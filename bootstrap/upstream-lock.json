@@ -1,0 +1,1287 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-10-16T03:41:47.498280+00:00",
+  "scope": "Complete tracked file trees at pinned default-branch commits for all 11 public edeproject repositories. Git history, other branch/tag trees, GitHub issues and live website database are not included.",
+  "repositories": [
+    {
+      "repository": "edeproject/svn",
+      "url": "https://github.com/edeproject/svn",
+      "clone_url": "https://github.com/edeproject/svn.git",
+      "description": "Copy of old subversion repository. Obsolete.",
+      "default_branch": "master",
+      "commit": "64c8013b1543a856e1ab76e14bc1c818772f89bc",
+      "commit_date": "2016-06-16T14:19:52+02:00",
+      "destination": "legacy/svn",
+      "files": 21668,
+      "bytes": 169697914,
+      "refs": [
+        {
+          "ref": "refs/heads/capone",
+          "object": "9a57ec72e96e2fda0b0c1869cac7b2f4eda8a061",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/capone@2476",
+          "object": "b0e02e1625a26a480b3d8f2414bb4e256af3960a",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/dbus",
+          "object": "2980c189907fa382481cd87a921b51d912074b3d",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede-bug-report",
+          "object": "1fcb9f8e848ecc60e45d470165474e382b3180f1",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede-desktop2",
+          "object": "675b3aac86103cf8519b2dfde0c708494242f95a",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede-meminfo-daemon",
+          "object": "7ad1ab78e77d7fa48aaa21ed735e25e4f656f92d",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede-panel-new",
+          "object": "26e7437b32f23bc3f8c03e52a12c388d8e216756",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede-scriptbus",
+          "object": "48428d44c612e98fe8a1bb1d50bf9feee056f3a2",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede2-fltk2",
+          "object": "4335ce706ac07c5708b6324b9edf102c51174f37",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib",
+          "object": "12bd2b83461f81ad7309898497774519529f6012",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-2.0.1",
+          "object": "7f4822c49bda94a23bc4a6339ddb762001fe363d",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-autojam",
+          "object": "d619169eb74744af5e8faf0ba11b089f66b3e3a5",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-autojam@3321",
+          "object": "02ccb83f6a843e7be9c2b2dee95015a45116da60",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-fltk2",
+          "object": "66901f16e467d5953214530d22f9cf253f1a84ad",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-new-icon-theme",
+          "object": "9f52aca3e857ac53260ca1ce045f902c330051ec",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-new-icon-theme@2569",
+          "object": "07b259dcd6e506421e9d2461de58eb66832fb160",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edewm_new",
+          "object": "3e4b5f829883628d43e44bc6f884d0224e5176c5",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edewm_new@1787",
+          "object": "8061cf88ba0f53afe5697457b8498739c39dcc0a",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/efiler",
+          "object": "af8d6748ebcb550bf8ff5f592a5db97865800b05",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/efiler@3277",
+          "object": "068948a71a70f0f268210a4f2308e048b9b2830c",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/eiconman_1_1",
+          "object": "988541bf9729596061281f5ac86cd80e681221d7",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/elma",
+          "object": "dd1dfccf1a07ee543255927d6e00837f110da250",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/elma@3278",
+          "object": "e224c3f4bfa818f971a7ebfed6ddf1170a4eeb6d",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/eml",
+          "object": "7a29006e6077554dc50c20e3bdb8ada325911521",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/evoke",
+          "object": "8e1f6a7a9976bb42d1370631453209b6be365cca",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/evoke-composite",
+          "object": "55ca11b6a17249acfe657d9bdd8574f7701a31c6",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/evoke-composite@2473",
+          "object": "4595633c32daaa22bc48970e30125320a7ba83b2",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/evoke@2458",
+          "object": "4595633c32daaa22bc48970e30125320a7ba83b2",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/file-chooser",
+          "object": "26840540844993119d6db43915529899ac3e696d",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/fltk-cairo",
+          "object": "815b3795ad66079cc6baa93d41d72be94b3ac8e0",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/initial",
+          "object": "668085c0d7864903bf45ff3f73823ea08dc4ffae",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/initial@1532",
+          "object": "4e614fb8d1f44322c1c13c1b68c3f8a90548eed6",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/master",
+          "object": "64c8013b1543a856e1ab76e14bc1c818772f89bc",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/v1_x",
+          "object": "4ec2676e97f99c83ae6c35ad7833a28766bd39d6",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/vendor",
+          "object": "1e0c684d7e0a928c98ffcc30b3558de1229f3fd2",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/vendor@2",
+          "object": "7416eef7f5a179e2ddb644d44c66420bbfad6cd8",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/tags/ede",
+          "object": "cda65b7c4eda8cecb87d02de0867ddcb545c6c78",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2",
+          "object": "d87d27b4f02887c355ccd4971691471d49b44846",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@1532",
+          "object": "d521e1de7c143fb7f789777de0072b31506939b2",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@1535",
+          "object": "5ea8a9b48e00fd0cdced1ba9653a1b200b84f34f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@2440",
+          "object": "685d3cd4974b2420d353d896a6581a7aa3430f86",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@2447",
+          "object": "2e6c428d8b0e6deab22e96b157ae0bb4d7768ed7",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1",
+          "object": "e6274f14985e429944f5fe1710a28d72c409da47",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@1798",
+          "object": "ef43962c31d063cc0f4524611bccc684a71d4416",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@1805",
+          "object": "8d0c8c3802f295ae50c43f63710d7d82ba7125b0",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@2441",
+          "object": "1e12383d69ad6e500b2a8741a55d0489289c7524",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@2448",
+          "object": "2ed19201c83b5792ca676e99f481d392f142e111",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm",
+          "object": "d86dad2eab91715ee96a6b40a276f850385cb972",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@1532",
+          "object": "3572a6a82ad4f724c46f78e3ed191abd4fe39b55",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@1535",
+          "object": "6e2c1be60b7262ef5ee6bb1fdd29cc59cfd5b59b",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@2443",
+          "object": "34af5a5c976c615f3d0a6ac3408fc0b319b00289",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@2449",
+          "object": "ca1aaca7ebaf7a9ce719a895f16f212ce8848272",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2",
+          "object": "66abc662591e6f8d10876b851ea3428c7f17dcbd",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2@2453",
+          "object": "9d7530282a8258f57728e896fcd72fc63a92e4e4",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0",
+          "object": "fb1fc7dd74ecfa954d8f6a7b1d6c9b28bc5357ea",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-alpha",
+          "object": "84f82c9f248ada8787d090e21f878ee26104fd59",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-alpha@2673",
+          "object": "feadc2e1bd8ad175c2273ff7b11eb963ab0e9067",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-beta",
+          "object": "459b62a35a818d7984129f587ee4366925a6817d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-beta@2905",
+          "object": "8fbd0b89962d82bc1dac43aa3ba28fe1e22052c6",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0@3315",
+          "object": "2db71dd4d6f59778d044d708a1b76260bf1a2e35",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.1",
+          "object": "c4906cccbb5a73a80bfa96dfadae21b1649c038a",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.1@3577",
+          "object": "22b85914bf80437af49bb25b8d0a270ab7f31c1d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.1@3580",
+          "object": "66e884b780877783fd81ff94950be7b331ad25e8",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0",
+          "object": "6886883226fe3fc837a091eab9f3476f33114ed3",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-alpha",
+          "object": "afa8df4ddfa200f35f182a0a38f5cdfd30a28033",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-alpha@2672",
+          "object": "a429a8ca9b76f9c12e22588efc9aeb2de821c802",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-beta",
+          "object": "0d35ed2b4bcd40dfe7c3a593c141bc86cd2214b8",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-beta@2904",
+          "object": "27ce69237c2b256f9122add852173e837e9b913d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0@3314",
+          "object": "dbcc470ed890ea374d7f3db38c7d692f9cb1da4e",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.1",
+          "object": "27b15f29ab141c2669657771d56b25137d0d7105",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.1@3576",
+          "object": "540340eff4eec6af5f0b66f722e6d98dddfc8697",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk",
+          "object": "46aff0f584c45024844d68dcce425d7b7046fbc4",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4",
+          "object": "c455a3d18b115f3c10d2148a0275478cde583a82",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@1530",
+          "object": "72bd0e6a7475a073798c2cf495b4453bc413098f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@2444",
+          "object": "9da64a43892c930dd004615c2bcc6d35474f1b36",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@2450",
+          "object": "465c28e8143840d7880c4b8a00cd81ddf7e3a70c",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6",
+          "object": "ee2437f4d2a48cafd777662635713573306fe299",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@1803",
+          "object": "c5c6fec4f73ef94a83537dd415fd9cb1ab2a11cd",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@2445",
+          "object": "e7f2fad1016e5a9eb6076db743c6fe099c7ba012",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@2451",
+          "object": "6a89716c0918fd9ced4355b9f3c02123a9dbf252",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7",
+          "object": "7c4aa00f8cc6f79abeafc88d2712c031e7ec5d49",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2135",
+          "object": "c027dfcfc5d9f0bc922d8b6b6a634c70a4d9a0a4",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2446",
+          "object": "ac21da36f66c88e70dddb265b758e19b5c3226e8",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2452",
+          "object": "ad98befb2be9798679258ecb2810c3e47ceb5213",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2455",
+          "object": "4c87b51bac07b94ab69c3be1eaf987c772c3b644",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.8",
+          "object": "8954d7ce8cbfd840315e2c7617b7f1d54bc8c16c",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.8@2676",
+          "object": "9f332a8c68f31761819a3b31aee0e02177c6663d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/start",
+          "object": "ee9e339fea31ad56f8f720cfd2b7bab6ea9b1671",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v1_0_2",
+          "object": "854a5861058346f2c6c48d149671c5c2efc24d3c",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v1_1",
+          "object": "faa34a289cac28e7caaeae31c3f9031b3516f39a",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v1_1_before_new_wm",
+          "object": "4aec98c77d59e022014924db62927ccd50008921",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v1_2",
+          "object": "b861548575ea25f9d72d05a096d3595cd9adcb51",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v1_2@2134",
+          "object": "df13784d3d620b85875cb245203fc5422daa451e",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v2_0_4",
+          "object": "d8fa3a356619c69eb880b7289afdbcc78e3c6606",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v2_0_4@1530",
+          "object": "6112f33b2ea9ec38e568885f7c488c666735514a",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v2_0_6",
+          "object": "21cadd45587235662afa1c94cc0223ca0f346040",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v2_0_7",
+          "object": "4cabc39e97d1b19931913d405498d9fb1c0863ba",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/v2_0_7@2135",
+          "object": "f563904a576418430f4022d9f383871684248baf",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/www_2_0",
+          "object": "4b576dfd321579348d685511b161b405f15cc821",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/www_2_0@2319",
+          "object": "8924cb76d64e9268b8b9e24b38e4bbb1a12397ee",
+          "type": "tag"
+        }
+      ],
+      "license_and_authors_paths": [
+        "legacy/svn/attic/ede-scriptbus/tinyscheme/COPYING",
+        "legacy/svn/attic/initial/ede/AUTHORS",
+        "legacy/svn/attic/initial/ede/COPYING",
+        "legacy/svn/attic/initial/ede/docs/ede/authors.html",
+        "legacy/svn/attic/initial/ede/docs/ede/copying.html",
+        "legacy/svn/attic/initial/themes/AUTHORS",
+        "legacy/svn/attic/start/ede/AUTHORS",
+        "legacy/svn/attic/start/ede/COPYING",
+        "legacy/svn/attic/start/ede/docs/ede/authors.html",
+        "legacy/svn/attic/start/ede/docs/ede/copying.html",
+        "legacy/svn/attic/start/themes/AUTHORS",
+        "legacy/svn/ede-1.x/tags/ede-1.0.2/AUTHORS",
+        "legacy/svn/ede-1.x/tags/ede-1.0.2/COPYING",
+        "legacy/svn/ede-1.x/tags/ede-1.0.2/docs/ede/authors.html",
+        "legacy/svn/ede-1.x/tags/ede-1.0.2/docs/ede/copying.html",
+        "legacy/svn/ede-1.x/tags/ede-1.1/AUTHORS",
+        "legacy/svn/ede-1.x/tags/ede-1.1/COPYING",
+        "legacy/svn/ede-1.x/tags/ede-1.1/docs/ede/authors.html",
+        "legacy/svn/ede-1.x/tags/ede-1.1/docs/ede/authors.html.in",
+        "legacy/svn/ede-1.x/tags/ede-1.1/docs/ede/copying.html",
+        "legacy/svn/ede-1.x/tags/ede-1.1/docs/ede/copying.html.in",
+        "legacy/svn/ede-1.x/tags/ede-1.1_before_new_wm/AUTHORS",
+        "legacy/svn/ede-1.x/tags/ede-1.1_before_new_wm/COPYING",
+        "legacy/svn/ede-1.x/tags/ede-1.1_before_new_wm/docs/ede/authors.html.in",
+        "legacy/svn/ede-1.x/tags/ede-1.1_before_new_wm/docs/ede/copying.html.in",
+        "legacy/svn/ede-1.x/tags/ede-1.2/AUTHORS",
+        "legacy/svn/ede-1.x/tags/ede-1.2/COPYING",
+        "legacy/svn/ede-1.x/tags/ede-1.2/docs/ede/authors.html",
+        "legacy/svn/ede-1.x/tags/ede-1.2/docs/ede/authors.html.in",
+        "legacy/svn/ede-1.x/tags/ede-1.2/docs/ede/copying.html",
+        "legacy/svn/ede-1.x/tags/ede-1.2/docs/ede/copying.html.in",
+        "legacy/svn/ede-1.x/trunk/AUTHORS",
+        "legacy/svn/ede-1.x/trunk/COPYING",
+        "legacy/svn/ede-1.x/trunk/docs/ede/authors.html",
+        "legacy/svn/ede-1.x/trunk/docs/ede/authors.html.in",
+        "legacy/svn/ede-1.x/trunk/docs/ede/copying.html",
+        "legacy/svn/ede-1.x/trunk/docs/ede/copying.html.in",
+        "legacy/svn/ede/branches/ede-fltk2/AUTHORS",
+        "legacy/svn/ede/branches/ede-fltk2/COPYING",
+        "legacy/svn/ede/tags/ede-2.0-alpha/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.0-alpha/COPYING",
+        "legacy/svn/ede/tags/ede-2.0-alpha/data/icon-themes/edeneu/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.0-alpha/data/icon-themes/edeneu/COPYING",
+        "legacy/svn/ede/tags/ede-2.0-beta/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.0-beta/COPYING",
+        "legacy/svn/ede/tags/ede-2.0-beta/data/icon-themes/edeneu/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.0-beta/data/icon-themes/edeneu/COPYING",
+        "legacy/svn/ede/tags/ede-2.0/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.0/AUTHORS.pekwm",
+        "legacy/svn/ede/tags/ede-2.0/COPYING",
+        "legacy/svn/ede/tags/ede-2.0/data/icon-themes/edeneu/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.0/data/icon-themes/edeneu/COPYING",
+        "legacy/svn/ede/tags/ede-2.0/data/icon-themes/kbflags/COPYING",
+        "legacy/svn/ede/tags/ede-2.0/data/wallpapers/COPYRIGHT",
+        "legacy/svn/ede/tags/ede-2.1/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.1/AUTHORS.pekwm",
+        "legacy/svn/ede/tags/ede-2.1/COPYING",
+        "legacy/svn/ede/tags/ede-2.1/data/icon-themes/edeneu/AUTHORS",
+        "legacy/svn/ede/tags/ede-2.1/data/icon-themes/edeneu/COPYING",
+        "legacy/svn/ede/tags/ede-2.1/data/icon-themes/kbflags/COPYING",
+        "legacy/svn/ede/tags/ede-2.1/data/wallpapers/COPYRIGHT",
+        "legacy/svn/ede/tags/ede-2.1/tools/svn2cl/authors.xml",
+        "legacy/svn/ede/trunk/AUTHORS",
+        "legacy/svn/ede/trunk/AUTHORS.pekwm",
+        "legacy/svn/ede/trunk/COPYING",
+        "legacy/svn/ede/trunk/data/icon-themes/edeneu/AUTHORS",
+        "legacy/svn/ede/trunk/data/icon-themes/edeneu/COPYING",
+        "legacy/svn/ede/trunk/data/icon-themes/kbflags/COPYING",
+        "legacy/svn/ede/trunk/data/wallpapers/COPYRIGHT",
+        "legacy/svn/ede/trunk/tools/svn2cl/authors.xml",
+        "legacy/svn/edelib/branches/edelib-2.0.1/COPYING",
+        "legacy/svn/edelib/branches/edelib-2.0.1/src/ts/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.0-alpha/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.0-beta/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.0-beta/src/tinyscheme/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.0/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.0/src/ts/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.1/COPYING",
+        "legacy/svn/edelib/tags/edelib-2.1/src/ts/COPYING",
+        "legacy/svn/edelib/trunk/COPYING",
+        "legacy/svn/edelib/trunk/src/ts/COPYING",
+        "legacy/svn/themes-1.x/trunk/AUTHORS"
+      ],
+      "tree": "6b232cd740b68bc3ab9cd86177b5e25309475a3b"
+    },
+    {
+      "repository": "edeproject/efltk",
+      "url": "https://github.com/edeproject/efltk",
+      "clone_url": "https://github.com/edeproject/efltk.git",
+      "description": "Extended FLTK. Obsolete",
+      "default_branch": "master",
+      "commit": "8626d11a537e537c95b4c2ab9df191e7ac5165b8",
+      "commit_date": "2016-06-06T15:03:54Z",
+      "destination": "legacy/efltk",
+      "files": 909,
+      "bytes": 7108936,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "8626d11a537e537c95b4c2ab9df191e7ac5165b8",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3602",
+          "object": "0ad64d0f1353a6c947419ee6fa83a6d6e03f602a",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4",
+          "object": "226550b5b08fd937f016c07b045c30a2b93c21cc",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@1530",
+          "object": "72bd0e6a7475a073798c2cf495b4453bc413098f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@2444",
+          "object": "9da64a43892c930dd004615c2bcc6d35474f1b36",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@2450",
+          "object": "465c28e8143840d7880c4b8a00cd81ddf7e3a70c",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.4@3605",
+          "object": "8e15d882f33be7fcd1c70d16801c9fd140c98e2a",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6",
+          "object": "f5651e01246151d452b0549e81b773940dfa8470",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@1803",
+          "object": "c5c6fec4f73ef94a83537dd415fd9cb1ab2a11cd",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@2445",
+          "object": "e7f2fad1016e5a9eb6076db743c6fe099c7ba012",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@2451",
+          "object": "6a89716c0918fd9ced4355b9f3c02123a9dbf252",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.6@3606",
+          "object": "a1348e3b0c4fdb642d0f8117ae0db97165af345f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7",
+          "object": "33c1cb48dd193cc99def4853c4ec838affedb4aa",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2135",
+          "object": "2c6d95c96fb6f0013a6e8c092437edcf880ce57f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2446",
+          "object": "22a726d8a481c2d8e1f7e131fb422df890495f54",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@2455",
+          "object": "4c87b51bac07b94ab69c3be1eaf987c772c3b644",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.7@3607",
+          "object": "c38671d16a750f7d1f5f45fd17a685998fa9e312",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.8",
+          "object": "bc627a455c11c5f4ba3e5da40358602e1184d0ba",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.8@2676",
+          "object": "9f332a8c68f31761819a3b31aee0e02177c6663d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/efltk-2.0.8@3608",
+          "object": "9ce25c26b2348569c24aa5a0fb4e258c48bee12e",
+          "type": "tag"
+        }
+      ],
+      "license_and_authors_paths": [],
+      "tree": "b37e0ebed32642fd4954eb61f95cb7f6dc7b6d4f"
+    },
+    {
+      "repository": "edeproject/ede-1.x",
+      "url": "https://github.com/edeproject/ede-1.x",
+      "clone_url": "https://github.com/edeproject/ede-1.x.git",
+      "description": "EDE 1.x. Obsolete.",
+      "default_branch": "master",
+      "commit": "f5eed7f50fb94be65c27b195b58da98da75213b0",
+      "commit_date": "2016-06-08T12:19:42Z",
+      "destination": "legacy/ede-1.x",
+      "files": 903,
+      "bytes": 3143882,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "f5eed7f50fb94be65c27b195b58da98da75213b0",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3628",
+          "object": "644bf191395a2e64b6d4fd7916e98d886ab060a2",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2",
+          "object": "130d2af6ee7389ce7921264c43dfcea042881ce7",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@1532",
+          "object": "d521e1de7c143fb7f789777de0072b31506939b2",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@1535",
+          "object": "5ea8a9b48e00fd0cdced1ba9653a1b200b84f34f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@2440",
+          "object": "685d3cd4974b2420d353d896a6581a7aa3430f86",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@2447",
+          "object": "2e6c428d8b0e6deab22e96b157ae0bb4d7768ed7",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.0.2@3629",
+          "object": "2a14c1e78cbb2b3d849b451c32d34b1900803d96",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1",
+          "object": "93eefcd55e66794f6bacaf939f6d772a95de5a3f",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@1798",
+          "object": "ef43962c31d063cc0f4524611bccc684a71d4416",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@1805",
+          "object": "8d0c8c3802f295ae50c43f63710d7d82ba7125b0",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@2441",
+          "object": "1e12383d69ad6e500b2a8741a55d0489289c7524",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@2448",
+          "object": "2ed19201c83b5792ca676e99f481d392f142e111",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1@3630",
+          "object": "ae3b947b9200137395d2a566c6a2d71f34e60e48",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm",
+          "object": "8ee5e2eaf63d5ebb8106fe594e5383d32deab237",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@1532",
+          "object": "3572a6a82ad4f724c46f78e3ed191abd4fe39b55",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@1535",
+          "object": "6e2c1be60b7262ef5ee6bb1fdd29cc59cfd5b59b",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@2443",
+          "object": "34af5a5c976c615f3d0a6ac3408fc0b319b00289",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@2449",
+          "object": "ca1aaca7ebaf7a9ce719a895f16f212ce8848272",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.1_before_new_wm@3631",
+          "object": "f12470824991501fab1b719aefd8de056ced849d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2",
+          "object": "a9cbab9af47bec3a0aa18badd02252585e098132",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2@2134",
+          "object": "db5aee20b857a7353301cde540f3a5df3734efe7",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2@2442",
+          "object": "f7291e33dfca20dbf1c7bab3cda23966647a5cca",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2@2453",
+          "object": "9d7530282a8258f57728e896fcd72fc63a92e4e4",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-1.2@3632",
+          "object": "5c553ae4e81a3f718f2663b5e77c510c219e8af6",
+          "type": "tag"
+        }
+      ],
+      "license_and_authors_paths": [
+        "legacy/ede-1.x/AUTHORS",
+        "legacy/ede-1.x/COPYING",
+        "legacy/ede-1.x/docs/ede/authors.html",
+        "legacy/ede-1.x/docs/ede/authors.html.in",
+        "legacy/ede-1.x/docs/ede/copying.html",
+        "legacy/ede-1.x/docs/ede/copying.html.in"
+      ],
+      "tree": "1b32444e7dc0b400281a5e52eaa4fc362d4fb2a8"
+    },
+    {
+      "repository": "edeproject/themes-1.x",
+      "url": "https://github.com/edeproject/themes-1.x",
+      "clone_url": "https://github.com/edeproject/themes-1.x.git",
+      "description": "Themes for EDE 1.x. Obsolete.",
+      "default_branch": "master",
+      "commit": "6c957b59cc654c5f8cf0266291f66a3ef670a61f",
+      "commit_date": "2016-06-08T12:22:59Z",
+      "destination": "legacy/themes-1.x",
+      "files": 151,
+      "bytes": 211473,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "6c957b59cc654c5f8cf0266291f66a3ef670a61f",
+          "type": "commit"
+        }
+      ],
+      "license_and_authors_paths": [
+        "legacy/themes-1.x/AUTHORS"
+      ],
+      "tree": "5378fa526b573f6111e6451c2dbbcda0e975d31a"
+    },
+    {
+      "repository": "edeproject/jam",
+      "url": "https://github.com/edeproject/jam",
+      "clone_url": "https://github.com/edeproject/jam.git",
+      "description": "Jam build tool from Haiku repository with some fixes.",
+      "default_branch": "master",
+      "commit": "507871ef5207411e734fa571991e309401d9af69",
+      "commit_date": "2025-10-21T14:46:52+02:00",
+      "destination": "tools/jam",
+      "files": 84,
+      "bytes": 675808,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "507871ef5207411e734fa571991e309401d9af69",
+          "type": "commit"
+        }
+      ],
+      "license_and_authors_paths": [],
+      "tree": "21561f4d89fa3f6a4b83cbc4dc1aba876c87b356"
+    },
+    {
+      "repository": "edeproject/net-install",
+      "url": "https://github.com/edeproject/net-install",
+      "clone_url": "https://github.com/edeproject/net-install.git",
+      "description": "EDE network installer",
+      "default_branch": "master",
+      "commit": "5ea3455414c463f005c6276d1c05a318fcdc1150",
+      "commit_date": "2016-06-16T14:30:05+02:00",
+      "destination": "legacy/net-install",
+      "files": 4,
+      "bytes": 19737,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "5ea3455414c463f005c6276d1c05a318fcdc1150",
+          "type": "commit"
+        }
+      ],
+      "license_and_authors_paths": [],
+      "tree": "7af4502eba2d26ccaf5519d30929d34a4b537fe6"
+    },
+    {
+      "repository": "edeproject/www",
+      "url": "https://github.com/edeproject/www",
+      "clone_url": "https://github.com/edeproject/www.git",
+      "description": "EDE website",
+      "default_branch": "master",
+      "commit": "ae62c4a772e93527bedc6c81f2bbd608c1194905",
+      "commit_date": "2016-06-16T14:32:01+02:00",
+      "destination": "reference/www",
+      "files": 147,
+      "bytes": 8020569,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "ae62c4a772e93527bedc6c81f2bbd608c1194905",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3644",
+          "object": "d866b72308897d732ee6ba7a52d1dc3cf8240784",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/tags/www-2.0",
+          "object": "e22fb4a2c4b1bc9d61cac9636ebbfa56ee8bc797",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/www-2.0@2319",
+          "object": "0a8f8c136237e1640e7f9bbe1e664ae91d58a7c4",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/www-2.0@3659",
+          "object": "d8ce6a16031889a1dca335dcf31d260168d50a56",
+          "type": "tag"
+        }
+      ],
+      "license_and_authors_paths": [],
+      "tree": "86e3d5ca63faa780c8190d93c36931158dd6d4ca"
+    },
+    {
+      "repository": "edeproject/art",
+      "url": "https://github.com/edeproject/art",
+      "clone_url": "https://github.com/edeproject/art.git",
+      "description": "Logos and wallpapers",
+      "default_branch": "master",
+      "commit": "b139b1d8a5ff623672153f62ede1e73165c608f2",
+      "commit_date": "2016-06-08T12:27:23Z",
+      "destination": "extras/art",
+      "files": 6,
+      "bytes": 17791888,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "b139b1d8a5ff623672153f62ede1e73165c608f2",
+          "type": "commit"
+        }
+      ],
+      "license_and_authors_paths": [],
+      "tree": "2eab5c5fac7d4f470b3965270732d1c8dbaa5347"
+    },
+    {
+      "repository": "edeproject/efiler",
+      "url": "https://github.com/edeproject/efiler",
+      "clone_url": "https://github.com/edeproject/efiler.git",
+      "description": "EDE file manager",
+      "default_branch": "master",
+      "commit": "7604251d256049461da3849f9f86721a758f985e",
+      "commit_date": "2016-06-08T12:44:07Z",
+      "destination": "extras/efiler",
+      "files": 33,
+      "bytes": 252106,
+      "refs": [
+        {
+          "ref": "refs/heads/master",
+          "object": "7604251d256049461da3849f9f86721a758f985e",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3277",
+          "object": "068948a71a70f0f268210a4f2308e048b9b2830c",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3666",
+          "object": "af8d6748ebcb550bf8ff5f592a5db97865800b05",
+          "type": "commit"
+        }
+      ],
+      "license_and_authors_paths": [],
+      "tree": "87792f2f93cc4221e366f9fcd20f2b97b06c8bc9"
+    },
+    {
+      "repository": "edeproject/edelib",
+      "url": "https://github.com/edeproject/edelib",
+      "clone_url": "https://github.com/edeproject/edelib.git",
+      "description": "EDE base library",
+      "default_branch": "master",
+      "commit": "b184b7df031aa8677aee326b10e8aeb0b67d646a",
+      "commit_date": "2026-02-17T14:21:42+01:00",
+      "destination": "src/edelib",
+      "files": 379,
+      "bytes": 3006033,
+      "refs": [
+        {
+          "ref": "refs/heads/edelib-2.0.1",
+          "object": "3e8313e6c5d664b94cb09cca3e1743513c7534a1",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-2.0.1@2044",
+          "object": "12bd2b83461f81ad7309898497774519529f6012",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-2.0.1@3314",
+          "object": "e47b6f56f4d21eae74af2a24767496ca8ccaf917",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-2.0.1@3337",
+          "object": "98bfc5342e0df01bf86b10c63cf2479a16ffd6ab",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-2.0.1@3619",
+          "object": "7f4822c49bda94a23bc4a6339ddb762001fe363d",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-fltk2",
+          "object": "ed6a840ef06ed5c1919364ac7a68699db0cdf655",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-fltk2@1940",
+          "object": "f4bbb284d8e964fc8767cf7ccda503e84d6454dd",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/edelib-fltk2@3620",
+          "object": "66901f16e467d5953214530d22f9cf253f1a84ad",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/master",
+          "object": "b184b7df031aa8677aee326b10e8aeb0b67d646a",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@2044",
+          "object": "12bd2b83461f81ad7309898497774519529f6012",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3614",
+          "object": "d85481a1d6d4a225333922e68596599b47675622",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0",
+          "object": "f41a92c12c0a8d11d703457242e1459112aed840",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-alpha",
+          "object": "effaafb37d44453b46ef11240051a4da4c6fd516",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-alpha@2044",
+          "object": "311e00eeb29ba80d3424793c3da520c36afcaf88",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-alpha@2672",
+          "object": "a429a8ca9b76f9c12e22588efc9aeb2de821c802",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-alpha@3616",
+          "object": "2aa74de523fd617aa838186e674df27f3776df9b",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-beta",
+          "object": "67d79689a4e4440241a18376d45e0e6a0c6ca5ef",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-beta@2044",
+          "object": "8662f7730fa31e02b505911fd5fac2a7b428f8b7",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-beta@2904",
+          "object": "27ce69237c2b256f9122add852173e837e9b913d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0-beta@3617",
+          "object": "e1f1933ef8f34f01efb55032bac039024dbd334c",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0@2044",
+          "object": "77e3058b5bea31ade3259bd69dd5e762f65ad27a",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0@3314",
+          "object": "dbcc470ed890ea374d7f3db38c7d692f9cb1da4e",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.0@3615",
+          "object": "fc60f279026e2d5ba99ecdc7e112941eb63d70ca",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.1",
+          "object": "66427a199f10b35203c64e115fa900e1db0bd972",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.1@2044",
+          "object": "2530a32d299dbf288cf30505f9b832953ccc6133",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.1@3576",
+          "object": "540340eff4eec6af5f0b66f722e6d98dddfc8697",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/edelib-2.1@3618",
+          "object": "834a1096e7702acfbddf86d64dcc948d34317b3e",
+          "type": "tag"
+        }
+      ],
+      "license_and_authors_paths": [
+        "src/edelib/COPYING",
+        "src/edelib/src/ts/COPYING"
+      ],
+      "tree": "5b8a8d163e9f0feb7a88f51a847b7e00935bc577"
+    },
+    {
+      "repository": "edeproject/ede",
+      "url": "https://github.com/edeproject/ede",
+      "clone_url": "https://github.com/edeproject/ede.git",
+      "description": "EDE code",
+      "default_branch": "master",
+      "commit": "97ff635d363c9874ed70aebbc2af35e2d116b3b1",
+      "commit_date": "2026-02-18T21:40:09+01:00",
+      "destination": "src/ede",
+      "files": 1369,
+      "bytes": 14095426,
+      "refs": [
+        {
+          "ref": "refs/heads/ede-fltk2",
+          "object": "b4b5ba92a851728c22581e5ff1e2c1b56539aeb1",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/ede-fltk2@3667",
+          "object": "4335ce706ac07c5708b6324b9edf102c51174f37",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/master",
+          "object": "97ff635d363c9874ed70aebbc2af35e2d116b3b1",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/heads/trunk@3652",
+          "object": "f799482f640ff1187414c4ecb3d674eda0e83119",
+          "type": "commit"
+        },
+        {
+          "ref": "refs/tags/ede-2.0",
+          "object": "790aef5851f6e0f57652eb79e38c340202aabd02",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-alpha",
+          "object": "9a40bea351b79bc45e598c51d6f1c1337c358e3d",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-alpha@2673",
+          "object": "feadc2e1bd8ad175c2273ff7b11eb963ab0e9067",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-alpha@3653",
+          "object": "a61e93c2a9b441c1900c56ff3d0eb9d7c36e7830",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-beta",
+          "object": "2d5b420c221ab26fe0bc3e9a4ebb35790174e07b",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-beta@2905",
+          "object": "8fbd0b89962d82bc1dac43aa3ba28fe1e22052c6",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0-beta@3654",
+          "object": "6dcc22a61e38c19f5d7a4d1f95c1a986b083781b",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0@3315",
+          "object": "2db71dd4d6f59778d044d708a1b76260bf1a2e35",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.0@3655",
+          "object": "48b118c67b7a99ba26d83ef97e41d0adf9697bf7",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.1",
+          "object": "f40828343161a6221eadb0fa718910b4b59db053",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.1@3580",
+          "object": "66e884b780877783fd81ff94950be7b331ad25e8",
+          "type": "tag"
+        },
+        {
+          "ref": "refs/tags/ede-2.1@3656",
+          "object": "f1110844897180351f764307c192980ad938bb83",
+          "type": "tag"
+        }
+      ],
+      "license_and_authors_paths": [
+        "src/ede/AUTHORS",
+        "src/ede/AUTHORS.pekwm",
+        "src/ede/COPYING",
+        "src/ede/data/icon-themes/edeneu/AUTHORS",
+        "src/ede/data/icon-themes/edeneu/COPYING",
+        "src/ede/data/icon-themes/kbflags/COPYING",
+        "src/ede/data/wallpapers/COPYRIGHT",
+        "src/ede/tools/svn2cl/authors.xml"
+      ],
+      "tree": "3f49604cf0196ba5a54fa579bf2cd7f67a784525"
+    }
+  ]
+}
