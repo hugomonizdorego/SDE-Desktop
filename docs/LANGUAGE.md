@@ -31,6 +31,8 @@ launcher and the build tools.**
 | cairo | `libcairo2-dev` | Anti-aliased rounded shapes, shadows, image scaling |
 | librsvg | `librsvg2-dev` | SVG icons and wallpapers |
 | Xlib, Xft | `libx11-dev`, `libxft-dev` | EWMH taskbar, struts, system tray, fonts |
+| libdbus | `libdbus-1-dev` | Notifications, StatusNotifierItem tray, logind brightness |
+| gettext | `gettext` (libintl is in glibc) | Translations |
 | Openbox | `openbox` (runtime) | Window manager, configured by SDE |
 
 A later release may replace Openbox with an SDE window manager and add Wayland

@@ -2,11 +2,15 @@
 #include "menu.h"
 
 #include <FL/Fl.H>
+#include <FL/Fl_Menu_Item.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
+#include <sys/stat.h>
 
+#include "i18n.h"
 #include "icons.h"
+#include "panel.h"
 #include "paint.h"
 #include "spawn.h"
 #include "util.h"
@@ -15,7 +19,7 @@ using namespace sde;
 
 namespace {
 
-const char *kAll = "All applications";
+const char *kAll = N_("All applications");
 
 std::string category_icon(const std::string &cat) {
   if (cat == kAll) return "applications-all";
@@ -72,14 +76,12 @@ class SearchInput : public Fl_Input {
 
 }  // namespace
 
-AppMenu::AppMenu() : sde::BufferedWindow(0, 0, 640, 580, "SDE Menu") {
+AppMenu::AppMenu() : PanelPopup("SDE Menu") {
   search_ = new SearchInput(0, 0, 10, 10);
   search_->box(FL_FLAT_BOX);
   search_->when(FL_WHEN_CHANGED);
   search_->callback(search_changed, this);
   end();
-  set_override();
-  border(0);
   callback([](Fl_Widget *w, void *) { static_cast<AppMenu *>(w)->close(); });
 }
 
@@ -128,14 +130,27 @@ void AppMenu::filter() {
   if (selected_ < 0) selected_ = 0;
 }
 
-void AppMenu::popup(const Theme &theme, int anchor_x, int panel_y, int screen_x, int screen_w) {
-  theme_ = theme;
-  int mh = std::min(580, panel_y - 24);
-  int mw = std::min(640, screen_w - 16);
-  int mx = std::max(screen_x + 8, std::min(anchor_x, screen_x + screen_w - mw - 8));
-  int my = panel_y - mh - 8;
-  resize(mx, my, mw, mh);
-  search_->resize(pad_ + 42, pad_ + 6, mw - 2 * pad_ - 54, 30);
+void AppMenu::layout() {
+  pad_ = S(16);
+  header_h_ = S(64);
+  footer_h_ = S(60);
+  cat_w_ = S(190);
+  row_h_ = S(46);
+  cat_row_h_ = S(36);
+  icon_ = S(32);
+}
+
+void AppMenu::prepare() {
+  theme_ = Panel::instance->theme();
+  layout();
+  int mx, my, mw, mh;
+  Panel::instance->monitor(mx, my, mw, mh);
+  int mw2 = std::min(S(640), mw - S(16));
+  int mh2 = std::min(S(580), mh - Panel::instance->h() - S(24));
+  // Narrow screens: give the list the room and shrink the categories.
+  if (mw2 < S(560)) cat_w_ = S(150);
+  size(mw2, mh2);
+  search_->resize(pad_ + S(42), pad_ + S(6), mw2 - 2 * pad_ - S(54), S(30));
   search_->color(theme_.surface_alt.fl());
   search_->textcolor(theme_.text.fl());
   search_->cursor_color(theme_.accent.fl());
@@ -148,15 +163,36 @@ void AppMenu::popup(const Theme &theme, int anchor_x, int panel_y, int screen_x,
   scroll_ = 0;
   reload();
   filter();
-  show();
-  Fl::grab(this);
-  search_->take_focus();
-  redraw();
+  Fl::add_timeout(0, [](void *d) { static_cast<AppMenu *>(d)->search_->take_focus(); }, this);
 }
 
-void AppMenu::close() {
-  if (Fl::grab() == this) Fl::grab(nullptr);
-  hide();
+void AppMenu::item_menu(int row) {
+  if (row < 0 || row >= int(rows_.size())) return;
+  DesktopEntry e = *rows_[size_t(row)].entry;
+  bool pinned = Panel::instance->is_pinned(e.id);
+  Fl_Menu_Item items[] = {
+      {_("Open"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
+      {pinned ? _("Unpin from Panel") : _("Pin to Panel"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+      {_("Add to Desktop"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+      {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
+  const Fl_Menu_Item *m = items->popup(Fl::event_x(), Fl::event_y());
+  if (m == &items[0]) {
+    launch(row);
+  } else if (m == &items[1]) {
+    if (pinned) Panel::instance->unpin(e.id);
+    else Panel::instance->pin(e.id);
+    redraw();
+  } else if (m == &items[2]) {
+    std::string desk = user_dir("DESKTOP");
+    make_dirs(desk);
+    std::string text;
+    if (read_file(e.path, text)) {
+      std::string target = desk + "/" + e.id;
+      write_file_atomic(target, text);
+      // Launchers created by the user are trusted (executable).
+      chmod(target.c_str(), 0755);
+    }
+  }
 }
 
 int AppMenu::list_rows_visible() const { return std::max(1, (h() - header_h_ - footer_h_) / row_h_); }
@@ -172,8 +208,8 @@ AppMenu::Zone AppMenu::zone_at(int x, int y, int &index) const {
   index = -1;
   int body_top = header_h_, body_bottom = h() - footer_h_;
   if (y >= body_top && y < body_bottom) {
-    if (x >= pad_ && x < pad_ + cat_w_ - 8) {
-      int i = (y - body_top - 4) / cat_row_h_;
+    if (x >= pad_ && x < pad_ + cat_w_ - S(8)) {
+      int i = (y - body_top - S(4)) / cat_row_h_;
       if (i >= 0 && i < int(categories_.size())) {
         index = i;
         return Z_CATEGORY;
@@ -186,9 +222,9 @@ AppMenu::Zone AppMenu::zone_at(int x, int y, int &index) const {
       }
     }
   }
-  if (y >= h() - footer_h_ + 10 && y < h() - 10) {
-    if (x >= w() - pad_ - 40 && x < w() - pad_) return Z_POWER;
-    if (x >= w() - pad_ - 88 && x < w() - pad_ - 48) return Z_SETTINGS;
+  if (y >= h() - footer_h_ + S(10) && y < h() - S(10)) {
+    if (x >= w() - pad_ - S(40) && x < w() - pad_) return Z_POWER;
+    if (x >= w() - pad_ - S(88) && x < w() - pad_ - S(48)) return Z_SETTINGS;
   }
   return Z_NONE;
 }
@@ -204,12 +240,15 @@ int AppMenu::handle(int event) {
   switch (event) {
     case FL_PUSH: {
       int ex = Fl::event_x(), ey = Fl::event_y();
-      if (ex < 0 || ey < 0 || ex >= w() || ey >= h()) {
-        close();
-        return 1;
-      }
+      if (ex < 0 || ey < 0 || ex >= w() || ey >= h()) return PanelPopup::handle(event);
       int idx;
       Zone z = zone_at(ex, ey, idx);
+      if (z == Z_APP && Fl::event_button() == FL_RIGHT_MOUSE) {
+        selected_ = idx;
+        redraw();
+        item_menu(idx);
+        return 1;
+      }
       if (z == Z_CATEGORY) {
         category_ = idx;
         search_->value("");
@@ -233,7 +272,7 @@ int AppMenu::handle(int event) {
         spawn_detached({"sde-logout"});
         return 1;
       }
-      return sde::BufferedWindow::handle(event);
+      return PanelPopup::handle(event);
     }
     case FL_MOVE:
     case FL_DRAG: {
@@ -245,7 +284,7 @@ int AppMenu::handle(int event) {
         if (z == Z_APP) selected_ = idx;
         redraw();
       }
-      sde::BufferedWindow::handle(event);
+      PanelPopup::handle(event);
       return 1;
     }
     case FL_MOUSEWHEEL: {
@@ -261,6 +300,10 @@ int AppMenu::handle(int event) {
         close();
         return 1;
       }
+      if (k == FL_Menu && n > 0) {
+        item_menu(selected_);
+        return 1;
+      }
       if (k == FL_Enter || k == FL_KP_Enter) {
         launch(selected_);
         return 1;
@@ -270,77 +313,79 @@ int AppMenu::handle(int event) {
       else if (k == FL_Up) selected_ = std::max(0, selected_ - 1);
       else if (k == FL_Page_Down) selected_ = std::min(n - 1, selected_ + list_rows_visible());
       else if (k == FL_Page_Up) selected_ = std::max(0, selected_ - list_rows_visible());
-      else return sde::BufferedWindow::handle(event);
+      else return PanelPopup::handle(event);
       ensure_visible(selected_);
       redraw();
       return 1;
     }
     default:
-      return sde::BufferedWindow::handle(event);
+      return PanelPopup::handle(event);
   }
 }
 
 void AppMenu::draw() {
   const Theme &t = theme_;
   int W = w(), H = h();
+  int cat_icon = S(20), btn = S(40), gi = S(22);
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    p.stroke_rounded(0, 0, W, H, 0, t.border);
+    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
 
     // Search box.
-    p.fill_rounded(pad_, pad_, W - 2 * pad_, 42, 12, t.surface_alt);
-    p.image(IconLoader::get({"system-search", "edit-find"}, 18), pad_ + 14, pad_ + 12, 18, 0.7);
+    p.fill_rounded(pad_, pad_, W - 2 * pad_, S(42), S(12), t.surface_alt);
+    if (Fl::focus() == search_) p.stroke_rounded(pad_, pad_, W - 2 * pad_, S(42), S(12), t.accent, Sd(1.5));
+    p.image(IconLoader::get({"system-search", "edit-find"}, S(18)), pad_ + S(14), pad_ + S(12), S(18), 0.7);
 
     // Categories.
     int top = header_h_;
     for (size_t i = 0; i < categories_.size(); ++i) {
-      int y = top + 4 + int(i) * cat_row_h_;
+      int y = top + S(4) + int(i) * cat_row_h_;
       if (y + cat_row_h_ > H - footer_h_) break;
       bool sel = int(i) == category_ && !*search_->value();
       bool hov = hover_zone_ == Z_CATEGORY && hover_index_ == int(i);
-      if (sel) p.fill_rounded(pad_, y, cat_w_ - 12, cat_row_h_ - 4, 8, t.accent.alpha(0.16));
-      else if (hov) p.fill_rounded(pad_, y, cat_w_ - 12, cat_row_h_ - 4, 8, t.hover);
-      if (sel) p.fill_rounded(pad_, y + 8, 3, cat_row_h_ - 20, 1.5, t.accent);
-      p.image(IconLoader::get({category_icon(categories_[i]), "applications-other"}, 20),
-              pad_ + 12, y + (cat_row_h_ - 4 - 20) / 2.0, 20);
+      if (sel) p.fill_rounded(pad_, y, cat_w_ - S(12), cat_row_h_ - S(4), S(8), t.accent.alpha(0.16));
+      else if (hov) p.fill_rounded(pad_, y, cat_w_ - S(12), cat_row_h_ - S(4), S(8), t.hover);
+      if (sel) p.fill_rounded(pad_, y + S(8), Sd(3), cat_row_h_ - S(20), Sd(1.5), t.accent);
+      p.image(IconLoader::get({category_icon(categories_[i]), "applications-other"}, cat_icon),
+              pad_ + S(12), y + (cat_row_h_ - S(4) - cat_icon) / 2.0, cat_icon);
     }
-    p.line(pad_ + cat_w_ - 4, top + 6, pad_ + cat_w_ - 4, H - footer_h_ - 6, t.border);
+    p.line(pad_ + cat_w_ - S(4), top + S(6), pad_ + cat_w_ - S(4), H - footer_h_ - S(6), t.border);
 
     // Application rows.
-    int lx = pad_ + cat_w_ + 4, lw = W - pad_ - lx;
+    int lx = pad_ + cat_w_ + S(4), lw = W - pad_ - lx;
     cairo_save(p.cr());
     cairo_rectangle(p.cr(), lx, top, lw, H - footer_h_ - top);
     cairo_clip(p.cr());
     for (int i = scroll_; i < int(rows_.size()); ++i) {
       int y = top + (i - scroll_) * row_h_;
       if (y > H - footer_h_) break;
-      if (i == selected_) p.fill_rounded(lx, y + 2, lw, row_h_ - 4, 10, t.accent.alpha(0.14));
+      if (i == selected_) p.fill_rounded(lx, y + S(2), lw, row_h_ - S(4), S(10), t.accent.alpha(0.14));
       const DesktopEntry *e = rows_[size_t(i)].entry;
-      p.image(IconLoader::get({e->icon}, 32), lx + 10, y + (row_h_ - 32) / 2.0, 32);
+      p.image(IconLoader::get({e->icon}, icon_), lx + S(10), y + (row_h_ - icon_) / 2.0, icon_);
     }
     cairo_restore(p.cr());
 
     // Scroll indicator.
     int vis = list_rows_visible();
     if (int(rows_.size()) > vis) {
-      double track = H - footer_h_ - top - 8;
-      double len = std::max(24.0, track * vis / rows_.size());
+      double track = H - footer_h_ - top - S(8);
+      double len = std::max(Sd(24), track * vis / rows_.size());
       double pos = (track - len) * scroll_ / std::max(1, int(rows_.size()) - vis);
-      p.fill_rounded(W - pad_ + 6, top + 4 + pos, 4, len, 2, t.text_dim.alpha(0.35));
+      p.fill_rounded(W - pad_ + S(6), top + S(4) + pos, Sd(4), len, Sd(2), t.text_dim.alpha(0.35));
     }
 
     // Footer.
     p.line(pad_, H - footer_h_ + 0.5, W - pad_, H - footer_h_ + 0.5, t.border);
     int cy = H - footer_h_ / 2;
-    p.circle(pad_ + 18, cy, 18, t.accent);
+    p.circle(pad_ + S(18), cy, S(18), t.accent);
     bool hs = hover_zone_ == Z_SETTINGS, hp = hover_zone_ == Z_POWER;
-    if (hs) p.fill_rounded(W - pad_ - 88, cy - 20, 40, 40, 10, t.hover);
-    if (hp) p.fill_rounded(W - pad_ - 40, cy - 20, 40, 40, 10, t.hover);
-    p.image(IconLoader::get({"preferences-system", "preferences-desktop", "configure"}, 22),
-            W - pad_ - 79, cy - 11, 22);
-    p.image(IconLoader::get({"system-shutdown", "system-log-out", "application-exit"}, 22),
-            W - pad_ - 31, cy - 11, 22);
+    if (hs) p.fill_rounded(W - pad_ - S(88), cy - btn / 2, btn, btn, S(10), t.hover);
+    if (hp) p.fill_rounded(W - pad_ - btn, cy - btn / 2, btn, btn, S(10), t.hover);
+    p.image(IconLoader::get({"preferences-system", "preferences-desktop", "configure"}, gi),
+            W - pad_ - S(88) + (btn - gi) / 2.0, cy - gi / 2.0, gi);
+    p.image(IconLoader::get({"system-shutdown", "system-log-out", "application-exit"}, gi),
+            W - pad_ - btn + (btn - gi) / 2.0, cy - gi / 2.0, gi);
   }
 
   // Children (the search input) and text.
@@ -348,19 +393,20 @@ void AppMenu::draw() {
   int top = header_h_;
   if (!*search_->value()) {
     text_font(t.font_size + 1);
-    fl_color(t.text_dim.fl());
-    draw_text("Search applications", search_->x() + 3, search_->y(), search_->w(), search_->h(),
+    draw_text(_("Search applications"), search_->x() + S(3), search_->y(), search_->w(), search_->h(),
               t.text_dim);
   }
   for (size_t i = 0; i < categories_.size(); ++i) {
-    int y = top + 4 + int(i) * cat_row_h_;
+    int y = top + S(4) + int(i) * cat_row_h_;
     if (y + cat_row_h_ > H - footer_h_) break;
     bool sel = int(i) == category_ && !*search_->value();
     text_font(t.font_size, sel);
-    draw_text(categories_[i], pad_ + 42, y, cat_w_ - 60, cat_row_h_ - 4, sel ? t.accent : t.text);
+    draw_text(_(categories_[i].c_str()), pad_ + S(42), y, cat_w_ - S(60), cat_row_h_ - S(4),
+              sel ? t.accent_text : t.text);
   }
-  int lx = pad_ + cat_w_ + 4, lw = W - pad_ - lx;
+  int lx = pad_ + cat_w_ + S(4), lw = W - pad_ - lx;
   fl_push_clip(lx, top, lw, H - footer_h_ - top);
+  int tx = lx + S(22) + icon_;
   for (int i = scroll_; i < int(rows_.size()); ++i) {
     int y = top + (i - scroll_) * row_h_;
     if (y > H - footer_h_) break;
@@ -369,16 +415,16 @@ void AppMenu::draw() {
                                                                              : e->comment;
     text_font(t.font_size + 1);
     if (sub.empty()) {
-      draw_text(e->name, lx + 54, y, lw - 64, row_h_, t.text);
+      draw_text(e->name, tx, y, lw - (tx - lx) - S(10), row_h_, t.text);
     } else {
-      draw_text(e->name, lx + 54, y + 4, lw - 64, row_h_ / 2 - 2, t.text);
+      draw_text(e->name, tx, y + S(4), lw - (tx - lx) - S(10), row_h_ / 2 - S(2), t.text);
       text_font(t.font_size - 1);
-      draw_text(sub, lx + 54, y + row_h_ / 2, lw - 64, row_h_ / 2 - 6, t.text_dim);
+      draw_text(sub, tx, y + row_h_ / 2, lw - (tx - lx) - S(10), row_h_ / 2 - S(6), t.text_dim);
     }
   }
   if (rows_.empty()) {
     text_font(t.font_size + 1);
-    draw_text("No applications found", lx, top + 20, lw, 40, t.text_dim, 1);
+    draw_text(_("No applications found"), lx, top + S(20), lw, S(40), t.text_dim, 1);
   }
   fl_pop_clip();
 
@@ -388,7 +434,7 @@ void AppMenu::draw() {
   std::string initial = name.empty() ? "?" : name.substr(0, 1);
   if (initial[0] >= 'a' && initial[0] <= 'z') initial[0] = char(initial[0] - 'a' + 'A');
   text_font(t.font_size + 3, true);
-  draw_text(initial, pad_, cy - 18, 36, 36, t.on_accent, 1);
+  draw_text(initial, pad_, cy - S(18), S(36), S(36), t.on_accent, 1);
   text_font(t.font_size + 1, true);
-  draw_text(name, pad_ + 46, cy - 12, W / 2, 24, t.text);
+  draw_text(name, pad_ + S(46), cy - S(12), W - pad_ * 2 - S(46) - S(96), S(24), t.text);
 }

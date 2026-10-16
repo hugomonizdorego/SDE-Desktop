@@ -4,6 +4,7 @@
 
 #include <FL/Enumerations.H>
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -21,12 +22,23 @@ struct Color {
   Fl_Color fl() const;
   std::string to_hex() const;
   double luminance() const;
+  // WCAG contrast ratio between two opaque colors (1 to 21).
+  double contrast(const Color &other) const;
 };
+
+// User interface scale factor (1.0 = 100 %, up to 2.0). Set by
+// Theme::from_config(); every SDE program multiplies its pixel sizes by it.
+double ui_scale();
+void set_ui_scale(double scale);
+inline int S(double px) { return int(std::lround(px * ui_scale())); }
+inline double Sd(double px) { return px * ui_scale(); }
 
 struct Theme {
   bool dark = false;
+  double scale = 1.0;     // UI scale, see ui_scale()
   Color accent;           // selection, focus, active indicators
   Color on_accent;        // text drawn on top of the accent
+  Color accent_text;      // accent shade readable as text on surface/background
   Color background;       // window background
   Color surface;          // cards, menus, panel
   Color surface_alt;      // sidebars, search fields
@@ -37,8 +49,10 @@ struct Theme {
   Color shadow;
 
   std::string font;       // fontconfig family, e.g. "Sans"
-  int font_size = 13;     // pixels used by FLTK
-  int panel_height = 40;
+  int font_size = 13;     // pixels used by FLTK (already scaled)
+  int panel_height = 40;  // pixels (already scaled)
+  int panel_size = 40;    // unscaled setting: 32, 40 or 48
+  bool panel_top = false;
 
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
@@ -47,6 +61,9 @@ struct Theme {
   // the default font) for dialogs such as sde-settings and sde-run.
   void apply_to_fltk() const;
 };
+
+// The theme last applied with Theme::apply_to_fltk(); used by sde widgets.
+const Theme &active_theme();
 
 // Accent colors offered in Settings.
 struct AccentChoice {

@@ -99,6 +99,57 @@ static cairo_surface_t *load_with_fltk(const std::string &path) {
   return s;
 }
 
+static cairo_surface_t *scale_to(cairo_surface_t *src, int bw, int bh, int size) {
+  cairo_surface_t *out = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+  cairo_t *cr = cairo_create(out);
+  double sc = double(size) / std::max(bw, bh);
+  cairo_translate(cr, (size - bw * sc) / 2, (size - bh * sc) / 2);
+  cairo_scale(cr, sc, sc);
+  cairo_set_source_surface(cr, src, 0, 0);
+  cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+  cairo_surface_destroy(src);
+  return out;
+}
+
+cairo_surface_t *rgba_pixels(const uint8_t *data, size_t len, int w, int h, int stride,
+                             bool has_alpha, int channels, int size) {
+  if (w <= 0 || h <= 0 || w > 4096 || h > 4096 || channels < 3 || stride < w * channels ||
+      len < size_t(stride) * size_t(h - 1) + size_t(w * channels))
+    return nullptr;
+  cairo_surface_t *src = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+  unsigned char *px = cairo_image_surface_get_data(src);
+  int dst_stride = cairo_image_surface_get_stride(src);
+  for (int y = 0; y < h; ++y) {
+    const uint8_t *in = data + size_t(y) * size_t(stride);
+    uint32_t *row = reinterpret_cast<uint32_t *>(px + y * dst_stride);
+    for (int x = 0; x < w; ++x, in += channels) {
+      uint32_t a = has_alpha && channels >= 4 ? in[3] : 255;
+      row[x] = (a << 24) | ((in[0] * a / 255) << 16) | ((in[1] * a / 255) << 8) | (in[2] * a / 255);
+    }
+  }
+  cairo_surface_mark_dirty(src);
+  return scale_to(src, w, h, size);
+}
+
+cairo_surface_t *argb_network_pixels(const uint8_t *data, size_t len, int w, int h, int size) {
+  if (w <= 0 || h <= 0 || w > 1024 || h > 1024 || len < size_t(w) * size_t(h) * 4) return nullptr;
+  cairo_surface_t *src = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+  unsigned char *px = cairo_image_surface_get_data(src);
+  int dst_stride = cairo_image_surface_get_stride(src);
+  for (int y = 0; y < h; ++y) {
+    uint32_t *row = reinterpret_cast<uint32_t *>(px + y * dst_stride);
+    for (int x = 0; x < w; ++x) {
+      const uint8_t *p = data + (size_t(y) * size_t(w) + size_t(x)) * 4;
+      uint32_t a = p[0];
+      row[x] = (a << 24) | ((p[1] * a / 255) << 16) | ((p[2] * a / 255) << 8) | (p[3] * a / 255);
+    }
+  }
+  cairo_surface_mark_dirty(src);
+  return scale_to(src, w, h, size);
+}
+
 cairo_surface_t *load_image(const std::string &path, int w, int h) {
   std::string ext = lower(path.substr(path.find_last_of('.') == std::string::npos
                                           ? path.size()
@@ -204,17 +255,8 @@ std::vector<std::string> icon_base_dirs() {
 
 std::string g_theme_name = "hicolor";
 std::map<std::string, std::unique_ptr<IconTheme>> g_themes;
-std::unordered_map<std::string, std::unordered_set<std::string>> g_dir_listing;
 std::unordered_map<std::string, std::string> g_lookup_cache;
 std::unordered_map<std::string, cairo_surface_t *> g_surface_cache;
-
-const std::unordered_set<std::string> &listing(const std::string &dir) {
-  auto it = g_dir_listing.find(dir);
-  if (it != g_dir_listing.end()) return it->second;
-  auto &set = g_dir_listing[dir];
-  for (auto &n : list_dir(dir)) set.insert(n);
-  return set;
-}
 
 IconTheme *load_theme(const std::string &name) {
   auto it = g_themes.find(name);
@@ -290,11 +332,13 @@ std::string find_in_theme(IconTheme *theme, const std::string &name, int size) {
     if (dist > 0 && d.type != "Scalable" && d.size < size) dist += 1000;
     if (dist >= best_dist) continue;
     for (auto &base : theme->bases) {
-      const std::string dir = base + "/" + d.path;
-      const auto &files = listing(dir);
+      // A stat() per candidate is cheap (results are cached by name and
+      // size), while keeping directory listings in memory costs tens of
+      // megabytes with large themes such as Papirus.
+      const std::string stem = base + "/" + d.path + "/" + name;
       for (const char *ext : exts) {
-        if (files.count(name + ext)) {
-          best = base + "/" + d.path + "/" + name + ext;
+        if (file_exists(stem + ext)) {
+          best = stem + ext;
           best_dist = dist;
           break;
         }

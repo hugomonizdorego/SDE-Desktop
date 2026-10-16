@@ -15,11 +15,14 @@ Build (all from the distribution archive):
 
 ```
 build-essential cmake pkgconf debhelper fakeroot lintian
-libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev
+libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext
 ```
 
 Runtime (the `.deb` declares these): `openbox librsvg2-common dbus-x11 xdg-utils
-x11-xserver-utils fonts-dejavu-core`.
+x11-utils x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core`.
+
+Recommended for quick settings and the desktop: `network-manager`, `pulseaudio-utils`
+(or PipeWire's `pactl`), `libglib2.0-bin` (move to trash), `libnotify-bin`.
 
 Recommended: an icon theme (`papirus-icon-theme`, `adwaita-icon-theme` or
 Eduka-Icons), a polkit agent (`policykit-1-gnome`, `mate-polkit` or `lxpolkit`),
@@ -63,6 +66,24 @@ SDE_BIN=build/src tools/screenshot.sh /tmp/shots
 
 It starts SDE on a virtual X server (Xvfb, 1366x768) with a temporary home
 directory and saves PNG files to `docs/screenshots/`. Run it as a normal user.
+
+## Unit tests
+
+`ctest --test-dir build` runs the tests in `tests/` (desktop entries, command
+parsing, D-Bus values, UI scale and WCAG contrast of every theme and accent).
+`dpkg-buildpackage` runs them too. `build/tests/sde-sni-demo` is a small
+StatusNotifierItem with a menu for testing the tray by hand.
+
+## Releases
+
+Push a tag such as `v0.1.0-alpha2` (or run the **Release** workflow by hand).
+`.github/workflows/release.yml` builds the package in Debian 12, Debian 13,
+Ubuntu 22.04 and Ubuntu 24.04 containers, names each one after its distribution
+(`sde_0.1.0-alpha2_debian12_amd64.deb`, ...), writes `SHA256SUMS` and publishes a
+GitHub pre-release with the newest `CHANGELOG.md` section as notes.
+
+Locally, `tools/build-deb.sh --suffix deb12` gives the package a distribution
+version suffix (`0.1.0~alpha2+deb12`).
 
 ## Continuous integration
 

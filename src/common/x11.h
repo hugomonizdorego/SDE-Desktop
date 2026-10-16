@@ -48,6 +48,10 @@ void remap(Window w);
 // Window type and struts for panels and the desktop window.
 void set_window_type(Window w, const char *type);  // e.g. "_NET_WM_WINDOW_TYPE_DOCK"
 void set_bottom_strut(Window w, int height, int x_start, int x_end, int screen_h);
+// Reserves |height| pixels at the top or bottom edge of the monitor that
+// spans [monitor_y, monitor_y + monitor_h). height 0 removes the strut.
+void set_edge_strut(Window w, bool top, int height, int x_start, int x_end, int monitor_y,
+                    int monitor_h);
 
 // Simple SDE inter-process messages. A command is written to the root window
 // property _SDE_COMMAND; programs that watch the root window react to it.

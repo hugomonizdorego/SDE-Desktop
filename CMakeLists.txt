@@ -23,6 +23,7 @@ find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo cairo-xlib)
 pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0)
+pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 
 # FLTK 1.3 (Debian 12/13, Ubuntu 22.04/24.04) or 1.4. fltk-config is the most
 # portable way to find it on Debian based systems.
@@ -41,10 +42,18 @@ add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 
 set(SDE_DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/sde")
 set(SDE_SYSCONFDIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}")
+set(SDE_LOCALEDIR "${CMAKE_INSTALL_FULL_LOCALEDIR}")
 configure_file(src/common/build_config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/generated/build_config.h @ONLY)
 
 add_subdirectory(src)
+add_subdirectory(po)
+
+option(SDE_BUILD_TESTS "Build unit tests" ON)
+if(SDE_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
 
 # ---------------------------------------------------------------- data files
 install(PROGRAMS data/startsde DESTINATION ${CMAKE_INSTALL_BINDIR})

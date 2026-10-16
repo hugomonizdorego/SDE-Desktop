@@ -4,10 +4,13 @@
 sde-session \- session manager of the Selviana Desktop Environment
 .SH SYNOPSIS
 .B sde-session
-[\-\-logout | \-\-version | \-\-help]
+[\-\-check | \-\-logout | \-\-version | \-\-help]
 .SH DESCRIPTION
-\fBsde-session\fR starts the window manager (Openbox by default), \fBsde-desktop\fR, \fBsde-panel\fR, a polkit authentication agent and XDG autostart applications. It restarts essential components when they crash and stops everything when the session ends.
+\fBsde-session\fR applies the saved display and input settings, then starts the window manager (Openbox by default), \fBsde-desktop\fR, \fBsde-panel\fR, \fBsde-notifyd\fR, a polkit authentication agent and XDG autostart applications. It restarts components that crash. When the panel or the window manager cannot start, it shows a rescue dialog instead of leaving a black screen.
 .SH OPTIONS
+.TP
+.B \-\-check
+Check that every SDE component and helper program can start, and report missing programs or libraries. Run it from a terminal (for example on a text console with Ctrl+Alt+F3) when the desktop does not appear.
 .TP
 .B \-\-logout
 End the SDE session running on \fI$DISPLAY\fR.
@@ -21,10 +24,14 @@ System-wide default settings.
 .TP
 .I ~/.config/sde/sde.conf
 Per-user settings, written by \fBsde-settings\fR(1).
+.TP
+.I ~/.local/state/sde/session.log
+Messages of the current session (the previous one is kept as \fIsession.log.old\fR).
 .SH SEE ALSO
 .BR sde-session (1),
 .BR sde-panel (1),
 .BR sde-desktop (1),
+.BR sde-notifyd (1),
 .BR sde-settings (1)
 .SH BUGS
 SDE 0.1 is an alpha release. Please report problems at

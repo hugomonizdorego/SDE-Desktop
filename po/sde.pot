@@ -1,0 +1,1080 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the sde package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: sde 0.1.0~alpha2\n"
+"Report-Msgid-Bugs-To: https://github.com/hugomonizdorego/SDE-Desktop/issues\n"
+"POT-Creation-Date: 2026-10-16 07:09+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: src/desktop/main.cpp:126 src/settings/main.cpp:471
+msgid "Home"
+msgstr ""
+
+#: src/desktop/main.cpp:128 src/settings/main.cpp:473
+msgid "Trash"
+msgstr ""
+
+#: src/desktop/main.cpp:284
+#, c-format
+msgid ""
+"\"%s\" is not marked as trusted.\n"
+"Do you want to trust and launch it?"
+msgstr ""
+
+#: src/desktop/main.cpp:285 src/run/main.cpp:164
+msgid "Cancel"
+msgstr ""
+
+#: src/desktop/main.cpp:285
+msgid "Trust and Launch"
+msgstr ""
+
+#: src/desktop/main.cpp:294
+#, c-format
+msgid "No application is available to open \"%s\"."
+msgstr ""
+
+#: src/desktop/main.cpp:303
+msgid "New name:"
+msgstr ""
+
+#: src/desktop/main.cpp:306
+msgid "A name cannot contain \"/\"."
+msgstr ""
+
+#: src/desktop/main.cpp:311 src/desktop/main.cpp:341
+#, c-format
+msgid "\"%s\" already exists."
+msgstr ""
+
+#: src/desktop/main.cpp:314
+msgid "Could not rename the item."
+msgstr ""
+
+#: src/desktop/main.cpp:320
+msgid "Moving to the trash needs the gio program (package libglib2.0-bin)."
+msgstr ""
+
+#: src/desktop/main.cpp:326
+msgid "New Folder"
+msgstr ""
+
+#: src/desktop/main.cpp:327
+msgid "Folder name:"
+msgstr ""
+
+#: src/desktop/main.cpp:330
+msgid "Could not create the folder."
+msgstr ""
+
+#: src/desktop/main.cpp:336
+msgid "New Document"
+msgstr ""
+
+#: src/desktop/main.cpp:337
+msgid "Document name:"
+msgstr ""
+
+#: src/desktop/main.cpp:344
+msgid "Could not create the document."
+msgstr ""
+
+#: src/desktop/main.cpp:361 src/panel/menu.cpp:174 src/panel/panel.cpp:623
+#: src/settings/main.cpp:488
+msgid "Open"
+msgstr ""
+
+#: src/desktop/main.cpp:362
+msgid "Rename..."
+msgstr ""
+
+#: src/desktop/main.cpp:363
+msgid "Copy Location"
+msgstr ""
+
+#: src/desktop/main.cpp:364
+msgid "Move to Trash"
+msgstr ""
+
+#: src/desktop/main.cpp:380
+msgid "View"
+msgstr ""
+
+#: src/desktop/main.cpp:381
+msgid "Large Icons"
+msgstr ""
+
+#: src/desktop/main.cpp:382
+msgid "Medium Icons"
+msgstr ""
+
+#: src/desktop/main.cpp:383
+msgid "Small Icons"
+msgstr ""
+
+#: src/desktop/main.cpp:385
+msgid "Sort By"
+msgstr ""
+
+#: src/desktop/main.cpp:386
+msgid "Name"
+msgstr ""
+
+#: src/desktop/main.cpp:387 src/settings/main.cpp:398
+msgid "Size"
+msgstr ""
+
+#: src/desktop/main.cpp:388
+msgid "Type"
+msgstr ""
+
+#: src/desktop/main.cpp:389
+msgid "Date Modified"
+msgstr ""
+
+#: src/desktop/main.cpp:391
+msgid "Refresh"
+msgstr ""
+
+#: src/desktop/main.cpp:392
+msgid "New"
+msgstr ""
+
+#: src/desktop/main.cpp:393
+msgid "Folder"
+msgstr ""
+
+#: src/desktop/main.cpp:394
+msgid "Empty Document"
+msgstr ""
+
+#: src/desktop/main.cpp:396
+msgid "Open Terminal Here"
+msgstr ""
+
+#: src/desktop/main.cpp:397
+msgid "Open in File Manager"
+msgstr ""
+
+#: src/desktop/main.cpp:398 src/settings/display.cpp:121
+msgid "Display Settings"
+msgstr ""
+
+#: src/desktop/main.cpp:399
+msgid "Change Wallpaper..."
+msgstr ""
+
+#: src/desktop/main.cpp:400
+msgid "Desktop Settings"
+msgstr ""
+
+#: src/logout/main.cpp:38
+msgid "Lock"
+msgstr ""
+
+#: src/logout/main.cpp:39
+msgid "Suspend"
+msgstr ""
+
+#: src/logout/main.cpp:40 src/session/main.cpp:191
+msgid "Log Out"
+msgstr ""
+
+#: src/logout/main.cpp:41
+msgid "Restart"
+msgstr ""
+
+#: src/logout/main.cpp:42
+msgid "Shut Down"
+msgstr ""
+
+#: src/logout/main.cpp:49
+msgid "Leave SDE"
+msgstr ""
+
+#: src/logout/main.cpp:75
+msgid "Leave the desktop?"
+msgstr ""
+
+#: src/logout/main.cpp:77
+msgid "Save your work before you continue."
+msgstr ""
+
+#: src/logout/main.cpp:83
+msgid "Use the arrow keys and Enter, or press Esc to cancel"
+msgstr ""
+
+#: src/logout/main.cpp:91
+#, c-format
+msgid "\"%s\" is not available on this system (%s is missing)."
+msgstr ""
+
+#: src/notifyd/main.cpp:524
+msgid ""
+"Usage: sde-notifyd [--version]\n"
+"\n"
+"Shows desktop notifications (org.freedesktop.Notifications).\n"
+msgstr ""
+
+#: src/notifyd/main.cpp:534
+msgid "another notification service is already running; exiting"
+msgstr ""
+
+#: src/panel/menu.cpp:22
+msgid "All applications"
+msgstr ""
+
+#: src/panel/menu.cpp:175 src/panel/panel.cpp:659
+msgid "Pin to Panel"
+msgstr ""
+
+#: src/panel/menu.cpp:175 src/panel/panel.cpp:627 src/panel/panel.cpp:659
+msgid "Unpin from Panel"
+msgstr ""
+
+#: src/panel/menu.cpp:176
+msgid "Add to Desktop"
+msgstr ""
+
+#: src/panel/menu.cpp:396
+msgid "Search applications"
+msgstr ""
+
+#: src/panel/menu.cpp:427
+msgid "No applications found"
+msgstr ""
+
+#: src/panel/panel.cpp:624
+msgid "Move Left"
+msgstr ""
+
+#: src/panel/panel.cpp:625
+msgid "Move Right"
+msgstr ""
+
+#: src/panel/panel.cpp:657
+msgid "Minimize"
+msgstr ""
+
+#: src/panel/panel.cpp:657
+msgid "Restore"
+msgstr ""
+
+#: src/panel/panel.cpp:658
+msgid "Maximize / Restore Size"
+msgstr ""
+
+#: src/panel/panel.cpp:661
+msgid "Close"
+msgstr ""
+
+#: src/panel/panel.cpp:684
+msgid "Panel Settings"
+msgstr ""
+
+#: src/panel/panel.cpp:685
+msgid "Appearance Settings"
+msgstr ""
+
+#: src/panel/panel.cpp:686
+msgid "Run Command..."
+msgstr ""
+
+#: src/panel/panel.cpp:687
+msgid "About SDE"
+msgstr ""
+
+#: src/panel/quick.cpp:319
+#, c-format
+msgid "Connecting to %s..."
+msgstr ""
+
+#: src/panel/quick.cpp:323 src/panel/quick.cpp:337 src/panel/quick.cpp:499
+#, c-format
+msgid "Connected to %s"
+msgstr ""
+
+#: src/panel/quick.cpp:328
+#, c-format
+msgid "Password for the Wi-Fi network \"%s\":"
+msgstr ""
+
+#: src/panel/quick.cpp:330 src/panel/quick.cpp:338
+msgid "Connection failed"
+msgstr ""
+
+#: src/panel/quick.cpp:442
+msgid "Wi-Fi"
+msgstr ""
+
+#: src/panel/quick.cpp:445 src/panel/quick.cpp:456 src/settings/display.cpp:217
+msgid "Off"
+msgstr ""
+
+#: src/panel/quick.cpp:446 src/panel/quick.cpp:500
+msgid "Not connected"
+msgstr ""
+
+#: src/panel/quick.cpp:456 src/settings/main.cpp:498
+msgid "Do Not Disturb"
+msgstr ""
+
+#: src/panel/quick.cpp:456
+msgid "On"
+msgstr ""
+
+#: src/panel/quick.cpp:490
+msgid "Network"
+msgstr ""
+
+#: src/panel/quick.cpp:496
+msgid "Network service is not running"
+msgstr ""
+
+#: src/panel/quick.cpp:498
+#, c-format
+msgid "Wired connection: %s"
+msgstr ""
+
+#: src/panel/quick.cpp:533
+msgid "Searching for networks..."
+msgstr ""
+
+#: src/panel/quick.cpp:538
+msgid "Network Connections..."
+msgstr ""
+
+#: src/panel/quick.cpp:550
+msgid "Sound"
+msgstr ""
+
+#: src/panel/quick.cpp:563
+msgid "Mute"
+msgstr ""
+
+#: src/panel/quick.cpp:591
+msgid "Output device"
+msgstr ""
+
+#: src/panel/quick.cpp:600
+msgid "Sound service is not running"
+msgstr ""
+
+#: src/panel/quick.cpp:609
+msgid "Brightness"
+msgstr ""
+
+#: src/panel/quick.cpp:644
+msgid "Fully charged"
+msgstr ""
+
+#: src/panel/quick.cpp:645
+msgid "Charging"
+msgstr ""
+
+#: src/panel/quick.cpp:647
+#, c-format
+msgid "%d h %02d min"
+msgstr ""
+
+#: src/panel/quick.cpp:648
+#, c-format
+msgid "%s left"
+msgstr ""
+
+#: src/panel/quick.cpp:648
+#, c-format
+msgid "%s until full"
+msgstr ""
+
+#: src/panel/quick.cpp:666 src/settings/main.cpp:625 src/settings/main.cpp:683
+msgid "Settings"
+msgstr ""
+
+#: src/panel/quick.cpp:668
+msgid "Lock Screen"
+msgstr ""
+
+#: src/panel/quick.cpp:670
+msgid "Power Off / Log Out"
+msgstr ""
+
+#: src/run/main.cpp:86
+msgid "Run Command"
+msgstr ""
+
+#: src/run/main.cpp:97
+msgid "Run a command"
+msgstr ""
+
+#: src/run/main.cpp:100
+msgid ""
+"Enter a program name or a full command. Ctrl+Enter runs it in a terminal."
+msgstr ""
+
+#: src/run/main.cpp:117
+#, c-format
+msgid "Command not found: %s"
+msgstr ""
+
+#: src/run/main.cpp:166
+msgid "Run"
+msgstr ""
+
+#: src/session/main.cpp:142
+#, c-format
+msgid "The %s could not be started because \"%s\" is not installed."
+msgstr ""
+
+#: src/session/main.cpp:174
+#, c-format
+msgid "The %s keeps stopping (%s)."
+msgstr ""
+
+#: src/session/main.cpp:186
+msgid "Selviana Desktop Environment could not start correctly."
+msgstr ""
+
+#: src/session/main.cpp:188
+#, c-format
+msgid "Details are in %s."
+msgstr ""
+
+#: src/session/main.cpp:189
+msgid ""
+"Run \"sde-session --check\" in a terminal to find missing packages,\n"
+"then install them with: sudo apt install --fix-broken"
+msgstr ""
+
+#: src/session/main.cpp:191 src/session/main.cpp:196
+msgid "Open Terminal"
+msgstr ""
+
+#: src/session/main.cpp:192
+msgid "Continue"
+msgstr ""
+
+#: src/session/main.cpp:313
+#, c-format
+msgid "no running session found for DISPLAY=%s"
+msgstr ""
+
+#: src/session/main.cpp:366
+#, c-format
+msgid "SDE %s system check"
+msgstr ""
+
+#: src/session/main.cpp:367
+msgid "Programs:"
+msgstr ""
+
+#: src/session/main.cpp:380
+msgid "not installed"
+msgstr ""
+
+#: src/session/main.cpp:384
+msgid "Helpers (optional):"
+msgstr ""
+
+#: src/session/main.cpp:390
+msgid "Session:"
+msgstr ""
+
+#: src/session/main.cpp:391
+msgid "not set"
+msgstr ""
+
+#: src/session/main.cpp:394
+msgid "will be started by startsde"
+msgstr ""
+
+#: src/session/main.cpp:395
+msgid "available"
+msgstr ""
+
+#: src/session/main.cpp:402 src/settings/main.cpp:348
+msgid "Icon theme"
+msgstr ""
+
+#: src/session/main.cpp:402
+msgid "installed"
+msgstr ""
+
+#: src/session/main.cpp:402
+msgid "none (install adwaita-icon-theme)"
+msgstr ""
+
+#: src/session/main.cpp:403
+#, c-format
+msgid "Session log: %s"
+msgstr ""
+
+#: src/session/main.cpp:405
+msgid ""
+"Problems were found. Missing libraries or programs are usually fixed with:\n"
+"  sudo apt install --fix-broken\n"
+"  sudo apt install --reinstall sde"
+msgstr ""
+
+#: src/session/main.cpp:408
+msgid "No problems found."
+msgstr ""
+
+#: src/session/main.cpp:420
+msgid ""
+"Usage: sde-session [--check | --logout | --version | --help]\n"
+"\n"
+"Starts the Selviana Desktop Environment. Normally run by startsde from\n"
+"the display manager.\n"
+"\n"
+"  --check    check that every SDE component can start, and report problems\n"
+"  --logout   end the running SDE session on this display\n"
+"  --version  print the version and exit\n"
+msgstr ""
+
+#: src/session/main.cpp:444
+#, c-format
+msgid "unknown option %s"
+msgstr ""
+
+#: src/session/main.cpp:449
+msgid "DISPLAY is not set; start SDE from a display manager or startx"
+msgstr ""
+
+#: src/session/main.cpp:455
+#, c-format
+msgid "cannot open display %s"
+msgstr ""
+
+#: src/session/main.cpp:465
+#, c-format
+msgid "a session is already running on %s"
+msgstr ""
+
+#: src/session/main.cpp:493
+msgid "window manager"
+msgstr ""
+
+#: src/session/main.cpp:501
+msgid "desktop"
+msgstr ""
+
+#: src/session/main.cpp:502
+msgid "panel"
+msgstr ""
+
+#: src/session/main.cpp:503
+msgid "notification service"
+msgstr ""
+
+#: src/session/main.cpp:509
+msgid "polkit agent"
+msgstr ""
+
+#: src/settings/display.cpp:122
+msgid "Keep Changes"
+msgstr ""
+
+#: src/settings/display.cpp:123
+msgid "Revert"
+msgstr ""
+
+#: src/settings/display.cpp:140
+msgid "Keep these display settings?"
+msgstr ""
+
+#: src/settings/display.cpp:142
+#, c-format
+msgid "The previous settings return in %d seconds."
+msgstr ""
+
+#: src/settings/display.cpp:179
+msgid "At least one display must stay on."
+msgstr ""
+
+#: src/settings/display.cpp:183
+msgid "The display settings could not be applied."
+msgstr ""
+
+#: src/settings/display.cpp:201 src/settings/main.cpp:583
+msgid "Displays"
+msgstr ""
+
+#: src/settings/display.cpp:201
+msgid "Resolution, main display and arrangement"
+msgstr ""
+
+#: src/settings/display.cpp:204
+msgid ""
+"No displays were found. Display settings need the xrandr program (package "
+"x11-xserver-utils)."
+msgstr ""
+
+#: src/settings/display.cpp:214 src/settings/display.cpp:242
+msgid "Main display"
+msgstr ""
+
+#: src/settings/display.cpp:216
+#, c-format
+msgid "%d x %d at position %d, %d"
+msgstr ""
+
+#: src/settings/display.cpp:219
+msgid "Use this display"
+msgstr ""
+
+#: src/settings/display.cpp:234
+msgid "(recommended)"
+msgstr ""
+
+#: src/settings/display.cpp:238
+msgid "Resolution"
+msgstr ""
+
+#: src/settings/display.cpp:245
+msgid "The panel and new windows appear here."
+msgstr ""
+
+#: src/settings/display.cpp:247 src/settings/main.cpp:392
+msgid "Position"
+msgstr ""
+
+#: src/settings/display.cpp:248
+msgid "Left of the main display"
+msgstr ""
+
+#: src/settings/display.cpp:248
+msgid "Right of the main display"
+msgstr ""
+
+#: src/settings/display.cpp:249
+msgid "Above the main display"
+msgstr ""
+
+#: src/settings/display.cpp:249
+msgid "Below the main display"
+msgstr ""
+
+#: src/settings/display.cpp:250
+msgid "Same as the main display (mirror)"
+msgstr ""
+
+#: src/settings/display.cpp:256
+msgid "Apply"
+msgstr ""
+
+#: src/settings/display.cpp:259
+msgid "Detect Displays"
+msgstr ""
+
+#: src/settings/display.cpp:262
+msgid ""
+"After you apply a change, it is kept only when you confirm it within 15 "
+"seconds."
+msgstr ""
+
+#: src/settings/input.cpp:44 src/settings/main.cpp:584
+msgid "Keyboard & Mouse"
+msgstr ""
+
+#: src/settings/input.cpp:44
+msgid "Layouts, key repeat, pointer and touchpad"
+msgstr ""
+
+#: src/settings/input.cpp:46
+msgid "Keyboard"
+msgstr ""
+
+#: src/settings/input.cpp:48
+msgid "Keyboard layouts are not available (the xkb-data package is missing)."
+msgstr ""
+
+#: src/settings/input.cpp:58 src/settings/main.cpp:391
+msgid "Layout"
+msgstr ""
+
+#: src/settings/input.cpp:63
+msgid "None"
+msgstr ""
+
+#: src/settings/input.cpp:65
+msgid "Second layout"
+msgstr ""
+
+#: src/settings/input.cpp:68
+msgid "Switch between the two layouts with Alt+Shift."
+msgstr ""
+
+#: src/settings/input.cpp:70
+msgid "Repeat delay"
+msgstr ""
+
+#: src/settings/input.cpp:73
+msgid "How long a key is held before it repeats (150-1000 ms)."
+msgstr ""
+
+#: src/settings/input.cpp:74
+msgid "Repeat speed"
+msgstr ""
+
+#: src/settings/input.cpp:77
+msgid "Characters per second while a key is held."
+msgstr ""
+
+#: src/settings/input.cpp:83
+msgid "Mouse"
+msgstr ""
+
+#: src/settings/input.cpp:84 src/settings/input.cpp:112
+msgid "Pointer speed"
+msgstr ""
+
+#: src/settings/input.cpp:88 src/settings/input.cpp:103
+msgid "Natural scrolling"
+msgstr ""
+
+#: src/settings/input.cpp:91
+msgid "Content moves in the direction of the wheel."
+msgstr ""
+
+#: src/settings/input.cpp:93
+msgid ""
+"No adjustable pointing device was found. Your choices are saved and applied "
+"when one is connected at login."
+msgstr ""
+
+#: src/settings/input.cpp:97
+msgid "Touchpad"
+msgstr ""
+
+#: src/settings/input.cpp:98
+msgid ""
+"No touchpad was found. These settings apply when one is present at login."
+msgstr ""
+
+#: src/settings/input.cpp:99
+msgid "Tap to click"
+msgstr ""
+
+#: src/settings/input.cpp:107
+msgid "Disable while typing"
+msgstr ""
+
+#: src/settings/main.cpp:104
+msgid "Dark"
+msgstr ""
+
+#: src/settings/main.cpp:104
+msgid "Light"
+msgstr ""
+
+#: src/settings/main.cpp:311 src/settings/main.cpp:578
+msgid "Appearance"
+msgstr ""
+
+#: src/settings/main.cpp:311
+msgid "Style, colors, size and wallpaper"
+msgstr ""
+
+#: src/settings/main.cpp:312
+msgid "Style"
+msgstr ""
+
+#: src/settings/main.cpp:318
+msgid "Accent color"
+msgstr ""
+
+#: src/settings/main.cpp:323
+msgid "Size and text"
+msgstr ""
+
+#: src/settings/main.cpp:325 src/settings/main.cpp:341
+msgid "Automatic"
+msgstr ""
+
+#: src/settings/main.cpp:327 src/settings/main.cpp:558
+msgid "Interface size"
+msgstr ""
+
+#: src/settings/main.cpp:331
+msgid ""
+"Larger sizes help on high-resolution screens. Automatic follows the screen's "
+"DPI."
+msgstr ""
+
+#: src/settings/main.cpp:334
+#, c-format
+msgid "%d pt"
+msgstr ""
+
+#: src/settings/main.cpp:335
+msgid "Text size"
+msgstr ""
+
+#: src/settings/main.cpp:356
+msgid "Wallpaper"
+msgstr ""
+
+#: src/settings/main.cpp:364
+msgid "Center"
+msgstr ""
+
+#: src/settings/main.cpp:364
+msgid "Fit"
+msgstr ""
+
+#: src/settings/main.cpp:364
+msgid "Placement"
+msgstr ""
+
+#: src/settings/main.cpp:364
+msgid "Stretch"
+msgstr ""
+
+#: src/settings/main.cpp:364
+msgid "Tile"
+msgstr ""
+
+#: src/settings/main.cpp:364
+msgid "Zoom"
+msgstr ""
+
+#: src/settings/main.cpp:368
+msgid "Your own picture"
+msgstr ""
+
+#: src/settings/main.cpp:369
+msgid "Browse..."
+msgstr ""
+
+#: src/settings/main.cpp:371
+msgid "Choose a wallpaper"
+msgstr ""
+
+#: src/settings/main.cpp:390 src/settings/main.cpp:579
+msgid "Panel"
+msgstr ""
+
+#: src/settings/main.cpp:390
+msgid "Position, size, clock and pinned applications"
+msgstr ""
+
+#: src/settings/main.cpp:392
+msgid "Bottom"
+msgstr ""
+
+#: src/settings/main.cpp:392
+msgid "Top"
+msgstr ""
+
+#: src/settings/main.cpp:398
+msgid "Large"
+msgstr ""
+
+#: src/settings/main.cpp:398
+msgid "Medium"
+msgstr ""
+
+#: src/settings/main.cpp:398
+msgid "Small"
+msgstr ""
+
+#: src/settings/main.cpp:403
+msgid "Hide automatically"
+msgstr ""
+
+#: src/settings/main.cpp:405
+msgid "The panel appears when the pointer touches the screen edge."
+msgstr ""
+
+#: src/settings/main.cpp:408
+msgid "Clock and status"
+msgstr ""
+
+#: src/settings/main.cpp:409
+msgid "24-hour clock"
+msgstr ""
+
+#: src/settings/main.cpp:411
+msgid "Show the date"
+msgstr ""
+
+#: src/settings/main.cpp:413
+msgid "Show battery status"
+msgstr ""
+
+#: src/settings/main.cpp:414
+msgid "On laptops and tablets."
+msgstr ""
+
+#: src/settings/main.cpp:417
+msgid "Pinned applications"
+msgstr ""
+
+#: src/settings/main.cpp:423
+msgid "No applications are pinned."
+msgstr ""
+
+#: src/settings/main.cpp:432
+msgid "Move Down"
+msgstr ""
+
+#: src/settings/main.cpp:432
+msgid "Move Up"
+msgstr ""
+
+#: src/settings/main.cpp:432
+msgid "Unpin"
+msgstr ""
+
+#: src/settings/main.cpp:460
+msgid ""
+"To pin an application, right-click it in the application menu or on the "
+"taskbar. Drag pinned icons on the panel to change their order."
+msgstr ""
+
+#: src/settings/main.cpp:467 src/settings/main.cpp:580
+msgid "Desktop"
+msgstr ""
+
+#: src/settings/main.cpp:467
+msgid "Icons shown on the desktop"
+msgstr ""
+
+#: src/settings/main.cpp:468
+msgid "Desktop icons"
+msgstr ""
+
+#: src/settings/main.cpp:469
+msgid "Files in the Desktop folder"
+msgstr ""
+
+#: src/settings/main.cpp:486
+msgid "Notifications work"
+msgstr ""
+
+#: src/settings/main.cpp:487
+msgid "This is how notifications from your applications look."
+msgstr ""
+
+#: src/settings/main.cpp:496
+msgid "Messages from your applications"
+msgstr ""
+
+#: src/settings/main.cpp:496 src/settings/main.cpp:581
+msgid "Notifications"
+msgstr ""
+
+#: src/settings/main.cpp:500
+msgid "Hide notifications, except critical ones such as a low battery."
+msgstr ""
+
+#: src/settings/main.cpp:502
+msgid "Show notifications for"
+msgstr ""
+
+#: src/settings/main.cpp:503
+msgid "10 seconds"
+msgstr ""
+
+#: src/settings/main.cpp:503
+msgid "4 seconds"
+msgstr ""
+
+#: src/settings/main.cpp:503
+msgid "6 seconds"
+msgstr ""
+
+#: src/settings/main.cpp:503
+msgid "Until dismissed"
+msgstr ""
+
+#: src/settings/main.cpp:509
+msgid "Try it"
+msgstr ""
+
+#: src/settings/main.cpp:510
+msgid "Send a Test Notification"
+msgstr ""
+
+#: src/settings/main.cpp:529
+msgid "none"
+msgstr ""
+
+#: src/settings/main.cpp:531
+msgid "unknown"
+msgstr ""
+
+#: src/settings/main.cpp:540
+msgid "Small and fast, with a modern desktop experience."
+msgstr ""
+
+#: src/settings/main.cpp:541
+#, c-format
+msgid "Version %s (%s)"
+msgstr ""
+
+#: src/settings/main.cpp:553
+msgid "Operating system"
+msgstr ""
+
+#: src/settings/main.cpp:554
+msgid "Kernel"
+msgstr ""
+
+#: src/settings/main.cpp:555
+msgid "Processor"
+msgstr ""
+
+#: src/settings/main.cpp:556
+msgid "Memory"
+msgstr ""
+
+#: src/settings/main.cpp:557
+msgid "Display"
+msgstr ""
+
+#: src/settings/main.cpp:559
+msgid "Window manager"
+msgstr ""
+
+#: src/settings/main.cpp:560
+msgid "Toolkit"
+msgstr ""
+
+#: src/settings/main.cpp:562
+msgid "System"
+msgstr ""
+
+#: src/settings/main.cpp:571
+msgid "Free software under the GNU General Public License, version 3 or later."
+msgstr ""
+
+#: src/settings/main.cpp:572
+msgid "Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors."
+msgstr ""
+
+#: src/settings/main.cpp:586
+msgid "About"
+msgstr ""
+
+#: src/settings/main.cpp:734
+msgid ""
+"Usage: sde-settings [--page NAME] [--apply] [--version]\n"
+"\n"
+"  --page NAME  open a page: appearance, panel, desktop, notifications,\n"
+"               display, input or about\n"
+"  --apply      apply the saved display, keyboard and mouse settings and "
+"exit\n"
+msgstr ""

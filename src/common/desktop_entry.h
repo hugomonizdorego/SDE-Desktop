@@ -19,6 +19,7 @@ struct DesktopEntry {
   std::string try_exec;
   std::string work_dir;    // Path=
   std::string url;         // URL= for Type=Link
+  std::string startup_wm_class;  // StartupWMClass=, matches WM_CLASS of windows
   std::vector<std::string> keywords;
   std::vector<std::string> categories;
   std::vector<std::string> only_show_in;

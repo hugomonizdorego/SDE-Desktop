@@ -1,0 +1,32 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH SDE-NOTIFYD 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
+.SH NAME
+sde-notifyd \- desktop notification service
+.SH SYNOPSIS
+.B sde-notifyd
+[\-\-version]
+.SH DESCRIPTION
+\fBsde-notifyd\fR implements the freedesktop.org Desktop Notifications Specification (org.freedesktop.Notifications). It shows notifications with icons, images and action buttons next to the panel. In Do Not Disturb mode only critical notifications are shown. It is started by \fBsde-session\fR(1) and exits quietly when another notification service is already running.
+.SH OPTIONS
+.TP
+.B \-\-version
+Print the version and exit.
+.SH FILES
+.TP
+.I /etc/xdg/sde/sde.conf
+System-wide default settings.
+.TP
+.I ~/.config/sde/sde.conf
+Per-user settings, written by \fBsde-settings\fR(1).
+.TP
+.I ~/.local/state/sde/session.log
+Messages of the current session (the previous one is kept as \fIsession.log.old\fR).
+.SH SEE ALSO
+.BR sde-session (1),
+.BR sde-panel (1),
+.BR sde-desktop (1),
+.BR sde-notifyd (1),
+.BR sde-settings (1)
+.SH BUGS
+SDE 0.1 is an alpha release. Please report problems at
+https://github.com/hugomonizdorego/SDE-Desktop/issues

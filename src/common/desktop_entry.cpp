@@ -133,6 +133,7 @@ bool DesktopEntry::load(const std::string &file, const std::string &file_id) {
   icon = unescape(get("Icon"));
   exec = get("Exec");
   try_exec = unescape(get("TryExec"));
+  startup_wm_class = unescape(get("StartupWMClass"));
   work_dir = unescape(get("Path"));
   url = unescape(get("URL"));
   keywords = list_value(localized("Keywords"));

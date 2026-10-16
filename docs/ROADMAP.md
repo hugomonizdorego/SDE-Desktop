@@ -8,14 +8,22 @@ SDE is built from the ground up and grows in small, usable steps.
 - [x] Light and dark themes with accent colors
 - [x] Openbox integration and SDE window themes
 - [x] Debian packages for Debian 12/13 and Ubuntu 22.04/24.04
+- [x] Rescue dialog, session log and `sde-session --check` (alpha2)
+- [x] Notification daemon with Do Not Disturb (alpha2)
+- [x] Quick settings: network, volume, output device, brightness, battery (alpha2)
+- [x] Display settings (XRandR) and keyboard, mouse and touchpad settings (alpha2)
+- [x] StatusNotifierItem/AppIndicator tray (alpha2)
+- [x] Interface size 100-200 %, keyboard focus, contrast checks (alpha2)
+- [x] gettext translation support (alpha2)
+- [x] Per-distribution GitHub releases with checksums (alpha2)
 
 ## 0.2 Alpha
 
-- [ ] Notification daemon (`org.freedesktop.Notifications`)
-- [ ] Volume and network indicators in the panel
-- [ ] Keyboard layout and input settings
-- [ ] Display settings (resolution, multiple monitors via XRandR)
-- [ ] Translations (gettext), starting with Indonesian and Portuguese
+- [ ] First translations (Indonesian, Portuguese)
+- [ ] Notification history and grouping
+- [ ] Bluetooth tile in quick settings
+- [ ] Apply input settings to devices plugged in during the session
+- [ ] Paste files on the desktop (clipboard file lists)
 
 ## 0.3 Beta
 
