@@ -1,0 +1,26 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH STARTSDE 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
+.SH NAME
+startsde \- start a Selviana Desktop Environment session
+.SH SYNOPSIS
+.B startsde
+
+.SH DESCRIPTION
+\fBstartsde\fR prepares the session environment (XDG_CURRENT_DESKTOP=SDE, D-Bus) and runs \fBsde-session\fR(1). Display managers call it through \fI/usr/share/xsessions/sde.desktop\fR; from a text console use \fBstartx /usr/bin/startsde\fR.
+.SH OPTIONS
+None.
+.SH FILES
+.TP
+.I /etc/xdg/sde/sde.conf
+System-wide default settings.
+.TP
+.I ~/.config/sde/sde.conf
+Per-user settings, written by \fBsde-settings\fR(1).
+.SH SEE ALSO
+.BR sde-session (1),
+.BR sde-panel (1),
+.BR sde-desktop (1),
+.BR sde-settings (1)
+.SH BUGS
+SDE 0.1 is an alpha release. Please report problems at
+https://github.com/hugomonizdorego/SDE-Desktop/issues

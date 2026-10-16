@@ -1,0 +1,36 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# startsde - start a Selviana Desktop Environment (SDE) session.
+#
+# Used by display managers (via /usr/share/xsessions/sde.desktop) and by
+# "startx /usr/bin/startsde". It prepares the environment and then replaces
+# itself with sde-session, which supervises the rest of the desktop.
+
+export XDG_CURRENT_DESKTOP=SDE
+export XDG_SESSION_DESKTOP=SDE
+export DESKTOP_SESSION=sde
+export XDG_MENU_PREFIX="${XDG_MENU_PREFIX:-}"
+
+# Make sure the XDG base directories exist.
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+mkdir -p "$XDG_CONFIG_HOME/sde" "$XDG_DATA_HOME"
+
+# Load X resources if the user has any.
+if [ -r "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
+    xrdb -merge "$HOME/.Xresources"
+fi
+
+# Import the environment into the systemd user manager and D-Bus activation
+# environment, so that applications started by D-Bus see the same variables.
+if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    dbus-update-activation-environment --systemd DISPLAY XAUTHORITY \
+        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION 2>/dev/null || true
+fi
+
+# Start a session bus when the display manager did not provide one.
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session -- sde-session "$@"
+fi
+
+exec sde-session "$@"

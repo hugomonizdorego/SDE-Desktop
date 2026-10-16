@@ -1,0 +1,38 @@
+name: Build Debian packages
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  deb:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04"]
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sh tools/install-deps.sh
+      - name: Build package
+        run: sh tools/build-deb.sh dist
+      - name: Install and smoke test
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
+          for p in sde-session sde-panel sde-desktop sde-settings sde-run sde-logout; do
+            "$p" --version
+          done
+      - name: Artifact name
+        id: name
+        run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: dist/*.deb

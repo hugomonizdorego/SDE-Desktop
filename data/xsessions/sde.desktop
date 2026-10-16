@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=SDE
+Comment=Selviana Desktop Environment - a small, fast and modern desktop
+Exec=startsde
+TryExec=startsde
+DesktopNames=SDE

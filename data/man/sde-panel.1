@@ -1,0 +1,31 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH SDE-PANEL 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
+.SH NAME
+sde-panel \- taskbar, application menu, system tray and clock
+.SH SYNOPSIS
+.B sde-panel
+[\-\-menu | \-\-version]
+.SH DESCRIPTION
+\fBsde-panel\fR shows the bottom panel: application menu with search, pinned applications, the list of open windows, a system tray, battery status and a clock.
+.SH OPTIONS
+.TP
+.B \-\-menu
+Open or close the application menu of the running panel (bound to the Super key).
+.TP
+.B \-\-version
+Print the version and exit.
+.SH FILES
+.TP
+.I /etc/xdg/sde/sde.conf
+System-wide default settings.
+.TP
+.I ~/.config/sde/sde.conf
+Per-user settings, written by \fBsde-settings\fR(1).
+.SH SEE ALSO
+.BR sde-session (1),
+.BR sde-panel (1),
+.BR sde-desktop (1),
+.BR sde-settings (1)
+.SH BUGS
+SDE 0.1 is an alpha release. Please report problems at
+https://github.com/hugomonizdorego/SDE-Desktop/issues

@@ -1,0 +1,54 @@
+Source: sde
+Section: x11
+Priority: optional
+Maintainer: Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.16),
+               pkgconf | pkg-config,
+               g++ (>= 4:9),
+               libfltk1.3-dev,
+               libcairo2-dev,
+               librsvg2-dev,
+               libx11-dev,
+               libxft-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/hugomonizdorego/SDE-Desktop
+Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
+Vcs-Browser: https://github.com/hugomonizdorego/SDE-Desktop
+Rules-Requires-Root: no
+
+Package: sde
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         openbox,
+         librsvg2-common,
+         dbus-x11 | dbus-user-session,
+         xdg-utils,
+         x11-xserver-utils,
+         fonts-dejavu-core | fonts-noto-core
+Recommends: papirus-icon-theme | adwaita-icon-theme,
+            policykit-1-gnome | mate-polkit | lxpolkit,
+            xterm | x-terminal-emulator,
+            pcmanfm | thunar | nautilus,
+            xdg-user-dirs,
+            lightdm | x-display-manager
+Suggests: eduka-icons,
+          scrot,
+          firefox-esr | firefox
+Provides: x-session-manager
+Description: Selviana Desktop Environment - small, fast and modern desktop
+ SDE (Selviana Desktop Environment) is a lightweight desktop environment
+ for Debian and Ubuntu, written from scratch in C++17 with FLTK, cairo
+ and Xlib, using Openbox as its window manager.
+ .
+ This 0.1 Alpha release contains:
+  * sde-session  - session manager with crash recovery and XDG autostart
+  * sde-panel    - taskbar, searchable application menu, tray and clock
+  * sde-desktop  - wallpaper and desktop icons
+  * sde-settings - light/dark theme, accent color, icons, fonts, wallpaper
+  * sde-run      - run command dialog (Alt+F2)
+  * sde-logout   - log out, lock, suspend, restart and shut down
+ .
+ Select "SDE" in your display manager to start it. This is an alpha
+ release meant for testing; expect missing features.

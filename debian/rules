@@ -1,0 +1,11 @@
+#!/usr/bin/make -f
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_CXXFLAGS_MAINT_APPEND = -O2
+
+%:
+	dh $@ --buildsystem=cmake
+
+override_dh_auto_configure:
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release
