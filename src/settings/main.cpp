@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// sde-settings: SDE settings center (Appearance, Panel, Desktop, About).
-// Every change is saved immediately to ~/.config/sde/sde.conf and announced to
-// the running panel and desktop.
+// sde-settings: the SDE settings center.
+//
+// Pages: Appearance, Panel, Desktop, Notifications, Displays, Keyboard &
+// Mouse and About. Every change is saved immediately to
+// ~/.config/sde/sde.conf and announced to the running desktop.
+//
+// "sde-settings --apply" applies the saved display, keyboard and pointer
+// settings without opening a window (run by sde-session at login).
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
-#include <FL/Fl_Button.H>
-#include <FL/Fl_Check_Button.H>
-#include <FL/Fl_Choice.H>
-#include "buffered_window.h"
 #include <FL/Fl_File_Chooser.H>
-#include <FL/Fl_Group.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <sys/utsname.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
@@ -23,78 +24,58 @@
 #include <string>
 #include <vector>
 
+#include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
+#include "dbus.h"
+#include "desktop_entry.h"
+#include "glyphs.h"
+#include "i18n.h"
 #include "icons.h"
 #include "paint.h"
+#include "settings.h"
+#include "spawn.h"
+#include "system.h"
 #include "theme.h"
+#include "ui.h"
 #include "util.h"
+#include "widgets.h"
 #include "wm.h"
 #include "x11.h"
 
-using namespace sde;
+namespace sde {
 
 namespace {
 
 Config g_cfg;
 Theme g_theme;
-sde::BufferedWindow *g_window = nullptr;
+BufferedWindow *g_window = nullptr;
+std::string g_argv0;
+
+}  // namespace
+
+Config &settings_config() { return g_cfg; }
+const Theme &settings_theme() { return g_theme; }
 
 void apply_change() {
+  double old_scale = g_theme.scale;
   g_cfg.save();
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
+  if (sync_openbox(g_cfg)) reconfigure_window_manager();
   x11::notify_config_changed();
+  if (std::fabs(g_theme.scale - old_scale) > 0.01) {
+    // Every size depends on the scale: start again with the new one.
+    Fl::add_timeout(0.2, [](void *) {
+      execl("/proc/self/exe", g_argv0.c_str(), "--page", "appearance", static_cast<char *>(nullptr));
+    });
+  }
   if (g_window) g_window->redraw();
 }
 
-// ----------------------------------------------------------------- widgets
+namespace {
 
-class Heading : public Fl_Widget {
- public:
-  Heading(int x, int y, int w, int h, const char *title, const char *subtitle = nullptr)
-      : Fl_Widget(x, y, w, h), title_(title), subtitle_(subtitle ? subtitle : "") {}
-  void draw() override {
-    text_font(g_theme.font_size + 7, true);
-    draw_text(title_, x(), y(), w(), 32, g_theme.text);
-    if (!subtitle_.empty()) {
-      text_font(g_theme.font_size);
-      draw_text(subtitle_, x(), y() + 32, w(), 20, g_theme.text_dim);
-    }
-  }
-
- private:
-  std::string title_, subtitle_;
-};
-
-class Label : public Fl_Widget {
- public:
-  Label(int x, int y, int w, int h, const char *text, bool bold = true)
-      : Fl_Widget(x, y, w, h), text_(text), bold_(bold) {}
-  void draw() override {
-    text_font(g_theme.font_size + (bold_ ? 1 : 0), bold_);
-    draw_text(text_, x(), y(), w(), h(), bold_ ? g_theme.text : g_theme.text_dim);
-  }
-  void set(const std::string &t) {
-    text_ = t;
-    redraw();
-  }
-
- private:
-  std::string text_;
-  bool bold_;
-};
-
-// Rounded card behind a group of options.
-class Card : public Fl_Widget {
- public:
-  Card(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  void draw() override {
-    Painter p(window()->w(), window()->h());
-    p.fill_rounded(x(), y(), w(), h(), 12, g_theme.surface);
-    p.stroke_rounded(x(), y(), w(), h(), 12, g_theme.border);
-  }
-};
+// ------------------------------------------------------- custom widgets
 
 // Light/Dark style preview that acts as a radio button.
 class StyleCard : public Fl_Widget {
@@ -102,35 +83,49 @@ class StyleCard : public Fl_Widget {
   StyleCard(int x, int y, int w, int h, bool dark) : Fl_Widget(x, y, w, h), dark_(dark) {}
   void draw() override {
     bool active = g_theme.dark == dark_;
+    int pv = h() - S(26);
     {
       Painter p(window()->w(), window()->h());
       Color bg = dark_ ? Color::hex(0x161B22) : Color::hex(0xF5F7FA);
       Color surf = dark_ ? Color::hex(0x1F2630) : Color::hex(0xFFFFFF);
       Color line = dark_ ? Color::hex(0x384252) : Color::hex(0xD5DBE3);
-      p.fill_rounded(x(), y(), w(), h() - 26, 12, bg);
-      p.stroke_rounded(x(), y(), w(), h() - 26, 12, active ? g_theme.accent : g_theme.border,
-                       active ? 2.5 : 1);
-      p.fill_rounded(x() + 14, y() + 14, w() - 28, h() - 78, 8, surf);
-      p.fill_rounded(x() + 24, y() + 26, w() * 0.4, 8, 4, line);
-      p.fill_rounded(x() + 24, y() + 42, w() * 0.55, 8, 4, line);
-      p.fill_rounded(x() + 24, y() + 58, 36, 12, 6, g_theme.accent);
-      p.fill_rect(x() + 1, y() + h() - 26 - 18, w() - 2, 17, surf);
-      p.circle(x() + 16, y() + h() - 35, 4, g_theme.accent);
+      p.fill_rounded(x(), y(), w(), pv, Sd(12), bg);
+      p.stroke_rounded(x(), y(), w(), pv, Sd(12), active ? g_theme.accent : g_theme.border,
+                       active ? Sd(2.5) : Sd(1));
+      p.fill_rounded(x() + Sd(14), y() + Sd(14), w() - Sd(28), pv - Sd(52), Sd(8), surf);
+      p.fill_rounded(x() + Sd(24), y() + Sd(26), w() * 0.4, Sd(8), Sd(4), line);
+      p.fill_rounded(x() + Sd(24), y() + Sd(42), w() * 0.55, Sd(8), Sd(4), line);
+      p.fill_rounded(x() + Sd(24), y() + Sd(58), Sd(36), Sd(12), Sd(6), g_theme.accent);
+      p.fill_rect(x() + 1, y() + pv - Sd(18), w() - 2, Sd(17), surf);
+      p.circle(x() + Sd(16), y() + pv - Sd(9), Sd(4), g_theme.accent);
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), pv, Sd(12));
     }
     text_font(g_theme.font_size, active);
-    draw_text(dark_ ? "Dark" : "Light", x(), y() + h() - 24, w(), 22,
-              active ? g_theme.accent : g_theme.text, 1);
+    draw_text(dark_ ? _("Dark") : _("Light"), x(), y() + pv + S(2), w(), S(22),
+              active ? g_theme.accent_text : g_theme.text, 1);
+  }
+  void choose() {
+    g_cfg.set("appearance", "theme", dark_ ? "dark" : "light");
+    set_openbox_theme(dark_);
+    reconfigure_window_manager();
+    apply_change();
   }
   int handle(int e) override {
-    if (e == FL_PUSH) return 1;
-    if (e == FL_RELEASE && Fl::event_inside(this)) {
-      g_cfg.set("appearance", "theme", dark_ ? "dark" : "light");
-      set_openbox_theme(dark_);
-      reconfigure_window_manager();
-      apply_change();
-      return 1;
+    switch (e) {
+      case FL_PUSH: return 1;
+      case FL_RELEASE:
+        if (Fl::event_inside(this)) choose();
+        return 1;
+      case FL_FOCUS:
+      case FL_UNFOCUS: redraw(); return 1;
+      case FL_KEYBOARD:
+        if (Fl::event_key() == ' ' || Fl::event_key() == FL_Enter) {
+          choose();
+          return 1;
+        }
+        return 0;
+      default: return Fl_Widget::handle(e);
     }
-    return Fl_Widget::handle(e);
   }
 
  private:
@@ -139,213 +134,385 @@ class StyleCard : public Fl_Widget {
 
 class AccentPicker : public Fl_Widget {
  public:
-  static constexpr int kStep = 30;  // seven swatches fit next to the style cards
   AccentPicker(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  int step() const { return std::min(S(34), w() / kAccentChoiceCount); }
   void draw() override {
     Painter p(window()->w(), window()->h());
+    int st = step();
     for (int i = 0; i < kAccentChoiceCount; ++i) {
       Color c;
       Color::parse(kAccentChoices[i].hex, c);
-      double cx = x() + 15 + i * kStep, cy = y() + h() / 2.0;
+      double cx = x() + st / 2.0 + i * st, cy = y() + h() / 2.0;
       bool active = lower(c.to_hex()) == lower(g_theme.accent.to_hex());
-      if (active) p.circle(cx, cy, 14, g_theme.text.alpha(0.85));
-      p.circle(cx, cy, active ? 12 : 13, g_theme.surface);
-      p.circle(cx, cy, 11, c);
+      double r = st * 0.36;
+      if (active) p.circle(cx, cy, r + Sd(3), g_theme.text.alpha(0.85));
+      p.circle(cx, cy, active ? r + Sd(1) : r + Sd(2), g_theme.surface);
+      p.circle(cx, cy, r, c);
+      if (Fl::focus() == this && i == focus_) {
+        p.set(g_theme.accent);
+        cairo_set_line_width(p.cr(), Sd(2));
+        cairo_new_sub_path(p.cr());
+        cairo_arc(p.cr(), cx, cy, r + Sd(6), 0, 2 * M_PI);
+        cairo_stroke(p.cr());
+      }
     }
+  }
+  void pick(int i) {
+    if (i < 0 || i >= kAccentChoiceCount) return;
+    g_cfg.set("appearance", "accent", kAccentChoices[i].hex);
+    apply_change();
   }
   int handle(int e) override {
-    if (e == FL_PUSH) return 1;
-    if (e == FL_RELEASE) {
-      int i = (Fl::event_x() - x()) / kStep;
-      if (i >= 0 && i < kAccentChoiceCount) {
-        g_cfg.set("appearance", "accent", kAccentChoices[i].hex);
-        apply_change();
+    switch (e) {
+      case FL_PUSH: return 1;
+      case FL_RELEASE: pick((Fl::event_x() - x()) / step()); return 1;
+      case FL_FOCUS:
+      case FL_UNFOCUS: redraw(); return 1;
+      case FL_KEYBOARD: {
+        int k = Fl::event_key();
+        if (k == FL_Left && focus_ > 0) --focus_;
+        else if (k == FL_Right && focus_ + 1 < kAccentChoiceCount) ++focus_;
+        else if (k == ' ' || k == FL_Enter) pick(focus_);
+        else return 0;
+        redraw();
+        return 1;
       }
-      return 1;
+      default: return Fl_Widget::handle(e);
     }
-    return Fl_Widget::handle(e);
   }
+
+ private:
+  int focus_ = 0;
 };
+
+std::string default_wallpaper() {
+  std::string base = std::string(SDE_DATADIR).substr(0, std::string(SDE_DATADIR).rfind('/'));
+  return base + "/backgrounds/sde/" + (g_theme.dark ? "selviana-dark.svg" : "selviana-light.svg");
+}
 
 class WallpaperGrid : public Fl_Widget {
  public:
-  WallpaperGrid(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) { scan(); }
+  WallpaperGrid(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
+    tw_ = S(132);
+    th_ = S(80);
+    cols_ = std::max(1, (w + S(12)) / (tw_ + S(12)));
+    scan();
+    size(w, rows() * (th_ + S(12)));
+  }
   ~WallpaperGrid() override {
     for (auto &kv : thumbs_)
       if (kv.second) cairo_surface_destroy(kv.second);
   }
+  int rows() const { return std::max(1, (int(files_.size()) + cols_ - 1) / cols_); }
   void scan() {
     files_.clear();
     std::string base = std::string(SDE_DATADIR).substr(0, std::string(SDE_DATADIR).rfind('/'));
     std::vector<std::string> dirs{base + "/backgrounds/sde", base + "/backgrounds",
                                   home_dir() + "/Pictures/Wallpapers"};
+    std::string current = g_cfg.get("appearance", "wallpaper", "auto");
+    if (current != "auto" && file_exists(current)) files_.push_back(current);
     for (auto &d : dirs) {
       for (auto &f : list_dir(d)) {
         std::string l = lower(f);
-        if (!ends_with(l, ".svg") && !ends_with(l, ".png") && !ends_with(l, ".jpg") &&
-            !ends_with(l, ".jpeg"))
+        if (!ends_with(l, ".svg") && !ends_with(l, ".png") && !ends_with(l, ".jpg") && !ends_with(l, ".jpeg"))
           continue;
         std::string full = d + "/" + f;
         if (std::find(files_.begin(), files_.end(), full) == files_.end()) files_.push_back(full);
-        if (files_.size() >= 8) return;
+        if (int(files_.size()) >= cols_ * 2) return;
       }
-    }
-  }
-  void add(const std::string &path) {
-    if (std::find(files_.begin(), files_.end(), path) == files_.end()) {
-      files_.insert(files_.begin(), path);
-      if (files_.size() > 8) files_.pop_back();
     }
   }
   std::string current() const {
     std::string wp = g_cfg.get("appearance", "wallpaper", "auto");
-    if (wp == "auto" || wp.empty()) {
-      std::string base = std::string(SDE_DATADIR).substr(0, std::string(SDE_DATADIR).rfind('/'));
-      return base + "/backgrounds/sde/" + (g_theme.dark ? "selviana-dark.svg" : "selviana-light.svg");
-    }
-    return wp;
+    return wp == "auto" || wp.empty() ? default_wallpaper() : wp;
   }
   void draw() override {
     Painter p(window()->w(), window()->h());
     std::string cur = current();
     for (size_t i = 0; i < files_.size(); ++i) {
-      int tx = x() + int(i % 4) * (tw_ + 12), ty = y() + int(i / 4) * (th_ + 12);
+      int tx = x() + int(i % size_t(cols_)) * (tw_ + S(12)), ty = y() + int(i / size_t(cols_)) * (th_ + S(12));
       cairo_surface_t *&thumb = thumbs_[files_[i]];
       if (!thumb) thumb = load_wallpaper(files_[i], tw_, th_, "zoom", 0.5, 0.5, 0.5);
       cairo_save(p.cr());
-      p.rounded_rect(tx, ty, tw_, th_, 8);
+      p.rounded_rect(tx, ty, tw_, th_, Sd(8));
       cairo_clip(p.cr());
-      cairo_set_source_surface(p.cr(), thumb, tx, ty);
-      cairo_paint(p.cr());
+      if (thumb) {
+        cairo_set_source_surface(p.cr(), thumb, tx, ty);
+        cairo_paint(p.cr());
+      }
       cairo_restore(p.cr());
-      if (files_[i] == cur) p.stroke_rounded(tx - 3, ty - 3, tw_ + 6, th_ + 6, 10, g_theme.accent, 3);
+      if (files_[i] == cur) p.stroke_rounded(tx - Sd(3), ty - Sd(3), tw_ + Sd(6), th_ + Sd(6), Sd(10), g_theme.accent, Sd(3));
+      if (Fl::focus() == this && int(i) == focus_) focus_ring(p, tx, ty, tw_, th_, Sd(8));
     }
   }
-  int handle(int e) override {
-    if (e == FL_PUSH) return 1;
-    if (e == FL_RELEASE) {
-      int col = (Fl::event_x() - x()) / (tw_ + 12), row = (Fl::event_y() - y()) / (th_ + 12);
-      size_t i = size_t(row * 4 + col);
-      if (col >= 0 && col < 4 && row >= 0 && i < files_.size()) {
-        g_cfg.set("appearance", "wallpaper", files_[i]);
-        apply_change();
-      }
-      return 1;
+  void pick(int i) {
+    if (i < 0 || i >= int(files_.size())) return;
+    g_cfg.set("appearance", "wallpaper", files_[size_t(i)]);
+    apply_change();
+  }
+  void add(const std::string &path) {
+    if (std::find(files_.begin(), files_.end(), path) == files_.end()) {
+      files_.insert(files_.begin(), path);
+      if (int(files_.size()) > cols_ * 2) files_.pop_back();
     }
-    return Fl_Widget::handle(e);
+    redraw();
+  }
+  int handle(int e) override {
+    switch (e) {
+      case FL_PUSH: return 1;
+      case FL_RELEASE: {
+        int col = (Fl::event_x() - x()) / (tw_ + S(12)), row = (Fl::event_y() - y()) / (th_ + S(12));
+        if (col >= 0 && col < cols_ && row >= 0) pick(row * cols_ + col);
+        return 1;
+      }
+      case FL_FOCUS:
+      case FL_UNFOCUS: redraw(); return 1;
+      case FL_KEYBOARD: {
+        int k = Fl::event_key(), n = int(files_.size());
+        if (k == FL_Left && focus_ > 0) --focus_;
+        else if (k == FL_Right && focus_ + 1 < n) ++focus_;
+        else if (k == ' ' || k == FL_Enter) pick(focus_);
+        else return 0;
+        redraw();
+        return 1;
+      }
+      default: return Fl_Widget::handle(e);
+    }
   }
 
  private:
   std::vector<std::string> files_;
   std::map<std::string, cairo_surface_t *> thumbs_;
-  int tw_ = 132, th_ = 80;
+  int tw_, th_, cols_, focus_ = 0;
 };
 
-// Sidebar with page names.
-class Sidebar : public Fl_Widget {
+class ImageBox : public Fl_Widget {
  public:
-  Sidebar(int x, int y, int w, int h, std::vector<Fl_Group *> pages)
-      : Fl_Widget(x, y, w, h), pages_(std::move(pages)) {}
-  void select(int i) {
-    current_ = i;
-    for (size_t p = 0; p < pages_.size(); ++p) {
-      if (int(p) == i) pages_[p]->show();
-      else pages_[p]->hide();
-    }
-    window()->redraw();
-  }
+  ImageBox(int x, int y, int s, std::vector<std::string> names) : Fl_Widget(x, y, s, s), names_(std::move(names)) {}
   void draw() override {
-    static const char *icons[][3] = {{"preferences-desktop-theme", "preferences-desktop-wallpaper", "preferences-desktop"},
-                                     {"preferences-system-windows", "preferences-desktop", "configure"},
-                                     {"user-desktop", "preferences-desktop-wallpaper", "folder"},
-                                     {"help-about", "dialog-information", "system-help"}};
-    {
-      Painter p(window()->w(), window()->h());
-      p.fill_rect(x(), y(), w(), h(), g_theme.surface);
-      p.line(x() + w() - 0.5, y(), x() + w() - 0.5, y() + h(), g_theme.border);
-      p.image(IconLoader::get({"sde-logo", "start-here"}, 36), x() + 20, y() + 20, 36);
-      for (size_t i = 0; i < names_.size(); ++i) {
-        int ry = y() + 84 + int(i) * 44;
-        if (int(i) == current_) {
-          p.fill_rounded(x() + 10, ry, w() - 20, 38, 9, g_theme.accent.alpha(0.15));
-          p.fill_rounded(x() + 10, ry + 10, 3, 18, 1.5, g_theme.accent);
-        } else if (int(i) == hover_) {
-          p.fill_rounded(x() + 10, ry, w() - 20, 38, 9, g_theme.hover);
-        }
-        p.image(IconLoader::get({icons[i][0], icons[i][1], icons[i][2]}, 20), x() + 24, ry + 9, 20);
-      }
-    }
-    text_font(g_theme.font_size + 2, true);
-    draw_text("Settings", x() + 64, y() + 22, w() - 70, 32, g_theme.text);
-    for (size_t i = 0; i < names_.size(); ++i) {
-      int ry = y() + 84 + int(i) * 44;
-      text_font(g_theme.font_size + 1, int(i) == current_);
-      draw_text(names_[i], x() + 56, ry, w() - 66, 38, int(i) == current_ ? g_theme.accent : g_theme.text);
-    }
-    text_font(g_theme.font_size - 1);
-    draw_text("SDE " SDE_VERSION_LABEL, x() + 20, y() + h() - 36, w() - 30, 20, g_theme.text_dim);
-  }
-  int handle(int e) override {
-    int i = (Fl::event_y() - y() - 84) / 44;
-    bool valid = Fl::event_y() >= y() + 84 && i >= 0 && i < int(names_.size());
-    if (e == FL_PUSH) {
-      if (valid) select(i);
-      return 1;
-    }
-    if (e == FL_MOVE || e == FL_ENTER) {
-      int h2 = valid ? i : -1;
-      if (h2 != hover_) {
-        hover_ = h2;
-        redraw();
-      }
-      return 1;
-    }
-    if (e == FL_LEAVE) {
-      hover_ = -1;
-      redraw();
-      return 1;
-    }
-    return Fl_Widget::handle(e);
+    Painter p(window()->w(), window()->h());
+    p.image(IconLoader::get(names_, w()), x(), y(), w());
   }
 
  private:
-  std::vector<Fl_Group *> pages_;
-  std::vector<std::string> names_{"Appearance", "Panel", "Desktop", "About"};
-  int current_ = 0, hover_ = -1;
+  std::vector<std::string> names_;
 };
 
-// The window background follows the theme.
-class SettingsWindow : public sde::BufferedWindow {
- public:
-  SettingsWindow(int w, int h) : sde::BufferedWindow(w, h, "Settings") {}
-  void draw() override {
-    {
-      Painter p(w(), h());
-      p.fill_rect(0, 0, w(), h(), g_theme.background);
-    }
-    draw_children();
+// ------------------------------------------------------------------ pages
+
+struct PageInfo {
+  const char *id;
+  const char *title;
+  std::vector<std::string> icons;
+  void (*build)(Page *);
+};
+
+void build_appearance(Page *page) {
+  page->heading(_("Appearance"), _("Style, colors, size and wallpaper"));
+  page->begin_card(_("Style"));
+  int cw = std::min(S(150), (page->width() - S(56)) / 2);
+  int y = page->cursor();
+  new StyleCard(page->left() + S(20), y, cw, S(124), false);
+  new StyleCard(page->left() + S(36) + cw, y, cw, S(124), true);
+  page->advance(S(132));
+  page->row(_("Accent color"), S(34) * kAccentChoiceCount, S(36), [](int x, int yy, int w, int h) {
+    return new AccentPicker(x, yy, w, h);
+  });
+  page->end_card();
+
+  page->begin_card(_("Size and text"));
+  std::string sc = g_cfg.get("appearance", "scale", "auto");
+  std::vector<std::string> scales = {_("Automatic"), "100 %", "125 %", "150 %", "175 %", "200 %"};
+  int sc_i = sc == "auto" ? 0 : std::max(0, std::min(5, (atoi(sc.c_str()) - 100) / 25 + 1));
+  page->choice_row(_("Interface size"), scales, sc_i, [](int v) {
+    static const char *vals[] = {"auto", "100", "125", "150", "175", "200"};
+    if (v >= 0 && v < 6) g_cfg.set("appearance", "scale", vals[v]);
+    apply_change();
+  }, _("Larger sizes help on high-resolution screens. Automatic follows the screen's DPI."));
+  int pt = g_cfg.get_int("appearance", "font_size", 10);
+  std::vector<std::string> sizes;
+  for (int s = 8; s <= 14; ++s) sizes.push_back(format(_("%d pt"), s));
+  page->choice_row(_("Text size"), sizes, std::max(0, std::min(6, pt - 8)), [](int v) {
+    g_cfg.set("appearance", "font_size", std::to_string(v + 8));
+    apply_change();
+  });
+  static std::vector<std::string> s_themes;
+  s_themes = IconLoader::installed_themes();
+  std::vector<std::string> theme_names{_("Automatic")};
+  std::string cur_theme = g_cfg.get("appearance", "icon_theme", "auto");
+  int theme_i = 0;
+  for (size_t i = 0; i < s_themes.size(); ++i) {
+    theme_names.push_back(s_themes[i]);
+    if (s_themes[i] == cur_theme) theme_i = int(i) + 1;
   }
-};
+  page->choice_row(_("Icon theme"), theme_names, theme_i, [](int v) {
+    g_cfg.set("appearance", "icon_theme", v <= 0 ? "auto" : s_themes[size_t(v - 1)]);
+    IconLoader::set_theme(g_cfg.get("appearance", "icon_theme"));
+    IconLoader::clear_cache();
+    apply_change();
+  });
+  page->end_card();
 
-// ------------------------------------------------------------------ helpers
+  page->begin_card(_("Wallpaper"));
+  auto *grid = new WallpaperGrid(page->left() + S(20), page->cursor(), page->width() - S(40), S(80));
+  page->advance(grid->h() + S(8));
+  std::string cm = g_cfg.get("appearance", "wallpaper_mode", "zoom");
+  static const char *modes[] = {"zoom", "fit", "stretch", "center", "tile"};
+  int mode_i = 0;
+  for (int i = 0; i < 5; ++i)
+    if (cm == modes[i]) mode_i = i;
+  page->choice_row(_("Placement"), {_("Zoom"), _("Fit"), _("Stretch"), _("Center"), _("Tile")}, mode_i, [](int v) {
+    if (v >= 0 && v < 5) g_cfg.set("appearance", "wallpaper_mode", modes[v]);
+    apply_change();
+  });
+  page->row(_("Your own picture"), S(160), S(34), [grid](int x, int y, int w, int h) {
+    auto *b = new FlatButton(x, y, w, h, _("Browse..."));
+    b->callback([](Fl_Widget *, void *d) {
+      const char *f = fl_file_chooser(_("Choose a wallpaper"), "Images (*.{png,jpg,jpeg,svg})",
+                                      (home_dir() + "/Pictures").c_str());
+      if (!f) return;
+      static_cast<WallpaperGrid *>(d)->add(f);
+      g_cfg.set("appearance", "wallpaper", f);
+      apply_change();
+    }, grid);
+    return b;
+  });
+  page->end_card();
+  page->finish();
+}
 
-Fl_Check_Button *check(int x, int y, int w, const char *label, const char *section, const char *key,
-                       bool def) {
-  auto *b = new Fl_Check_Button(x, y, w, 28, label);
-  b->value(g_cfg.get_bool(section, key, def));
-  b->labelsize(g_theme.font_size + 1);
-  b->selection_color(g_theme.accent.fl());
-  struct Key {
-    const char *section, *key;
-  };
-  b->callback(
-      [](Fl_Widget *w, void *d) {
-        auto *k = static_cast<Key *>(d);
-        g_cfg.set(k->section, k->key, static_cast<Fl_Check_Button *>(w)->value() ? "true" : "false");
+void set_bool(const char *section, const char *key, bool on) {
+  g_cfg.set(section, key, on ? "true" : "false");
+  apply_change();
+}
+
+void build_panel(Page *page) {
+  page->heading(_("Panel"), _("Position, size, clock and pinned applications"));
+  page->begin_card(_("Layout"));
+  page->choice_row(_("Position"), {_("Bottom"), _("Top")},
+                   lower(g_cfg.get("panel", "position", "bottom")) == "top" ? 1 : 0, [](int v) {
+                     g_cfg.set("panel", "position", v == 1 ? "top" : "bottom");
+                     apply_change();
+                   });
+  int h = g_cfg.get_int("panel", "height", 40);
+  page->choice_row(_("Size"), {_("Small"), _("Medium"), _("Large")}, h == 32 ? 0 : h == 48 ? 2 : 1, [](int v) {
+    static const char *vals[] = {"32", "40", "48"};
+    if (v >= 0 && v < 3) g_cfg.set("panel", "height", vals[v]);
+    apply_change();
+  });
+  page->switch_row(_("Hide automatically"), g_cfg.get_bool("panel", "autohide", false),
+                   [](bool on) { set_bool("panel", "autohide", on); },
+                   _("The panel appears when the pointer touches the screen edge."));
+  page->end_card();
+
+  page->begin_card(_("Clock and status"));
+  page->switch_row(_("24-hour clock"), g_cfg.get_bool("panel", "clock_24h", true),
+                   [](bool on) { set_bool("panel", "clock_24h", on); });
+  page->switch_row(_("Show the date"), g_cfg.get_bool("panel", "show_date", true),
+                   [](bool on) { set_bool("panel", "show_date", on); });
+  page->switch_row(_("Show battery status"), g_cfg.get_bool("panel", "show_battery", true),
+                   [](bool on) { set_bool("panel", "show_battery", on); }, _("On laptops and tablets."));
+  page->end_card();
+
+  page->begin_card(_("Pinned applications"));
+  std::vector<DesktopEntry> pins;
+  for (auto &id : split(g_cfg.get("panel", "pinned"), ';')) {
+    DesktopEntry e;
+    if (find_application(trim(id), e)) pins.push_back(e);
+  }
+  if (pins.empty()) page->note(_("No applications are pinned."));
+  for (size_t i = 0; i < pins.size(); ++i) {
+    int y = page->cursor(), x = page->left() + S(20), w = page->width() - S(40), rh = S(44);
+    new ImageBox(x, y + (rh - S(28)) / 2, S(28), {pins[i].icon, "application-x-executable"});
+    new Label(x + S(40), y, w - S(40) - S(3 * 96), rh, pins[i].name);
+    struct Move {
+      size_t index;
+      int delta;
+    };
+    const char *labels[] = {_("Move Up"), _("Move Down"), _("Unpin")};
+    int deltas[] = {-1, 1, 0};
+    for (int b = 0; b < 3; ++b) {
+      auto *btn = new FlatButton(x + w - (3 - b) * S(96) + S(4), y + (rh - S(32)) / 2, S(92), S(32), labels[b]);
+      if ((b == 0 && i == 0) || (b == 1 && i + 1 == pins.size())) btn->deactivate();
+      btn->callback([](Fl_Widget *, void *d) {
+        auto *m = static_cast<Move *>(d);
+        auto ids = split(g_cfg.get("panel", "pinned"), ';');
+        std::vector<std::string> valid;
+        for (auto &id : ids) {
+          DesktopEntry e;
+          if (find_application(trim(id), e)) valid.push_back(trim(id));
+        }
+        if (m->index >= valid.size()) return;
+        if (m->delta == 0) valid.erase(valid.begin() + long(m->index));
+        else {
+          size_t other = m->index + size_t(m->delta);
+          if (other < valid.size()) std::swap(valid[m->index], valid[other]);
+        }
+        std::string list;
+        for (auto &id : valid) list += (list.empty() ? "" : ";") + id;
+        g_cfg.set("panel", "pinned", list);
         apply_change();
-      },
-      new Key{section, key});
-  return b;
+        Fl::add_timeout(0, [](void *) { refresh_page(); });
+      }, keep(new Move{i, deltas[b]}));
+    }
+    page->advance(rh);
+  }
+  page->note(_("To pin an application, right-click it in the application menu or on the taskbar. "
+               "Drag pinned icons on the panel to change their order."));
+  page->end_card();
+  page->finish();
+}
+
+void build_desktop(Page *page) {
+  page->heading(_("Desktop"), _("Icons shown on the desktop"));
+  page->begin_card(_("Desktop icons"));
+  page->switch_row(_("Files in the Desktop folder"), g_cfg.get_bool("desktop", "show_icons", true),
+                   [](bool on) { set_bool("desktop", "show_icons", on); });
+  page->switch_row(_("Home"), g_cfg.get_bool("desktop", "show_home", true),
+                   [](bool on) { set_bool("desktop", "show_home", on); });
+  page->switch_row(_("Trash"), g_cfg.get_bool("desktop", "show_trash", false),
+                   [](bool on) { set_bool("desktop", "show_trash", on); });
+  page->end_card();
+  page->finish();
+}
+
+void send_test_notification() {
+  dbus::Bus *bus = dbus::Bus::session();
+  if (!bus) return;
+  DBusMessage *m = dbus::method("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                                "org.freedesktop.Notifications", "Notify");
+  {
+    dbus::Writer w(m);
+    w.str("SDE Settings").u32(0).str("preferences-desktop-notification").str(_("Notifications work"))
+        .str(_("This is how notifications from your applications look."));
+    w.strings({"default", _("Open")});
+    { dbus::Writer hints(w.iter(), DBUS_TYPE_ARRAY, "{sv}"); }
+    w.i32(-1);
+  }
+  bus->call_async(m, nullptr);
+}
+
+void build_notifications(Page *page) {
+  page->heading(_("Notifications"), _("Messages from your applications"));
+  page->begin_card();
+  page->switch_row(_("Do Not Disturb"), g_cfg.get_bool("notifications", "do_not_disturb", false),
+                   [](bool on) { set_bool("notifications", "do_not_disturb", on); },
+                   _("Hide notifications, except critical ones such as a low battery."));
+  int t = g_cfg.get_int("notifications", "timeout", 6);
+  page->choice_row(_("Show notifications for"),
+                   {_("4 seconds"), _("6 seconds"), _("10 seconds"), _("Until dismissed")},
+                   t == 4 ? 0 : t == 10 ? 2 : t == 0 ? 3 : 1, [](int v) {
+                     static const char *vals[] = {"4", "6", "10", "0"};
+                     if (v >= 0 && v < 4) g_cfg.set("notifications", "timeout", vals[v]);
+                     apply_change();
+                   });
+  page->row(_("Try it"), S(200), S(34), [](int x, int y, int w, int h) {
+    auto *b = new FlatButton(x, y, w, h, _("Send a Test Notification"));
+    b->callback([](Fl_Widget *, void *) { send_test_notification(); });
+    return b;
+  });
+  page->end_card();
+  page->finish();
 }
 
 std::string read_first(const std::string &path, const std::string &prefix) {
@@ -359,212 +526,247 @@ std::string read_first(const std::string &path, const std::string &prefix) {
 std::string wm_name() {
   Window root = RootWindow(fl_display, fl_screen);
   Window check = x11::get_window(root, "_NET_SUPPORTING_WM_CHECK");
-  if (!check) return "none";
+  if (!check) return _("none");
   std::string n = x11::get_utf8(check, "_NET_WM_NAME");
-  return n.empty() ? "unknown" : n;
+  return n.empty() ? _("unknown") : n;
 }
 
-// ------------------------------------------------------------------- pages
-
-const int kSide = 220, kW = 860, kH = 600;
-
-Fl_Group *appearance_page() {
-  int x0 = kSide + 32, cw = kW - kSide - 64;
-  auto *g = new Fl_Group(kSide, 0, kW - kSide, kH);
-  new Heading(x0, 24, cw, 56, "Appearance", "Style, colors, icons and wallpaper");
-  new Card(x0, 92, cw, 182);
-  new Label(x0 + 20, 102, 200, 28, "Style");
-  new StyleCard(x0 + 20, 134, 150, 124, false);
-  new StyleCard(x0 + 186, 134, 150, 124, true);
-  new Label(x0 + 360, 102, 200, 28, "Accent color");
-  new AccentPicker(x0 + 356, 132, AccentPicker::kStep * kAccentChoiceCount, 40);
-  new Label(x0 + 360, 186, 120, 28, "Icon theme");
-  auto *icons = new Fl_Choice(x0 + 360, 216, cw - 380, 30);
-  icons->add("Automatic");
-  auto themes = IconLoader::installed_themes();
-  std::string cur = g_cfg.get("appearance", "icon_theme", "auto");
-  icons->value(0);
-  for (size_t i = 0; i < themes.size(); ++i) {
-    // Escape '/' and '&' which have a meaning in FLTK menu labels.
-    std::string label;
-    for (char c : themes[i]) {
-      if (c == '/' || c == '&' || c == '_' || c == '\\') label += '\\';
-      label += c;
-    }
-    icons->add(label.c_str());
-    if (themes[i] == cur) icons->value(int(i) + 1);
-  }
-  static std::vector<std::string> s_themes;
-  s_themes = themes;
-  icons->callback([](Fl_Widget *w, void *) {
-    int v = static_cast<Fl_Choice *>(w)->value();
-    g_cfg.set("appearance", "icon_theme", v <= 0 ? "auto" : s_themes[size_t(v - 1)]);
-    IconLoader::set_theme(g_cfg.get("appearance", "icon_theme"));
-    apply_change();
-  });
-
-  new Card(x0, 290, cw, 290);
-  new Label(x0 + 20, 300, 200, 28, "Wallpaper");
-  auto *grid = new WallpaperGrid(x0 + 20, 336, cw - 40, 184);
-  auto *mode = new Fl_Choice(x0 + 120, 536, 150, 30, "Placement ");
-  mode->labelsize(g_theme.font_size);
-  for (const char *m : {"Zoom", "Fit", "Stretch", "Center", "Tile"}) mode->add(m);
-  std::string cm = g_cfg.get("appearance", "wallpaper_mode", "zoom");
-  const char *modes[] = {"zoom", "fit", "stretch", "center", "tile"};
-  for (int i = 0; i < 5; ++i)
-    if (cm == modes[i]) mode->value(i);
-  mode->callback([](Fl_Widget *w, void *) {
-    const char *modes[] = {"zoom", "fit", "stretch", "center", "tile"};
-    g_cfg.set("appearance", "wallpaper_mode", modes[static_cast<Fl_Choice *>(w)->value()]);
-    apply_change();
-  });
-  auto *browse = new Fl_Button(x0 + cw - 150, 536, 130, 30, "Browse...");
-  browse->callback(
-      [](Fl_Widget *, void *d) {
-        const char *f = fl_file_chooser("Choose a wallpaper", "Images (*.{png,jpg,jpeg,svg})",
-                                        (home_dir() + "/Pictures").c_str());
-        if (!f) return;
-        static_cast<WallpaperGrid *>(d)->add(f);
-        g_cfg.set("appearance", "wallpaper", f);
-        apply_change();
-      },
-      grid);
-  g->end();
-  return g;
-}
-
-Fl_Group *panel_page() {
-  int x0 = kSide + 32, cw = kW - kSide - 64;
-  auto *g = new Fl_Group(kSide, 0, kW - kSide, kH);
-  new Heading(x0, 24, cw, 56, "Panel", "Size, clock and status area");
-  new Card(x0, 92, cw, 96);
-  new Label(x0 + 20, 102, 200, 28, "Panel size");
-  auto *size = new Fl_Choice(x0 + 20, 138, 220, 30);
-  size->add("Small (32 px)");
-  size->add("Medium (40 px)");
-  size->add("Large (48 px)");
-  int h = g_cfg.get_int("panel", "height", 40);
-  size->value(h == 32 ? 0 : h == 48 ? 2 : 1);
-  size->callback([](Fl_Widget *w, void *) {
-    static const char *v[] = {"32", "40", "48"};
-    g_cfg.set("panel", "height", v[static_cast<Fl_Choice *>(w)->value()]);
-    apply_change();
-  });
-  new Card(x0, 204, cw, 150);
-  new Label(x0 + 20, 214, 200, 28, "Clock and status");
-  check(x0 + 20, 246, cw - 40, " Use 24-hour clock", "panel", "clock_24h", true);
-  check(x0 + 20, 278, cw - 40, " Show the date", "panel", "show_date", true);
-  check(x0 + 20, 310, cw - 40, " Show battery status (laptops)", "panel", "show_battery", true);
-  new Card(x0, 370, cw, 92);
-  new Label(x0 + 20, 380, cw - 40, 28, "Pinned applications");
-  new Label(x0 + 20, 408, cw - 40, 40,
-            "Edit the \"pinned\" line in ~/.config/sde/sde.conf (desktop file names).", false);
-  g->end();
-  return g;
-}
-
-Fl_Group *desktop_page() {
-  int x0 = kSide + 32, cw = kW - kSide - 64;
-  auto *g = new Fl_Group(kSide, 0, kW - kSide, kH);
-  new Heading(x0, 24, cw, 56, "Desktop", "Icons shown on the desktop");
-  new Card(x0, 92, cw, 150);
-  new Label(x0 + 20, 102, 200, 28, "Desktop icons");
-  check(x0 + 20, 134, cw - 40, " Show files from the Desktop folder", "desktop", "show_icons", true);
-  check(x0 + 20, 166, cw - 40, " Show Home", "desktop", "show_home", true);
-  check(x0 + 20, 198, cw - 40, " Show Trash", "desktop", "show_trash", false);
-  g->end();
-  return g;
-}
-
-class AboutLogo : public Fl_Widget {
- public:
-  AboutLogo(int x, int y, int s) : Fl_Widget(x, y, s, s) {}
-  void draw() override {
-    Painter p(window()->w(), window()->h());
-    p.image(IconLoader::get({"sde-logo", "start-here"}, w()), x(), y(), w());
-  }
-};
-
-Fl_Group *about_page() {
-  int x0 = kSide + 32, cw = kW - kSide - 64;
-  auto *g = new Fl_Group(kSide, 0, kW - kSide, kH);
-  new Card(x0, 24, cw, 150);
-  new AboutLogo(x0 + 24, 51, 96);
-  auto *title = new Heading(x0 + 144, 54, cw - 160, 60, "Selviana Desktop Environment",
-                            "Small and fast, with a modern desktop experience.");
-  (void)title;
-  new Label(x0 + 144, 120, cw - 160, 24, "Version " SDE_VERSION_LABEL " (" SDE_VERSION ")", false);
+void build_about(Page *page) {
+  page->begin_card();
+  int y = page->cursor();
+  new ImageBox(page->left() + S(24), y + S(16), S(88), {"sde-logo", "start-here"});
+  int tx = page->left() + S(132), tw = page->width() - S(152);
+  new Label(tx, y + S(14), tw, S(34), "Selviana Desktop Environment", Label::TITLE);
+  new Label(tx, y + S(50), tw, S(22), _("Small and fast, with a modern desktop experience."), Label::SUBTITLE);
+  new Label(tx, y + S(76), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION), Label::DIM);
+  page->advance(S(112));
+  page->end_card();
 
   struct utsname u;
   uname(&u);
   std::string mem = read_first("/proc/meminfo", "MemTotal");
-  if (!mem.empty()) {
-    double kb = atof(mem.c_str());
-    char buf[32];
-    snprintf(buf, sizeof buf, "%.1f GiB", kb / 1024.0 / 1024.0);
-    mem = buf;
-  }
+  if (!mem.empty()) mem = format("%.1f GiB", atof(mem.c_str()) / 1024.0 / 1024.0);
   std::string cpu = read_first("/proc/cpuinfo", "model name");
   int sx, sy, sw, sh;
   Fl::screen_xywh(sx, sy, sw, sh, 0);
   std::vector<std::pair<std::string, std::string>> rows = {
-      {"Operating system", os_release("PRETTY_NAME")},
-      {"Kernel", std::string(u.sysname) + " " + u.release},
-      {"Processor", cpu.empty() ? u.machine : cpu},
-      {"Memory", mem},
-      {"Display", std::to_string(sw) + " x " + std::to_string(sh) + " (" +
-                      std::to_string(Fl::screen_count()) + " screen" + (Fl::screen_count() > 1 ? "s)" : ")")},
-      {"Window manager", wm_name()},
-      {"Toolkit", "FLTK " SDE_FLTK_VERSION},
+      {_("Operating system"), os_release("PRETTY_NAME")},
+      {_("Kernel"), std::string(u.sysname) + " " + u.release},
+      {_("Processor"), cpu.empty() ? u.machine : cpu},
+      {_("Memory"), mem},
+      {_("Display"), format("%d x %d", sw, sh)},
+      {_("Interface size"), format("%d %%", int(std::lround(g_theme.scale * 100)))},
+      {_("Window manager"), wm_name()},
+      {_("Toolkit"), "FLTK " SDE_FLTK_VERSION},
   };
-  new Card(x0, 190, cw, 36 + int(rows.size()) * 30);
-  int y = 206;
+  page->begin_card(_("System"));
   for (auto &r : rows) {
-    auto *k = new Label(x0 + 24, y, 170, 30, strdup(r.first.c_str()), false);
-    (void)k;
-    new Label(x0 + 200, y, cw - 224, 30, strdup(r.second.c_str()), true);
-    y += 30;
+    int ry = page->cursor(), x = page->left() + S(20), w = page->width() - S(40);
+    int kw = std::min(S(190), w / 3);
+    new Label(x, ry, kw, S(30), r.first, Label::DIM);
+    new Label(x + kw + S(10), ry, w - kw - S(10), S(30), r.second, Label::NORMAL);
+    page->advance(S(30));
   }
-  new Label(x0, y + 34, cw, 24,
-            "Free software under the GNU General Public License, version 3 or later.", false);
-  new Label(x0, y + 58, cw, 24,
-            "Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors.", false);
-  g->end();
-  return g;
+  page->end_card();
+  page->note(_("Free software under the GNU General Public License, version 3 or later."));
+  page->note(_("Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors."));
+  page->finish();
+}
+
+const std::vector<PageInfo> &pages() {
+  static const std::vector<PageInfo> list = {
+      {"appearance", N_("Appearance"), {"preferences-desktop-theme", "preferences-desktop-wallpaper"}, build_appearance},
+      {"panel", N_("Panel"), {"preferences-system-windows", "preferences-desktop"}, build_panel},
+      {"desktop", N_("Desktop"), {"user-desktop", "preferences-desktop-wallpaper"}, build_desktop},
+      {"notifications", N_("Notifications"),
+       {"preferences-desktop-notification", "notification-active", "dialog-information"}, build_notifications},
+      {"display", N_("Displays"), {"preferences-desktop-display", "video-display", "computer"}, build_display_page},
+      {"input", N_("Keyboard & Mouse"), {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
+       build_input_page},
+      {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
+  };
+  return list;
+}
+
+// --------------------------------------------------------------- window
+
+class Sidebar;
+Sidebar *g_sidebar = nullptr;
+Page *g_page = nullptr;
+int g_page_index = 0;
+int g_content_x = 0, g_content_w = 0;
+
+void show_page(int index);
+
+class Sidebar : public Fl_Widget {
+ public:
+  Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  int row_y(int i) const { return y() + S(84) + i * S(44); }
+  void draw() override {
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rect(x(), y(), w(), h(), g_theme.surface);
+      p.line(x() + w() - 0.5, y(), x() + w() - 0.5, y() + h(), g_theme.border);
+      p.image(IconLoader::get({"sde-logo", "start-here"}, S(36)), x() + S(20), y() + S(20), S(36));
+      for (size_t i = 0; i < pages().size(); ++i) {
+        int ry = row_y(int(i));
+        if (int(i) == g_page_index) {
+          p.fill_rounded(x() + S(10), ry, w() - S(20), S(38), S(9), g_theme.accent.alpha(0.15));
+          p.fill_rounded(x() + S(10), ry + S(10), Sd(3), S(18), Sd(1.5), g_theme.accent);
+        } else if (int(i) == hover_) {
+          p.fill_rounded(x() + S(10), ry, w() - S(20), S(38), S(9), g_theme.hover);
+        }
+        if (Fl::focus() == this && int(i) == g_page_index)
+          focus_ring(p, x() + S(10), ry, w() - S(20), S(38), S(9));
+        p.image(IconLoader::get(pages()[i].icons, S(20)), x() + S(24), ry + S(9), S(20));
+      }
+    }
+    text_font(g_theme.font_size + 2, true);
+    draw_text(_("Settings"), x() + S(64), y() + S(22), w() - S(70), S(32), g_theme.text);
+    for (size_t i = 0; i < pages().size(); ++i) {
+      bool cur = int(i) == g_page_index;
+      text_font(g_theme.font_size + 1, cur);
+      draw_text(_(pages()[i].title), x() + S(56), row_y(int(i)), w() - S(66), S(38),
+                cur ? g_theme.accent_text : g_theme.text);
+    }
+    // The version line only when it does not collide with the page list.
+    if (row_y(int(pages().size())) + S(8) < y() + h() - S(36)) {
+      text_font(g_theme.font_size - 1);
+      draw_text("SDE " SDE_VERSION_LABEL, x() + S(20), y() + h() - S(36), w() - S(30), S(20), g_theme.text_dim);
+    }
+  }
+  int index_at(int ey) const {
+    for (size_t i = 0; i < pages().size(); ++i)
+      if (ey >= row_y(int(i)) && ey < row_y(int(i)) + S(38)) return int(i);
+    return -1;
+  }
+  int handle(int e) override {
+    switch (e) {
+      case FL_PUSH: {
+        int i = index_at(Fl::event_y());
+        if (i >= 0) show_page(i);
+        return 1;
+      }
+      case FL_MOVE:
+      case FL_ENTER: {
+        int h = index_at(Fl::event_y());
+        if (h != hover_) {
+          hover_ = h;
+          redraw();
+        }
+        return 1;
+      }
+      case FL_LEAVE:
+        hover_ = -1;
+        redraw();
+        return 1;
+      case FL_FOCUS:
+      case FL_UNFOCUS: redraw(); return 1;
+      case FL_KEYBOARD: {
+        int k = Fl::event_key(), n = int(pages().size());
+        if (k == FL_Up && g_page_index > 0) show_page(g_page_index - 1);
+        else if (k == FL_Down && g_page_index + 1 < n) show_page(g_page_index + 1);
+        else return 0;
+        take_focus();
+        return 1;
+      }
+      default: return Fl_Widget::handle(e);
+    }
+  }
+
+ private:
+  int hover_ = -1;
+};
+
+class SettingsWindow : public BufferedWindow {
+ public:
+  SettingsWindow(int w, int h) : BufferedWindow(w, h, _("Settings")) {}
+  void draw() override {
+    {
+      Painter p(w(), h());
+      p.fill_rect(0, 0, w(), h(), g_theme.background);
+    }
+    draw_children();
+  }
+};
+
+void show_page(int index) {
+  if (index < 0 || index >= int(pages().size())) return;
+  g_page_index = index;
+  if (g_page) {
+    g_window->remove(g_page);
+    Fl::delete_widget(g_page);
+  }
+  g_window->begin();
+  g_page = new Page(g_content_x, 0, g_content_w, g_window->h());
+  pages()[size_t(index)].build(g_page);
+  g_window->end();
+  g_window->redraw();
 }
 
 }  // namespace
 
+void refresh_page() {
+  int scroll = g_page ? g_page->yposition() : 0;
+  show_page(g_page_index);
+  if (g_page && scroll > 0) g_page->scroll_to(0, scroll);
+}
+
+}  // namespace sde
+
+using namespace sde;
+
 int main(int argc, char **argv) {
+  init_i18n();
+  g_argv0 = argv[0];
   std::string page = "appearance";
+  bool apply = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--page" && i + 1 < argc) {
       page = argv[++i];
+    } else if (a == "--apply") {
+      apply = true;
     } else if (a == "--version") {
       printf("sde-settings %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("Usage: sde-settings [--page appearance|panel|desktop|about] [--version]\n");
+      printf("%s", _("Usage: sde-settings [--page NAME] [--apply] [--version]\n\n"
+                     "  --page NAME  open a page: appearance, panel, desktop, notifications,\n"
+                     "               display, input or about\n"
+                     "  --apply      apply the saved display, keyboard and mouse settings and exit\n"));
       return a == "--help" ? 0 : 2;
     }
   }
-  fl_open_display();
   g_cfg.load();
+  if (apply) {
+    apply_all(g_cfg);
+    return 0;
+  }
+  fl_open_display();
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
   IconLoader::set_theme(g_cfg.get("appearance", "icon_theme", "auto"));
+  Fl::visible_focus(1);
 
-  auto *win = new SettingsWindow(kW, kH);
+  int sx, sy, sw, sh;
+  Fl::screen_work_area(sx, sy, sw, sh, 0);
+  int W = std::min(S(940), sw - S(24)), H = std::min(S(660), sh - S(60));
+  int side = W < S(760) ? S(176) : S(220);
+  auto *win = new SettingsWindow(W, H);
   g_window = win;
-  std::vector<Fl_Group *> pages{appearance_page(), panel_page(), desktop_page(), about_page()};
-  auto *side = new Sidebar(0, 0, kSide, kH, pages);
+  g_sidebar = new Sidebar(0, 0, side, H);
+  g_content_x = side;
+  g_content_w = W - side;
   win->end();
-  win->size_range(kW, kH, kW, kH);
+  win->size_range(std::min(W, S(600)), std::min(H, S(420)));
+  win->resizable(nullptr);
   win->xclass("sde-settings");
-  static const std::map<std::string, int> index = {{"appearance", 0}, {"panel", 1}, {"desktop", 2}, {"about", 3}};
-  auto it = index.find(page);
-  side->select(it == index.end() ? 0 : it->second);
+  int index = 0;
+  for (size_t i = 0; i < pages().size(); ++i)
+    if (page == pages()[i].id) index = int(i);
+  show_page(index);
+  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
   win->show();
   return Fl::run();
 }

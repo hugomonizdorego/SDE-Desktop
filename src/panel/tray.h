@@ -5,6 +5,7 @@
 
 #include <X11/Xlib.h>
 
+#include <algorithm>
 #include <vector>
 
 class Tray {
@@ -16,7 +17,10 @@ class Tray {
   bool start();
 
   int icon_size() const { return icon_size_; }
-  void set_icon_size(int size) { icon_size_ = size; }
+  void set_icon_size(int size) {
+    icon_size_ = size;
+    spacing_ = std::max(4, size / 4);
+  }
   int width() const;
   // Moves the icons to start at |x|, vertically centered in |height|.
   void place(int x, int height);

@@ -4,6 +4,8 @@
 
 #include <cairo.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -18,6 +20,13 @@ cairo_surface_t *load_image(const std::string &path, int w = 0, int h = 0);
 // "zoom" (cover), "fit" (contain), "stretch", "center" or "tile".
 cairo_surface_t *load_wallpaper(const std::string &path, int w, int h, const std::string &mode,
                                 double bg_r, double bg_g, double bg_b);
+
+// Builds a |size|x|size| surface from raw pixels (caller owns it):
+//  * rgba_pixels: RGB or RGBA rows as sent in notification "image-data" hints
+//  * argb_network_pixels: ARGB32 in network byte order (StatusNotifierItem)
+cairo_surface_t *rgba_pixels(const uint8_t *data, size_t len, int w, int h, int stride,
+                             bool has_alpha, int channels, int size);
+cairo_surface_t *argb_network_pixels(const uint8_t *data, size_t len, int w, int h, int size);
 
 class IconLoader {
  public:

@@ -1,16 +1,24 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH SDE-PANEL 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
 .SH NAME
-sde-panel \- taskbar, application menu, system tray and clock
+sde-panel \- taskbar, application menu, quick settings, tray and clock
 .SH SYNOPSIS
 .B sde-panel
-[\-\-menu | \-\-version]
+[\-\-menu | \-\-quick\-settings | \-\-calendar | \-\-version]
 .SH DESCRIPTION
-\fBsde-panel\fR shows the bottom panel: application menu with search, pinned applications, the list of open windows, a system tray, battery status and a clock.
+\fBsde-panel\fR shows the panel at the bottom or top of the screen: application menu with search, pinned applications, the list of open windows, the system tray (XEmbed and StatusNotifierItem/AppIndicator), quick settings for network, sound, brightness, battery and Do Not Disturb, and a clock with a calendar.
+.PP
+Right-click an application in the menu or on the taskbar to pin it; drag pinned icons to reorder them. The panel can hide itself automatically (see \fBsde-settings\fR(1)).
 .SH OPTIONS
 .TP
 .B \-\-menu
 Open or close the application menu of the running panel (bound to the Super key).
+.TP
+.B \-\-quick\-settings
+Open or close quick settings (Super+A).
+.TP
+.B \-\-calendar
+Open or close the calendar (Super+C).
 .TP
 .B \-\-version
 Print the version and exit.
@@ -21,10 +29,14 @@ System-wide default settings.
 .TP
 .I ~/.config/sde/sde.conf
 Per-user settings, written by \fBsde-settings\fR(1).
+.TP
+.I ~/.local/state/sde/session.log
+Messages of the current session (the previous one is kept as \fIsession.log.old\fR).
 .SH SEE ALSO
 .BR sde-session (1),
 .BR sde-panel (1),
 .BR sde-desktop (1),
+.BR sde-notifyd (1),
 .BR sde-settings (1)
 .SH BUGS
 SDE 0.1 is an alpha release. Please report problems at

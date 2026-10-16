@@ -6,7 +6,29 @@ sde-desktop \- wallpaper and desktop icons
 .B sde-desktop
 [\-\-version]
 .SH DESCRIPTION
-\fBsde-desktop\fR draws the wallpaper and the icons of the XDG Desktop folder, Home and Trash. Right-click the desktop to change the wallpaper or desktop settings.
+\fBsde-desktop\fR draws the wallpaper and the icons of the XDG Desktop folder, Home and Trash. Right-click the desktop for View (icon size), Sort by, Refresh, New folder or document, a terminal, the file manager and settings; right-click an icon to open, rename or move it to the trash.
+.SH KEYS
+.TP
+.B F5
+Refresh.
+.TP
+.B F2
+Rename the selected icon.
+.TP
+.B Delete
+Move the selected icon to the trash.
+.TP
+.B Ctrl+Shift+N
+New folder.
+.TP
+.B Enter
+Open the selected icon.
+.TP
+.B Menu, Shift+F10
+Open the context menu.
+.TP
+.B Arrow keys, Home, End
+Move the selection.
 .SH OPTIONS
 .TP
 .B \-\-version
@@ -18,10 +40,14 @@ System-wide default settings.
 .TP
 .I ~/.config/sde/sde.conf
 Per-user settings, written by \fBsde-settings\fR(1).
+.TP
+.I ~/.local/state/sde/session.log
+Messages of the current session (the previous one is kept as \fIsession.log.old\fR).
 .SH SEE ALSO
 .BR sde-session (1),
 .BR sde-panel (1),
 .BR sde-desktop (1),
+.BR sde-notifyd (1),
 .BR sde-settings (1)
 .SH BUGS
 SDE 0.1 is an alpha release. Please report problems at

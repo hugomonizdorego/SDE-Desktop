@@ -14,6 +14,7 @@
 
 #include "build_config.h"
 #include "config.h"
+#include "i18n.h"
 #include "icons.h"
 #include "paint.h"
 #include "spawn.h"
@@ -34,58 +35,60 @@ struct Action {
 
 const std::vector<Action> &actions() {
   static const std::vector<Action> list = {
-      {"Lock", {"system-lock-screen", "changes-prevent"}, {"xdg-screensaver", "lock"}},
-      {"Suspend", {"system-suspend", "media-playback-pause"}, {"systemctl", "suspend"}},
-      {"Log Out", {"system-log-out", "application-exit"}, {"sde-session", "--logout"}},
-      {"Restart", {"system-reboot", "view-refresh"}, {"systemctl", "reboot"}},
-      {"Shut Down", {"system-shutdown", "application-exit"}, {"systemctl", "poweroff"}},
+      {N_("Lock"), {"system-lock-screen", "changes-prevent"}, {"xdg-screensaver", "lock"}},
+      {N_("Suspend"), {"system-suspend", "media-playback-pause"}, {"systemctl", "suspend"}},
+      {N_("Log Out"), {"system-log-out", "application-exit"}, {"sde-session", "--logout"}},
+      {N_("Restart"), {"system-reboot", "view-refresh"}, {"systemctl", "reboot"}},
+      {N_("Shut Down"), {"system-shutdown", "application-exit"}, {"systemctl", "poweroff"}},
   };
   return list;
 }
 
 class LogoutWindow : public sde::BufferedWindow {
  public:
-  LogoutWindow(int w, int h) : sde::BufferedWindow(w, h, "Leave SDE") {}
+  LogoutWindow(int w, int h) : sde::BufferedWindow(w, h, _("Leave SDE")) {}
 
+  int cell() const { return S(104); }
   int button_at(int x, int y) const {
     int n = int(actions().size());
-    int bx0 = (w() - n * 104) / 2;
-    if (y < 76 || y > 76 + 104) return -1;
-    int i = (x - bx0) / 104;
+    int bx0 = (w() - n * cell()) / 2;
+    if (y < S(76) || y > S(76) + cell()) return -1;
+    int i = (x - bx0) / cell();
     return (x >= bx0 && i >= 0 && i < n) ? i : -1;
   }
 
   void draw() override {
-    int n = int(actions().size());
-    int bx0 = (w() - n * 104) / 2;
+    int n = int(actions().size()), c = cell();
+    int bx0 = (w() - n * c) / 2;
     {
       Painter p(w(), h());
       p.fill_rect(0, 0, w(), h(), g_theme.background);
       for (int i = 0; i < n; ++i) {
-        int bx = bx0 + i * 104;
+        int bx = bx0 + i * c;
         bool hl = i == hover_ || i == focus_;
-        p.fill_rounded(bx + 6, 76, 92, 104, 14, hl ? g_theme.accent.alpha(0.16) : g_theme.surface);
-        if (i == focus_) p.stroke_rounded(bx + 6, 76, 92, 104, 14, g_theme.accent, 2);
-        p.image(IconLoader::get(actions()[size_t(i)].icons, 40), bx + 32, 92, 40);
+        p.fill_rounded(bx + S(6), S(76), c - S(12), c, S(14), hl ? g_theme.accent.alpha(0.16) : g_theme.surface);
+        if (i == focus_) p.stroke_rounded(bx + S(6), S(76), c - S(12), c, S(14), g_theme.accent, Sd(2));
+        p.image(IconLoader::get(actions()[size_t(i)].icons, S(40)), bx + (c - S(40)) / 2.0, S(92), S(40));
       }
     }
     text_font(g_theme.font_size + 4, true);
-    draw_text("Leave the desktop?", 0, 18, w(), 30, g_theme.text, 1);
+    draw_text(_("Leave the desktop?"), 0, S(18), w(), S(30), g_theme.text, 1);
     text_font(g_theme.font_size);
-    draw_text("Save your work before you continue.", 0, 44, w(), 22, g_theme.text_dim, 1);
+    draw_text(_("Save your work before you continue."), 0, S(44), w(), S(22), g_theme.text_dim, 1);
     for (int i = 0; i < n; ++i) {
       text_font(g_theme.font_size, i == focus_);
-      draw_text(actions()[size_t(i)].label, bx0 + i * 104 + 6, 144, 92, 24, g_theme.text, 1);
+      draw_text(_(actions()[size_t(i)].label), bx0 + i * c + S(6), S(144), c - S(12), S(24), g_theme.text, 1);
     }
     text_font(g_theme.font_size - 1);
-    draw_text("Press Esc to cancel", 0, h() - 30, w(), 22, g_theme.text_dim, 1);
+    draw_text(_("Use the arrow keys and Enter, or press Esc to cancel"), 0, h() - S(30), w(), S(22),
+              g_theme.text_dim, 1);
   }
 
   void run_action(int i) {
     if (i < 0) return;
     const Action &a = actions()[size_t(i)];
     if (find_program(a.command[0]).empty()) {
-      fl_alert("\"%s\" is not available on this system (%s is missing).", a.label,
+      fl_alert(_("\"%s\" is not available on this system (%s is missing)."), _(a.label),
                a.command[0].c_str());
       return;
     }
@@ -135,6 +138,7 @@ class LogoutWindow : public sde::BufferedWindow {
 }  // namespace
 
 int main(int argc, char **argv) {
+  init_i18n();
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
       printf("sde-logout %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
@@ -150,7 +154,7 @@ int main(int argc, char **argv) {
   g_theme.apply_to_fltk();
   IconLoader::set_theme(cfg.get("appearance", "icon_theme", "auto"));
 
-  auto *win = new LogoutWindow(5 * 104 + 48, 236);
+  auto *win = new LogoutWindow(5 * S(104) + S(48), S(236));
   win->end();
   win->xclass("sde-logout");
   int sx, sy, sw, sh;

@@ -2,13 +2,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Builds the SDE Debian package (.deb) from this source tree.
 #
-#   tools/build-deb.sh [output-dir]
+#   tools/build-deb.sh [--suffix SUFFIX] [output-dir]
+#
+# --suffix adds a distribution tag to the package version, e.g. "deb12"
+# gives 0.1.0~alpha2+deb12 (used for the per-distribution release builds).
 #
 # The package lands in output-dir (default: ./dist). Install it with
 #   sudo apt install ./dist/sde_*.deb
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+SUFFIX=""
+if [ "${1:-}" = "--suffix" ]; then
+    SUFFIX=$2
+    shift 2
+fi
 OUT=${1:-$ROOT/dist}
 VERSION=$(cat "$ROOT/VERSION")
 WORK=$(mktemp -d)
@@ -24,6 +32,15 @@ echo "Building sde $VERSION"
 mkdir -p "$WORK/sde-$VERSION"
 tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=obj-* -cf - . |
     tar -C "$WORK/sde-$VERSION" -xf -
+if [ -n "$SUFFIX" ]; then
+    # Prepend a changelog entry carrying the distribution suffix.
+    (cd "$WORK/sde-$VERSION" &&
+        { printf 'sde (%s+%s) unstable; urgency=medium\n\n  * Build for %s.\n\n -- %s  %s\n\n' \
+              "$VERSION" "$SUFFIX" "$SUFFIX" \
+              "$(sed -n 's/^ -- \(.*>\).*/\1/p' debian/changelog | head -n1)" \
+              "$(date -R)"; cat debian/changelog; } > debian/changelog.new &&
+        mv debian/changelog.new debian/changelog)
+fi
 (cd "$WORK/sde-$VERSION" && dpkg-buildpackage -us -uc -b)
 
 mkdir -p "$OUT"

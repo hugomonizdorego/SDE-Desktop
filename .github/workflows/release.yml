@@ -1,0 +1,95 @@
+name: Release
+
+# Publishes a GitHub release with one .deb per distribution, SHA256SUMS and
+# the matching CHANGELOG.md section. Start it by pushing a tag such as
+# v0.1.0-alpha2, or by hand from the Actions tab.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create the release for (e.g. v0.1.0-alpha2)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { image: "debian:12", name: debian12, suffix: deb12 }
+          - { image: "debian:13", name: debian13, suffix: deb13 }
+          - { image: "ubuntu:22.04", name: ubuntu22.04, suffix: ubuntu22.04 }
+          - { image: "ubuntu:24.04", name: ubuntu24.04, suffix: ubuntu24.04 }
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sh tools/install-deps.sh
+      - name: Build package
+        run: sh tools/build-deb.sh --suffix ${{ matrix.suffix }} dist
+      - name: Install and smoke test
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
+          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout; do
+            "$p" --version
+          done
+      - name: Name the package after the distribution
+        run: |
+          version=$(cat VERSION | tr '~' '-')
+          mkdir -p out
+          cp dist/sde_*_amd64.deb "out/sde_${version}_${{ matrix.name }}_amd64.deb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.name }}
+          path: out/*.deb
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: deb-*
+          merge-multiple: true
+      - name: Checksums and release notes
+        run: |
+          cd artifacts
+          sha256sum *.deb > SHA256SUMS
+          cat SHA256SUMS
+          cd ..
+          # The newest section of CHANGELOG.md.
+          awk '/^## /{n++} n==1' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "### Downloads"
+            echo
+            echo "| Distribution | Package |"
+            echo "| --- | --- |"
+            for f in artifacts/*.deb; do
+              b=$(basename "$f")
+              d=$(echo "$b" | sed -E 's/^sde_[^_]+_([^_]+)_amd64\.deb$/\1/')
+              echo "| $d | \`$b\` |"
+            done
+            echo
+            echo "Install with \`sudo apt install ./<package>.deb\` and choose **SDE** at the login screen."
+            echo "Verify downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`."
+          } >> notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" artifacts/*.deb artifacts/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "SDE $TAG" --notes-file notes.md --prerelease

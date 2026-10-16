@@ -17,7 +17,9 @@
 #include "build_config.h"
 #include "config.h"
 #include "desktop_entry.h"
+#include "i18n.h"
 #include "icons.h"
+#include "widgets.h"
 #include "paint.h"
 #include "spawn.h"
 #include "theme.h"
@@ -81,21 +83,22 @@ class RunInput : public Fl_Input {
 
 class RunWindow : public sde::BufferedWindow {
  public:
-  RunWindow(int w, int h) : sde::BufferedWindow(w, h, "Run Command") {}
+  RunWindow(int w, int h) : sde::BufferedWindow(w, h, _("Run Command")) {}
   void draw() override {
     {
       Painter p(w(), h());
       p.fill_rect(0, 0, w(), h(), g_theme.background);
-      p.image(IconLoader::get({"system-run", "utilities-terminal", "application-x-executable"}, 40), 20, 20, 40);
-      p.fill_rounded(76, 52, w() - 96, 40, 10, g_theme.surface);
-      p.stroke_rounded(76, 52, w() - 96, 40, 10, g_theme.accent, 1.5);
+      p.image(IconLoader::get({"system-run", "utilities-terminal", "application-x-executable"}, S(40)), S(20),
+              S(20), S(40));
+      p.fill_rounded(S(76), S(52), w() - S(96), S(40), S(10), g_theme.surface);
+      p.stroke_rounded(S(76), S(52), w() - S(96), S(40), S(10), g_theme.accent, Sd(1.5));
     }
     text_font(g_theme.font_size + 2, true);
-    draw_text("Run a command", 76, 16, w() - 96, 28, g_theme.text);
+    draw_text(_("Run a command"), S(76), S(16), w() - S(96), S(28), g_theme.text);
     draw_children();
     text_font(g_theme.font_size - 1);
-    draw_text("Enter a program name or a full command. Ctrl+Enter runs it in a terminal.", 76, 98,
-              w() - 96, 22, g_theme.text_dim);
+    draw_text(_("Enter a program name or a full command. Ctrl+Enter runs it in a terminal."), S(76), S(98),
+              w() - S(96), S(22), g_theme.text_dim);
   }
 };
 
@@ -111,7 +114,7 @@ bool run(const std::string &cmd, bool in_terminal) {
   }
   if (in_terminal) return open_terminal(argv);
   if (find_program(argv[0]).empty()) {
-    fl_alert("Command not found: %s", argv[0].c_str());
+    fl_alert(_("Command not found: %s"), argv[0].c_str());
     return false;
   }
   return spawn_detached(argv);
@@ -130,6 +133,7 @@ void on_run(Fl_Widget *, void *data) {
 }  // namespace
 
 int main(int argc, char **argv) {
+  init_i18n();
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
       printf("sde-run %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
@@ -139,6 +143,7 @@ int main(int argc, char **argv) {
     return strcmp(argv[i], "--help") ? 2 : 0;
   }
   fl_open_display();
+  Fl::visible_focus(1);
   Config cfg;
   cfg.load();
   g_theme = Theme::from_config(cfg);
@@ -146,19 +151,19 @@ int main(int argc, char **argv) {
   IconLoader::set_theme(cfg.get("appearance", "icon_theme", "auto"));
   load_history();
 
-  auto *win = new RunWindow(520, 172);
-  g_input = new RunInput(86, 57, 520 - 116, 30);
+  int W = S(560);
+  auto *win = new RunWindow(W, S(172));
+  g_input = new RunInput(S(86), S(57), W - S(116), S(30));
   g_input->box(FL_FLAT_BOX);
   g_input->color(g_theme.surface.fl());
   g_input->textcolor(g_theme.text.fl());
   g_input->textsize(g_theme.font_size + 2);
+  g_input->cursor_color(g_theme.accent.fl());
   g_input->when(FL_WHEN_ENTER_KEY_ALWAYS);
   g_input->callback(on_run, win);
-  auto *cancel = new Fl_Button(520 - 220, 128, 96, 30, "Cancel");
+  auto *cancel = new FlatButton(W - S(236), S(126), S(104), S(34), _("Cancel"));
   cancel->callback([](Fl_Widget *w, void *) { w->window()->hide(); });
-  auto *ok = new Fl_Button(520 - 116, 128, 96, 30, "Run");
-  ok->color(g_theme.accent.fl());
-  ok->labelcolor(g_theme.on_accent.fl());
+  auto *ok = new FlatButton(W - S(124), S(126), S(104), S(34), _("Run"), true);
   ok->callback(on_run, win);
   win->end();
   win->xclass("sde-run");

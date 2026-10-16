@@ -1,3 +1,21 @@
+sde (0.1.0~alpha2) unstable; urgency=medium
+
+  * Fix the black screen when a component cannot start: session log in
+    ~/.local/state/sde/session.log, a rescue dialog and "sde-session --check".
+  * Panel: quick settings (Wi-Fi/Ethernet, volume, mute, output device,
+    brightness, battery, Do Not Disturb), calendar, pin/unpin by right-click,
+    drag to reorder, top or bottom position, auto-hide.
+  * StatusNotifierItem/AppIndicator tray with dbusmenu, next to XEmbed.
+  * New sde-notifyd: org.freedesktop.Notifications with action buttons.
+  * Settings: interface size 100-200 %, Displays (xrandr with automatic
+    revert), Keyboard & Mouse, Notifications pages; "sde-settings --apply".
+  * Desktop: combined Windows/Linux context menu (View, Sort by, Refresh,
+    New, terminal, file manager) and shortcuts F5, F2, Delete, Ctrl+Shift+N.
+  * Keyboard focus rings, WCAG contrast checks, gettext translations.
+  * Lower memory use: icon lookups no longer keep directory listings.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Fri, 16 Oct 2026 14:00:00 +0000
+
 sde (0.1.0~alpha1) unstable; urgency=medium
 
   * SDE 0.1 Alpha: first release, written from scratch in C++17.

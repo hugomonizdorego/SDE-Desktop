@@ -3,8 +3,9 @@
 // settings/power buttons.
 #pragma once
 
-#include "buffered_window.h"
 #include <FL/Fl_Input.H>
+
+#include "popup.h"
 
 #include <string>
 #include <vector>
@@ -12,13 +13,9 @@
 #include "desktop_entry.h"
 #include "theme.h"
 
-class AppMenu : public sde::BufferedWindow {
+class AppMenu : public PanelPopup {
  public:
   AppMenu();
-
-  // Shows the menu above the panel. |anchor_x|,|panel_y| are root coordinates.
-  void popup(const sde::Theme &theme, int anchor_x, int panel_y, int screen_x, int screen_w);
-  void close();
 
   void draw() override;
   int handle(int event) override;
@@ -29,7 +26,10 @@ class AppMenu : public sde::BufferedWindow {
   };
   enum Zone { Z_NONE, Z_CATEGORY, Z_APP, Z_SETTINGS, Z_POWER };
 
+  void prepare() override;
   void reload();
+  void layout();
+  void item_menu(int row);
   void filter();
   void launch(int row);
   void ensure_visible(int row);
@@ -49,4 +49,5 @@ class AppMenu : public sde::BufferedWindow {
 
   // Layout.
   int pad_ = 16, header_h_ = 64, footer_h_ = 60, cat_w_ = 190, row_h_ = 46, cat_row_h_ = 36;
+  int icon_ = 32;
 };

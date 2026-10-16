@@ -7,6 +7,7 @@
 #include <string>
 
 #include "build_config.h"
+#include "i18n.h"
 #include "panel.h"
 #include "x11.h"
 
@@ -32,22 +33,29 @@ bool claim_instance() {
 }  // namespace
 
 int main(int argc, char **argv) {
-  bool open_menu = false;
+  sde::init_i18n();
+  std::string command;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--menu")) {
-      open_menu = true;
+      command = "menu";
+    } else if (!strcmp(argv[i], "--quick-settings")) {
+      command = "quick";
+    } else if (!strcmp(argv[i], "--calendar")) {
+      command = "calendar";
     } else if (!strcmp(argv[i], "--version")) {
       printf("sde-panel %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("Usage: sde-panel [--menu | --version]\n\n"
-             "  --menu     open or close the application menu of the running panel\n");
+      printf("%s", _("Usage: sde-panel [--menu | --quick-settings | --calendar | --version]\n\n"
+                     "  --menu            open or close the application menu of the running panel\n"
+                     "  --quick-settings  open or close quick settings\n"
+                     "  --calendar        open or close the calendar\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
   }
   fl_open_display();
-  if (open_menu) {
-    sde::x11::send_command("menu");
+  if (!command.empty()) {
+    sde::x11::send_command(command);
     return 0;
   }
   if (!claim_instance()) {

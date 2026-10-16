@@ -13,6 +13,13 @@ namespace sde {
 Painter::Painter(int w, int h) {
   surface_ = cairo_xlib_surface_create(fl_display, fl_window, fl_visual->visual, w, h);
   cr_ = cairo_create(surface_);
+  // Respect FLTK's clipping (e.g. inside Fl_Scroll), which cairo does not see.
+  if (Fl_Region r = fl_clip_region()) {
+    XRectangle box;
+    XClipBox(r, &box);
+    cairo_rectangle(cr_, box.x, box.y, box.width, box.height);
+    cairo_clip(cr_);
+  }
 }
 
 Painter::~Painter() {

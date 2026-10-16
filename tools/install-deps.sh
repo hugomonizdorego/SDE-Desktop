@@ -9,11 +9,12 @@
 set -eu
 
 BUILD_DEPS="build-essential cmake pkgconf debhelper devscripts fakeroot lintian
-libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev"
-RUNTIME_DEPS="openbox librsvg2-common dbus-x11 xdg-utils xdg-user-dirs
-x11-xserver-utils fonts-dejavu-core xterm"
-OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme pcmanfm lxpolkit"
-PREVIEW_DEPS="xvfb xdotool imagemagick x11-apps"
+libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext"
+RUNTIME_DEPS="openbox librsvg2-common dbus-x11 xdg-utils xdg-user-dirs x11-utils
+x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core xterm"
+OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme pcmanfm lxpolkit network-manager
+pulseaudio-utils libglib2.0-bin libnotify-bin"
+PREVIEW_DEPS="xvfb xdotool imagemagick x11-apps pulseaudio"
 
 packages="$BUILD_DEPS"
 for arg in "$@"; do

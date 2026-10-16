@@ -228,6 +228,22 @@ void set_bottom_strut(Window w, int height, int x_start, int x_end, int screen_h
   set_cardinals(w, "_NET_WM_STRUT_PARTIAL", {0, 0, 0, bottom, 0, 0, 0, 0, 0, 0, x_start, x_end});
 }
 
+void set_edge_strut(Window w, bool top, int height, int x_start, int x_end, int monitor_y,
+                    int monitor_h) {
+  if (height <= 0) {
+    set_cardinals(w, "_NET_WM_STRUT", {0, 0, 0, 0});
+    set_cardinals(w, "_NET_WM_STRUT_PARTIAL", {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    return;
+  }
+  if (top) {
+    long t = monitor_y + height;
+    set_cardinals(w, "_NET_WM_STRUT", {0, 0, t, 0});
+    set_cardinals(w, "_NET_WM_STRUT_PARTIAL", {0, 0, t, 0, 0, 0, 0, 0, x_start, x_end, 0, 0});
+  } else {
+    set_bottom_strut(w, height, x_start, x_end, monitor_y + monitor_h);
+  }
+}
+
 void send_command(const std::string &command) {
   // Append a timestamp so that repeating the same command still changes the
   // property and produces a PropertyNotify event.

@@ -4,13 +4,16 @@
 sde-settings \- settings for the Selviana Desktop Environment
 .SH SYNOPSIS
 .B sde-settings
-[\-\-page appearance|panel|desktop|about] [\-\-version]
+[\-\-page \fIname\fR] [\-\-apply] [\-\-version]
 .SH DESCRIPTION
-\fBsde-settings\fR changes the theme (light or dark), accent color, icon theme, fonts, wallpaper, panel and desktop options. Changes apply immediately to running SDE programs.
+\fBsde-settings\fR changes the theme (light or dark), accent color, interface size (100 to 200 %), text size, icon theme and wallpaper; the panel position, size, auto-hide, clock and pinned applications; desktop icons; notifications; display resolution and arrangement (with an automatic revert after 15 seconds); keyboard layouts, key repeat, mouse and touchpad. Changes apply immediately to running SDE programs.
 .SH OPTIONS
 .TP
 .BI \-\-page " name"
-Open the given page.
+Open a page: appearance, panel, desktop, notifications, display, input or about.
+.TP
+.B \-\-apply
+Apply the saved display, keyboard and pointer settings and exit (run by \fBsde-session\fR(1) at login).
 .TP
 .B \-\-version
 Print the version and exit.
@@ -21,10 +24,14 @@ System-wide default settings.
 .TP
 .I ~/.config/sde/sde.conf
 Per-user settings, written by \fBsde-settings\fR(1).
+.TP
+.I ~/.local/state/sde/session.log
+Messages of the current session (the previous one is kept as \fIsession.log.old\fR).
 .SH SEE ALSO
 .BR sde-session (1),
 .BR sde-panel (1),
 .BR sde-desktop (1),
+.BR sde-notifyd (1),
 .BR sde-settings (1)
 .SH BUGS
 SDE 0.1 is an alpha release. Please report problems at

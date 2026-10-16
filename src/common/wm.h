@@ -15,6 +15,14 @@ bool ensure_openbox_config();
 // Returns true when the file changed.
 bool set_openbox_theme(bool dark);
 
+// Sets the font size (points) of all Openbox fonts, e.g. to follow the UI
+// scale. Returns true when the file changed.
+bool set_openbox_font_size(int points);
+
+// Applies the appearance settings (theme, font size x scale) to Openbox.
+// Returns true when the configuration changed.
+bool sync_openbox(const class Config &cfg);
+
 // Command line that starts the configured window manager.
 std::vector<std::string> window_manager_command(const std::string &configured);
 
