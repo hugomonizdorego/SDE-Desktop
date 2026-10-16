@@ -1,0 +1,28 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH SDE-DESKTOP 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
+.SH NAME
+sde-desktop \- wallpaper and desktop icons
+.SH SYNOPSIS
+.B sde-desktop
+[\-\-version]
+.SH DESCRIPTION
+\fBsde-desktop\fR draws the wallpaper and the icons of the XDG Desktop folder, Home and Trash. Right-click the desktop to change the wallpaper or desktop settings.
+.SH OPTIONS
+.TP
+.B \-\-version
+Print the version and exit.
+.SH FILES
+.TP
+.I /etc/xdg/sde/sde.conf
+System-wide default settings.
+.TP
+.I ~/.config/sde/sde.conf
+Per-user settings, written by \fBsde-settings\fR(1).
+.SH SEE ALSO
+.BR sde-session (1),
+.BR sde-panel (1),
+.BR sde-desktop (1),
+.BR sde-settings (1)
+.SH BUGS
+SDE 0.1 is an alpha release. Please report problems at
+https://github.com/hugomonizdorego/SDE-Desktop/issues

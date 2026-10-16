@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Log Out
+Comment=Log out, restart or shut down the computer
+Exec=sde-logout
+Icon=system-log-out
+Categories=System;
+OnlyShowIn=SDE;
+StartupNotify=false

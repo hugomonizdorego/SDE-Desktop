@@ -1,63 +1,110 @@
 # Selviana Desktop Environment (SDE)
 
-**A small, fast, and modern desktop environment**
+**A small, fast and modern desktop environment for Debian and Ubuntu.**
 
-Selviana Desktop Environment (SDE) is an EDE-based desktop project designed for Debian and Debian-based Linux distributions. It aims to deliver a responsive desktop experience, low resource usage, and a familiar look and feel with a clean, modern interface.
+Version **0.1 Alpha** (`0.1.0~alpha1`) · October 2026 · GPL-3.0-or-later
 
-Versi paket fondasi: **0.1.0-alpha.1** · snapshot upstream: **16 Oktober 2026**.
+![SDE 0.1 Alpha, light theme](docs/screenshots/03-settings-appearance.png)
 
-SDE adalah proyek fork independen yang direncanakan dari **Equinox Desktop Environment (EDE)** untuk melanjutkan pengembangan desktop yang kecil, cepat, dan mudah digunakan. Nama lengkap yang digunakan adalah **Selviana Desktop Environment**.
+SDE is written from scratch in **C++17** with **FLTK**, **cairo** and **Xlib**, and uses
+**Openbox** as its window manager. It aims for low memory use, quick startup and a
+clean interface with light and dark themes.
 
-Paket ini menggabungkan source tree dari **seluruh 11 repositori publik `edeproject`** ke **satu monorepo**, tanpa submodule dan tanpa direktori `.git` bersarang. Enam repositori yang diminta semuanya disertakan; lima repositori tambahan melengkapi sumber situs, artwork, tema, file manager, dan installer lama.
+> **Alpha software.** 0.1 is the first build of SDE. It is meant for testing and
+> development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
 
-## Status yang sebenarnya
+## Components
 
-Ini adalah **fondasi source untuk memulai SDE**, bukan rilis desktop modern yang telah selesai. Source upstream dipertahankan utuh. Aplikasi, binary, konfigurasi, dan sesi di dalam source masih menggunakan nama EDE. Penggantian nama runtime dan desain GUI adalah pekerjaan berikutnya; lihat [roadmap](docs/ROADMAP.md).
+| Program | What it does |
+| --- | --- |
+| `startsde` | Session entry point used by display managers (`/usr/share/xsessions/sde.desktop`) |
+| `sde-session` | Session manager: starts Openbox, desktop, panel, polkit agent and XDG autostart; restarts crashed parts |
+| `sde-panel` | Bottom panel: searchable application menu, pinned apps, taskbar, system tray, battery, clock |
+| `sde-desktop` | Wallpaper and desktop icons (Home, Trash, `~/Desktop`) |
+| `sde-settings` | Light/dark theme, accent color, icon theme, wallpaper, panel and desktop options, system info |
+| `sde-run` | Run Command dialog (Alt+F2) |
+| `sde-logout` | Lock, suspend, log out, restart, shut down |
 
-Paket berisi semua berkas yang dilacak Git pada commit branch default masing-masing repositori. Riwayat objek Git, isi branch/tag lain yang berbeda, issue/PR GitHub, release assets, dan database situs yang sedang berjalan tidak disertakan. Daftar refs dan commit asal tetap dicatat. FLTK, Xorg, compiler, dan dependency sistem diperoleh dari distribusi, bukan dibundel.
+Data: Openbox configuration, `SDE` and `SDE-Dark` window themes, Selviana light and
+dark wallpapers, the SDE logo, desktop entries and man pages.
 
-## Struktur satu proyek
+## Screenshots
 
-| Sumber asli | Lokasi di monorepo | Peran |
-| --- | --- | --- |
-| `edeproject/ede` | `src/ede/` | Basis desktop aktif: panel, desktop, launcher, sesi, konfigurasi, pekwm |
-| `edeproject/edelib` | `src/edelib/` | Library C++ pendukung desktop |
-| `edeproject/jam` | `tools/jam/` | Build tool upstream |
-| `edeproject/efltk` | `legacy/efltk/` | Toolkit generasi lama; referensi |
-| `edeproject/ede-1.x` | `legacy/ede-1.x/` | EDE generasi pertama; referensi |
-| `edeproject/svn` | `legacy/svn/` | Source tree arsip SVN, termasuk trunk/tags/branches di dalam tree tersebut |
-| `edeproject/themes-1.x` | `legacy/themes-1.x/` | Tema generasi lama |
-| `edeproject/net-install` | `legacy/net-install/` | Installer jaringan lama; tidak dijalankan otomatis |
-| `edeproject/efiler` | `extras/efiler/` | Kandidat file manager; perlu evaluasi |
-| `edeproject/art` | `extras/art/` | Artwork asli untuk referensi; periksa izin sebelum penggunaan ulang |
-| `edeproject/www` | `reference/www/` | Source situs dan data yang tersimpan di Git; bukan salinan seluruh situs live |
+| | |
+| --- | --- |
+| ![Desktop](docs/screenshots/01-desktop-light.png) | ![Application menu](docs/screenshots/02-app-menu.png) |
+| ![About](docs/screenshots/04-settings-about.png) | ![Log out](docs/screenshots/06-logout-dialog.png) |
+| ![Dark desktop](docs/screenshots/07-desktop-dark.png) | ![Dark menu](docs/screenshots/08-app-menu-dark.png) |
 
-Folder komponen dipertahankan agar nama berkas dan sistem build tidak bertabrakan. Semuanya tetap berada dalam satu repository GitHub, bukan digabung secara paksa menjadi satu file C++.
+Screenshots were taken with `tools/screenshot.sh` on Ubuntu 24.04 with the
+Eduka-Icons theme.
 
-## Mulai di sini
+## Install the package
 
-1. [Cara upload melalui browser](docs/BROWSER-UPLOAD.md) atau [menggunakan Git](docs/GITHUB.md).
-2. [Dependency dan percobaan build](docs/BUILD.md).
-3. [Roadmap 0.1 Alpha sampai 1.0](docs/ROADMAP.md).
-4. [Arah desain antarmuka](docs/DESIGN.md).
-5. [Panduan bekerja dengan AI](docs/AI-DEVELOPMENT.md) dan `AGENTS.md`.
-6. [Lisensi dan atribusi](LICENSE.md), [catatan pihak ketiga](docs/THIRD-PARTY.md).
-7. [Hasil pemeriksaan paket](docs/VALIDATION.md).
-
-Perintah awal, dari folder ini:
+Supported: **Debian 12 (bookworm), Debian 13 (trixie), Ubuntu 22.04 and 24.04** (amd64).
 
 ```sh
-python3 scripts/verify-source.py
-python3 scripts/sde.py doctor
-python3 scripts/sde.py build-jam
+sudo apt install ./release/sde_0.1.0~alpha1_amd64.deb
 ```
 
-`doctor` akan mengembalikan status gagal jika dependency belum tersedia. `build-jam` hanya membangun Jam dalam `.sde-work/`. Percobaan build desktop: `python3 scripts/sde.py build`; baca batas validasinya di BUILD.md. Script tidak meminta sudo dan tidak mengubah desktop sistem.
+`apt` pulls in the dependencies (Openbox, librsvg, D-Bus, xdg-utils, fonts, FLTK and
+cairo runtime libraries). Log out, choose **SDE** in your display manager and log in.
+From a text console you can use `startx /usr/bin/startsde`.
 
-## Asal-usul dan identitas
+The prebuilt package in `release/` was built on Ubuntu 24.04. On Debian 12 or
+Ubuntu 22.04, build the package yourself (below) so it links against that
+release's libraries; CI builds packages for all four releases.
 
-Upstream: [EDE di GitHub](https://github.com/edeproject) · [situs EDE](https://edeproject.org/).
+## Build from source
 
-Semua 25.653 berkas upstream dicocokkan dengan blob Git asal dan dicatat dengan SHA-256 di `provenance/upstream-files.json`. Commit dan daftar refs tersimpan di `provenance/upstream-lock.json`. Penambahan SDE dijelaskan di CHANGELOG.md.
+```sh
+sudo tools/install-deps.sh      # compiler, CMake, FLTK, cairo, librsvg, Xlib, debhelper
+tools/build-deb.sh              # writes dist/sde_0.1.0~alpha1_<arch>.deb
+```
 
-SDE adalah fork independen; penggabungan kode tidak memindahkan kepemilikan organisasi, repository, merek, atau hak cipta EDE. Kredit penulis EDE, edelib, pekwm, FLTK, dan komponen pihak ketiga tetap dipertahankan sesuai pemberitahuan asal.
+Or a plain CMake build for development:
+
+```sh
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build -j"$(nproc)"
+sudo cmake --install build
+```
+
+See [docs/BUILD.md](docs/BUILD.md) for the full dependency list and how to
+take screenshots.
+
+## Keyboard shortcuts
+
+| Keys | Action |
+| --- | --- |
+| Super, Alt+F1 | Application menu |
+| Alt+F2 | Run Command |
+| Ctrl+Alt+T | Terminal |
+| Super+E | File manager |
+| Super+D | Show desktop |
+| Super+Left / Right | Tile window to the left / right half |
+| Super+Up / Down | Maximize / restore |
+| Alt+Tab | Switch windows |
+| Ctrl+Alt+Delete | Log out dialog |
+
+## Configuration
+
+System defaults live in `/etc/xdg/sde/sde.conf`; per-user settings in
+`~/.config/sde/sde.conf` (written by `sde-settings`). The Openbox configuration is
+copied to `~/.config/sde/openbox/rc.xml` on first login.
+
+## Documentation
+
+- [Programming language choice](docs/LANGUAGE.md)
+- [Building and dependencies](docs/BUILD.md)
+- [Roadmap from 0.1 Alpha to 1.0](docs/ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+
+`bootstrap/` holds a pinned manifest and a fetch script for the original EDE
+(Equinox Desktop Environment) sources. They are kept for reference only; SDE does
+not build or ship EDE code.
+
+## License
+
+SDE is free software under the GNU General Public License, version 3 or later.
+See [LICENSE](LICENSE).

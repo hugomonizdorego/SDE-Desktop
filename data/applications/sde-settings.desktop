@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SDE Settings
+Comment=Change the appearance, panel and desktop of SDE
+Exec=sde-settings
+Icon=preferences-desktop
+Categories=Settings;DesktopSettings;
+OnlyShowIn=SDE;
+StartupNotify=false

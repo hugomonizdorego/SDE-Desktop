@@ -1,0 +1,28 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH SDE-LOGOUT 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
+.SH NAME
+sde-logout \- log out, restart or shut down
+.SH SYNOPSIS
+.B sde-logout
+[\-\-version]
+.SH DESCRIPTION
+\fBsde-logout\fR offers to log out, lock, suspend, restart or shut down the computer. Power actions use systemd-logind (loginctl/systemctl).
+.SH OPTIONS
+.TP
+.B \-\-version
+Print the version and exit.
+.SH FILES
+.TP
+.I /etc/xdg/sde/sde.conf
+System-wide default settings.
+.TP
+.I ~/.config/sde/sde.conf
+Per-user settings, written by \fBsde-settings\fR(1).
+.SH SEE ALSO
+.BR sde-session (1),
+.BR sde-panel (1),
+.BR sde-desktop (1),
+.BR sde-settings (1)
+.SH BUGS
+SDE 0.1 is an alpha release. Please report problems at
+https://github.com/hugomonizdorego/SDE-Desktop/issues
