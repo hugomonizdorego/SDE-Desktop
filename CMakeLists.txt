@@ -4,6 +4,8 @@
 cmake_minimum_required(VERSION 3.16)
 
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" SDE_VERSION_FILE)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
 string(STRIP "${SDE_VERSION_FILE}" SDE_VERSION)
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SDE_VERSION_NUMERIC "${SDE_VERSION}")
 
@@ -46,6 +48,7 @@ set(SDE_LOCALEDIR "${CMAKE_INSTALL_FULL_LOCALEDIR}")
 configure_file(src/common/build_config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/generated/build_config.h @ONLY)
 
+add_subdirectory(rust)
 add_subdirectory(src)
 add_subdirectory(po)
 
@@ -64,5 +67,5 @@ install(DIRECTORY data/themes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
 install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
 install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-file(GLOB SDE_MANPAGES data/man/*.1)
+file(GLOB SDE_MANPAGES CONFIGURE_DEPENDS data/man/*.1)
 install(FILES ${SDE_MANPAGES} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)

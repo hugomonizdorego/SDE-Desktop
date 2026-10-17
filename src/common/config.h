@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SDE configuration: a small INI file read in three layers.
 //
-//   1. built-in defaults (this file's .cpp)
+//   1. built-in defaults (data/sde.conf, embedded in the Rust core)
 //   2. system defaults, $XDG_CONFIG_DIRS/sde/sde.conf (e.g. /etc/xdg/sde/sde.conf)
 //   3. the user's file, ~/.config/sde/sde.conf
 //
@@ -9,13 +9,19 @@
 // and users can always return to them by deleting a key.
 #pragma once
 
-#include <map>
 #include <string>
+
+struct SdeRustConfig;
 
 namespace sde {
 
 class Config {
  public:
+  Config();
+  ~Config();
+  Config(const Config &);
+  Config &operator=(const Config &);
+
   void load();
   bool save() const;
 
@@ -30,11 +36,7 @@ class Config {
   static std::string user_path();
 
  private:
-  using Map = std::map<std::string, std::string>;  // "section/key" -> value
-  static void parse(const std::string &text, Map &into);
-  Map system_;  // built-in and system defaults
-  Map merged_;
-  Map user_;
+  SdeRustConfig *impl_;
 };
 
 }  // namespace sde

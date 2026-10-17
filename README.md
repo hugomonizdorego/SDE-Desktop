@@ -2,14 +2,16 @@
 
 **A small, fast and modern desktop environment for Debian and Ubuntu.**
 
-Version **0.1 Alpha** (`0.1.0~alpha2`) · October 2026 · GPL-3.0-or-later
+Development version **0.1 Alpha 3** (`0.1.0~alpha3`) · October 2026 · GPL-3.0-or-later
 
 ![SDE 0.1 Alpha with quick settings open](docs/screenshots/03-quick-settings.png)
 
-SDE is written from scratch in **C++17** with **FLTK**, **cairo**, **Xlib** and
-**libdbus**, and uses **Openbox** as its window manager. It is the successor of the
-EDE idea: small and quick. A full session (session manager, panel, desktop,
-notifications and Openbox) uses about **22 MB of private memory**.
+SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
+interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and **Openbox** as its
+window manager. It is the successor of the EDE idea: small and quick. Migration
+to Rust is underway; the panel, desktop and settings interface remain C++.
+The earlier alpha2 session measured about **22 MB of private memory**; alpha3
+has not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 
 > **Alpha software.** 0.1 is the first series of SDE builds. It is meant for testing
 > and development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
@@ -20,6 +22,7 @@ notifications and Openbox) uses about **22 MB of private memory**.
 | --- | --- |
 | `startsde` | Session entry point used by display managers (`/usr/share/xsessions/sde.desktop`) |
 | `sde-session` | Session manager: starts Openbox, desktop, panel, notifications, polkit agent and XDG autostart; restarts crashed parts; shows a rescue dialog instead of a black screen; `--check` finds missing packages |
+| `sde-autostart` | Native Rust XDG autostart launcher; `--dry-run` explains which entries would start or be skipped |
 | `sde-panel` | Panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, quick settings, calendar, auto-hide |
 | `sde-notifyd` | Desktop notifications (`org.freedesktop.Notifications`) with action buttons and Do Not Disturb |
 | `sde-desktop` | Wallpaper and desktop icons, right-click menu (View, Sort by, Refresh, New, terminal, file manager) and keyboard shortcuts |
@@ -61,7 +64,8 @@ sudo apt install ./sde_0.1.0-alpha2_ubuntu24.04_amd64.deb
 Log out, choose **SDE** at the login screen and log in. From a text console you can
 use `startx /usr/bin/startsde`.
 
-`release/` in this repository holds the Ubuntu 24.04 build of the current version.
+`release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
+test the alpha3 Rust changes; a new binary release is not included here.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -71,8 +75,8 @@ use `startx /usr/bin/startsde`.
 ## Build from source
 
 ```sh
-sudo tools/install-deps.sh      # compiler, CMake, FLTK, cairo, librsvg, Xlib, libdbus, gettext, debhelper
-tools/build-deb.sh              # writes dist/sde_0.1.0~alpha2_<arch>.deb
+sudo tools/install-deps.sh      # Rust/Cargo, C++ compiler, CMake and desktop libraries
+tools/build-deb.sh              # writes dist/sde_0.1.0~alpha3_<arch>.deb
 ```
 
 Or a plain CMake build for development:
@@ -118,6 +122,7 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 ## Documentation
 
 - [Programming language choice](docs/LANGUAGE.md)
+- [Rust architecture, tests and migration plan](docs/RUST.md)
 - [Building, dependencies and releases](docs/BUILD.md)
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Roadmap from 0.1 Alpha to 1.0](docs/ROADMAP.md)

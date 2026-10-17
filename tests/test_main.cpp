@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 #include "config.h"
 #include "dbus.h"
@@ -39,6 +40,42 @@ static void test_split_command() {
     CHECK(v[3] == "a b");
   }
   CHECK(split_command("").empty());
+}
+
+// Exercise Rust ownership and the real C ABI used by every C++ component.
+static void test_rust_config() {
+  char temp[] = "/tmp/sde-config-ffi-XXXXXX";
+  char *root = mkdtemp(temp);
+  CHECK(root != nullptr);
+  if (!root) return;
+  std::string saved_home = env("XDG_CONFIG_HOME");
+  std::string saved_dirs = env("XDG_CONFIG_DIRS");
+  setenv("XDG_CONFIG_HOME", root, 1);
+  std::string system = std::string(root) + "/system";
+  setenv("XDG_CONFIG_DIRS", system.c_str(), 1);
+  Config cfg;
+  cfg.load();
+  CHECK(cfg.get("appearance", "theme") == "light");
+  cfg.set("appearance", "font", "Noto Sans Tetun");
+  cfg.set("panel", "height", "999999999999999999999");
+  CHECK(cfg.get_int("panel", "height", 40) == 40);
+  Config copy = cfg;
+  copy.set("appearance", "font", "Other");
+  CHECK(cfg.get("appearance", "font") == "Noto Sans Tetun");
+  copy = cfg;
+  CHECK(copy.get("appearance", "font") == "Noto Sans Tetun");
+  CHECK(cfg.save());
+  copy.load();
+  CHECK(copy.get("appearance", "font") == "Noto Sans Tetun");
+  copy.unset("appearance", "font");
+  CHECK(copy.get("appearance", "font") == "Sans");
+  unlink(Config::user_path().c_str());
+  rmdir((std::string(root) + "/sde").c_str());
+  rmdir(root);
+  if (saved_home.empty()) unsetenv("XDG_CONFIG_HOME");
+  else setenv("XDG_CONFIG_HOME", saved_home.c_str(), 1);
+  if (saved_dirs.empty()) unsetenv("XDG_CONFIG_DIRS");
+  else setenv("XDG_CONFIG_DIRS", saved_dirs.c_str(), 1);
 }
 
 static void test_desktop_entry() {
@@ -122,6 +159,7 @@ static void test_dbus_value() {
 }
 
 int main() {
+  test_rust_config();
   test_split_command();
   test_desktop_entry();
   test_theme_contrast();

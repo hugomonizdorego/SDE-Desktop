@@ -39,7 +39,7 @@ jobs:
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout; do
+          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart; do
             "$p" --version
           done
       - name: Name the package after the distribution

@@ -30,7 +30,7 @@ command -v dpkg-buildpackage >/dev/null 2>&1 || {
 echo "Building sde $VERSION"
 # Build in a clean copy so the source tree stays untouched.
 mkdir -p "$WORK/sde-$VERSION"
-tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=obj-* -cf - . |
+tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=target --exclude=obj-* -cf - . |
     tar -C "$WORK/sde-$VERSION" -xf -
 if [ -n "$SUFFIX" ]; then
     # Prepend a changelog entry carrying the distribution suffix.

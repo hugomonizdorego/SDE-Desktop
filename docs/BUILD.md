@@ -14,7 +14,7 @@ package on all four.
 Build (all from the distribution archive):
 
 ```
-build-essential cmake pkgconf debhelper fakeroot lintian
+build-essential cmake pkgconf rustc cargo debhelper fakeroot lintian
 libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext
 ```
 
@@ -40,7 +40,7 @@ sudo tools/install-deps.sh --preview   # plus Xvfb, xdotool, ImageMagick for scr
 
 ```sh
 tools/build-deb.sh            # output in dist/
-sudo apt install ./dist/sde_0.1.0~alpha1_amd64.deb
+sudo apt install ./dist/sde_0.1.0~alpha3_amd64.deb
 ```
 
 The script builds in a temporary copy with `dpkg-buildpackage -us -uc -b` and runs
@@ -69,8 +69,22 @@ directory and saves PNG files to `docs/screenshots/`. Run it as a normal user.
 
 ## Unit tests
 
+The Rust workspace requires Rust 1.59 or later and has no registry dependencies.
+CMake builds it with `--locked --offline` into `build/cargo`. The installed
+programs do not require a Rust toolchain. For Rust-only work:
+
+```sh
+cargo test --workspace --locked --offline
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+```
+
+Install `rustfmt` and `rust-clippy` separately if using the distribution toolchain
+for those developer checks. See [RUST.md](RUST.md).
+
 `ctest --test-dir build` runs the tests in `tests/` (desktop entries, command
 parsing, D-Bus values, UI scale and WCAG contrast of every theme and accent).
+It also runs the Rust unit and autostart CLI integration tests.
 `dpkg-buildpackage` runs them too. `build/tests/sde-sni-demo` is a small
 StatusNotifierItem with a menu for testing the tray by hand.
 

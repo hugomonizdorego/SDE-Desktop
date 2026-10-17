@@ -21,7 +21,9 @@ target_include_directories(sde-common PUBLIC
   ${CMAKE_BINARY_DIR}/generated)
 target_compile_options(sde-common PUBLIC ${FLTK_CXXFLAGS})
 target_link_libraries(sde-common PUBLIC
-  ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES})
+  ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
+  sde-rust-config)
+add_dependencies(sde-common sde-rust-build)
 
 # The session manager draws nothing itself, but shares the configuration,
 # theme and window manager helpers with the other programs.

@@ -8,7 +8,7 @@
 #   sudo tools/install-deps.sh --preview  # plus Xvfb tools for screenshots
 set -eu
 
-BUILD_DEPS="build-essential cmake pkgconf debhelper devscripts fakeroot lintian
+BUILD_DEPS="build-essential cmake pkgconf rustc cargo debhelper devscripts fakeroot lintian
 libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext"
 RUNTIME_DEPS="openbox librsvg2-common dbus-x11 xdg-utils xdg-user-dirs x11-utils
 x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core xterm"

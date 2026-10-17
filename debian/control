@@ -6,6 +6,8 @@ Build-Depends: debhelper-compat (= 13),
                cmake (>= 3.16),
                pkgconf | pkg-config,
                g++ (>= 4:9),
+               rustc (>= 1.59),
+               cargo,
                libfltk1.3-dev,
                libcairo2-dev,
                librsvg2-dev,
@@ -50,8 +52,8 @@ Suggests: eduka-icons,
 Provides: x-session-manager, notification-daemon
 Description: Selviana Desktop Environment - small, fast and modern desktop
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
- for Debian and Ubuntu, written from scratch in C++17 with FLTK, cairo
- and Xlib, using Openbox as its window manager.
+ for Debian and Ubuntu, with a Rust configuration core and autostart helper,
+ a C++17 interface using FLTK, cairo and Xlib, and Openbox as window manager.
  .
  This 0.1 Alpha release contains:
   * sde-session  - session manager with crash recovery, rescue dialog,
@@ -65,6 +67,7 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
                    displays, keyboard and mouse
   * sde-run      - run command dialog (Alt+F2)
   * sde-logout   - log out, lock, suspend, restart and shut down
+  * sde-autostart - Rust XDG autostart launcher with a dry-run diagnostic
  .
  Select "SDE" in your display manager to start it. This is an alpha
  release meant for testing; expect missing features.
