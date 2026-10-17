@@ -30,6 +30,13 @@ namespace {
 // No package names, options, repository URLs or shell commands are accepted.
 // PackageKit handles dependency solving, locks and the system's polkit policy.
 std::vector<std::string> transaction(const std::string &action) {
+  // PackageKit 1.3.4+ ships pkgcli in the packagekit binary package;
+  // Debian 12/13 and older Ubuntu releases use packagekit-tools/pkcon.
+  if (is_executable("/usr/bin/pkgcli")) {
+    if (action == "refresh") return {"/usr/bin/pkgcli", "refresh"};
+    if (action == "upgrade") return {"/usr/bin/pkgcli", "update"};
+    return {};
+  }
   if (action == "refresh") return {"/usr/bin/pkcon", "refresh", "force"};
   if (action == "upgrade") return {"/usr/bin/pkcon", "update"};
   return {};
@@ -185,8 +192,8 @@ class UpdateWindow : public BufferedWindow {
   }
   void start(const std::string &action) {
     if (busy_) return;
-    if (find_program("xterm").empty() || !is_executable("/usr/bin/pkcon")) {
-      fl_alert("%s", _("Install xterm and packagekit-tools to run update transactions."));
+    if (find_program("xterm").empty() || !is_executable(transaction(action)[0])) {
+      fl_alert("%s", _("Install xterm and the PackageKit command-line client to run update transactions."));
       return;
     }
     set_busy(true);

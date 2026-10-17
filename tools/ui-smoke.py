@@ -211,7 +211,7 @@ try:
     shot("04-settings-action-center")
     app.terminate()
     app.wait()
-    for page in ["suite", "system"]:
+    for page in ["suite", "system", "about"]:
         app = spawn("sde-settings", "--page", page)
         settings = find("^Settings$")
         shot("07-settings-" + page)

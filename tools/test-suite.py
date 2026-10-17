@@ -83,13 +83,15 @@ with tempfile.TemporaryDirectory(prefix="sde-suite-test-") as temporary:
     call("niny", value)
     assert json.loads(log.read_text())[1] == "UserTheme"
     assert not (root / "SHOULD-NOT-EXIST").exists()
+    client = (
+        "/usr/bin/pkgcli" if os.access("/usr/bin/pkgcli", os.X_OK) else "/usr/bin/pkcon"
+    )
     assert call("sde-update", "--plan", "refresh").stdout.splitlines() == [
-        "/usr/bin/pkcon",
+        client,
         "refresh",
-        "force",
-    ]
+    ] + (["force"] if client.endswith("pkcon") else [])
     assert call("sde-update", "--plan", "upgrade").stdout.splitlines() == [
-        "/usr/bin/pkcon",
+        client,
         "update",
     ]
     rejected = subprocess.run([str(binary / "sde-update"), "--plan", "bad"], env=env)

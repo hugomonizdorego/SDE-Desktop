@@ -19,6 +19,9 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         "XDG_DATA_DIRS": "/usr/share",
         "XDG_CURRENT_DESKTOP": "SDE",
     }
+    assert any(
+        os.access("/usr/bin/" + client, os.X_OK) for client in ["pkgcli", "pkcon"]
+    ), "PackageKit client missing"
     expected = {
         "text/plain": "niny.desktop",
         "inode/directory": "liria.desktop",

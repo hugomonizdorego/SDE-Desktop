@@ -59,10 +59,13 @@ excluded. Mint settings, kernel policies, browser security assumptions, Mint
 repositories and Mint-only dependencies are not imported.
 
 **Check Again** reads the local APT cache. **Refresh Sources** opens a terminal
-for `pkcon refresh force`; **Install Updates** opens `pkcon update`. PackageKit
+for `pkgcli refresh` (or `pkcon refresh force` on older releases);
+**Install Updates** opens `pkgcli update` or `pkcon update`. PackageKit
 recalculates the actual transaction and presents its package changes and
 confirmation in the terminal. System polkit controls authorization. After the
 transaction, press Enter in that terminal to return and reload the preview.
+Debian testing uses the newer client shipped inside `packagekit`; older
+distributions install `packagekit-tools`.
 The preview is not a promise that every Debian testing transition is currently
 resolvable. Resolve transitions requiring manual package decisions with Debian's
 normal APT tools. SDE does not change repositories, run unattended upgrades or
@@ -130,6 +133,9 @@ without starting real engines or transactions. `tools/check-installed-suite.py`
 checks MIME defaults/user overrides, power/locker autostart dry-runs and complete
 installed copyright notices. The package CI runs these on Debian testing,
 Debian 12/13 and Ubuntu 22.04/24.04.
+
+On smaller screens the settings sidebar also scrolls and keeps the selected
+category visible, including the final About page.
 
 `tools/ui-smoke.py` exercises the native shell and settings at 1366×768/100% and
 1024×600/150%. Wi-Fi, sound and APT candidates are explicit harmless fixtures;

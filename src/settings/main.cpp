@@ -913,6 +913,7 @@ const std::vector<PageInfo> &pages() {
 
 class Sidebar;
 Sidebar *g_sidebar = nullptr;
+Fl_Scroll *g_sidebar_scroll = nullptr;
 Page *g_page = nullptr;
 int g_page_index = 0;
 int g_content_x = 0, g_content_w = 0;
@@ -1022,6 +1023,16 @@ class SettingsWindow : public BufferedWindow {
 void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
   g_page_index = index;
+  if (g_sidebar_scroll && g_sidebar) {
+    int top = g_sidebar->row_y(index), bottom = top + g_sidebar->row_h();
+    int scroll = g_sidebar_scroll->yposition();
+    if (top < 0)
+      scroll += top - S(8);
+    else if (bottom > g_sidebar_scroll->h())
+      scroll += bottom - g_sidebar_scroll->h() + S(8);
+    scroll = std::max(0, std::min(scroll, g_sidebar->h() - g_sidebar_scroll->h()));
+    g_sidebar_scroll->scroll_to(0, scroll);
+  }
   if (g_page) {
     g_window->remove(g_page);
     Fl::delete_widget(g_page);
@@ -1084,7 +1095,16 @@ int main(int argc, char **argv) {
   int side = W < S(760) ? S(176) : S(220);
   auto *win = new SettingsWindow(W, H);
   g_window = win;
-  g_sidebar = new Sidebar(0, 0, side, H);
+  g_sidebar_scroll = new Fl_Scroll(0, 0, side, H);
+  g_sidebar_scroll->type(Fl_Scroll::VERTICAL);
+  g_sidebar_scroll->box(FL_FLAT_BOX);
+  g_sidebar_scroll->color(g_theme.surface.fl());
+  g_sidebar_scroll->scrollbar_size(S(10));
+  g_sidebar_scroll->scrollbar.color(g_theme.surface.fl());
+  g_sidebar_scroll->scrollbar.selection_color(g_theme.border.fl());
+  int sidebar_height = std::max(H, S(144) + int(pages().size()) * S(44));
+  g_sidebar = new Sidebar(0, 0, side - S(10), sidebar_height);
+  g_sidebar_scroll->end();
   g_content_x = side;
   g_content_w = W - side;
   win->end();
