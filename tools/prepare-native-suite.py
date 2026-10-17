@@ -118,11 +118,13 @@ def prepare(record, cache, destination):
         if record["id"] == "sde-view":
             p = staged / "src/Makefile.am"
             s = p.read_text().replace("bin_PROGRAMS = sdeview", "bin_PROGRAMS = sde-view").replace("bin_PROGRAMS=sdeview", "bin_PROGRAMS=sde-view")
-            s = re.sub(r"(?m)^sdeview_", "sde_view_", s)
+            s = re.sub(r"(?m)^sdeview_(SOURCES|CFLAGS|CPPFLAGS|LDFLAGS|LDADD|DEPENDENCIES)\b", r"sde_view_\1", s)
+            s = s.replace("Sdeview-1.0.gir: sdeview", "Sdeview-1.0.gir: sde-view")
+            s = s.replace("_gir_PROGRAM = $(builddir)/sdeview", "_gir_PROGRAM = $(builddir)/sde-view")
             p.write_text(s)
             for p in staged.rglob("*.in"):
                 if p.is_file():
-                    p.write_text(p.read_text().replace("Exec=sdeview", "Exec=sde-view"))
+                    p.write_text(p.read_text().replace("Exec=sdeview", "Exec=sde-view").replace(">sdeview.desktop<", ">sde-view.desktop<"))
         # Native GTK programs read SDE's theme at startup; there is no launcher
         # executable in front of niny/liria/xanara/taca or the other fork binaries.
         helper = (ROOT / "suite/sde-brand.h").read_text()

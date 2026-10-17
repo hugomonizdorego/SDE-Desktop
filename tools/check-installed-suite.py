@@ -71,6 +71,8 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         "sde",
     ]:
         assert Path("/usr/share/doc", package, "copyright").is_file(), package
+    pam = Path("/etc/pam.d/sde-screensaver").read_text()
+    assert "@include common-auth" in pam and "@include common-account" in pam, pam
 print(
     "Installed MIME defaults, user overrides, dry-run autostarts and copyright files passed."
 )
