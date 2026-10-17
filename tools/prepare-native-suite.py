@@ -26,11 +26,20 @@ def brand(text):
     def protect(match):
         protected.append(match.group())
         return "SDEPROTECTEDTOKEN%dEND" % (len(protected) - 1)
-    text = re.sub(r"https?://[^\s<>\"'\)\]]+|[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}\b|/\*[\s\S]*?\*/|<!--[\s\S]*?-->", protect, text)
-    # Preserve notice text, while still renaming identifiers such as
-    # CAJA_COPYRIGHT in definitions and uses consistently.
-    text = re.sub(r'"(?:[^"\\\n]|\\.)*"',
-                  lambda m: protect(m) if re.search(r"copyright|\(c\)|©|SPDX", m.group(), re.I) else m.group(), text)
+    link = r"https?://[^\s<>\"'\)\]]+|[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}\b"
+    # Lex quoted strings and comments together. A MIME literal such as
+    # "image/*" must never be mistaken for the start of a C comment.
+    token = r'/\*[\s\S]*?\*/|<!--[\s\S]*?-->|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|' + link
+    def mask(match):
+        value = match.group()
+        if value.startswith(('/*', '<!--')):
+            return protect(match)
+        if value.startswith(('"', "'")):
+            if re.search(r"copyright|\(c\)|©|SPDX", value, re.I):
+                return protect(match)
+            return re.sub(link, protect, value)
+        return protect(match)
+    text = re.sub(token, mask, text)
     text = re.sub(r"(?m)^\s*(?:\#(?!\s*(?:include|define|undef|if|ifdef|ifndef|elif|else|endif|error|warning|line|pragma)\b)|//).*?$", protect, text)
     for old, new in [('org.mate.pluma', 'org.debion.niny'), ('org.mate.Pluma', 'org.debion.Niny'), ('org.mate.caja', 'org.debion.liria'), ('org.mate.Caja', 'org.debion.Liria'), ('org.mate.atril', 'org.debion.xanara'), ('org.mate.Atril', 'org.debion.Xanara'), ('org.mate.engrampa', 'org.debion.taca'), ('org.mate.eom', 'org.debion.sdeview'), ('org.mate.power-manager', 'org.debion.power-manager'), ('org.mate.system-monitor', 'org.debion.system-monitor'), ('org.mate.screensaver', 'org.debion.screensaver'), ('org.mate.PowerManager', 'org.debion.PowerManager'), ('org.mate.ScreenSaver', 'org.debion.ScreenSaver'), ('/org/mate/pluma', '/org/debion/niny'), ('/org/mate/caja', '/org/debion/liria'), ('/org/mate/atril', '/org/debion/xanara'), ('/org/mate/engrampa', '/org/debion/taca'), ('/org/mate/eom', '/org/debion/sdeview'), ('/org/mate/power-manager', '/org/debion/power-manager'), ('/org/mate/system-monitor', '/org/debion/system-monitor'), ('/org/mate/screensaver', '/org/debion/screensaver'), ('/org/mate/ScreenSaver', '/org/debion/ScreenSaver'), ('MATE System Monitor', 'SDE System Monitor'), ('MATE Power Manager', 'SDE Power Manager'), ('MATE Screensaver', 'SDE Screen Lock'), ('MATE ScreenSaver', 'SDE Screen Lock'), ('Eye of MATE', 'SDE View'), ('Eye of Mate', 'SDE View'), ('mate-system-monitor', 'sde-system-monitor'), ('mate_system_monitor', 'sde_system_monitor'), ('mate-power-manager', 'sde-power-manager'), ('mate_power_manager', 'sde_power_manager'), ('mate-power-preferences', 'sde-power-preferences'), ('mate-power-statistics', 'sde-power-statistics'), ('mate-screensaver', 'sde-screensaver'), ('mate_screensaver', 'sde_screensaver'), ('pluma', 'niny'), ('Pluma', 'Niny'), ('PLUMA', 'NINY'), ('caja', 'liria'), ('Caja', 'Liria'), ('CAJA', 'LIRIA'), ('atril', 'xanara'), ('Atril', 'Xanara'), ('ATRIL', 'XANARA'), ('engrampa', 'taca'), ('Engrampa', 'Taca'), ('ENGRAMPA', 'TACA'), ('libeom', 'libsdeview'), ('"System Monitor"', '"SDE System Monitor"'), ('"Power Preferences"', '"SDE Power Preferences"'), ('"Power Statistics"', '"SDE Power Statistics"')]:
         text = text.replace(old, new)
@@ -38,6 +47,8 @@ def brand(text):
     text = text.replace("-DEOM_", "-DSDEVIEW_")
     text = text.replace("mate_power_preferences", "sde_power_preferences")
     text = text.replace("mate_power_statistics", "sde_power_statistics")
+    text = text.replace("mate-power-", "sde-power-").replace("mate_power_", "sde_power_")
+    text = text.replace("org.mate.power", "org.debion.power")
     for old, new in [("eom", "sdeview"), ("Eom", "Sdeview"), ("EOM", "SDEVIEW")]:
         text = re.sub(r"(?<![A-Za-z0-9])" + old + r"(?=$|[^a-z0-9])", new, text)
     # A shell/comment line can contain an already protected URL. Unmask outer

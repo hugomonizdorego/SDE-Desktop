@@ -23,7 +23,6 @@
       "url": "https://github.com/mate-desktop/pluma",
       "configure": [
         "--disable-gtk-doc",
-        "--disable-introspection",
         "--disable-tests",
         "--disable-python"
       ]
@@ -66,7 +65,6 @@
       "url": "https://github.com/mate-desktop/eom",
       "configure": [
         "--disable-gtk-doc",
-        "--disable-introspection",
         "--disable-python",
         "--disable-thumbnailer"
       ]

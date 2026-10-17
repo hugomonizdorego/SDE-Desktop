@@ -25,6 +25,11 @@ class BrandingTest(unittest.TestCase):
         source = '#include "caja.h"\n/* background */\nchar *c = "Copyright Caja authors";\n# source: https://github.com/mate-desktop/caja\n'
         self.assertEqual(forks.brand(source), source.replace('"caja.h"', '"liria.h"'))
 
+    def test_mime_wildcards_in_strings_do_not_hide_native_code(self):
+        source = 'if (check("image/*")) eom_load(EomImage *image);\n/* unchanged EOM comment */\n'
+        expected = source.replace('eom_load', 'sdeview_load').replace('EomImage', 'SdeviewImage')
+        self.assertEqual(forks.brand(source), expected)
+
     def test_gtk_geometry_api_is_never_rebranded(self):
         self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
                          'gtk_window_set_geometry_hints(sdeview_window, geometry);')
