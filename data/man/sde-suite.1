@@ -1,0 +1,54 @@
+.TH SDE-SUITE 1 "October 2026" "SDE" "User Commands"
+.SH NAME
+sde-suite, niny, liria, xanara, taca, sde-view, sde-system-monitor, sde-power-manager \- SDE application suite integration
+.SH SYNOPSIS
+.B sde-suite
+APP [ARGUMENTS...]
+.br
+.B sde-suite
+--list | --check | --version
+.SH DESCRIPTION
+The native Rust dispatcher integrates distribution-packaged applications into
+SDE for DebION GNU/Linux. Niny uses Pluma, Liria uses Caja, Xanara uses Atril,
+Taca uses Engrampa, SDE View uses EOM, and the monitor/power tools use MATE.
+Arguments are passed without a shell. Liria adds --no-desktop so SDE continues
+to own the desktop. These are integration names; upstream application internals,
+plugins and licenses retain their original identity.
+.PP
+Applications follow the SDE light/dark GTK launch preference unless GTK_THEME
+is explicitly set or suite.gtk_theme is system. Already running applications
+keep their theme until restarted.
+.SH OPTIONS
+.TP
+.B --check
+Report missing suite backends and return nonzero if one is missing.
+.TP
+.B --list
+List suite names, availability, backend programs and source URLs.
+.TP
+.B APP --source
+Print the application's upstream source URL.
+.TP
+.B APP --copyright
+Print the complete installed package copyright notice.
+.TP
+.B APP --about
+Open Settings at the SDE Suite page, including clickable source links.
+.TP
+.B APP --dry-run [ARGUMENTS...]
+Print the backend argument vector without starting it.
+.TP
+.B sde-power-manager --daemon
+Start the MATE power daemon. Normally used by SDE-only XDG autostart.
+.TP
+.B sde-power-manager --statistics
+Open battery/power history instead of preferences.
+.TP
+.B APP -- [ARGUMENTS...]
+Forward arguments directly, including options reserved by the dispatcher.
+.SH SEE ALSO
+.BR sde-settings (1),
+.BR sde-update (1),
+.BR sde-autostart (1)
+.PP
+/usr/share/doc/sde/SUITE.md and THIRD-PARTY.md contain integration and license details.

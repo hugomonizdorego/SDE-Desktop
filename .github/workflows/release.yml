@@ -25,6 +25,7 @@ jobs:
         include:
           - { image: "debian:12", name: debian12, suffix: deb12 }
           - { image: "debian:13", name: debian13, suffix: deb13 }
+          - { image: "debian:testing", name: debian-testing, suffix: debtesting }
           - { image: "ubuntu:22.04", name: ubuntu22.04, suffix: ubuntu22.04 }
           - { image: "ubuntu:24.04", name: ubuntu24.04, suffix: ubuntu24.04 }
     container: ${{ matrix.image }}
@@ -39,14 +40,18 @@ jobs:
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart; do
+          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
             "$p" --version
           done
+          python3 tools/test-suite.py
+          python3 tools/check-installed-suite.py
+          apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb
       - name: Name the package after the distribution
         run: |
           version=$(cat VERSION | tr '~' '-')
           mkdir -p out
           cp dist/sde_*_amd64.deb "out/sde_${version}_${{ matrix.name }}_amd64.deb"
+          cp dist/sde-desktop_*_all.deb "out/sde-desktop_${version}_${{ matrix.name }}_all.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: deb-${{ matrix.name }}
@@ -78,11 +83,11 @@ jobs:
             echo "| --- | --- |"
             for f in artifacts/*.deb; do
               b=$(basename "$f")
-              d=$(echo "$b" | sed -E 's/^sde_[^_]+_([^_]+)_amd64\.deb$/\1/')
+              d=$(echo "$b" | sed -E 's/^sde(-desktop)?_[^_]+_([^_]+)_(amd64|all)\.deb$/\2/')
               echo "| $d | \`$b\` |"
             done
             echo
-            echo "Install with \`sudo apt install ./<package>.deb\` and choose **SDE** at the login screen."
+            echo "Install the matching pair with \`sudo apt install ./sde_<version>_<distro>_amd64.deb ./sde-desktop_<version>_<distro>_all.deb\` and choose **SDE** at the login screen."
             echo "Verify downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`."
           } >> notes.md
       - name: Publish

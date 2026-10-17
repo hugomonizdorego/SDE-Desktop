@@ -8,7 +8,7 @@
 # gives 0.1.0~alpha2+deb12 (used for the per-distribution release builds).
 #
 # The package lands in output-dir (default: ./dist). Install it with
-#   sudo apt install ./dist/sde_*.deb
+#   sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -30,7 +30,7 @@ command -v dpkg-buildpackage >/dev/null 2>&1 || {
 echo "Building sde $VERSION"
 # Build in a clean copy so the source tree stays untouched.
 mkdir -p "$WORK/sde-$VERSION"
-tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=target --exclude=obj-* -cf - . |
+tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=target --exclude=obj-* --exclude=source-work --exclude=__pycache__ -cf - . |
     tar -C "$WORK/sde-$VERSION" -xf -
 if [ -n "$SUFFIX" ]; then
     # Prepend a changelog entry carrying the distribution suffix.

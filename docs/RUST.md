@@ -106,3 +106,14 @@ alpha2 memory measurement are not measurements of this new version.
 4. Select a GUI integration strategy, then migrate run/logout dialogs, settings,
    desktop and panel independently. Preserve tray, keyboard and accessibility
    behavior before replacing the corresponding C++ programs.
+
+## Alpha5 suite integration
+
+`rust/sde-suite` shares the Rust configuration core and compiles `data/suite.tsv`
+into a single small launcher. Alias symlinks share one binary. File and URI
+arguments remain OS arguments and never pass through a shell. Liria always adds
+Caja's `--no-desktop`; power preferences, statistics and daemon use distinct
+commands. GTK launches can follow SDE light/dark or preserve system/user themes.
+The MATE engines remain distribution packages; the native update UI stays C++
+and its attributed metadata model uses Python APT. No new idle launcher daemon
+or Cargo registry dependency is introduced.

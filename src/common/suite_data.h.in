@@ -1,0 +1,3 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+namespace sde { inline constexpr char kSuiteManifest[] = R"SDE(@SDE_SUITE_DATA@)SDE"; }

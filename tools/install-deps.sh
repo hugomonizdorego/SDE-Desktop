@@ -9,10 +9,11 @@
 set -eu
 
 BUILD_DEPS="build-essential cmake pkgconf rustc cargo debhelper devscripts fakeroot lintian
-libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext"
+libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext python3"
 RUNTIME_DEPS="openbox librsvg2-common dbus-x11 xdg-utils xdg-user-dirs x11-utils
-x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core xterm"
-OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme pcmanfm lxpolkit network-manager
+x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core xterm pluma caja atril engrampa eom mate-system-monitor
+mate-power-manager mate-screensaver packagekit packagekit-tools python3-apt"
+OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme lxpolkit network-manager
 pulseaudio-utils libglib2.0-bin libnotify-bin"
 PREVIEW_DEPS="xvfb xdotool imagemagick x11-apps pulseaudio"
 

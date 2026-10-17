@@ -11,6 +11,18 @@ Files: bootstrap/*
 Copyright: 2026 SDE contributors
 License: GPL-2.0-or-later
 
+Files: data/update/model.py data/update/COPYRIGHT
+Copyright: 2007-2015 Clement Lefebvre <root@linuxmint.com>
+           2026 SDE contributors
+License: GPL-3.0-or-later
+Comment: Update class adapted from linuxmint/mintupdate, Classes.py,
+ commit b4c586f9839d2943944390f4117a10acd4ba865a.
+ Source: https://github.com/linuxmint/mintupdate
+ MATE application sources are not bundled in this package. Their
+ binaries, complete copyright notices and licenses are installed
+ through package dependencies; see /usr/share/doc/PACKAGE/copyright
+ and /usr/share/doc/sde/THIRD-PARTY.md.
+
 License: GPL-3.0-or-later
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by

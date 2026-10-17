@@ -1,0 +1,9 @@
+# id	name	role	command	package	icon	upstream	url	license
+niny	Niny	Text Editor	pluma	pluma	accessories-text-editor	pluma	https://github.com/mate-desktop/pluma	GPL-2.0-or-later
+liria	Liria	File Manager	caja --no-desktop	caja	system-file-manager	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later; LGPL parts
+xanara	Xanara	Document Viewer	atril	atril	x-office-document	atril	https://github.com/mate-desktop/atril	GPL-2.0-or-later; mixed libraries
+taca	Taca	Archive Manager	engrampa	engrampa	package-x-generic	engrampa	https://github.com/mate-desktop/engrampa	GPL-2.0-or-later
+sde-system-monitor	SDE System Monitor	Processes and Resources	mate-system-monitor	mate-system-monitor	utilities-system-monitor	mate-system-monitor	https://github.com/mate-desktop/mate-system-monitor	GPL-2.0-or-later
+sde-power-manager	SDE Power Manager	Power Preferences	mate-power-preferences	mate-power-manager	preferences-system-power	mate-power-manager	https://github.com/mate-desktop/mate-power-manager	GPL-2.0-or-later
+sde-view	SDE View	Image Viewer	eom	eom	image-x-generic	eom	https://github.com/mate-desktop/eom	GPL-2.0-or-later
+sde-update	SDE Update	System Updates	sde-update	sde	system-software-update	mintupdate	https://github.com/linuxmint/mintupdate	GPL-3.0-or-later (adapted model)

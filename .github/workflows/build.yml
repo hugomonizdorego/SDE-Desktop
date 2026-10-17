@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04"]
+        image: ["debian:12", "debian:13", "debian:testing", "ubuntu:22.04", "ubuntu:24.04"]
     container: ${{ matrix.image }}
     steps:
       - name: Install git
@@ -45,9 +45,14 @@ jobs:
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart; do
+          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update niny liria xanara taca sde-view sde-system-monitor sde-power-manager; do
             "$p" --version
           done
+          python3 tools/test-suite.py
+          python3 tools/check-installed-suite.py
+          /usr/bin/python3 /usr/share/sde/update/check.py > /tmp/sde-update-cache.tsv
+          head -n 1 /tmp/sde-update-cache.tsv | grep -F 'SDE-UPDATES'
+          DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb
       - name: Artifact name
         id: name
         run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
@@ -55,7 +60,7 @@ jobs:
         if: matrix.image == 'ubuntu:24.04'
         run: |
           apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick
-          dbus-run-session -- python3 tools/ui-smoke.py --output-dir dist/ui-smoke
+          dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
           dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small
       - uses: actions/upload-artifact@v4
         if: always() && matrix.image == 'ubuntu:24.04'

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE System Monitor
+GenericName=Processes and Resources
+Comment=Processes and Resources for SDE, based on mate-system-monitor
+Exec=sde-system-monitor
+TryExec=mate-system-monitor
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=mate-system-monitor
+X-SDE-Upstream=https://github.com/mate-desktop/mate-system-monitor
