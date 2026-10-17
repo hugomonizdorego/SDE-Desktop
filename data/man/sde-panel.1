@@ -1,21 +1,21 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH SDE-PANEL 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
 .SH NAME
-sde-panel \- taskbar, application menu, quick settings, tray and clock
+sde-panel \- taskbar, application menu, Action Center, tray and clock
 .SH SYNOPSIS
 .B sde-panel
-[\-\-menu | \-\-quick\-settings | \-\-calendar | \-\-version]
+[\-\-menu | \-\-action\-center | \-\-calendar | \-\-version]
 .SH DESCRIPTION
 \fBsde-panel\fR shows the panel at the bottom or top of the screen: application menu with search, pinned applications, the list of open windows, the system tray (XEmbed and StatusNotifierItem/AppIndicator), quick settings for network, sound, brightness, battery and Do Not Disturb, and a clock with a calendar.
 .PP
-Right-click an application in the menu or on the taskbar to pin it; drag pinned icons to reorder them. The panel can hide itself automatically (see \fBsde-settings\fR(1)).
+Right-click an application in the menu or on the taskbar to pin it; drag pinned icons to reorder them. Choose a full-edge, floating or short panel in Settings. Click the clock to open the Action Center. The panel can hide itself automatically (see \fBsde-settings\fR(1)).
 .SH OPTIONS
 .TP
 .B \-\-menu
 Open or close the application menu of the running panel (bound to the Super key).
 .TP
-.B \-\-quick\-settings
-Open or close quick settings (Super+A).
+.B \-\-action\-center, \-\-quick\-settings
+Open or close the Action Center (Super+A).
 .TP
 .B \-\-calendar
 Open or close the calendar (Super+C).

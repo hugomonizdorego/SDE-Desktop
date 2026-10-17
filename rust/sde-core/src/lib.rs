@@ -4,4 +4,5 @@
 pub mod autostart;
 pub mod config;
 pub mod desktop;
+pub mod layout;
 pub mod paths;

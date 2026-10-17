@@ -9,6 +9,7 @@
 #include "config.h"
 #include "dbus.h"
 #include "desktop_entry.h"
+#include "rust_layout.h"
 #include "theme.h"
 #include "util.h"
 
@@ -44,6 +45,10 @@ static void test_split_command() {
 
 // Exercise Rust ownership and the real C ABI used by every C++ component.
 static void test_rust_config() {
+  // Check the geometry structure's C ABI as used by the native panel.
+  auto geometry = sde_panel_geometry(-1280, 100, 1280, 720, 40, true, 1, 90, 8, 600, false);
+  CHECK(geometry.x == -1216 && geometry.y == 108);
+  CHECK(geometry.width == 1152 && geometry.height == 40 && geometry.reserve == 48);
   char temp[] = "/tmp/sde-config-ffi-XXXXXX";
   char *root = mkdtemp(temp);
   CHECK(root != nullptr);

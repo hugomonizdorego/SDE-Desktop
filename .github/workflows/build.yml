@@ -51,6 +51,17 @@ jobs:
       - name: Artifact name
         id: name
         run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
+      - name: Native UI smoke checks
+        if: matrix.image == 'ubuntu:24.04'
+        run: |
+          apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick
+          dbus-run-session -- python3 tools/ui-smoke.py --output-dir dist/ui-smoke
+          dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.image == 'ubuntu:24.04'
+        with:
+          name: sde-ui-smoke
+          path: dist/ui-smoke*/
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.name.outputs.name }}

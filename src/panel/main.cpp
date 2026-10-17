@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--menu")) {
       command = "menu";
-    } else if (!strcmp(argv[i], "--quick-settings")) {
+    } else if (!strcmp(argv[i], "--quick-settings") || !strcmp(argv[i], "--action-center")) {
       command = "quick";
     } else if (!strcmp(argv[i], "--calendar")) {
       command = "calendar";
@@ -46,9 +46,10 @@ int main(int argc, char **argv) {
       printf("sde-panel %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("%s", _("Usage: sde-panel [--menu | --quick-settings | --calendar | --version]\n\n"
+      printf("%s", _("Usage: sde-panel [--menu | --action-center | --calendar | --version]\n\n"
                      "  --menu            open or close the application menu of the running panel\n"
-                     "  --quick-settings  open or close quick settings\n"
+                     "  --action-center   open or close the Action Center\n"
+                     "  --quick-settings  alias for --action-center\n"
                      "  --calendar        open or close the calendar\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }

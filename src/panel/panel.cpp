@@ -6,10 +6,12 @@
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <X11/Xutil.h>
+#include <X11/extensions/shape.h>
 
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <cmath>
 
 #include "calendar.h"
 #include "glyphs.h"
@@ -18,10 +20,12 @@
 #include "menu.h"
 #include "paint.h"
 #include "quick.h"
+#include "rust_layout.h"
 #include "sni.h"
 #include "spawn.h"
 #include "tray.h"
 #include "util.h"
+#include "wm.h"
 #include "x11.h"
 
 using namespace sde;
@@ -81,27 +85,43 @@ void Panel::load_config() {
 
 void Panel::place_on_screen() {
   Fl::screen_xywh(monitor_x_, monitor_y_, monitor_w_, monitor_h_, 0);
-  int h = theme_.panel_height;
-  int y = theme_.panel_top ? monitor_y_ : monitor_y_ + monitor_h_ - h;
-  if (autohide_ && !revealed_) {
-    // Shrink to a thin strip at the screen edge that reveals the panel when
-    // touched. (Window managers keep dock windows on screen, so the panel
-    // cannot simply slide out of view.)
-    h = std::max(2, S(2));
-    y = theme_.panel_top ? monitor_y_ : monitor_y_ + monitor_h_ - h;
-  }
-  sde::BufferedWindow::resize(monitor_x_, y, monitor_w_, h);
+  std::string style = cfg_.get("panel", "style", "floating");
+  int kind = style == "floating" ? 1 : style == "short" ? 2 : 0;
+  auto g = sde_panel_geometry(monitor_x_, monitor_y_, monitor_w_, monitor_h_, theme_.panel_height,
+                              theme_.panel_top, kind, cfg_.get_int("panel", "width_percent", 96), S(8),
+                              S(600), autohide_ && !revealed_);
+  edge_reserve_ = g.reserve;
+  sde::BufferedWindow::resize(g.x, g.y, g.width, g.height);
+  relayout();
   if (shown()) {
-    XMoveResizeWindow(fl_display, fl_xid(this), monitor_x_, y, unsigned(monitor_w_), unsigned(h));
+    XMoveResizeWindow(fl_display, fl_xid(this), g.x, g.y, unsigned(g.width), unsigned(g.height));
     apply_strut();
+    apply_shape();
     if (tray_) tray_->set_icon_size(tray_icon_);
   }
 }
 
 void Panel::apply_strut() {
-  int reserve = autohide_ ? 0 : theme_.panel_height;
-  x11::set_edge_strut(fl_xid(this), theme_.panel_top, reserve, monitor_x_, monitor_x_ + monitor_w_ - 1,
-                      monitor_y_, monitor_h_);
+  int reserve = autohide_ ? 0 : edge_reserve_;
+  x11::set_edge_strut(fl_xid(this), theme_.panel_top, reserve, x(), x() + w() - 1, monitor_y_, monitor_h_);
+}
+
+void Panel::apply_shape() {
+  int event, error;
+  if (!XShapeQueryExtension(fl_display, &event, &error)) return;
+  if (cfg_.get("panel", "style", "floating") == "full" || h() <= S(2)) {
+    XShapeCombineMask(fl_display, fl_xid(this), ShapeBounding, 0, 0, None, ShapeSet);
+    return;
+  }
+  int radius = std::min(S(16), h() / 2);
+  std::vector<XRectangle> rows;
+  for (int row = 0; row < h(); ++row) {
+    double dy = row < radius ? radius - row - 0.5 : row >= h() - radius ? row - (h() - radius) + 0.5 : 0;
+    int inset = dy > 0 ? int(std::ceil(radius - std::sqrt(std::max(0.0, radius * radius - dy * dy)))) : 0;
+    rows.push_back({short(inset), short(row), static_cast<unsigned short>(std::max(1, w() - 2 * inset)), 1});
+  }
+  XShapeCombineRectangles(fl_display, fl_xid(this), ShapeBounding, 0, 0, rows.data(), int(rows.size()),
+                          ShapeSet, YXBanded);
 }
 
 void Panel::resize(int x, int y, int w, int h) {
@@ -119,6 +139,7 @@ void Panel::setup() {
   XClassHint hint{const_cast<char *>("sde-panel"), const_cast<char *>("SDE-Panel")};
   XSetClassHint(fl_display, xid, &hint);
   apply_strut();
+  apply_shape();
   XSetWindowBackground(fl_display, xid, theme_.surface.fl() >> 8);
   x11::remap(xid);
   // Keep the requested position after the WM re-manages the window.
@@ -217,6 +238,14 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
 }
 
 void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
+void Panel::toggle_calendar() { open_popup(calendar_.get(), x() + w() - S(8), true); }
+void Panel::toggle_dark_mode() {
+  cfg_.set("appearance", "theme", theme_.dark ? "light" : "dark");
+  if (cfg_.save()) {
+    if (sync_openbox(cfg_)) reconfigure_window_manager();
+    x11::notify_config_changed();
+  }
+}
 
 // ---------------------------------------------------------------- pinning
 
@@ -294,15 +323,8 @@ void Panel::relayout() {
   int H = theme_.panel_height;
   icon_ = H >= S(48) ? S(28) : H >= S(40) ? S(24) : S(20);
   tray_icon_ = H >= S(40) ? S(20) : S(18);
-  start_w_ = H + S(8);
+  start_w_ = H + S(46);
   pin_w_ = H;
-  int x = start_w_ + S(4);
-  for (auto &p : pinned_) {
-    p.x = x;
-    x += pin_w_;
-  }
-  if (!pinned_.empty()) x += S(10);
-  tasks_x_ = x;
 
   int right = w();
   show_desktop_x_ = right - S(10);
@@ -322,7 +344,7 @@ void Panel::relayout() {
 
   int n = status_count();
   const SystemStatus &s = SystemStatus::get();
-  status_w_ = n ? n * S(26) + S(16) : 0;
+  status_w_ = std::max(1, n) * S(26) + S(16);
   if (s.battery.present && cfg_.get_bool("panel", "show_battery", true)) {
     text_font(theme_.font_size - 1);
     status_w_ += text_width("100%") + S(4);
@@ -339,6 +361,17 @@ void Panel::relayout() {
   if (tray_) tray_->place(tray_x_, H);
   tasks_end_ = tray_x_ - S(8);
 
+  // Keep the status area and running windows reachable on short panels.
+  int room = std::max(0, tasks_end_ - start_w_ - S(12));
+  int task_room = tasks_.empty() ? 0 : std::min(2 * H, room / 2);
+  visible_pins_ = std::min(int(pinned_.size()), std::max(0, (room - task_room) / pin_w_));
+  int pin_x = start_w_ + S(4);
+  for (size_t i = 0; i < pinned_.size(); ++i) {
+    pinned_[i].x = int(i) < visible_pins_ ? pin_x : -100000;
+    if (int(i) < visible_pins_) pin_x += pin_w_;
+  }
+  tasks_x_ = pin_x + (visible_pins_ ? S(10) : 0);
+
   int count = int(tasks_.size());
   if (count) {
     int avail = std::max(0, tasks_end_ - tasks_x_);
@@ -347,7 +380,7 @@ void Panel::relayout() {
     int tx = tasks_x_;
     for (auto &t : tasks_) {
       t.x = tx;
-      t.w = each - S(4);
+      t.w = std::max(0, each - S(4));
       tx += each;
     }
   }
@@ -386,7 +419,10 @@ void Panel::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    p.line(0, edge, W, edge, t.border);
+    if (cfg_.get("panel", "style", "floating") == "full")
+      p.line(0, edge, W, edge, t.border);
+    else
+      p.stroke_rounded(0, 0, W, H, std::min(S(16), H / 2), t.border);
 
     auto button_bg = [&](int x, int bw, Target target, bool active) {
       bool hov = hover_ == target, down = pressed_ == target;
@@ -395,22 +431,30 @@ void Panel::draw() {
       if (active || hov || down) p.fill_rounded(x + S(2), S(4), bw - S(4), H - S(8), S(8), c);
     };
 
-    // Start button with the SDE logo.
-    button_bg(S(4), start_w_ - S(4), {START, 0}, menu_ && menu_->is_open());
-    p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon),
-            S(4) + (start_w_ - S(4) - icon) / 2.0, (H - icon) / 2.0, icon);
+    // Eduka-inspired named launcher and a separate status pill.
+    p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10), S(10),
+                   hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent);
+    p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14), (H - icon) / 2.0,
+            icon);
+    p.fill_rounded(status_x_ - S(2), S(4), clock_x_ + clock_w_ - status_x_ + S(2), H - S(8), S(11),
+                   t.surface_alt);
 
     for (size_t i = 0; i < pinned_.size(); ++i) {
+      if (int(i) >= visible_pins_) break;
       bool dragged = dragging_ && int(i) == drag_index_;
       if (dragged) continue;
       button_bg(pinned_[i].x, pin_w_, {PINNED, int(i)}, false);
       p.image(IconLoader::get({pinned_[i].entry.icon, "application-x-executable"}, icon),
               pinned_[i].x + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
     }
-    if (!pinned_.empty()) p.line(tasks_x_ - S(6), S(10), tasks_x_ - S(6), H - S(10), t.border);
+    if (visible_pins_) p.line(tasks_x_ - S(6), S(10), tasks_x_ - S(6), H - S(10), t.border);
 
     for (size_t i = 0; i < tasks_.size(); ++i) {
       Task &task = tasks_[i];
+      if (task.w <= 0) continue;
+      cairo_save(p.cr());
+      cairo_rectangle(p.cr(), task.x, 0, task.w, H);
+      cairo_clip(p.cr());
       bool active = task.win == active_ && !task.minimized;
       button_bg(task.x, task.w, {TASK, int(i)}, active);
       if (task.urgent) p.fill_rounded(task.x + S(2), S(4), task.w - S(4), H - S(8), S(8), Color::hex(0xE8A33D, 0.35));
@@ -418,10 +462,11 @@ void Panel::draw() {
       int ix = task.w < H + S(20) ? task.x + (task.w - icon) / 2 : task.x + S(10);
       p.image(img, ix, (H - icon) / 2.0, icon, task.minimized ? 0.55 : 1.0);
       // Indicator bar on the screen edge side: wide for the active window.
-      double bar = active ? std::min(S(28), task.w - S(16)) : S(8);
+      double bar = active ? std::max(S(2), std::min(S(28), task.w - S(16))) : S(8);
       double by = t.panel_top ? Sd(2) : H - Sd(5);
       p.fill_rounded(task.x + (task.w - bar) / 2.0, by, bar, Sd(3), Sd(1.5),
                      active ? t.accent : t.text_dim.alpha(0.6));
+      cairo_restore(p.cr());
     }
 
     // StatusNotifierItems.
@@ -439,6 +484,7 @@ void Panel::draw() {
       button_bg(status_x_, status_w_, {STATUS, 0}, quick_ && quick_->is_open());
       const SystemStatus &s = SystemStatus::get();
       double gs = S(18), gx = status_x_ + S(8) + S(4), gy = (H - gs) / 2.0;
+      if (!status_count()) glyph::gear(p, gx, gy, gs, t.text);
       if (s.network.available) {
         if (s.network.kind == "ethernet") glyph::ethernet(p, gx, gy, gs, t.text);
         else if (s.network.kind == "wifi") {
@@ -460,7 +506,7 @@ void Panel::draw() {
         glyph::battery(p, gx, gy - Sd(1), gs + Sd(2), s.battery.percent, s.battery.charging, t.text, level);
       }
     }
-    button_bg(clock_x_, clock_w_, {CLOCK, 0}, calendar_ && calendar_->is_open());
+    button_bg(clock_x_, clock_w_, {CLOCK, 0}, quick_ && quick_->is_open());
     if (hover_ == Target{SHOW_DESKTOP, 0}) p.fill_rect(show_desktop_x_, 0, W - show_desktop_x_, H, t.hover);
     p.line(show_desktop_x_ + 0.5, S(10), show_desktop_x_ + 0.5, H - S(10), t.border);
 
@@ -474,6 +520,8 @@ void Panel::draw() {
   }
 
   // Text on top of the cairo layer.
+  text_font(t.font_size, true);
+  draw_text("SDE", S(20) + icon, 0, start_w_ - icon - S(28), H, t.on_accent);
   for (auto &task : tasks_) {
     if (task.w < H + S(20)) continue;
     text_font(t.font_size, task.win == active_ && !task.minimized);
@@ -541,7 +589,7 @@ int Panel::handle(int event) {
       if (!dragging_ && std::abs(drag_x_ - drag_start_x_) > S(6)) dragging_ = true;
       if (dragging_ && !pinned_.empty()) {
         int first = start_w_ + S(4);
-        int target = std::max(0, std::min(int(pinned_.size()) - 1, (drag_x_ - first) / pin_w_));
+        int target = std::max(0, std::min(visible_pins_ - 1, (drag_x_ - first) / pin_w_));
         if (target != drag_index_) {
           Pinned moved = pinned_[size_t(drag_index_)];
           pinned_.erase(pinned_.begin() + drag_index_);
@@ -584,7 +632,9 @@ int Panel::handle(int event) {
         case TASK: task_clicked(t.index, button); break;
         case TRAY_ITEM: tray_item_clicked(t.index, button); break;
         case STATUS: open_popup(quick_.get(), x() + status_x_ + status_w_, true); break;
-        case CLOCK: open_popup(calendar_.get(), x() + clock_x_ + clock_w_, true); break;
+        case CLOCK:
+          open_popup(quick_.get(), x() + clock_x_ + clock_w_, true);
+          break;
         case SHOW_DESKTOP: x11::set_showing_desktop(!x11::showing_desktop()); break;
         default: break;
       }
@@ -832,6 +882,7 @@ void Panel::clock_tick(void *data) {
     p->clock_date_ = dstr;
     if (relayout_needed) p->relayout();
     p->redraw();
+    if (p->quick_ && p->quick_->is_open()) p->quick_->redraw();
   }
   // Wake up right after the next full minute.
   Fl::remove_timeout(clock_tick, data);

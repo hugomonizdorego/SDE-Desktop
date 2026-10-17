@@ -53,6 +53,8 @@ class Panel : public sde::BufferedWindow {
   void resize(int x, int y, int w, int h) override;
 
   void toggle_menu();
+  void toggle_calendar();
+  void toggle_dark_mode();
   const sde::Theme &theme() const { return theme_; }
   const sde::Config &config() const { return cfg_; }
   void monitor(int &x, int &y, int &w, int &h) const;
@@ -87,6 +89,7 @@ class Panel : public sde::BufferedWindow {
   void load_config();
   void place_on_screen();
   void apply_strut();
+  void apply_shape();
   void refresh_tasks();
   void update_task(Task &t);
   Target hit(int x, int y) const;
@@ -126,6 +129,7 @@ class Panel : public sde::BufferedWindow {
   int start_w_ = 0, pin_w_ = 0, tasks_x_ = 0, tasks_end_ = 0, tray_x_ = 0, sni_x_ = 0, sni_w_ = 0,
       status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0;
   int icon_ = 24, tray_icon_ = 22;
+  int edge_reserve_ = 0, visible_pins_ = 0;
 
   // Dragging a pinned launcher to reorder it.
   int drag_index_ = -1;

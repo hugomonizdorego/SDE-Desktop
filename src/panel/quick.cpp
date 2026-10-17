@@ -3,11 +3,15 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Choice.H>
+#include <FL/Fl_Scroll.H>
+#include <FL/Fl_Box.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
 #include <cstdlib>
+#include <ctime>
+#include <cmath>
 #include <sstream>
 
 #include "build_config.h"
@@ -361,19 +365,187 @@ void SystemStatus::set_brightness(int percent) {
   }
 }
 
-// =========================================================== QuickSettings
+// =========================================================== Action Center
+// Visual layout adapted from Eduka-Desktop: clock card, six tiles, grouped
+// controls and a fixed session footer. All services remain native SDE helpers.
+namespace {
+using IconFn = std::function<void(Painter &, double, double, double, const Color &)>;
+using StringFn = std::function<std::string()>;
 
-QuickSettings::QuickSettings() : PanelPopup("Quick Settings") { end(); }
+class ActionLabel : public Fl_Widget {
+ public:
+  ActionLabel(int x, int y, int w, int h, StringFn text, int style = 0)
+      : Fl_Widget(x, y, w, h), text_(std::move(text)), style_(style) {}
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    text_font(t.font_size + (style_ == 1 ? 1 : 0), style_ == 1);
+    draw_text(text_(), x(), y(), w(), h(), style_ == 2 ? t.text_dim : t.text);
+  }
+
+ private:
+  StringFn text_;
+  int style_;
+};
+
+class ActionCard : public Fl_Group {
+ public:
+  ActionCard(int x, int y, int w) : Fl_Group(x, y, w, S(40)) {
+    box(FL_NO_BOX);
+    resizable(nullptr);
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(14), t.surface_alt);
+    }
+    draw_children();
+  }
+};
+
+class ActionButton : public DrawnButton {
+ public:
+  ActionButton(int x, int y, int w, int h, std::string title, IconFn icon, std::function<void()> action,
+               std::function<bool()> on = nullptr, int color = -1, bool row = false, StringFn sub = nullptr)
+      : DrawnButton(x, y, w, h, nullptr),
+        title_(std::move(title)),
+        icon_(std::move(icon)),
+        action_(std::move(action)),
+        on_(std::move(on)),
+        sub_(std::move(sub)),
+        color_(color),
+        row_(row) {
+    copy_tooltip(title_.c_str());
+    callback([](Fl_Widget *w, void *) {
+      auto *b = static_cast<ActionButton *>(w);
+      b->action_();
+    });
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    bool hot = Fl::belowmouse() == this, on = on_ && on_();
+    static const unsigned colors[] = {0x2563EB, 0x7C3AED, 0x047857, 0xB45309, 0xBE185D, 0x0E7490};
+    bool multi = Panel::instance->config().get_bool("action_center", "multicolor", false) && color_ >= 0;
+    Color accent = multi ? Color::hex(colors[color_ % 6]) : t.accent;
+    Color bg = on ? accent : t.surface_alt;
+    if (multi && !on) bg = t.surface.mix(accent, t.dark ? 0.18 : 0.08);
+    if (hot || value()) bg = bg.mix(on ? t.on_accent : t.text, value() ? 0.15 : 0.06);
+    Color white = Color::hex(0xFFFFFF), black = Color::hex(0x101820);
+    Color ink = on ? (white.contrast(accent) >= 4.5 ? white : black) : t.text;
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(12), bg);
+      if (hot || on) p.stroke_rounded(x(), y(), w(), h(), S(12), on ? accent : t.border);
+      double size = S(row_ ? 20 : 23);
+      icon_(p, row_ ? x() + S(12) : x() + (w() - size) / 2.0, row_ ? y() + (h() - size) / 2.0 : y() + S(10),
+            size, ink);
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(12));
+    }
+    text_font(t.font_size - (row_ ? 0 : S(1)), true);
+    if (!row_ && text_width(title_) > w() - S(8)) text_font(std::max(S(9), t.font_size - S(2)), true);
+    int tx = row_ ? x() + S(42) : x() + S(4), tw = row_ ? w() - S(52) : w() - S(8);
+    draw_text(title_, tx, row_ ? y() : y() + S(36), tw, row_ ? h() : S(20), ink, row_ ? 0 : 1);
+    if (sub_ && !row_) {
+      text_font(std::max(S(9), t.font_size - 2));
+      draw_text(sub_(), tx, y() + S(55), tw, S(16), on ? ink : t.text_dim, 1);
+    }
+  }
+
+ private:
+  std::string title_;
+  IconFn icon_;
+  std::function<void()> action_;
+  std::function<bool()> on_;
+  StringFn sub_;
+  int color_;
+  bool row_;
+};
+
+class ClockCard : public Fl_Widget {
+ public:
+  ClockCard(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) { clear_visible_focus(); }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    const Config &cfg = Panel::instance->config();
+    time_t now = time(nullptr);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    bool analog = cfg.get("action_center", "clock_style", "digital") == "analog";
+    int tx = x() + (analog ? S(108) : S(18)), tw = w() - (analog ? S(124) : S(36));
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(16), t.surface_alt.mix(t.accent, t.dark ? 0.08 : 0.04));
+      p.stroke_rounded(x(), y(), w(), h(), S(16), t.border);
+      if (analog) {
+        double cx = x() + S(52), cy = y() + h() / 2.0, r = S(35);
+        p.circle(cx, cy, r, t.surface);
+        for (int i = 0; i < 12; ++i) {
+          double a = i * M_PI / 6;
+          p.line(cx + std::sin(a) * (r - S(4)), cy - std::cos(a) * (r - S(4)), cx + std::sin(a) * (r - S(7)),
+                 cy - std::cos(a) * (r - S(7)), t.text_dim, S(1));
+        }
+        double hour = (lt.tm_hour % 12 + lt.tm_min / 60.0) * M_PI / 6;
+        double minute = lt.tm_min * M_PI / 30;
+        p.line(cx, cy, cx + std::sin(hour) * r * 0.48, cy - std::cos(hour) * r * 0.48, t.text, S(3));
+        p.line(cx, cy, cx + std::sin(minute) * r * 0.76, cy - std::cos(minute) * r * 0.76, t.accent, S(2));
+        p.circle(cx, cy, S(3), t.accent);
+      }
+    }
+    char date[128], clock[64];
+    strftime(clock, sizeof clock, cfg.get_bool("panel", "clock_24h", true) ? "%H:%M" : "%I:%M %p", &lt);
+    strftime(date, sizeof date, "%A, %e %B", &lt);
+    text_font(t.font_size + (analog ? 10 : 26), true);
+    draw_text(clock, tx, y() + S(10), tw, S(44), t.text, analog ? 0 : 1);
+    text_font(t.font_size - 1);
+    draw_text(date, tx, y() + S(56), tw, S(22), t.text_dim, analog ? 0 : 1);
+    if (cfg.get_bool("action_center", "show_greeting", true)) {
+      const char *greeting = lt.tm_hour < 12   ? _("Good morning")
+                             : lt.tm_hour < 18 ? _("Good afternoon")
+                                               : _("Good evening");
+      text_font(t.font_size, true);
+      draw_text(greeting, tx, y() + S(80), tw, S(22), t.accent_text, analog ? 0 : 1);
+    }
+  }
+};
+
+IconFn gear_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) { glyph::gear(p, x, y, s, c); };
+}
+IconFn calendar_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    p.stroke_rounded(x + s * .1, y + s * .18, s * .8, s * .72, s * .12, c, s * .08);
+    p.line(x + s * .12, y + s * .4, x + s * .88, y + s * .4, c, s * .08);
+    for (int i = 0; i < 2; ++i)
+      p.line(x + s * (.32 + i * .36), y + s * .06, x + s * (.32 + i * .36), y + s * .28, c, s * .08);
+  };
+}
+IconFn display_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    p.stroke_rounded(x, y + s * .08, s, s * .64, s * .08, c, s * .08);
+    p.line(x + s * .5, y + s * .72, x + s * .5, y + s * .95, c, s * .08);
+    p.line(x + s * .25, y + s * .95, x + s * .75, y + s * .95, c, s * .08);
+  };
+}
+}  // namespace
+
+QuickSettings::QuickSettings() : PanelPopup("Action Center") { end(); }
 
 std::string QuickSettings::structure() const {
-  const SystemStatus &s = SystemStatus::get();
+  const auto &s = SystemStatus::get();
+  const auto &cfg = Panel::instance->config();
   std::string sig = std::to_string(s.network.available) + std::to_string(s.network.has_wifi) +
-                    std::to_string(s.network.wifi_enabled) + "|" + s.network.connection;
-  for (auto &w : s.wifi) sig += "|" + w.ssid + (w.active ? "*" : "") + (w.secure ? "s" : "");
+                    std::to_string(s.network.wifi_enabled) + std::to_string(network_expanded_);
+  for (auto &net : s.wifi) sig += "|" + net.ssid + (net.active ? "*" : "") + (net.secure ? "s" : "");
   sig += "#" + std::to_string(s.audio.available) + s.audio.default_sink;
-  for (auto &k : s.audio.sinks) sig += "|" + k.first;
+  for (auto &sink : s.audio.sinks) sig += "|" + sink.first;
   sig += "#" + std::to_string(s.brightness.available) + std::to_string(s.battery.present);
-  sig += "#" + Panel::instance->config().get("notifications", "do_not_disturb", "false");
+  for (const char *key : {"show_clock", "show_greeting", "clock_style", "multicolor"})
+    sig += "|" + cfg.get("action_center", key);
+  for (const char *key : {"style", "position", "height", "width_percent", "clock_24h"})
+    sig += "|" + cfg.get("panel", key);
+  sig += cfg.get("appearance", "accent");
+  sig += cfg.get("appearance", "theme") + cfg.get("appearance", "scale") +
+         cfg.get("notifications", "do_not_disturb");
   return sig;
 }
 
@@ -385,337 +557,335 @@ void QuickSettings::prepare() {
 
 void QuickSettings::status_changed() {
   if (!shown()) return;
-  std::string sig = structure();
-  if (sig == structure_) {
+  if (structure() == structure_) {
     sync();
     return;
   }
-  // Do not rebuild under the user's fingers.
-  Fl_Widget *p = Fl::pushed();
-  if (p && p->window() == this) {
+  if (!rebuild_pending_) {
     rebuild_pending_ = true;
+    Fl::add_timeout(0, rebuild_timeout, this);
+  }
+}
+
+void QuickSettings::rebuild_timeout(void *data) {
+  auto *self = static_cast<QuickSettings *>(data);
+  if (!self->shown()) {
+    self->rebuild_pending_ = false;
     return;
   }
-  Fl_Widget *focus = Fl::focus();
-  bool had_focus = focus && focus->window() == this;
-  rebuild();
-  int hh = h();
-  // Keep the popup attached to the panel when its height changed.
-  Panel *panel = Panel::instance;
-  if (!panel->theme().panel_top) position(x(), panel->y() - hh - S(8));
-  if (had_focus && children()) child(0)->take_focus();
+  // Never delete a pressed button or slider while its callback is running.
+  if (Fl::pushed() && Fl::pushed()->window() == self) {
+    Fl::add_timeout(.1, rebuild_timeout, data);
+    return;
+  }
+  int scroll = self->body_ ? self->body_->yposition() : 0;
+  bool had_focus = Fl::focus() && Fl::focus()->window() == self;
+  self->rebuild();
+  if (self->body_)
+    self->body_->scroll_to(0, std::min(scroll, std::max(0, self->content_height_ - self->body_->h())));
+  auto *panel = Panel::instance;
+  self->position(panel->x() + panel->w() - self->w(),
+                 panel->theme().panel_top ? panel->y() + panel->h() + S(8) : panel->y() - self->h() - S(8));
+  if (had_focus && self->body_->children()) self->body_->child(0)->take_focus();
 }
 
 void QuickSettings::sync() {
-  const SystemStatus &s = SystemStatus::get();
+  const auto &s = SystemStatus::get();
   if (volume_ && Fl::pushed() != volume_) volume_->value(s.audio.volume);
   if (brightness_ && Fl::pushed() != brightness_) brightness_->value(s.brightness.percent());
   redraw();
 }
 
 void QuickSettings::rebuild() {
-  structure_ = structure();
+  Fl::remove_timeout(rebuild_timeout, this);
   rebuild_pending_ = false;
+  structure_ = structure();
   clear();
-  keep_.clear();
   resizable(nullptr);
-  texts_.clear();
-  separators_.clear();
   volume_ = brightness_ = nullptr;
   sinks_ = nullptr;
+  const auto &t = Panel::instance->theme();
+  const auto &cfg = Panel::instance->config();
+  auto &s = SystemStatus::get();
+  int mx, my, mw, mh;
+  Panel::instance->monitor(mx, my, mw, mh);
+  int W = std::min(S(400), mw - S(16)), pad = S(16), inner = W - 2 * pad - S(12);
+  int available = std::max(S(120), mh - Panel::instance->theme().panel_height - S(32));
+  int footer = S(62), y = S(10);
   begin();
-  SystemStatus &st = SystemStatus::get();
-  const Theme &t = Panel::instance->theme();
-  int W = S(360), pad = S(16), y = pad, inner = W - 2 * pad;
-  const Config &cfg = Panel::instance->config();
-
-  // ---- toggle tiles
-  struct TileSpec {
-    std::string title;
-    std::function<std::string()> sub;
-    std::function<bool()> on;
-    std::function<void(Painter &, double, double, double, const Color &)> icon;
-    std::function<void()> click;
+  body_ = new Fl_Scroll(S(2), S(2), W - S(4), available - footer - S(4));
+  body_->type(Fl_Scroll::VERTICAL_ALWAYS);
+  body_->resizable(nullptr);
+  body_->scrollbar_size(S(10));
+  body_->box(FL_FLAT_BOX);
+  body_->color(t.surface.fl());
+  auto label = [&](const std::string &text, int style = 0, int height = 22) {
+    new ActionLabel(pad, y, inner, S(height), [text] { return text; }, style);
+    y += S(height);
   };
-  std::vector<TileSpec> tiles;
-  if (st.network.available && st.network.has_wifi) {
-    tiles.push_back({_("Wi-Fi"),
-                     [] {
-                       const auto &n = SystemStatus::get().network;
-                       if (!n.wifi_enabled) return std::string(_("Off"));
-                       return n.kind == "wifi" ? n.connection : std::string(_("Not connected"));
-                     },
-                     [] { return SystemStatus::get().network.wifi_enabled; },
-                     [](Painter &p, double x, double yy, double s, const Color &c) {
-                       const auto &n = SystemStatus::get().network;
-                       glyph::wifi(p, x, yy, s, n.wifi_enabled ? 4 : 0, c, !n.wifi_enabled);
-                     },
-                     [] { SystemStatus::get().set_wifi_enabled(!SystemStatus::get().network.wifi_enabled); }});
+  label(_("Action Center"), 1, 28);
+  y += S(4);
+  if (cfg.get_bool("action_center", "show_clock", true)) {
+    new ClockCard(pad, y, inner, S(112));
+    y += S(124);
   }
-  bool dnd = cfg.get_bool("notifications", "do_not_disturb", false);
-  tiles.push_back({_("Do Not Disturb"), [dnd] { return std::string(dnd ? _("On") : _("Off")); },
-                   [dnd] { return dnd; },
-                   [dnd](Painter &p, double x, double yy, double s, const Color &c) { glyph::bell(p, x, yy, s, dnd, c); },
-                   [dnd] { Panel::instance->set_do_not_disturb(!dnd); }});
-  int gap = S(10), tw = (inner - gap) / 2, th = S(60);
+  struct Tile {
+    std::string title;
+    IconFn icon;
+    std::function<void()> click;
+    std::function<bool()> on;
+    StringFn sub;
+  };
+  auto launch = [this](std::vector<std::string> cmd) {
+    close();
+    spawn_detached(cmd);
+  };
+  std::vector<Tile> tiles = {
+      {_("Network"),
+       [](Painter &p, double x, double y, double z, const Color &c) {
+         const auto &n = SystemStatus::get().network;
+         if (n.kind == "ethernet")
+           glyph::ethernet(p, x, y, z, c);
+         else
+           glyph::wifi(p, x, y, z, n.kind == "wifi" ? 4 : 0, c, n.kind.empty());
+       },
+       [this] {
+         network_expanded_ = !network_expanded_;
+         status_changed();
+       },
+       [] { return !SystemStatus::get().network.kind.empty(); },
+       [] {
+         const auto &n = SystemStatus::get().network;
+         return n.connection.empty() ? std::string(_("Offline")) : n.connection;
+       }},
+      {_("Display"), display_icon(), [launch] { launch({"sde-settings", "--page", "display"}); }, nullptr,
+       [] { return std::string(_("Resolution")); }},
+      {_("Do Not Disturb"),
+       [](Painter &p, double x, double y, double z, const Color &c) {
+         glyph::bell(p, x, y, z, Panel::instance->config().get_bool("notifications", "do_not_disturb", false),
+                     c);
+       },
+       [] {
+         auto *p = Panel::instance;
+         p->set_do_not_disturb(!p->config().get_bool("notifications", "do_not_disturb", false));
+       },
+       [] { return Panel::instance->config().get_bool("notifications", "do_not_disturb", false); },
+       [] {
+         return std::string(Panel::instance->config().get_bool("notifications", "do_not_disturb", false)
+                                ? _("On")
+                                : _("Off"));
+       }},
+      {_("Dark Mode"),
+       [](Painter &p, double x, double y, double z, const Color &c) { glyph::sun(p, x, y, z, c); },
+       [] { Panel::instance->toggle_dark_mode(); }, [] { return Panel::instance->theme().dark; },
+       [] { return std::string(Panel::instance->theme().dark ? _("On") : _("Off")); }},
+      {_("Calendar"), calendar_icon(),
+       [this] {
+         close();
+         Panel::instance->toggle_calendar();
+       },
+       nullptr, [] { return std::string(_("View month")); }},
+      {_("Settings"), gear_icon(), [launch] { launch({"sde-settings"}); }, nullptr,
+       [] { return std::string(_("Personalize")); }},
+  };
+  int gap = S(8), tw = (inner - 2 * gap) / 3, th = S(78);
   for (size_t i = 0; i < tiles.size(); ++i) {
-    TileSpec spec = tiles[i];
-    int tx = pad + int(i % 2) * (tw + gap);
-    int ty = y + int(i / 2) * (th + gap);
-    auto *b = new DrawnButton(
-        tx, ty, tw, th,
-        [spec, tx, ty, tw, th, &t](Painter &p, bool hover, bool down) {
-          bool on = spec.on();
-          Color bg = on ? t.accent : (hover ? t.hover : t.surface_alt);
-          if (down) bg = bg.mix(t.text, 0.12);
-          p.fill_rounded(tx, ty, tw, th, Sd(12), bg);
-          spec.icon(p, tx + Sd(12), ty + (th - Sd(22)) / 2.0, Sd(22), on ? t.on_accent : t.text);
-        },
-        [spec, tx, ty, tw, th, &t](bool) {
-          bool on = spec.on();
-          text_font(t.font_size, true);
-          draw_text(spec.title, tx + S(44), ty + S(10), tw - S(52), S(20), on ? t.on_accent : t.text);
-          text_font(t.font_size - 1);
-          draw_text(spec.sub(), tx + S(44), ty + S(30), tw - S(52), S(18), on ? t.on_accent : t.text_dim);
-        },
-        Sd(12));
-    b->callback([](Fl_Widget *, void *d) { (*static_cast<std::function<void()> *>(d))(); },
-                keep(new std::function<void()>(spec.click)));
+    const auto &tile = tiles[i];
+    new ActionButton(pad + int(i % 3) * (tw + gap), y + int(i / 3) * (th + gap), tw, th, tile.title,
+                     tile.icon, tile.click, tile.on, int(i), false, tile.sub);
   }
-  y += int((tiles.size() + 1) / 2) * (th + gap) + S(4);
+  y += 2 * (th + gap) + S(4);
 
-  // ---- network
-  separators_.push_back(y);
-  y += S(12);
-  texts_.push_back({pad, y, inner, S(22), [] { return std::string(_("Network")); }, 1});
-  y += S(24);
-  texts_.push_back({pad, y, inner, S(20),
-                    [] {
-                      const SystemStatus &s = SystemStatus::get();
-                      if (!s.message.empty()) return s.message;
-                      if (!s.network.available) return std::string(_("Network service is not running"));
-                      if (s.network.kind == "ethernet")
-                        return format(_("Wired connection: %s"), s.network.connection.c_str());
-                      if (s.network.kind == "wifi") return format(_("Connected to %s"), s.network.connection.c_str());
-                      return std::string(_("Not connected"));
-                    },
-                    2});
-  y += S(26);
-  if (st.network.available && st.network.wifi_enabled) {
-    int shown_rows = 0;
-    for (auto &net : st.wifi) {
-      if (shown_rows++ >= 6) break;
-      WifiNetwork w = net;
-      int ry = y, rh = S(36);
-      auto *row = new DrawnButton(
-          pad, ry, inner, rh,
-          [w, ry, rh, pad, inner, &t](Painter &p, bool hover, bool) {
-            if (hover || w.active) p.fill_rounded(pad, ry, inner, rh, Sd(8), w.active ? t.accent.alpha(0.14) : t.hover);
-            int bars = w.signal >= 75 ? 4 : w.signal >= 50 ? 3 : w.signal >= 25 ? 2 : 1;
-            glyph::wifi(p, pad + Sd(8), ry + (rh - Sd(18)) / 2.0, Sd(18), bars, t.text);
-            if (w.secure) glyph::lock(p, pad + inner - Sd(26), ry + (rh - Sd(14)) / 2.0, Sd(14), t.text_dim);
-            if (w.active) glyph::check(p, pad + inner - Sd(46), ry + (rh - Sd(16)) / 2.0, Sd(16), t.accent_text);
-          },
-          [w, ry, rh, pad, inner, &t](bool) {
-            text_font(t.font_size, w.active);
-            draw_text(w.ssid, pad + S(36), ry, inner - S(92), rh, t.text);
-          },
-          Sd(8));
-      row->callback(
-          [](Fl_Widget *, void *d) {
-            auto *net2 = static_cast<WifiNetwork *>(d);
-            if (!net2->active) SystemStatus::get().connect_wifi(*net2);
-          },
-          keep(new WifiNetwork(w)));
-      y += rh + S(2);
-    }
-    if (st.wifi.empty()) {
-      texts_.push_back({pad, y, inner, S(20), [] { return std::string(_("Searching for networks...")); }, 2});
-      y += S(24);
-    }
-  }
-  if (st.network.available && !find_program("nm-connection-editor").empty()) {
-    auto *more = new FlatButton(pad, y + S(4), inner, S(32), _("Network Connections..."));
-    more->callback([](Fl_Widget *w, void *) {
-      static_cast<QuickSettings *>(w->window())->close();
-      spawn_detached({"nm-connection-editor"});
-    });
-    y += S(40);
-  }
-  y += S(8);
-
-  // ---- sound
-  separators_.push_back(y);
-  y += S(12);
-  texts_.push_back({pad, y, inner, S(22), [] { return std::string(_("Sound")); }, 1});
-  y += S(26);
-  if (st.audio.available) {
-    int bh = S(36);
-    auto *mute = new DrawnButton(
-        pad, y, bh, bh,
-        [pad, y, bh, &t](Painter &p, bool hover, bool) {
-          const AudioState &a = SystemStatus::get().audio;
-          p.fill_rounded(pad, y, bh, bh, bh / 2.0, a.muted ? t.accent : (hover ? t.hover : t.surface_alt));
-          int level = a.volume == 0 ? 0 : a.volume < 34 ? 1 : a.volume < 67 ? 2 : 3;
-          glyph::speaker(p, pad + Sd(8), y + Sd(8), bh - Sd(16), level, a.muted, a.muted ? t.on_accent : t.text);
+  if (network_expanded_) {
+    int cy = y;
+    auto *card = new ActionCard(pad, y, inner);
+    y += S(10);
+    new ActionLabel(
+        pad + S(10), y, inner - S(20), S(22),
+        [] {
+          const auto &s = SystemStatus::get();
+          if (!s.message.empty()) return s.message;
+          return s.network.available
+                     ? (s.network.connection.empty() ? std::string(_("Not connected")) : s.network.connection)
+                     : std::string(_("Network service is not running"));
         },
-        nullptr, bh / 2.0);
-    mute->tooltip(_("Mute"));
-    mute->callback([](Fl_Widget *, void *) { SystemStatus::get().toggle_mute(); });
-    volume_ = new Slider(pad + bh + S(10), y, inner - bh - S(64), bh);
+        2);
+    y += S(28);
+    if (s.network.available && s.network.has_wifi) {
+      new ActionButton(
+          pad + S(8), y, inner - S(16), S(36),
+          s.network.wifi_enabled ? _("Turn Wi-Fi Off") : _("Turn Wi-Fi On"),
+          [](Painter &p, double x, double y, double z, const Color &c) { glyph::wifi(p, x, y, z, 4, c); },
+          [] {
+            auto &s = SystemStatus::get();
+            s.set_wifi_enabled(!s.network.wifi_enabled);
+          },
+          nullptr, -1, true);
+      y += S(42);
+      if (s.network.wifi_enabled) {
+        int count = 0;
+        for (const auto &network : s.wifi) {
+          if (++count > 8) break;
+          new ActionButton(
+              pad + S(8), y, inner - S(16), S(36), network.ssid,
+              [network](Painter &p, double x, double y, double z, const Color &c) {
+                glyph::wifi(p, x, y, z, std::max(1, network.signal / 25), c);
+              },
+              [network] {
+                if (!network.active) SystemStatus::get().connect_wifi(network);
+              },
+              [network] { return network.active; }, -1, true);
+          y += S(40);
+        }
+      }
+    }
+    if (!find_program("nm-connection-editor").empty()) {
+      new ActionButton(
+          pad + S(8), y, inner - S(16), S(36), _("Network Connections..."), gear_icon(),
+          [launch] { launch({"nm-connection-editor"}); }, nullptr, -1, true);
+      y += S(42);
+    }
+    card->size(inner, y - cy + S(6));
+    card->end();
+    y += S(16);
+  }
+
+  int cy = y;
+  auto *sound = new ActionCard(pad, y, inner);
+  y += S(10);
+  new ActionLabel(pad + S(12), y, inner - S(24), S(22), [] { return std::string(_("Sound")); }, 1);
+  y += S(28);
+  if (s.audio.available) {
+    new ActionButton(
+        pad + S(8), y, S(38), S(36), "",
+        [](Painter &p, double x, double y, double z, const Color &c) {
+          const auto &a = SystemStatus::get().audio;
+          glyph::speaker(p, x, y, z, 3, a.muted, c);
+        },
+        [] { SystemStatus::get().toggle_mute(); }, [] { return SystemStatus::get().audio.muted; }, -1, true);
+    volume_ = new Slider(pad + S(54), y, inner - S(116), S(36));
     volume_->bounds(0, 100);
-    volume_->value(st.audio.volume);
+    volume_->value(s.audio.volume);
+    volume_->tooltip(_("Volume"));
     volume_->callback([](Fl_Widget *w, void *) {
       SystemStatus::get().set_volume(int(static_cast<Fl_Slider *>(w)->value()));
       w->window()->redraw();
     });
-    texts_.push_back({pad + inner - S(48), y, S(48), bh,
-                      [] { return std::to_string(SystemStatus::get().audio.volume) + "%"; }, 3});
-    y += bh + S(8);
-    if (st.audio.sinks.size() > 1) {
-      sinks_ = new Fl_Choice(pad, y, inner, S(32));
-      sinks_->box(FL_FLAT_BOX);
-      sinks_->down_box(FL_FLAT_BOX);
-      sinks_->color(t.surface_alt.fl());
-      sinks_->textsize(t.font_size);
+    new ActionLabel(pad + inner - S(54), y, S(48), S(36),
+                    [] { return std::to_string(SystemStatus::get().audio.volume) + "%"; });
+    y += S(42);
+    if (!s.audio.sinks.empty()) {
+      sinks_ = new Fl_Choice(pad + S(12), y, inner - S(24), S(30));
+      sinks_->color(t.surface.fl());
       sinks_->textcolor(t.text.fl());
-      for (size_t i = 0; i < st.audio.sinks.size(); ++i) {
-        std::string label;
-        for (char c : st.audio.sinks[i].second) {
-          if (c == '/' || c == '&' || c == '_' || c == '\\') label += '\\';
-          label += c;
+      sinks_->textsize(t.font_size);
+      sinks_->box(FL_FLAT_BOX);
+      for (size_t i = 0; i < s.audio.sinks.size(); ++i) {
+        std::string name;
+        for (char c : s.audio.sinks[i].second) {
+          if (c == '/' || c == '&' || c == '_' || c == '\\') name += '\\';
+          name += c;
         }
-        sinks_->add(label.c_str());
-        if (st.audio.sinks[i].first == st.audio.default_sink) sinks_->value(int(i));
+        sinks_->add(name.c_str());
+        if (s.audio.sinks[i].first == s.audio.default_sink) sinks_->value(int(i));
       }
       sinks_->tooltip(_("Output device"));
       sinks_->callback([](Fl_Widget *w, void *) {
-        int v = static_cast<Fl_Choice *>(w)->value();
-        const auto &sinks = SystemStatus::get().audio.sinks;
-        if (v >= 0 && v < int(sinks.size())) SystemStatus::get().set_default_sink(sinks[size_t(v)].first);
+        int i = static_cast<Fl_Choice *>(w)->value();
+        const auto &s = SystemStatus::get().audio.sinks;
+        if (i >= 0 && i < int(s.size())) SystemStatus::get().set_default_sink(s[size_t(i)].first);
       });
-      y += S(40);
+      y += S(38);
     }
   } else {
-    texts_.push_back({pad, y, inner, S(20), [] { return std::string(_("Sound service is not running")); }, 2});
-    y += S(26);
+    new ActionLabel(
+        pad + S(12), y, inner - S(24), S(26), [] { return std::string(_("Sound service is not running")); },
+        2);
+    y += S(28);
   }
-  y += S(4);
+  sound->size(inner, y - cy + S(6));
+  sound->end();
+  y += S(16);
 
-  // ---- brightness
-  if (st.brightness.available) {
-    separators_.push_back(y);
-    y += S(12);
-    texts_.push_back({pad, y, inner, S(22), [] { return std::string(_("Brightness")); }, 1});
-    y += S(26);
-    int bh = S(36);
-    new DrawnButton(pad, y, bh, bh, [pad, y, bh, &t](Painter &p, bool, bool) {
-      glyph::sun(p, pad + Sd(7), y + Sd(7), bh - Sd(14), t.text);
-    });
-    child(children() - 1)->clear_visible_focus();
-    brightness_ = new Slider(pad + bh + S(10), y, inner - bh - S(64), bh);
+  if (s.brightness.available) {
+    int cy = y;
+    auto *card = new ActionCard(pad, y, inner);
+    y += S(10);
+    new ActionLabel(pad + S(12), y, inner - S(24), S(22), [] { return std::string(_("Brightness")); }, 1);
+    y += S(24);
+    brightness_ = new Slider(pad + S(14), y, inner - S(80), S(36));
     brightness_->bounds(1, 100);
-    brightness_->value(st.brightness.percent());
+    brightness_->value(s.brightness.percent());
+    brightness_->tooltip(_("Brightness"));
     brightness_->callback([](Fl_Widget *w, void *) {
       SystemStatus::get().set_brightness(int(static_cast<Fl_Slider *>(w)->value()));
       w->window()->redraw();
     });
-    texts_.push_back({pad + inner - S(48), y, S(48), bh,
-                      [] { return std::to_string(SystemStatus::get().brightness.percent()) + "%"; }, 3});
-    y += bh + S(12);
+    new ActionLabel(pad + inner - S(54), y, S(48), S(36),
+                    [] { return std::to_string(SystemStatus::get().brightness.percent()) + "%"; });
+    y += S(42);
+    card->size(inner, y - cy + S(6));
+    card->end();
+    y += S(16);
   }
-
-  // ---- battery
-  if (st.battery.present) {
-    separators_.push_back(y);
-    y += S(12);
-    int bh = S(30);
-    auto *icon = new DrawnButton(pad, y, bh, bh, [pad, y, bh, &t](Painter &p, bool, bool) {
-      const BatteryState &b = SystemStatus::get().battery;
-      Color level = b.percent <= 15 && !b.charging ? Color::hex(0xD64545) : t.text;
-      if (b.charging) level = Color::hex(0x2E9E5B);
-      glyph::battery(p, pad, y, bh, b.percent, b.charging, t.text, level);
-    });
-    icon->clear_visible_focus();
-    texts_.push_back({pad + bh + S(10), y, inner - bh - S(10), bh,
-                      [] {
-                        const BatteryState &b = SystemStatus::get().battery;
-                        std::string s = std::to_string(b.percent) + "%";
-                        if (b.full) s += " · " + std::string(_("Fully charged"));
-                        else if (b.charging) s += " · " + std::string(_("Charging"));
-                        if (b.minutes > 0 && !b.full) {
-                          std::string left = format(_("%d h %02d min"), b.minutes / 60, b.minutes % 60);
-                          s += " · " + format(b.charging ? _("%s until full") : _("%s left"), left.c_str());
-                        }
-                        return s;
-                      },
-                      0});
-    y += bh + S(12);
+  if (s.battery.present) {
+    new ActionLabel(
+        pad, y, inner, S(24),
+        [] {
+          const auto &b = SystemStatus::get().battery;
+          return std::to_string(b.percent) + "% · " +
+                 (b.charging ? _("Charging")
+                  : b.full   ? _("Fully charged")
+                             : _("On battery"));
+        },
+        2);
+    y += S(30);
   }
-
-  // ---- footer
-  separators_.push_back(y);
-  y += S(12);
-  int fb = S(38);
+  content_height_ = y + S(8);
+  new Fl_Box(pad, y, inner, S(8));
+  body_->end();
+  int H = std::min(available, content_height_ + footer + S(4));
+  body_->size(W - S(4), H - footer - S(4));
+  begin();
+  int fy = H - footer + S(10), fb = S(40);
+  new ActionLabel(pad, fy, W - 3 * fb - S(58), fb, [] { return user_name(); }, 2);
   struct Foot {
-    const char *tip;
-    std::function<void(Painter &, double, double, double, const Color &)> icon;
+    std::string title;
+    IconFn icon;
     std::vector<std::string> cmd;
   };
   std::vector<Foot> foot = {
-      {_("Settings"), [](Painter &p, double x, double yy, double s, const Color &c) { glyph::gear(p, x, yy, s, c); },
-       {"sde-settings"}},
-      {_("Lock Screen"), [](Painter &p, double x, double yy, double s, const Color &c) { glyph::lock(p, x, yy, s, c); },
+      {_("Settings"), gear_icon(), {"sde-settings", "--page", "action-center"}},
+      {_("Lock Screen"),
+       [](Painter &p, double x, double y, double z, const Color &c) { glyph::lock(p, x, y, z, c); },
        {"xdg-screensaver", "lock"}},
       {_("Power Off / Log Out"),
-       [](Painter &p, double x, double yy, double s, const Color &c) { glyph::power(p, x, yy, s, c); },
+       [](Painter &p, double x, double y, double z, const Color &c) { glyph::power(p, x, y, z, c); },
        {"sde-logout"}},
   };
   for (size_t i = 0; i < foot.size(); ++i) {
-    int bx = pad + inner - int(foot.size() - i) * (fb + S(8)) + S(8);
-    Foot f = foot[i];
-    auto *b = new DrawnButton(
-        bx, y, fb, fb,
-        [f, bx, y, fb, &t](Painter &p, bool hover, bool) {
-          p.fill_rounded(bx, y, fb, fb, fb / 2.0, hover ? t.hover : t.surface_alt);
-          f.icon(p, bx + Sd(10), y + Sd(10), fb - Sd(20), t.text);
-        },
-        nullptr, fb / 2.0);
-    b->tooltip(f.tip);
-    b->callback(
-        [](Fl_Widget *w, void *d) {
-          auto *cmd = static_cast<std::vector<std::string> *>(d);
-          static_cast<QuickSettings *>(w->window())->close();
-          spawn_detached(*cmd);
-        },
-        keep(new std::vector<std::string>(f.cmd)));
+    auto f = foot[i];
+    auto *b = new ActionButton(
+        W - pad - int(foot.size() - i) * (fb + S(6)), fy, fb, fb, "", f.icon, [launch, f] { launch(f.cmd); },
+        nullptr, -1, true);
+    b->copy_tooltip(f.title.c_str());
   }
-  texts_.push_back({pad, y, inner - 3 * (fb + S(8)), fb, [] { return std::string("SDE " SDE_VERSION_LABEL); }, 2});
-  y += fb + pad;
   end();
-  size(W, y);
+  resizable(nullptr);
+  init_sizes();
+  size(W, H);
   redraw();
 }
 
 void QuickSettings::draw() {
-  const Theme &t = Panel::instance->theme();
+  const auto &t = Panel::instance->theme();
   {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), t.surface);
-    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
-    for (int y : separators_) p.line(S(16), y + 0.5, w() - S(16), y + 0.5, t.border);
+    p.stroke_rounded(0, 0, w(), h(), 0, t.border);
+    p.line(S(16), h() - S(62), w() - S(16), h() - S(62), t.border);
   }
   draw_children();
-  for (auto &tx : texts_) {
-    text_font(tx.style == 1 ? t.font_size + 1 : t.font_size, tx.style == 1);
-    draw_text(tx.text(), tx.x, tx.y, tx.w, tx.h, tx.style == 2 ? t.text_dim : t.text, tx.style == 3 ? 2 : 0);
-  }
 }
 
-int QuickSettings::handle(int event) {
-  int r = PanelPopup::handle(event);
-  if (event == FL_RELEASE && rebuild_pending_) Fl::add_timeout(0, [](void *d) {
-      static_cast<QuickSettings *>(d)->status_changed();
-    }, this);
-  return r;
-}
+int QuickSettings::handle(int event) { return PanelPopup::handle(event); }

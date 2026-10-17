@@ -1,3 +1,12 @@
+sde (0.1.0~alpha4) unstable; urgency=medium
+
+  * Adapt panel, Action Center and settings design patterns from Eduka-Desktop.
+  * Add full/floating/short panels with Rust geometry and live previews.
+  * Add digital/analog clocks, quick-control tiles and a scrolling Action Center.
+  * Add settings overview, grouped categories and Action Center preferences.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sat, 17 Oct 2026 13:29:34 +0000
+
 sde (0.1.0~alpha3) unstable; urgency=medium
 
   * Start Rust migration: shared configuration core and native sde-autostart.

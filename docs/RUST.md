@@ -4,6 +4,10 @@ The first milestone moves configuration used by every SDE component into Rust
 and replaces the session's XDG autostart loop with a native Rust executable.
 The graphical programs and session supervisor still use C++17.
 
+Alpha4 also moves panel placement, sizing and edge reservation into the safe Rust
+core. The private ABI returns a C-compatible geometry structure to the native panel.
+Tests cover full/floating/short styles, screen offsets, small screens and auto-hide.
+
 ## Workspace
 
 | Crate | Output | Responsibility |

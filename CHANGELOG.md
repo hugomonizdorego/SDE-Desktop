@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.0~alpha4 (0.1 Alpha) - 2026-10-17
+
+### Added
+- Eduka-inspired full, floating and short panel styles, live previews and width control.
+- Panel geometry implemented in safe Rust, with monitor bounds/strut tests.
+- Action Center: clock card (digital/analog), greeting, six quick controls, optional
+  colorful tiles, expandable Wi-Fi connections, sound/brightness cards and a fixed
+  session footer. Content scrolls on small screens and at larger interface scales.
+- Settings overview with category cards, grouped navigation and an Action Center page.
+- `sde-panel --action-center` (the existing `--quick-settings` option remains an alias).
+
+### Changed
+- The panel clock now opens the Action Center; Super+C and the Calendar tile open
+  the existing month calendar. The status area remains reachable on short panels.
+- Floating panel corners use XShape and do not require a compositor.
+- The Rust configuration core remains in use throughout the desktop.
+
 ## 0.1.0~alpha3 (0.1 Alpha) - 2026-10-17
 
 ### Added

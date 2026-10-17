@@ -5,6 +5,26 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn sde_panel_geometry(
+    mx: i32,
+    my: i32,
+    mw: i32,
+    mh: i32,
+    height: i32,
+    top: bool,
+    style: i32,
+    percent: i32,
+    gap: i32,
+    minimum: i32,
+    hidden: bool,
+) -> sde_core::layout::PanelGeometry {
+    sde_core::layout::panel_geometry(
+        mx, my, mw, mh, height, top, style, percent, gap, minimum, hidden,
+    )
+}
+
 unsafe fn text<'a>(ptr: *const c_char) -> &'a str {
     if ptr.is_null() {
         ""
