@@ -28,6 +28,8 @@ class BrandingTest(unittest.TestCase):
     def test_gtk_geometry_api_is_never_rebranded(self):
         self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
                          'gtk_window_set_geometry_hints(sdeview_window, geometry);')
+        self.assertEqual(forks.brand('-DEOM_DATA_DIR=path mate_power_preferences_SOURCES'),
+                         '-DSDEVIEW_DATA_DIR=path sde_power_preferences_SOURCES')
 
     def test_copyright_licenses_and_source_links_are_preserved(self):
         source = '/* Copyright (C) 2012 Pluma MATE authors. GPLv2+ */\nconst char *url = "https://github.com/mate-desktop/pluma";\n'

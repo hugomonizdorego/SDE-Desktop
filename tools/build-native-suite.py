@@ -116,7 +116,10 @@ def main():
     for relative in [args.prefix.lstrip("/") + "/share/applications", args.sysconfdir.lstrip("/") + "/xdg/autostart"]:
         path = args.stage / relative
         if path.exists():
-            shutil.rmtree(path)
+            # Keep screensaver theme descriptors in applications/screensavers;
+            # only top-level launchers/autostarts are replaced by SDE entries.
+            for desktop in path.glob("*.desktop"):
+                desktop.unlink()
     for elf in args.stage.rglob("*"):
         if not elf.is_file() or elf.is_symlink():
             continue
