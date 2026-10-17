@@ -5,7 +5,7 @@ set -eu
 apt-get install -y --no-install-recommends \
     autoconf automake autoconf-archive libtool libtool-bin autopoint intltool mate-common \
     gtk-doc-tools yelp-tools xsltproc docbook-xsl docbook-xml gobject-introspection \
-    libgtk-3-dev libgtksourceview-4-dev libmate-desktop-dev libpeas-dev \
+    libgtk-3-dev libgail-3-dev libgtksourceview-4-dev libmate-desktop-dev libpeas-dev \
     libgtop2-dev libgtkmm-3.0-dev libwnck-3-dev libxml2-dev libexif-dev \
     libexempi-dev libsecret-1-dev libpoppler-glib-dev libspectre-dev \
     libdjvulibre-dev libtiff-dev libarchive-dev libjson-glib-dev \
