@@ -19,6 +19,12 @@ class BrandingTest(unittest.TestCase):
         expected = source.replace('CAJA_', 'LIRIA_')
         self.assertEqual(forks.brand(source), expected)
 
+    def test_generated_enum_templates_and_nested_comments(self):
+        self.assertEqual(forks.brand('#define PLUMA_TYPE_@ENUMSHORT@ (@enum_name@_get_type())'),
+                         '#define NINY_TYPE_@ENUMSHORT@ (@enum_name@_get_type())')
+        source = '#include "caja.h"\n/* background */\nchar *c = "Copyright Caja authors";\n# source: https://github.com/mate-desktop/caja\n'
+        self.assertEqual(forks.brand(source), source.replace('"caja.h"', '"liria.h"'))
+
     def test_gtk_geometry_api_is_never_rebranded(self):
         self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
                          'gtk_window_set_geometry_hints(sdeview_window, geometry);')
