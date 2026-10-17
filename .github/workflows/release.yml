@@ -23,18 +23,16 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { image: "debian:12", name: debian12, suffix: deb12 }
-          - { image: "debian:13", name: debian13, suffix: deb13 }
           - { image: "debian:testing", name: debian-testing, suffix: debtesting }
-          - { image: "ubuntu:22.04", name: ubuntu22.04, suffix: ubuntu22.04 }
-          - { image: "ubuntu:24.04", name: ubuntu24.04, suffix: ubuntu24.04 }
     container: ${{ matrix.image }}
     steps:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - name: Install build dependencies
-        run: sh tools/install-deps.sh
+        run: |
+          sh tools/install-deps.sh
+          sh tools/install-native-deps.sh
       - name: Build package
         run: sh tools/build-deb.sh --suffix ${{ matrix.suffix }} dist
       - name: Install and smoke test
@@ -52,10 +50,11 @@ jobs:
           mkdir -p out
           cp dist/sde_*_amd64.deb "out/sde_${version}_${{ matrix.name }}_amd64.deb"
           cp dist/sde-desktop_*_all.deb "out/sde-desktop_${version}_${{ matrix.name }}_all.deb"
+          cp dist/*sources*.tar.xz out/
       - uses: actions/upload-artifact@v4
         with:
           name: deb-${{ matrix.name }}
-          path: out/*.deb
+          path: out/*
 
   release:
     needs: build
@@ -70,7 +69,7 @@ jobs:
       - name: Checksums and release notes
         run: |
           cd artifacts
-          sha256sum *.deb > SHA256SUMS
+          sha256sum *.deb *.tar.xz > SHA256SUMS
           cat SHA256SUMS
           cd ..
           # The newest section of CHANGELOG.md.
@@ -95,6 +94,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          gh release create "$TAG" artifacts/*.deb artifacts/SHA256SUMS \
+          gh release create "$TAG" artifacts/*.deb artifacts/*.tar.xz artifacts/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "SDE $TAG" --notes-file notes.md --prerelease

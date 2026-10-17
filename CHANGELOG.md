@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0 Alpha 6 — native DebION suite
+
+- Build Niny, Liria, Xanara, Taca, SDE View, System Monitor, Power Manager and
+  Screen Lock from pinned source as native SDE executables in one `sde` package.
+- Remove original MATE application package dependencies; retain shared libraries.
+- Rename application namespaces, schemas, resources and Liria's extension API;
+  preserve all upstream legal notices and publish matching complete sources.
+- Keep SDE desktop ownership, GTK theme integration, MIME defaults and the
+  full-edge square panel; target the complete suite at Debian testing.
+
 ## 0.1.0~alpha5 (0.1 Alpha) - 2026-10-17
 
 - Default to a full-edge square panel and rectangular launcher/status controls.

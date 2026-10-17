@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-if command -v mate-screensaver-command >/dev/null 2>&1; then
-    exec mate-screensaver-command --lock
+if command -v sde-screensaver-command >/dev/null 2>&1; then
+    exec sde-screensaver-command --lock
 fi
 exec xdg-screensaver lock

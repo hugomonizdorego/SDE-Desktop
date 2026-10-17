@@ -57,12 +57,12 @@ fn command(app: &[&str], args: &[OsString]) -> (String, Vec<OsString>) {
     let mut out: Vec<OsString> = base.map(OsString::from).collect();
     if app[0] == "sde-power-manager" {
         if args.first().map(|a| a == "--daemon").unwrap_or(false) {
-            program = "mate-power-manager".into();
+            program = "sde-power-manager".into();
             out.extend_from_slice(&args[1..]);
             return (program, out);
         }
         if args.first().map(|a| a == "--statistics").unwrap_or(false) {
-            program = "mate-power-statistics".into();
+            program = "sde-power-statistics".into();
             out.extend_from_slice(&args[1..]);
             return (program, out);
         }
@@ -186,7 +186,7 @@ mod tests {
     fn registry_is_unique_and_complete() {
         let rows: Vec<_> = apps().collect();
         let mut ids = std::collections::BTreeSet::new();
-        assert_eq!(rows.len(), 8);
+        assert_eq!(rows.len(), 9);
         for row in rows {
             assert_eq!(row.len(), 9);
             assert!(ids.insert(row[0]));
@@ -202,7 +202,7 @@ mod tests {
             OsString::from("file:///tmp/b"),
         ];
         let (program, args) = command(&app, &files);
-        assert_eq!(program, "caja");
+        assert_eq!(program, "liria");
         assert_eq!(args[0], "--no-desktop");
         assert_eq!(args[1..], files);
     }
@@ -210,11 +210,11 @@ mod tests {
     #[test]
     fn power_service_and_preferences_are_separate() {
         let app = apps().find(|a| a[0] == "sde-power-manager").unwrap();
-        assert_eq!(command(&app, &[]).0, "mate-power-preferences");
-        assert_eq!(command(&app, &["--daemon".into()]).0, "mate-power-manager");
+        assert_eq!(command(&app, &[]).0, "sde-power-preferences");
+        assert_eq!(command(&app, &["--daemon".into()]).0, "sde-power-manager");
         assert_eq!(
             command(&app, &["--statistics".into()]).0,
-            "mate-power-statistics"
+            "sde-power-statistics"
         );
     }
 }

@@ -15,36 +15,41 @@ and full license are preserved in `data/update/COPYRIGHT` and `COPYING`, install
 under `/usr/share/sde/update`. The installed package's copyright records this
 adaptation separately. No Mint artwork or trademarks are rebranded.
 
-## Engines installed as package dependencies
+## Native application forks
 
-Their source code is not copied into SDE's GPLv3 shell or relicensed. Debian
-installs the maintained binaries and full historical copyright/license records.
-Each source includes GNOME/MATE and other historical contributors; the abbreviated
-credits here do not replace the complete per-file notices.
+Eight application source trees are prepared and compiled by SDE. Exact upstream
+versions and commits are recorded in `suite/forks.lock.json`. No upstream
+copyright ownership is replaced by an SDE name. The original COPYING, AUTHORS,
+COPYRIGHT, ChangeLog and trademark notices are preserved, as are copyright
+comments in transformed source. Installed combined notices include original
+copyright headers and full top-level licenses. Complete corresponding sources
+and submodules are published with the binaries.
 
-| SDE integration | Source | Copyright ownership | Full installed notices |
+| SDE fork | Source | Historical authors | Installed notice directory |
 | --- | --- | --- | --- |
-| Niny | [pluma](https://github.com/mate-desktop/pluma) | Pluma/gedit authors and MATE contributors | `/usr/share/doc/pluma/copyright` |
-| Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus authors, Eazel, GNOME and MATE contributors | `/usr/share/doc/caja/copyright` |
-| Xanara | [atril](https://github.com/mate-desktop/atril) | Atril/Evince authors and MATE contributors | `/usr/share/doc/atril/copyright` |
-| Taca | [engrampa](https://github.com/mate-desktop/engrampa) | Engrampa/File Roller authors and MATE contributors | `/usr/share/doc/engrampa/copyright` |
-| SDE System Monitor | [mate-system-monitor](https://github.com/mate-desktop/mate-system-monitor) | GNOME System Monitor authors and MATE contributors | `/usr/share/doc/mate-system-monitor/copyright` |
-| SDE Power Manager | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) | GNOME Power Manager authors and MATE contributors | `/usr/share/doc/mate-power-manager/copyright` |
-| SDE View | [eom](https://github.com/mate-desktop/eom) | Eye of GNOME authors and MATE contributors | `/usr/share/doc/eom/copyright` |
-| Screen lock | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) | GNOME Screensaver authors and MATE contributors | `/usr/share/doc/mate-screensaver/copyright` |
-| Update transactions | [PackageKit](https://github.com/PackageKit/PackageKit) | PackageKit authors and contributors | `/usr/share/doc/packagekit/copyright` |
+| Niny | [pluma](https://github.com/mate-desktop/pluma) | Pluma/gedit and MATE contributors | `sde/upstream/pluma` |
+| Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus, Eazel, GNOME and MATE contributors | `sde/upstream/caja` |
+| Xanara | [atril](https://github.com/mate-desktop/atril) | Atril/Evince and MATE contributors | `sde/upstream/atril` |
+| Taca | [engrampa](https://github.com/mate-desktop/engrampa) | Engrampa/File Roller and MATE contributors | `sde/upstream/engrampa` |
+| SDE View | [eom](https://github.com/mate-desktop/eom) | Eye of GNOME and MATE contributors | `sde/upstream/eom` |
+| SDE System Monitor | [mate-system-monitor](https://github.com/mate-desktop/mate-system-monitor) | GNOME System Monitor and MATE contributors | `sde/upstream/mate-system-monitor` |
+| SDE Power Manager | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) | GNOME Power Manager and MATE contributors | `sde/upstream/mate-power-manager` |
+| SDE Screen Lock | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) | GNOME Screensaver and MATE contributors | `sde/upstream/mate-screensaver` |
 
-The MATE applications principally use GPL-2.0-or-later; individual libraries,
-documentation, translations and bundled files can have LGPL, permissive or other
-licenses. Use the complete notices for the exact installed version. Caja's
-upstream `TRADEMARK_NOTICE` also remains part of the source workspace. No upstream
-copyright claim is replaced by the SDE integration names.
+Directories in the last column are relative to `/usr/share/doc`; each contains
+`copyright` and the retained license files. These projects principally use
+GPL-2.0-or-later. Individual libraries, translations, documentation and bundled
+files retain their own LGPL, permissive or other licenses; the full source is
+authoritative. Application rebranding is not a relicensing of those files.
+SDE-specific theme glue is GPL-2.0-or-later; the shell's GPLv3 license remains
+separate. Shared distribution libraries and PackageKit are dependencies with
+their own distribution copyright notices.
 
 ## Design and development references
 
 - [Eduka-Desktop](https://github.com/hugomonizdorego/Eduka-Desktop) — Hugo Moniz do
   Rego and Eduka contributors; source mapping in [EDUKA-DESIGN.md](EDUKA-DESIGN.md).
-- [MATE](https://github.com/mate-desktop) — maintained GTK application engines.
+- [MATE](https://github.com/mate-desktop) — upstream GTK application sources.
 - [LXQt](https://github.com/lxqt) — lightweight desktop development reference;
   pinned `lxqt-session` source, no copied implementation in this release.
 - [budgie-desktop](https://github.com/buddiesofbudgie/budgie-desktop) — Buddies of

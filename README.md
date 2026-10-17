@@ -2,7 +2,7 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 5** (`0.1.0~alpha5`) · October 2026 · GPL-3.0-or-later
+Development version **0.1 Alpha 6** (`0.1.0~alpha6`) · October 2026 · GPL-3.0-or-later
 
 ![SDE Alpha 5 with a full-edge square panel and integrated suite](docs/screenshots/suite/07-settings-suite.png)
 
@@ -11,7 +11,7 @@ interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and **Openbox** a
 window manager. It is the successor of the EDE idea: small and quick. Migration
 to Rust is underway; the panel, desktop and settings interface remain C++.
 The earlier alpha2 session measured about **22 MB of private memory**; alpha3
-and the complete alpha5 suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
+and the complete alpha6 suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 
 > **Alpha software.** 0.1 is the first series of SDE builds. It is meant for testing
 > and development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
@@ -29,7 +29,7 @@ and the complete alpha5 suite have not yet been profiled. See the [Rust migratio
 | `sde-settings` | Overview with settings cards; grouped Personalization/System navigation; appearance, panel previews, Action Center, desktop, notifications, displays, keyboard & mouse, about |
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
-| `sde-suite` | Native Rust application dispatch, theme integration, source/copyright and dependency diagnostics |
+| `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
 | `sde-update` | Native update preview; authenticated Debian PackageKit transactions |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
@@ -44,11 +44,14 @@ and **SDE Update**. Settings → SDE Suite provides short clickable source links
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
 
-This alpha integrates Debian's maintained MATE application engines under SDE
-launcher names; upstream windows and plugins retain their identity. SDE Update
-has a native interface, an attributed Mint Update model and Debian PackageKit
-transactions. Independent app forks are future development work. See the
-[suite and installation guide](docs/SUITE.md) and [source credits](docs/THIRD-PARTY.md).
+Alpha6 builds the GTK applications from pinned source as native SDE forks.
+`niny`, `liria`, `xanara`, `taca` and the other suite executables are included in
+one `sde` package with their resources and preserved copyrights. The original
+MATE application packages are not installed. Shared GTK/MATE libraries remain
+normal dependencies. SDE Update has a native interface, an attributed Mint Update
+model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
+and [source credits](docs/THIRD-PARTY.md). The screenshot above records alpha5;
+new native captures are uploaded by CI.
 
 `sudo apt install sde-desktop` is the single entry point when the two SDE packages
 are available in the DebION repository. The metapackage installs the session,
@@ -91,7 +94,7 @@ Wi-Fi).
 
 ## Install
 
-Primary target: **DebION GNU/Linux / Debian testing**. CI also checks Debian 12/13 and Ubuntu 22.04/24.04 (amd64).
+Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
 Download the package for your distribution from the
 [GitHub releases](https://github.com/hugomonizdorego/SDE-Desktop/releases), check it
@@ -106,7 +109,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test the alpha5 changes; a new binary release is not included here.
+test the alpha6 changes; a new binary release is not included here.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -116,13 +119,15 @@ test the alpha5 changes; a new binary release is not included here.
 ## Build from source
 
 ```sh
-sudo tools/install-deps.sh      # Rust/Cargo, C++ compiler, CMake and desktop libraries
+sudo sh tools/install-deps.sh
+sudo sh tools/install-native-deps.sh # native application build libraries
 tools/build-deb.sh              # writes sde and sde-desktop packages to dist/
 ```
 
 Or a plain CMake build for development:
 
 ```sh
+python3 tools/prepare-native-suite.py
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build -j"$(nproc)"
 ctest --test-dir build          # unit tests, including WCAG contrast checks
@@ -179,4 +184,5 @@ not build or ship EDE code.
 ## License
 
 SDE is free software under the GNU General Public License, version 3 or later.
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). Bundled application forks retain their individual upstream
+licenses and historical copyright notices; see [source credits](docs/THIRD-PARTY.md).

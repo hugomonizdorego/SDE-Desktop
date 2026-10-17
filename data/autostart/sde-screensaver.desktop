@@ -2,7 +2,7 @@
 [Desktop Entry]
 Type=Application
 Name=SDE Screen Lock
-Exec=mate-screensaver
-TryExec=mate-screensaver
+Exec=sde-screensaver
+TryExec=sde-screensaver
 OnlyShowIn=SDE;
 NoDisplay=true

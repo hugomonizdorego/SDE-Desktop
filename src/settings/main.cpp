@@ -790,7 +790,7 @@ void build_suite(Page *page) {
   for (const auto &app : suite_apps()) {
     page->begin_card(app.name);
     page->row(_(app.role.c_str()), S(112), S(32), [&app](int x, int y, int w, int h) {
-      auto *button = action_button(x, y, w, h, _("Open"), {app.id}, true);
+      auto *button = action_button(x, y, w, h, _("Open"), split_command(app.command), true);
       if (find_program(split_command(app.command)[0]).empty()) button->deactivate();
       return button;
     });
@@ -813,11 +813,11 @@ void build_suite(Page *page) {
 void build_suite_system(Page *page) {
   page->heading(_("Power & Updates"), _("System tools included with SDE"));
   const std::vector<std::pair<std::string, std::vector<std::string>>> tools = {
-      {_("Power Preferences"), {"sde-power-manager"}},
-      {_("Battery History"), {"sde-power-manager", "--statistics"}},
+      {_("Power Preferences"), {"sde-power-preferences"}},
+      {_("Battery History"), {"sde-power-statistics"}},
       {_("System Monitor"), {"sde-system-monitor"}},
       {_("System Updates"), {"sde-update"}},
-      {_("Screen Lock Preferences"), {"mate-screensaver-preferences"}},
+      {_("Screen Lock Preferences"), {"sde-screensaver-preferences"}},
   };
   page->begin_card(_("System"));
   for (auto &tool : tools) {

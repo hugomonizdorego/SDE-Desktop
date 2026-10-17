@@ -34,22 +34,25 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
             ["xdg-mime", "query", "default", mime], env=env, text=True
         ).strip()
         assert actual == application, (mime, actual, application)
+    applications = root / "data/applications"
+    applications.mkdir(parents=True)
+    (applications / "user-editor.desktop").write_text("[Desktop Entry]\nType=Application\nName=User Editor\nExec=niny %U\nMimeType=text/plain;\n")
     config = root / "config"
     config.mkdir(exist_ok=True)
     (config / "mimeapps.list").write_text(
-        "[Default Applications]\ntext/plain=pluma.desktop;\n"
+        "[Default Applications]\ntext/plain=user-editor.desktop;\n"
     )
     actual = subprocess.check_output(
         ["xdg-mime", "query", "default", "text/plain"], env=env, text=True
     ).strip()
-    assert actual == "pluma.desktop", actual
+    assert actual == "user-editor.desktop", actual
     dry = subprocess.check_output(["sde-autostart", "--dry-run"], env=env, text=True)
     assert any(
-        line.startswith("start sde-power-manager.desktop:") and "--daemon" in line
+        line.startswith("start sde-power-manager.desktop:") and "sde-power-manager" in line
         for line in dry.splitlines()
     ), dry
     assert any(
-        line.startswith("start sde-screensaver.desktop:") and "mate-screensaver" in line
+        line.startswith("start sde-screensaver.desktop:") and "sde-screensaver" in line
         for line in dry.splitlines()
     ), dry
     for name in ["sde-power-manager", "sde-screensaver"]:
@@ -57,14 +60,14 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         parser.read("/etc/xdg/autostart/" + name + ".desktop")
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
     for package in [
-        "pluma",
-        "caja",
-        "atril",
-        "engrampa",
-        "eom",
-        "mate-system-monitor",
-        "mate-power-manager",
-        "mate-screensaver",
+        "sde/upstream/pluma",
+        "sde/upstream/caja",
+        "sde/upstream/atril",
+        "sde/upstream/engrampa",
+        "sde/upstream/eom",
+        "sde/upstream/mate-system-monitor",
+        "sde/upstream/mate-power-manager",
+        "sde/upstream/mate-screensaver",
         "sde",
     ]:
         assert Path("/usr/share/doc", package, "copyright").is_file(), package

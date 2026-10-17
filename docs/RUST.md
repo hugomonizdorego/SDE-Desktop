@@ -107,13 +107,12 @@ alpha2 memory measurement are not measurements of this new version.
    desktop and panel independently. Preserve tray, keyboard and accessibility
    behavior before replacing the corresponding C++ programs.
 
-## Alpha5 suite integration
+## Alpha6 native suite
 
-`rust/sde-suite` shares the Rust configuration core and compiles `data/suite.tsv`
-into a single small launcher. Alias symlinks share one binary. File and URI
-arguments remain OS arguments and never pass through a shell. Liria always adds
-Caja's `--no-desktop`; power preferences, statistics and daemon use distinct
-commands. GTK launches can follow SDE light/dark or preserve system/user themes.
-The MATE engines remain distribution packages; the native update UI stays C++
-and its attributed metadata model uses Python APT. No new idle launcher daemon
-or Cargo registry dependency is introduced.
+`rust/sde-suite` provides optional dispatch and source/copyright diagnostics from
+`data/suite.tsv`. Native app commands are independent ELF executables built from
+the pinned C/C++ GTK source forks, rather than symlinks to this helper. Their
+main programs apply the SDE GTK launch preference through `suite/sde-brand.h`.
+Liria defaults to no desktop ownership. Power preferences, statistics and daemon
+are separate native programs. SDE Update stays C++/FLTK with an attributed Python
+APT model. No new Cargo registry dependency or idle dispatcher daemon is added.

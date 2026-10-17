@@ -240,7 +240,7 @@ try:
             time.sleep(0.3)
             assert (
                 home / "opened-uri"
-            ).read_text().strip() == "/usr/share/doc/pluma/copyright"
+            ).read_text().strip() == "/usr/share/doc/sde/upstream/pluma/copyright"
         run(
             "xdotool",
             "mousemove",
@@ -389,12 +389,15 @@ try:
         ]:
             engine = spawn(app_name, str(file))
             native = find(title)
+            identity = run("xprop", "-id", native, "WM_CLASS").stdout.lower()
+            expected = app_name.replace("sde-view", "sdeview")
+            assert expected in identity.replace("sde-view", "sdeview"), (app_name, identity)
             shot("10-engine-" + app_name)
             run("xdotool", "windowclose", native, check=False)
             if engine.poll() is None:
                 engine.terminate()
         print(
-            "NINY, LIRIA, XANARA, TACA AND SDE VIEW REAL ENGINE WINDOWS PASS",
+            "SOURCE-BUILT NINY, LIRIA, XANARA, TACA AND SDE VIEW NATIVE WINDOWS PASS",
             flush=True,
         )
     if os.environ.get("SDE_UI_DEBUG"):

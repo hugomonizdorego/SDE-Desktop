@@ -31,9 +31,6 @@ add_dependencies(sde-rust-config sde-rust-build)
 target_link_libraries(sde-rust-config INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m rt util)
 install(PROGRAMS "${SDE_AUTOSTART_BIN}" DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS "${SDE_SUITE_BIN}" DESTINATION ${CMAKE_INSTALL_BINDIR})
-foreach(alias niny liria xanara taca sde-view sde-system-monitor sde-power-manager)
-  install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" -E create_symlink sde-suite \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_BINDIR}/${alias}\")")
-endforeach()
 
 # Shared with tests/CMakeLists.txt (sibling directory).
 set(SDE_CARGO_TARGET_DIR "${SDE_CARGO_TARGET_DIR}" PARENT_SCOPE)

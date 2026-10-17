@@ -7,7 +7,6 @@ text/x-log=niny.desktop;
 text/x-shellscript=niny.desktop;
 application/pdf=xanara.desktop;
 application/postscript=xanara.desktop;
-application/epub+zip=xanara.desktop;
 image/png=sde-view.desktop;
 image/jpeg=sde-view.desktop;
 image/gif=sde-view.desktop;

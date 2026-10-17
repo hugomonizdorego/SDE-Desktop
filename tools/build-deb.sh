@@ -27,7 +27,11 @@ command -v dpkg-buildpackage >/dev/null 2>&1 || {
     exit 1
 }
 
-echo "Building sde $VERSION"
+echo "Building sde $VERSION with native application forks"
+# Download/verify sources before dpkg-buildpackage. Native compilation itself
+# has no network access and never installs upstream application packages.
+python3 "$ROOT/tools/prepare-native-suite.py"
+
 # Build in a clean copy so the source tree stays untouched.
 mkdir -p "$WORK/sde-$VERSION"
 tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=target --exclude=obj-* --exclude=source-work --exclude=__pycache__ -cf - . |
@@ -44,8 +48,14 @@ fi
 (cd "$WORK/sde-$VERSION" && dpkg-buildpackage -us -uc -b)
 
 mkdir -p "$OUT"
+# Publish complete corresponding sources beside the binaries, including all
+# patched upstream trees, submodules, copyright notices and build scripts.
+tar -C "$WORK" --exclude='*/obj-*' --exclude='*/build' --exclude='*/target' \
+    --exclude='*/__pycache__' --exclude='*/debian/.debhelper' --exclude='*/debian/sde' \
+    --exclude='*/debian/sde-desktop' -cJf "$OUT/sde-native-sources_${VERSION}${SUFFIX:+-$SUFFIX}.tar.xz" "sde-$VERSION"
 cp "$WORK"/*.deb "$OUT"/
 cp "$WORK"/*.buildinfo "$WORK"/*.changes "$OUT"/ 2>/dev/null || true
+(cd "$OUT" && sha256sum ./*.deb ./*sources*.tar.xz > SHA256SUMS.sha256)
 echo
 echo "Packages written to $OUT:"
 ls -1 "$OUT"/*.deb

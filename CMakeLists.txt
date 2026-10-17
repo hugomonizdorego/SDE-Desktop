@@ -52,6 +52,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_
 configure_file(src/common/suite_data.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/suite_data.h @ONLY)
 
 add_subdirectory(rust)
+add_subdirectory(suite)
 add_subdirectory(src)
 add_subdirectory(po)
 
