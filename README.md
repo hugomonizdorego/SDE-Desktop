@@ -2,9 +2,9 @@
 
 **A small, fast and modern desktop environment for Debian and Ubuntu.**
 
-Development version **0.1 Alpha 3** (`0.1.0~alpha3`) · October 2026 · GPL-3.0-or-later
+Development version **0.1 Alpha 4** (`0.1.0~alpha4`) · October 2026 · GPL-3.0-or-later
 
-![SDE 0.1 Alpha with quick settings open](docs/screenshots/03-quick-settings.png)
+![SDE Alpha 4 with the Eduka-inspired Action Center](docs/screenshots/eduka/01-action-center-light.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and **Openbox** as its
@@ -23,10 +23,10 @@ has not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 | `startsde` | Session entry point used by display managers (`/usr/share/xsessions/sde.desktop`) |
 | `sde-session` | Session manager: starts Openbox, desktop, panel, notifications, polkit agent and XDG autostart; restarts crashed parts; shows a rescue dialog instead of a black screen; `--check` finds missing packages |
 | `sde-autostart` | Native Rust XDG autostart launcher; `--dry-run` explains which entries would start or be skipped |
-| `sde-panel` | Panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, quick settings, calendar, auto-hide |
+| `sde-panel` | Full, floating or short panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, Action Center, calendar, auto-hide |
 | `sde-notifyd` | Desktop notifications (`org.freedesktop.Notifications`) with action buttons and Do Not Disturb |
 | `sde-desktop` | Wallpaper and desktop icons, right-click menu (View, Sort by, Refresh, New, terminal, file manager) and keyboard shortcuts |
-| `sde-settings` | Appearance (light/dark, accent, interface size 100-200 %), panel, desktop, notifications, displays, keyboard & mouse, about |
+| `sde-settings` | Overview with settings cards; grouped Personalization/System navigation; appearance, panel previews, Action Center, desktop, notifications, displays, keyboard & mouse, about |
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 
@@ -34,7 +34,27 @@ has not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
 output device, systemd-logind for screen brightness and the kernel for the battery.
 
-## Screenshots
+## Eduka-inspired interface
+
+Alpha4 adapts selected design patterns from [Eduka-Desktop](https://github.com/hugomonizdorego/Eduka-Desktop):
+three panel shapes, a grouped status area, a clock card and quick-control grid in
+the Action Center, and a categorized settings center. The panel clock and Super+A
+open the Action Center; Super+C opens the calendar directly. See [the design
+notes](docs/EDUKA-DESIGN.md) for the source reference, screenshots and settings.
+
+## Alpha4 screenshots
+
+| Settings overview | Panel styles |
+| --- | --- |
+| ![Settings overview](docs/screenshots/eduka/02-settings-overview.png) | ![Panel styles](docs/screenshots/eduka/03-settings-panel.png) |
+
+![Short panel and analog clock in dark mode](docs/screenshots/eduka/05-action-center-dark.png)
+
+Captured from the native programs on a virtual X11 display. Wi-Fi names and
+sound output/volume are explicit test fixtures. No real hardware connection is
+implied. `tools/ui-smoke.py` reproduces these views and exercises the controls.
+
+## Earlier alpha2 screenshots
 
 | | |
 | --- | --- |
@@ -65,7 +85,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test the alpha3 Rust changes; a new binary release is not included here.
+test the alpha4 changes; a new binary release is not included here.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -76,7 +96,7 @@ test the alpha3 Rust changes; a new binary release is not included here.
 
 ```sh
 sudo tools/install-deps.sh      # Rust/Cargo, C++ compiler, CMake and desktop libraries
-tools/build-deb.sh              # writes dist/sde_0.1.0~alpha3_<arch>.deb
+tools/build-deb.sh              # writes dist/sde_0.1.0~alpha4_<arch>.deb
 ```
 
 Or a plain CMake build for development:
@@ -96,7 +116,7 @@ releases.
 | Keys | Action |
 | --- | --- |
 | Super, Alt+F1 | Application menu |
-| Super+A | Quick settings |
+| Super+A | Action Center |
 | Super+C | Calendar |
 | Alt+F2 | Run Command |
 | Ctrl+Alt+T | Terminal |

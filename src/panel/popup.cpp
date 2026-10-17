@@ -2,11 +2,13 @@
 #include "popup.h"
 
 #include <FL/Fl.H>
+#include <FL/x.H>
 
 #include <algorithm>
 
 #include "panel.h"
 #include "theme.h"
+#include "x11.h"
 
 using namespace sde;
 
@@ -33,6 +35,12 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
   if (!panel->theme().panel_top) y = panel->y() - hh - gap;
   resize(x, y, w(), hh);
   show();
+  // FLTK omits WM titles for override-redirect popups. Keep a readable name
+  // for window inspection and assistive tools as well as normal windows.
+  if (label()) {
+    XStoreName(fl_display, fl_xid(this), label());
+    x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
+  }
   Fl::grab(this);
   panel->popup_opened(this);
   redraw();

@@ -100,27 +100,16 @@ class QuickSettings : public PanelPopup {
   void prepare() override;
 
  private:
-  struct Text {
-    int x, y, w, h;
-    std::function<std::string()> text;
-    int style;  // 0 normal, 1 heading, 2 dim
-  };
   void rebuild();
   void sync();
   std::string structure() const;
-
-  // Owns callback data of the current widgets.
-  template <class T>
-  T *keep(T *p) {
-    keep_.emplace_back(std::shared_ptr<T>(p));
-    return p;
-  }
-  std::vector<std::shared_ptr<void>> keep_;
-  std::vector<Text> texts_;
-  std::vector<int> separators_;  // y positions
-  std::string structure_;
+  static void rebuild_timeout(void *);
+  class Fl_Scroll *body_ = nullptr;
   class Fl_Slider *volume_ = nullptr;
   class Fl_Slider *brightness_ = nullptr;
   class Fl_Choice *sinks_ = nullptr;
+  std::string structure_;
+  int content_height_ = 0;
+  bool network_expanded_ = false;
   bool rebuild_pending_ = false;
 };

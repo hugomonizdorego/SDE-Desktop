@@ -40,7 +40,7 @@ sudo tools/install-deps.sh --preview   # plus Xvfb, xdotool, ImageMagick for scr
 
 ```sh
 tools/build-deb.sh            # output in dist/
-sudo apt install ./dist/sde_0.1.0~alpha3_amd64.deb
+sudo apt install ./dist/sde_0.1.0~alpha4_amd64.deb
 ```
 
 The script builds in a temporary copy with `dpkg-buildpackage -us -uc -b` and runs
