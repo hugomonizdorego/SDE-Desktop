@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [workspace]
-members = ["rust/sde-core", "rust/sde-config-ffi", "rust/sde-autostart"]
+members = ["rust/sde-core", "rust/sde-config-ffi", "rust/sde-autostart", "rust/sde-suite"]
 resolver = "2"
 
 [profile.release]

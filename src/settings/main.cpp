@@ -35,6 +35,7 @@
 #include "paint.h"
 #include "settings.h"
 #include "spawn.h"
+#include "suite.h"
 #include "system.h"
 #include "theme.h"
 #include "ui.h"
@@ -331,6 +332,10 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
     glyph::bell(p, x, y, size, false, c);
     return;
   }
+  if (id == "system") {
+    glyph::power(p, x, y, size, c);
+    return;
+  }
   if (id == "about") {
     p.stroke_rounded(x, y, size, size, size / 2, c, size * .08);
     p.circle(x + size * .5, y + size * .3, size * .055, c);
@@ -349,7 +354,7 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
   p.stroke_rounded(x, y + size * .1, size, size * .65, size * .08, c, size * .075);
   if (id == "panel") {
     p.fill_rounded(x + size * .1, y + size * .57, size * .8, size * .1, size * .03, c);
-  } else if (id == "home") {
+  } else if (id == "home" || id == "suite") {
     for (int i = 0; i < 4; ++i)
       p.fill_rounded(x + size * (.17 + (i % 2) * .38), y + size * (.23 + (i / 2) * .24), size * .25,
                      size * .13, size * .03, c);
@@ -398,7 +403,7 @@ class PanelStyleCard : public Fl_Widget {
   PanelStyleCard(int x, int y, int w, int h, std::string style, std::string title)
       : Fl_Widget(x, y, w, h), style_(std::move(style)), title_(std::move(title)) {}
   void draw() override {
-    bool selected = g_cfg.get("panel", "style", "floating") == style_;
+    bool selected = g_cfg.get("panel", "style", "full") == style_;
     {
       Painter p(window()->w(), window()->h());
       p.fill_rounded(x(), y(), w(), h() - S(25), S(10), g_theme.background);
@@ -465,12 +470,14 @@ void build_home(Page *page) {
       {"input", N_("Keyboard & Mouse"), N_("Layouts, pointer and touchpad"), "input-keyboard"},
       {"notifications", N_("Notifications"), N_("Alerts and Do Not Disturb"),
        "preferences-desktop-notification"},
+      {"suite", N_("SDE Suite"), N_("Applications and source credits"), "applications-other"},
+      {"system", N_("Power & Updates"), N_("Power, packages and processes"), "utilities-system-monitor"},
   };
   y = page->cursor();
-  for (size_t i = 0; i < 6; ++i)
+  for (size_t i = 0; i < sizeof(links) / sizeof(links[0]); ++i)
     new SettingsLink(page->left() + int(i % 2) * (width + gap), y + int(i / 2) * S(112), width,
                      _(links[i].title), _(links[i].hint), {links[i].icon, "preferences-system"}, links[i].id);
-  page->advance(S(336));
+  page->advance(S(448));
   page->note(_("Changes are saved automatically."));
   page->finish();
 }
@@ -586,7 +593,7 @@ void build_panel(Page *page) {
         apply_change();
       },
       _("Floating panels follow this percentage. Short panels use up to 72%."));
-  if (g_cfg.get("panel", "style", "floating") == "full") panel_width->deactivate();
+  if (g_cfg.get("panel", "style", "full") == "full") panel_width->deactivate();
   page->switch_row(_("Hide automatically"), g_cfg.get_bool("panel", "autohide", false),
                    [](bool on) { set_bool("panel", "autohide", on); },
                    _("The panel appears when the pointer touches the screen edge."));
@@ -753,6 +760,81 @@ std::string wm_name() {
   return n.empty() ? _("unknown") : n;
 }
 
+// Source names are short clickable links. Licenses open the installed backend's
+// complete Debian copyright file, including all historical contributors.
+FlatButton *action_button(int x, int y, int w, int h, const std::string &label, std::vector<std::string> argv,
+                          bool primary = false) {
+  auto *button = new FlatButton(x, y, w, h, label, primary);
+  button->callback(
+      [](Fl_Widget *, void *p) {
+        auto *command = static_cast<std::vector<std::string> *>(p);
+        spawn_detached(*command);
+      },
+      keep(new std::vector<std::string>(std::move(argv))));
+  return button;
+}
+
+void build_suite(Page *page) {
+  page->heading(_("SDE Suite"), _("Applications for DebION GNU/Linux"));
+  page->note(
+      _("Development edition. SDE integrates maintained MATE applications; upstream windows and plugins "
+        "retain their original identity and credits."));
+  page->choice_row(
+      _("Application theme"), {_("Follow SDE"), _("System GTK theme")},
+      g_cfg.get("suite", "gtk_theme", "auto") == "system" ? 1 : 0,
+      [](int choice) {
+        g_cfg.set("suite", "gtk_theme", choice ? "system" : "auto");
+        apply_change();
+      },
+      _("Applies when a suite application next starts."));
+  for (const auto &app : suite_apps()) {
+    page->begin_card(app.name);
+    page->row(_(app.role.c_str()), S(112), S(32), [&app](int x, int y, int w, int h) {
+      auto *button = action_button(x, y, w, h, _("Open"), {app.id}, true);
+      if (find_program(split_command(app.command)[0]).empty()) button->deactivate();
+      return button;
+    });
+    int x = page->left() + S(20), y = page->cursor();
+    int available = page->width() - S(40), gap = S(8);
+    int source_w = std::min(S(206), (available - gap) * 2 / 3);
+    action_button(x, y, source_w, S(32), app.upstream, {"xdg-open", app.url});
+    action_button(x + source_w + gap, y, available - source_w - gap, S(32), _("Copyright"),
+                  {"xdg-open", "/usr/share/doc/" + app.package + "/copyright"});
+    page->advance(S(42));
+    page->note(app.license);
+    page->end_card();
+  }
+  page->note(
+      _("MATE engines keep their own licenses. The SDE Update model is adapted from mintupdate; PackageKit "
+        "performs Debian transactions."));
+  page->finish();
+}
+
+void build_suite_system(Page *page) {
+  page->heading(_("Power & Updates"), _("System tools included with SDE"));
+  const std::vector<std::pair<std::string, std::vector<std::string>>> tools = {
+      {_("Power Preferences"), {"sde-power-manager"}},
+      {_("Battery History"), {"sde-power-manager", "--statistics"}},
+      {_("System Monitor"), {"sde-system-monitor"}},
+      {_("System Updates"), {"sde-update"}},
+      {_("Screen Lock Preferences"), {"mate-screensaver-preferences"}},
+  };
+  page->begin_card(_("System"));
+  for (auto &tool : tools) {
+    page->row(tool.first, S(112), S(34), [&tool](int x, int y, int w, int h) {
+      return action_button(x, y, w, h, _("Open"), tool.second);
+    });
+  }
+  page->end_card();
+  page->note(
+      _("SDE Power Manager handles battery, lid and idle policies. SDE Screen Lock starts with the session. "
+        "No background updater is started."));
+  page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, _("SDE Suite"), {"sde-settings", "--page", "suite"});
+  });
+  page->finish();
+}
+
 void build_about(Page *page) {
   page->begin_card();
   int y = page->cursor();
@@ -820,6 +902,8 @@ const std::vector<PageInfo> &pages() {
        N_("Keyboard & Mouse"),
        {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
        build_input_page},
+      {"suite", N_("SDE Suite"), {"applications-other", "sde-logo"}, build_suite},
+      {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
       {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
   };
   return list;
@@ -978,7 +1062,7 @@ int main(int argc, char **argv) {
     } else {
       printf("%s", _("Usage: sde-settings [--page NAME] [--apply] [--version]\n\n"
                      "  --page NAME  open a page: home, appearance, panel, desktop, action-center,\n"
-                     "               notifications, display, input or about\n"
+                     "               notifications, display, input, suite, system or about\n"
                      "  --apply      apply the saved display, keyboard and mouse settings and exit\n"));
       return a == "--help" ? 0 : 2;
     }

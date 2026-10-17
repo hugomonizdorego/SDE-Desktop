@@ -2,12 +2,13 @@
 
 ## Supported systems
 
+- DebION GNU/Linux / Debian testing (primary target)
 - Debian 12 (bookworm) and Debian 13 (trixie)
 - Ubuntu 22.04 LTS (jammy) and Ubuntu 24.04 LTS (noble)
 
 All of them ship FLTK 1.3, CMake 3.16 or newer and a GCC with C++17 support.
 0.1 Alpha was developed and screenshot-tested on Ubuntu 24.04; CI builds the
-package on all four.
+packages on all five distribution targets.
 
 ## Dependencies
 
@@ -15,18 +16,22 @@ Build (all from the distribution archive):
 
 ```
 build-essential cmake pkgconf rustc cargo debhelper fakeroot lintian
-libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext
+libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxft-dev libdbus-1-dev gettext python3
 ```
 
-Runtime (the `.deb` declares these): `openbox librsvg2-common dbus-x11 xdg-utils
+Core runtime (the `.deb` declares these): `openbox librsvg2-common dbus-x11 xdg-utils
 x11-utils x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core`.
+
+The `sde` package also requires the MATE suite engines, screen locker, Python APT
+and PackageKit. `sde-desktop` installs the complete display/network/audio/media
+stack. See [SUITE.md](SUITE.md) for exact scope and source credits.
 
 Recommended for quick settings and the desktop: `network-manager`, `pulseaudio-utils`
 (or PipeWire's `pactl`), `libglib2.0-bin` (move to trash), `libnotify-bin`.
 
 Recommended: an icon theme (`papirus-icon-theme`, `adwaita-icon-theme` or
 Eduka-Icons), a polkit agent (`policykit-1-gnome`, `mate-polkit` or `lxpolkit`),
-a terminal, a file manager (`pcmanfm`) and a display manager (`lightdm`).
+a terminal and a display manager (`lightdm`). Liria/Caja is included with SDE.
 
 Install everything with:
 
@@ -40,7 +45,7 @@ sudo tools/install-deps.sh --preview   # plus Xvfb, xdotool, ImageMagick for scr
 
 ```sh
 tools/build-deb.sh            # output in dist/
-sudo apt install ./dist/sde_0.1.0~alpha4_amd64.deb
+sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
 ```
 
 The script builds in a temporary copy with `dpkg-buildpackage -us -uc -b` and runs

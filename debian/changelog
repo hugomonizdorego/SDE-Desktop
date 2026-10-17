@@ -1,3 +1,13 @@
+sde (0.1.0~alpha5) unstable; urgency=medium
+
+  * Default to a full-edge square panel and integrate the DebION SDE Suite.
+  * Add Rust suite launcher, file associations, power and screen lock autostart.
+  * Add native SDE Update with a credited mintupdate model and PackageKit.
+  * Add complete sde-desktop metapackage and Debian testing CI.
+  * Record upstream source revisions, licenses, copyright and source links.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sat, 17 Oct 2026 14:45:00 +0000
+
 sde (0.1.0~alpha4) unstable; urgency=medium
 
   * Adapt panel, Action Center and settings design patterns from Eduka-Desktop.

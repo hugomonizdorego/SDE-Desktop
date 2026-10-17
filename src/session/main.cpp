@@ -355,9 +355,9 @@ int run_check() {
   cfg.load();
   std::string wm = trim(cfg.get("session", "window_manager", "openbox"));
   std::vector<std::vector<std::string>> programs = {
-      {"sde-panel", "--version"},   {"sde-desktop", "--version"}, {"sde-notifyd", "--version"},
-      {"sde-settings", "--version"}, {"sde-run", "--version"},    {"sde-logout", "--version"},
-      {"sde-autostart", "--version"},
+      {"sde-panel", "--version"},     {"sde-desktop", "--version"}, {"sde-notifyd", "--version"},
+      {"sde-settings", "--version"},  {"sde-run", "--version"},     {"sde-logout", "--version"},
+      {"sde-autostart", "--version"}, {"sde-suite", "--check"},     {"sde-update", "--version"},
   };
   if (wm.empty() || wm == "openbox") programs.insert(programs.begin(), {"openbox", "--version"});
   else programs.insert(programs.begin(), {split_command(wm)[0], "--version"});

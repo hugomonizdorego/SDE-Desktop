@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Isolated native GUI smoke check. Wi-Fi/audio are explicit test fixtures.
 import argparse
+import re
 import configparser
 import os, subprocess as sp, time, tempfile
 from pathlib import Path
@@ -10,6 +11,11 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--bin-dir", type=Path, default=Path("/usr/bin"))
 parser.add_argument("--data-dir", type=Path, default=Path("/usr/share/sde"))
 parser.add_argument("--output-dir", type=Path, default=Path("dist/ui-smoke"))
+parser.add_argument(
+    "--suite-apps",
+    action="store_true",
+    help="Also open real installed suite engines with sample files",
+)
 parser.add_argument("--size", default="1366x768")
 parser.add_argument("--scale", type=int, default=100, choices=[100, 125, 150, 175, 200])
 parser.add_argument(
@@ -43,6 +49,24 @@ env.setdefault("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent-sde-ui-smoke-
 (home / "run").mkdir(mode=0o700)
 (home / ".config/sde").mkdir(parents=True)
 (home / "bin").mkdir()
+fixtures = home / "fixtures"
+fixtures.mkdir()
+(fixtures / "apt_pkg.py").write_text("SELSTATE_HOLD = 1\n")
+(fixtures / "apt.py").write_text("""from types import SimpleNamespace as N
+def pkg(name, source, security=False):
+    c=N(source_name=source,source_version='2.0',version='2.0',size=4096,
+        raw_description='UI test fixture',description='UI test fixture',section='utils',
+        origins=[N(origin='Debian',site='fixture.invalid',archive='testing',
+                   label='Debian-Security' if security else 'Debian',component='main')])
+    return N(name=name,candidate=c,installed=N(version='1.0'),is_installed=True,
+             is_upgradable=True,_pkg=N(selected_state=0))
+def Cache():
+    return [pkg('example-security','example-security',True),
+            pkg('example-common','example'),pkg('example','example')]
+""")
+env["PYTHONPATH"] = str(fixtures)
+env["SDE_UI_OPEN"] = str(home / "opened-uri")
+(home / "bin/xdg-open").write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$SDE_UI_OPEN"\n')
 (home / "bin/nmcli").write_text("""#!/bin/sh
 case "$*" in
 *TYPE,STATE,CONNECTION*) printf 'wifi:connected:SDE Design Lab\\n' ;;
@@ -100,14 +124,19 @@ def find(name):
 
 
 def geom(w):
+    # xdotool can include frame offsets twice for reparented FLTK windows.
+    # XWinInfo reports the actual client origin used by our widget coordinates.
+    info = run("xwininfo", "-id", str(w)).stdout
+
+    def field(name):
+        return int(re.search(re.escape(name) + r"\s*:\s*(-?\d+)", info).group(1))
+
     return {
-        k: int(v)
-        for k, v in [
-            s.split("=")
-            for s in run(
-                "xdotool", "getwindowgeometry", "--shell", w
-            ).stdout.splitlines()
-        ]
+        "WINDOW": int(w),
+        "X": field("Absolute upper-left X"),
+        "Y": field("Absolute upper-left Y"),
+        "WIDTH": field("Width"),
+        "HEIGHT": field("Height"),
     }
 
 
@@ -117,11 +146,11 @@ def shot(name):
     print("saved", name, flush=True)
 
 
-def config(style="floating", theme="light", scale=None, analog=False, top=False):
+def config(style=None, theme="light", scale=None, analog=False, top=False):
     if scale is None:
         scale = args.scale
     (home / ".config/sde/sde.conf").write_text(
-        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\nstyle={style}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n'
+        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n'
     )
 
 
@@ -157,6 +186,8 @@ try:
     panel = spawn("sde-panel")
     wid = find("^SDE Panel$")
     print("panel", geom(wid), flush=True)
+    g = geom(wid)
+    assert g["X"] == 0 and g["WIDTH"] == W, g
     time.sleep(1.2)
     run("sde-panel", "--action-center")
     ac = find("^Action Center$")
@@ -180,6 +211,64 @@ try:
     shot("04-settings-action-center")
     app.terminate()
     app.wait()
+    for page in ["suite", "system"]:
+        app = spawn("sde-settings", "--page", page)
+        settings = find("^Settings$")
+        shot("07-settings-" + page)
+        if page == "suite" and args.scale == 100:
+            g = geom(settings)
+            run(
+                "xdotool",
+                "mousemove",
+                str(g["X"] + 370),
+                str(g["Y"] + 290),
+                "click",
+                "1",
+            )
+            time.sleep(0.8)
+            assert (
+                home / "opened-uri"
+            ).read_text().strip() == "https://github.com/mate-desktop/pluma"
+            run(
+                "xdotool",
+                "mousemove",
+                str(g["X"] + 720),
+                str(g["Y"] + 290),
+                "click",
+                "1",
+            )
+            time.sleep(0.3)
+            assert (
+                home / "opened-uri"
+            ).read_text().strip() == "/usr/share/doc/pluma/copyright"
+        run(
+            "xdotool",
+            "mousemove",
+            str(geom(settings)["X"] + geom(settings)["WIDTH"] - 70),
+            str(geom(settings)["Y"] + geom(settings)["HEIGHT"] // 2),
+            "click",
+            "5",
+            "click",
+            "5",
+            "click",
+            "5",
+        )
+        shot("08-settings-" + page + "-scrolled")
+        app.terminate()
+        app.wait()
+    metadata = run("sde-update", "--check").stdout
+    assert (
+        metadata.startswith("SDE-UPDATES\t1\n") and "example-security" in metadata
+    ), metadata
+    assert len(metadata.splitlines()) == 3, metadata
+    update = spawn("sde-update")
+    updater = find("^SDE Update$")
+    g = geom(updater)
+    assert g["X"] >= 0 and g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
+    time.sleep(1)
+    shot("09-update")
+    update.terminate()
+    update.wait()
     if args.scale == 100:
         # Overview card -> Panel page -> Short preview; verify persisted live change.
         app = spawn("sde-settings")
@@ -252,6 +341,62 @@ try:
     )
     run("xdotool", "key", "Escape")
     print("PANEL STYLES, TOP PLACEMENT AND POPUP BOUNDS PASS", flush=True)
+    if args.suite_apps:
+        import zipfile
+
+        folder = home / "SDE-Suite-Check"
+        folder.mkdir()
+        text = folder / "SDE-sample.txt"
+        text.write_text("SDE Suite · Niny integration check\n")
+        document = folder / "SDE-sample.pdf"
+        stream = b"BT /F1 18 Tf 40 150 Td (SDE Suite - Xanara) Tj ET"
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 220] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+            b"<< /Length "
+            + str(len(stream)).encode()
+            + b" >>\nstream\n"
+            + stream
+            + b"\nendstream",
+        ]
+        pdf = b"%PDF-1.4\n"
+        offsets = [0]
+        for i, obj in enumerate(objects, 1):
+            offsets.append(len(pdf))
+            pdf += str(i).encode() + b" 0 obj\n" + obj + b"\nendobj\n"
+        xref = len(pdf)
+        pdf += b"xref\n0 6\n0000000000 65535 f \n"
+        pdf += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets[1:])
+        pdf += (
+            b"trailer << /Size 6 /Root 1 0 R >>\nstartxref\n"
+            + str(xref).encode()
+            + b"\n%%EOF\n"
+        )
+        document.write_bytes(pdf)
+        archive = folder / "SDE-sample.zip"
+        with zipfile.ZipFile(archive, "w") as z:
+            z.write(text, text.name)
+        picture = folder / "SDE-sample.ppm"
+        picture.write_bytes(b"P6\n2 2\n255\n" + bytes([22, 125, 154]) * 4)
+        for app_name, file, title in [
+            ("niny", text, "SDE-sample.txt"),
+            ("liria", folder, "SDE-Suite-Check"),
+            ("xanara", document, "SDE-sample.pdf"),
+            ("taca", archive, "SDE-sample.zip"),
+            ("sde-view", picture, "SDE-sample.ppm"),
+        ]:
+            engine = spawn(app_name, str(file))
+            native = find(title)
+            shot("10-engine-" + app_name)
+            run("xdotool", "windowclose", native, check=False)
+            if engine.poll() is None:
+                engine.terminate()
+        print(
+            "NINY, LIRIA, XANARA, TACA AND SDE VIEW REAL ENGINE WINDOWS PASS",
+            flush=True,
+        )
     if os.environ.get("SDE_UI_DEBUG"):
         print((home / "sde-panel.log").read_text(), flush=True)
 except Exception:

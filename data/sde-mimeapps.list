@@ -1,0 +1,27 @@
+# SDE-specific defaults. User mimeapps.list preferences take precedence.
+[Default Applications]
+inode/directory=liria.desktop;
+x-scheme-handler/trash=liria.desktop;
+text/plain=niny.desktop;
+text/x-log=niny.desktop;
+text/x-shellscript=niny.desktop;
+application/pdf=xanara.desktop;
+application/postscript=xanara.desktop;
+application/epub+zip=xanara.desktop;
+image/png=sde-view.desktop;
+image/jpeg=sde-view.desktop;
+image/gif=sde-view.desktop;
+image/webp=sde-view.desktop;
+image/tiff=sde-view.desktop;
+image/bmp=sde-view.desktop;
+image/svg+xml=sde-view.desktop;
+application/zip=taca.desktop;
+application/x-tar=taca.desktop;
+application/gzip=taca.desktop;
+application/x-gzip=taca.desktop;
+application/x-bzip2=taca.desktop;
+application/x-xz=taca.desktop;
+application/x-7z-compressed=taca.desktop;
+application/x-compressed-tar=taca.desktop;
+application/x-bzip-compressed-tar=taca.desktop;
+application/x-xz-compressed-tar=taca.desktop;

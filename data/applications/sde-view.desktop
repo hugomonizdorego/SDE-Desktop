@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE View
+GenericName=Image Viewer
+Comment=Image Viewer for SDE, based on eom
+Exec=sde-view %U
+TryExec=eom
+Icon=image-x-generic
+Terminal=false
+Categories=Graphics;Viewer;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=Eom
+X-SDE-Upstream=https://github.com/mate-desktop/eom
+MimeType=image/png;image/jpeg;image/gif;image/webp;image/tiff;image/bmp;image/svg+xml;

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.0~alpha5 (0.1 Alpha) - 2026-10-17
+
+- Default to a full-edge square panel and rectangular launcher/status controls.
+- Add the Rust SDE Suite dispatcher and Niny, Liria, Xanara, Taca, SDE View,
+  System Monitor and Power Manager integration using maintained MATE engines.
+- Add SDE-specific MIME defaults, duplicate-menu suppression, GTK light/dark
+  launch preferences, and SDE-only power/screen-lock autostarts.
+- Add native SDE Update with a credited GPLv3+ Mint Update model, read-only APT
+  previews and authenticated Debian PackageKit transactions.
+- Add Settings suite/source/copyright and Power & Updates pages.
+- Add `sde-desktop`, the complete DebION installation metapackage, and Debian
+  testing CI alongside the existing four distribution builds.
+- Record pinned upstream source references and a non-destructive source workspace
+  tool; preserve upstream notices. MATE engines are packaged dependencies, and
+  LXQt/Budgie/COSMIC remain source references in this alpha.
+- Add update-model, launcher/MIME/autostart integration and real engine UI checks.
+
 ## 0.1.0~alpha4 (0.1 Alpha) - 2026-10-17
 
 ### Added

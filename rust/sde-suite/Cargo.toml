@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[package]
+name = "sde-suite"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.59"
+license = "GPL-3.0-or-later"
+description = "SDE suite integration and diagnostics for DebION"
+
+[dependencies]
+sde-core = { path = "../sde-core" }

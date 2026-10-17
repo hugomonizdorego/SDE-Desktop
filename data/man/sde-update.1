@@ -1,0 +1,33 @@
+.TH SDE-UPDATE 1 "October 2026" "SDE" "User Commands"
+.SH NAME
+sde-update \- preview and install system updates on DebION GNU/Linux
+.SH SYNOPSIS
+.B sde-update
+[--check | --version | --plan ACTION | --transaction ACTION]
+.SH DESCRIPTION
+Shows source-grouped updates from the local APT cache. The read-only Python APT
+model is adapted from Mint Update with its original GPLv3+ copyright preserved.
+Held packages are excluded. The frontend does not add repositories or start an
+automatic background updater.
+.PP
+Refresh Sources opens a terminal for PackageKit's cache refresh. Install Updates
+opens PackageKit's interactive update transaction. Review the final package list
+and confirm there. The system's polkit policy controls authorization. Press
+Enter in the terminal afterward to reload the native preview.
+.PP
+Debian testing transitions can require manual APT decisions; a preview from the
+local cache does not guarantee that every upgrade is currently resolvable.
+.SH OPTIONS
+.TP
+.B --check
+Print the versioned tab-separated read-only update metadata and exit.
+.TP
+.B --plan refresh|upgrade
+Print the fixed PackageKit argument vector without running it.
+.TP
+.B --transaction refresh|upgrade
+Run the fixed interactive PackageKit operation in the current terminal.
+.SH SEE ALSO
+.BR pkcon (1),
+.BR sde-suite (1),
+.BR apt (8)

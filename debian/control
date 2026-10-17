@@ -14,7 +14,8 @@ Build-Depends: debhelper-compat (= 13),
                libx11-dev,
                libxft-dev,
                libdbus-1-dev,
-               gettext
+               gettext,
+               python3
 Standards-Version: 4.6.2
 Homepage: https://github.com/hugomonizdorego/SDE-Desktop
 Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
@@ -29,10 +30,25 @@ Depends: ${shlibs:Depends},
          librsvg2-common,
          dbus-x11 | dbus-user-session,
          xdg-utils,
+         desktop-file-utils,
          x11-utils,
          x11-xserver-utils,
          x11-xkb-utils,
          xinput,
+         pluma,
+         caja,
+         atril,
+         engrampa,
+         eom,
+         mate-system-monitor,
+         mate-power-manager,
+         mate-screensaver,
+         packagekit,
+         packagekit-tools,
+         python3-apt,
+         xterm,
+         xdg-user-dirs,
+         policykit-1-gnome | mate-polkit | lxpolkit,
          fonts-dejavu-core | fonts-noto-core
 Recommends: papirus-icon-theme | adwaita-icon-theme,
             network-manager,
@@ -41,7 +57,6 @@ Recommends: papirus-icon-theme | adwaita-icon-theme,
             libnotify-bin,
             policykit-1-gnome | mate-polkit | lxpolkit,
             xterm | x-terminal-emulator,
-            pcmanfm | thunar | nautilus,
             xdg-user-dirs,
             lightdm | x-display-manager
 Suggests: eduka-icons,
@@ -71,3 +86,38 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  .
  Select "SDE" in your display manager to start it. This is an alpha
  release meant for testing; expect missing features.
+ .
+ Includes the SDE Suite integration: Niny (Pluma), Liria (Caja without
+ its desktop), Xanara (Atril), Taca (Engrampa), SDE View (EOM), System
+ Monitor and Power Manager (MATE), plus SDE Update (a native frontend
+ with a mintupdate-derived model and Debian PackageKit transactions).
+
+Package: sde-desktop
+Architecture: all
+Section: metapackages
+Depends: ${misc:Depends},
+         sde (>= ${source:Version}),
+         xserver-xorg,
+         xinit,
+         lightdm | x-display-manager,
+         network-manager,
+         pulseaudio-utils,
+         pipewire-pulse | pulseaudio,
+         wireplumber | pipewire-media-session,
+         gvfs,
+         gvfs-backends,
+         adwaita-icon-theme,
+         dconf-gsettings-backend,
+         upower,
+         udisks2
+Recommends: papirus-icon-theme,
+            firefox-esr | firefox,
+            network-manager-gnome
+Description: complete SDE desktop and application suite for DebION GNU/Linux
+ One installation entry point for the SDE session, display server,
+ login manager, network and sound services, removable media support
+ and integrated SDE Suite applications on Debian testing and DebION.
+ .
+ This metapackage installs individual maintained components rather than
+ another complete desktop environment. Existing user preferences and
+ distribution package sources are preserved.

@@ -858,7 +858,7 @@ void QuickSettings::rebuild() {
       {_("Settings"), gear_icon(), {"sde-settings", "--page", "action-center"}},
       {_("Lock Screen"),
        [](Painter &p, double x, double y, double z, const Color &c) { glyph::lock(p, x, y, z, c); },
-       {"xdg-screensaver", "lock"}},
+       {"sde-lock"}},
       {_("Power Off / Log Out"),
        [](Painter &p, double x, double y, double z, const Color &c) { glyph::power(p, x, y, z, c); },
        {"sde-logout"}},
