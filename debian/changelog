@@ -1,3 +1,12 @@
+sde (0.1.0~alpha3) unstable; urgency=medium
+
+  * Start Rust migration: shared configuration core and native sde-autostart.
+  * Preserve the C++ Config API through a private C ABI with ownership tests.
+  * Build the dependency-free Cargo workspace offline from CMake.
+  * Add autostart dry-run diagnostics, Rust tests and CI checks.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sat, 17 Oct 2026 13:09:00 +0000
+
 sde (0.1.0~alpha2) unstable; urgency=medium
 
   * Fix the black screen when a component cannot start: session log in

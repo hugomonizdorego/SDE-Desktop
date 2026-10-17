@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.0~alpha3 (0.1 Alpha) - 2026-10-17
+
+### Added
+- Dependency-free Rust workspace, built offline with Cargo from CMake and Debian
+  packaging. No Rust compiler or Cargo is needed on the installed desktop.
+- `sde-autostart`: native Rust XDG launcher with `--dry-run`, per-user overrides,
+  Hidden/OnlyShowIn/NotShowIn/TryExec checks, locale-aware names, terminal support,
+  and argument-vector execution without a shell.
+- Rust unit and CLI tests, C++/Rust ownership tests, and Rust formatting/lint/MSRV
+  checks in CI. `ctest` runs both the Rust and existing C++ tests.
+
+### Changed
+- All desktop components now use the Rust configuration core through a small C
+  ABI and the existing C++ Config API. Settings paths and INI format are retained.
+- Built-in defaults are embedded from `data/sde.conf`, avoiding a second defaults
+  list. User-only saves use exclusive temporary files, mode 0600 and atomic rename.
+- Invalid integer values, including overflow, fall back to the caller's default.
+- The session delegates XDG autostart to Rust once, and `--check` checks the helper.
+
+The graphical interface and session supervisor remain C++17 in this milestone.
+
 ## 0.1.0~alpha2 (0.1 Alpha) - 2026-10-16
 
 ### Fixed

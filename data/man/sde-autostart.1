@@ -1,0 +1,30 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH SDE-AUTOSTART 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
+.SH NAME
+sde-autostart \- Rust XDG autostart launcher for SDE
+.SH SYNOPSIS
+.B sde-autostart
+[\-\-dry-run | \-\-version | \-\-help]
+.SH DESCRIPTION
+Normally called once by sde-session. Reads desktop entries from
+$XDG_CONFIG_HOME/autostart and $XDG_CONFIG_DIRS/autostart. The first file with
+each name takes precedence, including a user file with Hidden=true.
+Honors OnlyShowIn, NotShowIn, TryExec, Terminal and Path. NoDisplay does not
+disable autostart. Exec is expanded into an argument vector without a shell.
+Polkit agents and notification daemons managed by SDE are skipped.
+.SH OPTIONS
+.TP
+.B \-\-dry-run
+Print the launch plan and skip reasons without starting any applications.
+.TP
+.B \-\-version
+Print the SDE version and exit.
+.SH EXIT STATUS
+0 means the plan or launch requests succeeded; it does not mean applications
+remained running. 1 means a directory, entry or launch failed; other entries
+are still processed when an individual entry fails. 2 means invalid arguments.
+.SH NOTES
+No autostart delays, desktop-specific condition expressions or D-Bus-only
+activation are implemented. Do not call the launcher twice in one session.
+.SH SEE ALSO
+.BR sde-session (1)

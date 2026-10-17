@@ -16,6 +16,19 @@ SDE is built from the ground up and grows in small, usable steps.
 - [x] Interface size 100-200 %, keyboard focus, contrast checks (alpha2)
 - [x] gettext translation support (alpha2)
 - [x] Per-distribution GitHub releases with checksums (alpha2)
+- [x] Shared Rust configuration core and native XDG autostart launcher (alpha3)
+- [x] Offline Cargo/CMake build and cross-language configuration tests (alpha3)
+
+## Rust migration
+
+- [x] Safe Rust core with an isolated C ABI for the existing interface
+- [ ] Share Rust desktop-entry parsing with the panel and desktop
+- [ ] Port session supervision, preserving rescue and logout behavior
+- [ ] Port notification service and D-Bus integration
+- [ ] Choose a GUI integration strategy and port individual applications
+- [ ] Measure startup time, memory and accessibility before replacing the panel
+
+See [RUST.md](RUST.md) for the current boundary and validation requirements.
 
 ## 0.2 Alpha
 

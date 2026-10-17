@@ -1,0 +1,12 @@
+[package]
+name = "sde-config-ffi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.59"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+sde-core = { path = "../sde-core" }

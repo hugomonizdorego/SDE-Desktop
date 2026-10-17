@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[workspace]
+members = ["rust/sde-core", "rust/sde-config-ffi", "rust/sde-autostart"]
+resolver = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

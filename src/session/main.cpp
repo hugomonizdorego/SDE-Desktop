@@ -286,24 +286,10 @@ std::string find_polkit_agent() {
 }
 
 void run_autostart() {
-  // User entries override system entries with the same file name.
-  std::map<std::string, std::string> entries;
-  std::vector<std::string> dirs{config_home()};
-  for (auto &d : config_dirs()) dirs.push_back(d);
-  for (auto &d : dirs)
-    for (auto &f : list_dir(d + "/autostart"))
-      if (ends_with(f, ".desktop") && !entries.count(f)) entries[f] = d + "/autostart/" + f;
-  for (auto &kv : entries) {
-    DesktopEntry e;
-    if (!e.load(kv.second, kv.first) || e.type != "Application" || e.exec.empty()) continue;
-    if (!e.visible_in("SDE")) continue;
-    // Polkit agents and notification daemons are started by SDE itself.
-    std::string exec = lower(e.exec);
-    if (exec.find("polkit") != std::string::npos) continue;
-    if (exec.find("notify-osd") != std::string::npos || exec.find("notification-daemon") != std::string::npos)
-      continue;
-    if (launch_entry(e)) log("autostart: %s", kv.first.c_str());
-  }
+  // Spawn once. Never restart this helper: retrying could start applications
+  // twice. Its children are adopted/reaped by this session's subreaper.
+  if (start_child({"sde-autostart"}) <= 0)
+    log("cannot start sde-autostart; run sde-session --check");
 }
 
 int request_logout() {
@@ -371,6 +357,7 @@ int run_check() {
   std::vector<std::vector<std::string>> programs = {
       {"sde-panel", "--version"},   {"sde-desktop", "--version"}, {"sde-notifyd", "--version"},
       {"sde-settings", "--version"}, {"sde-run", "--version"},    {"sde-logout", "--version"},
+      {"sde-autostart", "--version"},
   };
   if (wm.empty() || wm == "openbox") programs.insert(programs.begin(), {"openbox", "--version"});
   else programs.insert(programs.begin(), {split_command(wm)[0], "--version"});
