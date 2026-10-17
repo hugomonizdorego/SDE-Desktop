@@ -14,6 +14,11 @@ class BrandingTest(unittest.TestCase):
         self.assertEqual(forks.brand('#define EOM_WINDOW "org.mate.eom"'), '#define SDEVIEW_WINDOW "org.debion.sdeview"')
         self.assertEqual(forks.brand('pluma_window_new(CajaFile *file)'), 'niny_window_new(LiriaFile *file)')
 
+    def test_header_guards_and_copyright_identifiers_stay_consistent(self):
+        source = '#ifndef CAJA_TYPES_H\n#define CAJA_TYPES_H\n#ifdef CAJA_FEATURE\n#define CAJA_COPYRIGHT "Copyright (C) Caja authors"\n#endif\n#endif\n'
+        expected = source.replace('CAJA_', 'LIRIA_')
+        self.assertEqual(forks.brand(source), expected)
+
     def test_gtk_geometry_api_is_never_rebranded(self):
         self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
                          'gtk_window_set_geometry_hints(sdeview_window, geometry);')

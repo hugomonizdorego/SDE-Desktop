@@ -113,7 +113,7 @@ fn main() {
         return;
     }
     if id == "--help" || id == "-h" {
-        println!("Usage: sde-suite APP [ARGUMENTS...]\n       sde-suite --list | --check | --version\n\nAliases: niny, liria, xanara, taca, sde-view, sde-system-monitor,\n         sde-power-manager [--daemon | --statistics]\nPer app: --about, --source, --copyright, --dry-run, --version\nUse -- to forward one of these options to the upstream application.");
+        println!("Usage: sde-suite APP [ARGUMENTS...]\n       sde-suite --list | --check | --version\n\nUse --list for native SDE applications.\nHelper options after APP: --about, --source, --copyright, --dry-run, --version\nUse -- to forward one of these options to the native application.\nThe native executable commands also run directly without this helper.");
         return;
     }
     let app = apps().find(|a| a[0] == id).unwrap_or_else(|| {

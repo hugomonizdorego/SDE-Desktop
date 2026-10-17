@@ -76,6 +76,7 @@ def main():
         env.pop("PKG_CONFIG_SYSROOT_DIR", None)
         env["LD_LIBRARY_PATH"] = str(libroot) + os.pathsep + env.get("LD_LIBRARY_PATH", "")
         logfile = args.build / (app["id"] + ".log")
+        logfile.write_text("")
         print("Building native", app["id"], "from", app["upstream"], app["commit"], flush=True)
         def run(command, cwd):
             with logfile.open("a") as output:
