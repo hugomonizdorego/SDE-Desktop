@@ -41,7 +41,7 @@ def main():
             run(['autoreconf','-vif'],source)
             run([str(source/'configure'),'--prefix='+args.prefix,'--datadir='+args.prefix+'/share/sde/wm',
                  '--sysconfdir=/etc/xdg/sde/wm','--disable-shared','--enable-static','--disable-nls',
-                 '--disable-session-management','--disable-startup-notification','--disable-imlib2','--disable-librsvg'],obj)
+                 '--disable-session-management','--disable-startup-notification','--enable-imlib2','--disable-librsvg'],obj)
             run(['make','-j4','openbox/openbox'],obj)
             artifact=obj/'openbox/openbox'
         else:

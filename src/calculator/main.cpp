@@ -51,7 +51,7 @@ bool calculate(const std::string &text, int unit, std::string &out) {
       "e.press('=',angleUnit);if(e.error||!isFinite(+e.value))throw Error('Math domain error');return e.value;})()", &exception);
   if (exception || !value) { out = exception ? js_string(exception) : "Calculation failed"; return false; }
   out = js_string(value);
-  answer = std::strtod(out.c_str(), nullptr);
+  answer = g_ascii_strtod(out.c_str(), nullptr);
   return true;
 }
 void update_history() {
@@ -83,6 +83,14 @@ void insert_text(const std::string &s) {
   gtk_editable_set_position(GTK_EDITABLE(entry), pos);
   gtk_widget_grab_focus(entry);
 }
+void postfix(const std::string &suffix) {
+  int a, b;
+  if (gtk_editable_get_selection_bounds(GTK_EDITABLE(entry), &a, &b)) {
+    char *selected = gtk_editable_get_chars(GTK_EDITABLE(entry), a, b);
+    std::string text = "(" + std::string(selected) + ")" + suffix;
+    g_free(selected); insert_text(text);
+  } else insert_text(suffix);
+}
 void function(const std::string &name) {
   int a, b;
   if (gtk_editable_get_selection_bounds(GTK_EDITABLE(entry), &a, &b)) {
@@ -101,14 +109,22 @@ void key(GtkButton *button, gpointer) {
     if (gtk_editable_get_selection_bounds(GTK_EDITABLE(entry), &a, &b)) gtk_editable_delete_text(GTK_EDITABLE(entry), a, b);
     else if (pos > 0) gtk_editable_delete_text(GTK_EDITABLE(entry), pos - 1, pos);
   } else if (s == "MC") memory = 0;
-  else if (s == "MR") insert_text(std::to_string(memory));
-  else if (s == "M+") memory += answer;
-  else if (s == "M−") memory -= answer;
+  else if (s == "MR") { char text[G_ASCII_DTOSTR_BUF_SIZE]; insert_text(g_ascii_dtostr(text, sizeof text, memory)); }
+  else if (s == "M+" || s == "M−") {
+    std::string out, input = gtk_editable_get_text(GTK_EDITABLE(entry));
+    unsigned unit = gtk_drop_down_get_selected(GTK_DROP_DOWN(angle));
+    if (!input.empty() && !calculate(input, unit == 0 ? 1 : unit == 1 ? 0 : 2, out)) {
+      gtk_label_set_text(GTK_LABEL(result), out.c_str()); return;
+    }
+    double next = memory + (s == "M+" ? answer : -answer);
+    if (std::isfinite(next)) memory = next;
+  }
   else if (s == "Copy") gdk_clipboard_set_text(gtk_widget_get_clipboard(window), gtk_label_get_text(GTK_LABEL(result)));
-  else if (s == "±") insert_text("-");
-  else if (s == "x²") insert_text("^2");
+  else if (s == "±") function("-");
+  else if (s == "x²") postfix("^2");
   else if (s == "xʸ") insert_text("^");
-  else if (s == "x!") insert_text("!");
+  else if (s == "x!") postfix("!");
+  else if (s == "%") postfix("%");
   else if (s == "1/x") function("1/");
   else if (s == "√") function("sqrt");
   else if (s == "sin" || s == "cos" || s == "tan" || s == "ln" || s == "log" || s == "abs") function(s);
@@ -137,8 +153,10 @@ gboolean save(GtkWindow *, gpointer) {
   return FALSE;
 }
 void activate(GtkApplication *app, gpointer) {
+  if (window) { gtk_window_present(GTK_WINDOW(window)); return; }
   window = gtk_application_window_new(app);
   gtk_window_set_title(GTK_WINDOW(window), "Calculator");
+  gtk_window_set_icon_name(GTK_WINDOW(window), "org.debion.Calculator");
   gtk_window_set_default_size(GTK_WINDOW(window), 510, 650);
   GtkWidget *header = gtk_header_bar_new();
   GtkWidget *title = gtk_label_new("Calculator  ·  SDE Suite");

@@ -423,6 +423,15 @@ try:
         root_folder.mkdir()
         admin = spawn("sudo", "liria", "--no-desktop", str(root_folder))
         root_window = find("Liria-Administrator-Check")
+        import pwd
+        process_id = int(run("xprop", "-id", root_window, "_NET_WM_PID").stdout.split("=")[-1].strip())
+        status = Path(f"/proc/{process_id}/status").read_text()
+        assert re.search(r"^Uid:\s+0\s+0\s+0\s+0", status, re.M), status
+        process_env = dict(item.split(b"=", 1) for item in Path(f"/proc/{process_id}/environ").read_bytes().split(b"\0") if b"=" in item)
+        assert process_env.get(b"SDE_LIRIA_ROOT_BUS") == b"1", process_env
+        assert process_env.get(b"HOME") == pwd.getpwuid(0).pw_dir.encode(), process_env
+        assert process_env.get(b"DBUS_SESSION_BUS_ADDRESS", b"") not in [b"", env.get("DBUS_SESSION_BUS_ADDRESS", "").encode()]
+        assert b"XDG_CONFIG_HOME" not in process_env
         shot("12-liria-administrator")
         run("xdotool", "windowactivate", "--sync", root_window)
         run("xdotool", "key", "alt+F4")

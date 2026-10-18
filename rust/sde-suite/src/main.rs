@@ -121,12 +121,7 @@ fn main() {
         process::exit(2);
     });
     if args.first().map(|a| a == "--version").unwrap_or(false) {
-        println!(
-            "{} {} (SDE integration; {})",
-            app[1],
-            app[9],
-            app[6]
-        );
+        println!("{} {} (SDE integration; {})", app[1], app[9], app[6]);
         return;
     }
     if args.first().map(|a| a == "--source").unwrap_or(false) {

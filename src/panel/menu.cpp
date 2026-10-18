@@ -215,7 +215,7 @@ int AppMenu::list_rows_visible() const { return std::max(1, (h() - header_h_ - f
 void AppMenu::ensure_visible(int row) {
   int vis = list_rows_visible();
   if (row < scroll_) scroll_ = row;
-  if (row >= scroll_ + vis) scroll_ = row - vis + 1;
+  if (row >= scroll_ + vis) scroll_ = ((row / columns()) - (vis / columns()) + 1) * columns();
   if (scroll_ < 0) scroll_ = 0;
   scroll_ = (scroll_ / columns()) * columns();
 }
@@ -310,7 +310,7 @@ int AppMenu::handle(int event) {
       return 1;
     }
     case FL_MOUSEWHEEL: {
-      int max_scroll = std::max(0, int(rows_.size()) - list_rows_visible());
+      int max_scroll = std::max(0, ((int(rows_.size()) + columns() - 1) / columns()) * columns() - list_rows_visible());
       if (Fl::event_x() < pad_ + cat_w_) {
         int visible = std::max(1, (h() - header_h_ - footer_h_ - S(4)) / cat_row_h_);
         category_scroll_ = std::max(0, std::min(std::max(0, int(categories_.size()) - visible), category_scroll_ + Fl::event_dy()));
@@ -321,6 +321,7 @@ int AppMenu::handle(int event) {
       redraw();
       return 1;
     }
+    case FL_SHORTCUT:
     case FL_KEYBOARD: {
       int k = Fl::event_key();
       int n = int(rows_.size());
@@ -336,6 +337,9 @@ int AppMenu::handle(int event) {
         launch(selected_);
         return 1;
       }
+      bool navigation = k == FL_Down || k == FL_Up || k == FL_Page_Down || k == FL_Page_Up ||
+                        (grid_mode() && (k == FL_Left || k == FL_Right));
+      if (!navigation) return search_->Fl_Input::handle(FL_KEYBOARD);
       if (n == 0) return 1;
       if (k == FL_Down) selected_ = std::min(n - 1, selected_ + columns());
       else if (k == FL_Up) selected_ = std::max(0, selected_ - columns());
