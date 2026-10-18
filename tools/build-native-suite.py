@@ -30,6 +30,8 @@ def main():
     args.build.mkdir(parents=True, exist_ok=True)
     args.stage.mkdir(parents=True, exist_ok=True)
     lock = json.loads((ROOT / "suite/forks.lock.json").read_text())
+    if args.only and args.only not in {app["id"] for app in lock["forks"]}:
+        parser.error("Unknown native fork: " + args.only)
     if not (args.sources / ".sde-fork-lock").is_file():
         parser.error("Run python3 tools/prepare-native-suite.py before the offline build")
     recipe = (args.sources / ".sde-fork-lock").read_bytes() + Path(__file__).read_bytes()
@@ -126,6 +128,20 @@ def main():
             # only top-level launchers/autostarts are replaced by SDE entries.
             for desktop in path.glob("*.desktop"):
                 desktop.unlink()
+    # Some upstream install hooks generate indexes for DESTDIR alone. Those
+    # incomplete indexes must never replace the distribution's shared caches.
+    mime = args.stage / args.prefix.lstrip("/") / "share/mime"
+    if mime.exists():
+        for entry in mime.iterdir():
+            if entry.name == "packages":
+                continue
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry)
+            else:
+                entry.unlink()
+    for name in ["gschemas.compiled", "icon-theme.cache", "mimeinfo.cache"]:
+        for cache in args.stage.rglob(name):
+            cache.unlink()
     for elf in args.stage.rglob("*"):
         if not elf.is_file() or elf.is_symlink():
             continue

@@ -123,7 +123,7 @@ Suggests: eduka-icons,
 Provides: x-session-manager, notification-daemon
 Description: Selviana Desktop Environment - small, fast and modern desktop
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
- for Debian and Ubuntu, with a Rust configuration core and autostart helper,
+ for DebION GNU/Linux and Debian testing, with a Rust configuration core and autostart helper,
  a C++17 interface using FLTK, cairo and Xlib, and Openbox as window manager.
  .
  This 0.1 Alpha release contains:

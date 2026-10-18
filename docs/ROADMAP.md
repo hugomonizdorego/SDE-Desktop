@@ -7,7 +7,7 @@ SDE is built from the ground up and grows in small, usable steps.
 - [x] Session manager, panel, desktop, settings, run and log out programs
 - [x] Light and dark themes with accent colors
 - [x] Openbox integration and SDE window themes
-- [x] Debian packages for Debian 12/13 and Ubuntu 22.04/24.04
+- [x] Earlier shell packages for Debian 12/13 and Ubuntu 22.04/24.04 (alpha2)
 - [x] Rescue dialog, session log and `sde-session --check` (alpha2)
 - [x] Notification daemon with Do Not Disturb (alpha2)
 - [x] Quick settings: network, volume, output device, brightness, battery (alpha2)
@@ -18,6 +18,10 @@ SDE is built from the ground up and grows in small, usable steps.
 - [x] Per-distribution GitHub releases with checksums (alpha2)
 - [x] Shared Rust configuration core and native XDG autostart launcher (alpha3)
 - [x] Offline Cargo/CMake build and cross-language configuration tests (alpha3)
+
+- [x] Native source-built DebION application suite in one package (alpha6)
+- [x] Complete desktop metapackage targeting Debian testing (alpha6)
+- [ ] Validate real DebION login, locking and hardware power policies
 
 ## Rust migration
 
@@ -40,8 +44,9 @@ See [RUST.md](RUST.md) for the current boundary and validation requirements.
 
 ## 0.3 Beta
 
-- [ ] SDE file manager (or a tightly integrated default)
-- [ ] Screen locker and power management (idle, lid, brightness)
+- [x] Liria native file-manager fork (alpha6)
+- [x] Native screen-lock and power-manager forks (alpha6)
+- [ ] Hardware validation of idle, lid, suspend and locking
 - [ ] Panel applets API and panel position options
 - [ ] Workspace switcher and window previews
 

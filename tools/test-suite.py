@@ -27,4 +27,7 @@ assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode=
 for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-power-manager','mate-screensaver']:
     result=subprocess.run(['dpkg-query','-W','-f=${db:Status-Abbrev}',upstream],capture_output=True,text=True)
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
+files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
+for path in files:
+    assert not path.endswith(('/mime.cache','/mimeinfo.cache','/icon-theme.cache','/gschemas.compiled')),path
 print('Native ELF executables, metadata, transaction plans and absence of original MATE apps passed.')
