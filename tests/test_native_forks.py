@@ -30,6 +30,7 @@ const char *version = VERSION;
 const char *other = "# VERSION=";
 // PACKAGE_VERSION remains in this historical comment
 const char *build = PACKAGE_VERSION;
+#undef VERSION
 '''
         expected = source.replace('= VERSION;', '= "1.0.0~alpha1";').replace('= PACKAGE_VERSION;', '= "1.0.0~alpha1";')
         self.assertEqual(forks.stamp_version(source, '1.0.0~alpha1'), expected)

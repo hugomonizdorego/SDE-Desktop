@@ -39,6 +39,8 @@ env.update(
     XDG_DATA_DIRS=str(args.data_dir.parent)
     + ":"
     + env.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share"),
+    # Xvfb has no GPU: exercise GTK4 deterministically with its software renderer.
+    GSK_RENDERER="cairo",
     LANG="C.UTF-8",
     LC_ALL="C.UTF-8",
     XDG_RUNTIME_DIR=str(home / "run"),
@@ -206,6 +208,12 @@ try:
     run("xdotool", "type", "sin(30)+2^3")
     run("xdotool", "key", "Return")
     shot("11-calculator-native")
+    # A mapped GTK4 window must also contain rendered pixels, not just a title.
+    cg = geom(calculator)
+    sample = f"12x12+{cg['X'] + 24}+{cg['Y'] + cg['HEIGHT'] // 2}"
+    brightness = run("convert", str(out / "11-calculator-native.png"), "-crop", sample,
+                     "+repage", "-format", "%[fx:mean]", "info:").stdout.strip()
+    assert float(brightness) > 0.70, ("GTK4 Calculator did not paint", brightness, cg)
     run("xdotool", "key", "alt+F4")
     print("SDE WM, COMPOSITOR, START SEARCH AND GTK4 CALCULATOR PASS", flush=True)
     run("sde-panel", "--action-center")

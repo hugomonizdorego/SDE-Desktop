@@ -42,7 +42,6 @@ jobs:
         run: |
           sh tools/install-deps.sh
           sh tools/install-native-deps.sh
-          apt-get install -y --no-install-recommends sudo
       - name: Artifact name
         id: name
         run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
@@ -62,7 +61,7 @@ jobs:
       - name: Native UI smoke checks
         if: matrix.image == 'debian:testing'
         run: |
-          apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick dbus-x11 dconf-gsettings-backend adwaita-icon-theme sudo
+          apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick dbus-x11 dconf-gsettings-backend adwaita-icon-theme
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
           dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small
       - uses: actions/upload-artifact@v4

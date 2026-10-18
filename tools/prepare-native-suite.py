@@ -76,7 +76,7 @@ def brand(text):
 def stamp_version(text, version):
     # Lex character literals as well as strings. A C '\\"' must not make a
     # following os-release "VERSION=" field look like a product-version macro.
-    token = r"/\*[\s\S]*?\*/|//[^\n]*|\"(?:[^\"\\\n]|\\[\s\S])*\"|'(?:[^'\\\n]|\\[\s\S])*'|\b(?:VERSION|PACKAGE_VERSION)\b"
+    token = r"(?m)^[ \t]*#[^\n]*|/\*[\s\S]*?\*/|//[^\n]*|\"(?:[^\"\\\n]|\\[\s\S])*\"|'(?:[^'\\\n]|\\[\s\S])*'|\b(?:VERSION|PACKAGE_VERSION)\b"
     return re.sub(token, lambda m: json.dumps(version) if m.group() in {"VERSION", "PACKAGE_VERSION"} else m.group(), text)
 
 

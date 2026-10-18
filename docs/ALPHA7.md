@@ -12,7 +12,9 @@ under `bootstrap/` and `upstream/` are unchanged.
 unchanged Scientific Calculator engine from the commit pinned in
 `suite/components.lock.json`. JavaScriptCore runs
 the engine directly; there is no browser extension host, WebKit view, Electron
-or network dependency. The frontend supports expressions, precedence, brackets,
+or network dependency. Calculator defaults to Cairo software rendering for
+lightweight X11 and virtual displays; an explicit `GSK_RENDERER` is respected.
+The frontend supports expressions, precedence, brackets,
 scientific functions, degrees/radians/gradians, memory, answer reuse, clipboard
 copy and ten persisted history entries. Browser graph, solver and conversion
 panels are not part of this first native alpha frontend.
@@ -52,7 +54,9 @@ GTK3 and GTK4 are supported together. Calculator uses GTK4; the mature MATE
 derived suite applications still use GTK3. This is not a claim that all forks
 have been ported to GTK4. SDE synchronizes theme, font and icons through separate
 GTK3/GTK4 settings files, XSETTINGS, and the desktop color-scheme preference.
-Unrelated settings.ini keys are preserved. A GTK portal preference is included
+Unrelated settings.ini keys are preserved. Traditional icons that current
+Adwaita no longer includes fall back to AdwaitaLegacy (or a complete installed
+theme such as Papirus). A GTK portal preference is included
 for SDE. No incompatible GTK_MODULES variable is exported across toolkits.
 
 ## Administrator Liria

@@ -103,7 +103,7 @@ void key(GtkButton *button, gpointer) {
   const char *id = static_cast<const char *>(g_object_get_data(G_OBJECT(button), "calc-key"));
   std::string s = id;
   if (s == "=") { evaluate(nullptr, nullptr); return; }
-  if (s == "C") { gtk_editable_set_text(GTK_EDITABLE(entry), ""); gtk_label_set_text(GTK_LABEL(result), "0"); }
+  if (s == "C") { gtk_editable_set_text(GTK_EDITABLE(entry), ""); gtk_label_set_text(GTK_LABEL(result), "0"); gtk_widget_remove_css_class(result, "error"); }
   else if (s == "DEL") {
     int a, b, pos = gtk_editable_get_position(GTK_EDITABLE(entry));
     if (gtk_editable_get_selection_bounds(GTK_EDITABLE(entry), &a, &b)) gtk_editable_delete_text(GTK_EDITABLE(entry), a, b);
@@ -120,9 +120,17 @@ void key(GtkButton *button, gpointer) {
     if (std::isfinite(next)) memory = next;
   }
   else if (s == "Copy") gdk_clipboard_set_text(gtk_widget_get_clipboard(window), gtk_label_get_text(GTK_LABEL(result)));
-  else if (s == "±") function("-");
+  else if (s == "±") {
+    int a, b;
+    if (gtk_editable_get_selection_bounds(GTK_EDITABLE(entry), &a, &b)) function("-");
+    else {
+      std::string value = gtk_editable_get_text(GTK_EDITABLE(entry));
+      gtk_editable_set_text(GTK_EDITABLE(entry), value.empty() ? "-" : ("-(" + value + ")").c_str());
+      gtk_editable_set_position(GTK_EDITABLE(entry), -1);
+    }
+  }
   else if (s == "x²") postfix("^2");
-  else if (s == "xʸ") insert_text("^");
+  else if (s == "xʸ") postfix("^");
   else if (s == "x!") postfix("!");
   else if (s == "%") postfix("%");
   else if (s == "1/x") function("1/");
@@ -225,7 +233,11 @@ void activate(GtkApplication *app, gpointer) {
     char *text = g_key_file_get_string(f, "Calculator", "expression", nullptr);
     if (text) { gtk_editable_set_text(GTK_EDITABLE(entry), text); g_free(text); }
     double a = g_key_file_get_double(f, "Calculator", "answer", nullptr), m = g_key_file_get_double(f, "Calculator", "memory", nullptr);
-    if (std::isfinite(a)) answer = a;
+    if (std::isfinite(a)) {
+      answer = a;
+      char value[G_ASCII_DTOSTR_BUF_SIZE];
+      gtk_label_set_text(GTK_LABEL(result), g_ascii_dtostr(value, sizeof value, answer));
+    }
     if (std::isfinite(m)) memory = m;
     int unit = g_key_file_get_integer(f, "Calculator", "angle", nullptr);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(angle), unit >= 0 && unit <= 2 ? unit : 0);
@@ -262,6 +274,10 @@ int main(int argc, char **argv) {
     std::fprintf(ok ? stdout : stderr, "%s\n", out.c_str());
     JSGlobalContextRelease(context); return ok ? 0 : 2;
   }
+  // A small scientific keypad needs no GPU context; software rendering also
+  // works with SDE's lightweight XRender compositor and virtual displays.
+  // An explicit user/driver choice still takes precedence.
+  g_setenv("GSK_RENDERER", "cairo", FALSE);
   GtkApplication *app = gtk_application_new("org.debion.Calculator", G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(activate), nullptr);
   int status = g_application_run(G_APPLICATION(app), argc, argv);

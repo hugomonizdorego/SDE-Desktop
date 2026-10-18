@@ -39,7 +39,7 @@ for action,expected in [('refresh',[client,'refresh']+(['force'] if client.endsw
     actual=subprocess.check_output([str(binary/'sde-update'),'--plan',action],text=True).splitlines()
     assert actual==expected,(actual,expected)
 assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode==2
-for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-power-manager','mate-screensaver','mate-session-manager']:
+for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-power-manager','mate-screensaver','mate-session-manager','openbox','picom']:
     result=subprocess.run(['dpkg-query','-W','-f=${db:Status-Abbrev}',upstream],capture_output=True,text=True)
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
 files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
