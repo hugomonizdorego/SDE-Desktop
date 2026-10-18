@@ -2,6 +2,7 @@
 
 add_library(sde-common STATIC
   common/config.cpp
+  common/integration.cpp
   common/dbus.cpp
   common/desktop_entry.cpp
   common/glyphs.cpp
@@ -67,3 +68,7 @@ target_link_libraries(sde-update PRIVATE sde-common)
 
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(SDE_BUILD_COMPONENTS)
+  add_subdirectory(calculator)
+endif()

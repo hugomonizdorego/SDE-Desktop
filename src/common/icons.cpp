@@ -361,6 +361,9 @@ std::string lookup_uncached(const std::string &name, int size) {
       if (!found.empty()) return found;
     }
     for (auto &inh : t->inherits) chain.push_back(trim(inh));
+    // Recent Adwaita releases moved traditional app/category icons into a
+    // separate theme. Preserve the selected theme, then use those fallbacks.
+    if (i + 1 == chain.size() && !seen.count("AdwaitaLegacy")) chain.push_back("AdwaitaLegacy");
     if (i + 1 == chain.size() && !seen.count("hicolor")) chain.push_back("hicolor");
   }
   for (auto &base : data_dirs()) {

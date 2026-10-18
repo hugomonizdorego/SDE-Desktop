@@ -1,3 +1,14 @@
+# Alpha7 patch · 2026-10-18
+
+- Add native GTK4 Calculator using the attributed Scientific Calculator engine.
+- Redesign Start Menu with ordered Suite tiles, search and scrollable categories.
+- Add categorized first-login Suite launchers without replacing user files.
+- Build SDE WM (Openbox) and SDE Compositor (picom) from immutable source pins.
+- Add GTK3/GTK4 settings, XSETTINGS and portal integration.
+- Isolate `sudo liria` into root preferences and a private D-Bus session.
+- Track independent application versions; Liria follows the desktop version.
+- Keep the EDE-inspired component structure and all upstream notices.
+
 # Changelog
 
 ## 0.1.0 Alpha 6 — native DebION suite

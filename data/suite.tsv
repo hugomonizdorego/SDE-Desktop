@@ -1,10 +1,11 @@
-# id	name	role	command	package	icon	upstream	url	license
-niny	Niny	Text Editor	niny	sde/upstream/pluma	accessories-text-editor	pluma	https://github.com/mate-desktop/pluma	GPL-2.0-or-later
-liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	system-file-manager	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later; LGPL parts
-xanara	Xanara	Document Viewer	xanara	sde/upstream/atril	x-office-document	atril	https://github.com/mate-desktop/atril	GPL-2.0-or-later; mixed libraries
-taca	Taca	Archive Manager	taca	sde/upstream/engrampa	package-x-generic	engrampa	https://github.com/mate-desktop/engrampa	GPL-2.0-or-later
-sde-system-monitor	SDE System Monitor	Processes and Resources	sde-system-monitor	sde/upstream/mate-system-monitor	utilities-system-monitor	mate-system-monitor	https://github.com/mate-desktop/mate-system-monitor	GPL-2.0-or-later
-sde-power-manager	SDE Power Manager	Power Preferences	sde-power-preferences	sde/upstream/mate-power-manager	preferences-system-power	mate-power-manager	https://github.com/mate-desktop/mate-power-manager	GPL-2.0-or-later
-sde-view	SDE View	Image Viewer	sde-view	sde/upstream/eom	image-x-generic	eom	https://github.com/mate-desktop/eom	GPL-2.0-or-later
-sde-update	SDE Update	System Updates	sde-update	sde	system-software-update	mintupdate	https://github.com/linuxmint/mintupdate	GPL-3.0-or-later (adapted model)
-sde-screensaver	SDE Screen Lock	Screen Lock Preferences	sde-screensaver-preferences	sde/upstream/mate-screensaver	system-lock-screen	mate-screensaver	https://github.com/mate-desktop/mate-screensaver	GPL-2.0-or-later
+# id	name	role	command	package	icon	upstream	url	license	build_version
+niny	Niny	Text Editor	niny	sde/upstream/pluma	accessories-text-editor	pluma	https://github.com/mate-desktop/pluma	GPL-2.0-or-later	1.0.0~alpha1
+liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	system-file-manager	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later; LGPL parts	0.1.0~alpha7
+xanara	Xanara	Document Viewer	xanara	sde/upstream/atril	x-office-document	atril	https://github.com/mate-desktop/atril	GPL-2.0-or-later; mixed libraries	1.0.0~alpha1
+sde-view	SDE View	Image Viewer	sde-view	sde/upstream/eom	image-x-generic	eom	https://github.com/mate-desktop/eom	GPL-2.0-or-later	1.0.0~alpha1
+calculator	Calculator	Scientific Calculator	calculator	sde/upstream/scientific-calculator	accessories-calculator	scientific-calculator	https://github.com/raad-altaie/scientific-calculator	AGPL-3.0-only	1.0.0~alpha1
+taca	Taca	Archive Manager	taca	sde/upstream/engrampa	package-x-generic	engrampa	https://github.com/mate-desktop/engrampa	GPL-2.0-or-later	1.0.0~alpha1
+sde-system-monitor	SDE System Monitor	Processes and Resources	sde-system-monitor	sde/upstream/mate-system-monitor	utilities-system-monitor	mate-system-monitor	https://github.com/mate-desktop/mate-system-monitor	GPL-2.0-or-later	1.0.0~alpha1
+sde-update	SDE Update	System Updates	sde-update	sde	system-software-update	mintupdate	https://github.com/linuxmint/mintupdate	GPL-3.0-or-later (adapted model)	1.0.0~alpha1
+sde-power-manager	SDE Power Manager	Power Preferences	sde-power-preferences	sde/upstream/mate-power-manager	preferences-system-power	mate-power-manager	https://github.com/mate-desktop/mate-power-manager	GPL-2.0-or-later	1.0.0~alpha1
+sde-screensaver	SDE Screen Lock	Screen Lock Preferences	sde-screensaver-preferences	sde/upstream/mate-screensaver	system-lock-screen	mate-screensaver	https://github.com/mate-desktop/mate-screensaver	GPL-2.0-or-later	1.0.0~alpha1

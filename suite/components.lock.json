@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "components": [
+    {
+      "id": "calculator",
+      "upstream": "scientific-calculator",
+      "url": "https://github.com/raad-altaie/scientific-calculator",
+      "commit": "37ceb0974585772e9475215cbd57926945b74b83",
+      "license": "AGPL-3.0-only"
+    },
+    {
+      "id": "sde-wm",
+      "upstream": "openbox",
+      "url": "https://github.com/Mikachu/openbox",
+      "commit": "249020d6237bec9abfefc31953e934e83105c91c",
+      "license": "GPL-2.0-or-later"
+    },
+    {
+      "id": "sde-compositor",
+      "upstream": "picom",
+      "url": "https://github.com/yshui/picom",
+      "commit": "a456d438d0a681365d90a8adbf0941cede41aaa9",
+      "license": "MPL-2.0 AND MIT"
+    }
+  ]
+}

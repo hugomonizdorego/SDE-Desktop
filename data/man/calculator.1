@@ -1,0 +1,35 @@
+.TH CALCULATOR 1 "October 2026" "Calculator 1.0 Alpha 1" "SDE Suite"
+.SH NAME
+calculator \- native scientific calculator for SDE
+.SH SYNOPSIS
+.B calculator
+.br
+.B calculator --eval
+.I expression
+.RB [ --angle " deg|rad|grad" ]
+.br
+.B calculator --version
+.SH DESCRIPTION
+Calculator is a native GTK4 application using the embedded Scientific
+Calculator engine by Raad Altaie. It supports operator precedence,
+parentheses, scientific functions, angle modes, memory, answer reuse,
+clipboard copy and a small persistent history. It runs offline.
+.SH OPTIONS
+.TP
+.BI --eval " expression"
+Evaluate an expression without opening a window. The default angle unit
+is degrees. Invalid expressions and domain errors return a nonzero status.
+.TP
+.BI --angle " unit"
+Use deg, rad or grad with --eval.
+.TP
+.B --version
+Print Calculator's independent SDE build version.
+.SH FILES
+.I ~/.local/state/sde/calculator.ini
+stores GUI preferences, memory and the last ten history records.
+XDG_STATE_HOME is respected.
+.SH COPYRIGHT
+Copyright (c) 2026 Raad Altaie (engine) and SDE contributors (native frontend).
+AGPL-3.0-only. See /usr/share/doc/sde/upstream/scientific-calculator/.
+The complete corresponding source is distributed beside the SDE packages.

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
 import importlib.util
 import unittest
 from pathlib import Path
@@ -9,6 +10,31 @@ spec.loader.exec_module(forks)
 
 
 class BrandingTest(unittest.TestCase):
+    def test_independent_build_versions_and_desktop_placement(self):
+        root = Path(__file__).resolve().parents[1]
+        versions = json.loads((root / 'suite/versions.json').read_text())
+        self.assertEqual(versions['liria'], (root/'VERSION').read_text().strip())
+        rows = [r.split('\t') for r in (root/'data/suite.tsv').read_text().splitlines() if r and not r.startswith('#')]
+        self.assertEqual(len(rows), 10)
+        for row in rows:
+            self.assertEqual(row[9], versions[row[0]])
+            self.assertIn('alpha', row[9])
+            desktop = 'org.debion.Calculator' if row[0] == 'calculator' else row[0]
+            self.assertTrue((root/'data/applications'/ (desktop+'.desktop')).is_file())
+        for record in json.loads((root/'suite/forks.lock.json').read_text())['forks']:
+            self.assertEqual(record['build_version'], versions[record['id']])
+
+    def test_build_version_keeps_os_release_fields_and_character_quotes(self):
+        source = r'''if (s.at(start) == '\\"') { auto label = "VERSION="; }
+const char *version = VERSION;
+const char *other = "# VERSION=";
+// PACKAGE_VERSION remains in this historical comment
+const char *build = PACKAGE_VERSION;
+#undef VERSION
+'''
+        expected = source.replace('= VERSION;', '= "1.0.0~alpha1";').replace('= PACKAGE_VERSION;', '= "1.0.0~alpha1";')
+        self.assertEqual(forks.stamp_version(source, '1.0.0~alpha1'), expected)
+
     def test_native_identifiers_and_includes_change(self):
         self.assertEqual(forks.brand('#include "caja-window.h"'), '#include "liria-window.h"')
         self.assertEqual(forks.brand('#define EOM_WINDOW "org.mate.eom"'), '#define SDEVIEW_WINDOW "org.debion.sdeview"')

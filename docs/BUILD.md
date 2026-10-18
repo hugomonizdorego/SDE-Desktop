@@ -89,3 +89,14 @@ Measurements from alpha2 and older screenshots do not describe the resource use
 of this complete suite. Test real display-manager login, polkit authorization,
 notification delivery, screen locking and power policies on DebION before
 releasing an installer image.
+
+## Alpha7 components
+
+Run `python3 tools/prepare-components.py` before configuring; this fetches the
+pinned Calculator, Openbox and picom sources. `tools/build-deb.sh` performs both
+source-preparation steps automatically, then builds without network access.
+Additional dependencies are listed in `debian/control` and installed by
+`tools/install-native-deps.sh`. GTK4 >= 4.8 and JavaScriptCoreGTK 4.1 are required
+for Calculator; GTK3 is retained for the other native forks. CMake >= 3.19 is
+required. For core-only development, explicitly disable both
+`SDE_BUILD_NATIVE_SUITE` and `SDE_BUILD_COMPONENTS`.

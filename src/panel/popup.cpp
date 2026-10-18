@@ -42,6 +42,10 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
     x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
   }
   Fl::grab(this);
+  // Override-redirect menus are outside WM focus management. Claim keyboard
+  // focus explicitly, including after a GTK4 client has closed its window.
+  XSetInputFocus(fl_display, fl_xid(this), RevertToPointerRoot, CurrentTime);
+  XFlush(fl_display);
   panel->popup_opened(this);
   redraw();
   // Keyboard users start on the first control.
@@ -76,7 +80,7 @@ int PanelPopup::handle(int event) {
       return 1;
     }
   }
-  if (event == FL_KEYBOARD && Fl::event_key() == FL_Escape) {
+  if ((event == FL_KEYBOARD || event == FL_SHORTCUT) && Fl::event_key() == FL_Escape) {
     close();
     return 1;
   }

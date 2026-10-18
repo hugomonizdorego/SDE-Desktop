@@ -72,6 +72,14 @@ def brand(text):
     return text
 
 
+
+def stamp_version(text, version):
+    # Lex character literals as well as strings. A C '\\"' must not make a
+    # following os-release "VERSION=" field look like a product-version macro.
+    token = r"(?m)^[ \t]*#[^\n]*|/\*[\s\S]*?\*/|//[^\n]*|\"(?:[^\"\\\n]|\\[\s\S])*\"|'(?:[^'\\\n]|\\[\s\S])*'|\b(?:VERSION|PACKAGE_VERSION)\b"
+    return re.sub(token, lambda m: json.dumps(version) if m.group() in {"VERSION", "PACKAGE_VERSION"} else m.group(), text)
+
+
 def prepare(record, cache, destination):
     checkout = cache / record["upstream"]
     if not checkout.exists():
@@ -144,10 +152,14 @@ def prepare(record, cache, destination):
         helper = (ROOT / "suite/sde-brand.h").read_text()
         for path in list(staged.rglob("*.c")) + list(staged.rglob("*.cpp")):
             s = path.read_text()
+            # About dialogs and command versions identify the independent SDE
+            # build; upstream ABI/library version variables stay unchanged.
+            s = stamp_version(s, record["build_version"])
             if re.search(r"\bmain\s*\(\s*(?:int|gint)\b", s):
                 header = path.parent / "sde-brand.h"
-                header.write_text(helper)
-                path.write_text(s + '\n#include "sde-brand.h"\n')
+                header.write_text("#define SDE_NATIVE_NAME " + json.dumps(record["name"]) + "\n#define SDE_NATIVE_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_NATIVE_LIRIA " + str(int(record["id"] == "liria")) + "\n" + helper)
+                s += '\n#include "sde-brand.h"\n'
+            path.write_text(s)
         if record["id"] == "sde-screensaver":
             pam = staged / "data/sde-screensaver"
             pam.write_text("# SDE screen lock: Debian PAM policy\n@include common-auth\n@include common-account\n@include common-session\n")

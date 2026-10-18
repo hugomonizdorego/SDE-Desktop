@@ -12,3 +12,10 @@ apt-get install -y --no-install-recommends \
     libcanberra-gtk3-dev libdbus-glib-1-dev libnotify-dev libupower-glib-dev \
     libpam0g-dev libxss-dev libxrandr-dev libxxf86vm-dev libsm-dev libice-dev \
     liblcms2-dev libxklavier-dev libglib2.0-bin libglib2.0-dev-bin chrpath
+
+apt-get install -y --no-install-recommends \
+    libgtk-4-dev libjavascriptcoregtk-4.1-dev meson ninja-build libxcursor-dev libxinerama-dev \
+    libpango1.0-dev libimlib2-dev libconfig-dev libev-dev libepoxy-dev libpcre2-dev libpixman-1-dev libx11-xcb-dev \
+    libxcb-composite0-dev libxcb-damage0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev \
+    libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-sync-dev \
+    libxcb-util-dev libxcb-xfixes0-dev uthash-dev

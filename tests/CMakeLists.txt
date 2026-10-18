@@ -13,3 +13,7 @@ add_test(NAME sde-rust-tests
 # Test helper: a StatusNotifierItem with a menu (not installed).
 add_executable(sde-sni-demo sni_demo.cpp)
 target_link_libraries(sde-sni-demo PRIVATE sde-common)
+
+if(SDE_BUILD_COMPONENTS)
+  add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
+endif()

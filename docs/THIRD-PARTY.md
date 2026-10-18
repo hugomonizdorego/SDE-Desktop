@@ -61,3 +61,18 @@ The immutable development revisions are in `upstream/sources.lock.json`.
 `tools/suite-source.py` retains each project's complete original licensing when
 preparing its source tree. A project being listed as a reference does not imply
 that its code is licensed under SDE's GPLv3 or that it is installed with SDE.
+
+## Alpha7 native components
+
+| SDE component | Source | License | Integration |
+|---|---|---|---|
+| Calculator | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) | AGPL-3.0-only; Copyright (c) 2026 Raad Altaie | Unmodified pinned calculation engine embedded in a separate GTK4 native executable; SDE frontend also AGPL-3.0-only |
+| SDE WM | [openbox](https://github.com/Mikachu/openbox) | GPL-2.0-or-later; all original contributors retained | Private source build, SDE executable/WM identity, SDE rc.xml and themes |
+| SDE Compositor | [picom](https://github.com/yshui/picom) | MPL-2.0 AND MIT | Private source build and independent build version; lightweight XRender defaults |
+
+Exact revisions are in `suite/components.lock.json`. Preparation retains complete
+source trees, license texts, authors and historical notices. These are included
+in `sde-native-sources_*.tar.xz` beside every Debian package. Installed copyright
+files are under `/usr/share/doc/sde/upstream/`. Calculator embeds only the
+calculator engine; browser-specific web panels are not represented as ported
+native features. There is no browser or web view in the Calculator executable.
