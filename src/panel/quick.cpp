@@ -461,7 +461,7 @@ class ActionButton : public DrawnButton {
       p.fill_rounded(x(), y(), w(), h(), S(12), bg);
       if (hot || on) p.stroke_rounded(x(), y(), w(), h(), S(12), on ? accent : t.border);
       double size = S(row_ ? 20 : 23);
-      icon_(p, row_ ? x() + S(12) : x() + (w() - size) / 2.0,
+      icon_(p, row_ && !title_.empty() ? x() + S(12) : x() + (w() - size) / 2.0,
             row_ ? y() + (h() - size) / 2.0 : y() + S(10), size, ink);
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(12));
     }
@@ -565,6 +565,7 @@ class CommandButton : public FlatButton {
   CommandButton(int x, int y, int w, int h, const std::string &name, std::function<void()> fn)
       : FlatButton(x, y, w, h, name.c_str()), fn_(std::move(fn)) {
     copy_label(name.c_str());
+    copy_tooltip(name.c_str());
     callback([](Fl_Widget *w, void *) { static_cast<CommandButton *>(w)->fn_(); });
   }
 
@@ -703,7 +704,7 @@ void QuickSettings::rebuild_timeout(void *data) {
     Fl::add_timeout(.1, rebuild_timeout, data);
     return;
   }
-  int scroll = self->body_ ? self->body_->yposition() : 0;
+  int scroll = self->body_ ? std::max(0, self->body_->yposition()) : 0;
   bool focus = Fl::focus() && Fl::focus()->window() == self;
   self->rebuild();
   self->body_->scroll_to(0,
@@ -760,6 +761,9 @@ void QuickSettings::rebuild() {
   body_->scrollbar_size(S(10));
   body_->box(FL_FLAT_BOX);
   body_->color(t.surface.fl());
+  // Give Fl_Scroll a stable zero origin. Otherwise its padding is reported as
+  // negative scroll and repeated service rebuilds accumulate blank space.
+  new Fl_Box(body_->x(), body_->y(), 1, 1);
   auto label = [&](std::string text, int style = 0, int height = 24) {
     new ActionLabel(pad, y, inner, S(height), [text] { return text; }, style);
     y += S(height);
@@ -1193,9 +1197,14 @@ void QuickSettings::rebuild() {
             },
             reinterpret_cast<void *>(uintptr_t(a.id)));
         stream_sliders_[a.id] = slider;
-        new CommandButton(
-            pad + inner - S(72), y, S(60), S(34), a.muted ? _("Unmute") : _("Mute"),
-            [id = a.id, muted = !a.muted] { PanelControls::get().mute_stream(id, muted); });
+        auto *mute = new ActionButton(
+            pad + inner - S(72), y, S(60), S(34), "",
+            [muted = a.muted](Painter &p, double x, double y, double z, const Color &ink) {
+              glyph::speaker(p, x, y, z, 3, muted, ink);
+            },
+            [id = a.id, muted = !a.muted] { PanelControls::get().mute_stream(id, muted); },
+            [muted = a.muted] { return muted; }, -1, true);
+        mute->copy_tooltip(a.muted ? _("Unmute application") : _("Mute application"));
         y += S(40);
         auto player = match_media_player(a, c.players());
         if (!player.empty())
@@ -1296,4 +1305,18 @@ void QuickSettings::draw() {
   draw_children();
   sync_native_tray();
 }
-int QuickSettings::handle(int event) { return PanelPopup::handle(event); }
+int QuickSettings::handle(int event) {
+  if (event == FL_MOUSEWHEEL && body_ && Fl::event_inside(body_)) {
+    // Route wheel gestures explicitly through this override-redirect window;
+    // keep application-tray and slider wheel controls local to their widgets.
+    auto *target = Fl::belowmouse();
+    if (dynamic_cast<Fl_Slider *>(target) || dynamic_cast<TrayIndicator *>(target) ||
+        dynamic_cast<Fl_Choice *>(target))
+      return PanelPopup::handle(event);
+    int limit = std::max(0, content_height_ - body_->h());
+    body_->scroll_to(0, std::max(0, std::min(limit, body_->yposition() + Fl::event_dy() * S(36))));
+    redraw();
+    return 1;
+  }
+  return PanelPopup::handle(event);
+}

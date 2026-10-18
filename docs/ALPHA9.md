@@ -55,7 +55,9 @@ not part of this patch. They remain candidates for later alpha reviews.
 Use the complete `sde-desktop` metapackage to install NetworkManager, BlueZ,
 Blueman, PulseAudio tools and an audio server/session manager. The `sde` package
 recommends these helpers; missing services show a clear unavailable state.
-Pairing with PIN/passkey confirmation uses the system's BlueZ agent; Bluetooth
+An SDE-only autostart entry starts Blueman's single-instance applet when
+installed, providing the BlueZ pairing agent. Pairing with PIN/passkey
+confirmation uses this agent; Bluetooth
 Settings opens Blueman when confirmation is needed. SDE does not silently trust
 a device or bypass authentication. Bluetooth discovery stops after 10 seconds,
 when the selected adapter changes, or when Action Center closes.
