@@ -97,8 +97,8 @@ CI builds and installs on Debian testing, checks actual native ELF files,
 rejects original MATE application packages, checks MIME overrides and copyright
 notices, and opens the five file-handling applications with sample files on X11.
 Network, audio and APT screenshot fixtures are explicitly simulated. No test
-performs a real update, lock, suspend or shutdown. Historical alpha5 screenshots
-show the previous package-engine integration; fresh captures are CI artifacts.
+performs a real update, lock, suspend or shutdown. Native alpha6 captures of Niny and Suite settings are under
+`docs/screenshots/suite`; CI uploads the complete capture set.
 Hardware login, power, locking and whole-desktop idle memory remain to be
 validated on DebION. See [THIRD-PARTY.md](THIRD-PARTY.md) for provenance.
 

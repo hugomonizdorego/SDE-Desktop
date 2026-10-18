@@ -14,7 +14,7 @@ parser.add_argument("--output-dir", type=Path, default=Path("dist/ui-smoke"))
 parser.add_argument(
     "--suite-apps",
     action="store_true",
-    help="Also open real installed suite engines with sample files",
+    help="Also open native suite applications with sample files",
 )
 parser.add_argument("--size", default="1366x768")
 parser.add_argument("--scale", type=int, default=100, choices=[100, 125, 150, 175, 200])
@@ -344,10 +344,12 @@ try:
     if args.suite_apps:
         import zipfile
 
+        config("full")
+        reload_panel()
         folder = home / "SDE-Suite-Check"
         folder.mkdir()
         text = folder / "SDE-sample.txt"
-        text.write_text("SDE Suite · Niny integration check\n")
+        text.write_text("SDE Suite · Niny native build check\n")
         document = folder / "SDE-sample.pdf"
         stream = b"BT /F1 18 Tf 40 150 Td (SDE Suite - Xanara) Tj ET"
         objects = [

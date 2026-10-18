@@ -17,7 +17,12 @@ for name in apps:
     data=path.read_bytes()
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
-    assert 'libgtk' in dynamic or 'libgobject' in dynamic,(name,dynamic)
+    if name == 'sde-screensaver-command':
+        # This native command-line client talks to the locker over D-Bus;
+        # it intentionally has no GTK window or direct GObject dependency.
+        assert 'libglib-2.0' in dynamic and 'libdbus' in dynamic,(name,dynamic)
+    else:
+        assert 'libgtk' in dynamic or 'libgobject' in dynamic,(name,dynamic)
 subprocess.run([str(binary/'sde-suite'),'--check'],check=True)
 client='/usr/bin/pkgcli' if os.access('/usr/bin/pkgcli',os.X_OK) else '/usr/bin/pkcon'
 for action,expected in [('refresh',[client,'refresh']+(['force'] if client.endswith('pkcon') else [])),('upgrade',[client,'update'])]:

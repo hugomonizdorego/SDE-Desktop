@@ -760,8 +760,8 @@ std::string wm_name() {
   return n.empty() ? _("unknown") : n;
 }
 
-// Source names are short clickable links. Licenses open the installed backend's
-// complete Debian copyright file, including all historical contributors.
+// Source names are short clickable links. Licenses open the installed fork's
+// complete copyright file, including all historical contributors.
 FlatButton *action_button(int x, int y, int w, int h, const std::string &label, std::vector<std::string> argv,
                           bool primary = false) {
   auto *button = new FlatButton(x, y, w, h, label, primary);
@@ -777,8 +777,8 @@ FlatButton *action_button(int x, int y, int w, int h, const std::string &label, 
 void build_suite(Page *page) {
   page->heading(_("SDE Suite"), _("Applications for DebION GNU/Linux"));
   page->note(
-      _("Development edition. SDE integrates maintained MATE applications; upstream windows and plugins "
-        "retain their original identity and credits."));
+      _("Development edition. Native SDE applications are included in one package. "
+        "Original authors and licenses remain credited."));
   page->choice_row(
       _("Application theme"), {_("Follow SDE"), _("System GTK theme")},
       g_cfg.get("suite", "gtk_theme", "auto") == "system" ? 1 : 0,
@@ -805,7 +805,7 @@ void build_suite(Page *page) {
     page->end_card();
   }
   page->note(
-      _("MATE engines keep their own licenses. The SDE Update model is adapted from mintupdate; PackageKit "
+      _("Original application licenses and copyrights are retained. SDE Update credits mintupdate; PackageKit "
         "performs Debian transactions."));
   page->finish();
 }

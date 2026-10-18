@@ -4,7 +4,7 @@
 
 Development version **0.1 Alpha 6** (`0.1.0~alpha6`) · October 2026 · GPL-3.0-or-later
 
-![SDE Alpha 5 with a full-edge square panel and integrated suite](docs/screenshots/suite/07-settings-suite.png)
+![SDE Alpha 6 with native suite and a full-edge square panel](docs/screenshots/suite/07-settings-suite.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and **Openbox** as its
@@ -50,13 +50,14 @@ one `sde` package with their resources and preserved copyrights. The original
 MATE application packages are not installed. Shared GTK/MATE libraries remain
 normal dependencies. SDE Update has a native interface, an attributed Mint Update
 model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
-and [source credits](docs/THIRD-PARTY.md). The screenshot above records alpha5;
-new native captures are uploaded by CI.
+and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 
 `sudo apt install sde-desktop` is the single entry point when the two SDE packages
 are available in the DebION repository. The metapackage installs the session,
 suite, Xorg, login, network, sound and media services. No DebION repository is
 created by this project.
+
+![Native Niny editor in SDE](docs/screenshots/suite/10-niny-native.png)
 
 ## Eduka-inspired interface
 
