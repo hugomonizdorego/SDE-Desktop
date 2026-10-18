@@ -1,0 +1,24 @@
+.TH SDE-DISPLAY-SETTINGS 1 "October 2026" "SDE Alpha" "User Commands"
+.SH NAME
+sde-display-settings \- native monitor and display profile settings
+.SH SYNOPSIS
+.B sde-display-settings
+.RI [ --version ]
+.SH DESCRIPTION
+Configure X11 RandR displays, resolution, refresh rate, rotation, main display,
+position and hardware-matched profiles. Drag monitors or enter pixel positions.
+Detect refreshes hardware; topology changes are also detected while running.
+.PP
+Apply tests for 15 seconds. Keep Changes saves the layout. Revert, timeout or
+application termination restores the previous layout via an independent worker.
+.PP
+Interface scale changes shared SDE and GTK text DPI, not pixel resolution.
+Available sizes are 100, 125, 150, 175 and 200 percent. Some clients need reopening.
+This X11 backend does not implement independent fractional scale per monitor.
+.SH FILES
+.I ~/.config/sde/display-profiles/
+.br
+.I ~/.config/sde/sde.conf
+.SH AUTHORS
+Profile model ported from DisplayProfileManager, Copyright (c) 2025 zac15987, MIT.
+Linux backend and native frontend by SDE contributors, GPL-3.0-or-later.

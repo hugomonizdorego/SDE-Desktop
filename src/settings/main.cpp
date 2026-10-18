@@ -53,6 +53,7 @@ Config g_cfg;
 Theme g_theme;
 BufferedWindow *g_window = nullptr;
 std::string g_argv0;
+std::string g_restart_page = "appearance";
 
 }  // namespace
 
@@ -70,7 +71,7 @@ void apply_change() {
   if (std::fabs(g_theme.scale - old_scale) > 0.01) {
     // Every size depends on the scale: start again with the new one.
     Fl::add_timeout(0.2, [](void *) {
-      execl("/proc/self/exe", g_argv0.c_str(), "--page", "appearance", static_cast<char *>(nullptr));
+      execl("/proc/self/exe", g_argv0.c_str(), "--page", g_restart_page.c_str(), static_cast<char *>(nullptr));
     });
   }
   if (g_window) g_window->redraw();
@@ -472,7 +473,7 @@ void build_home(Page *page) {
       {"input", N_("Keyboard & Mouse"), N_("Layouts, pointer and touchpad"), "input-keyboard"},
       {"notifications", N_("Notifications"), N_("Alerts and Do Not Disturb"),
        "preferences-desktop-notification"},
-      {"suite", N_("SDE Suite"), N_("Applications and source credits"), "applications-other"},
+      {"suite", N_("Applications"), N_("Applications and source credits"), "applications-other"},
       {"system", N_("Power & Updates"), N_("Power, packages and processes"), "utilities-system-monitor"},
   };
   y = page->cursor();
@@ -777,7 +778,7 @@ FlatButton *action_button(int x, int y, int w, int h, const std::string &label, 
 }
 
 void build_suite(Page *page) {
-  page->heading(_("SDE Suite"), _("Applications for DebION GNU/Linux"));
+  page->heading(_("Applications"), _("Applications for DebION GNU/Linux"));
   page->note(
       _("Development edition. Native SDE applications are included in one package. "
         "Original authors and licenses remain credited."));
@@ -839,7 +840,7 @@ void build_suite_system(Page *page) {
       _("Changes apply at the next login. Disable effects to reduce graphics work."));
   page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
-    return action_button(x, y, w, h, _("SDE Suite"), {"sde-settings", "--page", "suite"});
+    return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});
   });
   page->finish();
 }
@@ -911,7 +912,7 @@ const std::vector<PageInfo> &pages() {
        N_("Keyboard & Mouse"),
        {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
        build_input_page},
-      {"suite", N_("SDE Suite"), {"applications-other", "sde-logo"}, build_suite},
+      {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite},
       {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
       {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
   };
@@ -1032,6 +1033,7 @@ class SettingsWindow : public BufferedWindow {
 void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
   g_page_index = index;
+  g_restart_page = pages()[size_t(index)].id;
   if (g_sidebar_scroll && g_sidebar) {
     int top = g_sidebar->row_y(index), bottom = top + g_sidebar->row_h();
     int scroll = g_sidebar_scroll->yposition();
@@ -1090,7 +1092,7 @@ int main(int argc, char **argv) {
   g_cfg.load();
   if (apply) {
     sync_gtk_settings(g_cfg);
-    ensure_suite_shortcuts();
+    migrate_legacy_suite_shortcuts();
     apply_all(g_cfg);
     return 0;
   }
@@ -1127,6 +1129,7 @@ int main(int argc, char **argv) {
     if (page == pages()[i].id) index = int(i);
   show_page(index);
   win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  start_display_watch();
   win->show();
   return Fl::run();
 }

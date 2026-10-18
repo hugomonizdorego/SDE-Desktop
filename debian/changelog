@@ -1,3 +1,12 @@
+sde (0.1.0~alpha8) unstable; urgency=medium
+
+  * Standard XDG menu categories, live application installation refresh.
+  * Native Display Settings: port DisplayProfileManager profiles to Linux RandR.
+  * EDID, modes, refresh rate, rotation, layout, profiles and independent rollback.
+  * Shared SDE / GTK interface scale at 100, 125, 150, 175 and 200 percent.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sun, 18 Oct 2026 14:30:00 +0000
+
 sde (0.1.0~alpha7) unstable; urgency=medium
 
   * Add native GTK4 Calculator with the pinned Scientific Calculator engine.

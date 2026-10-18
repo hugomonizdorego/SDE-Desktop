@@ -10,5 +10,6 @@
   "sde-wm": "1.0.0~alpha1",
   "sde-compositor": "1.0.0~alpha1",
   "sde-update": "1.0.0~alpha1",
-  "liria": "0.1.0~alpha7"
+  "liria": "0.1.0~alpha8",
+  "sde-display-settings": "1.0.0~alpha1"
 }

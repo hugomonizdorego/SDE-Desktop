@@ -11,7 +11,7 @@ string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SDE_VERSION_NUMERIC "${SDE_VERSIO
 
 project(sde VERSION ${SDE_VERSION_NUMERIC} LANGUAGES CXX)
 
-set(SDE_VERSION_LABEL "0.1 Alpha 7" CACHE STRING "Human readable release name")
+set(SDE_VERSION_LABEL "0.1 Alpha 8" CACHE STRING "Human readable release name")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ find_package(X11 REQUIRED)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo cairo-xlib)
 pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0)
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
+pkg_check_modules(XRANDR REQUIRED IMPORTED_TARGET xrandr)
 
 # FLTK 1.3 (Debian 12/13, Ubuntu 22.04/24.04) or 1.4. fltk-config is the most
 # portable way to find it on Debian based systems.
@@ -48,6 +49,7 @@ set(SDE_LOCALEDIR "${CMAKE_INSTALL_FULL_LOCALEDIR}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/suite/versions.json")
 file(READ "${PROJECT_SOURCE_DIR}/suite/versions.json" SDE_APP_VERSIONS)
 string(JSON SDE_UPDATE_VERSION GET "${SDE_APP_VERSIONS}" sde-update)
+string(JSON SDE_DISPLAY_VERSION GET "${SDE_APP_VERSIONS}" sde-display-settings)
 configure_file(src/common/build_config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/generated/build_config.h @ONLY)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/suite.tsv" SDE_SUITE_DATA)

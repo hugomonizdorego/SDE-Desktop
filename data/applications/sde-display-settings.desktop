@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Display Settings
+GenericName=Monitors and Display Profiles
+Comment=Arrange monitors, set resolution, refresh rate and interface scale
+Exec=sde-display-settings
+TryExec=sde-display-settings
+Icon=preferences-desktop-display
+Terminal=false
+Categories=Settings;HardwareSettings;DesktopSettings;
+Keywords=Display;Monitor;Resolution;Scale;Screen;HDMI;DisplayPort;Profile;
+OnlyShowIn=SDE;
+StartupNotify=false

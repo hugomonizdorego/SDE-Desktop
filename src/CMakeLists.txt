@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 add_library(sde-common STATIC
+  display/backend.cpp
+  display/profile.cpp
   common/config.cpp
   common/integration.cpp
   common/dbus.cpp
@@ -24,7 +26,7 @@ target_include_directories(sde-common PUBLIC
 target_compile_options(sde-common PUBLIC ${FLTK_CXXFLAGS})
 target_link_libraries(sde-common PUBLIC
   ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
-  sde-rust-config)
+  sde-rust-config PkgConfig::XRANDR)
 add_dependencies(sde-common sde-rust-build)
 
 # The session manager draws nothing itself, but shares the configuration,
@@ -71,4 +73,15 @@ install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logou
 
 if(SDE_BUILD_COMPONENTS)
   add_subdirectory(calculator)
+endif()
+
+add_executable(sde-display-settings display/main.cpp settings/display.cpp settings/ui.cpp)
+target_include_directories(sde-display-settings PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/settings)
+target_link_libraries(sde-display-settings PRIVATE sde-common)
+install(TARGETS sde-display-settings RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES display/profile.LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/DisplayProfileManager RENAME copyright)
+if(SDE_BUILD_COMPONENTS)
+  install(FILES "${SDE_COMPONENT_SOURCES}/sde-display-settings/LICENSE"
+                "${SDE_COMPONENT_SOURCES}/sde-display-settings/copyright"
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/DisplayProfileManager)
 endif()

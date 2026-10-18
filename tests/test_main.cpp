@@ -102,6 +102,46 @@ static void test_desktop_entry() {
   CHECK(none.size() == 2);
 }
 
+static void test_application_categories_refresh() {
+  char dir[] = "/tmp/sde-xdg-apps-XXXXXX";
+  CHECK(mkdtemp(dir));
+  std::string old_data = env("XDG_DATA_HOME"), old_dirs = env("XDG_DATA_DIRS");
+  setenv("XDG_DATA_HOME", dir, 1);
+  setenv("XDG_DATA_DIRS", dir, 1);
+  std::string apps = std::string(dir) + "/applications";
+  make_dirs(apps);
+  CHECK(load_applications("SDE").empty());
+  for (const auto &v :
+       std::vector<std::pair<std::string, std::string>>{{"Utility;Calculator;", "Accessories"},
+                                                        {"Utility;TextEditor;", "Accessories"},
+                                                        {"Utility;Archiving;", "Accessories"},
+                                                        {"Office;Viewer;", "Office"},
+                                                        {"Graphics;Viewer;", "Graphics"},
+                                                        {"Settings;HardwareSettings;", "Settings"},
+                                                        {"System;Monitor;", "System"},
+                                                        {"Network;WebBrowser;", "Internet"},
+                                                        {"AudioVideo;Player;", "Multimedia"},
+                                                        {"Development;IDE;", "Development"}}) {
+    CHECK(write_file_atomic(
+        apps + "/probe.desktop",
+        "[Desktop Entry]\nType=Application\nName=Installed probe\nExec=true\nCategories=" +
+            v.first + "\n"));
+    auto loaded = load_applications("SDE");
+    CHECK(loaded.size() == 1);
+    if (!loaded.empty()) CHECK(loaded[0].menu_category() == v.second);
+  }
+  unlink((apps + "/probe.desktop").c_str());
+  CHECK(load_applications("SDE").empty());
+  if (old_data.empty())
+    unsetenv("XDG_DATA_HOME");
+  else
+    setenv("XDG_DATA_HOME", old_data.c_str(), 1);
+  if (old_dirs.empty())
+    unsetenv("XDG_DATA_DIRS");
+  else
+    setenv("XDG_DATA_DIRS", old_dirs.c_str(), 1);
+}
+
 // WCAG 2.1: normal text needs 4.5:1, large/bold UI text and icons 3:1.
 static void test_theme_contrast() {
   for (const char *style : {"light", "dark"}) {
@@ -177,6 +217,7 @@ static void test_gtk_preferences() {
         "[Settings]\ngtk-double-click-time=450\n[Custom]\nkeep=yes\n"));
   Config cfg;
   cfg.set("appearance", "theme", "dark");
+  cfg.set("appearance", "scale", "125");
   sync_gtk_settings(cfg);
   std::string text;
   CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
@@ -187,12 +228,14 @@ static void test_gtk_preferences() {
   CHECK(text.find("gtk-theme-name=Adwaita") != std::string::npos);
   CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
   CHECK(text.find("Adwaita-dark") != std::string::npos);
+  CHECK(text.find("Xft/DPI 122880") != std::string::npos);
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 
 int main() {
   test_rust_config();
   test_split_command();
+  test_application_categories_refresh();
   test_desktop_entry();
   test_theme_contrast();
   test_scale();
