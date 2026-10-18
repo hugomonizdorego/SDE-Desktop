@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Prove the installed SDE apps are native fork ELFs, not upstream launchers."""
 import argparse, os, subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--bin-dir',type=Path,default=Path('/usr/bin'))
@@ -29,10 +30,16 @@ for action,expected in [('refresh',[client,'refresh']+(['force'] if client.endsw
     actual=subprocess.check_output([str(binary/'sde-update'),'--plan',action],text=True).splitlines()
     assert actual==expected,(actual,expected)
 assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode==2
-for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-power-manager','mate-screensaver']:
+for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-power-manager','mate-screensaver','mate-session-manager']:
     result=subprocess.run(['dpkg-query','-W','-f=${db:Status-Abbrev}',upstream],capture_output=True,text=True)
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
 files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
 for path in files:
     assert not path.endswith(('/mime.cache','/mimeinfo.cache','/icon-theme.cache','/gschemas.compiled')),path
+# Python plugins need the renamed API's original ownership/type annotations.
+gir=ET.parse('/usr/share/gir-1.0/Niny-1.0.gir')
+symbol='{http://www.gtk.org/introspection/c/1.0}identifier'
+for api in ['niny_app_get_documents','niny_window_get_documents']:
+    method=next(node for node in gir.iter() if node.get(symbol)==api)
+    assert method.get('introspectable')!='0',api
 print('Native ELF executables, metadata, transaction plans and absence of original MATE apps passed.')

@@ -73,6 +73,11 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         assert Path("/usr/share/doc", package, "copyright").is_file(), package
     pam = Path("/etc/pam.d/sde-screensaver").read_text()
     assert "@include common-auth" in pam and "@include common-account" in pam, pam
+    idle = subprocess.check_output(
+        ["gsettings", "get", "org.debion.session", "idle-delay"],
+        env={**env, "GSETTINGS_BACKEND": "memory"}, text=True
+    ).strip()
+    assert idle == "5", idle
 print(
     "Installed MIME defaults, user overrides, dry-run autostarts and copyright files passed."
 )

@@ -34,7 +34,9 @@ builds against the bundled Liria extension API.
 
 Liria defaults to `--no-desktop`, including direct invocation: SDE retains its
 wallpaper and desktop icons. Power and screen lock have SDE-only autostart entries.
-The locker uses Debian's common PAM policy. Actual locking, suspend, lid and
+The locker uses Debian's common PAM policy and the independent
+`org.debion.session` idle-delay setting; it does not require MATE Session Manager.
+Actual locking, suspend, lid and
 battery behavior require testing in a real DebION login session.
 
 New GTK processes follow SDE light/dark settings, respecting an existing

@@ -21,7 +21,7 @@ def run(*command, cwd):
 
 def brand(text):
     # Whole-file substitutions are fast even for large translation catalogs.
-    # Immutable notices, comments and source links are masked before rewriting.
+    # Immutable legal notices and source links are masked before rewriting.
     protected = []
     def protect(match):
         protected.append(match.group())
@@ -33,7 +33,11 @@ def brand(text):
     def mask(match):
         value = match.group()
         if value.startswith(('/*', '<!--')):
-            return protect(match)
+            if re.search(r"copyright|\(c\)|©|SPDX|Free Software Foundation|permission is hereby granted", value, re.I):
+                return protect(match)
+            # GTK-Doc identifiers and type/ownership annotations must follow
+            # the new C symbols so generated plugin APIs remain introspectable.
+            return re.sub(link, protect, value)
         if value.startswith(('"', "'")):
             if re.search(r"copyright|\(c\)|©|SPDX", value, re.I):
                 return protect(match)
@@ -49,6 +53,11 @@ def brand(text):
     text = text.replace("mate_power_statistics", "sde_power_statistics")
     text = text.replace("mate-power-", "sde-power-").replace("mate_power_", "sde_power_")
     text = text.replace("org.mate.power", "org.debion.power")
+    text = text.replace("org.mate.session", "org.debion.session")
+    for old, new in [("System Monitor", "SDE System Monitor"),
+                     ("Power Management Preferences", "SDE Power Preferences"),
+                     ("Screensaver Preferences", "SDE Screen Lock Preferences")]:
+        text = text.replace(">" + old + "<", ">" + new + "<")
     for old, new in [("eom", "sdeview"), ("Eom", "Sdeview"), ("EOM", "SDEVIEW")]:
         text = re.sub(r"(?<![A-Za-z0-9])" + old + r"(?=$|[^a-z0-9])", new, text)
     # A shell/comment line can contain an already protected URL. Unmask outer

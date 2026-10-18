@@ -31,7 +31,7 @@ License: individual-upstream-licenses
  LGPL and permissive licenses. Full notices are also installed under
  /usr/share/doc/sde/upstream/COMPONENT; see THIRD-PARTY.md for source links.
 
-Files: suite/sde-brand.h
+Files: suite/sde-brand.h data/schemas/org.debion.session.gschema.xml
 Copyright: 2026 SDE contributors
 License: GPL-2.0-or-later
 

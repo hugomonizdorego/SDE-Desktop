@@ -27,8 +27,12 @@ class BrandingTest(unittest.TestCase):
 
     def test_mime_wildcards_in_strings_do_not_hide_native_code(self):
         source = 'if (check("image/*")) eom_load(EomImage *image);\n/* unchanged EOM comment */\n'
-        expected = source.replace('eom_load', 'sdeview_load').replace('EomImage', 'SdeviewImage')
+        expected = source.replace('eom_load', 'sdeview_load').replace('EomImage', 'SdeviewImage').replace('EOM comment', 'SDEVIEW comment')
         self.assertEqual(forks.brand(source), expected)
+
+    def test_gtk_doc_ownership_and_type_annotations_follow_c_api(self):
+        source = '/**\n * pluma_app_get_documents:\n * Returns: (element-type PlumaDocument) (transfer container): open documents\n */\nGList *pluma_app_get_documents(PlumaApp *app);\n'
+        self.assertEqual(forks.brand(source), source.replace('pluma', 'niny').replace('Pluma', 'Niny'))
 
     def test_gtk_geometry_api_is_never_rebranded(self):
         self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
@@ -43,6 +47,8 @@ class BrandingTest(unittest.TestCase):
     def test_app_settings_and_screen_lock_contracts_are_independent(self):
         self.assertEqual(forks.brand('"org.mate.ScreenSaver" "org.mate.power-manager"'),
                          '"org.debion.ScreenSaver" "org.debion.power-manager"')
+        self.assertEqual(forks.brand('"org.mate.session" "org.mate.SessionManager"'),
+                         '"org.debion.session" "org.mate.SessionManager"')
 
 
 if __name__ == "__main__":

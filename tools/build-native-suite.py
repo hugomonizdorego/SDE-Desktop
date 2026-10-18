@@ -35,7 +35,7 @@ def main():
     if not (args.sources / ".sde-fork-lock").is_file():
         parser.error("Run python3 tools/prepare-native-suite.py before the offline build")
     recipe = (args.sources / ".sde-fork-lock").read_bytes() + Path(__file__).read_bytes()
-    recipe += (args.prefix + args.libdir + args.sysconfdir).encode()
+    recipe += (str(args.stage) + args.prefix + args.libdir + args.sysconfdir).encode()
     for app in lock["forks"]:
         if args.only and args.only != app["id"]:
             continue
@@ -51,7 +51,8 @@ def main():
         signature = digest.hexdigest()
         destination = args.build / app["id"]
         stamp = destination / ".built"
-        if stamp.exists() and stamp.read_text().strip() == signature:
+        installed = args.stage / args.prefix.lstrip("/") / "bin" / app["id"]
+        if stamp.exists() and stamp.read_text().strip() == signature and installed.is_file():
             print("Native", app["id"], "already built", flush=True)
             continue
         if destination.exists():
