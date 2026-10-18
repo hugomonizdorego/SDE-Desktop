@@ -60,8 +60,9 @@ void PanelPopup::reposition() {
   int mx, my, mw, mh;
   panel->monitor(mx, my, mw, mh);
   int gap = corner_popup() ? 0 : S(8), margin = corner_popup() ? 0 : S(8);
+  int available = panel->theme().panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my;
   int ww = std::min(w(), mw - 2 * margin),
-      hh = std::min(h(), std::max(1, mh - panel->h() - 2 * gap));
+      hh = std::min(h(), std::max(1, available - gap - margin));
   int right = corner_popup() ? std::min(mx + mw, panel->x() + panel->w()) : anchor_x_;
   int xx = corner_popup() || align_right_ ? right - ww : right;
   xx = std::max(mx + margin, std::min(xx, mx + mw - ww - margin));
@@ -73,9 +74,13 @@ void PanelPopup::reposition() {
 void PanelPopup::close() {
   if (!shown()) return;
   if (Fl::grab() == this) Fl::grab(nullptr);
-  hide();
+  // FLTK 1.3 hide() destroys this X window. Return native tray children to
+  // the panel before that happens, while reporting this popup as closed.
+  closing_ = true;
   closed();
   if (Panel::instance) Panel::instance->popup_closed(this);
+  hide();
+  closing_ = false;
 }
 
 int PanelPopup::handle(int event) {

@@ -514,7 +514,7 @@ void PanelControls::bluetooth_scan() {
     if (ok) {
       discovery_owned_ = path;
       Fl::remove_timeout(scan_timeout, this);
-      if (!visible_ || path!=adapter_path)
+      if (!visible_ || path != adapter_path)
         stop_scan();
       else
         Fl::add_timeout(10, scan_timeout, this);
@@ -565,7 +565,17 @@ void PanelControls::refresh_devices() {
   if (!run_async({"nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device", "status"},
                  [this](const std::string& out, int code) {
                    devices_pending_ = false;
+                   auto previous = std::move(devices);
                    devices = code == 0 ? parse_network_devices(out) : std::vector<NetworkDevice>{};
+                   for (auto& d : devices)
+                     for (const auto& old : previous)
+                       if (d.device == old.device && d.state == old.state &&
+                           d.connection == old.connection) {
+                         d.ip = old.ip;
+                         d.gateway = old.gateway;
+                         d.dns = old.dns;
+                         break;
+                       }
                    changed();
                    if (visible_)
                      for (const auto& d : devices)

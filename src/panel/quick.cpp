@@ -750,7 +750,9 @@ void QuickSettings::rebuild() {
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
   int W = std::min(S(424), mw), pad = S(16), inner = W - 2 * pad - S(12), footer = S(58), y = S(10);
-  int available = std::max(S(120), mh - Panel::instance->h());
+  auto *panel = Panel::instance;
+  int available =
+      std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
   begin();
   body_ = new Fl_Scroll(S(2), S(2), W - S(4), available - footer - S(4));
   body_->type(Fl_Scroll::VERTICAL_ALWAYS);
@@ -847,7 +849,8 @@ void QuickSettings::rebuild() {
           {"show_battery", _("Battery"),
            [](Painter &p, double x, double y, double z, const Color &ink) {
              const auto &b = SystemStatus::get().battery;
-             glyph::battery(p, x, y, z, b.percent, b.charging, ink, Panel::instance->theme().surface_alt);
+             glyph::battery(p, x, y, z, b.percent, b.charging, ink,
+                            Panel::instance->theme().surface_alt);
            },
            [this] { select_section("power"); }, s.battery.present},
           {"show_power", _("Power"),

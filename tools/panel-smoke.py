@@ -57,6 +57,15 @@ def bounds(ac,panel,top=False):
     assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,(g,pg)
 def open_section(name):
     run('sde-panel','--section',name);w=find('^Action Center$');time.sleep(.8);return w
+def below_tray(ac,offset,x=190):
+    for _ in range(30):
+        hg=geom(str(host));g=geom(ac)
+        target=hg['y']+hg['h']+round((30+offset)*scale)
+        if g['y']+round(12*scale)<target<g['y']+g['h']-round(65*scale):
+            run('xdotool','mousemove',g['x']+round(x*scale),target,'click','1');time.sleep(.5);return
+        direction='5' if target>=g['y']+g['h']-round(65*scale) else '4'
+        run('xdotool','mousemove',g['x']+g['w']-round(30*scale),g['y']+g['h']//2,'click',direction);time.sleep(.15)
+    raise AssertionError('Could not reveal action below the tray')
 def log_has(text):return text in (home/'service.log').read_text()
 def mode(name):
     run('dbus-send','--session','--type=method_call','--print-reply','--dest=org.bluez','/SDETest','org.sde.Test.Mode','string:'+name);time.sleep(.8)
@@ -122,6 +131,9 @@ try:
     waitfor(lambda:'item: Activate' in (home/'sde-sni-demo.log').read_text(),'SNI Activate missing')
     run('xdotool','key','Escape');time.sleep(.4)
     assert parent(str(host))==int(panel),'tray failed to return on Escape'
+    pg=geom(panel);click(panel,pg['w']/scale-80,pg['h']/scale/2)
+    ac=find('^Action Center$');time.sleep(.4);bounds(ac,panel)
+    run('xdotool','key','Escape');time.sleep(.4)
     ac=open_section('network');bounds(ac,panel);shot('02-network-lan-wifi')
     run('xdotool','mousemove','10','10','click','1');time.sleep(.4)
     assert parent(str(host))==int(panel),'outside click failed to restore tray'
@@ -129,21 +141,45 @@ try:
     # Derive row positions from the native tray host, robust to scale/scrollbar rounding.
     hg=geom(str(host));g=geom(ac);base=(hg['y']-g['y'])/scale+(hg['h']/scale)+30
     # Bluetooth title+adapter text+power row precede scan. Capture identifies QA data.
-    click(ac,90,base+100)
+    below_tray(ac,180,90)
+    waitfor(lambda:log_has('BT Connect'),'Bluetooth connect command missing')
+    below_tray(ac,180,90)
+    waitfor(lambda:log_has('BT Disconnect'),'Bluetooth disconnect command missing')
+    mode('unpaired');below_tray(ac,180,90)
+    waitfor(lambda:log_has('BT Pair'),'Bluetooth pair command missing')
+    below_tray(ac,180,90)
+    below_tray(ac,72,90)
+    waitfor(lambda:log_has('BT Powered off'),'Bluetooth power-off command missing')
+    below_tray(ac,72,90)
+    waitfor(lambda:log_has('BT Powered on'),'Bluetooth power-on command missing')
+    below_tray(ac,100,90)
     waitfor(lambda:log_has('BT StartDiscovery'),'Bluetooth discovery command missing')
     run('xdotool','key','Escape');time.sleep(.5)
     waitfor(lambda:log_has('BT StopDiscovery'),'discovery did not stop on close')
     ac=open_section('media');bounds(ac,panel);shot('04-media-and-volume')
     hg=geom(str(host));g=geom(ac);base=(hg['y']-g['y'])/scale+(hg['h']/scale)+30
-    click(ac,190,base+100)
+    below_tray(ac,100)
     waitfor(lambda:log_has('MPRIS PlayPause'),'MPRIS play/pause command missing')
     # Previous is unsupported by the fixture and must not be sent.
-    click(ac,60,base+100);assert not log_has('MPRIS Previous')
+    below_tray(ac,100,60);assert not log_has('MPRIS Previous')
     shot('05-media-paused')
-    mode('no-control');click(ac,190,base+100)
+    mode('no-control');below_tray(ac,100)
     assert (home/'service.log').read_text().count('MPRIS PlayPause')==1,'CanControl=false ignored'
     run('xdotool','key','Escape')
-    ac=open_section('sound');bounds(ac,panel);shot('06-sound-microphone-apps')
+    config();
+    with (home/'.config/sde/sde.conf').open('a') as f:f.write('show_media=false\n')
+    reload();ac=open_section('sound');bounds(ac,panel);shot('06-sound-microphone-apps')
+    below_tray(ac,48,210)
+    waitfor(lambda:'AUDIO set-sink-volume' in (home/'commands.log').read_text(),'master volume command missing')
+    below_tray(ac,188,100)
+    waitfor(lambda:'AUDIO set-source-mute' in (home/'commands.log').read_text(),'microphone mute command missing')
+    below_tray(ac,230,210)
+    waitfor(lambda:'AUDIO set-source-volume' in (home/'commands.log').read_text(),'microphone volume command missing')
+    below_tray(ac,381,110)
+    waitfor(lambda:'AUDIO set-sink-input-volume 0 ' in (home/'commands.log').read_text(),'per-application volume command missing')
+    below_tray(ac,381,330)
+    waitfor(lambda:'AUDIO set-sink-input-mute 0 1' in (home/'commands.log').read_text(),'per-application mute command missing')
+    shot('06-sound-mixer-scrolled')
     # Refreshes must keep the native host and its client alive in place.
     for _ in range(3):time.sleep(1)
     assert parent(icon)==host and parent(str(host))==int(ac)

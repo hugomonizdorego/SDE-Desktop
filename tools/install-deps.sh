@@ -13,7 +13,7 @@ libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxrandr-dev libxi-dev lib
 RUNTIME_DEPS="xsettingsd gsettings-desktop-schemas librsvg2-common dbus-x11 xdg-utils xdg-user-dirs x11-utils
 x11-xserver-utils x11-xkb-utils xinput fonts-dejavu-core xterm
 packagekit packagekit-tools python3-apt mate-desktop-common zip unzip 7zip bzip2 xz-utils"
-OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme lxpolkit network-manager
+OPTIONAL_DEPS="papirus-icon-theme adwaita-icon-theme lxpolkit network-manager bluez blueman
 pulseaudio-utils libglib2.0-bin libnotify-bin"
 PREVIEW_DEPS="xvfb xdotool imagemagick x11-apps pulseaudio"
 

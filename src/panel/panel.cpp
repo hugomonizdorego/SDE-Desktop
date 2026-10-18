@@ -249,7 +249,10 @@ void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
 
 void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
-  if (p == quick_.get()) PanelControls::get().set_visible(true);
+  if (p == quick_.get()) {
+    popup_opened_at_ = steady_ms();
+    PanelControls::get().set_visible(true);
+  }
   relayout();
   redraw();
 }
@@ -368,6 +371,9 @@ void Panel::input_event(int, void *d) {
 }
 void Panel::outside_pointer_press() {
   if (!quick_ || !quick_->is_open() || Fl::grab()) return;
+  // XI2 arrives on a separate connection: the press that opened the popup
+  // may be dispatched after FLTK's release. Do not treat it as a new click.
+  if (steady_ms() - popup_opened_at_ < 100) return;
   Window root = DefaultRootWindow(fl_display), r, child;
   int rx, ry, x, y;
   unsigned buttons;

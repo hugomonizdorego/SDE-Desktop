@@ -15,7 +15,7 @@ class PanelPopup : public sde::BufferedWindow {
   void open_at(int anchor_x, bool align_right);
   virtual void close();
   void reposition();
-  bool is_open() const { return const_cast<PanelPopup *>(this)->shown(); }
+  bool is_open() const { return !closing_ && const_cast<PanelPopup *>(this)->shown(); }
 
   int handle(int event) override;
 
@@ -28,6 +28,7 @@ class PanelPopup : public sde::BufferedWindow {
   virtual void closed() {}
 
  private:
+  bool closing_ = false;
   int anchor_x_ = 0;
   bool align_right_ = false;
 };

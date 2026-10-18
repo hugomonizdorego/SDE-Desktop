@@ -153,7 +153,7 @@ class Panel : public sde::BufferedWindow {
   bool compact_status_ = false;
   Display *input_display_ = nullptr;
   int input_opcode_ = 0;
-  long long block_quick_until_ = 0;
+  long long block_quick_until_ = 0, popup_opened_at_ = 0;
   int edge_reserve_ = 0, visible_pins_ = 0;
 
   // Dragging a pinned launcher to reorder it.
