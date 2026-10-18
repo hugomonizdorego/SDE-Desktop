@@ -83,3 +83,22 @@ sudo apt install ./sde_0.1.0~alpha8_amd64.deb ./sde-desktop_0.1.0~alpha8_all.deb
 
 APT resolves desktop services and shared libraries. Native SDE executables are
 included in `sde`; original MATE application packages are not dependencies.
+
+## Verified alpha8 build
+
+Production source commit `e947a84f9e01c32f4b251088216c72c7066d3178` passed the
+[Debian testing and Rust workflow](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276):
+all seven CTest groups, native package installation and ELF/version checks,
+metapackage dependency simulation, native suite windows, live application
+installation, Display Settings confirmation/profile persistence, and GUI captures
+at both display sizes. The PR-triggered run also passed.
+
+- [Packages, complete corresponding source and SHA256SUMS](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276/artifacts/12140560116)
+- [Updated screenshots](screenshots/alpha8/README.md)
+- [Full GUI capture artifact](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276/artifacts/12139364298)
+
+The package/source artifact ZIP is 130435407 bytes, SHA256
+`88d47710c3bdd470b0b41e1a50d82d1ab6d77ac634cc2fe4b6610c7efeba7a6c`.
+Package and source checksums inside it were verified. Gallery/documentation updates
+after that production commit do not change executable code. These remain alpha
+packages for DebION / Debian testing amd64; no physical monitor certification is implied.

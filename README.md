@@ -4,7 +4,7 @@
 
 Development version **0.1 Alpha 8** (`0.1.0~alpha8`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE Alpha 7 Start Menu](docs/screenshots/alpha7/01-start-menu.png)
+![SDE Alpha 8 Accessories menu](docs/screenshots/alpha8/02-accessories.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
@@ -86,7 +86,7 @@ implied. `tools/ui-smoke.py` reproduces these views and exercises the controls.
 | ![Desktop](docs/screenshots/01-desktop-light.png) | ![Application menu](docs/screenshots/02-app-menu.png) |
 | ![Calendar](docs/screenshots/04-calendar.png) | ![Notifications](docs/screenshots/05-notifications.png) |
 | ![Desktop menu](docs/screenshots/06-desktop-menu.png) | ![Appearance settings](docs/screenshots/07-settings-appearance.png) |
-| ![Display settings](docs/screenshots/08-settings-display.png) | ![Keyboard and mouse](docs/screenshots/09-settings-input.png) |
+| ![Display settings](docs/screenshots/alpha8/03-display-settings.png) | ![Keyboard and mouse](docs/screenshots/09-settings-input.png) |
 | ![Dark theme](docs/screenshots/12-desktop-dark.png) | ![150 % interface size](docs/screenshots/13-scale-150.png) |
 
 Taken with `tools/screenshot.sh` on Ubuntu 24.04 with the Eduka-Icons theme. The Wi-Fi
@@ -198,7 +198,7 @@ software; the EDE-inspired FLTK shell and Rust core retain their structure.
 
 ![Native GTK4 Calculator](docs/screenshots/alpha7/02-calculator.png)
 
-[Current alpha7 screenshot gallery](docs/screenshots/alpha7/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39121460921)
+[Current alpha8 screenshot gallery](docs/screenshots/alpha8/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276)
 
 
 Alpha8 places native and newly installed applications in standard XDG menu

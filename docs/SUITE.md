@@ -101,8 +101,8 @@ CI builds and installs on Debian testing, checks actual native ELF files,
 rejects original MATE application packages, checks MIME overrides and copyright
 notices, and opens the five file-handling applications with sample files on X11.
 Network, audio and APT screenshot fixtures are explicitly simulated. No test
-performs a real update, lock, suspend or shutdown. Current alpha7 native captures are under
-`docs/screenshots/alpha7`; CI uploads the complete capture set, including Calculator
+performs a real update, lock, suspend or shutdown. Current alpha8 menu/display captures are under
+`docs/screenshots/alpha8`; CI uploads the complete capture set, including Calculator
 and the isolated administrator Liria window. Older captures remain as release history.
 Hardware login, power, locking and whole-desktop idle memory remain to be
 validated on DebION. See [THIRD-PARTY.md](THIRD-PARTY.md) for provenance.
