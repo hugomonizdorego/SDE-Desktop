@@ -2,7 +2,7 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 7** (`0.1.0~alpha7`) · October 2026 · GPL-3.0-or-later
+Development version **0.1 Alpha 7** (`0.1.0~alpha7`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 7 Start Menu](docs/screenshots/alpha7/01-start-menu.png)
 
@@ -56,7 +56,7 @@ are available in the DebION repository. The metapackage installs the session,
 suite, Xorg, login, network, sound and media services. No DebION repository is
 created by this project.
 
-![Native Niny editor in SDE](docs/screenshots/suite/10-niny-native.png)
+![Native Niny editor in SDE](docs/screenshots/alpha7/05-native-niny.png)
 
 ## Eduka-inspired interface
 
@@ -196,3 +196,5 @@ The GTK3 suite remains supported alongside GTK4. This is still development
 software; the EDE-inspired FLTK shell and Rust core retain their structure.
 
 ![Native GTK4 Calculator](docs/screenshots/alpha7/02-calculator.png)
+
+[Current alpha7 screenshot gallery](docs/screenshots/alpha7/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39121460921)
