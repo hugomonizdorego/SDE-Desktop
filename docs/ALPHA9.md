@@ -71,3 +71,33 @@ fixtures and are not hardware certification.
 
 ` sde-panel --section network|bluetooth|sound|media|tray|power ` opens a particular
 page. `--action-center` / Super+A opens the overview; Super+C opens the calendar.
+
+## Verification
+
+The core build passes seven local CTest checks, including audio-stream/network
+parsing, media matching and independent RandR preview rollback. The full Debian
+build also includes the native Calculator test.
+
+`tools/panel-smoke.py` runs the actual panel at 1366×768 / 100% and 1024×600 /
+150%, using isolated QA services. It checks native XEmbed and SNI clicks after
+transfer, return on Escape/outside clicks, clock opening, Bluetooth power,
+pair/connect/disconnect and discovery cleanup, MPRIS capability gating,
+master/microphone/per-stream volume and mute, disappearing adapters/services,
+scrolling, top/bottom/full/floating/short placement and the move-status preference.
+Both local configurations passed. The complete Debian push build also passed
+all eight CTest checks, installation, Rust checks and both native GUI checks.
+The preview test keeps Xvfb alive between independent client probes to avoid
+a server reset race; this fixture change passed 12 local repetitions.
+QA helper executables are not installed in
+the desktop package.
+
+The [Debian CI run](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39142810949)
+builds the complete source-based suite and publishes `.deb` packages, matching
+sources, checksums and native screenshots. Install the two runtime packages with
+APT so Debian resolves system services:
+
+```sh
+sudo apt install ./sde_0.1.0~alpha9_amd64.deb ./sde-desktop_0.1.0~alpha9_all.deb
+```
+
+The optional `sde-dbgsym` package is only needed for debugging.

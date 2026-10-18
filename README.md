@@ -4,7 +4,7 @@
 
 Development version **0.1 Alpha 9** (`0.1.0~alpha9`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE Alpha 8 Accessories menu](docs/screenshots/alpha8/02-accessories.png)
+![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
@@ -198,7 +198,7 @@ software; the EDE-inspired FLTK shell and Rust core retain their structure.
 
 ![Native GTK4 Calculator](docs/screenshots/alpha7/02-calculator.png)
 
-[Current alpha8 screenshot gallery](docs/screenshots/alpha8/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276)
+[Previous alpha8 screenshot gallery](docs/screenshots/alpha8/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276)
 
 
 Alpha8 places native and newly installed applications in standard XDG menu
@@ -209,6 +209,9 @@ model port, native RandR monitor settings, safe preview/rollback and shared
 100/125/150/200% interface scale. Physical GPU/dock testing is still needed.
 
 ## Alpha 9 panel patch
+
+[Current screenshot gallery](docs/screenshots/alpha9/README.md) ·
+[Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39142810949)
 
 [Alpha 9](docs/ALPHA9.md) adds reference-style panel indicators, a corner-anchored
 Action Center, movable SNI/XEmbed tray, native Bluetooth controls, Wi-Fi/LAN

@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='sde-display-preview-') as temp:
     tcp = os.environ.get('SDE_XVFB_TCP') == '1'
     number = 200 + os.getpid() % 20000
     transport = ['-nolisten','unix','-nolisten','local','-listen','tcp','-ac'] if tcp else ['-nolisten','tcp','-ac']
-    server = sp.Popen(['Xvfb', ':'+str(number), '-screen','0','1024x768x24',*transport],stdout=sp.DEVNULL,stderr=sp.DEVNULL)
+    server = sp.Popen(['Xvfb', ':'+str(number), '-noreset', '-screen','0','1024x768x24',*transport],stdout=sp.DEVNULL,stderr=sp.DEVNULL)
     env = dict(os.environ,DISPLAY=('127.0.0.1:' if tcp else ':')+str(number),PATH=str(root)+':'+os.environ['PATH'],SDE_ROLLBACK_LOG=str(root/'calls'))
     try:
         for _ in range(60):
