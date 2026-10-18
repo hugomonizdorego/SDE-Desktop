@@ -72,6 +72,14 @@ def brand(text):
     return text
 
 
+
+def stamp_version(text, version):
+    # Lex character literals as well as strings. A C '\\"' must not make a
+    # following os-release "VERSION=" field look like a product-version macro.
+    token = r"/\*[\s\S]*?\*/|//[^\n]*|\"(?:[^\"\\\n]|\\[\s\S])*\"|'(?:[^'\\\n]|\\[\s\S])*'|\b(?:VERSION|PACKAGE_VERSION)\b"
+    return re.sub(token, lambda m: json.dumps(version) if m.group() in {"VERSION", "PACKAGE_VERSION"} else m.group(), text)
+
+
 def prepare(record, cache, destination):
     checkout = cache / record["upstream"]
     if not checkout.exists():
@@ -146,8 +154,7 @@ def prepare(record, cache, destination):
             s = path.read_text()
             # About dialogs and command versions identify the independent SDE
             # build; upstream ABI/library version variables stay unchanged.
-            s = re.sub(r'/\*[\s\S]*?\*/|//[^\n]*|"(?:[^"\\]|\\.)*"|\b(?:VERSION|PACKAGE_VERSION)\b',
-                       lambda m: json.dumps(record["build_version"]) if m.group() in {"VERSION", "PACKAGE_VERSION"} else m.group(), s)
+            s = stamp_version(s, record["build_version"])
             if re.search(r"\bmain\s*\(\s*(?:int|gint)\b", s):
                 header = path.parent / "sde-brand.h"
                 header.write_text("#define SDE_NATIVE_NAME " + json.dumps(record["name"]) + "\n#define SDE_NATIVE_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_NATIVE_LIRIA " + str(int(record["id"] == "liria")) + "\n" + helper)
