@@ -85,7 +85,7 @@ void Panel::load_config() {
 
 void Panel::place_on_screen() {
   Fl::screen_xywh(monitor_x_, monitor_y_, monitor_w_, monitor_h_, 0);
-  std::string style = cfg_.get("panel", "style", "floating");
+  std::string style = cfg_.get("panel", "style", "full");
   int kind = style == "floating" ? 1 : style == "short" ? 2 : 0;
   auto g = sde_panel_geometry(monitor_x_, monitor_y_, monitor_w_, monitor_h_, theme_.panel_height,
                               theme_.panel_top, kind, cfg_.get_int("panel", "width_percent", 96), S(8),
@@ -109,7 +109,7 @@ void Panel::apply_strut() {
 void Panel::apply_shape() {
   int event, error;
   if (!XShapeQueryExtension(fl_display, &event, &error)) return;
-  if (cfg_.get("panel", "style", "floating") == "full" || h() <= S(2)) {
+  if (cfg_.get("panel", "style", "full") == "full" || h() <= S(2)) {
     XShapeCombineMask(fl_display, fl_xid(this), ShapeBounding, 0, 0, None, ShapeSet);
     return;
   }
@@ -419,7 +419,7 @@ void Panel::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    if (cfg_.get("panel", "style", "floating") == "full")
+    if (cfg_.get("panel", "style", "full") == "full")
       p.line(0, edge, W, edge, t.border);
     else
       p.stroke_rounded(0, 0, W, H, std::min(S(16), H / 2), t.border);
@@ -428,16 +428,19 @@ void Panel::draw() {
       bool hov = hover_ == target, down = pressed_ == target;
       Color c = active ? t.accent.alpha(t.dark ? 0.26 : 0.14) : t.hover;
       if (down) c = t.accent.alpha(0.3);
-      if (active || hov || down) p.fill_rounded(x + S(2), S(4), bw - S(4), H - S(8), S(8), c);
+      if (active || hov || down)
+        p.fill_rounded(x + S(2), S(4), bw - S(4), H - S(8),
+                       (cfg_.get("panel", "style", "full") == "full" ? 0 : S(8)), c);
     };
 
-    // Eduka-inspired named launcher and a separate status pill.
-    p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10), S(10),
+    // Named launcher and grouped status controls follow the selected panel shape.
+    p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10),
+                   cfg_.get("panel", "style", "full") == "full" ? 0 : S(10),
                    hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent);
     p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14), (H - icon) / 2.0,
             icon);
-    p.fill_rounded(status_x_ - S(2), S(4), clock_x_ + clock_w_ - status_x_ + S(2), H - S(8), S(11),
-                   t.surface_alt);
+    p.fill_rounded(status_x_ - S(2), S(4), clock_x_ + clock_w_ - status_x_ + S(2), H - S(8),
+                   cfg_.get("panel", "style", "full") == "full" ? 0 : S(11), t.surface_alt);
 
     for (size_t i = 0; i < pinned_.size(); ++i) {
       if (int(i) >= visible_pins_) break;

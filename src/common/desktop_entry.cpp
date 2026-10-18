@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "util.h"
+#include "suite.h"
 
 namespace sde {
 
@@ -267,6 +268,23 @@ std::vector<DesktopEntry> load_applications(const std::string &desktop) {
     if (e.type != "Application" || e.no_display || e.name.empty() || e.exec.empty()) continue;
     if (!e.visible_in(desktop)) continue;
     out.push_back(std::move(e));
+  }
+  if (desktop_matches({"SDE"}, desktop)) {
+    std::set<std::string> replaced;
+    for (const auto &app : suite_apps()) {
+      bool available = std::any_of(out.begin(), out.end(),
+                                   [&](const DesktopEntry &e) { return e.id == app.id + ".desktop"; });
+      if (!available || app.id == "sde-update") continue;
+      replaced.insert(app.upstream + ".desktop");
+      if (app.id == "liria") replaced.insert("caja-browser.desktop");
+      if (app.id == "sde-power-manager") {
+        replaced.insert("mate-power-preferences.desktop");
+        replaced.insert("mate-power-statistics.desktop");
+      }
+    }
+    out.erase(std::remove_if(out.begin(), out.end(),
+                             [&](const DesktopEntry &e) { return replaced.count(e.id) != 0; }),
+              out.end());
   }
   std::sort(out.begin(), out.end(), [](const DesktopEntry &a, const DesktopEntry &b) {
     return lower(a.name) < lower(b.name);

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Xanara
+GenericName=Document Viewer
+Comment=Document Viewer for SDE, based on atril
+Exec=xanara %U
+TryExec=xanara
+Icon=x-office-document
+Terminal=false
+Categories=Office;Viewer;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=Xanara
+X-SDE-Upstream=https://github.com/mate-desktop/atril
+MimeType=application/pdf;application/postscript;

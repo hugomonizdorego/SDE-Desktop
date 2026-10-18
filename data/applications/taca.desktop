@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Taca
+GenericName=Archive Manager
+Comment=Archive Manager for SDE, based on engrampa
+Exec=taca %U
+TryExec=taca
+Icon=package-x-generic
+Terminal=false
+Categories=Utility;Archiving;Compression;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=Taca
+X-SDE-Upstream=https://github.com/mate-desktop/engrampa
+MimeType=application/zip;application/x-tar;application/gzip;application/x-gzip;application/x-bzip2;application/x-xz;application/x-7z-compressed;application/x-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;

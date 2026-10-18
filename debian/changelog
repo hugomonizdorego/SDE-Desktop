@@ -1,3 +1,23 @@
+sde (0.1.0~alpha6) unstable; urgency=medium
+
+  * Build native Niny, Liria, Xanara, Taca, SDE View, System Monitor,
+    Power Manager and Screen Lock forks from pinned upstream sources.
+  * Bundle native executables, schemas, plugins and resources in sde.
+  * Remove runtime dependencies on the original MATE application packages.
+  * Preserve all upstream licenses and publish complete corresponding sources.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sun, 18 Oct 2026 00:00:00 +0000
+
+sde (0.1.0~alpha5) unstable; urgency=medium
+
+  * Default to a full-edge square panel and integrate the DebION SDE Suite.
+  * Add Rust suite launcher, file associations, power and screen lock autostart.
+  * Add native SDE Update with a credited mintupdate model and PackageKit.
+  * Add complete sde-desktop metapackage and Debian testing CI.
+  * Record upstream source revisions, licenses, copyright and source links.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sat, 17 Oct 2026 14:45:00 +0000
+
 sde (0.1.0~alpha4) unstable; urgency=medium
 
   * Adapt panel, Action Center and settings design patterns from Eduka-Desktop.

@@ -8,3 +8,9 @@ debian/sde.substvars
 debian/debhelper-build-stamp
 debian/files
 debian/*.debhelper.log
+
+/source-work/
+/vendor/
+**/__pycache__/
+debian/sde-desktop/
+debian/sde-desktop.substvars

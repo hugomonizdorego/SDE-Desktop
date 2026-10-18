@@ -35,7 +35,7 @@ struct Action {
 
 const std::vector<Action> &actions() {
   static const std::vector<Action> list = {
-      {N_("Lock"), {"system-lock-screen", "changes-prevent"}, {"xdg-screensaver", "lock"}},
+      {N_("Lock"), {"system-lock-screen", "changes-prevent"}, {"sde-lock"}},
       {N_("Suspend"), {"system-suspend", "media-playback-pause"}, {"systemctl", "suspend"}},
       {N_("Log Out"), {"system-log-out", "application-exit"}, {"sde-session", "--logout"}},
       {N_("Restart"), {"system-reboot", "view-refresh"}, {"systemctl", "reboot"}},

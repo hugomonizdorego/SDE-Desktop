@@ -15,15 +15,26 @@ std::string openbox_config_path() { return config_home() + "/sde/openbox/rc.xml"
 // Additions to the template after 0.1.0~alpha1, merged into existing copies.
 static void migrate_openbox_config(const std::string &path) {
   std::string text;
-  if (!read_file(path, text) || text.find("<context name=\"Desktop\">") != std::string::npos) return;
-  size_t end = text.find("</mouse>");
-  if (end == std::string::npos) return;
-  text.insert(end,
-              "  <context name=\"Desktop\">\n"
-              "      <mousebind button=\"Left\" action=\"Press\"><action name=\"Focus\"/></mousebind>\n"
-              "      <mousebind button=\"Right\" action=\"Press\"><action name=\"Focus\"/></mousebind>\n"
-              "    </context>\n  ");
-  write_file_atomic(path, text);
+  if (!read_file(path, text)) return;
+  bool changed = false;
+  const std::string old_lock = "<command>xdg-screensaver lock</command>";
+  size_t lock = text.find(old_lock);
+  if (lock != std::string::npos) {
+    text.replace(lock, old_lock.size(), "<command>sde-lock</command>");
+    changed = true;
+  }
+  if (text.find("<context name=\"Desktop\">") == std::string::npos) {
+    size_t end = text.find("</mouse>");
+    if (end != std::string::npos) {
+      text.insert(end,
+                  "  <context name=\"Desktop\">\n"
+                  "      <mousebind button=\"Left\" action=\"Press\"><action name=\"Focus\"/></mousebind>\n"
+                  "      <mousebind button=\"Right\" action=\"Press\"><action name=\"Focus\"/></mousebind>\n"
+                  "    </context>\n  ");
+      changed = true;
+    }
+  }
+  if (changed) write_file_atomic(path, text);
 }
 
 bool ensure_openbox_config() {

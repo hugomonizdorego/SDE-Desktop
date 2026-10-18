@@ -47,8 +47,12 @@ set(SDE_SYSCONFDIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}")
 set(SDE_LOCALEDIR "${CMAKE_INSTALL_FULL_LOCALEDIR}")
 configure_file(src/common/build_config.h.in
                ${CMAKE_CURRENT_BINARY_DIR}/generated/build_config.h @ONLY)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/suite.tsv" SDE_SUITE_DATA)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/suite.tsv")
+configure_file(src/common/suite_data.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/suite_data.h @ONLY)
 
 add_subdirectory(rust)
+add_subdirectory(suite)
 add_subdirectory(src)
 add_subdirectory(po)
 
@@ -60,8 +64,17 @@ endif()
 
 # ---------------------------------------------------------------- data files
 install(PROGRAMS data/startsde DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS data/sde-lock DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES data/sde-mimeapps.list DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg)
+install(DIRECTORY data/autostart/ DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/autostart)
+install(DIRECTORY data/update/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/update
+        PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
+install(FILES docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)
+install(FILES data/schemas/org.debion.session.gschema.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
 install(FILES data/openbox/rc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/openbox)
 install(DIRECTORY data/themes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)

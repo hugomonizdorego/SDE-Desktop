@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later
+     Copyright (C) 2026 SDE contributors. -->
+<schemalist>
+  <schema id="org.debion.session" path="/org/debion/session/">
+    <key name="idle-delay" type="i">
+      <default>5</default>
+      <range min="0" max="2147483647"/>
+      <summary>Session idle delay</summary>
+      <description>Minutes without input before SDE Screen Lock considers the session idle. Zero disables the idle timeout.</description>
+    </key>
+  </schema>
+  <schema id="org.debion.applications-terminal" path="/org/debion/applications/terminal/">
+    <key name="exec" type="s">
+      <default>'xterm'</default>
+      <summary>Terminal program</summary>
+      <description>Terminal executable used by the Niny file browser.</description>
+    </key>
+    <key name="exec-arg" type="s">
+      <default>'-e'</default>
+      <summary>Terminal execution option</summary>
+      <description>Option used to run a program inside the terminal.</description>
+    </key>
+  </schema>
+</schemalist>

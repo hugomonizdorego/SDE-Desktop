@@ -10,6 +10,7 @@ add_library(sde-common STATIC
   common/paint.cpp
   common/process.cpp
   common/spawn.cpp
+  common/suite.cpp
   common/theme.cpp
   common/util.cpp
   common/widgets.cpp
@@ -61,5 +62,8 @@ target_link_libraries(sde-logout PRIVATE sde-common)
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)
 
-install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd
+add_executable(sde-update update/main.cpp)
+target_link_libraries(sde-update PRIVATE sde-common)
+
+install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

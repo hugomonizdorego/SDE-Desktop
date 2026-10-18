@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Power Manager
+GenericName=Power Preferences
+Comment=Power Preferences for SDE, based on mate-power-manager
+Exec=sde-power-preferences
+TryExec=sde-power-preferences
+Icon=preferences-system-power
+Terminal=false
+Categories=Settings;HardwareSettings;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=Sde-power-preferences
+X-SDE-Upstream=https://github.com/mate-desktop/mate-power-manager
