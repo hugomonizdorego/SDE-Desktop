@@ -78,6 +78,12 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         env={**env, "GSETTINGS_BACKEND": "memory"}, text=True
     ).strip()
     assert idle == "5", idle
+    schemas = set(subprocess.check_output(
+        ["gsettings", "list-schemas"], env=env, text=True
+    ).splitlines())
+    required = {"org.mate.lockdown", "org.mate.interface", "org.mate.background",
+                "org.debion.media-handling", "org.debion.applications-terminal"}
+    assert required <= schemas, required - schemas
 print(
     "Installed MIME defaults, user overrides, dry-run autostarts and copyright files passed."
 )

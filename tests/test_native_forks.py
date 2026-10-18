@@ -49,6 +49,8 @@ class BrandingTest(unittest.TestCase):
                          '"org.debion.ScreenSaver" "org.debion.power-manager"')
         self.assertEqual(forks.brand('"org.mate.session" "org.mate.SessionManager"'),
                          '"org.debion.session" "org.mate.SessionManager"')
+        self.assertEqual(forks.brand('"org.mate.Engrampa" "org.mate.SystemMonitor" "org.mate.media-handling"'),
+                         '"org.debion.Taca" "org.debion.SystemMonitor" "org.debion.media-handling"')
 
 
 if __name__ == "__main__":

@@ -54,6 +54,11 @@ def brand(text):
     text = text.replace("mate-power-", "sde-power-").replace("mate_power_", "sde_power_")
     text = text.replace("org.mate.power", "org.debion.power")
     text = text.replace("org.mate.session", "org.debion.session")
+    text = text.replace("org.mate.SystemMonitor", "org.debion.SystemMonitor")
+    text = text.replace("org.mate.Taca", "org.debion.Taca").replace("/org/mate/Taca", "/org/debion/Taca")
+    text = text.replace("org.mate.media-handling", "org.debion.media-handling")
+    text = text.replace("/org/mate/desktop/media-handling", "/org/debion/desktop/media-handling")
+    text = text.replace("org.mate.applications-terminal", "org.debion.applications-terminal")
     for old, new in [("System Monitor", "SDE System Monitor"),
                      ("Power Management Preferences", "SDE Power Preferences"),
                      ("Screensaver Preferences", "SDE Screen Lock Preferences")]:

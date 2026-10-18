@@ -3,8 +3,9 @@
 Alpha6 builds eight native application forks from pinned upstream source. Their
 ELF executables, libraries, resources, schemas and helpers are included in the
 single `sde` binary package. Installing the original MATE application packages
-is not required. Shared libraries such as GTK and libmate-desktop are normal
-Debian dependencies; they are not duplicated inside SDE.
+is not required. Shared libraries such as GTK and libmate-desktop, together with
+their settings data in `mate-desktop-common`, are normal Debian dependencies;
+they are not duplicated inside SDE.
 
 | Application | Executable | Source |
 | --- | --- | --- |
