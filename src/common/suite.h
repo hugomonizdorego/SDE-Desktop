@@ -4,7 +4,7 @@
 #include <vector>
 namespace sde {
 struct SuiteApp {
-  std::string id, name, role, command, package, icon, upstream, url, license;
+  std::string id, name, role, command, package, icon, upstream, url, license, version;
 };
 const std::vector<SuiteApp> &suite_apps();
 }  // namespace sde

@@ -42,6 +42,7 @@
 #include "util.h"
 #include "widgets.h"
 #include "wm.h"
+#include "integration.h"
 #include "x11.h"
 
 namespace sde {
@@ -61,6 +62,7 @@ const Theme &settings_theme() { return g_theme; }
 void apply_change() {
   double old_scale = g_theme.scale;
   g_cfg.save();
+  sync_gtk_settings(g_cfg);
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
   if (sync_openbox(g_cfg)) reconfigure_window_manager();
@@ -788,7 +790,7 @@ void build_suite(Page *page) {
       },
       _("Applies when a suite application next starts."));
   for (const auto &app : suite_apps()) {
-    page->begin_card(app.name);
+    page->begin_card(app.name + "  ·  " + app.version);
     page->row(_(app.role.c_str()), S(112), S(32), [&app](int x, int y, int w, int h) {
       auto *button = action_button(x, y, w, h, _("Open"), split_command(app.command), true);
       if (find_program(split_command(app.command)[0]).empty()) button->deactivate();
@@ -829,6 +831,13 @@ void build_suite_system(Page *page) {
   page->note(
       _("SDE Power Manager handles battery, lid and idle policies. SDE Screen Lock starts with the session. "
         "No background updater is started."));
+  page->begin_card(_("Windows and effects"));
+  page->note(_("SDE WM manages windows. SDE Compositor adds subtle shadows without blur or animations."));
+  page->choice_row(_("Compositing"), {_("Enabled"), _("Disabled")},
+      g_cfg.get("compositor", "mode", "auto") == "off" ? 1 : 0,
+      [](int choice) { g_cfg.set("compositor", "mode", choice ? "off" : "auto"); apply_change(); },
+      _("Changes apply at the next login. Disable effects to reduce graphics work."));
+  page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, _("SDE Suite"), {"sde-settings", "--page", "suite"});
   });
@@ -1080,6 +1089,8 @@ int main(int argc, char **argv) {
   }
   g_cfg.load();
   if (apply) {
+    sync_gtk_settings(g_cfg);
+    ensure_suite_shortcuts();
     apply_all(g_cfg);
     return 0;
   }

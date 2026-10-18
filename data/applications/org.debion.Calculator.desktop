@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Calculator
+GenericName=Scientific Calculator
+Comment=Scientific calculations with an offline native GTK4 interface
+Exec=calculator
+TryExec=calculator
+Icon=accessories-calculator
+Terminal=false
+Categories=Utility;Calculator;
+StartupNotify=true
+StartupWMClass=org.debion.Calculator

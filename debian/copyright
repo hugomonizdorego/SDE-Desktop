@@ -52,3 +52,28 @@ License: GPL-3.0-or-later
 License: GPL-2.0-or-later
  On Debian systems, the complete text of the GNU General Public
  License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+Files: src/calculator/* tests/test_calculator.py
+Copyright: 2026 SDE contributors
+License: AGPL-3.0-only
+ The native Calculator frontend and its linked Scientific Calculator engine
+ are distributed under the GNU Affero General Public License, version 3 only.
+ The complete license is installed in
+ /usr/share/doc/sde/upstream/scientific-calculator/LICENSE.
+ Corresponding engine source is fetched from the pinned revision in
+ suite/components.lock.json and included with the complete source archive.
+
+Files: vendor/components/calculator/*
+Copyright: 2026 Raad Altaie
+License: AGPL-3.0-only
+ See vendor/components/calculator/LICENSE in the complete corresponding source.
+
+Files: vendor/components/sde-wm/*
+Copyright: Original Openbox contributors; see AUTHORS, COPYING and source headers
+License: GPL-2.0-or-later
+ All original notices are retained in the complete corresponding source archive.
+
+Files: vendor/components/sde-compositor/*
+Copyright: Original picom, Compton and xcompmgr contributors; see COPYING and CONTRIBUTORS
+License: MPL-2.0 and MIT
+ See the original LICENSES directory in the complete corresponding source archive.

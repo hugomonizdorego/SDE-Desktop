@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "integration.h"
 #include "dbus.h"
 #include "desktop_entry.h"
 #include "rust_layout.h"
@@ -163,6 +164,32 @@ static void test_dbus_value() {
   CHECK(dict.get("missing") == nullptr);
 }
 
+static void test_gtk_preferences() {
+  char temp[] = "/tmp/sde-gtk-config-XXXXXX";
+  char *root = mkdtemp(temp);
+  CHECK(root != nullptr);
+  if (!root) return;
+  std::string saved = env("XDG_CONFIG_HOME");
+  setenv("XDG_CONFIG_HOME", root, 1);
+  setenv("GSETTINGS_BACKEND", "memory", 1);
+  make_dirs(std::string(root) + "/gtk-3.0");
+  CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/settings.ini",
+        "[Settings]\ngtk-double-click-time=450\n[Custom]\nkeep=yes\n"));
+  Config cfg;
+  cfg.set("appearance", "theme", "dark");
+  sync_gtk_settings(cfg);
+  std::string text;
+  CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
+  CHECK(text.find("gtk-double-click-time=450") != std::string::npos);
+  CHECK(text.find("keep=yes") != std::string::npos);
+  CHECK(text.find("gtk-application-prefer-dark-theme=true") != std::string::npos);
+  CHECK(read_file(std::string(root) + "/gtk-4.0/settings.ini", text));
+  CHECK(text.find("gtk-theme-name=Adwaita") != std::string::npos);
+  CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
+  CHECK(text.find("Adwaita-dark") != std::string::npos);
+  if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
+}
+
 int main() {
   test_rust_config();
   test_split_command();
@@ -170,6 +197,7 @@ int main() {
   test_theme_contrast();
   test_scale();
   test_dbus_value();
+  test_gtk_preferences();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);
     return 1;

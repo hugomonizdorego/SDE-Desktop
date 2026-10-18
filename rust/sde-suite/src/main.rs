@@ -124,7 +124,7 @@ fn main() {
         println!(
             "{} {} (SDE integration; {})",
             app[1],
-            VERSION.trim(),
+            app[9],
             app[6]
         );
         return;
@@ -186,9 +186,9 @@ mod tests {
     fn registry_is_unique_and_complete() {
         let rows: Vec<_> = apps().collect();
         let mut ids = std::collections::BTreeSet::new();
-        assert_eq!(rows.len(), 9);
+        assert_eq!(rows.len(), 10);
         for row in rows {
-            assert_eq!(row.len(), 9);
+            assert_eq!(row.len(), 10);
             assert!(ids.insert(row[0]));
             assert!(row[7].starts_with("https://github.com/"));
         }

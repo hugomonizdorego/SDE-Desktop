@@ -213,7 +213,7 @@ class UpdateWindow : public BufferedWindow {
 int main(int argc, char **argv) {
   init_i18n();
   if (argc == 2 && std::string(argv[1]) == "--version") {
-    printf("sde-update %s\n", SDE_VERSION);
+    printf("sde-update %s\n", SDE_UPDATE_VERSION);
     return 0;
   }
   if (argc == 2 && std::string(argv[1]) == "--check") {

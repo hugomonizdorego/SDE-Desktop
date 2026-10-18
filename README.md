@@ -2,16 +2,15 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 6** (`0.1.0~alpha6`) · October 2026 · GPL-3.0-or-later
+Development version **0.1 Alpha 7** (`0.1.0~alpha7`) · October 2026 · GPL-3.0-or-later
 
-![SDE Alpha 6 with native suite and a full-edge square panel](docs/screenshots/suite/07-settings-suite.png)
+![SDE Alpha 7 Start Menu](docs/screenshots/alpha7/01-start-menu.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
-interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and **Openbox** as its
-window manager. It is the successor of the EDE idea: small and quick. Migration
+interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
 to Rust is underway; the panel, desktop and settings interface remain C++.
 The earlier alpha2 session measured about **22 MB of private memory**; alpha3
-and the complete alpha6 suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
+and the complete alpha7 suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 
 > **Alpha software.** 0.1 is the first series of SDE builds. It is meant for testing
 > and development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
@@ -110,7 +109,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test the alpha6 changes; a new binary release is not included here.
+test alpha7; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -187,3 +186,13 @@ not build or ship EDE code.
 SDE is free software under the GNU General Public License, version 3 or later.
 See [LICENSE](LICENSE). Bundled application forks retain their individual upstream
 licenses and historical copyright notices; see [source credits](docs/THIRD-PARTY.md).
+
+## Alpha7 patch
+
+Native GTK4 Calculator, redesigned Start Menu, categorized Suite desktop
+launchers, source-built WM/compositor, isolated `sudo liria`, and independent
+application build versions are described in the [alpha7 notes](docs/ALPHA7.md).
+The GTK3 suite remains supported alongside GTK4. This is still development
+software; the EDE-inspired FLTK shell and Rust core retain their structure.
+
+![Native GTK4 Calculator](docs/screenshots/alpha7/02-calculator.png)

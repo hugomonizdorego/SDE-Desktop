@@ -14,14 +14,18 @@
 #include "paint.h"
 #include "spawn.h"
 #include "util.h"
+#include "suite.h"
+#include "build_config.h"
 
 using namespace sde;
 
 namespace {
 
+const char *kHome = N_("SDE Suite");
 const char *kAll = N_("All applications");
 
 std::string category_icon(const std::string &cat) {
+  if (cat == kHome) return "start-here";
   if (cat == kAll) return "applications-all";
   if (cat == "Accessories") return "applications-accessories";
   if (cat == "Education") return "applications-education";
@@ -67,7 +71,7 @@ class SearchInput : public Fl_Input {
     if (e == FL_KEYBOARD) {
       int k = Fl::event_key();
       if (k == FL_Up || k == FL_Down || k == FL_Enter || k == FL_KP_Enter || k == FL_Escape ||
-          k == FL_Page_Up || k == FL_Page_Down)
+          k == FL_Page_Up || k == FL_Page_Down || ((!*value()) && (k == FL_Left || k == FL_Right)))
         return parent()->handle(FL_KEYBOARD);
     }
     return Fl_Input::handle(e);
@@ -96,6 +100,7 @@ void AppMenu::search_changed(Fl_Widget *, void *data) {
 void AppMenu::reload() {
   apps_ = load_applications("SDE");
   categories_.clear();
+  categories_.push_back(kHome);
   categories_.push_back(kAll);
   for (auto &c : menu_categories()) {
     for (auto &a : apps_) {
@@ -113,7 +118,13 @@ void AppMenu::filter() {
   std::string q = lower(trim(search_->value()));
   if (q.empty()) {
     const std::string &cat = categories_[size_t(category_)];
-    for (auto &a : apps_)
+    if (cat == kHome) {
+      // The same stable order is used on every machine; desktop IDs remain XDG entries.
+      for (const auto &native : suite_apps())
+        for (auto &a : apps_)
+          if (a.id == native.id + ".desktop" || (native.id == "calculator" && a.id == "org.debion.Calculator.desktop"))
+            rows_.push_back({&a});
+    } else for (auto &a : apps_)
       if (cat == kAll || a.menu_category() == cat) rows_.push_back({&a});
   } else {
     auto terms = split(q, ' ');
@@ -126,15 +137,16 @@ void AppMenu::filter() {
                      [](auto &a, auto &b) { return a.first > b.first; });
     for (auto &s : scored) rows_.push_back({s.second});
   }
+  row_h_ = S(grid_mode() ? 72 : 48);
   if (selected_ >= int(rows_.size())) selected_ = int(rows_.size()) - 1;
   if (selected_ < 0) selected_ = 0;
 }
 
 void AppMenu::layout() {
   pad_ = S(16);
-  header_h_ = S(64);
+  header_h_ = S(112);
   footer_h_ = S(60);
-  cat_w_ = S(190);
+  cat_w_ = S(176);
   row_h_ = S(46);
   cat_row_h_ = S(36);
   icon_ = S(32);
@@ -145,12 +157,12 @@ void AppMenu::prepare() {
   layout();
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
-  int mw2 = std::min(S(640), mw - S(16));
-  int mh2 = std::min(S(580), mh - Panel::instance->h() - S(24));
+  int mw2 = std::min(S(760), mw - S(16));
+  int mh2 = std::min(S(650), mh - Panel::instance->h() - S(24));
   // Narrow screens: give the list the room and shrink the categories.
   if (mw2 < S(560)) cat_w_ = S(150);
   size(mw2, mh2);
-  search_->resize(pad_ + S(42), pad_ + S(6), mw2 - 2 * pad_ - S(54), S(30));
+  search_->resize(pad_ + S(42), S(64), mw2 - 2 * pad_ - S(54), S(30));
   search_->color(theme_.surface_alt.fl());
   search_->textcolor(theme_.text.fl());
   search_->cursor_color(theme_.accent.fl());
@@ -159,6 +171,7 @@ void AppMenu::prepare() {
   search_->textfont(FL_HELVETICA);
   search_->value("");
   category_ = 0;
+  category_scroll_ = 0;
   selected_ = 0;
   scroll_ = 0;
   reload();
@@ -195,13 +208,16 @@ void AppMenu::item_menu(int row) {
   }
 }
 
-int AppMenu::list_rows_visible() const { return std::max(1, (h() - header_h_ - footer_h_) / row_h_); }
+bool AppMenu::grid_mode() const { return category_ == 0 && !*search_->value(); }
+int AppMenu::columns() const { return grid_mode() ? 2 : 1; }
+int AppMenu::list_rows_visible() const { return std::max(1, (h() - header_h_ - footer_h_) / row_h_) * columns(); }
 
 void AppMenu::ensure_visible(int row) {
   int vis = list_rows_visible();
   if (row < scroll_) scroll_ = row;
   if (row >= scroll_ + vis) scroll_ = row - vis + 1;
   if (scroll_ < 0) scroll_ = 0;
+  scroll_ = (scroll_ / columns()) * columns();
 }
 
 AppMenu::Zone AppMenu::zone_at(int x, int y, int &index) const {
@@ -209,13 +225,15 @@ AppMenu::Zone AppMenu::zone_at(int x, int y, int &index) const {
   int body_top = header_h_, body_bottom = h() - footer_h_;
   if (y >= body_top && y < body_bottom) {
     if (x >= pad_ && x < pad_ + cat_w_ - S(8)) {
-      int i = (y - body_top - S(4)) / cat_row_h_;
+      int i = category_scroll_ + (y - body_top - S(4)) / cat_row_h_;
       if (i >= 0 && i < int(categories_.size())) {
         index = i;
         return Z_CATEGORY;
       }
     } else if (x >= pad_ + cat_w_ && x < w() - pad_) {
-      int i = scroll_ + (y - body_top) / row_h_;
+      int lw = w() - 2 * pad_ - cat_w_ - S(4);
+      int column = std::min(columns() - 1, (x - pad_ - cat_w_ - S(4)) / std::max(1, lw / columns()));
+      int i = scroll_ + ((y - body_top) / row_h_) * columns() + column;
       if (i >= 0 && i < int(rows_.size())) {
         index = i;
         return Z_APP;
@@ -224,6 +242,7 @@ AppMenu::Zone AppMenu::zone_at(int x, int y, int &index) const {
   }
   if (y >= h() - footer_h_ + S(10) && y < h() - S(10)) {
     if (x >= w() - pad_ - S(40) && x < w() - pad_) return Z_POWER;
+    if (x >= w() - pad_ - S(136) && x < w() - pad_ - S(96)) return Z_FILES;
     if (x >= w() - pad_ - S(88) && x < w() - pad_ - S(48)) return Z_SETTINGS;
   }
   return Z_NONE;
@@ -262,6 +281,9 @@ int AppMenu::handle(int event) {
         launch(idx);
         return 1;
       }
+      if (z == Z_FILES) {
+        close(); spawn_detached({"liria", "--no-desktop", home_dir()}); return 1;
+      }
       if (z == Z_SETTINGS) {
         close();
         spawn_detached({"sde-settings"});
@@ -289,7 +311,13 @@ int AppMenu::handle(int event) {
     }
     case FL_MOUSEWHEEL: {
       int max_scroll = std::max(0, int(rows_.size()) - list_rows_visible());
-      scroll_ = std::max(0, std::min(max_scroll, scroll_ + Fl::event_dy() * 3));
+      if (Fl::event_x() < pad_ + cat_w_) {
+        int visible = std::max(1, (h() - header_h_ - footer_h_ - S(4)) / cat_row_h_);
+        category_scroll_ = std::max(0, std::min(std::max(0, int(categories_.size()) - visible), category_scroll_ + Fl::event_dy()));
+      } else {
+        scroll_ = std::max(0, std::min(max_scroll, scroll_ + Fl::event_dy() * columns() * 2));
+        scroll_ = (scroll_ / columns()) * columns();
+      }
       redraw();
       return 1;
     }
@@ -309,8 +337,10 @@ int AppMenu::handle(int event) {
         return 1;
       }
       if (n == 0) return 1;
-      if (k == FL_Down) selected_ = std::min(n - 1, selected_ + 1);
-      else if (k == FL_Up) selected_ = std::max(0, selected_ - 1);
+      if (k == FL_Down) selected_ = std::min(n - 1, selected_ + columns());
+      else if (k == FL_Up) selected_ = std::max(0, selected_ - columns());
+      else if (k == FL_Right && grid_mode()) selected_ = std::min(n - 1, selected_ + 1);
+      else if (k == FL_Left && grid_mode()) selected_ = std::max(0, selected_ - 1);
       else if (k == FL_Page_Down) selected_ = std::min(n - 1, selected_ + list_rows_visible());
       else if (k == FL_Page_Up) selected_ = std::max(0, selected_ - list_rows_visible());
       else return PanelPopup::handle(event);
@@ -333,14 +363,15 @@ void AppMenu::draw() {
     p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
 
     // Search box.
-    p.fill_rounded(pad_, pad_, W - 2 * pad_, S(42), S(12), t.surface_alt);
-    if (Fl::focus() == search_) p.stroke_rounded(pad_, pad_, W - 2 * pad_, S(42), S(12), t.accent, Sd(1.5));
-    p.image(IconLoader::get({"system-search", "edit-find"}, S(18)), pad_ + S(14), pad_ + S(12), S(18), 0.7);
+    p.fill_rect(0, 0, W, S(48), t.accent.alpha(.10));
+    p.fill_rounded(pad_, S(58), W - 2 * pad_, S(42), S(6), t.surface_alt);
+    if (Fl::focus() == search_) p.stroke_rounded(pad_, S(58), W - 2 * pad_, S(42), S(6), t.accent, Sd(1.5));
+    p.image(IconLoader::get({"system-search", "edit-find"}, S(18)), pad_ + S(14), S(70), S(18), 0.7);
 
     // Categories.
     int top = header_h_;
-    for (size_t i = 0; i < categories_.size(); ++i) {
-      int y = top + S(4) + int(i) * cat_row_h_;
+    for (size_t i = size_t(category_scroll_); i < categories_.size(); ++i) {
+      int y = top + S(4) + (int(i) - category_scroll_) * cat_row_h_;
       if (y + cat_row_h_ > H - footer_h_) break;
       bool sel = int(i) == category_ && !*search_->value();
       bool hov = hover_zone_ == Z_CATEGORY && hover_index_ == int(i);
@@ -358,11 +389,13 @@ void AppMenu::draw() {
     cairo_rectangle(p.cr(), lx, top, lw, H - footer_h_ - top);
     cairo_clip(p.cr());
     for (int i = scroll_; i < int(rows_.size()); ++i) {
-      int y = top + (i - scroll_) * row_h_;
+      int y = top + ((i - scroll_) / columns()) * row_h_;
+      int tile_w = lw / columns(), tile_x = lx + ((i - scroll_) % columns()) * tile_w;
       if (y > H - footer_h_) break;
-      if (i == selected_) p.fill_rounded(lx, y + S(2), lw, row_h_ - S(4), S(10), t.accent.alpha(0.14));
+      if (i == selected_) p.fill_rounded(tile_x, y + S(2), tile_w - S(6), row_h_ - S(6), S(6), t.accent.alpha(0.18));
+      else if (grid_mode()) p.fill_rounded(tile_x, y + S(2), tile_w - S(6), row_h_ - S(6), S(6), t.surface_alt);
       const DesktopEntry *e = rows_[size_t(i)].entry;
-      p.image(IconLoader::get({e->icon}, icon_), lx + S(10), y + (row_h_ - icon_) / 2.0, icon_);
+      p.image(IconLoader::get({e->icon}, icon_), tile_x + S(10), y + (row_h_ - icon_) / 2.0, icon_);
     }
     cairo_restore(p.cr());
 
@@ -379,6 +412,8 @@ void AppMenu::draw() {
     p.line(pad_, H - footer_h_ + 0.5, W - pad_, H - footer_h_ + 0.5, t.border);
     int cy = H - footer_h_ / 2;
     p.circle(pad_ + S(18), cy, S(18), t.accent);
+    if (hover_zone_ == Z_FILES) p.fill_rounded(W - pad_ - S(136), cy - btn / 2, btn, btn, S(6), t.hover);
+    p.image(IconLoader::get({"user-home", "system-file-manager"}, gi), W - pad_ - S(136) + (btn - gi) / 2.0, cy - gi / 2.0, gi);
     bool hs = hover_zone_ == Z_SETTINGS, hp = hover_zone_ == Z_POWER;
     if (hs) p.fill_rounded(W - pad_ - S(88), cy - btn / 2, btn, btn, S(10), t.hover);
     if (hp) p.fill_rounded(W - pad_ - btn, cy - btn / 2, btn, btn, S(10), t.hover);
@@ -390,14 +425,20 @@ void AppMenu::draw() {
 
   // Children (the search input) and text.
   draw_children();
+  text_font(t.font_size + 3, true);
+  draw_text("SDE", pad_, S(8), S(68), S(32), t.accent_text);
+  text_font(t.font_size + 1);
+  draw_text(_("Applications"), pad_ + S(68), S(8), W - S(200), S(32), t.text);
+  text_font(t.font_size - 1);
+  draw_text("Alpha", W - pad_ - S(80), S(8), S(80), S(32), t.text_dim, 2);
   int top = header_h_;
   if (!*search_->value()) {
     text_font(t.font_size + 1);
     draw_text(_("Search applications"), search_->x() + S(3), search_->y(), search_->w(), search_->h(),
               t.text_dim);
   }
-  for (size_t i = 0; i < categories_.size(); ++i) {
-    int y = top + S(4) + int(i) * cat_row_h_;
+  for (size_t i = size_t(category_scroll_); i < categories_.size(); ++i) {
+    int y = top + S(4) + (int(i) - category_scroll_) * cat_row_h_;
     if (y + cat_row_h_ > H - footer_h_) break;
     bool sel = int(i) == category_ && !*search_->value();
     text_font(t.font_size, sel);
@@ -408,18 +449,19 @@ void AppMenu::draw() {
   fl_push_clip(lx, top, lw, H - footer_h_ - top);
   int tx = lx + S(22) + icon_;
   for (int i = scroll_; i < int(rows_.size()); ++i) {
-    int y = top + (i - scroll_) * row_h_;
+    int y = top + ((i - scroll_) / columns()) * row_h_;
+      int tile_w = lw / columns(), tile_x = lx + ((i - scroll_) % columns()) * tile_w;
     if (y > H - footer_h_) break;
     const DesktopEntry *e = rows_[size_t(i)].entry;
     std::string sub = !e->generic_name.empty() && e->generic_name != e->name ? e->generic_name
                                                                              : e->comment;
     text_font(t.font_size + 1);
     if (sub.empty()) {
-      draw_text(e->name, tx, y, lw - (tx - lx) - S(10), row_h_, t.text);
+      draw_text(e->name, tile_x + S(22) + icon_, y, tile_w - (tx - lx) - S(12), row_h_, t.text);
     } else {
-      draw_text(e->name, tx, y + S(4), lw - (tx - lx) - S(10), row_h_ / 2 - S(2), t.text);
+      draw_text(e->name, tile_x + S(22) + icon_, y + S(4), tile_w - (tx - lx) - S(12), row_h_ / 2 - S(2), t.text);
       text_font(t.font_size - 1);
-      draw_text(sub, tx, y + row_h_ / 2, lw - (tx - lx) - S(10), row_h_ / 2 - S(6), t.text_dim);
+      draw_text(sub, tile_x + S(22) + icon_, y + row_h_ / 2, tile_w - (tx - lx) - S(12), row_h_ / 2 - S(6), t.text_dim);
     }
   }
   if (rows_.empty()) {
@@ -436,5 +478,5 @@ void AppMenu::draw() {
   text_font(t.font_size + 3, true);
   draw_text(initial, pad_, cy - S(18), S(36), S(36), t.on_accent, 1);
   text_font(t.font_size + 1, true);
-  draw_text(name, pad_ + S(46), cy - S(12), W - pad_ * 2 - S(46) - S(96), S(24), t.text);
+  draw_text(name, pad_ + S(46), cy - S(12), W - pad_ * 2 - S(46) - S(144), S(24), t.text);
 }

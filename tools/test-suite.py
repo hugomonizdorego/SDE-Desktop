@@ -10,7 +10,7 @@ args=parser.parse_args()
 binary=args.bin_dir.resolve()
 apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power-manager','sde-power-preferences','sde-power-statistics',
-      'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences']
+      'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences','calculator','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
 for name in apps:
     path=binary/name
@@ -18,13 +18,22 @@ for name in apps:
     data=path.read_bytes()
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
-    if name == 'sde-screensaver-command':
+    if name in ['sde-wm','sde-compositor']:
+        assert 'libX11' in dynamic or 'libxcb' in dynamic,(name,dynamic)
+    elif name == 'sde-screensaver-command':
         # This native command-line client talks to the locker over D-Bus;
         # it intentionally has no GTK window or direct GObject dependency.
         assert 'libglib-2.0' in dynamic and 'libdbus' in dynamic,(name,dynamic)
     else:
         assert 'libgtk' in dynamic or 'libgobject' in dynamic,(name,dynamic)
 subprocess.run([str(binary/'sde-suite'),'--check'],check=True)
+import json
+versions=json.loads(Path('/usr/share/doc/sde/versions.json').read_text())
+for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde-power-manager','sde-screensaver','calculator','sde-wm','sde-compositor','sde-update']:
+    output=subprocess.check_output([str(binary/name),'--version'],text=True)
+    assert versions[name] in output,(name,output,versions[name])
+subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
+
 client='/usr/bin/pkgcli' if os.access('/usr/bin/pkgcli',os.X_OK) else '/usr/bin/pkcon'
 for action,expected in [('refresh',[client,'refresh']+(['force'] if client.endswith('pkcon') else [])),('upgrade',[client,'update'])]:
     actual=subprocess.check_output([str(binary/'sde-update'),'--plan',action],text=True).splitlines()

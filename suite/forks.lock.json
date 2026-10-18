@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 1,
+  "revision": 2,
   "forks": [
     {
       "id": "liria",
@@ -12,7 +12,8 @@
       "configure": [
         "--disable-gtk-doc",
         "--disable-introspection"
-      ]
+      ],
+      "build_version": "0.1.0~alpha7"
     },
     {
       "id": "niny",
@@ -25,7 +26,8 @@
         "--disable-gtk-doc",
         "--disable-tests",
         "--disable-python"
-      ]
+      ],
+      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "xanara",
@@ -45,7 +47,8 @@
         "--enable-comics",
         "--enable-djvu",
         "--disable-caja"
-      ]
+      ],
+      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "taca",
@@ -54,7 +57,8 @@
       "version": "1.28.5",
       "commit": "03326a91768cf915d322b379a4fc6ce253f9ff19",
       "url": "https://github.com/mate-desktop/engrampa",
-      "configure": []
+      "configure": [],
+      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "sde-view",
@@ -67,7 +71,8 @@
         "--disable-gtk-doc",
         "--disable-python",
         "--disable-thumbnailer"
-      ]
+      ],
+      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "sde-system-monitor",
@@ -76,7 +81,8 @@
       "version": "1.28.1",
       "commit": "a3bdf9f74608edee1c9fb1ed2074eb7af530b995",
       "url": "https://github.com/mate-desktop/mate-system-monitor",
-      "configure": []
+      "configure": [],
+      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "sde-power-manager",
@@ -89,7 +95,8 @@
         "--disable-applets",
         "--without-keyring",
         "--with-libsecret"
-      ]
+      ],
+      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "sde-screensaver",
@@ -104,7 +111,8 @@
         "--without-console-kit",
         "--with-systemd",
         "--without-kbd-layout-indicator"
-      ]
+      ],
+      "build_version": "1.0.0~alpha1"
     }
   ]
 }

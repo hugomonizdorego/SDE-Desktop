@@ -144,10 +144,15 @@ def prepare(record, cache, destination):
         helper = (ROOT / "suite/sde-brand.h").read_text()
         for path in list(staged.rglob("*.c")) + list(staged.rglob("*.cpp")):
             s = path.read_text()
+            # About dialogs and command versions identify the independent SDE
+            # build; upstream ABI/library version variables stay unchanged.
+            s = re.sub(r'/\*[\s\S]*?\*/|//[^\n]*|"(?:[^"\\]|\\.)*"|\b(?:VERSION|PACKAGE_VERSION)\b',
+                       lambda m: json.dumps(record["build_version"]) if m.group() in {"VERSION", "PACKAGE_VERSION"} else m.group(), s)
             if re.search(r"\bmain\s*\(\s*(?:int|gint)\b", s):
                 header = path.parent / "sde-brand.h"
-                header.write_text(helper)
-                path.write_text(s + '\n#include "sde-brand.h"\n')
+                header.write_text("#define SDE_NATIVE_NAME " + json.dumps(record["name"]) + "\n#define SDE_NATIVE_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_NATIVE_LIRIA " + str(int(record["id"] == "liria")) + "\n" + helper)
+                s += '\n#include "sde-brand.h"\n'
+            path.write_text(s)
         if record["id"] == "sde-screensaver":
             pam = staged / "data/sde-screensaver"
             pam.write_text("# SDE screen lock: Debian PAM policy\n@include common-auth\n@include common-account\n@include common-session\n")

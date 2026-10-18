@@ -98,15 +98,15 @@ bool sync_openbox(const Config &cfg) {
 
 std::vector<std::string> window_manager_command(const std::string &configured) {
   std::string wm = trim(configured);
-  if (wm.empty() || wm == "openbox") {
+  if (wm.empty() || wm == "sde-wm" || wm == "openbox") {
     ensure_openbox_config();
-    return {"openbox", "--config-file", openbox_config_path()};
+    return {"sde-wm", "--config-file", openbox_config_path()};
   }
   return split_command(wm);
 }
 
 void reconfigure_window_manager() {
-  if (!find_program("openbox").empty()) spawn_detached({"openbox", "--reconfigure"});
+  if (!find_program("sde-wm").empty()) spawn_detached({"sde-wm", "--reconfigure"});
 }
 
 }  // namespace sde

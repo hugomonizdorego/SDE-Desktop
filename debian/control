@@ -3,7 +3,7 @@ Section: x11
 Priority: optional
 Maintainer: Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>
 Build-Depends: debhelper-compat (= 13),
-               cmake (>= 3.16),
+               cmake (>= 3.19),
                pkgconf | pkg-config,
                g++ (>= 4:9),
                rustc (>= 1.59),
@@ -68,7 +68,33 @@ Build-Depends: debhelper-compat (= 13),
                libice-dev,
                liblcms2-dev,
                libxklavier-dev,
-               chrpath
+               chrpath,
+               libgtk-4-dev (>= 4.8),
+               libjavascriptcoregtk-4.1-dev,
+               meson,
+               ninja-build,
+               libxcursor-dev,
+               libxinerama-dev,
+               libpango1.0-dev,
+               libconfig-dev,
+               libev-dev,
+               libepoxy-dev,
+               libpcre2-dev,
+               libpixman-1-dev,
+               libx11-xcb-dev,
+               libxcb-composite0-dev,
+               libxcb-damage0-dev,
+               libxcb-glx0-dev,
+               libxcb-image0-dev,
+               libxcb-present-dev,
+               libxcb-randr0-dev,
+               libxcb-render0-dev,
+               libxcb-render-util0-dev,
+               libxcb-shape0-dev,
+               libxcb-sync-dev,
+               libxcb-util-dev,
+               libxcb-xfixes0-dev,
+               uthash-dev
 Standards-Version: 4.6.2
 Homepage: https://github.com/hugomonizdorego/SDE-Desktop
 Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
@@ -79,11 +105,12 @@ Package: sde
 Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
-         openbox,
          librsvg2-common,
          mate-desktop-common,
          dbus-x11 | dbus-user-session,
          xdg-utils,
+         xsettingsd,
+         gsettings-desktop-schemas,
          desktop-file-utils,
          x11-utils,
          x11-xserver-utils,
@@ -125,7 +152,7 @@ Provides: x-session-manager, notification-daemon
 Description: Selviana Desktop Environment - small, fast and modern desktop
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
  for DebION GNU/Linux and Debian testing, with a Rust configuration core and autostart helper,
- a C++17 interface using FLTK, cairo and Xlib, and Openbox as window manager.
+ a C++17 interface using FLTK, cairo and Xlib, and a source-built SDE WM (Openbox) and SDE compositor (picom).
  .
  This 0.1 Alpha release contains:
   * sde-session  - session manager with crash recovery, rescue dialog,
@@ -162,6 +189,8 @@ Depends: ${misc:Depends},
          pulseaudio-utils,
          pipewire-pulse | pulseaudio,
          wireplumber | pipewire-media-session,
+         xdg-desktop-portal,
+         xdg-desktop-portal-gtk,
          gvfs,
          gvfs-backends,
          adwaita-icon-theme,

@@ -180,7 +180,7 @@ try:
     time.sleep(0.6)
     if xv.poll() is not None:
         raise RuntimeError("Could not start a private test display")
-    spawn("openbox", "--config-file", str(args.data_dir / "openbox/rc.xml"))
+    spawn("sde-wm", "--config-file", str(args.data_dir / "openbox/rc.xml"))
     time.sleep(0.6)
     spawn("sde-desktop")
     panel = spawn("sde-panel")
@@ -189,6 +189,25 @@ try:
     g = geom(wid)
     assert g["X"] == 0 and g["WIDTH"] == W, g
     time.sleep(1.2)
+    compositor = spawn("sde-compositor", "--config", str(args.data_dir / "compositor/sde.conf"))
+    time.sleep(0.6)
+    assert compositor.poll() is None, "SDE compositor did not start"
+    run("sde-panel", "--menu")
+    menu = find("^SDE Menu$")
+    g = geom(menu)
+    assert g["X"] >= 0 and g["Y"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
+    shot("00-start-menu")
+    run("xdotool", "type", "calculator")
+    shot("00-start-search")
+    run("xdotool", "key", "Return")
+    calculator = find("^Calculator$")
+    run("xdotool", "windowactivate", "--sync", calculator)
+    run("xdotool", "key", "ctrl+a")
+    run("xdotool", "type", "sin(30)+2^3")
+    run("xdotool", "key", "Return")
+    shot("11-calculator-native")
+    run("xdotool", "key", "alt+F4")
+    print("SDE WM, COMPOSITOR, START SEARCH AND GTK4 CALCULATOR PASS", flush=True)
     run("sde-panel", "--action-center")
     ac = find("^Action Center$")
     print("AC", geom(ac), flush=True)
@@ -398,6 +417,16 @@ try:
             run("xdotool", "windowclose", native, check=False)
             if engine.poll() is None:
                 engine.terminate()
+        # The actual sudo command exercises the compiled Liria root startup path.
+        # Xvfb is private; no authentication or power operation is triggered.
+        root_folder = home / "Liria-Administrator-Check"
+        root_folder.mkdir()
+        admin = spawn("sudo", "liria", "--no-desktop", str(root_folder))
+        root_window = find("Liria-Administrator-Check")
+        shot("12-liria-administrator")
+        run("xdotool", "windowactivate", "--sync", root_window)
+        run("xdotool", "key", "alt+F4")
+        if admin.poll() is None: admin.terminate()
         print(
             "SOURCE-BUILT NINY, LIRIA, XANARA, TACA AND SDE VIEW NATIVE WINDOWS PASS",
             flush=True,
