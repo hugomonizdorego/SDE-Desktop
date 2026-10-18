@@ -64,7 +64,7 @@ def below_tray(ac,offset,x=190):
         if g['y']+round(12*scale)<target<g['y']+g['h']-round(65*scale):
             run('xdotool','mousemove',g['x']+round(x*scale),target,'click','1');time.sleep(.5);return
         direction='5' if target>=g['y']+g['h']-round(65*scale) else '4'
-        run('xdotool','mousemove',g['x']+g['w']-round(30*scale),g['y']+g['h']//2,'click',direction);time.sleep(.15)
+        run('xdotool','mousemove',g['x']+g['w']-round(7*scale),g['y']+g['h']//2,'click',direction);time.sleep(.15)
     print('REVEAL',g,hg,target,offset,flush=True)
     shot('debug-reveal')
     raise AssertionError('Could not reveal action below the tray')

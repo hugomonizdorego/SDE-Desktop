@@ -1310,8 +1310,11 @@ int QuickSettings::handle(int event) {
     // Route wheel gestures explicitly through this override-redirect window;
     // keep application-tray and slider wheel controls local to their widgets.
     auto *target = Fl::belowmouse();
-    if (dynamic_cast<Fl_Slider *>(target) || dynamic_cast<TrayIndicator *>(target) ||
-        dynamic_cast<Fl_Choice *>(target))
+    // belowmouse can still name a previous control after an async rebuild.
+    // Forward wheel events only when the pointer is actually inside it.
+    if (target && Fl::event_inside(target) &&
+        (dynamic_cast<Fl_Slider *>(target) || dynamic_cast<TrayIndicator *>(target) ||
+         dynamic_cast<Fl_Choice *>(target)))
       return PanelPopup::handle(event);
     int limit = std::max(0, content_height_ - body_->h());
     body_->scroll_to(0, std::max(0, std::min(limit, body_->yposition() + Fl::event_dy() * S(36))));
