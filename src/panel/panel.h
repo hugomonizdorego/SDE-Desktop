@@ -27,8 +27,8 @@ class Tray;
 struct Task {
   Window win = 0;
   std::string title;
-  std::string wm_class;  // res_class
-  std::string wm_name;   // res_name
+  std::string wm_class;             // res_class
+  std::string wm_name;              // res_name
   cairo_surface_t *icon = nullptr;  // owned
   bool minimized = false;
   bool urgent = false;
@@ -52,6 +52,11 @@ class Panel : public sde::BufferedWindow {
   int handle(int event) override;
   void resize(int x, int y, int w, int h) override;
 
+  void open_action_center(const std::string &section = "overview");
+  bool native_popup_input() const { return input_display_ != nullptr; }
+  bool status_in_center() const;
+  Tray *legacy_tray() const { return tray_.get(); }
+  SniHost *status_notifiers() const { return sni_.get(); }
   void toggle_menu();
   void toggle_calendar();
   void toggle_dark_mode();
@@ -79,7 +84,18 @@ class Panel : public sde::BufferedWindow {
   static Panel *instance;
 
  private:
-  enum Hit { NONE, START, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, SHOW_DESKTOP };
+  enum Hit { NONE, START, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP };
+  enum StatusIcon {
+    INPUT_STATUS,
+    BLUETOOTH_STATUS,
+    BATTERY_STATUS,
+    POWER_STATUS,
+    MEDIA_STATUS,
+    NETWORK_STATUS,
+    SOUND_STATUS,
+    CONTROLS_STATUS,
+    OVERFLOW_STATUS
+  };
   struct Target {
     Hit kind = NONE;
     int index = -1;
@@ -103,6 +119,9 @@ class Panel : public sde::BufferedWindow {
   void open_popup(PanelPopup *p, int anchor_x, bool align_right);
   bool any_popup_open() const;
   int status_count() const;
+  void status_clicked(int index, int button);
+  static void input_event(int, void *);
+  void outside_pointer_press();
 
   // Auto-hide.
   void set_revealed(bool revealed);
@@ -129,6 +148,12 @@ class Panel : public sde::BufferedWindow {
   int start_w_ = 0, pin_w_ = 0, tasks_x_ = 0, tasks_end_ = 0, tray_x_ = 0, sni_x_ = 0, sni_w_ = 0,
       status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0;
   int icon_ = 24, tray_icon_ = 22;
+  int action_x_ = 0, action_w_ = 0;
+  std::vector<StatusIcon> status_icons_;
+  bool compact_status_ = false;
+  Display *input_display_ = nullptr;
+  int input_opcode_ = 0;
+  long long block_quick_until_ = 0;
   int edge_reserve_ = 0, visible_pins_ = 0;
 
   // Dragging a pinned launcher to reorder it.

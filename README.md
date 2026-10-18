@@ -2,7 +2,7 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 8** (`0.1.0~alpha8`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 9** (`0.1.0~alpha9`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 8 Accessories menu](docs/screenshots/alpha8/02-accessories.png)
 
@@ -110,7 +110,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test alpha8; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
+test alpha9; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -207,3 +207,11 @@ categories (Calculator/Niny/Taca in Accessories), with live menu updates.
 [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile
 model port, native RandR monitor settings, safe preview/rollback and shared
 100/125/150/200% interface scale. Physical GPU/dock testing is still needed.
+
+## Alpha 9 panel patch
+
+[Alpha 9](docs/ALPHA9.md) adds reference-style panel indicators, a corner-anchored
+Action Center, movable SNI/XEmbed tray, native Bluetooth controls, Wi-Fi/LAN
+details, per-application and microphone volume, and MPRIS player controls.
+Settings keeps SDE's own configuration and two-column layout. The patch is
+still alpha and physical hardware review is required.

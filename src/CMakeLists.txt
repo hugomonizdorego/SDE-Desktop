@@ -26,7 +26,7 @@ target_include_directories(sde-common PUBLIC
 target_compile_options(sde-common PUBLIC ${FLTK_CXXFLAGS})
 target_link_libraries(sde-common PUBLIC
   ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
-  sde-rust-config PkgConfig::XRANDR)
+  sde-rust-config PkgConfig::XRANDR PkgConfig::XINPUT)
 add_dependencies(sde-common sde-rust-build)
 
 # The session manager draws nothing itself, but shares the configuration,
@@ -40,6 +40,7 @@ add_executable(sde-panel
   panel/menu.cpp
   panel/popup.cpp
   panel/quick.cpp
+  panel/controls.cpp
   panel/calendar.cpp
   panel/sni.cpp
   panel/tray.cpp)

@@ -148,11 +148,12 @@ def shot(name):
     print("saved", name, flush=True)
 
 
-def config(style=None, theme="light", scale=None, analog=False, top=False):
+def config(style=None, theme="light", scale=None, analog=False, top=False, compact=False):
     if scale is None:
         scale = args.scale
+    extra = "show_clock=false\nshow_media=false\nshow_tray=false\nmove_status=false\n" if compact else ""
     (home / ".config/sde/sde.conf").write_text(
-        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n'
+        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}'
     )
 
 
@@ -350,24 +351,26 @@ try:
         assert cfg.get("panel", "style") == "short", dict(cfg)
         app.terminate()
         app.wait()
+        run("sde-panel", "--section", "network")
+        ac = find("^Action Center$")
+        g = geom(ac)
+        pg = geom(wid)
+        assert g["X"] + g["WIDTH"] == pg["X"] + pg["WIDTH"], (g, pg)
+        assert g["Y"] + g["HEIGHT"] == pg["Y"], (g, pg)
+        shot("06-network-connections")
+        run("xdotool", "key", "Escape")
+        config("short", compact=True)
+        reload_panel()
         run("sde-panel", "--action-center")
         ac = find("^Action Center$")
         g = geom(ac)
-        # Expand connections, then collapse, and enable Do Not Disturb.
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 205), "click", "1")
-        time.sleep(0.5)
-        g = geom(ac)
-        assert g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
-        shot("06-network-connections")
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 205), "click", "1")
-        time.sleep(0.5)
-        g = geom(ac)
-        run("xdotool", "mousemove", str(g["X"] + 310), str(g["Y"] + 205), "click", "1")
+        # Compact fixture: two-column tiles start at y=42, DND/Dark are row 3.
+        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 254), "click", "1")
         time.sleep(0.5)
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.getboolean("notifications", "do_not_disturb")
         g = geom(ac)
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 292), "click", "1")
+        run("xdotool", "mousemove", str(g["X"] + 300), str(g["Y"] + 254), "click", "1")
         time.sleep(0.5)
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.get("appearance", "theme") == "dark"

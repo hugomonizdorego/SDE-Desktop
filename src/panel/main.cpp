@@ -25,7 +25,8 @@ int ignore_x_errors(Display *, XErrorEvent *e) {
 bool claim_instance() {
   Atom sel = XInternAtom(fl_display, ("_SDE_PANEL_S" + std::to_string(fl_screen)).c_str(), False);
   if (XGetSelectionOwner(fl_display, sel) != None) return false;
-  Window w = XCreateSimpleWindow(fl_display, RootWindow(fl_display, fl_screen), -1, -1, 1, 1, 0, 0, 0);
+  Window w =
+      XCreateSimpleWindow(fl_display, RootWindow(fl_display, fl_screen), -1, -1, 1, 1, 0, 0, 0);
   XSetSelectionOwner(fl_display, sel, w, CurrentTime);
   return XGetSelectionOwner(fl_display, sel) == w;
 }
@@ -40,6 +41,12 @@ int main(int argc, char **argv) {
       command = "menu";
     } else if (!strcmp(argv[i], "--quick-settings") || !strcmp(argv[i], "--action-center")) {
       command = "quick";
+    } else if (!strcmp(argv[i], "--section") && i + 1 < argc) {
+      std::string section = argv[++i];
+      if (section != "overview" && section != "network" && section != "bluetooth" &&
+          section != "sound" && section != "media" && section != "tray" && section != "power")
+        return 2;
+      command = "quick:" + section;
     } else if (!strcmp(argv[i], "--calendar")) {
       command = "calendar";
     } else if (!strcmp(argv[i], "--version")) {
@@ -50,6 +57,8 @@ int main(int argc, char **argv) {
                      "  --menu            open or close the application menu of the running panel\n"
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
+                     "  --section NAME    open Action Center: network, bluetooth, sound, media, "
+                     "tray, power\n"
                      "  --calendar        open or close the calendar\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
