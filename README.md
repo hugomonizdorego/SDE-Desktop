@@ -211,7 +211,7 @@ model port, native RandR monitor settings, safe preview/rollback and shared
 ## Alpha 9 panel patch
 
 [Current screenshot gallery](docs/screenshots/alpha9/README.md) ·
-[Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39142810949)
+[Latest Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha8-display-settings)
 
 [Alpha 9](docs/ALPHA9.md) adds reference-style panel indicators, a corner-anchored
 Action Center, movable SNI/XEmbed tray, native Bluetooth controls, Wi-Fi/LAN

@@ -91,8 +91,8 @@ a server reset race; this fixture change passed 12 local repetitions.
 QA helper executables are not installed in
 the desktop package.
 
-The [Debian CI run](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39142810949)
-builds the complete source-based suite and publishes `.deb` packages, matching
+The [current Debian CI builds](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha8-display-settings)
+build the complete source-based suite and publishes `.deb` packages, matching
 sources, checksums and native screenshots. Install the two runtime packages with
 APT so Debian resolves system services:
 
