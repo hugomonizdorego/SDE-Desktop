@@ -984,7 +984,7 @@ void build_about(Page *page) {
   page->note(_("Free software under the GNU General Public License, version 3 or later."));
   page->note(_("Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors."));
   page->row(_("Developer"), S(200), S(34), [](int x, int y, int w, int h) {
-    return action_button(x, y, w, h, "Hugo Moniz do Rego", {"xdg-open", "https://github.com/hugomonizdorego"});
+    return action_button(x, y, w, h, "DebION Dev-team", {"xdg-open", "https://github.com/hugomonizdorego/SDE-Desktop"});
   });
   page->row(_("Source code"), S(200), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, "SDE-Desktop", {"xdg-open", "https://github.com/hugomonizdorego/SDE-Desktop"});

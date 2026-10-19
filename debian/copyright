@@ -115,3 +115,11 @@ Comment: Gallery is a native GTK4/Vala source fork of gThumb 4.0.
  Archive: https://download.gnome.org/sources/gthumb/4.0/gthumb-4.0.tar.xz
  SHA256: a24aaa72b5637f49097dedc9c141a33615da770d029315f3285ebf2156cf7b61
  The complete original COPYING, source headers and translations accompany binary builds.
+
+Files: data/debion/debion-mozilla-archive-keyring.asc
+Copyright: Mozilla / Artifact Registry Repository Signer
+License: public-key
+ This is the public repository signing key distributed by Mozilla at
+ https://packages.mozilla.org/apt/repo-signing-key.gpg for verification of
+ its official APT repository. It is public cryptographic data, not software.
+ Its fingerprint is 35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3.

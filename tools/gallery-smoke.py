@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
         assert 'gthumb 4.0' in run('gallery', '--version').stdout.lower()
         # Credits are compiled into the actual Gallery executable.
         data = Path('/usr/bin/gallery').read_bytes()
-        for credit in [b'Hugo Moniz do Rego', b'Paolo Bacchilega', b'https://gitlab.gnome.org/GNOME/gthumb']:
+        for credit in [b'DebION Dev-team', b'Paolo Bacchilega', b'https://gitlab.gnome.org/GNOME/gthumb']:
             assert credit in data, credit
         # Restart through the application's normal quit action, then verify
         # that SDE's dark preference also controls libadwaita at startup.

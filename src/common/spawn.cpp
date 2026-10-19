@@ -52,8 +52,8 @@ bool spawn_detached(const std::vector<std::string> &argv, const std::string &wor
 }
 
 bool open_terminal(const std::vector<std::string> &argv, const std::string &work_dir) {
-  static const char *terminals[] = {"x-terminal-emulator", "xfce4-terminal", "lxterminal",
-                                    "qterminal", "mate-terminal", "gnome-terminal",
+  static const char *terminals[] = {"gnome-terminal", "x-terminal-emulator", "xfce4-terminal", "lxterminal",
+                                    "qterminal", "mate-terminal",
                                     "konsole", "xterm"};
   for (const char *t : terminals) {
     if (find_program(t).empty()) continue;

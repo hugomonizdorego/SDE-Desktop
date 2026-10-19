@@ -140,7 +140,7 @@ void key(GtkButton *button, gpointer) {
   gtk_widget_grab_focus(entry);
 }
 void about(GtkButton *, gpointer) {
-  const char *authors[] = {"Raad Altaie — Scientific Calculator engine", "Hugo Moniz do Rego https://github.com/hugomonizdorego", "SDE contributors https://github.com/hugomonizdorego/SDE-Desktop", nullptr};
+  const char *authors[] = {"Raad Altaie — Scientific Calculator engine", "DebION Dev-team https://github.com/hugomonizdorego/SDE-Desktop", nullptr};
   gtk_show_about_dialog(GTK_WINDOW(window), "program-name", "Calculator", "version", SDE_CALCULATOR_VERSION,
       "authors", authors, "website", "https://github.com/raad-altaie/scientific-calculator",
       "website-label", "scientific-calculator", "license-type", GTK_LICENSE_AGPL_3_0_ONLY,

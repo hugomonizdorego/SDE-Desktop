@@ -345,7 +345,7 @@ try:
     run("xdotool", "mousemove", str(ag["X"] + int(245 * factor)),
         str(ag["Y"] + int(165 * factor)), "click", "1")
     for _ in range(50):
-        if (home / "opened-uri").exists() and (home / "opened-uri").read_text().strip() == "https://github.com/hugomonizdorego": break
+        if (home / "opened-uri").exists() and (home / "opened-uri").read_text().strip() == "https://github.com/hugomonizdorego/SDE-Desktop": break
         time.sleep(.05)
     else: raise AssertionError("About developer link did not open the expected URI")
     run("xdotool", "mousemove", str(ag["X"] + int(245 * factor)),

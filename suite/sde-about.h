@@ -10,8 +10,7 @@ static void sde_native_about_apply(GtkWidget *widget, gpointer unused) {
   if (g_object_get_data(G_OBJECT(widget), "sde-about-credited")) return;
   g_object_set_data(G_OBJECT(widget), "sde-about-credited", GINT_TO_POINTER(1));
   const gchar *developers[] = {
-      "Hugo Moniz do Rego https://github.com/hugomonizdorego",
-      "SDE contributors https://github.com/hugomonizdorego/SDE-Desktop", NULL};
+      "DebION Dev-team https://github.com/hugomonizdorego/SDE-Desktop", NULL};
   const gchar *source[] = {SDE_UPSTREAM_NAME " " SDE_UPSTREAM_URL, NULL};
   gtk_about_dialog_add_credit_section(GTK_ABOUT_DIALOG(widget), "SDE development", developers);
   gtk_about_dialog_add_credit_section(GTK_ABOUT_DIALOG(widget), "Original source", source);

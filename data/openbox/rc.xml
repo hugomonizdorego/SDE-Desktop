@@ -59,11 +59,11 @@
     <keybind key="W-a"><action name="Execute"><command>sde-panel --quick-settings</command></action></keybind>
     <keybind key="W-c"><action name="Execute"><command>sde-panel --calendar</command></action></keybind>
     <keybind key="A-F2"><action name="Execute"><command>sde-run</command></action></keybind>
-    <keybind key="C-A-t"><action name="Execute"><command>x-terminal-emulator</command></action></keybind>
+    <keybind key="C-A-t"><action name="Execute"><command>sh -c 'if command -v gnome-terminal &gt;/dev/null; then exec gnome-terminal; else exec x-terminal-emulator; fi'</command></action></keybind>
     <keybind key="W-e"><action name="Execute"><command>xdg-open .</command></action></keybind>
     <keybind key="C-A-Delete"><action name="Execute"><command>sde-logout</command></action></keybind>
     <keybind key="C-A-l"><action name="Execute"><command>sde-lock</command></action></keybind>
-    <keybind key="Print"><action name="Execute"><command>sh -c 'command -v scrot &gt;/dev/null &amp;&amp; scrot "$HOME/Pictures/Screenshot-%Y%m%d-%H%M%S.png"'</command></action></keybind>
+    <keybind key="Print"><action name="Execute"><command>gnome-screenshot --interactive</command></action></keybind>
     <!-- Windows -->
     <keybind key="A-F4"><action name="Close"/></keybind>
     <keybind key="A-Tab"><action name="NextWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action></keybind>

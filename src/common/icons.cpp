@@ -397,7 +397,7 @@ void IconLoader::set_theme(const std::string &theme) {
   if (chosen.empty() || chosen == "auto") {
     chosen = "hicolor";
     auto installed = installed_themes();
-    for (const char *pref : {"Eduka-Icons-Light", "Papirus", "Yaru", "elementary-xfce",
+    for (const char *pref : {"Papirus", "Eduka-Icons-Light", "Yaru", "elementary-xfce",
                              "Adwaita", "breeze", "Tango"}) {
       if (std::find(installed.begin(), installed.end(), pref) != installed.end()) {
         chosen = pref;

@@ -12,12 +12,12 @@
   </schema>
   <schema id="org.debion.applications-terminal" path="/org/debion/applications/terminal/">
     <key name="exec" type="s">
-      <default>'xterm'</default>
+      <default>'gnome-terminal'</default>
       <summary>Terminal program</summary>
       <description>Terminal executable used by the Niny file browser.</description>
     </key>
     <key name="exec-arg" type="s">
-      <default>'-e'</default>
+      <default>'--'</default>
       <summary>Terminal execution option</summary>
       <description>Option used to run a program inside the terminal.</description>
     </key>

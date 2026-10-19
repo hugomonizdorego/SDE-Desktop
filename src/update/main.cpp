@@ -193,14 +193,18 @@ class UpdateWindow : public BufferedWindow {
   }
   void start(const std::string &action) {
     if (busy_) return;
-    if (find_program("xterm").empty() || !is_executable(transaction(action)[0])) {
-      fl_alert("%s", _("Install xterm and the PackageKit command-line client to run update transactions."));
+    const bool gnome = !find_program("gnome-terminal").empty();
+    if ((!gnome && find_program("xterm").empty()) || !is_executable(transaction(action)[0])) {
+      fl_alert("%s", _("Install gnome-terminal or xterm and the PackageKit command-line client to run update transactions."));
       return;
     }
     set_busy(true);
     summary_ = _("Complete or cancel the transaction in the terminal, then press Enter there.");
     redraw();
-    run_async({"xterm", "-T", "SDE Update", "-e", "sde-update", "--transaction", action},
+    std::vector<std::string> command = gnome
+        ? std::vector<std::string>{"gnome-terminal", "--wait", "--title=SDE Update", "--", "sde-update", "--transaction", action}
+        : std::vector<std::string>{"xterm", "-T", "SDE Update", "-e", "sde-update", "--transaction", action};
+    run_async(command,
               [this](const std::string &, int) { load(); });
   }
   Theme theme_;

@@ -1,0 +1,14 @@
+# Only Firefox release and its language packs come from Mozilla.
+Package: firefox firefox-l10n-*
+Pin: origin packages.mozilla.org
+Pin-Priority: 1000
+
+# Keep other Mozilla packages, including ESR and Thunderbird, out of this source.
+Package: *
+Pin: origin packages.mozilla.org
+Pin-Priority: -1
+
+# Celluloid uses libmpv2. Block only the standalone mpv player.
+Package: mpv
+Pin: version *
+Pin-Priority: -1

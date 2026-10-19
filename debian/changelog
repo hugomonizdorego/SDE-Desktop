@@ -1,3 +1,13 @@
+sde (0.1.0~alpha11) unstable; urgency=medium
+
+  * Install the complete DebION complementary application and service profile.
+  * Use Firefox release, Papirus, GNOME Terminal and explicit MIME defaults.
+  * Configure signed Mozilla APT, resolved DNS, LightDM and Slick Greeter.
+  * Exclude the standalone mpv player while retaining Celluloid's libmpv.
+  * Credit native SDE development to DebION Dev-team; retain upstream notices.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 19 Oct 2026 17:30:00 +0000
+
 sde (0.1.0~alpha10) unstable; urgency=medium
 
   * Build native Gallery from verified gThumb 4.0 sources with GTK4/libadwaita.

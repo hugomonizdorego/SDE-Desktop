@@ -24,3 +24,62 @@ application/x-7z-compressed=taca.desktop;
 application/x-compressed-tar=taca.desktop;
 application/x-bzip-compressed-tar=taca.desktop;
 application/x-xz-compressed-tar=taca.desktop;
+
+# firefox.desktop
+text/html=firefox.desktop;
+application/xhtml+xml=firefox.desktop;
+x-scheme-handler/http=firefox.desktop;
+x-scheme-handler/https=firefox.desktop;
+
+# thunderbird.desktop
+x-scheme-handler/mailto=thunderbird.desktop;
+message/rfc822=thunderbird.desktop;
+x-scheme-handler/news=thunderbird.desktop;
+x-scheme-handler/nntp=thunderbird.desktop;
+
+# io.github.celluloid_player.Celluloid.desktop
+video/mp4=io.github.celluloid_player.Celluloid.desktop;
+video/x-matroska=io.github.celluloid_player.Celluloid.desktop;
+video/webm=io.github.celluloid_player.Celluloid.desktop;
+video/mpeg=io.github.celluloid_player.Celluloid.desktop;
+video/quicktime=io.github.celluloid_player.Celluloid.desktop;
+video/x-msvideo=io.github.celluloid_player.Celluloid.desktop;
+video/x-ms-wmv=io.github.celluloid_player.Celluloid.desktop;
+video/ogg=io.github.celluloid_player.Celluloid.desktop;
+video/mp2t=io.github.celluloid_player.Celluloid.desktop;
+application/ogg=io.github.celluloid_player.Celluloid.desktop;
+application/x-matroska=io.github.celluloid_player.Celluloid.desktop;
+
+# org.gnome.Rhythmbox3.desktop
+audio/mpeg=org.gnome.Rhythmbox3.desktop;
+audio/flac=org.gnome.Rhythmbox3.desktop;
+audio/x-flac=org.gnome.Rhythmbox3.desktop;
+audio/ogg=org.gnome.Rhythmbox3.desktop;
+audio/x-vorbis+ogg=org.gnome.Rhythmbox3.desktop;
+audio/x-opus+ogg=org.gnome.Rhythmbox3.desktop;
+audio/opus=org.gnome.Rhythmbox3.desktop;
+audio/x-wav=org.gnome.Rhythmbox3.desktop;
+audio/wav=org.gnome.Rhythmbox3.desktop;
+audio/mp4=org.gnome.Rhythmbox3.desktop;
+audio/aac=org.gnome.Rhythmbox3.desktop;
+audio/x-m4a=org.gnome.Rhythmbox3.desktop;
+audio/x-mpegurl=org.gnome.Rhythmbox3.desktop;
+audio/mpegurl=org.gnome.Rhythmbox3.desktop;
+audio/x-scpls=org.gnome.Rhythmbox3.desktop;
+
+# transmission-gtk.desktop
+application/x-bittorrent=transmission-gtk.desktop;
+x-scheme-handler/magnet=transmission-gtk.desktop;
+
+# gdebi.desktop
+application/vnd.debian.binary-package=gdebi.desktop;
+application/x-deb=gdebi.desktop;
+
+# org.gnome.font-viewer.desktop
+font/ttf=org.gnome.font-viewer.desktop;
+font/otf=org.gnome.font-viewer.desktop;
+application/x-font-ttf=org.gnome.font-viewer.desktop;
+application/x-font-opentype=org.gnome.font-viewer.desktop;
+
+# org.gnome.seahorse.Application.desktop
+application/pgp-keys=org.gnome.seahorse.Application.desktop;

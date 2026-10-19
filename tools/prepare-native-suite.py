@@ -200,7 +200,7 @@ def prepare(record, cache, destination):
         if record["id"] == "sde-screensaver":
             pam = staged / "data/sde-screensaver"
             pam.write_text("# SDE screen lock: Debian PAM policy\n@include common-auth\n@include common-account\n@include common-session\n")
-        attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE developer: Hugo Moniz do Rego https://github.com/hugomonizdorego\nSDE source: https://github.com/hugomonizdorego/SDE-Desktop\nSDE changes: product/namespace/paths, About credits, GTK startup integration and Debian packaging.\n\n"
+        attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE developer: DebION Dev-team https://github.com/hugomonizdorego/SDE-Desktop\nSDE source: https://github.com/hugomonizdorego/SDE-Desktop\nSDE changes: product/namespace/paths, About credits, GTK startup integration and Debian packaging.\n\n"
         (staged / "SDE-UPSTREAM-NOTICE").write_text(attribution)
         (staged / "SDE-COPYRIGHT-HEADERS").write_text("\n\n".join(notices))
         staged.rename(source)

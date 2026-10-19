@@ -8,7 +8,7 @@
 # gives 0.1.0~alpha2+deb12 (used for the per-distribution release builds).
 #
 # The package lands in output-dir (default: ./dist). Install it with
-#   sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
+#   sudo sh ./dist/install-debion.sh ./dist
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -57,10 +57,11 @@ find "$WORK/sde-$VERSION" -type f \( -name sde-panel-service-fixture -o -name sd
 # patched upstream trees, submodules, copyright notices and build scripts.
 tar -C "$WORK" --exclude='*/obj-*' --exclude='*/build' --exclude='*/target' \
     --exclude='*/__pycache__' --exclude='*/debian/.debhelper' --exclude='*/debian/sde' \
-    --exclude='*/debian/sde-desktop' --exclude='*/debian/sde-dbgsym' --exclude='*/release/*.deb' -cJf "$OUT/sde-native-sources_${VERSION}${SUFFIX:+-$SUFFIX}.tar.xz" "sde-$VERSION"
+    --exclude='*/debian/debion-desktop-defaults' --exclude='*/debian/sde-desktop' --exclude='*/debian/sde-dbgsym' --exclude='*/release/*.deb' -cJf "$OUT/sde-native-sources_${VERSION}${SUFFIX:+-$SUFFIX}.tar.xz" "sde-$VERSION"
 cp "$WORK"/*.deb "$OUT"/
 cp "$WORK"/*.buildinfo "$WORK"/*.changes "$OUT"/ 2>/dev/null || true
-(cd "$OUT" && sha256sum ./*.deb ./*sources*.tar.xz > SHA256SUMS.sha256)
+cp "$ROOT/tools/install-debion.sh" "$OUT/install-debion.sh"
+(cd "$OUT" && sha256sum ./*.deb ./*sources*.tar.xz ./install-debion.sh > SHA256SUMS.sha256)
 echo
 echo "Packages written to $OUT:"
 ls -1 "$OUT"/*.deb

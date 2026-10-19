@@ -583,10 +583,10 @@ void build_display_page(Page* page) {
   page->end_card();
   page->begin_card(_("About Display Settings"));
   page->note("Display Settings " + std::string(SDE_DISPLAY_VERSION) + " · SDE Alpha");
-  page->note("SDE developer: Hugo Moniz do Rego");
+  page->note("SDE developer: DebION Dev-team");
   page->row(_("Developer"), S(180), S(34), [](int x, int y, int w, int h) -> Fl_Widget* {
-    auto* b = new FlatButton(x, y, w, h, "Hugo Moniz do Rego");
-    b->callback([](Fl_Widget*, void*) { open_uri("https://github.com/hugomonizdorego"); });
+    auto* b = new FlatButton(x, y, w, h, "DebION Dev-team");
+    b->callback([](Fl_Widget*, void*) { open_uri("https://github.com/hugomonizdorego/SDE-Desktop"); });
     return b;
   });
   page->row(_("Profile model source"), S(180), S(34), [](int x, int y, int w, int h) -> Fl_Widget* {

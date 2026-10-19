@@ -125,7 +125,7 @@ Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          librsvg2-common,
-         adwaita-icon-theme-legacy | papirus-icon-theme,
+         papirus-icon-theme,
          mate-desktop-common,
          dbus-x11 | dbus-user-session,
          xdg-utils,
@@ -171,7 +171,7 @@ Suggests: eduka-icons,
           brightnessctl,
           network-manager-gnome,
           scrot,
-          firefox-esr | firefox
+          firefox
 Provides: x-session-manager, notification-daemon
 Description: Selviana Desktop Environment - small, fast and modern desktop
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
@@ -207,31 +207,81 @@ Architecture: all
 Section: metapackages
 Depends: ${misc:Depends},
          sde (>= ${source:Version}),
+         debion-desktop-defaults (= ${source:Version}),
          xserver-xorg,
          xinit,
-         lightdm | x-display-manager,
+         lightdm,
+         lightdm-settings,
+         slick-greeter,
          network-manager,
+         nm-connection-editor,
+         wpasupplicant,
+         wireless-regdb,
+         gnome-keyring,
+         libpam-gnome-keyring,
+         systemd-resolved,
+         systemd-timesyncd,
          bluez,
          blueman,
+         pipewire,
+         pipewire-alsa,
+         pipewire-pulse,
+         wireplumber,
+         libspa-0.2-bluetooth,
          pulseaudio-utils,
-         pipewire-pulse | pulseaudio,
-         wireplumber | pipewire-media-session,
          xdg-desktop-portal,
          xdg-desktop-portal-gtk,
+         xdg-terminal-exec,
          gvfs,
          gvfs-backends,
+         papirus-icon-theme,
          adwaita-icon-theme,
          dconf-gsettings-backend,
          upower,
-         udisks2
-Recommends: papirus-icon-theme,
-            firefox-esr | firefox,
-            network-manager-gnome
-Description: complete SDE desktop and application suite for DebION GNU/Linux
- One installation entry point for the SDE session, display server,
- login manager, network and sound services, removable media support
- and integrated SDE applications on Debian testing and DebION.
+         udisks2,
+         gucharmap,
+         gnome-font-viewer,
+         seahorse,
+         gnome-screenshot,
+         simple-scan,
+         thunderbird,
+         firefox,
+         gparted,
+         transmission-gtk,
+         celluloid,
+         rhythmbox,
+         onboard,
+         gufw,
+         system-config-printer,
+         system-config-printer-udev,
+         synaptic,
+         gdebi,
+         gnome-terminal,
+         gamemode,
+         gstreamer1.0-plugins-good,
+         gstreamer1.0-libav
+Conflicts: mpv
+Description: complete SDE desktop and DebION GNU/Linux application profile
+ One installation entry point for the native SDE applications and DebION's
+ complementary desktop applications, network, PipeWire audio, Bluetooth,
+ printing, display manager, DNS and time synchronization services.
  .
- This metapackage installs individual maintained components rather than
- another complete desktop environment. Existing user preferences and
- distribution package sources are preserved.
+ Firefox uses the regular Mozilla release channel. Celluloid uses libmpv;
+ the separate mpv player package is excluded from this desktop profile.
+ Papirus is the default icon theme. Upstream desktop files place additional
+ applications in their own menu categories automatically.
+ .
+ Install debion-desktop-defaults and refresh APT before installing this
+ metapackage, so the official Mozilla Firefox repository is available.
+ See /usr/share/doc/debion-desktop-defaults/DEBION.md for installation.
+
+Package: debion-desktop-defaults
+Architecture: all
+Section: metapackages
+Depends: ${misc:Depends}, ca-certificates
+Description: DebION SDE desktop integration and repository defaults
+ Configures the signed official Mozilla Firefox repository, package policy,
+ LightDM with Slick Greeter, NetworkManager with systemd-resolved and the
+ preferred terminal for SDE. Package sources already present and individual
+ user preferences are preserved. No repositories are contacted by maintainer
+ scripts; refresh APT explicitly after installing this package.

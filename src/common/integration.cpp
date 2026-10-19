@@ -9,6 +9,7 @@
 
 #include "build_config.h"
 #include "desktop_entry.h"
+#include "icons.h"
 #include "suite.h"
 #include "theme.h"
 #include "util.h"
@@ -20,7 +21,10 @@ void sync_gtk_settings(const Config &cfg) {
   std::string font =
       cfg.get("appearance", "font", "Sans") + " " + cfg.get("appearance", "font_size", "10");
   std::string icons = cfg.get("appearance", "icon_theme", "auto");
-  if (icons == "auto") icons = "Adwaita";
+  if (icons == "auto") {
+    IconLoader::set_theme("auto");
+    icons = IconLoader::theme();
+  }
   for (const char *version : {"gtk-3.0", "gtk-4.0"}) {
     std::string dir = config_home() + "/" + version;
     make_dirs(dir);
@@ -64,6 +68,9 @@ void sync_gtk_settings(const Config &cfg) {
              : nullptr;
   if (schema) {
     GSettings *settings = g_settings_new_full(schema, nullptr, nullptr);
+    if (g_settings_schema_has_key(schema, "icon-theme") &&
+        g_settings_is_writable(settings, "icon-theme"))
+      g_settings_set_string(settings, "icon-theme", icons.c_str());
     if (!system && g_settings_schema_has_key(schema, "color-scheme") &&
         g_settings_is_writable(settings, "color-scheme"))
       g_settings_set_string(settings, "color-scheme", dark ? "prefer-dark" : "prefer-light");

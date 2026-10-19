@@ -2,7 +2,7 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 10** (`0.1.0~alpha10`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 11** (`0.1.0~alpha11`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
 
@@ -52,10 +52,11 @@ normal dependencies. SDE Update has a native interface, an attributed Mint Updat
 model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
 and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 
-`sudo apt install sde-desktop` is the single entry point when the two SDE packages
+`sudo apt install sde-desktop` is the single entry point when the SDE packages
 are available in the DebION repository. The metapackage installs the session,
 suite, Xorg, login, network, sound and media services. No DebION repository is
-created by this project.
+created by this project. The full profile uses the signed official Mozilla source for Firefox release.
+See [DebION packages and default applications](docs/DEBION.md) and [Alpha 11 installation](docs/ALPHA11.md).
 
 ![Native Niny editor in SDE](docs/screenshots/alpha7/05-native-niny.png)
 
@@ -236,3 +237,13 @@ is not required. This remains a development alpha for DebION / Debian testing.
 [Gallery Alpha 10 screenshots](docs/screenshots/alpha10/README.md) · [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39214607984)
 
 ![Gallery native About](docs/screenshots/alpha10/03-gallery-about.png)
+
+### Alpha 11 — DebION application profile
+
+All requested complementary applications are dependencies of `sde-desktop`.
+Papirus is the default icon theme; Firefox release, Thunderbird, Celluloid,
+Rhythmbox, Transmission, GNOME Terminal and GDebi provide their respective defaults.
+Native About development credits read **DebION Dev-team**.
+
+Use the included `install-debion.sh` for the three matching packages and Mozilla
+repository bootstrap. See [DebION profile](docs/DEBION.md).

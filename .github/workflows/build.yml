@@ -61,7 +61,11 @@ jobs:
           python3 tools/check-installed-suite.py
           /usr/bin/python3 /usr/share/sde/update/check.py > /tmp/sde-update-cache.tsv
           head -n 1 /tmp/sde-update-cache.tsv | grep -F 'SDE-UPDATES'
-          DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb
+      - name: Install full DebION desktop and verify defaults
+        run: |
+          DEBIAN_FRONTEND=noninteractive sh dist/install-debion.sh --yes dist
+          python3 tools/check-debion-profile.py
+          python3 tools/check-installed-suite.py
       - name: Native UI smoke checks
         if: matrix.image == 'debian:testing'
         run: |
@@ -89,3 +93,4 @@ jobs:
             dist/*.deb
             dist/*sources*.tar.xz
             dist/*.sha256
+            dist/install-debion.sh

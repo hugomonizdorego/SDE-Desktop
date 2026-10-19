@@ -17,7 +17,7 @@ assert "'APP_ID', 'org.debion.Gallery'" in config
 assert "exec_name = 'gallery'" in config
 assert versions['gallery'] in config
 app = (source/'src/Application.vala').read_text()
-for name in ['Hugo Moniz do Rego', 'Paolo Bacchilega', 'about.add_link', 'Adw.StyleManager']:
+for name in ['DebION Dev-team', 'Paolo Bacchilega', 'about.add_link', 'Adw.StyleManager']:
     assert name in app, name
 assert 'Copyright' in (source/'COPYING').read_text()
 assert 'Paolo Bacchilega' in (source/'data/appdata/org.debion.Gallery.metainfo.xml.in').read_text()

@@ -29,7 +29,7 @@ void show_app_about(const std::string &id) {
     window->color(active_theme().background.fl());
     auto *text = new Fl_Box(S(20), S(16), S(450), S(120));
     const auto description = app.name + " " + app.version + "\n" + app.role +
-        "\n\nSDE developer: Hugo Moniz do Rego\nOriginal authors and copyright notices are retained.";
+        "\n\nSDE developer: DebION Dev-team\nOriginal authors and copyright notices are retained.";
     text->copy_label(description.c_str());
     text->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
     text->labelcolor(active_theme().text.fl());
@@ -40,7 +40,7 @@ void show_app_about(const std::string &id) {
       button->copy_tooltip(uri.c_str());
       button->callback([](Fl_Widget *w, void *) { open_uri(w->tooltip()); });
     };
-    link(S(148), "Hugo Moniz do Rego", "https://github.com/hugomonizdorego");
+    link(S(148), "DebION Dev-team", "https://github.com/hugomonizdorego/SDE-Desktop");
     link(S(190), app.upstream, app.url);
     link(S(232), "SDE source", "https://github.com/hugomonizdorego/SDE-Desktop");
     link(S(274), "Copyright and license", "/usr/share/doc/" + app.package + "/copyright");

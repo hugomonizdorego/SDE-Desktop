@@ -61,6 +61,6 @@ for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor',
              'sde-power-preferences','sde-power-statistics','sde-screensaver-preferences',
              'calculator','gallery']:
     data = (binary/name).read_bytes()
-    for credit in [b'Hugo Moniz do Rego', b'https://github.com/hugomonizdorego']:
+    for credit in [b'DebION Dev-team', b'https://github.com/hugomonizdorego/SDE-Desktop']:
         assert credit in data, (name, credit)
 print('Native ELF executables, metadata, transaction plans and absence of original MATE apps passed.')

@@ -42,7 +42,7 @@ def patch(source, app, version):
     edit('data/meson.build', "install_man('gthumb.1')", "install_man('gallery.1')")
     manual = source/'data/gthumb.1'
     text = manual.read_text().replace('gthumb', 'gallery').replace('Thumbnails', 'Gallery').replace('GNOME Applications', 'SDE Applications')
-    (source/'data/gallery.1').write_text(text + '\nSDE Gallery integration: Hugo Moniz do Rego <https://github.com/hugomonizdorego>.\n')
+    (source/'data/gallery.1').write_text(text + '\nSDE Gallery integration: DebION Dev-team <https://github.com/hugomonizdorego/SDE-Desktop>.\n')
     manual.unlink()
     edit('src/Browser.vala', 'title = "Thumbnails";', 'title = Config.APP_NAME;')
     edit('src/Types.vala', 'APP_DIR = "gthumb"', 'APP_DIR = "sde-gallery"')
@@ -53,14 +53,14 @@ def patch(source, app, version):
          'async void add_root (GenericList<FileData> roots, File file, Cancellable cancellable)',
          'async void add_root (GenericList<FileData> roots, File? file, Cancellable cancellable)')
     edit('src/Application.vala', '"Paolo Bacchilega <paobac@src.gnome.org>",',
-         '"Paolo Bacchilega <paobac@src.gnome.org>",\n\t\t\t\t"Hugo Moniz do Rego https://github.com/hugomonizdorego — SDE Gallery",')
+         '"Paolo Bacchilega <paobac@src.gnome.org>",\n\t\t\t\t"DebION Dev-team https://github.com/hugomonizdorego/SDE-Desktop — SDE Gallery",')
     edit('src/Application.vala', 'Adw.show_about_dialog (active_window,', 'var about = new Adw.AboutDialog ();\n\t\t\tabout.set (')
     edit('src/Application.vala', '"website", "https://gitlab.gnome.org/GNOME/gthumb/",',
-         '"website", "https://github.com/hugomonizdorego/SDE-Desktop",\n\t\t\t\t"developer-name", "Hugo Moniz do Rego · SDE contributors",\n\t\t\t\t"copyright", "Copyright © Paolo Bacchilega and gThumb contributors; SDE adaptations © 2026 Hugo Moniz do Rego",')
+         '"website", "https://github.com/hugomonizdorego/SDE-Desktop",\n\t\t\t\t"developer-name", "DebION Dev-team",\n\t\t\t\t"copyright", "Copyright © Paolo Bacchilega and gThumb contributors; SDE adaptations © 2026 Hugo Moniz do Rego",')
     edit('src/Application.vala', '"issue-url", "https://gitlab.gnome.org/GNOME/gthumb/-/issues",',
          '"issue-url", "https://github.com/hugomonizdorego/SDE-Desktop/issues",')
     edit('src/Application.vala', '"developers", developers\n\t\t\t);',
-         '"developers", developers\n\t\t\t);\n\t\t\tabout.add_link ("gthumb", "https://gitlab.gnome.org/GNOME/gthumb");\n\t\t\tabout.add_link ("Hugo Moniz do Rego", "https://github.com/hugomonizdorego");\n\t\t\tabout.present (active_window);')
+         '"developers", developers\n\t\t\t);\n\t\t\tabout.add_link ("gthumb", "https://gitlab.gnome.org/GNOME/gthumb");\n\t\t\tabout.add_link ("DebION Dev-team", "https://github.com/hugomonizdorego/SDE-Desktop");\n\t\t\tabout.present (active_window);')
     # libadwaita controls its own appearance: read the same SDE preferences,
     # without relying on GTK_THEME (unsupported by libadwaita).
     theme = (ROOT / 'suite/gallery-theme.vala.inc').read_text()
@@ -75,11 +75,11 @@ def patch(source, app, version):
     text = re.sub(r'  <provides>[\s\S]*?</provides>\n', '', text)
     text = text.replace('<translation type="gettext">gthumb</translation>', '<translation type="gettext">gallery</translation>')
     text = text.replace('<name>Thumbnails</name>', '<name>Gallery</name>').replace('org.debion.Gallery.desktop</launchable>', 'gallery.desktop</launchable>')
-    text = text.replace('<developer id="org.gnome">\n    <name translate="no">Paolo Bacchilega</name>', '<developer id="org.debion">\n    <name translate="no">Hugo Moniz do Rego and SDE contributors</name>')
+    text = text.replace('<developer id="org.gnome">\n    <name translate="no">Paolo Bacchilega</name>', '<developer id="org.debion">\n    <name translate="no">DebION Dev-team</name>')
     text = text.replace('<description>', '<description>\n    <p>SDE Gallery, based on gThumb 4.0 by Paolo Bacchilega and contributors. Original copyright and GPL notices are retained.</p>', 1)
     path.write_text(text)
-    notice = ('Gallery ' + version + ' — SDE native fork\nSDE developer: Hugo Moniz do Rego\n'
-              'Developer: https://github.com/hugomonizdorego\nSDE source: https://github.com/hugomonizdorego/SDE-Desktop\n'
+    notice = ('Gallery ' + version + ' — SDE native fork\nSDE developer: DebION Dev-team\n'
+              'Developer: https://github.com/hugomonizdorego/SDE-Desktop\nSDE source: https://github.com/hugomonizdorego/SDE-Desktop\n'
               'Original developer: Paolo Bacchilega and gThumb contributors\n'
               'Upstream: ' + app['url'] + '\nArchive: ' + app['archive'] + '\nSHA256: ' + app['sha256'] + '\n'
               'License: GPL-2.0-or-later (individual files retain their notices)\n'
