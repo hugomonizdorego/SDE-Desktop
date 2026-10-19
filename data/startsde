@@ -6,9 +6,11 @@
 # "startx /usr/bin/startsde". It prepares the environment and then replaces
 # itself with sde-session, which supervises the rest of the desktop.
 
-export XDG_CURRENT_DESKTOP=SDE
-export XDG_SESSION_DESKTOP=SDE
-export DESKTOP_SESSION=sde
+# The session is "SDE-Desktop" for display managers and applications; "SDE"
+# stays in the desktop list so OnlyShowIn=SDE launchers keep working.
+export XDG_CURRENT_DESKTOP=SDE-Desktop:SDE
+export XDG_SESSION_DESKTOP=SDE-Desktop
+export DESKTOP_SESSION=sde-desktop
 export XDG_MENU_PREFIX="${XDG_MENU_PREFIX:-}"
 
 # Make sure the XDG base directories exist.

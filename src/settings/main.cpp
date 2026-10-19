@@ -993,15 +993,19 @@ void build_suite_system(Page *page) {
         "No background updater is started."));
   page->begin_card(_("Windows and effects"));
   page->note(
-      _("SDE WM manages windows. SDE Compositor adds subtle shadows without blur or animations."));
+      _("SDE WM manages windows. SDE Compositor adds shadows and SDE Aero glass (see Appearance)."));
   page->choice_row(
       _("Compositing"), {_("Enabled"), _("Disabled")},
       g_cfg.get("compositor", "mode", "auto") == "off" ? 1 : 0,
       [](int choice) {
         g_cfg.set("compositor", "mode", choice ? "off" : "auto");
         apply_change();
+        // Turning compositing off takes effect at once; turning it on needs
+        // the session to start the compositor at the next login.
+        if (choice)
+          spawn_detached({"pkill", "-TERM", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
       },
-      _("Changes apply at the next login. Disable effects to reduce graphics work."));
+      _("Disabling stops effects now; enabling applies at the next login."));
   page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});

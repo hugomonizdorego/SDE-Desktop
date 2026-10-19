@@ -269,7 +269,7 @@ std::vector<DesktopEntry> load_applications(const std::string &desktop) {
     if (!e.visible_in(desktop)) continue;
     out.push_back(std::move(e));
   }
-  if (desktop_matches({"SDE"}, desktop)) {
+  if (desktop_matches({"SDE", "SDE-Desktop"}, desktop)) {
     std::set<std::string> replaced;
     for (const auto &app : suite_apps()) {
       bool available = std::any_of(out.begin(), out.end(),

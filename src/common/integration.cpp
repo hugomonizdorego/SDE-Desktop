@@ -121,7 +121,14 @@ void sync_gtk_settings(const Config &cfg) {
   if (system) text = "Net/IconThemeName " + quote(icons) + "\nGtk/FontName " + quote(font) + "\n";
   text += "Xft/DPI " + std::to_string(dpi) + "\n";
   make_dirs(config_home() + "/sde");
-  write_file_atomic(config_home() + "/sde/xsettingsd.conf", text);
+  std::string old_text, xsettings = config_home() + "/sde/xsettingsd.conf";
+  if (!read_file(xsettings, old_text) || old_text != text) {
+    write_file_atomic(xsettings, text);
+    // xsettingsd re-reads its file on SIGHUP, so open GTK windows follow the
+    // new theme, icons and fonts immediately instead of at the next login.
+    if (!env("DISPLAY").empty())
+      spawn_detached({"pkill", "-HUP", "-u", std::to_string(getuid()), "-x", "xsettingsd"});
+  }
   GSettingsSchemaSource *source = g_settings_schema_source_get_default();
   GSettingsSchema *schema =
       source ? g_settings_schema_source_lookup(source, "org.gnome.desktop.interface", TRUE)
@@ -205,7 +212,7 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
 
 void reload_compositor() {
   // picom re-reads its configuration file on SIGUSR1.
-  spawn_detached({"pkill", "-USR1", "-x", "sde-compositor"});
+  spawn_detached({"pkill", "-USR1", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
 }
 
 void migrate_legacy_suite_shortcuts() {

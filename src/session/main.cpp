@@ -2,7 +2,7 @@
 // sde-session: starts and supervises the Selviana Desktop Environment.
 //
 // Responsibilities:
-//   * export the session environment (XDG_CURRENT_DESKTOP=SDE, ...)
+//   * export the session environment (XDG_CURRENT_DESKTOP=SDE-Desktop:SDE, ...)
 //   * apply saved display and input settings (sde-settings --apply)
 //   * start the window manager, sde-desktop, sde-panel and sde-notifyd,
 //     restarting them when they crash (with a limit, so a broken component
@@ -230,9 +230,11 @@ void stop_all() {
 }
 
 void setup_environment() {
-  setenv("XDG_CURRENT_DESKTOP", "SDE", 1);
-  setenv("XDG_SESSION_DESKTOP", "SDE", 1);
-  setenv("DESKTOP_SESSION", "sde", 1);
+  // Applications and display managers know the session as SDE-Desktop; the
+  // short name stays in the list so existing OnlyShowIn=SDE entries match.
+  setenv("XDG_CURRENT_DESKTOP", "SDE-Desktop:SDE", 1);
+  setenv("XDG_SESSION_DESKTOP", "SDE-Desktop", 1);
+  setenv("DESKTOP_SESSION", "sde-desktop", 1);
   setenv("SDE_SESSION_VERSION", SDE_VERSION, 1);
   if (env("XDG_SESSION_TYPE").empty()) setenv("XDG_SESSION_TYPE", "x11", 1);
   // Qt applications should follow GTK settings when no platform theme is set.

@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=SDE
-Comment=Selviana Desktop Environment - a small, fast and modern desktop
+Name=SDE-Desktop
+Comment=Compatibility entry for accounts that saved the alpha session name "sde"
 Exec=startsde
 TryExec=startsde
-DesktopNames=SDE
+DesktopNames=SDE-Desktop;SDE;
+NoDisplay=true
