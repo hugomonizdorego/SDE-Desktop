@@ -93,6 +93,8 @@ Its public signing key is shipped locally with fingerprint
 `35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3`, checked against Mozilla's instructions.
 Only `firefox` and `firefox-l10n-*` are pinned to Mozilla (priority 1000).
 Thunderbird stays a normal Debian package. Firefox ESR is never a fallback.
+The source and key under `/etc/apt/` are both conffiles: removing the defaults
+package retains a working source/key pair; purging removes both.
 
 The `mpv` player has APT pin priority -1 and conflicts with the full desktop
 metapackage. **`libmpv2` remains allowed and required by Celluloid**. No binaries

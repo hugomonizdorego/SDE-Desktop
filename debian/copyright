@@ -117,7 +117,7 @@ Comment: Gallery is a native GTK4/Vala source fork of gThumb 4.0.
  The complete original COPYING, source headers and translations accompany binary builds.
 
 Files: data/debion/debion-mozilla-archive-keyring.asc
-Copyright: Mozilla / Artifact Registry Repository Signer
+Copyright: not applicable (public OpenPGP key)
 License: public-key
  This is the public repository signing key distributed by Mozilla at
  https://packages.mozilla.org/apt/repo-signing-key.gpg for verification of

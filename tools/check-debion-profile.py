@@ -33,6 +33,13 @@ firefox = subprocess.check_output(['apt-cache', 'policy', 'firefox'], text=True)
 assert 'packages.mozilla.org' in firefox, firefox
 version = subprocess.check_output(['dpkg-query', '-W', '-f=${Version}', 'firefox'], text=True)
 assert 'esr' not in version.lower() and 'snap' not in version.lower(), version
+# The source and its key must both survive remove and both disappear on purge.
+# Keep the key in dpkg-managed conffiles, alongside the APT source.
+conffiles = subprocess.check_output(['dpkg-query', '-W', '-f=${Conffiles}', 'debion-desktop-defaults'], text=True)
+for name in ['/etc/apt/keyrings/debion-mozilla-archive-keyring.asc',
+             '/etc/apt/sources.list.d/debion-mozilla.sources']:
+    assert name in conffiles and Path(name).is_file(), (name, conffiles)
+assert 'Signed-By: /etc/apt/keyrings/debion-mozilla-archive-keyring.asc' in Path('/etc/apt/sources.list.d/debion-mozilla.sources').read_text()
 assert Path('/usr/share/icons/Papirus/index.theme').is_file()
 terminal = configparser.ConfigParser(interpolation=None)
 terminal.read('/usr/share/applications/sde-gnome-terminal.desktop')

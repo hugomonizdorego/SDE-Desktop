@@ -2,4 +2,4 @@ Types: deb
 URIs: https://packages.mozilla.org/apt
 Suites: mozilla
 Components: main
-Signed-By: /usr/share/keyrings/debion-mozilla-archive-keyring.asc
+Signed-By: /etc/apt/keyrings/debion-mozilla-archive-keyring.asc
