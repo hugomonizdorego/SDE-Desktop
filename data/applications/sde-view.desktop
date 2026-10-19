@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [Desktop Entry]
 Type=Application
-Name=SDE View
-GenericName=Image Viewer
-Comment=Image Viewer for SDE, based on eom
+Name=Photo
+GenericName=Photo Viewer and Editor
+Comment=Browse pictures and edit them with filters and effects; based on Eye of MATE
 Exec=sde-view %U
 TryExec=sde-view
 Icon=sdeview
 Terminal=false
-Categories=Graphics;Viewer;
+Categories=Graphics;Viewer;Photography;
+Keywords=Picture;Photo;Image;Gallery;Filter;Effect;Slideshow;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Sdeview

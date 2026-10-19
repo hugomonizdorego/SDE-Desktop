@@ -79,7 +79,7 @@ install(FILES docs/ALPHA9.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)
-install(FILES data/schemas/org.debion.session.gschema.xml
+install(FILES data/schemas/org.debion.session.gschema.xml data/schemas/30_sde-suite.gschema.override
         DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
 install(FILES data/openbox/rc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/openbox)
 install(DIRECTORY data/themes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/themes)
