@@ -15,6 +15,15 @@ and full license are preserved in `data/update/COPYRIGHT` and `COPYING`, install
 under `/usr/share/sde/update`. The installed package's copyright records this
 adaptation separately. No Mint artwork or trademarks are rebranded.
 
+## Design references
+
+**[GTKAero](https://github.com/User738git/GTKAero)** by User738git, a fork of
+the B00MERANG Project Windows 7 GTK theme — GPL-3.0. SDE Aero
+(`data/themes/SDE-Aero*`) is a new CSS-only theme that takes its design idea
+(glass title and tool bars, soft blue selections) from GTKAero. No GTKAero
+images or CSS files are copied; colors, gradients, geometry and the
+transparency system are SDE's own. SDE Aero is GPL-3.0-or-later.
+
 ## Native application forks
 
 Eight application source trees are prepared and compiled by SDE. Exact upstream
@@ -31,7 +40,7 @@ and submodules are published with the binaries.
 | Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus, Eazel, GNOME and MATE contributors | `sde/upstream/caja` |
 | Xanara | [atril](https://github.com/mate-desktop/atril) | Atril/Evince and MATE contributors | `sde/upstream/atril` |
 | Taca | [engrampa](https://github.com/mate-desktop/engrampa) | Engrampa/File Roller and MATE contributors | `sde/upstream/engrampa` |
-| SDE View | [eom](https://github.com/mate-desktop/eom) | Eye of GNOME and MATE contributors | `sde/upstream/eom` |
+| Photo (SDE View) | [eom](https://github.com/mate-desktop/eom) | Eye of GNOME and MATE contributors | `sde/upstream/eom` |
 | SDE System Monitor | [mate-system-monitor](https://github.com/mate-desktop/mate-system-monitor) | GNOME System Monitor and MATE contributors | `sde/upstream/mate-system-monitor` |
 | SDE Power Manager | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) | GNOME Power Manager and MATE contributors | `sde/upstream/mate-power-manager` |
 | SDE Screen Lock | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) | GNOME Screensaver and MATE contributors | `sde/upstream/mate-screensaver` |

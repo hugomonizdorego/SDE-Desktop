@@ -465,6 +465,12 @@ try:
             expected = app_name.replace("sde-view", "sdeview")
             assert expected in identity.replace("sde-view", "sdeview"), (app_name, identity)
             shot("10-engine-" + app_name)
+            if app_name == "sde-view":
+                # Photo's Effects side pane (SDE plugin) opens with E.
+                run("xdotool", "windowactivate", "--sync", native, check=False)
+                run("xdotool", "key", "--window", native, "e")
+                time.sleep(1.0)
+                shot("10-engine-photo-effects")
             run("xdotool", "windowclose", native, check=False)
             if engine.poll() is None:
                 engine.terminate()
@@ -488,7 +494,7 @@ try:
         run("xdotool", "key", "alt+F4")
         if admin.poll() is None: admin.terminate()
         print(
-            "SOURCE-BUILT NINY, LIRIA, XANARA, TACA AND SDE VIEW NATIVE WINDOWS PASS",
+            "SOURCE-BUILT NINY, LIRIA, XANARA, TACA AND PHOTO NATIVE WINDOWS PASS",
             flush=True,
         )
     if os.environ.get("SDE_UI_DEBUG"):
