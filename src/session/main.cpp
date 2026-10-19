@@ -50,6 +50,9 @@ struct Component {
   bool essential = false;     // restart when it exits, even with status 0
   bool critical = false;      // the desktop is unusable without it
   int max_restarts = 5;       // within 60 seconds
+  // Started once instead when the program fails, e.g. the compositor
+  // without OpenGL falls back to XRender.
+  std::vector<std::string> fallback;
   pid_t pid = 0;
   std::deque<time_t> starts;  // recent start times, for crash-loop detection
   time_t restart_at = 0;
@@ -168,6 +171,14 @@ void on_child_exit(pid_t pid, int status) {
     char why[128];
     log("%s exited (%s)", c.name.c_str(), exit_reason(status, why, sizeof why));
     time_t now = time(nullptr);
+    if (crashed && !c.fallback.empty()) {
+      log("starting %s with its fallback configuration", c.name.c_str());
+      c.argv = c.fallback;
+      c.fallback.clear();
+      c.starts.clear();
+      c.restart_at = now + 1;
+      return;
+    }
     if (int(c.starts.size()) >= c.max_restarts && now - c.starts.front() < 60) {
       log("%s keeps failing; not restarting it again", c.name.c_str());
       c.given_up = true;
@@ -503,9 +514,14 @@ int main(int argc, char **argv) {
     start_component(g_components.back());
   }
   if (cfg.get("compositor", "mode", "auto") != "off") {
+    // A user's own compositor.conf wins; otherwise SDE Aero settings
+    // generate one (OpenGL blur, XRender if OpenGL is unavailable).
     std::string conf = config_home() + "/sde/compositor.conf";
-    if (!file_exists(conf)) conf = std::string(SDE_DATADIR) + "/compositor/sde.conf";
+    bool own = file_exists(conf);
+    if (!own) conf = write_compositor_config(cfg);
     Component compositor = make_component("SDE compositor", {"sde-compositor", "--config", conf}, false);
+    if (!own)
+      compositor.fallback = {"sde-compositor", "--config", write_compositor_config(cfg, true)};
     compositor.max_restarts = 1;
     g_components.push_back(compositor);
     start_component(g_components.back());

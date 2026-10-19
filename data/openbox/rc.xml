@@ -4,7 +4,7 @@
   SPDX-License-Identifier: GPL-3.0-or-later
 
   Copied to ~/.config/sde/openbox/rc.xml on first login. sde-settings switches
-  the window theme name between SDE and SDE-Dark; any other theme name you set by
+  the window theme between SDE-Aero, SDE-Aero-Dark, SDE and SDE-Dark; any other theme you set by
   hand is left alone.
 -->
 <openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude">
@@ -27,7 +27,7 @@
     <primaryMonitor>1</primaryMonitor>
   </placement>
   <theme>
-    <name>SDE</name>
+    <name>SDE-Aero</name>
     <titleLayout>NLIMC</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>yes</animateIconify>

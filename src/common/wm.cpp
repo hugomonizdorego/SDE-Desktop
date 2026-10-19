@@ -48,7 +48,7 @@ bool ensure_openbox_config() {
   return write_file_atomic(path, tmpl);
 }
 
-bool set_openbox_theme(bool dark) {
+bool set_openbox_theme(bool dark, bool aero) {
   std::string path = openbox_config_path();
   std::string text;
   if (!ensure_openbox_config() || !read_file(path, text)) return false;
@@ -59,9 +59,10 @@ bool set_openbox_theme(bool dark) {
   size_t a = text.find(open, theme), b = text.find(close, theme);
   if (a == std::string::npos || b == std::string::npos || b < a) return false;
   std::string current = text.substr(a + open.size(), b - a - open.size());
-  std::string wanted = dark ? "SDE-Dark" : "SDE";
+  std::string wanted = aero ? (dark ? "SDE-Aero-Dark" : "SDE-Aero") : (dark ? "SDE-Dark" : "SDE");
   // Respect a theme the user picked by hand (anything that is not SDE's).
-  if (current != "SDE" && current != "SDE-Dark") return false;
+  if (current != "SDE" && current != "SDE-Dark" && current != "SDE-Aero" && current != "SDE-Aero-Dark")
+    return false;
   if (current == wanted) return false;
   text.replace(a + open.size(), current.size(), wanted);
   return write_file_atomic(path, text);
@@ -89,7 +90,8 @@ bool set_openbox_font_size(int points) {
 }
 
 bool sync_openbox(const Config &cfg) {
-  bool changed = set_openbox_theme(lower(cfg.get("appearance", "theme")) == "dark");
+  bool changed = set_openbox_theme(lower(cfg.get("appearance", "theme")) == "dark",
+                                   cfg.get_bool("aero", "enabled", true));
   Theme t = Theme::from_config(cfg);
   int pt = cfg.get_int("appearance", "font_size", 10);
   changed = set_openbox_font_size(int(pt * t.scale + 0.5)) || changed;
