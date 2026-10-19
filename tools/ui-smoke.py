@@ -335,6 +335,28 @@ try:
     assert g["X"] >= 0 and g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
     time.sleep(1)
     shot("09-update")
+    # Exercise the native FLTK About links. Inspecting URL bytes in an
+    # optimized ELF is unreliable: std::string can use split vector constants.
+    factor = args.scale / 100
+    run("xdotool", "mousemove", str(g["X"] + int(70 * factor)),
+        str(g["Y"] + g["HEIGHT"] - int(36 * factor)), "click", "1")
+    about = find("^About SDE Update$")
+    ag = geom(about)
+    run("xdotool", "mousemove", str(ag["X"] + int(245 * factor)),
+        str(ag["Y"] + int(165 * factor)), "click", "1")
+    for _ in range(50):
+        if (home / "opened-uri").exists() and (home / "opened-uri").read_text().strip() == "https://github.com/hugomonizdorego": break
+        time.sleep(.05)
+    else: raise AssertionError("About developer link did not open the expected URI")
+    run("xdotool", "mousemove", str(ag["X"] + int(245 * factor)),
+        str(ag["Y"] + int(207 * factor)), "click", "1")
+    for _ in range(50):
+        if (home / "opened-uri").exists() and (home / "opened-uri").read_text().strip() == "https://github.com/linuxmint/mintupdate": break
+        time.sleep(.05)
+    else: raise AssertionError("About upstream link did not open the expected URI")
+    shot("16-update-about")
+    run("xdotool", "windowactivate", "--sync", about)
+    run("xdotool", "key", "alt+F4")
     update.terminate()
     update.wait()
     if args.scale == 100:
