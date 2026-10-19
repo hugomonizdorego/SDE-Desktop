@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
         spawn('sde-wm', '--config-file', '/usr/share/sde/openbox/rc.xml')
         run('convert', '-size', '640x420', 'gradient:#167d9a-#d8f2f4', str(pictures/'SDE Gallery.png'))
         gallery = spawn('gallery', str(pictures))
-        win = wait(['xdotool', 'search', '--onlyvisible', '--name', '^Gallery$']).splitlines()[0]
+        win = wait(['xdotool', 'search', '--onlyvisible', '--class', 'gallery']).splitlines()[0]
         assert gallery.poll() is None
         identity = run('xprop', '-id', win, 'WM_CLASS').stdout
         assert 'gallery' in identity.lower(), identity
@@ -62,6 +62,9 @@ with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
         run('xdotool', 'windowsize', win, '1100', '680')
         run('xdotool', 'windowmove', win, '110', '40')
         shot('01-gallery-browser')
+        light = float(run('convert', str(out/'01-gallery-browser.png'), '-crop',
+                          '100x100+130+400', '+repage', '-format', '%[fx:mean]', 'info:').stdout)
+        assert light > .65, ('Gallery did not follow the SDE light theme', light)
         # Open the native photo viewer through the same application instance.
         run('gallery', str(pictures/'SDE Gallery.png'))
         shot('02-gallery-photo')
@@ -82,7 +85,21 @@ with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
         data = Path('/usr/bin/gallery').read_bytes()
         for credit in [b'Hugo Moniz do Rego', b'Paolo Bacchilega', b'https://gitlab.gnome.org/GNOME/gthumb']:
             assert credit in data, credit
-        print('Gallery: native GTK4 browser, image, About, schemas, version and SDE wallpaper passed.')
+        # Restart through the application's normal quit action, then verify
+        # that SDE's dark preference also controls libadwaita at startup.
+        run('gapplication', 'action', 'org.debion.Gallery', 'quit')
+        gallery.wait(timeout=10)
+        cfg['appearance']['theme'] = 'dark'
+        with (home/'.config/sde/sde.conf').open('w') as f: cfg.write(f)
+        gallery = spawn('gallery', str(pictures))
+        win = wait(['xdotool', 'search', '--onlyvisible', '--class', 'gallery']).splitlines()[0]
+        run('xdotool', 'windowsize', win, '1100', '680')
+        run('xdotool', 'windowmove', win, '110', '40')
+        shot('04-gallery-dark-browser')
+        dark = float(run('convert', str(out/'04-gallery-dark-browser.png'), '-crop',
+                         '100x100+130+400', '+repage', '-format', '%[fx:mean]', 'info:').stdout)
+        assert dark < .40, ('Gallery did not follow the SDE dark theme', dark)
+        print('Gallery: native GTK4 browser, image, About, light/dark themes, schemas, version and SDE wallpaper passed.')
     finally:
         for process in reversed(procs):
             if process.poll() is None: process.terminate()

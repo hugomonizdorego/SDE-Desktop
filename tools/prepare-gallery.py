@@ -21,6 +21,7 @@ def patch(source, app, version):
             continue
         text = path.read_text()
         text = text.replace('org.gnome.gthumb', 'org.debion.Gallery').replace('/org/gnome/gthumb', '/org/debion/Gallery')
+        text = text.replace('>Thumbnails</property>', '>Gallery</property>')
         text = text.replace('About Thumbnails', 'About Gallery').replace('domain="gthumb"', 'domain="gallery"')
         path.write_text(text)
     for path in sorted(source.rglob('*'), key=lambda p: len(p.parts), reverse=True):
@@ -43,6 +44,7 @@ def patch(source, app, version):
     text = manual.read_text().replace('gthumb', 'gallery').replace('Thumbnails', 'Gallery').replace('GNOME Applications', 'SDE Applications')
     (source/'data/gallery.1').write_text(text + '\nSDE Gallery integration: Hugo Moniz do Rego <https://github.com/hugomonizdorego>.\n')
     manual.unlink()
+    edit('src/Browser.vala', 'title = "Thumbnails";', 'title = Config.APP_NAME;')
     edit('src/Types.vala', 'APP_DIR = "gthumb"', 'APP_DIR = "sde-gallery"')
     # GLib returns null for unconfigured XDG folders. A non-nullable async
     # argument makes Vala return before completing the callback, so get_roots
@@ -62,7 +64,7 @@ def patch(source, app, version):
     # libadwaita controls its own appearance: read the same SDE preferences,
     # without relying on GTK_THEME (unsupported by libadwaita).
     theme = (ROOT / 'suite/gallery-theme.vala.inc').read_text()
-    edit('src/Application.vala', 'base.startup ();', 'base.startup ();\n' + theme)
+    edit('src/Application.vala', 'style_manager.color_scheme = Adw.ColorScheme.FORCE_DARK;', theme)
     # --version must work headlessly before GStreamer or GTK initializes.
     edit('src/Main.vala', 'Intl.bindtextdomain', 'if (args.length == 2 && args[1] == "--version") {\n\t\tstdout.printf ("Gallery ' + version + ' (gThumb 4.0)\\n");\n\t\treturn 0;\n\t}\n\tIntl.bindtextdomain')
     # The GNOME portal wallpaper backend does not control the SDE desktop.
