@@ -27,6 +27,12 @@ class Painter {
   void fill_rounded(double x, double y, double w, double h, double r, const Color &c);
   void stroke_rounded(double x, double y, double w, double h, double r, const Color &c,
                       double width = 1.0);
+  // Rounded rectangle filled with a linear gradient from |from| to |to|,
+  // top to bottom, or top-left to bottom-right when |diagonal|.
+  void fill_gradient(double x, double y, double w, double h, double r, const Color &from,
+                     const Color &to, bool diagonal = false);
+  // SDE Aero glass: a translucent sheen on the upper half of a surface.
+  void glass_sheen(double x, double y, double w, double h, double r, bool dark);
   // Soft drop shadow made of a few translucent rounded rectangles.
   void shadow(double x, double y, double w, double h, double r, const Color &c, int spread = 8);
   void image(cairo_surface_t *s, double x, double y, double size, double alpha = 1.0);

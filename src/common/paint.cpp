@@ -54,6 +54,31 @@ void Painter::fill_rounded(double x, double y, double w, double h, double r, con
   cairo_fill(cr_);
 }
 
+void Painter::fill_gradient(double x, double y, double w, double h, double r, const Color &from,
+                            const Color &to, bool diagonal) {
+  cairo_pattern_t *g =
+      cairo_pattern_create_linear(x, y, diagonal ? x + w : x, y + h);
+  cairo_pattern_add_color_stop_rgba(g, 0, from.r, from.g, from.b, from.a);
+  cairo_pattern_add_color_stop_rgba(g, 1, to.r, to.g, to.b, to.a);
+  rounded_rect(x, y, w, h, r);
+  cairo_set_source(cr_, g);
+  cairo_fill(cr_);
+  cairo_pattern_destroy(g);
+}
+
+void Painter::glass_sheen(double x, double y, double w, double h, double r, bool dark) {
+  cairo_pattern_t *g = cairo_pattern_create_linear(x, y, x, y + h);
+  double top = dark ? 0.10 : 0.55, mid = dark ? 0.03 : 0.18;
+  cairo_pattern_add_color_stop_rgba(g, 0, 1, 1, 1, top);
+  cairo_pattern_add_color_stop_rgba(g, 0.48, 1, 1, 1, mid);
+  cairo_pattern_add_color_stop_rgba(g, 0.5, 1, 1, 1, 0);
+  cairo_pattern_add_color_stop_rgba(g, 1, 1, 1, 1, 0);
+  rounded_rect(x, y, w, h, r);
+  cairo_set_source(cr_, g);
+  cairo_fill(cr_);
+  cairo_pattern_destroy(g);
+}
+
 void Painter::stroke_rounded(double x, double y, double w, double h, double r, const Color &c,
                              double width) {
   set(c);

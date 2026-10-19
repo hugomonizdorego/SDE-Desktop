@@ -5,6 +5,7 @@
 #include <FL/x.H>
 #include <X11/Xutil.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -85,6 +86,16 @@ void set_atoms(Window w, const char *prop, const std::vector<const char *> &valu
 void set_cardinals(Window w, const char *prop, const std::vector<long> &values) {
   XChangeProperty(fl_display, w, atom(prop), XA_CARDINAL, 32, PropModeReplace,
                   reinterpret_cast<const unsigned char *>(values.data()), int(values.size()));
+}
+
+void set_opacity(Window w, double opacity) {
+  if (opacity >= 0.999) {
+    XDeleteProperty(fl_display, w, atom("_NET_WM_WINDOW_OPACITY"));
+    return;
+  }
+  unsigned long value = (unsigned long)(std::max(0.2, opacity) * 0xFFFFFFFFu);
+  XChangeProperty(fl_display, w, atom("_NET_WM_WINDOW_OPACITY"), XA_CARDINAL, 32, PropModeReplace,
+                  reinterpret_cast<const unsigned char *>(&value), 1);
 }
 
 void set_string(Window w, const char *prop, const std::string &value) {

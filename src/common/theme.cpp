@@ -4,6 +4,7 @@
 #include <FL/Fl.H>
 #include <FL/x.H>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -15,7 +16,7 @@
 namespace sde {
 
 const AccentChoice kAccentChoices[] = {
-    {"Teal", "#167D9A"},   {"Blue", "#2F6FDB"},   {"Purple", "#7A4FD1"},
+    {"Aero", "#2672BE"},   {"Teal", "#167D9A"},   {"Blue", "#2F6FDB"},   {"Purple", "#7A4FD1"},
     {"Pink", "#C2407A"},   {"Orange", "#D9682B"}, {"Green", "#277A4C"},
     {"Graphite", "#5A6472"},
 };
@@ -81,8 +82,8 @@ double Color::contrast(const Color &o) const {
 Theme Theme::from_config(const Config &cfg) {
   Theme t;
   t.dark = lower(cfg.get("appearance", "theme", "light")) == "dark";
-  if (!Color::parse(cfg.get("appearance", "accent", "#167D9A"), t.accent))
-    t.accent = Color::hex(0x167D9A);
+  if (!Color::parse(cfg.get("appearance", "accent", "#2672BE"), t.accent))
+    t.accent = Color::hex(0x2672BE);
   Color black = Color::hex(0x17212B), white = Color::hex(0xFFFFFF);
   t.on_accent = t.accent.contrast(black) > t.accent.contrast(white) ? black : white;
   if (t.dark) {
@@ -125,6 +126,12 @@ Theme Theme::from_config(const Config &cfg) {
   t.panel_size = (h == 32 || h == 48) ? h : 40;
   t.panel_height = S(t.panel_size);
   t.panel_top = lower(cfg.get("panel", "position", "bottom")) == "top";
+  t.glass = cfg.get_bool("aero", "enabled", true);
+  t.transparency = std::max(0, std::min(60, cfg.get_int("aero", "transparency", 18)));
+  if (t.glass) {
+    t.opacity = 1.0 - t.transparency / 100.0;
+    t.popup_opacity = 1.0 - t.transparency * 0.5 / 100.0;
+  }
   return t;
 }
 

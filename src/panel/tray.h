@@ -4,6 +4,7 @@
 #include <X11/Xlib.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 class Tray {
  public:
@@ -24,12 +25,17 @@ class Tray {
   void hide();
   void set_background(unsigned long pixel);
   bool handle(const XEvent &e, bool &changed);
+  // Lower-case WM_CLASS names whose icons are not docked because an SDE
+  // indicator already shows the same state (nm-applet, blueman...).
+  void set_hidden(std::vector<std::string> names) { hidden_ = std::move(names); }
 
  private:
+  bool hidden(Window icon) const;
   void dock(Window icon);
   void undock(Window icon, bool reparent_to_root);
   Window panel_, owner_ = 0, host_ = 0, parent_ = 0;
   unsigned long selection_ = 0;
   std::vector<Window> icons_;
+  std::vector<std::string> hidden_;
   int icon_size_ = 22, spacing_ = 6;
 };

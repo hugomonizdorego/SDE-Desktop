@@ -663,10 +663,13 @@ void build_panel(Page *page) {
            {"show_media", _("Media player button")},
            {"show_network", _("Network indicator")},
            {"show_sound", _("Sound indicator")},
-           {"show_controls", _("Quick controls button")},
            {"show_tray", _("System tray button")}})
     page->switch_row(item.second, g_cfg.get_bool("panel", item.first, true),
                      [key = item.first](bool on) { set_bool("panel", key.c_str(), on); });
+  page->switch_row(
+      _("Hide duplicate tray icons"), g_cfg.get_bool("panel", "hide_duplicate_tray", true),
+      [](bool on) { set_bool("panel", "hide_duplicate_tray", on); },
+      _("nm-applet, Blueman and power applets keep running; SDE's indicators show their state."));
   page->end_card();
 
   page->begin_card(_("Pinned applications"));

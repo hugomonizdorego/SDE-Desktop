@@ -42,8 +42,14 @@ class SniHost {
   // Connects to the session bus. Returns false when D-Bus is unavailable.
   bool start();
 
-  // Items that should be shown (Status != Passive, properties loaded).
+  // Items that should be shown (Status != Passive, properties loaded, not
+  // hidden as a duplicate of a native SDE indicator).
   std::vector<const Item *> visible_items() const;
+
+  // Hides items whose Id, Title or bus name matches one of |names|
+  // (case-insensitive), e.g. nm-applet next to SDE's own network indicator.
+  void set_hidden(std::vector<std::string> names);
+  bool is_hidden(const Item &item) const;
 
   // Icon for |item| at |size| pixels (not owned; may be nullptr).
   cairo_surface_t *icon(const Item &item, int size) const;
@@ -57,6 +63,7 @@ class SniHost {
  private:
   void add_item(const std::string &service, const std::string &sender);
   void remove_owner(const std::string &owner);
+  void drop_duplicates();
   void refresh(Item &item);
   void apply_properties(Item &item, const sde::dbus::Value &props);
   bool show_dbus_menu(const Item &item, int x, int y);
@@ -67,4 +74,5 @@ class SniHost {
   sde::dbus::Bus *bus_ = nullptr;
   bool own_watcher_ = false;
   std::vector<std::unique_ptr<Item>> items_;
+  std::vector<std::string> hidden_;
 };

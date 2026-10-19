@@ -95,6 +95,7 @@ void Panel::load_config() {
   if (shown()) {
     Fl_Window::color(theme_.surface.fl());
     XSetWindowBackground(fl_display, fl_xid(this), theme_.surface.fl() >> 8);
+    x11::set_opacity(fl_xid(this), theme_.opacity);
   }
 }
 
@@ -161,6 +162,7 @@ void Panel::setup() {
   apply_strut();
   apply_shape();
   XSetWindowBackground(fl_display, xid, theme_.surface.fl() >> 8);
+  x11::set_opacity(xid, theme_.opacity);
   x11::remap(xid);
   // Keep the requested position after the WM re-manages the window.
   XMoveResizeWindow(fl_display, xid, x(), y(), unsigned(w()), unsigned(h()));
@@ -191,14 +193,22 @@ void Panel::setup() {
       Fl::add_fd(ConnectionNumber(input_display_), FL_READ, input_event, this);
     }
   }
+  // Applets such as nm-applet, blueman-applet or a power manager keep running
+  // as agents, but their icons would repeat SDE's own indicators.
+  std::vector<std::string> hidden;
+  if (cfg_.get_bool("panel", "hide_duplicate_tray", true))
+    for (auto &name : split(cfg_.get("panel", "duplicate_tray_items", ""), ';'))
+      if (!trim(name).empty()) hidden.push_back(lower(trim(name)));
   tray_.reset(new Tray(xid));
   tray_->set_icon_size(tray_icon_);
+  tray_->set_hidden(hidden);
   tray_->start();
   sni_.reset(new SniHost([this] {
     relayout();
     redraw();
     quick_->status_changed();
   }));
+  sni_->set_hidden(hidden);
   sni_->start();
   SystemStatus::get().start([this] {
     relayout();
@@ -471,7 +481,7 @@ void Panel::relayout() {
   add(MEDIA_STATUS, "show_media");
   add(NETWORK_STATUS, "show_network", s.network.available);
   add(SOUND_STATUS, "show_sound", s.audio.available);
-  add(CONTROLS_STATUS, "show_controls");
+  // CONTROLS_STATUS repeated the Action Center button next to the clock.
   int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
   compact_status_ =
       status_in_center() || right - start_w_ - S(100) <
@@ -555,6 +565,13 @@ void Panel::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
+    // SDE Aero: a soft glass sheen; the compositor supplies blur and opacity.
+    bool glass = cfg_.get_bool("aero", "enabled", true);
+    if (glass) {
+      p.fill_gradient(0, 0, W, H, 0, t.surface.mix(t.accent, t.dark ? 0.10 : 0.05),
+                      t.surface.mix(t.dark ? Color::hex(0x000000) : Color::hex(0xFFFFFF), 0.12));
+      p.glass_sheen(0, 0, W, H, 0, t.dark);
+    }
     if (cfg_.get("panel", "style", "full") == "full")
       p.line(0, edge, W, edge, t.border);
     else
@@ -570,9 +587,17 @@ void Panel::draw() {
     };
 
     // Named launcher and grouped status controls follow the selected panel shape.
-    p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10),
-                   cfg_.get("panel", "style", "full") == "full" ? 0 : S(10),
-                   hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent);
+    {
+      double r = cfg_.get("panel", "style", "full") == "full" ? S(6) : S(10);
+      Color base = hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent;
+      if (glass) {
+        p.fill_gradient(S(6), S(5), start_w_ - S(8), H - S(10), r,
+                        base.mix(Color::hex(0xFFFFFF), 0.18), base.mix(Color::hex(0x000000), 0.12));
+        p.glass_sheen(S(6), S(5), start_w_ - S(8), H - S(10), r, true);
+      } else {
+        p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10), r, base);
+      }
+    }
     p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14),
             (H - icon) / 2.0, icon);
 
