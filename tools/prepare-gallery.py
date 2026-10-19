@@ -44,6 +44,12 @@ def patch(source, app, version):
     (source/'data/gallery.1').write_text(text + '\nSDE Gallery integration: Hugo Moniz do Rego <https://github.com/hugomonizdorego>.\n')
     manual.unlink()
     edit('src/Types.vala', 'APP_DIR = "gthumb"', 'APP_DIR = "sde-gallery"')
+    # GLib returns null for unconfigured XDG folders. A non-nullable async
+    # argument makes Vala return before completing the callback, so get_roots
+    # waits forever on a fresh profile. Let the existing null guard complete it.
+    edit('src/Ext/FileManager/FileSourceVfs.vala',
+         'async void add_root (GenericList<FileData> roots, File file, Cancellable cancellable)',
+         'async void add_root (GenericList<FileData> roots, File? file, Cancellable cancellable)')
     edit('src/Application.vala', '"Paolo Bacchilega <paobac@src.gnome.org>",',
          '"Paolo Bacchilega <paobac@src.gnome.org>",\n\t\t\t\t"Hugo Moniz do Rego https://github.com/hugomonizdorego — SDE Gallery",')
     edit('src/Application.vala', 'Adw.show_about_dialog (active_window,', 'var about = new Adw.AboutDialog ();\n\t\t\tabout.set (')
@@ -75,7 +81,7 @@ def patch(source, app, version):
               'Original developer: Paolo Bacchilega and gThumb contributors\n'
               'Upstream: ' + app['url'] + '\nArchive: ' + app['archive'] + '\nSHA256: ' + app['sha256'] + '\n'
               'License: GPL-2.0-or-later (individual files retain their notices)\n'
-              'SDE changes: application ID, paths, Gallery branding, About, theme, wallpaper and Debian integration.\n')
+              'SDE changes: application ID, paths, Gallery branding, About, theme, wallpaper, first-login XDG folder handling and Debian integration.\n')
     (source/'SDE-UPSTREAM-NOTICE').write_text(notice)
     (source/'copyright').write_text(notice + '\n' + (source/'COPYING').read_text())
 

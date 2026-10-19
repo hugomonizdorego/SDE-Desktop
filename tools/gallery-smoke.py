@@ -16,6 +16,7 @@ out = a.output_dir.resolve(); out.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
     home = Path(temporary)
     (home/'.config/sde').mkdir(parents=True)
+    # Deliberately leave user-dirs.dirs absent to verify first-login startup.
     (home/'.config/sde/sde.conf').write_text('[appearance]\ntheme=light\n')
     (home/'run').mkdir(mode=0o700)
     pictures = home/'Pictures'; pictures.mkdir()
@@ -37,6 +38,12 @@ with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
             result = run(*command, check=False)
             if result.returncode == 0: return result.stdout.strip()
             time.sleep(.1)
+        print('Gallery processes:', [(p.args, p.poll()) for p in procs], flush=True)
+        for win in run('xdotool', 'search', '--name', '.', check=False).stdout.splitlines():
+            print('Window:', win, run('xprop', '-id', win, 'WM_NAME', 'WM_CLASS', check=False).stdout, flush=True)
+        run('import', '-window', 'root', str(out/'debug.png'), check=False)
+        for log in out.glob('*.log'):
+            print(log.name, log.read_text(errors='replace')[-3000:], flush=True)
         raise AssertionError(command)
     def shot(name):
         time.sleep(.5)
@@ -47,8 +54,11 @@ with tempfile.TemporaryDirectory(prefix='sde-gallery-') as temporary:
         spawn('sde-wm', '--config-file', '/usr/share/sde/openbox/rc.xml')
         run('convert', '-size', '640x420', 'gradient:#167d9a-#d8f2f4', str(pictures/'SDE Gallery.png'))
         gallery = spawn('gallery', str(pictures))
-        win = wait(['xdotool', 'search', '--onlyvisible', '--class', 'org.debion.Gallery']).splitlines()[0]
+        win = wait(['xdotool', 'search', '--onlyvisible', '--name', '^Gallery$']).splitlines()[0]
         assert gallery.poll() is None
+        identity = run('xprop', '-id', win, 'WM_CLASS').stdout
+        assert 'gallery' in identity.lower(), identity
+        print('Gallery identity:', identity, flush=True)
         run('xdotool', 'windowsize', win, '1100', '680')
         run('xdotool', 'windowmove', win, '110', '40')
         shot('01-gallery-browser')
