@@ -97,12 +97,13 @@ Wi-Fi).
 
 Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
-Download the package for your distribution from the
-[GitHub releases](https://github.com/hugomonizdorego/SDE-Desktop/releases), check it
-and install it with `apt`, which also installs the dependencies:
+Download the alpha10 packages and matching sources from the successful
+[Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39214607984)
+(`sde-debian-testing` artifact). Extract the ZIP, verify the checksums and install
+with `apt`, which also resolves the distribution dependencies:
 
 ```sh
-sha256sum -c SHA256SUMS --ignore-missing
+sha256sum -c SHA256SUMS.sha256 --ignore-missing
 sudo apt install ./sde_*.deb ./sde-desktop_*.deb
 ```
 
@@ -231,3 +232,7 @@ name and source links in About, while retaining original authors and licenses.
 See [Alpha 10 build notes](docs/ALPHA10.md) for versions, dependencies and validation.
 Gallery is included in the same SDE Debian package; the original gthumb package
 is not required. This remains a development alpha for DebION / Debian testing.
+
+[Gallery Alpha 10 screenshots](docs/screenshots/alpha10/README.md) · [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39214607984)
+
+![Gallery native About](docs/screenshots/alpha10/03-gallery-about.png)

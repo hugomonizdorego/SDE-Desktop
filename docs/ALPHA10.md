@@ -14,6 +14,7 @@ rotate, resize and edit images with the upstream engine.
 - The Start Menu lists Gallery under **Graphics** using standard XDG categories.
 - Gallery has private `org.debion.Gallery` application/resource/schema identities,
   `sde-gallery` configuration/cache directories and a separate build version.
+- First-login startup tolerates unconfigured optional XDG folders.
 - The SDE appearance preference selects light/dark libadwaita styling at startup;
   choosing the system GTK theme leaves the platform appearance in control.
 - Set as Background updates SDE through `sde-settings --wallpaper FILE` and notifies
@@ -68,7 +69,7 @@ metapackage installs the session's system services.
 
 CI builds every fork on Debian testing, runs unit tests including real GTK3 About
 dialog attribution/preservation, installs the resulting `.deb`, checks native ELF
-binaries and embedded developer links, and exercises Gallery's browser, photo
+binaries and About links (including real browser actions), and exercises Gallery's browser, photo
 viewer, actual About action, private schemas and SDE wallpaper command on Xvfb.
 Gallery screenshots and logs accompany the existing desktop/panel GUI checks in
 the `sde-ui-smoke` artifact. Binary packages, full corresponding sources and
@@ -77,3 +78,5 @@ SHA256SUMS accompany `sde-debian-testing`.
 This remains an alpha. Xvfb does not validate cameras, physical color profiles,
 RAW camera models, GPU drivers, media codecs, external displays or portal behavior
 on every machine. No such hardware results are implied by the virtual GUI checks.
+
+[Native Gallery screenshot gallery](screenshots/alpha10/README.md).
