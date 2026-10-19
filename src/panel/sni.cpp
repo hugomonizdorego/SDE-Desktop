@@ -228,8 +228,13 @@ void SniHost::add_item(const std::string &service, const std::string &sender) {
   if (item->service.empty()) return;
   if (item->service[0] == ':') item->owner = item->service;
   else if (!sender.empty()) item->owner = sender;
-  for (auto &i : items_)
+  // An application can register the same item twice: once by object path
+  // (libappindicator) and once by a well-known name, or again after the
+  // watcher restarts. Both point at the same owner and object path.
+  for (auto &i : items_) {
     if (i->service == item->service && i->path == item->path) return;
+    if (!item->owner.empty() && i->owner == item->owner && i->path == item->path) return;
+  }
   Item *raw = item.get();
   items_.push_back(std::move(item));
   if (raw->owner.empty()) {
@@ -241,6 +246,7 @@ void SniHost::add_item(const std::string &service, const std::string &sender) {
       auto args = dbus::read_args(reply);
       for (auto &i : items_)
         if (i->service == service_copy && i->path == path_copy && !args.empty()) i->owner = args[0].s;
+      drop_duplicates();
     });
   }
   refresh(*raw);
@@ -260,6 +266,40 @@ void SniHost::remove_owner(const std::string &owner) {
     }
   }
   if (changed) notify_changed();
+}
+
+void SniHost::drop_duplicates() {
+  bool changed = false;
+  for (size_t a = 0; a < items_.size(); ++a)
+    for (size_t b = a + 1; b < items_.size();) {
+      const Item &x = *items_[a], &y = *items_[b];
+      bool same = !x.owner.empty() && x.owner == y.owner && x.path == y.path;
+      if (!same) {
+        ++b;
+        continue;
+      }
+      if (items_[b]->pixmap) cairo_surface_destroy(items_[b]->pixmap);
+      if (items_[b]->attention_pixmap) cairo_surface_destroy(items_[b]->attention_pixmap);
+      items_.erase(items_.begin() + long(b));
+      changed = true;
+    }
+  if (changed) notify_changed();
+}
+
+void SniHost::set_hidden(std::vector<std::string> names) {
+  for (auto &n : names) n = lower(n);
+  hidden_ = std::move(names);
+}
+
+bool SniHost::is_hidden(const Item &item) const {
+  if (hidden_.empty()) return false;
+  for (const std::string &value : {item.id, item.title, item.service}) {
+    std::string v = lower(value);
+    if (v.empty()) continue;
+    for (const auto &h : hidden_)
+      if (!h.empty() && (v == h || v.rfind(h + "-", 0) == 0)) return true;
+  }
+  return false;
 }
 
 void SniHost::refresh(Item &item) {
@@ -307,7 +347,7 @@ void SniHost::apply_properties(Item &item, const dbus::Value &props) {
 std::vector<const SniHost::Item *> SniHost::visible_items() const {
   std::vector<const Item *> out;
   for (auto &i : items_)
-    if (i->loaded && i->status != "Passive") out.push_back(i.get());
+    if (i->loaded && i->status != "Passive" && !is_hidden(*i)) out.push_back(i.get());
   return out;
 }
 

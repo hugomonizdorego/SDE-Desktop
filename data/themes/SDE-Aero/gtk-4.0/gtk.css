@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * SDE Aero for GTK 4 - light. */
+@import url("resource:///org/gtk/libgtk/theme/Default/Default-light.css");
+@import url("colors.css");
+@import url("sde-aero.css");

@@ -1,3 +1,15 @@
+# Alpha10 patch · 2026-10-19 — SDE Aero
+
+- SDE Aero / SDE Aero Dark: new default GTK 3, GTK 4 and SDE WM theme with
+  adjustable glass transparency, blur, rounded corners and animations.
+- Fix duplicate tray icons; redesign the Action Center layout.
+- SDE View is now Photo, with a live Effects and Filters side pane.
+- Niny default plugins; Liria command bar; System Monitor graph cards.
+- SDE-Desktop session name for LightDM and applications; SDE Aero greeter.
+- Settings: Aero glass card, live XSETTINGS reload, immediate compositor off.
+- CI publishes the alpha-latest pre-release and the latest screenshots.
+- See docs/ALPHA10.md for details and recommendations.
+
 # Alpha7 patch · 2026-10-18
 
 - Add native GTK4 Calculator using the attributed Scientific Calculator engine.

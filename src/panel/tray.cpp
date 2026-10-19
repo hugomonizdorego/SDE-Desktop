@@ -3,10 +3,12 @@
 
 #include <FL/Fl.H>
 #include <FL/x.H>
+#include <X11/Xutil.h>
 #include <X11/extensions/shape.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <string>
 
@@ -107,8 +109,28 @@ void Tray::place_in(Window parent, int x, int y, int columns, int clip_top, int 
   XFlush(fl_display);
 }
 
+bool Tray::hidden(Window icon) const {
+  if (hidden_.empty()) return false;
+  XClassHint hint{nullptr, nullptr};
+  if (!XGetClassHint(fl_display, icon, &hint)) return false;
+  bool match = false;
+  for (const char *part : {hint.res_name, hint.res_class}) {
+    if (!part) continue;
+    std::string v(part);
+    std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return char(tolower(c)); });
+    for (const auto &h : hidden_)
+      if (v == h) match = true;
+  }
+  if (hint.res_name) XFree(hint.res_name);
+  if (hint.res_class) XFree(hint.res_class);
+  return match;
+}
+
 void Tray::dock(Window icon) {
   if (std::find(icons_.begin(), icons_.end(), icon) != icons_.end()) return;
+  // The application keeps running (nm-applet is also the Wi-Fi secret agent);
+  // only its second icon next to the native indicator is left out.
+  if (hidden(icon)) return;
   XWindowAttributes attr;
   if (!XGetWindowAttributes(fl_display, icon, &attr)) return;
   XSelectInput(fl_display, icon, StructureNotifyMask | PropertyChangeMask);

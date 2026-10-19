@@ -1,0 +1,643 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * SDE Aero - GTK 3 widget styling.
+ *
+ * Design reference: GTKAero by User738git (GPL-3.0, a fork of the B00MERANG
+ * Project Windows 7 theme), https://github.com/User738git/GTKAero. SDE Aero
+ * is a new CSS-only theme: no images are copied. It keeps the idea of glass
+ * title/tool bars and soft blue selections, with rounder corners, smoother
+ * gradients and translucent menus that the SDE compositor can blur.
+ */
+
+* {
+  outline-color: alpha(@sde_accent, 0.55);
+  -gtk-outline-radius: 7px;
+}
+
+window,
+.background {
+  background-color: @sde_bg;
+  color: @sde_fg;
+}
+
+/* ---------------------------------------------------------- glass bars */
+
+headerbar,
+.titlebar:not(headerbar),
+toolbar.primary-toolbar,
+.primary-toolbar,
+menubar,
+.liria-navigation-window toolbar,
+searchbar > revealer > box {
+  background-color: @sde_glass_bottom;
+  background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_bottom);
+  border-color: @sde_border;
+  box-shadow: inset 0 1px @sde_glass_line;
+  color: @sde_fg;
+}
+
+headerbar {
+  min-height: 42px;
+  padding: 0 8px;
+  border-width: 0 0 1px 0;
+  border-radius: 10px 10px 0 0;
+}
+
+headerbar:backdrop,
+.titlebar:backdrop,
+toolbar.primary-toolbar:backdrop,
+menubar:backdrop {
+  background-image: linear-gradient(to bottom, @sde_glass_top, mix(@sde_glass_bottom, @sde_glass_top, 0.5));
+  color: @sde_dim;
+}
+
+headerbar .title {
+  font-weight: 600;
+}
+
+headerbar .subtitle {
+  color: @sde_dim;
+}
+
+menubar {
+  padding: 0 4px;
+  border-bottom: 1px solid @sde_border_soft;
+  box-shadow: none;
+}
+
+menubar > menuitem {
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin: 2px 0;
+}
+
+menubar > menuitem:hover {
+  background-color: alpha(@sde_accent, 0.12);
+  box-shadow: inset 0 0 0 1px alpha(@sde_accent, 0.30);
+  color: @sde_fg;
+}
+
+toolbar {
+  padding: 4px;
+  background-color: transparent;
+}
+
+toolbar.primary-toolbar {
+  padding: 5px 8px;
+  border-bottom: 1px solid @sde_border;
+}
+
+statusbar {
+  padding: 2px 10px;
+  background-color: @sde_bg;
+  border-top: 1px solid @sde_border_soft;
+  color: @sde_dim;
+}
+
+/* ------------------------------------------------------------- buttons */
+
+button {
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid @sde_border;
+  background-color: @sde_button_bottom;
+  background-image: linear-gradient(to bottom, @sde_button_top, @sde_button_bottom);
+  box-shadow: inset 0 1px @sde_glass_line, 0 1px 1px alpha(@sde_shadow, 0.35);
+  color: @sde_fg;
+  text-shadow: none;
+  -gtk-icon-shadow: none;
+  transition: all 160ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+button:hover {
+  border-color: mix(@sde_border, @sde_accent, 0.55);
+  background-image: linear-gradient(to bottom, mix(@sde_button_top, @sde_accent, 0.05), mix(@sde_button_bottom, @sde_accent, 0.12));
+  box-shadow: inset 0 1px @sde_glass_line, 0 0 0 3px alpha(@sde_accent, 0.12);
+}
+
+button:active,
+button:checked,
+headerbar button:checked,
+stackswitcher button:checked,
+.linked > button:checked {
+  border-color: mix(@sde_border, @sde_accent, 0.7);
+  background-color: alpha(@sde_accent, 0.16);
+  background-image: linear-gradient(to bottom, alpha(@sde_accent, 0.24), alpha(@sde_accent, 0.12));
+  box-shadow: inset 0 1px 2px alpha(@sde_shadow, 0.5);
+  color: @sde_fg;
+}
+
+button:disabled {
+  background-image: none;
+  background-color: alpha(@sde_button_bottom, 0.6);
+  border-color: @sde_border_soft;
+  box-shadow: none;
+  color: alpha(@sde_fg, 0.42);
+}
+
+button:backdrop {
+  background-image: linear-gradient(to bottom, @sde_button_top, @sde_button_top);
+  box-shadow: none;
+}
+
+button.flat,
+headerbar button.flat,
+toolbar button.flat,
+.toolbar button.flat,
+toolbar toolbutton > button,
+.inline-toolbar button {
+  border-color: transparent;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+button.flat:hover,
+toolbar toolbutton > button:hover,
+.inline-toolbar button:hover {
+  background-color: alpha(@sde_accent, 0.10);
+  border-color: alpha(@sde_accent, 0.28);
+  box-shadow: inset 0 1px alpha(white, 0.25);
+}
+
+button.flat:active,
+button.flat:checked,
+toolbar toolbutton > button:active,
+toolbar toolbutton > button:checked {
+  background-color: alpha(@sde_accent, 0.18);
+  border-color: alpha(@sde_accent, 0.40);
+}
+
+button.suggested-action,
+button.default {
+  border-color: shade(@sde_accent, 0.85);
+  background-color: @sde_accent;
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.16), @sde_accent 55%, shade(@sde_accent, 0.92));
+  box-shadow: inset 0 1px alpha(white, 0.30), 0 1px 2px alpha(@sde_accent, 0.35);
+  color: @sde_accent_fg;
+}
+
+button.suggested-action:hover,
+button.default:hover {
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.24), shade(@sde_accent, 1.04));
+  box-shadow: inset 0 1px alpha(white, 0.35), 0 0 0 3px alpha(@sde_accent, 0.22);
+}
+
+button.destructive-action {
+  border-color: #A8323A;
+  background-image: linear-gradient(to bottom, #E0525C, #C63A44);
+  box-shadow: inset 0 1px alpha(white, 0.25);
+  color: #FFFFFF;
+}
+
+button.circular,
+button.image-button.circular {
+  border-radius: 9999px;
+}
+
+/* Window controls: soft round targets; close glows red like glass caption buttons. */
+headerbar button.titlebutton,
+.titlebar button.titlebutton {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  margin: 0 2px;
+  border-radius: 9999px;
+  border-color: transparent;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+headerbar button.titlebutton:hover {
+  background-color: alpha(@sde_fg, 0.10);
+}
+
+headerbar button.titlebutton.close:hover {
+  background-image: linear-gradient(to bottom, #EA6A6F, #CC3B43);
+  color: #FFFFFF;
+}
+
+/* ------------------------------------------------- entries and spinners */
+
+entry,
+spinbutton:not(.vertical),
+.liria-location-entry {
+  min-height: 26px;
+  padding: 2px 8px;
+  border-radius: 7px;
+  border: 1px solid @sde_border;
+  background-color: @sde_view;
+  background-image: none;
+  box-shadow: inset 0 1px 2px alpha(@sde_shadow, 0.35);
+  color: @sde_fg;
+  transition: all 160ms ease-out;
+}
+
+entry:focus,
+spinbutton:focus:not(.vertical) {
+  border-color: @sde_accent;
+  box-shadow: inset 0 1px 2px alpha(@sde_shadow, 0.20), 0 0 0 3px alpha(@sde_accent, 0.20);
+}
+
+entry:disabled {
+  background-color: @sde_bg;
+  color: alpha(@sde_fg, 0.45);
+  box-shadow: none;
+}
+
+entry selection,
+textview text selection,
+label selection {
+  background-color: @sde_accent;
+  color: @sde_accent_fg;
+}
+
+entry progress {
+  border-bottom: 2px solid @sde_accent;
+}
+
+spinbutton:not(.vertical) button {
+  border-radius: 0;
+  border-width: 0 0 0 1px;
+  border-color: @sde_border_soft;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+spinbutton:not(.vertical) button:last-child {
+  border-radius: 0 7px 7px 0;
+}
+
+/* ------------------------------------------ views, lists and selections */
+
+.view,
+iconview,
+treeview.view,
+textview text {
+  background-color: @sde_view;
+  color: @sde_fg;
+}
+
+.view:selected,
+iconview:selected,
+treeview.view:selected,
+row:selected,
+.liria-canvas-item:selected {
+  background-color: alpha(@sde_accent, 0.18);
+  background-image: linear-gradient(to bottom, alpha(@sde_accent, 0.14), alpha(@sde_accent, 0.24));
+  color: @sde_fg;
+}
+
+.view:selected:focus,
+iconview:selected:focus,
+treeview.view:selected:focus,
+row:selected:focus {
+  background-color: @sde_accent;
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.10), @sde_accent);
+  color: @sde_accent_fg;
+}
+
+treeview.view:hover,
+row.activatable:hover {
+  background-color: alpha(@sde_accent, 0.07);
+}
+
+treeview.view header button {
+  border-radius: 0;
+  border-width: 0 1px 1px 0;
+  border-color: @sde_border_soft;
+  background-image: linear-gradient(to bottom, @sde_view, @sde_bg);
+  box-shadow: none;
+  color: @sde_dim;
+  font-weight: 600;
+}
+
+treeview.view header button:hover {
+  background-image: linear-gradient(to bottom, @sde_view, alpha(@sde_accent, 0.10));
+  color: @sde_fg;
+}
+
+list,
+listbox {
+  background-color: @sde_view;
+}
+
+list row,
+listbox row {
+  border-radius: 6px;
+  margin: 0 3px;
+}
+
+/* ------------------------------------------------------------- sidebars */
+
+.sidebar,
+placessidebar,
+placessidebar list,
+stacksidebar list,
+.liria-side-pane,
+.liria-side-pane treeview.view,
+.liria-side-pane .view {
+  background-color: @sde_sidebar;
+  border-color: @sde_border_soft;
+}
+
+placessidebar row,
+stacksidebar row {
+  min-height: 30px;
+  margin: 1px 6px;
+  padding: 0 6px;
+  border-radius: 7px;
+}
+
+placessidebar row:selected,
+stacksidebar row:selected,
+.liria-side-pane treeview.view:selected {
+  background-image: linear-gradient(to right, alpha(@sde_accent, 0.26), alpha(@sde_accent, 0.12));
+  background-color: transparent;
+  box-shadow: inset 3px 0 @sde_accent;
+  color: @sde_fg;
+}
+
+/* ------------------------------------------------- menus and popovers */
+
+menu,
+.menu,
+.context-menu {
+  padding: 5px 0;
+  border-radius: 10px;
+  border: 1px solid alpha(@sde_border, 0.9);
+  background-color: @sde_glass_bg;
+  color: @sde_fg;
+}
+
+.csd menu,
+.csd .menu {
+  border: none;
+}
+
+menu menuitem,
+.menu menuitem {
+  min-height: 22px;
+  padding: 4px 12px;
+  margin: 0 5px;
+  border-radius: 6px;
+  text-shadow: none;
+}
+
+menu menuitem:hover,
+.menu menuitem:hover {
+  background-color: alpha(@sde_accent, 0.14);
+  background-image: linear-gradient(to bottom, alpha(@sde_accent, 0.10), alpha(@sde_accent, 0.20));
+  box-shadow: inset 0 0 0 1px alpha(@sde_accent, 0.30);
+  color: @sde_fg;
+}
+
+menu menuitem:disabled {
+  color: alpha(@sde_fg, 0.42);
+}
+
+menu separator {
+  margin: 4px 10px;
+  background-color: @sde_border_soft;
+}
+
+popover,
+popover.background {
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid alpha(@sde_border, 0.9);
+  background-color: @sde_glass_bg;
+  box-shadow: 0 6px 18px @sde_shadow;
+  color: @sde_fg;
+}
+
+popover modelbutton {
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+
+popover modelbutton:hover {
+  background-color: alpha(@sde_accent, 0.14);
+  color: @sde_fg;
+}
+
+tooltip,
+tooltip.background {
+  padding: 5px 9px;
+  border-radius: 8px;
+  border: 1px solid alpha(white, 0.08);
+  background-color: @sde_tooltip;
+  color: @sde_tooltip_fg;
+  box-shadow: none;
+}
+
+tooltip * {
+  color: @sde_tooltip_fg;
+}
+
+/* ------------------------------------------------------------ notebook */
+
+notebook > header {
+  background-color: @sde_bg;
+  border-color: @sde_border;
+}
+
+notebook > header tab {
+  min-height: 26px;
+  padding: 3px 12px;
+  margin: 3px 2px 0;
+  border-radius: 8px 8px 0 0;
+  border: 1px solid transparent;
+  color: @sde_dim;
+}
+
+notebook > header tab:hover {
+  background-color: alpha(@sde_accent, 0.08);
+  color: @sde_fg;
+}
+
+notebook > header tab:checked {
+  border-color: @sde_border @sde_border transparent;
+  background-image: linear-gradient(to bottom, @sde_view, @sde_view);
+  box-shadow: inset 0 2px @sde_accent;
+  color: @sde_fg;
+}
+
+notebook > header.top > tabs > tab:checked {
+  box-shadow: inset 0 2px @sde_accent;
+}
+
+notebook > stack:not(:only-child) {
+  background-color: @sde_view;
+}
+
+/* ------------------------------------------------------- range widgets */
+
+scale trough,
+progressbar trough,
+levelbar trough {
+  min-height: 6px;
+  min-width: 6px;
+  border-radius: 9999px;
+  border: 1px solid @sde_border;
+  background-color: mix(@sde_bg, @sde_border, 0.4);
+  box-shadow: inset 0 1px 1px alpha(@sde_shadow, 0.35);
+}
+
+scale highlight,
+progressbar progress,
+levelbar block.filled {
+  border-radius: 9999px;
+  border: 1px solid shade(@sde_accent, 0.88);
+  background-color: @sde_accent;
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.25), @sde_accent 50%, shade(@sde_accent, 0.95));
+}
+
+scale slider {
+  min-width: 18px;
+  min-height: 18px;
+  margin: -7px;
+  border-radius: 9999px;
+  border: 1px solid mix(@sde_border, @sde_accent, 0.4);
+  background-image: linear-gradient(to bottom, @sde_button_top, @sde_button_bottom);
+  box-shadow: 0 1px 3px alpha(@sde_shadow, 0.8);
+}
+
+scale slider:hover {
+  border-color: @sde_accent;
+  box-shadow: 0 0 0 4px alpha(@sde_accent, 0.16);
+}
+
+switch {
+  min-width: 42px;
+  min-height: 22px;
+  border-radius: 9999px;
+  border: 1px solid @sde_border;
+  background-color: mix(@sde_bg, @sde_border, 0.6);
+  background-image: none;
+  box-shadow: inset 0 1px 2px alpha(@sde_shadow, 0.4);
+  color: transparent;
+}
+
+switch:checked {
+  border-color: shade(@sde_accent, 0.88);
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.15), @sde_accent);
+}
+
+switch slider {
+  min-width: 20px;
+  min-height: 20px;
+  border-radius: 9999px;
+  border: 1px solid alpha(@sde_shadow, 0.6);
+  background-image: linear-gradient(to bottom, #FFFFFF, #EEF2F6);
+  box-shadow: 0 1px 2px alpha(@sde_shadow, 0.8);
+}
+
+check,
+radio {
+  min-width: 16px;
+  min-height: 16px;
+  border: 1px solid mix(@sde_border, @sde_fg, 0.15);
+  background-image: linear-gradient(to bottom, @sde_button_top, @sde_button_bottom);
+  box-shadow: none;
+}
+
+check {
+  border-radius: 5px;
+}
+
+check:checked,
+check:indeterminate,
+radio:checked {
+  border-color: shade(@sde_accent, 0.85);
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.15), @sde_accent);
+  color: @sde_accent_fg;
+}
+
+/* ----------------------------------------------------------- scrollbars */
+
+scrollbar {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+scrollbar slider {
+  min-width: 7px;
+  min-height: 7px;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-color: alpha(@sde_fg, 0.32);
+}
+
+scrollbar slider:hover {
+  background-color: alpha(@sde_fg, 0.48);
+}
+
+scrollbar slider:active {
+  background-color: @sde_accent;
+}
+
+/* ------------------------------------------------- combo boxes and misc */
+
+combobox button.combo,
+button.combo {
+  padding: 4px 8px;
+}
+
+infobar {
+  border-radius: 0;
+}
+
+infobar.info > revealer > box {
+  background-color: alpha(@sde_accent, 0.14);
+  color: @sde_fg;
+}
+
+frame > border,
+.frame {
+  border-color: @sde_border;
+  border-radius: 8px;
+}
+
+separator {
+  background-color: @sde_border_soft;
+}
+
+paned > separator {
+  background-color: @sde_border_soft;
+  background-image: none;
+}
+
+dialog .dialog-action-area button,
+messagedialog .dialog-action-area button {
+  min-width: 84px;
+}
+
+messagedialog.csd .dialog-action-area button {
+  border-radius: 0;
+}
+
+.app-notification,
+.app-notification.frame {
+  border-radius: 0 0 12px 12px;
+  background-color: @sde_tooltip;
+  color: @sde_tooltip_fg;
+}
+
+/* Client-side decorated windows: rounded glass edge and a soft shadow. */
+decoration {
+  border-radius: 10px 10px 0 0;
+  box-shadow: 0 6px 22px @sde_shadow, 0 0 0 1px alpha(@sde_shadow, 0.65);
+}
+
+decoration:backdrop {
+  box-shadow: 0 3px 12px alpha(@sde_shadow, 0.6), 0 0 0 1px alpha(@sde_shadow, 0.45);
+}
+
+textview,
+textview text {
+  background-color: @sde_view;
+}

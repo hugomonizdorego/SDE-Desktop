@@ -46,7 +46,9 @@ bool showing_desktop();
 void remap(Window w);
 
 // Window type and struts for panels and the desktop window.
-void set_window_type(Window w, const char *type);  // e.g. "_NET_WM_WINDOW_TYPE_DOCK"
+void set_window_type(Window w, const char *type);
+// _NET_WM_WINDOW_OPACITY for compositors; 1.0 removes the property.
+void set_opacity(Window w, double opacity);  // e.g. "_NET_WM_WINDOW_TYPE_DOCK"
 void set_bottom_strut(Window w, int height, int x_start, int x_end, int screen_h);
 // Reserves |height| pixels at the top or bottom edge of the monitor that
 // spans [monitor_y, monitor_y + monitor_h). height 0 removes the strut.

@@ -54,6 +54,12 @@ struct Theme {
   int panel_size = 40;    // unscaled setting: 32, 40 or 48
   bool panel_top = false;
 
+  // SDE Aero glass. |opacity| is the window opacity the compositor applies to
+  // the panel (popups use popup_opacity, which keeps text more legible).
+  bool glass = true;
+  int transparency = 18;  // percent, 0-60
+  double opacity = 1.0, popup_opacity = 1.0;
+
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
 

@@ -496,13 +496,14 @@ class ClockCard : public Fl_Widget {
     struct tm lt;
     localtime_r(&now, &lt);
     bool analog = cfg.get("action_center", "clock_style", "digital") == "analog";
-    int tx = x() + (analog ? S(108) : S(18)), tw = w() - (analog ? S(124) : S(36));
     {
       Painter p(window()->w(), window()->h());
-      p.fill_rounded(x(), y(), w(), h(), S(16), t.surface_alt.mix(t.accent, t.dark ? 0.08 : 0.04));
+      // Soft accent glow on the card: a two-stop gradient instead of a flat fill.
+      p.fill_gradient(x(), y(), w(), h(), S(16),
+                      t.surface_alt.mix(t.accent, t.dark ? 0.24 : 0.14), t.surface_alt, true);
       p.stroke_rounded(x(), y(), w(), h(), S(16), t.border);
       if (analog) {
-        double cx = x() + S(52), cy = y() + h() / 2.0, r = S(35);
+        double cx = x() + S(48), cy = y() + h() / 2.0, r = S(32);
         p.circle(cx, cy, r, t.surface);
         for (int i = 0; i < 12; ++i) {
           double a = i * M_PI / 6;
@@ -522,17 +523,42 @@ class ClockCard : public Fl_Widget {
     strftime(clock, sizeof clock, cfg.get_bool("panel", "clock_24h", true) ? "%H:%M" : "%I:%M %p",
              &lt);
     strftime(date, sizeof date, "%A, %e %B", &lt);
-    text_font(t.font_size + (analog ? 10 : 26), true);
-    draw_text(clock, tx, y() + S(10), tw, S(44), t.text, analog ? 0 : 1);
-    text_font(t.font_size - 1);
-    draw_text(date, tx, y() + S(56), tw, S(22), t.text_dim, analog ? 0 : 1);
-    if (cfg.get_bool("action_center", "show_greeting", true)) {
+    // Time on the left, date and greeting stacked beside it.
+    int left = x() + (analog ? S(96) : S(18));
+    text_font(t.font_size + (analog ? 12 : 22), true);
+    int cw = text_width(clock) + S(8);
+    draw_text(clock, left, y(), cw, h(), t.text);
+    int rx = left + cw + S(12), rw = x() + w() - rx - S(14);
+    bool greet = cfg.get_bool("action_center", "show_greeting", true);
+    int mid = y() + h() / 2;
+    if (greet) {
       const char *greeting = lt.tm_hour < 12   ? _("Good morning")
                              : lt.tm_hour < 18 ? _("Good afternoon")
                                                : _("Good evening");
       text_font(t.font_size, true);
-      draw_text(greeting, tx, y() + S(80), tw, S(22), t.accent_text, analog ? 0 : 1);
+      draw_text(greeting, rx, mid - S(22), rw, S(20), t.accent_text);
     }
+    text_font(t.font_size - 1);
+    draw_text(date, rx, greet ? mid : mid - S(10), rw, S(20), t.text_dim);
+  }
+};
+
+// Initial in an accent circle, then the user name.
+class UserBadge : public Fl_Widget {
+ public:
+  UserBadge(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    std::string name = user_name();
+    std::string initial = name.empty() ? "?" : std::string(1, char(toupper((unsigned char)name[0])));
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_gradient(x(), y(), h(), h(), h() / 2.0, t.accent.mix(Color::hex(0xFFFFFF), 0.2),
+                      t.accent.mix(Color::hex(0x000000), 0.1));
+    }
+    text_font(t.font_size, true);
+    draw_text(initial, x(), y(), h(), h(), t.on_accent, 1);
+    draw_text(name, x() + h() + S(10), y(), w() - h() - S(10), h(), t.text);
   }
 };
 
@@ -814,7 +840,13 @@ void QuickSettings::rebuild() {
   label(_("Action Center"), 1, 28);
   y += S(4);
   if (section_ != "overview")
-    row(_("Back to overview"), gear_icon(), [this] { select_section("overview"); });
+    row(
+        _("Back to overview"),
+        [](Painter &p, double x, double y, double z, const Color &ink) {
+          p.line(x + z * .62, y + z * .2, x + z * .3, y + z * .5, ink, z * .1);
+          p.line(x + z * .3, y + z * .5, x + z * .62, y + z * .8, ink, z * .1);
+        },
+        [this] { select_section("overview"); });
   if (!s.message.empty() || !c.message.empty()) {
     new ActionLabel(
         pad, y, inner, S(28),
@@ -825,72 +857,40 @@ void QuickSettings::rebuild() {
         2);
     y += S(30);
   }
+  // Application tray only. System indicators are the quick tiles below, so
+  // they are not repeated here (alpha9 showed every status icon twice).
   auto tray_card = [&] {
     auto *h = Panel::instance->status_notifiers();
     auto items = h ? h->visible_items() : std::vector<const SniHost::Item *>{};
     auto *tray = Panel::instance->legacy_tray();
     bool moved = cfg.get_bool("action_center", "move_status", true);
-    if (!moved && items.empty() && (!tray || !tray->count())) return;
+    bool legacy = tray && tray->count() && moved;
     if (!cfg.get_bool("action_center", "show_tray", true) && section_ != "tray") return;
-    auto *card = start_card(_("Status and tray"));
-    int cell = S(34), columns = std::max(1, (inner - S(24)) / cell);
-    if (moved) {
-      struct Indicator {
-        const char *key;
-        std::string title;
-        IconFn icon;
-        std::function<void()> fn;
-        bool available;
-      };
-      std::vector<Indicator> status = {
-          {"show_keyboard", _("Keyboard"),
-           [](Painter &p, double x, double y, double z, const Color &ink) {
-             glyph::keyboard(p, x, y, z, ink);
-           },
-           [launch] { launch({"sde-settings", "--page", "input"}); }, true},
-          {"show_bluetooth", _("Bluetooth"), bt_icon, [this] { select_section("bluetooth"); },
-           !c.adapters.empty()},
-          {"show_battery", _("Battery"),
-           [](Painter &p, double x, double y, double z, const Color &ink) {
-             const auto &b = SystemStatus::get().battery;
-             glyph::battery(p, x, y, z, b.percent, b.charging, ink,
-                            Panel::instance->theme().surface_alt);
-           },
-           [this] { select_section("power"); }, s.battery.present},
-          {"show_power", _("Power"),
-           [](Painter &p, double x, double y, double z, const Color &ink) {
-             glyph::power(p, x, y, z, ink);
-           },
-           [launch] { launch({"sde-logout"}); }, true},
-          {"show_media", _("Media players"), media_icon, [this] { select_section("media"); }, true},
-          {"show_network", _("Network"), network_icon, [this] { select_section("network"); },
-           s.network.available},
-          {"show_sound", _("Sound"), audio_icon, [this] { select_section("sound"); },
-           s.audio.available},
-          {"show_controls", _("Overview"),
-           [](Painter &p, double x, double y, double z, const Color &ink) {
-             glyph::sliders(p, x, y, z, ink);
-           },
-           [this] { select_section("overview"); }, true}};
-      int n = 0;
-      for (const auto &i : status)
-        if (i.available && cfg.get_bool("panel", i.key, true)) {
-          auto *b = new ActionButton(pad + S(12) + (n % columns) * cell, y + (n / columns) * cell,
-                                     cell, cell, "", i.icon, i.fn, nullptr, -1, true);
-          b->copy_tooltip(i.title.c_str());
-          ++n;
-        }
-      y += ((n + columns - 1) / columns) * cell + S(6);
-    }
+    if (items.empty() && !legacy && section_ != "tray") return;
+    if (section_ != "overview" && section_ != "tray" && !moved) return;
+    auto *card = start_card(_("Tray applications"));
+    int cell = S(36), columns = std::max(1, (inner - S(24)) / cell);
+    if (items.empty() && !legacy) info(_("No applications are in the tray."));
     for (size_t i = 0; i < items.size(); ++i)
       new TrayIndicator(pad + S(12) + int(i % columns) * cell, y + int(i / columns) * cell, cell,
                         *items[i]);
-    y += int((items.size() + columns - 1) / columns) * cell;
-    if (tray && tray->count() && cfg.get_bool("action_center", "move_status", true)) {
-      tray_columns_ = std::max(1, (inner - S(24)) / (tray->icon_size() + S(6)));
+    // XEmbed icons continue on the last SNI row when there is room for them.
+    int last = int(items.size() % size_t(columns)), rows = int((items.size() + columns - 1) / columns);
+    int tx = pad + S(12), ty = y + rows * cell;
+    if (legacy) {
+      int slot = tray->icon_size() + S(6), room = inner - S(24) - last * cell;
+      if (rows && last && room >= slot) {
+        tx += last * cell;
+        ty -= cell;
+        tray_columns_ = std::max(1, room / slot);
+      } else {
+        tray_columns_ = std::max(1, (inner - S(24)) / slot);
+      }
       int h = tray->grid_height(tray_columns_);
-      tray_box_ = new Fl_Box(pad + S(12), y, inner - S(24), h);
-      y += h + S(6);
+      tray_box_ = new Fl_Box(tx, ty + std::max(0, (cell - h) / 2), inner - S(24) - (tx - pad - S(12)), h);
+      y = std::max(ty + std::max(cell, h), y + rows * cell) + S(6);
+    } else {
+      y += rows * cell;
     }
     end_card(card);
   };
@@ -918,16 +918,15 @@ void QuickSettings::rebuild() {
           [service = p.service] { PanelControls::get().media_command(service, "Raise"); });
     end_card(card);
   };
+  // The moved panel tray stays at the top of every page, so it never jumps
+  // when the page content below it changes.
   if (section_ != "overview") tray_card();
   if (section_ == "overview") {
     if (cfg.get_bool("action_center", "show_clock", true)) {
-      new ClockCard(pad, y, inner, S(112));
-      y += S(124);
+      new ClockCard(pad, y, inner, S(96));
+      y += S(108);
     }
     tray_card();
-    auto players = c.players();
-    if (cfg.get_bool("action_center", "show_media", true) && !players.empty())
-      player_card(players.front());
     struct Tile {
       std::string title;
       IconFn icon;
@@ -990,10 +989,7 @@ void QuickSettings::rebuild() {
       new ActionButton(pad + int(i % columns) * (tw + gap), y + int(i / columns) * (th + gap), tw,
                        th, v.title, v.icon, v.click, v.on, int(i), false, v.sub);
     }
-    y += int((tiles.size() + columns - 1) / columns) * (th + gap) + S(8);
-    row(_("Sound and applications"), audio_icon, [this] { select_section("sound"); });
-    if (cfg.get_bool("action_center", "show_media", true))
-      row(_("Media players"), media_icon, [this] { select_section("media"); });
+    y += int((tiles.size() + columns - 1) / columns) * (th + gap) + S(10);
   }
   if (section_ == "network") {
     auto *card = start_card(_("Network"));
@@ -1132,6 +1128,9 @@ void QuickSettings::rebuild() {
         });
         y += S(38);
       }
+      if (section_ == "overview")
+        row(_("Sound, microphone and applications"), audio_icon,
+            [this] { select_section("sound"); });
     } else
       info(_("Sound service is unavailable"));
     end_card(card);
@@ -1257,6 +1256,11 @@ void QuickSettings::rebuild() {
     if (section_ == "power")
       row(_("Power Settings"), gear_icon(), [launch] { launch({"sde-power-preferences"}); });
   }
+  if (section_ == "overview") {
+    auto players = c.players();
+    if (cfg.get_bool("action_center", "show_media", true) && !players.empty())
+      player_card(players.front());
+  }
 
   content_height_ = y + S(8);
   new Fl_Box(pad, y, inner, S(8));
@@ -1265,7 +1269,7 @@ void QuickSettings::rebuild() {
   body_->size(W - S(4), H - footer - S(4));
   begin();
   int fy = H - footer + S(10), fb = S(36);
-  new ActionLabel(pad, fy, W - S(210), fb, [] { return user_name(); }, 2);
+  new UserBadge(pad, fy, W - S(210), fb);
   std::vector<std::pair<std::string, std::function<void()>>> foot = {
       {_("Calendar"),
        [this] {
@@ -1299,7 +1303,9 @@ void QuickSettings::draw() {
   {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), t.surface);
-    p.stroke_rounded(0, 0, w(), h(), 0, t.border);
+    if (Panel::instance->config().get_bool("aero", "enabled", true))
+      p.fill_rect(0, h() - S(58), w(), S(58), t.surface_alt.mix(t.surface, 0.4));
+    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
     p.line(S(16), h() - S(58), w() - S(16), h() - S(58), t.border);
   }
   draw_children();

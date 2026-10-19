@@ -111,7 +111,7 @@ class StyleCard : public Fl_Widget {
   }
   void choose() {
     g_cfg.set("appearance", "theme", dark_ ? "dark" : "light");
-    set_openbox_theme(dark_);
+    set_openbox_theme(dark_, g_cfg.get_bool("aero", "enabled", true));
     reconfigure_window_manager();
     apply_change();
   }
@@ -521,6 +521,13 @@ void build_home(Page *page) {
   page->finish();
 }
 
+void reload_compositor_later(void *) {
+  write_compositor_config(g_cfg);
+  write_compositor_config(g_cfg, true);
+  reload_compositor();
+}
+void aero_changed();
+
 void build_appearance(Page *page) {
   page->heading(_("Appearance"), _("Style, colors, size and wallpaper"));
   page->begin_card(_("Style"));
@@ -531,6 +538,55 @@ void build_appearance(Page *page) {
   page->advance(S(132));
   page->row(_("Accent color"), S(34) * kAccentChoiceCount, S(36),
             [](int x, int yy, int w, int h) { return new AccentPicker(x, yy, w, h); });
+  page->end_card();
+
+  page->begin_card(_("SDE Aero glass"));
+  page->switch_row(
+      _("Aero glass effects"), g_cfg.get_bool("aero", "enabled", true),
+      [](bool on) {
+        g_cfg.set("aero", "enabled", on ? "true" : "false");
+        set_openbox_theme(g_theme.dark, on);
+        reconfigure_window_manager();
+        aero_changed();
+      },
+      _("Translucent panel, menus and window frames with the SDE Aero theme."));
+  page->slider_row(
+      _("Transparency"), 0, 60, g_cfg.get_int("aero", "transparency", 18),
+      [](double v) {
+        g_cfg.set("aero", "transparency", std::to_string(int(std::lround(v))));
+        aero_changed();
+      },
+      _("0% is opaque. Text stays readable: menus use half of this value."));
+  page->switch_row(
+      _("Blur behind glass"), g_cfg.get_bool("aero", "blur", true),
+      [](bool on) {
+        g_cfg.set("aero", "blur", on ? "true" : "false");
+        aero_changed();
+      },
+      _("Uses OpenGL when available; older graphics fall back to a lighter blur."));
+  page->slider_row(
+      _("Blur strength"), 1, 12, g_cfg.get_int("aero", "blur_strength", 6),
+      [](double v) {
+        g_cfg.set("aero", "blur_strength", std::to_string(int(std::lround(v))));
+        aero_changed();
+      });
+  page->switch_row(
+      _("Rounded window corners"), g_cfg.get_bool("aero", "rounded_corners", true),
+      [](bool on) {
+        g_cfg.set("aero", "rounded_corners", on ? "true" : "false");
+        aero_changed();
+      });
+  page->switch_row(
+      _("Smooth animations"), g_cfg.get_bool("aero", "animations", true),
+      [](bool on) {
+        g_cfg.set("aero", "animations", on ? "true" : "false");
+        aero_changed();
+      },
+      _("Fade windows and menus in and out."));
+  if (g_cfg.get("compositor", "mode", "auto") == "off")
+    page->note(_("Compositing is off (Power & Updates), so glass effects are not shown."));
+  else if (file_exists(config_home() + "/sde/compositor.conf"))
+    page->note(_("~/.config/sde/compositor.conf exists, so it is used instead of these settings."));
   page->end_card();
 
   page->begin_card(_("Size and text"));
@@ -601,6 +657,14 @@ void build_appearance(Page *page) {
   page->finish();
 }
 
+// Saves, then regenerates the compositor configuration. Slider drags call
+// this often, so the compositor reloads once the value settles.
+void aero_changed() {
+  apply_change();
+  Fl::remove_timeout(reload_compositor_later);
+  Fl::add_timeout(0.35, reload_compositor_later);
+}
+
 void set_bool(const char *section, const char *key, bool on) {
   g_cfg.set(section, key, on ? "true" : "false");
   apply_change();
@@ -663,10 +727,13 @@ void build_panel(Page *page) {
            {"show_media", _("Media player button")},
            {"show_network", _("Network indicator")},
            {"show_sound", _("Sound indicator")},
-           {"show_controls", _("Quick controls button")},
            {"show_tray", _("System tray button")}})
     page->switch_row(item.second, g_cfg.get_bool("panel", item.first, true),
                      [key = item.first](bool on) { set_bool("panel", key.c_str(), on); });
+  page->switch_row(
+      _("Hide duplicate tray icons"), g_cfg.get_bool("panel", "hide_duplicate_tray", true),
+      [](bool on) { set_bool("panel", "hide_duplicate_tray", on); },
+      _("nm-applet, Blueman and power applets keep running; SDE's indicators show their state."));
   page->end_card();
 
   page->begin_card(_("Pinned applications"));
@@ -926,15 +993,19 @@ void build_suite_system(Page *page) {
         "No background updater is started."));
   page->begin_card(_("Windows and effects"));
   page->note(
-      _("SDE WM manages windows. SDE Compositor adds subtle shadows without blur or animations."));
+      _("SDE WM manages windows. SDE Compositor adds shadows and SDE Aero glass (see Appearance)."));
   page->choice_row(
       _("Compositing"), {_("Enabled"), _("Disabled")},
       g_cfg.get("compositor", "mode", "auto") == "off" ? 1 : 0,
       [](int choice) {
         g_cfg.set("compositor", "mode", choice ? "off" : "auto");
         apply_change();
+        // Turning compositing off takes effect at once; turning it on needs
+        // the session to start the compositor at the next login.
+        if (choice)
+          spawn_detached({"pkill", "-TERM", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
       },
-      _("Changes apply at the next login. Disable effects to reduce graphics work."));
+      _("Disabling stops effects now; enabling applies at the next login."));
   page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});

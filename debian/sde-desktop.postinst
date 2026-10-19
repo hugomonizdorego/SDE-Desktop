@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+if [ "$1" = "configure" ]; then
+    # Alpha builds before 0.1.0~alpha10 saved the session as "sde". Accounts
+    # that chose it move to the new "sde-desktop" name; others are untouched.
+    for f in /var/lib/AccountsService/users/*; do
+        [ -f "$f" ] || continue
+        if grep -qx 'XSession=sde' "$f"; then
+            sed -i 's/^XSession=sde$/XSession=sde-desktop/' "$f"
+        fi
+    done
+fi
+#DEBHELPER#
+exit 0

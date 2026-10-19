@@ -224,11 +224,40 @@ static void test_gtk_preferences() {
   CHECK(text.find("gtk-double-click-time=450") != std::string::npos);
   CHECK(text.find("keep=yes") != std::string::npos);
   CHECK(text.find("gtk-application-prefer-dark-theme=true") != std::string::npos);
+  // SDE Aero is used when it is installed; otherwise GTK's Adwaita.
+  bool aero = gtk_theme_name(cfg) == "SDE-Aero";
   CHECK(read_file(std::string(root) + "/gtk-4.0/settings.ini", text));
-  CHECK(text.find("gtk-theme-name=Adwaita") != std::string::npos);
+  CHECK(text.find(aero ? "gtk-theme-name=SDE-Aero" : "gtk-theme-name=Adwaita") != std::string::npos);
   CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
-  CHECK(text.find("Adwaita-dark") != std::string::npos);
+  CHECK(text.find(aero ? "SDE-Aero-Dark" : "Adwaita-dark") != std::string::npos);
   CHECK(text.find("Xft/DPI 122880") != std::string::npos);
+
+  // Disabling Aero always selects Adwaita and removes only SDE's CSS block.
+  CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/gtk.css",
+                          "/* SDE Aero: managed by SDE Settings - begin */\n@define-color "
+                          "sde_accent #000000;\n/* SDE Aero: managed by SDE Settings - end */\n"
+                          ".mine { color: red; }\n"));
+  cfg.set("aero", "enabled", "false");
+  CHECK(gtk_theme_name(cfg) == "Adwaita");
+  sync_gtk_settings(cfg);
+  CHECK(read_file(std::string(root) + "/gtk-3.0/gtk.css", text));
+  CHECK(text == ".mine { color: red; }\n");
+  CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
+  CHECK(text.find("gtk-theme-name=Adwaita") != std::string::npos);
+
+  // The generated compositor configuration follows [aero].
+  cfg.set("aero", "enabled", "true");
+  cfg.set("aero", "transparency", "30");
+  cfg.set("compositor", "backend", "xrender");
+  std::string conf = write_compositor_config(cfg);
+  CHECK(read_file(conf, text));
+  CHECK(text.find("backend = \"xrender\";") != std::string::npos);
+  CHECK(text.find("frame-opacity = 0.64;") != std::string::npos);
+  CHECK(text.find("blur-background = true;") != std::string::npos);
+  cfg.set("aero", "enabled", "false");
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);
+  CHECK(text.find("blur-background") == std::string::npos);
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 

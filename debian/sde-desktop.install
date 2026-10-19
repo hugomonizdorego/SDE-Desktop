@@ -1,0 +1,2 @@
+data/lightdm/50-sde-desktop.conf usr/share/lightdm/lightdm.conf.d/
+data/lightdm/50-sde-desktop-greeter.conf usr/share/lightdm/lightdm-gtk-greeter.conf.d/

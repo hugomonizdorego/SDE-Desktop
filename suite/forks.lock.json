@@ -13,7 +13,7 @@
         "--disable-gtk-doc",
         "--disable-introspection"
       ],
-      "build_version": "0.1.0~alpha9"
+      "build_version": "0.1.0~alpha10"
     },
     {
       "id": "niny",
@@ -63,7 +63,7 @@
     {
       "id": "sde-view",
       "upstream": "eom",
-      "name": "SDE View",
+      "name": "Photo",
       "version": "1.28.1",
       "commit": "3d238ef2c45fe50eb835076163a42d76d8895168",
       "url": "https://github.com/mate-desktop/eom",

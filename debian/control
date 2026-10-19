@@ -177,11 +177,11 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
   * sde-logout   - log out, lock, suspend, restart and shut down
   * sde-autostart - Rust XDG autostart launcher with a dry-run diagnostic
  .
- Select "SDE" in your display manager to start it. This is an alpha
+ Select "SDE-Desktop" in your display manager to start it. This is an alpha
  release meant for testing; expect missing features.
  .
  Includes native source-built SDE forks: Niny, Liria, Xanara, Taca,
- SDE View, SDE System Monitor, SDE Power Manager and SDE Screen Lock.
+ Photo (SDE View), SDE System Monitor, SDE Power Manager and SDE Screen Lock.
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
  SDE Update uses an attributed mintupdate model and Debian PackageKit.
@@ -209,12 +209,16 @@ Depends: ${misc:Depends},
          upower,
          udisks2
 Recommends: papirus-icon-theme,
+            lightdm-gtk-greeter,
             firefox-esr | firefox,
             network-manager-gnome
 Description: complete SDE desktop and application suite for DebION GNU/Linux
  One installation entry point for the SDE session, display server,
  login manager, network and sound services, removable media support
  and integrated SDE applications on Debian testing and DebION.
+ .
+ It makes SDE-Desktop the default LightDM session and styles the
+ LightDM GTK greeter with SDE Aero.
  .
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and

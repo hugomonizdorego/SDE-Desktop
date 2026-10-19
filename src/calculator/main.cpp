@@ -248,8 +248,9 @@ void activate(GtkApplication *app, gpointer) {
   g_key_file_unref(f);
   g_signal_connect(window, "close-request", G_CALLBACK(save), nullptr);
   GtkCssProvider *css = gtk_css_provider_new();
+  // Colors come from the GTK theme (SDE Aero tints operators with the accent).
   const char *style = ".expression {font-size:17px; padding:10px;} .result {font-size:36px;font-weight:600;padding:8px;}"
-      "button {border-radius:6px;} .operator {color:#167d9a;font-weight:700;} .suggested-action {background:#167d9a;color:white;}";
+      ".operator {font-weight:700;}";
   gtk_css_provider_load_from_data(css, style, -1);
   gtk_style_context_add_provider_for_display(gtk_widget_get_display(window), GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   g_object_unref(css);

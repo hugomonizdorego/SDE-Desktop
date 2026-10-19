@@ -11,7 +11,7 @@ string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SDE_VERSION_NUMERIC "${SDE_VERSIO
 
 project(sde VERSION ${SDE_VERSION_NUMERIC} LANGUAGES CXX)
 
-set(SDE_VERSION_LABEL "0.1 Alpha 9" CACHE STRING "Human readable release name")
+set(SDE_VERSION_LABEL "0.1 Alpha 10" CACHE STRING "Human readable release name")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,11 +75,11 @@ install(FILES data/sde-mimeapps.list DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg
 install(DIRECTORY data/autostart/ DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/autostart)
 install(DIRECTORY data/update/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/update
         PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
-install(FILES docs/ALPHA9.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json suite/versions.json
+install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json suite/versions.json
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
-install(FILES data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
+install(FILES data/xsessions/sde-desktop.desktop data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)
-install(FILES data/schemas/org.debion.session.gschema.xml
+install(FILES data/schemas/org.debion.session.gschema.xml data/schemas/30_sde-suite.gschema.override
         DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
 install(FILES data/openbox/rc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/openbox)
 install(DIRECTORY data/themes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/themes)

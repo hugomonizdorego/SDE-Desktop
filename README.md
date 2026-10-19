@@ -2,9 +2,15 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 9** (`0.1.0~alpha9`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 10** (`0.1.0~alpha10`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
+![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
+
+**New in Alpha 10:** the [SDE Aero](docs/ALPHA10.md) theme with adjustable glass
+transparency, a tidier Action Center without duplicate tray icons, **Photo** with
+live filters and effects, more Niny plugins, and the **SDE-Desktop** login session.
+Latest packages: [alpha-latest pre-release](https://github.com/hugomonizdorego/SDE-Desktop/releases/tag/alpha-latest) ·
+[latest screenshots](docs/screenshots/latest/README.md) · [recommendations](docs/ALPHA10.md#recommendations-what-to-fix-and-what-to-add-next)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
@@ -39,7 +45,7 @@ output device, systemd-logind for screen brightness and the kernel for the batte
 ## DebION application suite
 
 The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
-**Xanara**, **Taca**, **SDE View**, **SDE System Monitor**, **SDE Power Manager**
+**Xanara**, **Taca**, **Photo** (formerly SDE View), **SDE System Monitor**, **SDE Power Manager**
 and **SDE Update**. Settings → Applications provides short clickable source links
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
@@ -106,11 +112,14 @@ sha256sum -c SHA256SUMS --ignore-missing
 sudo apt install ./sde_*.deb ./sde-desktop_*.deb
 ```
 
-Log out, choose **SDE** at the login screen and log in. From a text console you can
+Log out, choose **SDE-Desktop** at the login screen and log in. From a text console you can
 use `startx /usr/bin/startsde`.
 
-`release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test alpha9; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
+`release/` holds the older alpha2 Ubuntu 24.04 build. The newest `.deb` packages
+for Debian testing / DebION are published automatically as the
+[`alpha-latest`](https://github.com/hugomonizdorego/SDE-Desktop/releases/tag/alpha-latest)
+pre-release after each successful build of `main`; every branch build also keeps
+them in the `sde-debian-testing` GitHub Actions artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel

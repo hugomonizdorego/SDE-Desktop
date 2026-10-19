@@ -1,3 +1,16 @@
+sde (0.1.0~alpha10) unstable; urgency=medium
+
+  * SDE Aero: new default GTK 3/GTK 4 and window theme (light and dark) with
+    adjustable glass transparency, blur, rounded corners and animations.
+  * Panel: remove duplicate tray icons and tidy the Action Center layout.
+  * Photo (formerly SDE View) with a live Effects side pane; Niny default
+    plugins; redesigned Liria command bar and System Monitor graphs.
+  * Session is SDE-Desktop for LightDM and applications; SDE Aero greeter.
+  * Settings: SDE Aero card; live XSETTINGS reload; immediate compositor off.
+  * CI publishes a rolling alpha-latest pre-release and screenshot gallery.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 19 Oct 2026 23:30:00 +0900
+
 sde (0.1.0~alpha9) unstable; urgency=medium
 
   * Redesign symbolic panel status icons and anchor Action Center above the clock.

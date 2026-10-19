@@ -2,7 +2,7 @@
 // sde-session: starts and supervises the Selviana Desktop Environment.
 //
 // Responsibilities:
-//   * export the session environment (XDG_CURRENT_DESKTOP=SDE, ...)
+//   * export the session environment (XDG_CURRENT_DESKTOP=SDE-Desktop:SDE, ...)
 //   * apply saved display and input settings (sde-settings --apply)
 //   * start the window manager, sde-desktop, sde-panel and sde-notifyd,
 //     restarting them when they crash (with a limit, so a broken component
@@ -50,6 +50,9 @@ struct Component {
   bool essential = false;     // restart when it exits, even with status 0
   bool critical = false;      // the desktop is unusable without it
   int max_restarts = 5;       // within 60 seconds
+  // Started once instead when the program fails, e.g. the compositor
+  // without OpenGL falls back to XRender.
+  std::vector<std::string> fallback;
   pid_t pid = 0;
   std::deque<time_t> starts;  // recent start times, for crash-loop detection
   time_t restart_at = 0;
@@ -168,6 +171,14 @@ void on_child_exit(pid_t pid, int status) {
     char why[128];
     log("%s exited (%s)", c.name.c_str(), exit_reason(status, why, sizeof why));
     time_t now = time(nullptr);
+    if (crashed && !c.fallback.empty()) {
+      log("starting %s with its fallback configuration", c.name.c_str());
+      c.argv = c.fallback;
+      c.fallback.clear();
+      c.starts.clear();
+      c.restart_at = now + 1;
+      return;
+    }
     if (int(c.starts.size()) >= c.max_restarts && now - c.starts.front() < 60) {
       log("%s keeps failing; not restarting it again", c.name.c_str());
       c.given_up = true;
@@ -219,9 +230,11 @@ void stop_all() {
 }
 
 void setup_environment() {
-  setenv("XDG_CURRENT_DESKTOP", "SDE", 1);
-  setenv("XDG_SESSION_DESKTOP", "SDE", 1);
-  setenv("DESKTOP_SESSION", "sde", 1);
+  // Applications and display managers know the session as SDE-Desktop; the
+  // short name stays in the list so existing OnlyShowIn=SDE entries match.
+  setenv("XDG_CURRENT_DESKTOP", "SDE-Desktop:SDE", 1);
+  setenv("XDG_SESSION_DESKTOP", "SDE-Desktop", 1);
+  setenv("DESKTOP_SESSION", "sde-desktop", 1);
   setenv("SDE_SESSION_VERSION", SDE_VERSION, 1);
   if (env("XDG_SESSION_TYPE").empty()) setenv("XDG_SESSION_TYPE", "x11", 1);
   // Qt applications should follow GTK settings when no platform theme is set.
@@ -503,9 +516,14 @@ int main(int argc, char **argv) {
     start_component(g_components.back());
   }
   if (cfg.get("compositor", "mode", "auto") != "off") {
+    // A user's own compositor.conf wins; otherwise SDE Aero settings
+    // generate one (OpenGL blur, XRender if OpenGL is unavailable).
     std::string conf = config_home() + "/sde/compositor.conf";
-    if (!file_exists(conf)) conf = std::string(SDE_DATADIR) + "/compositor/sde.conf";
+    bool own = file_exists(conf);
+    if (!own) conf = write_compositor_config(cfg);
     Component compositor = make_component("SDE compositor", {"sde-compositor", "--config", conf}, false);
+    if (!own)
+      compositor.fallback = {"sde-compositor", "--config", write_compositor_config(cfg, true)};
     compositor.max_restarts = 1;
     g_components.push_back(compositor);
     start_component(g_components.back());

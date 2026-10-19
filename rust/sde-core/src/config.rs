@@ -176,7 +176,7 @@ mod tests {
         cfg.load(&[], &user);
         assert_eq!(cfg.get("appearance", "accent"), Some("user"));
         cfg.unset("appearance", "accent");
-        assert_eq!(cfg.get("appearance", "accent"), Some("#167D9A"));
+        assert_eq!(cfg.get("appearance", "accent"), Some("#2672BE"));
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             fs::metadata(&user).unwrap().permissions().mode() & 0o777,

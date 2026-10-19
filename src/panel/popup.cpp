@@ -31,6 +31,7 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
     XStoreName(fl_display, fl_xid(this), label());
     x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
   }
+  x11::set_opacity(fl_xid(this), panel->theme().popup_opacity);
   if (!native_children() || !panel->native_popup_input()) Fl::grab(this);
   // Override-redirect menus are outside WM focus management. Claim keyboard
   // focus explicitly, including after a GTK4 client has closed its window.

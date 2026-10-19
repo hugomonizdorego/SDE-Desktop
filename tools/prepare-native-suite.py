@@ -7,10 +7,13 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "suite"))
+import redesign  # noqa: E402  (SDE alpha10 suite redesign recipe)
 LOCK = ROOT / "suite/forks.lock.json"
 LEGAL = re.compile(r"^(COPYING|LICENSE|AUTHORS|COPYRIGHT|THANKS|TRADEMARK|ChangeLog|NEWS)", re.I)
 
@@ -45,7 +48,7 @@ def brand(text):
         return protect(match)
     text = re.sub(token, mask, text)
     text = re.sub(r"(?m)^\s*(?:\#(?!\s*(?:include|define|undef|if|ifdef|ifndef|elif|else|endif|error|warning|line|pragma)\b)|//).*?$", protect, text)
-    for old, new in [('org.mate.pluma', 'org.debion.niny'), ('org.mate.Pluma', 'org.debion.Niny'), ('org.mate.caja', 'org.debion.liria'), ('org.mate.Caja', 'org.debion.Liria'), ('org.mate.atril', 'org.debion.xanara'), ('org.mate.Atril', 'org.debion.Xanara'), ('org.mate.engrampa', 'org.debion.taca'), ('org.mate.eom', 'org.debion.sdeview'), ('org.mate.power-manager', 'org.debion.power-manager'), ('org.mate.system-monitor', 'org.debion.system-monitor'), ('org.mate.screensaver', 'org.debion.screensaver'), ('org.mate.PowerManager', 'org.debion.PowerManager'), ('org.mate.ScreenSaver', 'org.debion.ScreenSaver'), ('/org/mate/pluma', '/org/debion/niny'), ('/org/mate/caja', '/org/debion/liria'), ('/org/mate/atril', '/org/debion/xanara'), ('/org/mate/engrampa', '/org/debion/taca'), ('/org/mate/eom', '/org/debion/sdeview'), ('/org/mate/power-manager', '/org/debion/power-manager'), ('/org/mate/system-monitor', '/org/debion/system-monitor'), ('/org/mate/screensaver', '/org/debion/screensaver'), ('/org/mate/ScreenSaver', '/org/debion/ScreenSaver'), ('MATE System Monitor', 'SDE System Monitor'), ('MATE Power Manager', 'SDE Power Manager'), ('MATE Screensaver', 'SDE Screen Lock'), ('MATE ScreenSaver', 'SDE Screen Lock'), ('Eye of MATE', 'SDE View'), ('Eye of Mate', 'SDE View'), ('mate-system-monitor', 'sde-system-monitor'), ('mate_system_monitor', 'sde_system_monitor'), ('mate-power-manager', 'sde-power-manager'), ('mate_power_manager', 'sde_power_manager'), ('mate-power-preferences', 'sde-power-preferences'), ('mate-power-statistics', 'sde-power-statistics'), ('mate-screensaver', 'sde-screensaver'), ('mate_screensaver', 'sde_screensaver'), ('pluma', 'niny'), ('Pluma', 'Niny'), ('PLUMA', 'NINY'), ('caja', 'liria'), ('Caja', 'Liria'), ('CAJA', 'LIRIA'), ('atril', 'xanara'), ('Atril', 'Xanara'), ('ATRIL', 'XANARA'), ('engrampa', 'taca'), ('Engrampa', 'Taca'), ('ENGRAMPA', 'TACA'), ('libeom', 'libsdeview'), ('"System Monitor"', '"SDE System Monitor"'), ('"Power Preferences"', '"SDE Power Preferences"'), ('"Power Statistics"', '"SDE Power Statistics"')]:
+    for old, new in [('org.mate.pluma', 'org.debion.niny'), ('org.mate.Pluma', 'org.debion.Niny'), ('org.mate.caja', 'org.debion.liria'), ('org.mate.Caja', 'org.debion.Liria'), ('org.mate.atril', 'org.debion.xanara'), ('org.mate.Atril', 'org.debion.Xanara'), ('org.mate.engrampa', 'org.debion.taca'), ('org.mate.eom', 'org.debion.sdeview'), ('org.mate.power-manager', 'org.debion.power-manager'), ('org.mate.system-monitor', 'org.debion.system-monitor'), ('org.mate.screensaver', 'org.debion.screensaver'), ('org.mate.PowerManager', 'org.debion.PowerManager'), ('org.mate.ScreenSaver', 'org.debion.ScreenSaver'), ('/org/mate/pluma', '/org/debion/niny'), ('/org/mate/caja', '/org/debion/liria'), ('/org/mate/atril', '/org/debion/xanara'), ('/org/mate/engrampa', '/org/debion/taca'), ('/org/mate/eom', '/org/debion/sdeview'), ('/org/mate/power-manager', '/org/debion/power-manager'), ('/org/mate/system-monitor', '/org/debion/system-monitor'), ('/org/mate/screensaver', '/org/debion/screensaver'), ('/org/mate/ScreenSaver', '/org/debion/ScreenSaver'), ('MATE System Monitor', 'SDE System Monitor'), ('MATE Power Manager', 'SDE Power Manager'), ('MATE Screensaver', 'SDE Screen Lock'), ('MATE ScreenSaver', 'SDE Screen Lock'), ('Eye of MATE', 'Photo'), ('Eye of Mate', 'Photo'), ('SDE View', 'Photo'), ('mate-system-monitor', 'sde-system-monitor'), ('mate_system_monitor', 'sde_system_monitor'), ('mate-power-manager', 'sde-power-manager'), ('mate_power_manager', 'sde_power_manager'), ('mate-power-preferences', 'sde-power-preferences'), ('mate-power-statistics', 'sde-power-statistics'), ('mate-screensaver', 'sde-screensaver'), ('mate_screensaver', 'sde_screensaver'), ('pluma', 'niny'), ('Pluma', 'Niny'), ('PLUMA', 'NINY'), ('caja', 'liria'), ('Caja', 'Liria'), ('CAJA', 'LIRIA'), ('atril', 'xanara'), ('Atril', 'Xanara'), ('ATRIL', 'XANARA'), ('engrampa', 'taca'), ('Engrampa', 'Taca'), ('ENGRAMPA', 'TACA'), ('libeom', 'libsdeview'), ('"System Monitor"', '"SDE System Monitor"'), ('"Power Preferences"', '"SDE Power Preferences"'), ('"Power Statistics"', '"SDE Power Statistics"')]:
         text = text.replace(old, new)
     # Do not corrupt GTK geometry APIs when changing the eom namespace.
     text = text.replace("-DEOM_", "-DSDEVIEW_")
@@ -163,7 +166,9 @@ def prepare(record, cache, destination):
         if record["id"] == "sde-screensaver":
             pam = staged / "data/sde-screensaver"
             pam.write_text("# SDE screen lock: Debian PAM policy\n@include common-auth\n@include common-account\n@include common-session\n")
-        attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE changes: product/namespace/paths, GTK startup integration and Debian packaging.\n\n"
+        # SDE alpha10 redesign: overlays and checked source edits.
+        redesign.apply(record, staged)
+        attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE changes: product/namespace/paths, GTK startup integration, the SDE redesign\n(suite/redesign.py and suite/overlays) and Debian packaging.\n\n"
         (staged / "SDE-UPSTREAM-NOTICE").write_text(attribution)
         (staged / "SDE-COPYRIGHT-HEADERS").write_text("\n\n".join(notices))
         staged.rename(source)
@@ -177,7 +182,8 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "vendor/suite")
     args = parser.parse_args()
     lock = json.loads(LOCK.read_text())
-    expected = hashlib.sha256(LOCK.read_bytes() + Path(__file__).read_bytes() + (ROOT / "suite/sde-brand.h").read_bytes()).hexdigest()
+    recipe = b"".join(path.read_bytes() for path in redesign.inputs())
+    expected = hashlib.sha256(LOCK.read_bytes() + Path(__file__).read_bytes() + (ROOT / "suite/sde-brand.h").read_bytes() + recipe).hexdigest()
     marker = args.output / ".sde-fork-lock"
     if not args.apps and marker.exists() and marker.read_text().strip() == expected:
         print("SDE fork sources already prepared", flush=True)

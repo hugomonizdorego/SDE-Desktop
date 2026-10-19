@@ -128,8 +128,8 @@ try:
     click(icon,8/scale,8/scale)
     waitfor(lambda:log_has('XEMBED click'),'native child did not receive pointer input')
     shot('01-action-center')
-    # SNI lives immediately before the XEmbed host; activate with a real pointer.
-    hg=geom(str(host));run('xdotool','mousemove',hg['x']+round(14*scale),hg['y']-round(16*scale),'click','1')
+    # SNI shares the row immediately left of the XEmbed host; activate with a real pointer.
+    hg=geom(str(host));run('xdotool','mousemove',hg['x']-round(18*scale),hg['y']+hg['h']//2,'click','1')
     waitfor(lambda:'item: Activate' in (home/'sde-sni-demo.log').read_text(),'SNI Activate missing')
     run('xdotool','key','Escape');time.sleep(.4)
     assert parent(str(host))==int(panel),'tray failed to return on Escape'

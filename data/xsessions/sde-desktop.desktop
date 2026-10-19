@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SDE-Desktop
+GenericName=Selviana Desktop Environment
+Comment=Selviana Desktop Environment for DebION GNU/Linux - light, fast and translucent
+Exec=startsde
+TryExec=startsde
+Icon=sde-logo
+DesktopNames=SDE-Desktop;SDE;
+X-LightDM-DesktopName=SDE-Desktop

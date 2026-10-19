@@ -81,3 +81,94 @@ jobs:
             dist/*.deb
             dist/*sources*.tar.xz
             dist/*.sha256
+
+  # Keeps GitHub current after every successful build of main (or a manual
+  # run): a rolling "alpha-latest" pre-release with the Debian packages and
+  # sources, and the screenshot gallery in docs/screenshots/latest.
+  publish:
+    name: Publish alpha-latest and screenshots
+    needs: deb
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-alpha-latest
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: sde-debian-testing
+          path: packages
+      - uses: actions/download-artifact@v4
+        with:
+          name: sde-ui-smoke
+          path: smoke
+      - name: Rolling pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version=$(cat VERSION)
+          cd packages
+          sha256sum ./*.deb ./*.tar.xz > SHA256SUMS
+          cd ..
+          {
+            echo "Automatic build of \`$GITHUB_SHA\` (SDE $version, Debian testing / DebION, amd64)."
+            echo
+            echo "This is alpha software for testing. Install both packages with:"
+            echo
+            echo '```sh'
+            echo 'sha256sum -c SHA256SUMS --ignore-missing'
+            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb'
+            echo '```'
+            echo
+            echo "Then choose **SDE-Desktop** at the login screen."
+            echo "Screenshots: docs/screenshots/latest/README.md"
+          } > notes.md
+          gh release delete alpha-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+          gh release create alpha-latest packages/*.deb packages/*.tar.xz packages/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "SDE $version (latest alpha build)" --notes-file notes.md
+      - name: Update the screenshot gallery
+        continue-on-error: true
+        run: |
+          set -eu
+          dest=docs/screenshots/latest
+          rm -rf "$dest" && mkdir -p "$dest"
+          pick() { [ -f "smoke/$1" ] && convert "smoke/$1" -strip -define png:compression-level=9 "$dest/$2" || true; }
+          sudo apt-get install -y --no-install-recommends imagemagick >/dev/null
+          pick ui-smoke/01-action-center-light.png 01-action-center.png
+          pick ui-smoke/05-action-center-dark.png 02-action-center-dark.png
+          pick ui-smoke/00-start-menu.png 03-start-menu.png
+          pick ui-smoke/02-settings-overview.png 04-settings.png
+          pick ui-smoke/10-engine-liria.png 05-liria.png
+          pick ui-smoke/10-engine-niny.png 06-niny.png
+          pick ui-smoke/10-engine-sde-view.png 07-photo.png
+          pick ui-smoke/10-engine-photo-effects.png 08-photo-effects.png
+          pick ui-smoke/10-engine-xanara.png 09-xanara.png
+          pick ui-smoke/10-engine-taca.png 10-taca.png
+          pick ui-smoke/11-calculator-native.png 11-calculator.png
+          pick ui-smoke/09-update.png 12-update.png
+          pick panel-smoke/01-action-center.png 13-panel-tray.png
+          {
+            echo "# Latest SDE screenshots"
+            echo
+            echo "Captured automatically by CI from the native programs on a virtual X11"
+            echo "display (commit \`$GITHUB_SHA\`). Network, sound and Bluetooth values are test fixtures."
+            echo
+            for f in "$dest"/*.png; do
+              b=$(basename "$f"); echo "![${b%.png}]($b)"; echo
+            done
+          } > "$dest/README.md"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          if git diff --cached --quiet; then echo "Screenshots unchanged"; exit 0; fi
+          git commit -m "Update latest screenshots [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
