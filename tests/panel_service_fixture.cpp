@@ -3,6 +3,7 @@
 #include <FL/Fl.H>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 #include <cstdio>
 #include <fstream>
@@ -134,6 +135,17 @@ DBusHandlerResult handle(DBusMessage* m) {
     changed(device, "org.bluez.Device1");
   } else if (path == "/SDETest" && method == "Mode" && !args.empty()) {
     auto mode = args[0].str();
+    if (mode == "tray-grow") XResizeWindow(display, icon, 140, 96);
+    if (mode == "tray-sound" || mode == "tray-ordinary") {
+      XClassHint hint{const_cast<char *>("qa-icon"), const_cast<char *>(mode == "tray-sound" ? "Pasystray" : "SDE-QA-App")};
+      XSetClassHint(display, icon, &hint);
+    }
+    if (mode == "tray-hide" || mode == "tray-show") {
+      Atom atom = XInternAtom(display, "_XEMBED_INFO", False);
+      unsigned long values[] = {0, mode == "tray-show" ? 1UL : 0UL};
+      XChangeProperty(display, icon, atom, atom, 32, PropModeReplace, reinterpret_cast<unsigned char *>(values), 2);
+    }
+    XFlush(display);
     adapter_present = mode != "no-adapter";
     device_present = mode != "no-device";
     control = mode != "no-control";

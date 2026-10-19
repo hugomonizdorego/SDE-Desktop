@@ -21,6 +21,8 @@ struct Value;
 }  // namespace dbus
 }  // namespace sde
 
+struct Fl_Menu_Item;
+
 class SniHost {
  public:
   struct Item {
@@ -36,7 +38,8 @@ class SniHost {
     bool loaded = false;
   };
 
-  explicit SniHost(std::function<void()> changed);
+  using MenuFn = std::function<const Fl_Menu_Item *(const Fl_Menu_Item *, int)>;
+  explicit SniHost(std::function<void()> changed, MenuFn menu = {});
   ~SniHost();
 
   // Connects to the session bus. Returns false when D-Bus is unavailable.
@@ -44,6 +47,8 @@ class SniHost {
 
   // Items that should be shown (Status != Passive, properties loaded).
   std::vector<const Item *> visible_items() const;
+  void set_native_roles(unsigned roles) { native_roles_ = roles; }
+  bool has_input_indicator() const;
 
   // Icon for |item| at |size| pixels (not owned; may be nullptr).
   cairo_surface_t *icon(const Item &item, int size) const;
@@ -64,7 +69,9 @@ class SniHost {
   void emit_watcher_signal(const char *member, const std::string &arg);
 
   std::function<void()> changed_;
+  MenuFn menu_;
   sde::dbus::Bus *bus_ = nullptr;
   bool own_watcher_ = false;
+  unsigned native_roles_ = 0;
   std::vector<std::unique_ptr<Item>> items_;
 };

@@ -26,6 +26,37 @@ jobs:
           rustup toolchain install 1.59.0 --profile minimal
           cargo +1.59.0 test --workspace --locked --offline
 
+  panel-sanitizers:
+    name: Panel memory safety
+    runs-on: ubuntu-latest
+    container: debian:testing
+    env:
+      ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - name: Install core build and GUI test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake pkgconf rustc cargo libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxrandr-dev libxi-dev libxft-dev libdbus-1-dev gettext python3 xvfb xdotool imagemagick dbus-daemon dbus-x11 x11-xserver-utils x11-utils x11-xkb-utils xinput xsettingsd fonts-dejavu-core adwaita-icon-theme
+      - uses: actions/checkout@v4
+      - name: Build instrumented core
+        run: |
+          cmake -S . -B build-asan -DSDE_BUILD_NATIVE_SUITE=OFF -DSDE_BUILD_COMPONENTS=OFF -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer' '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'
+          cmake --build build-asan -j2
+          cmake --install build-asan
+      - name: D-Bus and panel regressions under sanitizers
+        run: |
+          ctest --test-dir build-asan --output-on-failure
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir build-asan/tests --output-dir dist/panel-asan
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir build-asan/tests --size 1024x600 --scale 150 --output-dir dist/panel-asan-small
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sde-panel-sanitizers
+          path: |
+            build-asan/Testing/Temporary/
+            dist/panel-asan*/
+
   deb:
     name: ${{ matrix.image }}
     runs-on: ubuntu-latest

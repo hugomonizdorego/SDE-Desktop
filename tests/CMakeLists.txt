@@ -51,3 +51,16 @@ endif()
 # Used after the full DebION profile is installed, not shipped in the DE.
 add_executable(sde-menu-probe installed_menu_probe.cpp)
 target_link_libraries(sde-menu-probe PRIVATE sde-common)
+
+# Real libdbus/FLTK lifetime regressions; each probe owns a private test bus.
+add_executable(sde-dbus-lifecycle-tests test_dbus_lifecycle.cpp)
+target_link_libraries(sde-dbus-lifecycle-tests PRIVATE sde-common)
+target_compile_options(sde-dbus-lifecycle-tests PRIVATE -UNDEBUG)
+add_executable(sde-sni-lifecycle-tests test_sni_lifecycle.cpp ../src/panel/sni.cpp)
+target_link_libraries(sde-sni-lifecycle-tests PRIVATE sde-common)
+target_compile_options(sde-sni-lifecycle-tests PRIVATE -UNDEBUG)
+if(SDE_XVFB)
+  add_test(NAME sde-dbus-lifecycle COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_dbus_probe.py $<TARGET_FILE:sde-dbus-lifecycle-tests>)
+  add_test(NAME sde-sni-lifecycle COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/run_dbus_probe.py $<TARGET_FILE:sde-sni-lifecycle-tests> $<TARGET_FILE:sde-sni-demo>)
+  set_tests_properties(sde-dbus-lifecycle sde-sni-lifecycle PROPERTIES TIMEOUT 25)
+endif()

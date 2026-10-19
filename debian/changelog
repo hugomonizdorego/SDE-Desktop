@@ -1,3 +1,13 @@
+sde (0.1.0~alpha12) unstable; urgency=medium
+
+  * Open Action Center through the clock; remove duplicate panel launchers.
+  * Keep tray menu endpoints alive when their provider disappears.
+  * Protect D-Bus timeout/watch registrations against removal during callbacks.
+  * Deduplicate system applets and constrain XEmbed size and mapping state.
+  * Install user-session and real-time audio integration dependencies.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 19 Oct 2026 20:50:00 +0900
+
 sde (0.1.0~alpha11) unstable; urgency=medium
 
   * Install the complete DebION complementary application and service profile.

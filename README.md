@@ -2,7 +2,7 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 11** (`0.1.0~alpha11`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 12** (`0.1.0~alpha12`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
 
@@ -56,7 +56,7 @@ and [source credits](docs/THIRD-PARTY.md). CI also uploads native application ca
 are available in the DebION repository. The metapackage installs the session,
 suite, Xorg, login, network, sound and media services. No DebION repository is
 created by this project. The full profile uses the signed official Mozilla source for Firefox release.
-See [DebION packages and default applications](docs/DEBION.md) and [Alpha 11 installation](docs/ALPHA11.md).
+See [DebION packages and default applications](docs/DEBION.md) and [Alpha 12 panel fixes and installation](docs/ALPHA12.md).
 
 ![Native Niny editor in SDE](docs/screenshots/alpha7/05-native-niny.png)
 
@@ -98,9 +98,10 @@ Wi-Fi).
 
 Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
-Download the Alpha 11 packages, installer and matching sources from the latest
-successful [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39224810528/artifacts/12174101625)
-(`sde-debian-testing` artifact). Extract the ZIP, verify checksums, then install:
+Download the matching Alpha 12 packages, installer and sources from the
+[Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions)
+(`sde-debian-testing` artifact). See [Alpha 12 validation](docs/ALPHA12.md).
+Extract the ZIP, verify checksums, then install:
 
 ```sh
 sha256sum -c SHA256SUMS.sha256
@@ -114,7 +115,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test Alpha 11; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
+test Alpha 12; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -239,6 +240,15 @@ is not required. This remains a development alpha for DebION / Debian testing.
 [Gallery Alpha 10 screenshots](docs/screenshots/alpha10/README.md) · [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39214607984)
 
 ![Gallery native About](docs/screenshots/alpha10/03-gallery-about.png)
+
+### Alpha 12 — panel crash and indicators
+
+The clock is the panel entry to Action Center. Separate Action Center buttons
+and the permanent tray arrow are removed. Known system applet icons are hidden
+when their function is represented by a native indicator, while application
+icons remain available. Tray sizes and mapped state are enforced. A reproducible
+crash when an applet disappears during its menu is fixed, along with D-Bus
+registration lifetimes. See [Alpha 12](docs/ALPHA12.md).
 
 ### Alpha 11 — DebION application profile
 

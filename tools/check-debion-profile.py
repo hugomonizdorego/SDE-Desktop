@@ -20,7 +20,8 @@ celluloid rhythmbox onboard gufw system-config-printer system-config-printer-ude
 synaptic gdebi gnome-terminal pipewire pipewire-alsa pipewire-pulse wireplumber
 libspa-0.2-bluetooth gamemode systemd-resolved systemd-timesyncd lightdm
 lightdm-settings slick-greeter blueman bluez papirus-icon-theme network-manager
-nm-connection-editor wpasupplicant wireless-regdb libpam-gnome-keyring libmpv2'''.split()
+nm-connection-editor wpasupplicant wireless-regdb libpam-gnome-keyring libmpv2
+dbus-user-session libpam-systemd rtkit'''.split()
 for name in required:
     state = subprocess.check_output(['dpkg-query', '-W', '-f=${db:Status-Abbrev}', name], text=True)
     assert state.startswith('ii'), (name, state)

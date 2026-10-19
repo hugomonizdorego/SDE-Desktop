@@ -16,6 +16,7 @@ p.add_argument('--output-dir',type=Path,default=Path('dist/panel-smoke'))
 p.add_argument('--size',default='1366x768')
 p.add_argument('--scale',type=int,default=100)
 p.add_argument('--tcp-display',action='store_true')
+p.add_argument('--race-only',action='store_true',help='Only reproduce a provider disappearing during its menu')
 p.add_argument('--tcp-bus',action='store_true',help='Private localhost bus for containers without Unix sockets')
 a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
@@ -71,6 +72,21 @@ def below_tray(ac,offset,x=190):
 def log_has(text):return text in (home/'service.log').read_text()
 def mode(name):
     run('dbus-send','--session','--type=method_call','--print-reply','--dest=org.bluez','/SDETest','org.sde.Test.Mode','string:'+name);time.sleep(.8)
+def disappearing_menu(sni):
+    # The provider disappears during the nested menu event loop. The menu and
+    # the callback's copied endpoint must outlive its removed SNI item/widget.
+    sni.terminate();sni.wait();time.sleep(.5)
+    dying=spawn(str(a.test_dir.resolve()/'sde-sni-demo'),'--quit-on-menu','--alias')
+    time.sleep(.8);ac=open_section('tray');time.sleep(.4)
+    hg=geom(str(host))
+    run('xdotool','mousemove',hg['x']+round(14*scale),hg['y']-round(16*scale),'click','3')
+    waitfor(lambda:dying.poll() is not None,'menu provider did not exit')
+    time.sleep(.3)
+    run('xdotool','key','Down','Return');time.sleep(.5)
+    assert panel_proc.poll() is None,'provider exit during tray menu crashed panel'
+    shot('11-disconnected-menu-safe')
+    run('xdotool','key','Escape');time.sleep(.3)
+
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
 import sys,os
 from pathlib import Path
@@ -136,6 +152,10 @@ try:
     pg=geom(panel);click(panel,pg['w']/scale-80,pg['h']/scale/2)
     ac=find('^Action Center$');time.sleep(.4);bounds(ac,panel)
     run('xdotool','key','Escape');time.sleep(.4)
+    if a.race_only:
+        disappearing_menu(sni)
+        print('MENU DISCONNECT: PASS',flush=True)
+        raise SystemExit(0)
     ac=open_section('network');bounds(ac,panel);shot('02-network-lan-wifi')
     run('xdotool','mousemove','10','10','click','1');time.sleep(.4)
     assert parent(str(host))==int(panel),'outside click failed to restore tray'
@@ -189,8 +209,24 @@ try:
     run('xdotool','key','Escape');time.sleep(.4)
     for style,top in [('short',False),('floating',True),('full',True)]:
         config(style,top,theme='dark');reload();ac=open_section('overview');bounds(ac,panel,top);shot('08-'+style+('-top' if top else '-bottom'));run('xdotool','key','Escape');time.sleep(.3)
+    # GtkStatusIcon clients can request an oversized window or hide themselves.
+    config();reload()
+    mode('tray-grow')
+    waitfor(lambda:geom(icon)['w']==round(20*scale) and geom(icon)['h']==round(20*scale),'XEmbed escaped its fixed icon slot')
+    mode('tray-hide')
+    waitfor(lambda:not run('xdotool','search','--onlyvisible','--name','^SDE XEmbed fixture$',check=False).stdout.strip(),'unmapped XEmbed still visible')
+    mode('tray-show')
+    waitfor(lambda:bool(run('xdotool','search','--onlyvisible','--name','^SDE XEmbed fixture$',check=False).stdout.strip()),'XEmbed failed to remap')
+    mode('tray-sound')
+    waitfor(lambda:not run('xdotool','search','--onlyvisible','--name','^SDE XEmbed fixture$',check=False).stdout.strip(),'duplicate system sound icon visible')
+    cfg=home/'.config/sde/sde.conf'
+    cfg.write_text(cfg.read_text().replace('[panel]\n','[panel]\nshow_sound=false\n'))
+    reload()
+    waitfor(lambda:bool(run('xdotool','search','--onlyvisible','--name','^SDE XEmbed fixture$',check=False).stdout.strip()),'provider icon not restored when native indicator disabled')
+    mode('tray-ordinary');config();reload()
+    disappearing_menu(sni)
     config(moved=False);reload();ac=open_section('tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('09-keep-status-on-panel');run('xdotool','key','Escape')
-    fixture.terminate();fixture.wait();sni.terminate();sni.wait();time.sleep(.6)
+    fixture.terminate();fixture.wait();time.sleep(.6)
     assert panel_proc.poll() is None,'service disappearance crashed panel'
     ac=open_section('bluetooth');shot('10-services-disconnected');run('xdotool','key','Escape')
     print('PANEL: corner placement, status/tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh and panel styles PASS',flush=True)

@@ -68,6 +68,9 @@ settings, and in Slick Greeter. Explicit SDE icon choices remain configurable.
 
 ## Services
 
+- `dbus-user-session` and `libpam-systemd` provide the per-user D-Bus and login
+  session expected by desktop services. `rtkit` supplies on-demand real-time
+  scheduling for audio services.
 - NetworkManager with `nm-connection-editor`, `wpasupplicant` and `wireless-regdb`
   handles wired and Wi-Fi connections. The native panel already provides network
   controls, so a second NetworkManager tray applet is unnecessary.

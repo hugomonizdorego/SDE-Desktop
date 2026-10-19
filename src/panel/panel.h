@@ -84,7 +84,7 @@ class Panel : public sde::BufferedWindow {
   static Panel *instance;
 
  private:
-  enum Hit { NONE, START, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP };
+  enum Hit { NONE, START, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, SHOW_DESKTOP };
   enum StatusIcon {
     INPUT_STATUS,
     BLUETOOTH_STATUS,
@@ -92,9 +92,7 @@ class Panel : public sde::BufferedWindow {
     POWER_STATUS,
     MEDIA_STATUS,
     NETWORK_STATUS,
-    SOUND_STATUS,
-    CONTROLS_STATUS,
-    OVERFLOW_STATUS
+    SOUND_STATUS
   };
   struct Target {
     Hit kind = NONE;
@@ -148,7 +146,6 @@ class Panel : public sde::BufferedWindow {
   int start_w_ = 0, pin_w_ = 0, tasks_x_ = 0, tasks_end_ = 0, tray_x_ = 0, sni_x_ = 0, sni_w_ = 0,
       status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0;
   int icon_ = 24, tray_icon_ = 22;
-  int action_x_ = 0, action_w_ = 0;
   std::vector<StatusIcon> status_icons_;
   bool compact_status_ = false;
   Display *input_display_ = nullptr;

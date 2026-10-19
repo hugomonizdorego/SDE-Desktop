@@ -27,6 +27,7 @@
 #include "sni.h"
 #include "spawn.h"
 #include "tray.h"
+#include "indicator_policy.h"
 #include "util.h"
 #include "wm.h"
 #include "x11.h"
@@ -198,7 +199,7 @@ void Panel::setup() {
     relayout();
     redraw();
     quick_->status_changed();
-  }));
+  }, [this](const Fl_Menu_Item *items, int x) { return popup_menu(items, x); }));
   sni_->start();
   SystemStatus::get().start([this] {
     relayout();
@@ -420,12 +421,6 @@ void Panel::status_clicked(int index, int button) {
       else
         open_action_center("sound");
       break;
-    case CONTROLS_STATUS:
-      open_action_center();
-      break;
-    case OVERFLOW_STATUS:
-      open_action_center("tray");
-      break;
   }
 }
 
@@ -452,27 +447,32 @@ void Panel::relayout() {
   clock_x_ = right - clock_w_;
   right = clock_x_ - S(2);
 
-  action_w_ = S(34);
-  action_x_ = show_desktop_x_ - S(2) - action_w_;
-  // Clock is next to the SDE Action Center button, like the reference panel.
-  clock_x_ = action_x_ - clock_w_ - S(2);
-  right = clock_x_ - S(4);
   status_icons_.clear();
   const auto &s = SystemStatus::get();
   const auto &controls = PanelControls::get();
   auto add = [&](StatusIcon icon, const char *key, bool available = true) {
     if (available && cfg_.get_bool("panel", key, true)) status_icons_.push_back(icon);
   };
-  add(OVERFLOW_STATUS, "show_tray");
-  add(INPUT_STATUS, "show_keyboard");
+  add(INPUT_STATUS, "show_keyboard", !((sni_ && sni_->has_input_indicator()) ||
+                                       (tray_ && tray_->has_input_indicator())));
   add(BLUETOOTH_STATUS, "show_bluetooth", !controls.adapters.empty());
   add(BATTERY_STATUS, "show_battery", s.battery.present);
   add(POWER_STATUS, "show_power");
-  add(MEDIA_STATUS, "show_media");
+  add(MEDIA_STATUS, "show_media", !controls.players().empty());
   add(NETWORK_STATUS, "show_network", s.network.available);
   add(SOUND_STATUS, "show_sound", s.audio.available);
-  add(CONTROLS_STATUS, "show_controls");
-  int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
+  unsigned native_roles = 0;
+  for (auto icon : status_icons_) {
+    if (icon == BATTERY_STATUS) native_roles |= indicator::Battery;
+    if (icon == BLUETOOTH_STATUS) native_roles |= indicator::Bluetooth;
+    if (icon == NETWORK_STATUS) native_roles |= indicator::Network;
+    if (icon == SOUND_STATUS) native_roles |= indicator::Sound;
+  }
+  if (sni_) sni_->set_native_roles(native_roles);
+  if (tray_) tray_->set_native_roles(native_roles);
+  bool show_tray = cfg_.get_bool("panel", "show_tray", true);
+  int sn = show_tray && sni_ ? int(sni_->visible_items().size()) : 0;
+  int tw = show_tray && tray_ ? tray_->width() : 0;
   compact_status_ =
       status_in_center() || right - start_w_ - S(100) <
                                 int(status_icons_.size()) * S(26) + sn * (tray_icon_ + S(10)) + tw;
@@ -486,7 +486,7 @@ void Panel::relayout() {
   tw = compact_status_ ? 0 : tw;
   tray_x_ = right - tw;
   if (tray_ && !status_in_center()) {
-    if (compact_status_)
+    if (compact_status_ || !show_tray)
       tray_->hide();
     else {
       tray_->set_background(theme_.surface.fl() >> 8);
@@ -535,7 +535,6 @@ Panel::Target Panel::hit(int x, int y) const {
   if (status_w_ && x >= status_x_ && x < status_x_ + status_w_)
     return {STATUS, std::max(0, (x - status_x_) / S(26))};
   if (x >= clock_x_ && x < clock_x_ + clock_w_) return {CLOCK, 0};
-  if (x >= action_x_ && x < action_x_ + action_w_) return {ACTION_CENTER, 0};
   if (x >= show_desktop_x_) return {SHOW_DESKTOP, 0};
   return t;
 }
@@ -611,7 +610,7 @@ void Panel::draw() {
 
     // Application tray indicators keep their native icons; system controls
     // use a consistent monochrome Cairo set, independent of the GTK theme.
-    if (sni_ && !compact_status_) {
+    if (sni_ && sni_w_ && !compact_status_) {
       auto items = sni_->visible_items();
       for (size_t i = 0; i < items.size(); ++i) {
         int bx = sni_x_ + int(i) * (tray_icon_ + S(10));
@@ -663,24 +662,8 @@ void Panel::draw() {
                                                     : 0,
                          system.audio.muted, t.text);
           break;
-        case CONTROLS_STATUS:
-          glyph::sliders(p, gx, gy, gs, t.text);
-          break;
-        case OVERFLOW_STATUS: {
-          auto *cr = p.cr();
-          cairo_move_to(cr, gx + gs * .25, gy + gs * .6);
-          cairo_line_to(cr, gx + gs * .5, gy + gs * .35);
-          cairo_line_to(cr, gx + gs * .75, gy + gs * .6);
-          p.set(t.text);
-          cairo_set_line_width(cr, Sd(1.5));
-          cairo_stroke(cr);
-          break;
-        }
       }
     }
-    button_bg(action_x_, action_w_, {ACTION_CENTER, 0}, quick_ && quick_->is_open());
-    p.fill_rounded(action_x_ + S(5), S(7), action_w_ - S(10), H - S(14), S(5), t.accent);
-    glyph::sliders(p, action_x_ + (action_w_ - gs) / 2., gy, gs, t.on_accent);
     button_bg(clock_x_, clock_w_, {CLOCK, 0}, quick_ && quick_->is_open());
     if (hover_ == Target{SHOW_DESKTOP, 0})
       p.fill_rect(show_desktop_x_, 0, W - show_desktop_x_, H, t.hover);
@@ -739,11 +722,11 @@ int Panel::handle(int event) {
         } else if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size())) {
           const char *names[] = {_("Keyboard"), _("Bluetooth"),     _("Battery"),
                                  _("Power"),    _("Media players"), _("Network"),
-                                 _("Sound"),    _("Action Center"), _("System tray")};
+                                 _("Sound")};
           tip = names[int(status_icons_[size_t(t.index)])];
           if (status_icons_[size_t(t.index)] == INPUT_STATUS)
             tip += " · " + PanelControls::get().keyboard;
-        } else if (t.kind == ACTION_CENTER || t.kind == CLOCK)
+        } else if (t.kind == CLOCK)
           tip = _("Action Center · Super+A");
         copy_tooltip(tip.c_str());
         redraw();
@@ -801,7 +784,7 @@ int Panel::handle(int event) {
       int button = Fl::event_button();
       if (button == FL_RIGHT_MOUSE &&
           (t.kind == NONE || t.kind == START || t.kind == CLOCK || t.kind == SHOW_DESKTOP ||
-           t.kind == STATUS || t.kind == ACTION_CENTER)) {
+           t.kind == STATUS)) {
         show_context_menu();
         return 1;
       }
@@ -823,9 +806,6 @@ int Panel::handle(int event) {
           break;
         case STATUS:
           status_clicked(t.index, button);
-          break;
-        case ACTION_CENTER:
-          open_action_center();
           break;
         case CLOCK:
           open_action_center();

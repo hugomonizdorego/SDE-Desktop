@@ -12,7 +12,8 @@
 
 #include "dbus.h"
 #include "icons.h"
-#include "panel.h"
+#include "indicator_policy.h"
+#include <set>
 #include "util.h"
 
 using namespace sde;
@@ -62,7 +63,8 @@ std::string menu_label(const std::string &in) {
 
 }  // namespace
 
-SniHost::SniHost(std::function<void()> changed) : changed_(std::move(changed)) {}
+SniHost::SniHost(std::function<void()> changed, MenuFn menu)
+    : changed_(std::move(changed)), menu_(std::move(menu)) {}
 
 SniHost::~SniHost() {
   for (auto &i : items_) {
@@ -306,9 +308,19 @@ void SniHost::apply_properties(Item &item, const dbus::Value &props) {
 
 std::vector<const SniHost::Item *> SniHost::visible_items() const {
   std::vector<const Item *> out;
-  for (auto &i : items_)
-    if (i->loaded && i->status != "Passive") out.push_back(i.get());
+  std::set<std::string> endpoints;
+  for (const auto &i : items_) {
+    if (!i->loaded || i->status == "Passive" || (unsigned(indicator::role(i->id)) & native_roles_)) continue;
+    const std::string endpoint = (i->owner.empty() ? i->service : i->owner) + i->path;
+    if (endpoints.insert(endpoint).second) out.push_back(i.get());
+  }
   return out;
+}
+
+bool SniHost::has_input_indicator() const {
+  for (const auto &i : items_)
+    if (i->loaded && i->status != "Passive" && indicator::role(i->id) == indicator::Input) return true;
+  return false;
 }
 
 cairo_surface_t *SniHost::icon(const Item &item, int size) const {
@@ -380,12 +392,13 @@ void SniHost::context_menu(const Item &item, int x, int y) {
 }
 
 bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
+  const std::string service = item.service, menu_path = item.menu_path;
   const char *iface = "com.canonical.dbusmenu";
-  DBusMessage *about = dbus::method(item.service, item.menu_path, iface, "AboutToShow");
+  DBusMessage *about = dbus::method(service, menu_path, iface, "AboutToShow");
   dbus::Writer(about).i32(0);
   if (DBusMessage *r = bus_->call(about, 500)) dbus_message_unref(r);
 
-  DBusMessage *get = dbus::method(item.service, item.menu_path, iface, "GetLayout");
+  DBusMessage *get = dbus::method(service, menu_path, iface, "GetLayout");
   dbus::Writer(get).i32(0).i32(-1).strings(
       {"type", "label", "enabled", "visible", "toggle-type", "toggle-state", "children-display"});
   DBusMessage *reply = bus_->call(get, 1500);
@@ -435,9 +448,10 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
   menu.push_back(Fl_Menu_Item{});
 
   (void)y;
-  const Fl_Menu_Item *picked = Panel::instance->popup_menu(menu.data(), x);
+  if (!menu_) return false;
+  const Fl_Menu_Item *picked = menu_(menu.data(), x);
   if (!picked || (picked->flags & FL_SUBMENU)) return true;
-  DBusMessage *ev = dbus::method(item.service, item.menu_path, iface, "Event");
+  DBusMessage *ev = dbus::method(service, menu_path, iface, "Event");
   {
     dbus::Writer w(ev);
     w.i32(int32_t(reinterpret_cast<intptr_t>(picked->user_data_))).str("clicked").variant_i32(0).u32(0);

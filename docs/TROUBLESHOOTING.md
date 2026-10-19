@@ -54,6 +54,24 @@ SDE shows both XEmbed icons and StatusNotifierItem/AppIndicator icons. Only one
 program can own each tray; if another panel or tray runs in the session, SDE logs
 "another system tray is running" in the session log.
 
+Alpha 12 intentionally hides a known system applet icon when a native SDE
+indicator already covers its function. The applet still runs. Disable the
+corresponding native indicator in Panel settings to show the provider's icon.
+Ordinary application icons remain in the tray; when Action Center is open they
+move there by default. Click the clock to open it. An IBus/Fcitx indicator takes
+the place of the generic keyboard icon.
+
+## Panel stops with signal 11
+
+Alpha 12 fixes a reproducible crash caused by an applet exiting while its tray
+menu was open. Update the matching desktop packages using the artifact installer
+and log out/in. `apt install --fix-broken` resolves missing packages but does not
+repair this memory-lifetime bug in older panel binaries.
+
+For a further crash, include `sde-panel --version`, the actions immediately before
+it stopped, and `~/.local/state/sde/session.log` in the report. The screenshot
+alone does not identify every possible crash cause.
+
 ## Display settings were not restored
 
 Saved layouts are only applied when the same monitors are connected

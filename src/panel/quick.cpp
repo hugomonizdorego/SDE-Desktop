@@ -700,7 +700,8 @@ void QuickSettings::rebuild_timeout(void *data) {
     self->rebuild_pending_ = false;
     return;
   }
-  if (Fl::pushed() && Fl::pushed()->window() == self) {
+  if ((Fl::grab() && Fl::grab() != self) || Fl::modal() ||
+      (Fl::pushed() && Fl::pushed()->window() == self)) {
     Fl::add_timeout(.1, rebuild_timeout, data);
     return;
   }

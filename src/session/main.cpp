@@ -187,8 +187,11 @@ void show_rescue(const std::string &problem) {
   std::string text = std::string(_("Selviana Desktop Environment could not start correctly.")) +
                      "\n\n" + problem + "\n\n" +
                      format(_("Details are in %s."), log_path().c_str()) + "\n" +
-                     _("Run \"sde-session --check\" in a terminal to find missing packages,\n"
-                       "then install them with: sudo apt install --fix-broken");
+                     (problem.find("killed by signal") != std::string::npos
+                      ? _("Run \"sde-session --check\" for a component report.\n"
+                          "Keep the session log when reporting this crash.")
+                      : _("Run \"sde-session --check\" in a terminal to find missing packages,\n"
+                          "then install them with: sudo apt install --fix-broken"));
   std::string buttons = std::string(_("Open Terminal")) + ":10," + _("Log Out") + ":11," +
                         _("Continue") + ":12";
   log("showing the rescue dialog: %s", problem.c_str());

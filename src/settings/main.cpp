@@ -663,8 +663,7 @@ void build_panel(Page *page) {
            {"show_media", _("Media player button")},
            {"show_network", _("Network indicator")},
            {"show_sound", _("Sound indicator")},
-           {"show_controls", _("Quick controls button")},
-           {"show_tray", _("System tray button")}})
+           {"show_tray", _("Application tray icons")}})
     page->switch_row(item.second, g_cfg.get_bool("panel", item.first, true),
                      [key = item.first](bool on) { set_bool("panel", key.c_str(), on); });
   page->end_card();
