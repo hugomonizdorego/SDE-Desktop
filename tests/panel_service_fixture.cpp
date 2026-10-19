@@ -136,8 +136,8 @@ DBusHandlerResult handle(DBusMessage* m) {
   } else if (path == "/SDETest" && method == "Mode" && !args.empty()) {
     auto mode = args[0].str();
     if (mode == "tray-grow") XResizeWindow(display, icon, 140, 96);
-    if (mode == "tray-sound" || mode == "tray-ordinary") {
-      XClassHint hint{const_cast<char *>("qa-icon"), const_cast<char *>(mode == "tray-sound" ? "Pasystray" : "SDE-QA-App")};
+    if (mode == "tray-sound" || mode == "tray-input" || mode == "tray-ordinary") {
+      XClassHint hint{const_cast<char *>("qa-icon"), const_cast<char *>(mode == "tray-sound" ? "Pasystray" : mode == "tray-input" ? "Fcitx" : "SDE-QA-App")};
       XSetClassHint(display, icon, &hint);
     }
     if (mode == "tray-hide" || mode == "tray-show") {

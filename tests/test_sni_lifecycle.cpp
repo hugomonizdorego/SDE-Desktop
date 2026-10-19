@@ -43,6 +43,10 @@ int main(int argc, char **argv) {
   stop(transient);
   for (int i = 0; i < 50; ++i) Fl::wait(.01);
   assert(host.visible_items().size() == 1);
+  auto input = start("--id=ibus");
+  wait_for([&] { return host.has_input_indicator() && host.visible_items().size() == 2; });
+  stop(input);
+  wait_for([&] { return !host.has_input_indicator() && host.visible_items().size() == 1; });
   stop(app);
   wait_for([&] { return host.visible_items().empty(); });
   std::cout << "SNI: aliases, native replacement, ordinary apps and disappearing owners passed.\n";

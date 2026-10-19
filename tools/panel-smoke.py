@@ -224,6 +224,12 @@ try:
     reload()
     waitfor(lambda:bool(run('xdotool','search','--onlyvisible','--name','^SDE XEmbed fixture$',check=False).stdout.strip()),'provider icon not restored when native indicator disabled')
     mode('tray-ordinary');config();reload()
+    previous_x=geom(str(host))['x']
+    mode('tray-input')
+    waitfor(lambda:geom(str(host))['x']==previous_x+round(26*scale),'IME provider did not replace native keyboard indicator')
+    ac=open_section('overview');shot('12-ime-provider');run('xdotool','key','Escape');time.sleep(.3)
+    mode('tray-ordinary')
+    waitfor(lambda:geom(str(host))['x']==previous_x,'native keyboard indicator not restored after IME exit')
     disappearing_menu(sni)
     config(moved=False);reload();ac=open_section('tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('09-keep-status-on-panel');run('xdotool','key','Escape')
     fixture.terminate();fixture.wait();time.sleep(.6)

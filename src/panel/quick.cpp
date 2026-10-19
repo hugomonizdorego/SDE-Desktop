@@ -664,14 +664,18 @@ std::string QuickSettings::structure() const {
   for (const auto &a : c.streams) out << '|' << a.id << a.app << a.title << a.muted;
   for (const auto &d : c.devices)
     out << '|' << d.device << d.state << d.connection << d.ip << d.gateway << d.dns;
-  if (auto *h = Panel::instance->status_notifiers())
+  if (auto *h = Panel::instance->status_notifiers()) {
+    out << h->has_input_indicator();
     for (auto *i : h->visible_items()) out << '|' << i->service << i->path << i->title << i->status;
-  if (auto *tray = Panel::instance->legacy_tray()) out << tray->count();
+  }
+  if (auto *tray = Panel::instance->legacy_tray()) out << tray->count() << tray->has_input_indicator();
   for (const char *key :
        {"show_clock", "show_greeting", "clock_style", "multicolor", "move_status", "show_media",
         "show_app_volume", "show_microphone", "show_tray", "tile_columns"})
     out << '|' << cfg.get("action_center", key);
-  for (const char *key : {"style", "position", "height", "width_percent", "clock_24h"})
+  for (const char *key : {"style", "position", "height", "width_percent", "clock_24h",
+                          "show_keyboard", "show_bluetooth", "show_battery", "show_power",
+                          "show_media", "show_network", "show_sound", "show_tray"})
     out << '|' << cfg.get("panel", key);
   out << cfg.get("appearance", "accent") << cfg.get("appearance", "theme")
       << cfg.get("appearance", "scale") << cfg.get("notifications", "do_not_disturb");
@@ -848,7 +852,8 @@ void QuickSettings::rebuild() {
            [](Painter &p, double x, double y, double z, const Color &ink) {
              glyph::keyboard(p, x, y, z, ink);
            },
-           [launch] { launch({"sde-settings", "--page", "input"}); }, true},
+           [launch] { launch({"sde-settings", "--page", "input"}); },
+           !((h && h->has_input_indicator()) || (tray && tray->has_input_indicator()))},
           {"show_bluetooth", _("Bluetooth"), bt_icon, [this] { select_section("bluetooth"); },
            !c.adapters.empty()},
           {"show_battery", _("Battery"),
@@ -863,16 +868,12 @@ void QuickSettings::rebuild() {
              glyph::power(p, x, y, z, ink);
            },
            [launch] { launch({"sde-logout"}); }, true},
-          {"show_media", _("Media players"), media_icon, [this] { select_section("media"); }, true},
+          {"show_media", _("Media players"), media_icon, [this] { select_section("media"); },
+           !c.players().empty()},
           {"show_network", _("Network"), network_icon, [this] { select_section("network"); },
            s.network.available},
           {"show_sound", _("Sound"), audio_icon, [this] { select_section("sound"); },
-           s.audio.available},
-          {"show_controls", _("Overview"),
-           [](Painter &p, double x, double y, double z, const Color &ink) {
-             glyph::sliders(p, x, y, z, ink);
-           },
-           [this] { select_section("overview"); }, true}};
+           s.audio.available}};
       int n = 0;
       for (const auto &i : status)
         if (i.available && cfg.get_bool("panel", i.key, true)) {
