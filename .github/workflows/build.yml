@@ -66,11 +66,13 @@ jobs:
         if: matrix.image == 'debian:testing'
         run: |
           apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick dbus-x11 dconf-gsettings-backend adwaita-icon-theme
-          dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
-          dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
-          dbus-run-session -- python3 tools/gallery-smoke.py --output-dir dist/gallery-smoke
-          dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
-          dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small
+          ui_status=0
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke || ui_status=1
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small || ui_status=1
+          dbus-run-session -- python3 tools/gallery-smoke.py --output-dir dist/gallery-smoke || ui_status=1
+          dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke || ui_status=1
+          dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small || ui_status=1
+          exit "$ui_status"
       - uses: actions/upload-artifact@v4
         if: always() && matrix.image == 'debian:testing'
         with:
