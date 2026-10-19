@@ -138,7 +138,16 @@ def system_monitor(staged):
     }""")
 
 
-RECIPES = {"sde-view": photo, "sde-system-monitor": system_monitor}
+def liria(staged):
+    """Compact icon-only Back/Forward buttons (tooltips keep the names), so
+    the command bar reads as one glass strip instead of Caja's labels."""
+    menus = staged / "src/liria-navigation-window-menus.c"
+    for direction in ("BACK", "FORWARD"):
+        edit(menus, '"direction", LIRIA_NAVIGATION_DIRECTION_%s,\n                           "is_important", TRUE,' % direction,
+             '"direction", LIRIA_NAVIGATION_DIRECTION_%s,\n                           "is_important", FALSE,' % direction)
+
+
+RECIPES = {"sde-view": photo, "sde-system-monitor": system_monitor, "liria": liria}
 
 
 def apply(record, staged):
