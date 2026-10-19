@@ -1,3 +1,15 @@
+sde (0.1.0~alpha11) unstable; urgency=medium
+
+  * Four GTK 3/GTK 4 themes in /usr/share/themes: SDE Light, SDE Dark,
+    SDE Aero and SDE Liquid Glass, each with SDE WM frames.
+  * Start Menu: reliable search (no XIM, focus retry), Settings and session
+    results, right-click Arrange menu, grid view and animations.
+  * Ported from Eduka-Desktop: Effects page with compositor modes, report and
+    restart; Action Center drives and power modes.
+  * Liria SDE Tools extension and polished native application styling.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Tue, 20 Oct 2026 01:00:00 +0900
+
 sde (0.1.0~alpha10) unstable; urgency=medium
 
   * SDE Aero: new default GTK 3/GTK 4 and window theme (light and dark) with

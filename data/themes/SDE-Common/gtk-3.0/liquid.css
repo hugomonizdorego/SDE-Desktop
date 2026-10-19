@@ -203,3 +203,12 @@ switch:checked {
 .liria-notebook > header {
   background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_bottom);
 }
+
+/* Without a compositor, menus and tooltips are plain X windows: square
+ * corners avoid black edges. GTK marks composited ones with .csd. */
+window.popup:not(.csd) menu,
+window.popup:not(.csd) .menu,
+menu:not(.csd),
+tooltip:not(.csd) {
+  border-radius: 0;
+}

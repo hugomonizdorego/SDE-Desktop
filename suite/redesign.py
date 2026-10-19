@@ -61,7 +61,12 @@ def photo(staged):
 
 def system_monitor(staged):
     """Card-style graphs: theme-aware background, soft dashed grid, thicker
-    curves with a translucent fill instead of thin lines on white."""
+    curves with a translucent fill instead of thin lines on white; and a CSS
+    class on the window so SDE themes can style it."""
+    edit(staged / "src/interface.cpp",
+         'app = GTK_WIDGET (gtk_builder_get_object (builder, "main_window"));',
+         'app = GTK_WIDGET (gtk_builder_get_object (builder, "main_window"));\n'
+         '    gtk_style_context_add_class (gtk_widget_get_style_context (app), "sde-system-monitor");')
     graph = staged / "src/load-graph.cpp"
     edit(graph, """    /* Draw background rectangle */
     cairo_set_source_rgb (cr, 1.0, 1.0, 1.0);
@@ -140,7 +145,10 @@ def system_monitor(staged):
 
 def liria(staged):
     """Compact icon-only Back/Forward buttons (tooltips keep the names), so
-    the command bar reads as one glass strip instead of Caja's labels."""
+    the command bar reads as one glass strip instead of Caja's labels; and
+    the built-in SDE Tools extension (suite/overlays/liria/sde-tools)."""
+    edit(staged / "Makefile.am", "\tsrc \\\n", "\tsrc \\\n\tsde-tools \\\n")
+    edit(staged / "configure.ac", "src/file-manager/Makefile\n", "src/file-manager/Makefile\nsde-tools/Makefile\n")
     menus = staged / "src/liria-navigation-window-menus.c"
     for direction in ("BACK", "FORWARD"):
         edit(menus, '"direction", LIRIA_NAVIGATION_DIRECTION_%s,\n                           "is_important", TRUE,' % direction,

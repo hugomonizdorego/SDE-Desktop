@@ -1,3 +1,14 @@
+# Alpha11 patch · 2026-10-20 — themes, Start Menu, Eduka features
+
+- SDE Light, SDE Dark, SDE Aero and new SDE Liquid Glass themes for GTK 3/4
+  and SDE WM, all installed in /usr/share/themes; theme cards in Settings.
+- Start Menu search fixed (input method and focus), finds Settings and
+  session actions; right-click Arrange menu; grid view; animations.
+- From Eduka-Desktop: Effects page (animations, compositor mode, report,
+  restart), Action Center drives (show files, eject) and power modes.
+- Liria SDE Tools extension; cleaner Liria, Niny, Xanara and Taca styling.
+- See docs/ALPHA11.md.
+
 # Alpha10 patch · 2026-10-19 — SDE Aero
 
 - SDE Aero / SDE Aero Dark: new default GTK 3, GTK 4 and SDE WM theme with

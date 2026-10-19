@@ -641,3 +641,12 @@ textview,
 textview text {
   background-color: @sde_view;
 }
+
+/* Without a compositor, menus and tooltips are plain X windows: square
+ * corners avoid black edges. GTK marks composited ones with .csd. */
+window.popup:not(.csd) menu,
+window.popup:not(.csd) .menu,
+menu:not(.csd),
+tooltip:not(.csd) {
+  border-radius: 0;
+}

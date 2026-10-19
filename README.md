@@ -2,11 +2,16 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 10** (`0.1.0~alpha10`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 11** (`0.1.0~alpha11`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
 
-**New in Alpha 10:** the [SDE Aero](docs/ALPHA10.md) theme with adjustable glass
+**New in Alpha 11:** [four themes](docs/ALPHA11.md) — SDE Light, SDE Dark, SDE Aero and
+SDE Liquid Glass (GTK 3/4, in `/usr/share/themes`) — a working Start Menu search with a
+right-click Arrange menu and animations, Eduka-Desktop's effects, compositor, drives and
+power-mode features, and SDE Tools for Liria.
+
+**Alpha 10:** the [SDE Aero](docs/ALPHA10.md) theme with adjustable glass
 transparency, a tidier Action Center without duplicate tray icons, **Photo** with
 live filters and effects, more Niny plugins, and the **SDE-Desktop** login session.
 Latest packages: [alpha-latest pre-release](https://github.com/hugomonizdorego/SDE-Desktop/releases/tag/alpha-latest) ·
