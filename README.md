@@ -99,7 +99,7 @@ Wi-Fi).
 Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
 Download the Alpha 11 packages, installer and matching sources from the latest
-successful [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha10-gallery)
+successful [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39224810528/artifacts/12174101625)
 (`sde-debian-testing` artifact). Extract the ZIP, verify checksums, then install:
 
 ```sh
@@ -249,3 +249,12 @@ Native About development credits read **DebION Dev-team**.
 
 Use the included `install-debion.sh` for the three matching packages and Mozilla
 repository bootstrap. See [DebION profile](docs/DEBION.md).
+
+Both final Alpha 11 CI builds passed, including actual installation of the full
+DebION profile, menu/MIME/terminal defaults, native About links and GUI checks.
+[Download Alpha 11](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39224810528/artifacts/12174101625)
+· [Validation](docs/ALPHA11.md#verified-build--19-october-2026)
+· [Current screenshots](docs/screenshots/alpha11/README.md).
+
+![DebION accessories and Papirus defaults](docs/screenshots/alpha11/01-accessories.png)
+![Gallery development credits](docs/screenshots/alpha11/02-gallery-about.png)
