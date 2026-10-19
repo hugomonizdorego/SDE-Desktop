@@ -82,38 +82,78 @@ namespace {
 
 // ------------------------------------------------------- custom widgets
 
-// Light/Dark style preview that acts as a radio button.
-class StyleCard : public Fl_Widget {
+void aero_changed();
+
+// Theme preview that acts as a radio button: SDE Light, SDE Dark, SDE Aero
+// and SDE Liquid Glass (Aero and Liquid Glass follow the dark-mode switch).
+class ThemeCard : public Fl_Widget {
  public:
-  StyleCard(int x, int y, int w, int h, bool dark) : Fl_Widget(x, y, w, h), dark_(dark) {}
+  ThemeCard(int x, int y, int w, int h, std::string id) : Fl_Widget(x, y, w, h), id_(std::move(id)) {}
+  bool active() const {
+    std::string style = theme_style(g_cfg);
+    if (id_ == "light") return style == "sde" && !g_theme.dark;
+    if (id_ == "dark") return style == "sde" && g_theme.dark;
+    return style == id_;
+  }
   void draw() override {
-    bool active = g_theme.dark == dark_;
+    bool on = active();
+    bool dark = id_ == "dark" || ((id_ == "aero" || id_ == "liquid-glass") && g_theme.dark);
     int pv = h() - S(26);
     {
       Painter p(window()->w(), window()->h());
-      Color bg = dark_ ? Color::hex(0x161B22) : Color::hex(0xF5F7FA);
-      Color surf = dark_ ? Color::hex(0x1F2630) : Color::hex(0xFFFFFF);
-      Color line = dark_ ? Color::hex(0x384252) : Color::hex(0xD5DBE3);
-      p.fill_rounded(x(), y(), w(), pv, Sd(12), bg);
-      p.stroke_rounded(x(), y(), w(), pv, Sd(12), active ? g_theme.accent : g_theme.border,
-                       active ? Sd(2.5) : Sd(1));
-      p.fill_rounded(x() + Sd(14), y() + Sd(14), w() - Sd(28), pv - Sd(52), Sd(8), surf);
-      p.fill_rounded(x() + Sd(24), y() + Sd(26), w() * 0.4, Sd(8), Sd(4), line);
-      p.fill_rounded(x() + Sd(24), y() + Sd(42), w() * 0.55, Sd(8), Sd(4), line);
-      p.fill_rounded(x() + Sd(24), y() + Sd(58), Sd(36), Sd(12), Sd(6), g_theme.accent);
-      p.fill_rect(x() + 1, y() + pv - Sd(18), w() - 2, Sd(17), surf);
-      p.circle(x() + Sd(16), y() + pv - Sd(9), Sd(4), g_theme.accent);
+      Color bg = dark ? Color::hex(0x161B22) : Color::hex(0xF5F7FA);
+      Color surf = dark ? Color::hex(0x1F2630) : Color::hex(0xFFFFFF);
+      Color line = dark ? Color::hex(0x384252) : Color::hex(0xD5DBE3);
+      if (id_ == "liquid-glass") {
+        // A colorful backdrop seen through frosted layers.
+        p.fill_gradient(x(), y(), w(), pv, Sd(12), Color::hex(dark ? 0x23305A : 0x8EC5FC),
+                        Color::hex(dark ? 0x4A2B55 : 0xE0C3FC), true);
+        surf = dark ? Color::hex(0xFFFFFF, 0.10) : Color::hex(0xFFFFFF, 0.55);
+        line = dark ? Color::hex(0xFFFFFF, 0.25) : Color::hex(0xFFFFFF, 0.9);
+      } else {
+        p.fill_rounded(x(), y(), w(), pv, Sd(12), bg);
+      }
+      p.stroke_rounded(x(), y(), w(), pv, Sd(12), on ? g_theme.accent : g_theme.border,
+                       on ? Sd(2.5) : Sd(1));
+      double wx = x() + Sd(12), wy = y() + Sd(12), ww = w() - Sd(24), wh = pv - Sd(24);
+      double r = id_ == "liquid-glass" ? Sd(12) : Sd(6);
+      p.fill_rounded(wx, wy, ww, wh, r, surf);
+      if (id_ == "aero") {
+        p.fill_gradient(wx, wy, ww, Sd(18), Sd(6), dark ? Color::hex(0x354152) : Color::hex(0xFBFDFF),
+                        dark ? Color::hex(0x232B38) : Color::hex(0xD2E2F3));
+        p.glass_sheen(wx, wy, ww, Sd(18), Sd(6), dark);
+      } else if (id_ == "liquid-glass") {
+        p.stroke_rounded(wx, wy, ww, wh, r, line, Sd(1));
+      } else {
+        p.line(wx, wy + Sd(18), wx + ww, wy + Sd(18), line);
+      }
+      p.fill_rounded(wx + Sd(10), wy + Sd(28), ww * 0.5, Sd(7), Sd(3.5), line);
+      p.fill_rounded(wx + Sd(10), wy + Sd(42), ww * 0.65, Sd(7), Sd(3.5), line);
+      double br = id_ == "liquid-glass" ? Sd(7) : Sd(4);
+      p.fill_rounded(wx + Sd(10), wy + wh - Sd(22), Sd(40), Sd(14), br, g_theme.accent);
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), pv, Sd(12));
     }
-    text_font(g_theme.font_size, active);
-    draw_text(dark_ ? _("Dark") : _("Light"), x(), y() + pv + S(2), w(), S(22),
-              active ? g_theme.accent_text : g_theme.text, 1);
+    static const std::pair<const char *, const char *> names[] = {
+        {"light", N_("Light")}, {"dark", N_("Dark")}, {"aero", N_("Aero")},
+        {"liquid-glass", N_("Liquid Glass")}};
+    const char *label = "";
+    for (auto &n : names)
+      if (id_ == n.first) label = _(n.second);
+    text_font(g_theme.font_size, on);
+    draw_text(label, x(), y() + pv + S(2), w(), S(22), on ? g_theme.accent_text : g_theme.text, 1);
   }
   void choose() {
-    g_cfg.set("appearance", "theme", dark_ ? "dark" : "light");
-    set_openbox_theme(dark_, g_cfg.get_bool("aero", "enabled", true));
+    if (id_ == "light" || id_ == "dark") {
+      g_cfg.set("appearance", "style", "sde");
+      g_cfg.set("appearance", "theme", id_);
+    } else {
+      g_cfg.set("appearance", "style", id_);
+    }
+    g_theme = Theme::from_config(g_cfg);
+    set_openbox_theme(g_theme.dark, theme_style(g_cfg));
     reconfigure_window_manager();
-    apply_change();
+    aero_changed();
+    if (window()) window()->redraw();
   }
   int handle(int e) override {
     switch (e) {
@@ -138,7 +178,7 @@ class StyleCard : public Fl_Widget {
   }
 
  private:
-  bool dark_;
+  std::string id_;
 };
 
 class AccentPicker : public Fl_Widget {
@@ -529,27 +569,38 @@ void reload_compositor_later(void *) {
 void aero_changed();
 
 void build_appearance(Page *page) {
-  page->heading(_("Appearance"), _("Style, colors, size and wallpaper"));
-  page->begin_card(_("Style"));
-  int cw = std::min(S(150), (page->width() - S(56)) / 2);
+  page->heading(_("Appearance"), _("Theme, colors, glass, size and wallpaper"));
+  page->begin_card(_("Theme"));
+  int gap = S(12), cw = std::min(S(150), (page->width() - S(40) - 3 * gap) / 4);
   int y = page->cursor();
-  new StyleCard(page->left() + S(20), y, cw, S(124), false);
-  new StyleCard(page->left() + S(36) + cw, y, cw, S(124), true);
-  page->advance(S(132));
+  const char *ids[] = {"light", "dark", "aero", "liquid-glass"};
+  for (int i = 0; i < 4; ++i) new ThemeCard(page->left() + S(20) + i * (cw + gap), y, cw, S(118), ids[i]);
+  page->advance(S(126));
+  page->note(_("Themes are installed in /usr/share/themes (SDE, SDE-Dark, SDE-Aero, SDE-Liquid-Glass "
+               "and their dark versions) and work in GTK 3 and GTK 4 applications."));
+  page->switch_row(
+      _("Dark mode"), g_theme.dark,
+      [](bool on) {
+        g_cfg.set("appearance", "theme", on ? "dark" : "light");
+        g_theme = Theme::from_config(g_cfg);
+        set_openbox_theme(on, theme_style(g_cfg));
+        reconfigure_window_manager();
+        aero_changed();
+      },
+      _("Aero and Liquid Glass have light and dark versions."));
   page->row(_("Accent color"), S(34) * kAccentChoiceCount, S(36),
             [](int x, int yy, int w, int h) { return new AccentPicker(x, yy, w, h); });
   page->end_card();
 
-  page->begin_card(_("SDE Aero glass"));
+  page->begin_card(_("Glass effects"));
   page->switch_row(
-      _("Aero glass effects"), g_cfg.get_bool("aero", "enabled", true),
+      _("Glass effects"), g_cfg.get_bool("aero", "enabled", true),
       [](bool on) {
         g_cfg.set("aero", "enabled", on ? "true" : "false");
-        set_openbox_theme(g_theme.dark, on);
-        reconfigure_window_manager();
         aero_changed();
       },
-      _("Translucent panel, menus and window frames with the SDE Aero theme."));
+      _("Translucent panel, menus and window frames with Aero and Liquid Glass. SDE Light and "
+        "Dark stay opaque."));
   page->slider_row(
       _("Transparency"), 0, 60, g_cfg.get_int("aero", "transparency", 18),
       [](double v) {

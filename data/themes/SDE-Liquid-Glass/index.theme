@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=SDE Liquid Glass
+Comment=Frosted, rounded translucent theme for SDE (design after liquid-glass by Ryosuke Watanabe, MIT)
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=SDE-Liquid-Glass
+MetacityTheme=SDE-Liquid-Glass
+IconTheme=Papirus
+CursorTheme=Adwaita
+ButtonLayout=:minimize,maximize,close

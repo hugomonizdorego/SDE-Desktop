@@ -24,6 +24,21 @@ the B00MERANG Project Windows 7 GTK theme — GPL-3.0. SDE Aero
 images or CSS files are copied; colors, gradients, geometry and the
 transparency system are SDE's own. SDE Aero is GPL-3.0-or-later.
 
+**[Liquid Glass for GNOME Shell](https://github.com/ryohsuke1231/liquid-glass)**
+by Ryosuke Watanabe — MIT. An unofficial fan project, not affiliated with
+Apple. It renders glass with shaders inside GNOME Shell, which SDE does not
+use. SDE Liquid Glass (`data/themes/SDE-Liquid-Glass*` and
+`SDE-Common/*/liquid.css`) recreates its look for GTK 3/4 and SDE WM in CSS:
+frosted translucent layers, a bright rim, deep soft shadows, pill controls
+and large corners; the SDE compositor provides the blur. No code, shaders
+or images are copied.
+
+**[Eduka-Desktop](https://github.com/hugomonizdorego/Eduka-Desktop)** —
+the Edukasaun desktop suite by the same author. SDE ports behavior from its
+Python/PyQt5 panel, Action Center and settings (effects model and capability
+rule, compositor modes and report, removable drives, power profiles) into
+SDE's C++/FLTK code while keeping SDE's own design.
+
 ## Native application forks
 
 Eight application source trees are prepared and compiled by SDE. Exact upstream

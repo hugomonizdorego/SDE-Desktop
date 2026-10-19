@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * SDE Aero for GTK 3 - light. Widget geometry comes from GTK's built-in
- * Adwaita; SDE Aero restyles surfaces, glass bars, controls and the suite. */
+ * SDE Aero: soft glass bars and gradients - GTK 3 (light). Widget geometry from GTK's
+ * built-in theme; shared SDE styling in ../../SDE-Common. */
 @import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained.css");
 @import url("colors.css");
-@import url("sde-aero.css");
-@import url("apps.css");
+@import url("../../SDE-Common/gtk-3.0/widgets.css");
+@import url("../../SDE-Common/gtk-3.0/apps.css");

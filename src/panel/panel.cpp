@@ -574,7 +574,7 @@ void Panel::draw() {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
     // SDE Aero: a soft glass sheen; the compositor supplies blur and opacity.
-    bool glass = cfg_.get_bool("aero", "enabled", true);
+    bool glass = t.glass;
     if (glass) {
       p.fill_gradient(0, 0, W, H, 0, t.surface.mix(t.accent, t.dark ? 0.10 : 0.05),
                       t.surface.mix(t.dark ? Color::hex(0x000000) : Color::hex(0xFFFFFF), 0.12));

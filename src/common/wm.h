@@ -13,7 +13,7 @@ bool ensure_openbox_config();
 
 // Points the Openbox configuration at the SDE or SDE-Dark window theme.
 // Returns true when the file changed.
-bool set_openbox_theme(bool dark, bool aero = true);
+bool set_openbox_theme(bool dark, const std::string &style = "aero");
 
 // Sets the font size (points) of all Openbox fonts, e.g. to follow the UI
 // scale. Returns true when the file changed.

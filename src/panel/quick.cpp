@@ -1303,7 +1303,7 @@ void QuickSettings::draw() {
   {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), t.surface);
-    if (Panel::instance->config().get_bool("aero", "enabled", true))
+    if (t.glass)
       p.fill_rect(0, h() - S(58), w(), S(58), t.surface_alt.mix(t.surface, 0.4));
     p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
     p.line(S(16), h() - S(58), w() - S(16), h() - S(58), t.border);

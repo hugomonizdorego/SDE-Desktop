@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * SDE Light / Dark: calm flat surfaces - GTK 3 (light). Widget geometry from GTK's
+ * built-in theme; shared SDE styling in ../../SDE-Common. */
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained.css");
+@import url("colors.css");
+@import url("../../SDE-Common/gtk-3.0/widgets.css");
+@import url("../../SDE-Common/gtk-3.0/apps.css");
+@import url("../../SDE-Common/gtk-3.0/flat.css");

@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * SDE Aero - GTK 3 widget styling.
+ * SDE themes - shared GTK 3 widget styling for SDE Light/Dark, SDE Aero and
+ * SDE Liquid Glass. Each theme sets the sde_* palette and may add a style
+ * layer (flat.css, liquid.css).
  *
- * Design reference: GTKAero by User738git (GPL-3.0, a fork of the B00MERANG
- * Project Windows 7 theme), https://github.com/User738git/GTKAero. SDE Aero
- * is a new CSS-only theme: no images are copied. It keeps the idea of glass
- * title/tool bars and soft blue selections, with rounder corners, smoother
- * gradients and translucent menus that the SDE compositor can blur.
+ * Aero design reference: GTKAero by User738git (GPL-3.0, a fork of the
+ * B00MERANG Project Windows 7 theme), https://github.com/User738git/GTKAero.
+ * CSS only: no images or CSS were copied.
  */
 
 * {

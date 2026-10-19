@@ -237,13 +237,28 @@ static void test_gtk_preferences() {
                           "/* SDE Aero: managed by SDE Settings - begin */\n@define-color "
                           "sde_accent #000000;\n/* SDE Aero: managed by SDE Settings - end */\n"
                           ".mine { color: red; }\n"));
+  // Without [appearance] style, [aero] enabled=false means SDE Light/Dark
+  // (or Adwaita when the SDE themes are not installed); only SDE's block of
+  // the user's CSS changes, and an older "SDE Aero" block is replaced.
+  CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/gtk.css",
+                          "/* SDE Aero: managed by SDE Settings - begin */\n@define-color "
+                          "sde_accent #000000;\n/* SDE Aero: managed by SDE Settings - end */\n"
+                          ".mine { color: red; }\n"));
   cfg.set("aero", "enabled", "false");
-  CHECK(gtk_theme_name(cfg) == "Adwaita");
+  CHECK(theme_style(cfg) == "sde");
+  std::string flat = gtk_theme_name(cfg);
+  CHECK(flat == "SDE" || flat == "Adwaita");
   sync_gtk_settings(cfg);
   CHECK(read_file(std::string(root) + "/gtk-3.0/gtk.css", text));
-  CHECK(text == ".mine { color: red; }\n");
+  CHECK(text.find(".mine { color: red; }") != std::string::npos);
+  CHECK(text.find("SDE Aero: managed") == std::string::npos);
+  CHECK(text.find("sde_glass_bg") == std::string::npos);
   CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
-  CHECK(text.find("gtk-theme-name=Adwaita") != std::string::npos);
+  CHECK(text.find("gtk-theme-name=" + flat) != std::string::npos);
+  cfg.set("appearance", "style", "liquid-glass");
+  CHECK(theme_style(cfg) == "liquid-glass");
+  CHECK(theme_dir(theme_style(cfg)) == "SDE-Liquid-Glass");
+  cfg.unset("appearance", "style");
 
   // The generated compositor configuration follows [aero].
   cfg.set("aero", "enabled", "true");
@@ -258,6 +273,12 @@ static void test_gtk_preferences() {
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);
   CHECK(text.find("blur-background") == std::string::npos);
+  // Liquid Glass: larger corners and stronger blur.
+  cfg.set("aero", "enabled", "true");
+  cfg.set("appearance", "style", "liquid-glass");
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("corner-radius = 16;") != std::string::npos);
+  CHECK(text.find("blur-background = true;") != std::string::npos);
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 
