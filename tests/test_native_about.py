@@ -13,11 +13,11 @@ def main():
     server = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
         for _ in range(50):
-            if subprocess.run(['xdpyinfo'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            if subprocess.run(['xrandr', '--query'], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
                 break
             time.sleep(.1)
         else: raise AssertionError('Xvfb did not start')
-        subprocess.run([sys.argv[1]], env=env, check=True)
+        subprocess.run([sys.argv[1]], env=env, check=True, timeout=15)
     finally:
         server.terminate(); server.wait(timeout=5)
 
