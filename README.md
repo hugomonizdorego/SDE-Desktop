@@ -39,7 +39,7 @@ output device, systemd-logind for screen brightness and the kernel for the batte
 ## DebION application suite
 
 The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
-**Xanara**, **Taca**, **SDE View**, **SDE System Monitor**, **SDE Power Manager**
+**Xanara**, **Taca**, **Gallery**, **Calculator**, **SDE View**, **SDE System Monitor**, **SDE Power Manager**
 and **SDE Update**. Settings → Applications provides short clickable source links
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
@@ -110,7 +110,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test alpha9; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
+test alpha10; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -129,6 +129,8 @@ Or a plain CMake build for development:
 
 ```sh
 python3 tools/prepare-native-suite.py
+python3 tools/prepare-components.py
+python3 tools/prepare-gallery.py
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build -j"$(nproc)"
 ctest --test-dir build          # unit tests, including WCAG contrast checks

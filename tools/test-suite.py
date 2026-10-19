@@ -46,6 +46,7 @@ for upstream in ['gthumb','pluma','caja','atril','engrampa','eom','mate-system-m
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
 files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
 for path in files:
+    assert not path.endswith(("/gthumb.1", "/gthumb.1.gz", "/gthumb.mo")), path
     assert not path.endswith(('/mime.cache','/mimeinfo.cache','/icon-theme.cache','/gschemas.compiled')),path
 # Python plugins need the renamed API's original ownership/type annotations.
 gir=ET.parse('/usr/share/gir-1.0/Niny-1.0.gir')

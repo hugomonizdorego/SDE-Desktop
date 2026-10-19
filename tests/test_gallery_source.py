@@ -21,6 +21,9 @@ for name in ['Hugo Moniz do Rego', 'Paolo Bacchilega', 'about.add_link', 'Adw.St
     assert name in app, name
 assert 'Copyright' in (source/'COPYING').read_text()
 assert 'Paolo Bacchilega' in (source/'data/appdata/org.debion.Gallery.metainfo.xml.in').read_text()
+assert 'domain="gallery"' in (source/'data/schemas/org.debion.Gallery.gschema.xml').read_text()
+assert (source/'data/gallery.1').is_file()
+assert not (source/'data/gthumb.1').exists()
 assert 'gallery.desktop</launchable>' in (source/'data/appdata/org.debion.Gallery.metainfo.xml.in').read_text()
 assert (source/'src/Types.vala').read_text().startswith('const string APP_DIR = "sde-gallery"')
 assert '"--wallpaper"' in (source/'src/Ext/DesktopBackground/DesktopBackground.vala').read_text()

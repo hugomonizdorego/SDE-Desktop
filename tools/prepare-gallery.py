@@ -21,7 +21,7 @@ def patch(source, app, version):
             continue
         text = path.read_text()
         text = text.replace('org.gnome.gthumb', 'org.debion.Gallery').replace('/org/gnome/gthumb', '/org/debion/Gallery')
-        text = text.replace('About Thumbnails', 'About Gallery')
+        text = text.replace('About Thumbnails', 'About Gallery').replace('domain="gthumb"', 'domain="gallery"')
         path.write_text(text)
     for path in sorted(source.rglob('*'), key=lambda p: len(p.parts), reverse=True):
         if 'org.gnome.gthumb' in path.name:
@@ -36,9 +36,13 @@ def patch(source, app, version):
     edit('src/meson.build', "config.set_quoted('APP_NAME', 'Thumbnails')", "config.set_quoted('APP_NAME', 'Gallery')")
     edit('src/meson.build', 'app_version = meson.project_version()', "app_version = '" + version + "'")
     edit('src/meson.build', "exec_name = 'gthumb'", "exec_name = 'gallery'")
-    # Translations remain in the original gettext domain. Internal MIME types
+    # Translations use Gallery's private gettext domain. Internal MIME types
     # and serialized catalog formats remain readable by the upstream engine.
-    edit('meson.build', 'gettext_package = meson.project_name()', "gettext_package = 'gthumb'")
+    edit('data/meson.build', "install_man('gthumb.1')", "install_man('gallery.1')")
+    manual = source/'data/gthumb.1'
+    text = manual.read_text().replace('gthumb', 'gallery').replace('Thumbnails', 'Gallery').replace('GNOME Applications', 'SDE Applications')
+    (source/'data/gallery.1').write_text(text + '\nSDE Gallery integration: Hugo Moniz do Rego <https://github.com/hugomonizdorego>.\n')
+    manual.unlink()
     edit('src/Types.vala', 'APP_DIR = "gthumb"', 'APP_DIR = "sde-gallery"')
     edit('src/Application.vala', '"Paolo Bacchilega <paobac@src.gnome.org>",',
          '"Paolo Bacchilega <paobac@src.gnome.org>",\n\t\t\t\t"Hugo Moniz do Rego https://github.com/hugomonizdorego — SDE Gallery",')
@@ -61,6 +65,7 @@ def patch(source, app, version):
     text = path.read_text()
     text = re.sub(r'  <replaces>[\s\S]*?</replaces>\n', '', text)
     text = re.sub(r'  <provides>[\s\S]*?</provides>\n', '', text)
+    text = text.replace('<translation type="gettext">gthumb</translation>', '<translation type="gettext">gallery</translation>')
     text = text.replace('<name>Thumbnails</name>', '<name>Gallery</name>').replace('org.debion.Gallery.desktop</launchable>', 'gallery.desktop</launchable>')
     text = text.replace('<developer id="org.gnome">\n    <name translate="no">Paolo Bacchilega</name>', '<developer id="org.debion">\n    <name translate="no">Hugo Moniz do Rego and SDE contributors</name>')
     text = text.replace('<description>', '<description>\n    <p>SDE Gallery, based on gThumb 4.0 by Paolo Bacchilega and contributors. Original copyright and GPL notices are retained.</p>', 1)
