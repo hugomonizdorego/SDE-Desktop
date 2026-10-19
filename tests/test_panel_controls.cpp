@@ -31,6 +31,21 @@ Sink Input #oops
   assert(a[0].app == "Music Player" && a[0].pid == "42" && a[0].title == "Alpha song");
   assert(a[1].volume == 0 && !a[1].muted && a[1].title.empty());
   assert(parse_audio_streams("unavailable\n").empty());
+  // Removable drives: the system disk and loop devices are left out; a USB
+  // stick with a mounted partition and a memory card are found.
+  auto drives = parse_removable_drives(
+      "NAME=\"sda\" PATH=\"/dev/sda\" LABEL=\"\" SIZE=\"500107862016\" TYPE=\"disk\" TRAN=\"sata\" RM=\"0\" HOTPLUG=\"0\" ROTA=\"0\" MOUNTPOINT=\"\" FSTYPE=\"\" MODEL=\"Internal SSD\" VENDOR=\"ATA\" PKNAME=\"\"\n"
+      "NAME=\"sda1\" PATH=\"/dev/sda1\" LABEL=\"\" SIZE=\"500000000000\" TYPE=\"part\" TRAN=\"\" RM=\"0\" HOTPLUG=\"0\" ROTA=\"0\" MOUNTPOINT=\"/\" FSTYPE=\"ext4\" MODEL=\"\" VENDOR=\"\" PKNAME=\"sda\"\n"
+      "NAME=\"sdb\" PATH=\"/dev/sdb\" LABEL=\"\" SIZE=\"16008609792\" TYPE=\"disk\" TRAN=\"usb\" RM=\"1\" HOTPLUG=\"1\" ROTA=\"0\" MOUNTPOINT=\"\" FSTYPE=\"\" MODEL=\"Flash\\x20Disk\" VENDOR=\"Kingston\" PKNAME=\"\"\n"
+      "NAME=\"sdb1\" PATH=\"/dev/sdb1\" LABEL=\"DATA\" SIZE=\"16000000000\" TYPE=\"part\" TRAN=\"\" RM=\"1\" HOTPLUG=\"1\" ROTA=\"0\" MOUNTPOINT=\"/media/user/DATA\" FSTYPE=\"vfat\" MODEL=\"\" VENDOR=\"\" PKNAME=\"sdb\"\n"
+      "NAME=\"mmcblk0\" PATH=\"/dev/mmcblk0\" LABEL=\"\" SIZE=\"31914983424\" TYPE=\"disk\" TRAN=\"\" RM=\"0\" HOTPLUG=\"0\" ROTA=\"0\" MOUNTPOINT=\"\" FSTYPE=\"\" MODEL=\"\" VENDOR=\"\" PKNAME=\"\"\n"
+      "NAME=\"mmcblk0p1\" PATH=\"/dev/mmcblk0p1\" LABEL=\"\" SIZE=\"31914000000\" TYPE=\"part\" TRAN=\"\" RM=\"0\" HOTPLUG=\"0\" ROTA=\"0\" MOUNTPOINT=\"\" FSTYPE=\"exfat\" MODEL=\"\" VENDOR=\"\" PKNAME=\"mmcblk0\"\n"
+      "NAME=\"loop0\" PATH=\"/dev/loop0\" LABEL=\"\" SIZE=\"1000\" TYPE=\"loop\" TRAN=\"\" RM=\"0\" HOTPLUG=\"0\" ROTA=\"0\" MOUNTPOINT=\"/snap/x\" FSTYPE=\"squashfs\" MODEL=\"\" VENDOR=\"\" PKNAME=\"\"\n");
+  assert(drives.size() == 2);
+  assert(drives[0].name == "sdb" && drives[0].kind == "usb" && drives[0].label == "DATA");
+  assert(drives[0].model == "Kingston Flash Disk" && drives[0].mountpoint() == "/media/user/DATA");
+  assert(drives[1].name == "mmcblk0" && drives[1].kind == "card" && drives[1].mountpoint().empty());
+  assert(human_size(16008609792LL) == "16.0 GB" && human_size(512) == "512 B");
   MediaPlayer p;
   p.service = "org.mpris.MediaPlayer2.music.instance1";
   p.name = "Music Player";

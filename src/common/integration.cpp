@@ -13,6 +13,7 @@
 
 #include "build_config.h"
 #include "desktop_entry.h"
+#include "process.h"
 #include "spawn.h"
 #include "suite.h"
 #include "theme.h"
@@ -225,6 +226,43 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
 void reload_compositor() {
   // picom re-reads its configuration file on SIGUSR1.
   spawn_detached({"pkill", "-USR1", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
+}
+
+void restart_compositor_now() {
+  spawn_detached({"pkill", "-USR2", "-u", std::to_string(getuid()), "-x", "sde-session"});
+}
+
+std::string compositor_report(const Config &cfg) {
+  Theme t = Theme::from_config(cfg);
+  std::string mode = cfg.get("compositor", "mode", "auto");
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  bool drm = has_drm_device();
+  std::string chosen = backend == "glx" || backend == "xrender" ? backend : (drm ? "glx" : "xrender");
+  int status = -1;
+  std::string pid = trim(run_sync({"pgrep", "-u", std::to_string(getuid()), "-x", "sde-compositor"}, &status, 1500));
+  std::string virt = trim(run_sync({"systemd-detect-virt"}, nullptr, 1500));
+  std::string renderer;
+  if (!find_program("glxinfo").empty()) {
+    for (const auto &line : split(run_sync({"glxinfo", "-B"}, nullptr, 3000), '\n'))
+      if (starts_with(trim(line), "OpenGL renderer string:")) renderer = trim(line.substr(line.find(':') + 1));
+  }
+  std::string own = config_home() + "/sde/compositor.conf";
+  std::string r = std::string("SDE ") + SDE_VERSION + " compositor report\n";
+  r += "Compositing: " + std::string(mode == "off" ? "off" : "on") +
+       (status == 0 && !pid.empty() ? " (running, pid " + split(pid, '\n')[0] + ")" : " (not running)") + "\n";
+  r += "Backend: " + chosen + (backend == "auto" ? (drm ? " (auto: graphics device found)"
+                                                         : " (auto: no DRM graphics device)")
+                                                  : " (chosen in Settings)") + "\n";
+  r += "Virtual machine: " + (virt.empty() || virt == "none" ? std::string("no") : virt) + "\n";
+  r += "OpenGL renderer: " + (renderer.empty() ? std::string("unknown (install mesa-utils for glxinfo)") : renderer) + "\n";
+  r += "Configuration: " + (file_exists(own) ? own + " (your own file)"
+                                             : config_home() + "/sde/aero-compositor*.conf (generated)") + "\n";
+  r += "Theme: " + theme_dir(t.style) + (t.dark ? " (dark)" : " (light)") + ", glass " +
+       (t.glass ? "on, " + std::to_string(t.transparency) + "% transparency" : std::string("off")) +
+       ", blur " + (t.glass && cfg.get_bool("aero", "blur", true) ? "on" : "off") + "\n";
+  if (chosen == "glx" && !virt.empty() && virt != "none")
+    r += "Advice: OpenGL in a virtual machine can be slow or black; choose XRender if you see problems.\n";
+  return r;
 }
 
 void migrate_legacy_suite_shortcuts() {

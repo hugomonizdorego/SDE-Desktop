@@ -192,6 +192,35 @@ void on_child_exit(pid_t pid, int status) {
 }
 
 // A dialog that replaces the black screen when the desktop cannot start.
+// The optional SDE compositor. A user's own compositor.conf wins; otherwise
+// the [appearance] style and [aero] settings generate one (OpenGL blur,
+// XRender if OpenGL is unavailable or fails).
+void add_compositor(const Config &cfg) {
+  if (cfg.get("compositor", "mode", "auto") == "off") return;
+  std::string conf = config_home() + "/sde/compositor.conf";
+  bool own = file_exists(conf);
+  if (!own) conf = write_compositor_config(cfg);
+  Component compositor = make_component("SDE compositor", {"sde-compositor", "--config", conf}, false);
+  if (!own) compositor.fallback = {"sde-compositor", "--config", write_compositor_config(cfg, true)};
+  compositor.max_restarts = 1;
+  g_components.push_back(compositor);
+  start_component(g_components.back());
+}
+
+// SIGUSR2 (Settings > Effects > Restart compositor): stop the compositor and
+// start it again with the current settings, or leave it off.
+void restart_compositor(Config &cfg) {
+  cfg.load();
+  for (auto it = g_components.begin(); it != g_components.end(); ++it) {
+    if (it->name != "SDE compositor") continue;
+    if (it->pid > 0) kill(it->pid, SIGTERM);
+    g_components.erase(it);  // its exit is no longer reported as a crash
+    break;
+  }
+  log("restarting the SDE compositor");
+  add_compositor(cfg);
+}
+
 void show_rescue(const std::string &problem) {
   g_problems.push_back(problem);
   if (g_rescue_pid > 0) return;
@@ -476,7 +505,7 @@ int main(int argc, char **argv) {
 
   sigset_t mask;
   sigemptyset(&mask);
-  for (int s : {SIGCHLD, SIGTERM, SIGINT, SIGHUP}) sigaddset(&mask, s);
+  for (int s : {SIGCHLD, SIGTERM, SIGINT, SIGHUP, SIGUSR2}) sigaddset(&mask, s);
   sigprocmask(SIG_BLOCK, &mask, nullptr);
   int sfd = signalfd(-1, &mask, SFD_CLOEXEC);
 
@@ -515,19 +544,7 @@ int main(int argc, char **argv) {
     g_components.push_back(c);
     start_component(g_components.back());
   }
-  if (cfg.get("compositor", "mode", "auto") != "off") {
-    // A user's own compositor.conf wins; otherwise SDE Aero settings
-    // generate one (OpenGL blur, XRender if OpenGL is unavailable).
-    std::string conf = config_home() + "/sde/compositor.conf";
-    bool own = file_exists(conf);
-    if (!own) conf = write_compositor_config(cfg);
-    Component compositor = make_component("SDE compositor", {"sde-compositor", "--config", conf}, false);
-    if (!own)
-      compositor.fallback = {"sde-compositor", "--config", write_compositor_config(cfg, true)};
-    compositor.max_restarts = 1;
-    g_components.push_back(compositor);
-    start_component(g_components.back());
-  }
+  add_compositor(cfg);
   std::string selection = "_XSETTINGS_S" + std::to_string(DefaultScreen(g_display));
   if (XGetSelectionOwner(g_display, XInternAtom(g_display, selection.c_str(), False)) == None) {
     g_components.push_back(make_component("GTK settings", {"xsettingsd", "--config", config_home() + "/sde/xsettingsd.conf"}, false));
@@ -560,6 +577,8 @@ int main(int argc, char **argv) {
           while ((pid = waitpid(-1, &status, WNOHANG)) > 0) on_child_exit(pid, status);
         } else if (info.ssi_signo == SIGHUP) {
           cfg.load();
+        } else if (info.ssi_signo == SIGUSR2) {
+          restart_compositor(cfg);
         } else {
           log("ending session");
           running = false;

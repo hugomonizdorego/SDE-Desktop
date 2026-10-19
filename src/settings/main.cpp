@@ -9,6 +9,7 @@
 // settings without opening a window (run by sde-session at login).
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Group.H>
 #include <FL/Fl_File_Chooser.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -28,6 +29,7 @@
 #include "build_config.h"
 #include "config.h"
 #include "dbus.h"
+#include "effects.h"
 #include "desktop_entry.h"
 #include "glyphs.h"
 #include "i18n.h"
@@ -407,6 +409,20 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
   }
   if (id == "system") {
     glyph::power(p, x, y, size, c);
+    return;
+  }
+  if (id == "effects") {
+    // Four-point sparkle.
+    cairo_t *cr = p.cr();
+    double cx = x + size * .45, cy = y + size * .5, r = size * .42, k = size * .1;
+    cairo_move_to(cr, cx, cy - r);
+    cairo_curve_to(cr, cx + k, cy - k, cx + k, cy - k, cx + r, cy);
+    cairo_curve_to(cr, cx + k, cy + k, cx + k, cy + k, cx, cy + r);
+    cairo_curve_to(cr, cx - k, cy + k, cx - k, cy + k, cx - r, cy);
+    cairo_curve_to(cr, cx - k, cy - k, cx - k, cy - k, cx, cy - r);
+    p.set(c);
+    cairo_fill(cr);
+    p.circle(x + size * .86, y + size * .16, size * .08, c);
     return;
   }
   if (id == "about") {
@@ -895,6 +911,123 @@ void build_action_center(Page *page) {
   page->finish();
 }
 
+// Effects page: Start menu animations and the compositor. The effect set,
+// the capability rule and the compositor modes/report follow
+// Eduka-Desktop's Effects and Appearance pages, in SDE's own layout.
+void build_effects(Page *page) {
+  page->heading(_("Effects and Animations"), _("Menu animations, compositing, blur and shadows"));
+  double gib = 0;
+  int threads = 0;
+  bool capable = effects_capable(&gib, &threads);
+  page->begin_card(_("Animations"));
+  page->note(capable ? format(_("This computer can use effects (%.1f GiB memory, %d CPU threads)."), gib,
+                              threads)
+                     : format(_("Effects need 4 GB of memory and 4 CPU threads. This computer has "
+                                "%.1f GiB and %d threads, so Automatic keeps them off."),
+                              gib, threads));
+  std::string mode = g_cfg.get("effects", "enabled", "auto");
+  page->choice_row(
+      _("Effects"), {_("Automatic"), _("On"), _("Off")},
+      mode == "true" ? 1 : mode == "false" ? 2 : 0,
+      [](int v) {
+        static const char *vals[] = {"auto", "true", "false"};
+        g_cfg.set("effects", "enabled", vals[std::max(0, std::min(2, v))]);
+        apply_change();
+      },
+      _("Used by the Start menu: categories, application tiles and starting applications."));
+  auto effect_choice = [&](const char *label, const char *key, const char *fallback,
+                           const std::vector<std::pair<std::string, std::string>> &list,
+                           const char *hint) {
+    std::vector<std::string> names;
+    int current = 0;
+    std::string value = g_cfg.get("effects", key, fallback);
+    for (size_t i = 0; i < list.size(); ++i) {
+      names.push_back(list[i].second);
+      if (list[i].first == value) current = int(i);
+    }
+    page->choice_row(
+        label, names, current,
+        [key, items = &list](int v) {
+          if (v >= 0 && v < int(items->size())) g_cfg.set("effects", key, (*items)[size_t(v)].first);
+          apply_change();
+        },
+        hint);
+  };
+  effect_choice(_("Pointer over a tile"), "hover", "pop", hover_effects(),
+                _("Wave lifts the icon, Glow pulses a ring, Slide moves the name, Pop grows the icon, "
+                  "Bounce makes it jump."));
+  effect_choice(_("Opening an application"), "launch", "zoom", launch_effects(),
+                _("Zoom grows or shrinks the icon, Ripple spreads rings, Bubbles rise, Confetti "
+                  "scatters colors, Fade dissolves the menu."));
+  std::string speed = g_cfg.get("effects", "speed", "normal");
+  page->choice_row(_("Speed"), {_("Slow"), _("Normal"), _("Fast")},
+                   speed == "slow" ? 0 : speed == "fast" ? 2 : 1, [](int v) {
+                     static const char *vals[] = {"slow", "normal", "fast"};
+                     g_cfg.set("effects", "speed", vals[std::max(0, std::min(2, v))]);
+                     apply_change();
+                   });
+  std::string size = g_cfg.get("effects", "size", "normal");
+  page->choice_row(_("Size"), {_("Small"), _("Normal"), _("Large")},
+                   size == "small" ? 0 : size == "large" ? 2 : 1, [](int v) {
+                     static const char *vals[] = {"small", "normal", "large"};
+                     g_cfg.set("effects", "size", vals[std::max(0, std::min(2, v))]);
+                     apply_change();
+                   });
+  page->switch_row(_("Random effects"), g_cfg.get_bool("effects", "random", false),
+                   [](bool on) { set_bool("effects", "random", on); },
+                   _("A different opening effect each time."));
+  page->switch_row(
+      _("Low resource mode"), g_cfg.get_bool("appearance", "low_resource", false),
+      [](bool on) {
+        g_cfg.set("appearance", "low_resource", on ? "true" : "false");
+        if (on) g_cfg.set("aero", "blur", "false");
+        aero_changed();
+      },
+      _("For older computers: turns effects and blur off."));
+  page->end_card();
+
+  page->begin_card(_("Compositor"));
+  page->note(_("The compositor draws transparency, blur, shadows and rounded corners. Without one "
+               "SDE uses an opaque look."));
+  std::string cm = g_cfg.get("compositor", "mode", "auto"), cb = g_cfg.get("compositor", "backend", "auto");
+  int ci = cm == "off" ? 3 : cb == "glx" ? 1 : cb == "xrender" ? 2 : 0;
+  page->choice_row(
+      _("Compositor"), {_("Automatic (recommended)"), _("OpenGL (smoother, needs 3D graphics)"),
+                        _("XRender (works everywhere, also VirtualBox)"), _("Off")},
+      ci,
+      [](int v) {
+        g_cfg.set("compositor", "mode", v == 3 ? "off" : "auto");
+        g_cfg.set("compositor", "backend", v == 1 ? "glx" : v == 2 ? "xrender" : "auto");
+        apply_change();
+        write_compositor_config(g_cfg);
+        write_compositor_config(g_cfg, true);
+        restart_compositor_now();
+      },
+      _("Changes apply at once."));
+  static std::string report;
+  report = compositor_report(g_cfg);
+  page->note(report);
+  page->row(_("Compositor report"), S(220), S(34), [](int x, int y, int w, int h) {
+    auto *row = new Fl_Group(x, y, w, h);
+    auto *restart = new FlatButton(x, y, (w - S(8)) / 2, h, _("Restart"));
+    restart->callback([](Fl_Widget *, void *) {
+      write_compositor_config(g_cfg);
+      write_compositor_config(g_cfg, true);
+      restart_compositor_now();
+    });
+    auto *copy = new FlatButton(x + (w + S(8)) / 2, y, (w - S(8)) / 2, h, _("Copy"));
+    copy->callback([](Fl_Widget *, void *) {
+      Fl::copy(report.c_str(), int(report.size()), 1);
+      Fl::copy(report.c_str(), int(report.size()), 0);
+    });
+    row->end();
+    return row;
+  });
+  page->end_card();
+  page->note(_("Glass transparency, blur strength and rounded corners are in Appearance."));
+  page->finish();
+}
+
 void build_desktop(Page *page) {
   page->heading(_("Desktop"), _("Icons shown on the desktop"));
   page->begin_card(_("Desktop icons"));
@@ -1043,20 +1176,10 @@ void build_suite_system(Page *page) {
         "session. "
         "No background updater is started."));
   page->begin_card(_("Windows and effects"));
-  page->note(
-      _("SDE WM manages windows. SDE Compositor adds shadows and SDE Aero glass (see Appearance)."));
-  page->choice_row(
-      _("Compositing"), {_("Enabled"), _("Disabled")},
-      g_cfg.get("compositor", "mode", "auto") == "off" ? 1 : 0,
-      [](int choice) {
-        g_cfg.set("compositor", "mode", choice ? "off" : "auto");
-        apply_change();
-        // Turning compositing off takes effect at once; turning it on needs
-        // the session to start the compositor at the next login.
-        if (choice)
-          spawn_detached({"pkill", "-TERM", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
-      },
-      _("Disabling stops effects now; enabling applies at the next login."));
+  page->note(_("SDE WM manages windows. Compositing, animations and glass are on the Effects page."));
+  page->row(_("Effects and Animations"), S(112), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, _("Open"), {"sde-settings", "--page", "effects"});
+  });
   page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});
@@ -1125,6 +1248,10 @@ const std::vector<PageInfo> &pages() {
        N_("Notifications"),
        {"preferences-desktop-notification", "notification-active", "dialog-information"},
        build_notifications},
+      {"effects",
+       N_("Effects"),
+       {"preferences-desktop-effects", "applications-graphics", "preferences-desktop"},
+       build_effects},
       {"display",
        N_("Displays"),
        {"preferences-desktop-display", "video-display", "computer"},

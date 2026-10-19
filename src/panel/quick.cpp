@@ -10,6 +10,7 @@
 #include <FL/x.H>
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -688,6 +689,9 @@ std::string QuickSettings::structure() const {
     out << '|' << p.service << p.name << p.title << p.artist << p.status << p.control << p.play
         << p.pause << p.next << p.previous << p.raise;
   for (const auto &a : c.streams) out << '|' << a.id << a.app << a.title << a.muted;
+  for (const auto &d : c.drives) out << '|' << d.path << d.mountpoint();
+  for (const auto &p : c.power_profiles) out << '|' << p;
+  out << c.power_profile;
   for (const auto &d : c.devices)
     out << '|' << d.device << d.state << d.connection << d.ip << d.gateway << d.dns;
   if (auto *h = Panel::instance->status_notifiers())
@@ -1255,6 +1259,50 @@ void QuickSettings::rebuild() {
           y += S(34);
     if (section_ == "power")
       row(_("Power Settings"), gear_icon(), [launch] { launch({"sde-power-preferences"}); });
+  }
+  // Removable drives (Eduka-Panel's drives popup, as an SDE card).
+  if ((section_ == "overview" || section_ == "power") && !c.drives.empty() &&
+      cfg.get_bool("action_center", "show_drives", true)) {
+    auto *card = start_card(_("Drives"));
+    int gap = S(6), bw = (inner - S(24) - gap) / 2;
+    for (const auto &d : c.drives) {
+      static const std::map<std::string, std::string> kinds = {
+          {"usb", _("USB flash drive")}, {"card", _("Memory card")},
+          {"hdd", _("External hard disk")}, {"ssd", _("External SSD")}};
+      auto kind = kinds.count(d.kind) ? kinds.at(d.kind) : std::string();
+      new ActionLabel(pad + S(12), y, inner - S(24), S(22), [label = d.label] { return label; }, 1);
+      y += S(22);
+      info(kind + " · " + human_size(d.size) +
+           (d.mountpoint().empty() ? "" : " · " + std::string(_("Open"))));
+      new CommandButton(pad + S(12), y, bw, S(32), _("Show Files"),
+                        [this, name = d.name] {
+                          close();
+                          PanelControls::get().drive_open(name);
+                        });
+      new CommandButton(pad + S(12) + bw + gap, y, bw, S(32), _("Eject"),
+                        [name = d.name] { PanelControls::get().drive_eject(name, true); });
+      y += S(40);
+    }
+    end_card(card);
+  }
+  if (section_ == "overview" && !c.power_profiles.empty())
+    row(_("Power mode"), gear_icon(), [this] { select_section("power"); });
+  // power-profiles-daemon modes, when the service is installed.
+  if (section_ == "power" && !c.power_profiles.empty()) {
+    auto *card = start_card(_("Power mode"));
+    int n = int(c.power_profiles.size()), gap = S(6), bw = (inner - S(24) - (n - 1) * gap) / n;
+    static const std::map<std::string, std::string> names = {
+        {"power-saver", _("Power Saver")}, {"balanced", _("Balanced")},
+        {"performance", _("Performance")}};
+    for (int i = 0; i < n; ++i) {
+      const auto &id = c.power_profiles[size_t(i)];
+      std::string label = names.count(id) ? names.at(id) : id;
+      if (id == c.power_profile) label = "\u2713 " + label;
+      new CommandButton(pad + S(12) + i * (bw + gap), y, bw, S(34), label,
+                        [id] { PanelControls::get().set_power_profile(id); });
+    }
+    y += S(42);
+    end_card(card);
   }
   if (section_ == "overview") {
     auto players = c.players();
