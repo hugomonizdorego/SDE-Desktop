@@ -16,6 +16,7 @@
 class AppMenu : public PanelPopup {
  public:
   AppMenu();
+  ~AppMenu() override;
 
   void draw() override;
   int handle(int event) override;
@@ -28,6 +29,7 @@ class AppMenu : public PanelPopup {
 
   void prepare() override;
   void reload();
+  static void poll_applications(void *);
   void layout();
   void item_menu(int row);
   void filter();

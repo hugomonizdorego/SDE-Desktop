@@ -66,6 +66,12 @@
       "repository": "https://github.com/pop-os/cosmic-epoch",
       "commit": "364341d52454bf3a016d03185c6aff887247aab7",
       "use": "reference-only"
+    },
+    {
+      "id": "DisplayProfileManager",
+      "repository": "https://github.com/zac15987/DisplayProfileManager",
+      "commit": "c873b66ba54b6efb111620e736878c21eda22f51",
+      "use": "native-profile-model-port"
     }
   ]
 }

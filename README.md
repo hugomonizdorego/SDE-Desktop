@@ -2,15 +2,15 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 7** (`0.1.0~alpha7`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 9** (`0.1.0~alpha9`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE Alpha 7 Start Menu](docs/screenshots/alpha7/01-start-menu.png)
+![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
 to Rust is underway; the panel, desktop and settings interface remain C++.
 The earlier alpha2 session measured about **22 MB of private memory**; alpha3
-and the complete alpha7 suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
+and the complete native suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 
 > **Alpha software.** 0.1 is the first series of SDE builds. It is meant for testing
 > and development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
@@ -26,6 +26,7 @@ and the complete alpha7 suite have not yet been profiled. See the [Rust migratio
 | `sde-notifyd` | Desktop notifications (`org.freedesktop.Notifications`) with action buttons and Do Not Disturb |
 | `sde-desktop` | Wallpaper and desktop icons, right-click menu (View, Sort by, Refresh, New, terminal, file manager) and keyboard shortcuts |
 | `sde-settings` | Overview with settings cards; grouped Personalization/System navigation; appearance, panel previews, Action Center, desktop, notifications, displays, keyboard & mouse, about |
+| `sde-display-settings` | Native monitor arrangement, EDID, modes, rotation, profiles and scale |
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
@@ -39,7 +40,7 @@ output device, systemd-logind for screen brightness and the kernel for the batte
 
 The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
 **Xanara**, **Taca**, **SDE View**, **SDE System Monitor**, **SDE Power Manager**
-and **SDE Update**. Settings → SDE Suite provides short clickable source links
+and **SDE Update**. Settings → Applications provides short clickable source links
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
 
@@ -85,7 +86,7 @@ implied. `tools/ui-smoke.py` reproduces these views and exercises the controls.
 | ![Desktop](docs/screenshots/01-desktop-light.png) | ![Application menu](docs/screenshots/02-app-menu.png) |
 | ![Calendar](docs/screenshots/04-calendar.png) | ![Notifications](docs/screenshots/05-notifications.png) |
 | ![Desktop menu](docs/screenshots/06-desktop-menu.png) | ![Appearance settings](docs/screenshots/07-settings-appearance.png) |
-| ![Display settings](docs/screenshots/08-settings-display.png) | ![Keyboard and mouse](docs/screenshots/09-settings-input.png) |
+| ![Display settings](docs/screenshots/alpha8/03-display-settings.png) | ![Keyboard and mouse](docs/screenshots/09-settings-input.png) |
 | ![Dark theme](docs/screenshots/12-desktop-dark.png) | ![150 % interface size](docs/screenshots/13-scale-150.png) |
 
 Taken with `tools/screenshot.sh` on Ubuntu 24.04 with the Eduka-Icons theme. The Wi-Fi
@@ -109,7 +110,7 @@ Log out, choose **SDE** at the login screen and log in. From a text console you 
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test alpha7; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
+test alpha9; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -191,10 +192,29 @@ licenses and historical copyright notices; see [source credits](docs/THIRD-PARTY
 
 Native GTK4 Calculator, redesigned Start Menu, categorized Suite desktop
 launchers, source-built WM/compositor, isolated `sudo liria`, and independent
-application build versions are described in the [alpha7 notes](docs/ALPHA7.md).
+application build versions are described in the [alpha8 notes](docs/ALPHA8.md).
 The GTK3 suite remains supported alongside GTK4. This is still development
 software; the EDE-inspired FLTK shell and Rust core retain their structure.
 
 ![Native GTK4 Calculator](docs/screenshots/alpha7/02-calculator.png)
 
-[Current alpha7 screenshot gallery](docs/screenshots/alpha7/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39121460921)
+[Previous alpha8 screenshot gallery](docs/screenshots/alpha8/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276)
+
+
+Alpha8 places native and newly installed applications in standard XDG menu
+categories (Calculator/Niny/Taca in Accessories), with live menu updates.
+[Display Settings](docs/ALPHA8.md) adds the MIT
+[DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile
+model port, native RandR monitor settings, safe preview/rollback and shared
+100/125/150/200% interface scale. Physical GPU/dock testing is still needed.
+
+## Alpha 9 panel patch
+
+[Current screenshot gallery](docs/screenshots/alpha9/README.md) ·
+[Latest Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha8-display-settings)
+
+[Alpha 9](docs/ALPHA9.md) adds reference-style panel indicators, a corner-anchored
+Action Center, movable SNI/XEmbed tray, native Bluetooth controls, Wi-Fi/LAN
+details, per-application and microphone volume, and MPRIS player controls.
+Settings keeps SDE's own configuration and two-column layout. The patch is
+still alpha and physical hardware review is required.

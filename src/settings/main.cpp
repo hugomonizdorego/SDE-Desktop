@@ -32,6 +32,7 @@
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
+#include "integration.h"
 #include "paint.h"
 #include "settings.h"
 #include "spawn.h"
@@ -42,7 +43,6 @@
 #include "util.h"
 #include "widgets.h"
 #include "wm.h"
-#include "integration.h"
 #include "x11.h"
 
 namespace sde {
@@ -53,6 +53,7 @@ Config g_cfg;
 Theme g_theme;
 BufferedWindow *g_window = nullptr;
 std::string g_argv0;
+std::string g_restart_page = "appearance";
 
 }  // namespace
 
@@ -70,7 +71,8 @@ void apply_change() {
   if (std::fabs(g_theme.scale - old_scale) > 0.01) {
     // Every size depends on the scale: start again with the new one.
     Fl::add_timeout(0.2, [](void *) {
-      execl("/proc/self/exe", g_argv0.c_str(), "--page", "appearance", static_cast<char *>(nullptr));
+      execl("/proc/self/exe", g_argv0.c_str(), "--page", g_restart_page.c_str(),
+            static_cast<char *>(nullptr));
     });
   }
   if (g_window) g_window->redraw();
@@ -115,19 +117,23 @@ class StyleCard : public Fl_Widget {
   }
   int handle(int e) override {
     switch (e) {
-      case FL_PUSH: return 1;
+      case FL_PUSH:
+        return 1;
       case FL_RELEASE:
         if (Fl::event_inside(this)) choose();
         return 1;
       case FL_FOCUS:
-      case FL_UNFOCUS: redraw(); return 1;
+      case FL_UNFOCUS:
+        redraw();
+        return 1;
       case FL_KEYBOARD:
         if (Fl::event_key() == ' ' || Fl::event_key() == FL_Enter) {
           choose();
           return 1;
         }
         return 0;
-      default: return Fl_Widget::handle(e);
+      default:
+        return Fl_Widget::handle(e);
     }
   }
 
@@ -167,20 +173,30 @@ class AccentPicker : public Fl_Widget {
   }
   int handle(int e) override {
     switch (e) {
-      case FL_PUSH: return 1;
-      case FL_RELEASE: pick((Fl::event_x() - x()) / step()); return 1;
+      case FL_PUSH:
+        return 1;
+      case FL_RELEASE:
+        pick((Fl::event_x() - x()) / step());
+        return 1;
       case FL_FOCUS:
-      case FL_UNFOCUS: redraw(); return 1;
+      case FL_UNFOCUS:
+        redraw();
+        return 1;
       case FL_KEYBOARD: {
         int k = Fl::event_key();
-        if (k == FL_Left && focus_ > 0) --focus_;
-        else if (k == FL_Right && focus_ + 1 < kAccentChoiceCount) ++focus_;
-        else if (k == ' ' || k == FL_Enter) pick(focus_);
-        else return 0;
+        if (k == FL_Left && focus_ > 0)
+          --focus_;
+        else if (k == FL_Right && focus_ + 1 < kAccentChoiceCount)
+          ++focus_;
+        else if (k == ' ' || k == FL_Enter)
+          pick(focus_);
+        else
+          return 0;
         redraw();
         return 1;
       }
-      default: return Fl_Widget::handle(e);
+      default:
+        return Fl_Widget::handle(e);
     }
   }
 
@@ -217,7 +233,8 @@ class WallpaperGrid : public Fl_Widget {
     for (auto &d : dirs) {
       for (auto &f : list_dir(d)) {
         std::string l = lower(f);
-        if (!ends_with(l, ".svg") && !ends_with(l, ".png") && !ends_with(l, ".jpg") && !ends_with(l, ".jpeg"))
+        if (!ends_with(l, ".svg") && !ends_with(l, ".png") && !ends_with(l, ".jpg") &&
+            !ends_with(l, ".jpeg"))
           continue;
         std::string full = d + "/" + f;
         if (std::find(files_.begin(), files_.end(), full) == files_.end()) files_.push_back(full);
@@ -233,7 +250,8 @@ class WallpaperGrid : public Fl_Widget {
     Painter p(window()->w(), window()->h());
     std::string cur = current();
     for (size_t i = 0; i < files_.size(); ++i) {
-      int tx = x() + int(i % size_t(cols_)) * (tw_ + S(12)), ty = y() + int(i / size_t(cols_)) * (th_ + S(12));
+      int tx = x() + int(i % size_t(cols_)) * (tw_ + S(12)),
+          ty = y() + int(i / size_t(cols_)) * (th_ + S(12));
       cairo_surface_t *&thumb = thumbs_[files_[i]];
       if (!thumb) thumb = load_wallpaper(files_[i], tw_, th_, "zoom", 0.5, 0.5, 0.5);
       cairo_save(p.cr());
@@ -244,7 +262,9 @@ class WallpaperGrid : public Fl_Widget {
         cairo_paint(p.cr());
       }
       cairo_restore(p.cr());
-      if (files_[i] == cur) p.stroke_rounded(tx - Sd(3), ty - Sd(3), tw_ + Sd(6), th_ + Sd(6), Sd(10), g_theme.accent, Sd(3));
+      if (files_[i] == cur)
+        p.stroke_rounded(tx - Sd(3), ty - Sd(3), tw_ + Sd(6), th_ + Sd(6), Sd(10), g_theme.accent,
+                         Sd(3));
       if (Fl::focus() == this && int(i) == focus_) focus_ring(p, tx, ty, tw_, th_, Sd(8));
     }
   }
@@ -262,24 +282,33 @@ class WallpaperGrid : public Fl_Widget {
   }
   int handle(int e) override {
     switch (e) {
-      case FL_PUSH: return 1;
+      case FL_PUSH:
+        return 1;
       case FL_RELEASE: {
-        int col = (Fl::event_x() - x()) / (tw_ + S(12)), row = (Fl::event_y() - y()) / (th_ + S(12));
+        int col = (Fl::event_x() - x()) / (tw_ + S(12)),
+            row = (Fl::event_y() - y()) / (th_ + S(12));
         if (col >= 0 && col < cols_ && row >= 0) pick(row * cols_ + col);
         return 1;
       }
       case FL_FOCUS:
-      case FL_UNFOCUS: redraw(); return 1;
+      case FL_UNFOCUS:
+        redraw();
+        return 1;
       case FL_KEYBOARD: {
         int k = Fl::event_key(), n = int(files_.size());
-        if (k == FL_Left && focus_ > 0) --focus_;
-        else if (k == FL_Right && focus_ + 1 < n) ++focus_;
-        else if (k == ' ' || k == FL_Enter) pick(focus_);
-        else return 0;
+        if (k == FL_Left && focus_ > 0)
+          --focus_;
+        else if (k == FL_Right && focus_ + 1 < n)
+          ++focus_;
+        else if (k == ' ' || k == FL_Enter)
+          pick(focus_);
+        else
+          return 0;
         redraw();
         return 1;
       }
-      default: return Fl_Widget::handle(e);
+      default:
+        return Fl_Widget::handle(e);
     }
   }
 
@@ -291,7 +320,8 @@ class WallpaperGrid : public Fl_Widget {
 
 class ImageBox : public Fl_Widget {
  public:
-  ImageBox(int x, int y, int s, std::vector<std::string> names) : Fl_Widget(x, y, s, s), names_(std::move(names)) {}
+  ImageBox(int x, int y, int s, std::vector<std::string> names)
+      : Fl_Widget(x, y, s, s), names_(std::move(names)) {}
   void draw() override {
     Painter p(window()->w(), window()->h());
     p.image(IconLoader::get(names_, w()), x(), y(), w());
@@ -321,7 +351,8 @@ void open_page(const char *id) {
 }
 
 // Native category symbols remain distinct even without an optional icon theme.
-void settings_glyph(Painter &p, const std::string &id, double x, double y, double size, const Color &c) {
+void settings_glyph(Painter &p, const std::string &id, double x, double y, double size,
+                    const Color &c) {
   if (id == "appearance") {
     glyph::sun(p, x, y, size, c);
     return;
@@ -348,8 +379,8 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
     p.stroke_rounded(x, y + size * .18, size, size * .65, size * .1, c, size * .07);
     for (int row = 0; row < 2; ++row)
       for (int col = 0; col < 4; ++col)
-        p.fill_rounded(x + size * (.14 + col * .19), y + size * (.32 + row * .18), size * .09, size * .08,
-                       size * .02, c);
+        p.fill_rounded(x + size * (.14 + col * .19), y + size * (.32 + row * .18), size * .09,
+                       size * .08, size * .02, c);
     p.line(x + size * .3, y + size * .72, x + size * .7, y + size * .72, c, size * .06);
     return;
   }
@@ -409,8 +440,8 @@ class PanelStyleCard : public Fl_Widget {
     {
       Painter p(window()->w(), window()->h());
       p.fill_rounded(x(), y(), w(), h() - S(25), S(10), g_theme.background);
-      p.stroke_rounded(x(), y(), w(), h() - S(25), S(10), selected ? g_theme.accent : g_theme.border,
-                       selected ? S(2) : S(1));
+      p.stroke_rounded(x(), y(), w(), h() - S(25), S(10),
+                       selected ? g_theme.accent : g_theme.border, selected ? S(2) : S(1));
       p.fill_rounded(x() + S(12), y() + S(12), w() * .5, S(20), S(4), g_theme.surface);
       int length = style_ == "full" ? w() - S(4) : style_ == "short" ? w() * 2 / 3 : w() - S(22);
       int bx = x() + (w() - length) / 2, by = y() + h() - S(47);
@@ -420,7 +451,8 @@ class PanelStyleCard : public Fl_Widget {
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h() - S(25), S(10));
     }
     text_font(g_theme.font_size, selected);
-    draw_text(title_, x(), y() + h() - S(24), w(), S(22), selected ? g_theme.accent_text : g_theme.text, 1);
+    draw_text(title_, x(), y() + h() - S(24), w(), S(22),
+              selected ? g_theme.accent_text : g_theme.text, 1);
   }
   void choose() {
     g_cfg.set("panel", "style", style_);
@@ -457,7 +489,8 @@ void build_home(Page *page) {
   int x = page->left() + S(20), y = page->cursor();
   new ImageBox(x, y + S(8), S(46), {"computer", "sde-logo"});
   new Label(x + S(62), y, page->width() - S(102), S(30), user_name(), Label::BOLD);
-  new Label(x + S(62), y + S(30), page->width() - S(102), S(24), os_release("PRETTY_NAME"), Label::DIM);
+  new Label(x + S(62), y + S(30), page->width() - S(102), S(24), os_release("PRETTY_NAME"),
+            Label::DIM);
   page->advance(S(66));
   page->end_card();
   int gap = S(12), width = (page->width() - gap) / 2;
@@ -465,20 +498,24 @@ void build_home(Page *page) {
     const char *id, *title, *hint, *icon;
   };
   const Link links[] = {
-      {"appearance", N_("Appearance"), N_("Themes, colors and wallpaper"), "preferences-desktop-theme"},
+      {"appearance", N_("Appearance"), N_("Themes, colors and wallpaper"),
+       "preferences-desktop-theme"},
       {"panel", N_("Panel"), N_("Full, floating or short"), "preferences-system-windows"},
-      {"action-center", N_("Action Center"), N_("Clock, greeting and quick controls"), "preferences-system"},
+      {"action-center", N_("Action Center"), N_("Clock, greeting and quick controls"),
+       "preferences-system"},
       {"display", N_("Displays"), N_("Resolution and arrangement"), "video-display"},
       {"input", N_("Keyboard & Mouse"), N_("Layouts, pointer and touchpad"), "input-keyboard"},
       {"notifications", N_("Notifications"), N_("Alerts and Do Not Disturb"),
        "preferences-desktop-notification"},
-      {"suite", N_("SDE Suite"), N_("Applications and source credits"), "applications-other"},
-      {"system", N_("Power & Updates"), N_("Power, packages and processes"), "utilities-system-monitor"},
+      {"suite", N_("Applications"), N_("Applications and source credits"), "applications-other"},
+      {"system", N_("Power & Updates"), N_("Power, packages and processes"),
+       "utilities-system-monitor"},
   };
   y = page->cursor();
   for (size_t i = 0; i < sizeof(links) / sizeof(links[0]); ++i)
     new SettingsLink(page->left() + int(i % 2) * (width + gap), y + int(i / 2) * S(112), width,
-                     _(links[i].title), _(links[i].hint), {links[i].icon, "preferences-system"}, links[i].id);
+                     _(links[i].title), _(links[i].hint), {links[i].icon, "preferences-system"},
+                     links[i].id);
   page->advance(S(448));
   page->note(_("Changes are saved automatically."));
   page->finish();
@@ -533,27 +570,31 @@ void build_appearance(Page *page) {
   page->end_card();
 
   page->begin_card(_("Wallpaper"));
-  auto *grid = new WallpaperGrid(page->left() + S(20), page->cursor(), page->width() - S(40), S(80));
+  auto *grid =
+      new WallpaperGrid(page->left() + S(20), page->cursor(), page->width() - S(40), S(80));
   page->advance(grid->h() + S(8));
   std::string cm = g_cfg.get("appearance", "wallpaper_mode", "zoom");
   static const char *modes[] = {"zoom", "fit", "stretch", "center", "tile"};
   int mode_i = 0;
   for (int i = 0; i < 5; ++i)
     if (cm == modes[i]) mode_i = i;
-  page->choice_row(_("Placement"), {_("Zoom"), _("Fit"), _("Stretch"), _("Center"), _("Tile")}, mode_i, [](int v) {
-    if (v >= 0 && v < 5) g_cfg.set("appearance", "wallpaper_mode", modes[v]);
-    apply_change();
-  });
+  page->choice_row(_("Placement"), {_("Zoom"), _("Fit"), _("Stretch"), _("Center"), _("Tile")},
+                   mode_i, [](int v) {
+                     if (v >= 0 && v < 5) g_cfg.set("appearance", "wallpaper_mode", modes[v]);
+                     apply_change();
+                   });
   page->row(_("Your own picture"), S(160), S(34), [grid](int x, int y, int w, int h) {
     auto *b = new FlatButton(x, y, w, h, _("Browse..."));
-    b->callback([](Fl_Widget *, void *d) {
-      const char *f = fl_file_chooser(_("Choose a wallpaper"), "Images (*.{png,jpg,jpeg,svg})",
-                                      (home_dir() + "/Pictures").c_str());
-      if (!f) return;
-      static_cast<WallpaperGrid *>(d)->add(f);
-      g_cfg.set("appearance", "wallpaper", f);
-      apply_change();
-    }, grid);
+    b->callback(
+        [](Fl_Widget *, void *d) {
+          const char *f = fl_file_chooser(_("Choose a wallpaper"), "Images (*.{png,jpg,jpeg,svg})",
+                                          (home_dir() + "/Pictures").c_str());
+          if (!f) return;
+          static_cast<WallpaperGrid *>(d)->add(f);
+          g_cfg.set("appearance", "wallpaper", f);
+          apply_change();
+        },
+        grid);
     return b;
   });
   page->end_card();
@@ -573,7 +614,8 @@ void build_panel(Page *page) {
   new PanelStyleCard(page->left() + S(16), preview_y, preview_w, S(104), "full", _("Full edge"));
   new PanelStyleCard(page->left() + S(28) + preview_w, preview_y, preview_w, S(104), "floating",
                      _("Floating"));
-  new PanelStyleCard(page->left() + S(40) + 2 * preview_w, preview_y, preview_w, S(104), "short", _("Short"));
+  new PanelStyleCard(page->left() + S(40) + 2 * preview_w, preview_y, preview_w, S(104), "short",
+                     _("Short"));
   page->advance(S(112));
   page->end_card();
   page->begin_card(_("Layout"));
@@ -583,11 +625,15 @@ void build_panel(Page *page) {
                      apply_change();
                    });
   int h = g_cfg.get_int("panel", "height", 40);
-  page->choice_row(_("Size"), {_("Small"), _("Medium"), _("Large")}, h == 32 ? 0 : h == 48 ? 2 : 1, [](int v) {
-    static const char *vals[] = {"32", "40", "48"};
-    if (v >= 0 && v < 3) g_cfg.set("panel", "height", vals[v]);
-    apply_change();
-  });
+  page->choice_row(_("Size"), {_("Small"), _("Medium"), _("Large")},
+                   h == 32   ? 0
+                   : h == 48 ? 2
+                             : 1,
+                   [](int v) {
+                     static const char *vals[] = {"32", "40", "48"};
+                     if (v >= 0 && v < 3) g_cfg.set("panel", "height", vals[v]);
+                     apply_change();
+                   });
   auto *panel_width = page->slider_row(
       _("Panel width"), 65, 100, g_cfg.get_int("panel", "width_percent", 96),
       [](double v) {
@@ -596,9 +642,10 @@ void build_panel(Page *page) {
       },
       _("Floating panels follow this percentage. Short panels use up to 72%."));
   if (g_cfg.get("panel", "style", "full") == "full") panel_width->deactivate();
-  page->switch_row(_("Hide automatically"), g_cfg.get_bool("panel", "autohide", false),
-                   [](bool on) { set_bool("panel", "autohide", on); },
-                   _("The panel appears when the pointer touches the screen edge."));
+  page->switch_row(
+      _("Hide automatically"), g_cfg.get_bool("panel", "autohide", false),
+      [](bool on) { set_bool("panel", "autohide", on); },
+      _("The panel appears when the pointer touches the screen edge."));
   page->end_card();
 
   page->begin_card(_("Clock and status"));
@@ -606,8 +653,20 @@ void build_panel(Page *page) {
                    [](bool on) { set_bool("panel", "clock_24h", on); });
   page->switch_row(_("Show the date"), g_cfg.get_bool("panel", "show_date", true),
                    [](bool on) { set_bool("panel", "show_date", on); });
-  page->switch_row(_("Show battery status"), g_cfg.get_bool("panel", "show_battery", true),
-                   [](bool on) { set_bool("panel", "show_battery", on); }, _("On laptops and tablets."));
+  page->switch_row(
+      _("Show battery status"), g_cfg.get_bool("panel", "show_battery", true),
+      [](bool on) { set_bool("panel", "show_battery", on); }, _("On laptops and tablets."));
+  for (const auto &item : std::vector<std::pair<std::string, std::string>>{
+           {"show_keyboard", _("Keyboard indicator")},
+           {"show_bluetooth", _("Bluetooth indicator")},
+           {"show_power", _("Power button")},
+           {"show_media", _("Media player button")},
+           {"show_network", _("Network indicator")},
+           {"show_sound", _("Sound indicator")},
+           {"show_controls", _("Quick controls button")},
+           {"show_tray", _("System tray button")}})
+    page->switch_row(item.second, g_cfg.get_bool("panel", item.first, true),
+                     [key = item.first](bool on) { set_bool("panel", key.c_str(), on); });
   page->end_card();
 
   page->begin_card(_("Pinned applications"));
@@ -628,33 +687,38 @@ void build_panel(Page *page) {
     const char *labels[] = {_("Move Up"), _("Move Down"), _("Unpin")};
     int deltas[] = {-1, 1, 0};
     for (int b = 0; b < 3; ++b) {
-      auto *btn = new FlatButton(x + w - (3 - b) * S(96) + S(4), y + (rh - S(32)) / 2, S(92), S(32), labels[b]);
+      auto *btn = new FlatButton(x + w - (3 - b) * S(96) + S(4), y + (rh - S(32)) / 2, S(92), S(32),
+                                 labels[b]);
       if ((b == 0 && i == 0) || (b == 1 && i + 1 == pins.size())) btn->deactivate();
-      btn->callback([](Fl_Widget *, void *d) {
-        auto *m = static_cast<Move *>(d);
-        auto ids = split(g_cfg.get("panel", "pinned"), ';');
-        std::vector<std::string> valid;
-        for (auto &id : ids) {
-          DesktopEntry e;
-          if (find_application(trim(id), e)) valid.push_back(trim(id));
-        }
-        if (m->index >= valid.size()) return;
-        if (m->delta == 0) valid.erase(valid.begin() + long(m->index));
-        else {
-          size_t other = m->index + size_t(m->delta);
-          if (other < valid.size()) std::swap(valid[m->index], valid[other]);
-        }
-        std::string list;
-        for (auto &id : valid) list += (list.empty() ? "" : ";") + id;
-        g_cfg.set("panel", "pinned", list);
-        apply_change();
-        Fl::add_timeout(0, [](void *) { refresh_page(); });
-      }, keep(new Move{i, deltas[b]}));
+      btn->callback(
+          [](Fl_Widget *, void *d) {
+            auto *m = static_cast<Move *>(d);
+            auto ids = split(g_cfg.get("panel", "pinned"), ';');
+            std::vector<std::string> valid;
+            for (auto &id : ids) {
+              DesktopEntry e;
+              if (find_application(trim(id), e)) valid.push_back(trim(id));
+            }
+            if (m->index >= valid.size()) return;
+            if (m->delta == 0)
+              valid.erase(valid.begin() + long(m->index));
+            else {
+              size_t other = m->index + size_t(m->delta);
+              if (other < valid.size()) std::swap(valid[m->index], valid[other]);
+            }
+            std::string list;
+            for (auto &id : valid) list += (list.empty() ? "" : ";") + id;
+            g_cfg.set("panel", "pinned", list);
+            apply_change();
+            Fl::add_timeout(0, [](void *) { refresh_page(); });
+          },
+          keep(new Move{i, deltas[b]}));
     }
     page->advance(rh);
   }
-  page->note(_("To pin an application, right-click it in the application menu or on the taskbar. "
-               "Drag pinned icons on the panel to change their order."));
+  page->note(
+      _("To pin an application, right-click it in the application menu or on the taskbar. "
+        "Drag pinned icons on the panel to change their order."));
   page->end_card();
   page->finish();
 }
@@ -665,7 +729,8 @@ void build_action_center(Page *page) {
   page->switch_row(_("Show the clock"), g_cfg.get_bool("action_center", "show_clock", true),
                    [](bool on) { set_bool("action_center", "show_clock", on); });
   page->choice_row(_("Clock style"), {_("Digital"), _("Analog")},
-                   g_cfg.get("action_center", "clock_style", "digital") == "analog" ? 1 : 0, [](int v) {
+                   g_cfg.get("action_center", "clock_style", "digital") == "analog" ? 1 : 0,
+                   [](int v) {
                      g_cfg.set("action_center", "clock_style", v == 1 ? "analog" : "digital");
                      apply_change();
                    });
@@ -679,9 +744,26 @@ void build_action_center(Page *page) {
       _("Colorful tiles"), g_cfg.get_bool("action_center", "multicolor", false),
       [](bool on) { set_bool("action_center", "multicolor", on); },
       _("Give each quick control its own color, inspired by Eduka-Desktop."));
+  page->choice_row(_("Tile columns"), {_("Two"), _("Three")},
+                   g_cfg.get_int("action_center", "tile_columns", 2) == 3 ? 1 : 0, [](int v) {
+                     g_cfg.set("action_center", "tile_columns", v == 1 ? "3" : "2");
+                     apply_change();
+                   });
+  page->switch_row(
+      _("Move status icons into Action Center"),
+      g_cfg.get_bool("action_center", "move_status", true),
+      [](bool on) { set_bool("action_center", "move_status", on); },
+      _("System indicators and application tray return to the panel when it closes."));
+  for (const auto &item : std::vector<std::pair<std::string, std::string>>{
+           {"show_media", _("Media player cards")},
+           {"show_app_volume", _("Per-application volume")},
+           {"show_microphone", _("Microphone controls")},
+           {"show_tray", _("System tray card")}})
+    page->switch_row(item.second, g_cfg.get_bool("action_center", item.first, true),
+                     [key = item.first](bool on) { set_bool("action_center", key.c_str(), on); });
   page->note(
-      _("Network, Display, Do Not Disturb, Dark Mode, Calendar and Settings. Click Network to show Wi-Fi "
-        "connections."));
+      _("Bluetooth, Wi-Fi, LAN, sound and media have dedicated pages. The Action Center stays at "
+        "the panel corner above the clock."));
   page->row(_("Preview"), S(190), S(34), [](int x, int y, int w, int h) {
     auto *button = new FlatButton(x, y, w, h, _("Open Action Center"), true);
     button->callback([](Fl_Widget *, void *) { x11::send_command("quick"); });
@@ -689,7 +771,8 @@ void build_action_center(Page *page) {
   });
   page->end_card();
   page->note(
-      _("Click the panel clock or press Super+A to open the Action Center. Super+C opens the calendar "
+      _("Click the panel clock or press Super+A to open the Action Center. Super+C opens the "
+        "calendar "
         "directly."));
   page->finish();
 }
@@ -714,7 +797,10 @@ void send_test_notification() {
                                 "org.freedesktop.Notifications", "Notify");
   {
     dbus::Writer w(m);
-    w.str("SDE Settings").u32(0).str("preferences-desktop-notification").str(_("Notifications work"))
+    w.str("SDE Settings")
+        .u32(0)
+        .str("preferences-desktop-notification")
+        .str(_("Notifications work"))
         .str(_("This is how notifications from your applications look."));
     w.strings({"default", _("Open")});
     { dbus::Writer hints(w.iter(), DBUS_TYPE_ARRAY, "{sv}"); }
@@ -726,13 +812,18 @@ void send_test_notification() {
 void build_notifications(Page *page) {
   page->heading(_("Notifications"), _("Messages from your applications"));
   page->begin_card();
-  page->switch_row(_("Do Not Disturb"), g_cfg.get_bool("notifications", "do_not_disturb", false),
-                   [](bool on) { set_bool("notifications", "do_not_disturb", on); },
-                   _("Hide notifications, except critical ones such as a low battery."));
+  page->switch_row(
+      _("Do Not Disturb"), g_cfg.get_bool("notifications", "do_not_disturb", false),
+      [](bool on) { set_bool("notifications", "do_not_disturb", on); },
+      _("Hide notifications, except critical ones such as a low battery."));
   int t = g_cfg.get_int("notifications", "timeout", 6);
   page->choice_row(_("Show notifications for"),
                    {_("4 seconds"), _("6 seconds"), _("10 seconds"), _("Until dismissed")},
-                   t == 4 ? 0 : t == 10 ? 2 : t == 0 ? 3 : 1, [](int v) {
+                   t == 4    ? 0
+                   : t == 10 ? 2
+                   : t == 0  ? 3
+                             : 1,
+                   [](int v) {
                      static const char *vals[] = {"4", "6", "10", "0"};
                      if (v >= 0 && v < 4) g_cfg.set("notifications", "timeout", vals[v]);
                      apply_change();
@@ -764,8 +855,8 @@ std::string wm_name() {
 
 // Source names are short clickable links. Licenses open the installed fork's
 // complete copyright file, including all historical contributors.
-FlatButton *action_button(int x, int y, int w, int h, const std::string &label, std::vector<std::string> argv,
-                          bool primary = false) {
+FlatButton *action_button(int x, int y, int w, int h, const std::string &label,
+                          std::vector<std::string> argv, bool primary = false) {
   auto *button = new FlatButton(x, y, w, h, label, primary);
   button->callback(
       [](Fl_Widget *, void *p) {
@@ -777,7 +868,7 @@ FlatButton *action_button(int x, int y, int w, int h, const std::string &label, 
 }
 
 void build_suite(Page *page) {
-  page->heading(_("SDE Suite"), _("Applications for DebION GNU/Linux"));
+  page->heading(_("Applications"), _("Applications for DebION GNU/Linux"));
   page->note(
       _("Development edition. Native SDE applications are included in one package. "
         "Original authors and licenses remain credited."));
@@ -807,7 +898,8 @@ void build_suite(Page *page) {
     page->end_card();
   }
   page->note(
-      _("Original application licenses and copyrights are retained. SDE Update credits mintupdate; PackageKit "
+      _("Original application licenses and copyrights are retained. SDE Update credits mintupdate; "
+        "PackageKit "
         "performs Debian transactions."));
   page->finish();
 }
@@ -829,17 +921,23 @@ void build_suite_system(Page *page) {
   }
   page->end_card();
   page->note(
-      _("SDE Power Manager handles battery, lid and idle policies. SDE Screen Lock starts with the session. "
+      _("SDE Power Manager handles battery, lid and idle policies. SDE Screen Lock starts with the "
+        "session. "
         "No background updater is started."));
   page->begin_card(_("Windows and effects"));
-  page->note(_("SDE WM manages windows. SDE Compositor adds subtle shadows without blur or animations."));
-  page->choice_row(_("Compositing"), {_("Enabled"), _("Disabled")},
+  page->note(
+      _("SDE WM manages windows. SDE Compositor adds subtle shadows without blur or animations."));
+  page->choice_row(
+      _("Compositing"), {_("Enabled"), _("Disabled")},
       g_cfg.get("compositor", "mode", "auto") == "off" ? 1 : 0,
-      [](int choice) { g_cfg.set("compositor", "mode", choice ? "off" : "auto"); apply_change(); },
+      [](int choice) {
+        g_cfg.set("compositor", "mode", choice ? "off" : "auto");
+        apply_change();
+      },
       _("Changes apply at the next login. Disable effects to reduce graphics work."));
   page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
-    return action_button(x, y, w, h, _("SDE Suite"), {"sde-settings", "--page", "suite"});
+    return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});
   });
   page->finish();
 }
@@ -850,8 +948,10 @@ void build_about(Page *page) {
   new ImageBox(page->left() + S(24), y + S(16), S(88), {"sde-logo", "start-here"});
   int tx = page->left() + S(132), tw = page->width() - S(152);
   new Label(tx, y + S(14), tw, S(34), "Selviana Desktop Environment", Label::TITLE);
-  new Label(tx, y + S(50), tw, S(22), _("Small and fast, with a modern desktop experience."), Label::SUBTITLE);
-  new Label(tx, y + S(76), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION), Label::DIM);
+  new Label(tx, y + S(50), tw, S(22), _("Small and fast, with a modern desktop experience."),
+            Label::SUBTITLE);
+  new Label(tx, y + S(76), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION),
+            Label::DIM);
   page->advance(S(112));
   page->end_card();
 
@@ -911,7 +1011,7 @@ const std::vector<PageInfo> &pages() {
        N_("Keyboard & Mouse"),
        {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
        build_input_page},
-      {"suite", N_("SDE Suite"), {"applications-other", "sde-logo"}, build_suite},
+      {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite},
       {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
       {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
   };
@@ -932,8 +1032,12 @@ void show_page(int index);
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  int row_h() const { return std::max(S(18), std::min(S(44), (h() - S(144)) / int(pages().size()))); }
-  int row_y(int i) const { return y() + S(80) + i * row_h() + (i >= 1 ? S(24) : 0) + (i >= 5 ? S(24) : 0); }
+  int row_h() const {
+    return std::max(S(18), std::min(S(44), (h() - S(144)) / int(pages().size())));
+  }
+  int row_y(int i) const {
+    return y() + S(80) + i * row_h() + (i >= 1 ? S(24) : 0) + (i >= 5 ? S(24) : 0);
+  }
   void draw() override {
     {
       Painter p(window()->w(), window()->h());
@@ -943,7 +1047,8 @@ class Sidebar : public Fl_Widget {
       for (size_t i = 0; i < pages().size(); ++i) {
         int ry = row_y(int(i));
         if (int(i) == g_page_index) {
-          p.fill_rounded(x() + S(10), ry, w() - S(20), row_h() - S(4), S(9), g_theme.accent.alpha(0.15));
+          p.fill_rounded(x() + S(10), ry, w() - S(20), row_h() - S(4), S(9),
+                         g_theme.accent.alpha(0.15));
           p.fill_rounded(x() + S(10), ry + S(10), Sd(3), std::max(S(6), row_h() - S(20)), Sd(1.5),
                          g_theme.accent);
         } else if (int(i) == hover_) {
@@ -951,13 +1056,15 @@ class Sidebar : public Fl_Widget {
         }
         if (Fl::focus() == this && int(i) == g_page_index)
           focus_ring(p, x() + S(10), ry, w() - S(20), row_h() - S(4), S(9));
-        settings_glyph(p,pages()[i].id,x()+S(24),ry+(row_h()-S(20))/2,S(20),g_theme.accent_text);
+        settings_glyph(p, pages()[i].id, x() + S(24), ry + (row_h() - S(20)) / 2, S(20),
+                       g_theme.accent_text);
       }
     }
     text_font(g_theme.font_size + 2, true);
     draw_text(_("Settings"), x() + S(64), y() + S(22), w() - S(70), S(32), g_theme.text);
     text_font(g_theme.font_size - 2, true);
-    draw_text(_("PERSONALIZATION"), x() + S(22), row_y(1) - S(23), w() - S(30), S(20), g_theme.text_dim);
+    draw_text(_("PERSONALIZATION"), x() + S(22), row_y(1) - S(23), w() - S(30), S(20),
+              g_theme.text_dim);
     draw_text(_("SYSTEM"), x() + S(22), row_y(5) - S(23), w() - S(30), S(20), g_theme.text_dim);
     for (size_t i = 0; i < pages().size(); ++i) {
       bool cur = int(i) == g_page_index;
@@ -1000,16 +1107,22 @@ class Sidebar : public Fl_Widget {
         redraw();
         return 1;
       case FL_FOCUS:
-      case FL_UNFOCUS: redraw(); return 1;
+      case FL_UNFOCUS:
+        redraw();
+        return 1;
       case FL_KEYBOARD: {
         int k = Fl::event_key(), n = int(pages().size());
-        if (k == FL_Up && g_page_index > 0) show_page(g_page_index - 1);
-        else if (k == FL_Down && g_page_index + 1 < n) show_page(g_page_index + 1);
-        else return 0;
+        if (k == FL_Up && g_page_index > 0)
+          show_page(g_page_index - 1);
+        else if (k == FL_Down && g_page_index + 1 < n)
+          show_page(g_page_index + 1);
+        else
+          return 0;
         take_focus();
         return 1;
       }
-      default: return Fl_Widget::handle(e);
+      default:
+        return Fl_Widget::handle(e);
     }
   }
 
@@ -1032,6 +1145,7 @@ class SettingsWindow : public BufferedWindow {
 void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
   g_page_index = index;
+  g_restart_page = pages()[size_t(index)].id;
   if (g_sidebar_scroll && g_sidebar) {
     int top = g_sidebar->row_y(index), bottom = top + g_sidebar->row_h();
     int scroll = g_sidebar_scroll->yposition();
@@ -1080,17 +1194,18 @@ int main(int argc, char **argv) {
       printf("sde-settings %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("%s", _("Usage: sde-settings [--page NAME] [--apply] [--version]\n\n"
-                     "  --page NAME  open a page: home, appearance, panel, desktop, action-center,\n"
-                     "               notifications, display, input, suite, system or about\n"
-                     "  --apply      apply the saved display, keyboard and mouse settings and exit\n"));
+      printf("%s",
+             _("Usage: sde-settings [--page NAME] [--apply] [--version]\n\n"
+               "  --page NAME  open a page: home, appearance, panel, desktop, action-center,\n"
+               "               notifications, display, input, suite, system or about\n"
+               "  --apply      apply the saved display, keyboard and mouse settings and exit\n"));
       return a == "--help" ? 0 : 2;
     }
   }
   g_cfg.load();
   if (apply) {
     sync_gtk_settings(g_cfg);
-    ensure_suite_shortcuts();
+    migrate_legacy_suite_shortcuts();
     apply_all(g_cfg);
     return 0;
   }
@@ -1127,6 +1242,7 @@ int main(int argc, char **argv) {
     if (page == pages()[i].id) index = int(i);
   show_page(index);
   win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  start_display_watch();
   win->show();
   return Fl::run();
 }

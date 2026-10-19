@@ -1,4 +1,4 @@
-# SDE Suite for DebION GNU/Linux
+# SDE applications for DebION GNU/Linux
 
 Alpha6 builds eight native application forks from pinned upstream source. Their
 ELF executables, libraries, resources, schemas and helpers are included in the
@@ -17,6 +17,8 @@ they are not duplicated inside SDE.
 | SDE System Monitor | `sde-system-monitor` | [mate-system-monitor](https://github.com/mate-desktop/mate-system-monitor) |
 | SDE Power Manager | `sde-power-manager`, `sde-power-preferences`, `sde-power-statistics` | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) |
 | SDE Screen Lock | `sde-screensaver`, `sde-screensaver-command`, `sde-screensaver-preferences` | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) |
+| Calculator | `calculator` | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) engine, native GTK4 frontend |
+| Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
 | SDE Update | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model and Debian PackageKit |
 
 These GTK forks retain their upstream C/C++ implementation. SDE's configuration,
@@ -46,8 +48,7 @@ overrides. Xanara supports PDF, PostScript, DjVu and comic archives; the EPUB,
 DVI and XPS backends are disabled to avoid extra runtime stacks in this build.
 
 The panel defaults to a full-width square-edged rectangle. Floating and short
-styles remain available. Existing saved panel choices are retained. Settings →
-SDE Suite shows short clickable source names and complete installed copyright
+styles remain available. Existing saved panel choices are retained. Settings → Applications shows short clickable source names and complete installed copyright
 notices under `/usr/share/doc/sde/upstream/<upstream>/`.
 
 ## Installation
@@ -100,8 +101,8 @@ CI builds and installs on Debian testing, checks actual native ELF files,
 rejects original MATE application packages, checks MIME overrides and copyright
 notices, and opens the five file-handling applications with sample files on X11.
 Network, audio and APT screenshot fixtures are explicitly simulated. No test
-performs a real update, lock, suspend or shutdown. Current alpha7 native captures are under
-`docs/screenshots/alpha7`; CI uploads the complete capture set, including Calculator
+performs a real update, lock, suspend or shutdown. Current alpha8 menu/display captures are under
+`docs/screenshots/alpha8`; CI uploads the complete capture set, including Calculator
 and the isolated administrator Liria window. Older captures remain as release history.
 Hardware login, power, locking and whole-desktop idle memory remain to be
 validated on DebION. See [THIRD-PARTY.md](THIRD-PARTY.md) for provenance.
@@ -109,3 +110,5 @@ validated on DebION. See [THIRD-PARTY.md](THIRD-PARTY.md) for provenance.
 LXQt, Budgie and COSMIC remain development references rather than extra desktop
 shells shipped in SDE. `upstream/sources.lock.json` and `tools/suite-source.py`
 prepare those original reference trees independently of the actual build lock.
+
+See [alpha8 notes](ALPHA8.md) for current category placement and Display Settings.

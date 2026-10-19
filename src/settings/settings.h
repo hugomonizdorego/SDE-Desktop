@@ -18,6 +18,7 @@ void apply_change();
 void refresh_page();
 
 void build_display_page(Page *page);
+void start_display_watch();
 void build_input_page(Page *page);
 
 }  // namespace sde

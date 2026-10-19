@@ -6,14 +6,17 @@
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <X11/Xutil.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/extensions/shape.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <ctime>
-#include <cmath>
 
 #include "calendar.h"
+#include "controls.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
@@ -30,6 +33,13 @@
 
 using namespace sde;
 
+namespace {
+long long steady_ms() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+}  // namespace
 Panel *Panel::instance = nullptr;
 
 Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
@@ -45,6 +55,11 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
 }
 
 Panel::~Panel() {
+  if (input_display_) {
+    Fl::remove_fd(ConnectionNumber(input_display_));
+    XCloseDisplay(input_display_);
+    input_display_ = nullptr;
+  }
   for (auto &t : tasks_)
     if (t.icon) cairo_surface_destroy(t.icon);
 }
@@ -88,8 +103,8 @@ void Panel::place_on_screen() {
   std::string style = cfg_.get("panel", "style", "full");
   int kind = style == "floating" ? 1 : style == "short" ? 2 : 0;
   auto g = sde_panel_geometry(monitor_x_, monitor_y_, monitor_w_, monitor_h_, theme_.panel_height,
-                              theme_.panel_top, kind, cfg_.get_int("panel", "width_percent", 96), S(8),
-                              S(600), autohide_ && !revealed_);
+                              theme_.panel_top, kind, cfg_.get_int("panel", "width_percent", 96),
+                              S(8), S(600), autohide_ && !revealed_);
   edge_reserve_ = g.reserve;
   sde::BufferedWindow::resize(g.x, g.y, g.width, g.height);
   relayout();
@@ -103,7 +118,8 @@ void Panel::place_on_screen() {
 
 void Panel::apply_strut() {
   int reserve = autohide_ ? 0 : edge_reserve_;
-  x11::set_edge_strut(fl_xid(this), theme_.panel_top, reserve, x(), x() + w() - 1, monitor_y_, monitor_h_);
+  x11::set_edge_strut(fl_xid(this), theme_.panel_top, reserve, x(), x() + w() - 1, monitor_y_,
+                      monitor_h_);
 }
 
 void Panel::apply_shape() {
@@ -116,12 +132,16 @@ void Panel::apply_shape() {
   int radius = std::min(S(16), h() / 2);
   std::vector<XRectangle> rows;
   for (int row = 0; row < h(); ++row) {
-    double dy = row < radius ? radius - row - 0.5 : row >= h() - radius ? row - (h() - radius) + 0.5 : 0;
-    int inset = dy > 0 ? int(std::ceil(radius - std::sqrt(std::max(0.0, radius * radius - dy * dy)))) : 0;
-    rows.push_back({short(inset), short(row), static_cast<unsigned short>(std::max(1, w() - 2 * inset)), 1});
+    double dy = row < radius          ? radius - row - 0.5
+                : row >= h() - radius ? row - (h() - radius) + 0.5
+                                      : 0;
+    int inset =
+        dy > 0 ? int(std::ceil(radius - std::sqrt(std::max(0.0, radius * radius - dy * dy)))) : 0;
+    rows.push_back(
+        {short(inset), short(row), static_cast<unsigned short>(std::max(1, w() - 2 * inset)), 1});
   }
-  XShapeCombineRectangles(fl_display, fl_xid(this), ShapeBounding, 0, 0, rows.data(), int(rows.size()),
-                          ShapeSet, YXBanded);
+  XShapeCombineRectangles(fl_display, fl_xid(this), ShapeBounding, 0, 0, rows.data(),
+                          int(rows.size()), ShapeSet, YXBanded);
 }
 
 void Panel::resize(int x, int y, int w, int h) {
@@ -155,12 +175,29 @@ void Panel::setup() {
   XGetWindowAttributes(fl_display, xid, &own);
   XSelectInput(fl_display, xid, own.your_event_mask | SubstructureNotifyMask);
 
+  input_display_ = XOpenDisplay(nullptr);
+  if (input_display_) {
+    int event, error, major = 2, minor = 0;
+    if (!XQueryExtension(input_display_, "XInputExtension", &input_opcode_, &event, &error) ||
+        XIQueryVersion(input_display_, &major, &minor) != Success) {
+      XCloseDisplay(input_display_);
+      input_display_ = nullptr;
+    } else {
+      unsigned char bits[XIMaskLen(XI_RawButtonPress)] = {};
+      XISetMask(bits, XI_RawButtonPress);
+      XIEventMask mask{XIAllMasterDevices, int(sizeof bits), bits};
+      XISelectEvents(input_display_, DefaultRootWindow(input_display_), &mask, 1);
+      XFlush(input_display_);
+      Fl::add_fd(ConnectionNumber(input_display_), FL_READ, input_event, this);
+    }
+  }
   tray_.reset(new Tray(xid));
   tray_->set_icon_size(tray_icon_);
   tray_->start();
   sni_.reset(new SniHost([this] {
     relayout();
     redraw();
+    quick_->status_changed();
   }));
   sni_->start();
   SystemStatus::get().start([this] {
@@ -212,11 +249,18 @@ void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
 
 void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
+  if (p == quick_.get()) {
+    popup_opened_at_ = steady_ms();
+    PanelControls::get().set_visible(true);
+  }
+  relayout();
   redraw();
 }
 
 void Panel::popup_closed(PanelPopup *p) {
   if (open_popup_ == p) open_popup_ = nullptr;
+  if (p == quick_.get()) PanelControls::get().set_visible(false);
+  relayout();
   redraw();
   if (autohide_) Fl::add_timeout(0.8, hide_timeout, this);
 }
@@ -274,7 +318,8 @@ void Panel::pin(const std::string &id) {
 }
 
 void Panel::unpin(const std::string &id) {
-  pinned_.erase(std::remove_if(pinned_.begin(), pinned_.end(), [&](const Pinned &p) { return p.entry.id == id; }),
+  pinned_.erase(std::remove_if(pinned_.begin(), pinned_.end(),
+                               [&](const Pinned &p) { return p.entry.id == id; }),
                 pinned_.end());
   save_pins();
   relayout();
@@ -310,13 +355,78 @@ bool Panel::find_entry_for(const Task &t, DesktopEntry &out) const {
 
 // ------------------------------------------------------------------ layout
 
-int Panel::status_count() const {
-  const SystemStatus &s = SystemStatus::get();
-  int n = 0;
-  if (s.network.available) ++n;
-  if (s.audio.available) ++n;
-  if (s.battery.present && cfg_.get_bool("panel", "show_battery", true)) ++n;
-  return n;
+bool Panel::status_in_center() const {
+  return quick_ && quick_->is_open() && cfg_.get_bool("action_center", "move_status", true);
+}
+int Panel::status_count() const { return int(status_icons_.size()); }
+void Panel::input_event(int, void *d) {
+  auto *p = static_cast<Panel *>(d);
+  while (p->input_display_ && XPending(p->input_display_)) {
+    XEvent event;
+    XNextEvent(p->input_display_, &event);
+    if (event.type == GenericEvent && event.xcookie.extension == p->input_opcode_ &&
+        event.xcookie.evtype == XI_RawButtonPress)
+      p->outside_pointer_press();
+  }
+}
+void Panel::outside_pointer_press() {
+  if (!quick_ || !quick_->is_open() || Fl::grab()) return;
+  // XI2 arrives on a separate connection: the press that opened the popup
+  // may be dispatched after FLTK's release. Do not treat it as a new click.
+  if (steady_ms() - popup_opened_at_ < 100) return;
+  Window root = DefaultRootWindow(fl_display), r, child;
+  int rx, ry, x, y;
+  unsigned buttons;
+  if (!XQueryPointer(fl_display, root, &r, &child, &rx, &ry, &x, &y, &buttons)) return;
+  if (rx >= quick_->x() && rx < quick_->x() + quick_->w() && ry >= quick_->y() &&
+      ry < quick_->y() + quick_->h())
+    return;
+  block_quick_until_ = steady_ms() + 300;
+  quick_->close();
+}
+void Panel::open_action_center(const std::string &section) {
+  if (!quick_->is_open() && steady_ms() < block_quick_until_) return;
+  if (quick_->is_open() && quick_->section() != section) {
+    quick_->select_section(section);
+    return;
+  }
+  quick_->select_section(section);
+  open_popup(quick_.get(), x() + w(), true);
+}
+void Panel::status_clicked(int index, int button) {
+  if (index < 0 || index >= int(status_icons_.size())) return;
+  switch (status_icons_[size_t(index)]) {
+    case INPUT_STATUS:
+      spawn_detached({"sde-settings", "--page", "input"});
+      break;
+    case BLUETOOTH_STATUS:
+      open_action_center("bluetooth");
+      break;
+    case BATTERY_STATUS:
+      open_action_center("power");
+      break;
+    case POWER_STATUS:
+      spawn_detached({"sde-logout"});
+      break;
+    case MEDIA_STATUS:
+      open_action_center("media");
+      break;
+    case NETWORK_STATUS:
+      open_action_center("network");
+      break;
+    case SOUND_STATUS:
+      if (button == FL_MIDDLE_MOUSE)
+        SystemStatus::get().toggle_mute();
+      else
+        open_action_center("sound");
+      break;
+    case CONTROLS_STATUS:
+      open_action_center();
+      break;
+    case OVERFLOW_STATUS:
+      open_action_center("tray");
+      break;
+  }
 }
 
 void Panel::relayout() {
@@ -342,23 +452,47 @@ void Panel::relayout() {
   clock_x_ = right - clock_w_;
   right = clock_x_ - S(2);
 
-  int n = status_count();
-  const SystemStatus &s = SystemStatus::get();
-  status_w_ = std::max(1, n) * S(26) + S(16);
-  if (s.battery.present && cfg_.get_bool("panel", "show_battery", true)) {
-    text_font(theme_.font_size - 1);
-    status_w_ += text_width("100%") + S(4);
-  }
+  action_w_ = S(34);
+  action_x_ = show_desktop_x_ - S(2) - action_w_;
+  // Clock is next to the SDE Action Center button, like the reference panel.
+  clock_x_ = action_x_ - clock_w_ - S(2);
+  right = clock_x_ - S(4);
+  status_icons_.clear();
+  const auto &s = SystemStatus::get();
+  const auto &controls = PanelControls::get();
+  auto add = [&](StatusIcon icon, const char *key, bool available = true) {
+    if (available && cfg_.get_bool("panel", key, true)) status_icons_.push_back(icon);
+  };
+  add(OVERFLOW_STATUS, "show_tray");
+  add(INPUT_STATUS, "show_keyboard");
+  add(BLUETOOTH_STATUS, "show_bluetooth", !controls.adapters.empty());
+  add(BATTERY_STATUS, "show_battery", s.battery.present);
+  add(POWER_STATUS, "show_power");
+  add(MEDIA_STATUS, "show_media");
+  add(NETWORK_STATUS, "show_network", s.network.available);
+  add(SOUND_STATUS, "show_sound", s.audio.available);
+  add(CONTROLS_STATUS, "show_controls");
+  int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
+  compact_status_ =
+      status_in_center() || right - start_w_ - S(100) <
+                                int(status_icons_.size()) * S(26) + sn * (tray_icon_ + S(10)) + tw;
+  if (compact_status_) status_icons_.clear();
+  status_w_ = int(status_icons_.size()) * S(26);
   status_x_ = right - status_w_;
-  right = status_x_ - S(2);
-
-  int sni_count = sni_ ? int(sni_->visible_items().size()) : 0;
-  sni_w_ = sni_count * (tray_icon_ + S(10));
+  right = status_x_;
+  sni_w_ = compact_status_ ? 0 : sn * (tray_icon_ + S(10));
   sni_x_ = right - sni_w_;
   right = sni_x_;
-  int tw = tray_ ? tray_->width() : 0;
+  tw = compact_status_ ? 0 : tw;
   tray_x_ = right - tw;
-  if (tray_) tray_->place(tray_x_, H);
+  if (tray_ && !status_in_center()) {
+    if (compact_status_)
+      tray_->hide();
+    else {
+      tray_->set_background(theme_.surface.fl() >> 8);
+      tray_->place(tray_x_, H);
+    }
+  }
   tasks_end_ = tray_x_ - S(8);
 
   // Keep the status area and running windows reachable on short panels.
@@ -398,8 +532,10 @@ Panel::Target Panel::hit(int x, int y) const {
     int i = (x - sni_x_) / (tray_icon_ + S(10));
     return {TRAY_ITEM, i};
   }
-  if (status_w_ && x >= status_x_ && x < status_x_ + status_w_) return {STATUS, 0};
+  if (status_w_ && x >= status_x_ && x < status_x_ + status_w_)
+    return {STATUS, std::max(0, (x - status_x_) / S(26))};
   if (x >= clock_x_ && x < clock_x_ + clock_w_) return {CLOCK, 0};
+  if (x >= action_x_ && x < action_x_ + action_w_) return {ACTION_CENTER, 0};
   if (x >= show_desktop_x_) return {SHOW_DESKTOP, 0};
   return t;
 }
@@ -437,10 +573,8 @@ void Panel::draw() {
     p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10),
                    cfg_.get("panel", "style", "full") == "full" ? 0 : S(10),
                    hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent);
-    p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14), (H - icon) / 2.0,
-            icon);
-    p.fill_rounded(status_x_ - S(2), S(4), clock_x_ + clock_w_ - status_x_ + S(2), H - S(8),
-                   cfg_.get("panel", "style", "full") == "full" ? 0 : S(11), t.surface_alt);
+    p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14),
+            (H - icon) / 2.0, icon);
 
     for (size_t i = 0; i < pinned_.size(); ++i) {
       if (int(i) >= visible_pins_) break;
@@ -460,8 +594,11 @@ void Panel::draw() {
       cairo_clip(p.cr());
       bool active = task.win == active_ && !task.minimized;
       button_bg(task.x, task.w, {TASK, int(i)}, active);
-      if (task.urgent) p.fill_rounded(task.x + S(2), S(4), task.w - S(4), H - S(8), S(8), Color::hex(0xE8A33D, 0.35));
-      cairo_surface_t *img = task.icon ? task.icon : IconLoader::get({"application-x-executable"}, icon);
+      if (task.urgent)
+        p.fill_rounded(task.x + S(2), S(4), task.w - S(4), H - S(8), S(8),
+                       Color::hex(0xE8A33D, 0.35));
+      cairo_surface_t *img =
+          task.icon ? task.icon : IconLoader::get({"application-x-executable"}, icon);
       int ix = task.w < H + S(20) ? task.x + (task.w - icon) / 2 : task.x + S(10);
       p.image(img, ix, (H - icon) / 2.0, icon, task.minimized ? 0.55 : 1.0);
       // Indicator bar on the screen edge side: wide for the active window.
@@ -472,52 +609,89 @@ void Panel::draw() {
       cairo_restore(p.cr());
     }
 
-    // StatusNotifierItems.
-    if (sni_) {
+    // Application tray indicators keep their native icons; system controls
+    // use a consistent monochrome Cairo set, independent of the GTK theme.
+    if (sni_ && !compact_status_) {
       auto items = sni_->visible_items();
       for (size_t i = 0; i < items.size(); ++i) {
         int bx = sni_x_ + int(i) * (tray_icon_ + S(10));
         button_bg(bx, tray_icon_ + S(10), {TRAY_ITEM, int(i)}, false);
-        p.image(sni_->icon(*items[i], tray_icon_), bx + S(5), (H - tray_icon_) / 2.0, tray_icon_);
+        p.image(sni_->icon(*items[i], tray_icon_), bx + S(5), (H - tray_icon_) / 2., tray_icon_);
       }
     }
-
-    // Status area: network, sound, battery.
-    if (status_w_) {
-      button_bg(status_x_, status_w_, {STATUS, 0}, quick_ && quick_->is_open());
-      const SystemStatus &s = SystemStatus::get();
-      double gs = S(18), gx = status_x_ + S(8) + S(4), gy = (H - gs) / 2.0;
-      if (!status_count()) glyph::gear(p, gx, gy, gs, t.text);
-      if (s.network.available) {
-        if (s.network.kind == "ethernet") glyph::ethernet(p, gx, gy, gs, t.text);
-        else if (s.network.kind == "wifi") {
-          int bars = s.network.signal >= 75 ? 4 : s.network.signal >= 50 ? 3 : s.network.signal >= 25 ? 2 : 1;
-          glyph::wifi(p, gx, gy, gs, bars, t.text);
-        } else {
-          glyph::wifi(p, gx, gy, gs, 0, t.text, true);
+    const auto &system = SystemStatus::get();
+    const auto &controls = PanelControls::get();
+    double gs = S(18), gy = (H - gs) / 2.;
+    for (size_t i = 0; i < status_icons_.size(); ++i) {
+      int bx = status_x_ + int(i) * S(26);
+      double gx = bx + S(4);
+      button_bg(bx, S(26), {STATUS, int(i)}, false);
+      switch (status_icons_[i]) {
+        case INPUT_STATUS:
+          glyph::keyboard(p, gx, gy, gs, t.text);
+          break;
+        case BLUETOOTH_STATUS: {
+          auto *a = controls.adapter();
+          glyph::bluetooth(p, gx, gy, gs, t.text, a && a->powered);
+          break;
         }
-        gx += S(26);
-      }
-      if (s.audio.available) {
-        int level = s.audio.volume == 0 ? 0 : s.audio.volume < 34 ? 1 : s.audio.volume < 67 ? 2 : 3;
-        glyph::speaker(p, gx, gy, gs, level, s.audio.muted, t.text);
-        gx += S(26);
-      }
-      if (s.battery.present && cfg_.get_bool("panel", "show_battery", true)) {
-        Color level = s.battery.percent <= 15 && !s.battery.charging ? Color::hex(0xD64545) : t.text;
-        if (s.battery.charging) level = Color::hex(0x2E9E5B);
-        glyph::battery(p, gx, gy - Sd(1), gs + Sd(2), s.battery.percent, s.battery.charging, t.text, level);
+        case BATTERY_STATUS:
+          glyph::battery(p, gx, gy, gs, system.battery.percent, system.battery.charging, t.text,
+                         system.battery.percent <= 15 ? Color::hex(0xD64545) : t.text);
+          break;
+        case POWER_STATUS:
+          glyph::power(p, gx, gy, gs, t.text);
+          break;
+        case MEDIA_STATUS: {
+          auto players = controls.players();
+          glyph::media(p, gx, gy, gs, t.text,
+                       !players.empty() && players.front().status == "Playing");
+          break;
+        }
+        case NETWORK_STATUS:
+          if (system.network.kind == "ethernet")
+            glyph::ethernet(p, gx, gy, gs, t.text);
+          else
+            glyph::wifi(p, gx, gy, gs, std::max(1, system.network.signal / 25), t.text,
+                        system.network.kind.empty());
+          break;
+        case SOUND_STATUS:
+          glyph::speaker(p, gx, gy, gs,
+                         system.audio.volume > 66   ? 3
+                         : system.audio.volume > 33 ? 2
+                         : system.audio.volume > 0  ? 1
+                                                    : 0,
+                         system.audio.muted, t.text);
+          break;
+        case CONTROLS_STATUS:
+          glyph::sliders(p, gx, gy, gs, t.text);
+          break;
+        case OVERFLOW_STATUS: {
+          auto *cr = p.cr();
+          cairo_move_to(cr, gx + gs * .25, gy + gs * .6);
+          cairo_line_to(cr, gx + gs * .5, gy + gs * .35);
+          cairo_line_to(cr, gx + gs * .75, gy + gs * .6);
+          p.set(t.text);
+          cairo_set_line_width(cr, Sd(1.5));
+          cairo_stroke(cr);
+          break;
+        }
       }
     }
+    button_bg(action_x_, action_w_, {ACTION_CENTER, 0}, quick_ && quick_->is_open());
+    p.fill_rounded(action_x_ + S(5), S(7), action_w_ - S(10), H - S(14), S(5), t.accent);
+    glyph::sliders(p, action_x_ + (action_w_ - gs) / 2., gy, gs, t.on_accent);
     button_bg(clock_x_, clock_w_, {CLOCK, 0}, quick_ && quick_->is_open());
-    if (hover_ == Target{SHOW_DESKTOP, 0}) p.fill_rect(show_desktop_x_, 0, W - show_desktop_x_, H, t.hover);
+    if (hover_ == Target{SHOW_DESKTOP, 0})
+      p.fill_rect(show_desktop_x_, 0, W - show_desktop_x_, H, t.hover);
     p.line(show_desktop_x_ + 0.5, S(10), show_desktop_x_ + 0.5, H - S(10), t.border);
 
     // The launcher being dragged follows the pointer.
     if (dragging_ && drag_index_ >= 0 && drag_index_ < int(pinned_.size())) {
       int dx = drag_x_ - pin_w_ / 2;
       p.fill_rounded(dx + S(2), S(4), pin_w_ - S(4), H - S(8), S(8), t.accent.alpha(0.2));
-      p.image(IconLoader::get({pinned_[size_t(drag_index_)].entry.icon, "application-x-executable"}, icon),
+      p.image(IconLoader::get({pinned_[size_t(drag_index_)].entry.icon, "application-x-executable"},
+                              icon),
               dx + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
     }
   }
@@ -530,12 +704,6 @@ void Panel::draw() {
     text_font(t.font_size, task.win == active_ && !task.minimized);
     draw_text(task.title, task.x + S(10) + icon + S(8), 0, task.w - icon - S(28), H,
               task.minimized ? t.text_dim : t.text);
-  }
-  const SystemStatus &s = SystemStatus::get();
-  if (s.battery.present && cfg_.get_bool("panel", "show_battery", true) && status_w_) {
-    text_font(t.font_size - 1);
-    int tw = text_width("100%") + S(4);
-    draw_text(std::to_string(s.battery.percent) + "%", status_x_ + status_w_ - tw - S(6), 0, tw, H, t.text, 2);
   }
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   if (H >= S(40) && show_date) {
@@ -564,10 +732,20 @@ int Panel::handle(int event) {
       Target t = hit(Fl::event_x(), Fl::event_y());
       if (!(t == hover_)) {
         hover_ = t;
+        std::string tip;
         if (t.kind == TRAY_ITEM && sni_) {
           auto items = sni_->visible_items();
-          if (t.index < int(items.size())) tooltip(nullptr);
-        }
+          if (t.index < int(items.size())) tip = items[size_t(t.index)]->title;
+        } else if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size())) {
+          const char *names[] = {_("Keyboard"), _("Bluetooth"),     _("Battery"),
+                                 _("Power"),    _("Media players"), _("Network"),
+                                 _("Sound"),    _("Action Center"), _("System tray")};
+          tip = names[int(status_icons_[size_t(t.index)])];
+          if (status_icons_[size_t(t.index)] == INPUT_STATUS)
+            tip += " · " + PanelControls::get().keyboard;
+        } else if (t.kind == ACTION_CENTER || t.kind == CLOCK)
+          tip = _("Action Center · Super+A");
+        copy_tooltip(tip.c_str());
         redraw();
       }
       return 1;
@@ -621,36 +799,55 @@ int Panel::handle(int event) {
       redraw();
       if (!(t == p)) return 1;
       int button = Fl::event_button();
-      if (button == FL_RIGHT_MOUSE && (t.kind == NONE || t.kind == START || t.kind == CLOCK ||
-                                       t.kind == SHOW_DESKTOP || t.kind == STATUS)) {
+      if (button == FL_RIGHT_MOUSE &&
+          (t.kind == NONE || t.kind == START || t.kind == CLOCK || t.kind == SHOW_DESKTOP ||
+           t.kind == STATUS || t.kind == ACTION_CENTER)) {
         show_context_menu();
         return 1;
       }
       switch (t.kind) {
-        case START: toggle_menu(); break;
+        case START:
+          toggle_menu();
+          break;
         case PINNED:
-          if (button == FL_RIGHT_MOUSE) pinned_menu(t.index);
-          else launch_entry(pinned_[size_t(t.index)].entry);
+          if (button == FL_RIGHT_MOUSE)
+            pinned_menu(t.index);
+          else
+            launch_entry(pinned_[size_t(t.index)].entry);
           break;
-        case TASK: task_clicked(t.index, button); break;
-        case TRAY_ITEM: tray_item_clicked(t.index, button); break;
-        case STATUS: open_popup(quick_.get(), x() + status_x_ + status_w_, true); break;
+        case TASK:
+          task_clicked(t.index, button);
+          break;
+        case TRAY_ITEM:
+          tray_item_clicked(t.index, button);
+          break;
+        case STATUS:
+          status_clicked(t.index, button);
+          break;
+        case ACTION_CENTER:
+          open_action_center();
+          break;
         case CLOCK:
-          open_popup(quick_.get(), x() + clock_x_ + clock_w_, true);
+          open_action_center();
           break;
-        case SHOW_DESKTOP: x11::set_showing_desktop(!x11::showing_desktop()); break;
-        default: break;
+        case SHOW_DESKTOP:
+          x11::set_showing_desktop(!x11::showing_desktop());
+          break;
+        default:
+          break;
       }
       return 1;
     }
     case FL_MOUSEWHEEL: {
       Target t = hit(Fl::event_x(), Fl::event_y());
-      if (t.kind == STATUS && SystemStatus::get().audio.available) {
+      if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size()) &&
+          status_icons_[size_t(t.index)] == SOUND_STATUS && SystemStatus::get().audio.available) {
         SystemStatus::get().set_volume(SystemStatus::get().audio.volume - Fl::event_dy() * 5);
         redraw();
       } else if (t.kind == TRAY_ITEM && sni_) {
         auto items = sni_->visible_items();
-        if (t.index < int(items.size())) sni_->scroll(*items[size_t(t.index)], -Fl::event_dy() * 120);
+        if (t.index < int(items.size()))
+          sni_->scroll(*items[size_t(t.index)], -Fl::event_dy() * 120);
       }
       return 1;
     }
@@ -664,9 +861,12 @@ void Panel::tray_item_clicked(int index, int button) {
   auto items = sni_->visible_items();
   if (index < 0 || index >= int(items.size())) return;
   int x = Fl::event_x_root(), y = Fl::event_y_root();
-  if (button == FL_LEFT_MOUSE) sni_->activate(*items[size_t(index)], x, y);
-  else if (button == FL_MIDDLE_MOUSE) sni_->secondary_activate(*items[size_t(index)], x, y);
-  else sni_->context_menu(*items[size_t(index)], x, y);
+  if (button == FL_LEFT_MOUSE)
+    sni_->activate(*items[size_t(index)], x, y);
+  else if (button == FL_MIDDLE_MOUSE)
+    sni_->secondary_activate(*items[size_t(index)], x, y);
+  else
+    sni_->context_menu(*items[size_t(index)], x, y);
 }
 
 void Panel::pinned_menu(int index) {
@@ -716,34 +916,43 @@ void Panel::task_clicked(int index, int button) {
     const Fl_Menu_Item *m = popup_menu(items, Fl::event_x_root());
     if (!m) return;
     if (m == &items[0]) {
-      if (minimized) x11::activate_window(win);
-      else x11::minimize_window(win);
+      if (minimized)
+        x11::activate_window(win);
+      else
+        x11::minimize_window(win);
     } else if (m == &items[1]) {
       x11::toggle_maximize(win);
     } else if (m == &items[2]) {
-      if (pinned) unpin(entry.id);
-      else pin(entry.id);
+      if (pinned)
+        unpin(entry.id);
+      else
+        pin(entry.id);
     } else if (m == &items[3]) {
       x11::close_window(win);
     }
     return;
   }
-  if (t.win == active_ && !t.minimized) x11::minimize_window(t.win);
-  else x11::activate_window(t.win);
+  if (t.win == active_ && !t.minimized)
+    x11::minimize_window(t.win);
+  else
+    x11::activate_window(t.win);
 }
 
 void Panel::show_context_menu() {
-  Fl_Menu_Item items[] = {
-      {_("Panel Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-      {_("Appearance Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-      {_("Run Command..."), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-      {_("About SDE"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-      {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
+  Fl_Menu_Item items[] = {{_("Panel Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+                          {_("Appearance Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+                          {_("Run Command..."), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
+                          {_("About SDE"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+                          {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
   const Fl_Menu_Item *m = popup_menu(items, Fl::event_x_root());
-  if (m == &items[0]) spawn_detached({"sde-settings", "--page", "panel"});
-  else if (m == &items[1]) spawn_detached({"sde-settings", "--page", "appearance"});
-  else if (m == &items[2]) spawn_detached({"sde-run"});
-  else if (m == &items[3]) spawn_detached({"sde-settings", "--page", "about"});
+  if (m == &items[0])
+    spawn_detached({"sde-settings", "--page", "panel"});
+  else if (m == &items[1])
+    spawn_detached({"sde-settings", "--page", "appearance"});
+  else if (m == &items[2])
+    spawn_detached({"sde-run"});
+  else if (m == &items[3])
+    spawn_detached({"sde-settings", "--page", "about"});
 }
 
 // ------------------------------------------------------------ X11 / tasks
@@ -808,6 +1017,7 @@ bool Panel::handle_x(const XEvent &e) {
     if (tray_changed) {
       relayout();
       redraw();
+      quick_->status_changed();
     }
     return true;
   }
@@ -815,12 +1025,18 @@ bool Panel::handle_x(const XEvent &e) {
   if (e.type == PropertyNotify && e.xproperty.window == root) {
     Atom a = e.xproperty.atom;
     if (a == x11::atom("_NET_CLIENT_LIST") || a == x11::atom("_NET_ACTIVE_WINDOW")) {
+      if (a == x11::atom("_NET_ACTIVE_WINDOW") && quick_->is_open() && !Fl::grab()) quick_->close();
       refresh_tasks();
     } else if (a == x11::atom("_SDE_COMMAND")) {
       std::string cmd = x11::read_command();
-      if (cmd == "menu") toggle_menu();
-      else if (cmd == "quick") open_popup(quick_.get(), x() + status_x_ + status_w_, true);
-      else if (cmd == "calendar") open_popup(calendar_.get(), x() + clock_x_ + clock_w_, true);
+      if (cmd == "menu")
+        toggle_menu();
+      else if (cmd == "quick")
+        open_action_center();
+      else if (starts_with(cmd, "quick:"))
+        open_action_center(cmd.substr(6));
+      else if (cmd == "calendar")
+        open_popup(calendar_.get(), x() + clock_x_ + clock_w_, true);
     } else if (a == x11::atom("_SDE_CONFIG_SERIAL")) {
       bool was_autohide = autohide_;
       load_config();
@@ -845,7 +1061,8 @@ bool Panel::handle_x(const XEvent &e) {
       if (t.win != e.xproperty.window) continue;
       Atom a = e.xproperty.atom;
       if (a == x11::atom("_NET_WM_NAME") || a == XA_WM_NAME || a == x11::atom("_NET_WM_STATE") ||
-          a == x11::atom("_NET_WM_ICON") || a == XA_WM_HINTS || a == x11::atom("_NET_WM_VISIBLE_NAME")) {
+          a == x11::atom("_NET_WM_ICON") || a == XA_WM_HINTS ||
+          a == x11::atom("_NET_WM_VISIBLE_NAME")) {
         if (a == x11::atom("_NET_WM_STATE") &&
             x11::window_has_state(t.win, "_NET_WM_STATE_SKIP_TASKBAR")) {
           refresh_tasks();

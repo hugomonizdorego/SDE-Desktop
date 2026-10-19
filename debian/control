@@ -16,6 +16,8 @@ Build-Depends: debhelper-compat (= 13),
                libdbus-1-dev,
                gettext,
                python3,
+               xvfb,
+               x11-xserver-utils,
                autoconf,
                automake,
                autoconf-archive,
@@ -63,6 +65,7 @@ Build-Depends: debhelper-compat (= 13),
                libpam0g-dev,
                libxss-dev,
                libxrandr-dev,
+               libxi-dev,
                libxxf86vm-dev,
                libsm-dev,
                libice-dev,
@@ -139,6 +142,8 @@ Depends: ${shlibs:Depends},
          fonts-dejavu-core | fonts-noto-core
 Recommends: papirus-icon-theme | adwaita-icon-theme,
             network-manager,
+            bluez,
+            blueman,
             pulseaudio-utils,
             libglib2.0-bin,
             libnotify-bin,
@@ -167,6 +172,7 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
   * sde-notifyd  - desktop notifications with Do Not Disturb
   * sde-settings - appearance, interface scale, panel, notifications,
                    displays, keyboard and mouse
+  * sde-display-settings - native monitor profiles, resolution and scale
   * sde-run      - run command dialog (Alt+F2)
   * sde-logout   - log out, lock, suspend, restart and shut down
   * sde-autostart - Rust XDG autostart launcher with a dry-run diagnostic
@@ -189,6 +195,8 @@ Depends: ${misc:Depends},
          xinit,
          lightdm | x-display-manager,
          network-manager,
+         bluez,
+         blueman,
          pulseaudio-utils,
          pipewire-pulse | pulseaudio,
          wireplumber | pipewire-media-session,
@@ -206,7 +214,7 @@ Recommends: papirus-icon-theme,
 Description: complete SDE desktop and application suite for DebION GNU/Linux
  One installation entry point for the SDE session, display server,
  login manager, network and sound services, removable media support
- and integrated SDE Suite applications on Debian testing and DebION.
+ and integrated SDE applications on Debian testing and DebION.
  .
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and

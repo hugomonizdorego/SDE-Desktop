@@ -473,7 +473,7 @@ int main(int argc, char **argv) {
   cfg.load();
   sync_openbox(cfg);
   sync_gtk_settings(cfg);
-  ensure_suite_shortcuts();
+  migrate_legacy_suite_shortcuts();
   XSelectInput(g_display, DefaultRootWindow(g_display), PropertyChangeMask);
   log("starting Selviana Desktop Environment %s (DISPLAY=%s, D-Bus %s)", SDE_VERSION,
       env("DISPLAY").c_str(), env("DBUS_SESSION_BUS_ADDRESS").empty() ? "missing" : "ok");

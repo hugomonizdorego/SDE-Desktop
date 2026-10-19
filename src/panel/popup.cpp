@@ -21,19 +21,9 @@ PanelPopup::PanelPopup(const char *title) : BufferedWindow(0, 0, 100, 100, title
 void PanelPopup::open_at(int anchor_x, bool align_right) {
   Panel *panel = Panel::instance;
   prepare();
-  int mx, my, mw, mh;
-  panel->monitor(mx, my, mw, mh);
-  int gap = S(8);
-  int x = align_right ? anchor_x - w() : anchor_x;
-  x = std::max(mx + gap, std::min(x, mx + mw - w() - gap));
-  int y;
-  if (panel->theme().panel_top) y = panel->y() + panel->h() + gap;
-  else y = panel->y() - h() - gap;
-  // Never larger than the space next to the panel.
-  int avail = mh - panel->h() - 2 * gap;
-  int hh = std::min(h(), avail);
-  if (!panel->theme().panel_top) y = panel->y() - hh - gap;
-  resize(x, y, w(), hh);
+  anchor_x_ = anchor_x;
+  align_right_ = align_right;
+  reposition();
   show();
   // FLTK omits WM titles for override-redirect popups. Keep a readable name
   // for window inspection and assistive tools as well as normal windows.
@@ -41,7 +31,7 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
     XStoreName(fl_display, fl_xid(this), label());
     x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
   }
-  Fl::grab(this);
+  if (!native_children() || !panel->native_popup_input()) Fl::grab(this);
   // Override-redirect menus are outside WM focus management. Claim keyboard
   // focus explicitly, including after a GTK4 client has closed its window.
   XSetInputFocus(fl_display, fl_xid(this), RevertToPointerRoot, CurrentTime);
@@ -49,25 +39,48 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
   panel->popup_opened(this);
   redraw();
   // Keyboard users start on the first control.
-  Fl::add_timeout(0, [](void *d) {
-    auto *self = static_cast<PanelPopup *>(d);
-    if (!self->shown()) return;
-    Fl_Widget *f = Fl::focus();
-    if (f && (f == self || f->window() == self)) return;
-    for (int i = 0; i < self->children(); ++i) {
-      Fl_Widget *c = self->child(i);
-      if (c->visible() && c->visible_focus() && c->take_focus()) return;
-    }
-    self->take_focus();
-  }, this);
+  Fl::add_timeout(
+      0,
+      [](void *d) {
+        auto *self = static_cast<PanelPopup *>(d);
+        if (!self->shown()) return;
+        Fl_Widget *f = Fl::focus();
+        if (f && (f == self || f->window() == self)) return;
+        for (int i = 0; i < self->children(); ++i) {
+          Fl_Widget *c = self->child(i);
+          if (c->visible() && c->visible_focus() && c->take_focus()) return;
+        }
+        self->take_focus();
+      },
+      this);
+}
+
+void PanelPopup::reposition() {
+  auto *panel = Panel::instance;
+  int mx, my, mw, mh;
+  panel->monitor(mx, my, mw, mh);
+  int gap = corner_popup() ? 0 : S(8), margin = corner_popup() ? 0 : S(8);
+  int available = panel->theme().panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my;
+  int ww = std::min(w(), mw - 2 * margin),
+      hh = std::min(h(), std::max(1, available - gap - margin));
+  int right = corner_popup() ? std::min(mx + mw, panel->x() + panel->w()) : anchor_x_;
+  int xx = corner_popup() || align_right_ ? right - ww : right;
+  xx = std::max(mx + margin, std::min(xx, mx + mw - ww - margin));
+  int yy = panel->theme().panel_top ? panel->y() + panel->h() + gap : panel->y() - hh - gap;
+  yy = std::max(my, std::min(yy, my + mh - hh));
+  resize(xx, yy, ww, hh);
 }
 
 void PanelPopup::close() {
   if (!shown()) return;
   if (Fl::grab() == this) Fl::grab(nullptr);
-  hide();
+  // FLTK 1.3 hide() destroys this X window. Return native tray children to
+  // the panel before that happens, while reporting this popup as closed.
+  closing_ = true;
   closed();
   if (Panel::instance) Panel::instance->popup_closed(this);
+  hide();
+  closing_ = false;
 }
 
 int PanelPopup::handle(int event) {

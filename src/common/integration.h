@@ -3,5 +3,5 @@
 #include "config.h"
 namespace sde {
 void sync_gtk_settings(const Config &cfg);
-void ensure_suite_shortcuts();
+void migrate_legacy_suite_shortcuts();
 }

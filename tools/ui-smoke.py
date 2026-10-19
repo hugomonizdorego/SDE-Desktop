@@ -148,11 +148,12 @@ def shot(name):
     print("saved", name, flush=True)
 
 
-def config(style=None, theme="light", scale=None, analog=False, top=False):
+def config(style=None, theme="light", scale=None, analog=False, top=False, compact=False):
     if scale is None:
         scale = args.scale
+    extra = "show_clock=false\nshow_media=false\nshow_tray=false\nmove_status=false\n" if compact else ""
     (home / ".config/sde/sde.conf").write_text(
-        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n'
+        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}'
     )
 
 
@@ -199,6 +200,9 @@ try:
     g = geom(menu)
     assert g["X"] >= 0 and g["Y"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
     shot("00-start-menu")
+    run("xdotool", "mousemove", str(g["X"] + int(90 * args.scale / 100)),
+        str(g["Y"] + int(166 * args.scale / 100)), "click", "1")
+    shot("00-accessories")
     run("xdotool", "type", "calculator")
     shot("00-start-search")
     run("xdotool", "key", "Return")
@@ -215,6 +219,43 @@ try:
                      "+repage", "-format", "%[fx:mean]", "info:").stdout.strip()
     assert float(brightness) > 0.70, ("GTK4 Calculator did not paint", brightness, cg)
     run("xdotool", "key", "alt+F4")
+    # New package metadata becomes searchable while the same menu stays open.
+    run("sde-panel", "--menu")
+    find("^SDE Menu$")
+    run("xdotool", "type", "SDELiveInstallProbe")
+    time.sleep(.3)
+    app_dir = home / ".local/share/applications"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    live = app_dir / "sde-live-install-probe.desktop"
+    live.write_text("[Desktop Entry]\nType=Application\nName=SDELiveInstallProbe\nExec=calculator\nCategories=Utility;Calculator;\n")
+    time.sleep(2.8)
+    run("xdotool", "key", "Return")
+    find("^Calculator$")
+    run("xdotool", "key", "alt+F4")
+    live.unlink()
+    print("LIVE APPLICATION INSTALL AND ACCESSORIES CATEGORY PASS", flush=True)
+    display_app = spawn("sde-display-settings")
+    dw = find("^Display Settings$")
+    dg = geom(dw)
+    assert dg["X"] >= 0 and dg["Y"] >= 0 and dg["X"] + dg["WIDTH"] <= W and dg["Y"] + dg["HEIGHT"] <= H, dg
+    shot("13-display-settings")
+    run("xdotool", "mousemove", str(dg["X"] + dg["WIDTH"] - int(130 * args.scale / 100)),
+        str(dg["Y"] + int(112 * args.scale / 100)), "click", "1")
+    confirm = find("^Keep display settings[?]$")
+    cg = geom(confirm)
+    shot("14-display-confirm")
+    run("xdotool", "mousemove", str(cg["X"] + int(355 * args.scale / 100)),
+        str(cg["Y"] + int(142 * args.scale / 100)), "click", "1")
+    time.sleep(.5)
+    assert (home / ".config/sde/display-profiles").is_dir(), "Confirmed profile was not saved"
+    cp = configparser.ConfigParser()
+    cp.read(home / ".config/sde/sde.conf")
+    assert cp.get("appearance", "scale") == str(args.scale)
+    run("xdotool", "mousemove", str(dg["X"] + dg["WIDTH"] - 70), str(dg["Y"] + dg["HEIGHT"] // 2))
+    for _ in range(18): run("xdotool", "click", "5")
+    shot("15-display-profiles-scale")
+    display_app.terminate()
+    display_app.wait()
     print("SDE WM, COMPOSITOR, START SEARCH AND GTK4 CALCULATOR PASS", flush=True)
     run("sde-panel", "--action-center")
     ac = find("^Action Center$")
@@ -310,24 +351,26 @@ try:
         assert cfg.get("panel", "style") == "short", dict(cfg)
         app.terminate()
         app.wait()
+        run("sde-panel", "--section", "network")
+        ac = find("^Action Center$")
+        g = geom(ac)
+        pg = geom(wid)
+        assert g["X"] + g["WIDTH"] == pg["X"] + pg["WIDTH"], (g, pg)
+        assert g["Y"] + g["HEIGHT"] == pg["Y"], (g, pg)
+        shot("06-network-connections")
+        run("xdotool", "key", "Escape")
+        config("short", compact=True)
+        reload_panel()
         run("sde-panel", "--action-center")
         ac = find("^Action Center$")
         g = geom(ac)
-        # Expand connections, then collapse, and enable Do Not Disturb.
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 205), "click", "1")
-        time.sleep(0.5)
-        g = geom(ac)
-        assert g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
-        shot("06-network-connections")
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 205), "click", "1")
-        time.sleep(0.5)
-        g = geom(ac)
-        run("xdotool", "mousemove", str(g["X"] + 310), str(g["Y"] + 205), "click", "1")
+        # Compact fixture: two-column tiles start at y=42, DND/Dark are row 3.
+        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 254), "click", "1")
         time.sleep(0.5)
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.getboolean("notifications", "do_not_disturb")
         g = geom(ac)
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 292), "click", "1")
+        run("xdotool", "mousemove", str(g["X"] + 300), str(g["Y"] + 254), "click", "1")
         time.sleep(0.5)
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.get("appearance", "theme") == "dark"

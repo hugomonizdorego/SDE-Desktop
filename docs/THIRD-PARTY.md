@@ -76,3 +76,25 @@ in `sde-native-sources_*.tar.xz` beside every Debian package. Installed copyrigh
 files are under `/usr/share/doc/sde/upstream/`. Calculator embeds only the
 calculator engine; browser-specific web panels are not represented as ported
 native features. There is no browser or web view in the Calculator executable.
+
+### Display Settings (alpha8)
+
+[DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager),
+Copyright (c) 2025 zac15987, MIT, pinned to
+`c873b66ba54b6efb111620e736878c21eda22f51` in `suite/components.lock.json`.
+`src/display/profile.h` ports Profile/DisplaySetting from `Core/Profile.cs`;
+`profile.cpp` ports case-insensitive GetUniqueProfileName from
+`Core/ProfileManager.cs`. The complete MIT notice is `profile.LICENSE`.
+Native Linux RandR and FLTK integration is GPL-3.0-or-later SDE code. The original
+WPF/Win32 executable is not run as a Linux program. Full corresponding sources
+contain both the pinned upstream tree and native port; installed notices are
+under `/usr/share/doc/sde/upstream/DisplayProfileManager/`.
+
+## Alpha 9 panel service behavior
+
+[eduka-panel](https://github.com/hugomonizdorego/Eduka-Desktop/blob/7a92f29f731576830e8c5bde79a34d4f20b6b774/usr/bin/eduka-panel)
+by Hugo Moniz do Rego and Eduka contributors is the behavior reference for
+Bluetooth, audio streams/MPRIS, network controls and compact tray handling.
+SDE implements these independently in native C++/FLTK; no Qt code/assets are
+copied. The reference repo has no top-level license declaration. See
+[Alpha 9](ALPHA9.md) for attribution, feature mapping and alpha limitations.

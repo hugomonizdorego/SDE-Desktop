@@ -49,6 +49,9 @@ fi
 (cd "$WORK/sde-$VERSION" && dpkg-buildpackage -us -uc -b)
 
 mkdir -p "$OUT"
+# Preserve non-installed integration fixtures for the CI GUI checks only.
+mkdir -p "$OUT/test-tools"
+find "$WORK/sde-$VERSION" -type f \( -name sde-panel-service-fixture -o -name sde-sni-demo \)     -exec cp '{}' "$OUT/test-tools/" \;
 # Publish complete corresponding sources beside the binaries, including all
 # patched upstream trees, submodules, copyright notices and build scripts.
 tar -C "$WORK" --exclude='*/obj-*' --exclude='*/build' --exclude='*/target' \

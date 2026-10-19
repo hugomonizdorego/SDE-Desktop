@@ -21,11 +21,9 @@ using namespace sde;
 
 namespace {
 
-const char *kHome = N_("SDE Suite");
 const char *kAll = N_("All applications");
 
 std::string category_icon(const std::string &cat) {
-  if (cat == kHome) return "start-here";
   if (cat == kAll) return "applications-all";
   if (cat == "Accessories") return "applications-accessories";
   if (cat == "Education") return "applications-education";
@@ -89,6 +87,8 @@ AppMenu::AppMenu() : PanelPopup("SDE Menu") {
   callback([](Fl_Widget *w, void *) { static_cast<AppMenu *>(w)->close(); });
 }
 
+AppMenu::~AppMenu() { Fl::remove_timeout(poll_applications, this); }
+
 void AppMenu::search_changed(Fl_Widget *, void *data) {
   auto *m = static_cast<AppMenu *>(data);
   m->selected_ = 0;
@@ -100,7 +100,6 @@ void AppMenu::search_changed(Fl_Widget *, void *data) {
 void AppMenu::reload() {
   apps_ = load_applications("SDE");
   categories_.clear();
-  categories_.push_back(kHome);
   categories_.push_back(kAll);
   for (auto &c : menu_categories()) {
     for (auto &a : apps_) {
@@ -113,18 +112,30 @@ void AppMenu::reload() {
   if (category_ >= int(categories_.size())) category_ = 0;
 }
 
+// Refresh XDG application entries during package installs/removals without
+// restarting the panel, preserving the current category, query and selection.
+void AppMenu::poll_applications(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (!self->shown()) return;
+  std::string category = self->categories_[size_t(self->category_)];
+  std::string id = self->rows_.empty() ? "" : self->rows_[size_t(self->selected_)].entry->id;
+  self->reload();
+  auto cat = std::find(self->categories_.begin(), self->categories_.end(), category);
+  self->category_ = cat == self->categories_.end() ? 0 : int(cat - self->categories_.begin());
+  self->filter();
+  for (size_t i = 0; i < self->rows_.size(); ++i)
+    if (self->rows_[i].entry->id == id) self->selected_ = int(i);
+  self->scroll_ = std::min(self->scroll_, std::max(0, int(self->rows_.size()) - self->list_rows_visible()));
+  self->redraw();
+  Fl::repeat_timeout(2, poll_applications, data);
+}
+
 void AppMenu::filter() {
   rows_.clear();
   std::string q = lower(trim(search_->value()));
   if (q.empty()) {
     const std::string &cat = categories_[size_t(category_)];
-    if (cat == kHome) {
-      // The same stable order is used on every machine; desktop IDs remain XDG entries.
-      for (const auto &native : suite_apps())
-        for (auto &a : apps_)
-          if (a.id == native.id + ".desktop" || (native.id == "calculator" && a.id == "org.debion.Calculator.desktop"))
-            rows_.push_back({&a});
-    } else for (auto &a : apps_)
+    for (auto &a : apps_)
       if (cat == kAll || a.menu_category() == cat) rows_.push_back({&a});
   } else {
     auto terms = split(q, ' ');
@@ -176,6 +187,8 @@ void AppMenu::prepare() {
   scroll_ = 0;
   reload();
   filter();
+  Fl::remove_timeout(poll_applications, this);
+  Fl::add_timeout(2, poll_applications, this);
   Fl::add_timeout(0, [](void *d) { static_cast<AppMenu *>(d)->search_->take_focus(); }, this);
 }
 
@@ -208,7 +221,7 @@ void AppMenu::item_menu(int row) {
   }
 }
 
-bool AppMenu::grid_mode() const { return category_ == 0 && !*search_->value(); }
+bool AppMenu::grid_mode() const { return false; }
 int AppMenu::columns() const { return grid_mode() ? 2 : 1; }
 int AppMenu::list_rows_visible() const { return std::max(1, (h() - header_h_ - footer_h_) / row_h_) * columns(); }
 

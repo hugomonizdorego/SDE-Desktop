@@ -21,6 +21,13 @@
       "url": "https://github.com/yshui/picom",
       "commit": "a456d438d0a681365d90a8adbf0941cede41aaa9",
       "license": "MPL-2.0 AND MIT"
+    },
+    {
+      "id": "sde-display-settings",
+      "upstream": "DisplayProfileManager",
+      "url": "https://github.com/zac15987/DisplayProfileManager",
+      "commit": "c873b66ba54b6efb111620e736878c21eda22f51",
+      "license": "MIT"
     }
   ]
 }

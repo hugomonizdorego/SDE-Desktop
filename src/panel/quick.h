@@ -8,6 +8,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,12 +16,12 @@
 #include "popup.h"
 
 struct NetworkState {
-  bool available = false;     // NetworkManager is running
-  bool has_wifi = false;      // a Wi-Fi device exists
+  bool available = false;  // NetworkManager is running
+  bool has_wifi = false;   // a Wi-Fi device exists
   bool wifi_enabled = false;
-  std::string kind;           // "wifi", "ethernet" or "" when offline
-  std::string connection;     // connection or network name
-  int signal = 0;             // 0-100 for Wi-Fi
+  std::string kind;        // "wifi", "ethernet" or "" when offline
+  std::string connection;  // connection or network name
+  int signal = 0;          // 0-100 for Wi-Fi
 };
 
 struct WifiNetwork {
@@ -91,6 +92,8 @@ class SystemStatus {
 class QuickSettings : public PanelPopup {
  public:
   QuickSettings();
+  void select_section(const std::string &section);
+  const std::string &section() const { return section_; }
   // Called by the panel when SystemStatus changed.
   void status_changed();
   void draw() override;
@@ -98,18 +101,25 @@ class QuickSettings : public PanelPopup {
 
  protected:
   void prepare() override;
+  void closed() override;
+  bool corner_popup() const override { return true; }
+  bool native_children() const override { return true; }
 
  private:
   void rebuild();
   void sync();
+  void sync_native_tray();
   std::string structure() const;
   static void rebuild_timeout(void *);
   class Fl_Scroll *body_ = nullptr;
   class Fl_Slider *volume_ = nullptr;
   class Fl_Slider *brightness_ = nullptr;
-  class Fl_Choice *sinks_ = nullptr;
+  class Fl_Slider *microphone_ = nullptr;
+  class Fl_Widget *tray_box_ = nullptr;
+  std::map<unsigned, class Fl_Slider *> stream_sliders_;
+  int tray_columns_ = 1;
   std::string structure_;
   int content_height_ = 0;
-  bool network_expanded_ = false;
+  std::string section_ = "overview";
   bool rebuild_pending_ = false;
 };

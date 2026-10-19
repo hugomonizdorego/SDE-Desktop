@@ -10,7 +10,7 @@ args=parser.parse_args()
 binary=args.bin_dir.resolve()
 apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power-manager','sde-power-preferences','sde-power-statistics',
-      'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences','calculator','sde-wm','sde-compositor']
+      'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
 for name in apps:
     path=binary/name
@@ -18,7 +18,9 @@ for name in apps:
     data=path.read_bytes()
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
-    if name in ['sde-wm','sde-compositor']:
+    if name == 'sde-display-settings':
+        assert 'libXrandr' in dynamic and 'libfltk' in dynamic,(name,dynamic)
+    elif name in ['sde-wm','sde-compositor']:
         assert 'libX11' in dynamic or 'libxcb' in dynamic,(name,dynamic)
     elif name == 'sde-screensaver-command':
         # This native command-line client talks to the locker over D-Bus;
@@ -29,7 +31,7 @@ for name in apps:
 subprocess.run([str(binary/'sde-suite'),'--check'],check=True)
 import json
 versions=json.loads(Path('/usr/share/doc/sde/versions.json').read_text())
-for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde-power-manager','sde-screensaver','calculator','sde-wm','sde-compositor','sde-update']:
+for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde-power-manager','sde-screensaver','calculator','sde-display-settings','sde-wm','sde-compositor','sde-update']:
     output=subprocess.check_output([str(binary/name),'--version'],text=True)
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)

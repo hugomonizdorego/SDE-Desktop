@@ -1,3 +1,21 @@
+sde (0.1.0~alpha9) unstable; urgency=medium
+
+  * Redesign symbolic panel status icons and anchor Action Center above the clock.
+  * Move SNI and XEmbed tray icons into Action Center while open, preserving hosts.
+  * Add native BlueZ Bluetooth, MPRIS media and application volume controls.
+  * Adapt Eduka-Panel network/audio/compact-tray behavior with SDE-specific settings.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 19 Oct 2026 00:10:00 +0900
+
+sde (0.1.0~alpha8) unstable; urgency=medium
+
+  * Standard XDG menu categories, live application installation refresh.
+  * Native Display Settings: port DisplayProfileManager profiles to Linux RandR.
+  * EDID, modes, refresh rate, rotation, layout, profiles and independent rollback.
+  * Shared SDE / GTK interface scale at 100, 125, 150, 175 and 200 percent.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sun, 18 Oct 2026 14:30:00 +0000
+
 sde (0.1.0~alpha7) unstable; urgency=medium
 
   * Add native GTK4 Calculator with the pinned Scientific Calculator engine.

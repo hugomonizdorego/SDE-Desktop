@@ -85,7 +85,8 @@ void battery(Painter &p, double x, double y, double s, int percent, bool chargin
   p.fill_rounded(bx + bw + s * 0.02, by + bh * 0.3, s * 0.08, bh * 0.4, s * 0.03, c);
   double inner = lw + s * 0.04;
   double fill_w = (bw - 2 * inner) * std::fmax(0, std::fmin(100, percent)) / 100.0;
-  if (fill_w > 0.5) p.fill_rounded(bx + inner, by + inner, fill_w, bh - 2 * inner, s * 0.04, level_color);
+  if (fill_w > 0.5)
+    p.fill_rounded(bx + inner, by + inner, fill_w, bh - 2 * inner, s * 0.04, level_color);
   if (charging) {
     cairo_t *cr = p.cr();
     double cx = bx + bw / 2, cy = by + bh / 2;
@@ -121,9 +122,11 @@ void sun(Painter &p, double x, double y, double s, const Color &c) {
 void bell(Painter &p, double x, double y, double s, bool off, const Color &c) {
   cairo_t *cr = p.cr();
   cairo_move_to(cr, x + s * 0.2, y + s * 0.72);
-  cairo_curve_to(cr, x + s * 0.28, y + s * 0.6, x + s * 0.26, y + s * 0.5, x + s * 0.28, y + s * 0.4);
+  cairo_curve_to(cr, x + s * 0.28, y + s * 0.6, x + s * 0.26, y + s * 0.5, x + s * 0.28,
+                 y + s * 0.4);
   cairo_curve_to(cr, x + s * 0.3, y + s * 0.2, x + s * 0.7, y + s * 0.2, x + s * 0.72, y + s * 0.4);
-  cairo_curve_to(cr, x + s * 0.74, y + s * 0.5, x + s * 0.72, y + s * 0.6, x + s * 0.8, y + s * 0.72);
+  cairo_curve_to(cr, x + s * 0.74, y + s * 0.5, x + s * 0.72, y + s * 0.6, x + s * 0.8,
+                 y + s * 0.72);
   cairo_close_path(cr);
   stroke(p, c, s * 0.08);
   cairo_move_to(cr, x + s * 0.42, y + s * 0.84);
@@ -186,6 +189,70 @@ void check(Painter &p, double x, double y, double s, const Color &c) {
   cairo_line_to(cr, x + s * 0.42, y + s * 0.72);
   cairo_line_to(cr, x + s * 0.8, y + s * 0.3);
   stroke(p, c, s * 0.11);
+}
+
+void bluetooth(Painter &p, double x, double y, double s, const Color &c, bool on) {
+  auto *cr = p.cr();
+  cairo_move_to(cr, x + s * .48, y + s * .1);
+  cairo_line_to(cr, x + s * .48, y + s * .9);
+  cairo_line_to(cr, x + s * .77, y + s * .65);
+  cairo_line_to(cr, x + s * .25, y + s * .3);
+  cairo_move_to(cr, x + s * .25, y + s * .7);
+  cairo_line_to(cr, x + s * .77, y + s * .35);
+  cairo_line_to(cr, x + s * .48, y + s * .1);
+  stroke(p, on ? c : c.alpha(.45), s * .075);
+}
+void keyboard(Painter &p, double x, double y, double s, const Color &c) {
+  p.stroke_rounded(x + s * .07, y + s * .21, s * .86, s * .6, s * .08, c, s * .07);
+  for (int row = 0; row < 2; ++row)
+    for (int col = 0; col < 4; ++col)
+      p.fill_rect(x + s * (.21 + col * .18), y + s * (.33 + row * .16), s * .07, s * .06, c);
+  p.line(x + s * .32, y + s * .69, x + s * .68, y + s * .69, c, s * .06);
+}
+void media(Painter &p, double x, double y, double s, const Color &c, bool playing) {
+  auto *cr = p.cr();
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, x + s * .5, y + s * .5, s * .39, 0, 2 * M_PI);
+  stroke(p, c, s * .07);
+  if (playing) {
+    p.fill_rect(x + s * .36, y + s * .3, s * .09, s * .4, c);
+    p.fill_rect(x + s * .55, y + s * .3, s * .09, s * .4, c);
+  } else {
+    cairo_move_to(cr, x + s * .4, y + s * .28);
+    cairo_line_to(cr, x + s * .7, y + s * .5);
+    cairo_line_to(cr, x + s * .4, y + s * .72);
+    cairo_close_path(cr);
+    cairo_set_source_rgba(cr, c.r, c.g, c.b, c.a);
+    cairo_fill(cr);
+  }
+}
+void sliders(Painter &p, double x, double y, double s, const Color &c) {
+  for (int i = 0; i < 3; ++i) {
+    double cy = y + s * (.22 + i * .28), cx = x + s * (i == 1 ? .35 : .68);
+    p.line(x + s * .1, cy, x + s * .9, cy, c, s * .07);
+    p.circle(cx, cy, s * .09, c);
+  }
+}
+void airplane(Painter &p, double x, double y, double s, const Color &c) {
+  auto *cr = p.cr();
+  cairo_move_to(cr, x + s * .5, y + s * .1);
+  cairo_line_to(cr, x + s * .5, y + s * .88);
+  cairo_move_to(cr, x + s * .12, y + s * .6);
+  cairo_line_to(cr, x + s * .5, y + s * .36);
+  cairo_line_to(cr, x + s * .88, y + s * .6);
+  cairo_move_to(cr, x + s * .3, y + s * .88);
+  cairo_line_to(cr, x + s * .5, y + s * .76);
+  cairo_line_to(cr, x + s * .7, y + s * .88);
+  stroke(p, c, s * .09);
+}
+void microphone(Painter &p, double x, double y, double s, const Color &c, bool muted) {
+  p.stroke_rounded(x + s * .36, y + s * .12, s * .28, s * .48, s * .13, c, s * .07);
+  auto *cr = p.cr();
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, x + s * .5, y + s * .5, s * .28, 0, M_PI);
+  stroke(p, c, s * .07);
+  p.line(x + s * .5, y + s * .78, x + s * .5, y + s * .94, c, s * .07);
+  if (muted) p.line(x + s * .15, y + s * .15, x + s * .85, y + s * .85, c, s * .08);
 }
 
 }  // namespace glyph
