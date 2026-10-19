@@ -3,6 +3,7 @@
 #include <FL/x.H>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -63,7 +64,18 @@ int main(int argc, char **argv) {
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
   }
-  fl_open_display();
+  // The panel's only text field is the menu search. An X input method such
+  // as IBus or Fcitx can swallow its keys in FLTK 1.3, so the panel opens
+  // its display without XIM. The variable is restored at once, so programs
+  // started from the panel keep the user's input method.
+  {
+    const char *im = getenv("XMODIFIERS");
+    std::string saved = im ? im : "";
+    setenv("XMODIFIERS", "@im=none", 1);
+    fl_open_display();
+    if (im) setenv("XMODIFIERS", saved.c_str(), 1);
+    else unsetenv("XMODIFIERS");
+  }
   if (!command.empty()) {
     sde::x11::send_command(command);
     return 0;

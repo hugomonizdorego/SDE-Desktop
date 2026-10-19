@@ -28,6 +28,7 @@ class PanelPopup : public sde::BufferedWindow {
   virtual void closed() {}
 
  private:
+  static void refocus(void *data);
   bool closing_ = false;
   int anchor_x_ = 0;
   bool align_right_ = false;

@@ -37,6 +37,10 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
   // focus explicitly, including after a GTK4 client has closed its window.
   XSetInputFocus(fl_display, fl_xid(this), RevertToPointerRoot, CurrentTime);
   XFlush(fl_display);
+  // A window manager key binding (Super) or a client that just closed can
+  // still own the keyboard when the popup maps. Claim focus again shortly
+  // after, unless the popup already has it.
+  for (double delay : {0.06, 0.25}) Fl::add_timeout(delay, refocus, this);
   panel->popup_opened(this);
   redraw();
   // Keyboard users start on the first control.
@@ -54,6 +58,18 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
         self->take_focus();
       },
       this);
+}
+
+void PanelPopup::refocus(void *data) {
+  auto *self = static_cast<PanelPopup *>(data);
+  if (!self->is_open() || !fl_xid(self)) return;
+  Window focused = 0;
+  int revert = 0;
+  XGetInputFocus(fl_display, &focused, &revert);
+  if (focused != fl_xid(self)) {
+    XSetInputFocus(fl_display, fl_xid(self), RevertToPointerRoot, CurrentTime);
+    XFlush(fl_display);
+  }
 }
 
 void PanelPopup::reposition() {
@@ -74,6 +90,7 @@ void PanelPopup::reposition() {
 
 void PanelPopup::close() {
   if (!shown()) return;
+  Fl::remove_timeout(refocus, this);
   if (Fl::grab() == this) Fl::grab(nullptr);
   // FLTK 1.3 hide() destroys this X window. Return native tray children to
   // the panel before that happens, while reporting this popup as closed.

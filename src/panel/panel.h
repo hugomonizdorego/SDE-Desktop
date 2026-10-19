@@ -70,6 +70,8 @@ class Panel : public sde::BufferedWindow {
   void pin(const std::string &id);
   void unpin(const std::string &id);
   void set_do_not_disturb(bool on);
+  // Saves one key in the user's sde.conf and announces the change.
+  void set_setting(const std::string &section, const std::string &key, const std::string &value);
 
   // Shows a menu next to the panel (above it, or below a top panel), with its
   // left edge at root x |root_x|. Returns the picked item or nullptr.

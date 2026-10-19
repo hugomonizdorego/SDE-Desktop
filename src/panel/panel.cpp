@@ -336,6 +336,14 @@ void Panel::unpin(const std::string &id) {
   redraw();
 }
 
+void Panel::set_setting(const std::string &section, const std::string &key,
+                        const std::string &value) {
+  if (value.empty()) cfg_.unset(section, key);
+  else cfg_.set(section, key, value);
+  cfg_.save();
+  x11::notify_config_changed();
+}
+
 void Panel::set_do_not_disturb(bool on) {
   cfg_.set("notifications", "do_not_disturb", on ? "true" : "false");
   cfg_.save();

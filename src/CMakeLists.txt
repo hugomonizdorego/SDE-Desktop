@@ -6,6 +6,7 @@ add_library(sde-common STATIC
   common/config.cpp
   common/integration.cpp
   common/dbus.cpp
+  common/effects.cpp
   common/desktop_entry.cpp
   common/glyphs.cpp
   common/i18n.cpp
