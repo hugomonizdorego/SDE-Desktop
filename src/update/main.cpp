@@ -23,6 +23,7 @@
 #include "theme.h"
 #include "util.h"
 #include "widgets.h"
+#include "suite.h"
 
 using namespace sde;
 namespace {
@@ -103,8 +104,8 @@ class UpdateWindow : public BufferedWindow {
     list_->textcolor(theme_.text.fl());
     list_->textsize(theme_.font_size);
     list_->textfont(FL_HELVETICA);
-    auto *source = new FlatButton(gap, h - S(51), S(110), S(30), "mintupdate");
-    source->callback([](Fl_Widget *, void *) { open_uri("https://github.com/linuxmint/mintupdate"); });
+    auto *source = new FlatButton(gap, h - S(51), S(110), S(30), _("About"));
+    source->callback([](Fl_Widget *, void *) { show_app_about("sde-update"); });
     end();
     resizable(nullptr);
     xclass("sde-update");

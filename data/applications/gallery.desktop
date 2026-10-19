@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Gallery
+GenericName=Photo Organizer
+Comment=Browse, organize and edit photos in SDE
+Exec=gallery %U
+TryExec=gallery
+Icon=org.debion.Gallery
+Terminal=false
+Categories=Graphics;Photography;Viewer;RasterGraphics;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=org.debion.Gallery
+X-SDE-Upstream=https://gitlab.gnome.org/GNOME/gthumb
+MimeType=image/png;image/apng;image/jpeg;image/webp;image/svg+xml;image/jxl;image/heif;image/heic;image/avif;image/tiff;image/gif;image/x-canon-cr2;image/x-canon-crw;image/x-fuji-raf;image/x-dcraw;image/x-olympus-orf;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=gallery --new-window

@@ -32,6 +32,7 @@ echo "Building sde $VERSION with native application forks"
 # has no network access and never installs upstream application packages.
 python3 "$ROOT/tools/prepare-native-suite.py"
 python3 "$ROOT/tools/prepare-components.py"
+python3 "$ROOT/tools/prepare-gallery.py"
 
 # Build in a clean copy so the source tree stays untouched.
 mkdir -p "$WORK/sde-$VERSION"

@@ -15,7 +15,7 @@ class BrandingTest(unittest.TestCase):
         versions = json.loads((root / 'suite/versions.json').read_text())
         self.assertEqual(versions['liria'], (root/'VERSION').read_text().strip())
         rows = [r.split('\t') for r in (root/'data/suite.tsv').read_text().splitlines() if r and not r.startswith('#')]
-        self.assertEqual(len(rows), 11)
+        self.assertEqual(len(rows), 12)
         for row in rows:
             self.assertEqual(row[9], versions[row[0]])
             self.assertIn('alpha', row[9])

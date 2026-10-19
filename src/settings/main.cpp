@@ -983,6 +983,18 @@ void build_about(Page *page) {
   page->end_card();
   page->note(_("Free software under the GNU General Public License, version 3 or later."));
   page->note(_("Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors."));
+  page->row(_("Developer"), S(200), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, "Hugo Moniz do Rego", {"xdg-open", "https://github.com/hugomonizdorego"});
+  });
+  page->row(_("Source code"), S(200), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, "SDE-Desktop", {"xdg-open", "https://github.com/hugomonizdorego/SDE-Desktop"});
+  });
+  page->row(_("Window manager source"), S(200), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, "openbox", {"xdg-open", "https://github.com/Mikachu/openbox"});
+  });
+  page->row(_("Compositor source"), S(200), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, "picom", {"xdg-open", "https://github.com/yshui/picom"});
+  });
   page->finish();
 }
 
@@ -1184,10 +1196,13 @@ int main(int argc, char **argv) {
   g_argv0 = argv[0];
   std::string page = "home";
   bool apply = false;
+  std::string wallpaper;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--page" && i + 1 < argc) {
       page = argv[++i];
+    } else if (a == "--wallpaper" && i + 1 < argc) {
+      wallpaper = argv[++i];
     } else if (a == "--apply") {
       apply = true;
     } else if (a == "--version") {
@@ -1195,7 +1210,7 @@ int main(int argc, char **argv) {
       return 0;
     } else {
       printf("%s",
-             _("Usage: sde-settings [--page NAME] [--apply] [--version]\n\n"
+             _("Usage: sde-settings [--page NAME] [--wallpaper FILE] [--apply] [--version]\n\n"
                "  --page NAME  open a page: home, appearance, panel, desktop, action-center,\n"
                "               notifications, display, input, suite, system or about\n"
                "  --apply      apply the saved display, keyboard and mouse settings and exit\n"));
@@ -1203,6 +1218,14 @@ int main(int argc, char **argv) {
     }
   }
   g_cfg.load();
+  if (!wallpaper.empty()) {
+    if (!file_exists(wallpaper) || dir_exists(wallpaper)) { fputs("Wallpaper file is unavailable\n", stderr); return 2; }
+    g_cfg.set("appearance", "wallpaper", wallpaper);
+    if (!g_cfg.save()) return 1;
+    fl_open_display();
+    x11::notify_config_changed();
+    return 0;
+  }
   if (apply) {
     sync_gtk_settings(g_cfg);
     migrate_legacy_suite_shortcuts();

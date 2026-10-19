@@ -147,14 +147,36 @@ def prepare(record, cache, destination):
             for p in staged.rglob("*.in"):
                 if p.is_file():
                     p.write_text(p.read_text().replace("Exec=sdeview", "Exec=sde-view").replace(">sdeview.desktop<", ">sde-view.desktop<"))
+        # These preference windows had Help but no About entry upstream.
+        if record["id"] == "sde-screensaver":
+            path = staged / "src/sde-screensaver-preferences.c"
+            s = path.read_text().replace('g_signal_connect (dialog, "response",',
+                'sde_native_add_about (gtk_dialog_get_action_area (GTK_DIALOG (dialog)), GTK_WINDOW (dialog));\n\tg_signal_connect (dialog, "response",')
+            path.write_text(s)
+        if record["id"] == "sde-power-manager":
+            path = staged / "src/gpm-prefs-core.c"
+            s = path.read_text().replace('prefs_setup_ac (prefs);',
+                'GtkWidget *sde_help = GTK_WIDGET (gtk_builder_get_object (prefs->priv->builder, "button_help"));\n\tsde_native_add_about (gtk_widget_get_parent (sde_help), GET_WINDOW (\"dialog_preferences\"));\n\tprefs_setup_ac (prefs);')
+            path.write_text(s)
+            path = staged / "src/gpm-statistics.c"
+            s = path.read_text().replace('widget = GTK_WIDGET (gtk_builder_get_object (builder, "button_help"));',
+                'widget = GTK_WIDGET (gtk_builder_get_object (builder, "button_help"));\n\tsde_native_add_about (gtk_widget_get_parent (widget), GTK_WINDOW (window));')
+            path.write_text(s)
         # Native GTK programs read SDE's theme at startup; there is no launcher
         # executable in front of niny/liria/xanara/taca or the other fork binaries.
         helper = (ROOT / "suite/sde-brand.h").read_text()
+        about = (ROOT / "suite/sde-about.h").read_text()
         for path in list(staged.rglob("*.c")) + list(staged.rglob("*.cpp")):
             s = path.read_text()
             # About dialogs and command versions identify the independent SDE
             # build; upstream ABI/library version variables stay unchanged.
             s = stamp_version(s, record["build_version"])
+            if re.search(r"\b(?:gtk_show_about_dialog|gtk_about_dialog_new|sde_native_add_about)\s*\(", s):
+                header = path.parent / "sde-about.h"
+                original_authors = (staged / "AUTHORS").read_text(errors="replace") if (staged / "AUTHORS").exists() else record["upstream"] + " contributors"
+                definitions = "#define SDE_ABOUT_NAME " + json.dumps(record["name"]) + "\n#define SDE_ABOUT_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_ORIGINAL_AUTHORS " + json.dumps(original_authors) + "\n"
+                header.write_text(definitions + "#define SDE_UPSTREAM_NAME " + json.dumps(record["upstream"]) + "\n#define SDE_UPSTREAM_URL " + json.dumps(record["url"]) + "\n" + about)
+                s = '#include "sde-about.h"\n' + s
             if re.search(r"\bmain\s*\(\s*(?:int|gint)\b", s):
                 header = path.parent / "sde-brand.h"
                 header.write_text("#define SDE_NATIVE_NAME " + json.dumps(record["name"]) + "\n#define SDE_NATIVE_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_NATIVE_LIRIA " + str(int(record["id"] == "liria")) + "\n" + helper)
@@ -163,7 +185,7 @@ def prepare(record, cache, destination):
         if record["id"] == "sde-screensaver":
             pam = staged / "data/sde-screensaver"
             pam.write_text("# SDE screen lock: Debian PAM policy\n@include common-auth\n@include common-account\n@include common-session\n")
-        attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE changes: product/namespace/paths, GTK startup integration and Debian packaging.\n\n"
+        attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE developer: Hugo Moniz do Rego https://github.com/hugomonizdorego\nSDE source: https://github.com/hugomonizdorego/SDE-Desktop\nSDE changes: product/namespace/paths, About credits, GTK startup integration and Debian packaging.\n\n"
         (staged / "SDE-UPSTREAM-NOTICE").write_text(attribution)
         (staged / "SDE-COPYRIGHT-HEADERS").write_text("\n\n".join(notices))
         staged.rename(source)
@@ -177,7 +199,7 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "vendor/suite")
     args = parser.parse_args()
     lock = json.loads(LOCK.read_text())
-    expected = hashlib.sha256(LOCK.read_bytes() + Path(__file__).read_bytes() + (ROOT / "suite/sde-brand.h").read_bytes()).hexdigest()
+    expected = hashlib.sha256(LOCK.read_bytes() + Path(__file__).read_bytes() + (ROOT / "suite/sde-brand.h").read_bytes() + (ROOT / "suite/sde-about.h").read_bytes()).hexdigest()
     marker = args.output / ".sde-fork-lock"
     if not args.apps and marker.exists() and marker.read_text().strip() == expected:
         print("SDE fork sources already prepared", flush=True)

@@ -37,3 +37,20 @@ if(SDE_BUILD_COMPONENTS)
   install(DIRECTORY "${SDE_SESSION_STAGE}${CMAKE_INSTALL_PREFIX}/"
           DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS)
 endif()
+
+# Gallery is a complete GTK4/libadwaita/Vala source fork, independent of the
+# older GTK3 image viewer. The build has no network access.
+if(SDE_BUILD_NATIVE_SUITE)
+  set(SDE_GALLERY_SOURCES "${PROJECT_SOURCE_DIR}/vendor/gallery" CACHE PATH "Prepared Gallery source")
+  if(NOT EXISTS "${SDE_GALLERY_SOURCES}/.sde-gallery-lock")
+    message(FATAL_ERROR "Run python3 tools/prepare-gallery.py")
+  endif()
+  set(SDE_GALLERY_STAGE "${CMAKE_BINARY_DIR}/gallery-stage")
+  add_custom_target(sde-gallery ALL
+    COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/build-gallery.py"
+            --sources "${SDE_GALLERY_SOURCES}" --build "${CMAKE_BINARY_DIR}/gallery-build"
+            --stage "${SDE_GALLERY_STAGE}" --prefix "${CMAKE_INSTALL_PREFIX}"
+    USES_TERMINAL VERBATIM)
+  install(DIRECTORY "${SDE_GALLERY_STAGE}${CMAKE_INSTALL_PREFIX}/"
+          DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS)
+endif()

@@ -1,3 +1,11 @@
+sde (0.1.0~alpha10) unstable; urgency=medium
+
+  * Build native Gallery from verified gThumb 4.0 sources with GTK4/libadwaita.
+  * Add SDE developer names and clickable original source credits to About.
+  * Integrate Gallery in Graphics with private schemas and SDE appearance.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 19 Oct 2026 17:00:00 +0000
+
 sde (0.1.0~alpha9) unstable; urgency=medium
 
   * Redesign symbolic panel status icons and anchor Action Center above the clock.

@@ -112,3 +112,14 @@ shells shipped in SDE. `upstream/sources.lock.json` and `tools/suite-source.py`
 prepare those original reference trees independently of the actual build lock.
 
 See [alpha8 notes](ALPHA8.md) for current category placement and Display Settings.
+
+
+## Alpha 10 additions
+
+[Gallery](ALPHA10.md) is built from the verified gthumb 4.0 GNOME release using
+GTK4/libadwaita/Vala, under `vendor/gallery` after source preparation. It appears
+in Graphics and has its own `1.0.0~alpha1` version. SDE and Liria are alpha10;
+other existing application builds advance independently to `1.0.0~alpha2`.
+Developer names and clickable source links are present in the native About dialogs.
+Run `python3 tools/prepare-gallery.py` before offline CMake builds, alongside the
+two existing preparation commands. No gthumb application package is required.

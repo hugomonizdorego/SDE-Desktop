@@ -72,7 +72,7 @@ Build-Depends: debhelper-compat (= 13),
                liblcms2-dev,
                libxklavier-dev,
                chrpath,
-               libgtk-4-dev (>= 4.8),
+               libgtk-4-dev (>= 4.18.5),
                libjavascriptcoregtk-4.1-dev,
                meson,
                ninja-build,
@@ -98,7 +98,22 @@ Build-Depends: debhelper-compat (= 13),
                libxcb-sync-dev,
                libxcb-util-dev,
                libxcb-xfixes0-dev,
-               uthash-dev
+               uthash-dev,
+               valac,
+               libglib2.0-dev (>= 2.84),
+               libadwaita-1-dev (>= 1.8.0),
+               libportal-gtk4-dev (>= 0.9),
+               libexiv2-dev (>= 0.28),
+               libjpeg-dev,
+               libpng-dev,
+               libgstreamer1.0-dev (>= 1.26),
+               libgstreamer-plugins-base1.0-dev (>= 1.26),
+               libcolord-dev,
+               libwebp-dev,
+               libheif-dev,
+               libjxl-dev,
+               libgif-dev,
+               libraw-dev
 Standards-Version: 4.6.2
 Homepage: https://github.com/hugomonizdorego/SDE-Desktop
 Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
@@ -142,6 +157,7 @@ Depends: ${shlibs:Depends},
          fonts-dejavu-core | fonts-noto-core
 Recommends: papirus-icon-theme | adwaita-icon-theme,
             network-manager,
+            gstreamer1.0-plugins-good,
             bluez,
             blueman,
             pulseaudio-utils,
@@ -181,7 +197,7 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  release meant for testing; expect missing features.
  .
  Includes native source-built SDE forks: Niny, Liria, Xanara, Taca,
- SDE View, SDE System Monitor, SDE Power Manager and SDE Screen Lock.
+ Gallery (gThumb 4.0), SDE View, SDE System Monitor, SDE Power Manager and SDE Screen Lock.
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
  SDE Update uses an attributed mintupdate model and Debian PackageKit.

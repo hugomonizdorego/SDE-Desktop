@@ -19,3 +19,9 @@ apt-get install -y --no-install-recommends \
     libxcb-composite0-dev libxcb-damage0-dev libxcb-glx0-dev libxcb-image0-dev libxcb-present-dev \
     libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-sync-dev \
     libxcb-util-dev libxcb-xfixes0-dev uthash-dev
+
+# Gallery 4.0: current GTK4/libadwaita, Vala and native image codecs.
+apt-get install -y --no-install-recommends \
+    valac libadwaita-1-dev libportal-gtk4-dev libexiv2-dev libjpeg-dev libpng-dev \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libcolord-dev \
+    libwebp-dev libheif-dev libjxl-dev libgif-dev libraw-dev

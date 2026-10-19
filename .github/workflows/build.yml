@@ -50,7 +50,7 @@ jobs:
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
+          for p in gallery sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
             "$p" --version
           done
           python3 tools/test-suite.py
@@ -64,6 +64,7 @@ jobs:
           apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick dbus-x11 dconf-gsettings-backend adwaita-icon-theme
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
+          dbus-run-session -- python3 tools/gallery-smoke.py --output-dir dist/gallery-smoke
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
           dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small
       - uses: actions/upload-artifact@v4
@@ -73,6 +74,7 @@ jobs:
           path: |
             dist/ui-smoke*/
             dist/panel-smoke*/
+            dist/gallery-smoke*/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

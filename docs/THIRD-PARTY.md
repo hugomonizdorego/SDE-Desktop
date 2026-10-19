@@ -98,3 +98,14 @@ Bluetooth, audio streams/MPRIS, network controls and compact tray handling.
 SDE implements these independently in native C++/FLTK; no Qt code/assets are
 copied. The reference repo has no top-level license declaration. See
 [Alpha 9](ALPHA9.md) for attribution, feature mapping and alpha limitations.
+
+
+## Gallery (alpha10)
+
+[gthumb](https://gitlab.gnome.org/GNOME/gthumb) 4.0 — Paolo Bacchilega and gThumb
+contributors, GPL-2.0-or-later; individual source notices are retained.
+SDE Gallery development: [Hugo Moniz do Rego](https://github.com/hugomonizdorego)
+and SDE contributors. The verified official GNOME release archive is pinned in
+`suite/gallery.lock.json`. The complete modified source tree and COPYING are
+included in every `sde-native-sources_*.tar.xz`; installed legal notices are in
+`/usr/share/doc/sde/upstream/gthumb/`. See [Alpha 10](ALPHA10.md).

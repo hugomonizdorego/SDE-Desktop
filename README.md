@@ -2,7 +2,7 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 9** (`0.1.0~alpha9`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 10** (`0.1.0~alpha10`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
 
@@ -211,10 +211,21 @@ model port, native RandR monitor settings, safe preview/rollback and shared
 ## Alpha 9 panel patch
 
 [Current screenshot gallery](docs/screenshots/alpha9/README.md) ·
-[Latest Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha8-display-settings)
+[Latest Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha10-gallery)
 
 [Alpha 9](docs/ALPHA9.md) adds reference-style panel indicators, a corner-anchored
 Action Center, movable SNI/XEmbed tray, native Bluetooth controls, Wi-Fi/LAN
 details, per-application and microphone volume, and MPRIS player controls.
 Settings keeps SDE's own configuration and two-column layout. The patch is
 still alpha and physical hardware review is required.
+
+
+### Alpha 10 — Gallery
+
+Native **Gallery** is built from [gthumb](https://gitlab.gnome.org/GNOME/gthumb) 4.0
+(GTK4/libadwaita/Vala), with SDE identity, theme, wallpaper integration and a
+Graphics menu entry. All graphical native applications include the SDE developer's
+name and source links in About, while retaining original authors and licenses.
+See [Alpha 10 build notes](docs/ALPHA10.md) for versions, dependencies and validation.
+Gallery is included in the same SDE Debian package; the original gthumb package
+is not required. This remains a development alpha for DebION / Debian testing.

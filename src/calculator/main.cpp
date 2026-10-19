@@ -140,7 +140,7 @@ void key(GtkButton *button, gpointer) {
   gtk_widget_grab_focus(entry);
 }
 void about(GtkButton *, gpointer) {
-  const char *authors[] = {"Raad Altaie — Scientific Calculator engine", "SDE contributors — native GTK4 frontend", nullptr};
+  const char *authors[] = {"Raad Altaie — Scientific Calculator engine", "Hugo Moniz do Rego https://github.com/hugomonizdorego", "SDE contributors https://github.com/hugomonizdorego/SDE-Desktop", nullptr};
   gtk_show_about_dialog(GTK_WINDOW(window), "program-name", "Calculator", "version", SDE_CALCULATOR_VERSION,
       "authors", authors, "website", "https://github.com/raad-altaie/scientific-calculator",
       "website-label", "scientific-calculator", "license-type", GTK_LICENSE_AGPL_3_0_ONLY,
@@ -167,7 +167,7 @@ void activate(GtkApplication *app, gpointer) {
   gtk_window_set_icon_name(GTK_WINDOW(window), "org.debion.Calculator");
   gtk_window_set_default_size(GTK_WINDOW(window), 510, 650);
   GtkWidget *header = gtk_header_bar_new();
-  GtkWidget *title = gtk_label_new("Calculator  ·  SDE Suite");
+  GtkWidget *title = gtk_label_new("Calculator  ·  SDE");
   gtk_header_bar_set_title_widget(GTK_HEADER_BAR(header), title);
   GtkWidget *info = gtk_button_new_from_icon_name("help-about-symbolic");
   gtk_widget_set_tooltip_text(info, "About Calculator");

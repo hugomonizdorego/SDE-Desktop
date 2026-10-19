@@ -61,6 +61,7 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
     for package in [
         "sde/upstream/pluma",
+        "sde/upstream/gthumb",
         "sde/upstream/caja",
         "sde/upstream/atril",
         "sde/upstream/engrampa",

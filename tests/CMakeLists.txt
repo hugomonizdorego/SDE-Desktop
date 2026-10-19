@@ -35,3 +35,15 @@ add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 # QA-only D-Bus/XEmbed fixtures: deliberately not installed in the packages.
 add_executable(sde-panel-service-fixture panel_service_fixture.cpp)
 target_link_libraries(sde-panel-service-fixture PRIVATE sde-common)
+
+if(SDE_BUILD_NATIVE_SUITE AND SDE_XVFB)
+  add_test(NAME sde-gallery-source COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_gallery_source.py ${SDE_GALLERY_SOURCES})
+  pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+  add_executable(sde-native-about-tests test_native_about.cpp)
+  target_link_libraries(sde-native-about-tests PRIVATE PkgConfig::GTK3)
+  # assert() remains active in the distribution's RelWithDebInfo build.
+  target_compile_options(sde-native-about-tests PRIVATE -UNDEBUG)
+  add_test(NAME sde-native-about COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_native_about.py $<TARGET_FILE:sde-native-about-tests>)
+endif()

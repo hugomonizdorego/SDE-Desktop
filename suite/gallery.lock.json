@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "id": "gallery",
+  "upstream": "gthumb",
+  "version": "4.0",
+  "url": "https://gitlab.gnome.org/GNOME/gthumb",
+  "archive": "https://download.gnome.org/sources/gthumb/4.0/gthumb-4.0.tar.xz",
+  "sha256": "a24aaa72b5637f49097dedc9c141a33615da770d029315f3285ebf2156cf7b61",
+  "license": "GPL-2.0-or-later"
+}
