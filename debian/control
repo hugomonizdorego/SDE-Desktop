@@ -207,7 +207,8 @@ Depends: ${misc:Depends},
          adwaita-icon-theme,
          dconf-gsettings-backend,
          upower,
-         udisks2
+         udisks2,
+         debion-desktop-base (>= ${source:Version})
 Recommends: papirus-icon-theme,
             lightdm-gtk-greeter,
             firefox-esr | firefox,
@@ -218,8 +219,21 @@ Description: complete SDE desktop and application suite for DebION GNU/Linux
  and integrated SDE applications on Debian testing and DebION.
  .
  It makes SDE-Desktop the default LightDM session and styles the
- LightDM GTK greeter with SDE Aero.
+ LightDM GTK greeter with SDE Aero and the DebION login background.
  .
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and
  distribution package sources are preserved.
+
+Package: debion-desktop-base
+Architecture: all
+Depends: ${misc:Depends},
+         desktop-base
+Description: DebION GNU/Linux artwork for desktop-base
+ Makes the DebION theme the active desktop-base theme: wallpaper, lock
+ screen, login screen and GRUB background follow it in every desktop
+ (/usr/share/desktop-base/active-theme). It also provides the DebION vendor
+ logos and emblems and a DebION Plymouth boot splash.
+ .
+ Debian's themes stay installed; choose another one with
+ "update-alternatives --config desktop-theme".

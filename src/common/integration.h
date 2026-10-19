@@ -20,5 +20,10 @@ void restart_compositor_now();
 // OpenGL renderer, configuration file and glass settings (after Eduka's
 // eduka-compositor report).
 std::string compositor_report(const Config &cfg);
+// The hypervisor's name ("VirtualBox", ...) or "" on real hardware.
+std::string virtual_machine_name();
+// Backend for [compositor] backend=auto: "xrender" in virtual machines and
+// without a DRM device, otherwise "glx".
+std::string auto_compositor_backend();
 void migrate_legacy_suite_shortcuts();
 }

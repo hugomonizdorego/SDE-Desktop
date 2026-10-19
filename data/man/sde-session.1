@@ -4,9 +4,9 @@
 sde-session \- session manager of the Selviana Desktop Environment
 .SH SYNOPSIS
 .B sde-session
-[\-\-check | \-\-logout | \-\-version | \-\-help]
+[\-\-check | \-\-logout | \-\-compositor \fIMODE\fR | \-\-version | \-\-help]
 .SH DESCRIPTION
-\fBsde-session\fR applies the saved display and input settings, then starts the window manager (Openbox by default), \fBsde-desktop\fR, \fBsde-panel\fR, \fBsde-notifyd\fR, a polkit authentication agent and XDG autostart applications. It restarts components that crash. When the panel or the window manager cannot start, it shows a rescue dialog instead of leaving a black screen.
+\fBsde-session\fR applies the saved display and input settings, then starts the window manager (Openbox by default), \fBsde-desktop\fR, \fBsde-panel\fR, \fBsde-notifyd\fR, a polkit authentication agent and XDG autostart applications. It restarts components that crash. When the panel or the window manager cannot start, it shows a rescue dialog instead of leaving a black screen. When the compositor draws only black, it is replaced by its XRender configuration, or turned off for the session.
 .SH OPTIONS
 .TP
 .B \-\-check
@@ -14,6 +14,9 @@ Check that every SDE component and helper program can start, and report missing 
 .TP
 .B \-\-logout
 End the SDE session running on \fI$DISPLAY\fR.
+.TP
+.BI \-\-compositor " off|on|toggle|restart"
+Turn the SDE compositor off or on (saved in \fI~/.config/sde/sde.conf\fR) and apply it to the running session. Alt+Shift+F12 runs \fB\-\-compositor toggle\fR.
 .TP
 .B \-\-version
 Print the version and exit.

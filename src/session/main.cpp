@@ -12,6 +12,7 @@
 //     dialog instead of a black screen when the desktop cannot start
 //   * end the session cleanly on "sde-session --logout" or SIGTERM
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -65,6 +66,8 @@ int g_log_fd = -1;          // session.log, inherited by children as stdout/stde
 int g_console_fd = -1;      // the original stderr (.xsession-errors)
 pid_t g_rescue_pid = 0;
 std::vector<std::string> g_problems;
+time_t g_compositor_check = 0;  // when to look for a black screen
+int g_black_samples = 0;
 
 Component make_component(const std::string &name, const std::vector<std::string> &argv,
                          bool essential, bool critical = false) {
@@ -191,7 +194,6 @@ void on_child_exit(pid_t pid, int status) {
   }
 }
 
-// A dialog that replaces the black screen when the desktop cannot start.
 // The optional SDE compositor. A user's own compositor.conf wins; otherwise
 // the [appearance] style and [aero] settings generate one (OpenGL blur,
 // XRender if OpenGL is unavailable or fails).
@@ -201,10 +203,88 @@ void add_compositor(const Config &cfg) {
   bool own = file_exists(conf);
   if (!own) conf = write_compositor_config(cfg);
   Component compositor = make_component("SDE compositor", {"sde-compositor", "--config", conf}, false);
-  if (!own) compositor.fallback = {"sde-compositor", "--config", write_compositor_config(cfg, true)};
+  if (!own && conf.find("-xrender.conf") == std::string::npos)
+    compositor.fallback = {"sde-compositor", "--config", write_compositor_config(cfg, true)};
   compositor.max_restarts = 1;
   g_components.push_back(compositor);
   start_component(g_components.back());
+  g_compositor_check = time(nullptr) + 8;
+  g_black_samples = 0;
+}
+
+int ignore_x_error(Display *, XErrorEvent *) { return 0; }
+
+// True when every sampled point of the screen is pure black. Used only
+// while the desktop (which draws the wallpaper) is running, so a working
+// screen is never black everywhere.
+bool screen_is_black() {
+  if (!g_display) return false;
+  XErrorHandler old = XSetErrorHandler(ignore_x_error);
+  Window root = DefaultRootWindow(g_display);
+  int w = DisplayWidth(g_display, DefaultScreen(g_display));
+  int h = DisplayHeight(g_display, DefaultScreen(g_display));
+  bool black = true;
+  int sampled = 0;
+  for (int gy = 1; gy <= 5 && black; ++gy) {
+    for (int gx = 1; gx <= 5 && black; ++gx) {
+      XImage *img = XGetImage(g_display, root, w * gx / 6, h * gy / 6, 1, 1, AllPlanes, ZPixmap);
+      if (!img) continue;
+      ++sampled;
+      if ((XGetPixel(img, 0, 0) & 0xFFFFFF) != 0) black = false;
+      XDestroyImage(img);
+    }
+  }
+  XSync(g_display, False);
+  XSetErrorHandler(old);
+  return black && sampled > 0;
+}
+
+bool component_running(const std::string &name) {
+  for (auto &c : g_components)
+    if (c.name == name && c.pid > 0) return true;
+  return false;
+}
+
+// Some OpenGL drivers (virtual machines, old GPUs) let the compositor run but
+// draw nothing: the whole screen stays black (alpha11 bug). When that
+// happens the compositor is replaced by its XRender configuration, and if
+// that is black too, compositing stays off for this session.
+void check_compositor(Config &cfg) {
+  g_compositor_check = 0;
+  if (!component_running("SDE compositor") || !component_running(_("desktop"))) return;
+  if (!screen_is_black()) return;
+  if (++g_black_samples < 2) {  // look again before acting
+    g_compositor_check = time(nullptr) + 2;
+    return;
+  }
+  for (auto it = g_components.begin(); it != g_components.end(); ++it) {
+    if (it->name != "SDE compositor") continue;
+    std::vector<std::string> fallback = it->fallback;
+    if (it->pid > 0) kill(it->pid, SIGTERM);
+    g_components.erase(it);
+    if (!fallback.empty()) {
+      log("the compositor draws a black screen; switching to XRender");
+      // Remember it, so the next login does not start with a black screen.
+      Config saved;
+      saved.load();
+      saved.set("compositor", "backend", "xrender");
+      saved.save();
+      cfg.load();
+      Component c = make_component("SDE compositor", fallback, false);
+      c.max_restarts = 1;
+      g_components.push_back(c);
+      start_component(g_components.back());
+      g_compositor_check = time(nullptr) + 6;
+      g_black_samples = 0;
+    } else {
+      log("the compositor draws a black screen; compositing is off for this session "
+          "(Alt+Shift+F12 turns it on again)");
+      start_child({"notify-send", "-i", "dialog-warning", _("Compositor turned off"),
+                   _("It drew a black screen. Transparency and shadows are off for this session; "
+                     "Alt+Shift+F12 or Settings > Effects turns the compositor on again.")});
+    }
+    break;
+  }
 }
 
 // SIGUSR2 (Settings > Effects > Restart compositor): stop the compositor and
@@ -221,6 +301,7 @@ void restart_compositor(Config &cfg) {
   add_compositor(cfg);
 }
 
+// A dialog that replaces the black screen when the desktop cannot start.
 void show_rescue(const std::string &problem) {
   g_problems.push_back(problem);
   if (g_rescue_pid > 0) return;
@@ -350,6 +431,33 @@ int request_logout() {
   return 0;
 }
 
+// --compositor off|on|toggle|restart (Alt+Shift+F12 toggles): changes
+// [compositor] mode and asks the running session to apply it. A way out
+// when a compositor draws a black screen.
+int set_compositor(const std::string &how) {
+  if (how != "off" && how != "on" && how != "toggle" && how != "restart") {
+    fprintf(stderr, "sde-session: --compositor takes off, on, toggle or restart\n");
+    return 2;
+  }
+  Config cfg;
+  cfg.load();
+  bool off = cfg.get("compositor", "mode", "auto") == "off";
+  if (how != "restart") {
+    off = how == "off" || (how == "toggle" && !off);
+    cfg.set("compositor", "mode", off ? "off" : "auto");
+    if (!cfg.save()) {
+      fprintf(stderr, "sde-session: cannot save %s\n", (config_home() + "/sde/sde.conf").c_str());
+      return 1;
+    }
+  }
+  printf("SDE compositor: %s\n", off ? "off" : "on");
+  std::string text;
+  if (!read_file(pid_file(), text)) return 0;  // applied at the next login
+  pid_t pid = pid_t(atol(text.c_str()));
+  if (pid > 1) kill(pid, SIGUSR2);
+  return 0;
+}
+
 // ------------------------------------------------------------- --check
 
 // Runs |argv| with output captured; returns the exit status (-1 if missing).
@@ -447,11 +555,13 @@ int io_error_handler(Display *) {
 }
 
 void usage() {
-  printf("%s", _("Usage: sde-session [--check | --logout | --version | --help]\n\n"
+  printf("%s", _("Usage: sde-session [--check | --logout | --compositor MODE | --version | --help]\n\n"
                  "Starts the Selviana Desktop Environment. Normally run by startsde from\n"
                  "the display manager.\n\n"
                  "  --check    check that every SDE component can start, and report problems\n"
                  "  --logout   end the running SDE session on this display\n"
+                 "  --compositor off|on|toggle|restart\n"
+                 "             turn the compositor off or on (Alt+Shift+F12 toggles it)\n"
                  "  --version  print the version and exit\n"));
 }
 
@@ -463,6 +573,7 @@ int main(int argc, char **argv) {
     std::string a = argv[i];
     if (a == "--logout") return request_logout();
     if (a == "--check") return run_check();
+    if (a == "--compositor") return set_compositor(i + 1 < argc ? argv[i + 1] : "");
     if (a == "--version") {
       printf("sde-session %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
@@ -587,6 +698,7 @@ int main(int argc, char **argv) {
       }
     }
     time_t now = time(nullptr);
+    if (g_compositor_check && now >= g_compositor_check) check_compositor(cfg);
     for (auto &c : g_components) {
       if (c.pid == 0 && c.restart_at && now >= c.restart_at && !c.given_up) {
         c.restart_at = 0;

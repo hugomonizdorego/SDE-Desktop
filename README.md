@@ -2,11 +2,16 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 11** (`0.1.0~alpha11`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 12** (`0.1.0~alpha12`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
 
-**New in Alpha 11:** [four themes](docs/ALPHA11.md) — SDE Light, SDE Dark, SDE Aero and
+**New in Alpha 12:** [fixes the black screen after login](docs/ALPHA12.md) in
+virtual machines (automatic XRender, black-screen detection, Alt+Shift+F12) and adds
+**debion-desktop-base**, the DebION artwork for Debian's desktop-base (wallpaper, login,
+lock screen, GRUB, logos and boot splash).
+
+**Alpha 11:** [four themes](docs/ALPHA11.md) — SDE Light, SDE Dark, SDE Aero and
 SDE Liquid Glass (GTK 3/4, in `/usr/share/themes`) — a working Start Menu search with a
 right-click Arrange menu and animations, Eduka-Desktop's effects, compositor, drives and
 power-mode features, and SDE Tools for Liria.
@@ -63,7 +68,7 @@ normal dependencies. SDE Update has a native interface, an attributed Mint Updat
 model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
 and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 
-`sudo apt install sde-desktop` is the single entry point when the two SDE packages
+`sudo apt install sde-desktop` is the single entry point when the SDE packages
 are available in the DebION repository. The metapackage installs the session,
 suite, Xorg, login, network, sound and media services. No DebION repository is
 created by this project.
@@ -114,7 +119,7 @@ and install it with `apt`, which also installs the dependencies:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./sde_*.deb ./sde-desktop_*.deb
+sudo apt install ./sde_*.deb ./sde-desktop_*.deb ./debion-desktop-base_*.deb
 ```
 
 Log out, choose **SDE-Desktop** at the login screen and log in. From a text console you can

@@ -57,7 +57,11 @@ jobs:
           python3 tools/check-installed-suite.py
           /usr/bin/python3 /usr/share/sde/update/check.py > /tmp/sde-update-cache.tsv
           head -n 1 /tmp/sde-update-cache.tsv | grep -F 'SDE-UPDATES'
-          DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/debion-desktop-base_*.deb
+          test "$(readlink -f /usr/share/desktop-base/active-theme)" = /usr/share/desktop-base/debion-theme
+          test "$(readlink -f /usr/share/images/vendor-logos)" = /usr/share/desktop-base/debion-logos
+          test -s /usr/share/plymouth/themes/debion/debion.script
+          DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb ./dist/debion-desktop-base_*.deb
       - name: Native UI smoke checks
         if: matrix.image == 'debian:testing'
         run: |
@@ -121,11 +125,11 @@ jobs:
           {
             echo "Automatic build of \`$GITHUB_SHA\` (SDE $version, Debian testing / DebION, amd64)."
             echo
-            echo "This is alpha software for testing. Install both packages with:"
+            echo "This is alpha software for testing. Install the packages with:"
             echo
             echo '```sh'
             echo 'sha256sum -c SHA256SUMS --ignore-missing'
-            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb'
+            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb ./debion-desktop-base_*.deb'
             echo '```'
             echo
             echo "Then choose **SDE-Desktop** at the login screen."

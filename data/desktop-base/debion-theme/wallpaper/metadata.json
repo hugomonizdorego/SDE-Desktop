@@ -1,0 +1,8 @@
+{
+    "KPlugin": {
+        "Name": "DebION",
+        "Id": "DebION",
+        "License": "GPLv3+",
+        "Authors": [ { "Name": "DebION GNU/Linux" } ]
+    }
+}

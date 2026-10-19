@@ -144,8 +144,9 @@ std::map<std::string, std::string> lsblk_pairs(const std::string& line) {
     std::string key = line.substr(i, eq - i), value;
     size_t j = eq + 2;
     for (; j < line.size() && line[j] != '"'; ++j) {
-      if (line[j] == '\\' && j + 3 < line.size() && line[j + 1] == 'x') {
-        value += char(std::stoi(line.substr(j + 2, 2), nullptr, 16));
+      if (line[j] == '\\' && j + 3 < line.size() && line[j + 1] == 'x' &&
+          isxdigit((unsigned char)line[j + 2]) && isxdigit((unsigned char)line[j + 3])) {
+        value += char(strtol(line.substr(j + 2, 2).c_str(), nullptr, 16));
         j += 3;
       } else {
         value += line[j];

@@ -1,3 +1,13 @@
+# Alpha12 patch · 2026-10-20 — black screen fix, DebION desktop-base
+
+- Fixed: black screen after login (VirtualBox and other virtual machines).
+  The compositor uses XRender there, a compositor that draws only black is
+  replaced automatically, and Alt+Shift+F12 turns compositing off or on.
+- Fixed: a second compositor (system picom autostart) no longer starts.
+- New package debion-desktop-base: DebION artwork for desktop-base
+  (wallpaper, lock and login screens, GRUB, logos, Plymouth splash).
+- See docs/ALPHA12.md.
+
 # Alpha11 patch · 2026-10-20 — themes, Start Menu, Eduka features
 
 - SDE Light, SDE Dark, SDE Aero and new SDE Liquid Glass themes for GTK 3/4

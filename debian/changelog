@@ -1,3 +1,18 @@
+sde (0.1.0~alpha12) unstable; urgency=medium
+
+  * Fix the black screen after login in virtual machines: the compositor
+    uses XRender (no blur) in VirtualBox, VMware, QEMU/KVM and Hyper-V, and
+    sde-session replaces a compositor that draws a black screen (XRender,
+    then off). Alt+Shift+F12 and "sde-session --compositor" toggle it.
+  * Autostart no longer starts a second compositor (picom.desktop etc.).
+  * New debion-desktop-base package: DebION wallpaper, lock screen, login,
+    GRUB background, vendor logos and Plymouth splash as the active
+    desktop-base theme; the LightDM greeter uses the DebION login artwork.
+  * Fix a possible Action Center crash on unusual drive labels and a
+    compositor restart that ended pre-alpha12 sessions.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Tue, 20 Oct 2026 08:00:00 +0900
+
 sde (0.1.0~alpha11) unstable; urgency=medium
 
   * Four GTK 3/GTK 4 themes in /usr/share/themes: SDE Light, SDE Dark,
