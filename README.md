@@ -98,21 +98,23 @@ Wi-Fi).
 
 Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
-Download the alpha10 packages and matching sources from the successful
-[Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39214607984)
-(`sde-debian-testing` artifact). Extract the ZIP, verify the checksums and install
-with `apt`, which also resolves the distribution dependencies:
+Download the Alpha 11 packages, installer and matching sources from the latest
+successful [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha10-gallery)
+(`sde-debian-testing` artifact). Extract the ZIP, verify checksums, then install:
 
 ```sh
-sha256sum -c SHA256SUMS.sha256 --ignore-missing
-sudo apt install ./sde_*.deb ./sde-desktop_*.deb
+sha256sum -c SHA256SUMS.sha256
+sudo sh ./install-debion.sh .
 ```
+
+The installer bootstraps the signed Mozilla repository before resolving Firefox
+release and the complete desktop dependencies. See [the DebION profile](docs/DEBION.md).
 
 Log out, choose **SDE** at the login screen and log in. From a text console you can
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
-test alpha10; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
+test Alpha 11; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel

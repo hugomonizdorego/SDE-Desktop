@@ -47,3 +47,7 @@ if(SDE_BUILD_NATIVE_SUITE AND SDE_XVFB)
   add_test(NAME sde-native-about COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_native_about.py $<TARGET_FILE:sde-native-about-tests>)
 endif()
+
+# Used after the full DebION profile is installed, not shipped in the DE.
+add_executable(sde-menu-probe installed_menu_probe.cpp)
+target_link_libraries(sde-menu-probe PRIVATE sde-common)

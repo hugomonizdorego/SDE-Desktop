@@ -62,6 +62,7 @@ static void test_rust_config() {
   Config cfg;
   cfg.load();
   CHECK(cfg.get("appearance", "theme") == "light");
+  CHECK(cfg.get("appearance", "icon_theme") == "Papirus");
   cfg.set("appearance", "font", "Noto Sans Tetun");
   cfg.set("panel", "height", "999999999999999999999");
   CHECK(cfg.get_int("panel", "height", 40) == 40);
@@ -218,6 +219,7 @@ static void test_gtk_preferences() {
   Config cfg;
   cfg.set("appearance", "theme", "dark");
   cfg.set("appearance", "scale", "125");
+  cfg.set("appearance", "icon_theme", "Papirus");
   sync_gtk_settings(cfg);
   std::string text;
   CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
@@ -226,9 +228,11 @@ static void test_gtk_preferences() {
   CHECK(text.find("gtk-application-prefer-dark-theme=true") != std::string::npos);
   CHECK(read_file(std::string(root) + "/gtk-4.0/settings.ini", text));
   CHECK(text.find("gtk-theme-name=Adwaita") != std::string::npos);
+  CHECK(text.find("gtk-icon-theme-name=Papirus") != std::string::npos);
   CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
   CHECK(text.find("Adwaita-dark") != std::string::npos);
   CHECK(text.find("Xft/DPI 122880") != std::string::npos);
+  CHECK(text.find(R"(Net/IconThemeName "Papirus")") != std::string::npos);
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 

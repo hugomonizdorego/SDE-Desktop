@@ -52,6 +52,12 @@ bool spawn_detached(const std::vector<std::string> &argv, const std::string &wor
 }
 
 bool open_terminal(const std::vector<std::string> &argv, const std::string &work_dir) {
+  if (!find_program("xdg-terminal-exec").empty()) {
+    std::vector<std::string> cmd{"xdg-terminal-exec", "--dir=" +
+        (work_dir.empty() ? home_dir() : work_dir), "--"};
+    cmd.insert(cmd.end(), argv.begin(), argv.end());
+    return spawn_detached(cmd, work_dir.empty() ? home_dir() : work_dir);
+  }
   static const char *terminals[] = {"gnome-terminal", "x-terminal-emulator", "xfce4-terminal", "lxterminal",
                                     "qterminal", "mate-terminal",
                                     "konsole", "xterm"};

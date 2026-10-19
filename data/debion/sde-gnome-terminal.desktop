@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=GNOME Terminal
+GenericName=Terminal
+Comment=Use the command line
+Exec=gnome-terminal
+TryExec=gnome-terminal
+Icon=org.gnome.Terminal
+Terminal=false
+StartupNotify=true
+Categories=System;TerminalEmulator;
+OnlyShowIn=SDE;
+X-TerminalArgExec=--
+X-TerminalArgTitle=--title
+X-TerminalArgDir=--working-directory

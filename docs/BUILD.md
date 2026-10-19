@@ -10,7 +10,7 @@ GTK application sources require libmate-desktop 1.27.1 or later.
 sudo sh tools/install-deps.sh
 sudo sh tools/install-native-deps.sh
 sh tools/build-deb.sh dist
-sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
+sudo sh ./dist/install-debion.sh ./dist
 ```
 
 `debian/control` is the authoritative build dependency list. The scripts install
@@ -21,7 +21,7 @@ MATE monitor, power-manager or screensaver applications.
 `build-deb.sh` downloads and verifies pinned source before compilation, builds in
 a temporary source copy with `dpkg-buildpackage -us -uc -b`, runs the tests and
 reports lintian findings. Outputs include `sde`, the `sde-desktop` metapackage,
-optional debug symbols, complete corresponding sources and checksums. Use APT
+`debion-desktop-defaults`, the installer, optional debug symbols, complete corresponding sources and checksums. Use APT
 for installation so shared libraries and system services are resolved.
 
 ## Editable source and offline compilation

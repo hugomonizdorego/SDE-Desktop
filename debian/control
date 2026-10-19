@@ -129,6 +129,7 @@ Depends: ${shlibs:Depends},
          mate-desktop-common,
          dbus-x11 | dbus-user-session,
          xdg-utils,
+         xdg-terminal-exec,
          xsettingsd,
          gsettings-desktop-schemas,
          desktop-file-utils,
@@ -169,7 +170,7 @@ Recommends: papirus-icon-theme | adwaita-icon-theme,
             lightdm | x-display-manager
 Suggests: eduka-icons,
           brightnessctl,
-          network-manager-gnome,
+          nm-connection-editor,
           scrot,
           firefox
 Provides: x-session-manager, notification-daemon

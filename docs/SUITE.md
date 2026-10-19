@@ -54,7 +54,8 @@ notices under `/usr/share/doc/sde/upstream/<upstream>/`.
 ## Installation
 
 The supported full-suite target is **DebION GNU/Linux / Debian testing**.
-DebION image builders should publish `sde` and `sde-desktop` in their own signed
+DebION image builders should publish `sde`, `sde-desktop` and
+`debion-desktop-defaults` in their own signed
 APT repository and seed `sde-desktop` in the installer:
 
 ```sh
@@ -63,11 +64,12 @@ sudo apt install sde-desktop
 
 `sde` contains the native suite. `sde-desktop` adds Xorg, login, network, audio,
 removable-media support, icons and GSettings. These are operating-system
-services required for a complete DE. This project does not configure an APT
-repository. For local packages, let APT resolve dependencies:
+services required for a complete DE. The DebION defaults package supplies the
+signed official Mozilla repository for Firefox release. Install that package and
+refresh APT before resolving `sde-desktop`. For local packages, use the installer:
 
 ```sh
-sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
+sudo sh ./dist/install-debion.sh ./dist
 ```
 
 Select SDE at the login screen. Debug-symbol packages are optional and are not

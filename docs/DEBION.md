@@ -35,7 +35,7 @@ it does not fetch dependencies. Normal subsequent updates use APT / SDE Update.
 | Torrents / Internet | Transmission GTK |
 | Text / Accessories | Niny (native) |
 | Files / System | Liria (native, shares the SDE version) |
-| PDF and PostScript / Graphics | Xanara (native) |
+| PDF and PostScript / Office | Xanara (native) |
 | Archives / Accessories | Taca (native) |
 | Images / Graphics | SDE View (native); Gallery for photo browsing and organization |
 | Video / Multimedia | Celluloid |
@@ -47,9 +47,9 @@ it does not fetch dependencies. Normal subsequent updates use APT / SDE Update.
 | Passwords and keys / Accessories | Seahorse with GNOME Keyring |
 | Screenshot / Accessories | GNOME Screenshot; Print opens its interactive dialog |
 | Scanner / Graphics | Simple Scan |
-| On-screen keyboard / Accessibility | Onboard (available on demand) |
+| On-screen keyboard / Accessories | Onboard (available on demand) |
 | Local DEB files / System | GDebi |
-| Package management / System | Synaptic; SDE Update (native) handles update previews |
+| Package management / Settings | Synaptic; SDE Update (native) handles update previews |
 | Partitions / System | GParted |
 | Firewall / Settings | GUFW (installed; activation remains the user's decision) |
 | Printers / Settings | system-config-printer and its udev integration |
@@ -59,7 +59,9 @@ it does not fetch dependencies. Normal subsequent updates use APT / SDE Update.
 The menu uses each upstream launcher's XDG Categories; translated directory
 names can differ. Defaults are shipped as `/etc/xdg/sde-mimeapps.list` and
 `/etc/xdg/sde-xdg-terminals.list`. Personal MIME/terminal preferences take
-precedence. No duplicate launcher or “SDE Suite” menu directory is created.
+precedence. GNOME Terminal upstream restricts its launcher to GNOME/Unity, so an SDE-only
+compatibility launcher exposes it in System. There is one visible terminal
+entry in SDE. No “SDE Suite” menu directory is created.
 
 Papirus is the default in the SDE config, GTK3/GTK4, XSETTINGS and GNOME interface
 settings, and in Slick Greeter. Explicit SDE icon choices remain configurable.

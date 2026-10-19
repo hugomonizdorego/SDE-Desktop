@@ -12,7 +12,7 @@
   </schema>
   <schema id="org.debion.applications-terminal" path="/org/debion/applications/terminal/">
     <key name="exec" type="s">
-      <default>'gnome-terminal'</default>
+      <default>'xdg-terminal-exec'</default>
       <summary>Terminal program</summary>
       <description>Terminal executable used by the Niny file browser.</description>
     </key>
