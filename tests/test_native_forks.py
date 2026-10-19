@@ -35,6 +35,14 @@ const char *build = PACKAGE_VERSION;
         expected = source.replace('= VERSION;', '= "1.0.0~alpha1";').replace('= PACKAGE_VERSION;', '= "1.0.0~alpha1";')
         self.assertEqual(forks.stamp_version(source, '1.0.0~alpha1'), expected)
 
+    def test_about_include_preserves_gnu_feature_test_macros(self):
+        source = '#include "config.h"\n#define _GNU_SOURCE\n#include <unistd.h>\n#include <gtk/gtk.h>\nint main(void);\n'
+        result = forks.inject_about(source)
+        self.assertLess(result.index('_GNU_SOURCE'), result.index('<unistd.h>'))
+        self.assertLess(result.index('<gtk/gtk.h>'), result.index('"sde-about.h"'))
+        with self.assertRaises(ValueError):
+            forks.inject_about('int main(void);')
+
     def test_native_identifiers_and_includes_change(self):
         self.assertEqual(forks.brand('#include "caja-window.h"'), '#include "liria-window.h"')
         self.assertEqual(forks.brand('#define EOM_WINDOW "org.mate.eom"'), '#define SDEVIEW_WINDOW "org.debion.sdeview"')

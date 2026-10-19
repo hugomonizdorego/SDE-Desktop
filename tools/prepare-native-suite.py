@@ -80,6 +80,21 @@ def stamp_version(text, version):
     return re.sub(token, lambda m: json.dumps(version) if m.group() in {"VERSION", "PACKAGE_VERSION"} else m.group(), text)
 
 
+
+def inject_about(text):
+    # Feature-test macros/config.h must precede every system header. In
+    # particular Screen Lock defines _GNU_SOURCE before unistd.h for environ,
+    # getresuid and getresgid. Hook About only after GTK is already included.
+    include = re.search(r'(?m)^#include\s*[<"]gtk/gtk.h[>"][^\n]*\n', text)
+    if include is None:
+        # Taca receives GTK through its own headers; this is its final,
+        # unconditional preamble include in the pinned upstream revision.
+        include = re.search(r'(?m)^#include "typedefs.h"[^\n]*\n', text)
+    if include is None:
+        raise ValueError("Cannot safely locate native About include point")
+    return text[:include.end()] + '#include "sde-about.h"\n' + text[include.end():]
+
+
 def prepare(record, cache, destination):
     checkout = cache / record["upstream"]
     if not checkout.exists():
@@ -176,7 +191,7 @@ def prepare(record, cache, destination):
                 original_authors = (staged / "AUTHORS").read_text(errors="replace") if (staged / "AUTHORS").exists() else record["upstream"] + " contributors"
                 definitions = "#define SDE_ABOUT_NAME " + json.dumps(record["name"]) + "\n#define SDE_ABOUT_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_ORIGINAL_AUTHORS " + json.dumps(original_authors) + "\n"
                 header.write_text(definitions + "#define SDE_UPSTREAM_NAME " + json.dumps(record["upstream"]) + "\n#define SDE_UPSTREAM_URL " + json.dumps(record["url"]) + "\n" + about)
-                s = '#include "sde-about.h"\n' + s
+                s = inject_about(s)
             if re.search(r"\bmain\s*\(\s*(?:int|gint)\b", s):
                 header = path.parent / "sde-brand.h"
                 header.write_text("#define SDE_NATIVE_NAME " + json.dumps(record["name"]) + "\n#define SDE_NATIVE_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_NATIVE_LIRIA " + str(int(record["id"] == "liria")) + "\n" + helper)
