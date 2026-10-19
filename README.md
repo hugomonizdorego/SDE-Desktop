@@ -4,7 +4,7 @@
 
 Development version **0.1 Alpha 12** (`0.1.0~alpha12`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE Alpha 9 panel and Action Center](docs/screenshots/alpha9/02-action-center.png)
+![SDE Alpha 12 panel and Action Center](docs/screenshots/alpha12/02-action-center.png)
 
 SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
 interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
@@ -99,7 +99,7 @@ Wi-Fi).
 Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
 Download the matching Alpha 12 packages, installer and sources from the
-[Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions)
+[Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39252605381/artifacts/12187441719)
 (`sde-debian-testing` artifact). See [Alpha 12 validation](docs/ALPHA12.md).
 Extract the ZIP, verify checksums, then install:
 
@@ -241,15 +241,6 @@ is not required. This remains a development alpha for DebION / Debian testing.
 
 ![Gallery native About](docs/screenshots/alpha10/03-gallery-about.png)
 
-### Alpha 12 — panel crash and indicators
-
-The clock is the panel entry to Action Center. Separate Action Center buttons
-and the permanent tray arrow are removed. Known system applet icons are hidden
-when their function is represented by a native indicator, while application
-icons remain available. Tray sizes and mapped state are enforced. A reproducible
-crash when an applet disappears during its menu is fixed, along with D-Bus
-registration lifetimes. See [Alpha 12](docs/ALPHA12.md).
-
 ### Alpha 11 — DebION application profile
 
 All requested complementary applications are dependencies of `sde-desktop`.
@@ -264,7 +255,27 @@ Both final Alpha 11 CI builds passed, including actual installation of the full
 DebION profile, menu/MIME/terminal defaults, native About links and GUI checks.
 [Download Alpha 11](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39224810528/artifacts/12174101625)
 · [Validation](docs/ALPHA11.md#verified-build--19-october-2026)
-· [Current screenshots](docs/screenshots/alpha11/README.md).
+· [Alpha 11 screenshots](docs/screenshots/alpha11/README.md).
 
 ![DebION accessories and Papirus defaults](docs/screenshots/alpha11/01-accessories.png)
 ![Gallery development credits](docs/screenshots/alpha11/02-gallery-about.png)
+
+### Alpha 12 — panel crash and indicators
+
+The clock is the panel entry to Action Center. Separate Action Center buttons
+and the permanent tray arrow are removed. Known system applet icons are hidden
+when their function is represented by a native indicator, while application
+icons remain available. Tray sizes and mapped state are enforced. A reproducible
+crash when an applet disappears during its menu is fixed, along with D-Bus
+registration lifetimes. See [Alpha 12](docs/ALPHA12.md).
+
+All 12 full-suite CTest checks, complete DebION profile installation, Rust checks
+and GUI checks at two sizes passed. The separate ASan/UBSan job passed its nine
+core tests and both extended panel checks, including IME replacement and provider
+exit during a menu.
+
+[Download Alpha 12](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39252605381/artifacts/12187441719)
+· [Validation](docs/ALPHA12.md)
+· [Current screenshots](docs/screenshots/alpha12/README.md).
+
+![Panel without duplicate Action Center buttons](docs/screenshots/alpha12/01-panel.png)
