@@ -204,6 +204,45 @@ switch:checked {
   background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_bottom);
 }
 
+/* Liria (alpha14): frosted path field, glass cards on the Home overview. */
+.liria-navigation-window .sde-location-item > box {
+  border-radius: 9999px;
+  border-color: @sde_border;
+  background-color: alpha(@sde_view, 0.55);
+  box-shadow: inset 0 1px 2px alpha(@sde_shadow, 0.45), 0 1px @sde_glass_line;
+}
+
+.liria-navigation-window .sde-location-item .liria-pathbar button,
+.liria-navigation-window .sde-location-item > box > button,
+.liria-navigation-window .sde-location-item > box > togglebutton,
+.liria-navigation-window .sde-location-item entry {
+  border-radius: 9999px;
+}
+
+.sde-home-overview {
+  border-radius: 22px;
+  box-shadow: inset 0 1px @sde_glass_line;
+}
+
+button.sde-card {
+  border-radius: 18px;
+  border-color: @sde_border;
+  background-color: alpha(@sde_view, 0.62);
+  background-image: linear-gradient(to bottom, @sde_glass_top, alpha(@sde_glass_bottom, 0.2));
+  box-shadow: inset 0 1px @sde_glass_line, 0 4px 14px alpha(@sde_shadow, 0.55);
+}
+
+button.sde-card:hover {
+  border-color: alpha(@sde_accent, 0.45);
+  box-shadow: inset 0 1px @sde_glass_line, 0 0 0 4px alpha(@sde_accent, 0.10),
+              0 8px 22px alpha(@sde_shadow, 0.75);
+}
+
+button.sde-recent-card {
+  border-radius: 9999px;
+  padding: 6px 16px 6px 10px;
+}
+
 /* Without a compositor, menus and tooltips are plain X windows: square
  * corners avoid black edges. GTK marks composited ones with .csd. */
 window.popup:not(.csd) menu,

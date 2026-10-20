@@ -11,7 +11,7 @@ AM_CPPFLAGS = \
 extensiondir = $(libdir)/liria/extensions-2.0
 extension_LTLIBRARIES = libliria-sde-tools.la
 
-libliria_sde_tools_la_SOURCES = liria-sde-tools.c
+libliria_sde_tools_la_SOURCES = liria-sde-tools.c liria-sde-home.c
 libliria_sde_tools_la_LDFLAGS = -module -avoid-version -no-undefined
 libliria_sde_tools_la_LIBADD = \
 	$(top_builddir)/libliria-extension/libliria-extension.la \
