@@ -5,6 +5,12 @@
 #include <FL/x.H>
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#include <FL/Fl_Group.H>
+#include <FL/Fl_Scroll.H>
 
 #include "panel.h"
 #include "theme.h"
@@ -18,11 +24,14 @@ PanelPopup::PanelPopup(const char *title) : BufferedWindow(0, 0, 100, 100, title
   resizable(nullptr);
 }
 
-void PanelPopup::open_at(int anchor_x, bool align_right) {
+void PanelPopup::open_centered(int center_x) { open(center_x, 2); }
+void PanelPopup::open_at(int anchor_x, bool align_right) { open(anchor_x, align_right ? 1 : 0); }
+
+void PanelPopup::open(int anchor_x, int align) {
   Panel *panel = Panel::instance;
   prepare();
   anchor_x_ = anchor_x;
-  align_right_ = align_right;
+  align_ = align;
   reposition();
   show();
   // FLTK omits WM titles for override-redirect popups. Keep a readable name
@@ -81,7 +90,7 @@ void PanelPopup::reposition() {
   int ww = std::min(w(), mw - 2 * margin),
       hh = std::min(h(), std::max(1, available - gap - margin));
   int right = corner_popup() ? std::min(mx + mw, panel->x() + panel->w()) : anchor_x_;
-  int xx = corner_popup() || align_right_ ? right - ww : right;
+  int xx = corner_popup() || align_ == 1 ? right - ww : align_ == 2 ? right - ww / 2 : right;
   xx = std::max(mx + margin, std::min(xx, mx + mw - ww - margin));
   int yy = panel->theme().panel_top ? panel->y() + panel->h() + gap : panel->y() - hh - gap;
   yy = std::max(my, std::min(yy, my + mh - hh));
@@ -118,4 +127,46 @@ int PanelPopup::handle(int event) {
     return 1;
   }
   return BufferedWindow::handle(event);
+}
+
+// ------------------------------------------------------------- UI test hook
+
+bool qa_dump_enabled() {
+  const char *dir = getenv("SDE_PANEL_QA_DIR");
+  return dir && *dir;
+}
+
+namespace {
+void qa_collect(Fl_Widget *w, std::string &out, bool scrolled) {
+  if (!w->visible()) return;
+  const char *name = w->tooltip() ? w->tooltip() : w->label();
+  if (name && *name && w != w->window()) {
+    std::string n = name;
+    for (char &c : n)
+      if (c == '\t' || c == '\n') c = ' ';
+    char buf[96];
+    snprintf(buf, sizeof buf, "\t%d\t%d\t%d\t%d\t%d\t%d\n", w->x(), w->y(), w->w(), w->h(),
+             w->active_r() ? 1 : 0, scrolled ? 1 : 0);
+    out += n + buf;
+  }
+  if (auto *g = w->as_group())
+    for (int i = 0; i < g->children(); ++i)
+      qa_collect(g->child(i), out, scrolled || dynamic_cast<Fl_Scroll *>(w));
+}
+}  // namespace
+
+void qa_dump(Fl_Window *win, const std::string &extra) {
+  if (!qa_dump_enabled() || !win->label()) return;
+  std::string text = extra;
+  for (int i = 0; i < win->children(); ++i) qa_collect(win->child(i), text, false);
+  std::string name = win->label();
+  for (char &c : name)
+    if (c == '/' || c == ' ') c = '-';
+  std::string path = std::string(getenv("SDE_PANEL_QA_DIR")) + "/" + name + ".txt";
+  std::string tmp = path + ".tmp";
+  if (FILE *f = fopen(tmp.c_str(), "w")) {
+    fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    rename(tmp.c_str(), path.c_str());
+  }
 }
