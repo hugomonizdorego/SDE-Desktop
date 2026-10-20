@@ -271,7 +271,13 @@ void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
   if (p == quick_.get() || p == flyout_.get()) {
     popup_opened_at_ = steady_ms();
-    popup_opened_time_ = fl_event_time;
+    // Presses queued before the popup opened belong to earlier clicks. A
+    // popup opened by a command (a client message carries no time) would
+    // otherwise keep a stale fl_event_time and let them close it.
+    draining_input_ = true;
+    input_event(0, this);
+    draining_input_ = false;
+    popup_opened_time_ = std::max<unsigned long>(fl_event_time, last_press_time_);
     PanelControls::get().set_visible(true);
   }
   relayout();
@@ -399,11 +405,16 @@ void Panel::input_event(int, void *d) {
     if (event.type == GenericEvent && event.xcookie.extension == p->input_opcode_ &&
         event.xcookie.evtype == XI_RawButtonPress) {
       unsigned long time = 0;
+      int button = 1;
       if (XGetEventData(p->input_display_, &event.xcookie)) {
-        time = static_cast<XIRawEvent *>(event.xcookie.data)->time;
+        auto *raw = static_cast<XIRawEvent *>(event.xcookie.data);
+        time = raw->time;
+        button = raw->detail;
         XFreeEventData(p->input_display_, &event.xcookie);
       }
-      p->outside_pointer_press(time);
+      if (time > p->last_press_time_) p->last_press_time_ = time;
+      // Scrolling elsewhere (buttons 4-7) leaves popups open.
+      if (!p->draining_input_ && (button < 4 || button > 7)) p->outside_pointer_press(time);
     }
   }
 }
@@ -1276,7 +1287,10 @@ bool Panel::handle_x(const XEvent &e) {
   if (e.type == PropertyNotify && e.xproperty.window == root) {
     Atom a = e.xproperty.atom;
     if (a == x11::atom("_NET_CLIENT_LIST") || a == x11::atom("_NET_ACTIVE_WINDOW")) {
-      if (a == x11::atom("_NET_ACTIVE_WINDOW") && !Fl::grab()) {
+      // Activating another window closes the popups, except for the focus
+      // change that follows an application quitting just before they opened.
+      if (a == x11::atom("_NET_ACTIVE_WINDOW") && !Fl::grab() &&
+          steady_ms() - popup_opened_at_ > 500) {
         if (quick_->is_open()) quick_->close();
         if (flyout_->is_open()) flyout_->close();
       }

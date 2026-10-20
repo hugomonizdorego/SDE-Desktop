@@ -44,6 +44,7 @@ env.update(
     LANG="C.UTF-8",
     LC_ALL="C.UTF-8",
     XDG_RUNTIME_DIR=str(home / "run"),
+    SDE_PANEL_QA_DIR=str(home / "qa"),
 )
 # The smoke check exercises the native interface and process helpers. A real
 # session bus is inherited when available; otherwise fail bus lookups quickly.
@@ -51,6 +52,7 @@ env.setdefault("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent-sde-ui-smoke-
 (home / "run").mkdir(mode=0o700)
 (home / ".config/sde").mkdir(parents=True)
 (home / "bin").mkdir()
+(home / "qa").mkdir()
 fixtures = home / "fixtures"
 fixtures.mkdir()
 (fixtures / "apt_pkg.py").write_text("SELSTATE_HOLD = 1\n")
@@ -123,6 +125,26 @@ def find(name):
         + " logs: "
         + str([(p.name, p.read_text()) for p in home.glob("*.log")])
     )
+
+
+def control(title, name):
+    """Window-relative (x, y, w, h) of a named control from the panel QA dump."""
+    path = home / "qa" / (title.replace(" ", "-") + ".txt")
+    for _ in range(80):
+        if path.exists():
+            for line in path.read_text().splitlines():
+                f = line.split("\t")
+                if len(f) >= 6 and f[0] == name and f[5] == "1":
+                    return tuple(int(v) for v in f[1:5])
+        time.sleep(0.1)
+    raise RuntimeError(f"{title}: no control {name!r}")
+
+
+def click_control(win, title, name):
+    x, y, w, h = control(title, name)
+    g = geom(win)
+    run("xdotool", "mousemove", str(g["X"] + x + w // 2), str(g["Y"] + y + h // 2), "click", "1")
+    time.sleep(0.5)
 
 
 def geom(w):
@@ -353,26 +375,22 @@ try:
         app.terminate()
         app.wait()
         run("sde-panel", "--section", "network")
-        ac = find("^Action Center$")
-        g = geom(ac)
+        # Tray icons open their own flyout above the panel.
+        fly = find("^Network$")
+        g = geom(fly)
         pg = geom(wid)
-        assert g["X"] + g["WIDTH"] == pg["X"] + pg["WIDTH"], (g, pg)
-        assert g["Y"] + g["HEIGHT"] == pg["Y"], (g, pg)
+        assert g["X"] >= 0 and g["X"] + g["WIDTH"] <= W, (g, pg)
+        assert g["Y"] + g["HEIGHT"] <= pg["Y"], (g, pg)
         shot("06-network-connections")
         run("xdotool", "key", "Escape")
         config("short", compact=True)
         reload_panel()
         run("sde-panel", "--action-center")
         ac = find("^Action Center$")
-        g = geom(ac)
-        # Compact fixture: two-column tiles start at y=42, DND/Dark are row 3.
-        run("xdotool", "mousemove", str(g["X"] + 70), str(g["Y"] + 254), "click", "1")
-        time.sleep(0.5)
+        click_control(ac, "Action Center", "Do Not Disturb")
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.getboolean("notifications", "do_not_disturb")
-        g = geom(ac)
-        run("xdotool", "mousemove", str(g["X"] + 300), str(g["Y"] + 254), "click", "1")
-        time.sleep(0.5)
+        click_control(ac, "Action Center", "Dark Mode")
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.get("appearance", "theme") == "dark"
         run("xdotool", "key", "Escape")

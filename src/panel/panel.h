@@ -186,6 +186,8 @@ class Panel : public sde::BufferedWindow {
   std::string closed_key_;
   long long closed_at_ = 0, popup_opened_at_ = 0;
   unsigned long popup_opened_time_ = 0;  // X server time of the opening event
+  unsigned long last_press_time_ = 0;    // newest raw press seen on input_display_
+  bool draining_input_ = false;
   int edge_reserve_ = 0, visible_pins_ = 0;
 
   // Dragging a pinned launcher to reorder it.
