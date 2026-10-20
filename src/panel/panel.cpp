@@ -10,6 +10,7 @@
 #include <X11/extensions/shape.h>
 
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -419,6 +420,34 @@ void Panel::open_action_center(const std::string &section) {
   quick_->select_section(section);
   open_popup(quick_.get(), x() + w(), true);
 }
+bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
+  if (!shown() || root_x < x() || root_x >= x() + w() || root_y < y() || root_y >= y() + h())
+    return false;
+  Target t = hit(root_x - x(), root_y - y());
+  PanelPopup *target = nullptr;
+  if (t.kind == START) target = menu_.get();
+  else if (t.kind == CLOCK) target = calendar_.get();
+  else if (t.kind == ACTION_CENTER || t.kind == STATUS) target = quick_.get();
+  // The button that opened this popup only closes it (toggle).
+  if (!target || target == from) return false;
+  struct Pending {
+    Target t;
+  };
+  auto *pending = new Pending{t};
+  Fl::add_timeout(0, [](void *d) {
+    std::unique_ptr<Pending> p(static_cast<Pending *>(d));
+    Panel *self = Panel::instance;
+    switch (p->t.kind) {
+      case START: self->toggle_menu(); break;
+      case CLOCK: self->open_popup(self->calendar_.get(), self->x() + self->clock_x_ + self->clock_w_, true); break;
+      case ACTION_CENTER: self->open_action_center(); break;
+      case STATUS: self->status_clicked(p->t.index, FL_LEFT_MOUSE); break;
+      default: break;
+    }
+  }, pending);
+  return true;
+}
+
 void Panel::status_clicked(int index, int button) {
   if (index < 0 || index >= int(status_icons_.size())) return;
   switch (status_icons_[size_t(index)]) {

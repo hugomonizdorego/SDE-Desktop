@@ -128,6 +128,12 @@ class Panel : public sde::BufferedWindow {
   bool any_popup_open() const;
   int status_count() const;
   void status_clicked(int index, int button);
+ public:
+  // A click outside an open popup that lands on another panel button (the
+  // clock while the Action Center is open, ...) closes the popup and opens
+  // that button's popup at once. Returns true when it did.
+  bool switch_popup(int root_x, int root_y, PanelPopup *from);
+ private:
   static void input_event(int, void *);
   void outside_pointer_press();
 

@@ -133,8 +133,24 @@ try:
     waitfor(lambda:'item: Activate' in (home/'sde-sni-demo.log').read_text(),'SNI Activate missing')
     run('xdotool','key','Escape');time.sleep(.4)
     assert parent(str(host))==int(panel),'tray failed to return on Escape'
-    pg=geom(panel);click(panel,pg['w']/scale-80,pg['h']/scale/2)
-    ac=find('^Action Center$');time.sleep(.4);bounds(ac,panel)
+    # alpha13: the Action Center has its own button in the panel corner and
+    # the clock opens the calendar.
+    def click_open(x,name):
+        # A real click on a panel button; one retry absorbs a click that
+        # raced the previous popup closing.
+        for attempt in range(2):
+            click(panel,x,pg['h']/scale/2);time.sleep(.3)
+            for _ in range(40):
+                r=run('xdotool','search','--onlyvisible','--name',name,check=False)
+                if r.returncode==0 and r.stdout.strip():return r.stdout.splitlines()[-1]
+                time.sleep(.08)
+        return find(name)
+    pg=geom(panel);time.sleep(.5)
+    ac=click_open(pg['w']/scale-24,'^Action Center$');time.sleep(.4);bounds(ac,panel)
+    run('xdotool','mousemove','10','10','click','1');time.sleep(.8)
+    cal=click_open(pg['w']/scale-75,'^Calendar$');time.sleep(.4)
+    # The calendar opens above the clock, inside the screen.
+    cg=geom(cal);assert pg['y']-24<=cg['y']+cg['h']<=pg['y'] and 0<=cg['x'] and cg['x']+cg['w']<=W,(cg,pg)
     run('xdotool','key','Escape');time.sleep(.4)
     ac=open_section('network');bounds(ac,panel);shot('02-network-lan-wifi')
     run('xdotool','mousemove','10','10','click','1');time.sleep(.4)

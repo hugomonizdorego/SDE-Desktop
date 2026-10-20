@@ -105,9 +105,11 @@ int PanelPopup::handle(int event) {
   if (event == FL_PUSH) {
     int ex = Fl::event_x(), ey = Fl::event_y();
     if (ex < 0 || ey < 0 || ex >= w() || ey >= h()) {
-      // Clicking outside (including the panel button that opened the
-      // popup) only closes it.
+      // Clicking outside closes the popup; the panel button that opened it
+      // only closes it, another panel button opens its own popup at once.
+      int rx = Fl::event_x_root(), ry = Fl::event_y_root();
       close();
+      Panel::instance->switch_popup(rx, ry, this);
       return 1;
     }
   }
