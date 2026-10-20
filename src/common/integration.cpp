@@ -138,7 +138,8 @@ void sync_gtk_settings(const Config &cfg) {
     // xsettingsd re-reads its file on SIGHUP, so open GTK windows follow the
     // new theme, icons and fonts immediately instead of at the next login.
     if (!env("DISPLAY").empty())
-      spawn_detached({"pkill", "-HUP", "-u", std::to_string(getuid()), "-x", "xsettingsd"});
+      for (const char *daemon : {"sde-xsettingsd", "xsettingsd"})
+        spawn_detached({"pkill", "-HUP", "-u", std::to_string(getuid()), "-x", daemon});
   }
   GSettingsSchemaSource *source = g_settings_schema_source_get_default();
   GSettingsSchema *schema =

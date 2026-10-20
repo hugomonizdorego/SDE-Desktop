@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <set>
 
 namespace sde {
 namespace dbus {
@@ -237,14 +238,18 @@ struct FdEntry {
   std::vector<DBusWatch *> watches;
 };
 std::map<int, FdEntry> g_fds;
+// libdbus frees watches and timeouts right after removing them, possibly
+// while one of their callbacks runs; only live ones may be touched.
+std::set<DBusWatch *> g_watches;
+std::set<DBusTimeout *> g_timeouts;
 
 void on_fd(int fd, void *) {
   auto it = g_fds.find(fd);
   if (it == g_fds.end()) return;
-  // Copy: handling a watch can add or remove watches.
+  // Copy: handling a watch can add or remove (and free) watches.
   auto watches = it->second.watches;
   for (DBusWatch *w : watches) {
-    if (!dbus_watch_get_enabled(w)) continue;
+    if (!g_watches.count(w) || !dbus_watch_get_enabled(w)) continue;
     unsigned flags = dbus_watch_get_flags(w);
     dbus_watch_handle(w, flags & (DBUS_WATCH_READABLE | DBUS_WATCH_WRITABLE));
   }
@@ -267,12 +272,14 @@ void update_fd(int fd) {
 
 dbus_bool_t add_watch(DBusWatch *w, void *) {
   int fd = dbus_watch_get_unix_fd(w);
+  g_watches.insert(w);
   g_fds[fd].watches.push_back(w);
   update_fd(fd);
   return TRUE;
 }
 
 void remove_watch(DBusWatch *w, void *) {
+  g_watches.erase(w);
   int fd = dbus_watch_get_unix_fd(w);
   auto it = g_fds.find(fd);
   if (it == g_fds.end()) return;
@@ -284,20 +291,28 @@ void remove_watch(DBusWatch *w, void *) {
 
 void toggle_watch(DBusWatch *w, void *) { update_fd(dbus_watch_get_unix_fd(w)); }
 
+// When a pending call times out, libdbus removes the timeout from inside
+// dbus_timeout_handle() and frees it soon after; re-arming it then crashed
+// the panel ~5 s after login when org.bluez never answered (alpha12 bug).
 void on_timeout(void *data) {
   auto *t = static_cast<DBusTimeout *>(data);
+  if (!g_timeouts.count(t)) return;
   dbus_timeout_handle(t);
-  if (dbus_timeout_get_enabled(t))
+  if (g_timeouts.count(t) && dbus_timeout_get_enabled(t) && !Fl::has_timeout(on_timeout, t))
     Fl::repeat_timeout(dbus_timeout_get_interval(t) / 1000.0, on_timeout, t);
 }
 
 dbus_bool_t add_timeout(DBusTimeout *t, void *) {
+  g_timeouts.insert(t);
   if (dbus_timeout_get_enabled(t))
     Fl::add_timeout(dbus_timeout_get_interval(t) / 1000.0, on_timeout, t);
   return TRUE;
 }
 
-void remove_timeout(DBusTimeout *t, void *) { Fl::remove_timeout(on_timeout, t); }
+void remove_timeout(DBusTimeout *t, void *) {
+  g_timeouts.erase(t);
+  Fl::remove_timeout(on_timeout, t);
+}
 
 void toggle_timeout(DBusTimeout *t, void *d) {
   remove_timeout(t, d);

@@ -103,6 +103,7 @@ class PanelControls {
   std::map<std::string, MediaPlayer> players_;
   std::map<std::string, unsigned> player_generation_;
   static void scan_timeout(void*);
+  static void drives_later(void*);
   std::function<void()> changed_;
   std::string discovery_owned_;
   bool drives_pending_ = false, profiles_pending_ = false;

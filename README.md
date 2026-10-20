@@ -2,11 +2,15 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 12** (`0.1.0~alpha12`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 13** (`0.1.0~alpha13`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
 
-**New in Alpha 12:** [fixes the black screen after login](docs/ALPHA12.md) in
+**New in Alpha 13:** [fixes the panel crash after login](docs/ALPHA13.md), new tray
+icons that follow the hardware (USB drives, Bluetooth, battery…), an Action Center
+button in the panel corner, and SDE's own builds of FLTK, xsettingsd and the polkit agent.
+
+**Alpha 12:** [fixes the black screen after login](docs/ALPHA12.md) in
 virtual machines (automatic XRender, black-screen detection, Alt+Shift+F12) and adds
 **debion-desktop-base**, the DebION artwork for Debian's desktop-base (wallpaper, login,
 lock screen, GRUB, logos and boot splash).

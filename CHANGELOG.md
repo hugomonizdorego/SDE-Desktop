@@ -1,3 +1,15 @@
+# Alpha13 patch · 2026-10-20 — panel crash fix, new tray, own ecosystem
+
+- Fixed: the panel crashed a few seconds after login ("The panel keeps
+  stopping") on systems where a D-Bus service does not answer (Bluetooth
+  without an adapter, e.g. VirtualBox). Safe-mode panel and crash
+  backtraces in session.log as safety nets.
+- New tray icons that show the real state; hardware icons (USB drive,
+  Bluetooth, battery, media) appear and disappear with the hardware.
+- Action Center button in the panel corner; the clock opens the calendar.
+- SDE toolkit (FLTK), sde-xsettingsd and sde-polkit-agent built from source.
+- See docs/ALPHA13.md.
+
 # Alpha12 patch · 2026-10-20 — black screen fix, DebION desktop-base
 
 - Fixed: black screen after login (VirtualBox and other virtual machines).

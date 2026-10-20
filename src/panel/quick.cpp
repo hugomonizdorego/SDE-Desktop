@@ -90,7 +90,7 @@ void SystemStatus::start(std::function<void()> changed) {
   refresh_brightness();
   refresh_network();
   refresh_audio();
-  PanelControls::get().start([this] { this->changed(); });
+  if (!Panel::safe_mode) PanelControls::get().start([this] { this->changed(); });
   // Periodic refresh for things that have no change notification.
   struct Tick {
     static void network(void *) {

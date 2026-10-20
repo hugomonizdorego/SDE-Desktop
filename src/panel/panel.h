@@ -84,6 +84,9 @@ class Panel : public sde::BufferedWindow {
   // Raw X event hook (installed with Fl::add_handler).
   static int x_event_handler(int event);
   static Panel *instance;
+  // sde-panel --safe: no tray, StatusNotifier, D-Bus status or device
+  // polling; started by sde-session after the panel keeps crashing.
+  static bool safe_mode;
 
  private:
   enum Hit { NONE, START, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP };
@@ -96,7 +99,9 @@ class Panel : public sde::BufferedWindow {
     NETWORK_STATUS,
     SOUND_STATUS,
     CONTROLS_STATUS,
-    OVERFLOW_STATUS
+    OVERFLOW_STATUS,
+    DRIVE_STATUS,  // a USB drive or memory card is plugged in
+    DND_STATUS     // Do Not Disturb is on
   };
   struct Target {
     Hit kind = NONE;
@@ -105,6 +110,7 @@ class Panel : public sde::BufferedWindow {
   };
 
   void load_config();
+  std::string status_tooltip(StatusIcon icon) const;
   void place_on_screen();
   void apply_strut();
   void apply_shape();
@@ -148,7 +154,8 @@ class Panel : public sde::BufferedWindow {
 
   // Layout (window coordinates).
   int start_w_ = 0, pin_w_ = 0, tasks_x_ = 0, tasks_end_ = 0, tray_x_ = 0, sni_x_ = 0, sni_w_ = 0,
-      status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0;
+      status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0,
+      show_desktop_w_ = 0;
   int icon_ = 24, tray_icon_ = 22;
   int action_x_ = 0, action_w_ = 0;
   std::vector<StatusIcon> status_icons_;

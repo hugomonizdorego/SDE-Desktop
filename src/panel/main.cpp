@@ -8,6 +8,7 @@
 #include <string>
 
 #include "build_config.h"
+#include "crash.h"
 #include "i18n.h"
 #include "panel.h"
 #include "x11.h"
@@ -36,6 +37,7 @@ bool claim_instance() {
 
 int main(int argc, char **argv) {
   sde::init_i18n();
+  sde::install_crash_handler("sde-panel");
   std::string command;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--menu")) {
@@ -48,6 +50,8 @@ int main(int argc, char **argv) {
           section != "sound" && section != "media" && section != "tray" && section != "power")
         return 2;
       command = "quick:" + section;
+    } else if (!strcmp(argv[i], "--safe")) {
+      Panel::safe_mode = true;
     } else if (!strcmp(argv[i], "--calendar")) {
       command = "calendar";
     } else if (!strcmp(argv[i], "--version")) {
@@ -60,7 +64,8 @@ int main(int argc, char **argv) {
                      "  --quick-settings  alias for --action-center\n"
                      "  --section NAME    open Action Center: network, bluetooth, sound, media, "
                      "tray, power\n"
-                     "  --calendar        open or close the calendar\n"));
+                     "  --calendar        open or close the calendar\n"
+                     "  --safe            start without tray icons and device status (after crashes)\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
   }

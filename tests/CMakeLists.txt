@@ -35,3 +35,12 @@ add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 # QA-only D-Bus/XEmbed fixtures: deliberately not installed in the packages.
 add_executable(sde-panel-service-fixture panel_service_fixture.cpp)
 target_link_libraries(sde-panel-service-fixture PRIVATE sde-common)
+
+# alpha12 panel crash: D-Bus call timeouts (needs dbus-run-session).
+find_program(SDE_DBUS_RUN_SESSION dbus-run-session)
+add_executable(sde-dbus-timeout-tests test_dbus_timeout.cpp)
+target_link_libraries(sde-dbus-timeout-tests PRIVATE sde-common)
+if(SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-dbus-timeouts COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-dbus-timeout-tests>)
+  set_tests_properties(sde-dbus-timeouts PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+endif()

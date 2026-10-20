@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // sde-desktop: wallpaper and desktop icons (Home, Trash and ~/Desktop).
 #include <FL/Fl.H>
+#include "crash.h"
 #include "buffered_window.h"
 #include <FL/Fl_Menu_Item.H>
 #include <FL/fl_ask.H>
@@ -564,6 +565,7 @@ int ignore_x_errors(Display *, XErrorEvent *) { return 0; }
 
 int main(int argc, char **argv) {
   init_i18n();
+  install_crash_handler("sde-desktop");
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
       printf("sde-desktop %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);

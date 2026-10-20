@@ -53,6 +53,9 @@ jobs:
           for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
             "$p" --version
           done
+          # SDE's own ecosystem: no distribution FLTK, xsettingsd or polkit agent.
+          test -x /usr/bin/sde-xsettingsd && test -x /usr/libexec/sde/sde-polkit-agent
+          ! ldd /usr/bin/sde-panel | grep -q libfltk
           python3 tools/test-suite.py
           python3 tools/check-installed-suite.py
           /usr/bin/python3 /usr/share/sde/update/check.py > /tmp/sde-update-cache.tsv

@@ -4,6 +4,7 @@ add_library(sde-common STATIC
   display/backend.cpp
   display/profile.cpp
   common/config.cpp
+  common/crash.cpp
   common/integration.cpp
   common/dbus.cpp
   common/effects.cpp
@@ -16,6 +17,7 @@ add_library(sde-common STATIC
   common/spawn.cpp
   common/suite.cpp
   common/theme.cpp
+  common/tray_icons.cpp
   common/util.cpp
   common/widgets.cpp
   common/wm.cpp
@@ -49,6 +51,8 @@ target_link_libraries(sde-panel PRIVATE sde-common)
 
 add_executable(sde-desktop desktop/main.cpp)
 target_link_libraries(sde-desktop PRIVATE sde-common)
+# Function names in crash backtraces.
+set_target_properties(sde-panel sde-desktop PROPERTIES ENABLE_EXPORTS ON)
 
 add_executable(sde-settings
   settings/main.cpp

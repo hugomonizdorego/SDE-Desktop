@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
@@ -784,6 +785,8 @@ void build_panel(Page *page) {
                    [](bool on) { set_bool("panel", "clock_24h", on); });
   page->switch_row(_("Show the date"), g_cfg.get_bool("panel", "show_date", true),
                    [](bool on) { set_bool("panel", "show_date", on); });
+  page->switch_row(_("Show Desktop button"), g_cfg.get_bool("panel", "show_desktop_button", false),
+                   [](bool on) { set_bool("panel", "show_desktop_button", on); });
   page->switch_row(
       _("Show battery status"), g_cfg.get_bool("panel", "show_battery", true),
       [](bool on) { set_bool("panel", "show_battery", on); }, _("On laptops and tablets."));
@@ -1430,6 +1433,7 @@ using namespace sde;
 
 int main(int argc, char **argv) {
   init_i18n();
+  install_crash_handler("sde-settings");
   g_argv0 = argv[0];
   std::string page = "home";
   bool apply = false;

@@ -93,6 +93,9 @@ that its code is licensed under SDE's GPLv3 or that it is installed with SDE.
 | Calculator | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) | AGPL-3.0-only; Copyright (c) 2026 Raad Altaie | Unmodified pinned calculation engine embedded in a separate GTK4 native executable; SDE frontend also AGPL-3.0-only |
 | SDE WM | [openbox](https://github.com/Mikachu/openbox) | GPL-2.0-or-later; all original contributors retained | Private source build, SDE executable/WM identity, SDE rc.xml and themes |
 | SDE Compositor | [picom](https://github.com/yshui/picom) | MPL-2.0 AND MIT | Private source build and independent build version; lightweight XRender defaults |
+| SDE toolkit | [FLTK 1.3.11](https://github.com/fltk/fltk) | LGPL-2.0 with FLTK static-linking exceptions | Built from source and linked statically into every SDE program (alpha13) |
+| sde-xsettingsd | [xsettingsd 1.0.2](https://github.com/derat/xsettingsd) | BSD-3-Clause | Private source build; serves SDE's GTK settings (alpha13) |
+| sde-polkit-agent | [mate-polkit 1.28.1](https://github.com/mate-desktop/mate-polkit) | LGPL-2.0-or-later | Private source build in /usr/libexec/sde; started by sde-session (alpha13) |
 
 Exact revisions are in `suite/components.lock.json`. Preparation retains complete
 source trees, license texts, authors and historical notices. These are included

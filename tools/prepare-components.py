@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fetch immutable Calculator/WM/compositor source trees before offline builds."""
+"""Fetch immutable source trees of the SDE components before offline builds:
+Calculator, SDE WM (Openbox), SDE compositor (picom), the SDE toolkit (FLTK),
+sde-xsettingsd (xsettingsd) and sde-polkit-agent (mate-polkit)."""
 import argparse
 import hashlib
 import json
@@ -50,6 +52,13 @@ def main():
             for name in ['openbox/openbox.c', 'openbox/screen.c']:
                 path = out / name
                 path.write_text(path.read_text().replace('"Openbox %s\\n"', '"SDE WM %s (Openbox)\\n"').replace('"Openbox"','"SDE WM"'))
+        elif app['id'] == 'sde-polkit-agent':
+            path = out / 'src/meson.build'
+            text = path.read_text()
+            text = text.replace("executable('polkit-mate-authentication-agent-1'", "executable('sde-polkit-agent'")
+            path.write_text(text)
+            # SDE starts the agent itself; no autostart entry for other desktops.
+            path.write_text(path.read_text().replace('  install : true,\n  install_dir: join_paths(get_option(\'sysconfdir\')', '  install : false,\n  install_dir: join_paths(get_option(\'sysconfdir\')'))
         elif app['id'] == 'sde-compositor':
             path = out / 'meson.build'
             path.write_text(path.read_text().replace("version: '12.5'", "version: '"+versions[app['id']]+"'"))

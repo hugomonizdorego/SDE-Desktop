@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
@@ -516,6 +517,7 @@ int x_event_handler(int) {
 
 int main(int argc, char **argv) {
   init_i18n();
+  install_crash_handler("sde-notifyd");
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
       printf("sde-notifyd %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);

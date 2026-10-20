@@ -18,6 +18,7 @@
 #include "calendar.h"
 #include "controls.h"
 #include "glyphs.h"
+#include "tray_icons.h"
 #include "i18n.h"
 #include "icons.h"
 #include "menu.h"
@@ -41,6 +42,7 @@ long long steady_ms() {
 }
 }  // namespace
 Panel *Panel::instance = nullptr;
+bool Panel::safe_mode = false;
 
 Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   instance = this;
@@ -196,6 +198,12 @@ void Panel::setup() {
   // Applets such as nm-applet, blueman-applet or a power manager keep running
   // as agents, but their icons would repeat SDE's own indicators.
   std::vector<std::string> hidden;
+  if (safe_mode) {
+    configured_ = true;
+    refresh_tasks();
+    clock_tick(this);
+    return;
+  }
   if (cfg_.get_bool("panel", "hide_duplicate_tray", true))
     for (auto &name : split(cfg_.get("panel", "duplicate_tray_items", ""), ';'))
       if (!trim(name).empty()) hidden.push_back(lower(trim(name)));
@@ -444,7 +452,56 @@ void Panel::status_clicked(int index, int button) {
     case OVERFLOW_STATUS:
       open_action_center("tray");
       break;
+    case DRIVE_STATUS:
+      open_action_center();
+      break;
+    case DND_STATUS:
+      set_do_not_disturb(false);
+      break;
   }
+}
+
+// Tooltip of a tray status icon: what it is and its current state.
+std::string Panel::status_tooltip(StatusIcon icon) const {
+  const auto &s = SystemStatus::get();
+  const auto &c = PanelControls::get();
+  switch (icon) {
+    case INPUT_STATUS:
+      return std::string(_("Keyboard layout")) + " · " + c.keyboard;
+    case BLUETOOTH_STATUS: {
+      const auto *a = c.adapter();
+      if (!a || !a->powered) return _("Bluetooth is off");
+      for (const auto &d : c.bluetooth)
+        if (d.connected) return std::string(_("Bluetooth")) + " · " + d.name;
+      return _("Bluetooth is on");
+    }
+    case BATTERY_STATUS:
+      return format(s.battery.charging ? _("Battery %d%% · charging") : _("Battery %d%%"),
+                    s.battery.percent);
+    case POWER_STATUS:
+      return _("Shut down or log out");
+    case MEDIA_STATUS:
+      return _("Media players");
+    case NETWORK_STATUS:
+      if (s.network.kind == "wifi")
+        return std::string(_("Wi-Fi")) + " · " + s.network.connection;
+      if (s.network.kind == "ethernet")
+        return std::string(_("Wired network")) + " · " + s.network.connection;
+      return _("Not connected");
+    case SOUND_STATUS:
+      return s.audio.muted ? std::string(_("Sound is muted"))
+                           : format(_("Volume %d%%"), s.audio.volume);
+    case CONTROLS_STATUS:
+      return _("Action Center");
+    case OVERFLOW_STATUS:
+      return _("Show hidden icons");
+    case DRIVE_STATUS:
+      return c.drives.size() == 1 ? std::string(_("Drive plugged in")) + " · " + c.drives.front().label
+                                  : format(_("%d drives plugged in"), int(c.drives.size()));
+    case DND_STATUS:
+      return _("Do Not Disturb is on · click to turn it off");
+  }
+  return "";
 }
 
 void Panel::relayout() {
@@ -454,9 +511,15 @@ void Panel::relayout() {
   start_w_ = H + S(46);
   pin_w_ = H;
 
+  // The Action Center has its own button in the corner of the panel; the
+  // optional Show Desktop strip sits just before it.
   int right = w();
-  show_desktop_x_ = right - S(10);
-  right = show_desktop_x_ - S(4);
+  action_w_ = H >= S(40) ? S(40) : S(34);
+  action_x_ = right - action_w_ - S(4);
+  right = action_x_ - S(2);
+  show_desktop_w_ = cfg_.get_bool("panel", "show_desktop_button", false) ? S(10) : 0;
+  show_desktop_x_ = right - show_desktop_w_;
+  right = show_desktop_x_ - (show_desktop_w_ ? S(4) : 0);
   text_font(theme_.font_size, false);
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   bool two_lines = H >= S(40) && show_date;
@@ -468,12 +531,6 @@ void Panel::relayout() {
   }
   clock_w_ = cw + S(24);
   clock_x_ = right - clock_w_;
-  right = clock_x_ - S(2);
-
-  action_w_ = S(34);
-  action_x_ = show_desktop_x_ - S(2) - action_w_;
-  // Clock is next to the SDE Action Center button, like the reference panel.
-  clock_x_ = action_x_ - clock_w_ - S(2);
   right = clock_x_ - S(4);
   status_icons_.clear();
   const auto &s = SystemStatus::get();
@@ -481,14 +538,19 @@ void Panel::relayout() {
   auto add = [&](StatusIcon icon, const char *key, bool available = true) {
     if (available && cfg_.get_bool("panel", key, true)) status_icons_.push_back(icon);
   };
+  // Icons appear only while their hardware or source exists: Bluetooth
+  // when an adapter is present, drives when one is plugged in, media while a
+  // player runs, battery on laptops.
   add(OVERFLOW_STATUS, "show_tray");
-  add(INPUT_STATUS, "show_keyboard");
+  add(DRIVE_STATUS, "show_drives", !controls.drives.empty());
   add(BLUETOOTH_STATUS, "show_bluetooth", !controls.adapters.empty());
-  add(BATTERY_STATUS, "show_battery", s.battery.present);
-  add(POWER_STATUS, "show_power");
-  add(MEDIA_STATUS, "show_media");
+  add(MEDIA_STATUS, "show_media", !controls.players().empty());
+  add(INPUT_STATUS, "show_keyboard");
+  add(DND_STATUS, "show_do_not_disturb", cfg_.get_bool("notifications", "do_not_disturb", false));
   add(NETWORK_STATUS, "show_network", s.network.available);
   add(SOUND_STATUS, "show_sound", s.audio.available);
+  add(BATTERY_STATUS, "show_battery", s.battery.present);
+  add(POWER_STATUS, "show_power", cfg_.get_bool("panel", "show_power", false));
   // CONTROLS_STATUS repeated the Action Center button next to the clock.
   int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
   compact_status_ =
@@ -554,7 +616,8 @@ Panel::Target Panel::hit(int x, int y) const {
     return {STATUS, std::max(0, (x - status_x_) / S(26))};
   if (x >= clock_x_ && x < clock_x_ + clock_w_) return {CLOCK, 0};
   if (x >= action_x_ && x < action_x_ + action_w_) return {ACTION_CENTER, 0};
-  if (x >= show_desktop_x_) return {SHOW_DESKTOP, 0};
+  if (show_desktop_w_ && x >= show_desktop_x_ && x < show_desktop_x_ + show_desktop_w_)
+    return {SHOW_DESKTOP, 0};
   return t;
 }
 
@@ -661,63 +724,77 @@ void Panel::draw() {
       button_bg(bx, S(26), {STATUS, int(i)}, false);
       switch (status_icons_[i]) {
         case INPUT_STATUS:
-          glyph::keyboard(p, gx, gy, gs, t.text);
+          tray_icon::layout(p, gx, gy, gs, controls.keyboard, t.text);
           break;
         case BLUETOOTH_STATUS: {
           auto *a = controls.adapter();
-          glyph::bluetooth(p, gx, gy, gs, t.text, a && a->powered);
+          bool connected = false;
+          for (const auto &d : controls.bluetooth) connected = connected || d.connected;
+          tray_icon::bluetooth(p, gx, gy, gs, a && a->powered, connected, t.text);
           break;
         }
         case BATTERY_STATUS:
-          glyph::battery(p, gx, gy, gs, system.battery.percent, system.battery.charging, t.text,
-                         system.battery.percent <= 15 ? Color::hex(0xD64545) : t.text);
+          tray_icon::battery(p, gx, gy, gs, system.battery.percent, system.battery.charging,
+                             t.text, Color::hex(0xD64545));
           break;
         case POWER_STATUS:
-          glyph::power(p, gx, gy, gs, t.text);
+          tray_icon::power(p, gx, gy, gs, t.text);
           break;
         case MEDIA_STATUS: {
           auto players = controls.players();
-          glyph::media(p, gx, gy, gs, t.text,
-                       !players.empty() && players.front().status == "Playing");
+          tray_icon::media(p, gx, gy, gs,
+                           !players.empty() && players.front().status == "Playing", t.text);
           break;
         }
-        case NETWORK_STATUS:
-          if (system.network.kind == "ethernet")
-            glyph::ethernet(p, gx, gy, gs, t.text);
+        case NETWORK_STATUS: {
+          const auto &n = system.network;
+          if (n.kind == "ethernet")
+            tray_icon::wired(p, gx, gy, gs, true, t.text);
+          else if (n.kind == "wifi")
+            tray_icon::wifi(p, gx, gy, gs, std::max(1, (n.signal + 24) / 25), true, t.text);
+          else if (n.has_wifi && n.wifi_enabled)
+            tray_icon::wifi(p, gx, gy, gs, 0, false, t.text);
           else
-            glyph::wifi(p, gx, gy, gs, std::max(1, system.network.signal / 25), t.text,
-                        system.network.kind.empty());
+            tray_icon::offline(p, gx, gy, gs, t.text);
           break;
+        }
         case SOUND_STATUS:
-          glyph::speaker(p, gx, gy, gs,
-                         system.audio.volume > 66   ? 3
-                         : system.audio.volume > 33 ? 2
-                         : system.audio.volume > 0  ? 1
-                                                    : 0,
-                         system.audio.muted, t.text);
+          tray_icon::speaker(p, gx, gy, gs,
+                             system.audio.volume > 66   ? 3
+                             : system.audio.volume > 33 ? 2
+                             : system.audio.volume > 0  ? 1
+                                                        : 0,
+                             system.audio.muted || system.audio.volume == 0, t.text);
           break;
         case CONTROLS_STATUS:
-          glyph::sliders(p, gx, gy, gs, t.text);
+          tray_icon::action_center(p, gx, gy, gs, false, t.text, t.accent);
           break;
-        case OVERFLOW_STATUS: {
-          auto *cr = p.cr();
-          cairo_move_to(cr, gx + gs * .25, gy + gs * .6);
-          cairo_line_to(cr, gx + gs * .5, gy + gs * .35);
-          cairo_line_to(cr, gx + gs * .75, gy + gs * .6);
-          p.set(t.text);
-          cairo_set_line_width(cr, Sd(1.5));
-          cairo_stroke(cr);
+        case DRIVE_STATUS: {
+          bool card = !controls.drives.empty() && controls.drives.front().kind == "card";
+          tray_icon::drive(p, gx, gy, gs, card, t.text);
           break;
         }
+        case DND_STATUS:
+          tray_icon::moon(p, gx, gy, gs, t.text);
+          break;
+        case OVERFLOW_STATUS:
+          tray_icon::overflow(p, gx, gy, gs, quick_ && quick_->is_open() && quick_->section() == "tray",
+                              t.text);
+          break;
       }
     }
+    // The Action Center button in the corner: accent tile, own icon.
     button_bg(action_x_, action_w_, {ACTION_CENTER, 0}, quick_ && quick_->is_open());
-    p.fill_rounded(action_x_ + S(5), S(7), action_w_ - S(10), H - S(14), S(5), t.accent);
-    glyph::sliders(p, action_x_ + (action_w_ - gs) / 2., gy, gs, t.on_accent);
-    button_bg(clock_x_, clock_w_, {CLOCK, 0}, quick_ && quick_->is_open());
-    if (hover_ == Target{SHOW_DESKTOP, 0})
-      p.fill_rect(show_desktop_x_, 0, W - show_desktop_x_, H, t.hover);
-    p.line(show_desktop_x_ + 0.5, S(10), show_desktop_x_ + 0.5, H - S(10), t.border);
+    p.fill_rounded(action_x_ + S(5), S(7), action_w_ - S(10), H - S(14), S(7),
+                   quick_ && quick_->is_open() ? t.accent.mix(t.text, 0.15) : t.accent);
+    tray_icon::action_center(p, action_x_ + (action_w_ - gs) / 2., gy, gs, false, t.on_accent,
+                             t.on_accent);
+    button_bg(clock_x_, clock_w_, {CLOCK, 0}, calendar_ && calendar_->is_open());
+    if (show_desktop_w_) {
+      if (hover_ == Target{SHOW_DESKTOP, 0})
+        p.fill_rect(show_desktop_x_, 0, show_desktop_w_, H, t.hover);
+      p.line(show_desktop_x_ + 0.5, S(10), show_desktop_x_ + 0.5, H - S(10), t.border);
+    }
 
     // The launcher being dragged follows the pointer.
     if (dragging_ && drag_index_ >= 0 && drag_index_ < int(pinned_.size())) {
@@ -770,14 +847,12 @@ int Panel::handle(int event) {
           auto items = sni_->visible_items();
           if (t.index < int(items.size())) tip = items[size_t(t.index)]->title;
         } else if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size())) {
-          const char *names[] = {_("Keyboard"), _("Bluetooth"),     _("Battery"),
-                                 _("Power"),    _("Media players"), _("Network"),
-                                 _("Sound"),    _("Action Center"), _("System tray")};
-          tip = names[int(status_icons_[size_t(t.index)])];
-          if (status_icons_[size_t(t.index)] == INPUT_STATUS)
-            tip += " · " + PanelControls::get().keyboard;
-        } else if (t.kind == ACTION_CENTER || t.kind == CLOCK)
+          tip = status_tooltip(status_icons_[size_t(t.index)]);
+        } else if (t.kind == ACTION_CENTER) {
           tip = _("Action Center · Super+A");
+        } else if (t.kind == CLOCK) {
+          tip = _("Calendar · Super+C");
+        }
         copy_tooltip(tip.c_str());
         redraw();
       }
@@ -861,7 +936,8 @@ int Panel::handle(int event) {
           open_action_center();
           break;
         case CLOCK:
-          open_action_center();
+          // The clock opens the calendar; the Action Center has its own button.
+          open_popup(calendar_.get(), x() + clock_x_ + clock_w_, true);
           break;
         case SHOW_DESKTOP:
           x11::set_showing_desktop(!x11::showing_desktop());

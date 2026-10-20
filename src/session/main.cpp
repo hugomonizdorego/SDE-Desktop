@@ -54,6 +54,8 @@ struct Component {
   // Started once instead when the program fails, e.g. the compositor
   // without OpenGL falls back to XRender.
   std::vector<std::string> fallback;
+  int fallback_after = 1;  // crashes before the fallback is used
+  int crashes = 0;
   pid_t pid = 0;
   std::deque<time_t> starts;  // recent start times, for crash-loop detection
   time_t restart_at = 0;
@@ -174,8 +176,12 @@ void on_child_exit(pid_t pid, int status) {
     char why[128];
     log("%s exited (%s)", c.name.c_str(), exit_reason(status, why, sizeof why));
     time_t now = time(nullptr);
-    if (crashed && !c.fallback.empty()) {
+    if (crashed && !c.fallback.empty() && ++c.crashes >= c.fallback_after) {
       log("starting %s with its fallback configuration", c.name.c_str());
+      if (c.name == _("panel"))
+        start_child({"notify-send", "-i", "dialog-warning", _("Panel started in safe mode"),
+                     _("The panel stopped several times, so tray icons and device status are off "
+                       "for this session. The crash details are in ~/.local/state/sde/session.log.")});
       c.argv = c.fallback;
       c.fallback.clear();
       c.starts.clear();
@@ -395,6 +401,7 @@ void run_and_wait(const std::vector<std::string> &argv, int seconds) {
 
 std::string find_polkit_agent() {
   static const char *agents[] = {
+      SDE_LIBEXECDIR "/sde/sde-polkit-agent",  // SDE's own (mate-polkit)
       "/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1",
       "/usr/libexec/policykit-1-gnome/polkit-gnome-authentication-agent-1",
       "/usr/libexec/polkit-gnome-authentication-agent-1",
@@ -643,7 +650,14 @@ int main(int argc, char **argv) {
     log("window manager did not announce itself; continuing");
 
   g_components.push_back(make_component(_("desktop"), {"sde-desktop"}, false));
-  g_components.push_back(make_component(_("panel"), {"sde-panel"}, true, true));
+  {
+    // A panel that keeps crashing (a bad tray icon, device or D-Bus
+    // service) comes back in safe mode instead of leaving no panel.
+    Component panel = make_component(_("panel"), {"sde-panel"}, true, true);
+    panel.fallback = {"sde-panel", "--safe"};
+    panel.fallback_after = 3;
+    g_components.push_back(panel);
+  }
   g_components.push_back(make_component(_("notification service"), {"sde-notifyd"}, false));
   for (size_t i = 1; i < g_components.size(); ++i) start_component(g_components[i]);
 
@@ -658,7 +672,9 @@ int main(int argc, char **argv) {
   add_compositor(cfg);
   std::string selection = "_XSETTINGS_S" + std::to_string(DefaultScreen(g_display));
   if (XGetSelectionOwner(g_display, XInternAtom(g_display, selection.c_str(), False)) == None) {
-    g_components.push_back(make_component("GTK settings", {"xsettingsd", "--config", config_home() + "/sde/xsettingsd.conf"}, false));
+    // SDE's own build of xsettingsd; the distribution's one is a fallback.
+    std::string daemon = find_program("sde-xsettingsd").empty() ? "xsettingsd" : "sde-xsettingsd";
+    g_components.push_back(make_component("GTK settings", {daemon, "--config", config_home() + "/sde/xsettingsd.conf"}, false));
     start_component(g_components.back());
   }
   run_autostart();

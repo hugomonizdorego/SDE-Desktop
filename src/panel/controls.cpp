@@ -340,9 +340,22 @@ void PanelControls::start(std::function<void()> fn) {
           changed();
         });
   }
+  // New hardware shows up at once: udev reports block devices (USB drives,
+  // memory cards) as they are plugged in or removed.
+  stream_lines({"udevadm", "monitor", "--udev", "--subsystem-match=block"},
+               [this](const std::string& line) {
+                 if (line.find(" add ") == std::string::npos &&
+                     line.find(" remove ") == std::string::npos &&
+                     line.find(" change ") == std::string::npos)
+                   return;
+                 Fl::remove_timeout(drives_later, this);
+                 Fl::add_timeout(0.8, drives_later, this);
+               },
+               nullptr);
   refresh();
   Fl::add_timeout(3, tick, this);
 }
+void PanelControls::drives_later(void* d) { static_cast<PanelControls*>(d)->refresh_drives(); }
 void PanelControls::tick(void* d) {
   auto* c = static_cast<PanelControls*>(d);
   if (c->visible_)
@@ -350,6 +363,7 @@ void PanelControls::tick(void* d) {
   else {
     c->refresh_media();
     c->refresh_bluetooth();
+    c->refresh_drives();  // in case udevadm is not available
   }
   Fl::repeat_timeout(c->visible_ ? 3 : 15, tick, d);
 }
