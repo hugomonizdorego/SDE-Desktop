@@ -72,7 +72,7 @@ target_link_libraries(sde-logout PRIVATE sde-common)
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)
 
-add_executable(sde-update update/main.cpp)
+add_executable(sde-update update/main.cpp update/app.cpp update/model.cpp update/ui.cpp)
 target_link_libraries(sde-update PRIVATE sde-common)
 
 # Written from scratch by the DebION Dev-Team: the XSETTINGS manager and the

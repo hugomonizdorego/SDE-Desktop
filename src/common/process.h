@@ -22,6 +22,9 @@ bool run_async(const std::vector<std::string> &argv, DoneFn done);
 int stream_lines(const std::vector<std::string> &argv, LineFn on_line,
                  std::function<void()> on_exit = nullptr);
 void stop_stream(int id);
+// Sends |sig| to a stream started by stream_lines() without waiting for it;
+// its on_exit still runs when it ends. Returns false for an unknown id.
+bool signal_stream(int id, int sig);
 
 // Runs |argv| and waits at most |timeout_ms| for it. Returns its output;
 // *status receives the exit code (-1 on failure or timeout).

@@ -50,7 +50,7 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
-| `sde-update` | Native update preview; authenticated Debian PackageKit transactions |
+| `sde-update` | Updates, history, sources and maintenance; PackageKit transactions with progress and background notifications |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the

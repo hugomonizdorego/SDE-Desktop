@@ -327,7 +327,7 @@ try:
         app.wait()
     metadata = run("sde-update", "--check").stdout
     assert (
-        metadata.startswith("SDE-UPDATES\t1\n") and "example-security" in metadata
+        metadata.startswith("SDE-UPDATES\t2\n") and "example-security" in metadata
     ), metadata
     assert len(metadata.splitlines()) == 3, metadata
     update = spawn("sde-update")
