@@ -1,0 +1,118 @@
+{
+  "format": 1,
+  "revision": 3,
+  "forks": [
+    {
+      "id": "liria",
+      "upstream": "caja",
+      "name": "Liria",
+      "version": "1.28.0",
+      "commit": "27fdb849de02f551eab46eb78f48065da9d1d1ec",
+      "url": "https://github.com/mate-desktop/caja",
+      "configure": [
+        "--disable-gtk-doc",
+        "--disable-introspection"
+      ],
+      "build_version": "0.1.0~alpha12"
+    },
+    {
+      "id": "niny",
+      "upstream": "pluma",
+      "name": "Niny",
+      "version": "1.28.1",
+      "commit": "837036d73ed49a390cae6bbaac9a4f1e6d5b6de9",
+      "url": "https://github.com/mate-desktop/pluma",
+      "configure": [
+        "--disable-gtk-doc",
+        "--disable-tests",
+        "--disable-python"
+      ],
+      "build_version": "1.0.0~alpha3"
+    },
+    {
+      "id": "xanara",
+      "upstream": "atril",
+      "name": "Xanara",
+      "version": "1.28.7",
+      "commit": "95511ad7640437c0e97ee91f36664b89c7d45475",
+      "url": "https://github.com/mate-desktop/atril",
+      "configure": [
+        "--disable-gtk-doc",
+        "--disable-introspection",
+        "--disable-tests",
+        "--disable-epub",
+        "--disable-dvi",
+        "--disable-xps",
+        "--enable-pdf",
+        "--enable-comics",
+        "--enable-djvu",
+        "--disable-caja"
+      ],
+      "build_version": "1.0.0~alpha3"
+    },
+    {
+      "id": "taca",
+      "upstream": "engrampa",
+      "name": "Taca",
+      "version": "1.28.5",
+      "commit": "03326a91768cf915d322b379a4fc6ce253f9ff19",
+      "url": "https://github.com/mate-desktop/engrampa",
+      "configure": [],
+      "build_version": "1.0.0~alpha3"
+    },
+    {
+      "id": "sde-view",
+      "upstream": "eom",
+      "name": "SDE View",
+      "version": "1.28.1",
+      "commit": "3d238ef2c45fe50eb835076163a42d76d8895168",
+      "url": "https://github.com/mate-desktop/eom",
+      "configure": [
+        "--disable-gtk-doc",
+        "--disable-python",
+        "--disable-thumbnailer"
+      ],
+      "build_version": "1.0.0~alpha3"
+    },
+    {
+      "id": "sde-system-monitor",
+      "upstream": "mate-system-monitor",
+      "name": "SDE System Monitor",
+      "version": "1.28.1",
+      "commit": "a3bdf9f74608edee1c9fb1ed2074eb7af530b995",
+      "url": "https://github.com/mate-desktop/mate-system-monitor",
+      "configure": [],
+      "build_version": "1.0.0~alpha3"
+    },
+    {
+      "id": "sde-power-manager",
+      "upstream": "mate-power-manager",
+      "name": "SDE Power Manager",
+      "version": "1.28.1",
+      "commit": "6561790b03041e1c888c309ef17912058ae5aa2e",
+      "url": "https://github.com/mate-desktop/mate-power-manager",
+      "configure": [
+        "--disable-applets",
+        "--without-keyring",
+        "--with-libsecret"
+      ],
+      "build_version": "1.0.0~alpha3"
+    },
+    {
+      "id": "sde-screensaver",
+      "upstream": "mate-screensaver",
+      "name": "SDE Screen Lock",
+      "version": "1.28.1",
+      "commit": "88b098ab9beb54237a608ec23b101c823d2aa85f",
+      "url": "https://github.com/mate-desktop/mate-screensaver",
+      "configure": [
+        "--enable-locking",
+        "--enable-pam",
+        "--without-console-kit",
+        "--with-systemd",
+        "--without-kbd-layout-indicator"
+      ],
+      "build_version": "1.0.0~alpha3"
+    }
+  ]
+}

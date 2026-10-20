@@ -2,23 +2,33 @@
 #include "quick.h"
 
 #include <FL/Fl.H>
+#include <FL/Fl_Box.H>
 #include <FL/Fl_Choice.H>
+#include <FL/Fl_Scroll.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
+#include <FL/x.H>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <ctime>
 #include <sstream>
 
 #include "build_config.h"
 #include "config.h"
+#include "controls.h"
 #include "dbus.h"
+#include "desktop_entry.h"
 #include "glyphs.h"
 #include "i18n.h"
+#include "icons.h"
 #include "panel.h"
 #include "process.h"
+#include "sni.h"
 #include "spawn.h"
 #include "theme.h"
+#include "tray.h"
 #include "util.h"
 #include "widgets.h"
 #include "x11.h"
@@ -79,6 +89,7 @@ void SystemStatus::start(std::function<void()> changed) {
   refresh_brightness();
   refresh_network();
   refresh_audio();
+  PanelControls::get().start([this] { this->changed(); });
   // Periodic refresh for things that have no change notification.
   struct Tick {
     static void network(void *) {
@@ -101,12 +112,15 @@ void SystemStatus::start_audio_stream() {
   audio_stream_ = stream_lines(
       {"pactl", "subscribe"},
       [this](const std::string &line) {
-        if (line.find("sink") == std::string::npos && line.find("server") == std::string::npos) return;
+        if (line.find("sink") == std::string::npos && line.find("server") == std::string::npos &&
+            line.find("source") == std::string::npos)
+          return;
         if (audio_pending_) return;
         audio_pending_ = true;
         Fl::add_timeout(0.1, [](void *) {
           SystemStatus::get().audio_pending_ = false;
           SystemStatus::get().refresh_audio();
+          PanelControls::get().refresh_audio_apps();
         });
       },
       [] {
@@ -140,13 +154,15 @@ void SystemStatus::refresh_battery() {
            read_file(base + "/current_now", rate);
     double r = ok ? atof(rate.c_str()) : 0;
     if (r > 0) {
-      double hours = b.charging ? (atof(full.c_str()) - atof(now.c_str())) / r : atof(now.c_str()) / r;
+      double hours =
+          b.charging ? (atof(full.c_str()) - atof(now.c_str())) / r : atof(now.c_str()) / r;
       if (hours > 0 && hours < 48) b.minutes = int(hours * 60);
     }
     break;
   }
   bool diff = b.present != battery.present || b.percent != battery.percent ||
-              b.charging != battery.charging || b.full != battery.full || b.minutes != battery.minutes;
+              b.charging != battery.charging || b.full != battery.full ||
+              b.minutes != battery.minutes;
   battery = b;
   if (diff) changed();
 }
@@ -168,46 +184,48 @@ void SystemStatus::refresh_brightness() {
 }
 
 void SystemStatus::refresh_network(bool rescan) {
-  bool started = run_async({"nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"},
-                           [this, rescan](const std::string &out, int status) {
-    NetworkState n;
-    n.available = status == 0;
-    for (auto &line : lines_of(out)) {
-      auto f = nm_fields(line);
-      if (f.size() < 3) continue;
-      if (f[0] == "wifi") n.has_wifi = true;
-      bool connected = f[1] == "connected" || starts_with(f[1], "connected");
-      if (connected && n.kind.empty() && (f[0] == "wifi" || f[0] == "ethernet")) {
-        n.kind = f[0];
-        n.connection = f[2];
-      }
-    }
-    if (!n.available) {
-      network = n;
-      wifi.clear();
-      changed();
-      return;
-    }
-    run_async({"nmcli", "radio", "wifi"}, [this, n, rescan](const std::string &out2, int) mutable {
-      n.wifi_enabled = trim(out2) == "enabled";
-      network.available = n.available;
-      network.has_wifi = n.has_wifi;
-      network.wifi_enabled = n.wifi_enabled;
-      network.kind = n.kind;
-      network.connection = n.connection;
-      if (!n.has_wifi || !n.wifi_enabled) {
-        wifi.clear();
-        changed();
-        return;
-      }
-      run_async({"nmcli", "-t", "-f", "IN-USE,SIGNAL,SECURITY,SSID", "device", "wifi", "list", "--rescan",
-                 rescan ? "yes" : "no"},
-                [this](const std::string &out3, int) {
-                  parse_wifi_list(out3);
-                  changed();
-                });
-    });
-  });
+  bool started = run_async(
+      {"nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"},
+      [this, rescan](const std::string &out, int status) {
+        NetworkState n;
+        n.available = status == 0;
+        for (auto &line : lines_of(out)) {
+          auto f = nm_fields(line);
+          if (f.size() < 3) continue;
+          if (f[0] == "wifi") n.has_wifi = true;
+          bool connected = f[1] == "connected" || starts_with(f[1], "connected");
+          if (connected && n.kind.empty() && (f[0] == "wifi" || f[0] == "ethernet")) {
+            n.kind = f[0];
+            n.connection = f[2];
+          }
+        }
+        if (!n.available) {
+          network = n;
+          wifi.clear();
+          changed();
+          return;
+        }
+        run_async({"nmcli", "radio", "wifi"},
+                  [this, n, rescan](const std::string &out2, int) mutable {
+                    n.wifi_enabled = trim(out2) == "enabled";
+                    network.available = n.available;
+                    network.has_wifi = n.has_wifi;
+                    network.wifi_enabled = n.wifi_enabled;
+                    network.kind = n.kind;
+                    network.connection = n.connection;
+                    if (!n.has_wifi || !n.wifi_enabled) {
+                      wifi.clear();
+                      changed();
+                      return;
+                    }
+                    run_async({"nmcli", "-t", "-f", "IN-USE,SIGNAL,SECURITY,SSID", "device", "wifi",
+                               "list", "--rescan", rescan ? "yes" : "no"},
+                              [this](const std::string &out3, int) {
+                                parse_wifi_list(out3);
+                                changed();
+                              });
+                  });
+      });
   if (!started && network.available) {
     network = NetworkState();
     changed();
@@ -224,7 +242,8 @@ void SystemStatus::parse_wifi_list(const std::string &out) {
     w.signal = atoi(f[1].c_str());
     w.secure = !f[2].empty() && f[2] != "--";
     w.ssid = f[3];
-    auto same = std::find_if(list.begin(), list.end(), [&](const WifiNetwork &o) { return o.ssid == w.ssid; });
+    auto same = std::find_if(list.begin(), list.end(),
+                             [&](const WifiNetwork &o) { return o.ssid == w.ssid; });
     if (same != list.end()) {
       same->signal = std::max(same->signal, w.signal);
       same->active = same->active || w.active;
@@ -243,42 +262,46 @@ void SystemStatus::parse_wifi_list(const std::string &out) {
 }
 
 void SystemStatus::refresh_audio() {
-  bool started = run_async({"pactl", "get-sink-volume", "@DEFAULT_SINK@"}, [this](const std::string &vol, int st) {
-    if (st != 0) {
-      if (audio.available) {
-        audio = AudioState();
-        changed();
-      }
-      return;
-    }
-    int v = first_percent(vol);
-    run_async({"pactl", "get-sink-mute", "@DEFAULT_SINK@"}, [this, v](const std::string &mute, int) {
-      bool muted = mute.find("yes") != std::string::npos;
-      run_async({"pactl", "get-default-sink"}, [this, v, muted](const std::string &def, int) {
-        run_async({"pactl", "list", "sinks"}, [this, v, muted, def](const std::string &list, int) {
-          AudioState a;
-          a.available = true;
-          a.volume = std::max(0, v);
-          a.muted = muted;
-          a.default_sink = trim(def);
-          std::string name;
-          for (auto &line : lines_of(list)) {
-            std::string l = trim(line);
-            if (starts_with(l, "Name:")) name = trim(l.substr(5));
-            else if (starts_with(l, "Description:") && !name.empty()) {
-              a.sinks.push_back({name, trim(l.substr(12))});
-              name.clear();
-            }
+  bool started = run_async(
+      {"pactl", "get-sink-volume", "@DEFAULT_SINK@"}, [this](const std::string &vol, int st) {
+        if (st != 0) {
+          if (audio.available) {
+            audio = AudioState();
+            changed();
           }
-          bool diff = a.volume != audio.volume || a.muted != audio.muted ||
-                      a.default_sink != audio.default_sink || a.sinks.size() != audio.sinks.size() ||
-                      !audio.available;
-          audio = a;
-          if (diff) changed();
+          return;
+        }
+        int v = first_percent(vol);
+        run_async({"pactl", "get-sink-mute", "@DEFAULT_SINK@"}, [this, v](const std::string &mute,
+                                                                          int) {
+          bool muted = mute.find("yes") != std::string::npos;
+          run_async({"pactl", "get-default-sink"}, [this, v, muted](const std::string &def, int) {
+            run_async({"pactl", "list", "sinks"},
+                      [this, v, muted, def](const std::string &list, int) {
+                        AudioState a;
+                        a.available = true;
+                        a.volume = std::max(0, v);
+                        a.muted = muted;
+                        a.default_sink = trim(def);
+                        std::string name;
+                        for (auto &line : lines_of(list)) {
+                          std::string l = trim(line);
+                          if (starts_with(l, "Name:"))
+                            name = trim(l.substr(5));
+                          else if (starts_with(l, "Description:") && !name.empty()) {
+                            a.sinks.push_back({name, trim(l.substr(12))});
+                            name.clear();
+                          }
+                        }
+                        bool diff = a.volume != audio.volume || a.muted != audio.muted ||
+                                    a.default_sink != audio.default_sink ||
+                                    a.sinks.size() != audio.sinks.size() || !audio.available;
+                        audio = a;
+                        if (diff) changed();
+                      });
+          });
         });
       });
-    });
-  });
   if (!started && audio.available) {
     audio = AudioState();
     changed();
@@ -299,9 +322,8 @@ void SystemStatus::toggle_mute() {
 }
 
 void SystemStatus::set_default_sink(const std::string &name) {
-  run_async({"pactl", "set-default-sink", name}, [](const std::string &, int) {
-    SystemStatus::get().refresh_audio();
-  });
+  run_async({"pactl", "set-default-sink", name},
+            [](const std::string &, int) { SystemStatus::get().refresh_audio(); });
 }
 
 void SystemStatus::set_wifi_enabled(bool on) {
@@ -318,27 +340,31 @@ void SystemStatus::connect_wifi(const WifiNetwork &net) {
   std::string ssid = net.ssid;
   message = format(_("Connecting to %s..."), ssid.c_str());
   changed();
-  run_async({"nmcli", "device", "wifi", "connect", ssid}, [this, ssid](const std::string &out, int st) {
-    if (st == 0) {
-      message = format(_("Connected to %s"), ssid.c_str());
-      refresh_network();
-      return;
-    }
-    // Unknown secured network: ask for the password and try again.
-    const char *pw = fl_password("%s", "", format(_("Password for the Wi-Fi network \"%s\":"), ssid.c_str()).c_str());
-    if (!pw || !*pw) {
-      message = trim(out).empty() ? _("Connection failed") : trim(out);
-      changed();
-      return;
-    }
-    std::string password = pw;
-    run_async({"nmcli", "device", "wifi", "connect", ssid, "password", password},
-              [this, ssid](const std::string &out2, int st2) {
-                message = st2 == 0 ? format(_("Connected to %s"), ssid.c_str())
-                                   : (trim(out2).empty() ? std::string(_("Connection failed")) : trim(out2));
-                refresh_network();
-              });
-  });
+  run_async(
+      {"nmcli", "device", "wifi", "connect", ssid}, [this, ssid](const std::string &out, int st) {
+        if (st == 0) {
+          message = format(_("Connected to %s"), ssid.c_str());
+          refresh_network();
+          PanelControls::get().refresh_devices();
+          return;
+        }
+        // Unknown secured network: ask for the password and try again.
+        const char *pw = fl_password(
+            "%s", "", format(_("Password for the Wi-Fi network \"%s\":"), ssid.c_str()).c_str());
+        if (!pw || !*pw) {
+          message = trim(out).empty() ? _("Connection failed") : trim(out);
+          changed();
+          return;
+        }
+        std::string password = pw;
+        run_async({"nmcli", "device", "wifi", "connect", ssid, "password", password},
+                  [this, ssid](const std::string &out2, int st2) {
+                    message = st2 == 0 ? format(_("Connected to %s"), ssid.c_str())
+                                       : (trim(out2).empty() ? std::string(_("Connection failed"))
+                                                             : trim(out2));
+                    refresh_network();
+                  });
+      });
 }
 
 void SystemStatus::set_brightness(int percent) {
@@ -361,361 +387,941 @@ void SystemStatus::set_brightness(int percent) {
   }
 }
 
-// =========================================================== QuickSettings
+// =========================================================== Action Center
+// Visual layout adapted from Eduka-Desktop: clock card, six tiles, grouped
+// controls and a fixed session footer. All services remain native SDE helpers.
+namespace {
+using IconFn = std::function<void(Painter &, double, double, double, const Color &)>;
+using StringFn = std::function<std::string()>;
 
-QuickSettings::QuickSettings() : PanelPopup("Quick Settings") { end(); }
+class ActionLabel : public Fl_Widget {
+ public:
+  ActionLabel(int x, int y, int w, int h, StringFn text, int style = 0)
+      : Fl_Widget(x, y, w, h), text_(std::move(text)), style_(style) {}
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    text_font(t.font_size + (style_ == 1 ? 1 : 0), style_ == 1);
+    draw_text(text_(), x(), y(), w(), h(), style_ == 2 ? t.text_dim : t.text);
+  }
 
-std::string QuickSettings::structure() const {
-  const SystemStatus &s = SystemStatus::get();
-  std::string sig = std::to_string(s.network.available) + std::to_string(s.network.has_wifi) +
-                    std::to_string(s.network.wifi_enabled) + "|" + s.network.connection;
-  for (auto &w : s.wifi) sig += "|" + w.ssid + (w.active ? "*" : "") + (w.secure ? "s" : "");
-  sig += "#" + std::to_string(s.audio.available) + s.audio.default_sink;
-  for (auto &k : s.audio.sinks) sig += "|" + k.first;
-  sig += "#" + std::to_string(s.brightness.available) + std::to_string(s.battery.present);
-  sig += "#" + Panel::instance->config().get("notifications", "do_not_disturb", "false");
-  return sig;
+ private:
+  StringFn text_;
+  int style_;
+};
+
+class ActionCard : public Fl_Group {
+ public:
+  ActionCard(int x, int y, int w) : Fl_Group(x, y, w, S(40)) {
+    box(FL_NO_BOX);
+    resizable(nullptr);
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(14), t.surface_alt);
+    }
+    draw_children();
+  }
+};
+
+class ActionButton : public DrawnButton {
+ public:
+  ActionButton(int x, int y, int w, int h, std::string title, IconFn icon,
+               std::function<void()> action, std::function<bool()> on = nullptr, int color = -1,
+               bool row = false, StringFn sub = nullptr)
+      : DrawnButton(x, y, w, h, nullptr),
+        title_(std::move(title)),
+        icon_(std::move(icon)),
+        action_(std::move(action)),
+        on_(std::move(on)),
+        sub_(std::move(sub)),
+        color_(color),
+        row_(row) {
+    copy_tooltip(title_.c_str());
+    callback([](Fl_Widget *w, void *) {
+      auto *b = static_cast<ActionButton *>(w);
+      b->action_();
+    });
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    bool hot = Fl::belowmouse() == this, on = on_ && on_();
+    static const unsigned colors[] = {0x2563EB, 0x7C3AED, 0x047857, 0xB45309, 0xBE185D, 0x0E7490};
+    bool multi =
+        Panel::instance->config().get_bool("action_center", "multicolor", false) && color_ >= 0;
+    Color accent = multi ? Color::hex(colors[color_ % 6]) : t.accent;
+    Color bg = on ? accent : t.surface_alt;
+    if (multi && !on) bg = t.surface.mix(accent, t.dark ? 0.18 : 0.08);
+    if (hot || value()) bg = bg.mix(on ? t.on_accent : t.text, value() ? 0.15 : 0.06);
+    Color white = Color::hex(0xFFFFFF), black = Color::hex(0x101820);
+    Color ink = on ? (white.contrast(accent) >= 4.5 ? white : black) : t.text;
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(12), bg);
+      if (hot || on) p.stroke_rounded(x(), y(), w(), h(), S(12), on ? accent : t.border);
+      double size = S(row_ ? 20 : 23);
+      icon_(p, row_ && !title_.empty() ? x() + S(12) : x() + (w() - size) / 2.0,
+            row_ ? y() + (h() - size) / 2.0 : y() + S(10), size, ink);
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(12));
+    }
+    text_font(t.font_size - (row_ ? 0 : S(1)), true);
+    if (!row_ && text_width(title_) > w() - S(8))
+      text_font(std::max(S(9), t.font_size - S(2)), true);
+    int tx = row_ ? x() + S(42) : x() + S(4), tw = row_ ? w() - S(52) : w() - S(8);
+    draw_text(title_, tx, row_ ? y() : y() + S(36), tw, row_ ? h() : S(20), ink, row_ ? 0 : 1);
+    if (sub_ && !row_) {
+      text_font(std::max(S(9), t.font_size - 2));
+      draw_text(sub_(), tx, y() + S(55), tw, S(16), on ? ink : t.text_dim, 1);
+    }
+  }
+
+ private:
+  std::string title_;
+  IconFn icon_;
+  std::function<void()> action_;
+  std::function<bool()> on_;
+  StringFn sub_;
+  int color_;
+  bool row_;
+};
+
+class ClockCard : public Fl_Widget {
+ public:
+  ClockCard(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) { clear_visible_focus(); }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    const Config &cfg = Panel::instance->config();
+    time_t now = time(nullptr);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    bool analog = cfg.get("action_center", "clock_style", "digital") == "analog";
+    int tx = x() + (analog ? S(108) : S(18)), tw = w() - (analog ? S(124) : S(36));
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(16), t.surface_alt.mix(t.accent, t.dark ? 0.08 : 0.04));
+      p.stroke_rounded(x(), y(), w(), h(), S(16), t.border);
+      if (analog) {
+        double cx = x() + S(52), cy = y() + h() / 2.0, r = S(35);
+        p.circle(cx, cy, r, t.surface);
+        for (int i = 0; i < 12; ++i) {
+          double a = i * M_PI / 6;
+          p.line(cx + std::sin(a) * (r - S(4)), cy - std::cos(a) * (r - S(4)),
+                 cx + std::sin(a) * (r - S(7)), cy - std::cos(a) * (r - S(7)), t.text_dim, S(1));
+        }
+        double hour = (lt.tm_hour % 12 + lt.tm_min / 60.0) * M_PI / 6;
+        double minute = lt.tm_min * M_PI / 30;
+        p.line(cx, cy, cx + std::sin(hour) * r * 0.48, cy - std::cos(hour) * r * 0.48, t.text,
+               S(3));
+        p.line(cx, cy, cx + std::sin(minute) * r * 0.76, cy - std::cos(minute) * r * 0.76, t.accent,
+               S(2));
+        p.circle(cx, cy, S(3), t.accent);
+      }
+    }
+    char date[128], clock[64];
+    strftime(clock, sizeof clock, cfg.get_bool("panel", "clock_24h", true) ? "%H:%M" : "%I:%M %p",
+             &lt);
+    strftime(date, sizeof date, "%A, %e %B", &lt);
+    text_font(t.font_size + (analog ? 10 : 26), true);
+    draw_text(clock, tx, y() + S(10), tw, S(44), t.text, analog ? 0 : 1);
+    text_font(t.font_size - 1);
+    draw_text(date, tx, y() + S(56), tw, S(22), t.text_dim, analog ? 0 : 1);
+    if (cfg.get_bool("action_center", "show_greeting", true)) {
+      const char *greeting = lt.tm_hour < 12   ? _("Good morning")
+                             : lt.tm_hour < 18 ? _("Good afternoon")
+                                               : _("Good evening");
+      text_font(t.font_size, true);
+      draw_text(greeting, tx, y() + S(80), tw, S(22), t.accent_text, analog ? 0 : 1);
+    }
+  }
+};
+
+IconFn gear_icon() {
+  return
+      [](Painter &p, double x, double y, double s, const Color &c) { glyph::gear(p, x, y, s, c); };
 }
+IconFn calendar_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    p.stroke_rounded(x + s * .1, y + s * .18, s * .8, s * .72, s * .12, c, s * .08);
+    p.line(x + s * .12, y + s * .4, x + s * .88, y + s * .4, c, s * .08);
+    for (int i = 0; i < 2; ++i)
+      p.line(x + s * (.32 + i * .36), y + s * .06, x + s * (.32 + i * .36), y + s * .28, c,
+             s * .08);
+  };
+}
+IconFn display_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    p.stroke_rounded(x, y + s * .08, s, s * .64, s * .08, c, s * .08);
+    p.line(x + s * .5, y + s * .72, x + s * .5, y + s * .95, c, s * .08);
+    p.line(x + s * .25, y + s * .95, x + s * .75, y + s * .95, c, s * .08);
+  };
+}
+}  // namespace
 
+namespace {
+// Callback ownership follows the widget, including during asynchronous rebuilds.
+class CommandButton : public FlatButton {
+ public:
+  CommandButton(int x, int y, int w, int h, const std::string &name, std::function<void()> fn)
+      : FlatButton(x, y, w, h, name.c_str()), fn_(std::move(fn)) {
+    copy_label(name.c_str());
+    copy_tooltip(name.c_str());
+    callback([](Fl_Widget *w, void *) { static_cast<CommandButton *>(w)->fn_(); });
+  }
+
+ private:
+  std::function<void()> fn_;
+};
+class TrayIndicator : public DrawnButton {
+ public:
+  TrayIndicator(int x, int y, int size, const SniHost::Item &item)
+      : DrawnButton(x, y, size, size, nullptr), service_(item.service), path_(item.path) {
+    copy_tooltip((item.title.empty() ? item.id : item.title).c_str());
+    callback([](Fl_Widget *w, void *) { static_cast<TrayIndicator *>(w)->activate(1); });
+  }
+  const SniHost::Item *item() const {
+    auto *h = Panel::instance->status_notifiers();
+    if (!h) return nullptr;
+    for (auto *i : h->visible_items())
+      if (i->service == service_ && i->path == path_) return i;
+    return nullptr;
+  }
+  void activate(int button) {
+    auto *i = item();
+    auto *h = Panel::instance->status_notifiers();
+    if (!i || !h) return;
+    int x = Fl::event_x_root(), y = Fl::event_y_root();
+    if (button == 3)
+      h->context_menu(*i, x, y);
+    else if (button == 2)
+      h->secondary_activate(*i, x, y);
+    else
+      h->activate(*i, x, y);
+  }
+  int handle(int e) override {
+    if (e == FL_PUSH && Fl::event_button() != 1) {
+      activate(Fl::event_button());
+      return 1;
+    }
+    if (e == FL_MOUSEWHEEL) {
+      if (auto *i = item()) Panel::instance->status_notifiers()->scroll(*i, -Fl::event_dy() * 120);
+      return 1;
+    }
+    return DrawnButton::handle(e);
+  }
+  void draw() override {
+    const auto &t = Panel::instance->theme();
+    Painter p(window()->w(), window()->h());
+    if (Fl::belowmouse() == this) p.fill_rounded(x(), y(), w(), h(), S(6), t.hover);
+    auto *i = item();
+    auto *surface = i ? Panel::instance->status_notifiers()->icon(*i, S(22)) : nullptr;
+    if (surface)
+      p.image(surface, x() + (w() - S(22)) / 2, y() + (h() - S(22)) / 2, S(22));
+    else
+      glyph::gear(p, x() + S(6), y() + S(6), S(20), t.text_dim);
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(6));
+  }
+
+ private:
+  std::string service_, path_;
+};
+std::string choice_label(const std::string &s) {
+  std::string r;
+  for (char c : s) {
+    if (c == '/' || c == '&' || c == '_' || c == '\\') r += '\\';
+    r += c;
+  }
+  return r;
+}
+}  // namespace
+QuickSettings::QuickSettings() : PanelPopup("Action Center") { end(); }
+void QuickSettings::select_section(const std::string &section) {
+  static const std::vector<std::string> valid = {"overview", "network", "bluetooth", "sound",
+                                                 "media",    "tray",    "power"};
+  section_ = std::find(valid.begin(), valid.end(), section) != valid.end() ? section : "overview";
+  if (shown()) status_changed();
+}
+void QuickSettings::closed() { PanelControls::get().stop_scan(); }
+std::string QuickSettings::structure() const {
+  const auto &s = SystemStatus::get();
+  const auto &c = PanelControls::get();
+  const auto &cfg = Panel::instance->config();
+  std::ostringstream out;
+  out << section_ << s.network.available << s.network.has_wifi << s.network.wifi_enabled
+      << s.network.connection;
+  for (const auto &n : s.wifi) out << '|' << n.ssid << n.active << n.secure;
+  out << s.audio.available << s.audio.default_sink << s.brightness.available << s.battery.present;
+  for (const auto &sink : s.audio.sinks) out << '|' << sink.first << sink.second;
+  out << s.message.empty() << c.message.empty();
+  out << c.mic_available << c.mic_muted << c.default_source << c.bluetooth_available
+      << c.bluetooth_busy << c.adapter_path << c.airplane;
+  for (const auto &source : c.sources) out << '|' << source.first << source.second;
+  for (const auto &a : c.adapters) out << '|' << a.path << a.name << a.powered << a.discovering;
+  for (const auto &d : c.bluetooth) out << '|' << d.path << d.name << d.paired << d.connected;
+  for (const auto &p : c.players())
+    out << '|' << p.service << p.name << p.title << p.artist << p.status << p.control << p.play
+        << p.pause << p.next << p.previous << p.raise;
+  for (const auto &a : c.streams) out << '|' << a.id << a.app << a.title << a.muted;
+  for (const auto &d : c.devices)
+    out << '|' << d.device << d.state << d.connection << d.ip << d.gateway << d.dns;
+  if (auto *h = Panel::instance->status_notifiers()) {
+    out << h->has_input_indicator();
+    for (auto *i : h->visible_items()) out << '|' << i->service << i->path << i->title << i->status;
+  }
+  if (auto *tray = Panel::instance->legacy_tray()) out << tray->count() << tray->has_input_indicator();
+  for (const char *key :
+       {"show_clock", "show_greeting", "clock_style", "multicolor", "move_status", "show_media",
+        "show_app_volume", "show_microphone", "show_tray", "tile_columns"})
+    out << '|' << cfg.get("action_center", key);
+  for (const char *key : {"style", "position", "height", "width_percent", "clock_24h",
+                          "show_keyboard", "show_bluetooth", "show_battery", "show_power",
+                          "show_media", "show_network", "show_sound", "show_tray"})
+    out << '|' << cfg.get("panel", key);
+  out << cfg.get("appearance", "accent") << cfg.get("appearance", "theme")
+      << cfg.get("appearance", "scale") << cfg.get("notifications", "do_not_disturb");
+  return out.str();
+}
 void QuickSettings::prepare() {
   SystemStatus::get().refresh_brightness();
   SystemStatus::get().message.clear();
+  PanelControls::get().message.clear();
   rebuild();
 }
-
 void QuickSettings::status_changed() {
   if (!shown()) return;
-  std::string sig = structure();
-  if (sig == structure_) {
+  if (structure() == structure_) {
     sync();
     return;
   }
-  // Do not rebuild under the user's fingers.
-  Fl_Widget *p = Fl::pushed();
-  if (p && p->window() == this) {
+  if (!rebuild_pending_) {
     rebuild_pending_ = true;
+    Fl::add_timeout(0, rebuild_timeout, this);
+  }
+}
+void QuickSettings::rebuild_timeout(void *data) {
+  auto *self = static_cast<QuickSettings *>(data);
+  if (!self->shown()) {
+    self->rebuild_pending_ = false;
     return;
   }
-  Fl_Widget *focus = Fl::focus();
-  bool had_focus = focus && focus->window() == this;
-  rebuild();
-  int hh = h();
-  // Keep the popup attached to the panel when its height changed.
-  Panel *panel = Panel::instance;
-  if (!panel->theme().panel_top) position(x(), panel->y() - hh - S(8));
-  if (had_focus && children()) child(0)->take_focus();
+  if ((Fl::grab() && Fl::grab() != self) || Fl::modal() ||
+      (Fl::pushed() && Fl::pushed()->window() == self)) {
+    Fl::add_timeout(.1, rebuild_timeout, data);
+    return;
+  }
+  int scroll = self->body_ ? std::max(0, self->body_->yposition()) : 0;
+  bool focus = Fl::focus() && Fl::focus()->window() == self;
+  self->rebuild();
+  self->body_->scroll_to(0,
+                         std::min(scroll, std::max(0, self->content_height_ - self->body_->h())));
+  self->reposition();
+  if (focus && self->body_->children()) self->body_->child(0)->take_focus();
 }
-
 void QuickSettings::sync() {
-  const SystemStatus &s = SystemStatus::get();
+  const auto &s = SystemStatus::get();
+  const auto &c = PanelControls::get();
   if (volume_ && Fl::pushed() != volume_) volume_->value(s.audio.volume);
   if (brightness_ && Fl::pushed() != brightness_) brightness_->value(s.brightness.percent());
+  if (microphone_ && Fl::pushed() != microphone_) microphone_->value(c.mic_volume);
+  for (const auto &a : c.streams) {
+    auto i = stream_sliders_.find(a.id);
+    if (i != stream_sliders_.end() && Fl::pushed() != i->second) i->second->value(a.volume);
+  }
   redraw();
 }
-
+void QuickSettings::sync_native_tray() {
+  if (!shown() || !Panel::instance->status_in_center()) return;
+  auto *tray = Panel::instance->legacy_tray();
+  if (!tray) return;
+  if (tray_box_ && fl_xid(this)) {
+    tray->set_background(Panel::instance->theme().surface_alt.fl() >> 8);
+    tray->place_in(fl_xid(this), tray_box_->x(), tray_box_->y(), tray_columns_,
+                   body_->y() - tray_box_->y(), body_->h());
+  } else
+    tray->hide();
+}
 void QuickSettings::rebuild() {
-  structure_ = structure();
+  Fl::remove_timeout(rebuild_timeout, this);
   rebuild_pending_ = false;
+  structure_ = structure();
   clear();
-  keep_.clear();
   resizable(nullptr);
-  texts_.clear();
-  separators_.clear();
-  volume_ = brightness_ = nullptr;
-  sinks_ = nullptr;
+  volume_ = brightness_ = microphone_ = nullptr;
+  tray_box_ = nullptr;
+  stream_sliders_.clear();
+  const auto &t = Panel::instance->theme();
+  const auto &cfg = Panel::instance->config();
+  auto &s = SystemStatus::get();
+  auto &c = PanelControls::get();
+  int mx, my, mw, mh;
+  Panel::instance->monitor(mx, my, mw, mh);
+  int W = std::min(S(424), mw), pad = S(16), inner = W - 2 * pad - S(12), footer = S(58), y = S(10);
+  auto *panel = Panel::instance;
+  int available =
+      std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
   begin();
-  SystemStatus &st = SystemStatus::get();
-  const Theme &t = Panel::instance->theme();
-  int W = S(360), pad = S(16), y = pad, inner = W - 2 * pad;
-  const Config &cfg = Panel::instance->config();
-
-  // ---- toggle tiles
-  struct TileSpec {
-    std::string title;
-    std::function<std::string()> sub;
-    std::function<bool()> on;
-    std::function<void(Painter &, double, double, double, const Color &)> icon;
-    std::function<void()> click;
+  body_ = new Fl_Scroll(S(2), S(2), W - S(4), available - footer - S(4));
+  body_->type(Fl_Scroll::VERTICAL_ALWAYS);
+  body_->resizable(nullptr);
+  body_->scrollbar_size(S(10));
+  body_->box(FL_FLAT_BOX);
+  body_->color(t.surface.fl());
+  // Give Fl_Scroll a stable zero origin. Otherwise its padding is reported as
+  // negative scroll and repeated service rebuilds accumulate blank space.
+  new Fl_Box(body_->x(), body_->y(), 1, 1);
+  auto label = [&](std::string text, int style = 0, int height = 24) {
+    new ActionLabel(pad, y, inner, S(height), [text] { return text; }, style);
+    y += S(height);
   };
-  std::vector<TileSpec> tiles;
-  if (st.network.available && st.network.has_wifi) {
-    tiles.push_back({_("Wi-Fi"),
-                     [] {
-                       const auto &n = SystemStatus::get().network;
-                       if (!n.wifi_enabled) return std::string(_("Off"));
-                       return n.kind == "wifi" ? n.connection : std::string(_("Not connected"));
-                     },
-                     [] { return SystemStatus::get().network.wifi_enabled; },
-                     [](Painter &p, double x, double yy, double s, const Color &c) {
-                       const auto &n = SystemStatus::get().network;
-                       glyph::wifi(p, x, yy, s, n.wifi_enabled ? 4 : 0, c, !n.wifi_enabled);
-                     },
-                     [] { SystemStatus::get().set_wifi_enabled(!SystemStatus::get().network.wifi_enabled); }});
-  }
-  bool dnd = cfg.get_bool("notifications", "do_not_disturb", false);
-  tiles.push_back({_("Do Not Disturb"), [dnd] { return std::string(dnd ? _("On") : _("Off")); },
-                   [dnd] { return dnd; },
-                   [dnd](Painter &p, double x, double yy, double s, const Color &c) { glyph::bell(p, x, yy, s, dnd, c); },
-                   [dnd] { Panel::instance->set_do_not_disturb(!dnd); }});
-  int gap = S(10), tw = (inner - gap) / 2, th = S(60);
-  for (size_t i = 0; i < tiles.size(); ++i) {
-    TileSpec spec = tiles[i];
-    int tx = pad + int(i % 2) * (tw + gap);
-    int ty = y + int(i / 2) * (th + gap);
-    auto *b = new DrawnButton(
-        tx, ty, tw, th,
-        [spec, tx, ty, tw, th, &t](Painter &p, bool hover, bool down) {
-          bool on = spec.on();
-          Color bg = on ? t.accent : (hover ? t.hover : t.surface_alt);
-          if (down) bg = bg.mix(t.text, 0.12);
-          p.fill_rounded(tx, ty, tw, th, Sd(12), bg);
-          spec.icon(p, tx + Sd(12), ty + (th - Sd(22)) / 2.0, Sd(22), on ? t.on_accent : t.text);
-        },
-        [spec, tx, ty, tw, th, &t](bool) {
-          bool on = spec.on();
-          text_font(t.font_size, true);
-          draw_text(spec.title, tx + S(44), ty + S(10), tw - S(52), S(20), on ? t.on_accent : t.text);
-          text_font(t.font_size - 1);
-          draw_text(spec.sub(), tx + S(44), ty + S(30), tw - S(52), S(18), on ? t.on_accent : t.text_dim);
-        },
-        Sd(12));
-    b->callback([](Fl_Widget *, void *d) { (*static_cast<std::function<void()> *>(d))(); },
-                keep(new std::function<void()>(spec.click)));
-  }
-  y += int((tiles.size() + 1) / 2) * (th + gap) + S(4);
-
-  // ---- network
-  separators_.push_back(y);
-  y += S(12);
-  texts_.push_back({pad, y, inner, S(22), [] { return std::string(_("Network")); }, 1});
-  y += S(24);
-  texts_.push_back({pad, y, inner, S(20),
-                    [] {
-                      const SystemStatus &s = SystemStatus::get();
-                      if (!s.message.empty()) return s.message;
-                      if (!s.network.available) return std::string(_("Network service is not running"));
-                      if (s.network.kind == "ethernet")
-                        return format(_("Wired connection: %s"), s.network.connection.c_str());
-                      if (s.network.kind == "wifi") return format(_("Connected to %s"), s.network.connection.c_str());
-                      return std::string(_("Not connected"));
-                    },
-                    2});
-  y += S(26);
-  if (st.network.available && st.network.wifi_enabled) {
-    int shown_rows = 0;
-    for (auto &net : st.wifi) {
-      if (shown_rows++ >= 6) break;
-      WifiNetwork w = net;
-      int ry = y, rh = S(36);
-      auto *row = new DrawnButton(
-          pad, ry, inner, rh,
-          [w, ry, rh, pad, inner, &t](Painter &p, bool hover, bool) {
-            if (hover || w.active) p.fill_rounded(pad, ry, inner, rh, Sd(8), w.active ? t.accent.alpha(0.14) : t.hover);
-            int bars = w.signal >= 75 ? 4 : w.signal >= 50 ? 3 : w.signal >= 25 ? 2 : 1;
-            glyph::wifi(p, pad + Sd(8), ry + (rh - Sd(18)) / 2.0, Sd(18), bars, t.text);
-            if (w.secure) glyph::lock(p, pad + inner - Sd(26), ry + (rh - Sd(14)) / 2.0, Sd(14), t.text_dim);
-            if (w.active) glyph::check(p, pad + inner - Sd(46), ry + (rh - Sd(16)) / 2.0, Sd(16), t.accent_text);
-          },
-          [w, ry, rh, pad, inner, &t](bool) {
-            text_font(t.font_size, w.active);
-            draw_text(w.ssid, pad + S(36), ry, inner - S(92), rh, t.text);
-          },
-          Sd(8));
-      row->callback(
-          [](Fl_Widget *, void *d) {
-            auto *net2 = static_cast<WifiNetwork *>(d);
-            if (!net2->active) SystemStatus::get().connect_wifi(*net2);
-          },
-          keep(new WifiNetwork(w)));
-      y += rh + S(2);
-    }
-    if (st.wifi.empty()) {
-      texts_.push_back({pad, y, inner, S(20), [] { return std::string(_("Searching for networks...")); }, 2});
-      y += S(24);
-    }
-  }
-  if (st.network.available && !find_program("nm-connection-editor").empty()) {
-    auto *more = new FlatButton(pad, y + S(4), inner, S(32), _("Network Connections..."));
-    more->callback([](Fl_Widget *w, void *) {
-      static_cast<QuickSettings *>(w->window())->close();
-      spawn_detached({"nm-connection-editor"});
-    });
-    y += S(40);
-  }
-  y += S(8);
-
-  // ---- sound
-  separators_.push_back(y);
-  y += S(12);
-  texts_.push_back({pad, y, inner, S(22), [] { return std::string(_("Sound")); }, 1});
-  y += S(26);
-  if (st.audio.available) {
-    int bh = S(36);
-    auto *mute = new DrawnButton(
-        pad, y, bh, bh,
-        [pad, y, bh, &t](Painter &p, bool hover, bool) {
-          const AudioState &a = SystemStatus::get().audio;
-          p.fill_rounded(pad, y, bh, bh, bh / 2.0, a.muted ? t.accent : (hover ? t.hover : t.surface_alt));
-          int level = a.volume == 0 ? 0 : a.volume < 34 ? 1 : a.volume < 67 ? 2 : 3;
-          glyph::speaker(p, pad + Sd(8), y + Sd(8), bh - Sd(16), level, a.muted, a.muted ? t.on_accent : t.text);
-        },
-        nullptr, bh / 2.0);
-    mute->tooltip(_("Mute"));
-    mute->callback([](Fl_Widget *, void *) { SystemStatus::get().toggle_mute(); });
-    volume_ = new Slider(pad + bh + S(10), y, inner - bh - S(64), bh);
-    volume_->bounds(0, 100);
-    volume_->value(st.audio.volume);
-    volume_->callback([](Fl_Widget *w, void *) {
-      SystemStatus::get().set_volume(int(static_cast<Fl_Slider *>(w)->value()));
-      w->window()->redraw();
-    });
-    texts_.push_back({pad + inner - S(48), y, S(48), bh,
-                      [] { return std::to_string(SystemStatus::get().audio.volume) + "%"; }, 3});
-    y += bh + S(8);
-    if (st.audio.sinks.size() > 1) {
-      sinks_ = new Fl_Choice(pad, y, inner, S(32));
-      sinks_->box(FL_FLAT_BOX);
-      sinks_->down_box(FL_FLAT_BOX);
-      sinks_->color(t.surface_alt.fl());
-      sinks_->textsize(t.font_size);
-      sinks_->textcolor(t.text.fl());
-      for (size_t i = 0; i < st.audio.sinks.size(); ++i) {
-        std::string label;
-        for (char c : st.audio.sinks[i].second) {
-          if (c == '/' || c == '&' || c == '_' || c == '\\') label += '\\';
-          label += c;
-        }
-        sinks_->add(label.c_str());
-        if (st.audio.sinks[i].first == st.audio.default_sink) sinks_->value(int(i));
-      }
-      sinks_->tooltip(_("Output device"));
-      sinks_->callback([](Fl_Widget *w, void *) {
-        int v = static_cast<Fl_Choice *>(w)->value();
-        const auto &sinks = SystemStatus::get().audio.sinks;
-        if (v >= 0 && v < int(sinks.size())) SystemStatus::get().set_default_sink(sinks[size_t(v)].first);
-      });
-      y += S(40);
-    }
-  } else {
-    texts_.push_back({pad, y, inner, S(20), [] { return std::string(_("Sound service is not running")); }, 2});
-    y += S(26);
-  }
+  auto row = [&](std::string text, IconFn icon, std::function<void()> fn, bool enabled = true) {
+    auto *b =
+        new ActionButton(pad + S(8), y, inner - S(16), S(36), text, icon, fn, nullptr, -1, true);
+    if (!enabled) b->deactivate();
+    y += S(42);
+    return b;
+  };
+  auto info = [&](std::string text) {
+    new ActionLabel(pad + S(12), y, inner - S(24), S(24), [text] { return text; }, 2);
+    y += S(24);
+  };
+  auto launch = [this](std::vector<std::string> cmd) {
+    close();
+    spawn_detached(cmd);
+  };
+  auto bt_icon = [](Painter &p, double x, double y, double z, const Color &ink) {
+    glyph::bluetooth(p, x, y, z, ink);
+  };
+  auto audio_icon = [](Painter &p, double x, double y, double z, const Color &ink) {
+    glyph::speaker(p, x, y, z, 3, false, ink);
+  };
+  auto media_icon = [](Painter &p, double x, double y, double z, const Color &ink) {
+    glyph::media(p, x, y, z, ink, false);
+  };
+  auto network_icon = [](Painter &p, double x, double y, double z, const Color &ink) {
+    const auto &n = SystemStatus::get().network;
+    if (n.kind == "ethernet")
+      glyph::ethernet(p, x, y, z, ink);
+    else
+      glyph::wifi(p, x, y, z, n.kind == "wifi" ? 4 : 0, ink, n.kind.empty());
+  };
+  auto start_card = [&](std::string title) {
+    auto *card = new ActionCard(pad, y, inner);
+    y += S(10);
+    new ActionLabel(pad + S(12), y, inner - S(24), S(24), [title] { return title; }, 1);
+    y += S(28);
+    return card;
+  };
+  auto end_card = [&](ActionCard *card) {
+    card->size(inner, y - card->y() + S(6));
+    card->end();
+    y += S(16);
+  };
+  label(_("Action Center"), 1, 28);
   y += S(4);
-
-  // ---- brightness
-  if (st.brightness.available) {
-    separators_.push_back(y);
-    y += S(12);
-    texts_.push_back({pad, y, inner, S(22), [] { return std::string(_("Brightness")); }, 1});
-    y += S(26);
-    int bh = S(36);
-    new DrawnButton(pad, y, bh, bh, [pad, y, bh, &t](Painter &p, bool, bool) {
-      glyph::sun(p, pad + Sd(7), y + Sd(7), bh - Sd(14), t.text);
-    });
-    child(children() - 1)->clear_visible_focus();
-    brightness_ = new Slider(pad + bh + S(10), y, inner - bh - S(64), bh);
-    brightness_->bounds(1, 100);
-    brightness_->value(st.brightness.percent());
-    brightness_->callback([](Fl_Widget *w, void *) {
-      SystemStatus::get().set_brightness(int(static_cast<Fl_Slider *>(w)->value()));
-      w->window()->redraw();
-    });
-    texts_.push_back({pad + inner - S(48), y, S(48), bh,
-                      [] { return std::to_string(SystemStatus::get().brightness.percent()) + "%"; }, 3});
-    y += bh + S(12);
+  if (section_ != "overview")
+    row(_("Back to overview"), gear_icon(), [this] { select_section("overview"); });
+  if (!s.message.empty() || !c.message.empty()) {
+    new ActionLabel(
+        pad, y, inner, S(28),
+        [] {
+          const auto &m = PanelControls::get().message;
+          return m.empty() ? SystemStatus::get().message : m;
+        },
+        2);
+    y += S(30);
+  }
+  auto tray_card = [&] {
+    auto *h = Panel::instance->status_notifiers();
+    auto items = h ? h->visible_items() : std::vector<const SniHost::Item *>{};
+    auto *tray = Panel::instance->legacy_tray();
+    bool moved = cfg.get_bool("action_center", "move_status", true);
+    if (!moved && items.empty() && (!tray || !tray->count())) return;
+    if (!cfg.get_bool("action_center", "show_tray", true) && section_ != "tray") return;
+    auto *card = start_card(_("Status and tray"));
+    int cell = S(34), columns = std::max(1, (inner - S(24)) / cell);
+    if (moved) {
+      struct Indicator {
+        const char *key;
+        std::string title;
+        IconFn icon;
+        std::function<void()> fn;
+        bool available;
+      };
+      std::vector<Indicator> status = {
+          {"show_keyboard", _("Keyboard"),
+           [](Painter &p, double x, double y, double z, const Color &ink) {
+             glyph::keyboard(p, x, y, z, ink);
+           },
+           [launch] { launch({"sde-settings", "--page", "input"}); },
+           !((h && h->has_input_indicator()) || (tray && tray->has_input_indicator()))},
+          {"show_bluetooth", _("Bluetooth"), bt_icon, [this] { select_section("bluetooth"); },
+           !c.adapters.empty()},
+          {"show_battery", _("Battery"),
+           [](Painter &p, double x, double y, double z, const Color &ink) {
+             const auto &b = SystemStatus::get().battery;
+             glyph::battery(p, x, y, z, b.percent, b.charging, ink,
+                            Panel::instance->theme().surface_alt);
+           },
+           [this] { select_section("power"); }, s.battery.present},
+          {"show_power", _("Power"),
+           [](Painter &p, double x, double y, double z, const Color &ink) {
+             glyph::power(p, x, y, z, ink);
+           },
+           [launch] { launch({"sde-logout"}); }, true},
+          {"show_media", _("Media players"), media_icon, [this] { select_section("media"); },
+           !c.players().empty()},
+          {"show_network", _("Network"), network_icon, [this] { select_section("network"); },
+           s.network.available},
+          {"show_sound", _("Sound"), audio_icon, [this] { select_section("sound"); },
+           s.audio.available}};
+      int n = 0;
+      for (const auto &i : status)
+        if (i.available && cfg.get_bool("panel", i.key, true)) {
+          auto *b = new ActionButton(pad + S(12) + (n % columns) * cell, y + (n / columns) * cell,
+                                     cell, cell, "", i.icon, i.fn, nullptr, -1, true);
+          b->copy_tooltip(i.title.c_str());
+          ++n;
+        }
+      y += ((n + columns - 1) / columns) * cell + S(6);
+    }
+    for (size_t i = 0; i < items.size(); ++i)
+      new TrayIndicator(pad + S(12) + int(i % columns) * cell, y + int(i / columns) * cell, cell,
+                        *items[i]);
+    y += int((items.size() + columns - 1) / columns) * cell;
+    if (tray && tray->count() && cfg.get_bool("action_center", "move_status", true)) {
+      tray_columns_ = std::max(1, (inner - S(24)) / (tray->icon_size() + S(6)));
+      int h = tray->grid_height(tray_columns_);
+      tray_box_ = new Fl_Box(pad + S(12), y, inner - S(24), h);
+      y += h + S(6);
+    }
+    end_card(card);
+  };
+  auto player_card = [&](const MediaPlayer &p) {
+    auto *card = start_card(p.name);
+    info(p.title.empty() ? _("No track title") : p.title);
+    if (!p.artist.empty()) info(p.artist);
+    int gap = S(6), bw = (inner - S(24) - 2 * gap) / 3;
+    std::vector<std::pair<std::string, std::string>> buttons = {
+        {_("Previous"), "Previous"},
+        {p.status == "Playing" ? _("Pause") : _("Play"), "PlayPause"},
+        {_("Next"), "Next"}};
+    bool allowed[] = {p.control && p.previous,
+                      p.control && (p.status == "Playing" ? p.pause : p.play), p.control && p.next};
+    for (int i = 0; i < 3; ++i) {
+      auto cmd = buttons[i].second;
+      auto *b = new CommandButton(
+          pad + S(12) + i * (bw + gap), y, bw, S(34), buttons[i].first,
+          [service = p.service, cmd] { PanelControls::get().media_command(service, cmd); });
+      if (!allowed[i]) b->deactivate();
+    }
+    y += S(42);
+    if (p.raise)
+      row(_("Open player"), media_icon,
+          [service = p.service] { PanelControls::get().media_command(service, "Raise"); });
+    end_card(card);
+  };
+  if (section_ != "overview") tray_card();
+  if (section_ == "overview") {
+    if (cfg.get_bool("action_center", "show_clock", true)) {
+      new ClockCard(pad, y, inner, S(112));
+      y += S(124);
+    }
+    tray_card();
+    auto players = c.players();
+    if (cfg.get_bool("action_center", "show_media", true) && !players.empty())
+      player_card(players.front());
+    struct Tile {
+      std::string title;
+      IconFn icon;
+      std::function<void()> click;
+      std::function<bool()> on;
+      StringFn sub;
+    };
+    std::vector<Tile> tiles = {
+        {_("Network"), network_icon, [this] { select_section("network"); },
+         [] { return !SystemStatus::get().network.kind.empty(); },
+         [] {
+           const auto &n = SystemStatus::get().network;
+           return n.connection.empty() ? std::string(_("Offline")) : n.connection;
+         }},
+        {_("Bluetooth"), bt_icon, [this] { select_section("bluetooth"); },
+         [] {
+           auto *a = PanelControls::get().adapter();
+           return a && a->powered;
+         },
+         [] {
+           auto *a = PanelControls::get().adapter();
+           return std::string(!a ? _("No adapter") : a->powered ? _("On") : _("Off"));
+         }},
+        {_("Wireless off"),
+         [](Painter &p, double x, double y, double z, const Color &ink) {
+           glyph::airplane(p, x, y, z, ink);
+         },
+         [] {
+           auto &c = PanelControls::get();
+           c.wireless_off(!c.airplane);
+         },
+         [] { return PanelControls::get().airplane; },
+         [] { return std::string(_("Wi-Fi, WWAN, Bluetooth")); }},
+        {_("Display"), display_icon(), [launch] { launch({"sde-display-settings"}); }, nullptr,
+         [] { return std::string(_("Monitors and scale")); }},
+        {_("Do Not Disturb"),
+         [](Painter &p, double x, double y, double z, const Color &ink) {
+           glyph::bell(p, x, y, z,
+                       Panel::instance->config().get_bool("notifications", "do_not_disturb", false),
+                       ink);
+         },
+         [] {
+           auto *p = Panel::instance;
+           p->set_do_not_disturb(!p->config().get_bool("notifications", "do_not_disturb", false));
+         },
+         [] {
+           return Panel::instance->config().get_bool("notifications", "do_not_disturb", false);
+         },
+         [] { return std::string(_("Notifications")); }},
+        {_("Dark Mode"),
+         [](Painter &p, double x, double y, double z, const Color &ink) {
+           glyph::sun(p, x, y, z, ink);
+         },
+         [] { Panel::instance->toggle_dark_mode(); }, [] { return Panel::instance->theme().dark; },
+         [] { return std::string(_("Appearance")); }}};
+    int columns = cfg.get_int("action_center", "tile_columns", 2) == 3 ? 3 : 2, gap = S(8),
+        tw = (inner - (columns - 1) * gap) / columns, th = S(78);
+    for (size_t i = 0; i < tiles.size(); ++i) {
+      const auto &v = tiles[i];
+      new ActionButton(pad + int(i % columns) * (tw + gap), y + int(i / columns) * (th + gap), tw,
+                       th, v.title, v.icon, v.click, v.on, int(i), false, v.sub);
+    }
+    y += int((tiles.size() + columns - 1) / columns) * (th + gap) + S(8);
+    row(_("Sound and applications"), audio_icon, [this] { select_section("sound"); });
+    if (cfg.get_bool("action_center", "show_media", true))
+      row(_("Media players"), media_icon, [this] { select_section("media"); });
+  }
+  if (section_ == "network") {
+    auto *card = start_card(_("Network"));
+    info(s.network.available
+             ? (s.network.connection.empty() ? _("Not connected") : s.network.connection)
+             : _("NetworkManager is not running"));
+    if (s.network.available && s.network.has_wifi) {
+      row(s.network.wifi_enabled ? _("Turn Wi-Fi Off") : _("Turn Wi-Fi On"), network_icon, [] {
+        auto &s = SystemStatus::get();
+        s.set_wifi_enabled(!s.network.wifi_enabled);
+      });
+      if (s.network.wifi_enabled) {
+        row(_("Scan Wi-Fi networks"), network_icon,
+            [] { SystemStatus::get().refresh_network(true); });
+        int count = 0;
+        for (const auto &net : s.wifi) {
+          if (++count > 16) break;
+          auto *b = row(
+              net.ssid + (net.active   ? " · Connected"
+                          : net.secure ? " · Secured"
+                                       : " · Open"),
+              [net](Painter &p, double x, double y, double z, const Color &ink) {
+                glyph::wifi(p, x, y, z, std::max(1, net.signal / 25), ink);
+              },
+              [net] {
+                if (!net.active) SystemStatus::get().connect_wifi(net);
+              });
+          if (net.active) b->deactivate();
+        }
+      }
+    }
+    end_card(card);
+    for (const auto &d : c.devices) {
+      auto *card = start_card(d.device + " · " + d.kind);
+      info(d.state + (d.connection.empty() ? "" : " · " + d.connection));
+      if (!d.ip.empty()) info("IP: " + d.ip);
+      if (!d.gateway.empty()) info("Gateway: " + d.gateway);
+      if (!d.dns.empty()) info("DNS: " + d.dns);
+      if (d.kind == "ethernet")
+        row(d.state == "connected" ? _("Disconnect LAN") : _("Connect LAN"), network_icon,
+            [d] { PanelControls::get().network_device(d.device, d.state != "connected"); });
+      end_card(card);
+    }
+    if (!find_program("nm-connection-editor").empty())
+      row(_("Network Connections..."), gear_icon(), [launch] { launch({"nm-connection-editor"}); });
+  }
+  if (section_ == "bluetooth") {
+    auto *card = start_card(_("Bluetooth"));
+    if (c.adapters.empty())
+      info(c.bluetooth_available ? _("No Bluetooth adapter detected")
+                                 : _("Bluetooth service is unavailable"));
+    for (const auto &a : c.adapters)
+      if (c.adapters.size() > 1)
+        row(
+            a.name + (a.path == c.adapter_path ? " · Selected" : ""), bt_icon,
+            [path = a.path] { PanelControls::get().select_adapter(path); }, !c.bluetooth_busy);
+    if (auto *a = c.adapter()) {
+      info(a->name);
+      row(
+          a->powered ? _("Turn Bluetooth Off") : _("Turn Bluetooth On"), bt_icon,
+          [on = !a->powered] { PanelControls::get().bluetooth_power(on); }, !c.bluetooth_busy);
+      if (a->powered)
+        row(
+            a->discovering ? _("Stop scanning") : _("Scan for devices"), bt_icon,
+            [] {
+              auto &c = PanelControls::get();
+              auto *a = c.adapter();
+              if (a && a->discovering)
+                c.stop_scan();
+              else
+                c.bluetooth_scan();
+            },
+            !c.bluetooth_busy);
+      if (c.bluetooth_busy) info(_("Waiting for Bluetooth..."));
+      if (a->powered)
+        for (const auto &d : c.bluetooth)
+          if (d.adapter == a->path) {
+            info((d.name.empty() ? d.address : d.name) + " · " +
+                 (d.connected ? _("Connected")
+                  : d.paired  ? _("Paired")
+                              : _("Available")));
+            row(
+                d.connected ? _("Disconnect")
+                : d.paired  ? _("Connect")
+                            : _("Pair and connect"),
+                bt_icon, [path = d.path] { PanelControls::get().bluetooth_device(path); },
+                !c.bluetooth_busy);
+            if (d.paired && !d.connected)
+              row(
+                  _("Forget device"), bt_icon,
+                  [path = d.path] {
+                    if (fl_choice(_("Remove this Bluetooth pairing?"), _("Cancel"), _("Remove"),
+                                  nullptr) == 1)
+                      PanelControls::get().bluetooth_forget(path);
+                  },
+                  !c.bluetooth_busy);
+          }
+    }
+    end_card(card);
+    info(_("PIN/code pairing uses the system Bluetooth agent."));
+    if (!find_program("blueman-manager").empty())
+      row(_("Bluetooth Settings..."), gear_icon(), [launch] { launch({"blueman-manager"}); });
+  }
+  if (section_ == "overview" || section_ == "sound") {
+    auto *card = start_card(_("Sound"));
+    if (s.audio.available) {
+      new ActionButton(
+          pad + S(8), y, S(38), S(36), "",
+          [](Painter &p, double x, double y, double z, const Color &ink) {
+            glyph::speaker(p, x, y, z, 3, SystemStatus::get().audio.muted, ink);
+          },
+          [] { SystemStatus::get().toggle_mute(); }, [] { return SystemStatus::get().audio.muted; },
+          -1, true);
+      volume_ = new Slider(pad + S(54), y, inner - S(116), S(36));
+      volume_->bounds(0, 100);
+      volume_->value(s.audio.volume);
+      volume_->tooltip(_("Output volume"));
+      volume_->callback([](Fl_Widget *w, void *) {
+        SystemStatus::get().set_volume(int(static_cast<Fl_Slider *>(w)->value()));
+      });
+      new ActionLabel(pad + inner - S(54), y, S(48), S(36),
+                      [] { return std::to_string(SystemStatus::get().audio.volume) + "%"; });
+      y += S(42);
+      if (section_ == "sound" && !s.audio.sinks.empty()) {
+        auto *choice = new Fl_Choice(pad + S(12), y, inner - S(24), S(30));
+        choice->textsize(t.font_size);
+        choice->tooltip(_("Output device"));
+        for (size_t i = 0; i < s.audio.sinks.size(); ++i) {
+          choice->add(choice_label(s.audio.sinks[i].second).c_str());
+          if (s.audio.sinks[i].first == s.audio.default_sink) choice->value(int(i));
+        }
+        choice->callback([](Fl_Widget *w, void *) {
+          int i = static_cast<Fl_Choice *>(w)->value();
+          const auto &v = SystemStatus::get().audio.sinks;
+          if (i >= 0 && i < int(v.size())) SystemStatus::get().set_default_sink(v[size_t(i)].first);
+        });
+        y += S(38);
+      }
+    } else
+      info(_("Sound service is unavailable"));
+    end_card(card);
+    if (section_ == "sound" && c.mic_available &&
+        cfg.get_bool("action_center", "show_microphone", true)) {
+      card = start_card(_("Microphone"));
+      row(
+          c.mic_muted ? _("Unmute microphone") : _("Mute microphone"),
+          [](Painter &p, double x, double y, double z, const Color &ink) {
+            glyph::microphone(p, x, y, z, ink);
+          },
+          [] { PanelControls::get().microphone_mute(); });
+      microphone_ = new Slider(pad + S(14), y, inner - S(28), S(36));
+      microphone_->bounds(0, 100);
+      microphone_->value(c.mic_volume);
+      microphone_->tooltip(_("Microphone volume"));
+      microphone_->callback([](Fl_Widget *w, void *) {
+        PanelControls::get().microphone_volume(int(static_cast<Fl_Slider *>(w)->value()));
+      });
+      y += S(42);
+      if (!c.sources.empty()) {
+        auto *choice = new Fl_Choice(pad + S(12), y, inner - S(24), S(30));
+        choice->textsize(t.font_size);
+        choice->tooltip(_("Input device"));
+        for (size_t i = 0; i < c.sources.size(); ++i) {
+          choice->add(choice_label(c.sources[i].second).c_str());
+          if (c.sources[i].first == c.default_source) choice->value(int(i));
+        }
+        choice->callback([](Fl_Widget *w, void *) {
+          int i = static_cast<Fl_Choice *>(w)->value();
+          const auto &v = PanelControls::get().sources;
+          if (i >= 0 && i < int(v.size()))
+            PanelControls::get().microphone_source(v[size_t(i)].first);
+        });
+        y += S(38);
+      }
+      end_card(card);
+    }
+  }
+  if (section_ == "sound" || section_ == "media") {
+    if (cfg.get_bool("action_center", "show_media", true)) {
+      auto players = c.players();
+      if (players.empty())
+        label(_("No active media players"), 2);
+      else
+        for (const auto &p : players) player_card(p);
+    }
+    if (cfg.get_bool("action_center", "show_app_volume", true)) {
+      auto *card = start_card(_("Application volume"));
+      if (c.streams.empty()) info(_("No applications are playing sound"));
+      int count = 0;
+      for (const auto &a : c.streams) {
+        if (++count > 32) break;
+        info(a.app + (a.title.empty() ? "" : " · " + a.title));
+        auto *slider = new Slider(pad + S(14), y, inner - S(94), S(34));
+        slider->bounds(0, 100);
+        slider->value(a.volume);
+        slider->copy_tooltip(a.app.c_str());
+        slider->callback(
+            [](Fl_Widget *w, void *id) {
+              PanelControls::get().set_stream_volume(unsigned(reinterpret_cast<uintptr_t>(id)),
+                                                     int(static_cast<Fl_Slider *>(w)->value()));
+            },
+            reinterpret_cast<void *>(uintptr_t(a.id)));
+        stream_sliders_[a.id] = slider;
+        auto *mute = new ActionButton(
+            pad + inner - S(72), y, S(60), S(34), "",
+            [muted = a.muted](Painter &p, double x, double y, double z, const Color &ink) {
+              glyph::speaker(p, x, y, z, 3, muted, ink);
+            },
+            [id = a.id, muted = !a.muted] { PanelControls::get().mute_stream(id, muted); },
+            [muted = a.muted] { return muted; }, -1, true);
+        mute->copy_tooltip(a.muted ? _("Unmute application") : _("Mute application"));
+        y += S(40);
+        auto player = match_media_player(a, c.players());
+        if (!player.empty())
+          row(_("Open player"), media_icon,
+              [player] { PanelControls::get().media_command(player, "Raise"); });
+      }
+      end_card(card);
+    }
+  }
+  if (section_ == "media") {
+    auto *card = start_card(_("Installed media applications"));
+    int count = 0;
+    for (const auto &app : load_applications())
+      if (std::find(app.categories.begin(), app.categories.end(), "AudioVideo") !=
+          app.categories.end()) {
+        row(app.name, media_icon, [this, app] {
+          close();
+          launch_entry(app);
+        });
+        if (++count == 8) break;
+      }
+    if (!count) info(_("Install a media player to play music or video."));
+    end_card(card);
+  }
+  if (section_ == "overview" || section_ == "power") {
+    if (s.brightness.available) {
+      auto *card = start_card(_("Brightness"));
+      brightness_ = new Slider(pad + S(14), y, inner - S(28), S(36));
+      brightness_->bounds(1, 100);
+      brightness_->value(s.brightness.percent());
+      brightness_->tooltip(_("Brightness"));
+      brightness_->callback([](Fl_Widget *w, void *) {
+        SystemStatus::get().set_brightness(int(static_cast<Fl_Slider *>(w)->value()));
+      });
+      y += S(42);
+      end_card(card);
+    }
+    if (s.battery.present)
+      new ActionLabel(
+          pad, y, inner, S(28),
+          [] {
+            const auto &b = SystemStatus::get().battery;
+            return std::to_string(b.percent) + "% · " +
+                   (b.charging ? _("Charging")
+                    : b.full   ? _("Fully charged")
+                               : _("On battery"));
+          },
+          2),
+          y += S(34);
+    if (section_ == "power")
+      row(_("Power Settings"), gear_icon(), [launch] { launch({"sde-power-preferences"}); });
   }
 
-  // ---- battery
-  if (st.battery.present) {
-    separators_.push_back(y);
-    y += S(12);
-    int bh = S(30);
-    auto *icon = new DrawnButton(pad, y, bh, bh, [pad, y, bh, &t](Painter &p, bool, bool) {
-      const BatteryState &b = SystemStatus::get().battery;
-      Color level = b.percent <= 15 && !b.charging ? Color::hex(0xD64545) : t.text;
-      if (b.charging) level = Color::hex(0x2E9E5B);
-      glyph::battery(p, pad, y, bh, b.percent, b.charging, t.text, level);
-    });
-    icon->clear_visible_focus();
-    texts_.push_back({pad + bh + S(10), y, inner - bh - S(10), bh,
-                      [] {
-                        const BatteryState &b = SystemStatus::get().battery;
-                        std::string s = std::to_string(b.percent) + "%";
-                        if (b.full) s += " · " + std::string(_("Fully charged"));
-                        else if (b.charging) s += " · " + std::string(_("Charging"));
-                        if (b.minutes > 0 && !b.full) {
-                          std::string left = format(_("%d h %02d min"), b.minutes / 60, b.minutes % 60);
-                          s += " · " + format(b.charging ? _("%s until full") : _("%s left"), left.c_str());
-                        }
-                        return s;
-                      },
-                      0});
-    y += bh + S(12);
-  }
-
-  // ---- footer
-  separators_.push_back(y);
-  y += S(12);
-  int fb = S(38);
-  struct Foot {
-    const char *tip;
-    std::function<void(Painter &, double, double, double, const Color &)> icon;
-    std::vector<std::string> cmd;
-  };
-  std::vector<Foot> foot = {
-      {_("Settings"), [](Painter &p, double x, double yy, double s, const Color &c) { glyph::gear(p, x, yy, s, c); },
-       {"sde-settings"}},
-      {_("Lock Screen"), [](Painter &p, double x, double yy, double s, const Color &c) { glyph::lock(p, x, yy, s, c); },
-       {"xdg-screensaver", "lock"}},
-      {_("Power Off / Log Out"),
-       [](Painter &p, double x, double yy, double s, const Color &c) { glyph::power(p, x, yy, s, c); },
-       {"sde-logout"}},
-  };
+  content_height_ = y + S(8);
+  new Fl_Box(pad, y, inner, S(8));
+  body_->end();
+  int H = std::min(available, content_height_ + footer + S(4));
+  body_->size(W - S(4), H - footer - S(4));
+  begin();
+  int fy = H - footer + S(10), fb = S(36);
+  new ActionLabel(pad, fy, W - S(210), fb, [] { return user_name(); }, 2);
+  std::vector<std::pair<std::string, std::function<void()>>> foot = {
+      {_("Calendar"),
+       [this] {
+         close();
+         Panel::instance->toggle_calendar();
+       }},
+      {_("Action Center Settings"),
+       [launch] { launch({"sde-settings", "--page", "action-center"}); }},
+      {_("Lock Screen"), [launch] { launch({"sde-lock"}); }},
+      {_("Power Off / Log Out"), [launch] { launch({"sde-logout"}); }}};
+  std::vector<IconFn> icons = {calendar_icon(), gear_icon(),
+                               [](Painter &p, double x, double y, double z, const Color &ink) {
+                                 glyph::lock(p, x, y, z, ink);
+                               },
+                               [](Painter &p, double x, double y, double z, const Color &ink) {
+                                 glyph::power(p, x, y, z, ink);
+                               }};
   for (size_t i = 0; i < foot.size(); ++i) {
-    int bx = pad + inner - int(foot.size() - i) * (fb + S(8)) + S(8);
-    Foot f = foot[i];
-    auto *b = new DrawnButton(
-        bx, y, fb, fb,
-        [f, bx, y, fb, &t](Painter &p, bool hover, bool) {
-          p.fill_rounded(bx, y, fb, fb, fb / 2.0, hover ? t.hover : t.surface_alt);
-          f.icon(p, bx + Sd(10), y + Sd(10), fb - Sd(20), t.text);
-        },
-        nullptr, fb / 2.0);
-    b->tooltip(f.tip);
-    b->callback(
-        [](Fl_Widget *w, void *d) {
-          auto *cmd = static_cast<std::vector<std::string> *>(d);
-          static_cast<QuickSettings *>(w->window())->close();
-          spawn_detached(*cmd);
-        },
-        keep(new std::vector<std::string>(f.cmd)));
+    auto *b = new ActionButton(W - pad - int(foot.size() - i) * (fb + S(6)), fy, fb, fb, "",
+                               icons[i], foot[i].second, nullptr, -1, true);
+    b->copy_tooltip(foot[i].first.c_str());
   }
-  texts_.push_back({pad, y, inner - 3 * (fb + S(8)), fb, [] { return std::string("SDE " SDE_VERSION_LABEL); }, 2});
-  y += fb + pad;
   end();
-  size(W, y);
-  redraw();
+  resizable(nullptr);
+  init_sizes();
+  size(W, H);
+  sync();
 }
-
 void QuickSettings::draw() {
-  const Theme &t = Panel::instance->theme();
+  const auto &t = Panel::instance->theme();
   {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), t.surface);
-    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
-    for (int y : separators_) p.line(S(16), y + 0.5, w() - S(16), y + 0.5, t.border);
+    p.stroke_rounded(0, 0, w(), h(), 0, t.border);
+    p.line(S(16), h() - S(58), w() - S(16), h() - S(58), t.border);
   }
   draw_children();
-  for (auto &tx : texts_) {
-    text_font(tx.style == 1 ? t.font_size + 1 : t.font_size, tx.style == 1);
-    draw_text(tx.text(), tx.x, tx.y, tx.w, tx.h, tx.style == 2 ? t.text_dim : t.text, tx.style == 3 ? 2 : 0);
-  }
+  sync_native_tray();
 }
-
 int QuickSettings::handle(int event) {
-  int r = PanelPopup::handle(event);
-  if (event == FL_RELEASE && rebuild_pending_) Fl::add_timeout(0, [](void *d) {
-      static_cast<QuickSettings *>(d)->status_changed();
-    }, this);
-  return r;
+  if (event == FL_MOUSEWHEEL && body_ && Fl::event_inside(body_)) {
+    // Route wheel gestures explicitly through this override-redirect window;
+    // keep application-tray and slider wheel controls local to their widgets.
+    auto *target = Fl::belowmouse();
+    // belowmouse can still name a previous control after an async rebuild.
+    // Forward wheel events only when the pointer is actually inside it.
+    if (target && Fl::event_inside(target) &&
+        (dynamic_cast<Fl_Slider *>(target) || dynamic_cast<TrayIndicator *>(target) ||
+         dynamic_cast<Fl_Choice *>(target)))
+      return PanelPopup::handle(event);
+    int limit = std::max(0, content_height_ - body_->h());
+    body_->scroll_to(0, std::max(0, std::min(limit, body_->yposition() + Fl::event_dy() * S(36))));
+    redraw();
+    return 1;
+  }
+  return PanelPopup::handle(event);
 }

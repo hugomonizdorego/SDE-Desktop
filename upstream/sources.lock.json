@@ -1,0 +1,77 @@
+{
+  "format": 1,
+  "sources": [
+    {
+      "id": "pluma",
+      "repository": "https://github.com/mate-desktop/pluma",
+      "commit": "a4c2470f8f39bbc435ea058f85071f8369880345",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "caja",
+      "repository": "https://github.com/mate-desktop/caja",
+      "commit": "a57395da45a23faffdb27c123ddbb89638f188e4",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "atril",
+      "repository": "https://github.com/mate-desktop/atril",
+      "commit": "a049ebfdfdeeac2ebb611c2b5db697987f02c6dd",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "engrampa",
+      "repository": "https://github.com/mate-desktop/engrampa",
+      "commit": "dbad54448edafdfbf81f6470d1136896791e9519",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "mate-system-monitor",
+      "repository": "https://github.com/mate-desktop/mate-system-monitor",
+      "commit": "33e45b5435103a27c954b63fdec2cac014f57b7d",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "mate-power-manager",
+      "repository": "https://github.com/mate-desktop/mate-power-manager",
+      "commit": "4cf7346b34d2bdafcb682865ba9f43e5d047eee1",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "eom",
+      "repository": "https://github.com/mate-desktop/eom",
+      "commit": "8214609d0e939b774bf5fa952d68a7422b81ae88",
+      "use": "runtime-engine"
+    },
+    {
+      "id": "mintupdate",
+      "repository": "https://github.com/linuxmint/mintupdate",
+      "commit": "b4c586f9839d2943944390f4117a10acd4ba865a",
+      "use": "adapted-update-model"
+    },
+    {
+      "id": "lxqt-session",
+      "repository": "https://github.com/lxqt/lxqt-session",
+      "commit": "e535c67dd070dfa52e1757bbc9f903ca8d95c37a",
+      "use": "reference-only"
+    },
+    {
+      "id": "budgie-desktop",
+      "repository": "https://github.com/buddiesofbudgie/budgie-desktop",
+      "commit": "2954a0b606af06b6faa165b297e5686063b78fcd",
+      "use": "reference-only"
+    },
+    {
+      "id": "cosmic-epoch",
+      "repository": "https://github.com/pop-os/cosmic-epoch",
+      "commit": "364341d52454bf3a016d03185c6aff887247aab7",
+      "use": "reference-only"
+    },
+    {
+      "id": "DisplayProfileManager",
+      "repository": "https://github.com/zac15987/DisplayProfileManager",
+      "commit": "c873b66ba54b6efb111620e736878c21eda22f51",
+      "use": "native-profile-model-port"
+    }
+  ]
+}

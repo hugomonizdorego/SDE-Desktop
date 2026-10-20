@@ -1,0 +1,9 @@
+data/debion/debion-mozilla.sources etc/apt/sources.list.d/
+data/debion/debion-desktop.pref etc/apt/preferences.d/
+data/debion/debion-mozilla-archive-keyring.asc etc/apt/keyrings/
+data/debion/20-debion-resolved.conf etc/NetworkManager/conf.d/
+data/debion/50-debion.conf etc/lightdm/lightdm.conf.d/
+data/debion/slick-greeter.conf etc/lightdm/
+data/debion/sde-xdg-terminals.list etc/xdg/
+docs/DEBION.md usr/share/doc/debion-desktop-defaults/
+data/debion/sde-gnome-terminal.desktop usr/share/applications/

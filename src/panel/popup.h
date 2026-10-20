@@ -14,13 +14,21 @@ class PanelPopup : public sde::BufferedWindow {
   // with |align_right| the popup's right edge is placed at |anchor_x|.
   void open_at(int anchor_x, bool align_right);
   virtual void close();
-  bool is_open() const { return const_cast<PanelPopup *>(this)->shown(); }
+  void reposition();
+  bool is_open() const { return !closing_ && const_cast<PanelPopup *>(this)->shown(); }
 
   int handle(int event) override;
 
  protected:
   // Called before the window is placed; set the popup's size here.
   virtual void prepare() {}
+  virtual bool corner_popup() const { return false; }
+  virtual bool native_children() const { return false; }
   // Called after the popup closed.
   virtual void closed() {}
+
+ private:
+  bool closing_ = false;
+  int anchor_x_ = 0;
+  bool align_right_ = false;
 };

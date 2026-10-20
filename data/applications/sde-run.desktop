@@ -4,6 +4,6 @@ Name=Run Command
 Comment=Run a program by typing its name
 Exec=sde-run
 Icon=system-run
-Categories=System;
+Categories=Utility;
 OnlyShowIn=SDE;
 StartupNotify=false

@@ -7,32 +7,121 @@ on:
   workflow_dispatch:
 
 jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust tools
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Format, lint and test
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+          cargo test --workspace --locked --offline
+      - name: Check minimum Rust version
+        run: |
+          rustup toolchain install 1.59.0 --profile minimal
+          cargo +1.59.0 test --workspace --locked --offline
+
+  panel-sanitizers:
+    name: Panel memory safety
+    runs-on: ubuntu-latest
+    container: debian:testing
+    env:
+      ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - name: Install core build and GUI test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates build-essential cmake pkgconf rustc cargo libfltk1.3-dev libcairo2-dev librsvg2-dev libx11-dev libxrandr-dev libxi-dev libxft-dev libdbus-1-dev gettext python3 xvfb xdotool imagemagick dbus-daemon dbus-x11 x11-xserver-utils x11-utils x11-xkb-utils xinput xsettingsd fonts-dejavu-core adwaita-icon-theme
+      - uses: actions/checkout@v4
+      - name: Build instrumented core
+        run: |
+          cmake -S . -B build-asan -DSDE_BUILD_NATIVE_SUITE=OFF -DSDE_BUILD_COMPONENTS=OFF -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer' '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'
+          cmake --build build-asan -j2
+          cmake --install build-asan
+      - name: D-Bus and panel regressions under sanitizers
+        run: |
+          ctest --test-dir build-asan --output-on-failure
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir build-asan/tests --output-dir dist/panel-asan
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir build-asan/tests --size 1024x600 --scale 150 --output-dir dist/panel-asan-small
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sde-panel-sanitizers
+          path: |
+            build-asan/Testing/Temporary/
+            dist/panel-asan*/
+
   deb:
     name: ${{ matrix.image }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ["debian:12", "debian:13", "ubuntu:22.04", "ubuntu:24.04"]
+        image: ["debian:testing"]
     container: ${{ matrix.image }}
     steps:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - name: Install build dependencies
-        run: sh tools/install-deps.sh
+        run: |
+          sh tools/install-deps.sh
+          sh tools/install-native-deps.sh
+      - name: Check native About integration
+        run: |
+          c++ -std=c++17 tests/test_native_about.cpp -o /tmp/sde-native-about-check $(pkg-config --cflags --libs gtk+-3.0)
+          python3 tests/test_native_about.py /tmp/sde-native-about-check
+      - name: Artifact name
+        id: name
+        run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
       - name: Build package
         run: sh tools/build-deb.sh dist
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout; do
+          for p in gallery sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
             "$p" --version
           done
-      - name: Artifact name
-        id: name
-        run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
+          python3 tools/check-installed-suite.py
+          /usr/bin/python3 /usr/share/sde/update/check.py > /tmp/sde-update-cache.tsv
+          head -n 1 /tmp/sde-update-cache.tsv | grep -F 'SDE-UPDATES'
+      - name: Install full DebION desktop and verify defaults
+        run: |
+          DEBIAN_FRONTEND=noninteractive sh dist/install-debion.sh --yes dist
+          python3 tools/test-suite.py
+          python3 tools/check-debion-profile.py
+          python3 tools/check-installed-suite.py
+      - name: Native UI smoke checks
+        if: matrix.image == 'debian:testing'
+        run: |
+          apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick dbus-x11 dconf-gsettings-backend adwaita-icon-theme
+          ui_status=0
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke || ui_status=1
+          dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small || ui_status=1
+          dbus-run-session -- python3 tools/gallery-smoke.py --output-dir dist/gallery-smoke || ui_status=1
+          dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke || ui_status=1
+          dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small || ui_status=1
+          exit "$ui_status"
       - uses: actions/upload-artifact@v4
+        if: always() && matrix.image == 'debian:testing'
+        with:
+          name: sde-ui-smoke
+          path: |
+            dist/ui-smoke*/
+            dist/panel-smoke*/
+            dist/gallery-smoke*/
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: ${{ steps.name.outputs.name }}
-          path: dist/*.deb
+          path: |
+            dist/*.deb
+            dist/*sources*.tar.xz
+            dist/*.sha256
+            dist/install-debion.sh

@@ -16,7 +16,8 @@ using namespace sde;
 namespace {
 
 dbus::Bus *g_bus;
-std::string g_icon = "utilities-terminal";
+std::string g_icon = "utilities-terminal", g_id = "sde-sni-demo";
+bool g_quit_on_menu = false, g_alias = false;
 
 void add_prop(dbus::Writer &dict, const char *key, const std::string &value, char type = 's') {
   dbus::Writer e(dict.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
@@ -50,7 +51,7 @@ DBusHandlerResult on_item(DBusMessage *m) {
     dbus::Writer w(r);
     dbus::Writer dict(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
     add_prop(dict, "Category", "ApplicationStatus");
-    add_prop(dict, "Id", "sde-sni-demo");
+    add_prop(dict, "Id", g_id);
     add_prop(dict, "Title", "SDE tray demo");
     add_prop(dict, "Status", "Active");
     add_prop(dict, "IconName", g_icon);
@@ -73,6 +74,7 @@ DBusHandlerResult on_menu(DBusMessage *m) {
   std::string member = dbus_message_get_member(m);
   DBusMessage *r = dbus_message_new_method_return(m);
   if (member == "GetLayout") {
+    if (g_quit_on_menu) Fl::add_timeout(.3, [](void *) { exit(0); });
     dbus::Writer w(r);
     w.u32(1);
     dbus::Writer root(w.iter(), DBUS_TYPE_STRUCT, nullptr);
@@ -104,7 +106,13 @@ DBusHandlerResult on_menu(DBusMessage *m) {
 }  // namespace
 
 int main(int argc, char **argv) {
-  if (argc > 1) g_icon = argv[1];
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "--quit-on-menu") g_quit_on_menu = true;
+    else if (a == "--alias") g_alias = true;
+    else if (a.rfind("--id=", 0) == 0) g_id = a.substr(5);
+    else g_icon = a;
+  }
   g_bus = dbus::Bus::session();
   if (!g_bus) return 1;
   std::string name = "org.kde.StatusNotifierItem-" + std::to_string(getpid()) + "-1";
@@ -118,5 +126,11 @@ int main(int argc, char **argv) {
   printf("registered: %s\n", reply ? "yes" : "no (no watcher)");
   fflush(stdout);
   if (reply) dbus_message_unref(reply);
+  if (g_alias) {
+    DBusMessage *alias = dbus::method("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher",
+                                     "org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem");
+    dbus::Writer(alias).str("/StatusNotifierItem");
+    g_bus->call_async(alias, nullptr);
+  }
   for (;;) Fl::wait(1e20);
 }

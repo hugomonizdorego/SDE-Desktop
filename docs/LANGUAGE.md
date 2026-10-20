@@ -1,40 +1,27 @@
-# Programming language recommendation
+# Programming languages
 
-**Recommendation: C++17, with FLTK 1.3 for widgets, cairo/librsvg for drawing and
-Xlib for desktop integration. Shell (POSIX `sh`) only for the small session
-launcher and the build tools.**
+SDE alpha3 begins a staged migration to Rust. Rust now implements the shared
+configuration engine and XDG autostart. C++17, FLTK, cairo/librsvg, Xlib and libdbus
+continue to implement the graphical programs and session supervisor.
 
-## Why C++17
-
-| Need | How C++17 meets it |
-| --- | --- |
-| Small and fast | Native code; each SDE program uses only a few MB of RAM and starts instantly. |
-| Direct X11/EWMH access | Xlib, XEmbed, EWMH and ICCCM are C APIs; C++ calls them with no bindings layer. |
-| Toolkit fit | FLTK, the toolkit EDE used, is a C++ library; it is small (about 1 MB) and in every Debian/Ubuntu release. |
-| Long-term maintenance | The C++17 standard is supported by GCC 9 and later, so it builds on Debian 12/13 and Ubuntu 22.04/24.04 without extra repositories. |
-| Packaging | CMake + debhelper is the standard, well-supported path for Debian packages. |
-
-## Alternatives considered
-
-| Option | Why not (for now) |
-| --- | --- |
-| C | Possible, but string handling, containers and RAII make C++ safer and shorter for UI code. |
-| Rust | Good safety, but the GTK/Qt bindings are large, FLTK bindings are less mature, and Debian 12's Rust toolchain is old; it adds a heavy build dependency. |
-| Python | Fast to write but slower to start and uses far more memory per process (panel, desktop and settings all run at the same time). |
-| Vala/GTK 4 or Qt 6 | Mature toolkits, but they pull in much larger runtimes and their look is hard to make consistent with a light desktop. |
-
-## Libraries used in 0.1 Alpha
-
-| Library | Debian package (build) | Purpose |
+| Part | Language | Reason |
 | --- | --- | --- |
-| FLTK 1.3 | `libfltk1.3-dev` | Windows, input, buttons, text fields |
-| cairo | `libcairo2-dev` | Anti-aliased rounded shapes, shadows, image scaling |
-| librsvg | `librsvg2-dev` | SVG icons and wallpapers |
-| Xlib, Xft | `libx11-dev`, `libxft-dev` | EWMH taskbar, struts, system tray, fonts |
-| libdbus | `libdbus-1-dev` | Notifications, StatusNotifierItem tray, logind brightness |
-| gettext | `gettext` (libintl is in glibc) | Translations |
-| Openbox | `openbox` (runtime) | Window manager, configured by SDE |
+| Configuration parsing, layers, validation and persistence | Rust | Shared safe core, independently testable |
+| XDG autostart discovery, desktop-entry parsing and launch planning | Rust | Native executable with no registry dependencies |
+| Config API used by existing applications | C++ facade / C ABI | All applications use the Rust engine without rewriting the UI |
+| Panel, desktop, settings, notifications, run/logout dialogs | C++17 | Preserve current FLTK UI and desktop integrations during migration |
+| Session supervisor | C++17 | Preserve crash recovery, X11 and rescue dialog until a tested Rust replacement exists |
+| startsde and build helpers | POSIX shell | Small wrappers around native programs and packaging tools |
 
-A later release may replace Openbox with an SDE window manager and add Wayland
-support; the code is split into `src/common` (shared library code) and one
-directory per program so that this can happen piece by piece.
+Rust source requires Rust 1.59 or later. The workspace uses only the standard
+library and local crates, and builds with `--locked --offline`. It does not use
+GTK/Qt bindings or download another copy of FLTK. Rust and Cargo are build-time
+dependencies; installed SDE programs do not need them.
+
+This release is a mixed Rust/C++ desktop. A complete Rust source migration will
+require ports and integration tests for session supervision, D-Bus, X11, tray,
+notifications and the graphical interface. Openbox and the external C/C++ system
+libraries remain separate dependencies even after a Rust source migration.
+
+See [RUST.md](RUST.md) for architecture, development commands and next steps, and
+[BUILD.md](BUILD.md) for the supported distributions and library packages.

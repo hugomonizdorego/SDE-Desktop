@@ -361,6 +361,9 @@ std::string lookup_uncached(const std::string &name, int size) {
       if (!found.empty()) return found;
     }
     for (auto &inh : t->inherits) chain.push_back(trim(inh));
+    // Recent Adwaita releases moved traditional app/category icons into a
+    // separate theme. Preserve the selected theme, then use those fallbacks.
+    if (i + 1 == chain.size() && !seen.count("AdwaitaLegacy")) chain.push_back("AdwaitaLegacy");
     if (i + 1 == chain.size() && !seen.count("hicolor")) chain.push_back("hicolor");
   }
   for (auto &base : data_dirs()) {
@@ -394,7 +397,7 @@ void IconLoader::set_theme(const std::string &theme) {
   if (chosen.empty() || chosen == "auto") {
     chosen = "hicolor";
     auto installed = installed_themes();
-    for (const char *pref : {"Eduka-Icons-Light", "Papirus", "Yaru", "elementary-xfce",
+    for (const char *pref : {"Papirus", "Eduka-Icons-Light", "Yaru", "elementary-xfce",
                              "Adwaita", "breeze", "Tango"}) {
       if (std::find(installed.begin(), installed.end(), pref) != installed.end()) {
         chosen = pref;

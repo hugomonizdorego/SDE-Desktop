@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Niny
+GenericName=Text Editor
+Comment=Text Editor for SDE, based on pluma
+Exec=niny %U
+TryExec=niny
+Icon=accessories-text-editor
+Terminal=false
+Categories=Utility;TextEditor;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=Niny
+X-SDE-Upstream=https://github.com/mate-desktop/pluma
+MimeType=text/plain;text/x-log;text/x-shellscript;

@@ -38,6 +38,7 @@
 #include "spawn.h"
 #include "util.h"
 #include "wm.h"
+#include "integration.h"
 
 using namespace sde;
 
@@ -186,8 +187,11 @@ void show_rescue(const std::string &problem) {
   std::string text = std::string(_("Selviana Desktop Environment could not start correctly.")) +
                      "\n\n" + problem + "\n\n" +
                      format(_("Details are in %s."), log_path().c_str()) + "\n" +
-                     _("Run \"sde-session --check\" in a terminal to find missing packages,\n"
-                       "then install them with: sudo apt install --fix-broken");
+                     (problem.find("killed by signal") != std::string::npos
+                      ? _("Run \"sde-session --check\" for a component report.\n"
+                          "Keep the session log when reporting this crash.")
+                      : _("Run \"sde-session --check\" in a terminal to find missing packages,\n"
+                          "then install them with: sudo apt install --fix-broken"));
   std::string buttons = std::string(_("Open Terminal")) + ":10," + _("Log Out") + ":11," +
                         _("Continue") + ":12";
   log("showing the rescue dialog: %s", problem.c_str());
@@ -286,24 +290,10 @@ std::string find_polkit_agent() {
 }
 
 void run_autostart() {
-  // User entries override system entries with the same file name.
-  std::map<std::string, std::string> entries;
-  std::vector<std::string> dirs{config_home()};
-  for (auto &d : config_dirs()) dirs.push_back(d);
-  for (auto &d : dirs)
-    for (auto &f : list_dir(d + "/autostart"))
-      if (ends_with(f, ".desktop") && !entries.count(f)) entries[f] = d + "/autostart/" + f;
-  for (auto &kv : entries) {
-    DesktopEntry e;
-    if (!e.load(kv.second, kv.first) || e.type != "Application" || e.exec.empty()) continue;
-    if (!e.visible_in("SDE")) continue;
-    // Polkit agents and notification daemons are started by SDE itself.
-    std::string exec = lower(e.exec);
-    if (exec.find("polkit") != std::string::npos) continue;
-    if (exec.find("notify-osd") != std::string::npos || exec.find("notification-daemon") != std::string::npos)
-      continue;
-    if (launch_entry(e)) log("autostart: %s", kv.first.c_str());
-  }
+  // Spawn once. Never restart this helper: retrying could start applications
+  // twice. Its children are adopted/reaped by this session's subreaper.
+  if (start_child({"sde-autostart"}) <= 0)
+    log("cannot start sde-autostart; run sde-session --check");
 }
 
 int request_logout() {
@@ -367,12 +357,13 @@ int run_check() {
   printf("\n%s\n", _("Programs:"));
   Config cfg;
   cfg.load();
-  std::string wm = trim(cfg.get("session", "window_manager", "openbox"));
+  std::string wm = trim(cfg.get("session", "window_manager", "sde-wm"));
   std::vector<std::vector<std::string>> programs = {
-      {"sde-panel", "--version"},   {"sde-desktop", "--version"}, {"sde-notifyd", "--version"},
-      {"sde-settings", "--version"}, {"sde-run", "--version"},    {"sde-logout", "--version"},
+      {"sde-panel", "--version"},     {"sde-desktop", "--version"}, {"sde-notifyd", "--version"},
+      {"sde-settings", "--version"},  {"sde-run", "--version"},     {"sde-logout", "--version"},
+      {"sde-compositor", "--version"}, {"sde-autostart", "--version"}, {"sde-suite", "--check"},     {"sde-update", "--version"},
   };
-  if (wm.empty() || wm == "openbox") programs.insert(programs.begin(), {"openbox", "--version"});
+  if (wm.empty() || wm == "sde-wm" || wm == "openbox") programs.insert(programs.begin(), {"sde-wm", "--version"});
   else programs.insert(programs.begin(), {split_command(wm)[0], "--version"});
   for (auto &p : programs) {
     std::string out;
@@ -484,6 +475,9 @@ int main(int argc, char **argv) {
   Config cfg;
   cfg.load();
   sync_openbox(cfg);
+  sync_gtk_settings(cfg);
+  migrate_legacy_suite_shortcuts();
+  XSelectInput(g_display, DefaultRootWindow(g_display), PropertyChangeMask);
   log("starting Selviana Desktop Environment %s (DISPLAY=%s, D-Bus %s)", SDE_VERSION,
       env("DISPLAY").c_str(), env("DBUS_SESSION_BUS_ADDRESS").empty() ? "missing" : "ok");
 
@@ -511,6 +505,19 @@ int main(int argc, char **argv) {
     g_components.push_back(c);
     start_component(g_components.back());
   }
+  if (cfg.get("compositor", "mode", "auto") != "off") {
+    std::string conf = config_home() + "/sde/compositor.conf";
+    if (!file_exists(conf)) conf = std::string(SDE_DATADIR) + "/compositor/sde.conf";
+    Component compositor = make_component("SDE compositor", {"sde-compositor", "--config", conf}, false);
+    compositor.max_restarts = 1;
+    g_components.push_back(compositor);
+    start_component(g_components.back());
+  }
+  std::string selection = "_XSETTINGS_S" + std::to_string(DefaultScreen(g_display));
+  if (XGetSelectionOwner(g_display, XInternAtom(g_display, selection.c_str(), False)) == None) {
+    g_components.push_back(make_component("GTK settings", {"xsettingsd", "--config", config_home() + "/sde/xsettingsd.conf"}, false));
+    start_component(g_components.back());
+  }
   run_autostart();
 
   bool running = true;
@@ -522,6 +529,11 @@ int main(int argc, char **argv) {
       while (XPending(g_display)) {
         XEvent ev;
         XNextEvent(g_display, &ev);
+        if (ev.type == PropertyNotify && ev.xproperty.atom == XInternAtom(g_display, "_SDE_CONFIG_SERIAL", False)) {
+          cfg.load(); sync_gtk_settings(cfg);
+          for (auto &c : g_components)
+            if (c.name == "GTK settings" && c.pid > 0) kill(c.pid, SIGHUP);
+        }
       }
     }
     if (fds[0].revents & POLLIN) {

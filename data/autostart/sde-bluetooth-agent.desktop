@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Bluetooth Agent
+Comment=Bluetooth pairing confirmations and device authentication
+Exec=blueman-applet
+TryExec=blueman-applet
+OnlyShowIn=SDE;
+NoDisplay=true

@@ -1,0 +1,16 @@
+{
+  "niny": "1.0.0~alpha3",
+  "xanara": "1.0.0~alpha3",
+  "taca": "1.0.0~alpha3",
+  "sde-view": "1.0.0~alpha3",
+  "sde-system-monitor": "1.0.0~alpha3",
+  "sde-power-manager": "1.0.0~alpha3",
+  "sde-screensaver": "1.0.0~alpha3",
+  "calculator": "1.0.0~alpha3",
+  "sde-wm": "1.0.0~alpha2",
+  "sde-compositor": "1.0.0~alpha2",
+  "sde-update": "1.0.0~alpha3",
+  "liria": "0.1.0~alpha12",
+  "sde-display-settings": "1.0.0~alpha3",
+  "gallery": "1.0.0~alpha2"
+}

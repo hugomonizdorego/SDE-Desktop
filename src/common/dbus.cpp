@@ -233,18 +233,21 @@ Writer &Writer::variant_path(const std::string &v) {
 
 namespace {
 
+// libdbus can remove another watch while handling the first one. Snapshots
+// retain registration state, never the lifetime of a removed DBusWatch.
+struct WatchState { DBusWatch *watch; };
 struct FdEntry {
-  std::vector<DBusWatch *> watches;
+  std::vector<std::shared_ptr<WatchState>> watches;
 };
 std::map<int, FdEntry> g_fds;
 
 void on_fd(int fd, void *) {
   auto it = g_fds.find(fd);
   if (it == g_fds.end()) return;
-  // Copy: handling a watch can add or remove watches.
   auto watches = it->second.watches;
-  for (DBusWatch *w : watches) {
-    if (!dbus_watch_get_enabled(w)) continue;
+  for (const auto &state : watches) {
+    DBusWatch *w = state->watch;
+    if (!w || !dbus_watch_get_enabled(w)) continue;
     unsigned flags = dbus_watch_get_flags(w);
     dbus_watch_handle(w, flags & (DBUS_WATCH_READABLE | DBUS_WATCH_WRITABLE));
   }
@@ -254,8 +257,9 @@ void update_fd(int fd) {
   auto it = g_fds.find(fd);
   int events = 0;
   if (it != g_fds.end()) {
-    for (DBusWatch *w : it->second.watches) {
-      if (!dbus_watch_get_enabled(w)) continue;
+    for (const auto &state : it->second.watches) {
+      DBusWatch *w = state->watch;
+      if (!w || !dbus_watch_get_enabled(w)) continue;
       unsigned flags = dbus_watch_get_flags(w);
       if (flags & DBUS_WATCH_READABLE) events |= FL_READ;
       if (flags & DBUS_WATCH_WRITABLE) events |= FL_WRITE;
@@ -267,7 +271,7 @@ void update_fd(int fd) {
 
 dbus_bool_t add_watch(DBusWatch *w, void *) {
   int fd = dbus_watch_get_unix_fd(w);
-  g_fds[fd].watches.push_back(w);
+  g_fds[fd].watches.push_back(std::make_shared<WatchState>(WatchState{w}));
   update_fd(fd);
   return TRUE;
 }
@@ -277,27 +281,46 @@ void remove_watch(DBusWatch *w, void *) {
   auto it = g_fds.find(fd);
   if (it == g_fds.end()) return;
   auto &v = it->second.watches;
-  v.erase(std::remove(v.begin(), v.end(), w), v.end());
+  for (auto &state : v)
+    if (state->watch == w) state->watch = nullptr;
+  v.erase(std::remove_if(v.begin(), v.end(), [](const auto &state) { return !state->watch; }), v.end());
   if (v.empty()) g_fds.erase(it);
   update_fd(fd);
 }
 
 void toggle_watch(DBusWatch *w, void *) { update_fd(dbus_watch_get_unix_fd(w)); }
 
+struct TimeoutState { DBusTimeout *timeout; };
+std::map<DBusTimeout *, std::shared_ptr<TimeoutState>> g_timeouts;
+
 void on_timeout(void *data) {
-  auto *t = static_cast<DBusTimeout *>(data);
-  dbus_timeout_handle(t);
-  if (dbus_timeout_get_enabled(t))
-    Fl::repeat_timeout(dbus_timeout_get_interval(t) / 1000.0, on_timeout, t);
+  auto *raw = static_cast<TimeoutState *>(data);
+  auto it = g_timeouts.find(raw->timeout);
+  if (it == g_timeouts.end() || it->second.get() != raw) return;
+  auto state = it->second;
+  dbus_timeout_handle(state->timeout);
+  // Handling a pending-call timeout can remove/free it synchronously. A
+  // remove/toggle invalidates this registration before the DBus object dies.
+  DBusTimeout *t = state->timeout;
+  if (t && dbus_timeout_get_enabled(t))
+    Fl::repeat_timeout(dbus_timeout_get_interval(t) / 1000.0, on_timeout, state.get());
 }
 
 dbus_bool_t add_timeout(DBusTimeout *t, void *) {
+  auto state = std::make_shared<TimeoutState>(TimeoutState{t});
+  g_timeouts[t] = state;
   if (dbus_timeout_get_enabled(t))
-    Fl::add_timeout(dbus_timeout_get_interval(t) / 1000.0, on_timeout, t);
+    Fl::add_timeout(dbus_timeout_get_interval(t) / 1000.0, on_timeout, state.get());
   return TRUE;
 }
 
-void remove_timeout(DBusTimeout *t, void *) { Fl::remove_timeout(on_timeout, t); }
+void remove_timeout(DBusTimeout *t, void *) {
+  auto it = g_timeouts.find(t);
+  if (it == g_timeouts.end()) return;
+  Fl::remove_timeout(on_timeout, it->second.get());
+  it->second->timeout = nullptr;
+  g_timeouts.erase(it);
+}
 
 void toggle_timeout(DBusTimeout *t, void *d) {
   remove_timeout(t, d);

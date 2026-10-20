@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Update
+GenericName=System Updates
+Comment=System Updates for SDE, based on mintupdate
+Exec=sde-update
+TryExec=sde-update
+Icon=system-software-update
+Terminal=false
+Categories=System;Settings;PackageManager;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=sde-update
+X-SDE-Upstream=https://github.com/linuxmint/mintupdate

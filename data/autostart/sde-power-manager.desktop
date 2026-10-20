@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Power Manager
+Exec=sde-power-manager
+TryExec=sde-power-manager
+OnlyShowIn=SDE;
+NoDisplay=true

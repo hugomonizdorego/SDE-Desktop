@@ -16,6 +16,11 @@ export XDG_MENU_PREFIX="${XDG_MENU_PREFIX:-}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 mkdir -p "$XDG_CONFIG_HOME/sde" "$XDG_DATA_HOME"
 
+# Create standard Desktop/Documents/Downloads folders on first login.
+if command -v xdg-user-dirs-update >/dev/null 2>&1; then
+    xdg-user-dirs-update
+fi
+
 # Load X resources if the user has any.
 if [ -r "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
     xrdb -merge "$HOME/.Xresources"

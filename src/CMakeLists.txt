@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 add_library(sde-common STATIC
+  display/backend.cpp
+  display/profile.cpp
   common/config.cpp
+  common/integration.cpp
   common/dbus.cpp
   common/desktop_entry.cpp
   common/glyphs.cpp
@@ -10,6 +13,7 @@ add_library(sde-common STATIC
   common/paint.cpp
   common/process.cpp
   common/spawn.cpp
+  common/suite.cpp
   common/theme.cpp
   common/util.cpp
   common/widgets.cpp
@@ -21,7 +25,9 @@ target_include_directories(sde-common PUBLIC
   ${CMAKE_BINARY_DIR}/generated)
 target_compile_options(sde-common PUBLIC ${FLTK_CXXFLAGS})
 target_link_libraries(sde-common PUBLIC
-  ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES})
+  ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
+  sde-rust-config PkgConfig::XRANDR PkgConfig::XINPUT)
+add_dependencies(sde-common sde-rust-build)
 
 # The session manager draws nothing itself, but shares the configuration,
 # theme and window manager helpers with the other programs.
@@ -34,6 +40,7 @@ add_executable(sde-panel
   panel/menu.cpp
   panel/popup.cpp
   panel/quick.cpp
+  panel/controls.cpp
   panel/calendar.cpp
   panel/sni.cpp
   panel/tray.cpp)
@@ -59,5 +66,23 @@ target_link_libraries(sde-logout PRIVATE sde-common)
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)
 
-install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd
+add_executable(sde-update update/main.cpp)
+target_link_libraries(sde-update PRIVATE sde-common)
+
+install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(SDE_BUILD_COMPONENTS)
+  add_subdirectory(calculator)
+endif()
+
+add_executable(sde-display-settings display/main.cpp settings/display.cpp settings/ui.cpp)
+target_include_directories(sde-display-settings PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/settings)
+target_link_libraries(sde-display-settings PRIVATE sde-common)
+install(TARGETS sde-display-settings RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES display/profile.LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/DisplayProfileManager RENAME copyright)
+if(SDE_BUILD_COMPONENTS)
+  install(FILES "${SDE_COMPONENT_SOURCES}/sde-display-settings/LICENSE"
+                "${SDE_COMPONENT_SOURCES}/sde-display-settings/copyright"
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/DisplayProfileManager)
+endif()

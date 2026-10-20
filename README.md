@@ -1,15 +1,16 @@
 # Selviana Desktop Environment (SDE)
 
-**A small, fast and modern desktop environment for Debian and Ubuntu.**
+**A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Version **0.1 Alpha** (`0.1.0~alpha2`) · October 2026 · GPL-3.0-or-later
+Development version **0.1 Alpha 12** (`0.1.0~alpha12`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE 0.1 Alpha with quick settings open](docs/screenshots/03-quick-settings.png)
+![SDE Alpha 12 panel and Action Center](docs/screenshots/alpha12/02-action-center.png)
 
-SDE is written from scratch in **C++17** with **FLTK**, **cairo**, **Xlib** and
-**libdbus**, and uses **Openbox** as its window manager. It is the successor of the
-EDE idea: small and quick. A full session (session manager, panel, desktop,
-notifications and Openbox) uses about **22 MB of private memory**.
+SDE combines a **Rust core** for configuration and XDG autostart with a **C++17**
+interface using **FLTK**, **cairo**, **Xlib** and **libdbus**, and source-built **SDE WM** (Openbox) with **SDE Compositor** (picom). It is the successor of the EDE idea: small and quick. Migration
+to Rust is underway; the panel, desktop and settings interface remain C++.
+The earlier alpha2 session measured about **22 MB of private memory**; alpha3
+and the complete native suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 
 > **Alpha software.** 0.1 is the first series of SDE builds. It is meant for testing
 > and development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
@@ -20,25 +21,73 @@ notifications and Openbox) uses about **22 MB of private memory**.
 | --- | --- |
 | `startsde` | Session entry point used by display managers (`/usr/share/xsessions/sde.desktop`) |
 | `sde-session` | Session manager: starts Openbox, desktop, panel, notifications, polkit agent and XDG autostart; restarts crashed parts; shows a rescue dialog instead of a black screen; `--check` finds missing packages |
-| `sde-panel` | Panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, quick settings, calendar, auto-hide |
+| `sde-autostart` | Native Rust XDG autostart launcher; `--dry-run` explains which entries would start or be skipped |
+| `sde-panel` | Full, floating or short panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, Action Center, calendar, auto-hide |
 | `sde-notifyd` | Desktop notifications (`org.freedesktop.Notifications`) with action buttons and Do Not Disturb |
 | `sde-desktop` | Wallpaper and desktop icons, right-click menu (View, Sort by, Refresh, New, terminal, file manager) and keyboard shortcuts |
-| `sde-settings` | Appearance (light/dark, accent, interface size 100-200 %), panel, desktop, notifications, displays, keyboard & mouse, about |
+| `sde-settings` | Overview with settings cards; grouped Personalization/System navigation; appearance, panel previews, Action Center, desktop, notifications, displays, keyboard & mouse, about |
+| `sde-display-settings` | Native monitor arrangement, EDID, modes, rotation, profiles and scale |
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
+| `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
+| `sde-update` | Native update preview; authenticated Debian PackageKit transactions |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
 output device, systemd-logind for screen brightness and the kernel for the battery.
 
-## Screenshots
+## DebION application suite
+
+The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
+**Xanara**, **Taca**, **Gallery**, **Calculator**, **SDE View**, **SDE System Monitor**, **SDE Power Manager**
+and **SDE Update**. Settings → Applications provides short clickable source links
+and complete installed copyright notices. GTK suite launches follow SDE's
+light/dark preference, with an option to keep the system theme.
+
+Alpha6 builds the GTK applications from pinned source as native SDE forks.
+`niny`, `liria`, `xanara`, `taca` and the other suite executables are included in
+one `sde` package with their resources and preserved copyrights. The original
+MATE application packages are not installed. Shared GTK/MATE libraries remain
+normal dependencies. SDE Update has a native interface, an attributed Mint Update
+model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
+and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
+
+`sudo apt install sde-desktop` is the single entry point when the SDE packages
+are available in the DebION repository. The metapackage installs the session,
+suite, Xorg, login, network, sound and media services. No DebION repository is
+created by this project. The full profile uses the signed official Mozilla source for Firefox release.
+See [DebION packages and default applications](docs/DEBION.md) and [Alpha 12 panel fixes and installation](docs/ALPHA12.md).
+
+![Native Niny editor in SDE](docs/screenshots/alpha7/05-native-niny.png)
+
+## Eduka-inspired interface
+
+Alpha4 adapts selected design patterns from [Eduka-Desktop](https://github.com/hugomonizdorego/Eduka-Desktop):
+three panel shapes, a grouped status area, a clock card and quick-control grid in
+the Action Center, and a categorized settings center. The panel clock and Super+A
+open the Action Center; Super+C opens the calendar directly. See [the design
+notes](docs/EDUKA-DESIGN.md) for the source reference, screenshots and settings.
+
+## Alpha4 screenshots
+
+| Settings overview | Panel styles |
+| --- | --- |
+| ![Settings overview](docs/screenshots/eduka/02-settings-overview.png) | ![Panel styles](docs/screenshots/eduka/03-settings-panel.png) |
+
+![Short panel and analog clock in dark mode](docs/screenshots/eduka/05-action-center-dark.png)
+
+Captured from the native programs on a virtual X11 display. Wi-Fi names and
+sound output/volume are explicit test fixtures. No real hardware connection is
+implied. `tools/ui-smoke.py` reproduces these views and exercises the controls.
+
+## Earlier alpha2 screenshots
 
 | | |
 | --- | --- |
 | ![Desktop](docs/screenshots/01-desktop-light.png) | ![Application menu](docs/screenshots/02-app-menu.png) |
 | ![Calendar](docs/screenshots/04-calendar.png) | ![Notifications](docs/screenshots/05-notifications.png) |
 | ![Desktop menu](docs/screenshots/06-desktop-menu.png) | ![Appearance settings](docs/screenshots/07-settings-appearance.png) |
-| ![Display settings](docs/screenshots/08-settings-display.png) | ![Keyboard and mouse](docs/screenshots/09-settings-input.png) |
+| ![Display settings](docs/screenshots/alpha8/03-display-settings.png) | ![Keyboard and mouse](docs/screenshots/09-settings-input.png) |
 | ![Dark theme](docs/screenshots/12-desktop-dark.png) | ![150 % interface size](docs/screenshots/13-scale-150.png) |
 
 Taken with `tools/screenshot.sh` on Ubuntu 24.04 with the Eduka-Icons theme. The Wi-Fi
@@ -47,21 +96,26 @@ Wi-Fi).
 
 ## Install
 
-Supported: **Debian 12 (bookworm), Debian 13 (trixie), Ubuntu 22.04 and 24.04** (amd64).
+Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
 
-Download the package for your distribution from the
-[GitHub releases](https://github.com/hugomonizdorego/SDE-Desktop/releases), check it
-and install it with `apt`, which also installs the dependencies:
+Download the matching Alpha 12 packages, installer and sources from the
+[Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39252605381/artifacts/12187441719)
+(`sde-debian-testing` artifact). See [Alpha 12 validation](docs/ALPHA12.md).
+Extract the ZIP, verify checksums, then install:
 
 ```sh
-sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./sde_0.1.0-alpha2_ubuntu24.04_amd64.deb
+sha256sum -c SHA256SUMS.sha256
+sudo sh ./install-debion.sh .
 ```
+
+The installer bootstraps the signed Mozilla repository before resolving Firefox
+release and the complete desktop dependencies. See [the DebION profile](docs/DEBION.md).
 
 Log out, choose **SDE** at the login screen and log in. From a text console you can
 use `startx /usr/bin/startsde`.
 
-`release/` in this repository holds the Ubuntu 24.04 build of the current version.
+`release/` holds the older alpha2 Ubuntu 24.04 build. Build from source below to
+test Alpha 12; current `.deb` packages and matching sources are available in the latest successful GitHub Actions `sde-debian-testing` artifact.
 
 > **Do not install with `dpkg -i` alone** (for example in a Cubic chroot) without
 > running `sudo apt install --fix-broken` afterwards: without its libraries the panel
@@ -71,13 +125,17 @@ use `startx /usr/bin/startsde`.
 ## Build from source
 
 ```sh
-sudo tools/install-deps.sh      # compiler, CMake, FLTK, cairo, librsvg, Xlib, libdbus, gettext, debhelper
-tools/build-deb.sh              # writes dist/sde_0.1.0~alpha2_<arch>.deb
+sudo sh tools/install-deps.sh
+sudo sh tools/install-native-deps.sh # native application build libraries
+tools/build-deb.sh              # writes sde and sde-desktop packages to dist/
 ```
 
 Or a plain CMake build for development:
 
 ```sh
+python3 tools/prepare-native-suite.py
+python3 tools/prepare-components.py
+python3 tools/prepare-gallery.py
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build -j"$(nproc)"
 ctest --test-dir build          # unit tests, including WCAG contrast checks
@@ -92,7 +150,7 @@ releases.
 | Keys | Action |
 | --- | --- |
 | Super, Alt+F1 | Application menu |
-| Super+A | Quick settings |
+| Super+A | Action Center |
 | Super+C | Calendar |
 | Alt+F2 | Run Command |
 | Ctrl+Alt+T | Terminal |
@@ -117,7 +175,10 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 
 ## Documentation
 
+- [DebION suite, installation and source workspace](docs/SUITE.md)
+- [Copyright and source credits](docs/THIRD-PARTY.md)
 - [Programming language choice](docs/LANGUAGE.md)
+- [Rust architecture, tests and migration plan](docs/RUST.md)
 - [Building, dependencies and releases](docs/BUILD.md)
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Roadmap from 0.1 Alpha to 1.0](docs/ROADMAP.md)
@@ -131,4 +192,90 @@ not build or ship EDE code.
 ## License
 
 SDE is free software under the GNU General Public License, version 3 or later.
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). Bundled application forks retain their individual upstream
+licenses and historical copyright notices; see [source credits](docs/THIRD-PARTY.md).
+
+## Alpha7 patch
+
+Native GTK4 Calculator, redesigned Start Menu, categorized Suite desktop
+launchers, source-built WM/compositor, isolated `sudo liria`, and independent
+application build versions are described in the [alpha8 notes](docs/ALPHA8.md).
+The GTK3 suite remains supported alongside GTK4. This is still development
+software; the EDE-inspired FLTK shell and Rust core retain their structure.
+
+![Native GTK4 Calculator](docs/screenshots/alpha7/02-calculator.png)
+
+[Previous alpha8 screenshot gallery](docs/screenshots/alpha8/README.md) · [Tested Debian packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39136115276)
+
+
+Alpha8 places native and newly installed applications in standard XDG menu
+categories (Calculator/Niny/Taca in Accessories), with live menu updates.
+[Display Settings](docs/ALPHA8.md) adds the MIT
+[DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile
+model port, native RandR monitor settings, safe preview/rollback and shared
+100/125/150/200% interface scale. Physical GPU/dock testing is still needed.
+
+## Alpha 9 panel patch
+
+[Current screenshot gallery](docs/screenshots/alpha9/README.md) ·
+[Latest Debian build and packages](https://github.com/hugomonizdorego/SDE-Desktop/actions/workflows/build.yml?query=branch%3Acodex%2Falpha10-gallery)
+
+[Alpha 9](docs/ALPHA9.md) adds reference-style panel indicators, a corner-anchored
+Action Center, movable SNI/XEmbed tray, native Bluetooth controls, Wi-Fi/LAN
+details, per-application and microphone volume, and MPRIS player controls.
+Settings keeps SDE's own configuration and two-column layout. The patch is
+still alpha and physical hardware review is required.
+
+
+### Alpha 10 — Gallery
+
+Native **Gallery** is built from [gthumb](https://gitlab.gnome.org/GNOME/gthumb) 4.0
+(GTK4/libadwaita/Vala), with SDE identity, theme, wallpaper integration and a
+Graphics menu entry. All graphical native applications include the SDE developer's
+name and source links in About, while retaining original authors and licenses.
+See [Alpha 10 build notes](docs/ALPHA10.md) for versions, dependencies and validation.
+Gallery is included in the same SDE Debian package; the original gthumb package
+is not required. This remains a development alpha for DebION / Debian testing.
+
+[Gallery Alpha 10 screenshots](docs/screenshots/alpha10/README.md) · [Debian testing build](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39214607984)
+
+![Gallery native About](docs/screenshots/alpha10/03-gallery-about.png)
+
+### Alpha 11 — DebION application profile
+
+All requested complementary applications are dependencies of `sde-desktop`.
+Papirus is the default icon theme; Firefox release, Thunderbird, Celluloid,
+Rhythmbox, Transmission, GNOME Terminal and GDebi provide their respective defaults.
+Native About development credits read **DebION Dev-team**.
+
+Use the included `install-debion.sh` for the three matching packages and Mozilla
+repository bootstrap. See [DebION profile](docs/DEBION.md).
+
+Both final Alpha 11 CI builds passed, including actual installation of the full
+DebION profile, menu/MIME/terminal defaults, native About links and GUI checks.
+[Download Alpha 11](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39224810528/artifacts/12174101625)
+· [Validation](docs/ALPHA11.md#verified-build--19-october-2026)
+· [Alpha 11 screenshots](docs/screenshots/alpha11/README.md).
+
+![DebION accessories and Papirus defaults](docs/screenshots/alpha11/01-accessories.png)
+![Gallery development credits](docs/screenshots/alpha11/02-gallery-about.png)
+
+### Alpha 12 — panel crash and indicators
+
+The clock is the panel entry to Action Center. Separate Action Center buttons
+and the permanent tray arrow are removed. Known system applet icons are hidden
+when their function is represented by a native indicator, while application
+icons remain available. Tray sizes and mapped state are enforced. A reproducible
+crash when an applet disappears during its menu is fixed, along with D-Bus
+registration lifetimes. See [Alpha 12](docs/ALPHA12.md).
+
+All 12 full-suite CTest checks, complete DebION profile installation, Rust checks
+and GUI checks at two sizes passed. The separate ASan/UBSan job passed its nine
+core tests and both extended panel checks, including IME replacement and provider
+exit during a menu.
+
+[Download Alpha 12](https://github.com/hugomonizdorego/SDE-Desktop/actions/runs/39252605381/artifacts/12187441719)
+· [Validation](docs/ALPHA12.md)
+· [Current screenshots](docs/screenshots/alpha12/README.md).
+
+![Panel without duplicate Action Center buttons](docs/screenshots/alpha12/01-panel.png)

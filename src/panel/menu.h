@@ -16,6 +16,7 @@
 class AppMenu : public PanelPopup {
  public:
   AppMenu();
+  ~AppMenu() override;
 
   void draw() override;
   int handle(int event) override;
@@ -24,16 +25,19 @@ class AppMenu : public PanelPopup {
   struct Row {
     const sde::DesktopEntry *entry;
   };
-  enum Zone { Z_NONE, Z_CATEGORY, Z_APP, Z_SETTINGS, Z_POWER };
+  enum Zone { Z_NONE, Z_CATEGORY, Z_APP, Z_FILES, Z_SETTINGS, Z_POWER };
 
   void prepare() override;
   void reload();
+  static void poll_applications(void *);
   void layout();
   void item_menu(int row);
   void filter();
   void launch(int row);
   void ensure_visible(int row);
   Zone zone_at(int x, int y, int &index) const;
+  bool grid_mode() const;
+  int columns() const;
   int list_rows_visible() const;
   static void search_changed(Fl_Widget *, void *data);
 
@@ -43,6 +47,7 @@ class AppMenu : public PanelPopup {
   std::vector<std::string> categories_;  // "All applications" + non-empty ones
   std::vector<Row> rows_;
   int category_ = 0;
+  int category_scroll_ = 0;
   int selected_ = 0;
   int scroll_ = 0;
   int hover_zone_ = Z_NONE, hover_index_ = -1;

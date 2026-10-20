@@ -23,34 +23,38 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - { image: "debian:12", name: debian12, suffix: deb12 }
-          - { image: "debian:13", name: debian13, suffix: deb13 }
-          - { image: "ubuntu:22.04", name: ubuntu22.04, suffix: ubuntu22.04 }
-          - { image: "ubuntu:24.04", name: ubuntu24.04, suffix: ubuntu24.04 }
+          - { image: "debian:testing", name: debian-testing, suffix: debtesting }
     container: ${{ matrix.image }}
     steps:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
       - uses: actions/checkout@v4
       - name: Install build dependencies
-        run: sh tools/install-deps.sh
+        run: |
+          sh tools/install-deps.sh
+          sh tools/install-native-deps.sh
       - name: Build package
         run: sh tools/build-deb.sh --suffix ${{ matrix.suffix }} dist
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout; do
+          for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
             "$p" --version
           done
+          python3 tools/test-suite.py
+          python3 tools/check-installed-suite.py
+          apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb
       - name: Name the package after the distribution
         run: |
           version=$(cat VERSION | tr '~' '-')
           mkdir -p out
           cp dist/sde_*_amd64.deb "out/sde_${version}_${{ matrix.name }}_amd64.deb"
+          cp dist/sde-desktop_*_all.deb "out/sde-desktop_${version}_${{ matrix.name }}_all.deb"
+          cp dist/*sources*.tar.xz out/
       - uses: actions/upload-artifact@v4
         with:
           name: deb-${{ matrix.name }}
-          path: out/*.deb
+          path: out/*
 
   release:
     needs: build
@@ -65,7 +69,7 @@ jobs:
       - name: Checksums and release notes
         run: |
           cd artifacts
-          sha256sum *.deb > SHA256SUMS
+          sha256sum *.deb *.tar.xz > SHA256SUMS
           cat SHA256SUMS
           cd ..
           # The newest section of CHANGELOG.md.
@@ -78,11 +82,11 @@ jobs:
             echo "| --- | --- |"
             for f in artifacts/*.deb; do
               b=$(basename "$f")
-              d=$(echo "$b" | sed -E 's/^sde_[^_]+_([^_]+)_amd64\.deb$/\1/')
+              d=$(echo "$b" | sed -E 's/^sde(-desktop)?_[^_]+_([^_]+)_(amd64|all)\.deb$/\2/')
               echo "| $d | \`$b\` |"
             done
             echo
-            echo "Install with \`sudo apt install ./<package>.deb\` and choose **SDE** at the login screen."
+            echo "Install the matching pair with \`sudo apt install ./sde_<version>_<distro>_amd64.deb ./sde-desktop_<version>_<distro>_all.deb\` and choose **SDE** at the login screen."
             echo "Verify downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`."
           } >> notes.md
       - name: Publish
@@ -90,6 +94,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          gh release create "$TAG" artifacts/*.deb artifacts/SHA256SUMS \
+          gh release create "$TAG" artifacts/*.deb artifacts/*.tar.xz artifacts/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "SDE $TAG" --notes-file notes.md --prerelease
