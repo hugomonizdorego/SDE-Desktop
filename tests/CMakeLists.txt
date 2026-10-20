@@ -51,3 +51,7 @@ endif()
 add_executable(sde-xsettings-tests test_xsettings.cpp)
 target_link_libraries(sde-xsettings-tests PRIVATE sde-xsettings-model)
 add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)
+
+add_executable(sde-gallery-tests test_gallery.cpp)
+target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
+add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
