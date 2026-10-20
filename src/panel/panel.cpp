@@ -423,7 +423,7 @@ void Panel::outside_pointer_press(unsigned long time) {
   int rx, ry, x, y;
   unsigned buttons;
   if (!XQueryPointer(fl_display, root, &r, &child, &rx, &ry, &x, &y, &buttons)) return;
-  if (rx >= q->x() && rx < q->x() + q->w() && ry >= q->y() && ry < q->y() + q->h()) return;
+  if (q->contains_root(rx, ry)) return;
   closed_key_ = popup_key(q);
   closed_at_ = steady_ms();
   q->close();

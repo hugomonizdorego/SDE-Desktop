@@ -5,6 +5,7 @@
 #include <FL/x.H>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -94,7 +95,19 @@ void PanelPopup::reposition() {
   xx = std::max(mx + margin, std::min(xx, mx + mw - ww - margin));
   int yy = panel->theme().panel_top ? panel->y() + panel->h() + gap : panel->y() - hh - gap;
   yy = std::max(my, std::min(yy, my + mh - hh));
+  if (shown() && (xx != x() || yy != y() || ww != w() || hh != h())) {
+    // A click inside the old rectangle (e.g. on "Show less", which shrinks
+    // the Action Center) must not count as a click outside the new one.
+    previous_x_ = x(), previous_y_ = y(), previous_w_ = w(), previous_h_ = h();
+    previous_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
+  }
   resize(xx, yy, ww, hh);
+}
+
+bool PanelPopup::contains_root(int rx, int ry) const {
+  if (rx >= x() && rx < x() + w() && ry >= y() && ry < y() + h()) return true;
+  return std::chrono::steady_clock::now() < previous_until_ && rx >= previous_x_ &&
+         rx < previous_x_ + previous_w_ && ry >= previous_y_ && ry < previous_y_ + previous_h_;
 }
 
 void PanelPopup::close() {

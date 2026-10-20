@@ -4,12 +4,17 @@
 // closing on Escape or on a click outside, and keyboard focus.
 #pragma once
 
+#include <chrono>
+
 #include <string>
 
 #include "buffered_window.h"
 
 class PanelPopup : public sde::BufferedWindow {
  public:
+  // True when root coordinates are inside the popup, or inside where it was
+  // just before its last resize (for clicks that arrive late).
+  bool contains_root(int rx, int ry) const;
   explicit PanelPopup(const char *title);
 
   // Opens the popup next to the panel. |anchor_x| is a root x coordinate;
@@ -33,6 +38,8 @@ class PanelPopup : public sde::BufferedWindow {
   virtual void closed() {}
 
  private:
+  int previous_x_ = 0, previous_y_ = 0, previous_w_ = 0, previous_h_ = 0;
+  std::chrono::steady_clock::time_point previous_until_{};
   void open(int anchor_x, int align);
   static void refocus(void *data);
   bool closing_ = false;
