@@ -44,3 +44,7 @@ if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-dbus-timeouts COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-dbus-timeout-tests>)
   set_tests_properties(sde-dbus-timeouts PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif()
+
+add_executable(sde-xsettings-tests test_xsettings.cpp)
+target_link_libraries(sde-xsettings-tests PRIVATE sde-xsettings-model)
+add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)

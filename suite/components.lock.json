@@ -28,27 +28,6 @@
       "url": "https://github.com/zac15987/DisplayProfileManager",
       "commit": "c873b66ba54b6efb111620e736878c21eda22f51",
       "license": "MIT"
-    },
-    {
-      "id": "sde-toolkit",
-      "upstream": "fltk",
-      "url": "https://github.com/fltk/fltk",
-      "commit": "702172a951a2bb4f25afe31008ef3fcbb5bfb92f",
-      "license": "LGPL-2.0-only WITH FLTK-exception"
-    },
-    {
-      "id": "sde-xsettingsd",
-      "upstream": "xsettingsd",
-      "url": "https://github.com/derat/xsettingsd",
-      "commit": "b9908f92b2fedd4e2f345c1e36879750504b0f06",
-      "license": "BSD-3-Clause"
-    },
-    {
-      "id": "sde-polkit-agent",
-      "upstream": "mate-polkit",
-      "url": "https://github.com/mate-desktop/mate-polkit",
-      "commit": "c2df8de7c7b144189fc895639fc21261cf4c5d7d",
-      "license": "LGPL-2.0-or-later"
     }
   ]
 }

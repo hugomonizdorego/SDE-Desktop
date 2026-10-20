@@ -29,18 +29,17 @@ pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 pkg_check_modules(XRANDR REQUIRED IMPORTED_TARGET xrandr)
 pkg_check_modules(XINPUT REQUIRED IMPORTED_TARGET xi)
 
-# The SDE toolkit: FLTK 1.3.11 built from the pinned source in
-# vendor/components/sde-toolkit (tools/prepare-components.py) and linked
-# statically, so SDE does not depend on the distribution's FLTK packages.
-# -DSDE_BUNDLED_FLTK=OFF uses the system FLTK (fltk-config) instead.
-option(SDE_BUNDLED_FLTK "Build and statically link the SDE toolkit (FLTK)" ON)
-set(SDE_TOOLKIT_SOURCE "${PROJECT_SOURCE_DIR}/vendor/components/sde-toolkit")
+# SDE-FLTK: the DebION Dev-Team fork of FLTK 1.3.11 in sde-fltk/, built here
+# and linked statically, so SDE does not depend on the distribution's FLTK
+# packages. -DSDE_BUNDLED_FLTK=OFF uses the system FLTK (fltk-config).
+option(SDE_BUNDLED_FLTK "Build and statically link SDE-FLTK" ON)
+set(SDE_TOOLKIT_SOURCE "${PROJECT_SOURCE_DIR}/sde-fltk")
 if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
-  set(SDE_TOOLKIT_STAGE "${CMAKE_BINARY_DIR}/sde-toolkit/stage")
+  set(SDE_TOOLKIT_STAGE "${CMAKE_BINARY_DIR}/sde-fltk/stage")
   if(NOT EXISTS "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
-    message(STATUS "Building the SDE toolkit (FLTK) from ${SDE_TOOLKIT_SOURCE}")
+    message(STATUS "Building SDE-FLTK from ${SDE_TOOLKIT_SOURCE}")
     execute_process(
-      COMMAND ${CMAKE_COMMAND} -S "${SDE_TOOLKIT_SOURCE}" -B "${CMAKE_BINARY_DIR}/sde-toolkit/build"
+      COMMAND ${CMAKE_COMMAND} -S "${SDE_TOOLKIT_SOURCE}" -B "${CMAKE_BINARY_DIR}/sde-fltk/build"
               -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=${SDE_TOOLKIT_STAGE}"
               -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DOPTION_BUILD_SHARED_LIBS=OFF
               -DFLTK_BUILD_TEST=OFF -DFLTK_BUILD_EXAMPLES=OFF -DOPTION_USE_GL=OFF
@@ -49,22 +48,19 @@ if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
       RESULT_VARIABLE SDE_TOOLKIT_RESULT OUTPUT_QUIET)
     if(SDE_TOOLKIT_RESULT EQUAL 0)
       execute_process(
-        COMMAND ${CMAKE_COMMAND} --build "${CMAKE_BINARY_DIR}/sde-toolkit/build" --target install --parallel 4
+        COMMAND ${CMAKE_COMMAND} --build "${CMAKE_BINARY_DIR}/sde-fltk/build" --target install --parallel 4
         RESULT_VARIABLE SDE_TOOLKIT_RESULT OUTPUT_QUIET)
     endif()
     if(NOT SDE_TOOLKIT_RESULT EQUAL 0)
-      message(FATAL_ERROR "Building the SDE toolkit (FLTK) failed")
+      message(FATAL_ERROR "Building SDE-FLTK failed")
     endif()
   endif()
   set(FLTK_CONFIG "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
   # FLTK's license and notices travel with the statically linked programs.
   install(FILES "${SDE_TOOLKIT_SOURCE}/COPYING" "${SDE_TOOLKIT_SOURCE}/CREDITS"
-          DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/fltk" OPTIONAL)
-  if(EXISTS "${SDE_TOOLKIT_SOURCE}/copyright")
-    install(FILES "${SDE_TOOLKIT_SOURCE}/copyright"
-            DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/fltk")
-  endif()
-  message(STATUS "Using the SDE toolkit (bundled FLTK, static)")
+                "${SDE_TOOLKIT_SOURCE}/README.SDE-FLTK.md" "${SDE_TOOLKIT_SOURCE}/CHANGES.SDE-FLTK"
+          DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/sde/sde-fltk" OPTIONAL)
+  message(STATUS "Using SDE-FLTK (static)")
 else()
   # FLTK 1.3 (Debian 12/13, Ubuntu 22.04/24.04) or 1.4. fltk-config is the most
   # portable way to find it on Debian based systems.

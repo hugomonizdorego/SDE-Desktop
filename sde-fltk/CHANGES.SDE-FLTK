@@ -1,0 +1,7 @@
+SDE-FLTK changes (DebION Dev-Team)
+
+1.3.11-sde1  2026-10-20
+  - Imported FLTK 1.3.11 into the SDE repository as SDE-FLTK.
+  - Removed test/example programs, IDE files, documentation sources and the
+    bundled zlib/libjpeg/libpng (system libraries are used).
+  - FL/sde_fltk.h: SDE_FLTK_VERSION for SDE programs ("About" pages).

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compile the private SDE session components without network: SDE WM
-(Openbox), SDE compositor (picom), sde-xsettingsd (xsettingsd) and
-sde-polkit-agent (mate-polkit). The SDE toolkit (FLTK) is built by CMake at
+"""Compile the forked SDE session components without network: SDE WM
+(Openbox) and SDE compositor (picom). SDE-FLTK is built by CMake at
 configure time, because every SDE program links it."""
 import argparse
 import hashlib
@@ -21,13 +20,13 @@ def main():
     args.sources=args.sources.resolve(); args.build=args.build.resolve(); args.stage=args.stage.resolve()
     args.build.mkdir(parents=True,exist_ok=True)
     root=Path(__file__).resolve().parent.parent
-    for name in ['sde-wm','sde-compositor','sde-xsettingsd','sde-polkit-agent']:
+    for name in ['sde-wm','sde-compositor']:
         src=args.sources/name
         digest=hashlib.sha256(Path(__file__).read_bytes()+str(args.stage).encode()+args.prefix.encode())
         for f in sorted(src.rglob('*')):
             if f.is_file(): digest.update(str(f.relative_to(src)).encode()+f.read_bytes())
         stamp=args.build/(name+'.built')
-        bindir='libexec/sde' if name=='sde-polkit-agent' else 'bin'
+        bindir='bin'
         binary=args.stage/args.prefix.lstrip('/')/bindir/name
         if stamp.exists() and stamp.read_text()==digest.hexdigest() and binary.exists(): continue
         work=args.build/name
@@ -49,15 +48,6 @@ def main():
                  '--disable-session-management','--disable-startup-notification','--enable-imlib2','--disable-librsvg'],obj)
             run(['make','-j4','openbox/openbox'],obj)
             artifact=obj/'openbox/openbox'
-        elif name=='sde-xsettingsd':
-            run(['cmake','-S',str(source),'-B',str(obj),'-DCMAKE_BUILD_TYPE=Release','-DBUILD_TESTING=OFF'],work)
-            run(['cmake','--build',str(obj),'--target','xsettingsd','--parallel','4'],work)
-            artifact=obj/'xsettingsd'
-        elif name=='sde-polkit-agent':
-            run(['meson','setup',str(obj),str(source),'--prefix='+args.prefix,'--buildtype=release',
-                 '--wrap-mode=nodownload','-Daccountsservice=false','-Dappindicator=no'],work)
-            run(['ninja','-C',str(obj),'src/sde-polkit-agent'],work)
-            artifact=obj/'src/sde-polkit-agent'
         else:
             run(['meson','setup',str(obj),str(source),'--prefix='+args.prefix,'--buildtype=release',
                  '--wrap-mode=nodownload','-Dcompton=false','-Dwith_docs=false','-Dunittest=true'],work)
@@ -65,7 +55,7 @@ def main():
             run(['meson','test','-C',str(obj),'--print-errorlogs'],work)
             artifact=obj/'src/sde-compositor'
         binary.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(artifact,binary)
-        upstream={'sde-wm':'openbox','sde-compositor':'picom','sde-xsettingsd':'xsettingsd','sde-polkit-agent':'mate-polkit'}[name]
+        upstream={'sde-wm':'openbox','sde-compositor':'picom'}[name]
         docs=args.stage/args.prefix.lstrip('/')/'share/doc/sde/upstream'/upstream
         docs.mkdir(parents=True,exist_ok=True)
         for f in ['copyright','COPYING','AUTHORS','CONTRIBUTORS']:

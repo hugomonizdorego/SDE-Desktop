@@ -74,7 +74,21 @@ target_link_libraries(sde-notifyd PRIVATE sde-common)
 add_executable(sde-update update/main.cpp)
 target_link_libraries(sde-update PRIVATE sde-common)
 
+# Written from scratch by the DebION Dev-Team: the XSETTINGS manager and the
+# polkit authentication agent of SDE.
+add_library(sde-xsettings-model STATIC xsettingsd/xsettings.cpp)
+target_include_directories(sde-xsettings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xsettingsd)
+add_executable(sde-xsettingsd xsettingsd/main.cpp)
+target_include_directories(sde-xsettingsd PRIVATE ${CMAKE_BINARY_DIR}/generated)
+target_link_libraries(sde-xsettingsd PRIVATE sde-xsettings-model ${X11_LIBRARIES})
+
+pkg_check_modules(POLKIT_AGENT REQUIRED IMPORTED_TARGET polkit-agent-1)
+add_executable(sde-polkit-agent polkit-agent/main.cpp)
+target_link_libraries(sde-polkit-agent PRIVATE sde-common PkgConfig::POLKIT_AGENT)
+install(TARGETS sde-polkit-agent RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
+        sde-xsettingsd
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(SDE_BUILD_COMPONENTS)

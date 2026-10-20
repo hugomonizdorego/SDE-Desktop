@@ -14,3 +14,4 @@ debian/*.debhelper.log
 **/__pycache__/
 debian/sde-desktop/
 debian/sde-desktop.substvars
+.claude/worktrees/

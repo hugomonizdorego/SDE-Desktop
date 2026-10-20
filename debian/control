@@ -185,9 +185,9 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  Select "SDE-Desktop" in your display manager to start it. This is an alpha
  release meant for testing; expect missing features.
  .
- Its own ecosystem is built from pinned sources: the SDE toolkit (FLTK,
- linked statically), SDE WM (Openbox), SDE compositor (picom),
- sde-xsettingsd (xsettingsd) and sde-polkit-agent (mate-polkit).
+ Its own ecosystem: SDE-FLTK (the DebION Dev-Team fork of FLTK, linked
+ statically), sde-xsettingsd and sde-polkit-agent (written from scratch),
+ and source builds of SDE WM (Openbox) and SDE compositor (picom).
  .
  Includes native source-built SDE forks: Niny, Liria, Xanara, Taca,
  Photo (SDE View), SDE System Monitor, SDE Power Manager and SDE Screen Lock.
