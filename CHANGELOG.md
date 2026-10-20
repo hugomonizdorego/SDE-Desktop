@@ -1,3 +1,16 @@
+# Alpha14 patch · 2026-10-20 — Gallery, flyouts, new Menu, Action Center, Update, Liria
+
+- Gallery is back as a new app (sde-gallery) by the DebION Dev-Team.
+- Tray icons open their own flyouts; the Action Center has its own job,
+  with the calendar merged in and compact/expanded modes.
+- New Start Menu: search shows focus and suggestions at once; Favorites
+  tiles, All Programs A–Z, category pages.
+- SDE Update redesigned and extended (history, sources, maintenance,
+  settings, background checks).
+- Liria: Home overview and a new look in every SDE theme.
+- SDE-FLTK fork in-tree; sde-xsettingsd and sde-polkit-agent written from
+  scratch. See docs/ALPHA14.md.
+
 # Alpha13 patch · 2026-10-20 — panel crash fix, new tray, own ecosystem
 
 - Fixed: the panel crashed a few seconds after login ("The panel keeps

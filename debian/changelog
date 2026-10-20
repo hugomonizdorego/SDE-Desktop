@@ -1,3 +1,25 @@
+sde (0.1.0~alpha14) unstable; urgency=medium
+
+  * Gallery is back: sde-gallery, a new photo library written by the DebION
+    Dev-Team (month grid, favorites, folders, viewer, slideshow, thumbnail
+    cache, Edit in Photo, Set as Wallpaper).
+  * Tray icons open their own flyouts (Sound, Network, Bluetooth, Power,
+    Media, Drives, Keyboard, Tray) instead of the Action Center.
+  * Action Center redesign: tiles, sliders, media, calendar merged in, a
+    Notifications card; compact and expanded modes; the clock opens it at
+    the calendar.
+  * Start Menu redesign: working search focus with caret and suggestions,
+    Favorites as large tiles in pages, All Programs A-Z list, category pages,
+    file search.
+  * SDE Update redesign: grouped updates, details and changelogs, progress
+    and cancel, History, Sources, Maintenance, Settings, background checks.
+  * Liria: Home overview (quick access, drives with usage, recent files),
+    one-row command bar, new sidebar sections, styled in every SDE theme.
+  * SDE-FLTK: the DebION Dev-Team fork of FLTK 1.3.11, kept in sde-fltk/.
+  * sde-xsettingsd and sde-polkit-agent written from scratch.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Tue, 20 Oct 2026 22:00:00 +0900
+
 sde (0.1.0~alpha13) unstable; urgency=medium
 
   * Fix the panel crash ("panel keeps stopping", SIGSEGV ~5 s after login):
