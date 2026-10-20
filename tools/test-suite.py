@@ -19,7 +19,8 @@ for name in apps:
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
     if name == 'sde-display-settings':
-        assert 'libXrandr' in dynamic and 'libfltk' in dynamic,(name,dynamic)
+        # The SDE toolkit (FLTK) is linked statically since alpha13.
+        assert 'libXrandr' in dynamic and 'libfltk' not in dynamic and 'libXft' in dynamic,(name,dynamic)
     elif name in ['sde-wm','sde-compositor']:
         assert 'libX11' in dynamic or 'libxcb' in dynamic,(name,dynamic)
     elif name == 'sde-screensaver-command':
