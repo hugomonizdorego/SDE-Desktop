@@ -41,6 +41,7 @@ add_executable(sde-panel
   panel/main.cpp
   panel/panel.cpp
   panel/menu.cpp
+  panel/menu_model.cpp
   panel/popup.cpp
   panel/quick.cpp
   panel/controls.cpp

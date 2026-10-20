@@ -200,8 +200,9 @@ try:
     g = geom(menu)
     assert g["X"] >= 0 and g["Y"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
     shot("00-start-menu")
-    run("xdotool", "mousemove", str(g["X"] + int(90 * args.scale / 100)),
-        str(g["Y"] + int(166 * args.scale / 100)), "click", "1")
+    # First chip of the category strip (Accessories) opens its page.
+    run("xdotool", "mousemove", str(g["X"] + int(60 * args.scale / 100)),
+        str(g["Y"] + int(127 * args.scale / 100)), "click", "1")
     shot("00-accessories")
     run("xdotool", "type", "calculator")
     shot("00-start-search")
