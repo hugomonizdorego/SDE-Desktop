@@ -4,7 +4,8 @@
  * SDE Tools for Liria: everyday actions in the context menus and the
  * toolbar - Open Terminal Here, Copy Path, Open as Administrator, Edit with
  * Niny, Edit in Photo, Set as Wallpaper, Compress, Extract Here, Checksum
- * and New Text Document. Programs are started without a shell.
+ * and New Text Document. Programs are started without a shell. The Home
+ * overview shown above the home folder lives in liria-sde-home.c.
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -18,6 +19,7 @@
 
 #include <libliria-extension/liria-extension-types.h>
 #include <libliria-extension/liria-file-info.h>
+#include <libliria-extension/liria-location-widget-provider.h>
 #include <libliria-extension/liria-menu-provider.h>
 
 #define SDE_TYPE_TOOLS (sde_tools_get_type ())
@@ -449,6 +451,22 @@ menu_provider_iface_init (LiriaMenuProviderIface *iface)
 	iface->get_toolbar_items = get_toolbar_items;
 }
 
+/* ------------------------------------------------------- home overview */
+
+GtkWidget *sde_home_overview_new (const char *uri, GtkWidget *window);
+
+static GtkWidget *
+get_location_widget (LiriaLocationWidgetProvider *provider, const char *uri, GtkWidget *window)
+{
+	return sde_home_overview_new (uri, window);
+}
+
+static void
+location_widget_provider_iface_init (LiriaLocationWidgetProviderIface *iface)
+{
+	iface->get_widget = get_location_widget;
+}
+
 static void
 sde_tools_class_init (SdeToolsClass *klass)
 {
@@ -467,9 +485,14 @@ sde_tools_register_type (GTypeModule *module)
 		sizeof (SdeTools), 0, (GInstanceInitFunc) sde_tools_instance_init, NULL
 	};
 	static const GInterfaceInfo menu_provider = { (GInterfaceInitFunc) menu_provider_iface_init, NULL, NULL };
+	static const GInterfaceInfo location_widget_provider = {
+		(GInterfaceInitFunc) location_widget_provider_iface_init, NULL, NULL
+	};
 
 	sde_tools_type = g_type_module_register_type (module, G_TYPE_OBJECT, "SdeTools", &info, 0);
 	g_type_module_add_interface (module, sde_tools_type, LIRIA_TYPE_MENU_PROVIDER, &menu_provider);
+	g_type_module_add_interface (module, sde_tools_type, LIRIA_TYPE_LOCATION_WIDGET_PROVIDER,
+	                             &location_widget_provider);
 }
 
 /* ------------------------------------------------------- module interface */
