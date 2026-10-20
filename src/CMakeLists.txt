@@ -69,7 +69,30 @@ target_link_libraries(sde-notifyd PRIVATE sde-common)
 add_executable(sde-update update/main.cpp)
 target_link_libraries(sde-update PRIVATE sde-common)
 
+# Gallery: an original SDE photo library. The model and thumbnail cache are a
+# separate library so that the unit tests can use them without a display.
+add_library(sde-gallery-core STATIC gallery/library.cpp gallery/thumbnails.cpp)
+target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
+target_link_libraries(sde-gallery-core PUBLIC sde-common)
+pkg_check_modules(GDKPIXBUF IMPORTED_TARGET gdk-pixbuf-2.0)
+if(GDKPIXBUF_FOUND)
+  # Optional decoders (WebP, TIFF, ...) through the installed pixbuf loaders.
+  target_compile_definitions(sde-gallery-core PRIVATE SDE_GALLERY_PIXBUF=1)
+  target_link_libraries(sde-gallery-core PUBLIC PkgConfig::GDKPIXBUF)
+endif()
+find_package(Threads REQUIRED)
+target_link_libraries(sde-gallery-core PUBLIC Threads::Threads)
+add_executable(sde-gallery
+  gallery/main.cpp
+  gallery/window.cpp
+  gallery/sidebar.cpp
+  gallery/grid.cpp
+  gallery/viewer.cpp
+  gallery/icons.cpp)
+target_link_libraries(sde-gallery PRIVATE sde-gallery-core)
+
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
+        sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(SDE_BUILD_COMPONENTS)

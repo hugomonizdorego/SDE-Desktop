@@ -35,3 +35,7 @@ add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 # QA-only D-Bus/XEmbed fixtures: deliberately not installed in the packages.
 add_executable(sde-panel-service-fixture panel_service_fixture.cpp)
 target_link_libraries(sde-panel-service-fixture PRIVATE sde-common)
+
+add_executable(sde-gallery-tests test_gallery.cpp)
+target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
+add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
