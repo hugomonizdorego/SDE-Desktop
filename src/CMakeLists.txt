@@ -66,7 +66,7 @@ target_link_libraries(sde-logout PRIVATE sde-common)
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)
 
-add_executable(sde-update update/main.cpp)
+add_executable(sde-update update/main.cpp update/app.cpp update/model.cpp update/ui.cpp)
 target_link_libraries(sde-update PRIVATE sde-common)
 
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update

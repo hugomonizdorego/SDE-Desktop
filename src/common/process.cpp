@@ -173,6 +173,12 @@ void stop_stream(int id) {
   g_jobs.erase(it);
 }
 
+bool signal_stream(int id, int sig) {
+  auto it = g_jobs.find(id);
+  if (it == g_jobs.end()) return false;
+  return kill(it->second->pid, sig) == 0;
+}
+
 std::string run_sync(const std::vector<std::string> &argv, int *status, int timeout_ms) {
   if (status) *status = -1;
   int fd;

@@ -1,3 +1,14 @@
+# SDE Update 2 · 2026-10-20
+
+- Redesigned SDE Update: status header, grouped update list (Security, Kernel,
+  Software, Backports) with search, filters and check boxes, details pane with
+  asynchronous changelogs, reboot-required banner and a progress strip with
+  per-package status and cancel.
+- New History, Sources (read-only, deb822 aware), Maintenance (clean cache,
+  remove unused packages, repair) and Settings pages; mintupdate credits in About.
+- Streamed PackageKit transactions with an APT-through-pkexec fallback;
+  background checks and notifications (`[update]` in sde.conf).
+
 # Alpha10 patch · 2026-10-19 — SDE Aero
 
 - SDE Aero / SDE Aero Dark: new default GTK 3, GTK 4 and SDE WM theme with

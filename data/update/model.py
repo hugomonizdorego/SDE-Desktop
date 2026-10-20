@@ -4,9 +4,15 @@
 # Copyright (C) 2026 SDE contributors (Debian adaptation).
 # Source: https://github.com/linuxmint/mintupdate
 # Revision: b4c586f9839d2943944390f4117a10acd4ba865a
-# Changes: standalone model; remove Mint settings/GI and Mint/browser heuristics.
+# Changes: standalone model; remove Mint settings/GI and Mint/browser heuristics;
+#          Debian backports type, origin label and summary fields for SDE Update 2.
 # Full upstream copyright and license are in COPYRIGHT and COPYING.
 SOURCE_PACKAGE_NAME_OVERRIDES = ["linux-libc-dev"]
+
+
+def is_backport(archive, label):
+    """Debian (and derivative) backports suites, e.g. trixie-backports."""
+    return str(archive).endswith("-backports") or "backports" in str(label).lower()
 
 
 class Update:
@@ -41,6 +47,8 @@ class Update:
             self.short_description = package.candidate.raw_description
             self.description = package.candidate.description
             self.archive = ""
+            self.site = ""
+            self.label = ""
 
             self.type = "package"
             self.origin = ""
@@ -48,6 +56,7 @@ class Update:
                 self.origin = origin.origin
                 self.site = origin.site
                 self.archive = origin.archive
+                self.label = getattr(origin, "label", "")
                 if origin.origin == "Ubuntu":
                     self.origin = "ubuntu"
                 elif origin.origin == "Debian":
@@ -60,6 +69,8 @@ class Update:
                 if origin.origin == "Debian" and "-Security" in origin.label:
                     self.type = "security"
                     break
+            if self.type == "package" and is_backport(self.archive, self.label):
+                self.type = "backport"
             if (
                 package.candidate.section == "kernel"
                 or self.package_name.startswith("linux-headers")

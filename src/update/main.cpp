@@ -1,35 +1,46 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // SDE Update: native UI over a mintupdate-derived model and Debian PackageKit.
+//
+//   sde-update [--page NAME]        the window
+//   sde-update --notifier [--once]  background checks ([update] in sde.conf)
+//   sde-update --check | --history | --sources   helper protocols (read-only)
+//   sde-update --plan ACTION [PKG]  print a transaction's fixed argv
+//   sde-update --transaction refresh|upgrade     interactive, in a terminal
 #include <FL/Fl.H>
-#include <FL/Fl_Hold_Browser.H>
-#include <FL/fl_ask.H>
-#include <FL/x.H>
-#include <unistd.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <sys/wait.h>
-#include <cerrno>
-#include <algorithm>
+#include <unistd.h>
 
+#include <cerrno>
 #include <cstdio>
+#include <ctime>
+#include <functional>
 #include <string>
 #include <vector>
 
-#include "buffered_window.h"
+#include "app.h"
 #include "build_config.h"
 #include "config.h"
+#include "dbus.h"
 #include "i18n.h"
-#include "paint.h"
+#include "model.h"
 #include "process.h"
 #include "spawn.h"
-#include "theme.h"
 #include "util.h"
-#include "widgets.h"
 
 using namespace sde;
+using namespace sde::update;
+
 namespace {
+
+const char *kPython = "/usr/bin/python3";
+
+// ------------------------------------------------- interactive transaction
 
 // No package names, options, repository URLs or shell commands are accepted.
 // PackageKit handles dependency solving, locks and the system's polkit policy.
-std::vector<std::string> transaction(const std::string &action) {
+std::vector<std::string> terminal_transaction(const std::string &action) {
   // PackageKit 1.3.4+ ships pkgcli in the packagekit binary package;
   // Debian 12/13 and older Ubuntu releases use packagekit-tools/pkcon.
   if (is_executable("/usr/bin/pkgcli")) {
@@ -42,15 +53,11 @@ std::vector<std::string> transaction(const std::string &action) {
   return {};
 }
 
-int run_transaction(const std::string &action, bool plan) {
-  auto command = transaction(action);
+int run_terminal_transaction(const std::string &action) {
+  auto command = terminal_transaction(action);
   if (command.empty()) return 2;
-  if (plan) {
-    for (auto &arg : command) printf("%s\n", arg.c_str());
-    return 0;
-  }
-  // Unlike the metadata process helpers, a terminal transaction needs stdin
-  // and stderr intact for confirmation, authentication and useful diagnostics.
+  // Unlike the metadata helpers, a terminal transaction needs stdin and
+  // stderr intact for confirmation, authentication and useful diagnostics.
   pid_t child = fork();
   if (child < 0) return 1;
   if (child == 0) {
@@ -77,169 +84,209 @@ int run_transaction(const std::string &action, bool plan) {
   return result;
 }
 
-std::string browser_text(std::string value) {
-  std::string result;
-  for (char c : value) {
-    if (c == '@') result += '@';
-    result += c;
-  }
-  return result;
+int exec_helper(const std::string &name, const std::vector<std::string> &extra = {}) {
+  std::string path = helper(name);
+  std::vector<std::string> argv = {"python3", path};
+  argv.insert(argv.end(), extra.begin(), extra.end());
+  std::vector<char *> args;
+  for (auto &a : argv) args.push_back(const_cast<char *>(a.c_str()));
+  args.push_back(nullptr);
+  execv(kPython, args.data());
+  perror("sde-update");
+  return 127;
 }
 
-class UpdateWindow : public BufferedWindow {
+// ---------------------------------------------------------------- notifier
+
+struct NotifierState {
+  std::time_t last_check = 0;
+  std::string notified;  // signature of the last update set we notified about
+};
+
+std::string state_path() { return join_path(state_home(), "sde/update-notifier"); }
+
+NotifierState load_state() {
+  NotifierState s;
+  std::string text;
+  if (!read_file(state_path(), text)) return s;
+  for (auto &line : split(text, '\n')) {
+    if (starts_with(line, "last_check=")) s.last_check = std::time_t(atoll(line.c_str() + 11));
+    if (starts_with(line, "notified=")) s.notified = line.substr(9);
+  }
+  return s;
+}
+
+void save_state(const NotifierState &s) {
+  make_dirs(join_path(state_home(), "sde"));
+  write_file_atomic(state_path(), format("last_check=%lld\nnotified=%s\n", (long long)s.last_check,
+                                         s.notified.c_str()));
+}
+
+uint32_t g_notification = 0;
+
+void notify(const std::string &summary, const std::string &body) {
+  auto *bus = dbus::Bus::session();
+  if (!bus) {
+    if (!find_program("notify-send").empty())
+      run_sync({"notify-send", "-a", _("SDE Update"), "-i", "system-software-update", summary, body});
+    return;
+  }
+  DBusMessage *msg = dbus::method("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                                  "org.freedesktop.Notifications", "Notify");
+  {
+    dbus::Writer w(msg);
+    w.str(_("SDE Update")).u32(g_notification).str("system-software-update").str(summary).str(body);
+    w.strings({"default", _("Open SDE Update")});
+    { dbus::Writer hints(w.iter(), DBUS_TYPE_ARRAY, "{sv}"); }
+    w.i32(-1);
+  }
+  bus->call_async(msg, [](DBusMessage *reply) {
+    if (!reply) return;
+    auto args = dbus::read_args(reply);
+    if (!args.empty()) g_notification = uint32_t(args[0].num());
+  });
+}
+
+class Notifier {
  public:
-  UpdateWindow(int w, int h) : BufferedWindow(w, h, _("SDE Update")), theme_(active_theme()) {
-    int gap = S(16), bh = S(34), bw = (w - 4 * gap) / 3;
-    check_ = new FlatButton(gap, S(78), bw, bh, _("Check Again"));
-    refresh_ = new FlatButton(2 * gap + bw, S(78), bw, bh, _("Refresh Sources"));
-    install_ = new FlatButton(3 * gap + 2 * bw, S(78), bw, bh, _("Install Updates"), true);
-    check_->callback([](Fl_Widget *, void *p) { static_cast<UpdateWindow *>(p)->load(); }, this);
-    refresh_->callback([](Fl_Widget *, void *p) { static_cast<UpdateWindow *>(p)->start("refresh"); }, this);
-    install_->callback([](Fl_Widget *, void *p) { static_cast<UpdateWindow *>(p)->start("upgrade"); }, this);
-    list_ = new Fl_Hold_Browser(gap, S(164), w - 2 * gap, h - S(238));
-    list_->box(FL_FLAT_BOX);
-    list_->color(theme_.surface.fl());
-    list_->selection_color(theme_.accent.fl());
-    list_->textcolor(theme_.text.fl());
-    list_->textsize(theme_.font_size);
-    list_->textfont(FL_HELVETICA);
-    auto *source = new FlatButton(gap, h - S(51), S(110), S(30), "mintupdate");
-    source->callback([](Fl_Widget *, void *) { open_uri("https://github.com/linuxmint/mintupdate"); });
-    end();
-    resizable(nullptr);
-    xclass("sde-update");
-    callback(
-        [](Fl_Widget *w, void *p) {
-          // Keep callback targets alive while asynchronous jobs finish.
-          if (!static_cast<UpdateWindow *>(p)->busy_) w->hide();
-        },
-        this);
+  explicit Notifier(bool once) : once_(once) {}
+  void start(double delay) {
+    if (auto *bus = dbus::Bus::session())
+      bus->add_signal_handler(
+          "type='signal',interface='org.freedesktop.Notifications',member='ActionInvoked'",
+          [](DBusMessage *) { return true; },
+          [](DBusMessage *m) {
+            auto args = dbus::read_args(m);
+            if (args.size() >= 2 && g_notification && uint32_t(args[0].num()) == g_notification &&
+                args[1].str() == "default")
+              spawn_detached({"sde-update"});
+          });
+    Fl::add_timeout(delay, wake, this);
   }
-
-  void draw() override {
-    {
-      Painter p(w(), h());
-      p.fill_rect(0, 0, w(), h(), theme_.background);
-    }
-    text_font(theme_.font_size + S(8), true);
-    draw_text(_("SDE Update"), S(16), S(14), w() - S(32), S(31), theme_.text);
-    text_font(theme_.font_size);
-    draw_text(_("DebION GNU/Linux · System updates"), S(16), S(45), w() - S(32), S(24), theme_.text_dim);
-    draw_text(summary_, S(16), S(122), w() - S(32), S(32), theme_.text);
-    text_font(theme_.font_size - S(1));
-    draw_text(_("Review the final package changes in the terminal."), S(142), h() - S(60), w() - S(158),
-              S(24), theme_.text_dim);
-    draw_text(_("Authentication is handled by the system."), S(142), h() - S(37), w() - S(158), S(24),
-              theme_.text_dim);
-    draw_children();
-  }
-
-  void load() {
-    set_busy(true);
-    install_->deactivate();
-    summary_ = _("Reading local APT metadata…");
-    redraw();
-    bool started = run_async(
-        {"/usr/bin/python3", std::string(SDE_DATADIR) + "/update/check.py"},
-        [this](const std::string &output, int status) {
-          list_->clear();
-          auto lines = split(output, '\n');
-          int count = 0;
-          bool valid = status == 0 && !lines.empty() && lines[0] == "SDE-UPDATES\t1";
-          for (size_t i = 1; valid && i < lines.size(); ++i) {
-            if (lines[i].empty()) continue;
-            auto fields = split(lines[i], '\t');
-            if (fields.size() != 6) {
-              valid = false;
-              break;
-            }
-            list_->add(("@b" + browser_text(fields[1] + "  [" + fields[0] + "]")).c_str());
-            list_->add(browser_text("  " + fields[2] + " -> " + fields[3]).c_str());
-            list_->add(browser_text("  " + fields[5] + "  (" + fields[4] + " bytes)").c_str());
-            list_->add("");
-            ++count;
-          }
-          if (!valid) {
-            list_->clear();
-            summary_ = _("Cannot read APT metadata. Check python3-apt and your package sources.");
-          } else {
-            summary_ = count
-                           ? format(_("%d source packages have updates. Held packages are excluded."), count)
-                           : _("No updates in the local cache. Refresh Sources to check the repositories.");
-          }
-          set_busy(false);
-          if (valid && count) install_->activate();
-          redraw();
-        });
-    if (!started) {
-      summary_ = _("Python 3 is missing. Reinstall the sde package and its dependencies.");
-      set_busy(false);
-      redraw();
-    }
-  }
+  bool done = false;
 
  private:
-  void set_busy(bool busy) {
-    busy_ = busy;
-    if (busy) {
-      check_->deactivate();
-      refresh_->deactivate();
-      install_->deactivate();
-    } else {
-      check_->activate();
-      refresh_->activate();
-    }
-  }
-  void start(const std::string &action) {
-    if (busy_) return;
-    if (find_program("xterm").empty() || !is_executable(transaction(action)[0])) {
-      fl_alert("%s", _("Install xterm and the PackageKit command-line client to run update transactions."));
+  static void wake(void *data) { static_cast<Notifier *>(data)->check(); }
+  void later(double seconds) {
+    if (once_) {
+      done = true;
       return;
     }
-    set_busy(true);
-    summary_ = _("Complete or cancel the transaction in the terminal, then press Enter there.");
-    redraw();
-    run_async({"xterm", "-T", "SDE Update", "-e", "sde-update", "--transaction", action},
-              [this](const std::string &, int) { load(); });
+    Fl::add_timeout(seconds, wake, this);
   }
-  Theme theme_;
-  FlatButton *check_, *refresh_, *install_;
-  Fl_Hold_Browser *list_;
-  bool busy_ = false;
-  std::string summary_;
+  void check() {
+    Config cfg;
+    cfg.load();
+    int hours = cfg.get_int("update", "check_interval", 24);
+    if (hours <= 0 && !once_) return later(900);  // disabled; look again later
+    NotifierState state = load_state();
+    std::time_t now = std::time(nullptr);
+    std::time_t due = state.last_check + std::time_t(std::max(1, hours)) * 3600;
+    if (!once_ && state.last_check && now < due) return later(std::min<double>(double(due - now), 900));
+    bool refresh = cfg.get_bool("update", "auto_refresh", true) && is_executable("/usr/bin/pkcon");
+    if (refresh) {
+      // PackageKit lets the active session refresh without a password.
+      bool ok = run_async({"/usr/bin/pkcon", "-p", "refresh"},
+                          [this](const std::string &, int) { read_updates(); });
+      if (ok) return;
+    }
+    read_updates();
+  }
+  void read_updates() {
+    run_async({kPython, helper("check.py")}, [this](const std::string &out, int status) {
+      Config cfg;
+      cfg.load();
+      NotifierState state = load_state();
+      state.last_check = std::time(nullptr);
+      UpdateList list = parse_updates(out);
+      if (status == 0 && list.valid) {
+        std::string signature;
+        for (auto &u : list.updates) signature += u.name + "=" + u.new_version + ";";
+        signature = std::to_string(std::hash<std::string>()(signature));
+        int count = int(list.updates.size()), security = list.count(Kind::Security);
+        bool wanted = cfg.get_bool("update", "notify", true) &&
+                      (!cfg.get_bool("update", "notify_security_only", false) || security > 0);
+        if (count && wanted && signature != state.notified) {
+          std::string summary = count == 1 ? std::string(_("1 update is available"))
+                                           : format(_("%d updates are available"), count);
+          std::string body =
+              security ? format(_("%d of them are security updates. Open SDE Update to install them."), security)
+                       : format(_("%s to download. Open SDE Update to review them."),
+                                format_size(list.total_size()).c_str());
+          notify(summary, body);
+          state.notified = signature;
+        }
+        if (!count) state.notified.clear();
+        printf("sde-update: %d updates (%d security)\n", count, security);
+        fflush(stdout);
+      }
+      save_state(state);
+      int hours = cfg.get_int("update", "check_interval", 24);
+      later(hours > 0 ? hours * 3600.0 : 900);
+    });
+  }
+  bool once_;
 };
+
+int run_notifier(bool once) {
+  // One notifier per user session.
+  std::string lock = join_path(runtime_dir(), "sde-update-notifier.lock");
+  int fd = open(lock.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+  if (fd < 0 || flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    if (!once) return 0;
+  }
+  Notifier notifier(once);
+  // Let the session settle (and the network come up) before the first check.
+  notifier.start(once ? 0 : 120);
+  while (!notifier.done) Fl::wait(1e6);
+  // Give a pending notification call time to go out.
+  for (int i = 0; i < 20; ++i) Fl::wait(0.05);
+  return 0;
+}
+
+void usage(FILE *out) {
+  fprintf(out, "%s",
+          _("Usage: sde-update [--page NAME] [--version]\n"
+            "       sde-update --check | --history | --sources\n"
+            "       sde-update --plan refresh|upgrade|autoremove|clean|repair [PACKAGE...]\n"
+            "       sde-update --transaction refresh|upgrade\n"
+            "       sde-update --notifier [--once]\n\n"
+            "  --page NAME     open updates, history, sources, maintenance, settings or about\n"
+            "  --check         print the read-only update list (SDE-UPDATES protocol)\n"
+            "  --history       print the APT history (SDE-HISTORY protocol)\n"
+            "  --sources       print the package sources (SDE-SOURCES protocol)\n"
+            "  --plan          print the fixed command of a transaction without running it\n"
+            "  --transaction   run an interactive PackageKit transaction in this terminal\n"
+            "  --notifier      check for updates in the background and notify\n"));
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
   init_i18n();
-  if (argc == 2 && std::string(argv[1]) == "--version") {
+  std::vector<std::string> args(argv + 1, argv + argc);
+  std::string first = args.empty() ? "" : args[0];
+  if (first == "--version" && args.size() == 1) {
     printf("sde-update %s\n", SDE_UPDATE_VERSION);
     return 0;
   }
-  if (argc == 2 && std::string(argv[1]) == "--check") {
-    execl("/usr/bin/python3", "python3", (std::string(SDE_DATADIR) + "/update/check.py").c_str(),
-          static_cast<char *>(nullptr));
-    perror("sde-update");
-    return 127;
+  if (first == "--help") {
+    usage(stdout);
+    return 0;
   }
-  if (argc == 3 && (std::string(argv[1]) == "--transaction" || std::string(argv[1]) == "--plan"))
-    return run_transaction(argv[2], std::string(argv[1]) == "--plan");
-  if (argc != 1) {
-    printf(
-        "Usage: sde-update [--check | --version | --plan refresh|upgrade | --transaction refresh|upgrade]\n");
-    return argc == 2 && std::string(argv[1]) == "--help" ? 0 : 2;
+  if (first == "--check" && args.size() == 1) return exec_helper("check.py");
+  if (first == "--history" && args.size() == 1) return exec_helper("history.py");
+  if (first == "--sources" && args.size() == 1) return exec_helper("sources.py");
+  if (first == "--plan" && args.size() >= 2) {
+    std::vector<std::string> extra = {"--plan"};
+    extra.insert(extra.end(), args.begin() + 1, args.end());
+    return exec_helper("transaction.py", extra);
   }
-  Config config;
-  config.load();
-  fl_open_display();
-  auto theme = Theme::from_config(config);
-  theme.apply_to_fltk();
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int w = std::min(S(860), sw - S(24)), h = std::min(S(600), sh - S(60));
-  auto *window = new UpdateWindow(w, h);
-  window->position(sx + (sw - w) / 2, sy + (sh - h) / 2);
-  window->show();
-  window->load();
-  return Fl::run();
+  if (first == "--transaction" && args.size() == 2) return run_terminal_transaction(args[1]);
+  if (first == "--notifier" && (args.size() == 1 || (args.size() == 2 && args[1] == "--once")))
+    return run_notifier(args.size() == 2);
+  if (args.empty()) return run_app("updates");
+  if (first == "--page" && args.size() == 2) return run_app(args[1]);
+  usage(stderr);
+  return 2;
 }
