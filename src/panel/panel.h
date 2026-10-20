@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // sde-panel: application menu, pinned launchers, taskbar, system tray,
-// quick settings (network, sound, brightness, battery) and clock/calendar.
+// status flyouts (sound, network, Bluetooth, power, ...), clock and the
+// Action Center with its calendar.
 // The panel sits at the bottom or top of the primary monitor and can hide
 // itself automatically.
 #pragma once
@@ -18,7 +19,6 @@
 #include "theme.h"
 
 class AppMenu;
-class Calendar;
 class PanelPopup;
 class QuickSettings;
 class SniHost;
@@ -52,13 +52,19 @@ class Panel : public sde::BufferedWindow {
   int handle(int event) override;
   void resize(int x, int y, int w, int h) override;
 
-  void open_action_center(const std::string &section = "overview");
+  // The Action Center; with |calendar| it opens with the calendar in view
+  // (the clock, sde-panel --calendar). Clicking the same button closes it.
+  void open_action_center(bool calendar = false);
+  // The flyout of one status icon (sound, network, bluetooth, power, media,
+  // drives, keyboard, tray), anchored above that icon; toggles.
+  void open_flyout(const std::string &section);
   bool native_popup_input() const { return input_display_ != nullptr; }
-  bool status_in_center() const;
+  // The popup that currently holds the panel's XEmbed tray icons (the Tray
+  // flyout with [action_center] move_status), or nullptr.
+  QuickSettings *tray_host() const;
   Tray *legacy_tray() const { return tray_.get(); }
   SniHost *status_notifiers() const { return sni_.get(); }
   void toggle_menu();
-  void toggle_calendar();
   void toggle_dark_mode();
   const sde::Theme &theme() const { return theme_; }
   const sde::Config &config() const { return cfg_; }
@@ -111,6 +117,13 @@ class Panel : public sde::BufferedWindow {
 
   void load_config();
   std::string status_tooltip(StatusIcon icon) const;
+  static std::string status_section(StatusIcon icon);
+  // Root x of the center of the visible status icon for |section|.
+  bool status_anchor(const std::string &section, int &center_x) const;
+  std::string popup_key(const PanelPopup *p) const;
+  std::string target_key(const Target &t) const;
+  bool recently_closed(const std::string &key) const;
+  void qa_dump_panel();
   void place_on_screen();
   void apply_strut();
   void apply_shape();
@@ -135,7 +148,7 @@ class Panel : public sde::BufferedWindow {
   bool switch_popup(int root_x, int root_y, PanelPopup *from);
  private:
   static void input_event(int, void *);
-  void outside_pointer_press();
+  void outside_pointer_press(unsigned long time);
 
   // Auto-hide.
   void set_revealed(bool revealed);
@@ -152,7 +165,7 @@ class Panel : public sde::BufferedWindow {
   Target pressed_;
   std::unique_ptr<AppMenu> menu_;
   std::unique_ptr<QuickSettings> quick_;
-  std::unique_ptr<Calendar> calendar_;
+  std::unique_ptr<QuickSettings> flyout_;
   std::unique_ptr<Tray> tray_;
   std::unique_ptr<SniHost> sni_;
   PanelPopup *open_popup_ = nullptr;
@@ -168,7 +181,11 @@ class Panel : public sde::BufferedWindow {
   bool compact_status_ = false;
   Display *input_display_ = nullptr;
   int input_opcode_ = 0;
-  long long block_quick_until_ = 0, popup_opened_at_ = 0;
+  // The popup closed by the press that started the current click, so that
+  // the release on its own button does not reopen it.
+  std::string closed_key_;
+  long long closed_at_ = 0, popup_opened_at_ = 0;
+  unsigned long popup_opened_time_ = 0;  // X server time of the opening event
   int edge_reserve_ = 0, visible_pins_ = 0;
 
   // Dragging a pinned launcher to reorder it.

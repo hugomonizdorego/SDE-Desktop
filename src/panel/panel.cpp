@@ -16,7 +16,6 @@
 #include <cstdlib>
 #include <ctime>
 
-#include "calendar.h"
 #include "controls.h"
 #include "glyphs.h"
 #include "tray_icons.h"
@@ -53,8 +52,8 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   load_config();
   place_on_screen();
   menu_.reset(new AppMenu());
-  quick_.reset(new QuickSettings());
-  calendar_.reset(new Calendar());
+  quick_.reset(new QuickSettings(QuickSettings::ACTION_CENTER));
+  flyout_.reset(new QuickSettings(QuickSettings::FLYOUT));
 }
 
 Panel::~Panel() {
@@ -216,6 +215,7 @@ void Panel::setup() {
     relayout();
     redraw();
     quick_->status_changed();
+    flyout_->status_changed();
   }));
   sni_->set_hidden(hidden);
   sni_->start();
@@ -223,6 +223,7 @@ void Panel::setup() {
     relayout();
     redraw();
     quick_->status_changed();
+    flyout_->status_changed();
   });
 
   configured_ = true;
@@ -268,8 +269,9 @@ void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
 
 void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
-  if (p == quick_.get()) {
+  if (p == quick_.get() || p == flyout_.get()) {
     popup_opened_at_ = steady_ms();
+    popup_opened_time_ = fl_event_time;
     PanelControls::get().set_visible(true);
   }
   relayout();
@@ -278,7 +280,7 @@ void Panel::popup_opened(PanelPopup *p) {
 
 void Panel::popup_closed(PanelPopup *p) {
   if (open_popup_ == p) open_popup_ = nullptr;
-  if (p == quick_.get()) PanelControls::get().set_visible(false);
+  if (p == quick_.get() || p == flyout_.get()) PanelControls::get().set_visible(false);
   relayout();
   redraw();
   if (autohide_) Fl::add_timeout(0.8, hide_timeout, this);
@@ -301,7 +303,6 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
 }
 
 void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
-void Panel::toggle_calendar() { open_popup(calendar_.get(), x() + w() - S(8), true); }
 void Panel::toggle_dark_mode() {
   cfg_.set("appearance", "theme", theme_.dark ? "light" : "dark");
   if (cfg_.save()) {
@@ -358,6 +359,7 @@ void Panel::set_do_not_disturb(bool on) {
   cfg_.save();
   x11::notify_config_changed();
   quick_->status_changed();
+  flyout_->status_changed();
 }
 
 bool Panel::find_entry_for(const Task &t, DesktopEntry &out) const {
@@ -382,8 +384,11 @@ bool Panel::find_entry_for(const Task &t, DesktopEntry &out) const {
 
 // ------------------------------------------------------------------ layout
 
-bool Panel::status_in_center() const {
-  return quick_ && quick_->is_open() && cfg_.get_bool("action_center", "move_status", true);
+QuickSettings *Panel::tray_host() const {
+  if (flyout_ && flyout_->is_open() && flyout_->section() == "tray" &&
+      cfg_.get_bool("action_center", "move_status", true))
+    return flyout_.get();
+  return nullptr;
 }
 int Panel::status_count() const { return int(status_icons_.size()); }
 void Panel::input_event(int, void *d) {
@@ -392,58 +397,154 @@ void Panel::input_event(int, void *d) {
     XEvent event;
     XNextEvent(p->input_display_, &event);
     if (event.type == GenericEvent && event.xcookie.extension == p->input_opcode_ &&
-        event.xcookie.evtype == XI_RawButtonPress)
-      p->outside_pointer_press();
+        event.xcookie.evtype == XI_RawButtonPress) {
+      unsigned long time = 0;
+      if (XGetEventData(p->input_display_, &event.xcookie)) {
+        time = static_cast<XIRawEvent *>(event.xcookie.data)->time;
+        XFreeEventData(p->input_display_, &event.xcookie);
+      }
+      p->outside_pointer_press(time);
+    }
   }
 }
-void Panel::outside_pointer_press() {
-  if (!quick_ || !quick_->is_open() || Fl::grab()) return;
-  // XI2 arrives on a separate connection: the press that opened the popup
-  // may be dispatched after FLTK's release. Do not treat it as a new click.
-  if (steady_ms() - popup_opened_at_ < 100) return;
+void Panel::outside_pointer_press(unsigned long time) {
+  // The Action Center and the flyouts host native tray windows and do not
+  // grab the pointer; a press anywhere else closes them.
+  QuickSettings *q = quick_ && quick_->is_open()     ? quick_.get()
+                     : flyout_ && flyout_->is_open() ? flyout_.get()
+                                                     : nullptr;
+  if (!q || Fl::grab()) return;
+  // XI2 arrives on a separate connection: the press of the click that opened
+  // the popup may be dispatched after FLTK's release, even much later on a
+  // busy server. Server timestamps tell it apart from a new click.
+  if (time && popup_opened_time_ && time <= popup_opened_time_) return;
+  if (!time && steady_ms() - popup_opened_at_ < 100) return;
   Window root = DefaultRootWindow(fl_display), r, child;
   int rx, ry, x, y;
   unsigned buttons;
   if (!XQueryPointer(fl_display, root, &r, &child, &rx, &ry, &x, &y, &buttons)) return;
-  if (rx >= quick_->x() && rx < quick_->x() + quick_->w() && ry >= quick_->y() &&
-      ry < quick_->y() + quick_->h())
-    return;
-  block_quick_until_ = steady_ms() + 300;
-  quick_->close();
+  if (rx >= q->x() && rx < q->x() + q->w() && ry >= q->y() && ry < q->y() + q->h()) return;
+  closed_key_ = popup_key(q);
+  closed_at_ = steady_ms();
+  q->close();
 }
-void Panel::open_action_center(const std::string &section) {
-  if (!quick_->is_open() && steady_ms() < block_quick_until_) return;
-  if (quick_->is_open() && quick_->section() != section) {
-    quick_->select_section(section);
+bool Panel::recently_closed(const std::string &key) const {
+  return key == closed_key_ && steady_ms() - closed_at_ < 300;
+}
+// Identifies what a popup shows, so that its own button toggles it and any
+// other button switches to another popup.
+std::string Panel::popup_key(const PanelPopup *p) const {
+  if (!p) return "";
+  if (p == menu_.get()) return "menu";
+  if (p == quick_.get()) return quick_->calendar_view() ? "calendar" : "center";
+  if (p == flyout_.get()) return "flyout:" + flyout_->section();
+  return "";
+}
+std::string Panel::target_key(const Target &t) const {
+  switch (t.kind) {
+    case START:
+      return "menu";
+    case CLOCK:
+      return "calendar";
+    case ACTION_CENTER:
+      return "center";
+    case STATUS:
+      if (t.index >= 0 && t.index < int(status_icons_.size())) {
+        StatusIcon icon = status_icons_[size_t(t.index)];
+        if (icon == CONTROLS_STATUS) return "center";
+        std::string section = status_section(icon);
+        if (!section.empty()) return "flyout:" + section;
+      }
+      return "";
+    default:
+      return "";
+  }
+}
+void Panel::open_action_center(bool calendar) {
+  std::string key = calendar ? "calendar" : "center";
+  if (quick_->is_open()) {
+    // The clock while the Action Center is open from its button (or the
+    // other way round) switches the view; the same button closes it.
+    bool same = popup_key(quick_.get()) == key;
+    quick_->close();
+    if (same) return;
+  } else if (recently_closed(key)) {
     return;
   }
-  quick_->select_section(section);
+  quick_->set_calendar_view(calendar);
   open_popup(quick_.get(), x() + w(), true);
+}
+std::string Panel::status_section(StatusIcon icon) {
+  switch (icon) {
+    case INPUT_STATUS:
+      return "keyboard";
+    case BLUETOOTH_STATUS:
+      return "bluetooth";
+    case BATTERY_STATUS:
+      return "power";
+    case MEDIA_STATUS:
+      return "media";
+    case NETWORK_STATUS:
+      return "network";
+    case SOUND_STATUS:
+      return "sound";
+    case OVERFLOW_STATUS:
+      return "tray";
+    case DRIVE_STATUS:
+      return "drives";
+    default:
+      return "";
+  }
+}
+bool Panel::status_anchor(const std::string &section, int &center_x) const {
+  for (size_t i = 0; i < status_icons_.size(); ++i)
+    if (status_section(status_icons_[i]) == section) {
+      center_x = x() + status_x_ + int(i) * S(26) + S(13);
+      return true;
+    }
+  return false;
+}
+void Panel::open_flyout(const std::string &section) {
+  if (!QuickSettings::valid_section(section)) return;
+  std::string key = "flyout:" + section;
+  if (flyout_->is_open()) {
+    bool same = flyout_->section() == section;
+    flyout_->close();
+    if (same) return;
+  } else if (recently_closed(key)) {
+    return;
+  }
+  if (open_popup_ && open_popup_ != flyout_.get()) open_popup_->close();
+  set_revealed(true);
+  flyout_->select_section(section);
+  int center = 0;
+  if (status_anchor(section, center))
+    flyout_->open_centered(center);
+  else  // The icon is hidden (short panel): next to the Action Center button.
+    flyout_->open_at(x() + action_x_ + action_w_, true);
 }
 bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
   if (!shown() || root_x < x() || root_x >= x() + w() || root_y < y() || root_y >= y() + h())
     return false;
   Target t = hit(root_x - x(), root_y - y());
-  PanelPopup *target = nullptr;
-  if (t.kind == START) target = menu_.get();
-  else if (t.kind == CLOCK) target = calendar_.get();
-  else if (t.kind == ACTION_CENTER || t.kind == STATUS) target = quick_.get();
+  std::string key = target_key(t);
   // The button that opened this popup only closes it (toggle).
-  if (!target || target == from) return false;
+  if (key.empty() || key == popup_key(from)) return false;
   struct Pending {
-    Target t;
+    std::string key;
   };
-  auto *pending = new Pending{t};
+  auto *pending = new Pending{key};
   Fl::add_timeout(0, [](void *d) {
     std::unique_ptr<Pending> p(static_cast<Pending *>(d));
     Panel *self = Panel::instance;
-    switch (p->t.kind) {
-      case START: self->toggle_menu(); break;
-      case CLOCK: self->open_popup(self->calendar_.get(), self->x() + self->clock_x_ + self->clock_w_, true); break;
-      case ACTION_CENTER: self->open_action_center(); break;
-      case STATUS: self->status_clicked(p->t.index, FL_LEFT_MOUSE); break;
-      default: break;
-    }
+    if (p->key == "menu")
+      self->toggle_menu();
+    else if (p->key == "calendar")
+      self->open_action_center(true);
+    else if (p->key == "center")
+      self->open_action_center();
+    else if (starts_with(p->key, "flyout:"))
+      self->open_flyout(p->key.substr(7));
   }, pending);
   return true;
 }
@@ -451,38 +552,26 @@ bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
 void Panel::status_clicked(int index, int button) {
   if (index < 0 || index >= int(status_icons_.size())) return;
   switch (status_icons_[size_t(index)]) {
-    case INPUT_STATUS:
-      spawn_detached({"sde-settings", "--page", "input"});
-      break;
-    case BLUETOOTH_STATUS:
-      open_action_center("bluetooth");
-      break;
-    case BATTERY_STATUS:
-      open_action_center("power");
-      break;
     case POWER_STATUS:
       spawn_detached({"sde-logout"});
-      break;
-    case MEDIA_STATUS:
-      open_action_center("media");
-      break;
-    case NETWORK_STATUS:
-      open_action_center("network");
       break;
     case SOUND_STATUS:
       if (button == FL_MIDDLE_MOUSE)
         SystemStatus::get().toggle_mute();
       else
-        open_action_center("sound");
+        open_flyout("sound");
       break;
     case CONTROLS_STATUS:
       open_action_center();
       break;
+    case INPUT_STATUS:
+    case BLUETOOTH_STATUS:
+    case BATTERY_STATUS:
+    case MEDIA_STATUS:
+    case NETWORK_STATUS:
     case OVERFLOW_STATUS:
-      open_action_center("tray");
-      break;
     case DRIVE_STATUS:
-      open_action_center();
+      open_flyout(status_section(status_icons_[size_t(index)]));
       break;
     case DND_STATUS:
       set_do_not_disturb(false);
@@ -582,19 +671,21 @@ void Panel::relayout() {
   add(POWER_STATUS, "show_power", cfg_.get_bool("panel", "show_power", false));
   // CONTROLS_STATUS repeated the Action Center button next to the clock.
   int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
-  compact_status_ =
-      status_in_center() || right - start_w_ - S(100) <
-                                int(status_icons_.size()) * S(26) + sn * (tray_icon_ + S(10)) + tw;
+  compact_status_ = right - start_w_ - S(100) <
+                    int(status_icons_.size()) * S(26) + sn * (tray_icon_ + S(10)) + tw;
   if (compact_status_) status_icons_.clear();
+  // While the Tray flyout holds the tray icons they leave the panel; the
+  // status icons stay in place so the flyout stays above its button.
+  bool moved = tray_host() != nullptr;
   status_w_ = int(status_icons_.size()) * S(26);
   status_x_ = right - status_w_;
   right = status_x_;
-  sni_w_ = compact_status_ ? 0 : sn * (tray_icon_ + S(10));
+  sni_w_ = compact_status_ || moved ? 0 : sn * (tray_icon_ + S(10));
   sni_x_ = right - sni_w_;
   right = sni_x_;
-  tw = compact_status_ ? 0 : tw;
+  tw = compact_status_ || moved ? 0 : tw;
   tray_x_ = right - tw;
-  if (tray_ && !status_in_center()) {
+  if (tray_ && !moved) {
     if (compact_status_)
       tray_->hide();
     else {
@@ -750,7 +841,9 @@ void Panel::draw() {
     for (size_t i = 0; i < status_icons_.size(); ++i) {
       int bx = status_x_ + int(i) * S(26);
       double gx = bx + S(4);
-      button_bg(bx, S(26), {STATUS, int(i)}, false);
+      button_bg(bx, S(26), {STATUS, int(i)},
+                flyout_ && flyout_->is_open() &&
+                    flyout_->section() == status_section(status_icons_[i]));
       switch (status_icons_[i]) {
         case INPUT_STATUS:
           tray_icon::layout(p, gx, gy, gs, controls.keyboard, t.text);
@@ -807,18 +900,19 @@ void Panel::draw() {
           tray_icon::moon(p, gx, gy, gs, t.text);
           break;
         case OVERFLOW_STATUS:
-          tray_icon::overflow(p, gx, gy, gs, quick_ && quick_->is_open() && quick_->section() == "tray",
-                              t.text);
+          tray_icon::overflow(
+              p, gx, gy, gs, flyout_ && flyout_->is_open() && flyout_->section() == "tray", t.text);
           break;
       }
     }
     // The Action Center button in the corner: accent tile, own icon.
-    button_bg(action_x_, action_w_, {ACTION_CENTER, 0}, quick_ && quick_->is_open());
+    bool center_open = quick_ && quick_->is_open();
+    button_bg(action_x_, action_w_, {ACTION_CENTER, 0}, center_open && !quick_->calendar_view());
     p.fill_rounded(action_x_ + S(5), S(7), action_w_ - S(10), H - S(14), S(7),
                    quick_ && quick_->is_open() ? t.accent.mix(t.text, 0.15) : t.accent);
     tray_icon::action_center(p, action_x_ + (action_w_ - gs) / 2., gy, gs, false, t.on_accent,
                              t.on_accent);
-    button_bg(clock_x_, clock_w_, {CLOCK, 0}, calendar_ && calendar_->is_open());
+    button_bg(clock_x_, clock_w_, {CLOCK, 0}, center_open && quick_->calendar_view());
     if (show_desktop_w_) {
       if (hover_ == Target{SHOW_DESKTOP, 0})
         p.fill_rect(show_desktop_x_, 0, show_desktop_w_, H, t.hover);
@@ -855,6 +949,24 @@ void Panel::draw() {
     std::string str = show_date ? clock_date_ + "  " + clock_time_ : clock_time_;
     draw_text(str, clock_x_, 0, clock_w_, H, t.text, 1);
   }
+  if (qa_dump_enabled()) qa_dump_panel();
+}
+
+// Panel buttons for UI tests (see qa_dump in popup.h).
+void Panel::qa_dump_panel() {
+  int H = h();
+  auto line = [&](const std::string &name, int bx, int bw) {
+    return name + "\t" + std::to_string(bx) + "\t0\t" + std::to_string(bw) + "\t" +
+           std::to_string(H) + "\t1\n";
+  };
+  std::string text = line("start", 0, start_w_) + line("clock", clock_x_, clock_w_) +
+                     line("action-center", action_x_, action_w_);
+  for (size_t i = 0; i < status_icons_.size(); ++i) {
+    std::string name = status_section(status_icons_[i]);
+    if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
+    text += line("status:" + name, status_x_ + int(i) * S(26), S(26));
+  }
+  qa_dump(this, text);
 }
 
 // ------------------------------------------------------------------ events
@@ -965,8 +1077,8 @@ int Panel::handle(int event) {
           open_action_center();
           break;
         case CLOCK:
-          // The clock opens the calendar; the Action Center has its own button.
-          open_popup(calendar_.get(), x() + clock_x_ + clock_w_, true);
+          // The clock opens the Action Center with its calendar in view.
+          open_action_center(true);
           break;
         case SHOW_DESKTOP:
           x11::set_showing_desktop(!x11::showing_desktop());
@@ -1156,6 +1268,7 @@ bool Panel::handle_x(const XEvent &e) {
       relayout();
       redraw();
       quick_->status_changed();
+      flyout_->status_changed();
     }
     return true;
   }
@@ -1163,7 +1276,10 @@ bool Panel::handle_x(const XEvent &e) {
   if (e.type == PropertyNotify && e.xproperty.window == root) {
     Atom a = e.xproperty.atom;
     if (a == x11::atom("_NET_CLIENT_LIST") || a == x11::atom("_NET_ACTIVE_WINDOW")) {
-      if (a == x11::atom("_NET_ACTIVE_WINDOW") && quick_->is_open() && !Fl::grab()) quick_->close();
+      if (a == x11::atom("_NET_ACTIVE_WINDOW") && !Fl::grab()) {
+        if (quick_->is_open()) quick_->close();
+        if (flyout_->is_open()) flyout_->close();
+      }
       refresh_tasks();
     } else if (a == x11::atom("_SDE_COMMAND")) {
       std::string cmd = x11::read_command();
@@ -1171,10 +1287,12 @@ bool Panel::handle_x(const XEvent &e) {
         toggle_menu();
       else if (cmd == "quick")
         open_action_center();
+      else if (cmd == "quick:overview")
+        open_action_center();
       else if (starts_with(cmd, "quick:"))
-        open_action_center(cmd.substr(6));
+        open_flyout(cmd.substr(6));
       else if (cmd == "calendar")
-        open_popup(calendar_.get(), x() + clock_x_ + clock_w_, true);
+        open_action_center(true);
     } else if (a == x11::atom("_SDE_CONFIG_SERIAL")) {
       bool was_autohide = autohide_;
       load_config();
@@ -1184,6 +1302,7 @@ bool Panel::handle_x(const XEvent &e) {
       relayout();
       redraw();
       quick_->status_changed();
+      flyout_->status_changed();
       if (autohide_ && !was_autohide) Fl::add_timeout(1.0, hide_timeout, this);
     }
     return true;

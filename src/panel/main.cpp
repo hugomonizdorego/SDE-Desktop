@@ -11,6 +11,7 @@
 #include "crash.h"
 #include "i18n.h"
 #include "panel.h"
+#include "quick.h"
 #include "x11.h"
 
 namespace {
@@ -46,9 +47,7 @@ int main(int argc, char **argv) {
       command = "quick";
     } else if (!strcmp(argv[i], "--section") && i + 1 < argc) {
       std::string section = argv[++i];
-      if (section != "overview" && section != "network" && section != "bluetooth" &&
-          section != "sound" && section != "media" && section != "tray" && section != "power")
-        return 2;
+      if (section != "overview" && !QuickSettings::valid_section(section)) return 2;
       command = "quick:" + section;
     } else if (!strcmp(argv[i], "--safe")) {
       Panel::safe_mode = true;
@@ -62,9 +61,10 @@ int main(int argc, char **argv) {
                      "  --menu            open or close the application menu of the running panel\n"
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
-                     "  --section NAME    open Action Center: network, bluetooth, sound, media, "
-                     "tray, power\n"
-                     "  --calendar        open or close the calendar\n"
+                     "  --section NAME    open or close the flyout of a status icon: network,\n"
+                     "                    bluetooth, sound, media, power, drives, keyboard, tray\n"
+                     "                    (overview opens the Action Center)\n"
+                     "  --calendar        open or close the Action Center with its calendar\n"
                      "  --safe            start without tray icons and device status (after crashes)\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
