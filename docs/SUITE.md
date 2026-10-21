@@ -36,7 +36,21 @@ interfaces remain external system interfaces. Taca's file-manager extension
 builds against the bundled Liria extension API.
 
 Liria defaults to `--no-desktop`, including direct invocation: SDE retains its
-wallpaper and desktop icons. Power and screen lock have SDE-only autostart entries.
+wallpaper and desktop icons.
+
+Since alpha16 Liria is regenerated from Caja v1.28.0 with complete SDE
+branding (About: Developer DebION Dev-Team; desktop entries, AppStream data,
+man pages, local help in `/usr/share/liria/help`, translations and
+`liria --version`). The original authors' copyright lines stay in every
+source file, in the License section of the About window and under
+`/usr/share/doc/sde/upstream/caja/`, as the GPL requires;
+`tools/liria-branding-check.py` checks a prepared tree or an installed
+prefix for any other occurrence. The window has one compact header (Back,
+Forward, Parent, breadcrumb path with an edit toggle, icon/list/compact
+buttons, Search, main menu on F10) with 16 px symbolic icons, grouped
+context menus with Send To for removable drives, a symbolic sidebar and
+Liria's own style sheet that uses only standard GTK theme colours.
+Screenshots: `docs/screenshots/alpha16/liria-*.png`. Power and screen lock have SDE-only autostart entries.
 The locker uses Debian's common PAM policy and the independent
 `org.debion.session` idle-delay setting; it does not require MATE Session Manager.
 Actual locking, suspend, lid and
