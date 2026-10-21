@@ -71,6 +71,48 @@ std::vector<const DesktopEntry *> alphabetical(const std::vector<DesktopEntry> &
 // Icon name for a file or folder found by search.
 std::string file_icon(const std::string &path, bool dir);
 
+// ---------------------------------------------------------------- tiles
+// The Start menu's pinned applications are tiles in named groups. Sizes are
+// measured in grid cells: small 1x1, medium 2x2, wide 4x2, large 4x4, in a
+// group six cells wide.
+enum class TileSize { Small, Medium, Wide, Large };
+struct Tile {
+  std::string id;
+  TileSize size = TileSize::Medium;
+};
+struct TileGroup {
+  std::string name;
+  std::vector<Tile> tiles;
+};
+const int kGroupColumns = 6;
+int tile_cols(TileSize s);
+int tile_rows(TileSize s);
+char tile_size_code(TileSize s);  // 's', 'm', 'w', 'l'
+TileSize tile_size_from(char code);
+
+// [menu] tiles: "Name,a.desktop:m,b.desktop:w;Other,c.desktop:s". Group
+// names are percent-escaped (",;:%"). Empty groups are kept (a group the user
+// named before dragging tiles into it); unknown sizes read as medium; an id
+// is kept only once.
+std::vector<TileGroup> parse_tile_groups(const std::string &text);
+std::string format_tile_groups(const std::vector<TileGroup> &groups);
+// Every tile id, in order (kept in [menu] favorites for older readers).
+std::vector<std::string> tile_ids(const std::vector<TileGroup> &groups);
+// The first tile groups: alpha15 favorites (|user_list|) become one group
+// named |first|; the default favorites (|user_list| false) are split into
+// |first| (up to six) and |second|.
+std::vector<TileGroup> groups_from_favorites(const std::vector<std::string> &favorites,
+                                             bool user_list, const std::string &first,
+                                             const std::string &second);
+
+// Where a tile sits in its group, in cells.
+struct TileCell {
+  int col = 0, row = 0, cols = 2, rows = 2;
+};
+// First-fit placement of |tiles| (in order) in a grid |columns| cells wide.
+// |rows| receives the height of the group in cells.
+std::vector<TileCell> pack_tiles(const std::vector<Tile> &tiles, int columns, int *rows);
+
 // Names of files and folders below a few roots (not hidden, limited depth
 // and count), searched by name.
 class FileIndex {

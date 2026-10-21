@@ -166,6 +166,46 @@ int main() {
   std::string cmd = "rm -rf '" + root + "'";
   if (std::system(cmd.c_str()) != 0) ++failures;
 
+  // Start menu tile groups.
+  {
+    auto g = menu::parse_tile_groups("Work%2C Play,a.desktop:m,b.desktop:w;Explore,c.desktop:s,"
+                                     "a.desktop:l,d.desktop:x;Empty");
+    CHECK(g.size() == 3 && g[0].name == "Work, Play" && g[0].tiles.size() == 2);
+    CHECK(g[0].tiles[1].size == menu::TileSize::Wide);
+    // a.desktop only once; unknown size "x" reads as medium.
+    CHECK(g[1].tiles.size() == 2 && g[1].tiles[0].size == menu::TileSize::Small &&
+          g[1].tiles[1].id == "d.desktop" && g[1].tiles[1].size == menu::TileSize::Medium);
+    CHECK(g[2].name == "Empty" && g[2].tiles.empty());
+    CHECK(menu::parse_tile_groups(menu::format_tile_groups(g)).size() == 3);
+    CHECK(menu::format_tile_groups(g) ==
+          "Work%2C Play,a.desktop:m,b.desktop:w;Explore,c.desktop:s,d.desktop:m;Empty");
+    CHECK(menu::format_tile_groups({}) == ";" && menu::parse_tile_groups(";").empty());
+    CHECK(menu::tile_ids(g).size() == 4 && menu::tile_ids(g)[2] == "c.desktop");
+    CHECK(menu::parse_tile_groups("A%3Bb%25,x.desktop")[0].name == "A;b%");
+    // alpha15 favorites: one group; defaults: two groups.
+    std::vector<std::string> favs = {"1", "2", "3", "4", "5", "6", "7", "8"};
+    auto mine = menu::groups_from_favorites(favs, true, "Productivity", "Explore");
+    CHECK(mine.size() == 1 && mine[0].tiles.size() == 8 && mine[0].name == "Productivity");
+    auto defs = menu::groups_from_favorites(favs, false, "Productivity", "Explore");
+    CHECK(defs.size() == 2 && defs[0].tiles.size() == 6 && defs[1].tiles.size() == 2);
+    CHECK(menu::groups_from_favorites({}, false, "P", "E").empty());
+    // Packing: three medium tiles per row, a wide tile on its own row, small
+    // tiles filling the gaps first-fit.
+    using T = menu::TileSize;
+    int rows = 0;
+    auto cells = menu::pack_tiles({{"a", T::Medium}, {"b", T::Medium}, {"c", T::Medium},
+                                   {"d", T::Wide}, {"e", T::Small}, {"f", T::Small},
+                                   {"g", T::Large}},
+                                  menu::kGroupColumns, &rows);
+    CHECK(cells[2].col == 4 && cells[2].row == 0);
+    CHECK(cells[3].col == 0 && cells[3].row == 2 && cells[3].cols == 4);
+    CHECK(cells[4].col == 4 && cells[4].row == 2 && cells[5].col == 5 && cells[5].row == 2);
+    CHECK(cells[6].col == 0 && cells[6].row == 4 && rows == 8);
+    // A group narrower than a wide tile still places it.
+    cells = menu::pack_tiles({{"w", T::Wide}}, 2, &rows);
+    CHECK(cells[0].cols == 2 && rows == 2);
+  }
+
   if (failures) {
     std::fprintf(stderr, "%d menu model check(s) failed\n", failures);
     return 1;

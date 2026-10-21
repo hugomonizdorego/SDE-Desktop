@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The SDE application menu.
+// The SDE Start menu.
 //
-//  * Header: the user's picture and name, and a Files button. Power,
-//    session and Settings buttons live in the Action Center.
-//  * Search field (top or bottom): typing replaces the content with results
-//    (applications, Settings pages, session actions and files). Clicking the
-//    empty field shows recent applications and quick settings.
-//  * Category chips: each opens a page with that category's applications.
-//    They wrap into rows (or become icons) so that all of them always fit.
-//  * Home view: up to 12 "Favorites" as large tiles and below them the
-//    "Recently used" applications, ranked by how often and how recently they
-//    were opened (left); the alphabetical "All Programs" list with letter
-//    headings (right).
+//  * Left rail: the menu button (expands the rail with labels) and, at the
+//    bottom, the account, Documents, Pictures, Settings and Power.
+//  * Middle: "Recently added" and "Most used" applications, then every
+//    application A-Z under letter headings (click a heading for the letter
+//    grid). A small category filter at the top narrows the list.
+//  * Right: the user's pinned applications as tiles (small, medium, wide,
+//    large) in named groups. Drag tiles to arrange them, drag an
+//    application from the list to pin it; right-click for Resize, Move to
+//    group, Unpin and Rename group.
 //
-// Right-click an application to add it to the favorites or the panel;
-// right-click elsewhere to arrange the menu ([menu] in sde.conf).
+// Search lives in the panel (see search.h): typing while the menu is open
+// moves to the panel's search. The menu can be resized by dragging its
+// outer edges; [menu] in sde.conf keeps the tiles and the size.
 #pragma once
 
 #include <FL/Fl_Input.H>
@@ -30,6 +29,17 @@
 #include "popup.h"
 #include "theme.h"
 
+// Start tiles from other places (search results, the panel): the tile
+// groups saved in [menu] tiles.
+namespace start_tiles {
+std::vector<sde::menu::TileGroup> load();
+void save(const std::vector<sde::menu::TileGroup> &groups);
+std::vector<std::string> ids();
+bool pinned(const std::string &id);
+void pin(const std::string &id);
+void unpin(const std::string &id);
+}  // namespace start_tiles
+
 class AppMenu : public PanelPopup {
  public:
   AppMenu();
@@ -37,44 +47,40 @@ class AppMenu : public PanelPopup {
 
   void draw() override;
   int handle(int event) override;
+  // The group name editor commits or cancels (Enter, Escape, focus lost).
+  void finish_rename(bool commit);
 
  private:
-  enum View { V_HOME, V_CATEGORY, V_SEARCH, V_SEARCH_HOME };
-  // Everything that can be clicked, hovered or selected.
   enum Kind {
     K_NONE,
-    K_HEADER_BUTTON,  // index: 0 files
-    K_SEARCH,
-    K_CATEGORY,       // index into categories_
-    K_TILE,           // favorites (home) and recent tiles (search home)
-    K_RECENT,         // "Recently used" row (home)
-    K_ALL_ROW,        // "All Programs" application
-    K_ALL_LETTER,     // letter heading in "All Programs"
-    K_LETTER_JUMP,    // letter in the jump grid; index: letter
-    K_BACK,
-    K_CAT_TILE,       // application in a category page
-    K_RESULT,         // search result
-    K_CHIP,           // quick settings chip (search home)
+    K_RAIL,        // index: 0 menu, 1 account, 2 documents, 3 pictures, 4 settings, 5 power
+    K_FILTER,      // category filter of the list
+    K_ROW,         // application in the list; group: 0 A-Z, 1 recently added, 2 most used
+    K_LETTER,      // letter heading in the list
+    K_JUMP,        // letter in the jump grid; index: letter
+    K_GROUP,       // tile group heading; index: group
+    K_TILE,        // tile; index: tile number, group: group
+    K_HEADING,     // text only
   };
-  // A scrolled part of the menu: its rectangle, scroll offset and content.
   struct Area {
-    Kind kind = K_NONE;  // K_ALL_ROW, K_TILE (home left pane), K_CAT_TILE, K_RESULT
+    Kind kind = K_NONE;  // K_ROW (list) or K_TILE (tiles)
     int x = 0, y = 0, w = 0, h = 0;
     int content = 0;
     int *scroll = nullptr;
-    int bar_x() const;  // left edge of the scrollbar
+    int bar_x() const { return x + w - sde::S(7); }
     bool scrolls() const { return content > h; }
   };
   struct Item {
     Kind kind = K_NONE;
     int index = -1;
+    int group = -1;
     int x = 0, y = 0, w = 0, h = 0;
-    const sde::DesktopEntry *entry = nullptr;  // launchable items
-    int group = -1;                            // tile group or pane
-    std::string label;                         // letter or group text
-    bool visible = true;                       // inside its scrolled area
-    // Clip rectangle of the scrolled area the item belongs to.
-    int cx = 0, cy = 0, cw = 1 << 20, ch = 1 << 20;
+    const sde::DesktopEntry *entry = nullptr;
+    sde::menu::TileSize size = sde::menu::TileSize::Medium;
+    std::string label;
+    bool visible = true;
+    int cx = 0, cy = 0, cw = 1 << 20, ch = 1 << 20;  // clip of its scrolled area
+    bool clipped() const { return ch < (1 << 19); }
     bool contains(int px, int py) const {
       return visible && px >= x && px < x + w && py >= y && py < y + h && px >= cx &&
              px < cx + cw && py >= cy && py < cy + ch;
@@ -82,96 +88,99 @@ class AppMenu : public PanelPopup {
   };
   struct Ref {
     Kind kind = K_NONE;
-    int index = -1;
-    bool operator==(const Ref &o) const { return kind == o.kind && index == o.index; }
+    int index = -1, group = -1;
+    bool operator==(const Ref &o) const {
+      return kind == o.kind && index == o.index && group == o.group;
+    }
   };
 
   void prepare() override;
   void closed() override;
   void reload();
-  void load_favorites();
-  void save_favorites();
-  void save_usage();
-  void add_recent(const std::string &id);
-  void layout_chips();
+  void load_tiles();
+  void save_tiles();
   static void poll_applications(void *);
+  void filter();
   void metrics();
   void build_items();
-  void layout_home(int top, int bottom);
-  void layout_category(int top, int bottom);
-  void layout_search(int top, int bottom);
-  void layout_search_home(int top, int bottom);
-  void filter();
-  void set_view(View v);
-  void open_category(int index);
-  void go_back();
-  void give_focus();
-  void item_menu(Item it, int px, int py);
-  void layout_menu();
-  void activate(Item it);
-  void launch(Item it);
+  void layout_rail();
+  void layout_list();
+  void layout_tiles();
+  const sde::DesktopEntry *app(const std::string &id) const;
+  void activate(const Item &it);
+  void launch(const Item &it);
+  void rail_action(int index);
+  void filter_menu();
+  void tile_menu(const Item &it, int px, int py);
+  void group_menu(int group, int px, int py);
+  void row_menu(const Item &it, int px, int py);
+  void background_menu(int px, int py);
+  void start_rename(int group);
   void move_selection(int key);
   void ensure_visible(const Item &it);
   void scroll_by(Kind area, int dy);
   const Area *area(Kind kind) const;
   const Area *area_at(int x, int y) const;
   void drag_scrollbar(int y);
-  void qa_dump_menu();
   const Item *find(const Ref &r) const;
   const Item *item_at(int x, int y) const;
+  int edge_at(int x, int y) const;  // 1 width, 2 height, 3 both
+  void apply_size(int w, int h);
+  void drop_target(int x, int y, int &group, int &index) const;
+  void drop(int x, int y);
+  void redirect_to_search(const std::string &text);
   void start_hover(const Ref &r);
   static void animate(void *);
-  static void blink(void *);
-  static void search_changed(Fl_Widget *, void *data);
-  bool searching() const;
+  void qa_dump_menu();
 
   sde::Theme theme_;
   sde::Effects effects_;
-  Fl_Input *search_;
+  Fl_Input *rename_;  // group name editor
+  int rename_group_ = -1;
   std::vector<sde::DesktopEntry> apps_;
-  std::string apps_stamp_;  // applications_stamp() when apps_ was loaded
-  std::vector<sde::DesktopEntry> extras_;  // Settings pages and session actions
-  std::vector<sde::DesktopEntry> files_;   // file search results
-  std::vector<std::string> categories_;   // non-empty menu categories
-  std::vector<const sde::DesktopEntry *> sorted_;  // all applications, A-Z
-  std::vector<const sde::DesktopEntry *> results_;
-  std::vector<const sde::DesktopEntry *> category_apps_;
-  std::vector<std::string> favorites_, recent_;  // recent_: by last use
-  std::vector<sde::menu::Usage> usage_;           // launch counts and times
-  bool favorites_default_ = false;
-  std::vector<const sde::DesktopEntry *> fav_entries_, frecent_;
-  sde::menu::FileIndex file_index_;
+  std::string apps_stamp_;
+  std::vector<std::string> categories_;
+  std::vector<const sde::DesktopEntry *> sorted_, list_apps_, added_, most_used_;
+  std::vector<sde::menu::TileGroup> groups_;
+  std::vector<sde::menu::Usage> usage_;
+  bool tiles_default_ = false;  // not saved yet: follows the installed applications
   std::vector<Item> items_;
-  std::vector<Item> chips_;  // category chips, laid out by layout_chips()
   std::vector<Area> areas_;
-  bool chips_icons_ = false;  // icon-only chips (labels as tooltips)
+  struct Rect {
+    int x = 0, y = 0, w = 0, h = 0;
+    bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
+  };
+  std::vector<Rect> group_rects_;  // heading and tiles of each group (window coordinates)
+  Rect new_group_;                 // drop zone for a new group while dragging
   cairo_surface_t *avatar_ = nullptr;
   std::string full_name_;
 
-  View view_ = V_HOME, before_search_ = V_HOME;
-  int category_ = -1;
-  int all_scroll_ = 0, cat_scroll_ = 0, result_scroll_ = 0, home_scroll_ = 0;
-  // Scrollbar drag: the area and where it started.
-  Kind drag_area_ = K_NONE;
+  int category_ = -1;  // list filter, -1 all applications
+  int list_scroll_ = 0, tiles_scroll_ = 0;
+  bool letters_open_ = false, rail_open_ = false;
+  Kind drag_area_ = K_NONE;  // scrollbar drag
   int drag_y_ = 0, drag_scroll_ = 0;
-  bool bar_hover_ = false;  // the pointer is over a scrollbar
-  bool menu_busy_ = false;  // a context menu runs its own event loop
-  std::string last_query_;
-  bool letters_open_ = false;
+  // Pressed tile or list row, and its drag to a new place.
+  Ref press_;
+  int press_x_ = 0, press_y_ = 0, drag_x_ = 0, drag_y2_ = 0;
+  bool dragging_ = false;
+  std::string drag_id_;
+  sde::menu::TileSize drag_size_ = sde::menu::TileSize::Medium;
+  // Resizing the menu by its edge.
+  int resize_edge_ = 0, resize_rx_ = 0, resize_ry_ = 0, resize_w_ = 0, resize_h_ = 0;
+  int cursor_edge_ = 0;
+  bool menu_busy_ = false;
   Ref hover_, selected_;
-  bool keyboard_ = false;  // selection was moved with the keyboard
-  bool caret_on_ = true;
+  bool keyboard_ = false;
 
   // Arrangement from [menu] in sde.conf.
-  bool search_top_ = true, show_desc_ = true, show_recent_ = true;
+  bool show_added_ = true, show_most_used_ = true;
 
   // Layout (window coordinates), from metrics().
-  int pad_ = 12, header_h_ = 56, search_y_ = 56, search_h_ = 40, cats_y_ = 104, cats_h_ = 36;
-  int body_top_ = 148, body_bottom_ = 0;
-  bool compact_ = false;  // little height: smaller header, tiles and chips
-  int split_x_ = 0;  // left edge of the "All Programs" pane
-  int all_top_ = 0, all_bottom_ = 0;
-  int view_top_ = 0, view_bottom_ = 0;  // scrolled area of category/search views
+  int pad_ = 12, rail_w_ = 48, list_x_ = 48, list_w_ = 260, tiles_x_ = 0, tiles_w_ = 0;
+  int header_h_ = 44, list_top_ = 44, bottom_ = 0;
+  int cell_ = 46, gap_ = 4, group_w_ = 296, group_cols_ = 1;
+  bool compact_ = false;
 
   // Animations: hover progress of one item and the launch effect.
   Ref anim_;

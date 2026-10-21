@@ -43,6 +43,9 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--menu")) {
       command = "menu";
+    } else if (!strcmp(argv[i], "--search")) {
+      command = "search";
+      if (i + 1 < argc && argv[i + 1][0] != '-') command += std::string(":") + argv[++i];
     } else if (!strcmp(argv[i], "--quick-settings") || !strcmp(argv[i], "--action-center")) {
       command = "quick";
     } else if (!strcmp(argv[i], "--section") && i + 1 < argc) {
@@ -61,8 +64,9 @@ int main(int argc, char **argv) {
       printf("sde-panel %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("%s", _("Usage: sde-panel [--menu | --action-center | --calendar | --alarms | --version]\n\n"
+      printf("%s", _("Usage: sde-panel [--menu | --search [TEXT] | --action-center | --calendar | --alarms | --version]\n\n"
                      "  --menu            open or close the application menu of the running panel\n"
+                     "  --search [TEXT]   open or close the panel search (with TEXT typed)\n"
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
                      "  --section NAME    open or close the flyout of a status icon: network,\n"
@@ -76,7 +80,7 @@ int main(int argc, char **argv) {
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
   }
-  // The panel's only text field is the menu search. An X input method such
+  // The panel's text fields are the search and the menu's group names. An X input method such
   // as IBus or Fcitx can swallow its keys in FLTK 1.3, so the panel opens
   // its display without XIM. The variable is restored at once, so programs
   // started from the panel keep the user's input method.

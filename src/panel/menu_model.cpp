@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <cstdio>
 #include <cstdlib>
 
 #include "util.h"
@@ -83,6 +85,136 @@ std::vector<std::string> default_favorites(const std::vector<DesktopEntry> &apps
     if (out.size() >= std::min<size_t>(max, 4)) break;
     if (std::find(out.begin(), out.end(), a.id) == out.end()) out.push_back(a.id);
   }
+  return out;
+}
+
+int tile_cols(TileSize s) { return s == TileSize::Small ? 1 : s == TileSize::Medium ? 2 : 4; }
+int tile_rows(TileSize s) { return s == TileSize::Small ? 1 : s == TileSize::Large ? 4 : 2; }
+char tile_size_code(TileSize s) {
+  return s == TileSize::Small ? 's' : s == TileSize::Wide ? 'w' : s == TileSize::Large ? 'l' : 'm';
+}
+TileSize tile_size_from(char c) {
+  return c == 's'   ? TileSize::Small
+         : c == 'w' ? TileSize::Wide
+         : c == 'l' ? TileSize::Large
+                    : TileSize::Medium;
+}
+
+namespace {
+std::string escape_name(const std::string &s) {
+  std::string out;
+  for (char c : s) {
+    if (c == ',' || c == ';' || c == ':' || c == '%' || c == '\n' || c == '\r') {
+      char buf[4];
+      snprintf(buf, sizeof buf, "%%%02X", (unsigned char)c);
+      out += buf;
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+std::string unescape_name(const std::string &s) {
+  std::string out;
+  for (size_t i = 0; i < s.size(); ++i) {
+    unsigned v = 0;
+    if (s[i] == '%' && i + 2 < s.size() && isxdigit((unsigned char)s[i + 1]) &&
+        isxdigit((unsigned char)s[i + 2]) && sscanf(s.substr(i + 1, 2).c_str(), "%2x", &v) == 1) {
+      out += char(v);
+      i += 2;
+      continue;
+    }
+    out += s[i];
+  }
+  return out;
+}
+}  // namespace
+
+std::vector<TileGroup> parse_tile_groups(const std::string &text) {
+  std::vector<TileGroup> out;
+  std::vector<std::string> seen;
+  for (auto &part : split(text, ';')) {
+    if (trim(part).empty()) continue;
+    auto fields = split(part, ',');
+    TileGroup g;
+    g.name = trim(unescape_name(fields[0]));
+    for (size_t i = 1; i < fields.size(); ++i) {
+      std::string f = trim(fields[i]);
+      if (f.empty()) continue;
+      Tile t;
+      size_t colon = f.rfind(':');
+      t.id = trim(colon == std::string::npos ? f : f.substr(0, colon));
+      if (colon != std::string::npos && colon + 1 < f.size()) t.size = tile_size_from(f[colon + 1]);
+      if (t.id.empty() || std::find(seen.begin(), seen.end(), t.id) != seen.end()) continue;
+      seen.push_back(t.id);
+      g.tiles.push_back(t);
+    }
+    out.push_back(g);
+  }
+  return out;
+}
+
+std::string format_tile_groups(const std::vector<TileGroup> &groups) {
+  std::string s;
+  for (auto &g : groups) {
+    if (!s.empty()) s += ";";
+    s += escape_name(g.name);
+    for (auto &t : g.tiles) s += "," + t.id + ":" + tile_size_code(t.size);
+  }
+  // Nothing pinned is saved as ";" so that the defaults do not come back.
+  return s.empty() ? ";" : s;
+}
+
+std::vector<std::string> tile_ids(const std::vector<TileGroup> &groups) {
+  std::vector<std::string> out;
+  for (auto &g : groups)
+    for (auto &t : g.tiles) out.push_back(t.id);
+  return out;
+}
+
+std::vector<TileGroup> groups_from_favorites(const std::vector<std::string> &favorites,
+                                             bool user_list, const std::string &first,
+                                             const std::string &second) {
+  std::vector<TileGroup> out;
+  if (favorites.empty()) return out;
+  TileGroup a{first, {}}, b{second, {}};
+  for (size_t i = 0; i < favorites.size(); ++i)
+    (user_list || i < 6 ? a : b).tiles.push_back(Tile{favorites[i], TileSize::Medium});
+  out.push_back(a);
+  if (!b.tiles.empty()) out.push_back(b);
+  return out;
+}
+
+std::vector<TileCell> pack_tiles(const std::vector<Tile> &tiles, int columns, int *rows) {
+  columns = std::max(1, columns);
+  std::vector<std::vector<char>> used;  // [row][col]
+  auto free_at = [&](int r, int c, int w, int h) {
+    for (int y = r; y < r + h && y < int(used.size()); ++y)
+      for (int x = c; x < c + w; ++x)
+        if (used[size_t(y)][size_t(x)]) return false;
+    return true;
+  };
+  std::vector<TileCell> out;
+  int height = 0;
+  for (auto &t : tiles) {
+    TileCell cell;
+    cell.cols = std::min(columns, tile_cols(t.size));
+    cell.rows = tile_rows(t.size);
+    bool placed = false;
+    for (int r = 0; !placed; ++r)
+      for (int c = 0; c + cell.cols <= columns && !placed; ++c)
+        if (free_at(r, c, cell.cols, cell.rows)) {
+          cell.row = r;
+          cell.col = c;
+          placed = true;
+        }
+    while (int(used.size()) < cell.row + cell.rows) used.emplace_back(size_t(columns), 0);
+    for (int y = cell.row; y < cell.row + cell.rows; ++y)
+      for (int x = cell.col; x < cell.col + cell.cols; ++x) used[size_t(y)][size_t(x)] = 1;
+    height = std::max(height, cell.row + cell.rows);
+    out.push_back(cell);
+  }
+  if (rows) *rows = height;
   return out;
 }
 
