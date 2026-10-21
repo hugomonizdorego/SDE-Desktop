@@ -242,7 +242,11 @@ std::string compositor_effects(const Config &cfg, bool safe) {
   std::string effects = lower(cfg.get("compositor", "effects", "auto"));
   if (effects == "full" || effects == "lite") return effects;
   // The safe (XRender) fallback runs after OpenGL failed: CPU rendering too.
-  return detect_graphics_class() == "hardware" && !safe ? "full" : "lite";
+  if (safe) return "lite";
+  // A backend picked by hand in Settings keeps every effect, as before.
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  if (backend == "glx" || backend == "xrender") return "full";
+  return detect_graphics_class() == "hardware" ? "full" : "lite";
 }
 
 std::string write_compositor_config(const Config &cfg, bool safe) {
