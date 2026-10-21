@@ -66,25 +66,40 @@ bool ensure_openbox_config() {
   return write_file_atomic(path, tmpl);
 }
 
-bool set_openbox_theme(bool dark, const std::string &style) {
+// Reads (and with |wanted| replaces) the text of the first <tag>...</tag>
+// inside <theme>. False when it is missing.
+static bool theme_value(std::string &text, const std::string &tag, std::string &current,
+                        const std::string *wanted) {
+  size_t theme = text.find("<theme>"), end = text.find("</theme>");
+  if (theme == std::string::npos || end == std::string::npos) return false;
+  const std::string open = "<" + tag + ">", close = "</" + tag + ">";
+  size_t a = text.find(open, theme), b = text.find(close, theme);
+  if (a == std::string::npos || b == std::string::npos || b < a || b > end) return false;
+  current = text.substr(a + open.size(), b - a - open.size());
+  if (wanted) text.replace(a + open.size(), current.size(), *wanted);
+  return true;
+}
+
+bool set_openbox_theme(const std::string &wanted, const std::string &layout) {
   std::string path = openbox_config_path();
   std::string text;
   if (!ensure_openbox_config() || !read_file(path, text)) return false;
-  // The template marks the theme name line so it can be found reliably.
-  const std::string open = "<name>", close = "</name>";
-  size_t theme = text.find("<theme>");
-  if (theme == std::string::npos) return false;
-  size_t a = text.find(open, theme), b = text.find(close, theme);
-  if (a == std::string::npos || b == std::string::npos || b < a) return false;
-  std::string current = text.substr(a + open.size(), b - a - open.size());
-  std::string wanted = theme_dir(style) + (dark ? "-Dark" : "");
-  // Respect a theme the user picked by hand (anything that is not SDE's).
-  static const char *ours[] = {"SDE", "SDE-Dark", "SDE-Aero", "SDE-Aero-Dark", "SDE-Liquid-Glass",
-                               "SDE-Liquid-Glass-Dark"};
-  if (std::find(std::begin(ours), std::end(ours), current) == std::end(ours)) return false;
-  if (current == wanted) return false;
-  text.replace(a + open.size(), current.size(), wanted);
-  return write_file_atomic(path, text);
+  std::string current, before = text;
+  if (!theme_value(text, "name", current, nullptr)) return false;
+  // Respect a theme the user picked by hand (anything that is not SDE's:
+  // SDE, SDE-Dark, SDE-Aero..., SDE-Graphite-Light-Blue, ...).
+  if (current == "SDE" || starts_with(current, "SDE-")) theme_value(text, "name", current, &wanted);
+  std::string old_layout;
+  // The layouts SDE has used; anything else was chosen by hand.
+  if (theme_value(text, "titleLayout", old_layout, nullptr) &&
+      (old_layout == "NLIMC" || old_layout == "CIML" || old_layout == "CIMLN"))
+    theme_value(text, "titleLayout", old_layout, &layout);
+  return text != before && write_file_atomic(path, text);
+}
+
+bool set_openbox_theme(bool dark, const std::string &style) {
+  return set_openbox_theme(theme_dir(style, dark, "blue"),
+                           theme_title_layout(lower(style) == "aero" ? "fluent" : lower(style)));
 }
 
 bool set_openbox_font_size(int points) {
@@ -109,8 +124,8 @@ bool set_openbox_font_size(int points) {
 }
 
 bool sync_openbox(const Config &cfg) {
-  bool changed = set_openbox_theme(lower(cfg.get("appearance", "theme")) == "dark", theme_style(cfg));
   Theme t = Theme::from_config(cfg);
+  bool changed = set_openbox_theme(t.gtk_theme, theme_title_layout(t.family));
   int pt = cfg.get_int("appearance", "font_size", 10);
   changed = set_openbox_font_size(int(pt * t.scale + 0.5)) || changed;
   return changed;

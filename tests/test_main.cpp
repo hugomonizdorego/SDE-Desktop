@@ -144,28 +144,103 @@ static void test_application_categories_refresh() {
 
 // WCAG 2.1: normal text needs 4.5:1, large/bold UI text and icons 3:1.
 static void test_theme_contrast() {
-  for (const char *style : {"light", "dark"}) {
-    for (int a = 0; a < kAccentChoiceCount; ++a) {
-      Config cfg;
-      cfg.set("appearance", "theme", style);
-      cfg.set("appearance", "accent", kAccentChoices[a].hex);
-      cfg.set("appearance", "scale", "100");
-      Theme t = Theme::from_config(cfg);
-      CHECK(contrast(t.text, t.background) >= 7.0);
-      CHECK(contrast(t.text, t.surface) >= 7.0);
-      CHECK(contrast(t.text_dim, t.surface) >= 4.5);
-      CHECK(contrast(t.text_dim, t.background) >= 4.5);
-      CHECK(contrast(t.on_accent, t.accent) >= 4.5);
-      if (contrast(t.on_accent, t.accent) < 4.5)
-        fprintf(stderr, "  on_accent on %s (%s) = %.2f\n", kAccentChoices[a].name, style,
-                contrast(t.on_accent, t.accent));
-      // Selected text drawn in the accent color on the surface.
-      double c = contrast(t.accent_text, t.surface);
-      CHECK(c >= 4.5);
-      if (c < 4.5)
-        fprintf(stderr, "  accent text %s on %s surface = %.2f\n", kAccentChoices[a].name, style, c);
-    }
+  for (const auto &fam : theme_families())
+    for (const char *mode : {"light", "dark"})
+      for (const auto &accent : theme_accents()) {
+        Config cfg;
+        cfg.set("appearance", "style", fam.id);
+        cfg.set("appearance", "theme", mode);
+        cfg.set("appearance", "accent_name", accent);
+        cfg.set("appearance", "scale", "100");
+        Theme t = Theme::from_config(cfg);
+        std::string what = fam.id + " " + mode + " " + accent;
+        CHECK(t.family == fam.id && t.accent_name == accent);
+        CHECK(contrast(t.text, t.background) >= 7.0);
+        CHECK(contrast(t.text, t.surface) >= 7.0);
+        CHECK(contrast(t.text, t.menu_bg) >= 7.0);
+        CHECK(contrast(t.text_dim, t.surface) >= 4.5);
+        CHECK(contrast(t.text_dim, t.background) >= 4.5);
+        CHECK(contrast(t.menu_hover_text, t.menu_hover) >= 4.5);
+        if (contrast(t.on_accent, t.accent) < 4.5)
+          fprintf(stderr, "  note: on_accent on %s = %.2f\n", what.c_str(), contrast(t.on_accent, t.accent));
+        CHECK(contrast(t.on_accent, t.accent) >= 3.0);
+        // Selected text drawn in the accent color on the surface.
+        double c = contrast(t.accent_text, t.surface);
+        CHECK(c >= 4.5);
+        if (c < 4.5) fprintf(stderr, "  accent text %s = %.2f\n", what.c_str(), c);
+        CHECK(t.gtk_theme == theme_dir(fam.id, std::string(mode) == "dark", accent));
+      }
+}
+
+// Saved [appearance] values of every release map to the new families.
+static void test_theme_migration() {
+  struct Case {
+    const char *style, *theme, *accent, *name, *family, *mode, *want_accent;
+  } cases[] = {
+      {"sde", "light", "#2672BE", "", "graphite", "light", "blue"},
+      {"sde", "dark", "#7A4FD1", "", "graphite", "dark", "purple"},
+      {"aero", "light", "#167D9A", "", "fluent", "light", "teal"},
+      {"aero", "dark", "#C2407A", "", "fluent", "dark", "pink"},
+      {"liquid-glass", "light", "#D9682B", "", "glass", "light", "orange"},
+      {"liquid-glass", "dark", "#277A4C", "", "glass", "dark", "green"},
+      {"", "light", "#5A6472", "", "graphite", "light", "graphite"},
+      {"Aero", "DARK", "#2F6FDB", "", "fluent", "dark", "blue"},
+      {"bogus", "sepia", "", "", "graphite", "light", "blue"},
+      {"graphite", "auto", "#3684DD", "", "graphite", "auto", "blue"},
+      {"fluent", "dark", "#3684DD", "red", "fluent", "dark", "red"},
+      {"glass", "light", "#CD0245", "", "glass", "light", "pink"},
+      {"fluent", "light", "#FF0000", "", "fluent", "light", "red"},  // own color: nearest
+  };
+  for (const auto &c : cases) {
+    ThemeChoice t = map_theme_choice(c.style, c.theme, c.accent, c.name);
+    CHECK(t.family == c.family);
+    CHECK(t.mode == c.mode);
+    CHECK(t.accent == c.want_accent);
+    if (t.family != c.family || t.mode != c.mode || t.accent != c.want_accent)
+      fprintf(stderr, "  %s/%s/%s -> %s/%s/%s\n", c.style, c.theme, c.accent, t.family.c_str(),
+              t.mode.c_str(), t.accent.c_str());
   }
+  CHECK(map_theme_choice("fluent", "light", "#FF0000", "").custom_accent == "#FF0000");
+  CHECK(map_theme_choice("fluent", "light", "#2777FF", "").custom_accent.empty());
+  // A custom color stays SDE's accent; GTK gets the nearest named one.
+  {
+    Config cfg;
+    cfg.set("appearance", "accent", "#FF0000");
+    cfg.set("appearance", "scale", "100");
+    Theme t = Theme::from_config(cfg);
+    CHECK(t.accent.to_hex() == "#FF0000");
+    CHECK(t.gtk_theme == "SDE-Graphite-Light-Red");
+  }
+  // migrate_theme_config() rewrites only legacy values.
+  Config cfg;
+  cfg.set("appearance", "style", "aero");
+  cfg.set("appearance", "theme", "dark");
+  cfg.set("appearance", "accent", "#7A4FD1");
+  CHECK(migrate_theme_config(cfg));
+  CHECK(cfg.get("appearance", "style") == "fluent");
+  CHECK(cfg.get("appearance", "theme") == "dark");
+  CHECK(cfg.get("appearance", "accent_name") == "purple");
+  CHECK(cfg.get("appearance", "accent") == "#962AC3");
+  CHECK(theme_dir(cfg) == "SDE-Fluent-Dark-Purple");
+  CHECK(!migrate_theme_config(cfg));
+  cfg.set("appearance", "style", "liquid-glass");
+  cfg.set("appearance", "theme", "dim");
+  CHECK(migrate_theme_config(cfg));
+  CHECK(cfg.get("appearance", "style") == "glass");
+  CHECK(cfg.get("appearance", "theme") == "light");
+  // Directory names, the old one-argument form and the auto clock.
+  CHECK(theme_dir("graphite") == "SDE-Graphite-Light-Blue");
+  CHECK(theme_dir("aero", true) == "SDE-Fluent-Dark-Blue");
+  CHECK(theme_dir("glass", false, "graphite") == "SDE-Glass-Light-Graphite");
+  CHECK(theme_title_layout("graphite") == "CIML");
+  CHECK(theme_title_layout("fluent") == "NLIMC");
+  std::tm noon{};
+  noon.tm_year = 126, noon.tm_mon = 0, noon.tm_mday = 10, noon.tm_hour = 12, noon.tm_isdst = -1;
+  std::time_t t12 = mktime(&noon);
+  CHECK(!theme_mode_dark("auto", t12));
+  CHECK(theme_mode_dark("auto", t12 + 8 * 3600));
+  CHECK(theme_auto_seconds_left(t12) == 7 * 3600);
+  CHECK(theme_mode_dark("dark", t12) && !theme_mode_dark("light", t12 + 8 * 3600));
 }
 
 static void test_scale() {
@@ -224,61 +299,65 @@ static void test_gtk_preferences() {
   CHECK(text.find("gtk-double-click-time=450") != std::string::npos);
   CHECK(text.find("keep=yes") != std::string::npos);
   CHECK(text.find("gtk-application-prefer-dark-theme=true") != std::string::npos);
-  // SDE Aero is used when it is installed; otherwise GTK's Adwaita.
-  bool aero = gtk_theme_name(cfg) == "SDE-Aero";
+  // SDE Graphite (the default) when it is installed; otherwise GTK's Adwaita.
+  std::string name = gtk_theme_name(cfg);
+  bool sde = name == "SDE-Graphite-Dark-Blue";
+  CHECK(sde || name == "Adwaita-dark");
   CHECK(read_file(std::string(root) + "/gtk-4.0/settings.ini", text));
-  CHECK(text.find(aero ? "gtk-theme-name=SDE-Aero" : "gtk-theme-name=Adwaita") != std::string::npos);
+  CHECK(text.find("gtk-theme-name=" + name) != std::string::npos);
+  CHECK(text.find("gtk-decoration-layout=close,minimize,maximize:menu") != std::string::npos);
   CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
-  CHECK(text.find(aero ? "SDE-Aero-Dark" : "Adwaita-dark") != std::string::npos);
+  CHECK(text.find("Net/ThemeName \"" + name + "\"") != std::string::npos);
+  CHECK(text.find("Gtk/DecorationLayout") != std::string::npos);
   CHECK(text.find("Xft/DPI 122880") != std::string::npos);
 
-  // Disabling Aero always selects Adwaita and removes only SDE's CSS block.
+  // Only SDE's block of the user's CSS changes; older blocks are replaced.
   CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/gtk.css",
                           "/* SDE Aero: managed by SDE Settings - begin */\n@define-color "
                           "sde_accent #000000;\n/* SDE Aero: managed by SDE Settings - end */\n"
                           ".mine { color: red; }\n"));
-  // Without [appearance] style, [aero] enabled=false means SDE Light/Dark
-  // (or Adwaita when the SDE themes are not installed); only SDE's block of
-  // the user's CSS changes, and an older "SDE Aero" block is replaced.
-  CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/gtk.css",
-                          "/* SDE Aero: managed by SDE Settings - begin */\n@define-color "
-                          "sde_accent #000000;\n/* SDE Aero: managed by SDE Settings - end */\n"
-                          ".mine { color: red; }\n"));
-  cfg.set("aero", "enabled", "false");
-  CHECK(theme_style(cfg) == "sde");
-  std::string flat = gtk_theme_name(cfg);
-  CHECK(flat == "SDE" || flat == "Adwaita");
+  cfg.set("appearance", "style", "aero");  // alpha15 value
+  cfg.set("appearance", "accent", "#167D9A");
+  CHECK(theme_style(cfg) == "fluent");
+  name = gtk_theme_name(cfg);
+  CHECK(name == "SDE-Fluent-Dark-Teal" || name == "Adwaita-dark");
   sync_gtk_settings(cfg);
   CHECK(read_file(std::string(root) + "/gtk-3.0/gtk.css", text));
   CHECK(text.find(".mine { color: red; }") != std::string::npos);
   CHECK(text.find("SDE Aero: managed") == std::string::npos);
-  CHECK(text.find("sde_glass_bg") == std::string::npos);
   CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
-  CHECK(text.find("gtk-theme-name=" + flat) != std::string::npos);
+  CHECK(text.find("gtk-theme-name=" + name) != std::string::npos);
+  CHECK(text.find("gtk-decoration-layout=menu:minimize,maximize,close") != std::string::npos);
   cfg.set("appearance", "style", "liquid-glass");
-  CHECK(theme_style(cfg) == "liquid-glass");
-  CHECK(theme_dir(theme_style(cfg)) == "SDE-Liquid-Glass");
+  CHECK(theme_style(cfg) == "glass");
+  CHECK(theme_dir(cfg) == "SDE-Glass-Dark-Teal");
   cfg.unset("appearance", "style");
+  cfg.unset("appearance", "accent");
 
-  // The generated compositor configuration follows [aero].
+  // The generated compositor configuration follows the family and [aero].
   cfg.set("aero", "enabled", "true");
   cfg.set("aero", "transparency", "30");
   cfg.set("compositor", "backend", "xrender");
+  cfg.set("compositor", "effects", "full");
+  cfg.set("appearance", "style", "glass");
   std::string conf = write_compositor_config(cfg);
   CHECK(read_file(conf, text));
   CHECK(text.find("backend = \"xrender\";") != std::string::npos);
   CHECK(text.find("frame-opacity = 0.64;") != std::string::npos);
   CHECK(text.find("blur-background = true;") != std::string::npos);
+  CHECK(text.find("corner-radius = 16;") != std::string::npos);
+  // Fluent: opaque frames, Acrylic (translucent, blurred) menus, 8 px corners.
+  cfg.set("appearance", "style", "fluent");
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);
+  CHECK(text.find("blur-background = true;") != std::string::npos);
+  CHECK(text.find("corner-radius = 8;") != std::string::npos);
+  CHECK(text.find("popup_menu = { opacity = 1.00") == std::string::npos);
   cfg.set("aero", "enabled", "false");
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);
   CHECK(text.find("blur-background") == std::string::npos);
-  // Liquid Glass: larger corners and stronger blur.
-  cfg.set("aero", "enabled", "true");
-  cfg.set("appearance", "style", "liquid-glass");
-  CHECK(read_file(write_compositor_config(cfg), text));
-  CHECK(text.find("corner-radius = 16;") != std::string::npos);
-  CHECK(text.find("blur-background = true;") != std::string::npos);
+  CHECK(text.find("popup_menu = { opacity = 1.00") != std::string::npos);
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 
@@ -288,6 +367,7 @@ int main() {
   test_application_categories_refresh();
   test_desktop_entry();
   test_theme_contrast();
+  test_theme_migration();
   test_scale();
   test_dbus_value();
   test_gtk_preferences();

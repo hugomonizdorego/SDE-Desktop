@@ -21,12 +21,23 @@
 #include "util.h"
 namespace sde {
 namespace {
-bool theme_installed(const std::string &name) {
+// The directory of an installed GTK theme, or "".
+std::string theme_path(const std::string &name) {
   std::vector<std::string> dirs = {std::string(g_get_user_data_dir())};
   for (const gchar *const *d = g_get_system_data_dirs(); d && *d; ++d) dirs.push_back(*d);
   dirs.push_back(std::string(SDE_DATADIR) + "/..");
   for (const auto &d : dirs)
-    if (file_exists(d + "/themes/" + name + "/gtk-3.0/gtk.css")) return true;
+    if (file_exists(d + "/themes/" + name + "/gtk-3.0/gtk.css")) return d + "/themes/" + name;
+  return "";
+}
+bool theme_installed(const std::string &name) { return !theme_path(name).empty(); }
+
+bool icon_theme_installed(const std::string &name) {
+  std::vector<std::string> dirs = {std::string(g_get_user_data_dir()), home_dir() + "/.icons"};
+  for (const gchar *const *d = g_get_system_data_dirs(); d && *d; ++d) dirs.push_back(*d);
+  for (const auto &d : dirs)
+    if (file_exists(d + "/icons/" + name + "/index.theme") || file_exists(d + "/" + name + "/index.theme"))
+      return true;
   return false;
 }
 
@@ -63,19 +74,32 @@ void write_user_css(const std::string &path, const std::string &block) {
 }  // namespace
 
 std::string gtk_theme_name(const Config &cfg) {
-  std::string name = theme_dir(theme_style(cfg));
+  std::string name = theme_dir(cfg);
   if (theme_installed(name)) return name;
+  return theme_mode_dark(theme_choice(cfg).mode) ? "Adwaita-dark" : "Adwaita";
+}
+
+std::string gtk_icon_theme_name(const Config &cfg, bool dark) {
+  std::string icons = cfg.get("appearance", "icon_theme", "auto");
+  if (icons != "auto" && !icons.empty()) return icons;
+  // Papirus (recommended by the sde package) matches every SDE family.
+  std::string papirus = dark ? "Papirus-Dark" : "Papirus";
+  if (icon_theme_installed(papirus)) return papirus;
   return "Adwaita";
 }
 
 void sync_gtk_settings(const Config &cfg) {
-  int dpi = int(std::lround(96 * Theme::from_config(cfg).scale * 1024));
-  bool dark = cfg.get("appearance", "theme", "light") == "dark";
+  Theme t = Theme::from_config(cfg);
+  int dpi = int(std::lround(96 * t.scale * 1024));
+  bool dark = t.dark;
   bool system = cfg.get("suite", "gtk_theme", "auto") == "system";
   std::string font =
       cfg.get("appearance", "font", "Sans") + " " + cfg.get("appearance", "font_size", "10");
-  std::string icons = cfg.get("appearance", "icon_theme", "auto");
-  if (icons == "auto") icons = "Adwaita";
+  std::string icons = gtk_icon_theme_name(cfg, dark);
+  std::string cursor = cfg.get("appearance", "cursor_theme", "Adwaita");
+  std::string gtk_theme = gtk_theme_name(cfg);
+  bool sde_theme = starts_with(gtk_theme, "SDE-");
+  std::string layout = theme_decoration_layout(t.family);
   for (const char *version : {"gtk-3.0", "gtk-4.0"}) {
     std::string dir = config_home() + "/" + version;
     make_dirs(dir);
@@ -83,12 +107,14 @@ void sync_gtk_settings(const Config &cfg) {
     g_key_file_load_from_file(file, (dir + "/settings.ini").c_str(), G_KEY_FILE_KEEP_COMMENTS,
                               nullptr);
     if (!system) {
-      g_key_file_set_string(file, "Settings", "gtk-theme-name", gtk_theme_name(cfg).c_str());
+      g_key_file_set_string(file, "Settings", "gtk-theme-name", gtk_theme.c_str());
       g_key_file_set_boolean(file, "Settings", "gtk-application-prefer-dark-theme", dark);
+      g_key_file_set_string(file, "Settings", "gtk-decoration-layout", layout.c_str());
     }
     g_key_file_set_integer(file, "Settings", "gtk-xft-dpi", dpi);
     g_key_file_set_string(file, "Settings", "gtk-font-name", font.c_str());
     g_key_file_set_string(file, "Settings", "gtk-icon-theme-name", icons.c_str());
+    g_key_file_set_string(file, "Settings", "gtk-cursor-theme-name", cursor.c_str());
     gsize size = 0;
     gchar *text = g_key_file_to_data(file, &size, nullptr);
     if (text) {
@@ -97,25 +123,26 @@ void sync_gtk_settings(const Config &cfg) {
     }
     g_key_file_unref(file);
   }
-  // SDE themes read the accent and the glass opacity from the user's CSS.
-  std::string block;
-  std::string gtk_theme = gtk_theme_name(cfg);
-  if (!system && gtk_theme != "Adwaita") {
-    Theme t = Theme::from_config(cfg);
-    Color accent = dark ? t.accent.mix(Color::hex(0xFFFFFF), 0.15) : t.accent;
-    block = "@define-color sde_accent " + accent.to_hex() + ";\n";
-    if (t.glass) {
-      // Liquid Glass is more transparent than Aero at the same setting.
-      bool liquid = t.style == "liquid-glass";
-      Color glass = liquid ? (dark ? Color::hex(0x1E2128) : Color::hex(0xFAFBFD))
-                           : (dark ? Color::hex(0x1E2530) : Color::hex(0xF8FBFE));
-      double alpha = liquid ? std::max(0.55, 0.86 - t.transparency * 0.6 / 100.0)
-                            : std::max(0.70, 1.0 - t.transparency * 0.6 / 100.0);
-      block += "@define-color sde_glass_bg " + rgba(glass, alpha) + ";\n";
-    }
+  // The SDE themes carry the accent themselves. The user's CSS gets a
+  // custom accent color, and in GTK 4 the theme's libadwaita colors, so
+  // libadwaita applications (which ignore gtk-theme-name) match as well.
+  std::string block3, block4;
+  if (!system && sde_theme) {
+    ThemeChoice c = theme_choice(cfg);
+    std::string defs = "@define-color sde_accent " + t.accent.to_hex() + ";\n";
+    if (!c.custom_accent.empty())
+      defs += "@define-color theme_selected_bg_color " + t.accent.to_hex() + ";\n"
+              "@define-color accent_bg_color " + t.accent.to_hex() + ";\n"
+              "@define-color accent_color " + t.accent_text.to_hex() + ";\n"
+              "@define-color accent_fg_color " + t.on_accent.to_hex() + ";\n";
+    block3 = defs;
+    std::string lib = theme_path(gtk_theme) + "/libadwaita/gtk.css";
+    if (cfg.get_bool("suite", "libadwaita", true) && file_exists(lib))
+      block4 = "@import url(\"file://" + lib + "\");\n";
+    block4 += defs;
   }
-  for (const char *version : {"gtk-3.0", "gtk-4.0"})
-    write_user_css(config_home() + "/" + version + "/gtk.css", block);
+  write_user_css(config_home() + "/gtk-3.0/gtk.css", block3);
+  write_user_css(config_home() + "/gtk-4.0/gtk.css", block4);
   // X11 GTK clients use XSETTINGS; the session supervises one xsettingsd.
   // GSettings also exposes the dark preference to GTK4/libadwaita and portals.
   auto quote = [](std::string value) {
@@ -126,11 +153,11 @@ void sync_gtk_settings(const Config &cfg) {
     }
     return out + "\"";
   };
-  // Every SDE theme has a -Dark directory; Adwaita's is "Adwaita-dark".
-  std::string text = "Net/ThemeName " +
-                     quote(gtk_theme + (dark ? (gtk_theme == "Adwaita" ? "-dark" : "-Dark") : "")) + "\n";
+  std::string text;
+  if (!system)
+    text = "Net/ThemeName " + quote(gtk_theme) + "\nGtk/DecorationLayout " + quote(layout) + "\n";
   text += "Net/IconThemeName " + quote(icons) + "\nGtk/FontName " + quote(font) + "\n";
-  if (system) text = "Net/IconThemeName " + quote(icons) + "\nGtk/FontName " + quote(font) + "\n";
+  text += "Gtk/CursorThemeName " + quote(cursor) + "\n";
   text += "Xft/DPI " + std::to_string(dpi) + "\n";
   make_dirs(config_home() + "/sde");
   std::string old_text, xsettings = config_home() + "/sde/xsettingsd.conf";
@@ -148,9 +175,29 @@ void sync_gtk_settings(const Config &cfg) {
              : nullptr;
   if (schema) {
     GSettings *settings = g_settings_new_full(schema, nullptr, nullptr);
-    if (!system && g_settings_schema_has_key(schema, "color-scheme") &&
-        g_settings_is_writable(settings, "color-scheme"))
-      g_settings_set_string(settings, "color-scheme", dark ? "prefer-dark" : "prefer-light");
+    auto set = [&](const char *key, const std::string &value) {
+      if (g_settings_schema_has_key(schema, key) && g_settings_is_writable(settings, key)) {
+        gchar *now = g_settings_get_string(settings, key);
+        if (!now || value != now) g_settings_set_string(settings, key, value.c_str());
+        g_free(now);
+      }
+    };
+    if (!system) {
+      set("color-scheme", dark ? "prefer-dark" : "prefer-light");
+      set("gtk-theme", gtk_theme);
+      // GNOME 47 accent names; SDE's graphite is GNOME's slate.
+      std::string accent = t.accent_name == "graphite" ? "slate" : t.accent_name;
+      if (g_settings_schema_has_key(schema, "accent-color")) {
+        GSettingsSchemaKey *key = g_settings_schema_get_key(schema, "accent-color");
+        GVariant *v = g_variant_new_string(accent.c_str());
+        g_variant_ref_sink(v);
+        if (g_settings_schema_key_range_check(key, v)) set("accent-color", accent);
+        g_variant_unref(v);
+        g_settings_schema_key_unref(key);
+      }
+    }
+    set("icon-theme", icons);
+    set("cursor-theme", cursor);
     g_object_unref(settings);
     g_settings_schema_unref(schema);
   }
@@ -258,13 +305,15 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // the CPU composites.
   std::string effects = compositor_effects(cfg, safe);
   bool lite = effects == "lite";
-  bool glass = t.glass, blur = glass && cfg.get_bool("aero", "blur", true) && !lite;
+  // Every family is translucent with [aero] enabled (Graphite vibrancy,
+  // Fluent Acrylic); only SDE Glass makes window frames translucent.
+  bool glass = t.glass, blur = t.translucent && cfg.get_bool("aero", "blur", true) && !lite;
   bool round = cfg.get_bool("aero", "rounded_corners", true) && !lite;
-  bool liquid = t.style == "liquid-glass";
+  bool liquid = t.family == "glass";
   bool motion = cfg.get_bool("aero", "animations", true) && !lite;
   int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6) + (liquid ? 2 : 0)));
   double frame = glass ? std::max(0.45, 1.0 - t.transparency * 1.2 / 100.0) : 1.0;
-  double menu = glass ? std::max(0.70, 1.0 - t.transparency * 0.6 / 100.0) : 1.0;
+  double menu = t.translucent ? std::max(0.70, t.popup_opacity) : 1.0;
   char num[32];
   auto f = [&](double v) {
     snprintf(num, sizeof num, "%.2f", v);
@@ -291,8 +340,10 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
     c += "shadow = true;\nshadow-radius = 8;\nshadow-opacity = " + f(t.dark ? 0.36 : 0.20) +
          ";\nshadow-offset-x = -6;\nshadow-offset-y = -4;\n";
   else
-    c += "shadow = true;\nshadow-radius = 16;\nshadow-opacity = " + f(t.dark ? 0.42 : 0.24) +
-         ";\nshadow-offset-x = -14;\nshadow-offset-y = -10;\n";
+    c += "shadow = true;\nshadow-radius = " + std::to_string(int(t.shadow_radius / t.scale)) +
+         ";\nshadow-opacity = " + f(std::min(0.55, t.shadow.a + (t.dark ? 0.0 : 0.06))) +
+         ";\nshadow-offset-x = -" + std::to_string(int(t.shadow_radius / t.scale) - 2) +
+         ";\nshadow-offset-y = -" + std::to_string(int(t.shadow_radius / t.scale) / 2 + 2) + ";\n";
   c += "shadow-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@:c\"];\n";
   if (motion)
@@ -301,8 +352,8 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
-  // Liquid Glass uses the larger continuous corners of its design.
-  c += "corner-radius = " + std::to_string(round ? (liquid ? 16 : 10) : 0) + ";\n";
+  // Window corners follow the family: Fluent 8, Graphite 10, Glass 16.
+  c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
   c += "rounded-corners-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"window_type = 'tooltip'\", \"window_type = 'dropdown_menu'\", "
        "\"window_type = 'popup_menu'\", \"window_type = 'menu'\", \"fullscreen\"];\n";
@@ -379,10 +430,10 @@ std::string compositor_report(const Config &cfg) {
   r += "OpenGL renderer: " + (renderer.empty() ? std::string("unknown (install mesa-utils for glxinfo)") : renderer) + "\n";
   r += "Configuration: " + (file_exists(own) ? own + " (your own file)"
                                              : config_home() + "/sde/aero-compositor*.conf (generated)") + "\n";
-  r += "Theme: " + theme_dir(t.style) + (t.dark ? " (dark)" : " (light)") + ", glass " +
-       (t.glass ? "on, " + std::to_string(t.transparency) + "% transparency" : std::string("off")) +
+  r += "Theme: " + t.gtk_theme + ", translucency " +
+       (t.translucent ? "on, " + std::to_string(t.transparency) + "% transparency" : std::string("off")) +
        ", blur " +
-       (t.glass && cfg.get_bool("aero", "blur", true)
+       (t.translucent && cfg.get_bool("aero", "blur", true)
             ? (backend != "glx" && backend != "xrender" && !vm.empty() ? "off in virtual machines (choose OpenGL or XRender to use it)" : "on")
             : "off") + "\n";
   if (chosen == "glx" && !virt.empty() && virt != "none")

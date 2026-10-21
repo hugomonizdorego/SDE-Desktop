@@ -24,6 +24,10 @@ Look g_look;
 std::string theme_family(const Config &cfg) {
   std::string style = lower(cfg.get("appearance", "style", ""));
   if (style == "sde" || style == "aero" || style == "liquid-glass") return style;
+  // Alpha 16 families: Graphite (flat), Fluent (Mica-like), Glass (frosted).
+  if (style == "graphite") return "sde";
+  if (style == "fluent") return "aero";
+  if (style == "glass") return "liquid-glass";
   return cfg.get_bool("aero", "enabled", true) ? "aero" : "sde";
 }
 

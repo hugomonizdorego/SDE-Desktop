@@ -1,12 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// SDE colors and metrics. One light and one dark palette, plus an accent color.
+// SDE colors and metrics. Since 0.1.0~alpha16 every palette comes from
+// data/themes/palettes.json, the file that also builds the GTK and Openbox
+// themes, so SDE programs, GTK applications and window frames match:
+//
+//   family  graphite (default, Apple HIG), fluent (Fluent Design, Flat
+//           Remix) or glass (frosted; replaces SDE Aero and Liquid Glass)
+//   mode    light, dark or auto (light from 07:00 to 19:00)
+//   accent  blue, teal, green, yellow, orange, red, pink, purple, graphite
+//
+// sde.conf: [appearance] style=<family>, theme=<mode>, accent_name=<accent>
+// and accent=#RRGGBB (the accent's light shade, or a custom color).
 #pragma once
 
 #include <FL/Enumerations.H>
 
 #include <cmath>
 #include <cstdint>
+#include <ctime>
 #include <string>
+#include <vector>
 
 namespace sde {
 
@@ -39,14 +51,37 @@ struct Theme {
   Color accent;           // selection, focus, active indicators
   Color on_accent;        // text drawn on top of the accent
   Color accent_text;      // accent shade readable as text on surface/background
-  Color background;       // window background
+  Color background;       // window background (Mica tinted in Fluent)
   Color surface;          // cards, menus, panel
   Color surface_alt;      // sidebars, search fields
   Color hover;            // hovered item background
   Color text;
   Color text_dim;
   Color border;
-  Color shadow;
+  Color shadow;           // shadow color with its alpha
+
+  // Tokens added in 0.1.0~alpha16, shared with the GTK and Openbox themes.
+  Color menu_bg;          // menus, context menus, popups, Start menu, Action Center
+  Color menu_text;
+  Color menu_hover;       // highlighted menu item (accent in Graphite/Glass, subtle in Fluent)
+  Color menu_hover_text;
+  Color menu_border;
+  Color menu_separator;
+  Color selection_bg;     // selected rows and text
+  Color selection_text;
+  Color panel_bg;         // the panel (taskbar) before compositor translucency
+  Color titlebar_bg;      // active window title bar (SDE WM and headerbars)
+  Color titlebar_text;
+  Color success, warning, error;
+  int radius = 10;        // windows, cards, popups (already scaled)
+  int radius_small = 6;   // buttons, fields, menu items (already scaled)
+  int radius_large = 14;  // big surfaces: Start menu, Action Center (already scaled)
+  int shadow_radius = 18; // blur radius of drop shadows (already scaled)
+  double mica = 0;        // how much of the accent tints window backgrounds (0-1)
+  std::string family = "graphite";  // graphite, fluent or glass
+  std::string mode = "light";       // the setting: light, dark or auto
+  std::string accent_name = "blue"; // nearest named accent
+  std::string gtk_theme;            // e.g. "SDE-Graphite-Light-Blue"
 
   std::string font;       // fontconfig family, e.g. "Sans"
   int font_size = 13;     // pixels used by FLTK (already scaled)
@@ -54,32 +89,74 @@ struct Theme {
   int panel_size = 40;    // unscaled setting: 32, 40 or 48
   bool panel_top = false;
 
-  // SDE Aero glass. |opacity| is the window opacity the compositor applies to
-  // the panel (popups use popup_opacity, which keeps text more legible).
-  std::string style = "aero";  // sde, aero or liquid-glass
-  bool glass = true;
+  // |style| is the family (kept for older code). |glass| is true for the
+  // Glass family with [aero] enabled (sheen and gradients); |translucent|
+  // is true whenever [aero] enabled: the compositor then applies |opacity|
+  // to the panel and |popup_opacity| to menus (Acrylic, vibrancy).
+  std::string style = "graphite";
+  bool glass = false;
+  bool translucent = true;
   int transparency = 18;  // percent, 0-60
   double opacity = 1.0, popup_opacity = 1.0;
 
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
+  // A palette without a configuration (previews in Settings).
+  static Theme make(const std::string &family, bool dark, const std::string &accent);
 
   // Applies the palette to stock FLTK widgets (scheme, background colors and
   // the default font) for dialogs such as sde-settings and sde-run.
   void apply_to_fltk() const;
 };
 
-// The SDE theme family: "sde" (SDE Light/Dark), "aero" or "liquid-glass",
-// from [appearance] style. Older files without the key map
-// [aero] enabled=false to "sde".
+// The user's theme choice with every older value mapped to a current one.
+struct ThemeChoice {
+  std::string family = "graphite";  // graphite, fluent, glass
+  std::string mode = "light";       // light, dark, auto
+  std::string accent = "blue";      // named accent
+  std::string custom_accent;        // "#RRGGBB" when the accent is not a named one
+};
+
+// Maps [appearance] style/theme/accent/accent_name values of any SDE release
+// to the current families. Unknown styles become Graphite, unknown modes
+// light, unknown accents the nearest named accent (blue without a color):
+//   sde -> graphite, aero -> fluent, liquid-glass -> glass.
+ThemeChoice map_theme_choice(const std::string &style, const std::string &theme,
+                             const std::string &accent_hex, const std::string &accent_name);
+ThemeChoice theme_choice(const Config &cfg);
+// Rewrites legacy [appearance] values in |cfg| (not saved). True if changed.
+bool migrate_theme_config(Config &cfg);
+
+// Whether a mode is dark now ("auto": dark before 07:00 and from 19:00).
+bool theme_mode_dark(const std::string &mode, std::time_t now = std::time(nullptr));
+// Seconds until "auto" next switches between light and dark.
+int theme_auto_seconds_left(std::time_t now = std::time(nullptr));
+
+// The theme family: "graphite", "fluent" or "glass" (theme_choice().family).
 std::string theme_style(const Config &cfg);
-// GTK/Openbox theme directory for a style: SDE, SDE-Aero, SDE-Liquid-Glass.
-std::string theme_dir(const std::string &style);
+// GTK/Openbox theme directory, e.g. theme_dir("fluent", true, "green") is
+// "SDE-Fluent-Dark-Green". Old style names are accepted.
+std::string theme_dir(const std::string &family, bool dark = false, const std::string &accent = "blue");
+// The theme directory for the configuration, e.g. "SDE-Graphite-Light-Blue".
+std::string theme_dir(const Config &cfg);
+// Openbox <titleLayout> of a family: "CIML" (Graphite, Glass) or "NLIMC".
+std::string theme_title_layout(const std::string &family);
+// GTK decoration layout matching the Openbox buttons.
+std::string theme_decoration_layout(const std::string &family);
+
+// Families and accents for pickers.
+struct ThemeFamilyInfo {
+  std::string id, label, description;
+};
+std::vector<ThemeFamilyInfo> theme_families();
+std::vector<std::string> theme_accents();
+std::string theme_accent_label(const std::string &accent);
+Color theme_accent_color(const std::string &family, const std::string &accent, bool dark);
 
 // The theme last applied with Theme::apply_to_fltk(); used by sde widgets.
 const Theme &active_theme();
 
-// Accent colors offered in Settings.
+// Accent colors offered in Settings (Graphite's light shades).
 struct AccentChoice {
   const char *name;
   const char *hex;

@@ -5,9 +5,13 @@
 #include "config.h"
 namespace sde {
 void sync_gtk_settings(const Config &cfg);
-// GTK theme SDE uses for its suite and the GTK settings files: "SDE-Aero"
-// when Aero glass is enabled and installed, otherwise "Adwaita".
+// GTK theme SDE uses for its suite and the GTK settings files, e.g.
+// "SDE-Graphite-Light-Blue" (the light or dark variant is part of the name);
+// "Adwaita" or "Adwaita-dark" when the SDE themes are not installed.
 std::string gtk_theme_name(const Config &cfg);
+// Icon theme for GTK: [appearance] icon_theme, or for "auto" Papirus /
+// Papirus-Dark when installed, otherwise Adwaita.
+std::string gtk_icon_theme_name(const Config &cfg, bool dark);
 // "hardware" (a GPU with a 3D engine), "virtual" (VM/paravirtual or
 // display-only DRM device) or "software" (no DRM device, e.g. Xvfb).
 // SDE_GRAPHICS overrides the detection; LIBGL_ALWAYS_SOFTWARE forces software.

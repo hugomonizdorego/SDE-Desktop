@@ -31,6 +31,37 @@ License: individual-upstream-licenses
  LGPL and permissive licenses. Full notices are also installed under
  /usr/share/doc/sde/upstream/COMPONENT; see THIRD-PARTY.md for source links.
 
+Files: vendor/themes/graphite-gtk-theme/*
+Copyright: 2021-2025 Vince Liu (vinceliuice)
+License: GPL-3.0
+Comment: Graphite GTK theme, https://github.com/vinceliuice/Graphite-gtk-theme
+ commit 364173f47407164948788e4abb5e2eb46600f71a. Built by
+ tools/build-themes.py into the SDE-Graphite-* and SDE-Glass-* themes in
+ /usr/share/themes. The upstream LICENSE and README are installed under
+ /usr/share/doc/sde/themes/graphite-gtk-theme.
+
+Files: vendor/themes/flat-remix-gtk/*
+Copyright: 2016-2024 Daniel Ruiz de Alegría <daniel@drasite.com>
+License: GPL-3.0
+Comment: Flat Remix GTK, https://github.com/daniruiz/flat-remix-gtk commit
+ 919494f4f4ede88e2efb45cd48b98db7cc23f6ee. Its prebuilt GTK 3, GTK 4 and
+ libadwaita variants are the base of the SDE-Fluent-* themes. Notices are
+ installed under /usr/share/doc/sde/themes/flat-remix-gtk.
+
+Files: vendor/themes/flat-remix-gnome/*
+Copyright: 2017-2025 Daniel Ruiz de Alegría <daniel@drasite.com>
+License: CC-BY-SA-4.0
+Comment: Flat Remix GNOME, https://github.com/daniruiz/flat-remix-gnome commit
+ 95cb659507188db7d2ffdaa6f714db0e3555baf4, used as the color and shape
+ reference of SDE Fluent's palette (data/themes/palettes.json). Nothing of it
+ is installed except its LICENSE and README under
+ /usr/share/doc/sde/themes/flat-remix-gnome.
+
+Files: data/themes/*
+Copyright: 2026 SDE contributors
+License: GPL-3.0-or-later
+Comment: SDE theme palettes, overlays and the generated Openbox themes.
+
 Files: suite/sde-brand.h data/schemas/org.debion.session.gschema.xml
 Copyright: 2026 SDE contributors
 License: GPL-2.0-or-later
@@ -52,6 +83,16 @@ License: GPL-3.0-or-later
 License: GPL-2.0-or-later
  On Debian systems, the complete text of the GNU General Public
  License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: GPL-3.0
+ The upstream theme projects distribute their work under the GNU General
+ Public License, version 3. On Debian systems, the complete text can be
+ found in "/usr/share/common-licenses/GPL-3".
+
+License: CC-BY-SA-4.0
+ Creative Commons Attribution-ShareAlike 4.0 International. The complete
+ text is installed in /usr/share/doc/sde/themes/flat-remix-gnome/LICENSE and
+ available at https://creativecommons.org/licenses/by-sa/4.0/legalcode.
 
 Files: src/calculator/* tests/test_calculator.py
 Copyright: 2026 SDE contributors

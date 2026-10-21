@@ -30,6 +30,13 @@ Look Look::from_config(const Config &cfg) {
   std::string style = lower(cfg.get("appearance", "style", ""));
   if (style == "sde" || style == "aero" || style == "liquid-glass")
     l.style = style;
+  // Alpha 16 families: Graphite (flat), Fluent (Mica-like), Glass (frosted).
+  else if (style == "graphite")
+    l.style = "sde";
+  else if (style == "fluent")
+    l.style = "aero";
+  else if (style == "glass")
+    l.style = "liquid-glass";
   else
     l.style = cfg.get_bool("aero", "enabled", true) ? "aero" : "sde";
   return l;

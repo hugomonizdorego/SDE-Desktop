@@ -58,7 +58,7 @@ def click(w,x,y,button=1):
     g=geom(w);run('xdotool','mousemove',g['x']+round(x*scale),g['y']+round(y*scale),'click',button);time.sleep(.4)
 def shot(name):
     time.sleep(.3);run('import','-window','root',out/(name+'.png'));print('saved',name,flush=True)
-def config(style='full',top=False,moved=True,theme='light',look='aero',extra='',overflow=True):
+def config(style='full',top=False,moved=True,theme='light',look='graphite',extra='',overflow=True):
     # overflow: one tray icon is already "many", so the fixture's two icons
     # gather behind the overflow button (the default threshold is 4).
     limit='tray_overflow_threshold=1\n' if overflow else ''
@@ -477,10 +477,11 @@ try:
         config(style,top,theme='dark');reload()
         ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac,top);shot('12-'+style+('-top' if top else '-bottom'));escape('Action Center')
         fl=open_section('network','Network');flyout_bounds(fl,'network',top);shot('12-'+style+('-top' if top else '-bottom')+'-flyout');escape('Network')
-    for theme,look in [('light','sde'),('dark','sde'),('light','aero'),('dark','aero'),('light','liquid-glass'),('dark','liquid-glass')]:
+    # SDE theme families (alpha16) with two accents; "look" may carry the accent line.
+    for theme,look in [('light','graphite'),('dark','graphite\naccent_name=green'),('light','fluent'),('dark','fluent\naccent_name=purple'),('light','glass'),('dark','glass')]:
         config(theme=theme,look=look);reload()
-        ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac);shot(f'13-theme-{look}-{theme}');escape('Action Center')
-        fl=open_section('sound','Sound');flyout_bounds(fl,'sound');shot(f'13-theme-{look}-{theme}-sound');escape('Sound')
+        ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac);shot(f'13-theme-{look.split(chr(10))[0]}-{theme}');escape('Action Center')
+        fl=open_section('sound','Sound');flyout_bounds(fl,'sound');shot(f'13-theme-{look.split(chr(10))[0]}-{theme}-sound');escape('Sound')
     config(moved=False);reload();fl=open_section('tray','Tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('14-keep-tray-on-panel');escape('Tray')
     fixture.terminate();fixture.wait();sni.terminate();sni.wait();time.sleep(.6)
     assert panel_proc.poll() is None,'service disappearance crashed panel'
