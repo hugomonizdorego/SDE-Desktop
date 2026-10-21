@@ -22,6 +22,7 @@ class AlarmPopup;
 class AppMenu;
 class PanelPopup;
 class QuickSettings;
+class SearchFlyout;
 class SniHost;
 class Tray;
 
@@ -69,6 +70,15 @@ class Panel : public sde::BufferedWindow {
   Tray *legacy_tray() const { return tray_.get(); }
   SniHost *status_notifiers() const { return sni_.get(); }
   void toggle_menu();
+  // The search flyout above the panel's search box, with |text| typed. Called
+  // without text it toggles.
+  void open_search(const std::string &text = "");
+  // [panel] search=box: the panel shows the box (and the query while the
+  // flyout is open); icon or hidden: the flyout shows its own field.
+  bool search_box_shown() const { return search_mode_ == 2 && search_w_ > 0; }
+  bool search_box_contains(int root_x, int root_y) const;
+  // The query or caret changed: repaint the search box.
+  void search_changed();
   void toggle_dark_mode();
   const sde::Theme &theme() const { return theme_; }
   const sde::Config &config() const { return cfg_; }
@@ -99,7 +109,7 @@ class Panel : public sde::BufferedWindow {
   static bool safe_mode;
 
  private:
-  enum Hit { NONE, START, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP };
+  enum Hit { NONE, START, SEARCH, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP };
   enum StatusIcon {
     INPUT_STATUS,
     BLUETOOTH_STATUS,
@@ -178,6 +188,7 @@ class Panel : public sde::BufferedWindow {
   Target hover_;
   Target pressed_;
   std::unique_ptr<AppMenu> menu_;
+  std::unique_ptr<SearchFlyout> search_;
   std::unique_ptr<QuickSettings> quick_;
   std::unique_ptr<QuickSettings> flyout_;
   std::unique_ptr<AlarmPopup> alarms_;
@@ -191,6 +202,7 @@ class Panel : public sde::BufferedWindow {
       status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0,
       show_desktop_w_ = 0;
   int icon_ = 24, tray_icon_ = 22;
+  int search_x_ = 0, search_w_ = 0, search_mode_ = 0;  // mode: 0 hidden, 1 icon, 2 box
   int action_x_ = 0, action_w_ = 0;
   std::vector<StatusIcon> status_icons_;
   bool compact_status_ = false;

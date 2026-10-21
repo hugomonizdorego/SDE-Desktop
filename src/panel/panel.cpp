@@ -27,6 +27,7 @@
 #include "paint.h"
 #include "quick.h"
 #include "rust_layout.h"
+#include "search.h"
 #include "sni.h"
 #include "spawn.h"
 #include "tray.h"
@@ -54,6 +55,7 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   load_config();
   place_on_screen();
   menu_.reset(new AppMenu());
+  search_.reset(new SearchFlyout());
   quick_.reset(new QuickSettings(QuickSettings::ACTION_CENTER));
   flyout_.reset(new QuickSettings(QuickSettings::FLYOUT));
   alarms_.reset(new AlarmPopup());
@@ -314,6 +316,29 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
 }
 
 void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
+
+void Panel::open_search(const std::string &text) {
+  if (search_->is_open()) {
+    if (text.empty()) search_->close();
+    else search_->type(text);
+    return;
+  }
+  if (text.empty() && recently_closed("search")) return;
+  if (open_popup_ && open_popup_ != search_.get()) open_popup_->close();
+  set_revealed(true);
+  // Above the search box (or the Start button when the box is hidden).
+  int anchor = x() + (search_w_ ? search_x_ : S(4));
+  search_->open_with(text, anchor);
+}
+
+bool Panel::search_box_contains(int rx, int ry) const {
+  return search_w_ > 0 && rx >= x() + search_x_ && rx < x() + search_x_ + search_w_ &&
+         ry >= y() && ry < y() + h();
+}
+
+void Panel::search_changed() {
+  if (search_w_ > 0) damage_rect(search_x_, 0, search_w_, h());
+}
 void Panel::toggle_dark_mode() {
   cfg_.set("appearance", "theme", theme_.dark ? "light" : "dark");
   if (cfg_.save()) {
@@ -453,6 +478,7 @@ bool Panel::recently_closed(const std::string &key) const {
 std::string Panel::popup_key(const PanelPopup *p) const {
   if (!p) return "";
   if (p == menu_.get()) return "menu";
+  if (p == search_.get()) return "search";
   if (p == quick_.get()) return quick_->calendar_view() ? "calendar" : "center";
   if (p == flyout_.get()) return "flyout:" + flyout_->section();
   if (p == alarms_.get()) return "alarms";
@@ -462,6 +488,8 @@ std::string Panel::target_key(const Target &t) const {
   switch (t.kind) {
     case START:
       return "menu";
+    case SEARCH:
+      return "search";
     case CLOCK:
       return "alarms";
     case ACTION_CENTER:
@@ -569,6 +597,8 @@ bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
     Panel *self = Panel::instance;
     if (p->key == "menu")
       self->toggle_menu();
+    else if (p->key == "search")
+      self->open_search();
     else if (p->key == "calendar")
       self->open_action_center(true);
     else if (p->key == "alarms")
@@ -794,11 +824,30 @@ void Panel::relayout() {
   }
   tasks_end_ = tray_x_ - S(8);
 
+  // Search next to the Start button: [panel] search=box, icon or hidden;
+  // auto (default) is a box on a full-width panel and an icon on the short
+  // and floating ones. A box that leaves too little room becomes an icon.
+  {
+    std::string mode = cfg_.get("panel", "search", "auto");
+    if (mode != "box" && mode != "icon" && mode != "hidden")
+      mode = cfg_.get("panel", "style", "full") == "full" ? "box" : "icon";
+    search_mode_ = mode == "hidden" ? 0 : mode == "icon" ? 1 : 2;
+    int room = tasks_end_ - start_w_;
+    search_x_ = start_w_ + S(2);
+    search_w_ = 0;
+    if (search_mode_ == 2 && room < S(520)) search_mode_ = 1;
+    if (search_mode_ == 2)
+      search_w_ = std::max(S(170), std::min(S(320), room / 4));
+    else if (search_mode_ == 1)
+      search_w_ = H;
+  }
+  int lead = search_w_ ? search_x_ + search_w_ : start_w_;
+
   // Keep the status area and running windows reachable on short panels.
-  int room = std::max(0, tasks_end_ - start_w_ - S(12));
+  int room = std::max(0, tasks_end_ - lead - S(12));
   int task_room = tasks_.empty() ? 0 : std::min(2 * H, room / 2);
   visible_pins_ = std::min(int(pinned_.size()), std::max(0, (room - task_room) / pin_w_));
-  int pin_x = start_w_ + S(4);
+  int pin_x = lead + S(4);
   for (size_t i = 0; i < pinned_.size(); ++i) {
     pinned_[i].x = int(i) < visible_pins_ ? pin_x : -100000;
     if (int(i) < visible_pins_) pin_x += pin_w_;
@@ -823,6 +872,7 @@ Panel::Target Panel::hit(int x, int y) const {
   Target t;
   if (y < 0 || y >= h()) return t;
   if (x < start_w_) return {START, 0};
+  if (search_w_ && x >= search_x_ && x < search_x_ + search_w_) return {SEARCH, 0};
   for (size_t i = 0; i < pinned_.size(); ++i)
     if (x >= pinned_[i].x && x < pinned_[i].x + pin_w_) return {PINNED, int(i)};
   for (size_t i = 0; i < tasks_.size(); ++i)
@@ -890,6 +940,17 @@ void Panel::draw() {
     }
     p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14),
             (H - icon) / 2.0, icon);
+    bool searching = search_ && search_->is_open();
+    if (search_box_shown()) {
+      int bh = std::min(H - S(10), S(34));
+      panel_search::draw_field_back(p, t, search_x_ + S(4), (H - bh) / 2, search_w_ - S(8), bh,
+                                    searching, hover_.kind == SEARCH,
+                                    cfg_.get("panel", "style", "full") == "full" ? S(4) : bh / 2.0);
+    } else if (search_w_) {
+      button_bg(search_x_, search_w_, {SEARCH, 0}, searching);
+      double g = S(20);
+      panel_search::glyph(p, search_x_ + (search_w_ - g) / 2.0, (H - g) / 2.0, g, t.text);
+    }
 
     for (size_t i = 0; i < pinned_.size(); ++i) {
       if (int(i) >= visible_pins_) break;
@@ -1041,6 +1102,15 @@ void Panel::draw() {
   // Text on top of the cairo layer.
   text_font(t.font_size, true);
   draw_text("SDE", S(20) + icon, 0, start_w_ - icon - S(28), H, t.on_accent);
+  if (search_box_shown()) {
+    int bh = std::min(H - S(10), S(34));
+    bool searching = search_ && search_->is_open();
+    panel_search::draw_field_text(t, search_x_ + S(4), (H - bh) / 2, search_w_ - S(8), bh,
+                                  searching ? search_->query() : "",
+                                  searching ? search_->caret() : 0,
+                                  searching && search_->caret_on(), searching,
+                                  searching && search_->all_selected(), _("Type here to search"));
+  }
   for (auto &task : tasks_) {
     if (task.w < H + S(20)) continue;
     text_font(t.font_size, task.win == active_ && !task.minimized);
@@ -1069,6 +1139,9 @@ void Panel::qa_dump_panel() {
            std::to_string(H) + "\t1\n";
   };
   std::string text = line("start", 0, start_w_) + line("clock", clock_x_, clock_w_) +
+                     (search_w_ ? line(search_box_shown() ? "search" : "search-icon", search_x_,
+                                       search_w_)
+                                : std::string()) +
                      line("action-center", action_x_, action_w_);
   for (size_t i = 0; i < status_icons_.size(); ++i) {
     std::string name = status_section(status_icons_[i]);
@@ -1098,6 +1171,8 @@ int Panel::handle(int event) {
           if (t.index < int(items.size())) tip = items[size_t(t.index)]->title;
         } else if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size())) {
           tip = status_tooltip(status_icons_[size_t(t.index)]);
+        } else if (t.kind == SEARCH) {
+          tip = _("Search apps, settings and files");
         } else if (t.kind == ACTION_CENTER) {
           tip = _("Action Center · Super+A");
         } else if (t.kind == CLOCK) {
@@ -1127,7 +1202,7 @@ int Panel::handle(int event) {
       drag_x_ = Fl::event_x();
       if (!dragging_ && std::abs(drag_x_ - drag_start_x_) > S(6)) dragging_ = true;
       if (dragging_ && !pinned_.empty()) {
-        int first = start_w_ + S(4);
+        int first = (search_w_ ? search_x_ + search_w_ : start_w_) + S(4);
         int target = std::max(0, std::min(visible_pins_ - 1, (drag_x_ - first) / pin_w_));
         if (target != drag_index_) {
           Pinned moved = pinned_[size_t(drag_index_)];
@@ -1158,7 +1233,7 @@ int Panel::handle(int event) {
       if (!(t == p)) return 1;
       int button = Fl::event_button();
       if (button == FL_RIGHT_MOUSE &&
-          (t.kind == NONE || t.kind == START || t.kind == CLOCK || t.kind == SHOW_DESKTOP ||
+          (t.kind == NONE || t.kind == START || t.kind == SEARCH || t.kind == CLOCK || t.kind == SHOW_DESKTOP ||
            t.kind == STATUS || t.kind == ACTION_CENTER)) {
         show_context_menu();
         return 1;
@@ -1166,6 +1241,9 @@ int Panel::handle(int event) {
       switch (t.kind) {
         case START:
           toggle_menu();
+          break;
+        case SEARCH:
+          open_search();
           break;
         case PINNED:
           if (button == FL_RIGHT_MOUSE)
@@ -1299,19 +1377,31 @@ void Panel::task_clicked(int index, int button) {
 }
 
 void Panel::show_context_menu() {
-  Fl_Menu_Item items[] = {{_("Panel Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+  auto radio = [&](int mode) { return FL_MENU_RADIO | (search_mode_ == mode ? FL_MENU_VALUE : 0); };
+  Fl_Menu_Item items[] = {{_("Search"), 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},
+                          {_("Show Search Box"), 0, nullptr, nullptr, radio(2), 0, 0, 0, 0},
+                          {_("Show Search Icon"), 0, nullptr, nullptr, radio(1), 0, 0, 0, 0},
+                          {_("Hidden"), 0, nullptr, nullptr, radio(0), 0, 0, 0, 0},
+                          {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+                          {_("Panel Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
                           {_("Appearance Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
                           {_("Run Command..."), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
                           {_("About SDE"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
                           {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
   const Fl_Menu_Item *m = popup_menu(items, Fl::event_x_root());
-  if (m == &items[0])
-    spawn_detached({"sde-settings", "--page", "panel"});
-  else if (m == &items[1])
-    spawn_detached({"sde-settings", "--page", "appearance"});
+  if (m == &items[1])
+    set_setting("panel", "search", "box");
   else if (m == &items[2])
-    spawn_detached({"sde-run"});
+    set_setting("panel", "search", "icon");
   else if (m == &items[3])
+    set_setting("panel", "search", "hidden");
+  else if (m == &items[5])
+    spawn_detached({"sde-settings", "--page", "panel"});
+  else if (m == &items[6])
+    spawn_detached({"sde-settings", "--page", "appearance"});
+  else if (m == &items[7])
+    spawn_detached({"sde-run"});
+  else if (m == &items[8])
     spawn_detached({"sde-settings", "--page", "about"});
 }
 
@@ -1401,6 +1491,12 @@ bool Panel::handle_x(const XEvent &e) {
       std::string cmd = x11::read_command();
       if (cmd == "menu")
         toggle_menu();
+      else if (cmd == "search")
+        open_search();
+      else if (starts_with(cmd, "brightness:"))
+        SystemStatus::get().step_brightness(atoi(cmd.c_str() + 11));
+      else if (starts_with(cmd, "search:"))
+        open_search(cmd.substr(7));
       else if (cmd == "quick")
         open_action_center();
       else if (cmd == "quick:overview")

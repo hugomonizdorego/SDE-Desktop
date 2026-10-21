@@ -27,8 +27,10 @@ a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
 display=f':{a.display}'
-e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
+e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
 processes=[]
+# A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
+(home/'backlight/qa_backlight').mkdir(parents=True);(home/'backlight/qa_backlight/brightness').write_text('60\n');(home/'backlight/qa_backlight/max_brightness').write_text('100\n')
 FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Tray','Alarms']
 def spawn(*cmd):
     log=open(home/(Path(cmd[0]).name+'.log'),'w');proc=sp.Popen(cmd,env=e,stdout=log,stderr=sp.STDOUT);processes.append(proc);return proc
@@ -169,23 +171,40 @@ CATS=['Utility','Graphics','Network','AudioVideo','Office','Development','Educat
 (home/'.local/share/applications').mkdir(parents=True)
 for i,n in enumerate(APPS):
     (home/f'.local/share/applications/qa-{n.lower()}.desktop').write_text(f'[Desktop Entry]\nType=Application\nName={n}\nGenericName={n} QA\nExec=true\nIcon=applications-other\nCategories={CATS[i%len(CATS)]};\n')
-def menu_scroll():return layout('SDE Menu')['@all-scroll'][0]
+def menu_scroll():return layout('SDE Menu')['@list-scroll'][0]
+def inside(r,area):return area[0]<=r[0] and r[0]+r[2]<=area[0]+area[2]
+def drag(win,src,dst):
+    g=geom(win);run('xdotool','mousemove',g['x']+src[0],g['y']+src[1],'mousedown','1');time.sleep(.2)
+    for k in range(1,6):
+        run('xdotool','mousemove',g['x']+src[0]+(dst[0]-src[0])*k//5,g['y']+src[1]+(dst[1]-src[1])*k//5);time.sleep(.08)
+    time.sleep(.2);run('xdotool','mouseup','1');time.sleep(.6)
+def center(r):return (r[0]+r[2]//2,r[1]+r[3]//2)
 def menu_checks():
-    """Start menu: chips fit, slim size, wheel/scrollbar/keyboard scrolling,
-    letter jump, frecency "Recently Used", 12 favorites, search."""
+    """Start menu: rail, A-Z list with a category filter, live-tile groups
+    (drag, resize, move, rename), resizing the menu, typing goes to search."""
     m=click_panel('start','^SDE Menu$');time.sleep(1.2);g=geom(m)
-    assert g['w']<=round(580*scale)+1 and g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,g
-    chips=item('SDE Menu','@chips');L=layout('SDE Menu')
-    cats=[v for k,v in L.items() if k.startswith('category:')]
-    assert len(cats)>=10,L.keys()
-    for v in cats:assert chips[0]<=v[0] and v[0]+v[2]<=chips[0]+chips[2]<=g['w'] and chips[1]<=v[1] and v[1]+v[3]<=chips[1]+chips[3],(v,chips)
-    assert 'files' in L and not any(k in L for k in ['Settings','Lock','Power']),L.keys()
+    assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,g
+    L=layout('SDE Menu')
+    for name in ['rail:menu','rail:account','rail:documents','rail:pictures','rail:settings','rail:power','@list','@tiles']:assert name in L,(name,L.keys())
+    assert any(k.startswith('filter:') for k in L) and any(k.startswith('group:') for k in L),L.keys()
+    # No search field and no row of category chips any more.
+    assert 'search' not in L and not any(k.startswith('category:') for k in L),L.keys()
+    lst,tiles=L['@list'],L['@tiles']
+    assert L['rail:menu'][0]+L['rail:menu'][2]<=lst[0]<lst[0]+lst[2]<=tiles[0],(lst,tiles)
+    for k,v in L.items():
+        if k.startswith('tile:'):assert inside(v,tiles),(k,v,tiles)
+        if k.startswith('app:'):assert inside(v,lst),(k,v,lst)
+    # The rail sits at the bottom: account above Documents above ... Power.
+    ys=[L['rail:'+n][1] for n in ['account','documents','pictures','settings','power']];assert ys==sorted(ys) and ys[-1]+L['rail:power'][3]<=g['h'],ys
     shot('20-menu')
-    # Mouse wheel over "All Programs".
-    a=item('SDE Menu','@all');s=menu_scroll()
+    # The menu button expands the rail with labels; Escape folds it.
+    press('SDE Menu','rail:menu');waitfor(lambda:'@rail-open' in layout('SDE Menu'),'rail did not expand')
+    shot('20-menu-rail');run('xdotool','key','Escape');waitfor(lambda:'@rail-open' not in layout('SDE Menu'),'rail did not fold')
+    # Mouse wheel over the list.
+    a=item('SDE Menu','@list');s=menu_scroll()
     run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2)
     for _ in range(3):run('xdotool','click','5');time.sleep(.1)
-    waitfor(lambda:menu_scroll()>s,'wheel did not scroll All Programs');s=menu_scroll()
+    waitfor(lambda:menu_scroll()>s,'wheel did not scroll the list');s=menu_scroll()
     run('xdotool','click','4');waitfor(lambda:menu_scroll()<s,'wheel up did not scroll back')
     # Scrollbar drag.
     bx=g['x']+a[0]+a[2]-round(4*scale);s=menu_scroll()
@@ -193,38 +212,148 @@ def menu_checks():
     run('xdotool','mousemove',bx,g['y']+a[1]+a[3]//2);time.sleep(.2);run('xdotool','mouseup','1');time.sleep(.3)
     waitfor(lambda:menu_scroll()>s+a[3]//2,'scrollbar drag did not scroll');s=menu_scroll()
     shot('21-menu-scrolled')
-    # Page Down / Page Up.
+    # Page Down / Page Up move through the list.
+    run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2);time.sleep(.2)
     run('xdotool','key','Next');waitfor(lambda:menu_scroll()>s,'Page Down did not scroll');s=menu_scroll()
     run('xdotool','key','Prior');waitfor(lambda:menu_scroll()<s,'Page Up did not scroll')
     # Letter heading -> jump grid -> letter.
     press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
     press('SDE Menu','jump:W');waitfor(lambda:'app:Wget' in layout('SDE Menu'),'letter jump did not reach W')
     shot('22-menu-letter-jump')
-    # Launching counts for "Recently Used".
+    # The category filter: a short menu; the list keeps only that category.
+    press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('filter:')));time.sleep(.4)
+    shot('22-menu-filter');run('xdotool','key','Down','Down','Return')
+    waitfor(lambda:'filter:Accessories' in layout('SDE Menu'),'category filter not applied')
+    L=layout('SDE Menu');assert 'app:Atlas' in L and 'app:Bluefish' not in L and not any(k.startswith('added:') for k in L),L.keys()
+    shot('22-menu-filtered');run('xdotool','key','Escape');waitfor(lambda:'filter:All apps' in layout('SDE Menu'),'Escape did not clear the filter')
+    # Launching counts for "Most used".
+    press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')));press('SDE Menu','jump:W')
     press('SDE Menu','app:Wget');gone('^SDE Menu$')
     assert 'qa-wget.desktop\t1\t' in (home/'.local/state/sde/menu-usage').read_text()
     m=click_panel('start','^SDE Menu$');time.sleep(.8)
-    waitfor(lambda:'recent:Wget' in layout('SDE Menu'),'launched app missing from Recently Used')
-    # Search still finds settings pages and session actions.
-    run('xdotool','type','shut down');waitfor(lambda:'result:Log Out, Restart or Shut Down' in layout('SDE Menu'),'session action not found')
-    shot('23-menu-search')
-    # Escape clears the search, then leaves its page, then closes the menu.
-    for _ in range(2):run('xdotool','key','Escape');time.sleep(.3)
-    escape('SDE Menu')
-    # Twelve favorites fill the single page; a 13th replaces the oldest.
+    waitfor(lambda:'most-used:Wget' in layout('SDE Menu'),'launched app missing from Most used')
+    # Typing in the menu moves to the panel's search.
+    run('xdotool','type','--delay','40','shut down');gone('^SDE Menu$')
+    waitfor(lambda:'result:Log Out, Restart or Shut Down' in layout('SDE Search'),'typing in the menu did not search')
+    assert 'query:shut down' in layout('SDE Search'),layout('SDE Search').keys()
+    shot('23-menu-typing-searches');escape('SDE Search')
+    # alpha15 favorites become one tile group.
     favs=';'.join(f'qa-{n.lower()}.desktop' for n in APPS[:12])
     config(extra=f'[menu]\nfavorites={favs}\n');reload()
     m=click_panel('start','^SDE Menu$');time.sleep(.8)
-    waitfor(lambda:sum(k.startswith('favorite:') for k in layout('SDE Menu'))==12,'12 favorites not shown')
-    shot('24-menu-12-favorites')
-    press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
-    press('SDE Menu','jump:Z');r=item('SDE Menu','app:Zeal');g=geom(m)
+    waitfor(lambda:sum(k.startswith('tile:') for k in layout('SDE Menu'))>=6,'migrated favorites missing')
+    L=layout('SDE Menu');assert [k for k in L if k.startswith('group:')]==['group:Productivity'],L.keys()
+    assert 'tiles=' not in conf();escape('SDE Menu')
+    # Tile groups and sizes.
+    config(extra='[menu]\ntiles=Work,qa-atlas.desktop:m,qa-bluefish.desktop:m,qa-calendar.desktop:w;Play,qa-chess.desktop:s,qa-sudoku.desktop:l\n');reload()
+    m=click_panel('start','^SDE Menu$');time.sleep(.8);g=geom(m)
+    L=item('SDE Menu','tile:Calendar') and layout('SDE Menu')
+    assert 'group:Work' in L,L.keys()
+    med,wide=L['tile:Atlas'],L['tile:Calendar']
+    shot('24-menu-tiles')
+    # The second group may be below the fold on small screens: scroll the
+    # tiles with the wheel to reach it.
+    def reveal(name):
+        for _ in range(16):
+            L=layout('SDE Menu')
+            if name in L:return L
+            t=L['@tiles'];g=geom(m)
+            run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]//2,'click','5');time.sleep(.3)
+        raise AssertionError('tile not reachable: '+name)
+    L=reveal('tile:Sudoku');small,large=L['tile:Chess'],L['tile:Sudoku']
+    assert wide[2]>med[2]*1.8 and abs(wide[3]-med[3])<=1 and small[2]<med[2]*.6 and large[3]>med[3]*1.8,(med,wide,small,large)
+    assert 'group:Play' in L and L['group:Play'][1]<small[1],L.keys()
+    shot('24-menu-tiles-play')
+    for _ in range(6):run('xdotool','click','4');time.sleep(.1)
+    waitfor(lambda:layout('SDE Menu')['@tiles-scroll'][0]==0,'tiles did not scroll back')
+    # Drag the wide tile in front of Bluefish.
+    L=layout('SDE Menu');blue=L['tile:Bluefish'];wide=L['tile:Calendar']
+    drag(m,center(wide),(blue[0]+2,blue[1]+blue[3]//2))
+    waitfor(lambda:'Work,qa-atlas.desktop:m,qa-calendar.desktop:w,qa-bluefish.desktop:m' in conf(),'tile drag not saved: '+conf())
+    # Right-click a tile: Resize > Large.
+    r=item('SDE Menu','tile:Atlas');g=geom(m)
     run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
-    shot('25-menu-favorites-full')
-    run('xdotool','key','Down','Down','Return');time.sleep(.6)
-    waitfor(lambda:'qa-zeal.desktop' in conf(),'13th favorite not added')
-    text=conf();assert 'qa-atlas.desktop' not in text and text.count('.desktop')==12,text
-    escape('SDE Menu')
+    shot('25-menu-tile-menu')
+    run('xdotool','key','Down','Down','Down','Right','Down','Down','Down','Return');time.sleep(.6)
+    waitfor(lambda:'qa-atlas.desktop:l' in conf(),'tile resize not saved: '+conf())
+    # Rename a group by clicking its name.
+    press('SDE Menu','group:Work');time.sleep(.3)
+    run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Games');run('xdotool','key','Return')
+    waitfor(lambda:'tiles=Games,' in conf(),'group rename not saved: '+conf())
+    # Drag an application from the list to the tiles: a new group.
+    L=layout('SDE Menu');row=next(v for k,v in L.items() if k.startswith('app:'));name=next(k for k,v in L.items() if k.startswith('app:'))[4:]
+    t=L['@tiles'];drag(m,center(row),(t[0]+t[2]//2,t[1]+t[3]-round(20*scale)))
+    waitfor(lambda:f'qa-{name.lower()}.desktop:m' in conf(),'app dragged to the tiles not pinned: '+conf())
+    shot('26-menu-tiles-arranged')
+    # Drag the right edge to make the menu narrower; the size is kept.
+    g=geom(m);w0=g['w']
+    run('xdotool','mousemove',g['x']+g['w']-2,g['y']+g['h']//2,'mousedown','1');time.sleep(.2)
+    run('xdotool','mousemove',g['x']+g['w']-round(100*scale),g['y']+g['h']//2);time.sleep(.3);run('xdotool','mouseup','1');time.sleep(.5)
+    waitfor(lambda:geom(m)['w']<w0-20,'menu did not resize');waitfor(lambda:'width=' in conf(),'menu size not saved')
+    shot('27-menu-resized');escape('SDE Menu')
+    m=click_panel('start','^SDE Menu$');time.sleep(.6);assert geom(m)['w']<w0-20,'menu size not kept';escape('SDE Menu')
+    config();reload()
+def search_checks():
+    """Panel search: box with placeholder, flyout with results, keyboard,
+    icon and hidden styles."""
+    # A full panel shows the box; on a narrow screen it becomes an icon and
+    # the flyout shows the field itself.
+    box=waitfor(lambda:'search' if 'search' in layout('SDE Panel') else 'search-icon' if 'search-icon' in layout('SDE Panel') else None,'no search on the panel')
+    s=click_panel(box,'^SDE Search$');time.sleep(.6)
+    L=layout('SDE Search')
+    assert 'query:' in L,L.keys()
+    assert ('field' in L)==(box=='search-icon') and any(k.startswith('top:') or k.startswith('chip:') for k in L),L.keys()
+    pg=geom(panel);sg=geom(s);assert sg['y']+sg['h']<=pg['y'] and sg['x']>=0 and sg['x']+sg['w']<=W,(sg,pg)
+    shot('28-search-start')
+    run('xdotool','type','--delay','40','wget');waitfor(lambda:'result:Wget' in layout('SDE Search'),'app not found')
+    assert any(k.startswith('action:') for k in layout('SDE Search'))
+    shot('29-search-results')
+    run('xdotool','key','Return');gone('^SDE Search$')
+    waitfor(lambda:'qa-wget.desktop\t2\t' in (home/'.local/state/sde/menu-usage').read_text(),'Enter did not open the best match')
+    # Files, keyboard selection and the session actions.
+    (home/'Documents').mkdir(exist_ok=True);(home/'Documents/QA Report.txt').write_text('x')
+    s=command(['--search','report'],'SDE Search');waitfor(lambda:'result:QA Report.txt' in layout('SDE Search'),'file not found')
+    press('SDE Search','tab:Files');waitfor(lambda:all(not k.startswith('result:') or k=='result:QA Report.txt' for k in layout('SDE Search')),'Files tab shows other results')
+    escape('SDE Search')
+    s=command(['--search','shut down'],'SDE Search');waitfor(lambda:'selected:Log Out, Restart or Shut Down' in layout('SDE Search'),'session action not selected')
+    run('xdotool','key','Return');gone('^SDE Search$');waitfor(lambda:commands('LOGOUT'),'session action did not run')
+    # Short and floating panels show a search icon; the flyout has the field.
+    config(style='floating');reload()
+    waitfor(lambda:'search-icon' in layout('SDE Panel') and 'search' not in layout('SDE Panel'),'floating panel without search icon')
+    s=click_panel('search-icon','^SDE Search$');time.sleep(.5);item('SDE Search','field')
+    run('xdotool','type','--delay','40','zeal');waitfor(lambda:'result:Zeal' in layout('SDE Search'),'search icon flyout did not search')
+    shot('30-search-icon');escape('SDE Search')
+    config(extra='[panel]\nsearch=hidden\n');reload()
+    waitfor(lambda:not any(k.startswith('search') for k in layout('SDE Panel')),'hidden search still on the panel')
+    config();reload();item('SDE Panel',box)
+def brightness_checks(ac):
+    """Action Center: the brightness slider follows the volume slider in the
+    same card; wheel and brightness commands change the backlight."""
+    L=layout('Action Center');v,b=L['Output volume'],L['Brightness']
+    assert b[1]>v[1] and b[1]-v[1]<=round(60*scale) and abs(b[0]-v[0])<=2,(v,b)
+    def level():
+        try:return int((home/'backlight/qa_backlight/brightness').read_text())
+        except ValueError:return -1  # being written
+    g=geom(ac);before=level()
+    # Small screens: scroll the Action Center until the row is in view
+    # (scrolling over the row itself would change the brightness).
+    for _ in range(12):
+        b=layout('Action Center')['Brightness'];body=layout('Action Center')['@body'];cy=b[1]+b[3]//2
+        if body[1]<=cy<=body[1]+body[3]-2:break
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+round(10*scale),'click','5' if cy>body[1]+body[3] else '4');time.sleep(.3)
+    before=level()
+    run('xdotool','mousemove',g['x']+b[0]-round(20*scale),g['y']+b[1]+b[3]//2,'click','4');time.sleep(.2);run('xdotool','click','4')
+    waitfor(lambda:level()==before+10,f'wheel did not raise the brightness ({level()})')
+    # Brightness keys (sde-panel --brightness); a command can race the
+    # previous one, so it is sent again while nothing changed.
+    for _ in range(3):
+        run('sde-panel','--brightness','-20')
+        for _ in range(20):
+            if level()!=before+10:break
+            time.sleep(.1)
+        if level()!=before+10:break
+    waitfor(lambda:level()==before-10,f'sde-panel --brightness did not change it ({level()})')
+    shot('02-action-center-brightness')
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
 import sys,os
 from pathlib import Path
@@ -287,6 +416,7 @@ try:
     waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:media' in layout('SDE Panel'),'status icons missing')
     time.sleep(1);shot('00-panel-indicators')
     menu_checks()
+    search_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
     config(overflow=False);reload()
     waitfor(lambda:'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons')
@@ -312,9 +442,10 @@ try:
 
     # The corner button opens the Action Center (expanded by default).
     ac=click_panel('action-center','^Action Center$');time.sleep(.5);bounds(ac);only_open('Action Center')
-    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Alarms','Output volume','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']:
+    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Alarms','Output volume','Brightness','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']:
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
+    brightness_checks(ac)
     # Compact mode: tiles and sliders only, remembered in sde.conf.
     press('Action Center','Show less')
     waitfor(lambda:'expanded=false' in conf(),'compact mode not saved')

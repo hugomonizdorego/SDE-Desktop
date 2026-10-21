@@ -228,26 +228,46 @@ try:
     compositor = spawn("sde-compositor", "--config", str(args.data_dir / "compositor/sde.conf"))
     time.sleep(0.6)
     assert compositor.poll() is None, "SDE compositor did not start"
-    run("sde-panel", "--menu")
+    # A command can race the panel starting up (seen ~2 in 80 runs): send
+    # it again while the menu does not show.
+    for attempt in range(3):
+        run("sde-panel", "--menu")
+        for _ in range(30):
+            if run("xdotool", "search", "--onlyvisible", "--name", "^SDE Menu$", check=False).stdout.strip():
+                break
+            time.sleep(0.1)
+        else:
+            continue
+        break
     menu = find("^SDE Menu$")
     g = geom(menu)
     assert g["X"] >= 0 and g["Y"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
     shot("00-start-menu")
-    # The menu draws its own controls and lists them in the QA dump. Every
-    # category chip fits the menu width (no scrolling strip any more).
-    chips = control("SDE Menu", "@chips")
+    # The menu draws its own controls and lists them in the QA dump: the rail,
+    # the A-Z list with its category filter and the tile groups. There is no
+    # search field (search is on the panel) and no row of category chips.
     path = home / "qa" / "SDE-Menu.txt"
-    for line in path.read_text().splitlines():
-        f = line.split("\t")
-        if f[0].startswith("category:"):
-            x, y, w, h = map(int, f[1:5])
-            assert chips[0] <= x and x + w <= chips[0] + chips[2] <= g["WIDTH"], (f, chips)
-    for gone in ["Settings", "Lock", "Power"]:
-        assert not any(l.split("\t")[0] == gone for l in path.read_text().splitlines())
-    # The Accessories chip opens its page.
-    click_control(menu, "SDE Menu", "category:Accessories")
+    control("SDE Menu", "@tiles")
+    names = [l.split("\t")[0] for l in path.read_text().splitlines()]
+    for name in ("rail:account", "rail:documents", "rail:pictures", "rail:settings", "rail:power"):
+        assert name in names, (name, names)
+    assert "search" not in names and not any(n.startswith("category:") for n in names), names
+    assert any(n.startswith("tile:") for n in names) and any(n.startswith("group:") for n in names), names
+    for n in names:
+        if n.startswith("tile:") or n.startswith("app:"):
+            x, y, w, h = control("SDE Menu", n)
+            assert 0 <= x and x + w <= g["WIDTH"], (n, x, w, g)
+    control("SDE Panel", "search")
+    # The category filter narrows the list to Accessories.
+    click_control(menu, "SDE Menu", next(n for n in names if n.startswith("filter:")))
+    run("xdotool", "key", "Down", "Down", "Return")
+    time.sleep(.5)
+    control("SDE Menu", "filter:Accessories")
     shot("00-accessories")
+    # Typing in the menu searches on the panel.
     run("xdotool", "type", "calculator")
+    find("^SDE Search$")
+    time.sleep(.5)
     shot("00-start-search")
     run("xdotool", "key", "Return")
     calculator = find("^Calculator$")
