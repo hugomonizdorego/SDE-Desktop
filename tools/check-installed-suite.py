@@ -48,11 +48,11 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
     assert actual == "user-editor.desktop", actual
     dry = subprocess.check_output(["sde-autostart", "--dry-run"], env=env, text=True)
     assert any(
-        line.startswith("start sde-power.desktop:") and "sde-power --daemon" in line
+        line.startswith("start sde-power.desktop:") and "/sde-power\", \"--daemon\"" in line
         for line in dry.splitlines()
     ), dry
     assert any(
-        line.startswith("start sde-lock.desktop:") and "sde-lock --daemon" in line
+        line.startswith("start sde-lock.desktop:") and "/sde-lock\", \"--daemon\"" in line
         for line in dry.splitlines()
     ), dry
     for name in ["sde-power", "sde-lock"]:
