@@ -886,7 +886,7 @@ void TacaWindow::draw_sidebar_text() {
     draw_text(format("%s → %s", human_size(info_.total_size).c_str(), human_size(info_.archive_size).c_str()), tx,
               S(178), nw, S(22), theme_.text);
     text_font(theme_.font_size - S(2));
-    std::string ratio = saved < 0 ? std::string(_("Empty archive"))
+    std::string ratio = info_.total_size <= 0 ? std::string(_("Empty archive"))
                         : saved > 0.005 ? format(_("%d%% smaller than the original"), int(std::lround(saved * 100)))
                                         : std::string(_("Stored without compression"));
     draw_text(ratio, tx, S(216), nw, S(22), theme_.text_dim);

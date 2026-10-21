@@ -335,7 +335,7 @@ bool needs_external_tool(Format f, const ArchiveInfo &info) {
 }  // namespace
 
 static Result list_libarchive(const std::string &path, Format f, const std::string &password,
-                              ArchiveInfo &out, bool &can_decrypt) {
+                              ArchiveInfo &out, bool &can_decrypt, Progress *p = nullptr) {
   Result r;
   ReadHandle h;
   std::string err;
@@ -346,7 +346,17 @@ static Result list_libarchive(const std::string &path, Format f, const std::stri
   }
   struct archive_entry *e;
   bool single = format_info(f).single_file;
+  if (p) p->total = std::max<int64_t>(1, out.archive_size);
   for (;;) {
+    if (p) {
+      // Compressed bytes read so far: tar.* must be read to the end.
+      p->done = std::min<int64_t>(p->total, archive_filter_bytes(h.a, -1));
+      if (p->cancel) {
+        r.ok = false;
+        r.cancelled = true;
+        return r;
+      }
+    }
     int st = archive_read_next_header(h.a, &e);
     if (st == ARCHIVE_EOF) break;
     if (st < ARCHIVE_WARN) {
@@ -402,7 +412,8 @@ Result list_archive(const std::string &path, const std::string &password, Archiv
   out.format = detect_format(path);
   for (const auto &v : volumes(path)) out.archive_size += file_size(v);
   bool can_decrypt = true;
-  Result r = list_libarchive(path, out.format, password, out, can_decrypt);
+  Result r = list_libarchive(path, out.format, password, out, can_decrypt, progress);
+  if (r.cancelled) return r;
   if (!r.ok) {
     // Encrypted headers (7z -mhe, rar -hp) or features libarchive lacks.
     std::string tool = external_tool_for(out.format);
@@ -744,15 +755,16 @@ Result extract_archive(const std::string &path, const ExtractOptions &opts, Prog
     return Result::failure(sde::format(_("You cannot write to “%s”"), o.dest.c_str()));
   if (!sde::file_exists(path)) return Result::failure(_("The archive does not exist"));
   Format f = detect_format(path);
-  // Decide up front whether libarchive can decrypt this archive.
+  // Decide up front whether libarchive can decrypt this archive. Only
+  // formats with encryption need the look (it reads their headers only).
+  bool crypto_format = f == Format::SevenZip || f == Format::Rar || f == Format::Rar5 || f == Format::Zip;
   ArchiveInfo info;
   bool can_decrypt = true;
-  Result lr = list_libarchive(path, f, o.password, info, can_decrypt);
+  Result lr;
+  if (crypto_format) lr = list_libarchive(path, f, o.password, info, can_decrypt);
   bool external = !lr.ok || !can_decrypt || needs_external_tool(f, info);
   if (lr.ok && !info.encrypted && !info.header_encrypted) external = false;
-  if (!lr.ok && !(f == Format::SevenZip || f == Format::Rar || f == Format::Rar5 || f == Format::Zip ||
-                  f == Format::Cab || f == Format::Iso))
-    return lr;
+  if (!lr.ok && !crypto_format && f != Format::Cab && f != Format::Iso) return lr;
   if (!external) {
     bool unsupported = false;
     Result r = extract_libarchive(path, f, dest, o, p, unsupported);
@@ -779,7 +791,9 @@ Result test_archive(const std::string &path, const std::string &password, Progre
   Format f = detect_format(path);
   ArchiveInfo info;
   bool can_decrypt = true;
-  Result lr = list_libarchive(path, f, password, info, can_decrypt);
+  bool crypto_format = f == Format::SevenZip || f == Format::Rar || f == Format::Rar5 || f == Format::Zip;
+  Result lr;
+  if (crypto_format) lr = list_libarchive(path, f, password, info, can_decrypt);
   if (!lr.ok || !can_decrypt || needs_external_tool(f, info)) {
     std::string tool = external_tool_for(f);
     if (tool.empty()) return lr.ok ? missing_tool(f) : lr;
@@ -796,9 +810,8 @@ Result test_archive(const std::string &path, const std::string &password, Progre
   }
   if (p) {
     int64_t total = 0;
-    for (const auto &e : info.entries)
-      if (e.size > 0) total += e.size;
-    p->total = total;
+    for (const auto &v : volumes(path)) total += file_size(v);
+    p->total = std::max<int64_t>(1, total);
   }
   struct archive_entry *e;
   std::vector<char> buf(256 * 1024);
@@ -825,7 +838,7 @@ Result test_archive(const std::string &path, const std::string &password, Progre
         if (archive_entry_is_encrypted(e) && password.empty()) r.need_password = true;
         return r;
       }
-      if (p) p->done += n;
+      if (p) p->done = std::min<int64_t>(p->total, archive_filter_bytes(h.a, -1));
       if (p && p->cancel) break;
     }
     ++checked;
