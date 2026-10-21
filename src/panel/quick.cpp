@@ -1057,9 +1057,11 @@ std::string &settings_help() {
 }
 bool settings_page(const std::string &page) {
   const std::string &h = settings_help();
-  size_t at = h.find("--page NAME");
+  // The page list (and accepted aliases) follows the last "--page NAME",
+  // up to the next option.
+  size_t at = h.rfind("--page NAME");
   if (at == std::string::npos) return false;
-  size_t end = h.find("  --", at + 11);
+  size_t end = h.find("\n  --", at + 11);
   std::string list = h.substr(at + 11, end == std::string::npos ? std::string::npos : end - at - 11);
   std::string word;
   for (size_t i = 0; i <= list.size(); ++i) {
