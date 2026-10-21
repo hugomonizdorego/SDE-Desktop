@@ -668,7 +668,7 @@ void AppMenu::layout_home(int top, int bottom) {
   y += title_h;
 
   int cols = std::max(3, std::min(6, lw / S(74)));
-  int tile_w = lw / cols, tile_h = compact_ ? S(62) : S(78);
+  int tile_w = lw / cols, tile_h = compact_ ? S(58) : S(78);
   if (fav_entries_.empty()) {
     Item h;
     h.kind = K_NONE;
@@ -1691,9 +1691,9 @@ void AppMenu::draw() {
     switch (it.kind) {
       case K_TILE:
       case K_CAT_TILE:
-        size = compact_ ? S(32) : it.kind == K_CAT_TILE ? S(44) : S(40);
+        size = compact_ ? S(30) : it.kind == K_CAT_TILE ? S(44) : S(40);
         cx = it.x + it.w / 2.0;
-        cy = it.y + (compact_ ? S(6) : S(8)) + size / 2;
+        cy = it.y + (compact_ ? S(4) : S(8)) + size / 2;
         break;
       case K_RECENT:
         size = compact_ ? S(24) : S(28);
@@ -1978,8 +1978,8 @@ void AppMenu::draw() {
       case K_CAT_TILE: {
         double lift, scale, slide, glow;
         hover_of(it, lift, scale, slide, glow);
-        int icon = compact_ ? S(32) : it.kind == K_CAT_TILE ? S(44) : S(40);
-        int top = compact_ ? S(6) : S(8);
+        int icon = compact_ ? S(30) : it.kind == K_CAT_TILE ? S(44) : S(40);
+        int top = compact_ ? S(4) : S(8);
         text_font(t.font_size - (it.kind == K_TILE ? 1 : 0));
         draw_text(it.entry->name, it.x + S(4), it.y + top + icon + S(2) - int(lift), it.w - S(8),
                   S(24), t.text, 1);
