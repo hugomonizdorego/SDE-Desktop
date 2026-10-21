@@ -9,9 +9,10 @@ APP [ARGUMENTS...]
 --list | --check | --version
 .SH DESCRIPTION
 The Rust helper diagnoses and optionally launches SDE's native application forks.
-Niny, Liria, Xanara, Taca, Photo (sde-view) and the monitor/power/locker programs are
-independent source-built executables included in the sde package. They do not
-require the original MATE application packages. Liria defaults to no desktop
+Niny, Xanara, Taca, Photo (sde-view), SDE System Monitor, SDE Power and SDE
+Screen Lock are native SDE programs; Liria is a source-built fork of Caja. All
+are included in the sde package; the original Caja package is not required.
+Liria defaults to no desktop
 ownership, leaving SDE in charge of wallpaper and icons.
 Arguments are passed without a shell.
 .PP
@@ -37,12 +38,6 @@ Open Settings at the SDE Suite page, including clickable source links.
 .TP
 .B sde-suite APP --dry-run [ARGUMENTS...]
 Print the native argument vector without starting it.
-.TP
-.B sde-suite sde-power-manager --daemon
-Start the SDE power daemon. Normally started by SDE-only XDG autostart.
-.TP
-.B sde-suite sde-power-manager --statistics
-Open battery/power history instead of preferences.
 .TP
 .B sde-suite APP -- [ARGUMENTS...]
 Forward arguments directly, including options reserved by the dispatcher.

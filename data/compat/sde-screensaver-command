@@ -1,0 +1,17 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Compatibility command for scripts written for the former screen saver
+# command: translates its options to sde-lock.
+case "$1" in
+    -l|--lock|-a|--activate) exec sde-lock --lock ;;
+    -q|--query) exec sde-lock --query ;;
+    -p|--poke|-d|--deactivate) exec sde-lock --poke ;;
+    -V|--version) exec sde-lock --version ;;
+    -h|--help|"")
+        echo "Usage: sde-screensaver-command --lock | --query | --poke | --version"
+        echo "Compatibility wrapper for sde-lock."
+        exit 0 ;;
+    *)
+        echo "sde-screensaver-command: unsupported option $1 (see sde-lock --help)" >&2
+        exit 2 ;;
+esac

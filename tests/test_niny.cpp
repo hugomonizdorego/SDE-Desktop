@@ -4,13 +4,16 @@
 // Unit tests for the Niny Text Editor's text model.
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
 #include "codec.h"
+#include "markdown.h"
 #include "search.h"
 #include "settings.h"
 #include "syntax.h"
@@ -384,6 +387,23 @@ static void test_settings() {
   CHECK_EQ(s.color_scheme, std::string("dark"));
   CHECK_EQ(s.default_encoding, std::string("ISO-8859-1"));
   CHECK(s.auto_indent);  // default kept
+  // Notepad-like defaults of the redesign.
+  {
+    Settings d;
+    CHECK(!d.line_numbers && !d.show_sidebar && !d.highlight_line && !d.show_whitespace);
+    CHECK(d.status_bar && d.remember_recent && !d.open_in_new_window && d.spell_check);
+    Ini bad;
+    bad.parse("[web]\nsearch_url=javascript:alert(%s)\n[files]\nopen_in_new_window=yes\n");
+    d.from_ini(bad);
+    CHECK(d.search_url.compare(0, 8, "https://") == 0);  // unsafe search address rejected
+    CHECK(d.open_in_new_window);
+    Ini o;
+    d.show_whitespace = true;
+    d.to_ini(o);
+    Settings e;
+    e.from_ini(o);
+    CHECK(e.show_whitespace && e.open_in_new_window);
+  }
   Ini out;
   s.to_ini(out);
   Settings t;
@@ -488,6 +508,144 @@ static void test_textops() {
   CHECK(fuzzy_score("save", "Save File") > fuzzy_score("save", "Show All Versions Every"));
 }
 
+
+static void test_markdown() {
+  using namespace niny::md;
+  CHECK_EQ(heading_level("## Title"), 2);
+  CHECK_EQ(heading_level("#hashtag"), 0);
+  CHECK_EQ(heading_level("####### seven"), 0);
+  CHECK_EQ(set_heading("Title", 1), std::string("# Title"));
+  CHECK_EQ(set_heading("### Title", 2), std::string("## Title"));
+  CHECK_EQ(set_heading("## Title", 0), std::string("Title"));
+  CHECK_EQ(set_heading("", 3), std::string("### "));
+
+  CHECK_EQ(toggle_list("a\nb\n", ListKind::Bullet), std::string("- a\n- b\n"));
+  CHECK_EQ(toggle_list("- a\n- b\n", ListKind::Bullet), std::string("a\nb\n"));
+  CHECK_EQ(toggle_list("a\n\nb", ListKind::Numbered), std::string("1. a\n\n2. b"));
+  CHECK_EQ(toggle_list("- a\n- b", ListKind::Numbered), std::string("1. a\n2. b"));  // switches kind
+  CHECK_EQ(toggle_list("  x", ListKind::Task), std::string("  - [ ] x"));
+  CHECK_EQ(toggle_list("- [ ] x", ListKind::Task), std::string("x"));
+  CHECK_EQ(toggle_list("q", ListKind::Quote), std::string("> q"));
+  CHECK_EQ(toggle_list("", ListKind::Bullet), std::string("- "));
+  ListKind k;
+  CHECK(list_kind("- [x] done", k) && k == ListKind::Task);
+  CHECK(list_kind("12. twelve", k) && k == ListKind::Numbered);
+  CHECK(!list_kind("plain", k));
+
+  bool ends = false;
+  CHECK_EQ(continue_list("- item", ends), std::string("- "));
+  CHECK(!ends);
+  CHECK_EQ(continue_list("  9. nine", ends), std::string("  10. "));
+  CHECK_EQ(continue_list("- [x] done", ends), std::string("- [ ] "));
+  CHECK_EQ(continue_list("- ", ends), std::string("- "));
+  CHECK(ends);
+  CHECK_EQ(continue_list("text", ends), std::string(""));
+
+  // Bold / italic toggles.
+  md::Edit e = toggle_wrap("say hello now", 4, 9, "**");
+  CHECK(e.start == 4 && e.end == 9 && e.text == "**hello**" && e.sel_start == 6 && e.sel_end == 11);
+  std::string t = "say **hello** now";
+  e = toggle_wrap(t, 6, 11, "**");  // markers just outside the selection
+  CHECK(e.start == 4 && e.end == 13 && e.text == "hello" && e.sel_start == 4 && e.sel_end == 9);
+  e = toggle_wrap(t, 4, 13, "**");  // markers inside the selection
+  CHECK(e.text == "hello" && e.start == 4 && e.end == 13);
+  e = toggle_wrap(t, 6, 11, "*");  // italic on bold text adds a star pair
+  CHECK(e.text == "*hello*" && e.start == 6);
+  e = toggle_wrap("a ***b*** c", 5, 6, "*");  // bold+italic: remove only the italic
+  CHECK(e.start == 4 && e.end == 7 && e.text == "b");
+  e = toggle_wrap("ab", 1, 1, "**");  // empty selection: a pair with the caret inside
+  CHECK(e.text == "****" && e.sel_start == 3 && e.sel_end == 3);
+  e = toggle_wrap("x hi  y", 1, 6, "*");  // spaces stay outside
+  CHECK(e.start == 2 && e.end == 4 && e.text == "*hi*");
+  e = toggle_wrap("a `c` b", 3, 4, "`");
+  CHECK(e.text == "c" && e.start == 2);
+
+  e = make_link("see docs", 4, 8);
+  CHECK(e.text == "[docs](https://)" && e.sel_start == 11 && e.sel_end == 19);
+  e = make_link("https://x.org", 0, 13);
+  CHECK(e.text == "[https://x.org](https://x.org)" && e.sel_start == 1 && e.sel_end == 14);
+  e = make_link("", 0, 0);
+  CHECK(e.text == "[](https://)" && e.sel_start == 1);
+
+  CHECK_EQ(clear_formatting("## A **b** *c* `d` ~~e~~ [f](http://g)"), std::string("A b c d e f"));
+  CHECK_EQ(clear_formatting("snake_case_name and 2 * 3 * 4\n"), std::string("snake_case_name and 2 * 3 * 4\n"));
+
+  auto spans = parse_inline("x **b** _i_ `c` [l](u) \\*n\\*");
+  std::string plain;
+  bool saw_b = false, saw_i = false, saw_c = false, saw_l = false;
+  for (auto &sp : spans) {
+    plain += sp.text;
+    if (sp.bold && sp.text == "b") saw_b = true;
+    if (sp.italic && sp.text == "i") saw_i = true;
+    if (sp.code && sp.text == "c") saw_c = true;
+    if (sp.link && sp.text == "l" && sp.url == "u") saw_l = true;
+  }
+  CHECK(saw_b && saw_i && saw_c && saw_l);
+  CHECK_EQ(plain, std::string("x b i c l *n*"));
+
+  auto lines = parse("# T\n\npara one\npara two\n\n- a\n  - b\n1. c\n- [x] d\n> q\n```\ncode\n```\n---\n");
+  CHECK(lines.size() >= 9);
+  CHECK(lines[0].kind == Block::Heading && lines[0].level == 1 && lines[0].text == "T");
+  CHECK(lines[2].kind == Block::Paragraph && lines[2].text == "para one para two");
+  bool nested = false, num = false, task = false, quote = false, code = false, rule = false;
+  for (auto &l : lines) {
+    if (l.kind == Block::Bullet && l.text == "b" && l.level == 1) nested = true;
+    if (l.kind == Block::Numbered && l.marker == "1.") num = true;
+    if (l.kind == Block::Task && l.checked) task = true;
+    if (l.kind == Block::Quote && l.text == "q") quote = true;
+    if (l.kind == Block::Code && l.text == "code") code = true;
+    if (l.kind == Block::Rule) rule = true;
+  }
+  CHECK(nested && num && task && quote && code && rule);
+}
+
+static void test_notepad_tools() {
+  const char *t = "h\xC3\xA9llo world\nsecond line";
+  TextCounts c = count_text(t, strlen(t));
+  CHECK_EQ(c.chars, 23L);
+  CHECK_EQ(c.words, 4L);
+  CHECK_EQ(c.lines, 2L);
+  CHECK_EQ(utf8_length("\xF0\x9F\x98\x80" "a", 5), 2L);
+  CHECK_EQ(count_text("", 0).lines, 0L);
+  CHECK_EQ(group_thousands(1234567), std::string("1,234,567"));
+  CHECK_EQ(group_thousands(999), std::string("999"));
+  CHECK_EQ(character_status(0, 303), std::string("303 characters"));
+  CHECK_EQ(character_status(13, 1303), std::string("13 of 1,303 characters"));
+  CHECK_EQ(character_status(0, 1), std::string("1 character"));
+
+  std::string dt = date_time_text(0);
+  CHECK(dt.size() == 16 && dt[2] == ':' && dt[5] == ' ' && dt[10] == '-');
+
+  CHECK(unicode_controls().size() >= 10);
+  CHECK_EQ(utf8_encode(0x200E), std::string("\xE2\x80\x8E"));
+  CHECK_EQ(utf8_encode(0xA0), std::string("\xC2\xA0"));
+  CHECK_EQ(utf8_encode(0x1F600), std::string("\xF0\x9F\x98\x80"));
+  CHECK(whitespace_marker(' ') && whitespace_marker('\t') && !whitespace_marker('a'));
+
+  CHECK_EQ(url_query_encode("caf\xC3\xA9 & tea"), std::string("caf%C3%A9+%26+tea"));
+
+  SpellResult r = parse_ispell_line("& teh 3 0: the, ten, tea");
+  CHECK(r.known && !r.correct && r.suggestions.size() == 3 && r.suggestions[0] == "the" && r.suggestions[2] == "tea");
+  r = parse_ispell_line("*");
+  CHECK(r.known && r.correct);
+  r = parse_ispell_line("# xyzzy 0");
+  CHECK(r.known && !r.correct && r.suggestions.empty());
+  r = parse_ispell_line("@(#) International Ispell");
+  CHECK(!r.known);
+
+  std::string text = "Hello wrld, see /usr/share and foo_bar or me@x.org; it's 3rd ok";
+  auto words = spell_words(text);
+  std::vector<std::string> got;
+  for (auto &w : words) got.push_back(text.substr(w.start, w.end - w.start));
+  CHECK(std::find(got.begin(), got.end(), "Hello") != got.end());
+  CHECK(std::find(got.begin(), got.end(), "wrld") != got.end());
+  CHECK(std::find(got.begin(), got.end(), "it's") != got.end());
+  CHECK(std::find(got.begin(), got.end(), "usr") == got.end());
+  CHECK(std::find(got.begin(), got.end(), "foo") == got.end());
+  CHECK(std::find(got.begin(), got.end(), "org") == got.end());
+  CHECK(std::find(got.begin(), got.end(), "3rd") == got.end());
+}
+
 int main() {
   test_codec();
   test_syntax();
@@ -495,6 +653,8 @@ int main() {
   test_undo();
   test_settings();
   test_textops();
+  test_markdown();
+  test_notepad_tools();
   printf("niny-tests: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

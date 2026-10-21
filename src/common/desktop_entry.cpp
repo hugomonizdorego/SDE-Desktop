@@ -295,10 +295,6 @@ std::vector<DesktopEntry> load_applications(const std::string &desktop) {
       if (!available || app.id == "sde-update") continue;
       replaced.insert(app.upstream + ".desktop");
       if (app.id == "liria") replaced.insert("caja-browser.desktop");
-      if (app.id == "sde-power-manager") {
-        replaced.insert("mate-power-preferences.desktop");
-        replaced.insert("mate-power-statistics.desktop");
-      }
     }
     out.erase(std::remove_if(out.begin(), out.end(),
                              [&](const DesktopEntry &e) { return replaced.count(e.id) != 0; }),

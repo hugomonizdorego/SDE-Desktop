@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Screen Lock
+Comment=Locks the screen when idle and before suspend; keeps the session awake for videos
+Exec=sde-lock --daemon
+TryExec=sde-lock
+OnlyShowIn=SDE;
+NoDisplay=true

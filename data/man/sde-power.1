@@ -1,0 +1,35 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
+.TH SDE-POWER 1 "October 2026" "SDE" "User Commands"
+.SH NAME
+sde-power \- SDE power manager
+.SH SYNOPSIS
+.B sde-power
+[\fB\-\-daemon\fR]
+.br
+.B sde-power \-\-brightness
+[\fBget\fR | \fBup\fR | \fBdown\fR | \fIPERCENT\fR]
+.br
+.B sde-power \-\-profile
+[\fBget\fR | \fBlist\fR | \fINAME\fR]
+.br
+.B sde-power
+\fB\-\-status\fR | \fB\-\-osd\fR [\fIPERCENT\fR] | \fB\-\-version\fR
+.SH DESCRIPTION
+The power manager of SDE, started with the session through XDG autostart
+(\fBsde-power \-\-daemon\fR). It warns about low and critical battery
+(UPower) and runs the critical action, handles the lid and the power button
+(holding systemd-logind's handle-lid-switch and handle-power-key inhibitors
+unless the setting is \fBlogind\fR), dims the screen, turns it off (DPMS)
+and suspends after the idle timeouts, separately on battery and AC, unless a
+program holds an org.freedesktop.ScreenSaver or logind "idle" inhibitor,
+handles the XF86MonBrightnessUp/Down keys with an on-screen display and
+switches power-profiles-daemon modes with the power source.
+.PP
+Settings: \fBsde-settings \-\-page power\fR, or [power] in
+~/.config/sde/sde.conf (see /etc/xdg/sde/sde.conf).
+.SH D-BUS
+org.debion.SDE.Power at /org/debion/SDE/Power on the session bus:
+GetBrightness, SetBrightness(i), StepBrightness(i), GetStatus, Reload.
+.SH SEE ALSO
+.BR sde-lock (1),
+.BR sde-settings (1)

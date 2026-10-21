@@ -9,10 +9,9 @@ parser.add_argument('--bin-dir',type=Path,default=Path('/usr/bin'))
 args=parser.parse_args()
 binary=args.bin_dir.resolve()
 apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
-      'sde-power-manager','sde-power-preferences','sde-power-statistics',
-      'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences','calculator','sde-display-settings','sde-wm','sde-compositor']
+      'sde-power','sde-lock','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
-NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny'}
+NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock'}
 for name in apps:
     path=binary/name
     assert path.is_file() and not path.is_symlink(),name
@@ -22,22 +21,26 @@ for name in apps:
     if name in NATIVE:
         # Native SDE applications since alpha15 (statically linked SDE-FLTK).
         assert 'libX11' in dynamic and 'libfltk' not in dynamic and 'libgtk' not in dynamic,(name,dynamic)
+        if name == 'sde-lock':
+            assert 'libpam' in dynamic and 'libXss' in dynamic,(name,dynamic)
     elif name == 'sde-display-settings':
         # The SDE toolkit (FLTK) is linked statically since alpha13.
         assert 'libXrandr' in dynamic and 'libfltk' not in dynamic and 'libXft' in dynamic,(name,dynamic)
     elif name in ['sde-wm','sde-compositor']:
         assert 'libX11' in dynamic or 'libxcb' in dynamic,(name,dynamic)
-    elif name == 'sde-screensaver-command':
-        # This native command-line client talks to the locker over D-Bus;
-        # it intentionally has no GTK window or direct GObject dependency.
-        assert 'libglib-2.0' in dynamic and 'libdbus' in dynamic,(name,dynamic)
     else:
         assert 'libgtk' in dynamic or 'libgobject' in dynamic,(name,dynamic)
 subprocess.run([str(binary/'sde-suite'),'--check'],check=True)
+# Compatibility scripts of the former power-manager and screen-saver commands.
+for name in ['sde-power-preferences','sde-screensaver-preferences','sde-screensaver-command']:
+    text=(binary/name).read_text()
+    assert text.startswith('#!/bin/sh') and ('sde-settings' in text or 'sde-lock' in text),name
+for name in ['sde-power-manager','sde-power-statistics','sde-screensaver']:
+    assert not (binary/name).exists(),'retired fork executable still installed: '+name
 import json
 import shutil
 versions=json.loads(Path('/usr/share/doc/sde/versions.json').read_text())
-for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde-power-manager','sde-screensaver','calculator','sde-display-settings','sde-wm','sde-compositor','sde-update']:
+for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde-power','sde-lock','calculator','sde-display-settings','sde-wm','sde-compositor','sde-update']:
     output=subprocess.check_output([str(binary/name),'--version'],text=True)
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
@@ -54,7 +57,7 @@ for action,expected in plans:
     actual=subprocess.check_output([str(binary/'sde-update'),'--plan',action],text=True).splitlines()
     assert actual==expected,(actual,expected)
 assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode==2
-for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-power-manager','mate-screensaver','mate-session-manager','openbox','picom']:
+for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-session-manager','openbox','picom']:
     result=subprocess.run(['dpkg-query','-W','-f=${db:Status-Abbrev}',upstream],capture_output=True,text=True)
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
 files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()

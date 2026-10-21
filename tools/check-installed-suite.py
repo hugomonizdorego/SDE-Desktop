@@ -48,26 +48,32 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
     assert actual == "user-editor.desktop", actual
     dry = subprocess.check_output(["sde-autostart", "--dry-run"], env=env, text=True)
     assert any(
-        line.startswith("start sde-power-manager.desktop:") and "sde-power-manager" in line
+        line.startswith("start sde-power.desktop:") and "sde-power --daemon" in line
         for line in dry.splitlines()
     ), dry
     assert any(
-        line.startswith("start sde-screensaver.desktop:") and "sde-screensaver" in line
+        line.startswith("start sde-lock.desktop:") and "sde-lock --daemon" in line
         for line in dry.splitlines()
     ), dry
-    for name in ["sde-power-manager", "sde-screensaver"]:
+    for name in ["sde-power", "sde-lock"]:
         parser = configparser.ConfigParser(interpolation=None)
         parser.read("/etc/xdg/autostart/" + name + ".desktop")
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
     for package in [
         "sde/upstream/caja",
-        "sde/upstream/mate-power-manager",
-        "sde/upstream/mate-screensaver",
         "sde",
     ]:
         assert Path("/usr/share/doc", package, "copyright").is_file(), package
-    pam = Path("/etc/pam.d/sde-screensaver").read_text()
+    pam = Path("/etc/pam.d/sde-lock").read_text()
     assert "@include common-auth" in pam and "@include common-account" in pam, pam
+    # The retired fork's PAM service and autostarts are gone.
+    for old in ["/etc/pam.d/sde-screensaver", "/etc/xdg/autostart/sde-screensaver.desktop",
+                "/etc/xdg/autostart/sde-power-manager.desktop"]:
+        assert not Path(old).exists(), old
+    lock_help = subprocess.check_output(["sde-lock", "--help"], text=True)
+    assert "--daemon" in lock_help, lock_help
+    status = subprocess.run(["sde-power", "--brightness", "bogus"], capture_output=True)
+    assert status.returncode == 2, status
     idle = subprocess.check_output(
         ["gsettings", "get", "org.debion.session", "idle-delay"],
         env={**env, "GSETTINGS_BACKEND": "memory"}, text=True

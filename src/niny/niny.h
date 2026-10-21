@@ -14,10 +14,13 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "buffered_window.h"
 #include "codec.h"
+#include "markdown.h"
+#include "popup.h"
 #include "paint.h"
 #include "search.h"
 #include "settings.h"
@@ -50,6 +53,9 @@ struct Look {
   sde::Color match, match_current, bracket;
   sde::Color text, dim, border, hover;
   sde::Color sidebar, sidebar_active, status, card, card_border, field, shadow;
+  // Notepad-like chrome: the tab strip, and the bar under it (active tab,
+  // menu row and status bar share it).
+  sde::Color strip, strip_bottom, bar, bar_line;
   sde::Color syntax[kStyleCount];
   bool bold[kStyleCount] = {};
   bool italic[kStyleCount] = {};
@@ -71,7 +77,9 @@ namespace icon {
 enum Kind {
   Menu, Sidebar, Plus, Close, Search, Command, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   Folder, File, Up, Gear, Save, Warning, Info, Replace, ReplaceAll, Refresh, Wrap, Dot, Open, Recent,
-  Documents, Undo, Redo
+  Documents, Undo, Redo, Cut, Copy, Paste, SelectAll, Trash, Globe, TextTools, Spelling, Unicode, Bold, Italic,
+  Link, ClearFormat, ListBullet, ListNumbered, ListTask, Quote, Eye, Check, Pilcrow, Font, Theme, Window, Clock,
+  Heading, Wrench
 };
 void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde::Color &c);
 void logo(sde::Painter &p, double x, double y, double s);
@@ -122,6 +130,10 @@ class Document {
 
   unsigned revision = 0;  // increases on every change
   double last_edit = 0;
+  bool preview = false;  // Markdown shown rendered instead of the editor
+
+  // Character count for the status bar, cached per revision.
+  long char_count();
 
   bool modified() const { return !undo.at_saved() || format_dirty; }
   std::string display_name() const;
@@ -174,6 +186,9 @@ class Document {
 
   std::string snapshot_;
   bool snapshot_ok_ = false;
+  unsigned count_rev_ = ~0u;
+  long count_ = 0;
+  int count_len_ = -1;
   bool recording_ = true;
   bool quiet_ = false;
   bool hl_enabled_ = true;
@@ -206,6 +221,8 @@ class EditorView : public Fl_Text_Editor {
 
  private:
   void draw_overlay();
+  void draw_whitespace(sde::Painter &p);
+  void draw_spelling(sde::Painter &p);
   void draw_gutter(sde::Painter &p);
   void draw_scrollbars(sde::Painter &p);
   void notify_cursor();
@@ -260,15 +277,96 @@ class StatusBar : public Fl_Widget {
   void draw() override;
   int handle(int event) override;
 
- private:
-  struct Pill {
+  enum Id { Position = 1, Characters, FileType, Zoom, LineEnding, Encoding, ReadOnly };
+  struct Segment {
     std::string text;
     int id = 0;
     double x = 0, w = 0;
+    bool clickable = true;
   };
-  std::vector<Pill> pills() const;
+  std::vector<Segment> segments() const;
+
+ private:
   App *app_;
   int hover_ = -1;
+};
+
+// The slim row under the tabs: File/Edit/View menus on the left, Markdown
+// formatting helpers and the settings gear on the right.
+class Toolbar : public Fl_Widget {
+ public:
+  Toolbar(App *app, int x, int y, int w, int h);
+  void draw() override;
+  int handle(int event) override;
+  enum Id { File = 1, Edit, View, Heading = 10, List, Bold, Italic, Link, Clear, Preview, Settings = 20 };
+  struct Item {
+    int id = 0;
+    double x = 0, w = 0;
+    std::string label;
+    int icon = -1;
+    bool dropdown = false, on = false, enabled = true;
+    const char *tip = nullptr;
+  };
+  std::vector<Item> items() const;
+  // Opens the menu of |id| under its button (keyboard: Alt+F/E/V).
+  void open(int id);
+
+ private:
+  App *app_;
+  int hover_ = -1, open_ = -1;
+};
+
+// Read-only rendered view of a Markdown document.
+class MarkdownView : public Fl_Widget {
+ public:
+  MarkdownView(App *app, int x, int y, int w, int h);
+  void draw() override;
+  int handle(int event) override;
+  void show_doc(Document *doc);
+  void invalidate() { rev_ = ~0u; }
+
+ private:
+  struct Run {
+    std::string text;
+    double x = 0, y = 0, w = 0;
+    int font = 0, size = 0;
+    sde::Color color;
+    bool code = false, strike = false, underline = false;
+    std::string url;
+  };
+  struct Deco {
+    int kind = 0;  // 1 code block, 2 quote bar, 3 rule, 4 bullet, 5 checkbox, 6 checked box, 7 heading rule
+    double x = 0, y = 0, w = 0, h = 0;
+  };
+  void relayout();
+  App *app_;
+  Document *doc_ = nullptr;
+  unsigned rev_ = ~0u;
+  int laid_w_ = 0;
+  double height_ = 0;
+  int scroll_ = 0;
+  std::vector<Run> runs_;
+  std::vector<Deco> decos_;
+  int hover_link_ = -1;
+};
+
+// Settings as a page inside the window (the gear in the toolbar).
+class SettingsPage : public Fl_Group {
+ public:
+  SettingsPage(App *app, int x, int y, int w, int h);
+  void draw() override;
+  int handle(int event) override;
+  void resize(int x, int y, int w, int h) override;
+  void rebuild();  // after settings changed elsewhere
+
+ private:
+  struct Row;
+  void build();
+  void relayout();
+  App *app_;
+  std::vector<Row *> rows_;
+  int scroll_ = 0, content_h_ = 0;
+  sde::DrawnButton *back_ = nullptr;
 };
 
 class InfoBar : public Fl_Group {
@@ -285,22 +383,6 @@ class InfoBar : public Fl_Group {
   sde::FlatButton *primary_, *secondary_;
   std::string text_;
   bool warning_ = false;
-};
-
-class StartPage : public Fl_Widget {
- public:
-  StartPage(App *app, int x, int y, int w, int h);
-  void draw() override;
-  int handle(int event) override;
-
- private:
-  struct Hit {
-    double x, y, w, h;
-    int id;  // 0 new, 1 open, 100 + recent index
-  };
-  std::vector<Hit> hits() const;
-  App *app_;
-  int hover_ = -1;
 };
 
 class Sidebar : public Fl_Widget {
@@ -411,7 +493,6 @@ class Sheet : public Fl_Group {
   double cx_ = 0, cy_ = 0, cw_ = 0, ch_ = 0;
 };
 
-void show_settings(App *app);
 
 // ------------------------------------------------------------- commands
 
@@ -494,20 +575,63 @@ class App : public sde::BufferedWindow {
   void set_encoding_for_save(Encoding e);
   void set_eol(Eol e);
   void set_indent(bool tabs, int width);
-  void popup_menu(int x, int y);
   void popup_status(int id, int x, int y);
-  void open_settings() { show_settings(this); }
+  void open_settings() { show_settings_page(true); }
+  void show_settings_page(bool on);
+  bool settings_visible() const;
   void about();
+  void toggle_whitespace();
+  void toggle_preview();
+  void new_window();
+
+  // Menus (menus.cpp).
+  MenuSpec menu_spec(int toolbar_id);  // File, Edit, View and the toolbar dropdowns
+  void context_menu(int root_x, int root_y);
+  void tab_menu(int index, int root_x, int root_y);
+  std::vector<MenuItem> text_tools_items();
+  std::vector<MenuItem> spelling_items();
+  std::vector<MenuItem> display_items();
+  MenuItem command_item(const std::string &id, int icon = -1, bool checked = false);
+
+  // Markdown helpers and Notepad tools (actions.cpp).
+  bool is_markdown(const Document *doc) const;
+  void md_heading(int level);
+  void md_list(md::ListKind kind);
+  void md_wrap(const std::string &marker);
+  void md_link();
+  void md_clear();
+  int current_heading();
+  void insert_text(const std::string &text);
+  void insert_date_time();
+  void search_web();
+  std::string word_at_cursor(int *start = nullptr, int *end = nullptr);
+  void delete_selection();
+
+  // Spelling (spell.cpp).
+  bool spell_available();
+  std::vector<std::string> spell_suggestions(const std::string &word, bool &correct);
+  bool misspelled(const std::string &word) const;
+  bool misspelled_any() const { return !bad_words_.empty(); }
+  void schedule_spell_check();
+  void replace_word(int start, int end, const std::string &word);
+  void ignore_word(const std::string &word);
 
   // State.
   Settings &settings() { return settings_; }
   void apply_settings(bool save = true);
   const std::vector<std::string> &recent() const { return recent_; }
+  void set_secondary(bool v) { secondary_ = v; }
+  void clear_recent() {
+    recent_.clear();
+    save_recent();
+  }
   const std::vector<Command> &commands() const { return commands_; }
   void run_command(const std::string &id);
   EditorView *editor() const { return editor_; }
   Sidebar *sidebar() const { return sidebar_; }
   TabBar *tabs() const { return tabs_; }
+  Toolbar *toolbar() const { return toolbar_; }
+  StatusBar *status() const { return status_; }
   void doc_changed(Document *doc);    // text modified
   void doc_restyled(Document *doc, int start, int end);
   void cursor_moved();
@@ -527,6 +651,7 @@ class App : public sde::BufferedWindow {
   void check_disk(bool all);
   void handle_notice(Document *doc, int button);
   int header_h() const { return header_h_; }
+  int tabs_h() const { return tabs_h_; }
   void raise_window();
   std::string cwd_folder() const;
 
@@ -540,9 +665,12 @@ class App : public sde::BufferedWindow {
   static void watch_cb(void *p);
   static void toast_cb(void *p);
   static void match_cb(void *p);
+  static void spell_cb(void *p);
+  void check_spelling_now();
   static int x_event(int event);
   void schedule_ui();
   void draw_header(sde::Painter &p);
+  void editor_rect(int &x, int &y, int &w, int &h) const;
   void save_recent();
   Document *recover_from(const std::string &id, const std::string &path);
 
@@ -562,17 +690,23 @@ class App : public sde::BufferedWindow {
   EditorView *editor_ = nullptr;
   TabBar *tabs_ = nullptr;
   StatusBar *status_ = nullptr;
+  Toolbar *toolbar_ = nullptr;
+  MarkdownView *mdview_ = nullptr;
+  SettingsPage *settings_page_ = nullptr;
   InfoBar *info_ = nullptr;
-  StartPage *start_ = nullptr;
   Sidebar *sidebar_ = nullptr;
   FindBar *find_ = nullptr;
   Palette *palette_ = nullptr;
   Sheet *sheet_ = nullptr;
-  sde::DrawnButton *menu_btn_ = nullptr, *side_btn_ = nullptr, *cmd_btn_ = nullptr;
-  int header_h_ = 0, status_h_ = 0;
+  int header_h_ = 0, tabs_h_ = 0, status_h_ = 0;
+  // Spelling: words known to be wrong / right, and the checker program.
+  std::vector<std::string> spell_cmd_;
+  int spell_state_ = -1;  // -1 unknown, 0 missing, 1 available
+  std::unordered_set<std::string> bad_words_, good_words_, ignored_;
   std::string toast_;
   bool ui_pending_ = false, quitting_ = false;
   std::string instance_tag_;
+  bool secondary_ = false;
   static App *instance_;
   friend class Palette;
 };
@@ -580,6 +714,7 @@ class App : public sde::BufferedWindow {
 // instance.cpp: single-window handoff through a UNIX socket.
 // Returns true when another Niny took the files (this process should exit).
 bool hand_off_to_running(const std::vector<std::string> &args, const std::string &cwd);
+bool another_instance_running();
 void listen_for_instances(App *app);
 void stop_listening();
 

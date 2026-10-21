@@ -91,3 +91,22 @@ add_test(NAME sde-photo-model COMMAND sde-photo-tests)
 add_executable(niny-tests test_niny.cpp)
 target_link_libraries(niny-tests PRIVATE niny-core)
 add_test(NAME niny-core COMMAND niny-tests)
+
+# SDE Screen Lock and SDE Power: PAM conversation (fake PAM stack), password
+# buffer, attempt delays, inhibitors, idle stages, battery levels, brightness.
+add_executable(sde-lock-tests test_lock.cpp)
+target_link_libraries(sde-lock-tests PRIVATE sde-lock-core sde-power-core)
+add_test(NAME sde-lock-power-model COMMAND sde-lock-tests)
+# QA-only lock screen with a fake authenticator (not installed).
+add_executable(sde-lock-ui-fixture lock_ui_fixture.cpp)
+target_link_libraries(sde-lock-ui-fixture PRIVATE sde-lock-ui)
+if(SDE_XVFB)
+  add_test(NAME sde-lock-screen COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_ui.py $<TARGET_FILE:sde-lock-ui-fixture>)
+  set_tests_properties(sde-lock-screen PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+endif()
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-lock-daemon COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_daemon.py $<TARGET_FILE:sde-lock>)
+  set_tests_properties(sde-lock-daemon PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
+endif()

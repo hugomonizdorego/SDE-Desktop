@@ -13,6 +13,7 @@ add_library(sde-common STATIC
   common/i18n.cpp
   common/icons.cpp
   common/paint.cpp
+  common/power.cpp
   common/process.cpp
   common/spawn.cpp
   common/suite.cpp
@@ -66,7 +67,8 @@ add_executable(sde-settings
   settings/ui.cpp
   settings/display.cpp
   settings/input.cpp
-  settings/system.cpp)
+  settings/system.cpp
+  settings/power.cpp)
 # Display-free helpers (graphics card detection, wallpaper scan, pactl/
 # nmcli/bluetoothctl parsers), unit
 # tested; thumbnails come from the Gallery core (decoding threads and the
@@ -291,6 +293,42 @@ if(SDE_BUILD_COMPONENTS)
                 "${SDE_COMPONENT_SOURCES}/sde-display-settings/copyright"
           DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/DisplayProfileManager)
 endif()
+
+# SDE Power and SDE Screen Lock: the power manager and the screen locker,
+# written from scratch by the DebION Dev-Team (src/power, src/lock). Their
+# decisions (idle stages, battery levels, inhibitors, PAM conversation,
+# attempt delays) are small libraries shared with the unit tests.
+pkg_check_modules(XSS REQUIRED IMPORTED_TARGET xscrnsaver)
+pkg_check_modules(XEXT REQUIRED IMPORTED_TARGET xext)
+add_library(sde-power-core STATIC power/policy.cpp power/session.cpp)
+target_include_directories(sde-power-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/power)
+target_link_libraries(sde-power-core PUBLIC sde-common PkgConfig::XSS PkgConfig::XEXT)
+add_executable(sde-power power/main.cpp power/osd.cpp)
+target_link_libraries(sde-power PRIVATE sde-power-core)
+sde_app_version(sde-power sde-power)
+install(TARGETS sde-power RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+pkg_check_modules(PAM REQUIRED IMPORTED_TARGET pam)
+# Display-free parts of the locker (PAM conversation, attempt delays,
+# inhibitors) and the lock screen; the tests link the lock screen with a
+# fake authenticator, sde-lock always with PAM.
+add_library(sde-lock-core STATIC lock/auth.cpp lock/policy.cpp)
+target_include_directories(sde-lock-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lock)
+target_link_libraries(sde-lock-core PUBLIC PkgConfig::PAM)
+add_library(sde-lock-ui STATIC lock/ui.cpp)
+target_link_libraries(sde-lock-ui PUBLIC sde-lock-core sde-power-core Threads::Threads)
+add_executable(sde-lock lock/main.cpp lock/daemon.cpp)
+target_link_libraries(sde-lock PRIVATE sde-lock-ui)
+sde_app_version(sde-lock sde-lock)
+install(TARGETS sde-lock RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+# PAM service of the locker (Debian's common-auth/common-account stacks).
+install(FILES ${PROJECT_SOURCE_DIR}/data/pam/sde-lock DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/pam.d)
+# Compatibility commands of the former SDE Power Manager / SDE Screen Lock
+# forks: they open the Settings pages or call sde-lock.
+install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
+                 ${PROJECT_SOURCE_DIR}/data/compat/sde-screensaver-preferences
+                 ${PROJECT_SOURCE_DIR}/data/compat/sde-screensaver-command
+        DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)

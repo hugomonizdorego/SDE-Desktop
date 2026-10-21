@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Power
+GenericName=Power Settings
+Comment=Battery, screen dimming, sleep, lid and power button
+Exec=sde-settings --page power
+TryExec=sde-settings
+Icon=preferences-system-power
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=battery;suspend;brightness;lid;power;
+OnlyShowIn=SDE;
+StartupNotify=true
+X-SDE-Upstream=https://github.com/hugomonizdorego/SDE-Desktop

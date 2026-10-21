@@ -286,6 +286,247 @@ void draw(Painter &p, Kind kind, double x, double y, double size, const Color &c
       cairo_line_to(cr, 15.5, 14.5);
       cairo_stroke(cr);
       break;
+    case Cut:
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 7, 17.5, 3, 0, 2 * M_PI);
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 17, 17.5, 3, 0, 2 * M_PI);
+      line(cr, 9, 15.2, 16.5, 3.5);
+      line(cr, 15, 15.2, 7.5, 3.5);
+      cairo_stroke(cr);
+      break;
+    case Copy:
+      rrect(cr, 8, 7, 11.5, 14, 2);
+      cairo_move_to(cr, 5, 16.5);
+      cairo_line_to(cr, 5, 5);
+      cairo_curve_to(cr, 5, 3.8, 5.8, 3, 7, 3);
+      cairo_line_to(cr, 15, 3);
+      cairo_stroke(cr);
+      break;
+    case Paste:
+      rrect(cr, 5, 5, 14, 16.5, 2);
+      cairo_stroke(cr);
+      rrect(cr, 8.5, 2.8, 7, 4, 1.5);
+      cairo_stroke(cr);
+      line(cr, 9, 12, 15, 12);
+      line(cr, 9, 16, 13, 16);
+      cairo_stroke(cr);
+      break;
+    case SelectAll:
+      for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j) rrect(cr, 4.5 + i * 8.5, 4.5 + j * 8.5, 6.5, 6.5, 1.5);
+      cairo_stroke(cr);
+      break;
+    case Trash:
+      line(cr, 4, 6.5, 20, 6.5);
+      cairo_move_to(cr, 9, 6.5);
+      cairo_line_to(cr, 9.5, 3.5);
+      cairo_line_to(cr, 14.5, 3.5);
+      cairo_line_to(cr, 15, 6.5);
+      cairo_move_to(cr, 6, 6.5);
+      cairo_line_to(cr, 7, 20.5);
+      cairo_line_to(cr, 17, 20.5);
+      cairo_line_to(cr, 18, 6.5);
+      line(cr, 10, 10.5, 10, 16.5);
+      line(cr, 14, 10.5, 14, 16.5);
+      cairo_stroke(cr);
+      break;
+    case Globe:
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 12, 12, 8.5, 0, 2 * M_PI);
+      cairo_stroke(cr);
+      cairo_save(cr);
+      cairo_translate(cr, 12, 12);
+      cairo_scale(cr, 0.45, 1);
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 0, 0, 8.5, 0, 2 * M_PI);
+      cairo_restore(cr);
+      line(cr, 3.5, 12, 20.5, 12);
+      cairo_stroke(cr);
+      break;
+    case TextTools:
+      // "Aa"
+      cairo_move_to(cr, 3, 18);
+      cairo_line_to(cr, 8, 5);
+      cairo_line_to(cr, 13, 18);
+      line(cr, 5, 13.5, 11, 13.5);
+      cairo_stroke(cr);
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 17.5, 15, 3, 0, 2 * M_PI);
+      line(cr, 20.5, 11.5, 20.5, 18);
+      cairo_stroke(cr);
+      break;
+    case Spelling:
+      // "abc" with a check mark.
+      cairo_move_to(cr, 3, 12);
+      cairo_line_to(cr, 6, 4);
+      cairo_line_to(cr, 9, 12);
+      line(cr, 4.2, 9, 7.8, 9);
+      line(cr, 11.5, 4, 11.5, 12);
+      cairo_move_to(cr, 11.5, 8);
+      cairo_curve_to(cr, 15.5, 5.5, 15.5, 12.5, 11.5, 11.5);
+      cairo_move_to(cr, 21, 6);
+      cairo_curve_to(cr, 17.5, 4, 16.5, 12.5, 21, 11);
+      cairo_move_to(cr, 8, 16.5);
+      cairo_line_to(cr, 11.5, 20);
+      cairo_line_to(cr, 19, 13.5);
+      cairo_stroke(cr);
+      break;
+    case Unicode:
+      // An Omega.
+      cairo_move_to(cr, 4.5, 19.5);
+      cairo_line_to(cr, 9, 19.5);
+      cairo_line_to(cr, 9, 17.5);
+      cairo_curve_to(cr, 4.5, 15.5, 4, 8, 7.5, 5.5);
+      cairo_curve_to(cr, 10, 3.5, 14, 3.5, 16.5, 5.5);
+      cairo_curve_to(cr, 20, 8, 19.5, 15.5, 15, 17.5);
+      cairo_line_to(cr, 15, 19.5);
+      cairo_line_to(cr, 19.5, 19.5);
+      cairo_stroke(cr);
+      break;
+    case Bold:
+      cairo_set_line_width(cr, 2.6);
+      cairo_move_to(cr, 7, 4.5);
+      cairo_line_to(cr, 13, 4.5);
+      cairo_curve_to(cr, 17.5, 4.5, 17.5, 11.5, 13, 11.5);
+      cairo_line_to(cr, 7, 11.5);
+      cairo_move_to(cr, 13, 11.5);
+      cairo_curve_to(cr, 18.5, 11.5, 18.5, 19.5, 13, 19.5);
+      cairo_line_to(cr, 7, 19.5);
+      cairo_line_to(cr, 7, 4.5);
+      cairo_stroke(cr);
+      break;
+    case Italic:
+      line(cr, 10, 4.5, 18, 4.5);
+      line(cr, 6, 19.5, 14, 19.5);
+      line(cr, 14.5, 4.5, 9.5, 19.5);
+      cairo_stroke(cr);
+      break;
+    case Link:
+      rrect(cr, 2.5, 8, 11, 8, 4);
+      rrect(cr, 10.5, 8, 11, 8, 4);
+      cairo_stroke(cr);
+      break;
+    case ClearFormat:
+      cairo_move_to(cr, 4, 18);
+      cairo_line_to(cr, 9, 5);
+      cairo_line_to(cr, 14, 18);
+      line(cr, 6, 13.5, 12, 13.5);
+      line(cr, 15, 13, 21, 19);
+      line(cr, 21, 13, 15, 19);
+      cairo_stroke(cr);
+      break;
+    case ListBullet:
+    case ListNumbered:
+    case ListTask:
+      for (int i = 0; i < 3; ++i) {
+        double yy = 6 + i * 6;
+        line(cr, 9.5, yy, 20.5, yy);
+      }
+      cairo_stroke(cr);
+      for (int i = 0; i < 3; ++i) {
+        double yy = 6 + i * 6;
+        if (kind == ListBullet) {
+          cairo_new_sub_path(cr);
+          cairo_arc(cr, 4.8, yy, 1.4, 0, 2 * M_PI);
+          cairo_fill(cr);
+        } else if (kind == ListTask) {
+          rrect(cr, 3, yy - 2, 4, 4, 0.8);
+          cairo_set_line_width(cr, 1.3);
+          cairo_stroke(cr);
+          cairo_set_line_width(cr, size >= 20 ? 1.8 : 2.0);
+        } else {
+          line(cr, 5, yy - 2, 5, yy + 2);
+          cairo_set_line_width(cr, 1.4);
+          cairo_stroke(cr);
+          cairo_set_line_width(cr, size >= 20 ? 1.8 : 2.0);
+        }
+      }
+      break;
+    case Quote:
+      line(cr, 5, 5, 5, 19);
+      line(cr, 9.5, 8, 19.5, 8);
+      line(cr, 9.5, 12, 19.5, 12);
+      line(cr, 9.5, 16, 16, 16);
+      cairo_stroke(cr);
+      break;
+    case Eye:
+      cairo_move_to(cr, 2.5, 12);
+      cairo_curve_to(cr, 7, 4.5, 17, 4.5, 21.5, 12);
+      cairo_curve_to(cr, 17, 19.5, 7, 19.5, 2.5, 12);
+      cairo_close_path(cr);
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 12, 12, 3.2, 0, 2 * M_PI);
+      cairo_stroke(cr);
+      break;
+    case Check:
+      cairo_move_to(cr, 5, 12.5);
+      cairo_line_to(cr, 10, 17.5);
+      cairo_line_to(cr, 19.5, 7);
+      cairo_stroke(cr);
+      break;
+    case Pilcrow:
+      line(cr, 12, 4.5, 12, 19.5);
+      line(cr, 16, 4.5, 16, 19.5);
+      line(cr, 9.5, 4.5, 19, 4.5);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 12, 4.5);
+      cairo_curve_to(cr, 5.5, 4.5, 5.5, 12.5, 12, 12.5);
+      cairo_close_path(cr);
+      cairo_fill(cr);
+      break;
+    case Font:
+      cairo_move_to(cr, 4, 19);
+      cairo_line_to(cr, 10, 4.5);
+      cairo_line_to(cr, 16, 19);
+      line(cr, 6.3, 13.5, 13.7, 13.5);
+      line(cr, 18, 10, 18, 19);
+      cairo_stroke(cr);
+      break;
+    case Theme:
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 12, 12, 8.5, 0, 2 * M_PI);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 12, 3.5);
+      cairo_arc(cr, 12, 12, 8.5, -M_PI / 2, M_PI / 2);
+      cairo_close_path(cr);
+      cairo_fill(cr);
+      break;
+    case Window:
+      rrect(cr, 3, 4.5, 18, 15, 2.5);
+      line(cr, 3, 8.5, 21, 8.5);
+      cairo_stroke(cr);
+      break;
+    case Clock:
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 12, 12, 8.5, 0, 2 * M_PI);
+      cairo_move_to(cr, 12, 7);
+      cairo_line_to(cr, 12, 12);
+      cairo_line_to(cr, 15.5, 14);
+      cairo_stroke(cr);
+      break;
+    case Heading:
+      line(cr, 5, 5, 5, 19);
+      line(cr, 15, 5, 15, 19);
+      line(cr, 5, 12, 15, 12);
+      line(cr, 18.5, 11, 20, 9.5);
+      line(cr, 20, 9.5, 20, 19);
+      cairo_stroke(cr);
+      break;
+    case Wrench:
+      cairo_move_to(cr, 14.5, 3.5);
+      cairo_curve_to(cr, 11, 3.5, 9, 7, 10.3, 10.2);
+      cairo_line_to(cr, 3.8, 16.7);
+      cairo_curve_to(cr, 2.8, 17.7, 2.8, 19.3, 3.8, 20.2);
+      cairo_curve_to(cr, 4.7, 21.2, 6.3, 21.2, 7.3, 20.2);
+      cairo_line_to(cr, 13.8, 13.7);
+      cairo_curve_to(cr, 17, 15, 20.5, 13, 20.5, 9.5);
+      cairo_line_to(cr, 17, 11.5);
+      cairo_line_to(cr, 13.5, 10.5);
+      cairo_line_to(cr, 12.5, 7);
+      cairo_close_path(cr);
+      cairo_stroke(cr);
+      break;
     case Undo:
     case Redo:
       arrow_curve(cr, kind == Redo);

@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# PAM configuration of SDE Screen Lock (sde-lock): checks the password of
+# the user whose session is locked with Debian's standard stacks.
+@include common-auth
+@include common-account

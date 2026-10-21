@@ -12,8 +12,3 @@ start-with-sidebar=true
 
 [org.debion.liria.icon-view]
 default-zoom-level='large'
-
-# SDE's panel shows battery state; the power manager keeps running for
-# policies and notifications without a second tray icon.
-[org.debion.power-manager]
-icon-policy='never'

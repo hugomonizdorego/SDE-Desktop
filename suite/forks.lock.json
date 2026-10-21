@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 7,
+  "revision": 8,
   "forks": [
     {
       "id": "liria",
@@ -14,36 +14,6 @@
         "--disable-introspection"
       ],
       "build_version": "0.1.0~alpha15"
-    },
-    {
-      "id": "sde-power-manager",
-      "upstream": "mate-power-manager",
-      "name": "SDE Power Manager",
-      "version": "1.28.1",
-      "commit": "6561790b03041e1c888c309ef17912058ae5aa2e",
-      "url": "https://github.com/mate-desktop/mate-power-manager",
-      "configure": [
-        "--disable-applets",
-        "--without-keyring",
-        "--with-libsecret"
-      ],
-      "build_version": "1.0.0~alpha1"
-    },
-    {
-      "id": "sde-screensaver",
-      "upstream": "mate-screensaver",
-      "name": "SDE Screen Lock",
-      "version": "1.28.1",
-      "commit": "88b098ab9beb54237a608ec23b101c823d2aa85f",
-      "url": "https://github.com/mate-desktop/mate-screensaver",
-      "configure": [
-        "--enable-locking",
-        "--enable-pam",
-        "--without-console-kit",
-        "--with-systemd",
-        "--without-kbd-layout-indicator"
-      ],
-      "build_version": "1.0.0~alpha1"
     }
   ]
 }

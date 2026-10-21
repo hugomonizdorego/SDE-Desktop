@@ -402,7 +402,7 @@ void run_and_wait(const std::vector<std::string> &argv, int seconds) {
 
 std::string find_polkit_agent() {
   static const char *agents[] = {
-      SDE_LIBEXECDIR "/sde/sde-polkit-agent",  // SDE's own (mate-polkit)
+      SDE_LIBEXECDIR "/sde/sde-polkit-agent",  // SDE's own agent
       "/usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1",
       "/usr/libexec/policykit-1-gnome/polkit-gnome-authentication-agent-1",
       "/usr/libexec/polkit-gnome-authentication-agent-1",
@@ -517,6 +517,7 @@ int run_check() {
       {"sde-panel", "--version"},     {"sde-desktop", "--version"}, {"sde-notifyd", "--version"},
       {"sde-settings", "--version"},  {"sde-run", "--version"},     {"sde-logout", "--version"},
       {"sde-compositor", "--version"}, {"sde-autostart", "--version"}, {"sde-suite", "--check"},     {"sde-update", "--version"},
+      {"sde-power", "--version"},     {"sde-lock", "--version"},
   };
   if (wm.empty() || wm == "sde-wm" || wm == "openbox") programs.insert(programs.begin(), {"sde-wm", "--version"});
   else programs.insert(programs.begin(), {split_command(wm)[0], "--version"});

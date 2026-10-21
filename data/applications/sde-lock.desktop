@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Screen Lock
+GenericName=Lock Screen Settings
+Comment=When the screen locks and how the lock screen looks
+Exec=sde-settings --page lock
+TryExec=sde-settings
+Icon=system-lock-screen
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=lock;screensaver;idle;password;
+OnlyShowIn=SDE;
+StartupNotify=true
+X-SDE-Upstream=https://github.com/hugomonizdorego/SDE-Desktop

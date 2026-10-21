@@ -106,7 +106,6 @@ endif()
 
 # ---------------------------------------------------------------- data files
 install(PROGRAMS data/startsde DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(PROGRAMS data/sde-lock DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES data/sde-mimeapps.list DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg)
 install(DIRECTORY data/autostart/ DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/autostart)
 install(DIRECTORY data/update/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/update

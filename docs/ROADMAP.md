@@ -45,7 +45,7 @@ See [RUST.md](RUST.md) for the current boundary and validation requirements.
 ## 0.3 Beta
 
 - [x] Liria native file-manager fork (alpha6)
-- [x] Native screen-lock and power-manager forks (alpha6)
+- [x] SDE Power and SDE Screen Lock, written from scratch (alpha16)
 - [ ] Hardware validation of idle, lid, suspend and locking
 - [ ] Panel applets API and panel position options
 - [ ] Workspace switcher and window previews

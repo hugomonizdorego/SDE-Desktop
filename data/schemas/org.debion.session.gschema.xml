@@ -7,7 +7,7 @@
       <default>5</default>
       <range min="0" max="2147483647"/>
       <summary>Session idle delay</summary>
-      <description>Minutes without input before SDE Screen Lock considers the session idle. Zero disables the idle timeout.</description>
+      <description>Minutes without input before the session is considered idle, for applications that read this key. SDE Screen Lock and SDE Power use [lock] and [power] in sde.conf.</description>
     </key>
   </schema>
   <schema id="org.debion.applications-terminal" path="/org/debion/applications/terminal/">
