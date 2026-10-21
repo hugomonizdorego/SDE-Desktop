@@ -214,12 +214,41 @@ void SearchFlyout::prepare() {
   sel_index_ = -1;
   caret_on_ = true;
   filter();
+  // Opened with text (typing in the Start menu): the best match is selected.
+  if (!results_.empty()) {
+    sel_kind_ = K_RESULT;
+    sel_index_ = 0;
+  }
   Fl::remove_timeout(blink, this);
   Fl::add_timeout(0.55, blink, this);
+  Fl::remove_timeout(poll_applications, this);
+  Fl::add_timeout(2, poll_applications, this);
+}
+
+// Applications installed while the flyout is open become searchable.
+void SearchFlyout::poll_applications(void *data) {
+  auto *self = static_cast<SearchFlyout *>(data);
+  if (!self->is_open()) return;
+  Fl::repeat_timeout(2, poll_applications, data);
+  if (self->menu_busy_) return;
+  std::string stamp = applications_stamp();
+  if (stamp == self->apps_stamp_) return;
+  self->apps_stamp_ = stamp;
+  // Results point into apps_: keep the selected position, not the pointers.
+  self->apps_ = load_applications("SDE");
+  self->filter();
+  if (self->sel_kind_ == K_RESULT && self->sel_index_ >= int(self->results_.size()))
+    self->sel_index_ = self->results_.empty() ? -1 : 0;
+  if (self->sel_kind_ != K_RESULT && !self->results_.empty()) {
+    self->sel_kind_ = K_RESULT;
+    self->sel_index_ = 0;
+  }
+  self->redraw();
 }
 
 void SearchFlyout::closed() {
   Fl::remove_timeout(blink, this);
+  Fl::remove_timeout(poll_applications, this);
   query_.clear();
   caret_ = 0;
   select_all_ = false;

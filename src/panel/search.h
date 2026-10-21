@@ -94,6 +94,7 @@ class SearchFlyout : public PanelPopup {
   const Item *item_at(int x, int y) const;
   void qa_dump_search();
   static void blink(void *);
+  static void poll_applications(void *);
 
   sde::Theme theme_;
   std::string query_;
