@@ -314,7 +314,9 @@ def brightness_checks(ac):
     same card; wheel and brightness commands change the backlight."""
     L=layout('Action Center');v,b=L['Output volume'],L['Brightness']
     assert b[1]>v[1] and b[1]-v[1]<=round(60*scale) and abs(b[0]-v[0])<=2,(v,b)
-    level=lambda:int((home/'backlight/qa_backlight/brightness').read_text())
+    def level():
+        try:return int((home/'backlight/qa_backlight/brightness').read_text())
+        except ValueError:return -1  # being written
     g=geom(ac);before=level()
     run('xdotool','mousemove',g['x']+b[0]-round(20*scale),g['y']+b[1]+b[3]//2,'click','4');time.sleep(.2);run('xdotool','click','4')
     waitfor(lambda:level()==before+10,f'wheel did not raise the brightness ({level()})')
