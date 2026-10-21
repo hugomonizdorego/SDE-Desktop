@@ -572,7 +572,7 @@ bool App::global_shortcut(int key, int state) {
 
 int App::dispatch(int event, Fl_Window *w) {
   App *self = instance_;
-  if (self && w == self && !self->modal()) {
+  if (self && w == self && !self->modal() && !Fl::grab()) {  // popup menus get their keys
     if (event == FL_KEYBOARD && self->global_shortcut(Fl::event_key(), Fl::event_state())) return 1;
     if (event == FL_PUSH && self->palette_->visible() && !Fl::event_inside(self->palette_)) {
       self->palette_->close(true);

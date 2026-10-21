@@ -431,6 +431,7 @@ void SettingsPage::build() {
     rows_.push_back(r);
   }
   end();
+  Fl_Group::current(nullptr);  // end() made the window current; later widgets must not join it
   // Mark the first and last rows of each group for the rounded corners.
   for (size_t i = 0; i < rows_.size(); ++i) {
     Row *r = rows_[i];

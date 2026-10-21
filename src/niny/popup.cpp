@@ -139,6 +139,7 @@ class Controller {
   }
 
   void open(int x, int y, int anchor_h) {
+    Fl_Group::current(nullptr);  // top-level popups, never children of an open group
     auto *l = new Level(this, &spec_.items, &spec_.quick, spec_.min_width);
     int sx, sy, sw, sh;
     Fl::screen_work_area(sx, sy, sw, sh, x, y);
@@ -167,6 +168,7 @@ class Controller {
     Level *p = levels_[level];
     const MenuItem &it = (*p->items_)[size_t(index)];
     if (it.sub.empty() || !it.enabled) return;
+    Fl_Group::current(nullptr);
     auto *l = new Level(this, &it.sub, nullptr, 0);
     int sx, sy, sw, sh;
     Fl::screen_work_area(sx, sy, sw, sh, p->x(), p->y());

@@ -126,8 +126,8 @@ Look make_look(const Config &cfg, const std::string &scheme) {
   L.bracket = L.accent;
   // Tab strip (tinted like a Mica title bar) and the lighter bar below it.
   if (L.dark) {
-    L.strip = L.window.mix(Color::hex(0x000000), 0.22).mix(L.accent, 0.05);
-    L.bar = L.editor.mix(Color::hex(0xFFFFFF), 0.045);
+    L.strip = L.window.mix(Color::hex(0x000000), 0.38).mix(L.accent, 0.04);
+    L.bar = L.editor.mix(Color::hex(0xFFFFFF), 0.06);
   } else {
     L.strip = L.window.mix(L.accent, 0.075).mix(Color::hex(0x8090A8), 0.06);
     L.bar = Color::hex(0xFBFBFC).mix(L.window, 0.25);
