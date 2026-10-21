@@ -134,8 +134,18 @@ def flyout_bounds(fl,section,top=False):
 def only_open(title):
     for other in FLYOUTS+['Action Center']:
         if other!=title:assert not visible('^'+other+'$'),f'{other} open together with {title}'
+def command(args,title):
+    # A command sent with sde-panel can be lost when it races the previous
+    # popup closing (seen with alpha14 too, ~2 in 80); send it once more.
+    for attempt in range(2):
+        run('sde-panel',*args)
+        for _ in range(25):
+            w=visible('^'+title+'$')
+            if w:return w
+            time.sleep(.08)
+    return find('^'+title+'$')
 def open_section(name,title):
-    run('sde-panel','--section',name);w=find('^'+title+'$');time.sleep(.6);return w
+    w=command(['--section',name],title);time.sleep(.6);return w
 def escape(title):
     run('xdotool','key','Escape');gone('^'+title+'$');time.sleep(.2)
 def log_has(text):return text in (home/'service.log').read_text()
@@ -204,7 +214,7 @@ try:
     config(overflow=False);xv=spawn('Xvfb',display,'-screen','0',a.size+'x24',*transport);time.sleep(.6);assert xv.poll() is None
     spawn('sde-notifyd');time.sleep(.3)
     spawn('dbus-monitor','--session',"interface='org.freedesktop.Notifications'")
-    spawn('sde-desktop');panel_proc=spawn('sde-panel');panel=find('^SDE Panel$');time.sleep(.6)
+    spawn('sde-desktop');find('^SDE Desktop$');time.sleep(.3);panel_proc=spawn('sde-panel');panel=find('^SDE Panel$');time.sleep(.6)
     fixture=spawn(str(a.test_dir.resolve()/'sde-panel-service-fixture'),str(home/'service.log'))
     waitfor(lambda:(home/'service.log').exists() and log_has('READY'),'fixture not ready')
     sni=spawn(str(a.test_dir.resolve()/'sde-sni-demo'))
@@ -260,7 +270,7 @@ try:
     item('Action Center','Calendar',active=False)
     # The corner button closes what it opened.
     click_panel('action-center');gone('^Action Center$')
-    run('sde-panel','--calendar');ac=find('^Action Center$');time.sleep(.5)
+    ac=command(['--calendar'],'Action Center');time.sleep(.5)
     waitfor(lambda:in_view('Action Center','Calendar'),'sde-panel --calendar did not show the calendar')
     escape('Action Center')
 
@@ -290,7 +300,7 @@ try:
     item('Alarms','Add alarm');assert 'Dismiss' not in layout('Alarms');escape('Alarms')
 
     # Agenda: pick today, add an item with a reminder; the calendar marks the day.
-    run('sde-panel','--calendar');ac=find('^Action Center$');time.sleep(.5)
+    ac=command(['--calendar'],'Action Center');time.sleep(.5)
     press('Action Center','Add agenda item')
     type_into('Action Center','Agenda title','QA Dentist')
     type_into('Action Center','Agenda time','23:58')
@@ -310,17 +320,17 @@ try:
     waitfor(lambda:'reminded=true' in agenda.read_text(),'reminder not marked as fired')
 
     # Session buttons live in the Action Center footer.
-    run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.4)
+    ac=command(['--action-center'],'Action Center');time.sleep(.4)
     press('Action Center','Power')
     for name in ['Sleep','Log Out','Restart','Shut Down','Close power options']:item('Action Center',name)
     shot('21-power-options')
     press('Action Center','Restart');gone('^Action Center$')
     waitfor(lambda:commands('LOGOUT --action reboot'),'Restart did not run sde-logout --action reboot')
-    run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.4)
+    ac=command(['--action-center'],'Action Center');time.sleep(.4)
     assert 'Restart' not in layout('Action Center'),'power options stayed open'
     press('Action Center','Lock Screen');gone('^Action Center$')
     waitfor(lambda:commands('LOGOUT --action lock'),'Lock Screen did not run sde-logout --action lock')
-    run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.4)
+    ac=command(['--action-center'],'Action Center');time.sleep(.4)
     press('Action Center','SDE Settings');gone('^Action Center$')
     waitfor(lambda:commands('SETTINGS \n'),'SDE Settings button did not start sde-settings')
 
@@ -398,17 +408,17 @@ try:
 
     for style,top in [('short',False),('floating',True),('full',True)]:
         config(style,top,theme='dark');reload()
-        run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.5);bounds(ac,top);shot('12-'+style+('-top' if top else '-bottom'));escape('Action Center')
+        ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac,top);shot('12-'+style+('-top' if top else '-bottom'));escape('Action Center')
         fl=open_section('network','Network');flyout_bounds(fl,'network',top);shot('12-'+style+('-top' if top else '-bottom')+'-flyout');escape('Network')
     for theme,look in [('light','sde'),('dark','sde'),('light','aero'),('dark','aero'),('light','liquid-glass'),('dark','liquid-glass')]:
         config(theme=theme,look=look);reload()
-        run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.5);bounds(ac);shot(f'13-theme-{look}-{theme}');escape('Action Center')
+        ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac);shot(f'13-theme-{look}-{theme}');escape('Action Center')
         fl=open_section('sound','Sound');flyout_bounds(fl,'sound');shot(f'13-theme-{look}-{theme}-sound');escape('Sound')
     config(moved=False);reload();fl=open_section('tray','Tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('14-keep-tray-on-panel');escape('Tray')
     fixture.terminate();fixture.wait();sni.terminate();sni.wait();time.sleep(.6)
     assert panel_proc.poll() is None,'service disappearance crashed panel'
     fl=open_section('bluetooth','Bluetooth');shot('15-services-disconnected');escape('Bluetooth')
-    run('sde-panel','--action-center');find('^Action Center$');escape('Action Center')
+    command(['--action-center'],'Action Center');escape('Action Center')
     assert panel_proc.poll() is None,'panel exited'
     print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
 finally:

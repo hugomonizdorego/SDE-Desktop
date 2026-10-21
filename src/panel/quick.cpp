@@ -1509,10 +1509,10 @@ void QuickSettings::network_section(SectionBuilder &b) {
     b.y += S(26);
   }
   if (n.no_internet()) {
-    b.info(_("The network is connected, but it does not reach the internet."));
-    b.info(_("Troubleshoot reconnects and renews the address and DNS."));
+    b.info(_("The network has no internet access."));
+    b.info(_("Troubleshoot renews the address and DNS."));
   } else if (n.portal()) {
-    b.info(_("This network wants you to sign in (hotel, cafe, campus)."));
+    b.info(_("Sign in to this network to go online."));
   } else if (n.connected() && n.connectivity == NetworkState::UNKNOWN && !n.check_enabled) {
     b.info(_("Internet checking is off in NetworkManager."));
   }
@@ -2263,7 +2263,7 @@ void QuickSettings::footer(int W, int H, int pad) {
     int bw = (W - pad - x - (n - 1) * gap) / n;
     for (int i = 0; i < n; ++i)
       new CommandButton(x + i * (bw + gap), fy, bw, fb, choices[size_t(i)].name,
-                        launch({"sde-logout", "--action", choices[size_t(i)].action}), i == n - 1);
+                        launch({"sde-logout", "--action", choices[size_t(i)].action}));
     return;
   }
   std::vector<std::pair<std::string, std::function<void()>>> foot = {
