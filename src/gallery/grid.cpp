@@ -594,7 +594,7 @@ int Grid::handle(int event) {
       }
       bool any_selected = !selection().empty();
       // The round check mark toggles selection without opening.
-      double tx, ty, ts;
+      double tx = 0, ty = 0, ts = 0;
       tile_rect(size_t(i), tx, ty, ts);
       bool on_check = Fl::event_x() < tx + S(40) && Fl::event_y() < ty + S(40);
       if (shift) {

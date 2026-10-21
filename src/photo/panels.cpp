@@ -483,6 +483,7 @@ void SidePanel::draw_info(Painter *p) {
   } else {
     link_w_ = 0;
   }
+  info_h_ = yy + info_scroll_ - y();
 }
 
 void SidePanel::draw() {
@@ -567,7 +568,9 @@ void SidePanel::draw() {
       draw_text(note, px, y() + h() - S(88), pw, S(18), t.text_dim);
     }
   } else {
+    fl_push_clip(x(), y(), w(), h());
     draw_info(nullptr);
+    fl_pop_clip();
   }
   draw_children();
 }
@@ -617,7 +620,8 @@ int SidePanel::handle(int event) {
       break;
     case FL_MOUSEWHEEL:
       if (mode_ == Info) {
-        info_scroll_ = std::max(0.0, info_scroll_ + Fl::event_dy() * S(40));
+        info_scroll_ = std::max(0.0, std::min(std::max(0.0, info_h_ - h() + S(20)),
+                                              info_scroll_ + Fl::event_dy() * S(40)));
         redraw();
         return 1;
       }

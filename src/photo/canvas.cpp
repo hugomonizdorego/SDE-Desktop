@@ -107,7 +107,11 @@ double Canvas::target_scale() const {
   return 1.0;
 }
 
-double Canvas::scale() const { return shown_scale_ > 0 ? shown_scale_ : target_scale(); }
+double Canvas::scale() const {
+  // Fit and Fill follow the size of the view (the filmstrip may appear later).
+  if (!animating_ && (mode_ == ZoomMode::Fit || mode_ == ZoomMode::Fill || shown_scale_ <= 0)) return target_scale();
+  return shown_scale_;
+}
 
 void Canvas::clamp_pan() {
   double ax, ay, aw, ah;
@@ -119,6 +123,7 @@ void Canvas::clamp_pan() {
 }
 
 void Canvas::zoom_at(double ns, double cx, double cy, bool animate) {
+  if (!animating_) shown_scale_ = scale();
   ns = std::max(kMinScale, std::min(kMaxScale, ns));
   anchor_x_ = cx;
   anchor_y_ = cy;
@@ -178,6 +183,7 @@ void Canvas::anim_cb(void *p) {
 }
 
 void Canvas::set_zoom_mode(ZoomMode m) {
+  if (!animating_) shown_scale_ = scale();
   double ax, ay, aw, ah;
   image_area(ax, ay, aw, ah);
   anchor_x_ = ax + aw / 2;

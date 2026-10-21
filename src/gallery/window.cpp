@@ -37,8 +37,6 @@ std::string thumb_key(const std::string &path, bool large) {
   return path + (large ? "\n1" : "\n0");
 }
 
-bool under(const std::string &path, const std::string &dir) { return path_under(path, dir); }
-
 enum MenuId {
   M_OPEN_FILE = 1, M_OPEN_FOLDER, M_IMPORT, M_ADD_FOLDER, M_REFRESH, M_QUIT,
   M_SELECT_ALL, M_SELECT_NONE, M_FAVORITE, M_TRASH, M_COPY_PATH, M_OPEN_PHOTO, M_WALLPAPER, M_SHOW_FILES,
@@ -734,8 +732,6 @@ void GalleryWindow::update_menu() {
     if (!it.text || it.submenu()) continue;
     long id = reinterpret_cast<long>(it.user_data());
     auto state = [&](bool on) { on ? it.set() : it.clear(); };
-    auto enable = [&](bool on) { on ? it.activate() : it.deactivate(); };
-    bool any = grid_ && !selected_or_focused().empty();
     switch (id) {
       case M_SORT_NEWEST: state(sort_ == Sort::Newest); break;
       case M_SORT_OLDEST: state(sort_ == Sort::Oldest); break;
@@ -743,14 +739,8 @@ void GalleryWindow::update_menu() {
       case M_SIDEBAR: state(show_sidebar_); break;
       case M_PREFER_PHOTO: state(prefer_photo_); break;
       case M_FULLSCREEN: state(shown() && fullscreen_active()); break;
-      case M_FAVORITE:
-      case M_COPY_PATH:
-      case M_TRASH: enable(any); break;
-      case M_OPEN_PHOTO:
-      case M_WALLPAPER:
-      case M_SHOW_FILES: enable(grid_ && selected_or_focused().size() == 1); break;
-      case M_SELECT_ALL: enable(!view_.empty()); break;
-      case M_IMPORT: enable(!devices_.empty() && !importing_); break;
+      // Items that depend on the selection stay active: the menu cannot
+      // follow every focus change, and the actions check for themselves.
     }
   }
 }
@@ -769,12 +759,28 @@ void GalleryWindow::menu_cb(Fl_Widget *, void *data) {
     case M_QUIT: self->hide(); break;
     case M_SELECT_ALL: self->select_all(); break;
     case M_SELECT_NONE: self->grid_->clear_selection(); break;
-    case M_FAVORITE: self->toggle_favorite(paths); break;
-    case M_COPY_PATH: self->copy_paths(paths); break;
-    case M_TRASH: self->trash(paths); break;
-    case M_OPEN_PHOTO: if (paths.size() == 1) self->edit_in_photo(paths[0]); break;
-    case M_WALLPAPER: if (paths.size() == 1) self->set_wallpaper(paths[0]); break;
-    case M_SHOW_FILES: if (paths.size() == 1) self->show_in_files(paths[0]); break;
+    case M_FAVORITE:
+    case M_COPY_PATH:
+    case M_TRASH:
+      if (paths.empty()) {
+        self->toast(_("Select a photo first"));
+        break;
+      }
+      if (id == M_FAVORITE) self->toggle_favorite(paths);
+      else if (id == M_COPY_PATH) self->copy_paths(paths);
+      else self->trash(paths);
+      break;
+    case M_OPEN_PHOTO:
+    case M_WALLPAPER:
+    case M_SHOW_FILES:
+      if (paths.size() != 1) {
+        self->toast(paths.empty() ? _("Select a photo first") : _("Select only one photo"));
+        break;
+      }
+      if (id == M_OPEN_PHOTO) self->edit_in_photo(paths[0]);
+      else if (id == M_WALLPAPER) self->set_wallpaper(paths[0]);
+      else self->show_in_files(paths[0]);
+      break;
     case M_SORT_NEWEST:
     case M_SORT_OLDEST:
     case M_SORT_NAME:
@@ -1212,7 +1218,10 @@ void GalleryWindow::update_header_widgets() {
     import_btn_->hide();
   }
   int avail = right - sw - S(24);
-  bool show_zoom = avail > S(720), show_sort = avail > S(560);
+  // Leave the view title room before adding the optional controls.
+  text_font(theme_.font_size + S(5), true);
+  int title_w = std::max(S(150), std::min(S(320), text_width(view_title(view_kind_)) + S(24)));
+  bool show_zoom = avail - title_w > S(180) + S(234) + S(220), show_sort = avail - title_w > S(234) + S(170);
   if (show_zoom) {
     zoom_ctl_->resize(right - S(120) - S(22), cy - S(14), S(120), S(28));
     zoom_ctl_->show();
@@ -1227,7 +1236,8 @@ void GalleryWindow::update_header_widgets() {
   } else {
     sort_ctl_->hide();
   }
-  int search_w = std::max(S(140), std::min(S(260), avail - S(400)));
+  int used = (show_zoom ? S(180) : 0) + (show_sort ? S(234) : 0);
+  int search_w = std::max(S(140), std::min(S(260), avail - title_w - used));
   // The text field sits inside a rounded pill drawn by the window.
   search_->resize(right - search_w + S(34), cy - S(13), search_w - S(44), S(26));
   size_t selected = grid_->selection().size();

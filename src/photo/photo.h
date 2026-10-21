@@ -162,7 +162,7 @@ class SidePanel : public Fl_Group {
   std::vector<cairo_surface_t *> previews_;
   cairo_surface_t *preview_source_ = nullptr;
   int filter_hover_ = -1;
-  double info_scroll_ = 0;
+  double info_scroll_ = 0, info_h_ = 0;
   // Clickable link in the info view.
   double link_x_ = 0, link_y_ = 0, link_w_ = 0, link_h_ = 0;
   bool gesture_ = false;  // a slider drag in progress
