@@ -61,6 +61,17 @@ class DocView : public Fl_Widget {
   void scroll_by(double dx, double dy, bool smooth = true);
   void scroll_pages(int dir);  // Page Up / Page Down
   void follow(const LinkTarget &t);
+  void scroll_pos(double &sx, double &sy) const {
+    sx = sx_;
+    sy = sy_;
+  }
+  void set_scroll_pos(double sx, double sy) {
+    sx_ = tx_ = sx;
+    sy_ = ty_ = sy;
+    clamp_scroll();
+    update_current();
+    redraw();
+  }
 
   // Zoom and layout.
   double zoom() const { return zoom_; }  // 1.0 = 100 %

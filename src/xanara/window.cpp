@@ -1302,7 +1302,8 @@ bool XanaraWindow::replace_document(const std::string &path, const std::string &
     return false;
   }
   Fit fit = view_->fit();
-  double zoom = view_->zoom();
+  double zoom = view_->zoom(), ssx, ssy;
+  view_->scroll_pos(ssx, ssy);
   view_->set_document(nullptr);
   doc_ = std::move(d);
   working_copy_ = working;
@@ -1314,6 +1315,8 @@ bool XanaraWindow::replace_document(const std::string &path, const std::string &
   sidebar_->document_changed();
   layout();
   view_->go_to(std::clamp(page, 0, doc_->count() - 1));
+  // After saving, the pages are the same: stay exactly where the reader was.
+  if (keep_view && !working) view_->set_scroll_pos(ssx, ssy);
   update_chrome();
   return true;
 }

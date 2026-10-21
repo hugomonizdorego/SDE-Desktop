@@ -144,6 +144,7 @@ void Sidebar::page_changed(int page) {
 void Sidebar::draw() {
   const Theme &t = app_->theme();
   Document *d = app_->document();
+  if (tab_ == Notes && notes_dirty_) rebuild_notes();
   {
     Painter p(window()->w(), window()->h());
     cairo_t *cr = p.cr();

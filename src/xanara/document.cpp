@@ -784,13 +784,14 @@ PopplerAnnot *Document::add_ink(int page, const std::vector<std::vector<Point>> 
     poppler_annot_set_border_width(annot, width);
 #endif
     finish_annot(page, annot, color);
+    poppler_annot_set_contents(annot, "Drawing");
     geometry_.push_back(Geometry{page, rect, strokes});
   }
   touch(page);
   return annot;
 #else
   cairo_surface_t *img = ink_image(box, strokes, color, width);
-  PopplerAnnot *annot = add_image(page, box, img, "");
+  PopplerAnnot *annot = add_image(page, box, img, "Drawing");
   cairo_surface_destroy(img);
   return annot;
 #endif
@@ -841,15 +842,19 @@ PopplerAnnot *Document::add_image(int page, const Box &box, cairo_surface_t *ima
     std::lock_guard<std::mutex> lock(mu_);
     PopplerRectangle rect = to_pdf(page, box);
     annot = poppler_annot_stamp_new(doc_, &rect);
+    poppler_annot_set_flags(annot, POPPLER_ANNOT_FLAG_PRINT);
+    // Add it to the page first: poppler writes later changes (the image
+    // appearance, the contents) into the saved file only for annotations
+    // that already belong to the document.
+    poppler_page_add_annot(pages_[size_t(page)], annot);
     GError *err = nullptr;
     if (!poppler_annot_stamp_set_custom_image(POPPLER_ANNOT_STAMP(annot), image, &err)) {
       if (err) g_error_free(err);
+      poppler_page_remove_annot(pages_[size_t(page)], annot);
       g_object_unref(annot);
       return nullptr;
     }
     if (!label.empty()) poppler_annot_set_contents(annot, label.c_str());
-    poppler_annot_set_flags(annot, POPPLER_ANNOT_FLAG_PRINT);
-    poppler_page_add_annot(pages_[size_t(page)], annot);
     modified_ = true;
   }
   touch(page);

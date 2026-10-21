@@ -193,6 +193,17 @@ static void test_render_and_edit(const std::string &dir) {
     }
     CHECK(note && highlight && square);
     CHECK(again->annotations(1).size() == 2);
+    // Ink and free text keep their look and text (natively or as image
+    // stamps): the stroke at (150, 620) pt is drawn after reloading.
+    int with_text = 0;
+    for (const auto &x : again->annotations(1))
+      if (!x.contents.empty()) ++with_text;
+    CHECK(with_text == 2);
+    RenderParams one;
+    cairo_surface_t *pg2 = again->render(1, one, 0, 0, 595, 842);
+    uint32_t ink = pixel(pg2, 150, 620);
+    CHECK(((ink >> 16) & 255) > 150 && (ink & 255) < 160 && ((ink >> 8) & 255) < 90);
+    cairo_surface_destroy(pg2);
   }
   // No temporary files are left behind.
   int stray = 0;
