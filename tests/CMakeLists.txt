@@ -65,3 +65,7 @@ add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
 add_executable(sde-sysmon-tests test_sysmon.cpp)
 target_link_libraries(sde-sysmon-tests PRIVATE sde-sysmon-core)
 add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
+
+add_executable(sde-settings-tests test_settings.cpp)
+target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
+add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)

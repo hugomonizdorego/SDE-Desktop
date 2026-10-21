@@ -302,6 +302,18 @@ try:
     shot("04-settings-action-center")
     app.terminate()
     app.wait()
+    # Every page the panel flyouts open directly, plus the wallpaper grid.
+    pages = run("sde-settings", "--list-pages").stdout.split()
+    for needed in ["sound", "network", "bluetooth", "display", "input", "appearance",
+                   "desktop", "about", "system"]:
+        assert needed in pages, pages
+    for page in ["wallpaper", "desktop", "sound", "network", "bluetooth", "power", "keyboard"]:
+        app = spawn("sde-settings", "--page", page)
+        find("^Settings$")
+        time.sleep(0.8)
+        shot("08-settings-" + page)
+        app.terminate()
+        app.wait()
     for page in ["suite", "system", "about"]:
         app = spawn("sde-settings", "--page", page)
         settings = find("^Settings$")
