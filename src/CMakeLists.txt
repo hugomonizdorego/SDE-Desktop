@@ -224,7 +224,8 @@ add_library(taca-core STATIC
   taca/safety.cpp
   taca/engine.cpp
   taca/external.cpp
-  taca/model.cpp)
+  taca/model.cpp
+  taca/tools.cpp)
 target_include_directories(taca-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/taca)
 target_link_libraries(taca-core PUBLIC sde-common PkgConfig::LIBARCHIVE Threads::Threads)
 add_executable(taca

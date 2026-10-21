@@ -29,7 +29,10 @@ struct Node {
   std::vector<int> children;
 };
 
-enum class SortKey { Name, Size, Packed, Type, Modified };
+enum class SortKey { Name, Size, Packed, Ratio, Type, Modified };
+
+// Packed size as a share of the size (0.42 = 42 %), -1 when unknown.
+double packed_ratio(const Node &n);
 
 class Tree {
  public:
