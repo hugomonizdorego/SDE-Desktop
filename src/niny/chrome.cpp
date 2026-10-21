@@ -573,6 +573,8 @@ int StatusBar::handle(int event) {
       for (auto &s : sg)
         if (mx >= s.x && mx < s.x + s.w && s.clickable) {
           app_->popup_status(s.id, window()->x_root() + int(s.x), window()->y_root() + y());
+          hover_ = -1;
+          redraw();
           return 1;
         }
       return 1;

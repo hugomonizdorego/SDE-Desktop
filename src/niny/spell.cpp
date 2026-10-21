@@ -76,6 +76,31 @@ std::vector<SpellResult> run_checker(const std::vector<std::string> &cmd, const 
   return out;
 }
 
+// A hunspell dictionary for the locale, or the first one installed
+// (hunspell itself gives up when the locale has none).
+std::string hunspell_dictionary() {
+  std::vector<std::string> dirs{"/usr/share/hunspell", "/usr/share/myspell", "/usr/share/myspell/dicts"};
+  auto have = [&](const std::string &name) {
+    for (auto &d : dirs)
+      if (file_exists(d + "/" + name + ".dic")) return true;
+    return false;
+  };
+  for (const char *var : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
+    std::string v = env(var);
+    v = v.substr(0, v.find('.'));
+    v = v.substr(0, v.find('@'));
+    if (!v.empty() && v != "C" && v != "POSIX") {
+      if (have(v)) return v;
+      break;
+    }
+  }
+  if (have("en_US")) return "en_US";
+  for (auto &d : dirs)
+    for (auto &n : list_dir(d))
+      if (ends_with(n, ".dic")) return n.substr(0, n.size() - 4);
+  return "";
+}
+
 bool prose(const App *app, const Document *d) { return d && (is_plain(d->lang) || app->is_markdown(d)); }
 
 }  // namespace
@@ -86,6 +111,7 @@ bool App::spell_available() {
     std::string lang = settings_.spell_language;
     std::string p = find_program("hunspell");
     if (!p.empty()) {
+      if (lang.empty()) lang = hunspell_dictionary();
       spell_cmd_ = {p, "-a", "-i", "utf-8"};
       if (!lang.empty()) {
         spell_cmd_.push_back("-d");
