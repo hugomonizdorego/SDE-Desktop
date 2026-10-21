@@ -4,9 +4,12 @@
 
 #include <FL/Fl.H>
 #include <FL/x.H>
+#include <X11/extensions/shape.h>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
+#include <vector>
 
 #include "buffered_window.h"
 #include "config.h"
@@ -27,6 +30,24 @@ bool g_theme_loaded = false;
 const Theme &theme() {
   if (!g_theme_loaded) osd_reload_theme();
   return g_theme;
+}
+
+double kRadius() { return Sd(14); }
+
+// Rounded window corners with the SHAPE extension (works without a
+// compositor): one rectangle per row near the top and bottom edges.
+void round_corners(Window win, int w, int h, int r) {
+  int ev, err;
+  if (!XShapeQueryExtension(fl_display, &ev, &err)) return;
+  std::vector<XRectangle> rows;
+  for (int y = 0; y < h; ++y) {
+    int dy = y < r ? r - y : (y >= h - r ? y - (h - r - 1) : 0);
+    int inset = 0;
+    if (dy > 0) inset = int(std::ceil(r - std::sqrt(double(r) * r - double(dy - 0.5) * (dy - 0.5))));
+    rows.push_back(XRectangle{short(inset), short(y), static_cast<unsigned short>(std::max(0, w - 2 * inset)), 1});
+  }
+  XShapeCombineRectangles(fl_display, win, ShapeBounding, 0, 0, rows.data(), int(rows.size()), ShapeSet,
+                          YXBanded);
 }
 
 class Osd : public BufferedWindow {
@@ -53,8 +74,8 @@ class Osd : public BufferedWindow {
     {
       Painter p(W, H);
       p.fill_rect(0, 0, W, H, t.surface);
-      if (t.glass) p.glass_sheen(0, 0, W, H, 0, t.dark);
-      p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
+      if (t.glass) p.glass_sheen(0, 0, W, H, kRadius(), t.dark);
+      p.stroke_rounded(0.5, 0.5, W - 1, H - 1, kRadius(), t.border);
       double gy = (H - icon) / 2.0;
       if (kind_ == OsdKind::Brightness)
         glyph::sun(p, pad, gy, icon, t.text);
@@ -116,6 +137,7 @@ void show_osd(OsdKind kind, int percent, const std::string &label, double second
     if (fl_xid(g_osd.get())) {
       x11::set_window_type(fl_xid(g_osd.get()), "_NET_WM_WINDOW_TYPE_NOTIFICATION");
       x11::set_opacity(fl_xid(g_osd.get()), theme().glass ? theme().popup_opacity : 1.0);
+      round_corners(fl_xid(g_osd.get()), g_osd->w(), g_osd->h(), int(kRadius()));
     }
   }
   if (fl_xid(g_osd.get())) XRaiseWindow(fl_display, fl_xid(g_osd.get()));
