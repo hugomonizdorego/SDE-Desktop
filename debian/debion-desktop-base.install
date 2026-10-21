@@ -1,3 +1,5 @@
 data/desktop-base/debion-theme usr/share/desktop-base/
 data/desktop-base/debion-logos usr/share/desktop-base/
 data/desktop-base/plymouth/debion usr/share/plymouth/themes/
+data/networkmanager/20-debion-connectivity.conf usr/lib/NetworkManager/conf.d/
+data/networkmanager/debion-network-check usr/sbin/
