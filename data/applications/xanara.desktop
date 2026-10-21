@@ -13,4 +13,4 @@ OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Xanara
 X-SDE-Upstream=https://github.com/mate-desktop/atril
-MimeType=application/pdf;application/postscript;
+MimeType=application/pdf;application/x-pdf;

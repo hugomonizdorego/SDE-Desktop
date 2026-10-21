@@ -585,13 +585,13 @@ void XanaraWindow::draw_bar_text() {
   if (!bar_h_) return;
   for (const auto &b : buttons_)
     if (b.visible && b.text == "zoom") {
+      bool fit = view_->fit() != Fit::Free;
       text_font(theme_.font_size, true);
-      draw_text(view_->fit() == Fit::Width ? std::string(_("Width")) : view_->fit() == Fit::Page ? std::string(_("Page"))
-                                                                                                 : zoom_text(view_->zoom()),
-                b.x, b.y, b.w, b.h, theme_.text, 1);
-      if (view_->fit() != Fit::Free) {
+      draw_text(fit ? std::string(view_->fit() == Fit::Width ? _("Width") : _("Page")) : zoom_text(view_->zoom()), b.x,
+                fit ? b.y + S(1) : b.y, b.w, fit ? b.h / 2 + S(4) : b.h, theme_.text, 1);
+      if (fit) {
         text_font(theme_.font_size - S(3));
-        draw_text(zoom_text(view_->zoom()), b.x, b.y + b.h - S(12), b.w, S(12), theme_.text_dim, 1);
+        draw_text(zoom_text(view_->zoom()), b.x, b.y + b.h / 2 + S(3), b.w, b.h / 2 - S(4), theme_.text_dim, 1);
       }
     }
   if (page_input_->visible() && doc_) {
