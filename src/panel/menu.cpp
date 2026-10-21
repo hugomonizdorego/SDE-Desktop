@@ -1588,7 +1588,6 @@ void AppMenu::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    if (t.glass) p.glass_sheen(0, 0, W, H, 0, t.dark);
     // The rail is a shade apart from the list; the tiles sit on the surface.
     p.fill_rect(0, 0, rail_w_, H, t.surface_alt.alpha(t.dark ? 0.35 : 0.55));
     p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);

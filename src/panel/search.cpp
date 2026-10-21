@@ -864,7 +864,6 @@ void SearchFlyout::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    if (t.glass) p.glass_sheen(0, 0, W, H, 0, t.dark);
     p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
     p.line(pad, list_top_ - S(5) + 0.5, W - pad, list_top_ - S(5) + 0.5, t.border);
     if (preview)

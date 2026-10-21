@@ -835,9 +835,10 @@ void Panel::relayout() {
     int room = tasks_end_ - start_w_;
     search_x_ = start_w_ + S(2);
     search_w_ = 0;
-    if (search_mode_ == 2 && room >= S(520))
+    if (search_mode_ == 2 && room < S(520)) search_mode_ = 1;
+    if (search_mode_ == 2)
       search_w_ = std::max(S(170), std::min(S(320), room / 4));
-    else if (search_mode_ >= 1)
+    else if (search_mode_ == 1)
       search_w_ = H;
   }
   int lead = search_w_ ? search_x_ + search_w_ : start_w_;
