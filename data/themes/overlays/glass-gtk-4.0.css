@@ -1,0 +1,16 @@
+/* SDE Glass (GTK 4): frosted, rounded layers on SDE Graphite. The SDE
+ * compositor adds blur and translucency to frames, menus and the panel.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+window.background:not(.popup):not(.tooltip) { background-color: @sde_background; }
+headerbar {
+  background-color: @sde_titlebar;
+  background-image: linear-gradient(to bottom, shade(@sde_titlebar, 1.07), @sde_titlebar);
+  box-shadow: inset 0 -1px alpha(@sde_border, 0.8);
+}
+window:backdrop headerbar { background-color: @sde_titlebar_inactive; background-image: none; }
+.sidebar, .navigation-sidebar, stacksidebar { background-color: alpha(@sde_surface_alt, 0.92); }
+
+entry, spinbutton:not(.vertical), dropdown > button, button.text-button { border-radius: @RADIUS_SMALL@; }
+popover > contents { border-radius: @RADIUS_LARGE@; }
+tooltip { border-radius: @RADIUS_SMALL@; }

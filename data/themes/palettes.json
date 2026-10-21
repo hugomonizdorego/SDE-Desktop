@@ -1,0 +1,120 @@
+{
+  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1.",
+  "default": {"family": "graphite", "mode": "light", "accent": "blue"},
+  "accents": ["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "graphite"],
+  "accent_labels": {"blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow",
+                    "orange": "Orange", "red": "Red", "pink": "Pink", "purple": "Purple",
+                    "graphite": "Graphite"},
+  "families": {
+    "graphite": {
+      "label": "Graphite",
+      "description": "Calm, soft depth and vibrancy, after Apple's Human Interface Guidelines",
+      "prefix": "SDE-Graphite",
+      "upstream": "graphite-gtk-theme",
+      "radius": 10, "radius_small": 6, "radius_large": 14, "shadow_radius": 18,
+      "glass": false, "mica": 0.0, "translucency": 0.10,
+      "buttons": "traffic", "title_layout": "CIML", "title_justify": "center",
+      "menu_highlight": "accent",
+      "accent": {
+        "blue": ["#3684DD", "#5294E2"], "teal": ["#009688", "#4DB6AC"],
+        "green": ["#4CAF50", "#66BB6A"], "yellow": ["#FBC02D", "#FFD600"],
+        "orange": ["#F57C00", "#FB8C00"], "red": ["#E53935", "#F44336"],
+        "pink": ["#EC407A", "#F06292"], "purple": ["#AB47BC", "#BA68C8"],
+        "graphite": ["#333333", "#E0E0E0"]
+      },
+      "upstream_accent": {"blue": "blue", "teal": "teal", "green": "green", "yellow": "yellow",
+                          "orange": "orange", "red": "red", "pink": "pink", "purple": "purple",
+                          "graphite": "default"},
+      "light": {
+        "background": "#FAFAFA", "surface": "#FFFFFF", "surface_alt": "#F2F2F2", "hover": "#EBEBEB",
+        "text": "#212121", "text_dim": "#6B6B6B", "border": "#E0E0E0", "shadow": "#000000",
+        "shadow_alpha": 0.18, "menu": "#FFFFFF", "panel": "#F2F2F2",
+        "titlebar": "#FFFFFF", "titlebar_inactive": "#FAFAFA",
+        "titlebar_text": "#212121", "titlebar_text_inactive": "#8F8F8F",
+        "success": "#0F9D58", "warning": "#F4B400", "error": "#D93025"
+      },
+      "dark": {
+        "background": "#242424", "surface": "#2C2C2C", "surface_alt": "#333333", "hover": "#3C3C3C",
+        "text": "#F2F2F2", "text_dim": "#ABABAB", "border": "#454545", "shadow": "#000000",
+        "shadow_alpha": 0.45, "menu": "#2C2C2C", "panel": "#212121",
+        "titlebar": "#2C2C2C", "titlebar_inactive": "#242424",
+        "titlebar_text": "#F2F2F2", "titlebar_text_inactive": "#8C8C8C",
+        "success": "#81C995", "warning": "#FDD633", "error": "#F28B82"
+      }
+    },
+    "fluent": {
+      "label": "Fluent",
+      "description": "Light, depth and translucent Mica and Acrylic materials, after the Fluent Design System",
+      "prefix": "SDE-Fluent",
+      "upstream": "flat-remix-gtk",
+      "radius": 8, "radius_small": 4, "radius_large": 12, "shadow_radius": 22,
+      "glass": false, "mica": 0.035, "translucency": 0.14,
+      "buttons": "fluent", "title_layout": "NLIMC", "title_justify": "left",
+      "menu_highlight": "subtle",
+      "accent": {
+        "blue": ["#2777FF", "#2777FF"], "teal": ["#0099A1", "#0099A1"],
+        "green": ["#06A284", "#06A284"], "yellow": ["#FFD86E", "#FFD86E"],
+        "orange": ["#FD7D00", "#FD7D00"], "red": ["#EC0101", "#EC0101"],
+        "pink": ["#CD0245", "#CD0245"], "purple": ["#962AC3", "#962AC3"],
+        "graphite": ["#737680", "#737680"]
+      },
+      "upstream_accent": {"blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow",
+                          "orange": "Orange", "red": "Red", "pink": "Magenta", "purple": "Violet",
+                          "graphite": "Grey"},
+      "light": {
+        "background": "#F7F7F7", "surface": "#FFFFFF", "surface_alt": "#EBEBEB", "hover": "#E5E5E5",
+        "text": "#333333", "text_dim": "#666666", "border": "#DCDCDC", "shadow": "#000000",
+        "shadow_alpha": 0.20, "menu": "#FBFBFB", "panel": "#EEEEEE",
+        "titlebar": "#EBEBEB", "titlebar_inactive": "#F5F5F5",
+        "titlebar_text": "#333333", "titlebar_text_inactive": "#8A8A8A",
+        "success": "#1B8553", "warning": "#9C6E03", "error": "#C42B1C"
+      },
+      "dark": {
+        "background": "#23252E", "surface": "#272A34", "surface_alt": "#1A1C23", "hover": "#323541",
+        "text": "#EEEEEC", "text_dim": "#A6A9B3", "border": "#3A3D4A", "shadow": "#000000",
+        "shadow_alpha": 0.50, "menu": "#2B2E39", "panel": "#1A1C23",
+        "titlebar": "#1A1C23", "titlebar_inactive": "#23252E",
+        "titlebar_text": "#EEEEEC", "titlebar_text_inactive": "#80838D",
+        "success": "#57D18E", "warning": "#F5C451", "error": "#FF6B5E"
+      }
+    },
+    "glass": {
+      "label": "Glass",
+      "description": "Frosted, rounded and translucent; the successor of SDE Aero and SDE Liquid Glass",
+      "prefix": "SDE-Glass",
+      "upstream": "graphite-gtk-theme",
+      "base": "graphite",
+      "radius": 16, "radius_small": 10, "radius_large": 22, "shadow_radius": 24,
+      "glass": true, "mica": 0.025, "translucency": 0.22,
+      "buttons": "traffic", "title_layout": "CIML", "title_justify": "center",
+      "menu_highlight": "accent",
+      "accent": "graphite",
+      "light": {
+        "background": "#EEF2F8", "surface": "#F8FAFD", "surface_alt": "#E5EAF2", "hover": "#DCE3EE",
+        "text": "#1A2230", "text_dim": "#586477", "border": "#C9D3E1", "shadow": "#0B1622",
+        "shadow_alpha": 0.22, "menu": "#F6F8FC", "panel": "#E9EEF6",
+        "titlebar": "#F4F7FB", "titlebar_inactive": "#EEF2F8",
+        "titlebar_text": "#1A2230", "titlebar_text_inactive": "#8792A3",
+        "success": "#16A05D", "warning": "#C98A00", "error": "#D93A3A"
+      },
+      "dark": {
+        "background": "#181B22", "surface": "#21252E", "surface_alt": "#2A2F3A", "hover": "#343A47",
+        "text": "#EEF1F6", "text_dim": "#A3ACBB", "border": "#3D4452", "shadow": "#000000",
+        "shadow_alpha": 0.50, "menu": "#232731", "panel": "#1C2028",
+        "titlebar": "#21252E", "titlebar_inactive": "#1B1F27",
+        "titlebar_text": "#EEF1F6", "titlebar_text_inactive": "#7F8796",
+        "success": "#5FD39A", "warning": "#F2C14E", "error": "#FF7A7A"
+      }
+    }
+  },
+  "legacy": {
+    "comment": "Old [appearance] style values and the theme directories of 0.1.0~alpha15 and earlier.",
+    "styles": {"sde": "graphite", "aero": "fluent", "liquid-glass": "glass", "liquid": "glass",
+               "glass": "glass", "graphite": "graphite", "fluent": "fluent"},
+    "accents": {"#2672BE": "blue", "#167D9A": "teal", "#2F6FDB": "blue", "#7A4FD1": "purple",
+                "#C2407A": "pink", "#D9682B": "orange", "#277A4C": "green", "#5A6472": "graphite"},
+    "directories": {"SDE": ["graphite", "light"], "SDE-Dark": ["graphite", "dark"],
+                    "SDE-Aero": ["fluent", "light"], "SDE-Aero-Dark": ["fluent", "dark"],
+                    "SDE-Liquid-Glass": ["glass", "light"], "SDE-Liquid-Glass-Dark": ["glass", "dark"]}
+  }
+}

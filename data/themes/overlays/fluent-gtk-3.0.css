@@ -1,0 +1,71 @@
+/* SDE Fluent (GTK 3): SDE's layer on Flat Remix, after the Fluent Design
+ * System: a Mica tinted window base, rounded layers, an accent underline on
+ * focused fields and Windows 11 caption buttons that match the SDE WM frames.
+ * Acrylic translucency of menus comes from the SDE compositor.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Mica: the window base and title bar pick up a trace of the accent. */
+window.background:not(.popup):not(.tooltip) { background-color: @sde_background; }
+headerbar, .titlebar:not(headerbar) { background-color: @sde_titlebar; }
+headerbar:backdrop, .titlebar:not(headerbar):backdrop { background-color: @sde_titlebar_inactive; }
+
+/* Caption buttons: plain glyphs, a soft hover layer and a red close. */
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu).minimize,
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu).maximize,
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu).close,
+headerbar button.titlebutton:not(.appmenu).minimize,
+headerbar button.titlebutton:not(.appmenu).maximize,
+headerbar button.titlebutton:not(.appmenu).close {
+  color: @sde_text;
+  background-color: transparent;
+  background-image: none;
+  border-radius: @RADIUS_SMALL@;
+  min-width: 34px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+  -gtk-icon-transform: scale(0.8);
+}
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu):hover,
+headerbar button.titlebutton:not(.appmenu):hover {
+  background-color: alpha(@sde_text, 0.08);
+  background-image: none;
+}
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu):active,
+headerbar button.titlebutton:not(.appmenu):active {
+  background-color: alpha(@sde_text, 0.14);
+  background-image: none;
+}
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu).close:hover,
+headerbar button.titlebutton:not(.appmenu).close:hover {
+  background-color: #C42B1C;
+  color: #FFFFFF;
+}
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu).close:active,
+headerbar button.titlebutton:not(.appmenu).close:active {
+  background-color: #B0271A;
+  color: #FFFFFF;
+}
+.titlebar:not(headerbar) button.titlebutton:not(.appmenu):backdrop,
+headerbar button.titlebutton:not(.appmenu):backdrop {
+  color: @sde_text_dim;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+/* Rounded layers. */
+entry, spinbutton:not(.vertical), combobox > box > button.combo,
+button.text-button:not(.titlebutton) { border-radius: @RADIUS_SMALL@; }
+.linked > button:not(:first-child):not(:last-child),
+.linked > entry:not(:first-child):not(:last-child) { border-radius: 0; }
+.linked:not(.vertical) > button:first-child:not(:only-child),
+.linked:not(.vertical) > entry:first-child:not(:only-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.linked:not(.vertical) > button:last-child:not(:only-child),
+.linked:not(.vertical) > entry:last-child:not(:only-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+popover.background { border-radius: @RADIUS@; }
+tooltip.background { border-radius: @RADIUS_SMALL@; }
+
+/* Focused text fields carry the accent as an underline. */
+entry:focus { box-shadow: inset 0 -2px @sde_accent; }

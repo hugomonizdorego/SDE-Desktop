@@ -1,0 +1,33 @@
+/* SDE Fluent (GTK 4): SDE's layer on Flat Remix, after the Fluent Design
+ * System: a Mica tinted window base, rounded layers, an accent underline on
+ * focused fields and Windows 11 caption buttons that match the SDE WM frames.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+window.background:not(.popup):not(.tooltip) { background-color: @sde_background; }
+headerbar { background-color: @sde_titlebar; }
+window:backdrop headerbar { background-color: @sde_titlebar_inactive; }
+
+windowcontrols > button.minimize,
+windowcontrols > button.maximize,
+windowcontrols > button.close {
+  color: @sde_text;
+  background-color: transparent;
+  background-image: none;
+  border-radius: @RADIUS_SMALL@;
+  min-width: 34px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0;
+  box-shadow: none;
+}
+windowcontrols > button > image { background: none; box-shadow: none; color: inherit; }
+windowcontrols > button:hover { background-color: alpha(@sde_text, 0.08); background-image: none; }
+windowcontrols > button:active { background-color: alpha(@sde_text, 0.14); background-image: none; }
+windowcontrols > button.close:hover { background-color: #C42B1C; color: #FFFFFF; }
+windowcontrols > button.close:active { background-color: #B0271A; color: #FFFFFF; }
+window:backdrop windowcontrols > button { color: @sde_text_dim; background-color: transparent; }
+
+entry, spinbutton:not(.vertical), dropdown > button, button.text-button { border-radius: @RADIUS_SMALL@; }
+popover > contents { border-radius: @RADIUS@; }
+tooltip { border-radius: @RADIUS_SMALL@; }
+entry:focus-within { box-shadow: inset 0 -2px @sde_accent; }

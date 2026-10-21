@@ -1,0 +1,50 @@
+{
+  "format": 1,
+  "comment": "Upstream theme sources of SDE Graphite and SDE Fluent. tools/prepare-themes.py fetches exactly these commits into vendor/themes; tools/build-themes.py turns them into the SDE-* themes installed in /usr/share/themes.",
+  "themes": [
+    {
+      "id": "graphite-gtk-theme",
+      "family": "graphite",
+      "upstream": "Graphite-gtk-theme",
+      "url": "https://github.com/vinceliuice/Graphite-gtk-theme",
+      "commit": "364173f47407164948788e4abb5e2eb46600f71a",
+      "license": "GPL-3.0-only",
+      "copyright": "2021-2025 Vince Liu (vinceliuice)",
+      "paths": ["LICENSE", "README.md", "src/sass", "src/main/gtk-3.0", "src/main/gtk-4.0",
+                "src/assets/gtk"],
+      "use": "GTK 3 and GTK 4 style sheets compiled with sassc for every SDE accent, plus the accent-colored check, radio and switch assets"
+    },
+    {
+      "id": "flat-remix-gtk",
+      "family": "fluent",
+      "upstream": "flat-remix-gtk",
+      "url": "https://github.com/daniruiz/flat-remix-gtk",
+      "commit": "919494f4f4ede88e2efb45cd48b98db7cc23f6ee",
+      "license": "GPL-3.0-only",
+      "copyright": "2016-2024 Daniel Ruiz de Alegría",
+      "paths": ["LICENSE", "README.md",
+                "themes/Flat-Remix-GTK-Blue-Light", "themes/Flat-Remix-GTK-Blue-Dark",
+                "themes/Flat-Remix-GTK-Teal-Light", "themes/Flat-Remix-GTK-Teal-Dark",
+                "themes/Flat-Remix-GTK-Green-Light", "themes/Flat-Remix-GTK-Green-Dark",
+                "themes/Flat-Remix-GTK-Yellow-Light", "themes/Flat-Remix-GTK-Yellow-Dark",
+                "themes/Flat-Remix-GTK-Orange-Light", "themes/Flat-Remix-GTK-Orange-Dark",
+                "themes/Flat-Remix-GTK-Red-Light", "themes/Flat-Remix-GTK-Red-Dark",
+                "themes/Flat-Remix-GTK-Magenta-Light", "themes/Flat-Remix-GTK-Magenta-Dark",
+                "themes/Flat-Remix-GTK-Violet-Light", "themes/Flat-Remix-GTK-Violet-Dark",
+                "themes/Flat-Remix-GTK-Grey-Light", "themes/Flat-Remix-GTK-Grey-Dark"],
+      "use": "prebuilt GTK 3, GTK 4 and libadwaita color variants (gtk-2.0, Cinnamon, Metacity and Xfwm parts are not installed)"
+    },
+    {
+      "id": "flat-remix-gnome",
+      "family": "fluent",
+      "upstream": "flat-remix-gnome",
+      "url": "https://github.com/daniruiz/flat-remix-gnome",
+      "commit": "95cb659507188db7d2ffdaa6f714db0e3555baf4",
+      "license": "CC-BY-SA-4.0",
+      "copyright": "2017-2025 Daniel Ruiz de Alegría",
+      "paths": ["LICENSE", "README.md", "src/sass/gnome-shell/_colors.scss",
+                "src/sass/gnome-shell/_common-tweaks.scss"],
+      "use": "reference palette and shapes of the GNOME Shell theme for SDE Fluent's panel, menus, Action Center and window frames (no Shell theme is installed)"
+    }
+  ]
+}
