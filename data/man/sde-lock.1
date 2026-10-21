@@ -1,12 +1,44 @@
+.\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH SDE-LOCK 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-sde-lock \- request screen locking in SDE
+sde-lock \- SDE Screen Lock
 .SH SYNOPSIS
 .B sde-lock
+[\fB\-\-lock\fR]
+.br
+.B sde-lock
+\fB\-\-daemon\fR | \fB\-\-query\fR | \fB\-\-poke\fR | \fB\-\-inhibitors\fR | \fB\-\-version\fR
 .SH DESCRIPTION
-Requests a lock from sde-screensaver-command when installed. Otherwise delegates
-to xdg-screensaver. SDE starts its native screen locker through an
-SDE-only XDG autostart entry; this command does not start another daemon.
+Without options (or with \fB\-\-lock\fR) the screen is locked now; the
+command returns 0 once the keyboard and pointer are grabbed and fails when
+they could not be (the screen is then \fBnot\fR locked).
+.PP
+\fBsde-lock \-\-daemon\fR is the session service (XDG autostart). It
+implements org.freedesktop.ScreenSaver (Lock, GetActive, SetActive,
+Inhibit, UnInhibit, ...) and org.debion.SDE.ScreenLock, locks after
+[lock] idle_lock seconds unless a program inhibits idleness, locks before
+suspend (logind PrepareForSleep, with a delay inhibitor) and follows
+logind's Lock and Unlock requests (\fBloginctl lock-session\fR).
+.PP
+The lock screen runs in its own process. If it ends without a correct
+password, the screen stays black and grabbed and it is started again.
+Passwords are checked by PAM with the service file /etc/pam.d/sde-lock;
+wrong passwords delay further attempts.
+.TP
+.B \-\-query
+Print "locked" or "unlocked".
+.TP
+.B \-\-poke
+Simulate user activity (turns the monitors back on).
+.TP
+.B \-\-inhibitors
+List the programs that keep the session from idling.
+.PP
+Settings: \fBsde-settings \-\-page lock\fR, or [lock] in
+~/.config/sde/sde.conf. \fBsde-screensaver-command\fR remains as a
+compatibility wrapper.
+.SH FILES
+/etc/pam.d/sde-lock
 .SH SEE ALSO
-.BR sde-screensaver-command (1),
-.BR xdg-screensaver (1)
+.BR sde-power (1),
+.BR loginctl (1)

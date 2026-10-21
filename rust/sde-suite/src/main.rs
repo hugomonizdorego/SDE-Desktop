@@ -53,20 +53,8 @@ fn command(app: &[&str], args: &[OsString]) -> (String, Vec<OsString>) {
     // Commands come exclusively from the compiled manifest. Files/URIs remain
     // individual OS arguments; no shell, interpolation or command reconstruction.
     let mut base = app[3].split_whitespace();
-    let mut program = base.next().unwrap().to_string();
+    let program = base.next().unwrap().to_string();
     let mut out: Vec<OsString> = base.map(OsString::from).collect();
-    if app[0] == "sde-power-manager" {
-        if args.first().map(|a| a == "--daemon").unwrap_or(false) {
-            program = "sde-power-manager".into();
-            out.extend_from_slice(&args[1..]);
-            return (program, out);
-        }
-        if args.first().map(|a| a == "--statistics").unwrap_or(false) {
-            program = "sde-power-statistics".into();
-            out.extend_from_slice(&args[1..]);
-            return (program, out);
-        }
-    }
     out.extend_from_slice(args);
     (program, out)
 }
@@ -203,13 +191,12 @@ mod tests {
     }
 
     #[test]
-    fn power_service_and_preferences_are_separate() {
-        let app = apps().find(|a| a[0] == "sde-power-manager").unwrap();
-        assert_eq!(command(&app, &[]).0, "sde-power-preferences");
-        assert_eq!(command(&app, &["--daemon".into()]).0, "sde-power-manager");
-        assert_eq!(
-            command(&app, &["--statistics".into()]).0,
-            "sde-power-statistics"
-        );
+    fn power_and_lock_open_their_settings_pages() {
+        let app = apps().find(|a| a[0] == "sde-power").unwrap();
+        let (program, args) = command(&app, &[]);
+        assert_eq!(program, "sde-settings");
+        assert_eq!(args, ["--page", "power"]);
+        let app = apps().find(|a| a[0] == "sde-lock").unwrap();
+        assert_eq!(command(&app, &[]).1, ["--page", "lock"]);
     }
 }
