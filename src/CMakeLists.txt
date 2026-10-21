@@ -98,27 +98,63 @@ target_link_libraries(sde-polkit-agent PRIVATE sde-common PkgConfig::POLKIT_AGEN
 install(TARGETS sde-polkit-agent RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
 
 
-# Gallery: an original SDE photo library. The model and thumbnail cache are a
-# separate library so that the unit tests can use them without a display.
-add_library(sde-gallery-core STATIC gallery/library.cpp gallery/thumbnails.cpp)
+# Gallery: an original SDE photo library. The model, metadata reader,
+# storage media, albums and thumbnail cache are a separate library so that
+# the unit tests (and Photo, and Settings for wallpaper thumbnails) can use
+# them without a display.
+add_library(sde-gallery-core STATIC
+  gallery/library.cpp
+  gallery/thumbnails.cpp
+  gallery/exif.cpp
+  gallery/media.cpp
+  gallery/album.cpp)
 target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
 target_link_libraries(sde-gallery-core PUBLIC sde-common)
+pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
+target_link_libraries(sde-gallery-core PUBLIC PkgConfig::GIO)
 pkg_check_modules(GDKPIXBUF IMPORTED_TARGET gdk-pixbuf-2.0)
 if(GDKPIXBUF_FOUND)
-  # Optional decoders (WebP, TIFF, ...) through the installed pixbuf loaders.
-  target_compile_definitions(sde-gallery-core PRIVATE SDE_GALLERY_PIXBUF=1)
+  # Optional decoders (WebP, TIFF, ...) through the installed pixbuf loaders;
+  # Photo also saves and plays animated GIFs with it.
+  target_compile_definitions(sde-gallery-core PUBLIC SDE_GALLERY_PIXBUF=1)
   target_link_libraries(sde-gallery-core PUBLIC PkgConfig::GDKPIXBUF)
+endif()
+# EXIF is read by a built-in parser; libexif (when found) adds what it misses.
+option(SDE_WITH_LIBEXIF "Use libexif for photo metadata when available" ON)
+if(SDE_WITH_LIBEXIF)
+  pkg_check_modules(LIBEXIF IMPORTED_TARGET libexif)
+  if(LIBEXIF_FOUND)
+    target_compile_definitions(sde-gallery-core PUBLIC SDE_HAVE_LIBEXIF=1)
+    target_link_libraries(sde-gallery-core PUBLIC PkgConfig::LIBEXIF)
+  endif()
 endif()
 find_package(Threads REQUIRED)
 target_link_libraries(sde-gallery-core PUBLIC Threads::Threads)
+# Drawing shared by Gallery and Photo: line icons and the themed menu bar.
+add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp)
+target_link_libraries(sde-gallery-ui PUBLIC sde-gallery-core)
 add_executable(sde-gallery
   gallery/main.cpp
   gallery/window.cpp
   gallery/sidebar.cpp
   gallery/grid.cpp
-  gallery/viewer.cpp
-  gallery/icons.cpp)
-target_link_libraries(sde-gallery PRIVATE sde-gallery-core)
+  gallery/viewer.cpp)
+target_link_libraries(sde-gallery PRIVATE sde-gallery-ui)
+
+# Photo (sde-view): the SDE photo viewer and editor, written from scratch by
+# the DebION Dev-Team on top of sde-gallery-core.
+add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp)
+target_include_directories(sde-photo-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/photo)
+target_link_libraries(sde-photo-core PUBLIC sde-gallery-core)
+add_executable(sde-view
+  photo/main.cpp
+  photo/window.cpp
+  photo/canvas.cpp
+  photo/panels.cpp
+  photo/clipboard.cpp)
+target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
+install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES photo/sdeview.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 
 # Xanara: the SDE document viewer and PDF editor, written from scratch by
 # the DebION Dev-Team on poppler-glib. The document model, renderer and tile
@@ -207,6 +243,7 @@ function(sde_app_version target id)
 endfunction()
 sde_app_version(xanara xanara)
 sde_app_version(taca taca)
+sde_app_version(sde-view sde-view)
 
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         sde-xsettingsd sde-gallery

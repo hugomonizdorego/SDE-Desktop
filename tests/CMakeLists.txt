@@ -78,3 +78,7 @@ add_executable(sde-taca-tests test_taca.cpp)
 target_link_libraries(sde-taca-tests PRIVATE taca-core)
 add_test(NAME taca-engine COMMAND sde-taca-tests)
 set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)
+
+add_executable(sde-photo-tests test_photo.cpp)
+target_link_libraries(sde-photo-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-model COMMAND sde-photo-tests)

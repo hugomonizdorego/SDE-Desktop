@@ -18,7 +18,11 @@
 #include <vector>
 
 #include "buffered_window.h"
+#include "album.h"
 #include "library.h"
+#include "media.h"
+#include "menubar.h"
+#include "line_icons.h"
 #include "paint.h"
 #include "theme.h"
 #include "thumbnails.h"
@@ -26,24 +30,19 @@
 
 namespace gallery {
 
-// Vector icons in the SDE line style, drawn in a size x size box at (x, y).
-namespace icon {
-enum Kind {
-  Photos, Heart, HeartFilled, Clock, Screenshot, Folder, Plus, Close, Search, Back, Prev, Next,
-  ZoomIn, ZoomOut, Fit, Rotate, Play, Pause, Info, Trash, Edit, OpenWith, Wallpaper, Files, Copy,
-  Picture, Broken, Check, Small, Large
-};
-void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde::Color &c);
-}  // namespace icon
 
 class GalleryWindow;
 
-enum class ViewKind { All, Favorites, Recent, Screenshots, Folder };
+// Device and Browse views show photos outside the library (removable
+// media, or a folder opened with File > Open Folder) without adding them.
+enum class ViewKind { All, Favorites, Recent, Screenshots, Folder, Device, Browse };
 
 struct View {
   ViewKind kind = ViewKind::All;
-  std::string folder;  // for ViewKind::Folder
+  std::string folder;  // for Folder, Device (mount point) and Browse
   bool operator==(const View &o) const { return kind == o.kind && folder == o.folder; }
+  bool external() const { return kind == ViewKind::Device || kind == ViewKind::Browse; }
+  Album album() const;  // the same set as an album id for Photo
 };
 
 class Sidebar : public Fl_Widget {
@@ -59,7 +58,7 @@ class Sidebar : public Fl_Widget {
     icon::Kind glyph = icon::Photos;
     size_t count = 0;
     View view;
-    bool header = false, add = false, removable = false;
+    bool header = false, add = false, removable = false, device = false;
     int y = 0, h = 0;
   };
   std::vector<Row> rows() const;
@@ -67,6 +66,7 @@ class Sidebar : public Fl_Widget {
   GalleryWindow *app_;
   int hover_ = -1, focus_ = 0, tip_row_ = -1;
   bool hover_remove_ = false;
+  void activate(const Row &row);
   std::string tip_;
 };
 
@@ -101,6 +101,8 @@ class Grid : public Fl_Widget {
   void set_focus_index(int i);
   std::vector<size_t> selection() const;
   void clear_selection();
+  void handle_select_all();
+  void select_index(int i);
   void scroll_to_top() { target_ = scroll_ = 0; }
 
  private:
@@ -211,6 +213,8 @@ class GalleryWindow : public sde::BufferedWindow {
   const std::vector<Photo> &photos() const { return view_; }
   const std::vector<Group> &groups() const { return groups_; }
   const std::vector<Photo> &library() const { return all_; }
+  const std::vector<MountEntry> &devices() const { return devices_; }
+  bool external_scanning() const { return ext_scanning_; }
   const View &view() const { return view_kind_; }
   void set_view(const View &v);
   Sort sort() const { return sort_; }
@@ -234,6 +238,25 @@ class GalleryWindow : public sde::BufferedWindow {
   bool is_favorite(const std::string &path) const { return favorites_.count(path) != 0; }
   void toggle_favorite(const std::vector<std::string> &paths);
   void add_folder();
+  void add_folder(const std::string &dir);
+  void open_file_dialog();
+  void open_folder_dialog();
+  void browse(const std::string &dir);
+  void import_dialog();
+  void import_from(const MountEntry &device, const std::vector<Photo> &only = {});
+  void eject(const std::string &mount_point);
+  void select_all();
+  bool sidebar_shown() const { return show_sidebar_; }
+  void toggle_sidebar();
+  void toggle_fullscreen();
+  void show_about_dialog();
+  void show_shortcuts_dialog();
+  // Selects |path| (switching views when needed) and raises the window.
+  void select_path(const std::string &path);
+  // Opens the photo at |index| of the current view: in Photo when the user
+  // chose so (View menu), else in the built-in viewer.
+  void open_photo(int index);
+  bool prefer_photo() const { return prefer_photo_; }
   void remove_folder(const std::string &folder);
   void open_viewer(int index);
   void close_viewer();
@@ -242,7 +265,7 @@ class GalleryWindow : public sde::BufferedWindow {
   void rescan();
 
   // Actions on photos.
-  void edit_in_photo(const std::string &path);
+  void edit_in_photo(const std::string &path);  // Photo with this view as album
   void open_with(const std::string &path);
   void set_wallpaper(const std::string &path);
   void show_in_files(const std::string &path);
@@ -256,6 +279,20 @@ class GalleryWindow : public sde::BufferedWindow {
 
  private:
   void rebuild_view(bool keep_scroll = false);
+  void build_menu();
+  void update_menu();
+  void refresh_devices();
+  static void mounts_cb(int fd, void *p);
+  static void mounts_timer_cb(void *p);
+  void start_external_scan(const std::string &root);
+  void external_scan_finished();
+  static void ext_awake_cb(void *p);
+  void handle_events();
+  void forget_thumbnails(const std::string &path);
+  const std::vector<Photo> &source() const { return view_kind_.external() ? ext_photos_ : all_; }
+  LibrarySettings library_settings() const;
+  std::vector<std::string> selected_or_focused() const;
+  static void menu_cb(Fl_Widget *w, void *data);
   void start_scan();
   void scan_finished();
   void results_ready();
@@ -279,6 +316,19 @@ class GalleryWindow : public sde::BufferedWindow {
   View view_kind_;
 
   std::vector<Photo> all_, view_;
+  std::vector<MountEntry> devices_;
+  int mounts_fd_ = -1;
+  // External scans (Device and Browse views).
+  bool ext_scanning_ = false;
+  std::string ext_root_, ext_wanted_;
+  std::thread ext_thread_;
+  std::vector<Photo> ext_photos_, ext_result_;
+  std::string ext_result_root_;
+  std::string pending_select_;
+  bool importing_ = false;
+  bool show_sidebar_ = true, prefer_photo_ = false;
+  MenuBar *menubar_ = nullptr;
+  int top_ = 0;  // menu bar height
   std::vector<Group> groups_;
 
   bool scanning_ = false, rescan_wanted_ = false;
@@ -304,6 +354,7 @@ class GalleryWindow : public sde::BufferedWindow {
   Segmented *sort_ctl_ = nullptr;
   sde::Slider *zoom_ctl_ = nullptr;
   sde::FlatButton *sel_fav_ = nullptr, *sel_trash_ = nullptr, *sel_clear_ = nullptr;
+  sde::FlatButton *import_btn_ = nullptr;
   int header_h_ = 0;
   std::string toast_;
   static GalleryWindow *instance_;

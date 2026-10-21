@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 5,
+  "revision": 6,
   "forks": [
     {
       "id": "liria",
@@ -26,20 +26,6 @@
         "--disable-gtk-doc",
         "--disable-tests",
         "--disable-python"
-      ],
-      "build_version": "1.0.0~alpha1"
-    },
-    {
-      "id": "sde-view",
-      "upstream": "eom",
-      "name": "Photo",
-      "version": "1.28.1",
-      "commit": "3d238ef2c45fe50eb835076163a42d76d8895168",
-      "url": "https://github.com/mate-desktop/eom",
-      "configure": [
-        "--disable-gtk-doc",
-        "--disable-python",
-        "--disable-thumbnailer"
       ],
       "build_version": "1.0.0~alpha1"
     },

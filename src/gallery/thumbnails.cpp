@@ -23,6 +23,7 @@
 #include <memory>
 #include <random>
 
+#include "exif.h"
 #include "library.h"
 #include "util.h"
 
@@ -147,7 +148,9 @@ cairo_surface_t *decode_svg(const std::string &path, int max_dim, int *ow, int *
 }
 
 #ifdef SDE_GALLERY_PIXBUF
-cairo_surface_t *decode_pixbuf(const std::string &path, int max_dim, int *ow, int *oh) {
+// |orient|: apply the orientation the loader reports (TIFF, WebP ...).
+cairo_surface_t *decode_pixbuf(const std::string &path, int max_dim, int *ow, int *oh,
+                               bool orient = true) {
   int w = 0, h = 0;
   if (!gdk_pixbuf_get_file_info(path.c_str(), &w, &h) || w <= 0 || h <= 0) return nullptr;
   if ((long long)w * h > kMaxPixels) return nullptr;
@@ -161,6 +164,24 @@ cairo_surface_t *decode_pixbuf(const std::string &path, int max_dim, int *ow, in
     if (err) g_error_free(err);
     return nullptr;
   }
+  if (orient) {
+    GdkPixbuf *upright = gdk_pixbuf_apply_embedded_orientation(pb);
+    if (upright) {
+      if (gdk_pixbuf_get_width(upright) != gdk_pixbuf_get_width(pb) && ow && oh) std::swap(*ow, *oh);
+      g_object_unref(pb);
+      pb = upright;
+    }
+  }
+  cairo_surface_t *s = pixbuf_to_surface(pb);
+  g_object_unref(pb);
+  return s;
+}
+#endif
+
+}  // namespace
+
+#ifdef SDE_GALLERY_PIXBUF
+cairo_surface_t *pixbuf_to_surface(GdkPixbuf *pb) {
   int pw = gdk_pixbuf_get_width(pb), ph = gdk_pixbuf_get_height(pb);
   int channels = gdk_pixbuf_get_n_channels(pb), rs = gdk_pixbuf_get_rowstride(pb);
   bool alpha = gdk_pixbuf_get_has_alpha(pb);
@@ -177,21 +198,100 @@ cairo_surface_t *decode_pixbuf(const std::string &path, int max_dim, int *ow, in
     }
   }
   cairo_surface_mark_dirty(s);
-  g_object_unref(pb);
   return s;
 }
 #endif
 
+namespace {
+
+cairo_surface_t *decode_unoriented(const std::string &path, const std::string &kind, int max_dim,
+                                   int *ow, int *oh);
+
 }  // namespace
+
+cairo_surface_t *orient_surface(cairo_surface_t *s, int tag) {
+  if (!s || tag <= 1 || tag > 8) return s;
+  Orient o = orient_from_exif(tag);
+  int w = cairo_image_surface_get_width(s), h = cairo_image_surface_get_height(s);
+  int nw = o.k % 2 ? h : w, nh = o.k % 2 ? w : h;
+  cairo_surface_t *out = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, nw, nh);
+  if (cairo_surface_status(out) != CAIRO_STATUS_SUCCESS) {
+    cairo_surface_destroy(out);
+    return s;
+  }
+  cairo_t *cr = cairo_create(out);
+  // Map the stored image onto the upright canvas: mirror, then rotate.
+  cairo_translate(cr, nw / 2.0, nh / 2.0);
+  cairo_rotate(cr, o.k * M_PI / 2);
+  if (o.m) cairo_scale(cr, -1, 1);
+  cairo_translate(cr, -w / 2.0, -h / 2.0);
+  cairo_set_source_surface(cr, s, 0, 0);
+  cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+  cairo_surface_destroy(s);
+  return out;
+}
+
+cairo_surface_t *decode_image_data(const std::string &data) {
+  if (data.size() < 8) return nullptr;
+  const unsigned char *d = reinterpret_cast<const unsigned char *>(data.data());
+  if (d[0] == 0xFF && d[1] == 0xD8) {
+    Fl_JPEG_Image img("exif-preview", d);
+    return from_fltk(&img);
+  }
+#ifdef SDE_GALLERY_PIXBUF
+  GInputStream *in = g_memory_input_stream_new_from_data(data.data(), gssize(data.size()), nullptr);
+  GdkPixbuf *pb = gdk_pixbuf_new_from_stream(in, nullptr, nullptr);
+  g_object_unref(in);
+  if (!pb) return nullptr;
+  cairo_surface_t *s = pixbuf_to_surface(pb);
+  g_object_unref(pb);
+  return s;
+#else
+  return nullptr;
+#endif
+}
+
+cairo_surface_t *decode_exif_preview(const std::string &path) {
+  std::string jpeg = exif_thumbnail(path);
+  if (jpeg.empty()) return nullptr;
+  return orient_surface(decode_image_data(jpeg), jpeg_orientation(path));
+}
 
 cairo_surface_t *decode_image(const std::string &path, int max_dim, int *ow, int *oh) {
   if (ow) *ow = 0;
   if (oh) *oh = 0;
   std::string ext = extension_of(path), kind = sniff(path);
   if (ext == "svg" || ext == "svgz") return decode_svg(path, max_dim, ow, oh);
+  if (kind != "jpeg") return decode_unoriented(path, kind, max_dim, ow, oh);
+  // JPEG: decode, then turn upright following the EXIF orientation.
+  int tag = jpeg_orientation(path);
+  int w = 0, h = 0;
+  cairo_surface_t *s = decode_unoriented(path, kind, max_dim, &w, &h);
+  if (!s) return nullptr;
+  if (orient_from_exif(tag).k % 2) std::swap(w, h);
+  if (ow) *ow = w;
+  if (oh) *oh = h;
+  return orient_surface(s, tag);
+}
+
+namespace {
+
+cairo_surface_t *decode_unoriented(const std::string &path, const std::string &kind, int max_dim,
+                                   int *ow, int *oh) {
   std::unique_ptr<Fl_Image> img;
   cairo_surface_t *s = nullptr;
   if (kind == "jpeg") {
+#ifdef SDE_GALLERY_PIXBUF
+    // libjpeg scales by 1/2, 1/4 or 1/8 while decoding: much faster for
+    // thumbnails and screen-sized previews of camera photos.
+    if (max_dim > 0) {
+      int w = 0, h = 0;
+      if (gdk_pixbuf_get_file_info(path.c_str(), &w, &h) && (w > max_dim * 2 || h > max_dim * 2))
+        if (cairo_surface_t *pb = decode_pixbuf(path, max_dim, ow, oh, false)) return pb;
+    }
+#endif
     img.reset(new Fl_JPEG_Image(path.c_str()));
   } else if (kind == "png") {
     img.reset(new Fl_PNG_Image(path.c_str()));
@@ -218,11 +318,13 @@ cairo_surface_t *decode_image(const std::string &path, int max_dim, int *ow, int
     return fit_surface(s, max_dim);
   }
 #ifdef SDE_GALLERY_PIXBUF
-  return decode_pixbuf(path, max_dim, ow, oh);
+  return decode_pixbuf(path, max_dim, ow, oh, kind != "jpeg");
 #else
   return nullptr;
 #endif
 }
+
+}  // namespace
 
 std::set<std::string> extra_formats() {
   std::set<std::string> out;
@@ -401,7 +503,7 @@ ThumbnailService::~ThumbnailService() {
     std::lock_guard<std::mutex> lock(mu_);
     stop_ = true;
     queue_.clear();
-    has_full_ = false;
+    full_.clear();
   }
   cv_.notify_all();
   for (auto &t : threads_) t.join();
@@ -420,14 +522,17 @@ void ThumbnailService::replace_queue(std::vector<Request> jobs) {
 }
 
 void ThumbnailService::load_full(const std::string &path, int max_dim, uint64_t generation) {
+  load_full_steps(path, {max_dim}, generation);
+}
+
+void ThumbnailService::load_full_steps(const std::string &path, const std::vector<int> &max_dims,
+                                       uint64_t generation) {
   {
     std::lock_guard<std::mutex> lock(mu_);
-    has_full_ = true;
-    full_path_ = path;
-    full_max_ = max_dim;
-    full_gen_ = generation;
+    full_.clear();
+    for (int m : max_dims) full_.push_back(FullJob{path, m, generation});
   }
-  cv_.notify_one();
+  cv_.notify_all();
 }
 
 std::vector<Result> ThumbnailService::take_results() {
@@ -446,15 +551,15 @@ void ThumbnailService::worker() {
     uint64_t gen = 0;
     {
       std::unique_lock<std::mutex> lock(mu_);
-      cv_.wait(lock, [this] { return stop_ || has_full_ || !queue_.empty(); });
+      cv_.wait(lock, [this] { return stop_ || !full_.empty() || !queue_.empty(); });
       if (stop_) return;
-      if (has_full_) {
+      if (!full_.empty()) {
         full = true;
-        has_full_ = false;
-        job.path = full_path_;
+        job.path = full_.front().path;
         job.kind = JobKind::Full;
-        full_max = full_max_;
-        gen = full_gen_;
+        full_max = full_.front().max_dim;
+        gen = full_.front().generation;
+        full_.pop_front();
       } else {
         job = std::move(queue_.front());
         queue_.pop_front();
@@ -465,6 +570,7 @@ void ThumbnailService::worker() {
     r.path = job.path;
     r.kind = job.kind;
     r.generation = gen;
+    r.max_dim = full_max;
     if (full) {
       r.surface = decode_image(job.path, full_max, &r.width, &r.height);
     } else {

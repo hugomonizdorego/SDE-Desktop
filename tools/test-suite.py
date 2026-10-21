@@ -12,7 +12,7 @@ apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power-manager','sde-power-preferences','sde-power-statistics',
       'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
-NATIVE={'sde-system-monitor','xanara','taca'}
+NATIVE={'sde-system-monitor','xanara','taca','sde-view'}
 for name in apps:
     path=binary/name
     assert path.is_file() and not path.is_symlink(),name

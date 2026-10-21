@@ -134,6 +134,19 @@ void Grid::clear_selection() {
   window()->redraw();
 }
 
+void Grid::handle_select_all() {
+  std::fill(selected_.begin(), selected_.end(), 1);
+  app_->layout();
+  window()->redraw();
+}
+
+void Grid::select_index(int i) {
+  if (i < 0 || i >= int(selected_.size())) return;
+  selected_[size_t(i)] = 1;
+  app_->layout();
+  redraw();
+}
+
 void Grid::set_focus_index(int i) {
   if (i < 0 || i >= int(item_row_.size())) return;
   focus_ = anchor_ = i;
@@ -410,7 +423,7 @@ void Grid::open_menu(int index) {
     int flags;
   } entries[] = {{_("Open"), 1, one},
                  {fav.c_str(), 2, 0},
-                 {_("Edit in Photo"), 3, one},
+                 {_("Open in Photo"), 3, one},
                  {_("Open With Other Application"), 4, one},
                  {_("Set as Wallpaper"), 5, one},
                  {_("Show in Files"), 6, one | FL_MENU_DIVIDER},
@@ -428,7 +441,7 @@ void Grid::open_menu(int index) {
   const Fl_Menu_Item *picked = items->popup(Fl::event_x(), Fl::event_y());
   if (!picked) return;
   switch (reinterpret_cast<long>(picked->user_data())) {
-    case 1: app_->open_viewer(index); break;
+    case 1: app_->open_photo(index); break;
     case 2: app_->toggle_favorite(paths); break;
     case 3: app_->edit_in_photo(paths[0]); break;
     case 4: app_->open_with(paths[0]); break;
@@ -478,7 +491,7 @@ bool Grid::keyboard(int key, int state) {
       return true;
     case FL_Enter:
     case FL_KP_Enter:
-      if (focus_ >= 0) app_->open_viewer(focus_);
+      if (focus_ >= 0) app_->open_photo(focus_);
       return true;
     case FL_Escape:
       if (std::any_of(selected_.begin(), selected_.end(), [](char c) { return c != 0; })) {
@@ -498,9 +511,7 @@ bool Grid::keyboard(int key, int state) {
       return true;
   }
   if (ctrl && key == 'a') {
-    std::fill(selected_.begin(), selected_.end(), 1);
-    app_->layout();
-    window()->redraw();
+    handle_select_all();
     return true;
   }
   if (ctrl && key == 'c') {
@@ -583,7 +594,7 @@ int Grid::handle(int event) {
       }
       bool any_selected = !selection().empty();
       // The round check mark toggles selection without opening.
-      double tx, ty, ts;
+      double tx = 0, ty = 0, ts = 0;
       tile_rect(size_t(i), tx, ty, ts);
       bool on_check = Fl::event_x() < tx + S(40) && Fl::event_y() < ty + S(40);
       if (shift) {
@@ -592,7 +603,7 @@ int Grid::handle(int event) {
         move_focus(i, false, true);
       } else if (Fl::event_clicks()) {
         Fl::event_clicks(0);
-        app_->open_viewer(i);
+        app_->open_photo(i);
       } else {
         focus_ = anchor_ = i;
         redraw();

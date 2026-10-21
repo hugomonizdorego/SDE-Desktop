@@ -20,12 +20,6 @@
       "use": "runtime-engine"
     },
     {
-      "id": "eom",
-      "repository": "https://github.com/mate-desktop/eom",
-      "commit": "8214609d0e939b774bf5fa952d68a7422b81ae88",
-      "use": "runtime-engine"
-    },
-    {
       "id": "mintupdate",
       "repository": "https://github.com/linuxmint/mintupdate",
       "commit": "b4c586f9839d2943944390f4117a10acd4ba865a",

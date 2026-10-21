@@ -55,7 +55,7 @@ and submodules are published with the binaries.
 | Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus, Eazel, GNOME and MATE contributors | `sde/upstream/caja` |
 | Xanara | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | Taca | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| Photo (SDE View) | [eom](https://github.com/mate-desktop/eom) | Eye of GNOME and MATE contributors | `sde/upstream/eom` |
+| Photo (SDE View) | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | SDE System Monitor | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | SDE Power Manager | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) | GNOME Power Manager and MATE contributors | `sde/upstream/mate-power-manager` |
 | SDE Screen Lock | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) | GNOME Screensaver and MATE contributors | `sde/upstream/mate-screensaver` |

@@ -2,7 +2,7 @@
 niny	Niny	Text Editor	niny	sde/upstream/pluma	accessories-text-editor	pluma	https://github.com/mate-desktop/pluma	GPL-2.0-or-later	1.0.0~alpha1
 liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	system-file-manager	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later; LGPL parts	0.1.0~alpha14
 xanara	Xanara	Document Viewer	xanara	sde	x-office-document	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
-sde-view	Photo	Photos and Image Editing	sde-view	sde/upstream/eom	image-x-generic	eom	https://github.com/mate-desktop/eom	GPL-2.0-or-later	1.0.0~alpha1
+sde-view	Photo	Photos and Image Editing	sde-view	sde	image-x-generic	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 calculator	Calculator	Scientific Calculator	calculator	sde/upstream/scientific-calculator	accessories-calculator	scientific-calculator	https://github.com/raad-altaie/scientific-calculator	AGPL-3.0-only	1.0.0~alpha1
 taca	Taca	Archive Manager	taca	sde	package-x-generic	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 sde-system-monitor	SDE System Monitor	Processes and Resources	sde-system-monitor	sde	utilities-system-monitor	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1

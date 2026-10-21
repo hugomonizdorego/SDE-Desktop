@@ -1,24 +1,134 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH SDE-VIEW 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-sde-view \- SDE image viewer
+sde-view \- Photo, the SDE photo viewer and editor
 .SH SYNOPSIS
 .B sde-view
-[OPTIONS] FILES...
+[\fIOPTIONS\fR] [\fIFILE\fR|\fIURI\fR|\fIFOLDER\fR...]
 .SH DESCRIPTION
-Open image files with Photo, the native SDE picture viewer (based on Eye of MATE).
-The Effects side pane (Tools > Effects and Filters, or E) previews filters and
-adjustments live and saves an edited copy; the original file is not changed.
+Photo shows pictures and edits them. It opens quickly: the preview
+embedded in a camera photo (or its cached thumbnail) is shown at once,
+then a screen-sized image, then the full image. Photos are shown upright
+following their EXIF orientation. Animated GIFs play.
 .PP
-This is an independent native executable built from the SDE fork sources
-and included in the sde package.
+Photo steps through the other pictures of the folder (in name order), or
+through a Gallery album (see
+.BR \-\-album ).
+A filmstrip shows them below the photo.
+.SS Viewing
+The mouse wheel (or Ctrl+wheel for finer steps) zooms around the pointer;
+drag to move a zoomed photo; double-click switches between best fit and a
+closer look. Best Fit, Actual Size (1:1) and Fill Window are in the View
+menu. Full screen (F11) and a slideshow (F5) are available.
+.SS Information
+The information panel (I) shows the file name, folder, size, type,
+dimensions and colour profile, and the camera details from EXIF: date
+taken, camera, lens, exposure time, aperture, ISO, focal length, flash and
+exposure bias. Photos with a GPS position show the coordinates and an
+.B Open in Map
+link to openstreetmap.org.
+.SS Editing
+Edits are previewed and kept until saved: rotate (R, Shift+R), flip (H,
+V), crop with free or fixed aspect ratios (C), resize, the adjustments
+exposure, brightness, contrast, saturation, warmth, fade and vignette, and
+the filters Vivid, Warm, Cool, B&W, Noir, Sepia, Vintage, Matte and Invert
+with a strength. Every step can be undone and redone.
+.PP
+Save replaces the file after asking; Save As writes a copy (JPEG, PNG,
+WebP or TIFF). A JPEG that was only rotated or flipped is saved without
+loss of quality by updating its EXIF orientation. Other edits are encoded
+again with the chosen quality; JPEG files keep their camera details.
+GIF and SVG pictures are saved as PNG.
+.SS Other actions
+Copy Image (the clipboard offers PNG data, the file and its path), Set as
+Wallpaper, Print (through CUPS
+.BR lp ),
+Open With another application, Show in Files
+.RB ( liria ),
+Show in Gallery
+.RB ( sde-gallery ),
+Add to Favorites (shared with Gallery) and Move to Trash (freedesktop.org
+Trash). Changes are announced to a running Gallery, which updates at once.
 .SH OPTIONS
 .TP
-.B --help
-Display the native application options.
-.SH COPYRIGHT
-Original upstream copyrights and licenses are preserved. Settings at the SDE
-Suite page provides the source link and full installed notice.
+.BI \-\-album= ID
+Step through a Gallery album, in Gallery's sort order:
+.BR all ,
+.BR favorites ,
+.BR recent ,
+.BR screenshots ,
+.BI folder: PATH
+(a library folder and its subfolders; a bare absolute path means the
+same),
+.BI device: PATH
+(removable media),
+.BI dir: PATH
+(one folder) or
+.BI list: FILE
+(one path per line).
+.TP
+.BI \-\-sort= ORDER
+.BR newest ,
+.B oldest
+or
+.BR name .
+.TP
+.B \-\-slideshow
+Start a slideshow.
+.TP
+.B \-\-fullscreen
+Start in full screen.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.B \-\-help
+Print a short usage summary.
+.PP
+With several files, Photo steps through exactly those files.
+.SH KEYS
+.TP
+.B Left, Right, Home, End, Space, Backspace
+Previous, next, first, last photo.
+.TP
+.B + \- 0 1 F
+Zoom in, zoom out, best fit, actual size, fill.
+.TP
+.B R, Shift+R, H, V, C, E
+Rotate right or left, flip, crop, edit panel.
+.TP
+.B Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+Shift+S
+Undo, redo, save, save as.
+.TP
+.B Ctrl+C, Ctrl+D, Ctrl+G, Ctrl+P, Delete
+Copy image, favorite, show in Gallery, print, move to the Trash.
+.TP
+.B I, B, F1, F5, F11, Esc, Ctrl+W
+Information, filmstrip, shortcuts, slideshow, full screen, leave, close.
+.SH FILES
+.TP
+.I ~/.config/sde/sde.conf
+Section
+.B [photo]
+keeps
+.B jpeg_quality=
+(default 92),
+.B slideshow_interval=
+(seconds),
+.B info=
+and
+.BR filmstrip= .
+Favorites are the
+.B favorites=
+list of
+.BR [gallery] ;
+Set as Wallpaper writes
+.B wallpaper=
+in
+.BR [appearance] .
 .SH SEE ALSO
-.BR sde-settings (1),
-.BR sde-suite (1)
+.BR sde-gallery (1),
+.BR liria (1),
+.BR sde-settings (1)
+.SH AUTHORS
+Written from scratch by the DebION Dev-Team. GPL-3.0-or-later.

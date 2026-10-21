@@ -44,28 +44,6 @@ def overlay(record_id, staged):
             shutil.copy2(path, target)
 
 
-def photo(staged):
-    """SDE View becomes Photo, with a live Effects side pane plugin."""
-    window = staged / "src/sdeview-window.c"
-    edit(window, '"comments",_("Photo is a simple graphics viewer for the MATE Desktop Environment."),',
-         '"comments",_("Photo shows, browses and lightly edits pictures in SDE.\\n'
-         'Based on Eye of MATE by the MATE developers."),')
-    plugins = staged / "plugins/Makefile.am"
-    edit(plugins, "plugins_LTLIBRARIES = \\\n\tfullscreen/libfullscreen.la  \\\n",
-         "plugins_LTLIBRARIES = \\\n\teffects/libeffects.la  \\\n\tfullscreen/libfullscreen.la  \\\n")
-    edit(plugins, "plugins_in_files = \\\n\tfullscreen/fullscreen.plugin.desktop.in  \\\n",
-         "plugins_in_files = \\\n\teffects/effects.plugin.desktop.in  \\\n\tfullscreen/fullscreen.plugin.desktop.in  \\\n")
-    edit(plugins, "# Fullscreen plugin\n",
-         "# Effects plugin (SDE)\n"
-         "effects_libeffects_la_SOURCES = \\\n"
-         "\teffects/sdeview-effects-plugin.h  \\\n"
-         "\teffects/sdeview-effects-plugin.c\n\n"
-         "effects_libeffects_la_LIBADD = $(SDEVIEW_LIBS) -lm\n\n"
-         "# Fullscreen plugin\n")
-    edit(staged / "configure.ac", "plugins/fullscreen/fullscreen.plugin.desktop.in\n",
-         "plugins/effects/effects.plugin.desktop.in\nplugins/fullscreen/fullscreen.plugin.desktop.in\n")
-
-
 def liria(staged):
     """Compact icon-only Back/Forward buttons (tooltips keep the names), so
     the command bar reads as one glass strip instead of Caja's labels; and
@@ -947,7 +925,7 @@ liria_clipboard_request_files (GtkClipboard *clipboard, GdkAtom copied_files_ato
          "\t\tg_application_release (g_application_get_default ()); /* SDE */\n\t}\n")
 
 
-RECIPES = {"sde-view": photo, "liria": liria}
+RECIPES = {"liria": liria}
 
 
 def apply(record, staged):
