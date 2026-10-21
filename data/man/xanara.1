@@ -14,32 +14,87 @@ xanara \- read, annotate and edit PDF documents
 is the document viewer and PDF editor of the Selviana Desktop Environment,
 written from scratch by the DebION Dev-Team on poppler and cairo.
 .PP
-Pages are rendered at the exact resolution of the screen (zoom times the
-SDE interface scale) in 512 pixel tiles on a background thread, and kept in a
-memory bounded cache. While the zoom changes, a scaled preview is shown; the
-sharp rendering follows as soon as the zoom settles.
+One window holds several documents in tabs, next to a
+.B Home
+tab with quick actions (open, merge, images to PDF) and the recent documents
+as thumbnails. Tabs are reordered by dragging and closed with their x or the
+middle mouse button.
 .PP
-Reading: continuous, single page and two\-page (book) layouts; fit width, fit
-page or any zoom (Ctrl+wheel); rotation; page thumbnails, the document outline
-and a list of annotations in the sidebar; find with highlighted results; text
-selection and copy; internal and web links; presentation mode; night and
-sepia reading modes; recent documents and the last page of each document;
-password protected PDFs; printing through the CUPS
-.BR lp (1)
-command.
+The toolbar holds the side panel switch, the pointer (select or hand), the
+zoom and the editing modes
+.BR Annotate ,
+.BR Edit ,
+.BR Page ,
+.BR Form ,
+.BR Fill ,
+.BR Convert ,
+.B Protect
+and
+.BR Tools ,
+followed by undo, redo, export and the properties panel. The context toolbar
+below shows the tools of the active mode. On narrow or scaled windows modes
+and tools that do not fit move into overflow menus. Tools that need a program
+that is not installed are shown greyed; their tooltip names the Debian
+package to install.
 .PP
-Editing: highlight, underline and strike out text; sticky notes; text boxes;
-freehand pen drawings; rectangles and lines; a signature image; moving,
-recolouring and deleting annotations, with undo; filling in form fields (text,
-check boxes, radio buttons and lists). Pages can be rotated, moved, inserted
-from another PDF, deleted and extracted when
-.BR qpdf (1)
-is installed.
+The icon rail on the left switches the side panel between search results,
+page thumbnails (drag a thumbnail to move the page), the outline, bookmarks,
+the list of annotations and saved signatures; its bottom shows the current
+page and the page count. The properties panel on the right sets colour,
+opacity, line width, font size and alignment of the armed tool or the
+selected annotation, and shows the document information otherwise.
 .PP
-Saving writes a complete new file next to the original and renames it over
-the original only after it was written and read back successfully, so an
-interrupted save never damages the document. Closing a document with unsaved
-changes asks whether to save them.
+Pages are rendered at the exact resolution of the screen (zoom times the SDE
+interface scale) in 512 pixel tiles on a background thread, and kept in a
+memory bounded cache.
+.SS Modes
+.TP
+.B Annotate
+Highlight, underline, squiggly and strike-out; text boxes and sticky notes;
+pen and eraser; rectangle, ellipse, arrow and line; measuring distances;
+rubber stamps (Approved, Draft, Confidential, ...); signatures (drawn or from
+an image); showing or hiding all annotations.
+.TP
+.B Edit
+Text and images placed on the page; links to web addresses or pages,
+watermarks, background colours, headers and footers, Bates numbers and
+cropping (these use
+.BR qpdf (1)).
+.TP
+.B Page
+Insert, extract, split, append, rotate, delete and move pages and print page
+numbers (qpdf).
+.TP
+.B Form
+Add text fields, check boxes, radio buttons, combo and list boxes, push
+buttons and signature fields (qpdf); highlight the fields. Fields are filled
+in by clicking them.
+.TP
+.B Fill
+Type text anywhere, check marks, crosses, dots, today's date, initials and
+signatures.
+.TP
+.B Convert
+Export pages as PNG or JPEG images, the text as plain text, HTML or Markdown;
+make a PDF from images; merge PDFs (qpdf).
+.TP
+.B Protect
+Save a copy protected with a password (AES-256) and permissions; remove a
+password; mark areas for redaction and apply them: pages with marks are
+replaced by an image of themselves with the areas painted black, so nothing
+under the boxes survives; remove the metadata (qpdf).
+.TP
+.B Tools
+Compress (ghostscript when installed, otherwise qpdf), OCR into a searchable
+PDF (
+.BR tesseract (1)
+and qpdf), compare with another PDF side by side, print with
+.BR lp (1).
+.PP
+Changes to the structure of the PDF are made on a working copy; nothing is
+written to the original until it is saved. Saving writes a complete new file
+next to the original and renames it over the original only after it was
+written and read back successfully.
 .SH OPTIONS
 .TP
 .BI \-\-page= N
@@ -55,54 +110,75 @@ Print the version and the poppler version.
 .B \-\-help
 Print a short usage summary.
 .PP
-Further files open in windows of their own.
+Every
 .I FILE
-may also be a file:// URI.
+opens in a tab of its own and may also be a file:// URI. Without files the
+tabs of the last session are restored.
 .SH KEYS
 .TP
 .B Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+P, Ctrl+W, Ctrl+Q
-Open, save, save a copy, print, close the document, quit.
+Open, save, save a copy, print, close the tab, quit.
+.TP
+.B Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+Page Down, Ctrl+Page Up
+Next and previous tab (Home included).
+.TP
+.B Ctrl+Alt+1 ... Ctrl+Alt+8
+Switch to the Annotate ... Tools mode.
 .TP
 .B Ctrl+F, Enter, Shift+Enter, F3
-Find, next and previous result.
+Search, next and previous result.
 .TP
 .B Ctrl+wheel, Ctrl++, Ctrl+\-, Ctrl+0, Ctrl+1, Ctrl+2
 Zoom, 100\ %, fit page, fit width.
 .TP
-.B Ctrl+R, Ctrl+Shift+R, Ctrl+Left, Ctrl+Right
+.B Ctrl+R, Ctrl+Shift+R
 Rotate the view.
 .TP
-.B Ctrl+L
-Go to a page number.
+.B Ctrl+L, Ctrl+D
+Go to a page number; bookmark the page.
 .TP
 .B Ctrl+M
 Cycle normal, night and sepia reading.
 .TP
-.B F5, F9, F11
-Presentation, sidebar, full screen.
+.B F5, F9, F10, F11
+Presentation, side panel, properties panel, full screen.
 .TP
-.B V H U K N T P R L G
-Tools: select, highlight, underline, strike out, sticky note, text box, pen,
-rectangle, line, signature.
+.B V H U Q K N T P E R O A L M G
+Select, highlight, underline, squiggly, strike out, sticky note, text box,
+pen, eraser, rectangle, ellipse, arrow, line, measure, signature.
 .TP
-.B Delete, Ctrl+Z, Esc
-Delete the selected annotation, undo, leave the current tool.
+.B Delete, Ctrl+Z, Ctrl+Shift+Z, Esc
+Delete the selected annotation, undo, redo, leave the current tool.
 .SH FILES
 .TP
 .I ~/.config/sde/sde.conf
 The
 .B [xanara]
-section keeps the layout, reading mode, sidebar and
+section keeps the layout, reading mode, mode, side panel, properties panel,
+initials,
+.B restore_session
+(default true) and
 .B cache_mb
 (rendered tile cache in MiB, default 224).
 .TP
 .I ~/.local/state/sde/xanara\-history
 Recent documents and the last page and zoom of each.
+.TP
+.I ~/.local/state/sde/xanara\-session
+The tabs of the last session.
+.TP
+.I ~/.local/state/sde/xanara\-bookmarks
+Bookmarked pages.
+.TP
+.I ~/.local/share/sde/xanara/signatures/
+Saved signatures (PNG).
 .SH NOTES
 With poppler older than the release that can create FreeText and Ink
-annotations natively, text boxes and pen drawings are stored as image stamps
-that look the same in every PDF viewer.
+annotations natively, text boxes, drawings, arrows and fill-in marks are
+stored as image stamps that look the same in every PDF viewer.
 .SH SEE ALSO
 .BR qpdf (1),
+.BR gs (1),
+.BR tesseract (1),
 .BR lp (1),
 .BR sde-settings (1)
