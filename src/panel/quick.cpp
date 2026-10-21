@@ -149,7 +149,7 @@ std::string NetworkState::status_text() const {
     case FULL:
       return _("Connected · Internet access");
     case PORTAL:
-      return _("Sign-in required");
+      return _("Sign in to network");
     case LIMITED:
     case NONE:
       return _("Connected, no internet");
@@ -174,6 +174,8 @@ void SystemStatus::start_connectivity() {
           if (a.size() < 2 || a[0].str() != kNM) return;
           if (const auto *u = a[1].get("ConnectivityCheckUri")) network.check_uri = u->str();
           if (const auto *e = a[1].get("ConnectivityCheckEnabled")) network.check_enabled = e->boolean();
+          if (const auto *e = a[1].get("ConnectivityCheckAvailable"))
+            network.check_enabled = network.check_enabled && e->boolean();
           if (const auto *c = a[1].get("Connectivity")) {
             nm_dbus_ = true;
             set_connectivity(int(c->num()));
@@ -211,7 +213,10 @@ void SystemStatus::refresh_connectivity() {
     }
     nm_dbus_ = true;
     if (const auto *u = v.get("ConnectivityCheckUri")) network.check_uri = u->str();
-    if (const auto *e = v.get("ConnectivityCheckEnabled")) network.check_enabled = e->boolean();
+    bool enabled = true;
+    if (const auto *e = v.get("ConnectivityCheckEnabled")) enabled = e->boolean();
+    if (const auto *e = v.get("ConnectivityCheckAvailable")) enabled = enabled && e->boolean();
+    network.check_enabled = enabled;
     set_connectivity(int(c->num()));
   });
 }
@@ -1514,7 +1519,7 @@ void QuickSettings::network_section(SectionBuilder &b) {
   } else if (n.portal()) {
     b.info(_("Sign in to this network to go online."));
   } else if (n.connected() && n.connectivity == NetworkState::UNKNOWN && !n.check_enabled) {
-    b.info(_("Internet checking is off in NetworkManager."));
+    b.info(_("NetworkManager does not check internet access."));
   }
   if (n.portal())
     b.row(_("Open sign-in page"), network_icon, [this] {

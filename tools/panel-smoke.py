@@ -345,7 +345,7 @@ try:
     waitfor(lambda:commands('NM connection up id QA Wired LAN'),'Troubleshoot did not reconnect')
     escape('Network');shot('22-panel-no-internet')
     mode('nm-portal');fl=open_section('network','Network')
-    item('Network','Sign-in required',active=False);shot('23-network-portal')
+    item('Network','Sign in to network',active=False);shot('23-network-portal')
     press('Network','Open sign-in page');gone('^Network$')
     waitfor(lambda:commands('OPEN http://nmcheck.example.test/'),'portal sign-in page not opened')
     mode('nm-full');fl=open_section('network','Network')

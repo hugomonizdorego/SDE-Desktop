@@ -634,7 +634,7 @@ std::string Panel::status_tooltip(StatusIcon icon) const {
       return _("Media players");
     case NETWORK_STATUS: {
       std::string state = s.network.no_internet() ? std::string(" · ") + _("No internet access")
-                          : s.network.portal()    ? std::string(" · ") + _("Sign-in required")
+                          : s.network.portal()    ? std::string(" · ") + _("Sign in to network")
                           : s.network.connectivity == NetworkState::FULL
                               ? std::string(" · ") + _("Internet access")
                               : "";
