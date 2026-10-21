@@ -248,14 +248,28 @@ def menu_checks():
     config(extra='[menu]\ntiles=Work,qa-atlas.desktop:m,qa-bluefish.desktop:m,qa-calendar.desktop:w;Play,qa-chess.desktop:s,qa-sudoku.desktop:l\n');reload()
     m=click_panel('start','^SDE Menu$');time.sleep(.8);g=geom(m)
     L=item('SDE Menu','tile:Calendar') and layout('SDE Menu')
-    assert 'group:Work' in L and 'group:Play' in L,L.keys()
-    med,wide,small,large=L['tile:Atlas'],L['tile:Calendar'],L['tile:Chess'],L['tile:Sudoku']
-    assert wide[2]>med[2]*1.8 and abs(wide[3]-med[3])<=1 and small[2]<med[2]*.6 and large[3]>med[3]*1.8,(med,wide,small,large)
-    assert med[1]<L['group:Play'][1]<small[1],(med,L['group:Play'],small)
+    assert 'group:Work' in L,L.keys()
+    med,wide=L['tile:Atlas'],L['tile:Calendar']
     shot('24-menu-tiles')
-    # Drag the wide tile in front of Chess, into the other group.
-    drag(m,center(wide),(small[0]+2,small[1]+small[3]//2))
-    waitfor(lambda:'Play,qa-calendar.desktop:w,qa-chess.desktop:s' in conf(),'tile drag not saved: '+conf())
+    # The second group may be below the fold on small screens: scroll the
+    # tiles with the wheel to reach it.
+    def reveal(name):
+        for _ in range(16):
+            L=layout('SDE Menu')
+            if name in L:return L
+            t=L['@tiles'];g=geom(m)
+            run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]//2,'click','5');time.sleep(.3)
+        raise AssertionError('tile not reachable: '+name)
+    L=reveal('tile:Sudoku');small,large=L['tile:Chess'],L['tile:Sudoku']
+    assert wide[2]>med[2]*1.8 and abs(wide[3]-med[3])<=1 and small[2]<med[2]*.6 and large[3]>med[3]*1.8,(med,wide,small,large)
+    assert 'group:Play' in L and L['group:Play'][1]<small[1],L.keys()
+    shot('24-menu-tiles-play')
+    for _ in range(6):run('xdotool','click','4');time.sleep(.1)
+    waitfor(lambda:layout('SDE Menu')['@tiles-scroll'][0]==0,'tiles did not scroll back')
+    # Drag the wide tile in front of Bluefish.
+    L=layout('SDE Menu');blue=L['tile:Bluefish'];wide=L['tile:Calendar']
+    drag(m,center(wide),(blue[0]+2,blue[1]+blue[3]//2))
+    waitfor(lambda:'Work,qa-atlas.desktop:m,qa-calendar.desktop:w,qa-bluefish.desktop:m' in conf(),'tile drag not saved: '+conf())
     # Right-click a tile: Resize > Large.
     r=item('SDE Menu','tile:Atlas');g=geom(m)
     run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
@@ -263,29 +277,32 @@ def menu_checks():
     run('xdotool','key','Down','Down','Down','Right','Down','Down','Down','Return');time.sleep(.6)
     waitfor(lambda:'qa-atlas.desktop:l' in conf(),'tile resize not saved: '+conf())
     # Rename a group by clicking its name.
-    press('SDE Menu','group:Play');time.sleep(.3)
+    press('SDE Menu','group:Work');time.sleep(.3)
     run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Games');run('xdotool','key','Return')
-    waitfor(lambda:'tiles=Work' in conf() and ';Games,' in conf(),'group rename not saved: '+conf())
+    waitfor(lambda:'tiles=Games,' in conf(),'group rename not saved: '+conf())
     # Drag an application from the list to the tiles: a new group.
     L=layout('SDE Menu');row=next(v for k,v in L.items() if k.startswith('app:'));name=next(k for k,v in L.items() if k.startswith('app:'))[4:]
     t=L['@tiles'];drag(m,center(row),(t[0]+t[2]//2,t[1]+t[3]-round(20*scale)))
     waitfor(lambda:f'qa-{name.lower()}.desktop:m' in conf(),'app dragged to the tiles not pinned: '+conf())
     shot('26-menu-tiles-arranged')
-    # Drag the right edge to make the menu wider; the size is kept.
+    # Drag the right edge to make the menu narrower; the size is kept.
     g=geom(m);w0=g['w']
     run('xdotool','mousemove',g['x']+g['w']-2,g['y']+g['h']//2,'mousedown','1');time.sleep(.2)
-    run('xdotool','mousemove',g['x']+g['w']+round(60*scale),g['y']+g['h']//2);time.sleep(.3);run('xdotool','mouseup','1');time.sleep(.5)
-    waitfor(lambda:geom(m)['w']>w0+20,'menu did not resize');waitfor(lambda:'width=' in conf(),'menu size not saved')
+    run('xdotool','mousemove',g['x']+g['w']-round(100*scale),g['y']+g['h']//2);time.sleep(.3);run('xdotool','mouseup','1');time.sleep(.5)
+    waitfor(lambda:geom(m)['w']<w0-20,'menu did not resize');waitfor(lambda:'width=' in conf(),'menu size not saved')
     shot('27-menu-resized');escape('SDE Menu')
-    m=click_panel('start','^SDE Menu$');time.sleep(.6);assert geom(m)['w']>w0+20,'menu size not kept';escape('SDE Menu')
+    m=click_panel('start','^SDE Menu$');time.sleep(.6);assert geom(m)['w']<w0-20,'menu size not kept';escape('SDE Menu')
     config();reload()
 def search_checks():
     """Panel search: box with placeholder, flyout with results, keyboard,
     icon and hidden styles."""
-    item('SDE Panel','search');s=click_panel('search','^SDE Search$');time.sleep(.6)
+    # A full panel shows the box; on a narrow screen it becomes an icon and
+    # the flyout shows the field itself.
+    box=waitfor(lambda:'search' if 'search' in layout('SDE Panel') else 'search-icon' if 'search-icon' in layout('SDE Panel') else None,'no search on the panel')
+    s=click_panel(box,'^SDE Search$');time.sleep(.6)
     L=layout('SDE Search')
     assert 'query:' in L,L.keys()
-    assert 'field' not in L and any(k.startswith('top:') or k.startswith('chip:') for k in L),L.keys()
+    assert ('field' in L)==(box=='search-icon') and any(k.startswith('top:') or k.startswith('chip:') for k in L),L.keys()
     pg=geom(panel);sg=geom(s);assert sg['y']+sg['h']<=pg['y'] and sg['x']>=0 and sg['x']+sg['w']<=W,(sg,pg)
     shot('28-search-start')
     run('xdotool','type','--delay','40','wget');waitfor(lambda:'result:Wget' in layout('SDE Search'),'app not found')
@@ -308,7 +325,7 @@ def search_checks():
     shot('30-search-icon');escape('SDE Search')
     config(extra='[panel]\nsearch=hidden\n');reload()
     waitfor(lambda:not any(k.startswith('search') for k in layout('SDE Panel')),'hidden search still on the panel')
-    config();reload();item('SDE Panel','search')
+    config();reload();item('SDE Panel',box)
 def brightness_checks(ac):
     """Action Center: the brightness slider follows the volume slider in the
     same card; wheel and brightness commands change the backlight."""
@@ -318,6 +335,13 @@ def brightness_checks(ac):
         try:return int((home/'backlight/qa_backlight/brightness').read_text())
         except ValueError:return -1  # being written
     g=geom(ac);before=level()
+    # Small screens: scroll the Action Center until the row is in view
+    # (scrolling over the row itself would change the brightness).
+    for _ in range(12):
+        b=layout('Action Center')['Brightness'];body=layout('Action Center')['@body'];cy=b[1]+b[3]//2
+        if body[1]<=cy<=body[1]+body[3]-2:break
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+round(10*scale),'click','5' if cy>body[1]+body[3] else '4');time.sleep(.3)
+    before=level()
     run('xdotool','mousemove',g['x']+b[0]-round(20*scale),g['y']+b[1]+b[3]//2,'click','4');time.sleep(.2);run('xdotool','click','4')
     waitfor(lambda:level()==before+10,f'wheel did not raise the brightness ({level()})')
     # Brightness keys (sde-panel --brightness); a command can race the
