@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Prove the installed SDE apps are native fork ELFs, not upstream launchers."""
-import argparse, os, subprocess
+import argparse, os, subprocess, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 parser=argparse.ArgumentParser(description=__doc__)
@@ -44,6 +44,16 @@ for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde
     output=subprocess.check_output([str(binary/name),'--version'],text=True)
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
+
+# Liria (alpha16): SDE branding where users see it. Legal notices of the
+# original authors are allowed (see tools/liria-branding-check.py).
+liria_version=subprocess.check_output([str(binary/'liria'),'--version'],text=True)
+assert liria_version.startswith('Liria '),liria_version
+subprocess.run([sys.executable,str(Path(__file__).resolve().parent/'liria-branding-check.py'),
+                '--prefix',str(binary.parent)],check=True)
+for doc in ['COPYING','AUTHORS','copyright']:
+    assert (binary.parent/'share/doc/sde/upstream/caja'/doc).is_file(),doc
+assert (binary.parent/'share/liria/help/index.html').is_file()
 
 # SDE Update 2 streams PackageKit transactions through pkcon; without pkcon
 # (PackageKit 1.4 ships only pkgcli) it uses APT through pkexec.

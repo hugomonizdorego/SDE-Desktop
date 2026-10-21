@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later
+     Copyright (C) 2026 DebION Dev-Team -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liria Help</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.55 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.7rem; margin-bottom: .2rem; }
+  h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent); padding-bottom: .3rem; }
+  kbd { font: .85em ui-monospace, monospace; padding: .05rem .35rem; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 4px; }
+  nav a { margin-right: .8rem; }
+  .muted { opacity: .7; }
+</style>
+</head>
+<body>
+<h1>Liria</h1>
+<p class="muted">The SDE file manager &middot; Developer: DebION Dev-Team</p>
+<nav>
+  <a href="#window">The window</a><a href="#menus">Menus</a><a href="#bookmarks">Bookmarks</a>
+  <a href="#removable">Removable drives</a><a href="#connect-server">Network</a>
+  <a href="#views">Preferences</a><a href="#shortcuts">Shortcuts</a>
+</nav>
+
+<h2 id="window">The window</h2>
+<p>The header row holds <b>Back</b>, <b>Forward</b> and <b>Parent Folder</b>, the path of the
+current folder, the view switcher (icons, list, compact), <b>Search</b> and the <b>main menu</b>.
+Click a part of the path to go there; click the pencil button, or press <kbd>Ctrl</kbd>+<kbd>L</kbd>,
+to type a location instead.</p>
+<p>The sidebar lists <b>Favorites</b> (your home and personal folders), <b>Devices</b> (the file
+system and drives), <b>Bookmarks</b> and <b>Network</b>. Press <kbd>F9</kbd> to show or hide it.
+Above your home folder, the <b>Home overview</b> shows quick access folders, drives with their
+free space and your recent files.</p>
+
+<h2 id="menus">Menus</h2>
+<p>The main menu (<kbd>F10</kbd>) opens new windows and tabs, a terminal in the current folder,
+connections to servers, hidden files, sorting, view options, bookmarks, preferences, keyboard
+shortcuts and this help. Right-click a file for Open, Open With, Cut, Copy, Rename, Copy To,
+Move To, <b>Send To</b> a removable drive, Compress or Extract, Move to Trash and Properties.
+Right-click the background of a folder to create folders and documents or to paste.</p>
+
+<h2 id="select-pattern">Selecting files by name</h2>
+<p>Press <kbd>Ctrl</kbd>+<kbd>S</kbd> and type a pattern: <code>*</code> matches any text and
+<code>?</code> one character, for example <code>*.jpg</code> or <code>report-??.pdf</code>.</p>
+
+<h2 id="open-location">Opening a location</h2>
+<p>Type a folder path such as <code>/media</code>, a network address such as
+<code>sftp://server/home</code>, or <code>~</code> for your home folder.</p>
+
+<h2 id="bookmarks">Bookmarks</h2>
+<p>Press <kbd>Ctrl</kbd>+<kbd>D</kbd> to bookmark the current folder; it appears in the sidebar
+and under Main Menu &rsaquo; Bookmarks. <kbd>Ctrl</kbd>+<kbd>B</kbd> edits, renames or removes
+bookmarks.</p>
+
+<h2 id="removable">Removable drives</h2>
+<p>Copies to USB sticks and memory cards are written through to the drive, so the progress
+shows what really reached the device, and the operation ends with <i>Finishing</i> while the
+last data is written. Names that FAT, exFAT or NTFS cannot store are adjusted, and files of
+4&nbsp;GB or more are refused on FAT32 with a clear message. Use <b>Send To</b> in a file's
+menu to copy it to a drive. Always use <b>Eject</b> or <b>Safely Remove</b> in the sidebar
+before unplugging: Liria first writes all cached data to the drive.</p>
+
+<h2 id="connect-server">Connecting to a server</h2>
+<p>Main Menu &rsaquo; Connect to Server opens SFTP, FTP, Windows shares (SMB) and WebDAV
+locations. Saved connections appear in the sidebar under Network.</p>
+
+<h2 id="properties">File properties</h2>
+<p>Press <kbd>Alt</kbd>+<kbd>Return</kbd> to see a file's size, type, location, dates,
+permissions and the application that opens it.</p>
+
+<h2 id="backgrounds">Backgrounds and emblems</h2>
+<p>Emblems mark files and folders with small symbols. The desktop wallpaper is set in SDE
+Settings, or with <b>Set as Wallpaper</b> in a picture's menu.</p>
+
+<h2 id="views">Preferences</h2>
+<p id="behavior">Main Menu &rsaquo; Preferences sets the default view and icon size, whether one
+or two clicks open items, what happens with executable text files and the trash, and
+whether the Delete command bypasses the trash.</p>
+<p id="display">Display: the information shown under icon names and the date format.</p>
+<p id="list-columns">List Columns: the columns of the list view and their order.</p>
+<p id="preview">Preview: thumbnails, item counts and previews for local and remote files.</p>
+<p id="media">Media: what happens when a disc, camera or drive is inserted.</p>
+
+<h2 id="shortcuts">Keyboard shortcuts</h2>
+<p>Press <kbd>Ctrl</kbd>+<kbd>?</kbd> in Liria for the complete list. The most used:
+<kbd>Ctrl</kbd>+<kbd>T</kbd> new tab, <kbd>Ctrl</kbd>+<kbd>F</kbd> search,
+<kbd>Ctrl</kbd>+<kbd>H</kbd> hidden files, <kbd>Ctrl</kbd>+<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>
+icons/list/compact view, <kbd>F2</kbd> rename, <kbd>Delete</kbd> move to trash,
+<kbd>F3</kbd> extra pane.</p>
+
+<h2 id="about">About</h2>
+<p>Liria is part of SDE for DebION GNU/Linux and is developed by the DebION Dev-Team. It is free
+software under the GNU General Public License, version 2 or later. It is a modified version of
+an earlier free file manager; the original authors' copyright and license notices are kept in
+<code>/usr/share/doc/sde/upstream/caja/</code>.</p>
+</body>
+</html>

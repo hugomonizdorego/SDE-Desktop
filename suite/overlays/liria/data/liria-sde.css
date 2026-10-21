@@ -1,0 +1,385 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright (C) 2026 DebION Dev-Team
+ *
+ * Liria's own style, loaded from its resources at application priority.
+ * Only standard GTK named colours are used (@theme_bg_color,
+ * @theme_fg_color, @theme_base_color, @theme_text_color,
+ * @theme_selected_bg_color, @theme_selected_fg_color), so Liria follows
+ * every SDE theme - light, dark and accent colour - and other GTK themes.
+ */
+
+/* ---------------------------------------------------------- header row */
+
+.liria-navigation-window toolbar.sde-header {
+  padding: 4px 6px;
+  border-style: solid;
+  border-width: 0 0 1px 0;
+  border-color: alpha(@theme_fg_color, 0.12);
+  background-color: @theme_bg_color;
+  background-image: none;
+  box-shadow: none;
+}
+
+.liria-navigation-window toolbar.sde-header toolbutton > button,
+.liria-navigation-window toolbar.sde-header menutoolbutton > box > button,
+.liria-navigation-window toolbar.sde-header button.sde-main-menu-button,
+.liria-navigation-window toolbar.sde-header .sde-view-switcher > button {
+  min-width: 16px;
+  min-height: 16px;
+  padding: 5px 7px;
+  margin: 0 1px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: @theme_fg_color;
+  -gtk-icon-shadow: none;
+}
+
+.liria-navigation-window toolbar.sde-header toolbutton > button:hover,
+.liria-navigation-window toolbar.sde-header menutoolbutton > box > button:hover,
+.liria-navigation-window toolbar.sde-header button.sde-main-menu-button:hover,
+.liria-navigation-window toolbar.sde-header .sde-view-switcher > button:hover {
+  background-color: alpha(@theme_fg_color, 0.08);
+}
+
+.liria-navigation-window toolbar.sde-header toolbutton > button:active,
+.liria-navigation-window toolbar.sde-header toolbutton > button:checked,
+.liria-navigation-window toolbar.sde-header button.sde-main-menu-button:checked,
+.liria-navigation-window toolbar.sde-header .sde-view-switcher > button:checked {
+  background-color: alpha(@theme_fg_color, 0.14);
+}
+
+.liria-navigation-window toolbar.sde-header toolbutton > button:disabled {
+  background-color: transparent;
+  color: alpha(@theme_fg_color, 0.35);
+}
+
+/* The view switcher reads as one segmented control. */
+.liria-navigation-window toolbar.sde-header .sde-view-switcher {
+  margin: 0 4px;
+  padding: 1px;
+  border-radius: 7px;
+  background-color: alpha(@theme_fg_color, 0.06);
+}
+
+.liria-navigation-window toolbar.sde-header .sde-view-switcher > button {
+  margin: 0;
+  padding: 4px 8px;
+}
+
+.liria-navigation-window toolbar.sde-header .sde-view-switcher > button:checked {
+  background-color: @theme_base_color;
+  box-shadow: 0 1px 2px alpha(black, 0.18);
+}
+
+/* ------------------------------------------- breadcrumb path and entry */
+
+.liria-navigation-window .sde-location-item > box {
+  min-height: 30px;
+  padding: 0 2px;
+  border: 1px solid alpha(@theme_fg_color, 0.14);
+  border-radius: 7px;
+  background-color: @theme_base_color;
+}
+
+.liria-navigation-window .sde-location-item .liria-pathbar button,
+.liria-navigation-window .sde-location-item > box > button,
+.liria-navigation-window .sde-location-item > box > togglebutton {
+  min-height: 20px;
+  padding: 2px 7px;
+  margin: 2px 0;
+  border: none;
+  border-radius: 5px;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: @theme_text_color;
+}
+
+.liria-navigation-window .sde-location-item .liria-pathbar button:hover,
+.liria-navigation-window .sde-location-item > box > button:hover,
+.liria-navigation-window .sde-location-item > box > togglebutton:hover {
+  background-color: alpha(@theme_fg_color, 0.08);
+}
+
+.liria-navigation-window .sde-location-item .liria-pathbar button:checked {
+  background-color: alpha(@theme_selected_bg_color, 0.16);
+  color: @theme_text_color;
+  font-weight: bold;
+}
+
+.liria-navigation-window .sde-location-item > box > togglebutton:checked {
+  background-color: alpha(@theme_selected_bg_color, 0.20);
+}
+
+.liria-navigation-window .sde-location-item entry,
+.liria-navigation-window .sde-location-item .liria-location-entry {
+  min-height: 24px;
+  margin: 2px 0;
+  border: none;
+  border-radius: 5px;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.liria-navigation-window .sde-location-item .liria-search-bar entry {
+  background-color: alpha(@theme_fg_color, 0.05);
+}
+
+/* ------------------------------------------------------------- sidebar */
+
+.liria-side-pane,
+.liria-side-pane treeview.view,
+.liria-side-pane scrolledwindow,
+.liria-side-pane viewport {
+  background-color: @theme_bg_color;
+  color: @theme_fg_color;
+}
+
+.liria-side-pane treeview.view {
+  padding: 1px 0;
+}
+
+.liria-side-pane treeview.view:hover {
+  background-color: alpha(@theme_fg_color, 0.06);
+}
+
+.liria-side-pane treeview.view:selected,
+.liria-side-pane treeview.view:selected:focus {
+  background-color: alpha(@theme_selected_bg_color, 0.18);
+  color: @theme_fg_color;
+  border-radius: 6px;
+}
+
+.liria-navigation-window paned > separator {
+  min-width: 1px;
+  background-image: none;
+  background-color: alpha(@theme_fg_color, 0.12);
+}
+
+/* --------------------------------------------------------- content area */
+
+.liria-navigation-window .view,
+.liria-navigation-window iconview {
+  background-color: @theme_base_color;
+  color: @theme_text_color;
+}
+
+.liria-navigation-window .liria-canvas-item {
+  border-radius: 5px;
+}
+
+.liria-navigation-window treeview.view header button {
+  padding: 3px 8px;
+  border-style: none none solid none;
+  border-width: 1px;
+  border-color: alpha(@theme_fg_color, 0.10);
+  background-image: none;
+  background-color: @theme_base_color;
+  box-shadow: none;
+  color: alpha(@theme_text_color, 0.75);
+  font-weight: normal;
+}
+
+/* Tabs: flat, with the active one marked by the accent colour. */
+.liria-notebook > header {
+  padding: 0 4px;
+  border: none;
+  background-color: @theme_bg_color;
+  box-shadow: inset 0 -1px alpha(@theme_fg_color, 0.12);
+}
+
+.liria-notebook > header tab {
+  min-height: 24px;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.liria-notebook > header tab:checked {
+  box-shadow: inset 0 -2px @theme_selected_bg_color;
+}
+
+#liria-tab-close-button,
+.liria-tab-close-button {
+  min-width: 16px;
+  min-height: 16px;
+  padding: 1px;
+  border: none;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------ status bar */
+
+.liria-navigation-window statusbar,
+.liria-navigation-window #statusbar-noborder {
+  min-height: 0;
+  padding: 0 8px;
+  margin: 0;
+  border-style: solid;
+  border-width: 1px 0 0 0;
+  border-color: alpha(@theme_fg_color, 0.10);
+  background-color: @theme_bg_color;
+  font-size: 0.88em;
+  color: alpha(@theme_fg_color, 0.75);
+}
+
+.liria-navigation-window statusbar > frame > border,
+.liria-navigation-window statusbar label {
+  padding: 2px 0;
+  margin: 0;
+  border: none;
+}
+
+/* ------------------------------------------------------------ main menu */
+
+menu.sde-main-menu menuitem {
+  min-height: 24px;
+  padding: 3px 12px;
+}
+
+/* -------------------------------------------------------- Home overview */
+
+.liria-navigation-window frame.liria-extra-location > border {
+  border: none;
+  border-radius: 0;
+}
+
+.liria-navigation-window #liria-extra-view-widget {
+  background-color: @theme_base_color;
+  border-bottom: 1px solid alpha(@theme_fg_color, 0.10);
+}
+
+.sde-home-overview {
+  padding: 10px 14px 12px;
+  background-color: @theme_base_color;
+  background-image: linear-gradient(160deg, alpha(@theme_selected_bg_color, 0.08), alpha(@theme_selected_bg_color, 0.0) 55%);
+}
+
+.sde-home-title {
+  font-size: 1.35em;
+  font-weight: bold;
+  color: @theme_text_color;
+}
+
+.sde-home-subtitle,
+.sde-home-empty {
+  color: alpha(@theme_text_color, 0.65);
+}
+
+.sde-home-section {
+  margin-top: 2px;
+  font-size: 0.86em;
+  font-weight: bold;
+  color: alpha(@theme_text_color, 0.65);
+}
+
+button.sde-home-toggle,
+button.sde-home-clear {
+  min-height: 0;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  border: 1px solid alpha(@theme_fg_color, 0.14);
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: alpha(@theme_text_color, 0.75);
+}
+
+button.sde-home-clear {
+  margin: -2px 0;
+  border-color: transparent;
+  color: @theme_selected_bg_color;
+  font-size: 0.85em;
+}
+
+button.sde-home-toggle:hover,
+button.sde-home-clear:hover {
+  border-color: alpha(@theme_selected_bg_color, 0.40);
+  background-color: alpha(@theme_selected_bg_color, 0.10);
+  color: @theme_text_color;
+}
+
+.sde-quick-access flowboxchild,
+.sde-drives flowboxchild,
+.sde-recent-files flowboxchild {
+  padding: 0;
+  border-radius: 10px;
+}
+
+button.sde-card {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid alpha(@theme_fg_color, 0.10);
+  background-image: none;
+  background-color: alpha(@theme_bg_color, 0.55);
+  box-shadow: none;
+  color: @theme_text_color;
+}
+
+button.sde-card:hover {
+  border-color: alpha(@theme_selected_bg_color, 0.45);
+  background-color: alpha(@theme_selected_bg_color, 0.08);
+}
+
+button.sde-card:active {
+  background-color: alpha(@theme_selected_bg_color, 0.16);
+}
+
+button.sde-quick-card {
+  min-width: 84px;
+  padding: 8px 8px 6px;
+}
+
+button.sde-recent-card {
+  min-width: 170px;
+  padding: 6px 10px;
+}
+
+.sde-card-title {
+  font-weight: bold;
+}
+
+.sde-card-subtitle {
+  font-size: 0.88em;
+  color: alpha(@theme_text_color, 0.65);
+}
+
+levelbar.sde-usage-bar trough {
+  min-height: 5px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background-image: none;
+  background-color: alpha(@theme_fg_color, 0.12);
+  box-shadow: none;
+}
+
+levelbar.sde-usage-bar block {
+  min-height: 5px;
+  border: none;
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+levelbar.sde-usage-bar block.filled.sde-normal {
+  background-image: none;
+  background-color: @theme_selected_bg_color;
+}
+
+levelbar.sde-usage-bar block.filled.sde-critical {
+  background-image: none;
+  background-color: #d9434e;
+}
+
+levelbar.sde-usage-bar block.empty {
+  background-image: none;
+  background-color: transparent;
+}

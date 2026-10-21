@@ -120,7 +120,16 @@ def prepare(record, cache, destination):
                 if re.search(r"copyright|\(c\)|©", header, re.I):
                     notices.append(str(path.relative_to(staged)) + "\n" + header)
             if not LEGAL.match(path.name):
-                path.write_text(brand(original), encoding="utf-8", errors="surrogateescape")
+                text = original
+                # In Spanish and Aragonese catalogs "caja" is the word "box",
+                # not the program name: keep it in the translated strings.
+                spanish = path.suffix == ".po" and path.stem.split("_")[0].split("@")[0] in ("es", "an")
+                if spanish:
+                    text = re.sub(r"(?m)^(?!#:)(.*)$", lambda m: re.sub(r"\bcaja(s?)\b", r"SDEKEEPBOX\1", m.group(1)), text)
+                text = brand(text)
+                if spanish:
+                    text = text.replace("SDEKEEPBOX", "caja")
+                path.write_text(text, encoding="utf-8", errors="surrogateescape")
         # Rename identifiers in filenames/directories after contents are patched.
         for path in sorted(staged.rglob("*"), key=lambda p: len(p.parts), reverse=True):
             wanted = brand(path.name)

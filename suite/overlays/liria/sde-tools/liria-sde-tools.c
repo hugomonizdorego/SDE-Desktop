@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 SDE contributors.
  *
- * SDE Tools for Liria: everyday actions in the context menus and the
- * toolbar - Open Terminal Here, Copy Path, Open as Administrator, Edit with
- * Niny, Edit in Photo, Set as Wallpaper, Compress, Extract Here, Checksum
- * and New Text Document. Programs are started without a shell. The Home
- * overview shown above the home folder lives in liria-sde-home.c.
+ * SDE Tools for Liria: everyday actions in the context menus - Compress
+ * and Extract Here with Taca, Edit with Niny, Edit in Photo, Set as
+ * Wallpaper, Send To a removable drive, and under "More Actions" Open
+ * Terminal Here, Copy Path, Show Checksum and Open as Administrator; on the
+ * folder background Open Terminal Here and New Text Document. Programs are
+ * started without a shell. The Home overview shown above the home folder
+ * lives in liria-sde-home.c.
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -76,7 +78,7 @@ find_any (const gchar *first, ...)
 static void
 open_terminal (const gchar *dir)
 {
-	gchar *terminal = find_any ("x-terminal-emulator", "xfce4-terminal", "mate-terminal", "lxterminal",
+	gchar *terminal = find_any ("x-terminal-emulator", "sde-terminal", "xfce4-terminal", "lxterminal",
 	                            "xterm", NULL);
 	if (terminal) {
 		const gchar *argv[] = { terminal, NULL };
@@ -327,6 +329,50 @@ new_document_cb (LiriaMenuItem *item, gpointer data)
 	g_free (dir);
 }
 
+/* Send To: Liria copies with its safe removable-drive engine through the
+ * application action "sde-copy-to" (liria-sde-ui.c). */
+static void
+send_to_cb (LiriaMenuItem *item, gpointer data)
+{
+	const gchar *target = g_object_get_data (G_OBJECT (item), "sde-target");
+	GVariantBuilder uris;
+	GApplication *app = g_application_get_default ();
+
+	if (!target || !app)
+		return;
+	g_variant_builder_init (&uris, G_VARIANT_TYPE ("as"));
+	for (GList *l = data; l; l = l->next) {
+		gchar *uri = liria_file_info_get_uri (l->data);
+		g_variant_builder_add (&uris, "s", uri);
+		g_free (uri);
+	}
+	g_action_group_activate_action (G_ACTION_GROUP (app), "sde-copy-to",
+	                                g_variant_new ("(ass)", &uris, target));
+}
+
+/* Writable mounts of removable drives (USB sticks, memory cards, phones). */
+static GList *
+removable_mounts (void)
+{
+	GVolumeMonitor *monitor = g_volume_monitor_get ();
+	GList *mounts = g_volume_monitor_get_mounts (monitor), *result = NULL;
+
+	for (GList *l = mounts; l; l = l->next) {
+		GMount *mount = l->data;
+		GDrive *drive = g_mount_get_drive (mount);
+		gboolean removable = g_mount_can_eject (mount) ||
+		                     (drive && (g_drive_is_removable (drive) || g_drive_is_media_removable (drive)));
+
+		if (removable && !g_mount_is_shadowed (mount))
+			result = g_list_append (result, g_object_ref (mount));
+		if (drive)
+			g_object_unref (drive);
+	}
+	g_list_free_full (mounts, g_object_unref);
+	g_object_unref (monitor);
+	return result;
+}
+
 /* ------------------------------------------------------------- menu items */
 
 static LiriaMenuItem *
@@ -338,10 +384,54 @@ item (const gchar *name, const gchar *label, const gchar *tip, const gchar *icon
 	return menu_item;
 }
 
+static void
+append_owned (LiriaMenu *menu, LiriaMenuItem *menu_item)
+{
+	liria_menu_append_item (menu, menu_item);
+	g_object_unref (menu_item);
+}
+
+static LiriaMenuItem *
+send_to_item (GList *files)
+{
+	GList *mounts = removable_mounts ();
+	LiriaMenuItem *parent;
+	LiriaMenu *menu;
+	int n = 0;
+
+	if (!mounts)
+		return NULL;
+	parent = liria_menu_item_new ("SdeTools::SendTo", _("Send To"),
+	                              _("Copy to a removable drive"), "drive-removable-media");
+	menu = liria_menu_new ();
+	for (GList *l = mounts; l; l = l->next) {
+		GFile *root = g_mount_get_root (l->data);
+		gchar *uri = g_file_get_uri (root);
+		gchar *name = g_mount_get_name (l->data);
+		gchar *id = g_strdup_printf ("SdeTools::SendTo%d", n++);
+		gchar *tip = g_strdup_printf (_("Copy the selected items to \"%s\""), name);
+		LiriaMenuItem *drive = item (id, name, tip, "drive-removable-media", G_CALLBACK (send_to_cb), files);
+
+		g_object_set_data_full (G_OBJECT (drive), "sde-target", uri, g_free);
+		liria_menu_append_item (menu, drive);
+		g_object_unref (drive);
+		g_object_unref (root);
+		g_free (name);
+		g_free (id);
+		g_free (tip);
+	}
+	liria_menu_item_set_submenu (parent, menu);
+	g_object_unref (menu);
+	g_list_free_full (mounts, g_object_unref);
+	return parent;
+}
+
 static GList *
 get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 {
 	GList *items = NULL;
+	LiriaMenuItem *more_item, *send;
+	LiriaMenu *more;
 	guint count = g_list_length (files);
 	gboolean local = TRUE, all_text = TRUE, all_images = TRUE, all_archives = TRUE, any_dir = FALSE;
 
@@ -363,10 +453,17 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 		                                  _("Copy the location to the clipboard"), "edit-copy",
 		                                  G_CALLBACK (copy_path_cb), files));
 	}
-	if (count == 1)
-		items = g_list_append (items, item ("SdeTools::Terminal", _("Open Terminal Here"),
-		                                    _("Open a terminal in this folder"), "utilities-terminal",
-		                                    G_CALLBACK (terminal_cb), files));
+	if (all_archives)
+		items = g_list_append (items, item ("SdeTools::Extract", _("Extract Here"),
+		                                    _("Extract the archive into this folder"), "package-x-generic",
+		                                    G_CALLBACK (extract_cb), files));
+	else
+		items = g_list_append (items, item ("SdeTools::Compress", _("Compress..."),
+		                                    _("Create an archive with Taca"), "package-x-generic",
+		                                    G_CALLBACK (compress_cb), files));
+	send = send_to_item (files);
+	if (send)
+		items = g_list_append (items, send);
 	if (all_text && !any_dir)
 		items = g_list_append (items, item ("SdeTools::Niny", _("Edit with Niny"),
 		                                    _("Open in the Niny text editor"), "accessories-text-editor",
@@ -380,25 +477,28 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 			                                    _("Use this picture as the desktop background"),
 			                                    "preferences-desktop-wallpaper", G_CALLBACK (wallpaper_cb), files));
 	}
-	if (all_archives)
-		items = g_list_append (items, item ("SdeTools::Extract", _("Extract Here"),
-		                                    _("Extract the archive into this folder"), "package-x-generic",
-		                                    G_CALLBACK (extract_cb), files));
-	else
-		items = g_list_append (items, item ("SdeTools::Compress", _("Compress..."),
-		                                    _("Create an archive with Taca"), "package-x-generic",
-		                                    G_CALLBACK (compress_cb), files));
-	if (count == 1 && !any_dir)
-		items = g_list_append (items, item ("SdeTools::Checksum", _("Show Checksum"),
-		                                    _("Show the SHA-256 checksum"), "dialog-information",
-		                                    G_CALLBACK (checksum_cb), files));
-	items = g_list_append (items, item ("SdeTools::CopyPath", _("Copy Path"),
+	/* Less frequent tools in one submenu keep the menu short. */
+	more_item = liria_menu_item_new ("SdeTools::More", _("More Actions"), _("More actions for the selection"),
+	                                 "view-more");
+	more = liria_menu_new ();
+	if (count == 1)
+		append_owned (more, item ("SdeTools::Terminal", _("Open Terminal Here"),
+		                                    _("Open a terminal in this folder"), "utilities-terminal",
+		                                    G_CALLBACK (terminal_cb), files));
+	append_owned (more, item ("SdeTools::CopyPath", _("Copy Path"),
 	                                    _("Copy the full path to the clipboard"), "edit-copy",
 	                                    G_CALLBACK (copy_path_cb), files));
+	if (count == 1 && !any_dir)
+		append_owned (more, item ("SdeTools::Checksum", _("Show Checksum"),
+		                                    _("Show the SHA-256 checksum"), "dialog-information",
+		                                    G_CALLBACK (checksum_cb), files));
 	if (count == 1 && any_dir)
-		items = g_list_append (items, item ("SdeTools::Admin", _("Open as Administrator"),
+		append_owned (more, item ("SdeTools::Admin", _("Open as Administrator"),
 		                                    _("Open this folder in Liria as root (asks for your password)"),
 		                                    "dialog-password", G_CALLBACK (admin_cb), files));
+	liria_menu_item_set_submenu (more_item, more);
+	g_object_unref (more);
+	items = g_list_append (items, more_item);
 	return items;
 }
 
@@ -407,6 +507,8 @@ get_background_items (LiriaMenuProvider *provider, GtkWidget *window, LiriaFileI
 {
 	GList *files = g_list_append (NULL, folder), *items = NULL;
 	gchar *path = local_path (folder);
+	LiriaMenuItem *more_item;
+	LiriaMenu *more;
 
 	if (path) {
 		items = g_list_append (items, item ("SdeTools::BgTerminal", _("Open Terminal Here"),
@@ -416,28 +518,20 @@ get_background_items (LiriaMenuProvider *provider, GtkWidget *window, LiriaFileI
 			items = g_list_append (items, item ("SdeTools::NewDocument", _("New Text Document"),
 			                                    _("Create an empty text document"), "text-x-generic",
 			                                    G_CALLBACK (new_document_cb), files));
-		items = g_list_append (items, item ("SdeTools::BgAdmin", _("Open as Administrator"),
-		                                    _("Open this folder in Liria as root (asks for your password)"),
-		                                    "dialog-password", G_CALLBACK (admin_cb), files));
 	}
-	items = g_list_append (items, item ("SdeTools::BgCopyPath", _("Copy Location"),
-	                                    _("Copy this folder's location to the clipboard"), "edit-copy",
-	                                    G_CALLBACK (copy_path_cb), files));
-	g_free (path);
-	g_list_free (files);
-	return items;
-}
-
-static GList *
-get_toolbar_items (LiriaMenuProvider *provider, GtkWidget *window, LiriaFileInfo *folder)
-{
-	GList *files = g_list_append (NULL, folder), *items = NULL;
-	gchar *path = local_path (folder);
-
+	more_item = liria_menu_item_new ("SdeTools::BgMore", _("More Actions"), _("More actions for this folder"),
+	                                 "view-more");
+	more = liria_menu_new ();
+	append_owned (more, item ("SdeTools::BgCopyPath", _("Copy Location"),
+	                          _("Copy this folder's location to the clipboard"), "edit-copy",
+	                          G_CALLBACK (copy_path_cb), files));
 	if (path)
-		items = g_list_append (items, item ("SdeTools::ToolbarTerminal", _("Terminal"),
-		                                    _("Open a terminal in this folder"), "utilities-terminal",
-		                                    G_CALLBACK (terminal_cb), files));
+		append_owned (more, item ("SdeTools::BgAdmin", _("Open as Administrator"),
+		                          _("Open this folder in Liria as root (asks for your password)"),
+		                          "dialog-password", G_CALLBACK (admin_cb), files));
+	liria_menu_item_set_submenu (more_item, more);
+	g_object_unref (more);
+	items = g_list_append (items, more_item);
 	g_free (path);
 	g_list_free (files);
 	return items;
@@ -448,7 +542,6 @@ menu_provider_iface_init (LiriaMenuProviderIface *iface)
 {
 	iface->get_file_items = get_file_items;
 	iface->get_background_items = get_background_items;
-	iface->get_toolbar_items = get_toolbar_items;
 }
 
 /* ------------------------------------------------------- home overview */

@@ -38,6 +38,20 @@ builds against the bundled Liria extension API.
 Liria defaults to `--no-desktop`, including direct invocation: SDE retains its
 wallpaper and desktop icons.
 
+Since alpha16 Liria is regenerated from Caja v1.28.0 with complete SDE
+branding (About: Developer DebION Dev-Team; desktop entries, AppStream data,
+man pages, local help in `/usr/share/liria/help`, translations and
+`liria --version`). The original authors' copyright lines stay in every
+source file, in the License section of the About window and under
+`/usr/share/doc/sde/upstream/caja/`, as the GPL requires;
+`tools/liria-branding-check.py` checks a prepared tree or an installed
+prefix for any other occurrence. The window has one compact header (Back,
+Forward, Parent, breadcrumb path with an edit toggle, icon/list/compact
+buttons, Search, main menu on F10) with 16 px symbolic icons, grouped
+context menus with Send To for removable drives, a symbolic sidebar and
+Liria's own style sheet that uses only standard GTK theme colours.
+Screenshots: `docs/screenshots/alpha16/liria-*.png`.
+
 ## SDE Power and SDE Screen Lock (alpha16)
 
 The former power-manager and screen-saver forks were replaced in alpha16 by

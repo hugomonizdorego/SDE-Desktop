@@ -11,4 +11,4 @@ start-with-status-bar=true
 start-with-sidebar=true
 
 [org.debion.liria.icon-view]
-default-zoom-level='large'
+default-zoom-level='standard'
