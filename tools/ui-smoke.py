@@ -286,6 +286,9 @@ try:
     shot("01-action-center-light")
     g = geom(ac)
     assert g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
+    # Session and settings buttons live in the Action Center footer.
+    for name in ("SDE Settings", "Lock Screen", "Power"):
+        control("Action Center", name)
     run("xdotool", "key", "Escape")
     app = spawn("sde-settings")
     settings = find("^Settings$")

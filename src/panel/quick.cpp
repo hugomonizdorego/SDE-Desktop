@@ -1978,7 +1978,8 @@ void QuickSettings::build_center(SectionBuilder &b) {
                      struct tm lt;
                      localtime_r(&t, &lt);
                      char buf[16];
-                     strftime(buf, sizeof buf, "%H:%M", &lt);
+                     bool h24 = Panel::instance->config().get_bool("panel", "clock_24h", true);
+                     strftime(buf, sizeof buf, h24 ? "%H:%M" : "%I:%M %p", &lt);
                      return std::string(buf);
                    },
                    nullptr});
@@ -2238,10 +2239,11 @@ void QuickSettings::set_power_menu(bool open) {
   status_changed();
 }
 
-// The session row: the user, SDE Settings, Lock and Power. Power swaps the
-// row for Sleep, Log Out, Restart and Shut Down (the sde-logout actions).
+// The session row: the user, SDE Settings, Lock and Power. Power opens a
+// row above it with Sleep, Log Out, Restart and Shut Down (the sde-logout
+// actions); Power again closes it.
 void QuickSettings::footer(int W, int H, int pad) {
-  int fy = H - footer_ + S(11), fb = S(36);
+  int fy = H - S(58) + S(11), fb = S(36);
   auto launch = [this](std::vector<std::string> cmd) {
     return [this, cmd] {
       close();
@@ -2249,8 +2251,6 @@ void QuickSettings::footer(int W, int H, int pad) {
     };
   };
   if (power_open_) {
-    icon_button(pad, fy, fb, fb, _("Close power options"), back_icon(),
-                [this] { later([this] { set_power_menu(false); }); });
     struct Choice {
       std::string name;
       const char *action;
@@ -2259,26 +2259,31 @@ void QuickSettings::footer(int W, int H, int pad) {
                                    {_("Log Out"), "logout"},
                                    {_("Restart"), "reboot"},
                                    {_("Shut Down"), "poweroff"}};
-    int x = pad + fb + S(8), gap = S(6), n = int(choices.size());
-    int bw = (W - pad - x - (n - 1) * gap) / n;
+    int gap = S(6), n = int(choices.size()), bw = (W - 2 * pad - (n - 1) * gap) / n;
     for (int i = 0; i < n; ++i)
-      new CommandButton(x + i * (bw + gap), fy, bw, fb, choices[size_t(i)].name,
+      new CommandButton(pad + i * (bw + gap), H - footer_ + S(10), bw, fb,
+                        choices[size_t(i)].name,
                         launch({"sde-logout", "--action", choices[size_t(i)].action}));
-    return;
   }
+  bool open = power_open_;
   std::vector<std::pair<std::string, std::function<void()>>> foot = {
       {_("SDE Settings"), launch({"sde-settings"})},
       {_("Lock Screen"), launch({"sde-logout", "--action", "lock"})},
-      {_("Power"), [this] { later([this] { set_power_menu(true); }); }}};
+      {open ? _("Close power options") : _("Power"),
+       [this, open] { later([this, open] { set_power_menu(!open); }); }}};
   std::vector<IconFn> icons = {gear_icon(),
                                [](Painter &p, double x, double y, double z, const Color &ink) {
                                  glyph::lock(p, x, y, z, ink);
                                },
                                power_icon()};
   new UserBadge(pad, fy, W - 2 * pad - int(foot.size()) * (fb + S(6)) - S(8), fb);
-  for (size_t i = 0; i < foot.size(); ++i)
-    icon_button(W - pad - int(foot.size() - i) * (fb + S(6)) + S(6), fy, fb, fb, foot[i].first,
-                icons[i], foot[i].second);
+  for (size_t i = 0; i < foot.size(); ++i) {
+    auto *b = new ActionButton(W - pad - int(foot.size() - i) * (fb + S(6)) + S(6), fy, fb, fb, "",
+                               icons[i], foot[i].second,
+                               i == 2 ? std::function<bool()>([open] { return open; }) : nullptr,
+                               -1, true);
+    b->copy_tooltip(foot[i].first.c_str());
+  }
 }
 
 // --------------------------------------------------------------- rebuild
@@ -2307,7 +2312,7 @@ void QuickSettings::rebuild() {
       std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
   if (fly) available = std::max(S(120), available - S(16));
   header_ = fly ? S(48) : S(70);
-  footer_ = fly ? 0 : S(58);
+  footer_ = fly ? 0 : power_open_ ? S(104) : S(58);
 
   begin();
   body_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_ - footer_));
