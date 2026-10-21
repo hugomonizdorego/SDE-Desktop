@@ -93,6 +93,17 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/data/suite.tsv" SDE_SUITE_DATA)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/data/suite.tsv")
 configure_file(src/common/suite_data.h.in ${CMAKE_CURRENT_BINARY_DIR}/generated/suite_data.h @ONLY)
 
+# Theme palettes for sde::Theme, from the file that also builds the themes.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${PROJECT_SOURCE_DIR}/data/themes/palettes.json" "${PROJECT_SOURCE_DIR}/tools/build-themes.py")
+execute_process(COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/build-themes.py"
+                        --header "${CMAKE_CURRENT_BINARY_DIR}/generated/theme_palettes.h"
+                RESULT_VARIABLE SDE_PALETTE_RESULT)
+if(NOT SDE_PALETTE_RESULT EQUAL 0)
+  message(FATAL_ERROR "tools/build-themes.py --header failed")
+endif()
+
 add_subdirectory(rust)
 add_subdirectory(suite)
 add_subdirectory(src)
@@ -118,7 +129,34 @@ install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)
 install(FILES data/schemas/org.debion.session.gschema.xml data/schemas/30_sde-suite.gschema.override
         DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
 install(FILES data/openbox/rc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/openbox)
-install(DIRECTORY data/themes/ DESTINATION ${CMAKE_INSTALL_DATADIR}/themes)
+# SDE themes: SDE Graphite (default), SDE Fluent and SDE Glass, built from
+# data/themes/palettes.json and the pinned upstream sources that
+# tools/prepare-themes.py fetched into vendor/themes (suite/themes.lock.json).
+# Without them only the Openbox window themes are built and GTK applications
+# use Adwaita.
+set(SDE_THEMES_VENDOR "${PROJECT_SOURCE_DIR}/vendor/themes" CACHE PATH
+    "Upstream theme sources prepared by tools/prepare-themes.py")
+find_program(SDE_SASSC sassc)
+set(SDE_THEMES_OUT "${CMAKE_BINARY_DIR}/themes")
+set(SDE_THEME_DEPS "${PROJECT_SOURCE_DIR}/tools/build-themes.py" "${PROJECT_SOURCE_DIR}/data/themes/palettes.json")
+file(GLOB SDE_THEME_OVERLAYS CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/data/themes/overlays/*.css")
+if(EXISTS "${SDE_THEMES_VENDOR}/.sde-themes-lock" AND SDE_SASSC)
+  set(SDE_THEME_ARGS --vendor "${SDE_THEMES_VENDOR}" --docs "${CMAKE_BINARY_DIR}/theme-docs")
+  message(STATUS "SDE themes: building SDE Graphite, SDE Fluent and SDE Glass from ${SDE_THEMES_VENDOR}")
+  install(DIRECTORY "${CMAKE_BINARY_DIR}/theme-docs/" DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
+else()
+  set(SDE_THEME_ARGS --openbox-only)
+  message(WARNING "SDE themes: run tools/prepare-themes.py and install sassc to build the GTK themes; "
+                  "building the Openbox themes only")
+endif()
+add_custom_command(OUTPUT "${SDE_THEMES_OUT}/.stamp"
+  COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/build-themes.py" --output "${SDE_THEMES_OUT}" ${SDE_THEME_ARGS}
+  COMMAND ${CMAKE_COMMAND} -E touch "${SDE_THEMES_OUT}/.stamp"
+  DEPENDS ${SDE_THEME_DEPS} ${SDE_THEME_OVERLAYS} "${PROJECT_SOURCE_DIR}/suite/themes.lock.json"
+  COMMENT "Building the SDE themes" VERBATIM)
+add_custom_target(sde-themes ALL DEPENDS "${SDE_THEMES_OUT}/.stamp")
+install(DIRECTORY "${SDE_THEMES_OUT}/" DESTINATION ${CMAKE_INSTALL_DATADIR}/themes PATTERN ".stamp" EXCLUDE)
+install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
 install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
 install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

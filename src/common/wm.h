@@ -11,9 +11,13 @@ namespace sde {
 std::string openbox_config_path();
 bool ensure_openbox_config();
 
-// Points the Openbox configuration at the SDE or SDE-Dark window theme.
-// Returns true when the file changed.
-bool set_openbox_theme(bool dark, const std::string &style = "aero");
+// Points the Openbox configuration at an SDE window theme, e.g.
+// "SDE-Graphite-Light-Blue", and sets the family's button layout (left
+// round buttons for Graphite and Glass, right for Fluent). A theme or
+// layout the user chose by hand is left alone. True when the file changed.
+bool set_openbox_theme(const std::string &theme, const std::string &title_layout);
+// Older form: |style| is a family (or an alpha15 style), blue accent.
+bool set_openbox_theme(bool dark, const std::string &style = "graphite");
 
 // Sets the font size (points) of all Openbox fonts, e.g. to follow the UI
 // scale. Returns true when the file changed.
