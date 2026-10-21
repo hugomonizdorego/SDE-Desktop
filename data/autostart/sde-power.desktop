@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=SDE Power
+Comment=Battery warnings, lid and power button, idle dimming and suspend, brightness keys
+Exec=sde-power --daemon
+TryExec=sde-power
+OnlyShowIn=SDE;
+NoDisplay=true

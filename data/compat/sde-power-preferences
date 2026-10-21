@@ -1,0 +1,4 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Compatibility command: SDE Power settings are a page of SDE Settings.
+exec sde-settings --page power "$@"
