@@ -423,6 +423,13 @@ const std::vector<Annotation> &Document::annotations(int page) {
       a.contents = t;
       g_free(t);
     }
+    if (POPPLER_IS_ANNOT_MARKUP(m->annot)) {
+      a.opacity = poppler_annot_markup_get_opacity(POPPLER_ANNOT_MARKUP(m->annot));
+      if (gchar *l = poppler_annot_markup_get_label(POPPLER_ANNOT_MARKUP(m->annot))) {
+        a.author = l;
+        g_free(l);
+      }
+    }
     pi.annots.push_back(a);
   }
   poppler_page_free_annot_mapping(list);
@@ -839,6 +846,23 @@ PopplerAnnot *Document::add_line(int page, Point a, Point b, Rgb color, double w
   return annot;
 }
 
+PopplerAnnot *Document::add_circle(int page, const Box &box, Rgb color, double width) {
+  if (page < 0 || page >= count()) return nullptr;
+  PopplerAnnot *annot;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    PopplerRectangle rect = to_pdf(page, box);
+    annot = poppler_annot_circle_new(doc_, &rect);
+#ifdef XANARA_HAVE_BORDER_WIDTH
+    poppler_annot_set_border_width(annot, width);
+#endif
+    (void)width;
+    finish_annot(page, annot, color);
+  }
+  touch(page);
+  return annot;
+}
+
 PopplerAnnot *Document::add_image(int page, const Box &box, cairo_surface_t *image, const std::string &label) {
   if (page < 0 || page >= count() || !image) return nullptr;
 #if POPPLER_CHECK_VERSION(22, 7, 0)
@@ -978,6 +1002,34 @@ bool Document::set_annot_contents(int page, PopplerAnnot *annot, const std::stri
   }
   touch(page);
   return true;
+}
+
+bool Document::set_annot_opacity(int page, PopplerAnnot *annot, double opacity) {
+  if (page < 0 || page >= count() || !annot || !POPPLER_IS_ANNOT_MARKUP(annot)) return false;
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    poppler_annot_markup_set_opacity(POPPLER_ANNOT_MARKUP(annot), std::clamp(opacity, 0.05, 1.0));
+    modified_ = true;
+  }
+  touch(page);
+  return true;
+}
+
+std::vector<std::pair<std::string, std::string>> Document::info() {
+  std::vector<std::pair<std::string, std::string>> out;
+  std::lock_guard<std::mutex> lock(mu_);
+  auto add = [&](const char *label, gchar *v) {
+    if (v && *v) out.push_back({label, v});
+    g_free(v);
+  };
+  add("Title", poppler_document_get_title(doc_));
+  add("Author", poppler_document_get_author(doc_));
+  add("Subject", poppler_document_get_subject(doc_));
+  add("Keywords", poppler_document_get_keywords(doc_));
+  add("Creator", poppler_document_get_creator(doc_));
+  add("Producer", poppler_document_get_producer(doc_));
+  add("PDF version", poppler_document_get_pdf_version_string(doc_));
+  return out;
 }
 
 bool Document::set_field_text(int page, PopplerFormField *f, const std::string &text) {

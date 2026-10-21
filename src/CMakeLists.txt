@@ -199,9 +199,16 @@ int main() { poppler_annot_set_border_width(nullptr, 2.0); return 0; }
 ]=] XANARA_HAVE_BORDER_WIDTH)
 unset(CMAKE_REQUIRED_INCLUDES)
 unset(CMAKE_REQUIRED_LIBRARIES)
-add_library(sde-xanara-core STATIC xanara/document.cpp xanara/cache.cpp)
+add_library(sde-xanara-core STATIC xanara/document.cpp xanara/cache.cpp xanara/model.cpp)
 target_include_directories(sde-xanara-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xanara)
 target_link_libraries(sde-xanara-core PUBLIC sde-common PkgConfig::POPPLER_GLIB Threads::Threads)
+# JPEG export writes with libjpeg (already needed by SDE-FLTK); without it
+# Xanara falls back to pdftoppm when that is installed.
+find_package(JPEG)
+if(JPEG_FOUND)
+  target_compile_definitions(sde-xanara-core PRIVATE XANARA_HAVE_JPEG=1)
+  target_link_libraries(sde-xanara-core PUBLIC JPEG::JPEG)
+endif()
 foreach(feature XANARA_HAVE_FREE_TEXT XANARA_HAVE_INK XANARA_HAVE_BORDER_WIDTH)
   if(${feature})
     target_compile_definitions(sde-xanara-core PUBLIC ${feature}=1)
@@ -210,6 +217,10 @@ endforeach()
 add_executable(xanara
   xanara/main.cpp
   xanara/window.cpp
+  xanara/chrome.cpp
+  xanara/commands.cpp
+  xanara/home.cpp
+  xanara/props.cpp
   xanara/view.cpp
   xanara/sidebar.cpp
   xanara/icons.cpp)

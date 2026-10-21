@@ -106,7 +106,8 @@ struct Annotation {
   Box box;
   Rgb color;
   bool has_color = false;
-  std::string contents;
+  double opacity = 1.0;
+  std::string contents, author;
   std::vector<std::vector<Point>> strokes;  // ink created in this session
 };
 
@@ -183,6 +184,7 @@ class Document {
                         double width);
   PopplerAnnot *add_square(int page, const Box &box, Rgb color, double width);
   PopplerAnnot *add_line(int page, Point a, Point b, Rgb color, double width);
+  PopplerAnnot *add_circle(int page, const Box &box, Rgb color, double width);
   // |image| is any cairo image surface (e.g. a signature); it is stretched to |box|.
   PopplerAnnot *add_image(int page, const Box &box, cairo_surface_t *image, const std::string &label);
   bool remove_annot(int page, PopplerAnnot *annot);
@@ -190,6 +192,10 @@ class Document {
   bool move_annot(int page, PopplerAnnot *annot, double dx, double dy);
   bool set_annot_color(int page, PopplerAnnot *annot, Rgb color);
   bool set_annot_contents(int page, PopplerAnnot *annot, const std::string &text);
+  bool set_annot_opacity(int page, PopplerAnnot *annot, double opacity);  // markup annotations only
+  // The document information (title, author, subject, keywords, creator,
+  // producer) as label/value pairs, for the properties panel.
+  std::vector<std::pair<std::string, std::string>> info();
 
   // Forms.
   bool set_field_text(int page, PopplerFormField *f, const std::string &text);
