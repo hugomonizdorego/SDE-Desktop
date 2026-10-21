@@ -1254,6 +1254,10 @@ int XanaraWindow::handle(int event) {
         if (v) v->handle(FL_KEYBOARD);
         return 1;  // never close the window on Escape
       }
+      if (ctrl && (st & FL_ALT) && key >= '1' && key <= '8') {
+        set_mode(Mode(key - '1'));
+        return 1;
+      }
       if (ctrl) {
         switch (key) {
           case 'o': open_dialog(); return 1;
@@ -1306,10 +1310,6 @@ int XanaraWindow::handle(int event) {
             return 1;
           case 'r': if (v) v->rotate(shift ? -90 : 90); return 1;
           case 'm': cycle_color_mode(); return 1;
-        }
-        if (key >= '1' && key <= '8' && (st & FL_ALT)) {
-          set_mode(Mode(key - '1'));
-          return 1;
         }
       }
       if (key == FL_F + 9) {

@@ -310,6 +310,7 @@ class Sidebar : public Fl_Widget {
   bool panel_open() const { return open_; }
   void set_panel_open(bool on) { open_ = on; }
   int rail_w() const;
+  int rail_step() const;
   void document_changed();  // new document: rebuild outline and notes
   void notes_changed() {
     notes_dirty_ = true;

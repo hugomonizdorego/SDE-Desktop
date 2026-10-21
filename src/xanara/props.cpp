@@ -79,7 +79,7 @@ void PropsPanel::build() {
   bool color = a ? a->has_color : tool_has_color(t);
   if (color) {
     heading(_("Color"));
-    int sz = S(26), gap = std::max(S(4), (pw - 8 * sz) / 7);
+    int sz = std::min(S(26), (pw - 7 * S(5)) / 8), gap = (pw - 8 * sz) / 7;
     for (int k = 0; k < kSwatchCount; ++k) items_.push_back({Item::Swatch, px + k * (sz + gap), yy, sz, sz, k});
     yy += sz + S(18);
     heading(_("Opacity"));

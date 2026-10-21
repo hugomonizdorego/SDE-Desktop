@@ -69,7 +69,7 @@ void XanaraWindow::layout() {
     home_->hide();
     int rail = sidebar_->rail_w();
     // The panels give way to the pages on narrow windows.
-    int min_canvas = S(380);
+    int min_canvas = S(300);
     bool panel = sidebar_on_ && w() - rail - side_w_ >= min_canvas;
     int sw = rail + (panel ? side_w_ : 0);
     props_w_ = props_on_ && w() - sw - S(264) >= min_canvas ? S(264) : 0;

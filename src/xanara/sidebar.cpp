@@ -76,6 +76,13 @@ const char *Sidebar::panel_id(Panel p) {
 Sidebar::Sidebar(XanaraWindow *app, int x, int y, int w, int h) : Fl_Widget(x, y, w, h), app_(app) {}
 
 int Sidebar::rail_w() const { return S(54); }
+
+int Sidebar::rail_step() const {
+  int bx, by, bw, bh;
+  page_box(bx, by, bw, bh);
+  int space = by - (h() < S(520) ? S(10) : S(48)) - y() - S(8);
+  return std::max(S(30), std::min(S(50), space / PanelCount));
+}
 int Sidebar::header_h() const { return S(52); }
 int Sidebar::content_top() const {
   return y() + header_h() + (panel_ == Search ? S(64) : 0);
@@ -85,7 +92,8 @@ void Sidebar::page_box(int &bx, int &by, int &bw, int &bh) const {
   bw = S(40);
   bh = S(28);
   bx = x() + (rail_w() - bw) / 2;
-  by = y() + h() - S(98);
+  // Short windows drop the page up/down buttons to keep the rail usable.
+  by = y() + h() - (h() < S(520) ? S(62) : S(98));
 }
 
 void Sidebar::search_box(int &bx, int &by, int &bw, int &bh) const {
@@ -313,11 +321,12 @@ int Sidebar::rail_item_at(int mx, int my) const {
   if (mx >= x() + rail_w()) return -1;
   int ry = y() + S(8);
   for (int k = 0; k < PanelCount; ++k) {
-    if (my >= ry && my < ry + S(46)) return k;
-    ry += S(50);
+    if (my >= ry && my < ry + rail_step() - S(4)) return k;
+    ry += rail_step();
   }
   int bx, by, bw, bh;
   page_box(bx, by, bw, bh);
+  if (h() < S(520)) return -1;
   if (my >= by - S(40) && my < by - S(4)) return 100;  // page up
   if (my >= by + bh + S(26) && my < by + bh + S(62)) return 101;  // page down
   return -1;
@@ -328,7 +337,7 @@ void Sidebar::draw_rail(Painter &p) {
   p.fill_rect(x(), y(), rail_w(), h(), t.surface);
   p.line(x() + rail_w() - 0.5, y(), x() + rail_w() - 0.5, y() + h(), t.border);
   int ry = y() + S(8);
-  int cs = S(42);
+  int cs = std::min(S(42), rail_step() - S(6));
   for (int k = 0; k < PanelCount; ++k) {
     int cx = x() + (rail_w() - cs) / 2;
     bool sel = open_ && k == int(panel_);
@@ -336,15 +345,18 @@ void Sidebar::draw_rail(Painter &p) {
     else if (k == hover_rail_) p.fill_rounded(cx, ry + S(2), cs, cs, S(10), t.hover);
     icon::draw(p, kRailGlyphs[k], cx + (cs - S(22)) / 2.0, ry + S(2) + (cs - S(22)) / 2.0, S(22),
                sel ? t.text : t.text_dim);
-    ry += S(50);
+    ry += rail_step();
   }
   int bx, by, bw, bh;
   page_box(bx, by, bw, bh);
+  bool arrows = h() >= S(520);
   int cx = x() + (rail_w() - S(30)) / 2;
-  if (hover_rail_ == 100) p.fill_rounded(cx, by - S(38), S(30), S(30), S(8), t.hover);
-  if (hover_rail_ == 101) p.fill_rounded(cx, by + bh + S(30), S(30), S(30), S(8), t.hover);
-  icon::draw(p, icon::Up, cx + S(4), by - S(34), S(22), t.text);
-  icon::draw(p, icon::Down, cx + S(4), by + bh + S(34), S(22), t.text);
+  if (arrows) {
+    if (hover_rail_ == 100) p.fill_rounded(cx, by - S(38), S(30), S(30), S(8), t.hover);
+    if (hover_rail_ == 101) p.fill_rounded(cx, by + bh + S(30), S(30), S(30), S(8), t.hover);
+    icon::draw(p, icon::Up, cx + S(4), by - S(34), S(22), t.text);
+    icon::draw(p, icon::Down, cx + S(4), by + bh + S(34), S(22), t.text);
+  }
   p.fill_rounded(bx - S(3), by - S(3), bw + S(6), bh + S(6), S(7), t.background);
   p.stroke_rounded(bx - S(3) + 0.5, by - S(3) + 0.5, bw + S(5), bh + S(5), S(7),
                    Fl::focus() && Fl::focus()->parent() == window() && Fl::focus()->x() == bx ? t.accent : t.accent.alpha(0.7),
