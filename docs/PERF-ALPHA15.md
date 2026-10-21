@@ -93,8 +93,8 @@ column at a clip edge in sde-settings.
    (virtio_gpu, vmwgfx, qxl, bochs, cirrus, vboxvideo, hyperv_drm, simpledrm,
    efifb, ast, mgag200, udl, …), a hypervisor, `LIBGL_ALWAYS_SOFTWARE` or no
    DRM device mean "virtual"/"software". New `effects=auto|full|lite`:
-   lite (auto off a real GPU and for the XRender fallback after OpenGL
-   failed) keeps shadows (radius 8) and translucency, drops blur, rounded
+   lite (auto off a real GPU with `backend=auto`, and always for the XRender
+   fallback after OpenGL failed; a backend picked by hand keeps full) keeps shadows (radius 8) and translucency, drops blur, rounded
    masks and fades, and turns vsync off (no real vblank there). On a real GPU:
    `unredir-if-possible = true` (fullscreen video/games bypass the
    compositor), dual_kawase capped at strength 8, fades in ~10 frames
