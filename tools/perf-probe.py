@@ -299,7 +299,7 @@ for phase, data in results["phases"].items():
         print(f"{n:<14}{r['cpu_pct']:>8.2f}{r['helper_cpu_pct']:>11.2f}{r['wakeups_per_s']:>11.1f}"
               f"{r['rss_kb'] / 1024:>8.1f}")
     for n, rows in results.get("stats_" + phase, {}).items():
-        for row in [r for r in rows if "enabled" not in r][-4:]:
+        for row in [r for r in rows if "enabled" not in r][-1:]:
             print("  ", n, row)
 if args.json:
     args.json.write_text(json.dumps(results, indent=2))
