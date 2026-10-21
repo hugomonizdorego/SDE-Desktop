@@ -29,7 +29,7 @@ tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(hom
 display=f':{a.display}'
 e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
 processes=[]
-FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Tray']
+FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Tray','Alarms']
 def spawn(*cmd):
     log=open(home/(Path(cmd[0]).name+'.log'),'w');proc=sp.Popen(cmd,env=e,stdout=log,stderr=sp.STDOUT);processes.append(proc);return proc
 def run(*cmd,check=True):return sp.run(list(map(str,cmd)),env=e,check=check,stdout=sp.PIPE,stderr=sp.PIPE,text=True)
@@ -58,8 +58,11 @@ def click(w,x,y,button=1):
     g=geom(w);run('xdotool','mousemove',g['x']+round(x*scale),g['y']+round(y*scale),'click',button);time.sleep(.4)
 def shot(name):
     time.sleep(.3);run('import','-window','root',out/(name+'.png'));print('saved',name,flush=True)
-def config(style='full',top=False,moved=True,theme='light',look='aero',extra=''):
-    (home/'.config/sde/sde.conf').write_text(f'[appearance]\nscale={a.scale}\ntheme={theme}\nstyle={look}\n[panel]\nstyle={style}\nposition={"top" if top else "bottom"}\n[action_center]\nmove_status={str(moved).lower()}\n{extra}')
+def config(style='full',top=False,moved=True,theme='light',look='aero',extra='',overflow=True):
+    # overflow: one tray icon is already "many", so the fixture's two icons
+    # gather behind the overflow button (the default threshold is 4).
+    limit='tray_overflow_threshold=1\n' if overflow else ''
+    (home/'.config/sde/sde.conf').write_text(f'[appearance]\nscale={a.scale}\ntheme={theme}\nstyle={look}\n[panel]\nstyle={style}\nposition={"top" if top else "bottom"}\n{limit}[action_center]\nmove_status={str(moved).lower()}\n{extra}')
 def conf():return (home/'.config/sde/sde.conf').read_text()
 def reload():
     run('xprop','-root','-f','_SDE_CONFIG_SERIAL','32c','-set','_SDE_CONFIG_SERIAL',time.time_ns()%1000000000);time.sleep(.6)
@@ -136,7 +139,15 @@ def open_section(name,title):
 def escape(title):
     run('xdotool','key','Escape');gone('^'+title+'$');time.sleep(.2)
 def log_has(text):return text in (home/'service.log').read_text()
-def commands(text):return text in (home/'commands.log').read_text()
+def commands(text):
+    try:return text in (home/'commands.log').read_text()
+    except FileNotFoundError:return False
+def mapped(w):return 'IsViewable' in run('xwininfo','-id',str(w)).stdout
+def type_into(title,name,text):
+    press(title,name);run('xdotool','type','--delay','30',text);time.sleep(.4)
+def notified(text):
+    try:return text in (home/'dbus-monitor.log').read_text()
+    except FileNotFoundError:return False
 def mode(name):
     run('dbus-send','--session','--type=method_call','--print-reply','--dest=org.bluez','/SDETest','org.sde.Test.Mode','string:'+name);time.sleep(.8)
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
@@ -150,6 +161,12 @@ elif a==['radio','wifi']:print('enabled')
 elif a==['radio','wwan']:print('disabled')
 elif 'IN-USE,SIGNAL,SECURITY,SSID' in s:print('*:84:WPA2:QA Design Lab\\n:62:WPA2:QA Library\\n:40:--:QA Guest')
 elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n192.0.2.53')
+elif a[:2]==['-t','networking']:print('full')
+''')
+# Session actions, the browser and sound players only log what they were asked.
+for name,tag in [('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS')]:
+    (home/'bin'/name).write_text(f'''#!/bin/sh
+echo "{tag} $*" >> "$HOME/commands.log"
 ''')
 (home/'bin/pactl').write_text('''#!/usr/bin/env python3
 import sys,os,json
@@ -184,7 +201,9 @@ try:
     # Deliberately route only this QA process tree's system lookups to its fixture bus.
     e['DBUS_SYSTEM_BUS_ADDRESS']=e['DBUS_SESSION_BUS_ADDRESS']
     transport=['-nolisten','unix','-nolisten','local','-listen','tcp','-ac'] if a.tcp_display else ['-nolisten','tcp','-ac']
-    config();xv=spawn('Xvfb',display,'-screen','0',a.size+'x24',*transport);time.sleep(.6);assert xv.poll() is None
+    config(overflow=False);xv=spawn('Xvfb',display,'-screen','0',a.size+'x24',*transport);time.sleep(.6);assert xv.poll() is None
+    spawn('sde-notifyd');time.sleep(.3)
+    spawn('dbus-monitor','--session',"interface='org.freedesktop.Notifications'")
     spawn('sde-desktop');panel_proc=spawn('sde-panel');panel=find('^SDE Panel$');time.sleep(.6)
     fixture=spawn(str(a.test_dir.resolve()/'sde-panel-service-fixture'),str(home/'service.log'))
     waitfor(lambda:(home/'service.log').exists() and log_has('READY'),'fixture not ready')
@@ -192,6 +211,15 @@ try:
     icon=find('^SDE XEmbed fixture$',visible_only=False);host=parent(icon);waitfor(lambda:parent(str(host))==int(panel),'tray not docked in panel')
     waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:media' in layout('SDE Panel'),'status icons missing')
     time.sleep(1);shot('00-panel-indicators')
+    # Few tray icons: they sit on the panel and there is no overflow button.
+    assert 'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons'
+    assert parent(str(host))==int(panel) and mapped(host),'tray icons not shown on the panel'
+    shot('00-panel-tray-direct')
+    # Many icons (threshold 1 here): they gather behind the overflow button.
+    config();reload()
+    waitfor(lambda:'status:tray' in layout('SDE Panel'),'overflow button missing with many tray icons')
+    waitfor(lambda:not mapped(host),'tray icons still on the panel behind the overflow button')
+    shot('00-panel-tray-overflow')
 
     # The overflow icon opens the Tray flyout, which gathers the native tray.
     fl=click_panel('status:tray','^Tray$');time.sleep(.6);flyout_bounds(fl,'tray');only_open('Tray')
@@ -207,7 +235,7 @@ try:
 
     # The corner button opens the Action Center (expanded by default).
     ac=click_panel('action-center','^Action Center$');time.sleep(.5);bounds(ac);only_open('Action Center')
-    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Settings','Output volume','Calendar','Show less','Lock Screen']:
+    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Alarms','Output volume','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']:
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
     # Compact mode: tiles and sliders only, remembered in sde.conf.
@@ -217,9 +245,12 @@ try:
     time.sleep(.4);ac=find('^Action Center$');assert geom(ac)['h']<tall or tall>=H-round(80*scale),(geom(ac),tall);bounds(ac)
     shot('03-action-center-compact')
     run('xdotool','mousemove','10','10','click','1');gone('^Action Center$')
-    # The clock opens the Action Center with the calendar in view, even in compact mode.
-    ac=click_panel('clock','^Action Center$');time.sleep(.5);bounds(ac)
-    waitfor(lambda:in_view('Action Center','Calendar'),'calendar not in view after clicking the clock')
+    # The clock opens its alarms popup; its calendar link opens the Action
+    # Center with the calendar in view, even in compact mode.
+    al=click_panel('clock','^Alarms$');time.sleep(.5);only_open('Alarms');flyout_bounds(al,'clock')
+    shot('04-alarms')
+    press('Alarms','Calendar and agenda');ac=find('^Action Center$');gone('^Alarms$');bounds(ac)
+    waitfor(lambda:in_view('Action Center','Calendar'),'calendar not in view after the alarms link')
     shot('04-calendar-from-clock')
     # One click on the corner button switches to the remembered (compact) view.
     click_panel('action-center');time.sleep(.6);ac=find('^Action Center$')
@@ -232,6 +263,81 @@ try:
     run('sde-panel','--calendar');ac=find('^Action Center$');time.sleep(.5)
     waitfor(lambda:in_view('Action Center','Calendar'),'sde-panel --calendar did not show the calendar')
     escape('Action Center')
+
+    # Alarms: add one (time, repeat day, name), switch it off, ring, snooze.
+    al=click_panel('clock','^Alarms$');time.sleep(.4)
+    press('Alarms','Add alarm');item('Alarms','Hour up')
+    press('Alarms','Hour up');press('Alarms','Minute up');press('Alarms','Monday');press('Alarms','Saturday')
+    type_into('Alarms','Alarm name','QA Wake');shot('16-alarm-editor')
+    press('Alarms','Save')
+    waitfor(lambda:'label=QA Wake' in (home/'.config/sde/alarms.ini').read_text(),'alarm not saved')
+    text=(home/'.config/sde/alarms.ini').read_text();assert 'days=mon,sat' in text and 'enabled=true' in text,text
+    when=re.search(r'time=(\d\d:\d\d)',text).group(1)
+    item('Alarms','Edit alarm '+when);shot('17-alarm-list')
+    press('Alarms','Alarm '+when+' on')
+    waitfor(lambda:'enabled=false' in (home/'.config/sde/alarms.ini').read_text(),'alarm switch not saved')
+    escape('Alarms')
+    # A snooze that ends in two seconds rings: notification, sound, Snooze/Dismiss.
+    due=int(time.time())+2
+    (home/'.config/sde/alarms.ini').write_text(text+f'\n[alarm 9]\ntime=06:00\nlabel=QA Ring\nsnooze=5\nsnoozed_until={due}\n');reload()
+    waitfor(lambda:notified('QA Ring'),'alarm notification missing',tries=150)
+    waitfor(lambda:commands('SOUND'),'alarm sound missing')
+    assert notified('snooze') and notified('dismiss'),'alarm notification without Snooze/Dismiss'
+    time.sleep(.6);shot('18-alarm-ringing')
+    al=click_panel('clock','^Alarms$');press('Alarms','Snooze')
+    waitfor(lambda:re.search(r'snoozed_until=(\d+)',(home/'.config/sde/alarms.ini').read_text()) and int(re.search(r'snoozed_until=(\d+)',(home/'.config/sde/alarms.ini').read_text()).group(1))>=due+290,'snooze not saved')
+    waitfor(lambda:notified('CloseNotification'),'ringing notification not closed on snooze')
+    item('Alarms','Add alarm');assert 'Dismiss' not in layout('Alarms');escape('Alarms')
+
+    # Agenda: pick today, add an item with a reminder; the calendar marks the day.
+    run('sde-panel','--calendar');ac=find('^Action Center$');time.sleep(.5)
+    press('Action Center','Add agenda item')
+    type_into('Action Center','Agenda title','QA Dentist')
+    type_into('Action Center','Agenda time','23:58')
+    type_into('Action Center','Agenda note','Bring the card')
+    press('Action Center','Agenda reminder');time.sleep(.4);run('xdotool','key','Down','Down','Down','Return');time.sleep(.5)
+    shot('19-agenda-form')
+    press('Action Center','Save item')
+    agenda=home/'.local/share/sde/agenda.ini'
+    waitfor(lambda:agenda.exists() and 'title=QA Dentist' in agenda.read_text(),'agenda item not saved')
+    t=agenda.read_text();assert 'time=23:58' in t and 'note=Bring the card' in t and 'remind=15' in t and time.strftime('date=%Y-%m-%d') in t,t
+    item('Action Center','Edit agenda item QA Dentist',active=False);shot('20-agenda-item')
+    escape('Action Center')
+    # A reminder that is due fires as a notification, also with the Action Center closed.
+    soon=time.localtime(time.time()+120)
+    agenda.write_text(t+f'\n[item 50]\ndate={time.strftime("%Y-%m-%d",soon)}\ntime={time.strftime("%H:%M",soon)}\ntitle=QA Standup\nremind=5\n');reload()
+    waitfor(lambda:notified('QA Standup'),'agenda reminder notification missing',tries=150)
+    waitfor(lambda:'reminded=true' in agenda.read_text(),'reminder not marked as fired')
+
+    # Session buttons live in the Action Center footer.
+    run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.4)
+    press('Action Center','Power')
+    for name in ['Sleep','Log Out','Restart','Shut Down','Close power options']:item('Action Center',name)
+    shot('21-power-options')
+    press('Action Center','Restart');gone('^Action Center$')
+    waitfor(lambda:commands('LOGOUT --action reboot'),'Restart did not run sde-logout --action reboot')
+    run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.4)
+    assert 'Restart' not in layout('Action Center'),'power options stayed open'
+    press('Action Center','Lock Screen');gone('^Action Center$')
+    waitfor(lambda:commands('LOGOUT --action lock'),'Lock Screen did not run sde-logout --action lock')
+    run('sde-panel','--action-center');ac=find('^Action Center$');time.sleep(.4)
+    press('Action Center','SDE Settings');gone('^Action Center$')
+    waitfor(lambda:commands('SETTINGS \n'),'SDE Settings button did not start sde-settings')
+
+    # Internet connectivity from NetworkManager: limited, captive portal, full.
+    mode('nm-limited');fl=open_section('network','Network')
+    item('Network','Connected, no internet',active=False)
+    waitfor(lambda:log_has('NM CheckConnectivity'),'opening the Network flyout did not check connectivity')
+    shot('22-network-no-internet')
+    press('Network','Troubleshoot')
+    waitfor(lambda:commands('NM connection up id QA Wired LAN'),'Troubleshoot did not reconnect')
+    escape('Network');shot('22-panel-no-internet')
+    mode('nm-portal');fl=open_section('network','Network')
+    item('Network','Sign-in required',active=False);shot('23-network-portal')
+    press('Network','Open sign-in page');gone('^Network$')
+    waitfor(lambda:commands('OPEN http://nmcheck.example.test/'),'portal sign-in page not opened')
+    mode('nm-full');fl=open_section('network','Network')
+    item('Network','Connected · Internet access',active=False);escape('Network')
 
     # Each status icon opens its own flyout above it; another icon switches
     # with one click, the same icon closes it.
@@ -304,7 +410,7 @@ try:
     fl=open_section('bluetooth','Bluetooth');shot('15-services-disconnected');escape('Bluetooth')
     run('sde-panel','--action-center');find('^Action Center$');escape('Action Center')
     assert panel_proc.poll() is None,'panel exited'
-    print('PANEL: Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
+    print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
 finally:
     for proc in reversed(processes):
         if proc.poll() is None:proc.terminate()

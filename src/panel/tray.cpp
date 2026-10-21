@@ -75,6 +75,14 @@ int Tray::grid_height(int columns) const {
 void Tray::hide() {
   if (host_) XUnmapWindow(fl_display, host_);
 }
+void Tray::park() {
+  if (!host_) return;
+  XUnmapWindow(fl_display, host_);
+  if (parent_ != panel_) {
+    XReparentWindow(fl_display, host_, panel_, 0, 0);
+    parent_ = panel_;
+  }
+}
 void Tray::place(int x, int height) {
   place_in(panel_, x, (height - icon_size_ - 2 * spacing_) / 2, std::max(1, count()));
 }

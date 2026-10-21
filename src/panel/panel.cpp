@@ -786,7 +786,7 @@ void Panel::relayout() {
   tray_x_ = right - tw;
   if (tray_ && !moved) {
     if (compact_status_ || !keep_xembed)
-      tray_->hide();
+      tray_->park();
     else {
       tray_->set_background(theme_.surface.fl() >> 8);
       tray_->place(tray_x_, H);

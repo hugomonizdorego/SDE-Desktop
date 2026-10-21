@@ -23,6 +23,9 @@ class Tray {
   void place_in(Window parent, int x, int y, int columns, int clip_top = 0,
                 int clip_height = 100000);
   void hide();
+  // Hidden inside the panel window (behind the overflow button): the host
+  // must not stay in a popup that is about to be destroyed.
+  void park();
   void set_background(unsigned long pixel);
   bool handle(const XEvent &e, bool &changed);
   // Lower-case WM_CLASS names whose icons are not docked because an SDE
