@@ -546,18 +546,18 @@ void SidePanel::draw() {
         text_font(t.font_size);
         draw_text("×", res_w_->x() + res_w_->w(), res_w_->y(), S(24), res_w_->h(), t.text_dim, 1);
         text_font(t.font_size - S(1));
-        draw_text(_("Width and height in pixels; the proportions are kept."), px, res_apply_->y() + S(38), pw,
+        draw_text(_("Size in pixels; proportions are kept."), px, res_apply_->y() + S(38), pw,
                   S(18), t.text_dim);
       } else {
         draw_text(_("ASPECT RATIO"), px, y() + S(64), pw, S(18), t.accent_text);
         text_font(t.font_size - S(1));
-        draw_text(_("Drag the corners or the edges; drag inside to move."), px,
+        draw_text(_("Drag the corners, edges or the frame."), px,
                   crop_buttons_[5]->y() + S(44), pw, S(18), t.text_dim);
       }
     }
     if (!app_->modified()) {
       text_font(t.font_size - S(1));
-      draw_text(_("Edits are previewed; the file changes only when you save."), px, y() + h() - S(88), pw, S(18),
+      draw_text(_("The file changes only when you save."), px, y() + h() - S(88), pw, S(18),
                 t.text_dim);
     } else if (save_->active()) {
       text_font(t.font_size - S(1));

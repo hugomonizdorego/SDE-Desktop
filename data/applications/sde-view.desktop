@@ -14,4 +14,9 @@ OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Sdeview
 X-SDE-Upstream=https://github.com/mate-desktop/eom
-MimeType=image/png;image/jpeg;image/gif;image/webp;image/tiff;image/bmp;image/svg+xml;
+MimeType=image/png;image/jpeg;image/pjpeg;image/gif;image/webp;image/tiff;image/bmp;image/x-bmp;image/svg+xml;image/svg+xml-compressed;image/avif;image/heic;image/heif;image/jxl;
+Actions=Slideshow;
+
+[Desktop Action Slideshow]
+Name=Slideshow
+Exec=sde-view --slideshow %U

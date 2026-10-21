@@ -46,4 +46,11 @@ void show_about(const AboutInfo &info);
 void show_shortcuts(const std::string &title,
                     const std::vector<std::pair<std::string, std::string>> &rows);
 
+// Modal question in the SDE theme. |buttons| run left to right; the first
+// is the cancel choice (also Escape), the last the default one. With
+// |quality|, a 30-100 quality slider is shown and its value returned.
+// Returns the index of the chosen button.
+int ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
+        int *quality = nullptr);
+
 }  // namespace gallery

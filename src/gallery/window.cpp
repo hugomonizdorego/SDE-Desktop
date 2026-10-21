@@ -528,9 +528,9 @@ void GalleryWindow::import_dialog() {
       }
   }
   if (devices_.empty()) {
-    fl_message_title(_("Import from Device"));
-    fl_message("%s", _("No camera, SD card or USB drive is connected.\n\n"
-                       "Connect one, and it appears under Devices in the sidebar."));
+    ask(_("Import from Device"), _("No camera, SD card or USB drive is connected.\n"
+                                   "Connect one, and it appears under Devices in the sidebar."),
+        {_("Close")});
     return;
   }
   if (devices_.size() == 1) {
@@ -575,10 +575,10 @@ void GalleryWindow::import_from(const MountEntry &device, const std::vector<Phot
     toast(format(_("All photos on “%s” were imported already"), label.c_str()));
     return;
   }
-  std::string question = format(_("Copy %zu photos from “%s” to %s?"), todo, label.c_str(), dest.c_str());
+  std::string shown = starts_with(dest, home_dir() + "/") ? "~" + dest.substr(home_dir().size()) : dest;
+  std::string question = format(_("Copy %zu photos from “%s” to %s?"), todo, label.c_str(), shown.c_str());
   if (plan.size() > todo) question += "\n" + format(_("%zu photos were imported before and are skipped."), plan.size() - todo);
-  fl_message_title(_("Import Photos"));
-  if (fl_choice("%s", _("Cancel"), _("Import"), nullptr, question.c_str()) != 1) return;
+  if (ask(_("Import Photos"), question, {_("Cancel"), _("Import")}) != 1) return;
   importing_ = true;
   toast(format(_("Importing %zu photos…"), todo));
   // Copy on a worker thread; report back through the event loop.
@@ -1095,8 +1095,7 @@ void GalleryWindow::trash(const std::vector<std::string> &paths) {
   std::string question =
       paths.size() == 1 ? format(_("Move “%s” to the Trash?"), basename_of(paths[0]).c_str())
                         : format(_("Move %zu photos to the Trash?"), paths.size());
-  fl_message_title(_("Move to Trash"));
-  if (fl_choice("%s", _("Cancel"), _("Move to Trash"), nullptr, question.c_str()) != 1) return;
+  if (ask(_("Move to Trash"), question, {_("Cancel"), _("Move to Trash")}) != 1) return;
   size_t removed = 0;
   std::string error;
   for (const auto &p : paths) {

@@ -10,6 +10,7 @@
 #include "buffered_window.h"
 #include "i18n.h"
 #include "theme.h"
+#include "util.h"
 #include "widgets.h"
 
 using namespace sde;
@@ -266,5 +267,98 @@ void show_shortcuts(const std::string &title,
   run_modal(win, parent);
   Fl::delete_widget(win);
 }
+
+int ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
+        int *quality) {
+  const Theme &t = active_theme();
+  int W = S(460);
+  // Wrap the message (paths break at slashes).
+  text_font(t.font_size);
+  std::vector<std::string> lines;
+  for (const auto &para : split(message, '\n', true)) {
+    std::string line;
+    size_t i = 0;
+    while (i < para.size()) {
+      size_t j = para.find_first_of(" /", i);
+      std::string word = para.substr(i, j == std::string::npos ? std::string::npos : j - i + 1);
+      i = j == std::string::npos ? para.size() : j + 1;
+      if (!line.empty() && text_width(line + word) > W - S(48)) {
+        lines.push_back(line);
+        line.clear();
+      }
+      line += word;
+    }
+    lines.push_back(line);
+  }
+  int H = S(126) + S(22) * int(lines.size()) + (quality ? S(64) : 0);
+  struct Win : BufferedWindow {
+    std::vector<std::string> lines;
+    sde::Slider *slider = nullptr;
+    int result = 0;
+    Win(int w, int h, const char *l) : BufferedWindow(w, h, l) {}
+    void draw() override {
+      const Theme &t = active_theme();
+      {
+        Painter p(w(), h());
+        p.fill_rect(0, 0, w(), h(), t.surface);
+      }
+      text_font(t.font_size + S(1), true);
+      int y = S(22);
+      draw_text(label() ? label() : "", S(24), y, w() - S(48), S(24), t.text);
+      y += S(34);
+      text_font(t.font_size);
+      for (const auto &line : lines) {
+        draw_text(line, S(24), y, w() - S(48), S(22), t.text_dim);
+        y += S(22);
+      }
+      if (slider) {
+        text_font(t.font_size - S(1));
+        draw_text(_("Quality"), S(24), slider->y() - S(22), S(200), S(20), t.text);
+        draw_text(format("%d", int(slider->value())), w() - S(124), slider->y() - S(22), S(100), S(20), t.text_dim, 2);
+      }
+      draw_children();
+    }
+    int handle(int e) override {
+      if ((e == FL_KEYBOARD || e == FL_SHORTCUT) && Fl::event_key() == FL_Escape) {
+        result = 0;
+        hide();
+        return 1;
+      }
+      return BufferedWindow::handle(e);
+    }
+  };
+  Win *win = new Win(W, H, title.c_str());
+  win->lines = lines;
+  win->begin();
+  if (quality) {
+    win->slider = new sde::Slider(S(24), H - S(110), W - S(48), S(26));
+    win->slider->bounds(30, 100);
+    win->slider->step(1);
+    win->slider->value(*quality);
+    win->slider->callback([](Fl_Widget *w, void *) { w->window()->redraw(); });
+  }
+  int bw = S(124), x = W - S(24) - bw * int(buttons.size()) - S(8) * int(buttons.size() - 1);
+  for (size_t i = 0; i < buttons.size(); ++i) {
+    auto *b = new FlatButton(x, H - S(52), bw, S(34), buttons[i], i + 1 == buttons.size());
+    b->callback([](Fl_Widget *w, void *data) {
+      auto *win = static_cast<Win *>(w->window());
+      win->result = int(reinterpret_cast<long>(data));
+      win->hide();
+    }, reinterpret_cast<void *>(long(i)));
+    x += bw + S(8);
+  }
+  win->end();
+  win->color(t.surface.fl());
+  if (Fl_Window *parent = Fl::first_window())
+    win->position(parent->x() + (parent->w() - W) / 2, parent->y() + (parent->h() - H) / 3);
+  win->set_modal();
+  win->show();
+  while (win->shown()) Fl::wait();
+  int r = win->result;
+  if (quality && win->slider) *quality = int(win->slider->value());
+  Fl::delete_widget(win);
+  return r;
+}
+
 
 }  // namespace gallery

@@ -3,33 +3,72 @@
 sde-gallery \- browse the photo library on the SDE desktop
 .SH SYNOPSIS
 .B sde-gallery
-[--version | --help]
+[\-\-select FILE] [\-\-version | \-\-help]
 .SH DESCRIPTION
 Gallery shows the pictures in your XDG Pictures folder (see
 .BR xdg-user-dir (1))
 and in folders you add, grouped by month of their modification time.
 The sidebar offers All Photos, Favorites, Recent (the last 30 days),
-Screenshots (the Screenshots folder inside Pictures) and the folder list.
-JPEG, PNG, GIF, BMP and SVG files are shown; WebP and TIFF are shown when
-the matching gdk-pixbuf loaders are installed.
+Screenshots (the Screenshots folder inside Pictures), the folder list and,
+under
+.BR Devices ,
+the cameras, SD cards, USB drives and other removable media mounted below
+.I /media
+or
+.IR /run/media .
+The device list follows
+.I /proc/self/mountinfo
+and changes as media are connected and removed.
+A device can be browsed in place, imported, or ejected (the button shown
+when the pointer is over it, or its context menu).
+JPEG, PNG, GIF, BMP and SVG files are shown; WebP, TIFF, AVIF, HEIF and
+JPEG XL are shown when the matching gdk-pixbuf loaders are installed.
+Photos are shown upright following their EXIF orientation.
 .PP
 Thumbnails are made in the background and shared with other applications
 through the freedesktop.org thumbnail cache in
 .IR ~/.cache/thumbnails/normal
 and
 .IR ~/.cache/thumbnails/large .
+.SS Menus
+.TP
+.B File
+Open File (opens it in Photo), Open Folder (browse any folder without
+adding it), Import from Device, Add Folder to Library, Refresh, Quit.
+.TP
+.B Edit
+Select All, Select None, Add to Favorites, Copy Path, Move to Trash, Open
+in Photo, Set as Wallpaper, Show in Files.
+.TP
+.B View
+Sort order, thumbnail size, Show Sidebar, Open Photos in Photo, Full
+Screen.
+.TP
+.B Help
+Keyboard Shortcuts, About Gallery.
+.SS Import
+Import from Device copies the photos of a device (or the selected ones)
+to
+.IR ~/Pictures/Imported/YYYY-MM-DD/ ,
+the date being the day each photo was taken by the camera (its
+modification time). Photos imported before (same name and size) are
+skipped; other name clashes get a number, as in
+.IR "DSC_0001 (2).JPG" .
+.SS Photo
+Double-click a photo or press Enter to open the built-in viewer, or, with
+.B View > Open Photos in Photo
+set, Photo
+.RB ( sde-view (1)).
+Ctrl+E always opens the photo in Photo. Gallery starts Photo with
+.BI \-\-album= ID
+and the current sort order, so that Photo steps through the same photos in
+the same order (search results are passed as a list). Edits, favorites,
+deletions and new files made in Photo appear in Gallery at once; Photo's
+.B Show in Gallery
+selects the photo in the running Gallery.
 .PP
-Double-click a photo or press Enter to open the viewer. It offers zoom,
-fit, view rotation, a slideshow and a details panel, and these actions:
-Favorite, Edit in Photo
-.RB ( sde-view ),
-Open With Other Application
-.RB ( xdg-open ),
-Set as Wallpaper, Show in Files
-.RB ( liria ),
-Copy Path and Move to Trash
-.RB ( "gio trash" ).
-Files are never deleted permanently.
+Files are never deleted permanently: Move to Trash uses the
+freedesktop.org Trash through GIO.
 .SH KEYS
 .TP
 .B Arrows, Page Up/Down, Home, End
@@ -39,25 +78,34 @@ Move between photos. Shift extends the selection.
 Select photos, select all, clear the selection.
 .TP
 .B Enter
-Open the viewer.
+Open the photo.
 .TP
 .B + \- , Ctrl+mouse wheel
 Change the thumbnail size (zoom in the viewer).
 .TP
-.B Ctrl+F, Ctrl+O, F5
-Search, add a folder, reload the library.
+.B Ctrl+F, Ctrl+O, Ctrl+Shift+O, Ctrl+I, F5
+Search, open a photo, open a folder, import from a device, reload.
 .TP
-.B Ctrl+D, Ctrl+C, Delete
-Toggle favorite, copy paths, move to the Trash.
+.B Ctrl+D, Ctrl+C, Ctrl+E, Delete
+Toggle favorite, copy paths, open in Photo, move to the Trash.
+.TP
+.B F1, F9, F11, Ctrl+Q
+Keyboard shortcuts, sidebar, full screen, quit.
 .TP
 .B Viewer: 0, 1, R, I, F5, F11, Esc
 Fit, actual size, rotate, details, slideshow, full screen, back.
 .SH OPTIONS
 .TP
-.B --version
+.BI \-\-select " FILE"
+Show and select
+.IR FILE .
+When Gallery is already running, the running window does it and is
+raised; only one Gallery runs per display.
+.TP
+.B \-\-version
 Print the version and exit.
 .TP
-.B --help
+.B \-\-help
 Print a short usage summary.
 .SH FILES
 .TP
@@ -68,9 +116,11 @@ keeps
 .BR folders= ,
 .BR favorites=
 (lists separated by semicolons),
-.B thumbnail_size=
+.BR thumbnail_size= ,
+.BR sort= ,
+.B sidebar=
 and
-.BR sort= .
+.BR open_in_photo= .
 Set as Wallpaper writes
 .B wallpaper=
 in
@@ -80,3 +130,5 @@ in
 .BR liria (1),
 .BR sde-settings (1),
 .BR xdg-user-dir (1)
+.SH AUTHORS
+Written from scratch by the DebION Dev-Team. GPL-3.0-or-later.

@@ -38,6 +38,8 @@ using gallery::Photo;
 
 namespace photo {
 
+using gallery::ask;
+
 PhotoWindow *PhotoWindow::instance_ = nullptr;
 
 namespace {
@@ -83,82 +85,6 @@ struct RenderJob {
   uint64_t gen;
   cairo_surface_t *result;
 };
-
-// A modal question with up to three buttons and an optional quality slider.
-// Returns the button index (0 = first/cancel) and updates |quality|.
-int ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
-        int *quality = nullptr) {
-  const Theme &t = active_theme();
-  int W = S(460), H = S(170) + (quality ? S(64) : 0);
-  struct Win : BufferedWindow {
-    std::string msg;
-    sde::Slider *slider = nullptr;
-    int result = 0;
-    Win(int w, int h, const char *l) : BufferedWindow(w, h, l) {}
-    void draw() override {
-      const Theme &t = active_theme();
-      {
-        Painter p(w(), h());
-        p.fill_rect(0, 0, w(), h(), t.surface);
-      }
-      text_font(t.font_size + S(1), true);
-      int y = S(22);
-      draw_text(label() ? label() : "", S(24), y, w() - S(48), S(24), t.text);
-      y += S(34);
-      text_font(t.font_size);
-      std::string line;
-      for (const auto &part : split(msg, '\n', true)) {
-        draw_text(part, S(24), y, w() - S(48), S(22), t.text_dim);
-        y += S(22);
-      }
-      if (slider) {
-        text_font(t.font_size - S(1));
-        draw_text(_("Quality"), S(24), slider->y() - S(22), S(200), S(20), t.text);
-        draw_text(format("%d", int(slider->value())), w() - S(124), slider->y() - S(22), S(100), S(20), t.text_dim, 2);
-      }
-      draw_children();
-    }
-    int handle(int e) override {
-      if ((e == FL_KEYBOARD || e == FL_SHORTCUT) && Fl::event_key() == FL_Escape) {
-        result = 0;
-        hide();
-        return 1;
-      }
-      return BufferedWindow::handle(e);
-    }
-  };
-  Win *win = new Win(W, H, title.c_str());
-  win->msg = message;
-  win->begin();
-  if (quality) {
-    win->slider = new sde::Slider(S(24), H - S(110), W - S(48), S(26));
-    win->slider->bounds(30, 100);
-    win->slider->step(1);
-    win->slider->value(*quality);
-    win->slider->callback([](Fl_Widget *w, void *) { w->window()->redraw(); });
-  }
-  int bw = S(124), x = W - S(24) - bw * int(buttons.size()) - S(8) * int(buttons.size() - 1);
-  for (size_t i = 0; i < buttons.size(); ++i) {
-    auto *b = new FlatButton(x, H - S(52), bw, S(34), buttons[i], i + 1 == buttons.size());
-    b->callback([](Fl_Widget *w, void *data) {
-      auto *win = static_cast<Win *>(w->window());
-      win->result = int(reinterpret_cast<long>(data));
-      win->hide();
-    }, reinterpret_cast<void *>(long(i)));
-    x += bw + S(8);
-  }
-  win->end();
-  win->color(t.surface.fl());
-  if (Fl_Window *parent = Fl::first_window())
-    win->position(parent->x() + (parent->w() - W) / 2, parent->y() + (parent->h() - H) / 3);
-  win->set_modal();
-  win->show();
-  while (win->shown()) Fl::wait();
-  int r = win->result;
-  if (quality && win->slider) *quality = int(win->slider->value());
-  Fl::delete_widget(win);
-  return r;
-}
 
 }  // namespace
 
@@ -903,8 +829,7 @@ bool PhotoWindow::save(bool ask_first) {
   fl_cursor(FL_CURSOR_DEFAULT);
   if (out) cairo_surface_destroy(out);
   if (r == SaveResult::Failed) {
-    fl_message_title(_("Save Photo"));
-    fl_alert("%s", format(_("“%s” could not be saved:\n%s"), p->name.c_str(), err.c_str()).c_str());
+    ask(_("Save Photo"), format(_("“%s” could not be saved:\n%s"), p->name.c_str(), err.c_str()), {_("Close")});
     return false;
   }
   // Reload: the file now holds the edits.
@@ -963,8 +888,7 @@ bool PhotoWindow::save_as() {
   SaveResult r = save_edits(p->path, edits(), out, dest, quality, &err);
   if (out) cairo_surface_destroy(out);
   if (r == SaveResult::Failed) {
-    fl_message_title(_("Save Photo As"));
-    fl_alert("%s", format(_("The photo could not be saved:\n%s"), err.c_str()).c_str());
+    ask(_("Save Photo As"), format(_("The photo could not be saved:\n%s"), err.c_str()), {_("Close")});
     return false;
   }
   notify_gallery(dest == p->path ? "changed" : "added", dest);
@@ -1026,8 +950,7 @@ void PhotoWindow::trash() {
     return;
   std::string err;
   if (!gallery::move_to_trash(path, &err)) {
-    fl_message_title(_("Move to Trash"));
-    fl_alert("%s", format(_("“%s” could not be moved to the Trash:\n%s"), name.c_str(), err.c_str()).c_str());
+    ask(_("Move to Trash"), format(_("“%s” could not be moved to the Trash:\n%s"), name.c_str(), err.c_str()), {_("Close")});
     return;
   }
   notify_gallery("removed", path);
