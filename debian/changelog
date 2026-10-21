@@ -1,3 +1,24 @@
+sde (0.1.0~alpha15) unstable; urgency=medium
+
+  * New native applications written from scratch by the DebION Dev-Team
+    replace the MATE forks: Niny (text editor), Xanara (PDF viewer and
+    editor), Taca (archive manager), Photo and SDE System Monitor.
+  * Gallery: menus, storage devices (USB/SD) with import, and two-way
+    integration with Photo.
+  * Start Menu: categories fit without scrolling, wheel scrolling fixed,
+    slimmer, 12 Favorites plus Recently used (frequency and recency).
+  * Settings: Computer desktop icon, wallpaper gallery from
+    /usr/share/backgrounds, graphics card details in About, Sound, Network
+    and Bluetooth pages opened directly from the panel.
+  * Liria: Clear recent files, reliable copies to USB drives with a final
+    flush, cross-application copy/paste.
+  * Performance: partial repaints, server-side wallpaper and icons, lite
+    compositor profile for VMs and software rendering.
+  * Network: NetworkManager connectivity check and debion-network-check in
+    debion-desktop-base.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Wed, 21 Oct 2026 18:00:00 +0900
+
 sde (0.1.0~alpha14) unstable; urgency=medium
 
   * Gallery is back: sde-gallery, a new photo library written by the DebION

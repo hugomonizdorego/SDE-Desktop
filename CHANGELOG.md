@@ -1,3 +1,12 @@
+# Alpha15 patch · 2026-10-21 — native apps, Menu, Panel, Settings, Liria, performance
+
+- Niny, Xanara, Taca, Photo and SDE System Monitor are new native apps by
+  the DebION Dev-Team; the MATE forks they replace are retired.
+- Gallery menus, devices and Photo integration; Start Menu fixes; Settings
+  wallpaper gallery, Computer icon and GPU details; Liria USB copy and
+  clipboard fixes; partial repaints and a lite compositor profile.
+- See docs/ALPHA15.md.
+
 # Alpha14 patch · 2026-10-20 — Gallery, flyouts, new Menu, Action Center, Update, Liria
 
 - Gallery is back as a new app (sde-gallery) by the DebION Dev-Team.
