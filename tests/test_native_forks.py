@@ -63,16 +63,13 @@ const char *build = PACKAGE_VERSION;
     def test_gtk_geometry_api_is_never_rebranded(self):
         self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
                          'gtk_window_set_geometry_hints(sdeview_window, geometry);')
-        self.assertEqual(forks.brand('-DEOM_DATA_DIR=path mate_power_preferences_SOURCES'),
-                         '-DSDEVIEW_DATA_DIR=path sde_power_preferences_SOURCES')
+        self.assertEqual(forks.brand('-DEOM_DATA_DIR=path'), '-DSDEVIEW_DATA_DIR=path')
 
     def test_copyright_licenses_and_source_links_are_preserved(self):
         source = '/* Copyright (C) 2012 Pluma MATE authors. GPLv2+ */\nconst char *url = "https://github.com/mate-desktop/pluma";\n'
         self.assertEqual(forks.brand(source), source)
 
-    def test_app_settings_and_screen_lock_contracts_are_independent(self):
-        self.assertEqual(forks.brand('"org.mate.ScreenSaver" "org.mate.power-manager"'),
-                         '"org.debion.ScreenSaver" "org.debion.power-manager"')
+    def test_app_settings_contracts_are_independent(self):
         self.assertEqual(forks.brand('"org.mate.session" "org.mate.SessionManager"'),
                          '"org.debion.session" "org.mate.SessionManager"')
         self.assertEqual(forks.brand('"org.mate.Engrampa" "org.mate.SystemMonitor" "org.mate.media-handling"'),

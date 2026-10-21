@@ -48,7 +48,6 @@ Build-Depends: debhelper-compat (= 13),
                libenchant-2-dev,
                iso-codes,
                libmate-desktop-dev (>= 1.27.1),
-               libmate-menu-dev,
                libpeas-dev,
                libgtop2-dev,
                libsystemd-dev,
@@ -57,7 +56,6 @@ Build-Depends: debhelper-compat (= 13),
                libxml2-utils,
                libexif-dev,
                libexempi-dev,
-               libsecret-1-dev,
                libpoppler-glib-dev,
                libsynctex-dev,
                libspectre-dev,
@@ -65,19 +63,14 @@ Build-Depends: debhelper-compat (= 13),
                libtiff-dev,
                libarchive-dev,
                libjson-glib-dev,
-               libcanberra-gtk3-dev,
-               libdbus-glib-1-dev,
                libnotify-dev,
-               libupower-glib-dev,
                libpam0g-dev,
                libxss-dev,
                libxrandr-dev,
                libxi-dev,
-               libxxf86vm-dev,
                libsm-dev,
                libice-dev,
                liblcms2-dev,
-               libxklavier-dev,
                chrpath,
                libgtk-4-dev (>= 4.8),
                libjavascriptcoregtk-4.1-dev,
@@ -179,6 +172,10 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
   * sde-display-settings - native monitor profiles, resolution and scale
   * sde-run      - run command dialog (Alt+F2)
   * sde-logout   - log out, lock, suspend, restart and shut down
+  * sde-power    - power manager: battery warnings, lid and power button,
+                   idle dimming and suspend, brightness keys with an OSD
+  * sde-lock     - screen locker (PAM service sde-lock) with
+                   org.freedesktop.ScreenSaver idle inhibitors
   * sde-autostart - Rust XDG autostart launcher with a dry-run diagnostic
  .
  Select "SDE-Desktop" in your display manager to start it. This is an alpha
@@ -190,8 +187,8 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  .
  Applications written from scratch by the DebION Dev-Team: Niny (text
  editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
- Gallery and SDE System Monitor. Source-built SDE forks: Liria (Caja),
- SDE Power Manager and SDE Screen Lock.
+ Gallery, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
+ SDE fork: Liria (Caja).
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
  SDE Update uses an attributed mintupdate model and Debian PackageKit.

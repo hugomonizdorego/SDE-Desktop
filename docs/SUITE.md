@@ -15,8 +15,8 @@ they are not duplicated inside SDE.
 | Taca | `taca` | native SDE application (DebION Dev-Team) |
 | Photo | `sde-view` | native SDE application (DebION Dev-Team) |
 | SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
-| SDE Power Manager | `sde-power-manager`, `sde-power-preferences`, `sde-power-statistics` | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) |
-| SDE Screen Lock | `sde-screensaver`, `sde-screensaver-command`, `sde-screensaver-preferences` | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) |
+| SDE Power | `sde-power` (Settings > Power) | native SDE application (DebION Dev-Team, alpha16) |
+| SDE Screen Lock | `sde-lock` (Settings > Lock Screen) | native SDE application (DebION Dev-Team, alpha16) |
 | Calculator | `calculator` | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) engine, native GTK4 frontend |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
 | SDE Update | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model and Debian PackageKit |
@@ -36,11 +36,28 @@ interfaces remain external system interfaces. Taca's file-manager extension
 builds against the bundled Liria extension API.
 
 Liria defaults to `--no-desktop`, including direct invocation: SDE retains its
-wallpaper and desktop icons. Power and screen lock have SDE-only autostart entries.
-The locker uses Debian's common PAM policy and the independent
-`org.debion.session` idle-delay setting; it does not require MATE Session Manager.
-Actual locking, suspend, lid and
-battery behavior require testing in a real DebION login session.
+wallpaper and desktop icons.
+
+## SDE Power and SDE Screen Lock (alpha16)
+
+The former power-manager and screen-saver forks were replaced in alpha16 by
+programs written from scratch (`src/power`, `src/lock`), both started by
+SDE-only XDG autostart entries:
+
+* `sde-power --daemon`: UPower battery warnings and the critical action,
+  logind lid/power-button inhibitors, idle dim/blank/suspend (separately on
+  battery and AC), brightness keys with an OSD, power profiles. D-Bus
+  `org.debion.SDE.Power`. Settings in sde.conf `[power]`.
+* `sde-lock --daemon`: `org.freedesktop.ScreenSaver` (Lock, GetActive,
+  SetActive, Inhibit/UnInhibit, ...) and `org.debion.SDE.ScreenLock`, idle
+  lock, lock before suspend (logind delay inhibitor), logind Lock/Unlock.
+  The lock screen is a separate process watched by the daemon; PAM service
+  `/etc/pam.d/sde-lock` (`@include common-auth`, `common-account`).
+  Settings in sde.conf `[lock]`.
+
+`sde-power-preferences`, `sde-screensaver-preferences` (open the Settings
+pages) and `sde-screensaver-command` (forwards `--lock`, `--query`, `--poke`
+to `sde-lock`) remain as small compatibility scripts.
 
 New GTK processes follow SDE light/dark settings, respecting an existing
 `GTK_THEME` or the system-theme option. SDE-specific MIME defaults preserve user

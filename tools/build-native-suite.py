@@ -102,12 +102,6 @@ def main():
         run(configure, obj)
         run(["make", "-j" + str(args.jobs)], obj)
         run(["make", "DESTDIR=" + str(args.stage), "install"], obj)
-        if app["id"] == "sde-screensaver":
-            # Upstream's install hook probes a hardcoded host include path
-            # and misses this file with multiarch PAM or out-of-tree builds.
-            pam = args.stage / args.sysconfdir.lstrip("/") / "pam.d/sde-screensaver"
-            pam.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source / "data/sde-screensaver", pam)
         docs = args.stage / args.prefix.lstrip("/") / "share/doc/sde/upstream" / app["upstream"]
         docs.mkdir(parents=True, exist_ok=True)
         for name in ["COPYING", "COPYING.LIB", "COPYRIGHT", "AUTHORS", "TRADEMARK_NOTICE", "SDE-UPSTREAM-NOTICE", "SDE-COPYRIGHT-HEADERS"]:
@@ -125,8 +119,7 @@ def main():
     for relative in [args.prefix.lstrip("/") + "/share/applications", args.sysconfdir.lstrip("/") + "/xdg/autostart"]:
         path = args.stage / relative
         if path.exists():
-            # Keep screensaver theme descriptors in applications/screensavers;
-            # only top-level launchers/autostarts are replaced by SDE entries.
+            # Only top-level launchers/autostarts are replaced by SDE entries.
             for desktop in path.glob("*.desktop"):
                 desktop.unlink()
     # Some upstream install hooks generate indexes for DESTDIR alone. Those

@@ -15,8 +15,8 @@ sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
 
 `debian/control` is the authoritative build dependency list. The scripts install
 compilers, Rust, FLTK, GTK3, GtkSourceView4, GTKmm, document backends and native
-build tools. They do not install Pluma, Caja, Atril, Engrampa, EOM or the original
-MATE monitor, power-manager or screensaver applications.
+build tools. They do not install Caja (Liria's upstream) or any other upstream
+desktop application.
 
 `build-deb.sh` downloads and verifies pinned source before compilation, builds in
 a temporary source copy with `dpkg-buildpackage -us -uc -b`, runs the tests and

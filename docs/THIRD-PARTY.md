@@ -57,8 +57,8 @@ and submodules are published with the binaries.
 | Taca | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | Photo (SDE View) | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | SDE System Monitor | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| SDE Power Manager | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) | GNOME Power Manager and MATE contributors | `sde/upstream/mate-power-manager` |
-| SDE Screen Lock | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) | GNOME Screensaver and MATE contributors | `sde/upstream/mate-screensaver` |
+| SDE Power | written by the DebION Dev-Team (alpha16) | DebION Dev-Team | `sde` |
+| SDE Screen Lock | written by the DebION Dev-Team (alpha16) | DebION Dev-Team | `sde` |
 
 Directories in the last column are relative to `/usr/share/doc`; each contains
 `copyright` and the retained license files. These projects principally use

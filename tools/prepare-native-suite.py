@@ -48,23 +48,17 @@ def brand(text):
         return protect(match)
     text = re.sub(token, mask, text)
     text = re.sub(r"(?m)^\s*(?:\#(?!\s*(?:include|define|undef|if|ifdef|ifndef|elif|else|endif|error|warning|line|pragma)\b)|//).*?$", protect, text)
-    for old, new in [('org.mate.pluma', 'org.debion.niny'), ('org.mate.Pluma', 'org.debion.Niny'), ('org.mate.caja', 'org.debion.liria'), ('org.mate.Caja', 'org.debion.Liria'), ('org.mate.atril', 'org.debion.xanara'), ('org.mate.Atril', 'org.debion.Xanara'), ('org.mate.engrampa', 'org.debion.taca'), ('org.mate.eom', 'org.debion.sdeview'), ('org.mate.power-manager', 'org.debion.power-manager'), ('org.mate.system-monitor', 'org.debion.system-monitor'), ('org.mate.screensaver', 'org.debion.screensaver'), ('org.mate.PowerManager', 'org.debion.PowerManager'), ('org.mate.ScreenSaver', 'org.debion.ScreenSaver'), ('/org/mate/pluma', '/org/debion/niny'), ('/org/mate/caja', '/org/debion/liria'), ('/org/mate/atril', '/org/debion/xanara'), ('/org/mate/engrampa', '/org/debion/taca'), ('/org/mate/eom', '/org/debion/sdeview'), ('/org/mate/power-manager', '/org/debion/power-manager'), ('/org/mate/system-monitor', '/org/debion/system-monitor'), ('/org/mate/screensaver', '/org/debion/screensaver'), ('/org/mate/ScreenSaver', '/org/debion/ScreenSaver'), ('MATE System Monitor', 'SDE System Monitor'), ('MATE Power Manager', 'SDE Power Manager'), ('MATE Screensaver', 'SDE Screen Lock'), ('MATE ScreenSaver', 'SDE Screen Lock'), ('Eye of MATE', 'Photo'), ('Eye of Mate', 'Photo'), ('SDE View', 'Photo'), ('mate-system-monitor', 'sde-system-monitor'), ('mate_system_monitor', 'sde_system_monitor'), ('mate-power-manager', 'sde-power-manager'), ('mate_power_manager', 'sde_power_manager'), ('mate-power-preferences', 'sde-power-preferences'), ('mate-power-statistics', 'sde-power-statistics'), ('mate-screensaver', 'sde-screensaver'), ('mate_screensaver', 'sde_screensaver'), ('pluma', 'niny'), ('Pluma', 'Niny'), ('PLUMA', 'NINY'), ('caja', 'liria'), ('Caja', 'Liria'), ('CAJA', 'LIRIA'), ('atril', 'xanara'), ('Atril', 'Xanara'), ('ATRIL', 'XANARA'), ('engrampa', 'taca'), ('Engrampa', 'Taca'), ('ENGRAMPA', 'TACA'), ('libeom', 'libsdeview'), ('"System Monitor"', '"SDE System Monitor"'), ('"Power Preferences"', '"SDE Power Preferences"'), ('"Power Statistics"', '"SDE Power Statistics"')]:
+    for old, new in [('org.mate.pluma', 'org.debion.niny'), ('org.mate.Pluma', 'org.debion.Niny'), ('org.mate.caja', 'org.debion.liria'), ('org.mate.Caja', 'org.debion.Liria'), ('org.mate.atril', 'org.debion.xanara'), ('org.mate.Atril', 'org.debion.Xanara'), ('org.mate.engrampa', 'org.debion.taca'), ('org.mate.eom', 'org.debion.sdeview'), ('org.mate.system-monitor', 'org.debion.system-monitor'), ('/org/mate/pluma', '/org/debion/niny'), ('/org/mate/caja', '/org/debion/liria'), ('/org/mate/atril', '/org/debion/xanara'), ('/org/mate/engrampa', '/org/debion/taca'), ('/org/mate/eom', '/org/debion/sdeview'), ('/org/mate/system-monitor', '/org/debion/system-monitor'), ('MATE System Monitor', 'SDE System Monitor'), ('Eye of MATE', 'Photo'), ('Eye of Mate', 'Photo'), ('SDE View', 'Photo'), ('mate-system-monitor', 'sde-system-monitor'), ('mate_system_monitor', 'sde_system_monitor'), ('pluma', 'niny'), ('Pluma', 'Niny'), ('PLUMA', 'NINY'), ('caja', 'liria'), ('Caja', 'Liria'), ('CAJA', 'LIRIA'), ('atril', 'xanara'), ('Atril', 'Xanara'), ('ATRIL', 'XANARA'), ('engrampa', 'taca'), ('Engrampa', 'Taca'), ('ENGRAMPA', 'TACA'), ('libeom', 'libsdeview'), ('"System Monitor"', '"SDE System Monitor"')]:
         text = text.replace(old, new)
     # Do not corrupt GTK geometry APIs when changing the eom namespace.
     text = text.replace("-DEOM_", "-DSDEVIEW_")
-    text = text.replace("mate_power_preferences", "sde_power_preferences")
-    text = text.replace("mate_power_statistics", "sde_power_statistics")
-    text = text.replace("mate-power-", "sde-power-").replace("mate_power_", "sde_power_")
-    text = text.replace("org.mate.power", "org.debion.power")
     text = text.replace("org.mate.session", "org.debion.session")
     text = text.replace("org.mate.SystemMonitor", "org.debion.SystemMonitor")
     text = text.replace("org.mate.Taca", "org.debion.Taca").replace("/org/mate/Taca", "/org/debion/Taca")
     text = text.replace("org.mate.media-handling", "org.debion.media-handling")
     text = text.replace("/org/mate/desktop/media-handling", "/org/debion/desktop/media-handling")
     text = text.replace("org.mate.applications-terminal", "org.debion.applications-terminal")
-    for old, new in [("System Monitor", "SDE System Monitor"),
-                     ("Power Management Preferences", "SDE Power Preferences"),
-                     ("Screensaver Preferences", "SDE Screen Lock Preferences")]:
+    for old, new in [("System Monitor", "SDE System Monitor")]:
         text = text.replace(">" + old + "<", ">" + new + "<")
     for old, new in [("eom", "sdeview"), ("Eom", "Sdeview"), ("EOM", "SDEVIEW")]:
         text = re.sub(r"(?<![A-Za-z0-9])" + old + r"(?=$|[^a-z0-9])", new, text)
@@ -163,9 +157,6 @@ def prepare(record, cache, destination):
                 header.write_text("#define SDE_NATIVE_NAME " + json.dumps(record["name"]) + "\n#define SDE_NATIVE_VERSION " + json.dumps(record["build_version"]) + "\n#define SDE_NATIVE_LIRIA " + str(int(record["id"] == "liria")) + "\n" + helper)
                 s += '\n#include "sde-brand.h"\n'
             path.write_text(s)
-        if record["id"] == "sde-screensaver":
-            pam = staged / "data/sde-screensaver"
-            pam.write_text("# SDE screen lock: Debian PAM policy\n@include common-auth\n@include common-account\n@include common-session\n")
         # SDE alpha10 redesign: overlays and checked source edits.
         redesign.apply(record, staged)
         attribution = f"{record['name']} — SDE native fork\nUpstream: {record['url']}\nRevision: {record['commit']}\n\nOriginal copyright, author and license documents are retained.\nSDE changes: product/namespace/paths, GTK startup integration, the SDE redesign\n(suite/redesign.py and suite/overlays) and Debian packaging.\n\n"
