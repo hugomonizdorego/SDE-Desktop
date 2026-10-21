@@ -51,8 +51,10 @@ liria_version=subprocess.check_output([str(binary/'liria'),'--version'],text=Tru
 assert liria_version.startswith('Liria '),liria_version
 subprocess.run([sys.executable,str(Path(__file__).resolve().parent/'liria-branding-check.py'),
                 '--prefix',str(binary.parent)],check=True)
+# dh_compress gzips larger files under /usr/share/doc (not copyright).
+caja_docs=binary.parent/'share/doc/sde/upstream/caja'
 for doc in ['COPYING','AUTHORS','copyright']:
-    assert (binary.parent/'share/doc/sde/upstream/caja'/doc).is_file(),doc
+    assert (caja_docs/doc).is_file() or (caja_docs/(doc+'.gz')).is_file(),doc
 assert (binary.parent/'share/liria/help/index.html').is_file()
 
 # SDE Update 2 streams PackageKit transactions through pkcon; without pkcon
