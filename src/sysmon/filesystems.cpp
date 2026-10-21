@@ -46,7 +46,7 @@ class FsList : public Fl_Widget {
         p.fill_rounded(x() + S(18), ry + S(18), S(40), S(40), Sd(10), palette().disk.alpha(t.dark ? 0.22 : 0.14));
         draw_icon(p, Icon::Drive, x() + S(27), ry + S(27), S(22), palette().disk);
         double frac = f.total ? double(f.used) / double(f.total) : 0;
-        int bx = x() + S(76), bw = w() - S(76) - S(160), by = ry + rh - S(28);
+        int bx = x() + S(76), bw = w() - S(76) - S(160), by = ry + S(60);
         Color bar = frac > 0.9 ? palette().danger : frac > 0.75 ? palette().warning : t.accent;
         p.fill_rounded(bx, by, bw, S(8), Sd(4), t.surface_alt.mix(t.border, 0.5));
         p.fill_rounded(bx, by, std::max(Sd(8), bw * frac), S(8), Sd(4), bar);
@@ -110,7 +110,7 @@ class FsList : public Fl_Widget {
   }
 
  private:
-  int row_h() const { return S(76); }
+  int row_h() const { return S(82); }
   int hit(int ey) const {
     int stride = row_h() + S(12);
     int rel = ey - y() + offset_;

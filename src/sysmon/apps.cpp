@@ -24,7 +24,7 @@ void AppIndex::load_async() {
 }
 
 void AppIndex::load() {
-  // Include NoDisplay entries too: many helpers that own windows have one.
+  // Visible SDE applications; their StartupWMClass, id and Exec name windows.
   auto entries = sde::load_applications("SDE");
   for (auto &e : entries) {
     AppInfo a{e.id, e.name, e.icon};

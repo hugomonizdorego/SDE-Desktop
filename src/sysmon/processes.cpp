@@ -127,8 +127,9 @@ class PropertiesWindow : public sde::BufferedWindow {
         {_("Working folder"), unknown(cwd)},
     };
     cmdline_ = p.cmdline.empty() ? "[" + p.comm + "]" : p.cmdline;
-    open_ = new sde::FlatButton(S(20), h() - S(54), S(180), S(34), _("Open File Location"));
+    // Close is created first so that it has the initial keyboard focus.
     auto *close = new sde::FlatButton(w() - S(120), h() - S(54), S(100), S(34), _("Close"), true);
+    open_ = new sde::FlatButton(S(20), h() - S(54), S(180), S(34), _("Open File Location"));
     open_->callback([](Fl_Widget *, void *d) {
       auto *self = static_cast<PropertiesWindow *>(d);
       std::string dir = self->exe_.substr(0, self->exe_.rfind('/'));

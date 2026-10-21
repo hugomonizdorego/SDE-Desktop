@@ -452,6 +452,8 @@ void Sampler::sample_procs(Snapshot &s, double dt) {
       c.name = st.comm;
       if (st.comm.size() >= 15 && c.exe_base.compare(0, st.comm.size(), st.comm) == 0)
         c.name = c.exe_base;
+      else if (st.comm.size() >= 15 && c.cmdline.compare(0, st.comm.size(), st.comm) == 0)
+        c.name = c.cmdline.substr(0, 48);  // a process that rewrote its title
       if (c.uid == my_uid_ && read_text(base + "/environ", raw)) {
         for (auto &kv : split_nul(raw)) {
           if (kv.compare(0, 26, "GIO_LAUNCHED_DESKTOP_FILE=") == 0) c.desktop_hint = kv.substr(26);

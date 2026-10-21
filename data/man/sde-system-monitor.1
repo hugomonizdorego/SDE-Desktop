@@ -1,22 +1,68 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
+.\" Copyright (C) 2026 DebION Dev-Team
 .TH SDE-SYSTEM-MONITOR 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-sde-system-monitor \- SDE process and resource monitor
+sde-system-monitor \- processes, performance graphs and file systems for SDE
 .SH SYNOPSIS
 .B sde-system-monitor
-[OPTIONS]
+[\fB\-\-page\fR \fIprocesses\fR|\fIperformance\fR|\fIdisks\fR|\fIstartup\fR]
+.br
+.B sde-system-monitor
+\fB\-\-version\fR | \fB\-\-help\fR
 .SH DESCRIPTION
-Inspect processes, CPU, memory and file systems in SDE System Monitor.
-.PP
-This is an independent native executable built from the SDE fork sources
-and included in the sde package.
+SDE System Monitor is the native task manager of the Selviana Desktop
+Environment. It reads /proc and /sys directly from a background thread once a
+second and only repaints what changed.
+.TP
+.B Processes
+All processes, grouped into apps (processes that own a window or were started
+from a .desktop file, shown with their name and icon) and background
+processes, or as a parent/child tree. Columns: name, PID, user, CPU, memory,
+disk read and write rates, threads and state. Click a column header to sort,
+type in the search field to filter by name, user, PID or command line.
+End Task, Kill, Stop, Continue, Change Priority, Open File Location and
+Properties are in the context menu and the Actions button. Acting on another
+user's process asks for administrator rights through
+.BR pkexec (1).
+.TP
+.B Performance
+Live 60 second graphs for the processor (total or per core, with model, speed,
+load average and up time), memory and swap, every disk (read and write
+throughput, active time), every network interface (receive and send), AMD GPU
+utilization when the driver exposes it, and the battery.
+.TP
+.B File Systems
+Mounted local storage with type, usage bar and free space. Open shows the
+mount point in Liria.
+.TP
+.B Startup Apps
+XDG autostart entries that SDE starts at login. Click a row to switch it; the
+change is written to ~/.config/autostart, never to the system directories.
 .SH OPTIONS
 .TP
-.B --help
-Display the native application options.
+.BR \-\-page " " \fINAME\fR
+Open on a page: processes, performance, disks (also filesystems) or startup.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.B \-\-help
+Print a short usage summary and exit.
+.SH KEYBOARD
+Ctrl+1 to Ctrl+4 switch pages, Ctrl+F searches processes, Up and Down move the
+selection, Enter opens Properties, the Menu key opens the context menu,
+Ctrl+W or Ctrl+Q closes the window.
+.SH FILES
+.TP
+.I ~/.config/sde/sde.conf
+Theme, accent color and UI scale.
+.TP
+.I ~/.config/autostart/
+Per-user autostart entries and overrides.
 .SH COPYRIGHT
-Original upstream copyrights and licenses are preserved. Settings at the SDE
-Suite page provides the source link and full installed notice.
+Copyright (C) 2026 DebION Dev-Team. License GPL-3.0-or-later.
 .SH SEE ALSO
+.BR liria (1),
 .BR sde-settings (1),
-.BR sde-suite (1)
+.BR sde-autostart (1),
+.BR proc (5)

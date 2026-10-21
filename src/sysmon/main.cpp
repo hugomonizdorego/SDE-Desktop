@@ -65,7 +65,7 @@ class NavRail : public Fl_Widget {
           p.fill_rounded(x() + S(12), iy, w() - S(24), S(40), Sd(10), t.hover);
         }
         draw_icon(p, kNav[i].icon, x() + S(30), iy + S(11), S(18), sel ? t.accent_text : t.text);
-        if (Fl::focus() == this && sel) sde::focus_ring(p, x() + S(12), iy, w() - S(24), S(40), Sd(10));
+        if (Fl::focus() == this && keyboard_ && sel) sde::focus_ring(p, x() + S(12), iy, w() - S(24), S(40), Sd(10));
       }
     }
     sde::text_font(t.font_size + S(1), true);
@@ -81,10 +81,15 @@ class NavRail : public Fl_Widget {
   int handle(int e) override {
     switch (e) {
       case FL_ENTER: return 1;
-      case FL_FOCUS: case FL_UNFOCUS: redraw(); return 1;
+      case FL_FOCUS:
+        keyboard_ = Fl::event() == FL_KEYBOARD;
+        redraw();
+        return 1;
+      case FL_UNFOCUS: redraw(); return 1;
       case FL_LEAVE: set_hover(-1); return 1;
       case FL_MOVE: set_hover(hit(Fl::event_y())); return 1;
       case FL_PUSH: {
+        keyboard_ = false;
         int i = hit(Fl::event_y());
         if (i >= 0 && on_pick) on_pick(i);
         return 1;
@@ -92,6 +97,7 @@ class NavRail : public Fl_Widget {
       case FL_KEYBOARD: {
         int k = Fl::event_key();
         if ((k == FL_Up || k == FL_Down) && on_pick) {
+          keyboard_ = true;
           on_pick((current + (k == FL_Up ? kNavCount - 1 : 1)) % kNavCount);
           return 1;
         }
@@ -114,6 +120,7 @@ class NavRail : public Fl_Widget {
     redraw();
   }
   int hover_ = -1;
+  bool keyboard_ = false;  // focus ring only after keyboard use
 };
 
 // Live CPU and memory meters at the bottom of the rail; repainted alone.
@@ -174,7 +181,6 @@ class MainWindow : public MonitorWindow {
     grow->hide();
     resizable(grow);
     end();
-    for (auto *p : pages_) resizable_pages_.push_back(p);
     nav_->on_pick = [this](int i) { show_page(i); };
     size_range(S(760), S(520));
     xclass("sde-system-monitor");
@@ -249,7 +255,6 @@ class MainWindow : public MonitorWindow {
   NavRail *nav_;
   RailMeters *meters_;
   std::vector<Page *> pages_;
-  std::vector<Fl_Widget *> resizable_pages_;
   int current_ = 0;
   uint64_t last_serial_ = 0;
 };
