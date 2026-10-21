@@ -70,7 +70,7 @@ void Palette::open(const std::string &prefix) {
   origin_cursor_ = ed && app_->active() ? ed->insert_position() : -1;
   origin_top_ = ed ? ed->top_line() : 1;
   input_->value(prefix.c_str());
-  input_->insert_position(int(prefix.size()));
+  input_->position(int(prefix.size()));
   sel_ = scroll_ = 0;
   show();
   rebuild();

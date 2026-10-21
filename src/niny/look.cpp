@@ -27,17 +27,17 @@ std::string theme_family(const Config &cfg) {
   return cfg.get_bool("aero", "enabled", true) ? "aero" : "sde";
 }
 
-struct Palette {
+struct SyntaxPalette {
   uint32_t c[kStyleCount];
 };
 
 // Plain, keyword, type, string, comment, number, preproc, function,
 // operator, tag, attribute, added, removed, heading, constant, escape,
 // special, strong, emphasis, builtin.
-const Palette kLight = {{0x1E2731, 0x8B2FC9, 0x0B7A8C, 0x1D7A3A, 0x6F7A86, 0xB3560B, 0xC0306B, 0x1F5FBF,
+const SyntaxPalette kLight = {{0x1E2731, 0x8B2FC9, 0x0B7A8C, 0x1D7A3A, 0x6F7A86, 0xB3560B, 0xC0306B, 0x1F5FBF,
                          0x5B6675, 0x1652B5, 0x9A4A06, 0x1D7A3A, 0xC4262E, 0x1652B5, 0x7A3FC2, 0x0E7490,
                          0xB4520A, 0x1E2731, 0x1E2731, 0x0B7A8C}};
-const Palette kDark = {{0xE3E9F0, 0xC79BF2, 0x6FD3C9, 0xA6D98A, 0x7F8B99, 0xF4A26B, 0xFF84B4, 0x86B4FF,
+const SyntaxPalette kDark = {{0xE3E9F0, 0xC79BF2, 0x6FD3C9, 0xA6D98A, 0x7F8B99, 0xF4A26B, 0xFF84B4, 0x86B4FF,
                         0x8FD6F2, 0x7FA8F8, 0xF2CA74, 0x86E39A, 0xFF8A80, 0x86B4FF, 0xD2A8FF, 0x8FD6F2,
                         0xF2CA74, 0xE3E9F0, 0xE3E9F0, 0x6FD3C9}};
 
@@ -124,7 +124,7 @@ Look make_look(const Config &cfg, const std::string &scheme) {
   L.match = Color::hex(0xF2B84B, L.dark ? 0.32 : 0.42);
   L.match_current = L.accent;
   L.bracket = L.accent;
-  const Palette &pal = L.dark ? kDark : kLight;
+  const SyntaxPalette &pal = L.dark ? kDark : kLight;
   for (int i = 0; i < kStyleCount; ++i) L.syntax[i] = Color::hex(pal.c[i]);
   L.syntax[0] = L.text.mix(L.syntax[0], 0.5);
   L.bold[kKeyword - 'A'] = L.bold[kHeading - 'A'] = L.bold[kStrong - 'A'] = true;

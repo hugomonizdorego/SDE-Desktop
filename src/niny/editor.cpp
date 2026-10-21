@@ -218,7 +218,7 @@ int EditorView::handle(int event) {
 
 void EditorView::draw() {
   // Overlays are drawn over the text; always redraw everything below them.
-  set_damage(FL_DAMAGE_ALL);
+  // BufferedWindow redraws the whole window, so the text below is always fresh.
   Fl_Text_Editor::draw();
   if (doc_) draw_overlay();
 }

@@ -7,6 +7,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+#include <strings.h>
+
 #include <algorithm>
 #include <cmath>
 

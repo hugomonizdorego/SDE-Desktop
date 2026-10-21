@@ -12,6 +12,7 @@
 
 #include "i18n.h"
 #include "niny.h"
+#include "textops.h"
 #include "util.h"
 
 using namespace sde;
@@ -385,7 +386,7 @@ InfoBar::InfoBar(App *app, int x, int y, int w, int h) : Fl_Group(x, y, w, h), a
 
 void InfoBar::show_for(Document *doc) {
   doc_ = doc;
-  if (!doc || doc->notice == Document::Notice::None) {
+  if (!doc || doc->notice == Document::Notice::Clear) {
     hide();
     return;
   }

@@ -410,7 +410,7 @@ bool Document::load(const std::string &file, std::string &error, const Encoding 
   set_content(d.text);
   undo.mark_saved();
   stat_disk();
-  notice = Notice::None;
+  notice = Notice::Clear;
   if (d.binary) {
     notice = Notice::Error;
     notice_text = _("This looks like a binary file. Saving it may damage it.");
@@ -449,7 +449,7 @@ bool Document::save_to(const std::string &file, std::string &error) {
   stat_disk();
   if (notice == Notice::Changed || notice == Notice::Deleted || notice == Notice::Recovered ||
       notice == Notice::Error)
-    notice = Notice::None;
+    notice = Notice::Clear;
   if (renamed && !lang_manual) set_language(detect_language(file, text().substr(0, text().find('\n'))), false);
   return true;
 }

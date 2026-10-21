@@ -107,8 +107,8 @@ class Document {
   long long disk_size = -1;
   bool readonly = false;
 
-  enum class Notice { None, Changed, Deleted, Recovered, Error };
-  Notice notice = Notice::None;
+  enum class Notice { Clear, Changed, Deleted, Recovered, Error };
+  Notice notice = Notice::Clear;
   std::string notice_text;
 
   // View state while the document is not shown.
@@ -193,6 +193,7 @@ class EditorView : public Fl_Text_Editor {
   int visible_lines() const { return mNVisibleLines; }
   void goto_pos(int pos, bool center = true, int sel_to = -1);
   int char_width() const { return char_w_; }
+  bool wrap_mode_on() const { return mContinuousWrap != 0; }
   int font_px() const { return font_px_; }
 
  private:
@@ -411,6 +412,7 @@ struct Command {
   int shortcut = 0;           // FLTK shortcut value (FL_CTRL + 's')
   std::string shortcut_text;  // "Ctrl+S"
   std::function<void()> run;
+  bool global = true;  // false: the editor handles the keys itself
 };
 
 // ------------------------------------------------------------------ app

@@ -16,6 +16,8 @@ namespace niny {
 
 namespace {
 
+constexpr int kRow = 44;  // height of one bar row (unscaled)
+
 // Small square button showing an icon or a short label; optionally a toggle
 // bound to a flag.
 class Chip : public DrawnButton {
@@ -186,7 +188,7 @@ void FindBar::open(bool replace, const std::string &seed) {
   show();
   app_->layout();
   find_->take_focus();
-  find_->insert_position(0, find_->size());
+  find_->position(find_->size(), 0);
   redraw();
 }
 
