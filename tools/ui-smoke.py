@@ -16,6 +16,10 @@ parser.add_argument(
     action="store_true",
     help="Also open native suite applications with sample files",
 )
+parser.add_argument("--themes-dir", type=Path, default=Path(__file__).resolve().parent.parent / "build/themes",
+                    help="SDE themes built by tools/build-themes.py (default: build/themes)")
+parser.add_argument("--theme", default="",
+                    help="[appearance] lines, e.g. 'style=fluent\\ntheme=dark\\naccent_name=green'")
 parser.add_argument("--size", default="1366x768")
 parser.add_argument("--scale", type=int, default=100, choices=[100, 125, 150, 175, 200])
 parser.add_argument(
@@ -51,6 +55,12 @@ env.update(
 env.setdefault("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent-sde-ui-smoke-bus")
 (home / "run").mkdir(mode=0o700)
 (home / ".config/sde").mkdir(parents=True)
+# The SDE themes (SDE-Graphite-Light-Blue, ...) built next to the binaries,
+# so SDE WM frames and GTK windows use them without an installation.
+if args.themes_dir and (args.themes_dir / "SDE-Graphite-Light-Blue/openbox-3/themerc").is_file():
+    (home / ".local/share").mkdir(parents=True)
+    (home / ".local/share/themes").symlink_to(args.themes_dir.resolve())
+    print("themes", args.themes_dir, flush=True)
 (home / "bin").mkdir()
 (home / "qa").mkdir()
 fixtures = home / "fixtures"
@@ -175,7 +185,7 @@ def config(style=None, theme="light", scale=None, analog=False, top=False, compa
         scale = args.scale
     extra = "show_clock=false\nshow_media=false\nshow_tray=false\nmove_status=false\n" if compact else ""
     (home / ".config/sde/sde.conf").write_text(
-        f'[appearance]\ntheme={theme}\nscale={scale}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}'
+        f'[appearance]\ntheme={theme}\nscale={scale}\n{args.theme.encode().decode("unicode_escape")}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}'
     )
 
 
@@ -205,7 +215,8 @@ try:
     time.sleep(0.6)
     if xv.poll() is not None:
         raise RuntimeError("Could not start a private test display")
-    spawn("sde-wm", "--config-file", str(args.data_dir / "openbox/rc.xml"))
+    # Absolute: SDE WM ignores a relative --config-file and would run unthemed.
+    spawn("sde-wm", "--config-file", str((args.data_dir / "openbox/rc.xml").resolve()))
     time.sleep(0.6)
     spawn("sde-desktop")
     panel = spawn("sde-panel")
