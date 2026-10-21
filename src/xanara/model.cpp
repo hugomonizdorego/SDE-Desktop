@@ -505,7 +505,7 @@ Json Json::string(const std::string &s) {
 }
 Json Json::boolean(bool b) {
   Json j;
-  j.type_ = Bool;
+  j.type_ = Boolean;
   j.bool_ = b;
   return j;
 }
@@ -580,7 +580,7 @@ void dump_string(const std::string &s, std::string &out) {
 void dump_value(const Json &j, std::string &out) {
   switch (j.type()) {
     case Json::Null: out += "null"; break;
-    case Json::Bool: out += j.boolean_value() ? "true" : "false"; break;
+    case Json::Boolean: out += j.boolean_value() ? "true" : "false"; break;
     case Json::Number: {
       double v = j.num();
       char buf[40];

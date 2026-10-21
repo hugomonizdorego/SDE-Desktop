@@ -1026,7 +1026,7 @@ void DocView::draw_preview(Painter &p) {
       }
       if (tool_ == Tool::Measure) {
         double d = std::hypot(drag_p1_.x - drag_p0_.x, drag_p1_.y - drag_p0_.y);
-        std::string label = measure_label(d, "mm");
+        std::string label = xanara::measure_label(d, "mm");
         cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
         cairo_set_font_size(cr, Sd(12));
         cairo_text_extents_t te;
@@ -2061,7 +2061,7 @@ void DocView::place_at(Tool t, int pg, Point at, const Box &b0, bool moved) {
       if (moved) {
         double dist = std::hypot(drag_p1_.x - drag_p0_.x, drag_p1_.y - drag_p0_.y);
         if (PopplerAnnot *a = doc_->add_line(pg, drag_p0_, drag_p1_, c, stroke_)) {
-          std::string label = measure_label(dist, "mm");
+          std::string label = xanara::measure_label(dist, "mm");
           doc_->set_annot_contents(pg, a, label);
           finish_added(pg, a);
           double lw, lh;
@@ -2134,7 +2134,7 @@ void DocView::place_at(Tool t, int pg, Point at, const Box &b0, bool moved) {
       cairo_surface_t *src = t == Tool::Signature ? signature_ : image_;
       if (!src) {
         if (t == Tool::Signature) app_->choose_signature();
-        else app_->run(Act::AddImage);
+        else app_->choose_image();
         src = t == Tool::Signature ? signature_ : image_;
       }
       if (!src) break;

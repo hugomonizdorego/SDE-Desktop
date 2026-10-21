@@ -496,9 +496,12 @@ class XanaraWindow : public sde::BufferedWindow {
   static XanaraWindow *instance() { return instance_; }
   void layout();
   void find_input_changed();
+  bool find_case() const { return find_case_; }
+  void toggle_find_case();
   int side_w() const { return side_w_; }
   void set_side_w(int w);
-  std::vector<std::string> bookmarks(const std::string &path);
+  std::vector<int> bookmarks(const std::string &path);
+  std::string initials();  // asks once, then remembers
   void toggle_bookmark();
   std::string signatures_dir() const;
 
@@ -510,6 +513,8 @@ class XanaraWindow : public sde::BufferedWindow {
   void images_to_pdf_dialog();
   void apply_redactions();
   bool working_change(const std::string &out, const std::string &message);
+  bool choose_image();  // for the Image tool
+  bool comparing() const { return compare_id_ >= 0; }
 
  private:
   void build_chrome();
@@ -568,6 +573,8 @@ class XanaraWindow : public sde::BufferedWindow {
   DocView *field_view_ = nullptr;
 
   std::vector<Hot> hots_;
+  std::vector<std::array<int, 3>> seps_;  // x, y, h of toolbar separators
+  int ctx_hint_x_ = 0, ctx_hint_w_ = 0;
   int hover_hot_ = -1, press_hot_ = -1;
   int tabs_h_ = 0, bar_h_ = 0, ctx_h_ = 0, side_w_ = 0, props_w_ = 0;
   int tab_w_ = 0, tabs_x0_ = 0;
@@ -580,6 +587,7 @@ class XanaraWindow : public sde::BufferedWindow {
   std::string tip_;
   int tip_x_ = 0, tip_y_ = 0;
   std::string initials_;
+  int compare_id_ = -1;  // tab shown beside the active one
   static XanaraWindow *instance_;
 };
 

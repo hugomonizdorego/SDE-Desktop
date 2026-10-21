@@ -177,7 +177,7 @@ Argv ocr_join_args(const std::vector<std::string> &page_pdfs, const std::string 
 // A small JSON value, enough for qpdf's JSON v2 (ordered objects).
 class Json {
  public:
-  enum Type { Null, Bool, Number, String, Array, Object };
+  enum Type { Null, Boolean, Number, String, Array, Object };
   Json() = default;
   static Json number(double v);
   static Json string(const std::string &s);
