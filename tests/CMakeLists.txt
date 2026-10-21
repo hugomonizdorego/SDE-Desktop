@@ -35,3 +35,8 @@ add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 # QA-only D-Bus/XEmbed fixtures: deliberately not installed in the packages.
 add_executable(sde-panel-service-fixture panel_service_fixture.cpp)
 target_link_libraries(sde-panel-service-fixture PRIVATE sde-common)
+
+# Niny Text Editor: codec, highlighter, find/replace, undo, settings, text ops.
+add_executable(niny-tests test_niny.cpp)
+target_link_libraries(niny-tests PRIVATE niny-core)
+add_test(NAME niny-core COMMAND niny-tests)
