@@ -1337,8 +1337,9 @@ std::string smart_destination(const ArchiveInfo &info, const std::string &parent
     tops.insert(first_component(e.path));
     if (tops.size() > 1) break;
   }
-  if (tops.size() == 1) {
-    // One top-level item: extract next to the archive.
+  struct stat st;
+  if (tops.size() == 1 && lstat((parent + "/" + *tops.begin()).c_str(), &st) != 0) {
+    // One top-level item that does not exist yet: extract next to the archive.
     return parent;
   }
   std::string name = strip_archive_extension(info.path);

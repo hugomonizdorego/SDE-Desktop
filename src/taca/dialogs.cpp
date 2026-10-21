@@ -321,7 +321,6 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
     if (!caps.password) note = note.empty() ? std::string(_("This format does not support passwords")) : note;
   };
   int last_format = chosen;
-  chips->callback([](Fl_Widget *, void *) {}, nullptr);
   d.on_change = [&]() {
     if (chips->value() != last_format) {
       // Swap the extension in the name field.
@@ -334,6 +333,18 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
     update();
   };
   update();
+  // Key presses go straight to the focused field, not through the dialog.
+  auto changed = [](Fl_Widget *, void *p) {
+    auto *dlg = static_cast<Dialog *>(p);
+    if (dlg->on_change) dlg->on_change();
+    dlg->redraw();
+  };
+  for (Fl_Input *in : {static_cast<Fl_Input *>(pw), name, vol}) {
+    in->when(FL_WHEN_CHANGED);
+    in->callback(changed, &d);
+  }
+  chips->callback(changed, &d);
+  split->callback(changed, &d);
   const Theme &t = d.theme();
   d.extra_text = [&, level]() {
     text_font(t.font_size - S(1));
@@ -397,7 +408,8 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
   std::vector<std::pair<std::string, std::string>> rows = {
       {_("Location"), info.path.substr(0, info.path.rfind('/'))},
       {_("Format"), std::string(format_info(info.format).label) +
-                        (info.engine_format.empty() ? "" : "  (" + info.engine_format + ")")},
+                        (info.engine_format.empty() || info.backend == "libarchive" ? ""
+                                                                                     : "  (" + info.engine_format + ")")},
       {_("Archive size"), human_size(info.archive_size)},
       {_("Contents"), human_size(info.total_size)},
       {_("Files"), format(_("%zu files in %zu folders"), info.files, info.folders)},

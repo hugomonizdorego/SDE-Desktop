@@ -286,6 +286,9 @@ static void test_selection_and_overwrite() {
 
   // Smart "extract here": one top-level folder goes next to the archive.
   CHECK(smart_destination(info, tmp("")) == tmp(""));
+  // The single top-level folder exists already: use a new folder instead.
+  std::string again = smart_destination(info, tmp("src"));
+  CHECK(again == tmp("src/sel") && sde::dir_exists(again));
   ArchiveInfo many;
   many.path = tmp("loose.zip");
   many.entries.resize(2);
