@@ -2,8 +2,8 @@
 [Desktop Entry]
 Type=Application
 Name=Xanara
-GenericName=Document Viewer
-Comment=Read, annotate and fill in PDF documents
+GenericName=PDF Editor
+Comment=Read, annotate, edit, fill in, convert and protect PDF documents
 Exec=xanara %U
 TryExec=xanara
 Icon=x-office-document
@@ -13,5 +13,6 @@ OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Xanara
 MimeType=application/pdf;application/x-pdf;
+Keywords=PDF;Annotate;Sign;Form;Redact;OCR;Merge;Viewer;
 X-Developer=DebION Dev-Team
 X-DebION-Developer=DebION Dev-Team

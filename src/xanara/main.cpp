@@ -27,11 +27,14 @@ using namespace sde;
 static void usage() {
   printf("%s", _("Usage: xanara [--page=N] [FILE...]\n"
                  "       xanara --version | --help\n\n"
-                 "Xanara shows PDF documents sharply at every zoom, and lets you highlight,\n"
-                 "underline and strike out text, add notes, text boxes, drawings, shapes and\n"
-                 "a signature, fill in forms and rotate, move, insert, delete or extract\n"
-                 "pages (page changes use qpdf). Edits are saved into the PDF; the original\n"
-                 "is replaced only after the new file was written completely.\n\n"
+                 "Xanara shows PDF documents sharply at every zoom, each in a tab of its\n"
+                 "own. Its modes annotate (highlight, notes, drawings, shapes, stamps,\n"
+                 "signatures), edit (text, images, links, watermarks, headers and footers,\n"
+                 "Bates numbers, crop), rearrange pages, add and fill in form fields,\n"
+                 "convert (images, text, HTML, Markdown), protect (passwords, redaction,\n"
+                 "metadata) and offer tools (compress, OCR, compare, print). Structural\n"
+                 "changes use qpdf; ghostscript and tesseract are used when installed.\n"
+                 "The original is replaced only after the new file was written completely.\n\n"
                  "  --page=N    open FILE at page N (1 is the first page)\n\n"
                  "Settings are kept in the [xanara] section of ~/.config/sde/sde.conf; the\n"
                  "last page of each document in ~/.local/state/sde/xanara-history.\n"));
@@ -77,8 +80,6 @@ int main(int argc, char **argv) {
   fl_register_images();
   // The renderer thread hands finished tiles to the main loop with Fl::awake().
   Fl::lock();
-  // Additional files open in windows of their own.
-  for (size_t i = 1; i < files.size(); ++i) spawn_detached({argv[0], xanara::path_from_argument(files[i])});
 
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);
@@ -92,7 +93,22 @@ int main(int argc, char **argv) {
   XWindowAttributes attr;
   XGetWindowAttributes(fl_display, root, &attr);
   XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask);
-  if (!files.empty()) window->open_path(xanara::path_from_argument(files[0]), page);
+  // Every file opens in a tab of its own; without files the tabs of the
+  // last session come back (unless [xanara] restore_session=false).
+  if (!files.empty()) {
+    for (size_t i = 0; i < files.size(); ++i)
+      window->open_path(xanara::path_from_argument(files[i]), i == 0 ? page : -1);
+    if (files.size() > 1) window->activate_tab(0);
+  } else if (config.get_bool("xanara", "restore_session", true)) {
+    std::string text;
+    std::vector<std::string> paths;
+    int active = -1;
+    if (read_file(state_home() + "/sde/xanara-session", text) && xanara::TabList::parse(text, paths, active)) {
+      for (const auto &p : paths)
+        if (file_exists(p)) window->open_path(p);
+      window->activate_tab(active < int(paths.size()) ? active : -1);
+    }
+  }
   int status = Fl::run();
   delete window;
   return status;
