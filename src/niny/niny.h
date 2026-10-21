@@ -499,6 +499,7 @@ class App : public sde::BufferedWindow {
   Sidebar *sidebar() const { return sidebar_; }
   TabBar *tabs() const { return tabs_; }
   void doc_changed(Document *doc);    // text modified
+  void doc_restyled(Document *doc, int start, int end);
   void cursor_moved();
   void update_ui();                   // tabs, status, title
   void toast(const std::string &message);
