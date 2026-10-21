@@ -776,14 +776,19 @@ PopplerAnnot *Document::add_ink(int page, const std::vector<std::vector<Point>> 
       std::vector<PopplerPoint> pts;
       for (const auto &p : st) pts.push_back(PopplerPoint{p.x, ph - p.y});
       if (pts.size() == 1) pts.push_back(PopplerPoint{pts[0].x + 0.01, pts[0].y});
-      paths.push_back(poppler_path_new_from_array(pts.data(), pts.size()));
+      // The path takes ownership of the point array and frees it with g_free().
+      PopplerPoint *owned = g_new(PopplerPoint, pts.size());
+      std::copy(pts.begin(), pts.end(), owned);
+      paths.push_back(poppler_path_new_from_array(owned, pts.size()));
     }
-    poppler_annot_ink_set_ink_list(POPPLER_ANNOT_INK(annot), paths.data(), paths.size());
-    for (auto *p : paths) poppler_path_free(p);
 #ifdef XANARA_HAVE_BORDER_WIDTH
     poppler_annot_set_border_width(annot, width);
 #endif
     finish_annot(page, annot, color);
+    // Set the strokes once the annotation is on its page, so poppler maps
+    // the coordinates through the page's transform.
+    poppler_annot_ink_set_ink_list(POPPLER_ANNOT_INK(annot), paths.data(), paths.size());
+    for (auto *p : paths) poppler_path_free(p);
     poppler_annot_set_contents(annot, "Drawing");
     geometry_.push_back(Geometry{page, rect, strokes});
   }
@@ -935,7 +940,10 @@ bool Document::move_annot(int page, PopplerAnnot *annot, double dx, double dy) {
         for (const auto &st : g.strokes) {
           std::vector<PopplerPoint> pts;
           for (const auto &p : st) pts.push_back(PopplerPoint{p.x, ph - p.y});
-          paths.push_back(poppler_path_new_from_array(pts.data(), pts.size()));
+          // The path takes ownership of the point array and frees it with g_free().
+      PopplerPoint *owned = g_new(PopplerPoint, pts.size());
+      std::copy(pts.begin(), pts.end(), owned);
+      paths.push_back(poppler_path_new_from_array(owned, pts.size()));
         }
         poppler_annot_ink_set_ink_list(POPPLER_ANNOT_INK(annot), paths.data(), paths.size());
         for (auto *p : paths) poppler_path_free(p);
