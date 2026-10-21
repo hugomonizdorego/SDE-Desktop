@@ -7,3 +7,5 @@ Icon=system-log-out
 Categories=System;
 OnlyShowIn=SDE;
 StartupNotify=false
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

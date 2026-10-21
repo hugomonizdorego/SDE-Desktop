@@ -11,9 +11,14 @@
 #include <cmath>
 
 #include "buffered_window.h"
+#include "menu.h"
 #include "perf.h"
 
 namespace sde {
+
+// Every program that draws with Painter also gets the SDE look for FLTK's
+// menus, tooltips, scroll bars and stock dialogs (menu.cpp).
+[[maybe_unused]] static const bool g_ui_style_installed = (install_ui_style(), true);
 
 namespace {
 struct Target {

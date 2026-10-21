@@ -19,6 +19,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Return_Button.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 
 int fl_return_arrow(int x, int y, int w, int h) {
   int size = w; if (h<size) size = h;
@@ -40,6 +41,8 @@ int fl_return_arrow(int x, int y, int w, int h) {
 
 void Fl_Return_Button::draw() {
   if (type() == FL_HIDDEN_BUTTON) return;
+  // SDE-FLTK: themed default buttons are marked by their color, not an arrow.
+  if (fl_sde_style()) { Fl_Button::draw(); return; }
   Fl_Boxtype bt = value() ? (down_box()?down_box():fl_down(box())) : box();
   int dx = Fl::box_dx(bt);
   draw_box(bt, value() ? selection_color() : color());

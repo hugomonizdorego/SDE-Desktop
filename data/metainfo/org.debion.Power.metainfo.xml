@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 DebION Dev-Team -->
+<component type="desktop-application">
+  <id>org.debion.Power</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <name>SDE Power</name>
+  <summary>Power and battery preferences</summary>
+  <developer id="org.debion">
+    <name>DebION Dev-Team</name>
+  </developer>
+  <description>
+    <p>SDE Power Manager sets what happens when the computer is idle, the lid is closed or the battery runs low, and shows battery and power information.</p>
+    <p>Based on MATE Power Manager by the MATE Desktop team.</p>
+    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+  </description>
+  <launchable type="desktop-id">sde-power.desktop</launchable>
+  <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
+  <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
+  <project_group>SDE</project_group>
+  <provides>
+    <binary>sde-power-preferences</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0~alpha16" date="2026-10-21"/>
+  </releases>
+</component>

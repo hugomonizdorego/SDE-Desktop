@@ -14,8 +14,10 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "config.h"
 #include "i18n.h"
+#include "menu.h"
 #include "theme.h"
 #include "ui.h"
 #include "widgets.h"
@@ -43,6 +45,7 @@ const int kNavCount = 4;
 class NavRail : public Fl_Widget {
  public:
   std::function<void(int)> on_pick;
+  std::function<void()> on_menu;  // header click or right click
   NavRail(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) { box(FL_NO_BOX); }
   int current = 0;
 
@@ -90,6 +93,10 @@ class NavRail : public Fl_Widget {
       case FL_MOVE: set_hover(hit(Fl::event_y())); return 1;
       case FL_PUSH: {
         keyboard_ = false;
+        if ((Fl::event_button() == FL_RIGHT_MOUSE || Fl::event_y() < item_y(0)) && on_menu) {
+          on_menu();
+          return 1;
+        }
         int i = hit(Fl::event_y());
         if (i >= 0 && on_pick) on_pick(i);
         return 1;
@@ -182,6 +189,7 @@ class MainWindow : public MonitorWindow {
     resizable(grow);
     end();
     nav_->on_pick = [this](int i) { show_page(i); };
+    nav_->on_menu = [this] { app_menu(); };
     size_range(S(760), S(520));
     xclass("sde-system-monitor");
     callback([](Fl_Widget *w, void *) {
@@ -203,6 +211,10 @@ class MainWindow : public MonitorWindow {
   }
 
   int handle(int e) override {
+    if (e == FL_SHORTCUT && Fl::event_key() == FL_F + 1) {
+      show_about();
+      return 1;
+    }
     if (e == FL_SHORTCUT && (Fl::event_state() & FL_CTRL)) {
       int k = Fl::event_key();
       if (k == 'f') {
@@ -219,6 +231,30 @@ class MainWindow : public MonitorWindow {
       }
     }
     return MonitorWindow::handle(e);
+  }
+
+  static void show_about() {
+    sde::AppInfo info;
+    info.name = _("System Monitor");
+    info.program = "sde-system-monitor";
+    info.version = SDE_SYSMON_VERSION;
+    info.icon = "utilities-system-monitor";
+    info.description = _("Shows running processes, live CPU, memory, disk and network graphs, "
+                         "mounted file systems and the apps that start when you log in.");
+    info.credits = {sde::toolkit_credit()};
+    sde::show_about(info);
+  }
+
+  void app_menu() {
+    sde::ContextMenu menu;
+    for (int i = 0; i < kNavCount; ++i)
+      menu.radio(_(kNav[i].label), i == current_, [this, i] { show_page(i); });
+    menu.separator();
+    sde::MenuItemOptions about;
+    about.icon = "info";
+    about.shortcut = FL_F + 1;
+    menu.item(_("About System Monitor"), [] { show_about(); }, about);
+    menu.popup();
   }
 
   void show_page(int i) {

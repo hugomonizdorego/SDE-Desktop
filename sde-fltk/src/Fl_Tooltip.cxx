@@ -18,6 +18,7 @@
 
 #include <FL/Fl_Tooltip.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 #include <FL/Fl_Menu_Window.H>
 
 #include <stdio.h>
@@ -83,13 +84,20 @@ Fl_Window *Fl_Tooltip::current_window(void)
 }
 #endif
 
+// SDE-FLTK: a style may choose the margins.
+static int tip_margin(int vertical) {
+  int m = fl_sde_style() ? fl_sde_style()->tooltip_margin(vertical) : -1;
+  if (m >= 0) return m;
+  return vertical ? Fl_Tooltip::margin_height() : Fl_Tooltip::margin_width();
+}
+
 void Fl_TooltipBox::layout() {
   fl_font(Fl_Tooltip::font(), Fl_Tooltip::size());
   int ww = Fl_Tooltip::wrap_width();
   int hh = 0;
   fl_measure(tip, ww, hh, draw_symbols_);
-  ww += (Fl_Tooltip::margin_width() * 2);
-  hh += (Fl_Tooltip::margin_height() * 2);
+  ww += (tip_margin(0) * 2);
+  hh += (tip_margin(1) * 2);
 
   // find position on the screen of the widget:
   int ox = Fl::event_x_root();
@@ -113,6 +121,7 @@ void Fl_TooltipBox::layout() {
 }
 
 void Fl_TooltipBox::draw() {
+  if (fl_sde_style() && fl_sde_style()->tooltip_draw(w(), h(), tip)) return;  // SDE-FLTK
   draw_box(FL_BORDER_BOX, 0, 0, w(), h(), Fl_Tooltip::color());
   fl_color(Fl_Tooltip::textcolor());
   fl_font(Fl_Tooltip::font(), Fl_Tooltip::size());

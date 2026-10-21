@@ -20,6 +20,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Scrollbar.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 #include <math.h>
 #include "flstring.h"
 
@@ -107,6 +108,7 @@ int Fl_Scrollbar::handle(int event) {
   switch (event) {
   case FL_ENTER:
   case FL_LEAVE:
+    if (fl_sde_style()) damage(FL_DAMAGE_ALL);  // SDE-FLTK: hover look
     return 1;
   case FL_RELEASE:
       damage(FL_DAMAGE_ALL);
@@ -198,6 +200,25 @@ int Fl_Scrollbar::handle(int event) {
 }
 
 void Fl_Scrollbar::draw() {
+  if (Fl_SDE_Style *st = fl_sde_style()) {  // SDE-FLTK: thin overlay scrollbar
+    int X = x(), Y = y(), W = w(), H = h();
+    // The thumb moves where handle() expects it: between the arrow areas.
+    int sx = X, sy = Y, sw = W, sh = H;
+    if (horizontal()) { if (W >= 3*H) { sx += H; sw -= 2*H; } }
+    else { if (H >= 3*W) { sy += W; sh -= 2*W; } }
+    double val = (maximum()-minimum()) ? (value()-minimum())/(maximum()-minimum()) : 0.5;
+    if (val > 1.0) val = 1.0; else if (val < 0.0) val = 0.0;
+    int ww = horizontal() ? sw : sh;
+    int S = int(slider_size()*ww+.5);
+    int T = (horizontal() ? H : W)/2+1;
+    if (S < T) S = T;
+    int xx = int(val*(ww-S)+.5);
+    int tx, ty, tw, th;
+    if (horizontal()) { tx = sx+xx; ty = Y; tw = S; th = H; }
+    else { tx = X; ty = sy+xx; tw = W; th = S; }
+    int hover = Fl::belowmouse() == this || Fl::pushed() == this;
+    if (st->scrollbar_draw(this, X, Y, W, H, tx, ty, tw, th, hover)) return;
+  }
   if (damage()&FL_DAMAGE_ALL) draw_box();
   int X = x()+Fl::box_dx(box());
   int Y = y()+Fl::box_dy(box());

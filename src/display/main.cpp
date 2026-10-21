@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "about.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
@@ -53,6 +54,23 @@ void apply_change() {
 class DisplayWindow : public BufferedWindow {
  public:
   DisplayWindow(int w, int h) : BufferedWindow(w, h, _("Display Settings")) {}
+  static AppInfo app_info() {
+    AppInfo info;
+    info.name = _("Display Settings");
+    info.program = "sde-display-settings";
+    info.version = SDE_DISPLAY_VERSION;
+    info.icon = "preferences-desktop-display";
+    info.description = _("Arranges monitors, sets their resolution, refresh rate and scale, and "
+                         "saves display profiles.");
+    info.credits = {_("Display profile model based on DisplayProfileManager by zac15987 (MIT)"),
+                    toolkit_credit()};
+    return info;
+  }
+  int handle(int e) override {
+    int r = BufferedWindow::handle(e);
+    if (!r && handle_about_event(e, app_info())) return 1;
+    return r;
+  }
   void draw() override {
     {
       Painter p(w(), h());
@@ -67,8 +85,8 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--version") {
-      printf("Display Settings %s (SDE alpha; DisplayProfileManager MIT port)\n",
-             SDE_DISPLAY_VERSION);
+      printf("Display Settings %s (SDE alpha; DisplayProfileManager MIT port) - %s\n",
+             SDE_DISPLAY_VERSION, kDeveloper);
       return 0;
     }
     if (a == "--help") {

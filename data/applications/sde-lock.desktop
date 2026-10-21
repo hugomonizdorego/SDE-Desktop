@@ -13,3 +13,5 @@ Keywords=lock;screensaver;idle;password;
 OnlyShowIn=SDE;
 StartupNotify=true
 X-SDE-Upstream=https://github.com/hugomonizdorego/SDE-Desktop
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

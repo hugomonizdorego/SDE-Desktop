@@ -140,9 +140,9 @@ void key(GtkButton *button, gpointer) {
   gtk_widget_grab_focus(entry);
 }
 void about(GtkButton *, gpointer) {
-  const char *authors[] = {"Raad Altaie — Scientific Calculator engine", "SDE contributors — native GTK4 frontend", nullptr};
+  const char *authors[] = {"DebION Dev-Team — developer, native GTK4 frontend", "Raad Altaie — Scientific Calculator engine", nullptr};
   gtk_show_about_dialog(GTK_WINDOW(window), "program-name", "Calculator", "version", SDE_CALCULATOR_VERSION,
-      "authors", authors, "website", "https://github.com/raad-altaie/scientific-calculator",
+      "authors", authors, "copyright", "Developer: DebION Dev-Team\n© 2026 DebION Dev-Team; calculation engine © Raad Altaie", "website", "https://github.com/raad-altaie/scientific-calculator",
       "website-label", "scientific-calculator", "license-type", GTK_LICENSE_AGPL_3_0_ONLY,
       "comments", "Native SDE Calculator. The calculation engine is embedded unchanged from the credited source.\n"
       "Full corresponding sources accompany the SDE alpha packages.", nullptr);

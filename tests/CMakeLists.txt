@@ -110,3 +110,9 @@ if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_daemon.py $<TARGET_FILE:sde-lock>)
   set_tests_properties(sde-lock-daemon PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif()
+
+# Test helper: stock FLTK menus, dialogs and widgets in the SDE look (not
+# installed); used for screenshots of the UI kit (docs/UI-KIT.md).
+add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
+target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
+add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)

@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
@@ -42,6 +43,17 @@ const std::vector<Action> &actions() {
       {N_("Shut Down"), {"system-shutdown", "application-exit"}, {"systemctl", "poweroff"}},
   };
   return list;
+}
+
+AppInfo app_info() {
+  AppInfo info;
+  info.name = _("Leave SDE");
+  info.program = "sde-logout";
+  info.version = SDE_VERSION;
+  info.icon = "system-log-out";
+  info.description = _("Locks the screen, suspends, logs out, restarts or shuts down the computer.");
+  info.credits = {toolkit_credit()};
+  return info;
 }
 
 class LogoutWindow : public sde::BufferedWindow {
@@ -108,8 +120,10 @@ class LogoutWindow : public sde::BufferedWindow {
         return 1;
       }
       case FL_PUSH:
+        if (Fl::event_button() == FL_RIGHT_MOUSE) return handle_about_event(e, app_info());
         return 1;
       case FL_RELEASE:
+        if (Fl::event_button() != FL_LEFT_MOUSE) return 1;
         run_action(button_at(Fl::event_x(), Fl::event_y()));
         return 1;
       case FL_FOCUS:
@@ -121,6 +135,7 @@ class LogoutWindow : public sde::BufferedWindow {
         else if (k == FL_Right || k == FL_Tab) focus_ = (focus_ + 1) % n;
         else if (k == FL_Enter || k == FL_KP_Enter || k == ' ') run_action(focus_);
         else if (k == FL_Escape) hide();
+        else if (k == FL_F + 1) return handle_about_event(e, app_info());
         else return 0;
         redraw();
         return 1;
@@ -141,7 +156,7 @@ int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
-      printf("sde-logout %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
+      printf("sde-logout %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
       return 0;
     }
     // sde-logout --action NAME runs one action without the dialog (the

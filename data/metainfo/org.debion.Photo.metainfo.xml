@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 DebION Dev-Team -->
+<component type="desktop-application">
+  <id>org.debion.Photo</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Photo</name>
+  <summary>View and edit photos</summary>
+  <developer id="org.debion">
+    <name>DebION Dev-Team</name>
+  </developer>
+  <description>
+    <p>Photo views your photos, reads their camera details and location, and edits them: rotate, crop, resize, adjust the colours and apply filters.</p>
+    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+  </description>
+  <launchable type="desktop-id">sde-view.desktop</launchable>
+  <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
+  <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
+  <project_group>SDE</project_group>
+  <provides>
+    <binary>sde-view</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0~alpha16" date="2026-10-21"/>
+  </releases>
+</component>

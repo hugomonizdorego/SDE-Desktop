@@ -15,6 +15,8 @@ StartupNotify=true
 StartupWMClass=Taca
 Actions=new-archive;
 MimeType=application/zip;application/x-zip;application/x-zip-compressed;application/vnd.rar;application/x-rar;application/x-rar-compressed;application/x-7z-compressed;application/x-tar;application/x-gtar;application/x-compressed-tar;application/x-bzip-compressed-tar;application/x-bzip2-compressed-tar;application/x-xz-compressed-tar;application/x-zstd-compressed-tar;application/x-lz4-compressed-tar;application/x-lzma-compressed-tar;application/x-lzip-compressed-tar;application/x-tarz;application/gzip;application/x-gzip;application/x-bzip;application/x-bzip2;application/x-xz;application/zstd;application/x-zstd;application/x-lz4;application/x-lzma;application/x-lzip;application/x-compress;application/x-cd-image;application/x-iso9660-image;application/vnd.ms-cab-compressed;application/x-cpio;application/x-archive;application/vnd.debian.binary-package;application/x-deb;application/x-rpm;application/x-xar;application/x-lha;application/x-lzh-compressed;application/warc;application/java-archive;application/x-java-archive;application/x-war;application/vnd.android.package-archive;application/epub+zip;application/vnd.comicbook+zip;application/x-cbz;application/vnd.comicbook-rar;application/x-cbr;application/x-cb7;application/x-cbt;application/x-xpinstall;
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team
 
 [Desktop Action new-archive]
 Name=New Archive

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 DebION Dev-Team -->
+<component type="desktop-application">
+  <id>org.debion.Settings</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>SDE Settings</name>
+  <summary>Change the appearance, panel and desktop of SDE</summary>
+  <developer id="org.debion">
+    <name>DebION Dev-Team</name>
+  </developer>
+  <description>
+    <p>SDE Settings changes the theme, accent colour, wallpaper, panel, desktop, devices and system options of the Selviana Desktop Environment.</p>
+    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+  </description>
+  <launchable type="desktop-id">sde-settings.desktop</launchable>
+  <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
+  <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
+  <project_group>SDE</project_group>
+  <provides>
+    <binary>sde-settings</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0~alpha16" date="2026-10-21"/>
+  </releases>
+</component>

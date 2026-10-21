@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "about.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "i18n.h"
@@ -583,6 +584,7 @@ void build_display_page(Page* page) {
   page->end_card();
   page->begin_card(_("About Display Settings"));
   page->note("Display Settings " + std::string(SDE_DISPLAY_VERSION) + " · SDE Alpha");
+  page->note(developer_line());
   page->row(_("Profile model source"), S(180), S(34), [](int x, int y, int w, int h) -> Fl_Widget* {
     auto* b = new FlatButton(x, y, w, h, "DisplayProfileManager");
     b->callback(

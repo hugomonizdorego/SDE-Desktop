@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "desktop_entry.h"
@@ -33,6 +34,17 @@ Theme g_theme;
 Fl_Input *g_input = nullptr;
 std::vector<std::string> g_history;
 size_t g_history_pos = 0;
+
+AppInfo app_info() {
+  AppInfo info;
+  info.name = _("Run Command");
+  info.program = "sde-run";
+  info.version = SDE_VERSION;
+  info.icon = "system-run";
+  info.description = _("Starts a program, a command or a web address (Alt+F2).");
+  info.credits = {toolkit_credit()};
+  return info;
+}
 
 std::string history_path() { return state_home() + "/sde/run-history"; }
 
@@ -84,6 +96,12 @@ class RunInput : public Fl_Input {
 class RunWindow : public sde::BufferedWindow {
  public:
   RunWindow(int w, int h) : sde::BufferedWindow(w, h, _("Run Command")) {}
+  int handle(int e) override {
+    int r = sde::BufferedWindow::handle(e);
+    if (!r || (e == FL_PUSH && Fl::event_button() == FL_RIGHT_MOUSE && !Fl::event_inside(g_input)))
+      if (handle_about_event(e, app_info())) return 1;
+    return r;
+  }
   void draw() override {
     {
       Painter p(w(), h());
@@ -136,7 +154,7 @@ int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
-      printf("sde-run %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
+      printf("sde-run %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
       return 0;
     }
     printf("Usage: sde-run [--version]\n");

@@ -22,6 +22,7 @@
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
+#include "menu.h"
 #include "process.h"
 #include "ui.h"
 #include "util.h"
@@ -848,7 +849,11 @@ class ProcessesPage : public Page {
     add(_("Open File Location"), 20, 0);
     add(_("Properties"), 21, 0);
     finish();
+    sde::set_menu_icon(&items[0], "close");
+    sde::set_menu_icon(&items[items.size() - 3], "folder");
+    sde::set_menu_icon(&items[items.size() - 2], "properties");
     const Fl_Menu_Item *m = items.data()->popup(mx, my);
+    for (auto &it : items) sde::set_menu_icon(&it, "");
     if (!m || !m->user_data()) return;
     switch (intptr_t(m->user_data())) {
       case 1: signal_selected(SIGTERM); break;

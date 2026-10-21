@@ -7,3 +7,5 @@ Icon=preferences-desktop
 Categories=Settings;DesktopSettings;
 OnlyShowIn=SDE;
 StartupNotify=false
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team
