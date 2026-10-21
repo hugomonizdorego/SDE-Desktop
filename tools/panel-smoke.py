@@ -91,7 +91,8 @@ def press(title,name,fx=.5,fy=.5,active=True):
         cy=r[1]+r[3]*fy
         if not r[5] or not body or body[1]+2<=cy<=body[1]+body[3]-2:
             run('xdotool','mousemove',g['x']+round(r[0]+r[2]*fx),g['y']+round(r[1]+r[3]*fy),'click','1');time.sleep(.5);return
-        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+body[3]//2,'click','5' if cy>body[1]+body[3] else '4');time.sleep(.2)
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+body[3]//2,'click','5' if cy>body[1]+body[3]-2 else '4');time.sleep(.2)
+    print('press failed',name,layout(title).get(name),layout(title).get('@body'),flush=True)
     shot('debug-press');raise AssertionError(f'{title}: could not reveal {name!r}')
 def in_view(title,name):
     """The control's top and most of it (all of it when it fits) are in view."""
@@ -137,9 +138,10 @@ def only_open(title):
 def command(args,title):
     # A command sent with sde-panel can be lost when it races the previous
     # popup closing (seen with alpha14 too, ~2 in 80); send it once more.
-    for attempt in range(2):
+    for attempt in range(3):
+        if visible('^'+title+'$'):return visible('^'+title+'$')
         run('sde-panel',*args)
-        for _ in range(25):
+        for _ in range(40):
             w=visible('^'+title+'$')
             if w:return w
             time.sleep(.08)
