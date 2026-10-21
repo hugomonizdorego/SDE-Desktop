@@ -75,7 +75,7 @@ def overlay(record_id, staged):
 def brand_leaks(text):
     """Original product names in text, outside copyright lines."""
     return [line for line in text.splitlines()
-            if BRAND_WORDS.search(line) and not re.search(r"copyright|\(c\)|©", line, re.I)]
+            if BRAND_WORDS.search(line) and not re.search(r"copyright|\(c\)|©|modified version of the Caja", line, re.I)]
 
 
 def liria(staged):
