@@ -341,7 +341,9 @@ void XanaraWindow::layout() {
   bool strip = have && !presenting && (view_->tool() != Tool::Select || view_->has_selected_annot());
   strip_h_ = strip ? S(44) : 0;
   sidebar_w_ = have && sidebar_on_ && !presenting && w() >= S(640) ? S(224) : 0;
-  int top = bar_h_ + strip_h_;
+  // The tool strip floats over the pages, so choosing a tool never moves
+  // the text under the pointer.
+  int top = bar_h_;
   if (sidebar_w_) {
     sidebar_->resize(0, top, sidebar_w_, h() - top);
     sidebar_->show();
@@ -625,6 +627,8 @@ void XanaraWindow::draw_bar_text() {
 
 void XanaraWindow::draw_strip(Painter &p) {
   if (!strip_h_) return;
+  p.fill_gradient(0, bar_h_ + strip_h_, w(), S(8), 0, theme_.shadow.alpha(theme_.dark ? 0.35 : 0.14),
+                  theme_.shadow.alpha(0));
   p.fill_rect(0, bar_h_, w(), strip_h_, theme_.surface_alt);
   p.line(0, bar_h_ + strip_h_ - 0.5, w(), bar_h_ + strip_h_ - 0.5, theme_.border);
   Rgb ink = view_->ink();
@@ -695,10 +699,15 @@ void XanaraWindow::draw() {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), theme_.background);
     draw_bar(p);
-    draw_strip(p);
   }
   draw_bar_text();
+  draw_child(*view_);
+  if (sidebar_->visible()) draw_child(*sidebar_);
   if (strip_h_) {
+    {
+      Painter p(w(), h());
+      draw_strip(p);
+    }
     Tool t = view_->tool();
     text_font(theme_.font_size, true);
     std::string name = view_->has_selected_annot() && t == Tool::Select ? std::string(_("Annotation")) : tool_name(t);
@@ -712,8 +721,6 @@ void XanaraWindow::draw() {
     text_font(theme_.font_size - S(1));
     draw_text(tool_hint(t), hint_x, bar_h_, hint_r - hint_x, strip_h_, theme_.text_dim);
   }
-  draw_child(*view_);
-  if (sidebar_->visible()) draw_child(*sidebar_);
   {
     Painter p(w(), h());
     draw_find(p);
@@ -790,6 +797,7 @@ int XanaraWindow::handle(int event) {
         redraw();
         return 1;
       }
+      if (strip_h_ && my >= bar_h_ && my < bar_h_ + strip_h_) return 1;  // strip background
       break;
     }
     case FL_DRAG:
