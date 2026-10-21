@@ -5,6 +5,9 @@
  * collapsible overview sits above the files with Quick access folder cards,
  * drives with a usage bar and recently used files. Everything is styled by
  * the SDE GTK themes through the .sde-home-* / .sde-*-card style classes.
+ * Recent files can be removed one by one (right click or the Menu key) or
+ * cleared at once; both go through GtkRecentManager, so the shared
+ * ~/.local/share/recently-used.xbel list of every application changes.
  *
  * Folders open in the same Liria window through the "sde-go-to-uri" hook
  * that suite/redesign.py adds to the navigation window; without it they are
@@ -27,11 +30,13 @@ typedef void (*SdeGoToUri) (GtkWidget *window, const char *uri);
 
 typedef struct {
 	GtkWidget *window;
+	GtkWidget *root;
 	GtkWidget *revealer;
 	GtkWidget *toggle_label;
 	GtkWidget *toggle_icon;
 	GtkWidget *drives;
 	GtkWidget *recent;
+	GtkWidget *recent_clear;
 	GVolumeMonitor *monitor;
 	GCancellable *cancellable;
 	gboolean destroyed;
@@ -130,14 +135,215 @@ card_clicked (GtkButton *button, Overview *o)
 		activate_uri (o->window, uri, GPOINTER_TO_INT (g_object_get_data (G_OBJECT (button), "sde-open-file")));
 }
 
-/* Right click on a recent file opens the folder that contains it. */
+static void fill_recent (Overview *o);
+
+/* ---------------------------------------------------- recent: clearing */
+
+static void
+recent_remove_uri (Overview *o, const gchar *uri)
+{
+	GError *error = NULL;
+
+	if (!gtk_recent_manager_remove_item (gtk_recent_manager_get_default (), uri, &error)) {
+		g_warning ("SDE Home: %s", error->message);
+		g_error_free (error);
+	}
+	if (!o->destroyed)
+		fill_recent (o);
+}
+
+static void
+recent_clear_all (Overview *o)
+{
+	GtkWidget *toplevel = o->window ? gtk_widget_get_toplevel (o->window) : NULL;
+	GtkWidget *dialog = gtk_message_dialog_new (GTK_IS_WINDOW (toplevel) ? GTK_WINDOW (toplevel) : NULL,
+	                                            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+	                                            GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE,
+	                                            _("Clear the list of recent files?"));
+	GError *error = NULL;
+	gint response;
+
+	gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog),
+	                                          _("The files themselves are not deleted. The list is "
+	                                            "cleared for all applications."));
+	gtk_dialog_add_buttons (GTK_DIALOG (dialog), _("_Cancel"), GTK_RESPONSE_CANCEL,
+	                        _("C_lear"), GTK_RESPONSE_ACCEPT, NULL);
+	gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_ACCEPT);
+	response = gtk_dialog_run (GTK_DIALOG (dialog));
+	gtk_widget_destroy (dialog);
+	if (response != GTK_RESPONSE_ACCEPT)
+		return;
+	if (gtk_recent_manager_purge_items (gtk_recent_manager_get_default (), &error) < 0 || error) {
+		if (error) {
+			g_warning ("SDE Home: %s", error->message);
+			g_error_free (error);
+		}
+	}
+	if (!o->destroyed)
+		fill_recent (o);
+}
+
+static void
+clear_clicked (GtkButton *button, Overview *o)
+{
+	recent_clear_all (o);
+}
+
+typedef struct {
+	Overview *o;
+	gchar *uri;
+	gchar *parent_uri;
+} RecentAction;
+
+static void
+recent_action_free (gpointer data, GClosure *closure)
+{
+	RecentAction *a = data;
+
+	g_free (a->uri);
+	g_free (a->parent_uri);
+	g_free (a);
+}
+
+static void
+menu_open (GtkMenuItem *item, RecentAction *a)
+{
+	activate_uri (a->o->window, a->uri, TRUE);
+}
+
+static void
+menu_open_folder (GtkMenuItem *item, RecentAction *a)
+{
+	activate_uri (a->o->window, a->parent_uri, FALSE);
+}
+
+/* The menu is closing: change the list after the menu has gone. */
+static gboolean
+remove_idle (gpointer data)
+{
+	RecentAction *a = data;
+
+	if (!a->o->destroyed)
+		recent_remove_uri (a->o, a->uri);
+	g_object_unref (a->o->root);
+	recent_action_free (a, NULL);
+	return G_SOURCE_REMOVE;
+}
+
+static void
+menu_remove (GtkMenuItem *item, RecentAction *a)
+{
+	RecentAction *copy = g_new0 (RecentAction, 1);
+
+	copy->o = a->o;
+	copy->uri = g_strdup (a->uri);
+	g_object_ref (a->o->root);
+	g_idle_add (remove_idle, copy);
+}
+
+static gboolean
+clear_idle (gpointer data)
+{
+	GtkWidget *root = data;
+	Overview *o = g_object_get_data (G_OBJECT (root), "sde-overview");
+
+	if (o && !o->destroyed)
+		recent_clear_all (o);
+	g_object_unref (root);
+	return G_SOURCE_REMOVE;
+}
+
+static void
+menu_clear (GtkMenuItem *item, RecentAction *a)
+{
+	g_idle_add (clear_idle, g_object_ref (a->o->root));
+}
+
+static GtkWidget *
+menu_item (GtkWidget *menu, const gchar *label, GCallback callback, RecentAction *a, gboolean owns)
+{
+	GtkWidget *item = gtk_menu_item_new_with_mnemonic (label);
+
+	if (owns)
+		g_signal_connect_data (item, "activate", callback, a, recent_action_free, 0);
+	else
+		g_signal_connect (item, "activate", callback, a);
+	gtk_menu_shell_append (GTK_MENU_SHELL (menu), item);
+	return item;
+}
+
+static gboolean
+destroy_idle (gpointer menu)
+{
+	gtk_widget_destroy (menu);
+	g_object_unref (menu);
+	return G_SOURCE_REMOVE;
+}
+
+/* The chosen item is activated after "deactivate": destroy later. */
+static void
+menu_deactivated (GtkWidget *menu)
+{
+	g_idle_add (destroy_idle, g_object_ref (menu));
+}
+
+static void
+recent_popup (GtkWidget *card, Overview *o, const GdkEvent *event)
+{
+	RecentAction *a = g_new0 (RecentAction, 1);
+	GtkWidget *menu = gtk_menu_new ();
+
+	a->o = o;
+	a->uri = g_strdup (g_object_get_data (G_OBJECT (card), "sde-uri"));
+	a->parent_uri = g_strdup (g_object_get_data (G_OBJECT (card), "sde-parent-uri"));
+	gtk_style_context_add_class (gtk_widget_get_style_context (menu), "sde-recent-menu");
+	/* The first item owns the shared data and frees it with the menu. */
+	menu_item (menu, _("_Open"), G_CALLBACK (menu_open), a, TRUE);
+	if (a->parent_uri)
+		menu_item (menu, _("Open _Containing Folder"), G_CALLBACK (menu_open_folder), a, FALSE);
+	gtk_menu_shell_append (GTK_MENU_SHELL (menu), gtk_separator_menu_item_new ());
+	menu_item (menu, _("_Remove from Recent"), G_CALLBACK (menu_remove), a, FALSE);
+	menu_item (menu, _("C_lear Recent Files\xE2\x80\xA6"), G_CALLBACK (menu_clear), a, FALSE);
+	gtk_widget_show_all (menu);
+	gtk_menu_attach_to_widget (GTK_MENU (menu), card, NULL);
+	g_signal_connect (menu, "deactivate", G_CALLBACK (menu_deactivated), NULL);
+	if (event)
+		gtk_menu_popup_at_pointer (GTK_MENU (menu), event);
+	else
+		gtk_menu_popup_at_widget (GTK_MENU (menu), card, GDK_GRAVITY_SOUTH_WEST, GDK_GRAVITY_NORTH_WEST, NULL);
+}
+
+/* Right click on a recent file: Open, Open Containing Folder, Remove
+ * from Recent and Clear Recent Files. */
 static gboolean
 card_pressed (GtkWidget *button, GdkEventButton *event, Overview *o)
 {
-	const gchar *parent = g_object_get_data (G_OBJECT (button), "sde-parent-uri");
+	if (event->type == GDK_BUTTON_PRESS && event->button == 3 &&
+	    g_object_get_data (G_OBJECT (button), "sde-open-file")) {
+		recent_popup (button, o, (GdkEvent *) event);
+		return TRUE;
+	}
+	return FALSE;
+}
 
-	if (event->type == GDK_BUTTON_PRESS && event->button == 3 && parent) {
-		activate_uri (o->window, parent, FALSE);
+static gboolean
+card_popup_menu (GtkWidget *button, Overview *o)
+{
+	if (!g_object_get_data (G_OBJECT (button), "sde-open-file"))
+		return FALSE;
+	recent_popup (button, o, NULL);
+	return TRUE;
+}
+
+/* Delete removes the focused recent file from the list. */
+static gboolean
+card_key_pressed (GtkWidget *button, GdkEventKey *event, Overview *o)
+{
+	if ((event->keyval == GDK_KEY_Delete || event->keyval == GDK_KEY_KP_Delete) &&
+	    g_object_get_data (G_OBJECT (button), "sde-open-file")) {
+		RecentAction a = { o, g_object_get_data (G_OBJECT (button), "sde-uri"), NULL };
+
+		menu_remove (NULL, &a);
 		return TRUE;
 	}
 	return FALSE;
@@ -173,6 +379,8 @@ card_new (Overview *o, const gchar *style_class, const gchar *uri, const gchar *
 		gtk_widget_set_tooltip_text (button, tooltip);
 	g_signal_connect (button, "clicked", G_CALLBACK (card_clicked), o);
 	g_signal_connect (button, "button-press-event", G_CALLBACK (card_pressed), o);
+	g_signal_connect (button, "popup-menu", G_CALLBACK (card_popup_menu), o);
+	g_signal_connect (button, "key-press-event", G_CALLBACK (card_key_pressed), o);
 	return button;
 }
 
@@ -554,6 +762,8 @@ fill_recent (Overview *o)
 			g_object_unref (parent);
 		g_object_unref (file);
 	}
+	if (o->recent_clear)
+		gtk_widget_set_visible (o->recent_clear, shown > 0);
 	if (shown == 0) {
 		GtkWidget *empty = label_new (_("Files you open will appear here."), "sde-home-empty", FALSE);
 		flow_add (o->recent, empty);
@@ -664,7 +874,7 @@ GtkWidget *
 sde_home_overview_new (const char *uri, GtkWidget *window)
 {
 	Overview *o;
-	GtkWidget *root, *header, *titles, *title, *toggle, *toggle_box, *body, *quick, *lower, *drives;
+	GtkWidget *root, *header, *titles, *title, *toggle, *toggle_box, *body, *quick, *lower, *drives, *recent_box;
 	gchar *home_uri = g_filename_to_uri (g_get_home_dir (), NULL, NULL);
 	gchar *hello;
 	const gchar *real_name;
@@ -681,6 +891,7 @@ sde_home_overview_new (const char *uri, GtkWidget *window)
 	o->monitor = g_volume_monitor_get ();
 
 	root = gtk_box_new (GTK_ORIENTATION_VERTICAL, 10);
+	o->root = root;
 	gtk_style_context_add_class (gtk_widget_get_style_context (root), "sde-home-overview");
 	g_object_set_data_full (G_OBJECT (root), "sde-overview", o, (GDestroyNotify) overview_free);
 	g_signal_connect (root, "destroy", G_CALLBACK (overview_destroyed), o);
@@ -726,13 +937,34 @@ sde_home_overview_new (const char *uri, GtkWidget *window)
 	gtk_widget_set_size_request (o->drives, 280, -1);
 	fill_drives (o);
 	o->recent = flow_new (1, 3, "sde-recent-files");
+	o->recent_clear = gtk_button_new_with_mnemonic (_("C_lear"));
+	gtk_widget_set_tooltip_text (o->recent_clear, _("Clear the list of recent files"));
+	gtk_style_context_add_class (gtk_widget_get_style_context (o->recent_clear), "sde-home-clear");
+	gtk_widget_set_no_show_all (o->recent_clear, TRUE);
+	gtk_widget_set_valign (o->recent_clear, GTK_ALIGN_CENTER);
+	g_signal_connect (o->recent_clear, "clicked", G_CALLBACK (clear_clicked), o);
 	fill_recent (o);
 	drives = section (_("Drives"), o->drives);
 	/* Ellipsized card labels expand; only Recent files takes the extra width. */
 	gtk_widget_set_hexpand (drives, FALSE);
 	gtk_widget_set_halign (drives, GTK_ALIGN_START);
 	gtk_box_pack_start (GTK_BOX (lower), drives, FALSE, FALSE, 0);
-	gtk_box_pack_start (GTK_BOX (lower), section (_("Recent files"), o->recent), TRUE, TRUE, 0);
+	recent_box = section (_("Recent files"), o->recent);
+	{
+		/* The Clear button sits at the end of the section title row. */
+		GList *children = gtk_container_get_children (GTK_CONTAINER (recent_box));
+		GtkWidget *title_label = children->data, *title_row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+
+		g_object_ref (title_label);
+		gtk_container_remove (GTK_CONTAINER (recent_box), title_label);
+		gtk_box_pack_start (GTK_BOX (title_row), title_label, TRUE, TRUE, 0);
+		gtk_box_pack_end (GTK_BOX (title_row), o->recent_clear, FALSE, FALSE, 0);
+		g_object_unref (title_label);
+		gtk_box_pack_start (GTK_BOX (recent_box), title_row, FALSE, FALSE, 0);
+		gtk_box_reorder_child (GTK_BOX (recent_box), title_row, 0);
+		g_list_free (children);
+	}
+	gtk_box_pack_start (GTK_BOX (lower), recent_box, TRUE, TRUE, 0);
 	gtk_box_pack_start (GTK_BOX (body), lower, FALSE, FALSE, 0);
 	g_signal_connect (lower, "size-allocate", G_CALLBACK (lower_allocated), NULL);
 
