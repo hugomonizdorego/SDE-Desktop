@@ -55,6 +55,7 @@ struct RenderParams {
   double scale = 1.0;
   int rotation = 0;
   ColorMode mode = ColorMode::Normal;
+  bool annots = true;  // false: draw the page without its markup annotations
 };
 
 // Pixel size of a whole page of |pw| x |ph| points.

@@ -90,7 +90,8 @@ cairo_surface_t *render_area(PopplerPage *page, double pw, double ph, const Rend
     cairo_set_font_options(cr, fo);
     cairo_font_options_destroy(fo);
     cairo_set_antialias(cr, CAIRO_ANTIALIAS_GRAY);
-    poppler_page_render(page, cr);
+    if (rp.annots) poppler_page_render(page, cr);
+    else poppler_page_render_for_printing_with_options(page, cr, POPPLER_PRINT_DOCUMENT);
   }
   cairo_destroy(cr);
   cairo_surface_flush(s);
