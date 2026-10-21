@@ -52,7 +52,6 @@ Build-Depends: debhelper-compat (= 13),
                libpeas-dev,
                libgtop2-dev,
                libsystemd-dev,
-               libgtkmm-3.0-dev,
                libwnck-3-dev,
                libxml2-dev,
                libxml2-utils,
@@ -146,7 +145,7 @@ Depends: ${shlibs:Depends},
          xz-utils,
          xdg-user-dirs,
          fonts-dejavu-core | fonts-noto-core
-Recommends: papirus-icon-theme | adwaita-icon-theme,
+Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             network-manager,
             bluez,
             blueman,
@@ -156,7 +155,7 @@ Recommends: papirus-icon-theme | adwaita-icon-theme,
             xterm | x-terminal-emulator,
             xdg-user-dirs,
             lightdm | x-display-manager
-Suggests: eduka-icons,
+Suggests: eduka-icons, unrar,
           brightnessctl,
           network-manager-gnome,
           scrot,
@@ -189,8 +188,10 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  statically), sde-xsettingsd and sde-polkit-agent (written from scratch),
  and source builds of SDE WM (Openbox) and SDE compositor (picom).
  .
- Includes native source-built SDE forks: Niny, Liria, Xanara, Taca,
- Photo (SDE View), SDE System Monitor, SDE Power Manager and SDE Screen Lock.
+ Applications written from scratch by the DebION Dev-Team: Niny (text
+ editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
+ Gallery and SDE System Monitor. Source-built SDE forks: Liria (Caja),
+ SDE Power Manager and SDE Screen Lock.
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
  SDE Update uses an attributed mintupdate model and Debian PackageKit.
@@ -238,7 +239,9 @@ Package: debion-desktop-base
 Architecture: all
 Depends: ${misc:Depends},
          desktop-base
-Description: DebION GNU/Linux artwork for desktop-base
+Recommends: network-manager,
+            iproute2
+Description: DebION GNU/Linux artwork and desktop defaults for desktop-base
  Makes the DebION theme the active desktop-base theme: wallpaper, lock
  screen, login screen and GRUB background follow it in every desktop
  (/usr/share/desktop-base/active-theme). It also provides the DebION vendor
@@ -246,3 +249,10 @@ Description: DebION GNU/Linux artwork for desktop-base
  .
  Debian's themes stay installed; choose another one with
  "update-alternatives --config desktop-theme".
+ .
+ Desktop network defaults: NetworkManager connectivity checking against
+ Debian's endpoint (/usr/lib/NetworkManager/conf.d/20-debion-connectivity.conf;
+ override it in /etc/NetworkManager/conf.d/), and debion-network-check, which
+ explains "connected but no internet" (interfaces left to ifupdown, competing
+ default routes, a broken /etc/resolv.conf, stale proxies) and can hand
+ DHCP/Wi-Fi interfaces from /etc/network/interfaces to NetworkManager.

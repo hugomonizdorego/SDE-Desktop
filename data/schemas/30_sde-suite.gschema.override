@@ -2,48 +2,6 @@
 # SDE alpha10 defaults for the native suite. Users can still change every
 # key; `gsettings reset` returns to these values.
 
-[org.debion.niny]
-active-plugins=['docinfo', 'modelines', 'filebrowser', 'spell', 'time', 'sort', 'trailsave', 'snippets', 'quickopen', 'externaltools']
-display-line-numbers=true
-highlight-current-line=true
-bracket-matching=true
-auto-indent=true
-display-overview-map=true
-restore-cursor-position=true
-show-single-tab=false
-toolbar-buttons-style='icons'
-
-[org.debion.sdeview.ui]
-image-collection=true
-image-collection-position='bottom'
-image-collection-resizable=true
-sidebar=false
-statusbar=true
-
-[org.debion.sdeview.view]
-use-background-color=true
-background-color='#1C222B'
-
-[org.debion.sdeview.plugins]
-active-plugins=['effects', 'fullscreen', 'reload', 'statusbar-date']
-
-[org.debion.system-monitor]
-window-state=(920, 660, 60, 60)
-current-tab=2
-smooth-refresh=true
-cpu-color0='#2672BE'
-cpu-color1='#E0525C'
-cpu-color2='#2E9E6E'
-cpu-color3='#E39A2B'
-cpu-color4='#7A4FD1'
-cpu-color5='#1C9DB8'
-cpu-color6='#C2407A'
-cpu-color7='#5A6472'
-mem-color='#7A4FD1'
-swap-color='#2E9E6E'
-net-in-color='#2672BE'
-net-out-color='#E0525C'
-
 [org.debion.liria.preferences]
 show-image-thumbnails='always'
 default-folder-viewer='icon-view'

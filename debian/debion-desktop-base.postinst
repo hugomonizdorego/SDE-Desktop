@@ -34,6 +34,18 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-remov
         esac
     fi
 
+    # NetworkManager: load the connectivity check (a configuration reload
+    # does not drop connections), and explain interfaces that ifupdown still
+    # manages. /etc/network/interfaces belongs to the administrator, so it is
+    # only changed by an explicit "debion-network-check --fix".
+    if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 &&
+       systemctl is-active --quiet NetworkManager.service; then
+        systemctl reload NetworkManager.service >/dev/null 2>&1 || true
+    fi
+    if [ -z "$2" ] && [ -x /usr/sbin/debion-network-check ]; then
+        /usr/sbin/debion-network-check --postinst || true
+    fi
+
     # Refresh the GRUB background when GRUB is the boot loader.
     if [ -e /boot/grub/grub.cfg ] && command -v update-grub >/dev/null 2>&1; then
         update-grub >/dev/null 2>&1 || echo "debion-desktop-base: update-grub failed; run it later"

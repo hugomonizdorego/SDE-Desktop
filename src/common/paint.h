@@ -3,6 +3,7 @@
 // FLTK is currently drawing into. Text is drawn by FLTK (Xft) afterwards.
 #pragma once
 
+#include <X11/Xlib.h>
 #include <cairo.h>
 
 #include <string>
@@ -35,15 +36,30 @@ class Painter {
   void glass_sheen(double x, double y, double w, double h, double r, bool dark);
   // Soft drop shadow made of a few translucent rounded rectangles.
   void shadow(double x, double y, double w, double h, double r, const Color &c, int spread = 8);
+  // Draws an image scaled into a |size| square. Image surfaces are uploaded
+  // to the X server once and the server copy is reused while |s| lives, so
+  // |s| must not be modified after it was first painted (icons, wallpapers).
   void image(cairo_surface_t *s, double x, double y, double size, double alpha = 1.0);
+  // Paints |s| unscaled at |x|,|y| (e.g. a pre-scaled wallpaper), with the
+  // same server-side cache as image().
+  void surface(cairo_surface_t *s, double x, double y, double alpha = 1.0);
+  // Server-side copy of an immutable image surface, cached on |s|.
+  cairo_surface_t *server_copy(cairo_surface_t *s);
   void circle(double cx, double cy, double radius, const Color &c);
   void line(double x1, double y1, double x2, double y2, const Color &c, double width = 1.0);
 
   // Flushes cairo so that FLTK/Xft text can be drawn on top.
   void flush();
 
+  // Used by BufferedWindow: while a back buffer is being drawn, every
+  // Painter on it shares one cairo surface instead of creating its own.
+  static void begin_target(Drawable d, int w, int h);
+  static void end_target();
+  static void forget_target(Drawable d);  // the pixmap is about to be freed
+
  private:
   cairo_surface_t *surface_ = nullptr;
+  bool shared_ = false;
   cairo_t *cr_ = nullptr;
 };
 

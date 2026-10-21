@@ -9,12 +9,12 @@ they are not duplicated inside SDE.
 
 | Application | Executable | Source |
 | --- | --- | --- |
-| Niny | `niny` | [pluma](https://github.com/mate-desktop/pluma) |
+| Niny | `niny` | native SDE application (DebION Dev-Team) |
 | Liria | `liria` | [caja](https://github.com/mate-desktop/caja) |
-| Xanara | `xanara` | [atril](https://github.com/mate-desktop/atril) |
-| Taca | `taca` | [engrampa](https://github.com/mate-desktop/engrampa) |
-| SDE View | `sde-view` | [eom](https://github.com/mate-desktop/eom) |
-| SDE System Monitor | `sde-system-monitor` | [mate-system-monitor](https://github.com/mate-desktop/mate-system-monitor) |
+| Xanara | `xanara` | native SDE application (DebION Dev-Team) |
+| Taca | `taca` | native SDE application (DebION Dev-Team) |
+| Photo | `sde-view` | native SDE application (DebION Dev-Team) |
+| SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
 | SDE Power Manager | `sde-power-manager`, `sde-power-preferences`, `sde-power-statistics` | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) |
 | SDE Screen Lock | `sde-screensaver`, `sde-screensaver-command`, `sde-screensaver-preferences` | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) |
 | Calculator | `calculator` | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) engine, native GTK4 frontend |
@@ -44,8 +44,8 @@ battery behavior require testing in a real DebION login session.
 
 New GTK processes follow SDE light/dark settings, respecting an existing
 `GTK_THEME` or the system-theme option. SDE-specific MIME defaults preserve user
-overrides. Xanara supports PDF, PostScript, DjVu and comic archives; the EPUB,
-DVI and XPS backends are disabled to avoid extra runtime stacks in this build.
+overrides. Xanara (native since alpha15) opens, annotates and fills in PDF files with
+poppler; page operations use qpdf when it is installed.
 
 The panel defaults to a full-width square-edged rectangle. Floating and short
 styles remain available. Existing saved panel choices are retained. Settings → Applications shows short clickable source names and complete installed copyright

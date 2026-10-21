@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The SDE application menu.
 //
-//  * Header: the user's picture and name, and Files, Settings, Lock and
-//    Power buttons.
+//  * Header: the user's picture and name, and a Files button. Power,
+//    session and Settings buttons live in the Action Center.
 //  * Search field (top or bottom): typing replaces the content with results
 //    (applications, Settings pages, session actions and files). Clicking the
 //    empty field shows recent applications and quick settings.
-//  * Category buttons: each opens a page with that category's applications.
-//  * Home view: "Favorites" groups of large tiles on pages (left) and the
-//    alphabetical "All Programs" list with letter headings (right).
+//  * Category chips: each opens a page with that category's applications.
+//    They wrap into rows (or become icons) so that all of them always fit.
+//  * Home view: up to 12 "Favorites" as large tiles and below them the
+//    "Recently used" applications, ranked by how often and how recently they
+//    were opened (left); the alphabetical "All Programs" list with letter
+//    headings (right).
 //
 // Right-click an application to add it to the favorites or the panel;
 // right-click elsewhere to arrange the menu ([menu] in sde.conf).
@@ -40,13 +43,11 @@ class AppMenu : public PanelPopup {
   // Everything that can be clicked, hovered or selected.
   enum Kind {
     K_NONE,
-    K_HEADER_BUTTON,  // index: 0 files, 1 settings, 2 lock, 3 power
+    K_HEADER_BUTTON,  // index: 0 files
     K_SEARCH,
     K_CATEGORY,       // index into categories_
-    K_PAGE_PREV,
-    K_PAGE_NEXT,
-    K_PAGE_DOT,       // index: page
-    K_TILE,           // favorites, recent and quick settings tiles (home)
+    K_TILE,           // favorites (home) and recent tiles (search home)
+    K_RECENT,         // "Recently used" row (home)
     K_ALL_ROW,        // "All Programs" application
     K_ALL_LETTER,     // letter heading in "All Programs"
     K_LETTER_JUMP,    // letter in the jump grid; index: letter
@@ -54,8 +55,15 @@ class AppMenu : public PanelPopup {
     K_CAT_TILE,       // application in a category page
     K_RESULT,         // search result
     K_CHIP,           // quick settings chip (search home)
-    K_CATS_LEFT,      // scroll the category strip
-    K_CATS_RIGHT,
+  };
+  // A scrolled part of the menu: its rectangle, scroll offset and content.
+  struct Area {
+    Kind kind = K_NONE;  // K_ALL_ROW, K_TILE (home left pane), K_CAT_TILE, K_RESULT
+    int x = 0, y = 0, w = 0, h = 0;
+    int content = 0;
+    int *scroll = nullptr;
+    int bar_x() const;  // left edge of the scrollbar
+    bool scrolls() const { return content > h; }
   };
   struct Item {
     Kind kind = K_NONE;
@@ -72,10 +80,6 @@ class AppMenu : public PanelPopup {
              px < cx + cw && py >= cy && py < cy + ch;
     }
   };
-  struct Group {
-    std::string title;
-    std::vector<const sde::DesktopEntry *> entries;
-  };
   struct Ref {
     Kind kind = K_NONE;
     int index = -1;
@@ -87,7 +91,9 @@ class AppMenu : public PanelPopup {
   void reload();
   void load_favorites();
   void save_favorites();
+  void save_usage();
   void add_recent(const std::string &id);
+  void layout_chips();
   static void poll_applications(void *);
   void metrics();
   void build_items();
@@ -107,6 +113,10 @@ class AppMenu : public PanelPopup {
   void move_selection(int key);
   void ensure_visible(const Item &it);
   void scroll_by(Kind area, int dy);
+  const Area *area(Kind kind) const;
+  const Area *area_at(int x, int y) const;
+  void drag_scrollbar(int y);
+  void qa_dump_menu();
   const Item *find(const Ref &r) const;
   const Item *item_at(int x, int y) const;
   void start_hover(const Ref &r);
@@ -119,26 +129,32 @@ class AppMenu : public PanelPopup {
   sde::Effects effects_;
   Fl_Input *search_;
   std::vector<sde::DesktopEntry> apps_;
+  std::string apps_stamp_;  // applications_stamp() when apps_ was loaded
   std::vector<sde::DesktopEntry> extras_;  // Settings pages and session actions
   std::vector<sde::DesktopEntry> files_;   // file search results
   std::vector<std::string> categories_;   // non-empty menu categories
   std::vector<const sde::DesktopEntry *> sorted_;  // all applications, A-Z
   std::vector<const sde::DesktopEntry *> results_;
   std::vector<const sde::DesktopEntry *> category_apps_;
-  std::vector<std::string> favorites_, recent_;
+  std::vector<std::string> favorites_, recent_;  // recent_: by last use
+  std::vector<sde::menu::Usage> usage_;           // launch counts and times
   bool favorites_default_ = false;
-  std::vector<Group> groups_;
+  std::vector<const sde::DesktopEntry *> fav_entries_, frecent_;
   sde::menu::FileIndex file_index_;
   std::vector<Item> items_;
+  std::vector<Item> chips_;  // category chips, laid out by layout_chips()
+  std::vector<Area> areas_;
+  bool chips_icons_ = false;  // icon-only chips (labels as tooltips)
   cairo_surface_t *avatar_ = nullptr;
   std::string full_name_;
 
   View view_ = V_HOME, before_search_ = V_HOME;
   int category_ = -1;
-  int page_ = 0;
-  size_t page_count_ = 1;
-  int all_scroll_ = 0, cat_scroll_ = 0, result_scroll_ = 0, cats_scroll_ = 0;
-  int all_content_h_ = 0, cat_content_h_ = 0, result_content_h_ = 0, cats_content_w_ = 0;
+  int all_scroll_ = 0, cat_scroll_ = 0, result_scroll_ = 0, home_scroll_ = 0;
+  // Scrollbar drag: the area and where it started.
+  Kind drag_area_ = K_NONE;
+  int drag_y_ = 0, drag_scroll_ = 0;
+  bool bar_hover_ = false;  // the pointer is over a scrollbar
   bool menu_busy_ = false;  // a context menu runs its own event loop
   std::string last_query_;
   bool letters_open_ = false;
@@ -150,8 +166,9 @@ class AppMenu : public PanelPopup {
   bool search_top_ = true, show_desc_ = true, show_recent_ = true;
 
   // Layout (window coordinates), from metrics().
-  int pad_ = 14, header_h_ = 60, search_y_ = 64, search_h_ = 40, cats_y_ = 112, cats_h_ = 36;
-  int body_top_ = 156, body_bottom_ = 0;
+  int pad_ = 12, header_h_ = 56, search_y_ = 56, search_h_ = 40, cats_y_ = 104, cats_h_ = 36;
+  int body_top_ = 148, body_bottom_ = 0;
+  bool compact_ = false;  // little height: smaller header, tiles and chips
   int split_x_ = 0;  // left edge of the "All Programs" pane
   int all_top_ = 0, all_bottom_ = 0;
   int view_top_ = 0, view_bottom_ = 0;  // scrolled area of category/search views

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// sde-desktop: wallpaper and desktop icons (Home, Trash and ~/Desktop).
+// sde-desktop: wallpaper and desktop icons (Computer, Home, Trash and
+// ~/Desktop).
 #include <FL/Fl.H>
 #include "crash.h"
 #include "buffered_window.h"
@@ -12,8 +13,10 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -24,6 +27,7 @@
 #include "icons.h"
 #include "paint.h"
 #include "spawn.h"
+#include "thumbnails.h"
 #include "theme.h"
 #include "util.h"
 #include "x11.h"
@@ -123,6 +127,10 @@ class Desktop : public sde::BufferedWindow {
   void reload_items() {
     items_.clear();
     std::string home = home_dir();
+    if (cfg_.get_bool("desktop", "show_computer", false))
+      items_.push_back({_("Computer"), "", "computer:///",
+                        {"computer", "user-desktop", "drive-harddisk", "drive-harddisk-system"},
+                        false});
     if (cfg_.get_bool("desktop", "show_home", true))
       items_.push_back({_("Home"), home, home, {"user-home", "folder-home", "folder"}, false});
     if (cfg_.get_bool("desktop", "show_trash", false))
@@ -157,7 +165,7 @@ class Desktop : public sde::BufferedWindow {
     layout_items();
   }
 
-  // Home and Trash stay first; files follow the "Sort by" choice, with
+  // Computer, Home and Trash stay first; files follow the "Sort by" choice, with
   // folders before files as in most file managers.
   void sort_items() {
     size_t first = size_t(first_file_index());
@@ -219,11 +227,55 @@ class Desktop : public sde::BufferedWindow {
     d->redraw();
   }
 
+  // Formats that the shared loader (SVG, PNG, JPEG, GIF, BMP) cannot read
+  // but the Gallery decoder can (WebP, TIFF, AVIF ... through gdk-pixbuf).
+  static bool needs_decoder(const std::string &path) {
+    size_t dot = path.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = lower(path.substr(dot + 1));
+    static const std::set<std::string> extra = gallery::extra_formats();
+    return extra.count(ext) > 0;
+  }
+
+  static cairo_surface_t *compose_wallpaper(const std::string &path, int w, int h,
+                                            const std::string &mode, const Color &bg) {
+    cairo_surface_t *out = cairo_image_surface_create(CAIRO_FORMAT_RGB24, w, h);
+    cairo_t *cr = cairo_create(out);
+    cairo_set_source_rgb(cr, bg.r, bg.g, bg.b);
+    cairo_paint(cr);
+    if (cairo_surface_t *img = gallery::decode_image(path, 0)) {
+      double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
+      if (mode == "tile") {
+        cairo_pattern_t *pat = cairo_pattern_create_for_surface(img);
+        cairo_pattern_set_extend(pat, CAIRO_EXTEND_REPEAT);
+        cairo_set_source(cr, pat);
+        cairo_paint(cr);
+        cairo_pattern_destroy(pat);
+      } else {
+        double sx = w / iw, sy = h / ih;
+        if (mode == "fit") sx = sy = std::fmin(sx, sy);
+        else if (mode == "center") sx = sy = 1;
+        else if (mode != "stretch") sx = sy = std::fmax(sx, sy);  // zoom
+        cairo_translate(cr, (w - iw * sx) / 2, (h - ih * sy) / 2);
+        cairo_scale(cr, sx, sy);
+        cairo_set_source_surface(cr, img, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
+        cairo_paint(cr);
+      }
+      cairo_surface_destroy(img);
+    }
+    cairo_destroy(cr);
+    return out;
+  }
+
   std::string wallpaper_path() const {
     std::string wp = cfg_.get("appearance", "wallpaper", "auto");
     if (wp.empty() || wp == "auto" || !file_exists(wp)) {
       std::string base = std::string(SDE_DATADIR).substr(0, std::string(SDE_DATADIR).rfind('/'));
-      wp = base + "/backgrounds/sde/" + (theme_.dark ? "selviana-dark.svg" : "selviana-light.svg");
+      std::string name = theme_.dark ? "selviana-dark.svg" : "selviana-light.svg";
+      wp = base + "/backgrounds/sde/" + name;
+      if (!file_exists(wp) && file_exists("/usr/share/backgrounds/sde/" + name))
+        wp = "/usr/share/backgrounds/sde/" + name;
     }
     return wp;
   }
@@ -239,7 +291,8 @@ class Desktop : public sde::BufferedWindow {
         int sx, sy, sw, sh;
         Fl::screen_xywh(sx, sy, sw, sh, i);
         Color bg = theme_.dark ? Color::hex(0x10161D) : Color::hex(0x1C6F8A);
-        wallpapers_.push_back(load_wallpaper(wp, sw, sh, mode, bg.r, bg.g, bg.b));
+        wallpapers_.push_back(needs_decoder(wp) ? compose_wallpaper(wp, sw, sh, mode, bg)
+                                                : load_wallpaper(wp, sw, sh, mode, bg.r, bg.g, bg.b));
       }
     }
     {
@@ -247,8 +300,8 @@ class Desktop : public sde::BufferedWindow {
       for (int i = 0; i < n; ++i) {
         int sx, sy, sw, sh;
         Fl::screen_xywh(sx, sy, sw, sh, i);
-        cairo_set_source_surface(p.cr(), wallpapers_[size_t(i)], sx, sy);
-        cairo_paint(p.cr());
+        // Uploaded to the X server once, not on every repaint.
+        p.surface(wallpapers_[size_t(i)], sx, sy);
       }
       for (size_t i = 0; i < items_.size(); ++i) {
         const Item &it = items_[i];
@@ -265,6 +318,12 @@ class Desktop : public sde::BufferedWindow {
       draw_text(label, it.x + S(6) + 1, it.y + icon_ + S(12) + 1, cell_w_ - S(12), S(22), Color::hex(0x000000, 1), 1);
       draw_text(label, it.x + S(6), it.y + icon_ + S(12), cell_w_ - S(12), S(22), Color::hex(0xFFFFFF), 1);
     }
+  }
+
+  // Repaints one icon cell only (hover and selection changes).
+  void damage_item(int i) {
+    if (i >= 0 && i < int(items_.size()))
+      damage_rect(items_[size_t(i)].x, items_[size_t(i)].y, cell_w_, cell_h_);
   }
 
   int item_at(int x, int y) const {
@@ -292,7 +351,24 @@ class Desktop : public sde::BufferedWindow {
       if (e.load(it.path)) launch_entry(e);
       return;
     }
-    if (!open_uri(it.uri)) fl_alert(_("No application is available to open \"%s\"."), it.label.c_str());
+    if (!open_place(it.uri)) fl_alert(_("No application is available to open \"%s\"."), it.label.c_str());
+  }
+
+  // computer:/// and trash:/// are Liria (the SDE file manager) places;
+  // other file managers get them through xdg-open/gio.
+  static bool open_place(const std::string &uri) {
+    bool virtual_place = starts_with(uri, "computer:") || starts_with(uri, "trash:");
+    if (virtual_place && !find_program("liria").empty()) return spawn_detached({"liria", uri});
+    return open_uri(uri);
+  }
+
+  // Hides Computer, Home or Trash (the switches in Settings > Desktop).
+  void hide_place(int i) {
+    const Item &it = items_[size_t(i)];
+    const char *key = it.uri == "computer:///" ? "show_computer"
+                      : it.uri == "trash:///"  ? "show_trash"
+                                               : "show_home";
+    set_option(key, "false");
   }
 
   bool is_file_item(int i) const { return i >= first_file_index() && i < int(items_.size()); }
@@ -358,20 +434,39 @@ class Desktop : public sde::BufferedWindow {
     if (i >= 0) {
       bool file = is_file_item(i);
       int fflag = file ? 0 : FL_MENU_INACTIVE;
+      const Item &it = items_[size_t(i)];
+      bool trash = it.uri == "trash:///";
+      // Places (Computer, Home, Trash) share the file layout of the menu;
+      // entries that do not apply are shown disabled, and the last entry
+      // removes the place from the desktop instead of trashing it.
       Fl_Menu_Item items[] = {
-          {_("Open"), FL_Enter, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-          {_("Rename..."), FL_F + 2, nullptr, nullptr, fflag, 0, 0, 0, 0},
-          {_("Copy Location"), 0, nullptr, nullptr, fflag | FL_MENU_DIVIDER, 0, 0, 0, 0},
-          {_("Move to Trash"), FL_Delete, nullptr, nullptr, fflag, 0, 0, 0, 0},
+          {_("Open"), FL_Enter, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},           // 0
+          {_("Rename..."), FL_F + 2, nullptr, nullptr, fflag, 0, 0, 0, 0},                // 1
+          {_("Copy Location"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},         // 2
+          {file ? _("Move to Trash") : _("Remove from Desktop"), file ? FL_Delete : 0, nullptr,
+           nullptr, trash ? FL_MENU_DIVIDER : 0, 0, 0, 0, 0},                              // 3
+          {_("Empty Trash"), 0, nullptr, nullptr, trash ? 0 : FL_MENU_INVISIBLE, 0, 0, 0, 0},  // 4
+          {_("Desktop Settings"), 0, nullptr, nullptr, file ? FL_MENU_INVISIBLE : 0, 0, 0, 0, 0},  // 5
           {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
+      if (!file) items[3].flags |= FL_MENU_DIVIDER;
       const Fl_Menu_Item *m = items->popup(mx, my);
       if (m == &items[0]) open_item(i);
       else if (m == &items[1]) rename_item(i);
       else if (m == &items[2]) {
-        const std::string &path = items_[size_t(i)].path;
+        const std::string &path = it.path.empty() ? it.uri : it.path;
         Fl::copy(path.c_str(), int(path.size()), 1);  // clipboard
         Fl::copy(path.c_str(), int(path.size()), 0);  // primary selection
-      } else if (m == &items[3]) trash_item(i);
+      } else if (m == &items[3]) {
+        if (file) trash_item(i);
+        else hide_place(i);
+      } else if (m == &items[4]) {
+        if (fl_choice("%s", _("Cancel"), _("Empty Trash"), nullptr,
+                      _("Permanently delete all items in the Trash?")) == 1 &&
+            !spawn_detached({"gio", "trash", "--empty"}))
+          fl_alert("%s", _("Emptying the trash needs the gio program (package libglib2.0-bin)."));
+      } else if (m == &items[5]) {
+        spawn_detached({"sde-settings", "--page", "desktop"});
+      }
       return;
     }
     std::string size = cfg_.get("desktop", "icon_size", "medium");
@@ -421,7 +516,7 @@ class Desktop : public sde::BufferedWindow {
         open_uri(desk);
         break;
       case 18: spawn_detached({"sde-settings", "--page", "display"}); break;
-      case 19: spawn_detached({"sde-settings", "--page", "appearance"}); break;
+      case 19: spawn_detached({"sde-settings", "--page", "wallpaper"}); break;
       case 20: spawn_detached({"sde-settings", "--page", "desktop"}); break;
       default: break;
     }
@@ -477,8 +572,9 @@ class Desktop : public sde::BufferedWindow {
     else if (k == FL_Home) s = 0;
     else if (k == FL_End) s = n - 1;
     else return 0;
+    damage_item(selected_);
     selected_ = s;
-    redraw();
+    damage_item(selected_);
     return 1;
   }
 
@@ -494,8 +590,9 @@ class Desktop : public sde::BufferedWindow {
       case FL_PUSH: {
         int i = item_at(Fl::event_x(), Fl::event_y());
         if (i != selected_) {
+          damage_item(selected_);
           selected_ = i;
-          redraw();
+          damage_item(selected_);
         }
         if (Fl::event_button() == FL_RIGHT_MOUSE) context_menu(i, Fl::event_x(), Fl::event_y());
         else if (Fl::event_clicks() && i >= 0) open_item(i);
@@ -505,14 +602,15 @@ class Desktop : public sde::BufferedWindow {
       case FL_MOVE: {
         int i = item_at(Fl::event_x(), Fl::event_y());
         if (i != hover_) {
+          damage_item(hover_);
           hover_ = i;
-          redraw();
+          damage_item(hover_);
         }
         return 1;
       }
       case FL_LEAVE:
+        damage_item(hover_);
         hover_ = -1;
-        redraw();
         return 1;
       case FL_FOCUS:
       case FL_UNFOCUS:

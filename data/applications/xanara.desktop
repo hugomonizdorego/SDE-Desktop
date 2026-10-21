@@ -3,7 +3,7 @@
 Type=Application
 Name=Xanara
 GenericName=Document Viewer
-Comment=Document Viewer for SDE, based on atril
+Comment=Read, annotate and fill in PDF documents
 Exec=xanara %U
 TryExec=xanara
 Icon=x-office-document
@@ -12,5 +12,4 @@ Categories=Office;Viewer;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Xanara
-X-SDE-Upstream=https://github.com/mate-desktop/atril
-MimeType=application/pdf;application/postscript;
+MimeType=application/pdf;application/x-pdf;

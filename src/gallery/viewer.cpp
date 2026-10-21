@@ -278,7 +278,7 @@ void Viewer::layout_buttons() {
     redraw();
   });
   add(icon::Play, _("Slideshow (F5)"), [this] { toggle_slideshow(); });
-  add(icon::Edit, _("Edit in Photo (Ctrl+E)"), [this, path] { app_->edit_in_photo(path); });
+  add(icon::Edit, _("Open in Photo to edit (Ctrl+E)"), [this, path] { app_->edit_in_photo(path); });
   add(icon::Trash, _("Move to Trash (Delete)"), [this, path] { app_->trash({path}); });
   add(icon::Info, _("Details (I)"), [this] {
     info_ = !info_;
@@ -312,7 +312,7 @@ void Viewer::layout_buttons() {
     b.active = p != nullptr;
     actions_.push_back(std::move(b));
   };
-  action(icon::Edit, _("Edit in Photo"), [this, path] { app_->edit_in_photo(path); });
+  action(icon::Edit, _("Open in Photo"), [this, path] { app_->edit_in_photo(path); });
   action(icon::OpenWith, _("Open With Other Application"), [this, path] { app_->open_with(path); });
   action(icon::Wallpaper, _("Set as Wallpaper"), [this, path] { app_->set_wallpaper(path); });
   action(icon::Files, _("Show in Files"), [this, path] { app_->show_in_files(path); });

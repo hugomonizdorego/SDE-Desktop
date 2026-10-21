@@ -3,7 +3,7 @@
 Type=Application
 Name=SDE System Monitor
 GenericName=Processes and Resources
-Comment=Processes and Resources for SDE, based on mate-system-monitor
+Comment=Processes, performance and file systems for SDE
 Exec=sde-system-monitor
 TryExec=sde-system-monitor
 Icon=utilities-system-monitor
@@ -12,4 +12,3 @@ Categories=System;Monitor;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=sde-system-monitor
-X-SDE-Upstream=https://github.com/mate-desktop/mate-system-monitor

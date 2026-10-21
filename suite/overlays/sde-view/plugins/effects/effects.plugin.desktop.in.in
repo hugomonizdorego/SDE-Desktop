@@ -1,9 +1,0 @@
-[Plugin]
-Module=effects
-IAge=2
-Name=Effects and Filters
-Icon=applications-graphics
-Description=Filters and adjustments previewed live on the picture; saves an edited copy
-Authors=SDE contributors
-Copyright=Copyright © 2026 SDE contributors
-Website=https://github.com/hugomonizdorego/SDE-Desktop

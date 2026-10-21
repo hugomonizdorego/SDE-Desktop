@@ -577,6 +577,26 @@ button.sde-home-toggle:hover {
   color: @sde_fg;
 }
 
+/* alpha15: "Clear" at the end of the Recent files title; as small as
+ * the section title so both columns keep the same baseline. */
+button.sde-home-clear {
+  min-height: 0;
+  padding: 0 10px;
+  margin: -2px 0;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: @sde_accent;
+  font-size: 0.85em;
+}
+
+button.sde-home-clear:hover {
+  border-color: alpha(@sde_accent, 0.40);
+  background-color: alpha(@sde_accent, 0.10);
+}
+
 .sde-quick-access flowboxchild,
 .sde-drives flowboxchild,
 .sde-recent-files flowboxchild {

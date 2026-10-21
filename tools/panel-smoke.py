@@ -162,6 +162,69 @@ def notified(text):
     except FileNotFoundError:return False
 def mode(name):
     run('dbus-send','--session','--type=method_call','--print-reply','--dest=org.bluez','/SDETest','org.sde.Test.Mode','string:'+name);time.sleep(.8)
+# Start menu fixture: applications in every main category, more than fit the
+# "All Programs" list.
+APPS='Atlas Bluefish Calendar Draw Editor Gimp Hex Inkscape Journal Kate Lyrics Mail Notes Orca Paint Quod Rhythm Sudoku Terminal Umbrello Vlc Writer Xterm Yelp Zeal Abacus Bolt Chess Dia Evince Geany Htop Iris Jigsaw Kicad Mines Nano Okular Pidgin Ristretto Shotwell Uget Viewer Wget Xournal'.split()
+CATS=['Utility','Graphics','Network','AudioVideo','Office','Development','Education','Game','Science','Settings','System']
+(home/'.local/share/applications').mkdir(parents=True)
+for i,n in enumerate(APPS):
+    (home/f'.local/share/applications/qa-{n.lower()}.desktop').write_text(f'[Desktop Entry]\nType=Application\nName={n}\nGenericName={n} QA\nExec=true\nIcon=applications-other\nCategories={CATS[i%len(CATS)]};\n')
+def menu_scroll():return layout('SDE Menu')['@all-scroll'][0]
+def menu_checks():
+    """Start menu: chips fit, slim size, wheel/scrollbar/keyboard scrolling,
+    letter jump, frecency "Recently Used", 12 favorites, search."""
+    m=click_panel('start','^SDE Menu$');time.sleep(1.2);g=geom(m)
+    assert g['w']<=round(580*scale)+1 and g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,g
+    chips=item('SDE Menu','@chips');L=layout('SDE Menu')
+    cats=[v for k,v in L.items() if k.startswith('category:')]
+    assert len(cats)>=10,L.keys()
+    for v in cats:assert chips[0]<=v[0] and v[0]+v[2]<=chips[0]+chips[2]<=g['w'] and chips[1]<=v[1] and v[1]+v[3]<=chips[1]+chips[3],(v,chips)
+    assert 'files' in L and not any(k in L for k in ['Settings','Lock','Power']),L.keys()
+    shot('20-menu')
+    # Mouse wheel over "All Programs".
+    a=item('SDE Menu','@all');s=menu_scroll()
+    run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2)
+    for _ in range(3):run('xdotool','click','5');time.sleep(.1)
+    waitfor(lambda:menu_scroll()>s,'wheel did not scroll All Programs');s=menu_scroll()
+    run('xdotool','click','4');waitfor(lambda:menu_scroll()<s,'wheel up did not scroll back')
+    # Scrollbar drag.
+    bx=g['x']+a[0]+a[2]-round(4*scale);s=menu_scroll()
+    run('xdotool','mousemove',bx,g['y']+a[1]+round(12*scale),'mousedown','1');time.sleep(.2)
+    run('xdotool','mousemove',bx,g['y']+a[1]+a[3]//2);time.sleep(.2);run('xdotool','mouseup','1');time.sleep(.3)
+    waitfor(lambda:menu_scroll()>s+a[3]//2,'scrollbar drag did not scroll');s=menu_scroll()
+    shot('21-menu-scrolled')
+    # Page Down / Page Up.
+    run('xdotool','key','Next');waitfor(lambda:menu_scroll()>s,'Page Down did not scroll');s=menu_scroll()
+    run('xdotool','key','Prior');waitfor(lambda:menu_scroll()<s,'Page Up did not scroll')
+    # Letter heading -> jump grid -> letter.
+    press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
+    press('SDE Menu','jump:W');waitfor(lambda:'app:Wget' in layout('SDE Menu'),'letter jump did not reach W')
+    shot('22-menu-letter-jump')
+    # Launching counts for "Recently Used".
+    press('SDE Menu','app:Wget');gone('^SDE Menu$')
+    assert 'qa-wget.desktop\t1\t' in (home/'.local/state/sde/menu-usage').read_text()
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    waitfor(lambda:'recent:Wget' in layout('SDE Menu'),'launched app missing from Recently Used')
+    # Search still finds settings pages and session actions.
+    run('xdotool','type','shut down');waitfor(lambda:'result:Log Out, Restart or Shut Down' in layout('SDE Menu'),'session action not found')
+    shot('23-menu-search')
+    # Escape clears the search, then leaves its page, then closes the menu.
+    for _ in range(2):run('xdotool','key','Escape');time.sleep(.3)
+    escape('SDE Menu')
+    # Twelve favorites fill the single page; a 13th replaces the oldest.
+    favs=';'.join(f'qa-{n.lower()}.desktop' for n in APPS[:12])
+    config(extra=f'[menu]\nfavorites={favs}\n');reload()
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    waitfor(lambda:sum(k.startswith('favorite:') for k in layout('SDE Menu'))==12,'12 favorites not shown')
+    shot('24-menu-12-favorites')
+    press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
+    press('SDE Menu','jump:Z');r=item('SDE Menu','app:Zeal');g=geom(m)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
+    shot('25-menu-favorites-full')
+    run('xdotool','key','Down','Down','Return');time.sleep(.6)
+    waitfor(lambda:'qa-zeal.desktop' in conf(),'13th favorite not added')
+    text=conf();assert 'qa-atlas.desktop' not in text and text.count('.desktop')==12,text
+    escape('SDE Menu')
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
 import sys,os
 from pathlib import Path
@@ -223,9 +286,11 @@ try:
     icon=find('^SDE XEmbed fixture$',visible_only=False);host=parent(icon);waitfor(lambda:parent(str(host))==int(panel),'tray not docked in panel')
     waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:media' in layout('SDE Panel'),'status icons missing')
     time.sleep(1);shot('00-panel-indicators')
+    menu_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
-    assert 'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons'
-    assert parent(str(host))==int(panel) and mapped(host),'tray icons not shown on the panel'
+    config(overflow=False);reload()
+    waitfor(lambda:'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons')
+    waitfor(lambda:parent(str(host))==int(panel) and mapped(host),'tray icons not shown on the panel')
     shot('00-panel-tray-direct')
     # Many icons (threshold 1 here): they gather behind the overflow button.
     config();reload()

@@ -64,3 +64,30 @@ add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
 # Panel clock: alarms and agenda model (parsing, ring and reminder times).
 add_executable(sde-agenda-tests test_agenda.cpp ../src/panel/agenda.cpp)
 add_test(NAME sde-agenda-model COMMAND sde-agenda-tests)
+
+# SDE System Monitor /proc and /sys parsers.
+add_executable(sde-sysmon-tests test_sysmon.cpp)
+target_link_libraries(sde-sysmon-tests PRIVATE sde-sysmon-core)
+add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
+
+add_executable(sde-settings-tests test_settings.cpp)
+target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
+add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)
+
+add_executable(sde-xanara-tests test_xanara.cpp)
+target_link_libraries(sde-xanara-tests PRIVATE sde-xanara-core)
+add_test(NAME sde-xanara COMMAND sde-xanara-tests)
+
+add_executable(sde-taca-tests test_taca.cpp)
+target_link_libraries(sde-taca-tests PRIVATE taca-core)
+add_test(NAME taca-engine COMMAND sde-taca-tests)
+set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)
+
+add_executable(sde-photo-tests test_photo.cpp)
+target_link_libraries(sde-photo-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-model COMMAND sde-photo-tests)
+
+# Niny Text Editor: codec, highlighter, find/replace, undo, settings, text ops.
+add_executable(niny-tests test_niny.cpp)
+target_link_libraries(niny-tests PRIVATE niny-core)
+add_test(NAME niny-core COMMAND niny-tests)

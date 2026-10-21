@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ctime>
 #include <map>
 
 #include "build_config.h"
@@ -27,6 +28,10 @@ namespace {
 
 const char *kExtraPrefix = "sde-search:";
 const char *kFilePrefix = "sde-file:";
+// Favorites fit on one page of large tiles.
+const size_t kMaxFavorites = 12;
+// "Recently used" rows on the home view.
+const size_t kMaxRecent = 6;
 
 double now() {
   using namespace std::chrono;
@@ -82,7 +87,12 @@ DesktopEntry extra(const std::string &id, const std::string &name, const std::st
   return e;
 }
 
+// Older plain list of recently opened applications (read once to migrate).
 std::string recent_path() { return state_home() + "/sde/menu-recent"; }
+// Launch counts and times: "id<TAB>count<TAB>last" (see menu::parse_usage).
+std::string usage_path() { return state_home() + "/sde/menu-usage"; }
+
+long long epoch_now() { return (long long)time(nullptr); }
 
 std::string tilde(const std::string &path) {
   std::string home = home_dir();
@@ -169,6 +179,7 @@ AppMenu::~AppMenu() {
 // Data
 
 void AppMenu::reload() {
+  apps_stamp_ = applications_stamp();
   apps_ = load_applications("SDE");
   sorted_ = menu::alphabetical(apps_);
   categories_.clear();
@@ -225,12 +236,12 @@ void AppMenu::load_favorites() {
   std::string v = Panel::instance->config().get("menu", "favorites", sentinel);
   favorites_default_ = v == sentinel;
   favorites_ = favorites_default_ ? menu::default_favorites(apps_) : menu::parse_id_list(v);
+  if (favorites_.size() > kMaxFavorites) favorites_.resize(kMaxFavorites);
   std::string text;
-  recent_.clear();
-  if (read_file(recent_path(), text))
-    for (auto &line : split(text, '\n'))
-      if (!trim(line).empty()) recent_.push_back(trim(line));
-  if (recent_.size() > 12) recent_.resize(12);
+  usage_.clear();
+  if (read_file(usage_path(), text)) usage_ = menu::parse_usage(text);
+  else if (read_file(recent_path(), text)) usage_ = menu::parse_usage(text, epoch_now());
+  recent_ = menu::by_last_use(usage_, 12);
 }
 
 void AppMenu::save_favorites() {
@@ -240,12 +251,15 @@ void AppMenu::save_favorites() {
   Panel::instance->set_setting("menu", "favorites", v.empty() ? ";" : v);
 }
 
-void AppMenu::add_recent(const std::string &id) {
-  menu::remember(recent_, id, 12);
+void AppMenu::save_usage() {
   make_dirs(state_home() + "/sde");
-  std::string text;
-  for (auto &r : recent_) text += r + "\n";
-  write_file_atomic(recent_path(), text);
+  write_file_atomic(usage_path(), menu::format_usage(usage_));
+  recent_ = menu::by_last_use(usage_, 12);
+}
+
+void AppMenu::add_recent(const std::string &id) {
+  menu::record_launch(usage_, id, epoch_now());
+  save_usage();
 }
 
 // Refresh XDG application entries during package installs/removals without
@@ -255,6 +269,11 @@ void AppMenu::poll_applications(void *data) {
   if (!self->shown()) return;
   Fl::repeat_timeout(2, poll_applications, data);
   if (self->menu_busy_ || self->launching_) return;
+  // Parsing every .desktop file every 2 s while the menu is open showed up
+  // as periodic hitches; only reload when an applications directory changed.
+  std::string stamp = applications_stamp();
+  if (stamp == self->apps_stamp_) return;
+  self->apps_stamp_ = stamp;
   auto fresh = load_applications("SDE");
   bool same = fresh.size() == self->apps_.size();
   for (size_t i = 0; same && i < fresh.size(); ++i) {
@@ -285,24 +304,14 @@ void AppMenu::filter() {
   std::map<std::string, const DesktopEntry *> by_id;
   for (auto &a : apps_) by_id[a.id] = &a;
 
-  // Home: favorites, recent applications and quick settings.
-  groups_.clear();
-  Group fav{_("Pinned Apps"), {}};
+  // Home: favorites, then the applications opened most often and lately.
+  fav_entries_.clear();
   for (auto &id : favorites_)
-    if (by_id.count(id)) fav.entries.push_back(by_id[id]);
-  groups_.push_back(fav);
-  if (show_recent_) {
-    Group rec{_("Recently Used"), {}};
-    for (auto &id : recent_)
-      if (by_id.count(id) && std::find(favorites_.begin(), favorites_.end(), id) == favorites_.end())
-        rec.entries.push_back(by_id[id]);
-    if (!rec.entries.empty()) groups_.push_back(rec);
-  }
-  Group quick{_("Quick Settings"), {}};
-  for (auto &e : extras_)
-    for (const char *id : {"appearance", "display", "network", "sound", "bluetooth", "about"})
-      if (e.id == std::string(kExtraPrefix) + id) quick.entries.push_back(&e);
-  groups_.push_back(quick);
+    if (by_id.count(id) && fav_entries_.size() < kMaxFavorites) fav_entries_.push_back(by_id[id]);
+  frecent_.clear();
+  if (show_recent_)
+    for (auto &id : menu::rank_frecent(usage_, epoch_now(), 64, favorites_))
+      if (by_id.count(id) && frecent_.size() < kMaxRecent) frecent_.push_back(by_id[id]);
 
   category_apps_.clear();
   if (category_ >= 0 && category_ < int(categories_.size()))
@@ -392,12 +401,12 @@ void AppMenu::prepare() {
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
   std::string sz = cfg.get("menu", "size", "medium");
-  int bw = sz == "small" ? 600 : sz == "large" ? 820 : 700;
-  int bh = sz == "small" ? 520 : sz == "large" ? 720 : 610;
+  // Slim, balanced proportions; small screens get what is there.
+  int bw = sz == "small" ? 520 : sz == "large" ? 660 : 580;
+  int bh = sz == "small" ? 580 : sz == "large" ? 720 : 650;
   int mw2 = std::min(S(bw), mw - S(16));
   int mh2 = std::min(S(bh), mh - Panel::instance->h() - S(24));
   size(mw2, mh2);
-  metrics();
   search_->color(theme_.surface_alt.fl());
   search_->textcolor(theme_.text.fl());
   search_->cursor_color(theme_.accent.fl());
@@ -408,8 +417,8 @@ void AppMenu::prepare() {
   last_query_.clear();
   view_ = before_search_ = V_HOME;
   category_ = -1;
-  page_ = 0;
-  all_scroll_ = cat_scroll_ = result_scroll_ = cats_scroll_ = 0;
+  all_scroll_ = cat_scroll_ = result_scroll_ = home_scroll_ = 0;
+  drag_area_ = K_NONE;
   letters_open_ = false;
   hover_ = selected_ = anim_ = {};
   keyboard_ = false;
@@ -419,6 +428,7 @@ void AppMenu::prepare() {
   load_favorites();
   file_index_.clear();
   filter();
+  metrics();
 
   full_name_ = user_name();
   if (avatar_) cairo_surface_destroy(avatar_);
@@ -502,43 +512,127 @@ void AppMenu::go_back() {
 // ---------------------------------------------------------------------------
 // Layout
 
+int AppMenu::Area::bar_x() const { return x + w - S(7); }
+
+// Category chips that always fit the width: labeled chips in one or two
+// justified rows when they fit, otherwise equal icon cells (one or two rows)
+// whose names show on hover. Sets cats_h_ and chips_.
+void AppMenu::layout_chips() {
+  chips_.clear();
+  int avail = w() - 2 * pad_, gap = S(6), row_gap = S(6);
+  int chip_h = compact_ ? S(28) : S(30);
+  size_t n = categories_.size();
+  if (!n) {
+    cats_h_ = 0;
+    return;
+  }
+  text_font(theme_.font_size - 1, true);  // the selected chip is bold
+  std::vector<int> natural;
+  int total = 0;
+  for (auto &c : categories_) {
+    natural.push_back(S(40) + text_width(category_label(c)));
+    total += natural.back();
+  }
+  // Splits the chips into |rows| rows of about equal width; empty when one
+  // of them does not fit.
+  auto split_rows = [&](int rows) {
+    std::vector<std::vector<size_t>> out(1);
+    int target = (total + gap * int(n)) / rows, row_w = 0;
+    for (size_t i = 0; i < n; ++i) {
+      int add = natural[i] + (out.back().empty() ? 0 : gap);
+      if (!out.back().empty() && int(out.size()) < rows &&
+          (row_w + add > avail || row_w + add / 2 > target)) {
+        out.emplace_back();
+        row_w = 0;
+        add = natural[i];
+      }
+      out.back().push_back(i);
+      row_w += add;
+      if (row_w > avail) return std::vector<std::vector<size_t>>();
+    }
+    return out;
+  };
+  std::vector<std::vector<size_t>> rows;
+  // Rows of labeled chips: one on short screens, up to three on tall ones.
+  int max_rows = compact_ ? 1 : h() >= S(620) ? 3 : 2;
+  for (int r = 1; r <= max_rows && rows.empty(); ++r) rows = split_rows(r);
+  chips_icons_ = rows.empty();
+  if (chips_icons_) {
+    // Icon cells: as many per row as fit, rows balanced.
+    int per_row = std::max(1, std::min(int(n), (avail + gap) / (S(34) + gap)));
+    int nrows = (int(n) + per_row - 1) / per_row;
+    per_row = (int(n) + nrows - 1) / nrows;
+    rows.assign(size_t(nrows), {});
+    for (size_t i = 0; i < n; ++i) rows[i / size_t(per_row)].push_back(i);
+  }
+  int y = cats_y_;
+  int cols = int(rows[0].size());
+  for (auto &row : rows) {
+    int count = int(row.size()), x = pad_;
+    int sum = 0;
+    for (size_t i : row) sum += natural[i];
+    // Labeled rows are justified to the full width; icon cells share it.
+    int extra = chips_icons_ ? 0 : avail - sum - gap * (count - 1);
+    for (int k = 0; k < count; ++k) {
+      size_t i = row[size_t(k)];
+      Item c;
+      c.kind = K_CATEGORY;
+      c.index = int(i);
+      c.label = category_label(categories_[i]);
+      if (chips_icons_) c.w = (avail - gap * (cols - 1)) / cols;
+      else c.w = natural[i] + extra / count + (k < extra % count ? 1 : 0);
+      c.h = chip_h;
+      c.x = x;
+      c.y = y;
+      x += c.w + gap;
+      chips_.push_back(c);
+    }
+    y += chip_h + row_gap;
+  }
+  cats_h_ = y - row_gap - cats_y_;
+}
+
 void AppMenu::metrics() {
   int W = w(), H = h();
-  pad_ = S(14);
-  header_h_ = S(60);
-  search_h_ = S(40);
-  cats_h_ = S(38);
+  compact_ = H < S(560);
+  pad_ = S(12);
+  header_h_ = compact_ ? S(46) : S(56);
+  search_h_ = compact_ ? S(36) : S(40);
+  int gap = compact_ ? S(6) : S(10);
   if (search_top_) {
     search_y_ = header_h_;
-    cats_y_ = search_y_ + search_h_ + S(8);
-    body_top_ = cats_y_ + cats_h_ + S(8);
+    cats_y_ = search_y_ + search_h_ + gap;
+    layout_chips();
+    body_top_ = cats_y_ + cats_h_ + gap;
     body_bottom_ = H - pad_;
   } else {
     cats_y_ = header_h_;
-    body_top_ = cats_y_ + cats_h_ + S(8);
+    layout_chips();
+    body_top_ = cats_y_ + cats_h_ + gap;
     search_y_ = H - pad_ - search_h_;
-    body_bottom_ = search_y_ - S(10);
+    body_bottom_ = search_y_ - gap;
   }
-  split_x_ = pad_ + int((W - 2 * pad_) * 0.56);
-  search_->resize(pad_ + S(40), search_y_ + S(8), W - 2 * pad_ - S(52), search_h_ - S(16));
+  split_x_ = pad_ + int((W - 2 * pad_) * 0.58);
+  int sx = pad_ + S(40), sy = search_y_ + S(8), sw = W - 2 * pad_ - S(52), sh = search_h_ - S(16);
+  if (search_->x() != sx || search_->y() != sy || search_->w() != sw || search_->h() != sh)
+    search_->resize(sx, sy, sw, sh);
 }
 
 void AppMenu::build_items() {
   items_.clear();
+  areas_.clear();
+  metrics();
   int W = w();
   Item it;
 
-  // Header buttons: Files, Settings, Lock, Power.
-  int b = S(36), gap = S(4);
-  for (int i = 0; i < 4; ++i) {
-    it = Item();
-    it.kind = K_HEADER_BUTTON;
-    it.index = i;
-    it.w = it.h = b;
-    it.x = W - pad_ - (4 - i) * b - (3 - i) * gap;
-    it.y = (header_h_ - b) / 2;
-    items_.push_back(it);
-  }
+  // Header: Files (power and Settings are in the Action Center).
+  int b = S(36);
+  it.kind = K_HEADER_BUTTON;
+  it.index = 0;
+  it.w = it.h = b;
+  it.x = W - pad_ - b;
+  it.y = (header_h_ - b) / 2;
+  items_.push_back(it);
 
   it = Item();
   it.kind = K_SEARCH;
@@ -548,56 +642,7 @@ void AppMenu::build_items() {
   it.h = search_h_;
   items_.push_back(it);
 
-  // Category strip: chips with icon and label, scrolled sideways when they
-  // do not fit.
-  {
-    int x = 0, chip_h = cats_h_ - S(6);
-    text_font(theme_.font_size, true);  // the selected chip is bold
-    std::vector<Item> chips;
-    for (size_t i = 0; i < categories_.size(); ++i) {
-      Item c;
-      c.kind = K_CATEGORY;
-      c.index = int(i);
-      c.label = category_label(categories_[i]);
-      c.w = S(42) + text_width(c.label);
-      c.h = chip_h;
-      c.x = x;
-      c.y = cats_y_ + S(3);
-      x += c.w + S(5);
-      chips.push_back(c);
-    }
-    cats_content_w_ = std::max(0, x - S(5));
-    int full = W - 2 * pad_, arrow = S(28), reserve = arrow + S(4);
-    bool overflow = cats_content_w_ > full;
-    // Arrows take room only on the sides where more chips are hidden.
-    cats_scroll_ = overflow ? std::max(0, std::min(cats_scroll_, cats_content_w_ - (full - 2 * reserve)))
-                            : 0;
-    bool left = overflow && cats_scroll_ > 0;
-    bool right = overflow && cats_scroll_ < cats_content_w_ - (full - 2 * reserve);
-    int area_x = pad_ + (left ? reserve : 0);
-    int area_w = full - (left ? reserve : 0) - (right ? reserve : 0);
-    for (auto &c : chips) {
-      c.x += area_x - cats_scroll_;
-      c.cx = area_x;
-      c.cw = area_w;
-      c.cy = cats_y_;
-      c.ch = cats_h_;
-      c.visible = c.x + c.w > area_x && c.x < area_x + area_w;
-      items_.push_back(c);
-    }
-    if (overflow) {
-      for (int side = 0; side < 2; ++side) {
-        if (!(side ? right : left)) continue;
-        Item a;
-        a.kind = side ? K_CATS_RIGHT : K_CATS_LEFT;
-        a.w = arrow;
-        a.h = chip_h;
-        a.x = side ? W - pad_ - arrow : pad_;
-        a.y = cats_y_ + S(3);
-        items_.push_back(a);
-      }
-    }
-  }
+  for (auto &c : chips_) items_.push_back(c);
 
   switch (view_) {
     case V_HOME: layout_home(body_top_, body_bottom_); break;
@@ -610,117 +655,111 @@ void AppMenu::build_items() {
 void AppMenu::layout_home(int top, int bottom) {
   int W = w();
   Item it;
-  // Left pane: favorites groups on pages.
+  // Left pane: favorites (one page of up to 12 tiles), then recently used.
   int lx = pad_, lw = split_x_ - S(12) - pad_;
-  int title_h = S(30);
-  it = Item();
+  int title_h = compact_ ? S(24) : S(28);
+  std::vector<Item> left;
+  int y = 0;
   it.kind = K_NONE;
   it.index = 0;  // pane title
   it.label = _("Favorites");
   it.x = lx + S(4);
-  it.y = top;
-  it.w = lw / 2;
+  it.y = y;
+  it.w = lw - S(8);
   it.h = title_h;
-  items_.push_back(it);
+  left.push_back(it);
+  it.index = 3;  // count, right aligned
+  it.label = format("%d/%d", int(fav_entries_.size()), int(kMaxFavorites));
+  left.push_back(it);
+  y += title_h;
 
-  int cols = std::max(3, lw / S(84));
-  int tile_w = lw / cols, tile_h = S(84), label_h = S(24);
-  int content_top = top + title_h + S(2);
-  int page = 0, y = content_top, n = 0;
-  std::vector<Item> tiles;
-  auto heading = [&](const std::string &text) {
+  int cols = std::max(3, std::min(6, lw / S(74)));
+  int tile_w = lw / cols, tile_h = compact_ ? S(58) : S(78);
+  if (fav_entries_.empty()) {
     Item h;
     h.kind = K_NONE;
-    h.index = 1;  // group heading
-    h.label = text;
+    h.index = 2;  // hint
+    h.label = _("Right-click an app and choose \"Add to Favorites\".");
     h.x = lx + S(6);
     h.y = y;
     h.w = lw - S(12);
-    h.h = label_h;
-    h.group = page;
-    tiles.push_back(h);
-    y += label_h;
-  };
-  for (size_t g = 0; g < groups_.size(); ++g) {
-    const Group &grp = groups_[g];
-    size_t count = grp.entries.size();
-    // Recent applications: one row is enough.
-    if (grp.title == _("Recently Used")) count = std::min(count, size_t(cols));
-    int rows = std::max(1, int((count + size_t(cols) - 1) / size_t(cols)));
-    if (y != content_top && y + label_h + tile_h > bottom) {
-      ++page;
-      y = content_top;
-    }
-    heading(grp.title);
-    if (count == 0) {
+    h.h = S(40);
+    left.push_back(h);
+    y += S(44);
+  }
+  for (size_t i = 0; i < fav_entries_.size(); ++i) {
+    Item t;
+    t.kind = K_TILE;
+    t.index = int(i);
+    t.entry = fav_entries_[i];
+    t.x = lx + int(i % size_t(cols)) * tile_w;
+    t.y = y + int(i / size_t(cols)) * tile_h;
+    t.w = tile_w;
+    t.h = tile_h;
+    left.push_back(t);
+  }
+  y += int((fav_entries_.size() + size_t(cols) - 1) / size_t(cols)) * tile_h;
+
+  if (show_recent_) {
+    y += compact_ ? S(4) : S(10);
+    it = Item();
+    it.kind = K_NONE;
+    it.index = 0;
+    it.label = _("Recently Used");
+    it.x = lx + S(4);
+    it.y = y;
+    it.w = lw - S(8);
+    it.h = title_h;
+    left.push_back(it);
+    y += title_h;
+    if (frecent_.empty()) {
       Item h;
       h.kind = K_NONE;
-      h.index = 2;  // hint
-      h.label = _("Right-click an app and choose \"Add to Favorites\".");
+      h.index = 2;
+      h.label = _("Apps you open often show up here.");
       h.x = lx + S(6);
       h.y = y;
       h.w = lw - S(12);
-      h.h = S(40);
-      h.group = page;
-      tiles.push_back(h);
-      y += S(48);
-      continue;
+      h.h = S(32);
+      left.push_back(h);
+      y += S(32);
     }
-    for (int r = 0; r < rows; ++r) {
-      if (y + tile_h > bottom) {
-        ++page;
-        y = content_top;
-        heading(grp.title);
-      }
-      for (int c = 0; c < cols; ++c) {
-        size_t i = size_t(r * cols + c);
-        if (i >= count) break;
-        Item t;
-        t.kind = K_TILE;
-        t.index = n++;
-        t.entry = grp.entries[i];
-        t.group = page;
-        t.x = lx + c * tile_w;
-        t.y = y;
-        t.w = tile_w;
-        t.h = tile_h;
-        tiles.push_back(t);
-      }
-      y += tile_h;
+    int rcols = lw >= S(300) ? 2 : 1, row_h = compact_ ? S(36) : S(42);
+    int rw = lw / rcols;
+    for (size_t i = 0; i < frecent_.size(); ++i) {
+      Item r;
+      r.kind = K_RECENT;
+      r.index = int(i);
+      r.entry = frecent_[i];
+      r.x = lx + int(i % size_t(rcols)) * rw;
+      r.y = y + int(i / size_t(rcols)) * row_h;
+      r.w = rw - S(4);
+      r.h = row_h;
+      left.push_back(r);
     }
-    y += S(6);
+    y += int((frecent_.size() + size_t(rcols) - 1) / size_t(rcols)) * row_h;
   }
-  page_count_ = size_t(page + 1);
-  page_ = std::max(0, std::min(page_, page));
-  for (auto &t : tiles) {
-    if (t.group != page_) continue;
-    if (t.kind == K_NONE) t.group = 0;
-    items_.push_back(t);
-  }
-  if (page_count_ > 1) {
-    int dot = S(14), arrow = S(26);
-    int total = arrow * 2 + dot * int(page_count_) + S(8);
-    int x = lx + lw - total, cy = top + title_h / 2;
-    Item a;
-    a.kind = K_PAGE_PREV;
-    a.x = x;
-    a.y = cy - arrow / 2;
-    a.w = a.h = arrow;
-    items_.push_back(a);
-    x += arrow + S(4);
-    for (int p = 0; p < int(page_count_); ++p) {
-      Item d;
-      d.kind = K_PAGE_DOT;
-      d.index = p;
-      d.x = x;
-      d.y = cy - dot / 2;
-      d.w = d.h = dot;
-      items_.push_back(d);
-      x += dot;
+  // The left pane scrolls only when the screen is too small for it.
+  {
+    Area a;
+    a.kind = K_TILE;
+    a.x = lx;
+    a.y = top;
+    a.w = split_x_ - S(4) - lx;
+    a.h = bottom - top;
+    a.content = y;
+    a.scroll = &home_scroll_;
+    home_scroll_ = std::max(0, std::min(home_scroll_, a.content - a.h));
+    for (auto &t : left) {
+      t.y += top - home_scroll_;
+      t.cx = a.x;
+      t.cy = a.y;
+      t.cw = a.w;
+      t.ch = a.h;
+      t.visible = t.y + t.h > a.y && t.y < a.y + a.h;
+      items_.push_back(t);
     }
-    a.kind = K_PAGE_NEXT;
-    a.x = x + S(4);
-    items_.push_back(a);
+    areas_.push_back(a);
   }
 
   // Right pane: all programs, A-Z.
@@ -751,9 +790,9 @@ void AppMenu::layout_home(int top, int bottom) {
     }
     for (auto &l : present)
       if (std::find(letters.begin(), letters.end(), l) == letters.end()) letters.push_back(l);
-    int gc = 5, cell = std::min((rw - S(24)) / gc, S(48));
+    int gc = 5, cell = std::min((rw - S(16)) / gc, S(46));
     int grows = (int(letters.size()) + gc - 1) / gc;
-    cell = std::min(cell, std::max(S(24), area_h / std::max(1, grows)));
+    cell = std::min(cell, std::max(S(20), area_h / std::max(1, grows)));
     int gx = rx + (rw - cell * gc) / 2, gy = all_top_ + std::max(0, (area_h - cell * grows) / 2);
     for (size_t i = 0; i < letters.size(); ++i) {
       Item l;
@@ -768,7 +807,7 @@ void AppMenu::layout_home(int top, int bottom) {
     }
     return;
   }
-  int row_h = S(36), letter_h = S(28), ly = 0, idx = 0;
+  int row_h = compact_ ? S(32) : S(36), letter_h = compact_ ? S(26) : S(28), ly = 0, idx = 0;
   std::string last;
   std::vector<Item> rows;
   for (size_t i = 0; i < sorted_.size(); ++i) {
@@ -780,7 +819,7 @@ void AppMenu::layout_home(int top, int bottom) {
       h.label = l;
       h.x = rx + S(6);
       h.y = ly;
-      h.w = rw - S(18);
+      h.w = rw - S(20);
       h.h = letter_h;
       rows.push_back(h);
       ly += letter_h;
@@ -792,13 +831,21 @@ void AppMenu::layout_home(int top, int bottom) {
     r.entry = sorted_[i];
     r.x = rx + S(6);
     r.y = ly;
-    r.w = rw - S(18);
+    r.w = rw - S(20);
     r.h = row_h;
     rows.push_back(r);
     ly += row_h;
   }
-  all_content_h_ = ly;
-  all_scroll_ = std::max(0, std::min(all_scroll_, all_content_h_ - area_h));
+  Area a;
+  a.kind = K_ALL_ROW;
+  a.x = rx;
+  a.y = all_top_;
+  a.w = rw;
+  a.h = area_h;
+  a.content = ly;
+  a.scroll = &all_scroll_;
+  areas_.push_back(a);
+  all_scroll_ = std::max(0, std::min(all_scroll_, ly - area_h));
   for (auto &r : rows) {
     r.y += all_top_ - all_scroll_;
     r.cx = rx;
@@ -836,11 +883,19 @@ void AppMenu::layout_category(int top, int bottom) {
   view_top_ = top + title_h + S(6);
   view_bottom_ = bottom;
   int area_w = W - 2 * pad_, area_h = view_bottom_ - view_top_;
-  int cols = std::max(3, area_w / S(104));
-  int tile_w = area_w / cols, tile_h = S(100);
+  int cols = std::max(3, area_w / S(100));
+  int tile_w = area_w / cols, tile_h = compact_ ? S(84) : S(96);
   int rows = (int(category_apps_.size()) + cols - 1) / cols;
-  cat_content_h_ = rows * tile_h;
-  cat_scroll_ = std::max(0, std::min(cat_scroll_, cat_content_h_ - area_h));
+  Area a;
+  a.kind = K_CAT_TILE;
+  a.x = pad_;
+  a.y = view_top_;
+  a.w = area_w + S(8);
+  a.h = area_h;
+  a.content = rows * tile_h;
+  a.scroll = &cat_scroll_;
+  areas_.push_back(a);
+  cat_scroll_ = std::max(0, std::min(cat_scroll_, a.content - area_h));
   for (size_t i = 0; i < category_apps_.size(); ++i) {
     Item c;
     c.kind = K_CAT_TILE;
@@ -888,8 +943,16 @@ void AppMenu::layout_search(int top, int bottom) {
     return;
   }
   int row_h = show_desc_ ? S(50) : S(40);
-  result_content_h_ = int(results_.size()) * row_h;
-  result_scroll_ = std::max(0, std::min(result_scroll_, result_content_h_ - area_h));
+  Area a;
+  a.kind = K_RESULT;
+  a.x = pad_;
+  a.y = view_top_;
+  a.w = W - 2 * pad_;
+  a.h = area_h;
+  a.content = int(results_.size()) * row_h;
+  a.scroll = &result_scroll_;
+  areas_.push_back(a);
+  result_scroll_ = std::max(0, std::min(result_scroll_, a.content - area_h));
   for (size_t i = 0; i < results_.size(); ++i) {
     Item r;
     r.kind = K_RESULT;
@@ -897,7 +960,7 @@ void AppMenu::layout_search(int top, int bottom) {
     r.entry = results_[i];
     r.x = pad_;
     r.y = view_top_ + int(i) * row_h - result_scroll_;
-    r.w = W - 2 * pad_ - S(8);
+    r.w = W - 2 * pad_ - S(12);
     r.h = row_h;
     r.cx = pad_;
     r.cy = view_top_;
@@ -1003,16 +1066,8 @@ void AppMenu::activate(Item it) {
   switch (it.kind) {
     case K_HEADER_BUTTON:
       close();
-      if (it.index == 0) {
-        if (!find_program("liria").empty()) spawn_detached({"liria", "--no-desktop", home_dir()});
-        else open_uri(home_dir());
-      } else if (it.index == 1) {
-        spawn_detached({"sde-settings"});
-      } else if (it.index == 2) {
-        spawn_detached({"sde-lock"});
-      } else {
-        spawn_detached({"sde-logout"});
-      }
+      if (!find_program("liria").empty()) spawn_detached({"liria", "--no-desktop", home_dir()});
+      else open_uri(home_dir());
       return;
     case K_SEARCH:
       give_focus();
@@ -1022,14 +1077,6 @@ void AppMenu::activate(Item it) {
       }
       return;
     case K_CATEGORY: open_category(it.index); return;
-    case K_CATS_LEFT:
-    case K_CATS_RIGHT:
-      cats_scroll_ += (it.kind == K_CATS_LEFT ? -1 : 1) * (w() / 2);
-      redraw();
-      return;
-    case K_PAGE_PREV: page_ = std::max(0, page_ - 1); break;
-    case K_PAGE_NEXT: page_ = std::min(int(page_count_) - 1, page_ + 1); break;
-    case K_PAGE_DOT: page_ = it.index; break;
     case K_ALL_LETTER:
       letters_open_ = true;
       selected_ = {};
@@ -1047,6 +1094,7 @@ void AppMenu::activate(Item it) {
     }
     case K_BACK: go_back(); return;
     case K_TILE:
+    case K_RECENT:
     case K_ALL_ROW:
     case K_CAT_TILE:
     case K_RESULT:
@@ -1087,10 +1135,26 @@ void AppMenu::item_menu(Item it, int px, int py) {
   DesktopEntry e = *it.entry;
   bool app = is_app(&e), file = is_file(&e);
   bool fav = std::find(favorites_.begin(), favorites_.end(), e.id) != favorites_.end();
-  bool recent = std::find(recent_.begin(), recent_.end(), e.id) != recent_.end();
+  bool recent = std::find_if(usage_.begin(), usage_.end(), [&](const menu::Usage &u) {
+                  return u.id == e.id;
+                }) != usage_.end();
   bool pinned = app && Panel::instance->is_pinned(e.id);
-  enum { OPEN = 1, FAV, FAV_LEFT, FAV_RIGHT, PIN, DESKTOP, FORGET, FOLDER, ARRANGE };
+  // Favorites hold 12 applications. When they are full, adding one replaces
+  // a favorite that is no longer installed, or else the oldest one; the menu
+  // says which.
+  bool full = !fav && favorites_.size() >= kMaxFavorites;
+  std::string replaced;
+  if (full) {
+    std::map<std::string, const DesktopEntry *> by_id;
+    for (auto &a : apps_) by_id[a.id] = &a;
+    auto gone = std::find_if(favorites_.begin(), favorites_.end(),
+                             [&](const std::string &id) { return !by_id.count(id); });
+    replaced = gone != favorites_.end() ? *gone : favorites_.front();
+  }
+  enum { OPEN = 1, FAV, FAV_LEFT, FAV_RIGHT, PIN, DESKTOP, FORGET, FOLDER, ARRANGE, NOTE };
   std::vector<Fl_Menu_Item> items;
+  std::vector<std::string> texts;  // labels made here; kept alive while the menu runs
+  texts.reserve(4);
   auto add = [&](const char *text, long code, int flags = 0) {
     Fl_Menu_Item m = {text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0};
     items.push_back(m);
@@ -1098,7 +1162,18 @@ void AppMenu::item_menu(Item it, int px, int py) {
   add(_("Open"), OPEN, FL_MENU_DIVIDER);
   if (file) add(_("Open Containing Folder"), FOLDER, FL_MENU_DIVIDER);
   if (app) {
-    add(fav ? _("Remove from Favorites") : _("Add to Favorites"), FAV);
+    if (full) {
+      std::string name = replaced;
+      for (auto &a : apps_)
+        if (a.id == replaced) name = a.name;
+      texts.push_back(format(_("Favorites are full (%d of %d)"), int(kMaxFavorites),
+                             int(kMaxFavorites)));
+      add(texts.back().c_str(), NOTE, FL_MENU_INACTIVE);
+      texts.push_back(format(_("Add to Favorites, Replacing \"%s\""), name.c_str()));
+      add(texts.back().c_str(), FAV);
+    } else {
+      add(fav ? _("Remove from Favorites") : _("Add to Favorites"), FAV);
+    }
     if (fav && it.kind == K_TILE && view_ == V_HOME) {
       add(_("Move Left"), FAV_LEFT);
       add(_("Move Right"), FAV_RIGHT);
@@ -1122,8 +1197,12 @@ void AppMenu::item_menu(Item it, int px, int py) {
       open_uri(e.path.substr(0, e.path.rfind('/')));
       return;
     case FAV:
-      if (fav) favorites_.erase(pos);
-      else favorites_.push_back(e.id);
+      if (fav) {
+        favorites_.erase(pos);
+      } else {
+        if (full) favorites_.erase(std::find(favorites_.begin(), favorites_.end(), replaced));
+        favorites_.push_back(e.id);
+      }
       save_favorites();
       break;
     case FAV_LEFT:
@@ -1152,8 +1231,8 @@ void AppMenu::item_menu(Item it, int px, int py) {
       break;
     }
     case FORGET:
-      recent_.erase(std::remove(recent_.begin(), recent_.end(), e.id), recent_.end());
-      add_recent("");  // saves the list
+      menu::forget(usage_, e.id);
+      save_usage();
       break;
     case ARRANGE: layout_menu(); return;
   }
@@ -1230,19 +1309,44 @@ void AppMenu::ensure_visible(const Item &it) {
     case K_ALL_LETTER: fit(all_scroll_, all_top_, all_bottom_); break;
     case K_CAT_TILE: fit(cat_scroll_, view_top_, view_bottom_); break;
     case K_RESULT: fit(result_scroll_, view_top_, view_bottom_); break;
-    case K_CATEGORY:
-      if (it.x < it.cx) cats_scroll_ -= it.cx - it.x;
-      else if (it.x + it.w > it.cx + it.cw) cats_scroll_ += it.x + it.w - it.cx - it.cw;
+    case K_TILE:
+    case K_RECENT:
+      if (view_ == V_HOME && it.ch < (1 << 19)) fit(home_scroll_, it.cy, it.cy + it.ch);
       break;
     default: break;
   }
 }
 
-void AppMenu::scroll_by(Kind area, int dy) {
-  if (area == K_ALL_ROW) all_scroll_ = std::max(0, all_scroll_ + dy);
-  else if (area == K_CAT_TILE) cat_scroll_ = std::max(0, cat_scroll_ + dy);
-  else if (area == K_RESULT) result_scroll_ = std::max(0, result_scroll_ + dy);
-  else if (area == K_CATEGORY) cats_scroll_ = std::max(0, cats_scroll_ + dy);
+const AppMenu::Area *AppMenu::area(Kind kind) const {
+  for (auto &a : areas_)
+    if (a.kind == kind) return &a;
+  return nullptr;
+}
+
+const AppMenu::Area *AppMenu::area_at(int x, int y) const {
+  for (auto &a : areas_)
+    if (x >= a.x && x < a.x + a.w && y >= a.y && y < a.y + a.h) return &a;
+  return nullptr;
+}
+
+void AppMenu::scroll_by(Kind kind, int dy) {
+  const Area *a = area(kind);
+  if (!a || !a->scrolls()) return;
+  *a->scroll = std::max(0, std::min(*a->scroll + dy, a->content - a->h));
+  // The item under the pointer changed: hover follows the content.
+  hover_ = {};
+  redraw();
+}
+
+// Scrollbar thumb dragged to window y |y| (see FL_DRAG).
+void AppMenu::drag_scrollbar(int y) {
+  const Area *a = area(drag_area_);
+  if (!a || !a->scrolls()) return;
+  double track = a->h - S(8);
+  double len = std::max(Sd(24), track * a->h / a->content);
+  double per_px = (a->content - a->h) / std::max(1.0, track - len);
+  *a->scroll = std::max(0, std::min(a->content - a->h,
+                                    drag_scroll_ + int(std::lround((y - drag_y_) * per_px))));
   redraw();
 }
 
@@ -1250,13 +1354,57 @@ void AppMenu::scroll_by(Kind area, int dy) {
 // panes (arrow keys) or by one screen (Page Up/Down).
 void AppMenu::move_selection(int key) {
   auto selectable = [](Kind k) {
-    return k == K_HEADER_BUTTON || k == K_CATEGORY || k == K_TILE || k == K_ALL_ROW ||
+    return k == K_HEADER_BUTTON || k == K_CATEGORY || k == K_TILE || k == K_RECENT || k == K_ALL_ROW ||
            k == K_LETTER_JUMP || k == K_BACK || k == K_CAT_TILE ||
            k == K_RESULT || k == K_CHIP;
   };
   build_items();
   const Item *cur = find(selected_);
   keyboard_ = true;
+  if (key == FL_Page_Down || key == FL_Page_Up) {
+    // Page Up/Down scroll the view's list by a page; the selection keeps its
+    // place on screen (or starts at the top of the list).
+    int dir = key == FL_Page_Down ? 1 : -1;
+    Kind list = view_ == V_HOME ? (letters_open_ ? K_NONE : K_ALL_ROW)
+                : view_ == V_CATEGORY ? K_CAT_TILE : view_ == V_SEARCH ? K_RESULT : K_NONE;
+    if (cur && cur->kind == K_TILE && view_ == V_HOME) list = K_TILE;
+    const Area *a = area(list);
+    if (a) {
+      bool keep = cur && cur->kind == (list == K_TILE ? K_TILE : list) && cur->visible;
+      int ref_x = keep ? cur->x : a->x, ref_y = keep ? cur->y : a->y;
+      int before = *a->scroll;
+      if (a->scrolls())
+        *a->scroll = std::max(0, std::min(a->content - a->h, *a->scroll + dir * (a->h - S(36))));
+      bool moved = *a->scroll != before;
+      build_items();
+      Kind kind = list == K_TILE ? K_TILE : list;
+      const Item *best = nullptr;
+      double best_d = 1e18;
+      for (auto &it : items_) {
+        if (it.kind != kind || !it.visible) continue;
+        double d = std::fabs(double(it.y - ref_y)) + std::fabs(double(it.x - ref_x));
+        if (d < best_d) best_d = d, best = &it;
+      }
+      // Already at either end of the list: the first or last item.
+      if (!moved && keep) {
+        for (auto &it : items_)
+          if (it.kind == kind) {
+            if (dir < 0) {
+              best = &it;
+              break;
+            }
+            best = &it;
+          }
+      }
+      if (best) {
+        selected_ = {best->kind, best->index};
+        ensure_visible(*best);
+      }
+      redraw();
+      return;
+    }
+    return;
+  }
   if (!cur) {
     // The first key shows the selection on the first item of the content.
     const Item *first = nullptr;
@@ -1266,36 +1414,6 @@ void AppMenu::move_selection(int key) {
         break;
       }
     if (first) selected_ = {first->kind, first->index};
-    redraw();
-    return;
-  }
-  if (key == FL_Page_Down || key == FL_Page_Up) {
-    int dir = key == FL_Page_Down ? 1 : -1;
-    if (cur->kind == K_TILE && view_ == V_HOME) {
-      page_ = std::max(0, std::min(int(page_count_) - 1, page_ + dir));
-      selected_ = {K_TILE, -1};
-      build_items();
-      for (auto &it : items_)
-        if (it.kind == K_TILE) {
-          selected_ = {K_TILE, it.index};
-          break;
-        }
-      redraw();
-      return;
-    }
-    int span = cur->ch < (1 << 19) ? cur->ch - S(36) : S(200);
-    double target = cur->y + cur->h / 2.0 + dir * span;
-    const Item *best = nullptr;
-    double best_d = 1e9;
-    for (auto &it : items_) {
-      if (it.kind != cur->kind) continue;
-      double d = std::fabs(it.y + it.h / 2.0 - target) + std::fabs(double(it.x - cur->x));
-      if (d < best_d) best_d = d, best = &it;
-    }
-    if (best) {
-      selected_ = {best->kind, best->index};
-      ensure_visible(*best);
-    }
     redraw();
     return;
   }
@@ -1374,6 +1492,29 @@ int AppMenu::handle(int event) {
       build_items();
       const Item *hit = item_at(ex, ey);
       Item it = hit ? *hit : Item();
+      if (Fl::event_button() == FL_LEFT_MOUSE) {
+        // Scrollbars: drag the thumb, or click the track to jump there.
+        for (auto &a : areas_) {
+          if (!a.scrolls() || ex < a.bar_x() - S(5) || ex >= a.x + a.w || ey < a.y ||
+              ey >= a.y + a.h)
+            continue;
+          double track = a.h - S(8);
+          double len = std::max(Sd(24), track * a.h / a.content);
+          double pos = a.y + S(4) + (track - len) * *a.scroll / std::max(1, a.content - a.h);
+          drag_area_ = a.kind;
+          drag_y_ = ey;
+          drag_scroll_ = *a.scroll;
+          if (ey < pos || ey > pos + len) {
+            // Center the thumb on the click, then keep dragging from there.
+            drag_y_ = int(pos + len / 2);
+            drag_scrollbar(ey);
+            drag_y_ = ey;
+            drag_scroll_ = *a.scroll;
+          }
+          redraw();
+          return 1;
+        }
+      }
       if (Fl::event_button() == FL_RIGHT_MOUSE) {
         if (it.entry) {
           selected_ = {it.kind, it.index};
@@ -1403,6 +1544,15 @@ int AppMenu::handle(int event) {
       build_items();
       const Item *hit = item_at(Fl::event_x(), Fl::event_y());
       Ref r = hit ? Ref{hit->kind, hit->index} : Ref{};
+      bool on_bar = false;
+      for (auto &a : areas_)
+        on_bar = on_bar || (a.scrolls() && Fl::event_x() >= a.bar_x() - S(5) &&
+                            Fl::event_x() < a.x + a.w && Fl::event_y() >= a.y &&
+                            Fl::event_y() < a.y + a.h);
+      if (on_bar != bar_hover_) {
+        bar_hover_ = on_bar;
+        redraw();
+      }
       if (!(r == hover_)) {
         hover_ = r;
         if (hit && hit->entry) {
@@ -1421,20 +1571,35 @@ int AppMenu::handle(int event) {
         redraw();
       }
       return PanelPopup::handle(event);
-    case FL_MOUSEWHEEL: {
-      int ex = Fl::event_x(), ey = Fl::event_y(), dy = Fl::event_dy() ? Fl::event_dy() : Fl::event_dx();
-      if (ey >= cats_y_ && ey < cats_y_ + cats_h_) {
-        scroll_by(K_CATEGORY, dy * S(60));
-      } else if (view_ == V_HOME && ex < split_x_ && ey >= body_top_) {
-        page_ = std::max(0, std::min(int(page_count_) - 1, page_ + (dy > 0 ? 1 : -1)));
-        redraw();
-      } else if (view_ == V_HOME && !letters_open_) {
-        scroll_by(K_ALL_ROW, dy * S(72));
-      } else if (view_ == V_CATEGORY) {
-        scroll_by(K_CAT_TILE, dy * S(72));
-      } else if (view_ == V_SEARCH) {
-        scroll_by(K_RESULT, dy * S(72));
+    case FL_DRAG:
+      if (drag_area_ != K_NONE) {
+        drag_scrollbar(Fl::event_y());
+        return 1;
       }
+      return PanelPopup::handle(event);
+    case FL_RELEASE:
+      if (drag_area_ != K_NONE) {
+        drag_area_ = K_NONE;
+        redraw();
+        return 1;
+      }
+      return PanelPopup::handle(event);
+    case FL_MOUSEWHEEL: {
+      // The wheel scrolls the area under the pointer. The menu holds the
+      // pointer grab, so take the position from root coordinates: they are
+      // right whichever of the panel's windows X reported the event to.
+      int ex = Fl::event_x_root() - x_root(), ey = Fl::event_y_root() - y_root();
+      int dy = Fl::event_dy() ? Fl::event_dy() : Fl::event_dx();
+      if (!dy || menu_busy_) return 1;
+      build_items();
+      const Area *a = area_at(ex, ey);
+      // Elsewhere (headings, chips, or a pane that fits): the main list.
+      if (!a || !a->scrolls()) {
+        Kind main = view_ == V_HOME ? K_ALL_ROW : view_ == V_CATEGORY ? K_CAT_TILE
+                    : view_ == V_SEARCH ? K_RESULT : K_NONE;
+        a = area(main);
+      }
+      if (a) scroll_by(a->kind, dy * (compact_ ? S(64) : S(72)));
       return 1;
     }
     case FL_SHORTCUT:
@@ -1532,9 +1697,14 @@ void AppMenu::draw() {
     switch (it.kind) {
       case K_TILE:
       case K_CAT_TILE:
-        size = it.kind == K_CAT_TILE ? S(52) : S(48);
+        size = compact_ ? S(30) : it.kind == K_CAT_TILE ? S(44) : S(40);
         cx = it.x + it.w / 2.0;
-        cy = it.y + S(8) + size / 2;
+        cy = it.y + (compact_ ? S(4) : S(8)) + size / 2;
+        break;
+      case K_RECENT:
+        size = compact_ ? S(24) : S(28);
+        cx = it.x + S(8) + size / 2;
+        cy = it.y + it.h / 2.0;
         break;
       case K_RESULT: size = S(32); cx = it.x + S(12) + size / 2; cy = it.y + it.h / 2.0; break;
       case K_CHIP: size = S(18); cx = it.x + S(12) + size / 2; cy = it.y + it.h / 2.0; break;
@@ -1593,10 +1763,7 @@ void AppMenu::draw() {
           if (hv) p.circle(it.x + it.w / 2.0, it.y + it.h / 2.0, it.w / 2.0, t.hover);
           if (s && keyboard_) p.stroke_rounded(it.x, it.y, it.w, it.h, it.w / 2.0, t.accent, Sd(2));
           double g = S(20), gx = it.x + (it.w - g) / 2.0, gy = it.y + (it.h - g) / 2.0;
-          if (it.index == 0) folder_glyph(p, gx, gy, g, t.text);
-          else if (it.index == 1) glyph::gear(p, gx, gy, g, t.text);
-          else if (it.index == 2) glyph::lock(p, gx, gy, g, t.text);
-          else glyph::power(p, gx, gy, g, hv ? Color::hex(0xE0525C) : t.text);
+          folder_glyph(p, gx, gy, g, t.text);
           break;
         }
         case K_SEARCH: {
@@ -1624,31 +1791,18 @@ void AppMenu::draw() {
           if (s && keyboard_)
             p.stroke_rounded(it.x + 1, it.y + 1, it.w - 2, it.h - 2, r - 1, t.accent, Sd(2));
           int g = S(18);
+          // Labeled chips: icon on the left; icon cells: icon centered.
+          double gx = it.x + (it.w - g) / 2.0;
+          if (!chips_icons_) {
+            // Icon and name centered together in the (justified) chip.
+            text_font(t.font_size - 1, on);
+            int group = g + S(6) + text_width(it.label);
+            gx = it.x + std::max(S(9), (it.w - group) / 2);
+          }
           p.image(IconLoader::get({category_icon(categories_[size_t(it.index)]),
                                    "applications-other"},
                                   g),
-                  it.x + S(10), it.y + (it.h - g) / 2.0, g);
-          break;
-        }
-        case K_CATS_LEFT:
-        case K_CATS_RIGHT:
-          p.circle(it.x + it.w / 2.0, it.y + it.h / 2.0, it.w / 2.0,
-                   hv ? t.hover : t.surface_alt);
-          glyph::chevron(p, it.x + (it.w - S(18)) / 2.0, it.y + (it.h - S(18)) / 2.0, S(18),
-                         it.kind == K_CATS_RIGHT, t.text);
-          break;
-        case K_PAGE_PREV:
-        case K_PAGE_NEXT: {
-          bool enabled = it.kind == K_PAGE_PREV ? page_ > 0 : page_ + 1 < int(page_count_);
-          if (hv && enabled) p.circle(it.x + it.w / 2.0, it.y + it.h / 2.0, it.w / 2.0, t.hover);
-          glyph::chevron(p, it.x + (it.w - S(18)) / 2.0, it.y + (it.h - S(18)) / 2.0, S(18),
-                         it.kind == K_PAGE_NEXT, enabled ? t.text : t.text_dim.alpha(0.4));
-          break;
-        }
-        case K_PAGE_DOT: {
-          bool on = it.index == page_;
-          if (on) p.fill_rounded(it.x + Sd(1), it.y + it.h / 2.0 - Sd(3), it.w - Sd(2), Sd(6), Sd(3), t.accent);
-          else p.circle(it.x + it.w / 2.0, it.y + it.h / 2.0, Sd(3), t.text_dim.alpha(hv ? 0.8 : 0.4));
+                  gx, it.y + (it.h - g) / 2.0, g);
           break;
         }
         case K_BACK:
@@ -1666,6 +1820,7 @@ void AppMenu::draw() {
           p.fill_rounded(it.x, it.y, it.w, it.h, S(8), hv || s ? t.accent : t.surface);
           break;
         case K_TILE:
+        case K_RECENT:
         case K_ALL_ROW:
         case K_CAT_TILE:
         case K_RESULT:
@@ -1695,21 +1850,21 @@ void AppMenu::draw() {
       cairo_restore(p.cr());
     }
 
-    // Scroll indicators.
-    auto scrollbar = [&](int x, int top, int bottom, int content, int scroll) {
-      int view = bottom - top;
-      if (content <= view) return;
-      double track = view - S(8);
-      double len = std::max(Sd(24), track * view / content);
-      double pos = (track - len) * scroll / std::max(1, content - view);
-      p.fill_rounded(x, top + S(4) + pos, Sd(4), len, Sd(2), t.text_dim.alpha(0.35));
-    };
-    if (view_ == V_HOME && !letters_open_)
-      scrollbar(W - pad_ - S(8), all_top_, all_bottom_, all_content_h_, all_scroll_);
-    else if (view_ == V_CATEGORY)
-      scrollbar(W - pad_ + S(4), view_top_, view_bottom_, cat_content_h_, cat_scroll_);
-    else if (view_ == V_SEARCH && !results_.empty())
-      scrollbar(W - pad_ - S(2), view_top_, view_bottom_, result_content_h_, result_scroll_);
+    // Scrollbars: thin, wider while hovered or dragged (they can be dragged).
+    int mx = Fl::event_x_root() - x_root(), my = Fl::event_y_root() - y_root();
+    for (auto &a : areas_) {
+      if (!a.scrolls()) continue;
+      double track = a.h - S(8);
+      double len = std::max(Sd(24), track * a.h / a.content);
+      double pos = (track - len) * *a.scroll / std::max(1, a.content - a.h);
+      bool active = drag_area_ == a.kind ||
+                    (mx >= a.bar_x() - S(5) && mx < a.x + a.w && my >= a.y && my < a.y + a.h);
+      double bw = active ? Sd(6) : Sd(4);
+      double bx = a.bar_x() + Sd(6) - bw;
+      if (active) p.fill_rounded(bx, a.y + S(4), bw, track, bw / 2, t.text_dim.alpha(0.12));
+      p.fill_rounded(bx, a.y + S(4) + pos, bw, len, bw / 2,
+                     t.text_dim.alpha(active ? 0.6 : 0.35));
+    }
 
     // Launch effect, drawn over the content.
     if (launching_) {
@@ -1756,7 +1911,7 @@ void AppMenu::draw() {
   draw_children();
 
   int ad = S(36), nx = pad_ + ad + S(12);
-  int buttons_x = W - pad_ - 4 * S(36) - 3 * S(4);
+  int buttons_x = W - pad_ - S(36);
   if (!avatar_) {
     std::string initial = full_name_.empty() ? "?" : full_name_.substr(0, 1);
     if (initial[0] >= 'a' && initial[0] <= 'z') initial[0] = char(initial[0] - 'a' + 'A');
@@ -1807,9 +1962,12 @@ void AppMenu::draw() {
         }
         break;
       case K_CATEGORY: {
+        if (chips_icons_) break;  // the name shows on hover
         bool on = view_ == V_CATEGORY && category_ == it.index;
-        text_font(t.font_size, on);
-        draw_text(it.label, it.x + S(34), it.y, it.w - S(38), it.h, on ? t.on_accent : t.text);
+        text_font(t.font_size - 1, on);
+        int g = S(18), group = g + S(6) + text_width(it.label);
+        int tx = it.x + std::max(S(9), (it.w - group) / 2) + g + S(6);
+        draw_text(it.label, tx, it.y, it.w - (tx - it.x) - S(8), it.h, on ? t.on_accent : t.text);
         break;
       }
       case K_ALL_LETTER:
@@ -1826,10 +1984,28 @@ void AppMenu::draw() {
       case K_CAT_TILE: {
         double lift, scale, slide, glow;
         hover_of(it, lift, scale, slide, glow);
-        int icon = it.kind == K_CAT_TILE ? S(52) : S(48);
+        int icon = compact_ ? S(30) : it.kind == K_CAT_TILE ? S(44) : S(40);
+        int top = compact_ ? S(4) : S(8);
         text_font(t.font_size - (it.kind == K_TILE ? 1 : 0));
-        draw_text(it.entry->name, it.x + S(4), it.y + S(12) + icon - int(lift), it.w - S(8), S(26),
-                  t.text, 1);
+        draw_text(it.entry->name, it.x + S(4), it.y + top + icon + S(2) - int(lift), it.w - S(8),
+                  S(24), t.text, 1);
+        break;
+      }
+      case K_RECENT: {
+        double lift, scale, slide, glow;
+        hover_of(it, lift, scale, slide, glow);
+        int tx = it.x + (compact_ ? S(40) : S(46)) + int(slide), tw = it.w - (tx - it.x) - S(6);
+        const DesktopEntry *e = it.entry;
+        std::string sub = !e->generic_name.empty() && e->generic_name != e->name ? e->generic_name
+                                                                                 : e->comment;
+        text_font(t.font_size);
+        if (sub.empty() || compact_) {
+          draw_text(e->name, tx, it.y, tw, it.h, t.text);
+        } else {
+          draw_text(e->name, tx, it.y + S(3), tw, it.h / 2 - S(1), t.text);
+          text_font(t.font_size - 2);
+          draw_text(sub, tx, it.y + it.h / 2, tw, it.h / 2 - S(4), t.text_dim);
+        }
         break;
       }
       case K_ALL_ROW: {
@@ -1873,10 +2049,9 @@ void AppMenu::draw() {
     if (clipped) fl_pop_clip();
   }
 
-  // Tooltips for the header buttons.
-  if (hov && hov->kind == K_HEADER_BUTTON) {
-    static const char *tips[] = {N_("Files"), N_("Settings"), N_("Lock"), N_("Power")};
-    std::string tip = _(tips[hov->index]);
+  // Tooltips: the Files button and icon-only category chips.
+  if (hov && (hov->kind == K_HEADER_BUTTON || (hov->kind == K_CATEGORY && chips_icons_))) {
+    std::string tip = hov->kind == K_HEADER_BUTTON ? std::string(_("Files")) : hov->label;
     text_font(t.font_size - 1);
     int tw = text_width(tip) + S(16), th = S(24);
     int tx = std::min(W - S(4) - tw, hov->x + hov->w / 2 - tw / 2), ty = hov->y + hov->h + S(4);
@@ -1891,4 +2066,55 @@ void AppMenu::draw() {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface.alpha(ease_out(q)));
   }
+  if (qa_dump_enabled()) qa_dump_menu();
+}
+
+// UI test hook (see qa_dump in popup.h): the menu draws its own controls, so
+// it lists them itself. Lines starting with "@" describe areas: "@chips"
+// (and "@chips-icons" for icon-only chips), "@all"/"@home" scrolled areas and
+// "@all-scroll"/"@home-scroll" with the offset and its maximum as x and y.
+void AppMenu::qa_dump_menu() {
+  std::string text;
+  auto line = [&](const std::string &name, int x, int y, int w, int h, int active, int scrolled) {
+    std::string n = name;
+    for (char &c : n)
+      if (c == '\t' || c == '\n') c = ' ';
+    text += n + "\t" + std::to_string(x) + "\t" + std::to_string(y) + "\t" + std::to_string(w) +
+            "\t" + std::to_string(h) + "\t" + std::to_string(active) + "\t" +
+            std::to_string(scrolled) + "\n";
+  };
+  line("@menu", 0, 0, w(), h(), 1, 0);
+  line("@chips", pad_, cats_y_, w() - 2 * pad_, cats_h_, 1, 0);
+  if (chips_icons_) line("@chips-icons", pad_, cats_y_, w() - 2 * pad_, cats_h_, 1, 0);
+  for (auto &a : areas_) {
+    std::string n = a.kind == K_ALL_ROW ? "all" : a.kind == K_TILE ? "home"
+                    : a.kind == K_CAT_TILE ? "category" : "results";
+    line("@" + n, a.x, a.y, a.w, a.h, 1, 0);
+    line("@" + n + "-scroll", *a.scroll, std::max(0, a.content - a.h), 0, 0, 1, 0);
+  }
+  for (auto &it : items_) {
+    if (!it.visible) continue;
+    int cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+    bool clipped = it.ch < (1 << 19);
+    if (clipped && !(cx >= it.cx && cx < it.cx + it.cw && cy >= it.cy && cy < it.cy + it.ch))
+      continue;
+    std::string name;
+    switch (it.kind) {
+      case K_HEADER_BUTTON: name = "files"; break;
+      case K_SEARCH: name = "search"; break;
+      case K_CATEGORY: name = "category:" + it.label; break;
+      case K_TILE: name = (view_ == V_HOME ? "favorite:" : "tile:") + it.entry->name; break;
+      case K_RECENT: name = "recent:" + it.entry->name; break;
+      case K_ALL_ROW: name = "app:" + it.entry->name; break;
+      case K_ALL_LETTER: name = "letter:" + it.label; break;
+      case K_LETTER_JUMP: name = "jump:" + it.label; break;
+      case K_BACK: name = "back"; break;
+      case K_CAT_TILE: name = "tile:" + it.entry->name; break;
+      case K_RESULT: name = "result:" + it.entry->name; break;
+      case K_CHIP: name = "chip:" + it.entry->name; break;
+      default: continue;
+    }
+    line(name, it.x, it.y, it.w, it.h, 1, clipped ? 1 : 0);
+  }
+  qa_dump(this, text);
 }

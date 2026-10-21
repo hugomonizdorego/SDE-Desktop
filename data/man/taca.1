@@ -1,22 +1,124 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
+.\" Copyright (C) 2026 DebION Dev-Team
 .TH TACA 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-taca \- Taca archive manager
+taca \- archive manager of the Selviana Desktop Environment
 .SH SYNOPSIS
 .B taca
-[OPTIONS] FILES...
+[\fIFILE\fR...]
+.br
+.B taca
+\fB\-\-extract\-here\fR \fIARCHIVE\fR...
+.br
+.B taca
+\fB\-\-extract\-to\fR=\fIDIR\fR \fIARCHIVE\fR...
+.br
+.B taca
+\fB\-\-add\-to\fR=\fIARCHIVE\fR \fIFILE\fR...
+.br
+.B taca
+\fB\-\-list\fR | \fB\-\-test\fR \fIARCHIVE\fR
 .SH DESCRIPTION
-Create, inspect and extract archives with the native Taca GTK archive manager.
+Taca opens, creates, changes and extracts archives. It is written for SDE
+by the DebION Dev-Team with SDE-FLTK and libarchive.
 .PP
-This is an independent native executable built from the SDE fork sources
-and included in the sde package.
+Without options, \fIFILE\fR is opened in the Taca window; files that are not
+archives are offered for packing into a new archive. The window shows the
+archive's format, size and compression next to its contents, which can be
+browsed by folder, searched, shown as a list or as icons, extracted (all or
+the selection, also by dragging items to a file manager), opened with their
+default application, renamed, deleted, tested and extended with files
+dropped onto the window. Archive work runs in the background and can be
+cancelled.
+.SH FORMATS
+Read with libarchive: ZIP (and JAR, WAR, APK, EPUB, CBZ and other ZIP based
+files), RAR 4 and RAR 5, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4,
+tar.lzma, tar.lz, tar.Z, gz, bz2, xz, zst, lz4, lzma, lz, Z, ISO 9660, CAB,
+cpio, ar, Debian packages, RPM, XAR, LHA and WARC.
+.PP
+Created with libarchive: ZIP (also with AES-256 passwords), 7z, tar,
+tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4, ISO 9660, cpio, XAR and single
+compressed files (gz, bz2, xz, zst, lz4, lzma, lz).
+.PP
+External programs are used when they are installed:
+.BR 7z (1)
+(package 7zip) for encrypted 7z archives (also with encrypted file names),
+split volumes and AES ZIP archives when libarchive has no crypto support;
+.BR unrar (1)
+or 7-Zip for encrypted RAR archives; and
+.BR rar (1)
+to create or change RAR archives. Taca tells which package to install when
+one is needed.
+.SH SAFETY
+Archives are untrusted. Members with absolute paths, ".." components,
+drive letters or backslash traversal, symbolic links that point outside the
+destination, members below such links, hard links to members that were not
+extracted and device files are never written; Taca lists what it skipped.
+Set-user-ID, set-group-ID and sticky bits are not restored. External tools
+extract into a private folder first and Taca moves the result after the
+same checks.
 .SH OPTIONS
 .TP
-.B --help
-Display the native application options.
+.BR \-h ", " \-\-extract\-here " " \fIARCHIVE\fR...
+Extracts next to each archive. An archive with a single top-level item that
+does not exist yet is extracted directly; otherwise a new folder named
+after the archive is created.
+.TP
+.BR \-e ", " \-\-extract\-to =\fIDIR\fR " " \fIARCHIVE\fR...
+Extracts into \fIDIR\fR (asks before creating it, see \fB\-\-force\fR).
+.TP
+.BR \-x ", " \-\-extract " " \fIARCHIVE\fR...
+Asks where and how to extract.
+.TP
+.BR \-a ", " \-\-add\-to =\fIARCHIVE\fR " " \fIFILE\fR...
+Adds files to \fIARCHIVE\fR, creating it (format from its extension, ZIP
+otherwise) when it does not exist.
+.TP
+.BR \-d ", " \-\-add " " \fIFILE\fR...
+Asks for the name, format, compression level, password and volume size of
+a new archive holding \fIFILE\fR.
+.TP
+.BR \-\-default\-dir =\fIDIR\fR
+Default folder for \fB\-\-extract\fR.
+.TP
+.BR \-f ", " \-\-force
+Creates the destination folder without asking.
+.TP
+.BR \-\-list " " \fIARCHIVE\fR
+Prints the contents, one member per line, without a window.
+.TP
+.BR \-\-test " " \fIARCHIVE\fR
+Reads every member and checks it, without a window.
+.TP
+.B \-\-formats
+Prints what each format supports on this computer.
+.TP
+.B \-\-version
+Prints the version.
+.TP
+.B \-\-help
+Shows the options.
+.SH ENVIRONMENT
+.TP
+.B TACA_PASSWORD
+Password used by \fB\-\-list\fR and \fB\-\-test\fR.
+.SH FILES
+.TP
+.I ~/.local/state/sde/taca-recent
+Recently opened archives.
+.TP
+.I ~/.cache/sde/taca/
+Temporary copies of opened and dragged files (removed after a day).
+.TP
+.I ~/.config/sde/sde.conf
+Section [taca]: view=list|icons.
+.SH EXIT STATUS
+0 on success, 1 on errors, 2 for wrong usage, 3 when cancelled and 4 when
+a password is needed or wrong (\fB\-\-list\fR, \fB\-\-test\fR).
 .SH COPYRIGHT
-Original upstream copyrights and licenses are preserved. Settings at the SDE
-Suite page provides the source link and full installed notice.
+Copyright \(co 2026 DebION Dev-Team. License GPL-3.0-or-later.
 .SH SEE ALSO
-.BR sde-settings (1),
-.BR sde-suite (1)
+.BR 7z (1),
+.BR unrar (1),
+.BR bsdtar (1),
+.BR sde-settings (1)

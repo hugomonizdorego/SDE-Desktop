@@ -1,22 +1,72 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
+.\" Copyright (C) 2026 DebION Dev-Team
 .TH NINY 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-niny \- Niny text editor
+niny \- Niny text editor for the Selviana Desktop Environment
 .SH SYNOPSIS
 .B niny
-[OPTIONS] FILES...
+[\fIOPTION\fR...] [\fB+\fILINE\fR] [\fIFILE\fR[\fB:\fILINE\fR[\fB:\fICOLUMN\fR]]|\fIURI\fR...]
 .SH DESCRIPTION
-Open and edit text files with the native Niny GTK editor.
+.B niny
+is the text editor of SDE, written for SDE with SDE-FLTK and cairo by the
+DebION Dev-Team. It opens each file in a tab, highlights the syntax of C,
+C++, Python, shell, JavaScript, TypeScript, JSON, HTML, XML, CSS, Markdown,
+INI/configuration files, Rust, Go, Makefiles, YAML and diffs, and stays
+responsive with files of tens of megabytes.
 .PP
-This is an independent native executable built from the SDE fork sources
-and included in the sde package.
+Files given on the command line open in the running Niny window of the
+display; a file that does not exist yet is created when it is first saved.
+Local
+.B file://
+URIs are accepted.
+.PP
+Character encodings (UTF-8, UTF-8 with BOM, UTF-16, ISO-8859-1 and
+Windows-1252) and line endings (LF, CRLF, CR) are detected when a file is
+opened and kept when it is saved; both can be changed in the status bar.
 .SH OPTIONS
 .TP
-.B --help
-Display the native application options.
+.BI + LINE
+Put the cursor on \fILINE\fR of the next file.
+.TP
+.BR \-n ", " \-\-new\-window
+Open a separate window instead of handing the files to the running one.
+.TP
+.BR \-h ", " \-\-help
+Show the options.
+.TP
+.BR \-v ", " \-\-version
+Show the version.
+.SH KEYS
+.TP
+.B Ctrl+Shift+P
+Command palette (every command); \fBCtrl+P\fR quickly opens files and
+\fBCtrl+G\fR goes to a line.
+.TP
+.B Ctrl+F, Ctrl+H, F3, Shift+F3
+Find, find and replace (with case, whole word and regular expression
+options), next and previous match.
+.TP
+.B Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+W, Ctrl+Shift+T
+New, open, save, save as, close and reopen the last closed document.
+.TP
+.B Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y
+Undo and redo.
+.TP
+.B Ctrl+D, Ctrl+Shift+K, Alt+Up, Alt+Down, Ctrl+/
+Duplicate, delete or move lines; toggle comments.
+.TP
+.B Ctrl+Plus, Ctrl+Minus, Ctrl+0, Alt+Z, F9
+Zoom, word wrap and the side panel.
+.SH FILES
+.TP
+.I ~/.config/sde/niny.conf
+Settings (also changed in Niny's Settings window).
+.TP
+.I ~/.local/state/niny/
+Session, recent files and backups of unsaved changes, used to restore
+documents after a crash or when quitting with unsaved changes.
 .SH COPYRIGHT
-Original upstream copyrights and licenses are preserved. Settings at the SDE
-Suite page provides the source link and full installed notice.
+Copyright (C) 2026 DebION Dev-Team. Niny is free software under the GNU
+General Public License, version 3 or later.
 .SH SEE ALSO
-.BR sde-settings (1),
-.BR sde-suite (1)
+.BR sde-settings (1)

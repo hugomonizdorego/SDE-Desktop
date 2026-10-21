@@ -7,13 +7,18 @@
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
 
+#include "build_config.h"
 #include "config.h"
+#include "exif.h"
 #include "gallery.h"
+#include "link.h"
 #include "i18n.h"
 #include "process.h"
 #include "spawn.h"
@@ -32,11 +37,40 @@ std::string thumb_key(const std::string &path, bool large) {
   return path + (large ? "\n1" : "\n0");
 }
 
-bool under(const std::string &path, const std::string &dir) {
-  return path.size() > dir.size() + 1 && starts_with(path, dir) && path[dir.size()] == '/';
+enum MenuId {
+  M_OPEN_FILE = 1, M_OPEN_FOLDER, M_IMPORT, M_ADD_FOLDER, M_REFRESH, M_QUIT,
+  M_SELECT_ALL, M_SELECT_NONE, M_FAVORITE, M_TRASH, M_COPY_PATH, M_OPEN_PHOTO, M_WALLPAPER, M_SHOW_FILES,
+  M_SORT_NEWEST, M_SORT_OLDEST, M_SORT_NAME, M_ZOOM_IN, M_ZOOM_OUT, M_SIDEBAR, M_PREFER_PHOTO,
+  M_FULLSCREEN, M_SHORTCUTS, M_ABOUT
+};
+
+// The Gallery icon (see sde-gallery.svg), for the About window.
+void draw_app_icon(Painter &p, double x, double y, double s) {
+  cairo_t *cr = p.cr();
+  cairo_pattern_t *g = cairo_pattern_create_linear(x, y, x + s, y + s);
+  cairo_pattern_add_color_stop_rgb(g, 0, 0x2B / 255.0, 0xB4 / 255.0, 0xD3 / 255.0);
+  cairo_pattern_add_color_stop_rgb(g, 1, 0x0E / 255.0, 0x56 / 255.0, 0x6C / 255.0);
+  p.rounded_rect(x, y, s, s, s * 0.26);
+  cairo_set_source(cr, g);
+  cairo_fill(cr);
+  cairo_pattern_destroy(g);
+  icon::draw(p, icon::Picture, x + s * 0.18, y + s * 0.18, s * 0.64, Color::hex(0xFFFFFF));
 }
 
 }  // namespace
+
+Album View::album() const {
+  switch (kind) {
+    case ViewKind::All: return {AlbumKind::All, ""};
+    case ViewKind::Favorites: return {AlbumKind::Favorites, ""};
+    case ViewKind::Recent: return {AlbumKind::Recent, ""};
+    case ViewKind::Screenshots: return {AlbumKind::Screenshots, ""};
+    case ViewKind::Folder: return {AlbumKind::Folder, folder};
+    case ViewKind::Device: return {AlbumKind::Device, folder};
+    case ViewKind::Browse: return {AlbumKind::Folder, folder};
+  }
+  return {};
+}
 
 GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) {
   instance_ = this;
@@ -48,6 +82,8 @@ GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) 
                                       int(std::max(2u, std::thread::hardware_concurrency() / 2))));
 
   begin();
+  menubar_ = new MenuBar(0, 0, w, S(30));
+  build_menu();
   sidebar_ = new Sidebar(this, 0, 0, S(232), h);
   search_ = new Fl_Input(0, 0, S(200), S(30));
   search_->when(FL_WHEN_CHANGED);
@@ -84,6 +120,9 @@ GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) 
     for (size_t i : self->grid_->selection()) paths.push_back(self->view_[i].path);
     self->trash(paths);
   }, this);
+  import_btn_ = new FlatButton(0, 0, S(120), S(32), _("Import…"), true);
+  import_btn_->callback([](Fl_Widget *, void *p) { static_cast<GalleryWindow *>(p)->import_dialog(); }, this);
+  import_btn_->hide();
   sel_clear_ = new FlatButton(0, 0, S(84), S(32), _("Done"), true);
   sel_clear_->callback([](Fl_Widget *, void *p) {
     static_cast<GalleryWindow *>(p)->grid_->clear_selection();
@@ -98,11 +137,22 @@ GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) 
   apply_theme();
   layout();
   start_scan();
+  refresh_devices();
+  // The kernel flags /proc/self/mountinfo as exceptional when mounts change.
+  mounts_fd_ = open("/proc/self/mountinfo", O_RDONLY | O_CLOEXEC);
+  if (mounts_fd_ >= 0) Fl::add_fd(mounts_fd_, FL_EXCEPT, mounts_cb, this);
+  Fl::add_timeout(5.0, mounts_timer_cb, this);
   Fl::add_handler(x_event_handler);
 }
 
 GalleryWindow::~GalleryWindow() {
   Fl::remove_handler(x_event_handler);
+  Fl::remove_timeout(mounts_timer_cb, this);
+  if (mounts_fd_ >= 0) {
+    Fl::remove_fd(mounts_fd_);
+    close(mounts_fd_);
+  }
+  if (ext_thread_.joinable()) ext_thread_.join();
   Fl::remove_timeout(toast_cb, this);
   if (Fl::has_timeout(save_cb, this)) save_settings();
   Fl::remove_timeout(save_cb, this);
@@ -133,6 +183,17 @@ void GalleryWindow::reload_config() {
   zoom_ = std::max(96, std::min(320, cfg.get_int("gallery", "thumbnail_size", 168)));
   std::string s = cfg.get("gallery", "sort", "newest");
   sort_ = s == "oldest" ? Sort::Oldest : s == "name" ? Sort::Name : Sort::Newest;
+  prefer_photo_ = cfg.get_bool("gallery", "open_in_photo", false);
+  show_sidebar_ = cfg.get_bool("gallery", "sidebar", true);
+}
+
+LibrarySettings GalleryWindow::library_settings() const {
+  LibrarySettings s;
+  s.pictures = pictures_;
+  s.user_folders = user_folders_;
+  s.favorites = favorites_;
+  s.sort = sort_;
+  return s;
 }
 
 void GalleryWindow::save_settings() {
@@ -142,7 +203,9 @@ void GalleryWindow::save_settings() {
   cfg.set("gallery", "favorites",
           encode_list(std::vector<std::string>(favorites_.begin(), favorites_.end())));
   cfg.set("gallery", "thumbnail_size", std::to_string(zoom_));
-  cfg.set("gallery", "sort", sort_ == Sort::Oldest ? "oldest" : sort_ == Sort::Name ? "name" : "newest");
+  cfg.set("gallery", "sort", sort_name(sort_));
+  cfg.set("gallery", "open_in_photo", prefer_photo_ ? "true" : "false");
+  cfg.set("gallery", "sidebar", show_sidebar_ ? "true" : "false");
   cfg.save();
 }
 
@@ -162,6 +225,7 @@ void GalleryWindow::apply_theme() {
   search_->cursor_color(theme_.accent.fl());
   search_->textsize(theme_.font_size);
   search_->textfont(FL_HELVETICA);
+  if (menubar_) menubar_->apply_theme();
   color(theme_.background.fl());
   redraw();
 }
@@ -169,6 +233,11 @@ void GalleryWindow::apply_theme() {
 int GalleryWindow::x_event_handler(int) {
   if (!instance_ || !fl_xevent) return 0;
   const XEvent &e = *fl_xevent;
+  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
+      e.xproperty.atom == events_atom() && e.xproperty.state == PropertyNewValue) {
+    instance_->handle_events();
+    return 0;
+  }
   if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
       e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
     auto *self = instance_;
@@ -178,6 +247,8 @@ int GalleryWindow::x_event_handler(int) {
     self->apply_theme();
     self->sort_ctl_->value(int(self->sort_));
     self->zoom_ctl_->value(self->zoom_);
+    self->update_menu();
+    self->layout();
     if (old_folders != self->user_folders_) self->start_scan();
     else if (old_favorites != self->favorites_) self->rebuild_view(true);
     self->grid_->relayout();
@@ -226,31 +297,26 @@ void GalleryWindow::scan_finished() {
   // Forget thumbnails of files that changed.
   rebuild_view(true);
   if (rescan_wanted_) start_scan();
+  else if (!pending_select_.empty()) {
+    std::string p = pending_select_;
+    pending_select_.clear();
+    select_path(p);
+  }
 }
 
 bool GalleryWindow::searching() const { return search_ && search_->size() > 0; }
 
-static bool in_view(const Photo &p, const View &v, const GalleryWindow &w,
-                    const std::function<bool(const std::string &)> &fav, time_t recent) {
-  switch (v.kind) {
-    case ViewKind::All: return true;
-    case ViewKind::Favorites: return fav(p.path);
-    case ViewKind::Recent: return p.mtime >= recent;
-    case ViewKind::Screenshots: return under(p.path, w.screenshots_dir());
-    case ViewKind::Folder: return under(p.path, v.folder);
-  }
-  return true;
-}
-
 size_t GalleryWindow::count_for(const View &v) const {
+  if (v.external()) return v == view_kind_ && !ext_scanning_ ? ext_photos_.size() : 0;
   std::string key = std::to_string(int(v.kind)) + v.folder;
   auto cached = counts_.find(key);
   if (cached != counts_.end()) return cached->second;
-  time_t recent = time(nullptr) - 30 * 24 * 3600;
-  auto fav = [this](const std::string &p) { return is_favorite(p); };
+  LibrarySettings lib = library_settings();
+  Album album = v.album();
+  time_t now = time(nullptr);
   size_t n = 0;
   for (const auto &p : all_)
-    if (in_view(p, v, *this, fav, recent)) ++n;
+    if (album_contains(album, p, lib, now)) ++n;
   counts_[key] = n;
   return n;
 }
@@ -262,23 +328,23 @@ std::string GalleryWindow::view_title(const View &v) const {
     case ViewKind::Recent: return _("Recent");
     case ViewKind::Screenshots: return _("Screenshots");
     case ViewKind::Folder: return v.folder == pictures_ ? std::string(_("Pictures")) : basename_of(v.folder);
+    case ViewKind::Device:
+      for (const auto &d : devices_)
+        if (d.mount_point == v.folder) return d.label();
+      return basename_of(v.folder);
+    case ViewKind::Browse: return basename_of(v.folder).empty() ? v.folder : basename_of(v.folder);
   }
   return "";
 }
 
 void GalleryWindow::rebuild_view(bool keep_scroll) {
   counts_.clear();
-  time_t recent = time(nullptr) - 30 * 24 * 3600;
-  auto fav = [this](const std::string &p) { return is_favorite(p); };
   std::string query = search_ ? search_->value() : "";
   std::string focus_path;
   if (grid_ && grid_->focus_index() >= 0 && grid_->focus_index() < int(view_.size()))
     focus_path = view_[size_t(grid_->focus_index())].path;
-  view_.clear();
-  for (const auto &p : all_)
-    if (in_view(p, view_kind_, *this, fav, recent) && matches_search(p.name, query))
-      view_.push_back(p);
-  sort_photos(view_, sort_);
+  // The same filter and order as Photo uses for this album (album.h).
+  view_ = album_photos(source(), view_kind_.album(), library_settings(), sort_, time(nullptr), query);
   groups_ = group_photos(view_, sort_);
   if (grid_) {
     if (keep_scroll) grid_->relayout();
@@ -289,12 +355,559 @@ void GalleryWindow::rebuild_view(bool keep_scroll) {
   }
   if (viewer_open()) viewer_->photos_changed();
   update_header_widgets();
+  update_menu();
   redraw();
 }
 
 void GalleryWindow::set_view(const View &v) {
   view_kind_ = v;
+  if (v.external() && (ext_root_ != v.folder || ext_photos_.empty())) {
+    ext_photos_.clear();
+    start_external_scan(v.folder);
+  }
   rebuild_view(false);
+  layout();
+}
+
+// ------------------------------------------------------ devices and browsing
+
+void GalleryWindow::refresh_devices() {
+  auto now = current_removable_mounts();
+  bool same = now.size() == devices_.size();
+  for (size_t i = 0; same && i < now.size(); ++i) same = now[i].mount_point == devices_[i].mount_point;
+  if (same) return;
+  for (const auto &d : now) {
+    bool known = false;
+    for (const auto &o : devices_) known |= o.mount_point == d.mount_point;
+    if (!known && !devices_.empty()) toast(format(_("“%s” is connected"), d.label().c_str()));
+  }
+  devices_ = now;
+  // Leave a device view whose medium was removed.
+  if (view_kind_.kind == ViewKind::Device) {
+    bool present = false;
+    for (const auto &d : devices_) present |= d.mount_point == view_kind_.folder;
+    if (!present) {
+      if (viewer_open()) close_viewer();
+      ext_photos_.clear();
+      set_view(View{});
+    }
+  }
+  sidebar_->redraw();
+  update_menu();
+  redraw();
+}
+
+void GalleryWindow::mounts_cb(int, void *p) {
+  if (instance_ == p) static_cast<GalleryWindow *>(p)->refresh_devices();
+}
+
+void GalleryWindow::mounts_timer_cb(void *p) {
+  if (instance_ == p) static_cast<GalleryWindow *>(p)->refresh_devices();
+  Fl::repeat_timeout(5.0, mounts_timer_cb, p);
+}
+
+void GalleryWindow::start_external_scan(const std::string &root) {
+  ext_wanted_ = root;
+  if (ext_scanning_) return;
+  ext_scanning_ = true;
+  ext_root_ = root;
+  if (ext_thread_.joinable()) ext_thread_.join();
+  auto extra = extra_formats_;
+  ext_thread_ = std::thread([this, root, extra] {
+    auto found = scan_folders({root}, extra, 50000);
+    {
+      std::lock_guard<std::mutex> lock(scan_mu_);
+      ext_result_ = std::move(found);
+      ext_result_root_ = root;
+    }
+    Fl::awake(ext_awake_cb, this);
+  });
+  redraw();
+}
+
+void GalleryWindow::ext_awake_cb(void *p) {
+  if (instance_ == p) static_cast<GalleryWindow *>(p)->external_scan_finished();
+}
+
+void GalleryWindow::external_scan_finished() {
+  std::string root;
+  {
+    std::lock_guard<std::mutex> lock(scan_mu_);
+    root = ext_result_root_;
+    if (view_kind_.external() && view_kind_.folder == root) ext_photos_ = std::move(ext_result_);
+    ext_result_.clear();
+  }
+  ext_scanning_ = false;
+  if (ext_wanted_ != root && view_kind_.external() && view_kind_.folder == ext_wanted_) {
+    start_external_scan(ext_wanted_);
+    return;
+  }
+  rebuild_view(true);
+  sidebar_->redraw();
+  if (!pending_select_.empty()) {
+    std::string p = pending_select_;
+    pending_select_.clear();
+    select_path(p);
+  }
+}
+
+void GalleryWindow::browse(const std::string &dir_in) {
+  std::string dir = dir_in;
+  while (dir.size() > 1 && dir.back() == '/') dir.pop_back();
+  if (!dir_exists(dir)) return;
+  for (const auto &d : devices_)
+    if (d.mount_point == dir) {
+      set_view(View{ViewKind::Device, dir});
+      return;
+    }
+  if (dir == pictures_ || std::find(user_folders_.begin(), user_folders_.end(), dir) != user_folders_.end()) {
+    set_view(View{ViewKind::Folder, dir});
+    return;
+  }
+  set_view(View{ViewKind::Browse, dir});
+}
+
+void GalleryWindow::open_folder_dialog() {
+  Fl_Native_File_Chooser chooser;
+  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
+  chooser.title(_("Open a Folder"));
+  chooser.directory((devices_.empty() ? pictures_ : devices_[0].mount_point).c_str());
+  if (chooser.show() != 0 || !chooser.filename()) return;
+  browse(chooser.filename());
+}
+
+void GalleryWindow::open_file_dialog() {
+  Fl_Native_File_Chooser chooser;
+  chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+  chooser.title(_("Open a Photo"));
+  chooser.filter(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff}"));
+  chooser.directory(pictures_.c_str());
+  if (chooser.show() != 0 || !chooser.filename()) return;
+  std::string path = chooser.filename();
+  std::string dir = path.substr(0, path.rfind('/'));
+  // Photo steps through the photos of that folder.
+  if (!open_in_photo(path, Album{AlbumKind::Directory, dir.empty() ? "/" : dir}, Sort::Name)) {
+    pending_select_ = path;
+    browse(dir);
+  }
+}
+
+void GalleryWindow::eject(const std::string &mount_point) {
+  std::string label = basename_of(mount_point);
+  std::vector<std::string> argv;
+  if (!find_program("gio").empty()) argv = {"gio", "mount", "-u", mount_point};
+  else if (!find_program("umount").empty()) argv = {"umount", mount_point};
+  else {
+    toast(_("Ejecting needs the gio program (libglib2.0-bin)"));
+    return;
+  }
+  if (view_kind_.kind == ViewKind::Device && view_kind_.folder == mount_point) {
+    if (viewer_open()) close_viewer();
+    set_view(View{});
+  }
+  run_async(argv, [this, label](const std::string &, int status) {
+    if (instance_ != this) return;
+    toast(status == 0 ? format(_("“%s” can be removed safely"), label.c_str())
+                      : format(_("“%s” is busy and could not be ejected"), label.c_str()));
+    refresh_devices();
+  });
+}
+
+void GalleryWindow::import_dialog() {
+  if (importing_) {
+    toast(_("An import is already running"));
+    return;
+  }
+  if (view_kind_.kind == ViewKind::Device) {
+    for (const auto &d : devices_)
+      if (d.mount_point == view_kind_.folder) {
+        std::vector<Photo> only;
+        for (size_t i : grid_->selection()) only.push_back(view_[i]);
+        import_from(d, only);
+        return;
+      }
+  }
+  if (devices_.empty()) {
+    ask(_("Import from Device"), _("No camera, SD card or USB drive is connected.\n"
+                                   "Connect one, and it appears under Devices in the sidebar."),
+        {_("Close")});
+    return;
+  }
+  if (devices_.size() == 1) {
+    import_from(devices_[0]);
+    return;
+  }
+  // Several devices: let the user pick one.
+  std::vector<Fl_Menu_Item> items(devices_.size() + 1);
+  for (auto &it : items) memset(&it, 0, sizeof it);
+  std::vector<std::string> labels;
+  for (const auto &d : devices_) labels.push_back(d.label());
+  for (size_t i = 0; i < devices_.size(); ++i) {
+    items[i].text = labels[i].c_str();
+    items[i].labelsize(theme_.font_size);
+    items[i].labelcolor(theme_.text.fl());
+  }
+  const Fl_Menu_Item *picked = items.data()->popup(w() / 2 - S(80), top_ + S(80), _("Import from"));
+  if (picked) import_from(devices_[size_t(picked - items.data())]);
+}
+
+void GalleryWindow::import_from(const MountEntry &device, const std::vector<Photo> &only) {
+  std::string label = device.label();
+  std::vector<Photo> photos = only;
+  if (photos.empty()) {
+    if (view_kind_.kind == ViewKind::Device && view_kind_.folder == device.mount_point && !ext_scanning_)
+      photos = ext_photos_;
+    else
+      photos = scan_folders({device.mount_point}, extra_formats_, 50000);
+  }
+  if (photos.empty()) {
+    toast(format(_("No photos found on “%s”"), label.c_str()));
+    return;
+  }
+  std::string dest = import_root(pictures_);
+  auto plan = plan_import(photos, dest, [](const std::string &p) {
+    struct stat st {};
+    return stat(p.c_str(), &st) == 0 ? (long long)st.st_size : -1LL;
+  });
+  size_t todo = 0;
+  for (const auto &i : plan) todo += i.skip ? 0 : 1;
+  if (todo == 0) {
+    toast(format(_("All photos on “%s” were imported already"), label.c_str()));
+    return;
+  }
+  std::string shown = starts_with(dest, home_dir() + "/") ? "~" + dest.substr(home_dir().size()) : dest;
+  std::string question = format(_("Copy %zu photos from “%s” to %s?"), todo, label.c_str(), shown.c_str());
+  if (plan.size() > todo) question += "\n" + format(_("%zu photos were imported before and are skipped."), plan.size() - todo);
+  if (ask(_("Import Photos"), question, {_("Cancel"), _("Import")}) != 1) return;
+  importing_ = true;
+  toast(format(_("Importing %zu photos…"), todo));
+  // Copy on a worker thread; report back through the event loop.
+  struct Job {
+    GalleryWindow *self;
+    size_t done = 0, failed = 0, total = 0;
+    std::string error;
+  };
+  auto *job = new Job{this, 0, 0, todo, ""};
+  std::thread([job, plan] {
+    for (const auto &i : plan) {
+      if (i.skip) continue;
+      std::string err;
+      if (copy_file(i.source, i.dest, &err)) ++job->done;
+      else {
+        ++job->failed;
+        job->error = err;
+      }
+    }
+    Fl::awake([](void *p) {
+      auto *job = static_cast<Job *>(p);
+      GalleryWindow *self = job->self;
+      if (instance_ == self) {
+        self->importing_ = false;
+        if (job->failed)
+          self->toast(format(_("Imported %zu photos; %zu could not be copied (%s)"), job->done, job->failed,
+                             job->error.c_str()));
+        else
+          self->toast(format(job->done == 1 ? _("Imported %zu photo") : _("Imported %zu photos"), job->done));
+        self->start_scan();
+      }
+      delete job;
+    }, job);
+  }).detach();
+}
+
+void GalleryWindow::select_all() {
+  if (viewer_open() || view_.empty()) return;
+  Fl::focus(grid_);
+  grid_->handle_select_all();
+}
+
+void GalleryWindow::toggle_sidebar() {
+  show_sidebar_ = !show_sidebar_;
+  save_settings();
+  layout();
+  update_menu();
+  redraw();
+}
+
+void GalleryWindow::toggle_fullscreen() {
+  if (fullscreen_active()) fullscreen_off();
+  else fullscreen();
+  update_menu();
+}
+
+void GalleryWindow::show_about_dialog() {
+  AboutInfo info;
+  info.name = _("Gallery");
+  info.program = "sde-gallery";
+  info.version = SDE_VERSION;
+  info.description = _("Browse the photos in your Pictures folder, your own folders and on cameras, "
+                       "SD cards and USB drives. Open them in Photo to view details and edit them.");
+  info.logo = draw_app_icon;
+  info.credits.push_back(format(_("Built with SDE-FLTK %s and cairo"), SDE_FLTK_VERSION));
+  show_about(info);
+}
+
+void GalleryWindow::show_shortcuts_dialog() {
+  show_shortcuts(_("Gallery Keyboard Shortcuts"),
+                 {{"", _("Browsing")},
+                  {_("Arrows"), _("Move between photos")},
+                  {_("Enter"), _("Open the photo")},
+                  {_("Space"), _("Select or deselect")},
+                  {_("Shift+Arrows"), _("Extend the selection")},
+                  {_("Ctrl+A"), _("Select all")},
+                  {_("Esc"), _("Clear the selection")},
+                  {_("Ctrl+F"), _("Search")},
+                  {_("Ctrl+wheel, + −"), _("Thumbnail size")},
+                  {"", _("Photos")},
+                  {_("Ctrl+D"), _("Add to or remove from Favorites")},
+                  {_("Ctrl+E"), _("Open in Photo")},
+                  {_("Ctrl+C"), _("Copy the path")},
+                  {_("Delete"), _("Move to the Trash")},
+                  {"", _("Library")},
+                  {_("Ctrl+O"), _("Open a photo")},
+                  {_("Ctrl+Shift+O"), _("Open a folder")},
+                  {_("Ctrl+I"), _("Import from a device")},
+                  {_("F5"), _("Refresh")},
+                  {"", _("Window")},
+                  {_("F9"), _("Show or hide the sidebar")},
+                  {_("F11"), _("Full screen")},
+                  {_("F1"), _("Keyboard shortcuts")},
+                  {_("Ctrl+Q"), _("Quit")}});
+}
+
+std::vector<std::string> GalleryWindow::selected_or_focused() const {
+  std::vector<std::string> paths;
+  for (size_t i : grid_->selection()) paths.push_back(view_[i].path);
+  if (paths.empty() && grid_->focus_index() >= 0 && grid_->focus_index() < int(view_.size()))
+    paths.push_back(view_[size_t(grid_->focus_index())].path);
+  return paths;
+}
+
+// ----------------------------------------------------------------- menus
+
+void GalleryWindow::build_menu() {
+  auto add = [this](const char *label, int shortcut, long id, int flags = 0) {
+    menubar_->add(label, shortcut, menu_cb, reinterpret_cast<void *>(id), flags);
+  };
+  std::string f = std::string(_("&File")) + "/", e = std::string(_("&Edit")) + "/",
+              v = std::string(_("&View")) + "/", h = std::string(_("&Help")) + "/";
+  auto L = [](const std::string &menu, const char *item) {
+    // A slash in a translated label would start a submenu.
+    std::string it = item;
+    for (auto &c : it)
+      if (c == '/') c = '|';
+    return menu + it;
+  };
+  add(L(f, _("Open File…")).c_str(), FL_CTRL + 'o', M_OPEN_FILE);
+  add(L(f, _("Open Folder…")).c_str(), FL_CTRL + FL_SHIFT + 'o', M_OPEN_FOLDER);
+  add(L(f, _("Import from Device…")).c_str(), FL_CTRL + 'i', M_IMPORT, FL_MENU_DIVIDER);
+  add(L(f, _("Add Folder to Library…")).c_str(), 0, M_ADD_FOLDER);
+  add(L(f, _("Refresh")).c_str(), FL_F + 5, M_REFRESH, FL_MENU_DIVIDER);
+  add(L(f, _("Quit")).c_str(), FL_CTRL + 'q', M_QUIT);
+  add(L(e, _("Select All")).c_str(), FL_CTRL + 'a', M_SELECT_ALL);
+  add(L(e, _("Select None")).c_str(), FL_CTRL + FL_SHIFT + 'a', M_SELECT_NONE, FL_MENU_DIVIDER);
+  add(L(e, _("Add to Favorites")).c_str(), FL_CTRL + 'd', M_FAVORITE);
+  add(L(e, _("Copy Path")).c_str(), FL_CTRL + 'c', M_COPY_PATH);
+  add(L(e, _("Move to Trash…")).c_str(), 0, M_TRASH, FL_MENU_DIVIDER);
+  add(L(e, _("Open in Photo")).c_str(), FL_CTRL + 'e', M_OPEN_PHOTO);
+  add(L(e, _("Set as Wallpaper")).c_str(), 0, M_WALLPAPER);
+  add(L(e, _("Show in Files")).c_str(), 0, M_SHOW_FILES);
+  add(L(v, _("Newest First")).c_str(), 0, M_SORT_NEWEST, FL_MENU_RADIO);
+  add(L(v, _("Oldest First")).c_str(), 0, M_SORT_OLDEST, FL_MENU_RADIO);
+  add(L(v, _("By Name")).c_str(), 0, M_SORT_NAME, FL_MENU_RADIO | FL_MENU_DIVIDER);
+  add(L(v, _("Larger Thumbnails")).c_str(), FL_CTRL + '=', M_ZOOM_IN);
+  add(L(v, _("Smaller Thumbnails")).c_str(), FL_CTRL + '-', M_ZOOM_OUT, FL_MENU_DIVIDER);
+  add(L(v, _("Show Sidebar")).c_str(), FL_F + 9, M_SIDEBAR, FL_MENU_TOGGLE);
+  add(L(v, _("Open Photos in Photo")).c_str(), 0, M_PREFER_PHOTO, FL_MENU_TOGGLE | FL_MENU_DIVIDER);
+  add(L(v, _("Full Screen")).c_str(), FL_F + 11, M_FULLSCREEN, FL_MENU_TOGGLE);
+  add(L(h, _("Keyboard Shortcuts")).c_str(), FL_F + 1, M_SHORTCUTS);
+  add(L(h, _("About Gallery")).c_str(), 0, M_ABOUT);
+  update_menu();
+}
+
+void GalleryWindow::update_menu() {
+  if (!menubar_) return;
+  for (int i = 0; i < menubar_->size(); ++i) {
+    Fl_Menu_Item &it = const_cast<Fl_Menu_Item &>(menubar_->menu()[i]);
+    if (!it.text || it.submenu()) continue;
+    long id = reinterpret_cast<long>(it.user_data());
+    auto state = [&](bool on) { on ? it.set() : it.clear(); };
+    switch (id) {
+      case M_SORT_NEWEST: state(sort_ == Sort::Newest); break;
+      case M_SORT_OLDEST: state(sort_ == Sort::Oldest); break;
+      case M_SORT_NAME: state(sort_ == Sort::Name); break;
+      case M_SIDEBAR: state(show_sidebar_); break;
+      case M_PREFER_PHOTO: state(prefer_photo_); break;
+      case M_FULLSCREEN: state(shown() && fullscreen_active()); break;
+      // Items that depend on the selection stay active: the menu cannot
+      // follow every focus change, and the actions check for themselves.
+    }
+  }
+}
+
+void GalleryWindow::menu_cb(Fl_Widget *, void *data) {
+  auto *self = instance_;
+  if (!self) return;
+  long id = reinterpret_cast<long>(data);
+  auto paths = self->selected_or_focused();
+  switch (id) {
+    case M_OPEN_FILE: self->open_file_dialog(); break;
+    case M_OPEN_FOLDER: self->open_folder_dialog(); break;
+    case M_IMPORT: self->import_dialog(); break;
+    case M_ADD_FOLDER: self->add_folder(); break;
+    case M_REFRESH: self->rescan(); break;
+    case M_QUIT: self->hide(); break;
+    case M_SELECT_ALL: self->select_all(); break;
+    case M_SELECT_NONE: self->grid_->clear_selection(); break;
+    case M_FAVORITE:
+    case M_COPY_PATH:
+    case M_TRASH:
+      if (paths.empty()) {
+        self->toast(_("Select a photo first"));
+        break;
+      }
+      if (id == M_FAVORITE) self->toggle_favorite(paths);
+      else if (id == M_COPY_PATH) self->copy_paths(paths);
+      else self->trash(paths);
+      break;
+    case M_OPEN_PHOTO:
+    case M_WALLPAPER:
+    case M_SHOW_FILES:
+      if (paths.size() != 1) {
+        self->toast(paths.empty() ? _("Select a photo first") : _("Select only one photo"));
+        break;
+      }
+      if (id == M_OPEN_PHOTO) self->edit_in_photo(paths[0]);
+      else if (id == M_WALLPAPER) self->set_wallpaper(paths[0]);
+      else self->show_in_files(paths[0]);
+      break;
+    case M_SORT_NEWEST:
+    case M_SORT_OLDEST:
+    case M_SORT_NAME:
+      self->sort_ = id == M_SORT_NEWEST ? Sort::Newest : id == M_SORT_OLDEST ? Sort::Oldest : Sort::Name;
+      self->sort_ctl_->value(int(self->sort_));
+      self->save_settings();
+      self->rebuild_view();
+      break;
+    case M_ZOOM_IN: self->set_zoom(self->zoom_ + 24); break;
+    case M_ZOOM_OUT: self->set_zoom(self->zoom_ - 24); break;
+    case M_SIDEBAR: self->toggle_sidebar(); break;
+    case M_PREFER_PHOTO:
+      self->prefer_photo_ = !self->prefer_photo_;
+      self->save_settings();
+      break;
+    case M_FULLSCREEN: self->toggle_fullscreen(); break;
+    case M_SHORTCUTS: self->show_shortcuts_dialog(); break;
+    case M_ABOUT: self->show_about_dialog(); break;
+  }
+  self->update_menu();
+}
+
+// --------------------------------------------------------- Photo events
+
+void GalleryWindow::forget_thumbnails(const std::string &path) {
+  for (bool large : {false, true}) {
+    auto it = thumbs_.find(thumb_key(path, large));
+    if (it != thumbs_.end()) {
+      if (it->second.surface) cairo_surface_destroy(it->second.surface);
+      thumbs_.erase(it);
+    }
+  }
+  failed_.erase(path);
+  dims_.erase(path);
+}
+
+void GalleryWindow::handle_events() {
+  auto events = take_gallery_events();
+  if (events.empty()) return;
+  bool changed = false, favorites = false;
+  std::string select;
+  auto update = [&](std::vector<Photo> &list, const std::string &path, bool remove) {
+    for (size_t i = 0; i < list.size(); ++i) {
+      if (list[i].path != path) continue;
+      if (remove) {
+        list.erase(list.begin() + long(i));
+      } else {
+        struct stat st {};
+        if (stat(path.c_str(), &st) == 0) {
+          list[i].mtime = st.st_mtime;
+          list[i].size = st.st_size;
+        }
+      }
+      return true;
+    }
+    return false;
+  };
+  for (const auto &e : events) {
+    if (e.verb == "select") {
+      select = e.path;
+    } else if (e.verb == "present") {
+      select = "";
+      x11::activate_window(fl_xid(this));
+    } else if (e.verb == "changed" || e.verb == "removed" || e.verb == "added") {
+      bool remove = e.verb == "removed" || !file_exists(e.path);
+      forget_thumbnails(e.path);
+      bool known = update(all_, e.path, remove);
+      known |= update(ext_photos_, e.path, remove);
+      if (remove && favorites_.erase(e.path)) favorites = true;
+      if (!known && !remove) {
+        // A new file (Save As): add it when it belongs to what is shown.
+        auto ph = photos_for_paths({e.path});
+        if (!ph.empty() && is_image_name(ph[0].name, extra_formats_)) {
+          bool in_library = false;
+          for (const auto &r : library_settings().roots()) in_library |= path_under(e.path, r);
+          if (in_library) all_.push_back(ph[0]);
+          if (view_kind_.external() && path_under(e.path, view_kind_.folder)) ext_photos_.push_back(ph[0]);
+        }
+      }
+      changed = true;
+    }
+  }
+  if (favorites) save_settings();
+  if (changed) rebuild_view(true);
+  if (!select.empty()) select_path(select);
+}
+
+void GalleryWindow::select_path(const std::string &path) {
+  auto find = [&]() { return index_of(view_, path); };
+  int i = find();
+  if (i < 0 && index_of(all_, path) >= 0) {
+    search_->value("");
+    set_view(View{});
+    i = find();
+  }
+  if (i < 0) {
+    // Not in the library: show its folder.
+    std::string dir = path.substr(0, path.rfind('/'));
+    if (view_kind_.external() && view_kind_.folder == dir && ext_scanning_) {
+      pending_select_ = path;
+    } else if (!(view_kind_.external() && path_under(path, view_kind_.folder))) {
+      pending_select_ = path;
+      if (scanning_) {
+        // The library scan may still find it.
+        return;
+      }
+      browse(dir.empty() ? "/" : dir);
+      return;
+    }
+  }
+  if (viewer_open()) close_viewer();
+  if (i >= 0) {
+    grid_->clear_selection();
+    grid_->set_focus_index(i);
+    grid_->select_index(i);
+    grid_->ensure_visible(i);
+    Fl::focus(grid_);
+    layout();
+  }
+  if (shown()) x11::activate_window(fl_xid(this));
+  redraw();
+}
+
+void GalleryWindow::open_photo(int index) {
+  if (index < 0 || index >= int(view_.size())) return;
+  if (prefer_photo_ && !find_program("sde-view").empty()) edit_in_photo(view_[size_t(index)].path);
+  else open_viewer(index);
 }
 
 void GalleryWindow::set_zoom(int z) {
@@ -406,7 +1019,11 @@ void GalleryWindow::add_folder() {
   chooser.title(_("Add a Folder to Gallery"));
   chooser.directory(home_dir().c_str());
   if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string dir = chooser.filename();
+  add_folder(chooser.filename());
+}
+
+void GalleryWindow::add_folder(const std::string &chosen) {
+  std::string dir = chosen;
   while (dir.size() > 1 && dir.back() == '/') dir.pop_back();
   if (dir.empty() || !dir_exists(dir)) return;
   if (dir != pictures_ && std::find(user_folders_.begin(), user_folders_.end(), dir) == user_folders_.end())
@@ -429,8 +1046,15 @@ void GalleryWindow::remove_folder(const std::string &folder) {
 }
 
 void GalleryWindow::edit_in_photo(const std::string &path) {
-  if (find_program("sde-view").empty() || !spawn_detached({"sde-view", path}))
-    toast(_("Photo (sde-view) is not installed"));
+  Album album = view_kind_.album();
+  if (searching()) {
+    // Photo steps through the search results: hand them over as a list.
+    std::vector<std::string> paths;
+    for (const auto &p : view_) paths.push_back(p.path);
+    std::string file = runtime_dir() + "/sde-gallery/results-" + std::to_string(getpid()) + ".list";
+    if (write_album_list(file, paths)) album = Album{AlbumKind::List, file};
+  }
+  if (!open_in_photo(path, album, sort_)) toast(_("Photo (sde-view) is not installed"));
 }
 
 void GalleryWindow::open_with(const std::string &path) {
@@ -468,36 +1092,37 @@ void GalleryWindow::copy_paths(const std::vector<std::string> &paths) {
 
 void GalleryWindow::trash(const std::vector<std::string> &paths) {
   if (paths.empty()) return;
-  if (find_program("gio").empty()) {
-    toast(_("Moving to the Trash needs the gio program (libglib2.0-bin)"));
-    return;
-  }
   std::string question =
       paths.size() == 1 ? format(_("Move “%s” to the Trash?"), basename_of(paths[0]).c_str())
                         : format(_("Move %zu photos to the Trash?"), paths.size());
-  if (fl_choice("%s", _("Cancel"), _("Move to Trash"), nullptr, question.c_str()) != 1) return;
-  std::vector<std::string> argv{"gio", "trash", "--"};
-  argv.insert(argv.end(), paths.begin(), paths.end());
-  bool started = run_async(argv, [this, paths](const std::string &, int status) {
-    if (instance_ != this) return;
-    size_t removed = 0;
-    for (const auto &p : paths) {
-      if (file_exists(p)) continue;
-      ++removed;
-      favorites_.erase(p);
-      all_.erase(std::remove_if(all_.begin(), all_.end(), [&](const Photo &ph) { return ph.path == p; }),
-                 all_.end());
+  if (ask(_("Move to Trash"), question, {_("Cancel"), _("Move to Trash")}) != 1) return;
+  size_t removed = 0;
+  std::string error;
+  for (const auto &p : paths) {
+    std::string err;
+    if (!move_to_trash(p, &err)) {
+      error = err;
+      continue;
     }
-    if (removed) save_settings();
-    rebuild_view(true);
-    if (status != 0 && removed < paths.size()) toast(_("Some files could not be moved to the Trash"));
-    else toast(removed == 1 ? _("Moved to the Trash") : format(_("%zu photos moved to the Trash"), removed));
-  });
-  if (!started) toast(_("Could not start gio"));
+    ++removed;
+    favorites_.erase(p);
+    forget_thumbnails(p);
+    for (auto *list : {&all_, &ext_photos_})
+      list->erase(std::remove_if(list->begin(), list->end(), [&](const Photo &ph) { return ph.path == p; }),
+                  list->end());
+  }
+  if (removed) save_settings();
+  rebuild_view(true);
+  if (removed < paths.size())
+    toast(format(_("Some files could not be moved to the Trash: %s"), error.c_str()));
+  else
+    toast(removed == 1 ? _("Moved to the Trash") : format(_("%zu photos moved to the Trash"), removed));
 }
 
 void GalleryWindow::open_viewer(int index) {
   if (index < 0 || index >= int(view_.size())) return;
+  menubar_->hide();
+  import_btn_->hide();
   sidebar_->hide();
   grid_->hide();
   search_->hide();
@@ -517,7 +1142,8 @@ void GalleryWindow::close_viewer() {
   int index = viewer_->index();
   viewer_->close();
   viewer_->hide();
-  sidebar_->show();
+  menubar_->show();
+  if (show_sidebar_) sidebar_->show();
   grid_->show();
   search_->show();
   sort_ctl_->show();
@@ -564,19 +1190,37 @@ void GalleryWindow::resize(int x, int y, int w, int h) {
 
 void GalleryWindow::layout() {
   header_h_ = S(64);
+  top_ = viewer_open() ? 0 : S(30);
+  menubar_->resize(0, 0, w(), S(30));
   int sw = w() >= S(900) ? S(232) : S(68);
-  sidebar_->resize(0, 0, sw, h());
-  grid_->resize(sw, header_h_, w() - sw, h() - header_h_);
+  sidebar_->resize(0, top_, sw, h() - top_);
+  if (!show_sidebar_) {
+    sw = 0;
+    sidebar_->hide();
+  } else if (!viewer_open()) {
+    sidebar_->show();
+  }
+  grid_->resize(sw, top_ + header_h_, w() - sw, h() - top_ - header_h_);
   if (viewer_open()) viewer_->resize(0, 0, w(), h());
   update_header_widgets();
 }
 
 void GalleryWindow::update_header_widgets() {
   if (!grid_ || viewer_open()) return;
-  int sw = sidebar_->w();
-  int right = w() - S(20), cy = header_h_ / 2;
+  int sw = sidebar_->visible() ? sidebar_->w() : 0;
+  int right = w() - S(20), cy = top_ + header_h_ / 2;
+  if (view_kind_.kind == ViewKind::Device && !devices_.empty()) {
+    import_btn_->resize(right - S(120), cy - S(16), S(120), S(32));
+    import_btn_->show();
+    right -= S(120) + S(12);
+  } else {
+    import_btn_->hide();
+  }
   int avail = right - sw - S(24);
-  bool show_zoom = avail > S(720), show_sort = avail > S(560);
+  // Leave the view title room before adding the optional controls.
+  text_font(theme_.font_size + S(5), true);
+  int title_w = std::max(S(150), std::min(S(320), text_width(view_title(view_kind_)) + S(24)));
+  bool show_zoom = avail - title_w > S(180) + S(234) + S(220), show_sort = avail - title_w > S(234) + S(170);
   if (show_zoom) {
     zoom_ctl_->resize(right - S(120) - S(22), cy - S(14), S(120), S(28));
     zoom_ctl_->show();
@@ -591,7 +1235,8 @@ void GalleryWindow::update_header_widgets() {
   } else {
     sort_ctl_->hide();
   }
-  int search_w = std::max(S(140), std::min(S(260), avail - S(400)));
+  int used = (show_zoom ? S(180) : 0) + (show_sort ? S(234) : 0);
+  int search_w = std::max(S(140), std::min(S(260), avail - title_w - used));
   // The text field sits inside a rounded pill drawn by the window.
   search_->resize(right - search_w + S(34), cy - S(13), search_w - S(44), S(26));
   size_t selected = grid_->selection().size();
@@ -621,9 +1266,9 @@ void GalleryWindow::update_header_widgets() {
 }
 
 void GalleryWindow::draw_header(Painter &p) {
-  int sw = sidebar_->w();
-  p.fill_rect(sw, 0, w() - sw, header_h_, theme_.background);
-  p.line(sw, header_h_ - 0.5, w(), header_h_ - 0.5, theme_.border.alpha(0.7));
+  int sw = sidebar_->visible() ? sidebar_->w() : 0;
+  p.fill_rect(sw, top_, w() - sw, header_h_, theme_.background);
+  p.line(sw, top_ + header_h_ - 0.5, w(), top_ + header_h_ - 0.5, theme_.border.alpha(0.7));
   // Search pill.
   if (search_->visible()) {
   int sx = search_->x() - S(34), sy = search_->y() - S(3), sww = search_->w() + S(44), sh = S(32);
@@ -633,32 +1278,35 @@ void GalleryWindow::draw_header(Painter &p) {
   icon::draw(p, icon::Search, sx + S(10), sy + S(7), S(18), theme_.text_dim);
   }
   if (zoom_ctl_->visible()) {
-    icon::draw(p, icon::Small, zoom_ctl_->x() - S(22), header_h_ / 2.0 - S(9), S(18), theme_.text_dim);
-    icon::draw(p, icon::Large, zoom_ctl_->x() + zoom_ctl_->w() + S(4), header_h_ / 2.0 - S(10), S(20),
+    icon::draw(p, icon::Small, zoom_ctl_->x() - S(22), top_ + header_h_ / 2.0 - S(9), S(18), theme_.text_dim);
+    icon::draw(p, icon::Large, zoom_ctl_->x() + zoom_ctl_->w() + S(4), top_ + header_h_ / 2.0 - S(10), S(20),
                theme_.text_dim);
   }
 }
 
 void GalleryWindow::draw_header_text() {
-  int sw = sidebar_->w(), x = sw + S(24);
+  int sw = sidebar_->visible() ? sidebar_->w() : 0, x = sw + S(24), ty = top_;
   size_t selected = grid_->selection().size();
   int limit = (search_->x() - S(44)) - x;
   if (sel_clear_->visible()) limit = (sel_fav_->visible() ? sel_fav_->x() : sel_clear_->x()) - x - S(10);
   if (selected) {
     text_font(theme_.font_size + S(5), true);
-    draw_text(format(_("%zu selected"), selected), x, S(10), limit, S(28), theme_.text);
+    draw_text(format(_("%zu selected"), selected), x, ty + S(10), limit, S(28), theme_.text);
     text_font(theme_.font_size - S(1));
-    draw_text(_("Press Esc to clear"), x, S(36), limit, S(18), theme_.text_dim);
+    draw_text(_("Press Esc to clear"), x, ty + S(36), limit, S(18), theme_.text_dim);
   } else {
     text_font(theme_.font_size + S(5), true);
-    draw_text(view_title(view_kind_), x, S(10), limit, S(28), theme_.text);
+    draw_text(view_title(view_kind_), x, ty + S(10), limit, S(28), theme_.text);
     text_font(theme_.font_size - S(1));
     std::string sub;
-    if (scanning_ && all_.empty()) sub = _("Looking for photos…");
+    if (view_kind_.external() && ext_scanning_) sub = _("Looking for photos…");
+    else if (scanning_ && all_.empty() && !view_kind_.external()) sub = _("Looking for photos…");
     else if (searching()) sub = format(view_.size() == 1 ? _("%zu result") : _("%zu results"), view_.size());
     else sub = format(view_.size() == 1 ? _("%zu photo") : _("%zu photos"), view_.size());
-    if (scanning_ && !all_.empty()) sub += "  ·  " + std::string(_("Updating…"));
-    draw_text(sub, x, S(36), limit, S(18), theme_.text_dim);
+    if (scanning_ && !all_.empty() && !view_kind_.external()) sub += "  ·  " + std::string(_("Updating…"));
+    if (view_kind_.kind == ViewKind::Device) sub += "  ·  " + std::string(_("on removable media"));
+    else if (view_kind_.kind == ViewKind::Browse) sub += "  ·  " + view_kind_.folder;
+    draw_text(sub, x, ty + S(36), limit, S(18), theme_.text_dim);
   }
   if (search_->visible() && search_->size() == 0) {
     text_font(theme_.font_size);
@@ -699,21 +1347,13 @@ int GalleryWindow::handle(int event) {
   if (event == FL_SHORTCUT || event == FL_KEYBOARD) {
     int key = Fl::event_key();
     bool ctrl = Fl::event_state() & FL_CTRL;
-    if (ctrl && (key == 'q' || key == 'w')) {
+    if (ctrl && key == 'w') {
       hide();
       return 1;
     }
     if (!viewer_open()) {
       if (ctrl && key == 'f') {
         focus_search();
-        return 1;
-      }
-      if (ctrl && key == 'o') {
-        add_folder();
-        return 1;
-      }
-      if (key == FL_F + 5) {
-        rescan();
         return 1;
       }
       if (Fl::focus() == search_ && (key == FL_Escape || key == FL_Down || key == FL_Enter ||

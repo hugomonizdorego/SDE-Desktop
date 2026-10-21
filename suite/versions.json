@@ -1,16 +1,16 @@
 {
-  "niny": "1.0.0~alpha1",
-  "xanara": "1.0.0~alpha1",
-  "taca": "1.0.0~alpha1",
-  "sde-view": "1.0.0~alpha1",
-  "sde-system-monitor": "1.0.0~alpha1",
+  "niny": "2.0.0~alpha1",
+  "xanara": "2.0.0~alpha1",
+  "taca": "2.0.0~alpha1",
+  "sde-view": "2.0.0~alpha1",
+  "sde-system-monitor": "2.0.0~alpha1",
   "sde-power-manager": "1.0.0~alpha1",
   "sde-screensaver": "1.0.0~alpha1",
   "calculator": "1.0.0~alpha1",
   "sde-wm": "1.0.0~alpha1",
   "sde-compositor": "1.0.0~alpha1",
   "sde-update": "1.0.0~alpha1",
-  "liria": "0.1.0~alpha14",
+  "liria": "0.1.0~alpha15",
   "sde-display-settings": "1.0.0~alpha1",
   "sde-fltk": "1.3.11-sde1"
 }

@@ -2,45 +2,15 @@
   "format": 1,
   "sources": [
     {
-      "id": "pluma",
-      "repository": "https://github.com/mate-desktop/pluma",
-      "commit": "a4c2470f8f39bbc435ea058f85071f8369880345",
-      "use": "runtime-engine"
-    },
-    {
       "id": "caja",
       "repository": "https://github.com/mate-desktop/caja",
       "commit": "a57395da45a23faffdb27c123ddbb89638f188e4",
       "use": "runtime-engine"
     },
     {
-      "id": "atril",
-      "repository": "https://github.com/mate-desktop/atril",
-      "commit": "a049ebfdfdeeac2ebb611c2b5db697987f02c6dd",
-      "use": "runtime-engine"
-    },
-    {
-      "id": "engrampa",
-      "repository": "https://github.com/mate-desktop/engrampa",
-      "commit": "dbad54448edafdfbf81f6470d1136896791e9519",
-      "use": "runtime-engine"
-    },
-    {
-      "id": "mate-system-monitor",
-      "repository": "https://github.com/mate-desktop/mate-system-monitor",
-      "commit": "33e45b5435103a27c954b63fdec2cac014f57b7d",
-      "use": "runtime-engine"
-    },
-    {
       "id": "mate-power-manager",
       "repository": "https://github.com/mate-desktop/mate-power-manager",
       "commit": "4cf7346b34d2bdafcb682865ba9f43e5d047eee1",
-      "use": "runtime-engine"
-    },
-    {
-      "id": "eom",
-      "repository": "https://github.com/mate-desktop/eom",
-      "commit": "8214609d0e939b774bf5fa952d68a7422b81ae88",
       "use": "runtime-engine"
     },
     {

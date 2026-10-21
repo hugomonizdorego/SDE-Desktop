@@ -29,6 +29,38 @@ void remember(std::vector<std::string> &list, const std::string &id, size_t cap)
 std::vector<std::string> default_favorites(const std::vector<DesktopEntry> &apps,
                                            size_t max = 8);
 
+// Launch history of one application, for "Recently used": how often and
+// when (seconds since the epoch) it was last opened from the menu.
+struct Usage {
+  std::string id;
+  unsigned count = 0;
+  long long last = 0;
+};
+
+// The state file: one "id<TAB>count<TAB>last" line per application. Lines
+// that do not parse are skipped; a bare id (the older menu-recent list) counts
+// as one launch, older the further down it is.
+std::vector<Usage> parse_usage(const std::string &text, long long now = 0);
+std::string format_usage(const std::vector<Usage> &usage);
+
+// Counts one launch of |id| at |now|. At most |cap| applications are kept;
+// the ones with the lowest frecency are dropped first.
+void record_launch(std::vector<Usage> &usage, const std::string &id, long long now,
+                   size_t cap = 64);
+void forget(std::vector<Usage> &usage, const std::string &id);
+
+// Frequency weighted by recency: count * 2^(-age / one week), with a bonus
+// for the last day so that something just opened shows up at once.
+double frecency(const Usage &u, long long now);
+
+// The |max| best application ids by frecency (ties: most recent first),
+// leaving out |exclude| (the favorites).
+std::vector<std::string> rank_frecent(const std::vector<Usage> &usage, long long now,
+                                      size_t max,
+                                      const std::vector<std::string> &exclude = {});
+// Ids by last use, most recent first.
+std::vector<std::string> by_last_use(const std::vector<Usage> &usage, size_t max);
+
 // Index heading for a name in the alphabetical list: "A".."Z", "#" for
 // digits and symbols, or the first (non-ASCII) UTF-8 character.
 std::string index_letter(const std::string &name);
