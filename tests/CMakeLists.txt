@@ -60,3 +60,8 @@ add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)
 add_executable(sde-gallery-tests test_gallery.cpp)
 target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
 add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
+
+# SDE System Monitor /proc and /sys parsers.
+add_executable(sde-sysmon-tests test_sysmon.cpp)
+target_link_libraries(sde-sysmon-tests PRIVATE sde-sysmon-core)
+add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)

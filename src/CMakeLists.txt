@@ -119,6 +119,29 @@ if(SDE_BUILD_COMPONENTS)
   add_subdirectory(calculator)
 endif()
 
+# SDE System Monitor: native from-scratch rewrite (DebION Dev-Team).
+# The /proc and /sys parsers live in a small library shared with the tests.
+add_library(sde-sysmon-core STATIC sysmon/procfs.cpp sysmon/sampler.cpp)
+target_include_directories(sde-sysmon-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sysmon)
+find_package(Threads REQUIRED)
+target_link_libraries(sde-sysmon-core PUBLIC Threads::Threads)
+add_executable(sde-system-monitor
+  sysmon/main.cpp
+  sysmon/widgets.cpp
+  sysmon/apps.cpp
+  sysmon/processes.cpp
+  sysmon/performance.cpp
+  sysmon/filesystems.cpp
+  sysmon/startup.cpp)
+string(JSON SDE_SYSMON_VERSION ERROR_VARIABLE SDE_SYSMON_VERSION_ERROR
+       GET "${SDE_APP_VERSIONS}" sde-system-monitor)
+if(SDE_SYSMON_VERSION_ERROR OR NOT SDE_SYSMON_VERSION)
+  set(SDE_SYSMON_VERSION "${SDE_VERSION}")
+endif()
+target_compile_definitions(sde-system-monitor PRIVATE SDE_SYSMON_VERSION="${SDE_SYSMON_VERSION}")
+target_link_libraries(sde-system-monitor PRIVATE sde-sysmon-core sde-common)
+install(TARGETS sde-system-monitor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 add_executable(sde-display-settings display/main.cpp settings/display.cpp settings/ui.cpp)
 target_include_directories(sde-display-settings PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/settings)
 target_link_libraries(sde-display-settings PRIVATE sde-common)
