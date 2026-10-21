@@ -21,6 +21,8 @@
 #include <thread>
 #include <vector>
 
+struct _GdkPixbuf;  // GdkPixbuf
+
 namespace gallery {
 
 // Decodes |path| (JPEG, PNG, GIF, BMP with FLTK, SVG with librsvg, others
@@ -29,6 +31,19 @@ namespace gallery {
 // original dimensions. Thread safe. Caller owns the surface.
 cairo_surface_t *decode_image(const std::string &path, int max_dim, int *w = nullptr,
                               int *h = nullptr);
+
+// Applies an EXIF orientation (1-8) to |s| and returns the result; |s| is
+// released when a new surface is made.
+cairo_surface_t *orient_surface(cairo_surface_t *s, int exif_orientation);
+// Decodes JPEG or PNG data held in memory (natural size).
+cairo_surface_t *decode_image_data(const std::string &data);
+// The small preview JPEG embedded in a photo's EXIF data, already turned
+// upright, or nullptr. Much faster than decoding the photo.
+cairo_surface_t *decode_exif_preview(const std::string &path);
+
+// Converts a GdkPixbuf (RGB or RGBA) into a new ARGB32 surface. Only
+// available when built with gdk-pixbuf (SDE_GALLERY_PIXBUF).
+cairo_surface_t *pixbuf_to_surface(::_GdkPixbuf *pixbuf);
 
 // Extensions that gdk-pixbuf decodes beyond the built-in formats (e.g.
 // "webp" when its loader is installed). Empty without gdk-pixbuf.
@@ -54,6 +69,7 @@ struct Result {
   cairo_surface_t *surface = nullptr;  // nullptr: the file could not be decoded
   int width = 0, height = 0;           // original image size (0 if unknown)
   uint64_t generation = 0;
+  int max_dim = 0;                     // Full: the size limit that was asked for
 };
 
 class ThumbnailService {
@@ -76,6 +92,10 @@ class ThumbnailService {
   // Loads a full-size image ahead of every thumbnail; |generation|
   // identifies the request in the result.
   void load_full(const std::string &path, int max_dim, uint64_t generation);
+  // Like load_full(), in several steps: e.g. {1600, 0} first delivers a
+  // quick screen-sized image, then the natural size (0 = no limit).
+  void load_full_steps(const std::string &path, const std::vector<int> &max_dims,
+                       uint64_t generation);
   std::vector<Result> take_results();
 
  private:
@@ -85,10 +105,12 @@ class ThumbnailService {
   std::condition_variable cv_;
   std::deque<Request> queue_;
   std::set<std::pair<std::string, int>> inflight_;
-  bool has_full_ = false;
-  std::string full_path_;
-  int full_max_ = 0;
-  uint64_t full_gen_ = 0;
+  struct FullJob {
+    std::string path;
+    int max_dim = 0;
+    uint64_t generation = 0;
+  };
+  std::deque<FullJob> full_;
   std::vector<Result> results_;
   std::atomic<bool> stop_{false};
   std::atomic<bool> notified_{false};

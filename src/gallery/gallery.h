@@ -19,6 +19,7 @@
 
 #include "buffered_window.h"
 #include "library.h"
+#include "line_icons.h"
 #include "paint.h"
 #include "theme.h"
 #include "thumbnails.h"
@@ -26,15 +27,6 @@
 
 namespace gallery {
 
-// Vector icons in the SDE line style, drawn in a size x size box at (x, y).
-namespace icon {
-enum Kind {
-  Photos, Heart, HeartFilled, Clock, Screenshot, Folder, Plus, Close, Search, Back, Prev, Next,
-  ZoomIn, ZoomOut, Fit, Rotate, Play, Pause, Info, Trash, Edit, OpenWith, Wallpaper, Files, Copy,
-  Picture, Broken, Check, Small, Large
-};
-void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde::Color &c);
-}  // namespace icon
 
 class GalleryWindow;
 

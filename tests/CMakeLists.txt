@@ -60,3 +60,7 @@ add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)
 add_executable(sde-gallery-tests test_gallery.cpp)
 target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
 add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
+
+add_executable(sde-photo-tests test_photo.cpp)
+target_link_libraries(sde-photo-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-model COMMAND sde-photo-tests)
