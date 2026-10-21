@@ -4,16 +4,21 @@
 #include <FL/Fl.H>
 #include <fcntl.h>
 #include <poll.h>
+// <spawn.h> would find SDE's own spawn.h (src/common is on the include path).
+#include <../include/spawn.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstring>
 #include <map>
 #include <memory>
 
 #include "util.h"
+
+extern "C" char **environ;
 
 namespace sde {
 
@@ -32,37 +37,59 @@ struct Job {
 std::map<int, std::unique_ptr<Job>> g_jobs;
 int g_next_id = 1;
 
+// The child environment: ours with LC_ALL=C, since helper output is parsed
+// and must not be translated. Built once; SDE programs do not change it later.
+char **child_environment() {
+  static std::vector<std::string> storage;
+  static std::vector<char *> envp;
+  if (envp.empty()) {
+    for (char **e = environ; e && *e; ++e)
+      if (strncmp(*e, "LC_ALL=", 7) != 0) storage.push_back(*e);
+    storage.push_back("LC_ALL=C");
+    for (auto &v : storage) envp.push_back(const_cast<char *>(v.c_str()));
+    envp.push_back(nullptr);
+  }
+  return envp.data();
+}
+
+// posix_spawn (vfork-like in glibc) instead of fork(): the panel and the
+// other SDE programs map cairo, fonts and icon caches, and copying their page
+// tables for every nmcli/pactl call made helper starts noticeably slower.
 pid_t start(const std::vector<std::string> &argv, int &out_fd) {
   out_fd = -1;
-  if (argv.empty() || find_program(argv[0]).empty()) return -1;
+  if (argv.empty()) return -1;
+  std::string path = find_program(argv[0]);
+  if (path.empty()) return -1;
   int fds[2];
   if (pipe2(fds, O_CLOEXEC) != 0) return -1;
   std::vector<char *> args;
   for (auto &a : argv) args.push_back(const_cast<char *>(a.c_str()));
   args.push_back(nullptr);
-  pid_t pid = fork();
-  if (pid < 0) {
+
+  posix_spawn_file_actions_t fa;
+  posix_spawnattr_t attr;
+  posix_spawn_file_actions_init(&fa);
+  posix_spawnattr_init(&attr);
+  posix_spawn_file_actions_adddup2(&fa, fds[1], 1);
+  posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
+  posix_spawn_file_actions_addopen(&fa, 2, "/dev/null", O_WRONLY, 0);
+  sigset_t none, dflt;
+  sigemptyset(&none);
+  sigemptyset(&dflt);
+  sigaddset(&dflt, SIGPIPE);
+  sigaddset(&dflt, SIGCHLD);
+  posix_spawnattr_setsigmask(&attr, &none);
+  posix_spawnattr_setsigdefault(&attr, &dflt);
+  posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF);
+  pid_t pid = -1;
+  int err = posix_spawn(&pid, path.c_str(), &fa, &attr, args.data(), child_environment());
+  posix_spawn_file_actions_destroy(&fa);
+  posix_spawnattr_destroy(&attr);
+  close(fds[1]);
+  if (err != 0) {
     close(fds[0]);
-    close(fds[1]);
     return -1;
   }
-  if (pid == 0) {
-    sigset_t none;
-    sigemptyset(&none);
-    sigprocmask(SIG_SETMASK, &none, nullptr);
-    signal(SIGPIPE, SIG_DFL);
-    dup2(fds[1], 1);
-    int devnull = open("/dev/null", O_RDWR);
-    if (devnull >= 0) {
-      dup2(devnull, 0);
-      dup2(devnull, 2);
-    }
-    // Helper output is parsed, so it must not be translated.
-    setenv("LC_ALL", "C", 1);
-    execvp(args[0], args.data());
-    _exit(127);
-  }
-  close(fds[1]);
   fcntl(fds[0], F_SETFL, O_NONBLOCK);
   out_fd = fds[0];
   return pid;
