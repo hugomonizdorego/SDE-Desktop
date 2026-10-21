@@ -26,12 +26,6 @@
       "use": "runtime-engine"
     },
     {
-      "id": "mate-system-monitor",
-      "repository": "https://github.com/mate-desktop/mate-system-monitor",
-      "commit": "33e45b5435103a27c954b63fdec2cac014f57b7d",
-      "use": "runtime-engine"
-    },
-    {
       "id": "mate-power-manager",
       "repository": "https://github.com/mate-desktop/mate-power-manager",
       "commit": "4cf7346b34d2bdafcb682865ba9f43e5d047eee1",

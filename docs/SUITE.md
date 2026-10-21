@@ -14,7 +14,7 @@ they are not duplicated inside SDE.
 | Xanara | `xanara` | [atril](https://github.com/mate-desktop/atril) |
 | Taca | `taca` | [engrampa](https://github.com/mate-desktop/engrampa) |
 | SDE View | `sde-view` | [eom](https://github.com/mate-desktop/eom) |
-| SDE System Monitor | `sde-system-monitor` | [mate-system-monitor](https://github.com/mate-desktop/mate-system-monitor) |
+| SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
 | SDE Power Manager | `sde-power-manager`, `sde-power-preferences`, `sde-power-statistics` | [mate-power-manager](https://github.com/mate-desktop/mate-power-manager) |
 | SDE Screen Lock | `sde-screensaver`, `sde-screensaver-command`, `sde-screensaver-preferences` | [mate-screensaver](https://github.com/mate-desktop/mate-screensaver) |
 | Calculator | `calculator` | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) engine, native GTK4 frontend |

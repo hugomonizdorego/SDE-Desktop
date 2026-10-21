@@ -18,7 +18,10 @@ for name in apps:
     data=path.read_bytes()
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
-    if name == 'sde-display-settings':
+    if name == 'sde-system-monitor':
+        # Native SDE application since alpha15 (statically linked SDE-FLTK).
+        assert 'libX11' in dynamic and 'libfltk' not in dynamic and 'libgtk' not in dynamic,(name,dynamic)
+    elif name == 'sde-display-settings':
         # The SDE toolkit (FLTK) is linked statically since alpha13.
         assert 'libXrandr' in dynamic and 'libfltk' not in dynamic and 'libXft' in dynamic,(name,dynamic)
     elif name in ['sde-wm','sde-compositor']:

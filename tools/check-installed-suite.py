@@ -65,7 +65,6 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         "sde/upstream/atril",
         "sde/upstream/engrampa",
         "sde/upstream/eom",
-        "sde/upstream/mate-system-monitor",
         "sde/upstream/mate-power-manager",
         "sde/upstream/mate-screensaver",
         "sde",

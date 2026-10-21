@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 2,
+  "revision": 3,
   "forks": [
     {
       "id": "liria",
@@ -72,16 +72,6 @@
         "--disable-python",
         "--disable-thumbnailer"
       ],
-      "build_version": "1.0.0~alpha1"
-    },
-    {
-      "id": "sde-system-monitor",
-      "upstream": "mate-system-monitor",
-      "name": "SDE System Monitor",
-      "version": "1.28.1",
-      "commit": "a3bdf9f74608edee1c9fb1ed2074eb7af530b995",
-      "url": "https://github.com/mate-desktop/mate-system-monitor",
-      "configure": [],
       "build_version": "1.0.0~alpha1"
     },
     {
