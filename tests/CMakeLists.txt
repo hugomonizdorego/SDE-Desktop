@@ -60,3 +60,8 @@ add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)
 add_executable(sde-gallery-tests test_gallery.cpp)
 target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
 add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
+
+add_executable(sde-taca-tests test_taca.cpp)
+target_link_libraries(sde-taca-tests PRIVATE taca-core)
+add_test(NAME taca-engine COMMAND sde-taca-tests)
+set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)

@@ -111,6 +111,19 @@ add_executable(sde-gallery
   gallery/icons.cpp)
 target_link_libraries(sde-gallery PRIVATE sde-gallery-core)
 
+# Taca: the SDE archive manager, written from scratch by the DebION Dev-Team.
+# The archive engine is a separate library for the unit tests (no display).
+pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive>=3.6)
+add_library(taca-core STATIC
+  taca/formats.cpp
+  taca/safety.cpp
+  taca/engine.cpp
+  taca/external.cpp
+  taca/model.cpp)
+target_include_directories(taca-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/taca)
+target_link_libraries(taca-core PUBLIC sde-common PkgConfig::LIBARCHIVE Threads::Threads)
+#TACA-UI
+
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         sde-xsettingsd sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
