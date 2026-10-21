@@ -257,7 +257,11 @@ try:
         if n.startswith("tile:") or n.startswith("app:"):
             x, y, w, h = control("SDE Menu", n)
             assert 0 <= x and x + w <= g["WIDTH"], (n, x, w, g)
-    control("SDE Panel", "search")
+    # Narrow screens (1024 px at 150 %) show only the search icon.
+    try:
+        control("SDE Panel", "search")
+    except RuntimeError:
+        control("SDE Panel", "search-icon")
     # The category filter narrows the list to Accessories.
     click_control(menu, "SDE Menu", next(n for n in names if n.startswith("filter:")))
     run("xdotool", "key", "Down", "Down", "Return")
