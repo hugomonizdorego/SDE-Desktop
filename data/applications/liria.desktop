@@ -3,7 +3,7 @@
 Type=Application
 Name=Liria
 GenericName=File Manager
-Comment=File Manager for SDE, based on caja
+Comment=Browse and organize files and folders
 Exec=liria --no-desktop %U
 TryExec=liria
 Icon=system-file-manager

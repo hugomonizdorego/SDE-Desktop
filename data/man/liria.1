@@ -1,22 +1,61 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH LIRIA 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-liria \- Liria file manager
+liria \- the SDE file manager
 .SH SYNOPSIS
 .B liria
-[OPTIONS] FILES...
+[\fIOPTIONS\fR] [\fIURI\fR...]
 .SH DESCRIPTION
-Browse files with the native Liria file manager. Desktop ownership is disabled by default so SDE keeps its wallpaper and icons.
+Liria browses and organizes the files and folders on your computer,
+removable drives and the network. It has tabs, an extra pane, a Home overview
+with quick access folders, drives and recent files, safe copying to USB drives
+and extensions for archives (Taca) and terminals.
 .PP
-This is an independent native executable built from the SDE fork sources
-and included in the sde package.
+The window has one compact header row: Back, Forward and Parent Folder, the
+path of the current folder, the view buttons (icons, list, compact), Search and
+the main menu (F10). Press Ctrl+? for all keyboard shortcuts and F1 for help.
+.PP
+Liria does not manage the desktop: SDE keeps its own wallpaper and desktop icons.
 .SH OPTIONS
 .TP
-.B --help
-Display the native application options.
+.B \-\-browser
+Open a browser window.
+.TP
+.BR \-t ", " \-\-tabs
+Open the URIs in tabs of one window.
+.TP
+.BR \-n ", " \-\-no\-default\-window
+Only create windows for explicitly given URIs.
+.TP
+.BR \-s ", " \-\-select
+Select the given URIs in their parent folders.
+.TP
+.BR \-g ", " \-\-geometry =\fIGEOMETRY\fR
+Create the first window with the given geometry.
+.TP
+.BR \-q ", " \-\-quit
+Quit the running Liria.
+.TP
+.B \-\-version
+Show the Liria version.
+.TP
+.B \-\-help
+Show all options.
+.SH FILES
+.TP
+.I /usr/share/liria/help/index.html
+Liria help.
+.TP
+.I ~/.config/liria/
+Bookmarks, accelerators and other user data.
+.SH AUTHORS
+Liria is developed by the DebION Dev-Team as part of SDE for DebION GNU/Linux.
 .SH COPYRIGHT
-Original upstream copyrights and licenses are preserved. Settings at the SDE
-Suite page provides the source link and full installed notice.
+Liria is free software under the GNU General Public License, version 2 or
+later. It is a modified version of an earlier free file manager; the original
+copyright notices, author lists and licenses are installed under
+.IR /usr/share/doc/sde/upstream/ .
 .SH SEE ALSO
-.BR sde-settings (1),
-.BR sde-suite (1)
+.BR liria\-connect\-server (1),
+.BR sde\-settings (1),
+.BR sde\-suite (1)

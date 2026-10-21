@@ -1,22 +1,33 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""SDE alpha10 redesign of the native suite forks.
+"""SDE redesign of the native suite forks.
 
 Applied by tools/prepare-native-suite.py after the namespace rename. Every
-change is a small, checked text edit or an added file from suite/overlays;
-upstream copyright notices, authors and About credits are kept unchanged.
-A missing anchor stops preparation instead of silently skipping a change.
+change is a small, checked text edit or an added file from suite/overlays.
+Copyright notices and license texts of the original authors are never
+removed: they stay in every source file, in the About window's license
+section and under /usr/share/doc/sde/upstream. A missing anchor stops
+preparation instead of silently skipping a change.
 """
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
 OVERLAYS = HERE / "overlays"
+# SDE-owned files copied into the Liria tree (man page shared with CMake).
+SHARED = [ROOT / "data/man/liria.1"]
+# Original product names that must not reach users. Legal notices
+# (copyright lines, license files, the About license text and the
+# installed upstream documentation) are the only allowed exception.
+BRAND_WORDS = re.compile(r"\bMATE\b|\bCaja\b|\bCAJA\b|mate-desktop\.org|mate-user-guide")
+LEGAL_FILE = re.compile(r"^(COPYING|LICENSE|AUTHORS|COPYRIGHT|THANKS|TRADEMARK|ChangeLog|NEWS|SDE-)", re.I)
 
 
 def inputs():
     """Files whose content changes the prepared sources (for the lock hash)."""
-    return [Path(__file__)] + sorted(p for p in OVERLAYS.rglob("*") if p.is_file())
+    return [Path(__file__)] + sorted(p for p in OVERLAYS.rglob("*") if p.is_file()) + SHARED
 
 
 def edit_once(path, old, new):
@@ -33,6 +44,23 @@ def edit(path, old, new, count=1):
     path.write_text(text.replace(old, new, count))
 
 
+def edit_all(path, old, new):
+    text = path.read_text()
+    if old not in text:
+        raise ValueError("Redesign anchor not found in %s: %r" % (path, old[:60]))
+    path.write_text(text.replace(old, new))
+
+
+def replace_between(path, start, end, new):
+    """Replaces the text from start (inclusive) to end (exclusive)."""
+    text = path.read_text()
+    if text.count(start) != 1 or text.count(end) < 1:
+        raise ValueError("Redesign region not found in %s: %r" % (path, start[:60]))
+    a = text.index(start)
+    b = text.index(end, a)
+    path.write_text(text[:a] + new + text[b:])
+
+
 def overlay(record_id, staged):
     source = OVERLAYS / record_id
     if not source.is_dir():
@@ -44,140 +72,521 @@ def overlay(record_id, staged):
             shutil.copy2(path, target)
 
 
+def brand_leaks(text):
+    """Original product names in text, outside copyright lines."""
+    return [line for line in text.splitlines()
+            if BRAND_WORDS.search(line) and not re.search(r"copyright|\(c\)|©", line, re.I)]
+
+
 def liria(staged):
-    """Compact icon-only Back/Forward buttons (tooltips keep the names), so
-    the command bar reads as one glass strip instead of Caja's labels; and
-    the built-in SDE Tools extension (suite/overlays/liria/sde-tools)."""
+    """alpha16: Liria re-forked from Caja 1.28.0 with complete SDE branding
+    and a new window layout (suite/overlays/liria/src/liria-sde-ui.c): a
+    compact header with 16 px symbolic icons, one tidy main menu, linked
+    view buttons, grouped context menus with Send To, a symbolic sidebar,
+    Liria's own theme-neutral CSS, local help and the keyboard shortcuts
+    window. The alpha14/15 work stays: Home overview, USB safe copy engine,
+    clipboard fixes, safe removal and the SDE Tools extension."""
     edit(staged / "Makefile.am", "\tsrc \\\n", "\tsrc \\\n\tsde-tools \\\n")
     edit(staged / "configure.ac", "src/file-manager/Makefile\n", "src/file-manager/Makefile\nsde-tools/Makefile\n")
-    menus = staged / "src/liria-navigation-window-menus.c"
-    for direction in ("BACK", "FORWARD"):
-        edit(menus, '"direction", LIRIA_NAVIGATION_DIRECTION_%s,\n                           "is_important", TRUE,' % direction,
-             '"direction", LIRIA_NAVIGATION_DIRECTION_%s,\n                           "is_important", FALSE,' % direction)
-    liria_command_bar(staged)
+    liria_branding(staged)
+    liria_header(staged)
+    liria_view_switcher(staged)
+    liria_history_buttons(staged)
+    liria_context_menus(staged)
     liria_home(staged)
     liria_sidebar(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
+    liria_translations(staged)
 
 
-def liria_command_bar(staged):
-    """alpha14: one command row. Back, Forward, Up and Reload, then the
-    breadcrumb path (with its search field) stretched across the window,
-    then View As, Search, extension buttons and a single main-menu button
-    that holds the classic File/Edit/View/Go/Bookmarks/Help menus. Every
-    action, shortcut and menu stays available; only the layout changes."""
-    edit(staged / "src/liria-navigation-window-ui.xml",
-         '\t<toolitem name="Up" action="Up"/>\n'
-         '\t<toolitem name="Stop" action="Stop"/>\n'
-         '\t<toolitem name="Reload" action="Reload"/>\n'
-         '\t<separator/>\n'
-         '\t<toolitem name="Home" action="Home"/>\n'
-         '\t<toolitem name="Computer" action="Go to Computer"/>\n'
-         '\t<separator/>\n'
-         '\t<toolitem name="Zoom" action="Zoom"/>\n'
-         '\t<toolitem name="ViewAs" action="ViewAs"/>\n',
-         '\t<toolitem name="Up" action="Up"/>\n'
-         '\t<toolitem name="Reload" action="Reload"/>\n'
-         '\t<toolitem name="ViewAs" action="ViewAs"/>\n')
-    window = staged / "src/liria-navigation-window.c"
-    edit(window, "static void\nliria_navigation_window_init (LiriaNavigationWindow *window)\n{",
-         """/* SDE: opens a location in this window's active tab. The SDE Home
- * overview (an extension) finds it as the "sde-go-to-uri" object data. */
-static void
-sde_go_to_uri (GtkWidget *widget, const char *uri)
-{
-    GFile *location = g_file_new_for_uri (uri);
+# ------------------------------------------------------------------ brand
 
-    liria_window_go_to (LIRIA_WINDOW (widget), location);
-    g_object_unref (location);
+HELP_SECTIONS = {
+    "gosliria-1": "", "gosliria-36": "bookmarks", "gosliria-50": "backgrounds",
+    "gosliria-51": "properties", "liria-server-connect": "connect-server",
+    "liria-open-location": "open-location", "liria-select-pattern": "select-pattern",
+    "gosliria-438": "views", "gosliria-56": "behavior", "gosliria-439": "display",
+    "gosliria-490": "list-columns", "gosliria-60": "preview", "gosliria-61": "media",
 }
 
-/* SDE: the first pane's path bar row moves into the command bar, right
- * after Reload; it is destroyed together with its pane. */
-static void
-sde_merge_location_row (GtkWidget *toolbar, GtkUIManager *ui_manager, LiriaNavigationWindowPane *pane)
-{
-    GtkWidget *reload = gtk_ui_manager_get_widget (ui_manager, "/Toolbar/Reload");
-    GtkToolItem *item = gtk_tool_item_new ();
-    GtkWidget *row = pane->location_bar;
-    gint index = -1;
 
-    if (reload != NULL && gtk_widget_get_parent (reload) == toolbar)
-        index = gtk_toolbar_get_item_index (GTK_TOOLBAR (toolbar), GTK_TOOL_ITEM (reload)) + 1;
-    g_object_ref (row);
-    gtk_container_remove (GTK_CONTAINER (gtk_widget_get_parent (row)), row);
-    gtk_container_add (GTK_CONTAINER (item), row);
-    g_object_unref (row);
-    gtk_container_set_border_width (GTK_CONTAINER (row), 0);
-    gtk_widget_set_margin_start (row, 8);
-    gtk_widget_set_margin_end (row, 8);
-    gtk_tool_item_set_expand (item, TRUE);
-    gtk_style_context_add_class (gtk_widget_get_style_context (GTK_WIDGET (item)), "sde-location-item");
-    gtk_toolbar_insert (GTK_TOOLBAR (toolbar), item, index);
-    gtk_widget_show (GTK_WIDGET (item));
-    g_signal_connect_object (pane->widget, "destroy", G_CALLBACK (gtk_widget_destroy), item, G_CONNECT_SWAPPED);
-}
+def _text_files(staged):
+    for path in staged.rglob("*"):
+        if not path.is_file() or path.is_symlink() or LEGAL_FILE.match(path.name):
+            continue
+        if path.suffix in (".po", ".pot", ".png", ".svg", ".pdf", ".sxw", ".dia", ".gmo", ".mo"):
+            continue
+        try:
+            yield path, path.read_text()
+        except (UnicodeDecodeError, ValueError):
+            continue
 
-/* SDE: the menu bar's menus move into one main-menu button at the end of
- * the command bar. F10 opens it, like the menu bar before. */
-static void
-sde_merge_menu_bar (GtkWidget *toolbar, GtkWidget *menubar)
-{
-    GtkToolItem *item = gtk_tool_item_new ();
-    GtkWidget *bar = gtk_menu_bar_new ();
-    GtkWidget *button = gtk_menu_item_new ();
-    GtkWidget *menu = gtk_menu_new ();
-    GtkWidget *image;
-    GList *children, *l;
-    const char *icon = "open-menu-symbolic";
 
-    if (!gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), icon))
-        icon = "open-menu";
-    if (!gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), icon))
-        icon = "emblem-system";
-    image = gtk_image_new_from_icon_name (icon, GTK_ICON_SIZE_LARGE_TOOLBAR);
-    gtk_container_add (GTK_CONTAINER (button), image);
-    gtk_widget_set_tooltip_text (button, _("Menu"));
-    children = gtk_container_get_children (GTK_CONTAINER (menubar));
-    for (l = children; l != NULL; l = l->next)
-    {
-        GtkWidget *child = l->data;
+def liria_branding(staged):
+    """No MATE or Caja names where users see them: desktop entries,
+    AppStream data, man pages, help links, About, --version, D-Bus service
+    file names, icon names, terminal fallbacks and build metadata. Legal
+    notices of the original authors are kept (see liria_sde_ui_show_about
+    and /usr/share/doc/sde/upstream/caja)."""
+    # Files whose names carried the old product name.
+    for old, new in [("data/mate-network-scheme.desktop.in.in", "data/liria-network-scheme.desktop.in.in"),
+                     ("data/org.mate.freedesktop.FileManager1.service.in",
+                      "data/org.debion.Liria.FileManager1.service.in")]:
+        (staged / old).rename(staged / new)
+    for path, text in _text_files(staged):
+        changed = text.replace("mate-network-scheme.desktop", "liria-network-scheme.desktop")
+        changed = changed.replace("org.mate.freedesktop.FileManager1.service", "org.debion.Liria.FileManager1.service")
+        if changed != text:
+            path.write_text(changed)
 
-        g_object_ref (child);
-        gtk_container_remove (GTK_CONTAINER (menubar), child);
-        gtk_menu_shell_append (GTK_MENU_SHELL (menu), child);
-        g_object_unref (child);
+    # Desktop entries: SDE only, no MATE keywords or session keys.
+    for path in sorted((staged / "data").glob("*.desktop.in.in")):
+        text = path.read_text()
+        text = re.sub(r"(?m)^Keywords=(.*?)MATE;", r"Keywords=\1", text)
+        text = re.sub(r"(?m)^OnlyShowIn=.*$", "OnlyShowIn=SDE;", text)
+        text = re.sub(r"(?m)^X-MATE-[^\n]*\n", "", text)
+        text = text.replace("X-MATE-PersonalSettings;", "X-SDE-Settings;")
+        text = text.replace("application/x-mate-saved-search;", "application/x-liria-saved-search;")
+        path.write_text(text)
+
+    appdata = staged / "data/liria.appdata.xml.in.in"
+    replace_between(appdata, " <summary>", "</component>",
+                    " <summary>The file manager of SDE</summary>\n"
+                    " <description>\n  <p>\n   Liria browses and organizes the files and folders on your computer,\n"
+                    "   removable drives and the network. It has tabs, an extra pane, a Home\n"
+                    "   overview with quick access, drives and recent files, safe copying to USB\n"
+                    "   drives and extensions for archives and terminals.\n  </p>\n"
+                    "  <p>\n   Liria is part of SDE for DebION GNU/Linux, developed by the DebION Dev-Team.\n  </p>\n"
+                    " </description>\n"
+                    " <developer_name>DebION Dev-Team</developer_name>\n"
+                    " <url type=\"homepage\">@PACKAGE_URL@</url>\n"
+                    " <url type=\"bugtracker\">@PACKAGE_BUGREPORT@</url>\n"
+                    " <project_group>SDE</project_group>\n")
+
+    configure = staged / "configure.ac"
+    edit_once(configure, "[https://github.com/mate-desktop/caja/issues]",
+              "[https://github.com/hugomonizdorego/SDE-Desktop/issues]")
+    edit_once(configure, "[https://mate-desktop.org])", "[https://github.com/hugomonizdorego/SDE-Desktop])")
+
+    # The saved-search MIME type is Liria's own.
+    for rel in ("data/liria.xml.in", "libliria-private/liria-file-utilities.h"):
+        edit_all(staged / rel, "application/x-mate-saved-search", "application/x-liria-saved-search")
+
+    # --version, the session check and desktop entry filtering.
+    app = staged / "src/liria-application.c"
+    edit_once(app, 'g_print ("MATE liria " ', 'g_print ("Liria " ')
+    replace_between(app, "static gboolean\nrunning_in_mate (void)\n{", "static gboolean\nrunning_as_root (void)",
+                    "static gboolean\nrunning_in_mate (void)\n{\n"
+                    "    /* SDE owns the desktop and the session; Liria never manages them\n"
+                    "     * unless LIRIA_MANAGE_DESKTOP=1 is set for testing. */\n"
+                    "    return g_strcmp0 (g_getenv (\"LIRIA_MANAGE_DESKTOP\"), \"1\") == 0;\n}\n\n")
+    link = staged / "libliria-private/liria-link.c"
+    edit_all(link, 'string_array_contains (only_show_in, "MATE")', 'string_array_contains (only_show_in, "SDE")')
+    edit_all(link, 'string_array_contains (not_show_in, "MATE")', 'string_array_contains (not_show_in, "SDE")')
+    for old, new in [("mate-fs-executable", "application-x-executable"), ("mate-dev-symlink", "emblem-symbolic-link"),
+                     ("mate-dev-harddisk", "drive-harddisk"), ("mate-fs-web", "text-html"),
+                     ("mate-fs-regular", "text-x-generic")]:
+        edit_once(link, '"%s"' % old, '"%s"' % new)
+    edit_once(staged / "src/file-manager/fm-directory-view.c", '"mate-fs-bookmark"', '"user-bookmarks"')
+    edit_once(staged / "eel/eel-mate-extensions.c", '{ "mate-terminal", "-x",', '{ "x-terminal-emulator", "-e",')
+
+    # Help: local SDE help (data/help/index.html) instead of the MATE guide.
+    for path, text in _text_files(staged / "src"):
+        changed = re.sub(r'"help:mate-user-guide(?:/([\w-]+))?"',
+                         lambda m: '"file://" LIRIA_DATADIR "/help/index.html%s"'
+                         % (("#" + HELP_SECTIONS[m[1]]) if m[1] and HELP_SECTIONS.get(m[1]) else ""), text)
+        if changed != text:
+            path.write_text(changed)
+    prefs = staged / "src/liria-file-management-properties.c"
+    edit_once(prefs, 'g_strdup_printf ("help:%s/%s", helpfile, sect_id)',
+              'g_strdup_printf ("file://%s/help/index.html#%s", helpfile, sect_id)')
+    edit_once(prefs, 'preferences_show_help (GTK_WINDOW (parent), "mate-user-guide", section);',
+              'preferences_show_help (GTK_WINDOW (parent), LIRIA_DATADIR, section);')
+    for old, new in HELP_SECTIONS.items():
+        if new and '"%s"' % old in prefs.read_text():
+            edit_once(prefs, 'section = "%s";' % old, 'section = "%s";' % new)
+    data = staged / "data/Makefile.am"
+    edit_once(data, "liriadatadir = $(datadir)/liria\n",
+              "liriahelpdir = $(datadir)/liria/help\nliriahelp_DATA = help/index.html\n\n"
+              "liriadatadir = $(datadir)/liria\n")
+
+    # About: SDE developer, version and site; original notices in the
+    # license section (liria-sde-ui.c).
+    menus = staged / "src/liria-window-menus.c"
+    edit_once(menus, '#include "liria-window-private.h"\n', '#include "liria-window-private.h"\n#include "liria-sde-ui.h"\n')
+    replace_between(menus, "static void\naction_about_liria_callback (GtkAction *action,",
+                    "static void\naction_up_callback (GtkAction *action,",
+                    "static void\naction_about_liria_callback (GtkAction *action,\n"
+                    "                             gpointer user_data)\n{\n"
+                    "    liria_sde_ui_show_about (GTK_WINDOW (user_data));\n}\n\n")
+
+    # Man pages: SDE's own (data/man/liria.1 in the SDE tree) and short
+    # pages for the helper programs.
+    docs = staged / "docs"
+    shutil.copy2(ROOT / "data/man/liria.1", docs / "liria.1")
+    helpers = {
+        "liria-autorun-software": ("run software found on inserted media",
+                                   "Asks whether to run the autorun program of a newly inserted medium."),
+        "liria-connect-server": ("connect to a server",
+                                 "Opens the Connect to Server dialog of Liria for SFTP, FTP, SMB and WebDAV locations."),
+        "liria-file-management-properties": ("Liria preferences",
+                                             "Opens the Liria preferences window."),
     }
-    g_list_free (children);
-    gtk_menu_item_set_submenu (GTK_MENU_ITEM (button), menu);
-    gtk_menu_shell_append (GTK_MENU_SHELL (bar), button);
-    gtk_style_context_add_class (gtk_widget_get_style_context (bar), "sde-main-menu");
-    gtk_container_add (GTK_CONTAINER (item), bar);
-    gtk_toolbar_insert (GTK_TOOLBAR (toolbar), item, -1);
-    gtk_widget_show_all (GTK_WIDGET (item));
-    gtk_widget_hide (menubar);
-    gtk_widget_set_no_show_all (menubar, TRUE);
-}
+    for name, (summary, description) in helpers.items():
+        (docs / (name + ".1")).write_text(
+            ".\\\" SPDX-License-Identifier: GPL-2.0-or-later\n"
+            ".TH %s 1 \"October 2026\" \"SDE\" \"User Commands\"\n.SH NAME\n%s \\- %s\n"
+            ".SH SYNOPSIS\n.B %s\n.SH DESCRIPTION\n%s\nIt is part of the Liria file manager of SDE,\n"
+            "developed by the DebION Dev-Team.\n.SH SEE ALSO\n.BR liria (1)\n"
+            % (name.upper(), name.replace("-", "\\-"), summary, name, description))
 
-static void
-liria_navigation_window_init (LiriaNavigationWindow *window)
-{""")
-    edit(window, """    gtk_widget_show (toolbar);
+
+def liria_translations(staged):
+    """Translations of texts that named the original product are removed
+    (those texts no longer exist), and catalog headers name SDE. Run after
+    every source edit."""
+    entry_split = re.compile(r"\n\s*\n")
+    for po in sorted((staged / "po").glob("*.po")):
+        text = po.read_text(encoding="utf-8", errors="surrogateescape")
+        entries = entry_split.split(text)
+        kept = []
+        for index, entry in enumerate(entries):
+            body = "\n".join(line for line in entry.splitlines() if not line.startswith("#"))
+            if index == 0:
+                header = re.sub(r'(?m)^"(Report-Msgid-Bugs-To|Language-Team): [^"\\]*(?:\\n)?"$',
+                                lambda m: '"%s: SDE <https://github.com/hugomonizdorego/SDE-Desktop>\\n"' % m[1],
+                                entry)
+                kept.append(header)
+                continue
+            if BRAND_WORDS.search(body):
+                continue
+            kept.append(entry)
+        po.write_text("\n\n".join(kept), encoding="utf-8", errors="surrogateescape")
+        subprocess.run(["msgfmt", "--check-format", "-o", "/dev/null", str(po)], check=True)
+
+
+# ----------------------------------------------------------------- window
+
+def liria_header(staged):
+    """One compact header row (liria-sde-ui.c): Back, Forward and Parent,
+    the breadcrumb path with its edit toggle and search field, the view
+    buttons, Search and the main menu. Reload, Home and Computer leave the
+    toolbar (Main Menu > View, Ctrl+R, Alt+Home). The menu bar stays hidden
+    for its shortcuts; the toolbar and path can no longer be hidden, so the
+    main menu is always reachable."""
+    edit_once(staged / "src/liria-navigation-window-ui.xml",
+              '\t<toolitem name="Up" action="Up"/>\n'
+              '\t<toolitem name="Stop" action="Stop"/>\n'
+              '\t<toolitem name="Reload" action="Reload"/>\n'
+              '\t<separator/>\n'
+              '\t<toolitem name="Home" action="Home"/>\n'
+              '\t<toolitem name="Computer" action="Go to Computer"/>\n'
+              '\t<separator/>\n'
+              '\t<toolitem name="Zoom" action="Zoom"/>\n'
+              '\t<toolitem name="ViewAs" action="ViewAs"/>\n',
+              '\t<toolitem name="Up" action="Up"/>\n'
+              '\t<toolitem name="ViewAs" action="ViewAs"/>\n')
+    src = staged / "src"
+    edit_once(src / "Makefile.am", "\tliria-navigation-window.c \\\n",
+              "\tliria-navigation-window.c \\\n\tliria-sde-ui.c \\\n\tliria-sde-ui.h \\\n")
+    window = src / "liria-navigation-window.c"
+    edit_once(window, '#include "liria-navigation-window-pane.h"\n',
+              '#include "liria-navigation-window-pane.h"\n#include "liria-sde-ui.h"\n')
+    edit_once(window, """    gtk_widget_show (toolbar);
 
     liria_navigation_window_initialize_toolbars (window);
 """, """    gtk_widget_show (toolbar);
 
-    /* SDE: one command row with icon buttons, the path and the menu. */
-    gtk_toolbar_set_style (GTK_TOOLBAR (toolbar), GTK_TOOLBAR_ICONS);
-    gtk_toolbar_set_show_arrow (GTK_TOOLBAR (toolbar), FALSE);
-    sde_merge_location_row (toolbar, ui_manager, pane);
-    sde_merge_menu_bar (toolbar, win->details->menubar);
-    g_object_set_data (G_OBJECT (window), "sde-go-to-uri", sde_go_to_uri);
+    /* SDE: compact header row with the path, view buttons and main menu. */
+    liria_sde_ui_setup_header (window, toolbar, ui_manager, pane);
 
     liria_navigation_window_initialize_toolbars (window);
 """)
+    edit_once(window, "    if (g_settings_get_boolean (liria_window_state, LIRIA_WINDOW_STATE_START_WITH_TOOLBAR))\n",
+              "    if (TRUE) /* SDE: the header row holds the main menu */\n")
+    edit_once(window, "    show_location_bar = g_settings_get_boolean (liria_window_state, LIRIA_WINDOW_STATE_START_WITH_LOCATION_BAR);\n",
+              "    show_location_bar = TRUE; /* SDE: the path is part of the header */\n")
+    edit_once(window, "    gtk_widget_show (GTK_WIDGET (window->sidebar));\n}\n",
+              "    gtk_widget_show (GTK_WIDGET (window->sidebar));\n    liria_sde_ui_tidy_sidebar (window);\n}\n")
+    # The location toggle: a symbolic pencil at the end of the path.
+    pane = src / "liria-navigation-window-pane.c"
+    edit_once(pane, 'image = gtk_image_new_from_icon_name ("gtk-edit", GTK_ICON_SIZE_MENU);',
+              'image = gtk_image_new_from_icon_name (gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), '
+              '"document-edit-symbolic") ? "document-edit-symbolic" : "gtk-edit", GTK_ICON_SIZE_MENU);')
+    edit_once(pane, "    gtk_box_pack_start (GTK_BOX (hbox), pane->location_button, FALSE, FALSE, 0);\n",
+              "    gtk_box_pack_end (GTK_BOX (hbox), pane->location_button, FALSE, FALSE, 0);\n")
+    edit_once(pane, '_("Toggle between button and text-based location bar")', '_("Edit the location")')
+    # Liria's style sheet and application actions.
+    edit_once(staged / "data/liria-resources.gresource.xml",
+              '    <file compressed="true">liria-bookmarks-window.ui</file>\n',
+              '    <file compressed="true">liria-bookmarks-window.ui</file>\n'
+              '    <file compressed="true">liria-sde.css</file>\n')
+    app = src / "liria-application.c"
+    edit_once(app, '#include "liria-application.h"\n', '#include "liria-application.h"\n#include "liria-sde-ui.h"\n')
+    edit_once(app, "    /* initialize theming */\n    init_icons_and_styles ();\n",
+              "    /* initialize theming */\n    init_icons_and_styles ();\n"
+              "    liria_sde_ui_startup (app); /* SDE: style sheet, Send To */\n")
+    # New Launcher needs a launcher editor SDE does not ship.
+    ui = src / "file-manager/liria-directory-view-ui.xml"
+    edit_all(ui, '<menuitem name="New Launcher" action="New Launcher"/>', "")
+
+
+def liria_view_switcher(staged):
+    """View As becomes linked icon buttons (icons, list, compact) instead
+    of a text combo box."""
+    action = staged / "src/liria-view-as-action.c"
+    replace_between(action, "static void\nactivate_nth_short_list_item (LiriaWindow *window, guint index)",
+                    "static void\ndisconnect_proxy (GtkAction *action,", r'''static const char *
+sde_view_icon (const char *id)
+{
+    GtkIconTheme *theme = gtk_icon_theme_get_default ();
+    const char *names[4] = { "view-grid-symbolic", "view-app-grid-symbolic", "view-grid", NULL };
+
+    if (g_strrstr (id, "List_View") != NULL)
+    {
+        names[0] = "view-list-symbolic";
+        names[1] = "view-list-bullet-symbolic";
+        names[2] = "view-list";
+    }
+    else if (g_strrstr (id, "Compact_View") != NULL)
+    {
+        names[0] = "view-compact-symbolic";
+        names[1] = "view-dual-symbolic";
+        names[2] = "view-continuous-symbolic";
+    }
+    for (int i = 0; names[i] != NULL; i++)
+        if (gtk_icon_theme_has_icon (theme, names[i]))
+            return names[i];
+    return names[0];
+}
+
+static void
+sde_view_button_toggled (GtkToggleButton *button, LiriaWindow *window)
+{
+    GtkWidget *box = gtk_widget_get_parent (GTK_WIDGET (button));
+    const char *id = g_object_get_data (G_OBJECT (button), "sde-view-id");
+    LiriaWindowSlot *slot;
+
+    if (!gtk_toggle_button_get_active (button) || box == NULL ||
+        g_object_get_data (G_OBJECT (box), "sde-updating") != NULL)
+        return;
+    slot = liria_window_get_active_slot (window);
+    if (slot != NULL && id != NULL && !liria_window_slot_content_view_matches_iid (slot, id))
+        liria_window_slot_set_content_view (slot, id);
+}
+
+static void
+sde_add_view_button (GtkWidget *box, LiriaWindow *window, LiriaWindowSlot *slot,
+                     const char *id, GtkWidget **group)
+{
+    const LiriaViewInfo *info = liria_view_factory_lookup (id);
+    GtkWidget *button;
+
+    if (info == NULL)
+        return;
+    button = *group != NULL ? gtk_radio_button_new_from_widget (GTK_RADIO_BUTTON (*group))
+                            : gtk_radio_button_new (NULL);
+    *group = button;
+    gtk_toggle_button_set_mode (GTK_TOGGLE_BUTTON (button), FALSE);
+    gtk_container_add (GTK_CONTAINER (button),
+                       gtk_image_new_from_icon_name (sde_view_icon (id), GTK_ICON_SIZE_MENU));
+    gtk_widget_set_tooltip_text (button, _(info->view_combo_label));
+    gtk_widget_set_focus_on_click (button, FALSE);
+    g_object_set_data_full (G_OBJECT (button), "sde-view-id", g_strdup (id), g_free);
+    gtk_box_pack_start (GTK_BOX (box), button, FALSE, FALSE, 0);
+    if (slot != NULL && liria_window_slot_content_view_matches_iid (slot, id))
+        gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (button), TRUE);
+    g_signal_connect (button, "toggled", G_CALLBACK (sde_view_button_toggled), window);
+    gtk_widget_show_all (button);
+}
+
+static void
+view_as_changed_callback (LiriaWindow *window,
+                          GtkWidget *box)
+{
+    LiriaWindowSlot *slot = liria_window_get_active_slot (window);
+    GtkWidget *group = NULL;
+    GList *node, *children;
+    gboolean listed = FALSE;
+    guint count;
+
+    g_object_set_data (G_OBJECT (box), "sde-updating", GINT_TO_POINTER (1));
+    children = gtk_container_get_children (GTK_CONTAINER (box));
+    for (node = children; node != NULL; node = node->next)
+        gtk_widget_destroy (node->data);
+    g_list_free (children);
+
+    for (node = window->details->short_list_viewers; node != NULL; node = node->next)
+    {
+        sde_add_view_button (box, window, slot, node->data, &group);
+        if (slot != NULL && liria_window_slot_content_view_matches_iid (slot, node->data))
+            listed = TRUE;
+    }
+    if (!listed && slot != NULL && liria_window_slot_get_content_view_id (slot) != NULL)
+        sde_add_view_button (box, window, slot, liria_window_slot_get_content_view_id (slot), &group);
+
+    children = gtk_container_get_children (GTK_CONTAINER (box));
+    count = g_list_length (children);
+    g_list_free (children);
+    gtk_widget_set_visible (box, count > 1);
+    g_object_set_data (G_OBJECT (box), "sde-updating", NULL);
+}
+
+static void
+connect_proxy (GtkAction *action,
+               GtkWidget *proxy)
+{
+    if (GTK_IS_TOOL_ITEM (proxy))
+    {
+        GtkToolItem *item = GTK_TOOL_ITEM (proxy);
+        LiriaViewAsAction *vaction = LIRIA_VIEW_AS_ACTION (action);
+        LiriaNavigationWindow *window = vaction->priv->window;
+        GtkWidget *box;
+
+        /* SDE: linked icon buttons, one per view, filled in when a
+         * location is shown. */
+        box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_style_context_add_class (gtk_widget_get_style_context (box), GTK_STYLE_CLASS_LINKED);
+        gtk_style_context_add_class (gtk_widget_get_style_context (box), "sde-view-switcher");
+        gtk_widget_set_valign (box, GTK_ALIGN_CENTER);
+        gtk_container_add (GTK_CONTAINER (item), box);
+
+        g_signal_connect (window, "view-as-changed",
+                          G_CALLBACK (view_as_changed_callback),
+                          box);
+    }
+
+    G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
+    (* GTK_ACTION_CLASS (parent_class)->connect_proxy) (action, proxy);
+    G_GNUC_END_IGNORE_DEPRECATIONS;
+}
+
+''')
+
+
+def liria_history_buttons(staged):
+    """Back and Forward without drop-down arrows; a right-click on either
+    shows the history, as before through the arrow."""
+    nav = staged / "src/liria-navigation-action.c"
+    edit_once(nav, "static void\nconnect_proxy (GtkAction *action, GtkWidget *proxy)\n{", """/* SDE: right-click shows the history menu. */
+static gboolean
+sde_history_button_press (GtkWidget *button, GdkEventButton *event, GtkMenuToolButton *proxy)
+{
+    GtkWidget *menu;
+
+    if (event->type != GDK_BUTTON_PRESS || event->button != 3)
+        return FALSE;
+    menu = gtk_menu_tool_button_get_menu (proxy);
+    g_signal_emit_by_name (proxy, "show-menu");
+    gtk_menu_popup_at_widget (GTK_MENU (menu), button, GDK_GRAVITY_SOUTH_WEST,
+                              GDK_GRAVITY_NORTH_WEST, (GdkEvent *) event);
+    return TRUE;
+}
+
+static void
+connect_proxy (GtkAction *action, GtkWidget *proxy)
+{""")
+    edit_once(nav, """        g_signal_connect (child, "button-release-event", G_CALLBACK (proxy_button_release_event_cb), NULL);
+    }
+""", """        g_signal_connect (child, "button-release-event", G_CALLBACK (proxy_button_release_event_cb), NULL);
+
+        /* SDE: no drop-down arrow next to Back and Forward. */
+        {
+            GList *kids = gtk_container_get_children (GTK_CONTAINER (gtk_widget_get_parent (child)));
+            GList *k;
+
+            for (k = kids; k != NULL; k = k->next)
+            {
+                if (k->data != (gpointer) child)
+                {
+                    gtk_widget_hide (k->data);
+                    gtk_widget_set_no_show_all (k->data, TRUE);
+                }
+            }
+            g_list_free (kids);
+            gtk_widget_set_tooltip_text (child, naction->priv->direction == LIRIA_NAVIGATION_DIRECTION_BACK
+                                                ? _("Go back (right-click for history)")
+                                                : _("Go forward (right-click for history)"));
+            g_signal_connect (child, "button-press-event", G_CALLBACK (sde_history_button_press), proxy);
+        }
+    }
+""")
+
+
+def liria_context_menus(staged):
+    """Right-click menus in clear groups: open; clipboard; rename, link,
+    copy/move/send to; tools from extensions (compress, extract, edit);
+    trash; drives; properties."""
+    ui = staged / "src/file-manager/liria-directory-view-ui.xml"
+    replace_between(ui, '<popup name="selection">', '<popup name="location">', '''<popup name="selection">
+	<placeholder name="Open Placeholder">
+		<menuitem name="Open" action="Open"/>
+		<placeholder name="Applications Placeholder"/>
+		<menu action="Open With">
+			<placeholder name="Applications Placeholder"/>
+			<separator name="open with separator"/>
+			<menuitem name="OtherApplication" action="OtherApplication1"/>
+		</menu>
+		<placeholder name="OtherApplicationPlaceholder">
+		        <menuitem name="OtherApplication2" action="OtherApplication2"/>
+		</placeholder>
+		<menuitem name="OpenInNewTab" action="OpenInNewTab"/>
+		<menuitem name="OpenAlternate" action="OpenAlternate"/>
+		<menu action="Scripts">
+			 <placeholder name="Scripts Placeholder"/>
+			 <separator name="After Scripts"/>
+			 <menuitem name="Open Scripts Folder" action="Open Scripts Folder"/>
+		</menu>
+	</placeholder>
+	<separator name="Clipboard separator"/>
+	<placeholder name="File Clipboard Actions">
+		<menuitem name="Cut" action="Cut"/>
+		<menuitem name="Copy" action="Copy"/>
+		<menuitem name="Paste Files Into" action="Paste Files Into"/>
+	</placeholder>
+	<separator name="File actions separator"/>
+	<placeholder name="File Actions">
+		<menuitem name="Rename" action="Rename"/>
+		<menuitem name="Create Link" action="Create Link"/>
+		<menu action="CopyToMenu">
+			<menuitem name="Copy to next pane" action="Copy to next pane"/>
+			<menuitem name="Copy to Home" action="Copy to Home"/>
+			<menuitem name="Copy to Desktop" action="Copy to Desktop"/>
+		</menu>
+		<menu action="MoveToMenu">
+			<menuitem name="Move to next pane" action="Move to next pane"/>
+			<menuitem name="Copy to Home" action="Move to Home"/>
+			<menuitem name="Copy to Desktop" action="Move to Desktop"/>
+		</menu>
+	</placeholder>
+	<separator name="Extension actions separator"/>
+	<placeholder name="Extension Actions"/>
+	<separator name="Dangerous separator"/>
+	<placeholder name="Dangerous File Actions">
+		<menuitem name="Trash" action="Trash"/>
+		<menuitem name="Delete" action="Delete"/>
+		<menuitem name="Restore From Trash" action="Restore From Trash"/>
+	</placeholder>
+	<separator name="Appearance separator"/>
+	<placeholder name="Icon Appearance Items">
+	</placeholder>
+	<separator name="Removable separator"/>
+	<placeholder name="Removable Media Placeholder">
+		 <menuitem name="Mount Volume" action="Mount Volume"/>
+		 <menuitem name="Unmount Volume" action="Unmount Volume"/>
+		 <menuitem name="Eject Volume" action="Eject Volume"/>
+		 <menuitem name="Format Volume" action="Format Volume"/>
+		 <menuitem name="Start Volume" action="Start Volume"/>
+		 <menuitem name="Stop Volume" action="Stop Volume"/>
+		 <menuitem name="Poll" action="Poll"/>
+        </placeholder>
+        <menuitem name="Connect To Server Link" action="Connect To Server Link"/>
+        <separator name="Properties Separator"/>
+        <menuitem name="Properties" action="Properties"/>
+</popup>
+''')
 
 
 def liria_home(staged):
@@ -191,12 +600,12 @@ def liria_home(staged):
 
 def liria_sidebar(staged):
     """Sidebar sections read Favorites (Home and the personal folders),
-    Drives (the file system and devices), Bookmarks and Network."""
+    Devices (the file system and drives), Bookmarks and Network, with
+    16 px symbolic icons that follow the text colour (a GIcon column drawn
+    by the cell renderer instead of pre-rendered colour pixbufs)."""
     sidebar = staged / "src/liria-places-sidebar.c"
     edit(sidebar, '    last_iter = add_heading (sidebar, SECTION_COMPUTER,\n                             _("Computer"));',
          '    last_iter = add_heading (sidebar, SECTION_COMPUTER,\n                             _("Favorites"));')
-    edit(sidebar, '            add_heading (sidebar, SECTION_DEVICES,\n                     _("Devices"));',
-         '            add_heading (sidebar, SECTION_DEVICES,\n                     _("Drives"));')
     edit(sidebar, "    display_name = g_filename_display_basename (g_get_home_dir ());\n",
          "    display_name = g_strdup (_(\"Home\"));\n")
     root = """    /* file system root */
@@ -215,6 +624,40 @@ def liria_sidebar(staged):
     edit(sidebar, root, "")
     edit(sidebar, "    /* first go through all connected drives */\n",
          root.replace("SECTION_COMPUTER", "SECTION_DEVICES") + "\n    /* first go through all connected drives */\n")
+    # Symbolic icons.
+    edit_once(sidebar, '#include "liria-places-sidebar.h"\n', '#include "liria-places-sidebar.h"\n#include "liria-sde-ui.h"\n')
+    edit_once(sidebar, "    PLACES_SIDEBAR_COLUMN_HEADING_TEXT,\n\n    PLACES_SIDEBAR_COLUMN_COUNT",
+              "    PLACES_SIDEBAR_COLUMN_HEADING_TEXT,\n    PLACES_SIDEBAR_COLUMN_GICON, /* SDE */\n\n    PLACES_SIDEBAR_COLUMN_COUNT")
+    edit_once(sidebar, "                                         G_TYPE_INT,\n                                         G_TYPE_STRING);\n",
+              "                                         G_TYPE_INT,\n                                         G_TYPE_STRING,\n"
+              "                                         G_TYPE_ICON);\n")
+    edit_once(sidebar, """                        PLACES_SIDEBAR_COLUMN_SECTION_TYPE, section_type,
+                        -1);
+
+    if (surface != NULL)""", """                        PLACES_SIDEBAR_COLUMN_SECTION_TYPE, section_type,
+                        -1);
+    {
+        GIcon *symbolic = liria_sde_ui_symbolic_icon (icon);
+
+        gtk_list_store_set (sidebar->store, &iter, PLACES_SIDEBAR_COLUMN_GICON, symbolic, -1);
+        if (symbolic != NULL)
+            g_object_unref (symbolic);
+    }
+
+    if (surface != NULL)""")
+    edit_once(sidebar, """    cell = gtk_cell_renderer_pixbuf_new ();
+    gtk_tree_view_column_pack_start (col, cell, FALSE);
+    gtk_tree_view_column_set_attributes (col, cell,
+                                         "surface", PLACES_SIDEBAR_COLUMN_ICON,
+                                         NULL);""", """    cell = gtk_cell_renderer_pixbuf_new ();
+    g_object_set (cell, "stock-size", GTK_ICON_SIZE_MENU, NULL);
+    gtk_tree_view_column_pack_start (col, cell, FALSE);
+    gtk_tree_view_column_set_attributes (col, cell,
+                                         "gicon", PLACES_SIDEBAR_COLUMN_GICON,
+                                         NULL);""")
+    edit_once(sidebar, 'liria_icon_info_lookup_from_name ("media-eject", icon_size, icon_scale);',
+              'liria_icon_info_lookup_from_name (gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), '
+              '"media-eject-symbolic") ? "media-eject-symbolic" : "media-eject", icon_size, icon_scale);')
 
 
 def liria_copy_engine(staged):
@@ -930,6 +1373,11 @@ RECIPES = {"liria": liria}
 
 def apply(record, staged):
     overlay(record["id"], staged)
+    # Overlay sources carry the SDE build version as a placeholder.
+    for path in staged.rglob("*.c"):
+        text = path.read_text(errors="surrogateescape")
+        if "@SDE_BUILD_VERSION@" in text:
+            path.write_text(text.replace("@SDE_BUILD_VERSION@", record["build_version"]), errors="surrogateescape")
     recipe = RECIPES.get(record["id"])
     if recipe:
         recipe(staged)
