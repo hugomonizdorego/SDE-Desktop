@@ -196,25 +196,23 @@ Eol detect_eol(const std::string &text, bool *mixed) {
   const char *s = text.data();
   size_t n = text.size();
   const char *p = s, *end = s + n;
-  while (p < end) {
-    const void *hit = memchr(p, '\n', size_t(end - p));
-    const void *hit_cr = memchr(p, '\r', size_t(end - p));
-    if (!hit && !hit_cr) break;
-    const char *q;
-    if (hit && (!hit_cr || hit < hit_cr)) {
-      q = (const char *)hit;
+  // Each scan looks for the next '\n' and the next '\r' only when the
+  // previous hit was passed, so the whole text is read about twice.
+  const char *next_lf = static_cast<const char *>(memchr(p, '\n', n));
+  const char *next_cr = static_cast<const char *>(memchr(p, '\r', n));
+  while (next_lf || next_cr) {
+    if (next_lf && (!next_cr || next_lf < next_cr)) {
       ++lf;
-      p = q + 1;
+      p = next_lf + 1;
+    } else if (next_cr + 1 < end && next_cr[1] == '\n') {
+      ++crlf;
+      p = next_cr + 2;
     } else {
-      q = (const char *)hit_cr;
-      if (q + 1 < end && q[1] == '\n') {
-        ++crlf;
-        p = q + 2;
-      } else {
-        ++cr;
-        p = q + 1;
-      }
+      ++cr;
+      p = next_cr + 1;
     }
+    if (next_lf && next_lf < p) next_lf = p < end ? static_cast<const char *>(memchr(p, '\n', size_t(end - p))) : nullptr;
+    if (next_cr && next_cr < p) next_cr = p < end ? static_cast<const char *>(memchr(p, '\r', size_t(end - p))) : nullptr;
   }
   if (mixed) *mixed = (lf != 0) + (crlf != 0) + (cr != 0) > 1;
   if (crlf > lf && crlf >= cr) return Eol::CRLF;

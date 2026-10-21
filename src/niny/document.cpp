@@ -216,7 +216,7 @@ void Document::modify_cb(int pos, int ins, int del, int, const char *deleted, vo
 }
 
 void Document::on_modify(int pos, int ins, int del, const char *deleted) {
-  if (ins == 0 && del == 0) return;
+  if ((ins == 0 && del == 0) || quiet_) return;
   snapshot_ok_ = false;
   ++revision;
   std::string inserted;
@@ -364,7 +364,7 @@ void Document::apply_indent_detection(bool detect, int default_width, bool defau
       if (!s.tabs) indent_width = s.width;
     }
   }
-  buf->tab_distance(use_tabs ? default_width : indent_width);
+  set_tab_width(use_tabs ? default_width : indent_width);
 }
 
 void Document::stat_disk() {

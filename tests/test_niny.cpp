@@ -105,6 +105,18 @@ static void test_codec() {
     if (b == '\r') continue;
     CHECK(encode(dd.text, Encoding::Windows1252, Eol::LF, enc) && enc == raw);
   }
+  // Large files decode in linear time (LF only, CRLF, and a lone CR at the end).
+  for (const char *eol : {"\n", "\r\n"}) {
+    std::string big;
+    while (big.size() < 12u << 20) big += std::string("int value = 42; // caf\xC3\xA9") + eol;
+    big += "tail\r";
+    auto t0 = std::chrono::steady_clock::now();
+    Decoded bd = decode(big);
+    double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    fprintf(stderr, "decode 12 MB (%s): %.3f s\n", eol[0] == '\r' ? "CRLF" : "LF", secs);
+    CHECK(secs < 2.0);
+    CHECK(bd.mixed_eol && bd.eol == (eol[0] == '\r' ? Eol::CRLF : Eol::LF));
+  }
   Encoding e;
   CHECK(encoding_from_name("iso-8859-1", e) && e == Encoding::Latin1);
   CHECK(!decode_as("\xE9", Encoding::Utf8, back));

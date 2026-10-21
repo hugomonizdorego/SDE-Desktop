@@ -144,6 +144,13 @@ class Document {
 
   void set_language(const Language *l, bool manual);
   void apply_indent_detection(bool detect, int default_width, bool default_spaces);
+  // Fl_Text_Buffer reports a tab width change as a change of the whole text.
+  void set_tab_width(int w) {
+    if (buf->tab_distance() == w) return;
+    quiet_ = true;
+    buf->tab_distance(w);
+    quiet_ = false;
+  }
 
   // Undo/redo; returns the new cursor position or -1.
   int do_undo();
@@ -168,6 +175,7 @@ class Document {
   std::string snapshot_;
   bool snapshot_ok_ = false;
   bool recording_ = true;
+  bool quiet_ = false;
   bool hl_enabled_ = true;
   int valid_end_ = 0;
   int cache_pos_ = 0, cache_line_ = 1;

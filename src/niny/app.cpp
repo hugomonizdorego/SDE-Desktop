@@ -190,9 +190,14 @@ void App::apply_theme() {
 }
 
 void App::apply_settings(bool save) {
+  int cur = editor_->insert_position(), top = editor_->top_line();
   apply_theme();
   for (auto &d : docs_) {
     if (!d->indent_manual) d->apply_indent_detection(settings_.detect_indent, settings_.tab_width, settings_.insert_spaces);
+  }
+  if (editor_->doc()) {
+    editor_->insert_position(std::min(cur, editor_->doc()->length()));
+    editor_->scroll(top, 0);
   }
   editor_->update_gutter();
   layout();
@@ -691,7 +696,7 @@ Document *App::new_document() {
   d->untitled = ++untitled_counter_;
   d->indent_width = settings_.tab_width;
   d->use_tabs = !settings_.insert_spaces;
-  d->buf->tab_distance(settings_.tab_width);
+  d->set_tab_width(settings_.tab_width);
   Encoding e;
   if (encoding_from_name(settings_.default_encoding, e)) d->encoding = e;
   Eol eol;
@@ -1035,6 +1040,18 @@ Document *App::recover_from(const std::string &id, const std::string &path_hint)
   Ini meta;
   meta.parse(meta_text);
   std::string path = meta.get("backup", "path", path_hint);
+  int existing = find_document(path);
+  if (existing >= 0) {
+    // Already open (restored from the session): give it the unsaved text.
+    Document *open = docs_[size_t(existing)].get();
+    open->set_content(text);
+    open->undo.mark_unsaved();
+    open->notice = Document::Notice::Recovered;
+    open->notice_text = _("Niny closed unexpectedly. Your unsaved changes were recovered.");
+    unlink((dir + "/" + id + ".txt").c_str());
+    unlink((dir + "/" + id + ".meta").c_str());
+    return open;
+  }
   auto d = std::make_unique<Document>(this);
   std::string err;
   if (!path.empty() && file_exists(path) && d->load(path, err)) {
@@ -1114,11 +1131,11 @@ void App::recover_backups() {
     if (pid == getpid()) continue;
     if (process_is_niny(pid)) continue;  // another Niny window owns it
     Document *d = recover_from(id, "");
-    if (d) {
-      int idx = int(docs_.size()) - 1;
-      active_ = -1;
-      activate(idx);
-    }
+    for (size_t k = 0; d && k < docs_.size(); ++k)
+      if (docs_[k].get() == d) {
+        active_ = -1;
+        activate(int(k));
+      }
   }
   write_backups(true);
 }
@@ -1398,6 +1415,8 @@ void App::find_changed() {
   Match m;
   if (searcher_.find(d->text(), size_t(std::max(0, find_origin_)), true, true, m))
     editor_->goto_pos(int(m.start), true, int(m.end));
+  else
+    editor_->goto_pos(std::min(std::max(0, find_origin_), d->length()), false);
   match_rev_ = ~0u;
   Fl::remove_timeout(match_cb, this);
   if (d->length() > (2 << 20)) Fl::add_timeout(0.15, match_cb, this);
@@ -1584,7 +1603,10 @@ void App::set_indent(bool tabs, int width) {
   d->use_tabs = tabs;
   d->indent_width = width;
   d->indent_manual = true;
-  d->buf->tab_distance(width);
+  int cur = editor_->insert_position(), top = editor_->top_line();
+  d->set_tab_width(width);
+  editor_->insert_position(std::min(cur, d->length()));
+  editor_->scroll(top, 0);
   editor_->redraw();
   update_ui();
 }

@@ -106,7 +106,7 @@ Look make_look(const Config &cfg, const std::string &scheme) {
     L.current_line = L.accent.alpha(0.065);
     L.gutter = Color::hex(0xFFFFFF);
     L.gutter_text = L.dim.mix(L.editor, 0.4);
-    L.selection = L.accent.mix(L.editor, 0.68);
+    L.selection = L.accent.mix(L.editor, 0.58);
     L.margin = L.border.alpha(0.6);
   }
   if (L.liquid) {

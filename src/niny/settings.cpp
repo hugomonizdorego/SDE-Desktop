@@ -66,7 +66,7 @@ void Ini::parse(const std::string &text) {
 }
 
 std::string Ini::serialize() const {
-  std::string out = "# Niny Text Editor settings\n";
+  std::string out = "# Niny Text Editor\n";
   for (auto &sec : data_) {
     out += "\n[" + sec.first + "]\n";
     for (auto &kv : sec.second) out += kv.first + "=" + escape(kv.second) + "\n";
