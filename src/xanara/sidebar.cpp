@@ -284,7 +284,7 @@ void Sidebar::page_changed(int page) {
   }
   int viewh = y() + h() - content_top();
   if (y0 < scroll_) scroll_ = y0 - S(8);
-  else if (y0 + row_hh > scroll_ + viewh) scroll_ = y0 + row_hh - viewh + S(8);
+  else if (y0 + row_hh > scroll_ + viewh) scroll_ = std::min(double(y0 - S(8)), double(y0 + row_hh - viewh + S(8)));
   clamp();
   redraw();
 }
