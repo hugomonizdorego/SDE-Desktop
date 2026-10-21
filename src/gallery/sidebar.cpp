@@ -6,7 +6,10 @@
 #include <FL/Fl_Tooltip.H>
 #include <FL/fl_draw.H>
 
+#include <FL/Fl_Menu_Item.H>
+
 #include <algorithm>
+#include <cstring>
 
 #include "gallery.h"
 #include "i18n.h"
@@ -92,6 +95,25 @@ std::vector<Sidebar::Row> Sidebar::rows() const {
   r = Row{_("Add Folder…"), icon::Plus, 0, View{}};
   r.add = true;
   add(r, rh);
+  const View &cur = app_->view();
+  if (cur.kind == ViewKind::Browse) {
+    Row b{basename_of(cur.folder).empty() ? cur.folder : basename_of(cur.folder), icon::Folder,
+          app_->count_for(cur), cur};
+    add(b, rh);
+  }
+  if (!app_->devices().empty()) {
+    Row d;
+    d.label = _("Devices");
+    d.header = true;
+    add(d, hh);
+    for (const auto &m : app_->devices()) {
+      View v{ViewKind::Device, m.mount_point};
+      r = Row{m.label(), icon::Drive, app_->count_for(v), v};
+      r.device = true;
+      r.removable = true;  // the hover button ejects
+      add(r, rh);
+    }
+  }
   return out;
 }
 
@@ -141,7 +163,7 @@ void Sidebar::draw() {
       if (hot && r.removable && !small) {
         double bx = rx + rw - S(30), by = r.y + (r.h - S(24)) / 2.0;
         if (hover_remove_) p.fill_rounded(bx, by, S(24), S(24), Sd(6), t.border);
-        icon::draw(p, icon::Close, bx + S(4), by + S(4), S(16), t.text_dim);
+        icon::draw(p, r.device ? icon::Eject : icon::Close, bx + S(4), by + S(4), S(16), t.text_dim);
       }
     }
     cairo_restore(p.cr());
@@ -161,7 +183,7 @@ void Sidebar::draw() {
     bool active = !r.add && app_->view() == r.view;
     int tx = x() + S(50), tw = w() - S(50) - S(20);
     bool hot = int(i) == hover_;
-    std::string count = r.add || (hot && r.removable) ? "" : std::to_string(r.count);
+    std::string count = r.add || (hot && r.removable) || (r.device && r.count == 0) ? "" : std::to_string(r.count);
     text_font(t.font_size - S(1));
     int cw = count.empty() ? 0 : text_width(count) + S(10);
     if (!count.empty())
@@ -216,14 +238,30 @@ int Sidebar::handle(int event) {
       focus_ = r;
       auto rs = rows();
       const Row &row = rs[size_t(r)];
-      if (row.add) {
-        app_->add_folder();
-      } else if (row.removable && hover_remove_ && !compact()) {
-        app_->remove_folder(row.view.folder);
-        hover_ = -1;
-      } else {
-        app_->set_view(row.view);
+      if (Fl::event_button() == FL_RIGHT_MOUSE && row.device) {
+        Fl_Menu_Item items[4];
+        memset(items, 0, sizeof items);
+        items[0].text = _("Open");
+        items[1].text = _("Import Photos…");
+        items[2].text = _("Eject");
+        for (int k = 0; k < 3; ++k) {
+          items[k].labelsize(app_->theme().font_size);
+          items[k].labelcolor(app_->theme().text.fl());
+        }
+        const Fl_Menu_Item *m = items->popup(Fl::event_x(), Fl::event_y());
+        int pick = m ? int(m - items) : -1;
+        if (pick == 0) app_->set_view(row.view);
+        else if (pick == 1) {
+          app_->set_view(row.view);
+          for (const auto &d : app_->devices())
+            if (d.mount_point == row.view.folder) app_->import_from(d);
+        } else if (pick == 2) {
+          app_->eject(row.view.folder);
+        }
+        redraw();
+        return 1;
       }
+      activate(row);
       redraw();
       return 1;
     }
@@ -245,13 +283,26 @@ int Sidebar::handle(int event) {
         return 1;
       }
       if (k == FL_Delete && focus_ >= 0 && focus_ < int(rs.size()) && rs[size_t(focus_)].removable) {
-        app_->remove_folder(rs[size_t(focus_)].view.folder);
+        if (rs[size_t(focus_)].device) app_->eject(rs[size_t(focus_)].view.folder);
+        else app_->remove_folder(rs[size_t(focus_)].view.folder);
         return 1;
       }
       return 0;
     }
   }
   return Fl_Widget::handle(event);
+}
+
+void Sidebar::activate(const Row &row) {
+  if (row.add) {
+    app_->add_folder();
+  } else if (row.removable && hover_remove_ && !compact()) {
+    if (row.device) app_->eject(row.view.folder);
+    else app_->remove_folder(row.view.folder);
+    hover_ = -1;
+  } else {
+    app_->set_view(row.view);
+  }
 }
 
 // ------------------------------------------------------------ segmented

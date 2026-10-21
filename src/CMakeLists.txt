@@ -122,16 +122,14 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(sde-gallery-core PUBLIC Threads::Threads)
 # Drawing shared by Gallery and Photo: line icons and the themed menu bar.
-add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp)
+add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp)
 target_link_libraries(sde-gallery-ui PUBLIC sde-gallery-core)
 add_executable(sde-gallery
   gallery/main.cpp
   gallery/window.cpp
   gallery/sidebar.cpp
   gallery/grid.cpp
-  gallery/viewer.cpp
-  gallery/devices.cpp
-  gallery/dialogs.cpp)
+  gallery/viewer.cpp)
 target_link_libraries(sde-gallery PRIVATE sde-gallery-ui)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
