@@ -15,6 +15,7 @@
 #include "config.h"
 #include "i18n.h"
 #include "icons.h"
+#include "menu.h"
 #include "spawn.h"
 #include "theme.h"
 #include "widgets.h"
@@ -258,6 +259,28 @@ void show_about(const AppInfo &info) {
   close->take_focus();
   while (win->shown()) Fl::wait();
   Fl::delete_widget(win);
+}
+
+int handle_about_event(int event, const AppInfo &info) {
+  if ((event == FL_SHORTCUT || event == FL_KEYBOARD) && Fl::event_key() == FL_F + 1) {
+    show_about(info);
+    return 1;
+  }
+  if (event == FL_PUSH && Fl::event_button() == FL_RIGHT_MOUSE) {
+    ContextMenu menu;
+    MenuItemOptions o;
+    o.icon = "info";
+    o.shortcut = FL_F + 1;
+    AppInfo app = info;
+    menu.item(format(_("About %s"), info.name.c_str()), [app] { show_about(app); }, o);
+    menu.popup();
+    return 1;
+  }
+  return 0;
+}
+
+std::string version_line(const AppInfo &info) {
+  return info.program + " " + info.version + " (" + kDeveloper + ")";
 }
 
 }  // namespace sde

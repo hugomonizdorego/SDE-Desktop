@@ -38,7 +38,8 @@ struct AboutInfo {
   std::function<void(sde::Painter &, double x, double y, double size)> logo;
   std::vector<std::string> credits;  // extra lines (libraries used ...)
 };
-// Modal About window with the DebION Dev-Team credits and the licence.
+// Modal About window (sde::show_about): developer DebION Dev-Team, licence
+// and credits.
 void show_about(const AboutInfo &info);
 
 // Modal list of keyboard shortcuts: sections of (keys, description) rows;

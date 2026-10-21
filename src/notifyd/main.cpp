@@ -520,7 +520,7 @@ int main(int argc, char **argv) {
   install_crash_handler("sde-notifyd");
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) {
-      printf("sde-notifyd %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
+      printf("sde-notifyd %s (%s) - DebION Dev-Team\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     }
     printf("%s", _("Usage: sde-notifyd [--version]\n\n"

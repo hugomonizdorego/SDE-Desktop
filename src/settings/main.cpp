@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 
+#include "about.h"
 #include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
@@ -1937,7 +1938,8 @@ void build_about(Page *page) {
             Label::SUBTITLE);
   new Label(tx, y + S(76), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION),
             Label::DIM);
-  page->advance(S(112));
+  new Label(tx, y + S(98), tw, S(22), developer_line(), Label::DIM);
+  page->advance(S(126));
   page->end_card();
 
   struct utsname u;
@@ -1955,7 +1957,7 @@ void build_about(Page *page) {
       {_("Display"), format("%d x %d", sw, sh)},
       {_("Interface size"), format("%d %%", int(std::lround(g_theme.scale * 100)))},
       {_("Window manager"), wm_name()},
-      {_("Toolkit"), "FLTK " SDE_FLTK_VERSION},
+      {_("Toolkit"), "SDE-FLTK " SDE_FLTK_VERSION},
   };
   page->begin_card(_("System"));
   for (auto &r : rows) info_row(page, r.first, r.second);

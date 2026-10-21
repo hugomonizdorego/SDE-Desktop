@@ -53,4 +53,12 @@ std::string toolkit_credit();
 // Modal About window centered over the program's first window.
 void show_about(const AppInfo &info);
 
+// For small dialogs without a menu: call from a window's handle(). F1, or a
+// right click that no other widget used, opens a menu with "About <name>".
+// Returns 1 when the event was used.
+int handle_about_event(int event, const AppInfo &info);
+
+// "<program> <version> (DebION Dev-Team)" for --version output.
+std::string version_line(const AppInfo &info);
+
 }  // namespace sde

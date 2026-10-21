@@ -7,6 +7,7 @@
 
 #include <algorithm>
 
+#include "about.h"
 #include "buffered_window.h"
 #include "i18n.h"
 #include "theme.h"
@@ -144,79 +145,17 @@ void run_modal(Fl_Window *win, Fl_Window *parent) {
 }  // namespace
 
 void show_about(const AboutInfo &info) {
-  const Theme &t = active_theme();
-  int W = S(420), H = S(420) + S(20) * int(info.credits.size());
-  std::string title = format(_("About %s"), info.name.c_str());
-  Fl_Window *parent = Fl::first_window();
-  InfoWindow *win = new InfoWindow(W, H, title.c_str(), [info](InfoWindow *w) {
-    const Theme &t = active_theme();
-    {
-      Painter p(w->w(), w->h());
-      p.fill_rect(0, 0, w->w(), w->h(), t.surface);
-      if (t.glass) p.glass_sheen(0, 0, w->w(), S(150), 0, t.dark);
-      double ls = S(84);
-      if (info.logo) info.logo(p, (w->w() - ls) / 2, S(28), ls);
-    }
-    int y = S(124);
-    text_font(t.font_size + S(7), true);
-    draw_text(info.name, 0, y, w->w(), S(34), t.text, 1);
-    y += S(34);
-    text_font(t.font_size - S(1));
-    draw_text(format(_("Version %s"), info.version.c_str()) + "  ·  " + info.program, 0, y, w->w(), S(20),
-              t.text_dim, 1);
-    y += S(32);
-    text_font(t.font_size);
-    // Simple centred word wrap for the description.
-    std::vector<std::string> lines;
-    std::string line;
-    for (const auto &word : [&] {
-           std::vector<std::string> words;
-           std::string cur;
-           for (char c : info.description) {
-             if (c == ' ') {
-               if (!cur.empty()) words.push_back(cur);
-               cur.clear();
-             } else {
-               cur += c;
-             }
-           }
-           if (!cur.empty()) words.push_back(cur);
-           return words;
-         }()) {
-      std::string cand = line.empty() ? word : line + " " + word;
-      if (text_width(cand) > w->w() - S(64) && !line.empty()) {
-        lines.push_back(line);
-        line = word;
-      } else {
-        line = cand;
-      }
-    }
-    if (!line.empty()) lines.push_back(line);
-    for (const auto &l : lines) {
-      draw_text(l, S(32), y, w->w() - S(64), S(22), t.text, 1);
-      y += S(22);
-    }
-    y += S(16);
-    text_font(t.font_size - S(1), true);
-    draw_text(_("Written from scratch by the DebION Dev-Team"), 0, y, w->w(), S(20), t.text, 1);
-    y += S(20);
-    text_font(t.font_size - S(1));
-    draw_text("Copyright © 2026 DebION Dev-Team", 0, y, w->w(), S(20), t.text_dim, 1);
-    y += S(20);
-    draw_text(_("License: GNU GPL version 3 or later"), 0, y, w->w(), S(20), t.text_dim, 1);
-    y += S(20);
-    for (const auto &c : info.credits) {
-      draw_text(c, S(20), y, w->w() - S(40), S(20), t.text_dim, 1);
-      y += S(20);
-    }
-  });
-  win->begin();
-  auto *close = new FlatButton((W - S(110)) / 2, H - S(52), S(110), S(34), _("Close"), true);
-  close->callback([](Fl_Widget *b, void *) { b->window()->hide(); });
-  win->end();
-  win->color(t.surface.fl());
-  run_modal(win, parent);
-  Fl::delete_widget(win);
+  // The common SDE About window (src/common/about.h): DebION Dev-Team is the
+  // developer of every SDE program.
+  sde::AppInfo app;
+  app.name = info.name;
+  app.program = info.program;
+  app.version = info.version;
+  app.icon = info.program;
+  app.description = info.description;
+  app.logo = info.logo;
+  app.credits = info.credits;
+  sde::show_about(app);
 }
 
 void show_shortcuts(const std::string &title,

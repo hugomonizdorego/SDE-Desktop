@@ -18,6 +18,7 @@
 #include <memory>
 #include <set>
 
+#include "about.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
@@ -1322,6 +1323,20 @@ class AboutPage : public Page {
       std::string path = helper("COPYRIGHT");
       open_uri(file_exists("/usr/share/doc/sde/copyright") ? "/usr/share/doc/sde/copyright" : path);
     });
+    about = new Button(0, 0, 10, 10, _("About SDE Update"));
+    about->callback([](Fl_Widget *, void *) {
+      AppInfo info;
+      info.name = _("SDE Update");
+      info.program = "sde-update";
+      info.version = SDE_UPDATE_VERSION;
+      info.icon = "system-software-update";
+      info.description = _("Keeps DebION GNU/Linux up to date: security, software and kernel updates "
+                           "from the configured sources.");
+      info.credits = {_("Update model adapted from Linux Mint's Update Manager (mintupdate), "
+                        "© 2007–2015 Clement Lefebvre and the Linux Mint team, GPL-3.0-or-later"),
+                      toolkit_credit()};
+      show_about(info);
+    });
     end();
   }
   void layout() override {
@@ -1331,6 +1346,8 @@ class AboutPage : public Page {
     upstream->position(X + S(20), by);
     copyright->size(copyright->preferred_width(), S(34));
     copyright->position(upstream->x() + upstream->w() + S(10), by);
+    about->size(about->preferred_width(), S(34));
+    about->position(copyright->x() + copyright->w() + S(10), by);
   }
   void paint() override {
     const Theme &t = active_theme();
@@ -1348,6 +1365,8 @@ class AboutPage : public Page {
     text_font(t.font_size);
     draw_text(format(_("Version %s · System updates for DebION GNU/Linux"), SDE_UPDATE_VERSION), X + S(92),
               y() + S(70), W - S(92), S(24), t.text_dim);
+    text_font(t.font_size - S(1));
+    draw_text(developer_line(), X + S(92), y() + S(94), W - S(92), S(22), t.text_dim);
     int cy = y() + S(126);
     text_font(t.font_size + S(1), true);
     draw_text(_("Credits"), X + S(20), cy + S(14), W - S(40), S(24), t.text);
@@ -1377,7 +1396,7 @@ class AboutPage : public Page {
       ry += S(22);
     }
   }
-  Button *upstream, *copyright;
+  Button *upstream, *copyright, *about;
 };
 
 // ---------------------------------------------------------- activity strip
