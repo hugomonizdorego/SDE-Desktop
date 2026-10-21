@@ -51,7 +51,8 @@ add_executable(sde-panel
 target_link_libraries(sde-panel PRIVATE sde-common)
 
 add_executable(sde-desktop desktop/main.cpp)
-target_link_libraries(sde-desktop PRIVATE sde-common)
+# WebP and other pixbuf wallpapers are decoded with the Gallery core.
+target_link_libraries(sde-desktop PRIVATE sde-gallery-core sde-common)
 # Function names in crash backtraces.
 set_target_properties(sde-panel sde-desktop PROPERTIES ENABLE_EXPORTS ON)
 
@@ -61,7 +62,15 @@ add_executable(sde-settings
   settings/display.cpp
   settings/input.cpp
   settings/system.cpp)
-target_link_libraries(sde-settings PRIVATE sde-common)
+# Display-free helpers (graphics card detection, wallpaper scan, pactl/
+# nmcli/bluetoothctl parsers), unit
+# tested; thumbnails come from the Gallery core (decoding threads and the
+# freedesktop.org thumbnail cache).
+add_library(sde-settings-model STATIC settings/gpu.cpp settings/wallpapers.cpp
+  settings/devices.cpp)
+target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/settings)
+target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common)
+target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)
 
 add_executable(sde-run run/main.cpp)
 target_link_libraries(sde-run PRIVATE sde-common)

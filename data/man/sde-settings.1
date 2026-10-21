@@ -4,13 +4,20 @@
 sde-settings \- settings for the Selviana Desktop Environment
 .SH SYNOPSIS
 .B sde-settings
-[\-\-page \fIname\fR] [\-\-apply] [\-\-version]
+[\-\-page \fIname\fR] [\-\-list\-pages] [\-\-apply] [\-\-version]
 .SH DESCRIPTION
-\fBsde-settings\fR changes the theme (light or dark), accent color, interface size (100 to 200 %), text size, icon theme and wallpaper; the panel style, width, position, size, auto-hide, clock and pinned applications; the Action Center clock, greeting and tile colors; desktop icons; notifications; display resolution and arrangement (with an automatic revert after 15 seconds); keyboard layouts, key repeat, mouse and touchpad. Changes apply immediately to running SDE programs.
+\fBsde-settings\fR changes the theme (light or dark), accent color, interface size (100 to 200 %), text size, icon theme and wallpaper (a thumbnail grid of every picture in /usr/share/backgrounds, the desktop-base themes and ~/Pictures/Wallpapers, with thumbnails cached in ~/.cache/thumbnails); the panel style, width, position, size, auto-hide, clock and pinned applications; the Action Center clock, greeting and tile colors; desktop icons (Computer, Home, Trash and the Desktop folder); notifications; sound output and input devices and volumes (pactl); Wi-Fi and network devices (nmcli); Bluetooth power and paired devices (bluetoothctl); the power mode (powerprofilesctl); display resolution and arrangement (with an automatic revert after 15 seconds); keyboard layouts, key repeat, mouse and touchpad. Changes apply immediately to running SDE programs. About shows the system, every graphics card (vendor and model from pci.ids or lspci, kernel driver, primary card) and the OpenGL renderer (glxinfo or eglinfo, when installed).
 .SH OPTIONS
 .TP
 .BI \-\-page " name"
-Open a page: home (overview), appearance, panel, desktop, action-center, notifications, display, input, suite, system or about. The default is home.
+Open a page directly (also written \fB\-\-page=\fR\fIname\fR). Page names: home (overview), appearance, panel, desktop, action-center, notifications, effects, display, input, sound, network, bluetooth, suite, system and about. The default is home.
+.IP
+Also accepted, for the panel's status flyouts and convenience: overview, wallpaper, wallpapers and background (Appearance, scrolled to the wallpapers), theme, icons (desktop), displays, screen, monitor, keyboard, mouse, touchpad (input), audio, volume, media, microphone (sound), wifi, wi-fi, ethernet, vpn (network), power, battery, updates (system, Power & Updates), applications, apps (suite), quick (action-center), animations, compositor (effects), info and graphics (about). An unknown name opens the overview with a warning.
+.IP
+Examples: \fBsde-settings \-\-page sound\fR, \fBsde-settings \-\-page=bluetooth\fR, \fBsde-settings \-\-page wallpaper\fR.
+.TP
+.B \-\-list\-pages
+Print the page names, one per line, and exit.
 .TP
 .B \-\-apply
 Apply the saved display, keyboard and pointer settings and exit (run by \fBsde-session\fR(1) at login).

@@ -60,3 +60,7 @@ add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)
 add_executable(sde-gallery-tests test_gallery.cpp)
 target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
 add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
+
+add_executable(sde-settings-tests test_settings.cpp)
+target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
+add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)

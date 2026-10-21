@@ -13,16 +13,22 @@
 #include <FL/Fl_File_Chooser.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
+#include <sys/stat.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <memory>
+#include <sstream>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "crash.h"
@@ -32,18 +38,23 @@
 #include "dbus.h"
 #include "effects.h"
 #include "desktop_entry.h"
+#include "devices.h"
+#include "gpu.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
 #include "integration.h"
 #include "paint.h"
+#include "process.h"
 #include "settings.h"
 #include "spawn.h"
 #include "suite.h"
 #include "system.h"
 #include "theme.h"
+#include "thumbnails.h"
 #include "ui.h"
 #include "util.h"
+#include "wallpapers.h"
 #include "widgets.h"
 #include "wm.h"
 #include "x11.h"
@@ -57,6 +68,10 @@ Theme g_theme;
 BufferedWindow *g_window = nullptr;
 std::string g_argv0;
 std::string g_restart_page = "appearance";
+// Page offset of the Wallpaper card ("--page wallpaper" scrolls to it).
+int g_wallpaper_anchor = 0;
+// True while refresh_page() rebuilds the visible page (not a new visit).
+bool g_refreshing = false;
 
 }  // namespace
 
@@ -249,104 +264,327 @@ class AccentPicker : public Fl_Widget {
 
 std::string default_wallpaper() {
   std::string base = std::string(SDE_DATADIR).substr(0, std::string(SDE_DATADIR).rfind('/'));
-  return base + "/backgrounds/sde/" + (g_theme.dark ? "selviana-dark.svg" : "selviana-light.svg");
+  std::string name = g_theme.dark ? "selviana-dark.svg" : "selviana-light.svg";
+  std::string path = base + "/backgrounds/sde/" + name;
+  // Builds installed elsewhere than /usr still show the packaged picture.
+  if (!file_exists(path) && file_exists("/usr/share/backgrounds/sde/" + name))
+    path = "/usr/share/backgrounds/sde/" + name;
+  return path;
+}
+
+// ------------------------------------------------------------- wallpapers
+//
+// The list of wallpapers is scanned once per run on a worker thread, so the
+// Appearance page opens at once. Thumbnails come from the Gallery
+// thumbnail service: decoded on worker threads, shared with other
+// applications through ~/.cache/thumbnails (freedesktop.org) and requested
+// only for the tiles that are on screen.
+
+struct WallpaperScan {
+  std::mutex mu;
+  bool started = false, done = false;
+  std::vector<Wallpaper> list;
+};
+WallpaperScan &wallpaper_scan() {
+  static auto *scan = new WallpaperScan;  // outlives the scanning thread
+  return *scan;
+}
+
+void wallpaper_scan_done(void *) {
+  if (g_restart_page == "appearance") refresh_page();
+}
+
+void start_wallpaper_scan() {
+  WallpaperScan &s = wallpaper_scan();
+  if (s.started) return;
+  s.started = true;
+  std::thread([&s] {
+    auto list = scan_wallpapers(wallpaper_roots(SDE_DATADIR), gallery::extra_formats());
+    {
+      std::lock_guard<std::mutex> lock(s.mu);
+      s.list = std::move(list);
+      s.done = true;
+    }
+    Fl::awake(wallpaper_scan_done, nullptr);
+  }).detach();
+}
+
+class WallpaperGrid;
+WallpaperGrid *g_wallpaper_grid = nullptr;
+std::unique_ptr<gallery::ThumbnailService> g_thumbnailer;
+std::map<std::string, cairo_surface_t *> g_thumbs;  // nullptr: could not be decoded
+void thumbnails_ready(void *);
+
+gallery::ThumbnailService &thumbnailer() {
+  if (!g_thumbnailer)
+    g_thumbnailer.reset(
+        new gallery::ThumbnailService([] { Fl::awake(thumbnails_ready, nullptr); }, 2));
+  return *g_thumbnailer;
 }
 
 class WallpaperGrid : public Fl_Widget {
  public:
-  WallpaperGrid(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
-    tw_ = S(132);
-    th_ = S(80);
-    cols_ = std::max(1, (w + S(12)) / (tw_ + S(12)));
-    scan();
-    size(w, rows() * (th_ + S(12)));
+  struct Tile {
+    std::string value;  // stored in [appearance] wallpaper ("auto" or a path)
+    std::string path;   // picture shown
+    std::string label;
+    time_t mtime = 0;
+  };
+
+  WallpaperGrid(int x, int y, int w) : Fl_Widget(x, y, w, 10) {
+    gap_ = S(12);
+    cols_ = std::max(2, (w + gap_) / (S(150) + gap_));
+    tw_ = (w - (cols_ - 1) * gap_) / cols_;
+    th_ = tw_ * 10 / 16;
+    label_h_ = S(24);
+    build_tiles();
+    int rows = std::max(1, (int(tiles_.size()) + cols_ - 1) / cols_);
+    size(w, rows * row_h() - gap_);
+    g_wallpaper_grid = this;
+    for (size_t i = 0; i < tiles_.size(); ++i)
+      if (selected(int(i))) focus_ = int(i);
   }
   ~WallpaperGrid() override {
-    for (auto &kv : thumbs_)
-      if (kv.second) cairo_surface_destroy(kv.second);
+    if (g_wallpaper_grid == this) g_wallpaper_grid = nullptr;
   }
-  int rows() const { return std::max(1, (int(files_.size()) + cols_ - 1) / cols_); }
-  void scan() {
-    files_.clear();
-    std::string base = std::string(SDE_DATADIR).substr(0, std::string(SDE_DATADIR).rfind('/'));
-    std::vector<std::string> dirs{base + "/backgrounds/sde", base + "/backgrounds",
-                                  home_dir() + "/Pictures/Wallpapers"};
-    std::string current = g_cfg.get("appearance", "wallpaper", "auto");
-    if (current != "auto" && file_exists(current)) files_.push_back(current);
-    for (auto &d : dirs) {
-      for (auto &f : list_dir(d)) {
-        std::string l = lower(f);
-        if (!ends_with(l, ".svg") && !ends_with(l, ".png") && !ends_with(l, ".jpg") &&
-            !ends_with(l, ".jpeg"))
-          continue;
-        std::string full = d + "/" + f;
-        if (std::find(files_.begin(), files_.end(), full) == files_.end()) files_.push_back(full);
-        if (int(files_.size()) >= cols_ * 2) return;
-      }
-    }
-  }
-  std::string current() const {
+  int count() const { return int(tiles_.size()); }
+  int row_h() const { return th_ + label_h_ + gap_; }
+
+  static std::string current_value() {
     std::string wp = g_cfg.get("appearance", "wallpaper", "auto");
-    return wp == "auto" || wp.empty() ? default_wallpaper() : wp;
+    return wp.empty() ? "auto" : wp;
   }
-  void draw() override {
-    Painter p(window()->w(), window()->h());
-    std::string cur = current();
-    for (size_t i = 0; i < files_.size(); ++i) {
-      int tx = x() + int(i % size_t(cols_)) * (tw_ + S(12)),
-          ty = y() + int(i / size_t(cols_)) * (th_ + S(12));
-      cairo_surface_t *&thumb = thumbs_[files_[i]];
-      if (!thumb) thumb = load_wallpaper(files_[i], tw_, th_, "zoom", 0.5, 0.5, 0.5);
-      cairo_save(p.cr());
-      p.rounded_rect(tx, ty, tw_, th_, Sd(8));
-      cairo_clip(p.cr());
-      if (thumb) {
-        cairo_set_source_surface(p.cr(), thumb, tx, ty);
-        cairo_paint(p.cr());
+  bool selected(int i) const {
+    std::string cur = current_value();
+    if (tiles_[size_t(i)].value == cur) return true;
+    // The same picture through another path (symbolic link).
+    if (cur != "auto" && tiles_[size_t(i)].value != "auto") {
+      char a[PATH_MAX], b[PATH_MAX];
+      return realpath(cur.c_str(), a) && realpath(tiles_[size_t(i)].value.c_str(), b) &&
+             strcmp(a, b) == 0 && !has_value(cur);
+    }
+    return false;
+  }
+  bool has_value(const std::string &v) const {
+    for (auto &t : tiles_)
+      if (t.value == v) return true;
+    return false;
+  }
+
+  void build_tiles() {
+    tiles_.clear();
+    Tile autot;
+    autot.value = "auto";
+    autot.path = default_wallpaper();
+    autot.label = _("Automatic");
+    tiles_.push_back(autot);
+    std::vector<Wallpaper> list;
+    {
+      WallpaperScan &s = wallpaper_scan();
+      std::lock_guard<std::mutex> lock(s.mu);
+      list = s.list;
+    }
+    // A picture chosen with Browse... stays offered right after Automatic.
+    std::string cur = current_value();
+    bool listed = cur == "auto";
+    char rc[PATH_MAX];
+    std::string cur_real = cur != "auto" && realpath(cur.c_str(), rc) ? rc : cur;
+    for (auto &w : list) {
+      char rw[PATH_MAX];
+      if (w.path == cur || (realpath(w.path.c_str(), rw) && cur_real == rw)) listed = true;
+    }
+    if (!listed && file_exists(cur)) {
+      Tile t;
+      t.value = t.path = cur;
+      t.label = wallpaper_label(cur);
+      struct stat st;
+      if (stat(cur.c_str(), &st) == 0) t.mtime = st.st_mtime;
+      tiles_.push_back(t);
+    }
+    for (auto &w : list) {
+      Tile t;
+      t.value = t.path = w.path;
+      t.label = w.label;
+      t.mtime = w.mtime;
+      tiles_.push_back(t);
+    }
+  }
+
+  void tile_box(int i, int &tx, int &ty) const {
+    tx = x() + (i % cols_) * (tw_ + gap_);
+    ty = y() + (i / cols_) * row_h();
+  }
+
+  // Asks for the thumbnails of the visible rows (and one row around them).
+  void request_visible(int top, int bottom) {
+    std::vector<gallery::ThumbnailService::Request> jobs;
+    int first = std::max(0, (top - y()) / row_h() - 1) * cols_;
+    int last = std::min(count(), ((bottom - y()) / row_h() + 2) * cols_);
+    for (int i = first; i < last; ++i) {
+      const Tile &t = tiles_[size_t(i)];
+      if (g_thumbs.count(t.path)) continue;
+      gallery::ThumbnailService::Request r;
+      r.path = t.path;
+      r.mtime = t.mtime;
+      if (!r.mtime) {
+        struct stat st;
+        if (stat(t.path.c_str(), &st) == 0) r.mtime = st.st_mtime;
       }
-      cairo_restore(p.cr());
-      if (files_[i] == cur)
-        p.stroke_rounded(tx - Sd(3), ty - Sd(3), tw_ + Sd(6), th_ + Sd(6), Sd(10), g_theme.accent,
-                         Sd(3));
-      if (Fl::focus() == this && int(i) == focus_) focus_ring(p, tx, ty, tw_, th_, Sd(8));
+      r.kind = gallery::JobKind::Large;
+      jobs.push_back(r);
+    }
+    if (!jobs.empty()) thumbnailer().replace_queue(std::move(jobs));
+  }
+
+  void draw() override {
+    int top = parent() ? parent()->y() : y(), bottom = parent() ? top + parent()->h() : y() + h();
+    request_visible(top, bottom);
+    int first = std::max(0, (top - y()) / row_h()) * cols_;
+    int last = std::min(count(), ((bottom - y()) / row_h() + 1) * cols_);
+    {
+      Painter p(window()->w(), window()->h());
+      for (int i = first; i < last; ++i) {
+        int tx, ty;
+        tile_box(i, tx, ty);
+        const Tile &t = tiles_[size_t(i)];
+        auto it = g_thumbs.find(t.path);
+        cairo_surface_t *thumb = it == g_thumbs.end() ? nullptr : it->second;
+        cairo_save(p.cr());
+        p.rounded_rect(tx, ty, tw_, th_, Sd(8));
+        cairo_clip(p.cr());
+        if (thumb) {
+          // Zoom: cover the tile, centered.
+          double iw = cairo_image_surface_get_width(thumb), ih = cairo_image_surface_get_height(thumb);
+          double sc = std::max(tw_ / iw, th_ / ih);
+          cairo_translate(p.cr(), tx + (tw_ - iw * sc) / 2, ty + (th_ - ih * sc) / 2);
+          cairo_scale(p.cr(), sc, sc);
+          cairo_set_source_surface(p.cr(), thumb, 0, 0);
+          cairo_pattern_set_filter(cairo_get_source(p.cr()), CAIRO_FILTER_GOOD);
+          cairo_paint(p.cr());
+        } else {
+          p.fill_rect(tx, ty, tw_, th_, g_theme.hover);
+          // Picture placeholder: a mountain and a sun.
+          Color c = g_theme.text_dim.alpha(it == g_thumbs.end() ? 0.35 : 0.6);
+          double cx = tx + tw_ / 2.0, cy = ty + th_ / 2.0, s = std::min(tw_, th_) * 0.32;
+          p.stroke_rounded(cx - s, cy - s * .7, s * 2, s * 1.4, s * .15, c, Sd(1.5));
+          p.circle(cx + s * .45, cy - s * .25, s * .16, c);
+          cairo_move_to(p.cr(), cx - s * .8, cy + s * .55);
+          cairo_line_to(p.cr(), cx - s * .2, cy - s * .1);
+          cairo_line_to(p.cr(), cx + s * .2, cy + s * .3);
+          cairo_line_to(p.cr(), cx + s * .45, cy + s * .1);
+          cairo_line_to(p.cr(), cx + s * .8, cy + s * .55);
+          cairo_close_path(p.cr());
+          p.set(c);
+          cairo_fill(p.cr());
+        }
+        cairo_restore(p.cr());
+        bool sel = selected(i);
+        if (sel) {
+          p.stroke_rounded(tx - Sd(3), ty - Sd(3), tw_ + Sd(6), th_ + Sd(6), Sd(10), g_theme.accent,
+                           Sd(3));
+          // Check mark badge.
+          double bx = tx + tw_ - Sd(14), by = ty + Sd(14);
+          p.circle(bx, by, Sd(10), g_theme.accent);
+          p.line(bx - Sd(4.5), by, bx - Sd(1), by + Sd(3.5), Color::hex(0xFFFFFF), Sd(2));
+          p.line(bx - Sd(1), by + Sd(3.5), bx + Sd(5), by - Sd(3.5), Color::hex(0xFFFFFF), Sd(2));
+        } else if (i == hover_) {
+          p.stroke_rounded(tx - Sd(2), ty - Sd(2), tw_ + Sd(4), th_ + Sd(4), Sd(9),
+                           g_theme.accent.alpha(.55), Sd(2));
+        } else {
+          p.stroke_rounded(tx, ty, tw_, th_, Sd(8), g_theme.border, Sd(1));
+        }
+        if (Fl::focus() == this && i == focus_) focus_ring(p, tx, ty, tw_, th_, Sd(8));
+      }
+    }
+    for (int i = first; i < last; ++i) {
+      int tx, ty;
+      tile_box(i, tx, ty);
+      bool sel = selected(i);
+      text_font(g_theme.font_size - 1, sel);
+      draw_text(tiles_[size_t(i)].label, tx, ty + th_ + S(2), tw_, label_h_ - S(4),
+                sel ? g_theme.accent_text : g_theme.text_dim, 1);
     }
   }
+
   void pick(int i) {
-    if (i < 0 || i >= int(files_.size())) return;
-    g_cfg.set("appearance", "wallpaper", files_[size_t(i)]);
+    if (i < 0 || i >= count()) return;
+    g_cfg.set("appearance", "wallpaper", tiles_[size_t(i)].value);
     apply_change();
-  }
-  void add(const std::string &path) {
-    if (std::find(files_.begin(), files_.end(), path) == files_.end()) {
-      files_.insert(files_.begin(), path);
-      if (int(files_.size()) > cols_ * 2) files_.pop_back();
-    }
     redraw();
+  }
+  int index_at(int ex, int ey) const {
+    int col = (ex - x()) / (tw_ + gap_), row = (ey - y()) / row_h();
+    if (ex < x() || ey < y() || col >= cols_) return -1;
+    int tx = x() + col * (tw_ + gap_), ty = y() + row * row_h();
+    if (ex >= tx + tw_ || ey >= ty + th_ + label_h_) return -1;
+    int i = row * cols_ + col;
+    return i < count() ? i : -1;
+  }
+  // Keeps the focused tile on screen while moving with the keyboard.
+  void reveal(int i) {
+    auto *scroll = dynamic_cast<Fl_Scroll *>(parent());
+    if (!scroll) return;
+    int tx, ty;
+    tile_box(i, tx, ty);
+    int top = scroll->y(), bottom = scroll->y() + scroll->h();
+    int pos = scroll->yposition();
+    if (ty - S(8) < top)
+      scroll->scroll_to(scroll->xposition(), std::max(0, pos - (top - ty + S(8))));
+    else if (ty + row_h() > bottom)
+      scroll->scroll_to(scroll->xposition(), pos + (ty + row_h() - bottom));
   }
   int handle(int e) override {
     switch (e) {
       case FL_PUSH:
+        if (Fl::event_button() != FL_LEFT_MOUSE) return 0;
+        take_focus();
         return 1;
       case FL_RELEASE: {
-        int col = (Fl::event_x() - x()) / (tw_ + S(12)),
-            row = (Fl::event_y() - y()) / (th_ + S(12));
-        if (col >= 0 && col < cols_ && row >= 0) pick(row * cols_ + col);
+        int i = index_at(Fl::event_x(), Fl::event_y());
+        if (i >= 0) {
+          focus_ = i;
+          pick(i);
+        }
         return 1;
       }
+      case FL_ENTER:
+      case FL_MOVE: {
+        int i = index_at(Fl::event_x(), Fl::event_y());
+        if (i != hover_) {
+          hover_ = i;
+          redraw();
+        }
+        return 1;
+      }
+      case FL_LEAVE:
+        hover_ = -1;
+        redraw();
+        return 1;
       case FL_FOCUS:
       case FL_UNFOCUS:
         redraw();
         return 1;
       case FL_KEYBOARD: {
-        int k = Fl::event_key(), n = int(files_.size());
-        if (k == FL_Left && focus_ > 0)
-          --focus_;
-        else if (k == FL_Right && focus_ + 1 < n)
-          ++focus_;
-        else if (k == ' ' || k == FL_Enter)
+        int k = Fl::event_key(), n = count(), f = focus_;
+        if (k == FL_Left && f > 0)
+          --f;
+        else if (k == FL_Right && f + 1 < n)
+          ++f;
+        else if (k == FL_Up && f - cols_ >= 0)
+          f -= cols_;
+        else if (k == FL_Down && f + cols_ < n)
+          f += cols_;
+        else if (k == FL_Home)
+          f = 0;
+        else if (k == FL_End)
+          f = n - 1;
+        else if (k == ' ' || k == FL_Enter || k == FL_KP_Enter) {
           pick(focus_);
-        else
+          return 1;
+        } else
           return 0;
+        focus_ = f;
+        reveal(f);
         redraw();
         return 1;
       }
@@ -356,10 +594,24 @@ class WallpaperGrid : public Fl_Widget {
   }
 
  private:
-  std::vector<std::string> files_;
-  std::map<std::string, cairo_surface_t *> thumbs_;
-  int tw_, th_, cols_, focus_ = 0;
+  std::vector<Tile> tiles_;
+  int tw_ = 0, th_ = 0, cols_ = 1, gap_ = 0, label_h_ = 0, focus_ = 0, hover_ = -1;
 };
+
+void thumbnails_ready(void *) {
+  if (!g_thumbnailer) return;
+  bool any = false;
+  for (auto &r : g_thumbnailer->take_results()) {
+    auto it = g_thumbs.find(r.path);
+    if (it != g_thumbs.end()) {
+      if (r.surface) cairo_surface_destroy(r.surface);
+      continue;
+    }
+    g_thumbs[r.path] = r.surface;
+    any = true;
+  }
+  if (any && g_wallpaper_grid) g_wallpaper_grid->redraw();
+}
 
 class ImageBox : public Fl_Widget {
  public:
@@ -410,6 +662,18 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
   }
   if (id == "system") {
     glyph::power(p, x, y, size, c);
+    return;
+  }
+  if (id == "sound") {
+    glyph::speaker(p, x, y, size, 3, false, c);
+    return;
+  }
+  if (id == "network") {
+    glyph::wifi(p, x, y, size, 4, c);
+    return;
+  }
+  if (id == "bluetooth") {
+    glyph::bluetooth(p, x, y, size, c);
     return;
   }
   if (id == "effects") {
@@ -562,6 +826,9 @@ void build_home(Page *page) {
        "preferences-system"},
       {"display", N_("Displays"), N_("Resolution and arrangement"), "video-display"},
       {"input", N_("Keyboard & Mouse"), N_("Layouts, pointer and touchpad"), "input-keyboard"},
+      {"sound", N_("Sound"), N_("Volume, speakers and microphones"), "audio-volume-high"},
+      {"network", N_("Network"), N_("Wi-Fi and wired connections"), "network-wireless"},
+      {"bluetooth", N_("Bluetooth"), N_("Pair and connect devices"), "bluetooth"},
       {"notifications", N_("Notifications"), N_("Alerts and Do Not Disturb"),
        "preferences-desktop-notification"},
       {"suite", N_("Applications"), N_("Applications and source credits"), "applications-other"},
@@ -573,7 +840,7 @@ void build_home(Page *page) {
     new SettingsLink(page->left() + int(i % 2) * (width + gap), y + int(i / 2) * S(112), width,
                      _(links[i].title), _(links[i].hint), {links[i].icon, "preferences-system"},
                      links[i].id);
-  page->advance(S(448));
+  page->advance(int((sizeof(links) / sizeof(links[0]) + 1) / 2) * S(112));
   page->note(_("Changes are saved automatically."));
   page->finish();
 }
@@ -693,10 +960,8 @@ void build_appearance(Page *page) {
   });
   page->end_card();
 
+  g_wallpaper_anchor = page->cursor() - page->y();
   page->begin_card(_("Wallpaper"));
-  auto *grid =
-      new WallpaperGrid(page->left() + S(20), page->cursor(), page->width() - S(40), S(80));
-  page->advance(grid->h() + S(8));
   std::string cm = g_cfg.get("appearance", "wallpaper_mode", "zoom");
   static const char *modes[] = {"zoom", "fit", "stretch", "center", "tile"};
   int mode_i = 0;
@@ -707,20 +972,37 @@ void build_appearance(Page *page) {
                      if (v >= 0 && v < 5) g_cfg.set("appearance", "wallpaper_mode", modes[v]);
                      apply_change();
                    });
-  page->row(_("Your own picture"), S(160), S(34), [grid](int x, int y, int w, int h) {
+  page->row(_("Your own picture"), S(160), S(34), [](int x, int y, int w, int h) {
     auto *b = new FlatButton(x, y, w, h, _("Browse..."));
-    b->callback(
-        [](Fl_Widget *, void *d) {
-          const char *f = fl_file_chooser(_("Choose a wallpaper"), "Images (*.{png,jpg,jpeg,svg})",
-                                          (home_dir() + "/Pictures").c_str());
-          if (!f) return;
-          static_cast<WallpaperGrid *>(d)->add(f);
-          g_cfg.set("appearance", "wallpaper", f);
-          apply_change();
-        },
-        grid);
+    b->callback([](Fl_Widget *, void *) {
+      static std::string filter;
+      filter = "Images (*.{png,jpg,jpeg,svg";
+      for (auto &e : gallery::extra_formats()) filter += "," + e;
+      filter += "})";
+      const char *f = fl_file_chooser(_("Choose a wallpaper"), filter.c_str(),
+                                      (home_dir() + "/Pictures").c_str());
+      if (!f) return;
+      g_cfg.set("appearance", "wallpaper", f);
+      apply_change();
+      Fl::add_timeout(0, [](void *) { refresh_page(); });
+    });
     return b;
   });
+  page->advance(S(6));
+  start_wallpaper_scan();
+  auto *grid = new WallpaperGrid(page->left() + S(20), page->cursor(), page->width() - S(40));
+  page->advance(grid->h() + S(12));
+  bool scanned;
+  {
+    std::lock_guard<std::mutex> lock(wallpaper_scan().mu);
+    scanned = wallpaper_scan().done;
+  }
+  if (!scanned)
+    page->note(_("Looking for wallpapers..."));
+  else
+    page->note(format(_("%d wallpapers from /usr/share/backgrounds, desktop-base themes and "
+                        "~/Pictures/Wallpapers. Click one to use it."),
+                      grid->count() - 1));
   page->end_card();
   page->finish();
 }
@@ -1036,6 +1318,10 @@ void build_desktop(Page *page) {
   page->begin_card(_("Desktop icons"));
   page->switch_row(_("Files in the Desktop folder"), g_cfg.get_bool("desktop", "show_icons", true),
                    [](bool on) { set_bool("desktop", "show_icons", on); });
+  page->switch_row(
+      _("Computer"), g_cfg.get_bool("desktop", "show_computer", false),
+      [](bool on) { set_bool("desktop", "show_computer", on); },
+      _("Drives, devices and network places in the file manager."));
   page->switch_row(_("Home"), g_cfg.get_bool("desktop", "show_home", true),
                    [](bool on) { set_bool("desktop", "show_home", on); });
   page->switch_row(_("Trash"), g_cfg.get_bool("desktop", "show_trash", false),
@@ -1158,6 +1444,399 @@ void build_suite(Page *page) {
   page->finish();
 }
 
+// ------------------------------------------- sound, network and bluetooth
+//
+// These pages read their state with pactl, nmcli and bluetoothctl in the
+// background (never blocking the window) and rebuild once it arrives. The
+// panel's status flyouts open them with "sde-settings --page NAME".
+
+// Runs the |steps| one after another, then rebuilds |page_id| when shown.
+struct Loader {
+  bool loading = false, loaded = false;
+};
+
+void refresh_if(const char *page_id) {
+  if (g_restart_page == page_id) Fl::add_timeout(0, [](void *) { refresh_page(); });
+}
+
+struct SoundState : Loader {
+  std::vector<AudioDevice> sinks, sources;
+  std::string sink, source;
+  int volume = -1, mic_volume = -1;
+  bool muted = false, mic_muted = false;
+};
+SoundState g_sound;
+
+void load_sound() {
+  if (g_sound.loading) return;
+  g_sound.loading = true;
+  auto *st = new SoundState;
+  auto step = std::make_shared<int>(0);
+  // A chain of pactl calls; each callback starts the next.
+  struct Call {
+    std::vector<std::string> argv;
+    std::function<void(const std::string &)> take;
+  };
+  auto calls = std::make_shared<std::vector<Call>>(std::vector<Call>{
+      {{"pactl", "list", "sinks"}, [st](const std::string &o) { st->sinks = parse_pactl_devices(o); }},
+      {{"pactl", "list", "sources"},
+       [st](const std::string &o) { st->sources = parse_pactl_devices(o); }},
+      {{"pactl", "get-default-sink"}, [st](const std::string &o) { st->sink = trim(o); }},
+      {{"pactl", "get-default-source"}, [st](const std::string &o) { st->source = trim(o); }},
+      {{"pactl", "get-sink-volume", "@DEFAULT_SINK@"},
+       [st](const std::string &o) { st->volume = first_percent(o); }},
+      {{"pactl", "get-sink-mute", "@DEFAULT_SINK@"},
+       [st](const std::string &o) { st->muted = parse_pactl_mute(o); }},
+      {{"pactl", "get-source-volume", "@DEFAULT_SOURCE@"},
+       [st](const std::string &o) { st->mic_volume = first_percent(o); }},
+      {{"pactl", "get-source-mute", "@DEFAULT_SOURCE@"},
+       [st](const std::string &o) { st->mic_muted = parse_pactl_mute(o); }},
+  });
+  auto next = std::make_shared<std::function<void()>>();
+  *next = [st, step, calls, next] {
+    if (*step >= int(calls->size())) {
+      g_sound = *st;
+      g_sound.loaded = true;
+      g_sound.loading = false;
+      delete st;
+      *next = nullptr;  // breaks the reference cycle
+      refresh_if("sound");
+      return;
+    }
+    Call &c = (*calls)[size_t(*step)];
+    ++*step;
+    auto take = c.take;
+    auto again = next;
+    if (!run_async(with_timeout(c.argv), [take, again](const std::string &out, int status) {
+          if (status == 0) take(out);
+          if (*again) (*again)();
+        }))
+      (*next)();
+  };
+  (*next)();
+}
+
+void pactl_then_reload(std::vector<std::string> argv) {
+  run_async(with_timeout(std::move(argv)), [](const std::string &, int) { load_sound(); });
+}
+
+void build_sound(Page *page) {
+  page->heading(_("Sound"), _("Speakers, headphones and microphones"));
+  if (find_program("pactl").empty()) {
+    page->note(_("Sound settings need pactl (package pulseaudio-utils) and PipeWire or "
+                 "PulseAudio."));
+    page->finish();
+    return;
+  }
+  if (!g_refreshing || !g_sound.loaded) load_sound();
+  if (!g_sound.loaded) {
+    page->note(_("Reading sound devices..."));
+    page->finish();
+    return;
+  }
+  static std::vector<std::string> sink_names, source_names;
+  page->begin_card(_("Output"));
+  if (g_sound.sinks.empty()) {
+    page->note(_("No sound output was found. Is PipeWire or PulseAudio running?"));
+  } else {
+    std::vector<std::string> labels;
+    int cur = 0;
+    sink_names.clear();
+    for (size_t i = 0; i < g_sound.sinks.size(); ++i) {
+      labels.push_back(g_sound.sinks[i].description);
+      sink_names.push_back(g_sound.sinks[i].name);
+      if (g_sound.sinks[i].name == g_sound.sink) cur = int(i);
+    }
+    page->choice_row(_("Output device"), labels, cur, [](int v) {
+      if (v >= 0 && v < int(sink_names.size()))
+        pactl_then_reload({"pactl", "set-default-sink", sink_names[size_t(v)]});
+    });
+    page->slider_row(_("Volume"), 0, 150, std::max(0, g_sound.volume), [](double v) {
+      pactl_then_reload({"pactl", "set-sink-volume", "@DEFAULT_SINK@",
+                         std::to_string(int(std::lround(v))) + "%"});
+    }, _("Above 100% the sound is amplified and may distort."));
+    page->switch_row(_("Mute"), g_sound.muted, [](bool on) {
+      pactl_then_reload({"pactl", "set-sink-mute", "@DEFAULT_SINK@", on ? "1" : "0"});
+    });
+  }
+  page->end_card();
+  page->begin_card(_("Input"));
+  if (g_sound.sources.empty()) {
+    page->note(_("No microphone was found."));
+  } else {
+    std::vector<std::string> labels;
+    int cur = 0;
+    source_names.clear();
+    for (size_t i = 0; i < g_sound.sources.size(); ++i) {
+      labels.push_back(g_sound.sources[i].description);
+      source_names.push_back(g_sound.sources[i].name);
+      if (g_sound.sources[i].name == g_sound.source) cur = int(i);
+    }
+    page->choice_row(_("Input device"), labels, cur, [](int v) {
+      if (v >= 0 && v < int(source_names.size()))
+        pactl_then_reload({"pactl", "set-default-source", source_names[size_t(v)]});
+    });
+    page->slider_row(_("Input volume"), 0, 100, std::max(0, g_sound.mic_volume), [](double v) {
+      pactl_then_reload({"pactl", "set-source-volume", "@DEFAULT_SOURCE@",
+                         std::to_string(int(std::lround(v))) + "%"});
+    });
+    page->switch_row(_("Mute microphone"), g_sound.mic_muted, [](bool on) {
+      pactl_then_reload({"pactl", "set-source-mute", "@DEFAULT_SOURCE@", on ? "1" : "0"});
+    });
+  }
+  page->end_card();
+  if (!find_program("pavucontrol").empty())
+    page->row(_("Per-application volume and profiles"), S(160), S(34),
+              [](int x, int y, int w, int h) {
+                return action_button(x, y, w, h, _("Volume Control"), {"pavucontrol"});
+              });
+  page->note(_("The sound icon on the panel also changes the volume and the output device."));
+  page->finish();
+}
+
+struct NetworkState : Loader {
+  std::vector<NetDevice> devices;
+  bool wifi = true, airplane = false;
+};
+NetworkState g_net;
+
+void load_network() {
+  if (g_net.loading) return;
+  g_net.loading = true;
+  run_async(with_timeout({"nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device",
+                          "status"}),
+            [](const std::string &out, int) {
+              auto devices = parse_nmcli_devices(out);
+              run_async(with_timeout({"nmcli", "radio", "all"}),
+                        [devices](const std::string &radio, int status) {
+                          g_net.devices = devices;
+                          // "WIFI-HW  WIFI     WWAN-HW  WWAN": second column.
+                          std::istringstream in(radio);
+                          std::string line, last;
+                          while (std::getline(in, line))
+                            if (!trim(line).empty()) last = line;
+                          std::istringstream f(last);
+                          std::string hw, wifi;
+                          f >> hw >> wifi;
+                          g_net.wifi = status != 0 || wifi != "disabled";
+                          g_net.loaded = true;
+                          g_net.loading = false;
+                          refresh_if("network");
+                        });
+            });
+}
+
+std::string net_type_label(const std::string &type) {
+  if (type == "wifi") return _("Wi-Fi");
+  if (type == "ethernet") return _("Wired");
+  if (type == "gsm" || type == "cdma") return _("Mobile broadband");
+  if (type == "bt") return _("Bluetooth");
+  if (type == "wireguard" || type == "vpn") return _("VPN");
+  return type;
+}
+
+void build_network(Page *page) {
+  page->heading(_("Network"), _("Wi-Fi, wired and mobile connections"));
+  if (find_program("nmcli").empty()) {
+    page->note(_("Network settings need NetworkManager (package network-manager)."));
+    page->finish();
+    return;
+  }
+  if (!g_refreshing || !g_net.loaded) load_network();
+  if (!g_net.loaded) {
+    page->note(_("Reading network devices..."));
+    page->finish();
+    return;
+  }
+  page->begin_card(_("Wireless"));
+  page->switch_row(
+      _("Wi-Fi"), g_net.wifi,
+      [](bool on) {
+        run_async(with_timeout({"nmcli", "radio", "wifi", on ? "on" : "off"}),
+                  [](const std::string &, int) { load_network(); });
+      },
+      _("Choose a Wi-Fi network from the network icon on the panel."));
+  page->row(_("Wi-Fi networks"), S(160), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, _("Show Networks"), {"sde-panel", "--section", "network"},
+                         true);
+  });
+  page->end_card();
+  page->begin_card(_("Devices"));
+  if (g_net.devices.empty()) page->note(_("No network devices were found."));
+  for (auto &d : g_net.devices) {
+    bool connected = starts_with(d.state, "connected");
+    std::string state = connected && !d.connection.empty()
+                            ? format(_("Connected to %s"), d.connection.c_str())
+                        : connected                     ? std::string(_("Connected"))
+                        : d.state == "unavailable"      ? std::string(_("Cable unplugged or off"))
+                        : d.state == "unmanaged"        ? std::string(_("Not managed"))
+                                                        : std::string(_("Disconnected"));
+    std::string device = d.device;
+    page->row(net_type_label(d.type) + "  ·  " + d.device, S(120), S(34),
+              [connected, device, &d](int x, int y, int w, int h) {
+                auto *b = new FlatButton(x, y, w, h, connected ? _("Disconnect") : _("Connect"));
+                b->callback(
+                    [](Fl_Widget *, void *p) {
+                      auto *a = static_cast<std::pair<std::string, bool> *>(p);
+                      run_async(with_timeout({"nmcli", "device", a->second ? "disconnect" : "connect",
+                                              a->first}, 30),
+                                [](const std::string &, int) { load_network(); });
+                    },
+                    keep(new std::pair<std::string, bool>(device, connected)));
+                if (d.state == "unavailable" || d.state == "unmanaged") b->deactivate();
+                return b;
+              },
+              state);
+  }
+  page->end_card();
+  if (!find_program("nm-connection-editor").empty())
+    page->row(_("VPN, proxies and advanced settings"), S(160), S(34),
+              [](int x, int y, int w, int h) {
+                return action_button(x, y, w, h, _("Connections"), {"nm-connection-editor"});
+              });
+  page->finish();
+}
+
+struct BluetoothState : Loader {
+  bool available = false, powered = false;
+  std::string name;
+  std::vector<BtDevice> devices;
+};
+BluetoothState g_bt;
+
+void load_bluetooth() {
+  if (g_bt.loading) return;
+  g_bt.loading = true;
+  run_async(with_timeout({"bluetoothctl", "show"}), [](const std::string &show, int status) {
+    auto *st = new BluetoothState;
+    st->available = status == 0 && !bluetoothctl_field(show, "Powered").empty();
+    st->powered = bluetoothctl_field(show, "Powered") == "yes";
+    st->name = bluetoothctl_field(show, "Alias");
+    if (st->name.empty()) st->name = bluetoothctl_field(show, "Name");
+    auto finish = [st] {
+      g_bt = *st;
+      g_bt.loaded = true;
+      g_bt.loading = false;
+      delete st;
+      refresh_if("bluetooth");
+    };
+    if (!st->available) return finish();
+    run_async(with_timeout({"bluetoothctl", "devices", "Paired"}),
+              [st, finish](const std::string &paired, int) {
+                st->devices = parse_bluetoothctl_devices(paired);
+                run_async(with_timeout({"bluetoothctl", "devices", "Connected"}),
+                          [st, finish](const std::string &conn, int) {
+                            for (auto &c : parse_bluetoothctl_devices(conn))
+                              for (auto &d : st->devices)
+                                if (d.address == c.address) d.connected = true;
+                            finish();
+                          });
+              });
+  });
+}
+
+void build_bluetooth(Page *page) {
+  page->heading(_("Bluetooth"), _("Headphones, speakers, mice, keyboards and phones"));
+  if (find_program("bluetoothctl").empty()) {
+    page->note(_("Bluetooth settings need BlueZ (package bluez)."));
+    page->finish();
+    return;
+  }
+  if (!g_refreshing || !g_bt.loaded) load_bluetooth();
+  if (!g_bt.loaded) {
+    page->note(_("Looking for the Bluetooth adapter..."));
+    page->finish();
+    return;
+  }
+  if (!g_bt.available) {
+    page->begin_card(_("Adapter"));
+    page->note(_("No Bluetooth adapter was found, or the Bluetooth service is not running."));
+    page->end_card();
+    page->finish();
+    return;
+  }
+  page->begin_card(_("Adapter"));
+  page->switch_row(
+      _("Bluetooth"), g_bt.powered,
+      [](bool on) {
+        run_async(with_timeout({"bluetoothctl", "power", on ? "on" : "off"}),
+                  [](const std::string &, int) { load_bluetooth(); });
+      },
+      g_bt.name.empty() ? std::string() : format(_("Visible to other devices as \"%s\" while "
+                                                  "pairing."),
+                                                g_bt.name.c_str()));
+  page->row(_("Add a device"), S(160), S(34), [](int x, int y, int w, int h) {
+    if (!find_program("blueman-manager").empty())
+      return action_button(x, y, w, h, _("Add Device..."), {"blueman-manager"}, true);
+    return action_button(x, y, w, h, _("Add Device..."), {"sde-panel", "--section", "bluetooth"},
+                         true);
+  });
+  page->end_card();
+  page->begin_card(_("Paired devices"));
+  if (g_bt.devices.empty()) page->note(_("No devices are paired yet."));
+  for (auto &d : g_bt.devices) {
+    std::string addr = d.address;
+    bool connected = d.connected;
+    page->row(d.name, S(120), S(34),
+              [addr, connected](int x, int y, int w, int h) {
+                auto *b = new FlatButton(x, y, w, h, connected ? _("Disconnect") : _("Connect"));
+                b->callback(
+                    [](Fl_Widget *, void *p) {
+                      auto *a = static_cast<std::pair<std::string, bool> *>(p);
+                      run_async(with_timeout({"bluetoothctl", a->second ? "disconnect" : "connect",
+                                              a->first}, 20),
+                                [](const std::string &, int) { load_bluetooth(); });
+                    },
+                    keep(new std::pair<std::string, bool>(addr, connected)));
+                if (!g_bt.powered) b->deactivate();
+                return b;
+              },
+              connected ? std::string(_("Connected")) + "  ·  " + addr : addr);
+  }
+  page->end_card();
+  page->finish();
+}
+
+struct PowerState : Loader {
+  std::vector<std::string> profiles;
+  std::string current;
+};
+PowerState g_power;
+
+void load_power_profiles() {
+  if (g_power.loading || find_program("powerprofilesctl").empty()) return;
+  g_power.loading = true;
+  run_async(with_timeout({"powerprofilesctl", "list"}), [](const std::string &out, int status) {
+    g_power.profiles.clear();
+    g_power.current.clear();
+    std::istringstream in(out);
+    std::string line;
+    while (std::getline(in, line)) {
+      // "* balanced:" marks the active profile.
+      std::string t = trim(line);
+      if (t.empty() || t.back() != ':' || t.find(' ') != std::string::npos &&
+                                              !starts_with(t, "* "))
+        continue;
+      bool active = starts_with(t, "* ");
+      std::string name = trim(t.substr(active ? 2 : 0, t.size() - (active ? 3 : 1)));
+      if (name.empty()) continue;
+      g_power.profiles.push_back(name);
+      if (active) g_power.current = name;
+    }
+    if (status != 0) g_power.profiles.clear();
+    g_power.loaded = true;
+    g_power.loading = false;
+    refresh_if("system");
+  });
+}
+
+std::string profile_label(const std::string &p) {
+  if (p == "power-saver") return _("Power saver");
+  if (p == "balanced") return _("Balanced");
+  if (p == "performance") return _("Performance");
+  return p;
+}
+
 void build_suite_system(Page *page) {
   page->heading(_("Power & Updates"), _("System tools included with SDE"));
   const std::vector<std::pair<std::string, std::vector<std::string>>> tools = {
@@ -1167,6 +1846,25 @@ void build_suite_system(Page *page) {
       {_("System Updates"), {"sde-update"}},
       {_("Screen Lock Preferences"), {"sde-screensaver-preferences"}},
   };
+  if (!g_refreshing || !g_power.loaded) load_power_profiles();
+  if (g_power.loaded && !g_power.profiles.empty()) {
+    page->begin_card(_("Power mode"));
+    std::vector<std::string> labels;
+    int cur = 0;
+    for (size_t i = 0; i < g_power.profiles.size(); ++i) {
+      labels.push_back(profile_label(g_power.profiles[i]));
+      if (g_power.profiles[i] == g_power.current) cur = int(i);
+    }
+    page->choice_row(
+        _("Power mode"), labels, cur,
+        [](int v) {
+          if (v < 0 || v >= int(g_power.profiles.size())) return;
+          run_async(with_timeout({"powerprofilesctl", "set", g_power.profiles[size_t(v)]}),
+                    [](const std::string &, int) { load_power_profiles(); });
+        },
+        _("Power saver makes the battery last longer; Performance is faster but uses more power."));
+    page->end_card();
+  }
   page->begin_card(_("System"));
   for (auto &tool : tools) {
     page->row(tool.first, S(112), S(34), [&tool](int x, int y, int w, int h) {
@@ -1188,6 +1886,45 @@ void build_suite_system(Page *page) {
     return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});
   });
   page->finish();
+}
+
+// A "key: value" line of the About page; |detail| is a dim second line.
+void info_row(Page *page, const std::string &key, const std::string &value,
+              const std::string &detail = "") {
+  int ry = page->cursor(), x = page->left() + S(20), w = page->width() - S(40);
+  int kw = std::min(S(190), w / 3), vw = w - kw - S(10);
+  int vh = std::max(S(30), Label::measure(value, vw, Label::NORMAL) + S(6));
+  new Label(x, ry, kw, S(30), key, Label::DIM);
+  new Label(x + kw + S(10), ry, vw, vh, value, Label::NORMAL, true);
+  page->advance(vh);
+  if (!detail.empty()) {
+    int dh = Label::measure(detail, vw, Label::DIM) + S(4);
+    new Label(x + kw + S(10), page->cursor() - S(4), vw, dh, detail, Label::DIM, true);
+    page->advance(dh);
+  }
+}
+
+// OpenGL renderer from "glxinfo -B" (or "eglinfo -B"), asked once per run
+// in the background with a time limit. 0 unknown, 1 running, 2 known.
+int g_gl_state = 0;
+std::string g_gl_renderer;
+void start_gl_query() {
+  static bool started = false;
+  if (started) return;
+  started = true;
+  std::vector<std::string> argv;
+  if (!find_program("glxinfo").empty())
+    argv = {"glxinfo", "-B"};
+  else if (!find_program("eglinfo").empty())
+    argv = {"eglinfo", "-B"};
+  if (argv.empty()) return;
+  g_gl_state = 1;
+  bool ok = run_async(with_timeout(argv, 5), [](const std::string &out, int) {
+    g_gl_renderer = parse_gl_renderer(out);
+    g_gl_state = g_gl_renderer.empty() ? 0 : 2;
+    if (g_restart_page == "about") refresh_page();
+  });
+  if (!ok) g_gl_state = 0;
 }
 
 void build_about(Page *page) {
@@ -1221,13 +1958,37 @@ void build_about(Page *page) {
       {_("Toolkit"), "FLTK " SDE_FLTK_VERSION},
   };
   page->begin_card(_("System"));
-  for (auto &r : rows) {
-    int ry = page->cursor(), x = page->left() + S(20), w = page->width() - S(40);
-    int kw = std::min(S(190), w / 3);
-    new Label(x, ry, kw, S(30), r.first, Label::DIM);
-    new Label(x + kw + S(10), ry, w - kw - S(10), S(30), r.second, Label::NORMAL);
-    page->advance(S(30));
+  for (auto &r : rows) info_row(page, r.first, r.second);
+  page->end_card();
+
+  // Graphics: every display controller (hybrid laptops have two), its
+  // kernel driver and the OpenGL renderer actually used for drawing.
+  static bool gpus_read = false;
+  static std::vector<Gpu> gpus;
+  if (!gpus_read) {
+    gpus = detect_gpus();
+    gpus_read = true;
   }
+  start_gl_query();
+  page->begin_card(_("Graphics"));
+  int in_use = g_gl_state == 2 ? renderer_gpu(gpus, g_gl_renderer) : -1;
+  if (gpus.empty()) info_row(page, _("Graphics card"), _("No PCI graphics card found"));
+  for (size_t i = 0; i < gpus.size(); ++i) {
+    const Gpu &g = gpus[i];
+    std::string key = gpus.size() > 1 ? format(_("Graphics card %d"), int(i) + 1)
+                                      : std::string(_("Graphics card"));
+    std::string detail = g.driver.empty() ? std::string(_("No driver in use"))
+                                          : format(_("Driver: %s"), g.driver.c_str());
+    if (g.boot_vga && gpus.size() > 1) detail += std::string("  ·  ") + _("Primary");
+    if (int(i) == in_use) detail += std::string("  ·  ") + _("Drawing the desktop");
+    detail += "  ·  " + format("PCI %s [%s:%s]", g.slot.c_str(), g.vendor_id.c_str(),
+                               g.device_id.c_str());
+    info_row(page, key, gpu_label(g), detail);
+  }
+  std::string gl = g_gl_state == 2   ? g_gl_renderer
+                   : g_gl_state == 1 ? std::string(_("Checking..."))
+                                     : std::string(_("Unknown (install mesa-utils for glxinfo)"));
+  info_row(page, _("OpenGL renderer"), gl);
   page->end_card();
   page->note(_("Free software under the GNU General Public License, version 3 or later."));
   page->note(_("Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors."));
@@ -1263,6 +2024,9 @@ const std::vector<PageInfo> &pages() {
        N_("Keyboard & Mouse"),
        {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
        build_input_page},
+      {"sound", N_("Sound"), {"preferences-desktop-sound", "audio-volume-high"}, build_sound},
+      {"network", N_("Network"), {"preferences-system-network", "network-wireless"}, build_network},
+      {"bluetooth", N_("Bluetooth"), {"bluetooth", "preferences-bluetooth"}, build_bluetooth},
       {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite},
       {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
       {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
@@ -1423,7 +2187,9 @@ void show_page(int index) {
 
 void refresh_page() {
   int scroll = g_page ? g_page->yposition() : 0;
+  g_refreshing = true;
   show_page(g_page_index);
+  g_refreshing = false;
   if (g_page && scroll > 0) g_page->scroll_to(0, scroll);
 }
 
@@ -1431,29 +2197,93 @@ void refresh_page() {
 
 using namespace sde;
 
+namespace {
+
+// Other names accepted by --page (the panel's flyout names and common
+// words), mapped to page ids. "wallpaper" also scrolls to the Wallpaper card.
+const std::pair<const char *, const char *> kPageAliases[] = {
+    {"overview", "home"},      {"wallpaper", "appearance"}, {"wallpapers", "appearance"},
+    {"theme", "appearance"},   {"background", "appearance"}, {"icons", "desktop"},
+    {"displays", "display"},   {"screen", "display"},       {"monitor", "display"},
+    {"keyboard", "input"},     {"mouse", "input"},          {"touchpad", "input"},
+    {"audio", "sound"},        {"volume", "sound"},         {"media", "sound"},
+    {"microphone", "sound"},   {"wifi", "network"},         {"wi-fi", "network"},
+    {"ethernet", "network"},   {"vpn", "network"},          {"power", "system"},
+    {"battery", "system"},     {"updates", "system"},       {"applications", "suite"},
+    {"apps", "suite"},         {"quick", "action-center"},  {"animations", "effects"},
+    {"compositor", "effects"}, {"info", "about"},           {"graphics", "about"},
+};
+
+// Page id for |name| (an id or an alias, any case), or "".
+std::string resolve_page(std::string name) {
+  name = lower(trim(name));
+  for (auto &p : pages())
+    if (name == p.id) return p.id;
+  for (auto &a : kPageAliases)
+    if (name == a.first) return a.second;
+  return "";
+}
+
+std::string usage() {
+  std::string ids, aliases;
+  for (auto &p : pages()) ids += std::string(ids.empty() ? "" : ", ") + p.id;
+  for (auto &a : kPageAliases) aliases += std::string(aliases.empty() ? "" : ", ") + a.first;
+  auto wrap = [](const std::string &text) {
+    std::string out, line;
+    for (auto &word : split(text, ' ')) {
+      if (line.size() + word.size() + 1 > 62) {
+        out += "               " + line + "\n";
+        line.clear();
+      }
+      line += (line.empty() ? "" : " ") + word;
+    }
+    if (!line.empty()) out += "               " + line + "\n";
+    return out;
+  };
+  return std::string(_("Usage: sde-settings [--page NAME] [--list-pages] [--apply] [--version]\n\n"
+                       "  --page NAME  open a page directly (also --page=NAME). Pages:\n")) +
+         wrap(ids) + _("               Also accepted:\n") + wrap(aliases) +
+         _("  --list-pages print the page names, one per line\n"
+           "  --apply      apply the saved display, keyboard and mouse settings and exit\n"
+           "  --version    print the version and exit\n");
+}
+
+}  // namespace
+
 int main(int argc, char **argv) {
   init_i18n();
   install_crash_handler("sde-settings");
   g_argv0 = argv[0];
-  std::string page = "home";
+  std::string page = "home", requested;
   bool apply = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--page" && i + 1 < argc) {
-      page = argv[++i];
+      requested = argv[++i];
+    } else if (starts_with(a, "--page=")) {
+      requested = a.substr(7);
+    } else if (a == "--list-pages") {
+      for (auto &p : pages()) printf("%s\n", p.id);
+      return 0;
     } else if (a == "--apply") {
       apply = true;
     } else if (a == "--version") {
       printf("sde-settings %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("%s",
-             _("Usage: sde-settings [--page NAME] [--apply] [--version]\n\n"
-               "  --page NAME  open a page: home, appearance, panel, desktop, action-center,\n"
-               "               notifications, display, input, suite, system or about\n"
-               "  --apply      apply the saved display, keyboard and mouse settings and exit\n"));
-      return a == "--help" ? 0 : 2;
+      printf("%s", usage().c_str());
+      return a == "--help" || a == "-h" ? 0 : 2;
     }
+  }
+  bool to_wallpaper = false;
+  if (!requested.empty()) {
+    std::string id = resolve_page(requested);
+    if (id.empty())
+      fprintf(stderr, "sde-settings: unknown page \"%s\" (see --list-pages)\n", requested.c_str());
+    else
+      page = id;
+    std::string r = lower(requested);
+    to_wallpaper = r == "wallpaper" || r == "wallpapers" || r == "background";
   }
   g_cfg.load();
   if (apply) {
@@ -1493,9 +2323,14 @@ int main(int argc, char **argv) {
   int index = 0;
   for (size_t i = 0; i < pages().size(); ++i)
     if (page == pages()[i].id) index = int(i);
+  // Worker threads (thumbnails, wallpaper scan) wake the loop with Fl::awake().
+  Fl::lock();
   show_page(index);
+  if (to_wallpaper && g_page) g_page->scroll_to(0, std::max(0, g_wallpaper_anchor - S(8)));
   win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
   start_display_watch();
   win->show();
-  return Fl::run();
+  int status = Fl::run();
+  g_thumbnailer.reset();  // joins the decoding threads
+  return status;
 }
