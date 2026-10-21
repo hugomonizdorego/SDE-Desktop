@@ -181,12 +181,12 @@ DocView::DocView(XanaraWindow *app, int x, int y, int w, int h) : Fl_Widget(x, y
   cache_.reset(new TileCache(kDefaultCacheBytes));
   live_views().insert(this);
   for (int k = 0; k < kToolCount; ++k) {
-    tool_ink_[k] = Rgb{0.85, 0.18, 0.2};
+    tool_ink_[k] = Rgb{0.88, 0.19, 0.19};
     opacity_[k] = 1.0;
   }
   tool_ink_[tool_index(Tool::Squiggly)] = Rgb{0.95, 0.55, 0.1};
   tool_ink_[tool_index(Tool::Ellipse)] = Rgb{0.11, 0.49, 0.84};
-  tool_ink_[tool_index(Tool::Arrow)] = Rgb{0.85, 0.18, 0.2};
+  tool_ink_[tool_index(Tool::Arrow)] = Rgb{0.88, 0.19, 0.19};
   tool_ink_[tool_index(Tool::Measure)] = Rgb{0.11, 0.49, 0.84};
   tool_ink_[tool_index(Tool::Stamp)] = Rgb{0.18, 0.62, 0.27};
   for (Tool t : {Tool::FillText, Tool::FillCheck, Tool::FillCross, Tool::FillDot, Tool::FillDate, Tool::FillInitials})
@@ -1947,6 +1947,15 @@ int DocView::handle(int event) {
       return 1;
     }
     case FL_RELEASE:
+      // The release point ends a shape even when no drag event came first.
+      if (drag_ == Drag::Shape && drag_page_ >= 0) {
+        double cx = mx - x() + std::round(sx_), cy = my - y() + std::round(sy_);
+        const Slot &s = slots_[size_t(drag_page_)];
+        double dx = std::clamp(cx - s.x, 0.0, double(s.w)), dy = std::clamp(cy - s.y, 0.0, double(s.h));
+        double px, py;
+        device_to_page(doc_->width(drag_page_), doc_->height(drag_page_), params(), dx, dy, px, py);
+        drag_p1_ = Point{px, py};
+      }
       finish_drag(mx, my);
       update_cursor(mx, my);
       return 1;
