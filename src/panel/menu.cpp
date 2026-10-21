@@ -72,6 +72,16 @@ std::string category_label(const std::string &cat) {
   return _("Other");
 }
 
+// Menu item text: "&" would mark a shortcut letter.
+std::string menu_text(const std::string &s) {
+  std::string out;
+  for (char c : s) {
+    out += c;
+    if (c == '&') out += '&';
+  }
+  return out;
+}
+
 std::string size_label(TileSize s) {
   switch (s) {
     case TileSize::Small: return _("Small");
@@ -764,7 +774,7 @@ void AppMenu::rail_action(int index) {
       redraw();
       return;
     case 1: {
-      std::string name = full_name_.empty() ? std::string(_("Account")) : full_name_;
+      std::string name = menu_text(full_name_.empty() ? std::string(_("Account")) : full_name_);
       Fl_Menu_Item items[] = {
           {name.c_str(), 0, nullptr, nullptr, FL_MENU_INACTIVE | FL_MENU_DIVIDER, 0, 0, 0, 0},
           {_("Account and system information"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
@@ -820,7 +830,7 @@ void AppMenu::filter_menu() {
   for (auto &c : categories_) {
     int n = 0;
     for (auto *a : sorted_) n += a->menu_category() == c;
-    labels.push_back(format("%s (%d)", category_label(c).c_str(), n));
+    labels.push_back(format("%s (%d)", menu_text(category_label(c)).c_str(), n));
   }
   std::vector<Fl_Menu_Item> items;
   for (size_t i = 0; i < labels.size(); ++i)
@@ -866,7 +876,8 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   add(_("Move to Group"), 0, FL_SUBMENU);
   for (size_t i = 0; i < groups_.size(); ++i) {
     if (int(i) == it.group) continue;
-    texts.push_back(groups_[i].name.empty() ? std::string(_("Unnamed group")) : groups_[i].name);
+    texts.push_back(groups_[i].name.empty() ? std::string(_("Unnamed group"))
+                                            : menu_text(groups_[i].name));
     add(texts.back().c_str(), GROUP0 + long(i));
   }
   add(_("New Group"), NEW_GROUP);
@@ -1801,7 +1812,11 @@ void AppMenu::draw() {
     }
   }
 
-  // Text on top of the cairo layer.
+  // Text on top of the cairo layer; the expanded rail covers the list.
+  int rail_right = rail_w_;
+  for (auto &it : items_)
+    if (it.kind == K_RAIL) rail_right = std::max(rail_right, it.x + it.w);
+  if (rail_open_) fl_push_clip(rail_right, 0, W - rail_right, H);
   for (auto &it : items_) {
     if (!it.visible || it.kind == K_RAIL) continue;
     bool clipped = it.clipped();
@@ -1859,6 +1874,7 @@ void AppMenu::draw() {
     if (clipped) fl_pop_clip();
   }
   if (rail_open_) {
+    fl_pop_clip();
     for (auto &it : items_) {
       if (it.kind != K_RAIL) continue;
       text_font(t.font_size, it.index == 0);

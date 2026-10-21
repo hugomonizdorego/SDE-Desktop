@@ -531,7 +531,9 @@ void SearchFlyout::build() {
   const DesktopEntry *e = selected_entry();
   if (!e) e = results_.front();
   int px = pad + lw + S(8), pw = area - lw - S(8);
-  int ay = list_top_ + S(150);
+  // Short screens: a smaller icon so that every action fits.
+  bool small = list_bottom_ - list_top_ < S(330);
+  int ay = list_top_ + (small ? S(110) : S(150));
   std::vector<std::pair<int, std::string>> actions = {{0, _("Open")}};
   if (is_file(e)) actions.push_back({1, _("Open file location")});
   if (is_app(e)) {
@@ -916,11 +918,12 @@ void SearchFlyout::draw() {
       cairo_restore(p.cr());
     }
     if (preview && shown) {
-      int px = pad + lw + S(8), pw = area - lw - S(8), is = S(64);
+      bool small = list_bottom_ - list_top_ < S(330);
+      int px = pad + lw + S(8), pw = area - lw - S(8), is = small ? S(40) : S(64);
+      int ly = list_top_ + (small ? S(100) : S(140));
       p.image(IconLoader::get({shown->icon, "application-x-executable"}, is), px + (pw - is) / 2.0,
-              list_top_ + S(18), is);
-      p.line(px + S(16), list_top_ + S(140) + 0.5, px + pw - S(16), list_top_ + S(140) + 0.5,
-             t.border);
+              list_top_ + (small ? S(10) : S(18)), is);
+      p.line(px + S(16), ly + 0.5, px + pw - S(16), ly + 0.5, t.border);
     }
     // Scrollbar of the results.
     int view_h = list_bottom_ - list_top_;
@@ -1001,13 +1004,14 @@ void SearchFlyout::draw() {
   }
   if (preview && shown) {
     int px = pad + lw + S(8), pw = area - lw - S(8);
+    int off = list_bottom_ - list_top_ < S(330) ? S(40) : 0;
     text_font(t.font_size + 2, true);
-    draw_text(shown->name, px + S(8), list_top_ + S(88), pw - S(16), S(26), t.text, 1);
+    draw_text(shown->name, px + S(8), list_top_ + S(88) - off, pw - S(16), S(26), t.text, 1);
     std::string kind = is_file(shown) ? (shown->icon == "folder" ? _("Folder") : _("File"))
                        : is_extra(shown) ? shown->generic_name
                                          : _("App");
     text_font(t.font_size - 1);
-    draw_text(is_file(shown) ? shown->path : kind, px + S(8), list_top_ + S(112), pw - S(16), S(20),
+    draw_text(is_file(shown) ? shown->path : kind, px + S(8), list_top_ + S(112) - off, pw - S(16), S(20),
               t.text_dim, 1);
   }
   if (qa_dump_enabled()) qa_dump_search();
