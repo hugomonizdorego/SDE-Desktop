@@ -79,5 +79,55 @@ const char *build = PACKAGE_VERSION;
                          '"org.debion.Taca" "org.debion.SystemMonitor" "org.debion.media-handling"')
 
 
+class LiriaAlpha15Test(unittest.TestCase):
+    """Liria copy engine, safe removal, clipboard and recent files."""
+
+    def setUp(self):
+        import sys
+        self.root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(self.root / 'suite'))
+        import redesign
+        self.redesign = redesign
+
+    def test_new_recipe_anchors_must_be_unique(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'x.c'
+            path.write_text('a;\na;\n')
+            with self.assertRaises(ValueError):
+                self.redesign.edit_once(path, 'a;', 'b;')
+            path.write_text('a;\n')
+            self.redesign.edit_once(path, 'a;', 'b;')
+            self.assertEqual(path.read_text(), 'b;\n')
+
+    def test_safe_copy_overlay_bounds_dirty_data_and_syncs(self):
+        source = (self.root / 'suite/overlays/liria/libliria-private/liria-sde-copy.c').read_text()
+        for needle in ('sync_file_range', 'syncfs', 'fdatasync', 'SYNC_FILE_RANGE_WAIT_AFTER',
+                       'G_IO_ERROR_EXISTS', 'G_IO_ERROR_INVALID_FILENAME', '"/usb"'):
+            self.assertIn(needle, source)
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        for name in ('liria_copy_engine', 'liria_safe_remove', 'liria_clipboard'):
+            self.assertIn(name + '(staged)', recipe)
+
+    def test_fat_names_lose_pipe_and_backslash(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            ops = staged / 'libliria-private/liria-file-operations.c'
+            ops.parent.mkdir(parents=True)
+            ops.write_text('#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>"\n')
+            self.redesign.edit_once(ops, '#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>"',
+                                    '#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>|\\\\"')
+            self.assertEqual(ops.read_text(), '#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>|\\\\"\n')
+
+    def test_home_recent_files_can_be_cleared(self):
+        home = (self.root / 'suite/overlays/liria/sde-tools/liria-sde-home.c').read_text()
+        for needle in ('gtk_recent_manager_purge_items', 'gtk_recent_manager_remove_item',
+                       'Remove from Recent', 'sde-home-clear'):
+            self.assertIn(needle, home)
+        css = (self.root / 'data/themes/SDE-Common/gtk-3.0/apps.css').read_text()
+        self.assertIn('button.sde-home-clear', css)
+
+
 if __name__ == "__main__":
     unittest.main()
