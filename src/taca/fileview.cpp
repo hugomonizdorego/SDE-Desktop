@@ -182,10 +182,10 @@ std::vector<FileView::Column> FileView::columns_layout() const {
   } else {
     want.push_back({_("Size"), S(96), 2, SortKey::Size, 1});
     if (archive) {
-      want.push_back({_("Packed"), S(92), 2, SortKey::Packed, 4});
-      want.push_back({_("Ratio"), S(58), 2, SortKey::Ratio, 5});
+      want.push_back({_("Packed"), S(92), 2, SortKey::Packed, 3});
+      want.push_back({_("Ratio"), S(58), 2, SortKey::Ratio, 4});
     }
-    want.push_back({_("Type"), S(150), 0, SortKey::Type, 3});
+    want.push_back({_("Type"), S(150), 0, SortKey::Type, archive ? 5 : 3});
     want.push_back({_("Modified"), S(132), 0, SortKey::Modified, 2});
   }
   int avail = w() - S(12), min_name = S(170);

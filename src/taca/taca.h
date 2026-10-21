@@ -257,6 +257,20 @@ class Dialog : public sde::BufferedWindow {
   bool done_ = false;
 };
 
+// Shrinks the user interface scale while a dialog that would not fit on
+// the screen is open (a 600 pixel tall screen at 150 %), so every dialog
+// stays reachable. Construct it before the Dialog; it restores on exit.
+class FitScale {
+ public:
+  explicit FitScale(int logical_h, int logical_w = 0);
+  ~FitScale();
+
+ private:
+  double old_ = 0;
+  sde::Theme saved_;
+  bool active_ = false;
+};
+
 // Asks for a password. Returns false when cancelled.
 bool ask_password(Fl_Window *parent, const std::string &archive, bool wrong, std::string &out);
 // Message with up to three buttons; returns the button index (0 = first).

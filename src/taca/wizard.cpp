@@ -22,6 +22,7 @@ namespace taca {
 // ------------------------------------------------------------------- find
 
 bool ask_find(Fl_Window *parent, const std::string &where, FindChoice &c) {
+  FitScale fit(c.in_archive ? 262 : 342, 520);
   Dialog d(S(520), c.in_archive ? S(262) : S(342), _("Find Files"), format(_("Look in %s"), where.c_str()));
   int left = S(24), fw = d.w() - S(48);
   d.begin();
@@ -55,6 +56,7 @@ bool ask_find(Fl_Window *parent, const std::string &where, FindChoice &c) {
 // ----------------------------------------------------------------- repair
 
 bool ask_repair(Fl_Window *parent, const std::string &archive, const RepairPlan &plan, std::string &dest_dir) {
+  FitScale fit(360, 580);
   Dialog d(S(580), S(360), _("Repair Archive"), format(_("“%s”"), basename_of(archive).c_str()));
   int left = S(24), fw = d.w() - S(48);
   d.begin();
@@ -97,6 +99,7 @@ bool ask_repair(Fl_Window *parent, const std::string &archive, const RepairPlan 
 // ----------------------------------------------------------------- wizard
 
 int ask_wizard_action(Fl_Window *parent) {
+  FitScale fit(372, 560);
   Dialog d(S(560), S(372), _("Wizard"), _("What would you like to do?"));
   const Theme &t = d.theme();
   int choice = 0;
@@ -154,6 +157,7 @@ bool ask_convert(Fl_Window *parent, const std::string &archive, std::string &des
   auto formats = creatable_formats();
   std::vector<std::string> labels;
   for (Format f : formats) labels.push_back(format_info(f).label);
+  FitScale fit(420, 580);
   int w = S(580);
   Dialog d(w, S(420), _("Convert Archive"), format(_("Repack “%s” in another format"), basename_of(archive).c_str()));
   int left = S(24), fw = w - S(48);
@@ -224,8 +228,9 @@ bool ask_settings(Fl_Window *parent, Settings &s) {
   auto formats = creatable_formats();
   std::vector<std::string> labels;
   for (Format f : formats) labels.push_back(format_info(f).label);
+  FitScale fit(490, 600);
   int w = S(600);
-  Dialog d(w, S(560), _("Settings"), _("Defaults for new archives and how Taca looks"));
+  Dialog d(w, S(490), _("Settings"), _("Defaults for new archives and how Taca looks"));
   int left = S(24), fw = w - S(48);
   d.begin();
   d.label(left, S(80), fw, _("Default archive format"), true);
@@ -241,12 +246,12 @@ bool ask_settings(Fl_Window *parent, Settings &s) {
   level->step(1);
   level->value(s.level);
   y += S(70);
-  d.label(left, y, fw, _("View"), true);
-  auto *view = new Chips(left, y + S(26), fw, S(30), {_("Details"), _("Icons")});
+  int vw = S(190);
+  d.label(left, y, vw, _("View"), true);
+  auto *view = new Chips(left, y + S(26), vw, S(30), {_("Details"), _("Icons")});
   view->value(s.icons ? 1 : 0);
-  y += S(70);
-  d.label(left, y, fw, _("Appearance"), true);
-  auto *theme = new Chips(left, y + S(26), fw, S(30), {_("Follow the SDE theme"), _("Light"), _("Dark")});
+  d.label(left + vw + S(10), y, fw - vw - S(10), _("Appearance"), true);
+  auto *theme = new Chips(left + vw + S(10), y + S(26), fw - vw - S(10), S(30), {_("Follow SDE"), _("Light"), _("Dark")});
   theme->value(s.theme == "light" ? 1 : s.theme == "dark" ? 2 : 0);
   y += S(74);
   auto *hidden = new Switch(left, y, S(44), S(24));
@@ -292,6 +297,7 @@ void style_browser(Fl_Browser *b, const Theme &t) {
 }  // namespace
 
 bool organize_favorites(Fl_Window *parent, std::vector<std::string> &list) {
+  FitScale fit(440, 600);
   Dialog d(S(600), S(440), _("Organize Favorites"), _("Folders and archives you open often"));
   std::vector<std::string> work = list;
   d.begin();
@@ -398,8 +404,9 @@ void show_shortcuts(Fl_Window *parent) {
       {"Ctrl+O, Ctrl+N", "Open or create an archive"},
       {"Ctrl+W, Ctrl+Q", "Close the archive, quit"},
   };
+  FitScale fit(84 + int(rows.size()) * 22 + 90, 520);
   int h = S(84) + int(rows.size()) * S(22) + S(90);
-  Dialog d(S(520), std::min(h, Fl::h() - S(60)), _("Keyboard Shortcuts"));
+  Dialog d(S(520), h, _("Keyboard Shortcuts"));
   const Theme &t = d.theme();
   d.extra_text = [&]() {
     int y = S(64);
@@ -422,7 +429,9 @@ void show_shortcuts(Fl_Window *parent) {
 }
 
 void show_about(Fl_Window *parent) {
-  Dialog d(S(460), S(468), _("About Taca"));
+  FitScale fit(468, 460);
+  Dialog d(S(460), S(468), "");
+  d.copy_label(_("About Taca"));
   const Theme &t = d.theme();
   std::string version = format(_("Version %s"), SDE_APP_VERSION);
   std::string engines = std::string(archive_version_string());

@@ -110,7 +110,7 @@ TacaWindow::TacaWindow(int w, int h) : BufferedWindow(w, h, _("Taca")) {
   favorites_ = load_favorites(favorites_file());
   view_->set_grid(settings_.icons);
   resizable(nullptr);
-  size_range(S(560), S(380));
+  size_range(S(480), S(320));
   xclass("Taca");
   apply_theme();
   build_menu();
@@ -1685,8 +1685,9 @@ void TacaWindow::draw_status_text() {
   auto counts = [](size_t fo, size_t fi, int64_t b) {
     std::string s;
     if (fo) s += format(fo == 1 ? _("%zu folder") : _("%zu folders"), fo);
-    if (fo && (fi || b)) s += _(" and ");
+    if (fo && fi) s += _(" and ");
     if (fi || !fo) s += format(fi == 1 ? _("%s bytes in %zu file") : _("%s bytes in %zu files"), group_digits(b).c_str(), fi);
+    else if (b > 0) s += format(_(", %s bytes"), group_digits(b).c_str());
     return s;
   };
   std::string middle;
@@ -1800,6 +1801,11 @@ int TacaWindow::handle(int event) {
     if (mx >= bx + bw - S(30) && mx < bx + bw) return 2;
     return 0;
   };
+  if (event == FL_SHOW) {
+    int r = BufferedWindow::handle(event);
+    Fl::focus(view_);
+    return r;
+  }
   switch (event) {
     case FL_DND_ENTER:
     case FL_DND_DRAG:
