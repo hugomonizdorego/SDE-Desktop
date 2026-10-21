@@ -116,7 +116,7 @@ sde_set_symbolic (GtkUIManager *ui_manager, const char *name, const char *icon)
     GtkAction *action = sde_find_action (ui_manager, name);
 
     if (action != NULL)
-        g_object_set (action, "icon-name", icon, "gicon", NULL, NULL);
+        g_object_set (action, "icon-name", icon, NULL);
 }
 
 static GtkWidget *
@@ -410,7 +410,7 @@ sde_add_sidebar_items (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIMana
     sde_action_item (menu, ui_manager, "Show Hide Sidebar", _("Show _Sidebar"));
     if (window->sidebar == NULL)
         return;
-    sde_separator (menu);
+    menu = sde_submenu (menu, _("Sidebar _Content"));
     panels = g_list_reverse (g_list_copy (window->sidebar_panels));
     for (l = panels; l != NULL; l = l->next)
     {
@@ -937,7 +937,6 @@ liria_sde_ui_show_about (GtkWindow *parent)
                   "copyright", "Copyright \xC2\xA9 2026 DebION Dev-Team",
                   "license", license,
                   "wrap-license", TRUE,
-                  "authors", developers,
                   "translator-credits", _("translator-credits"),
                   "logo-icon-name", "system-file-manager",
                   "website", SDE_PROJECT_URL,

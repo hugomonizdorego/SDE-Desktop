@@ -182,6 +182,11 @@ def liria_branding(staged):
                     "    /* SDE owns the desktop and the session; Liria never manages them\n"
                     "     * unless LIRIA_MANAGE_DESKTOP=1 is set for testing. */\n"
                     "    return g_strcmp0 (g_getenv (\"LIRIA_MANAGE_DESKTOP\"), \"1\") == 0;\n}\n\n")
+    egg = staged / "mate-submodules/libegg"
+    replace_between(egg / "eggsmclient.c", "static gboolean\nrunning_in_mate (void)\n{", "static void\negg_sm_client_init",
+                    "static gboolean\nrunning_in_mate (void)\n{\n"
+                    "    return g_strcmp0 (g_getenv (\"LIRIA_MANAGE_DESKTOP\"), \"1\") == 0; /* SDE */\n}\n\n")
+    edit_once(egg / "eggsmclient-xsmp.c", '"X-MATE-AutoRestart"', '"X-SDE-AutoRestart"')
     link = staged / "libliria-private/liria-link.c"
     edit_all(link, 'string_array_contains (only_show_in, "MATE")', 'string_array_contains (only_show_in, "SDE")')
     edit_all(link, 'string_array_contains (not_show_in, "MATE")', 'string_array_contains (not_show_in, "SDE")')
@@ -222,6 +227,15 @@ def liria_branding(staged):
                     "                             gpointer user_data)\n{\n"
                     "    liria_sde_ui_show_about (GTK_WINDOW (user_data));\n}\n\n")
 
+    edit_once(staged / "data/liria-file-management-properties.ui",
+              '<property name="title" translatable="yes">File Management Preferences</property>',
+              '<property name="title" translatable="yes">Liria Preferences</property>')
+
+    # Only the authors list is read (About > Credits > Original authors);
+    # the full author and documenter lists stay in AUTHORS and the docs.
+    about = staged / "src/liria.about"
+    about.write_text(re.sub(r"(?m)^Documenters=.*\n", "", about.read_text()))
+
     # Man pages: SDE's own (data/man/liria.1 in the SDE tree) and short
     # pages for the helper programs.
     docs = staged / "docs"
@@ -255,8 +269,9 @@ def liria_translations(staged):
         for index, entry in enumerate(entries):
             body = "\n".join(line for line in entry.splitlines() if not line.startswith("#"))
             if index == 0:
-                header = re.sub(r'(?m)^"(Report-Msgid-Bugs-To|Language-Team): [^"\\]*(?:\\n)?"$',
-                                lambda m: '"%s: SDE <https://github.com/hugomonizdorego/SDE-Desktop>\\n"' % m[1],
+                header = re.sub(r'(?m)^"(Report-Msgid-Bugs-To|Language-Team|Project-Id-Version): [^"\\]*(?:\\n)?"$',
+                                lambda m: '"%s: %s\\n"' % (m[1], "liria" if m[1] == "Project-Id-Version"
+                                                            else "SDE <https://github.com/hugomonizdorego/SDE-Desktop>"),
                                 entry)
                 kept.append(header)
                 continue
