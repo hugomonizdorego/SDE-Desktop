@@ -72,7 +72,9 @@ class Panel : public sde::BufferedWindow {
   void toggle_menu();
   // The search flyout above the panel's search box, with |text| typed. Called
   // without text it toggles.
-  void open_search(const std::string &text = "");
+  // keep_popup: the caller (the Start menu handing over typed text) closes
+  // itself once the search has the keyboard.
+  void open_search(const std::string &text = "", bool keep_popup = false);
   // [panel] search=box: the panel shows the box (and the query while the
   // flyout is open); icon or hidden: the flyout shows its own field.
   bool search_box_shown() const { return search_mode_ == 2 && search_w_ > 0; }

@@ -317,14 +317,14 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
 
 void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
 
-void Panel::open_search(const std::string &text) {
+void Panel::open_search(const std::string &text, bool keep_popup) {
   if (search_->is_open()) {
     if (text.empty()) search_->close();
     else search_->type(text);
     return;
   }
   if (text.empty() && recently_closed("search")) return;
-  if (open_popup_ && open_popup_ != search_.get()) open_popup_->close();
+  if (open_popup_ && open_popup_ != search_.get() && !keep_popup) open_popup_->close();
   set_revealed(true);
   // Above the search box (or the Start button when the box is hidden).
   int anchor = x() + (search_w_ ? search_x_ : S(4));

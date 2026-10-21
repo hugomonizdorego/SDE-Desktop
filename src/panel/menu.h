@@ -129,6 +129,7 @@ class AppMenu : public PanelPopup {
   void drop_target(int x, int y, int &group, int &index) const;
   void drop(int x, int y);
   void redirect_to_search(const std::string &text);
+  bool handing_to_search_ = false;
   void start_hover(const Ref &r);
   static void animate(void *);
   void qa_dump_menu();

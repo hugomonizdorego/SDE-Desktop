@@ -359,6 +359,7 @@ void AppMenu::filter() {
 // Opening
 
 void AppMenu::prepare() {
+  handing_to_search_ = false;
   theme_ = Panel::instance->theme();
   effects_ = effects_from_config(Panel::instance->config());
   const Config &cfg = Panel::instance->config();
@@ -1082,8 +1083,20 @@ void AppMenu::finish_rename(bool commit) {
 }
 
 void AppMenu::redirect_to_search(const std::string &text) {
-  close();
-  Panel::instance->open_search(text);
+  // Open the search first so it takes the keyboard straight from the menu,
+  // and keep the menu mapped a moment: keys typed quickly after the first
+  // one are still queued for this window and are forwarded from here.
+  bool first = !handing_to_search_;
+  handing_to_search_ = true;
+  Panel::instance->open_search(text, true);
+  if (first)
+    Fl::add_timeout(0.25, [](void *d) {
+      auto *menu = static_cast<AppMenu *>(d);
+      if (menu->handing_to_search_) {
+        menu->handing_to_search_ = false;
+        menu->close();
+      }
+    }, this);
 }
 
 // ---------------------------------------------------------------------------
