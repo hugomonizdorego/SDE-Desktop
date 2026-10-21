@@ -37,6 +37,21 @@ static void migrate_openbox_config(const std::string &path) {
       changed = true;
     }
   }
+  // Alpha 15: the iconify animation moves the frame in 20 ms steps on the
+  // CPU and delays every minimize; the compositor already fades windows.
+  // Migrated once, so a user who turns it back on keeps it.
+  const std::string marker = "<!-- sde: animateIconify migrated -->";
+  if (text.find(marker) == std::string::npos) {
+    const std::string anim = "<animateIconify>yes</animateIconify>";
+    size_t at = text.find(anim);
+    if (at != std::string::npos) text.replace(at, anim.size(), "<animateIconify>no</animateIconify>");
+    size_t root = text.find("<openbox_config");
+    size_t close = root == std::string::npos ? std::string::npos : text.find('>', root);
+    if (close != std::string::npos) {
+      text.insert(close + 1, "\n  " + marker);
+      changed = true;
+    }
+  }
   if (changed) write_file_atomic(path, text);
 }
 
