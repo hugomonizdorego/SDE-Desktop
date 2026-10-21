@@ -6,6 +6,8 @@ add_library(sde-common STATIC
   common/config.cpp
   common/crash.cpp
   common/integration.cpp
+  common/about.cpp
+  common/menu.cpp
   common/dbus.cpp
   common/effects.cpp
   common/desktop_entry.cpp
@@ -31,6 +33,10 @@ target_link_libraries(sde-common PUBLIC
   ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
   sde-rust-config PkgConfig::XRANDR PkgConfig::XINPUT)
 add_dependencies(sde-common sde-rust-build)
+if(TARGET sde-fltk-static)
+  add_dependencies(sde-common sde-fltk-update)
+  target_link_libraries(sde-common PUBLIC sde-fltk-static)
+endif()
 
 # The session manager draws nothing itself, but shares the configuration,
 # theme and window manager helpers with the other programs.

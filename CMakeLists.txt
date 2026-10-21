@@ -56,6 +56,19 @@ if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
     endif()
   endif()
   set(FLTK_CONFIG "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
+  # The step above builds SDE-FLTK once; this target brings the staged copy
+  # up to date when sde-fltk/ changes, and the imported library makes every
+  # program relink against the new libfltk.a.
+  file(WRITE "${CMAKE_BINARY_DIR}/sde-fltk/update.cmake"
+       "execute_process(COMMAND \"${CMAKE_COMMAND}\" --build \"${CMAKE_BINARY_DIR}/sde-fltk/build\" --target install\n"
+       "                RESULT_VARIABLE r OUTPUT_QUIET)\n"
+       "if(NOT r EQUAL 0)\n  message(FATAL_ERROR \"Building SDE-FLTK failed\")\nendif()\n")
+  add_custom_target(sde-fltk-update ALL
+                    COMMAND ${CMAKE_COMMAND} -P "${CMAKE_BINARY_DIR}/sde-fltk/update.cmake"
+                    COMMENT "Updating SDE-FLTK")
+  add_library(sde-fltk-static STATIC IMPORTED GLOBAL)
+  set_target_properties(sde-fltk-static PROPERTIES
+                        IMPORTED_LOCATION "${SDE_TOOLKIT_STAGE}/lib/libfltk.a")
   # FLTK's license and notices travel with the statically linked programs.
   install(FILES "${SDE_TOOLKIT_SOURCE}/COPYING" "${SDE_TOOLKIT_SOURCE}/CREDITS"
                 "${SDE_TOOLKIT_SOURCE}/README.SDE-FLTK.md" "${SDE_TOOLKIT_SOURCE}/CHANGES.SDE-FLTK"

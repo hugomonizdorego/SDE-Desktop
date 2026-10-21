@@ -37,6 +37,7 @@
 #include <FL/Fl_Secret_Input.H>
 #include <FL/x.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 
 static Fl_Window *message_form;
 static Fl_Box *message;
@@ -242,6 +243,7 @@ static int innards(const char* fmt, va_list ap,
   if (!prev_icon_label) icon->label(iconlabel);
 
   resizeform();
+  if (fl_sde_style()) fl_sde_style()->dialog(message_form);  // SDE-FLTK theme
 
   if (button[1]->visible() && !input->visible())
     button[1]->take_focus();
