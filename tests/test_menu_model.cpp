@@ -45,6 +45,66 @@ int main() {
   menu::remember(ids, "", 2);
   CHECK(ids.size() == 2);
 
+  // Usage state file and frecency ranking ("Recently used").
+  {
+    const long long day = 86400, now = 1800000000;
+    auto u = menu::parse_usage("a.desktop\t3\t1799990000\nbad line\nb.desktop\tx\t5\n"
+                               "c.desktop\t1\t1799999000\n\n#comment\n");
+    CHECK(u.size() == 2 && u[0].id == "a.desktop" && u[0].count == 3 && u[1].id == "c.desktop");
+    CHECK(menu::parse_usage(menu::format_usage(u)).size() == 2);
+    CHECK(menu::format_usage(u) == "a.desktop\t3\t1799990000\nc.desktop\t1\t1799999000\n");
+    // The older plain list: one launch each, newest first.
+    auto old = menu::parse_usage("x.desktop\ny.desktop\n", now);
+    CHECK(old.size() == 2 && old[0].count == 1 && old[0].last > old[1].last);
+    CHECK(menu::by_last_use(old, 5)[0] == "x.desktop");
+
+    std::vector<menu::Usage> usage = {
+        {"daily.desktop", 40, now - 2 * day},   // used a lot, two days ago
+        {"stale.desktop", 60, now - 60 * day},  // used a lot, two months ago
+        {"once.desktop", 1, now - 30},          // opened once, just now
+        {"week.desktop", 3, now - 8 * day},     // a few times, last week
+    };
+    // Frequent and recent beats both frequent-but-stale and once-just-now.
+    CHECK(menu::frecency(usage[0], now) > menu::frecency(usage[1], now));
+    CHECK(menu::frecency(usage[0], now) > menu::frecency(usage[2], now));
+    // Something opened right now beats a few launches last week...
+    CHECK(menu::frecency(usage[2], now) > menu::frecency(usage[3], now));
+    // ...and two months make heavy use fade below it.
+    CHECK(menu::frecency(usage[2], now) > menu::frecency(usage[1], now));
+    // Older launches always weigh less with equal counts.
+    CHECK(menu::frecency({"a", 5, now - day}, now) > menu::frecency({"a", 5, now - 3 * day}, now));
+    CHECK(menu::frecency({"a", 0, now}, now) == 0);
+    auto ranked = menu::rank_frecent(usage, now, 3);
+    CHECK(ranked.size() == 3 && ranked[0] == "daily.desktop" && ranked[1] == "once.desktop");
+    // Favorites are left out, the limit is respected.
+    ranked = menu::rank_frecent(usage, now, 2, {"daily.desktop"});
+    CHECK(ranked.size() == 2 && ranked[0] == "once.desktop");
+    // Equal scores: the most recent first.
+    auto tie = menu::rank_frecent({{"p", 2, now - 10 * day}, {"q", 2, now - 10 * day}, {"r", 2, now - 10 * day + 5}}, now, 3);
+    CHECK(tie[0] == "r" && tie[1] == "p" && tie[2] == "q");
+
+    // Launching counts up and moves an application up the ranking.
+    menu::record_launch(usage, "week.desktop", now, 64);
+    menu::record_launch(usage, "week.desktop", now, 64);
+    CHECK(usage[3].count == 5 && usage[3].last == now);
+    CHECK(menu::rank_frecent(usage, now, 2)[1] == "week.desktop");
+    menu::record_launch(usage, "new.desktop", now, 64);
+    CHECK(usage.size() == 5 && usage.back().count == 1);
+    // Over the cap, the weakest go and the newest stays.
+    menu::record_launch(usage, "newest.desktop", now, 3);
+    CHECK(usage.size() == 3);
+    bool newest = false, stale = false;
+    for (auto &x : usage) {
+      newest = newest || x.id == "newest.desktop";
+      stale = stale || x.id == "stale.desktop";
+    }
+    CHECK(newest && !stale);
+    menu::forget(usage, "newest.desktop");
+    CHECK(usage.size() == 2);
+    menu::record_launch(usage, "", now);
+    CHECK(usage.size() == 2);
+  }
+
   // Search scoring: name prefix beats a word inside, generic names match.
   auto calc = app("calc.desktop", "Calculator", {"Utility"}, "Scientific Calculator");
   auto office = app("lo.desktop", "LibreOffice Calc", {"Office", "Spreadsheet"}, "Spreadsheet");

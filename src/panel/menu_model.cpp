@@ -4,6 +4,8 @@
 #include <dirent.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 
 #include "util.h"
 
@@ -80,6 +82,117 @@ std::vector<std::string> default_favorites(const std::vector<DesktopEntry> &apps
   for (auto &a : apps) {
     if (out.size() >= std::min<size_t>(max, 4)) break;
     if (std::find(out.begin(), out.end(), a.id) == out.end()) out.push_back(a.id);
+  }
+  return out;
+}
+
+std::vector<Usage> parse_usage(const std::string &text, long long now) {
+  std::vector<Usage> out;
+  int bare = 0;
+  for (auto &line : split(text, '\n')) {
+    std::string l = trim(line);
+    if (l.empty() || l[0] == '#') continue;
+    auto f = split(l, '\t');
+    Usage u;
+    u.id = trim(f[0]);
+    if (u.id.empty()) continue;
+    if (f.size() >= 3) {
+      char *end = nullptr;
+      long c = std::strtol(f[1].c_str(), &end, 10);
+      if (end == f[1].c_str() || c < 0) continue;
+      long long t = std::strtoll(f[2].c_str(), &end, 10);
+      if (end == f[2].c_str()) continue;
+      u.count = unsigned(c);
+      u.last = t;
+    } else if (f.size() == 1 && l.find(' ') == std::string::npos) {
+      // Older plain recent list: newest first.
+      u.count = 1;
+      u.last = now - 60LL * ++bare;
+    } else {
+      continue;
+    }
+    auto it = std::find_if(out.begin(), out.end(), [&](const Usage &o) { return o.id == u.id; });
+    if (it == out.end()) {
+      out.push_back(u);
+    } else {
+      it->count += u.count;
+      it->last = std::max(it->last, u.last);
+    }
+  }
+  return out;
+}
+
+std::string format_usage(const std::vector<Usage> &usage) {
+  std::string s;
+  for (auto &u : usage)
+    s += u.id + "\t" + std::to_string(u.count) + "\t" + std::to_string(u.last) + "\n";
+  return s;
+}
+
+double frecency(const Usage &u, long long now) {
+  if (u.count == 0) return 0;
+  double age = std::max(0.0, double(now - u.last));
+  const double day = 86400, week = 7 * day;
+  double score = double(u.count) * std::pow(2.0, -age / week);
+  // Opened today: a boost that fades over the day.
+  if (age < day) score += 2.0 * (1.0 - age / day);
+  return score;
+}
+
+void record_launch(std::vector<Usage> &usage, const std::string &id, long long now, size_t cap) {
+  if (id.empty()) return;
+  auto it = std::find_if(usage.begin(), usage.end(), [&](const Usage &u) { return u.id == id; });
+  if (it == usage.end()) {
+    usage.push_back({id, 1, now});
+  } else {
+    ++it->count;
+    it->last = std::max(it->last, now);
+  }
+  if (usage.size() > cap) {
+    // Keep the best |cap|; the application just opened always stays.
+    std::stable_sort(usage.begin(), usage.end(), [&](const Usage &a, const Usage &b) {
+      if (a.id == id || b.id == id) return a.id == id && b.id != id;
+      return frecency(a, now) > frecency(b, now);
+    });
+    usage.resize(cap);
+  }
+}
+
+void forget(std::vector<Usage> &usage, const std::string &id) {
+  usage.erase(std::remove_if(usage.begin(), usage.end(),
+                             [&](const Usage &u) { return u.id == id; }),
+              usage.end());
+}
+
+std::vector<std::string> rank_frecent(const std::vector<Usage> &usage, long long now, size_t max,
+                                      const std::vector<std::string> &exclude) {
+  std::vector<const Usage *> list;
+  for (auto &u : usage)
+    if (u.count && std::find(exclude.begin(), exclude.end(), u.id) == exclude.end())
+      list.push_back(&u);
+  std::stable_sort(list.begin(), list.end(), [&](const Usage *a, const Usage *b) {
+    double fa = frecency(*a, now), fb = frecency(*b, now);
+    if (std::fabs(fa - fb) > 1e-9) return fa > fb;
+    if (a->last != b->last) return a->last > b->last;
+    return a->id < b->id;
+  });
+  std::vector<std::string> out;
+  for (auto *u : list) {
+    if (out.size() >= max) break;
+    out.push_back(u->id);
+  }
+  return out;
+}
+
+std::vector<std::string> by_last_use(const std::vector<Usage> &usage, size_t max) {
+  std::vector<const Usage *> list;
+  for (auto &u : usage) list.push_back(&u);
+  std::stable_sort(list.begin(), list.end(),
+                   [](const Usage *a, const Usage *b) { return a->last > b->last; });
+  std::vector<std::string> out;
+  for (auto *u : list) {
+    if (out.size() >= max) break;
+    out.push_back(u->id);
   }
   return out;
 }
