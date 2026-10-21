@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -712,6 +713,9 @@ void install_ui_style() {
   static bool installed = false;
   if (installed) return;
   installed = true;
+  // Debugging aid: SDE_STOCK_FLTK=1 keeps FLTK's own look and behavior.
+  if (const char *stock = getenv("SDE_STOCK_FLTK"))
+    if (*stock && strcmp(stock, "0") != 0) return;
   fl_sde_style(&style());
   Fl_Event_Dispatch prev = Fl::event_dispatch();
   if (prev != dispatch) g_prev_dispatch = prev;
