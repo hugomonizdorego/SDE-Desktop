@@ -10,6 +10,7 @@
 #include <FL/x.H>
 
 #include <algorithm>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <cmath>
@@ -20,7 +21,11 @@
 #include "build_config.h"
 #include "calendar.h"
 #include "config.h"
+#include "agenda.h"
+#include "alarm_popup.h"
+#include "alarms.h"
 #include "controls.h"
+#include "panel_widgets.h"
 #include "dbus.h"
 #include "desktop_entry.h"
 #include "glyphs.h"
@@ -76,6 +81,10 @@ int first_percent(const std::string &s) {
 
 }  // namespace
 
+namespace {
+std::string &settings_help();
+}  // namespace
+
 // ============================================================ SystemStatus
 
 SystemStatus &SystemStatus::get() {
@@ -108,6 +117,197 @@ void SystemStatus::start(std::function<void()> changed) {
   Fl::add_timeout(15, Tick::network);
   Fl::add_timeout(30, Tick::battery);
   start_audio_stream();
+  start_connectivity();
+  run_async({"sde-settings", "--help"},
+            [](const std::string &out, int) { settings_help() = out; });
+}
+
+// ------------------------------------------------- internet connectivity
+
+namespace {
+const char *kNM = "org.freedesktop.NetworkManager";
+const char *kNMPath = "/org/freedesktop/NetworkManager";
+int parse_connectivity(const std::string &s) {
+  std::string v = lower(trim(s));
+  return v == "full" ? NetworkState::FULL
+         : v == "limited" ? NetworkState::LIMITED
+         : v == "portal"  ? NetworkState::PORTAL
+         : v == "none"    ? NetworkState::NONE
+                          : NetworkState::UNKNOWN;
+}
+long long mono_ms() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+}  // namespace
+
+std::string NetworkState::status_text() const {
+  if (!available) return _("NetworkManager is not running");
+  if (!connected()) return _("Not connected");
+  switch (connectivity) {
+    case FULL:
+      return _("Connected · Internet access");
+    case PORTAL:
+      return _("Sign-in required");
+    case LIMITED:
+    case NONE:
+      return _("Connected, no internet");
+    default:
+      return _("Connected");
+  }
+}
+
+void SystemStatus::start_connectivity() {
+  if (Panel::safe_mode) return;
+  if (dbus::Bus *bus = dbus::Bus::system())
+    bus->add_signal_handler(
+        "type='signal',path='/org/freedesktop/NetworkManager',interface='org.freedesktop.DBus."
+        "Properties',member='PropertiesChanged'",
+        [](DBusMessage *m) {
+          const char *path = dbus_message_get_path(m);
+          return dbus_message_is_signal(m, "org.freedesktop.DBus.Properties", "PropertiesChanged") &&
+                 path && std::string(path) == kNMPath;
+        },
+        [this](DBusMessage *m) {
+          auto a = dbus::read_args(m);
+          if (a.size() < 2 || a[0].str() != kNM) return;
+          if (const auto *u = a[1].get("ConnectivityCheckUri")) network.check_uri = u->str();
+          if (const auto *e = a[1].get("ConnectivityCheckEnabled")) network.check_enabled = e->boolean();
+          if (const auto *c = a[1].get("Connectivity")) {
+            nm_dbus_ = true;
+            set_connectivity(int(c->num()));
+          }
+        });
+  refresh_connectivity();
+}
+
+void SystemStatus::set_connectivity(int value) {
+  if (value < NetworkState::UNKNOWN || value > NetworkState::FULL) value = NetworkState::UNKNOWN;
+  if (value == network.connectivity) return;
+  network.connectivity = value;
+  changed();
+}
+
+// NetworkManager's Connectivity property over D-Bus; nmcli when NM is not
+// reachable on the system bus.
+void SystemStatus::refresh_connectivity() {
+  auto fallback = [this] {
+    nm_dbus_ = false;
+    run_async({"nmcli", "-t", "networking", "connectivity"}, [this](const std::string &out, int st) {
+      if (st == 0) set_connectivity(parse_connectivity(out));
+    });
+  };
+  dbus::Bus *bus = Panel::safe_mode ? nullptr : dbus::Bus::system();
+  if (!bus) {
+    fallback();
+    return;
+  }
+  dbus::get_all_properties(bus, kNM, kNMPath, kNM, [this, fallback](const dbus::Value &v) {
+    const dbus::Value *c = v.valid() ? v.get("Connectivity") : nullptr;
+    if (!c) {
+      fallback();
+      return;
+    }
+    nm_dbus_ = true;
+    if (const auto *u = v.get("ConnectivityCheckUri")) network.check_uri = u->str();
+    if (const auto *e = v.get("ConnectivityCheckEnabled")) network.check_enabled = e->boolean();
+    set_connectivity(int(c->num()));
+  });
+}
+
+void SystemStatus::check_connectivity(bool force, std::function<void(int)> done) {
+  long long now = mono_ms();
+  if (!force && now - last_check_ms_ < 5000) {
+    if (done) done(network.connectivity);
+    return;
+  }
+  last_check_ms_ = now;
+  auto finish = [this, done](int value) {
+    set_connectivity(value);
+    if (done) done(network.connectivity);
+  };
+  auto by_nmcli = [finish] {
+    run_async({"nmcli", "-t", "networking", "connectivity", "check"},
+              [finish](const std::string &out, int st) {
+                finish(st == 0 ? parse_connectivity(out) : SystemStatus::get().network.connectivity);
+              });
+  };
+  dbus::Bus *bus = Panel::safe_mode ? nullptr : dbus::Bus::system();
+  if (!bus || !nm_dbus_) {
+    by_nmcli();
+    return;
+  }
+  DBusMessage *m = dbus::method(kNM, kNMPath, kNM, "CheckConnectivity");
+  // NetworkManager answers after its check, which can take a while.
+  bus->call_async(m, [finish, by_nmcli](DBusMessage *reply) {
+    auto a = dbus::read_args(reply);
+    if (a.empty())
+      by_nmcli();
+    else
+      finish(int(a[0].num()));
+  }, 30000);
+}
+
+void SystemStatus::troubleshoot_network() {
+  if (!network.connected()) {
+    message = _("Not connected: choose a Wi-Fi network or plug in the network cable.");
+    changed();
+    refresh_network(true);
+    return;
+  }
+  std::string name = network.connection;
+  message = format(_("Checking the connection to %s..."), name.c_str());
+  changed();
+  check_connectivity(true, [this, name](int value) {
+    if (value == NetworkState::FULL) {
+      message = _("Internet access works.");
+      changed();
+      return;
+    }
+    if (value == NetworkState::PORTAL) {
+      message = _("This network needs a sign-in: open the sign-in page.");
+      changed();
+      return;
+    }
+    // Reconnecting renews the address (DHCP) and the DNS servers.
+    message = format(_("Reconnecting to %s..."), name.c_str());
+    changed();
+    run_async({"nmcli", "connection", "up", "id", name}, [this, name](const std::string &, int st) {
+      refresh_network();
+      Fl::add_timeout(st == 0 ? 3 : 0.5, [](void *) {
+        SystemStatus::get().check_connectivity(true, [](int v) {
+          auto &s = SystemStatus::get();
+          s.message = v == NetworkState::FULL ? _("Internet access works again.")
+                      : v == NetworkState::PORTAL
+                          ? _("This network needs a sign-in: open the sign-in page.")
+                          : _("Still no internet. The network itself does not reach the internet: "
+                              "restart the router or modem, or check the DNS settings.");
+          s.changed();
+        });
+      });
+      if (st != 0) {
+        message = format(_("Could not reconnect to %s."), name.c_str());
+        changed();
+      }
+    });
+  });
+}
+
+void SystemStatus::open_portal() {
+  std::string uri = network.check_uri.empty() ? "http://nmcheck.gnome.org/check_network_status.txt"
+                                              : network.check_uri;
+  // Any plain http page is redirected to the portal's sign-in form.
+  open_uri(uri);
+  Fl::add_timeout(20, [](void *) { SystemStatus::get().check_connectivity(true); });
+}
+
+std::string SystemStatus::network_signature() const {
+  std::ostringstream o;
+  o << network.available << network.has_wifi << network.wifi_enabled << network.kind << '|'
+    << network.connection << '|' << network.signal;
+  for (const auto &w : wifi) o << '|' << w.ssid << w.signal << w.secure << w.active;
+  return o.str();
 }
 
 // pactl reports every volume, mute and device change. The sound server may
@@ -212,6 +412,17 @@ void SystemStatus::refresh_network(bool rescan) {
         run_async({"nmcli", "radio", "wifi"},
                   [this, n, rescan](const std::string &out2, int) mutable {
                     n.wifi_enabled = trim(out2) == "enabled";
+                    std::string before = network_signature();
+                    std::string now = n.kind + "|" + n.connection;
+                    if (now != last_connection_) {
+                      last_connection_ = now;
+                      // A new connection: ask NetworkManager whether it reaches the internet.
+                      if (!n.kind.empty())
+                        Fl::add_timeout(2, [](void *) { SystemStatus::get().check_connectivity(true); });
+                      else
+                        set_connectivity(NetworkState::UNKNOWN);
+                    }
+                    if (!nm_dbus_) refresh_connectivity();
                     network.available = n.available;
                     network.has_wifi = n.has_wifi;
                     network.wifi_enabled = n.wifi_enabled;
@@ -219,14 +430,14 @@ void SystemStatus::refresh_network(bool rescan) {
                     network.connection = n.connection;
                     if (!n.has_wifi || !n.wifi_enabled) {
                       wifi.clear();
-                      changed();
+                      if (network_signature() != before) changed();
                       return;
                     }
                     run_async({"nmcli", "-t", "-f", "IN-USE,SIGNAL,SECURITY,SSID", "device", "wifi",
                                "list", "--rescan", rescan ? "yes" : "no"},
-                              [this](const std::string &out3, int) {
+                              [this, before](const std::string &out3, int) {
                                 parse_wifi_list(out3);
-                                changed();
+                                if (network_signature() != before) changed();
                               });
                   });
       });
@@ -715,6 +926,37 @@ IconFn chevron_icon() {
 IconFn sun_icon() {
   return [](Painter &p, double x, double y, double s, const Color &c) { glyph::sun(p, x, y, s, c); };
 }
+IconFn alarm_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    double cx = x + s * .5, cy = y + s * .55, r = s * .36;
+    p.set(c);
+    cairo_set_line_width(p.cr(), s * .08);
+    cairo_new_sub_path(p.cr());
+    cairo_arc(p.cr(), cx, cy, r, 0, 2 * M_PI);
+    cairo_stroke(p.cr());
+    p.line(cx, cy, cx, cy - r * .6, c, s * .08);
+    p.line(cx, cy, cx + r * .45, cy + r * .2, c, s * .08);
+    p.line(x + s * .08, y + s * .24, x + s * .26, y + s * .08, c, s * .1);
+    p.line(x + s * .92, y + s * .24, x + s * .74, y + s * .08, c, s * .1);
+  };
+}
+IconFn plus_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    p.line(x + s * .5, y + s * .2, x + s * .5, y + s * .8, c, s * .1);
+    p.line(x + s * .2, y + s * .5, x + s * .8, y + s * .5, c, s * .1);
+  };
+}
+IconFn cross_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    p.line(x + s * .28, y + s * .28, x + s * .72, y + s * .72, c, s * .09);
+    p.line(x + s * .72, y + s * .28, x + s * .28, y + s * .72, c, s * .09);
+  };
+}
+IconFn back_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    glyph::chevron(p, x + s * .2, y + s * .2, s * .6, false, c);
+  };
+}
 IconFn power_icon() {
   return [](Painter &p, double x, double y, double s, const Color &c) {
     glyph::power(p, x, y, s, c);
@@ -724,8 +966,9 @@ IconFn power_icon() {
 // Callback ownership follows the widget, including during asynchronous rebuilds.
 class CommandButton : public FlatButton {
  public:
-  CommandButton(int x, int y, int w, int h, const std::string &name, std::function<void()> fn)
-      : FlatButton(x, y, w, h, name.c_str()), fn_(std::move(fn)) {
+  CommandButton(int x, int y, int w, int h, const std::string &name, std::function<void()> fn,
+                bool primary = false)
+      : FlatButton(x, y, w, h, name.c_str(), primary), fn_(std::move(fn)) {
     copy_label(name.c_str());
     copy_tooltip(name.c_str());
     callback([](Fl_Widget *w, void *) { static_cast<CommandButton *>(w)->fn_(); });
@@ -800,6 +1043,38 @@ std::string first_program(std::initializer_list<const char *> names) {
   for (const char *n : names)
     if (!find_program(n).empty()) return n;
   return "";
+}
+// The pages of sde-settings, read once from "sde-settings --help", so that a
+// flyout's settings button opens its own page as soon as SDE Settings has it.
+std::string &settings_help() {
+  static std::string text;
+  return text;
+}
+bool settings_page(const std::string &page) {
+  const std::string &h = settings_help();
+  size_t at = h.find("--page NAME");
+  if (at == std::string::npos) return false;
+  size_t end = h.find("  --", at + 11);
+  std::string list = h.substr(at + 11, end == std::string::npos ? std::string::npos : end - at - 11);
+  std::string word;
+  for (size_t i = 0; i <= list.size(); ++i) {
+    char c = i < list.size() ? list[i] : ' ';
+    if (isalnum(static_cast<unsigned char>(c)) || c == '-') {
+      word += c;
+    } else {
+      if (word == page) return true;
+      word.clear();
+    }
+  }
+  return false;
+}
+// The SDE Settings page |page|, else |fallback| when installed, else the
+// SDE Settings overview.
+std::vector<std::string> settings_for(const std::string &page, std::vector<std::string> fallback) {
+  if (settings_page(page)) return {"sde-settings", "--page", page};
+  if (!fallback.empty() && !fallback[0].empty() && !find_program(fallback[0]).empty())
+    return fallback;
+  return {"sde-settings"};
 }
 void bt_icon(Painter &p, double x, double y, double z, const Color &ink) {
   glyph::bluetooth(p, x, y, z, ink);
@@ -918,6 +1193,9 @@ std::string QuickSettings::structure() const {
   const auto &c = PanelControls::get();
   const auto &cfg = Panel::instance->config();
   std::ostringstream out;
+  out << Alarms::get().revision() << '|' << agenda_year_ << '-' << agenda_month_ << '-'
+      << agenda_day_ << agenda_form_ << agenda_edit_ << agenda_error_ << power_open_
+      << s.network.connectivity << s.network.check_enabled << '|';
   out << int(mode_) << section_ << calendar_view_ << s.network.available << s.network.has_wifi
       << s.network.wifi_enabled << s.network.connection << s.network.kind;
   for (const auto &n : s.wifi) out << '|' << n.ssid << n.active << n.secure;
@@ -961,6 +1239,21 @@ void QuickSettings::prepare() {
   SystemStatus::get().message.clear();
   PanelControls::get().message.clear();
   scroll_to_calendar_ = calendar_view_;
+  power_open_ = false;
+  if (mode_ == ACTION_CENTER) {
+    // The agenda starts on today.
+    time_t now = time(nullptr);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    agenda_year_ = shown_year_ = lt.tm_year + 1900;
+    agenda_month_ = shown_month_ = lt.tm_mon + 1;
+    agenda_day_ = lt.tm_mday;
+    agenda_form_ = false;
+    agenda_edit_ = 0;
+    agenda_error_.clear();
+  }
+  // Opening the Network flyout asks NetworkManager for a fresh check.
+  if (mode_ == FLYOUT && section_ == "network") SystemStatus::get().check_connectivity();
   rebuild();
 }
 void QuickSettings::status_changed() {
@@ -986,12 +1279,16 @@ void QuickSettings::rebuild_timeout(void *data) {
   }
   int scroll = self->body_ ? std::max(0, self->body_->yposition()) : 0;
   bool focus = Fl::focus() && Fl::focus()->window() == self;
+  std::string focus_name = focused_name(self);
   self->rebuild();
   if (!self->scroll_to_calendar_)
     self->body_->scroll_to(
         0, std::min(scroll, std::max(0, self->content_height_ - self->body_->h())));
   self->reposition();
-  if (focus && self->body_->children()) self->body_->child(0)->take_focus();
+  if (!focus_name.empty())
+    restore_focus(self, focus_name);
+  else if (focus && self->body_->children())
+    self->body_->child(0)->take_focus();
 }
 void QuickSettings::sync() {
   const auto &s = SystemStatus::get();
@@ -1194,16 +1491,53 @@ void QuickSettings::sound_section(SectionBuilder &b) {
     b.end_card(card);
   }
   std::string mixer = first_program({"pavucontrol", "pwvucontrol"});
-  if (!mixer.empty()) b.settings_row(_("Sound settings"), {mixer});
+  b.settings_row(_("Sound settings"), settings_for("sound", {mixer}));
 }
 
 void QuickSettings::network_section(SectionBuilder &b) {
   const auto &s = SystemStatus::get();
   const auto &c = PanelControls::get();
+  const auto &n = s.network;
   auto *card = b.start_card(_("Status"));
-  b.info(s.network.available
-             ? (s.network.connection.empty() ? _("Not connected") : s.network.connection)
-             : _("NetworkManager is not running"));
+  if (n.connected()) b.info(n.connection);
+  {
+    // Named for window inspection; the text follows NetworkManager live.
+    auto *state = new ActionLabel(b.pad + S(12), b.y, b.inner - S(24), S(26),
+                                  [] { return SystemStatus::get().network.status_text(); }, 1);
+    state->copy_label(n.status_text().c_str());
+    state->labeltype(FL_NO_LABEL);
+    b.y += S(26);
+  }
+  if (n.no_internet()) {
+    b.info(_("The network is connected, but it does not reach the internet."));
+    b.info(_("Troubleshoot reconnects and renews the address and DNS."));
+  } else if (n.portal()) {
+    b.info(_("This network wants you to sign in (hotel, cafe, campus)."));
+  } else if (n.connected() && n.connectivity == NetworkState::UNKNOWN && !n.check_enabled) {
+    b.info(_("Internet checking is off in NetworkManager."));
+  }
+  if (n.portal())
+    b.row(_("Open sign-in page"), network_icon, [this] {
+      close();
+      SystemStatus::get().open_portal();
+    });
+  if (n.connected()) {
+    b.row(_("Troubleshoot"),
+          [](Painter &p, double x, double y, double z, const Color &ink) {
+            glyph::gear(p, x, y, z, ink);
+          },
+          [] { SystemStatus::get().troubleshoot_network(); });
+    b.row(_("Check internet connection"), network_icon,
+          [] {
+            auto &s = SystemStatus::get();
+            s.message = _("Checking the internet connection...");
+            s.check_connectivity(true, [](int) {
+              auto &st = SystemStatus::get();
+              st.message = st.network.status_text();
+              st.changed_now();
+            });
+          });
+  }
   if (s.network.available && s.network.has_wifi) {
     b.row(s.network.wifi_enabled ? _("Turn Wi-Fi Off") : _("Turn Wi-Fi On"), network_icon, [] {
       auto &s = SystemStatus::get();
@@ -1253,8 +1587,7 @@ void QuickSettings::network_section(SectionBuilder &b) {
             [d] { PanelControls::get().network_device(d.device, d.state != "connected"); });
     b.end_card(card);
   }
-  if (!find_program("nm-connection-editor").empty())
-    b.settings_row(_("Network settings"), {"nm-connection-editor"});
+  b.settings_row(_("Network settings"), settings_for("network", {"nm-connection-editor"}));
 }
 
 void QuickSettings::bluetooth_section(SectionBuilder &b) {
@@ -1323,8 +1656,7 @@ void QuickSettings::bluetooth_section(SectionBuilder &b) {
     b.end_card(card);
   }
   b.info(_("PIN/code pairing uses the system Bluetooth agent."));
-  if (!find_program("blueman-manager").empty())
-    b.settings_row(_("Bluetooth settings"), {"blueman-manager"});
+  b.settings_row(_("Bluetooth settings"), settings_for("bluetooth", {"blueman-manager"}));
 }
 
 void QuickSettings::media_section(SectionBuilder &b) {
@@ -1398,10 +1730,10 @@ void QuickSettings::power_section(SectionBuilder &b) {
     b.end_card(card);
   }
   std::string prefs = first_program({"sde-power-preferences", "xfce4-power-manager-settings"});
-  b.settings_row(_("Power settings"), prefs.empty() ? std::vector<std::string>{"sde-settings",
-                                                                               "--page", "system"}
-                                                    : std::vector<std::string>{prefs});
-  b.row(_("Shut down or log out"), power_icon(), b.launch({"sde-logout"}));
+  b.settings_row(_("Power settings"),
+                 settings_for("power", prefs.empty() ? std::vector<std::string>{"sde-settings",
+                                                                                "--page", "system"}
+                                                     : std::vector<std::string>{prefs}));
 }
 
 void QuickSettings::drives_section(SectionBuilder &b) {
@@ -1469,7 +1801,7 @@ void QuickSettings::keyboard_section(SectionBuilder &b) {
   else
     b.info(_("Add a second layout in Keyboard settings to switch here."));
   b.end_card(card);
-  b.settings_row(_("Keyboard settings"), {"sde-settings", "--page", "input"});
+  b.settings_row(_("Keyboard settings"), settings_for("input", {"sde-settings", "--page", "input"}));
 }
 
 void QuickSettings::tray_section(SectionBuilder &b) {
@@ -1509,7 +1841,7 @@ void QuickSettings::tray_section(SectionBuilder &b) {
     b.y += rows * cell;
   }
   b.end_card(card);
-  b.settings_row(_("Panel settings"), {"sde-settings", "--page", "panel"});
+  b.settings_row(_("Panel settings"), settings_for("panel", {"sde-settings", "--page", "panel"}));
 }
 
 void QuickSettings::build_flyout(SectionBuilder &b) {
@@ -1560,6 +1892,8 @@ void QuickSettings::build_center(SectionBuilder &b) {
                      [] { return SystemStatus::get().network.wifi_enabled; },
                      [] {
                        const auto &n = SystemStatus::get().network;
+                       if (n.kind == "wifi" && n.no_internet()) return std::string(_("No internet"));
+                       if (n.kind == "wifi" && n.portal()) return std::string(_("Sign in"));
                        return n.kind == "wifi" && !n.connection.empty() ? n.connection
                                                                         : std::string(_("Wi-Fi"));
                      },
@@ -1569,6 +1903,8 @@ void QuickSettings::build_center(SectionBuilder &b) {
                      [] { return !SystemStatus::get().network.kind.empty(); },
                      [] {
                        const auto &n = SystemStatus::get().network;
+                       if (n.no_internet()) return std::string(_("No internet"));
+                       if (n.portal()) return std::string(_("Sign in"));
                        return n.connection.empty() ? std::string(_("Offline")) : n.connection;
                      },
                      nullptr});
@@ -1611,8 +1947,9 @@ void QuickSettings::build_center(SectionBuilder &b) {
                    },
                    [] { Panel::instance->toggle_dark_mode(); },
                    [] { return Panel::instance->theme().dark; }, nullptr, nullptr});
-  tiles.push_back({_("Display"), display_icon(), b.launch({"sde-display-settings"}), nullptr,
-                   nullptr, nullptr});
+  tiles.push_back({_("Display"), display_icon(),
+                   b.launch(settings_for("display", {"sde-display-settings"})), nullptr, nullptr,
+                   nullptr});
   std::string shooter = first_program({"scrot", "gnome-screenshot", "xfce4-screenshooter",
                                        "flameshot", "spectacle"});
   if (!shooter.empty()) {
@@ -1631,7 +1968,19 @@ void QuickSettings::build_center(SectionBuilder &b) {
          },
          nullptr, nullptr, nullptr});
   }
-  tiles.push_back({_("Settings"), gear_icon(), b.launch({"sde-settings"}), nullptr, nullptr,
+  // SDE Settings has its button in the footer; the clock's alarms get a tile.
+  tiles.push_back({_("Alarms"), alarm_icon(),
+                   [] { later([] { Panel::instance->open_alarms(); }); }, nullptr,
+                   [] {
+                     long long next = Alarms::get().next_alarm();
+                     if (!next) return std::string(_("Alarms"));
+                     time_t t = time_t(next);
+                     struct tm lt;
+                     localtime_r(&t, &lt);
+                     char buf[16];
+                     strftime(buf, sizeof buf, "%H:%M", &lt);
+                     return std::string(buf);
+                   },
                    nullptr});
   int columns = cfg.get_int("action_center", "tile_columns", 4) == 3 ? 3 : 4, gap = S(8),
       tw = (inner - (columns - 1) * gap) / columns, th = S(74);
@@ -1676,10 +2025,20 @@ void QuickSettings::build_center(SectionBuilder &b) {
                 });
     b.y += S(32);
     if (open) {
-      calendar_ = new MonthCalendar(pad + S(12), b.y, inner - S(24));
+      auto *cal = new MonthCalendar(pad + S(12), b.y, inner - S(24));
+      calendar_ = cal;
+      if (shown_year_) cal->show_month(shown_year_, shown_month_);
+      cal->select(agenda_year_, agenda_month_, agenda_day_);
+      cal->marked = [](int y, int m, int d) { return agenda::has_items(Alarms::get().items(), y, m, d); };
+      cal->moved = [this](int y, int m) {
+        shown_year_ = y;
+        shown_month_ = m;
+      };
+      cal->picked = [this](int y, int m, int d) { agenda_pick(y, m, d); };
       b.y += calendar_->h();
     }
     b.end_card(card);
+    if (open) agenda_card(b);
   }
   if (cfg.get_bool("action_center", "show_notifications", true)) {
     auto *card = b.start_card(_("Notifications"));
@@ -1690,6 +2049,236 @@ void QuickSettings::build_center(SectionBuilder &b) {
                : _("No new notifications"));
     b.end_card(card);
   }
+}
+
+// ---------------------------------------------------------------- agenda
+
+namespace {
+const int kRemind[] = {-1, 0, 5, 15, 30, 60, 1440};
+std::string remind_label(int minutes) {
+  switch (minutes) {
+    case -1:
+      return _("No reminder");
+    case 0:
+      return _("At start time");
+    case 60:
+      return _("1 hour before");
+    case 1440:
+      return _("1 day before");
+    default:
+      return format(_("%d minutes before"), minutes);
+  }
+}
+int remind_index(int minutes) {
+  for (int i = 0; i < 7; ++i)
+    if (kRemind[i] == minutes) return i;
+  return 0;
+}
+}  // namespace
+
+void QuickSettings::agenda_pick(int year, int month, int day) {
+  agenda_year_ = year;
+  agenda_month_ = month;
+  agenda_day_ = day;
+  shown_year_ = year;
+  shown_month_ = month;
+  agenda_error_.clear();
+  status_changed();
+}
+
+void QuickSettings::agenda_edit(int id) {
+  const agenda::Item *it = id ? Alarms::get().item(id) : nullptr;
+  agenda_edit_ = it ? id : 0;
+  agenda_form_ = true;
+  agenda_error_.clear();
+  draft_title_ = it ? it->title : "";
+  draft_note_ = it ? it->note : "";
+  draft_time_.clear();
+  if (it && it->timed()) draft_time_ = format("%02d:%02d", it->hour, it->minute);
+  draft_remind_ = it ? remind_index(it->remind) : 0;
+  status_changed();
+}
+
+void QuickSettings::agenda_cancel() {
+  agenda_form_ = false;
+  agenda_edit_ = 0;
+  agenda_error_.clear();
+  status_changed();
+}
+
+void QuickSettings::agenda_save() {
+  agenda::Item item;
+  if (const agenda::Item *old = agenda_edit_ ? Alarms::get().item(agenda_edit_) : nullptr)
+    item = *old;
+  item.id = agenda_edit_;
+  item.year = agenda_year_;
+  item.month = agenda_month_;
+  item.day = agenda_day_;
+  item.title = trim(draft_title_);
+  item.note = trim(draft_note_);
+  item.remind = kRemind[std::max(0, std::min(6, draft_remind_))];
+  item.hour = -1;
+  item.minute = 0;
+  if (item.title.empty()) {
+    agenda_error_ = _("Give the agenda item a title.");
+  } else if (!trim(draft_time_).empty() &&
+             !agenda::parse_time(draft_time_, item.hour, item.minute)) {
+    agenda_error_ = _("Write the time as HH:MM, for example 14:30.");
+  } else {
+    Alarms::get().save_item(item);
+    agenda_form_ = false;
+    agenda_edit_ = 0;
+    agenda_error_.clear();
+    draft_title_.clear();
+    draft_time_.clear();
+    draft_note_.clear();
+    draft_remind_ = 0;
+  }
+  status_changed();
+}
+
+void QuickSettings::agenda_card(SectionBuilder &b) {
+  const auto &t = Panel::instance->theme();
+  int pad = b.pad, inner = b.inner;
+  auto *card = b.start_card("");
+  struct tm day {};
+  day.tm_year = agenda_year_ - 1900;
+  day.tm_mon = agenda_month_ - 1;
+  day.tm_mday = agenda_day_;
+  day.tm_hour = 12;
+  day.tm_isdst = -1;
+  mktime(&day);
+  char date[96];
+  strftime(date, sizeof date, "%A, %e %B", &day);
+  std::string title = std::string(_("Agenda")) + " · " + trim(date);
+  new ActionLabel(pad + S(12), b.y - S(4), inner - S(70), S(32), [title] { return title; }, 1);
+  if (!agenda_form_)
+    icon_button(pad + inner - S(46), b.y - S(4), S(34), S(32), _("Add agenda item"), plus_icon(),
+                [this] { later([this] { agenda_edit(0); }); });
+  b.y += S(32);
+  auto items = agenda::items_on(Alarms::get().items(), agenda_year_, agenda_month_, agenda_day_);
+  if (items.empty() && !agenda_form_) b.info(_("Nothing planned. Add an item with +."));
+  for (const auto &it : items) {
+    std::string text =
+        (it.timed() ? format("%02d:%02d", it.hour, it.minute) : std::string(_("All day"))) +
+        " · " + it.title;
+    int id = it.id;
+    auto *row = new ActionButton(
+        pad + S(8), b.y, inner - S(58), S(36), text,
+        [](Painter &p, double x, double y, double z, const Color &ink) {
+          p.circle(x + z / 2, y + z / 2, z * .22, ink);
+        },
+        [this, id] { later([this, id] { agenda_edit(id); }); }, nullptr, -1, true);
+    row->copy_tooltip(format(_("Edit agenda item %s"), it.title.c_str()).c_str());
+    icon_button(pad + inner - S(46), b.y + S(1), S(34), S(34),
+                format(_("Delete agenda item %s"), it.title.c_str()), cross_icon(),
+                [id] { later([id] { Alarms::get().remove_item(id); }); });
+    b.y += S(38);
+    std::string extra = it.note;
+    if (it.remind >= 0)
+      extra += std::string(extra.empty() ? "" : " · ") + std::string(_("Reminder")) + ": " +
+               remind_label(it.remind);
+    for (char &c : extra)
+      if (c == '\n') c = ' ';
+    if (!extra.empty()) {
+      new ActionLabel(pad + S(50), b.y - S(4), inner - S(62), S(22), [extra] { return extra; }, 2);
+      b.y += S(20);
+    }
+  }
+  if (agenda_form_) {
+    b.y += S(4);
+    new ActionLabel(
+        pad + S(12), b.y, inner - S(24), S(24),
+        [this] { return std::string(agenda_edit_ ? _("Edit agenda item") : _("New agenda item")); },
+        0);
+    b.y += S(26);
+    int x = pad + S(12), w = inner - S(24), gap = S(8);
+    auto *title_in = new TextField(x, b.y, w, S(34), _("Agenda title"), _("Title"),
+                                   [this](const std::string &v) { draft_title_ = v; });
+    title_in->value(draft_title_.c_str());
+    b.y += S(40);
+    int half = (w - gap) / 2;
+    auto *time_in = new TextField(x, b.y, half, S(34), _("Agenda time"), _("Time (optional)"),
+                                  [this](const std::string &v) { draft_time_ = v; });
+    time_in->value(draft_time_.c_str());
+    auto *remind = new Fl_Choice(x + half + gap, b.y + S(1), w - half - gap, S(32));
+    remind->tooltip(_("Agenda reminder"));
+    remind->textsize(t.font_size);
+    for (int i = 0; i < 7; ++i) remind->add(choice_label(remind_label(kRemind[i])).c_str());
+    remind->value(std::max(0, std::min(6, draft_remind_)));
+    remind->callback(
+        [](Fl_Widget *w, void *d) {
+          auto *q = static_cast<QuickSettings *>(d);
+          q->draft_remind_ = static_cast<Fl_Choice *>(w)->value();
+          q->status_changed();
+        },
+        this);
+    b.y += S(40);
+    auto *note_in = new TextField(x, b.y, w, S(34), _("Agenda note"), _("Note (optional)"),
+                                  [this](const std::string &v) { draft_note_ = v; });
+    note_in->value(draft_note_.c_str());
+    b.y += S(40);
+    if (!agenda_error_.empty()) b.info(agenda_error_);
+    if (draft_remind_ > 0 && trim(draft_time_).empty())
+      b.info(_("Without a time, reminders count from 09:00."));
+    int bw = (w - gap) / 2;
+    new CommandButton(
+        x, b.y, bw, S(34), _("Save item"), [this] { later([this] { agenda_save(); }); }, true);
+    new CommandButton(x + bw + gap, b.y, w - bw - gap, S(34), _("Cancel"),
+                      [this] { later([this] { agenda_cancel(); }); });
+    b.y += S(40);
+  }
+  b.end_card(card);
+}
+
+// ---------------------------------------------------------------- footer
+
+void QuickSettings::set_power_menu(bool open) {
+  power_open_ = open;
+  status_changed();
+}
+
+// The session row: the user, SDE Settings, Lock and Power. Power swaps the
+// row for Sleep, Log Out, Restart and Shut Down (the sde-logout actions).
+void QuickSettings::footer(int W, int H, int pad) {
+  int fy = H - footer_ + S(11), fb = S(36);
+  auto launch = [this](std::vector<std::string> cmd) {
+    return [this, cmd] {
+      close();
+      spawn_detached(cmd);
+    };
+  };
+  if (power_open_) {
+    icon_button(pad, fy, fb, fb, _("Close power options"), back_icon(),
+                [this] { later([this] { set_power_menu(false); }); });
+    struct Choice {
+      std::string name;
+      const char *action;
+    };
+    std::vector<Choice> choices = {{_("Sleep"), "suspend"},
+                                   {_("Log Out"), "logout"},
+                                   {_("Restart"), "reboot"},
+                                   {_("Shut Down"), "poweroff"}};
+    int x = pad + fb + S(8), gap = S(6), n = int(choices.size());
+    int bw = (W - pad - x - (n - 1) * gap) / n;
+    for (int i = 0; i < n; ++i)
+      new CommandButton(x + i * (bw + gap), fy, bw, fb, choices[size_t(i)].name,
+                        launch({"sde-logout", "--action", choices[size_t(i)].action}), i == n - 1);
+    return;
+  }
+  std::vector<std::pair<std::string, std::function<void()>>> foot = {
+      {_("SDE Settings"), launch({"sde-settings"})},
+      {_("Lock Screen"), launch({"sde-logout", "--action", "lock"})},
+      {_("Power"), [this] { later([this] { set_power_menu(true); }); }}};
+  std::vector<IconFn> icons = {gear_icon(),
+                               [](Painter &p, double x, double y, double z, const Color &ink) {
+                                 glyph::lock(p, x, y, z, ink);
+                               },
+                               power_icon()};
+  new UserBadge(pad, fy, W - 2 * pad - int(foot.size()) * (fb + S(6)) - S(8), fb);
+  for (size_t i = 0; i < foot.size(); ++i)
+    icon_button(W - pad - int(foot.size() - i) * (fb + S(6)) + S(6), fy, fb, fb, foot[i].first,
+                icons[i], foot[i].second);
 }
 
 // --------------------------------------------------------------- rebuild
@@ -1761,31 +2350,19 @@ void QuickSettings::rebuild() {
   } else {
     int toggle = S(36);
     if (cfg.get_bool("action_center", "show_clock", true))
-      new ClockCard(pad + S(4), S(8), W - 2 * pad - toggle - S(12), header_ - S(14), true);
+      new ClockCard(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(18), header_ - S(14), true);
     else
-      new ActionLabel(pad + S(4), S(8), W - 2 * pad - toggle, header_ - S(14),
+      new ActionLabel(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(6), header_ - S(14),
                       [] { return std::string(_("Action Center")); }, 1);
     bool open = expanded();
+    icon_button(W - pad - 2 * toggle - S(6), (header_ - toggle) / 2, toggle, toggle,
+                _("Action Center settings"), gear_icon(),
+                b.launch(settings_for("action-center", {})));
     icon_button(W - pad - toggle, (header_ - toggle) / 2, toggle, toggle,
                 open ? _("Show less") : _("Show more"), fold_icon(open),
                 [this] { toggle_expanded(); });
   }
-  if (!fly) {
-    int fy = H - footer_ + S(11), fb = S(36);
-    std::vector<std::pair<std::string, std::function<void()>>> foot = {
-        {_("Action Center Settings"), b.launch({"sde-settings", "--page", "action-center"})},
-        {_("Lock Screen"), b.launch({"sde-lock"})},
-        {_("Power Off / Log Out"), b.launch({"sde-logout"})}};
-    std::vector<IconFn> icons = {gear_icon(),
-                                 [](Painter &p, double x, double y, double z, const Color &ink) {
-                                   glyph::lock(p, x, y, z, ink);
-                                 },
-                                 power_icon()};
-    new UserBadge(pad, fy, W - 2 * pad - int(foot.size()) * (fb + S(6)) - S(8), fb);
-    for (size_t i = 0; i < foot.size(); ++i)
-      icon_button(W - pad - int(foot.size() - i) * (fb + S(6)) + S(6), fy, fb, fb, foot[i].first,
-                  icons[i], foot[i].second);
-  }
+  if (!fly) footer(W, H, pad);
   end();
   resizable(nullptr);
   init_sizes();

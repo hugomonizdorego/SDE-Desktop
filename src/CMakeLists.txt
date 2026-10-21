@@ -47,7 +47,11 @@ add_executable(sde-panel
   panel/controls.cpp
   panel/calendar.cpp
   panel/sni.cpp
-  panel/tray.cpp)
+  panel/tray.cpp
+  panel/agenda.cpp
+  panel/alarms.cpp
+  panel/alarm_popup.cpp
+  panel/panel_widgets.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 
 add_executable(sde-desktop desktop/main.cpp)

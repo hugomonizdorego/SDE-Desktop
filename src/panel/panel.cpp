@@ -16,6 +16,8 @@
 #include <cstdlib>
 #include <ctime>
 
+#include "alarm_popup.h"
+#include "alarms.h"
 #include "controls.h"
 #include "glyphs.h"
 #include "tray_icons.h"
@@ -54,6 +56,7 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   menu_.reset(new AppMenu());
   quick_.reset(new QuickSettings(QuickSettings::ACTION_CENTER));
   flyout_.reset(new QuickSettings(QuickSettings::FLYOUT));
+  alarms_.reset(new AlarmPopup());
 }
 
 Panel::~Panel() {
@@ -198,6 +201,15 @@ void Panel::setup() {
   // Applets such as nm-applet, blueman-applet or a power manager keep running
   // as agents, but their icons would repeat SDE's own indicators.
   std::vector<std::string> hidden;
+  // Alarms and agenda reminders ring even in safe mode.
+  Alarms::get().start(
+      [this] {
+        alarms_->changed();
+        quick_->status_changed();
+      },
+      [this] {
+        if (!alarms_->is_open()) open_alarms();
+      });
   if (safe_mode) {
     configured_ = true;
     refresh_tasks();
@@ -212,19 +224,12 @@ void Panel::setup() {
   tray_->set_hidden(hidden);
   tray_->start();
   sni_.reset(new SniHost([this] {
-    relayout();
-    redraw();
-    quick_->status_changed();
-    flyout_->status_changed();
+    status_signature_.clear();  // icons can change without a new title
+    status_update();
   }));
   sni_->set_hidden(hidden);
   sni_->start();
-  SystemStatus::get().start([this] {
-    relayout();
-    redraw();
-    quick_->status_changed();
-    flyout_->status_changed();
-  });
+  SystemStatus::get().start([this] { status_update(); });
 
   configured_ = true;
   refresh_tasks();
@@ -269,7 +274,7 @@ void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
 
 void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
-  if (p == quick_.get() || p == flyout_.get()) {
+  if (p == quick_.get() || p == flyout_.get() || p == alarms_.get()) {
     popup_opened_at_ = steady_ms();
     // Presses queued before the popup opened belong to earlier clicks. A
     // popup opened by a command (a client message carries no time) would
@@ -278,7 +283,7 @@ void Panel::popup_opened(PanelPopup *p) {
     input_event(0, this);
     draining_input_ = false;
     popup_opened_time_ = std::max<unsigned long>(fl_event_time, last_press_time_);
-    PanelControls::get().set_visible(true);
+    if (p != alarms_.get()) PanelControls::get().set_visible(true);
   }
   relayout();
   redraw();
@@ -421,9 +426,10 @@ void Panel::input_event(int, void *d) {
 void Panel::outside_pointer_press(unsigned long time) {
   // The Action Center and the flyouts host native tray windows and do not
   // grab the pointer; a press anywhere else closes them.
-  QuickSettings *q = quick_ && quick_->is_open()     ? quick_.get()
-                     : flyout_ && flyout_->is_open() ? flyout_.get()
-                                                     : nullptr;
+  PanelPopup *q = quick_ && quick_->is_open()     ? static_cast<PanelPopup *>(quick_.get())
+                  : flyout_ && flyout_->is_open() ? static_cast<PanelPopup *>(flyout_.get())
+                  : alarms_ && alarms_->is_open() ? static_cast<PanelPopup *>(alarms_.get())
+                                                  : nullptr;
   if (!q || Fl::grab()) return;
   // XI2 arrives on a separate connection: the press of the click that opened
   // the popup may be dispatched after FLTK's release, even much later on a
@@ -449,6 +455,7 @@ std::string Panel::popup_key(const PanelPopup *p) const {
   if (p == menu_.get()) return "menu";
   if (p == quick_.get()) return quick_->calendar_view() ? "calendar" : "center";
   if (p == flyout_.get()) return "flyout:" + flyout_->section();
+  if (p == alarms_.get()) return "alarms";
   return "";
 }
 std::string Panel::target_key(const Target &t) const {
@@ -456,7 +463,7 @@ std::string Panel::target_key(const Target &t) const {
     case START:
       return "menu";
     case CLOCK:
-      return "calendar";
+      return "alarms";
     case ACTION_CENTER:
       return "center";
     case STATUS:
@@ -534,6 +541,18 @@ void Panel::open_flyout(const std::string &section) {
   else  // The icon is hidden (short panel): next to the Action Center button.
     flyout_->open_at(x() + action_x_ + action_w_, true);
 }
+void Panel::open_alarms(bool add) {
+  if (alarms_->is_open()) {
+    alarms_->close();
+    if (!add) return;
+  } else if (!add && recently_closed("alarms")) {
+    return;
+  }
+  if (open_popup_ && open_popup_ != alarms_.get()) open_popup_->close();
+  set_revealed(true);
+  if (add) alarms_->start_new();
+  alarms_->open_centered(x() + clock_x_ + clock_w_ / 2);
+}
 bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
   if (!shown() || root_x < x() || root_x >= x() + w() || root_y < y() || root_y >= y() + h())
     return false;
@@ -552,6 +571,8 @@ bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
       self->toggle_menu();
     else if (p->key == "calendar")
       self->open_action_center(true);
+    else if (p->key == "alarms")
+      self->open_alarms();
     else if (p->key == "center")
       self->open_action_center();
     else if (starts_with(p->key, "flyout:"))
@@ -611,12 +632,18 @@ std::string Panel::status_tooltip(StatusIcon icon) const {
       return _("Shut down or log out");
     case MEDIA_STATUS:
       return _("Media players");
-    case NETWORK_STATUS:
+    case NETWORK_STATUS: {
+      std::string state = s.network.no_internet() ? std::string(" · ") + _("No internet access")
+                          : s.network.portal()    ? std::string(" · ") + _("Sign-in required")
+                          : s.network.connectivity == NetworkState::FULL
+                              ? std::string(" · ") + _("Internet access")
+                              : "";
       if (s.network.kind == "wifi")
-        return std::string(_("Wi-Fi")) + " · " + s.network.connection;
+        return std::string(_("Wi-Fi")) + " · " + s.network.connection + state;
       if (s.network.kind == "ethernet")
-        return std::string(_("Wired network")) + " · " + s.network.connection;
+        return std::string(_("Wired network")) + " · " + s.network.connection + state;
       return _("Not connected");
+    }
     case SOUND_STATUS:
       return s.audio.muted ? std::string(_("Sound is muted"))
                            : format(_("Volume %d%%"), s.audio.volume);
@@ -631,6 +658,45 @@ std::string Panel::status_tooltip(StatusIcon icon) const {
       return _("Do Not Disturb is on · click to turn it off");
   }
   return "";
+}
+
+// What the panel itself draws from the status services; an update that does
+// not change it skips the panel redraw.
+std::string Panel::status_signature() const {
+  const auto &s = SystemStatus::get();
+  const auto &c = PanelControls::get();
+  std::string sig = std::to_string(s.network.available) + s.network.kind + s.network.connection +
+                    std::to_string(s.network.signal / 25) + std::to_string(s.network.connectivity) +
+                    std::to_string(s.network.has_wifi) + std::to_string(s.network.wifi_enabled) +
+                    std::to_string(s.audio.available) + std::to_string(s.audio.volume) +
+                    std::to_string(s.audio.muted) + std::to_string(s.battery.present) +
+                    std::to_string(s.battery.percent) + std::to_string(s.battery.charging) +
+                    c.keyboard + std::to_string(c.drives.size()) + std::to_string(c.adapters.size());
+  if (const auto *a = c.adapter()) sig += std::to_string(a->powered);
+  for (const auto &d : c.bluetooth) sig += std::to_string(d.connected);
+  auto players = c.players();
+  sig += std::to_string(players.size()) + (players.empty() ? "" : players.front().status);
+  if (sni_)
+    for (auto *i : sni_->visible_items()) sig += "|" + i->service + i->path + i->status + i->title;
+  if (tray_) sig += "|" + std::to_string(tray_->count());
+  return sig;
+}
+void Panel::status_update() {
+  if (status_update_pending_) return;
+  status_update_pending_ = true;
+  Fl::add_timeout(0.05, status_update_timeout, this);
+}
+void Panel::status_update_timeout(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  p->status_update_pending_ = false;
+  std::string sig = p->status_signature();
+  if (sig != p->status_signature_) {
+    p->status_signature_ = sig;
+    p->relayout();
+    p->redraw();
+  }
+  p->quick_->status_changed();
+  p->flyout_->status_changed();
 }
 
 void Panel::relayout() {
@@ -670,7 +736,25 @@ void Panel::relayout() {
   // Icons appear only while their hardware or source exists: Bluetooth
   // when an adapter is present, drives when one is plugged in, media while a
   // player runs, battery on laptops.
-  add(OVERFLOW_STATUS, "show_tray");
+  // Application tray icons sit directly on the panel while they are few and
+  // fit; more than [panel] tray_overflow_threshold (default 4) of them gather
+  // behind the overflow (^) button and its Tray flyout. tray_overflow=always
+  // or never overrides the automatic choice.
+  int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
+  int apps = sn + (tray_ ? tray_->count() : 0);
+  std::string overflow_mode = cfg_.get("panel", "tray_overflow", "auto");
+  int threshold = std::max(0, cfg_.get_int("panel", "tray_overflow_threshold", 4));
+  {
+    int others = 0;  // the status icons other than the overflow button
+    for (const char *key : {"show_drives", "show_bluetooth", "show_media", "show_keyboard",
+                            "show_network", "show_sound", "show_battery"})
+      others += cfg_.get_bool("panel", key, true) ? 1 : 0;
+    bool fits = right - start_w_ - S(100) >= (others + 1) * S(26) + sn * (tray_icon_ + S(10)) + tw;
+    tray_overflow_ = apps > 0 && cfg_.get_bool("panel", "show_tray", true) &&
+                     (overflow_mode == "always" ||
+                      (overflow_mode != "never" && (apps > threshold || !fits)));
+  }
+  if (tray_overflow_) status_icons_.push_back(OVERFLOW_STATUS);
   add(DRIVE_STATUS, "show_drives", !controls.drives.empty());
   add(BLUETOOTH_STATUS, "show_bluetooth", !controls.adapters.empty());
   add(MEDIA_STATUS, "show_media", !controls.players().empty());
@@ -681,7 +765,11 @@ void Panel::relayout() {
   add(BATTERY_STATUS, "show_battery", s.battery.present);
   add(POWER_STATUS, "show_power", cfg_.get_bool("panel", "show_power", false));
   // CONTROLS_STATUS repeated the Action Center button next to the clock.
-  int sn = sni_ ? int(sni_->visible_items().size()) : 0, tw = tray_ ? tray_->width() : 0;
+  // Behind the overflow button, the StatusNotifier icons leave the panel; the
+  // XEmbed icons too, unless [action_center] move_status=false keeps them.
+  bool keep_xembed = !tray_overflow_ || !cfg_.get_bool("action_center", "move_status", true);
+  if (tray_overflow_) sn = 0;
+  if (!keep_xembed) tw = 0;
   compact_status_ = right - start_w_ - S(100) <
                     int(status_icons_.size()) * S(26) + sn * (tray_icon_ + S(10)) + tw;
   if (compact_status_) status_icons_.clear();
@@ -697,7 +785,7 @@ void Panel::relayout() {
   tw = compact_status_ || moved ? 0 : tw;
   tray_x_ = right - tw;
   if (tray_ && !moved) {
-    if (compact_status_)
+    if (compact_status_ || !keep_xembed)
       tray_->hide();
     else {
       tray_->set_background(theme_.surface.fl() >> 8);
@@ -838,7 +926,7 @@ void Panel::draw() {
 
     // Application tray indicators keep their native icons; system controls
     // use a consistent monochrome Cairo set, independent of the GTK theme.
-    if (sni_ && !compact_status_) {
+    if (sni_ && sni_w_ > 0) {
       auto items = sni_->visible_items();
       for (size_t i = 0; i < items.size(); ++i) {
         int bx = sni_x_ + int(i) * (tray_icon_ + S(10));
@@ -889,6 +977,15 @@ void Panel::draw() {
             tray_icon::wifi(p, gx, gy, gs, 0, false, t.text);
           else
             tray_icon::offline(p, gx, gy, gs, t.text);
+          // Connected without internet (or behind a sign-in page): a small
+          // warning badge, so the icon never suggests a working connection.
+          if (n.no_internet() || n.portal()) {
+            double r = gs * 0.24, bx2 = gx + gs - r * 0.9, by2 = gy + gs - r * 0.9;
+            p.circle(bx2, by2, r + Sd(1), t.surface);
+            p.circle(bx2, by2, r, n.portal() ? t.accent : Color::hex(0xE8A33D));
+            p.line(bx2, by2 - r * 0.55, bx2, by2 + r * 0.1, Color::hex(0x1A1A1A), Sd(1.6));
+            p.circle(bx2, by2 + r * 0.5, Sd(1), Color::hex(0x1A1A1A));
+          }
           break;
         }
         case SOUND_STATUS:
@@ -923,7 +1020,8 @@ void Panel::draw() {
                    quick_ && quick_->is_open() ? t.accent.mix(t.text, 0.15) : t.accent);
     tray_icon::action_center(p, action_x_ + (action_w_ - gs) / 2., gy, gs, false, t.on_accent,
                              t.on_accent);
-    button_bg(clock_x_, clock_w_, {CLOCK, 0}, center_open && quick_->calendar_view());
+    button_bg(clock_x_, clock_w_, {CLOCK, 0},
+              (center_open && quick_->calendar_view()) || (alarms_ && alarms_->is_open()));
     if (show_desktop_w_) {
       if (hover_ == Target{SHOW_DESKTOP, 0})
         p.fill_rect(show_desktop_x_, 0, show_desktop_w_, H, t.hover);
@@ -1003,7 +1101,7 @@ int Panel::handle(int event) {
         } else if (t.kind == ACTION_CENTER) {
           tip = _("Action Center · Super+A");
         } else if (t.kind == CLOCK) {
-          tip = _("Calendar · Super+C");
+          tip = _("Clock and alarms · Super+C opens the calendar");
         }
         copy_tooltip(tip.c_str());
         redraw();
@@ -1088,8 +1186,9 @@ int Panel::handle(int event) {
           open_action_center();
           break;
         case CLOCK:
-          // The clock opens the Action Center with its calendar in view.
-          open_action_center(true);
+          // The clock opens the alarms; Super+C (sde-panel --calendar) and
+          // the alarm popup's link open the calendar and agenda.
+          open_alarms();
           break;
         case SHOW_DESKTOP:
           x11::set_showing_desktop(!x11::showing_desktop());
@@ -1276,10 +1375,8 @@ bool Panel::handle_x(const XEvent &e) {
   bool tray_changed = false;
   if (tray_ && tray_->handle(e, tray_changed)) {
     if (tray_changed) {
-      relayout();
-      redraw();
-      quick_->status_changed();
-      flyout_->status_changed();
+      status_signature_.clear();
+      status_update();
     }
     return true;
   }
@@ -1293,6 +1390,7 @@ bool Panel::handle_x(const XEvent &e) {
           steady_ms() - popup_opened_at_ > 500) {
         if (quick_->is_open()) quick_->close();
         if (flyout_->is_open()) flyout_->close();
+        if (alarms_->is_open()) alarms_->close();
       }
       refresh_tasks();
     } else if (a == x11::atom("_SDE_COMMAND")) {
@@ -1307,6 +1405,10 @@ bool Panel::handle_x(const XEvent &e) {
         open_flyout(cmd.substr(6));
       else if (cmd == "calendar")
         open_action_center(true);
+      else if (cmd == "alarms")
+        open_alarms();
+      else if (cmd == "alarms:new")
+        open_alarms(true);
     } else if (a == x11::atom("_SDE_CONFIG_SERIAL")) {
       bool was_autohide = autohide_;
       load_config();
@@ -1317,6 +1419,8 @@ bool Panel::handle_x(const XEvent &e) {
       redraw();
       quick_->status_changed();
       flyout_->status_changed();
+      Alarms::get().reload();
+      alarms_->changed();
       if (autohide_ && !was_autohide) Fl::add_timeout(1.0, hide_timeout, this);
     }
     return true;
@@ -1374,6 +1478,7 @@ void Panel::clock_tick(void *data) {
     if (relayout_needed) p->relayout();
     p->redraw();
     if (p->quick_ && p->quick_->is_open()) p->quick_->redraw();
+    if (p->alarms_ && p->alarms_->is_open()) p->alarms_->redraw();
   }
   // Wake up right after the next full minute.
   Fl::remove_timeout(clock_tick, data);

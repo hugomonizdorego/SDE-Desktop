@@ -80,6 +80,22 @@ void MonthCalendar::today() {
   redraw();
 }
 
+void MonthCalendar::show_month(int year, int month) {
+  if (month < 1 || month > 12) return;
+  year_ = year;
+  month_ = month - 1;
+  focus_day_ = std::min(std::max(1, focus_day_), days_in_month(year_, month_));
+  redraw();
+}
+
+void MonthCalendar::select(int year, int month, int day) {
+  sel_year_ = year;
+  sel_month_ = month - 1;
+  sel_day_ = day;
+  if (year == year_ && month - 1 == month_) focus_day_ = day;
+  redraw();
+}
+
 void MonthCalendar::shift_month(int delta) {
   month_ += delta;
   while (month_ < 0) {
@@ -92,6 +108,7 @@ void MonthCalendar::shift_month(int delta) {
   }
   focus_day_ = std::min(focus_day_, days_in_month(year_, month_));
   redraw();
+  if (moved) moved(year_, month_ + 1);
 }
 
 void MonthCalendar::layout(int &cell_w, int &cell_h, int &grid_y) const {
@@ -145,10 +162,24 @@ void MonthCalendar::draw() {
       int cell = offset + d - 1;
       double cx = gx + (cell % 7) * cw + cw / 2.0;
       double cy = gy + (cell / 7) * ch + ch / 2.0;
+      bool selected = year_ == sel_year_ && month_ == sel_month_ && d == sel_day_;
       if (this_month && d == lt.tm_mday)
         p.circle(cx, cy, radius, t.accent);
+      else if (selected)
+        p.circle(cx, cy, radius, t.accent.alpha(t.dark ? 0.35 : 0.2));
       else if (d == hover_)
         p.circle(cx, cy, radius, t.hover);
+      if (selected && this_month && d == lt.tm_mday) {
+        p.set(t.text);
+        cairo_set_line_width(p.cr(), Sd(1.5));
+        cairo_new_sub_path(p.cr());
+        cairo_arc(p.cr(), cx, cy, radius - Sd(2.5), 0, 2 * M_PI);
+        cairo_stroke(p.cr());
+      }
+      // A dot under days with agenda items.
+      if (marked && marked(year_, month_ + 1, d))
+        p.circle(cx, cy + radius * 0.62, Sd(2.2),
+                 this_month && d == lt.tm_mday ? t.on_accent : t.accent);
       if (d == focus_day_ && Fl::focus() == this) {
         p.set(t.accent);
         cairo_set_line_width(p.cr(), Sd(2));
@@ -205,6 +236,18 @@ int MonthCalendar::handle(int event) {
     case FL_PUSH: {
       int n = nav_at(Fl::event_x(), Fl::event_y());
       if (n) shift_month(n == -1 ? -1 : 1);
+      int day = n ? 0 : cell_at(Fl::event_x(), Fl::event_y());
+      if (day) {
+        focus_day_ = day;
+        select(year_, month_ + 1, day);
+        if (picked) {
+          auto fn = picked;  // the popup may rebuild in the callback
+          int y = year_, m = month_ + 1;
+          if (Fl::visible_focus()) take_focus();
+          fn(y, m, day);
+          return 1;
+        }
+      }
       if (Fl::visible_focus()) take_focus();
       return 1;
     }
@@ -219,6 +262,12 @@ int MonthCalendar::handle(int event) {
         shift_month(1);
       else if (k == FL_Home)
         today();
+      else if ((k == FL_Enter || k == FL_KP_Enter || k == ' ') && picked) {
+        select(year_, month_ + 1, focus_day_);
+        auto fn = picked;
+        fn(year_, month_ + 1, focus_day_);
+        return 1;
+      }
       else if (k == FL_Left || k == FL_Right || k == FL_Up || k == FL_Down) {
         int step = k == FL_Left ? -1 : k == FL_Right ? 1 : k == FL_Up ? -7 : 7;
         int d = focus_day_ + step;

@@ -22,6 +22,21 @@ struct NetworkState {
   std::string kind;        // "wifi", "ethernet" or "" when offline
   std::string connection;  // connection or network name
   int signal = 0;          // 0-100 for Wi-Fi
+  // NetworkManager's Connectivity: whether the connection reaches the
+  // internet (checked by NM against its connectivity URI).
+  enum { UNKNOWN = 0, NONE = 1, PORTAL = 2, LIMITED = 3, FULL = 4 };
+  int connectivity = UNKNOWN;
+  bool check_enabled = true;  // NM's connectivity checking is on
+  std::string check_uri;      // NM's ConnectivityCheckUri
+  bool connected() const { return !kind.empty(); }
+  // Connected to a network that does not reach the internet.
+  bool no_internet() const {
+    return connected() && (connectivity == NONE || connectivity == LIMITED);
+  }
+  bool portal() const { return connected() && connectivity == PORTAL; }
+  // Short state for tiles and tooltips; never claims internet access that
+  // NetworkManager did not confirm.
+  std::string status_text() const;
 };
 
 struct WifiNetwork {
@@ -78,11 +93,27 @@ class SystemStatus {
   void set_default_sink(const std::string &name);
   void set_wifi_enabled(bool on);
   void connect_wifi(const WifiNetwork &net);
+  // Asks NetworkManager to check the internet connection now (D-Bus
+  // CheckConnectivity, else nmcli); rate limited unless |force|.
+  void check_connectivity(bool force = false, std::function<void(int)> done = nullptr);
+  // Reconnects the active connection (renews DHCP and DNS) and checks again.
+  void troubleshoot_network();
+  // Opens the captive portal sign-in page in the browser.
+  void open_portal();
+  // Reports a change made from outside (a new message).
+  void changed_now() { changed(); }
   void set_brightness(int percent);
 
  private:
   void changed();
   void start_audio_stream();
+  void start_connectivity();
+  void refresh_connectivity();
+  void set_connectivity(int value);
+  bool nm_dbus_ = false;
+  long long last_check_ms_ = 0;
+  std::string last_connection_;
+  std::string network_signature() const;
   void parse_wifi_list(const std::string &out);
   std::function<void()> changed_;
   int audio_stream_ = 0;
@@ -136,6 +167,17 @@ class QuickSettings : public PanelPopup {
   void keyboard_section(struct SectionBuilder &b);
   void tray_section(struct SectionBuilder &b);
   void player_card(struct SectionBuilder &b, const struct MediaPlayer &p);
+  void agenda_card(struct SectionBuilder &b);
+  void footer(int W, int H, int pad);
+ public:
+  // Agenda form actions (used by its buttons).
+  void agenda_pick(int year, int month, int day);
+  void agenda_edit(int id);  // 0: a new item on the selected date
+  void agenda_save();
+  void agenda_cancel();
+  void set_power_menu(bool open);
+
+ private:
   void sync();
   void sync_native_tray();
   bool expanded() const;
@@ -156,4 +198,12 @@ class QuickSettings : public PanelPopup {
   std::string section_ = "overview";
   bool rebuild_pending_ = false;
   bool calendar_view_ = false, scroll_to_calendar_ = false;
+  // Agenda: the selected date, the calendar's shown month and the draft of
+  // the add/edit form (kept across rebuilds).
+  int agenda_year_ = 0, agenda_month_ = 0, agenda_day_ = 0, shown_year_ = 0, shown_month_ = 0;
+  bool agenda_form_ = false;
+  int agenda_edit_ = 0, draft_remind_ = 0;
+  std::string draft_title_, draft_time_, draft_note_, agenda_error_;
+  // The footer's power button shows Sleep, Log Out, Restart and Shut Down.
+  bool power_open_ = false;
 };

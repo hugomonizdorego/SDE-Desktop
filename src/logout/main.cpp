@@ -144,7 +144,23 @@ int main(int argc, char **argv) {
       printf("sde-logout %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     }
-    printf("Usage: sde-logout [--version]\n");
+    // sde-logout --action NAME runs one action without the dialog (the
+    // Action Center's power buttons).
+    if (!strcmp(argv[i], "--action") && i + 1 < argc) {
+      static const char *names[] = {"lock", "suspend", "logout", "reboot", "poweroff"};
+      for (size_t a = 0; a < actions().size() && a < 5; ++a)
+        if (!strcmp(argv[i + 1], names[a])) {
+          const auto &cmd = actions()[a].command;
+          if (find_program(cmd[0]).empty()) {
+            fprintf(stderr, "sde-logout: %s is missing\n", cmd[0].c_str());
+            return 1;
+          }
+          return spawn_detached(cmd) ? 0 : 1;
+        }
+      fprintf(stderr, "sde-logout: unknown action %s\n", argv[i + 1]);
+      return 2;
+    }
+    printf("Usage: sde-logout [--action lock|suspend|logout|reboot|poweroff] [--version]\n");
     return strcmp(argv[i], "--help") ? 2 : 0;
   }
   fl_open_display();

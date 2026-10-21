@@ -53,11 +53,15 @@ int main(int argc, char **argv) {
       Panel::safe_mode = true;
     } else if (!strcmp(argv[i], "--calendar")) {
       command = "calendar";
+    } else if (!strcmp(argv[i], "--alarms")) {
+      command = "alarms";
+    } else if (!strcmp(argv[i], "--new-alarm")) {
+      command = "alarms:new";
     } else if (!strcmp(argv[i], "--version")) {
       printf("sde-panel %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
       return 0;
     } else {
-      printf("%s", _("Usage: sde-panel [--menu | --action-center | --calendar | --version]\n\n"
+      printf("%s", _("Usage: sde-panel [--menu | --action-center | --calendar | --alarms | --version]\n\n"
                      "  --menu            open or close the application menu of the running panel\n"
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
@@ -65,6 +69,9 @@ int main(int argc, char **argv) {
                      "                    bluetooth, sound, media, power, drives, keyboard, tray\n"
                      "                    (overview opens the Action Center)\n"
                      "  --calendar        open or close the Action Center with its calendar\n"
+                     "                    and agenda\n"
+                     "  --alarms          open or close the clock's alarms\n"
+                     "  --new-alarm       open the alarms with a new alarm\n"
                      "  --safe            start without tray icons and device status (after crashes)\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }

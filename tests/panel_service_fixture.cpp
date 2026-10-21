@@ -18,6 +18,9 @@ std::string log_path;
 bool powered = true, discovering = false, paired = true, connected = false, adapter_present = true,
      device_present = true, control = true;
 std::string playback = "Playing";
+// NetworkManager connectivity: 1 none, 2 portal, 3 limited, 4 full.
+uint32_t connectivity = 4;
+const std::string nm = "/org/freedesktop/NetworkManager";
 const std::string adapter = "/org/bluez/hci0", device = adapter + "/dev_00_11_22_33_44_55",
                   player = "/org/mpris/MediaPlayer2";
 void log(const std::string& s) { std::ofstream(log_path, std::ios::app) << s << '\n'; }
@@ -56,13 +59,42 @@ void changed(const std::string& path, const char* iface) {
   }
   bus->send(m);
 }
+void nm_props(dbus::Writer& w) {
+  {
+    dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+    e.str("Connectivity").variant_u32(connectivity);
+  }
+  flag(w, "ConnectivityCheckEnabled", true);
+  str(w, "ConnectivityCheckUri", "http://nmcheck.example.test/check_network_status.txt");
+}
+void nm_changed() {
+  auto* m = dbus::signal(nm, "org.freedesktop.DBus.Properties", "PropertiesChanged");
+  {
+    dbus::Writer w(m);
+    w.str("org.freedesktop.NetworkManager");
+    {
+      dbus::Writer d(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+      dbus::Writer e(d.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+      e.str("Connectivity").variant_u32(connectivity);
+    }
+    w.strings({});
+  }
+  bus->send(m);
+}
 DBusHandlerResult handle(DBusMessage* m) {
   if (dbus_message_get_type(m) != DBUS_MESSAGE_TYPE_METHOD_CALL)
     return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
   const std::string path = dbus_message_get_path(m), method = dbus_message_get_member(m);
   auto args = dbus::read_args(m);
   auto* r = dbus_message_new_method_return(m);
-  if (path == "/" && method == "GetManagedObjects") {
+  if (path == nm && method == "GetAll") {
+    dbus::Writer w(r);
+    dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+    nm_props(props);
+  } else if (path == nm && method == "CheckConnectivity") {
+    log("NM CheckConnectivity");
+    dbus::Writer(r).u32(connectivity);
+  } else if (path == "/" && method == "GetManagedObjects") {
     dbus::Writer w(r);
     dbus::Writer objects(w.iter(), DBUS_TYPE_ARRAY, "{oa{sa{sv}}}");
     if (adapter_present) {
@@ -138,6 +170,10 @@ DBusHandlerResult handle(DBusMessage* m) {
     device_present = mode != "no-device";
     control = mode != "no-control";
     if (mode == "unpaired") paired = false;
+    if (mode.rfind("nm-", 0) == 0) {
+      connectivity = mode == "nm-none" ? 1 : mode == "nm-portal" ? 2 : mode == "nm-limited" ? 3 : 4;
+      nm_changed();
+    }
     changed(adapter, "org.bluez.Adapter1");
     changed(player, "org.mpris.MediaPlayer2.Player");
     log("MODE " + mode);
@@ -170,9 +206,10 @@ int main(int argc, char** argv) {
   if (argc != 2) return 2;
   log_path = argv[1];
   bus = dbus::Bus::session();
-  if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez"))
+  if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez") ||
+      !bus->request_name("org.freedesktop.NetworkManager"))
     return 1;
-  for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest")})
+  for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm})
     bus->export_object(path, handle);
   display = XOpenDisplay(nullptr);
   if (!display) return 1;

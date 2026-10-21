@@ -6,6 +6,8 @@
 
 #include <FL/Fl_Widget.H>
 
+#include <functional>
+
 class MonthCalendar : public Fl_Widget {
  public:
   MonthCalendar(int x, int y, int w);
@@ -15,6 +17,16 @@ class MonthCalendar : public Fl_Widget {
   static int height_for(int w);
   // Back to the current month.
   void today();
+  // Shown month (month 1-12) and the selected day (the agenda's date).
+  void show_month(int year, int month);
+  void select(int year, int month, int day);
+  int year() const { return year_; }
+  int month() const { return month_ + 1; }
+  // Days that get a dot (agenda items); |picked| runs when a day is clicked
+  // or chosen with Enter, |moved| when the shown month changes.
+  std::function<bool(int year, int month, int day)> marked;
+  std::function<void(int year, int month, int day)> picked;
+  std::function<void(int year, int month)> moved;
 
  private:
   void shift_month(int delta);
@@ -25,4 +37,5 @@ class MonthCalendar : public Fl_Widget {
   int first_weekday_ = 1;           // 0 Sunday, 1 Monday
   int hover_ = 0;
   int focus_day_ = 0;
+  int sel_year_ = 0, sel_month_ = -1, sel_day_ = 0;
 };

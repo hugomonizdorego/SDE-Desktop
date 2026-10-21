@@ -60,3 +60,7 @@ add_test(NAME sde-xsettings COMMAND sde-xsettings-tests)
 add_executable(sde-gallery-tests test_gallery.cpp)
 target_link_libraries(sde-gallery-tests PRIVATE sde-gallery-core)
 add_test(NAME sde-gallery-model COMMAND sde-gallery-tests)
+
+# Panel clock: alarms and agenda model (parsing, ring and reminder times).
+add_executable(sde-agenda-tests test_agenda.cpp ../src/panel/agenda.cpp)
+add_test(NAME sde-agenda-model COMMAND sde-agenda-tests)

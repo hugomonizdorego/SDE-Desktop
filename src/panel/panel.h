@@ -18,6 +18,7 @@
 #include "desktop_entry.h"
 #include "theme.h"
 
+class AlarmPopup;
 class AppMenu;
 class PanelPopup;
 class QuickSettings;
@@ -58,6 +59,9 @@ class Panel : public sde::BufferedWindow {
   // The flyout of one status icon (sound, network, bluetooth, power, media,
   // drives, keyboard, tray), anchored above that icon; toggles.
   void open_flyout(const std::string &section);
+  // The clock's popup: alarms (sde-panel --alarms); with |add| it opens the
+  // editor for a new alarm. Toggles.
+  void open_alarms(bool add = false);
   bool native_popup_input() const { return input_display_ != nullptr; }
   // The popup that currently holds the panel's XEmbed tray icons (the Tray
   // flyout with [action_center] move_status), or nullptr.
@@ -155,6 +159,16 @@ class Panel : public sde::BufferedWindow {
   static void hide_timeout(void *data);
 
   static void clock_tick(void *);
+  // SystemStatus, PanelControls and the tray report many small changes;
+  // they are folded into one panel and popup update per event loop turn.
+  void status_update();
+  static void status_update_timeout(void *);
+  std::string status_signature() const;
+  std::string status_signature_;
+  bool status_update_pending_ = false;
+  // The tray's application icons do not fit or exceed the threshold, so they
+  // gather behind the overflow (^) button.
+  bool tray_overflow_ = false;
 
   sde::Config cfg_;
   sde::Theme theme_;
@@ -166,6 +180,7 @@ class Panel : public sde::BufferedWindow {
   std::unique_ptr<AppMenu> menu_;
   std::unique_ptr<QuickSettings> quick_;
   std::unique_ptr<QuickSettings> flyout_;
+  std::unique_ptr<AlarmPopup> alarms_;
   std::unique_ptr<Tray> tray_;
   std::unique_ptr<SniHost> sni_;
   PanelPopup *open_popup_ = nullptr;
