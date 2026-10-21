@@ -468,12 +468,12 @@ std::vector<StartPage::Hit> StartPage::hits() const {
   double cy = y() + std::max<double>(S(40), (h() - S(520)) / 2);
   double ty = cy + S(150);
   double bw = (cw - S(16)) / 2;
-  out.push_back({cx, ty, bw, S(64), 0});
-  out.push_back({cx + bw + S(16), ty, bw, S(64), 1});
+  out.push_back({cx, ty, bw, Sd(64), 0});
+  out.push_back({cx + bw + S(16), ty, bw, Sd(64), 1});
   double ry = ty + S(110);
   const auto &rec = app_->recent();
   for (size_t i = 0; i < rec.size() && i < 7 && ry + S(36) < y() + h(); ++i, ry += S(38))
-    out.push_back({cx, ry, cw, S(36), int(100 + i)});
+    out.push_back({cx, ry, cw, Sd(36), int(100 + i)});
   return out;
 }
 

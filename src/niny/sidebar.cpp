@@ -157,6 +157,10 @@ void Sidebar::draw() {
       draw_text(e.name, rx + S(32), ry, rw - S(40), rh, L.text);
     }
   }
+  if (mode_ == 0 && docs.empty()) {
+    text_font(L.theme.font_size - S(1));
+    draw_text(_("No open documents"), x() + S(16), top + S(8), w() - S(32), S(24), L.dim);
+  }
   if (mode_ == 1 && entries_.empty()) {
     text_font(L.theme.font_size - S(1));
     draw_text(_("This folder is empty."), x() + S(16), top + S(8), w() - S(32), S(24), L.dim);
