@@ -1,0 +1,4 @@
+# Files of the retired power-manager and screen-saver forks (alpha15 and older).
+rm_conffile /etc/pam.d/sde-screensaver 0.1.0~alpha16~
+rm_conffile /etc/xdg/autostart/sde-screensaver.desktop 0.1.0~alpha16~
+rm_conffile /etc/xdg/autostart/sde-power-manager.desktop 0.1.0~alpha16~
