@@ -1,6 +1,0 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later
- * SDE Aero: soft glass bars and gradients - GTK 4 (light). Widget geometry from GTK's
- * built-in theme; shared SDE styling in ../../SDE-Common. */
-@import url("resource:///org/gtk/libgtk/theme/Default/Default-light.css");
-@import url("colors.css");
-@import url("../../SDE-Common/gtk-4.0/widgets.css");

@@ -11,6 +11,7 @@
 //   * log everything to ~/.local/state/sde/session.log and show a rescue
 //     dialog instead of a black screen when the desktop cannot start
 //   * end the session cleanly on "sde-session --logout" or SIGTERM
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <fcntl.h>
@@ -41,6 +42,7 @@
 #include "util.h"
 #include "wm.h"
 #include "integration.h"
+#include "theme.h"
 
 using namespace sde;
 
@@ -204,6 +206,27 @@ void on_child_exit(pid_t pid, int status) {
 // The optional SDE compositor. A user's own compositor.conf wins; otherwise
 // the [appearance] style and [aero] settings generate one (OpenGL blur,
 // XRender if OpenGL is unavailable or fails).
+bool g_auto_dark = theme_mode_dark("auto");
+
+// Announces a configuration change to every SDE program (as
+// x11::notify_config_changed() does in FLTK programs).
+void bump_config_serial() {
+  Atom serial = XInternAtom(g_display, "_SDE_CONFIG_SERIAL", False), type;
+  Window root = DefaultRootWindow(g_display);
+  int format = 0;
+  unsigned long n = 0, after = 0;
+  unsigned char *data = nullptr;
+  long value = 1;
+  if (XGetWindowProperty(g_display, root, serial, 0, 1, False, XA_CARDINAL, &type, &format, &n, &after,
+                         &data) == Success && data) {
+    if (n == 1 && format == 32) value = reinterpret_cast<long *>(data)[0] + 1;
+    XFree(data);
+  }
+  XChangeProperty(g_display, root, serial, XA_CARDINAL, 32, PropModeReplace,
+                  reinterpret_cast<unsigned char *>(&value), 1);
+  XFlush(g_display);
+}
+
 void add_compositor(const Config &cfg) {
   if (cfg.get("compositor", "mode", "auto") == "off") return;
   std::string conf = config_home() + "/sde/compositor.conf";
@@ -632,6 +655,12 @@ int main(int argc, char **argv) {
   paint_root();
   Config cfg;
   cfg.load();
+  // Theme values of alpha15 and earlier (sde, aero, liquid-glass and the old
+  // accent swatches) are rewritten once to SDE Graphite/Fluent/Glass.
+  if (migrate_theme_config(cfg)) {
+    cfg.save();
+    log("theme settings migrated to %s", theme_dir(cfg).c_str());
+  }
   sync_openbox(cfg);
   sync_gtk_settings(cfg);
   migrate_legacy_suite_shortcuts();
@@ -692,7 +721,18 @@ int main(int argc, char **argv) {
         int ms = c.restart_at > now0 ? int(c.restart_at - now0) * 1000 : 0;
         timeout = timeout < 0 ? ms : std::min(timeout, ms);
       }
+    // [appearance] theme=auto switches between light and dark at 07:00 and
+    // 19:00: wake up then and announce the change like Settings does.
+    bool auto_mode = lower(cfg.get("appearance", "theme", "light")) == "auto";
+    if (auto_mode) {
+      int ms = theme_auto_seconds_left() * 1000 + 500;
+      timeout = timeout < 0 ? ms : std::min(timeout, ms);
+    }
     int r = poll(fds, 2, timeout);
+    if (auto_mode && theme_mode_dark("auto") != g_auto_dark) {
+      g_auto_dark = theme_mode_dark("auto");
+      bump_config_serial();  // handled below like any other change
+    }
     if (r < 0 && errno != EINTR) break;
     if (fds[1].revents) {
       while (XPending(g_display)) {
@@ -700,6 +740,16 @@ int main(int argc, char **argv) {
         XNextEvent(g_display, &ev);
         if (ev.type == PropertyNotify && ev.xproperty.atom == XInternAtom(g_display, "_SDE_CONFIG_SERIAL", False)) {
           cfg.load(); sync_gtk_settings(cfg);
+          // The window frames and the compositor follow the theme too, no
+          // matter which program changed it (Settings, the panel, a script).
+          if (sync_openbox(cfg)) reconfigure_window_manager();
+          if (!file_exists(config_home() + "/sde/compositor.conf")) {
+            std::string before, after, path = config_home() + "/sde/aero-compositor.conf";
+            read_file(path, before);
+            write_compositor_config(cfg);
+            write_compositor_config(cfg, true);
+            if (read_file(path, after) && after != before) reload_compositor();
+          }
           for (auto &c : g_components)
             if (c.name == "GTK settings" && c.pid > 0) kill(c.pid, SIGHUP);
         }

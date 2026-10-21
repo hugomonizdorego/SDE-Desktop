@@ -125,7 +125,7 @@ class LiriaAlpha15Test(unittest.TestCase):
         for needle in ('gtk_recent_manager_purge_items', 'gtk_recent_manager_remove_item',
                        'Remove from Recent', 'sde-home-clear'):
             self.assertIn(needle, home)
-        css = (self.root / 'data/themes/SDE-Common/gtk-3.0/apps.css').read_text()
+        css = (self.root / 'data/themes/overlays/apps-gtk-3.0.css').read_text()
         self.assertIn('button.sde-home-clear', css)
 
 

@@ -102,91 +102,41 @@ namespace {
 
 void aero_changed();
 
-// Theme preview that acts as a radio button: SDE Light, SDE Dark, SDE Aero
-// and SDE Liquid Glass (Aero and Liquid Glass follow the dark-mode switch).
-class ThemeCard : public Fl_Widget {
+// Writes the chosen family, mode and accent and applies them everywhere:
+// GTK (settings.ini, XSETTINGS, libadwaita colors), SDE WM frames and
+// button layout, the compositor and every SDE program.
+void set_theme(const std::string &family, const std::string &mode, const std::string &accent) {
+  g_cfg.set("appearance", "style", family);
+  g_cfg.set("appearance", "theme", mode);
+  g_cfg.set("appearance", "accent_name", accent);
+  g_cfg.set("appearance", "accent", theme_accent_color(family, accent, false).to_hex());
+  g_theme = Theme::from_config(g_cfg);
+  aero_changed();
+  if (g_window) g_window->redraw();
+}
+
+// Generic card-like radio widget: draw_card() paints, pick() chooses.
+class PickCard : public Fl_Widget {
  public:
-  ThemeCard(int x, int y, int w, int h, std::string id) : Fl_Widget(x, y, w, h), id_(std::move(id)) {}
-  bool active() const {
-    std::string style = theme_style(g_cfg);
-    if (id_ == "light") return style == "sde" && !g_theme.dark;
-    if (id_ == "dark") return style == "sde" && g_theme.dark;
-    return style == id_;
-  }
-  void draw() override {
-    bool on = active();
-    bool dark = id_ == "dark" || ((id_ == "aero" || id_ == "liquid-glass") && g_theme.dark);
-    int pv = h() - S(26);
-    {
-      Painter p(window()->w(), window()->h());
-      Color bg = dark ? Color::hex(0x161B22) : Color::hex(0xF5F7FA);
-      Color surf = dark ? Color::hex(0x1F2630) : Color::hex(0xFFFFFF);
-      Color line = dark ? Color::hex(0x384252) : Color::hex(0xD5DBE3);
-      if (id_ == "liquid-glass") {
-        // A colorful backdrop seen through frosted layers.
-        p.fill_gradient(x(), y(), w(), pv, Sd(12), Color::hex(dark ? 0x23305A : 0x8EC5FC),
-                        Color::hex(dark ? 0x4A2B55 : 0xE0C3FC), true);
-        surf = dark ? Color::hex(0xFFFFFF, 0.10) : Color::hex(0xFFFFFF, 0.55);
-        line = dark ? Color::hex(0xFFFFFF, 0.25) : Color::hex(0xFFFFFF, 0.9);
-      } else {
-        p.fill_rounded(x(), y(), w(), pv, Sd(12), bg);
-      }
-      p.stroke_rounded(x(), y(), w(), pv, Sd(12), on ? g_theme.accent : g_theme.border,
-                       on ? Sd(2.5) : Sd(1));
-      double wx = x() + Sd(12), wy = y() + Sd(12), ww = w() - Sd(24), wh = pv - Sd(24);
-      double r = id_ == "liquid-glass" ? Sd(12) : Sd(6);
-      p.fill_rounded(wx, wy, ww, wh, r, surf);
-      if (id_ == "aero") {
-        p.fill_gradient(wx, wy, ww, Sd(18), Sd(6), dark ? Color::hex(0x354152) : Color::hex(0xFBFDFF),
-                        dark ? Color::hex(0x232B38) : Color::hex(0xD2E2F3));
-        p.glass_sheen(wx, wy, ww, Sd(18), Sd(6), dark);
-      } else if (id_ == "liquid-glass") {
-        p.stroke_rounded(wx, wy, ww, wh, r, line, Sd(1));
-      } else {
-        p.line(wx, wy + Sd(18), wx + ww, wy + Sd(18), line);
-      }
-      p.fill_rounded(wx + Sd(10), wy + Sd(28), ww * 0.5, Sd(7), Sd(3.5), line);
-      p.fill_rounded(wx + Sd(10), wy + Sd(42), ww * 0.65, Sd(7), Sd(3.5), line);
-      double br = id_ == "liquid-glass" ? Sd(7) : Sd(4);
-      p.fill_rounded(wx + Sd(10), wy + wh - Sd(22), Sd(40), Sd(14), br, g_theme.accent);
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), pv, Sd(12));
-    }
-    static const std::pair<const char *, const char *> names[] = {
-        {"light", N_("Light")}, {"dark", N_("Dark")}, {"aero", N_("Aero")},
-        {"liquid-glass", N_("Liquid Glass")}};
-    const char *label = "";
-    for (auto &n : names)
-      if (id_ == n.first) label = _(n.second);
-    text_font(g_theme.font_size, on);
-    draw_text(label, x(), y() + pv + S(2), w(), S(22), on ? g_theme.accent_text : g_theme.text, 1);
-  }
-  void choose() {
-    if (id_ == "light" || id_ == "dark") {
-      g_cfg.set("appearance", "style", "sde");
-      g_cfg.set("appearance", "theme", id_);
-    } else {
-      g_cfg.set("appearance", "style", id_);
-    }
-    g_theme = Theme::from_config(g_cfg);
-    set_openbox_theme(g_theme.dark, theme_style(g_cfg));
-    reconfigure_window_manager();
-    aero_changed();
-    if (window()) window()->redraw();
-  }
+  PickCard(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  virtual bool selected() const = 0;
+  virtual void pick() = 0;
   int handle(int e) override {
     switch (e) {
-      case FL_PUSH:
-        return 1;
+      case FL_PUSH: return 1;
       case FL_RELEASE:
-        if (Fl::event_inside(this)) choose();
+        if (Fl::event_inside(this)) pick();
         return 1;
-      case FL_FOCUS:
-      case FL_UNFOCUS:
+      case FL_ENTER: case FL_LEAVE:
+        hot_ = e == FL_ENTER;
+        redraw();
+        return 1;
+      case FL_FOCUS: case FL_UNFOCUS:
         redraw();
         return 1;
       case FL_KEYBOARD:
         if (Fl::event_key() == ' ' || Fl::event_key() == FL_Enter) {
-          choose();
+          pick();
           return 1;
         }
         return 0;
@@ -195,43 +145,209 @@ class ThemeCard : public Fl_Widget {
     }
   }
 
- private:
-  std::string id_;
+ protected:
+  bool hot_ = false;
 };
 
+// A miniature desktop window drawn with a family's palette: title bar with
+// that family's caption buttons, sidebar, text lines, an accent button and a
+// popup menu with the highlighted item.
+void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w, double h,
+                        double outer_r) {
+  // Backdrop: a soft wallpaper gradient (glass shows through it).
+  p.fill_gradient(x, y, w, h, outer_r, t.dark ? Color::hex(0x2B3445) : Color::hex(0xC9D6EA),
+                  t.dark ? Color::hex(0x3B2B48) : Color::hex(0xE9D8F2), true);
+  double wx = x + w * 0.08, wy = y + h * 0.12, ww = w * 0.78, wh = h * 0.78;
+  double r = std::min(Sd(8), t.radius * 0.6);
+  p.shadow(wx, wy, ww, wh, r, t.shadow.alpha(std::min(0.35, t.shadow.a)), int(Sd(6)));
+  Color body = t.background;
+  if (t.family == "glass") body = body.alpha(0.88);
+  p.fill_rounded(wx, wy, ww, wh, r, body);
+  double th = Sd(16);
+  // Title bar.
+  cairo_save(p.cr());
+  p.rounded_rect(wx, wy, ww, wh, r);
+  cairo_clip(p.cr());
+  if (t.family == "glass")
+    p.fill_gradient(wx, wy, ww, th, 0, t.titlebar_bg.mix(Color::hex(0xFFFFFF), t.dark ? 0.08 : 0.5), t.titlebar_bg);
+  else
+    p.fill_rect(wx, wy, ww, th, t.titlebar_bg);
+  p.line(wx, wy + th - 0.5, wx + ww, wy + th - 0.5, t.border);
+  // Sidebar and content.
+  p.fill_rect(wx, wy + th, ww * 0.28, wh - th, t.surface_alt);
+  p.fill_rect(wx + ww * 0.28, wy + th, ww * 0.72, wh - th, t.surface);
+  cairo_restore(p.cr());
+  p.stroke_rounded(wx + 0.5, wy + 0.5, ww - 1, wh - 1, r, t.border);
+  double cy = wy + th / 2;
+  if (t.family == "fluent") {
+    Color g = t.titlebar_text;
+    double bx = wx + ww - Sd(10);
+    p.line(bx - Sd(3), cy - Sd(3), bx + Sd(3), cy + Sd(3), g, Sd(1));
+    p.line(bx - Sd(3), cy + Sd(3), bx + Sd(3), cy - Sd(3), g, Sd(1));
+    bx -= Sd(14);
+    p.stroke_rounded(bx - Sd(3), cy - Sd(3), Sd(6), Sd(6), Sd(1), g, Sd(1));
+    bx -= Sd(14);
+    p.line(bx - Sd(3), cy, bx + Sd(3), cy, g, Sd(1));
+  } else {
+    const uint32_t lights[] = {0xFF5F57, 0xFEBC2E, 0x28C840};
+    for (int i = 0; i < 3; ++i) p.circle(wx + Sd(9) + i * Sd(10), cy, Sd(3.4), Color::hex(lights[i]));
+  }
+  // Sidebar rows, the selected one in the accent.
+  for (int i = 0; i < 3; ++i) {
+    double ry = wy + th + Sd(8) + i * Sd(11);
+    if (i == 0) p.fill_rounded(wx + Sd(4), ry - Sd(3), ww * 0.28 - Sd(8), Sd(9), Sd(3), t.accent.alpha(0.22));
+    p.fill_rounded(wx + Sd(8), ry, ww * 0.16, Sd(3), Sd(1.5), i == 0 ? t.accent_text : t.text_dim.alpha(0.6));
+  }
+  double cx = wx + ww * 0.28 + Sd(8);
+  p.fill_rounded(cx, wy + th + Sd(9), ww * 0.34, Sd(4), Sd(2), t.text.alpha(0.75));
+  p.fill_rounded(cx, wy + th + Sd(18), ww * 0.46, Sd(3), Sd(1.5), t.text_dim.alpha(0.6));
+  p.fill_rounded(cx, wy + th + Sd(25), ww * 0.40, Sd(3), Sd(1.5), t.text_dim.alpha(0.6));
+  p.fill_rounded(cx, wy + wh - Sd(16), Sd(30), Sd(10), std::min(Sd(5), double(t.radius_small)), t.accent);
+  // A popup menu overlapping the window, as Acrylic/vibrancy shows it.
+  double mx = wx + ww * 0.58, my = wy + wh * 0.42, mw = w * 0.36, mh = Sd(34);
+  p.shadow(mx, my, mw, mh, Sd(5), t.shadow.alpha(std::min(0.3, t.shadow.a)), int(Sd(5)));
+  p.fill_rounded(mx, my, mw, mh, Sd(5), t.menu_bg.alpha(t.translucent ? 0.94 : 1.0));
+  p.stroke_rounded(mx + 0.5, my + 0.5, mw - 1, mh - 1, Sd(5), t.menu_border);
+  p.fill_rounded(mx + Sd(3), my + Sd(12), mw - Sd(6), Sd(10), Sd(3), t.menu_hover);
+  p.fill_rounded(mx + Sd(7), my + Sd(5), mw * 0.5, Sd(3), Sd(1.5), t.menu_text.alpha(0.6));
+  p.fill_rounded(mx + Sd(7), my + Sd(15.5), mw * 0.55, Sd(3), Sd(1.5), t.menu_hover_text.alpha(0.9));
+  p.fill_rounded(mx + Sd(7), my + Sd(26), mw * 0.4, Sd(3), Sd(1.5), t.menu_text.alpha(0.6));
+}
+
+// Theme family card: preview, name and a one-line description.
+class FamilyCard : public PickCard {
+ public:
+  FamilyCard(int x, int y, int w, int h, std::string id, std::string label, std::string desc)
+      : PickCard(x, y, w, h), id_(std::move(id)), label_(std::move(label)), desc_(std::move(desc)) {
+    tooltip(desc_.c_str());
+  }
+  bool selected() const override { return g_theme.family == id_; }
+  void pick() override { set_theme(id_, g_theme.mode, g_theme.accent_name); }
+  void draw() override {
+    bool on = selected();
+    int pv = h() - S(44);
+    {
+      Painter p(window()->w(), window()->h());
+      Theme t = Theme::make(id_, g_theme.dark, g_theme.accent_name);
+      t.translucent = g_theme.translucent;
+      p.fill_rounded(x(), y(), w(), h(), S(12), hot_ ? g_theme.hover : g_theme.surface);
+      double in = Sd(6);
+      cairo_save(p.cr());
+      p.rounded_rect(x() + in, y() + in, w() - 2 * in, pv - in, Sd(8));
+      cairo_clip(p.cr());
+      draw_theme_preview(p, t, x() + in, y() + in, w() - 2 * in, pv - in, Sd(8));
+      cairo_restore(p.cr());
+      p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(12), on ? g_theme.accent : g_theme.border,
+                       on ? Sd(2.5) : Sd(1));
+      if (on) {
+        double bx = x() + w() - Sd(18), by = y() + Sd(18);
+        p.circle(bx, by, Sd(9), g_theme.accent);
+        p.line(bx - Sd(4), by, bx - Sd(1), by + Sd(3), g_theme.on_accent, Sd(2));
+        p.line(bx - Sd(1), by + Sd(3), bx + Sd(4), by - Sd(3), g_theme.on_accent, Sd(2));
+      }
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(12));
+    }
+    text_font(g_theme.font_size, true);
+    draw_text(std::string("SDE ") + _(label_.c_str()), x() + S(12), y() + pv + S(3), w() - S(24), S(20),
+              on ? g_theme.accent_text : g_theme.text);
+    text_font(std::max(S(10), g_theme.font_size - S(2)));
+    draw_text(_(short_desc().c_str()), x() + S(12), y() + pv + S(21), w() - S(24), S(18), g_theme.text_dim);
+  }
+
+ private:
+  std::string short_desc() const {
+    if (id_ == "graphite") return N_("Apple HIG · soft depth");
+    if (id_ == "fluent") return N_("Fluent Design · Mica, Acrylic");
+    return N_("Frosted, rounded glass");
+  }
+  std::string id_, label_, desc_;
+};
+
+// Light / Dark / Auto: a half-and-half tile for Auto.
+class ModeCard : public PickCard {
+ public:
+  ModeCard(int x, int y, int w, int h, std::string mode) : PickCard(x, y, w, h), mode_(std::move(mode)) {}
+  bool selected() const override { return g_theme.mode == mode_; }
+  void pick() override { set_theme(g_theme.family, mode_, g_theme.accent_name); }
+  void draw() override {
+    bool on = selected();
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(10), hot_ || on ? g_theme.hover : g_theme.surface_alt);
+      double sw = h() - Sd(14), sx = x() + Sd(8), sy = y() + Sd(7);
+      Theme light = Theme::make(g_theme.family, false, g_theme.accent_name);
+      Theme dark = Theme::make(g_theme.family, true, g_theme.accent_name);
+      if (mode_ == "auto") {
+        cairo_save(p.cr());
+        p.rounded_rect(sx, sy, sw, sw, Sd(6));
+        cairo_clip(p.cr());
+        p.fill_rect(sx, sy, sw / 2, sw, light.background);
+        p.fill_rect(sx + sw / 2, sy, sw / 2, sw, dark.background);
+        cairo_restore(p.cr());
+      } else {
+        p.fill_rounded(sx, sy, sw, sw, Sd(6), mode_ == "dark" ? dark.background : light.background);
+      }
+      p.stroke_rounded(sx + 0.5, sy + 0.5, sw - 1, sw - 1, Sd(6), g_theme.border);
+      p.fill_rounded(sx + sw * 0.2, sy + sw * 0.6, sw * 0.6, sw * 0.18, Sd(2), g_theme.accent);
+      p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(10), on ? g_theme.accent : g_theme.border,
+                       on ? Sd(2) : Sd(1));
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(10));
+    }
+    const char *label = mode_ == "light" ? _("Light") : mode_ == "dark" ? _("Dark") : _("Auto");
+    text_font(g_theme.font_size, on);
+    int tx = x() + h() + S(2);
+    draw_text(label, tx, y(), w() - (tx - x()) - S(6), h(), on ? g_theme.accent_text : g_theme.text);
+  }
+
+ private:
+  std::string mode_;
+};
+
+// Accent swatches of the current family.
 class AccentPicker : public Fl_Widget {
  public:
   AccentPicker(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  int step() const { return std::min(S(34), w() / kAccentChoiceCount); }
+  int step() const { return std::min(S(36), w() / int(theme_accents().size())); }
   void draw() override {
     Painter p(window()->w(), window()->h());
     int st = step();
-    for (int i = 0; i < kAccentChoiceCount; ++i) {
-      Color c;
-      Color::parse(kAccentChoices[i].hex, c);
+    auto accents = theme_accents();
+    for (int i = 0; i < int(accents.size()); ++i) {
+      Color c = theme_accent_color(g_theme.family, accents[size_t(i)], g_theme.dark);
       double cx = x() + st / 2.0 + i * st, cy = y() + h() / 2.0;
-      bool active = lower(c.to_hex()) == lower(g_theme.accent.to_hex());
-      double r = st * 0.36;
-      if (active) p.circle(cx, cy, r + Sd(3), g_theme.text.alpha(0.85));
-      p.circle(cx, cy, active ? r + Sd(1) : r + Sd(2), g_theme.surface);
+      bool active = accents[size_t(i)] == g_theme.accent_name;
+      double r = st * 0.34;
+      if (active) p.circle(cx, cy, r + Sd(4), c);
+      p.circle(cx, cy, active ? r + Sd(2) : r + Sd(1), g_theme.surface);
       p.circle(cx, cy, r, c);
+      p.stroke_rounded(cx - r, cy - r, 2 * r, 2 * r, r, g_theme.text.alpha(0.12));
       if (Fl::focus() == this && i == focus_) {
-        p.set(g_theme.accent);
+        p.set(g_theme.accent_text);
         cairo_set_line_width(p.cr(), Sd(2));
         cairo_new_sub_path(p.cr());
-        cairo_arc(p.cr(), cx, cy, r + Sd(6), 0, 2 * M_PI);
+        cairo_arc(p.cr(), cx, cy, r + Sd(7), 0, 2 * M_PI);
         cairo_stroke(p.cr());
       }
     }
   }
   void pick(int i) {
-    if (i < 0 || i >= kAccentChoiceCount) return;
-    g_cfg.set("appearance", "accent", kAccentChoices[i].hex);
-    apply_change();
+    auto accents = theme_accents();
+    if (i < 0 || i >= int(accents.size())) return;
+    set_theme(g_theme.family, g_theme.mode, accents[size_t(i)]);
   }
   int handle(int e) override {
+    int n = int(theme_accents().size());
     switch (e) {
       case FL_PUSH:
+        return 1;
+      case FL_MOVE: {
+        int i = (Fl::event_x() - x()) / step();
+        static std::string tip;
+        tip = i >= 0 && i < n ? theme_accent_label(theme_accents()[size_t(i)]) : "";
+        tooltip(tip.c_str());
+        return 1;
+      }
+      case FL_ENTER:
         return 1;
       case FL_RELEASE:
         pick((Fl::event_x() - x()) / step());
@@ -244,7 +360,7 @@ class AccentPicker : public Fl_Widget {
         int k = Fl::event_key();
         if (k == FL_Left && focus_ > 0)
           --focus_;
-        else if (k == FL_Right && focus_ + 1 < kAccentChoiceCount)
+        else if (k == FL_Right && focus_ + 1 < n)
           ++focus_;
         else if (k == ' ' || k == FL_Enter)
           pick(focus_);
@@ -853,38 +969,44 @@ void reload_compositor_later(void *) {
 void aero_changed();
 
 void build_appearance(Page *page) {
-  page->heading(_("Appearance"), _("Theme, colors, glass, size and wallpaper"));
+  page->heading(_("Appearance"), _("Theme, colors, translucency, size and wallpaper"));
   page->begin_card(_("Theme"));
-  int gap = S(12), cw = std::min(S(150), (page->width() - S(40) - 3 * gap) / 4);
+  auto fams = theme_families();
+  int gap = S(12), n = int(fams.size());
+  int cw = std::min(S(220), (page->width() - S(40) - (n - 1) * gap) / n);
   int y = page->cursor();
-  const char *ids[] = {"light", "dark", "aero", "liquid-glass"};
-  for (int i = 0; i < 4; ++i) new ThemeCard(page->left() + S(20) + i * (cw + gap), y, cw, S(118), ids[i]);
-  page->advance(S(126));
-  page->note(_("Themes are installed in /usr/share/themes (SDE, SDE-Dark, SDE-Aero, SDE-Liquid-Glass "
-               "and their dark versions) and work in GTK 3 and GTK 4 applications."));
-  page->switch_row(
-      _("Dark mode"), g_theme.dark,
-      [](bool on) {
-        g_cfg.set("appearance", "theme", on ? "dark" : "light");
-        g_theme = Theme::from_config(g_cfg);
-        set_openbox_theme(on, theme_style(g_cfg));
-        reconfigure_window_manager();
-        aero_changed();
-      },
-      _("Aero and Liquid Glass have light and dark versions."));
-  page->row(_("Accent color"), S(34) * kAccentChoiceCount, S(36),
+  for (int i = 0; i < n; ++i)
+    new FamilyCard(page->left() + S(20) + i * (cw + gap), y, cw, S(164), fams[size_t(i)].id,
+                   fams[size_t(i)].label, fams[size_t(i)].description);
+  page->advance(S(176));
+  page->row(_("Mode"), S(3 * 104 + 2 * 8), S(40), [](int x, int yy, int w, int h) {
+    auto *g = new Fl_Group(x, yy, w, h);
+    const char *modes[] = {"light", "dark", "auto"};
+    for (int i = 0; i < 3; ++i) new ModeCard(x + i * S(112), yy, S(104), h, modes[i]);
+    g->end();
+    return g;
+  }, _("Auto is light from 07:00 to 19:00 and dark in the evening."));
+  page->row(_("Accent color"), S(36) * int(theme_accents().size()), S(38),
             [](int x, int yy, int w, int h) { return new AccentPicker(x, yy, w, h); });
+  {
+    std::string based = g_theme.family == "fluent"
+                             ? _("Based on Flat Remix GTK and Flat Remix GNOME by Daniel Ruiz de Alegría.")
+                             : _("Based on the Graphite GTK theme by Vince Liu.");
+    page->note(format(_("Applications, menus, window frames and SDE use %s (GTK 3, GTK 4, libadwaita "
+                        "and SDE WM). %s"),
+                      g_theme.gtk_theme.c_str(), based.c_str()));
+  }
   page->end_card();
 
-  page->begin_card(_("Glass effects"));
+  page->begin_card(_("Translucency"));
   page->switch_row(
-      _("Glass effects"), g_cfg.get_bool("aero", "enabled", true),
+      _("Translucent surfaces"), g_cfg.get_bool("aero", "enabled", true),
       [](bool on) {
         g_cfg.set("aero", "enabled", on ? "true" : "false");
         aero_changed();
       },
-      _("Translucent panel, menus and window frames with Aero and Liquid Glass. SDE Light and "
-        "Dark stay opaque."));
+      _("Acrylic panel and menus in Fluent, vibrancy in Graphite, frosted window frames in "
+        "Glass."));
   page->slider_row(
       _("Transparency"), 0, 60, g_cfg.get_int("aero", "transparency", 18),
       [](double v) {
@@ -1937,7 +2059,8 @@ void build_about(Page *page) {
             Label::SUBTITLE);
   new Label(tx, y + S(76), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION),
             Label::DIM);
-  page->advance(S(112));
+  new Label(tx, y + S(98), tw, S(22), _("Developer: DebION Dev-Team"), Label::DIM);
+  page->advance(S(132));
   page->end_card();
 
   struct utsname u;
@@ -1956,6 +2079,7 @@ void build_about(Page *page) {
       {_("Interface size"), format("%d %%", int(std::lround(g_theme.scale * 100)))},
       {_("Window manager"), wm_name()},
       {_("Toolkit"), "FLTK " SDE_FLTK_VERSION},
+      {_("Theme"), g_theme.gtk_theme},
   };
   page->begin_card(_("System"));
   for (auto &r : rows) info_row(page, r.first, r.second);
@@ -2286,6 +2410,7 @@ int main(int argc, char **argv) {
     to_wallpaper = r == "wallpaper" || r == "wallpapers" || r == "background";
   }
   g_cfg.load();
+  if (migrate_theme_config(g_cfg)) g_cfg.save();
   if (apply) {
     sync_gtk_settings(g_cfg);
     migrate_legacy_suite_shortcuts();

@@ -283,6 +283,11 @@ static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
   bool accent_menu = std::strcmp(f.menu_highlight, "accent") == 0;
   t.menu_hover = accent_menu ? t.accent : t.hover;
   t.menu_hover_text = accent_menu ? t.on_accent : t.text;
+  // Highlighted items keep their label readable (WCAG AA): bright accents
+  // (red, Flat Remix blue) get a slightly deeper shade there.
+  for (int i = 1; i <= 10 && accent_menu && t.menu_hover_text.contrast(t.menu_hover) < 4.5; ++i)
+    t.menu_hover = t.accent.mix(t.on_accent.luminance() > 0.5 ? Color::hex(0x000000) : Color::hex(0xFFFFFF),
+                                i * 0.04);
   t.menu_border = t.border;
   t.menu_separator = t.border;
   t.selection_bg = t.accent;

@@ -134,7 +134,6 @@ int theme_auto_seconds_left(std::time_t now = std::time(nullptr));
 
 // The theme family: "graphite", "fluent" or "glass" (theme_choice().family).
 std::string theme_style(const Config &cfg);
-inline std::string theme_family(const Config &cfg) { return theme_style(cfg); }
 // GTK/Openbox theme directory, e.g. theme_dir("fluent", true, "green") is
 // "SDE-Fluent-Dark-Green". Old style names are accepted.
 std::string theme_dir(const std::string &family, bool dark = false, const std::string &accent = "blue");

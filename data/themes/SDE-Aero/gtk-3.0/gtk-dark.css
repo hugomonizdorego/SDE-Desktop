@@ -1,7 +1,0 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later
- * SDE Aero: soft glass bars and gradients - GTK 3 (dark). Widget geometry from GTK's
- * built-in theme; shared SDE styling in ../../SDE-Common. */
-@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");
-@import url("colors-dark.css");
-@import url("../../SDE-Common/gtk-3.0/widgets.css");
-@import url("../../SDE-Common/gtk-3.0/apps.css");
