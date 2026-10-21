@@ -8,7 +8,10 @@
 #include <FL/fl_draw.H>
 
 #include <algorithm>
+#include <csignal>
+#include <cstdlib>
 #include <cstring>
+#include <set>
 
 #include "i18n.h"
 #include "taca.h"
@@ -160,8 +163,38 @@ int Chips::handle(int event) {
 
 // ------------------------------------------------------------------- jobs
 
+namespace {
+
+volatile sig_atomic_t g_terminate = 0;
+std::set<Job *> g_jobs;  // main thread only
+
+void on_signal(int) { g_terminate = 1; }
+
+// SIGTERM or SIGINT: cancel running work (which removes its temporary
+// files) and leave once nothing runs any more.
+void poll_terminate(void *) {
+  if (g_terminate) {
+    if (g_jobs.empty()) std::exit(143);
+    for (Job *j : g_jobs) j->cancel();
+  }
+  Fl::repeat_timeout(0.2, poll_terminate);
+}
+
+}  // namespace
+
+void install_signal_handlers() {
+  struct sigaction sa {};
+  sa.sa_handler = on_signal;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGTERM, &sa, nullptr);
+  sigaction(SIGINT, &sa, nullptr);
+  sigaction(SIGHUP, &sa, nullptr);
+  Fl::add_timeout(0.2, poll_terminate);
+}
+
 Job::Job(const std::string &title, Work work, Done done)
     : title_(title), work_(std::move(work)), done_(std::move(done)) {
+  g_jobs.insert(this);
   thread_ = std::thread([this] {
     result_ = work_(progress_);
     Fl::awake(awake_cb, this);
@@ -169,14 +202,19 @@ Job::Job(const std::string &title, Work work, Done done)
 }
 
 Job::~Job() {
+  g_jobs.erase(this);
   progress_.cancel = true;
   if (thread_.joinable()) thread_.join();
 }
 
 void Job::awake_cb(void *p) {
   auto *job = static_cast<Job *>(p);
+  // The job may have been cancelled and deleted before this ran.
+  if (!g_jobs.count(job)) return;
   if (job->thread_.joinable()) job->thread_.join();
   job->finished_ = true;
+  g_jobs.erase(job);
+  if (g_terminate) std::exit(143);
   // |done| may destroy the job: copy what it needs first.
   Done done = job->done_;
   Result result = job->result_;

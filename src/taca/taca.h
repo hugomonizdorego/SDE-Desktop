@@ -322,6 +322,9 @@ class TacaWindow : public sde::BufferedWindow {
 int run_cli_job(const std::string &title, Job::Work work, bool quiet_success,
                 std::function<void(const Result &)> done = nullptr);
 
+// SIGTERM, SIGINT and SIGHUP cancel running work cleanly before exiting.
+void install_signal_handlers();
+
 std::string uri_to_path(const std::string &uri);
 std::string path_to_uri(const std::string &path);
 std::vector<std::string> parse_uri_list(const std::string &text);

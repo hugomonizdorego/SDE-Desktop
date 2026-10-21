@@ -71,6 +71,7 @@ void open_display() {
   auto theme = Theme::from_config(config);
   theme.apply_to_fltk();
   Fl::lock();  // workers wake the main loop with Fl::awake()
+  install_signal_handlers();
 }
 
 // Lists |path|, asking for a password when needed. Returns false on error
