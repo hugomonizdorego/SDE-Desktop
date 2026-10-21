@@ -17,7 +17,10 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <atomic>
+#include <chrono>
 #include <set>
+#include <thread>
 
 #include "i18n.h"
 #include "internal.h"
@@ -471,6 +474,10 @@ bool copy_file(const std::string &from, const std::string &to) {
 
 }  // namespace
 
+namespace {
+bool zip_end_record(const std::string &path, std::string *comment);
+}
+
 Result salvage_archive(const std::string &archive, const std::string &output, Format f, const std::string &password,
                        Progress *p, size_t &recovered, size_t &lost) {
   recovered = lost = 0;
@@ -533,11 +540,26 @@ Result repair_archive(const std::string &archive, const std::string &dest_dir, c
     lost = long(lo);
     return r;
   };
+  // zip -FF asks questions on the terminal when the end record is missing
+  // (a truncated file): libarchive's salvage handles that case instead.
+  if (plan.method == RepairMethod::ZipFix && !zip_end_record(archive, nullptr)) plan.method = RepairMethod::Salvage;
   if (plan.method == RepairMethod::ZipFix) {
     if (p) p->set_current(_("Rebuilding the archive directory"));
     std::vector<std::string> argv = plan.argv;
     argv[4] = output;
-    int st = run_tool(argv, dest_dir, nullptr, p ? &p->cancel : nullptr);
+    // A watchdog: never wait more than two minutes for a stuck program.
+    std::atomic<bool> stop{false}, finished{false};
+    std::thread watchdog([&] {
+      for (int i = 0; i < 1200 && !finished; ++i) {
+        if (p && p->cancel) stop = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      stop = true;
+    });
+    int st = run_tool(argv, dest_dir, nullptr, &stop);
+    finished = true;
+    watchdog.join();
+    if (st == -2 && !(p && p->cancel)) st = 1;  // timed out: salvage below
     if (st == -2) {
       unlink(output.c_str());
       Result r;
@@ -651,9 +673,13 @@ Result convert_archive(const std::string &archive, const std::string &password, 
   return c;
 }
 
-std::string zip_comment(const std::string &path) {
+namespace {
+
+// Finds the ZIP end-of-central-directory record; |comment| receives the
+// archive comment.
+bool zip_end_record(const std::string &path, std::string *comment) {
   FILE *f = fopen(path.c_str(), "rb");
-  if (!f) return "";
+  if (!f) return false;
   std::string tail;
   if (fseeko(f, 0, SEEK_END) == 0) {
     off_t size = ftello(f);
@@ -662,7 +688,7 @@ std::string zip_comment(const std::string &path) {
     if (fseeko(f, start, SEEK_SET) != 0 || fread(&tail[0], 1, tail.size(), f) != tail.size()) tail.clear();
   }
   fclose(f);
-  if (tail.size() < 22) return "";
+  if (tail.size() < 22) return false;
   for (size_t i = tail.size() - 22 + 1; i-- > 0;) {
     const unsigned char *e = reinterpret_cast<const unsigned char *>(tail.data()) + i;
     if (e[0] != 'P' || e[1] != 'K' || e[2] != 5 || e[3] != 6) continue;
@@ -671,9 +697,17 @@ std::string zip_comment(const std::string &path) {
     std::string c = tail.substr(i + 22, len);
     for (auto &ch : c)
       if (ch == '\r') ch = '\n';
-    return c;
+    if (comment) *comment = c;
+    return true;
   }
-  return "";
+  return false;
+}
+
+}  // namespace
+
+std::string zip_comment(const std::string &path) {
+  std::string c;
+  return zip_end_record(path, &c) ? c : "";
 }
 
 // --------------------------------------------------------------- favorites
