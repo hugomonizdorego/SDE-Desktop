@@ -53,7 +53,7 @@ and submodules are published with the binaries.
 | --- | --- | --- | --- |
 | Niny | [pluma](https://github.com/mate-desktop/pluma) | Pluma/gedit and MATE contributors | `sde/upstream/pluma` |
 | Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus, Eazel, GNOME and MATE contributors | `sde/upstream/caja` |
-| Xanara | [atril](https://github.com/mate-desktop/atril) | Atril/Evince and MATE contributors | `sde/upstream/atril` |
+| Xanara | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | Taca | [engrampa](https://github.com/mate-desktop/engrampa) | Engrampa/File Roller and MATE contributors | `sde/upstream/engrampa` |
 | Photo (SDE View) | [eom](https://github.com/mate-desktop/eom) | Eye of GNOME and MATE contributors | `sde/upstream/eom` |
 | SDE System Monitor | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |

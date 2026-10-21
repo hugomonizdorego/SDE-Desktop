@@ -120,6 +120,62 @@ add_executable(sde-gallery
   gallery/icons.cpp)
 target_link_libraries(sde-gallery PRIVATE sde-gallery-core)
 
+# Xanara: the SDE document viewer and PDF editor, written from scratch by
+# the DebION Dev-Team on poppler-glib. The document model, renderer and tile
+# cache are a separate library so the unit tests run without a display.
+pkg_check_modules(POPPLER_GLIB REQUIRED IMPORTED_TARGET poppler-glib)
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_INCLUDES ${POPPLER_GLIB_INCLUDE_DIRS})
+set(CMAKE_REQUIRED_LIBRARIES ${POPPLER_GLIB_LINK_LIBRARIES})
+# Annotation APIs that only newer poppler releases have; older ones get an
+# image stamp that looks the same.
+check_cxx_source_compiles([=[
+#include <poppler.h>
+int main() {
+  PopplerRectangle r{0, 0, 10, 10};
+  PopplerAnnot *a = poppler_annot_free_text_new(nullptr, &r);
+  PopplerFontDescription *fd = poppler_font_description_new("Sans");
+  fd->size_pt = 12;
+  poppler_annot_free_text_set_font_desc(POPPLER_ANNOT_FREE_TEXT(a), fd);
+  poppler_font_description_free(fd);
+  PopplerColor c{0, 0, 0};
+  poppler_annot_free_text_set_font_color(POPPLER_ANNOT_FREE_TEXT(a), &c);
+  return 0;
+}]=] XANARA_HAVE_FREE_TEXT)
+check_cxx_source_compiles([=[
+#include <poppler.h>
+int main() {
+  PopplerRectangle r{0, 0, 10, 10};
+  PopplerAnnot *a = poppler_annot_ink_new(nullptr, &r);
+  PopplerPoint pts[2] = {{0, 0}, {1, 1}};
+  PopplerPath *p = poppler_path_new_from_array(pts, 2);
+  poppler_annot_ink_set_ink_list(POPPLER_ANNOT_INK(a), &p, 1);
+  poppler_path_free(p);
+  return 0;
+}]=] XANARA_HAVE_INK)
+check_cxx_source_compiles([=[
+#include <poppler.h>
+int main() { poppler_annot_set_border_width(nullptr, 2.0); return 0; }
+]=] XANARA_HAVE_BORDER_WIDTH)
+unset(CMAKE_REQUIRED_INCLUDES)
+unset(CMAKE_REQUIRED_LIBRARIES)
+add_library(sde-xanara-core STATIC xanara/document.cpp xanara/cache.cpp)
+target_include_directories(sde-xanara-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xanara)
+target_link_libraries(sde-xanara-core PUBLIC sde-common PkgConfig::POPPLER_GLIB Threads::Threads)
+foreach(feature XANARA_HAVE_FREE_TEXT XANARA_HAVE_INK XANARA_HAVE_BORDER_WIDTH)
+  if(${feature})
+    target_compile_definitions(sde-xanara-core PUBLIC ${feature}=1)
+  endif()
+endforeach()
+add_executable(xanara
+  xanara/main.cpp
+  xanara/window.cpp
+  xanara/view.cpp
+  xanara/sidebar.cpp
+  xanara/icons.cpp)
+target_link_libraries(xanara PRIVATE sde-xanara-core)
+install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         sde-xsettingsd sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

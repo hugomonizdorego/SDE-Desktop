@@ -11,7 +11,7 @@ they are not duplicated inside SDE.
 | --- | --- | --- |
 | Niny | `niny` | [pluma](https://github.com/mate-desktop/pluma) |
 | Liria | `liria` | [caja](https://github.com/mate-desktop/caja) |
-| Xanara | `xanara` | [atril](https://github.com/mate-desktop/atril) |
+| Xanara | `xanara` | native SDE application (DebION Dev-Team) |
 | Taca | `taca` | [engrampa](https://github.com/mate-desktop/engrampa) |
 | SDE View | `sde-view` | [eom](https://github.com/mate-desktop/eom) |
 | SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
@@ -44,8 +44,8 @@ battery behavior require testing in a real DebION login session.
 
 New GTK processes follow SDE light/dark settings, respecting an existing
 `GTK_THEME` or the system-theme option. SDE-specific MIME defaults preserve user
-overrides. Xanara supports PDF, PostScript, DjVu and comic archives; the EPUB,
-DVI and XPS backends are disabled to avoid extra runtime stacks in this build.
+overrides. Xanara (native since alpha15) opens, annotates and fills in PDF files with
+poppler; page operations use qpdf when it is installed.
 
 The panel defaults to a full-width square-edged rectangle. Floating and short
 styles remain available. Existing saved panel choices are retained. Settings → Applications shows short clickable source names and complete installed copyright

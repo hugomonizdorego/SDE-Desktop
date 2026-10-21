@@ -62,7 +62,6 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
     for package in [
         "sde/upstream/pluma",
         "sde/upstream/caja",
-        "sde/upstream/atril",
         "sde/upstream/engrampa",
         "sde/upstream/eom",
         "sde/upstream/mate-power-manager",

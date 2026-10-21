@@ -14,12 +14,6 @@
       "use": "runtime-engine"
     },
     {
-      "id": "atril",
-      "repository": "https://github.com/mate-desktop/atril",
-      "commit": "a049ebfdfdeeac2ebb611c2b5db697987f02c6dd",
-      "use": "runtime-engine"
-    },
-    {
       "id": "engrampa",
       "repository": "https://github.com/mate-desktop/engrampa",
       "commit": "dbad54448edafdfbf81f6470d1136896791e9519",

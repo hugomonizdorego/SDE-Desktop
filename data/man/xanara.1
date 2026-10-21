@@ -1,22 +1,108 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
+.\" Copyright (C) 2026 DebION Dev-Team
 .TH XANARA 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-xanara \- Xanara document viewer
+xanara \- read, annotate and edit PDF documents
 .SH SYNOPSIS
 .B xanara
-[OPTIONS] FILES...
+[\fB\-\-page=\fIN\fR] [\fIFILE\fR...]
+.br
+.B xanara
+\fB\-\-version\fR | \fB\-\-help\fR
 .SH DESCRIPTION
-View PDF, PostScript, DjVu and comic documents with the native Xanara GTK viewer.
+.B Xanara
+is the document viewer and PDF editor of the Selviana Desktop Environment,
+written from scratch by the DebION Dev-Team on poppler and cairo.
 .PP
-This is an independent native executable built from the SDE fork sources
-and included in the sde package.
+Pages are rendered at the exact resolution of the screen (zoom times the
+SDE interface scale) in 512 pixel tiles on a background thread, and kept in a
+memory bounded cache. While the zoom changes, a scaled preview is shown; the
+sharp rendering follows as soon as the zoom settles.
+.PP
+Reading: continuous, single page and two\-page (book) layouts; fit width, fit
+page or any zoom (Ctrl+wheel); rotation; page thumbnails, the document outline
+and a list of annotations in the sidebar; find with highlighted results; text
+selection and copy; internal and web links; presentation mode; night and
+sepia reading modes; recent documents and the last page of each document;
+password protected PDFs; printing through the CUPS
+.BR lp (1)
+command.
+.PP
+Editing: highlight, underline and strike out text; sticky notes; text boxes;
+freehand pen drawings; rectangles and lines; a signature image; moving,
+recolouring and deleting annotations, with undo; filling in form fields (text,
+check boxes, radio buttons and lists). Pages can be rotated, moved, inserted
+from another PDF, deleted and extracted when
+.BR qpdf (1)
+is installed.
+.PP
+Saving writes a complete new file next to the original and renames it over
+the original only after it was written and read back successfully, so an
+interrupted save never damages the document. Closing a document with unsaved
+changes asks whether to save them.
 .SH OPTIONS
 .TP
-.B --help
-Display the native application options.
-.SH COPYRIGHT
-Original upstream copyrights and licenses are preserved. Settings at the SDE
-Suite page provides the source link and full installed notice.
+.BI \-\-page= N
+Open the first
+.I FILE
+at page
+.I N
+(1 is the first page).
+.TP
+.B \-\-version
+Print the version and the poppler version.
+.TP
+.B \-\-help
+Print a short usage summary.
+.PP
+Further files open in windows of their own.
+.I FILE
+may also be a file:// URI.
+.SH KEYS
+.TP
+.B Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+P, Ctrl+W, Ctrl+Q
+Open, save, save a copy, print, close the document, quit.
+.TP
+.B Ctrl+F, Enter, Shift+Enter, F3
+Find, next and previous result.
+.TP
+.B Ctrl+wheel, Ctrl++, Ctrl+\-, Ctrl+0, Ctrl+1, Ctrl+2
+Zoom, 100\ %, fit page, fit width.
+.TP
+.B Ctrl+R, Ctrl+Shift+R, Ctrl+Left, Ctrl+Right
+Rotate the view.
+.TP
+.B Ctrl+L
+Go to a page number.
+.TP
+.B Ctrl+M
+Cycle normal, night and sepia reading.
+.TP
+.B F5, F9, F11
+Presentation, sidebar, full screen.
+.TP
+.B V H U K N T P R L G
+Tools: select, highlight, underline, strike out, sticky note, text box, pen,
+rectangle, line, signature.
+.TP
+.B Delete, Ctrl+Z, Esc
+Delete the selected annotation, undo, leave the current tool.
+.SH FILES
+.TP
+.I ~/.config/sde/sde.conf
+The
+.B [xanara]
+section keeps the layout, reading mode, sidebar and
+.B cache_mb
+(rendered tile cache in MiB, default 224).
+.TP
+.I ~/.local/state/sde/xanara\-history
+Recent documents and the last page and zoom of each.
+.SH NOTES
+With poppler older than the release that can create FreeText and Ink
+annotations natively, text boxes and pen drawings are stored as image stamps
+that look the same in every PDF viewer.
 .SH SEE ALSO
-.BR sde-settings (1),
-.BR sde-suite (1)
+.BR qpdf (1),
+.BR lp (1),
+.BR sde-settings (1)

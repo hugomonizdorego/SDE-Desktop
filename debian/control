@@ -145,7 +145,7 @@ Depends: ${shlibs:Depends},
          xz-utils,
          xdg-user-dirs,
          fonts-dejavu-core | fonts-noto-core
-Recommends: papirus-icon-theme | adwaita-icon-theme,
+Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             network-manager,
             bluez,
             blueman,

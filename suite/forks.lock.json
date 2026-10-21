@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 3,
+  "revision": 4,
   "forks": [
     {
       "id": "liria",
@@ -26,27 +26,6 @@
         "--disable-gtk-doc",
         "--disable-tests",
         "--disable-python"
-      ],
-      "build_version": "1.0.0~alpha1"
-    },
-    {
-      "id": "xanara",
-      "upstream": "atril",
-      "name": "Xanara",
-      "version": "1.28.7",
-      "commit": "95511ad7640437c0e97ee91f36664b89c7d45475",
-      "url": "https://github.com/mate-desktop/atril",
-      "configure": [
-        "--disable-gtk-doc",
-        "--disable-introspection",
-        "--disable-tests",
-        "--disable-epub",
-        "--disable-dvi",
-        "--disable-xps",
-        "--enable-pdf",
-        "--enable-comics",
-        "--enable-djvu",
-        "--disable-caja"
       ],
       "build_version": "1.0.0~alpha1"
     },
