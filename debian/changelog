@@ -7,6 +7,9 @@ sde (0.1.0~alpha15) unstable; urgency=medium
     integration with Photo.
   * Start Menu: categories fit without scrolling, wheel scrolling fixed,
     slimmer, 12 Favorites plus Recently used (frequency and recency).
+  * Panel: honest internet status from NetworkManager with Troubleshoot,
+    tray overflow only when needed, alarms from the clock, agenda with
+    reminders in the calendar, Settings/Lock/Power in the Action Center.
   * Settings: Computer desktop icon, wallpaper gallery from
     /usr/share/backgrounds, graphics card details in About, Sound, Network
     and Bluetooth pages opened directly from the panel.

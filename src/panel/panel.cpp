@@ -1317,7 +1317,7 @@ void Panel::show_context_menu() {
 
 // ------------------------------------------------------------ X11 / tasks
 
-void Panel::update_task(Task &t) {
+void Panel::update_task(Task &t, bool icon) {
   t.title = x11::window_title(t.win);
   XClassHint hint;
   if (XGetClassHint(fl_display, t.win, &hint)) {
@@ -1333,6 +1333,10 @@ void Panel::update_task(Task &t) {
     if (hints->flags & XUrgencyHint) t.urgent = true;
     XFree(hints);
   }
+  // _NET_WM_ICON is large (often 100+ KiB with every size): fetch and
+  // scale it again only when the icon may have changed, not on every title
+  // change of a terminal or a browser tab.
+  if (!icon && t.icon) return;
   int size = icon_;
   if (t.icon) cairo_surface_destroy(t.icon);
   t.icon = x11::window_icon(t.win, size);
@@ -1443,7 +1447,7 @@ bool Panel::handle_x(const XEvent &e) {
           refresh_tasks();
           return true;
         }
-        update_task(t);
+        update_task(t, a == x11::atom("_NET_WM_ICON") || a == XA_WM_HINTS);
         redraw();
       }
       return true;

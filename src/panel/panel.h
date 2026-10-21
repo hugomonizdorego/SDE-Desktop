@@ -132,7 +132,7 @@ class Panel : public sde::BufferedWindow {
   void apply_strut();
   void apply_shape();
   void refresh_tasks();
-  void update_task(Task &t);
+  void update_task(Task &t, bool icon = true);
   Target hit(int x, int y) const;
   void task_clicked(int index, int button);
   void pinned_menu(int index);

@@ -36,9 +36,25 @@ edits, deletions and favourites appear in Gallery at once.
 
 ## Panel and Action Center
 
-See the panel section of the changelog below (alarms from the clock, agenda
-with reminders in the calendar, power and Settings buttons in the Action
-Center, honest internet status, tray overflow only when needed).
+- **Honest internet status.** The network icon and flyout use
+  NetworkManager's connectivity state: "Connected, no internet" (with a
+  warning badge), "Sign in to network" for captive portals (Open sign-in
+  page), or "Connected · Internet access". **Troubleshoot** re-checks and
+  reconnects to renew the address and DNS.
+- **Tray:** the ^ overflow button appears only when there are many app icons
+  (`[panel] tray_overflow_threshold`, default 4); otherwise they sit on the panel.
+- **Clock → Alarms.** Create alarms with time, repeat days, name and snooze.
+  They ring with a notification and sound (Snooze/Dismiss) even when the
+  popup is closed. Stored in `~/.config/sde/alarms.ini`. Super+C still opens
+  the calendar.
+- **Agenda in the calendar.** Pick a day, press **+**, write the item (time,
+  note) and choose a reminder (at start, 5/15/30 min, 1 hour, 1 day before).
+  Days with items get a dot; reminders arrive as notifications. Stored in
+  `~/.local/share/sde/agenda.ini`.
+- **Footer with SDE Settings, Lock Screen and Power** (Sleep, Log Out,
+  Restart, Shut Down) — these buttons are no longer in the Start Menu.
+- Each flyout's settings button opens its own page of SDE Settings.
+- Fewer repaints: status changes are merged into one panel update.
 
 ## SDE Settings
 
