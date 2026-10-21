@@ -1355,10 +1355,48 @@ void AppMenu::move_selection(int key) {
   build_items();
   const Item *cur = find(selected_);
   keyboard_ = true;
-  if (!cur && (key == FL_Page_Down || key == FL_Page_Up) && view_ == V_HOME && !letters_open_) {
-    // Nothing selected yet: Page Up/Down scroll "All Programs".
-    const Area *a = area(K_ALL_ROW);
-    if (a) scroll_by(K_ALL_ROW, (key == FL_Page_Down ? 1 : -1) * (a->h - S(36)));
+  if (key == FL_Page_Down || key == FL_Page_Up) {
+    // Page Up/Down scroll the view's list by a page; the selection keeps its
+    // place on screen (or starts at the top of the list).
+    int dir = key == FL_Page_Down ? 1 : -1;
+    Kind list = view_ == V_HOME ? (letters_open_ ? K_NONE : K_ALL_ROW)
+                : view_ == V_CATEGORY ? K_CAT_TILE : view_ == V_SEARCH ? K_RESULT : K_NONE;
+    if (cur && cur->kind == K_TILE && view_ == V_HOME) list = K_TILE;
+    const Area *a = area(list);
+    if (a) {
+      bool keep = cur && cur->kind == (list == K_TILE ? K_TILE : list) && cur->visible;
+      int ref_x = keep ? cur->x : a->x, ref_y = keep ? cur->y : a->y;
+      int before = *a->scroll;
+      if (a->scrolls())
+        *a->scroll = std::max(0, std::min(a->content - a->h, *a->scroll + dir * (a->h - S(36))));
+      bool moved = *a->scroll != before;
+      build_items();
+      Kind kind = list == K_TILE ? K_TILE : list;
+      const Item *best = nullptr;
+      double best_d = 1e18;
+      for (auto &it : items_) {
+        if (it.kind != kind || !it.visible) continue;
+        double d = std::fabs(double(it.y - ref_y)) + std::fabs(double(it.x - ref_x));
+        if (d < best_d) best_d = d, best = &it;
+      }
+      // Already at either end of the list: the first or last item.
+      if (!moved && keep) {
+        for (auto &it : items_)
+          if (it.kind == kind) {
+            if (dir < 0) {
+              best = &it;
+              break;
+            }
+            best = &it;
+          }
+      }
+      if (best) {
+        selected_ = {best->kind, best->index};
+        ensure_visible(*best);
+      }
+      redraw();
+      return;
+    }
     return;
   }
   if (!cur) {
@@ -1370,31 +1408,6 @@ void AppMenu::move_selection(int key) {
         break;
       }
     if (first) selected_ = {first->kind, first->index};
-    redraw();
-    return;
-  }
-  if (key == FL_Page_Down || key == FL_Page_Up) {
-    int dir = key == FL_Page_Down ? 1 : -1;
-    int span = cur->ch < (1 << 19) ? cur->ch - S(36) : S(200);
-    double target = cur->y + cur->h / 2.0 + dir * span;
-    const Item *best = nullptr;
-    double best_d = 1e9;
-    for (auto &it : items_) {
-      if (it.kind != cur->kind) continue;
-      double d = std::fabs(it.y + it.h / 2.0 - target) + std::fabs(double(it.x - cur->x));
-      if (d < best_d) best_d = d, best = &it;
-    }
-    if (best) {
-      selected_ = {best->kind, best->index};
-      // Keep the selection where it was on screen, one page further.
-      const Area *a = cur->kind == K_ALL_ROW ? area(K_ALL_ROW) : nullptr;
-      if (a && a->scrolls() && best->index != cur->index) {
-        *a->scroll = std::max(0, std::min(a->content - a->h, *a->scroll + (best->y - cur->y)));
-        build_items();
-        best = find(selected_);
-      }
-      if (best) ensure_visible(*best);
-    }
     redraw();
     return;
   }
@@ -2052,7 +2065,7 @@ void AppMenu::draw() {
 
 // UI test hook (see qa_dump in popup.h): the menu draws its own controls, so
 // it lists them itself. Lines starting with "@" describe areas: "@chips"
-// (active = 0 for icon-only chips), "@all"/"@home" scrolled areas and
+// (and "@chips-icons" for icon-only chips), "@all"/"@home" scrolled areas and
 // "@all-scroll"/"@home-scroll" with the offset and its maximum as x and y.
 void AppMenu::qa_dump_menu() {
   std::string text;
@@ -2065,7 +2078,8 @@ void AppMenu::qa_dump_menu() {
             std::to_string(scrolled) + "\n";
   };
   line("@menu", 0, 0, w(), h(), 1, 0);
-  line("@chips", pad_, cats_y_, w() - 2 * pad_, cats_h_, chips_icons_ ? 0 : 1, 0);
+  line("@chips", pad_, cats_y_, w() - 2 * pad_, cats_h_, 1, 0);
+  if (chips_icons_) line("@chips-icons", pad_, cats_y_, w() - 2 * pad_, cats_h_, 1, 0);
   for (auto &a : areas_) {
     std::string n = a.kind == K_ALL_ROW ? "all" : a.kind == K_TILE ? "home"
                     : a.kind == K_CAT_TILE ? "category" : "results";

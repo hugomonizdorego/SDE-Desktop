@@ -222,9 +222,19 @@ try:
     g = geom(menu)
     assert g["X"] >= 0 and g["Y"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
     shot("00-start-menu")
-    # First chip of the category strip (Accessories) opens its page.
-    run("xdotool", "mousemove", str(g["X"] + int(60 * args.scale / 100)),
-        str(g["Y"] + int(127 * args.scale / 100)), "click", "1")
+    # The menu draws its own controls and lists them in the QA dump. Every
+    # category chip fits the menu width (no scrolling strip any more).
+    chips = control("SDE Menu", "@chips")
+    path = home / "qa" / "SDE-Menu.txt"
+    for line in path.read_text().splitlines():
+        f = line.split("\t")
+        if f[0].startswith("category:"):
+            x, y, w, h = map(int, f[1:5])
+            assert chips[0] <= x and x + w <= chips[0] + chips[2] <= g["WIDTH"], (f, chips)
+    for gone in ["Settings", "Lock", "Power"]:
+        assert not any(l.split("\t")[0] == gone for l in path.read_text().splitlines())
+    # The Accessories chip opens its page.
+    click_control(menu, "SDE Menu", "category:Accessories")
     shot("00-accessories")
     run("xdotool", "type", "calculator")
     shot("00-start-search")
