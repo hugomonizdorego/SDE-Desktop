@@ -2,11 +2,30 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 10** (`0.1.0~alpha10`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 14** (`0.1.0~alpha14`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
 
-**New in Alpha 10:** the [SDE Aero](docs/ALPHA10.md) theme with adjustable glass
+**New in Alpha 14:** [Gallery is back](docs/ALPHA14.md) as a new app, tray icons open
+their own flyouts, a redesigned Action Center (with calendar, compact/expanded), a new
+Start Menu, a complete SDE Update, a modern Liria, SDE-FLTK, and sde-xsettingsd and
+sde-polkit-agent written from scratch by the DebION Dev-Team.
+
+**Alpha 13:** [fixes the panel crash after login](docs/ALPHA13.md), new tray
+icons that follow the hardware (USB drives, Bluetooth, battery…), an Action Center
+button in the panel corner, and SDE's own builds of FLTK, xsettingsd and the polkit agent.
+
+**Alpha 12:** [fixes the black screen after login](docs/ALPHA12.md) in
+virtual machines (automatic XRender, black-screen detection, Alt+Shift+F12) and adds
+**debion-desktop-base**, the DebION artwork for Debian's desktop-base (wallpaper, login,
+lock screen, GRUB, logos and boot splash).
+
+**Alpha 11:** [four themes](docs/ALPHA11.md) — SDE Light, SDE Dark, SDE Aero and
+SDE Liquid Glass (GTK 3/4, in `/usr/share/themes`) — a working Start Menu search with a
+right-click Arrange menu and animations, Eduka-Desktop's effects, compositor, drives and
+power-mode features, and SDE Tools for Liria.
+
+**Alpha 10:** the [SDE Aero](docs/ALPHA10.md) theme with adjustable glass
 transparency, a tidier Action Center without duplicate tray icons, **Photo** with
 live filters and effects, more Niny plugins, and the **SDE-Desktop** login session.
 Latest packages: [alpha-latest pre-release](https://github.com/hugomonizdorego/SDE-Desktop/releases/tag/alpha-latest) ·
@@ -36,7 +55,7 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
-| `sde-update` | Native update preview; authenticated Debian PackageKit transactions |
+| `sde-update` | Updates, history, sources and maintenance; PackageKit transactions with progress and background notifications |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
@@ -58,7 +77,7 @@ normal dependencies. SDE Update has a native interface, an attributed Mint Updat
 model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
 and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 
-`sudo apt install sde-desktop` is the single entry point when the two SDE packages
+`sudo apt install sde-desktop` is the single entry point when the SDE packages
 are available in the DebION repository. The metapackage installs the session,
 suite, Xorg, login, network, sound and media services. No DebION repository is
 created by this project.
@@ -109,7 +128,7 @@ and install it with `apt`, which also installs the dependencies:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
-sudo apt install ./sde_*.deb ./sde-desktop_*.deb
+sudo apt install ./sde_*.deb ./sde-desktop_*.deb ./debion-desktop-base_*.deb
 ```
 
 Log out, choose **SDE-Desktop** at the login screen and log in. From a text console you can

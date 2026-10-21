@@ -79,6 +79,18 @@ double Color::contrast(const Color &o) const {
   return (a + 0.05) / (b + 0.05);
 }
 
+std::string theme_style(const Config &cfg) {
+  std::string style = lower(cfg.get("appearance", "style", ""));
+  if (style == "sde" || style == "aero" || style == "liquid-glass") return style;
+  return cfg.get_bool("aero", "enabled", true) ? "aero" : "sde";
+}
+
+std::string theme_dir(const std::string &style) {
+  if (style == "sde") return "SDE";
+  if (style == "liquid-glass") return "SDE-Liquid-Glass";
+  return "SDE-Aero";
+}
+
 Theme Theme::from_config(const Config &cfg) {
   Theme t;
   t.dark = lower(cfg.get("appearance", "theme", "light")) == "dark";
@@ -126,7 +138,9 @@ Theme Theme::from_config(const Config &cfg) {
   t.panel_size = (h == 32 || h == 48) ? h : 40;
   t.panel_height = S(t.panel_size);
   t.panel_top = lower(cfg.get("panel", "position", "bottom")) == "top";
-  t.glass = cfg.get_bool("aero", "enabled", true);
+  t.style = theme_style(cfg);
+  // Glass (window opacity, blur) belongs to Aero and Liquid Glass.
+  t.glass = t.style != "sde" && cfg.get_bool("aero", "enabled", true);
   t.transparency = std::max(0, std::min(60, cfg.get_int("aero", "transparency", 18)));
   if (t.glass) {
     t.opacity = 1.0 - t.transparency / 100.0;

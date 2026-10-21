@@ -3,12 +3,15 @@
 #include <FL/x.H>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
 #include "build_config.h"
+#include "crash.h"
 #include "i18n.h"
 #include "panel.h"
+#include "quick.h"
 #include "x11.h"
 
 namespace {
@@ -35,6 +38,7 @@ bool claim_instance() {
 
 int main(int argc, char **argv) {
   sde::init_i18n();
+  sde::install_crash_handler("sde-panel");
   std::string command;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--menu")) {
@@ -43,10 +47,10 @@ int main(int argc, char **argv) {
       command = "quick";
     } else if (!strcmp(argv[i], "--section") && i + 1 < argc) {
       std::string section = argv[++i];
-      if (section != "overview" && section != "network" && section != "bluetooth" &&
-          section != "sound" && section != "media" && section != "tray" && section != "power")
-        return 2;
+      if (section != "overview" && !QuickSettings::valid_section(section)) return 2;
       command = "quick:" + section;
+    } else if (!strcmp(argv[i], "--safe")) {
+      Panel::safe_mode = true;
     } else if (!strcmp(argv[i], "--calendar")) {
       command = "calendar";
     } else if (!strcmp(argv[i], "--version")) {
@@ -57,13 +61,26 @@ int main(int argc, char **argv) {
                      "  --menu            open or close the application menu of the running panel\n"
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
-                     "  --section NAME    open Action Center: network, bluetooth, sound, media, "
-                     "tray, power\n"
-                     "  --calendar        open or close the calendar\n"));
+                     "  --section NAME    open or close the flyout of a status icon: network,\n"
+                     "                    bluetooth, sound, media, power, drives, keyboard, tray\n"
+                     "                    (overview opens the Action Center)\n"
+                     "  --calendar        open or close the Action Center with its calendar\n"
+                     "  --safe            start without tray icons and device status (after crashes)\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
   }
-  fl_open_display();
+  // The panel's only text field is the menu search. An X input method such
+  // as IBus or Fcitx can swallow its keys in FLTK 1.3, so the panel opens
+  // its display without XIM. The variable is restored at once, so programs
+  // started from the panel keep the user's input method.
+  {
+    const char *im = getenv("XMODIFIERS");
+    std::string saved = im ? im : "";
+    setenv("XMODIFIERS", "@im=none", 1);
+    fl_open_display();
+    if (im) setenv("XMODIFIERS", saved.c_str(), 1);
+    else unsetenv("XMODIFIERS");
+  }
   if (!command.empty()) {
     sde::x11::send_command(command);
     return 0;

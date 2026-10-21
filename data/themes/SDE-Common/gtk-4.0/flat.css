@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * SDE Light / SDE Dark style layer for GTK 4. */
+
+headerbar,
+.titlebar,
+popovermenubar {
+  background-image: none;
+  box-shadow: inset 0 -1px @sde_border;
+}
+
+button,
+button:hover,
+button.suggested-action,
+button.suggested-action:hover {
+  background-image: none;
+  box-shadow: none;
+}
+
+button:hover {
+  background-color: mix(@sde_button_bottom, @sde_accent, 0.08);
+}
+
+button.suggested-action {
+  background-color: @sde_accent;
+}
+
+scale > trough > highlight,
+progressbar > trough > progress,
+switch:checked,
+check:checked,
+radio:checked {
+  background-image: none;
+  background-color: @sde_accent;
+}

@@ -13,18 +13,19 @@
 
 #include "build_config.h"
 #include "desktop_entry.h"
+#include "process.h"
 #include "spawn.h"
 #include "suite.h"
 #include "theme.h"
 #include "util.h"
 namespace sde {
 namespace {
-bool aero_installed() {
+bool theme_installed(const std::string &name) {
   std::vector<std::string> dirs = {std::string(g_get_user_data_dir())};
   for (const gchar *const *d = g_get_system_data_dirs(); d && *d; ++d) dirs.push_back(*d);
   dirs.push_back(std::string(SDE_DATADIR) + "/..");
   for (const auto &d : dirs)
-    if (file_exists(d + "/themes/SDE-Aero/gtk-3.0/gtk.css")) return true;
+    if (file_exists(d + "/themes/" + name + "/gtk-3.0/gtk.css")) return true;
   return false;
 }
 
@@ -35,19 +36,24 @@ std::string rgba(const Color &c, double alpha) {
   return buf;
 }
 
-const char *kCssBegin = "/* SDE Aero: managed by SDE Settings - begin */";
-const char *kCssEnd = "/* SDE Aero: managed by SDE Settings - end */";
+const char *kCssBegin = "/* SDE theme: managed by SDE Settings - begin */";
+const char *kCssEnd = "/* SDE theme: managed by SDE Settings - end */";
+// Blocks written by alpha10 used this name; they are replaced as well.
+const char *kOldBegin = "/* SDE Aero: managed by SDE Settings - begin */";
+const char *kOldEnd = "/* SDE Aero: managed by SDE Settings - end */";
 
 // Keeps the user's own CSS and replaces only SDE's marked block.
 void write_user_css(const std::string &path, const std::string &block) {
   std::string text;
   bool exists = read_file(path, text);
   std::string rest = text;
-  size_t a = rest.find(kCssBegin), b = rest.find(kCssEnd);
-  if (a != std::string::npos && b != std::string::npos && b > a) {
-    size_t end = b + std::string(kCssEnd).size();
-    if (end < rest.size() && rest[end] == '\n') ++end;
-    rest.erase(a, end - a);
+  for (auto markers : {std::make_pair(kCssBegin, kCssEnd), std::make_pair(kOldBegin, kOldEnd)}) {
+    size_t a = rest.find(markers.first), b = rest.find(markers.second);
+    if (a != std::string::npos && b != std::string::npos && b > a) {
+      size_t end = b + std::string(markers.second).size();
+      if (end < rest.size() && rest[end] == '\n') ++end;
+      rest.erase(a, end - a);
+    }
   }
   std::string out = block.empty() ? rest : std::string(kCssBegin) + "\n" + block + kCssEnd + "\n" + rest;
   if (out == text || (!exists && out.empty())) return;
@@ -56,11 +62,10 @@ void write_user_css(const std::string &path, const std::string &block) {
 }  // namespace
 
 std::string gtk_theme_name(const Config &cfg) {
-  if (cfg.get_bool("aero", "enabled", true) && aero_installed()) return "SDE-Aero";
+  std::string name = theme_dir(theme_style(cfg));
+  if (theme_installed(name)) return name;
   return "Adwaita";
 }
-
-static bool theme_is_aero(const Config &cfg) { return gtk_theme_name(cfg) == "SDE-Aero"; }
 
 void sync_gtk_settings(const Config &cfg) {
   int dpi = int(std::lround(96 * Theme::from_config(cfg).scale * 1024));
@@ -91,16 +96,22 @@ void sync_gtk_settings(const Config &cfg) {
     }
     g_key_file_unref(file);
   }
-  // SDE Aero reads the accent and the glass opacity from the user's CSS.
+  // SDE themes read the accent and the glass opacity from the user's CSS.
   std::string block;
-  if (!system && theme_is_aero(cfg)) {
+  std::string gtk_theme = gtk_theme_name(cfg);
+  if (!system && gtk_theme != "Adwaita") {
     Theme t = Theme::from_config(cfg);
     Color accent = dark ? t.accent.mix(Color::hex(0xFFFFFF), 0.15) : t.accent;
-    Color glass = dark ? Color::hex(0x1E2530) : Color::hex(0xF8FBFE);
-    double alpha = std::max(0.70, 1.0 - t.transparency * 0.6 / 100.0);
-    if (!t.glass) alpha = 1.0;
-    block = "@define-color sde_accent " + accent.to_hex() + ";\n" +
-            "@define-color sde_glass_bg " + rgba(glass, alpha) + ";\n";
+    block = "@define-color sde_accent " + accent.to_hex() + ";\n";
+    if (t.glass) {
+      // Liquid Glass is more transparent than Aero at the same setting.
+      bool liquid = t.style == "liquid-glass";
+      Color glass = liquid ? (dark ? Color::hex(0x1E2128) : Color::hex(0xFAFBFD))
+                           : (dark ? Color::hex(0x1E2530) : Color::hex(0xF8FBFE));
+      double alpha = liquid ? std::max(0.55, 0.86 - t.transparency * 0.6 / 100.0)
+                            : std::max(0.70, 1.0 - t.transparency * 0.6 / 100.0);
+      block += "@define-color sde_glass_bg " + rgba(glass, alpha) + ";\n";
+    }
   }
   for (const char *version : {"gtk-3.0", "gtk-4.0"})
     write_user_css(config_home() + "/" + version + "/gtk.css", block);
@@ -114,9 +125,9 @@ void sync_gtk_settings(const Config &cfg) {
     }
     return out + "\"";
   };
-  std::string theme = gtk_theme_name(cfg);
-  std::string text = "Net/ThemeName " + quote(theme + (dark ? "-dark" : "")) + "\n";
-  if (theme == "SDE-Aero") text = "Net/ThemeName " + quote(dark ? "SDE-Aero-Dark" : "SDE-Aero") + "\n";
+  // Every SDE theme has a -Dark directory; Adwaita's is "Adwaita-dark".
+  std::string text = "Net/ThemeName " +
+                     quote(gtk_theme + (dark ? (gtk_theme == "Adwaita" ? "-dark" : "-Dark") : "")) + "\n";
   text += "Net/IconThemeName " + quote(icons) + "\nGtk/FontName " + quote(font) + "\n";
   if (system) text = "Net/IconThemeName " + quote(icons) + "\nGtk/FontName " + quote(font) + "\n";
   text += "Xft/DPI " + std::to_string(dpi) + "\n";
@@ -127,7 +138,8 @@ void sync_gtk_settings(const Config &cfg) {
     // xsettingsd re-reads its file on SIGHUP, so open GTK windows follow the
     // new theme, icons and fonts immediately instead of at the next login.
     if (!env("DISPLAY").empty())
-      spawn_detached({"pkill", "-HUP", "-u", std::to_string(getuid()), "-x", "xsettingsd"});
+      for (const char *daemon : {"sde-xsettingsd", "xsettingsd"})
+        spawn_detached({"pkill", "-HUP", "-u", std::to_string(getuid()), "-x", daemon});
   }
   GSettingsSchemaSource *source = g_settings_schema_source_get_default();
   GSettingsSchema *schema =
@@ -148,12 +160,40 @@ static bool has_drm_device() {
   return false;
 }
 
+std::string virtual_machine_name() {
+  // DMI names what the hypervisor emulates; the CPU flag covers the rest.
+  for (const char *f : {"/sys/class/dmi/id/sys_vendor", "/sys/class/dmi/id/product_name",
+                        "/sys/class/dmi/id/board_vendor"}) {
+    std::string text;
+    if (!read_file(f, text)) continue;
+    std::string v = lower(text);
+    for (const char *name : {"virtualbox", "innotek", "vmware", "qemu", "kvm", "bochs",
+                             "parallels", "xen", "bhyve", "virtual machine"})
+      if (v.find(name) != std::string::npos) return trim(text);
+  }
+  std::string cpu;
+  if (read_file("/proc/cpuinfo", cpu)) {
+    for (const auto &line : split(cpu, '\n'))
+      if (starts_with(line, "flags") && (" " + line + " ").find(" hypervisor ") != std::string::npos)
+        return "virtual machine";
+  }
+  return "";
+}
+
+std::string auto_compositor_backend() {
+  // OpenGL compositing in VirtualBox, VMware and QEMU often draws a black
+  // screen (alpha11 bug); XRender works there and on any X server.
+  if (!virtual_machine_name().empty()) return "xrender";
+  return has_drm_device() ? "glx" : "xrender";
+}
+
 std::string write_compositor_config(const Config &cfg, bool safe) {
   Theme t = Theme::from_config(cfg);
   bool glass = t.glass, blur = glass && cfg.get_bool("aero", "blur", true);
   bool round = cfg.get_bool("aero", "rounded_corners", true);
+  bool liquid = t.style == "liquid-glass";
   bool motion = cfg.get_bool("aero", "animations", true);
-  int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6)));
+  int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6) + (liquid ? 2 : 0)));
   double frame = glass ? std::max(0.45, 1.0 - t.transparency * 1.2 / 100.0) : 1.0;
   double menu = glass ? std::max(0.70, 1.0 - t.transparency * 0.6 / 100.0) : 1.0;
   char num[32];
@@ -161,12 +201,17 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
     snprintf(num, sizeof num, "%.2f", v);
     return std::string(num);
   };
-  std::string c = "# Generated by SDE from [aero] in sde.conf. Edits are replaced; copy this\n"
+  std::string c = "# Generated by SDE from [appearance] style and [aero] in sde.conf. Edits are replaced; copy this\n"
                   "# file to ~/.config/sde/compositor.conf to keep your own configuration.\n";
-  // auto: OpenGL needs a DRM device; virtual displays and machines without
-  // one get XRender, which picom draws reliably everywhere.
+  // auto: OpenGL needs a DRM device on real hardware; virtual machines,
+  // virtual displays and machines without one get XRender, which picom draws
+  // reliably everywhere.
   std::string backend = lower(cfg.get("compositor", "backend", "auto"));
-  if (backend != "glx" && backend != "xrender") backend = has_drm_device() ? "glx" : "xrender";
+  if (backend != "glx" && backend != "xrender") {
+    backend = auto_compositor_backend();
+    // XRender blur is drawn by the CPU and makes a virtual machine crawl.
+    if (!virtual_machine_name().empty()) blur = false;
+  }
   if (safe) backend = "xrender";
   safe = backend == "xrender";
   c += "backend = \"" + backend + "\";\n";
@@ -180,7 +225,8 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
-  c += "corner-radius = " + std::to_string(round ? 10 : 0) + ";\n";
+  // Liquid Glass uses the larger continuous corners of its design.
+  c += "corner-radius = " + std::to_string(round ? (liquid ? 16 : 10) : 0) + ";\n";
   c += "rounded-corners-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"window_type = 'tooltip'\", \"window_type = 'dropdown_menu'\", "
        "\"window_type = 'popup_menu'\", \"window_type = 'menu'\", \"fullscreen\"];\n";
@@ -213,6 +259,55 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
 void reload_compositor() {
   // picom re-reads its configuration file on SIGUSR1.
   spawn_detached({"pkill", "-USR1", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
+}
+
+void restart_compositor_now() {
+  // Sessions started before alpha12 end on SIGUSR2; they only get a reload.
+  if (env("SDE_SESSION_VERSION") != SDE_VERSION) {
+    reload_compositor();
+    return;
+  }
+  spawn_detached({"pkill", "-USR2", "-u", std::to_string(getuid()), "-x", "sde-session"});
+}
+
+std::string compositor_report(const Config &cfg) {
+  Theme t = Theme::from_config(cfg);
+  std::string mode = cfg.get("compositor", "mode", "auto");
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  bool drm = has_drm_device();
+  std::string vm = virtual_machine_name();
+  std::string chosen = backend == "glx" || backend == "xrender" ? backend : auto_compositor_backend();
+  int status = -1;
+  std::string pid = trim(run_sync({"pgrep", "-u", std::to_string(getuid()), "-x", "sde-compositor"}, &status, 1500));
+  std::string virt = trim(run_sync({"systemd-detect-virt"}, nullptr, 1500));
+  std::string renderer;
+  if (!find_program("glxinfo").empty()) {
+    for (const auto &line : split(run_sync({"glxinfo", "-B"}, nullptr, 3000), '\n'))
+      if (starts_with(trim(line), "OpenGL renderer string:")) renderer = trim(line.substr(line.find(':') + 1));
+  }
+  std::string own = config_home() + "/sde/compositor.conf";
+  std::string r = std::string("SDE ") + SDE_VERSION + " compositor report\n";
+  r += "Compositing: " + std::string(mode == "off" ? "off" : "on") +
+       (status == 0 && !pid.empty() ? " (running, pid " + split(pid, '\n')[0] + ")" : " (not running)") + "\n";
+  r += "Backend: " + chosen + (backend != "glx" && backend != "xrender"
+                                  ? (!vm.empty() ? " (auto: virtual machine)"
+                                                 : drm ? " (auto: graphics device found)"
+                                                       : " (auto: no DRM graphics device)")
+                                  : " (chosen in Settings)") + "\n";
+  if (virt.empty() || virt == "none") virt = vm;
+  r += "Virtual machine: " + (virt.empty() || virt == "none" ? std::string("no") : virt) + "\n";
+  r += "OpenGL renderer: " + (renderer.empty() ? std::string("unknown (install mesa-utils for glxinfo)") : renderer) + "\n";
+  r += "Configuration: " + (file_exists(own) ? own + " (your own file)"
+                                             : config_home() + "/sde/aero-compositor*.conf (generated)") + "\n";
+  r += "Theme: " + theme_dir(t.style) + (t.dark ? " (dark)" : " (light)") + ", glass " +
+       (t.glass ? "on, " + std::to_string(t.transparency) + "% transparency" : std::string("off")) +
+       ", blur " +
+       (t.glass && cfg.get_bool("aero", "blur", true)
+            ? (backend != "glx" && backend != "xrender" && !vm.empty() ? "off in virtual machines (choose OpenGL or XRender to use it)" : "on")
+            : "off") + "\n";
+  if (chosen == "glx" && !virt.empty() && virt != "none")
+    r += "Advice: OpenGL in a virtual machine can be slow or black; choose XRender if you see problems.\n";
+  return r;
 }
 
 void migrate_legacy_suite_shortcuts() {

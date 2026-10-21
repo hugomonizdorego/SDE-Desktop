@@ -19,7 +19,8 @@ for name in apps:
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
     if name == 'sde-display-settings':
-        assert 'libXrandr' in dynamic and 'libfltk' in dynamic,(name,dynamic)
+        # The SDE toolkit (FLTK) is linked statically since alpha13.
+        assert 'libXrandr' in dynamic and 'libfltk' not in dynamic and 'libXft' in dynamic,(name,dynamic)
     elif name in ['sde-wm','sde-compositor']:
         assert 'libX11' in dynamic or 'libxcb' in dynamic,(name,dynamic)
     elif name == 'sde-screensaver-command':
@@ -30,14 +31,22 @@ for name in apps:
         assert 'libgtk' in dynamic or 'libgobject' in dynamic,(name,dynamic)
 subprocess.run([str(binary/'sde-suite'),'--check'],check=True)
 import json
+import shutil
 versions=json.loads(Path('/usr/share/doc/sde/versions.json').read_text())
 for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde-power-manager','sde-screensaver','calculator','sde-display-settings','sde-wm','sde-compositor','sde-update']:
     output=subprocess.check_output([str(binary/name),'--version'],text=True)
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
 
-client='/usr/bin/pkgcli' if os.access('/usr/bin/pkgcli',os.X_OK) else '/usr/bin/pkcon'
-for action,expected in [('refresh',[client,'refresh']+(['force'] if client.endswith('pkcon') else [])),('upgrade',[client,'update'])]:
+# SDE Update 2 streams PackageKit transactions through pkcon; without pkcon
+# (PackageKit 1.4 ships only pkgcli) it uses APT through pkexec.
+if os.access('/usr/bin/pkcon',os.X_OK):
+    plans=[('refresh',['/usr/bin/pkcon','-p','refresh','force']),('upgrade',['/usr/bin/pkcon','-p','-y','update'])]
+else:
+    pkexec=shutil.which('pkexec') or '/usr/bin/pkexec'
+    plans=[('refresh',[pkexec,'/usr/bin/apt-get','-q','-o','APT::Status-Fd=1','update']),
+           ('clean',[pkexec,'/usr/bin/apt-get','clean'])]
+for action,expected in plans:
     actual=subprocess.check_output([str(binary/'sde-update'),'--plan',action],text=True).splitlines()
     assert actual==expected,(actual,expected)
 assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode==2

@@ -5,6 +5,13 @@
 #include <FL/x.H>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#include <FL/Fl_Group.H>
+#include <FL/Fl_Scroll.H>
 
 #include "panel.h"
 #include "theme.h"
@@ -18,11 +25,14 @@ PanelPopup::PanelPopup(const char *title) : BufferedWindow(0, 0, 100, 100, title
   resizable(nullptr);
 }
 
-void PanelPopup::open_at(int anchor_x, bool align_right) {
+void PanelPopup::open_centered(int center_x) { open(center_x, 2); }
+void PanelPopup::open_at(int anchor_x, bool align_right) { open(anchor_x, align_right ? 1 : 0); }
+
+void PanelPopup::open(int anchor_x, int align) {
   Panel *panel = Panel::instance;
   prepare();
   anchor_x_ = anchor_x;
-  align_right_ = align_right;
+  align_ = align;
   reposition();
   show();
   // FLTK omits WM titles for override-redirect popups. Keep a readable name
@@ -37,6 +47,10 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
   // focus explicitly, including after a GTK4 client has closed its window.
   XSetInputFocus(fl_display, fl_xid(this), RevertToPointerRoot, CurrentTime);
   XFlush(fl_display);
+  // A window manager key binding (Super) or a client that just closed can
+  // still own the keyboard when the popup maps. Claim focus again shortly
+  // after, unless the popup already has it.
+  for (double delay : {0.06, 0.25}) Fl::add_timeout(delay, refocus, this);
   panel->popup_opened(this);
   redraw();
   // Keyboard users start on the first control.
@@ -56,6 +70,18 @@ void PanelPopup::open_at(int anchor_x, bool align_right) {
       this);
 }
 
+void PanelPopup::refocus(void *data) {
+  auto *self = static_cast<PanelPopup *>(data);
+  if (!self->is_open() || !fl_xid(self)) return;
+  Window focused = 0;
+  int revert = 0;
+  XGetInputFocus(fl_display, &focused, &revert);
+  if (focused != fl_xid(self)) {
+    XSetInputFocus(fl_display, fl_xid(self), RevertToPointerRoot, CurrentTime);
+    XFlush(fl_display);
+  }
+}
+
 void PanelPopup::reposition() {
   auto *panel = Panel::instance;
   int mx, my, mw, mh;
@@ -65,15 +91,28 @@ void PanelPopup::reposition() {
   int ww = std::min(w(), mw - 2 * margin),
       hh = std::min(h(), std::max(1, available - gap - margin));
   int right = corner_popup() ? std::min(mx + mw, panel->x() + panel->w()) : anchor_x_;
-  int xx = corner_popup() || align_right_ ? right - ww : right;
+  int xx = corner_popup() || align_ == 1 ? right - ww : align_ == 2 ? right - ww / 2 : right;
   xx = std::max(mx + margin, std::min(xx, mx + mw - ww - margin));
   int yy = panel->theme().panel_top ? panel->y() + panel->h() + gap : panel->y() - hh - gap;
   yy = std::max(my, std::min(yy, my + mh - hh));
+  if (shown() && (xx != x() || yy != y() || ww != w() || hh != h())) {
+    // A click inside the old rectangle (e.g. on "Show less", which shrinks
+    // the Action Center) must not count as a click outside the new one.
+    previous_x_ = x(), previous_y_ = y(), previous_w_ = w(), previous_h_ = h();
+    previous_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
+  }
   resize(xx, yy, ww, hh);
+}
+
+bool PanelPopup::contains_root(int rx, int ry) const {
+  if (rx >= x() && rx < x() + w() && ry >= y() && ry < y() + h()) return true;
+  return std::chrono::steady_clock::now() < previous_until_ && rx >= previous_x_ &&
+         rx < previous_x_ + previous_w_ && ry >= previous_y_ && ry < previous_y_ + previous_h_;
 }
 
 void PanelPopup::close() {
   if (!shown()) return;
+  Fl::remove_timeout(refocus, this);
   if (Fl::grab() == this) Fl::grab(nullptr);
   // FLTK 1.3 hide() destroys this X window. Return native tray children to
   // the panel before that happens, while reporting this popup as closed.
@@ -88,9 +127,11 @@ int PanelPopup::handle(int event) {
   if (event == FL_PUSH) {
     int ex = Fl::event_x(), ey = Fl::event_y();
     if (ex < 0 || ey < 0 || ex >= w() || ey >= h()) {
-      // Clicking outside (including the panel button that opened the
-      // popup) only closes it.
+      // Clicking outside closes the popup; the panel button that opened it
+      // only closes it, another panel button opens its own popup at once.
+      int rx = Fl::event_x_root(), ry = Fl::event_y_root();
       close();
+      Panel::instance->switch_popup(rx, ry, this);
       return 1;
     }
   }
@@ -99,4 +140,46 @@ int PanelPopup::handle(int event) {
     return 1;
   }
   return BufferedWindow::handle(event);
+}
+
+// ------------------------------------------------------------- UI test hook
+
+bool qa_dump_enabled() {
+  const char *dir = getenv("SDE_PANEL_QA_DIR");
+  return dir && *dir;
+}
+
+namespace {
+void qa_collect(Fl_Widget *w, std::string &out, bool scrolled) {
+  if (!w->visible()) return;
+  const char *name = w->tooltip() ? w->tooltip() : w->label();
+  if (name && *name && w != w->window()) {
+    std::string n = name;
+    for (char &c : n)
+      if (c == '\t' || c == '\n') c = ' ';
+    char buf[96];
+    snprintf(buf, sizeof buf, "\t%d\t%d\t%d\t%d\t%d\t%d\n", w->x(), w->y(), w->w(), w->h(),
+             w->active_r() ? 1 : 0, scrolled ? 1 : 0);
+    out += n + buf;
+  }
+  if (auto *g = w->as_group())
+    for (int i = 0; i < g->children(); ++i)
+      qa_collect(g->child(i), out, scrolled || dynamic_cast<Fl_Scroll *>(w));
+}
+}  // namespace
+
+void qa_dump(Fl_Window *win, const std::string &extra) {
+  if (!qa_dump_enabled() || !win->label()) return;
+  std::string text = extra;
+  for (int i = 0; i < win->children(); ++i) qa_collect(win->child(i), text, false);
+  std::string name = win->label();
+  for (char &c : name)
+    if (c == '/' || c == ' ') c = '-';
+  std::string path = std::string(getenv("SDE_PANEL_QA_DIR")) + "/" + name + ".txt";
+  std::string tmp = path + ".tmp";
+  if (FILE *f = fopen(tmp.c_str(), "w")) {
+    fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    rename(tmp.c_str(), path.c_str());
+  }
 }

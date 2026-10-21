@@ -24,6 +24,21 @@ the B00MERANG Project Windows 7 GTK theme — GPL-3.0. SDE Aero
 images or CSS files are copied; colors, gradients, geometry and the
 transparency system are SDE's own. SDE Aero is GPL-3.0-or-later.
 
+**[Liquid Glass for GNOME Shell](https://github.com/ryohsuke1231/liquid-glass)**
+by Ryosuke Watanabe — MIT. An unofficial fan project, not affiliated with
+Apple. It renders glass with shaders inside GNOME Shell, which SDE does not
+use. SDE Liquid Glass (`data/themes/SDE-Liquid-Glass*` and
+`SDE-Common/*/liquid.css`) recreates its look for GTK 3/4 and SDE WM in CSS:
+frosted translucent layers, a bright rim, deep soft shadows, pill controls
+and large corners; the SDE compositor provides the blur. No code, shaders
+or images are copied.
+
+**[Eduka-Desktop](https://github.com/hugomonizdorego/Eduka-Desktop)** —
+the Edukasaun desktop suite by the same author. SDE ports behavior from its
+Python/PyQt5 panel, Action Center and settings (effects model and capability
+rule, compositor modes and report, removable drives, power profiles) into
+SDE's C++/FLTK code while keeping SDE's own design.
+
 ## Native application forks
 
 Eight application source trees are prepared and compiled by SDE. Exact upstream
@@ -78,6 +93,11 @@ that its code is licensed under SDE's GPLv3 or that it is installed with SDE.
 | Calculator | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) | AGPL-3.0-only; Copyright (c) 2026 Raad Altaie | Unmodified pinned calculation engine embedded in a separate GTK4 native executable; SDE frontend also AGPL-3.0-only |
 | SDE WM | [openbox](https://github.com/Mikachu/openbox) | GPL-2.0-or-later; all original contributors retained | Private source build, SDE executable/WM identity, SDE rc.xml and themes |
 | SDE Compositor | [picom](https://github.com/yshui/picom) | MPL-2.0 AND MIT | Private source build and independent build version; lightweight XRender defaults |
+| SDE-FLTK | fork of [FLTK 1.3.11](https://github.com/fltk/fltk), in `sde-fltk/` | LGPL-2.0 with FLTK static-linking exceptions; FLTK copyrights retained | DebION Dev-Team fork kept in this repository, linked statically into every SDE program (alpha14) |
+
+sde-xsettingsd and sde-polkit-agent (alpha14) are new programs written from
+scratch by the DebION Dev-Team (GPL-3.0-or-later); alpha13 used builds of
+xsettingsd and mate-polkit instead.
 
 Exact revisions are in `suite/components.lock.json`. Preparation retains complete
 source trees, license texts, authors and historical notices. These are included

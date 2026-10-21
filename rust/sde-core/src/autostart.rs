@@ -33,12 +33,34 @@ pub fn session_owned(program: &str) -> bool {
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("");
-    name.contains("polkit") || matches!(name, "sde-notifyd" | "notify-osd" | "notification-daemon")
+    // sde-session runs the only compositor; a second one from another
+    // desktop's autostart entry (picom.desktop has no OnlyShowIn) fights it
+    // for the screen.
+    name.contains("polkit")
+        || matches!(
+            name,
+            "sde-notifyd"
+                | "notify-osd"
+                | "notification-daemon"
+                | "picom"
+                | "compton"
+                | "xcompmgr"
+                | "fastcompmgr"
+                | "eduka-compositor"
+        )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn other_compositors_are_session_owned() {
+        assert!(session_owned("/usr/bin/picom"));
+        assert!(session_owned("compton"));
+        assert!(!session_owned("blueman-applet"));
+    }
+
     use crate::desktop::DesktopEntry;
     #[test]
     fn hidden_user_override_masks_system_entry() {

@@ -1,0 +1,658 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * SDE Aero - suite application styling. These rules give the SDE forks
+ * their own look; upstream About dialogs and credits are untouched. */
+
+/* ------------------------------------------------------------- Liria */
+
+/* Liria: one glass command bar with a breadcrumb path, a calm sidebar and a
+ * borderless content area instead of Caja's stacked toolbars and frames. */
+.liria-navigation-window toolbar,
+.liria-navigation-window .primary-toolbar {
+  padding: 6px 10px;
+  border-bottom: 1px solid @sde_border;
+}
+
+.liria-navigation-window toolbar button {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border-color: transparent;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.liria-navigation-window toolbar button:hover {
+  background-color: alpha(@sde_accent, 0.12);
+  border-color: alpha(@sde_accent, 0.30);
+}
+
+.liria-pathbar button {
+  margin: 0 1px;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  border-color: transparent;
+  background-image: none;
+  background-color: alpha(@sde_fg, 0.05);
+  box-shadow: none;
+}
+
+.liria-pathbar button:hover {
+  background-color: alpha(@sde_accent, 0.14);
+}
+
+.liria-pathbar button:checked {
+  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.12), @sde_accent);
+  border-color: shade(@sde_accent, 0.88);
+  color: @sde_accent_fg;
+}
+
+.liria-location-entry {
+  border-radius: 9999px;
+  padding: 2px 12px;
+}
+
+.liria-side-pane {
+  border-right: 1px solid @sde_border_soft;
+}
+
+.liria-side-pane treeview.view {
+  padding: 4px 0;
+}
+
+.liria-side-pane treeview.view:hover {
+  background-color: alpha(@sde_accent, 0.08);
+}
+
+.liria-notebook > header {
+  background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_bottom);
+  border-bottom: 1px solid @sde_border;
+}
+
+.liria-notebook > header tab {
+  border-radius: 9px 9px 0 0;
+}
+
+#liria-tab-close-button {
+  padding: 0;
+  min-width: 18px;
+  min-height: 18px;
+  border-radius: 9999px;
+}
+
+.liria-navigation-window .view,
+.liria-navigation-window iconview {
+  background-color: @sde_view;
+}
+
+.liria-navigation-window .liria-canvas-item {
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.liria-navigation-window .liria-canvas-item:hover {
+  background-color: alpha(@sde_accent, 0.08);
+}
+
+.liria-navigation-window statusbar,
+#statusbar-noborder {
+  background-color: @sde_bg;
+  border-top: 1px solid @sde_border_soft;
+  color: @sde_dim;
+  font-size: 0.92em;
+}
+
+.liria-search-bar {
+  background-image: linear-gradient(to bottom, @sde_glass_bottom, @sde_bg);
+  border-bottom: 1px solid @sde_border_soft;
+}
+
+/* ---------------------------------------------------------------- Niny */
+
+.niny-window .niny-view,
+.niny-window textview text {
+  background-color: @sde_view;
+}
+
+.niny-window notebook > header {
+  background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_bottom);
+}
+
+.niny-window notebook > header tab:checked {
+  background-image: linear-gradient(to bottom, @sde_view, @sde_view);
+}
+
+.niny-window textview.view border.left,
+.niny-window .niny-view border {
+  background-color: @sde_sidebar;
+  color: alpha(@sde_dim, 0.85);
+}
+
+.niny-status-combo-button {
+  border-radius: 9999px;
+  padding: 0 10px;
+}
+
+/* ----------------------------------------------------- Photo (sde-view) */
+
+/* Photo: dark stage around the picture and a floating glass filmstrip. */
+.sdeview-window .view,
+.sdeview-window scrolledwindow > viewport {
+  background-color: #1C222B;
+}
+
+.sdeview-window .sdeview-image-collection-scrollbar,
+.sdeview-window iconview {
+  background-color: alpha(#1C222B, 0.96);
+  color: #E8EEF5;
+}
+
+.sdeview-window iconview:selected {
+  background-image: linear-gradient(to bottom, alpha(@sde_accent, 0.55), alpha(@sde_accent, 0.75));
+  border-radius: 8px;
+  color: #FFFFFF;
+}
+
+.sdeview-sidebar-title {
+  font-weight: 700;
+  color: @sde_fg;
+}
+
+.sdeview-effects {
+  padding: 10px;
+  background-color: @sde_sidebar;
+  border-left: 1px solid @sde_border_soft;
+}
+
+.sdeview-effects .preset button,
+.sdeview-effects flowboxchild button {
+  border-radius: 9999px;
+  padding: 3px 12px;
+}
+
+/* -------------------------------------------------------------- Xanara */
+
+.xanara-window .content-view,
+.xanara-window .view.content-view {
+  background-color: mix(@sde_bg, @sde_fg, 0.06);
+}
+
+.xanara-window .page-label-entry {
+  border-radius: 9999px;
+}
+
+/* ---------------------------------------------------------------- Taca */
+
+.taca-window treeview.view {
+  background-color: @sde_view;
+}
+
+.taca-window .text-button {
+  border-radius: 9999px;
+}
+
+/* ---------------------------------------------------- SDE System Monitor */
+
+.sde-system-monitor notebook > header,
+.sde-system-monitor-window notebook > header {
+  background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_bottom);
+}
+
+.sde-system-monitor .graph-card {
+  border-radius: 12px;
+  background-color: @sde_view;
+}
+
+/* ======================================================= alpha11 polish */
+
+/* Liria: the menu bar, toolbar and location bar read as one header; the
+ * sidebar and the view are calm cards; status text is small and quiet. */
+.liria-navigation-window menubar {
+  background-image: linear-gradient(to bottom, @sde_glass_top, @sde_glass_top);
+  border-bottom: none;
+  padding: 2px 6px 0;
+}
+
+.liria-navigation-window menubar > menuitem {
+  padding: 3px 10px;
+  color: @sde_dim;
+}
+
+.liria-navigation-window menubar > menuitem:hover {
+  color: @sde_fg;
+}
+
+.liria-navigation-window toolbar,
+.liria-navigation-window .primary-toolbar {
+  padding: 4px 10px 6px;
+  border-bottom: none;
+}
+
+.liria-navigation-window toolbar separator {
+  background-color: transparent;
+  min-width: 10px;
+}
+
+.liria-navigation-window .liria-pathbar,
+.liria-navigation-window .liria-location-entry {
+  margin: 2px 0;
+}
+
+.liria-navigation-window .liria-pathbar button {
+  min-height: 26px;
+  font-weight: 500;
+}
+
+.liria-side-pane {
+  background-color: @sde_sidebar;
+  padding: 6px 0;
+}
+
+.liria-side-pane treeview.view {
+  background-color: transparent;
+  color: @sde_fg;
+}
+
+.liria-side-pane treeview.view header button,
+.liria-side-pane > box > box button {
+  border: none;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: @sde_dim;
+  font-size: 0.92em;
+  font-weight: 700;
+}
+
+.liria-navigation-window .view,
+.liria-navigation-window iconview,
+.liria-navigation-window treeview.view {
+  background-color: @sde_view;
+}
+
+.liria-navigation-window treeview.view:hover {
+  background-color: alpha(@sde_accent, 0.06);
+}
+
+.liria-navigation-window .liria-canvas-item:selected,
+.liria-navigation-window iconview:selected {
+  border-radius: 10px;
+  background-image: none;
+  background-color: alpha(@sde_accent, 0.20);
+  color: @sde_fg;
+  box-shadow: inset 0 0 0 1px alpha(@sde_accent, 0.45);
+}
+
+.liria-navigation-window #statusbar-noborder,
+.liria-navigation-window statusbar {
+  min-height: 24px;
+  padding: 0 12px;
+  font-size: 0.88em;
+}
+
+.liria-notebook > header tab {
+  padding: 2px 10px;
+  margin: 4px 2px 0;
+}
+
+.liria-search-bar entry {
+  border-radius: 9999px;
+}
+
+/* Niny: editor in a clean card, side pane and bottom panel like the rest. */
+.niny-window toolbar {
+  padding: 4px 8px;
+  border-bottom: 1px solid @sde_border_soft;
+}
+
+.niny-window toolbar button {
+  border-radius: 8px;
+}
+
+.niny-window textview.view border.left {
+  border-right: 1px solid @sde_border_soft;
+}
+
+.niny-window notebook > header tab {
+  padding: 3px 12px;
+}
+
+.niny-window statusbar {
+  font-size: 0.88em;
+}
+
+/* Xanara: pages float on a soft backdrop, with a light shadow. */
+.xanara-window toolbar {
+  padding: 4px 8px;
+  border-bottom: 1px solid @sde_border_soft;
+}
+
+.xanara-window .content-view .page,
+.xanara-window .view.content-view {
+  box-shadow: 0 2px 10px alpha(@sde_shadow, 0.9);
+}
+
+.xanara-window .page-label-entry {
+  min-width: 44px;
+}
+
+/* Taca: the file list is a table with a quiet header. */
+.taca-window toolbar {
+  padding: 4px 8px;
+  border-bottom: 1px solid @sde_border_soft;
+}
+
+.taca-window treeview.view header button {
+  font-size: 0.92em;
+}
+
+.taca-window .location-bar entry,
+.taca-window entry {
+  border-radius: 9999px;
+}
+
+/* SDE System Monitor: tabs as a segmented control, tables with soft rows. */
+notebook.frame > header {
+  padding: 4px 8px 0;
+}
+
+.sde-system-monitor-window treeview.view:nth-child(even),
+.sde-system-monitor treeview.view:nth-child(even) {
+  background-color: alpha(@sde_fg, 0.02);
+}
+
+/* ===================================================== alpha14 Liria */
+
+/* One command row: round icon buttons, the path in a soft field in the
+ * middle and a single main-menu button at the end. All colours come from
+ * the theme palette, so SDE, Aero and Liquid Glass (light and dark) match
+ * the rest of the desktop. */
+.liria-navigation-window toolbar.primary-toolbar {
+  padding: 6px 10px;
+  border-bottom: 1px solid @sde_border_soft;
+}
+
+.liria-navigation-window toolbar.primary-toolbar toolbutton > button,
+.liria-navigation-window toolbar.primary-toolbar menutoolbutton > box > button {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 4px;
+  border-radius: 9999px;
+}
+
+/* The small history arrows next to Back/Forward stay usable but quiet. */
+.liria-navigation-window toolbar.primary-toolbar menutoolbutton > box > button:last-child {
+  min-width: 14px;
+  padding: 0;
+  color: alpha(@sde_fg, 0.45);
+}
+
+.liria-navigation-window toolbar.primary-toolbar toolbutton > button:hover,
+.liria-navigation-window toolbar.primary-toolbar menutoolbutton > box > button:hover {
+  background-color: alpha(@sde_fg, 0.07);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The path field: breadcrumbs, the location entry and the search field. */
+.liria-navigation-window .sde-location-item > box {
+  min-height: 34px;
+  padding: 0 4px;
+  border-radius: 12px;
+  border: 1px solid @sde_border_soft;
+  background-color: alpha(@sde_fg, 0.045);
+  box-shadow: inset 0 1px 1px alpha(@sde_shadow, 0.35);
+}
+
+.liria-navigation-window .sde-location-item > box > button,
+.liria-navigation-window .sde-location-item > box > togglebutton,
+.liria-navigation-window .liria-pathbar button {
+  min-height: 26px;
+  margin: 3px 1px;
+  padding: 0 9px;
+  border-radius: 9px;
+  border-color: transparent;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.liria-navigation-window .liria-pathbar button:hover,
+.liria-navigation-window .sde-location-item > box > button:hover,
+.liria-navigation-window .sde-location-item > box > togglebutton:hover {
+  background-color: alpha(@sde_accent, 0.12);
+}
+
+.liria-navigation-window .liria-pathbar button:checked {
+  background-image: none;
+  background-color: alpha(@sde_accent, 0.16);
+  border-color: transparent;
+  box-shadow: none;
+  color: @sde_fg;
+  font-weight: 700;
+}
+
+.liria-navigation-window .sde-location-item .liria-location-entry,
+.liria-navigation-window .sde-location-item entry {
+  margin: 3px 0;
+  border-radius: 9px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.liria-navigation-window .sde-location-item .liria-location-entry:focus,
+.liria-navigation-window .sde-location-item entry:focus {
+  border-color: @sde_accent;
+  box-shadow: 0 0 0 3px alpha(@sde_accent, 0.18);
+}
+
+/* View As keeps its menu, drawn as a small pill. */
+.liria-navigation-window toolbar.primary-toolbar combobox button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  border-color: @sde_border_soft;
+  background-image: none;
+  background-color: alpha(@sde_fg, 0.04);
+  box-shadow: none;
+}
+
+/* The main-menu button holding File, Edit, View, Go, Bookmarks and Help. */
+.liria-navigation-window menubar.sde-main-menu {
+  padding: 0;
+  margin: 0 0 0 4px;
+  border: none;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.liria-navigation-window menubar.sde-main-menu > menuitem {
+  min-width: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 4px;
+  border-radius: 9999px;
+  color: @sde_fg;
+}
+
+.liria-navigation-window menubar.sde-main-menu > menuitem:hover {
+  background-color: alpha(@sde_fg, 0.07);
+  box-shadow: none;
+}
+
+/* Sidebar: a calm column with section headings and soft selection. */
+.liria-side-pane treeview.view {
+  padding: 2px 0;
+}
+
+.liria-side-pane treeview.view:selected,
+.liria-side-pane treeview.view:selected:focus {
+  background-image: none;
+  background-color: alpha(@sde_accent, 0.16);
+  box-shadow: inset 3px 0 @sde_accent;
+  color: @sde_fg;
+}
+
+/* Tabs: rounded pills on the header colour, the current one lifted. */
+.liria-notebook > header {
+  padding: 4px 8px 0;
+  border-bottom: 1px solid @sde_border_soft;
+  background-image: linear-gradient(to bottom, @sde_glass_bottom, @sde_glass_bottom);
+}
+
+.liria-notebook > header tab {
+  min-height: 26px;
+  padding: 2px 12px;
+  margin: 0 2px 4px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.liria-notebook > header tab:hover {
+  background-color: alpha(@sde_fg, 0.06);
+}
+
+.liria-notebook > header tab:checked {
+  border-color: @sde_border_soft;
+  background-color: @sde_view;
+  box-shadow: 0 1px 3px alpha(@sde_shadow, 0.6);
+}
+
+/* ------------------------------------------------- Liria Home overview */
+
+.liria-navigation-window frame.liria-extra-location > border {
+  border: none;
+  border-radius: 0;
+}
+
+.liria-navigation-window #liria-extra-view-widget {
+  background-color: @sde_view;
+  border-bottom: 1px solid @sde_border_soft;
+}
+
+.sde-home-overview {
+  padding: 10px 14px 12px;
+  border-radius: 16px;
+  background-color: @sde_view;
+  background-image: linear-gradient(160deg, alpha(@sde_accent, 0.11), alpha(@sde_accent, 0.0) 55%);
+}
+
+.sde-home-title {
+  font-size: 1.5em;
+  font-weight: 700;
+  color: @sde_fg;
+}
+
+.sde-home-subtitle,
+.sde-home-empty {
+  color: @sde_dim;
+}
+
+.sde-home-section {
+  margin-top: 2px;
+  font-size: 0.86em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: @sde_dim;
+}
+
+button.sde-home-toggle {
+  padding: 4px 12px;
+  border-radius: 9999px;
+  border: 1px solid @sde_border_soft;
+  background-image: none;
+  background-color: alpha(@sde_view, 0.6);
+  box-shadow: none;
+  color: @sde_dim;
+}
+
+button.sde-home-toggle:hover {
+  border-color: alpha(@sde_accent, 0.40);
+  background-color: alpha(@sde_accent, 0.10);
+  color: @sde_fg;
+}
+
+.sde-quick-access flowboxchild,
+.sde-drives flowboxchild,
+.sde-recent-files flowboxchild {
+  padding: 0;
+  border-radius: 14px;
+}
+
+button.sde-card {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid @sde_border_soft;
+  background-color: @sde_bg;
+  background-image: linear-gradient(to bottom, alpha(@sde_glass_top, 0.35), alpha(@sde_glass_bottom, 0.10));
+  box-shadow: 0 1px 2px alpha(@sde_shadow, 0.55);
+  color: @sde_fg;
+}
+
+button.sde-card:hover {
+  border-color: alpha(@sde_accent, 0.45);
+  background-color: mix(@sde_bg, @sde_accent, 0.07);
+  box-shadow: 0 4px 12px alpha(@sde_shadow, 0.8), 0 0 0 1px alpha(@sde_accent, 0.18);
+}
+
+button.sde-card:active {
+  background-color: mix(@sde_bg, @sde_accent, 0.14);
+  box-shadow: inset 0 1px 2px alpha(@sde_shadow, 0.6);
+}
+
+button.sde-quick-card {
+  min-width: 88px;
+  padding: 9px 10px 7px;
+}
+
+button.sde-recent-card {
+  min-width: 170px;
+  padding: 7px 10px;
+  border-radius: 12px;
+}
+
+.sde-card-title {
+  font-weight: 600;
+}
+
+.sde-card-subtitle {
+  font-size: 0.88em;
+  color: @sde_dim;
+}
+
+levelbar.sde-usage-bar trough {
+  min-height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background-image: none;
+  background-color: alpha(@sde_fg, 0.10);
+  box-shadow: none;
+}
+
+levelbar.sde-usage-bar block {
+  min-height: 6px;
+  border: none;
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+levelbar.sde-usage-bar block.filled.sde-normal {
+  background-image: linear-gradient(to right, shade(@sde_accent, 1.15), @sde_accent);
+  background-color: @sde_accent;
+}
+
+levelbar.sde-usage-bar block.filled.sde-critical {
+  background-image: none;
+  background-color: #D9434E;
+}
+
+levelbar.sde-usage-bar block.empty {
+  background-image: none;
+  background-color: transparent;
+}

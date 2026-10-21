@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fetch immutable Calculator/WM/compositor source trees before offline builds."""
+"""Fetch immutable source trees of the forked SDE components before offline
+builds: Calculator engine, SDE WM (Openbox), SDE compositor (picom) and the
+display profile model. SDE-FLTK lives in sde-fltk/; sde-xsettingsd and
+sde-polkit-agent are SDE programs in src/."""
 import argparse
 import hashlib
 import json

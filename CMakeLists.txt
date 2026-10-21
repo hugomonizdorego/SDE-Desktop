@@ -11,7 +11,7 @@ string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SDE_VERSION_NUMERIC "${SDE_VERSIO
 
 project(sde VERSION ${SDE_VERSION_NUMERIC} LANGUAGES CXX)
 
-set(SDE_VERSION_LABEL "0.1 Alpha 10" CACHE STRING "Human readable release name")
+set(SDE_VERSION_LABEL "0.1 Alpha 14" CACHE STRING "Human readable release name")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,9 +29,43 @@ pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 pkg_check_modules(XRANDR REQUIRED IMPORTED_TARGET xrandr)
 pkg_check_modules(XINPUT REQUIRED IMPORTED_TARGET xi)
 
-# FLTK 1.3 (Debian 12/13, Ubuntu 22.04/24.04) or 1.4. fltk-config is the most
-# portable way to find it on Debian based systems.
-find_program(FLTK_CONFIG fltk-config REQUIRED)
+# SDE-FLTK: the DebION Dev-Team fork of FLTK 1.3.11 in sde-fltk/, built here
+# and linked statically, so SDE does not depend on the distribution's FLTK
+# packages. -DSDE_BUNDLED_FLTK=OFF uses the system FLTK (fltk-config).
+option(SDE_BUNDLED_FLTK "Build and statically link SDE-FLTK" ON)
+set(SDE_TOOLKIT_SOURCE "${PROJECT_SOURCE_DIR}/sde-fltk")
+if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
+  set(SDE_TOOLKIT_STAGE "${CMAKE_BINARY_DIR}/sde-fltk/stage")
+  if(NOT EXISTS "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
+    message(STATUS "Building SDE-FLTK from ${SDE_TOOLKIT_SOURCE}")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -S "${SDE_TOOLKIT_SOURCE}" -B "${CMAKE_BINARY_DIR}/sde-fltk/build"
+              -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=${SDE_TOOLKIT_STAGE}"
+              -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DOPTION_BUILD_SHARED_LIBS=OFF
+              -DFLTK_BUILD_TEST=OFF -DFLTK_BUILD_EXAMPLES=OFF -DOPTION_USE_GL=OFF
+              -DOPTION_BUILD_HTML_DOCUMENTATION=OFF -DOPTION_BUILD_PDF_DOCUMENTATION=OFF
+              -DOPTION_USE_SYSTEM_LIBPNG=ON -DOPTION_USE_SYSTEM_LIBJPEG=ON -DOPTION_USE_SYSTEM_ZLIB=ON
+      RESULT_VARIABLE SDE_TOOLKIT_RESULT OUTPUT_QUIET)
+    if(SDE_TOOLKIT_RESULT EQUAL 0)
+      execute_process(
+        COMMAND ${CMAKE_COMMAND} --build "${CMAKE_BINARY_DIR}/sde-fltk/build" --target install --parallel 4
+        RESULT_VARIABLE SDE_TOOLKIT_RESULT OUTPUT_QUIET)
+    endif()
+    if(NOT SDE_TOOLKIT_RESULT EQUAL 0)
+      message(FATAL_ERROR "Building SDE-FLTK failed")
+    endif()
+  endif()
+  set(FLTK_CONFIG "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
+  # FLTK's license and notices travel with the statically linked programs.
+  install(FILES "${SDE_TOOLKIT_SOURCE}/COPYING" "${SDE_TOOLKIT_SOURCE}/CREDITS"
+                "${SDE_TOOLKIT_SOURCE}/README.SDE-FLTK.md" "${SDE_TOOLKIT_SOURCE}/CHANGES.SDE-FLTK"
+          DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/sde/sde-fltk" OPTIONAL)
+  message(STATUS "Using SDE-FLTK (static)")
+else()
+  # FLTK 1.3 (Debian 12/13, Ubuntu 22.04/24.04) or 1.4. fltk-config is the most
+  # portable way to find it on Debian based systems.
+  find_program(FLTK_CONFIG fltk-config REQUIRED)
+endif()
 execute_process(COMMAND ${FLTK_CONFIG} --version
                 OUTPUT_VARIABLE FLTK_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND ${FLTK_CONFIG} --use-images --cxxflags
@@ -46,6 +80,8 @@ add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 
 set(SDE_DATADIR "${CMAKE_INSTALL_FULL_DATADIR}/sde")
 set(SDE_SYSCONFDIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}")
+# Session components are staged under <prefix>/libexec/sde.
+set(SDE_LIBEXECDIR "${CMAKE_INSTALL_PREFIX}/libexec")
 set(SDE_LOCALEDIR "${CMAKE_INSTALL_FULL_LOCALEDIR}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/suite/versions.json")
 file(READ "${PROJECT_SOURCE_DIR}/suite/versions.json" SDE_APP_VERSIONS)
@@ -75,7 +111,7 @@ install(FILES data/sde-mimeapps.list DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg
 install(DIRECTORY data/autostart/ DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/autostart)
 install(DIRECTORY data/update/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/update
         PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
-install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json suite/versions.json
+install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/ALPHA11.md docs/ALPHA12.md docs/ALPHA13.md docs/ALPHA14.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json suite/versions.json
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/xsessions/sde-desktop.desktop data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)

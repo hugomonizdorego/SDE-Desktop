@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=DebION
+Description=DebION GNU/Linux boot splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/debion
+ScriptFile=/usr/share/plymouth/themes/debion/debion.script

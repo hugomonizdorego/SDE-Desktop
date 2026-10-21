@@ -9,6 +9,7 @@
 // settings without opening a window (run by sde-session at login).
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Group.H>
 #include <FL/Fl_File_Chooser.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -24,10 +25,12 @@
 #include <string>
 #include <vector>
 
+#include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
 #include "dbus.h"
+#include "effects.h"
 #include "desktop_entry.h"
 #include "glyphs.h"
 #include "i18n.h"
@@ -82,38 +85,78 @@ namespace {
 
 // ------------------------------------------------------- custom widgets
 
-// Light/Dark style preview that acts as a radio button.
-class StyleCard : public Fl_Widget {
+void aero_changed();
+
+// Theme preview that acts as a radio button: SDE Light, SDE Dark, SDE Aero
+// and SDE Liquid Glass (Aero and Liquid Glass follow the dark-mode switch).
+class ThemeCard : public Fl_Widget {
  public:
-  StyleCard(int x, int y, int w, int h, bool dark) : Fl_Widget(x, y, w, h), dark_(dark) {}
+  ThemeCard(int x, int y, int w, int h, std::string id) : Fl_Widget(x, y, w, h), id_(std::move(id)) {}
+  bool active() const {
+    std::string style = theme_style(g_cfg);
+    if (id_ == "light") return style == "sde" && !g_theme.dark;
+    if (id_ == "dark") return style == "sde" && g_theme.dark;
+    return style == id_;
+  }
   void draw() override {
-    bool active = g_theme.dark == dark_;
+    bool on = active();
+    bool dark = id_ == "dark" || ((id_ == "aero" || id_ == "liquid-glass") && g_theme.dark);
     int pv = h() - S(26);
     {
       Painter p(window()->w(), window()->h());
-      Color bg = dark_ ? Color::hex(0x161B22) : Color::hex(0xF5F7FA);
-      Color surf = dark_ ? Color::hex(0x1F2630) : Color::hex(0xFFFFFF);
-      Color line = dark_ ? Color::hex(0x384252) : Color::hex(0xD5DBE3);
-      p.fill_rounded(x(), y(), w(), pv, Sd(12), bg);
-      p.stroke_rounded(x(), y(), w(), pv, Sd(12), active ? g_theme.accent : g_theme.border,
-                       active ? Sd(2.5) : Sd(1));
-      p.fill_rounded(x() + Sd(14), y() + Sd(14), w() - Sd(28), pv - Sd(52), Sd(8), surf);
-      p.fill_rounded(x() + Sd(24), y() + Sd(26), w() * 0.4, Sd(8), Sd(4), line);
-      p.fill_rounded(x() + Sd(24), y() + Sd(42), w() * 0.55, Sd(8), Sd(4), line);
-      p.fill_rounded(x() + Sd(24), y() + Sd(58), Sd(36), Sd(12), Sd(6), g_theme.accent);
-      p.fill_rect(x() + 1, y() + pv - Sd(18), w() - 2, Sd(17), surf);
-      p.circle(x() + Sd(16), y() + pv - Sd(9), Sd(4), g_theme.accent);
+      Color bg = dark ? Color::hex(0x161B22) : Color::hex(0xF5F7FA);
+      Color surf = dark ? Color::hex(0x1F2630) : Color::hex(0xFFFFFF);
+      Color line = dark ? Color::hex(0x384252) : Color::hex(0xD5DBE3);
+      if (id_ == "liquid-glass") {
+        // A colorful backdrop seen through frosted layers.
+        p.fill_gradient(x(), y(), w(), pv, Sd(12), Color::hex(dark ? 0x23305A : 0x8EC5FC),
+                        Color::hex(dark ? 0x4A2B55 : 0xE0C3FC), true);
+        surf = dark ? Color::hex(0xFFFFFF, 0.10) : Color::hex(0xFFFFFF, 0.55);
+        line = dark ? Color::hex(0xFFFFFF, 0.25) : Color::hex(0xFFFFFF, 0.9);
+      } else {
+        p.fill_rounded(x(), y(), w(), pv, Sd(12), bg);
+      }
+      p.stroke_rounded(x(), y(), w(), pv, Sd(12), on ? g_theme.accent : g_theme.border,
+                       on ? Sd(2.5) : Sd(1));
+      double wx = x() + Sd(12), wy = y() + Sd(12), ww = w() - Sd(24), wh = pv - Sd(24);
+      double r = id_ == "liquid-glass" ? Sd(12) : Sd(6);
+      p.fill_rounded(wx, wy, ww, wh, r, surf);
+      if (id_ == "aero") {
+        p.fill_gradient(wx, wy, ww, Sd(18), Sd(6), dark ? Color::hex(0x354152) : Color::hex(0xFBFDFF),
+                        dark ? Color::hex(0x232B38) : Color::hex(0xD2E2F3));
+        p.glass_sheen(wx, wy, ww, Sd(18), Sd(6), dark);
+      } else if (id_ == "liquid-glass") {
+        p.stroke_rounded(wx, wy, ww, wh, r, line, Sd(1));
+      } else {
+        p.line(wx, wy + Sd(18), wx + ww, wy + Sd(18), line);
+      }
+      p.fill_rounded(wx + Sd(10), wy + Sd(28), ww * 0.5, Sd(7), Sd(3.5), line);
+      p.fill_rounded(wx + Sd(10), wy + Sd(42), ww * 0.65, Sd(7), Sd(3.5), line);
+      double br = id_ == "liquid-glass" ? Sd(7) : Sd(4);
+      p.fill_rounded(wx + Sd(10), wy + wh - Sd(22), Sd(40), Sd(14), br, g_theme.accent);
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), pv, Sd(12));
     }
-    text_font(g_theme.font_size, active);
-    draw_text(dark_ ? _("Dark") : _("Light"), x(), y() + pv + S(2), w(), S(22),
-              active ? g_theme.accent_text : g_theme.text, 1);
+    static const std::pair<const char *, const char *> names[] = {
+        {"light", N_("Light")}, {"dark", N_("Dark")}, {"aero", N_("Aero")},
+        {"liquid-glass", N_("Liquid Glass")}};
+    const char *label = "";
+    for (auto &n : names)
+      if (id_ == n.first) label = _(n.second);
+    text_font(g_theme.font_size, on);
+    draw_text(label, x(), y() + pv + S(2), w(), S(22), on ? g_theme.accent_text : g_theme.text, 1);
   }
   void choose() {
-    g_cfg.set("appearance", "theme", dark_ ? "dark" : "light");
-    set_openbox_theme(dark_, g_cfg.get_bool("aero", "enabled", true));
+    if (id_ == "light" || id_ == "dark") {
+      g_cfg.set("appearance", "style", "sde");
+      g_cfg.set("appearance", "theme", id_);
+    } else {
+      g_cfg.set("appearance", "style", id_);
+    }
+    g_theme = Theme::from_config(g_cfg);
+    set_openbox_theme(g_theme.dark, theme_style(g_cfg));
     reconfigure_window_manager();
-    apply_change();
+    aero_changed();
+    if (window()) window()->redraw();
   }
   int handle(int e) override {
     switch (e) {
@@ -138,7 +181,7 @@ class StyleCard : public Fl_Widget {
   }
 
  private:
-  bool dark_;
+  std::string id_;
 };
 
 class AccentPicker : public Fl_Widget {
@@ -369,6 +412,20 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
     glyph::power(p, x, y, size, c);
     return;
   }
+  if (id == "effects") {
+    // Four-point sparkle.
+    cairo_t *cr = p.cr();
+    double cx = x + size * .45, cy = y + size * .5, r = size * .42, k = size * .1;
+    cairo_move_to(cr, cx, cy - r);
+    cairo_curve_to(cr, cx + k, cy - k, cx + k, cy - k, cx + r, cy);
+    cairo_curve_to(cr, cx + k, cy + k, cx + k, cy + k, cx, cy + r);
+    cairo_curve_to(cr, cx - k, cy + k, cx - k, cy + k, cx - r, cy);
+    cairo_curve_to(cr, cx - k, cy - k, cx - k, cy - k, cx, cy - r);
+    p.set(c);
+    cairo_fill(cr);
+    p.circle(x + size * .86, y + size * .16, size * .08, c);
+    return;
+  }
   if (id == "about") {
     p.stroke_rounded(x, y, size, size, size / 2, c, size * .08);
     p.circle(x + size * .5, y + size * .3, size * .055, c);
@@ -529,27 +586,38 @@ void reload_compositor_later(void *) {
 void aero_changed();
 
 void build_appearance(Page *page) {
-  page->heading(_("Appearance"), _("Style, colors, size and wallpaper"));
-  page->begin_card(_("Style"));
-  int cw = std::min(S(150), (page->width() - S(56)) / 2);
+  page->heading(_("Appearance"), _("Theme, colors, glass, size and wallpaper"));
+  page->begin_card(_("Theme"));
+  int gap = S(12), cw = std::min(S(150), (page->width() - S(40) - 3 * gap) / 4);
   int y = page->cursor();
-  new StyleCard(page->left() + S(20), y, cw, S(124), false);
-  new StyleCard(page->left() + S(36) + cw, y, cw, S(124), true);
-  page->advance(S(132));
+  const char *ids[] = {"light", "dark", "aero", "liquid-glass"};
+  for (int i = 0; i < 4; ++i) new ThemeCard(page->left() + S(20) + i * (cw + gap), y, cw, S(118), ids[i]);
+  page->advance(S(126));
+  page->note(_("Themes are installed in /usr/share/themes (SDE, SDE-Dark, SDE-Aero, SDE-Liquid-Glass "
+               "and their dark versions) and work in GTK 3 and GTK 4 applications."));
+  page->switch_row(
+      _("Dark mode"), g_theme.dark,
+      [](bool on) {
+        g_cfg.set("appearance", "theme", on ? "dark" : "light");
+        g_theme = Theme::from_config(g_cfg);
+        set_openbox_theme(on, theme_style(g_cfg));
+        reconfigure_window_manager();
+        aero_changed();
+      },
+      _("Aero and Liquid Glass have light and dark versions."));
   page->row(_("Accent color"), S(34) * kAccentChoiceCount, S(36),
             [](int x, int yy, int w, int h) { return new AccentPicker(x, yy, w, h); });
   page->end_card();
 
-  page->begin_card(_("SDE Aero glass"));
+  page->begin_card(_("Glass effects"));
   page->switch_row(
-      _("Aero glass effects"), g_cfg.get_bool("aero", "enabled", true),
+      _("Glass effects"), g_cfg.get_bool("aero", "enabled", true),
       [](bool on) {
         g_cfg.set("aero", "enabled", on ? "true" : "false");
-        set_openbox_theme(g_theme.dark, on);
-        reconfigure_window_manager();
         aero_changed();
       },
-      _("Translucent panel, menus and window frames with the SDE Aero theme."));
+      _("Translucent panel, menus and window frames with Aero and Liquid Glass. SDE Light and "
+        "Dark stay opaque."));
   page->slider_row(
       _("Transparency"), 0, 60, g_cfg.get_int("aero", "transparency", 18),
       [](double v) {
@@ -717,6 +785,8 @@ void build_panel(Page *page) {
                    [](bool on) { set_bool("panel", "clock_24h", on); });
   page->switch_row(_("Show the date"), g_cfg.get_bool("panel", "show_date", true),
                    [](bool on) { set_bool("panel", "show_date", on); });
+  page->switch_row(_("Show Desktop button"), g_cfg.get_bool("panel", "show_desktop_button", false),
+                   [](bool on) { set_bool("panel", "show_desktop_button", on); });
   page->switch_row(
       _("Show battery status"), g_cfg.get_bool("panel", "show_battery", true),
       [](bool on) { set_bool("panel", "show_battery", on); }, _("On laptops and tablets."));
@@ -841,6 +911,123 @@ void build_action_center(Page *page) {
       _("Click the panel clock or press Super+A to open the Action Center. Super+C opens the "
         "calendar "
         "directly."));
+  page->finish();
+}
+
+// Effects page: Start menu animations and the compositor. The effect set,
+// the capability rule and the compositor modes/report follow
+// Eduka-Desktop's Effects and Appearance pages, in SDE's own layout.
+void build_effects(Page *page) {
+  page->heading(_("Effects and Animations"), _("Menu animations, compositing, blur and shadows"));
+  double gib = 0;
+  int threads = 0;
+  bool capable = effects_capable(&gib, &threads);
+  page->begin_card(_("Animations"));
+  page->note(capable ? format(_("This computer can use effects (%.1f GiB memory, %d CPU threads)."), gib,
+                              threads)
+                     : format(_("Effects need 4 GB of memory and 4 CPU threads. This computer has "
+                                "%.1f GiB and %d threads, so Automatic keeps them off."),
+                              gib, threads));
+  std::string mode = g_cfg.get("effects", "enabled", "auto");
+  page->choice_row(
+      _("Effects"), {_("Automatic"), _("On"), _("Off")},
+      mode == "true" ? 1 : mode == "false" ? 2 : 0,
+      [](int v) {
+        static const char *vals[] = {"auto", "true", "false"};
+        g_cfg.set("effects", "enabled", vals[std::max(0, std::min(2, v))]);
+        apply_change();
+      },
+      _("Used by the Start menu: categories, application tiles and starting applications."));
+  auto effect_choice = [&](const char *label, const char *key, const char *fallback,
+                           const std::vector<std::pair<std::string, std::string>> &list,
+                           const char *hint) {
+    std::vector<std::string> names;
+    int current = 0;
+    std::string value = g_cfg.get("effects", key, fallback);
+    for (size_t i = 0; i < list.size(); ++i) {
+      names.push_back(list[i].second);
+      if (list[i].first == value) current = int(i);
+    }
+    page->choice_row(
+        label, names, current,
+        [key, items = &list](int v) {
+          if (v >= 0 && v < int(items->size())) g_cfg.set("effects", key, (*items)[size_t(v)].first);
+          apply_change();
+        },
+        hint);
+  };
+  effect_choice(_("Pointer over a tile"), "hover", "pop", hover_effects(),
+                _("Wave lifts the icon, Glow pulses a ring, Slide moves the name, Pop grows the icon, "
+                  "Bounce makes it jump."));
+  effect_choice(_("Opening an application"), "launch", "zoom", launch_effects(),
+                _("Zoom grows or shrinks the icon, Ripple spreads rings, Bubbles rise, Confetti "
+                  "scatters colors, Fade dissolves the menu."));
+  std::string speed = g_cfg.get("effects", "speed", "normal");
+  page->choice_row(_("Speed"), {_("Slow"), _("Normal"), _("Fast")},
+                   speed == "slow" ? 0 : speed == "fast" ? 2 : 1, [](int v) {
+                     static const char *vals[] = {"slow", "normal", "fast"};
+                     g_cfg.set("effects", "speed", vals[std::max(0, std::min(2, v))]);
+                     apply_change();
+                   });
+  std::string size = g_cfg.get("effects", "size", "normal");
+  page->choice_row(_("Size"), {_("Small"), _("Normal"), _("Large")},
+                   size == "small" ? 0 : size == "large" ? 2 : 1, [](int v) {
+                     static const char *vals[] = {"small", "normal", "large"};
+                     g_cfg.set("effects", "size", vals[std::max(0, std::min(2, v))]);
+                     apply_change();
+                   });
+  page->switch_row(_("Random effects"), g_cfg.get_bool("effects", "random", false),
+                   [](bool on) { set_bool("effects", "random", on); },
+                   _("A different opening effect each time."));
+  page->switch_row(
+      _("Low resource mode"), g_cfg.get_bool("appearance", "low_resource", false),
+      [](bool on) {
+        g_cfg.set("appearance", "low_resource", on ? "true" : "false");
+        if (on) g_cfg.set("aero", "blur", "false");
+        aero_changed();
+      },
+      _("For older computers: turns effects and blur off."));
+  page->end_card();
+
+  page->begin_card(_("Compositor"));
+  page->note(_("The compositor draws transparency, blur, shadows and rounded corners. Without one "
+               "SDE uses an opaque look."));
+  std::string cm = g_cfg.get("compositor", "mode", "auto"), cb = g_cfg.get("compositor", "backend", "auto");
+  int ci = cm == "off" ? 3 : cb == "glx" ? 1 : cb == "xrender" ? 2 : 0;
+  page->choice_row(
+      _("Compositor"), {_("Automatic (recommended)"), _("OpenGL (smoother, needs 3D graphics)"),
+                        _("XRender (works everywhere, also VirtualBox)"), _("Off")},
+      ci,
+      [](int v) {
+        g_cfg.set("compositor", "mode", v == 3 ? "off" : "auto");
+        g_cfg.set("compositor", "backend", v == 1 ? "glx" : v == 2 ? "xrender" : "auto");
+        apply_change();
+        write_compositor_config(g_cfg);
+        write_compositor_config(g_cfg, true);
+        restart_compositor_now();
+      },
+      _("Changes apply at once."));
+  static std::string report;
+  report = compositor_report(g_cfg);
+  page->note(report);
+  page->row(_("Compositor report"), S(220), S(34), [](int x, int y, int w, int h) {
+    auto *row = new Fl_Group(x, y, w, h);
+    auto *restart = new FlatButton(x, y, (w - S(8)) / 2, h, _("Restart"));
+    restart->callback([](Fl_Widget *, void *) {
+      write_compositor_config(g_cfg);
+      write_compositor_config(g_cfg, true);
+      restart_compositor_now();
+    });
+    auto *copy = new FlatButton(x + (w + S(8)) / 2, y, (w - S(8)) / 2, h, _("Copy"));
+    copy->callback([](Fl_Widget *, void *) {
+      Fl::copy(report.c_str(), int(report.size()), 1);
+      Fl::copy(report.c_str(), int(report.size()), 0);
+    });
+    row->end();
+    return row;
+  });
+  page->end_card();
+  page->note(_("Glass transparency, blur strength and rounded corners are in Appearance."));
   page->finish();
 }
 
@@ -992,20 +1179,10 @@ void build_suite_system(Page *page) {
         "session. "
         "No background updater is started."));
   page->begin_card(_("Windows and effects"));
-  page->note(
-      _("SDE WM manages windows. SDE Compositor adds shadows and SDE Aero glass (see Appearance)."));
-  page->choice_row(
-      _("Compositing"), {_("Enabled"), _("Disabled")},
-      g_cfg.get("compositor", "mode", "auto") == "off" ? 1 : 0,
-      [](int choice) {
-        g_cfg.set("compositor", "mode", choice ? "off" : "auto");
-        apply_change();
-        // Turning compositing off takes effect at once; turning it on needs
-        // the session to start the compositor at the next login.
-        if (choice)
-          spawn_detached({"pkill", "-TERM", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
-      },
-      _("Disabling stops effects now; enabling applies at the next login."));
+  page->note(_("SDE WM manages windows. Compositing, animations and glass are on the Effects page."));
+  page->row(_("Effects and Animations"), S(112), S(34), [](int x, int y, int w, int h) {
+    return action_button(x, y, w, h, _("Open"), {"sde-settings", "--page", "effects"});
+  });
   page->end_card();
   page->row(_("Applications and credits"), S(112), S(34), [](int x, int y, int w, int h) {
     return action_button(x, y, w, h, _("Applications"), {"sde-settings", "--page", "suite"});
@@ -1074,6 +1251,10 @@ const std::vector<PageInfo> &pages() {
        N_("Notifications"),
        {"preferences-desktop-notification", "notification-active", "dialog-information"},
        build_notifications},
+      {"effects",
+       N_("Effects"),
+       {"preferences-desktop-effects", "applications-graphics", "preferences-desktop"},
+       build_effects},
       {"display",
        N_("Displays"),
        {"preferences-desktop-display", "video-display", "computer"},
@@ -1252,6 +1433,7 @@ using namespace sde;
 
 int main(int argc, char **argv) {
   init_i18n();
+  install_crash_handler("sde-settings");
   g_argv0 = argv[0];
   std::string page = "home";
   bool apply = false;

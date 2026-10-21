@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Gallery
+GenericName=Photo Library
+Comment=Browse your photos by month, mark favorites and set wallpapers
+Keywords=photos;pictures;images;gallery;screenshots;album;
+Exec=sde-gallery
+TryExec=sde-gallery
+Icon=sde-gallery
+Terminal=false
+Categories=Graphics;Photography;Viewer;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=SDE-Gallery

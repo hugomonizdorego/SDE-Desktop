@@ -1,8 +1,12 @@
 [Desktop Entry]
 Type=X-GNOME-Metatheme
-Name=SDE
-Comment=Selviana Desktop Environment window theme
+Name=SDE Light
+Comment=Calm flat light theme for the Selviana Desktop Environment
 Encoding=UTF-8
 
 [X-GNOME-Metatheme]
+GtkTheme=SDE
 MetacityTheme=SDE
+IconTheme=Papirus
+CursorTheme=Adwaita
+ButtonLayout=:minimize,maximize,close

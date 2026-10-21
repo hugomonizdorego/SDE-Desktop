@@ -7,11 +7,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <memory>
 #include <sstream>
 
 #include "i18n.h"
 #include "process.h"
 #include "quick.h"
+#include "spawn.h"
 #include "util.h"
 using namespace sde;
 namespace {
@@ -128,6 +132,126 @@ std::vector<NetworkDevice> parse_network_devices(const std::string& text) {
   }
   return r;
 }
+namespace {
+// KEY="value" pairs of one `lsblk -P` line; \xNN escapes are decoded.
+std::map<std::string, std::string> lsblk_pairs(const std::string& line) {
+  std::map<std::string, std::string> out;
+  size_t i = 0;
+  while (i < line.size()) {
+    while (i < line.size() && line[i] == ' ') ++i;
+    size_t eq = line.find("=\"", i);
+    if (eq == std::string::npos) break;
+    std::string key = line.substr(i, eq - i), value;
+    size_t j = eq + 2;
+    for (; j < line.size() && line[j] != '"'; ++j) {
+      if (line[j] == '\\' && j + 3 < line.size() && line[j + 1] == 'x' &&
+          isxdigit((unsigned char)line[j + 2]) && isxdigit((unsigned char)line[j + 3])) {
+        value += char(strtol(line.substr(j + 2, 2).c_str(), nullptr, 16));
+        j += 3;
+      } else {
+        value += line[j];
+      }
+    }
+    out[key] = value;
+    i = j + 1;
+  }
+  return out;
+}
+bool system_mount(const std::string& mp) {
+  for (const char* m : {"/", "/boot", "/boot/efi", "/home", "/usr", "/var", "[SWAP]"})
+    if (mp == m) return true;
+  return false;
+}
+}  // namespace
+
+std::string RemovableDrive::mountpoint() const {
+  for (const auto& p : parts)
+    if (!p.mountpoint.empty()) return p.mountpoint;
+  return "";
+}
+
+std::string human_size(long long bytes) {
+  double n = double(bytes);
+  const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+  int u = 0;
+  while (n >= 1000 && u < 4) {
+    n /= 1000;
+    ++u;
+  }
+  char buf[32];
+  snprintf(buf, sizeof buf, (u < 2 || n >= 100) ? "%.0f %s" : "%.1f %s", n, units[u]);
+  return buf;
+}
+
+std::vector<RemovableDrive> parse_removable_drives(const std::string& text) {
+  std::vector<RemovableDrive> drives;
+  std::vector<std::map<std::string, std::string>> rows;
+  for (const auto& l : lines(text))
+    if (!l.empty()) rows.push_back(lsblk_pairs(l));
+  for (const auto& d : rows) {
+    auto get = [&](const char* k) {
+      auto it = d.find(k);
+      return it == d.end() ? std::string() : it->second;
+    };
+    if (get("TYPE") != "disk") continue;
+    std::string name = get("NAME"), tran = get("TRAN");
+    bool hot = get("HOTPLUG") == "1" || get("RM") == "1" || tran == "usb" || tran == "mmc" ||
+               starts_with(name, "mmcblk");
+    if (!hot || starts_with(name, "loop") || starts_with(name, "zram") || starts_with(name, "sr") ||
+        starts_with(name, "ram"))
+      continue;
+    RemovableDrive r;
+    r.name = name;
+    r.path = get("PATH");
+    r.size = atoll(get("SIZE").c_str());
+    std::string vendor = trim(get("VENDOR")), model = trim(get("MODEL"));
+    r.model = trim((starts_with(vendor, "0x") ? "" : vendor) + " " + (starts_with(model, "0x") ? "" : model));
+    bool system = false;
+    bool has_children = false;
+    for (const auto& c : rows) {
+      auto cget = [&](const char* k) {
+        auto it = c.find(k);
+        return it == c.end() ? std::string() : it->second;
+      };
+      if (cget("PKNAME") != name) continue;
+      has_children = true;
+      std::string type = cget("TYPE");
+      if (type != "part" && type != "crypt" && type != "lvm") continue;
+      if (system_mount(cget("MOUNTPOINT"))) system = true;
+      if (!cget("FSTYPE").empty() || !cget("MOUNTPOINT").empty())
+        r.parts.push_back({cget("PATH"), cget("LABEL"), cget("MOUNTPOINT"), cget("FSTYPE")});
+    }
+    if (system_mount(get("MOUNTPOINT"))) system = true;
+    if (!has_children && (!get("FSTYPE").empty() || !get("MOUNTPOINT").empty()))
+      r.parts.push_back({r.path, get("LABEL"), get("MOUNTPOINT"), get("FSTYPE")});
+    if (system || r.parts.empty()) continue;
+    std::string lm = lower(r.model);
+    if (starts_with(name, "mmcblk") || tran == "mmc" || lm.find("card") != std::string::npos ||
+        lm.find("sd/mmc") != std::string::npos) {
+      r.kind = "card";
+      r.icon = "media-flash";
+    } else if (get("ROTA") == "1") {
+      r.kind = "hdd";
+      r.icon = "drive-harddisk-usb";
+    } else if (lm.find("ssd") != std::string::npos || lm.find("nvme") != std::string::npos ||
+               r.size > 300LL * 1000 * 1000 * 1000) {
+      r.kind = "ssd";
+      r.icon = "drive-harddisk-solidstate";
+    } else {
+      r.kind = "usb";
+      r.icon = "drive-removable-media-usb";
+    }
+    for (const auto& p : r.parts)
+      if (!p.label.empty()) {
+        r.label = p.label;
+        break;
+      }
+    if (r.label.empty()) r.label = r.model.empty() ? name : r.model;
+    drives.push_back(r);
+  }
+  return drives;
+}
+
 PanelControls& PanelControls::get() {
   static PanelControls c;
   return c;
@@ -216,9 +340,22 @@ void PanelControls::start(std::function<void()> fn) {
           changed();
         });
   }
+  // New hardware shows up at once: udev reports block devices (USB drives,
+  // memory cards) as they are plugged in or removed.
+  stream_lines({"udevadm", "monitor", "--udev", "--subsystem-match=block"},
+               [this](const std::string& line) {
+                 if (line.find(" add ") == std::string::npos &&
+                     line.find(" remove ") == std::string::npos &&
+                     line.find(" change ") == std::string::npos)
+                   return;
+                 Fl::remove_timeout(drives_later, this);
+                 Fl::add_timeout(0.8, drives_later, this);
+               },
+               nullptr);
   refresh();
   Fl::add_timeout(3, tick, this);
 }
+void PanelControls::drives_later(void* d) { static_cast<PanelControls*>(d)->refresh_drives(); }
 void PanelControls::tick(void* d) {
   auto* c = static_cast<PanelControls*>(d);
   if (c->visible_)
@@ -226,6 +363,7 @@ void PanelControls::tick(void* d) {
   else {
     c->refresh_media();
     c->refresh_bluetooth();
+    c->refresh_drives();  // in case udevadm is not available
   }
   Fl::repeat_timeout(c->visible_ ? 3 : 15, tick, d);
 }
@@ -241,6 +379,122 @@ void PanelControls::refresh() {
   refresh_audio_apps();
   refresh_bluetooth();
   refresh_devices();
+  refresh_drives();
+  refresh_power_profiles();
+}
+
+void PanelControls::refresh_drives() {
+  if (drives_pending_) return;
+  drives_pending_ = true;
+  if (!run_async({"lsblk", "-P", "-b", "-o",
+                  "NAME,PATH,LABEL,SIZE,TYPE,TRAN,RM,HOTPLUG,ROTA,MOUNTPOINT,FSTYPE,MODEL,VENDOR,PKNAME"},
+                 [this](const std::string& out, int code) {
+                   drives_pending_ = false;
+                   auto found = code == 0 ? parse_removable_drives(out) : std::vector<RemovableDrive>{};
+                   bool same = found.size() == drives.size();
+                   for (size_t i = 0; same && i < found.size(); ++i)
+                     same = found[i].path == drives[i].path &&
+                            found[i].mountpoint() == drives[i].mountpoint();
+                   drives = std::move(found);
+                   if (!same) changed();
+                 }))
+    drives_pending_ = false;
+}
+
+void PanelControls::drive_open(const std::string& name) {
+  for (const auto& d : drives) {
+    if (d.name != name) continue;
+    std::string mp = d.mountpoint();
+    if (!mp.empty()) {
+      spawn_detached({"liria", "--no-desktop", mp});
+      return;
+    }
+    std::string label = d.label;
+    // udisks lets the person at the computer mount without a password.
+    run_async({"udisksctl", "mount", "-b", d.parts.front().path, "--no-user-interaction"},
+              [this, label](const std::string& out, int code) {
+                size_t at = out.find(" at ");
+                if (code == 0 && at != std::string::npos) {
+                  std::string path = trim(out.substr(at + 4));
+                  if (!path.empty() && path.back() == '.') path.pop_back();
+                  spawn_detached({"liria", "--no-desktop", path});
+                  message.clear();
+                } else {
+                  message = format(_("%s could not be opened."), label.c_str());
+                }
+                refresh_drives();
+                changed();
+              });
+    return;
+  }
+}
+
+void PanelControls::drive_eject(const std::string& name, bool power_off) {
+  for (const auto& d : drives) {
+    if (d.name != name) continue;
+    auto parts = std::make_shared<std::vector<std::string>>();
+    for (const auto& p : d.parts)
+      if (!p.mountpoint.empty()) parts->push_back(p.path);
+    std::string disk = d.path, label = d.label;
+    auto step = std::make_shared<std::function<void(size_t)>>();
+    *step = [this, parts, disk, label, power_off, step](size_t i) {
+      if (i < parts->size()) {
+        run_async({"udisksctl", "unmount", "-b", (*parts)[i], "--no-user-interaction"},
+                  [this, i, label, step](const std::string&, int code) {
+                    if (code != 0) {
+                      message = format(_("%s is still in use. Close its files and try again."),
+                                       label.c_str());
+                      refresh_drives();
+                      changed();
+                      return;
+                    }
+                    (*step)(i + 1);
+                  });
+        return;
+      }
+      auto finish = [this, label](const std::string&, int) {
+        message = format(_("%s can be removed safely."), label.c_str());
+        refresh_drives();
+        changed();
+      };
+      if (power_off)
+        run_async({"udisksctl", "power-off", "-b", disk, "--no-user-interaction"}, finish);
+      else
+        finish("", 0);
+    };
+    (*step)(0);
+    return;
+  }
+}
+
+void PanelControls::refresh_power_profiles() {
+  if (profiles_pending_) return;
+  profiles_pending_ = true;
+  if (!run_async({"powerprofilesctl", "list"}, [this](const std::string& out, int code) {
+        profiles_pending_ = false;
+        std::vector<std::string> names;
+        std::string current;
+        for (auto l : lines(out)) {
+          l = trim(l);
+          bool active = !l.empty() && l[0] == '*';
+          if (active) l = trim(l.substr(1));
+          if (l.size() < 2 || l.back() != ':' || l.find(' ') != std::string::npos) continue;
+          names.push_back(l.substr(0, l.size() - 1));
+          if (active) current = names.back();
+        }
+        if (code != 0) names.clear();
+        if (names != power_profiles || current != power_profile) {
+          power_profiles = names;
+          power_profile = current;
+          changed();
+        }
+      }))
+    profiles_pending_ = false;
+}
+
+void PanelControls::set_power_profile(const std::string& profile) {
+  run_async({"powerprofilesctl", "set", profile},
+            [this](const std::string&, int) { refresh_power_profiles(); });
 }
 void PanelControls::refresh_media() {
   if (!session_) return;

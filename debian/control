@@ -8,7 +8,14 @@ Build-Depends: debhelper-compat (= 13),
                g++ (>= 4:9),
                rustc (>= 1.59),
                cargo,
-               libfltk1.3-dev,
+               libxfixes-dev,
+               libxext-dev,
+               libxrender-dev,
+               libfontconfig-dev,
+               libpng-dev,
+               libjpeg-dev,
+               zlib1g-dev,
+               libpolkit-agent-1-dev,
                libcairo2-dev,
                librsvg2-dev,
                libx11-dev,
@@ -17,6 +24,7 @@ Build-Depends: debhelper-compat (= 13),
                gettext,
                python3,
                xvfb,
+               dbus-daemon | dbus,
                x11-xserver-utils,
                autoconf,
                automake,
@@ -114,7 +122,6 @@ Depends: ${shlibs:Depends},
          mate-desktop-common,
          dbus-x11 | dbus-user-session,
          xdg-utils,
-         xsettingsd,
          gsettings-desktop-schemas,
          desktop-file-utils,
          x11-utils,
@@ -138,7 +145,6 @@ Depends: ${shlibs:Depends},
          bzip2,
          xz-utils,
          xdg-user-dirs,
-         policykit-1-gnome | mate-polkit | lxpolkit,
          fonts-dejavu-core | fonts-noto-core
 Recommends: papirus-icon-theme | adwaita-icon-theme,
             network-manager,
@@ -147,7 +153,6 @@ Recommends: papirus-icon-theme | adwaita-icon-theme,
             pulseaudio-utils,
             libglib2.0-bin,
             libnotify-bin,
-            policykit-1-gnome | mate-polkit | lxpolkit,
             xterm | x-terminal-emulator,
             xdg-user-dirs,
             lightdm | x-display-manager
@@ -180,6 +185,10 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  Select "SDE-Desktop" in your display manager to start it. This is an alpha
  release meant for testing; expect missing features.
  .
+ Its own ecosystem: SDE-FLTK (the DebION Dev-Team fork of FLTK, linked
+ statically), sde-xsettingsd and sde-polkit-agent (written from scratch),
+ and source builds of SDE WM (Openbox) and SDE compositor (picom).
+ .
  Includes native source-built SDE forks: Niny, Liria, Xanara, Taca,
  Photo (SDE View), SDE System Monitor, SDE Power Manager and SDE Screen Lock.
  These executables and their resources are included in this package;
@@ -207,7 +216,8 @@ Depends: ${misc:Depends},
          adwaita-icon-theme,
          dconf-gsettings-backend,
          upower,
-         udisks2
+         udisks2,
+         debion-desktop-base (>= ${source:Version})
 Recommends: papirus-icon-theme,
             lightdm-gtk-greeter,
             firefox-esr | firefox,
@@ -218,8 +228,21 @@ Description: complete SDE desktop and application suite for DebION GNU/Linux
  and integrated SDE applications on Debian testing and DebION.
  .
  It makes SDE-Desktop the default LightDM session and styles the
- LightDM GTK greeter with SDE Aero.
+ LightDM GTK greeter with SDE Aero and the DebION login background.
  .
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and
  distribution package sources are preserved.
+
+Package: debion-desktop-base
+Architecture: all
+Depends: ${misc:Depends},
+         desktop-base
+Description: DebION GNU/Linux artwork for desktop-base
+ Makes the DebION theme the active desktop-base theme: wallpaper, lock
+ screen, login screen and GRUB background follow it in every desktop
+ (/usr/share/desktop-base/active-theme). It also provides the DebION vendor
+ logos and emblems and a DebION Plymouth boot splash.
+ .
+ Debian's themes stay installed; choose another one with
+ "update-alternatives --config desktop-theme".

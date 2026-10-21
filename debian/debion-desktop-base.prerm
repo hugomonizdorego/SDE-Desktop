@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    update-alternatives --remove desktop-theme /usr/share/desktop-base/debion-theme
+    update-alternatives --remove vendor-logos /usr/share/desktop-base/debion-logos
+    if command -v plymouth-set-default-theme >/dev/null 2>&1 &&
+       [ "$(plymouth-set-default-theme 2>/dev/null || true)" = "debion" ]; then
+        plymouth-set-default-theme --reset || true
+    fi
+fi
+#DEBHELPER#
+exit 0

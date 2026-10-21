@@ -1,0 +1,110 @@
+# SDE Liquid Glass window frames for SDE WM (Openbox): frosted, flat and
+# softly bordered; the SDE compositor rounds and blurs them.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Glass gradients are drawn by SDE WM; the SDE compositor adds frame
+# translucency, blur and rounded corners when Aero glass is enabled.
+
+border.width: 1
+padding.width: 8
+padding.height: 7
+window.handle.width: 0
+window.client.padding.width: 0
+window.client.padding.height: 0
+menu.overlap.x: -4
+menu.overlap.y: 0
+
+window.active.border.color: #D3D9E2
+window.inactive.border.color: #DDE2E9
+window.active.title.separator.color: #D3D9E2
+window.inactive.title.separator.color: #DDE2E9
+window.active.client.color: #F1F3F7
+window.inactive.client.color: #F1F3F7
+
+window.active.title.bg: flat gradient vertical
+window.active.title.bg.color: #FCFDFE
+window.active.title.bg.colorTo: #EEF1F6
+window.inactive.title.bg: flat gradient vertical
+window.inactive.title.bg.color: #FBFCFD
+window.inactive.title.bg.colorTo: #F3F5F8
+window.active.label.bg: parentrelative
+window.inactive.label.bg: parentrelative
+window.active.label.text.color: #151A21
+window.inactive.label.text.color: #8A93A0
+window.label.text.justify: center
+
+window.active.button.unpressed.bg: parentrelative
+window.active.button.unpressed.image.color: #151A21
+window.active.button.hover.bg: flat gradient vertical
+window.active.button.hover.bg.color: #FCFDFE
+window.active.button.hover.bg.colorTo: #E2E8F1
+window.active.button.hover.image.color: #151A21
+window.active.button.pressed.bg: flat solid
+window.active.button.pressed.bg.color: #2672BE
+window.active.button.pressed.image.color: #FFFFFF
+window.active.button.disabled.bg: parentrelative
+window.active.button.disabled.image.color: #9AA6B2
+window.active.button.toggled.bg: parentrelative
+window.active.button.toggled.image.color: #2672BE
+window.inactive.button.unpressed.bg: parentrelative
+window.inactive.button.unpressed.image.color: #8A93A0
+window.inactive.button.hover.bg: flat gradient vertical
+window.inactive.button.hover.bg.color: #FBFCFD
+window.inactive.button.hover.bg.colorTo: #E2E8F1
+window.inactive.button.hover.image.color: #151A21
+window.inactive.button.pressed.bg: flat solid
+window.inactive.button.pressed.bg.color: #2672BE
+window.inactive.button.pressed.image.color: #FFFFFF
+window.inactive.button.disabled.bg: parentrelative
+window.inactive.button.disabled.image.color: #9AA6B2
+window.inactive.button.toggled.bg: parentrelative
+window.inactive.button.toggled.image.color: #8A93A0
+
+# Close glows red, like glass caption buttons.
+window.active.button.close.hover.bg: flat gradient vertical
+window.active.button.close.hover.bg.color: #EA6A6F
+window.active.button.close.hover.bg.colorTo: #C63A44
+window.active.button.close.hover.image.color: #FFFFFF
+window.active.button.close.pressed.bg: flat solid
+window.active.button.close.pressed.bg.color: #A8323A
+window.active.button.close.pressed.image.color: #FFFFFF
+
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #EEF1F6
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #F3F5F8
+window.active.grip.bg: flat solid
+window.active.grip.bg.color: #EEF1F6
+window.inactive.grip.bg: flat solid
+window.inactive.grip.bg.color: #F3F5F8
+
+menu.border.width: 1
+menu.border.color: #D3D9E2
+menu.items.bg: flat solid
+menu.items.bg.color: #FAFBFD
+menu.items.text.color: #151A21
+menu.items.disabled.text.color: #9AA6B2
+menu.items.active.bg: flat gradient vertical
+menu.items.active.bg.color: #E2E8F1
+menu.items.active.bg.colorTo: #2672BE
+menu.items.active.text.color: #FFFFFF
+menu.title.bg: flat gradient vertical
+menu.title.bg.color: #FCFDFE
+menu.title.bg.colorTo: #EEF1F6
+menu.title.text.color: #151A21
+menu.title.text.justify: left
+menu.separator.color: #E3E7ED
+menu.separator.width: 1
+menu.separator.padding.width: 8
+menu.separator.padding.height: 4
+
+osd.border.width: 1
+osd.border.color: #D3D9E2
+osd.bg: flat gradient vertical
+osd.bg.color: #FCFDFE
+osd.bg.colorTo: #EEF1F6
+osd.label.bg: parentrelative
+osd.label.text.color: #151A21
+osd.hilight.bg: flat solid
+osd.hilight.bg.color: #2672BE
+osd.unhilight.bg: flat solid
+osd.unhilight.bg.color: #E3E7ED

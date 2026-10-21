@@ -76,16 +76,34 @@ or system services; use `sudo apt --fix-broken install` to repair that state.
 
 ## SDE Update
 
-The native FLTK interface uses a read-only Python APT provider adapted from Mint
-Update's `Update` class. It groups candidates by source and excludes held
-packages. Mint repositories and Mint-only policies are not imported.
+SDE Update 2 is a native FLTK window with six pages, drawn with the SDE theme
+family (SDE, Aero and Liquid Glass, light and dark) at every UI scale:
 
-Check Again reads the local cache. Refresh Sources and Install Updates open
-interactive `pkgcli` or `pkcon` transactions in a terminal; PackageKit computes
-the transaction and polkit authorizes it. SDE does not run unattended upgrades.
-`--check` prints the preview protocol; `--plan refresh|upgrade` prints the fixed
-argument vector without changing the system. Debian testing transitions may
-still require manual APT decisions.
+- **Updates**: status header (up to date / N updates, security count, download
+  size, last refresh), Refresh and Install buttons, a reboot-required banner,
+  search, type filters and a list grouped into Security, Kernel, Software and
+  Backports with check boxes. The details pane shows versions, packages, origin
+  and the changelog (`apt-get changelog`, PackageKit `get-update-detail`, then
+  the installed changelog), loaded in the background with a time limit.
+- **History** from `/var/log/apt/history.log*`, **Sources** (read-only one-line
+  and deb822 entries, Software Sources when installed), **Maintenance** (refresh,
+  clean cache, remove unused packages after review, repair, terminal update),
+  **Settings** (`[update]` in sde.conf) and **About** with the mintupdate credits.
+
+The read-only Python APT provider (`data/update/check.py`, protocol
+`SDE-UPDATES 2`) uses the `Update` class adapted from Mint Update: candidates
+are grouped by source, held packages are excluded and counted, Debian backports
+get their own type. Mint repositories and Mint-only policies are not imported.
+
+Transactions run in `transaction.py`, which streams progress (status, percent,
+per-package items) to the window. It uses `pkcon` when PackageKit is running,
+so polkit authorizes and the user can cancel; otherwise, and for cache cleaning
+and autoremove, `apt-get` runs through `pkexec`. Names are validated and no
+options or repository URLs are accepted. `sde-update --notifier` (autostarted)
+checks in the background and notifies; nothing is installed automatically.
+`--check`, `--history` and `--sources` print the helper protocols; `--plan`
+prints a transaction's argument vector without changing the system. Debian
+testing transitions may still require manual APT decisions.
 
 ## Sources and validation
 

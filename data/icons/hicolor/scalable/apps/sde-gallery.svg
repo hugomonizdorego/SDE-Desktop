@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SDE Gallery icon. Copyright (C) 2026 DebION Dev-Team. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2BB4D3"/>
+      <stop offset="0.55" stop-color="#177E9C"/>
+      <stop offset="1" stop-color="#0E566C"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#BFEAF4"/>
+      <stop offset="1" stop-color="#E4F6FA"/>
+    </linearGradient>
+    <clipPath id="photo">
+      <rect x="33" y="44" width="68" height="51" rx="3"/>
+    </clipPath>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="30" fill="url(#tile)"/>
+  <path d="M 12 40 Q 14 10 44 8 L 84 8 Q 112 10 116 36 Q 70 22 12 40 Z" fill="url(#shine)"/>
+  <!-- back print -->
+  <rect x="24" y="30" width="72" height="58" rx="6" fill="#FFFFFF" fill-opacity="0.45"
+        transform="rotate(-12 60 59)"/>
+  <!-- front print -->
+  <rect x="28" y="39" width="78" height="61" rx="7" fill="#FFFFFF"/>
+  <g clip-path="url(#photo)">
+    <rect x="33" y="44" width="68" height="51" fill="url(#sky)"/>
+    <path d="M 33 95 L 56 64 L 71 82 L 81 72 L 101 92 L 101 95 Z" fill="#177E9C"/>
+    <path d="M 33 95 L 56 64 L 63 73 L 50 95 Z" fill="#0E566C" fill-opacity="0.35"/>
+  </g>
+  <circle cx="84" cy="58" r="7" fill="#F2B84B"/>
+</svg>

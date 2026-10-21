@@ -1,3 +1,49 @@
+# Alpha14 patch · 2026-10-20 — Gallery, flyouts, new Menu, Action Center, Update, Liria
+
+- Gallery is back as a new app (sde-gallery) by the DebION Dev-Team.
+- Tray icons open their own flyouts; the Action Center has its own job,
+  with the calendar merged in and compact/expanded modes.
+- New Start Menu: search shows focus and suggestions at once; Favorites
+  tiles, All Programs A–Z, category pages.
+- SDE Update redesigned and extended (history, sources, maintenance,
+  settings, background checks).
+- Liria: Home overview and a new look in every SDE theme.
+- SDE-FLTK fork in-tree; sde-xsettingsd and sde-polkit-agent written from
+  scratch. See docs/ALPHA14.md.
+
+# Alpha13 patch · 2026-10-20 — panel crash fix, new tray, own ecosystem
+
+- Fixed: the panel crashed a few seconds after login ("The panel keeps
+  stopping") on systems where a D-Bus service does not answer (Bluetooth
+  without an adapter, e.g. VirtualBox). Safe-mode panel and crash
+  backtraces in session.log as safety nets.
+- New tray icons that show the real state; hardware icons (USB drive,
+  Bluetooth, battery, media) appear and disappear with the hardware.
+- Action Center button in the panel corner; the clock opens the calendar.
+- SDE toolkit (FLTK), sde-xsettingsd and sde-polkit-agent built from source.
+- See docs/ALPHA13.md.
+
+# Alpha12 patch · 2026-10-20 — black screen fix, DebION desktop-base
+
+- Fixed: black screen after login (VirtualBox and other virtual machines).
+  The compositor uses XRender there, a compositor that draws only black is
+  replaced automatically, and Alt+Shift+F12 turns compositing off or on.
+- Fixed: a second compositor (system picom autostart) no longer starts.
+- New package debion-desktop-base: DebION artwork for desktop-base
+  (wallpaper, lock and login screens, GRUB, logos, Plymouth splash).
+- See docs/ALPHA12.md.
+
+# Alpha11 patch · 2026-10-20 — themes, Start Menu, Eduka features
+
+- SDE Light, SDE Dark, SDE Aero and new SDE Liquid Glass themes for GTK 3/4
+  and SDE WM, all installed in /usr/share/themes; theme cards in Settings.
+- Start Menu search fixed (input method and focus), finds Settings and
+  session actions; right-click Arrange menu; grid view; animations.
+- From Eduka-Desktop: Effects page (animations, compositor mode, report,
+  restart), Action Center drives (show files, eject) and power modes.
+- Liria SDE Tools extension; cleaner Liria, Niny, Xanara and Taca styling.
+- See docs/ALPHA11.md.
+
 # Alpha10 patch · 2026-10-19 — SDE Aero
 
 - SDE Aero / SDE Aero Dark: new default GTK 3, GTK 4 and SDE WM theme with

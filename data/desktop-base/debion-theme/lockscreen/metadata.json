@@ -1,0 +1,8 @@
+{
+    "KPlugin": {
+        "Name": "DebION Lock Screen",
+        "Id": "DebIONLockScreen",
+        "License": "GPLv3+",
+        "Authors": [ { "Name": "DebION GNU/Linux" } ]
+    }
+}

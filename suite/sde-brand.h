@@ -36,26 +36,28 @@ static void sde_liria_root(int argc, char **argv) {
 #endif
 }
 
-static void sde_read_theme(const gchar *file, gchar **theme, gboolean *system, gboolean *aero) {
+static void sde_read_theme(const gchar *file, gchar **theme, gboolean *system, gchar **style, gboolean *glass) {
   GKeyFile *key = g_key_file_new();
   if (g_key_file_load_from_file(key, file, G_KEY_FILE_NONE, NULL)) {
     gchar *value = g_key_file_get_string(key, "appearance", "theme", NULL);
     if (value) { g_free(*theme); *theme = value; }
+    value = g_key_file_get_string(key, "appearance", "style", NULL);
+    if (value) { g_free(*style); *style = value; }
     value = g_key_file_get_string(key, "suite", "gtk_theme", NULL);
     if (value) { *system = g_str_equal(value, "system"); g_free(value); }
     value = g_key_file_get_string(key, "aero", "enabled", NULL);
-    if (value) { *aero = !g_str_equal(value, "false") && !g_str_equal(value, "0"); g_free(value); }
+    if (value) { *glass = !g_str_equal(value, "false") && !g_str_equal(value, "0"); g_free(value); }
   }
   g_key_file_unref(key);
 }
 
-/* SDE Aero is the default suite theme when it is installed. */
-static gboolean sde_aero_installed(void) {
-  gchar *file = g_build_filename(g_get_user_data_dir(), "themes", "SDE-Aero", "gtk-3.0", "gtk.css", NULL);
+/* SDE themes (SDE, SDE-Aero, SDE-Liquid-Glass) are used when installed. */
+static gboolean sde_theme_installed(const char *name) {
+  gchar *file = g_build_filename(g_get_user_data_dir(), "themes", name, "gtk-3.0", "gtk.css", NULL);
   gboolean found = g_file_test(file, G_FILE_TEST_EXISTS);
   g_free(file);
   for (const gchar *const *d = g_get_system_data_dirs(); !found && d && *d; ++d) {
-    file = g_build_filename(*d, "themes", "SDE-Aero", "gtk-3.0", "gtk.css", NULL);
+    file = g_build_filename(*d, "themes", name, "gtk-3.0", "gtk.css", NULL);
     found = g_file_test(file, G_FILE_TEST_EXISTS);
     g_free(file);
   }
@@ -72,21 +74,28 @@ static void __attribute__((constructor)) sde_native_theme(int argc, char **argv,
   }
   sde_liria_root(argc, argv);
   if (g_getenv("GTK_THEME")) return;
-  gchar *theme = g_strdup("light");
-  gboolean system = FALSE, aero = TRUE;
+  gchar *theme = g_strdup("light"), *style = g_strdup("");
+  gboolean system = FALSE, glass = TRUE;
   const gchar *const *dirs = g_get_system_config_dirs();
   guint count = g_strv_length((gchar **)dirs);
   while (count) {
     gchar *file = g_build_filename(dirs[--count], "sde", "sde.conf", NULL);
-    sde_read_theme(file, &theme, &system, &aero); g_free(file);
+    sde_read_theme(file, &theme, &system, &style, &glass); g_free(file);
   }
   gchar *file = g_build_filename(g_get_user_config_dir(), "sde", "sde.conf", NULL);
-  sde_read_theme(file, &theme, &system, &aero); g_free(file);
+  sde_read_theme(file, &theme, &system, &style, &glass); g_free(file);
   if (!system) {
-    const char *name = aero && sde_aero_installed() ? "SDE-Aero" : "Adwaita";
+    /* Same mapping as theme_style() in SDE: an alpha10 file without
+     * [appearance] style and with [aero] enabled=false means SDE Light/Dark. */
+    const char *name = g_str_equal(style, "sde") ? "SDE"
+                       : g_str_equal(style, "liquid-glass") ? "SDE-Liquid-Glass"
+                       : g_str_equal(style, "aero") ? "SDE-Aero"
+                       : glass ? "SDE-Aero" : "SDE";
+    if (!sde_theme_installed(name)) name = "Adwaita";
     gchar *value = g_strconcat(name, g_str_equal(theme, "dark") ? ":dark" : "", NULL);
     g_setenv("GTK_THEME", value, FALSE);
     g_free(value);
   }
+  g_free(style);
   g_free(theme);
 }

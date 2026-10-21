@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compile private SDE WM (Openbox) and compositor (picom), without network."""
+"""Compile the forked SDE session components without network: SDE WM
+(Openbox) and SDE compositor (picom). SDE-FLTK is built by CMake at
+configure time, because every SDE program links it."""
 import argparse
 import hashlib
 import os
@@ -23,7 +25,9 @@ def main():
         digest=hashlib.sha256(Path(__file__).read_bytes()+str(args.stage).encode()+args.prefix.encode())
         for f in sorted(src.rglob('*')):
             if f.is_file(): digest.update(str(f.relative_to(src)).encode()+f.read_bytes())
-        stamp=args.build/(name+'.built'); binary=args.stage/args.prefix.lstrip('/')/'bin'/name
+        stamp=args.build/(name+'.built')
+        bindir='bin'
+        binary=args.stage/args.prefix.lstrip('/')/bindir/name
         if stamp.exists() and stamp.read_text()==digest.hexdigest() and binary.exists(): continue
         work=args.build/name
         if work.exists(): shutil.rmtree(work)
@@ -51,7 +55,8 @@ def main():
             run(['meson','test','-C',str(obj),'--print-errorlogs'],work)
             artifact=obj/'src/sde-compositor'
         binary.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(artifact,binary)
-        docs=args.stage/args.prefix.lstrip('/')/'share/doc/sde/upstream'/('openbox' if name=='sde-wm' else 'picom')
+        upstream={'sde-wm':'openbox','sde-compositor':'picom'}[name]
+        docs=args.stage/args.prefix.lstrip('/')/'share/doc/sde/upstream'/upstream
         docs.mkdir(parents=True,exist_ok=True)
         for f in ['copyright','COPYING','AUTHORS','CONTRIBUTORS']:
             if (src/f).is_file(): shutil.copy2(src/f,docs/f)

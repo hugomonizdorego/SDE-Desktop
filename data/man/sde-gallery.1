@@ -1,0 +1,82 @@
+.TH SDE-GALLERY 1 "October 2026" "SDE" "User Commands"
+.SH NAME
+sde-gallery \- browse the photo library on the SDE desktop
+.SH SYNOPSIS
+.B sde-gallery
+[--version | --help]
+.SH DESCRIPTION
+Gallery shows the pictures in your XDG Pictures folder (see
+.BR xdg-user-dir (1))
+and in folders you add, grouped by month of their modification time.
+The sidebar offers All Photos, Favorites, Recent (the last 30 days),
+Screenshots (the Screenshots folder inside Pictures) and the folder list.
+JPEG, PNG, GIF, BMP and SVG files are shown; WebP and TIFF are shown when
+the matching gdk-pixbuf loaders are installed.
+.PP
+Thumbnails are made in the background and shared with other applications
+through the freedesktop.org thumbnail cache in
+.IR ~/.cache/thumbnails/normal
+and
+.IR ~/.cache/thumbnails/large .
+.PP
+Double-click a photo or press Enter to open the viewer. It offers zoom,
+fit, view rotation, a slideshow and a details panel, and these actions:
+Favorite, Edit in Photo
+.RB ( sde-view ),
+Open With Other Application
+.RB ( xdg-open ),
+Set as Wallpaper, Show in Files
+.RB ( liria ),
+Copy Path and Move to Trash
+.RB ( "gio trash" ).
+Files are never deleted permanently.
+.SH KEYS
+.TP
+.B Arrows, Page Up/Down, Home, End
+Move between photos. Shift extends the selection.
+.TP
+.B Ctrl+click, Shift+click, Space, Ctrl+A, Esc
+Select photos, select all, clear the selection.
+.TP
+.B Enter
+Open the viewer.
+.TP
+.B + \- , Ctrl+mouse wheel
+Change the thumbnail size (zoom in the viewer).
+.TP
+.B Ctrl+F, Ctrl+O, F5
+Search, add a folder, reload the library.
+.TP
+.B Ctrl+D, Ctrl+C, Delete
+Toggle favorite, copy paths, move to the Trash.
+.TP
+.B Viewer: 0, 1, R, I, F5, F11, Esc
+Fit, actual size, rotate, details, slideshow, full screen, back.
+.SH OPTIONS
+.TP
+.B --version
+Print the version and exit.
+.TP
+.B --help
+Print a short usage summary.
+.SH FILES
+.TP
+.I ~/.config/sde/sde.conf
+Section
+.B [gallery]
+keeps
+.BR folders= ,
+.BR favorites=
+(lists separated by semicolons),
+.B thumbnail_size=
+and
+.BR sort= .
+Set as Wallpaper writes
+.B wallpaper=
+in
+.BR [appearance] .
+.SH SEE ALSO
+.BR sde-view (1),
+.BR liria (1),
+.BR sde-settings (1),
+.BR xdg-user-dir (1)

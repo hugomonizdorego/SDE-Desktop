@@ -56,6 +56,7 @@ struct Theme {
 
   // SDE Aero glass. |opacity| is the window opacity the compositor applies to
   // the panel (popups use popup_opacity, which keeps text more legible).
+  std::string style = "aero";  // sde, aero or liquid-glass
   bool glass = true;
   int transparency = 18;  // percent, 0-60
   double opacity = 1.0, popup_opacity = 1.0;
@@ -67,6 +68,13 @@ struct Theme {
   // the default font) for dialogs such as sde-settings and sde-run.
   void apply_to_fltk() const;
 };
+
+// The SDE theme family: "sde" (SDE Light/Dark), "aero" or "liquid-glass",
+// from [appearance] style. Older files without the key map
+// [aero] enabled=false to "sde".
+std::string theme_style(const Config &cfg);
+// GTK/Openbox theme directory for a style: SDE, SDE-Aero, SDE-Liquid-Glass.
+std::string theme_dir(const std::string &style);
 
 // The theme last applied with Theme::apply_to_fltk(); used by sde widgets.
 const Theme &active_theme();

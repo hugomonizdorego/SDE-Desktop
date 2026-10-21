@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# DebION GNU/Linux boot splash: background, logo and a thin progress bar.
+
+Window.SetBackgroundTopColor(0.04, 0.09, 0.16);
+Window.SetBackgroundBottomColor(0.05, 0.16, 0.24);
+
+sw = Window.GetWidth();
+sh = Window.GetHeight();
+
+bg_image = Image("background.png");
+bg = Sprite(bg_image.Scale(sw, sh));
+bg.SetZ(-100);
+
+logo_image = Image("logo.png");
+logo = Sprite(logo_image);
+logo.SetX(sw / 2 - logo_image.GetWidth() / 2);
+logo.SetY(sh / 2 - logo_image.GetHeight() / 2 - 40);
+
+bar_w = 220;
+track = Sprite(Image.Text(" ", 1, 1, 1).Scale(bar_w, 4));
+track.SetPosition(sw / 2 - bar_w / 2, sh / 2 + logo_image.GetHeight() / 2 + 10, 1);
+track.SetOpacity(0.18);
+bar_image = Image.Text(" ", 0.18, 0.70, 0.82);
+bar = Sprite();
+bar.SetPosition(sw / 2 - bar_w / 2, sh / 2 + logo_image.GetHeight() / 2 + 10, 2);
+
+fun progress_callback(duration, progress) {
+  w = Math.Int(bar_w * progress);
+  if (w < 1) w = 1;
+  bar.SetImage(bar_image.Scale(w, 4));
+}
+Plymouth.SetBootProgressFunction(progress_callback);
+
+# Password prompt (encrypted disks).
+fun display_password_callback(prompt, bullets) {
+  global.prompt_sprite = Sprite(Image.Text(prompt, 1, 1, 1));
+  global.prompt_sprite.SetPosition(sw / 2 - global.prompt_sprite.GetImage().GetWidth() / 2, sh * 0.72, 10);
+  text = "";
+  for (i = 0; i < bullets; i++) text += "*";
+  global.bullet_sprite = Sprite(Image.Text(text + " ", 1, 1, 1));
+  global.bullet_sprite.SetPosition(sw / 2 - global.bullet_sprite.GetImage().GetWidth() / 2, sh * 0.72 + 28, 10);
+}
+fun display_normal_callback() {
+  global.prompt_sprite = NULL;
+  global.bullet_sprite = NULL;
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+Plymouth.SetDisplayNormalFunction(display_normal_callback);
+
+fun message_callback(text) {
+  global.message_sprite = Sprite(Image.Text(text, 0.8, 0.8, 0.8));
+  global.message_sprite.SetPosition(sw / 2 - global.message_sprite.GetImage().GetWidth() / 2, sh * 0.88, 10);
+}
+Plymouth.SetMessageFunction(message_callback);
