@@ -44,7 +44,7 @@ void EditorView::apply_look() {
   font_px_ = std::max(7, int(std::lround(s.font_size * 4.0 / 3.0 * ui_scale())) + s.zoom);
   int n = int(sizeof table_ / sizeof table_[0]);
   for (int i = 0; i < n; ++i) {
-    int k = i < kStyleCount ? i : 0;
+    int k = i < kStyleCount && s.syntax_colors ? i : 0;
     table_[i].color = L.syntax[k].fl();
     table_[i].font = L.bold[k] ? Fl_Font(FL_FREE_FONT + 1) : L.italic[k] ? Fl_Font(FL_FREE_FONT + 2) : FL_FREE_FONT;
     table_[i].size = font_px_;
@@ -81,7 +81,8 @@ void EditorView::apply_wrap(bool wrap) { wrap_mode(wrap ? WRAP_AT_BOUNDS : WRAP_
 
 void EditorView::update_gutter() {
   if (!app_->settings().line_numbers) {
-    if (linenumber_width() != S(8)) linenumber_width(S(8));
+    // No numbers: a plain left margin, like a sheet of paper.
+    if (linenumber_width() != S(18)) linenumber_width(S(18));
     gutter_digits_ = 0;
     return;
   }
@@ -196,6 +197,21 @@ int EditorView::handle(int event) {
       return r;
     }
     case FL_PUSH:
+      if (Fl::event_button() == FL_RIGHT_MOUSE) {
+        take_focus();
+        int pos = xy_to_position(Fl::event_x(), Fl::event_y(), CURSOR_POS);
+        int a = 0, b = 0;
+        bool inside = buffer()->selection_position(&a, &b) && b > a && pos >= a && pos <= b;
+        if (!inside) {
+          buffer()->unselect();
+          insert_position(pos);
+        }
+        notify_cursor();
+        redraw();
+        app_->context_menu(Fl::event_x_root(), Fl::event_y_root());
+        return 1;
+      }
+      /* fall through */
     case FL_DRAG:
     case FL_RELEASE:
     case FL_MOUSEWHEEL: {
@@ -300,6 +316,8 @@ void EditorView::draw_overlay() {
       }
     }
   }
+  if (s.show_whitespace) draw_whitespace(p);
+  if (s.spell_check && app_->misspelled_any()) draw_spelling(p);
   // Caret: a 2 px accent bar.
   if (cursor_visible && Fl::focus() == this && !app_->modal()) {
     p.fill_rounded(cx - Sd(1), cy + 1, std::max(2.0, Sd(2)), lh - 2, Sd(1), L.accent);
@@ -309,14 +327,78 @@ void EditorView::draw_overlay() {
   draw_scrollbars(p);
 }
 
+void EditorView::draw_whitespace(Painter &p) {
+  const Look &L = look();
+  Fl_Text_Buffer *b = buffer();
+  int lh = mMaxsize;
+  Color c = L.dim.alpha(L.dark ? 0.5 : 0.45);
+  for (int vis = 0; vis < mNVisibleLines; ++vis) {
+    int ls = mLineStarts[vis];
+    if (ls == -1) break;
+    int le = vis + 1 < mNVisibleLines && mLineStarts[vis + 1] != -1 ? mLineStarts[vis + 1] : b->line_end(ls) + 1;
+    le = std::min(le, b->length() + 1);
+    if (le - ls > 2000) continue;
+    for (int pos = ls; pos < le && pos <= b->length(); ++pos) {
+      char ch = pos < b->length() ? char(b->byte_at(pos)) : '\n';
+      if (ch != ' ' && ch != '\t' && ch != '\n') continue;
+      if (pos == b->length() && pos != ls && b->byte_at(pos - 1) != '\n') {
+        // End of text without a final newline: no mark.
+        continue;
+      }
+      if (pos == b->length()) continue;
+      int px, py;
+      if (!position_to_xy(pos, &px, &py)) continue;
+      if (ch == ' ') {
+        p.circle(px + char_w_ / 2.0, py + lh / 2.0, std::max(1.0, Sd(1.3)), c);
+      } else if (ch == '\t') {
+        int ex, ey;
+        if (!position_to_xy(pos + 1, &ex, &ey) || ey != py) ex = px + char_w_ * b->tab_distance();
+        double y0 = py + lh / 2.0, x1 = px + Sd(2), x2 = std::max(x1 + Sd(4), ex - Sd(3));
+        p.line(x1, y0, x2, y0, c, Sd(1));
+        p.line(x2 - Sd(3.5), y0 - Sd(3), x2, y0, c, Sd(1));
+        p.line(x2 - Sd(3.5), y0 + Sd(3), x2, y0, c, Sd(1));
+      } else {
+        icon::draw(p, icon::Pilcrow, px + Sd(2), py + lh * 0.2, lh * 0.6, c);
+      }
+    }
+  }
+}
+
+void EditorView::draw_spelling(Painter &p) {
+  Fl_Text_Buffer *b = buffer();
+  int a = std::max(0, mFirstChar), z = std::min(b->length(), mLastChar + 1);
+  if (z <= a || z - a > 200000) return;
+  char *t = b->text_range(a, z);
+  std::string text(t, size_t(z - a));
+  free(t);
+  int lh = mMaxsize;
+  Color red = Color::hex(0xE5484D);
+  cairo_t *cr = p.cr();
+  for (auto &w : spell_words(text)) {
+    if (!app_->misspelled(text.substr(w.start, w.end - w.start))) continue;
+    int x1, y1, x2, y2;
+    if (!position_to_xy(a + int(w.start), &x1, &y1)) continue;
+    if (!position_to_xy(a + int(w.end), &x2, &y2) || y2 != y1) continue;
+    // A wavy underline.
+    double yb = y1 + lh - Sd(2.5), amp = Sd(1.3), step = Sd(2.5);
+    cairo_new_path(cr);
+    cairo_move_to(cr, x1, yb);
+    int k = 0;
+    for (double xx = x1; xx < x2; xx += step, ++k) cairo_line_to(cr, std::min<double>(xx + step, x2), yb + (k % 2 ? -amp : amp));
+    p.set(red);
+    cairo_set_line_width(cr, std::max(1.0, Sd(1)));
+    cairo_stroke(cr);
+  }
+}
+
 void EditorView::draw_gutter(Painter &p) {
   const Look &L = look();
   int gx = x() + Fl::box_dx(box()), gw = mLineNumWidth;
   if (gw <= 0) return;
   int gy = text_area.y, gh = text_area.h;
   p.fill_rect(gx, y(), gw, h() - (mHScrollBar->visible() ? mHScrollBar->h() : 0), L.gutter);
-  p.line(gx + gw - S(8) - 0.5, gy, gx + gw - S(8) - 0.5, gy + gh, L.border.alpha(L.dark ? 0.35 : 0.5), 1);
   if (!app_->settings().line_numbers) return;
+  p.line(gx + gw - S(8) - 0.5, gy, gx + gw - S(8) - 0.5, gy + gh, L.border.alpha(L.dark ? 0.25 : 0.35), 1);
   p.flush();
   int lh = mMaxsize;
   int cursor_line_start = buffer()->line_start(insert_position());

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <cwctype>
 #include <set>
 #include <sstream>
@@ -353,6 +354,194 @@ int fuzzy_score(const std::string &query, const std::string &text) {
   if (qi < query.size()) return -1;
   // Shorter texts first among equal matches.
   return score * 100 - int(std::min<size_t>(text.size(), 99));
+}
+
+
+// ---------------------------------------------------------- Notepad tools
+
+long utf8_length(const char *text, size_t len) {
+  long n = 0;
+  for (size_t i = 0; i < len; ++i)
+    if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80) ++n;
+  return n;
+}
+
+TextCounts count_text(const char *text, size_t len) {
+  TextCounts c;
+  bool in_word = false;
+  if (len) c.lines = 1;
+  for (size_t i = 0; i < len; ++i) {
+    unsigned char ch = static_cast<unsigned char>(text[i]);
+    if ((ch & 0xC0) != 0x80) ++c.chars;
+    if (ch == '\n') ++c.lines;
+    bool space = ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v';
+    if (space) {
+      in_word = false;
+    } else if (!in_word && (ch & 0xC0) != 0x80) {
+      in_word = true;
+      ++c.words;
+    }
+  }
+  return c;
+}
+
+std::string group_thousands(long n) {
+  std::string digits = std::to_string(n < 0 ? -n : n), out;
+  int k = 0;
+  for (size_t i = digits.size(); i-- > 0;) {
+    out.insert(out.begin(), digits[i]);
+    if (++k % 3 == 0 && i > 0) out.insert(out.begin(), ',');
+  }
+  return n < 0 ? "-" + out : out;
+}
+
+std::string character_status(long selected, long total) {
+  if (selected > 0)
+    return group_thousands(selected) + " of " + group_thousands(total) + (total == 1 ? " character" : " characters");
+  return group_thousands(total) + (total == 1 ? " character" : " characters");
+}
+
+std::string date_time_text(long long t) {
+  time_t tt = time_t(t);
+  struct tm tmv;
+  localtime_r(&tt, &tmv);
+  char buf[64];
+  strftime(buf, sizeof buf, "%H:%M %Y-%m-%d", &tmv);
+  return buf;
+}
+
+const std::vector<UnicodeControl> &unicode_controls() {
+  static const std::vector<UnicodeControl> k = {
+      {"Left-to-right mark", "LRM", 0x200E},
+      {"Right-to-left mark", "RLM", 0x200F},
+      {"Arabic letter mark", "ALM", 0x061C},
+      {"Zero width joiner", "ZWJ", 0x200D},
+      {"Zero width non-joiner", "ZWNJ", 0x200C},
+      {"Zero width space", "ZWSP", 0x200B},
+      {"Word joiner", "WJ", 0x2060},
+      {"No-break space", "NBSP", 0x00A0},
+      {"Left-to-right embedding", "LRE", 0x202A},
+      {"Right-to-left embedding", "RLE", 0x202B},
+      {"Left-to-right override", "LRO", 0x202D},
+      {"Right-to-left override", "RLO", 0x202E},
+      {"Pop directional formatting", "PDF", 0x202C},
+      {"Left-to-right isolate", "LRI", 0x2066},
+      {"Right-to-left isolate", "RLI", 0x2067},
+      {"First strong isolate", "FSI", 0x2068},
+      {"Pop directional isolate", "PDI", 0x2069},
+  };
+  return k;
+}
+
+std::string utf8_encode(unsigned cp) {
+  std::string o;
+  if (cp < 0x80) {
+    o += char(cp);
+  } else if (cp < 0x800) {
+    o += char(0xC0 | (cp >> 6));
+    o += char(0x80 | (cp & 0x3F));
+  } else if (cp < 0x10000) {
+    o += char(0xE0 | (cp >> 12));
+    o += char(0x80 | ((cp >> 6) & 0x3F));
+    o += char(0x80 | (cp & 0x3F));
+  } else {
+    o += char(0xF0 | (cp >> 18));
+    o += char(0x80 | ((cp >> 12) & 0x3F));
+    o += char(0x80 | ((cp >> 6) & 0x3F));
+    o += char(0x80 | (cp & 0x3F));
+  }
+  return o;
+}
+
+const char *whitespace_marker(char c) {
+  switch (c) {
+    case ' ': return "\xC2\xB7";      // middle dot
+    case '\t': return "\xE2\x86\x92"; // rightwards arrow
+    case '\n': return "\xC2\xB6";     // pilcrow
+    default: return nullptr;
+  }
+}
+
+std::string url_query_encode(const std::string &text) {
+  static const char hex[] = "0123456789ABCDEF";
+  std::string o;
+  for (unsigned char c : text) {
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      o += char(c);
+    } else if (c == ' ') {
+      o += '+';
+    } else {
+      o += '%';
+      o += hex[c >> 4];
+      o += hex[c & 15];
+    }
+  }
+  return o;
+}
+
+SpellResult parse_ispell_line(const std::string &line) {
+  SpellResult r;
+  if (line.empty()) {
+    r.known = false;
+    return r;
+  }
+  char c = line[0];
+  if (c == '*' || c == '+' || c == '-') return r;
+  if (c == '#') {
+    r.correct = false;
+    return r;
+  }
+  if (c == '&' || c == '?') {
+    r.correct = false;
+    size_t colon = line.find(": ");
+    if (colon == std::string::npos) return r;
+    std::string rest = line.substr(colon + 2);
+    size_t start = 0;
+    while (start < rest.size()) {
+      size_t comma = rest.find(", ", start);
+      std::string w = rest.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+      while (!w.empty() && (w.back() == '\r' || w.back() == ' ')) w.pop_back();
+      if (!w.empty()) r.suggestions.push_back(w);
+      if (comma == std::string::npos) break;
+      start = comma + 2;
+    }
+    return r;
+  }
+  r.known = false;
+  return r;
+}
+
+std::vector<WordSpan> spell_words(const std::string &text) {
+  std::vector<WordSpan> out;
+  size_t n = text.size(), i = 0;
+  auto letter = [&](size_t k) {
+    unsigned char ch = static_cast<unsigned char>(text[k]);
+    return isalpha(ch) || ch >= 0x80;
+  };
+  while (i < n) {
+    if (!letter(i)) {
+      ++i;
+      continue;
+    }
+    size_t s = i;
+    bool digits = false;
+    while (i < n && (letter(i) || isdigit(static_cast<unsigned char>(text[i])) ||
+                     (text[i] == '\'' && i + 1 < n && letter(i + 1)))) {
+      if (isdigit(static_cast<unsigned char>(text[i]))) digits = true;
+      ++i;
+    }
+    // Skip words glued to paths, addresses and identifiers.
+    bool glued = (s > 0 && (text[s - 1] == '_' || text[s - 1] == '/' || text[s - 1] == '@' || text[s - 1] == '.' ||
+                            text[s - 1] == '\\')) ||
+                 (i < n && (text[i] == '_' || text[i] == '/' || text[i] == '@' ||
+                            (text[i] == '.' && i + 1 < n && letter(i + 1))));
+    if (!digits && !glued && i - s >= 2) out.push_back({s, i});
+    if (glued)
+      while (i < n && (text[i] == '_' || text[i] == '/' || text[i] == '@' || text[i] == '.' || letter(i) ||
+                       isdigit(static_cast<unsigned char>(text[i]))))
+        ++i;
+  }
+  return out;
 }
 
 }  // namespace niny

@@ -15,7 +15,8 @@ add_library(niny-core STATIC
   search.cpp
   undo.cpp
   settings.cpp
-  textops.cpp)
+  textops.cpp
+  markdown.cpp)
 target_include_directories(niny-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(niny-core PUBLIC sde-common)
 
@@ -32,7 +33,12 @@ add_executable(niny
   dialogs.cpp
   icons.cpp
   look.cpp
-  instance.cpp)
+  instance.cpp
+  popup.cpp
+  menus.cpp
+  mdview.cpp
+  spell.cpp
+  settings_page.cpp)
 target_compile_definitions(niny PRIVATE NINY_VERSION="${NINY_VERSION}")
 target_link_libraries(niny PRIVATE niny-core)
 install(TARGETS niny RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

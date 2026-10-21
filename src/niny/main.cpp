@@ -68,6 +68,12 @@ int main(int argc, char **argv) {
   }
   char cwd_buf[PATH_MAX];
   std::string cwd = getcwd(cwd_buf, sizeof cwd_buf) ? cwd_buf : home_dir();
+  if (!new_window && !args.empty()) {
+    // Settings > Opening files: "Open in a new window".
+    niny::Settings prefs;
+    prefs.load(niny::settings_path());
+    if (prefs.open_in_new_window) new_window = true;
+  }
   if (!new_window && !env("DISPLAY").empty() && niny::hand_off_to_running(args, cwd)) return 0;
 
   Config config;
@@ -82,9 +88,12 @@ int main(int argc, char **argv) {
   int w = std::min(S(1100), sw - S(40)), h = std::min(S(760), sh - S(40));
   auto *app = new niny::App(std::max(w, S(480)), std::max(h, S(320)));
   app->position(sx + (sw - app->w()) / 2, sy + (sh - app->h()) / 2);
-  app->restore_session();
+  // A second window keeps to its own files; the session belongs to the first.
+  if (new_window && niny::another_instance_running()) app->set_secondary(true);
+  else app->restore_session();
   app->recover_backups();
   app->open_files(args, cwd);
+  if (app->docs().empty()) app->new_document();
   app->show();
   XClassHint hint{const_cast<char *>("niny"), const_cast<char *>("Niny")};
   XSetClassHint(fl_display, fl_xid(app), &hint);

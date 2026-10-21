@@ -9,7 +9,11 @@ niny \- Niny text editor for the Selviana Desktop Environment
 .SH DESCRIPTION
 .B niny
 is the text editor of SDE, written for SDE with SDE-FLTK and cairo by the
-DebION Dev-Team. It opens each file in a tab, highlights the syntax of C,
+DebION Dev-Team. It looks like a simple notepad: a row of tabs, the File,
+Edit and View menus, a roomy editing area and a status bar with the line
+and column, the number of characters (and of selected characters), the
+file type, the zoom level, the line ending and the encoding. It opens each
+file in a tab, highlights the syntax of C,
 C++, Python, shell, JavaScript, TypeScript, JSON, HTML, XML, CSS, Markdown,
 INI/configuration files, Rust, Go, Makefiles, YAML and diffs, and stays
 responsive with files of tens of megabytes.
@@ -23,6 +27,21 @@ URIs are accepted.
 Character encodings (UTF-8, UTF-8 with BOM, UTF-16, ISO-8859-1 and
 Windows-1252) and line endings (LF, CRLF, CR) are detected when a file is
 opened and kept when it is saved; both can be changed in the status bar.
+.PP
+In Markdown documents the row under the tabs offers heading levels, lists,
+bold, italic, links, clear formatting and a formatted (rendered, read-only)
+view. Right-clicking the text shows Cut, Copy, Paste, Select all and Delete
+buttons, Undo, Search the web, text tools (case changes, sorting, trimming,
+date and time), spelling suggestions (when
+.BR hunspell (1)
+or
+.BR aspell (1)
+and a dictionary are installed) and "Display and Unicode" (whitespace
+characters, word wrap and Unicode control characters).
+.PP
+The gear opens the Settings page: theme, font, word wrap, status bar,
+whether files from other programs open in a new tab or a new window,
+spell checking, recent files and the editing options.
 .SH OPTIONS
 .TP
 .BI + LINE
@@ -46,8 +65,18 @@ Command palette (every command); \fBCtrl+P\fR quickly opens files and
 Find, find and replace (with case, whole word and regular expression
 options), next and previous match.
 .TP
-.B Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+W, Ctrl+Shift+T
-New, open, save, save as, close and reopen the last closed document.
+.B Ctrl+N, Ctrl+Shift+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+W, Ctrl+Shift+T
+New tab, new window, open, save, save as, close and reopen the last closed
+tab.
+.TP
+.B Alt+F, Alt+E, Alt+V, Ctrl+Comma
+Open the File, Edit and View menus; open Settings.
+.TP
+.B F5, Ctrl+E
+Insert the date and time; search the web for the selection.
+.TP
+.B Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+1 ... Ctrl+6, Ctrl+Shift+M
+Markdown: bold, italic, link, heading levels and the formatted view.
 .TP
 .B Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y
 Undo and redo.
@@ -60,7 +89,7 @@ Zoom, word wrap and the side panel.
 .SH FILES
 .TP
 .I ~/.config/sde/niny.conf
-Settings (also changed in Niny's Settings window).
+Settings (also changed on Niny's Settings page).
 .TP
 .I ~/.local/state/niny/
 Session, recent files and backups of unsaved changes, used to restore
