@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DebION Dev-Team
 //
-// The archive contents: a list with sortable columns, or a grid of file
-// cards. Multi-selection with Ctrl and Shift, keyboard navigation and
-// dragging the selection out to a file manager.
+// The details list (or an icon grid): folders and files on disk, the
+// members of an archive or find results, with a ".." row to go up.
+// Multi-selection with Ctrl and Shift, keyboard navigation, sortable
+// columns and dragging the selection out to a file manager.
 #include <FL/Fl.H>
 #include <FL/fl_draw.H>
 
@@ -22,7 +23,7 @@ namespace taca {
 namespace {
 
 std::string short_date(time_t t) {
-  if (t <= 0) return "—";
+  if (t <= 0) return "";
   struct tm tm;
   localtime_r(&t, &tm);
   char buf[32];
@@ -34,16 +35,16 @@ std::string short_date(time_t t) {
 
 FileView::FileView(TacaWindow *app, int x, int y, int w, int h) : Fl_Widget(x, y, w, h), app_(app) {}
 
-int FileView::header_h() const { return grid_ ? 0 : S(34); }
-int FileView::row_h() const { return S(36); }
-int FileView::tile_w() const { return S(118); }
-int FileView::tile_h() const { return S(124); }
-int FileView::columns() const { return std::max(1, (w() - S(24)) / (tile_w() + S(8))); }
+int FileView::header_h() const { return grid_ ? 0 : S(26); }
+int FileView::row_h() const { return S(26); }
+int FileView::tile_w() const { return S(112); }
+int FileView::tile_h() const { return S(112); }
+int FileView::columns() const { return std::max(1, (w() - S(24)) / (tile_w() + S(6))); }
 
 int FileView::content_h() const {
   int n = int(items_.size());
-  if (grid_) return S(12) + ((n + columns() - 1) / columns()) * (tile_h() + S(8)) + S(12);
-  return n * row_h() + S(8);
+  if (grid_) return S(10) + ((n + columns() - 1) / columns()) * (tile_h() + S(6)) + S(10);
+  return n * row_h() + S(4);
 }
 
 void FileView::clamp_scroll() {
@@ -56,19 +57,24 @@ void FileView::resize(int x, int y, int w, int h) {
   clamp_scroll();
 }
 
-void FileView::set_items(std::vector<int> items, bool keep_selection) {
+void FileView::set_items(std::vector<int> items, bool parent_row, bool keep_selection) {
   std::set<int> keep;
   if (keep_selection)
     for (int n : selection()) keep.insert(n);
   int focus_node = focus_item();
-  items_ = std::move(items);
+  items_.clear();
+  if (parent_row) items_.push_back(kParentItem);
+  items_.insert(items_.end(), items.begin(), items.end());
   selected_.assign(items_.size(), 0);
   focus_ = -1;
   for (size_t i = 0; i < items_.size(); ++i) {
-    if (keep.count(items_[i])) selected_[i] = 1;
+    if (items_[i] != kParentItem && keep.count(items_[i])) selected_[i] = 1;
     if (items_[i] == focus_node && keep_selection) focus_ = int(i);
   }
-  if (!keep_selection) scroll_ = 0;
+  if (!keep_selection) {
+    scroll_ = 0;
+    focus_ = items_.empty() ? -1 : 0;
+  }
   anchor_ = focus_;
   hover_ = -1;
   clamp_scroll();
@@ -78,12 +84,18 @@ void FileView::set_items(std::vector<int> items, bool keep_selection) {
 std::vector<int> FileView::selection() const {
   std::vector<int> out;
   for (size_t i = 0; i < items_.size(); ++i)
-    if (selected_[i]) out.push_back(items_[i]);
+    if (selected_[i] && items_[i] != kParentItem) out.push_back(items_[i]);
   return out;
 }
 
 void FileView::select_all() {
-  std::fill(selected_.begin(), selected_.end(), 1);
+  for (size_t i = 0; i < items_.size(); ++i) selected_[i] = items_[i] != kParentItem;
+  app_->selection_changed();
+  redraw();
+}
+
+void FileView::invert_selection() {
+  for (size_t i = 0; i < items_.size(); ++i) selected_[i] = items_[i] != kParentItem && !selected_[i];
   app_->selection_changed();
   redraw();
 }
@@ -92,6 +104,15 @@ void FileView::clear_selection() {
   std::fill(selected_.begin(), selected_.end(), 0);
   app_->selection_changed();
   redraw();
+}
+
+void FileView::select_node(int node) {
+  for (size_t i = 0; i < items_.size(); ++i)
+    if (items_[i] == node) {
+      click(int(i), 0);
+      ensure_visible(int(i));
+      return;
+    }
 }
 
 void FileView::set_grid(bool g) {
@@ -104,18 +125,17 @@ void FileView::set_grid(bool g) {
 
 void FileView::item_rect(int i, int &ix, int &iy, int &iw, int &ih) const {
   if (grid_) {
-    int cols = columns();
-    int gap = S(8);
+    int cols = columns(), gap = S(6);
     int total = cols * tile_w() + (cols - 1) * gap;
-    int left = x() + std::max(S(12), (w() - S(12) - total) / 2);
+    int left = x() + std::max(S(10), (w() - S(12) - total) / 2);
     ix = left + (i % cols) * (tile_w() + gap);
-    iy = y() + S(12) + (i / cols) * (tile_h() + gap) - scroll_;
+    iy = y() + S(10) + (i / cols) * (tile_h() + gap) - scroll_;
     iw = tile_w();
     ih = tile_h();
   } else {
-    ix = x() + S(8);
+    ix = x();
     iy = y() + header_h() + i * row_h() - scroll_;
-    iw = w() - S(22);
+    iw = w() - S(12);
     ih = row_h();
   }
 }
@@ -139,99 +159,147 @@ void FileView::ensure_visible(int i) {
   int ix, iy, iw, ih;
   item_rect(i, ix, iy, iw, ih);
   int top = y() + header_h(), bottom = y() + h();
-  if (iy < top) scroll_ -= top - iy + S(4);
-  else if (iy + ih > bottom) scroll_ += iy + ih - bottom + S(4);
+  if (iy < top) scroll_ -= top - iy;
+  else if (iy + ih > bottom) scroll_ += iy + ih - bottom;
   clamp_scroll();
 }
 
-void FileView::column_x(int &name, int &size, int &packed, int &type, int &modified, int &end) const {
-  end = x() + w() - S(22);
-  int left = x() + S(8);
-  int width = end - left;
-  bool wide = width > S(720), mid = width > S(520);
-  modified = wide ? end - S(150) : end;
-  type = mid ? modified - S(130) : modified;
-  packed = type - S(96);
-  size = packed - S(96);
-  name = left;
+// Columns from the right edge; the name takes what is left. Narrow
+// windows drop the less important columns first.
+std::vector<FileView::Column> FileView::columns_layout() const {
+  bool archive = app_->has_archive() && !app_->results(), results = app_->results();
+  struct Want {
+    std::string label;
+    int w, align;
+    SortKey key;
+    int priority;  // higher is dropped first
+  };
+  std::vector<Want> want;
+  if (results) {
+    want = {{_("Folder"), S(250), 0, SortKey::Type, 2},
+            {_("Size"), S(96), 2, SortKey::Size, 1},
+            {_("Modified"), S(132), 0, SortKey::Modified, 3}};
+  } else {
+    want.push_back({_("Size"), S(96), 2, SortKey::Size, 1});
+    if (archive) {
+      want.push_back({_("Packed"), S(92), 2, SortKey::Packed, 4});
+      want.push_back({_("Ratio"), S(58), 2, SortKey::Ratio, 5});
+    }
+    want.push_back({_("Type"), S(150), 0, SortKey::Type, 3});
+    want.push_back({_("Modified"), S(132), 0, SortKey::Modified, 2});
+  }
+  int avail = w() - S(12), min_name = S(170);
+  for (;;) {
+    int sum = 0;
+    for (const auto &c : want) sum += c.w;
+    if (sum + min_name <= avail || want.empty()) break;
+    auto worst = std::max_element(want.begin(), want.end(),
+                                  [](const Want &a, const Want &b) { return a.priority < b.priority; });
+    want.erase(worst);
+  }
+  int sum = 0;
+  for (const auto &c : want) sum += c.w;
+  std::vector<Column> out;
+  out.push_back({_("Name"), x(), avail - sum, 0, SortKey::Name});
+  int X = x() + avail - sum;
+  for (const auto &c : want) {
+    out.push_back({c.label, X, c.w, c.align, c.key});
+    X += c.w;
+  }
+  return out;
 }
 
-int FileView::header_column_at(int mx) const {
-  int nx, sx, px, tx, mx2, end;
-  column_x(nx, sx, px, tx, mx2, end);
-  if (mx < sx) return 0;
-  if (mx < px) return 1;
-  if (mx < tx) return 2;
-  if (mx < mx2) return 3;
-  return 4;
+void FileView::draw_icon(Painter &p, int item, double ix, double iy, double size) {
+  const Theme &t = app_->theme();
+  if (item == kParentItem) {
+    icon::parent_folder(p, ix, iy, size, t.accent, t.dark);
+    return;
+  }
+  const Node &n = app_->tree().node(item);
+  if (!n.dir && app_->node_is_archive(item)) icon::archive(p, ix, iy, size, t.accent, t.dark);
+  else icon::file(p, n.name, ix, iy, size, n.dir, t.accent, t.dark);
 }
 
 void FileView::draw_list(Painter *p, bool text_pass) {
   const Theme &t = app_->theme();
   const Tree &tree = app_->tree();
-  int nx, sx, px, tx, mx, end;
-  column_x(nx, sx, px, tx, mx, end);
+  auto cols = columns_layout();
   int hh = header_h();
+  bool archive = app_->has_archive() && !app_->results();
   int first = std::max(0, scroll_ / row_h()), last = std::min(int(items_.size()), first + h() / row_h() + 2);
   fl_push_clip(x(), y() + hh, w(), h() - hh);
   for (int i = first; i < last; ++i) {
     int ix, iy, iw, ih;
     item_rect(i, ix, iy, iw, ih);
-    const Node &n = tree.node(items_[size_t(i)]);
-    int icon = S(22);
+    int item = items_[size_t(i)];
+    int isz = S(18);
+    bool sel = selected_[size_t(i)];
     if (!text_pass) {
-      bool sel = selected_[size_t(i)];
-      if (sel) p->fill_rounded(ix, iy + S(2), iw, ih - S(4), S(8), t.accent.alpha(t.dark ? 0.34 : 0.18));
-      else if (i == hover_) p->fill_rounded(ix, iy + S(2), iw, ih - S(4), S(8), t.hover);
+      if (i % 2 == 1) p->fill_rect(ix, iy, iw, ih, t.text.alpha(t.dark ? 0.025 : 0.022));
+      if (sel) p->fill_rect(ix, iy, iw, ih, t.accent.alpha(Fl::focus() == this ? (t.dark ? 0.45 : 0.28) : 0.16));
+      else if (i == hover_) p->fill_rect(ix, iy, iw, ih, t.hover.alpha(0.8));
       if (i == focus_ && Fl::focus() == this)
-        p->stroke_rounded(ix + 0.5, iy + S(2) + 0.5, iw - 1, ih - S(4) - 1, S(8), t.accent, Sd(1.5));
-      icon::file(*p, n.name, nx + S(8), iy + (ih - icon) / 2.0, icon, n.dir, t.accent, t.dark);
-      if (n.encrypted) icon::draw(*p, icon::Lock, nx + S(8) + icon - S(8), iy + ih / 2.0 + S(1), S(11), t.accent_text);
-      if (n.unsafe) icon::draw(*p, icon::Warning, nx + S(8) + icon - S(9), iy + ih / 2.0, S(12), Color::hex(0xD9822B));
-    } else {
-      Color fg = n.unsafe ? t.text_dim : t.text;
-      text_font(t.font_size);
-      int name_w = sx - nx - S(48);
-      std::string shown = n.name;
-      if (app_->searching() && !n.path.empty() && n.path != n.name) {
-        draw_text(n.name, nx + S(40), iy + S(3), name_w, ih / 2, fg);
-        text_font(t.font_size - S(2));
-        draw_text(n.path.substr(0, n.path.size() - n.name.size()), nx + S(40), iy + ih / 2 - S(2), name_w,
-                  ih / 2, t.text_dim);
-        text_font(t.font_size);
-      } else {
-        draw_text(shown, nx + S(40), iy, name_w, ih, fg);
+        p->stroke_rounded(ix + 1.5, iy + 0.5, iw - 3, ih - 1, S(3), t.accent, Sd(1.2));
+      draw_icon(*p, item, ix + S(8), iy + (ih - isz) / 2.0, isz);
+      if (item != kParentItem) {
+        const Node &n = tree.node(item);
+        if (n.encrypted) icon::draw(*p, icon::Lock, ix + S(8) + isz - S(7), iy + ih / 2.0, S(10), t.accent_text);
+        if (n.unsafe) icon::draw(*p, icon::Warning, ix + S(8) + isz - S(8), iy + ih / 2.0, S(11), Color::hex(0xD9822B));
       }
-      Color dim = t.text_dim;
-      std::string size = n.dir ? (n.files == 1 ? std::string(_("1 item")) : format(_("%zu items"), n.files))
-                               : human_size(n.size);
-      draw_text(size, sx, iy, px - sx - S(10), ih, dim, 2);
-      std::string packed = n.packed >= 0 ? human_size(n.packed) : "—";
-      draw_text(packed, px, iy, tx - px - S(10), ih, dim, 2);
-      if (mx > tx) draw_text(file_kind(n.name, n.dir), tx + S(14), iy, mx - tx - S(18), ih, dim);
-      if (end > mx) draw_text(short_date(n.mtime), mx + S(4), iy, end - mx - S(4), ih, dim);
+    } else {
+      text_font(t.font_size);
+      Color fg = t.text, dim = t.text_dim;
+      if (item == kParentItem) {
+        draw_text("..", cols[0].x + S(34), iy, cols[0].w - S(40), ih, fg);
+        for (size_t c = 1; c < cols.size(); ++c)
+          if (cols[c].key == SortKey::Type && !app_->results())
+            draw_text(_("Folder"), cols[c].x + S(8), iy, cols[c].w - S(12), ih, dim);
+        continue;
+      }
+      const Node &n = tree.node(item);
+      if (n.unsafe) fg = t.text_dim;
+      draw_text(n.name, cols[0].x + S(34), iy, cols[0].w - S(40), ih, fg);
+      for (size_t c = 1; c < cols.size(); ++c) {
+        const Column &col = cols[c];
+        std::string s;
+        switch (col.key) {
+          case SortKey::Size:
+            if (!n.dir) s = n.size >= 0 ? group_digits(n.size) : "?";
+            else if (archive) s = group_digits(n.size);
+            break;
+          case SortKey::Packed:
+            s = n.packed >= 0 ? group_digits(n.packed) : "";
+            break;
+          case SortKey::Ratio: {
+            double r = packed_ratio(n);
+            s = r >= 0 ? format("%d%%", int(std::lround(r * 100))) : "";
+            break;
+          }
+          case SortKey::Type:
+            s = app_->results() ? app_->hit_folder(item) : app_->type_of(item);
+            break;
+          case SortKey::Modified: s = short_date(n.mtime); break;
+          default: break;
+        }
+        int pad = S(8);
+        draw_text(s, col.x + pad, iy, col.w - 2 * pad, ih, dim, col.align);
+      }
     }
   }
   fl_pop_clip();
   // Column header.
-  struct Col {
-    const char *label;
-    int x, w, align;
-    SortKey key;
-  } cols[] = {{_("Name"), nx + S(40), sx - nx - S(48), 0, SortKey::Name},
-              {_("Size"), sx, px - sx - S(10), 2, SortKey::Size},
-              {_("Packed"), px, tx - px - S(10), 2, SortKey::Packed},
-              {_("Type"), tx + S(14), mx - tx - S(18), 0, SortKey::Type},
-              {_("Modified"), mx + S(4), end - mx - S(4), 0, SortKey::Modified}};
-  text_font(t.font_size - S(1), true);
+  text_font(t.font_size - S(1));
   if (!text_pass) {
-    p->fill_rect(x(), y(), w(), hh, t.background);
-    p->line(x() + S(8), y() + hh - 0.5, x() + w() - S(14), y() + hh - 0.5, t.border.alpha(0.8));
-    // Sort direction: a small triangle next to the active column's label.
-    for (const auto &c : cols) {
-      if (c.key != app_->sort_key() || c.w <= S(10)) continue;
-      double d = Sd(4), ay = y() + hh / 2.0;
-      double ax = c.align == 2 ? c.x + c.w - 2 * d : c.x + text_width(c.label) + S(6);
+    p->fill_gradient(x(), y(), w(), hh, 0, t.surface, t.surface_alt);
+    p->line(x(), y() + hh - 0.5, x() + w(), y() + hh - 0.5, t.border);
+    for (size_t c = 0; c < cols.size(); ++c) {
+      const Column &col = cols[c];
+      if (c + 1 < cols.size() || col.x + col.w < x() + w() - S(14))
+        p->line(col.x + col.w - 0.5, y() + S(5), col.x + col.w - 0.5, y() + hh - S(5), t.border);
+      if (col.key != app_->sort_key()) continue;
+      // Sort direction: a small triangle next to the label.
+      double d = Sd(3.5), ay = y() + hh / 2.0;
+      double ax = col.align == 2 ? col.x + S(8) : col.x + S(c == 0 ? 34 : 8) + text_width(col.label) + S(6);
       cairo_t *cr = p->cr();
       double dir = app_->sort_descending() ? 1 : -1;
       cairo_move_to(cr, ax, ay - dir * d / 2);
@@ -242,11 +310,11 @@ void FileView::draw_list(Painter *p, bool text_pass) {
       cairo_fill(cr);
     }
   } else {
-    for (const auto &c : cols) {
-      if (c.w <= S(10)) continue;
-      bool active = app_->sort_key() == c.key;
-      int cw = c.w - (active && c.align == 2 ? S(14) : 0);
-      draw_text(c.label, c.x, y(), cw, hh, active ? t.accent_text : t.text_dim, c.align);
+    for (size_t c = 0; c < cols.size(); ++c) {
+      const Column &col = cols[c];
+      bool active = app_->sort_key() == col.key;
+      int lx = col.x + S(c == 0 ? 34 : 8);
+      draw_text(col.label, lx, y(), col.w - (lx - col.x) - S(8), hh, active ? t.text : t.text_dim, col.align);
     }
   }
 }
@@ -259,32 +327,29 @@ void FileView::draw_grid(Painter *p, bool text_pass) {
     int ix, iy, iw, ih;
     item_rect(i, ix, iy, iw, ih);
     if (iy + ih < y() || iy > y() + h()) continue;
-    const Node &n = tree.node(items_[size_t(i)]);
-    int icon = S(58);
-    double icx = ix + (iw - icon) / 2.0, icy = iy + S(10);
+    int item = items_[size_t(i)];
+    int isz = S(52);
+    double icx = ix + (iw - isz) / 2.0, icy = iy + S(10);
     if (!text_pass) {
       bool sel = selected_[size_t(i)];
-      if (sel) p->fill_rounded(ix, iy, iw, ih, S(12), t.accent.alpha(t.dark ? 0.34 : 0.18));
-      else if (i == hover_) p->fill_rounded(ix, iy, iw, ih, S(12), t.hover);
-      if (i == focus_ && Fl::focus() == this) p->stroke_rounded(ix + 0.5, iy + 0.5, iw - 1, ih - 1, S(12), t.accent, Sd(1.5));
-      icon::file(*p, n.name, icx, icy, icon, n.dir, t.accent, t.dark);
-      if (n.encrypted) {
-        p->circle(icx + icon - S(6), icy + icon - S(6), S(10), t.surface);
-        icon::draw(*p, icon::Lock, icx + icon - S(14), icy + icon - S(14), S(16), t.accent_text);
-      }
+      if (sel) p->fill_rounded(ix, iy, iw, ih, S(10), t.accent.alpha(t.dark ? 0.34 : 0.2));
+      else if (i == hover_) p->fill_rounded(ix, iy, iw, ih, S(10), t.hover);
+      if (i == focus_ && Fl::focus() == this) p->stroke_rounded(ix + 0.5, iy + 0.5, iw - 1, ih - 1, S(10), t.accent, Sd(1.5));
+      draw_icon(*p, item, icx, icy, isz);
     } else {
-      int lx, ly, lw, lh;
-      icon::file_label_box(n.name, icx, icy, icon, lx, ly, lw, lh);
-      if (!n.dir && lw > 0) {
-        text_font(std::max(S(8), lh - S(5)), true);
-        std::string e = extension_label(n.name);
-        if (e.size() > 4) e = e.substr(0, 4);
-        draw_text(e, lx, ly, lw, lh, Color::hex(0xFFFFFF), 1);
+      std::string name = item == kParentItem ? ".." : tree.node(item).name;
+      if (item != kParentItem && !tree.node(item).dir && !app_->node_is_archive(item)) {
+        int lx, ly, lw, lh;
+        icon::file_label_box(name, icx, icy, isz, lx, ly, lw, lh);
+        if (lw > 0) {
+          text_font(std::max(S(8), lh - S(5)), true);
+          std::string e = extension_label(name);
+          if (e.size() > 4) e = e.substr(0, 4);
+          draw_text(e, lx, ly, lw, lh, Color::hex(0xFFFFFF), 1);
+        }
       }
       text_font(t.font_size - S(1));
-      // Two lines for long names.
-      std::string name = n.name;
-      int tw = iw - S(12);
+      int tw = iw - S(10);
       std::string l1 = name, l2;
       if (text_width(name) > tw) {
         size_t cut = name.size();
@@ -293,14 +358,9 @@ void FileView::draw_grid(Painter *p, bool text_pass) {
         l1 = name.substr(0, cut);
         l2 = name.substr(cut);
       }
-      int ty = int(icy + icon + S(6));
-      draw_text(l1, ix + S(6), ty, tw, S(18), t.text, 1);
-      if (!l2.empty()) draw_text(l2, ix + S(6), ty + S(16), tw, S(18), t.text, 1);
-      else {
-        text_font(t.font_size - S(2));
-        std::string sub = n.dir ? format(_("%zu items"), n.files) : human_size(n.size);
-        draw_text(sub, ix + S(6), ty + S(16), tw, S(18), t.text_dim, 1);
-      }
+      int ty = int(icy + isz + S(4));
+      draw_text(l1, ix + S(5), ty, tw, S(18), t.text, 1);
+      if (!l2.empty()) draw_text(l2, ix + S(5), ty + S(16), tw, S(18), t.text, 1);
     }
   }
   fl_pop_clip();
@@ -310,7 +370,7 @@ void FileView::draw() {
   const Theme &t = app_->theme();
   {
     Painter p(window()->w(), window()->h());
-    p.fill_rect(x(), y(), w(), h(), t.background);
+    p.fill_rect(x(), y(), w(), h(), t.surface);
     if (grid_) draw_grid(&p, false);
     else draw_list(&p, false);
     // Scroll bar.
@@ -325,10 +385,11 @@ void FileView::draw() {
   }
   if (grid_) draw_grid(nullptr, true);
   else draw_list(nullptr, true);
-  if (items_.empty()) {
-    text_font(t.font_size + S(1));
-    draw_text(app_->searching() ? _("Nothing matches your search") : _("This folder is empty"), x(),
-              y() + h() / 3, w(), S(30), t.text_dim, 1);
+  bool only_parent = items_.size() == 1 && items_[0] == kParentItem;
+  if (items_.empty() || only_parent) {
+    text_font(t.font_size);
+    draw_text(app_->results() ? _("No files match the pattern") : _("This folder is empty"), x(),
+              y() + header_h() + row_h() * 2, w(), S(30), t.text_dim, 1);
   }
 }
 
@@ -356,6 +417,7 @@ void FileView::click(int i, int state) {
 bool FileView::keyboard(int key, int state) {
   int n = int(items_.size());
   bool ctrl = state & FL_CTRL, shift = state & FL_SHIFT;
+  if (state & FL_ALT) return false;  // Alt+letter: menu shortcuts
   if (ctrl && key == 'a') {
     select_all();
     return true;
@@ -364,7 +426,7 @@ bool FileView::keyboard(int key, int state) {
     if (focus_ >= 0) app_->enter(items_[size_t(focus_)]);
     return true;
   }
-  if (key == FL_BackSpace || (key == FL_Up && (state & FL_ALT))) {
+  if (key == FL_BackSpace) {
     app_->go_up();
     return true;
   }
@@ -388,7 +450,25 @@ bool FileView::keyboard(int key, int state) {
     case FL_Page_Up: step = -page; break;
     case FL_Home: step = -n; break;
     case FL_End: step = n; break;
-    default: return false;
+    default: {
+      // Type-ahead: jump to the next name starting with the letter.
+      const char *txt = Fl::event_text();
+      if (!ctrl && txt && txt[0] && static_cast<unsigned char>(txt[0]) > ' ' && n > 0) {
+        char c = char(tolower(static_cast<unsigned char>(txt[0])));
+        for (int k = 1; k <= n; ++k) {
+          int i = (std::max(0, focus_) + k) % n;
+          if (items_[size_t(i)] == kParentItem) continue;
+          const std::string &name = app_->tree().node(items_[size_t(i)]).name;
+          if (!name.empty() && tolower(static_cast<unsigned char>(name[0])) == c) {
+            click(i, 0);
+            ensure_visible(i);
+            return true;
+          }
+        }
+        return true;
+      }
+      return false;
+    }
   }
   if (n == 0) return true;
   int target = focus_ < 0 ? 0 : std::max(0, std::min(n - 1, focus_ + step));
@@ -429,7 +509,7 @@ int FileView::handle(int event) {
       redraw();
       return 1;
     case FL_MOUSEWHEEL:
-      scroll_ += Fl::event_dy() * S(60);
+      scroll_ += Fl::event_dy() * row_h() * 3;
       clamp_scroll();
       redraw();
       return 1;
@@ -445,8 +525,8 @@ int FileView::handle(int event) {
         return handle(FL_DRAG);
       }
       if (!grid_ && my < y() + header_h()) {
-        static const SortKey keys[] = {SortKey::Name, SortKey::Size, SortKey::Packed, SortKey::Type, SortKey::Modified};
-        app_->set_sort(keys[header_column_at(mx)]);
+        for (const auto &c : columns_layout())
+          if (mx >= c.x && mx < c.x + c.w) app_->set_sort(c.key);
         return 1;
       }
       int i = item_at(mx, my);
@@ -456,7 +536,7 @@ int FileView::handle(int event) {
       drag_started_ = false;
       if (Fl::event_button() == FL_RIGHT_MOUSE) {
         if (i >= 0 && !selected_[size_t(i)]) click(i, 0);
-        app_->context_menu(i >= 0 ? items_[size_t(i)] : -1);
+        app_->context_menu(i >= 0 ? items_[size_t(i)] : -2);
         return 1;
       }
       if (Fl::event_clicks() && i >= 0) {
@@ -483,7 +563,7 @@ int FileView::handle(int event) {
         redraw();
         return 1;
       }
-      if (press_item_ >= 0 && !drag_started_ &&
+      if (press_item_ >= 0 && items_[size_t(press_item_)] != kParentItem && !drag_started_ &&
           std::abs(Fl::event_x() - press_x_) + std::abs(Fl::event_y() - press_y_) > S(10)) {
         drag_started_ = true;
         if (!selected_[size_t(press_item_)]) click(press_item_, 0);

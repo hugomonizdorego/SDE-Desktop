@@ -78,7 +78,7 @@ Result find_files(const FindOptions &o, std::vector<FindHit> &hits, Progress *p 
 // ------------------------------------------------------------------ repair
 
 enum class RepairMethod {
-  None,         // nothing can be done for this format
+  Unsupported,  // nothing can be done for this format
   ZipFix,       // "zip -FF damaged.zip --out repaired.zip"
   RarRepair,    // "rar r", which writes fixed.NAME.rar / rebuilt.NAME.rar
   ToolSalvage,  // 7-Zip or unrar extract what they can, Taca repacks it
@@ -86,7 +86,7 @@ enum class RepairMethod {
 };
 
 struct RepairPlan {
-  RepairMethod method = RepairMethod::None;
+  RepairMethod method = RepairMethod::Unsupported;
   std::vector<std::string> argv;  // the program to run (ZipFix, RarRepair, ToolSalvage)
   std::string output;             // the repaired archive to write
   Format output_format = Format::Zip;

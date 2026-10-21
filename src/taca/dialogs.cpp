@@ -288,7 +288,9 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
   d.end();
 
   // Defaults.
-  std::string dir = files.empty() ? home_dir() : files[0].substr(0, std::max<size_t>(1, files[0].rfind('/')));
+  std::string dir = !c.folder.empty() ? c.folder
+                    : files.empty()     ? home_dir()
+                                        : files[0].substr(0, std::max<size_t>(1, files[0].rfind('/')));
   std::string base = files.size() == 1 ? basename_of(files[0]) : basename_of(dir);
   if (base.empty() || base == "/") base = _("Archive");
   where->value(dir.c_str());
@@ -394,8 +396,6 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
 // ----------------------------------------------------------- properties
 
 void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::string &password_note) {
-  Dialog d(S(560), S(470), basename_of(info.path), describe_format(info.format, info.path));
-  const Theme &t = d.theme();
   struct stat st;
   time_t mtime = stat(info.path.c_str(), &st) == 0 ? st.st_mtime : 0;
   char date[64] = "—";
@@ -411,7 +411,9 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
                         (info.engine_format.empty() || info.backend == "libarchive" ? ""
                                                                                      : "  (" + info.engine_format + ")")},
       {_("Archive size"), human_size(info.archive_size)},
-      {_("Contents"), human_size(info.total_size)},
+      {_("Contents"), format("%s (%s bytes)", human_size(info.total_size).c_str(), group_digits(info.total_size).c_str())},
+      {_("Packed"), info.total_packed >= 0 ? human_size(info.total_packed) : std::string("—")},
+      {_("Ratio"), ratio >= 0 ? format("%d%%", int(std::lround(ratio * 100))) : std::string("—")},
       {_("Files"), format(_("%zu files in %zu folders"), info.files, info.folders)},
       {_("Encryption"), info.header_encrypted ? _("Contents and file names")
                         : info.encrypted       ? _("Contents (file names are visible)")
@@ -421,6 +423,15 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
   };
   if (info.unsafe) rows.push_back({_("Warning"), format(_("%zu unsafe names will not be extracted"), info.unsafe)});
   if (!password_note.empty()) rows.push_back({_("Password"), password_note});
+  std::vector<std::string> comment_lines;
+  for (const auto &l : split(info.comment, '\n', true))
+    if (comment_lines.size() < 6) comment_lines.push_back(l);
+  while (!comment_lines.empty() && trim(comment_lines.back()).empty()) comment_lines.pop_back();
+  if (comment_lines.empty() && !info.comment.empty()) comment_lines.push_back(info.comment);
+  int comment_h = comment_lines.empty() ? 0 : S(36) + int(comment_lines.size()) * S(20);
+  Dialog d(S(580), S(84) + int(rows.size()) * S(30) + comment_h + S(96), basename_of(info.path),
+           describe_format(info.format, info.path));
+  const Theme &t = d.theme();
   d.extra_paint = [&](Painter &p) {
     // Compression ring.
     double cx = d.w() - S(96), cy = S(150), r = S(54);
@@ -447,6 +458,17 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
       text_font(t.font_size);
       draw_text(row.second, S(150), y, d.w() - S(150) - S(190), S(24), t.text);
       y += S(30);
+    }
+    if (!comment_lines.empty()) {
+      y += S(8);
+      text_font(t.font_size - S(1), true);
+      draw_text(_("Comment"), S(24), y, S(200), S(24), t.text_dim);
+      y += S(26);
+      text_font(t.font_size);
+      for (const auto &l : comment_lines) {
+        draw_text(l, S(32), y, d.w() - S(56), S(20), t.text);
+        y += S(20);
+      }
     }
     double cx = d.w() - S(96), cy = S(150);
     text_font(t.font_size + S(6), true);

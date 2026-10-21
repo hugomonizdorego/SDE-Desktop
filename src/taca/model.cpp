@@ -97,6 +97,36 @@ void Tree::build(const std::vector<Entry> &entries) {
   }
 }
 
+void Tree::build_flat(const std::vector<Entry> &entries) {
+  nodes_.clear();
+  index_.clear();
+  Node root;
+  root.dir = true;
+  nodes_.push_back(root);
+  index_[""] = 0;
+  for (const auto &e : entries) {
+    Node n;
+    n.path = e.path;
+    size_t slash = e.path.rfind('/');
+    n.name = slash == std::string::npos ? e.path : e.path.substr(slash + 1);
+    n.dir = e.dir;
+    n.symlink = e.symlink;
+    n.encrypted = e.encrypted;
+    n.unsafe = e.unsafe;
+    n.size = e.size;
+    n.packed = e.packed;
+    n.mtime = e.mtime;
+    n.files = e.dir ? 0 : 1;
+    n.parent = 0;
+    nodes_.push_back(n);
+    int index = int(nodes_.size() - 1);
+    index_[n.path] = index;
+    nodes_[0].children.push_back(index);
+    if (!e.dir && e.size > 0) nodes_[0].size += e.size;
+    nodes_[0].files += n.files;
+  }
+}
+
 int Tree::find(const std::string &path) const {
   auto it = index_.find(path);
   return it == index_.end() ? -1 : it->second;

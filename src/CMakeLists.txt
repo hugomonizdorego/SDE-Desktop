@@ -234,7 +234,9 @@ add_executable(taca
   taca/fileview.cpp
   taca/dialogs.cpp
   taca/icons.cpp
-  taca/ui.cpp)
+  taca/ui.cpp
+  taca/bars.cpp
+  taca/wizard.cpp)
 target_link_libraries(taca PRIVATE taca-core)
 install(TARGETS taca RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 

@@ -15,6 +15,7 @@
 #include <FL/Fl_Widget.H>
 
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <set>
@@ -408,7 +409,7 @@ class TacaWindow : public sde::BufferedWindow {
   void action_add();
   void add_paths(const std::vector<std::string> &paths);
   void action_extract(bool here);
-  void extract_archives(const std::vector<std::string> &archives, const ExtractChoice &c, size_t index);
+  void run_extract(const std::string &path, ExtractOptions o, bool here, bool open_after, std::function<void()> next);
   void action_delete();
   void action_rename();
   void action_test();
@@ -418,6 +419,7 @@ class TacaWindow : public sde::BufferedWindow {
   void action_wizard();
   void action_convert(const std::string &archive);
   void action_info();
+  void disk_info(const std::vector<std::string> &paths);
   void action_repair();
   void action_settings();
   void open_member(int node, bool preview);
@@ -460,7 +462,7 @@ class TacaWindow : public sde::BufferedWindow {
   FileView *view_ = nullptr;
   sde::FlatButton *cancel_ = nullptr;
   std::vector<Fl_Menu_Item> menu_;
-  std::vector<std::string> menu_labels_;
+  std::deque<std::string> menu_labels_;
   int address_y_ = 0, address_h_ = 0, status_h_ = 0;
   int hover_part_ = 0;  // 1 up button, 2 dropdown
   bool drop_hover_ = false;

@@ -37,6 +37,10 @@ double packed_ratio(const Node &n);
 class Tree {
  public:
   void build(const std::vector<Entry> &entries);
+  // Every entry directly below the root, named after the last component of
+  // its path (a folder listing or a list of find results). Node i + 1 is
+  // entries[i]; folders are not summed up.
+  void build_flat(const std::vector<Entry> &entries);
   void clear() {
     nodes_.clear();
     index_.clear();

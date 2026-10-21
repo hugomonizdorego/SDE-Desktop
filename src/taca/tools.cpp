@@ -517,7 +517,7 @@ Result repair_archive(const std::string &archive, const std::string &dest_dir, c
   Format f = detect_format(archive);
   RepairPlan plan = plan_repair(archive, f, dest_dir, sde::find_program("zip"), rar_program(), seven_zip_program(),
                                 unrar_program());
-  if (plan.method == RepairMethod::None) return Result::failure(plan.summary);
+  if (plan.method == RepairMethod::Unsupported) return Result::failure(plan.summary);
   plan.output = unique_path(plan.output);
   output = plan.output;
   auto verify = [&](Result &r) {

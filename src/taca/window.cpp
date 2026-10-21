@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DebION Dev-Team
 //
-// The Taca main window. Without an archive it shows a drop zone and the
-// recent archives; with one, an "archive card" on the left (identity,
-// compression and the actions), a breadcrumb and search on top and the
-// contents in a list or a grid. Archive work runs on a worker thread and
-// shows a progress card that can be cancelled.
+// The Taca main window: menu bar, toolbar, address bar, the details list
+// and a status bar. The list browses the file system; double-clicking an
+// archive enters it and ".." (or Backspace) goes back up, out of the
+// archive into its folder. Archive work runs on a worker thread and shows
+// a progress card that can be cancelled.
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
 #include <FL/fl_draw.H>
@@ -18,7 +18,6 @@
 #include <cmath>
 #include <cstring>
 #include <ctime>
-#include <fstream>
 
 #include "config.h"
 #include "i18n.h"
@@ -36,19 +35,27 @@ TacaWindow *TacaWindow::instance_ = nullptr;
 
 namespace {
 
-enum Action {
-  ExtractAll, ExtractSelected, AddFiles, AddFolder, RenameItem, DeleteItems, TestArchive, Properties,
-  OpenOther, NewArchive, CloseArchive, ActionCount
-};
-
-struct Rect {
-  int x = 0, y = 0, w = 0, h = 0;
-  bool inside(int mx, int my) const { return mx >= x && mx < x + w && my >= y && my < y + h; }
-};
-
 std::string recent_file() { return state_home() + "/sde/taca-recent"; }
 
 std::string fmt_count(size_t n, const char *one, const char *many) { return format(n == 1 ? one : many, n); }
+
+std::string parent_of(const std::string &path) { return parent_directory(path); }
+
+std::string join(const std::string &dir, const std::string &name) {
+  return dir == "/" ? "/" + name : dir + "/" + name;
+}
+
+const int kToolCommand[] = {CmdAdd, CmdExtract, CmdTest, CmdView, CmdDelete, CmdFind, CmdWizard, CmdInfo, CmdRepair};
+
+// Escapes '&' so FLTK does not take it as a menu mnemonic.
+std::string menu_text(const std::string &s) {
+  std::string out;
+  for (char c : s) {
+    if (c == '&') out += '&';
+    out += c;
+  }
+  return out;
+}
 
 }  // namespace
 
@@ -80,41 +87,33 @@ void TacaWindow::remember(const std::string &path) {
 
 TacaWindow::TacaWindow(int w, int h) : BufferedWindow(w, h, _("Taca")) {
   instance_ = this;
+  settings_ = Settings::load();
   theme_ = active_theme();
   begin();
-  view_ = new FileView(this, 0, 0, w, h);
-  search_ = new Fl_Input(0, 0, S(200), S(26));
-  search_->when(FL_WHEN_CHANGED);
-  search_->callback([](Fl_Widget *, void *p) { static_cast<TacaWindow *>(p)->refresh_view(); }, this);
-  mode_ = new Chips(0, 0, S(150), S(30), {_("List"), _("Icons")});
-  mode_->callback([](Fl_Widget *w, void *p) {
+  menubar_ = new MenuBar(0, 0, w, S(28));
+  toolbar_ = new Toolbar(this, 0, S(28), w, Toolbar::wanted_height(h));
+  address_ = new Fl_Input(0, 0, S(200), S(22));
+  address_->when(FL_WHEN_ENTER_KEY_ALWAYS);
+  address_->callback([](Fl_Widget *w, void *p) {
     auto *self = static_cast<TacaWindow *>(p);
-    self->view_->set_grid(static_cast<Chips *>(w)->value() == 1);
-    Config cfg;
-    cfg.load();
-    cfg.set("taca", "view", self->view_->grid() ? "icons" : "list");
-    cfg.save();
+    self->navigate_to(static_cast<Fl_Input *>(w)->value());
   }, this);
+  view_ = new FileView(this, 0, 0, w, h);
   cancel_ = new FlatButton(0, 0, S(96), S(32), _("Cancel"));
   cancel_->callback([](Fl_Widget *, void *p) {
     auto *self = static_cast<TacaWindow *>(p);
     if (self->job_) self->job_->cancel();
   }, this);
-  open_btn_ = new FlatButton(0, 0, S(170), S(38), _("Open Archive…"), true);
-  open_btn_->callback([](Fl_Widget *, void *p) { static_cast<TacaWindow *>(p)->action_open(); }, this);
-  new_btn_ = new FlatButton(0, 0, S(170), S(38), _("New Archive…"));
-  new_btn_->callback([](Fl_Widget *, void *p) { static_cast<TacaWindow *>(p)->action_new(); }, this);
   end();
-  Config cfg;
-  cfg.load();
-  bool grid = cfg.get("taca", "view", "list") == "icons";
-  view_->set_grid(grid);
-  mode_->value(grid ? 1 : 0);
+  toolbar_->on_click = [this](int t) { command(kToolCommand[t]); };
+  toolbar_->is_enabled = [this](int t) { return command_enabled(kToolCommand[t]); };
+  favorites_ = load_favorites(favorites_file());
+  view_->set_grid(settings_.icons);
   resizable(nullptr);
-  size_range(S(640), S(440));
+  size_range(S(560), S(380));
   xclass("Taca");
-  recent_ = recent();
   apply_theme();
+  build_menu();
   layout();
   Fl::add_handler(x_event_handler);
   Fl::add_system_handler(system_handler, this);
@@ -127,6 +126,11 @@ TacaWindow::TacaWindow(int w, int h) : BufferedWindow(w, h, _("Taca")) {
         time(nullptr) - st.st_mtime > 24 * 3600)
       detail::remove_tree(p);
   }
+  Config cfg;
+  cfg.load();
+  std::string start = cfg.get("taca", "last_dir", "");
+  if (start.empty() || !dir_exists(start)) start = home_dir();
+  browse(start);
 }
 
 TacaWindow::~TacaWindow() {
@@ -146,19 +150,28 @@ void TacaWindow::hide() {
     job_->cancel();
     job_.reset();
   }
+  if (!fs_dir_.empty()) {
+    Config cfg;
+    cfg.load();
+    cfg.set("taca", "last_dir", fs_dir_);
+    cfg.save();
+  }
   BufferedWindow::hide();
 }
 
 void TacaWindow::apply_theme() {
   Config cfg;
   cfg.load();
-  double scale = ui_scale();
+  if (settings_.theme == "light" || settings_.theme == "dark") cfg.set("appearance", "theme", settings_.theme);
   theme_ = Theme::from_config(cfg);
-  set_ui_scale(scale);
-  theme_.scale = scale;
   theme_.apply_to_fltk();
-  style_input(search_, theme_);
+  if (address_) {
+    style_input(address_, theme_);
+    address_->color(theme_.surface.fl());
+  }
+  if (menubar_) menubar_->apply_theme();
   color(theme_.background.fl());
+  layout();
   redraw();
 }
 
@@ -205,6 +218,100 @@ int TacaWindow::system_handler(void *event, void *data) {
   return 1;
 }
 
+// ------------------------------------------------------------------- menu
+
+void TacaWindow::menu_cb(Fl_Widget *, void *data) {
+  if (instance_) instance_->command(int(reinterpret_cast<long>(data)));
+}
+
+void TacaWindow::build_menu() {
+  menu_.clear();
+  menu_labels_.clear();
+  auto item = [&](const char *label, int shortcut, int cmd, int flags = 0) {
+    Fl_Menu_Item m;
+    memset(&m, 0, sizeof m);
+    m.text = label;
+    m.shortcut_ = shortcut;
+    m.callback_ = menu_cb;
+    m.user_data_ = reinterpret_cast<void *>(long(cmd));
+    m.flags = flags;
+    m.labelsize_ = uchar(theme_.font_size);
+    menu_.push_back(m);
+  };
+  auto sub = [&](const char *label, int flags = 0) {
+    Fl_Menu_Item m;
+    memset(&m, 0, sizeof m);
+    m.text = label;
+    m.flags = FL_SUBMENU | flags;
+    m.labelsize_ = uchar(theme_.font_size);
+    menu_.push_back(m);
+  };
+  auto end = [&]() {
+    Fl_Menu_Item m;
+    memset(&m, 0, sizeof m);
+    menu_.push_back(m);
+  };
+  const int D = FL_MENU_DIVIDER;
+  sub(_("&File"));
+  item(_("Open Archive…"), FL_CTRL + 'o', CmdOpen);
+  item(_("Browse Folder…"), FL_CTRL + 'd', CmdBrowse);
+  item(_("New Archive…"), FL_CTRL + 'n', CmdNew);
+  item(_("Close Archive"), FL_CTRL + 'w', CmdClose, D);
+  item(_("Select All"), FL_CTRL + 'a', CmdSelectAll);
+  item(_("Invert Selection"), FL_CTRL + 'i', CmdInvert);
+  item(_("Deselect"), 0, CmdDeselect, D);
+  item(_("Copy Full Path"), FL_CTRL + FL_SHIFT + 'c', CmdCopyPath);
+  item(_("Show in File Manager"), 0, CmdShowFolder);
+  item(_("Refresh"), FL_F + 5, CmdRefresh, D);
+  item(_("Exit"), FL_CTRL + 'q', CmdQuit);
+  end();
+  sub(_("&Commands"));
+  item(_("Add Files to Archive…"), FL_ALT + 'a', CmdAdd);
+  item(_("Extract To…"), FL_ALT + 'e', CmdExtract);
+  item(_("Extract Here"), FL_ALT + 'w', CmdExtractHere);
+  item(_("Test Archive"), FL_ALT + 't', CmdTest);
+  item(_("View File"), FL_ALT + 'v', CmdView, D);
+  item(_("Rename…"), FL_F + 2, CmdRename);
+  item(_("Delete"), FL_Delete, CmdDelete, D);
+  item(_("Repair Archive…"), FL_ALT + 'r', CmdRepair);
+  item(_("Show Information"), FL_ALT + 'i', CmdInfo, D);
+  item(_("Up One Level"), FL_ALT + FL_Up, CmdUp);
+  end();
+  sub(_("Too&ls"));
+  item(_("Wizard…"), FL_ALT + 'z', CmdWizard);
+  item(_("Find Files…"), FL_F + 3, CmdFind);
+  item(_("Convert Archive…"), FL_ALT + 'q', CmdConvert);
+  item(_("Repair Archive…"), 0, CmdRepair);
+  end();
+  sub(_("Favorite&s"));
+  bool here = std::find(favorites_.begin(), favorites_.end(), has_archive() ? info_.path : fs_dir_) != favorites_.end();
+  item(here ? _("Remove from Favorites") : _("Add to Favorites"), FL_CTRL + 'b', CmdFavAdd);
+  item(_("Organize Favorites…"), 0, CmdFavOrganize, favorites_.empty() ? 0 : D);
+  for (size_t i = 0; i < favorites_.size() && i < 30; ++i) {
+    std::string home = home_dir(), shown = favorites_[i];
+    if (starts_with(shown, home + "/")) shown = "~" + shown.substr(home.size());
+    menu_labels_.push_back(menu_text(shown));
+    item(menu_labels_.back().c_str(), 0, CmdFavorite + int(i));
+  }
+  end();
+  sub(_("O&ptions"));
+  item(_("Settings…"), FL_CTRL + ',', CmdSettings, D);
+  item(_("Show Hidden Files"), FL_CTRL + 'h', CmdHidden, FL_MENU_TOGGLE | (settings_.hidden ? FL_MENU_VALUE : 0) | D);
+  item(_("Details"), 0, CmdViewDetails, FL_MENU_RADIO | (settings_.icons ? 0 : FL_MENU_VALUE));
+  item(_("Icons"), 0, CmdViewIcons, FL_MENU_RADIO | (settings_.icons ? FL_MENU_VALUE : 0) | D);
+  item(_("Follow the SDE Theme"), 0, CmdThemeFollow, FL_MENU_RADIO | (settings_.theme == "follow" ? FL_MENU_VALUE : 0));
+  item(_("Light"), 0, CmdThemeLight, FL_MENU_RADIO | (settings_.theme == "light" ? FL_MENU_VALUE : 0));
+  item(_("Dark"), 0, CmdThemeDark, FL_MENU_RADIO | (settings_.theme == "dark" ? FL_MENU_VALUE : 0));
+  end();
+  sub(_("&Help"));
+  item(_("Keyboard Shortcuts"), FL_F + 1, CmdShortcuts);
+  item(_("About Taca"), 0, CmdAbout);
+  end();
+  end();
+  menubar_->menu(menu_.data());
+  menubar_->redraw();
+}
+
 // ----------------------------------------------------------------- layout
 
 void TacaWindow::resize(int x, int y, int w, int h) {
@@ -213,36 +320,20 @@ void TacaWindow::resize(int x, int y, int w, int h) {
 }
 
 void TacaWindow::layout() {
-  bool archive = has_archive();
-  sidebar_w_ = archive ? (w() >= S(900) ? S(284) : S(236)) : 0;
-  header_h_ = archive ? S(64) : 0;
-  int footer = S(34);
-  if (archive) {
-    view_->resize(sidebar_w_, header_h_, w() - sidebar_w_, h() - header_h_ - footer);
-    view_->show();
-    int right = w() - S(20), cy = header_h_ / 2;
-    mode_->resize(right - S(150), cy - S(15), S(150), S(30));
-    mode_->show();
-    int sw = std::max(S(140), std::min(S(260), (w() - sidebar_w_) / 3));
-    search_->resize(right - S(150) - S(16) - sw + S(34), cy - S(13), sw - S(44), S(26));
-    search_->show();
-    open_btn_->hide();
-    new_btn_->hide();
-  } else {
-    view_->hide();
-    mode_->hide();
-    search_->hide();
-    int zw = std::min(S(640), w() - S(64)), zx = (w() - zw) / 2, zy = std::max(S(40), h() / 2 - S(250));
-    int by = zy + S(186);
-    open_btn_->resize(w() / 2 - S(178), by, S(170), S(38));
-    new_btn_->resize(w() / 2 + S(8), by, S(170), S(38));
-    open_btn_->show();
-    new_btn_->show();
-    (void)zx;
-  }
+  int mh = S(28);
+  menubar_->resize(0, 0, w(), mh);
+  int th = Toolbar::wanted_height(h());
+  toolbar_->resize(0, mh, w(), th);
+  address_y_ = mh + th;
+  address_h_ = S(40);
+  status_h_ = S(28);
+  int bx = S(50), by = address_y_ + S(6), bw = w() - bx - S(8), bh = address_h_ - S(12);
+  address_->resize(bx + S(32), by + S(3), bw - S(32) - S(32), bh - S(6));
+  int vy = address_y_ + address_h_;
+  view_->resize(0, vy, w(), h() - vy - status_h_);
   if (job_) {
-    int cw = std::min(S(560), w() - sidebar_w_ - S(40));
-    int cx = sidebar_w_ + (w() - sidebar_w_ - cw) / 2, cy = h() - S(34) - S(96);
+    int cw = std::min(S(560), w() - S(40));
+    int cx = (w() - cw) / 2, cy = h() - status_h_ - S(96);
     cancel_->resize(cx + cw - S(112), cy + S(22), S(96), S(32));
     cancel_->show();
   } else {
@@ -266,7 +357,6 @@ void TacaWindow::run_job(const std::string &title, Job::Work work, Job::Done don
   }));
   Fl::add_timeout(0.1, tick_cb, this);
   layout();
-  if (Fl::focus() == nullptr) Fl::focus(cancel_);
 }
 
 void TacaWindow::tick_cb(void *p) {
@@ -309,70 +399,70 @@ void TacaWindow::show_result(const std::string &what, const Result &r) {
   }
 }
 
-// --------------------------------------------------------------- archive
+// ------------------------------------------------------------- navigation
 
-void TacaWindow::open_archive(const std::string &path, bool keep_password) {
-  if (!file_exists(path)) {
-    message(this, _("Cannot open the archive"), format(_("“%s” does not exist."), path.c_str()), {_("OK")}, 0, true);
+void TacaWindow::browse(const std::string &dir_in, const std::string &select) {
+  std::string dir = normalize_path(dir_in, fs_dir_.empty() ? "/" : fs_dir_);
+  std::vector<Entry> entries;
+  std::string err;
+  if (!list_directory(dir, settings_.hidden, entries, err)) {
+    message(this, _("Cannot open the folder"), format("%s\n\n%s", dir.c_str(), err.c_str()), {_("OK")}, 0, true);
+    address_->value(location().c_str());
     return;
   }
-  if (info_.path != path && !keep_password) password_.clear();
-  std::string pw = password_;
-  auto result = std::make_shared<ArchiveInfo>();
-  run_job(format(_("Opening “%s”"), basename_of(path).c_str()),
-          [path, pw, result](Progress &p) { return list_archive(path, pw, *result, &p); },
-          [this, path, result](const Result &r) {
-            if (!r.ok) {
-              if (password_retry(r, [this, path] { open_archive(path, true); }, path)) return;
-              if (!r.cancelled)
-                message(this, _("Cannot open the archive"),
-                        format("%s\n\n%s", basename_of(path).c_str(), r.error.c_str()), {_("OK")}, 0, true);
-              return;
-            }
-            std::string folder_path = info_.path == path && folder_ > 0 && folder_ < int(tree_.size())
-                                          ? tree_.node(folder_).path
-                                          : "";
-            info_ = std::move(*result);
-            tree_.build(info_.entries);
-            folder_ = std::max(0, tree_.find(folder_path));
-            remember(path);
-            recent_ = recent();
-            copy_label(format("%s — Taca", basename_of(path).c_str()).c_str());
-            search_->value("");
-            layout();
-            refresh_view(false);
-            Fl::focus(view_);
-            if (info_.unsafe)
-              toast(fmt_count(info_.unsafe, _("%zu unsafe name will be skipped when extracting"),
-                              _("%zu unsafe names will be skipped when extracting")));
-          });
-}
-
-void TacaWindow::reload() { open_archive(info_.path); }
-
-void TacaWindow::close_archive() {
-  info_ = ArchiveInfo{};
-  tree_.clear();
+  if (has_archive()) {
+    info_ = ArchiveInfo{};
+    password_.clear();
+  }
+  results_ = false;
+  hits_.clear();
+  hit_of_node_.clear();
+  fs_dir_ = dir;
+  tree_.build_flat(entries);
   folder_ = 0;
-  password_.clear();
-  recent_ = recent();
-  copy_label(_("Taca"));
-  layout();
+  copy_label(format("%s — Taca", dir == "/" ? "/" : basename_of(dir).c_str()).c_str());
+  refresh_view(false);
+  if (!select.empty()) {
+    int n = tree_.find(select);
+    if (n > 0) view_->select_node(n);
+  }
+  build_menu();
 }
 
-bool TacaWindow::searching() const { return search_ && search_->size() > 0 && has_archive(); }
+void TacaWindow::list_folder(bool keep_selection) {
+  if (has_archive() || results_) return;
+  std::vector<Entry> entries;
+  std::string err;
+  if (!list_directory(fs_dir_, settings_.hidden, entries, err)) return;
+  std::vector<std::string> keep;
+  for (int n : view_->selection()) keep.push_back(tree_.node(n).path);
+  tree_.build_flat(entries);
+  refresh_view(false);
+  if (keep_selection)
+    for (const auto &k : keep) {
+      int n = tree_.find(k);
+      if (n > 0) view_->select_node(n);
+    }
+}
+
+std::string TacaWindow::location() const {
+  if (results_) return results_title_;
+  if (has_archive()) return location_text(info_.path, current_folder());
+  return fs_dir_;
+}
 
 void TacaWindow::refresh_view(bool keep_selection) {
-  if (!has_archive()) return;
-  std::vector<int> items = searching() ? tree_.search(folder_, search_->value(), sort_, descending_)
-                                       : tree_.list(folder_, sort_, descending_);
-  view_->set_items(items, keep_selection);
+  std::vector<int> items = tree_.size() ? tree_.list(folder_, sort_, descending_) : std::vector<int>{};
+  bool parent_row = results_ || has_archive() || fs_dir_ != "/";
+  view_->set_items(items, parent_row, keep_selection);
+  if (Fl::focus() != address_) address_->value(location().c_str());
   redraw();
 }
 
 void TacaWindow::set_sort(SortKey key) {
-  if (sort_ == key) descending_ = !descending_;
-  else {
+  if (sort_ == key) {
+    descending_ = !descending_;
+  } else {
     sort_ = key;
     descending_ = key == SortKey::Size || key == SortKey::Modified || key == SortKey::Packed;
   }
@@ -382,54 +472,411 @@ void TacaWindow::set_sort(SortKey key) {
 void TacaWindow::selection_changed() { redraw(); }
 
 std::string TacaWindow::current_folder() const {
-  return folder_ > 0 && folder_ < int(tree_.size()) ? tree_.node(folder_).path : "";
+  return has_archive() && folder_ > 0 && folder_ < int(tree_.size()) ? tree_.node(folder_).path : "";
 }
 
 std::vector<std::string> TacaWindow::selected_paths() const {
   std::vector<std::string> out;
+  if (!has_archive() || results_) return out;
   for (int n : view_->selection()) out.push_back(tree_.node(n).path);
   return out;
 }
 
+std::string TacaWindow::disk_path(int node) const {
+  if (node <= 0 || node >= int(tree_.size())) return "";
+  if (results_) {
+    auto it = hit_of_node_.find(node);
+    if (it == hit_of_node_.end() || !hits_[it->second].archive.empty()) return "";
+    return hits_[it->second].path;
+  }
+  if (has_archive()) return "";
+  return join(fs_dir_, tree_.node(node).path);
+}
+
+std::vector<std::string> TacaWindow::selected_disk_paths() const {
+  std::vector<std::string> out;
+  for (int n : view_->selection()) {
+    std::string p = disk_path(n);
+    if (!p.empty()) out.push_back(p);
+  }
+  return out;
+}
+
+std::vector<std::string> TacaWindow::selected_archives() const {
+  std::vector<std::string> out;
+  for (int n : view_->selection()) {
+    std::string p = disk_path(n);
+    if (!p.empty() && !tree_.node(n).dir && looks_like_archive(p)) out.push_back(p);
+  }
+  return out;
+}
+
+bool TacaWindow::node_is_archive(int node) const {
+  if (node <= 0 || node >= int(tree_.size())) return false;
+  const Node &n = tree_.node(node);
+  return !n.dir && format_from_name(n.name) != Format::Unknown;
+}
+
+std::string TacaWindow::type_of(int node) const {
+  if (node <= 0 || node >= int(tree_.size())) return "";
+  const Node &n = tree_.node(node);
+  if (n.symlink && n.dir) return _("Link to folder");
+  if (node_is_archive(node)) return describe_format(format_from_name(n.name), n.name);
+  return file_kind(n.name, n.dir);
+}
+
+std::string TacaWindow::hit_folder(int node) const {
+  auto it = hit_of_node_.find(node);
+  if (it == hit_of_node_.end()) return "";
+  const FindHit &h = hits_[it->second];
+  std::string home = home_dir();
+  std::string where;
+  if (h.archive.empty()) {
+    where = parent_of(h.path);
+  } else {
+    size_t slash = h.path.rfind('/');
+    where = location_text(h.archive, slash == std::string::npos ? "" : h.path.substr(0, slash));
+  }
+  if (starts_with(where, home + "/") || where == home) where = "~" + where.substr(home.size());
+  return where;
+}
+
 void TacaWindow::enter(int node) {
-  if (node < 0 || node >= int(tree_.size())) return;
-  if (tree_.node(node).dir) {
-    folder_ = node;
-    search_->value("");
-    refresh_view(false);
+  if (node == kParentItem) {
+    go_up();
     return;
   }
-  open_member(node);
+  if (node <= 0 || node >= int(tree_.size())) return;
+  if (results_) {
+    open_hit(node);
+    return;
+  }
+  const Node &n = tree_.node(node);
+  if (has_archive()) {
+    if (n.dir) {
+      folder_ = node;
+      refresh_view(false);
+      build_menu();
+    } else {
+      open_member(node, false);
+    }
+    return;
+  }
+  std::string path = join(fs_dir_, n.path);
+  if (n.dir) browse(path);
+  else if (looks_like_archive(path)) open_archive(path);
+  else if (!open_uri(path)) toast(_("No application can open this file"));
 }
 
 void TacaWindow::go_up() {
-  if (searching()) {
-    search_->value("");
-    refresh_view();
+  if (results_) {
+    if (!back_archive_.empty()) open_archive(back_archive_, true, back_inner_);
+    else browse(back_dir_.empty() ? fs_dir_ : back_dir_);
     return;
   }
-  if (folder_ <= 0) return;
-  int from = folder_;
-  folder_ = std::max(0, tree_.node(folder_).parent);
-  refresh_view(false);
-  (void)from;
+  if (has_archive()) {
+    if (folder_ > 0) {
+      std::string from = tree_.node(folder_).path;
+      folder_ = std::max(0, tree_.node(folder_).parent);
+      refresh_view(false);
+      view_->select_node(tree_.find(from));
+      return;
+    }
+    close_archive();
+    return;
+  }
+  if (fs_dir_ == "/") return;
+  std::string from = basename_of(fs_dir_);
+  browse(parent_of(fs_dir_), from);
+}
+
+void TacaWindow::navigate_to(const std::string &typed) {
+  if (trim(typed).empty() || typed == location()) {
+    Fl::focus(view_);
+    return;
+  }
+  Location l = resolve_location(typed, has_archive() ? parent_of(info_.path) : fs_dir_);
+  if (!l.ok) {
+    message(this, _("Location not found"), format(_("“%s” does not exist."), typed.c_str()), {_("OK")}, 0, true);
+    address_->value(location().c_str());
+    return;
+  }
+  Fl::focus(view_);
+  if (!l.folder.empty()) {
+    browse(l.folder);
+  } else if (looks_like_archive(l.archive)) {
+    if (has_archive() && info_.path == l.archive) {
+      int f = tree_.find(l.inner);
+      if (f >= 0 && tree_.node(f).dir) {
+        folder_ = f;
+        refresh_view(false);
+        return;
+      }
+    }
+    open_archive(l.archive, false, l.inner);
+  } else {
+    browse(parent_of(l.archive), basename_of(l.archive));
+  }
+}
+
+void TacaWindow::address_menu() {
+  std::vector<std::string> targets;
+  std::vector<std::string> labels;
+  std::string loc = has_archive() ? info_.path : fs_dir_;
+  for (std::string p = loc;; p = parent_of(p)) {
+    targets.push_back(p);
+    labels.push_back(p);
+    if (p == "/") break;
+  }
+  size_t parents = targets.size();
+  for (const auto &f : favorites_) {
+    targets.push_back(f);
+    labels.push_back(f);
+  }
+  size_t favs = targets.size();
+  for (const auto &r : recent()) {
+    targets.push_back(r);
+    labels.push_back(r);
+  }
+  std::vector<Fl_Menu_Item> menu(targets.size() + 1);
+  memset(menu.data(), 0, sizeof(Fl_Menu_Item) * menu.size());
+  std::vector<std::string> texts;
+  texts.reserve(targets.size());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    texts.push_back(menu_text(labels[i]));
+    menu[i].text = texts.back().c_str();
+    menu[i].user_data_ = reinterpret_cast<void *>(long(i));
+    menu[i].labelsize_ = uchar(theme_.font_size);
+    if (i + 1 == parents || i + 1 == favs) menu[i].flags = FL_MENU_DIVIDER;
+  }
+  int bx = S(50), by = address_y_ + S(6), bw = w() - bx - S(8), bh = address_h_ - S(12);
+  const Fl_Menu_Item *picked = menu.data()->popup(bx, by + bh, nullptr, nullptr, nullptr);
+  (void)bw;
+  if (picked) navigate_to(targets[size_t(reinterpret_cast<long>(picked->user_data()))]);
+}
+
+// --------------------------------------------------------------- archive
+
+void TacaWindow::open_archive(const std::string &path, bool keep_password, const std::string &inner,
+                              const std::string &select) {
+  if (!file_exists(path)) {
+    message(this, _("Cannot open the archive"), format(_("“%s” does not exist."), path.c_str()), {_("OK")}, 0, true);
+    return;
+  }
+  if (info_.path != path && !keep_password) password_.clear();
+  std::string pw = password_;
+  auto result = std::make_shared<ArchiveInfo>();
+  run_job(format(_("Opening “%s”"), basename_of(path).c_str()),
+          [path, pw, result](Progress &p) { return list_archive(path, pw, *result, &p); },
+          [this, path, inner, select, result](const Result &r) {
+            if (!r.ok) {
+              if (password_retry(r, [this, path, inner, select] { open_archive(path, true, inner, select); }, path))
+                return;
+              if (!r.cancelled)
+                message(this, _("Cannot open the archive"),
+                        format("%s\n\n%s", basename_of(path).c_str(), r.error.c_str()), {_("OK")}, 0, true);
+              return;
+            }
+            info_ = std::move(*result);
+            results_ = false;
+            hits_.clear();
+            hit_of_node_.clear();
+            tree_.build(info_.entries);
+            int f = tree_.find(inner);
+            folder_ = f >= 0 && tree_.node(f).dir ? f : 0;
+            fs_dir_ = parent_of(path);
+            remember(path);
+            copy_label(format("%s — Taca", basename_of(path).c_str()).c_str());
+            refresh_view(false);
+            if (!select.empty()) view_->select_node(tree_.find(select));
+            Fl::focus(view_);
+            build_menu();
+            if (info_.unsafe)
+              toast(fmt_count(info_.unsafe, _("%zu unsafe name will be skipped when extracting"),
+                              _("%zu unsafe names will be skipped when extracting")));
+          });
+}
+
+void TacaWindow::reload() {
+  if (has_archive()) open_archive(info_.path, true, current_folder());
+  else list_folder(true);
+}
+
+void TacaWindow::close_archive() {
+  if (!has_archive()) return;
+  std::string path = info_.path;
+  info_ = ArchiveInfo{};
+  tree_.clear();
+  password_.clear();
+  browse(parent_of(path), basename_of(path));
+}
+
+void TacaWindow::open_hit(int node) {
+  auto it = hit_of_node_.find(node);
+  if (it == hit_of_node_.end()) return;
+  FindHit h = hits_[it->second];
+  if (h.archive.empty()) {
+    if (h.dir) browse(h.path);
+    else browse(parent_of(h.path), basename_of(h.path));
+    return;
+  }
+  size_t slash = h.path.rfind('/');
+  open_archive(h.archive, false, slash == std::string::npos ? "" : h.path.substr(0, slash), h.path);
+}
+
+// ---------------------------------------------------------------- commands
+
+bool TacaWindow::command_enabled(int id) const {
+  if (busy() && id != CmdAbout && id != CmdShortcuts && id != CmdQuit) return false;
+  auto sel = view_->selection();
+  bool archive = has_archive() && !results_;
+  bool modify = archive && capabilities(info_.format).modify;
+  switch (id) {
+    case CmdAdd: return results_ ? false : archive ? modify : true;
+    case CmdExtract:
+    case CmdExtractHere:
+    case CmdTest:
+    case CmdRepair:
+      return archive || !selected_archives().empty();
+    case CmdView: {
+      if (sel.size() != 1 && view_->focus_item() <= 0) return false;
+      int n = sel.size() == 1 ? sel[0] : view_->focus_item();
+      return n > 0 && !tree_.node(n).dir && (archive || !disk_path(n).empty());
+    }
+    case CmdDelete: return !sel.empty() && !results_ && (archive ? modify : true);
+    case CmdRename: return sel.size() == 1 && !results_ && (archive ? modify : true);
+    case CmdInfo: return archive || !sel.empty() || !results_;
+    case CmdClose: return has_archive();
+    case CmdUp: return results_ || has_archive() || fs_dir_ != "/";
+    default: return true;
+  }
+}
+
+void TacaWindow::command(int id) {
+  if (id >= CmdFavorite) {
+    size_t i = size_t(id - CmdFavorite);
+    if (i < favorites_.size()) navigate_to(favorites_[i]);
+    return;
+  }
+  if (!command_enabled(id)) {
+    if (busy()) toast(_("Please wait for the current task to finish"));
+    else if (id == CmdExtract || id == CmdExtractHere || id == CmdTest || id == CmdRepair)
+      toast(_("Select an archive first"));
+    else if (id == CmdView) toast(_("Select a file to view"));
+    else if (id == CmdAdd) toast(_("Archives of this format cannot be changed"));
+    else if (id == CmdDelete || id == CmdRename) toast(_("Select what to change first"));
+    return;
+  }
+  switch (id) {
+    case CmdOpen: action_open(); break;
+    case CmdBrowse: action_browse(); break;
+    case CmdNew: action_new(); break;
+    case CmdClose: close_archive(); break;
+    case CmdSelectAll: view_->select_all(); break;
+    case CmdInvert: view_->invert_selection(); break;
+    case CmdDeselect: view_->clear_selection(); break;
+    case CmdCopyPath: {
+      auto paths = selected_disk_paths();
+      std::string text;
+      if (paths.empty()) text = location();
+      for (const auto &p : paths) text += (text.empty() ? "" : "\n") + p;
+      Fl::copy(text.c_str(), int(text.size()), 1);
+      Fl::copy(text.c_str(), int(text.size()), 0);
+      toast(_("Copied to the clipboard"));
+      break;
+    }
+    case CmdShowFolder: open_uri(has_archive() ? parent_of(info_.path) : fs_dir_); break;
+    case CmdRefresh: reload(); break;
+    case CmdQuit: hide(); break;
+    case CmdAdd: action_add(); break;
+    case CmdExtract: action_extract(false); break;
+    case CmdExtractHere: action_extract(true); break;
+    case CmdTest: action_test(); break;
+    case CmdView: action_view(); break;
+    case CmdRename: action_rename(); break;
+    case CmdDelete: action_delete(); break;
+    case CmdRepair: action_repair(); break;
+    case CmdInfo: action_info(); break;
+    case CmdUp: go_up(); break;
+    case CmdWizard: action_wizard(); break;
+    case CmdFind: action_find(); break;
+    case CmdConvert: {
+      std::string a = has_archive() ? info_.path : "";
+      if (a.empty() && !selected_archives().empty()) a = selected_archives()[0];
+      if (a.empty()) {
+        auto files = choose_files(_("Choose an Archive to Convert"), fs_dir_, false, true);
+        if (files.empty()) break;
+        a = files[0];
+      }
+      action_convert(a);
+      break;
+    }
+    case CmdFavAdd: {
+      std::string p = has_archive() ? info_.path : fs_dir_;
+      bool added = toggle_favorite(favorites_, p);
+      save_favorites(favorites_file(), favorites_);
+      build_menu();
+      toast(added ? format(_("“%s” was added to the favorites"), basename_of(p).c_str())
+                  : format(_("“%s” was removed from the favorites"), basename_of(p).c_str()));
+      break;
+    }
+    case CmdFavOrganize:
+      if (organize_favorites(this, favorites_)) {
+        save_favorites(favorites_file(), favorites_);
+        build_menu();
+      }
+      break;
+    case CmdSettings: action_settings(); break;
+    case CmdHidden:
+      settings_.hidden = !settings_.hidden;
+      settings_.save();
+      list_folder(true);
+      build_menu();
+      break;
+    case CmdViewDetails:
+    case CmdViewIcons:
+      settings_.icons = id == CmdViewIcons;
+      settings_.save();
+      view_->set_grid(settings_.icons);
+      build_menu();
+      break;
+    case CmdThemeFollow:
+    case CmdThemeLight:
+    case CmdThemeDark:
+      settings_.theme = id == CmdThemeLight ? "light" : id == CmdThemeDark ? "dark" : "follow";
+      settings_.save();
+      apply_theme();
+      build_menu();
+      break;
+    case CmdShortcuts: show_shortcuts(this); break;
+    case CmdAbout: show_about(this); break;
+  }
+  redraw();
 }
 
 // ---------------------------------------------------------------- actions
 
 void TacaWindow::action_open() {
-  std::string start = has_archive() ? info_.path.substr(0, info_.path.rfind('/')) : home_dir();
+  std::string start = has_archive() ? parent_of(info_.path) : fs_dir_;
   auto files = choose_files(_("Open an Archive"), start, false, true);
   if (!files.empty()) open_archive(files[0]);
+}
+
+void TacaWindow::action_browse() {
+  std::string dir = choose_folder(_("Browse a Folder"), has_archive() ? parent_of(info_.path) : fs_dir_);
+  if (!dir.empty()) browse(dir);
 }
 
 void TacaWindow::action_new(const std::vector<std::string> &given) {
   std::vector<std::string> files = given;
   if (files.empty()) {
-    files = choose_files(_("Choose Files to Pack"), home_dir(), false, false);
+    files = choose_files(_("Choose Files to Pack"), fs_dir_.empty() ? home_dir() : fs_dir_, false, false);
     if (files.empty()) return;
   }
   CreateChoice c;
+  c.options.format = settings_.format;
+  c.options.level = settings_.level;
+  if (!has_archive() && !fs_dir_.empty() && access(fs_dir_.c_str(), W_OK) == 0) c.folder = fs_dir_;
   if (!ask_create(this, files, c)) return;
   std::string path = c.path;
   CreateOptions o = c.options;
@@ -441,73 +888,23 @@ void TacaWindow::action_new(const std::vector<std::string> &given) {
               return;
             }
             password_ = o.password;
-            if (o.volume_size > 0) {
-              toast(_("The split archive was created"));
-              return;
+            toast(format(_("“%s” was created"), basename_of(path).c_str()));
+            if (!has_archive() && !results_ && parent_of(path) == fs_dir_) {
+              list_folder(false);
+              view_->select_node(tree_.find(basename_of(path)));
+            } else if (o.volume_size == 0) {
+              open_archive(path, true);
             }
-            open_archive(path, true);  // keeps the password just set
           });
 }
 
-void TacaWindow::action_extract(bool selected_only) {
-  if (!has_archive()) return;
-  auto sel = selected_paths();
-  ExtractChoice c;
-  c.dest = info_.path.substr(0, info_.path.rfind('/'));
-  if (c.dest.empty()) c.dest = "/";
-  if (access(c.dest.c_str(), W_OK) != 0) c.dest = home_dir();
-  c.selected_only = selected_only && !sel.empty();
-  if (!ask_extract(this, info_.path, sel.size(), c)) return;
-  ExtractOptions o;
-  o.dest = c.dest;
-  o.keep_structure = c.keep_structure;
-  o.overwrite = c.overwrite;
-  o.password = password_;
-  int64_t total = 0;
-  if (c.selected_only) {
-    o.only = sel;
-    o.strip_prefix = current_folder();
-    for (int n : view_->selection()) total += std::max<int64_t>(0, tree_.node(n).size);
-  } else {
-    total = info_.total_size;
+void TacaWindow::action_add() {
+  if (has_archive()) {
+    auto files = choose_files(_("Add Files to the Archive"), fs_dir_, false, false);
+    if (!files.empty()) add_paths(files);
+    return;
   }
-  o.total_hint = total;
-  std::string path = info_.path;
-  bool open_after = c.open_after;
-  std::function<void(ExtractOptions)> start;
-  start = [this, path, open_after](ExtractOptions o) {
-    run_job(format(_("Extracting “%s”"), basename_of(path).c_str()),
-            [path, o](Progress &p) { return extract_archive(path, o, &p); },
-            [this, o, open_after](const Result &r) mutable {
-              if (password_retry(r, [this, o, open_after]() mutable {
-                    ExtractOptions again = o;
-                    again.password = password_;
-                    std::string path = info_.path;
-                    run_job(_("Extracting"), [path, again](Progress &p) { return extract_archive(path, again, &p); },
-                            [this, again, open_after](const Result &r2) {
-                              if (password_retry(r2, [this] { action_extract(false); })) return;
-                              show_result(_("Extraction failed"), r2);
-                              if (!r2.ok) return;
-                              toast(format(_("Extracted to %s"), again.dest.c_str()));
-                              if (open_after)
-                                open_uri(r2.written.size() == 1 && dir_exists(r2.written[0]) ? r2.written[0] : again.dest);
-                            });
-                  }))
-                return;
-              show_result(_("Extraction failed"), r);
-              if (r.ok) {
-                toast(format(_("Extracted to %s"), o.dest.c_str()));
-                if (open_after) open_uri(r.written.size() == 1 && dir_exists(r.written[0]) ? r.written[0] : o.dest);
-              }
-            });
-  };
-  start(o);
-}
-
-void TacaWindow::action_add(bool folders) {
-  if (!has_archive()) return;
-  auto files = choose_files(folders ? _("Add Folders") : _("Add Files"), home_dir(), folders, false);
-  if (!files.empty()) add_paths(files);
+  action_new(selected_disk_paths());
 }
 
 void TacaWindow::add_paths(const std::vector<std::string> &paths) {
@@ -532,9 +929,145 @@ void TacaWindow::add_paths(const std::vector<std::string> &paths) {
           });
 }
 
+void TacaWindow::run_extract(const std::string &path, ExtractOptions o, bool here, bool open_after,
+                             std::function<void()> next) {
+  std::string parent = parent_of(path);
+  run_job(format(_("Extracting “%s”"), basename_of(path).c_str()),
+          [path, o, here, parent](Progress &p) {
+            ExtractOptions eo = o;
+            if (here) {
+              ArchiveInfo inf;
+              Result lr = list_archive(path, eo.password, inf, &p);
+              if (!lr.ok) return lr;
+              eo.dest = smart_destination(inf, parent);
+              if (eo.dest.empty()) return Result::failure(_("Could not create the destination folder"));
+              eo.total_hint = inf.total_size;
+              p.done = 0;
+            } else if (!dir_exists(eo.dest) && !make_dirs(eo.dest)) {
+              return Result::failure(format(_("“%s” could not be created."), eo.dest.c_str()));
+            }
+            Result r = extract_archive(path, eo, &p);
+            if (r.ok && r.written.empty()) r.written.push_back(eo.dest);
+            return r;
+          },
+          [this, path, o, here, open_after, next](const Result &r) {
+            if (r.need_password || r.wrong_password) {
+              std::string pw;
+              if (ask_password(this, path, r.wrong_password, pw)) {
+                if (path == info_.path) password_ = pw;
+                ExtractOptions again = o;
+                again.password = pw;
+                run_extract(path, again, here, open_after, next);
+              }
+              return;
+            }
+            show_result(_("Extraction failed"), r);
+            if (!has_archive()) list_folder(true);
+            if (!r.ok) return;
+            std::string where = r.written.size() == 1 && dir_exists(r.written[0]) ? r.written[0]
+                                : here ? parent_of(path) : o.dest;
+            toast(format(_("Extracted to %s"), where.c_str()));
+            if (next) next();
+            else if (open_after) open_uri(where);
+          });
+}
+
+void TacaWindow::action_extract(bool here) {
+  bool archive = has_archive() && !results_;
+  std::vector<std::string> archives = archive ? std::vector<std::string>{info_.path} : selected_archives();
+  if (archives.empty()) return;
+  auto sel = archive ? selected_paths() : std::vector<std::string>{};
+  ExtractOptions base;
+  base.password = archive ? password_ : "";
+  if (here) {
+    if (access(parent_of(archives[0]).c_str(), W_OK) != 0) {
+      message(this, _("Cannot extract here"), format(_("You cannot write to “%s”."), parent_of(archives[0]).c_str()),
+              {_("OK")}, 0, true);
+      return;
+    }
+    // One after the other.
+    auto queue = std::make_shared<std::vector<std::string>>(archives);
+    auto step = std::make_shared<std::function<void(size_t)>>();
+    *step = [this, queue, step, base](size_t i) {
+      if (i >= queue->size()) return;
+      std::function<void()> next;
+      if (i + 1 < queue->size()) next = [step, i] { (*step)(i + 1); };
+      run_extract((*queue)[i], base, true, false, next);
+    };
+    (*step)(0);
+    return;
+  }
+  ExtractChoice c;
+  std::string parent = parent_of(archives[0]);
+  if (access(parent.c_str(), W_OK) != 0) parent = home_dir();
+  c.dest = archives.size() == 1 ? join(parent, strip_archive_extension(basename_of(archives[0]))) : parent;
+  c.selected_only = archive && !sel.empty();
+  c.open_after = settings_.open_after;
+  std::string shown = archives.size() == 1 ? archives[0] : format(_("%zu archives"), archives.size());
+  if (!ask_extract(this, shown, archive ? sel.size() : 0, c)) return;
+  base.keep_structure = c.keep_structure;
+  base.overwrite = c.overwrite;
+  if (archives.size() == 1) {
+    base.dest = c.dest;
+    if (archive) {
+      if (c.selected_only) {
+        base.only = sel;
+        base.strip_prefix = current_folder();
+        int64_t total = 0;
+        for (int n : view_->selection()) total += std::max<int64_t>(0, tree_.node(n).size);
+        base.total_hint = total;
+      } else {
+        base.total_hint = info_.total_size;
+      }
+    }
+    run_extract(archives[0], base, false, c.open_after, nullptr);
+    return;
+  }
+  // Several archives: each into its own folder below the destination.
+  auto queue = std::make_shared<std::vector<std::string>>(archives);
+  auto step = std::make_shared<std::function<void(size_t)>>();
+  std::string dest = c.dest;
+  bool open_after = c.open_after;
+  *step = [this, queue, step, base, dest, open_after](size_t i) {
+    if (i >= queue->size()) return;
+    ExtractOptions o = base;
+    o.dest = join(dest, strip_archive_extension(basename_of((*queue)[i])));
+    std::function<void()> next;
+    if (i + 1 < queue->size()) next = [step, i] { (*step)(i + 1); };
+    run_extract((*queue)[i], o, false, open_after && i + 1 == queue->size(), next);
+  };
+  (*step)(0);
+}
+
 void TacaWindow::action_delete() {
+  auto nodes = view_->selection();
+  if (nodes.empty()) return;
+  if (!has_archive()) {
+    auto paths = selected_disk_paths();
+    std::string q = paths.size() == 1 ? format(_("Move “%s” to the trash?"), basename_of(paths[0]).c_str())
+                                      : format(_("Move %zu items to the trash?"), paths.size());
+    if (message(this, q, _("You can restore them from the trash later."), {_("Cancel"), _("Move to Trash")}, 1, true) != 1)
+      return;
+    std::string err;
+    auto failed = move_to_trash(paths, err);
+    if (!failed.empty() && err.empty()) {
+      std::string q2 = fmt_count(failed.size(), _("%zu item cannot be moved to the trash"),
+                                 _("%zu items cannot be moved to the trash"));
+      if (message(this, q2, _("They are on another drive. Delete them permanently? This cannot be undone."),
+                  {_("Cancel"), _("Delete Permanently")}, 0, true) == 1) {
+        for (const auto &f : failed) {
+          struct stat st;
+          if (lstat(f.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) detail::remove_tree(f);
+          else unlink(f.c_str());
+        }
+      }
+    } else if (!err.empty()) {
+      message(this, _("Could not delete"), err, {_("OK")}, 0, true);
+    }
+    list_folder(false);
+    return;
+  }
   auto sel = selected_paths();
-  if (sel.empty()) return;
   Capabilities caps = capabilities(info_.format);
   if (!caps.modify) {
     message(this, _("This archive cannot be changed"), caps.note.empty() ? _("Archives of this format are read-only in Taca.") : caps.note,
@@ -556,16 +1089,29 @@ void TacaWindow::action_delete() {
 }
 
 void TacaWindow::action_rename() {
-  auto sel = selected_paths();
-  if (sel.size() != 1) {
+  auto nodes = view_->selection();
+  if (nodes.size() != 1) {
     toast(_("Select one item to rename"));
+    return;
+  }
+  if (!has_archive()) {
+    std::string from = disk_path(nodes[0]), name;
+    if (!ask_name(this, _("Rename"), basename_of(from), name) || name == basename_of(from)) return;
+    std::string to = join(fs_dir_, name);
+    if (access(to.c_str(), F_OK) == 0) {
+      message(this, _("The name is taken"), format(_("“%s” already exists here."), name.c_str()), {_("OK")}, 0, true);
+      return;
+    }
+    if (rename(from.c_str(), to.c_str()) != 0) message(this, _("Could not rename"), strerror(errno), {_("OK")}, 0, true);
+    list_folder(false);
+    view_->select_node(tree_.find(name));
     return;
   }
   if (!capabilities(info_.format).modify) {
     toast(_("Archives of this format cannot be changed"));
     return;
   }
-  std::string from = sel[0], name;
+  std::string from = tree_.node(nodes[0]).path, name;
   if (!ask_name(this, _("Rename"), basename_of(from), name) || name == basename_of(from)) return;
   size_t slash = from.rfind('/');
   std::string to = slash == std::string::npos ? name : from.substr(0, slash + 1) + name;
@@ -582,120 +1128,484 @@ void TacaWindow::action_rename() {
 }
 
 void TacaWindow::action_test() {
-  if (!has_archive()) return;
-  std::string path = info_.path, pw = password_;
-  run_job(_("Testing integrity"), [path, pw](Progress &p) { return test_archive(path, pw, &p); },
-          [this](const Result &r) {
-            if (password_retry(r, [this] { action_test(); })) return;
+  if (has_archive() && !results_) {
+    std::string path = info_.path, pw = password_;
+    run_job(_("Testing integrity"), [path, pw](Progress &p) { return test_archive(path, pw, &p); },
+            [this](const Result &r) {
+              if (password_retry(r, [this] { action_test(); })) return;
+              if (r.cancelled) return;
+              if (r.ok)
+                message(this, _("The archive is intact"),
+                        format(_("Every file in “%s” was read and checked without errors."), basename_of(info_.path).c_str()),
+                        {_("OK")});
+              else if (message(this, _("The archive is damaged"), r.error, {_("OK"), _("Repair…")}, 0, true) == 1)
+                action_repair();
+            });
+    return;
+  }
+  test_archives(selected_archives(), 0, {});
+}
+
+void TacaWindow::test_archives(const std::vector<std::string> &archives, size_t index, std::vector<std::string> damaged) {
+  if (index >= archives.size()) {
+    if (damaged.empty())
+      message(this, _("No errors were found"),
+              archives.size() == 1 ? format(_("Every file in “%s” was read and checked without errors."),
+                                            basename_of(archives[0]).c_str())
+                                   : format(_("All %zu archives were read and checked without errors."), archives.size()),
+              {_("OK")});
+    else {
+      std::string text;
+      for (const auto &d : damaged) text += d + "\n";
+      message(this, _("Damaged archives"), text, {_("OK")}, 0, true);
+    }
+    return;
+  }
+  std::string path = archives[index];
+  std::string pw = path == info_.path ? password_ : "";
+  run_job(format(_("Testing “%s”"), basename_of(path).c_str()), [path, pw](Progress &p) { return test_archive(path, pw, &p); },
+          [this, archives, index, damaged, path](const Result &r) mutable {
             if (r.cancelled) return;
-            if (r.ok)
-              message(this, _("The archive is intact"),
-                      format(_("Every file in “%s” was read and checked without errors."), basename_of(info_.path).c_str()),
-                      {_("OK")});
-            else
-              message(this, _("The archive is damaged"), r.error, {_("OK")}, 0, true);
+            if (r.need_password || r.wrong_password) {
+              std::string pw;
+              if (ask_password(this, path, r.wrong_password, pw)) {
+                Result again = test_archive(path, pw);
+                if (!again.ok) damaged.push_back(basename_of(path) + ": " + again.error);
+              } else {
+                damaged.push_back(basename_of(path) + ": " + _("not tested (encrypted)"));
+              }
+            } else if (!r.ok) {
+              damaged.push_back(basename_of(path) + ": " + r.error);
+            }
+            test_archives(archives, index + 1, damaged);
           });
 }
 
-void TacaWindow::action_properties() {
-  if (has_archive()) show_properties(this, info_, password_.empty() ? "" : _("Entered for this session"));
+void TacaWindow::preview_file(const std::string &path, const std::string &title) {
+  int cat = file_category(path);
+  std::string data;
+  bool text = cat == 0 || cat == 1 || cat == 6;
+  if (text) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (f) {
+      data.resize(1024 * 1024);
+      data.resize(fread(&data[0], 1, data.size(), f));
+      fclose(f);
+    }
+    if (data.find('\0') != std::string::npos) text = false;
+  }
+  if (!text) {
+    if (!open_uri(path)) toast(_("No application can open this file"));
+    return;
+  }
+  if (data.size() == 1024 * 1024) data += "\n…";
+  show_text(this, title, data);
 }
 
-void TacaWindow::open_member(int node) {
+void TacaWindow::action_view() {
+  auto sel = view_->selection();
+  int n = sel.size() == 1 ? sel[0] : view_->focus_item();
+  if (n <= 0) return;
+  if (has_archive() && !results_) {
+    open_member(n, true);
+    return;
+  }
+  std::string path = disk_path(n);
+  if (path.empty()) {
+    open_hit(n);
+    return;
+  }
+  if (tree_.node(n).dir) browse(path);
+  else if (looks_like_archive(path)) open_archive(path);
+  else preview_file(path, basename_of(path));
+}
+
+void TacaWindow::open_member(int node, bool preview) {
   const Node &n = tree_.node(node);
-  std::string dir = detail::make_temp_dir(detail::cache_dir());
-  if (dir.empty()) return;
-  std::string tmp = dir + "/open";
-  std::rename(dir.c_str(), (detail::cache_dir() + "/open-" + basename_of(dir).substr(6)).c_str());
-  dir = detail::cache_dir() + "/open-" + basename_of(dir).substr(6);
+  std::string base = detail::make_temp_dir(detail::cache_dir());
+  if (base.empty()) return;
+  std::string dir = detail::cache_dir() + "/open-" + basename_of(base).substr(6);
+  std::rename(base.c_str(), dir.c_str());
   ExtractOptions o;
   o.dest = dir;
   o.only = {n.path};
   o.strip_prefix = n.path.find('/') == std::string::npos ? "" : n.path.substr(0, n.path.rfind('/'));
   o.password = password_;
   o.total_hint = n.size;
-  std::string path = info_.path, file = dir + "/" + n.name;
+  std::string path = info_.path, file = dir + "/" + n.name, name = n.name;
   run_job(format(_("Opening “%s”"), n.name.c_str()), [path, o](Progress &p) { return extract_archive(path, o, &p); },
-          [this, node, file](const Result &r) {
-            if (password_retry(r, [this, node] { open_member(node); })) return;
+          [this, node, file, name, preview](const Result &r) {
+            if (password_retry(r, [this, node, preview] { open_member(node, preview); })) return;
             if (!r.ok) {
               show_result(_("Could not open the file"), r);
               return;
             }
-            if (!file_exists(file) || !open_uri(file)) toast(_("No application can open this file"));
+            if (!file_exists(file)) return;
+            if (preview) preview_file(file, name);
+            else if (!open_uri(file)) toast(_("No application can open this file"));
           });
-  (void)tmp;
+}
+
+void TacaWindow::action_find() {
+  FindChoice c;
+  c.in_archive = has_archive() && !results_;
+  std::string where = c.in_archive ? basename_of(info_.path) : fs_dir_;
+  if (!ask_find(this, where, c)) return;
+  FindOptions o;
+  o.pattern = c.pattern;
+  o.recursive = c.recursive;
+  o.inside_archives = c.inside_archives;
+  o.hidden = settings_.hidden;
+  if (c.in_archive) {
+    o.archive = info_.path;
+    o.password = password_;
+  }
+  o.root = fs_dir_;
+  auto hits = std::make_shared<std::vector<FindHit>>();
+  back_archive_ = c.in_archive ? info_.path : "";
+  back_inner_ = c.in_archive ? current_folder() : "";
+  back_dir_ = fs_dir_;
+  run_job(format(_("Finding “%s”"), c.pattern.c_str()), [o, hits](Progress &p) { return find_files(o, *hits, &p); },
+          [this, hits, c, where](const Result &r) {
+            if (r.cancelled) return;
+            if (!r.ok) {
+              message(this, _("Could not search"), r.error, {_("OK")}, 0, true);
+              return;
+            }
+            std::string archive_path = info_.path;
+            info_ = ArchiveInfo{};
+            hits_ = std::move(*hits);
+            results_ = true;
+            hit_of_node_.clear();
+            std::vector<Entry> entries;
+            for (size_t i = 0; i < hits_.size(); ++i) {
+              const FindHit &h = hits_[i];
+              Entry e;
+              e.path = h.archive.empty() ? h.path : h.archive + "/" + h.path;
+              e.dir = h.dir;
+              e.size = h.size;
+              e.mtime = h.mtime;
+              entries.push_back(e);
+              hit_of_node_[int(i) + 1] = i;
+            }
+            tree_.build_flat(entries);
+            folder_ = 0;
+            results_title_ = format(_("Find “%s” in %s"), c.pattern.c_str(), where.c_str());
+            copy_label(format(_("Find results — Taca")).c_str());
+            refresh_view(false);
+            Fl::focus(view_);
+            toast(hits_.empty() ? std::string(_("Nothing was found"))
+                                : fmt_count(hits_.size(), _("%zu match found"), _("%zu matches found")));
+            if (!r.warnings.empty()) toast(r.warnings.back());
+            (void)archive_path;
+          });
+}
+
+void TacaWindow::action_wizard() {
+  int what = ask_wizard_action(this);
+  if (what == 1) {
+    action_new();
+  } else if (what == 2) {
+    auto files = choose_files(_("Choose the Archive to Extract"), fs_dir_, false, true);
+    if (files.empty()) return;
+    ExtractChoice c;
+    c.dest = join(parent_of(files[0]), strip_archive_extension(basename_of(files[0])));
+    c.open_after = settings_.open_after;
+    if (!ask_extract(this, files[0], 0, c)) return;
+    ExtractOptions o;
+    o.dest = c.dest;
+    o.keep_structure = c.keep_structure;
+    o.overwrite = c.overwrite;
+    run_extract(files[0], o, false, c.open_after, nullptr);
+  } else if (what == 3) {
+    auto files = choose_files(_("Choose the Archive to Convert"), fs_dir_, false, true);
+    if (!files.empty()) action_convert(files[0]);
+  }
+}
+
+void TacaWindow::action_convert(const std::string &archive) {
+  CreateOptions o;
+  o.format = settings_.format;
+  o.level = settings_.level;
+  std::string dest;
+  if (!ask_convert(this, archive, dest, o)) return;
+  std::string pw = archive == info_.path ? password_ : "";
+  auto run = std::make_shared<std::function<void(std::string)>>();
+  *run = [this, archive, dest, o, run](std::string pw) {
+    run_job(format(_("Converting “%s”"), basename_of(archive).c_str()),
+            [archive, pw, dest, o](Progress &p) { return convert_archive(archive, pw, dest, o, &p); },
+            [this, archive, dest, run](const Result &r) {
+              if (r.need_password || r.wrong_password) {
+                std::string entered;
+                if (ask_password(this, archive, r.wrong_password, entered)) (*run)(entered);
+                return;
+              }
+              show_result(_("Could not convert the archive"), r);
+              if (!r.ok) return;
+              toast(format(_("Saved as %s"), basename_of(dest).c_str()));
+              if (!has_archive() && !results_ && parent_of(dest) == fs_dir_) {
+                list_folder(false);
+                view_->select_node(tree_.find(basename_of(dest)));
+              }
+            });
+  };
+  (*run)(pw);
+}
+
+void TacaWindow::action_info() {
+  if (has_archive() && !results_) {
+    show_properties(this, info_, password_.empty() ? "" : _("Entered for this session"));
+    return;
+  }
+  auto archives = selected_archives();
+  auto paths = selected_disk_paths();
+  if (archives.size() == 1 && paths.size() == 1) {
+    std::string path = archives[0];
+    auto result = std::make_shared<ArchiveInfo>();
+    auto run = std::make_shared<std::function<void(std::string)>>();
+    *run = [this, path, result, run](std::string pw) {
+      run_job(format(_("Reading “%s”"), basename_of(path).c_str()),
+              [path, pw, result](Progress &p) { return list_archive(path, pw, *result, &p); },
+              [this, path, result, run, pw](const Result &r) {
+                if (r.need_password || r.wrong_password) {
+                  std::string entered;
+                  if (ask_password(this, path, r.wrong_password, entered)) (*run)(entered);
+                  return;
+                }
+                if (!r.ok) {
+                  show_result(_("Cannot read the archive"), r);
+                  return;
+                }
+                show_properties(this, *result, pw.empty() ? "" : _("Entered for this session"));
+              });
+    };
+    (*run)("");
+    return;
+  }
+  if (paths.empty() && !results_) paths = {fs_dir_};
+  disk_info(paths);
+}
+
+void TacaWindow::disk_info(const std::vector<std::string> &paths) {
+  if (paths.empty()) return;
+  struct Totals {
+    int64_t bytes = 0;
+    size_t files = 0, folders = 0;
+  };
+  auto totals = std::make_shared<Totals>();
+  run_job(_("Counting"),
+          [paths, totals](Progress &p) {
+            std::vector<std::string> stack;
+            for (const auto &path : paths) {
+              struct stat st;
+              if (lstat(path.c_str(), &st) != 0) continue;
+              if (S_ISDIR(st.st_mode)) stack.push_back(path);
+              else {
+                totals->files++;
+                totals->bytes += st.st_size;
+              }
+            }
+            bool top = true;
+            while (!stack.empty() && !p.cancel) {
+              std::string d = stack.back();
+              stack.pop_back();
+              if (!top || paths.size() > 1 || d != paths[0]) totals->folders++;
+              top = false;
+              p.set_current(d);
+              std::vector<Entry> entries;
+              std::string err;
+              if (!list_directory(d, true, entries, err)) continue;
+              for (const auto &e : entries) {
+                if (e.dir && !e.symlink) stack.push_back(join(d, e.path));
+                else if (!e.dir) {
+                  totals->files++;
+                  totals->bytes += std::max<int64_t>(0, e.size);
+                }
+              }
+            }
+            Result r;
+            if (p.cancel) {
+              r.ok = false;
+              r.cancelled = true;
+            }
+            return r;
+          },
+          [this, paths, totals](const Result &r) {
+            if (!r.ok) return;
+            std::string title = paths.size() == 1 ? basename_of(paths[0]) : format(_("%zu items"), paths.size());
+            if (title.empty()) title = "/";
+            std::string text = format(_("Location: %s\n"), paths.size() == 1 ? paths[0].c_str() : fs_dir_.c_str());
+            text += format(_("Contents: %zu files in %zu folders\n"), totals->files, totals->folders);
+            text += format(_("Size: %s (%s bytes)\n"), human_size(totals->bytes).c_str(), group_digits(totals->bytes).c_str());
+            if (paths.size() == 1) {
+              struct stat st;
+              if (stat(paths[0].c_str(), &st) == 0) {
+                char date[64];
+                struct tm tm;
+                localtime_r(&st.st_mtime, &tm);
+                strftime(date, sizeof date, "%Y-%m-%d %H:%M", &tm);
+                text += format(_("Modified: %s\n"), date);
+                if (!S_ISDIR(st.st_mode)) text += format(_("Type: %s\n"), file_kind(paths[0], false).c_str());
+              }
+            }
+            message(this, title, text, {_("OK")});
+          });
+}
+
+void TacaWindow::action_repair() {
+  std::string archive = has_archive() && !results_ ? info_.path : "";
+  if (archive.empty()) {
+    auto a = selected_archives();
+    if (a.empty()) return;
+    archive = a[0];
+  }
+  std::string dest = parent_of(archive);
+  if (access(dest.c_str(), W_OK) != 0) dest = home_dir();
+  Format f = detect_format(archive);
+  RepairPlan plan = plan_repair(archive, f, dest, find_program("zip"), rar_program(), seven_zip_program(), unrar_program());
+  if (plan.method == RepairMethod::Unsupported) {
+    message(this, _("Cannot repair this file"), plan.summary, {_("OK")}, 0, true);
+    return;
+  }
+  if (!ask_repair(this, archive, plan, dest)) return;
+  std::string pw = archive == info_.path ? password_ : "";
+  struct Out {
+    std::string output;
+    size_t recovered = 0;
+    long lost = -1;
+  };
+  auto out = std::make_shared<Out>();
+  run_job(format(_("Repairing “%s”"), basename_of(archive).c_str()),
+          [archive, dest, pw, out](Progress &p) {
+            return repair_archive(archive, dest, pw, &p, out->output, out->recovered, out->lost);
+          },
+          [this, archive, dest, out](const Result &r) {
+            if (r.cancelled) {
+              toast(_("Cancelled"));
+              return;
+            }
+            if (!r.ok) {
+              message(this, _("The archive could not be repaired"),
+                      format(_("%s\n\nNo readable files were found in “%s”."), r.error.c_str(), basename_of(archive).c_str()),
+                      {_("OK")}, 0, true);
+              return;
+            }
+            std::string text = fmt_count(out->recovered, _("%zu file was recovered into:"), _("%zu files were recovered into:"));
+            text += "\n" + out->output;
+            if (out->lost > 0)
+              text += "\n\n" + fmt_count(size_t(out->lost), _("%zu damaged file could not be recovered."),
+                                         _("%zu damaged files could not be recovered."));
+            if (message(this, _("Repair finished"), text, {_("OK"), _("Show")}, 1) == 1) {
+              close_archive();
+              browse(dest, basename_of(out->output));
+            } else if (!has_archive() && dest == fs_dir_) {
+              list_folder(true);
+            }
+          });
+}
+
+void TacaWindow::action_settings() {
+  Settings s = settings_;
+  if (!ask_settings(this, s)) return;
+  bool relist = s.hidden != settings_.hidden;
+  settings_ = s;
+  settings_.save();
+  view_->set_grid(settings_.icons);
+  apply_theme();
+  if (relist) list_folder(true);
+  build_menu();
 }
 
 void TacaWindow::context_menu(int node) {
-  if (!has_archive()) return;
   auto sel = view_->selection();
-  bool one = sel.size() == 1, any = !sel.empty();
-  bool can = capabilities(info_.format).modify;
+  bool archive = has_archive() && !results_;
   struct Item {
     const char *text;
-    long id;
+    int cmd;
     int flags;
-  } items[] = {{_("Open"), 1, (one ? 0 : FL_MENU_INACTIVE)},
-               {_("Extract Selected…"), 2, (any ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER},
-               {_("Rename…"), 3, one && can ? 0 : FL_MENU_INACTIVE},
-               {_("Delete from Archive"), 4, (any && can ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER},
-               {_("Add Files Here…"), 5, can ? 0 : FL_MENU_INACTIVE},
-               {_("Select All"), 6, 0}};
-  Fl_Menu_Item menu[7];
-  memset(menu, 0, sizeof menu);
-  for (int i = 0; i < 6; ++i) {
+  };
+  std::vector<Item> items;
+  if (node == kParentItem) {
+    items.push_back({_("Up One Level"), CmdUp, 0});
+  } else if (!sel.empty()) {
+    bool one_archive = !archive && !selected_archives().empty();
+    items.push_back({_("Open"), -1, sel.size() == 1 ? 0 : FL_MENU_INACTIVE});
+    items.push_back({_("View"), CmdView, FL_MENU_DIVIDER});
+    if (archive || one_archive) {
+      items.push_back({archive ? _("Extract Selected…") : _("Extract To…"), CmdExtract, 0});
+      if (!archive) items.push_back({_("Extract Here"), CmdExtractHere, 0});
+      if (!archive) items.push_back({_("Test Archive"), CmdTest, 0});
+      if (!archive) items.push_back({_("Repair Archive…"), CmdRepair, 0});
+      if (!archive) items.push_back({_("Convert Archive…"), CmdConvert, 0});
+      items.back().flags |= FL_MENU_DIVIDER;
+    }
+    if (!archive && !results_) items.push_back({_("Add to Archive…"), CmdAdd, FL_MENU_DIVIDER});
+    items.push_back({_("Rename…"), CmdRename, 0});
+    items.push_back({_("Delete"), CmdDelete, FL_MENU_DIVIDER});
+    if (!archive) items.push_back({_("Copy Full Path"), CmdCopyPath, 0});
+    items.push_back({_("Information"), CmdInfo, 0});
+  } else {
+    if (archive) items.push_back({_("Add Files Here…"), CmdAdd, 0});
+    else items.push_back({_("New Archive…"), CmdNew, 0});
+    items.push_back({_("Find Files…"), CmdFind, 0});
+    items.push_back({_("Refresh"), CmdRefresh, FL_MENU_DIVIDER});
+    items.push_back({_("Select All"), CmdSelectAll, 0});
+    items.push_back({_("Information"), CmdInfo, 0});
+  }
+  std::vector<Fl_Menu_Item> menu(items.size() + 1);
+  memset(menu.data(), 0, sizeof(Fl_Menu_Item) * menu.size());
+  for (size_t i = 0; i < items.size(); ++i) {
     menu[i].text = items[i].text;
-    menu[i].user_data_ = reinterpret_cast<void *>(items[i].id);
-    menu[i].flags = items[i].flags;
-    menu[i].labelsize(theme_.font_size);
-    menu[i].labelcolor(theme_.text.fl());
+    menu[i].user_data_ = reinterpret_cast<void *>(long(items[i].cmd));
+    int flags = items[i].flags;
+    if (items[i].cmd > 0 && !command_enabled(items[i].cmd)) flags |= FL_MENU_INACTIVE;
+    menu[i].flags = flags;
+    menu[i].labelsize_ = uchar(theme_.font_size);
   }
-  const Fl_Menu_Item *picked = menu->popup(Fl::event_x(), Fl::event_y());
+  const Fl_Menu_Item *picked = menu.data()->popup(Fl::event_x(), Fl::event_y());
   if (!picked) return;
-  switch (reinterpret_cast<long>(picked->user_data())) {
-    case 1: enter(sel[0]); break;
-    case 2: action_extract(true); break;
-    case 3: action_rename(); break;
-    case 4: action_delete(); break;
-    case 5: action_add(false); break;
-    case 6: view_->select_all(); break;
-  }
-  (void)node;
+  int cmd = int(reinterpret_cast<long>(picked->user_data()));
+  if (cmd == -1) enter(sel[0]);
+  else command(cmd);
 }
 
-// Dragging the selection out: the items are extracted to a private cache
-// folder and offered to the drop target as a text/uri-list.
+// Dragging the selection out. Files on disk are offered as they are;
+// archive members are extracted to a private cache folder first.
 void TacaWindow::start_drag() {
   auto sel = view_->selection();
   if (sel.empty() || job_) return;
-  int64_t total = 0;
-  for (int n : sel) total += std::max<int64_t>(0, tree_.node(n).size);
-  if (total > 512ll * 1000 * 1000) {
-    toast(_("Large selection: use Extract Selected instead of dragging"));
-    return;
-  }
-  std::string base = detail::make_temp_dir(detail::cache_dir());
-  if (base.empty()) return;
-  std::string dir = detail::cache_dir() + "/drag-" + basename_of(base).substr(6);
-  std::rename(base.c_str(), dir.c_str());
-  ExtractOptions o;
-  o.dest = dir;
-  o.only = selected_paths();
-  o.strip_prefix = current_folder();
-  o.password = password_;
-  fl_cursor(FL_CURSOR_WAIT);
-  Fl::flush();
-  Result r = extract_archive(info_.path, o, nullptr);
-  fl_cursor(FL_CURSOR_DEFAULT);
-  if (!r.ok || r.written.empty()) {
-    detail::remove_tree(dir);
-    toast(r.need_password || r.wrong_password ? _("Extract the files once to enter the password, then drag them")
-                                               : _("Could not prepare the files for dragging"));
-    return;
-  }
   drag_uris_.clear();
-  for (const auto &w : r.written) drag_uris_ += path_to_uri(w) + "\r\n";
+  if (!has_archive()) {
+    for (const auto &p : selected_disk_paths()) drag_uris_ += path_to_uri(p) + "\r\n";
+  } else {
+    int64_t total = 0;
+    for (int n : sel) total += std::max<int64_t>(0, tree_.node(n).size);
+    if (total > 512ll * 1000 * 1000) {
+      toast(_("Large selection: use Extract To instead of dragging"));
+      return;
+    }
+    std::string base = detail::make_temp_dir(detail::cache_dir());
+    if (base.empty()) return;
+    std::string dir = detail::cache_dir() + "/drag-" + basename_of(base).substr(6);
+    std::rename(base.c_str(), dir.c_str());
+    ExtractOptions o;
+    o.dest = dir;
+    o.only = selected_paths();
+    o.strip_prefix = current_folder();
+    o.password = password_;
+    fl_cursor(FL_CURSOR_WAIT);
+    Fl::flush();
+    Result r = extract_archive(info_.path, o, nullptr);
+    fl_cursor(FL_CURSOR_DEFAULT);
+    if (!r.ok || r.written.empty()) {
+      detail::remove_tree(dir);
+      toast(r.need_password || r.wrong_password ? _("Extract the files once to enter the password, then drag them")
+                                                 : _("Could not prepare the files for dragging"));
+      return;
+    }
+    for (const auto &w : r.written) drag_uris_ += path_to_uri(w) + "\r\n";
+  }
+  if (drag_uris_.empty()) return;
   Fl::copy(drag_uris_.c_str(), int(drag_uris_.size()), 0);
   dragging_out_ = true;
   Fl::dnd();
@@ -704,306 +1614,99 @@ void TacaWindow::start_drag() {
 
 // --------------------------------------------------------------- drawing
 
-namespace {
-
-struct SidebarRow {
-  Action action;
-  Rect r;
-  const char *label;
-  icon::Kind glyph;
-  bool small = false;  // an icon-only button in the bottom row
-};
-
-// Short windows get a compact archive card.
-bool compact_card(int h) { return h < S(700); }
-int card_height(int h) { return compact_card(h) ? S(164) : S(268); }
-
-std::vector<SidebarRow> sidebar_rows(int w, int h, int top) {
-  std::vector<SidebarRow> rows;
-  int x = S(16), rw = w - S(32), rh = S(35);
-  rows.push_back({ExtractAll, {x, top, rw, S(42)}, _("Extract All…"), icon::Extract});
-  int y = top + S(52);
-  const std::pair<Action, std::pair<const char *, icon::Kind>> list[] = {
-      {ExtractSelected, {_("Extract Selected…"), icon::Extract}},
-      {AddFiles, {_("Add Files…"), icon::Add}},
-      {AddFolder, {_("Add Folder…"), icon::AddFolder}},
-      {RenameItem, {_("Rename…"), icon::Rename}},
-      {DeleteItems, {_("Delete"), icon::Trash}},
-      {TestArchive, {_("Test Integrity"), icon::Shield}},
-      {Properties, {_("Properties"), icon::Info}},
-  };
-  std::vector<SidebarRow> overflow;
-  for (const auto &l : list) {
-    if (y + rh > h - S(96)) {
-      overflow.push_back({l.first, {}, l.second.first, l.second.second, true});
-      continue;
-    }
-    rows.push_back({l.first, {x, y, rw, rh}, l.second.first, l.second.second});
-    y += rh + S(2);
-  }
-  // Bottom row: Open and New, then whatever did not fit above as icons.
-  int by = h - S(34) - S(52), gap = S(6), icon_w = S(36);
-  int iw = int(overflow.size()) * (icon_w + gap);
-  int half = (rw - iw - gap) / 2;
-  bool labels = half >= S(84);
-  if (!labels) half = icon_w;
-  rows.push_back({OpenOther, {x, by, half, S(36)}, _("Open…"), icon::Open, !labels});
-  rows.push_back({NewArchive, {x + half + gap, by, half, S(36)}, _("New…"), icon::Plus, !labels});
-  int ox = x + 2 * (half + gap);
-  for (auto &o : overflow) {
-    o.r = {ox, by, icon_w, S(36)};
-    rows.push_back(o);
-    ox += icon_w + gap;
-  }
-  return rows;
+void TacaWindow::draw_address(Painter &p) {
+  int y0 = address_y_;
+  p.fill_rect(0, y0, w(), address_h_, theme_.surface_alt.mix(theme_.surface, 0.5));
+  p.line(0, y0 + address_h_ - 0.5, w(), y0 + address_h_ - 0.5, theme_.border);
+  int bx = S(50), by = y0 + S(6), bw = w() - bx - S(8), bh = address_h_ - S(12);
+  // Up button.
+  bool up_on = command_enabled(CmdUp);
+  int ux = S(8);
+  if (hover_part_ == 1 && up_on) p.fill_rounded(ux, by, S(36), bh, S(6), theme_.hover);
+  p.stroke_rounded(ux + 0.5, by + 0.5, S(36) - 1, bh - 1, S(6), theme_.border);
+  icon::draw(p, icon::Up, ux + (S(36) - S(18)) / 2.0, by + (bh - S(18)) / 2.0, S(18),
+             up_on ? theme_.accent_text : theme_.text_dim.alpha(0.4));
+  // Location field.
+  bool focus = Fl::focus() == address_;
+  p.fill_rounded(bx, by, bw, bh, S(6), theme_.surface);
+  p.stroke_rounded(bx + 0.5, by + 0.5, bw - 1, bh - 1, S(6), focus ? theme_.accent : theme_.border, focus ? Sd(1.5) : 1);
+  double isz = S(18);
+  if (results_) icon::draw(p, icon::Search, bx + S(8), by + (bh - isz) / 2, isz, theme_.accent_text);
+  else if (has_archive()) icon::archive(p, bx + S(7), by + (bh - isz) / 2, isz, theme_.accent, theme_.dark);
+  else icon::file(p, "", bx + S(7), by + (bh - isz) / 2, isz, true, theme_.accent, theme_.dark);
+  // Drop-down arrow.
+  int dx = bx + bw - S(30);
+  if (hover_part_ == 2) p.fill_rounded(dx + S(2), by + S(2), S(26), bh - S(4), S(5), theme_.hover);
+  p.line(dx + 0.5, by + S(5), dx + 0.5, by + bh - S(5), theme_.border);
+  icon::draw(p, icon::Down, dx + S(6), by + (bh - S(18)) / 2.0, S(18), theme_.text_dim);
 }
 
-int sidebar_top(int h) { return card_height(h) + S(32); }
-
-}  // namespace
-
-int TacaWindow::sidebar_action_at(int mx, int my) const {
-  if (!has_archive() || mx >= sidebar_w_) return -1;
-  for (const auto &row : sidebar_rows(sidebar_w_, h(), sidebar_top(h())))
-    if (row.r.inside(mx, my)) return int(row.action);
-  // The close "x" on the card.
-  if (mx >= sidebar_w_ - S(44) && mx < sidebar_w_ - S(12) && my >= S(18) && my < S(50)) return CloseArchive;
-  return -1;
+void TacaWindow::draw_status(Painter &p) {
+  int y0 = h() - status_h_;
+  p.fill_rect(0, y0, w(), status_h_, theme_.surface_alt.mix(theme_.surface, 0.4));
+  p.line(0, y0 + 0.5, w(), y0 + 0.5, theme_.border);
+  double isz = S(16);
+  icon::draw(p, icon::Drive, S(10), y0 + (status_h_ - isz) / 2, isz, theme_.text_dim);
+  bool locked = has_archive() && (info_.encrypted || info_.header_encrypted);
+  icon::draw(p, icon::Lock, S(32), y0 + (status_h_ - isz) / 2, isz,
+             locked ? Color::hex(0xE0A21B) : theme_.text_dim.alpha(0.35));
+  int sep1 = S(56);
+  p.line(sep1 + 0.5, y0 + S(5), sep1 + 0.5, y0 + status_h_ - S(5), theme_.border);
+  int sep2 = w() / 2;
+  p.line(sep2 + 0.5, y0 + S(5), sep2 + 0.5, y0 + status_h_ - S(5), theme_.border);
 }
 
-bool action_enabled(const TacaWindow &win, int a, size_t selected) {
-  if (win.busy()) return false;
-  bool can = capabilities(win.info().format).modify;
-  switch (a) {
-    case ExtractSelected: return selected > 0;
-    case AddFiles:
-    case AddFolder: return can;
-    case RenameItem: return can && selected == 1;
-    case DeleteItems: return can && selected > 0;
-    default: return true;
-  }
-}
-
-void TacaWindow::run_sidebar_action(int a) {
-  if (job_ || !action_enabled(*this, a, view_->selection().size())) return;
-  switch (a) {
-    case ExtractAll: action_extract(false); break;
-    case ExtractSelected: action_extract(true); break;
-    case AddFiles: action_add(false); break;
-    case AddFolder: action_add(true); break;
-    case RenameItem: action_rename(); break;
-    case DeleteItems: action_delete(); break;
-    case TestArchive: action_test(); break;
-    case Properties: action_properties(); break;
-    case OpenOther: action_open(); break;
-    case NewArchive: action_new(); break;
-    case CloseArchive: close_archive(); break;
-  }
-}
-
-void TacaWindow::draw_sidebar(Painter &p) {
-  int sw = sidebar_w_;
-  p.fill_rect(0, 0, sw, h(), theme_.surface_alt);
-  p.line(sw - 0.5, 0, sw - 0.5, h(), theme_.border.alpha(0.8));
-  // Identity card.
-  int cx = S(16), cw = sw - S(32);
-  bool compact = compact_card(h());
-  p.fill_rounded(cx, S(16), cw, card_height(h()), S(16), theme_.surface);
-  p.stroke_rounded(cx + 0.5, S(16) + 0.5, cw - 1, card_height(h()) - 1, S(16), theme_.border.alpha(0.6));
-  icon::badge(p, cx + S(16), S(32), S(56), theme_.accent);
-  icon::draw(p, icon::Close, sw - S(40), S(26), S(18), hover_action_ == CloseArchive ? theme_.text : theme_.text_dim);
-  bool locked = info_.encrypted || info_.header_encrypted;
-  if (compact) {
-    if (locked) {
-      text_font(theme_.font_size - S(1), true);
-      icon::draw(p, icon::Lock, cx + S(84) + text_width(format_info(info_.format).label) + S(8), S(39), S(16),
-                 theme_.accent_text);
-    }
-  } else {
-    // Compression meter.
-    double saved = info_.total_size > 0 ? 1 - double(info_.archive_size) / double(info_.total_size) : -1;
-    int my = S(206), mx = cx + S(16), mw = cw - S(32);
-    p.fill_rounded(mx, my, mw, S(8), S(4), theme_.border.alpha(0.6));
-    if (saved > 0) p.fill_rounded(mx, my, std::max(double(S(8)), mw * std::min(1.0, saved)), S(8), S(4), theme_.accent);
-    if (locked) {
-      p.fill_rounded(mx, S(242), S(112), S(26), S(13), theme_.accent.alpha(0.16));
-      icon::draw(p, icon::Lock, mx + S(8), S(247), S(16), theme_.accent_text);
-    }
-  }
-  // Actions.
-  size_t selected = view_->selection().size();
-  for (const auto &row : sidebar_rows(sw, h(), sidebar_top(h()))) {
-    bool on = action_enabled(*this, row.action, selected) && !job_;
-    bool hover = hover_action_ == int(row.action) && on;
-    if (row.action == ExtractAll) {
-      p.fill_gradient(row.r.x, row.r.y, row.r.w, row.r.h, row.r.h / 2.0, theme_.accent.mix(Color::hex(0xFFFFFF), hover ? 0.18 : 0.08),
-                      theme_.accent.mix(Color::hex(0x000000), 0.08));
-      icon::draw(p, row.glyph, row.r.x + S(16), row.r.y + (row.r.h - S(20)) / 2.0, S(20), theme_.on_accent);
-      continue;
-    }
-    if (row.action == OpenOther || row.action == NewArchive || row.small) {
-      p.fill_rounded(row.r.x, row.r.y, row.r.w, row.r.h, S(10), hover ? theme_.hover : theme_.surface);
-      p.stroke_rounded(row.r.x + 0.5, row.r.y + 0.5, row.r.w - 1, row.r.h - 1, S(10), theme_.border);
-      double ix = row.small ? row.r.x + (row.r.w - S(18)) / 2.0 : row.r.x + S(10);
-      Color c = on || row.action == OpenOther || row.action == NewArchive ? theme_.text_dim : theme_.text_dim.alpha(0.4);
-      if (on && row.action == DeleteItems) c = Color::hex(0xD14B3C);
-      icon::draw(p, row.glyph, ix, row.r.y + (row.r.h - S(18)) / 2.0, S(18), c);
-      continue;
-    }
-    if (hover) p.fill_rounded(row.r.x, row.r.y, row.r.w, row.r.h, S(10), theme_.hover);
-    Color c = on ? (row.action == DeleteItems ? Color::hex(0xD14B3C) : theme_.text) : theme_.text_dim.alpha(0.5);
-    icon::draw(p, row.glyph, row.r.x + S(12), row.r.y + (row.r.h - S(20)) / 2.0, S(20), c);
-  }
-}
-
-void TacaWindow::draw_sidebar_text() {
-  int sw = sidebar_w_, cx = S(16), cw = sw - S(32), tx = cx + S(16);
-  text_font(theme_.font_size - S(1), true);
-  draw_text(format_info(info_.format).label, cx + S(84), S(36), cw - S(84) - S(30), S(22), theme_.accent_text);
-  text_font(theme_.font_size - S(2));
-  draw_text(describe_format(info_.format, info_.path), cx + S(84), S(58), cw - S(96), S(22), theme_.text_dim);
-  // Name: up to two lines.
-  text_font(theme_.font_size + S(3), true);
-  std::string name = basename_of(info_.path);
-  int nw = cw - S(32);
-  std::string l1 = name, l2;
-  if (text_width(name) > nw) {
-    size_t cut = name.size();
-    while (cut > 1 && text_width(name.substr(0, cut)) > nw) --cut;
-    while (cut > 1 && (static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80) --cut;
-    l1 = name.substr(0, cut);
-    l2 = name.substr(cut);
-  }
-  draw_text(l1, tx, S(100), nw, S(26), theme_.text);
-  if (!l2.empty()) draw_text(l2, tx, S(124), nw, S(26), theme_.text);
+void TacaWindow::draw_status_text() {
+  int y0 = h() - status_h_;
   text_font(theme_.font_size - S(1));
-  int sy = l2.empty() ? S(132) : S(152);
-  draw_text(format("%s · %s", fmt_count(info_.files, _("%zu file"), _("%zu files")).c_str(),
-                   fmt_count(info_.folders, _("%zu folder"), _("%zu folders")).c_str()),
-            tx, sy, nw, S(22), theme_.text_dim);
-  double saved = info_.total_size > 0 ? 1 - double(info_.archive_size) / double(info_.total_size) : -1;
-  if (!compact_card(h())) {
-    draw_text(format("%s → %s", human_size(info_.total_size).c_str(), human_size(info_.archive_size).c_str()), tx,
-              S(178), nw, S(22), theme_.text);
-    text_font(theme_.font_size - S(2));
-    std::string ratio = info_.total_size <= 0 ? std::string(_("Empty archive"))
-                        : saved > 0.005 ? format(_("%d%% smaller than the original"), int(std::lround(saved * 100)))
-                                        : std::string(_("Stored without compression"));
-    draw_text(ratio, tx, S(216), nw, S(22), theme_.text_dim);
-    if (info_.encrypted || info_.header_encrypted) {
-      text_font(theme_.font_size - S(2), true);
-      draw_text(_("Encrypted"), tx + S(28), S(242), S(80), S(26), theme_.accent_text);
-    }
-  } else if (l2.empty() && saved > 0.005) {
-    text_font(theme_.font_size - S(2));
-    draw_text(format(_("%s · %d%% smaller"), human_size(info_.archive_size).c_str(), int(std::lround(saved * 100))),
-              tx, S(154), nw, S(22), theme_.text_dim);
-  }
-  size_t selected = view_->selection().size();
-  for (const auto &row : sidebar_rows(sw, h(), sidebar_top(h()))) {
-    if (row.small) continue;
-    bool on = action_enabled(*this, row.action, selected) && !job_;
-    std::string label = row.label;
-    if (row.action == ExtractSelected && selected) label = format(_("Extract %zu Selected…"), selected);
-    if (row.action == ExtractAll) {
-      text_font(theme_.font_size, true);
-      draw_text(label, row.r.x + S(46), row.r.y, row.r.w - S(56), row.r.h, theme_.on_accent);
-    } else if (row.action == OpenOther || row.action == NewArchive) {
-      text_font(theme_.font_size - S(1));
-      draw_text(label, row.r.x + S(34), row.r.y, row.r.w - S(38), row.r.h, theme_.text);
-    } else {
-      text_font(theme_.font_size);
-      Color c = on ? (row.action == DeleteItems ? Color::hex(0xD14B3C) : theme_.text) : theme_.text_dim.alpha(0.6);
-      draw_text(label, row.r.x + S(44), row.r.y, row.r.w - S(50), row.r.h, c);
+  // Totals of what is listed.
+  int64_t bytes = 0, sel_bytes = 0;
+  size_t files = 0, folders = 0, sel_files = 0, sel_folders = 0;
+  for (int n : view_->items()) {
+    if (n <= 0) continue;
+    const Node &node = tree_.node(n);
+    if (node.dir) ++folders;
+    else {
+      ++files;
+      bytes += std::max<int64_t>(0, node.size);
     }
   }
-}
-
-int TacaWindow::crumb_at(int mx, int my) const {
-  if (!has_archive() || my > header_h_ || mx < sidebar_w_) return -1;
-  auto chain = tree_.ancestry(folder_);
-  text_font(theme_.font_size, true);
-  int x = sidebar_w_ + S(20), limit = search_->x() - S(60);
-  for (size_t i = 0; i < chain.size(); ++i) {
-    std::string label = i == 0 ? strip_archive_extension(info_.path) : tree_.node(chain[i]).name;
-    int w = std::min(text_width(label) + S(i == 0 ? 50 : 24), S(220));
-    if (x + w > limit) break;
-    if (mx >= x && mx < x + w && my >= header_h_ / 2 - S(16) && my < header_h_ / 2 + S(16)) return chain[i];
-    x += w + S(20);
-  }
-  return -1;
-}
-
-void TacaWindow::draw_header(Painter &p) {
-  int sw = sidebar_w_;
-  p.fill_rect(sw, 0, w() - sw, header_h_, theme_.background);
-  p.line(sw, header_h_ - 0.5, w(), header_h_ - 0.5, theme_.border.alpha(0.7));
-  auto chain = tree_.ancestry(folder_);
-  text_font(theme_.font_size, true);
-  int x = sw + S(20), cy = header_h_ / 2, limit = search_->x() - S(60);
-  for (size_t i = 0; i < chain.size(); ++i) {
-    std::string label = i == 0 ? strip_archive_extension(info_.path) : tree_.node(chain[i]).name;
-    int w = std::min(text_width(label) + S(i == 0 ? 50 : 24), S(220));
-    if (x + w > limit) break;
-    bool last = i + 1 == chain.size();
-    Color bg = last ? theme_.accent.alpha(theme_.dark ? 0.3 : 0.14) : (hover_crumb_ == chain[i] ? theme_.hover : theme_.surface_alt);
-    p.fill_rounded(x, cy - S(16), w, S(32), S(16), bg);
-    if (i == 0) icon::draw(p, icon::Box, x + S(10), cy - S(9), S(18), last ? theme_.accent_text : theme_.text_dim);
-    x += w;
-    if (!last) icon::draw(p, icon::Chevron, x + S(2), cy - S(8), S(16), theme_.text_dim);
-    x += S(20);
-  }
-  // Search pill.
-  int sx = search_->x() - S(34), sy = search_->y() - S(3), sww = search_->w() + S(44), shh = S(32);
-  p.fill_rounded(sx, sy, sww, shh, shh / 2.0, theme_.surface_alt);
-  p.stroke_rounded(sx + 0.5, sy + 0.5, sww - 1, shh - 1, shh / 2.0, Fl::focus() == search_ ? theme_.accent : theme_.border,
-                   Fl::focus() == search_ ? Sd(1.5) : 1);
-  icon::draw(p, icon::Search, sx + S(10), sy + S(7), S(18), theme_.text_dim);
-}
-
-void TacaWindow::draw_header_text() {
-  auto chain = tree_.ancestry(folder_);
-  text_font(theme_.font_size, true);
-  int x = sidebar_w_ + S(20), cy = header_h_ / 2, limit = search_->x() - S(60);
-  for (size_t i = 0; i < chain.size(); ++i) {
-    std::string label = i == 0 ? strip_archive_extension(info_.path) : tree_.node(chain[i]).name;
-    int w = std::min(text_width(label) + S(i == 0 ? 50 : 24), S(220));
-    if (x + w > limit) {
-      draw_text("…", x, cy - S(16), S(20), S(32), theme_.text_dim);
-      break;
-    }
-    bool last = i + 1 == chain.size();
-    int pad = i == 0 ? S(36) : S(12);
-    draw_text(label, x + pad, cy - S(16), w - pad - S(10), S(32), last ? theme_.accent_text : theme_.text);
-    x += w + S(20);
-  }
-  if (search_->size() == 0) {
-    text_font(theme_.font_size);
-    draw_text(_("Search in archive"), search_->x() + S(3), search_->y(), search_->w(), search_->h(), theme_.text_dim);
-  }
-  // Footer status.
-  int fy = h() - S(34);
-  text_font(theme_.font_size - S(1));
   auto sel = view_->selection();
-  std::string status;
-  if (!sel.empty()) {
-    int64_t total = 0;
-    for (int n : sel) total += std::max<int64_t>(0, tree_.node(n).size);
-    status = format(_("%zu selected · %s"), sel.size(), human_size(total).c_str());
-  } else {
-    status = searching() ? fmt_count(view_->items().size(), _("%zu match"), _("%zu matches"))
-                         : fmt_count(view_->items().size(), _("%zu item"), _("%zu items"));
+  for (int n : sel) {
+    const Node &node = tree_.node(n);
+    if (node.dir) {
+      ++sel_folders;
+      if (has_archive()) sel_bytes += std::max<int64_t>(0, node.size);
+    } else {
+      ++sel_files;
+      sel_bytes += std::max<int64_t>(0, node.size);
+    }
   }
-  draw_text(status, sidebar_w_ + S(20), fy, w() - sidebar_w_ - S(40), S(34), theme_.text_dim);
-  std::string hint = capabilities(info_.format).modify ? _("Drag files here to add them · drag items out to extract")
-                                                       : _("Read-only format · drag items out to extract");
-  draw_text(hint, sidebar_w_ + S(20), fy, w() - sidebar_w_ - S(40), S(34), theme_.text_dim.alpha(0.8), 2);
+  auto counts = [](size_t fo, size_t fi, int64_t b) {
+    std::string s;
+    if (fo) s += format(fo == 1 ? _("%zu folder") : _("%zu folders"), fo);
+    if (fo && (fi || b)) s += _(" and ");
+    if (fi || !fo) s += format(fi == 1 ? _("%s bytes in %zu file") : _("%s bytes in %zu files"), group_digits(b).c_str(), fi);
+    return s;
+  };
+  std::string middle;
+  if (!sel.empty()) middle = _("Selected ") + counts(sel_folders, sel_files, sel_bytes);
+  else if (has_archive() && !results_) {
+    middle = describe_format(info_.format, info_.path);
+    if (info_.total_size > 0)
+      middle += format(_(", ratio %d%%"), int(std::lround(100.0 * double(info_.archive_size) / double(info_.total_size))));
+    if (info_.encrypted || info_.header_encrypted) middle += _(", encrypted");
+  }
+  draw_text(middle, S(66), y0, w() / 2 - S(74), status_h_, theme_.text);
+  std::string right = results_ ? fmt_count(view_->items().size() - 1, _("Found %zu item"), _("Found %zu items"))
+                               : _("Total ") + counts(folders, files, bytes);
+  draw_text(right, w() / 2 + S(10), y0, w() / 2 - S(20), status_h_, theme_.text);
 }
 
 void TacaWindow::draw_progress(Painter &p) {
   if (!job_) return;
-  int cw = std::min(S(560), w() - sidebar_w_ - S(40));
-  int cx = sidebar_w_ + (w() - sidebar_w_ - cw) / 2, cy = h() - S(34) - S(96), ch = S(76);
+  int cw = std::min(S(560), w() - S(40));
+  int cx = (w() - cw) / 2, cy = h() - status_h_ - S(96), ch = S(76);
   p.shadow(cx, cy, cw, ch, S(14), theme_.shadow, S(10));
   p.fill_rounded(cx, cy, cw, ch, S(14), theme_.surface);
   p.stroke_rounded(cx + 0.5, cy + 0.5, cw - 1, ch - 1, S(14), theme_.border.alpha(0.7));
@@ -1013,19 +1716,16 @@ void TacaWindow::draw_progress(Painter &p) {
   if (f >= 0) {
     p.fill_rounded(bx, by, std::max(double(S(6)), bw * f), S(6), S(3), theme_.accent);
   } else {
-    // Indeterminate: a moving segment.
-    double t = std::fmod(Fl::version() * 0 + double(clock()) / CLOCKS_PER_SEC * 0.8, 1.0);
     static double phase = 0;
     phase = std::fmod(phase + 0.04, 1.0);
-    (void)t;
     p.fill_rounded(bx + (bw - bw / 4) * phase, by, bw / 4, S(6), S(3), theme_.accent);
   }
 }
 
 void TacaWindow::draw_progress_text() {
   if (!job_) return;
-  int cw = std::min(S(560), w() - sidebar_w_ - S(40));
-  int cx = sidebar_w_ + (w() - sidebar_w_ - cw) / 2, cy = h() - S(34) - S(96);
+  int cw = std::min(S(560), w() - S(40));
+  int cx = (w() - cw) / 2, cy = h() - status_h_ - S(96);
   double f = job_->progress().fraction();
   text_font(theme_.font_size, true);
   std::string title = job_->title();
@@ -1035,97 +1735,34 @@ void TacaWindow::draw_progress_text() {
   draw_text(job_->progress().current(), cx + S(18), cy + S(32), cw - S(150), S(20), theme_.text_dim);
 }
 
-int TacaWindow::recent_at(int mx, int my) const {
-  if (has_archive()) return -1;
-  int zw = std::min(S(640), w() - S(64)), zx = (w() - zw) / 2, zy = std::max(S(40), h() / 2 - S(250));
-  int ry = zy + S(300);
-  for (size_t i = 0; i < recent_.size(); ++i) {
-    int y = ry + int(i) * S(54);
-    if (y + S(50) > h() - S(40)) break;
-    if (mx >= zx && mx < zx + zw && my >= y && my < y + S(48)) return int(i);
-  }
-  return -1;
-}
-
-void TacaWindow::draw_welcome(Painter &p) {
-  int zw = std::min(S(640), w() - S(64)), zx = (w() - zw) / 2, zy = std::max(S(40), h() / 2 - S(250)), zh = S(250);
-  // Soft accent glow behind the drop zone.
-  p.fill_gradient(0, 0, w(), h() / 2, 0, theme_.accent.alpha(theme_.dark ? 0.10 : 0.07), theme_.background.alpha(0));
-  p.fill_rounded(zx, zy, zw, zh, S(22), drop_hover_ ? theme_.accent.alpha(0.12) : theme_.surface);
-  cairo_t *cr = p.cr();
-  cairo_save(cr);
-  double dash[] = {Sd(8), Sd(6)};
-  cairo_set_dash(cr, dash, 2, 0);
-  p.stroke_rounded(zx + S(8), zy + S(8), zw - S(16), zh - S(16), S(16), drop_hover_ ? theme_.accent : theme_.border, Sd(1.6));
-  cairo_restore(cr);
-  icon::badge(p, w() / 2 - S(34), zy + S(30), S(68), theme_.accent);
-  int ry = zy + S(300);
-  for (size_t i = 0; i < recent_.size(); ++i) {
-    int y = ry + int(i) * S(54);
-    if (y + S(50) > h() - S(40)) break;
-    bool hv = hover_recent_ == int(i);
-    p.fill_rounded(zx, y, zw, S(48), S(12), hv ? theme_.hover : theme_.surface_alt);
-    p.fill_rounded(zx + S(10), y + S(10), S(56), S(28), S(8), theme_.accent.alpha(theme_.dark ? 0.3 : 0.15));
-  }
-}
-
-void TacaWindow::draw_welcome_text() {
-  int zw = std::min(S(640), w() - S(64)), zx = (w() - zw) / 2, zy = std::max(S(40), h() / 2 - S(250));
-  text_font(theme_.font_size + S(7), true);
-  draw_text(drop_hover_ ? _("Drop to open or pack") : _("Drop an archive here"), zx, zy + S(108), zw, S(32), theme_.text, 1);
-  text_font(theme_.font_size);
-  draw_text(_("or drop files and folders to pack them into a new archive"), zx, zy + S(142), zw, S(24), theme_.text_dim, 1);
-  int ry = zy + S(300);
-  text_font(theme_.font_size - S(1), true);
-  if (!recent_.empty()) draw_text(_("Recent archives"), zx + S(4), ry - S(30), zw, S(24), theme_.text_dim);
-  else {
-    text_font(theme_.font_size - S(1));
-    draw_text(_("ZIP · RAR · 7Z · TAR · GZ · BZ2 · XZ · ZST · LZ4 · ISO · CAB · CPIO · DEB · RPM · XAR · JAR · EPUB"),
-              zx, ry - S(20), zw, S(24), theme_.text_dim, 1);
-  }
-  for (size_t i = 0; i < recent_.size(); ++i) {
-    int y = ry + int(i) * S(54);
-    if (y + S(50) > h() - S(40)) break;
-    Format f = format_from_name(recent_[i]);
-    text_font(theme_.font_size - S(3), true);
-    draw_text(f == Format::Unknown ? "?" : format_info(f).label, zx + S(10), y + S(10), S(56), S(28), theme_.accent_text, 1);
-    text_font(theme_.font_size, true);
-    draw_text(basename_of(recent_[i]), zx + S(80), y + S(4), zw - S(96), S(22), theme_.text);
-    text_font(theme_.font_size - S(2));
-    std::string dir = recent_[i].substr(0, recent_[i].rfind('/'));
-    std::string home = home_dir();
-    if (starts_with(dir, home)) dir = "~" + dir.substr(home.size());
-    draw_text(dir, zx + S(80), y + S(24), zw - S(96), S(20), theme_.text_dim);
-  }
-}
-
 void TacaWindow::draw() {
   {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), theme_.background);
-    if (has_archive()) {
-      draw_sidebar(p);
-      draw_header(p);
-      p.line(sidebar_w_, h() - S(34) + 0.5, w(), h() - S(34) + 0.5, theme_.border.alpha(0.6));
-    } else {
-      draw_welcome(p);
-    }
+    draw_address(p);
+    draw_status(p);
   }
-  if (has_archive()) {
-    draw_sidebar_text();
-    draw_header_text();
-  } else {
-    draw_welcome_text();
-  }
+  draw_status_text();
   draw_children();
+  if (drop_hover_) {
+    Painter p(w(), h());
+    int vy = view_->y();
+    p.fill_rounded(S(6), vy + S(6), w() - S(12), view_->h() - S(12), S(12), theme_.accent.alpha(0.10));
+    cairo_t *cr = p.cr();
+    cairo_save(cr);
+    double dash[] = {Sd(8), Sd(6)};
+    cairo_set_dash(cr, dash, 2, 0);
+    p.stroke_rounded(S(6), vy + S(6), w() - S(12), view_->h() - S(12), S(12), theme_.accent, Sd(2));
+    cairo_restore(cr);
+  }
   if (job_ || !toast_.empty()) {
+    text_font(theme_.font_size);
+    int tw = std::min(text_width(toast_) + S(40), w() - S(40)), th = S(38);
+    int tx = (w() - tw) / 2, ty = h() - status_h_ - th - S(16);
     {
       Painter p(w(), h());
       draw_progress(p);
       if (!toast_.empty() && !job_) {
-        text_font(theme_.font_size);
-        int tw = std::min(text_width(toast_) + S(40), w() - S(40)), th = S(40);
-        int tx = sidebar_w_ + (w() - sidebar_w_ - tw) / 2, ty = h() - th - S(48);
         Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : Color::hex(0x1F2630);
         p.shadow(tx, ty, tw, th, th / 2.0, theme_.shadow, S(8));
         p.fill_rounded(tx, ty, tw, th, th / 2.0, bg);
@@ -1134,8 +1771,6 @@ void TacaWindow::draw() {
     draw_progress_text();
     if (job_) draw_child(*cancel_);
     if (!toast_.empty() && !job_) {
-      int tw = std::min(text_width(toast_) + S(40), w() - S(40)), th = S(40);
-      int tx = sidebar_w_ + (w() - sidebar_w_ - tw) / 2, ty = h() - th - S(48);
       text_font(theme_.font_size);
       draw_text(toast_, tx + S(20), ty, tw - S(40), th, theme_.dark ? theme_.text : Color::hex(0xF5F7FA), 1);
     }
@@ -1158,6 +1793,13 @@ void TacaWindow::toast_cb(void *p) {
 // ----------------------------------------------------------------- events
 
 int TacaWindow::handle(int event) {
+  int bx = S(50), by = address_y_ + S(6), bw = w() - bx - S(8), bh = address_h_ - S(12);
+  auto part_at = [&](int mx, int my) {
+    if (my < by || my >= by + bh) return 0;
+    if (mx >= S(8) && mx < S(44)) return 1;
+    if (mx >= bx + bw - S(30) && mx < bx + bw) return 2;
+    return 0;
+  };
   switch (event) {
     case FL_DND_ENTER:
     case FL_DND_DRAG:
@@ -1183,12 +1825,13 @@ int TacaWindow::handle(int event) {
         toast(_("Please wait for the current task to finish"));
         return 1;
       }
-      if (has_archive()) {
+      if (has_archive() && !results_) {
         add_paths(paths);
       } else {
         struct stat st;
-        if (paths.size() == 1 && stat(paths[0].c_str(), &st) == 0 && S_ISREG(st.st_mode) &&
-            detect_format(paths[0]) != Format::Unknown)
+        if (paths.size() == 1 && stat(paths[0].c_str(), &st) == 0 && S_ISDIR(st.st_mode)) browse(paths[0]);
+        else if (paths.size() == 1 && stat(paths[0].c_str(), &st) == 0 && S_ISREG(st.st_mode) &&
+                 looks_like_archive(paths[0]))
           open_archive(paths[0]);
         else
           action_new(paths);
@@ -1197,39 +1840,27 @@ int TacaWindow::handle(int event) {
     }
     case FL_MOVE:
     case FL_ENTER: {
-      int a = sidebar_action_at(Fl::event_x(), Fl::event_y());
-      int c = crumb_at(Fl::event_x(), Fl::event_y());
-      int rc = recent_at(Fl::event_x(), Fl::event_y());
-      if (a != hover_action_ || c != hover_crumb_ || rc != hover_recent_) {
-        hover_action_ = a;
-        hover_crumb_ = c;
-        hover_recent_ = rc;
-        cursor(a >= 0 || c >= 0 || rc >= 0 ? FL_CURSOR_HAND : FL_CURSOR_DEFAULT);
+      int part = part_at(Fl::event_x(), Fl::event_y());
+      if (part != hover_part_) {
+        hover_part_ = part;
         redraw();
       }
       break;
     }
     case FL_LEAVE:
-      hover_action_ = hover_crumb_ = hover_recent_ = -1;
-      cursor(FL_CURSOR_DEFAULT);
-      redraw();
+      if (hover_part_) {
+        hover_part_ = 0;
+        redraw();
+      }
       break;
     case FL_PUSH: {
-      int a = sidebar_action_at(Fl::event_x(), Fl::event_y());
-      if (a >= 0) {
-        run_sidebar_action(a);
+      int part = part_at(Fl::event_x(), Fl::event_y());
+      if (part == 1) {
+        if (!job_) go_up();
         return 1;
       }
-      int c = crumb_at(Fl::event_x(), Fl::event_y());
-      if (c >= 0) {
-        folder_ = c;
-        search_->value("");
-        refresh_view(false);
-        return 1;
-      }
-      int rc = recent_at(Fl::event_x(), Fl::event_y());
-      if (rc >= 0) {
-        open_archive(recent_[size_t(rc)]);
+      if (part == 2) {
+        if (!job_) address_menu();
         return 1;
       }
       break;
@@ -1238,60 +1869,28 @@ int TacaWindow::handle(int event) {
     case FL_KEYBOARD: {
       int key = Fl::event_key();
       bool ctrl = Fl::event_state() & FL_CTRL;
-      if (ctrl && (key == 'q' || key == 'w')) {
-        hide();
+      if (key == FL_Escape && job_) {
+        job_->cancel();
         return 1;
       }
-      if (ctrl && key == 'o') {
-        action_open();
-        return 1;
-      }
-      if (ctrl && key == 'n') {
-        action_new();
-        return 1;
-      }
-      if (!has_archive() || job_) {
-        if (key == FL_Escape && job_) {
-          job_->cancel();
-          return 1;
-        }
-        break;
-      }
-      if (ctrl && key == 'f') {
-        Fl::focus(search_);
+      if (job_) break;
+      if (ctrl && key == 'l') {
+        Fl::focus(address_);
+        address_->position(0, address_->size());
         redraw();
         return 1;
       }
-      if (ctrl && key == 'e') {
-        action_extract(!view_->selection().empty());
+      if (ctrl && key == 'f') {
+        command(CmdFind);
         return 1;
       }
-      if (ctrl && key == 'i') {
-        action_properties();
-        return 1;
-      }
-      if (ctrl && key == 't') {
-        action_test();
-        return 1;
-      }
-      if (key == FL_Delete && Fl::focus() != search_) {
-        action_delete();
-        return 1;
-      }
-      if (key == FL_F + 2) {
-        action_rename();
-        return 1;
-      }
-      if (Fl::focus() == search_ && (key == FL_Escape || key == FL_Down || key == FL_Enter)) {
-        if (key == FL_Escape) {
-          search_->value("");
-          refresh_view();
-        }
+      if (Fl::focus() == address_ && key == FL_Escape) {
+        address_->value(location().c_str());
         Fl::focus(view_);
         redraw();
         return 1;
       }
-      if (key == FL_Escape) {
+      if (key == FL_Escape && Fl::focus() == view_) {
         if (!view_->selection().empty()) view_->clear_selection();
         return 1;
       }
@@ -1299,7 +1898,7 @@ int TacaWindow::handle(int event) {
     }
   }
   int r = BufferedWindow::handle(event);
-  if (event == FL_FOCUS || event == FL_UNFOCUS || event == FL_PUSH) redraw();
+  if (event == FL_FOCUS || event == FL_UNFOCUS || event == FL_PUSH || event == FL_KEYBOARD) redraw();
   return r;
 }
 

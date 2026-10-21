@@ -584,6 +584,20 @@ static void test_browsing() {
   t.build(v);
   auto top = t.list(t.root(), SortKey::Name, false);
   CHECK(top.size() == 2 && t.node(top[0]).name == "sub" && t.node(top[0]).dir);
+  // Find results: a flat list named after the last path component.
+  std::vector<Entry> flat(3);
+  flat[0].path = "/x/one.txt";
+  flat[0].size = 4;
+  flat[1].path = "a.zip/inner/two.txt";
+  flat[1].size = 6;
+  flat[2].path = "/y/dir";
+  flat[2].dir = true;
+  Tree ft;
+  ft.build_flat(flat);
+  CHECK(ft.size() == 4 && ft.node(1).name == "one.txt" && ft.node(2).name == "two.txt" && ft.node(3).dir);
+  CHECK(ft.node(2).path == "a.zip/inner/two.txt" && ft.node(2).parent == 0);
+  CHECK(ft.node(ft.root()).files == 2 && ft.node(ft.root()).size == 10);
+  CHECK(ft.list(ft.root(), SortKey::Name, false).size() == 3);
 
   CHECK(parent_directory("/a/b") == "/a");
   CHECK(parent_directory("/a") == "/");
@@ -696,7 +710,7 @@ static void test_repair_plan() {
   p = plan_repair("/x/c.tar.gz", Format::TarGz, dir, "/usr/bin/zip", "", "", "");
   CHECK(p.method == RepairMethod::Salvage && p.output == "/out/c (repaired).tar.gz");
   p = plan_repair("/x/d.txt", Format::Unknown, dir, "", "", "", "");
-  CHECK(p.method == RepairMethod::None && !p.summary.empty());
+  CHECK(p.method == RepairMethod::Unsupported && !p.summary.empty());
   CHECK(repaired_name("/x/photos.tar.xz", Format::TarXz) == "photos (repaired).tar.xz");
 }
 
