@@ -720,6 +720,12 @@ void install_ui_style() {
 
 void set_input_context_menus(bool enabled) { g_input_menus = enabled; }
 
+void apply_stock_style(Fl_Widget *root) {
+  if (!root) return;
+  style().refresh();
+  restyle(root, ui_theme());
+}
+
 void set_menu_icon(const Fl_Menu_Item *item, const std::string &icon) {
   if (icon.empty()) icons_by_item().erase(item);
   else icons_by_item()[item] = icon;

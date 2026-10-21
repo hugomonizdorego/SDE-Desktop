@@ -11,9 +11,12 @@
 // a Windows 11 like row of quick actions (Cut, Copy, Paste, ...) at the top:
 //
 //   sde::ContextMenu menu;
-//   menu.edit_actions({.cut = [&] { cut(); }, .copy = [&] { copy(); },
-//                      .paste = [&] { paste(); }});
-//   menu.item(_("Open"), [&] { open(); }, {.icon = "document-open", .shortcut = FL_CTRL + 'o'});
+//   sde::EditActions edit;
+//   edit.cut = [&] { cut(); };
+//   edit.copy = [&] { copy(); };
+//   edit.paste = [&] { paste(); };
+//   menu.edit_actions(edit);
+//   menu.item(_("Open"), [&] { open(); }, {"document-open", FL_CTRL + 'o'});
 //   menu.check(_("Show hidden files"), hidden, [&] { toggle_hidden(); });
 //   menu.separator();
 //   menu.submenu(_("Sort by"), std::move(sort_menu));
@@ -114,6 +117,11 @@ class ContextMenu {
   void flatten(std::vector<Fl_Menu_Item> &out);
   bool run(const Fl_Menu_Item *picked);
 };
+
+// Gives stock FLTK widgets in |root| (buttons, inputs, browsers, choices,
+// check buttons; recursively) the SDE look: rounded themed boxes and theme
+// colors. fl_ask.H dialogs and Fl_File_Chooser get it automatically.
+void apply_stock_style(Fl_Widget *root);
 
 // The standard SDE context menu of a text field.
 void show_input_context_menu(Fl_Input_ *input);
