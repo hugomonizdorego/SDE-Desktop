@@ -320,7 +320,15 @@ def brightness_checks(ac):
     g=geom(ac);before=level()
     run('xdotool','mousemove',g['x']+b[0]-round(20*scale),g['y']+b[1]+b[3]//2,'click','4');time.sleep(.2);run('xdotool','click','4')
     waitfor(lambda:level()==before+10,f'wheel did not raise the brightness ({level()})')
-    run('sde-panel','--brightness','-20');waitfor(lambda:level()==before-10,'sde-panel --brightness did not change it')
+    # Brightness keys (sde-panel --brightness); a command can race the
+    # previous one, so it is sent again while nothing changed.
+    for _ in range(3):
+        run('sde-panel','--brightness','-20')
+        for _ in range(20):
+            if level()!=before+10:break
+            time.sleep(.1)
+        if level()!=before+10:break
+    waitfor(lambda:level()==before-10,f'sde-panel --brightness did not change it ({level()})')
     shot('02-action-center-brightness')
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
 import sys,os
