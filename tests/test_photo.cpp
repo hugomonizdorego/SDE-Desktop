@@ -122,7 +122,7 @@ static void test_filters() {
   CHECK(sep.r > sep.g && sep.g > sep.b);
   CHECK(near(filter_pixel(c, Filter::Vivid, 1), c));  // tone-only filters
   CHECK(near(filter_pixel(c, Filter::Mono, 0), c));
-  CHECK(filter_preset(Filter::None).identity() && filter_preset(Filter::Invert).identity());
+  CHECK(filter_preset(Filter::Original).identity() && filter_preset(Filter::Invert).identity());
   CHECK(filter_preset(Filter::Vivid).saturation > 0 && filter_preset(Filter::Cool).warmth < 0);
   Filter f;
   CHECK(parse_filter("sepia", f) && f == Filter::Sepia);

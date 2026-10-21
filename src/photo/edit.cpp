@@ -29,7 +29,7 @@ bool Adjust::operator==(const Adjust &o) const {
 
 const std::vector<FilterInfo> &filters() {
   static const std::vector<FilterInfo> list{
-      {Filter::None, "original", "Original"}, {Filter::Vivid, "vivid", "Vivid"},
+      {Filter::Original, "original", "Original"}, {Filter::Vivid, "vivid", "Vivid"},
       {Filter::Warm, "warm", "Warm"},         {Filter::Cool, "cool", "Cool"},
       {Filter::Mono, "mono", "B&W"},          {Filter::Noir, "noir", "Noir"},
       {Filter::Sepia, "sepia", "Sepia"},      {Filter::Vintage, "vintage", "Vintage"},
@@ -63,7 +63,7 @@ Adjust filter_preset(Filter f) {
     case Filter::Sepia: a.brightness = 4; a.contrast = 4; a.fade = 10; a.vignette = 15; break;
     case Filter::Vintage: a.brightness = 6; a.contrast = -12; a.saturation = -20; a.warmth = 30; a.fade = 35; a.vignette = 40; break;
     case Filter::Matte: a.brightness = 6; a.contrast = -18; a.saturation = -10; a.warmth = 8; a.fade = 45; break;
-    case Filter::None:
+    case Filter::Original:
     case Filter::Invert: break;
   }
   return a;
@@ -208,7 +208,7 @@ cairo_surface_t *apply_geometry(cairo_surface_t *src, const Edits &e, double sca
 void apply_tone(cairo_surface_t *s, const Edits &e) {
   if (e.tone_identity()) return;
   Adjust a = e.adjust;
-  double st = e.filter == Filter::None ? 0 : e.strength / 100.0;
+  double st = e.filter == Filter::Original ? 0 : e.strength / 100.0;
   Adjust p = filter_preset(e.filter);
   a.exposure += p.exposure * st;
   a.brightness += p.brightness * st;

@@ -30,7 +30,7 @@ struct Adjust {
   bool operator!=(const Adjust &o) const { return !(*this == o); }
 };
 
-enum class Filter { None, Vivid, Warm, Cool, Mono, Noir, Sepia, Vintage, Matte, Invert };
+enum class Filter { Original, Vivid, Warm, Cool, Mono, Noir, Sepia, Vintage, Matte, Invert };
 
 struct FilterInfo {
   Filter id;
@@ -54,12 +54,12 @@ struct Edits {
   Rect crop;               // then the crop
   int resize_w = 0, resize_h = 0;  // then a resize (0 = keep)
   Adjust adjust;
-  Filter filter = Filter::None;
+  Filter filter = Filter::Original;
   int strength = 100;  // filter strength in percent
   bool identity() const;
   // Only rotation/flip: JPEG files can then be saved losslessly.
   bool geometry_only() const;
-  bool tone_identity() const { return adjust.identity() && filter == Filter::None; }
+  bool tone_identity() const { return adjust.identity() && filter == Filter::Original; }
   bool operator==(const Edits &o) const;
   bool operator!=(const Edits &o) const { return !(*this == o); }
 };
