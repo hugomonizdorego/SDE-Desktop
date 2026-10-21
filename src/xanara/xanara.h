@@ -297,6 +297,7 @@ class XanaraWindow : public sde::BufferedWindow {
   int handle(int event) override;
   void resize(int x, int y, int w, int h) override;
   void hide() override;
+  void quit();  // asks about unsaved changes, then closes
 
   const sde::Theme &theme() const { return theme_; }
   DocView *view() const { return view_; }

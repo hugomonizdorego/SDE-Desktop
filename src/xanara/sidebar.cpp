@@ -316,7 +316,11 @@ int Sidebar::handle(int event) {
       return 1;
     case FL_PUSH: {
       if (my < y() + tabs_h()) {
-        if (hover_tab_ >= 0) set_tab(Tab(hover_tab_));
+        int tw = (w() - S(24)) / 3;
+        if (tw > 0 && mx >= x() + S(12) && mx < x() + S(12) + 3 * tw) {
+          set_tab(Tab((mx - x() - S(12)) / tw));
+          app_->save_settings();
+        }
         return 1;
       }
       int k;

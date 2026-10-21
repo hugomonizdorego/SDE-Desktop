@@ -126,9 +126,11 @@ XanaraWindow::XanaraWindow(int w, int h) : BufferedWindow(w, h, "Xanara") {
   layout();
   update_chrome();
   Fl::add_handler(x_event_handler);
+  callback([](Fl_Widget *, void *p) { static_cast<XanaraWindow *>(p)->quit(); }, this);
 }
 
 XanaraWindow::~XanaraWindow() {
+  remember_position();
   Fl::remove_handler(x_event_handler);
   Fl::remove_timeout(toast_cb, this);
   Fl::remove_timeout(remember_cb, this);
@@ -141,8 +143,13 @@ XanaraWindow::~XanaraWindow() {
 }
 
 void XanaraWindow::hide() {
-  if (!close_document(true)) return;
+  // FLTK also hides and re-shows the window to enter full screen without a
+  // window manager, so this must not close the document; quit() does.
   BufferedWindow::hide();
+}
+
+void XanaraWindow::quit() {
+  if (close_document(true)) hide();
 }
 
 // ------------------------------------------------------------- settings
@@ -851,7 +858,7 @@ int XanaraWindow::handle(int event) {
             else view_->find_next(1);
             return 1;
           case 'w': close_document(true); update_chrome(); layout(); return 1;
-          case 'q': hide(); return 1;
+          case 'q': quit(); return 1;
           case 'z':
             if (!typing) {
               view_->undo();
@@ -1208,7 +1215,7 @@ void XanaraWindow::show_menu(int mx, int my) {
     case SaveAs: save_as(); break;
     case Print: print(); break;
     case Close: close_document(true); layout(); update_chrome(); break;
-    case Quit: hide(); break;
+    case Quit: quit(); break;
     case Continuous: view_->set_layout(Layout::Continuous); break;
     case Single: view_->set_layout(Layout::Single); break;
     case Book: view_->set_layout(Layout::Book); break;
