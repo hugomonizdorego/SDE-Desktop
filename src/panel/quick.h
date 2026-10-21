@@ -58,7 +58,7 @@ struct BrightnessState {
   bool available = false;
   std::string device;  // /sys/class/backlight/<device>
   int value = 0, max = 0;
-  int percent() const { return max > 0 ? value * 100 / max : 0; }
+  int percent() const { return max > 0 ? int((long(value) * 100 + max / 2) / max) : 0; }
 };
 
 struct BatteryState {

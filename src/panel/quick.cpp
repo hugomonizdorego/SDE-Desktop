@@ -34,6 +34,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "panel.h"
+#include "power.h"
 #include "process.h"
 #include "sni.h"
 #include "spawn.h"
@@ -386,15 +387,14 @@ static std::string backlight_dir() {
 
 void SystemStatus::refresh_brightness() {
   BrightnessState s;
-  std::string root = backlight_dir();
-  for (auto &dev : list_dir(root)) {
-    std::string base = root + "/" + dev, v, m;
-    if (!read_file(base + "/brightness", v) || !read_file(base + "/max_brightness", m)) continue;
-    s.available = atoi(m.c_str()) > 0;
-    s.device = dev;
-    s.value = atoi(v.c_str());
-    s.max = atoi(m.c_str());
-    if (s.available) break;
+  // The same backlight as sde-power and Settings (firmware before platform
+  // before raw interfaces).
+  power::Backlight bl;
+  if (power::primary_backlight(bl, backlight_dir())) {
+    s.available = true;
+    s.device = bl.name;
+    s.value = bl.value;
+    s.max = bl.max;
   }
   // No built-in panel: an external monitor through DDC/CI (ddcutil), probed
   // once in the background because it takes a few seconds.
@@ -618,7 +618,7 @@ void SystemStatus::connect_wifi(const WifiNetwork &net) {
 void SystemStatus::set_brightness(int percent) {
   if (!brightness.available) return;
   percent = std::max(1, std::min(100, percent));
-  int value = std::max(1, (brightness.max * percent + 50) / 100);
+  int value = power::percent_to_raw(percent, brightness.max);
   if (value == brightness.value) return;
   brightness.value = value;
   if (brightness.device == "ddc") {
@@ -658,7 +658,9 @@ void SystemStatus::ddc_apply(void *data) {
 void SystemStatus::step_brightness(int delta) {
   refresh_brightness();
   if (!brightness.available) return;
-  set_brightness(brightness.percent() + delta);
+  // Finer steps near the dark end, as the brightness keys of sde-power.
+  int now = brightness.percent();
+  set_brightness(delta % 5 == 0 ? power::step_percent(now, delta / 5, 5) : now + delta);
   changed();
 }
 
