@@ -22,6 +22,7 @@
 #include "engine.h"
 #include "i18n.h"
 #include "internal.h"
+#include "tools.h"
 #include "util.h"
 
 namespace taca {
@@ -453,6 +454,7 @@ Result list_archive(const std::string &path, const std::string &password, Archiv
     return r;
   }
   if (out.format == Format::Zip) {
+    out.comment = zip_comment(path);
     auto cd = zip_central_directory(path);
     for (auto &e : out.entries) {
       auto it = cd.find(e.path);

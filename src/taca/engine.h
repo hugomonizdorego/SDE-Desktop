@@ -111,6 +111,7 @@ struct ArchiveInfo {
   int64_t total_size = 0;    // sum of member sizes (known ones)
   int64_t total_packed = -1; // sum of packed sizes, -1 if unknown
   size_t files = 0, folders = 0, unsafe = 0;
+  std::string comment;  // archive comment (ZIP), "" when none
 };
 
 // Progress shared between a worker thread and the user interface.

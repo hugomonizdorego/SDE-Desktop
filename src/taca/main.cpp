@@ -37,7 +37,7 @@ void usage() {
                  "\n"
                  "Open, create and extract archives.\n"
                  "\n"
-                 "  FILE...                    open an archive (other files: pack them)\n"
+                 "  FILE...                    open an archive or a folder (other files: pack them)\n"
                  "  -h, --extract-here FILE... extract next to each archive\n"
                  "  -e, --extract-to=DIR FILE... extract into DIR\n"
                  "  -x, --extract FILE...      ask where to extract\n"
@@ -323,7 +323,7 @@ int main(int argc, char **argv) {
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);
   int w = std::min(S(1120), sw - S(40)), h = std::min(S(720), sh - S(40));
-  auto *window = new TacaWindow(std::max(w, S(640)), std::max(h, S(440)));
+  auto *window = new TacaWindow(std::max(w, S(480)), std::max(h, S(320)));
   window->position(sx + (sw - window->w()) / 2, sy + (sh - window->h()) / 2);
   window->show();
   XClassHint hint{const_cast<char *>("taca"), const_cast<char *>("Taca")};
@@ -336,7 +336,9 @@ int main(int argc, char **argv) {
     std::vector<std::string> abs;
     for (const auto &f : files) abs.push_back(absolute(f));
     struct stat st;
-    if (stat(abs[0].c_str(), &st) == 0 && S_ISREG(st.st_mode) && detect_format(abs[0]) != Format::Unknown)
+    if (abs.size() == 1 && dir_exists(abs[0]))
+      window->browse(abs[0]);
+    else if (stat(abs[0].c_str(), &st) == 0 && S_ISREG(st.st_mode) && detect_format(abs[0]) != Format::Unknown)
       window->open_archive(abs[0]);
     else if (std::all_of(abs.begin(), abs.end(), [](const std::string &f) { return file_exists(f); }))
       window->action_new(abs);

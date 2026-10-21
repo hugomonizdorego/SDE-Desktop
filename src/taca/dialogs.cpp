@@ -112,14 +112,42 @@ int Dialog::run(Fl_Window *parent) {
     position(parent->x() + (parent->w() - w()) / 2, parent->y() + std::max(0, (parent->h() - h()) / 3));
   else
     position(sx + (sw - w()) / 2, sy + (sh - h()) / 3);
+  // Keep the whole dialog (and its title bar) on the screen.
+  int nx = std::max(sx, std::min(x(), sx + sw - w()));
+  int ny = std::max(sy + 24, std::min(y(), sy + sh - h() - 4));
+  position(nx, std::max(sy, ny));
   show();
   while (!done_ && shown()) Fl::wait();
   return code_;
 }
 
+FitScale::FitScale(int logical_h, int logical_w) {
+  int sx, sy, sw, sh;
+  Fl::screen_work_area(sx, sy, sw, sh, 0);
+  double scale = ui_scale();
+  double fit = std::min((sh - 64.0) / logical_h, logical_w > 0 ? (sw - 16.0) / logical_w : 99.0);
+  if (fit >= scale) return;
+  fit = std::max(0.75, fit);
+  saved_ = active_theme();
+  old_ = scale;
+  Theme t = saved_;
+  t.font_size = std::max(9, int(std::lround(saved_.font_size * fit / scale)));
+  t.scale = fit;
+  set_ui_scale(fit);
+  t.apply_to_fltk();
+  active_ = true;
+}
+
+FitScale::~FitScale() {
+  if (!active_) return;
+  set_ui_scale(old_);
+  saved_.apply_to_fltk();
+}
+
 // --------------------------------------------------------------- simple
 
 bool ask_password(Fl_Window *parent, const std::string &archive, bool wrong, std::string &out) {
+  FitScale fit(232, 440);
   Dialog d(S(440), S(232), wrong ? _("Wrong password") : _("Password required"),
            format(wrong ? _("Try again to unlock “%s”.") : _("“%s” is encrypted."), basename_of(archive).c_str()));
   d.begin();
@@ -184,6 +212,7 @@ bool ask_name(Fl_Window *parent, const std::string &title, const std::string &cu
 // -------------------------------------------------------------- extract
 
 bool ask_extract(Fl_Window *parent, const std::string &archive, size_t selected, ExtractChoice &c) {
+  FitScale fit(486, 560);
   Dialog d(S(560), S(486), _("Extract"), format(_("From “%s”"), basename_of(archive).c_str()));
   int left = S(24), fw = d.w() - S(48);
   d.begin();
@@ -241,43 +270,46 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
   std::string sub = files.empty() ? std::string(_("Choose what goes inside after creating it."))
                     : files.size() == 1 ? format(_("Pack “%s”"), basename_of(files[0]).c_str())
                                         : format(_("Pack %zu items"), files.size());
+  FitScale fit(560, 600);
   int w = S(600);
-  Dialog d(w, S(640), _("New Archive"), sub);
+  Dialog d(w, S(560), _("New Archive"), sub);
   int left = S(24), fw = w - S(48);
   d.begin();
-  d.label(left, S(80), fw, _("Name"), true);
-  auto *name = new Fl_Input(left + S(8), S(110), fw - S(16), S(28));
+  int nw = fw * 2 / 5;
+  d.label(left, S(80), nw, _("Name"), true);
+  auto *name = new Fl_Input(left + S(8), S(110), nw - S(16), S(28));
   style_input(name, d.theme());
   d.field(name);
-  d.label(left, S(150), fw, _("Location"), true);
-  auto *where = new Fl_Input(left + S(8), S(180), fw - S(130), S(28));
+  d.label(left + nw + S(12), S(80), fw - nw - S(12), _("Location"), true);
+  auto *where = new Fl_Input(left + nw + S(20), S(110), fw - nw - S(20) - S(60), S(28));
   style_input(where, d.theme());
   d.field(where);
-  auto *browse = new FlatButton(left + fw - S(108), S(176), S(108), S(34), _("Browse…"));
+  auto *browse = new FlatButton(left + fw - S(44), S(106), S(44), S(34), "…");
+  browse->tooltip(_("Browse…"));
   browse->callback([](Fl_Widget *w, void *p) {
     auto *in = static_cast<Fl_Input *>(p);
     std::string dir = choose_folder(_("Save the Archive In"), in->value());
     if (!dir.empty()) in->value(dir.c_str());
     w->window()->redraw();
   }, where);
-  d.label(left, S(220), fw, _("Format"), true);
-  auto *chips = new Chips(left, S(246), fw, S(66), labels);
+  d.label(left, S(150), fw, _("Format"), true);
+  auto *chips = new Chips(left, S(176), fw, S(66), labels);
   int rows = chips->rows_needed(fw);
   chips->size(fw, rows * S(36));
-  int y = S(246) + rows * S(36) + S(10);
+  int y = S(176) + rows * S(36) + S(10);
   d.label(left, y, fw, _("Compression"), true);
   auto *level = new Slider(left + S(150), y + S(28), fw - S(300), S(26));
   level->bounds(0, 9);
   level->step(1);
   level->value(c.options.level);
-  y += S(66);
+  y += S(70);
   d.label(left, y, fw / 2, _("Password (optional)"), true);
   auto *pw = new Fl_Secret_Input(left + S(8), y + S(30), fw / 2 - S(30), S(28));
   style_input(pw, d.theme());
   d.field(pw);
   auto *names = new Switch(left + fw / 2 + S(10), y + S(32), S(44), S(24));
   d.label(left + fw / 2 + S(64), y + S(33), fw / 2 - S(64), _("Encrypt file names"));
-  y += S(76);
+  y += S(70);
   auto *split = new Switch(left, y, S(44), S(24));
   d.label(left + S(56), y + S(1), S(180), _("Split into volumes of"));
   auto *vol = new Fl_Input(left + S(250), y - S(2), S(90), S(28));
@@ -288,7 +320,9 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
   d.end();
 
   // Defaults.
-  std::string dir = files.empty() ? home_dir() : files[0].substr(0, std::max<size_t>(1, files[0].rfind('/')));
+  std::string dir = !c.folder.empty() ? c.folder
+                    : files.empty()     ? home_dir()
+                                        : files[0].substr(0, std::max<size_t>(1, files[0].rfind('/')));
   std::string base = files.size() == 1 ? basename_of(files[0]) : basename_of(dir);
   if (base.empty() || base == "/") base = _("Archive");
   where->value(dir.c_str());
@@ -394,8 +428,6 @@ bool ask_create(Fl_Window *parent, const std::vector<std::string> &files, Create
 // ----------------------------------------------------------- properties
 
 void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::string &password_note) {
-  Dialog d(S(560), S(470), basename_of(info.path), describe_format(info.format, info.path));
-  const Theme &t = d.theme();
   struct stat st;
   time_t mtime = stat(info.path.c_str(), &st) == 0 ? st.st_mtime : 0;
   char date[64] = "—";
@@ -411,7 +443,9 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
                         (info.engine_format.empty() || info.backend == "libarchive" ? ""
                                                                                      : "  (" + info.engine_format + ")")},
       {_("Archive size"), human_size(info.archive_size)},
-      {_("Contents"), human_size(info.total_size)},
+      {_("Contents"), format("%s (%s bytes)", human_size(info.total_size).c_str(), group_digits(info.total_size).c_str())},
+      {_("Packed"), info.total_packed >= 0 ? human_size(info.total_packed) : std::string("—")},
+      {_("Ratio"), ratio >= 0 ? format("%d%%", int(std::lround(ratio * 100))) : std::string("—")},
       {_("Files"), format(_("%zu files in %zu folders"), info.files, info.folders)},
       {_("Encryption"), info.header_encrypted ? _("Contents and file names")
                         : info.encrypted       ? _("Contents (file names are visible)")
@@ -421,6 +455,16 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
   };
   if (info.unsafe) rows.push_back({_("Warning"), format(_("%zu unsafe names will not be extracted"), info.unsafe)});
   if (!password_note.empty()) rows.push_back({_("Password"), password_note});
+  std::vector<std::string> comment_lines;
+  for (const auto &l : split(info.comment, '\n', true))
+    if (comment_lines.size() < 6) comment_lines.push_back(l);
+  while (!comment_lines.empty() && trim(comment_lines.back()).empty()) comment_lines.pop_back();
+  if (comment_lines.empty() && !info.comment.empty()) comment_lines.push_back(info.comment);
+  FitScale fit(84 + int(rows.size()) * 30 + (comment_lines.empty() ? 0 : 36 + int(comment_lines.size()) * 20) + 96, 580);
+  int comment_h = comment_lines.empty() ? 0 : S(36) + int(comment_lines.size()) * S(20);
+  Dialog d(S(580), S(84) + int(rows.size()) * S(30) + comment_h + S(96), basename_of(info.path),
+           describe_format(info.format, info.path));
+  const Theme &t = d.theme();
   d.extra_paint = [&](Painter &p) {
     // Compression ring.
     double cx = d.w() - S(96), cy = S(150), r = S(54);
@@ -447,6 +491,17 @@ void show_properties(Fl_Window *parent, const ArchiveInfo &info, const std::stri
       text_font(t.font_size);
       draw_text(row.second, S(150), y, d.w() - S(150) - S(190), S(24), t.text);
       y += S(30);
+    }
+    if (!comment_lines.empty()) {
+      y += S(8);
+      text_font(t.font_size - S(1), true);
+      draw_text(_("Comment"), S(24), y, S(200), S(24), t.text_dim);
+      y += S(26);
+      text_font(t.font_size);
+      for (const auto &l : comment_lines) {
+        draw_text(l, S(32), y, d.w() - S(56), S(20), t.text);
+        y += S(20);
+      }
     }
     double cx = d.w() - S(96), cy = S(150);
     text_font(t.font_size + S(6), true);

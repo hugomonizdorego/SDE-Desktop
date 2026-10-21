@@ -13,6 +13,12 @@
 #include <cstring>
 #include <set>
 
+#include <unistd.h>
+
+#include <cerrno>
+#include <ctime>
+
+#include "config.h"
 #include "i18n.h"
 #include "taca.h"
 #include "util.h"
@@ -297,6 +303,90 @@ std::vector<std::string> choose_files(const std::string &title, const std::strin
   for (int i = 0; i < chooser.count(); ++i)
     if (chooser.filename(i)) out.push_back(chooser.filename(i));
   return out;
+}
+
+// ------------------------------------------------------------- settings
+
+std::string favorites_file() { return config_home() + "/sde/taca-favorites"; }
+
+Settings Settings::load() {
+  Settings s;
+  Config cfg;
+  cfg.load();
+  std::string f = cfg.get("taca", "format", "zip");
+  for (const auto &fi : all_formats())
+    if (f == fi.id && fi.format != Format::Unknown) s.format = fi.format;
+  s.level = std::max(0, std::min(9, cfg.get_int("taca", "level", 6)));
+  s.icons = cfg.get("taca", "view", "details") == "icons";
+  s.hidden = cfg.get_bool("taca", "hidden", false);
+  s.theme = cfg.get("taca", "theme", "follow");
+  if (s.theme != "light" && s.theme != "dark") s.theme = "follow";
+  s.open_after = cfg.get_bool("taca", "open_after", true);
+  return s;
+}
+
+void Settings::save() const {
+  Config cfg;
+  cfg.load();
+  cfg.set("taca", "format", format_info(format).id);
+  cfg.set("taca", "level", std::to_string(level));
+  cfg.set("taca", "view", icons ? "icons" : "details");
+  cfg.set("taca", "hidden", hidden ? "true" : "false");
+  cfg.set("taca", "theme", theme);
+  cfg.set("taca", "open_after", open_after ? "true" : "false");
+  cfg.save();
+}
+
+// ------------------------------------------------------------------ trash
+
+namespace {
+
+std::string trash_escape(const std::string &path) {
+  static const char *hex = "0123456789ABCDEF";
+  std::string out;
+  for (unsigned char c : path) {
+    if (isalnum(c) || strchr("/-_.~", c)) {
+      out += char(c);
+    } else {
+      out += '%';
+      out += hex[c >> 4];
+      out += hex[c & 15];
+    }
+  }
+  return out;
+}
+
+}  // namespace
+
+std::vector<std::string> move_to_trash(const std::vector<std::string> &paths, std::string &error) {
+  std::vector<std::string> failed;
+  std::string trash = data_home() + "/Trash";
+  make_dirs(trash + "/files");
+  make_dirs(trash + "/info");
+  for (const auto &p : paths) {
+    std::string base = basename_of(p), name = base;
+    for (int i = 2; access((trash + "/info/" + name + ".trashinfo").c_str(), F_OK) == 0 ||
+                    access((trash + "/files/" + name).c_str(), F_OK) == 0;
+         ++i)
+      name = base + "." + std::to_string(i);
+    time_t now = time(nullptr);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    char date[32];
+    strftime(date, sizeof date, "%Y-%m-%dT%H:%M:%S", &tm);
+    std::string info = trash + "/info/" + name + ".trashinfo";
+    if (!write_file_atomic(info, "[Trash Info]\nPath=" + trash_escape(p) + "\nDeletionDate=" + date + "\n")) {
+      error = strerror(errno);
+      failed.push_back(p);
+      continue;
+    }
+    if (rename(p.c_str(), (trash + "/files/" + name).c_str()) != 0) {
+      if (errno != EXDEV) error = strerror(errno);
+      unlink(info.c_str());
+      failed.push_back(p);
+    }
+  }
+  return failed;
 }
 
 }  // namespace taca

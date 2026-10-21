@@ -22,14 +22,67 @@ taca \- archive manager of the Selviana Desktop Environment
 Taca opens, creates, changes and extracts archives. It is written for SDE
 by the DebION Dev-Team with SDE-FLTK and libarchive.
 .PP
-Without options, \fIFILE\fR is opened in the Taca window; files that are not
-archives are offered for packing into a new archive. The window shows the
-archive's format, size and compression next to its contents, which can be
-browsed by folder, searched, shown as a list or as icons, extracted (all or
-the selection, also by dragging items to a file manager), opened with their
-default application, renamed, deleted, tested and extended with files
-dropped onto the window. Archive work runs in the background and can be
-cancelled.
+Without options, an archive \fIFILE\fR is opened in the Taca window and a
+folder is browsed; other files are offered for packing into a new archive.
+.SH WINDOW
+The window has a menu bar (File, Commands, Tools, Favorites, Options and
+Help), a toolbar, an address bar with an Up button, a details list and a
+status bar with the totals of the folder and of the selection.
+.PP
+The list browses the file system: double-click a folder to open it, an
+archive to look inside it (with its packed sizes and compression ratio) and
+".." or Backspace to go up, out of the archive into its folder. Type a path
+into the address bar (Ctrl+L), also a folder inside an archive such as
+\fI~/Downloads/photos.zip/2026\fR.
+.PP
+The toolbar buttons:
+.TP
+.B Add
+packs the selected files into a new archive, or adds files to the open one.
+.TP
+.B Extract To
+extracts the open archive (or the selection inside it, or the selected
+archives) into a folder, with options for existing files and folders.
+.TP
+.B Test
+reads every member and checks it for errors.
+.TP
+.B View
+shows a text file inside Taca or opens other files with their default
+application.
+.TP
+.B Delete
+removes members from the archive, or moves files to the trash.
+.TP
+.B Find
+finds files by name patterns such as \fI*.txt;*.md\fR in the folder, its
+sub-folders and, optionally, inside the archives found there.
+.TP
+.B Wizard
+guides through creating, extracting or converting an archive.
+.TP
+.B Info
+shows the format, sizes, ratio, encryption and comment of an archive.
+.TP
+.B Repair
+saves the readable files of a damaged archive into a new one: with
+\fBzip -FF\fR for ZIP files, \fBrar r\fR for RAR archives (both when
+installed), 7-Zip or unrar for others, and otherwise libarchive, which
+copies every member it can still read. The damaged archive is never changed.
+.PP
+Archive work runs in the background and can be cancelled. Files can be
+dropped onto the window (to open an archive, pack files or add them to the
+open archive) and dragged out of it to extract them.
+.PP
+Favorites keeps folders and archives you open often. Options sets the
+default format and compression level, the view (details or icons), hidden
+files and whether Taca follows the SDE theme or is always light or dark.
+.SH KEYS
+Alt+A add, Alt+E extract to, Alt+W extract here, Alt+T test, Alt+V view,
+Alt+I information, Alt+R repair, Alt+Z wizard, Alt+Q convert, Del delete,
+F2 rename, Enter open, Backspace up, F3 or Ctrl+F find, F5 refresh, Ctrl+B
+add to favorites, Ctrl+H hidden files, Ctrl+O open, Ctrl+N new archive,
+Ctrl+W close the archive, Ctrl+Q quit, F1 the list of keys.
 .SH FORMATS
 Read with libarchive: ZIP (and JAR, WAR, APK, EPUB, CBZ and other ZIP based
 files), RAR 4 and RAR 5, 7z, tar, tar.gz, tar.bz2, tar.xz, tar.zst, tar.lz4,

@@ -97,6 +97,36 @@ void Tree::build(const std::vector<Entry> &entries) {
   }
 }
 
+void Tree::build_flat(const std::vector<Entry> &entries) {
+  nodes_.clear();
+  index_.clear();
+  Node root;
+  root.dir = true;
+  nodes_.push_back(root);
+  index_[""] = 0;
+  for (const auto &e : entries) {
+    Node n;
+    n.path = e.path;
+    size_t slash = e.path.rfind('/');
+    n.name = slash == std::string::npos ? e.path : e.path.substr(slash + 1);
+    n.dir = e.dir;
+    n.symlink = e.symlink;
+    n.encrypted = e.encrypted;
+    n.unsafe = e.unsafe;
+    n.size = e.size;
+    n.packed = e.packed;
+    n.mtime = e.mtime;
+    n.files = e.dir ? 0 : 1;
+    n.parent = 0;
+    nodes_.push_back(n);
+    int index = int(nodes_.size() - 1);
+    index_[n.path] = index;
+    nodes_[0].children.push_back(index);
+    if (!e.dir && e.size > 0) nodes_[0].size += e.size;
+    nodes_[0].files += n.files;
+  }
+}
+
 int Tree::find(const std::string &path) const {
   auto it = index_.find(path);
   return it == index_.end() ? -1 : it->second;
@@ -111,6 +141,11 @@ void Tree::sort(std::vector<int> &v, SortKey key, bool descending) const {
       case SortKey::Name: break;
       case SortKey::Size: c = x.size < y.size ? -1 : x.size > y.size; break;
       case SortKey::Packed: c = x.packed < y.packed ? -1 : x.packed > y.packed; break;
+      case SortKey::Ratio: {
+        double rx = packed_ratio(x), ry = packed_ratio(y);
+        c = rx < ry ? -1 : rx > ry;
+        break;
+      }
       case SortKey::Type: c = file_kind(x.name, x.dir).compare(file_kind(y.name, y.dir)); break;
       case SortKey::Modified: c = x.mtime < y.mtime ? -1 : x.mtime > y.mtime; break;
     }
@@ -125,6 +160,11 @@ std::vector<int> Tree::list(int dir, SortKey key, bool descending) const {
   std::vector<int> v = nodes_[size_t(dir)].children;
   sort(v, key, descending);
   return v;
+}
+
+double packed_ratio(const Node &n) {
+  if (n.packed < 0 || n.size <= 0) return -1;
+  return double(n.packed) / double(n.size);
 }
 
 bool matches_query(const std::string &name, const std::string &query) {

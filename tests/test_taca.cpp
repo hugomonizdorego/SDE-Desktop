@@ -20,6 +20,7 @@
 #include "engine.h"
 #include "internal.h"
 #include "model.h"
+#include "tools.h"
 #include "util.h"
 
 using namespace taca;
@@ -542,8 +543,273 @@ static void test_tree() {
   CHECK(found.size() == 3);
   auto crumbs = t.ancestry(t.find("a/b"));
   CHECK(crumbs.size() == 3 && t.node(crumbs[1]).name == "a");
+  Node rn;
+  rn.size = 200;
+  rn.packed = 50;
+  CHECK(packed_ratio(rn) == 0.25);
+  rn.packed = -1;
+  CHECK(packed_ratio(rn) < 0);
+  v[1].packed = 4;  // a/d.txt: 80 %
+  v[2].packed = 1;  // z.txt: 100 %
+  Tree rt;
+  rt.build(v);
+  auto by_ratio = rt.list(rt.find("a"), SortKey::Ratio, false);
+  CHECK(by_ratio.size() == 2 && rt.node(by_ratio[0]).dir);  // folders stay first
   CHECK(file_kind("x.png", false) == "Image");
   CHECK(extension_label("archive.tar.gz") == "GZ");
+}
+
+// ------------------------------------------------------------- tools
+
+static void test_browsing() {
+  std::string d = tmp("browse");
+  sde::make_dirs(d + "/sub");
+  write(d + "/a.txt", "12345");
+  write(d + "/.hidden", "x");
+  std::vector<Entry> v;
+  std::string err;
+  CHECK(list_directory(d, false, v, err));
+  CHECK(v.size() == 2);
+  bool saw_sub = false, saw_a = false;
+  for (const auto &e : v) {
+    if (e.path == "sub") saw_sub = e.dir;
+    if (e.path == "a.txt") saw_a = !e.dir && e.size == 5;
+  }
+  CHECK(saw_sub && saw_a);
+  CHECK(list_directory(d, true, v, err) && v.size() == 3);
+  CHECK(!list_directory(d + "/missing", false, v, err) && !err.empty());
+  // The file system as a Tree: the same view code shows both.
+  Tree t;
+  list_directory(d, false, v, err);
+  t.build(v);
+  auto top = t.list(t.root(), SortKey::Name, false);
+  CHECK(top.size() == 2 && t.node(top[0]).name == "sub" && t.node(top[0]).dir);
+  // Find results: a flat list named after the last path component.
+  std::vector<Entry> flat(3);
+  flat[0].path = "/x/one.txt";
+  flat[0].size = 4;
+  flat[1].path = "a.zip/inner/two.txt";
+  flat[1].size = 6;
+  flat[2].path = "/y/dir";
+  flat[2].dir = true;
+  Tree ft;
+  ft.build_flat(flat);
+  CHECK(ft.size() == 4 && ft.node(1).name == "one.txt" && ft.node(2).name == "two.txt" && ft.node(3).dir);
+  CHECK(ft.node(2).path == "a.zip/inner/two.txt" && ft.node(2).parent == 0);
+  CHECK(ft.node(ft.root()).files == 2 && ft.node(ft.root()).size == 10);
+  CHECK(ft.list(ft.root(), SortKey::Name, false).size() == 3);
+
+  CHECK(parent_directory("/a/b") == "/a");
+  CHECK(parent_directory("/a") == "/");
+  CHECK(parent_directory("/") == "/");
+  CHECK(parent_directory("/a/b/") == "/a");
+  CHECK(normalize_path("/a//b/./c/../d/") == "/a/b/d");
+  CHECK(normalize_path("x/y", "/base") == "/base/x/y");
+  CHECK(normalize_path("/../..") == "/");
+  CHECK(normalize_path("~/z") == sde::home_dir() + "/z");
+
+  // Locations: a folder, an archive, a folder inside an archive.
+  std::string src = make_source();
+  std::string arc = tmp("browse/pack.zip");
+  CreateOptions co;
+  CHECK(create_archive(arc, {src}, co).ok);
+  Location l = resolve_location(d);
+  CHECK(l.ok && l.folder == d && l.archive.empty());
+  l = resolve_location(arc);
+  CHECK(l.ok && l.archive == arc && l.inner.empty());
+  l = resolve_location(arc + "/project/docs/");
+  CHECK(l.ok && l.archive == arc && l.inner == "project/docs");
+  l = resolve_location(d + "/nothing/here");
+  CHECK(!l.ok);
+  l = resolve_location("browse", g_root);
+  CHECK(l.ok && l.folder == d);
+  CHECK(location_text(arc, "") == arc && location_text(arc, "a/b") == arc + "/a/b");
+  CHECK(looks_like_archive(arc));
+  CHECK(!looks_like_archive(d + "/a.txt"));
+  std::string renamed = d + "/noext";
+  CHECK(create_archive(renamed + ".zip", {src}, co).ok);
+  CHECK(rename((renamed + ".zip").c_str(), renamed.c_str()) == 0);
+  CHECK(looks_like_archive(renamed));
+}
+
+static void test_patterns() {
+  CHECK(matches_pattern("Report.TXT", "*.txt"));
+  CHECK(matches_pattern("notes.md", "*.txt; *.md"));
+  CHECK(matches_pattern("notes.md", "*.txt,*.md"));
+  CHECK(!matches_pattern("notes.md", "*.txt"));
+  CHECK(matches_pattern("IMG_01.jpg", "img_??.jpg"));
+  CHECK(!matches_pattern("IMG_001.jpg", "img_??.jpg"));
+  CHECK(matches_pattern("holiday photo.png", "PHOTO"));
+  CHECK(matches_pattern("anything", ""));
+  CHECK(matches_pattern("anything", " ; "));
+  CHECK(matches_pattern("b-file", "[ab]*"));
+  CHECK(!matches_pattern("c-file", "[ab]*"));
+  CHECK(group_digits(3941620) == "3,941,620");
+  CHECK(group_digits(999) == "999");
+  CHECK(group_digits(1000) == "1,000");
+  CHECK(group_digits(0) == "0");
+}
+
+static void test_find() {
+  std::string root = tmp("findroot");
+  sde::make_dirs(root + "/one/two");
+  write(root + "/top.txt", "t");
+  write(root + "/one/mid.txt", "m");
+  write(root + "/one/two/deep.TXT", "d");
+  write(root + "/one/two/other.bin", "o");
+  std::string src = make_source();
+  CreateOptions co;
+  CHECK(create_archive(root + "/one/bundle.zip", {src}, co).ok);
+  FindOptions o;
+  o.root = root;
+  o.pattern = "*.txt";
+  std::vector<FindHit> hits;
+  Result r = find_files(o, hits);
+  CHECK(r.ok && hits.size() == 3);
+  for (const auto &h : hits) CHECK(h.archive.empty() && h.path[0] == '/');
+  o.recursive = false;
+  CHECK(find_files(o, hits).ok && hits.size() == 1 && hits[0].path == root + "/top.txt");
+  o.recursive = true;
+  o.inside_archives = true;
+  CHECK(find_files(o, hits).ok && hits.size() == 4);
+  bool member = false;
+  for (const auto &h : hits)
+    if (h.archive == root + "/one/bundle.zip" && h.path == "project/readme.txt") member = true;
+  CHECK(member);
+  // Only inside one archive.
+  FindOptions a;
+  a.archive = root + "/one/bundle.zip";
+  a.pattern = "*.md;data*";
+  CHECK(find_files(a, hits).ok && hits.size() == 2);
+  // Limit.
+  o.pattern = "";
+  o.limit = 2;
+  r = find_files(o, hits);
+  CHECK(r.ok && hits.size() == 2 && !r.warnings.empty());
+  o.root = root + "/missing";
+  CHECK(!find_files(o, hits).ok);
+}
+
+static void test_repair_plan() {
+  std::string dir = "/out";
+  RepairPlan p = plan_repair("/x/photos.zip", Format::Zip, dir, "/usr/bin/zip", "", "", "");
+  CHECK(p.method == RepairMethod::ZipFix && p.argv.size() == 5 && p.argv[1] == "-FF" && p.argv[3] == "--out");
+  CHECK(p.output == "/out/photos (repaired).zip" && p.argv[4] == p.output);
+  p = plan_repair("/x/photos.zip", Format::Zip, dir, "", "", "", "");
+  CHECK(p.method == RepairMethod::Salvage && p.output_format == Format::Zip);
+  p = plan_repair("/x/a.rar", Format::Rar5, dir, "", "/usr/bin/rar", "/usr/bin/7z", "");
+  CHECK(p.method == RepairMethod::RarRepair && p.argv[1] == "r" && p.output == "/out/a (repaired).rar");
+  p = plan_repair("/x/a.rar", Format::Rar, dir, "", "", "", "/usr/bin/unrar");
+  CHECK(p.method == RepairMethod::ToolSalvage && p.output_format == Format::Zip && p.argv[0] == "/usr/bin/unrar");
+  p = plan_repair("/x/a.rar", Format::Rar, dir, "", "", "/usr/bin/7z", "");
+  CHECK(p.method == RepairMethod::ToolSalvage && p.argv[0] == "/usr/bin/7z");
+  p = plan_repair("/x/a.rar", Format::Rar, dir, "", "", "", "");
+  CHECK(p.method == RepairMethod::Salvage && p.output == "/out/a (repaired).zip");
+  p = plan_repair("/x/b.7z", Format::SevenZip, dir, "", "", "/usr/bin/7z", "");
+  CHECK(p.method == RepairMethod::ToolSalvage && p.output_format == Format::SevenZip);
+  p = plan_repair("/x/c.tar.gz", Format::TarGz, dir, "/usr/bin/zip", "", "", "");
+  CHECK(p.method == RepairMethod::Salvage && p.output == "/out/c (repaired).tar.gz");
+  p = plan_repair("/x/d.txt", Format::Unknown, dir, "", "", "", "");
+  CHECK(p.method == RepairMethod::Unsupported && !p.summary.empty());
+  CHECK(repaired_name("/x/photos.tar.xz", Format::TarXz) == "photos (repaired).tar.xz");
+}
+
+static std::string make_trio() {
+  std::string d = tmp("trio");
+  sde::make_dirs(d);
+  write(d + "/a.txt", std::string(3000, 'A'));
+  write(d + "/b.txt", std::string(3000, 'B'));
+  write(d + "/c.txt", std::string(3000, 'C'));
+  return d;
+}
+
+static void test_salvage() {
+  std::string d = make_trio();
+  CreateOptions co;
+  co.level = 0;  // stored, so the bytes of each file are easy to find
+  std::string arc = tmp("damaged.zip");
+  CHECK(create_archive(arc, {d + "/a.txt", d + "/b.txt", d + "/c.txt"}, co).ok);
+  std::string data = slurp(arc);
+  size_t at = data.find(std::string(100, 'B'));
+  CHECK(at != std::string::npos);
+  data[at + 50] = 'X';
+  write(arc, data);
+  CHECK(!test_archive(arc, "").ok);
+  size_t rec = 0, lost = 0;
+  std::string out = tmp("salvaged.zip");
+  Result r = salvage_archive(arc, out, Format::Zip, "", nullptr, rec, lost);
+  CHECK(r.ok);
+  if (rec != 2 || lost != 1) fprintf(stderr, "salvage: recovered %zu lost %zu\n", rec, lost);
+  CHECK(rec == 2 && lost == 1);
+  ArchiveInfo info;
+  CHECK(list_archive(out, "", info).ok && info.files == 2 && has_name(info, "a.txt") && has_name(info, "c.txt"));
+  CHECK(test_archive(out, "").ok);
+
+  // A truncated ZIP file: its directory is gone, the first files are not.
+  data[at + 50] = 'B';
+  size_t cpos = data.find(std::string(100, 'C'));
+  write(arc, data.substr(0, cpos + 1000));
+  std::string out2 = tmp("salvaged2.zip");
+  r = salvage_archive(arc, out2, Format::Zip, "", nullptr, rec, lost);
+  if (rec != 2) fprintf(stderr, "truncated salvage: recovered %zu lost %zu (%s)\n", rec, lost, r.error.c_str());
+  CHECK(r.ok && rec == 2);
+  CHECK(list_archive(out2, "", info).ok && has_name(info, "a.txt") && has_name(info, "b.txt"));
+
+  // The whole repair path (zip -FF when installed, salvage otherwise).
+  std::string repair_dir = tmp("repaired");
+  sde::make_dirs(repair_dir);
+  std::string output;
+  size_t recovered = 0;
+  long lost2 = 0;
+  r = repair_archive(arc, repair_dir, "", nullptr, output, recovered, lost2);
+  if (!r.ok) fprintf(stderr, "repair: %s\n", r.error.c_str());
+  CHECK(r.ok && recovered >= 2 && exists(output));
+  CHECK(sde::starts_with(output, repair_dir + "/damaged (repaired)"));
+  CHECK(list_archive(output, "", info).ok && has_name(info, "a.txt") && has_name(info, "b.txt"));
+  // Nothing readable at all.
+  write(tmp("garbage.zip"), std::string(4000, 'z'));
+  r = salvage_archive(tmp("garbage.zip"), tmp("nothing.zip"), Format::Zip, "", nullptr, rec, lost);
+  CHECK(!r.ok && !exists(tmp("nothing.zip")));
+}
+
+static void test_convert_and_comment() {
+  std::string src = make_source();
+  CreateOptions co;
+  std::string zip = tmp("conv.zip");
+  CHECK(create_archive(zip, {src}, co).ok);
+  CreateOptions to;
+  to.format = Format::TarXz;
+  std::string out = tmp("conv.tar.xz");
+  Result r = convert_archive(zip, "", out, to);
+  CHECK(r.ok);
+  ArchiveInfo info;
+  CHECK(list_archive(out, "", info).ok && info.format == Format::TarXz && has_name(info, "project/docs/deep/data.bin"));
+  CHECK(zip_comment(zip).empty());
+  // Add a comment to the end-of-central-directory record by hand.
+  std::string data = slurp(zip);
+  size_t eocd = data.rfind(std::string("PK\x05\x06", 4));
+  CHECK(eocd != std::string::npos);
+  std::string comment = "Made by the Taca tests";
+  data[eocd + 20] = char(comment.size());
+  data[eocd + 21] = 0;
+  write(zip, data + comment);
+  CHECK(zip_comment(zip) == comment);
+  CHECK(list_archive(zip, "", info).ok && info.comment == comment);
+}
+
+static void test_favorites() {
+  std::string file = tmp("fav/list");
+  std::vector<std::string> list;
+  CHECK(toggle_favorite(list, "/home/a"));
+  CHECK(toggle_favorite(list, "/home/b.zip"));
+  CHECK(save_favorites(file, list));
+  auto back = load_favorites(file);
+  CHECK(back.size() == 2 && back[0] == "/home/a" && back[1] == "/home/b.zip");
+  CHECK(!toggle_favorite(back, "/home/a") && back.size() == 1);
+  write(file, "/x\n\n/x\nrelative\n /y \n");
+  back = load_favorites(file);
+  CHECK(back.size() == 2 && back[0] == "/x" && back[1] == "/y");
+  CHECK(load_favorites(tmp("fav/none")).empty());
 }
 
 int main() {
@@ -564,6 +830,13 @@ int main() {
   if (!seven_zip_program().empty()) test_password(Format::SevenZip);
   else fprintf(stderr, "7-Zip is not installed: skipping encrypted 7z tests\n");
   test_corrupt();
+  test_browsing();
+  test_patterns();
+  test_find();
+  test_repair_plan();
+  test_salvage();
+  test_convert_and_comment();
+  test_favorites();
   if (!getenv("TACA_KEEP_TEST_DIR")) detail::remove_tree(g_root);
   printf("taca: %d checks, %d failures\n", g_checks, g_failures);
   return g_failures ? 1 : 0;

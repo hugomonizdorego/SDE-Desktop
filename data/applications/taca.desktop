@@ -3,8 +3,8 @@
 Type=Application
 Name=Taca
 GenericName=Archive Manager
-Comment=Open, create and extract archives: zip, 7z, rar, tar and more
-Keywords=zip;rar;7z;tar;gz;xz;zst;archive;compress;extract;unpack;
+Comment=Browse, create, extract, test and repair archives: zip, 7z, rar, tar and more
+Keywords=zip;rar;7z;tar;gz;xz;zst;archive;compress;extract;unpack;repair;convert;
 Exec=taca %U
 TryExec=taca
 Icon=taca
