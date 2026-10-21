@@ -1492,6 +1492,8 @@ bool Panel::handle_x(const XEvent &e) {
         toggle_menu();
       else if (cmd == "search")
         open_search();
+      else if (starts_with(cmd, "brightness:"))
+        SystemStatus::get().step_brightness(atoi(cmd.c_str() + 11));
       else if (starts_with(cmd, "search:"))
         open_search(cmd.substr(7));
       else if (cmd == "quick")

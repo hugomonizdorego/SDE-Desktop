@@ -14,6 +14,8 @@
 #include <map>
 #include <memory>
 #include <cmath>
+#include <cstdio>
+#include <unistd.h>
 #include <cstdlib>
 #include <ctime>
 #include <sstream>
@@ -376,16 +378,42 @@ void SystemStatus::refresh_battery() {
   if (diff) changed();
 }
 
+// The backlight class directory; SDE_BACKLIGHT_DIR replaces it in tests.
+static std::string backlight_dir() {
+  const char *dir = getenv("SDE_BACKLIGHT_DIR");
+  return dir && *dir ? dir : "/sys/class/backlight";
+}
+
 void SystemStatus::refresh_brightness() {
   BrightnessState s;
-  for (auto &dev : list_dir("/sys/class/backlight")) {
-    std::string base = "/sys/class/backlight/" + dev, v, m;
+  std::string root = backlight_dir();
+  for (auto &dev : list_dir(root)) {
+    std::string base = root + "/" + dev, v, m;
     if (!read_file(base + "/brightness", v) || !read_file(base + "/max_brightness", m)) continue;
     s.available = atoi(m.c_str()) > 0;
     s.device = dev;
     s.value = atoi(v.c_str());
     s.max = atoi(m.c_str());
     if (s.available) break;
+  }
+  // No built-in panel: an external monitor through DDC/CI (ddcutil), probed
+  // once in the background because it takes a few seconds.
+  if (!s.available && ddc_.available) s = ddc_;
+  if (!s.available && !ddc_probed_ && !Panel::safe_mode && Panel::instance &&
+      Panel::instance->config().get_bool("action_center", "external_brightness", true) &&
+      !find_program("ddcutil").empty()) {
+    ddc_probed_ = true;
+    run_async({"ddcutil", "--brief", "getvcp", "10"}, [this](const std::string &out, int status) {
+      // "VCP 10 C 50 100": current and maximum.
+      int cur = 0, max = 0;
+      if (status == 0 && sscanf(out.c_str(), "VCP %*s C %d %d", &cur, &max) == 2 && max > 0) {
+        ddc_.available = true;
+        ddc_.device = "ddc";
+        ddc_.value = cur;
+        ddc_.max = max;
+        refresh_brightness();
+      }
+    });
   }
   bool diff = s.available != brightness.available || s.value != brightness.value;
   brightness = s;
@@ -590,21 +618,48 @@ void SystemStatus::connect_wifi(const WifiNetwork &net) {
 void SystemStatus::set_brightness(int percent) {
   if (!brightness.available) return;
   percent = std::max(1, std::min(100, percent));
-  int value = std::max(1, brightness.max * percent / 100);
+  int value = std::max(1, (brightness.max * percent + 50) / 100);
+  if (value == brightness.value) return;
   brightness.value = value;
+  if (brightness.device == "ddc") {
+    // ddcutil is slow: send the last value once the slider rests.
+    ddc_.value = value;
+    Fl::remove_timeout(ddc_apply, this);
+    Fl::add_timeout(0.3, ddc_apply, this);
+    return;
+  }
+  // A backlight the user may write to (udev rule, or the test fixture).
+  std::string file = backlight_dir() + "/" + brightness.device + "/brightness";
+  if (access(file.c_str(), W_OK) == 0) {
+    if (FILE *f = fopen(file.c_str(), "w")) {
+      bool ok = fprintf(f, "%d\n", value) > 0;
+      if (fclose(f) == 0 && ok) return;
+    }
+  }
   // systemd-logind lets the session's user change the backlight.
   dbus::Bus *bus = dbus::Bus::system();
   if (bus) {
     DBusMessage *m = dbus::method("org.freedesktop.login1", "/org/freedesktop/login1/session/auto",
                                   "org.freedesktop.login1.Session", "SetBrightness");
     dbus::Writer(m).str("backlight").str(brightness.device).u32(uint32_t(value));
-    std::string dev = brightness.device;
     bus->call_async(m, [percent](DBusMessage *reply) {
       if (!reply) run_async({"brightnessctl", "set", std::to_string(percent) + "%"}, nullptr);
     });
   } else {
     run_async({"brightnessctl", "set", std::to_string(percent) + "%"}, nullptr);
   }
+}
+
+void SystemStatus::ddc_apply(void *data) {
+  auto *self = static_cast<SystemStatus *>(data);
+  run_async({"ddcutil", "--noverify", "setvcp", "10", std::to_string(self->ddc_.value)}, nullptr);
+}
+
+void SystemStatus::step_brightness(int delta) {
+  refresh_brightness();
+  if (!brightness.available) return;
+  set_brightness(brightness.percent() + delta);
+  changed();
 }
 
 // =========================================================== Action Center
@@ -1182,7 +1237,17 @@ void QuickSettings::select_section(const std::string &section) {
   copy_label(names.at(section_));
   if (shown()) status_changed();
 }
+// While a popup with the brightness slider is open, follow changes made
+// elsewhere (brightness keys, the power manager).
+static void poll_brightness(void *data) {
+  auto *q = static_cast<QuickSettings *>(data);
+  if (!q->is_open()) return;
+  SystemStatus::get().refresh_brightness();
+  Fl::repeat_timeout(1.5, poll_brightness, data);
+}
+
 void QuickSettings::closed() {
+  Fl::remove_timeout(poll_brightness, this);
   PanelControls::get().stop_scan();
   calendar_view_ = false;
 }
@@ -1243,6 +1308,8 @@ std::string QuickSettings::structure() const {
 }
 void QuickSettings::prepare() {
   SystemStatus::get().refresh_brightness();
+  Fl::remove_timeout(poll_brightness, this);
+  Fl::add_timeout(1.5, poll_brightness, this);
   SystemStatus::get().message.clear();
   PanelControls::get().message.clear();
   scroll_to_calendar_ = calendar_view_;
@@ -2413,6 +2480,18 @@ void QuickSettings::draw() {
 }
 
 int QuickSettings::handle(int event) {
+  if (event == FL_MOUSEWHEEL && body_ && Fl::event_inside(body_) && Fl::event_dy()) {
+    // The wheel anywhere on the volume or brightness row (icon, slider,
+    // percentage) moves that slider.
+    for (Fl_Slider *sl : {volume_, brightness_}) {
+      if (!sl || !sl->visible_r() || Fl::event_y() < sl->y() || Fl::event_y() >= sl->y() + sl->h())
+        continue;
+      sl->value(sl->clamp(sl->value() - Fl::event_dy() * 5));
+      sl->do_callback();
+      redraw();
+      return 1;
+    }
+  }
   if (event == FL_MOUSEWHEEL && body_ && Fl::event_inside(body_)) {
     // Route wheel gestures explicitly through this override-redirect window;
     // keep application-tray and slider wheel controls local to their widgets.

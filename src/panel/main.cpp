@@ -43,6 +43,9 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--menu")) {
       command = "menu";
+    } else if (!strcmp(argv[i], "--brightness") && i + 1 < argc) {
+      // Brightness keys: --brightness +5 or -5 (percent).
+      command = std::string("brightness:") + argv[++i];
     } else if (!strcmp(argv[i], "--search")) {
       command = "search";
       if (i + 1 < argc && argv[i + 1][0] != '-') command += std::string(":") + argv[++i];
@@ -67,6 +70,7 @@ int main(int argc, char **argv) {
       printf("%s", _("Usage: sde-panel [--menu | --search [TEXT] | --action-center | --calendar | --alarms | --version]\n\n"
                      "  --menu            open or close the application menu of the running panel\n"
                      "  --search [TEXT]   open or close the panel search (with TEXT typed)\n"
+                     "  --brightness +N|-N  change the screen brightness by N percent\n"
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
                      "  --section NAME    open or close the flyout of a status icon: network,\n"

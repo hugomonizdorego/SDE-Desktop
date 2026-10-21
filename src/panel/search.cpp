@@ -272,6 +272,11 @@ void SearchFlyout::filter() {
   std::stable_sort(scored.begin(), scored.end(),
                    [](auto &a, auto &b) { return a.first > b.first; });
   for (auto &s : scored) results_.push_back(s.second);
+  // The best match first, then applications before Settings pages, each
+  // kind in one block under its heading.
+  if (results_.size() > 2)
+    std::stable_partition(results_.begin() + 1, results_.end(),
+                          [](const DesktopEntry *e) { return is_app(e); });
   if (tab_ != 0 && tab_ != 3) return;
   // Files and folders of the home folder, after everything else.
   if (!file_index_.built()) {
@@ -426,10 +431,14 @@ void SearchFlyout::build() {
         ry += S(36);
       }
     }
-    int qx = two ? pad + cw + S(12) : pad;
-    if (!two) qy = ry + S(10);
+    // Quick settings beside the recent applications, or in two columns
+    // of their own when nothing was opened yet.
+    int qcols = two && recent_.empty() ? 2 : 1;
+    int qx = two && !recent_.empty() ? pad + cw + S(12) : pad;
+    if (!two && !recent_.empty()) qy = ry + S(10);
     heading(_("Quick settings"), qx + S(4), qy, cw);
     qy += S(28);
+    int qy0 = qy;
     static const char *const quick[] = {"appearance", "display", "network", "sound",
                                         "notifications", "system"};
     int n = 0;
@@ -437,17 +446,19 @@ void SearchFlyout::build() {
       bool wanted = false;
       for (const char *q : quick) wanted = wanted || extras_[i].id == std::string(kExtraPrefix) + q;
       if (!wanted) continue;
-      if (qy + S(36) > bottom) break;
+      int col = qcols == 2 ? n % 2 : 0;
+      int y = qcols == 2 ? qy0 + (n / 2) * S(36) : qy;
+      if (y + S(36) > bottom) break;
       Item it;
       it.kind = K_CHIP;
       it.index = int(i);
       it.entry = &extras_[i];
-      it.x = qx;
-      it.y = qy;
+      it.x = qx + col * (cw + S(12));
+      it.y = y;
       it.w = cw;
       it.h = S(36);
       items_.push_back(it);
-      qy += S(36);
+      qy = y + S(36);
       ++n;
     }
     content_h_ = 0;

@@ -103,12 +103,17 @@ class SystemStatus {
   // Reports a change made from outside (a new message).
   void changed_now() { changed(); }
   void set_brightness(int percent);
+  // Brightness keys and sde-panel --brightness: +/- percent.
+  void step_brightness(int delta);
 
  private:
   void changed();
   void start_audio_stream();
   void start_connectivity();
   void refresh_connectivity();
+  static void ddc_apply(void *);
+  BrightnessState ddc_;  // external monitor (ddcutil), when probed
+  bool ddc_probed_ = false;
   void set_connectivity(int value);
   bool nm_dbus_ = false;
   long long last_check_ms_ = 0;
