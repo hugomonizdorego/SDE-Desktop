@@ -10,6 +10,7 @@
 #include <FL/Fl_Widget.H>
 #include <cairo.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -81,8 +82,9 @@ class DocView : public Fl_Widget {
   // Tools and editing.
   Tool tool() const { return tool_; }
   void set_tool(Tool t);
-  Rgb ink() const { return ink_; }
+  Rgb ink() const;
   void set_ink(Rgb c);
+  void set_cache_budget(size_t bytes);
   double stroke() const { return stroke_; }
   void set_stroke(double w) { stroke_ = w; }
   bool has_selection() const { return sel_active_ && !sel_boxes_.empty(); }
@@ -165,13 +167,12 @@ class DocView : public Fl_Widget {
   void reselect_annot(int page, const Box &box, PopplerAnnotType type);
   void update_cursor(int mx, int my);
   bool keyboard(int key, int state);
-  std::vector<int> start_rows_hit(int my) const;
 
   XanaraWindow *app_;
   Document *doc_ = nullptr;
   std::unique_ptr<TileCache> cache_;
   std::unique_ptr<Renderer> renderer_;
-  std::vector<RenderJob> thumb_jobs_;
+  std::vector<RenderJob> thumb_jobs_, view_jobs_;
   bool schedule_pending_ = false;
 
   std::vector<Slot> slots_;
@@ -189,7 +190,7 @@ class DocView : public Fl_Widget {
   bool highlight_fields_ = true;
 
   Tool tool_ = Tool::Select;
-  Rgb ink_{1.0, 0.82, 0.12};
+  Rgb tool_ink_[10];
   double stroke_ = 2.0;
 
   // Text selection.
@@ -226,6 +227,8 @@ class DocView : public Fl_Widget {
   std::string hover_tip_;
   int hover_x_ = 0, hover_y_ = 0;
   int hover_recent_ = -1;
+  std::array<int, 4> start_open_{{0, 0, 0, 0}};
+  std::vector<std::array<int, 4>> recent_rects_;
 };
 
 class Sidebar : public Fl_Widget {
