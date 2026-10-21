@@ -486,14 +486,18 @@ void TacaWindow::action_extract(bool selected_only) {
     run_job(format(_("Extracting “%s”"), basename_of(path).c_str()),
             [path, o](Progress &p) { return extract_archive(path, o, &p); },
             [this, o, open_after](const Result &r) mutable {
-              if (password_retry(r, [this, o]() mutable {
+              if (password_retry(r, [this, o, open_after]() mutable {
                     ExtractOptions again = o;
                     again.password = password_;
                     std::string path = info_.path;
                     run_job(_("Extracting"), [path, again](Progress &p) { return extract_archive(path, again, &p); },
-                            [this, again](const Result &r2) {
+                            [this, again, open_after](const Result &r2) {
+                              if (password_retry(r2, [this] { action_extract(false); })) return;
                               show_result(_("Extraction failed"), r2);
-                              if (r2.ok) toast(_("Extracted"));
+                              if (!r2.ok) return;
+                              toast(format(_("Extracted to %s"), again.dest.c_str()));
+                              if (open_after)
+                                open_uri(r2.written.size() == 1 && dir_exists(r2.written[0]) ? r2.written[0] : again.dest);
                             });
                   }))
                 return;
@@ -718,9 +722,9 @@ struct SidebarRow {
 
 std::vector<SidebarRow> sidebar_rows(int w, int h, int top) {
   std::vector<SidebarRow> rows;
-  int x = S(16), rw = w - S(32), rh = S(38);
+  int x = S(16), rw = w - S(32), rh = S(35);
   rows.push_back({ExtractAll, {x, top, rw, S(42)}, _("Extract All…"), icon::Extract});
-  int y = top + S(54);
+  int y = top + S(52);
   const std::pair<Action, std::pair<const char *, icon::Kind>> list[] = {
       {ExtractSelected, {_("Extract Selected…"), icon::Extract}},
       {AddFiles, {_("Add Files…"), icon::Add}},
@@ -731,7 +735,7 @@ std::vector<SidebarRow> sidebar_rows(int w, int h, int top) {
       {Properties, {_("Properties"), icon::Info}},
   };
   for (const auto &l : list) {
-    if (y + rh > h - S(130)) break;
+    if (y + rh > h - S(96)) break;
     rows.push_back({l.first, {x, y, rw, rh}, l.second.first, l.second.second});
     y += rh + S(2);
   }
@@ -756,7 +760,7 @@ int TacaWindow::sidebar_action_at(int mx, int my) const {
 }
 
 bool action_enabled(const TacaWindow &win, int a, size_t selected) {
-  if (win.busy()) return a == OpenOther || a == NewArchive ? false : false;
+  if (win.busy()) return false;
   bool can = capabilities(win.info().format).modify;
   switch (a) {
     case ExtractSelected: return selected > 0;

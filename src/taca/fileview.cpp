@@ -214,26 +214,39 @@ void FileView::draw_list(Painter *p, bool text_pass) {
   }
   fl_pop_clip();
   // Column header.
+  struct Col {
+    const char *label;
+    int x, w, align;
+    SortKey key;
+  } cols[] = {{_("Name"), nx + S(40), sx - nx - S(48), 0, SortKey::Name},
+              {_("Size"), sx, px - sx - S(10), 2, SortKey::Size},
+              {_("Packed"), px, tx - px - S(10), 2, SortKey::Packed},
+              {_("Type"), tx + S(14), mx - tx - S(18), 0, SortKey::Type},
+              {_("Modified"), mx + S(4), end - mx - S(4), 0, SortKey::Modified}};
+  text_font(t.font_size - S(1), true);
   if (!text_pass) {
     p->fill_rect(x(), y(), w(), hh, t.background);
     p->line(x() + S(8), y() + hh - 0.5, x() + w() - S(14), y() + hh - 0.5, t.border.alpha(0.8));
+    // Sort direction: a small triangle next to the active column's label.
+    for (const auto &c : cols) {
+      if (c.key != app_->sort_key() || c.w <= S(10)) continue;
+      double d = Sd(4), ay = y() + hh / 2.0;
+      double ax = c.align == 2 ? c.x + c.w - 2 * d : c.x + text_width(c.label) + S(6);
+      cairo_t *cr = p->cr();
+      double dir = app_->sort_descending() ? 1 : -1;
+      cairo_move_to(cr, ax, ay - dir * d / 2);
+      cairo_line_to(cr, ax + 2 * d, ay - dir * d / 2);
+      cairo_line_to(cr, ax + d, ay + dir * d / 2 + dir);
+      cairo_close_path(cr);
+      p->set(t.accent_text);
+      cairo_fill(cr);
+    }
   } else {
-    struct Col {
-      const char *label;
-      int x, w, align;
-      SortKey key;
-    } cols[] = {{_("Name"), nx + S(40), sx - nx - S(48), 0, SortKey::Name},
-                {_("Size"), sx, px - sx - S(10), 2, SortKey::Size},
-                {_("Packed"), px, tx - px - S(10), 2, SortKey::Packed},
-                {_("Type"), tx + S(14), mx - tx - S(18), 0, SortKey::Type},
-                {_("Modified"), mx + S(4), end - mx - S(4), 0, SortKey::Modified}};
-    text_font(t.font_size - S(1), true);
     for (const auto &c : cols) {
       if (c.w <= S(10)) continue;
       bool active = app_->sort_key() == c.key;
-      std::string label = c.label;
-      if (active) label += app_->sort_descending() ? "  \xE2\x96\xBE" : "  \xE2\x96\xB4";
-      draw_text(label, c.x, y(), c.w, hh, active ? t.accent_text : t.text_dim, c.align);
+      int cw = c.w - (active && c.align == 2 ? S(14) : 0);
+      draw_text(c.label, c.x, y(), cw, hh, active ? t.accent_text : t.text_dim, c.align);
     }
   }
 }
