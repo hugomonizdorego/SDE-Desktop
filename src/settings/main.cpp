@@ -2413,6 +2413,7 @@ int main(int argc, char **argv) {
   if (migrate_theme_config(g_cfg)) g_cfg.save();
   if (apply) {
     sync_gtk_settings(g_cfg);
+    sync_openbox(g_cfg);
     migrate_legacy_suite_shortcuts();
     apply_all(g_cfg);
     return 0;
