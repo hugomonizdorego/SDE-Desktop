@@ -66,7 +66,8 @@ add_executable(sde-settings
   settings/ui.cpp
   settings/display.cpp
   settings/input.cpp
-  settings/system.cpp)
+  settings/system.cpp
+  settings/power.cpp)
 # Display-free helpers (graphics card detection, wallpaper scan, pactl/
 # nmcli/bluetoothctl parsers), unit
 # tested; thumbnails come from the Gallery core (decoding threads and the

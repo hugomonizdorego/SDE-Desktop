@@ -664,6 +664,14 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
     glyph::power(p, x, y, size, c);
     return;
   }
+  if (id == "power") {
+    glyph::battery(p, x, y, size, 70, false, c, c);
+    return;
+  }
+  if (id == "lock") {
+    glyph::lock(p, x, y, size, c);
+    return;
+  }
   if (id == "sound") {
     glyph::speaker(p, x, y, size, 3, false, c);
     return;
@@ -829,6 +837,7 @@ void build_home(Page *page) {
       {"sound", N_("Sound"), N_("Volume, speakers and microphones"), "audio-volume-high"},
       {"network", N_("Network"), N_("Wi-Fi and wired connections"), "network-wireless"},
       {"bluetooth", N_("Bluetooth"), N_("Pair and connect devices"), "bluetooth"},
+      {"power", N_("Power"), N_("Battery, sleep and brightness"), "preferences-system-power"},
       {"notifications", N_("Notifications"), N_("Alerts and Do Not Disturb"),
        "preferences-desktop-notification"},
       {"suite", N_("Applications"), N_("Applications and source credits"), "applications-other"},
@@ -1840,11 +1849,10 @@ std::string profile_label(const std::string &p) {
 void build_suite_system(Page *page) {
   page->heading(_("Power & Updates"), _("System tools included with SDE"));
   const std::vector<std::pair<std::string, std::vector<std::string>>> tools = {
-      {_("Power Preferences"), {"sde-power-preferences"}},
-      {_("Battery History"), {"sde-power-statistics"}},
+      {_("Power"), {"sde-settings", "--page", "power"}},
+      {_("Lock Screen"), {"sde-settings", "--page", "lock"}},
       {_("System Monitor"), {"sde-system-monitor"}},
       {_("System Updates"), {"sde-update"}},
-      {_("Screen Lock Preferences"), {"sde-screensaver-preferences"}},
   };
   if (!g_refreshing || !g_power.loaded) load_power_profiles();
   if (g_power.loaded && !g_power.profiles.empty()) {
@@ -1873,7 +1881,7 @@ void build_suite_system(Page *page) {
   }
   page->end_card();
   page->note(
-      _("SDE Power Manager handles battery, lid and idle policies. SDE Screen Lock starts with the "
+      _("SDE Power handles battery, lid and idle policies. SDE Screen Lock starts with the "
         "session. "
         "No background updater is started."));
   page->begin_card(_("Windows and effects"));
@@ -2027,6 +2035,9 @@ const std::vector<PageInfo> &pages() {
       {"sound", N_("Sound"), {"preferences-desktop-sound", "audio-volume-high"}, build_sound},
       {"network", N_("Network"), {"preferences-system-network", "network-wireless"}, build_network},
       {"bluetooth", N_("Bluetooth"), {"bluetooth", "preferences-bluetooth"}, build_bluetooth},
+      {"power", N_("Power"), {"preferences-system-power", "battery"}, build_power_page},
+      {"lock", N_("Lock Screen"), {"system-lock-screen", "preferences-desktop-screensaver"},
+       build_lock_page},
       {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite},
       {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
       {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
