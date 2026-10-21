@@ -14,3 +14,5 @@ StartupNotify=true
 StartupWMClass=Liria
 X-SDE-Upstream=https://github.com/mate-desktop/caja
 MimeType=inode/directory;x-scheme-handler/trash;
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

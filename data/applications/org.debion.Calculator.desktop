@@ -10,3 +10,5 @@ Terminal=false
 Categories=Utility;Calculator;
 StartupNotify=true
 StartupWMClass=org.debion.Calculator
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

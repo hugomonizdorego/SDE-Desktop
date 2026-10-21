@@ -13,3 +13,5 @@ OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Sde-power-preferences
 X-SDE-Upstream=https://github.com/mate-desktop/mate-power-manager
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

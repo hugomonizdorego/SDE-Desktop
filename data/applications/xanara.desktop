@@ -13,3 +13,5 @@ OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Xanara
 MimeType=application/pdf;application/x-pdf;
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

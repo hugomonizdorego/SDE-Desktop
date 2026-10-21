@@ -11,3 +11,5 @@ Categories=Settings;HardwareSettings;DesktopSettings;
 Keywords=Display;Monitor;Resolution;Scale;Screen;HDMI;DisplayPort;Profile;
 OnlyShowIn=SDE;
 StartupNotify=false
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

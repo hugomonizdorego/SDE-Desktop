@@ -15,6 +15,8 @@ StartupNotify=true
 StartupWMClass=Sdeview
 MimeType=image/png;image/jpeg;image/pjpeg;image/gif;image/webp;image/tiff;image/bmp;image/x-bmp;image/svg+xml;image/svg+xml-compressed;image/avif;image/heic;image/heif;image/jxl;
 Actions=Slideshow;
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team
 
 [Desktop Action Slideshow]
 Name=Slideshow

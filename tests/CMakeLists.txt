@@ -96,3 +96,4 @@ add_test(NAME niny-core COMMAND niny-tests)
 # installed); used for screenshots of the UI kit (docs/UI-KIT.md).
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
 target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
+add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)

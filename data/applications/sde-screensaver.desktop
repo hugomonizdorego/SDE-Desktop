@@ -9,3 +9,5 @@ Icon=system-lock-screen
 Terminal=false
 Categories=Settings;DesktopSettings;
 StartupNotify=true
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

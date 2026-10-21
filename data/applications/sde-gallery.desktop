@@ -13,3 +13,5 @@ Categories=Graphics;Photography;Viewer;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=SDE-Gallery
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team
