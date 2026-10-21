@@ -46,6 +46,10 @@ struct DesktopEntry {
 // All installed applications, de-duplicated by desktop file ID following the
 // XDG data directory precedence. Hidden and NoDisplay entries are skipped.
 std::vector<DesktopEntry> load_applications(const std::string &desktop = "SDE");
+// Cheap fingerprint (directory mtimes) of every XDG applications directory:
+// it changes when .desktop files are added, removed or replaced, so callers
+// can poll it instead of parsing all entries again.
+std::string applications_stamp();
 
 // Finds an installed application by desktop file ID ("firefox.desktop").
 bool find_application(const std::string &id, DesktopEntry &out);

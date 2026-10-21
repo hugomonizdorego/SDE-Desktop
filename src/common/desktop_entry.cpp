@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "desktop_entry.h"
 
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <map>
 #include <set>
@@ -87,7 +89,23 @@ void scan_applications(const std::string &dir, const std::string &prefix,
   }
 }
 
+void stamp_dir(const std::string &dir, std::string &out) {
+  struct stat st;
+  if (stat(dir.c_str(), &st) != 0) return;
+  out += dir + ':' + std::to_string(st.st_mtim.tv_sec) + '.' + std::to_string(st.st_mtim.tv_nsec) + ';';
+  for (auto &name : list_dir(dir)) {
+    std::string full = dir + "/" + name;
+    if (dir_exists(full)) stamp_dir(full, out);
+  }
+}
+
 }  // namespace
+
+std::string applications_stamp() {
+  std::string out;
+  for (auto &dir : data_dirs()) stamp_dir(dir + "/applications", out);
+  return out;
+}
 
 bool DesktopEntry::load(const std::string &file, const std::string &file_id) {
   std::string text;

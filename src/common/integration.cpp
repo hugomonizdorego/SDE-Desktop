@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include "build_config.h"
 #include "desktop_entry.h"
@@ -180,19 +181,87 @@ std::string virtual_machine_name() {
   return "";
 }
 
+namespace {
+// Kernel drivers of virtual or display-only (no 3D engine) DRM devices. On
+// them OpenGL is llvmpipe/softpipe or a slow paravirtual path, so blur,
+// rounded corners and fades run on the CPU and make the desktop choppy.
+bool software_drm_driver(const std::string &d) {
+  static const char *const names[] = {
+      "virtio_gpu", "virtio-gpu", "vmwgfx",     "qxl",        "bochs",         "bochs-drm",
+      "cirrus",     "cirrus-qemu", "vboxvideo", "hyperv_drm", "hyperv-drm",    "simpledrm",
+      "simple-framebuffer", "efifb", "vesafb",  "ast",        "mgag200",       "udl",
+      "vkms",       "vgem",       "gm12u320",  "ofdrm",      "xen-drm-front"};
+  for (const char *n : names)
+    if (d == n) return true;
+  return false;
+}
+
+std::string drm_driver(const std::string &node) {
+  char buf[512];
+  std::string link = "/sys/class/drm/" + node + "/device/driver";
+  ssize_t n = readlink(link.c_str(), buf, sizeof buf - 1);
+  if (n <= 0) return "";
+  buf[n] = 0;
+  std::string target = buf;
+  size_t slash = target.rfind('/');
+  return slash == std::string::npos ? target : target.substr(slash + 1);
+}
+}  // namespace
+
+std::string detect_graphics_class() {
+  const char *forced = getenv("SDE_GRAPHICS");  // hardware | virtual | software
+  if (forced && *forced) return forced;
+  const char *sw = getenv("LIBGL_ALWAYS_SOFTWARE");
+  if (sw && *sw && std::string(sw) != "0" && std::string(sw) != "false") return "software";
+  bool any = false, hardware = false;
+  for (auto &node : list_dir("/sys/class/drm")) {
+    // Render nodes name the GPU; cardN may be a display-only controller.
+    bool render = starts_with(node, "renderD");
+    bool card = starts_with(node, "card") && node.find('-') == std::string::npos;
+    if (!render && !card) continue;
+    if (access(("/dev/dri/" + node).c_str(), R_OK | W_OK) != 0) continue;
+    std::string drv = drm_driver(node);
+    if (drv.empty()) continue;
+    any = true;
+    if (!software_drm_driver(drv)) hardware = true;
+  }
+  // A passed-through GPU in a VM is real hardware; anything else in a VM is not.
+  if (hardware) return "hardware";
+  if (any || !virtual_machine_name().empty()) return "virtual";
+  return "software";
+}
+
 std::string auto_compositor_backend() {
   // OpenGL compositing in VirtualBox, VMware and QEMU often draws a black
-  // screen (alpha11 bug); XRender works there and on any X server.
-  if (!virtual_machine_name().empty()) return "xrender";
-  return has_drm_device() ? "glx" : "xrender";
+  // screen (alpha11 bug) and is llvmpipe or a slow paravirtual path anyway;
+  // XRender works there and on any X server. A passed-through GPU keeps GLX.
+  return detect_graphics_class() == "hardware" ? "glx" : "xrender";
+}
+
+std::string compositor_effects(const Config &cfg, bool safe) {
+  std::string effects = lower(cfg.get("compositor", "effects", "auto"));
+  if (effects == "full" || effects == "lite") return effects;
+  // The safe (XRender) fallback runs after OpenGL failed: CPU rendering too.
+  if (safe) return "lite";
+  // A backend picked by hand in Settings keeps every effect, as before.
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  if (backend == "glx" || backend == "xrender") return "full";
+  return detect_graphics_class() == "hardware" ? "full" : "lite";
 }
 
 std::string write_compositor_config(const Config &cfg, bool safe) {
   Theme t = Theme::from_config(cfg);
-  bool glass = t.glass, blur = glass && cfg.get_bool("aero", "blur", true);
-  bool round = cfg.get_bool("aero", "rounded_corners", true);
+  std::string gfx = detect_graphics_class();
+  // [compositor] effects: auto (full on a real GPU, lite in VMs and with
+  // software rendering), full or lite. Lite keeps shadows and translucency
+  // but drops blur, rounded-corner masks and fades, which cost the most when
+  // the CPU composites.
+  std::string effects = compositor_effects(cfg, safe);
+  bool lite = effects == "lite";
+  bool glass = t.glass, blur = glass && cfg.get_bool("aero", "blur", true) && !lite;
+  bool round = cfg.get_bool("aero", "rounded_corners", true) && !lite;
   bool liquid = t.style == "liquid-glass";
-  bool motion = cfg.get_bool("aero", "animations", true);
+  bool motion = cfg.get_bool("aero", "animations", true) && !lite;
   int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6) + (liquid ? 2 : 0)));
   double frame = glass ? std::max(0.45, 1.0 - t.transparency * 1.2 / 100.0) : 1.0;
   double menu = glass ? std::max(0.70, 1.0 - t.transparency * 0.6 / 100.0) : 1.0;
@@ -206,22 +275,29 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // auto: OpenGL needs a DRM device on real hardware; virtual machines,
   // virtual displays and machines without one get XRender, which picom draws
   // reliably everywhere.
+  c += "# graphics: " + gfx + ", effects: " + effects + "\n";
   std::string backend = lower(cfg.get("compositor", "backend", "auto"));
-  if (backend != "glx" && backend != "xrender") {
-    backend = auto_compositor_backend();
-    // XRender blur is drawn by the CPU and makes a virtual machine crawl.
-    if (!virtual_machine_name().empty()) blur = false;
-  }
+  if (backend != "glx" && backend != "xrender") backend = auto_compositor_backend();
   if (safe) backend = "xrender";
   safe = backend == "xrender";
   c += "backend = \"" + backend + "\";\n";
-  c += "vsync = true;\nuse-damage = true;\n";
-  c += "shadow = true;\nshadow-radius = 16;\nshadow-opacity = " + f(t.dark ? 0.42 : 0.24) +
-       ";\nshadow-offset-x = -14;\nshadow-offset-y = -10;\n";
+  // Virtual displays have no real vblank; waiting for one only adds jitter.
+  bool vsync = cfg.get_bool("compositor", "vsync", gfx == "hardware");
+  c += std::string("vsync = ") + (vsync ? "true" : "false") + ";\nuse-damage = true;\n";
+  // Fullscreen games and videos bypass the compositor on a real GPU.
+  bool unredir = cfg.get_bool("compositor", "unredirect_fullscreen", gfx == "hardware");
+  c += std::string("unredir-if-possible = ") + (unredir ? "true" : "false") + ";\n";
+  if (lite)
+    c += "shadow = true;\nshadow-radius = 8;\nshadow-opacity = " + f(t.dark ? 0.36 : 0.20) +
+         ";\nshadow-offset-x = -6;\nshadow-offset-y = -4;\n";
+  else
+    c += "shadow = true;\nshadow-radius = 16;\nshadow-opacity = " + f(t.dark ? 0.42 : 0.24) +
+         ";\nshadow-offset-x = -14;\nshadow-offset-y = -10;\n";
   c += "shadow-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@:c\"];\n";
   if (motion)
-    c += "fading = true;\nfade-in-step = 0.07;\nfade-out-step = 0.08;\nfade-delta = 8;\n"
+    // About 10 frames per fade (~100 ms): smooth without long busy periods.
+    c += "fading = true;\nfade-in-step = 0.10;\nfade-out-step = 0.12;\nfade-delta = 10;\n"
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
@@ -234,13 +310,15 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   c += "detect-client-opacity = true;\n";
   if (blur) {
     if (safe)
-      c += "blur: { method = \"gaussian\"; size = " + std::to_string(5 + strength / 2 * 2) +
-           "; deviation = " + f(2.0 + strength * 0.5) + "; };\n";
+      // XRender blur runs on the CPU (only with effects=full): small kernel.
+      c += "blur: { method = \"gaussian\"; size = " + std::to_string(std::min(9, 5 + strength / 3 * 2)) +
+           "; deviation = " + f(std::min(4.0, 2.0 + strength * 0.25)) + "; };\n";
     else
-      c += "blur: { method = \"dual_kawase\"; strength = " + std::to_string(strength) + "; };\n";
+      // Above 8 dual_kawase costs much more for little visible difference.
+      c += "blur: { method = \"dual_kawase\"; strength = " + std::to_string(std::min(strength, 8)) + "; };\n";
     c += "blur-background = true;\nblur-background-frame = true;\nblur-background-fixed = false;\n";
     c += "blur-background-exclude = [\"window_type = 'desktop'\", \"_GTK_FRAME_EXTENTS@:c\", "
-         "\"class_g = 'Xfce4-screenshooter'\"];\n";
+         "\"class_g = 'Xfce4-screenshooter'\", \"fullscreen\"];\n";
   }
   c += "wintypes: {\n"
        "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.85, menu)) + "; };\n"
@@ -296,6 +374,8 @@ std::string compositor_report(const Config &cfg) {
                                   : " (chosen in Settings)") + "\n";
   if (virt.empty() || virt == "none") virt = vm;
   r += "Virtual machine: " + (virt.empty() || virt == "none" ? std::string("no") : virt) + "\n";
+  r += "Graphics: " + detect_graphics_class() + ", effects: " + compositor_effects(cfg, false) +
+       " ([compositor] effects=" + cfg.get("compositor", "effects", "auto") + ")\n";
   r += "OpenGL renderer: " + (renderer.empty() ? std::string("unknown (install mesa-utils for glxinfo)") : renderer) + "\n";
   r += "Configuration: " + (file_exists(own) ? own + " (your own file)"
                                              : config_home() + "/sde/aero-compositor*.conf (generated)") + "\n";

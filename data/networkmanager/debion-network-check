@@ -1,0 +1,219 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# debion-network-check - find out why a DebION desktop says "connected" but
+# has no internet, and optionally fix the usual causes.
+#
+#   debion-network-check            report (any user)
+#   sudo debion-network-check --fix hand DHCP/Wi-Fi interfaces from
+#                                   /etc/network/interfaces to NetworkManager
+#                                   and repair a dangling /etc/resolv.conf
+#   debion-network-check --postinst short warning used by package scripts
+#
+# It never touches static, bridge, bond or VLAN configurations: those are
+# deliberate server-style setups.
+set -u
+
+MODE=report
+case "${1:-}" in
+    --fix) MODE=fix ;;
+    --postinst) MODE=postinst ;;
+    -h|--help)
+        sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'
+        exit 0 ;;
+    "") ;;
+    *) echo "usage: debion-network-check [--fix]" >&2; exit 2 ;;
+esac
+
+IFACES=${DEBION_NETWORK_INTERFACES:-/etc/network/interfaces}
+problems=0
+say() { [ "$MODE" = postinst ] || printf '%s\n' "$*"; }
+ok() { say "  OK    $*"; }
+warn() { problems=$((problems + 1)); say "  WARN  $*"; }
+info() { say "  INFO  $*"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+nm_running() {
+    if have systemctl && [ -d /run/systemd/system ]; then
+        systemctl is-active --quiet NetworkManager.service
+    else
+        pidof NetworkManager >/dev/null 2>&1
+    fi
+}
+
+# Interfaces that ifupdown configures only with DHCP, SLAAC or
+# wpa_supplicant (one name per line). An interface with any static, bridge,
+# bond, VLAN or hook stanza is left alone.
+ifupdown_dhcp_ifaces() {
+    files="$IFACES"
+    [ -d "$IFACES.d" ] && files="$files $(ls "$IFACES.d"/* 2>/dev/null)"
+    # shellcheck disable=SC2086
+    awk '
+        function flush() {
+            if (cur == "") return
+            ok = (method == "dhcp" || method == "auto" || (method == "manual" && wpa)) && !special
+            print cur, ok
+            cur = ""
+        }
+        $1 == "iface" { flush(); if ($2 != "lo" && $2 !~ /[.:]/) { cur = $2; method = $4; special = 0; wpa = 0 } ; next }
+        $1 ~ /^(auto|allow-|mapping|source|rename)/ { flush(); next }
+        cur != "" && $1 ~ /^wpa-/ { wpa = 1; next }
+        cur != "" && $1 ~ /^(address|netmask|gateway|bridge|bond|vlan|pre-up|up|post-up|down|pre-down|post-down|hwaddress|dns-|mtu)/ { special = 1 }
+        END { flush() }
+    ' $files 2>/dev/null | awk '{ seen[$1] = 1; if ($2 == 0) bad[$1] = 1 } END { for (n in seen) if (!bad[n]) print n }' | sort
+}
+
+say "DebION network check"
+say ""
+
+# --------------------------------------------------------------- services
+if ! have nmcli; then
+    warn "NetworkManager is not installed: sudo apt install network-manager"
+else
+    if nm_running; then ok "NetworkManager is running"; else warn "NetworkManager is not running: sudo systemctl enable --now NetworkManager"; fi
+fi
+
+# ---------------------------------------------------- ifupdown vs NetworkManager
+conflicts=$(ifupdown_dhcp_ifaces)
+if [ -n "$conflicts" ]; then
+    names=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
+    warn "/etc/network/interfaces configures: $names"
+    say "        NetworkManager leaves these unmanaged ([ifupdown] managed=false), so the"
+    say "        panel cannot control them, and their default route (metric 0) wins over"
+    say "        Wi-Fi/Ethernet connected by NetworkManager: \"connected, no internet\"."
+    say "        Fix: sudo debion-network-check --fix   (backs the file up first)"
+else
+    ok "no DHCP/Wi-Fi interfaces in /etc/network/interfaces compete with NetworkManager"
+fi
+
+# --------------------------------------------------------------- routes
+if have ip; then
+    n=$(ip -4 route show default 2>/dev/null | grep -c . || true)
+    if [ "$n" = 0 ]; then
+        warn "no IPv4 default route (no gateway): the network is connected but cannot reach the internet"
+    elif [ "$n" -gt 1 ]; then
+        warn "$n IPv4 default routes; the lowest metric wins:"
+        ip -4 route show default 2>/dev/null | sed 's/^/          /' | { [ "$MODE" = postinst ] && cat >/dev/null || cat; }
+    else
+        ok "one IPv4 default route: $(ip -4 route show default 2>/dev/null)"
+    fi
+fi
+
+# --------------------------------------------------------------- DNS
+resolv_problem=""
+if [ -L /etc/resolv.conf ]; then
+    target=$(readlink /etc/resolv.conf)
+    if [ ! -e /etc/resolv.conf ]; then
+        resolv_problem="dangling"
+        warn "/etc/resolv.conf points to $target, which does not exist (DNS cannot work)"
+    else
+        case "$target" in
+            *systemd/resolve*)
+                if have systemctl && ! systemctl is-active --quiet systemd-resolved.service 2>/dev/null; then
+                    resolv_problem="resolved-off"
+                    warn "/etc/resolv.conf uses systemd-resolved, but systemd-resolved is not running"
+                else
+                    ok "/etc/resolv.conf is managed by systemd-resolved"
+                fi ;;
+            *) ok "/etc/resolv.conf -> $target" ;;
+        esac
+    fi
+elif [ -f /etc/resolv.conf ]; then
+    if grep -q '^nameserver' /etc/resolv.conf; then
+        ok "/etc/resolv.conf has $(grep -c '^nameserver' /etc/resolv.conf) name server(s)"
+    else
+        resolv_problem="empty"
+        warn "/etc/resolv.conf has no name server: names cannot be resolved"
+    fi
+else
+    resolv_problem="missing"
+    warn "/etc/resolv.conf is missing"
+fi
+
+# ------------------------------------------------------------ proxy settings
+proxy=""
+for f in /etc/environment /etc/profile.d/*.sh /etc/apt/apt.conf.d/*; do
+    [ -f "$f" ] && grep -qiE '^[^#]*(https?_proxy|all_proxy|Acquire::https?::Proxy)' "$f" 2>/dev/null && proxy="$proxy $f"
+done
+for v in http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY; do
+    eval "val=\${$v:-}"
+    [ -n "$val" ] && proxy="$proxy \$$v"
+done
+if [ -n "$proxy" ]; then
+    info "a proxy is configured in:$proxy (a stale proxy looks like \"no internet\" in browsers)"
+fi
+if have gsettings && [ "$MODE" = report ]; then
+    pm=$(gsettings get org.gnome.system.proxy mode 2>/dev/null || true)
+    [ -n "$pm" ] && [ "$pm" != "'none'" ] && info "GNOME/GTK proxy mode is $pm (gsettings org.gnome.system.proxy)"
+fi
+
+# --------------------------------------------------- NetworkManager state
+if have nmcli && nm_running; then
+    state=$(nmcli -t -f STATE,CONNECTIVITY general 2>/dev/null || true)
+    info "NetworkManager state:connectivity = ${state:-unknown}"
+    check=$(nmcli networking connectivity 2>/dev/null || true)
+    if [ "$check" = unknown ] && ! ls /usr/lib/NetworkManager/conf.d/*connectivity* /etc/NetworkManager/conf.d/*connectivity* >/dev/null 2>&1; then
+        warn "connectivity checking is off; install debion-desktop-base or network-manager-config-connectivity-debian"
+    fi
+    unmanaged=$(nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | awk -F: '($2=="ethernet"||$2=="wifi") && $3=="unmanaged" {print $1}' | tr '\n' ' ')
+    [ -n "$unmanaged" ] && warn "devices unmanaged by NetworkManager: $unmanaged"
+fi
+
+# ------------------------------------------------------------------- fix
+if [ "$MODE" = fix ]; then
+    if [ "$(id -u)" != 0 ]; then
+        echo "debion-network-check --fix must run as root (sudo)." >&2
+        exit 1
+    fi
+    say ""
+    if [ -n "$conflicts" ]; then
+        backup="$IFACES.debion-$(date +%Y%m%d-%H%M%S)"
+        cp -p "$IFACES" "$backup"
+        list=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
+        # Comment out the stanzas (and their auto/allow-hotplug lines) of the
+        # DHCP/Wi-Fi interfaces; everything else stays as it was.
+        awk -v list=" $list " '
+            function managed(n) { return index(list, " " n " ") > 0 }
+            /^[ \t]*(auto|allow-hotplug|allow-auto)[ \t]/ {
+                out = $1; keep = 0
+                for (i = 2; i <= NF; i++) if (!managed($i)) { out = out " " $i; keep = 1 }
+                if (!keep) { print "# " $0 "  # moved to NetworkManager by debion-network-check"; next }
+                if (out != $0) { print "# " $0 "  # moved to NetworkManager by debion-network-check"; print out; next }
+                print; next
+            }
+            /^[ \t]*iface[ \t]/ { skip = managed($2) }
+            /^[ \t]*(mapping|source|source-directory|auto|allow-)/ { skip = 0 }
+            skip { print "# " $0; next }
+            { print }
+        ' "$backup" > "$IFACES.new" && mv "$IFACES.new" "$IFACES"
+        echo "Moved to NetworkManager: $list"
+        echo "Backup: $backup"
+        echo "Reboot, or run: sudo ifdown --force $list; sudo systemctl restart NetworkManager"
+    fi
+    case "$resolv_problem" in
+        dangling|resolved-off|missing|empty)
+            # Let NetworkManager write a plain resolv.conf again.
+            [ -e /etc/resolv.conf ] || [ -L /etc/resolv.conf ] && mv /etc/resolv.conf "/etc/resolv.conf.debion-$(date +%Y%m%d-%H%M%S)"
+            : > /etc/resolv.conf
+            if nm_running; then
+                if have systemctl; then systemctl restart NetworkManager.service; else nmcli general reload; fi
+            fi
+            echo "/etc/resolv.conf is now written by NetworkManager again." ;;
+    esac
+    [ -n "$conflicts" ] || [ -n "$resolv_problem" ] || echo "Nothing to fix."
+    exit 0
+fi
+
+if [ "$MODE" = postinst ]; then
+    if [ -n "$conflicts" ] && have nmcli; then
+        names=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
+        echo "debion-desktop-base: /etc/network/interfaces configures $names; NetworkManager"
+        echo "  (the SDE panel) cannot manage them and their routes can hide Wi-Fi."
+        echo "  Run 'sudo debion-network-check --fix' to hand them to NetworkManager."
+    fi
+    exit 0
+fi
+
+say ""
+if [ "$problems" = 0 ]; then say "No problems found."; else say "$problems problem(s) found."; fi
+exit 0

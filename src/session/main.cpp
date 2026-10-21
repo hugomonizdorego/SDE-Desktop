@@ -21,6 +21,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
@@ -682,7 +683,16 @@ int main(int argc, char **argv) {
   bool running = true;
   while (running) {
     struct pollfd fds[2] = {{sfd, POLLIN, 0}, {ConnectionNumber(g_display), POLLIN, 0}};
-    int r = poll(fds, 2, 1000);
+    // Sleep until a signal, an X event or the next scheduled restart; an idle
+    // session manager must not wake up every second.
+    int timeout = -1;
+    time_t now0 = time(nullptr);
+    for (auto &c : g_components)
+      if (c.pid == 0 && c.restart_at && !c.given_up) {
+        int ms = c.restart_at > now0 ? int(c.restart_at - now0) * 1000 : 0;
+        timeout = timeout < 0 ? ms : std::min(timeout, ms);
+      }
+    int r = poll(fds, 2, timeout);
     if (r < 0 && errno != EINTR) break;
     if (fds[1].revents) {
       while (XPending(g_display)) {
