@@ -1,3 +1,12 @@
+# Alpha16 patch · 2026-10-21 — themes, themed UI, redesigned apps, no MATE
+
+- New theme families SDE Graphite (default), SDE Fluent and SDE Glass with
+  accents, applied everywhere; themed native menus and dialogs.
+- Taca, Xanara, Niny and the Start Menu redesigned; search in the panel;
+  brightness in the Action Center.
+- Liria re-forked without MATE branding; native SDE Power and Screen Lock.
+- DebION Dev-Team named as developer in every app. See docs/ALPHA16.md.
+
 # Alpha15 patch · 2026-10-21 — native apps, Menu, Panel, Settings, Liria, performance
 
 - Niny, Xanara, Taca, Photo and SDE System Monitor are new native apps by

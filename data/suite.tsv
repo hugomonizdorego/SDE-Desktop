@@ -1,6 +1,6 @@
 # id	name	role	command	package	icon	upstream	url	license	build_version
 niny	Niny	Text Editor	niny	sde	accessories-text-editor	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
-liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	system-file-manager	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later; LGPL parts	0.1.0~alpha15
+liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	system-file-manager	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later; LGPL parts	0.1.0~alpha16
 xanara	Xanara	Document Viewer	xanara	sde	x-office-document	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 sde-view	Photo	Photos and Image Editing	sde-view	sde	image-x-generic	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 calculator	Calculator	Scientific Calculator	calculator	sde/upstream/scientific-calculator	accessories-calculator	scientific-calculator	https://github.com/raad-altaie/scientific-calculator	AGPL-3.0-only	1.0.0~alpha1

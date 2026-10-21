@@ -2,11 +2,16 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 15** (`0.1.0~alpha15`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 16** (`0.1.0~alpha16`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
 
-**New in Alpha 15:** [native apps by the DebION Dev-Team](docs/ALPHA15.md) —
+**New in Alpha 16:** [new themes and a uniform look](docs/ALPHA16.md) — SDE Graphite
+(default, macOS-like), SDE Fluent (Windows-like) and SDE Glass with accent colours,
+themed menus everywhere, redesigned Taca, Xanara, Niny and Start Menu, search in the
+panel, and no more MATE: Liria re-forked, native SDE Power and Screen Lock.
+
+**Alpha 15:** [native apps by the DebION Dev-Team](docs/ALPHA15.md) —
 Niny, Xanara (PDF editing), Taca (rar/7z/zip…), Photo and SDE System Monitor written
 from scratch — plus a slimmer Start Menu, alarms and agenda in the panel, a wallpaper
 gallery, reliable USB copies in Liria and a smoother desktop.

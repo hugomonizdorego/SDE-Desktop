@@ -1,3 +1,20 @@
+sde (0.1.0~alpha16) unstable; urgency=medium
+
+  * Themes rebuilt from scratch: SDE Graphite (default, from
+    Graphite-gtk-theme), SDE Fluent (from Flat Remix) and SDE Glass, each
+    light/dark with nine accents, applied to GTK 3/4, libadwaita, the
+    window manager and all native SDE applications.
+  * Themed menus, menu bars, lists, tooltips, scroll bars and dialogs in
+    SDE-FLTK (1.3.11-sde2); common About window naming DebION Dev-Team;
+    developer metadata in desktop files and AppStream.
+  * Taca, Xanara and Niny redesigned; Start Menu with favorite tiles and
+    search in the panel; brightness slider in the Action Center.
+  * Liria re-forked from Caja 1.28.0 without MATE branding and with a
+    compact header UI.
+  * sde-power and sde-lock replace the MATE power manager and screensaver.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Wed, 21 Oct 2026 23:00:00 +0900
+
 sde (0.1.0~alpha15) unstable; urgency=medium
 
   * New native applications written from scratch by the DebION Dev-Team
