@@ -122,7 +122,15 @@ add_library(taca-core STATIC
   taca/model.cpp)
 target_include_directories(taca-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/taca)
 target_link_libraries(taca-core PUBLIC sde-common PkgConfig::LIBARCHIVE Threads::Threads)
-#TACA-UI
+add_executable(taca
+  taca/main.cpp
+  taca/window.cpp
+  taca/fileview.cpp
+  taca/dialogs.cpp
+  taca/icons.cpp
+  taca/ui.cpp)
+target_link_libraries(taca PRIVATE taca-core)
+install(TARGETS taca RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         sde-xsettingsd sde-gallery
