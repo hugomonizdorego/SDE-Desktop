@@ -1,9 +1,9 @@
 {
   "niny": "1.0.0~alpha1",
-  "xanara": "1.0.0~alpha1",
-  "taca": "1.0.0~alpha1",
+  "xanara": "2.0.0~alpha1",
+  "taca": "2.0.0~alpha1",
   "sde-view": "1.0.0~alpha1",
-  "sde-system-monitor": "1.0.0~alpha1",
+  "sde-system-monitor": "2.0.0~alpha1",
   "sde-power-manager": "1.0.0~alpha1",
   "sde-screensaver": "1.0.0~alpha1",
   "calculator": "1.0.0~alpha1",

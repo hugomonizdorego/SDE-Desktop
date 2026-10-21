@@ -155,7 +155,7 @@ Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             xterm | x-terminal-emulator,
             xdg-user-dirs,
             lightdm | x-display-manager
-Suggests: eduka-icons,
+Suggests: eduka-icons, unrar,
           brightnessctl,
           network-manager-gnome,
           scrot,

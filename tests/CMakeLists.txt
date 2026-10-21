@@ -73,3 +73,8 @@ add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOUR
 add_executable(sde-xanara-tests test_xanara.cpp)
 target_link_libraries(sde-xanara-tests PRIVATE sde-xanara-core)
 add_test(NAME sde-xanara COMMAND sde-xanara-tests)
+
+add_executable(sde-taca-tests test_taca.cpp)
+target_link_libraries(sde-taca-tests PRIVATE taca-core)
+add_test(NAME taca-engine COMMAND sde-taca-tests)
+set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)

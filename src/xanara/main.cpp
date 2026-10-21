@@ -44,7 +44,7 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--version" || a == "-v") {
-      printf("xanara %s (poppler %s)\n", SDE_VERSION, poppler_get_version());
+      printf("xanara %s (poppler %s)\n", SDE_APP_VERSION, poppler_get_version());
       return 0;
     }
     if (a == "--help" || a == "-h") {

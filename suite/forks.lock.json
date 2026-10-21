@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 4,
+  "revision": 5,
   "forks": [
     {
       "id": "liria",
@@ -27,16 +27,6 @@
         "--disable-tests",
         "--disable-python"
       ],
-      "build_version": "1.0.0~alpha1"
-    },
-    {
-      "id": "taca",
-      "upstream": "engrampa",
-      "name": "Taca",
-      "version": "1.28.5",
-      "commit": "03326a91768cf915d322b379a4fc6ce253f9ff19",
-      "url": "https://github.com/mate-desktop/engrampa",
-      "configure": [],
       "build_version": "1.0.0~alpha1"
     },
     {

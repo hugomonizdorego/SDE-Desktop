@@ -176,6 +176,38 @@ add_executable(xanara
 target_link_libraries(xanara PRIVATE sde-xanara-core)
 install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# Taca: the SDE archive manager, written from scratch by the DebION Dev-Team.
+# The archive engine is a separate library for the unit tests (no display).
+pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive>=3.6)
+add_library(taca-core STATIC
+  taca/formats.cpp
+  taca/safety.cpp
+  taca/engine.cpp
+  taca/external.cpp
+  taca/model.cpp)
+target_include_directories(taca-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/taca)
+target_link_libraries(taca-core PUBLIC sde-common PkgConfig::LIBARCHIVE Threads::Threads)
+add_executable(taca
+  taca/main.cpp
+  taca/window.cpp
+  taca/fileview.cpp
+  taca/dialogs.cpp
+  taca/icons.cpp
+  taca/ui.cpp)
+target_link_libraries(taca PRIVATE taca-core)
+install(TARGETS taca RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Native suite applications report their own version from suite/versions.json.
+function(sde_app_version target id)
+  string(JSON _version ERROR_VARIABLE _error GET "${SDE_APP_VERSIONS}" ${id})
+  if(_error OR NOT _version)
+    set(_version "${SDE_VERSION}")
+  endif()
+  target_compile_definitions(${target} PRIVATE SDE_APP_VERSION="${_version}")
+endfunction()
+sde_app_version(xanara xanara)
+sde_app_version(taca taca)
+
 install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logout sde-notifyd sde-update
         sde-xsettingsd sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
