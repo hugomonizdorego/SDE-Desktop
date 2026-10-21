@@ -188,8 +188,10 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  statically), sde-xsettingsd and sde-polkit-agent (written from scratch),
  and source builds of SDE WM (Openbox) and SDE compositor (picom).
  .
- Includes native source-built SDE forks: Niny, Liria, Xanara, Taca,
- Photo (SDE View), SDE System Monitor, SDE Power Manager and SDE Screen Lock.
+ Applications written from scratch by the DebION Dev-Team: Niny (text
+ editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
+ Gallery and SDE System Monitor. Source-built SDE forks: Liria (Caja),
+ SDE Power Manager and SDE Screen Lock.
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
  SDE Update uses an attributed mintupdate model and Debian PackageKit.

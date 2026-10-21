@@ -2,12 +2,6 @@
   "format": 1,
   "sources": [
     {
-      "id": "pluma",
-      "repository": "https://github.com/mate-desktop/pluma",
-      "commit": "a4c2470f8f39bbc435ea058f85071f8369880345",
-      "use": "runtime-engine"
-    },
-    {
       "id": "caja",
       "repository": "https://github.com/mate-desktop/caja",
       "commit": "a57395da45a23faffdb27c123ddbb89638f188e4",

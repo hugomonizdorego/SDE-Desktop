@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 6,
+  "revision": 7,
   "forks": [
     {
       "id": "liria",
@@ -14,20 +14,6 @@
         "--disable-introspection"
       ],
       "build_version": "0.1.0~alpha14"
-    },
-    {
-      "id": "niny",
-      "upstream": "pluma",
-      "name": "Niny",
-      "version": "1.28.1",
-      "commit": "837036d73ed49a390cae6bbaac9a4f1e6d5b6de9",
-      "url": "https://github.com/mate-desktop/pluma",
-      "configure": [
-        "--disable-gtk-doc",
-        "--disable-tests",
-        "--disable-python"
-      ],
-      "build_version": "1.0.0~alpha1"
     },
     {
       "id": "sde-power-manager",

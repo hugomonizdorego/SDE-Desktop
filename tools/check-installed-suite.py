@@ -60,7 +60,6 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         parser.read("/etc/xdg/autostart/" + name + ".desktop")
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
     for package in [
-        "sde/upstream/pluma",
         "sde/upstream/caja",
         "sde/upstream/mate-power-manager",
         "sde/upstream/mate-screensaver",

@@ -286,3 +286,6 @@ if(SDE_BUILD_COMPONENTS)
                 "${SDE_COMPONENT_SOURCES}/sde-display-settings/copyright"
           DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/upstream/DisplayProfileManager)
 endif()
+
+# Niny Text Editor: a native SDE editor written from scratch (src/niny).
+add_subdirectory(niny)

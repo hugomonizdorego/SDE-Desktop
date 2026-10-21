@@ -51,7 +51,7 @@ and submodules are published with the binaries.
 
 | SDE fork | Source | Historical authors | Installed notice directory |
 | --- | --- | --- | --- |
-| Niny | [pluma](https://github.com/mate-desktop/pluma) | Pluma/gedit and MATE contributors | `sde/upstream/pluma` |
+| Niny | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus, Eazel, GNOME and MATE contributors | `sde/upstream/caja` |
 | Xanara | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
 | Taca | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |

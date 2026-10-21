@@ -12,7 +12,7 @@ apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power-manager','sde-power-preferences','sde-power-statistics',
       'sde-screensaver','sde-screensaver-command','sde-screensaver-preferences','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
-NATIVE={'sde-system-monitor','xanara','taca','sde-view'}
+NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny'}
 for name in apps:
     path=binary/name
     assert path.is_file() and not path.is_symlink(),name
@@ -60,10 +60,4 @@ for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','
 files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
 for path in files:
     assert not path.endswith(('/mime.cache','/mimeinfo.cache','/icon-theme.cache','/gschemas.compiled')),path
-# Python plugins need the renamed API's original ownership/type annotations.
-gir=ET.parse('/usr/share/gir-1.0/Niny-1.0.gir')
-symbol='{http://www.gtk.org/introspection/c/1.0}identifier'
-for api in ['niny_app_get_documents','niny_window_get_documents']:
-    method=next(node for node in gir.iter() if node.get(symbol)==api)
-    assert method.get('introspectable')!='0',api
 print('Native ELF executables, metadata, transaction plans and absence of original MATE apps passed.')

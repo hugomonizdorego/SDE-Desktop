@@ -9,7 +9,7 @@ they are not duplicated inside SDE.
 
 | Application | Executable | Source |
 | --- | --- | --- |
-| Niny | `niny` | [pluma](https://github.com/mate-desktop/pluma) |
+| Niny | `niny` | native SDE application (DebION Dev-Team) |
 | Liria | `liria` | [caja](https://github.com/mate-desktop/caja) |
 | Xanara | `xanara` | native SDE application (DebION Dev-Team) |
 | Taca | `taca` | native SDE application (DebION Dev-Team) |
