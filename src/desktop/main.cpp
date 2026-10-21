@@ -300,8 +300,8 @@ class Desktop : public sde::BufferedWindow {
       for (int i = 0; i < n; ++i) {
         int sx, sy, sw, sh;
         Fl::screen_xywh(sx, sy, sw, sh, i);
-        cairo_set_source_surface(p.cr(), wallpapers_[size_t(i)], sx, sy);
-        cairo_paint(p.cr());
+        // Uploaded to the X server once, not on every repaint.
+        p.surface(wallpapers_[size_t(i)], sx, sy);
       }
       for (size_t i = 0; i < items_.size(); ++i) {
         const Item &it = items_[i];
@@ -318,6 +318,12 @@ class Desktop : public sde::BufferedWindow {
       draw_text(label, it.x + S(6) + 1, it.y + icon_ + S(12) + 1, cell_w_ - S(12), S(22), Color::hex(0x000000, 1), 1);
       draw_text(label, it.x + S(6), it.y + icon_ + S(12), cell_w_ - S(12), S(22), Color::hex(0xFFFFFF), 1);
     }
+  }
+
+  // Repaints one icon cell only (hover and selection changes).
+  void damage_item(int i) {
+    if (i >= 0 && i < int(items_.size()))
+      damage_rect(items_[size_t(i)].x, items_[size_t(i)].y, cell_w_, cell_h_);
   }
 
   int item_at(int x, int y) const {
@@ -566,8 +572,9 @@ class Desktop : public sde::BufferedWindow {
     else if (k == FL_Home) s = 0;
     else if (k == FL_End) s = n - 1;
     else return 0;
+    damage_item(selected_);
     selected_ = s;
-    redraw();
+    damage_item(selected_);
     return 1;
   }
 
@@ -583,8 +590,9 @@ class Desktop : public sde::BufferedWindow {
       case FL_PUSH: {
         int i = item_at(Fl::event_x(), Fl::event_y());
         if (i != selected_) {
+          damage_item(selected_);
           selected_ = i;
-          redraw();
+          damage_item(selected_);
         }
         if (Fl::event_button() == FL_RIGHT_MOUSE) context_menu(i, Fl::event_x(), Fl::event_y());
         else if (Fl::event_clicks() && i >= 0) open_item(i);
@@ -594,14 +602,15 @@ class Desktop : public sde::BufferedWindow {
       case FL_MOVE: {
         int i = item_at(Fl::event_x(), Fl::event_y());
         if (i != hover_) {
+          damage_item(hover_);
           hover_ = i;
-          redraw();
+          damage_item(hover_);
         }
         return 1;
       }
       case FL_LEAVE:
+        damage_item(hover_);
         hover_ = -1;
-        redraw();
         return 1;
       case FL_FOCUS:
       case FL_UNFOCUS:

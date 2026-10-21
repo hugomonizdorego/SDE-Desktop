@@ -341,7 +341,7 @@ try:
             time.sleep(0.8)
             assert (
                 home / "opened-uri"
-            ).read_text().strip() == "https://github.com/mate-desktop/pluma"
+            ).read_text().strip() == "https://github.com/hugomonizdorego/SDE-Desktop"
             run(
                 "xdotool",
                 "mousemove",
@@ -353,7 +353,7 @@ try:
             time.sleep(0.3)
             assert (
                 home / "opened-uri"
-            ).read_text().strip() == "/usr/share/doc/sde/upstream/pluma/copyright"
+            ).read_text().strip() == "/usr/share/doc/sde/copyright"
         run(
             "xdotool",
             "mousemove",

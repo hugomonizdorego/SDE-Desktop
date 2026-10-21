@@ -129,6 +129,7 @@ class AppMenu : public PanelPopup {
   sde::Effects effects_;
   Fl_Input *search_;
   std::vector<sde::DesktopEntry> apps_;
+  std::string apps_stamp_;  // applications_stamp() when apps_ was loaded
   std::vector<sde::DesktopEntry> extras_;  // Settings pages and session actions
   std::vector<sde::DesktopEntry> files_;   // file search results
   std::vector<std::string> categories_;   // non-empty menu categories

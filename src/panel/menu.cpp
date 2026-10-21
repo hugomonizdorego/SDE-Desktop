@@ -179,6 +179,7 @@ AppMenu::~AppMenu() {
 // Data
 
 void AppMenu::reload() {
+  apps_stamp_ = applications_stamp();
   apps_ = load_applications("SDE");
   sorted_ = menu::alphabetical(apps_);
   categories_.clear();
@@ -268,6 +269,11 @@ void AppMenu::poll_applications(void *data) {
   if (!self->shown()) return;
   Fl::repeat_timeout(2, poll_applications, data);
   if (self->menu_busy_ || self->launching_) return;
+  // Parsing every .desktop file every 2 s while the menu is open showed up
+  // as periodic hitches; only reload when an applications directory changed.
+  std::string stamp = applications_stamp();
+  if (stamp == self->apps_stamp_) return;
+  self->apps_stamp_ = stamp;
   auto fresh = load_applications("SDE");
   bool same = fresh.size() == self->apps_.size();
   for (size_t i = 0; same && i < fresh.size(); ++i) {
