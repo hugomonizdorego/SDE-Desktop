@@ -397,15 +397,6 @@ class SdeStyle : public Fl_SDE_Style {
     if (active_theme().font.empty()) reload_config_theme();
     const Theme &t = ui_theme();
     register_boxes();
-    // Tooltip colors, unless the program chose its own.
-    Fl_Color tip_bg = t.surface.fl(), tip_fg = t.text.fl();
-    if (Fl_Tooltip::color() == last_tip_color ||
-        Fl_Tooltip::color() == fl_color_cube(FL_NUM_RED - 1, FL_NUM_GREEN - 1, FL_NUM_BLUE - 2))
-      Fl_Tooltip::color(tip_bg);
-    if (Fl_Tooltip::textcolor() == last_tip_text || Fl_Tooltip::textcolor() == FL_BLACK)
-      Fl_Tooltip::textcolor(tip_fg);
-    last_tip_color = tip_bg;
-    last_tip_text = tip_fg;
     Fl_Tooltip::size(std::max(10, t.font_size - S(1)));
   }
 
@@ -644,6 +635,15 @@ class SdeStyle : public Fl_SDE_Style {
 
   int tooltip_draw(int w, int h, const char *text) override {
     const Theme &t = ui_theme();
+    // Theme colors unless the program chose its own.
+    Fl_Color tip_bg = t.surface.fl(), tip_fg = t.text.fl();
+    if (Fl_Tooltip::color() == last_tip_color ||
+        Fl_Tooltip::color() == fl_color_cube(FL_NUM_RED - 1, FL_NUM_GREEN - 1, FL_NUM_BLUE - 2))
+      Fl_Tooltip::color(tip_bg);
+    if (Fl_Tooltip::textcolor() == last_tip_text || Fl_Tooltip::textcolor() == FL_BLACK)
+      Fl_Tooltip::textcolor(tip_fg);
+    last_tip_color = tip_bg;
+    last_tip_text = tip_fg;
     Color bg = from_fl(Fl_Tooltip::color());
     {
       Painter p(w, h);

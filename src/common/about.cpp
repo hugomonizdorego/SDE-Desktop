@@ -106,7 +106,19 @@ class AboutWindow : public BufferedWindow {
         if (!info_.icon.empty()) names.push_back(info_.icon);
         if (!info_.program.empty()) names.push_back(info_.program);
         names.push_back("application-x-executable");
-        if (cairo_surface_t *img = IconLoader::get(names, int(ls))) p.image(img, lx, ly, ls);
+        std::string path;
+        for (const auto &n : names)
+          if (!(path = IconLoader::lookup(n, int(ls))).empty()) break;
+        cairo_surface_t *img = path.empty() ? nullptr : IconLoader::get({path}, int(ls));
+        if (img) {
+          p.image(img, lx, ly, ls);
+        } else {
+          // No icon theme: a tile with the initial.
+          p.fill_gradient(lx, ly, ls, ls, S(18), t.accent.mix(t.on_accent, 0.15), t.accent);
+          p.flush();
+          text_font(int(ls * 0.5), true);
+          draw_text(info_.name.substr(0, 1), int(lx), int(ly), int(ls), int(ls), t.on_accent, 1);
+        }
       }
       p.fill_rounded(S(24), card_y, W - S(48), card_h, S(10), t.surface_alt);
       for (size_t i = 1; i < rows_.size(); ++i) {

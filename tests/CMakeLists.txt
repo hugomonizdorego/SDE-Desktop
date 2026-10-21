@@ -91,3 +91,8 @@ add_test(NAME sde-photo-model COMMAND sde-photo-tests)
 add_executable(niny-tests test_niny.cpp)
 target_link_libraries(niny-tests PRIVATE niny-core)
 add_test(NAME niny-core COMMAND niny-tests)
+
+# Test helper: stock FLTK menus, dialogs and widgets in the SDE look (not
+# installed); used for screenshots of the UI kit (docs/UI-KIT.md).
+add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
+target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
