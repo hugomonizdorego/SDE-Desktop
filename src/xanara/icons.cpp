@@ -14,7 +14,7 @@ namespace icon {
 
 namespace {
 
-struct Pen {
+struct Stroke {
   cairo_t *cr;
   void move(double x, double y) { cairo_move_to(cr, x, y); }
   void line(double x, double y) { cairo_line_to(cr, x, y); }
@@ -53,7 +53,7 @@ void draw(Painter &p, Kind kind, double x, double y, double size, const Color &c
   cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
   cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
   cairo_set_source_rgba(cr, c.r, c.g, c.b, c.a);
-  Pen d{cr};
+  Stroke d{cr};
   switch (kind) {
     case Sidebar:
       d.rect(3, 5, 18, 14, 2.5);

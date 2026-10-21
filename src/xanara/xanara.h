@@ -36,7 +36,7 @@ void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde
 
 enum class Tool { Select, Highlight, Underline, Strike, Note, Text, Pen, Rect, Line, Signature };
 enum class Layout { Continuous = 0, Single = 1, Book = 2 };
-enum class Fit { None = 0, Width = 1, Page = 2 };
+enum class Fit { Free = 0, Width = 1, Page = 2 };
 
 class XanaraWindow;
 
@@ -129,6 +129,7 @@ class DocView : public Fl_Widget {
     enum Kind { Added, Removed, Moved, Recolored } kind;
     int page;
     PopplerAnnot *annot;
+    UndoStep(Kind k, int p, PopplerAnnot *a) : kind(k), page(p), annot(a) {}
     double dx = 0, dy = 0;
     Rgb color;
   };
@@ -201,7 +202,7 @@ class DocView : public Fl_Widget {
   std::vector<std::pair<int, Box>> sel_boxes_;
 
   // Mouse drags.
-  enum class Drag { None, Select, Pan, MoveAnnot, Shape, Ink, ScrollV, ScrollH, Link } drag_ = Drag::None;
+  enum class Drag { Idle, Select, Pan, MoveAnnot, Shape, Ink, ScrollV, ScrollH, Link } drag_ = Drag::Idle;
   int press_x_ = 0, press_y_ = 0, drag_page_ = -1;
   Point drag_p0_, drag_p1_;
   double press_sx_ = 0, press_sy_ = 0;

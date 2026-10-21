@@ -327,7 +327,7 @@ int Sidebar::handle(int event) {
         const Row &r = list[size_t(k)];
         int indent = x() + S(14) + r.depth * S(14);
         if (tab_ == Outline && r.item && !r.item->children.empty() &&
-            (mx < indent + S(18) || r.target.kind == LinkTarget::None)) {
+            (mx < indent + S(18) || r.target.kind == LinkTarget::Nothing)) {
           r.item->expanded = !r.item->expanded;
           rebuild_rows();
           clamp();

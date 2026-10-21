@@ -580,7 +580,7 @@ void XanaraWindow::draw_bar_text() {
       draw_text(view_->fit() == Fit::Width ? std::string(_("Width")) : view_->fit() == Fit::Page ? std::string(_("Page"))
                                                                                                  : zoom_text(view_->zoom()),
                 b.x, b.y, b.w, b.h, theme_.text, 1);
-      if (view_->fit() != Fit::None) {
+      if (view_->fit() != Fit::Free) {
         text_font(theme_.font_size - S(3));
         draw_text(zoom_text(view_->zoom()), b.x, b.y + b.h - S(12), b.w, S(12), theme_.text_dim, 1);
       }
@@ -1267,7 +1267,7 @@ void XanaraWindow::edit_field(int page, const FormField &f, int fx, int fy, int 
     gchar *t = poppler_form_field_text_get_text(field_);
     value = t ? t : "";
     g_free(t);
-    multiline = poppler_form_field_text_is_multiline(field_);
+    multiline = poppler_form_field_text_get_text_type(field_) == POPPLER_FORM_TEXT_MULTILINE;
   }
   field_input_->type(multiline ? FL_MULTILINE_INPUT : FL_NORMAL_INPUT);
   field_input_->when(multiline ? FL_WHEN_NEVER : FL_WHEN_ENTER_KEY);
@@ -1308,7 +1308,7 @@ bool XanaraWindow::replace_document(const std::string &path, const std::string &
   working_copy_ = working;
   view_->set_document(doc_.get());
   if (keep_view) {
-    if (fit != Fit::None) view_->set_fit(fit);
+    if (fit != Fit::Free) view_->set_fit(fit);
     else view_->set_zoom(zoom);
   }
   sidebar_->document_changed();

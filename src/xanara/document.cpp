@@ -390,7 +390,7 @@ const std::vector<Link> &Document::links(int page) {
     Link link;
     link.box = from_pdf(page, m->area);
     link.target = resolve(m->action);
-    if (link.target.kind != LinkTarget::None) pi.links.push_back(link);
+    if (link.target.kind != LinkTarget::Nothing) pi.links.push_back(link);
   }
   poppler_page_free_link_mapping(list);
   return pi.links;

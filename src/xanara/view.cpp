@@ -81,7 +81,7 @@ void DocView::set_document(Document *doc) {
   clear_selection();
   find_clear();
   annot_sel_page_ = -1;
-  drag_ = Drag::None;
+  drag_ = Drag::Idle;
   doc_ = doc;
   current_ = 0;
   sx_ = sy_ = tx_ = ty_ = 0;
@@ -165,7 +165,7 @@ void DocView::relayout(bool keep_position) {
     frac = (sy_ - s.y) / s.h;
     if (canvas_w_ > view_w()) hfrac = sx_ / std::max(1, canvas_w_ - view_w());
   }
-  if (fit_ != Fit::None) zoom_ = fit_zoom(fit_);
+  if (fit_ != Fit::Free) zoom_ = fit_zoom(fit_);
   RenderParams rp = params();
   int m = presentation_ ? 0 : S(22), gap = presentation_ ? 0 : S(14);
   slots_.assign(size_t(n), Slot{});
@@ -248,7 +248,7 @@ void DocView::resize(int x, int y, int w, int h) {
 
 void DocView::set_fit(Fit f) {
   fit_ = f;
-  if (f != Fit::None) {
+  if (f != Fit::Free) {
     settled_ = false;
     Fl::remove_timeout(settle_cb, this);
     Fl::add_timeout(kSettleDelay, settle_cb, this);
@@ -270,7 +270,7 @@ void DocView::set_zoom(double z, int ax, int ay) {
   int page = -1;
   double px = 0, py = 0;
   bool have = screen_to_page(ax, ay, page, px, py, true);
-  fit_ = Fit::None;
+  fit_ = Fit::Free;
   zoom_ = z;
   relayout(true);
   if (have) {
@@ -517,7 +517,7 @@ void DocView::follow(const LinkTarget &t) {
       else if (t.text == "Find") app_->show_find(true);
       else if (t.text == "Print") app_->print();
       break;
-    case LinkTarget::None: break;
+    case LinkTarget::Nothing: break;
   }
 }
 
@@ -1552,7 +1552,7 @@ int DocView::handle(int event) {
               copy.field = POPPLER_FORM_FIELD(g_object_ref(f->field));
               activate_field(page, copy);
               g_object_unref(copy.field);
-              drag_ = Drag::None;
+              drag_ = Drag::Idle;
               return 1;
             }
           }
@@ -1564,7 +1564,7 @@ int DocView::handle(int event) {
             move_dx_ = move_dy_ = 0;
             drag_ = Drag::MoveAnnot;
             if (Fl::event_clicks() > 0 && (a.type == POPPLER_ANNOT_TEXT || a.type == POPPLER_ANNOT_FREE_TEXT)) {
-              drag_ = Drag::None;
+              drag_ = Drag::Idle;
               edit_selected_note();
             }
             redraw();
@@ -1701,7 +1701,7 @@ int DocView::handle(int event) {
 
 void DocView::finish_drag(int mx, int my) {
   Drag d = drag_;
-  drag_ = Drag::None;
+  drag_ = Drag::Idle;
   if (d == Drag::Pan || d == Drag::ScrollV || d == Drag::ScrollH) {
     redraw();
     return;
@@ -1931,8 +1931,8 @@ bool DocView::keyboard(int key, int state) {
       }
       return false;
     case FL_Escape:
-      if (drag_ != Drag::None) {
-        drag_ = Drag::None;
+      if (drag_ != Drag::Idle) {
+        drag_ = Drag::Idle;
         stroke_pts_.clear();
       } else if (has_selection() || annot_sel_page_ >= 0) {
         clear_selection();

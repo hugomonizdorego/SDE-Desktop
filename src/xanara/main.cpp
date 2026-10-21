@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
   // The renderer thread hands finished tiles to the main loop with Fl::awake().
   Fl::lock();
   // Additional files open in windows of their own.
-  for (size_t i = 1; i < files.size(); ++i) spawn_detached({argv[0], path_from_argument(files[i])});
+  for (size_t i = 1; i < files.size(); ++i) spawn_detached({argv[0], xanara::path_from_argument(files[i])});
 
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);

@@ -76,7 +76,7 @@ void apply_color_mode(cairo_surface_t *surface, ColorMode mode);
 // ------------------------------------------------------------------ links
 
 struct LinkTarget {
-  enum Kind { None, Page, Uri, File, Named } kind = None;
+  enum Kind { Nothing, Page, Uri, File, Named } kind = Nothing;
   int page = -1;          // 0-based, for Page
   double top = -1;        // page space y to scroll to, or -1
   std::string text;       // URI, file name or named action
