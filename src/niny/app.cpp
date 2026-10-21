@@ -24,6 +24,7 @@
 #include "config.h"
 #include "i18n.h"
 #include "niny.h"
+#include "spawn.h"
 #include "textops.h"
 #include "util.h"
 #include "x11.h"
@@ -78,32 +79,16 @@ App::App(int w, int h) : BufferedWindow(w, h, "Niny") {
   }
   begin();
   editor_ = new EditorView(this, 0, 0, w, h);
-  start_ = new StartPage(this, 0, 0, w, h);
+  mdview_ = new MarkdownView(this, 0, 0, w, h);
+  mdview_->hide();
   info_ = new InfoBar(this, 0, 0, w, S(44));
   info_->hide();
   sidebar_ = new Sidebar(this, 0, 0, S(230), h);
-  tabs_ = new TabBar(this, 0, 0, w, S(46));
-  auto header_button = [this](DrawnButton **slot, icon::Kind kind, const char *tip, void (*cb)(Fl_Widget *, void *)) {
-    *slot = new DrawnButton(0, 0, S(34), S(34), [this, slot, kind](Painter &p, bool hot, bool down) {
-      const Look &L = look();
-      DrawnButton *b = *slot;
-      bool on = kind == icon::Sidebar && settings_.show_sidebar;
-      double r = L.liquid ? b->w() / 2.0 : Sd(8);
-      if (hot || down || on) p.fill_rounded(b->x(), b->y(), b->w(), b->h(), r, down ? L.hover.mix(L.text, 0.1) : L.hover);
-      icon::draw(p, kind, b->x() + (b->w() - S(20)) / 2.0, b->y() + (b->h() - S(20)) / 2.0, S(20),
-                 on ? L.accent_text : L.text.mix(L.dim, 0.35));
-    }, nullptr, Sd(8));
-    (*slot)->tooltip(tip);
-    (*slot)->callback(cb, this);
-  };
-  header_button(&menu_btn_, icon::Menu, _("Menu"), [](Fl_Widget *w, void *p) {
-    static_cast<App *>(p)->popup_menu(w->x(), w->y() + w->h());
-  });
-  header_button(&side_btn_, icon::Sidebar, _("Side Panel (F9)"),
-                [](Fl_Widget *, void *p) { static_cast<App *>(p)->toggle_sidebar(); });
-  header_button(&cmd_btn_, icon::Command, _("Command Palette (Ctrl+Shift+P)"),
-                [](Fl_Widget *, void *p) { static_cast<App *>(p)->show_palette(">"); });
-  status_ = new StatusBar(this, 0, 0, w, S(28));
+  tabs_ = new TabBar(this, 0, 0, w, S(42));
+  toolbar_ = new Toolbar(this, 0, 0, w, S(40));
+  status_ = new StatusBar(this, 0, 0, w, S(30));
+  settings_page_ = new SettingsPage(this, 0, 0, w, h);
+  settings_page_->hide();
   find_ = new FindBar(this, 0, 0, S(560), S(52));
   palette_ = new Palette(this, 0, 0, S(600), S(300));
   sheet_ = new Sheet(this, 0, 0, w, h);
@@ -205,46 +190,65 @@ void App::apply_settings(bool save) {
   update_ui();
 }
 
+void App::editor_rect(int &X, int &Y, int &W, int &H) const {
+  int sw = settings_.show_sidebar ? std::min(S(settings_.sidebar_width), w() / 2) : 0;
+  X = sw;
+  Y = header_h_;
+  W = w() - sw;
+  H = h() - header_h_ - status_h_;
+}
+
 void App::layout() {
-  const Look &L = look();
-  header_h_ = S(46);
-  status_h_ = settings_.status_bar ? S(28) : 0;
+  tabs_h_ = S(42);
+  int bar_h = S(40);
+  header_h_ = tabs_h_ + bar_h;
+  bool page = settings_visible();
+  status_h_ = settings_.status_bar && !page ? S(30) : 0;
   int W = w(), H = h();
-  menu_btn_->resize(S(8), (header_h_ - S(34)) / 2 + S(2), S(34), S(34));
-  side_btn_->resize(S(44), (header_h_ - S(34)) / 2 + S(2), S(34), S(34));
-  cmd_btn_->resize(W - S(42), (header_h_ - S(34)) / 2 + S(2), S(34), S(34));
-  tabs_->resize(S(88), 0, std::max(S(80), W - S(88) - S(48)), header_h_);
-  int body_y = header_h_, body_h = H - header_h_ - status_h_;
-  int sw = settings_.show_sidebar ? std::min(S(settings_.sidebar_width), W / 2) : 0;
-  if (sw) {
-    sidebar_->resize(0, body_y, sw, body_h);
+  tabs_->resize(S(46), 0, std::max(S(80), W - S(46) - S(6)), tabs_h_);
+  toolbar_->resize(0, tabs_h_, W, bar_h);
+  int ex, ey, ew, eh;
+  editor_rect(ex, ey, ew, eh);
+  int body_y = ey, body_h = eh;
+  settings_page_->resize(0, header_h_, W, H - header_h_ - status_h_);
+  if (ex && !page) {
+    sidebar_->resize(0, body_y, ex, body_h);
     sidebar_->show();
   } else {
     sidebar_->hide();
   }
-  int ex = sw, ew = W - sw;
-  int ey = body_y;
   Document *d = active();
-  if (d && d->notice != Document::Notice::Clear) {
+  if (d && d->notice != Document::Notice::Clear && !page) {
     info_->resize(ex, ey, ew, S(44));
     info_->show_for(d);
     ey += S(44);
+    eh -= S(44);
   } else {
     info_->show_for(nullptr);
   }
-  int eh = body_y + body_h - ey;
-  editor_->resize(ex, ey, ew, std::max(S(40), eh));
-  start_->resize(ex, body_y, ew, body_h);
-  if (docs_.empty()) {
+  // A little air above the first line, like a sheet of paper.
+  int top_pad = S(6);
+  editor_->resize(ex, ey + top_pad, ew, std::max(S(40), eh - top_pad));
+  mdview_->resize(ex, ey, ew, std::max(S(40), eh));
+  bool preview = d && d->preview && is_markdown(d);
+  if (page) {
     editor_->hide();
-    start_->show();
+    mdview_->hide();
+    settings_page_->show();
   } else {
-    start_->hide();
-    editor_->show();
+    settings_page_->hide();
+    if (preview) {
+      editor_->hide();
+      mdview_->show_doc(d);
+      mdview_->show();
+    } else {
+      mdview_->hide();
+      editor_->show();
+    }
   }
   if (find_->visible()) {
     int fw = std::min(S(600), ew - S(24));
-    find_->resize(ex + ew - fw - S(18), ey + S(2), fw, find_->wanted_height());
+    find_->resize(ex + ew - fw - S(18), ey + S(4), fw, find_->wanted_height());
     find_->relayout();
   }
   int pw = std::min(S(640), W - S(40));
@@ -257,7 +261,6 @@ void App::layout() {
   } else {
     status_->hide();
   }
-  (void)L;
 }
 
 void App::resize(int X, int Y, int W, int H) {
@@ -267,20 +270,22 @@ void App::resize(int X, int Y, int W, int H) {
 
 void App::draw_header(Painter &p) {
   const Look &L = look();
-  int hh = header_h_;
+  int hh = tabs_h_;
   if (L.glass) {
-    p.fill_gradient(0, 0, w(), hh, 0, L.header_top, L.header_bottom);
+    p.fill_gradient(0, 0, w(), hh, 0, L.strip, L.strip_bottom);
     p.glass_sheen(0, 0, w(), hh, 0, L.dark);
   } else {
-    p.fill_rect(0, 0, w(), hh, L.header_bottom);
+    p.fill_rect(0, 0, w(), hh, L.strip);
   }
-  p.line(0, hh - 0.5, w(), hh - 0.5, L.header_line, 1);
+  // The app mark at the start of the tab strip.
+  double s = S(22);
+  icon::logo(p, (S(46) - s) / 2.0 + S(2), S(6) + (hh - S(6) - s) / 2.0, s);
 }
 
 void App::draw() {
   {
     Painter p(w(), h());
-    p.fill_rect(0, 0, w(), h(), look().window);
+    p.fill_rect(0, 0, w(), h(), look().editor);
     draw_header(p);
   }
   draw_children();
@@ -303,24 +308,25 @@ void App::build_commands() {
     commands_.push_back(std::move(c));
   };
   std::string F = _("File"), E = _("Edit"), S_ = _("Search"), V = _("View"), D = _("Document"), T = _("Tools");
-  add("new", _("New Document"), F, FL_CTRL + 'n', "Ctrl+N", [this] { new_document(); });
-  add("open", _("Open File…"), F, FL_CTRL + 'o', "Ctrl+O", [this] { open_dialog(); });
+  add("new", _("New Tab"), F, FL_CTRL + 'n', "Ctrl+N", [this] { new_document(); });
+  add("new_window", _("New Window"), F, FL_CTRL + FL_SHIFT + 'n', "Ctrl+Shift+N", [this] { new_window(); });
+  add("open", _("Open…"), F, FL_CTRL + 'o', "Ctrl+O", [this] { open_dialog(); });
   add("quick_open", _("Quick Open…"), F, FL_CTRL + 'p', "Ctrl+P", [this] { show_palette(""); });
   add("save", _("Save"), F, FL_CTRL + 's', "Ctrl+S", [this] { if (active()) save(active()); });
   add("save_as", _("Save As…"), F, FL_CTRL + FL_SHIFT + 's', "Ctrl+Shift+S", [this] { if (active()) save_as(active()); });
   add("save_all", _("Save All"), F, FL_CTRL + FL_ALT + 's', "Ctrl+Alt+S", [this] { save_all(); });
   add("reload", _("Reload from Disk"), F, 0, nullptr, [this] { if (active()) reload(active()); });
-  add("close", _("Close Document"), F, FL_CTRL + 'w', "Ctrl+W", [this] { if (active()) close_document(active_); });
-  add("close_others", _("Close Other Documents"), F, 0, nullptr, [this] {
+  add("close", _("Close Tab"), F, FL_CTRL + 'w', "Ctrl+W", [this] { if (active()) close_document(active_); });
+  add("close_others", _("Close Other Tabs"), F, 0, nullptr, [this] {
     Document *keep = active();
     for (int i = int(docs_.size()) - 1; i >= 0; --i)
       if (docs_[size_t(i)].get() != keep && !close_document(i)) break;
   });
-  add("close_all", _("Close All Documents"), F, FL_CTRL + FL_SHIFT + 'w', "Ctrl+Shift+W", [this] {
+  add("close_all", _("Close All Tabs"), F, FL_CTRL + FL_SHIFT + 'w', "Ctrl+Shift+W", [this] {
     for (int i = int(docs_.size()) - 1; i >= 0; --i)
       if (!close_document(i)) break;
   });
-  add("reopen", _("Reopen Closed Document"), F, FL_CTRL + FL_SHIFT + 't', "Ctrl+Shift+T", [this] { reopen_closed(); });
+  add("reopen", _("Reopen Closed Tab"), F, FL_CTRL + FL_SHIFT + 't', "Ctrl+Shift+T", [this] { reopen_closed(); });
   add("copy_path", _("Copy File Path"), F, 0, nullptr, [this] {
     if (active() && !active()->path.empty()) {
       Fl::copy(active()->path.c_str(), int(active()->path.size()), 1);
@@ -333,17 +339,21 @@ void App::build_commands() {
     sidebar_->set_mode(1);
     if (!settings_.show_sidebar) toggle_sidebar();
   });
-  add("quit", _("Quit"), F, FL_CTRL + 'q', "Ctrl+Q", [this] { quit(); });
+  add("quit", _("Exit"), F, FL_CTRL + 'q', "Ctrl+Q", [this] { quit(); });
 
   add("undo", _("Undo"), E, FL_CTRL + 'z', "Ctrl+Z", [this] { undo(); }, false);
   add("redo", _("Redo"), E, FL_CTRL + FL_SHIFT + 'z', "Ctrl+Shift+Z", [this] { redo(); }, false);
   add("cut", _("Cut"), E, FL_CTRL + 'x', "Ctrl+X", [this] { if (active()) Fl_Text_Editor::kf_cut(0, editor_); }, false);
   add("copy", _("Copy"), E, FL_CTRL + 'c', "Ctrl+C", [this] { if (active()) Fl_Text_Editor::kf_copy(0, editor_); }, false);
   add("paste", _("Paste"), E, FL_CTRL + 'v', "Ctrl+V", [this] { if (active()) Fl_Text_Editor::kf_paste(0, editor_); }, false);
+  add("delete", _("Delete"), E, 0, "Del", [this] { delete_selection(); }, false);
   add("select_all", _("Select All"), E, FL_CTRL + 'a', "Ctrl+A", [this] {
     if (active()) active()->buf->select(0, active()->buf->length());
     editor_->redraw();
+    cursor_moved();
   }, false);
+  add("date_time", _("Time/Date"), E, FL_F + 5, "F5", [this] { insert_date_time(); });
+  add("search_web", _("Search the Web"), E, FL_CTRL + 'e', "Ctrl+E", [this] { search_web(); });
   add("duplicate", _("Duplicate Line or Selection"), E, FL_CTRL + 'd', "Ctrl+D", [this] { duplicate_lines(); }, false);
   add("delete_line", _("Delete Line"), E, FL_CTRL + FL_SHIFT + 'k', "Ctrl+Shift+K", [this] { delete_lines(); }, false);
   add("move_up", _("Move Line Up"), E, FL_ALT + FL_Up, "Alt+Up", [this] { move_lines(-1); }, false);
@@ -376,49 +386,69 @@ void App::build_commands() {
     if (t != d->text()) replace_range(0, d->length(), t, false);
   });
 
+  std::string M = _("Format");
+  add("md_bold", _("Bold"), M, FL_CTRL + 'b', "Ctrl+B", [this] { md_wrap("**"); });
+  add("md_italic", _("Italic"), M, FL_CTRL + 'i', "Ctrl+I", [this] { md_wrap("*"); });
+  add("md_strike", _("Strikethrough"), M, 0, nullptr, [this] { md_wrap("~~"); });
+  add("md_code", _("Inline Code"), M, 0, nullptr, [this] { md_wrap("`"); });
+  add("md_link", _("Link"), M, FL_CTRL + 'k', "Ctrl+K", [this] { md_link(); });
+  add("md_clear", _("Clear Formatting"), M, FL_CTRL + FL_SHIFT + 'x', "Ctrl+Shift+X", [this] { md_clear(); });
+  for (int lv = 1; lv <= 6; ++lv) {
+    static const char *ids[] = {"", "md_h1", "md_h2", "md_h3", "md_h4", "md_h5", "md_h6"};
+    static const char *keys[] = {"", "Ctrl+1", "Ctrl+2", "Ctrl+3", "Ctrl+4", "Ctrl+5", "Ctrl+6"};
+    add(ids[lv], format(_("Heading %d"), lv), M, FL_CTRL + '0' + lv, keys[lv], [this, lv] { md_heading(lv); });
+  }
+  add("md_body", _("Body Text"), M, 0, nullptr, [this] { md_heading(0); });
+  add("md_bullet", _("Bulleted List"), M, 0, nullptr, [this] { md_list(md::ListKind::Bullet); });
+  add("md_numbered", _("Numbered List"), M, 0, nullptr, [this] { md_list(md::ListKind::Numbered); });
+  add("md_task", _("Task List"), M, 0, nullptr, [this] { md_list(md::ListKind::Task); });
+  add("md_quote", _("Quote"), M, 0, nullptr, [this] { md_list(md::ListKind::Quote); });
+  add("preview", _("Formatted Markdown View"), M, FL_CTRL + FL_SHIFT + 'm', "Ctrl+Shift+M", [this] { toggle_preview(); });
+
   add("find", _("Find…"), S_, FL_CTRL + 'f', "Ctrl+F", [this] { show_find(false); });
   add("replace", _("Find and Replace…"), S_, FL_CTRL + 'h', "Ctrl+H", [this] { show_find(true); });
   add("find_next", _("Find Next"), S_, FL_F + 3, "F3", [this] { find_next(true); });
   add("find_prev", _("Find Previous"), S_, FL_SHIFT + FL_F + 3, "Shift+F3", [this] { find_next(false); });
-  add("goto", _("Go to Line…"), S_, FL_CTRL + 'g', "Ctrl+G", [this] { show_palette(":"); });
+  add("goto", _("Go To…"), S_, FL_CTRL + 'g', "Ctrl+G", [this] { show_palette(":"); });
 
   add("palette", _("Command Palette"), V, FL_CTRL + FL_SHIFT + 'p', "Ctrl+Shift+P", [this] { show_palette(">"); });
-  add("sidebar", _("Toggle Side Panel"), V, FL_F + 9, "F9", [this] { toggle_sidebar(); });
+  add("sidebar", _("Side Panel"), V, FL_F + 9, "F9", [this] { toggle_sidebar(); });
   add("documents", _("Show Open Documents"), V, 0, nullptr, [this] {
     sidebar_->set_mode(0);
     if (!settings_.show_sidebar) toggle_sidebar();
   });
-  add("wrap", _("Toggle Word Wrap"), V, FL_ALT + 'z', "Alt+Z", [this] { set_wrap(!settings_.word_wrap); });
-  add("line_numbers", _("Toggle Line Numbers"), V, 0, nullptr, [this] {
+  add("wrap", _("Word Wrap"), V, FL_ALT + 'z', "Alt+Z", [this] { set_wrap(!settings_.word_wrap); });
+  add("whitespace", _("Show Whitespace"), V, 0, nullptr, [this] { toggle_whitespace(); });
+  add("line_numbers", _("Line Numbers"), V, 0, nullptr, [this] {
     settings_.line_numbers = !settings_.line_numbers;
     apply_settings(true);
   });
-  add("status_bar", _("Toggle Status Bar"), V, 0, nullptr, [this] {
+  add("status_bar", _("Status Bar"), V, 0, nullptr, [this] {
     settings_.status_bar = !settings_.status_bar;
     apply_settings(true);
   });
   add("zoom_in", _("Zoom In"), V, FL_CTRL + '=', "Ctrl++", [this] { zoom(1); });
   add("zoom_out", _("Zoom Out"), V, FL_CTRL + '-', "Ctrl+-", [this] { zoom(-1); });
-  add("zoom_reset", _("Reset Zoom"), V, FL_CTRL + '0', "Ctrl+0", [this] { zoom(0); });
-  add("next_tab", _("Next Document"), V, FL_CTRL + FL_Page_Down, "Ctrl+Page Down", [this] {
+  add("zoom_reset", _("Restore Default Zoom"), V, FL_CTRL + '0', "Ctrl+0", [this] { zoom(0); });
+  add("next_tab", _("Next Tab"), V, FL_CTRL + FL_Page_Down, "Ctrl+Page Down", [this] {
     if (!docs_.empty()) activate((active_ + 1) % int(docs_.size()));
   });
-  add("prev_tab", _("Previous Document"), V, FL_CTRL + FL_Page_Up, "Ctrl+Page Up", [this] {
+  add("prev_tab", _("Previous Tab"), V, FL_CTRL + FL_Page_Up, "Ctrl+Page Up", [this] {
     if (!docs_.empty()) activate((active_ + int(docs_.size()) - 1) % int(docs_.size()));
   });
-  add("fullscreen", _("Toggle Full Screen"), V, FL_F + 11, "F11", [this] {
+  add("fullscreen", _("Full Screen"), V, FL_F + 11, "F11", [this] {
     if (fullscreen_active()) fullscreen_off();
     else fullscreen();
   });
-  add("scheme_light", _("Colors: Light"), V, 0, nullptr, [this] {
+  add("scheme_light", _("Theme: Light"), V, 0, nullptr, [this] {
     settings_.color_scheme = "light";
     apply_settings(true);
   });
-  add("scheme_dark", _("Colors: Dark"), V, 0, nullptr, [this] {
+  add("scheme_dark", _("Theme: Dark"), V, 0, nullptr, [this] {
     settings_.color_scheme = "dark";
     apply_settings(true);
   });
-  add("scheme_auto", _("Colors: Follow SDE"), V, 0, nullptr, [this] {
+  add("scheme_auto", _("Theme: Follow SDE"), V, 0, nullptr, [this] {
     settings_.color_scheme = "auto";
     apply_settings(true);
   });
@@ -463,7 +493,7 @@ void App::build_commands() {
     c.run = [this, wdt] { if (active()) set_indent(active()->use_tabs, wdt); };
     commands_.push_back(c);
   }
-  add("settings", _("Settings…"), T, FL_CTRL + ',', "Ctrl+,", [this] { open_settings(); });
+  add("settings", _("Settings"), T, FL_CTRL + ',', "Ctrl+,", [this] { open_settings(); });
   add("about", _("About Niny"), T, 0, nullptr, [this] { about(); });
 }
 
@@ -481,6 +511,20 @@ bool App::global_shortcut(int key, int state) {
   // Ctrl+Tab, Alt+1..9, keypad zoom and Escape.
   if ((state & FL_CTRL) && key == FL_Tab) {
     run_command(state & FL_SHIFT ? "prev_tab" : "next_tab");
+    return true;
+  }
+  if (state == FL_ALT && (key == 'f' || key == 'e' || key == 'v')) {
+    toolbar_->open(key == 'f' ? Toolbar::File : key == 'e' ? Toolbar::Edit : Toolbar::View);
+    return true;
+  }
+  if (key == FL_Escape && state == 0 && settings_visible()) {
+    show_settings_page(false);
+    return true;
+  }
+  if (key == FL_Menu && state == 0 && active() && !settings_visible()) {
+    int px = 0, py = 0;
+    editor_->position_to_xy(editor_->insert_position(), &px, &py);
+    context_menu(x_root() + px, y_root() + py + editor_->line_height());
     return true;
   }
   if (state == FL_ALT && key >= '1' && key <= '9') {
@@ -537,149 +581,116 @@ int App::dispatch(int event, Fl_Window *w) {
   return Fl::handle_(event, w);
 }
 
-void App::popup_menu(int x, int y) {
-  // Built from the command registry so that labels and shortcuts agree.
-  std::vector<Fl_Menu_Item> items;
-  std::vector<std::string> recent_labels;
-  auto item = [&](const char *id, int flags = 0) {
-    for (auto &c : commands_)
-      if (c.id == id) {
-        Fl_Menu_Item m{c.label.c_str(), c.shortcut, nullptr, (void *)&c, flags, FL_NORMAL_LABEL, FL_HELVETICA,
-                       look().theme.font_size, look().text.fl()};
-        items.push_back(m);
-        return;
-      }
-  };
-  auto sub = [&](const char *label) {
-    items.push_back(Fl_Menu_Item{label, 0, nullptr, nullptr, FL_SUBMENU, FL_NORMAL_LABEL, FL_HELVETICA,
-                                 look().theme.font_size, look().text.fl()});
-  };
-  auto end_sub = [&] { items.push_back(Fl_Menu_Item{nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}); };
-  item("new");
-  item("open");
-  item("quick_open", FL_MENU_DIVIDER);
-  // Recent files.
-  static std::vector<std::string> recent_store;
-  recent_store = recent_;
-  sub(_("Open Recent"));
-  if (recent_store.empty()) {
-    items.push_back(Fl_Menu_Item{_("No recent files"), 0, nullptr, nullptr, FL_MENU_INACTIVE, FL_NORMAL_LABEL,
-                                 FL_HELVETICA, look().theme.font_size, look().text.fl()});
-  }
-  static std::vector<std::string> recent_disp;
-  recent_disp.clear();
-  for (size_t i = 0; i < recent_store.size() && i < 15; ++i) {
-    std::string label = home_relative(recent_store[i]);
-    std::string esc;
-    for (char ch : label) {
-      if (ch == '/' || ch == '\\' || ch == '&' || ch == '_') esc += '\\';
-      esc += ch;
-    }
-    recent_disp.push_back(esc);
-  }
-  for (size_t i = 0; i < recent_disp.size(); ++i)
-    items.push_back(Fl_Menu_Item{recent_disp[i].c_str(), 0, nullptr, (void *)(intptr_t)(i + 1), 0, FL_NORMAL_LABEL,
-                                 FL_HELVETICA, look().theme.font_size, look().text.fl()});
-  end_sub();
-  item("save");
-  item("save_as");
-  item("save_all", FL_MENU_DIVIDER);
-  sub(_("Edit"));
-  for (const char *id : {"undo", "redo", "cut", "copy", "paste", "select_all", "duplicate", "delete_line", "move_up",
-                         "move_down", "comment", "upper", "lower", "sort", "trim"})
-    item(id);
-  end_sub();
-  sub(_("Search"));
-  for (const char *id : {"find", "replace", "find_next", "find_prev", "goto"}) item(id);
-  end_sub();
-  sub(_("View"));
-  for (const char *id : {"palette", "sidebar", "wrap", "line_numbers", "status_bar", "zoom_in", "zoom_out",
-                         "zoom_reset", "fullscreen"})
-    item(id);
-  end_sub();
-  sub(_("Document"));
-  for (const char *id : {"reload", "eol_lf", "eol_crlf", "indent_spaces", "indent_tabs", "copy_path", "show_folder"})
-    item(id);
-  end_sub();
-  item("settings");
-  item("about", FL_MENU_DIVIDER);
-  item("close");
-  item("quit");
-  items.push_back(Fl_Menu_Item{nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0});
-  const Fl_Menu_Item *m = items[0].popup(x, y);
-  if (!m) return;
-  intptr_t v = reinterpret_cast<intptr_t>(m->user_data());
-  if (v > 0 && v <= intptr_t(recent_store.size())) {
-    open_file(recent_store[size_t(v - 1)]);
-    return;
-  }
-  if (v > 1000) static_cast<const Command *>(m->user_data())->run();
-}
-
 void App::popup_status(int id, int x, int y) {
   Document *d = active();
   if (!d) return;
-  if (id == 1) {
+  if (id == StatusBar::Position) {
     show_palette(":");
     return;
   }
-  if (id == 6) {
-    zoom(0);
+  MenuSpec spec;
+  auto radio = [](const std::string &label, bool on, std::function<void()> fn) {
+    MenuItem m;
+    m.label = label;
+    m.radio = true;
+    m.checked = on;
+    m.run = std::move(fn);
+    return m;
+  };
+  if (id == StatusBar::FileType) {
+    for (const Language *l : all_languages())
+      spec.items.push_back(radio(is_plain(l) ? std::string(_("Plain text")) : language_name(l), d->lang == l,
+                                 [this, l] { set_language(l); }));
+  } else if (id == StatusBar::Zoom) {
+    spec.items.push_back(command_item("zoom_in"));
+    spec.items.push_back(command_item("zoom_out"));
+    spec.items.push_back(command_item("zoom_reset"));
+  } else if (id == StatusBar::LineEnding) {
+    spec.items.push_back(radio(_("Windows (CRLF)"), d->eol == Eol::CRLF && !d->mixed_eol, [this] { set_eol(Eol::CRLF); }));
+    spec.items.push_back(radio(_("Unix (LF)"), d->eol == Eol::LF && !d->mixed_eol, [this] { set_eol(Eol::LF); }));
+    spec.items.push_back(radio(_("Macintosh (CR)"), d->eol == Eol::CR && !d->mixed_eol, [this] { set_eol(Eol::CR); }));
+  } else if (id == StatusBar::Encoding) {
+    for (Encoding e : all_encodings())
+      spec.items.push_back(radio(encoding_name(e), d->encoding == e, [this, e] { set_encoding_for_save(e); }));
+    if (!d->path.empty()) {
+      spec.items.push_back(MenuItem::sep());
+      MenuItem re;
+      re.label = _("Reopen with Encoding");
+      for (Encoding e : all_encodings()) {
+        MenuItem m;
+        m.label = encoding_name(e);
+        m.run = [this, d, e] { reload(d, &e); };
+        re.sub.push_back(m);
+      }
+      spec.items.push_back(re);
+    }
+  } else {
     return;
   }
-  std::vector<std::string> labels;
-  std::vector<std::function<void()>> actions;
-  std::vector<bool> checked;
-  auto opt = [&](const std::string &l, bool on, std::function<void()> fn) {
-    labels.push_back(l);
-    checked.push_back(on);
-    actions.push_back(std::move(fn));
-  };
-  if (id == 2) {
-    opt(_("Indent Using Spaces"), !d->use_tabs, [this, d] { set_indent(false, d->indent_width); });
-    opt(_("Indent Using Tabs"), d->use_tabs, [this, d] { set_indent(true, d->buf->tab_distance()); });
-    for (int wdt : {2, 3, 4, 8})
-      opt(format(_("Width: %d"), wdt), (d->use_tabs ? d->buf->tab_distance() : d->indent_width) == wdt,
-          [this, d, wdt] { set_indent(d->use_tabs, wdt); });
-    opt(_("Detect from Content"), false, [this, d] {
-      d->indent_manual = false;
-      d->apply_indent_detection(true, settings_.tab_width, settings_.insert_spaces);
-      update_ui();
-    });
-  } else if (id == 3) {
-    for (Encoding e : all_encodings())
-      opt(format(_("Save as %s"), encoding_name(e)), d->encoding == e, [this, e] { set_encoding_for_save(e); });
-    if (!d->path.empty())
-      for (Encoding e : all_encodings())
-        opt(format(_("Reopen as %s"), encoding_name(e)), false, [this, d, e] { reload(d, &e); });
-  } else if (id == 4) {
-    for (Eol e : {Eol::LF, Eol::CRLF, Eol::CR}) opt(eol_name(e), d->eol == e, [this, e] { set_eol(e); });
-  } else if (id == 5) {
-    for (const Language *l : all_languages()) opt(language_name(l), d->lang == l, [this, l] { set_language(l); });
-  }
-  std::vector<Fl_Menu_Item> items;
-  for (size_t i = 0; i < labels.size(); ++i) {
-    int flags = FL_MENU_RADIO | (checked[i] ? FL_MENU_VALUE : 0);
-    if (id == 2 && (i == 1 || i == 5)) flags |= FL_MENU_DIVIDER;
-    if (id == 3 && i + 1 == all_encodings().size()) flags |= FL_MENU_DIVIDER;
-    items.push_back(Fl_Menu_Item{labels[i].c_str(), 0, nullptr, (void *)(intptr_t)(i + 1), flags, FL_NORMAL_LABEL,
-                                 FL_HELVETICA, look().theme.font_size, look().text.fl()});
-  }
-  items.push_back(Fl_Menu_Item{nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0});
-  int menu_h = int(labels.size()) * (look().theme.font_size + S(10));
-  const Fl_Menu_Item *m = items[0].popup(x, std::max(0, y - menu_h - S(8)));
-  if (!m) return;
-  intptr_t v = reinterpret_cast<intptr_t>(m->user_data());
-  if (v > 0 && v <= intptr_t(actions.size())) actions[size_t(v - 1)]();
+  spec.min_width = 160;
+  popup_menu(spec, x, y, -1);
 }
 
 void App::about() {
   ask(std::string("Niny ") + NINY_VERSION,
-      format(_("A text editor for the Selviana Desktop Environment.\n\nCopyright (C) 2026 DebION Dev-Team. "
-               "Niny is free software under the GNU General Public License, version 3 or later.\n\n"
-               "Settings: %s"),
+      format(_("A simple text editor for the Selviana Desktop Environment.\n\n"
+               "Developer: DebION Dev-Team\n"
+               "Copyright (C) 2026 DebION Dev-Team. Niny is free software under the GNU General Public "
+               "License, version 3 or later.\n\nSettings: %s"),
              home_relative(settings_path()).c_str()),
       {_("Close")}, 0, 0);
+}
+
+void App::new_window() {
+  char exe[PATH_MAX];
+  ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+  std::string prog = n > 0 ? std::string(exe, size_t(n)) : std::string("niny");
+  if (!spawn_detached({prog, "--new-window"})) toast(_("Could not open a new window"));
+}
+
+void App::toggle_whitespace() {
+  settings_.show_whitespace = !settings_.show_whitespace;
+  settings_.save(settings_path());
+  editor_->redraw();
+}
+
+void App::toggle_preview() {
+  Document *d = active();
+  if (!d) return;
+  if (!is_markdown(d)) {
+    toast(_("The formatted view is for Markdown documents"));
+    return;
+  }
+  if (!d->preview) {
+    d->cursor = editor_->insert_position();
+    d->top_line = editor_->top_line();
+  }
+  d->preview = !d->preview;
+  if (d->preview) hide_find();
+  layout();
+  if (!d->preview) editor_->take_focus();
+  else mdview_->take_focus();
+  update_ui();
+  redraw();
+}
+
+bool App::settings_visible() const { return settings_page_ && settings_page_->visible(); }
+
+void App::show_settings_page(bool on) {
+  if (on == settings_visible()) return;
+  if (on) {
+    palette_->close(false);
+    hide_find();
+    settings_page_->rebuild();
+    settings_page_->show();
+  } else {
+    settings_page_->hide();
+  }
+  layout();
+  if (on) settings_page_->take_focus();
+  else if (active()) editor_->take_focus();
+  update_ui();
+  redraw();
 }
 
 // -------------------------------------------------------------- documents
@@ -739,7 +750,7 @@ Document *App::open_file(const std::string &input, int line, int column, bool ac
     if (encoding_from_name(settings_.default_encoding, e)) d->encoding = e;
   }
   d->apply_indent_detection(settings_.detect_indent, settings_.tab_width, settings_.insert_spaces);
-  push_recent(recent_, path);
+  if (settings_.remember_recent) push_recent(recent_, path);
   save_recent();
   // Replace an untouched empty untitled document.
   Document *cur = active();
@@ -840,12 +851,11 @@ bool App::close_document(int index, bool ask_user) {
   if (match_doc_ == d) match_doc_ = nullptr;
   docs_.erase(docs_.begin() + index);
   if (docs_.empty()) {
+    // Like Notepad's last tab: start over with an empty one.
     active_ = -1;
     editor_->buffer(nullptr);
     hide_find();
-    layout();
-    update_ui();
-    redraw();
+    new_document();
     return true;
   }
   int next = std::min(index, int(docs_.size()) - 1);
@@ -927,7 +937,7 @@ bool App::save(Document *doc) {
     return false;
   }
   remove_backup(doc);
-  push_recent(recent_, doc->path);
+  if (settings_.remember_recent) push_recent(recent_, doc->path);
   save_recent();
   if (doc == active()) {
     sidebar_->set_folder(doc->folder());
@@ -1008,6 +1018,7 @@ void App::save_recent() {
 }
 
 void App::save_session() {
+  if (secondary_) return;
   Session s;
   if (editor_->doc()) {
     editor_->doc()->cursor = editor_->insert_position();
@@ -1339,12 +1350,18 @@ void App::update_ui() {
   if (!label() || title != label()) copy_label(title.c_str());
   editor_->update_gutter();
   tabs_->redraw();
+  toolbar_->redraw();
   status_->redraw();
+  if (mdview_->visible()) mdview_->redraw();
   sidebar_->redraw();
   editor_->redraw();
 }
 
 void App::doc_changed(Document *doc) {
+  if (doc == active()) {
+    mdview_->invalidate();
+    if (settings_.spell_check) schedule_spell_check();
+  }
   if (doc == active() && find_->visible()) {
     Fl::remove_timeout(match_cb, this);
     Fl::add_timeout(doc->length() > (2 << 20) ? 0.4 : 0.1, match_cb, this);

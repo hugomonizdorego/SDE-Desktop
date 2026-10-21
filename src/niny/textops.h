@@ -60,4 +60,48 @@ bool split_position_suffix(const std::string &arg, std::string &path, int &line,
 // characters do not all appear in order in |text|.
 int fuzzy_score(const std::string &query, const std::string &text);
 
+// ---------------------------------------------------------- Notepad tools
+
+// Characters (UTF-8 code points), words and lines of |text|.
+struct TextCounts {
+  long chars = 0, words = 0, lines = 0;
+};
+TextCounts count_text(const char *text, size_t len);
+long utf8_length(const char *text, size_t len);
+// Status bar text: "1,234 characters" or "13 of 1,234 characters".
+std::string character_status(long selected, long total);
+std::string group_thousands(long n);
+
+// Text for Edit > Time/Date: "14:05 2026-10-21" (local time of |t|).
+std::string date_time_text(long long t);
+
+// Unicode control characters offered by "Display and Unicode".
+struct UnicodeControl {
+  const char *name;   // "Left-to-right mark"
+  const char *abbr;   // "LRM"
+  unsigned codepoint;
+};
+const std::vector<UnicodeControl> &unicode_controls();
+std::string utf8_encode(unsigned codepoint);
+
+// Visible markers used by "Show whitespace" for a byte, or nullptr.
+const char *whitespace_marker(char c);
+
+// Percent-encodes |text| for a URL query value (spaces become '+').
+std::string url_query_encode(const std::string &text);
+
+// One line of "ispell -a" output (hunspell/aspell pipe mode):
+// "*" or "+ root" correct, "& word n off: a, b" and "# word off" misspelled.
+struct SpellResult {
+  bool known = true;  // false for an unrecognized line
+  bool correct = true;
+  std::vector<std::string> suggestions;
+};
+SpellResult parse_ispell_line(const std::string &line);
+// Words worth spell checking (letters, apostrophes), with byte offsets.
+struct WordSpan {
+  size_t start = 0, end = 0;
+};
+std::vector<WordSpan> spell_words(const std::string &text);
+
 }  // namespace niny

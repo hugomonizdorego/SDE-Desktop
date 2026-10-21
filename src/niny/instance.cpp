@@ -102,7 +102,19 @@ bool hand_off_to_running(const std::vector<std::string> &args, const std::string
   return true;
 }
 
+bool another_instance_running() {
+  sockaddr_un addr;
+  if (!fill_addr(addr, socket_path())) return false;
+  int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  if (fd < 0) return false;
+  bool ok = connect(fd, reinterpret_cast<sockaddr *>(&addr), sizeof addr) == 0;
+  close(fd);
+  return ok;
+}
+
 void listen_for_instances(App *app) {
+  // A second window (--new-window) leaves the socket to the first one.
+  if (another_instance_running()) return;
   g_app = app;
   g_path = socket_path();
   sockaddr_un addr;

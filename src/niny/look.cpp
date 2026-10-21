@@ -124,6 +124,22 @@ Look make_look(const Config &cfg, const std::string &scheme) {
   L.match = Color::hex(0xF2B84B, L.dark ? 0.32 : 0.42);
   L.match_current = L.accent;
   L.bracket = L.accent;
+  // Tab strip (tinted like a Mica title bar) and the lighter bar below it.
+  if (L.dark) {
+    L.strip = L.window.mix(Color::hex(0x000000), 0.22).mix(L.accent, 0.05);
+    L.bar = L.editor.mix(Color::hex(0xFFFFFF), 0.045);
+  } else {
+    L.strip = L.window.mix(L.accent, 0.075).mix(Color::hex(0x8090A8), 0.06);
+    L.bar = Color::hex(0xFBFBFC).mix(L.window, 0.25);
+  }
+  L.strip_bottom = L.strip;
+  if (L.glass) {
+    L.strip = L.strip.mix(L.accent, L.dark ? 0.05 : 0.06).mix(Color::hex(0xFFFFFF), L.dark ? 0.0 : 0.15);
+    L.strip_bottom = L.strip.mix(L.window, 0.35);
+  }
+  L.bar_line = L.border.alpha(L.dark ? 0.75 : 0.7);
+  L.status = L.bar;
+  L.tab_active = L.bar;
   const SyntaxPalette &pal = L.dark ? kDark : kLight;
   for (int i = 0; i < kStyleCount; ++i) L.syntax[i] = Color::hex(pal.c[i]);
   L.syntax[0] = L.text.mix(L.syntax[0], 0.5);

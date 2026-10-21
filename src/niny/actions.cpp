@@ -8,10 +8,13 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 
 #include "i18n.h"
 #include "niny.h"
+#include "spawn.h"
 #include "textops.h"
+#include "util.h"
 
 namespace niny {
 
@@ -443,6 +446,22 @@ int App::editor_key(int key, int state, const char *text, int len) {
     }
     int ls = b->line_start(pos);
     std::string before = range(b, ls, pos);
+    if (is_markdown(d) && pos == b->line_end(pos) && state == 0) {
+      bool ends = false;
+      std::string next_prefix = md::continue_list(before, ends);
+      if (ends) {  // Enter on an empty item ends the list
+        b->remove(ls, pos);
+        editor_->insert_position(ls);
+        return 1;
+      }
+      if (!next_prefix.empty()) {
+        std::string ins = "\n" + next_prefix;
+        b->insert(pos, ins.c_str());
+        editor_->insert_position(pos + int(ins.size()));
+        editor_->show_insert_position();
+        return 1;
+      }
+    }
     std::string ind = auto_indent(before, d->indent_unit(), colon_opens);
     std::string base = leading_whitespace(before);
     bool blank = before.find_first_not_of(" \t") == std::string::npos;
@@ -558,6 +577,204 @@ int App::editor_key(int key, int state, const char *text, int len) {
     }
   }
   return 0;
+}
+
+// ------------------------------------------------- Markdown and Notepad tools
+
+bool App::is_markdown(const Document *doc) const { return doc && language_id(doc->lang) == "markdown"; }
+
+int App::current_heading() {
+  Document *d = active();
+  if (!d || !is_markdown(d)) return 0;
+  int pos = editor_->insert_position();
+  return md::heading_level(range(d->buf, d->buf->line_start(pos), d->buf->line_end(pos)));
+}
+
+namespace {
+bool markdown_only(App *app) {
+  Document *d = app->active();
+  if (!d) return false;
+  if (d->preview) return false;
+  if (!app->is_markdown(d)) {
+    app->toast(_("Formatting works in Markdown documents (.md)"));
+    return false;
+  }
+  return true;
+}
+}  // namespace
+
+void App::md_heading(int level) {
+  if (!markdown_only(this)) return;
+  Document *d = active();
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  int ls = b->line_start(pos), le = b->line_end(pos);
+  std::string line = range(b, ls, le);
+  int cur = md::heading_level(line);
+  std::string out = md::set_heading(line, cur == level ? 0 : level);
+  if (out == line) return;
+  Group g(d, pos);
+  int col = pos - ls + int(out.size()) - int(line.size());
+  b->replace(ls, le, out.c_str());
+  editor_->insert_position(std::max(ls, std::min(ls + std::max(0, col), ls + int(out.size()))));
+  editor_->show_insert_position();
+  update_ui();
+}
+
+void App::md_list(md::ListKind kind) {
+  if (!markdown_only(this)) return;
+  Document *d = active();
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  int s, e;
+  line_block(b, pos, s, e);
+  std::string block = range(b, s, e);
+  std::string out = md::toggle_list(block, kind);
+  if (out == block) return;
+  Group g(d, pos);
+  bool multi = b->count_lines(s, e) > 1;
+  replace_range(s, e, out, multi);
+  if (!multi) {
+    // Keep the caret at the end of the item's text.
+    int end = s + int(out.size());
+    if (!out.empty() && out.back() == '\n') --end;
+    editor_->insert_position(end);
+  }
+}
+
+void App::md_wrap(const std::string &marker) {
+  if (!markdown_only(this)) return;
+  Document *d = active();
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  int a = pos, z = pos;
+  if (!(b->selection_position(&a, &z) && z > a)) {
+    // No selection: the word under the cursor, if any.
+    int ws = b->word_start(pos), we = b->word_end(pos);
+    if (we > ws && pos < b->length() && is_word((unsigned char)b->byte_at(pos))) {
+      a = ws;
+      z = we;
+    } else {
+      a = z = pos;
+    }
+  }
+  // Work on the surrounding line(s) so markers just outside are seen.
+  int ls = b->line_start(a), le = b->line_end(z);
+  std::string text = range(b, ls, le);
+  md::Edit e = md::toggle_wrap(text, size_t(a - ls), size_t(z - ls), marker);
+  Group g(d, pos);
+  b->replace(ls + int(e.start), ls + int(e.end), e.text.c_str());
+  if (e.sel_end > e.sel_start) b->select(ls + int(e.sel_start), ls + int(e.sel_end));
+  else b->unselect();
+  editor_->insert_position(ls + int(e.sel_end));
+  editor_->show_insert_position();
+}
+
+void App::md_link() {
+  if (!markdown_only(this)) return;
+  Document *d = active();
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  int a = pos, z = pos;
+  if (!(b->selection_position(&a, &z) && z > a)) a = z = pos;
+  int ls = b->line_start(a), le = b->line_end(z);
+  std::string text = range(b, ls, le);
+  md::Edit e = md::make_link(text, size_t(a - ls), size_t(z - ls));
+  Group g(d, pos);
+  b->replace(ls + int(e.start), ls + int(e.end), e.text.c_str());
+  if (e.sel_end > e.sel_start) b->select(ls + int(e.sel_start), ls + int(e.sel_end));
+  else b->unselect();
+  editor_->insert_position(ls + int(e.sel_end));
+  editor_->show_insert_position();
+}
+
+void App::md_clear() {
+  if (!markdown_only(this)) return;
+  Document *d = active();
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  int s, e;
+  if (!(b->selection_position(&s, &e) && e > s)) {
+    s = b->line_start(pos);
+    e = b->line_end(pos);
+  }
+  std::string t = range(b, s, e);
+  std::string out = md::clear_formatting(t);
+  if (out == t) return;
+  Group g(d, pos);
+  replace_range(s, e, out, true);
+}
+
+void App::insert_text(const std::string &text) {
+  Document *d = active();
+  if (!d || d->preview || text.empty()) return;
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  Group g(d, pos);
+  int a, z;
+  if (b->selection_position(&a, &z) && z > a) {
+    b->remove(a, z);
+    pos = a;
+  }
+  b->insert(pos, text.c_str());
+  b->unselect();
+  editor_->insert_position(pos + int(text.size()));
+  editor_->show_insert_position();
+  editor_->take_focus();
+}
+
+void App::insert_date_time() { insert_text(date_time_text(time(nullptr))); }
+
+void App::delete_selection() {
+  Document *d = active();
+  if (!d) return;
+  int a, z;
+  if (!(d->buf->selection_position(&a, &z) && z > a)) return;
+  Group g(d, editor_->insert_position());
+  d->buf->remove(a, z);
+  editor_->insert_position(a);
+  editor_->show_insert_position();
+}
+
+std::string App::word_at_cursor(int *start, int *end) {
+  Document *d = active();
+  if (!d) return "";
+  Fl_Text_Buffer *b = d->buf;
+  int pos = editor_->insert_position();
+  int len = b->length();
+  auto letter = [&](int p) {
+    if (p < 0 || p >= len) return false;
+    unsigned char c = (unsigned char)b->byte_at(p);
+    return isalpha(c) || c >= 0x80 || c == '\'' || isdigit(c);
+  };
+  int s = pos;
+  if (!letter(s) && letter(s - 1)) --s;
+  if (!letter(s)) return "";
+  while (s > 0 && letter(s - 1)) --s;
+  int e = s;
+  while (e < len && letter(e)) ++e;
+  while (e > s && b->byte_at(e - 1) == '\'') --e;
+  while (s < e && b->byte_at(s) == '\'') ++s;
+  if (e <= s) return "";
+  if (start) *start = s;
+  if (end) *end = e;
+  return range(b, s, e);
+}
+
+void App::search_web() {
+  std::string q = selection_text();
+  if (q.empty()) q = word_at_cursor();
+  q = sde::trim(q);
+  if (q.empty()) {
+    toast(_("Select some text to search for"));
+    return;
+  }
+  if (q.size() > 400) q.resize(400);
+  std::string url = settings_.search_url;
+  size_t at = url.find("%s");
+  if (at == std::string::npos) return;
+  url.replace(at, 2, url_query_encode(q));
+  if (!sde::open_uri(url)) toast(_("Could not open the web browser"));
 }
 
 }  // namespace niny

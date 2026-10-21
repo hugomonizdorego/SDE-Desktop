@@ -40,10 +40,13 @@ struct Settings {
   bool word_wrap = false;
   int right_margin = 0;  // column of the margin line; 0 hides it
   // View
-  bool line_numbers = true;
-  bool highlight_line = true;
+  // Notepad-like defaults: no line numbers, no side panel, no line band.
+  bool line_numbers = false;
+  bool highlight_line = false;
   bool bracket_match = true;
-  bool show_sidebar = true;
+  bool show_sidebar = false;
+  bool show_whitespace = false;
+  bool syntax_colors = true;  // highlighting for code files
   int sidebar_width = 230;
   bool status_bar = true;
   std::string color_scheme = "auto";  // auto, light, dark
@@ -56,6 +59,12 @@ struct Settings {
   bool final_newline = false;
   std::string default_encoding = "UTF-8";
   std::string default_eol = "LF";
+  bool remember_recent = true;
+  bool open_in_new_window = false;  // files from other programs: new window instead of a new tab
+  // Spelling and the web
+  bool spell_check = true;  // underline misspelled words (hunspell or aspell)
+  std::string spell_language;  // dictionary, empty: from the locale
+  std::string search_url = "https://duckduckgo.com/?q=%s";
 
   void from_ini(const Ini &ini);
   void to_ini(Ini &ini) const;

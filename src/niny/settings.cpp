@@ -125,6 +125,16 @@ void Settings::from_ini(const Ini &ini) {
   show_sidebar = ini.get_bool("view", "side_panel", d.show_sidebar);
   sidebar_width = ini.get_int("view", "side_panel_width", d.sidebar_width, 140, 600);
   status_bar = ini.get_bool("view", "status_bar", d.status_bar);
+  show_whitespace = ini.get_bool("view", "show_whitespace", d.show_whitespace);
+  syntax_colors = ini.get_bool("view", "syntax_highlighting", d.syntax_colors);
+  remember_recent = ini.get_bool("files", "remember_recent", d.remember_recent);
+  open_in_new_window = ini.get_bool("files", "open_in_new_window", d.open_in_new_window);
+  spell_check = ini.get_bool("spelling", "check_spelling", d.spell_check);
+  spell_language = ini.get("spelling", "dictionary", d.spell_language);
+  search_url = ini.get("web", "search_url", d.search_url);
+  if (search_url.find("%s") == std::string::npos ||
+      (search_url.compare(0, 8, "https://") != 0 && search_url.compare(0, 7, "http://") != 0))
+    search_url = d.search_url;
   color_scheme = sde::lower(ini.get("view", "color_scheme", d.color_scheme));
   if (color_scheme != "light" && color_scheme != "dark") color_scheme = "auto";
   restore_session = ini.get_bool("files", "restore_session", d.restore_session);
@@ -160,6 +170,13 @@ void Settings::to_ini(Ini &ini) const {
   ini.set("view", "side_panel", b(show_sidebar));
   ini.set("view", "side_panel_width", std::to_string(sidebar_width));
   ini.set("view", "status_bar", b(status_bar));
+  ini.set("view", "show_whitespace", b(show_whitespace));
+  ini.set("view", "syntax_highlighting", b(syntax_colors));
+  ini.set("files", "remember_recent", b(remember_recent));
+  ini.set("files", "open_in_new_window", b(open_in_new_window));
+  ini.set("spelling", "check_spelling", b(spell_check));
+  ini.set("spelling", "dictionary", spell_language);
+  ini.set("web", "search_url", search_url);
   ini.set("view", "color_scheme", color_scheme);
   ini.set("files", "restore_session", b(restore_session));
   ini.set("files", "backups", b(backups));

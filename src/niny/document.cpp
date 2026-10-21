@@ -197,6 +197,16 @@ const std::string &Document::text() {
 
 std::string Document::indent_unit() const { return use_tabs ? "\t" : std::string(size_t(indent_width), ' '); }
 
+long Document::char_count() {
+  if (count_rev_ != revision || count_len_ != buf->length()) {
+    const std::string &t = text();
+    count_ = utf8_length(t.data(), t.size());
+    count_rev_ = revision;
+    count_len_ = buf->length();
+  }
+  return count_;
+}
+
 int Document::line_count() const { return buf->count_lines(0, buf->length()) + 1; }
 
 int Document::line_of(int pos) {
