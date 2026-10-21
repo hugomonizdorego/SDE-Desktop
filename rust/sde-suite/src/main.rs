@@ -41,11 +41,18 @@ fn gtk_theme() -> Option<String> {
     }
     let name = sde_theme_name(&config)?;
     let data = env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-    let user = env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p| p.is_absolute())
+    let user = env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
         .unwrap_or_else(|| home.join(".local/share"));
     let found = std::iter::once(user)
         .chain(data.split(':').filter(|d| !d.is_empty()).map(PathBuf::from))
-        .any(|d| d.join("themes").join(&name).join("gtk-3.0/gtk.css").is_file());
+        .any(|d| {
+            d.join("themes")
+                .join(&name)
+                .join("gtk-3.0/gtk.css")
+                .is_file()
+        });
     let dark = name.contains("-Dark-");
     Some(match (found, dark) {
         (true, _) => name,
@@ -73,8 +80,14 @@ fn sde_theme_name(config: &Config) -> Option<String> {
 
 fn accent_label(config: &Config) -> &'static str {
     const NAMES: [(&str, &str); 9] = [
-        ("blue", "Blue"), ("teal", "Teal"), ("green", "Green"), ("yellow", "Yellow"),
-        ("orange", "Orange"), ("red", "Red"), ("pink", "Pink"), ("purple", "Purple"),
+        ("blue", "Blue"),
+        ("teal", "Teal"),
+        ("green", "Green"),
+        ("yellow", "Yellow"),
+        ("orange", "Orange"),
+        ("red", "Red"),
+        ("pink", "Pink"),
+        ("purple", "Purple"),
         ("graphite", "Graphite"),
     ];
     if let Some(name) = config.get("appearance", "accent_name") {
@@ -84,18 +97,42 @@ fn accent_label(config: &Config) -> &'static str {
     }
     // Swatches of alpha15 and the light shades of the current families.
     const COLORS: [(&str, &str); 26] = [
-        ("#2672BE", "Blue"), ("#2F6FDB", "Blue"), ("#3684DD", "Blue"), ("#2777FF", "Blue"),
-        ("#167D9A", "Teal"), ("#009688", "Teal"), ("#0099A1", "Teal"),
-        ("#277A4C", "Green"), ("#4CAF50", "Green"), ("#06A284", "Green"),
-        ("#FBC02D", "Yellow"), ("#FFD86E", "Yellow"),
-        ("#D9682B", "Orange"), ("#F57C00", "Orange"), ("#FD7D00", "Orange"),
-        ("#E53935", "Red"), ("#EC0101", "Red"),
-        ("#C2407A", "Pink"), ("#EC407A", "Pink"), ("#CD0245", "Pink"),
-        ("#7A4FD1", "Purple"), ("#AB47BC", "Purple"), ("#962AC3", "Purple"),
-        ("#5A6472", "Graphite"), ("#333333", "Graphite"), ("#737680", "Graphite"),
+        ("#2672BE", "Blue"),
+        ("#2F6FDB", "Blue"),
+        ("#3684DD", "Blue"),
+        ("#2777FF", "Blue"),
+        ("#167D9A", "Teal"),
+        ("#009688", "Teal"),
+        ("#0099A1", "Teal"),
+        ("#277A4C", "Green"),
+        ("#4CAF50", "Green"),
+        ("#06A284", "Green"),
+        ("#FBC02D", "Yellow"),
+        ("#FFD86E", "Yellow"),
+        ("#D9682B", "Orange"),
+        ("#F57C00", "Orange"),
+        ("#FD7D00", "Orange"),
+        ("#E53935", "Red"),
+        ("#EC0101", "Red"),
+        ("#C2407A", "Pink"),
+        ("#EC407A", "Pink"),
+        ("#CD0245", "Pink"),
+        ("#7A4FD1", "Purple"),
+        ("#AB47BC", "Purple"),
+        ("#962AC3", "Purple"),
+        ("#5A6472", "Graphite"),
+        ("#333333", "Graphite"),
+        ("#737680", "Graphite"),
     ];
-    let hex = config.get("appearance", "accent").unwrap_or("").to_ascii_uppercase();
-    COLORS.iter().find(|(c, _)| *c == hex).map(|(_, l)| *l).unwrap_or("Blue")
+    let hex = config
+        .get("appearance", "accent")
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    COLORS
+        .iter()
+        .find(|(c, _)| *c == hex)
+        .map(|(_, l)| *l)
+        .unwrap_or("Blue")
 }
 
 fn command(app: &[&str], args: &[OsString]) -> (String, Vec<OsString>) {

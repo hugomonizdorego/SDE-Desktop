@@ -18,8 +18,12 @@ if(SDE_BUILD_NATIVE_SUITE)
           DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS
           PATTERN "include" EXCLUDE PATTERN "pkgconfig" EXCLUDE
           PATTERN "*.la" EXCLUDE PATTERN "*.a" EXCLUDE)
-  install(DIRECTORY "${SDE_SUITE_STAGE}${CMAKE_INSTALL_FULL_SYSCONFDIR}/"
-          DESTINATION "${CMAKE_INSTALL_FULL_SYSCONFDIR}" USE_SOURCE_PERMISSIONS)
+  # Since alpha16 (no power-manager/screensaver forks) the suite may stage
+  # nothing under /etc.
+  install(CODE "if(EXISTS \"${SDE_SUITE_STAGE}${CMAKE_INSTALL_FULL_SYSCONFDIR}\")
+    file(INSTALL \"${SDE_SUITE_STAGE}${CMAKE_INSTALL_FULL_SYSCONFDIR}/\"
+         DESTINATION \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_SYSCONFDIR}\" USE_SOURCE_PERMISSIONS)
+  endif()")
 endif()
 
 option(SDE_BUILD_COMPONENTS "Build Calculator and SDE session components" ON)
