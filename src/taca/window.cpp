@@ -275,10 +275,11 @@ void TacaWindow::tick_cb(void *p) {
   if (self->job_) Fl::repeat_timeout(0.1, tick_cb, p);
 }
 
-bool TacaWindow::password_retry(const Result &r, std::function<void()> again) {
+bool TacaWindow::password_retry(const Result &r, std::function<void()> again, const std::string &name) {
   if (!r.need_password && !r.wrong_password) return false;
   std::string pw;
-  if (ask_password(this, info_.path.empty() ? std::string(_("archive")) : info_.path, r.wrong_password, pw)) {
+  std::string shown = !name.empty() ? name : info_.path.empty() ? std::string(_("archive")) : info_.path;
+  if (ask_password(this, shown, r.wrong_password, pw)) {
     password_ = pw;
     again();
   }
@@ -310,26 +311,19 @@ void TacaWindow::show_result(const std::string &what, const Result &r) {
 
 // --------------------------------------------------------------- archive
 
-void TacaWindow::open_archive(const std::string &path) {
+void TacaWindow::open_archive(const std::string &path, bool keep_password) {
   if (!file_exists(path)) {
     message(this, _("Cannot open the archive"), format(_("“%s” does not exist."), path.c_str()), {_("OK")}, 0, true);
     return;
   }
-  if (info_.path != path) password_.clear();
+  if (info_.path != path && !keep_password) password_.clear();
   std::string pw = password_;
   auto result = std::make_shared<ArchiveInfo>();
   run_job(format(_("Opening “%s”"), basename_of(path).c_str()),
           [path, pw, result](Progress &p) { return list_archive(path, pw, *result, &p); },
           [this, path, result](const Result &r) {
             if (!r.ok) {
-              ArchiveInfo keep = info_;
-              info_.path = path;
-              bool asked = password_retry(r, [this, path] { open_archive(path); });
-              if (asked) {
-                if (keep.path != path) info_ = keep;
-                return;
-              }
-              info_ = keep;
+              if (password_retry(r, [this, path] { open_archive(path, true); }, path)) return;
               if (!r.cancelled)
                 message(this, _("Cannot open the archive"),
                         format("%s\n\n%s", basename_of(path).c_str(), r.error.c_str()), {_("OK")}, 0, true);
@@ -451,8 +445,7 @@ void TacaWindow::action_new(const std::vector<std::string> &given) {
               toast(_("The split archive was created"));
               return;
             }
-            info_.path = path;
-            open_archive(path);
+            open_archive(path, true);  // keeps the password just set
           });
 }
 
@@ -718,7 +711,12 @@ struct SidebarRow {
   Rect r;
   const char *label;
   icon::Kind glyph;
+  bool small = false;  // an icon-only button in the bottom row
 };
+
+// Short windows get a compact archive card.
+bool compact_card(int h) { return h < S(700); }
+int card_height(int h) { return compact_card(h) ? S(164) : S(268); }
 
 std::vector<SidebarRow> sidebar_rows(int w, int h, int top) {
   std::vector<SidebarRow> rows;
@@ -734,25 +732,39 @@ std::vector<SidebarRow> sidebar_rows(int w, int h, int top) {
       {TestArchive, {_("Test Integrity"), icon::Shield}},
       {Properties, {_("Properties"), icon::Info}},
   };
+  std::vector<SidebarRow> overflow;
   for (const auto &l : list) {
-    if (y + rh > h - S(96)) break;
+    if (y + rh > h - S(96)) {
+      overflow.push_back({l.first, {}, l.second.first, l.second.second, true});
+      continue;
+    }
     rows.push_back({l.first, {x, y, rw, rh}, l.second.first, l.second.second});
     y += rh + S(2);
   }
-  int by = h - S(34) - S(52);
-  int half = (rw - S(8)) / 2;
-  rows.push_back({OpenOther, {x, by, half, S(36)}, _("Open…"), icon::Open});
-  rows.push_back({NewArchive, {x + half + S(8), by, half, S(36)}, _("New…"), icon::Plus});
+  // Bottom row: Open and New, then whatever did not fit above as icons.
+  int by = h - S(34) - S(52), gap = S(6), icon_w = S(36);
+  int iw = int(overflow.size()) * (icon_w + gap);
+  int half = (rw - iw - gap) / 2;
+  bool labels = half >= S(84);
+  if (!labels) half = icon_w;
+  rows.push_back({OpenOther, {x, by, half, S(36)}, _("Open…"), icon::Open, !labels});
+  rows.push_back({NewArchive, {x + half + gap, by, half, S(36)}, _("New…"), icon::Plus, !labels});
+  int ox = x + 2 * (half + gap);
+  for (auto &o : overflow) {
+    o.r = {ox, by, icon_w, S(36)};
+    rows.push_back(o);
+    ox += icon_w + gap;
+  }
   return rows;
 }
 
-int sidebar_top() { return S(300); }
+int sidebar_top(int h) { return card_height(h) + S(32); }
 
 }  // namespace
 
 int TacaWindow::sidebar_action_at(int mx, int my) const {
   if (!has_archive() || mx >= sidebar_w_) return -1;
-  for (const auto &row : sidebar_rows(sidebar_w_, h(), sidebar_top()))
+  for (const auto &row : sidebar_rows(sidebar_w_, h(), sidebar_top(h())))
     if (row.r.inside(mx, my)) return int(row.action);
   // The close "x" on the card.
   if (mx >= sidebar_w_ - S(44) && mx < sidebar_w_ - S(12) && my >= S(18) && my < S(50)) return CloseArchive;
@@ -795,22 +807,32 @@ void TacaWindow::draw_sidebar(Painter &p) {
   p.line(sw - 0.5, 0, sw - 0.5, h(), theme_.border.alpha(0.8));
   // Identity card.
   int cx = S(16), cw = sw - S(32);
-  p.fill_rounded(cx, S(16), cw, S(268), S(16), theme_.surface);
-  p.stroke_rounded(cx + 0.5, S(16) + 0.5, cw - 1, S(268) - 1, S(16), theme_.border.alpha(0.6));
+  bool compact = compact_card(h());
+  p.fill_rounded(cx, S(16), cw, card_height(h()), S(16), theme_.surface);
+  p.stroke_rounded(cx + 0.5, S(16) + 0.5, cw - 1, card_height(h()) - 1, S(16), theme_.border.alpha(0.6));
   icon::badge(p, cx + S(16), S(32), S(56), theme_.accent);
   icon::draw(p, icon::Close, sw - S(40), S(26), S(18), hover_action_ == CloseArchive ? theme_.text : theme_.text_dim);
-  // Compression meter.
-  double saved = info_.total_size > 0 ? 1 - double(info_.archive_size) / double(info_.total_size) : -1;
-  int my = S(206), mx = cx + S(16), mw = cw - S(32);
-  p.fill_rounded(mx, my, mw, S(8), S(4), theme_.border.alpha(0.6));
-  if (saved > 0) p.fill_rounded(mx, my, std::max(double(S(8)), mw * std::min(1.0, saved)), S(8), S(4), theme_.accent);
-  if (info_.encrypted || info_.header_encrypted) {
-    p.fill_rounded(mx, S(242), S(112), S(26), S(13), theme_.accent.alpha(0.16));
-    icon::draw(p, icon::Lock, mx + S(8), S(247), S(16), theme_.accent_text);
+  bool locked = info_.encrypted || info_.header_encrypted;
+  if (compact) {
+    if (locked) {
+      text_font(theme_.font_size - S(1), true);
+      icon::draw(p, icon::Lock, cx + S(84) + text_width(format_info(info_.format).label) + S(8), S(39), S(16),
+                 theme_.accent_text);
+    }
+  } else {
+    // Compression meter.
+    double saved = info_.total_size > 0 ? 1 - double(info_.archive_size) / double(info_.total_size) : -1;
+    int my = S(206), mx = cx + S(16), mw = cw - S(32);
+    p.fill_rounded(mx, my, mw, S(8), S(4), theme_.border.alpha(0.6));
+    if (saved > 0) p.fill_rounded(mx, my, std::max(double(S(8)), mw * std::min(1.0, saved)), S(8), S(4), theme_.accent);
+    if (locked) {
+      p.fill_rounded(mx, S(242), S(112), S(26), S(13), theme_.accent.alpha(0.16));
+      icon::draw(p, icon::Lock, mx + S(8), S(247), S(16), theme_.accent_text);
+    }
   }
   // Actions.
   size_t selected = view_->selection().size();
-  for (const auto &row : sidebar_rows(sw, h(), sidebar_top())) {
+  for (const auto &row : sidebar_rows(sw, h(), sidebar_top(h()))) {
     bool on = action_enabled(*this, row.action, selected) && !job_;
     bool hover = hover_action_ == int(row.action) && on;
     if (row.action == ExtractAll) {
@@ -819,10 +841,13 @@ void TacaWindow::draw_sidebar(Painter &p) {
       icon::draw(p, row.glyph, row.r.x + S(16), row.r.y + (row.r.h - S(20)) / 2.0, S(20), theme_.on_accent);
       continue;
     }
-    if (row.action == OpenOther || row.action == NewArchive) {
+    if (row.action == OpenOther || row.action == NewArchive || row.small) {
       p.fill_rounded(row.r.x, row.r.y, row.r.w, row.r.h, S(10), hover ? theme_.hover : theme_.surface);
       p.stroke_rounded(row.r.x + 0.5, row.r.y + 0.5, row.r.w - 1, row.r.h - 1, S(10), theme_.border);
-      icon::draw(p, row.glyph, row.r.x + S(10), row.r.y + (row.r.h - S(18)) / 2.0, S(18), theme_.text_dim);
+      double ix = row.small ? row.r.x + (row.r.w - S(18)) / 2.0 : row.r.x + S(10);
+      Color c = on || row.action == OpenOther || row.action == NewArchive ? theme_.text_dim : theme_.text_dim.alpha(0.4);
+      if (on && row.action == DeleteItems) c = Color::hex(0xD14B3C);
+      icon::draw(p, row.glyph, ix, row.r.y + (row.r.h - S(18)) / 2.0, S(18), c);
       continue;
     }
     if (hover) p.fill_rounded(row.r.x, row.r.y, row.r.w, row.r.h, S(10), theme_.hover);
@@ -857,19 +882,26 @@ void TacaWindow::draw_sidebar_text() {
                    fmt_count(info_.folders, _("%zu folder"), _("%zu folders")).c_str()),
             tx, sy, nw, S(22), theme_.text_dim);
   double saved = info_.total_size > 0 ? 1 - double(info_.archive_size) / double(info_.total_size) : -1;
-  draw_text(format("%s → %s", human_size(info_.total_size).c_str(), human_size(info_.archive_size).c_str()), tx,
-            S(178), nw, S(22), theme_.text);
-  text_font(theme_.font_size - S(2));
-  std::string ratio = saved < 0 ? std::string(_("Empty archive"))
-                      : saved > 0.005 ? format(_("%d%% smaller than the original"), int(std::lround(saved * 100)))
-                                      : std::string(_("Stored without compression"));
-  draw_text(ratio, tx, S(216), nw, S(22), theme_.text_dim);
-  if (info_.encrypted || info_.header_encrypted) {
-    text_font(theme_.font_size - S(2), true);
-    draw_text(_("Encrypted"), tx + S(28), S(242), S(80), S(26), theme_.accent_text);
+  if (!compact_card(h())) {
+    draw_text(format("%s → %s", human_size(info_.total_size).c_str(), human_size(info_.archive_size).c_str()), tx,
+              S(178), nw, S(22), theme_.text);
+    text_font(theme_.font_size - S(2));
+    std::string ratio = saved < 0 ? std::string(_("Empty archive"))
+                        : saved > 0.005 ? format(_("%d%% smaller than the original"), int(std::lround(saved * 100)))
+                                        : std::string(_("Stored without compression"));
+    draw_text(ratio, tx, S(216), nw, S(22), theme_.text_dim);
+    if (info_.encrypted || info_.header_encrypted) {
+      text_font(theme_.font_size - S(2), true);
+      draw_text(_("Encrypted"), tx + S(28), S(242), S(80), S(26), theme_.accent_text);
+    }
+  } else if (l2.empty() && saved > 0.005) {
+    text_font(theme_.font_size - S(2));
+    draw_text(format(_("%s · %d%% smaller"), human_size(info_.archive_size).c_str(), int(std::lround(saved * 100))),
+              tx, S(154), nw, S(22), theme_.text_dim);
   }
   size_t selected = view_->selection().size();
-  for (const auto &row : sidebar_rows(sw, h(), sidebar_top())) {
+  for (const auto &row : sidebar_rows(sw, h(), sidebar_top(h()))) {
+    if (row.small) continue;
     bool on = action_enabled(*this, row.action, selected) && !job_;
     std::string label = row.label;
     if (row.action == ExtractSelected && selected) label = format(_("Extract %zu Selected…"), selected);

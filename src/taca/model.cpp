@@ -150,6 +150,7 @@ std::vector<int> Tree::search(int dir, const std::string &query, SortKey key, bo
 
 std::vector<int> Tree::ancestry(int dir) const {
   std::vector<int> out;
+  if (dir < 0 || dir >= int(nodes_.size())) return out;
   for (int i = dir; i >= 0; i = nodes_[size_t(i)].parent) out.push_back(i);
   std::reverse(out.begin(), out.end());
   return out;

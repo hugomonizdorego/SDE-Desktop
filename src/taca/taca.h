@@ -239,7 +239,7 @@ class TacaWindow : public sde::BufferedWindow {
   void set_sort(SortKey key);
   bool searching() const;
 
-  void open_archive(const std::string &path);
+  void open_archive(const std::string &path, bool keep_password = false);
   void close_archive();
   void enter(int node);  // folder: browse into it; file: open it
   void go_up();
@@ -272,7 +272,7 @@ class TacaWindow : public sde::BufferedWindow {
   void run_job(const std::string &title, Job::Work work, Job::Done done);
   void job_finished();
   // Retries |again| with a password when |r| asks for one; true if handled.
-  bool password_retry(const Result &r, std::function<void()> again);
+  bool password_retry(const Result &r, std::function<void()> again, const std::string &name = "");
   void show_result(const std::string &what, const Result &r);
   void reload();
   std::vector<std::string> selected_paths() const;

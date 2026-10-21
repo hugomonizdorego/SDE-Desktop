@@ -219,6 +219,9 @@ bool external_list(const std::string &tool, const std::string &path, const std::
     }
   }
   flush();
+  // Solid 7z blocks report their packed size on the first file only.
+  if (out.format == Format::SevenZip)
+    for (auto &e : out.entries) e.packed = -1;
   // With -mhe the listing itself only works with the password.
   if (!password.empty()) {
     std::string probe;
