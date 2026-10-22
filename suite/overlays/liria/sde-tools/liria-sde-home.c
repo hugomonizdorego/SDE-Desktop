@@ -630,6 +630,21 @@ thumb_free (Thumb *t)
 	g_free (t);
 }
 
+/* Previews fill the 36 px icon square, cropped to the middle. */
+static void
+set_square_preview (GtkWidget *image, GdkPixbuf *pixbuf)
+{
+	gint width = gdk_pixbuf_get_width (pixbuf), height = gdk_pixbuf_get_height (pixbuf);
+	gint side = MIN (width, height);
+	GdkPixbuf *square = gdk_pixbuf_new_subpixbuf (pixbuf, (width - side) / 2, (height - side) / 2, side, side);
+	GdkPixbuf *scaled = gdk_pixbuf_scale_simple (square, 36, 36, GDK_INTERP_BILINEAR);
+
+	gtk_image_set_from_pixbuf (GTK_IMAGE (image), scaled);
+	gtk_style_context_add_class (gtk_widget_get_style_context (image), "sde-card-preview");
+	g_object_unref (scaled);
+	g_object_unref (square);
+}
+
 static void
 thumb_loaded (GObject *source, GAsyncResult *result, gpointer data)
 {
@@ -637,7 +652,7 @@ thumb_loaded (GObject *source, GAsyncResult *result, gpointer data)
 	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream_finish (result, NULL);
 
 	if (pixbuf && !g_cancellable_is_cancelled (t->cancellable))
-		gtk_image_set_from_pixbuf (GTK_IMAGE (t->image), pixbuf);
+		set_square_preview (t->image, pixbuf);
 	if (pixbuf)
 		g_object_unref (pixbuf);
 	g_input_stream_close (G_INPUT_STREAM (source), NULL, NULL);
@@ -656,7 +671,7 @@ thumb_opened (GObject *source, GAsyncResult *result, gpointer data)
 		thumb_free (t);
 		return;
 	}
-	gdk_pixbuf_new_from_stream_at_scale_async (G_INPUT_STREAM (stream), 36, 36, TRUE, t->cancellable,
+	gdk_pixbuf_new_from_stream_at_scale_async (G_INPUT_STREAM (stream), 96, 96, TRUE, t->cancellable,
 	                                           thumb_loaded, t);
 	g_object_unref (stream);
 }
@@ -671,10 +686,10 @@ pin_thumbnail (PinQuery *q, GFile *file, GFileInfo *info)
 	Thumb *t;
 
 	if (thumb && *thumb) {
-		GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_size (thumb, 36, 36, NULL);
+		GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_size (thumb, 96, 96, NULL);
 
 		if (pixbuf) {
-			gtk_image_set_from_pixbuf (GTK_IMAGE (q->image), pixbuf);
+			set_square_preview (q->image, pixbuf);
 			g_object_unref (pixbuf);
 			return;
 		}
@@ -1215,7 +1230,7 @@ pin_card (Overview *o, GPtrArray *pins, guint index)
 	GFile *file = g_file_new_for_uri (pin->uri), *home = g_file_new_for_path (g_get_home_dir ());
 	gchar *where = g_file_get_parse_name (file), *base = g_file_get_basename (file), *name;
 	gboolean is_trash = g_str_has_prefix (pin->uri, "trash:"), is_home = g_file_equal (file, home);
-	GtkWidget *card = card_new (o, "sde-quick-card", pin->uri, where);
+	GtkWidget *card = card_new (o, "sde-quick-card", pin->uri, is_trash ? _("Trash") : where);
 	GtkWidget *image, *title, *subtitle;
 	PinQuery *q;
 
@@ -1291,7 +1306,7 @@ add_card (Overview *o, gboolean empty)
 	gtk_style_context_add_class (gtk_widget_get_style_context (card), "sde-quick-add");
 	g_object_set_data (G_OBJECT (card), "sde-add", GINT_TO_POINTER (TRUE));
 	card_box (card, image, label_new (_("Add"), "sde-card-title", TRUE),
-	          label_new (empty ? _("Pin folders and files") : _("Pin more"), "sde-card-subtitle", TRUE));
+	          label_new (empty ? _("Pin a folder") : _("Pin more"), "sde-card-subtitle", TRUE));
 	atk_object_set_name (gtk_widget_get_accessible (card), _("Pin a folder or file to Quick access"));
 	return card;
 }
@@ -1342,6 +1357,10 @@ quick_access_new (Overview *o)
 	g_signal_connect (o->quick, "drag-data-received", G_CALLBACK (quick_drag_data_received), o);
 	fill_quick_access (o);
 
+	/* The folder must exist for the change notification to be immediate. */
+	path = g_build_filename (g_get_user_config_dir (), "sde", NULL);
+	g_mkdir_with_parents (path, 0700);
+	g_free (path);
 	path = liria_sde_pins_path ();
 	file = g_file_new_for_path (path);
 	o->pins_monitor = g_file_monitor_file (file, G_FILE_MONITOR_NONE, NULL, NULL);

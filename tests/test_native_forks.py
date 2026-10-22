@@ -199,6 +199,75 @@ class LiriaAlpha16Test(unittest.TestCase):
                                               'Keywords=files;MATE;\nOpen Caja\nhelp:mate-user-guide\n')
         self.assertEqual(len(leaks), 4)
 
+    def test_quick_access_pins_overlay(self):
+        pins = (self.overlay / 'src/liria-sde-pins.c').read_text()
+        for needle in ('"liria-quick-access"', 'g_get_user_config_dir', 'g_file_set_contents', "'\\t'",
+                       'G_USER_DIRECTORY_DOCUMENTS', '"trash:///"', 'liria_sde_pins_reset'):
+            self.assertIn(needle, pins)
+        self.assertEqual((self.overlay / 'sde-tools/liria-sde-pins.c').read_text().count(
+            '#include "../src/liria-sde-pins.c"'), 1)
+        home = (self.overlay / 'sde-tools/liria-sde-home.c').read_text()
+        for needle in ('liria_sde_pins_load', 'g_file_monitor_file', 'gtk_drag_dest_set', 'gtk_drag_source_set',
+                       '"text/uri-list"', 'Unpin from Quick Access', 'Remove from Quick Access', 'Move _Left',
+                       'Move _Right', 'Reset to _Defaults', 'Not available', 'sde-card-missing', 'sde-quick-add',
+                       'GDK_KEY_Delete', 'GDK_KEY_F2', 'gtk_file_chooser_dialog_new', 'G_FILE_ATTRIBUTE_THUMBNAIL_PATH',
+                       'g_content_type_get_description', 'popup-menu'):
+            self.assertIn(needle, home)
+        # Drops never ask the source to delete what was dropped.
+        self.assertNotIn('GDK_ACTION_MOVE', home)
+        tools = (self.overlay / 'sde-tools/liria-sde-tools.c').read_text()
+        for needle in ('Pin to Quick Access', 'Unpin from Quick Access', 'liria_sde_pins_add', 'liria_sde_pins_remove'):
+            self.assertIn(needle, tools)
+        make = (self.overlay / 'sde-tools/Makefile.am').read_text()
+        self.assertIn('liria-sde-pins.c', make)
+        self.assertIn('TESTS = test-liria-sde-pins', make)
+        css = (self.overlay / 'data/liria-sde.css').read_text()
+        for needle in ('button.sde-card-missing', 'button.sde-quick-add', 'flowbox.sde-quick-access:drop(active)'):
+            self.assertIn(needle, css)
+        self.assertIn('Pin to Quick Access', (self.overlay / 'data/help/index.html').read_text())
+
+    def test_quick_access_recipe_edits_window_and_sidebar(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            src = staged / 'src'
+            src.mkdir()
+            (src / 'Makefile.am').write_text('liria_SOURCES = \\\n\tliria-sde-ui.c \\\n')
+            (src / 'liria-places-sidebar.c').write_text(
+                '#include "liria-sde-ui.h"\n'
+                '    GtkWidget *popup_menu_open_in_new_tab_item;\n'
+                '    sidebar->popup_menu_remove_item = NULL;\n'
+                'static void\nbookmarks_check_popup_sensitivity (LiriaPlacesSidebar *sidebar)\n{\n'
+                '    gtk_widget_show (sidebar->popup_menu_open_in_new_tab_item);\n}\n'
+                '/* Rename the selected bookmark */\n'
+                '                      G_CALLBACK (open_shortcut_in_new_window_cb), sidebar);\n'
+                '    gtk_widget_show (item);\n'
+                '    gtk_menu_shell_append (GTK_MENU_SHELL (sidebar->popup_menu), item);\n')
+            self.redesign.liria_quick_access(staged)
+            self.assertIn('\tliria-sde-pins.c \\\n\tliria-sde-pins.h \\\n\tliria-sde-ui.c', (src / 'Makefile.am').read_text())
+            sidebar = (src / 'liria-places-sidebar.c').read_text()
+            for needle in ('#include "liria-sde-pins.h"', 'popup_menu_sde_pin_item = NULL', 'sde_pin_shortcut_cb',
+                           'liria_sde_pins_is_pinned (uri)', 'sde_menu_item_set_text', '"view-pin-symbolic"'):
+                self.assertIn(needle, sidebar)
+        self.assertIn('liria_quick_access(staged)', (self.root / 'suite/redesign.py').read_text())
+
+    def test_quick_access_pin_list_unit(self):
+        import shutil
+        import subprocess
+        import tempfile
+        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
+                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
+            self.skipTest('gcc and gio-2.0 development files are needed')
+        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
+                               check=True).stdout.split()
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / 'test-liria-sde-pins'
+            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
+                            str(self.overlay / 'sde-tools/test-liria-sde-pins.c')] + flags, check=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('ok 3 /liria/pins/defaults-and-edits', result.stdout)
+
     def test_prepared_tree_has_no_brand_leaks(self):
         source = self.root / 'vendor/suite/liria'
         if not source.is_dir():

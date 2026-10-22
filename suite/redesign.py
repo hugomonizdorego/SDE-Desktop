@@ -693,14 +693,33 @@ def liria_quick_access(staged):
               "    GtkWidget *popup_menu_open_in_new_tab_item;\n    GtkWidget *popup_menu_sde_pin_item; /* SDE */\n")
     edit_once(sidebar, "    sidebar->popup_menu_remove_item = NULL;\n",
               "    sidebar->popup_menu_remove_item = NULL;\n    sidebar->popup_menu_sde_pin_item = NULL;\n")
+    edit_once(sidebar, "static void\nbookmarks_check_popup_sensitivity (LiriaPlacesSidebar *sidebar)\n",
+              """/* SDE: the label of an eel image menu item sits in a box next to its icon. */
+static void
+sde_menu_item_set_text (GtkWidget *item, const char *text)
+{
+    GtkWidget *box = gtk_bin_get_child (GTK_BIN (item));
+    GList *children = GTK_IS_CONTAINER (box) ? gtk_container_get_children (GTK_CONTAINER (box)) : NULL;
+
+    for (GList *l = children; l != NULL; l = l->next)
+    {
+        if (GTK_IS_LABEL (l->data))
+            gtk_label_set_text_with_mnemonic (GTK_LABEL (l->data), text);
+    }
+    g_list_free (children);
+}
+
+static void
+bookmarks_check_popup_sensitivity (LiriaPlacesSidebar *sidebar)
+""")
     edit_once(sidebar, "    gtk_widget_show (sidebar->popup_menu_open_in_new_tab_item);\n",
               """    gtk_widget_show (sidebar->popup_menu_open_in_new_tab_item);
 
     /* SDE: Pin to / Unpin from Quick Access on the Home overview. */
     gtk_widget_set_visible (sidebar->popup_menu_sde_pin_item, uri != NULL);
-    gtk_menu_item_set_label (GTK_MENU_ITEM (sidebar->popup_menu_sde_pin_item),
-                             uri != NULL && liria_sde_pins_is_pinned (uri) ? _("Unpin from Quick Access")
-                                                                           : _("Pin to Quick Access"));
+    sde_menu_item_set_text (sidebar->popup_menu_sde_pin_item,
+                            uri != NULL && liria_sde_pins_is_pinned (uri) ? _("Unpin from Quick Access")
+                                                                          : _("Pin to Quick Access"));
 """)
     edit_once(sidebar, "/* Rename the selected bookmark */\n", """/* SDE: pins or unpins the selected place in Quick access. */
 static void
