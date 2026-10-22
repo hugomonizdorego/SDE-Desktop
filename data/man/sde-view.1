@@ -1,25 +1,35 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH SDE-VIEW 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-sde-view \- Photo, the SDE photo viewer and editor
+sde-view \- Photo, the SDE image viewer and editor
 .SH SYNOPSIS
 .B sde-view
 [\fIOPTIONS\fR] [\fIFILE\fR|\fIURI\fR|\fIFOLDER\fR...]
 .SH DESCRIPTION
-Photo shows pictures and edits them. It opens quickly: the preview
-embedded in a camera photo (or its cached thumbnail) is shown at once,
-then a screen-sized image, then the full image. Photos are shown upright
-following their EXIF orientation. Animated GIFs play.
+Photo views and edits one image at a time. It is the default application
+for image files on the SDE desktop. Organizing a photo library (albums,
+favorites, slideshows, import from cameras, batch actions on many photos)
+is the job of Gallery,
+.BR sde-gallery (1);
+Photo's
+.B Show in Gallery
+(Ctrl+G) selects the photo there and F5 plays a slideshow of its folder in
+Gallery.
+.PP
+Photo opens quickly: the preview embedded in a camera photo (or its cached
+thumbnail) is shown at once, then a screen-sized image, then the full
+image. Photos are shown upright following their EXIF orientation.
+Animated GIFs play.
 .PP
 Photo steps through the other pictures of the folder (in name order), or
 through a Gallery album (see
-.BR \-\-album ).
-A filmstrip shows them below the photo.
+.BR \-\-album ),
+with the arrow keys and a filmstrip below the photo.
 .SS Viewing
 The mouse wheel (or Ctrl+wheel for finer steps) zooms around the pointer;
 drag to move a zoomed photo; double-click switches between best fit and a
 closer look. Best Fit, Actual Size (1:1) and Fill Window are in the View
-menu. Full screen (F11) and a slideshow (F5) are available.
+menu; full screen is F11.
 .SS Information
 The information panel (I) shows the file name, folder, size, type,
 dimensions and colour profile, and the camera details from EXIF: date
@@ -28,27 +38,51 @@ exposure bias. Photos with a GPS position show the coordinates and an
 .B Open in Map
 link to openstreetmap.org.
 .SS Editing
-Edits are previewed and kept until saved: rotate (R, Shift+R), flip (H,
-V), crop with free or fixed aspect ratios (C), resize, the adjustments
-exposure, brightness, contrast, saturation, warmth, fade and vignette, and
-the filters Vivid, Warm, Cool, B&W, Noir, Sepia, Vintage, Matte and Invert
-with a strength. Every step can be undone and redone.
+The edit panel (E) has four tabs. Edits are previewed and kept until
+saved, and every step can be undone and redone.
+.TP
+.B Adjust
+Exposure, brightness, contrast, saturation, warmth, fade and vignette.
+.TP
+.B Filters
+Vivid, Warm, Cool, B&W, Noir, Sepia, Vintage, Matte and Invert, with a
+strength.
+.TP
+.B Crop
+Rotate (R, Shift+R), flip (H, V), crop with free or fixed aspect ratios
+(C) and resize.
+.TP
+.B Draw
+(D) Annotate the photo: a pen with smooth strokes, a highlighter (a
+translucent marker that darkens what it covers, like ink on paper), an
+eraser that removes drawn strokes but never the photo, lines, arrows,
+rectangles and ellipses (outlined or filled), text (Sans, Serif or Mono,
+any size and colour, with an optional background box), blur and pixelate
+regions to hide private details such as faces, card numbers or
+addresses, and a colour picker that takes a colour from the photo. A
+palette and a custom colour, the stroke width and the opacity apply to new
+drawings and to the selected one. The select tool picks a drawing to move
+it, resize it by its corners (Shift keeps the proportions) or delete it;
+double-click text to change it. Each stroke or shape is one undo step.
 .PP
+Drawings are kept in the coordinates of the full-size photo, so they stay
+in place while zooming and panning, and they turn with the photo when it
+is rotated or flipped. They stay a separate, editable layer until the
+photo is saved; saving flattens them into the image at full resolution.
+.SS Saving
 Save replaces the file after asking; Save As writes a copy (JPEG, PNG,
 WebP or TIFF). A JPEG that was only rotated or flipped is saved without
-loss of quality by updating its EXIF orientation. Other edits are encoded
-again with the chosen quality; JPEG files keep their camera details.
-GIF and SVG pictures are saved as PNG.
+loss of quality by updating its EXIF orientation. Other edits, drawings
+included, are encoded again with the chosen quality; JPEG files keep their
+camera details (EXIF). GIF and SVG pictures are saved as PNG.
 .SS Other actions
 Copy Image (the clipboard offers PNG data, the file and its path), Set as
 Wallpaper, Print (through CUPS
 .BR lp ),
 Open With another application, Show in Files
 .RB ( liria ),
-Show in Gallery
-.RB ( sde-gallery ),
-Add to Favorites (shared with Gallery) and Move to Trash (freedesktop.org
-Trash). Changes are announced to a running Gallery, which updates at once.
+Show in Gallery and Move to Trash (freedesktop.org Trash). Changes are
+announced to a running Gallery, which updates at once.
 .SH OPTIONS
 .TP
 .BI \-\-album= ID
@@ -65,7 +99,7 @@ same),
 .BI dir: PATH
 (one folder) or
 .BI list: FILE
-(one path per line).
+(one path per line; Gallery's own albums are such lists).
 .TP
 .BI \-\-sort= ORDER
 .BR newest ,
@@ -73,8 +107,11 @@ same),
 or
 .BR name .
 .TP
+.B \-\-draw
+Open the drawing tools (the Draw tab) once the photo is loaded.
+.TP
 .B \-\-slideshow
-Start a slideshow.
+Play a slideshow of the photo's folder in Gallery.
 .TP
 .B \-\-fullscreen
 Start in full screen.
@@ -94,17 +131,24 @@ Previous, next, first, last photo.
 .B + \- 0 1 F
 Zoom in, zoom out, best fit, actual size, fill.
 .TP
-.B R, Shift+R, H, V, C, E
-Rotate right or left, flip, crop, edit panel.
+.B R, Shift+R, H, V, C, E, D
+Rotate right or left, flip, crop, edit panel, draw.
+.TP
+.B Draw tab: S, P, M, X, L, A, U, O, T, K
+Select, pen, highlighter, eraser, line, arrow, rectangle, ellipse, text,
+pick a colour. Shift while drawing gives 45\(de lines, squares and
+circles; the middle mouse button moves a zoomed photo; Delete removes the
+selected drawing; Esc deselects.
 .TP
 .B Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+Shift+S
 Undo, redo, save, save as.
 .TP
-.B Ctrl+C, Ctrl+D, Ctrl+G, Ctrl+P, Delete
-Copy image, favorite, show in Gallery, print, move to the Trash.
+.B Ctrl+C, Ctrl+G, Ctrl+P, Delete
+Copy image, show in Gallery, print, move to the Trash.
 .TP
 .B I, B, F1, F5, F11, Esc, Ctrl+W
-Information, filmstrip, shortcuts, slideshow, full screen, leave, close.
+Information, filmstrip, shortcuts, slideshow in Gallery, full screen,
+leave, close.
 .SH FILES
 .TP
 .I ~/.config/sde/sde.conf
@@ -113,15 +157,16 @@ Section
 keeps
 .B jpeg_quality=
 (default 92),
-.B slideshow_interval=
-(seconds),
 .B info=
 and
-.BR filmstrip= .
-Favorites are the
-.B favorites=
-list of
-.BR [gallery] ;
+.BR filmstrip= ,
+and the drawing options
+.BR draw_color= ,
+.BR draw_fill= ,
+.BR draw_font= ,
+.B draw_text_size=
+and
+.BR draw_text_box= .
 Set as Wallpaper writes
 .B wallpaper=
 in

@@ -289,6 +289,7 @@ class PhotoWindow : public sde::BufferedWindow {
   DrawSettings &draw_settings() { return draw_; }
   void set_tool(Tool t);
   void open_draw();
+  void open_draw_when_loaded() { draw_on_load_ = true; if (source_) open_draw(); }
   void delete_selected_mark();
   // The panel's style changed: restyle the selected mark (one undo step
   // per slider drag when |amend|).
@@ -393,6 +394,7 @@ class PhotoWindow : public sde::BufferedWindow {
   uint64_t render_result_gen_ = 0;
   int jpeg_quality_ = 92;
   DrawSettings draw_;
+  bool draw_on_load_ = false;
   std::string toast_;
 
   Canvas *canvas_ = nullptr;

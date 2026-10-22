@@ -2,22 +2,22 @@
 [Desktop Entry]
 Type=Application
 Name=Photo
-GenericName=Photo Viewer and Editor
-Comment=View, edit and organise photos
+GenericName=Image Viewer and Editor
+Comment=View and edit images
 Exec=sde-view %U
 TryExec=sde-view
 Icon=sdeview
 Terminal=false
-Categories=Graphics;Viewer;Photography;
-Keywords=Picture;Photo;Image;Gallery;Filter;Effect;Slideshow;
+Categories=Graphics;RasterGraphics;Viewer;
+Keywords=Picture;Photo;Image;Viewer;Editor;Crop;Rotate;Filter;Draw;Annotate;Markup;Blur;Pixelate;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Sdeview
 MimeType=image/png;image/jpeg;image/pjpeg;image/gif;image/webp;image/tiff;image/bmp;image/x-bmp;image/svg+xml;image/svg+xml-compressed;image/avif;image/heic;image/heif;image/jxl;
-Actions=Slideshow;
+Actions=Draw;
 X-Developer=DebION Dev-Team
 X-DebION-Developer=DebION Dev-Team
 
-[Desktop Action Slideshow]
-Name=Slideshow
-Exec=sde-view --slideshow %U
+[Desktop Action Draw]
+Name=Draw and Annotate
+Exec=sde-view --draw %U

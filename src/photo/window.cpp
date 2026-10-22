@@ -550,6 +550,10 @@ void PhotoWindow::full_loaded(gallery::Result &r) {
   panel_->sync();
   panel_->info_changed();
   update_title();
+  if (draw_on_load_) {
+    draw_on_load_ = false;
+    open_draw();
+  }
 }
 
 void PhotoWindow::load_animation(const std::string &path) {

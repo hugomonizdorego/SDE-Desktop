@@ -63,6 +63,7 @@ void usage() {
                  "  --sort=ORDER    newest, oldest or name (default: Gallery's order)\n"
                  "  --slideshow     play a slideshow of the folder in Gallery\n"
                  "  --fullscreen    start in full screen\n"
+                 "  --draw          open the drawing tools (Draw tab)\n"
                  "  --version       print the version\n"
                  "  --help          show this help\n\n"
                  "Settings are kept in the [photo] section of ~/.config/sde/sde.conf.\n"));
@@ -74,7 +75,7 @@ int main(int argc, char **argv) {
   init_i18n();
   std::vector<std::string> files;
   std::string album_arg, sort_arg;
-  bool slideshow = false, full = false, options = true;
+  bool slideshow = false, full = false, draw = false, options = true;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (options && a == "--") {
@@ -91,6 +92,7 @@ int main(int argc, char **argv) {
         return 0;
       }
       if (a == "--slideshow") slideshow = true;
+      else if (a == "--draw") draw = true;
       else if (a == "--fullscreen") full = true;
       else if (starts_with(a, "--album=")) album_arg = a.substr(8);
       else if (a == "--album" && i + 1 < argc) album_arg = argv[++i];
@@ -179,6 +181,7 @@ int main(int argc, char **argv) {
     window->open("", album, true, sort);
   }
   if (slideshow) window->toast(_("Slideshows need Gallery (sde-gallery)"));
+  if (draw) window->open_draw_when_loaded();
   Fl::focus(window->canvas());
   int status = Fl::run();
   delete window;
