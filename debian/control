@@ -73,8 +73,6 @@ Build-Depends: debhelper-compat (= 13),
                libice-dev,
                liblcms2-dev,
                chrpath,
-               libgtk-4-dev (>= 4.8),
-               libjavascriptcoregtk-4.1-dev,
                meson,
                ninja-build,
                libxcursor-dev,
@@ -146,6 +144,8 @@ Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             pulseaudio-utils,
             libglib2.0-bin,
             libnotify-bin,
+            dconf-gsettings-backend | gsettings-backend,
+            glib-networking,
             xterm | x-terminal-emulator,
             xdg-user-dirs,
             lightdm | x-display-manager
@@ -188,7 +188,7 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  .
  Applications written from scratch by the DebION Dev-Team: Niny (text
  editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
- Gallery, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
+ Gallery, Calculator, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
  SDE fork: Liria (Caja).
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
@@ -220,7 +220,10 @@ Depends: ${misc:Depends},
 Recommends: papirus-icon-theme,
             lightdm-gtk-greeter,
             firefox-esr | firefox,
-            network-manager-gnome
+            network-manager-gnome,
+            glib-networking,
+            ca-certificates,
+            systemd-timesyncd | time-daemon
 Description: complete SDE desktop and application suite for DebION GNU/Linux
  One installation entry point for the SDE session, display server,
  login manager, network and sound services, removable media support
@@ -238,7 +241,10 @@ Architecture: all
 Depends: ${misc:Depends},
          desktop-base
 Recommends: network-manager,
-            iproute2
+            iproute2,
+            curl,
+            ca-certificates,
+            systemd-timesyncd | time-daemon
 Description: DebION GNU/Linux artwork and desktop defaults for desktop-base
  Makes the DebION theme the active desktop-base theme: wallpaper, lock
  screen, login screen and GRUB background follow it in every desktop
@@ -252,5 +258,9 @@ Description: DebION GNU/Linux artwork and desktop defaults for desktop-base
  Debian's endpoint (/usr/lib/NetworkManager/conf.d/20-debion-connectivity.conf;
  override it in /etc/NetworkManager/conf.d/), and debion-network-check, which
  explains "connected but no internet" (interfaces left to ifupdown, competing
- default routes, a broken /etc/resolv.conf, stale proxies) and can hand
- DHCP/Wi-Fi interfaces from /etc/network/interfaces to NetworkManager.
+ default routes, a broken /etc/resolv.conf, a network that needs a proxy,
+ a wrong clock, broken IPv6). On first installation, interfaces that
+ /etc/network/interfaces configures with plain DHCP or a wpa-ssid/wpa-psk
+ Wi-Fi network move to NetworkManager at the next boot (backups in
+ /var/backups/debion-network; static, bridge, bond and VLAN setups are left
+ alone; opt out with /etc/debion/keep-ifupdown).

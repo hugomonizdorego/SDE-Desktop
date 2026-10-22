@@ -28,11 +28,41 @@ if [ -r "$HOME/.Xresources" ] && command -v xrdb >/dev/null 2>&1; then
     xrdb -merge "$HOME/.Xresources"
 fi
 
+# Proxy chosen in Settings > Network > Proxy. sde-settings writes it in the
+# systemd environment.d format; only proxy variables are taken from it.
+# Firefox and GTK read the same setting from GSettings
+# (org.gnome.system.proxy); these variables cover curl, wget, Chromium
+# (auto_proxy) and other command-line programs.
+proxy_vars=""
+proxy_env="$XDG_CONFIG_HOME/environment.d/90-sde-proxy.conf"
+if [ -r "$proxy_env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            http_proxy=*|https_proxy=*|ftp_proxy=*|all_proxy=*|no_proxy=*|auto_proxy=*|\
+            HTTP_PROXY=*|HTTPS_PROXY=*|FTP_PROXY=*|ALL_PROXY=*|NO_PROXY=*)
+                export "${line%%=*}=${line#*=}"
+                proxy_vars="$proxy_vars ${line%%=*}" ;;
+        esac
+    done < "$proxy_env"
+fi
+# GIO applications outside GNOME otherwise only see proxy variables; the
+# "gnome" resolver of glib-networking follows GSettings, like Firefox does.
+if [ -z "${GIO_USE_PROXY_RESOLVER:-}" ]; then
+    for m in /usr/lib/*/gio/modules/libgiognomeproxy.so /usr/lib/gio/modules/libgiognomeproxy.so; do
+        if [ -e "$m" ]; then
+            export GIO_USE_PROXY_RESOLVER=gnome
+            proxy_vars="$proxy_vars GIO_USE_PROXY_RESOLVER"
+            break
+        fi
+    done
+fi
+
 # Import the environment into the systemd user manager and D-Bus activation
 # environment, so that applications started by D-Bus see the same variables.
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
     dbus-update-activation-environment --systemd DISPLAY XAUTHORITY \
-        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION 2>/dev/null || true
+        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION $proxy_vars 2>/dev/null || true
 fi
 
 # Mounting USB drives (UDisks2) and the power actions need an active local

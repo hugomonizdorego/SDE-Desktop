@@ -1,0 +1,16 @@
+[Icon Theme]
+Name=FixtureChild
+Comment=FixtureChild (SDE test fixture)
+Inherits=FixtureParent,FixtureOther,hicolor
+Directories=48x48/apps,24x24@2/places
+
+[48x48/apps]
+Size=48
+Type=Fixed
+Context=Applications
+
+[24x24@2/places]
+Size=24
+Type=Fixed
+Context=Places
+Scale=2

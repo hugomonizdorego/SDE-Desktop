@@ -24,5 +24,10 @@ void build_touchpad_page(Page *page);  // touchpad.cpp
 // Settings > Power and Settings > Lock Screen (power.cpp).
 void build_power_page(Page *page);
 void build_lock_page(Page *page);
+// Settings > Network: the Proxy and Troubleshooting cards (network.cpp).
+void build_network_proxy(Page *page);
+void build_network_diagnostics(Page *page);
+// Rebuilds the visible page when it is |page_id| (after background work).
+void refresh_if_shown(const char *page_id);
 
 }  // namespace sde

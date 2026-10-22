@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SDE Welcome at login. It exits at once when sde.conf [welcome] show=false
+# (the "Show this dialog at startup" switch in its sidebar).
+[Desktop Entry]
+Type=Application
+Name=SDE Welcome
+Comment=Shows the welcome screen at login
+Exec=sde-welcome --autostart
+TryExec=sde-welcome
+OnlyShowIn=SDE;
+NoDisplay=true

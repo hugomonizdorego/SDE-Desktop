@@ -2,6 +2,13 @@
 // Copyright (C) 2026 DebION Dev-Team
 //
 // SDE Gallery: a photo library for the Selviana Desktop Environment.
+//
+// Gallery organizes: it browses the library by date, folder, album and
+// device, keeps favorites and the albums you create, imports from cameras
+// and cards, searches, runs slideshows of a set of photos and batch
+// actions (rotate, resize and export, copy or move, share). It does not
+// edit single photos: opening a photo starts Photo (sde-view), and the
+// built-in preview offers "Edit in Photo".
 #pragma once
 
 #include <FL/Fl_Input.H>
@@ -19,8 +26,10 @@
 
 #include "buffered_window.h"
 #include "album.h"
+#include "collections.h"
 #include "library.h"
 #include "media.h"
+#include "menu.h"
 #include "menubar.h"
 #include "line_icons.h"
 #include "paint.h"
@@ -35,11 +44,12 @@ class GalleryWindow;
 
 // Device and Browse views show photos outside the library (removable
 // media, or a folder opened with File > Open Folder) without adding them.
-enum class ViewKind { All, Favorites, Recent, Screenshots, Folder, Device, Browse };
+// Album views show the photos of an album the user made (its list file).
+enum class ViewKind { All, Favorites, Recent, Screenshots, Folder, Device, Browse, Album };
 
 struct View {
   ViewKind kind = ViewKind::All;
-  std::string folder;  // for Folder, Device (mount point) and Browse
+  std::string folder;  // for Folder, Device (mount point), Browse, and the Album's list file
   bool operator==(const View &o) const { return kind == o.kind && folder == o.folder; }
   bool external() const { return kind == ViewKind::Device || kind == ViewKind::Browse; }
   Album album() const;  // the same set as an album id for Photo
@@ -58,7 +68,7 @@ class Sidebar : public Fl_Widget {
     icon::Kind glyph = icon::Photos;
     size_t count = 0;
     View view;
-    bool header = false, add = false, removable = false, device = false;
+    bool header = false, add = false, removable = false, device = false, new_album = false, album = false;
     int y = 0, h = 0;
   };
   std::vector<Row> rows() const;
@@ -155,6 +165,10 @@ class Viewer : public Fl_Widget {
   void open(int index);
   void close();
   int index() const { return index_; }
+  // A slideshow from |index|, through |subset| (indices of the view) or
+  // the whole view when empty.
+  void start_slideshow(std::vector<int> subset = {});
+  bool slideshow() const { return slideshow_; }
   void full_loaded(const Result &r);
   void stop_slideshow();
   void photos_changed();  // the view list changed under the viewer
@@ -190,8 +204,8 @@ class Viewer : public Fl_Widget {
   bool failed_ = false;
   double zoom_ = 0;  // 0 = fit
   double pan_x_ = 0, pan_y_ = 0;
-  int rotation_ = 0;  // quarter turns clockwise
   bool info_ = true, slideshow_ = false;
+  std::vector<int> subset_;  // the slideshow's photos (indices), empty = all
   bool panning_ = false;
   int press_x_ = 0, press_y_ = 0;
   double press_pan_x_ = 0, press_pan_y_ = 0;
@@ -243,6 +257,26 @@ class GalleryWindow : public sde::BufferedWindow {
   void open_folder_dialog();
   void browse(const std::string &dir);
   void import_dialog();
+  // Albums.
+  const std::vector<UserAlbum> &user_albums() const { return albums_; }
+  void reload_albums();
+  void new_album(const std::vector<std::string> &add = {});
+  void add_to_album(const std::string &file, const std::vector<std::string> &paths);
+  void remove_from_album(const std::vector<std::string> &paths);
+  void rename_album(const std::string &file);
+  void delete_album(const std::string &file);
+  sde::ContextMenu album_menu(const std::vector<std::string> &paths);
+  // Batch actions on several photos.
+  void rotate_files(const std::vector<std::string> &paths, int quarter_turns);
+  void export_files(const std::vector<std::string> &paths, int max_edge);
+  void copy_files_to(const std::vector<std::string> &paths, bool move);
+  void share_files(const std::vector<std::string> &paths);
+  void slideshow(const std::vector<std::string> &paths);  // empty: the whole view
+  void slideshow_from(const std::string &path);           // its folder or album, from it
+  // The menu of actions for photos (right click, the "More" button).
+  void photo_menu(int index, const std::vector<std::string> &paths, int x = -1, int y = -1);
+  std::vector<std::string> selected_or_focused() const;
+  void files_changed(const std::vector<std::string> &paths);  // rewritten on disk
   void import_from(const MountEntry &device, const std::vector<Photo> &only = {});
   void eject(const std::string &mount_point);
   void select_all();
@@ -266,6 +300,7 @@ class GalleryWindow : public sde::BufferedWindow {
 
   // Actions on photos.
   void edit_in_photo(const std::string &path);  // Photo with this view as album
+  void preview(int index);                       // the built-in quick preview
   void open_with(const std::string &path);
   void set_wallpaper(const std::string &path);
   void show_in_files(const std::string &path);
@@ -289,9 +324,12 @@ class GalleryWindow : public sde::BufferedWindow {
   static void ext_awake_cb(void *p);
   void handle_events();
   void forget_thumbnails(const std::string &path);
-  const std::vector<Photo> &source() const { return view_kind_.external() ? ext_photos_ : all_; }
+  const std::vector<Photo> &source() const {
+    return view_kind_.kind == ViewKind::Album ? album_photos_ : view_kind_.external() ? ext_photos_ : all_;
+  }
   LibrarySettings library_settings() const;
-  std::vector<std::string> selected_or_focused() const;
+  void run_batch(const std::string &busy, std::vector<std::function<bool(std::string *)>> steps,
+                 std::function<void(size_t done, size_t failed, const std::string &error)> after);
   static void menu_cb(Fl_Widget *w, void *data);
   void start_scan();
   void scan_finished();
@@ -325,7 +363,9 @@ class GalleryWindow : public sde::BufferedWindow {
   std::vector<Photo> ext_photos_, ext_result_;
   std::string ext_result_root_;
   std::string pending_select_;
-  bool importing_ = false;
+  bool importing_ = false, batch_running_ = false, pending_slideshow_ = false;
+  std::vector<UserAlbum> albums_;
+  std::vector<Photo> album_photos_;  // the Album view's photos
   bool show_sidebar_ = true, prefer_photo_ = false;
   MenuBar *menubar_ = nullptr;
   int top_ = 0;  // menu bar height
@@ -354,6 +394,7 @@ class GalleryWindow : public sde::BufferedWindow {
   Segmented *sort_ctl_ = nullptr;
   sde::Slider *zoom_ctl_ = nullptr;
   sde::FlatButton *sel_fav_ = nullptr, *sel_trash_ = nullptr, *sel_clear_ = nullptr;
+  sde::FlatButton *sel_album_ = nullptr, *sel_more_ = nullptr;
   sde::FlatButton *import_btn_ = nullptr;
   int header_h_ = 0;
   std::string toast_;

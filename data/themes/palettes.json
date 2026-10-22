@@ -1,5 +1,5 @@
 {
-  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1.",
+  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Every family has right-hand caption buttons (minimize, maximize, close) with glyphs, a hover layer and a red close; caption sets their size in percent of the title height, the spacing in pixels and the close hover color.",
   "default": {"family": "graphite", "mode": "light", "accent": "blue"},
   "accents": ["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "graphite"],
   "accent_labels": {"blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow",
@@ -13,8 +13,9 @@
       "upstream": "graphite-gtk-theme",
       "radius": 10, "radius_small": 6, "radius_large": 14, "shadow_radius": 18,
       "glass": false, "mica": 0.0, "translucency": 0.10,
-      "buttons": "traffic", "title_layout": "CIML", "title_justify": "center",
+      "buttons": "caption", "title_layout": "NLIMC", "title_justify": "center",
       "menu_highlight": "accent",
+      "caption": {"width": 115, "height": 100, "spacing": 0, "glyph": "regular", "close_hover": "#D93025"},
       "accent": {
         "blue": ["#3684DD", "#5294E2"], "teal": ["#009688", "#4DB6AC"],
         "green": ["#4CAF50", "#66BB6A"], "yellow": ["#FBC02D", "#FFD600"],
@@ -49,8 +50,9 @@
       "upstream": "flat-remix-gtk",
       "radius": 8, "radius_small": 4, "radius_large": 12, "shadow_radius": 22,
       "glass": false, "mica": 0.035, "translucency": 0.14,
-      "buttons": "fluent", "title_layout": "NLIMC", "title_justify": "left",
+      "buttons": "caption", "title_layout": "NLIMC", "title_justify": "left",
       "menu_highlight": "subtle",
+      "caption": {"width": 120, "height": 100, "spacing": 0, "glyph": "thin", "close_hover": "#C42B1C"},
       "accent": {
         "blue": ["#2777FF", "#2777FF"], "teal": ["#0099A1", "#0099A1"],
         "green": ["#06A284", "#06A284"], "yellow": ["#FFD86E", "#FFD86E"],
@@ -86,8 +88,9 @@
       "base": "graphite",
       "radius": 16, "radius_small": 10, "radius_large": 22, "shadow_radius": 24,
       "glass": true, "mica": 0.025, "translucency": 0.22,
-      "buttons": "traffic", "title_layout": "CIML", "title_justify": "center",
+      "buttons": "caption", "title_layout": "NLIMC", "title_justify": "center",
       "menu_highlight": "accent",
+      "caption": {"width": 115, "height": 100, "spacing": 0, "glyph": "regular", "close_hover": "#D93A3A"},
       "accent": "graphite",
       "light": {
         "background": "#EEF2F8", "surface": "#F8FAFD", "surface_alt": "#E5EAF2", "hover": "#DCE3EE",

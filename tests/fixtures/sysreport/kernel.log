@@ -1,0 +1,17 @@
+[    0.000000] Linux version 6.12.0-1-amd64 (debian-kernel@lists.debian.org)
+[    0.412345] microcode: Current revision: 0x000000f4
+[    3.101010] iwlwifi 0000:00:14.3: firmware: failed to load iwlwifi-so-a0-gf-a0-89.ucode (-2)
+[    3.101020] iwlwifi 0000:00:14.3: Direct firmware load for iwlwifi-so-a0-gf-a0-89.ucode failed with error -2
+[    3.200000] bluetooth hci0: firmware: failed to load intel/ibt-0040-0041.sfi (-2)
+[    3.300000] r8169 0000:02:00.0: Direct firmware load for rtl_nic/rtl8168h-2.fw failed with error -2
+[    3.300001] r8169 0000:02:00.0: Unable to load firmware rtl_nic/rtl8168h-2.fw (-2)
+[    4.000000] i915 0000:00:02.0: [drm] Failed to load DMC firmware i915/adlp_dmc.bin. Disabling runtime power management.
+[    4.100000] amdgpu 0000:03:00.0: firmware: failed to load amdgpu/navi23_sos.bin (-2)
+[    4.200000] brcmfmac: brcmf_fw_alloc_request: using brcm/brcmfmac43455-sdio for chip BCM4345/6
+[    4.200001] brcmfmac mmc1:0001:1: Direct firmware load for brcm/brcmfmac43455-sdio.raspberrypi,4-model-b.bin failed with error -2
+[    4.300000] ath10k_pci 0000:3a:00.0: firmware: failed to load ath10k/QCA6174/hw3.0/firmware-6.bin (-2)
+[    4.400000] mt7921e 0000:04:00.0: Direct firmware load for mediatek/WIFI_RAM_CODE_MT7961_1.bin failed with error -2
+[    4.500000] cfg80211: failed to load regulatory.db
+[    4.600000] snd_hda_intel: some unrelated line
+[    4.700000] bluetooth hci1: failed to load firmware (-2)
+[    4.800000] foo 0000:05:00.0: firmware: failed to load vendor/unknown-chip.bin (-2)

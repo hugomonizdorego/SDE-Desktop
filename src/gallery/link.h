@@ -31,5 +31,8 @@ std::vector<GalleryEvent> take_gallery_events();
 bool open_in_photo(const std::string &path, const Album &album, Sort sort);
 // Starts Gallery (or asks the running one) to show and select |path|.
 bool show_in_gallery(const std::string &path);
+// Starts Gallery (or asks the running one) to play a slideshow of the
+// folder or album of |path|, starting with it.
+bool slideshow_in_gallery(const std::string &path);
 
 }  // namespace gallery

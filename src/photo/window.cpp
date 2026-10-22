@@ -23,6 +23,7 @@
 #include "desktop_entry.h"
 #include "i18n.h"
 #include "link.h"
+#include "menu.h"
 #include "menubar.h"
 #include "photo.h"
 #include "process.h"
@@ -47,8 +48,8 @@ namespace {
 enum MenuId {
   M_OPEN = 1, M_SAVE, M_SAVE_AS, M_COPY, M_WALLPAPER, M_PRINT, M_OPEN_WITH, M_SHOW_FILES, M_SHOW_GALLERY,
   M_TRASH, M_CLOSE, M_UNDO, M_REDO, M_ROT_LEFT, M_ROT_RIGHT, M_FLIP_H, M_FLIP_V, M_CROP, M_RESIZE,
-  M_ADJUST, M_FILTERS, M_RESET, M_ZOOM_IN, M_ZOOM_OUT, M_FIT, M_ACTUAL, M_FILL, M_INFO, M_FILMSTRIP,
-  M_FULLSCREEN, M_SLIDESHOW, M_FAVORITE, M_SHORTCUTS, M_ABOUT
+  M_ADJUST, M_FILTERS, M_DRAW, M_DELETE_MARK, M_RESET, M_ZOOM_IN, M_ZOOM_OUT, M_FIT, M_ACTUAL, M_FILL, M_INFO,
+  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT
 };
 
 // The Photo icon (see sdeview.svg).
@@ -127,7 +128,13 @@ PhotoWindow::PhotoWindow(int w, int h) : BufferedWindow(w, h, _("Photo")) {
   Config cfg;
   cfg.load();
   jpeg_quality_ = std::max(30, std::min(100, cfg.get_int("photo", "jpeg_quality", 92)));
-  slideshow_interval_ = std::max(1, std::min(60, cfg.get_int("photo", "slideshow_interval", 5)));
+  // The drawing tools remember their colour and options.
+  draw_.color = uint32_t(std::stoul(cfg.get("photo", "draw_color", "FFE5484D"), nullptr, 16));
+  draw_.fill = cfg.get_bool("photo", "draw_fill", false);
+  draw_.text_box = cfg.get_bool("photo", "draw_text_box", false);
+  draw_.text_size = std::max(8, std::min(160, cfg.get_int("photo", "draw_text_size", 28)));
+  int font = cfg.get_int("photo", "draw_font", 0);
+  draw_.font = font == 1 ? FontFace::Serif : font == 2 ? FontFace::Mono : FontFace::Sans;
   service_.reset(new gallery::ThumbnailService([this] { Fl::awake(awake_cb, this); }, 2));
   begin();
   canvas_ = new Canvas(this, 0, 0, w, h);
@@ -147,7 +154,6 @@ PhotoWindow::PhotoWindow(int w, int h) : BufferedWindow(w, h, _("Photo")) {
 
 PhotoWindow::~PhotoWindow() {
   Fl::remove_handler(x_event_handler);
-  Fl::remove_timeout(slideshow_cb, this);
   Fl::remove_timeout(toast_cb, this);
   instance_ = nullptr;
   if (album_thread_.joinable()) album_thread_.join();
@@ -164,6 +170,13 @@ void PhotoWindow::hide() {
   cfg.load();
   cfg.set("photo", "info", panel_->visible() && panel_->mode() == SidePanel::Info ? "true" : "false");
   cfg.set("photo", "filmstrip", canvas_->filmstrip() ? "true" : "false");
+  char color[16];
+  snprintf(color, sizeof color, "%08X", unsigned(draw_.color));
+  cfg.set("photo", "draw_color", color);
+  cfg.set("photo", "draw_fill", draw_.fill ? "true" : "false");
+  cfg.set("photo", "draw_text_box", draw_.text_box ? "true" : "false");
+  cfg.set("photo", "draw_text_size", std::to_string(int(draw_.text_size)));
+  cfg.set("photo", "draw_font", std::to_string(int(draw_.font)));
   cfg.save();
   BufferedWindow::hide();
 }
@@ -225,8 +238,9 @@ void PhotoWindow::build_menu() {
   add(e + _("Crop…"), 'c', M_CROP);
   add(e + _("Resize…"), 0, M_RESIZE);
   add(e + _("Adjust Colours…"), 'e', M_ADJUST);
-  add(e + _("Filters…"), 0, M_FILTERS, FL_MENU_DIVIDER);
-  add(e + _("Add to Favorites"), FL_CTRL + 'd', M_FAVORITE, FL_MENU_DIVIDER);
+  add(e + _("Filters…"), 0, M_FILTERS);
+  add(e + _("Draw and Annotate…"), 'd', M_DRAW);
+  add(e + _("Delete Annotation"), 0, M_DELETE_MARK, FL_MENU_DIVIDER);
   add(e + _("Revert to Original"), 0, M_RESET);
   add(v + _("Zoom In"), '+', M_ZOOM_IN);
   add(v + _("Zoom Out"), '-', M_ZOOM_OUT);
@@ -236,7 +250,7 @@ void PhotoWindow::build_menu() {
   add(v + _("Information"), 'i', M_INFO, FL_MENU_TOGGLE);
   add(v + _("Filmstrip"), 'b', M_FILMSTRIP, FL_MENU_TOGGLE | FL_MENU_DIVIDER);
   add(v + _("Full Screen"), FL_F + 11, M_FULLSCREEN, FL_MENU_TOGGLE);
-  add(v + _("Slideshow"), FL_F + 5, M_SLIDESHOW);
+  add(v + _("Slideshow in Gallery"), FL_F + 5, M_SLIDESHOW);
   add(h + _("Keyboard Shortcuts"), FL_F + 1, M_SHORTCUTS);
   add(h + _("About Photo"), 0, M_ABOUT);
 }
@@ -275,7 +289,8 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
       if (!self->panel_->visible() || self->panel_->mode() != SidePanel::Edit) self->toggle_panel(SidePanel::Edit);
       self->panel_->set_tab(reinterpret_cast<long>(data) == M_ADJUST ? SidePanel::Adjust : SidePanel::Filters);
       break;
-    case M_FAVORITE: self->toggle_favorite(); break;
+    case M_DRAW: self->open_draw(); break;
+    case M_DELETE_MARK: self->delete_selected_mark(); break;
     case M_RESET: self->reset_edits(); break;
     case M_ZOOM_IN: self->canvas_->zoom_by(1.25); break;
     case M_ZOOM_OUT: self->canvas_->zoom_by(1 / 1.25); break;
@@ -285,7 +300,7 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
     case M_INFO: self->toggle_panel(SidePanel::Info); break;
     case M_FILMSTRIP: self->toggle_filmstrip(); break;
     case M_FULLSCREEN: self->toggle_fullscreen(); break;
-    case M_SLIDESHOW: self->toggle_slideshow(); break;
+    case M_SLIDESHOW: self->slideshow_in_gallery(); break;
     case M_SHORTCUTS: self->show_shortcuts(); break;
     case M_ABOUT: self->show_about(); break;
   }
@@ -404,7 +419,6 @@ void PhotoWindow::step(int delta) {
   int n = int(photos_.size());
   if (!n) return;
   int next = index_ + delta;
-  if (slideshow_) next = ((next % n) + n) % n;
   if (next < 0 || next >= n) {
     toast(next < 0 ? _("This is the first photo") : _("This is the last photo"));
     return;
@@ -414,6 +428,7 @@ void PhotoWindow::step(int delta) {
 
 void PhotoWindow::load_current() {
   history_.reset();
+  canvas_->cancel_drawing();
   canvas_->stop_animation();
   if (canvas_->cropping()) canvas_->end_crop();
   if (source_) cairo_surface_destroy(source_);
@@ -536,6 +551,10 @@ void PhotoWindow::full_loaded(gallery::Result &r) {
   panel_->sync();
   panel_->info_changed();
   update_title();
+  if (draw_on_load_) {
+    draw_on_load_ = false;
+    open_draw();
+  }
 }
 
 void PhotoWindow::load_animation(const std::string &path) {
@@ -610,6 +629,7 @@ void PhotoWindow::undo() {
     cancel_crop();
     return;
   }
+  if (canvas_->drawing_busy() || canvas_->selected_mark() >= 0) canvas_->cancel_drawing();
   if (!history_.can_undo()) return;
   history_.undo();
   refresh_preview();
@@ -619,6 +639,7 @@ void PhotoWindow::undo() {
 }
 
 void PhotoWindow::redo() {
+  canvas_->cancel_drawing();
   if (!history_.can_redo()) return;
   history_.redo();
   refresh_preview();
@@ -629,6 +650,7 @@ void PhotoWindow::redo() {
 
 void PhotoWindow::reset_edits() {
   if (canvas_->cropping()) canvas_->end_crop();
+  canvas_->cancel_drawing();
   apply(Edits());
 }
 
@@ -641,6 +663,9 @@ void PhotoWindow::rotate(int q) {
   if (((q % 4) + 4) % 4 == 1) e.crop = {1 - c.y - c.h, c.x, c.h, c.w};
   else if (((q % 4) + 4) % 4 == 3) e.crop = {c.y, 1 - c.x - c.w, c.h, c.w};
   if (e.resize_w && e.resize_h && q % 2) std::swap(e.resize_w, e.resize_h);
+  // Drawings turn with the picture.
+  rotate_marks(e.marks, q);
+  canvas_->cancel_drawing();
   apply(e);
   if (q) toast(q > 0 ? _("Rotated right") : _("Rotated left"));
 }
@@ -652,6 +677,8 @@ void PhotoWindow::flip(bool horizontal) {
   e.orient = gallery::orient_then(e.orient, horizontal ? gallery::Orient{0, true} : gallery::Orient{2, true});
   Rect c = e.crop;
   e.crop = horizontal ? Rect{1 - c.x - c.w, c.y, c.w, c.h} : Rect{c.x, 1 - c.y - c.h, c.w, c.h};
+  flip_marks(e.marks, horizontal);
+  canvas_->cancel_drawing();
   apply(e);
 }
 
@@ -698,19 +725,25 @@ void PhotoWindow::refresh_preview() {
     e.resize_w = e.resize_h = 0;
     int ow, oh;
     result_size(e, full_w_, full_h_, ow, oh);
-    cairo_surface_t *img = render(preview_base_, e);
+    cairo_surface_t *img = render(preview_base_, e, 1.0, kMarkEffects);
     canvas_->set_image(img, ow, oh, false);
     cairo_surface_destroy(img);
     return;
   }
-  if (e.identity()) {
+  // Vector marks are drawn live by the canvas (a layer above the photo
+  // until saving); only the pixel effects (blur, pixelate) are rendered.
+  Edits base = e;
+  base.marks.items.erase(std::remove_if(base.marks.items.begin(), base.marks.items.end(),
+                                        [](const Mark &m) { return !m.effect(); }),
+                         base.marks.items.end());
+  if (base.identity()) {
     canvas_->set_image(source_, full_w_, full_h_, true);
     return;
   }
   int ow, oh;
   result_size(e, full_w_, full_h_, ow, oh);
   double scale = double(cairo_image_surface_get_width(preview_base_)) / std::max(1, full_w_);
-  cairo_surface_t *img = render(preview_base_, e, scale);
+  cairo_surface_t *img = render(preview_base_, base, scale, kMarkEffects);
   canvas_->set_image(img, ow, oh, true);
   cairo_surface_destroy(img);
   // Sharp pixels for zooming in: render the full image in the background.
@@ -731,7 +764,7 @@ void PhotoWindow::start_full_render() {
       cairo_surface_destroy(src);
       return;
     }
-    cairo_surface_t *out = render(src, e, scale);
+    cairo_surface_t *out = render(src, e, scale, kMarkEffects);
     cairo_surface_destroy(src);
     auto *job = new RenderJob{this, gen, out};
     Fl::awake(render_awake_cb, job);
@@ -910,6 +943,102 @@ bool PhotoWindow::save_as() {
   return true;
 }
 
+// ---------------------------------------------------------------- drawing
+
+bool PhotoWindow::drawing() const {
+  return panel_->visible() && panel_->mode() == SidePanel::Edit && panel_->tab() == SidePanel::Draw &&
+         source_ != nullptr;
+}
+
+void PhotoWindow::open_draw() {
+  if (!source_) return;
+  if (canvas_->cropping()) apply_crop();
+  if (!panel_->visible() || panel_->mode() != SidePanel::Edit) toggle_panel(SidePanel::Edit);
+  panel_->set_tab(SidePanel::Draw);
+  canvas_->stop_animation();
+  layout();
+  redraw();
+}
+
+void PhotoWindow::set_tool(Tool t) {
+  canvas_->cancel_drawing();
+  draw_.tool = t;
+  panel_->sync();
+  canvas_->redraw();
+}
+
+void PhotoWindow::mark_reference(int &w, int &h) const {
+  Edits g = edits();
+  g.crop = Rect();
+  g.resize_w = g.resize_h = 0;
+  result_size(g, full_w_, full_h_, w, h);
+}
+
+Edits PhotoWindow::edits_for_marks() const {
+  Edits e = edits();
+  if (e.marks.w <= 0 || e.marks.h <= 0) mark_reference(e.marks.w, e.marks.h);
+  return e;
+}
+
+void PhotoWindow::delete_selected_mark() {
+  int i = canvas_->selected_mark();
+  Edits e = edits();
+  if (i < 0 || i >= int(e.marks.items.size())) return;
+  e.marks.items.erase(e.marks.items.begin() + i);
+  canvas_->cancel_drawing();
+  apply(e);
+  toast(_("Annotation deleted"));
+}
+
+void PhotoWindow::style_changed(bool amend) {
+  int i = canvas_->selected_mark();
+  Edits e = edits();
+  if (i < 0 || i >= int(e.marks.items.size())) return;
+  Mark &m = e.marks.items[size_t(i)];
+  double k = canvas_->scale() > 0 ? 1 / canvas_->scale() : 1;
+  // Screen pixels at the current zoom -> image pixels.
+  Edits ref = edits_for_marks();
+  int rw = 0, rh = 0;
+  result_size(ref, full_w_, full_h_, rw, rh);
+  MarkMap mm = mark_map(ref, rw, rh);
+  if (mm.scale() > 0) k /= mm.scale();
+  int tool = m.kind == MarkKind::Pen ? int(Tool::Pen) : m.kind == MarkKind::Highlighter ? int(Tool::Highlighter)
+           : m.kind == MarkKind::Line ? int(Tool::Line) : m.kind == MarkKind::Arrow ? int(Tool::Arrow)
+           : m.kind == MarkKind::Rect ? int(Tool::Rect) : m.kind == MarkKind::Ellipse ? int(Tool::Ellipse)
+           : m.kind == MarkKind::Blur ? int(Tool::Blur) : m.kind == MarkKind::Pixelate ? int(Tool::Pixelate)
+                                      : int(Tool::Text);
+  if (m.kind == MarkKind::Text) {
+    m.size = draw_.text_size * k;
+    m.font = draw_.font;
+    m.box = draw_.text_box;
+  } else {
+    m.width = draw_.width[tool] * k;
+  }
+  if (!m.effect()) {
+    m.color = m.kind == MarkKind::Highlighter ? (draw_.color | 0xFF000000u) : draw_.color;
+    m.opacity = draw_.opacity[tool] / 100.0;
+  }
+  if (m.kind == MarkKind::Rect || m.kind == MarkKind::Ellipse) m.fill = draw_.fill;
+  apply(e, amend);
+}
+
+void PhotoWindow::edit_text_mark(int index) {
+  Edits e = edits_for_marks();
+  bool fresh = index < 0 || index >= int(e.marks.items.size());
+  std::string text = fresh ? std::string() : e.marks.items[size_t(index)].text;
+  const char *r = fl_input("%s", text.c_str(), _("Text to place on the photo:"));
+  if (!r) return;
+  std::string t = r;
+  if (fresh) return;  // new text is placed by the canvas, see Canvas::draw_event()
+  if (t.empty()) {
+    e.marks.items.erase(e.marks.items.begin() + index);
+    canvas_->cancel_drawing();
+  } else {
+    e.marks.items[size_t(index)].text = t;
+  }
+  apply(e);
+}
+
 // ------------------------------------------------------------ file actions
 
 void PhotoWindow::copy_to_clipboard() {
@@ -1034,37 +1163,6 @@ void PhotoWindow::print() {
   });
 }
 
-bool PhotoWindow::is_favorite() const {
-  const Photo *p = current();
-  if (!p) return false;
-  Config cfg;
-  cfg.load();
-  for (const auto &f : gallery::decode_list(cfg.get("gallery", "favorites", "")))
-    if (f == p->path) return true;
-  return false;
-}
-
-void PhotoWindow::toggle_favorite() {
-  const Photo *p = current();
-  if (!p) return;
-  Config cfg;
-  cfg.load();
-  auto list = gallery::decode_list(cfg.get("gallery", "favorites", ""));
-  auto it = std::find(list.begin(), list.end(), p->path);
-  bool now = it == list.end();
-  if (now) list.push_back(p->path);
-  else list.erase(it);
-  cfg.set("gallery", "favorites", gallery::encode_list(list));
-  if (!cfg.save()) {
-    toast(_("Could not save the favorite"));
-    return;
-  }
-  // Gallery reloads its favorites when the configuration changes.
-  x11::notify_config_changed();
-  toast(now ? _("Added to Favorites") : _("Removed from Favorites"));
-  redraw();
-}
-
 void PhotoWindow::open_map() {
   if (!info_.has_gps) return;
   if (!open_uri(gallery::osm_url(info_.latitude, info_.longitude))) toast(_("No web browser is available"));
@@ -1077,32 +1175,36 @@ void PhotoWindow::toggle_fullscreen() {
   else fullscreen();
 }
 
-void PhotoWindow::toggle_slideshow() {
-  slideshow_ = !slideshow_;
-  Fl::remove_timeout(slideshow_cb, this);
-  if (slideshow_) {
-    if (modified() && !confirm_discard()) {
-      slideshow_ = false;
-      return;
-    }
-    was_fullscreen_ = fullscreen_active();
-    if (!was_fullscreen_) fullscreen();
-    Fl::add_timeout(slideshow_interval_, slideshow_cb, this);
-    toast(_("Slideshow · press Esc to stop"));
-  } else if (!was_fullscreen_) {
-    fullscreen_off();
-  }
-  canvas_->set_chrome(!slideshow_);
-  canvas_->reset_view();
-  layout();
+void PhotoWindow::context_menu() {
+  bool have = current() != nullptr, loaded = source_ != nullptr;
+  ContextMenu m;
+  m.item(_("Copy Image"), [this] { copy_to_clipboard(); }, {"copy", FL_CTRL + 'c', loaded});
+  m.item(_("Draw and Annotate…"), [this] { open_draw(); }, {"", 'd', loaded});
+  m.item(_("Adjust Colours…"), [this] {
+    if (!panel_->visible() || panel_->mode() != SidePanel::Edit) toggle_panel(SidePanel::Edit);
+    panel_->set_tab(SidePanel::Adjust);
+  }, {"", 'e', loaded});
+  m.item(_("Crop…"), [this] { start_crop(); }, {"", 'c', loaded});
+  m.item(_("Rotate Right"), [this] { rotate(1); }, {"", 'r', loaded, true});
+  if (drawing() && canvas_->selected_mark() >= 0)
+    m.item(_("Delete Annotation"), [this] { delete_selected_mark(); }, {"delete", FL_Delete, true, true});
+  m.item(_("Show in Gallery"), [this] { show_in_gallery(); }, {"image", FL_CTRL + 'g', have});
+  m.item(_("Slideshow in Gallery"), [this] { slideshow_in_gallery(); }, {"", FL_F + 5, have && photos_.size() > 1});
+  m.item(_("Open With…"), [this] { open_with(); }, {"open", 0, have});
+  m.item(_("Show in Files"), [this] { show_in_files(); }, {"folder", 0, have});
+  m.item(_("Set as Wallpaper"), [this] { set_wallpaper(); }, {"", 0, have, true});
+  m.item(_("Information"), [this] { toggle_panel(SidePanel::Info); }, {"info", 'i', have});
+  m.item(_("Move to Trash…"), [this] { trash(); }, {"trash", FL_Delete, have});
+  m.popup();
   redraw();
 }
 
-void PhotoWindow::slideshow_cb(void *p) {
-  auto *self = static_cast<PhotoWindow *>(p);
-  if (!self->slideshow_) return;
-  self->step(1);
-  Fl::repeat_timeout(self->slideshow_interval_, slideshow_cb, p);
+void PhotoWindow::slideshow_in_gallery() {
+  // Slideshows of a folder or album are Gallery's: hand over the photo.
+  const Photo *p = current();
+  if (!p) return;
+  if (modified() && !confirm_discard()) return;
+  if (!gallery::slideshow_in_gallery(p->path)) toast(_("Gallery (sde-gallery) is not installed"));
 }
 
 bool PhotoWindow::panel_open() const { return panel_->visible(); }
@@ -1130,8 +1232,10 @@ void PhotoWindow::show_about() {
   info.name = _("Photo");
   info.program = "sde-view";
   info.version = SDE_VERSION;
-  info.description = _("View your photos, read their camera details and location, and edit them: rotate, "
-                       "crop, resize, adjust the colours and apply filters.");
+  info.description = _("View and edit one image at a time: read its camera details and location, rotate, "
+                       "crop, resize, adjust the colours, apply filters, and draw on it with pens, highlighters, "
+                       "shapes, arrows and text, or blur and pixelate private details. "
+                       "Your photo library, albums and slideshows are in Gallery.");
   info.logo = draw_logo;
   info.credits.push_back(format(_("Built with SDE-FLTK %s, cairo and gdk-pixbuf"), SDE_FLTK_VERSION));
   if (gallery::have_libexif()) info.credits.push_back(_("Camera details read with libexif"));
@@ -1149,18 +1253,24 @@ void PhotoWindow::show_shortcuts() {
                            {_("I"), _("Information")},
                            {_("B"), _("Filmstrip")},
                            {_("F11"), _("Full screen")},
-                           {_("F5"), _("Slideshow")},
+                           {_("F5"), _("Slideshow in Gallery")},
                            {"", _("Editing")},
                            {_("R, Shift+R"), _("Rotate right or left")},
                            {_("H, V"), _("Flip horizontally or vertically")},
                            {_("C"), _("Crop")},
                            {_("E"), _("Adjust colours and filters")},
+                           {_("D"), _("Draw and annotate")},
+                           {"", _("Drawing (Draw tab open)")},
+                           {_("S, P, M, X"), _("Select, pen, highlighter, eraser")},
+                           {_("L, A, U, O, T, K"), _("Line, arrow, rectangle, ellipse, text, pick colour")},
+                           {_("Shift+drag"), _("Straight angles, squares and circles")},
+                           {_("Middle drag"), _("Move a zoomed photo while drawing")},
+                           {_("Delete"), _("Delete the selected annotation")},
                            {_("Ctrl+Z, Ctrl+Shift+Z"), _("Undo, redo")},
                            {_("Ctrl+S"), _("Save")},
                            {_("Ctrl+Shift+S"), _("Save as")},
                            {"", _("File")},
                            {_("Ctrl+C"), _("Copy the image")},
-                           {_("Ctrl+D"), _("Favorite")},
                            {_("Ctrl+G"), _("Show in Gallery")},
                            {_("Delete"), _("Move to the Trash")},
                            {_("Ctrl+O"), _("Open a photo")},
@@ -1195,7 +1305,7 @@ void PhotoWindow::resize(int x, int y, int w, int h) {
 }
 
 void PhotoWindow::layout() {
-  bool chrome = !slideshow_;
+  bool chrome = true;
   header_h_ = chrome ? S(56) : 0;
   int pw = chrome && panel_->visible() && w() >= S(640) ? S(320) : 0;
   if (!chrome) panel_->hide();
@@ -1211,7 +1321,6 @@ void PhotoWindow::layout() {
 
 void PhotoWindow::layout_buttons() {
   buttons_.clear();
-  if (slideshow_) return;
   double bs = S(40), by = S(8);
   auto add = [&](icon::Kind g, const std::string &tip, std::function<void()> fn) {
     Button b;
@@ -1236,22 +1345,33 @@ void PhotoWindow::layout_buttons() {
     add(icon::Save, _("Save (Ctrl+S)"), [this] { save(); })->toggled = true;
     group_after.push_back(int(buttons_.size()));
   }
-  add(icon::ZoomOut, _("Zoom Out (−)"), [this] { canvas_->zoom_by(1 / 1.25); });
+  // Narrow windows keep the name readable: zooming stays on the wheel and
+  // the keys, full screen on F11.
+  bool narrow = w() < S(820);
+  if (!narrow) add(icon::ZoomOut, _("Zoom Out (−)"), [this] { canvas_->zoom_by(1 / 1.25); });
   bool fit = canvas_->zoom_mode() == ZoomMode::Fit;
   add(icon::Fit, fit ? _("Actual Size (1)") : _("Best Fit (0)"),
       [this, fit] { canvas_->set_zoom_mode(fit ? ZoomMode::Actual : ZoomMode::Fit); });
-  add(icon::ZoomIn, _("Zoom In (+)"), [this] { canvas_->zoom_by(1.25); });
+  if (!narrow) add(icon::ZoomIn, _("Zoom In (+)"), [this] { canvas_->zoom_by(1.25); });
   group_after.push_back(int(buttons_.size()));
   add(icon::Rotate, _("Rotate Right (R)"), [this] { rotate(1); });
-  bool fav = have && is_favorite();
-  auto *f = add(fav ? icon::HeartFilled : icon::Heart, fav ? _("Remove from Favorites (Ctrl+D)") : _("Add to Favorites (Ctrl+D)"),
-                [this] { toggle_favorite(); });
-  f->toggled = fav;
-  add(icon::Play, _("Slideshow (F5)"), [this] { toggle_slideshow(); })->active = photos_.size() > 1;
-  add(fullscreen_active() ? icon::Unfullscreen : icon::Fullscreen, _("Full Screen (F11)"), [this] { toggle_fullscreen(); });
+  if (!narrow)
+    add(fullscreen_active() ? icon::Unfullscreen : icon::Fullscreen, _("Full Screen (F11)"), [this] { toggle_fullscreen(); });
   group_after.push_back(int(buttons_.size()));
-  auto *ed = add(icon::Adjust, _("Edit (E)"), [this] { toggle_panel(SidePanel::Edit); });
-  ed->toggled = panel_->visible() && panel_->mode() == SidePanel::Edit;
+  auto *dr = add(icon::Edit, _("Draw and Annotate (D)"), [this] {
+    if (drawing()) toggle_panel(SidePanel::Edit);
+    else open_draw();
+  });
+  dr->toggled = drawing();
+  auto *ed = add(icon::Adjust, _("Edit (E)"), [this] {
+    if (panel_->visible() && panel_->mode() == SidePanel::Edit && panel_->tab() == SidePanel::Draw) {
+      panel_->set_tab(SidePanel::Adjust);
+      redraw();
+      return;
+    }
+    toggle_panel(SidePanel::Edit);
+  });
+  ed->toggled = panel_->visible() && panel_->mode() == SidePanel::Edit && !drawing();
   auto *in = add(icon::Info, _("Information (I)"), [this] { toggle_panel(SidePanel::Info); });
   in->toggled = panel_->visible() && panel_->mode() == SidePanel::Info;
   double rx = menu_->x() - S(6);
@@ -1281,7 +1401,6 @@ void PhotoWindow::draw() {
         if (b.toggled) p.fill_rounded(b.x, b.y, b.w, b.h, Sd(10), theme_.accent.alpha(theme_.dark ? 0.3 : 0.16));
         else if (hot) p.fill_rounded(b.x, b.y, b.w, b.h, Sd(10), theme_.hover);
         Color c = !b.active ? theme_.text_dim.alpha(0.45) : b.toggled ? theme_.accent_text : theme_.text;
-        if (b.glyph == icon::HeartFilled) c = Color::hex(0xE0475B);
         icon::draw(p, b.glyph, b.x + S(9), b.y + S(9), S(22), c);
       }
     }
@@ -1352,7 +1471,6 @@ bool PhotoWindow::keyboard(int key, int state) {
       case 'c': if (!typing) { copy_to_clipboard(); return true; } return false;
       case 'o': open_dialog(); return true;
       case 'w': case 'q': hide(); return true;
-      case 'd': toggle_favorite(); return true;
       case 'g': show_in_gallery(); return true;
       case 'p': print(); return true;
       case '=': case '+': canvas_->zoom_by(1.25); return true;
@@ -1364,15 +1482,19 @@ bool PhotoWindow::keyboard(int key, int state) {
   if (alt) return false;
   switch (key) {
     case FL_Escape:
-      if (slideshow_) toggle_slideshow();
-      else if (canvas_->cropping()) cancel_crop();
+      if (canvas_->cropping()) cancel_crop();
+      else if (drawing() && (canvas_->drawing_busy() || canvas_->selected_mark() >= 0)) canvas_->cancel_drawing();
       else if (fullscreen_active()) fullscreen_off();
       else if (typing) Fl::focus(canvas_);
       return true;
-    case FL_F + 5: toggle_slideshow(); return true;
+    case FL_F + 5: slideshow_in_gallery(); return true;
     case FL_F + 11: toggle_fullscreen(); return true;
     case FL_F + 1: show_shortcuts(); return true;
-    case FL_Delete: if (typing) return false; trash(); return true;
+    case FL_Delete:
+      if (typing) return false;
+      if (drawing() && canvas_->selected_mark() >= 0) delete_selected_mark();
+      else trash();
+      return true;
     case FL_Enter:
     case FL_KP_Enter:
       if (canvas_->cropping()) {
@@ -1382,6 +1504,22 @@ bool PhotoWindow::keyboard(int key, int state) {
       return false;
   }
   if (typing) return false;
+  if (drawing() && !shift) {
+    // Tool keys while the Draw tab is open.
+    switch (key) {
+      case 's': set_tool(Tool::Select); return true;
+      case 'p': set_tool(Tool::Pen); return true;
+      case 'm': set_tool(Tool::Highlighter); return true;
+      case 'x': set_tool(Tool::Eraser); return true;
+      case 'l': set_tool(Tool::Line); return true;
+      case 'a': set_tool(Tool::Arrow); return true;
+      case 'u': set_tool(Tool::Rect); return true;
+      case 'o': set_tool(Tool::Ellipse); return true;
+      case 't': set_tool(Tool::Text); return true;
+      case 'k': set_tool(Tool::Picker); return true;
+      case 'd': toggle_panel(SidePanel::Edit); return true;
+    }
+  }
   switch (key) {
     case FL_Left: case FL_Page_Up: case FL_BackSpace: step(-1); return true;
     case FL_Right: case FL_Page_Down: case ' ': step(1); return true;
@@ -1398,6 +1536,7 @@ bool PhotoWindow::keyboard(int key, int state) {
     case 'v': flip(false); return true;
     case 'c': start_crop(); return true;
     case 'e': toggle_panel(SidePanel::Edit); return true;
+    case 'd': open_draw(); return true;
     case 'i': toggle_panel(SidePanel::Info); return true;
     case 'b': toggle_filmstrip(); return true;
   }

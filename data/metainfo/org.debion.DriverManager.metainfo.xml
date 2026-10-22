@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 DebION Dev-Team -->
+<component type="desktop-application">
+  <id>org.debion.DriverManager</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Driver Manager</name>
+  <summary>Drivers and firmware for your hardware</summary>
+  <developer id="org.debion">
+    <name>DebION Dev-Team</name>
+  </developer>
+  <description>
+    <p>The SDE Driver Manager finds hardware that needs drivers or firmware which are not free software: NVIDIA, AMD and Intel graphics, Wi-Fi and Bluetooth adapters whose firmware failed to load, and processor microcode. It recommends Debian's packages and installs them with the administrator's permission.</p>
+    <p>When the non-free-firmware, contrib or non-free components are missing from the APT sources it offers to add them, keeping a copy of the previous file.</p>
+    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+  </description>
+  <launchable type="desktop-id">sde-drivers.desktop</launchable>
+  <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
+  <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
+  <project_group>SDE</project_group>
+  <provides>
+    <binary>sde-drivers</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0~alpha50" date="2026-10-22"/>
+  </releases>
+</component>

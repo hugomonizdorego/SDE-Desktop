@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "draw.h"
 #include "exif.h"
 
 namespace photo {
@@ -56,6 +57,7 @@ struct Edits {
   Adjust adjust;
   Filter filter = Filter::Original;
   int strength = 100;  // filter strength in percent
+  Marks marks;         // drawings on top (see draw.h), flattened last
   bool identity() const;
   // Only rotation/flip: JPEG files can then be saved losslessly.
   bool geometry_only() const;
@@ -90,8 +92,11 @@ void crop_pixels(const Rect &r, int w, int h, int &cx, int &cy, int &cw, int &ch
 cairo_surface_t *apply_geometry(cairo_surface_t *src, const Edits &e, double scale = 1.0);
 // Applies the tone adjustments and filter in place (threads for big images).
 void apply_tone(cairo_surface_t *s, const Edits &e);
-// Full pipeline; returns a new surface.
-cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale = 1.0);
+// Which marks render() flattens into the result.
+enum MarkLayers { kNoMarks = 0, kMarkEffects = 1, kMarkVectors = 2, kAllMarks = 3 };
+// Full pipeline; returns a new surface. While editing, Photo renders the
+// pixel effects (blur, pixelate) and draws the vector marks live on top.
+cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale = 1.0, int marks = kAllMarks);
 // A copy of |src| that fits in max_dim x max_dim (a new reference).
 cairo_surface_t *downscale(cairo_surface_t *src, int max_dim);
 

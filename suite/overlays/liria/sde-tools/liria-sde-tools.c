@@ -5,7 +5,9 @@
  * and Extract Here with Taca, Edit with Niny, Edit in Photo, Set as
  * Wallpaper, Send To a removable drive, and under "More Actions" Open
  * Terminal Here, Copy Path, Show Checksum and Open as Administrator; on the
- * folder background Open Terminal Here and New Text Document. Programs are
+ * folder background Open Terminal Here and New Text Document. Pin to /
+ * Unpin from Quick Access adds files, folders and locations to the Home
+ * overview's Quick access cards (src/liria-sde-pins.c). Programs are
  * started without a shell. The Home overview shown above the home folder
  * lives in liria-sde-home.c.
  */
@@ -23,6 +25,8 @@
 #include <libliria-extension/liria-file-info.h>
 #include <libliria-extension/liria-location-widget-provider.h>
 #include <libliria-extension/liria-menu-provider.h>
+
+#include "../src/liria-sde-pins.h"
 
 #define SDE_TYPE_TOOLS (sde_tools_get_type ())
 
@@ -373,6 +377,72 @@ removable_mounts (void)
 	return result;
 }
 
+/* ------------------------------------------------------------ quick access */
+
+static gchar **
+file_uris (GList *files)
+{
+	GPtrArray *uris = g_ptr_array_new ();
+
+	for (GList *l = files; l; l = l->next)
+		g_ptr_array_add (uris, liria_file_info_get_uri (l->data));
+	g_ptr_array_add (uris, NULL);
+	return (gchar **) g_ptr_array_free (uris, FALSE);
+}
+
+static void
+pin_cb (LiriaMenuItem *item, GList *files)
+{
+	gchar **uris = file_uris (files);
+
+	liria_sde_pins_add ((const gchar *const *) uris, -1);
+	g_strfreev (uris);
+}
+
+static void
+unpin_cb (LiriaMenuItem *item, GList *files)
+{
+	gchar **uris = file_uris (files);
+
+	liria_sde_pins_remove ((const gchar *const *) uris);
+	g_strfreev (uris);
+}
+
+static LiriaMenuItem *item (const gchar *name, const gchar *label, const gchar *tip, const gchar *icon,
+                            GCallback cb, GList *files);
+
+/* "Pin to Quick Access", or "Unpin from Quick Access" when every selected
+ * item is pinned already. Items inside the Trash are not offered. */
+static LiriaMenuItem *
+pin_item (const gchar *name, GList *files)
+{
+	GPtrArray *pins = liria_sde_pins_load ();
+	gboolean all_pinned = TRUE, offered = TRUE;
+	gchar *pin_name = g_strconcat (name, "Pin", NULL), *unpin_name = g_strconcat (name, "Unpin", NULL);
+	LiriaMenuItem *menu_item = NULL;
+
+	for (GList *l = files; l; l = l->next) {
+		gchar *uri = liria_file_info_get_uri (l->data);
+
+		if (!uri || (g_str_has_prefix (uri, "trash:") && g_strcmp0 (uri, "trash:///") != 0) ||
+		    g_str_has_prefix (uri, "x-liria-desktop:"))
+			offered = FALSE;
+		else if (liria_sde_pins_find (pins, uri) < 0)
+			all_pinned = FALSE;
+		g_free (uri);
+	}
+	if (offered && all_pinned)
+		menu_item = item (unpin_name, _("Unpin from Quick Access"), _("Remove from Quick access on the Home overview"),
+		                  "view-pin-symbolic", G_CALLBACK (unpin_cb), files);
+	else if (offered)
+		menu_item = item (pin_name, _("Pin to Quick Access"), _("Show in Quick access on the Home overview"),
+		                  "view-pin-symbolic", G_CALLBACK (pin_cb), files);
+	g_free (unpin_name);
+	g_free (pin_name);
+	g_ptr_array_unref (pins);
+	return menu_item;
+}
+
 /* ------------------------------------------------------------- menu items */
 
 static LiriaMenuItem *
@@ -430,7 +500,7 @@ static GList *
 get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 {
 	GList *items = NULL;
-	LiriaMenuItem *more_item, *send;
+	LiriaMenuItem *more_item, *send, *pin;
 	LiriaMenu *more;
 	guint count = g_list_length (files);
 	gboolean local = TRUE, all_text = TRUE, all_images = TRUE, all_archives = TRUE, any_dir = FALSE;
@@ -448,10 +518,13 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 		if (!is_type (l->data, "image/")) all_images = FALSE;
 		if (!is_archive (l->data)) all_archives = FALSE;
 	}
+	pin = pin_item ("SdeTools::", files);
 	if (!local) {
-		return g_list_append (NULL, item ("SdeTools::CopyPath", _("Copy Location"),
-		                                  _("Copy the location to the clipboard"), "edit-copy",
-		                                  G_CALLBACK (copy_path_cb), files));
+		if (pin)
+			items = g_list_append (items, pin);
+		return g_list_append (items, item ("SdeTools::CopyPath", _("Copy Location"),
+		                                   _("Copy the location to the clipboard"), "edit-copy",
+		                                   G_CALLBACK (copy_path_cb), files));
 	}
 	if (all_archives)
 		items = g_list_append (items, item ("SdeTools::Extract", _("Extract Here"),
@@ -477,6 +550,8 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 			                                    _("Use this picture as the desktop background"),
 			                                    "preferences-desktop-wallpaper", G_CALLBACK (wallpaper_cb), files));
 	}
+	if (pin)
+		items = g_list_append (items, pin);
 	/* Less frequent tools in one submenu keep the menu short. */
 	more_item = liria_menu_item_new ("SdeTools::More", _("More Actions"), _("More actions for the selection"),
 	                                 "view-more");
@@ -507,7 +582,7 @@ get_background_items (LiriaMenuProvider *provider, GtkWidget *window, LiriaFileI
 {
 	GList *files = g_list_append (NULL, folder), *items = NULL;
 	gchar *path = local_path (folder);
-	LiriaMenuItem *more_item;
+	LiriaMenuItem *more_item, *pin;
 	LiriaMenu *more;
 
 	if (path) {
@@ -519,6 +594,9 @@ get_background_items (LiriaMenuProvider *provider, GtkWidget *window, LiriaFileI
 			                                    _("Create an empty text document"), "text-x-generic",
 			                                    G_CALLBACK (new_document_cb), files));
 	}
+	pin = pin_item ("SdeTools::Bg", files);
+	if (pin)
+		items = g_list_append (items, pin);
 	more_item = liria_menu_item_new ("SdeTools::BgMore", _("More Actions"), _("More actions for this folder"),
 	                                 "view-more");
 	more = liria_menu_new ();

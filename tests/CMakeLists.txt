@@ -19,9 +19,12 @@ add_test(NAME sde-rust-tests
 add_executable(sde-sni-demo sni_demo.cpp)
 target_link_libraries(sde-sni-demo PRIVATE sde-common)
 
-if(SDE_BUILD_COMPONENTS)
-  add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
-endif()
+# Calculator: parser, precedence, percent, functions, errors, formatting,
+# programmer mode, converter and history; then the command line (--eval).
+add_executable(calculator-tests test_calculator.cpp)
+target_link_libraries(calculator-tests PRIVATE calculator-core)
+add_test(NAME calculator-engine COMMAND calculator-tests)
+add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
 
 add_executable(sde-display-tests test_display.cpp)
 target_link_libraries(sde-display-tests PRIVATE sde-common)
@@ -87,6 +90,9 @@ set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)
 add_executable(sde-photo-tests test_photo.cpp)
 target_link_libraries(sde-photo-tests PRIVATE sde-photo-core)
 add_test(NAME sde-photo-model COMMAND sde-photo-tests)
+add_executable(sde-photo-draw-tests test_photo_draw.cpp)
+target_link_libraries(sde-photo-draw-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-draw COMMAND sde-photo-draw-tests)
 
 # Niny Text Editor: codec, highlighter, find/replace, undo, settings, text ops.
 add_executable(niny-tests test_niny.cpp)
@@ -125,3 +131,23 @@ target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
 add_executable(sde-grab-fixture grab_fixture.cpp)
 target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
+
+# SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
+# heuristics, APT sources rewriting, crash log parsing, issue URLs.
+add_executable(sde-sysreport-tests test_sysreport.cpp)
+target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
+add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
+
+# debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
+# --quick --json verdicts, against fixtures and stub commands.
+add_test(NAME debion-network-check COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_network_check.py)
+set_tests_properties(debion-network-check PROPERTIES TIMEOUT 120)
+
+# Caption buttons and their migration, transparency contrast, icon theme
+# lookup (tests/fixtures/icon-themes) and the build history of Settings > About.
+add_executable(sde-theme-tests test_theme.cpp)
+target_link_libraries(sde-theme-tests PRIVATE sde-settings-model sde-common)
+target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                   SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(sde-theme-tests sde-build-info)
+add_test(NAME sde-theme COMMAND sde-theme-tests)

@@ -1,0 +1,3 @@
+# Hand ifupdown DHCP interfaces to NetworkManager when it is installed after
+# this package (see network_handover in the postinst).
+interest-noawait /usr/sbin/NetworkManager

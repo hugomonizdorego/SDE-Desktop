@@ -285,6 +285,23 @@ void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde
       cairo_curve_to(cr, 4, 15.5, 4.5, 16, 5.5, 16);
       cairo_stroke(cr);
       break;
+    case Album:
+      // A photo on a stack of photos.
+      cairo_move_to(cr, 6, 3.5);
+      cairo_line_to(cr, 18, 3.5);
+      cairo_move_to(cr, 4.5, 6.5);
+      cairo_line_to(cr, 19.5, 6.5);
+      cairo_stroke(cr);
+      rrect(cr, 3, 9.5, 18, 11.5, 2.2);
+      cairo_move_to(cr, 3.5, 18.5);
+      cairo_line_to(cr, 8.5, 14);
+      cairo_line_to(cr, 12.5, 17.5);
+      cairo_line_to(cr, 15, 15.5);
+      cairo_line_to(cr, 20.5, 19.5);
+      cairo_stroke(cr);
+      cairo_arc(cr, 16, 12.6, 1.4, 0, 2 * M_PI);
+      cairo_fill(cr);
+      break;
     case Picture:
     case Small:
     case Large:

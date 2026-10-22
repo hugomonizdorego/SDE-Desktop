@@ -78,4 +78,13 @@ bool show_in_gallery(const std::string &path) {
   return sde::spawn_detached({"sde-gallery", "--select", path});
 }
 
+bool slideshow_in_gallery(const std::string &path) {
+  if (gallery_running()) {
+    send_gallery_events({{"slideshow", path}});
+    return true;
+  }
+  if (sde::find_program("sde-gallery").empty()) return false;
+  return sde::spawn_detached({"sde-gallery", "--slideshow", path});
+}
+
 }  // namespace gallery
