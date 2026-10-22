@@ -1,3 +1,25 @@
+sde (0.1.0~alpha50) unstable; urgency=medium
+
+  * Panel: network LED (red no connection, yellow no internet, green
+    internet) from debion-network-check, Wi-Fi and wired switches, Eject
+    for removable drives (UDisks2), one keyboard layout indicator, no
+    media button, touchpad indicator, Show Desktop strip, tray tooltips
+    fixed, popups recover after screenshot tools grabbed the input.
+  * Action Center: animated weather behind the clock, brightness settings
+    with Night Light, compact media card; Start Menu with Gallery and a
+    single Power off.
+  * "Connected but no internet" on Debian standard installs: proxy
+    detection and environment, clock, DNS and interfaces checks with
+    debion-network-check; Proxy and Troubleshooting cards in Settings.
+  * New native Calculator; Photo drawing tools; Gallery albums and batch
+    actions; Liria Quick Access pins; Niny About crash fixed; fast desktop
+    Refresh.
+  * Large window buttons on the right, one transparency setting, icon
+    themes everywhere, build history and donation link in Settings > About.
+  * SDE Welcome, Driver Manager and System Reports (Linux Mint concepts).
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Thu, 22 Oct 2026 18:00:00 +0900
+
 sde (0.1.0~alpha16) unstable; urgency=medium
 
   * Themes rebuilt from scratch: SDE Graphite (default, from

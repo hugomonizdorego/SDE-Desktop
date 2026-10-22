@@ -1,3 +1,20 @@
+# Alpha50 patch · 2026-10-22 — panel focus, network fix, Calculator, drawing, themes
+
+- Panel: network LED with Wi-Fi/LAN switches, Eject for removable drives,
+  one keyboard indicator, touchpad indicator, no media button, fixed tray
+  tooltips and popups after screenshots; Show Desktop strip.
+- Action Center: animated weather behind the clock, Night Light and
+  brightness settings, compact media card. Start Menu: Gallery and one
+  Power off.
+- Fix for "connected but no internet" on Debian standard installs (proxy,
+  DNS, clock, interfaces) with debion-network-check and Settings cards.
+- New native Calculator; drawing in Photo; albums and batch actions in
+  Gallery; Liria Quick Access pins; Niny About crash and slow desktop
+  Refresh fixed.
+- Big window buttons on the right, adjustable transparency, icon themes
+  everywhere, build history and PayPal donation in Settings > About.
+- SDE Welcome, Driver Manager and System Reports. See docs/ALPHA50.md.
+
 # Alpha16 patch · 2026-10-21 — themes, themed UI, redesigned apps, no MATE
 
 - New theme families SDE Graphite (default), SDE Fluent and SDE Glass with

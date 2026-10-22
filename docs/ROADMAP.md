@@ -21,6 +21,10 @@ SDE is built from the ground up and grows in small, usable steps.
 
 - [x] Native source-built DebION application suite in one package (alpha6)
 - [x] Complete desktop metapackage targeting Debian testing (alpha6)
+- [x] Panel focus: network LED and switches, removable drives, touchpad indicator (alpha50)
+- [x] Native Calculator, Photo drawing, Gallery albums (alpha50)
+- [x] Welcome, Driver Manager and System Reports from Linux Mint concepts (alpha50)
+- [x] Proxy-aware network diagnosis for Debian standard installs (alpha50)
 - [ ] Validate real DebION login, locking and hardware power policies
 
 ## Rust migration
@@ -48,6 +52,7 @@ See [RUST.md](RUST.md) for the current boundary and validation requirements.
 - [x] SDE Power and SDE Screen Lock, written from scratch (alpha16)
 - [ ] Hardware validation of idle, lid, suspend and locking
 - [ ] Panel applets API and panel position options
+- [x] Show Desktop strip (alpha50)
 - [ ] Workspace switcher and window previews
 
 ## 0.5 Beta
