@@ -1834,6 +1834,8 @@ bool Panel::handle_x(const XEvent &e) {
         open_alarms();
       else if (cmd == "alarms:new")
         open_alarms(true);
+      else if (cmd == "close-popups" && open_popup_)
+        open_popup_->close();  // the screen locks: give the keyboard grab back
     } else if (a == x11::atom("_SDE_CONFIG_SERIAL")) {
       bool was_autohide = autohide_;
       load_config();

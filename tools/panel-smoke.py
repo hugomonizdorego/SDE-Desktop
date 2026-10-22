@@ -173,6 +173,10 @@ CATS=['Utility','Graphics','Network','AudioVideo','Office','Development','Educat
 (home/'.local/share/applications').mkdir(parents=True)
 for i,n in enumerate(APPS):
     (home/f'.local/share/applications/qa-{n.lower()}.desktop').write_text(f'[Desktop Entry]\nType=Application\nName={n}\nGenericName={n} QA\nExec=true\nIcon=applications-other\nCategories={CATS[i%len(CATS)]};\n')
+# SDE's own helper entries (alpha 51: "Log Out" was listed between Liria and
+# Login Window); they must stay out of the menu.
+HELPERS=[f for f in ('sde-logout.desktop','sde-lock.desktop','sde-power.desktop') if (Path(__file__).resolve().parents[1]/'data/applications'/f).exists()]
+for f in HELPERS:(home/'.local/share/applications'/f).write_text((Path(__file__).resolve().parents[1]/'data/applications'/f).read_text())
 def menu_scroll():return layout('SDE Menu')['@list-scroll'][0]
 def inside(r,area):return area[0]<=r[0] and r[0]+r[2]<=area[0]+area[2]
 def drag(win,src,dst):
@@ -247,6 +251,10 @@ def menu_checks():
     press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
     press('SDE Menu','jump:W');waitfor(lambda:'app:Wget' in layout('SDE Menu'),'letter jump did not reach W')
     shot('22-menu-letter-jump')
+    if HELPERS:
+        press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
+        press('SDE Menu','jump:L');waitfor(lambda:'app:Lyrics' in layout('SDE Menu'),'letter jump did not reach L')
+        L=layout('SDE Menu');assert not any(k in L for k in ('app:Log Out','app:SDE Screen Lock','app:SDE Power')),L.keys()
     # The category filter: a short menu; the list keeps only that category.
     press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('filter:')));time.sleep(.4)
     shot('22-menu-filter');run('xdotool','key','Down','Down','Return')

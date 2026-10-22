@@ -111,6 +111,10 @@ if(SDE_XVFB)
   add_test(NAME sde-lock-screen COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_ui.py $<TARGET_FILE:sde-lock-ui-fixture>)
   set_tests_properties(sde-lock-screen PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+  # Alpha 51: grabs held by other clients, monitor changes, resume.
+  add_test(NAME sde-lock-input COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_input.py $<TARGET_FILE:sde-lock-ui-fixture>)
+  set_tests_properties(sde-lock-input PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif()
 if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-lock-daemon COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}

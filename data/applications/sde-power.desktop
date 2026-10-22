@@ -11,6 +11,7 @@ Terminal=false
 Categories=Settings;HardwareSettings;
 Keywords=battery;suspend;brightness;lid;power;
 OnlyShowIn=SDE;
+NoDisplay=true
 StartupNotify=true
 X-SDE-Upstream=https://github.com/hugomonizdorego/SDE-Desktop
 X-Developer=DebION Dev-Team

@@ -260,6 +260,8 @@ try:
     assert ys == sorted(ys), ys
     assert ys[-1] + control("SDE Menu", "rail:power")[3] <= g["HEIGHT"], (ys, g)
     assert "search" not in names and not any(n.startswith("category:") for n in names), names
+    # Alpha 51: Log Out (sde-logout.desktop) is no application of the list.
+    assert "app:Log Out" not in names, names
     assert any(n.startswith("tile:") for n in names) and any(n.startswith("group:") for n in names), names
     for n in names:
         if n.startswith("tile:") or n.startswith("app:"):
