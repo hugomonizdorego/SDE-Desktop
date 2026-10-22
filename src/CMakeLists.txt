@@ -156,7 +156,7 @@ target_link_libraries(sde-gallery PRIVATE sde-gallery-ui)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
 # the DebION Dev-Team on top of sde-gallery-core.
-add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp)
+add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp)
 target_include_directories(sde-photo-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/photo)
 target_link_libraries(sde-photo-core PUBLIC sde-gallery-core)
 add_executable(sde-view

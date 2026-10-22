@@ -86,6 +86,9 @@ set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)
 add_executable(sde-photo-tests test_photo.cpp)
 target_link_libraries(sde-photo-tests PRIVATE sde-photo-core)
 add_test(NAME sde-photo-model COMMAND sde-photo-tests)
+add_executable(sde-photo-draw-tests test_photo_draw.cpp)
+target_link_libraries(sde-photo-draw-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-draw COMMAND sde-photo-draw-tests)
 
 # Niny Text Editor: codec, highlighter, find/replace, undo, settings, text ops.
 add_executable(niny-tests test_niny.cpp)

@@ -72,12 +72,12 @@ Adjust filter_preset(Filter f) {
 bool Edits::identity() const { return geometry_only() && orient == gallery::Orient(); }
 
 bool Edits::geometry_only() const {
-  return crop.full() && resize_w == 0 && resize_h == 0 && tone_identity();
+  return crop.full() && resize_w == 0 && resize_h == 0 && tone_identity() && marks.empty();
 }
 
 bool Edits::operator==(const Edits &o) const {
   return orient == o.orient && crop == o.crop && resize_w == o.resize_w && resize_h == o.resize_h &&
-         adjust == o.adjust && filter == o.filter && strength == o.strength;
+         adjust == o.adjust && filter == o.filter && strength == o.strength && marks == o.marks;
 }
 
 double srgb_to_linear(double c) {
@@ -260,9 +260,11 @@ void apply_tone(cairo_surface_t *s, const Edits &e) {
   cairo_surface_mark_dirty(s);
 }
 
-cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale) {
+cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale, int marks) {
   cairo_surface_t *g = apply_geometry(src, e, scale);
-  if (!e.tone_identity()) {
+  bool effects = (marks & kMarkEffects) && e.marks.has_effects();
+  bool vectors = (marks & kMarkVectors) && e.marks.has_vectors();
+  if (!e.tone_identity() || effects || vectors) {
     if (g == src) {
       // Never modify the original: work on a copy.
       cairo_surface_destroy(g);
@@ -275,6 +277,7 @@ cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale) {
       cairo_destroy(cr);
     }
     apply_tone(g, e);
+    if (effects || vectors) flatten_marks(g, e, vectors, effects);
   }
   return g;
 }

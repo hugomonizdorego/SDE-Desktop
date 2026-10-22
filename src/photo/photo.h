@@ -4,8 +4,12 @@
 // Photo (sde-view): the SDE photo viewer and editor.
 //
 //   PhotoWindow  the window: header bar, actions, files and saving
-//   Canvas       the image: zoom and pan, crop overlay, filmstrip, GIFs
-//   SidePanel    photo information, and the editing tools
+//   Canvas       the image: zoom and pan, crop overlay, drawing, filmstrip, GIFs
+//   SidePanel    photo information, and the editing tools (Adjust, Filters,
+//                Crop, Draw)
+//
+// Photo views and edits one image at a time; the library (albums,
+// favorites, slideshows, import, batch actions) is Gallery's job.
 #pragma once
 
 #include <FL/Fl_Group.H>
@@ -48,6 +52,26 @@ void copy_image(cairo_surface_t *image, const std::string &path);
 
 enum class ZoomMode { Fit, Fill, Actual, Custom };
 
+// Drawing tools (the Draw tab).
+enum class Tool { Select, Pen, Highlighter, Eraser, Line, Arrow, Rect, Ellipse, Text, Blur, Pixelate, Picker };
+constexpr int kToolCount = 12;
+
+struct DrawSettings {
+  Tool tool = Tool::Pen;
+  uint32_t color = 0xFFE5484D;
+  // Per tool: the stroke width (block size for Pixelate, blur radius for
+  // Blur, eraser size) in screen pixels at the zoom level when drawing,
+  // and the opacity in percent.
+  double width[kToolCount] = {4, 4, 22, 24, 4, 5, 4, 4, 4, 14, 14, 4};
+  double opacity[kToolCount] = {100, 100, 40, 100, 100, 100, 100, 100, 100, 100, 100, 100};
+  bool fill = false;
+  FontFace font = FontFace::Sans;
+  double text_size = 28;  // screen pixels
+  bool text_box = false;
+  double tool_width() const { return width[int(tool)]; }
+  double tool_opacity() const { return opacity[int(tool)] / 100.0; }
+};
+
 class Canvas : public Fl_Widget {
  public:
   Canvas(PhotoWindow *app, int x, int y, int w, int h);
@@ -75,6 +99,13 @@ class Canvas : public Fl_Widget {
   bool cropping() const { return cropping_; }
   const Rect &crop_rect() const { return crop_; }
 
+  // Drawing (the Draw tab is open). The selected mark is an index into
+  // the marks of the current edits, -1 none.
+  int selected_mark() const { return selected_; }
+  void select_mark(int i);
+  void cancel_drawing();  // drops a stroke in progress and the selection
+  bool drawing_busy() const { return live_on_ || mark_drag_ >= 0; }
+
   // Animated GIF frames (owned): each frame with its delay in ms.
   void set_animation(std::vector<std::pair<cairo_surface_t *, int>> frames);
   void stop_animation();
@@ -97,6 +128,13 @@ class Canvas : public Fl_Widget {
   int crop_handle_at(int mx, int my) const;
 
   void drop_caches();
+  // Drawing (drawing.cpp).
+  ViewMap screen_map() const;  // image coordinates to the screen
+  int draw_event(int event, int mx, int my);
+  void draw_overlay(sde::Painter &p);
+  void commit_live();
+  int handle_at(int mx, int my) const;  // corner of the selection box, -1
+  Mark style_mark(MarkKind kind) const;  // a new mark with the panel's settings
   PhotoWindow *app_;
   cairo_surface_t *image_ = nullptr;
   // A screen-sized copy of the image, and the same kept on the X server so
@@ -122,13 +160,24 @@ class Canvas : public Fl_Widget {
   // Animation.
   std::vector<std::pair<cairo_surface_t *, int>> frames_;
   size_t frame_ = 0;
-};
+  // Drawing.
+  Mark live_;              // the stroke or shape being drawn
+  bool live_on_ = false;
+  int selected_ = -1;
+  int mark_drag_ = -1;     // 0-3 corners, 4 move, -1 none
+  Marks drag_marks_;       // the marks while a move or resize is dragged
+  Box press_box_;
+  Pt press_img_;
+  bool erasing_ = false, erased_ = false;
+  bool hover_in_ = false;  // pointer over the image (eraser outline)
+  int hover_x_ = 0, hover_y_ = 0;
+  bool middle_pan_ = false;
 
 // The panel on the right: photo information, or the editing tools.
 class SidePanel : public Fl_Group {
  public:
   enum Mode { Info, Edit };
-  enum Tab { Adjust, Filters, Crop };
+  enum Tab { Adjust, Filters, Crop, Draw };
   SidePanel(PhotoWindow *app, int x, int y, int w, int h);
   void draw() override;
   int handle(int event) override;
@@ -148,6 +197,20 @@ class SidePanel : public Fl_Group {
   int filter_at(int mx, int my) const;
   void slider_changed(int index);
   void filter_previews();
+  // The Draw tab (custom drawn; see panels.cpp).
+  void layout_draw(int px, int pw, int top);
+  void draw_draw_tab(sde::Painter *p);
+  int draw_tab_click(int mx, int my);  // 1 when handled
+  void draw_slider_changed(int which);
+  struct HitBox {
+    double x = 0, y = 0, w = 0, h = 0;
+    int id = 0;
+    bool in(int mx, int my) const { return mx >= x && mx < x + w && my >= y && my < y + h; }
+  };
+  std::vector<HitBox> draw_boxes_;
+  sde::Slider *draw_width_ = nullptr, *draw_opacity_ = nullptr;
+  double draw_scroll_ = 0, draw_h_ = 0;
+  int draw_hover_ = -1;
   PhotoWindow *app_;
   Mode mode_ = Info;
   Tab tab_ = Adjust;
@@ -213,6 +276,20 @@ class PhotoWindow : public sde::BufferedWindow {
   void redo();
   void reset_edits();
   bool modified() const { return !history_.current().identity(); }
+  // Drawing.
+  bool drawing() const;  // the Draw tab is shown
+  DrawSettings &draw_settings() { return draw_; }
+  void set_tool(Tool t);
+  void open_draw();
+  void delete_selected_mark();
+  // The panel's style changed: restyle the selected mark (one undo step
+  // per slider drag when |amend|).
+  void style_changed(bool amend);
+  void edit_text_mark(int index);
+  // The oriented, uncropped full size marks refer to.
+  void mark_reference(int &w, int &h) const;
+  // Edits with the marks set up for drawing (reference size known).
+  Edits edits_for_marks() const;
   void rotate(int quarter_turns);
   void flip(bool horizontal);
   void start_crop();
@@ -231,14 +308,10 @@ class PhotoWindow : public sde::BufferedWindow {
   void show_in_files();
   void show_in_gallery();
   void print();
-  void toggle_favorite();
-  bool is_favorite() const;
   void open_map();
 
   // View.
   void toggle_fullscreen();
-  void toggle_slideshow();
-  bool slideshow() const { return slideshow_; }
   void toggle_panel(SidePanel::Mode m);
   bool panel_open() const;
   void toggle_filmstrip();
@@ -275,7 +348,6 @@ class PhotoWindow : public sde::BufferedWindow {
   bool keyboard(int key, int state);
   static void awake_cb(void *p);
   static void album_awake_cb(void *p);
-  static void slideshow_cb(void *p);
   static void toast_cb(void *p);
   static void render_awake_cb(void *p);
   static int x_event_handler(int event);
@@ -310,9 +382,8 @@ class PhotoWindow : public sde::BufferedWindow {
   std::atomic<uint64_t> render_gen_{0};
   cairo_surface_t *render_result_ = nullptr;
   uint64_t render_result_gen_ = 0;
-  bool slideshow_ = false, was_fullscreen_ = false;
-  double slideshow_interval_ = 5;
   int jpeg_quality_ = 92;
+  DrawSettings draw_;
   std::string toast_;
 
   Canvas *canvas_ = nullptr;
