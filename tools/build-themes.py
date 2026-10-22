@@ -125,6 +125,7 @@ def write_header(pal, path):
     out.append('  int radius, radius_small, radius_large, shadow_radius;')
     out.append('  bool glass;')
     out.append('  double mica, translucency;')
+    out.append('  unsigned close_hover;  // caption close button while hovered')
     out.append(f'  unsigned accent[{len(acc)}][2];')
     out.append('  Mode light, dark;')
     out.append('};')
@@ -155,7 +156,8 @@ def write_header(pal, path):
                                        cstr(f['buttons']), cstr(f['title_layout']),
                                        cstr(f['menu_highlight'])]) + ',')
         out.append(f"   {f['radius']}, {f['radius_small']}, {f['radius_large']}, {f['shadow_radius']}, "
-                   f"{'true' if f['glass'] else 'false'}, {f['mica']}, {f['translucency']},")
+                   f"{'true' if f['glass'] else 'false'}, {f['mica']}, {f['translucency']}, "
+                   f"{u(f['caption']['close_hover'])},")
         out.append('   {' + ', '.join('{' + u(accents[a][0]) + ', ' + u(accents[a][1]) + '}' for a in acc) + '},')
         out.append('   ' + ', '.join(modes) + '},')
     out.append('};')
@@ -198,11 +200,82 @@ def grid(size, inside):
     return [''.join('#' if inside(x + 0.5, y + 0.5) else '.' for x in range(size)) for y in range(size)]
 
 
+def soft_caption_masks():
+    """Caption glyphs since 0.1.0~alpha51, after Mint-Y: small, thin glyphs
+    (a 6 px minimize dash on the baseline of a 6 px maximize square, two
+    overlapping squares for restore) and close as a soft 16 px disc with the
+    cross cut out. Hovered or pressed, minimize and maximize get the same disc
+    with their glyph cut out, so every state stays round; the theme colors the
+    disc (gray, the close button muted red while hovered). The masks are 18 px:
+    SDE WM centers them in the larger caption button, which keeps the hit area
+    at the title height."""
+    n, c, R = 18, 9.0, 8.2
+
+    def disc(x, y):
+        return (x - c) ** 2 + (y - c) ** 2 <= R * R
+
+    def cell(lo, hi, v):
+        return lo <= int(v) <= hi
+
+    def dash(x, y):
+        return cell(6, 11, x) and int(y) == 11
+
+    def square(x, y):
+        return cell(6, 11, x) and cell(6, 11, y) and not (cell(7, 10, x) and cell(7, 10, y))
+
+    def restore(x, y):
+        front = cell(5, 10, x) and cell(7, 12, y) and not (cell(6, 9, x) and cell(8, 11, y))
+        back = (cell(7, 12, x) and int(y) == 5) or (int(x) == 12 and cell(5, 10, y))
+        return front or back
+
+    def cross(x, y):
+        dx, dy = x - c, y - c
+        return max(abs(dx), abs(dy)) <= 3.6 and (abs(dx - dy) < 0.8 or abs(dx + dy) < 0.8)
+
+    def cut(glyph):
+        return lambda x, y: disc(x, y) and not glyph(x, y)
+
+    def desk(x, y):
+        return (x - c) ** 2 + (y - c) ** 2 <= 6.5
+
+    def shade(x, y):
+        return int(y) == 6 and cell(6, 11, x)
+
+    m = {'iconify': grid(n, dash), 'max': grid(n, square), 'max_toggled': grid(n, restore),
+         'close': grid(n, cut(cross)), 'desk': grid(n, desk), 'shade': grid(n, shade)}
+    for state in ('hover', 'pressed'):
+        m[f'iconify_{state}'] = grid(n, cut(dash))
+        m[f'max_{state}'] = grid(n, cut(square))
+        m[f'max_{state}_toggled'] = grid(n, cut(restore))
+        m[f'close_{state}'] = m['close']
+    return m
+
+
+def caption_colors(t, dark, cap, inactive=False):
+    """Caption colors shared by SDE WM, GTK and sde::Theme (theme.cpp):
+    glyph, disc (close at rest, the others while hovered), pressed disc,
+    close while hovered and pressed."""
+    bar = t['titlebar_inactive'] if inactive else t['titlebar']
+    if inactive:
+        glyph = t['titlebar_text_inactive']
+        disc = mix(bar, t['titlebar_text'], 0.26 if not dark else 0.30)
+    else:
+        glyph = mix(t['titlebar_text'], bar, 0.15)
+        disc = mix(bar, t['titlebar_text'], 0.40 if not dark else 0.38)
+    press = mix(bar, t['titlebar_text'], 0.58)
+    close = cap['close_hover']
+    return {'glyph': glyph, 'disc': disc, 'press': press, 'close': close,
+            'close_press': mix(close, '#000000', 0.15)}
+
+
 def caption_masks(glyph='thin'):
     """Caption glyphs of every family: minimize (a bar), maximize (a square),
     restore (two squares, shown while maximized) and close (a cross). The
     "thin" glyphs are 10 px with 1 px strokes (Fluent, after Segoe Fluent
-    Icons); "regular" ones are 11 px with a heavier cross (Graphite, Glass)."""
+    Icons); "regular" ones are 11 px with a heavier cross (Graphite, Glass);
+    "soft" ones (0.1.0~alpha51, every family) come from soft_caption_masks()."""
+    if glyph == 'soft':
+        return soft_caption_masks()
     n = 10 if glyph == 'thin' else 11
     w = 0.75 if glyph == 'thin' else 1.05  # half the width of the cross strokes
 
@@ -261,7 +334,10 @@ def openbox_theme(pal, family, mode, accent, outdir):
     while fam['menu_highlight'] == 'accent' and contrast(sel_fg, sel_bg) < 4.5 and i <= 10:
         sel_bg = mix(t['accent'], '#000000' if luminance(sel_fg) > 0.5 else '#FFFFFF', i * 0.04)
         i += 1
-    border_active = mix(t['border'], t['accent'], 0.25) if fluent else t['border']
+    # A quiet frame line: the compositor's soft shadow and rounded corners
+    # do the separating (alpha51; Fluent no longer tints it with the accent).
+    border_active = mix(t['border'], t['titlebar_text'], 0.08) if cap['glyph'] == 'soft' else (
+        mix(t['border'], t['accent'], 0.25) if fluent else t['border'])
     L = [f'# {theme_name(pal, family, mode, accent)}: window frames for SDE WM (Openbox).',
          '# Generated by tools/build-themes.py from data/themes/palettes.json.',
          f'# Part of SDE {fam["label"]}; GTK parts from {fam["upstream"]} (see /usr/share/doc/sde/themes).',
@@ -281,7 +357,7 @@ def openbox_theme(pal, family, mode, accent, outdir):
          f'window.inactive.title.separator.color: {t["titlebar_inactive"]}',
          f'window.active.client.color: {t["background"]}',
          f'window.inactive.client.color: {t["background"]}', '']
-    if fam['glass']:
+    if fam['glass'] and cap['glyph'] != 'soft':
         # Glass: a soft vertical sheen; the compositor adds blur and translucency.
         top = mix(t['titlebar'], '#FFFFFF', 0.10 if dark else 0.55)
         L += ['window.active.title.bg: flat gradient vertical',
@@ -290,6 +366,8 @@ def openbox_theme(pal, family, mode, accent, outdir):
               'window.inactive.title.bg: flat solid',
               f'window.inactive.title.bg.color: {t["titlebar_inactive"]}']
     else:
+        # Since alpha51 every family has a flat title bar (Glass gets its
+        # frosted look from the compositor's blur, not from a gradient).
         L += ['window.active.title.bg: flat solid', f'window.active.title.bg.color: {t["titlebar"]}',
               'window.inactive.title.bg: flat solid',
               f'window.inactive.title.bg.color: {t["titlebar_inactive"]}']
@@ -297,6 +375,33 @@ def openbox_theme(pal, family, mode, accent, outdir):
           f'window.active.label.text.color: {t["titlebar_text"]}',
           f'window.inactive.label.text.color: {t["titlebar_text_inactive"]}',
           f'window.label.text.justify: {fam["title_justify"]}', '']
+    if cap['glyph'] == 'soft':
+        # Mint-Y like caption buttons (0.1.0~alpha51): the button background
+        # stays the title bar; the masks draw the round shapes (see
+        # soft_caption_masks()), so only image colors change with the state.
+        for state in ('active', 'inactive'):
+            k = caption_colors(t, dark, cap, inactive=state == 'inactive')
+            L += [f'window.{state}.button.unpressed.bg: parentrelative',
+                  f'window.{state}.button.unpressed.image.color: {k["glyph"]}',
+                  f'window.{state}.button.hover.bg: parentrelative',
+                  f'window.{state}.button.hover.image.color: {k["disc"]}',
+                  f'window.{state}.button.pressed.bg: parentrelative',
+                  f'window.{state}.button.pressed.image.color: {k["press"]}',
+                  f'window.{state}.button.disabled.bg: parentrelative',
+                  f'window.{state}.button.disabled.image.color: {mix(k["glyph"], t["titlebar"], 0.6)}',
+                  f'window.{state}.button.toggled.bg: parentrelative',
+                  f'window.{state}.button.toggled.image.color: {k["glyph"]}',
+                  f'window.{state}.button.toggled.hover.bg: parentrelative',
+                  f'window.{state}.button.toggled.hover.image.color: {k["disc"]}',
+                  f'window.{state}.button.toggled.pressed.bg: parentrelative',
+                  f'window.{state}.button.toggled.pressed.image.color: {k["press"]}',
+                  f'window.{state}.button.close.unpressed.bg: parentrelative',
+                  f'window.{state}.button.close.unpressed.image.color: {k["disc"]}',
+                  f'window.{state}.button.close.hover.bg: parentrelative',
+                  f'window.{state}.button.close.hover.image.color: {k["close"]}',
+                  f'window.{state}.button.close.pressed.bg: parentrelative',
+                  f'window.{state}.button.close.pressed.image.color: {k["close_press"]}', '']
+        return finish_openbox(L, t, fam, sel_bg, sel_fg, ob)
     inactive_glyph = t['titlebar_text_inactive']
     # Caption buttons: clear glyphs, a hover layer over the title bar and a
     # red close, the same in every family and in GTK header bars.
@@ -330,6 +435,11 @@ def openbox_theme(pal, family, mode, accent, outdir):
               f'window.{state}.button.close.pressed.bg: flat solid',
               f'window.{state}.button.close.pressed.bg.color: {close_press}',
               f'window.{state}.button.close.pressed.image.color: #FFFFFF', '']
+    finish_openbox(L, t, fam, sel_bg, sel_fg, ob)
+
+
+def finish_openbox(L, t, fam, sel_bg, sel_fg, ob):
+    """Handles, menus and OSD of an Openbox theme; writes themerc."""
     for part in ('handle', 'grip'):
         L += [f'window.active.{part}.bg: flat solid', f'window.active.{part}.bg.color: {t["titlebar"]}',
               f'window.inactive.{part}.bg: flat solid',
@@ -371,11 +481,12 @@ def css_tokens(pal, family, mode, accent):
     lines = [f'/* SDE {fam["label"]} {mode} ({accent}): palette shared with SDE, generated by tools/build-themes.py */']
     for key in ('accent', 'on_accent', 'background', 'surface', 'surface_alt', 'hover', 'text', 'text_dim',
                 'border', 'menu', 'panel', 'titlebar', 'titlebar_inactive', 'titlebar_text',
-                'titlebar_text_inactive'):
+                'titlebar_text_inactive', 'success', 'warning', 'error'):
         lines.append(f'@define-color sde_{key} {t[key]};')
     # Names used by the suite application styling (apps-gtk-3.0.css).
     dark = mode == 'dark'
-    glass_top = mix(t['titlebar'], '#FFFFFF', 0.08 if dark else 0.5) if fam['glass'] else t['titlebar']
+    # alpha51: no sheen, every family's title bar is flat.
+    glass_top = t['titlebar']
     legacy = {'sde_accent_fg': t['on_accent'], 'sde_bg': t['background'], 'sde_view': t['surface'],
               'sde_fg': t['text'], 'sde_dim': t['text_dim'], 'sde_sidebar': t['surface_alt'],
               'sde_border_soft': mix(t['border'], t['surface'], 0.45),
@@ -394,6 +505,13 @@ def overlay(name, gtk, t, fam):
     text = path.read_text()
     subst = {'RADIUS_SMALL': f'{fam["radius_small"]}px', 'RADIUS_LARGE': f'{fam["radius_large"]}px',
              'RADIUS': f'{fam["radius"]}px', 'CLOSE_HOVER': fam['caption']['close_hover']}
+    # Caption colors (caption_colors()), resolved per theme so GTK header
+    # bars and SDE WM frames match exactly.
+    dark = luminance(t['background']) < 0.3
+    for key, value in caption_colors(t, dark, fam['caption']).items():
+        subst['CAPTION_' + key.upper()] = value
+    for key, value in caption_colors(t, dark, fam['caption'], inactive=True).items():
+        subst['CAPTION_INACTIVE_' + key.upper()] = value
     for k in sorted(subst, key=len, reverse=True):
         text = text.replace('@' + k + '@', subst[k])
     return '\n' + text
@@ -431,7 +549,46 @@ def libadwaita_colors(t, dark):
     return ''.join(f'@define-color {k} {v};\n' for k, v in pairs)
 
 
-def compile_graphite(src, accent_id, work):
+def graphite_sass_palette(colors, pal, accent, accent_id):
+    """Puts SDE's palette into Graphite's _colors.scss before compiling: the
+    accent of |accent| and the neutral backgrounds of SDE Graphite light
+    (a-d) and dark (e-h), so GTK applications use the same calm colors as
+    SDE instead of upstream's (alpha51)."""
+    import re
+    L = tokens(pal, 'graphite', 'light', accent)
+    D = tokens(pal, 'graphite', 'dark', accent)
+    colors = re.sub(rf'^\$theme_{accent_id}_color:.*$',
+                    f"$theme_{accent_id}_color: if($variant == 'light', {L['accent']}, {D['accent']});",
+                    colors, flags=re.M)
+    shades = {'a': L['surface'], 'b': L['background'], 'c': L['surface_alt'],
+              'd': mix(L['border'], L['text_dim'], 0.35),
+              'e': D['panel'], 'f': D['surface_alt'], 'g': D['background'], 'h': D['hover']}
+    defaults = {'a': '#FFFFFF', 'b': '#FAFAFA', 'c': '#F2F2F2', 'd': '#CCCCCC',
+                'e': '#212121', 'f': '#242424', 'g': '#2C2C2C', 'h': '#3C3C3C'}
+    for k, old in defaults.items():
+        colors = colors.replace(f"@if ($type == '{k}') {{ @return {old}; }}",
+                                f"@if ($type == '{k}') {{ @return {shades[k]}; }}")
+    return colors
+
+
+def libadwaita_shapes(fam):
+    """Soft corners for libadwaita applications (alpha51): libadwaita reads
+    ~/.config/gtk-4.0/gtk.css and the theme's libadwaita/gtk.css, which SDE
+    links there; its own radii are kept where they are already round."""
+    r, rs, rl = fam['radius'], fam['radius_small'], fam['radius_large']
+    return (f'\n/* SDE soft corners */\n'
+            f'window.csd, dialog-host > dialog.floating sheet {{ border-radius: {r}px; }}\n'
+            f'window.csd.maximized, window.csd.tiled, window.csd.fullscreen {{ border-radius: 0; }}\n'
+            f'button:not(.circular):not(.pill):not(.titlebutton), entry, spinbutton, dropdown > button {{ border-radius: {rs}px; }}\n'
+            f'popover > contents, .card, list.boxed-list, .boxed-list {{ border-radius: {r}px; }}\n'
+            f'popover > contents > * > modelbutton, popover.menu modelbutton {{ border-radius: {rs}px; }}\n'
+            f'tooltip {{ border-radius: {rs}px; }}\n'
+            f'scrollbar slider, switch, switch > slider, scale > trough, scale > trough > highlight, scale > trough > slider '
+            f'{{ border-radius: 9999px; }}\n'
+            f'window.dialog.message, window.messagedialog, dialog.alert > sheet {{ border-radius: {rl}px; }}\n')
+
+
+def compile_graphite(src, accent_id, work, pal=None, accent=None):
     """Compiles Graphite's GTK 3/4 Light and Dark style sheets for one accent."""
     tree = Path(work) / ('graphite-' + accent_id)
     if tree.exists():
@@ -441,6 +598,11 @@ def compile_graphite(src, accent_id, work):
     tweaks = tweaks.replace("$theme: 'default';", f"$theme: '{accent_id}';")
     tweaks = tweaks.replace("$rimless: 'false';", "$rimless: 'true';")
     tweaks = tweaks.replace("$sidebar: 'styled';", "$sidebar: 'normal';")
+    if pal is not None:
+        fam = pal['families']['graphite']
+        tweaks = tweaks.replace('$default_corner: 6px;', f'$default_corner: {fam["radius_small"]}px;')
+        colors = tree / 'sass/_colors.scss'
+        colors.write_text(graphite_sass_palette(colors.read_text(), pal, accent, accent_id))
     (tree / 'sass/_tweaks-temp.scss').write_text(tweaks)
     out = {}
     sassc = shutil.which('sassc')
@@ -476,7 +638,7 @@ def build_graphite(pal, vendor, out, work):
     src = vendor / 'graphite-gtk-theme'
     fam = pal['families']['graphite']
     for accent in pal['accents']:
-        css, assets, scalable = compile_graphite(src, fam['upstream_accent'][accent], work)
+        css, assets, scalable = compile_graphite(src, fam['upstream_accent'][accent], work, pal, accent)
         for mode in MODES:
             name = theme_name(pal, 'graphite', mode, accent)
             d = out / name
@@ -484,17 +646,56 @@ def build_graphite(pal, vendor, out, work):
             for gtk in ('gtk-3.0', 'gtk-4.0'):
                 g = d / gtk
                 write(g / 'gtk.css', f'/* {name}: Graphite GTK theme by Vince Liu (GPL-3.0), built for SDE. */\n'
-                      + css[(gtk, mode)] + '\n' + defs + overlay('graphite', gtk, t, fam) + overlay('caption', gtk, t, fam)
-                      + overlay('apps', gtk, t, fam))
+                      + css[(gtk, mode)] + '\n' + defs + overlay('graphite', gtk, t, fam) + overlay('soft', gtk, t, fam)
+                      + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'graphite', accent, gtk))
                 shutil.copytree(assets, g / 'assets')
                 shutil.copytree(scalable, g / 'assets/scalable')
-            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark'))
+            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
             write(d / 'index.theme', index_theme(name, f'SDE Graphite {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  'SDE Graphite, based on the Graphite GTK theme by Vince Liu',
                                                  mode == 'dark'))
             openbox_theme(pal, 'graphite', mode, accent, d)
+
+
+def recolor_css(text, up_accent, accent, neutral):
+    """Moves an upstream style sheet onto SDE's palette (alpha51): colors
+    close to the upstream accent hue become shades of |accent| (same
+    lightness steps), and tinted grays become grays of |neutral|'s hue with
+    at most its chroma, so Flat Remix's saturated blues and blue-violet grays
+    turn into calm SDE Fluent colors. Hex and rgb()/rgba() colors."""
+    import re
+    uh, ul, us = colorsys.rgb_to_hls(*rgb(up_accent))
+    ah, al, as_ = colorsys.rgb_to_hls(*rgb(accent))
+    nh, _, ns = colorsys.rgb_to_hls(*rgb(neutral))
+    accent_like = us > 0.25
+
+    def convert(r, g, b):
+        h, l, s = colorsys.rgb_to_hls(r, g, b)
+        dh = min(abs(h - uh), 1 - abs(h - uh))
+        if accent_like and s > 0.35 and dh < 0.07:
+            l2 = max(0.0, min(1.0, al + (l - ul)))
+            s2 = max(0.0, min(1.0, as_ * (s / us if us else 1)))
+            return colorsys.hls_to_rgb(ah, l2, s2)
+        if s < 0.30 and 0.04 < l < 0.96:
+            return colorsys.hls_to_rgb(nh, l, min(s, ns))
+        return r, g, b
+
+    def hex_sub(m):
+        h = m.group(0)
+        if len(h) == 4:
+            h = '#' + ''.join(ch * 2 for ch in h[1:])
+        return hexc(convert(*rgb(h))).lower()
+
+    def rgb_sub(m):
+        r, g, b = (int(m.group(i)) / 255.0 for i in (2, 3, 4))
+        r, g, b = convert(r, g, b)
+        vals = ', '.join(str(round(v * 255)) for v in (r, g, b))
+        return f'{m.group(1)}({vals}{m.group(5) or ""})'
+
+    text = re.sub(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b', hex_sub, text)
+    return re.sub(r'\b(rgba?)\(\s*(\d+),\s*(\d+),\s*(\d+)(\s*,\s*[0-9.]+)?\)', rgb_sub, text)
 
 
 def build_fluent(pal, vendor, out):
@@ -506,16 +707,20 @@ def build_fluent(pal, vendor, out):
             name = theme_name(pal, 'fluent', mode, accent)
             d = out / name
             defs, t = css_tokens(pal, 'fluent', mode, accent)
+            upcolor = fam['upstream_accent_color'][accent][0 if mode == 'light' else 1]
+            neutral = fam[mode]['text_dim']
             for gtk in ('gtk-3.0', 'gtk-4.0'):
                 g = d / gtk
-                base = (up / gtk / 'gtk.css').read_text()
+                # Flat Remix's saturated accent and tinted grays become SDE
+                # Fluent's calm accent and slate grays (alpha51).
+                base = recolor_css((up / gtk / 'gtk.css').read_text(), upcolor, t['accent'], neutral)
                 if gtk == 'gtk-4.0':
                     # Flat Remix's GTK 4 style sheets name its blue for every color.
                     base += (f"\n@define-color accent_bg_color {t['accent']};\n"
                              f"@define-color accent_fg_color {t['on_accent']};\n")
                 write(g / 'gtk.css', f'/* {name}: Flat Remix GTK by Daniel Ruiz de Alegría (GPL-3.0), built for SDE. */\n'
-                      + base + '\n' + defs + overlay('fluent', gtk, t, fam) + overlay('caption', gtk, t, fam)
-                      + overlay('apps', gtk, t, fam))
+                      + base + '\n' + defs + overlay('fluent', gtk, t, fam) + overlay('soft', gtk, t, fam)
+                      + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'fluent', accent, gtk))
                 shutil.copytree(up / gtk / 'assets', g / 'assets')
@@ -523,13 +728,11 @@ def build_fluent(pal, vendor, out):
             lib.mkdir(parents=True)
             if (up / 'libadwaita/assets').is_dir():
                 shutil.copytree(up / 'libadwaita/assets', lib / 'assets')
-            upstream = (up / 'libadwaita/gtk.css').read_text()
-            # Flat Remix's libadwaita colors, with SDE's Mica window and title bar tint.
-            keep = ('accent_bg_color', 'accent_fg_color', 'window_bg_color', 'headerbar_bg_color',
-                    'headerbar_backdrop_color', 'popover_bg_color')
-            mica = ''.join(line + '\n' for line in libadwaita_colors(t, mode == 'dark').splitlines()
-                           if line.split()[1] in keep)
-            write(lib / 'gtk.css', upstream + '\n/* SDE Fluent: Mica tint */\n' + defs + mica)
+            upstream = recolor_css((up / 'libadwaita/gtk.css').read_text(), upcolor, t['accent'], neutral)
+            # Flat Remix's libadwaita style with every SDE Fluent color (alpha51:
+            # libadwaita applications follow the whole palette, not only Mica).
+            write(lib / 'gtk.css', upstream + '\n/* SDE Fluent palette */\n' + defs
+                  + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
             write(d / 'index.theme', index_theme(name, f'SDE Fluent {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  'SDE Fluent, based on Flat Remix GTK and Flat Remix GNOME by Daniel Ruiz de Alegría',
                                                  mode == 'dark'))
@@ -548,10 +751,11 @@ def build_glass(pal, out):
                 g = d / gtk
                 write(g / 'gtk.css', f'/* {name}: SDE glass layer on SDE Graphite. */\n'
                       f'@import url("../../{theme_name(pal, base, mode, accent)}/{gtk}/gtk.css");\n'
-                      + defs + overlay('glass', gtk, t, fam) + overlay('caption', gtk, t, fam))
+                      + defs + overlay('glass', gtk, t, fam) + overlay('soft', gtk, t, fam)
+                      + overlay('caption', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'glass', accent, gtk))
-            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark'))
+            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
             write(d / 'index.theme', index_theme(name, f'SDE Glass {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  'SDE Glass: frosted and rounded, built on SDE Graphite', mode == 'dark'))
             openbox_theme(pal, 'glass', mode, accent, d)

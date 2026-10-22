@@ -1,58 +1,70 @@
 /* SDE caption buttons (GTK 4), shared by SDE Graphite, SDE Fluent and SDE
- * Glass and matching the SDE WM frames: minimize, maximize and close on the
- * right (gtk-decoration-layout ":minimize,maximize,close"), clear symbolic
- * glyphs, a comfortable target, a hover layer and a red close. The window
- * and :not(.suggested-action) parts outweigh the upstream round buttons.
+ * Glass and matching the SDE WM frames (0.1.0~alpha51, after Mint-Y):
+ * minimize, maximize and close on the right (gtk-decoration-layout
+ * ":minimize,maximize,close"), small thin glyphs, a soft gray disc behind
+ * the close cross and behind the other glyphs while hovered, a muted red
+ * close only while hovered. The disc is the content box (background-clip),
+ * so the hit area stays 30 px. The window and :not(.suggested-action) parts
+ * outweigh the upstream buttons. @CAPTION_*@ come from tools/build-themes.py.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 window windowcontrols > button:not(.suggested-action):not(.destructive-action) {
-  min-width: 40px;
-  min-height: 30px;
-  margin: 0;
-  padding: 0;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0 1px;
+  padding: 6px;
   border: none;
-  border-radius: @RADIUS_SMALL@;
-  color: @sde_titlebar_text;
+  border-radius: 9999px;
+  background-clip: content-box;
+  color: @CAPTION_GLYPH@;
   background-color: transparent;
   background-image: none;
   box-shadow: none;
+  outline: none;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action) > image {
-  min-width: 16px;
-  min-height: 16px;
-  padding: 0;
+  min-width: 12px;
+  min-height: 12px;
+  padding: 3px;
   margin: 0;
   color: inherit;
   background: none;
   box-shadow: none;
-  -gtk-icon-size: 16px;
+  -gtk-icon-size: 12px;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action):hover {
-  background-color: alpha(@sde_titlebar_text, 0.10);
-  color: @sde_titlebar_text;
+  background-color: @CAPTION_DISC@;
+  color: @sde_titlebar;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action):active {
-  background-color: alpha(@sde_titlebar_text, 0.18);
+  background-color: @CAPTION_PRESS@;
+  color: @sde_titlebar;
+}
+window windowcontrols > button:not(.suggested-action):not(.destructive-action).close {
+  background-color: @CAPTION_DISC@;
+  color: @sde_titlebar;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action).close:hover {
-  background-color: @CLOSE_HOVER@;
+  background-color: @CAPTION_CLOSE@;
   color: #FFFFFF;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action).close:active {
-  background-color: shade(@CLOSE_HOVER@, 0.88);
+  background-color: @CAPTION_CLOSE_PRESS@;
   color: #FFFFFF;
 }
 window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action) {
-  color: @sde_titlebar_text_inactive;
+  color: @CAPTION_INACTIVE_GLYPH@;
   background-color: transparent;
 }
+window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action).close {
+  color: @sde_titlebar_inactive;
+  background-color: @CAPTION_INACTIVE_DISC@;
+}
 window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action):hover {
-  color: @sde_titlebar_text;
-  background-color: alpha(@sde_titlebar_text, 0.10);
+  color: @sde_titlebar;
+  background-color: @CAPTION_DISC@;
 }
 window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action).close:hover {
-  background-color: @CLOSE_HOVER@;
+  background-color: @CAPTION_CLOSE@;
   color: #FFFFFF;
 }
-window.maximized windowcontrols > button:not(.suggested-action):not(.destructive-action),
-window.tiled windowcontrols > button:not(.suggested-action):not(.destructive-action) { border-radius: 0; }

@@ -43,7 +43,8 @@
 }
 
 .liria-pathbar button:checked {
-  background-image: linear-gradient(to bottom, shade(@sde_accent, 1.12), @sde_accent);
+  background-image: none;
+  background-color: @sde_accent;
   border-color: shade(@sde_accent, 0.88);
   color: @sde_accent_fg;
 }
@@ -139,17 +140,18 @@
 /* Photo: dark stage around the picture and a floating glass filmstrip. */
 .sdeview-window .view,
 .sdeview-window scrolledwindow > viewport {
-  background-color: #1C222B;
+  background-color: #1E1E20;
 }
 
 .sdeview-window .sdeview-image-collection-scrollbar,
 .sdeview-window iconview {
-  background-color: alpha(#1C222B, 0.96);
-  color: #E8EEF5;
+  background-color: alpha(#1E1E20, 0.96);
+  color: #E8E8EA;
 }
 
 .sdeview-window iconview:selected {
-  background-image: linear-gradient(to bottom, alpha(@sde_accent, 0.55), alpha(@sde_accent, 0.75));
+  background-image: none;
+  background-color: alpha(@sde_accent, 0.70);
   border-radius: 8px;
   color: #FFFFFF;
 }
@@ -539,7 +541,7 @@ notebook.frame > header {
   padding: 10px 14px 12px;
   border-radius: 16px;
   background-color: @sde_view;
-  background-image: linear-gradient(160deg, alpha(@sde_accent, 0.11), alpha(@sde_accent, 0.0) 55%);
+  background-image: none;
 }
 
 .sde-home-title {
@@ -609,7 +611,7 @@ button.sde-card {
   border-radius: 14px;
   border: 1px solid @sde_border_soft;
   background-color: @sde_bg;
-  background-image: linear-gradient(to bottom, alpha(@sde_glass_top, 0.35), alpha(@sde_glass_bottom, 0.10));
+  background-image: none;
   box-shadow: 0 1px 2px alpha(@sde_shadow, 0.55);
   color: @sde_fg;
 }
@@ -663,13 +665,13 @@ levelbar.sde-usage-bar block {
 }
 
 levelbar.sde-usage-bar block.filled.sde-normal {
-  background-image: linear-gradient(to right, shade(@sde_accent, 1.15), @sde_accent);
+  background-image: none;
   background-color: @sde_accent;
 }
 
 levelbar.sde-usage-bar block.filled.sde-critical {
   background-image: none;
-  background-color: #D9434E;
+  background-color: @sde_error;
 }
 
 levelbar.sde-usage-bar block.empty {

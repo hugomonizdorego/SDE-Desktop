@@ -1,70 +1,84 @@
 /* SDE caption buttons (GTK 3), shared by SDE Graphite, SDE Fluent and SDE
- * Glass and matching the SDE WM frames: minimize, maximize and close on the
- * right (gtk-decoration-layout ":minimize,maximize,close"), clear symbolic
- * glyphs, a comfortable target, a hover layer and a red close. The
- * :not(.suggested-action) parts outweigh the upstream round buttons.
+ * Glass and matching the SDE WM frames (0.1.0~alpha51, after Mint-Y):
+ * minimize, maximize and close on the right (gtk-decoration-layout
+ * ":minimize,maximize,close"), small thin glyphs, a soft gray disc behind
+ * the close cross and behind the other glyphs while hovered, a muted red
+ * close only while hovered. The disc is the content box (background-clip),
+ * so the hit area stays 30 px. The :not(.suggested-action) parts outweigh
+ * the upstream buttons. @CAPTION_*@ come from tools/build-themes.py.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu),
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu) {
-  min-width: 40px;
-  min-height: 30px;
-  margin: 0;
-  padding: 0;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0 1px;
+  padding: 6px;
   border: none;
-  border-radius: @RADIUS_SMALL@;
-  color: @sde_titlebar_text;
+  border-radius: 9999px;
+  background-clip: content-box;
+  color: @CAPTION_GLYPH@;
   background-color: transparent;
   background-image: none;
   box-shadow: none;
+  outline: none;
   text-shadow: none;
   -gtk-icon-shadow: none;
-  -gtk-icon-transform: none;
+  -gtk-icon-transform: scale(0.75);
   -gtk-icon-effect: none;
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu) image,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu) image {
   color: inherit;
   opacity: 1;
+  -gtk-icon-transform: scale(0.75);
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):hover,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):hover {
-  background-color: alpha(@sde_titlebar_text, 0.10);
+  background-color: @CAPTION_DISC@;
   background-image: none;
-  color: @sde_titlebar_text;
+  color: @sde_titlebar;
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):active,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):active {
-  background-color: alpha(@sde_titlebar_text, 0.18);
+  background-color: @CAPTION_PRESS@;
   background-image: none;
+  color: @sde_titlebar;
+}
+headerbar button.titlebutton:not(.suggested-action):not(.destructive-action).close,
+.titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action).close {
+  background-color: @CAPTION_DISC@;
+  color: @sde_titlebar;
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action).close:hover,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action).close:hover {
-  background-color: @CLOSE_HOVER@;
+  background-color: @CAPTION_CLOSE@;
   color: #FFFFFF;
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action).close:active,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action).close:active {
-  background-color: shade(@CLOSE_HOVER@, 0.88);
+  background-color: @CAPTION_CLOSE_PRESS@;
   color: #FFFFFF;
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):backdrop,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):backdrop {
-  color: @sde_titlebar_text_inactive;
+  color: @CAPTION_INACTIVE_GLYPH@;
   background-color: transparent;
   background-image: none;
   box-shadow: none;
 }
+headerbar button.titlebutton:not(.suggested-action):not(.destructive-action).close:backdrop,
+.titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action).close:backdrop {
+  background-color: @CAPTION_INACTIVE_DISC@;
+  color: @sde_titlebar_inactive;
+}
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):backdrop:hover,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu):backdrop:hover {
-  color: @sde_titlebar_text;
-  background-color: alpha(@sde_titlebar_text, 0.10);
+  color: @sde_titlebar;
+  background-color: @CAPTION_DISC@;
 }
 headerbar button.titlebutton:not(.suggested-action):not(.destructive-action).close:backdrop:hover,
 .titlebar:not(headerbar) button.titlebutton:not(.suggested-action):not(.destructive-action).close:backdrop:hover {
-  background-color: @CLOSE_HOVER@;
+  background-color: @CAPTION_CLOSE@;
   color: #FFFFFF;
 }
-/* Maximized and tiled windows: the buttons reach the top edge. */
-.maximized headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu),
-.tiled headerbar button.titlebutton:not(.suggested-action):not(.destructive-action):not(.appmenu) { border-radius: 0; }

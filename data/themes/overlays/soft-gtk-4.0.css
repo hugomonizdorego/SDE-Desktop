@@ -1,0 +1,79 @@
+/* SDE soft layer (GTK 4), every family since 0.1.0~alpha51: the SDE palette
+ * on the main surfaces and soft corners on windows, header bars, popovers,
+ * menus, buttons, fields, lists, tooltips, pill-shaped scrollbars, switches
+ * and sliders. @RADIUS@ and friends come from data/themes/palettes.json.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* ------------------------------------------------------------ colors */
+
+@define-color accent_bg_color @sde_accent;
+@define-color accent_fg_color @sde_on_accent;
+@define-color window_bg_color @sde_background;
+@define-color window_fg_color @sde_text;
+@define-color view_bg_color @sde_surface;
+@define-color view_fg_color @sde_text;
+@define-color headerbar_bg_color @sde_titlebar;
+@define-color headerbar_fg_color @sde_titlebar_text;
+@define-color headerbar_backdrop_color @sde_titlebar_inactive;
+@define-color popover_bg_color @sde_menu;
+@define-color popover_fg_color @sde_text;
+@define-color card_bg_color @sde_surface;
+@define-color sidebar_bg_color @sde_surface_alt;
+
+window.background:not(.popup):not(.tooltip) { background-color: @sde_background; color: @sde_text; }
+.view, textview > text, iconview, gridview, columnview { background-color: @sde_surface; color: @sde_text; }
+.sidebar, .navigation-sidebar, stacksidebar { background-color: @sde_surface_alt; }
+headerbar {
+  background-color: @sde_titlebar;
+  background-image: none;
+  color: @sde_titlebar_text;
+  box-shadow: inset 0 -1px @sde_border;
+}
+window:backdrop headerbar { background-color: @sde_titlebar_inactive; color: @sde_titlebar_text_inactive; }
+popover > contents, popover > arrow, popover.menu > contents { background-color: @sde_menu; color: @sde_text; }
+tooltip, tooltip.background {
+  background-color: @sde_menu;
+  color: @sde_text;
+  border: 1px solid @sde_border;
+  box-shadow: none;
+}
+text selection, label selection, .view:selected, row:selected { background-color: @sde_accent; color: @sde_on_accent; }
+
+/* ---------------------------------------------------------- corners */
+
+window.csd { border-radius: @RADIUS@; }
+window.csd > .titlebar, window.csd > headerbar.titlebar {
+  border-top-left-radius: @RADIUS@;
+  border-top-right-radius: @RADIUS@;
+}
+window.maximized, window.fullscreen, window.tiled, window.tiled-top, window.tiled-bottom,
+window.tiled-left, window.tiled-right, window.solid-csd { border-radius: 0; }
+window.maximized > .titlebar, window.fullscreen > .titlebar, window.tiled > .titlebar,
+window.solid-csd > .titlebar { border-radius: 0; }
+window.dialog.message, window.messagedialog { border-radius: @RADIUS_LARGE@; }
+
+popover > contents, popover.menu > contents { border-radius: @RADIUS@; }
+popover.menu modelbutton, popover modelbutton, popover.menu menuitem { border-radius: @RADIUS_SMALL@; }
+popovermenubar > item { border-radius: @RADIUS_SMALL@; }
+
+button:not(.titlebutton):not(.circular):not(.pill), entry, spinbutton:not(.vertical),
+dropdown > button, combobox > box > button.combo { border-radius: @RADIUS_SMALL@; }
+.linked:not(.vertical) > *:not(:first-child):not(:last-child),
+.linked.vertical > *:not(:first-child):not(:last-child) { border-radius: 0; }
+.linked:not(.vertical) > *:first-child:not(:only-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.linked:not(.vertical) > *:last-child:not(:only-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.linked.vertical > *:first-child:not(:only-child) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.linked.vertical > *:last-child:not(:only-child) { border-top-left-radius: 0; border-top-right-radius: 0; }
+check { border-radius: 4px; }
+radio { border-radius: 9999px; }
+
+.navigation-sidebar > row, stacksidebar row, .sidebar row { border-radius: @RADIUS_SMALL@; margin: 1px 6px; }
+.card, list.boxed-list, .boxed-list, frame { border-radius: @RADIUS@; }
+infobar, .app-notification, .osd, toast { border-radius: @RADIUS@; }
+notebook > header > tabs > tab { border-radius: @RADIUS_SMALL@ @RADIUS_SMALL@ 0 0; }
+tooltip, tooltip.background { border-radius: @RADIUS_SMALL@; }
+
+scrollbar slider, scrollbar trough { border-radius: 9999px; }
+switch, switch > slider { border-radius: 9999px; }
+scale > trough, scale > trough > highlight, scale > trough > fill, scale > trough > slider { border-radius: 9999px; }
+progressbar > trough, progressbar > trough > progress, levelbar > trough, levelbar block { border-radius: 9999px; }

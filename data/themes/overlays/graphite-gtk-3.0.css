@@ -6,9 +6,9 @@
 tooltip.background { border-radius: @RADIUS_SMALL@; }
 popover.background { border-radius: @RADIUS@; }
 
-/* GTK 3 menus are opaque X windows under SDE WM (with or without the
- * compositor): square corners, the compositor adds the shadow. */
-menu, .menu, .context-menu, .csd menu, .csd .menu, .csd .context-menu {
+/* GTK 3 menus without a compositor are opaque X windows: square corners.
+ * With one (.csd) they are rounded by soft-gtk-3.0.css. */
+menu, .menu, .context-menu {
   border-radius: 0;
   margin: 0;
 }

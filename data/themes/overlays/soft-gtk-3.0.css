@@ -1,0 +1,131 @@
+/* SDE soft layer (GTK 3), every family since 0.1.0~alpha51: the SDE palette
+ * on the main surfaces (so GTK applications match SDE programs and the SDE WM
+ * frames whatever the upstream theme chose) and soft corners everywhere:
+ * windows, header bars, popovers, menus, buttons, fields, lists, tooltips,
+ * pill-shaped scrollbars, switches and sliders. @RADIUS@ and friends come
+ * from data/themes/palettes.json.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* ------------------------------------------------------------ colors */
+
+window.background:not(.popup):not(.tooltip) { background-color: @sde_background; color: @sde_text; }
+.view, iconview, textview text, treeview.view, .content-view {
+  background-color: @sde_surface;
+  color: @sde_text;
+}
+.view:selected, iconview:selected, treeview.view:selected, list row:selected,
+textview text selection, entry selection, label selection {
+  background-color: @sde_accent;
+  color: @sde_on_accent;
+}
+.sidebar, placessidebar, stacksidebar, .sidebar .view { background-color: @sde_surface_alt; }
+headerbar, .titlebar:not(headerbar) {
+  background-color: @sde_titlebar;
+  background-image: none;
+  color: @sde_titlebar_text;
+  border-color: @sde_border;
+  box-shadow: none;
+}
+headerbar:backdrop, .titlebar:not(headerbar):backdrop {
+  background-color: @sde_titlebar_inactive;
+  color: @sde_titlebar_text_inactive;
+}
+headerbar .title { color: @sde_titlebar_text; }
+headerbar .subtitle { color: @sde_titlebar_text_inactive; }
+popover.background, menu, .menu, .context-menu {
+  background-color: @sde_menu;
+  color: @sde_text;
+}
+tooltip.background, tooltip.background.csd {
+  background-color: @sde_menu;
+  color: @sde_text;
+  border: 1px solid @sde_border;
+  box-shadow: none;
+  text-shadow: none;
+}
+tooltip.background label { color: @sde_text; }
+entry { caret-color: @sde_accent; }
+entry:focus { border-color: @sde_accent; }
+link, button.link, *:link { color: @sde_accent; }
+
+/* ---------------------------------------------------------- corners */
+
+/* Client-side decorated windows (dialogs, header bar applications). */
+decoration, window.csd decoration { border-radius: @RADIUS@; }
+.maximized decoration, .tiled decoration, .fullscreen decoration,
+.tiled-top decoration, .tiled-bottom decoration, .tiled-left decoration, .tiled-right decoration,
+.solid-csd decoration { border-radius: 0; }
+window.csd > .titlebar, window.csd > headerbar.titlebar,
+window.csd > .titlebar headerbar:first-child, window.csd > .titlebar headerbar:last-child {
+  border-top-left-radius: @RADIUS@;
+  border-top-right-radius: @RADIUS@;
+}
+.maximized .titlebar, .tiled .titlebar, .fullscreen .titlebar, .solid-csd .titlebar,
+.tiled-top .titlebar, .tiled-left .titlebar, .tiled-right .titlebar { border-radius: 0; }
+messagedialog.csd decoration, dialog.csd decoration { border-radius: @RADIUS_LARGE@; }
+messagedialog .dialog-action-area button:first-child { border-bottom-left-radius: @RADIUS_LARGE@; }
+messagedialog .dialog-action-area button:last-child { border-bottom-right-radius: @RADIUS_LARGE@; }
+
+/* Popovers and menus. Composited menus (.csd) are rounded; opaque X menus
+ * without a compositor stay square, where corners cannot be transparent. */
+popover.background { border-radius: @RADIUS@; }
+.csd menu, .csd .menu, .csd .context-menu {
+  border-radius: @RADIUS@;
+  border: 1px solid @sde_border;
+  padding: 4px 0;
+}
+menu menuitem, .menu menuitem, .context-menu menuitem {
+  border-radius: @RADIUS_SMALL@;
+  margin: 0 4px;
+}
+popover modelbutton, popover.menu modelbutton { border-radius: @RADIUS_SMALL@; }
+menubar > menuitem { border-radius: @RADIUS_SMALL@; }
+
+/* Buttons and fields. */
+button:not(.titlebutton):not(.circular):not(.image-button.circular),
+entry, spinbutton:not(.vertical), combobox > box > button.combo, combobox button,
+.linked > button.combo { border-radius: @RADIUS_SMALL@; }
+.linked > button:not(:first-child):not(:last-child),
+.linked > entry:not(:first-child):not(:last-child),
+.linked > combobox:not(:first-child):not(:last-child) > box > button.combo { border-radius: 0; }
+.linked:not(.vertical) > button:first-child:not(:only-child),
+.linked:not(.vertical) > entry:first-child:not(:only-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.linked:not(.vertical) > button:last-child:not(:only-child),
+.linked:not(.vertical) > entry:last-child:not(:only-child) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.linked.vertical > button:first-child:not(:only-child),
+.linked.vertical > entry:first-child:not(:only-child) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.linked.vertical > button:last-child:not(:only-child),
+.linked.vertical > entry:last-child:not(:only-child) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+check { border-radius: 4px; }
+radio { border-radius: 9999px; }
+
+/* Lists, sidebars and cards: the selection is a soft pill inside the list. */
+.sidebar row, placessidebar row, stacksidebar row, list.navigation-sidebar row {
+  border-radius: @RADIUS_SMALL@;
+  margin: 1px 6px;
+}
+frame > border, .frame { border-radius: @RADIUS_SMALL@; }
+list.content, list.boxed-list, .card { border-radius: @RADIUS@; }
+infobar, infobar > revealer > box { border-radius: @RADIUS_SMALL@; }
+notebook > header > tabs > tab { border-radius: @RADIUS_SMALL@ @RADIUS_SMALL@ 0 0; }
+.app-notification, .osd { border-radius: @RADIUS@; }
+tooltip.background, tooltip { border-radius: @RADIUS_SMALL@; }
+
+/* Pills: scrollbars, switches, sliders, progress bars. */
+scrollbar slider { border-radius: 9999px; }
+scrollbar trough { border-radius: 9999px; }
+switch, switch slider { border-radius: 9999px; }
+scale trough, scale highlight, scale fill, scale slider { border-radius: 9999px; }
+progressbar trough, progressbar progress, levelbar trough, levelbar block { border-radius: 9999px; }

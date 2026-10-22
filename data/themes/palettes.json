@@ -1,123 +1,153 @@
 {
-  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Every family has right-hand caption buttons (minimize, maximize, close) with glyphs, a hover layer and a red close; caption sets their size in percent of the title height, the spacing in pixels and the close hover color.",
+  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Since 0.1.0~alpha51 the palettes are calm, low-chroma neutrals (Graphite neutral, Fluent cool slate, Glass warm stone) with muted accents, and every family has soft corners (radius_small for buttons and fields, radius for windows, menus and cards, radius_large for big surfaces). Caption buttons are on the right (minimize, maximize, close) in the style of Mint-Y: thin small glyphs, a soft gray disc behind the close cross (and behind the other glyphs while hovered), a muted red close only while hovered; caption sets the hit area in percent of the title height, the spacing in pixels and that red.",
   "default": {"family": "graphite", "mode": "light", "accent": "blue"},
   "accents": ["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "graphite"],
-  "accent_labels": {"blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow",
-                    "orange": "Orange", "red": "Red", "pink": "Pink", "purple": "Purple",
-                    "graphite": "Graphite"},
+  "accent_labels": {
+    "blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow", "orange": "Orange", "red": "Red",
+    "pink": "Pink", "purple": "Purple", "graphite": "Graphite"
+  },
   "families": {
     "graphite": {
       "label": "Graphite",
-      "description": "Calm, soft depth and vibrancy, after Apple's Human Interface Guidelines",
+      "description": "Calm neutral grays with soft corners and muted accents, the default",
       "prefix": "SDE-Graphite",
       "upstream": "graphite-gtk-theme",
-      "radius": 10, "radius_small": 6, "radius_large": 14, "shadow_radius": 18,
-      "glass": false, "mica": 0.0, "translucency": 0.10,
-      "buttons": "caption", "title_layout": "NLIMC", "title_justify": "center",
+      "radius": 10,
+      "radius_small": 6,
+      "radius_large": 12,
+      "shadow_radius": 18,
+      "glass": false,
+      "mica": 0.0,
+      "translucency": 0.1,
+      "buttons": "caption",
+      "title_layout": "NLIMC",
+      "title_justify": "center",
       "menu_highlight": "accent",
-      "caption": {"width": 115, "height": 100, "spacing": 0, "glyph": "regular", "close_hover": "#D93025"},
+      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C4554D"},
       "accent": {
-        "blue": ["#3684DD", "#5294E2"], "teal": ["#009688", "#4DB6AC"],
-        "green": ["#4CAF50", "#66BB6A"], "yellow": ["#FBC02D", "#FFD600"],
-        "orange": ["#F57C00", "#FB8C00"], "red": ["#E53935", "#F44336"],
-        "pink": ["#EC407A", "#F06292"], "purple": ["#AB47BC", "#BA68C8"],
-        "graphite": ["#333333", "#E0E0E0"]
+        "blue": ["#3876B9", "#6A9FD8"], "teal": ["#2B807B", "#5AB0A9"], "green": ["#4A9157", "#7BBA84"],
+        "yellow": ["#C29C48", "#D8B964"], "orange": ["#C9773F", "#E0955E"], "red": ["#C24D45", "#DD7A72"],
+        "pink": ["#B9547C", "#D883A3"], "purple": ["#7E61A8", "#A58CCB"], "graphite": ["#55585E", "#B4B7BC"]
       },
-      "upstream_accent": {"blue": "blue", "teal": "teal", "green": "green", "yellow": "yellow",
-                          "orange": "orange", "red": "red", "pink": "pink", "purple": "purple",
-                          "graphite": "default"},
+      "upstream_accent": {
+        "blue": "blue", "teal": "teal", "green": "green", "yellow": "yellow", "orange": "orange",
+        "red": "red", "pink": "pink", "purple": "purple", "graphite": "default"
+      },
       "light": {
-        "background": "#FAFAFA", "surface": "#FFFFFF", "surface_alt": "#F2F2F2", "hover": "#EBEBEB",
-        "text": "#212121", "text_dim": "#6B6B6B", "border": "#E0E0E0", "shadow": "#000000",
-        "shadow_alpha": 0.18, "menu": "#FFFFFF", "panel": "#F2F2F2",
-        "titlebar": "#FFFFFF", "titlebar_inactive": "#FAFAFA",
-        "titlebar_text": "#212121", "titlebar_text_inactive": "#8F8F8F",
-        "success": "#0F9D58", "warning": "#F4B400", "error": "#D93025"
+        "background": "#F6F6F7", "surface": "#FFFFFF", "surface_alt": "#EEEEF0", "hover": "#E5E5E8",
+        "text": "#2B2B2F", "text_dim": "#5F5F66", "border": "#DADADD", "shadow": "#000000",
+        "shadow_alpha": 0.16, "menu": "#FFFFFF", "panel": "#F0F0F2", "titlebar": "#EBEBED",
+        "titlebar_inactive": "#F3F3F4", "titlebar_text": "#3A3A3F", "titlebar_text_inactive": "#8A8A90",
+        "success": "#3F8A4E", "warning": "#9C6B14", "error": "#B8463D"
       },
       "dark": {
-        "background": "#242424", "surface": "#2C2C2C", "surface_alt": "#333333", "hover": "#3C3C3C",
-        "text": "#F2F2F2", "text_dim": "#ABABAB", "border": "#454545", "shadow": "#000000",
-        "shadow_alpha": 0.45, "menu": "#2C2C2C", "panel": "#212121",
-        "titlebar": "#2C2C2C", "titlebar_inactive": "#242424",
-        "titlebar_text": "#F2F2F2", "titlebar_text_inactive": "#8C8C8C",
-        "success": "#81C995", "warning": "#FDD633", "error": "#F28B82"
+        "background": "#2C2C2E", "surface": "#343437", "surface_alt": "#262628", "hover": "#3E3E42",
+        "text": "#E6E6E8", "text_dim": "#A6A6AC", "border": "#47474B", "shadow": "#000000",
+        "shadow_alpha": 0.42, "menu": "#313134", "panel": "#232325", "titlebar": "#262628",
+        "titlebar_inactive": "#2A2A2C", "titlebar_text": "#DCDCDE", "titlebar_text_inactive": "#85858B",
+        "success": "#78BE87", "warning": "#D9B060", "error": "#E88079"
       }
     },
     "fluent": {
       "label": "Fluent",
-      "description": "Light, depth and translucent Mica and Acrylic materials, after the Fluent Design System",
+      "description": "Cool slate grays, light layers and gentle Mica and Acrylic, after the Fluent Design System",
       "prefix": "SDE-Fluent",
       "upstream": "flat-remix-gtk",
-      "radius": 8, "radius_small": 4, "radius_large": 12, "shadow_radius": 22,
-      "glass": false, "mica": 0.035, "translucency": 0.14,
-      "buttons": "caption", "title_layout": "NLIMC", "title_justify": "left",
+      "radius": 8,
+      "radius_small": 5,
+      "radius_large": 12,
+      "shadow_radius": 20,
+      "glass": false,
+      "mica": 0.015,
+      "translucency": 0.14,
+      "buttons": "caption",
+      "title_layout": "NLIMC",
+      "title_justify": "left",
       "menu_highlight": "subtle",
-      "caption": {"width": 120, "height": 100, "spacing": 0, "glyph": "thin", "close_hover": "#C42B1C"},
+      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#B9473F"},
       "accent": {
-        "blue": ["#2777FF", "#2777FF"], "teal": ["#0099A1", "#0099A1"],
-        "green": ["#06A284", "#06A284"], "yellow": ["#FFD86E", "#FFD86E"],
-        "orange": ["#FD7D00", "#FD7D00"], "red": ["#EC0101", "#EC0101"],
-        "pink": ["#CD0245", "#CD0245"], "purple": ["#962AC3", "#962AC3"],
-        "graphite": ["#737680", "#737680"]
+        "blue": ["#3A6EAD", "#6B9FDC"], "teal": ["#2A787C", "#57AEB3"], "green": ["#367D50", "#6CBC88"],
+        "yellow": ["#AE8B3E", "#DDBE62"], "orange": ["#B0623A", "#E5935E"], "red": ["#B4433C", "#E3786F"],
+        "pink": ["#A94870", "#DD7FA2"], "purple": ["#6E52A3", "#A48BD5"], "graphite": ["#5C6168", "#A2A6AD"]
       },
-      "upstream_accent": {"blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow",
-                          "orange": "Orange", "red": "Red", "pink": "Magenta", "purple": "Violet",
-                          "graphite": "Grey"},
+      "upstream_accent": {
+        "blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow", "orange": "Orange",
+        "red": "Red", "pink": "Magenta", "purple": "Violet", "graphite": "Grey"
+      },
+      "upstream_accent_color": {
+        "blue": ["#2777FF", "#2777FF"], "teal": ["#0099A1", "#0099A1"], "green": ["#06A284", "#06A284"],
+        "yellow": ["#FFD86E", "#FFD86E"], "orange": ["#FD7D00", "#FD7D00"], "red": ["#EC0101", "#EC0101"],
+        "pink": ["#CD0245", "#CD0245"], "purple": ["#962AC3", "#962AC3"], "graphite": ["#737680", "#737680"]
+      },
       "light": {
-        "background": "#F7F7F7", "surface": "#FFFFFF", "surface_alt": "#EBEBEB", "hover": "#E5E5E5",
-        "text": "#333333", "text_dim": "#666666", "border": "#DCDCDC", "shadow": "#000000",
-        "shadow_alpha": 0.20, "menu": "#FBFBFB", "panel": "#EEEEEE",
-        "titlebar": "#EBEBEB", "titlebar_inactive": "#F5F5F5",
-        "titlebar_text": "#333333", "titlebar_text_inactive": "#8A8A8A",
-        "success": "#1B8553", "warning": "#9C6E03", "error": "#C42B1C"
+        "background": "#F3F4F6", "surface": "#FCFCFD", "surface_alt": "#EBEDF0", "hover": "#E2E5E9",
+        "text": "#24272C", "text_dim": "#5B5F66", "border": "#D5D9DE", "shadow": "#000000",
+        "shadow_alpha": 0.18, "menu": "#FAFAFB", "panel": "#EDEFF2", "titlebar": "#EEF0F3",
+        "titlebar_inactive": "#F4F5F7", "titlebar_text": "#24272C", "titlebar_text_inactive": "#888C93",
+        "success": "#2F7A4D", "warning": "#8E6512", "error": "#B2423A"
       },
       "dark": {
-        "background": "#23252E", "surface": "#272A34", "surface_alt": "#1A1C23", "hover": "#323541",
-        "text": "#EEEEEC", "text_dim": "#A6A9B3", "border": "#3A3D4A", "shadow": "#000000",
-        "shadow_alpha": 0.50, "menu": "#2B2E39", "panel": "#1A1C23",
-        "titlebar": "#1A1C23", "titlebar_inactive": "#23252E",
-        "titlebar_text": "#EEEEEC", "titlebar_text_inactive": "#80838D",
-        "success": "#57D18E", "warning": "#F5C451", "error": "#FF6B5E"
+        "background": "#24262A", "surface": "#2C2F33", "surface_alt": "#1F2124", "hover": "#363940",
+        "text": "#EBECEE", "text_dim": "#A2A6AD", "border": "#3D4046", "shadow": "#000000",
+        "shadow_alpha": 0.46, "menu": "#2B2D32", "panel": "#1D1F22", "titlebar": "#202226",
+        "titlebar_inactive": "#24262A", "titlebar_text": "#EBECEE", "titlebar_text_inactive": "#7F838A",
+        "success": "#6DBE8B", "warning": "#DDB862", "error": "#EC8A80"
       }
     },
     "glass": {
       "label": "Glass",
-      "description": "Frosted, rounded and translucent; the successor of SDE Aero and SDE Liquid Glass",
+      "description": "Warm stone grays, frosted translucency and the softest corners; the successor of SDE Aero and SDE Liquid Glass",
       "prefix": "SDE-Glass",
       "upstream": "graphite-gtk-theme",
       "base": "graphite",
-      "radius": 16, "radius_small": 10, "radius_large": 22, "shadow_radius": 24,
-      "glass": true, "mica": 0.025, "translucency": 0.22,
-      "buttons": "caption", "title_layout": "NLIMC", "title_justify": "center",
+      "radius": 12,
+      "radius_small": 8,
+      "radius_large": 16,
+      "shadow_radius": 22,
+      "glass": true,
+      "mica": 0.0,
+      "translucency": 0.22,
+      "buttons": "caption",
+      "title_layout": "NLIMC",
+      "title_justify": "center",
       "menu_highlight": "accent",
-      "caption": {"width": 115, "height": 100, "spacing": 0, "glyph": "regular", "close_hover": "#D93A3A"},
+      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#BF5A4C"},
       "accent": "graphite",
       "light": {
-        "background": "#EEF2F8", "surface": "#F8FAFD", "surface_alt": "#E5EAF2", "hover": "#DCE3EE",
-        "text": "#1A2230", "text_dim": "#586477", "border": "#C9D3E1", "shadow": "#0B1622",
-        "shadow_alpha": 0.22, "menu": "#F6F8FC", "panel": "#E9EEF6",
-        "titlebar": "#F4F7FB", "titlebar_inactive": "#EEF2F8",
-        "titlebar_text": "#1A2230", "titlebar_text_inactive": "#8792A3",
-        "success": "#16A05D", "warning": "#C98A00", "error": "#D93A3A"
+        "background": "#F4F2EF", "surface": "#FCFBF9", "surface_alt": "#ECE9E5", "hover": "#E3E0DB",
+        "text": "#2C2925", "text_dim": "#625E58", "border": "#D8D4CE", "shadow": "#1A140E",
+        "shadow_alpha": 0.18, "menu": "#FAF9F7", "panel": "#EEEBE7", "titlebar": "#EDEAE6",
+        "titlebar_inactive": "#F3F1EE", "titlebar_text": "#2C2925", "titlebar_text_inactive": "#8B8680",
+        "success": "#47834F", "warning": "#94680F", "error": "#B4473C"
       },
       "dark": {
-        "background": "#181B22", "surface": "#21252E", "surface_alt": "#2A2F3A", "hover": "#343A47",
-        "text": "#EEF1F6", "text_dim": "#A3ACBB", "border": "#3D4452", "shadow": "#000000",
-        "shadow_alpha": 0.50, "menu": "#232731", "panel": "#1C2028",
-        "titlebar": "#21252E", "titlebar_inactive": "#1B1F27",
-        "titlebar_text": "#EEF1F6", "titlebar_text_inactive": "#7F8796",
-        "success": "#5FD39A", "warning": "#F2C14E", "error": "#FF7A7A"
+        "background": "#2A2826", "surface": "#33302D", "surface_alt": "#242220", "hover": "#3E3B37",
+        "text": "#ECE8E2", "text_dim": "#AAA59F", "border": "#48443F", "shadow": "#000000",
+        "shadow_alpha": 0.44, "menu": "#302D2A", "panel": "#211F1D", "titlebar": "#262422",
+        "titlebar_inactive": "#2A2826", "titlebar_text": "#ECE8E2", "titlebar_text_inactive": "#89857E",
+        "success": "#7DBB86", "warning": "#DDB565", "error": "#E8857B"
       }
     }
   },
   "legacy": {
-    "comment": "Old [appearance] style values and the theme directories of 0.1.0~alpha15 and earlier.",
-    "styles": {"sde": "graphite", "aero": "fluent", "liquid-glass": "glass", "liquid": "glass",
-               "glass": "glass", "graphite": "graphite", "fluent": "fluent"},
-    "accents": {"#2672BE": "blue", "#167D9A": "teal", "#2F6FDB": "blue", "#7A4FD1": "purple",
-                "#C2407A": "pink", "#D9682B": "orange", "#277A4C": "green", "#5A6472": "graphite"},
-    "directories": {"SDE": ["graphite", "light"], "SDE-Dark": ["graphite", "dark"],
-                    "SDE-Aero": ["fluent", "light"], "SDE-Aero-Dark": ["fluent", "dark"],
-                    "SDE-Liquid-Glass": ["glass", "light"], "SDE-Liquid-Glass-Dark": ["glass", "dark"]}
+    "comment": "Old [appearance] style values, the theme directories of 0.1.0~alpha15 and earlier, and the accent colors of earlier palettes (alpha15 swatches and the alpha16 to alpha50 accents), which map to the named accent of the current palette.",
+    "styles": {
+      "sde": "graphite", "aero": "fluent", "liquid-glass": "glass", "liquid": "glass", "glass": "glass",
+      "graphite": "graphite", "fluent": "fluent"
+    },
+    "accents": {
+      "#2672BE": "blue", "#167D9A": "teal", "#2F6FDB": "blue", "#7A4FD1": "purple", "#C2407A": "pink",
+      "#D9682B": "orange", "#277A4C": "green", "#5A6472": "graphite", "#3684DD": "blue", "#5294E2": "blue",
+      "#009688": "teal", "#4DB6AC": "teal", "#4CAF50": "green", "#66BB6A": "green", "#FBC02D": "yellow",
+      "#FFD600": "yellow", "#F57C00": "orange", "#FB8C00": "orange", "#E53935": "red", "#F44336": "red",
+      "#EC407A": "pink", "#F06292": "pink", "#AB47BC": "purple", "#BA68C8": "purple", "#333333": "graphite",
+      "#E0E0E0": "graphite", "#2777FF": "blue", "#0099A1": "teal", "#06A284": "green", "#FFD86E": "yellow",
+      "#FD7D00": "orange", "#EC0101": "red", "#CD0245": "pink", "#962AC3": "purple", "#737680": "graphite"
+    },
+    "directories": {
+      "SDE": ["graphite", "light"], "SDE-Dark": ["graphite", "dark"], "SDE-Aero": ["fluent", "light"],
+      "SDE-Aero-Dark": ["fluent", "dark"], "SDE-Liquid-Glass": ["glass", "light"],
+      "SDE-Liquid-Glass-Dark": ["glass", "dark"]
+    }
   }
 }
