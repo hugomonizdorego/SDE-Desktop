@@ -73,7 +73,8 @@ DrawnButton *FindBar::chip(const char *label, bool *flag) {
 DrawnButton *FindBar::icon_button(icon::Kind kind, std::function<void()> fn, const char *tip) {
   auto *b = new Chip(kind, nullptr, nullptr);
   b->tooltip(tip);
-  auto *holder = new std::function<void()>(std::move(fn));  // lives as long as the window
+  actions_.push_back(std::make_unique<std::function<void()>>(std::move(fn)));
+  auto *holder = actions_.back().get();  // lives as long as the find bar
   b->callback([](Fl_Widget *, void *f) { (*static_cast<std::function<void()> *>(f))(); }, holder);
   return b;
 }

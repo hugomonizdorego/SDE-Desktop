@@ -117,6 +117,15 @@ if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   set_tests_properties(sde-lock-daemon PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif()
 
+# About windows open and close without crashing (Niny alpha 50 regression).
+if(SDE_XVFB)
+  add_test(NAME sde-about-windows COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_about_ui.py
+    niny=$<TARGET_FILE:niny> sysmon=$<TARGET_FILE:sde-system-monitor>
+    run=$<TARGET_FILE:sde-run> display=$<TARGET_FILE:sde-display-settings>)
+  set_tests_properties(sde-about-windows PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
+
 # Test helper: stock FLTK menus, dialogs and widgets in the SDE look (not
 # installed); used for screenshots of the UI kit (docs/UI-KIT.md).
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)

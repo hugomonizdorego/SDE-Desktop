@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
@@ -482,13 +483,15 @@ bool XanaraWindow::ask_choice(const std::string &title, const std::string &messa
 }
 
 void XanaraWindow::about() {
-  // The native UI kit's sde::show_about is not available yet.
-  fl_message_title(_("About Xanara"));
-  fl_message("%s", format(_("Xanara %s\nDocument viewer and PDF editor for SDE.\n\n"
-                            "Developer: DebION Dev-Team\n"
-                            "License: GPL-3.0-or-later.\nRendering by poppler %s; page tools by qpdf."),
-                          SDE_APP_VERSION, poppler_get_version())
-                       .c_str());
+  sde::AppInfo info;
+  info.name = "Xanara";
+  info.program = "xanara";
+  info.version = SDE_APP_VERSION;
+  info.icon = "x-office-document";
+  info.description = _("Document viewer and PDF editor for SDE.");
+  info.credits = {format(_("Rendering by poppler %s; page tools by qpdf."), poppler_get_version()),
+                  sde::toolkit_credit()};
+  sde::show_about(info);
 }
 
 void XanaraWindow::show_menu(int mx, int my) {

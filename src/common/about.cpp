@@ -195,6 +195,13 @@ class AboutWindow : public BufferedWindow {
 
 void show_about(const AppInfo &info) {
   fl_open_display();
+  // Programs that draw their own icons never pick an icon theme; without one
+  // the About logo would fall back to the letter tile.
+  if (!info.logo && IconLoader::theme() == "hicolor") {
+    Config cfg;
+    cfg.load();
+    IconLoader::set_theme(cfg.get("appearance", "icon_theme", "auto"));
+  }
   const Theme &t = active_theme();
   int W = S(480);
   std::string title = format(_("About %s"), info.name.c_str());
