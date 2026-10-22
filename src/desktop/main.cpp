@@ -982,8 +982,106 @@ class Desktop : public sde::BufferedWindow {
     return n;
   }
 
+  // Files dropped from Liria or another application (XDND, alpha52): FLTK
+  // delivers them as text, one file:// URI or absolute path per line. On
+  // the same drive they are moved to ~/Desktop, from another drive copied,
+  // as in a file manager; Shift moves and Ctrl copies. Existing names are
+  // never overwritten. The inotify watch then shows the new icons.
+  static std::string uri_to_path(const std::string &line) {
+    std::string s = line;
+    if (s.rfind("file://", 0) == 0) {
+      size_t slash = s.find('/', 7);
+      if (slash == std::string::npos) return std::string();
+      s = s.substr(slash);
+      std::string out;
+      for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '%' && i + 2 < s.size() && isxdigit((unsigned char)s[i + 1]) &&
+            isxdigit((unsigned char)s[i + 2])) {
+          out += char(std::stoi(s.substr(i + 1, 2), nullptr, 16));
+          i += 2;
+        } else {
+          out += s[i];
+        }
+      }
+      return out;
+    }
+    return !s.empty() && s[0] == '/' ? s : std::string();
+  }
+
+  void drop_files(const char *text, int state) {
+    std::string desk = user_dir("DESKTOP");
+    struct stat ds {};
+    if (!text || desk.empty() || stat(desk.c_str(), &ds) != 0) return;
+    std::string all = text;
+    size_t start = 0;
+    while (start <= all.size()) {
+      size_t end = all.find('\n', start);
+      std::string line = all.substr(start, end == std::string::npos ? std::string::npos : end - start);
+      start = end == std::string::npos ? all.size() + 1 : end + 1;
+      while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+      if (line.empty() || line[0] == '#') continue;
+      std::string path = uri_to_path(line);
+      struct stat fs {};
+      if (path.empty() || stat(path.c_str(), &fs) != 0) continue;
+      std::string parent = path.substr(0, path.find_last_of('/'));
+      if (parent == desk || path == desk) continue;  // already on the desktop
+      bool move = (state & FL_SHIFT) ? true : (state & FL_CTRL) ? false : fs.st_dev == ds.st_dev;
+      if (move)
+        spawn_detached({"mv", "-n", "--", path, desk + "/"});
+      else
+        spawn_detached({"cp", "-a", "-n", "--", path, desk + "/"});
+    }
+  }
+
+  // Desktop files can be dragged into Liria and other applications: FLTK
+  // offers a selection that starts with file:/// and ends with CR LF as
+  // text/uri-list. Places (Home, Trash, ...) are not dragged.
+  void start_drag(int i) {
+    if (i < first_file_index() || i >= int(items_.size()) || items_[size_t(i)].path.empty()) return;
+    static const char hex[] = "0123456789ABCDEF";
+    std::string uri = "file://";
+    for (unsigned char c : items_[size_t(i)].path) {
+      if (isalnum(c) || strchr("/-._~", c)) {
+        uri += char(c);
+      } else {
+        uri += '%';
+        uri += hex[c >> 4];
+        uri += hex[c & 15];
+      }
+    }
+    uri += "\r\n";
+    Fl::copy(uri.c_str(), int(uri.size()), 0);
+    Fl::dnd();
+  }
+
   int handle(int e) override {
     switch (e) {
+      case FL_DRAG:
+        if (press_item_ >= 0 && Fl::event_button1() &&
+            std::abs(Fl::event_x() - press_x_) + std::abs(Fl::event_y() - press_y_) > 8) {
+          int i = press_item_;
+          press_item_ = -1;
+          start_drag(i);
+          return 1;
+        }
+        return sde::BufferedWindow::handle(e);
+      case FL_RELEASE:
+        press_item_ = -1;
+        return sde::BufferedWindow::handle(e);
+      case FL_DND_ENTER:
+      case FL_DND_DRAG:
+      case FL_DND_LEAVE:
+        return 1;
+      case FL_DND_RELEASE:
+        dnd_state_ = Fl::event_state();
+        dnd_pending_ = true;
+        return 1;
+      case FL_PASTE:
+        if (dnd_pending_) {
+          dnd_pending_ = false;
+          drop_files(Fl::event_text(), dnd_state_);
+        }
+        return 1;
       case FL_PUSH: {
         int i = item_at(Fl::event_x(), Fl::event_y());
         if (i != selected_) {
@@ -991,6 +1089,9 @@ class Desktop : public sde::BufferedWindow {
           selected_ = i;
           damage_item(selected_);
         }
+        press_item_ = Fl::event_button() == FL_LEFT_MOUSE && !Fl::event_clicks() ? i : -1;
+        press_x_ = Fl::event_x();
+        press_y_ = Fl::event_y();
         if (Fl::event_button() == FL_RIGHT_MOUSE) context_menu(i, Fl::event_x(), Fl::event_y());
         else if (Fl::event_clicks() && i >= 0) open_item(i);
         return 1;
@@ -1055,6 +1156,9 @@ class Desktop : public sde::BufferedWindow {
   bool wallpaper_checked_ = false, config_dirty_ = true;
   std::string desktop_dir_, watched_dir_;
   int selected_ = -1, hover_ = -1;
+  int press_item_ = -1, press_x_ = 0, press_y_ = 0;  // a possible drag start
+  int dnd_state_ = 0;          // keyboard state when files were dropped
+  bool dnd_pending_ = false;   // FL_PASTE that follows a drop
   int cell_w_ = 96, cell_h_ = 96, icon_ = 0;
   int inotify_fd_ = -1, watch_ = -1;
   double draw_t0_ = 0, wallpaper_t0_ = 0;
