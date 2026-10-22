@@ -32,6 +32,13 @@ shadow along the shape and applies the theme's popup opacity under Aero and
 Liquid Glass. A popup that would leave the work area is moved up into it
 (dropdowns open above their widget when there is room).
 
+Since alpha51 nothing is square: popups, tooltips and notifications are
+shaped with the theme's `radius` (`sde::shape_rounded(window, r)`), and
+`Theme::apply_to_fltk()` replaces FLTK's `FL_UP_BOX`, `FL_DOWN_BOX`, the thin
+boxes and their frames with soft rounded ones (`sde::install_soft_boxes()`;
+`radius_small`, or 4 px for boxes under 20 px such as check buttons). Use
+`theme.radius_for(h)` for controls you draw yourself.
+
 Opt out of the text field menu with `sde::set_input_context_menus(false)`.
 
 ## ContextMenu

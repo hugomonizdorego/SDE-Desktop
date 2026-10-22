@@ -1,4 +1,4 @@
-# SDE themes, transparency and icons (0.1.0~alpha50)
+# SDE themes, transparency and icons (0.1.0~alpha51)
 
 SDE has three theme families, SDE Graphite (default), SDE Fluent and SDE
 Glass, each light or dark with nine accents. `data/themes/palettes.json` is
@@ -6,13 +6,44 @@ the single source of their colors and shapes: `tools/build-themes.py` builds
 the GTK 3, GTK 4, libadwaita and SDE WM (Openbox) themes from it and writes
 `generated/theme_palettes.h` for `sde::Theme`.
 
+## Palettes and corners (0.1.0~alpha51)
+
+The palettes are calm, low-chroma neutrals with muted accents (no neon, no
+glow, no colorful gradients): Graphite is neutral gray (after Linux Mint),
+Fluent a cool slate, Glass a warm stone. Text keeps WCAG contrast (7:1 on
+surfaces, 4.5:1 for dimmed text, also on sidebars, menus and the panel);
+the `sde-theme` test checks every family, mode and accent, and that the
+neutrals stay grays (chroma at most 0.05). Accent colors of alpha16 to
+alpha50 move to the new ones (`legacy.accents`).
+
+Every family has soft corners, `radius_small` (buttons, fields, menu items,
+list selections, tooltips), `radius` (windows, menus, popups, cards) and
+`radius_large` (Start menu, Action Center, message dialogs): Graphite 6/10/12,
+Fluent 5/8/12, Glass 8/12/16. `sde::Theme` scales them with the interface
+and has `radius_for(h)` for slim controls. They reach:
+
+* SDE programs: SDE-FLTK menus, popups, tooltips and notifications are
+  shaped (`sde::shape_rounded()`), and FLTK's stock up/down/thin boxes are
+  soft rounded boxes (`sde::install_soft_boxes()`, called by
+  `Theme::apply_to_fltk()`); scroll bars, switches and sliders are pills.
+* Window frames: the compositor's `corner-radius` (also on the lite
+  profile since alpha51).
+* GTK 3/4 and libadwaita: `data/themes/overlays/soft-gtk-{3.0,4.0}.css`
+  (every family) puts the SDE palette on the main surfaces and rounds
+  windows, header bars, popovers, menus, buttons, fields, lists, tooltips,
+  scroll bars, switches and sliders. SDE Graphite is compiled with the SDE
+  palette; Flat Remix (SDE Fluent) is recolored onto it.
+* Qt applications use the GTK palette (`QT_QPA_PLATFORMTHEME=gtk3`, set by
+  `startsde` and `sde-session`).
+
 ## Window buttons
 
-Every family has the same standard caption buttons on the right:
-minimize (—), maximize (□, a restore glyph of two squares while maximized)
-and close (✕). They are wide (about 40 x 34 px at 100 %), show a hover
-layer, and Close turns red on hover. Graphite and Glass no longer have round
-buttons on the left.
+Every family has the same caption buttons on the right, after Mint-Y:
+minimize (a thin dash), maximize (a small square; two squares while
+maximized) and close, a soft gray disc with the cross cut out. Hovered,
+minimize and maximize get the same disc, close turns a muted red; there
+are no traffic-light colors and no square hover layers. The hit area stays
+large (95 % of the title height, about 30 x 32 px at 100 %).
 
 * SDE WM: `<titleLayout>NLIMC</titleLayout>` (window icon, title, minimize,
   maximize, close). Configurations with the old left layouts of SDE (`CIML`,
@@ -35,8 +66,11 @@ buttons on the left.
   | `window.button.spacing`         | pixels between buttons and before the right edge |
 
   `palettes.json` sets them per family in `caption` (`width`, `height`,
-  `spacing`), with the glyph style (`thin` for Fluent, `regular`) and the
-  red of the close button (`close_hover`).
+  `spacing`, `glyph`: `soft` since alpha51, and `close_hover`, the red).
+  The glyphs are 14 px masks (`soft_caption_masks()` in
+  `tools/build-themes.py`), so they also fit stock Openbox's buttons; the
+  colors come from `caption_colors()`, shared with GTK and `sde::Theme`
+  (`caption_glyph`, `caption_disc`, `caption_close`, ...).
 
 ## Transparency and clarity
 
