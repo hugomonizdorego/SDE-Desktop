@@ -32,7 +32,7 @@ class Painter {
   // top to bottom, or top-left to bottom-right when |diagonal|.
   void fill_gradient(double x, double y, double w, double h, double r, const Color &from,
                      const Color &to, bool diagonal = false);
-  // SDE Aero glass: a translucent sheen on the upper half of a surface.
+  // SDE Glass: a faint light fading out over the upper part of a surface.
   void glass_sheen(double x, double y, double w, double h, double r, bool dark);
   // Soft drop shadow made of a few translucent rounded rectangles.
   void shadow(double x, double y, double w, double h, double r, const Color &c, int spread = 8);

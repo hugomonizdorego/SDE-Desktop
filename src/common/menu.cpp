@@ -302,7 +302,7 @@ void button_box(int x, int y, int w, int h, Fl_Color c, bool down) {
   Painter p(cur_w(), cur_h());
   Color fill = from_fl(c);
   if (down) fill = fill.mix(t.text, 0.12);
-  double r = std::min(Sd(6), h / 2.0);
+  double r = t.radius_for(h);
   p.fill_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, fill);
   p.stroke_rounded(x, y, w, h, r, fill.luminance() < t.border.luminance() - 0.1 ? fill : t.border);
 }
@@ -311,10 +311,32 @@ void button_down(int x, int y, int w, int h, Fl_Color c) { button_box(x, y, w, h
 void field_box(int x, int y, int w, int h, Fl_Color c) {
   const Theme &t = ui_theme();
   Painter p(cur_w(), cur_h());
-  double r = std::min(Sd(5), h / 2.0);
+  double r = t.radius_for(h);
   p.fill_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, from_fl(c));
   p.stroke_rounded(x, y, w, h, r, t.border);
 }
+// FLTK's stock boxes, softened (install_soft_boxes()). Small boxes (check
+// buttons) keep a small radius so they stay square-ish.
+double stock_radius(const Theme &t, int h) {
+  return h < S(20) ? std::min(Sd(4), h / 2.0) : t.radius_for(h);
+}
+void soft_box(int x, int y, int w, int h, Fl_Color c, bool down, bool thin, bool frame_only) {
+  const Theme &t = ui_theme();
+  Painter p(cur_w(), cur_h());
+  double r = stock_radius(t, h);
+  Color fill = from_fl(c);
+  if (!frame_only) p.fill_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, fill);
+  Color edge = down ? t.border.mix(t.text_dim, 0.25) : t.border;
+  if (thin && !down) edge = edge.alpha(0.8);
+  p.stroke_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, edge);
+}
+void soft_up(int x, int y, int w, int h, Fl_Color c) { soft_box(x, y, w, h, c, false, false, false); }
+void soft_down(int x, int y, int w, int h, Fl_Color c) { soft_box(x, y, w, h, c, true, false, false); }
+void soft_thin_up(int x, int y, int w, int h, Fl_Color c) { soft_box(x, y, w, h, c, false, true, false); }
+void soft_thin_down(int x, int y, int w, int h, Fl_Color c) { soft_box(x, y, w, h, c, true, true, false); }
+void soft_up_frame(int x, int y, int w, int h, Fl_Color c) { soft_box(x, y, w, h, c, false, false, true); }
+void soft_down_frame(int x, int y, int w, int h, Fl_Color c) { soft_box(x, y, w, h, c, true, false, true); }
+
 void circle_box(int x, int y, int w, int h, Fl_Color c) {
   Painter p(cur_w(), cur_h());
   double d = std::min(w, h) - Sd(4);
@@ -408,25 +430,7 @@ class SdeStyle : public Fl_SDE_Style {
     Window xid = fl_xid(win);
     int w = win->w(), h = win->h();
     if (w < 4 || h < 4) return;
-    int ev, er;
-    if (XShapeQueryExtension(fl_display, &ev, &er)) {
-      // Rounded corners; compositors draw the shadow along this shape.
-      int r = std::min(S(8), std::min(w, h) / 2);
-      Pixmap mask = XCreatePixmap(fl_display, xid, w, h, 1);
-      GC gc = XCreateGC(fl_display, mask, 0, nullptr);
-      XSetForeground(fl_display, gc, 0);
-      XFillRectangle(fl_display, mask, gc, 0, 0, w, h);
-      XSetForeground(fl_display, gc, 1);
-      XFillRectangle(fl_display, mask, gc, r, 0, w - 2 * r, h);
-      XFillRectangle(fl_display, mask, gc, 0, r, w, h - 2 * r);
-      XFillArc(fl_display, mask, gc, 0, 0, 2 * r, 2 * r, 0, 360 * 64);
-      XFillArc(fl_display, mask, gc, w - 2 * r - 1, 0, 2 * r, 2 * r, 0, 360 * 64);
-      XFillArc(fl_display, mask, gc, 0, h - 2 * r - 1, 2 * r, 2 * r, 0, 360 * 64);
-      XFillArc(fl_display, mask, gc, w - 2 * r - 1, h - 2 * r - 1, 2 * r, 2 * r, 0, 360 * 64);
-      XShapeCombineMask(fl_display, xid, ShapeBounding, 0, 0, mask, ShapeSet);
-      XFreeGC(fl_display, gc);
-      XFreePixmap(fl_display, mask);
-    }
+    shape_rounded(win, ui_theme().radius);
     const Theme &t = ui_theme();
     // Every family follows [aero] transparency (readable at any level).
     if (t.translucent && t.popup_opacity < 0.999) x11::set_opacity(xid, t.popup_opacity);
@@ -449,9 +453,10 @@ class SdeStyle : public Fl_SDE_Style {
   void menu_draw_background(int w, int h) override {
     const Theme &t = ui_theme();
     Painter p(w, h);
-    p.fill_rect(0, 0, w, h, t.surface);
+    p.fill_rect(0, 0, w, h, t.menu_bg);
     if (t.glass) p.glass_sheen(0, 0, w, std::min(h, S(80)), 0, t.dark);
-    p.stroke_rounded(0, 0, w, h, S(8), t.dark ? t.border.mix(t.text, 0.08) : t.border);
+    double r = std::min(double(t.radius), std::min(w, h) / 2.0);
+    p.stroke_rounded(0.5, 0.5, w - 1, h - 1, r, t.dark ? t.menu_border.mix(t.text, 0.08) : t.menu_border);
   }
 
   void menu_draw_item(const Fl_Menu_Item *m, const Fl_Menu_ *b, int x, int y, int w, int h,
@@ -459,17 +464,20 @@ class SdeStyle : public Fl_SDE_Style {
     const Theme &t = ui_theme();
     bool active = m->active();
     bool sel = selected && active;
-    Color fg = sel ? t.on_accent : active ? t.text : t.text_dim.alpha(0.7);
-    Color dim = sel ? t.on_accent.alpha(0.85) : t.text_dim;
+    // The highlight follows the family (accent pill in Graphite and Glass,
+    // a subtle one in Fluent), like GTK and SDE WM menus.
+    Color fg = sel ? t.menu_hover_text : active ? t.menu_text : t.text_dim.alpha(0.7);
+    Color dim = sel ? t.menu_hover_text.alpha(0.85) : t.text_dim;
     int trail = menu_trailing_width();
     {
       Painter p(cur_w(), cur_h());
-      if (sel) p.fill_rounded(x, y + 1, w, h - 2, Sd(6), t.accent);
+      if (sel) p.fill_rounded(x, y + 1, w, h - 2, t.radius_for(h - 2), t.menu_hover);
       double is = Sd(16), ix = x + (lead - is) / 2.0, iy = y + (h - is) / 2.0;
+      Color mark = sel ? t.menu_hover_text : t.accent_text;
       if ((m->flags & FL_MENU_TOGGLE) && m->value()) {
-        glyph::check(p, ix, iy, is, sel ? t.on_accent : t.accent_text);
+        glyph::check(p, ix, iy, is, mark);
       } else if ((m->flags & FL_MENU_RADIO) && m->value()) {
-        p.circle(ix + is / 2, iy + is / 2, Sd(3.5), sel ? t.on_accent : t.accent_text);
+        p.circle(ix + is / 2, iy + is / 2, Sd(3.5), mark);
       } else {
         std::string icon = menu_icon(m);
         if (!icon.empty()) draw_icon(p, icon, ix, iy, is, fg, active ? 1.0 : 0.5);
@@ -502,10 +510,10 @@ class SdeStyle : public Fl_SDE_Style {
     bool sel = selected && active;
     Painter p(cur_w(), cur_h());
     double in = Sd(3);
-    if (sel) p.fill_rounded(x + in, y + in, w - 2 * in, h - 2 * in, Sd(6), t.accent);
+    if (sel) p.fill_rounded(x + in, y + in, w - 2 * in, h - 2 * in, t.radius_for(h - 2 * in), t.menu_hover);
     double is = Sd(18);
     std::string icon = menu_icon(m);
-    Color c = sel ? t.on_accent : t.text;
+    Color c = sel ? t.menu_hover_text : t.menu_text;
     if (icon.empty()) {
       // No icon: the first letter of the label.
       p.flush();
@@ -525,8 +533,8 @@ class SdeStyle : public Fl_SDE_Style {
       Color bg = from_fl(b ? b->color() : t.background.fl());
       {
         Painter p(w, h);
-        Color pill = bg.mix(t.accent, t.dark ? 0.28 : 0.16);
-        p.fill_rounded(1, S(3), w - 2, h - S(6), Sd(6), pill);
+        Color pill = bg.mix(t.accent, t.dark ? 0.22 : 0.12);
+        p.fill_rounded(1, S(3), w - 2, h - S(6), t.radius_for(h - S(6)), pill);
         double uw = std::min(w - S(16), S(18));
         p.fill_rounded((w - uw) / 2.0, h - S(3) - Sd(3), uw, Sd(2.5), Sd(1.25), t.accent);
       }
@@ -536,8 +544,8 @@ class SdeStyle : public Fl_SDE_Style {
     }
     {
       Painter p(w, h);
-      p.fill_rect(0, 0, w, h, t.surface);
-      p.stroke_rounded(0, 0, w, h, S(6), t.border);
+      p.fill_rect(0, 0, w, h, t.menu_bg);
+      p.stroke_rounded(0.5, 0.5, w - 1, h - 1, std::min(double(t.radius), h / 2.0), t.menu_border);
     }
     fl_font(FL_HELVETICA_BOLD, b ? b->textsize() : FL_NORMAL_SIZE);
     fl_color(t.text_dim.fl());
@@ -557,7 +565,7 @@ class SdeStyle : public Fl_SDE_Style {
       for (const Fl_Menu_Item *m = b->menu()->first(); m->text; m = m->next(), ++i) {
         int W = m->measure(nullptr, b) + 16;
         if (i == hover && b->active_r() && m->active())
-          p.fill_rounded(X + 1, b->y() + S(3), W - 2, b->h() - S(6), Sd(6),
+          p.fill_rounded(X + 1, b->y() + S(3), W - 2, b->h() - S(6), t.radius_for(b->h() - S(6)),
                          bg.mix(t.text, t.dark ? 0.12 : 0.07));
         X += W;
       }
@@ -582,7 +590,7 @@ class SdeStyle : public Fl_SDE_Style {
     if (c->color() == FL_BACKGROUND_COLOR || c->color() == FL_GRAY) bg = t.surface_alt;
     {
       Painter p(cur_w(), cur_h());
-      double r = std::min(Sd(6), c->h() / 2.0);
+      double r = t.radius_for(c->h());
       p.fill_rounded(c->x() + 0.5, c->y() + 0.5, c->w() - 1, c->h() - 1, r,
                      hover ? bg.mix(t.text, 0.05) : bg);
       p.stroke_rounded(c->x(), c->y(), c->w(), c->h(), r,
@@ -638,7 +646,7 @@ class SdeStyle : public Fl_SDE_Style {
   int tooltip_draw(int w, int h, const char *text) override {
     const Theme &t = ui_theme();
     // Theme colors unless the program chose its own.
-    Fl_Color tip_bg = t.surface.fl(), tip_fg = t.text.fl();
+    Fl_Color tip_bg = t.menu_bg.fl(), tip_fg = t.menu_text.fl();
     if (Fl_Tooltip::color() == last_tip_color ||
         Fl_Tooltip::color() == fl_color_cube(FL_NUM_RED - 1, FL_NUM_GREEN - 1, FL_NUM_BLUE - 2))
       Fl_Tooltip::color(tip_bg);
@@ -648,9 +656,12 @@ class SdeStyle : public Fl_SDE_Style {
     last_tip_text = tip_fg;
     Color bg = from_fl(Fl_Tooltip::color());
     {
+      // Soft corners (alpha51): the tooltip window is shaped like popups.
+      double r = std::min(double(t.radius_small), h / 2.0);
+      if (Fl_Window *win = Fl_Window::current()) shape_rounded(win, int(r));
       Painter p(w, h);
       p.fill_rect(0, 0, w, h, bg);
-      p.stroke_rounded(0, 0, w, h, 0, t.border);
+      p.stroke_rounded(0.5, 0.5, w - 1, h - 1, r, t.border);
     }
     fl_color(Fl_Tooltip::textcolor());
     fl_font(Fl_Tooltip::font(), Fl_Tooltip::size());
@@ -710,6 +721,35 @@ void action_trampoline(Fl_Widget *, void *data) {
 
 // ------------------------------------------------------------- public API
 
+// Gives a shown window rounded corners of radius |r| with XShape (popups,
+// tooltips); compositors draw the shadow along the shape.
+void shape_rounded(Fl_Window *win, int r) {
+  if (!fl_display || !win || !win->shown()) return;
+  Window xid = fl_xid(win);
+  int w = win->w(), h = win->h();
+  if (w < 4 || h < 4) return;
+  int ev, er;
+  if (!XShapeQueryExtension(fl_display, &ev, &er)) return;
+  r = std::max(0, std::min(r, std::min(w, h) / 2));
+  Pixmap mask = XCreatePixmap(fl_display, xid, w, h, 1);
+  GC gc = XCreateGC(fl_display, mask, 0, nullptr);
+  XSetForeground(fl_display, gc, 0);
+  XFillRectangle(fl_display, mask, gc, 0, 0, w, h);
+  XSetForeground(fl_display, gc, 1);
+  XFillRectangle(fl_display, mask, gc, r, 0, w - 2 * r, h);
+  XFillRectangle(fl_display, mask, gc, 0, r, w, h - 2 * r);
+  if (r > 0) {
+    XFillArc(fl_display, mask, gc, 0, 0, 2 * r, 2 * r, 0, 360 * 64);
+    XFillArc(fl_display, mask, gc, w - 2 * r - 1, 0, 2 * r, 2 * r, 0, 360 * 64);
+    XFillArc(fl_display, mask, gc, 0, h - 2 * r - 1, 2 * r, 2 * r, 0, 360 * 64);
+    XFillArc(fl_display, mask, gc, w - 2 * r - 1, h - 2 * r - 1, 2 * r, 2 * r, 0, 360 * 64);
+  }
+  XShapeCombineMask(fl_display, xid, ShapeBounding, 0, 0, mask, ShapeSet);
+  XFreeGC(fl_display, gc);
+  XFreePixmap(fl_display, mask);
+}
+
+
 void install_ui_style() {
   static bool installed = false;
   if (installed) return;
@@ -721,6 +761,23 @@ void install_ui_style() {
   Fl_Event_Dispatch prev = Fl::event_dispatch();
   if (prev != dispatch) g_prev_dispatch = prev;
   Fl::event_dispatch(dispatch);
+}
+
+void install_soft_boxes() {
+  static bool stock = [] {
+    const char *v = getenv("SDE_STOCK_FLTK");
+    return v && *v && strcmp(v, "0") != 0;
+  }();
+  if (stock) return;
+  register_boxes();
+  Fl::set_boxtype(FL_UP_BOX, soft_up, 2, 2, 4, 4);
+  Fl::set_boxtype(FL_DOWN_BOX, soft_down, 2, 2, 4, 4);
+  Fl::set_boxtype(FL_THIN_UP_BOX, soft_thin_up, 1, 1, 2, 2);
+  Fl::set_boxtype(FL_THIN_DOWN_BOX, soft_thin_down, 1, 1, 2, 2);
+  Fl::set_boxtype(FL_UP_FRAME, soft_up_frame, 2, 2, 4, 4);
+  Fl::set_boxtype(FL_DOWN_FRAME, soft_down_frame, 2, 2, 4, 4);
+  Fl::set_boxtype(FL_THIN_UP_FRAME, soft_up_frame, 1, 1, 2, 2);
+  Fl::set_boxtype(FL_THIN_DOWN_FRAME, soft_down_frame, 1, 1, 2, 2);
 }
 
 void set_input_context_menus(bool enabled) { g_input_menus = enabled; }

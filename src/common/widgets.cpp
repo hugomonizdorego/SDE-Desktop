@@ -138,9 +138,10 @@ void FlatButton::draw() {
     if (primary_ && hot) bg = t.accent.mix(t.text, 0.12);
     if (down) bg = bg.mix(t.text, 0.15);
     if (!active_r()) bg = t.surface_alt.mix(t.surface, 0.5);
-    p.fill_rounded(x(), y(), w(), h(), Sd(8), bg);
-    if (!primary_) p.stroke_rounded(x(), y(), w(), h(), Sd(8), t.border);
-    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(8));
+    double r = t.radius_for(h());
+    p.fill_rounded(x(), y(), w(), h(), r, bg);
+    if (!primary_) p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, t.border);
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
   }
   text_font(t.font_size, primary_);
   Color fg = primary_ ? t.on_accent : t.text;
@@ -175,7 +176,7 @@ void DrawnButton::draw() {
     Painter p(window()->w(), window()->h());
     if (draw_fn_) draw_fn_(p, hot, down);
     if (Fl::focus() == this) {
-      double r = radius_ >= 0 ? radius_ : Sd(10);
+      double r = radius_ >= 0 ? radius_ : active_theme().radius;
       focus_ring(p, x(), y(), w(), h(), r);
     }
   }

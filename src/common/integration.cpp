@@ -314,7 +314,10 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // Every family is translucent with [aero] enabled (Graphite vibrancy,
   // Fluent Acrylic, Glass); [aero] transparency sets how much (Theme).
   bool blur = t.blur && !lite;
-  bool round = cfg.get_bool("aero", "rounded_corners", true) && !lite;
+  // Soft window corners are part of every theme since alpha51, also on the
+  // lite profile: picom rounds them with a cheap mask on XRender too, and
+  // square frames were the most visible difference to the SDE look there.
+  bool round = cfg.get_bool("aero", "rounded_corners", true);
   bool liquid = t.family == "glass";
   bool motion = cfg.get_bool("aero", "animations", true) && !lite;
   int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6) + (liquid ? 2 : 0)));
@@ -363,7 +366,7 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
-  // Window corners follow the family: Fluent 8, Graphite 10, Glass 16.
+  // Window corners follow the family: Fluent 8, Graphite 10, Glass 12.
   c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
   c += "rounded-corners-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"window_type = 'tooltip'\", \"window_type = 'dropdown_menu'\", "

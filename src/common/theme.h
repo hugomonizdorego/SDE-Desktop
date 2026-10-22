@@ -73,10 +73,26 @@ struct Theme {
   Color titlebar_bg;      // active window title bar (SDE WM and headerbars)
   Color titlebar_text;
   Color success, warning, error;
-  int radius = 10;        // windows, cards, popups (already scaled)
-  int radius_small = 6;   // buttons, fields, menu items (already scaled)
-  int radius_large = 14;  // big surfaces: Start menu, Action Center (already scaled)
+  // Corner radii (already scaled). Since 0.1.0~alpha51 every surface is
+  // soft: nothing an SDE program draws has square corners. Use radius_for()
+  // for controls whose height can be small.
+  int radius = 10;        // windows, menus, popups, cards, dialogs
+  int radius_small = 6;   // buttons, fields, menu items, list selections, tooltips
+  int radius_large = 12;  // big surfaces: Start menu, Action Center, flyouts
   int shadow_radius = 18; // blur radius of drop shadows (already scaled)
+  // Radius for a control |h| pixels high: radius_small, at most half the
+  // height (a pill for slim controls).
+  double radius_for(double h) const { return std::fmin(radius_small, h / 2.0); }
+
+  // Caption buttons (alpha51, Mint-Y like; the same colors as the SDE WM
+  // frames and GTK header bars, see caption_colors() in build-themes.py):
+  // thin glyphs, a soft disc behind close (and behind the others while
+  // hovered), a muted red close while hovered.
+  Color caption_glyph;
+  Color caption_disc;
+  Color caption_press;
+  Color caption_close;    // close while hovered
+  Color caption_close_press;
   double mica = 0;        // how much of the accent tints window backgrounds (0-1)
   std::string family = "graphite";  // graphite, fluent or glass
   std::string mode = "light";       // the setting: light, dark or auto

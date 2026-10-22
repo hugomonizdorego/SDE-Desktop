@@ -13,15 +13,17 @@
 
 #include "config.h"
 #include "integration.h"
+#include "menu.h"
 #include "theme_palettes.h"
 #include "util.h"
 
 namespace sde {
 
+// SDE Graphite's light accents (data/themes/palettes.json, alpha51).
 const AccentChoice kAccentChoices[] = {
-    {"Blue", "#3684DD"},   {"Teal", "#009688"}, {"Green", "#4CAF50"}, {"Yellow", "#FBC02D"},
-    {"Orange", "#F57C00"}, {"Red", "#E53935"},  {"Pink", "#EC407A"},  {"Purple", "#AB47BC"},
-    {"Graphite", "#333333"},
+    {"Blue", "#3876B9"},   {"Teal", "#2B807B"}, {"Green", "#4A9157"}, {"Yellow", "#C29C48"},
+    {"Orange", "#C9773F"}, {"Red", "#C24D45"},  {"Pink", "#B9547C"},  {"Purple", "#7E61A8"},
+    {"Graphite", "#55585E"},
 };
 const int kAccentChoiceCount = int(sizeof(kAccentChoices) / sizeof(kAccentChoices[0]));
 
@@ -329,6 +331,11 @@ static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
   t.panel_bg = Color::hex(m.panel);
   t.titlebar_bg = Color::hex(m.titlebar).mix(t.accent, f.mica * 1.4);
   t.titlebar_text = Color::hex(m.titlebar_text);
+  t.caption_glyph = t.titlebar_text.mix(t.titlebar_bg, 0.15);
+  t.caption_disc = t.titlebar_bg.mix(t.titlebar_text, t.dark ? 0.38 : 0.40);
+  t.caption_press = t.titlebar_bg.mix(t.titlebar_text, 0.58);
+  t.caption_close = Color::hex(f.close_hover);
+  t.caption_close_press = t.caption_close.mix(Color::hex(0x000000), 0.15);
   t.success = Color::hex(m.success);
   t.warning = Color::hex(m.warning);
   t.error = Color::hex(m.error);
@@ -432,6 +439,9 @@ const Theme &active_theme() { return g_active; }
 void Theme::apply_to_fltk() const {
   g_active = *this;
   Fl::scheme("gtk+");
+  // The scheme resets FLTK's box types; give the stock boxes soft corners
+  // again (menu.cpp).
+  install_soft_boxes();
   auto u = [](double v) { return uchar(std::lround(v * 255)); };
   Fl::background(u(background.r), u(background.g), u(background.b));
   Fl::background2(u(surface.r), u(surface.g), u(surface.b));

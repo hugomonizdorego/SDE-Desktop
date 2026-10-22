@@ -37,12 +37,25 @@
 
 class Fl_Input_;
 class Fl_Widget;
+class Fl_Window;
 
 namespace sde {
 
 // Installs the SDE-FLTK theme hooks. Called automatically when a program
 // links the common library; calling it again is harmless.
 void install_ui_style();
+
+// Replaces FLTK's square stock boxes (FL_UP_BOX, FL_DOWN_BOX, the thin ones
+// and their frames) with soft rounded ones in the theme's radii, so stock
+// buttons, fields, check boxes and panels have no sharp corners (alpha51).
+// Theme::apply_to_fltk() calls it after setting the FLTK scheme, which
+// resets the box types; SDE_STOCK_FLTK=1 keeps FLTK's own boxes.
+void install_soft_boxes();
+
+// Gives a shown window rounded corners of radius |r| (already scaled) with
+// XShape: popups, tooltips, notifications. Compositors draw the shadow
+// along the shape. Calling it again (e.g. from draw()) is cheap.
+void shape_rounded(Fl_Window *win, int r);
 
 // Text fields (Fl_Input and friends) get an SDE context menu on right click
 // (Cut, Copy, Paste, Delete, Select all). On by default.
