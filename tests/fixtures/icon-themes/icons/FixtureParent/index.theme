@@ -1,0 +1,12 @@
+[Icon Theme]
+Name=FixtureParent
+Comment=FixtureParent (SDE test fixture)
+Inherits=FixtureGrand
+Directories=scalable/apps
+
+[scalable/apps]
+Size=48
+Type=Scalable
+Context=Applications
+MinSize=8
+MaxSize=512

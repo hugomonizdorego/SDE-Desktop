@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fetch immutable source trees of the forked SDE components before offline
-builds: Calculator engine, SDE WM (Openbox), SDE compositor (picom) and the
-display profile model. SDE-FLTK lives in sde-fltk/; sde-xsettingsd and
-sde-polkit-agent are SDE programs in src/."""
+builds: SDE WM (Openbox), SDE compositor (picom) and the display profile
+model. SDE-FLTK lives in sde-fltk/; sde-xsettingsd, sde-polkit-agent and
+Calculator (since 0.1.0~alpha50 a native rewrite) are SDE programs in src/."""
 import argparse
 import hashlib
 import json
@@ -21,7 +21,10 @@ def main():
     lock = ROOT / 'suite/components.lock.json'
     version_file = ROOT / 'suite/versions.json'
     versions = json.loads(version_file.read_text())
-    signature = hashlib.sha256(lock.read_bytes() + version_file.read_bytes() + Path(__file__).read_bytes()).hexdigest()
+    # SDE patches (suite/patches/<component>/*.patch) are applied in order.
+    patches = sorted((ROOT / 'suite/patches').glob('*/*.patch'))
+    signature = hashlib.sha256(lock.read_bytes() + version_file.read_bytes() + Path(__file__).read_bytes() +
+                               b''.join(p.read_bytes() for p in patches)).hexdigest()
     marker = args.output / '.sde-component-lock'
     if marker.exists():
         if marker.read_text().strip() == signature:
@@ -47,6 +50,8 @@ def main():
         if out.exists():
             p.error('Output exists; choose another --output: ' + str(out))
         shutil.copytree(cache,out,ignore=shutil.ignore_patterns('.git'))
+        for patch in sorted((ROOT / 'suite/patches' / app['id']).glob('*.patch')):
+            subprocess.run(['patch', '--quiet', '-p1', '-d', str(out), '-i', str(patch)], check=True)
         if app['id'] == 'sde-wm':
             path = out / 'configure.ac'
             path.write_text(path.read_text().replace('AC_INIT([openbox], [3.6.1]', 'AC_INIT([openbox], ['+versions[app['id']]+']'))
@@ -62,8 +67,6 @@ def main():
                   f"Source: {app['url']}\nRevision: {app['commit']}\nLicense: {app['license']}\n\n"
                   "Original copyrights and license files are retained in the complete corresponding source archive.\n"
                   "SDE modifications: native desktop integration, independent build identity and packaging.\n")
-        if app['id'] == 'calculator':
-            notice += '\nCopyright (c) 2026 Raad Altaie\n'
         for name in ['COPYING','LICENSE','CONTRIBUTORS','AUTHORS']:
             if (out/name).is_file(): notice += '\n=== '+name+' ===\n'+(out/name).read_text(errors='replace')
         for path in (out/'LICENSES').glob('*') if (out/'LICENSES').is_dir() else []:

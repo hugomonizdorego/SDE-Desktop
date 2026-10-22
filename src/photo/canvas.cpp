@@ -411,6 +411,8 @@ void Canvas::draw() {
       cairo_pattern_set_filter(cairo_get_source(cr), filter);
       cairo_paint(cr);
       cairo_restore(cr);
+      // Drawings: a layer above the photo until it is saved.
+      draw_overlay(p);
       if (cropping_) {
         double x0 = ix + crop_.x * iw, y0 = iy + crop_.y * ih, cw = crop_.w * iw, ch = crop_.h * ih;
         // Dim outside the selection.
@@ -475,6 +477,12 @@ int Canvas::handle(int event) {
   double ax, ay, aw, ah;
   image_area(ax, ay, aw, ah);
   int mx = Fl::event_x(), my = Fl::event_y();
+  if (app_->drawing() && chrome_ && (event == FL_PUSH || event == FL_DRAG || event == FL_RELEASE ||
+                                      event == FL_MOVE || event == FL_ENTER)) {
+    bool strip = filmstrip_at(mx, my) != -2 && event != FL_DRAG && event != FL_RELEASE;
+    if (event == FL_PUSH && Fl::focus() != this) Fl::focus(this);
+    if (!strip && draw_event(event, mx, my)) return 1;
+  }
   switch (event) {
     case FL_ENTER:
     case FL_MOVE: {
@@ -510,10 +518,6 @@ int Canvas::handle(int event) {
         if (d) app_->step(d > 0 ? 1 : -1);
         return 1;
       }
-      if (app_->slideshow()) {
-        if (Fl::event_dy()) app_->step(Fl::event_dy() > 0 ? 1 : -1);
-        return 1;
-      }
       if (Fl::event_dx() && !Fl::event_dy()) {
         pan_x_ -= Fl::event_dx() * S(60);
         clamp_pan();
@@ -534,10 +538,6 @@ int Canvas::handle(int event) {
         if (fi >= 0) app_->go(fi);
         return 1;
       }
-      if (app_->slideshow()) {
-        app_->step(1);
-        return 1;
-      }
       if (cropping_) {
         crop_drag_ = crop_handle_at(mx, my);
         press_x_ = mx;
@@ -546,7 +546,7 @@ int Canvas::handle(int event) {
         return 1;
       }
       if (Fl::event_button() == FL_RIGHT_MOUSE) {
-        app_->menu_->popup();
+        app_->context_menu();
         return 1;
       }
       if (Fl::event_clicks()) {
@@ -624,7 +624,7 @@ int Canvas::handle(int event) {
       }
       return 1;
     case FL_RELEASE:
-      if (dragging_ && !cropping_ && std::abs(mx - press_x_) < 4 && std::abs(my - press_y_) < 4 &&
+      if (dragging_ && !cropping_ && !app_->drawing() && std::abs(mx - press_x_) < 4 && std::abs(my - press_y_) < 4 &&
           mode_ == ZoomMode::Fit) {
         // A click on the left or right fifth of the picture steps.
         if (mx < ax + aw * 0.2) app_->step(-1);

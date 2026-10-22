@@ -1,6 +1,6 @@
 [Liria Extension]
 Name=SDE Tools
-Description=Open Terminal Here, Copy Path, Open as Administrator, Edit with Niny or Photo, Set as Wallpaper, Compress, Extract Here, Checksum, New Text Document and the Home overview (Quick access, Drives, Recent files)
+Description=Open Terminal Here, Copy Path, Open as Administrator, Edit with Niny or Photo, Set as Wallpaper, Compress, Extract Here, Checksum, New Text Document and Pin to Quick Access and the Home overview (Quick access pins, Drives, Recent files)
 Icon=sde-logo
 Author=SDE contributors
 Copyright=Copyright © 2026 SDE contributors

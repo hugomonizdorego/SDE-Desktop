@@ -428,7 +428,8 @@ class SdeStyle : public Fl_SDE_Style {
       XFreePixmap(fl_display, mask);
     }
     const Theme &t = ui_theme();
-    if (t.glass && t.popup_opacity < 0.999) x11::set_opacity(xid, t.popup_opacity);
+    // Every family follows [aero] transparency (readable at any level).
+    if (t.translucent && t.popup_opacity < 0.999) x11::set_opacity(xid, t.popup_opacity);
   }
 
   int menu_padding() override { return S(5); }

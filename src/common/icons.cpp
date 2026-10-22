@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "theme.h"
 #include "util.h"
 
 namespace sde {
@@ -235,6 +236,7 @@ namespace {
 
 struct ThemeDir {
   std::string path;  // relative, e.g. "48x48/apps"
+  // Sizes in pixels: Size=24 with Scale=2 ("24x24@2x") holds 48 px icons.
   int size = 48, min = 48, max = 48, threshold = 2, scale = 1;
   std::string type = "Threshold";
 };
@@ -244,6 +246,9 @@ struct IconTheme {
   std::vector<std::string> bases;  // absolute theme directories
   std::vector<ThemeDir> dirs;
   std::vector<std::string> inherits;
+  std::string display_name, comment;
+  bool has_apps = false;  // Directories with apps or places icons
+  bool hidden = false;
   bool valid = false;
 };
 
@@ -254,11 +259,24 @@ std::vector<std::string> icon_base_dirs() {
 }
 
 std::string g_theme_name = "hicolor";
+std::string g_dirs_key;  // icon_base_dirs() the theme cache was built for
 std::map<std::string, std::unique_ptr<IconTheme>> g_themes;
 std::unordered_map<std::string, std::string> g_lookup_cache;
 std::unordered_map<std::string, cairo_surface_t *> g_surface_cache;
 
+// Themes are cached per process; a different XDG_DATA_DIRS (tests, or a
+// program that changes it) starts again.
+void check_dirs() {
+  std::string key;
+  for (auto &d : icon_base_dirs()) key += d + ":";
+  if (key == g_dirs_key) return;
+  g_dirs_key = key;
+  g_themes.clear();
+  g_lookup_cache.clear();
+}
+
 IconTheme *load_theme(const std::string &name) {
+  check_dirs();
   auto it = g_themes.find(name);
   if (it != g_themes.end()) return it->second.get();
   auto theme = std::make_unique<IconTheme>();
@@ -266,7 +284,7 @@ IconTheme *load_theme(const std::string &name) {
   std::string index;
   for (auto &base : icon_base_dirs()) {
     std::string dir = base + "/" + name;
-    if (!dir_exists(dir)) continue;
+    if (name.empty() || name.find('/') != std::string::npos || !dir_exists(dir)) continue;
     theme->bases.push_back(dir);
     if (index.empty()) read_file(dir + "/index.theme", index);
   }
@@ -285,28 +303,50 @@ IconTheme *load_theme(const std::string &name) {
       if (eq != std::string::npos) sections[section][trim(line.substr(0, eq))] = trim(line.substr(eq + 1));
     }
     auto &main = sections["Icon Theme"];
-    theme->inherits = split(main["Inherits"], ',');
+    for (auto &inh : split(main["Inherits"], ','))
+      if (!trim(inh).empty()) theme->inherits.push_back(trim(inh));
+    theme->display_name = main["Name"].empty() ? name : main["Name"];
+    theme->comment = main["Comment"];
+    theme->hidden = lower(main["Hidden"]) == "true";
     std::string dirs = main["Directories"];
     if (!main["ScaledDirectories"].empty()) dirs += "," + main["ScaledDirectories"];
-    for (auto &d : split(dirs, ',')) {
+    std::set<std::string> seen;
+    for (auto &raw : split(dirs, ',')) {
+      std::string d = trim(raw);
+      if (d.empty() || !seen.insert(d).second) continue;
       auto &s = sections[d];
       if (s.empty()) continue;
       ThemeDir td;
       td.path = d;
-      td.size = atoi(s["Size"].c_str());
-      td.scale = s["Scale"].empty() ? 1 : atoi(s["Scale"].c_str());
+      int size = atoi(s["Size"].c_str());
+      int scale = s["Scale"].empty() ? 1 : std::max(1, atoi(s["Scale"].c_str()));
+      if (size <= 0) continue;
+      td.scale = scale;
       td.type = s["Type"].empty() ? "Threshold" : s["Type"];
-      td.min = s["MinSize"].empty() ? td.size : atoi(s["MinSize"].c_str());
-      td.max = s["MaxSize"].empty() ? td.size : atoi(s["MaxSize"].c_str());
-      td.threshold = s["Threshold"].empty() ? 2 : atoi(s["Threshold"].c_str());
-      if (td.scale != 1 || td.size <= 0) continue;  // SDE 0.1 renders at scale 1
+      td.size = size * scale;
+      td.min = (s["MinSize"].empty() ? size : atoi(s["MinSize"].c_str())) * scale;
+      td.max = (s["MaxSize"].empty() ? size : atoi(s["MaxSize"].c_str())) * scale;
+      td.threshold = (s["Threshold"].empty() ? 2 : atoi(s["Threshold"].c_str())) * scale;
+      std::string ctx = lower(s["Context"]);
+      if (ctx == "applications" || ctx == "places" || d.find("apps") != std::string::npos ||
+          d.find("places") != std::string::npos)
+        theme->has_apps = true;
       theme->dirs.push_back(td);
     }
+    // Unscaled directories first: at equal distance they win, and their
+    // icons are drawn for that size.
+    std::stable_sort(theme->dirs.begin(), theme->dirs.end(),
+                     [](const ThemeDir &a, const ThemeDir &b) { return a.scale < b.scale; });
     theme->valid = !theme->dirs.empty();
   }
   IconTheme *raw = theme.get();
   g_themes[name] = std::move(theme);
   return raw;
+}
+
+bool theme_installed(const std::string &name) {
+  IconTheme *t = load_theme(name);
+  return t->valid && t->has_apps && !t->hidden;
 }
 
 int size_distance(const ThemeDir &d, int size) {
@@ -350,21 +390,31 @@ std::string find_in_theme(IconTheme *theme, const std::string &name, int size) {
   return best;
 }
 
-std::string lookup_uncached(const std::string &name, int size) {
-  std::vector<std::string> chain{g_theme_name};
+// The theme, its parents depth first (Icon Theme Specification), then the
+// fallbacks every desktop expects.
+void add_chain(const std::string &name, std::vector<std::string> &chain, std::set<std::string> &seen) {
+  if (name.empty() || !seen.insert(name).second) return;
+  IconTheme *t = load_theme(name);
+  if (!t->valid) return;
+  chain.push_back(name);
+  for (auto &parent : t->inherits)
+    if (parent != "hicolor") add_chain(parent, chain, seen);
+}
+
+std::vector<std::string> chain_for(const std::string &theme) {
+  std::vector<std::string> chain;
   std::set<std::string> seen;
-  for (size_t i = 0; i < chain.size(); ++i) {
-    if (!seen.insert(chain[i]).second) continue;
-    IconTheme *t = load_theme(chain[i]);
-    if (t->valid) {
-      std::string found = find_in_theme(t, name, size);
-      if (!found.empty()) return found;
-    }
-    for (auto &inh : t->inherits) chain.push_back(trim(inh));
-    // Recent Adwaita releases moved traditional app/category icons into a
-    // separate theme. Preserve the selected theme, then use those fallbacks.
-    if (i + 1 == chain.size() && !seen.count("AdwaitaLegacy")) chain.push_back("AdwaitaLegacy");
-    if (i + 1 == chain.size() && !seen.count("hicolor")) chain.push_back("hicolor");
+  add_chain(theme, chain, seen);
+  // Recent Adwaita releases moved traditional app/category icons into a
+  // separate theme (AdwaitaLegacy).
+  for (const char *fallback : {"Adwaita", "AdwaitaLegacy", "hicolor"}) add_chain(fallback, chain, seen);
+  return chain;
+}
+
+std::string lookup_in_chain(const std::vector<std::string> &chain, const std::string &name, int size) {
+  for (auto &theme : chain) {
+    std::string found = find_in_theme(load_theme(theme), name, size);
+    if (!found.empty()) return found;
   }
   for (auto &base : data_dirs()) {
     for (const char *ext : {".svg", ".png", ".xpm"}) {
@@ -375,44 +425,83 @@ std::string lookup_uncached(const std::string &name, int size) {
   return "";
 }
 
-}  // namespace
+std::vector<std::string> g_chain;
+std::string g_chain_theme;
 
-std::vector<std::string> IconLoader::installed_themes() {
-  std::set<std::string> names;
-  for (auto &base : icon_base_dirs()) {
-    for (auto &n : list_dir(base)) {
-      std::string idx = base + "/" + n + "/index.theme", text;
-      if (n == "hicolor" || n == "default" || !read_file(idx, text)) continue;
-      // Cursor-only themes have no "Directories" key.
-      if (text.find("Directories") == std::string::npos) continue;
-      if (text.find("Hidden=true") != std::string::npos) continue;
-      names.insert(n);
-    }
+const std::vector<std::string> &current_chain() {
+  check_dirs();
+  if (g_chain_theme != g_theme_name + "|" + g_dirs_key || g_chain.empty()) {
+    g_chain = chain_for(g_theme_name);
+    g_chain_theme = g_theme_name + "|" + g_dirs_key;
   }
-  return {names.begin(), names.end()};
+  return g_chain;
 }
 
-void IconLoader::set_theme(const std::string &theme) {
-  std::string chosen = theme;
-  if (chosen.empty() || chosen == "auto") {
-    chosen = "hicolor";
-    auto installed = installed_themes();
-    for (const char *pref : {"Eduka-Icons-Light", "Papirus", "Yaru", "elementary-xfce",
-                             "Adwaita", "breeze", "Tango"}) {
-      if (std::find(installed.begin(), installed.end(), pref) != installed.end()) {
-        chosen = pref;
-        break;
-      }
-    }
+std::string with_extension_fallback(const std::vector<std::string> &chain, const std::string &name, int size) {
+  std::string found = lookup_in_chain(chain, name, size);
+  // Some desktop files wrongly include an extension in Icon=.
+  if (found.empty() && (ends_with(name, ".png") || ends_with(name, ".svg") || ends_with(name, ".xpm")))
+    found = lookup_in_chain(chain, name.substr(0, name.size() - 4), size);
+  return found;
+}
+
+}  // namespace
+
+std::string resolve_icon_theme(const std::string &setting, bool dark) {
+  std::string s = trim(setting);
+  if (!s.empty() && lower(s) != "auto" && theme_installed(s)) return s;
+  // Papirus (recommended by the sde package) matches every SDE family.
+  std::string papirus = dark ? "Papirus-Dark" : "Papirus";
+  if (theme_installed(papirus)) return papirus;
+  if (theme_installed("Papirus")) return "Papirus";
+  for (const char *pref : {"Adwaita", "breeze", "Yaru", "elementary-xfce", "Tango"}) {
+    std::string name = pref;
+    if (dark && theme_installed(name + "-dark")) return name + "-dark";
+    if (theme_installed(name)) return name;
   }
+  auto all = IconLoader::installed_themes();
+  return all.empty() ? "hicolor" : all.front();
+}
+
+std::vector<IconThemeInfo> IconLoader::installed_theme_infos() {
+  std::set<std::string> names;
+  for (auto &base : icon_base_dirs())
+    for (auto &n : list_dir(base))
+      if (n != "hicolor" && n != "default" && n != "locolor" && file_exists(base + "/" + n + "/index.theme"))
+        names.insert(n);
+  std::vector<IconThemeInfo> out;
+  for (auto &n : names) {
+    // Cursor-only themes have no Directories; emblem or status-only themes
+    // have no application or places icons.
+    if (!theme_installed(n)) continue;
+    IconTheme *t = load_theme(n);
+    out.push_back({n, t->display_name, t->comment, t->inherits});
+  }
+  return out;
+}
+
+std::vector<std::string> IconLoader::installed_themes() {
+  std::vector<std::string> out;
+  for (auto &info : installed_theme_infos()) out.push_back(info.id);
+  return out;
+}
+
+void IconLoader::set_theme(const std::string &theme) { set_theme(theme, active_theme().dark); }
+
+void IconLoader::set_theme(const std::string &theme, bool dark) {
+  check_dirs();
+  std::string chosen = resolve_icon_theme(theme, dark);
   if (chosen != g_theme_name) clear_cache();
   g_theme_name = chosen;
 }
 
 std::string IconLoader::theme() { return g_theme_name; }
 
+std::vector<std::string> IconLoader::theme_chain() { return current_chain(); }
+
 void IconLoader::clear_cache() {
   g_lookup_cache.clear();
+  g_chain.clear();
   for (auto &kv : g_surface_cache)
     if (kv.second) cairo_surface_destroy(kv.second);
   g_surface_cache.clear();
@@ -421,15 +510,19 @@ void IconLoader::clear_cache() {
 std::string IconLoader::lookup(const std::string &name, int size) {
   if (name.empty()) return "";
   if (name[0] == '/') return file_exists(name) ? name : "";
+  const auto &chain = current_chain();
   std::string key = name + "@" + std::to_string(size);
   auto it = g_lookup_cache.find(key);
   if (it != g_lookup_cache.end()) return it->second;
-  std::string found = lookup_uncached(name, size);
-  // Some desktop files wrongly include an extension in Icon=.
-  if (found.empty() && (ends_with(name, ".png") || ends_with(name, ".svg") || ends_with(name, ".xpm")))
-    found = lookup_uncached(name.substr(0, name.size() - 4), size);
+  std::string found = with_extension_fallback(chain, name, size);
   g_lookup_cache[key] = found;
   return found;
+}
+
+std::string IconLoader::lookup_in(const std::string &theme, const std::string &name, int size) {
+  if (name.empty()) return "";
+  if (name[0] == '/') return file_exists(name) ? name : "";
+  return with_extension_fallback(chain_for(theme), name, size);
 }
 
 cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size) {

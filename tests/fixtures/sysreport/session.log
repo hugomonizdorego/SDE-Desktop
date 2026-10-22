@@ -1,0 +1,19 @@
+09:14:02 sde-session: starting SDE 0.1.0~alpha16
+09:14:02 sde-session: window manager: openbox
+sde-panel crashed: Segmentation fault. Backtrace (please attach it to a bug report):
+sde-panel(+0x8a1f2)[0x55d4c8e8a1f2]
+/lib/x86_64-linux-gnu/libc.so.6(+0x3c050)[0x7f1e2a43c050]
+sde-panel(_ZN3sde5Panel4drawEv+0x51)[0x55d4c8e91234]
+sde-panel(+0x91000)[0x55d4c8e91000]
+-- end of backtrace
+09:20:11 sde-session: panel exited (killed by signal 11 (Segmentation fault))
+some GTK warning printed by an application
+sde-panel crashed: Segmentation fault. Backtrace (please attach it to a bug report):
+sde-panel(+0x8a1f2)[0x5611aa08a1f2]
+/lib/x86_64-linux-gnu/libc.so.6(+0x3c050)[0x7f00aa43c050]
+sde-panel(_ZN3sde5Panel4drawEv+0x51)[0x5611aa091234]
+sde-panel(+0x91000)[0x5611aa091000]
+-- end of backtrace
+09:31:45 sde-session: panel exited (killed by signal 11 (Segmentation fault))
+09:40:00 sde-session: desktop exited (killed by signal 6 (Aborted))
+09:50:00 sde-session: notifyd exited (status 1)

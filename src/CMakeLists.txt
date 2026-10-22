@@ -77,13 +77,14 @@ add_executable(sde-settings
   settings/display.cpp
   settings/input.cpp
   settings/system.cpp
-  settings/power.cpp)
+  settings/power.cpp
+  settings/network.cpp)
 # Display-free helpers (graphics card detection, wallpaper scan, pactl/
 # nmcli/bluetoothctl parsers), unit
 # tested; thumbnails come from the Gallery core (decoding threads and the
 # freedesktop.org thumbnail cache).
 add_library(sde-settings-model STATIC settings/gpu.cpp settings/wallpapers.cpp
-  settings/devices.cpp)
+  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp)
 target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/settings)
 target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common)
 target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)
@@ -123,7 +124,8 @@ add_library(sde-gallery-core STATIC
   gallery/thumbnails.cpp
   gallery/exif.cpp
   gallery/media.cpp
-  gallery/album.cpp)
+  gallery/album.cpp
+  gallery/collections.cpp)
 target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
 target_link_libraries(sde-gallery-core PUBLIC sde-common)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
@@ -154,12 +156,14 @@ add_executable(sde-gallery
   gallery/window.cpp
   gallery/sidebar.cpp
   gallery/grid.cpp
-  gallery/viewer.cpp)
-target_link_libraries(sde-gallery PRIVATE sde-gallery-ui)
+  gallery/viewer.cpp
+  gallery/organize.cpp)
+# Batch rotate/export use Photo's encoder (lossless JPEG rotation, EXIF).
+target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
 # the DebION Dev-Team on top of sde-gallery-core.
-add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp)
+add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp)
 target_include_directories(sde-photo-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/photo)
 target_link_libraries(sde-photo-core PUBLIC sde-gallery-core)
 add_executable(sde-view
@@ -167,6 +171,7 @@ add_executable(sde-view
   photo/window.cpp
   photo/canvas.cpp
   photo/panels.cpp
+  photo/drawing.cpp
   photo/clipboard.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
 install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -279,9 +284,24 @@ install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logou
         sde-xsettingsd sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-if(SDE_BUILD_COMPONENTS)
-  add_subdirectory(calculator)
-endif()
+# Calculator: native from-scratch SDE application (DebION Dev-Team) that
+# replaced the GTK4 frontend of the scientific-calculator component. The
+# parser, programmer mode, converter and history live in calculator-core,
+# which the unit tests link.
+add_library(calculator-core STATIC
+  calculator/engine.cpp
+  calculator/programmer.cpp
+  calculator/converter.cpp
+  calculator/state.cpp)
+target_include_directories(calculator-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/calculator)
+target_link_libraries(calculator-core PUBLIC sde-common)
+add_executable(calculator
+  calculator/main.cpp
+  calculator/window.cpp
+  calculator/keys.cpp)
+target_link_libraries(calculator PRIVATE calculator-core)
+sde_app_version(calculator calculator)
+install(TARGETS calculator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # SDE System Monitor: native from-scratch rewrite (DebION Dev-Team).
 # The /proc and /sys parsers live in a small library shared with the tests.
@@ -355,3 +375,6 @@ install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)
+
+# SDE Welcome, Driver Manager and System Reports (docs/MINT-CONCEPTS.md).
+add_subdirectory(welcome)

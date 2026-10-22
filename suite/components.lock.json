@@ -2,13 +2,6 @@
   "format": 1,
   "components": [
     {
-      "id": "calculator",
-      "upstream": "scientific-calculator",
-      "url": "https://github.com/raad-altaie/scientific-calculator",
-      "commit": "37ceb0974585772e9475215cbd57926945b74b83",
-      "license": "AGPL-3.0-only"
-    },
-    {
       "id": "sde-wm",
       "upstream": "openbox",
       "url": "https://github.com/Mikachu/openbox",

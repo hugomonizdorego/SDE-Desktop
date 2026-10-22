@@ -3,9 +3,9 @@
 Type=Application
 Name=Gallery
 GenericName=Photo Library
-Comment=Browse your photos by month, mark favorites and set wallpapers
-Keywords=photos;pictures;images;gallery;screenshots;album;
-Exec=sde-gallery
+Comment=Organize photos
+Keywords=photos;pictures;images;gallery;library;album;favorites;slideshow;import;camera;screenshots;
+Exec=sde-gallery %U
 TryExec=sde-gallery
 Icon=sde-gallery
 Terminal=false
@@ -13,5 +13,11 @@ Categories=Graphics;Photography;Viewer;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=SDE-Gallery
+MimeType=x-content/image-dcf;x-content/image-picturecd;
+Actions=Import;
 X-Developer=DebION Dev-Team
 X-DebION-Developer=DebION Dev-Team
+
+[Desktop Action Import]
+Name=Import from Device
+Exec=sde-gallery --import

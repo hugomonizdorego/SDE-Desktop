@@ -19,9 +19,12 @@ add_test(NAME sde-rust-tests
 add_executable(sde-sni-demo sni_demo.cpp)
 target_link_libraries(sde-sni-demo PRIVATE sde-common)
 
-if(SDE_BUILD_COMPONENTS)
-  add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
-endif()
+# Calculator: parser, precedence, percent, functions, errors, formatting,
+# programmer mode, converter and history; then the command line (--eval).
+add_executable(calculator-tests test_calculator.cpp)
+target_link_libraries(calculator-tests PRIVATE calculator-core)
+add_test(NAME calculator-engine COMMAND calculator-tests)
+add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
 
 add_executable(sde-display-tests test_display.cpp)
 target_link_libraries(sde-display-tests PRIVATE sde-common)
@@ -86,6 +89,9 @@ set_tests_properties(taca-engine PROPERTIES TIMEOUT 120)
 add_executable(sde-photo-tests test_photo.cpp)
 target_link_libraries(sde-photo-tests PRIVATE sde-photo-core)
 add_test(NAME sde-photo-model COMMAND sde-photo-tests)
+add_executable(sde-photo-draw-tests test_photo_draw.cpp)
+target_link_libraries(sde-photo-draw-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-draw COMMAND sde-photo-draw-tests)
 
 # Niny Text Editor: codec, highlighter, find/replace, undo, settings, text ops.
 add_executable(niny-tests test_niny.cpp)
@@ -111,6 +117,15 @@ if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   set_tests_properties(sde-lock-daemon PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif()
 
+# About windows open and close without crashing (Niny alpha 50 regression).
+if(SDE_XVFB)
+  add_test(NAME sde-about-windows COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_about_ui.py
+    niny=$<TARGET_FILE:niny> sysmon=$<TARGET_FILE:sde-system-monitor>
+    run=$<TARGET_FILE:sde-run> display=$<TARGET_FILE:sde-display-settings>)
+  set_tests_properties(sde-about-windows PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
+
 # Test helper: stock FLTK menus, dialogs and widgets in the SDE look (not
 # installed); used for screenshots of the UI kit (docs/UI-KIT.md).
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
@@ -122,3 +137,22 @@ add_executable(sde-weather-tests test_weather.cpp ../src/panel/weather.cpp ../sr
 target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(sde-weather-tests PRIVATE sde-common)
 add_test(NAME sde-weather-model COMMAND sde-weather-tests)
+# SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
+# heuristics, APT sources rewriting, crash log parsing, issue URLs.
+add_executable(sde-sysreport-tests test_sysreport.cpp)
+target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
+add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
+
+# debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
+# --quick --json verdicts, against fixtures and stub commands.
+add_test(NAME debion-network-check COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_network_check.py)
+set_tests_properties(debion-network-check PROPERTIES TIMEOUT 120)
+
+# Caption buttons and their migration, transparency contrast, icon theme
+# lookup (tests/fixtures/icon-themes) and the build history of Settings > About.
+add_executable(sde-theme-tests test_theme.cpp)
+target_link_libraries(sde-theme-tests PRIVATE sde-settings-model sde-common)
+target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                   SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(sde-theme-tests sde-build-info)
+add_test(NAME sde-theme COMMAND sde-theme-tests)

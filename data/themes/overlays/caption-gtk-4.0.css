@@ -1,0 +1,58 @@
+/* SDE caption buttons (GTK 4), shared by SDE Graphite, SDE Fluent and SDE
+ * Glass and matching the SDE WM frames: minimize, maximize and close on the
+ * right (gtk-decoration-layout ":minimize,maximize,close"), clear symbolic
+ * glyphs, a comfortable target, a hover layer and a red close. The window
+ * and :not(.suggested-action) parts outweigh the upstream round buttons.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+window windowcontrols > button:not(.suggested-action):not(.destructive-action) {
+  min-width: 40px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: @RADIUS_SMALL@;
+  color: @sde_titlebar_text;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+window windowcontrols > button:not(.suggested-action):not(.destructive-action) > image {
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  background: none;
+  box-shadow: none;
+  -gtk-icon-size: 16px;
+}
+window windowcontrols > button:not(.suggested-action):not(.destructive-action):hover {
+  background-color: alpha(@sde_titlebar_text, 0.10);
+  color: @sde_titlebar_text;
+}
+window windowcontrols > button:not(.suggested-action):not(.destructive-action):active {
+  background-color: alpha(@sde_titlebar_text, 0.18);
+}
+window windowcontrols > button:not(.suggested-action):not(.destructive-action).close:hover {
+  background-color: @CLOSE_HOVER@;
+  color: #FFFFFF;
+}
+window windowcontrols > button:not(.suggested-action):not(.destructive-action).close:active {
+  background-color: shade(@CLOSE_HOVER@, 0.88);
+  color: #FFFFFF;
+}
+window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action) {
+  color: @sde_titlebar_text_inactive;
+  background-color: transparent;
+}
+window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action):hover {
+  color: @sde_titlebar_text;
+  background-color: alpha(@sde_titlebar_text, 0.10);
+}
+window:backdrop windowcontrols > button:not(.suggested-action):not(.destructive-action).close:hover {
+  background-color: @CLOSE_HOVER@;
+  color: #FFFFFF;
+}
+window.maximized windowcontrols > button:not(.suggested-action):not(.destructive-action),
+window.tiled windowcontrols > button:not(.suggested-action):not(.destructive-action) { border-radius: 0; }

@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "config.h"
+#include "integration.h"
 #include "theme_palettes.h"
 #include "util.h"
 
@@ -238,8 +239,41 @@ std::string theme_dir(const Config &cfg) {
 std::string theme_title_layout(const std::string &family) { return family_info(family).title_layout; }
 
 std::string theme_decoration_layout(const std::string &family) {
-  return std::string(family_info(family).title_layout) == "CIML" ? "close,minimize,maximize:menu"
-                                                                 : "menu:minimize,maximize,close";
+  (void)family;  // every family: right-hand minimize, maximize and close
+  return ":minimize,maximize,close";
+}
+
+const std::vector<TransparencyPreset> &transparency_presets() {
+  static const std::vector<TransparencyPreset> list = {
+      {"off", "Off", 0}, {"subtle", "Subtle", 25}, {"clear", "Clear", 50}, {"glass", "Glass", 80}};
+  return list;
+}
+
+std::string transparency_preset_id(int value) {
+  for (const auto &p : transparency_presets())
+    if (p.value == value) return p.id;
+  return "";
+}
+
+double translucent_contrast(const Color &fg, const Color &bg, double alpha, bool fade_text) {
+  auto over = [alpha](const Color &c, const Color &b) {
+    return Color{c.r * alpha + b.r * (1 - alpha), c.g * alpha + b.g * (1 - alpha),
+                 c.b * alpha + b.b * (1 - alpha), 1};
+  };
+  // Blur averages the wallpaper and windows behind into a smooth color, so
+  // the worst case is a flat backdrop: any gray, or the colors themselves.
+  std::vector<Color> backdrops = {fg, bg};
+  for (int v = 0; v <= 10; ++v) backdrops.push_back(Color{v / 10.0, v / 10.0, v / 10.0, 1});
+  double worst = 1e9;
+  for (const auto &b : backdrops)
+    worst = std::min(worst, (fade_text ? over(fg, b) : fg).contrast(over(bg, b)));
+  return worst;
+}
+
+double readable_opacity(const Color &fg, const Color &bg, double ratio, bool fade_text) {
+  int a = 100;
+  while (a > 30 && translucent_contrast(fg, bg, (a - 1) / 100.0, fade_text) >= ratio) --a;
+  return a / 100.0;
 }
 
 std::vector<ThemeFamilyInfo> theme_families() {
@@ -314,6 +348,40 @@ static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
   t.gtk_theme = theme_dir(f.id, t.dark, t.accent_name);
 }
 
+// Whether the compositor runs its lite profile ([compositor] effects, or
+// auto on virtual machines and software rendering), as integration.cpp
+// decides it for the compositor configuration.
+static bool compositor_lite(const Config &cfg) {
+  if (cfg.get_bool("appearance", "low_resource", false)) return true;
+  return compositor_effects(cfg) == "lite";
+}
+
+// Turns the transparency setting into the opacity of each surface: 0 is
+// opaque, 100 the readable limit of that surface (readable_opacity()).
+// Families keep a little character: Glass goes furthest, Graphite least.
+// Without blur (lite profile) surfaces only go part of the way.
+static void apply_transparency(Theme &t, const palettes::Family &f) {
+  t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = 1.0;
+  if (!t.translucent || t.transparency <= 0) return;
+  // A square-root curve: the first steps of the slider (Subtle) already
+  // show, the last ones (Glass) approach the readable limit gently.
+  double s = std::sqrt(t.transparency / 100.0) * (0.75 + 0.25 * std::min(1.0, f.translucency / 0.22));
+  if (t.lite) s *= 0.5;
+  auto floor_of = [](std::initializer_list<double> floors) { return std::max(floors); };
+  auto toward = [s](double floor) { return 1.0 - s * (1.0 - floor); };
+  t.opacity = toward(floor_of({readable_opacity(t.text, t.panel_bg, 4.5, true),
+                               readable_opacity(t.text_dim, t.panel_bg, 3.0, true)}));
+  t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, true),
+                                     readable_opacity(t.text_dim, t.menu_bg, 3.0, true),
+                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, true)}));
+  // Frames: translucent title bars need blur behind them to stay calm;
+  // Glass goes all the way, the other families part of it.
+  double frame = toward(readable_opacity(t.titlebar_text, t.titlebar_bg, 4.5, true));
+  t.frame_opacity = t.lite ? 1.0 : f.glass ? frame : 1.0 - (1.0 - frame) * 0.6;
+  t.gtk_menu_alpha = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, false),
+                                      readable_opacity(t.text_dim, t.menu_bg, 3.0, false)}));
+}
+
 Theme Theme::make(const std::string &family, bool dark, const std::string &accent) {
   Theme t;
   t.dark = dark;
@@ -348,15 +416,13 @@ Theme Theme::from_config(const Config &cfg) {
   t.panel_height = S(t.panel_size);
   t.panel_top = lower(cfg.get("panel", "position", "bottom")) == "top";
   // Translucency (Acrylic, vibrancy, glass) needs [aero] enabled and is
-  // turned off by low resource mode. Graphite is the most opaque family.
+  // turned off by low resource mode.
   t.translucent = cfg.get_bool("aero", "enabled", true) && !cfg.get_bool("appearance", "low_resource", false);
   t.glass = f.glass && t.translucent;
-  t.transparency = std::max(0, std::min(60, cfg.get_int("aero", "transparency", 18)));
-  if (t.translucent) {
-    double k = f.translucency / 0.22;  // Glass uses the slider value as is
-    t.opacity = 1.0 - t.transparency * k / 100.0;
-    t.popup_opacity = 1.0 - t.transparency * k * 0.5 / 100.0;
-  }
+  t.transparency = std::max(0, std::min(100, cfg.get_int("aero", "transparency", 25)));
+  t.lite = compositor_lite(cfg);
+  t.blur = t.translucent && !t.lite && cfg.get_bool("aero", "blur", true);
+  apply_transparency(t, f);
   return t;
 }
 

@@ -1,0 +1,9 @@
+[Icon Theme]
+Name=hicolor
+Comment=hicolor (SDE test fixture)
+Directories=48x48/apps
+
+[48x48/apps]
+Size=48
+Type=Threshold
+Context=Applications

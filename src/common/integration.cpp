@@ -14,6 +14,7 @@
 
 #include "build_config.h"
 #include "desktop_entry.h"
+#include "icons.h"
 #include "process.h"
 #include "spawn.h"
 #include "suite.h"
@@ -31,15 +32,6 @@ std::string theme_path(const std::string &name) {
   return "";
 }
 bool theme_installed(const std::string &name) { return !theme_path(name).empty(); }
-
-bool icon_theme_installed(const std::string &name) {
-  std::vector<std::string> dirs = {std::string(g_get_user_data_dir()), home_dir() + "/.icons"};
-  for (const gchar *const *d = g_get_system_data_dirs(); d && *d; ++d) dirs.push_back(*d);
-  for (const auto &d : dirs)
-    if (file_exists(d + "/icons/" + name + "/index.theme") || file_exists(d + "/" + name + "/index.theme"))
-      return true;
-  return false;
-}
 
 std::string rgba(const Color &c, double alpha) {
   char buf[64];
@@ -80,12 +72,8 @@ std::string gtk_theme_name(const Config &cfg) {
 }
 
 std::string gtk_icon_theme_name(const Config &cfg, bool dark) {
-  std::string icons = cfg.get("appearance", "icon_theme", "auto");
-  if (icons != "auto" && !icons.empty()) return icons;
-  // Papirus (recommended by the sde package) matches every SDE family.
-  std::string papirus = dark ? "Papirus-Dark" : "Papirus";
-  if (icon_theme_installed(papirus)) return papirus;
-  return "Adwaita";
+  // The same choice as every SDE program (IconLoader::set_theme()).
+  return resolve_icon_theme(cfg.get("appearance", "icon_theme", "auto"), dark);
 }
 
 void sync_gtk_settings(const Config &cfg) {
@@ -140,6 +128,19 @@ void sync_gtk_settings(const Config &cfg) {
     if (cfg.get_bool("suite", "libadwaita", true) && file_exists(lib))
       block4 = "@import url(\"file://" + lib + "\");\n";
     block4 += defs;
+    // Transparency (Settings > Appearance): menus and popovers get a
+    // translucent background while their text stays opaque; the compositor
+    // blurs what is behind. GTK marks windows .csd only while a compositor
+    // runs, so without one everything stays opaque.
+    if (t.gtk_menu_alpha < 0.999) {
+      std::string menu = rgba(t.menu_bg, t.gtk_menu_alpha);
+      block3 += "/* transparency " + std::to_string(t.transparency) + " */\n"
+                ".csd menu, .csd .menu, .csd .context-menu { background-color: " + menu + "; }\n"
+                "window.csd.popup.background { background-color: transparent; }\n"
+                ".csd popover.background { background-color: " + menu + "; }\n";
+      block4 += "/* transparency " + std::to_string(t.transparency) + " */\n"
+                "window.csd popover > contents, window.csd popover > arrow { background-color: " + menu + "; }\n";
+    }
   }
   write_user_css(config_home() + "/gtk-3.0/gtk.css", block3);
   write_user_css(config_home() + "/gtk-4.0/gtk.css", block4);
@@ -260,6 +261,10 @@ std::string detect_graphics_class() {
   if (forced && *forced) return forced;
   const char *sw = getenv("LIBGL_ALWAYS_SOFTWARE");
   if (sw && *sw && std::string(sw) != "0" && std::string(sw) != "false") return "software";
+  // The devices do not change while a program runs; Theme::from_config()
+  // asks on every configuration change.
+  static std::string cached;
+  if (!cached.empty()) return cached;
   bool any = false, hardware = false;
   for (auto &node : list_dir("/sys/class/drm")) {
     // Render nodes name the GPU; cardN may be a display-only controller.
@@ -273,9 +278,10 @@ std::string detect_graphics_class() {
     if (!software_drm_driver(drv)) hardware = true;
   }
   // A passed-through GPU in a VM is real hardware; anything else in a VM is not.
-  if (hardware) return "hardware";
-  if (any || !virtual_machine_name().empty()) return "virtual";
-  return "software";
+  if (hardware) cached = "hardware";
+  else if (any || !virtual_machine_name().empty()) cached = "virtual";
+  else cached = "software";
+  return cached;
 }
 
 std::string auto_compositor_backend() {
@@ -306,14 +312,19 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   std::string effects = compositor_effects(cfg, safe);
   bool lite = effects == "lite";
   // Every family is translucent with [aero] enabled (Graphite vibrancy,
-  // Fluent Acrylic); only SDE Glass makes window frames translucent.
-  bool glass = t.glass, blur = t.translucent && cfg.get_bool("aero", "blur", true) && !lite;
+  // Fluent Acrylic, Glass); [aero] transparency sets how much (Theme).
+  bool blur = t.blur && !lite;
   bool round = cfg.get_bool("aero", "rounded_corners", true) && !lite;
   bool liquid = t.family == "glass";
   bool motion = cfg.get_bool("aero", "animations", true) && !lite;
   int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6) + (liquid ? 2 : 0)));
-  double frame = glass ? std::max(0.45, 1.0 - t.transparency * 1.2 / 100.0) : 1.0;
-  double menu = t.translucent ? std::max(0.70, t.popup_opacity) : 1.0;
+  double frame = t.frame_opacity;
+  // GTK menus draw their own translucent background with opaque text (the
+  // CSS block of sync_gtk_settings()); other toolkits' menus get the
+  // whole-window opacity, which is still readable (readable_opacity()).
+  bool gtk_alpha = t.gtk_menu_alpha < 0.999 && cfg.get("suite", "gtk_theme", "auto") != "system" &&
+                   starts_with(gtk_theme_name(cfg), "SDE-");
+  double menu = t.translucent ? (gtk_alpha ? 1.0 : t.popup_opacity) : 1.0;
   char num[32];
   auto f = [&](double v) {
     snprintf(num, sizeof num, "%.2f", v);
@@ -372,7 +383,7 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
          "\"class_g = 'Xfce4-screenshooter'\", \"fullscreen\"];\n";
   }
   c += "wintypes: {\n"
-       "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.85, menu)) + "; };\n"
+       "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.92, t.popup_opacity)) + "; };\n"
        "  dock = { shadow = false; clip-shadow-above = true; };\n"
        "  dnd = { shadow = false; };\n"
        "  popup_menu = { opacity = " + f(menu) + "; };\n"
@@ -431,7 +442,11 @@ std::string compositor_report(const Config &cfg) {
   r += "Configuration: " + (file_exists(own) ? own + " (your own file)"
                                              : config_home() + "/sde/aero-compositor*.conf (generated)") + "\n";
   r += "Theme: " + t.gtk_theme + ", translucency " +
-       (t.translucent ? "on, " + std::to_string(t.transparency) + "% transparency" : std::string("off")) +
+       (t.translucent ? "on, transparency " + std::to_string(t.transparency) + "/100 (panel " +
+                            std::to_string(int(std::lround(t.opacity * 100))) + "%, menus " +
+                            std::to_string(int(std::lround(t.popup_opacity * 100))) + "%, frames " +
+                            std::to_string(int(std::lround(t.frame_opacity * 100))) + "% opaque)"
+                      : std::string("off")) +
        ", blur " +
        (t.translucent && cfg.get_bool("aero", "blur", true)
             ? (backend != "glx" && backend != "xrender" && !vm.empty() ? "off in virtual machines (choose OpenGL or XRender to use it)" : "on")

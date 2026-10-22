@@ -411,45 +411,7 @@ void Grid::open_menu(int index) {
   } else {
     paths.push_back(photos[size_t(index)].path);
   }
-  bool all_fav = std::all_of(paths.begin(), paths.end(), [&](const std::string &p) { return app_->is_favorite(p); });
-  bool single = paths.size() == 1;
-  std::string fav = all_fav ? _("Remove from Favorites") : _("Add to Favorites");
-  std::string copy = single ? _("Copy Path") : _("Copy Paths");
-  std::string trash = _("Move to Trash…");
-  int one = single ? 0 : FL_MENU_INACTIVE;
-  struct Entry {
-    const char *text;
-    long id;
-    int flags;
-  } entries[] = {{_("Open"), 1, one},
-                 {fav.c_str(), 2, 0},
-                 {_("Open in Photo"), 3, one},
-                 {_("Open With Other Application"), 4, one},
-                 {_("Set as Wallpaper"), 5, one},
-                 {_("Show in Files"), 6, one | FL_MENU_DIVIDER},
-                 {copy.c_str(), 7, 0},
-                 {trash.c_str(), 8, 0}};
-  Fl_Menu_Item items[9];
-  memset(items, 0, sizeof items);
-  for (size_t i = 0; i < 8; ++i) {
-    items[i].text = entries[i].text;
-    items[i].user_data_ = reinterpret_cast<void *>(entries[i].id);
-    items[i].flags = entries[i].flags;
-    items[i].labelsize(app_->theme().font_size);
-    items[i].labelcolor(app_->theme().text.fl());
-  }
-  const Fl_Menu_Item *picked = items->popup(Fl::event_x(), Fl::event_y());
-  if (!picked) return;
-  switch (reinterpret_cast<long>(picked->user_data())) {
-    case 1: app_->open_photo(index); break;
-    case 2: app_->toggle_favorite(paths); break;
-    case 3: app_->edit_in_photo(paths[0]); break;
-    case 4: app_->open_with(paths[0]); break;
-    case 5: app_->set_wallpaper(paths[0]); break;
-    case 6: app_->show_in_files(paths[0]); break;
-    case 7: app_->copy_paths(paths); break;
-    case 8: app_->trash(paths); break;
-  }
+  app_->photo_menu(index, paths);
 }
 
 bool Grid::keyboard(int key, int state) {

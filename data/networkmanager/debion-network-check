@@ -1,35 +1,69 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
 # debion-network-check - find out why a DebION desktop says "connected" but
-# has no internet, and optionally fix the usual causes.
+# a browser cannot reach the internet, and optionally fix the usual causes.
 #
-#   debion-network-check            report (any user)
-#   sudo debion-network-check --fix hand DHCP/Wi-Fi interfaces from
-#                                   /etc/network/interfaces to NetworkManager
-#                                   and repair a dangling /etc/resolv.conf
-#   debion-network-check --postinst short warning used by package scripts
+#   debion-network-check              full report (any user; no changes)
+#   debion-network-check --quick --json
+#                                     a few fast checks as one JSON object
+#                                     (for the panel and Settings)
+#   sudo debion-network-check --fix   repair what is safe to repair:
+#                                     hand DHCP/Wi-Fi interfaces from
+#                                     /etc/network/interfaces to NetworkManager,
+#                                     stop a second DHCP client, give
+#                                     /etc/resolv.conf back to one owner and
+#                                     turn on network time
+#   debion-network-check --wpad       print the proxy auto-configuration URL
+#                                     this network publishes (WPAD), if any
+#   sudo debion-network-check --apt-proxy URL|none
+#                                     set (or remove) the proxy used by APT
+#   debion-network-check --postinst   used by the package scripts
 #
-# It never touches static, bridge, bond or VLAN configurations: those are
-# deliberate server-style setups.
+# It never touches static, bridge, bond, VLAN or wpa-conf/wpa-roam
+# configurations: those are deliberate server-style setups.
 set -u
 
+VERSION=2
 MODE=report
-case "${1:-}" in
-    --fix) MODE=fix ;;
-    --postinst) MODE=postinst ;;
-    -h|--help)
-        sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'
-        exit 0 ;;
-    "") ;;
-    *) echo "usage: debion-network-check [--fix]" >&2; exit 2 ;;
-esac
+NOW=0
+APT_PROXY_ARG=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --fix) MODE=fix ;;
+        --now) NOW=1 ;;
+        --postinst) MODE=postinst ;;
+        --handover) MODE=handover ;;
+        --quick) MODE=quick ;;
+        --json) [ "$MODE" = report ] && MODE=quick ;;
+        --wpad) MODE=wpad ;;
+        --apt-proxy) MODE=apt-proxy; APT_PROXY_ARG=${2:-}; [ $# -gt 1 ] && shift ;;
+        # Building blocks, used by the tests.
+        --list-convertible|--convert-interfaces|--dhcp-clients|--wpad-candidates|--explain-curl|--resolv-owner|--wifi-profiles)
+            MODE=${1#--} ;;
+        -h|--help)
+            sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) [ "${MODE}" = explain-curl ] || [ "$MODE" = wifi-profiles ] && break
+           echo "usage: debion-network-check [--quick --json | --fix [--now] | --wpad | --apt-proxy URL|none]" >&2; exit 2 ;;
+    esac
+    shift
+done
 
 IFACES=${DEBION_NETWORK_INTERFACES:-/etc/network/interfaces}
+RESOLV=${DEBION_RESOLV_CONF:-/etc/resolv.conf}
+SYSNET=${DEBION_SYS_CLASS_NET:-/sys/class/net}
+NMCONN=${DEBION_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
+BACKUPS=${DEBION_BACKUP_DIR:-/var/backups/debion-network}
+NM_RUN_CONF=${DEBION_NM_RUN_CONF:-/run/NetworkManager/conf.d}
+TEST_HOST=deb.debian.org
+TIMEOUT=${DEBION_NET_TIMEOUT:-5}
+
 problems=0
-say() { [ "$MODE" = postinst ] || printf '%s\n' "$*"; }
+say() { case "$MODE" in postinst|handover|quick) ;; *) printf '%s\n' "$*" ;; esac; }
 ok() { say "  OK    $*"; }
 warn() { problems=$((problems + 1)); say "  WARN  $*"; }
 info() { say "  INFO  $*"; }
+more() { say "        $*"; }
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -41,116 +75,741 @@ nm_running() {
     fi
 }
 
-# Interfaces that ifupdown configures only with DHCP, SLAAC or
-# wpa_supplicant (one name per line). An interface with any static, bridge,
-# bond, VLAN or hook stanza is left alone.
+unit_active() { have systemctl && [ -d /run/systemd/system ] && systemctl is-active --quiet "$1" 2>/dev/null; }
+
+stamp() { date +%Y%m%d-%H%M%S; }
+
+# ------------------------------------------------------- /etc/network/interfaces
+
+interfaces_files() {
+    printf '%s\n' "$IFACES"
+    if [ -d "$IFACES.d" ]; then
+        for f in "$IFACES.d"/*; do
+            # ifupdown's "source-directory" skips names with dots; the
+            # Debian default "source /etc/network/interfaces.d/*" does not.
+            [ -f "$f" ] && printf '%s\n' "$f"
+        done
+    fi
+}
+
+# Physical interfaces that ifupdown configures only with DHCP, SLAAC or a
+# wpa-ssid/wpa-psk network (one name per line). An interface with any static,
+# bridge, bond, VLAN, hook or wpa-conf/wpa-roam line, or one that another
+# stanza uses as a bridge port, bond slave or VLAN device, is left alone.
 ifupdown_dhcp_ifaces() {
-    files="$IFACES"
-    [ -d "$IFACES.d" ] && files="$files $(ls "$IFACES.d"/* 2>/dev/null)"
-    # shellcheck disable=SC2086
-    awk '
+    interfaces_files | while IFS= read -r f; do cat "$f" 2>/dev/null; echo; done | awk '
         function flush() {
             if (cur == "") return
-            ok = (method == "dhcp" || method == "auto" || (method == "manual" && wpa)) && !special
-            print cur, ok
+            good = (method == "dhcp" || method == "auto" || (method == "manual" && wpa)) && !special
+            print cur, good
             cur = ""
         }
-        $1 == "iface" { flush(); if ($2 != "lo" && $2 !~ /[.:]/) { cur = $2; method = $4; special = 0; wpa = 0 } ; next }
-        $1 ~ /^(auto|allow-|mapping|source|rename)/ { flush(); next }
-        cur != "" && $1 ~ /^wpa-/ { wpa = 1; next }
-        cur != "" && $1 ~ /^(address|netmask|gateway|bridge|bond|vlan|pre-up|up|post-up|down|pre-down|post-down|hwaddress|dns-|mtu)/ { special = 1 }
-        END { flush() }
-    ' $files 2>/dev/null | awk '{ seen[$1] = 1; if ($2 == 0) bad[$1] = 1 } END { for (n in seen) if (!bad[n]) print n }' | sort
+        { sub(/^[ \t]+/, "") }
+        $1 ~ /^#/ { next }
+        $1 == "iface" {
+            flush()
+            if ($2 != "lo" && $2 !~ /[.:@]/) { cur = $2; method = $4; special = 0; wpa = 0 }
+            else if ($2 != "lo") { print $2, 0 }
+            next
+        }
+        $1 == "mapping" { flush(); mapped = 1; next }
+        $1 ~ /^(auto|allow-|source|rename|no-auto-down|no-scripts)/ { flush(); next }
+        # Lines that tie other interfaces to this stanza.
+        $1 ~ /^(bridge[-_]ports|bond[-_]slaves|bond[-_]master|vlan[-_]raw[-_]device|ovs_bridge|ovs_ports)$/ {
+            for (i = 2; i <= NF; i++) used[$i] = 1
+        }
+        cur == "" { next }
+        $1 == "wpa-ssid" || $1 == "wpa-psk" || $1 == "wpa-key-mgmt" || $1 == "wpa-bssid" || $1 == "wpa-scan-ssid" { wpa = 1; next }
+        $1 ~ /^wpa-/ { special = 1; next }
+        $1 ~ /^(address|netmask|gateway|broadcast|network|pointopoint|scope|bridge|bond|vlan|ovs|pre-up|up|post-up|down|pre-down|post-down|hwaddress|dns-|mtu|wireless-|provider|tunnel|endpoint|local|ttl|mode|media|accept_ra|autoconf|privext|dhcp|request_prefix|ll-)/ { special = 1 }
+        END {
+            flush()
+            for (n in used) print n, 0
+            if (mapped) print "*mapping*", 0
+        }
+    ' | awk '
+        { seen[$1] = 1; if ($2 == 0) bad[$1] = 1 }
+        END { if (bad["*mapping*"]) exit; for (n in seen) if (!bad[n]) print n }
+    ' | sort | while IFS= read -r n; do
+        # Only interfaces this machine has (when that can be checked).
+        if [ -d "$SYSNET" ] && [ ! -e "$SYSNET/$n" ]; then continue; fi
+        printf '%s\n' "$n"
+    done
 }
+
+# Prints |file| with the stanzas (and auto/allow-* entries) of the
+# interfaces in |list| commented out.
+convert_file() {
+    awk -v list=" $2 " '
+        function managed(n) { return index(list, " " n " ") > 0 }
+        {
+            line = $0; t = $0; sub(/^[ \t]+/, "", t)
+            split(t, f, /[ \t]+/)
+        }
+        f[1] ~ /^(auto|allow-hotplug|allow-auto|allow-[a-z]+)$/ {
+            skip = 0
+            out = f[1]; kept = 0; dropped = 0
+            n = split(t, w, /[ \t]+/)
+            for (i = 2; i <= n; i++) {
+                if (w[i] == "") continue
+                if (managed(w[i])) dropped = 1; else { out = out " " w[i]; kept = 1 }
+            }
+            if (!dropped) { print line; next }
+            print "# " line "  # moved to NetworkManager by debion-network-check"
+            if (kept) print out
+            next
+        }
+        f[1] == "iface" { skip = managed(f[2]) }
+        f[1] ~ /^(mapping|source|source-directory|rename)$/ { skip = 0 }
+        skip { print "# " line; next }
+        { print line }
+    ' "$1"
+}
+
+# Writes a NetworkManager keyfile for every wpa-ssid stanza of an interface
+# in |list| into |dir| (mode 600). Prints the files it wrote.
+wifi_profiles() {
+    list=" $1 "; dir=$2
+    interfaces_files | while IFS= read -r f; do cat "$f" 2>/dev/null; echo; done | awk -v list="$list" '
+        function flush() {
+            if (cur != "" && ssid != "") printf "%s\037%s\037%s\037%s\n", cur, ssid, psk, mgmt
+            cur = ""; ssid = ""; psk = ""; mgmt = ""
+        }
+        function unq(s) { if (s ~ /^".*"$/) s = substr(s, 2, length(s) - 2); return s }
+        { sub(/^[ \t]+/, "") }
+        $1 == "iface" { flush(); if (index(list, " " $2 " ") > 0) cur = $2; next }
+        $1 ~ /^(auto|allow-|mapping|source)/ { flush(); next }
+        cur != "" && $1 == "wpa-ssid" { v = $0; sub(/^wpa-ssid[ \t]+/, "", v); ssid = unq(v) }
+        cur != "" && $1 == "wpa-psk" { v = $0; sub(/^wpa-psk[ \t]+/, "", v); psk = unq(v) }
+        cur != "" && $1 == "wpa-key-mgmt" { mgmt = $2 }
+        END { flush() }
+    ' | while IFS="$(printf '\037')" read -r dev ssid psk mgmt; do
+        uuid=${DEBION_UUID:-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo 00000000-0000-4000-8000-000000000000)}
+        name=$(printf '%s' "$ssid" | tr -c 'A-Za-z0-9._-' '_')
+        out="$dir/ifupdown-$dev-$name.nmconnection"
+        [ -e "$out" ] && continue
+        esc() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+        (
+            umask 077
+            {
+                echo "# Imported from /etc/network/interfaces by debion-network-check"
+                echo "[connection]"
+                echo "id=$(esc "$ssid")"
+                echo "uuid=$uuid"
+                echo "type=wifi"
+                echo "interface-name=$dev"
+                echo ""
+                echo "[wifi]"
+                echo "mode=infrastructure"
+                echo "ssid=$(esc "$ssid")"
+                echo ""
+                if [ -n "$psk" ] && [ "$mgmt" != NONE ]; then
+                    echo "[wifi-security]"
+                    echo "key-mgmt=wpa-psk"
+                    echo "psk=$(esc "$psk")"
+                    echo ""
+                fi
+                echo "[ipv4]"
+                echo "method=auto"
+                echo ""
+                echo "[ipv6]"
+                echo "method=auto"
+            } > "$out"
+        )
+        chmod 600 "$out" 2>/dev/null
+        printf '%s\n' "$out"
+    done
+}
+
+# Hands |list| from ifupdown to NetworkManager: backs up and edits every
+# file that configures them, imports Wi-Fi networks. With |now|=1 the
+# interfaces are taken down by ifupdown first (while the old configuration
+# is still there) and NetworkManager is restarted afterwards.
+handover() {
+    list=$1; now=$2; dest=$3
+    mkdir -p "$dest"
+    if [ "$now" = 1 ] && have ifdown; then
+        for n in $list; do ifdown --force "$n" >/dev/null 2>&1 || true; done
+    fi
+    [ -d "$NMCONN" ] || mkdir -p "$NMCONN"
+    wifi_profiles "$list" "$NMCONN" | sed 's/^/  imported Wi-Fi network: /'
+    interfaces_files | while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        convert_file "$f" "$list" > "$f.debion-new" || { rm -f "$f.debion-new"; continue; }
+        if cmp -s "$f" "$f.debion-new"; then rm -f "$f.debion-new"; continue; fi
+        # Backups never go next to the file: ifupdown sources every file
+        # in interfaces.d, and a copy there would configure the NIC again.
+        cp -p "$f" "$dest/$(printf '%s' "$f" | tr / _)"
+        chmod --reference="$f" "$f.debion-new" 2>/dev/null || true
+        mv "$f.debion-new" "$f"
+    done
+    echo "Moved to NetworkManager: $list"
+    echo "Backup: $dest"
+    if [ "$now" = 1 ]; then
+        rm -f "$NM_RUN_CONF/90-debion-handover.conf"
+        if have systemctl && [ -d /run/systemd/system ]; then
+            systemctl restart NetworkManager.service 2>/dev/null || true
+        fi
+    fi
+}
+
+# Interfaces whose handover waits for the next boot (see --handover), and
+# the backup that still describes them for ifdown.
+pending_handover() { sed -n 's/^unmanaged-devices+=//p' "$NM_RUN_CONF/90-debion-handover.conf" 2>/dev/null | tr ';' '\n' | sed -n 's/^interface-name://p' | tr '\n' ' ' | sed 's/ $//'; }
+pending_backup() { sed -n 's/^# backup: //p' "$NM_RUN_CONF/90-debion-handover.conf" 2>/dev/null; }
+
+# ---------------------------------------------------------- DHCP clients
+
+# Lists DHCP clients that are not NetworkManager's own (which runs inside
+# NetworkManager or as "dhclient ... /run/NetworkManager/..."):
+# "PID CLIENT IFACE", IFACE "*" for a dhcpcd manager serving all interfaces.
+# Reads "ps -eo pid=,args=" (or $DEBION_PS_OUTPUT).
+dhcp_clients() {
+    known=""
+    if [ -d "$SYSNET" ]; then
+        for d in "$SYSNET"/*; do [ -e "$d" ] && known="$known ${d##*/}"; done
+    fi
+    known="$known ${DEBION_KNOWN_IFACES:-}"
+    if [ -n "${DEBION_PS_OUTPUT:-}" ]; then cat "$DEBION_PS_OUTPUT"; else ps -eo pid=,args= 2>/dev/null; fi | awk -v known=" $known " '
+        {
+            pid = $1; cmd = $2; sub(/.*\//, "", cmd)
+            if ($0 ~ /NetworkManager/) next
+            if (cmd == "dhclient") client = "dhclient"
+            else if (cmd == "dhcpcd" || cmd == "dhcpcd:") client = "dhcpcd"
+            else if (cmd == "udhcpc" || cmd == "dhcpcd-run-hooks") { if (cmd == "udhcpc") client = "udhcpc"; else next }
+            else next
+            # dhcpcd helpers serve the manager; they are not separate clients.
+            if ($0 ~ /\[(privileged|network|control) proxy\]|\[privileged actioneer\]|\[launcher\]/) next
+            ifs = ""
+            for (i = 3; i <= NF; i++) {
+                w = $i
+                if (w ~ /^-/) { if (client == "dhcpcd" && w ~ /^-(c|e|f|h|i|I|l|m|o|O|r|s|S|t|u|v|y|z)$/) i++; continue }
+                if (index(known, " " w " ") > 0 && w != "lo") ifs = ifs " " w
+            }
+            if (client == "dhclient") {
+                # dhclient: the interfaces are the trailing arguments.
+                ifs = ""
+                for (i = NF; i >= 3; i--) { if ($i ~ /^-/ || $(i-1) ~ /^-(pf|lf|cf|sf|df|e|s|p)$/) break; ifs = " " $i ifs }
+            }
+            if (ifs == "") ifs = " *"
+            n = split(substr(ifs, 2), a, " ")
+            for (j = 1; j <= n; j++) if (!seen[client " " a[j]]++) print pid, client, a[j]
+        }
+    '
+}
+
+# ----------------------------------------------------------------- DNS
+
+# Who writes /etc/resolv.conf: networkmanager, systemd-resolved,
+# resolvconf, dhclient, static, dangling, missing, empty.
+resolv_owner() {
+    if [ -L "$RESOLV" ]; then
+        target=$(readlink "$RESOLV")
+        [ -e "$RESOLV" ] || { echo dangling; return; }
+        case "$target" in
+            *systemd/resolve*) echo systemd-resolved ;;
+            *NetworkManager*) echo networkmanager ;;
+            *resolvconf*) echo resolvconf ;;
+            *) echo static ;;
+        esac
+        return
+    fi
+    [ -e "$RESOLV" ] || { echo missing; return; }
+    grep -q '^[ \t]*nameserver' "$RESOLV" 2>/dev/null || { echo empty; return; }
+    if grep -qi 'generated by networkmanager' "$RESOLV"; then echo networkmanager
+    elif grep -qi 'resolvconf' "$RESOLV"; then echo resolvconf
+    elif grep -qi 'systemd-resolved' "$RESOLV"; then echo systemd-resolved
+    elif grep -qi 'dhclient\|dhcpcd' "$RESOLV"; then echo dhclient
+    else echo static
+    fi
+}
+
+# Search domains of this network, most specific first, then candidate WPAD
+# URLs (RFC draft: wpad.<domain>/wpad.dat walking up to two labels).
+wpad_candidates() {
+    domains=$(awk '$1 == "search" || $1 == "domain" { for (i = 2; i <= NF; i++) print $i }' "$RESOLV" 2>/dev/null)
+    if [ -z "${DEBION_RESOLV_CONF:-}" ] && have nmcli; then
+        domains="$domains
+$(nmcli -t -g IP4.DOMAIN device show 2>/dev/null | tr '|' '\n')"
+    fi
+    printf '%s\n' "$domains" | awk '
+        # wpad.com.br or wpad.co.uk would ask a stranger for our proxy.
+        function public(x) { return x ~ /^(com|net|org|gov|edu|co|ac|or|ne|go|mil|nom|gob|gv|int)\.[a-z][a-z]$/ }
+        function emit(x) { if (!(x in seen) && !public(x)) { seen[x] = 1; print "http://wpad." x "/wpad.dat" } }
+        NF {
+            d = tolower($1); sub(/\.$/, "", d)
+            if (d !~ /\./) { emit(d); next }
+            # Walk up, but never to wpad.<top-level domain>.
+            while (d ~ /\./) { emit(d); sub(/^[^.]*\./, "", d) }
+        }'
+    echo "http://wpad/wpad.dat"
+}
+
+# The PAC URL a DHCP server announced (option 252), if NetworkManager saw one.
+dhcp_wpad() {
+    have nmcli || return 0
+    nmcli -t -f DHCP4 device show 2>/dev/null | sed -n 's/^DHCP4\.OPTION\[[0-9]*\]:wpad = //p; s/^DHCP4\.OPTION\[[0-9]*\]:wpad=//p' | head -n1
+}
+
+fetch() {
+    # fetch URL [curl options...]: prints the curl exit code (0 on success).
+    if ! have curl; then echo 127; return; fi
+    url=$1; shift
+    curl -sS -o /dev/null --connect-timeout "$TIMEOUT" --max-time $((TIMEOUT * 2)) "$@" "$url" 2>/dev/null
+    echo $?
+}
+
+find_wpad() {
+    u=$(dhcp_wpad)
+    if [ -n "$u" ]; then echo "$u"; return 0; fi
+    have curl || return 1
+    for u in $(wpad_candidates); do
+        body=$(curl -sS --noproxy '*' --connect-timeout 3 --max-time 5 "$u" 2>/dev/null | head -c 4096)
+        case "$body" in
+            *FindProxyForURL*) echo "$u"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+explain_curl() {
+    case "$1" in
+        0) echo "ok" ;;
+        5) echo "proxy-dns:the proxy name cannot be resolved" ;;
+        6) echo "dns:the name cannot be resolved (DNS)" ;;
+        7) echo "refused:the connection was refused or the host is unreachable" ;;
+        28) echo "timeout:the connection timed out (blocked by a firewall?)" ;;
+        35) echo "tls:the TLS handshake failed (firewall or broken path MTU?)" ;;
+        47|52|55|56) echo "reset:the connection was reset (firewall or broken path MTU?)" ;;
+        51|58|59|60|77|83|90|91) echo "cert:the certificate was not accepted (wrong clock or a network that intercepts HTTPS)" ;;
+        97) echo "proxy:the proxy handshake failed" ;;
+        127) echo "nocurl:curl is not installed" ;;
+        *) echo "other:curl error $1" ;;
+    esac
+}
+
+# ---------------------------------------------------------------- proxies
+
+# The desktop proxy (GSettings, read by Firefox, GTK and SDE) as
+# "MODE URL": none, manual http://host:port, auto PAC-URL (may be empty).
+desktop_proxy() {
+    # root (sudo/pkexec) has its own, unrelated GSettings.
+    if ! have gsettings || [ "${DEBION_UID:-$(id -u)}" = 0 ]; then echo "unknown"; return; fi
+    m=$(gsettings get org.gnome.system.proxy mode 2>/dev/null | tr -d "'")
+    case "$m" in
+        manual)
+            h=$(gsettings get org.gnome.system.proxy.https host 2>/dev/null | tr -d "'")
+            p=$(gsettings get org.gnome.system.proxy.https port 2>/dev/null)
+            if [ -z "$h" ]; then
+                h=$(gsettings get org.gnome.system.proxy.http host 2>/dev/null | tr -d "'")
+                p=$(gsettings get org.gnome.system.proxy.http port 2>/dev/null)
+            fi
+            if [ -n "$h" ]; then echo "manual http://$h:${p:-8080}"; else echo "manual"; fi ;;
+        auto) echo "auto $(gsettings get org.gnome.system.proxy autoconfig-url 2>/dev/null | tr -d "'")" ;;
+        "") echo "unknown" ;;
+        *) echo "none" ;;
+    esac
+}
+
+apt_proxy() {
+    have apt-config || return 0
+    apt-config dump 2>/dev/null | sed -n 's/^Acquire::https\{0,1\}::Proxy "\(.*\)";$/\1/p' | grep -v '^DIRECT$\|^false$' | head -n1
+}
+
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r')"; }
+
+clock_skew() {
+    # Seconds between this clock and the Date header of an HTTP server
+    # (through the user's proxy variables, if any). Empty when unknown.
+    have curl || return 0
+    d=$(curl -sSI --connect-timeout "$TIMEOUT" --max-time $((TIMEOUT * 2)) "http://$TEST_HOST/" 2>/dev/null | tr -d '\r' | sed -n 's/^[Dd]ate: //p' | head -n1)
+    [ -n "$d" ] || return 0
+    remote=$(date -d "$d" +%s 2>/dev/null) || return 0
+    echo $(( $(date +%s) - remote ))
+}
+
+abs() { case "$1" in -*) echo "${1#-}" ;; *) echo "$1" ;; esac; }
+
+# ========================================================== building blocks
+case "$MODE" in
+    list-convertible) ifupdown_dhcp_ifaces; exit 0 ;;
+    convert-interfaces) convert_file "$IFACES" "$(ifupdown_dhcp_ifaces | tr '\n' ' ')"; exit 0 ;;
+    wifi-profiles) wifi_profiles "$(ifupdown_dhcp_ifaces | tr '\n' ' ')" "${1:-.}"; exit 0 ;;
+    dhcp-clients) dhcp_clients; exit 0 ;;
+    wpad-candidates) wpad_candidates; exit 0 ;;
+    explain-curl) explain_curl "${1:-0}"; exit 0 ;;
+    resolv-owner) resolv_owner; exit 0 ;;
+    wpad) find_wpad || exit 1; exit 0 ;;
+esac
+
+# ------------------------------------------------------------ APT proxy
+if [ "$MODE" = apt-proxy ]; then
+    if [ "$(id -u)" != 0 ]; then echo "debion-network-check --apt-proxy must run as root." >&2; exit 1; fi
+    conf=/etc/apt/apt.conf.d/80debion-proxy
+    case "$APT_PROXY_ARG" in
+        none|"") rm -f "$conf"; echo "APT connects directly."; exit 0 ;;
+    esac
+    # Only plain proxy URLs: nothing that could end the APT string.
+    if ! printf '%s\n' "$APT_PROXY_ARG" | grep -Eq '^https?://([A-Za-z0-9._~%!$&()*+,;=-]+(:[A-Za-z0-9._~%!$&()*+,;=-]*)?@)?[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+        echo "not a proxy URL: $APT_PROXY_ARG" >&2; exit 2
+    fi
+    {
+        echo "// Written by debion-network-check (SDE Settings > Network > Proxy)."
+        echo "Acquire::http::Proxy \"$APT_PROXY_ARG\";"
+        echo "Acquire::https::Proxy \"$APT_PROXY_ARG\";"
+    } > "$conf.new" && chmod 644 "$conf.new" && mv "$conf.new" "$conf"
+    echo "APT uses the proxy $APT_PROXY_ARG"
+    exit 0
+fi
+
+# ------------------------------------------------------- package scripts
+# Called by debion-desktop-base's postinst, once per system (first
+# installation, or the first upgrade that has this code): moves interfaces
+# that the installer configured with plain DHCP (or a wpa-ssid/wpa-psk
+# Wi-Fi) to NetworkManager. Nothing running is changed: the network keeps
+# working for the rest of the installation (and over SSH), and the next
+# boot brings the interfaces up with NetworkManager only, so that there is
+# never a second DHCP client. Opt out: /etc/debion/keep-ifupdown.
+# Exit status 3: NetworkManager is not installed yet (try again later).
+if [ "$MODE" = handover ]; then
+    [ -e "${DEBION_KEEP_FILE:-/etc/debion/keep-ifupdown}" ] && exit 0
+    [ -x "${DEBION_NM_BINARY:-/usr/sbin/NetworkManager}" ] || exit 3
+    # A dangling /etc/resolv.conf (systemd-resolved removed) cannot work
+    # for anyone; an empty file is what NetworkManager writes into.
+    if [ "$(resolv_owner)" = dangling ]; then
+        mv "$RESOLV" "$RESOLV.debion-$(stamp)" && : > "$RESOLV" && chmod 644 "$RESOLV"
+        echo "debion-desktop-base: $RESOLV pointed nowhere; NetworkManager writes it now"
+    fi
+    [ -f "$IFACES" ] || exit 0
+    list=$(ifupdown_dhcp_ifaces | tr '\n' ' ')
+    list=${list% }
+    [ -n "$list" ] || exit 0
+    echo "debion-desktop-base: handing $list from ifupdown to NetworkManager"
+    # Until the next boot, ifupdown's DHCP client still owns the
+    # interfaces: keep NetworkManager away from them even if it is reloaded
+    # or restarted now, so that there are never two DHCP clients. /run is
+    # emptied at boot, and then NetworkManager alone manages them.
+    dest="$BACKUPS/$(stamp)"
+    if mkdir -p "$NM_RUN_CONF" 2>/dev/null; then
+        spec=""
+        for n in $list; do spec="${spec:+$spec;}interface-name:$n"; done
+        printf '%s\n' "# debion-desktop-base: ifupdown still runs these until the next boot." \
+            "# backup: $dest/$(printf '%s' "$IFACES" | tr / _)" \
+            "[keyfile]" "unmanaged-devices+=$spec" > "$NM_RUN_CONF/90-debion-handover.conf"
+    fi
+    handover "$list" 0 "$dest" | sed 's/^/  /'
+    echo "  This takes effect at the next boot (no connection is dropped now)."
+    echo "  Undo: restore the backup above; opt out: touch /etc/debion/keep-ifupdown"
+    exit 0
+fi
+
+# ================================================================ checks
+conflicts=$(ifupdown_dhcp_ifaces)
+clients=$(dhcp_clients)
+resolv=$(resolv_owner)
+
+if [ "$MODE" = postinst ]; then
+    if [ -n "$conflicts" ] && have nmcli; then
+        names=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
+        echo "debion-desktop-base: /etc/network/interfaces configures $names; NetworkManager"
+        echo "  (the SDE panel) cannot manage them and their routes can hide Wi-Fi."
+        echo "  Run 'sudo debion-network-check --fix' to hand them to NetworkManager."
+    fi
+    exit 0
+fi
+
+# --------------------------------------------------------- quick (JSON)
+if [ "$MODE" = quick ]; then
+    route=false; dns=false
+    have ip && [ -n "$(ip -4 route show default 2>/dev/null)$(ip -6 route show default 2>/dev/null)" ] && route=true
+    getent ahosts "$TEST_HOST" >/dev/null 2>&1 && dns=true
+    nmstate=""; have nmcli && nmstate=$(nmcli -t -f STATE,CONNECTIVITY general 2>/dev/null | head -n1)
+    dp=$(desktop_proxy); pmode=${dp%% *}; purl=""; [ "$dp" != "$pmode" ] && purl=${dp#* }
+    http_d=$(fetch "http://$TEST_HOST/debian/" --noproxy '*')
+    https_d=$(fetch "https://$TEST_HOST/debian/" --noproxy '*')
+    https_p=""
+    proxy_used=""
+    if [ "$pmode" = manual ] && [ -n "$purl" ]; then proxy_used=$purl
+    elif [ -n "${https_proxy:-${HTTPS_PROXY:-}}" ]; then proxy_used=${https_proxy:-${HTTPS_PROXY:-}}
+    fi
+    [ -n "$proxy_used" ] && https_p=$(fetch "https://$TEST_HOST/debian/" -x "$proxy_used")
+    wpad=""; aptp=$(apt_proxy)
+    skew=""
+    if [ "$https_d" != 0 ] && [ "${https_p:-1}" != 0 ]; then
+        wpad=$(find_wpad || true)
+        case "$(explain_curl "$https_d")" in cert:*) skew=$(clock_skew) ;; esac
+    fi
+    verdict=ok
+    if [ "$route" = false ]; then verdict=no-route
+    elif [ "$dns" = false ] && [ "$http_d" = 6 ]; then verdict=no-dns
+    elif [ "$https_d" = 0 ] || [ "${https_p:-1}" = 0 ]; then verdict=ok
+    elif [ -n "$skew" ] && [ "$(abs "$skew")" -gt 300 ]; then verdict=clock
+    else
+        case "$(explain_curl "$https_d")" in
+            cert:*) verdict=tls-intercepted ;;
+            nocurl:*) verdict=unknown ;;
+            *) if [ "$http_d" = 0 ] || [ -n "$wpad$aptp" ]; then verdict=proxy-required; else verdict=offline; fi ;;
+        esac
+    fi
+    printf '{"version":%s,"verdict":%s,"nm":%s,"default_route":%s,"dns":%s,' "$VERSION" "$(json_str "$verdict")" "$(json_str "$nmstate")" "$route" "$dns"
+    printf '"http_direct":%s,"https_direct":%s,"https_proxy":%s,' "$http_d" "$https_d" "${https_p:-null}"
+    printf '"proxy_mode":%s,"proxy_url":%s,"wpad_url":%s,"apt_proxy":%s,"clock_skew":%s}\n' \
+        "$(json_str "$pmode")" "$(json_str "$purl")" "$(json_str "$wpad")" "$(json_str "$aptp")" "${skew:-null}"
+    exit 0
+fi
 
 say "DebION network check"
 say ""
-
-# --------------------------------------------------------------- services
+say "Services"
 if ! have nmcli; then
     warn "NetworkManager is not installed: sudo apt install network-manager"
+elif nm_running; then
+    ok "NetworkManager is running"
 else
-    if nm_running; then ok "NetworkManager is running"; else warn "NetworkManager is not running: sudo systemctl enable --now NetworkManager"; fi
+    warn "NetworkManager is not running: sudo systemctl enable --now NetworkManager"
+fi
+if unit_active systemd-networkd.service; then
+    warn "systemd-networkd is running too: two network managers fight over the same interfaces"
+    more "Keep one: sudo systemctl disable --now systemd-networkd.service"
 fi
 
 # ---------------------------------------------------- ifupdown vs NetworkManager
-conflicts=$(ifupdown_dhcp_ifaces)
 if [ -n "$conflicts" ]; then
     names=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
     warn "/etc/network/interfaces configures: $names"
-    say "        NetworkManager leaves these unmanaged ([ifupdown] managed=false), so the"
-    say "        panel cannot control them, and their default route (metric 0) wins over"
-    say "        Wi-Fi/Ethernet connected by NetworkManager: \"connected, no internet\"."
-    say "        Fix: sudo debion-network-check --fix   (backs the file up first)"
+    more "NetworkManager leaves these unmanaged ([ifupdown] managed=false), so the"
+    more "panel cannot control them, and their default route (metric 0) wins over"
+    more "Wi-Fi/Ethernet connected by NetworkManager: \"connected, no internet\"."
+    more "Fix: sudo debion-network-check --fix   (backs the files up first)"
 else
     ok "no DHCP/Wi-Fi interfaces in /etc/network/interfaces compete with NetworkManager"
 fi
+pending=$(pending_handover)
+if [ -n "$pending" ]; then
+    info "$pending move from ifupdown to NetworkManager at the next boot (or: sudo debion-network-check --fix)"
+fi
+
+dup=""
+if [ -n "$clients" ]; then
+    managed=""
+    have nmcli && managed=$(nmcli -t -f DEVICE,STATE device 2>/dev/null | awk -F: '$2 != "unmanaged" && $2 != "unavailable" {print $1}' | tr '\n' ' ')
+    dup=$(printf '%s\n' "$clients" | while read -r pid client dev; do
+        case " $managed " in
+            *" $dev "*) echo "$pid $client $dev" ;;
+            *) [ "$dev" = "*" ] && [ -n "${managed% }" ] && echo "$pid $client $dev" ;;
+        esac
+    done)
+    if [ -n "$dup" ]; then
+        old_ifs=$IFS; IFS='
+'
+        for line in $dup; do
+            IFS=$old_ifs
+            set -- $line
+            warn "a second DHCP client ($2, PID $1) runs on $3, which NetworkManager also manages"
+        done
+        IFS=$old_ifs
+        more "Two DHCP clients mean two leases, competing routes and a resolv.conf that changes under you."
+        more "Fix: sudo debion-network-check --fix   (takes the interface down in ifupdown)"
+    else
+        info "other DHCP clients: $(printf '%s\n' "$clients" | awk '{print $2 " on " $3}' | tr '\n' ' ')"
+    fi
+fi
 
 # --------------------------------------------------------------- routes
+say ""
+say "Routes"
 if have ip; then
     n=$(ip -4 route show default 2>/dev/null | grep -c . || true)
     if [ "$n" = 0 ]; then
         warn "no IPv4 default route (no gateway): the network is connected but cannot reach the internet"
     elif [ "$n" -gt 1 ]; then
         warn "$n IPv4 default routes; the lowest metric wins:"
-        ip -4 route show default 2>/dev/null | sed 's/^/          /' | { [ "$MODE" = postinst ] && cat >/dev/null || cat; }
+        ip -4 route show default 2>/dev/null | sed 's/^/          /'
     else
         ok "one IPv4 default route: $(ip -4 route show default 2>/dev/null)"
     fi
 fi
 
 # --------------------------------------------------------------- DNS
-resolv_problem=""
-if [ -L /etc/resolv.conf ]; then
-    target=$(readlink /etc/resolv.conf)
-    if [ ! -e /etc/resolv.conf ]; then
-        resolv_problem="dangling"
-        warn "/etc/resolv.conf points to $target, which does not exist (DNS cannot work)"
-    else
-        case "$target" in
-            *systemd/resolve*)
-                if have systemctl && ! systemctl is-active --quiet systemd-resolved.service 2>/dev/null; then
-                    resolv_problem="resolved-off"
-                    warn "/etc/resolv.conf uses systemd-resolved, but systemd-resolved is not running"
-                else
-                    ok "/etc/resolv.conf is managed by systemd-resolved"
-                fi ;;
-            *) ok "/etc/resolv.conf -> $target" ;;
-        esac
+say ""
+say "Name resolution"
+case "$resolv" in
+    dangling) warn "$RESOLV points to $(readlink "$RESOLV"), which does not exist (DNS cannot work)" ;;
+    missing) warn "$RESOLV is missing" ;;
+    empty) warn "$RESOLV has no name server: names cannot be resolved" ;;
+    systemd-resolved)
+        if unit_active systemd-resolved.service; then ok "$RESOLV is managed by systemd-resolved"
+        else resolv=resolved-off; warn "$RESOLV uses systemd-resolved, but systemd-resolved is not running"; fi ;;
+    networkmanager) ok "$RESOLV is written by NetworkManager" ;;
+    resolvconf) ok "$RESOLV is managed by resolvconf (NetworkManager feeds it)" ;;
+    dhclient) warn "$RESOLV was written by a DHCP client outside NetworkManager"
+              more "It is rewritten whenever that client renews its lease." ;;
+    static) info "$RESOLV is a plain file that NetworkManager did not write" ;;
+esac
+if [ -e "$RESOLV" ] && [ ! -r "$RESOLV" ]; then
+    warn "$RESOLV is not readable by $(id -un): programs run by this user cannot resolve names"
+fi
+if have nmcli && nm_running && [ -f "$RESOLV" ]; then
+    nmdns=$(nmcli -t -g IP4.DNS device show 2>/dev/null | tr '|' '\n' | grep . | sort -u | tr '\n' ' ')
+    rdns=$(awk '$1 == "nameserver" {print $2}' "$RESOLV" 2>/dev/null | sort -u | tr '\n' ' ')
+    if [ -n "$nmdns" ] && [ "$resolv" != systemd-resolved ] && [ "$resolv" != resolvconf ]; then
+        missing=""
+        for s in $nmdns; do case " $rdns " in *" $s "*) ;; *) missing="$missing $s" ;; esac; done
+        if [ -n "$missing" ] && [ -n "$rdns" ]; then
+            warn "NetworkManager's DNS servers ($nmdns) are not in $RESOLV ($rdns): another program wrote it"
+        fi
     fi
-elif [ -f /etc/resolv.conf ]; then
-    if grep -q '^nameserver' /etc/resolv.conf; then
-        ok "/etc/resolv.conf has $(grep -c '^nameserver' /etc/resolv.conf) name server(s)"
-    else
-        resolv_problem="empty"
-        warn "/etc/resolv.conf has no name server: names cannot be resolved"
-    fi
+fi
+if grep -q '^hosts:' /etc/nsswitch.conf 2>/dev/null; then
+    hosts=$(sed -n 's/^hosts:[ \t]*//p' /etc/nsswitch.conf)
+    case " $hosts " in
+        *" dns "*|*" resolve"*) : ;;
+        *) warn "/etc/nsswitch.conf does not use DNS for host names (hosts: $hosts)" ;;
+    esac
+fi
+if getent ahosts "$TEST_HOST" >/dev/null 2>&1; then
+    ok "$TEST_HOST resolves: $(getent ahosts "$TEST_HOST" | awk '{print $1}' | sort -u | head -n4 | tr '\n' ' ')"
 else
-    resolv_problem="missing"
-    warn "/etc/resolv.conf is missing"
+    warn "$TEST_HOST does not resolve (DNS does not work for this user)"
 fi
 
-# ------------------------------------------------------------ proxy settings
-proxy=""
-for f in /etc/environment /etc/profile.d/*.sh /etc/apt/apt.conf.d/*; do
-    [ -f "$f" ] && grep -qiE '^[^#]*(https?_proxy|all_proxy|Acquire::https?::Proxy)' "$f" 2>/dev/null && proxy="$proxy $f"
-done
-for v in http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY; do
-    eval "val=\${$v:-}"
-    [ -n "$val" ] && proxy="$proxy \$$v"
-done
-if [ -n "$proxy" ]; then
-    info "a proxy is configured in:$proxy (a stale proxy looks like \"no internet\" in browsers)"
+# ---------------------------------------------------------------- clock
+say ""
+say "Time"
+if have timedatectl; then
+    sync=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)
+    ntp=$(timedatectl show -p NTP --value 2>/dev/null || true)
+    if [ "$sync" = yes ]; then ok "the clock is synchronized (NTP)"
+    elif [ "$ntp" = no ]; then warn "network time is off: HTTPS fails when the clock is wrong. Fix: sudo timedatectl set-ntp true"
+    elif ! [ -x /lib/systemd/systemd-timesyncd ] && ! [ -x /usr/lib/systemd/systemd-timesyncd ] &&
+         ! have chronyd && ! have ntpd && ! have ntpsec; then
+        warn "no time service is installed: sudo apt install systemd-timesyncd"
+    else info "the clock is not synchronized yet (NTP may be blocked on this network)"
+    fi
 fi
-if have gsettings && [ "$MODE" = report ]; then
-    pm=$(gsettings get org.gnome.system.proxy mode 2>/dev/null || true)
-    [ -n "$pm" ] && [ "$pm" != "'none'" ] && info "GNOME/GTK proxy mode is $pm (gsettings org.gnome.system.proxy)"
+skew=$(clock_skew)
+if [ -n "$skew" ]; then
+    if [ "$(abs "$skew")" -gt 300 ]; then
+        warn "the clock is off by $skew s compared to $TEST_HOST: certificates look invalid, so HTTPS fails"
+        more "Fix: sudo debion-network-check --fix (sets the time once and turns on NTP)"
+    else ok "the clock agrees with $TEST_HOST (${skew} s)"
+    fi
+fi
+[ -s /etc/ssl/certs/ca-certificates.crt ] || warn "ca-certificates is missing: sudo apt install ca-certificates"
+
+# -------------------------------------------------------- reachability
+say ""
+say "Internet access (as Firefox would try it)"
+dp=$(desktop_proxy); pmode=${dp%% *}; purl=""; [ "$dp" != "$pmode" ] && purl=${dp#* }
+aptp=$(apt_proxy)
+http_d=$(fetch "http://$TEST_HOST/debian/" --noproxy '*')
+https_d=$(fetch "https://$TEST_HOST/debian/" --noproxy '*')
+if [ "$http_d" = 127 ]; then
+    info "curl is not installed; reachability is not checked (sudo apt install curl)"
+else
+    [ "$http_d" = 0 ] && ok "direct HTTP to $TEST_HOST works (this is what NetworkManager's check and APT use)" \
+                      || warn "direct HTTP to $TEST_HOST fails: $(explain_curl "$http_d" | cut -d: -f2)"
+    if [ "$https_d" = 0 ]; then
+        ok "direct HTTPS to $TEST_HOST works"
+    else
+        warn "direct HTTPS to $TEST_HOST fails: $(explain_curl "$https_d" | cut -d: -f2)"
+        case "$(explain_curl "$https_d")" in
+            cert:*)
+                issuer=$(curl -k -v --noproxy '*' --max-time $((TIMEOUT * 2)) -o /dev/null "https://$TEST_HOST/" 2>&1 | sed -n 's/^\*[ \t]*issuer: //p' | head -n1)
+                [ -n "$issuer" ] && more "The certificate was issued by: $issuer"
+                more "If that is not a public authority (Let's Encrypt, GlobalSign...), this network"
+                more "intercepts HTTPS: import your organization's CA certificate into Firefox"
+                more "(Settings > Privacy & Security > Certificates) and into /usr/local/share/ca-certificates." ;;
+            timeout:*|refused:*|reset:*|tls:*)
+                if [ "$http_d" = 0 ]; then
+                    more "Plain HTTP works but HTTPS does not: the network lets HTTP through a"
+                    more "transparent proxy and expects browsers to use its proxy for everything else."
+                fi ;;
+        esac
+    fi
+    if [ "$pmode" = manual ] && [ -n "$purl" ]; then
+        r=$(fetch "https://$TEST_HOST/debian/" -x "$purl")
+        [ "$r" = 0 ] && ok "HTTPS through the desktop proxy $purl works" \
+                     || warn "HTTPS through the desktop proxy $purl fails: $(explain_curl "$r" | cut -d: -f2)"
+    fi
+    envp=${https_proxy:-${HTTPS_PROXY:-${all_proxy:-${ALL_PROXY:-}}}}
+    if [ -n "$envp" ] && [ "$envp" != "$purl" ]; then
+        r=$(fetch "https://$TEST_HOST/debian/" -x "$envp")
+        [ "$r" = 0 ] && ok "HTTPS through the proxy in https_proxy ($envp) works" \
+                     || warn "HTTPS through the proxy in https_proxy ($envp) fails: $(explain_curl "$r" | cut -d: -f2)"
+    fi
+    case "$pmode" in
+        none) info "desktop proxy: none (Firefox's default \"Use system proxy settings\" connects directly)" ;;
+        manual) info "desktop proxy: $purl (Settings > Network > Proxy)" ;;
+        auto) info "desktop proxy: automatic ${purl:-(WPAD)}" ;;
+    esac
+    [ -n "$aptp" ] && info "APT uses the proxy $aptp"
+    for v in http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY; do
+        eval "val=\${$v:-}"
+        [ -n "$val" ] && info "environment: $v=$val"
+    done
+    for f in /etc/environment /etc/profile.d/*.sh; do
+        [ -f "$f" ] && grep -qiE '^[^#]*(https?_proxy|all_proxy)' "$f" 2>/dev/null && info "a proxy is set in $f"
+    done
+    if [ "$https_d" != 0 ] && [ "$pmode" != manual ]; then
+        wpad=$(find_wpad || true)
+        if [ -n "$wpad" ]; then
+            warn "this network publishes a proxy configuration (WPAD): $wpad"
+            more "Use it: Settings > Network > Proxy > Automatic, or in Firefox:"
+            more "Settings > Network Settings > Auto-detect proxy settings for this network."
+        elif [ -n "$aptp" ]; then
+            warn "APT reaches the internet through $aptp, but the desktop has no proxy"
+            more "Set the same proxy in Settings > Network > Proxy (Manual)."
+        elif [ "$http_d" = 0 ]; then
+            more "Ask the network administrator for the proxy address and set it in"
+            more "Settings > Network > Proxy."
+        fi
+    fi
+
+    # IPv6: a network that announces IPv6 without routing it makes some
+    # connections wait for a timeout before falling back to IPv4.
+    if have ip && [ -n "$(ip -6 route show default 2>/dev/null)" ]; then
+        r6=$(fetch "http://$TEST_HOST/debian/" -6 --noproxy '*')
+        r4=$(fetch "http://$TEST_HOST/debian/" -4 --noproxy '*')
+        if [ "$r6" != 0 ] && [ "$r4" = 0 ]; then
+            conn=$(nmcli -t -g GENERAL.CONNECTION device show 2>/dev/null | grep . | head -n1)
+            warn "IPv6 has a default route but does not reach the internet (IPv4 does)"
+            more "Turn IPv6 off for this network: nmcli connection modify \"${conn:-<connection>}\" ipv6.method disabled"
+            more "then reconnect. (Firefox: about:config network.dns.disableIPv6 = true also helps.)"
+        elif [ "$r6" = 0 ]; then
+            ok "IPv6 works"
+        fi
+    else
+        info "no IPv6 default route (programs use IPv4 only)"
+    fi
+fi
+
+# --------------------------------------------------- Firefox profile
+if [ "$(id -u)" != 0 ] && [ -d "$HOME/.mozilla/firefox" ]; then
+    for p in "$HOME"/.mozilla/firefox/*/prefs.js; do
+        [ -f "$p" ] || continue
+        prof=$(basename "$(dirname "$p")")
+        t=$(sed -n 's/^user_pref("network.proxy.type", \([0-9]*\));/\1/p' "$p" | tail -n1)
+        case "${t:-5}" in
+            0) info "Firefox profile $prof: no proxy (ignores the desktop proxy)" ;;
+            1) info "Firefox profile $prof: manual proxy $(sed -n 's/^user_pref("network.proxy.http", "\(.*\)");/\1/p' "$p" | tail -n1)" ;;
+            2) info "Firefox profile $prof: proxy configuration URL $(sed -n 's/^user_pref("network.proxy.autoconfig_url", "\(.*\)");/\1/p' "$p" | tail -n1)" ;;
+            4) info "Firefox profile $prof: auto-detects the proxy (WPAD)" ;;
+            5) : ;;
+        esac
+        trr=$(sed -n 's/^user_pref("network.trr.mode", \([0-9]*\));/\1/p' "$p" | tail -n1)
+        case "${trr:-0}" in
+            2|3) info "Firefox profile $prof: DNS over HTTPS is on (network.trr.mode=$trr); networks that block it need mode 5 (off)" ;;
+        esac
+    done
 fi
 
 # --------------------------------------------------- NetworkManager state
 if have nmcli && nm_running; then
+    say ""
+    say "NetworkManager"
     state=$(nmcli -t -f STATE,CONNECTIVITY general 2>/dev/null || true)
-    info "NetworkManager state:connectivity = ${state:-unknown}"
+    info "state:connectivity = ${state:-unknown} (the check is plain HTTP to network-test.debian.org; it passes behind a transparent proxy)"
     check=$(nmcli networking connectivity 2>/dev/null || true)
     if [ "$check" = unknown ] && ! ls /usr/lib/NetworkManager/conf.d/*connectivity* /etc/NetworkManager/conf.d/*connectivity* >/dev/null 2>&1; then
         warn "connectivity checking is off; install debion-desktop-base or network-manager-config-connectivity-debian"
@@ -166,51 +825,70 @@ if [ "$MODE" = fix ]; then
         exit 1
     fi
     say ""
+    say "Fixing"
+    fixed=0
     if [ -n "$conflicts" ]; then
-        backup="$IFACES.debion-$(date +%Y%m%d-%H%M%S)"
-        cp -p "$IFACES" "$backup"
-        list=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
-        # Comment out the stanzas (and their auto/allow-hotplug lines) of the
-        # DHCP/Wi-Fi interfaces; everything else stays as it was.
-        awk -v list=" $list " '
-            function managed(n) { return index(list, " " n " ") > 0 }
-            /^[ \t]*(auto|allow-hotplug|allow-auto)[ \t]/ {
-                out = $1; keep = 0
-                for (i = 2; i <= NF; i++) if (!managed($i)) { out = out " " $i; keep = 1 }
-                if (!keep) { print "# " $0 "  # moved to NetworkManager by debion-network-check"; next }
-                if (out != $0) { print "# " $0 "  # moved to NetworkManager by debion-network-check"; print out; next }
-                print; next
-            }
-            /^[ \t]*iface[ \t]/ { skip = managed($2) }
-            /^[ \t]*(mapping|source|source-directory|auto|allow-)/ { skip = 0 }
-            skip { print "# " $0; next }
-            { print }
-        ' "$backup" > "$IFACES.new" && mv "$IFACES.new" "$IFACES"
-        echo "Moved to NetworkManager: $list"
-        echo "Backup: $backup"
-        echo "Reboot, or run: sudo ifdown --force $list; sudo systemctl restart NetworkManager"
+        list=$(printf '%s\n' "$conflicts" | tr '\n' ' '); list=${list% }
+        # Over SSH the handover waits for the next boot unless --now.
+        now=1
+        if [ -n "${SSH_CONNECTION:-}" ] && [ "$NOW" != 1 ]; then now=0; fi
+        handover "$list" "$now" "$BACKUPS/$(stamp)"
+        [ "$now" = 0 ] && echo "Reboot to finish (or run again with --now; this drops the SSH connection)."
+        fixed=1
     fi
-    case "$resolv_problem" in
-        dangling|resolved-off|missing|empty)
-            # Let NetworkManager write a plain resolv.conf again.
-            [ -e /etc/resolv.conf ] || [ -L /etc/resolv.conf ] && mv /etc/resolv.conf "/etc/resolv.conf.debion-$(date +%Y%m%d-%H%M%S)"
-            : > /etc/resolv.conf
+    pending=$(pending_handover)
+    if [ -n "$pending" ]; then
+        if [ -n "${SSH_CONNECTION:-}" ] && [ "$NOW" != 1 ]; then
+            echo "The handover of $pending finishes at the next boot (or run with --now)."
+        else
+            # ifdown needs the old configuration to release the leases.
+            old=$(pending_backup)
+            for n in $pending; do
+                if [ -f "$old" ] && have ifdown; then ifdown --force -i "$old" "$n" >/dev/null 2>&1 || true; fi
+            done
+            rm -f "$NM_RUN_CONF/90-debion-handover.conf"
+            if have systemctl && [ -d /run/systemd/system ]; then systemctl restart NetworkManager.service || true; fi
+            echo "NetworkManager now manages $pending."
+        fi
+        fixed=1
+    fi
+    if [ -n "$dup" ] && have ifdown; then
+        printf '%s\n' "$dup" | while read -r pid client dev; do
+            [ "$dev" = "*" ] && { echo "Stop the stray $client manager by hand: sudo kill $pid"; continue; }
+            if ifquery --state "$dev" >/dev/null 2>&1; then
+                ifdown --force "$dev" >/dev/null 2>&1 && echo "ifupdown released $dev (PID $pid)"
+                nmcli device connect "$dev" >/dev/null 2>&1 || true
+            else
+                echo "Stop the stray $client on $dev by hand: sudo kill $pid"
+            fi
+        done
+        fixed=1
+    fi
+    case "$resolv" in
+        dangling|resolved-off|missing|empty|dhclient)
+            [ -e "$RESOLV" ] || [ -L "$RESOLV" ] && mv "$RESOLV" "$RESOLV.debion-$(stamp)"
+            : > "$RESOLV"; chmod 644 "$RESOLV"
             if nm_running; then
                 if have systemctl; then systemctl restart NetworkManager.service; else nmcli general reload; fi
             fi
-            echo "/etc/resolv.conf is now written by NetworkManager again." ;;
+            echo "$RESOLV is now written by NetworkManager only."
+            fixed=1 ;;
     esac
-    [ -n "$conflicts" ] || [ -n "$resolv_problem" ] || echo "Nothing to fix."
-    exit 0
-fi
-
-if [ "$MODE" = postinst ]; then
-    if [ -n "$conflicts" ] && have nmcli; then
-        names=$(printf '%s\n' "$conflicts" | tr '\n' ' ')
-        echo "debion-desktop-base: /etc/network/interfaces configures $names; NetworkManager"
-        echo "  (the SDE panel) cannot manage them and their routes can hide Wi-Fi."
-        echo "  Run 'sudo debion-network-check --fix' to hand them to NetworkManager."
+    if [ -f "$RESOLV" ] && [ ! -L "$RESOLV" ]; then
+        case "$(stat -c %a "$RESOLV" 2>/dev/null)" in
+            *[4567]|"") ;;
+            *) chmod a+r "$RESOLV" && echo "$RESOLV is readable by everyone again." && fixed=1 ;;
+        esac
     fi
+    if have timedatectl && [ "$(timedatectl show -p NTP --value 2>/dev/null)" = no ] &&
+       { [ -x /lib/systemd/systemd-timesyncd ] || [ -x /usr/lib/systemd/systemd-timesyncd ]; }; then
+        timedatectl set-ntp true && echo "Network time (systemd-timesyncd) is on." && fixed=1
+    fi
+    if [ -n "$skew" ] && [ "$(abs "$skew")" -gt 300 ]; then
+        date -s "@$(( $(date +%s) - skew ))" >/dev/null && echo "The clock was off by $skew s and is set again." && fixed=1
+        have hwclock && hwclock --systohc >/dev/null 2>&1 || true
+    fi
+    [ "$fixed" = 1 ] || echo "Nothing to fix automatically."
     exit 0
 fi
 

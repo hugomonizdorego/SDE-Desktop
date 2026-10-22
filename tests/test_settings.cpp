@@ -13,6 +13,7 @@
 
 #include "devices.h"
 #include "gpu.h"
+#include "proxy.h"
 #include "util.h"
 #include "wallpapers.h"
 
@@ -246,6 +247,100 @@ static void test_devices() {
            "yes");
 }
 
+// Settings > Network > Proxy (proxy.h).
+static void test_proxy() {
+  CHECK_EQ(gvariant_quote("it's"), "'it\\'s'");
+  CHECK_EQ(gvariant_string_list({"localhost", "::1"}), "['localhost', '::1']");
+  CHECK_EQ(gvariant_unquote("'it\\'s'"), "it's");
+  auto list = gvariant_strings("['localhost', '127.0.0.0/8', '::1']");
+  CHECK(list.size() == 3 && list[1] == "127.0.0.0/8");
+  CHECK(gvariant_strings("@as []").empty());
+
+  // A fresh account: GNOME's defaults.
+  auto none = parse_gsettings_proxy(
+      "org.gnome.system.proxy autoconfig-url ''\n"
+      "org.gnome.system.proxy ignore-hosts ['localhost', '127.0.0.0/8', '::1']\n"
+      "org.gnome.system.proxy mode 'none'\n"
+      "org.gnome.system.proxy use-same-proxy true\n"
+      "org.gnome.system.proxy.http host ''\n"
+      "org.gnome.system.proxy.http port 8080\n"
+      "org.gnome.system.proxy.https host ''\n"
+      "org.gnome.system.proxy.https port 0\n");
+  CHECK(none.mode == ProxySettings::NONE);
+  CHECK(none.ignore_hosts.size() == 3);
+  CHECK_EQ(proxy_environment(none), "");
+
+  auto manual = parse_gsettings_proxy(
+      "org.gnome.system.proxy mode 'manual'\n"
+      "org.gnome.system.proxy.http host 'proxy.corp.example'\n"
+      "org.gnome.system.proxy.http port 3128\n"
+      "org.gnome.system.proxy.https host ''\n"
+      "org.gnome.system.proxy.https port 0\n");
+  CHECK(manual.mode == ProxySettings::MANUAL);
+  CHECK_EQ(manual.host, "proxy.corp.example");
+  CHECK(manual.port == 3128);
+  CHECK_EQ(proxy_url(manual), "http://proxy.corp.example:3128/");
+  std::string env = proxy_environment(manual);
+  CHECK(env.find("\nhttps_proxy=http://proxy.corp.example:3128/\n") != std::string::npos);
+  CHECK(env.find("\nHTTPS_PROXY=http://proxy.corp.example:3128/\n") != std::string::npos);
+  CHECK(env.find("\nno_proxy=localhost,127.0.0.0/8,::1\n") != std::string::npos);
+
+  auto cmds = gsettings_proxy_commands(manual);
+  CHECK(!cmds.empty());
+  if (!cmds.empty()) {
+    // mode is written last.
+    CHECK_EQ(cmds.back()[3], "mode");
+    CHECK_EQ(cmds.back()[4], "'manual'");
+    CHECK_EQ(cmds[0][2], "org.gnome.system.proxy.http");
+    CHECK_EQ(cmds[0][4], "'proxy.corp.example'");
+    CHECK_EQ(cmds[2][2], "org.gnome.system.proxy.https");
+  }
+
+  auto pac = parse_gsettings_proxy("org.gnome.system.proxy mode 'auto'\n"
+                                   "org.gnome.system.proxy autoconfig-url 'http://wpad.corp.example/wpad.dat'\n");
+  CHECK(pac.mode == ProxySettings::AUTO);
+  CHECK_EQ(proxy_environment(pac).substr(proxy_environment(pac).find("auto_proxy=")),
+           "auto_proxy=http://wpad.corp.example/wpad.dat\n");
+  auto pac_cmds = gsettings_proxy_commands(pac);
+  bool has_url = false;
+  for (auto &c : pac_cmds) has_url |= c[3] == "autoconfig-url" && c[4] == "'http://wpad.corp.example/wpad.dat'";
+  CHECK(has_url);
+
+  std::string host;
+  int port = 0;
+  CHECK(parse_proxy_address("proxy.example.org:3128", &host, &port) && host == "proxy.example.org" && port == 3128);
+  CHECK(parse_proxy_address("http://10.10.1.1:3128/", &host, &port) && host == "10.10.1.1" && port == 3128);
+  CHECK(parse_proxy_address("http://user:pw@proxy/", &host, &port) && host == "proxy" && port == 8080);
+  CHECK(!parse_proxy_address("proxy:99999", &host, &port));
+  CHECK(!parse_proxy_address("socks5://proxy:1080", &host, &port));
+  CHECK(!parse_proxy_address("pro xy:80", &host, &port));
+  CHECK(!parse_proxy_address("$(reboot):80", &host, &port));
+  CHECK(!parse_proxy_address("", &host, &port));
+  CHECK(valid_pac_url("http://wpad.example.org/wpad.dat"));
+  CHECK(!valid_pac_url("wpad.dat"));
+  CHECK(!valid_pac_url("http://x/$HOME"));
+  CHECK(!valid_pac_url("http://x/a b"));
+
+  auto hosts = split_host_list("localhost, *.corp.example  10.0.0.0/8;::1");
+  CHECK(hosts.size() == 4 && hosts[1] == "*.corp.example" && hosts[3] == "::1");
+  CHECK_EQ(join_host_list(hosts), "localhost, *.corp.example, 10.0.0.0/8, ::1");
+
+  CHECK_EQ(parse_apt_config_shell("P='http://10.10.1.1:3128/'\n"), "http://10.10.1.1:3128/");
+  CHECK_EQ(parse_apt_config_shell(""), "");
+  CHECK_EQ(parse_apt_config_shell("P='DIRECT'"), "");
+
+  auto v = parse_network_verdict(
+      "{\"version\":2,\"verdict\":\"proxy-required\",\"nm\":\"connected:full\",\"default_route\":true,"
+      "\"dns\":true,\"http_direct\":0,\"https_direct\":28,\"https_proxy\":null,\"proxy_mode\":\"none\","
+      "\"proxy_url\":\"\",\"wpad_url\":\"http://wpad.corp.example/wpad.dat\",\"apt_proxy\":\"\","
+      "\"clock_skew\":null}\n");
+  CHECK(v.parsed);
+  CHECK_EQ(v.verdict, "proxy-required");
+  CHECK_EQ(v.wpad_url, "http://wpad.corp.example/wpad.dat");
+  CHECK_EQ(v.proxy_mode, "none");
+  CHECK(!parse_network_verdict("not json").parsed);
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     fprintf(stderr, "usage: %s PCI_IDS_FIXTURE\n", argv[0]);
@@ -260,6 +355,7 @@ int main(int argc, char **argv) {
   test_pci_ids();
   test_names();
   test_devices();
+  test_proxy();
   test_sysfs(tmp);
   test_wallpapers(tmp);
   std::string cmd = "rm -rf '" + tmp + "'";

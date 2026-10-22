@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 DebION Dev-Team
 //
-// The photo viewer: a large view with zoom, rotation, slideshow, details
-// and actions.
+// Gallery's quick preview: a large view with zoom, slideshows, details and
+// actions. Editing is Photo's: "Edit in Photo" opens the photo there.
 #include <FL/Fl.H>
 #include <FL/fl_draw.H>
 
@@ -102,7 +102,6 @@ void Viewer::load_current() {
   failed_ = false;
   zoom_ = 0;
   pan_x_ = pan_y_ = 0;
-  rotation_ = 0;
   if (!p) return;
   full_path_ = p->path;
   app_->dimensions(p->path, img_w_, img_h_);
@@ -148,6 +147,18 @@ void Viewer::photos_changed() {
 void Viewer::step(int delta) {
   int n = int(app_->photos().size());
   if (n == 0) return;
+  if (slideshow_ && !subset_.empty()) {
+    // A slideshow of a set of photos.
+    auto it = std::find(subset_.begin(), subset_.end(), index_);
+    int pos = it == subset_.end() ? -1 : int(it - subset_.begin());
+    int m = int(subset_.size());
+    int next = ((pos + delta) % m + m) % m;
+    if (subset_[size_t(next)] < n && subset_[size_t(next)] != index_) {
+      index_ = subset_[size_t(next)];
+      load_current();
+    }
+    return;
+  }
   int next = index_ + delta;
   if (slideshow_) next = (next % n + n) % n;
   if (next < 0 || next >= n || next == index_) return;
@@ -172,7 +183,6 @@ double Viewer::fit_scale() const {
   if (iw <= 0 || ih <= 0) {
     iw = ih = 512;
   }
-  if (rotation_ % 2) std::swap(iw, ih);
   double margin = slideshow_ ? 0 : S(48);
   double f = std::min((aw - margin) / iw, (ah - margin) / ih);
   // Photos are never enlarged to fit; vector images scale freely.
@@ -200,7 +210,6 @@ void Viewer::set_zoom(double scale, double cx, double cy) {
     pan_y_ = cy - (cy - ccy) * r - (ay + ah / 2);
     zoom_ = scale;
     double iw = img_w_ > 0 ? img_w_ : 512, ih = img_h_ > 0 ? img_h_ : 512;
-    if (rotation_ % 2) std::swap(iw, ih);
     double mx = std::max(0.0, (iw * scale - aw) / 2), my = std::max(0.0, (ih * scale - ah) / 2);
     pan_x_ = std::max(-mx, std::min(mx, pan_x_));
     pan_y_ = std::max(-my, std::min(my, pan_y_));
@@ -217,10 +226,16 @@ void Viewer::toggle_slideshow() {
     app_->toast(_("Slideshow · press Esc to stop"));
   } else {
     window()->fullscreen_off();
+    subset_.clear();
   }
   zoom_ = 0;
   pan_x_ = pan_y_ = 0;
   redraw();
+}
+
+void Viewer::start_slideshow(std::vector<int> subset) {
+  subset_ = std::move(subset);
+  if (!slideshow_) toggle_slideshow();
 }
 
 void Viewer::stop_slideshow() {
@@ -271,14 +286,8 @@ void Viewer::layout_buttons() {
     image_area(ax, ay, aw, ah);
     set_zoom(current_scale() * 1.25, ax + aw / 2, ay + ah / 2);
   });
-  add(icon::Rotate, _("Rotate View (R)"), [this] {
-    rotation_ = (rotation_ + 1) % 4;
-    zoom_ = 0;
-    pan_x_ = pan_y_ = 0;
-    redraw();
-  });
   add(icon::Play, _("Slideshow (F5)"), [this] { toggle_slideshow(); });
-  add(icon::Edit, _("Open in Photo to edit (Ctrl+E)"), [this, path] { app_->edit_in_photo(path); });
+  add(icon::Edit, _("Edit in Photo (Ctrl+E)"), [this, path] { app_->edit_in_photo(path); });
   add(icon::Trash, _("Move to Trash (Delete)"), [this, path] { app_->trash({path}); });
   add(icon::Info, _("Details (I)"), [this] {
     info_ = !info_;
@@ -292,7 +301,7 @@ void Viewer::layout_buttons() {
     rx -= bs;
     top_[i].x = rx;
     rx -= gap;
-    if (i == right_start + 1 || i == right_start + 5 || i == right_start + 7) rx -= S(10);  // groups
+    if (i == right_start + 1 || i == right_start + 4 || i == right_start + 6) rx -= S(10);  // groups
   }
   if (!p) for (auto &b : top_) b.active = b.glyph == icon::Back;
   // Info panel actions.
@@ -312,7 +321,7 @@ void Viewer::layout_buttons() {
     b.active = p != nullptr;
     actions_.push_back(std::move(b));
   };
-  action(icon::Edit, _("Open in Photo"), [this, path] { app_->edit_in_photo(path); });
+  action(icon::Edit, _("Edit in Photo"), [this, path] { app_->edit_in_photo(path); });
   action(icon::OpenWith, _("Open With Other Application"), [this, path] { app_->open_with(path); });
   action(icon::Wallpaper, _("Set as Wallpaper"), [this, path] { app_->set_wallpaper(path); });
   action(icon::Files, _("Show in Files"), [this, path] { app_->show_in_files(path); });
@@ -356,17 +365,14 @@ void Viewer::draw() {
       double scale = current_scale();
       if (img_w_ <= 0) {
         double fiw = iw, fih = ih;
-        if (rotation_ % 2) std::swap(fiw, fih);
         double margin = slideshow_ ? 0 : S(48);
         scale = zoom_ > 0 ? zoom_ : std::min(1.0, std::min((aw - margin) / fiw, (ah - margin) / fih));
       }
       double cx = ax + aw / 2 + pan_x_, cy = ay + ah / 2 + pan_y_;
       double ew = iw * scale, eh = ih * scale;
-      if (rotation_ % 2) std::swap(ew, eh);
       if (!slideshow_) p.shadow(cx - ew / 2, cy - eh / 2, ew, eh, 2, t.shadow.alpha(t.shadow.a * 0.8), S(10));
       cairo_save(cr);
       cairo_translate(cr, cx, cy);
-      cairo_rotate(cr, rotation_ * M_PI / 2);
       double k = scale * iw / sw;
       cairo_scale(cr, k, k);
       cairo_translate(cr, -sw / 2, -sh / 2);
@@ -447,7 +453,6 @@ void Viewer::draw() {
     double sc = current_scale();
     sub += "  ·  " + (zoom_ > 0 ? format("%d%%", int(std::lround(sc * 100)))
                                 : format(_("Fit (%d%%)"), int(std::lround(sc * 100))));
-    if (rotation_) sub += "  ·  " + format(_("Rotated %d°"), rotation_ * 90);
     draw_text(sub, name_x, y() + S(29), name_w, S(18), t.text_dim);
   }
   if (ph && failed_ && !full_) {
@@ -508,7 +513,7 @@ void Viewer::draw() {
 }
 
 bool Viewer::keyboard(int key, int state) {
-  bool ctrl = state & FL_CTRL, shift = state & FL_SHIFT;
+  bool ctrl = state & FL_CTRL;
   const Photo *p = photo();
   double ax, ay, aw, ah;
   image_area(ax, ay, aw, ah);
@@ -561,13 +566,6 @@ bool Viewer::keyboard(int key, int state) {
   }
   if (key == '1') {
     set_zoom(1.0, ax + aw / 2, ay + ah / 2);
-    return true;
-  }
-  if (key == 'r' && !ctrl) {
-    rotation_ = (rotation_ + (shift ? 3 : 1)) % 4;
-    zoom_ = 0;
-    pan_x_ = pan_y_ = 0;
-    redraw();
     return true;
   }
   if (key == 'i' && !ctrl) {

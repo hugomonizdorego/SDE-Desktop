@@ -9,8 +9,9 @@ void sync_gtk_settings(const Config &cfg);
 // "SDE-Graphite-Light-Blue" (the light or dark variant is part of the name);
 // "Adwaita" or "Adwaita-dark" when the SDE themes are not installed.
 std::string gtk_theme_name(const Config &cfg);
-// Icon theme for GTK: [appearance] icon_theme, or for "auto" Papirus /
-// Papirus-Dark when installed, otherwise Adwaita.
+// Icon theme for GTK, the same one SDE programs use: [appearance]
+// icon_theme, or for "auto" (and themes that are not installed) Papirus /
+// Papirus-Dark when installed, otherwise Adwaita (resolve_icon_theme()).
 std::string gtk_icon_theme_name(const Config &cfg, bool dark);
 // "hardware" (a GPU with a 3D engine), "virtual" (VM/paravirtual or
 // display-only DRM device) or "software" (no DRM device, e.g. Xvfb).

@@ -1,35 +1,91 @@
-.TH CALCULATOR 1 "October 2026" "Calculator 1.0 Alpha 1" "SDE Suite"
+.TH CALCULATOR 1 "October 2026" "Calculator 2.0 Alpha 1" "SDE Suite"
 .SH NAME
-calculator \- native scientific calculator for SDE
+calculator \- the calculator of the Selviana Desktop Environment
 .SH SYNOPSIS
 .B calculator
+.RB [ --mode " standard|scientific|programmer|converter" ]
 .br
 .B calculator --eval
 .I expression
 .RB [ --angle " deg|rad|grad" ]
 .br
+.B calculator --eval
+.I expression
+.B --base
+.IR hex | dec | oct | bin
+.RB [ --bits " 8|16|32|64" ]
+.br
+.B calculator --convert
+.I value from to
+.br
 .B calculator --version
 .SH DESCRIPTION
-Calculator is a native GTK4 application using the embedded Scientific
-Calculator engine by Raad Altaie. It supports operator precedence,
-parentheses, scientific functions, angle modes, memory, answer reuse,
-clipboard copy and a small persistent history. It runs offline.
+Calculator is a native SDE application with Standard, Scientific,
+Programmer and Converter modes and a history of results. Expressions can be
+typed or clicked; operator precedence, right associative powers (2^3^2 is
+512), unary minus, implicit multiplication (2\(*p, 2(3+4)) and
+pocket-calculator percent (200 + 10% is 220) are supported. The result is
+previewed while typing; errors such as "Cannot divide by zero" are shown
+without clearing the input. Numbers have a 64-bit mantissa and are shown
+with 16 significant digits, so 0.1 + 0.2 is 0.3. It works offline.
+.SH KEYS
+.TP
+.B Enter, =
+calculate
+.TP
+.B Escape, Delete
+clear (Delete clears when the cursor is at the end)
+.TP
+.B Backspace
+delete the last character or operator
+.TP
+.B Ctrl+C, Ctrl+Shift+C, Ctrl+V
+copy the result (or the selection), copy the expression, paste
+.TP
+.B Ctrl+1 ... Ctrl+4
+Standard, Scientific, Programmer, Converter
+.TP
+.B Ctrl+H
+show or hide the history
 .SH OPTIONS
 .TP
+.BI --mode " name"
+Open in a mode.
+.TP
 .BI --eval " expression"
-Evaluate an expression without opening a window. The default angle unit
-is degrees. Invalid expressions and domain errors return a nonzero status.
+Print the result and exit. Invalid expressions and domain errors print a
+message on standard error and return status 2. The default angle unit is
+degrees.
 .TP
 .BI --angle " unit"
 Use deg, rad or grad with --eval.
 .TP
+.BI --base " base"
+Evaluate --eval as a programmer expression in hex, dec, oct or bin.
+.TP
+.BI --bits " n"
+Word size of --base (default 64).
+.TP
+.BI --convert " value from to"
+Convert between units, e.g. "calculator --convert 1 km mi".
+.TP
 .B --version
 Print Calculator's independent SDE build version.
+.SH ENVIRONMENT
+.TP
+.B SDE_CALC_QA_FILE
+Write the mode, expression, result and error to this file after every
+change (for automated tests).
 .SH FILES
-.I ~/.local/state/sde/calculator.ini
-stores GUI preferences, memory and the last ten history records.
-XDG_STATE_HOME is respected.
+.TP
+.I $XDG_STATE_HOME/sde/calculator-history.tsv
+the history (last 100 results)
+.TP
+.I $XDG_STATE_HOME/sde/calculator.ini
+mode, angle unit, base, word size, memory and window size
+.TP
+.I ~/.config/sde/calculator-currency.conf
+currency rates per euro, one "CODE = rate" per line, replacing the offline
+sample table
 .SH COPYRIGHT
-Copyright (c) 2026 Raad Altaie (engine) and SDE contributors (native frontend).
-AGPL-3.0-only. See /usr/share/doc/sde/upstream/scientific-calculator/.
-The complete corresponding source is distributed beside the SDE packages.
+Copyright (C) 2026 DebION Dev-Team. GPL-3.0-or-later.

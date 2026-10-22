@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <set>
 
 #include "i18n.h"
@@ -48,6 +49,11 @@ void Sheet::layout_card() {
 
 int Sheet::ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
                int default_button, int cancel_button) {
+  if (!window()) {
+    fprintf(stderr, "niny: BUG: the question sheet is not part of a window\n");
+    return cancel_button;
+  }
+  if (active_) return cancel_button;  // already asking
   for (auto *b : buttons_) {
     remove(b);
     Fl::delete_widget(b);

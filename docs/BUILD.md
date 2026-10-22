@@ -93,10 +93,11 @@ releasing an installer image.
 ## Alpha7 components
 
 Run `python3 tools/prepare-components.py` before configuring; this fetches the
-pinned Calculator, Openbox and picom sources. `tools/build-deb.sh` performs both
+pinned Openbox and picom sources (Calculator is a native SDE program since
+alpha50). `tools/build-deb.sh` performs both
 source-preparation steps automatically, then builds without network access.
 Additional dependencies are listed in `debian/control` and installed by
-`tools/install-native-deps.sh`. GTK4 >= 4.8 and JavaScriptCoreGTK 4.1 are required
-for Calculator; GTK3 is retained for the other native forks. CMake >= 3.19 is
+`tools/install-native-deps.sh`. GTK3 is retained for the remaining native forks;
+GTK4 and JavaScriptCoreGTK are no longer needed. CMake >= 3.19 is
 required. For core-only development, explicitly disable both
 `SDE_BUILD_NATIVE_SUITE` and `SDE_BUILD_COMPONENTS`.

@@ -35,6 +35,8 @@
 #include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
+#include "build_history.h"
+#include "build_info.h"
 #include "config.h"
 #include "dbus.h"
 #include "effects.h"
@@ -75,6 +77,10 @@ int g_wallpaper_anchor = 0;
 bool g_refreshing = false;
 
 }  // namespace
+
+void refresh_if_shown(const char *page_id) {
+  if (g_restart_page == page_id) Fl::add_timeout(0, [](void *) { refresh_page(); });
+}
 
 Config &settings_config() { return g_cfg; }
 const Theme &settings_theme() { return g_theme; }
@@ -180,18 +186,24 @@ void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w
   cairo_restore(p.cr());
   p.stroke_rounded(wx + 0.5, wy + 0.5, ww - 1, wh - 1, r, t.border);
   double cy = wy + th / 2;
-  if (t.family == "fluent") {
+  {
+    // Caption buttons of every family since alpha50: minimize, maximize and
+    // close on the right, the close button shown hovered (red).
     Color g = t.titlebar_text;
-    double bx = wx + ww - Sd(10);
-    p.line(bx - Sd(3), cy - Sd(3), bx + Sd(3), cy + Sd(3), g, Sd(1));
-    p.line(bx - Sd(3), cy + Sd(3), bx + Sd(3), cy - Sd(3), g, Sd(1));
-    bx -= Sd(14);
-    p.stroke_rounded(bx - Sd(3), cy - Sd(3), Sd(6), Sd(6), Sd(1), g, Sd(1));
-    bx -= Sd(14);
-    p.line(bx - Sd(3), cy, bx + Sd(3), cy, g, Sd(1));
-  } else {
-    const uint32_t lights[] = {0xFF5F57, 0xFEBC2E, 0x28C840};
-    for (int i = 0; i < 3; ++i) p.circle(wx + Sd(9) + i * Sd(10), cy, Sd(3.4), Color::hex(lights[i]));
+    double bw = Sd(14), bx = wx + ww - bw;
+    cairo_save(p.cr());
+    p.rounded_rect(wx, wy, ww, wh, r);
+    cairo_clip(p.cr());
+    p.fill_rect(bx, wy, bw, th - 1, Color::hex(0xC42B1C));
+    cairo_restore(p.cr());
+    double c = bx + bw / 2;
+    Color w = Color::hex(0xFFFFFF);
+    p.line(c - Sd(2.6), cy - Sd(2.6), c + Sd(2.6), cy + Sd(2.6), w, Sd(1));
+    p.line(c - Sd(2.6), cy + Sd(2.6), c + Sd(2.6), cy - Sd(2.6), w, Sd(1));
+    c -= bw;
+    p.stroke_rounded(c - Sd(2.6), cy - Sd(2.6), Sd(5.2), Sd(5.2), Sd(0.5), g, Sd(1));
+    c -= bw;
+    p.line(c - Sd(2.6), cy, c + Sd(2.6), cy, g, Sd(1));
   }
   // Sidebar rows, the selected one in the accent.
   for (int i = 0; i < 3; ++i) {
@@ -257,7 +269,7 @@ class FamilyCard : public PickCard {
 
  private:
   std::string short_desc() const {
-    if (id_ == "graphite") return N_("Apple HIG · soft depth");
+    if (id_ == "graphite") return N_("Calm colors · soft depth");
     if (id_ == "fluent") return N_("Fluent Design · Mica, Acrylic");
     return N_("Frosted, rounded glass");
   }
@@ -978,7 +990,162 @@ void reload_compositor_later(void *) {
 }
 void aero_changed();
 
+// Transparency preset (Off, Subtle, Clear, Glass): a panel and a menu over a
+// wallpaper, drawn with the opacity that preset gives the current family.
+class TransparencyCard : public PickCard {
+ public:
+  TransparencyCard(int x, int y, int w, int h, const TransparencyPreset &p)
+      : PickCard(x, y, w, h), id_(p.id), label_(p.label), value_(p.value) {}
+  bool selected() const override {
+    return g_cfg.get_bool("aero", "enabled", true) && g_theme.transparency == value_;
+  }
+  void pick() override {
+    g_cfg.set("aero", "enabled", "true");
+    g_cfg.set("aero", "transparency", std::to_string(value_));
+    aero_changed();
+    Fl::add_timeout(0, [](void *) { refresh_page(); });
+  }
+  void draw() override {
+    bool on = selected();
+    Config c = g_cfg;
+    c.set("aero", "enabled", "true");
+    c.set("aero", "transparency", std::to_string(value_));
+    Theme t = Theme::from_config(c);
+    int pv = h() - S(30);
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(10), hot_ ? g_theme.hover : g_theme.surface_alt);
+      double in = Sd(6), px = x() + in, py = y() + in, pw = w() - 2 * in, ph = pv - in;
+      cairo_save(p.cr());
+      p.rounded_rect(px, py, pw, ph, Sd(7));
+      cairo_clip(p.cr());
+      // A busy backdrop shows how much comes through: stripes and a sun.
+      p.fill_gradient(px, py, pw, ph, 0, t.dark ? Color::hex(0x1F4E79) : Color::hex(0x7FB2E5),
+                      t.dark ? Color::hex(0x5B2C6F) : Color::hex(0xF2A65A), true);
+      for (int i = 0; i < 6; ++i)
+        p.fill_rect(px + i * pw / 6, py, pw / 12, ph, Color::hex(0xFFFFFF).alpha(0.18));
+      p.circle(px + pw * 0.72, py + ph * 0.35, ph * 0.22, Color::hex(0xFFE08A));
+      // A menu with text, at the popup opacity, and the panel at the bottom.
+      double mx = px + pw * 0.12, my = py + ph * 0.14, mw = pw * 0.56, mh = ph * 0.52;
+      p.fill_rounded(mx, my, mw, mh, Sd(4), t.menu_bg.alpha(t.popup_opacity));
+      for (int i = 0; i < 3; ++i)
+        p.fill_rounded(mx + Sd(6), my + Sd(6) + i * mh / 3.4, mw * (i == 1 ? 0.5 : 0.66), Sd(3), Sd(1.5),
+                       t.menu_text.alpha(t.popup_opacity));
+      double bh = ph * 0.2;
+      p.fill_rect(px, py + ph - bh, pw, bh, t.panel_bg.alpha(t.opacity));
+      for (int i = 0; i < 4; ++i)
+        p.fill_rounded(px + Sd(6) + i * Sd(12), py + ph - bh + bh * 0.25, Sd(8), bh * 0.5, Sd(2),
+                       (i == 0 ? g_theme.accent : t.text_dim).alpha(t.opacity));
+      cairo_restore(p.cr());
+      p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(10), on ? g_theme.accent : g_theme.border,
+                       on ? Sd(2) : Sd(1));
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(10));
+    }
+    text_font(g_theme.font_size, on);
+    draw_text(_(label_.c_str()), x() + S(10), y() + pv, w() - S(20), S(28), on ? g_theme.accent_text : g_theme.text);
+  }
+
+ private:
+  std::string id_, label_;
+  int value_;
+};
+
+// An installed icon theme: five typical icons (folder, home, settings,
+// terminal, picture) drawn from that theme and its name. "auto" shows the
+// theme Automatic resolves to in the current mode.
+class IconThemeCard : public PickCard {
+ public:
+  IconThemeCard(int x, int y, int w, int h, std::string id, std::string label, std::string detail)
+      : PickCard(x, y, w, h), id_(std::move(id)), label_(std::move(label)), detail_(std::move(detail)) {
+    tooltip(detail_.empty() ? label_.c_str() : detail_.c_str());
+  }
+  ~IconThemeCard() override {
+    for (auto *s : icons_)
+      if (s) cairo_surface_destroy(s);
+  }
+  bool selected() const override {
+    std::string cur = trim(g_cfg.get("appearance", "icon_theme", "auto"));
+    if (cur.empty()) cur = "auto";
+    if (id_ == "auto") return lower(cur) == "auto" || resolve_icon_theme(cur, g_theme.dark) != cur;
+    return cur == id_;
+  }
+  void pick() override {
+    g_cfg.set("appearance", "icon_theme", id_);
+    IconLoader::set_theme(id_, g_theme.dark);
+    IconLoader::clear_cache();
+    apply_change();
+    Fl::add_timeout(0, [](void *) { refresh_page(); });
+  }
+  void draw() override {
+    static const char *const names[][3] = {{"folder", "inode-directory", nullptr},
+                                           {"user-home", "folder-home", nullptr},
+                                           {"preferences-system", "preferences-desktop", "applications-system"},
+                                           {"utilities-terminal", "terminal", "org.gnome.Terminal"},
+                                           {"image-x-generic", "image", "applications-graphics"}};
+    int isz = std::min(S(28), (w() - S(24)) / 5 - S(4));
+    if (icons_.empty() || size_ != isz) {
+      for (auto *s : icons_)
+        if (s) cairo_surface_destroy(s);
+      icons_.clear();
+      size_ = isz;
+      std::string theme = id_ == "auto" ? resolve_icon_theme("auto", g_theme.dark) : id_;
+      for (const auto &alts : names) {
+        cairo_surface_t *s = nullptr;
+        for (const char *n : alts) {
+          if (!n) break;
+          std::string path = IconLoader::lookup_in(theme, n, isz);
+          if (!path.empty() && (s = load_image(path, isz, isz))) break;
+        }
+        icons_.push_back(s);
+      }
+    }
+    bool on = selected();
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), S(10), hot_ ? g_theme.hover : g_theme.surface_alt);
+      int step = (w() - S(16)) / 5;
+      for (size_t i = 0; i < icons_.size(); ++i) {
+        if (!icons_[i]) continue;
+        double ix = x() + S(8) + int(i) * step + (step - size_) / 2.0, iy = y() + S(12);
+        int iw = cairo_image_surface_get_width(icons_[i]), ih = cairo_image_surface_get_height(icons_[i]);
+        cairo_save(p.cr());
+        cairo_translate(p.cr(), ix, iy);
+        if (iw > 0 && ih > 0) cairo_scale(p.cr(), double(size_) / iw, double(size_) / ih);
+        cairo_set_source_surface(p.cr(), icons_[i], 0, 0);
+        cairo_paint(p.cr());
+        cairo_restore(p.cr());
+      }
+      p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(10), on ? g_theme.accent : g_theme.border,
+                       on ? Sd(2) : Sd(1));
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(10));
+    }
+    text_font(g_theme.font_size, on);
+    draw_text(label_, x() + S(10), y() + S(16) + size_, w() - S(20), S(22), on ? g_theme.accent_text : g_theme.text);
+    if (!detail_.empty()) {
+      text_font(std::max(S(10), g_theme.font_size - S(2)));
+      draw_text(detail_, x() + S(10), y() + S(36) + size_, w() - S(20), S(18), g_theme.text_dim);
+    }
+  }
+
+ private:
+  std::string id_, label_, detail_;
+  std::vector<cairo_surface_t *> icons_;
+  int size_ = 0;
+};
+
+Label *g_transparency_note = nullptr;
+
+// "Panel 82 % · Menus 88 % · Window frames 94 % opaque" for the slider hint.
+std::string transparency_summary(const Theme &t) {
+  if (!t.translucent || t.transparency <= 0) return _("Every surface is opaque.");
+  auto pc = [](double v) { return int(std::lround(v * 100)); };
+  return format(_("Panel %d %%, menus %d %%, window frames %d %% opaque. At every level text keeps "
+                  "its contrast (WCAG AA) over any background."),
+                pc(t.opacity), pc(std::min(t.popup_opacity, t.gtk_menu_alpha)), pc(t.frame_opacity));
+}
+
 void build_appearance(Page *page) {
+  g_transparency_note = nullptr;
   page->heading(_("Appearance"), _("Theme, colors, translucency, size and wallpaper"));
   page->begin_card(_("Theme"));
   auto fams = theme_families();
@@ -1008,29 +1175,52 @@ void build_appearance(Page *page) {
   }
   page->end_card();
 
-  page->begin_card(_("Translucency"));
+  page->begin_card(_("Transparency and clarity"));
+  {
+    // Presets: Off, Subtle, Clear, Glass. One setting drives the panel,
+    // menus, Start menu, Action Center, popups, window frames and GTK menus.
+    const auto &presets = transparency_presets();
+    int pn = int(presets.size()), pgap = S(10);
+    int pw = std::min(S(150), (page->width() - S(40) - (pn - 1) * pgap) / pn);
+    int py = page->cursor();
+    for (int i = 0; i < pn; ++i)
+      new TransparencyCard(page->left() + S(20) + i * (pw + pgap), py, pw, S(104), presets[size_t(i)]);
+    page->advance(S(116));
+  }
+  page->slider_row(
+      _("Transparency"), 0, 100, g_cfg.get_int("aero", "transparency", 25),
+      [](double v) {
+        g_cfg.set("aero", "transparency", std::to_string(int(std::lround(v))));
+        if (!g_cfg.get_bool("aero", "enabled", true) && v > 0) g_cfg.set("aero", "enabled", "true");
+        aero_changed();
+        if (g_transparency_note) g_transparency_note->set(transparency_summary(g_theme));
+      });
+  {
+    std::string text = transparency_summary(g_theme);
+    int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::DIM) + S(14);
+    g_transparency_note = new Label(page->left() + S(20), page->cursor(), lw, lh, text, Label::DIM, true);
+    page->advance(lh);
+  }
   page->switch_row(
       _("Translucent surfaces"), g_cfg.get_bool("aero", "enabled", true),
       [](bool on) {
         g_cfg.set("aero", "enabled", on ? "true" : "false");
         aero_changed();
+        Fl::add_timeout(0, [](void *) { refresh_page(); });
       },
       _("Acrylic panel and menus in Fluent, vibrancy in Graphite, frosted window frames in "
         "Glass."));
-  page->slider_row(
-      _("Transparency"), 0, 60, g_cfg.get_int("aero", "transparency", 18),
-      [](double v) {
-        g_cfg.set("aero", "transparency", std::to_string(int(std::lround(v))));
-        aero_changed();
-      },
-      _("0% is opaque. Text stays readable: menus use half of this value."));
   page->switch_row(
       _("Blur behind glass"), g_cfg.get_bool("aero", "blur", true),
       [](bool on) {
         g_cfg.set("aero", "blur", on ? "true" : "false");
         aero_changed();
       },
-      _("Uses OpenGL when available; older graphics fall back to a lighter blur."));
+      _("Blur keeps text calm and crisp on translucent surfaces. Uses OpenGL when available."));
+  if (g_theme.lite)
+    page->note(_("This computer uses the lite compositor profile (virtual machine or software "
+                 "rendering): blur is off and surfaces stay more opaque so that text stays readable. "
+                 "Choose OpenGL or XRender in Effects to use every effect."));
   page->slider_row(
       _("Blur strength"), 1, 12, g_cfg.get_int("aero", "blur_strength", 6),
       [](double v) {
@@ -1075,21 +1265,47 @@ void build_appearance(Page *page) {
     g_cfg.set("appearance", "font_size", std::to_string(v + 8));
     apply_change();
   });
-  static std::vector<std::string> s_themes;
-  s_themes = IconLoader::installed_themes();
-  std::vector<std::string> theme_names{_("Automatic")};
-  std::string cur_theme = g_cfg.get("appearance", "icon_theme", "auto");
-  int theme_i = 0;
-  for (size_t i = 0; i < s_themes.size(); ++i) {
-    theme_names.push_back(s_themes[i]);
-    if (s_themes[i] == cur_theme) theme_i = int(i) + 1;
+  page->end_card();
+
+  // Icons: one choice for GTK applications, Liria, the desktop, the Start
+  // menu, the panel and every SDE application.
+  page->begin_card(_("Icons"));
+  {
+    auto infos = IconLoader::installed_theme_infos();
+    std::string auto_theme = resolve_icon_theme("auto", g_theme.dark);
+    struct Item {
+      std::string id, label, detail;
+    };
+    std::vector<Item> items;
+    items.push_back({"auto", _("Automatic"),
+                     auto_theme == "Papirus" || auto_theme == "Papirus-Dark"
+                         ? std::string(_("Papirus, light or dark"))
+                         : format(_("%s, follows the mode"), auto_theme.c_str())});
+    for (const auto &i : infos) {
+      std::string detail = i.id == "Papirus" ? _("Recommended")
+                           : i.id == "Papirus-Dark" ? _("For dark panels and themes")
+                           : i.id == "Papirus-Light" ? _("For light panels")
+                           : i.id == "Adwaita" ? _("GNOME")
+                                               : i.comment;
+      if (detail.size() > 40) detail = detail.substr(0, 37) + "...";
+      items.push_back({i.id, i.name, detail});
+    }
+    int gap = S(10), cols = std::max(1, (page->width() - S(40) + gap) / (S(196) + gap));
+    int cw = (page->width() - S(40) - (cols - 1) * gap) / cols, ch = S(86);
+    for (size_t k = 0; k < items.size(); ++k) {
+      int col = int(k) % cols, rowi = int(k) / cols;
+      new IconThemeCard(page->left() + S(20) + col * (cw + gap), page->cursor() + rowi * (ch + gap), cw, ch,
+                        items[k].id, items[k].label, items[k].detail);
+    }
+    int rows = (int(items.size()) + cols - 1) / cols;
+    page->advance(rows * (ch + gap) + S(4));
+    page->note(format(_("In use: %s. GTK applications, Liria, the desktop, the Start menu, the panel and "
+                        "SDE applications follow this choice; missing icons come from the theme's parents, "
+                        "Adwaita and hicolor."),
+                      IconLoader::theme().c_str()));
+    if (std::none_of(infos.begin(), infos.end(), [](const IconThemeInfo &i) { return i.id == "Papirus"; }))
+      page->note(_("Install papirus-icon-theme for the recommended SDE icons."));
   }
-  page->choice_row(_("Icon theme"), theme_names, theme_i, [](int v) {
-    g_cfg.set("appearance", "icon_theme", v <= 0 ? "auto" : s_themes[size_t(v - 1)]);
-    IconLoader::set_theme(g_cfg.get("appearance", "icon_theme"));
-    IconLoader::clear_cache();
-    apply_change();
-  });
   page->end_card();
 
   g_wallpaper_anchor = page->cursor() - page->y();
@@ -1771,6 +1987,8 @@ void build_network(Page *page) {
   page->heading(_("Network"), _("Wi-Fi, wired and mobile connections"));
   if (find_program("nmcli").empty()) {
     page->note(_("Network settings need NetworkManager (package network-manager)."));
+    build_network_diagnostics(page);
+    build_network_proxy(page);
     page->finish();
     return;
   }
@@ -1821,8 +2039,10 @@ void build_network(Page *page) {
               state);
   }
   page->end_card();
+  build_network_diagnostics(page);
+  build_network_proxy(page);
   if (!find_program("nm-connection-editor").empty())
-    page->row(_("VPN, proxies and advanced settings"), S(160), S(34),
+    page->row(_("VPN and advanced connection settings"), S(160), S(34),
               [](int x, int y, int w, int h) {
                 return action_button(x, y, w, h, _("Connections"), {"nm-connection-editor"});
               });
@@ -2058,6 +2278,62 @@ void start_gl_query() {
   if (!ok) g_gl_state = 0;
 }
 
+const char *const kDonateUrl = "https://paypal.me/hugocenturion0311";
+bool g_history_all = false;
+
+// "What's new in each build": the newest entries of build-history.json
+// (from CHANGELOG.md); the three newest are open, the others behind a button.
+void build_history_card(Page *page) {
+  static bool loaded = false;
+  static BuildHistory history;
+  if (!loaded) {
+    loaded = true;
+    std::string source = build_history_path(), text;
+    if (source.empty() || !read_file(source, text) || !parse_build_history(text, history)) history = BuildHistory();
+  }
+  page->begin_card(_("What's new in each build"));
+  if (history.entries.empty()) {
+    page->note(_("The development log (build-history.json) is not installed."));
+    page->end_card();
+    return;
+  }
+  int x = page->left() + S(20), w = page->width() - S(40);
+  size_t shown = g_history_all ? history.entries.size() : std::min<size_t>(3, history.entries.size());
+  for (size_t k = 0; k < shown; ++k) {
+    const BuildEntry &e = history.entries[k];
+    std::string head = e.title + (e.date.empty() ? "" : "  ·  " + e.date);
+    new Label(x, page->cursor(), w, S(26), head, Label::BOLD);
+    page->advance(S(26));
+    if (!e.summary.empty()) {
+      int sh = Label::measure(e.summary, w, Label::DIM) + S(2);
+      new Label(x, page->cursor(), w, sh, e.summary, Label::DIM, true);
+      page->advance(sh);
+    }
+    for (const auto &item : e.items) {
+      // A hanging bullet: wrapped lines start under the text.
+      int tx = x + S(28), tw = w - S(28);
+      int ih = Label::measure(item, tw, Label::NORMAL) + S(2);
+      new Label(x + S(12), page->cursor(), S(16), S(22), "•", Label::NORMAL);
+      new Label(tx, page->cursor(), tw, ih, item, Label::NORMAL, true);
+      page->advance(ih);
+    }
+    page->advance(S(10));
+  }
+  if (history.entries.size() > 3) {
+    std::string label = g_history_all ? std::string(_("Show fewer builds"))
+                                      : format(_("Show all %d builds"), int(history.entries.size()));
+    page->row(_("Development log"), S(200), S(34), [label](int bx, int by, int bw, int bh) {
+      auto *b = new FlatButton(bx, by, bw, bh, label);
+      b->callback([](Fl_Widget *, void *) {
+        g_history_all = !g_history_all;
+        Fl::add_timeout(0, [](void *) { refresh_page(); });
+      });
+      return b;
+    });
+  }
+  page->end_card();
+}
+
 void build_about(Page *page) {
   page->begin_card();
   int y = page->cursor();
@@ -2070,6 +2346,38 @@ void build_about(Page *page) {
             Label::DIM);
   new Label(tx, y + S(98), tw, S(22), developer_line(), Label::DIM);
   page->advance(S(126));
+  page->end_card();
+
+  // Build information, embedded at build time (tools/build-info.py).
+  page->begin_card(_("Build"));
+  info_row(page, _("Version"), format("%s (%s)", SDE_VERSION_LABEL, SDE_VERSION));
+  info_row(page, _("Build"), std::string(SDE_BUILD_NUMBER).empty() ? std::string(_("Unknown"))
+                                                                   : std::string(SDE_BUILD_NUMBER));
+  info_row(page, _("Build date"), SDE_BUILD_DATE);
+  info_row(page, _("Commit"), std::string(SDE_BUILD_COMMIT).empty()
+                                  ? std::string(_("Unknown (not built from a source repository)"))
+                                  : std::string(SDE_BUILD_COMMIT));
+  info_row(page, _("Developer"), kDeveloper);
+  page->end_card();
+
+  build_history_card(page);
+
+  // Support development: an honest note and a PayPal link.
+  page->begin_card(_("Support development"));
+  {
+    std::string text = _("SDE is in alpha. The developer keeps monitoring it and improving it with every "
+                         "build. Donations are optional and help keep that work going; SDE stays free "
+                         "software either way.");
+    int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::NORMAL) + S(8);
+    new Label(page->left() + S(20), page->cursor(), lw, lh, text, Label::NORMAL, true);
+    page->advance(lh + S(6));
+  }
+  page->row(_("PayPal"), S(200), S(36), [](int x, int yy, int w, int h) {
+    auto *b = new FlatButton(x, yy, w, h, _("Donate via PayPal"), true);
+    b->callback([](Fl_Widget *, void *) { spawn_detached({"xdg-open", kDonateUrl}); });
+    b->tooltip(kDonateUrl);
+    return b;
+  }, kDonateUrl);
   page->end_card();
 
   struct utsname u;

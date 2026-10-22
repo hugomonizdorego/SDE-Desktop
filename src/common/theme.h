@@ -93,11 +93,24 @@ struct Theme {
   // Glass family with [aero] enabled (sheen and gradients); |translucent|
   // is true whenever [aero] enabled: the compositor then applies |opacity|
   // to the panel and |popup_opacity| to menus (Acrylic, vibrancy).
+  //
+  // Since 0.1.0~alpha50 one setting, [aero] transparency (0-100, presets
+  // Off 0, Subtle 25, Clear 50, Glass 80), drives every translucent surface
+  // of every family. 100 is the most transparent each surface can be while
+  // its text keeps WCAG contrast (4.5:1 text, 3:1 secondary text) over any
+  // backdrop, so text stays crisp; see readable_opacity(). On the lite
+  // compositor profile (virtual machines, software rendering) there is no
+  // blur and surfaces stay more opaque.
   std::string style = "graphite";
   bool glass = false;
   bool translucent = true;
-  int transparency = 18;  // percent, 0-60
-  double opacity = 1.0, popup_opacity = 1.0;
+  int transparency = 25;        // the setting, 0-100
+  bool lite = false;            // lite compositor profile: no blur, less transparency
+  bool blur = true;             // blur behind translucent surfaces
+  double opacity = 1.0;         // panel (whole window, text included)
+  double popup_opacity = 1.0;   // SDE menus, Start menu, Action Center, OSDs
+  double frame_opacity = 1.0;   // SDE WM title bars and borders (compositor frame-opacity)
+  double gtk_menu_alpha = 1.0;  // GTK menu and popover backgrounds (text stays opaque)
 
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
@@ -139,9 +152,12 @@ std::string theme_style(const Config &cfg);
 std::string theme_dir(const std::string &family, bool dark = false, const std::string &accent = "blue");
 // The theme directory for the configuration, e.g. "SDE-Graphite-Light-Blue".
 std::string theme_dir(const Config &cfg);
-// Openbox <titleLayout> of a family: "CIML" (Graphite, Glass) or "NLIMC".
+// Openbox <titleLayout> of a family. Since 0.1.0~alpha50 every family has
+// "NLIMC": the window icon and title, then minimize, maximize and close on
+// the right (alpha16 to alpha49 had Graphite and Glass round buttons on
+// the left, "CIML", which SDE WM configurations are migrated from).
 std::string theme_title_layout(const std::string &family);
-// GTK decoration layout matching the Openbox buttons.
+// GTK decoration layout matching the SDE WM buttons: ":minimize,maximize,close".
 std::string theme_decoration_layout(const std::string &family);
 
 // Families and accents for pickers.
@@ -152,6 +168,24 @@ std::vector<ThemeFamilyInfo> theme_families();
 std::vector<std::string> theme_accents();
 std::string theme_accent_label(const std::string &accent);
 Color theme_accent_color(const std::string &family, const std::string &accent, bool dark);
+
+// Transparency presets of Settings > Appearance.
+struct TransparencyPreset {
+  const char *id;     // "off", "subtle", "clear", "glass"
+  const char *label;  // untranslated (N_) label
+  int value;          // [aero] transparency
+};
+const std::vector<TransparencyPreset> &transparency_presets();
+// The preset id of a transparency value, or "" for a value of the user's own.
+std::string transparency_preset_id(int value);
+
+// Contrast of |fg| on a surface |bg| drawn with |alpha| over the worst
+// backdrop (any gray, the text color or the surface color). |fade_text|:
+// the whole window is translucent (_NET_WM_WINDOW_OPACITY), text included;
+// otherwise only the background is (GTK CSS alpha, ARGB windows).
+double translucent_contrast(const Color &fg, const Color &bg, double alpha, bool fade_text);
+// The lowest alpha (0.30-1.00) that keeps translucent_contrast() >= |ratio|.
+double readable_opacity(const Color &fg, const Color &bg, double ratio, bool fade_text);
 
 // The theme last applied with Theme::apply_to_fltk(); used by sde widgets.
 const Theme &active_theme();

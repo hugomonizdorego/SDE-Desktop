@@ -44,7 +44,7 @@ env.update(
     XDG_DATA_DIRS=str(args.data_dir.parent)
     + ":"
     + env.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share"),
-    # Xvfb has no GPU: exercise GTK4 deterministically with its software renderer.
+    # Xvfb has no GPU: GTK4 clients (if any) use the software renderer.
     GSK_RENDERER="cairo",
     LANG="C.UTF-8",
     LC_ALL="C.UTF-8",
@@ -53,6 +53,8 @@ env.update(
     XDG_CACHE_HOME=str(home / ".cache"),
     # The Action Center's weather from a fixed report (no network in QA).
     SDE_WEATHER_FIXTURE=os.environ.get("SDE_WEATHER_FIXTURE", "partly"),
+    # Calculator writes its display (expression, result, error) here.
+    SDE_CALC_QA_FILE=str(home / "qa" / "calculator.txt"),
 )
 # The smoke check exercises the native interface and process helpers. A real
 # session bus is inherited when available; otherwise fail bus lookups quickly.
@@ -286,16 +288,44 @@ try:
     run("xdotool", "key", "Return")
     calculator = find("^Calculator$")
     run("xdotool", "windowactivate", "--sync", calculator)
-    run("xdotool", "key", "ctrl+a")
-    run("xdotool", "type", "sin(30)+2^3")
+    # Native SDE Calculator (alpha50): "2 + 2" must compute 4, typed with and
+    # without spaces (the GTK4 component cleared the input instead).
+    calc_qa = home / "qa" / "calculator.txt"
+
+    def calculator_shows(expected):
+        state = {}
+        for _ in range(50):
+            if calc_qa.exists():
+                state = dict(l.split("=", 1) for l in calc_qa.read_text().splitlines() if "=" in l)
+                if state.get("evaluated") == "1" and state.get("result") == expected:
+                    return state
+            time.sleep(0.1)
+        raise AssertionError(("Calculator result", expected, state))
+
+    for expression, expected in [("2+2", "4"), ("2 + 2", "4"), ("sin(30)+2^3", "8.5")]:
+        run("xdotool", "key", "Escape")
+        run("xdotool", "type", "--delay", "30", expression)
+        run("xdotool", "key", "Return")
+        state = calculator_shows(expected)
+        assert state.get("error") == "", state
+    run("xdotool", "key", "Escape")
+    run("xdotool", "type", "--delay", "30", "1/0")
     run("xdotool", "key", "Return")
+    time.sleep(0.4)
+    state = dict(l.split("=", 1) for l in calc_qa.read_text().splitlines() if "=" in l)
+    assert state["error"] == "Cannot divide by zero" and state["expression"], state  # input kept
+    run("xdotool", "key", "Escape")
+    run("xdotool", "type", "--delay", "30", "2+2")
+    run("xdotool", "key", "Return")
+    calculator_shows("4")
+    time.sleep(0.3)
     shot("11-calculator-native")
-    # A mapped GTK4 window must also contain rendered pixels, not just a title.
+    # The window must contain painted keys, not just a title (any theme).
     cg = geom(calculator)
-    sample = f"12x12+{cg['X'] + 24}+{cg['Y'] + cg['HEIGHT'] // 2}"
-    brightness = run("convert", str(out / "11-calculator-native.png"), "-crop", sample,
-                     "+repage", "-format", "%[fx:mean]", "info:").stdout.strip()
-    assert float(brightness) > 0.70, ("GTK4 Calculator did not paint", brightness, cg)
+    crop = f"{cg['WIDTH']}x{cg['HEIGHT']}+{cg['X']}+{cg['Y']}"
+    spread = run("convert", str(out / "11-calculator-native.png"), "-crop", crop, "+repage",
+                 "-colorspace", "Gray", "-format", "%[fx:standard_deviation]", "info:").stdout.strip()
+    assert float(spread) > 0.03, ("Calculator did not paint", spread, cg)
     run("xdotool", "key", "alt+F4")
     # New package metadata becomes searchable while the same menu stays open.
     run("sde-panel", "--menu")
@@ -334,7 +364,7 @@ try:
     shot("15-display-profiles-scale")
     display_app.terminate()
     display_app.wait()
-    print("SDE WM, COMPOSITOR, START SEARCH AND GTK4 CALCULATOR PASS", flush=True)
+    print("SDE WM, COMPOSITOR, START SEARCH AND NATIVE CALCULATOR PASS", flush=True)
     run("sde-panel", "--action-center")
     ac = find("^Action Center$")
     print("AC", geom(ac), flush=True)

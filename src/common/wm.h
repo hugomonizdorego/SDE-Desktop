@@ -12,9 +12,10 @@ std::string openbox_config_path();
 bool ensure_openbox_config();
 
 // Points the Openbox configuration at an SDE window theme, e.g.
-// "SDE-Graphite-Light-Blue", and sets the family's button layout (left
-// round buttons for Graphite and Glass, right for Fluent). A theme or
-// layout the user chose by hand is left alone. True when the file changed.
+// "SDE-Graphite-Light-Blue", and sets the button layout ("NLIMC" since
+// alpha50: minimize, maximize and close on the right in every family; the
+// old left "CIML" of Graphite and Glass is migrated). A theme or layout the
+// user chose by hand is left alone. True when the file changed.
 bool set_openbox_theme(const std::string &theme, const std::string &title_layout);
 // Older form: |style| is a family (or an alpha15 style), blue accent.
 bool set_openbox_theme(bool dark, const std::string &style = "graphite");
