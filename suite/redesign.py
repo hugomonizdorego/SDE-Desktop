@@ -1220,6 +1220,59 @@ def liria_pathbar(staged):
     (liria-sde-ui.c)."""
     edit_once(staged / "src/liria-pathbar.c", "    need_sliders = TRUE;\n    up_slider_offset = 0;\n",
               "    need_sliders = FALSE; /* SDE: only when the buttons do not fit */\n    up_slider_offset = 0;\n")
+    # A plain left click released on a breadcrumb always navigates: if the
+    # button's own "clicked" did not start the change (it can be lost to a
+    # pointer grab or a touch/pen device), the release does it shortly after.
+    pane = staged / "src/liria-navigation-window-pane.c"
+    edit_once(pane, """static gboolean
+path_bar_path_event_callback (LiriaPathBar *path_bar,""", """typedef struct
+{
+    LiriaNavigationWindowPane *pane;
+    GFile *location;
+} SdeCrumbClick;
+
+static gboolean
+sde_crumb_click_check (gpointer data)
+{
+    SdeCrumbClick *click = data;
+    LiriaWindowSlot *slot = LIRIA_WINDOW_PANE (click->pane)->active_slot;
+
+    if (slot != NULL && LIRIA_WINDOW_PANE (click->pane)->window != NULL &&
+        !(slot->location != NULL && g_file_equal (slot->location, click->location)) &&
+        !(slot->pending_location != NULL && g_file_equal (slot->pending_location, click->location)))
+    {
+        path_bar_location_changed_callback (NULL, click->location, click->pane);
+    }
+    g_object_unref (click->pane);
+    g_object_unref (click->location);
+    g_free (click);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+path_bar_path_event_callback (LiriaPathBar *path_bar,""")
+    edit_once(pane, """        if (flags != 0)
+        {
+            slot = liria_window_get_active_slot (LIRIA_WINDOW_PANE (pane)->window);""", """        if (flags == 0 && event->button == 1 && mask == 0)
+        {
+            GtkWidget *button = NULL;
+
+            gdk_window_get_user_data (event->window, (gpointer *) &button);
+            if (GTK_IS_WIDGET (button) && event->x >= 0 && event->y >= 0 &&
+                event->x < gtk_widget_get_allocated_width (button) &&
+                event->y < gtk_widget_get_allocated_height (button))
+            {
+                SdeCrumbClick *click = g_new0 (SdeCrumbClick, 1);
+
+                click->pane = g_object_ref (LIRIA_NAVIGATION_WINDOW_PANE (pane));
+                click->location = g_object_ref (location);
+                g_timeout_add (150, sde_crumb_click_check, click);
+            }
+        }
+
+        if (flags != 0)
+        {
+            slot = liria_window_get_active_slot (LIRIA_WINDOW_PANE (pane)->window);""")
 
 
 def liria_ribbon(staged):

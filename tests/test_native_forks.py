@@ -321,7 +321,8 @@ class LiriaAlpha16Test(unittest.TestCase):
                        'pan-end-symbolic'):
             self.assertIn(needle, helpers)
         for needle in ('_("Pinned")', '_("Drives")', 'liria_sde_pins_add ((const char * const *) uris, position)',
-                       'need_sliders = FALSE', 'liria_sde_ui_sidebar_icon_pixels ()'):
+                       'need_sliders = FALSE', 'liria_sde_ui_sidebar_icon_pixels ()', 'sde_crumb_click_check',
+                       'slot->pending_location'):
             self.assertIn(needle, recipe)
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
         # Full-colour theme icons in the sidebar, no symbolic-first lookup.
