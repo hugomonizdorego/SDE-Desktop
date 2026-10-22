@@ -50,6 +50,15 @@ class SniHost {
   // (case-insensitive), e.g. nm-applet next to SDE's own network indicator.
   void set_hidden(std::vector<std::string> names);
   bool is_hidden(const Item &item) const;
+  // Plain XKB layout applets (gxkb, xxkb...) repeat SDE's own keyboard
+  // indicator: hidden while it is shown.
+  void set_hide_layout_applets(bool hide) { hide_layout_applets_ = hide; }
+  // An input method framework (IBus, Fcitx...) shows an item.
+  bool has_input_method() const;
+
+  // The name shown for |item| (tooltip, accessibility): its Title, else its
+  // ToolTip title, Id or bus name; always printable text, never empty.
+  static std::string display_name(const Item &item);
 
   // Icon for |item| at |size| pixels (not owned; may be nullptr).
   cairo_surface_t *icon(const Item &item, int size) const;
@@ -75,4 +84,5 @@ class SniHost {
   bool own_watcher_ = false;
   std::vector<std::unique_ptr<Item>> items_;
   std::vector<std::string> hidden_;
+  bool hide_layout_applets_ = false;
 };

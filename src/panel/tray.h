@@ -31,6 +31,10 @@ class Tray {
   // Lower-case WM_CLASS names whose icons are not docked because an SDE
   // indicator already shows the same state (nm-applet, blueman...).
   void set_hidden(std::vector<std::string> names) { hidden_ = std::move(names); }
+  // XKB layout applets (gxkb, xxkb...) are not docked while SDE's keyboard
+  // indicator is shown; an input method's icon (IBus, Fcitx) is.
+  void set_hide_layout_applets(bool hide) { hide_layout_applets_ = hide; }
+  bool has_input_method() const;
 
  private:
   bool hidden(Window icon) const;
@@ -40,5 +44,7 @@ class Tray {
   unsigned long selection_ = 0;
   std::vector<Window> icons_;
   std::vector<std::string> hidden_;
+  std::vector<std::string> classes_;  // WM_CLASS (lower case) of icons_
+  bool hide_layout_applets_ = false;
   int icon_size_ = 22, spacing_ = 6;
 };

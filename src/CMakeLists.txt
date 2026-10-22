@@ -20,6 +20,7 @@ add_library(sde-common STATIC
   common/spawn.cpp
   common/suite.cpp
   common/theme.cpp
+  common/touchpad.cpp
   common/tray_icons.cpp
   common/util.cpp
   common/widgets.cpp
@@ -59,7 +60,11 @@ add_executable(sde-panel
   panel/agenda.cpp
   panel/alarms.cpp
   panel/alarm_popup.cpp
-  panel/panel_widgets.cpp)
+  panel/panel_widgets.cpp
+  panel/status_model.cpp
+  panel/status_flyout.cpp
+  panel/drives.cpp
+  panel/touchpad_monitor.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 
 add_executable(sde-desktop desktop/main.cpp)

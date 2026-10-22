@@ -12,6 +12,7 @@
 #include <cstring>
 #include <string>
 
+#include "status_model.h"
 #include "x11.h"
 
 namespace {
@@ -117,7 +118,32 @@ void Tray::place_in(Window parent, int x, int y, int columns, int clip_top, int 
   XFlush(fl_display);
 }
 
+namespace {
+std::string icon_class(Window icon) {
+  XClassHint hint{nullptr, nullptr};
+  if (!XGetClassHint(fl_display, icon, &hint)) return "";
+  std::string v = hint.res_name ? hint.res_name : "";
+  if (hint.res_class) v += std::string(" ") + hint.res_class;
+  if (hint.res_name) XFree(hint.res_name);
+  if (hint.res_class) XFree(hint.res_class);
+  std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return char(tolower(c)); });
+  return v;
+}
+}  // namespace
+
+bool Tray::has_input_method() const {
+  for (const auto &c : classes_)
+    for (const auto &part : {c.substr(0, c.find(' ')), c.substr(c.find(' ') + 1)})
+      if (keyboard_applet(part) == KeyboardApplet::INPUT_METHOD) return true;
+  return false;
+}
+
 bool Tray::hidden(Window icon) const {
+  if (hide_layout_applets_) {
+    std::string c = icon_class(icon);
+    for (const auto &part : {c.substr(0, c.find(' ')), c.substr(c.find(' ') + 1)})
+      if (keyboard_applet(part) == KeyboardApplet::LAYOUT) return true;
+  }
   if (hidden_.empty()) return false;
   XClassHint hint{nullptr, nullptr};
   if (!XGetClassHint(fl_display, icon, &hint)) return false;
@@ -164,12 +190,14 @@ void Tray::dock(Window icon) {
   auto info = sde::x11::get_cardinals(icon, "_XEMBED_INFO", sde::x11::atom("_XEMBED_INFO"));
   if (info.size() < 2 || (info[1] & XEMBED_MAPPED)) XMapRaised(fl_display, icon);
   icons_.push_back(icon);
+  classes_.push_back(icon_class(icon));
   XFlush(fl_display);
 }
 
 void Tray::undock(Window icon, bool reparent_to_root) {
   auto it = std::find(icons_.begin(), icons_.end(), icon);
   if (it == icons_.end()) return;
+  classes_.erase(classes_.begin() + (it - icons_.begin()));
   icons_.erase(it);
   if (reparent_to_root) {
     XUnmapWindow(fl_display, icon);

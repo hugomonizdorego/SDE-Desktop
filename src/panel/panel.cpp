@@ -3,6 +3,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
+#include <FL/Fl_Tooltip.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <X11/Xutil.h>
@@ -25,11 +26,15 @@
 #include "icons.h"
 #include "menu.h"
 #include "paint.h"
+#include "process.h"
 #include "quick.h"
 #include "rust_layout.h"
 #include "search.h"
 #include "sni.h"
 #include "spawn.h"
+#include "status_flyout.h"
+#include "status_model.h"
+#include "touchpad_monitor.h"
 #include "tray.h"
 #include "util.h"
 #include "wm.h"
@@ -58,6 +63,7 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   search_.reset(new SearchFlyout());
   quick_.reset(new QuickSettings(QuickSettings::ACTION_CENTER));
   flyout_.reset(new QuickSettings(QuickSettings::FLYOUT));
+  status_flyout_.reset(new StatusFlyout());
   alarms_.reset(new AlarmPopup());
 }
 
@@ -224,14 +230,22 @@ void Panel::setup() {
   tray_.reset(new Tray(xid));
   tray_->set_icon_size(tray_icon_);
   tray_->set_hidden(hidden);
+  tray_->set_hide_layout_applets(cfg_.get_bool("panel", "show_keyboard", true));
   tray_->start();
   sni_.reset(new SniHost([this] {
     status_signature_.clear();  // icons can change without a new title
     status_update();
   }));
   sni_->set_hidden(hidden);
+  sni_->set_hide_layout_applets(cfg_.get_bool("panel", "show_keyboard", true));
   sni_->start();
   SystemStatus::get().start([this] { status_update(); });
+  TouchpadMonitor::get().start([this] { touchpad_activity(); },
+                               [this] {
+                                 status_signature_.clear();
+                                 status_update();
+                               });
+  TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
 
   configured_ = true;
   refresh_tasks();
@@ -276,7 +290,8 @@ void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
 
 void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
-  if (p == quick_.get() || p == flyout_.get() || p == alarms_.get()) {
+  if (p == quick_.get() || p == flyout_.get() || p == alarms_.get() ||
+      p == status_flyout_.get()) {
     popup_opened_at_ = steady_ms();
     // Presses queued before the popup opened belong to earlier clicks. A
     // popup opened by a command (a client message carries no time) would
@@ -293,7 +308,9 @@ void Panel::popup_opened(PanelPopup *p) {
 
 void Panel::popup_closed(PanelPopup *p) {
   if (open_popup_ == p) open_popup_ = nullptr;
-  if (p == quick_.get() || p == flyout_.get()) PanelControls::get().set_visible(false);
+  if (p == quick_.get() || p == flyout_.get() || p == status_flyout_.get())
+    PanelControls::get().set_visible(false);
+  if (p == status_flyout_.get()) TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
   relayout();
   redraw();
   if (autohide_) Fl::add_timeout(0.8, hide_timeout, this);
@@ -390,6 +407,17 @@ void Panel::set_setting(const std::string &section, const std::string &key,
   x11::notify_config_changed();
 }
 
+void Panel::set_settings(const std::vector<Setting> &settings) {
+  for (const auto &s : settings) {
+    if (s.value.empty())
+      cfg_.unset(s.section, s.key);
+    else
+      cfg_.set(s.section, s.key, s.value);
+  }
+  cfg_.save();
+  x11::notify_config_changed();
+}
+
 void Panel::set_do_not_disturb(bool on) {
   cfg_.set("notifications", "do_not_disturb", on ? "true" : "false");
   cfg_.save();
@@ -454,7 +482,9 @@ void Panel::outside_pointer_press(unsigned long time) {
   PanelPopup *q = quick_ && quick_->is_open()     ? static_cast<PanelPopup *>(quick_.get())
                   : flyout_ && flyout_->is_open() ? static_cast<PanelPopup *>(flyout_.get())
                   : alarms_ && alarms_->is_open() ? static_cast<PanelPopup *>(alarms_.get())
-                                                  : nullptr;
+                  : status_flyout_ && status_flyout_->is_open()
+                      ? static_cast<PanelPopup *>(status_flyout_.get())
+                      : nullptr;
   if (!q || Fl::grab()) return;
   // XI2 arrives on a separate connection: the press of the click that opened
   // the popup may be dispatched after FLTK's release, even much later on a
@@ -481,6 +511,7 @@ std::string Panel::popup_key(const PanelPopup *p) const {
   if (p == search_.get()) return "search";
   if (p == quick_.get()) return quick_->calendar_view() ? "calendar" : "center";
   if (p == flyout_.get()) return "flyout:" + flyout_->section();
+  if (p == status_flyout_.get()) return "flyout:" + status_flyout_->section();
   if (p == alarms_.get()) return "alarms";
   return "";
 }
@@ -538,6 +569,8 @@ std::string Panel::status_section(StatusIcon icon) {
       return "tray";
     case DRIVE_STATUS:
       return "drives";
+    case TOUCHPAD_STATUS:
+      return "touchpad";
     default:
       return "";
   }
@@ -551,6 +584,15 @@ bool Panel::status_anchor(const std::string &section, int &center_x) const {
   return false;
 }
 void Panel::open_flyout(const std::string &section) {
+  // Media controls live in the Action Center (alpha50).
+  if (section == "media") {
+    open_action_center();
+    return;
+  }
+  if (StatusFlyout::handles(section)) {
+    open_status_flyout(section);
+    return;
+  }
   if (!QuickSettings::valid_section(section)) return;
   std::string key = "flyout:" + section;
   if (flyout_->is_open()) {
@@ -568,6 +610,24 @@ void Panel::open_flyout(const std::string &section) {
     flyout_->open_centered(center);
   else  // The icon is hidden (short panel): next to the Action Center button.
     flyout_->open_at(x() + action_x_ + action_w_, true);
+}
+void Panel::open_status_flyout(const std::string &section) {
+  std::string key = "flyout:" + section;
+  if (status_flyout_->is_open()) {
+    bool same = status_flyout_->section() == section;
+    status_flyout_->close();
+    if (same) return;
+  } else if (recently_closed(key)) {
+    return;
+  }
+  if (open_popup_ && open_popup_ != status_flyout_.get()) open_popup_->close();
+  set_revealed(true);
+  status_flyout_->select_section(section);
+  int center = 0;
+  if (status_anchor(section, center))
+    status_flyout_->open_centered(center);
+  else
+    status_flyout_->open_at(x() + action_x_ + action_w_, true);
 }
 void Panel::open_alarms(bool add) {
   if (alarms_->is_open()) {
@@ -624,13 +684,14 @@ void Panel::status_clicked(int index, int button) {
         open_flyout("sound");
       break;
     case CONTROLS_STATUS:
+    case MEDIA_STATUS:
       open_action_center();
       break;
     case INPUT_STATUS:
     case BLUETOOTH_STATUS:
     case BATTERY_STATUS:
-    case MEDIA_STATUS:
     case NETWORK_STATUS:
+    case TOUCHPAD_STATUS:
     case OVERFLOW_STATUS:
     case DRIVE_STATUS:
       open_flyout(status_section(status_icons_[size_t(index)]));
@@ -686,8 +747,190 @@ std::string Panel::status_tooltip(StatusIcon icon) const {
                                   : format(_("%d drives plugged in"), int(c.drives.size()));
     case DND_STATUS:
       return _("Do Not Disturb is on · click to turn it off");
+    case TOUCHPAD_STATUS:
+      return TouchpadMonitor::get().enabled() ? _("Touchpad · on") : _("Touchpad is off");
   }
   return "";
+}
+
+std::string Panel::tooltip_for(const Target &t) const {
+  if (t.kind == TRAY_ITEM && sni_) {
+    auto items = sni_->visible_items();
+    if (t.index >= 0 && t.index < int(items.size()))
+      return SniHost::display_name(*items[size_t(t.index)]);
+  } else if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size())) {
+    return status_tooltip(status_icons_[size_t(t.index)]);
+  } else if (t.kind == SEARCH) {
+    return _("Search apps, settings and files");
+  } else if (t.kind == ACTION_CENTER) {
+    return _("Action Center · Super+A");
+  } else if (t.kind == CLOCK) {
+    return _("Clock and alarms · Super+C opens the calendar");
+  } else if (t.kind == START) {
+    return _("Start · Super");
+  } else if (t.kind == TASK && t.index >= 0 && t.index < int(tasks_.size())) {
+    // A narrow task button shows only the icon: its title as tooltip.
+    const Task &task = tasks_[size_t(t.index)];
+    if (task.w < h() + S(20)) return printable_text(task.title.empty() ? task.wm_class : task.title);
+  } else if (t.kind == PINNED && t.index >= 0 && t.index < int(pinned_.size())) {
+    return pinned_[size_t(t.index)].entry.name;
+  }
+  return "";
+}
+bool Panel::target_rect(const Target &t, int &x, int &w) const {
+  switch (t.kind) {
+    case START:
+      x = 0, w = start_w_;
+      return true;
+    case SEARCH:
+      x = search_x_, w = search_w_;
+      return true;
+    case PINNED:
+      if (t.index < 0 || t.index >= int(pinned_.size())) return false;
+      x = pinned_[size_t(t.index)].x, w = pin_w_;
+      return true;
+    case TASK:
+      if (t.index < 0 || t.index >= int(tasks_.size())) return false;
+      x = tasks_[size_t(t.index)].x, w = tasks_[size_t(t.index)].w;
+      return true;
+    case TRAY_ITEM:
+      x = sni_x_ + t.index * (tray_icon_ + S(10)), w = tray_icon_ + S(10);
+      return true;
+    case STATUS:
+      x = status_x_ + t.index * S(26), w = S(26);
+      return true;
+    case CLOCK:
+      x = clock_x_, w = clock_w_;
+      return true;
+    case ACTION_CENTER:
+      x = action_x_, w = action_w_;
+      return true;
+    default:
+      return false;
+  }
+}
+// The text is stored in tip_ (never a temporary or a string that the next
+// hover frees) and Fl_Tooltip is told about each part separately; see
+// tooltip_text.h for the alpha16 bug this replaces.
+void Panel::update_tooltip() {
+  std::string tip = tooltip_for(hover_);
+  int tx = 0, tw = w();
+  if (tip.empty() || !target_rect(hover_, tx, tw)) {
+    if (!tip_.current().empty()) {
+      tip_.set("");
+      if (Fl_Tooltip::current() == this) Fl_Tooltip::enter_area(this, 0, 0, w(), h(), nullptr);
+    }
+    return;
+  }
+  if (tip == tip_.current() && Fl_Tooltip::current() == this) return;
+  Fl_Tooltip::enter_area(this, tx, 0, tw, h(), tip_.set(tip));
+}
+const char *Panel::qa_tooltip() const { return tip_.c_str(); }
+
+// ------------------------------------------------------ LED and touchpad
+
+// IBus or Fcitx manage the keyboard (engines and their layouts) and reset
+// the XKB layout when their engine changes, so SDE's layout indicator would
+// show a stale "US" next to the input method's own "EN". With an input
+// method in the tray, its icon is the only keyboard indicator.
+// [panel] keyboard_indicator=sde keeps SDE's indicator anyway.
+bool Panel::input_method_indicator() const {
+  if (cfg_.get("panel", "keyboard_indicator", "auto") == "sde") return false;
+  return (sni_ && sni_->has_input_method()) || (tray_ && tray_->has_input_method());
+}
+
+int Panel::status_index(StatusIcon icon) const {
+  for (size_t i = 0; i < status_icons_.size(); ++i)
+    if (status_icons_[i] == icon) return int(i);
+  return -1;
+}
+void Panel::status_icon_changed(const std::string &section) {
+  if (!shown() || (autohide_ && !revealed_)) return;
+  for (size_t i = 0; i < status_icons_.size(); ++i)
+    if (status_section(status_icons_[i]) == section)
+      damage_rect(status_x_ + int(i) * S(26), 0, S(26), h());
+}
+void Panel::led_update() {
+  const auto &n = SystemStatus::get().network;
+  bool shown_led = cfg_.get_bool("panel", "network_led", true) && status_index(NETWORK_STATUS) >= 0;
+  // NetworkManager does not check connectivity: a quick probe of our own,
+  // at most once a minute, tells local-only networks apart.
+  if (shown_led && n.connected() && n.connectivity == NetworkState::UNKNOWN &&
+      !led_probe_pending_ && steady_ms() - led_probe_at_ > 60000) {
+    led_probe_at_ = steady_ms();
+    std::string uri = n.check_uri.empty() ? "http://nmcheck.gnome.org/check_network_status.txt"
+                                          : n.check_uri;
+    std::vector<std::string> probe;
+    if (!find_program("curl").empty())
+      probe = {"curl", "-s", "-o", "/dev/null", "-m", "4", "-w", "%{http_code}", uri};
+    else if (!find_program("wget").empty())
+      probe = {"wget", "-q", "-T", "4", "-t", "1", "-O", "/dev/null", uri};
+    if (!probe.empty()) {
+      led_probe_pending_ = true;
+      bool curl = probe[0] == "curl";
+      run_async(probe, [this, curl](const std::string &out, int code) {
+        led_probe_pending_ = false;
+        std::string status = trim(out);
+        bool ok = code == 0 && (!curl || (!status.empty() && status[0] == '2'));
+        if (ok == !led_probe_failed_) return;
+        led_probe_failed_ = !ok;
+        status_icon_changed("network");
+      });
+    }
+  } else if (n.connectivity != NetworkState::UNKNOWN || !n.connected()) {
+    led_probe_failed_ = false;
+  }
+  // Steady instead of pulsing on battery saver or with network_led_blink=false.
+  bool blink = shown_led && cfg_.get_bool("panel", "network_led_blink", true) &&
+               PanelControls::get().power_profile != "power-saver";
+  if (blink && !led_running_) {
+    led_running_ = true;
+    Fl::add_timeout(0.125, led_tick, this);
+  } else if (!blink && led_running_) {
+    led_running_ = false;
+    Fl::remove_timeout(led_tick, this);
+    status_icon_changed("network");
+  }
+}
+// A 2 s soft pulse at 8 frames per second; only the icon's rectangle is
+// repainted.
+void Panel::led_tick(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  if (!p->led_running_) return;
+  p->led_phase_ = double(steady_ms() % 2000) / 2000.0;
+  p->status_icon_changed("network");
+  Fl::repeat_timeout(0.125, led_tick, data);
+}
+bool Panel::touchpad_motion_wanted() const {
+  if (!TouchpadMonitor::get().present()) return false;
+  bool flyout =
+      status_flyout_ && status_flyout_->is_open() && status_flyout_->section() == "touchpad";
+  std::string mode = cfg_.get("panel", "touchpad_indicator", "auto");
+  if (mode == "never") return flyout;
+  if (mode == "always") return true;
+  int i = status_index(TOUCHPAD_STATUS);
+  bool hovered = i >= 0 && hover_.kind == STATUS && hover_.index == i;
+  bool recent = steady_ms() - TouchpadMonitor::get().state().click_at < 2000;
+  return hovered || flyout || recent;
+}
+void Panel::touchpad_activity() {
+  if (touchpad_tick_pending_) return;
+  touchpad_tick_pending_ = true;
+  Fl::add_timeout(1.0 / 30, touchpad_tick, this);
+}
+void Panel::touchpad_tick(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  p->touchpad_tick_pending_ = false;
+  p->status_icon_changed("touchpad");
+  if (p->status_flyout_->is_open() && p->status_flyout_->section() == "touchpad")
+    p->status_flyout_->redraw();
+  auto &tp = TouchpadMonitor::get();
+  tp.want_motion(p->touchpad_motion_wanted());
+  // Keep animating while the dot fades out and the flash ends.
+  if (steady_ms() - tp.last_activity() < 2100) {
+    p->touchpad_tick_pending_ = true;
+    Fl::add_timeout(1.0 / 20, touchpad_tick, data);
+  }
 }
 
 // What the panel itself draws from the status services; an update that does
@@ -709,6 +952,8 @@ std::string Panel::status_signature() const {
   if (sni_)
     for (auto *i : sni_->visible_items()) sig += "|" + i->service + i->path + i->status + i->title;
   if (tray_) sig += "|" + std::to_string(tray_->count());
+  sig += "|tp" + std::to_string(TouchpadMonitor::get().present()) +
+         std::to_string(TouchpadMonitor::get().enabled());
   return sig;
 }
 void Panel::status_update() {
@@ -724,9 +969,13 @@ void Panel::status_update_timeout(void *data) {
     p->status_signature_ = sig;
     p->relayout();
     p->redraw();
+    // A Title or state that arrives while the pointer rests on an icon.
+    if (p->hover_.kind == TRAY_ITEM || p->hover_.kind == STATUS) p->update_tooltip();
   }
   p->quick_->status_changed();
   p->flyout_->status_changed();
+  p->status_flyout_->status_changed();
+  p->led_update();
 }
 
 void Panel::relayout() {
@@ -764,8 +1013,8 @@ void Panel::relayout() {
     if (available && cfg_.get_bool("panel", key, true)) status_icons_.push_back(icon);
   };
   // Icons appear only while their hardware or source exists: Bluetooth
-  // when an adapter is present, drives when one is plugged in, media while a
-  // player runs, battery on laptops.
+  // when an adapter is present, drives when one is plugged in, battery on
+  // laptops.
   // Application tray icons sit directly on the panel while they are few and
   // fit; more than [panel] tray_overflow_threshold (default 4) of them gather
   // behind the overflow (^) button and its Tray flyout. tray_overflow=always
@@ -776,8 +1025,8 @@ void Panel::relayout() {
   int threshold = std::max(0, cfg_.get_int("panel", "tray_overflow_threshold", 4));
   {
     int others = 0;  // the status icons other than the overflow button
-    for (const char *key : {"show_drives", "show_bluetooth", "show_media", "show_keyboard",
-                            "show_network", "show_sound", "show_battery"})
+    for (const char *key : {"show_drives", "show_bluetooth", "show_keyboard", "show_network",
+                            "show_sound", "show_battery", "show_touchpad"})
       others += cfg_.get_bool("panel", key, true) ? 1 : 0;
     bool fits = right - start_w_ - S(100) >= (others + 1) * S(26) + sn * (tray_icon_ + S(10)) + tw;
     tray_overflow_ = apps > 0 && cfg_.get_bool("panel", "show_tray", true) &&
@@ -787,8 +1036,18 @@ void Panel::relayout() {
   if (tray_overflow_) status_icons_.push_back(OVERFLOW_STATUS);
   add(DRIVE_STATUS, "show_drives", !controls.drives.empty());
   add(BLUETOOTH_STATUS, "show_bluetooth", !controls.adapters.empty());
-  add(MEDIA_STATUS, "show_media", !controls.players().empty());
-  add(INPUT_STATUS, "show_keyboard");
+  // alpha50: media players are controlled from the Action Center only; the
+  // panel shows no media icon while music plays (MEDIA_STATUS is unused).
+  // One keyboard indicator: an input method's own tray icon (IBus, Fcitx)
+  // replaces SDE's layout indicator; plain XKB applets are hidden instead
+  // (SniHost/Tray set_hide_layout_applets).
+  add(INPUT_STATUS, "show_keyboard", !input_method_indicator());
+  // [panel] touchpad_indicator: auto (shown when a touchpad exists, animated
+  // while hovered and briefly after use), always (follows every movement)
+  // or never.
+  add(TOUCHPAD_STATUS, "show_touchpad",
+      cfg_.get("panel", "touchpad_indicator", "auto") != "never" &&
+          TouchpadMonitor::get().present());
   add(DND_STATUS, "show_do_not_disturb", cfg_.get_bool("notifications", "do_not_disturb", false));
   add(NETWORK_STATUS, "show_network", s.network.available);
   add(SOUND_STATUS, "show_sound", s.audio.available);
@@ -1001,9 +1260,11 @@ void Panel::draw() {
     for (size_t i = 0; i < status_icons_.size(); ++i) {
       int bx = status_x_ + int(i) * S(26);
       double gx = bx + S(4);
+      std::string section = status_section(status_icons_[i]);
       button_bg(bx, S(26), {STATUS, int(i)},
-                flyout_ && flyout_->is_open() &&
-                    flyout_->section() == status_section(status_icons_[i]));
+                (flyout_ && flyout_->is_open() && flyout_->section() == section) ||
+                    (status_flyout_ && status_flyout_->is_open() &&
+                     status_flyout_->section() == section));
       switch (status_icons_[i]) {
         case INPUT_STATUS:
           tray_icon::layout(p, gx, gy, gs, controls.keyboard, t.text);
@@ -1038,15 +1299,33 @@ void Panel::draw() {
             tray_icon::wifi(p, gx, gy, gs, 0, false, t.text);
           else
             tray_icon::offline(p, gx, gy, gs, t.text);
-          // Connected without internet (or behind a sign-in page): a small
-          // warning badge, so the icon never suggests a working connection.
-          if (n.no_internet() || n.portal()) {
+          if (cfg_.get_bool("panel", "network_led", true)) {
+            // The LED: red offline, yellow local network only, green
+            // internet; pulsing gently (led_tick) unless steady.
+            NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_);
+            Color c = led == NetLed::GREEN    ? Color::hex(0x22C55E)
+                      : led == NetLed::YELLOW ? Color::hex(0xEAB308)
+                                              : Color::hex(0xEF4444);
+            double pulse = led_running_ ? 0.5 + 0.5 * std::cos(2 * M_PI * led_phase_) : 1.0;
+            double r = gs * 0.17, lx = gx + gs - r * 0.6, ly = gy + gs - r * 0.6;
+            p.circle(lx, ly, r + Sd(1.2), t.surface);
+            p.circle(lx, ly, r * (1.6 + 0.6 * pulse), c.alpha(0.18 * pulse));
+            p.circle(lx, ly, r, c.alpha(0.55 + 0.45 * pulse));
+          } else if (n.no_internet() || n.portal()) {
+            // Connected without internet (or behind a sign-in page): a small
+            // warning badge, so the icon never suggests a working connection.
             double r = gs * 0.24, bx2 = gx + gs - r * 0.9, by2 = gy + gs - r * 0.9;
             p.circle(bx2, by2, r + Sd(1), t.surface);
             p.circle(bx2, by2, r, n.portal() ? t.accent : Color::hex(0xE8A33D));
             p.line(bx2, by2 - r * 0.55, bx2, by2 + r * 0.1, Color::hex(0x1A1A1A), Sd(1.6));
             p.circle(bx2, by2 + r * 0.5, Sd(1), Color::hex(0x1A1A1A));
           }
+          break;
+        }
+        case TOUCHPAD_STATUS: {
+          auto &tp = TouchpadMonitor::get();
+          draw_touchpad(p, gx, gy + gs * 0.14, gs, gs * 0.72, tp.state(), tp.enabled(), true,
+                        t.text, t.accent);
           break;
         }
         case SOUND_STATUS:
@@ -1143,6 +1422,8 @@ void Panel::qa_dump_panel() {
                                        search_w_)
                                 : std::string()) +
                      line("action-center", action_x_, action_w_);
+  // The tooltip the panel handed to Fl_Tooltip for the hovered part.
+  if (!tip_.current().empty()) text += "@tooltip:" + tip_.current() + "\t0\t0\t0\t0\t1\n";
   for (size_t i = 0; i < status_icons_.size(); ++i) {
     std::string name = status_section(status_icons_[i]);
     if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
@@ -1165,26 +1446,15 @@ int Panel::handle(int event) {
       Target t = hit(Fl::event_x(), Fl::event_y());
       if (!(t == hover_)) {
         hover_ = t;
-        std::string tip;
-        if (t.kind == TRAY_ITEM && sni_) {
-          auto items = sni_->visible_items();
-          if (t.index < int(items.size())) tip = items[size_t(t.index)]->title;
-        } else if (t.kind == STATUS && t.index >= 0 && t.index < int(status_icons_.size())) {
-          tip = status_tooltip(status_icons_[size_t(t.index)]);
-        } else if (t.kind == SEARCH) {
-          tip = _("Search apps, settings and files");
-        } else if (t.kind == ACTION_CENTER) {
-          tip = _("Action Center · Super+A");
-        } else if (t.kind == CLOCK) {
-          tip = _("Clock and alarms · Super+C opens the calendar");
-        }
-        copy_tooltip(tip.c_str());
+        update_tooltip();
+        TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
         redraw();
       }
       return 1;
     }
     case FL_LEAVE:
       hover_ = Target{};
+      TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
       redraw();
       if (autohide_) Fl::add_timeout(0.8, hide_timeout, this);
       return 1;
@@ -1484,6 +1754,7 @@ bool Panel::handle_x(const XEvent &e) {
           steady_ms() - popup_opened_at_ > 500) {
         if (quick_->is_open()) quick_->close();
         if (flyout_->is_open()) flyout_->close();
+        if (status_flyout_->is_open()) status_flyout_->close();
         if (alarms_->is_open()) alarms_->close();
       }
       refresh_tasks();
@@ -1519,6 +1790,9 @@ bool Panel::handle_x(const XEvent &e) {
       redraw();
       quick_->status_changed();
       flyout_->status_changed();
+      status_flyout_->status_changed();
+      led_update();
+      TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
       Alarms::get().reload();
       alarms_->changed();
       if (autohide_ && !was_autohide) Fl::add_timeout(1.0, hide_timeout, this);

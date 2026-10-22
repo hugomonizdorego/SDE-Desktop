@@ -34,7 +34,8 @@ if(SDE_XVFB)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_display_preview.py $<TARGET_FILE:sde-display-preview-probe>)
 endif()
 
-add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp)
+add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp
+  ../src/panel/status_model.cpp ../src/panel/drives.cpp)
 target_link_libraries(sde-panel-controls-tests PRIVATE sde-common)
 add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 add_executable(sde-menu-model-tests test_menu_model.cpp ../src/panel/menu_model.cpp)
