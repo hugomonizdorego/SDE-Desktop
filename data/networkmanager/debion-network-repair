@@ -1,0 +1,7 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The SDE panel runs this through pkexec when DNS fails after login. polkit
+# (org.debion.network-check.repair) lets active local administrators (group
+# sudo) run it without a password: it takes no arguments and runs only the
+# safe, idempotent --boot-repair, never --fix or anything else.
+exec /usr/sbin/debion-network-check --boot-repair

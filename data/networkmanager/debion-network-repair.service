@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Repairs what keeps a DebION desktop offline although NetworkManager is
+# connected (an /etc/resolv.conf nobody writes, a device NetworkManager does
+# not manage, a profile that never connects by itself) and checks that DNS
+# works; see "debion-network-check --help" (--boot-repair). Only safe, idempotent
+# changes; the log is /var/log/debion-network-check.log.
+# Nothing waits for it: the login screen and the desktop start meanwhile.
+# Opt out: [network] auto_repair=false in /etc/debion/network.conf, or
+# systemctl disable debion-network-repair.service.
+[Unit]
+Description=DebION network repair (DNS and NetworkManager devices)
+Documentation=https://github.com/hugomonizdorego/SDE-Desktop/blob/main/docs/TROUBLESHOOTING.md
+After=NetworkManager.service
+Wants=NetworkManager.service
+ConditionPathExists=/usr/sbin/NetworkManager
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/debion-network-check --boot-repair
+TimeoutStartSec=30s
+# Not part of the boot transaction's critical path.
+Nice=10
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target

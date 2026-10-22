@@ -32,13 +32,21 @@ network_handover() {
 
 # An /etc/resolv.conf without any name server (left empty or dangling by
 # the installer, dhclient or a removed systemd-resolved) breaks every name
-# lookup although NetworkManager says "connected". Unless the administrator
-# configured NetworkManager's DNS handling, let NetworkManager write it
-# (conf.d/90-debion-dns.conf: dns=default, rc-manager=file); the reload
-# below applies it. A working resolv.conf is never touched.
-dns_repair() {
+# lookup although NetworkManager says "connected". debion-network-check
+# --postinst-repair repairs what is safe, without touching anything that
+# works or that the administrator chose: such a resolv.conf goes back to
+# NetworkManager, which is told to write it when its configuration would
+# not (conf.d/90-debion-dns.conf, unless /etc/NetworkManager sets dns= or
+# rc-manager=); Ethernet/Wi-Fi devices nothing else configures are managed
+# by NetworkManager; imported profiles connect automatically; a new
+# installation turns network time on. debion-network-repair.service does
+# the same at every boot. Log: /var/log/debion-network-check.log. Opt out:
+# [network] auto_repair=false in /etc/debion/network.conf.
+network_repair() {
     [ -x /usr/sbin/debion-network-check ] || return 0
-    /usr/sbin/debion-network-check --postinst-dns || true
+    first=""
+    [ -n "${1:-}" ] || first=--first-install
+    /usr/sbin/debion-network-check --postinst-repair $first 2>&1 | sed 's/^/debion-desktop-base: /' || true
 }
 
 reload_nm() {
@@ -51,7 +59,7 @@ reload_nm() {
 if [ "$1" = "triggered" ]; then
     # NetworkManager was installed after this package.
     network_handover
-    dns_repair
+    network_repair upgrade
     reload_nm
     exit 0
 fi
@@ -86,7 +94,8 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-remov
 
     if [ "$1" = "configure" ]; then
         network_handover
-        dns_repair
+        # $2: the version configured before ("" on a new installation).
+        network_repair "${2:-}"
     fi
 
     # NetworkManager: load the connectivity check and the DNS setting (a

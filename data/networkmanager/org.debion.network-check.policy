@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>DebION</vendor>
+
+  <!-- pkexec /usr/sbin/debion-network-check, option fix (SDE panel "Fix now",
+       Settings > Network > Troubleshooting): the full repair. Always an
+       administrator's password (kept for a few minutes). -->
+  <action id="org.debion.network-check.fix">
+    <description>Repair the network connection</description>
+    <message>Authentication is required to repair the network settings</message>
+    <icon_name>network-wired</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/sbin/debion-network-check</annotate>
+  </action>
+
+  <!-- pkexec /usr/libexec/debion-network-repair: the safe, argument-free
+       repair that also runs at every boot (debion-network-check
+       option boot-repair). An administrator's password by default;
+       50-debion-network-repair.rules lets active local members of the
+       group sudo run it without one. -->
+  <action id="org.debion.network-check.repair">
+    <description>Repair the DNS and network device settings</description>
+    <message>Authentication is required to repair the network settings</message>
+    <icon_name>network-wired</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/debion-network-repair</annotate>
+  </action>
+</policyconfig>

@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The SDE panel repairs DNS after login without a password prompt when the
+// person logged in at this machine is an administrator (group sudo, who
+// could run "sudo debion-network-check --fix" anyway).
+// /usr/libexec/debion-network-repair takes no arguments and only runs
+// debion-network-check --boot-repair: the same safe, idempotent changes as
+// at every boot (an /etc/resolv.conf that cannot work, NetworkManager's DNS
+// setting, unmanaged devices, profiles that do not connect by themselves).
+// Remote (SSH), inactive and other users still need an administrator's
+// password; --fix always does.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.debion.network-check.repair" &&
+        subject.local && subject.active && subject.isInGroup("sudo")) {
+        return polkit.Result.YES;
+    }
+});
