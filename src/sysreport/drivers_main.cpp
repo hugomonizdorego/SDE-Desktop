@@ -52,6 +52,7 @@ namespace {
 
 drivers::Scan g_scan;
 bool g_scanned = false;
+bool g_keyboard = false;  // the last input was a key: show focus rings
 bool g_demo = false;
 std::vector<int> g_initial, g_selection;
 
@@ -208,7 +209,7 @@ class DeviceRow : public Fl_Widget {
     const Device &d = g_scan.devices[index_];
     int sel = choice_of(g_selection[index_]);
     int rx = x() + S(64);  // radio column
-    bool focused = Fl::focus() == this;
+    bool focused = Fl::focus() == this && g_keyboard;  // the ring is for keyboard users
     {
       Painter p(window()->w(), window()->h());
       p.image(IconLoader::get(icons_for(d.kind), S(40)), x() + S(4), y() + S(2), S(40),
@@ -266,6 +267,7 @@ class DeviceRow : public Fl_Widget {
         return 1;
       }
       case FL_FOCUS:
+        g_keyboard = Fl::event() == FL_KEYBOARD;
         focus_ = choice_of(g_selection[index_]);
         redraw();
         return 1;
@@ -477,6 +479,7 @@ class DriversWindow : public BufferedWindow {
   }
 
   int handle(int e) override {
+    if (e == FL_PUSH) g_keyboard = false;
     if (e == FL_KEYBOARD && Fl::event_key() == FL_Escape) {
       do_callback();
       return 1;

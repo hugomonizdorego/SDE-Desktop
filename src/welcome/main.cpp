@@ -40,6 +40,7 @@ using namespace sde;
 namespace {
 
 bool g_live = false;
+bool g_keyboard = false;  // the last input was a key: show focus rings
 
 const Theme &theme() { return shell::theme(); }
 
@@ -72,7 +73,7 @@ class Tile : public Fl_Button {
       p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, Sd(10), t.border);
       p.fill_rounded(x() + S(14), y() + (h() - box) / 2.0, box, box, Sd(8), t.accent.alpha(t.dark ? 0.20 : 0.10));
       p.image(IconLoader::get(icons_, isz), x() + S(14) + S(6), y() + (h() - isz) / 2.0, isz);
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(10));
+      if (Fl::focus() == this && g_keyboard) focus_ring(p, x(), y(), w(), h(), Sd(10));
     }
     int tx = x() + S(14) + box + S(14), tw = w() - (tx - x()) - S(12);
     int mid = y() + h() / 2;
@@ -83,6 +84,7 @@ class Tile : public Fl_Button {
   }
 
   int handle(int e) override {
+    if (e == FL_FOCUS) g_keyboard = Fl::event() == FL_KEYBOARD;
     if (e == FL_ENTER || e == FL_LEAVE || e == FL_FOCUS || e == FL_UNFOCUS) {
       redraw();
       return 1;
@@ -135,12 +137,13 @@ class CheckBox : public Fl_Button {
         p.stroke_rounded(x() + S(2) + 0.5, by + 0.5, b - 1, b - 1, Sd(4), t.text_dim.mix(t.background, 0.35),
                          Sd(1.2));
       }
-      if (Fl::focus() == this) focus_ring(p, x() + S(2), by, b, b, Sd(4));
+      if (Fl::focus() == this && g_keyboard) focus_ring(p, x() + S(2), by, b, b, Sd(4));
     }
     text_font(t.font_size);
     draw_text(label_, x() + S(28), y(), w() - S(28), h(), t.text);
   }
   int handle(int e) override {
+    if (e == FL_FOCUS) g_keyboard = Fl::event() == FL_KEYBOARD;
     if (e == FL_FOCUS || e == FL_UNFOCUS) {
       redraw();
       return 1;
@@ -169,7 +172,7 @@ std::vector<Step> first_steps() {
   std::vector<Step> s;
   s.push_back({{"preferences-desktop-theme", "preferences-desktop-appearance", "preferences-desktop"},
                _("Appearance"),
-               _("Light or dark, accent colour and wallpaper"),
+               _("Theme, accent and wallpaper"),
                [] { shell::launch({"sde-settings", "--page", "appearance"}); }});
   s.push_back({{"system-software-update", "software-update-available", "update-manager"},
                _("Software Updater"),
@@ -188,11 +191,11 @@ std::vector<Step> first_steps() {
   else
     s.push_back({{"apport", "utilities-system-monitor", "dialog-information"},
                  _("System Reports"),
-                 _("Crash reports and system information"),
+                 _("Crashes and system details"),
                  [] { shell::launch({"sde-system-reports"}); }});
   s.push_back({{"help-browser", "system-help", "help-contents"},
                _("Help"),
-               _("Guides, troubleshooting and the forums"),
+               _("Guides and troubleshooting"),
                [] { shell::open_url(welcome::kDocsUrl); }});
   s.push_back({{"emblem-favorite", "starred", "face-smile"},
                _("Donate"),
@@ -230,14 +233,14 @@ class WelcomeWindow : public BufferedWindow {
   }
 
   void layout() {
-    int top = header_h() + (g_live ? S(40) : 0);
+    int top = header_h();
     int gap = S(12);
     int cols = w() < S(520) ? 1 : 2;
     int rows = int((tiles_.size() + size_t(cols) - 1) / size_t(cols));
     int gw = w() - 2 * pad();
-    int gh = h() - top - footer_h();
+    int gh = h() - top - footer_h() - S(14);
     int tw = (gw - gap * (cols - 1)) / cols;
-    int th = std::max(S(52), std::min(S(84), (gh - gap * (rows - 1)) / std::max(1, rows)));
+    int th = std::max(S(40), std::min(S(84), (gh - gap * (rows - 1)) / std::max(1, rows)));
     for (size_t i = 0; i < tiles_.size(); ++i) {
       int c = int(i) % cols, r = int(i) / cols;
       tiles_[i]->resize(pad() + c * (tw + gap), top + r * (th + gap), tw, th);
@@ -256,9 +259,10 @@ class WelcomeWindow : public BufferedWindow {
       p.fill_rect(0, 0, w(), h(), t.background);
       p.image(IconLoader::get({"sde-logo", "debion-logo", "start-here", "distributor-logo", "computer"}, lsz),
               pad(), S(28), lsz);
-      if (g_live) {
-        p.fill_rounded(pad(), header_h() - S(6), w() - 2 * pad(), S(32), Sd(8), t.surface_alt);
-        p.circle(pad() + S(16), header_h() - S(6) + S(16), Sd(4), t.warning);
+      if (g_live) {  // in the footer, where the check box would be
+        int ly = h() - footer_h() + (footer_h() - S(32)) / 2;
+        p.fill_rounded(pad(), ly, close_->x() - pad() - S(16), S(32), Sd(8), t.surface_alt);
+        p.circle(pad() + S(16), ly + S(16), Sd(4), t.warning);
       }
       p.fill_rect(pad(), h() - footer_h(), w() - 2 * pad(), std::max(1, S(1)), t.border);
     }
@@ -270,12 +274,13 @@ class WelcomeWindow : public BufferedWindow {
     if (g_live) {
       text_font(t.font_size - 1);
       draw_text(_("Live session \xe2\x80\x94 install DebION to keep your settings"), pad() + S(30),
-                header_h() - S(6), w() - 2 * pad() - S(40), S(32), t.text);
+                h() - footer_h() + (footer_h() - S(32)) / 2, close_->x() - pad() - S(56), S(32), t.text);
     }
     draw_children();
   }
 
   int handle(int e) override {
+    if (e == FL_PUSH) g_keyboard = false;
     if (e == FL_KEYBOARD && Fl::event_key() == FL_Escape) {
       hide();
       return 1;
