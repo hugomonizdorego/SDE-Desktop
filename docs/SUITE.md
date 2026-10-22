@@ -48,7 +48,7 @@ source file, in the License section of the About window and under
 prefix for any other occurrence. The window has one compact header (Back,
 Forward, Parent, breadcrumb path with an edit toggle, icon/list/compact
 buttons, Search, main menu on F10) with 16 px symbolic icons, grouped
-context menus with Send To for removable drives, a symbolic sidebar and
+context menus with Send To for removable drives, a sidebar (colour theme icons since alpha52) and
 Liria's own style sheet that uses only standard GTK theme colours.
 Screenshots: `docs/screenshots/alpha16/liria-*.png`.
 
@@ -64,7 +64,38 @@ missing file means the defaults (Desktop, Documents, Downloads, Pictures,
 Music, Videos, Trash); "Reset to Defaults" deletes it. Every Liria window
 watches the file. The code is `src/liria-sde-pins.c` (shared by the window
 and the SDE Tools extension); its unit test `sde-tools/test-liria-sde-pins.c`
-runs in `make check`. The sidebar's Favorites stay the standard folders.
+runs in `make check`.
+
+Since alpha52 (`src/liria-sde-ribbon.c`, `src/liria-sde-model.c` and
+`suite/redesign.py` `liria_home_view`, `liria_ribbon`,
+`liria_sidebar_pinned`, `liria_pathbar`, `liria_right_drag`):
+
+* **Home view.** The overview is the Home view: while it is shown the
+  slot hides its folder grid (no second copy of Desktop, Documents...)
+  and the overview scrolls; "Hide overview" brings the folder view back.
+  Quick access shows the pins (with a pin marker) followed by folders
+  suggested from recently used files ("Frequent folder", Pin button on
+  hover); Quick access, Drives (a grid of cards with a usage bar) and
+  Recent files have collapsible headers.
+* **Sidebar.** Home, Pinned (the same pin list), Bookmarks, Drives and
+  Network with collapsible headings, the icon theme's full-colour icons
+  at 18 px times the interface scale, and a pin on the hovered pinned row.
+* **Ribbon.** Home, Share and View tabs (plus Drive and Archive when they
+  apply) under the header of every folder window. Modes: full, tabs only
+  (Ctrl+F1) or off, chosen in Main Menu > Ribbon and kept in
+  `~/.config/sde/liria.conf` (`[ribbon] mode=full|collapsed|off`); the
+  same file holds the collapsed sections (`[home]`, `[sidebar]`).
+* **Drag and drop.** Every Home card is a drag source (text/uri-list);
+  files dropped on folder and drive cards are copied, moved or linked by
+  Liria (application action `sde-drop`), locations dropped on Quick
+  access or the Pinned heading are pinned, and a right-button drag of
+  icons asks Move/Copy/Link Here (Alt+drag belongs to SDE WM).
+  `tools/liria-dnd-smoke.py --prefix <built prefix>` checks real drags on
+  Xvfb; `sde-tools/test-liria-sde-model.c` tests the pin-on-drop,
+  ribbon-preference and Home layout decisions.
+* **Path bar.** The scroll arrows appear only for long paths (Caja showed
+  them always, inert); a click on the empty part of the path opens the
+  location entry.
 
 ## SDE Power and SDE Screen Lock (alpha16)
 
