@@ -971,8 +971,9 @@ class ClockCard : public Fl_Widget {
         sde::draw_text(s, x + 1, y + 1, w, h, shade);
         sde::draw_text(s, x, y, w, h, c);
       };
-      draw_text(clock, left, y(), cw, h(), ink);
-      int rx = left + cw + S(8), rw = x() + w() - rx - S(8);
+      // The analog face already tells the time: room for the weather.
+      if (!analog) draw_text(clock, left, y(), cw, h(), ink);
+      int rx = analog ? left : left + cw + S(8), rw = x() + w() - rx - S(8);
       int mid = y() + h() / 2;
       std::string cond = _(weather::from_wmo(wx_.code).text);
       std::string temp = weather::format_temperature(wx_.temp_c, fahrenheit_);
@@ -1530,6 +1531,16 @@ void QuickSettings::rebuild_timeout(void *data) {
   if (!self->scroll_to_calendar_)
     self->body_->scroll_to(
         0, std::min(scroll, std::max(0, self->content_height_ - self->body_->h())));
+  if (self->reveal_brightness_ && self->brightness_card_) {
+    // Just opened: bring the settings card into view (its top first).
+    auto *c = self->brightness_card_;
+    int y = self->body_->yposition();
+    int bottom = c->y() + c->h() - (self->body_->y() + self->body_->h());
+    int top = c->y() - self->body_->y() - S(8);
+    if (bottom > 0) y += std::min(bottom, std::max(0, top));
+    self->body_->scroll_to(0, std::max(0, std::min(y, self->content_height_ - self->body_->h())));
+  }
+  self->reveal_brightness_ = false;
   self->reposition();
   if (!focus_name.empty())
     restore_focus(self, focus_name);
@@ -1619,6 +1630,7 @@ void save_now(const std::string &section, const std::string &key, const std::str
 
 void QuickSettings::set_brightness_menu(bool open) {
   brightness_open_ = open;
+  reveal_brightness_ = open;
   status_changed();
 }
 
@@ -1653,6 +1665,7 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
   const auto &t = Panel::instance->theme();
   int pad = b.pad, inner = b.inner;
   auto *card = b.start_card(_("Brightness and Night Light"));
+  brightness_card_ = card;
   icon_button(pad + inner - S(46), card->y() + S(6), S(34), S(32), _("Close brightness settings"),
               cross_icon(), [this] { later([this] { set_brightness_menu(false); }); });
   auto refresh = [this] { later([this] { status_changed(); }); };
@@ -2803,6 +2816,7 @@ void QuickSettings::rebuild() {
   volume_ = brightness_ = microphone_ = nullptr;
   tray_box_ = nullptr;
   calendar_ = nullptr;
+  brightness_card_ = nullptr;
   clock_ = nullptr;
   media_slider_ = nullptr;
   media_service_.clear();

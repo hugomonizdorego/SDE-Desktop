@@ -777,7 +777,8 @@ void draw_scene(Painter &p, double x, double y, double w, double h, double radiu
   double u = h;  // scene unit: everything scales with the card height
   bool open_sky = k == Kind::Clear || k == Kind::PartlyCloudy;
   // Night: stars and the moon; day: the sun with slowly turning rays.
-  double bx = x + w * .80, by = y + h * .36, br = u * .17;
+  // In the top right corner, away from the text.
+  double br = u * .17, bx = x + w - br * 1.9, by = y + br * 1.7;
   if (!day) {
     int stars = open_sky ? 22 : k == Kind::Cloudy ? 6 : 0;
     for (int i = 0; i < stars; ++i) {

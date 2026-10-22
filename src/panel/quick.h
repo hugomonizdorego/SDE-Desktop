@@ -223,5 +223,6 @@ class QuickSettings : public PanelPopup {
   // The footer's power button shows Sleep, Log Out, Restart and Shut Down.
   bool power_open_ = false;
   // The brightness row's gear opens brightness and Night Light settings.
-  bool brightness_open_ = false;
+  bool brightness_open_ = false, reveal_brightness_ = false;
+  class Fl_Widget *brightness_card_ = nullptr;
 };
