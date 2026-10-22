@@ -202,6 +202,7 @@ class Panel : public sde::BufferedWindow {
  private:
   static void input_event(int, void *);
   void outside_pointer_press(unsigned long time);
+  void recover_input();
 
   // Auto-hide.
   void set_revealed(bool revealed);

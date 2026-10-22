@@ -26,6 +26,10 @@ class PanelPopup : public sde::BufferedWindow {
   virtual void close();
   void reposition();
   bool is_open() const { return !closing_ && const_cast<PanelPopup *>(this)->shown(); }
+  // The X window is really on screen (not unmapped behind FLTK's back).
+  bool viewable() const;
+  // The keyboard reaches this popup (focus and, with a grab, the grabs).
+  bool has_input() const;
 
   int handle(int event) override;
 
@@ -42,6 +46,14 @@ class PanelPopup : public sde::BufferedWindow {
   std::chrono::steady_clock::time_point previous_until_{};
   void open(int anchor_x, int align);
   static void refocus(void *data);
+  // alpha50: a screenshot tool (scrot -s, xfce4-screenshooter, flameshot)
+  // that still holds the pointer and keyboard grabs when a popup opens made
+  // FLTK's grab and the input focus fail silently: the search then took no
+  // typing. ensure_input() checks the grabs and the focus and retries until
+  // they hold (or the popup closes).
+  static void ensure_input(void *data);
+  bool grabbing_ = false;
+  int input_tries_ = 0;
   bool closing_ = false;
   int anchor_x_ = 0;
   int align_ = 0;  // 0 left edge, 1 right edge, 2 center at anchor_x_

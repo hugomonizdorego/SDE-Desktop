@@ -279,7 +279,18 @@ void Panel::hide_timeout(void *data) {
 bool Panel::any_popup_open() const { return open_popup_ && open_popup_->is_open(); }
 
 void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
+  recover_input();
   if (open_popup_ && open_popup_ != p) open_popup_->close();
+  // Open for FLTK but not on screen (unmapped by another client): the
+  // button opens it again instead of "closing" an invisible popup.
+  if (p->is_open() && !p->viewable()) p->close();
+  // Open, but the keyboard never reached it (a grab of another client):
+  // the button gives it the keyboard instead of closing it.
+  if (p->is_open() && !p->has_input() && Fl::grab() == p) {
+    p->take_focus();
+    XSetInputFocus(fl_display, fl_xid(p), RevertToPointerRoot, CurrentTime);
+    return;
+  }
   if (p->is_open()) {
     p->close();
     return;
@@ -335,6 +346,8 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
 void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
 
 void Panel::open_search(const std::string &text, bool keep_popup) {
+  recover_input();
+  if (search_->is_open() && !search_->viewable()) search_->close();
   if (search_->is_open()) {
     if (text.empty()) search_->close();
     else search_->type(text);
@@ -476,7 +489,23 @@ void Panel::input_event(int, void *d) {
     }
   }
 }
+// Repairs FLTK's input state after another client held the pointer: a grab
+// left on a window that is gone, or a button FLTK still thinks is down
+// because its release went to the grabbing client.
+void Panel::recover_input() {
+  if (Fl::grab() && (!Fl::grab()->shown() || !Fl::grab()->visible())) Fl::grab(nullptr);
+  if (Fl::pushed()) {
+    Window root = DefaultRootWindow(fl_display), r, child;
+    int rx, ry, x, y;
+    unsigned buttons = 0;
+    if (XQueryPointer(fl_display, root, &r, &child, &rx, &ry, &x, &y, &buttons) &&
+        !(buttons & (Button1Mask | Button2Mask | Button3Mask)) && Fl::event() != FL_RELEASE &&
+        Fl::event() != FL_PUSH && Fl::event() != FL_DRAG)
+      Fl::pushed(nullptr);
+  }
+}
 void Panel::outside_pointer_press(unsigned long time) {
+  recover_input();
   // The Action Center and the flyouts host native tray windows and do not
   // grab the pointer; a press anywhere else closes them.
   PanelPopup *q = quick_ && quick_->is_open()     ? static_cast<PanelPopup *>(quick_.get())
