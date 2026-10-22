@@ -505,23 +505,30 @@ void SidePanel::layout_draw(int px, int pw, int top) {
   DrawSettings &d = app_->draw_settings();
   Tool t = panel_tool(app_);
   bool selection = app_->canvas()->selected_mark() >= 0;
-  double yy = top - draw_scroll_ + S(22);
-  double gap = S(6), cell = (pw - 5 * gap) / 6;
+  bool compact = draw_compact();
+  double cell_h = compact ? S(34) : S(40), label = compact ? S(20) : S(22);
+  if (compact) top -= S(4);
+  double yy = top - draw_scroll_;
+  draw_tool_label_y_ = yy;
+  yy += label;
+  double gap = compact ? S(4) : S(6), cell = (pw - 5 * gap) / 6;
   for (int i = 0; i < kToolCount; ++i)
-    draw_boxes_.push_back({px + (i % 6) * (cell + gap), yy + (i / 6) * (S(40) + gap), cell, double(S(40)), D_TOOL + i});
-  yy += 2 * (S(40) + gap) + S(12) + S(22);
+    draw_boxes_.push_back({px + (i % 6) * (cell + gap), yy + (i / 6) * (cell_h + gap), cell, cell_h, D_TOOL + i});
+  yy += 2 * (cell_h + gap) + (compact ? S(6) : S(12));
+  draw_colour_label_y_ = yy;
+  yy += label;
   const auto &pal = palette();
   double sw = double(pw) / double(pal.size() + 1);
   for (size_t i = 0; i < pal.size(); ++i) draw_boxes_.push_back({px + i * sw, yy, sw, double(S(30)), D_SWATCH + int(i)});
   draw_boxes_.push_back({px + pal.size() * sw, yy, sw, double(S(30)), D_CUSTOM});
-  yy += S(30) + S(14);
-  int content_top = y() + S(56), content_bottom = y() + h() - S(96);
+  yy += S(30) + (compact ? S(8) : S(14));
+  int content_top = draw_top(), content_bottom = draw_bottom();
   auto place = [&](Slider *sl, bool on) {
     if (!on) return;
     yy += S(20);
     sl->resize(px, int(yy), pw, S(26));
-    if (sl->y() - S(20) >= content_top && sl->y() + sl->h() <= content_bottom) sl->show();
-    yy += S(26) + S(12);
+    if (sl->y() + sl->h() > content_top && sl->y() < content_bottom) sl->show();
+    yy += S(26) + (compact ? S(6) : S(12));
   };
   bool width = t != Tool::Picker && (t != Tool::Select || selection);
   int ti = int(t);
@@ -567,8 +574,7 @@ void SidePanel::draw_slider_changed(int which) {
 }
 
 int SidePanel::draw_tab_click(int mx, int my) {
-  int content_top = y() + S(56), content_bottom = y() + h() - S(96);
-  if (my < content_top || my >= content_bottom) return 0;
+  if (my < draw_top() || my >= draw_bottom()) return 0;
   DrawSettings &d = app_->draw_settings();
   for (const auto &b : draw_boxes_) {
     if (!b.in(mx, my)) continue;
@@ -700,12 +706,12 @@ void SidePanel::draw_draw_tab(Painter *p) {
   if (p) return;
   // Labels.
   text_font(t.font_size - S(1), true);
-  double ly = top - draw_scroll_;
+  double ly = draw_tool_label_y_;
   const ToolSpec &cur = kTools[int(d.tool)];
   std::string tool_line = _(cur.name);
   if (*cur.key) tool_line += format("  (%s)", cur.key);
   draw_text(tool_line, px, int(ly), pw, S(18), t.accent_text);
-  double cy = ly + S(22) + 2 * (S(40) + S(6)) + S(12);
+  double cy = draw_colour_label_y_;
   draw_text(_("COLOUR"), px, int(cy), pw, S(18), t.accent_text);
   text_font(t.font_size - S(1));
   char hex[16];
@@ -939,10 +945,20 @@ void SidePanel::draw() {
       if (tab_ == Filters) draw_filters(p);
       if (tab_ == Draw) {
         cairo_save(p.cr());
-        cairo_rectangle(p.cr(), x(), y() + S(56), w(), h() - S(56) - S(96));
+        cairo_rectangle(p.cr(), x(), draw_top(), w(), draw_bottom() - draw_top());
         cairo_clip(p.cr());
         draw_draw_tab(&p);
         cairo_restore(p.cr());
+        double room = draw_bottom() - draw_top() - S(8);
+        if (draw_h_ > room) {
+          // A scroll bar, and a fade where more options continue.
+          double track = draw_bottom() - draw_top() - S(8);
+          double bar = std::max(double(S(24)), track * room / draw_h_);
+          double by = draw_top() + S(4) + (track - bar) * draw_scroll_ / std::max(1.0, draw_h_ - room);
+          p.fill_rounded(x() + w() - S(7), by, S(4), bar, S(2), t.text_dim.alpha(0.45));
+          if (draw_scroll_ < draw_h_ - room - 1)
+            p.fill_gradient(x() + 1, draw_bottom() - S(18), w() - S(10), S(18), 0, t.surface.alpha(0), t.surface);
+        }
       }
       p.line(x() + S(20), y() + h() - S(64), x() + w() - S(20), y() + h() - S(64), t.border);
     } else {
@@ -972,7 +988,7 @@ void SidePanel::draw() {
                   v ? t.accent_text : t.text_dim, 2);
       }
     } else if (tab_ == Draw) {
-      fl_push_clip(x(), y() + S(56), w(), h() - S(56) - S(96));
+      fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
       draw_draw_tab(nullptr);
       fl_pop_clip();
     } else if (tab_ == Filters) {
@@ -1004,7 +1020,9 @@ void SidePanel::draw() {
                   crop_buttons_[5]->y() + S(44), pw, S(18), t.text_dim);
       }
     }
-    if (tab_ == Draw && !app_->edits().marks.empty()) {
+    if (tab_ == Draw && draw_compact()) {
+      // No room for a note.
+    } else if (tab_ == Draw && !app_->edits().marks.empty()) {
       text_font(t.font_size - S(1));
       draw_text(_("Drawings stay editable until you save."), px, y() + h() - S(88), pw, S(18), t.text_dim);
     } else if (!app_->modified()) {
@@ -1023,6 +1041,20 @@ void SidePanel::draw() {
     fl_push_clip(x(), y(), w(), h());
     draw_info(nullptr);
     fl_pop_clip();
+  }
+  if (mode_ == Edit && tab_ == Draw) {
+    // The sliders scroll with the tab: clip them to its area.
+    for (Slider *sl : {draw_width_, draw_opacity_}) {
+      if (!sl->visible()) continue;
+      fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
+      draw_child(*sl);
+      fl_pop_clip();
+    }
+    for (int i = 0; i < children(); ++i) {
+      Fl_Widget *c = child(i);
+      if (c != draw_width_ && c != draw_opacity_ && c->visible()) draw_child(*c);
+    }
+    return;
   }
   draw_children();
 }
@@ -1066,7 +1098,7 @@ int SidePanel::handle(int event) {
       int dh = -1;
       if (mode_ == Edit && tab_ == Draw)
         for (const auto &b : draw_boxes_)
-          if (b.in(mx, my) && my >= y() + S(56) && my < y() + h() - S(96)) dh = b.id;
+          if (b.in(mx, my) && my >= draw_top() && my < draw_bottom()) dh = b.id;
       if (dh != draw_hover_) {
         draw_hover_ = dh;
         redraw();
@@ -1084,7 +1116,7 @@ int SidePanel::handle(int event) {
       break;
     case FL_MOUSEWHEEL:
       if (mode_ == Edit && tab_ == Draw) {
-        double room = h() - S(56) - S(96) - S(8);
+        double room = draw_bottom() - draw_top() - S(8);
         draw_scroll_ = std::max(0.0, std::min(std::max(0.0, draw_h_ - room), draw_scroll_ + Fl::event_dy() * S(40)));
         layout();
         redraw();

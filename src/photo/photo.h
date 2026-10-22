@@ -212,6 +212,12 @@ class SidePanel : public Fl_Group {
   std::vector<HitBox> draw_boxes_;
   sde::Slider *draw_width_ = nullptr, *draw_opacity_ = nullptr;
   double draw_scroll_ = 0, draw_h_ = 0;
+  double draw_tool_label_y_ = 0, draw_colour_label_y_ = 0;
+  // Short panels (small screens, large scale) use tighter rows and no
+  // footer note; the tab scrolls when it still does not fit.
+  bool draw_compact() const { return h() < sde::S(600); }
+  int draw_top() const { return y() + sde::S(56); }
+  int draw_bottom() const { return y() + h() - (draw_compact() ? sde::S(68) : sde::S(96)); }
   int draw_hover_ = -1;
   PhotoWindow *app_;
   Mode mode_ = Info;
