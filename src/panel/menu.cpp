@@ -3,7 +3,6 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
-#include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -14,6 +13,7 @@
 #include <ctime>
 #include <map>
 
+#include "buffered_window.h"
 #include "build_config.h"
 #include "glyphs.h"
 #include "i18n.h"
@@ -23,6 +23,7 @@
 #include "spawn.h"
 #include "suite.h"
 #include "util.h"
+#include "widgets.h"
 
 using namespace sde;
 using menu::Tile;
@@ -145,6 +146,66 @@ void picture_glyph(Painter &p, double x, double y, double s, const Color &c) {
   cairo_line_to(cr, r, b - s * 0.1);
   stroke(p, c, std::max(1.1, s * 0.07));
   p.circle(x + s * 0.67, y + s * 0.36, s * 0.06, c);
+}
+
+// The question before Power off: a small dialog in the middle of the
+// screen. Enter (or the Power off button) confirms, Escape cancels.
+class PowerOffDialog : public BufferedWindow {
+ public:
+  bool confirmed = false;
+  PowerOffDialog(int w, int h) : BufferedWindow(w, h) {}
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    {
+      Painter p(w(), h());
+      p.fill_rect(0, 0, w(), h(), t.surface);
+      p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
+      p.circle(S(40), S(44), S(22), t.accent.alpha(0.14));
+      glyph::power(p, S(28), S(32), S(24), t.accent_text);
+    }
+    text_font(t.font_size + 3, true);
+    draw_text(_("Power off the computer?"), S(76), S(20), w() - S(92), S(26), t.text);
+    text_font(t.font_size);
+    draw_text(_("Unsaved work in open applications may be lost."), S(76), S(48), w() - S(92),
+              S(22), t.text_dim);
+    draw_children();
+  }
+  int handle(int event) override {
+    if ((event == FL_KEYBOARD || event == FL_SHORTCUT) &&
+        (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter)) {
+      confirmed = true;
+      hide();
+      return 1;
+    }
+    return BufferedWindow::handle(event);
+  }
+};
+
+bool confirm_power_off() {
+  int W = S(440), H = S(140), bw = S(112), bh = S(34);
+  auto *win = new PowerOffDialog(W, H);
+  win->copy_label(_("Power off"));
+  win->xclass("sde-panel");
+  auto *cancel = new FlatButton(W - S(16) - 2 * bw - S(10), H - S(16) - bh, bw, bh, _("Cancel"));
+  cancel->copy_tooltip(_("Cancel"));
+  cancel->callback([](Fl_Widget *b, void *) { b->window()->hide(); });
+  auto *ok = new FlatButton(W - S(16) - bw, H - S(16) - bh, bw, bh, _("Power off"), true);
+  ok->copy_tooltip(_("Power off"));
+  ok->callback([](Fl_Widget *b, void *) {
+    static_cast<PowerOffDialog *>(b->window())->confirmed = true;
+    b->window()->hide();
+  });
+  win->end();
+  int sx, sy, sw, sh;
+  Fl::screen_work_area(sx, sy, sw, sh, Fl::event_x_root(), Fl::event_y_root());
+  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->set_modal();
+  win->show();
+  ok->take_focus();
+  while (win->shown()) Fl::wait();
+  bool yes = win->confirmed;
+  Fl::delete_widget(win);
+  return yes;
 }
 
 // Gallery: two stacked photos.
@@ -839,11 +900,7 @@ void AppMenu::rail_action(int index) {
       // (sleep, restart and log out are in the Action Center).
       close();
       Fl::add_timeout(0, [](void *) {
-        fl_message_title(_("Power off"));
-        int answer = fl_choice("%s", _("Cancel"), _("Power off"), nullptr,
-                               _("Shut down the computer now? Unsaved work in open "
-                                 "applications may be lost."));
-        if (answer == 1) spawn_detached({"sde-logout", "--action", "poweroff"});
+        if (confirm_power_off()) spawn_detached({"sde-logout", "--action", "poweroff"});
       });
       return;
   }

@@ -4,6 +4,8 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
+#include <cairo.h>
+
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -18,6 +20,10 @@ std::string log_path;
 bool powered = true, discovering = false, paired = true, connected = false, adapter_present = true,
      device_present = true, control = true;
 std::string playback = "Playing";
+// MPRIS position (microseconds) and the album art written next to the log.
+long long position = 42000000;
+std::string cover;
+const char* track = "/org/sde/qa/track/1";
 // NetworkManager connectivity: 1 none, 2 portal, 3 limited, 4 full.
 uint32_t connectivity = 4;
 const std::string nm = "/org/freedesktop/NetworkManager";
@@ -125,6 +131,14 @@ DBusHandlerResult handle(DBusMessage* m) {
     } else {
       str(props, "PlaybackStatus", playback);
       flag(props, "CanControl", control);
+      flag(props, "CanSeek", true);
+      {
+        dbus::Writer e(props.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+        e.str("Position");
+        dbus::Writer v(e.iter(), DBUS_TYPE_VARIANT, "x");
+        dbus_int64_t pos = position;
+        dbus_message_iter_append_basic(v.iter(), DBUS_TYPE_INT64, &pos);
+      }
       flag(props, "CanPlay", true);
       flag(props, "CanPause", true);
       flag(props, "CanGoNext", true);
@@ -134,9 +148,23 @@ DBusHandlerResult handle(DBusMessage* m) {
       dbus::Writer v(entry.iter(), DBUS_TYPE_VARIANT, "a{sv}");
       dbus::Writer metadata(v.iter(), DBUS_TYPE_ARRAY, "{sv}");
       str(metadata, "xesam:title", "Alpha test track");
+      str(metadata, "xesam:album", "QA Sessions");
+      str(metadata, "mpris:trackid", track, true);
+      if (!cover.empty()) str(metadata, "mpris:artUrl", "file://" + cover);
+      {
+        dbus::Writer e(metadata.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+        e.str("mpris:length");
+        dbus::Writer v(e.iter(), DBUS_TYPE_VARIANT, "x");
+        dbus_int64_t len = 187000000;
+        dbus_message_iter_append_basic(v.iter(), DBUS_TYPE_INT64, &len);
+      }
       dbus::Writer artist(metadata.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
       artist.str("xesam:artist").variant_strings({"SDE QA"});
     }
+  } else if (path == player && method == "SetPosition" && args.size() == 2) {
+    position = args[1].num();
+    log("MPRIS SetPosition " + args[0].str() + " " + std::to_string(position / 1000000));
+    changed(player, "org.mpris.MediaPlayer2.Player");
   } else if (path == player && (method == "PlayPause" || method == "Next" || method == "Previous" ||
                                 method == "Raise")) {
     log("MPRIS " + method);
@@ -205,6 +233,27 @@ void poll(void*) {
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   log_path = argv[1];
+  {
+    // A small album cover next to the log.
+    cover = log_path.substr(0, log_path.rfind('/') + 1) + "qa-cover.png";
+    cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, 96, 96);
+    cairo_t* cr = cairo_create(s);
+    cairo_pattern_t* g = cairo_pattern_create_linear(0, 0, 96, 96);
+    cairo_pattern_add_color_stop_rgb(g, 0, 0.93, 0.36, 0.44);
+    cairo_pattern_add_color_stop_rgb(g, 1, 0.33, 0.24, 0.78);
+    cairo_set_source(cr, g);
+    cairo_paint(cr);
+    cairo_pattern_destroy(g);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.85);
+    cairo_arc(cr, 48, 48, 26, 0, 6.2832);
+    cairo_fill(cr);
+    cairo_set_source_rgb(cr, 0.33, 0.24, 0.78);
+    cairo_arc(cr, 48, 48, 6, 0, 6.2832);
+    cairo_fill(cr);
+    cairo_destroy(cr);
+    if (cairo_surface_write_to_png(s, cover.c_str()) != CAIRO_STATUS_SUCCESS) cover.clear();
+    cairo_surface_destroy(s);
+  }
   bus = dbus::Bus::session();
   if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez") ||
       !bus->request_name("org.freedesktop.NetworkManager"))

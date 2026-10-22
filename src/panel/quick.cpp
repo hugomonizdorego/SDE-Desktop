@@ -963,7 +963,14 @@ class ClockCard : public Fl_Widget {
     int cw = text_width(clock) + S(8);
     if (sky_) {
       // White text on the sky (the scene shades its left side).
-      Color ink = Color::hex(0xFFFFFF), soft = Color::hex(0xE6EDF6);
+      Color ink = Color::hex(0xFFFFFF), soft = Color::hex(0xE6EDF6),
+            shade = Color::hex(0x0B1424);
+      // Text with a soft shadow, readable over clouds and snow.
+      auto draw_text = [&shade](const std::string &s, int x, int y, int w, int h,
+                                const Color &c) {
+        sde::draw_text(s, x + 1, y + 1, w, h, shade);
+        sde::draw_text(s, x, y, w, h, c);
+      };
       draw_text(clock, left, y(), cw, h(), ink);
       int rx = left + cw + S(8), rw = x() + w() - rx - S(8);
       int mid = y() + h() / 2;
@@ -1780,9 +1787,9 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
                       SystemStatus::get().reset_external_brightness();
                       refresh();
                     },
-                    ddc, [] {
+                    ddc, [ddc] {
                       const auto &c = Panel::instance->config();
-                      return c.get_bool("brightness", "external_monitor",
+                      return ddc && c.get_bool("brightness", "external_monitor",
                                         c.get_bool("action_center", "external_brightness", true));
                     });
   ext->copy_tooltip(_("External monitor brightness"));

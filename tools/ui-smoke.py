@@ -21,6 +21,7 @@ parser.add_argument("--themes-dir", type=Path, default=Path(__file__).resolve().
 parser.add_argument("--theme", default="",
                     help="[appearance] lines, e.g. 'style=fluent\\ntheme=dark\\naccent_name=green'")
 parser.add_argument("--size", default="1366x768")
+parser.add_argument("--display", type=int, default=98, help="Xvfb display number")
 parser.add_argument("--scale", type=int, default=100, choices=[100, 125, 150, 175, 200])
 parser.add_argument(
     "--tcp-display",
@@ -36,7 +37,7 @@ home = Path(tmp.name)
 env = os.environ.copy()
 env.update(
     PATH=str(home / "bin") + ":" + str(args.bin_dir.resolve()) + ":" + env["PATH"],
-    DISPLAY="127.0.0.1:98" if args.tcp_display else ":98",
+    DISPLAY=f"127.0.0.1:{args.display}" if args.tcp_display else f":{args.display}",
     HOME=str(home),
     XDG_CONFIG_HOME=str(home / ".config"),
     XDG_CONFIG_DIRS=str(home / "system"),
@@ -49,6 +50,9 @@ env.update(
     LC_ALL="C.UTF-8",
     XDG_RUNTIME_DIR=str(home / "run"),
     SDE_PANEL_QA_DIR=str(home / "qa"),
+    XDG_CACHE_HOME=str(home / ".cache"),
+    # The Action Center's weather from a fixed report (no network in QA).
+    SDE_WEATHER_FIXTURE=os.environ.get("SDE_WEATHER_FIXTURE", "partly"),
 )
 # The smoke check exercises the native interface and process helpers. A real
 # session bus is inherited when available; otherwise fail bus lookups quickly.
@@ -211,7 +215,7 @@ try:
         if args.tcp_display
         else ["-nolisten", "tcp", "-ac"]
     )
-    xv = spawn("Xvfb", ":98", "-screen", "0", args.size + "x24", *transport)
+    xv = spawn("Xvfb", f":{args.display}", "-screen", "0", args.size + "x24", *transport)
     time.sleep(0.6)
     if xv.poll() is not None:
         raise RuntimeError("Could not start a private test display")
@@ -249,8 +253,14 @@ try:
     path = home / "qa" / "SDE-Menu.txt"
     control("SDE Menu", "@tiles")
     names = [l.split("\t")[0] for l in path.read_text().splitlines()]
-    for name in ("rail:account", "rail:documents", "rail:pictures", "rail:settings", "rail:power"):
+    rail = ("rail:account", "rail:documents", "rail:pictures", "rail:gallery", "rail:settings",
+            "rail:power")
+    for name in rail:
         assert name in names, (name, names)
+    # Top to bottom in this order, Power off last and on screen.
+    ys = [control("SDE Menu", n)[1] for n in rail]
+    assert ys == sorted(ys), ys
+    assert ys[-1] + control("SDE Menu", "rail:power")[3] <= g["HEIGHT"], (ys, g)
     assert "search" not in names and not any(n.startswith("category:") for n in names), names
     assert any(n.startswith("tile:") for n in names) and any(n.startswith("group:") for n in names), names
     for n in names:
@@ -334,6 +344,14 @@ try:
     # Session and settings buttons live in the Action Center footer.
     for name in ("SDE Settings", "Lock Screen", "Power"):
         control("Action Center", name)
+    # The weather picture behind the clock (SDE_WEATHER_FIXTURE), inside
+    # the header above the scrolled body.
+    names = [l.split("\t")[0] for l in (home / "qa" / "Action-Center.txt").read_text().splitlines()]
+    sky = [n for n in names if n.startswith("@weather-")]
+    assert sky, names
+    wx, wy, ww, wh = control("Action Center", sky[0])
+    assert wy >= 0 and wy + wh <= control("Action Center", "@body")[1], (wy, wh)
+    assert any(n.startswith("Weather: ") for n in names), names
     run("xdotool", "key", "Escape")
     app = spawn("sde-settings")
     settings = find("^Settings$")

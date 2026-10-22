@@ -177,15 +177,26 @@ void Controller::update() {
   double lat = 0, lon = 0;
   bool have = s.enabled && s.schedule == "sunset" && location(*cfg, lat, lon);
   bool on = active(s, time(nullptr), have, lat, lon);
+  bool set = false;
   if (on) {
     // Re-applied every minute: monitors may have been plugged in.
-    if (apply(whitepoint(s.temperature))) {
+    set = apply(whitepoint(s.temperature));
+    if (set) {
       applied_ = true;
       applied_temp_ = s.temperature;
     }
   } else if (applied_) {
     restore();
     applied_ = false;
+  }
+  // UI tests (Xvfb has no gamma ramps): what the panel decided.
+  std::string qa = env("SDE_PANEL_QA_DIR");
+  if (!qa.empty()) {
+    Rgb c = whitepoint(s.temperature);
+    char buf[128];
+    snprintf(buf, sizeof buf, "%s %d %.3f %.3f %.3f gamma=%s\n", on ? "on" : "off",
+             s.temperature, c.r, c.g, c.b, set ? "set" : "none");
+    write_file_atomic(join_path(qa, "night-light.txt"), buf);
   }
 }
 

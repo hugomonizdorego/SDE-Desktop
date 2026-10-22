@@ -27,7 +27,9 @@ a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
 display=f':{a.display}'
-e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
+e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),XDG_CACHE_HOME=str(home/'.cache'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
+# The Action Center's weather comes from a fixed report (no network in QA).
+e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
 (home/'backlight/qa_backlight').mkdir(parents=True);(home/'backlight/qa_backlight/brightness').write_text('60\n');(home/'backlight/qa_backlight/max_brightness').write_text('100\n')
@@ -179,13 +181,33 @@ def drag(win,src,dst):
         run('xdotool','mousemove',g['x']+src[0]+(dst[0]-src[0])*k//5,g['y']+src[1]+(dst[1]-src[1])*k//5);time.sleep(.08)
     time.sleep(.2);run('xdotool','mouseup','1');time.sleep(.6)
 def center(r):return (r[0]+r[2]//2,r[1]+r[3]//2)
+def rail_checks():
+    """Start menu rail (alpha50): Gallery opens sde-gallery; the account
+    shows only the account page (no Lock or Log Out); Power off asks first
+    and is the menu's only session action."""
+    press('SDE Menu','rail:gallery');gone('^SDE Menu$')
+    waitfor(lambda:commands('GALLERY'),'Gallery did not start sde-gallery')
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    press('SDE Menu','rail:account');time.sleep(.6);shot('20-menu-account')
+    run('xdotool','key','Escape');time.sleep(.4)
+    if visible('^SDE Menu$'):escape('SDE Menu')
+    # Power off: Escape cancels the question, Enter powers off.
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    press('SDE Menu','rail:power');gone('^SDE Menu$');d=find('^Power off$');time.sleep(.4)
+    shot('20-menu-power-off-question');run('xdotool','key','Escape');gone('^Power off$')
+    time.sleep(.3);assert not commands('LOGOUT --action poweroff'),'Power off ran without asking'
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    press('SDE Menu','rail:power');find('^Power off$');time.sleep(.4)
+    run('xdotool','key','Return');gone('^Power off$')
+    waitfor(lambda:commands('LOGOUT --action poweroff'),'Power off did not run sde-logout --action poweroff')
+    assert not commands('LOGOUT --action logout') and not commands('LOGOUT --action lock'),'menu ran another session action'
 def menu_checks():
     """Start menu: rail, A-Z list with a category filter, live-tile groups
     (drag, resize, move, rename), resizing the menu, typing goes to search."""
     m=click_panel('start','^SDE Menu$');time.sleep(1.2);g=geom(m)
     assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,g
     L=layout('SDE Menu')
-    for name in ['rail:menu','rail:account','rail:documents','rail:pictures','rail:settings','rail:power','@list','@tiles']:assert name in L,(name,L.keys())
+    for name in ['rail:menu','rail:account','rail:documents','rail:pictures','rail:gallery','rail:settings','rail:power','@list','@tiles']:assert name in L,(name,L.keys())
     assert any(k.startswith('filter:') for k in L) and any(k.startswith('group:') for k in L),L.keys()
     # No search field and no row of category chips any more.
     assert 'search' not in L and not any(k.startswith('category:') for k in L),L.keys()
@@ -194,12 +216,17 @@ def menu_checks():
     for k,v in L.items():
         if k.startswith('tile:'):assert inside(v,tiles),(k,v,tiles)
         if k.startswith('app:'):assert inside(v,lst),(k,v,lst)
-    # The rail sits at the bottom: account above Documents above ... Power.
-    ys=[L['rail:'+n][1] for n in ['account','documents','pictures','settings','power']];assert ys==sorted(ys) and ys[-1]+L['rail:power'][3]<=g['h'],ys
+    # The rail sits at the bottom: account, Documents, Pictures, Gallery,
+    # Settings, then (apart) the one Power off button.
+    order=['account','documents','pictures','gallery','settings','power']
+    ys=[L['rail:'+n][1] for n in order];assert ys==sorted(ys) and ys[-1]+L['rail:power'][3]<=g['h'],ys
+    assert L['rail:power'][1]-(L['rail:settings'][1]+L['rail:settings'][3])>=round(6*scale),'Power off not set apart'
     shot('20-menu')
     # The menu button expands the rail with labels; Escape folds it.
     press('SDE Menu','rail:menu');waitfor(lambda:'@rail-open' in layout('SDE Menu'),'rail did not expand')
     shot('20-menu-rail');run('xdotool','key','Escape');waitfor(lambda:'@rail-open' not in layout('SDE Menu'),'rail did not fold')
+    rail_checks()
+    m=click_panel('start','^SDE Menu$');time.sleep(1.0);g=geom(m)
     # Mouse wheel over the list.
     a=item('SDE Menu','@list');s=menu_scroll()
     run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2)
@@ -326,6 +353,56 @@ def search_checks():
     config(extra='[panel]\nsearch=hidden\n');reload()
     waitfor(lambda:not any(k.startswith('search') for k in layout('SDE Panel')),'hidden search still on the panel')
     config();reload();item('SDE Panel',box)
+def weather_checks():
+    """Action Center (alpha50): the weather sky behind the clock with the
+    temperature, condition and place; [weather] enabled=false removes it."""
+    L=waitfor(lambda:(lambda L:L if any(k.startswith('@weather-') for k in L) else None)(layout('Action Center')),'weather picture missing')
+    kind=next(k for k in L if k.startswith('@weather-'))
+    assert kind=='@weather-'+{'rain':'rain-day','clear-night':'clear-night','snow':'snow-day','thunder':'thunder-day'}.get(e['SDE_WEATHER_FIXTURE'],kind[9:]),kind
+    tip=next(k for k in L if k.startswith('Weather: '));assert 'Jakarta' in tip and '°C' in tip,tip
+    w=L[kind];assert w[1]>=0 and w[1]+w[3]<=L['@body'][1],('weather card leaves the header',w,L['@body'])
+    shot('02-action-center-weather')
+    escape('Action Center')
+    config(extra='[weather]\nenabled=false\n');reload()
+    command(['--action-center'],'Action Center');time.sleep(.5)
+    waitfor(lambda:not any(k.startswith('@weather-') for k in layout('Action Center')),'weather shown while disabled')
+    escape('Action Center');config(overflow=False);reload()
+    command(['--action-center'],'Action Center');time.sleep(.5)
+def brightness_settings_checks():
+    """The brightness row's gear: Night Light (gamma), schedule, auto-dim on
+    battery and dim level for sde-power, the DDC/CI monitor, Display settings."""
+    press('Action Center','Brightness settings')
+    for name in ['Night Light','Night Light warmth','Night Light schedule','Auto-dim on battery','Dim level','External monitor brightness','Display settings…','Close brightness settings']:
+        item('Action Center',name,active=False)
+    shot('02-action-center-brightness-settings')
+    press('Action Center','Night Light');waitfor(lambda:'[night_light]' in conf() and 'enabled=true' in conf().split('[night_light]')[1],'Night Light not saved')
+    press('Action Center','Night Light schedule');time.sleep(.4);run('xdotool','key','Down','Return');time.sleep(.5)
+    waitfor(lambda:'schedule=always' in conf(),'Night Light schedule not saved')
+    waitfor(lambda:(home/'qa/night-light.txt').exists() and (home/'qa/night-light.txt').read_text().startswith('on 4000'),'Night Light not applied')
+    shot('02-action-center-night-light')
+    press('Action Center','Night Light warmth',.85)
+    waitfor(lambda:re.search(r'temperature=(\d+)',conf()) and int(re.search(r'temperature=(\d+)',conf()).group(1))<4000,'warmth not saved')
+    waitfor(lambda:(home/'qa/night-light.txt').read_text().split()[1]!='4000','warmth not applied')
+    press('Action Center','Night Light');waitfor(lambda:'enabled=false' in conf().split('[night_light]')[1],'Night Light not switched off')
+    waitfor(lambda:(home/'qa/night-light.txt').read_text().startswith('off'),'Night Light not restored')
+    press('Action Center','Auto-dim on battery');waitfor(lambda:'idle_dim_battery=0' in conf(),'auto-dim not switched off for sde-power')
+    press('Action Center','Auto-dim on battery');waitfor(lambda:'idle_dim_battery=120' in conf(),'auto-dim not restored')
+    press('Action Center','Display settings…');gone('^Action Center$')
+    waitfor(lambda:commands('SETTINGS --page display'),'Display settings… did not open sde-settings --page display')
+    command(['--action-center'],'Action Center');time.sleep(.4)
+    assert 'Night Light' not in layout('Action Center'),'brightness settings stayed open'
+def media_card_checks():
+    """The media card: title, artist (album), cover, seek bar and only
+    previous / play-pause / next for the active MPRIS player."""
+    item('Action Center','Now playing: Alpha test track',active=False)
+    item('Action Center','Artist: SDE QA — QA Sessions',active=False)
+    for name in ['Playback position','Pause','Next']:item('Action Center',name)
+    item('Action Center','Previous',active=False)
+    assert 'Open player' not in layout('Action Center'),'media card shows more than the transport buttons'
+    shot('02-action-center-media')
+    press('Action Center','Playback position',.5)
+    waitfor(lambda:log_has('MPRIS SetPosition /org/sde/qa/track/1 9'),'seek bar did not send SetPosition')
+    escape('Action Center')
 def brightness_checks(ac):
     """Action Center: the brightness slider follows the volume slider in the
     same card; wheel and brightness commands change the backlight."""
@@ -368,7 +445,7 @@ elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n1
 elif a[:2]==['-t','networking']:print('full')
 ''')
 # Session actions, the browser and sound players only log what they were asked.
-for name,tag in [('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS')]:
+for name,tag in [('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY')]:
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
 ''')
@@ -442,10 +519,14 @@ try:
 
     # The corner button opens the Action Center (expanded by default).
     ac=click_panel('action-center','^Action Center$');time.sleep(.5);bounds(ac);only_open('Action Center')
-    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Alarms','Output volume','Brightness','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']:
+    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Alarms','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']:
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
     brightness_checks(ac)
+    weather_checks()
+    brightness_settings_checks()
+    media_card_checks()
+    ac=command(['--action-center'],'Action Center');time.sleep(.4)
     # Compact mode: tiles and sliders only, remembered in sde.conf.
     press('Action Center','Show less')
     waitfor(lambda:'expanded=false' in conf(),'compact mode not saved')

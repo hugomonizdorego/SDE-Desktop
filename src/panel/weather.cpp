@@ -842,7 +842,9 @@ void draw_scene(Painter &p, double x, double y, double w, double h, double radiu
     double cx = x - s * 1.5 + std::fmod(hash(i + 60) * span + t * speed, span);
     double cy = y + h * (.18 + .30 * hash(i + 70)) + (k == Kind::PartlyCloudy ? h * .12 : 0);
     double alpha = k == Kind::PartlyCloudy ? .92 : .55 + .35 * hash(i + 80);
-    cloud(cr, cx, cy, s, sky.cloud.alpha(alpha));
+    // Fainter over the text on the left side of the card.
+    double f = std::max(0.0, std::min(1.0, (cx - x - w * .3) / (w * .3)));
+    cloud(cr, cx, cy, s, sky.cloud.alpha(alpha * (.35 + .65 * f)));
   }
   // Precipitation.
   if (k == Kind::Rain || k == Kind::Drizzle || k == Kind::Thunder) {
