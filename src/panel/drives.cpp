@@ -16,6 +16,7 @@
 #include "i18n.h"
 #include "panel.h"
 #include "process.h"
+#include "quick.h"
 #include "spawn.h"
 #include "util.h"
 
@@ -70,26 +71,319 @@ std::string network_checker_path() {
 
 bool PanelControls::network_checker() const { return !network_checker_path().empty(); }
 
-void PanelControls::check_network() {
+// Login (alpha52): the panel asks NetworkManager at start (nmcli, D-Bus
+// GetAll) and runs the verdict as soon as it sees a connection; NetworkManager
+// state and device signals, and resume from suspend, refresh it at once
+// instead of on the next 15 s poll. A verdict that DNS fails is repaired
+// without a prompt when polkit allows the safe repair (an administrator at
+// the machine, see 50-debion-network-repair.rules), else a notification
+// offers "Fix now".
+void PanelControls::check_network(std::function<void()> done) {
   std::string checker = network_checker_path();
-  if (checker.empty()) return;
+  if (checker.empty()) {
+    if (done) done();
+    return;
+  }
+  if (done) verdict_waiters_.push_back(std::move(done));
+  if (net_verdict.empty()) {
+    net_verdict = "checking";
+    changed();
+  }
   if (verdict_pending_) {
     verdict_again_ = true;
     return;
   }
   verdict_pending_ = true;
-  run_async({"timeout", "25", checker, "--quick", "--json"}, [this](const std::string &out, int) {
+  std::string key = net_key_;
+  bool started = run_async({"timeout", "25", checker, "--quick", "--json"}, [this, key](const std::string &out, int) {
     verdict_pending_ = false;
-    std::string v = parse_network_verdict(out);
-    if (v != net_verdict) {
-      net_verdict = v;
-      changed();
+    if (key != net_key_ && !verdict_again_) {
+      // Answered for a connection that is gone: ask again for this one.
+      verdict_again_ = true;
     }
-    if (verdict_again_) {
-      verdict_again_ = false;
-      check_network();
+    if (!verdict_again_) {
+      std::string v = parse_network_verdict(out);
+      if (v.empty()) v = "unknown";  // timed out or failed: NetworkManager decides
+      bool repairable = parse_json_bool(out, "repairable");
+      if (v != net_verdict || repairable != net_repairable) {
+        net_verdict = v;
+        net_repairable = repairable;
+        changed();
+      }
+      verdict_in(parse_json_bool(out, "auto_repair", true));
+      auto waiters = std::move(verdict_waiters_);
+      verdict_waiters_.clear();
+      for (auto &w : waiters) w();
+      return;
     }
+    verdict_again_ = false;
+    check_network();
   });
+  if (!started) {
+    verdict_pending_ = false;
+    net_verdict = "unknown";
+    changed();
+  }
+}
+
+void PanelControls::net_retry(void *d) { static_cast<PanelControls *>(d)->check_network(); }
+
+void PanelControls::verdict_in(bool auto_repair) {
+  Fl::remove_timeout(net_retry, this);
+  bool bad = net_verdict != "ok" && net_verdict != "unknown" && net_verdict != "checking";
+  if (!bad || net_key_.empty()) {
+    net_retries_ = 0;
+    return;
+  }
+  // Check again later: DHCP, the boot repair or the user may fix it.
+  Fl::add_timeout(std::min(300, 20 << std::min(net_retries_, 4)), net_retry, this);
+  ++net_retries_;
+  if (!auto_repair || !network_verdict_fixable(net_verdict, net_repairable)) return;
+  if (net_repair_state == "running") return;
+  if (!net_auto_tried_) {
+    net_auto_tried_ = true;
+    // Only without a password prompt: nobody asked for it.
+    std::string wrapper = find_program("debion-network-repair");
+    if (wrapper.empty() && access("/usr/libexec/debion-network-repair", X_OK) == 0)
+      wrapper = "/usr/libexec/debion-network-repair";
+    if (!wrapper.empty() && !find_program("pkexec").empty() && !find_program("pkcheck").empty()) {
+      std::string process = std::to_string(getpid());
+      {
+        // pid,start-time,uid: pkcheck's race-free form.
+        std::string stat;
+        size_t p = read_file("/proc/self/stat", stat) ? stat.rfind(')') : std::string::npos;
+        if (p != std::string::npos && p + 2 < stat.size()) {
+          auto f = split(stat.substr(p + 2), ' ');
+          if (f.size() > 19) process += "," + f[19] + "," + std::to_string(getuid());
+        }
+      }
+      run_async({"pkcheck", "--action-id", "org.debion.network-check.repair", "--process", process},
+                [this](const std::string &, int status) {
+                  if (status == 0)
+                    repair_network(false);
+                  else
+                    offer_repair();
+                });
+      return;
+    }
+  }
+  offer_repair();
+}
+
+// "Internet needs a quick repair" with "Fix now", once per connection.
+void PanelControls::offer_repair() {
+  if (net_offered_ || find_program("pkexec").empty()) return;
+  dbus::Bus *bus = session_;
+  if (!bus || !bus->name_has_owner(kNotify)) return;
+  net_offered_ = true;
+  DBusMessage *m = dbus::method(kNotify, kNotifyPath, kNotify, "Notify");
+  {
+    dbus::Writer w(m);
+    std::string body = _(network_verdict_text(net_verdict).c_str());
+    body += ". ";
+    body += _("The repair gives the network settings back to NetworkManager and checks DNS.");
+    w.str(_("Network")).u32(net_notification_).str("network-error")
+        .str(_("Internet needs a quick repair")).str(body);
+    w.strings({"fix", _("Fix now")});
+    {
+      dbus::Writer hints(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+      dbus::Writer e(hints.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+      e.str("category").variant_str("network.error");
+    }
+    w.i32(0);
+  }
+  bus->call_async(m, [this](DBusMessage *r) {
+    auto a = r ? dbus::read_args(r) : std::vector<dbus::Value>{};
+    if (!a.empty()) net_notification_ = uint32_t(a[0].num());
+  });
+}
+
+void PanelControls::repair_network(bool full) {
+  if (net_repair_state == "running") return;
+  // polkit's action names /usr/sbin/debion-network-check (the /usr/bin
+  // link would need pkexec's generic authorization).
+  std::string checker = network_checker_path();
+  if (checker == "/usr/bin/debion-network-check" && access("/usr/sbin/debion-network-check", X_OK) == 0)
+    checker = "/usr/sbin/debion-network-check";
+  std::string wrapper = find_program("debion-network-repair");
+  if (wrapper.empty() && access("/usr/libexec/debion-network-repair", X_OK) == 0)
+    wrapper = "/usr/libexec/debion-network-repair";
+  if (checker.empty() || find_program("pkexec").empty()) {
+    net_repair_state = "failed";
+    net_repair_text = _("The network repair (debion-network-check and pkexec) is not installed.");
+    changed();
+    return;
+  }
+  if (!full && wrapper.empty()) full = true;
+  std::vector<std::string> argv = {"timeout", "300", "pkexec"};
+  if (full) {
+    argv.push_back(checker);
+    argv.push_back("--fix");
+  } else {
+    argv.push_back(wrapper);
+  }
+  net_repair_state = "running";
+  net_repair_text = _("Repairing the network connection...");
+  changed();
+  run_async(argv, [this, full](const std::string &out, int status) {
+    std::string summary = network_repair_summary(out, status);
+    if (status == 126 || status == 127) {
+      net_repair_state = "failed";
+      net_repair_text = _("The repair needs an administrator's password.");
+    } else if (summary == "ok") {
+      net_repair_state = "ok";
+      net_repair_text = _("Repaired: names (DNS) resolve again.");
+    } else if (summary == "done" && !full) {
+      // The safe repair found nothing it may change: the full one may.
+      net_repair_state = "";
+      net_repair_text.clear();
+      repair_network(true);
+      return;
+    } else {
+      net_repair_state = status == 0 ? "ok" : "failed";
+      net_repair_text = summary == "done" ? std::string(_("The repair finished.")) : summary;
+    }
+    changed();
+    SystemStatus::get().refresh_network();
+    refresh_devices();
+    SystemStatus::get().check_connectivity(true);
+    check_network();
+  });
+}
+
+void PanelControls::troubleshoot_network() {
+  auto &s = SystemStatus::get();
+  if (!network_checker() || !s.network.connected()) {
+    s.troubleshoot_network();
+    return;
+  }
+  net_repair_state.clear();
+  net_repair_text.clear();
+  s.message = format(_("Checking the connection to %s..."), s.network.connection.c_str());
+  s.changed_now();
+  s.check_connectivity(true, [this](int) {
+    check_network([this] {
+      auto &st = SystemStatus::get();
+      if (net_verdict == "ok") {
+        st.message = _("Internet access works.");
+        st.changed_now();
+      } else if (network_verdict_fixable(net_verdict, net_repairable)) {
+        st.message = _(network_verdict_text(net_verdict).c_str());
+        st.changed_now();
+        repair_network(false);
+      } else {
+        // Proxy, clock, portal, a network without internet: reconnect and
+        // let NetworkManager tell.
+        st.troubleshoot_network();
+      }
+    });
+  });
+}
+
+void PanelControls::network_state(const std::string &key, int connectivity) {
+  if (key != net_key_) {
+    net_key_ = key;
+    net_connectivity_ = connectivity;
+    net_verdict.clear();
+    net_repairable = false;
+    net_retries_ = 0;
+    net_offered_ = false;
+    net_auto_tried_ = false;
+    if (net_repair_state != "running") {
+      net_repair_state.clear();
+      net_repair_text.clear();
+    }
+    Fl::remove_timeout(net_retry, this);
+    if (!key.empty()) check_network();
+    return;
+  }
+  if (connectivity != net_connectivity_) {
+    net_connectivity_ = connectivity;
+    // LIMITED -> FULL (DHCP finished) or FULL -> NONE: the verdict may
+    // have changed although the connection did not.
+    if (!key.empty()) check_network();
+  }
+}
+
+void PanelControls::net_refresh(void *d) {
+  auto *c = static_cast<PanelControls *>(d);
+  c->net_refresh_pending_ = false;
+  SystemStatus::get().refresh_network();
+  c->refresh_devices();
+}
+
+void PanelControls::start_network() {
+  if (!system_) return;
+  auto later = [this] {
+    if (net_refresh_pending_) return;
+    net_refresh_pending_ = true;
+    Fl::add_timeout(0.3, net_refresh, this);
+  };
+  // NetworkManager's State, ActiveConnections, WirelessEnabled...
+  system_->add_signal_handler(
+      "type='signal',path='/org/freedesktop/NetworkManager',interface='org.freedesktop.DBus."
+      "Properties',member='PropertiesChanged'",
+      [](DBusMessage *m) {
+        const char *path = dbus_message_get_path(m);
+        return dbus_message_is_signal(m, "org.freedesktop.DBus.Properties", "PropertiesChanged") &&
+               path && std::string(path) == "/org/freedesktop/NetworkManager";
+      },
+      [later](DBusMessage *m) {
+        auto a = dbus::read_args(m);
+        if (a.size() < 2) return;
+        for (const char *k : {"State", "ActiveConnections", "PrimaryConnection", "WirelessEnabled",
+                              "NetworkingEnabled", "Devices"})
+          if (a[1].get(k)) {
+            later();
+            return;
+          }
+      });
+  // A cable plugged in, a device that NetworkManager starts or stops managing.
+  system_->add_signal_handler(
+      "type='signal',interface='org.freedesktop.NetworkManager.Device',member='StateChanged'",
+      [](DBusMessage *m) {
+        return bool(dbus_message_is_signal(m, "org.freedesktop.NetworkManager.Device", "StateChanged"));
+      },
+      [later](DBusMessage *) { later(); });
+  // NetworkManager started after the panel (or restarted by a repair).
+  system_->add_signal_handler(
+      "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='"
+      "org.freedesktop.NetworkManager'",
+      [](DBusMessage *m) {
+        auto a = dbus::read_args(m);
+        return bool(dbus_message_is_signal(m, "org.freedesktop.DBus", "NameOwnerChanged")) &&
+               !a.empty() && a[0].str() == "org.freedesktop.NetworkManager";
+      },
+      [later](DBusMessage *) { later(); });
+  // Resume: the connection and its verdict may be stale.
+  system_->add_signal_handler(
+      "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'",
+      [](DBusMessage *m) {
+        return bool(dbus_message_is_signal(m, "org.freedesktop.login1.Manager", "PrepareForSleep"));
+      },
+      [this](DBusMessage *m) {
+        auto a = dbus::read_args(m);
+        if (a.empty() || a[0].boolean()) return;
+        Fl::add_timeout(3, [](void *d) {
+          auto *c = static_cast<PanelControls *>(d);
+          SystemStatus::get().refresh_network();
+          c->refresh_devices();
+          SystemStatus::get().check_connectivity(true);
+          c->net_retries_ = 0;
+          if (!c->net_key_.empty()) c->check_network();
+        }, this);
+      });
+  if (session_)
+    session_->add_signal_handler(
+        "type='signal',interface='org.freedesktop.Notifications',member='ActionInvoked'",
+        [](DBusMessage *m) {
+          return bool(dbus_message_is_signal(m, "org.freedesktop.Notifications", "ActionInvoked"));
+        },
+        [this](DBusMessage *m) {
+          auto a = dbus::read_args(m);
+          if (a.size() < 2 || !net_notification_ || uint32_t(a[0].num()) != net_notification_) return;
+          if (a[1].str() == "fix" || a[1].str() == "default") repair_network(true);
+        });
 }
 
 void PanelControls::drives_later(void *d) { static_cast<PanelControls *>(d)->refresh_drives(); }

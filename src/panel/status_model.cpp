@@ -107,7 +107,50 @@ std::string network_verdict_text(const std::string &v) {
   if (v == "clock") return "The clock is wrong: secure sites fail";
   if (v == "tls-intercepted") return "Secure connections are intercepted";
   if (v == "offline") return "The network does not reach the internet";
+  if (v == "checking") return "Checking internet access...";
   return "";
+}
+
+bool parse_json_bool(const std::string &json, const std::string &key, bool fallback) {
+  size_t k = json.find("\"" + key + "\"");
+  if (k == std::string::npos) return fallback;
+  size_t c = json.find(':', k);
+  if (c == std::string::npos) return fallback;
+  size_t v = json.find_first_not_of(" \t", c + 1);
+  if (v == std::string::npos) return fallback;
+  if (json.compare(v, 4, "true") == 0) return true;
+  if (json.compare(v, 5, "false") == 0) return false;
+  return fallback;
+}
+
+bool network_verdict_fixable(const std::string &verdict, bool repairable) {
+  if (verdict == "no-dns") return true;
+  // Something the repair changes (an unmanaged device, ifupdown DHCP, a
+  // resolv.conf nobody writes) explains a missing route or an offline network.
+  return repairable && (verdict == "no-route" || verdict == "offline");
+}
+
+std::string network_repair_summary(const std::string &output, int status) {
+  std::string fail, last;
+  size_t start = 0;
+  while (start < output.size()) {
+    size_t end = output.find('\n', start);
+    if (end == std::string::npos) end = output.size();
+    std::string line = output.substr(start, end - start);
+    start = end + 1;
+    size_t b = line.find_first_not_of(" \t");
+    if (b == std::string::npos) continue;
+    line = line.substr(b);
+    if (line.rfind("DNS works", 0) == 0) return "ok";
+    if (fail.empty() && (line.rfind("DNS still does not work", 0) == 0 ||
+                         line.rfind("DNS does not work yet", 0) == 0 ||
+                         line.rfind("DNS is not repaired", 0) == 0))
+      fail = line;
+    last = line;
+  }
+  if (!fail.empty()) return fail;
+  if (status == 0) return "done";
+  return last;
 }
 
 // ---------------------------------------------------- keyboard indicators

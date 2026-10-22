@@ -901,10 +901,11 @@ void Panel::led_update() {
   std::string key = n.connected() ? n.kind + "|" + n.connection : "";
   if (key != led_connection_) {
     led_connection_ = key;
-    controls.net_verdict.clear();
-    if (!key.empty()) controls.check_network();
     tz_pending_ = !key.empty();
   }
+  // New connections and connectivity changes (re)run the verdict; the LED
+  // stays yellow ("checking") until the first one is in.
+  controls.network_state(key, n.connectivity);
   // [clock] auto_timezone: once the new connection reaches the internet
   // (at most once an hour; never asks for a password).
   if (tz_pending_ && n.connected() && !n.no_internet() && !n.portal()) {

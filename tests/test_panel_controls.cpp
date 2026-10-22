@@ -14,6 +14,11 @@ SystemStatus& SystemStatus::get() {
 }
 void SystemStatus::refresh_network(bool) {}
 void SystemStatus::set_wifi_enabled(bool on) { network.wifi_enabled = on; }
+void SystemStatus::changed() {}
+void SystemStatus::check_connectivity(bool, std::function<void(int)> done) {
+  if (done) done(network.connectivity);
+}
+void SystemStatus::troubleshoot_network() {}
 int main() {
   auto a = parse_audio_streams(R"(Sink Input #0
     Mute: yes
