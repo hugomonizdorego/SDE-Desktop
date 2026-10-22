@@ -2588,25 +2588,27 @@ void QuickSettings::timezone_rows(SectionBuilder &b) {
   int pad = b.pad, inner = b.inner, bw = S(78);
   bool online = weather_online();
   b.y += S(4);
-  new ActionLabel(pad + S(12), b.y, inner - S(32) - bw, S(32), [] {
+  // The labels name the rows for the QA dump (they are not drawn).
+  auto *zone = new ActionLabel(pad + S(12), b.y, inner - S(32) - bw, S(32), [] {
     return std::string(_("Time zone")) + " \xc2\xb7 " + tzsync::current_label();
   });
+  zone->copy_label(("Time zone: " + tzsync::current_label()).c_str());
   auto *sync = new CommandButton(pad + inner - S(12) - bw, b.y, bw, S(32),
                                  tz.busy() ? _("Syncing") : _("Sync"),
                                  [] { tzsync::Sync::get().start(weather_online()); });
-  sync->copy_tooltip(online ? _("Detect the time zone from the network and synchronize the clock")
-                            : _("Connect to the internet to detect the time zone"));
+  sync->copy_tooltip(online ? _("Sync time zone")
+                            : _("Sync time zone: connect to the internet to detect the time zone"));
   if (!online || tz.busy()) sync->deactivate();
   b.y += S(34);
   if (!tz.message().empty()) {
-    new ActionLabel(pad + S(12), b.y, inner - S(24), S(24),
-                    [] { return tzsync::Sync::get().message(); }, 2);
+    auto *status = new ActionLabel(pad + S(12), b.y, inner - S(24), S(24),
+                                   [] { return tzsync::Sync::get().message(); }, 2);
+    status->copy_label(("Time zone status: " + tz.message()).c_str());
     b.y += S(24);
   }
   auto *automatic = new Switch(pad + S(12), b.y, inner - S(24), S(32));
   automatic->copy_label(_("Automatic time zone"));
-  automatic->copy_tooltip(_("Set the time zone from the network at login and when the network "
-                            "changes (at most once an hour)"));
+  automatic->copy_tooltip(_("Automatic time zone"));
   automatic->value(cfg.get_bool("clock", "auto_timezone", false) ? 1 : 0);
   automatic->callback([](Fl_Widget *w, void *) {
     bool on = static_cast<Switch *>(w)->value() != 0;
