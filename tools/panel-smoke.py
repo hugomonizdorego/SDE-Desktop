@@ -411,7 +411,8 @@ def media_card_checks():
     assert 'Open player' not in layout('Action Center'),'media card shows more than the transport buttons'
     shot('02-action-center-media')
     press('Action Center','Playback position',.5)
-    waitfor(lambda:log_has('MPRIS SetPosition /org/sde/qa/track/1 9'),'seek bar did not send SetPosition')
+    # The middle of the bar, about half of the 3-minute track (pixel rounding).
+    waitfor(lambda:re.search(r'MPRIS SetPosition /org/sde/qa/track/1 (8[5-9]|9[0-5])\b',(home/'service.log').read_text()),'seek bar did not send SetPosition')
     escape('Action Center')
 def brightness_checks(ac):
     """Action Center: the brightness slider follows the volume slider in the

@@ -2487,27 +2487,27 @@ void QuickSettings::tray_section(SectionBuilder &b) {
   bool moved = cfg.get_bool("action_center", "move_status", true);
   bool legacy = tray && tray->count() && moved;
   auto *card = b.start_card(_("Tray applications"));
-  int cell = S(36), columns = std::max(1, (inner - S(24)) / cell);
+  int cell = S(36), columns = std::max(1, (inner - S(8)) / cell);
   if (items.empty() && !legacy) b.info(_("No applications are in the tray."));
   for (size_t i = 0; i < items.size(); ++i)
-    new TrayIndicator(pad + S(12) + int(i % columns) * cell, b.y + int(i / columns) * cell, cell,
+    new TrayIndicator(pad + S(4) + int(i % columns) * cell, b.y + int(i / columns) * cell, cell,
                       *items[i]);
   // XEmbed icons continue on the last StatusNotifier row when there is room.
   int last = int(items.size() % size_t(columns)),
       rows = int((items.size() + columns - 1) / columns);
-  int tx = pad + S(12), ty = b.y + rows * cell;
+  int tx = pad + S(4), ty = b.y + rows * cell;
   if (legacy) {
-    int slot = tray->icon_size() + S(6), room = inner - S(24) - last * cell;
+    int slot = tray->icon_size() + S(6), room = inner - S(8) - last * cell;
     if (rows && last && room >= slot) {
       tx += last * cell;
       ty -= cell;
       tray_columns_ = std::max(1, room / slot);
     } else {
-      tray_columns_ = std::max(1, (inner - S(24)) / slot);
+      tray_columns_ = std::max(1, (inner - S(8)) / slot);
     }
     int th = tray->grid_height(tray_columns_);
     tray_box_ = new Fl_Box(tx, ty + std::max(0, (cell - th) / 2),
-                           inner - S(24) - (tx - pad - S(12)), th);
+                           inner - S(8) - (tx - pad - S(4)), th);
     b.y = std::max(ty + std::max(cell, th), b.y + rows * cell) + S(6);
   } else {
     b.y += rows * cell;
@@ -2998,6 +2998,8 @@ void QuickSettings::rebuild() {
   int available =
       std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
   if (fly) available = std::max(S(120), available - S(16));
+  // The Action Center stays compact on tall screens too; the body scrolls.
+  else available = std::min(available, S(popup_style::kCenterMaxH));
   // The battery flyout has no title bar: its first line names the battery.
   bool titled = !(fly && section_ == "power");
   header_ = fly ? (titled ? S(popup_style::kHeader) : S(4)) : wx ? S(72) : S(56);

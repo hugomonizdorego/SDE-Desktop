@@ -22,6 +22,7 @@ constexpr int kHeader = 40;     // the title bar of a flyout
 constexpr int kFlyoutW = 340;   // status flyouts
 constexpr int kBatteryW = 380;  // the battery (Power) flyout
 constexpr int kCenterW = 360;   // the Action Center
+constexpr int kCenterMaxH = 620;  // its height at most (it scrolls)
 constexpr int kTile = 56;       // Action Center quick tile (button + caption)
 constexpr int kSection = 24;    // dim section caption ("Output", "Devices")
 
