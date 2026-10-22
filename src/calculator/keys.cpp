@@ -173,13 +173,13 @@ void Key::draw() {
       if (kind_ != Equals && kind_ != Memory && t.dark)
         p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, Color{1, 1, 1, 0.06});
     }
-    if (glyph_) {
+    if (glyph_ >= 0) {
       double s = std::min(S(22), int(h() * 0.55));
-      draw_glyph(p, Glyph::Backspace, x() + (w() - s) / 2, y() + (h() - s) / 2, s,
+      draw_glyph(p, Glyph(glyph_), x() + (w() - s) / 2, y() + (h() - s) / 2, s,
                  on ? text : t.text_dim.alpha(0.45));
     }
   }
-  if (glyph_) return;
+  if (glyph_ >= 0) return;
   int size;
   if (kind_ == Digit) size = std::min(S(21), std::max(S(13), h() * 2 / 5));
   else if (kind_ == Function || kind_ == Memory) size = std::min(S(15), std::max(S(11), h() / 3));

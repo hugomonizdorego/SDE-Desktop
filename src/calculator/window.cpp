@@ -278,8 +278,9 @@ void CalcWindow::build_keys() {
       continue;
     }
     Key *k = new Key(0, 0, 10, 10, d->id, d->label, d->kind);
+    if (!std::strcmp(d->id, "swap")) k->set_glyph(Glyph::Swap);
     if (!std::strcmp(d->id, "back")) {
-      k->set_glyph(true);
+      k->set_glyph(Glyph::Backspace);
       k->tooltip_text = _("Backspace");
     }
     keys_.push_back(k);
@@ -330,7 +331,7 @@ void CalcWindow::press(const std::string &id) {
   else if (id == "pow") {
     if (second_) apply_function("root");
     else insert("^", true);
-  } else if (id == "sqrt") apply_function(second_ ? "\xE2\x88\x9B" : "\xE2\x88\x9A");
+  } else if (id == "sqrt") apply_function(second_ ? "cbrt" : "\xE2\x88\x9A");
   else if (id == "sin" || id == "cos" || id == "tan")
     apply_function(std::string(second_ ? "a" : "") + id + (hyp_ ? "h" : ""));
   else if (id == "log") apply_function(second_ ? "log2" : "log");
@@ -507,7 +508,7 @@ void CalcWindow::negate() {
 }
 
 void CalcWindow::apply_function(const std::string &name) {
-  bool prefix = name == "\xE2\x88\x9A" || name == "\xE2\x88\x9B" || ends_with(name, "^") || name == "1\xC3\xB7";
+  bool prefix = name == "\xE2\x88\x9A" || ends_with(name, "^") || name == "1\xC3\xB7";
   if (evaluated_ && error_.empty() && !raw_result_.empty()) {
     std::string value = pretty_operators(raw_result_);
     if (name == "root") set_expression("root(" + value + ",");
@@ -700,8 +701,10 @@ int CalcWindow::key_event() {
     return via_key(std::string(1, c));
   }
   if (prog) {
-    if (std::isxdigit((unsigned char)c) && std::isalpha((unsigned char)c) && settings_.base == 16)
+    if (std::isxdigit((unsigned char)c) && std::isalpha((unsigned char)c)) {
+      if (settings_.base != 16) return 1;  // not a digit here
       return via_key(std::string(1, char(std::toupper((unsigned char)c))));
+    }
     switch (c) {
       case '+': return via_key("+");
       case '-': return via_key("-");
@@ -719,7 +722,9 @@ int CalcWindow::key_event() {
       case '>': insert(" >> ", true); return 1;
       default: break;
     }
-    insert(text, operator_text(text));
+    std::string up = text;
+    for (char &ch : up) ch = char(std::toupper((unsigned char)ch));  // "and" -> "AND"
+    insert(up, operator_text(up));
     return 1;
   }
   switch (c) {
@@ -861,6 +866,8 @@ void CalcWindow::set_mode(Mode m) {
   settings_.mode = m;
   input_->color(mode_ == Mode::Converter ? theme_.surface.fl() : theme_.background.fl());
   build_keys();
+  // Typing replaces the converter's sample value.
+  if (m == Mode::Converter) input_->position(0, input_->size());
   // Programmer needs room for the bases and bits.
   int want = m == Mode::Programmer ? S(640) : m == Mode::Scientific ? S(560) : S(500);
   if (h() < want) {
@@ -1011,7 +1018,7 @@ void CalcWindow::toggle_history() {
   }
   settings_.save(settings_path());
   layout();
-  redraw();
+  update();
 }
 
 // ------------------------------------------------------ programmer, converter
@@ -1318,7 +1325,7 @@ void CalcWindow::layout() {
     if (id == "sin" || id == "cos" || id == "tan") k->set_label(id + h + (sh ? "\xE2\x81\xBB\xC2\xB9" : ""));
     else if (id == "sq" && mode_ == Mode::Scientific) k->set_label(sh ? "x\xC2\xB3" : "x\xC2\xB2");
     else if (id == "pow") k->set_label(sh ? "\xCA\xB8\xE2\x88\x9Ax" : "x\xCA\xB8");
-    else if (id == "sqrt" && mode_ == Mode::Scientific) k->set_label(sh ? "\xE2\x88\x9Bx" : "\xE2\x88\x9Ax");
+    else if (id == "sqrt" && mode_ == Mode::Scientific) k->set_label(sh ? "\xC2\xB3\xE2\x88\x9Ax" : "\xE2\x88\x9Ax");
     else if (id == "log") k->set_label(sh ? "log\xE2\x82\x82" : "log");
     else if (id == "ln") k->set_label(sh ? "e\xCB\xA3" : "ln");
     else if (id == "pow10") k->set_label(sh ? "2\xCB\xA3" : "10\xCB\xA3");

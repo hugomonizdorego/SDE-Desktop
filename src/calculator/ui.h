@@ -42,7 +42,7 @@ class Key : public Fl_Widget {
     if (on != toggled_) redraw();
     toggled_ = on;
   }
-  void set_glyph(bool on) { glyph_ = on; }
+  void set_glyph(Glyph g) { glyph_ = int(g); }
   // Shows the pressed look briefly (the key was typed on the keyboard).
   void flash();
   std::function<void(const std::string &)> on_press;
@@ -55,7 +55,8 @@ class Key : public Fl_Widget {
   static void unflash(void *data);
   std::string id_, label_;
   Kind kind_;
-  bool down_ = false, toggled_ = false, glyph_ = false;
+  bool down_ = false, toggled_ = false;
+  int glyph_ = -1;
 };
 
 // A borderless icon button of the title row.
