@@ -2,8 +2,13 @@
 // Copyright (C) 2026 DebION Dev-Team
 #include "drivers.h"
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <cctype>
+#include <climits>
+#include <cstdlib>
+#include <set>
 #include <sstream>
 
 #include "gpu.h"
@@ -101,6 +106,7 @@ const FirmwareRule *rule_for(const std::string &file) {
 
 std::string component_of(const std::string &package) {
   if (package == "wireless-regdb") return "main";
+  if (starts_with(package, "broadcom-sta")) return "non-free";
   if (starts_with(package, "firmware-") || ends_with(package, "-microcode")) return "non-free-firmware";
   if (package.find("nvidia") != std::string::npos) return "non-free";
   return "main";
@@ -312,6 +318,7 @@ std::vector<Recommendation> gpu_recommendations(const std::vector<Gpu> &gpus,
         fw.device = label;
         fw.reason = _("Firmware for the free nouveau driver (needed by recent GeForce cards).");
         fw.component = "non-free-firmware";
+        fw.recommended = false;  // the alternative to nvidia-driver
         out.push_back(fw);
       }
     } else if (vid == "1002") {
@@ -443,6 +450,302 @@ std::vector<Recommendation> merge(const std::vector<Recommendation> &list) {
   return out;
 }
 
+// ---- devices and driver choices
+
+namespace {
+
+std::string norm_hex(std::string s) {
+  s = lower_copy(trim(s));
+  if (starts_with(s, "0x")) s = s.substr(2);
+  return s;
+}
+
+std::string read_value(const std::string &path) {
+  std::string s;
+  read_file(path, s);
+  return trim(s);
+}
+
+// PCI vendor IDs named in a recommendation's device text or package.
+std::vector<std::string> vendor_ids(const Recommendation &r) {
+  std::string t = lower_copy(r.device + " " + r.package);
+  std::vector<std::string> out;
+  auto add = [&](const char *word, std::initializer_list<const char *> ids) {
+    if (t.find(word) != std::string::npos)
+      for (const char *id : ids) add_unique(out, id);
+  };
+  add("intel", {"8086"});
+  add("iwlwifi", {"8086"});
+  add("realtek", {"10ec"});
+  add("rtw8", {"10ec"});
+  add("atheros", {"168c", "17cb"});
+  add("qualcomm", {"168c", "17cb"});
+  add("broadcom", {"14e4"});
+  add("cypress", {"14e4"});
+  add("mediatek", {"14c3"});
+  add("marvell", {"11ab", "1b4b"});
+  add("texas", {"104c"});
+  add("amd", {"1002", "1022"});
+  add("nvidia", {"10de"});
+  return out;
+}
+
+std::string first_sentence(const std::string &s) {
+  size_t p = s.find(". ");
+  return p == std::string::npos ? s : s.substr(0, p + 1);
+}
+
+}  // namespace
+
+DeviceKind pci_kind(const std::string &class_id) {
+  std::string c = norm_hex(class_id);
+  if (starts_with(c, "0280")) return DeviceKind::Wifi;
+  if (starts_with(c, "02")) return DeviceKind::Network;
+  if (starts_with(c, "0d11")) return DeviceKind::Bluetooth;
+  if (starts_with(c, "0403") || starts_with(c, "0401")) return DeviceKind::Audio;
+  if (starts_with(c, "03")) return DeviceKind::Graphics;
+  return DeviceKind::Other;
+}
+
+std::string dkms_device(const std::string &package) {
+  if (!ends_with(package, "-dkms") || package.find("nvidia") != std::string::npos) return "";
+  static const struct {
+    const char *prefix, *device;
+  } table[] = {
+      {"rtw89", N_("Realtek Wi-Fi")},   {"rtw88", N_("Realtek Wi-Fi")},
+      {"rtl8", N_("Realtek Wi-Fi")},    {"8821", N_("Realtek Wi-Fi")},
+      {"88x2", N_("Realtek Wi-Fi")},    {"r8168", N_("Realtek Ethernet")},
+      {"r8125", N_("Realtek Ethernet")}, {"broadcom-sta", N_("Broadcom Wi-Fi")},
+      {"bcmwl", N_("Broadcom Wi-Fi")},  {"mt76", N_("MediaTek Wi-Fi")},
+      {"iwlwifi", N_("Intel Wi-Fi")},   {"backport-iwlwifi", N_("Intel Wi-Fi")},
+  };
+  for (const auto &e : table)
+    if (starts_with(package, e.prefix)) return _(e.device);
+  return "";
+}
+
+DeviceKind device_kind(const Recommendation &r) {
+  const std::string &p = r.package;
+  std::string d = lower_copy(r.device + " " + dkms_device(p));
+  if (p.find("nvidia") != std::string::npos || p.find("graphics") != std::string::npos ||
+      d.find("graphics") != std::string::npos)
+    return DeviceKind::Graphics;
+  if (ends_with(p, "-microcode")) return DeviceKind::Processor;
+  if (d.find("wi-fi") != std::string::npos || d.find("wireless") != std::string::npos)
+    return DeviceKind::Wifi;
+  if (d.find("bluetooth") != std::string::npos) return DeviceKind::Bluetooth;
+  if (d.find("ethernet") != std::string::npos) return DeviceKind::Network;
+  if (d.find("audio") != std::string::npos) return DeviceKind::Audio;
+  return DeviceKind::Other;
+}
+
+bool is_firmware_package(const std::string &package) {
+  return starts_with(package, "firmware-") || ends_with(package, "-microcode") ||
+         package == "wireless-regdb";
+}
+
+bool is_free_driver(const std::string &package, const std::string &component) {
+  if (package.find("nvidia") != std::string::npos) return false;
+  return component.empty() || component == "main";
+}
+
+std::vector<PciDevice> detect_pci_devices(const std::string &sysfs_in) {
+  std::string sysfs = sysfs_in.empty() ? env("SDE_PCI_SYSFS", "/sys/bus/pci/devices") : sysfs_in;
+  std::vector<PciDevice> out;
+  std::vector<std::string> slots = list_dir(sysfs);
+  std::sort(slots.begin(), slots.end());
+  for (auto &slot : slots) {
+    std::string dir = sysfs + "/" + slot;
+    PciDevice d;
+    d.class_id = norm_hex(read_value(dir + "/class"));
+    DeviceKind k = pci_kind(d.class_id);
+    if (k == DeviceKind::Other || k == DeviceKind::Graphics) continue;
+    d.slot = slot;
+    d.vendor_id = norm_hex(read_value(dir + "/vendor"));
+    d.device_id = norm_hex(read_value(dir + "/device"));
+    char buf[PATH_MAX];
+    ssize_t n = readlink((dir + "/driver").c_str(), buf, sizeof buf - 1);
+    if (n > 0) {
+      buf[n] = 0;
+      d.driver = basename_of(buf);
+    }
+    PciName name = lookup_pci_ids(d.vendor_id, d.device_id);
+    d.vendor = name.vendor.empty() ? known_vendor(d.vendor_id) : name.vendor;
+    d.model = name.device;
+    out.push_back(d);
+  }
+  return out;
+}
+
+std::vector<Device> group_devices(const std::vector<Recommendation> &recs,
+                                  const std::vector<PciDevice> &pci,
+                                  const std::map<std::string, AptVersions> &versions,
+                                  const std::map<std::string, std::string> &summaries) {
+  std::vector<Device> out;
+  for (const auto &r : recs) {
+    DeviceKind kind = device_kind(r);
+    std::string name = r.device;
+    if (kind != DeviceKind::Graphics && kind != DeviceKind::Processor) {
+      auto ids = vendor_ids(r);
+      for (const auto &p : pci) {
+        if (pci_kind(p.class_id) != kind || !has(ids, p.vendor_id)) continue;
+        name = p.model.empty() ? p.vendor : (p.vendor.empty() ? p.model : p.vendor + ": " + p.model);
+        break;
+      }
+    }
+    DriverOption o;
+    o.package = r.package;
+    o.installed = r.installed;
+    o.recommended = r.recommended;
+    o.free_software = is_free_driver(r.package, r.component);
+    auto v = versions.find(r.package);
+    if (v != versions.end()) o.version = v->second.installed.empty() ? v->second.candidate : v->second.installed;
+    auto s = summaries.find(r.package);
+    o.summary = s != summaries.end() && !s->second.empty() ? s->second : first_sentence(r.reason);
+    auto it = std::find_if(out.begin(), out.end(), [&](const Device &d) { return d.name == name; });
+    if (it == out.end()) {
+      Device d;
+      d.kind = kind;
+      d.name = name;
+      out.push_back(d);
+      it = out.end() - 1;
+    }
+    it->options.push_back(o);
+  }
+  for (auto &d : out)
+    std::stable_sort(d.options.begin(), d.options.end(),
+                     [](const DriverOption &a, const DriverOption &b) { return a.recommended && !b.recommended; });
+  std::stable_sort(out.begin(), out.end(), [](const Device &a, const Device &b) { return a.kind < b.kind; });
+  return out;
+}
+
+std::vector<int> initial_selection(const std::vector<Device> &devices) {
+  std::vector<int> out;
+  for (const auto &d : devices) {
+    int pick = kNoDriver;
+    for (size_t j = 0; j < d.options.size() && pick == kNoDriver; ++j)
+      if (d.options[j].installed && !is_firmware_package(d.options[j].package)) pick = int(j);
+    for (size_t j = 0; j < d.options.size() && pick == kNoDriver; ++j)
+      if (d.options[j].installed) pick = int(j);
+    out.push_back(pick);
+  }
+  return out;
+}
+
+DeviceState device_state(const Device &d, int selected) {
+  if (selected < 0 || selected >= int(d.options.size())) return DeviceState::NoDriver;
+  return d.options[size_t(selected)].recommended ? DeviceState::Recommended : DeviceState::Alternative;
+}
+
+Changes plan_changes(const std::vector<Device> &devices, const std::vector<int> &initial,
+                     const std::vector<int> &selection) {
+  Changes c;
+  for (size_t i = 0; i < devices.size() && i < initial.size() && i < selection.size(); ++i) {
+    int sel = selection[i];
+    if (sel == initial[i]) continue;
+    const Device &d = devices[i];
+    if (sel >= int(d.options.size())) continue;
+    if (sel >= 0 && !d.options[size_t(sel)].installed) add_unique(c.install, d.options[size_t(sel)].package);
+    for (size_t j = 0; j < d.options.size(); ++j) {
+      const DriverOption &o = d.options[j];
+      if (int(j) == sel || !o.installed) continue;
+      if (sel == kNoDriver || !is_firmware_package(o.package)) add_unique(c.remove, o.package);
+    }
+  }
+  c.remove.erase(std::remove_if(c.remove.begin(), c.remove.end(),
+                                [&](const std::string &p) { return has(c.install, p); }),
+                 c.remove.end());
+  return c;
+}
+
+std::vector<std::string> apt_arguments(const Changes &changes) {
+  if (changes.empty()) return {};
+  std::vector<std::string> out = {"install", "-y"};
+  for (const auto &p : changes.install) out.push_back(p);
+  for (const auto &p : changes.remove) out.push_back(p + "-");
+  return out;
+}
+
+int proprietary_in_use(const std::vector<Device> &devices) {
+  std::set<std::string> pkgs;
+  for (const auto &d : devices)
+    for (const auto &o : d.options)
+      if (o.installed && !o.free_software) pkgs.insert(o.package);
+  return int(pkgs.size());
+}
+
+std::map<std::string, AptVersions> parse_apt_policy(const std::string &output) {
+  std::map<std::string, AptVersions> out;
+  std::istringstream in(output);
+  std::string line, pkg;
+  auto value = [](const std::string &t, size_t at) {
+    std::string v = trim(t.substr(at));
+    return v == "(none)" ? std::string() : v;
+  };
+  while (std::getline(in, line)) {
+    if (line.empty()) continue;
+    if (!std::isspace(static_cast<unsigned char>(line[0])) && line.back() == ':') {
+      pkg = line.substr(0, line.size() - 1);
+      size_t colon = pkg.find(':');  // "pkg:amd64"
+      if (colon != std::string::npos) pkg = pkg.substr(0, colon);
+      out[pkg];
+      continue;
+    }
+    if (pkg.empty()) continue;
+    std::string t = trim(line);
+    if (starts_with(t, "Installed:")) out[pkg].installed = value(t, 10);
+    else if (starts_with(t, "Candidate:")) out[pkg].candidate = value(t, 10);
+  }
+  return out;
+}
+
+std::map<std::string, std::string> parse_apt_summaries(const std::string &output) {
+  std::map<std::string, std::string> out;
+  std::istringstream in(output);
+  std::string line, pkg;
+  while (std::getline(in, line)) {
+    if (trim(line).empty()) {
+      pkg.clear();
+      continue;
+    }
+    if (starts_with(line, "Package:")) {
+      pkg = trim(line.substr(8));
+    } else if (!pkg.empty() && (starts_with(line, "Description:") || starts_with(line, "Description-en:"))) {
+      std::string v = trim(line.substr(line.find(':') + 1));
+      if (!v.empty() && !out.count(pkg)) out[pkg] = v;
+    }
+  }
+  return out;
+}
+
+bool parse_apt_status(const std::string &line, double *percent, std::string *text) {
+  bool dl = starts_with(line, "dlstatus:"), pm = starts_with(line, "pmstatus:");
+  if (!dl && !pm) return false;
+  size_t a = line.find(':');
+  size_t b = line.find(':', a + 1);
+  size_t c = b == std::string::npos ? b : line.find(':', b + 1);
+  if (c == std::string::npos) return false;
+  char *end = nullptr;
+  std::string num = line.substr(b + 1, c - b - 1);
+  double v = std::strtod(num.c_str(), &end);
+  if (end == num.c_str()) return false;
+  v = std::max(0.0, std::min(100.0, v));
+  if (percent) *percent = dl ? v * 0.3 : 30.0 + v * 0.7;
+  if (text) *text = trim(line.substr(c + 1));
+  return true;
+}
+
+std::string cpu_model_name(const std::string &cpuinfo) {
+  std::istringstream in(cpuinfo);
+  std::string line;
+  while (std::getline(in, line)) {
+    if (!starts_with(line, "model name")) continue;
+    size_t colon = line.find(':');
+    if (colon != std::string::npos) return trim(line.substr(colon + 1));
+  }
+  return "";
+}
+
 std::string main_sources_file(bool *deb822) {
   std::string over = env("SDE_APT_SOURCES");
   std::string path;
@@ -497,7 +800,8 @@ Scan scan_system() {
   if (!mc.empty()) {
     Recommendation r;
     r.package = mc;
-    r.device = _("Processor");
+    r.device = cpu_model_name(cpuinfo);
+    if (r.device.empty()) r.device = _("Processor");
     r.reason = _("Processor microcode updates fix CPU bugs and security issues. They are loaded "
                  "at every start.");
     r.component = "non-free-firmware";
@@ -523,6 +827,38 @@ Scan scan_system() {
     auto installed = parse_dpkg_installed(run_sync(argv, nullptr, 5000));
     for (auto &r : scan.items) r.installed = has(installed, r.package);
   }
+  // DKMS drivers installed by hand (rtw89-dkms, r8168-dkms ...) show up as
+  // the alternative driver of their device.
+  if (!find_program("dpkg-query").empty()) {
+    auto dkms = parse_dpkg_installed(
+        run_sync({"dpkg-query", "-W", "-f=${Package} ${Status}\n", "*-dkms"}, nullptr, 5000));
+    for (const auto &p : dkms) {
+      std::string dev = dkms_device(p);
+      bool known = std::any_of(scan.items.begin(), scan.items.end(),
+                               [&](const Recommendation &r) { return r.package == p; });
+      if (dev.empty() || known) continue;
+      Recommendation r;
+      r.package = p;
+      r.device = dev;
+      r.reason = _("A driver module that DKMS builds for every installed kernel.");
+      r.component = component_of(p);
+      r.installed = true;
+      r.recommended = false;
+      scan.items.push_back(r);
+    }
+  }
+  std::map<std::string, AptVersions> versions;
+  std::map<std::string, std::string> summaries;
+  if (!scan.items.empty() && !find_program("apt-cache").empty()) {
+    std::vector<std::string> policy = {"apt-cache", "policy"}, show = {"apt-cache", "show", "--no-all-versions"};
+    for (auto &r : scan.items) {
+      policy.push_back(r.package);
+      show.push_back(r.package);
+    }
+    versions = parse_apt_policy(run_sync(policy, nullptr, 8000));
+    summaries = parse_apt_summaries(run_sync(show, nullptr, 8000));
+  }
+  scan.devices = group_devices(scan.items, detect_pci_devices(), versions, summaries);
 
   scan.sources_file = main_sources_file(&scan.sources_deb822);
   std::string sources;
