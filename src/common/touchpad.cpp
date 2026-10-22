@@ -104,6 +104,11 @@ std::vector<TouchpadDevice> find_touchpads() {
 
 int apply_touchpad(const Config &cfg) {
   auto pads = find_touchpads();
+  apply_touchpad(cfg, pads);
+  return int(pads.size());
+}
+
+void apply_touchpad(const Config &cfg, const std::vector<TouchpadDevice> &pads) {
   TouchpadOptions o = load_touchpad_options(cfg);
   for (const auto &d : pads)
     for (const auto &prop : touchpad_props(o, d.props)) {
@@ -111,7 +116,6 @@ int apply_touchpad(const Config &cfg) {
       argv.insert(argv.end(), prop.second.begin(), prop.second.end());
       run_sync(argv, nullptr, 3000);
     }
-  return int(pads.size());
 }
 
 }  // namespace sde

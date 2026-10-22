@@ -12,6 +12,7 @@
 #include "i18n.h"
 #include "panel.h"
 #include "quick.h"
+#include "status_flyout.h"
 #include "x11.h"
 
 namespace {
@@ -53,7 +54,9 @@ int main(int argc, char **argv) {
       command = "quick";
     } else if (!strcmp(argv[i], "--section") && i + 1 < argc) {
       std::string section = argv[++i];
-      if (section != "overview" && !QuickSettings::valid_section(section)) return 2;
+      if (section != "overview" && !QuickSettings::valid_section(section) &&
+          !StatusFlyout::handles(section))
+        return 2;
       command = "quick:" + section;
     } else if (!strcmp(argv[i], "--safe")) {
       Panel::safe_mode = true;
@@ -74,7 +77,7 @@ int main(int argc, char **argv) {
                      "  --action-center   open or close the Action Center\n"
                      "  --quick-settings  alias for --action-center\n"
                      "  --section NAME    open or close the flyout of a status icon: network,\n"
-                     "                    bluetooth, sound, media, power, drives, keyboard, tray\n"
+                     "                    bluetooth, sound, power, drives, keyboard, touchpad, tray\n"
                      "                    (overview opens the Action Center)\n"
                      "  --calendar        open or close the Action Center with its calendar\n"
                      "                    and agenda\n"

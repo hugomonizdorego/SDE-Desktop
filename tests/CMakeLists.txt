@@ -117,3 +117,11 @@ endif()
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
 target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
 add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)
+
+# alpha50 panel status rules (tooltips, network LED, keyboard indicators,
+# UDisks2 drives, touchpad properties) and the grab helper of panel-smoke.
+add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
+target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
+add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
+add_executable(sde-grab-fixture grab_fixture.cpp)
+target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})

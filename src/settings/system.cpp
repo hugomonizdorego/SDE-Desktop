@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "process.h"
+#include "touchpad.h"
 #include "util.h"
 
 namespace sde {
@@ -105,6 +106,7 @@ void apply_all(const Config &cfg) {
   apply_display_layout(cfg);
   apply_keyboard(cfg);
   apply_pointers(cfg);
+  apply_touchpad(cfg);  // [touchpad] keys (touchpad.h), after the [input] pointer keys
 }
 
 }  // namespace sde

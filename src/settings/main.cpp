@@ -2157,6 +2157,7 @@ const std::vector<PageInfo> &pages() {
        N_("Keyboard & Mouse"),
        {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
        build_input_page},
+      {"touchpad", N_("Touchpad"), {"input-touchpad", "input-mouse"}, build_touchpad_page},
       {"sound", N_("Sound"), {"preferences-desktop-sound", "audio-volume-high"}, build_sound},
       {"network", N_("Network"), {"preferences-system-network", "network-wireless"}, build_network},
       {"bluetooth", N_("Bluetooth"), {"bluetooth", "preferences-bluetooth"}, build_bluetooth},

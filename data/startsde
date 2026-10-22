@@ -35,6 +35,16 @@ if command -v dbus-update-activation-environment >/dev/null 2>&1; then
         XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION 2>/dev/null || true
 fi
 
+# Mounting USB drives (UDisks2) and the power actions need an active local
+# logind session (polkit allow_active); display managers and Debian's xinit
+# provide one through pam_systemd. Say so in the session log otherwise.
+if command -v loginctl >/dev/null 2>&1; then
+    if [ -z "$XDG_SESSION_ID" ] ||
+       [ "$(loginctl show-session "$XDG_SESSION_ID" -p Active --value 2>/dev/null)" != yes ]; then
+        echo "startsde: no active logind session; mounting drives will ask for a password" >&2
+    fi
+fi
+
 # Start a session bus when the display manager did not provide one.
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && command -v dbus-run-session >/dev/null 2>&1; then
     exec dbus-run-session -- sde-session "$@"

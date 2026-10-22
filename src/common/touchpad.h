@@ -47,5 +47,7 @@ struct TouchpadDevice {
 std::vector<TouchpadDevice> find_touchpads();
 // Applies the saved options to every touchpad. Returns the number found.
 int apply_touchpad(const Config &cfg);
+// The same for touchpads found earlier.
+void apply_touchpad(const Config &cfg, const std::vector<TouchpadDevice> &pads);
 
 }  // namespace sde
