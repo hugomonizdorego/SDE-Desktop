@@ -239,6 +239,9 @@ void run_checker(std::vector<std::string> args, bool root, const std::string &ti
   std::vector<std::string> argv{check};
   if (root) {
     if (find_program("pkexec").empty()) return;
+    // polkit's org.debion.network-check.fix names the /usr/sbin path.
+    if (check == "/usr/bin/debion-network-check" && is_executable("/usr/sbin/debion-network-check"))
+      check = "/usr/sbin/debion-network-check";
     argv = {"pkexec", check};
   }
   argv.insert(argv.end(), args.begin(), args.end());
