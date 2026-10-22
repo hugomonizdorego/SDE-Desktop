@@ -25,6 +25,7 @@ SDE is built from the ground up and grows in small, usable steps.
 - [x] Native Calculator, Photo drawing, Gallery albums (alpha50)
 - [x] Welcome, Driver Manager and System Reports from Linux Mint concepts (alpha50)
 - [x] Proxy-aware network diagnosis for Debian standard installs (alpha50)
+- [x] Verified DNS repair, lock screen input recovery, Software Updater (alpha51)
 - [ ] Validate real DebION login, locking and hardware power policies
 
 ## Rust migration
@@ -53,7 +54,8 @@ See [RUST.md](RUST.md) for the current boundary and validation requirements.
 - [ ] Hardware validation of idle, lid, suspend and locking
 - [ ] Panel applets API and panel position options
 - [x] Show Desktop strip (alpha50)
-- [ ] Workspace switcher and window previews
+- [x] Taskbar window previews (alpha51)
+- [ ] Workspace switcher
 
 ## 0.5 Beta
 

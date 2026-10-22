@@ -1,3 +1,21 @@
+sde (0.1.0~alpha51) unstable; urgency=medium
+
+  * debion-network-check --fix repairs and verifies DNS (NetworkManager
+    dns/rc-manager, resolvconf, systemd-resolved, ignore-auto-dns,
+    immutable resolv.conf); --dns-fallback and a "Use Public DNS" button.
+  * Lock screen: no input method, grabs retried and re-checked, monitor
+    changes followed, hung lock screens replaced, rescue password prompt.
+  * Clock: time zone sync button and automatic time zone.
+  * Software Updater replaces SDE Update: Critical, Security, Main and
+    Flatpak groups with check boxes, technical description, inline install.
+  * Panel: taskbar window previews, compact popups, battery flyout.
+  * Calm low-chroma palettes, soft corners everywhere, Mint-like window
+    buttons, Qt apps follow the GTK theme.
+  * Minimal Welcome (not shown on live sessions) and Driver Manager; Log Out
+    and helper entries hidden from the Start Menu.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Thu, 22 Oct 2026 21:00:00 +0900
+
 sde (0.1.0~alpha50) unstable; urgency=medium
 
   * Panel: network LED (red no connection, yellow no internet, green

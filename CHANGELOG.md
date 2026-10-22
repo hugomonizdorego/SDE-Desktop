@@ -1,3 +1,14 @@
+# Alpha51 patch · 2026-10-22 — DNS fix, lock screen, Software Updater, calmer look
+
+- debion-network-check repairs DNS and verifies it; public DNS fallback.
+- Lock screen always gets the keyboard and pointer; rescue prompt.
+- Time zone sync in the clock; Software Updater with Critical, Security,
+  Main and Flatpak groups.
+- Taskbar window previews, compact popups and a Mint-like battery flyout.
+- Calm palettes, soft corners, Mint-like window buttons.
+- Minimal Welcome (not on live boot) and Driver Manager; Log Out hidden from
+  the Start Menu. See docs/ALPHA51.md.
+
 # Alpha50 patch · 2026-10-22 — panel focus, network fix, Calculator, drawing, themes
 
 - Panel: network LED with Wi-Fi/LAN switches, Eject for removable drives,
