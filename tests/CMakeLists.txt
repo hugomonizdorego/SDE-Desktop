@@ -19,9 +19,12 @@ add_test(NAME sde-rust-tests
 add_executable(sde-sni-demo sni_demo.cpp)
 target_link_libraries(sde-sni-demo PRIVATE sde-common)
 
-if(SDE_BUILD_COMPONENTS)
-  add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
-endif()
+# Calculator: parser, precedence, percent, functions, errors, formatting,
+# programmer mode, converter and history; then the command line (--eval).
+add_executable(calculator-tests test_calculator.cpp)
+target_link_libraries(calculator-tests PRIVATE calculator-core)
+add_test(NAME calculator-engine COMMAND calculator-tests)
+add_test(NAME sde-calculator COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_calculator.py $<TARGET_FILE:calculator>)
 
 add_executable(sde-display-tests test_display.cpp)
 target_link_libraries(sde-display-tests PRIVATE sde-common)

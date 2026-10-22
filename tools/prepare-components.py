@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fetch immutable source trees of the forked SDE components before offline
-builds: Calculator engine, SDE WM (Openbox), SDE compositor (picom) and the
-display profile model. SDE-FLTK lives in sde-fltk/; sde-xsettingsd and
-sde-polkit-agent are SDE programs in src/."""
+builds: SDE WM (Openbox), SDE compositor (picom) and the display profile
+model. SDE-FLTK lives in sde-fltk/; sde-xsettingsd, sde-polkit-agent and
+Calculator (since 0.1.0~alpha50 a native rewrite) are SDE programs in src/."""
 import argparse
 import hashlib
 import json
@@ -62,8 +62,6 @@ def main():
                   f"Source: {app['url']}\nRevision: {app['commit']}\nLicense: {app['license']}\n\n"
                   "Original copyrights and license files are retained in the complete corresponding source archive.\n"
                   "SDE modifications: native desktop integration, independent build identity and packaging.\n")
-        if app['id'] == 'calculator':
-            notice += '\nCopyright (c) 2026 Raad Altaie\n'
         for name in ['COPYING','LICENSE','CONTRIBUTORS','AUTHORS']:
             if (out/name).is_file(): notice += '\n=== '+name+' ===\n'+(out/name).read_text(errors='replace')
         for path in (out/'LICENSES').glob('*') if (out/'LICENSES').is_dir() else []:

@@ -11,7 +11,7 @@ binary=args.bin_dir.resolve()
 apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power','sde-lock','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
-NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock'}
+NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock','calculator'}
 for name in apps:
     path=binary/name
     assert path.is_file() and not path.is_symlink(),name
@@ -19,8 +19,11 @@ for name in apps:
     assert data[:4]==b'\x7fELF' and data!=helper,name
     dynamic=subprocess.check_output(['readelf','-d',str(path)],text=True)
     if name in NATIVE:
-        # Native SDE applications since alpha15 (statically linked SDE-FLTK).
+        # Native SDE applications since alpha15 (statically linked SDE-FLTK);
+        # Calculator since alpha50 (no GTK4 or JavaScriptCore).
         assert 'libX11' in dynamic and 'libfltk' not in dynamic and 'libgtk' not in dynamic,(name,dynamic)
+        if name == 'calculator':
+            assert 'javascriptcore' not in dynamic.lower(),(name,dynamic)
         if name == 'sde-lock':
             assert 'libpam' in dynamic and 'libXss' in dynamic,(name,dynamic)
     elif name == 'sde-display-settings':

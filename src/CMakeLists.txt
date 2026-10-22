@@ -277,9 +277,24 @@ install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logou
         sde-xsettingsd sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-if(SDE_BUILD_COMPONENTS)
-  add_subdirectory(calculator)
-endif()
+# Calculator: native from-scratch SDE application (DebION Dev-Team) that
+# replaced the GTK4 frontend of the scientific-calculator component. The
+# parser, programmer mode, converter and history live in calculator-core,
+# which the unit tests link.
+add_library(calculator-core STATIC
+  calculator/engine.cpp
+  calculator/programmer.cpp
+  calculator/converter.cpp
+  calculator/state.cpp)
+target_include_directories(calculator-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/calculator)
+target_link_libraries(calculator-core PUBLIC sde-common)
+add_executable(calculator
+  calculator/main.cpp
+  calculator/window.cpp
+  calculator/keys.cpp)
+target_link_libraries(calculator PRIVATE calculator-core)
+sde_app_version(calculator calculator)
+install(TARGETS calculator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # SDE System Monitor: native from-scratch rewrite (DebION Dev-Team).
 # The /proc and /sys parsers live in a small library shared with the tests.

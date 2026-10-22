@@ -1,3 +1,0 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Unmodified Scientific Calculator engine; see installed copyright and LICENSE.
-static const char kCalculatorEngine[] = R"SDE_ENGINE(@CALCULATOR_ENGINE_SOURCE@)SDE_ENGINE";
