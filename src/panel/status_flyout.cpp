@@ -17,6 +17,7 @@
 #include "i18n.h"
 #include "panel.h"
 #include "panel_widgets.h"
+#include "popup_style.h"
 #include "quick.h"
 #include "spawn.h"
 #include "status_model.h"
@@ -47,22 +48,25 @@ Color led_color(NetLed led) {
                                  : Color::hex(0xEF4444);
 }
 
-// Rounded card behind a group of rows.
+// A group of rows. alpha51: plain rows with a thin separator above every
+// group but the first (no card behind them).
 class FlyCard : public Fl_Group {
  public:
-  FlyCard(int x, int y, int w) : Fl_Group(x, y, w, S(40)) {
+  FlyCard(int x, int y, int w, bool rule = false) : Fl_Group(x, y, w, S(40)), rule_(rule) {
     box(FL_NO_BOX);
     resizable(nullptr);
   }
   void draw() override {
     const Theme &t = theme();
-    {
+    if (rule_) {
       Painter p(window()->w(), window()->h());
-      p.fill_rounded(x(), y(), w(), h(), S(12), t.surface_alt);
-      if (t.glass) p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(12), t.border);
+      p.line(x(), y() + 0.5, x() + w(), y() + 0.5, t.border);
     }
     draw_children();
   }
+
+ private:
+  bool rule_;
 };
 
 // Text; the label (not drawn) names it for window inspection and UI tests.
@@ -76,7 +80,7 @@ class FlyLabel : public Fl_Widget {
   }
   void draw() override {
     const Theme &t = theme();
-    text_font(t.font_size + (style_ == 1 ? 1 : 0), style_ == 1);
+    text_font(t.font_size, style_ == 1);
     Color c = style_ == 2 ? t.text_dim : style_ == 3 ? t.accent_text : t.text;
     draw_text(text_(), x(), y(), w(), h(), c);
   }
@@ -114,30 +118,30 @@ class FlyRow : public Fl_Button {
     const Theme &t = theme();
     bool hot = Fl::belowmouse() == this && active_r();
     Color ink = active_r() ? t.text : t.text_dim;
-    double sw = Sd(40), sh = Sd(22);
+    double sw = Sd(36), sh = Sd(20);
     {
       Painter p(window()->w(), window()->h());
-      if (hot || value()) p.fill_rounded(x(), y(), w(), h(), S(10), value() ? t.accent.alpha(0.2) : t.hover);
-      double size = S(20);
-      if (icon_) icon_(p, x() + S(10), y() + (h() - size) / 2.0, size, ink);
+      if (hot || value()) p.fill_rounded(x(), y(), w(), h(), S(6), value() ? t.accent.alpha(0.2) : t.hover);
+      double size = S(popup_style::kIcon);
+      if (icon_) icon_(p, x() + S(8), y() + (h() - size) / 2.0, size, ink);
       if (on_) {
         bool on = on_();
-        double sx = x() + w() - sw - S(10), sy = y() + (h() - sh) / 2;
+        double sx = x() + w() - sw - S(8), sy = y() + (h() - sh) / 2;
         Color track = on ? t.accent : t.border;
         if (!active_r()) track = track.alpha(0.5);
         p.fill_rounded(sx, sy, sw, sh, sh / 2, track);
         p.circle(on ? sx + sw - sh / 2 : sx + sh / 2, sy + sh / 2, sh / 2 - Sd(3),
                  on ? Color::hex(0xFFFFFF) : t.surface);
       }
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(10));
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(6));
     }
-    int tx = x() + (icon_ ? S(40) : S(12)), tw = w() - (tx - x()) - (on_ ? int(sw) + S(20) : S(10));
+    int tx = x() + (icon_ ? S(32) : S(8)), tw = w() - (tx - x()) - (on_ ? int(sw) + S(16) : S(8));
     std::string sub = sub_ ? sub_() : "";
-    text_font(t.font_size, true);
+    text_font(t.font_size);
     if (sub.empty()) {
       draw_text(title_, tx, y(), tw, h(), ink);
     } else {
-      draw_text(title_, tx, y() + S(3), tw, h() / 2 - S(1), ink);
+      draw_text(title_, tx, y() + S(2), tw, h() / 2 - S(1), ink);
       text_font(std::max(S(9), t.font_size - 1));
       draw_text(sub, tx, y() + h() / 2 - S(1), tw, h() / 2 - S(2), t.text_dim);
     }
@@ -182,10 +186,10 @@ class FlyIconButton : public Fl_Button {
     const Theme &t = theme();
     Painter p(window()->w(), window()->h());
     bool hot = Fl::belowmouse() == this;
-    if (hot || value()) p.fill_rounded(x(), y(), w(), h(), S(8), t.hover);
-    double s = std::min(w(), h()) * 0.6;
+    if (hot || value()) p.fill_rounded(x(), y(), w(), h(), S(6), t.hover);
+    double s = std::min<double>(std::min(w(), h()) * 0.6, S(popup_style::kIcon));
     icon_(p, x() + (w() - s) / 2, y() + (h() - s) / 2, s, t.text);
-    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(8));
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(6));
   }
   int handle(int event) override {
     if (event == FL_ENTER || event == FL_LEAVE || event == FL_FOCUS || event == FL_UNFOCUS) {
@@ -232,10 +236,10 @@ class NetworkHeader : public Fl_Widget {
   void draw() override {
     const Theme &t = theme();
     const auto &n = SystemStatus::get().network;
-    double size = S(28), ix = x() + S(6), iy = y() + (h() - size) / 2;
+    double size = S(20), ix = x() + S(6), iy = y() + (h() - size) / 2;
     {
       Painter p(window()->w(), window()->h());
-      p.fill_rounded(ix - S(6), iy - S(6), size + S(12), size + S(12), S(10),
+      p.fill_rounded(ix - S(6), iy - S(6), size + S(12), size + S(12), S(8),
                      t.accent.alpha(t.dark ? 0.22 : 0.12));
       if (n.kind == "ethernet")
         tray_icon::wired(p, ix, iy, size, true, t.text);
@@ -244,11 +248,11 @@ class NetworkHeader : public Fl_Widget {
       else
         tray_icon::offline(p, ix, iy, size, t.text);
       NetLed led = network_led(n.connected(), n.connectivity, false, PanelControls::get().net_verdict);
-      double r = Sd(4.5);
+      double r = Sd(3.5);
       p.circle(ix + size + Sd(1), iy + size - Sd(1), r + Sd(1.5), t.surface_alt);
       p.circle(ix + size + Sd(1), iy + size - Sd(1), r, led_color(led));
     }
-    int tx = x() + int(size) + S(22), tw = w() - (tx - x());
+    int tx = x() + int(size) + S(20), tw = w() - (tx - x());
     std::string name = n.connected() ? n.connection
                        : n.available ? std::string(_("Not connected"))
                                      : std::string(_("Network unavailable"));
@@ -267,10 +271,10 @@ class NetworkHeader : public Fl_Widget {
       state = _("Local network only · no internet");
     else
       state = n.kind == "wifi" ? _("Wi-Fi · connected") : _("Ethernet · connected");
-    text_font(t.font_size + 1, true);
-    draw_text(name, tx, y() + S(4), tw, h() / 2 - S(2), t.text);
+    text_font(t.font_size, true);
+    draw_text(name, tx, y() + S(2), tw, h() / 2 - S(1), t.text);
     text_font(std::max(S(9), t.font_size - 1));
-    draw_text(state, tx, y() + h() / 2, tw, h() / 2 - S(4), t.text_dim);
+    draw_text(state, tx, y() + h() / 2, tw, h() / 2 - S(2), t.text_dim);
   }
 };
 
@@ -341,32 +345,41 @@ struct FlyBuilder {
   StatusFlyout *fly;
   int pad, inner, y;
   FlyCard *card = nullptr;
+  int groups = 0;
   void start_card(const std::string &title = "") {
-    card = new FlyCard(pad, y, inner);
-    y += S(8);
+    card = new FlyCard(pad, y, inner, groups > 0);
+    y += groups > 0 ? S(6) : 0;
+    ++groups;
     if (!title.empty()) {
-      new FlyLabel(pad + S(12), y, inner - S(24), S(24), [title] { return title; }, 1);
-      y += S(28);
+      new FlyLabel(pad + S(8), y, inner - S(16), S(popup_style::kSection), [title] { return title; }, 1);
+      y += S(popup_style::kSection);
     }
   }
   void end_card() {
-    card->size(inner, y - card->y() + S(6));
+    card->size(inner, y - card->y());
     card->end();
-    y += S(10);
+    y += S(4);
     card = nullptr;
+  }
+  // A separator before a row that follows the groups (the settings link).
+  void rule() {
+    auto *r = new FlyCard(pad, y, inner, groups > 0);
+    r->size(inner, S(1));
+    r->end();
+    y += S(6);
   }
   FlyRow *row(const std::string &title, IconFn icon, std::function<void()> fn, TextFn sub = nullptr,
               std::function<bool()> on = nullptr, bool enabled = true) {
-    int h = sub ? S(46) : S(38);
-    auto *r = new FlyRow(pad + S(6), y, inner - S(12), h, title, std::move(icon), std::move(fn),
+    int h = sub ? S(popup_style::kRowSub) : S(popup_style::kRow);
+    auto *r = new FlyRow(pad, y, inner, h, title, std::move(icon), std::move(fn),
                          std::move(sub), std::move(on));
     if (!enabled) r->deactivate();
     y += h + S(2);
     return r;
   }
   void info(const std::string &text, int style = 2) {
-    new FlyLabel(pad + S(12), y, inner - S(24), S(22), [text] { return text; }, style);
-    y += S(22);
+    new FlyLabel(pad + S(8), y, inner - S(16), S(20), [text] { return text; }, style);
+    y += S(20);
   }
   std::function<void()> launch(std::vector<std::string> cmd) {
     StatusFlyout *f = fly;
@@ -470,12 +483,12 @@ void StatusFlyout::rebuild() {
   const auto &t = Panel::instance->theme();
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
-  int W = std::min(S(360), mw - S(16));
-  int pad = S(12), scrollbar = S(8), inner = W - 2 * pad - scrollbar;
+  int W = std::min(S(popup_style::kFlyoutW), mw - S(16));
+  int pad = S(popup_style::kPad), scrollbar = S(6), inner = W - 2 * pad - scrollbar;
   auto *panel = Panel::instance;
   int available =
       std::max(S(120), (t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my) - S(16));
-  header_ = S(46);
+  header_ = S(popup_style::kHeader);
   begin();
   body_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_));
   body_->type(Fl_Scroll::VERTICAL);
@@ -500,9 +513,9 @@ void StatusFlyout::rebuild() {
   std::string title = section_ == "drives"     ? _("Drives")
                       : section_ == "touchpad" ? _("Touchpad")
                                                : _("Network");
-  new FlyLabel(pad + S(4), S(6), W - 2 * pad - S(44), S(34), [title] { return title; }, 1);
+  new FlyLabel(pad + S(8), S(4), W - 2 * pad - S(44), header_ - S(4), [title] { return title; }, 1);
   if (section_ == "network")
-    new FlyIconButton(W - pad - S(34), S(6), S(34), _("More network options"), dots_icon(),
+    new FlyIconButton(W - pad - S(30), (header_ - S(30)) / 2, S(30), _("More network options"), dots_icon(),
                       [this] { network_menu(); });
   end();
   resizable(nullptr);
@@ -516,8 +529,8 @@ void StatusFlyout::draw() {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), t.surface);
     if (t.glass) p.fill_rect(0, 0, w(), header_, t.surface_alt.mix(t.surface, 0.55));
-    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
-    p.line(S(12), header_ - 0.5, w() - S(12), header_ - 0.5, t.border);
+    stroke_outline(p, t.border);
+    p.line(S(popup_style::kPad), header_ - 0.5, w() - S(popup_style::kPad), header_ - 0.5, t.border);
   }
   draw_children();
   if (qa_dump_enabled() && body_)
@@ -586,8 +599,8 @@ void StatusFlyout::network_section(FlyBuilder &b) {
   const auto &c = PanelControls::get();
   const auto &n = s.network;
   b.start_card();
-  new NetworkHeader(b.pad + S(12), b.y, b.inner - S(24), S(48));
-  b.y += S(52);
+  new NetworkHeader(b.pad + S(4), b.y, b.inner - S(8), S(40));
+  b.y += S(44);
   std::string message = !c.message.empty() ? c.message : s.message;
   if (!message.empty()) b.info(message);
   if (c.net_verdict == "proxy-required" || c.net_verdict == "no-dns" || c.net_verdict == "clock")
@@ -652,7 +665,7 @@ void StatusFlyout::network_section(FlyBuilder &b) {
           plugged);
     if (d.state == "connected" && !d.ip.empty()) {
       std::string line = "IP " + d.ip + (d.gateway.empty() ? "" : " · " + std::string(_("Gateway")) + " " + d.gateway);
-      new FlyLabel(b.pad + S(46), b.y - S(4), b.inner - S(58), S(18), [line] { return line; }, 2);
+      new FlyLabel(b.pad + S(32), b.y - S(4), b.inner - S(40), S(18), [line] { return line; }, 2);
       b.y += S(16);
     }
   }
@@ -660,14 +673,14 @@ void StatusFlyout::network_section(FlyBuilder &b) {
   b.end_card();
   if (n.available && n.has_wifi && n.wifi_enabled && !c.airplane) {
     b.start_card();
-    new FlyLabel(b.pad + S(12), b.y, b.inner - S(60), S(28), [] { return std::string(_("Wi-Fi networks")); }, 1);
-    new FlyIconButton(b.pad + b.inner - S(42), b.y - S(2), S(32), _("Scan Wi-Fi networks"), refresh_icon(), [] {
+    new FlyLabel(b.pad + S(8), b.y, b.inner - S(52), S(28), [] { return std::string(_("Wi-Fi networks")); }, 1);
+    new FlyIconButton(b.pad + b.inner - S(32), b.y, S(28), _("Scan Wi-Fi networks"), refresh_icon(), [] {
       auto &st = SystemStatus::get();
       st.message = _("Looking for Wi-Fi networks...");
       st.changed_now();
       st.refresh_network(true);
     });
-    b.y += S(32);
+    b.y += S(30);
     if (s.wifi.empty()) b.info(_("No Wi-Fi networks found."));
     size_t shown = 0;
     for (const auto &w : s.wifi) {
@@ -682,6 +695,7 @@ void StatusFlyout::network_section(FlyBuilder &b) {
     }
     b.end_card();
   }
+  b.rule();
   b.row(_("Network settings"), gear_icon(), b.launch({"sde-settings", "--page", "network"}));
 }
 
@@ -702,7 +716,7 @@ void StatusFlyout::drives_section(FlyBuilder &b) {
     bool working = task != c.drive_tasks.end() &&
                    (task->second.state == "ejecting" || task->second.state == "mounting");
     {
-      auto *icon = new FlyRow(b.pad + S(6), b.y, b.inner - S(12), S(46), label, drive_icon(d.kind == "card"),
+      auto *icon = new FlyRow(b.pad, b.y, b.inner, S(popup_style::kRowSub), label, drive_icon(d.kind == "card"),
                               nullptr, [d] {
                                 auto k = kinds.find(d.kind);
                                 return std::string(_(k == kinds.end() ? N_("Drive") : k->second)) +
@@ -710,7 +724,7 @@ void StatusFlyout::drives_section(FlyBuilder &b) {
                               });
       icon->clear_visible_focus();
       icon->copy_tooltip(("Drive " + label).c_str());
-      b.y += S(48);
+      b.y += S(popup_style::kRowSub) + S(2);
     }
     for (const auto &p : d.parts) {
       std::string line;
@@ -739,12 +753,12 @@ void StatusFlyout::drives_section(FlyBuilder &b) {
       }
       if (!trim(text).empty()) b.info(text, style);
     }
-    int bw = (b.inner - S(24) - gap) / 2;
-    auto *open = new FlyButton(b.pad + S(12), b.y + S(4), bw, S(32), _("Open"), "Open " + label, [this, name] {
+    int bw = (b.inner - S(16) - gap) / 2;
+    auto *open = new FlyButton(b.pad + S(8), b.y + S(4), bw, S(28), _("Open"), "Open " + label, [this, name] {
       close();
       PanelControls::get().drive_open(name);
     });
-    auto *eject = new FlyButton(b.pad + S(12) + bw + gap, b.y + S(4), bw, S(32),
+    auto *eject = new FlyButton(b.pad + S(8) + bw + gap, b.y + S(4), bw, S(28),
                                 d.kind == "hdd" || d.kind == "ssd" ? _("Safely remove") : _("Eject"),
                                 "Eject " + label, [name] { PanelControls::get().drive_eject(name, true); },
                                 true);
@@ -752,7 +766,7 @@ void StatusFlyout::drives_section(FlyBuilder &b) {
       open->deactivate();
       eject->deactivate();
     }
-    b.y += S(42);
+    b.y += S(36);
     b.end_card();
   }
   // Drives removed safely stay listed until the flyout closes.
@@ -777,8 +791,8 @@ void StatusFlyout::touchpad_section(FlyBuilder &b) {
     return;
   }
   b.start_card();
-  new TouchpadPreview(b.pad + S(12), b.y, b.inner - S(24), S(84));
-  b.y += S(90);
+  new TouchpadPreview(b.pad + S(8), b.y, b.inner - S(16), S(64));
+  b.y += S(68);
   b.info(tp.enabled() ? _("Move a finger, tap or scroll to try it.") : _("The touchpad is off."));
   b.end_card();
   b.start_card();
@@ -798,9 +812,9 @@ void StatusFlyout::touchpad_section(FlyBuilder &b) {
     o.natural = !o.natural;
     TouchpadMonitor::get().apply(o);
   }, nullptr, [options] { return options().natural; }, tp.enabled());
-  new FlyLabel(b.pad + S(12), b.y, b.inner - S(24), S(24), [] { return std::string(_("Pointer speed")); }, 0);
-  b.y += S(24);
-  auto *speed = new Slider(b.pad + S(12), b.y, b.inner - S(24), S(28));
+  new FlyLabel(b.pad + S(8), b.y, b.inner - S(16), S(22), [] { return std::string(_("Pointer speed")); }, 0);
+  b.y += S(22);
+  auto *speed = new Slider(b.pad + S(8), b.y, b.inner - S(16), S(28));
   speed->bounds(-100, 100);
   speed->step(5);
   speed->value(options().speed);
@@ -814,7 +828,8 @@ void StatusFlyout::touchpad_section(FlyBuilder &b) {
     TouchpadMonitor::get().apply(o);
   });
   if (!tp.enabled()) speed->deactivate();
-  b.y += S(34);
+  b.y += S(30);
   b.end_card();
+  b.rule();
   b.row(_("Touchpad settings..."), gear_icon(), b.launch({"sde-settings", "--page", "touchpad"}));
 }
