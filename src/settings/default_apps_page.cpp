@@ -356,6 +356,7 @@ class OtherTypesDialog {
 
   void run() {
     win_->show();
+    search_->take_focus();
     while (win_->shown()) Fl::wait();
   }
 

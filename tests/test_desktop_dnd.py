@@ -220,6 +220,8 @@ with tempfile.TemporaryDirectory(prefix='sde-desktop-dnd-') as temp:
         if (desk / 'www.debian.org.desktop').exists():
             check('URL=https://www.debian.org/intro/' in (desk / 'www.debian.org.desktop').read_text(),
                   'link points to the URL')
+        wait_for(lambda: 'www.debian.org.desktop' in layout(layout_file))
+        time.sleep(0.5)
         shot(env, 'dnd-5-dropped.png')
 
         # 6. XDND source: drag an icon onto another program's window.

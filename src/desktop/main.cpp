@@ -518,7 +518,9 @@ class Desktop : public sde::BufferedWindow {
   void rebuild_items() {
     std::string sel = selected_ >= 0 && selected_ < int(items_.size())
                           ? items_[size_t(selected_)].uri : std::string();
-    if (drag_state_ != DRAG_NONE) cancel_drag();
+    // Indexes change: a drag in progress ends (a rubber band goes on, it
+    // works with uris).
+    if (drag_state_ == DRAG_ITEMS || drag_state_ == DRAG_PRESSED) cancel_drag();
     // Places keep their loaded icons across rebuilds.
     std::map<std::string, Item> places;
     for (auto &it : items_)
@@ -734,6 +736,10 @@ class Desktop : public sde::BufferedWindow {
 
   static void apply_inotify(void *data) {
     auto *d = static_cast<Desktop *>(data);
+    if (d->drag_state_ == DRAG_ITEMS || d->drag_state_ == DRAG_PRESSED) {
+      Fl::repeat_timeout(0.3, apply_inotify, data);  // after the drag
+      return;
+    }
     double t0 = perf::enabled() ? perf::now_ms() : 0;
     size_t changes = d->changed_.size();
     if (d->full_rescan_) {
