@@ -167,6 +167,18 @@ add_custom_command(OUTPUT "${SDE_THEMES_OUT}/.stamp"
   DEPENDS ${SDE_THEME_DEPS} ${SDE_THEME_OVERLAYS} "${PROJECT_SOURCE_DIR}/suite/themes.lock.json"
   COMMENT "Building the SDE themes" VERBATIM)
 add_custom_target(sde-themes ALL DEPENDS "${SDE_THEMES_OUT}/.stamp")
+
+# Settings > About: commit, build number and date (generated/build_info.h)
+# and the development log (build-history.json from CHANGELOG.md), refreshed on
+# every build; unchanged files are not rewritten, so nothing else rebuilds.
+add_custom_target(sde-build-info ALL
+  COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/build-info.py"
+          --header "${CMAKE_BINARY_DIR}/generated/build_info.h"
+          --history "${CMAKE_BINARY_DIR}/build-history.json"
+  BYPRODUCTS "${CMAKE_BINARY_DIR}/generated/build_info.h" "${CMAKE_BINARY_DIR}/build-history.json"
+  COMMENT "SDE build information" VERBATIM)
+add_dependencies(sde-settings sde-build-info)
+install(FILES "${CMAKE_BINARY_DIR}/build-history.json" DESTINATION ${CMAKE_INSTALL_DATADIR}/sde)
 install(DIRECTORY "${SDE_THEMES_OUT}/" DESTINATION ${CMAKE_INSTALL_DATADIR}/themes PATTERN ".stamp" EXCLUDE)
 install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)

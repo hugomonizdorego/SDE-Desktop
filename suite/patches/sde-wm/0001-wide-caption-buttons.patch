@@ -1,0 +1,240 @@
+SDE WM: wide caption buttons that follow the title font.
+
+New themerc keys (ignored by stock Openbox, so SDE themes still load there):
+  window.button.width.percent   button width, percent of the title height
+  window.button.height.percent  button height, percent of the title height (100 = full)
+  window.button.spacing         pixels between buttons and before the right edge
+The title height follows the window title font, which SDE scales with the
+interface size, so the buttons grow on HiDPI screens. Without the keys the
+buttons keep the Openbox size (label height - 2) and spacing (padding.width + 1).
+
+--- a/obrender/theme.h
++++ b/obrender/theme.h
+@@ -59,6 +59,11 @@
+     gint label_height;
+     gint title_height;
+     gint button_size;
++    /* SDE: caption button area (window.button.width/height.percent of the
++       title height, window.button.spacing pixels); button_size otherwise */
++    gint button_width;
++    gint button_height;
++    gint button_spacing;
+     gint grip_width;
+     gint menu_title_label_height;
+     gint menu_title_height;
+--- a/obrender/theme.c
++++ b/obrender/theme.c
+@@ -271,6 +271,10 @@
+     READ_INT("menu.separator.padding.height", theme->menu_sep_paddingy, 0, 100, 3);
+     READ_INT("window.client.padding.width", theme->cbwidthx, 0, 100, theme->paddingx);
+     READ_INT("window.client.padding.height", theme->cbwidthy, 0, 100, theme->cbwidthx);
++    /* SDE: wide caption buttons that follow the font (and so the UI scale) */
++    READ_INT("window.button.width.percent", theme->button_width, 0, 1000, 0);
++    READ_INT("window.button.height.percent", theme->button_height, 0, 100, 0);
++    READ_INT("window.button.spacing", theme->button_spacing, -1, 100, -1);
+ 
+     /* load colors */
+     READ_COLOR_("window.active.border.color",
+@@ -983,6 +987,14 @@
+             theme->paddingy * 2;
+     }
+     theme->button_size = theme->label_height - 2;
++    theme->button_width = theme->button_width > 0 ?
++        MAX(theme->button_size, theme->title_height * theme->button_width / 100) :
++        theme->button_size;
++    theme->button_height = theme->button_height > 0 ?
++        MAX(theme->button_size, theme->title_height * theme->button_height / 100) :
++        theme->button_size;
++    if (theme->button_spacing < 0)
++        theme->button_spacing = theme->paddingx + 1;
+     theme->grip_width = 25;
+ 
+     RrAppearanceFree(fbs.focused_disabled);
+--- a/openbox/frame.c
++++ b/openbox/frame.c
+@@ -201,17 +201,17 @@
+ {
+     /* set colors/appearance/sizes for stuff that doesn't change */
+     XResizeWindow(obt_display, self->max,
+-                  ob_rr_theme->button_size, ob_rr_theme->button_size);
++                  ob_rr_theme->button_width, ob_rr_theme->button_height);
+     XResizeWindow(obt_display, self->iconify,
+-                  ob_rr_theme->button_size, ob_rr_theme->button_size);
++                  ob_rr_theme->button_width, ob_rr_theme->button_height);
+     XResizeWindow(obt_display, self->icon,
+                   ob_rr_theme->button_size + 2, ob_rr_theme->button_size + 2);
+     XResizeWindow(obt_display, self->close,
+-                  ob_rr_theme->button_size, ob_rr_theme->button_size);
++                  ob_rr_theme->button_width, ob_rr_theme->button_height);
+     XResizeWindow(obt_display, self->desk,
+-                  ob_rr_theme->button_size, ob_rr_theme->button_size);
++                  ob_rr_theme->button_width, ob_rr_theme->button_height);
+     XResizeWindow(obt_display, self->shade,
+-                  ob_rr_theme->button_size, ob_rr_theme->button_size);
++                  ob_rr_theme->button_width, ob_rr_theme->button_height);
+     XResizeWindow(obt_display, self->tltresize,
+                   ob_rr_theme->grip_width, ob_rr_theme->paddingy + 1);
+     XResizeWindow(obt_display, self->trtresize,
+@@ -1182,7 +1182,9 @@
+     gchar *lc;
+     gint i;
+ 
+-    const gint bwidth = ob_rr_theme->button_size + ob_rr_theme->paddingx + 1;
++    const gint bwidth = ob_rr_theme->button_width + ob_rr_theme->button_spacing;
++    /* buttons are centered in the title (paddingy + 1 for stock themes) */
++    const gint by = (ob_rr_theme->title_height - ob_rr_theme->button_height) / 2;
+     /* position of the leftmost button */
+     const gint left = ob_rr_theme->paddingx + 1;
+     /* position of the rightmost button */
+@@ -1225,7 +1227,7 @@
+             } else if (*lc == 'N') {
+                 if (firstcon) *firstcon = OB_FRAME_CONTEXT_ICON;
+                 /* icon is bigger than buttons */
+-                place_button(self, lc, bwidth + 2, left, i, &x, &self->icon_on, &self->icon_x);
++                place_button(self, lc, ob_rr_theme->button_size + ob_rr_theme->paddingx + 3, left, i, &x, &self->icon_on, &self->icon_x);
+             } else if (*lc == 'D') {
+                 if (firstcon) *firstcon = OB_FRAME_CONTEXT_ALLDESKTOPS;
+                 place_button(self, lc, bwidth, left, i, &x, &self->desk_on, &self->desk_x);
+@@ -1257,36 +1259,31 @@
+ 
+     if (self->desk_on) {
+         XMapWindow(obt_display, self->desk);
+-        XMoveWindow(obt_display, self->desk, self->desk_x,
+-                    ob_rr_theme->paddingy + 1);
++        XMoveWindow(obt_display, self->desk, self->desk_x, by);
+     } else
+         XUnmapWindow(obt_display, self->desk);
+ 
+     if (self->shade_on) {
+         XMapWindow(obt_display, self->shade);
+-        XMoveWindow(obt_display, self->shade, self->shade_x,
+-                    ob_rr_theme->paddingy + 1);
++        XMoveWindow(obt_display, self->shade, self->shade_x, by);
+     } else
+         XUnmapWindow(obt_display, self->shade);
+ 
+     if (self->iconify_on) {
+         XMapWindow(obt_display, self->iconify);
+-        XMoveWindow(obt_display, self->iconify, self->iconify_x,
+-                    ob_rr_theme->paddingy + 1);
++        XMoveWindow(obt_display, self->iconify, self->iconify_x, by);
+     } else
+         XUnmapWindow(obt_display, self->iconify);
+ 
+     if (self->max_on) {
+         XMapWindow(obt_display, self->max);
+-        XMoveWindow(obt_display, self->max, self->max_x,
+-                    ob_rr_theme->paddingy + 1);
++        XMoveWindow(obt_display, self->max, self->max_x, by);
+     } else
+         XUnmapWindow(obt_display, self->max);
+ 
+     if (self->close_on) {
+         XMapWindow(obt_display, self->close);
+-        XMoveWindow(obt_display, self->close, self->close_x,
+-                    ob_rr_theme->paddingy + 1);
++        XMoveWindow(obt_display, self->close, self->close_x, by);
+     } else
+         XUnmapWindow(obt_display, self->close);
+ 
+@@ -1448,18 +1445,17 @@
+ 
+         /* figure out if we're over the area that should be considered a
+            button */
+-        if (fy < self->bwidth + ob_rr_theme->paddingy + 1 +
+-            ob_rr_theme->button_size)
++        if (fy < self->bwidth + ob_rr_theme->title_height)
+         {
+             if (fx < (self->bwidth + ob_rr_theme->paddingx + 1 +
+-                      ob_rr_theme->button_size))
++                      ob_rr_theme->button_width))
+             {
+                 if (self->leftmost != OB_FRAME_CONTEXT_NONE)
+                     return self->leftmost;
+             }
+             else if (fx >= (self->area.width -
+-                            (self->bwidth + ob_rr_theme->paddingx + 1 +
+-                             ob_rr_theme->button_size)))
++                            (self->bwidth + ob_rr_theme->button_spacing +
++                             ob_rr_theme->button_width)))
+             {
+                 if (self->rightmost != OB_FRAME_CONTEXT_NONE)
+                     return self->rightmost;
+--- a/openbox/framerender.c
++++ b/openbox/framerender.c
+@@ -283,7 +283,8 @@
+ 
+         m->surface.parent = t;
+         m->surface.parentx = self->max_x;
+-        m->surface.parenty = ob_rr_theme->paddingy + 1;
++        m->surface.parenty =
++            (ob_rr_theme->title_height - ob_rr_theme->button_height) / 2;
+ 
+         n->surface.parent = t;
+         n->surface.parentx = self->icon_x;
+@@ -291,19 +292,23 @@
+ 
+         i->surface.parent = t;
+         i->surface.parentx = self->iconify_x;
+-        i->surface.parenty = ob_rr_theme->paddingy + 1;
++        i->surface.parenty =
++            (ob_rr_theme->title_height - ob_rr_theme->button_height) / 2;
+ 
+         d->surface.parent = t;
+         d->surface.parentx = self->desk_x;
+-        d->surface.parenty = ob_rr_theme->paddingy + 1;
++        d->surface.parenty =
++            (ob_rr_theme->title_height - ob_rr_theme->button_height) / 2;
+ 
+         s->surface.parent = t;
+         s->surface.parentx = self->shade_x;
+-        s->surface.parenty = ob_rr_theme->paddingy + 1;
++        s->surface.parenty =
++            (ob_rr_theme->title_height - ob_rr_theme->button_height) / 2;
+ 
+         c->surface.parent = t;
+         c->surface.parentx = self->close_x;
+-        c->surface.parenty = ob_rr_theme->paddingy + 1;
++        c->surface.parenty =
++            (ob_rr_theme->title_height - ob_rr_theme->button_height) / 2;
+ 
+         framerender_label(self, l);
+         framerender_max(self, m);
+@@ -381,32 +386,32 @@
+ static void framerender_max(ObFrame *self, RrAppearance *a)
+ {
+     if (!self->max_on) return;
+-    RrPaint(a, self->max, ob_rr_theme->button_size, ob_rr_theme->button_size);
++    RrPaint(a, self->max, ob_rr_theme->button_width, ob_rr_theme->button_height);
+ }
+ 
+ static void framerender_iconify(ObFrame *self, RrAppearance *a)
+ {
+     if (!self->iconify_on) return;
+     RrPaint(a, self->iconify,
+-            ob_rr_theme->button_size, ob_rr_theme->button_size);
++            ob_rr_theme->button_width, ob_rr_theme->button_height);
+ }
+ 
+ static void framerender_desk(ObFrame *self, RrAppearance *a)
+ {
+     if (!self->desk_on) return;
+-    RrPaint(a, self->desk, ob_rr_theme->button_size, ob_rr_theme->button_size);
++    RrPaint(a, self->desk, ob_rr_theme->button_width, ob_rr_theme->button_height);
+ }
+ 
+ static void framerender_shade(ObFrame *self, RrAppearance *a)
+ {
+     if (!self->shade_on) return;
+     RrPaint(a, self->shade,
+-            ob_rr_theme->button_size, ob_rr_theme->button_size);
++            ob_rr_theme->button_width, ob_rr_theme->button_height);
+ }
+ 
+ static void framerender_close(ObFrame *self, RrAppearance *a)
+ {
+     if (!self->close_on) return;
+     RrPaint(a, self->close,
+-            ob_rr_theme->button_size, ob_rr_theme->button_size);
++            ob_rr_theme->button_width, ob_rr_theme->button_height);
+ }

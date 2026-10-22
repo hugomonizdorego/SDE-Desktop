@@ -21,7 +21,10 @@ def main():
     lock = ROOT / 'suite/components.lock.json'
     version_file = ROOT / 'suite/versions.json'
     versions = json.loads(version_file.read_text())
-    signature = hashlib.sha256(lock.read_bytes() + version_file.read_bytes() + Path(__file__).read_bytes()).hexdigest()
+    # SDE patches (suite/patches/<component>/*.patch) are applied in order.
+    patches = sorted((ROOT / 'suite/patches').glob('*/*.patch'))
+    signature = hashlib.sha256(lock.read_bytes() + version_file.read_bytes() + Path(__file__).read_bytes() +
+                               b''.join(p.read_bytes() for p in patches)).hexdigest()
     marker = args.output / '.sde-component-lock'
     if marker.exists():
         if marker.read_text().strip() == signature:
@@ -47,6 +50,8 @@ def main():
         if out.exists():
             p.error('Output exists; choose another --output: ' + str(out))
         shutil.copytree(cache,out,ignore=shutil.ignore_patterns('.git'))
+        for patch in sorted((ROOT / 'suite/patches' / app['id']).glob('*.patch')):
+            subprocess.run(['patch', '--quiet', '-p1', '-d', str(out), '-i', str(patch)], check=True)
         if app['id'] == 'sde-wm':
             path = out / 'configure.ac'
             path.write_text(path.read_text().replace('AC_INIT([openbox], [3.6.1]', 'AC_INIT([openbox], ['+versions[app['id']]+']'))

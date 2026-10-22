@@ -133,3 +133,12 @@ add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SO
 # --quick --json verdicts, against fixtures and stub commands.
 add_test(NAME debion-network-check COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_network_check.py)
 set_tests_properties(debion-network-check PROPERTIES TIMEOUT 120)
+
+# Caption buttons and their migration, transparency contrast, icon theme
+# lookup (tests/fixtures/icon-themes) and the build history of Settings > About.
+add_executable(sde-theme-tests test_theme.cpp)
+target_link_libraries(sde-theme-tests PRIVATE sde-settings-model sde-common)
+target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                   SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(sde-theme-tests sde-build-info)
+add_test(NAME sde-theme COMMAND sde-theme-tests)

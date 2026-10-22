@@ -1,35 +1,7 @@
-/* SDE Graphite (GTK 4): SDE's layer on Graphite, after Apple's Human
- * Interface Guidelines: round caption buttons like the SDE WM frames and
- * soft depth on popovers and tooltips.
+/* SDE Graphite (GTK 4): SDE's layer on Graphite: soft depth on popovers
+ * and tooltips. Caption buttons come from caption-gtk-4.0.css (right-hand
+ * minimize, maximize and close, like the SDE WM frames).
  * SPDX-License-Identifier: GPL-3.0-or-later */
-
-windowcontrols > button.close,
-windowcontrols > button.minimize,
-windowcontrols > button.maximize {
-  min-width: 14px;
-  min-height: 14px;
-  margin: 0 3px;
-  padding: 0;
-  border-radius: 9999px;
-  border: none;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
-  color: transparent;
-  background-image: none;
-}
-windowcontrols > button > image { -gtk-icon-size: 9px; padding: 0; background: none; box-shadow: none; }
-windowcontrols > button.close { background-color: #FF5F57; }
-windowcontrols > button.minimize { background-color: #FEBC2E; }
-windowcontrols > button.maximize { background-color: #28C840; }
-windowcontrols:hover > button.close, windowcontrols:hover > button.minimize,
-windowcontrols:hover > button.maximize { color: rgba(0, 0, 0, 0.55); }
-windowcontrols > button.close:active { background-color: #D8473F; }
-windowcontrols > button.minimize:active { background-color: #D99A1E; }
-windowcontrols > button.maximize:active { background-color: #1FA634; }
-window:backdrop windowcontrols > button.close, window:backdrop windowcontrols > button.minimize,
-window:backdrop windowcontrols > button.maximize {
-  background-color: alpha(@sde_text, 0.16);
-  color: transparent;
-}
 
 tooltip { border-radius: @RADIUS_SMALL@; }
 popover > contents { border-radius: @RADIUS@; }

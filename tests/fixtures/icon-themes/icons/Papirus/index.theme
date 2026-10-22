@@ -1,0 +1,10 @@
+[Icon Theme]
+Name=Papirus
+Comment=Papirus (SDE test fixture)
+Inherits=FixtureParent
+Directories=48x48/places
+
+[48x48/places]
+Size=48
+Type=Fixed
+Context=Places

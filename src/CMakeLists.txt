@@ -81,7 +81,7 @@ add_executable(sde-settings
 # tested; thumbnails come from the Gallery core (decoding threads and the
 # freedesktop.org thumbnail cache).
 add_library(sde-settings-model STATIC settings/gpu.cpp settings/wallpapers.cpp
-  settings/devices.cpp settings/proxy.cpp)
+  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp)
 target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/settings)
 target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common)
 target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)

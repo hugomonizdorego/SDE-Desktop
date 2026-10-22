@@ -9,51 +9,7 @@ window.background:not(.popup):not(.tooltip) { background-color: @sde_background;
 headerbar, .titlebar:not(headerbar) { background-color: @sde_titlebar; }
 headerbar:backdrop, .titlebar:not(headerbar):backdrop { background-color: @sde_titlebar_inactive; }
 
-/* Caption buttons: plain glyphs, a soft hover layer and a red close. */
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu).minimize,
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu).maximize,
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu).close,
-headerbar button.titlebutton:not(.appmenu).minimize,
-headerbar button.titlebutton:not(.appmenu).maximize,
-headerbar button.titlebutton:not(.appmenu).close {
-  color: @sde_text;
-  background-color: transparent;
-  background-image: none;
-  border-radius: @RADIUS_SMALL@;
-  min-width: 34px;
-  min-height: 28px;
-  margin: 0;
-  padding: 0;
-  box-shadow: none;
-  -gtk-icon-transform: scale(0.8);
-}
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu):hover,
-headerbar button.titlebutton:not(.appmenu):hover {
-  background-color: alpha(@sde_text, 0.08);
-  background-image: none;
-}
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu):active,
-headerbar button.titlebutton:not(.appmenu):active {
-  background-color: alpha(@sde_text, 0.14);
-  background-image: none;
-}
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu).close:hover,
-headerbar button.titlebutton:not(.appmenu).close:hover {
-  background-color: #C42B1C;
-  color: #FFFFFF;
-}
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu).close:active,
-headerbar button.titlebutton:not(.appmenu).close:active {
-  background-color: #B0271A;
-  color: #FFFFFF;
-}
-.titlebar:not(headerbar) button.titlebutton:not(.appmenu):backdrop,
-headerbar button.titlebutton:not(.appmenu):backdrop {
-  color: @sde_text_dim;
-  background-color: transparent;
-  background-image: none;
-  box-shadow: none;
-}
+/* Caption buttons: caption-gtk-3.0.css, shared by every SDE family. */
 
 /* Rounded layers. */
 entry, spinbutton:not(.vertical), combobox > box > button.combo,
