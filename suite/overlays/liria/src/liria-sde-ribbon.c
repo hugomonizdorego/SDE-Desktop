@@ -1289,7 +1289,19 @@ liria_sde_ribbon_setup (LiriaNavigationWindow *window, GtkUIManager *ui_manager)
     r->revealer = gtk_revealer_new ();
     gtk_revealer_set_transition_type (GTK_REVEALER (r->revealer), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
     gtk_revealer_set_transition_duration (GTK_REVEALER (r->revealer), 120);
-    gtk_container_add (GTK_CONTAINER (r->revealer), r->stack);
+    {
+        /* The groups never make the window wider: on a narrow window or
+         * a large interface scale the ribbon scrolls sideways. */
+        GtkWidget *scroller = gtk_scrolled_window_new (NULL, NULL);
+
+        gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroller), GTK_POLICY_AUTOMATIC, GTK_POLICY_NEVER);
+        gtk_scrolled_window_set_propagate_natural_height (GTK_SCROLLED_WINDOW (scroller), TRUE);
+        gtk_scrolled_window_set_overlay_scrolling (GTK_SCROLLED_WINDOW (scroller), TRUE);
+        gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (scroller), GTK_SHADOW_NONE);
+        gtk_style_context_add_class (gtk_widget_get_style_context (scroller), "sde-ribbon-scroller");
+        gtk_container_add (GTK_CONTAINER (scroller), r->stack);
+        gtk_container_add (GTK_CONTAINER (r->revealer), scroller);
+    }
     gtk_box_pack_start (GTK_BOX (r->root), r->revealer, FALSE, FALSE, 0);
 
     rb_build_home (r);

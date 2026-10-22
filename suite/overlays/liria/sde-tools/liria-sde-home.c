@@ -430,6 +430,17 @@ flow_add (GtkWidget *flow, GtkWidget *child)
 		gtk_widget_set_can_focus (gtk_widget_get_parent (child), FALSE);
 }
 
+/* Drive and recent file cards: 220 px at 100 %, grown with the interface
+ * scale (Xft/DPI) so that "12.3 GB free of 45.6 GB" fits. */
+static gint
+card_min_width (void)
+{
+	gint dpi = -1;
+
+	g_object_get (gtk_settings_get_default (), "gtk-xft-dpi", &dpi, NULL);
+	return dpi > 96 * 1024 ? 220 * (dpi / 1024) / 96 : 220;
+}
+
 static void
 clear_container (GtkWidget *container)
 {
@@ -1830,7 +1841,7 @@ drive_card (Overview *o, GFile *root, const gchar *name, GIcon *icon)
 	gtk_box_pack_start (GTK_BOX (row), image, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (row), text, TRUE, TRUE, 0);
 	gtk_container_add (GTK_CONTAINER (card), row);
-	gtk_widget_set_size_request (card, 220, -1);
+	gtk_widget_set_size_request (card, card_min_width (), -1);
 	card_drag_source (card, FALSE);
 	drive_drag_dest (card);
 
@@ -2142,7 +2153,7 @@ grid_columns_idle (gpointer data)
 {
 	GtkWidget *flow = data;
 	gint width = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (flow), "sde-width"));
-	guint columns = liria_sde_home_columns (width, 220, 8, 3);
+	guint columns = liria_sde_home_columns (width, card_min_width (), 8, 3);
 
 	g_object_set_data (G_OBJECT (flow), "sde-idle", NULL);
 	if (!gtk_widget_in_destruction (flow) &&

@@ -358,6 +358,23 @@ class LiriaAlpha16Test(unittest.TestCase):
         for needle in ('button.sde-ribbon-tab:checked', 'button.sde-ribbon-button', '.sde-ribbon-group-label'):
             self.assertIn(needle, css)
 
+    def test_drag_and_drop_smoke(self):
+        """Real drags on Xvfb with xdotool (tools/liria-dnd-smoke.py) when a
+        built Liria is named by SDE_LIRIA_PREFIX (e.g. a DESTDIR stage/usr)."""
+        import os
+        import subprocess
+        import sys
+        script = self.root / 'tools/liria-dnd-smoke.py'
+        self.assertIn('right-button drag asks', script.read_text())
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        result = subprocess.run([sys.executable, str(script), '--prefix', prefix], capture_output=True, text=True,
+                                timeout=300)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_home_view_recipe_restores_view(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

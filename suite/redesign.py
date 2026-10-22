@@ -1169,6 +1169,29 @@ def liria_sidebar_pinned(staged):
                       G_CALLBACK (sde_sidebar_left), sidebar);
     sde_watch_pins (sidebar);
 """)
+    # Until the user drags it, the sidebar is wide enough for its names at
+    # every interface scale (176 px at 100 %, grown with Xft/DPI).
+    edit_once(staged / "src/liria-navigation-window.c", """        g_settings_get_int (liria_window_state,
+                            LIRIA_WINDOW_STATE_SIDEBAR_WIDTH) * scale;
+""", """        g_settings_get_int (liria_window_state,
+                            LIRIA_WINDOW_STATE_SIDEBAR_WIDTH) * scale;
+    {
+        GVariant *user = g_settings_get_user_value (liria_window_state, LIRIA_WINDOW_STATE_SIDEBAR_WIDTH);
+        gint dpi = -1;
+
+        if (user == NULL)
+        {
+            g_object_get (gtk_settings_get_default (), "gtk-xft-dpi", &dpi, NULL);
+            window->details->side_pane_width = MAX (window->details->side_pane_width, 176 * scale);
+            if (dpi > 96 * 1024)
+                window->details->side_pane_width = window->details->side_pane_width * (dpi / 1024) / 96;
+        }
+        else
+        {
+            g_variant_unref (user);
+        }
+    }
+""")
     edit_once(sidebar, """    if (event->type != GDK_BUTTON_PRESS)
     {
         /* ignore multiple clicks */
