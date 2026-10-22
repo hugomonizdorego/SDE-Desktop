@@ -52,6 +52,20 @@ context menus with Send To for removable drives, a symbolic sidebar and
 Liria's own style sheet that uses only standard GTK theme colours.
 Screenshots: `docs/screenshots/alpha16/liria-*.png`.
 
+Since alpha50 the Home overview's Quick access is a user-editable pin list:
+any folder, file or location (remote URIs, folders on removable drives) is
+pinned with "Pin to Quick Access" in the file and sidebar menus, by dropping
+it on the cards or with the "+" card, and a card's menu renames, moves,
+unpins or resets the list (drag to reorder; Delete, F2 and
+Ctrl+Shift+Left/Right on a focused card). Pins are stored in
+`~/.config/sde/liria-quick-access`: UTF-8, one URI per line in card order,
+optionally followed by a TAB and a custom label, `#` comments allowed. A
+missing file means the defaults (Desktop, Documents, Downloads, Pictures,
+Music, Videos, Trash); "Reset to Defaults" deletes it. Every Liria window
+watches the file. The code is `src/liria-sde-pins.c` (shared by the window
+and the SDE Tools extension); its unit test `sde-tools/test-liria-sde-pins.c`
+runs in `make check`. The sidebar's Favorites stay the standard folders.
+
 ## SDE Power and SDE Screen Lock (alpha16)
 
 The former power-manager and screen-saver forks were replaced in alpha16 by
