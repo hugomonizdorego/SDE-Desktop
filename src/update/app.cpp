@@ -929,9 +929,18 @@ class UpdaterPage : public Page {
       place(settings, X, by, S(96));
       right_to_left({install, remind});
       int line_h = S(26);
-      download_y = by - S(8) - line_h;
+      // On short screens the download size goes between the buttons when it
+      // fits, and the tree has no column header: more rows stay visible.
+      int free_x = settings->x() + settings->w() + S(12), free_w = remind->x() - S(12) - free_x;
+      text_font(active_theme().font_size);
+      download_inline = short_screen() && text_width(download_text(true)) + S(30) <= free_w;
+      download_x = download_inline ? free_x : X;
+      download_w = download_inline ? free_w : W;
+      download_y = download_inline ? by + (S(34) - line_h) / 2 : by - S(8) - line_h;
       int exp_h = S(26);
-      int avail = download_y - S(4) - exp_h - S(4) - cy - exp_h - S(4);
+      int bottom = download_inline ? by - S(8) : download_y - S(4);
+      int avail = bottom - exp_h - S(4) - cy - exp_h - S(4);
+      tree_head = short_screen() ? 0 : S(26);
       int tech_h = 0;
       if (a.details_open && a.tech_open) {
         tree_h = std::max(S(84), avail * 55 / 100);
@@ -947,7 +956,7 @@ class UpdaterPage : public Page {
       cy += exp_h + S(4);
       if (a.details_open) {
         tree_y = cy;
-        list->resize(X + S(3), cy + S(26), W - S(6), tree_h - S(29));
+        list->resize(X + S(3), cy + (tree_head ? tree_head : S(3)), W - S(6), tree_h - tree_head - S(6) + (tree_head ? S(3) : 0));
         want_.insert(list);
         cy += tree_h + S(6);
       }
@@ -1043,13 +1052,14 @@ class UpdaterPage : public Page {
       }
       if (tree_h > 0) {
         paint_card(pp, X, tree_y, W, tree_h);
-        pp.line(X + S(8), tree_y + S(26) + 0.5, X + W - S(8), tree_y + S(26) + 0.5, t.border);
+        if (tree_head) pp.line(X + S(8), tree_y + tree_head + 0.5, X + W - S(8), tree_y + tree_head + 0.5, t.border);
       }
       if (log_h > 0 && a.log_open) paint_card(pp, X, log_y, W, log_h);
       if (progress_y >= 0) {
         paint_progress(pp, X, progress_y + S(4), W, S(8), a.busy() ? a.progress.percent : -1, a.phase);
       }
-      if (download_y >= 0) paint_icon(pp, Icon::Package, X + S(2), download_y + S(4), S(18), t.accent_text);
+      if (download_y >= 0)
+        paint_icon(pp, Icon::Package, download_x + S(2), download_y + S(4), S(18), t.accent_text);
     }
     text_font(t.font_size + S(2), true);
     int th = std::max(S(22), std::min(S(60), wrapped_height(title, tw)));
@@ -1062,7 +1072,7 @@ class UpdaterPage : public Page {
       text_font(t.font_size - S(1), true);
       draw_text(msg, X + S(36), banner_y, restart_small->x() - X - S(44), S(34), t.text);
     }
-    if (tree_h > 0) {
+    if (tree_h > 0 && tree_head) {
       text_font(t.font_size - S(1));
       draw_text(_("Install"), X + S(12), tree_y, W / 2, S(26), t.text_dim);
       draw_text(_("Download"), X + W / 2, tree_y, W / 2 - S(12), S(26), t.text_dim, 2);
@@ -1082,18 +1092,25 @@ class UpdaterPage : public Page {
       draw_text(item, X, progress_y + S(40), W, S(22), t.text_dim);
     }
     if (download_y >= 0) {
-      long long size = a.list.selected_size();
-      int n = a.list.selected_count();
-      std::string line;
-      if (!n) line = _("No updates are selected.");
-      else if (!size) line = _("Nothing needs to be downloaded.");
-      else line = format(_("%s will be downloaded."), format_size(size).c_str());
-      if (n && n < int(a.list.updates.size()))
-        line += "  " + format(_("(%d of %d updates selected)"), n, int(a.list.updates.size()));
-      if (n && a.list.needs_reboot()) line += "  ·  " + std::string(_("A restart will be required."));
       text_font(t.font_size);
-      draw_text(line, X + S(28), download_y, W - S(28), S(26), t.text);
+      draw_text(download_text(download_inline), download_x + S(28), download_y, download_w - S(28), S(26), t.text);
     }
+  }
+
+  // "80.0 MB will be downloaded." (|brief| leaves out the selection and restart).
+  std::string download_text(bool brief) const {
+    App &a = app();
+    long long size = a.list.selected_size();
+    int n = a.list.selected_count();
+    std::string line;
+    if (!n) line = _("No updates are selected.");
+    else if (!size) line = _("Nothing needs to be downloaded.");
+    else line = format(_("%s will be downloaded."), format_size(size).c_str());
+    if (brief) return line;
+    if (n && n < int(a.list.updates.size()))
+      line += "  " + format(_("(%d of %d updates selected)"), n, int(a.list.updates.size()));
+    if (n && a.list.needs_reboot()) line += "  ·  " + std::string(_("A restart will be required."));
+    return line;
   }
 
   void activated() override {
@@ -1106,7 +1123,8 @@ class UpdaterPage : public Page {
   TextView *log;
   Button *settings, *remind, *install, *check, *close, *cancel, *back, *retry, *later, *restart_now, *restart_small;
   int header_y = 0, header_h = 0, banner_y = 0, tree_y = 0, tree_h = 0, progress_y = -1, download_y = -1;
-  int log_y = 0, log_h = 0;
+  int log_y = 0, log_h = 0, tree_head = 0, download_x = 0, download_w = 0;
+  bool download_inline = false;
   bool banner = false;
 };
 
