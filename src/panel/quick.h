@@ -103,6 +103,8 @@ class SystemStatus {
   // Reports a change made from outside (a new message).
   void changed_now() { changed(); }
   void set_brightness(int percent);
+  // [brightness] external_monitor changed: probe the DDC/CI monitor again.
+  void reset_external_brightness();
   // Brightness keys and sde-panel --brightness: +/- percent.
   void step_brightness(int delta);
 
@@ -172,6 +174,9 @@ class QuickSettings : public PanelPopup {
   void keyboard_section(struct SectionBuilder &b);
   void tray_section(struct SectionBuilder &b);
   void player_card(struct SectionBuilder &b, const struct MediaPlayer &p);
+  void brightness_settings(struct SectionBuilder &b);
+  static void weather_tick(void *);
+  static void media_tick(void *);
   void agenda_card(struct SectionBuilder &b);
   void footer(int W, int H, int pad);
  public:
@@ -181,6 +186,7 @@ class QuickSettings : public PanelPopup {
   void agenda_save();
   void agenda_cancel();
   void set_power_menu(bool open);
+  void set_brightness_menu(bool open);
 
  private:
   void sync();
@@ -196,6 +202,10 @@ class QuickSettings : public PanelPopup {
   class Fl_Slider *microphone_ = nullptr;
   class Fl_Widget *tray_box_ = nullptr;
   class Fl_Widget *calendar_ = nullptr;
+  class Fl_Widget *clock_ = nullptr;      // the clock card (weather scene)
+  class Fl_Slider *media_slider_ = nullptr;  // the media card's seek bar
+  std::string media_service_;
+  bool weather_frame_ = false;  // the next draw only animates the weather
   std::map<unsigned, class Fl_Slider *> stream_sliders_;
   int tray_columns_ = 1;
   std::string structure_;
@@ -211,4 +221,6 @@ class QuickSettings : public PanelPopup {
   std::string draft_title_, draft_time_, draft_note_, agenda_error_;
   // The footer's power button shows Sleep, Log Out, Restart and Shut Down.
   bool power_open_ = false;
+  // The brightness row's gear opens brightness and Night Light settings.
+  bool brightness_open_ = false;
 };

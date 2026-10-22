@@ -26,6 +26,7 @@
 #include "agenda.h"
 #include "alarm_popup.h"
 #include "alarms.h"
+#include "art.h"
 #include "controls.h"
 #include "panel_widgets.h"
 #include "dbus.h"
@@ -43,6 +44,8 @@
 #include "tray_icons.h"
 #include "util.h"
 #include "widgets.h"
+#include "nightlight.h"
+#include "weather.h"
 #include "x11.h"
 
 using namespace sde;
@@ -121,6 +124,11 @@ void SystemStatus::start(std::function<void()> changed) {
   Fl::add_timeout(30, Tick::battery);
   start_audio_stream();
   start_connectivity();
+  // The Action Center's weather reports a fetch through the usual change.
+  weather::Service::get().set_listener([this] { this->changed(); });
+  if (!Panel::safe_mode)
+    nightlight::Controller::get().start(
+        []() -> const Config * { return Panel::instance ? &Panel::instance->config() : nullptr; });
   run_async({"sde-settings", "--help"},
             [](const std::string &out, int) { settings_help() = out; });
 }
@@ -398,9 +406,15 @@ void SystemStatus::refresh_brightness() {
   }
   // No built-in panel: an external monitor through DDC/CI (ddcutil), probed
   // once in the background because it takes a few seconds.
-  if (!s.available && ddc_.available) s = ddc_;
-  if (!s.available && !ddc_probed_ && !Panel::safe_mode && Panel::instance &&
-      Panel::instance->config().get_bool("action_center", "external_brightness", true) &&
+  // [brightness] external_monitor (older name: [action_center]
+  // external_brightness) allows the DDC/CI monitor.
+  bool external =
+      Panel::instance &&
+      Panel::instance->config().get_bool(
+          "brightness", "external_monitor",
+          Panel::instance->config().get_bool("action_center", "external_brightness", true));
+  if (!s.available && ddc_.available && external) s = ddc_;
+  if (!s.available && !ddc_probed_ && !Panel::safe_mode && external &&
       !find_program("ddcutil").empty()) {
     ddc_probed_ = true;
     run_async({"ddcutil", "--brief", "getvcp", "10"}, [this](const std::string &out, int status) {
@@ -650,6 +664,13 @@ void SystemStatus::set_brightness(int percent) {
   }
 }
 
+void SystemStatus::reset_external_brightness() {
+  ddc_ = BrightnessState();
+  ddc_probed_ = false;
+  refresh_brightness();
+  changed();
+}
+
 void SystemStatus::ddc_apply(void *data) {
   auto *self = static_cast<SystemStatus *>(data);
   run_async({"ddcutil", "--noverify", "setvcp", "10", std::to_string(self->ddc_.value)}, nullptr);
@@ -857,12 +878,44 @@ class QuickTile : public DrawnButton {
   int color_;
 };
 
+// Weather: the network reaches the internet (or NetworkManager is not there
+// to tell; then a failed request decides).
+bool weather_online() {
+  const auto &n = SystemStatus::get().network;
+  if (!n.available) return true;
+  return n.connected() && !n.no_internet() && !n.portal();
+}
+weather::Settings weather_settings() {
+  return weather::Settings::from_config(Panel::instance->config());
+}
+const weather::Report *weather_report() {
+  return weather::Service::get().current(weather_settings(), weather_online());
+}
+// Seconds since the panel started, for animations.
+double anim_seconds() {
+  static const auto start = std::chrono::steady_clock::now();
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
 class ClockCard : public Fl_Widget {
  public:
-  ClockCard(int x, int y, int w, int h, bool flat = false)
-      : Fl_Widget(x, y, w, h), flat_(flat) {
+  ClockCard(int x, int y, int w, int h, bool flat = false, const weather::Report *wx = nullptr,
+            bool fahrenheit = false, bool animate = true)
+      : Fl_Widget(x, y, w, h), flat_(flat), animate_(animate), fahrenheit_(fahrenheit) {
     clear_visible_focus();
+    if (wx) {
+      wx_ = *wx;
+      sky_ = true;
+      // Named for UI tests and shown as the tooltip.
+      std::string tip = std::string(_("Weather")) + ": " +
+                        _(weather::from_wmo(wx_.code).text) + ", " +
+                        weather::format_temperature(wx_.temp_c, fahrenheit_);
+      if (!wx_.location.city.empty()) tip += ", " + wx_.location.city;
+      copy_tooltip(tip.c_str());
+    }
   }
+  bool sky() const { return sky_; }
+  const weather::Report &report() const { return wx_; }
   void draw() override {
     const Theme &t = Panel::instance->theme();
     const Config &cfg = Panel::instance->config();
@@ -871,10 +924,13 @@ class ClockCard : public Fl_Widget {
     localtime_r(&now, &lt);
     bool analog = cfg.get("action_center", "clock_style", "digital") == "analog";
     double r = std::min(double(S(32)), h() / 2.0 - S(4));
-    double cx = x() + (flat_ ? 0 : S(16)) + r, cy = y() + h() / 2.0;
+    double cx = x() + (flat_ && !sky_ ? 0 : S(16)) + r, cy = y() + h() / 2.0;
     {
       Painter p(window()->w(), window()->h());
-      if (!flat_) {
+      if (sky_) {
+        // A still picture at reduced motion (always the same moment).
+        weather::draw_scene(p, x(), y(), w(), h(), S(14), wx_, animate_ ? anim_seconds() : 2.0);
+      } else if (!flat_) {
         // Soft accent glow on the card: a two-stop gradient instead of a flat fill.
         p.fill_gradient(x(), y(), w(), h(), S(16),
                         t.surface_alt.mix(t.accent, t.dark ? 0.24 : 0.14), t.surface_alt, true);
@@ -902,9 +958,33 @@ class ClockCard : public Fl_Widget {
              &lt);
     strftime(date, sizeof date, "%A, %e %B", &lt);
     // Time on the left, greeting and date stacked beside it.
-    int left = analog ? int(cx + r + S(14)) : x() + (flat_ ? 0 : S(18));
+    int left = analog ? int(cx + r + S(14)) : x() + (flat_ && !sky_ ? 0 : S(16));
     text_font(t.font_size + (analog ? 10 : flat_ ? 16 : 22), true);
     int cw = text_width(clock) + S(8);
+    if (sky_) {
+      // White text on the sky (the scene shades its left side).
+      Color ink = Color::hex(0xFFFFFF), soft = Color::hex(0xE6EDF6);
+      draw_text(clock, left, y(), cw, h(), ink);
+      int rx = left + cw + S(8), rw = x() + w() - rx - S(8);
+      int mid = y() + h() / 2;
+      std::string cond = _(weather::from_wmo(wx_.code).text);
+      std::string temp = weather::format_temperature(wx_.temp_c, fahrenheit_);
+      text_font(t.font_size + 1, true);
+      int tw = text_width(temp) + S(6);
+      draw_text(temp, rx, mid - S(27), std::min(tw, rw), S(20), ink);
+      text_font(t.font_size, true);
+      draw_text(cond, rx + tw, mid - S(27), std::max(0, rw - tw), S(20), ink);
+      text_font(t.font_size - 1);
+      draw_text(trim(date), rx, mid - S(8), rw, S(18), soft);
+      std::string place = wx_.location.city;
+      if (place.empty() && wx_.location.valid) {
+        char buf[64];
+        snprintf(buf, sizeof buf, "%.2f, %.2f", wx_.location.lat, wx_.location.lon);
+        place = buf;
+      }
+      draw_text(place, rx, mid + S(9), rw, S(18), soft);
+      return;
+    }
     draw_text(clock, left, y(), cw, h(), t.text);
     int rx = left + cw + S(10), rw = x() + w() - rx - S(4);
     bool greet = cfg.get_bool("action_center", "show_greeting", true);
@@ -921,7 +1001,9 @@ class ClockCard : public Fl_Widget {
   }
 
  private:
-  bool flat_;
+  bool flat_, animate_, fahrenheit_;
+  bool sky_ = false;
+  weather::Report wx_;
 };
 
 // Initial in an accent circle, then the user name.
@@ -1022,6 +1104,47 @@ IconFn back_icon() {
 IconFn power_icon() {
   return [](Painter &p, double x, double y, double s, const Color &c) {
     glyph::power(p, x, y, s, c);
+  };
+}
+// Media transport: 0 previous, 1 play, 2 pause, 3 next.
+IconFn transport_icon(int kind) {
+  return [kind](Painter &p, double x, double y, double s, const Color &c) {
+    cairo_t *cr = p.cr();
+    p.set(c);
+    auto tri = [&](double x0, double w, bool right) {
+      cairo_new_path(cr);
+      if (right) {
+        cairo_move_to(cr, x0, y + s * .2);
+        cairo_line_to(cr, x0 + w, y + s * .5);
+        cairo_line_to(cr, x0, y + s * .8);
+      } else {
+        cairo_move_to(cr, x0 + w, y + s * .2);
+        cairo_line_to(cr, x0, y + s * .5);
+        cairo_line_to(cr, x0 + w, y + s * .8);
+      }
+      cairo_close_path(cr);
+      cairo_fill(cr);
+    };
+    switch (kind) {
+      case 0:
+        p.fill_rounded(x + s * .18, y + s * .2, s * .1, s * .6, s * .03, c);
+        tri(x + s * .3, s * .5, false);
+        break;
+      case 1: tri(x + s * .28, s * .52, true); break;
+      case 2:
+        p.fill_rounded(x + s * .26, y + s * .2, s * .16, s * .6, s * .04, c);
+        p.fill_rounded(x + s * .58, y + s * .2, s * .16, s * .6, s * .04, c);
+        break;
+      default:
+        tri(x + s * .2, s * .5, true);
+        p.fill_rounded(x + s * .72, y + s * .2, s * .1, s * .6, s * .03, c);
+        break;
+    }
+  };
+}
+IconFn battery_icon() {
+  return [](Painter &p, double x, double y, double s, const Color &c) {
+    glyph::battery(p, x, y, s, 60, false, c, c);
   };
 }
 
@@ -1248,8 +1371,35 @@ static void poll_brightness(void *data) {
   Fl::repeat_timeout(1.5, poll_brightness, data);
 }
 
+void QuickSettings::weather_tick(void *data) {
+  auto *q = static_cast<QuickSettings *>(data);
+  if (!q->is_open() || !q->clock_) return;
+  q->weather_frame_ = true;
+  q->clock_->redraw();
+  Fl::repeat_timeout(1.0 / weather_settings().fps, weather_tick, data);
+}
+// The seek bar and times follow a playing track once a second.
+void QuickSettings::media_tick(void *data) {
+  auto *q = static_cast<QuickSettings *>(data);
+  if (!q->is_open()) return;
+  if (q->media_slider_ && Fl::pushed() != q->media_slider_) {
+    for (const auto &p : PanelControls::get().players())
+      if (p.service == q->media_service_) {
+        q->media_slider_->value(double(p.position_now(mono_ms()) / 1000000));
+        // The slider and the time labels below it.
+        q->damage_rect(q->media_slider_->x(), q->media_slider_->y(), q->media_slider_->w(),
+                       q->media_slider_->h() + S(20));
+        break;
+      }
+  }
+  Fl::repeat_timeout(1.0, media_tick, data);
+}
+
 void QuickSettings::closed() {
   Fl::remove_timeout(poll_brightness, this);
+  Fl::remove_timeout(weather_tick, this);
+  Fl::remove_timeout(media_tick, this);
+  brightness_open_ = false;
   PanelControls::get().stop_scan();
   calendar_view_ = false;
 }
@@ -1269,6 +1419,7 @@ std::string QuickSettings::structure() const {
   std::ostringstream out;
   out << Alarms::get().revision() << '|' << agenda_year_ << '-' << agenda_month_ << '-'
       << agenda_day_ << agenda_form_ << agenda_edit_ << agenda_error_ << power_open_
+      << brightness_open_
       << s.network.connectivity << s.network.check_enabled << '|';
   out << int(mode_) << section_ << calendar_view_ << s.network.available << s.network.has_wifi
       << s.network.wifi_enabled << s.network.connection << s.network.kind;
@@ -1283,7 +1434,18 @@ std::string QuickSettings::structure() const {
   for (const auto &d : c.bluetooth) out << '|' << d.path << d.name << d.paired << d.connected;
   for (const auto &p : c.players())
     out << '|' << p.service << p.name << p.title << p.artist << p.status << p.control << p.play
-        << p.pause << p.next << p.previous << p.raise;
+        << p.pause << p.next << p.previous << p.raise << p.album << p.art_url << p.length_us
+        << p.seek;
+  if (mode_ == ACTION_CENTER) {
+    // The weather picture (condition, temperature, place) and its settings.
+    if (const auto *w = weather_report())
+      out << "|wx" << w->code << w->is_day << std::lround(w->temp_c * 10) << w->location.city;
+    for (const char *key : {"enabled", "unit", "animation", "location"})
+      out << '|' << cfg.get("weather", key);
+    for (const char *key : {"enabled", "schedule", "from", "to"})
+      out << '|' << cfg.get("night_light", key);
+    out << '|' << cfg.get("power", "idle_dim_battery") << cfg.get("brightness", "external_monitor");
+  }
   for (const auto &a : c.streams) out << '|' << a.id << a.app << a.title << a.muted;
   for (const auto &d : c.drives) out << '|' << d.path << d.mountpoint();
   for (const auto &p : c.power_profiles) out << '|' << p;
@@ -1316,6 +1478,7 @@ void QuickSettings::prepare() {
   PanelControls::get().message.clear();
   scroll_to_calendar_ = calendar_view_;
   power_open_ = false;
+  if (mode_ == ACTION_CENTER) weather::Service::get().request(weather_settings(), weather_online());
   if (mode_ == ACTION_CENTER) {
     // The agenda starts on today.
     time_t now = time(nullptr);
@@ -1424,11 +1587,47 @@ void QuickSettings::volume_row(SectionBuilder &b, bool more) {
   b.y += S(42);
 }
 
+namespace {
+// Settings changed by sliders are written once the slider rests.
+std::map<std::pair<std::string, std::string>, std::string> &pending_settings() {
+  static std::map<std::pair<std::string, std::string>, std::string> m;
+  return m;
+}
+void flush_settings(void *) {
+  auto m = std::move(pending_settings());
+  pending_settings().clear();
+  for (const auto &kv : m) Panel::instance->set_setting(kv.first.first, kv.first.second, kv.second);
+  nightlight::Controller::get().update();
+}
+void save_later(const std::string &section, const std::string &key, const std::string &value) {
+  pending_settings()[{section, key}] = value;
+  Fl::remove_timeout(flush_settings);
+  Fl::add_timeout(0.5, flush_settings);
+}
+void save_now(const std::string &section, const std::string &key, const std::string &value) {
+  pending_settings().erase({section, key});
+  Panel::instance->set_setting(section, key, value);
+}
+}  // namespace
+
+void QuickSettings::set_brightness_menu(bool open) {
+  brightness_open_ = open;
+  status_changed();
+}
+
 void QuickSettings::brightness_row(SectionBuilder &b) {
   const auto &s = SystemStatus::get();
-  int x = b.pad + S(8), right = b.pad + b.inner - S(8), pct = S(44);
+  int x = b.pad + S(8), right = b.pad + b.inner - S(8), pct = S(44), more_w = S(36);
   auto *icon = new ActionButton(x, b.y, S(38), S(36), "", sun_icon(), [] {}, nullptr, -1, true);
   icon->clear_visible_focus();
+  // The gear at the end opens brightness and Night Light settings.
+  bool open = brightness_open_;
+  auto *more = new ActionButton(
+      right - more_w + S(2), b.y, more_w - S(2), S(36), "", gear_icon(),
+      [this, open] { later([this, open] { set_brightness_menu(!open); }); },
+      [this] { return brightness_open_; }, -1, true);
+  more->copy_tooltip(_("Brightness settings"));
+  right -= more_w;
   brightness_ = new Slider(x + S(46), b.y, right - pct - (x + S(46)) - S(4), S(36));
   brightness_->bounds(1, 100);
   brightness_->value(s.brightness.percent());
@@ -1442,30 +1641,255 @@ void QuickSettings::brightness_row(SectionBuilder &b) {
   b.y += S(42);
 }
 
-void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
+void QuickSettings::brightness_settings(SectionBuilder &b) {
+  const auto &cfg = Panel::instance->config();
+  const auto &t = Panel::instance->theme();
   int pad = b.pad, inner = b.inner;
-  auto *card = b.start_card(p.name);
-  b.info(p.title.empty() ? _("No track title") : p.title);
-  if (!p.artist.empty()) b.info(p.artist);
-  b.y += S(4);
-  int gap = S(6), bw = (inner - S(24) - 2 * gap) / 3;
-  std::vector<std::pair<std::string, std::string>> buttons = {
-      {_("Previous"), "Previous"},
-      {p.status == "Playing" ? _("Pause") : _("Play"), "PlayPause"},
-      {_("Next"), "Next"}};
-  bool allowed[] = {p.control && p.previous,
-                    p.control && (p.status == "Playing" ? p.pause : p.play), p.control && p.next};
-  for (int i = 0; i < 3; ++i) {
-    auto cmd = buttons[i].second;
-    auto *button = new CommandButton(
-        pad + S(12) + i * (bw + gap), b.y, bw, S(34), buttons[i].first,
-        [service = p.service, cmd] { PanelControls::get().media_command(service, cmd); });
-    if (!allowed[i]) button->deactivate();
+  auto *card = b.start_card(_("Brightness and Night Light"));
+  icon_button(pad + inner - S(46), card->y() + S(6), S(34), S(32), _("Close brightness settings"),
+              cross_icon(), [this] { later([this] { set_brightness_menu(false); }); });
+  auto refresh = [this] { later([this] { status_changed(); }); };
+  // Night Light: warm colors through the XRandR gamma ramps.
+  auto nl = nightlight::Settings::from_config(cfg);
+  b.row(_("Night Light"), moon_icon(),
+        [refresh] {
+          bool on = !nightlight::Settings::from_config(Panel::instance->config()).enabled;
+          save_now("night_light", "enabled", on ? "true" : "false");
+          nightlight::Controller::get().update();
+          refresh();
+        },
+        true, [] { return nightlight::Settings::from_config(Panel::instance->config()).enabled; });
+  int x = pad + S(12), w = inner - S(24), lw = S(92), vw = S(64);
+  new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("Warmth")); }, 2);
+  auto *warm = new Slider(x + lw, b.y, w - lw - vw, S(32));
+  // Right is warmer.
+  warm->bounds(6500, 2500);
+  warm->step(100);
+  warm->value(nl.temperature);
+  warm->tooltip(_("Night Light warmth"));
+  if (!nl.enabled) warm->deactivate();
+  warm->callback([](Fl_Widget *wd, void *) {
+    int k = int(static_cast<Fl_Slider *>(wd)->value());
+    save_later("night_light", "temperature", std::to_string(k));
+    wd->window()->redraw();
+  });
+  new ActionLabel(
+      x + w - vw, b.y, vw, S(32),
+      [warm] { return std::to_string(int(warm->value())) + " K"; }, 4);
+  b.y += S(38);
+  {
+    new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("Schedule")); }, 2);
+    auto *sched = new Fl_Choice(x + lw, b.y, w - lw, S(32));
+    sched->tooltip(_("Night Light schedule"));
+    sched->textsize(t.font_size);
+    sched->add(choice_label(_("Sunset to sunrise")).c_str());
+    sched->add(choice_label(_("Always on")).c_str());
+    sched->add(choice_label(_("Custom hours")).c_str());
+    sched->value(nl.schedule == "always" ? 1 : nl.schedule == "custom" ? 2 : 0);
+    if (!nl.enabled) sched->deactivate();
+    sched->callback([](Fl_Widget *wd, void *d) {
+      static const char *names[] = {"sunset", "always", "custom"};
+      int i = std::max(0, std::min(2, static_cast<Fl_Choice *>(wd)->value()));
+      save_now("night_light", "schedule", names[i]);
+      nightlight::Controller::get().update();
+      later([d] { static_cast<QuickSettings *>(d)->status_changed(); });
+    }, this);
+    b.y += S(38);
   }
-  b.y += S(42);
-  if (p.raise)
-    b.row(_("Open player"), media_icon,
-          [service = p.service] { PanelControls::get().media_command(service, "Raise"); });
+  if (nl.schedule == "custom") {
+    int half = (w - lw - S(8)) / 2;
+    new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("From – to")); }, 2);
+    for (int which = 0; which < 2; ++which) {
+      auto *c = new Fl_Choice(x + lw + which * (half + S(8)), b.y, half, S(32));
+      c->tooltip(which ? _("Night Light ends") : _("Night Light starts"));
+      c->textsize(t.font_size);
+      int cur = which ? nl.to : nl.from, sel = 0;
+      for (int i = 0; i < 48; ++i) {
+        c->add(nightlight::format_time(i * 30).c_str());
+        if (std::abs(i * 30 - cur) < 15) sel = i;
+      }
+      c->value(sel);
+      if (!nl.enabled) c->deactivate();
+      c->callback(
+          [](Fl_Widget *wd, void *data) {
+            bool end = data != nullptr;
+            int i = static_cast<Fl_Choice *>(wd)->value();
+            save_now("night_light", end ? "to" : "from", nightlight::format_time(i * 30));
+            nightlight::Controller::get().update();
+          },
+          which ? reinterpret_cast<void *>(1) : nullptr);
+    }
+    b.y += S(38);
+  } else if (nl.enabled && nl.schedule == "sunset") {
+    int from, to;
+    double lat = 0, lon = 0;
+    bool have = false;
+    if (const auto *r = weather::Service::get().current(weather_settings(), true))
+      if (r->location.valid) {
+        have = true;
+        lat = r->location.lat;
+        lon = r->location.lon;
+      }
+    nightlight::window_for(nl, time(nullptr), have, lat, lon, from, to);
+    b.info(format(_("On from %s to %s"), nightlight::format_time(from).c_str(),
+                  nightlight::format_time(to).c_str()));
+  }
+  b.y += S(4);
+  // Dimming by sde-power ([power] idle_dim_battery and dim_level).
+  bool dim = cfg.get_int("power", "idle_dim_battery", 120) > 0;
+  b.row(_("Auto-dim on battery"), battery_icon(),
+        [refresh] {
+          const auto &c = Panel::instance->config();
+          int now = c.get_int("power", "idle_dim_battery", 120);
+          if (now > 0) {
+            save_now("brightness", "auto_dim_seconds", std::to_string(now));
+            save_now("power", "idle_dim_battery", "0");
+            save_now("brightness", "auto_dim_battery", "false");
+          } else {
+            int back = std::max(30, c.get_int("brightness", "auto_dim_seconds", 120));
+            save_now("power", "idle_dim_battery", std::to_string(back));
+            save_now("brightness", "auto_dim_battery", "true");
+          }
+          refresh();
+        },
+        true, [] { return Panel::instance->config().get_int("power", "idle_dim_battery", 120) > 0; });
+  new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("Dim level")); }, 2);
+  auto *level = new Slider(x + lw, b.y, w - lw - vw, S(32));
+  level->bounds(10, 90);
+  level->step(5);
+  level->value(std::max(10, std::min(90, cfg.get_int("power", "dim_level", 30))));
+  level->tooltip(_("Dim level"));
+  if (!dim) level->deactivate();
+  level->callback([](Fl_Widget *wd, void *) {
+    save_later("power", "dim_level", std::to_string(int(static_cast<Fl_Slider *>(wd)->value())));
+    wd->window()->redraw();
+  });
+  new ActionLabel(
+      x + w - vw, b.y, vw, S(32),
+      [level] { return std::to_string(int(level->value())) + "%"; }, 4);
+  b.y += S(38);
+  // External monitors through DDC/CI.
+  bool ddc = !find_program("ddcutil").empty();
+  auto *ext = b.row(ddc ? _("External monitor (DDC/CI)") : _("External monitor: install ddcutil"),
+                    display_icon(),
+                    [refresh] {
+                      const auto &c = Panel::instance->config();
+                      bool on = !c.get_bool("brightness", "external_monitor",
+                                            c.get_bool("action_center", "external_brightness", true));
+                      save_now("brightness", "external_monitor", on ? "true" : "false");
+                      SystemStatus::get().reset_external_brightness();
+                      refresh();
+                    },
+                    ddc, [] {
+                      const auto &c = Panel::instance->config();
+                      return c.get_bool("brightness", "external_monitor",
+                                        c.get_bool("action_center", "external_brightness", true));
+                    });
+  ext->copy_tooltip(_("External monitor brightness"));
+  b.row(_("Display settings…"), gear_icon(), b.launch({"sde-settings", "--page", "display"}));
+  b.end_card(card);
+}
+
+void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
+  const auto &t = Panel::instance->theme();
+  int pad = b.pad, inner = b.inner;
+  auto *card = b.start_card("");
+  int x = pad + S(12), w = inner - S(24), art = S(56);
+  // Album art (mpris:artUrl) or a note on an accent tile.
+  std::string url = p.art_url;
+  struct Cover : Fl_Widget {
+    std::string url;
+    Cover(int X, int Y, int W, int H, std::string u) : Fl_Widget(X, Y, W, H), url(std::move(u)) {}
+    void draw() override {
+      const Theme &th = Panel::instance->theme();
+      Painter pt(window()->w(), window()->h());
+      cairo_surface_t *img = url.empty() ? nullptr : art::get(url, w(), [] {
+        SystemStatus::get().changed_now();
+      });
+      if (img) {
+        cairo_t *cr = pt.cr();
+        cairo_save(cr);
+        pt.rounded_rect(x(), y(), w(), h(), S(10));
+        cairo_clip(cr);
+        cairo_set_source_surface(cr, img, x(), y());
+        cairo_paint(cr);
+        cairo_restore(cr);
+      } else {
+        pt.fill_gradient(x(), y(), w(), h(), S(10), th.accent.mix(Color::hex(0xFFFFFF), 0.15),
+                         th.accent.mix(Color::hex(0x000000), 0.15), true);
+        double g = w() * .5;
+        glyph::media(pt, x() + (w() - g) / 2, y() + (h() - g) / 2, g, th.on_accent);
+      }
+    }
+  };
+  auto *cv = new Cover(x, b.y, art, art, url);
+  cv->clear_visible_focus();
+  // Title, then the artist; a video without one shows the application.
+  std::string title = p.title.empty() ? p.name : p.title;
+  std::string artist = !p.artist.empty() ? p.artist : p.title.empty() ? std::string() : p.name;
+  if (!p.album.empty() && !p.artist.empty()) artist += " — " + p.album;
+  int tx = x + art + S(12), tw = w - art - S(12);
+  auto *tl = new ActionLabel(tx, b.y + S(6), tw, S(22), [title] { return title; }, 1);
+  tl->copy_tooltip((std::string(_("Now playing")) + ": " + title).c_str());
+  auto *al = new ActionLabel(tx, b.y + S(30), tw, S(20), [artist] { return artist; }, 2);
+  if (!artist.empty()) al->copy_tooltip((std::string(_("Artist")) + ": " + artist).c_str());
+  b.y += art + S(8);
+  // Seek bar with the elapsed and total time.
+  std::string service = p.service;
+  media_service_ = service;
+  auto *bar = new Slider(x - S(4), b.y, w + S(8), S(24));
+  bar->bounds(0, std::max<long long>(1, p.length_us / 1000000));
+  bar->value(double(p.position_now(mono_ms()) / 1000000));
+  bar->tooltip(_("Playback position"));
+  bar->when(FL_WHEN_RELEASE);
+  bar->callback([](Fl_Widget *wd, void *d) {
+    (void)d;
+    auto *sl = static_cast<Fl_Slider *>(wd);
+    const auto players = PanelControls::get().players();
+    if (players.empty()) return;
+    PanelControls::get().media_seek(players.front().service,
+                                    (long long)(sl->value() * 1000000.0));
+  }, this);
+  if (!(p.control && p.seek && p.length_us > 0)) bar->deactivate();
+  media_slider_ = bar;
+  b.y += S(24);
+  auto time_of = [service](bool total) {
+    return [service, total] {
+      for (const auto &pl : PanelControls::get().players())
+        if (pl.service == service)
+          return pl.length_us > 0 ? format_media_time(total ? pl.length_us
+                                                            : pl.position_now(mono_ms()))
+                                  : std::string(total ? "" : "");
+      return std::string();
+    };
+  };
+  new ActionLabel(x, b.y, w / 2, S(18), time_of(false), 2);
+  new ActionLabel(x + w / 2, b.y, w - w / 2, S(18),
+                  [f = time_of(true)] { return f(); }, 4);
+  b.y += S(20);
+  // Only previous, play/pause and next.
+  int bw = S(44), gap = S(14), cx = x + (w - 3 * bw - 2 * gap) / 2;
+  bool playing = p.status == "Playing";
+  struct B {
+    const char *tip, *cmd;
+    int icon;
+    bool on;
+  } buttons[] = {{N_("Previous"), "Previous", 0, p.control && p.previous},
+                 {playing ? N_("Pause") : N_("Play"), "PlayPause", playing ? 2 : 1,
+                  p.control && (playing ? p.pause : p.play)},
+                 {N_("Next"), "Next", 3, p.control && p.next}};
+  for (int i = 0; i < 3; ++i) {
+    std::string cmd = buttons[i].cmd;
+    auto *btn = new ActionButton(cx + i * (bw + gap), b.y, bw, S(40), "",
+                                 transport_icon(buttons[i].icon),
+                                 [service, cmd] { PanelControls::get().media_command(service, cmd); },
+                                 i == 1 ? std::function<bool()>([] { return true; }) : nullptr, -1,
+                                 true);
+    btn->copy_tooltip(_(buttons[i].tip));
+    if (!buttons[i].on) btn->deactivate();
+  }
+  (void)t;
+  b.y += S(46);
   b.end_card(card);
 }
 
@@ -2076,6 +2500,7 @@ void QuickSettings::build_center(SectionBuilder &b) {
     b.y -= S(4);
     b.end_card(card);
   }
+  if (brightness_open_) brightness_settings(b);
   if (!expanded()) return;
 
   if (cfg.get_bool("action_center", "show_media", true)) {
@@ -2373,6 +2798,16 @@ void QuickSettings::rebuild() {
   volume_ = brightness_ = microphone_ = nullptr;
   tray_box_ = nullptr;
   calendar_ = nullptr;
+  clock_ = nullptr;
+  media_slider_ = nullptr;
+  media_service_.clear();
+  Fl::remove_timeout(weather_tick, this);
+  Fl::remove_timeout(media_tick, this);
+  // The weather picture behind the clock, while online.
+  const weather::Report *wx = nullptr;
+  weather::Settings wset = weather_settings();
+  if (mode_ == ACTION_CENTER && Panel::instance->config().get_bool("action_center", "show_clock", true))
+    wx = weather_report();
   stream_sliders_.clear();
   const auto &t = Panel::instance->theme();
   const auto &cfg = Panel::instance->config();
@@ -2387,7 +2822,7 @@ void QuickSettings::rebuild() {
   int available =
       std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
   if (fly) available = std::max(S(120), available - S(16));
-  header_ = fly ? S(48) : S(70);
+  header_ = fly ? S(48) : wx ? S(92) : S(70);
   footer_ = fly ? 0 : power_open_ ? S(104) : S(58);
 
   begin();
@@ -2430,8 +2865,12 @@ void QuickSettings::rebuild() {
     new ActionLabel(pad + S(4), S(8), W - 2 * pad, S(34), [title] { return title; }, 1);
   } else {
     int toggle = S(36);
-    if (cfg.get_bool("action_center", "show_clock", true))
-      new ClockCard(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(18), header_ - S(14), true);
+    if (wx)
+      clock_ = new ClockCard(pad, S(8), W - 2 * pad - 2 * toggle - S(14), header_ - S(16), true,
+                             wx, wset.fahrenheit, wset.animate);
+    else if (cfg.get_bool("action_center", "show_clock", true))
+      clock_ = new ClockCard(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(18), header_ - S(14),
+                             true);
     else
       new ActionLabel(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(6), header_ - S(14),
                       [] { return std::string(_("Action Center")); }, 1);
@@ -2457,10 +2896,20 @@ void QuickSettings::rebuild() {
     body_->scroll_to(0, std::max(0, std::min(scroll, content_height_ - body_->h())));
     scroll_to_calendar_ = false;
   }
+  if (wx && wset.animate) Fl::add_timeout(1.0 / wset.fps, weather_tick, this);
+  if (media_slider_) Fl::add_timeout(1.0, media_tick, this);
   sync();
 }
 
 void QuickSettings::draw() {
+  // A weather animation frame repaints only the clock card (the buffered
+  // window clips to it); skip the bookkeeping below.
+  bool frame = weather_frame_ && damage() == FL_DAMAGE_CHILD;
+  weather_frame_ = false;
+  if (frame) {
+    draw_children();
+    return;
+  }
   const auto &t = Panel::instance->theme();
   {
     Painter p(w(), h());
@@ -2475,10 +2924,19 @@ void QuickSettings::draw() {
   }
   draw_children();
   sync_native_tray();
-  if (qa_dump_enabled() && body_)
-    qa_dump(this, "@body\t" + std::to_string(body_->x()) + "\t" + std::to_string(body_->y()) +
-                      "\t" + std::to_string(body_->w()) + "\t" + std::to_string(body_->h()) +
-                      "\t1\n");
+  if (qa_dump_enabled() && body_) {
+    std::string extra = "@body\t" + std::to_string(body_->x()) + "\t" +
+                        std::to_string(body_->y()) + "\t" + std::to_string(body_->w()) + "\t" +
+                        std::to_string(body_->h()) + "\t1\n";
+    // "@weather-rain-day" etc. over the clock card while the sky shows.
+    if (auto *cc = dynamic_cast<ClockCard *>(clock_))
+      if (cc->sky())
+        extra += std::string("@weather-") + weather::kind_name(weather::from_wmo(cc->report().code).kind) +
+                 (cc->report().is_day ? "-day" : "-night") + "\t" + std::to_string(cc->x()) +
+                 "\t" + std::to_string(cc->y()) + "\t" + std::to_string(cc->w()) + "\t" +
+                 std::to_string(cc->h()) + "\t1\n";
+    qa_dump(this, extra);
+  }
 }
 
 int QuickSettings::handle(int event) {

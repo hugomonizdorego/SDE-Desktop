@@ -16,7 +16,26 @@ struct AudioStream {
 struct MediaPlayer {
   std::string service, owner, name, title, artist, pid, binary, status = "Stopped";
   bool control = false, play = false, pause = false, next = false, previous = false, raise = false;
+  // Metadata: xesam:album, mpris:artUrl, mpris:trackid and mpris:length.
+  std::string album, art_url, track_id;
+  long long length_us = 0;
+  // Position (microseconds) as read at |position_ms| (steady clock), and
+  // the playback rate, so the seek bar moves between reads.
+  long long position_us = 0, position_ms = 0;
+  double rate = 1.0;
+  bool seek = false;
+  // When the player last started playing or changed track (steady ms);
+  // picks the most recently active player.
+  long long active_ms = 0;
+  // Interpolated position now, clamped to the track length.
+  long long position_now(long long now_ms) const;
 };
+// The player the Action Center shows: one that is Playing (the most
+// recently started), else the most recently active paused one, else any.
+// Returns -1 for an empty list.
+int choose_player(const std::vector<MediaPlayer>& players);
+// "3:07" or "1:02:03".
+std::string format_media_time(long long us);
 struct BluetoothAdapter {
   std::string path, name;
   bool powered = false, discovering = false;
@@ -62,6 +81,8 @@ class PanelControls {
   void bluetooth_device(const std::string& path);
   void bluetooth_forget(const std::string& path);
   void media_command(const std::string& service, const std::string& command);
+  // MPRIS SetPosition (absolute, microseconds); needs CanSeek and a track id.
+  void media_seek(const std::string& service, long long position_us);
   void set_stream_volume(unsigned id, int volume);
   void mute_stream(unsigned id, bool muted);
   void microphone_volume(int percent);

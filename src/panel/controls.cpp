@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -62,7 +63,56 @@ std::string error_text(DBusMessage* r) {
              ? args[0].str()
              : _("Request failed; check the service and permissions");
 }
+long long steady_ms() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+// D-Bus object path syntax (libdbus aborts on an invalid one).
+bool valid_object_path(const std::string& p) {
+  if (p.empty() || p[0] != '/') return false;
+  if (p == "/") return true;
+  if (p.back() == '/' || p.find("//") != std::string::npos) return false;
+  for (char c : p)
+    if (!(isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '/')) return false;
+  return true;
+}
 }  // namespace
+long long MediaPlayer::position_now(long long now_ms) const {
+  long long p = position_us;
+  if (status == "Playing" && position_ms > 0 && now_ms > position_ms)
+    p += (long long)((now_ms - position_ms) * 1000 * rate);
+  if (length_us > 0) p = std::min(p, length_us);
+  return std::max(0LL, p);
+}
+int choose_player(const std::vector<MediaPlayer>& players) {
+  int best = -1;
+  auto rank = [](const MediaPlayer& p) {
+    return p.status == "Playing" ? 2 : p.status == "Paused" ? 1 : 0;
+  };
+  for (size_t i = 0; i < players.size(); ++i) {
+    if (best < 0) {
+      best = int(i);
+      continue;
+    }
+    const auto &a = players[i], &b = players[size_t(best)];
+    int ra = rank(a), rb = rank(b);
+    // Players with a title beat silent ones of the same state (a browser
+    // with no media still registers a player).
+    bool ta = !a.title.empty(), tb = !b.title.empty();
+    if (ra != rb ? ra > rb : ta != tb ? ta : a.active_ms > b.active_ms) best = int(i);
+  }
+  return best;
+}
+std::string format_media_time(long long us) {
+  long long s = std::max(0LL, us / 1000000);
+  char buf[32];
+  if (s >= 3600)
+    snprintf(buf, sizeof buf, "%lld:%02lld:%02lld", s / 3600, s / 60 % 60, s % 60);
+  else
+    snprintf(buf, sizeof buf, "%lld:%02lld", s / 60, s % 60);
+  return buf;
+}
 std::vector<AudioStream> parse_audio_streams(const std::string& text) {
   std::vector<AudioStream> result;
   AudioStream* current = nullptr;
@@ -267,9 +317,13 @@ const BluetoothAdapter* PanelControls::adapter() const {
 std::vector<MediaPlayer> PanelControls::players() const {
   std::vector<MediaPlayer> r;
   for (const auto& p : players_) r.push_back(p.second);
-  std::stable_sort(r.begin(), r.end(), [](const MediaPlayer& a, const MediaPlayer& b) {
-    return a.status == "Playing" && b.status != "Playing";
-  });
+  // The chosen player first, then the other playing ones.
+  int best = choose_player(r);
+  if (best > 0) std::rotate(r.begin(), r.begin() + best, r.begin() + best + 1);
+  std::stable_sort(r.begin() + (r.empty() ? 0 : 1), r.end(),
+                   [](const MediaPlayer& a, const MediaPlayer& b) {
+                     return a.status == "Playing" && b.status != "Playing";
+                   });
   return r;
 }
 void PanelControls::start(std::function<void()> fn) {
@@ -537,9 +591,23 @@ void PanelControls::read_player(const std::string& service, const std::string& o
           return;
         }
         auto& player = players_[service];
+        std::string old_status = player.status, old_track = player.track_id + player.title;
         player.service = service;
         player.owner = owner;
         player.status = prop(v, "PlaybackStatus");
+        if (player.status.empty()) player.status = "Stopped";
+        player.seek = flag(v, "CanSeek");
+        if (auto* r = v.get("Rate")) {
+          double rate = r->inner().type == 'd' ? r->inner().d : double(r->num());
+          player.rate = rate > 0 && rate < 16 ? rate : 1.0;
+        }
+        if (auto* pos = v.get("Position")) {
+          player.position_us = pos->num();
+          player.position_ms = steady_ms();
+        } else {
+          player.position_us = 0;
+          player.position_ms = 0;
+        }
         player.control = flag(v, "CanControl");
         player.play = flag(v, "CanPlay");
         player.pause = flag(v, "CanPause");
@@ -547,8 +615,16 @@ void PanelControls::read_player(const std::string& service, const std::string& o
         player.previous = flag(v, "CanGoPrevious");
         player.title.clear();
         player.artist.clear();
+        player.album.clear();
+        player.art_url.clear();
+        player.track_id.clear();
+        player.length_us = 0;
         if (auto* m = v.get("Metadata")) {
           player.title = prop(*m, "xesam:title");
+          player.album = prop(*m, "xesam:album");
+          player.art_url = prop(*m, "mpris:artUrl");
+          player.track_id = prop(*m, "mpris:trackid");
+          if (auto* len = m->get("mpris:length")) player.length_us = std::max<long long>(0, len->num());
           if (auto* a = m->get("xesam:artist"))
             for (const auto& artist : a->items) {
               if (!player.artist.empty()) player.artist += ", ";
@@ -557,6 +633,11 @@ void PanelControls::read_player(const std::string& service, const std::string& o
         }
         if (player.name.empty())
           player.name = service.substr(std::string("org.mpris.MediaPlayer2.").size());
+        if (player.status == "Playing" &&
+            (old_status != "Playing" || old_track != player.track_id + player.title))
+          player.active_ms = steady_ms();
+        else if (player.status != old_status)
+          player.active_ms = std::max(player.active_ms, steady_ms() - 1);
         changed();
         dbus::get_all_properties(session_, owner, "/org/mpris/MediaPlayer2",
                                  "org.mpris.MediaPlayer2",
@@ -599,6 +680,32 @@ void PanelControls::media_command(const std::string& service, const std::string&
   session_->call_async(m, [this, service](DBusMessage* r) {
     if (!success(r)) message = error_text(r);
     refresh_media();
+    changed();
+  });
+}
+void PanelControls::media_seek(const std::string& service, long long position_us) {
+  auto p = players_.find(service);
+  if (p == players_.end() || !session_) return;
+  auto& v = p->second;
+  if (!v.control || !v.seek || !valid_object_path(v.track_id) ||
+      v.track_id == "/org/mpris/MediaPlayer2/TrackList/NoTrack" || v.length_us <= 0)
+    return;
+  position_us = std::max(0LL, std::min(position_us, v.length_us));
+  auto* m = dbus::method(v.owner, "/org/mpris/MediaPlayer2", "org.mpris.MediaPlayer2.Player",
+                         "SetPosition");
+  {
+    dbus::Writer w(m);
+    w.path(v.track_id);
+    dbus_int64_t pos = position_us;
+    dbus_message_iter_append_basic(w.iter(), DBUS_TYPE_INT64, &pos);
+  }
+  // Show the new position at once; the player confirms on the next read.
+  v.position_us = position_us;
+  v.position_ms = steady_ms();
+  session_->call_async(m, [this, service](DBusMessage* r) {
+    if (!success(r)) message = error_text(r);
+    auto p = players_.find(service);
+    if (p != players_.end()) read_player(service, p->second.owner);
     changed();
   });
 }
