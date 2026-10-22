@@ -321,7 +321,17 @@ void TaskPreview::hide_soon() {
   Fl::add_timeout(0.25, hide_timeout, this);
 }
 void TaskPreview::cancel_hide() { Fl::remove_timeout(hide_timeout, this); }
-void TaskPreview::hide_timeout(void *data) { static_cast<TaskPreview *>(data)->hide_now(); }
+void TaskPreview::hide_timeout(void *data) {
+  auto *self = static_cast<TaskPreview *>(data);
+  // The pointer moved onto the preview (its Enter may come before the
+  // panel's Leave): keep it.
+  int rx, ry;
+  Fl::get_mouse(rx, ry);
+  if (self->shown() && rx >= self->x() && rx < self->x() + self->w() && ry >= self->y() &&
+      ry < self->y() + self->h())
+    return;
+  self->hide_now();
+}
 
 void TaskPreview::hide_now() {
   Fl::remove_timeout(hide_timeout, this);
@@ -427,6 +437,7 @@ int TaskPreview::handle(int event) {
       cancel_hide();
       [[fallthrough]];
     case FL_MOVE: {
+      cancel_hide();
       int i = item_at(Fl::event_x(), Fl::event_y());
       bool hc = on_close(i, Fl::event_x(), Fl::event_y());
       if (i != hot_ || hc != hot_close_) {
