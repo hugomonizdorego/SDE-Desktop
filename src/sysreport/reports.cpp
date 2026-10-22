@@ -105,7 +105,12 @@ std::vector<CrashReport> parse_crash_log(const std::string &log, const std::stri
         const std::string &prev = out.back().program;
         dup = prev == r.program || prev == "sde-" + r.program || ends_with(prev, r.program);
       }
-      if (!dup) out.push_back(r);
+      if (dup) {
+        // The session's line carries the time of the crash itself.
+        if (!r.time.empty()) out.back().time = r.time;
+      } else {
+        out.push_back(r);
+      }
     }
   }
   return out;

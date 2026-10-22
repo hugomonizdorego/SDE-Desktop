@@ -203,7 +203,8 @@ static void test_reports() {
   if (list.size() == 3) {
     CHECK_EQ(list[0].program, "sde-panel");
     CHECK_EQ(list[0].signal, "Segmentation fault");
-    CHECK_EQ(list[0].time, "09:14:02");
+    CHECK_EQ(list[0].time, "09:20:11");
+    CHECK_EQ(list[1].time, "09:31:45");
     CHECK(list[0].has_backtrace);
     CHECK(list[0].backtrace.find("_ZN3sde5Panel4drawEv") != std::string::npos);
     CHECK(list[0].backtrace.find("end of backtrace") == std::string::npos);

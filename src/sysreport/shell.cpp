@@ -60,7 +60,7 @@ class ShellWindow : public BufferedWindow {
       if (sw) {
         p.fill_rect(0, 0, sw, h(), t.surface_alt);
         p.line(sw - 0.5, 0, sw - 0.5, h(), t.border);
-        p.image(IconLoader::get({g_opts.about.icon, "start-here", "computer"}, S(36)), S(20), S(22), S(36));
+        p.image(IconLoader::get({g_opts.about.icon, "sde-logo", "computer"}, S(36)), S(20), S(22), S(36));
         for (size_t i = 0; i < g_opts.pages.size(); ++i) {
           const PageDef &d = g_opts.pages[i];
           int y = items_top() + int(i) * item_h();
@@ -178,7 +178,8 @@ class Hero : public Fl_Widget {
                      Color::hex(0xffffff, 0.16));
       p.image(IconLoader::get(icons_, isz), x() + S(34), y() + (h() - isz) / 2.0, isz);
     }
-    Color fg = t.on_accent;
+    // The gradient ends dark: white text reads on every accent.
+    Color fg = Color::hex(0xffffff);
     int tx = x() + S(26) + isz + S(36);
     text_font(t.font_size + 12, true);
     draw_text(title_, tx, y() + h() / 2 - S(40), w() - (tx - x()) - S(20), S(40), fg);
@@ -216,7 +217,8 @@ class StepBox : public Fl_Widget {
     draw_text(title_, x() + S(82), y() + S(14), w() - S(100), S(26), t.text);
     if (!status_.empty()) {
       text_font(t.font_size, true);
-      draw_text(status_, x() + S(98), y() + S(40), w() - S(116), S(22), status_color_);
+      // Status colors (yellow especially) are darkened toward the text color to stay readable.
+      draw_text(status_, x() + S(98), y() + S(40), w() - S(116), S(22), status_color_.mix(t.text, 0.45));
     }
   }
 
@@ -307,6 +309,7 @@ void apply_config(bool retheme) {
     reload_compositor();
     g_theme = Theme::from_config(g_cfg);
     g_theme.apply_to_fltk();
+    IconLoader::set_theme(g_cfg.get("appearance", "icon_theme", "auto"));
     IconLoader::clear_cache();
     if (g_switch) g_switch->redraw();
     build_current();

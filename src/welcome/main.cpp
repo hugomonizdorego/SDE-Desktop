@@ -9,6 +9,7 @@
 // /etc/xdg/autostart/sde-welcome.desktop ("sde-welcome --autostart") while
 // sde.conf [welcome] show=true; the sidebar switch turns that off.
 #include <FL/Fl.H>
+#include <FL/Fl_Window.H>
 #include <FL/fl_ask.H>
 
 #include <algorithm>
@@ -285,7 +286,7 @@ void build_panel_layout(Page *page) {
 
 void build_welcome(Page *page) {
   std::string os = os_release("PRETTY_NAME");
-  shell::hero(page, {"start-here", "distributor-logo", "debian-logo", "user-desktop", "computer"},
+  shell::hero(page, {"sde-logo", "start-here", "computer"},
               _("Welcome to SDE"),
               format(_("The Selviana Desktop Environment %s on %s, by the DebION Dev-Team. Thank you "
                        "for trying it!"),
@@ -440,7 +441,7 @@ void build_first_steps(Page *page) {
                 actions, status, &sc);
   }
 
-  shell::step(page, {"dialog-warning", "utilities-system-monitor", "computer"}, _("System Reports"),
+  shell::step(page, {"apport", "utilities-system-monitor", "dialog-warning"}, _("System Reports"),
               _("If an SDE program crashes, its report with a backtrace is listed here, ready to "
                 "copy or send to the developers on GitHub."),
               {{_("Launch"), [] { shell::show_page("reports"); }}});
@@ -449,24 +450,24 @@ void build_first_steps(Page *page) {
 void build_help(Page *page) {
   page->heading(_("Documentation & Help"), _("Learn how SDE works and where to get help"));
   std::string local = std::string(SDE_DATADIR) + "/doc/sde";
-  shell::step(page, {"help-contents", "help-browser", "accessories-dictionary"}, _("Documentation"),
+  shell::step(page, {"help-browser", "system-help", "help-contents"}, _("Documentation"),
               _("Guides for the desktop, the suite and building SDE, including the release notes of "
                 "each alpha."),
               {{_("Open"), [] { shell::open_url(welcome::kDocsUrl); }, true},
                {_("Local Copy"), [local] { shell::open_url(dir_exists(local) ? local : "/usr/share/doc/sde"); }}});
-  shell::step(page, {"dialog-question", "help-faq", "help-browser"}, _("Troubleshooting"),
+  shell::step(page, {"system-help", "dialog-question", "help-browser"}, _("Troubleshooting"),
               _("What to do when the panel restarts in safe mode, the compositor misbehaves or a "
                 "program will not start. \"sde-session --check\" in a terminal tests the "
                 "installation."),
               {{_("Open"), [] {
                   shell::open_url(std::string(welcome::kProjectUrl) + "/blob/main/docs/TROUBLESHOOTING.md");
                 }}});
-  shell::step(page, {"bug", "tools-report-bug", "dialog-warning"}, _("Report a problem"),
+  shell::step(page, {"bug-buddy", "apport", "dialog-warning"}, _("Report a problem"),
               _("Found a bug or have an idea? Open an issue on GitHub. System Reports fills in the "
                 "details for crashes."),
               {{_("Open Issues"), [] { shell::open_url(welcome::kIssuesUrl); }},
                {_("System Reports"), [] { shell::show_page("reports"); }}});
-  shell::step(page, {"user-available", "system-users", "internet-group-chat"}, _("Debian community"),
+  shell::step(page, {"internet-chat", "system-users"}, _("Debian community"),
               _("DebION follows Debian testing, so Debian's documentation, wiki and forums answer "
                 "most questions about packages and hardware."),
               {{_("Debian Wiki"), [] { shell::open_url("https://wiki.debian.org/"); }},
@@ -489,7 +490,7 @@ void build_contribute(Page *page) {
               {{_("How to Translate"), [] {
                   shell::open_url(std::string(welcome::kProjectUrl) + "/blob/main/po/README.md");
                 }}});
-  shell::step(page, {"tools-report-bug", "bug", "dialog-information"}, _("Testing"),
+  shell::step(page, {"applications-science", "bug-buddy", "applications-utilities"}, _("Testing"),
               _("Every alpha needs testers. Report what works and what does not, with the system "
                 "information from System Reports."),
               {{_("Report a Problem"), [] { shell::open_url(welcome::kIssuesUrl); }}});
@@ -500,7 +501,7 @@ AppInfo app_info() {
   info.name = _("SDE Welcome");
   info.program = "sde-welcome";
   info.version = SDE_VERSION;
-  info.icon = "start-here";
+  info.icon = "sde-logo";
   info.description = _("First steps with SDE on DebION: colors, panel layout, updates, drivers, "
                        "snapshots, firewall, codecs and help.");
   info.credits = {_("Welcome screen concept after Linux Mint's mintwelcome (no code or artwork "
@@ -550,12 +551,12 @@ int main(int argc, char **argv) {
   o.width = 980;
   o.height = 700;
   o.pages = {
-      {"welcome", _("Welcome"), {"go-home", "user-home", "start-here"}, build_welcome},
-      {"first-steps", _("First Steps"), {"emblem-default", "object-select", "starred"}, build_first_steps},
+      {"welcome", _("Welcome"), {"user-home", "go-home"}, build_welcome},
+      {"first-steps", _("First Steps"), {"preferences-desktop", "emblem-default"}, build_first_steps},
       {"drivers", _("Driver Manager"), {"jockey", "application-x-firmware", "preferences-system", "computer"},
        sysreport::build_drivers_page},
-      {"reports", _("System Reports"), {"dialog-warning", "utilities-system-monitor"}, sysreport::build_reports_page},
-      {"help", _("Documentation"), {"help-contents", "help-browser"}, build_help},
+      {"reports", _("System Reports"), {"apport", "utilities-system-monitor", "dialog-warning"}, sysreport::build_reports_page},
+      {"help", _("Documentation"), {"help-browser", "help-contents"}, build_help},
       {"contribute", _("Contribute"), {"emblem-favorite", "starred"}, build_contribute},
   };
   bool known = false;

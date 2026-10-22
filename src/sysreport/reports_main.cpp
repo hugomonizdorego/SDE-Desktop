@@ -46,11 +46,11 @@ int main(int argc, char **argv) {
   o.about.name = _("System Reports");
   o.about.program = "sde-system-reports";
   o.about.version = SDE_VERSION;
-  o.about.icon = "dialog-warning";
+  o.about.icon = "apport";
   o.about.description = _("Lists crash reports of SDE programs and helps send them to the developers.");
   o.about.credits = {_("Concept after Linux Mint's System Reports (no code used)"), toolkit_credit()};
   o.width = 820;
   o.height = 680;
-  o.pages = {{"reports", _("System Reports"), {"dialog-warning"}, sysreport::build_reports_page}};
+  o.pages = {{"reports", _("System Reports"), {"apport", "dialog-warning"}, sysreport::build_reports_page}};
   return shell::run(std::move(o));
 }
