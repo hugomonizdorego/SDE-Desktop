@@ -159,7 +159,38 @@ int main() {
     }
     CHECK(tap && scroll && click && speed);
   }
+  // alpha51: the battery flyout's text, power profile order and the
+  // taskbar preview geometry.
+  {
+    CHECK(battery_duration_text(237) == "3 hours 57 minutes");
+    CHECK(battery_duration_text(60) == "1 hour");
+    CHECK(battery_duration_text(1) == "1 minute");
+    CHECK(battery_duration_text(-1).empty() && battery_duration_text(0).empty());
+    CHECK(battery_status_line(false, false, 237) ==
+          "Using battery power - 3 hours 57 minutes remaining");
+    CHECK(battery_status_line(true, false, 70) == "Charging - 1 hour 10 minutes until full");
+    CHECK(battery_status_line(true, true, 70) == "Fully charged");
+    CHECK(battery_status_line(true, false, -1) == "Charging");
+    CHECK(battery_status_line(false, false, -1) == "Using battery power");
+    CHECK(battery_model_name("LGES", "AP23A8L") == "LGES AP23A8L");
+    CHECK(battery_model_name(" ", "AP23A8L\n") == "AP23A8L");
+    CHECK(battery_model_name("SMP", "SMP 5B10W") == "SMP 5B10W");
+    CHECK(battery_model_name("", "").empty());
+    auto order = ordered_power_profiles({"performance", "balanced", "custom", "power-saver"});
+    CHECK((order == std::vector<std::string>{"power-saver", "balanced", "performance", "custom"}));
+    PreviewSize s = preview_fit(1920, 1080, 220, 140);
+    CHECK(s.w == 220 && s.h == 124);
+    s = preview_fit(600, 1200, 220, 140);
+    CHECK(s.w == 70 && s.h == 140);
+    s = preview_fit(100, 50, 220, 140);  // never enlarged
+    CHECK(s.w == 100 && s.h == 50);
+    s = preview_fit(0, 50, 220, 140);
+    CHECK(s.w == 0 && s.h == 0);
+    CHECK(preview_column_width(1, 220, 120, 6, 1000) == 220);
+    CHECK(preview_column_width(5, 220, 120, 6, 800) == 155);
+    CHECK(preview_column_width(20, 220, 120, 6, 800) == 120);
+  }
   if (failures) return 1;
-  printf("Panel status rules (tooltips, LED, keyboard, drives, touchpad) passed\n");
+  printf("Panel status rules (tooltips, LED, keyboard, drives, touchpad, battery, previews) passed\n");
   return 0;
 }

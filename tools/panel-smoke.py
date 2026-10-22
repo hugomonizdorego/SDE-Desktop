@@ -32,6 +32,10 @@ e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),
 e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
+# alpha51: a battery (SDE_POWER_SUPPLY_DIR, see refresh_battery in quick.cpp):
+# 45 %, discharging, 3 h 57 min left.
+e['SDE_POWER_SUPPLY_DIR']=str(home/'power');(home/'power/BAT0').mkdir(parents=True)
+for k,v in {'type':'Battery','capacity':'45','status':'Discharging','energy_now':'39550000','energy_full':'88000000','power_now':'10000000','manufacturer':'LGES','model_name':'AP23A8L'}.items():(home/'power/BAT0'/k).write_text(v+'\n')
 (home/'backlight/qa_backlight').mkdir(parents=True);(home/'backlight/qa_backlight/brightness').write_text('60\n');(home/'backlight/qa_backlight/max_brightness').write_text('100\n')
 FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Touchpad','Tray','Alarms']
 def spawn(*cmd):
@@ -118,15 +122,21 @@ def click_panel(name,expect=None):
             if w:return w
             time.sleep(.08)
     return find(expect)
+SIZES={}
+def size_report(name,g):
+    """alpha51: popup sizes (logical px at 100 %) for the size report."""
+    key=name
+    if key not in SIZES:
+        SIZES[key]=(g['w'],g['h']);print(f'SIZE {name} {g["w"]}x{g["h"]} ({round(g["w"]/scale)}x{round(g["h"]/scale)} at 100%)',flush=True)
 def bounds(ac,top=False):
     """The Action Center sits in the panel's corner, on screen."""
-    g=geom(ac);pg=geom(panel)
+    g=geom(ac);pg=geom(panel);size_report('Action Center',g)
     assert g['x']+g['w']==pg['x']+pg['w'],(g,pg)
     assert g['y']==pg['y']+pg['h'] if top else g['y']+g['h']==pg['y'],(g,pg)
     assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,(g,pg)
 def flyout_bounds(fl,section,top=False):
     """A flyout sits above (below a top panel) its status icon, fully on screen."""
-    g=geom(fl);pg=geom(panel);margin=round(8*scale)
+    g=geom(fl);pg=geom(panel);margin=round(8*scale);size_report(section,g)
     assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,(section,g)
     if top:assert pg['y']+pg['h']<=g['y']<=pg['y']+pg['h']+2*margin,(section,g,pg)
     else:assert pg['y']-2*margin<=g['y']+g['h']<=pg['y'],(section,g,pg)
@@ -135,7 +145,7 @@ def flyout_bounds(fl,section,top=False):
         center=pg['x']+r[0]+r[2]/2
         clamped=g['x']<=margin+1 or g['x']+g['w']>=W-margin-1
         assert clamped or abs(g['x']+g['w']/2-center)<=2,(section,g,center)
-    assert g['w']<=round(362*scale),(section,g)
+    assert g['w']<=round(400*scale),(section,g)
 def only_open(title):
     for other in FLYOUTS+['Action Center']:
         if other!=title:assert not visible('^'+other+'$'),f'{other} open together with {title}'
@@ -484,6 +494,96 @@ def panel_checks_a50():
     press('Touchpad','Touchpad settings...');gone('^Touchpad$');waitfor(lambda:commands('SETTINGS --page touchpad'),'Touchpad settings link missing')
     hover_panel('status:touchpad');run('xdotool','click','2');run('import','-window','root',out/'15-touchpad-indicator-click.png')
     fl=find('^Touchpad$');escape('Touchpad')
+def preview_checks():
+    """alpha51 taskbar previews: hovering a task button shows the window
+    title and a thumbnail (one per window of the application), a minimized
+    window keeps a cached thumbnail, moving to another button swaps at once,
+    clicking a thumbnail activates the window and × closes it."""
+    def preview():return layout('SDE Preview')
+    def thumbs():return {k.split(':',3)[3]:k.split(':')[1:3] for k in preview() if k.startswith('@thumb:')}
+    def task_button(title):
+        L=layout('SDE Panel');return next((v for k,v in L.items() if k.startswith('task:'+title)),None)
+    def hover_task(title):
+        r=waitfor(lambda:task_button(title),'no taskbar button for '+title);g=geom(panel)
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2)
+    def away():run('xdotool','mousemove',W//2,round(60*scale));time.sleep(.6)
+    def active():return run('xdotool','getactivewindow',check=False).stdout.strip()
+    spawn('openbox','--sm-disable')
+    waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'openbox did not start')
+    window=str(a.test_dir.resolve()/'sde-preview-window')
+    one=sp.Popen([window,'SDE Preview QA One','2563EB'],env=e,stdout=open(home/'preview-one.log','w'))
+    two=sp.Popen([window,'SDE Preview QA Two','16A34A'],env=e,stdout=open(home/'preview-two.log','w'))
+    other=sp.Popen([window,'SDE Preview QA Other','DC2626','SDE-Preview-Other'],env=e,stdout=open(home/'preview-other.log','w'))
+    processes.extend([one,two,other])
+    w1=find('^SDE Preview QA One$');find('^SDE Preview QA Two$');find('^SDE Preview QA Other$')
+    for t in ['SDE Preview QA One','SDE Preview QA Two','SDE Preview QA Other']:
+        waitfor(lambda:task_button(t),'no taskbar button for '+t)
+    time.sleep(.5)
+    # Hover: nothing at once, the preview after the delay, with the title
+    # and a live thumbnail of each window of the application.
+    hover_task('SDE Preview QA One');time.sleep(.15)
+    assert not visible('^SDE Preview$'),'preview shown before the delay'
+    pv=find('^SDE Preview$')
+    waitfor(lambda:'preview:SDE Preview QA One' in preview() and 'preview:SDE Preview QA Two' in preview(),'preview without both windows of the application')
+    th=waitfor(lambda:thumbs().get('SDE Preview QA One'),'no thumbnail for One')
+    assert th[0]=='live',th
+    tw,tt=map(int,th[1].split('x'));assert 0<tw<=round(220*scale)+1 and 0<tt<=round(140*scale)+1,th
+    assert 'SDE Preview QA Other' not in thumbs(),'another application in the preview'
+    g=geom(pv);pg=geom(panel)
+    assert g['x']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=pg['y'],('preview not above the panel',g,pg)
+    size_report('Preview (2 windows)',g)
+    print(f'PREVIEW hover: SDE Preview QA One thumbnail {th[0]} {th[1]}',flush=True)
+    shot('30-preview-hover')
+    # Another button swaps at once (no new delay).
+    hover_task('SDE Preview QA Other');time.sleep(.15)
+    waitfor(lambda:'preview:SDE Preview QA Other' in preview(),'preview did not swap at once',tries=4)
+    assert 'preview:SDE Preview QA One' not in preview()
+    away();gone('^SDE Preview$')
+    # Minimized: the cached picture.
+    run('xdotool','windowminimize',w1)
+    waitfor(lambda:any(k.startswith('task:SDE Preview QA One:minimized') for k in layout('SDE Panel')),'One not minimized')
+    hover_task('SDE Preview QA One');pv=find('^SDE Preview$')
+    th=waitfor(lambda:thumbs().get('SDE Preview QA One'),'no thumbnail for the minimized window')
+    assert th[0]=='cached',('minimized window without its cached thumbnail',th)
+    print(f'PREVIEW minimized: SDE Preview QA One thumbnail {th[0]} {th[1]}',flush=True)
+    shot('31-preview-minimized')
+    # A click on the thumbnail activates (restores) the window.
+    r=item('SDE Preview','preview:SDE Preview QA One');g=geom(pv)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[3]*2//3,'click','1')
+    gone('^SDE Preview$')
+    waitfor(lambda:active()==w1,'thumbnail click did not activate the window')
+    waitfor(lambda:not any(k.startswith('task:SDE Preview QA One:minimized') for k in layout('SDE Panel')),'window not restored')
+    print('PREVIEW click: SDE Preview QA One activated',flush=True)
+    # The × of a thumbnail closes that window.
+    hover_task('SDE Preview QA Two');pv=find('^SDE Preview$')
+    r=item('SDE Preview','preview:SDE Preview QA Two');g=geom(pv)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[3]//2);time.sleep(.3)
+    c=item('SDE Preview','close:SDE Preview QA Two')
+    run('xdotool','mousemove',g['x']+c[0]+c[2]//2,g['y']+c[1]+c[3]//2);time.sleep(.3);shot('32-preview-close')
+    run('xdotool','click','1')
+    waitfor(lambda:two.poll() is not None,'close button did not close the window')
+    waitfor(lambda:not task_button('SDE Preview QA Two'),'closed window kept its button')
+    away()
+    # [panel] window_previews=false: no preview.
+    config(extra='[panel]\nwindow_previews=false\n');reload()
+    hover_task('SDE Preview QA One');time.sleep(1.0)
+    assert not visible('^SDE Preview$'),'preview shown with window_previews=false'
+    away();config();reload()
+    for proc in (one,other):proc.terminate()
+    print('PANEL a51: taskbar previews (delay, grouped thumbnails, instant swap, cached thumbnail of a minimized window, click activates, close button, setting) PASS',flush=True)
+def battery_checks():
+    """alpha51 battery flyout in the spirit of the Cinnamon power applet:
+    battery and model, state with the remaining time, brightness, power
+    profiles as text rows, Power Settings."""
+    fl=open_section('power','Power');flyout_bounds(fl,'power')
+    for name in ['45% LGES AP23A8L','Using battery power - 3 hours 57 minutes remaining','Brightness','Power Saver','Balanced','Performance','Power Settings']:item('Power',name,active=False)
+    L=layout('Power');assert L['45% LGES AP23A8L'][1]<L['Brightness'][1]<L['Power Saver'][1]<L['Balanced'][1]<L['Performance'][1]<L['Power Settings'][1],L
+    g=geom(fl);assert g['w']<=round(400*scale) and g['h']<=round(320*scale),g
+    shot('24-battery-flyout')
+    press('Power','Power Saver');waitfor(lambda:commands('PROFILE set power-saver'),'power profile not set')
+    press('Power','Power Settings');gone('^Power$')
+    waitfor(lambda:commands('SETTINGS --page power'),'Power Settings did not open sde-settings --page power')
+    print('PANEL a51: battery flyout (model, remaining time, brightness, profiles, Power Settings) PASS',flush=True)
 def drive_checks():
     """Removable drives through UDisks2: open (mount + Liria), eject while
     busy (programs named), eject (unmount + power off), new drive (notify,
@@ -558,6 +658,15 @@ elif a[0]=='set-source-volume':state['mic']=int(a[2].strip('%'))
 elif a[0]=='set-source-mute':state['mic_mute']=not state['mic_mute']
 if a[0].startswith('set-'):path.write_text(json.dumps(state))
 ''')
+(home/'bin/powerprofilesctl').write_text('''#!/bin/sh
+p=$(cat "$HOME/profile" 2>/dev/null || echo balanced)
+echo "PROFILE $*" >> "$HOME/commands.log"
+if [ "$1" = set ]; then echo "$2" > "$HOME/profile"; exit 0; fi
+for n in performance balanced power-saver; do
+  if [ "$n" = "$p" ]; then echo "* $n:"; else echo "  $n:"; fi
+  echo "    Driver:     placeholder"; echo
+done
+''')
 for f in (home/'bin').iterdir():f.chmod(0o755)
 try:
     if a.tcp_bus:
@@ -621,6 +730,7 @@ try:
     waitfor(lambda:'expanded=false' in conf(),'compact mode not saved')
     waitfor(lambda:'Calendar' not in layout('Action Center') and 'Show more' in layout('Action Center'),'compact mode still shows the calendar')
     time.sleep(.4);ac=find('^Action Center$');assert geom(ac)['h']<tall or tall>=H-round(80*scale),(geom(ac),tall);bounds(ac)
+    size_report('Action Center compact',geom(ac))
     shot('03-action-center-compact')
     run('xdotool','mousemove','10','10','click','1');gone('^Action Center$')
     # The clock opens its alarms popup; its calendar link opens the Action
@@ -783,6 +893,7 @@ try:
     press('Sound','Mute application');waitfor(lambda:commands('AUDIO set-sink-input-mute 0 1'),'per-application mute command missing')
     shot('09-sound-mixer-scrolled')
     escape('Sound')
+    battery_checks()
     drive_checks()
     for section,title in [('power','Power'),('drives','Drives'),('keyboard','Keyboard'),('touchpad','Touchpad')]:
         fl=open_section(section,title);flyout_bounds(fl,section);shot('10-flyout-'+section);escape(title)
@@ -809,6 +920,7 @@ try:
     assert panel_proc.poll() is None,'service disappearance crashed panel'
     fl=open_section('bluetooth','Bluetooth');shot('15-services-disconnected');escape('Bluetooth')
     command(['--action-center'],'Action Center');escape('Action Center')
+    preview_checks()
     assert panel_proc.poll() is None,'panel exited'
     print('PANEL a50: tooltips name the hovered icon at once, no media icon, one keyboard indicator, network LED and switches, drives (open/eject/busy/notify/automount), touchpad indicator, popups take input after a screenshot grab PASS',flush=True)
     print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
