@@ -2266,7 +2266,7 @@ void QuickSettings::network_section(SectionBuilder &b) {
           [](Painter &p, double x, double y, double z, const Color &ink) {
             glyph::gear(p, x, y, z, ink);
           },
-          [] { SystemStatus::get().troubleshoot_network(); });
+          [] { PanelControls::get().troubleshoot_network(); });
     b.row(_("Check internet connection"), network_icon,
           [] {
             auto &s = SystemStatus::get();
@@ -2323,8 +2323,9 @@ void QuickSettings::network_section(SectionBuilder &b) {
     if (!d.gateway.empty()) b.info(std::string(_("Gateway")) + ": " + d.gateway);
     if (!d.dns.empty()) b.info("DNS: " + d.dns);
     if (d.kind == "ethernet")
-      b.row(d.state == "connected" ? _("Disconnect LAN") : _("Connect LAN"), network_icon,
-            [d] { PanelControls::get().network_device(d.device, d.state != "connected"); });
+      // "connected (externally)" counts as connected too.
+      b.row(d.state.rfind("connected", 0) == 0 ? _("Disconnect LAN") : _("Connect LAN"), network_icon,
+            [d] { PanelControls::get().network_device(d.device, d.state.rfind("connected", 0) != 0); });
     b.end_card(card);
   }
   b.settings_row(_("Network settings"), settings_for("network", {"nm-connection-editor"}));
