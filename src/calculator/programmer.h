@@ -21,7 +21,7 @@ namespace calc {
 struct ProgResult {
   bool ok = false;
   uint64_t value = 0;  // masked to the word size
-  ErrorKind error = ErrorKind::None;
+  ErrorKind error = ErrorKind::Ok;
   std::string message;
 };
 

@@ -191,8 +191,15 @@ class CalcWindow : public sde::BufferedWindow {
   bool evaluated_ = false;  // the result of "=" is shown
   bool preview_ = false;    // result_ is a live preview
   bool second_ = false, hyp_ = false;
-  uint64_t pvalue_ = 0;
+  uint64_t pvalue_ = 0, pans_ = 0;
   bool pvalid_ = true;
+  std::string saved_[3];  // expression of decimal, programmer and converter modes
+  struct Slot {
+    int row, col, span;
+    bool memory_row;
+  };
+  std::vector<Slot> slots_;
+  int rows_ = 0, cols_ = 0;
   Number conv_value_ = 0;
   bool conv_ok_ = false;
 

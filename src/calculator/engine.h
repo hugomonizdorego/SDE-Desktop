@@ -36,7 +36,7 @@ using Number = long double;
 enum class Angle { Degrees, Radians, Gradians };
 
 enum class ErrorKind {
-  None,
+  Ok,
   Incomplete,    // the expression ends early, e.g. "2+" (no error while typing)
   Syntax,        // misplaced token, unknown name
   DivideByZero,  // "Cannot divide by zero"
@@ -48,7 +48,7 @@ enum class ErrorKind {
 struct Result {
   bool ok = false;
   Number value = 0;
-  ErrorKind error = ErrorKind::None;
+  ErrorKind error = ErrorKind::Ok;
   std::string message;  // translated, empty when ok
   int position = -1;    // byte offset of the problem, -1 when unknown
 };

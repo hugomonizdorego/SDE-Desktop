@@ -597,7 +597,7 @@ class Parser {
 
 std::string error_message(ErrorKind kind) {
   switch (kind) {
-    case ErrorKind::None: return "";
+    case ErrorKind::Ok: return "";
     case ErrorKind::Incomplete: return _("Incomplete expression");
     case ErrorKind::Syntax: return _("Invalid expression");
     case ErrorKind::DivideByZero: return _("Cannot divide by zero");
