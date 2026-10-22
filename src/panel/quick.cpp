@@ -1588,6 +1588,7 @@ void QuickSettings::closed() {
   brightness_open_ = false;
   PanelControls::get().stop_scan();
   calendar_view_ = false;
+  media_view_ = false;
 }
 bool QuickSettings::expanded() const {
   return calendar_view_ || Panel::instance->config().get_bool("action_center", "expanded", true);
@@ -1997,11 +1998,14 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
   b.end_card(card);
 }
 
-void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
+void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p, bool mini) {
   const auto &t = Panel::instance->theme();
   int pad = b.pad, inner = b.inner;
   auto *card = b.start_card("");
-  int x = pad + S(12), w = inner - S(24), art = S(48);
+  // |mini| (alpha52, small screens): the transport buttons beside the
+  // title and no time labels, about 90 px instead of 150.
+  int x = pad + S(12), w = inner - S(24), art = mini ? S(40) : S(48);
+  int row_y = b.y;
   // Album art (mpris:artUrl) or a note on an accent tile.
   std::string url = p.art_url;
   struct Cover : Fl_Widget {
@@ -2034,12 +2038,13 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
   std::string title = p.title.empty() ? p.name : p.title;
   std::string artist = !p.artist.empty() ? p.artist : p.title.empty() ? std::string() : p.name;
   if (!p.album.empty() && !p.artist.empty()) artist += " — " + p.album;
-  int tx = x + art + S(12), tw = w - art - S(12);
-  auto *tl = new ActionLabel(tx, b.y + S(3), tw, S(22), [title] { return title; }, 1);
+  int tx = x + art + S(12), tw = w - art - S(12) - (mini ? 3 * S(34) + S(4) : 0);
+  int ty = mini ? b.y - S(1) : b.y + S(3);
+  auto *tl = new ActionLabel(tx, ty, tw, S(22), [title] { return title; }, 1);
   tl->copy_tooltip((std::string(_("Now playing")) + ": " + title).c_str());
-  auto *al = new ActionLabel(tx, b.y + S(25), tw, S(20), [artist] { return artist; }, 2);
+  auto *al = new ActionLabel(tx, ty + S(mini ? 20 : 22), tw, S(20), [artist] { return artist; }, 2);
   if (!artist.empty()) al->copy_tooltip((std::string(_("Artist")) + ": " + artist).c_str());
-  b.y += art + S(8);
+  b.y += art + S(mini ? 4 : 8);
   // Seek bar with the elapsed and total time.
   std::string service = p.service;
   media_service_ = service;
@@ -2067,12 +2072,16 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
       return std::string();
     };
   };
-  new ActionLabel(x, b.y, w / 2, S(18), time_of(false), 2);
-  new ActionLabel(x + w / 2, b.y, w - w / 2, S(18),
-                  [f = time_of(true)] { return f(); }, 4);
-  b.y += S(20);
+  if (!mini) {
+    new ActionLabel(x, b.y, w / 2, S(18), time_of(false), 2);
+    new ActionLabel(x + w / 2, b.y, w - w / 2, S(18),
+                    [f = time_of(true)] { return f(); }, 4);
+    b.y += S(20);
+  }
   // Only previous, play/pause and next.
-  int bw = S(40), gap = S(12), cx = x + (w - 3 * bw - 2 * gap) / 2;
+  int bw = mini ? S(34) : S(40), gap = mini ? S(1) : S(12),
+      cx = mini ? x + w - 3 * bw - 2 * gap : x + (w - 3 * bw - 2 * gap) / 2;
+  int by = mini ? row_y + (art - S(32)) / 2 : b.y;
   bool playing = p.status == "Playing";
   struct B {
     const char *tip, *cmd;
@@ -2084,7 +2093,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
                  {N_("Next"), "Next", 3, p.control && p.next}};
   for (int i = 0; i < 3; ++i) {
     std::string cmd = buttons[i].cmd;
-    auto *btn = new ActionButton(cx + i * (bw + gap), b.y, bw, S(32), "",
+    auto *btn = new ActionButton(cx + i * (bw + gap), by, bw, S(32), "",
                                  transport_icon(buttons[i].icon),
                                  [service, cmd] { PanelControls::get().media_command(service, cmd); },
                                  i == 1 ? std::function<bool()>([] { return true; }) : nullptr, -1,
@@ -2093,7 +2102,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
     if (!buttons[i].on) btn->deactivate();
   }
   (void)t;
-  b.y += S(34);
+  if (!mini) b.y += S(34);
   b.end_card(card);
 }
 
@@ -2802,7 +2811,7 @@ void QuickSettings::tiles_part(SectionBuilder &b, bool all) {
   b.y += int((count + columns - 1) / columns) * (th + gap) + S(2);
 }
 
-void QuickSettings::sliders_part(SectionBuilder &b) {
+void QuickSettings::sliders_part(SectionBuilder &b, bool settings) {
   const auto &s = SystemStatus::get();
   if (s.audio.available || s.brightness.available) {
     auto *card = b.start_card("");
@@ -2811,14 +2820,14 @@ void QuickSettings::sliders_part(SectionBuilder &b) {
     b.y -= S(2);
     b.end_card(card);
   }
-  if (brightness_open_) brightness_settings(b);
+  if (brightness_open_ && settings) brightness_settings(b);
 }
 
-bool QuickSettings::media_part(SectionBuilder &b) {
+bool QuickSettings::media_part(SectionBuilder &b, bool mini) {
   if (!Panel::instance->config().get_bool("action_center", "show_media", true)) return false;
   auto players = PanelControls::get().players();
   if (players.empty()) return false;
-  player_card(b, players.front());
+  player_card(b, players.front(), mini);
   return true;
 }
 
@@ -3180,6 +3189,7 @@ void QuickSettings::rebuild() {
   bool titled = section_ != "power";
   header_ = titled ? S(popup_style::kHeader) : S(4);
   footer_ = 0;
+  footer_w_ = 0;
 
   begin();
   scroll_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_));
@@ -3230,9 +3240,10 @@ struct QuickSettings::CenterPlan {
   std::string name;
   bool two = false;        // two columns: calendar beside the controls
   bool tiles_all = false;  // every tile, else the row of toggles
-  int media = 0;           // the player card: 0 hidden, 1 left, 2 right column
+  int media = 0;           // the player card: 0 hidden, 1 left, 2 right column, 3 right (mini)
   bool calendar = false, tz = false, agenda = false, notif = false;
   int cal_row = 29;        // calendar week row height at 100 %
+  bool bright_right = false;  // the brightness settings card in the right column
 };
 
 
@@ -3268,7 +3279,7 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
     bl.y += S(30);
   }
   tiles_part(bl, plan.tiles_all);
-  sliders_part(bl);
+  sliders_part(bl, !plan.bright_right);
   if (plan.media == 1) media_part(bl);
   if (!plan.two) {
     calendar_part(bl, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
@@ -3284,7 +3295,8 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
     right = new Fl_Group(pad + colw + gap, 0, colw, S(10));
     right->resizable(nullptr);
     SectionBuilder br{this, pad + colw + gap, colw, 0};
-    if (plan.media == 2) media_part(br);
+    if (plan.bright_right && brightness_open_) brightness_settings(br);
+    if (plan.media >= 2) media_part(br, plan.media == 3);
     calendar_part(br, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
     if (plan.notif) notifications_part(br);
     right->end();
@@ -3296,20 +3308,25 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
   // Two columns: the wide hero when it gets as much height as the hero
   // above the left column alone would; else the calendar runs up beside it.
   bool wide = !plan.two;
+  // Beside the hero, the right column runs from the top down past the
+  // footer, which then stays under the left column.
+  int right_bottom = S(8);
   if (plan.two) {
     int wide_hero = limit - bottom - top - sp - std::max(lh, rh);
     int narrow_hero = std::min(limit - bottom - top - sp - lh, S(popup_style::kHeroMax));
     wide = wide_hero >= S(popup_style::kHeroMin) &&
-           (wide_hero >= narrow_hero || top + rh + bottom > limit);
+           (wide_hero >= narrow_hero || top + rh + right_bottom > limit);
   }
   int column = wide ? std::max(lh, rh) : lh;
   int hero = std::min(S(popup_style::kHeroMax), limit - bottom - top - sp - column);
-  bool fits = hero >= S(popup_style::kHeroMin) && (wide || top + rh + bottom <= limit);
+  bool fits = hero >= S(popup_style::kHeroMin) && (wide || top + rh + right_bottom <= limit);
   hero = std::max(S(popup_style::kHeroMin), hero);
   int body_top = top + hero + sp;
   left->resize(pad, body_top, colw, std::max(1, lh));
   if (right) right->resize(pad + colw + gap, wide ? body_top : top, colw, std::max(1, rh));
-  H = std::max(body_top + lh, right ? (wide ? body_top : top) + rh : 0) + bottom;
+  H = body_top + lh + bottom;
+  if (right) H = std::max(H, wide ? body_top + rh + bottom : top + rh + right_bottom);
+  footer_w_ = right && !wide ? pad + colw + pad / 2 : W;
   // Everything above the footer (QA dump; nothing scrolls).
   body_x_ = 0, body_y_ = 0, body_w_ = W, body_h_ = H - footer_;
 
@@ -3329,7 +3346,7 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
                    spawn_detached(settings_for("action-center", {}));
                  });
   h->end();
-  footer(W, H, pad);
+  footer(footer_w_, H, pad);
   end();
   return fits;
 }
@@ -3362,14 +3379,18 @@ void QuickSettings::rebuild_center() {
     plans.push_back({"expanded-two", true, true, m, true, false, true, false, 24});
     if (media) plans.push_back({"expanded-two", true, true, 2, true, false, true, false, 24});
     plans.push_back({"expanded-two", true, false, m, true, false, true, false, 24});
-    if (media) plans.push_back({"expanded-two", true, false, 2, true, false, false, false, 24});
+    // Small screens: the small player above the month.
+    if (media) plans.push_back({"expanded-two", true, false, 3, true, false, true, false, 24});
   }
   if (exp || calendar_view_ || agenda_form_) {
-    // The calendar (or the agenda form) was asked for: it stays, the media
-    // card goes.
+    // The calendar and agenda (or the agenda form) were asked for: they
+    // stay, the media card goes (it is in the compact view).
     plans.push_back({"calendar-two", true, false, 0, true, false, true, false, 24});
     plans.push_back({"calendar-two", true, false, 0, true, false, false, false, 24});
     plans.push_back({"calendar", false, false, 0, true, false, false, false, 24});
+    // Only reached first from the media icon (media_view_ below).
+    if (media) plans.push_back({"expanded-two", true, false, 3, true, false, false, false, 24});
+    if (media) plans.push_back({"expanded-two", true, false, 2, true, false, false, false, 24});
     if (agenda_form_) {
       plans.push_back({"agenda-two", true, false, 0, false, false, true, false, 24});
       plans.push_back({"agenda", false, false, 0, false, false, true, false, 24});
@@ -3380,10 +3401,32 @@ void QuickSettings::rebuild_center() {
     plans.push_back({"compact-two", true, false, 2, false, false, false, false, 24});
     plans.push_back({"compact", false, false, 0, false, false, false, false, 24});
   }
+  if (brightness_open_) {
+    // The brightness gear was just pressed: its card comes first, beside
+    // the controls when there is no room under them.
+    std::vector<CenterPlan> first;
+    first.push_back({"brightness", false, false, m, false, false, false, false, 24});
+    first.push_back({"brightness", false, false, 0, false, false, false, false, 24});
+    CenterPlan two{"brightness-two", true, false, 0, false, false, false, false, 24};
+    two.bright_right = true;
+    first.push_back(two);
+    plans.insert(plans.begin() + (exp ? std::min<long>(4, long(plans.size())) : 0), first.begin(),
+                 first.end());
+  }
   if (calendar_view_ && !exp) {
     // The clock asked for the calendar in compact mode: try it first.
     std::stable_partition(plans.begin(), plans.end(),
                           [](const CenterPlan &p) { return p.calendar; });
+  }
+  if (agenda_form_) {
+    // Adding or editing an agenda item: the form stays in view.
+    std::stable_partition(plans.begin(), plans.end(),
+                          [](const CenterPlan &p) { return p.agenda; });
+  }
+  if (media_view_ && media) {
+    // The media status icon (sde-panel --section media): the player first.
+    std::stable_partition(plans.begin(), plans.end(),
+                          [](const CenterPlan &p) { return p.media != 0; });
   }
   auto reset = [this] {
     clear();
@@ -3411,6 +3454,7 @@ void QuickSettings::rebuild_center() {
       reset();
       if (build_center_plan(plan, limit, W, H) && H <= limit) {
         center_plan_ = plan.name + (plan.media == 2 ? "+media-right" : "") +
+                       (plan.media == 3 ? "+mini-media" : "") +
                        (plan.calendar && plan.cal_row != 29 ? "+small-calendar" : "");
         done = true;
         break;
@@ -3457,15 +3501,15 @@ void QuickSettings::draw() {
     p.fill_rect(0, 0, w(), h(), t.surface);
     if (t.glass) {
       p.fill_rect(0, 0, w(), header_, t.surface_alt.mix(t.surface, 0.55));
-      if (footer_) p.fill_rect(0, h() - footer_, w(), footer_, t.surface_alt.mix(t.surface, 0.4));
+      if (footer_) p.fill_rect(0, h() - footer_, footer_w_ ? footer_w_ : w(), footer_, t.surface_alt.mix(t.surface, 0.4));
     }
     stroke_outline(p, t.border);
     if (header_ > S(8))
       p.line(S(popup_style::kPad), header_ - 0.5, w() - S(popup_style::kPad), header_ - 0.5,
              t.border);
     if (footer_)
-      p.line(S(popup_style::kPad), h() - footer_ + 0.5, w() - S(popup_style::kPad),
-             h() - footer_ + 0.5, t.border);
+      p.line(S(popup_style::kPad), h() - footer_ + 0.5,
+             (footer_w_ ? footer_w_ : w()) - S(popup_style::kPad), h() - footer_ + 0.5, t.border);
   }
   draw_children();
   sync_native_tray();

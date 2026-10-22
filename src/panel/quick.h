@@ -145,6 +145,9 @@ class QuickSettings : public PanelPopup {
   // clock), even in compact mode.
   void set_calendar_view(bool on) { calendar_view_ = on; }
   bool calendar_view() const { return calendar_view_; }
+  // Action Center: the media card first for this opening (the media status
+  // icon, sde-panel --section media), even on a small screen.
+  void set_media_view(bool on) { media_view_ = on; }
   // Window title of a flyout section ("Sound", "Network", ...).
   static std::string section_title(const std::string &section);
   static bool valid_section(const std::string &section);
@@ -173,7 +176,7 @@ class QuickSettings : public PanelPopup {
   void drives_section(struct SectionBuilder &b);
   void keyboard_section(struct SectionBuilder &b);
   void tray_section(struct SectionBuilder &b);
-  void player_card(struct SectionBuilder &b, const struct MediaPlayer &p);
+  void player_card(struct SectionBuilder &b, const struct MediaPlayer &p, bool mini = false);
   void brightness_settings(struct SectionBuilder &b);
   static void weather_tick(void *);
   static void media_tick(void *);
@@ -187,8 +190,8 @@ class QuickSettings : public PanelPopup {
   void rebuild_center();
   bool build_center_plan(const CenterPlan &plan, int limit, int &W, int &H);
   void tiles_part(struct SectionBuilder &b, bool all);
-  void sliders_part(struct SectionBuilder &b);
-  bool media_part(struct SectionBuilder &b);
+  void sliders_part(struct SectionBuilder &b, bool settings = true);
+  bool media_part(struct SectionBuilder &b, bool mini = false);
   void calendar_part(struct SectionBuilder &b, int row, bool tz, bool agenda, bool calendar);
   void notifications_part(struct SectionBuilder &b);
  public:
@@ -223,6 +226,7 @@ class QuickSettings : public PanelPopup {
   bool weather_frame_ = false;  // the next draw only animates the weather
   std::string center_plan_;     // the plan shown (QA dump)
   int body_x_ = 0, body_y_ = 0, body_w_ = 0, body_h_ = 0;
+  int footer_w_ = 0;  // two columns: the footer under the left one
   int weather_fps_ = 24;
   std::map<unsigned, class Fl_Slider *> stream_sliders_;
   int tray_columns_ = 1;
@@ -231,6 +235,7 @@ class QuickSettings : public PanelPopup {
   std::string section_ = "overview";
   bool rebuild_pending_ = false;
   bool calendar_view_ = false, scroll_to_calendar_ = false;
+  bool media_view_ = false;
   // Agenda: the selected date, the calendar's shown month and the draft of
   // the add/edit form (kept across rebuilds).
   int agenda_year_ = 0, agenda_month_ = 0, agenda_day_ = 0, shown_year_ = 0, shown_month_ = 0;

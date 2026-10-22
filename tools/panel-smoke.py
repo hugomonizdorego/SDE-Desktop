@@ -508,6 +508,8 @@ def brightness_settings_checks():
     press('Action Center','Brightness settings')
     for name in ['Night Light','Night Light warmth','Night Light schedule','Auto-dim on battery','Dim level','External monitor brightness','Display settings…','Close brightness settings']:
         item('Action Center',name,active=False)
+    # alpha52: the card fits (beside the controls on small screens).
+    assert not any(k.startswith('@plan-') and k.endswith('+clipped') for k in layout('Action Center')),[k for k in layout('Action Center') if k.startswith('@plan')]
     shot('02-action-center-brightness-settings')
     press('Action Center','Night Light');waitfor(lambda:'[night_light]' in conf() and 'enabled=true' in conf().split('[night_light]')[1],'Night Light not saved')
     press('Action Center','Night Light schedule');time.sleep(.4);run('xdotool','key','Down','Return');time.sleep(.5)
@@ -528,6 +530,10 @@ def brightness_settings_checks():
 def media_card_checks():
     """The media card: title, artist (album), cover, seek bar and only
     previous / play-pause / next for the active MPRIS player."""
+    # alpha52: small screens keep the calendar and agenda in the expanded
+    # view; the media icon (--section media) opens it with the player.
+    if 'Now playing: Alpha test track' not in layout('Action Center'):
+        escape('Action Center');command(['--section','media'],'Action Center');time.sleep(.6)
     item('Action Center','Now playing: Alpha test track',active=False)
     item('Action Center','Artist: SDE QA — QA Sessions',active=False)
     for name in ['Playback position','Pause','Next']:item('Action Center',name)

@@ -623,6 +623,7 @@ bool Panel::status_anchor(const std::string &section, int &center_x) const {
 void Panel::open_flyout(const std::string &section) {
   // Media controls live in the Action Center (alpha50).
   if (section == "media") {
+    quick_->set_media_view(true);
     open_action_center();
     return;
   }
