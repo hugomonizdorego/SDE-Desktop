@@ -60,7 +60,24 @@ void PanelControls::drives_later(void *d) { static_cast<PanelControls *>(d)->ref
 
 void PanelControls::start_drives() {
   udisks_ = system_ && system_->name_has_owner(kUDisks);
-  if (udisks_) {
+  if (system_) {
+    // UDisks2 can start after the panel (D-Bus activation) or restart.
+    system_->add_signal_handler(
+        "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='"
+        "org.freedesktop.UDisks2'",
+        [](DBusMessage *m) {
+          auto a = dbus::read_args(m);
+          return bool(dbus_message_is_signal(m, "org.freedesktop.DBus", "NameOwnerChanged")) &&
+                 a.size() >= 3 && a[0].str() == kUDisks;
+        },
+        [this](DBusMessage *m) {
+          auto a = dbus::read_args(m);
+          udisks_ = !a[2].str().empty();
+          // Drives already there when UDisks2 starts are not "new".
+          drives_scanned_ = false;
+          drives_pending_ = false;
+          refresh_drives();
+        });
     // Drives and filesystems come and go (InterfacesAdded/Removed); mount
     // points change with PropertiesChanged.
     for (const char *member : {"InterfacesAdded", "InterfacesRemoved"})
@@ -86,8 +103,8 @@ void PanelControls::start_drives() {
           Fl::remove_timeout(drives_later, this);
           Fl::add_timeout(0.3, drives_later, this);
         });
-    return;
   }
+  if (udisks_) return;
   // New hardware shows up at once: udev reports block devices (USB drives,
   // memory cards) as they are plugged in or removed.
   stream_lines({"udevadm", "monitor", "--udev", "--subsystem-match=block"},

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 
 #include "config.h"
@@ -99,6 +100,22 @@ void TouchpadMonitor::detect() {
       }
       if (props) XFree(props);
     }
+    if (devices) XIFreeDeviceInfo(devices);
+  }
+  // UI tests (panel-smoke): SDE_PANEL_FAKE_TOUCHPAD=1 lets the XTEST pointer
+  // (xdotool) stand in for a touchpad, so the indicator can be exercised.
+  const char *fake = getenv("SDE_PANEL_FAKE_TOUCHPAD");
+  if (!id_ && fake && *fake == '1') {
+    int count = 0;
+    XIDeviceInfo *devices = XIQueryDevice(display_, XIAllDevices, &count);
+    for (int i = 0; devices && i < count && !id_; ++i)
+      if (devices[i].use == XISlavePointer && devices[i].name &&
+          strstr(devices[i].name, "XTEST")) {
+        id_ = devices[i].deviceid;
+        name_ = "QA touchpad (XTEST)";
+        props_ = {"Device Enabled", "libinput Tapping Enabled",
+                  "libinput Natural Scrolling Enabled", "libinput Accel Speed"};
+      }
     if (devices) XIFreeDeviceInfo(devices);
   }
   if ((old != id_ || old_enabled != enabled_) && changed_) changed_();

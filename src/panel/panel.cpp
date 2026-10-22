@@ -1453,6 +1453,14 @@ void Panel::qa_dump_panel() {
                      line("action-center", action_x_, action_w_);
   // The tooltip the panel handed to Fl_Tooltip for the hovered part.
   if (!tip_.current().empty()) text += "@tooltip:" + tip_.current() + "\t0\t0\t0\t0\t1\n";
+  {
+    const auto &n = SystemStatus::get().network;
+    NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_);
+    if (cfg_.get_bool("panel", "network_led", true) && status_index(NETWORK_STATUS) >= 0)
+      text += std::string("@led:") +
+              (led == NetLed::GREEN ? "green" : led == NetLed::YELLOW ? "yellow" : "red") +
+              (led_running_ ? ":pulse" : ":steady") + "\t0\t0\t0\t0\t1\n";
+  }
   for (size_t i = 0; i < status_icons_.size(); ++i) {
     std::string name = status_section(status_icons_[i]);
     if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
