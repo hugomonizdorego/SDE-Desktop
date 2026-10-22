@@ -180,7 +180,7 @@ class App {
 
   // Updates (APT from check.py, Flatpak from flatpak.py).
   UpdateList list;
-  bool loading = false, loaded_once = false;
+  bool loading = false, loaded_once = false, focused_once = false;
   int pending_loads = 0;
   std::string apt_output, flatpak_output;
   int apt_status = -1;
@@ -480,34 +480,51 @@ class TechPane : public Fl_Group {
     f.push_back({_("Download"), size});
     return f;
   }
-  int info_height() const { return S(34) + int(facts().size()) * S(20) + S(6); }
+  // On short screens the facts go into the scrolling text with the changelog.
+  int full_info_height() const { return S(34) + int(facts().size()) * S(20) + S(6); }
+  int info_height() const { return compact_ && current() ? S(34) : full_info_height(); }
   void layout() {
+    bool compact = h() < full_info_height() + S(84);
+    if (compact != compact_) {
+      compact_ = compact;
+      set_text();
+    }
     int top = y() + info_height();
     int room = y() + h() - top - S(8);
     text->resize(x() + S(10), top, w() - S(20), std::max(S(30), room));
     if (!current() || room < S(36)) text->hide();
     else text->show();
   }
-  void refresh() {
+  void set_text() {
     App &a = app();
     const Update *u = current();
+    std::string facts_text;
+    if (u && compact_)
+      for (auto &f : facts()) facts_text += f.first + ":  " + f.second + "\n";
+    if (!facts_text.empty()) facts_text += "\n";
     if (!u) {
       text->set("");
     } else if (u->flatpak) {
       std::string body = u->summary.empty() ? std::string(_("No description is available.")) : u->summary;
-      text->set(body + "\n\n" + _("Flatpak applications are updated from their remote; their changes are "
-                                  "published by the application developers."));
+      text->set(facts_text + body + "\n\n" +
+                _("Flatpak applications are updated from their remote; their changes are "
+                  "published by the application developers."));
     } else {
       auto it = a.changelogs.find(u->main_package);
       // The long description, unless it only repeats the summary.
       std::string d = trim(u->description);
       if (!d.empty() && d.back() == '.') d.pop_back();
       std::string head = d.empty() || lower(d) == lower(trim(u->summary)) ? "" : u->description + "\n\n";
-      text->set(head + (it != a.changelogs.end() ? it->second : std::string(_("Loading the changelog…"))));
+      text->set(facts_text + head +
+                (it != a.changelogs.end() ? it->second : std::string(_("Loading the changelog…"))));
     }
+  }
+  void refresh() {
+    set_text();
     layout();
     redraw();
   }
+  bool compact_ = false;
   void draw() override {
     const Theme &t = active_theme();
     App &a = app();
@@ -552,6 +569,7 @@ class TechPane : public Fl_Group {
     text_font(t.font_size, true);
     draw_text(title, px, y() + S(6), pw - bw_total - S(8), S(24), t.text);
     auto f = facts();
+    if (compact_ && u) f.clear();
     int lw = std::min(S(110), pw / 3), fy = y() + S(32);
     text_font(t.font_size - S(1));
     for (auto &row : f) {
@@ -572,13 +590,19 @@ class UpdaterPage : public Page {
  public:
   UpdaterPage() {
     details = new Expander(_("Details of updates"), &app().details_open);
-    details->changed = [] { app().changed(); };
+    // On short screens the two sections take turns (an accordion).
+    details->changed = [] {
+      App &a = app();
+      if (a.details_open && updater()->short_screen()) a.tech_open = false;
+      a.changed();
+    };
     list = new ListView(0, 0, 10, 10);
     list->framed = false;
     setup_list();
     tech_exp = new Expander(_("Technical description"), &app().tech_open);
     tech_exp->changed = [] {
       App &a = app();
+      if (a.tech_open && updater()->short_screen()) a.details_open = false;
       if (a.tech_open && a.current >= 0) a.select_changelog(a.current);
       a.changed();
     };
@@ -791,6 +815,7 @@ class UpdaterPage : public Page {
   static UpdaterPage *updater() { return static_cast<UpdaterPage *>(app().pages[P_UPDATES]); }
 
   int P() const { return h() < S(460) ? S(10) : S(16); }
+  bool short_screen() const { return h() < S(480); }
 
   // Header text for the current view.
   void header_text(View v, std::string &title, std::string &sub) const {
@@ -2198,7 +2223,13 @@ void App::merge_updates() {
   }
   icons.clear();
   loaded_once = true;
+  bool first = !focused_once;
   rebuild_rows();
+  // The tree takes the keyboard focus once it first appears.
+  if (first && page == P_UPDATES && updater_page()->list->visible()) {
+    focused_once = true;
+    Fl::focus(updater_page()->list);
+  }
   maybe_auto_refresh();
 }
 

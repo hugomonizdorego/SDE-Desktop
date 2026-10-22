@@ -1786,7 +1786,7 @@ void build_suite(Page *page) {
     page->end_card();
   }
   page->note(
-      _("Original application licenses and copyrights are retained. SDE Update credits mintupdate; "
+      _("Original application licenses and copyrights are retained. Software Updater credits mintupdate; "
         "PackageKit "
         "performs Debian transactions."));
   page->finish();
@@ -2195,7 +2195,7 @@ void build_suite_system(Page *page) {
       {_("Power"), {"sde-settings", "--page", "power"}},
       {_("Lock Screen"), {"sde-settings", "--page", "lock"}},
       {_("System Monitor"), {"sde-system-monitor"}},
-      {_("System Updates"), {"sde-update"}},
+      {_("Software Updater"), {"sde-update"}},
   };
   if (!g_refreshing || !g_power.loaded) load_power_profiles();
   if (g_power.loaded && !g_power.profiles.empty()) {

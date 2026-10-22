@@ -6,7 +6,7 @@ sde-view	Photo	Photos and Image Editing	sde-view	sde	image-x-generic	DebION Dev-
 calculator	Calculator	Scientific Calculator	calculator	sde	accessories-calculator	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 taca	Taca	Archive Manager	taca	sde	package-x-generic	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 sde-system-monitor	SDE System Monitor	Processes and Resources	sde-system-monitor	sde	utilities-system-monitor	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
-sde-update	SDE Update	System Updates	sde-update	sde	system-software-update	mintupdate	https://github.com/linuxmint/mintupdate	GPL-3.0-or-later (adapted model)	1.0.0~alpha1
+sde-update	Software Updater	Software Updates	sde-update	sde	system-software-update	mintupdate	https://github.com/linuxmint/mintupdate	GPL-3.0-or-later (adapted model)	1.0.0~alpha1
 sde-power	SDE Power	Power Management	sde-settings --page power	sde	preferences-system-power	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 sde-lock	SDE Screen Lock	Screen Lock	sde-settings --page lock	sde	system-lock-screen	DebION Dev-Team	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 sde-display-settings	Display Settings	Monitors and Display Profiles	sde-display-settings	sde/upstream/DisplayProfileManager	preferences-desktop-display	DisplayProfileManager	https://github.com/zac15987/DisplayProfileManager	MIT (ported profile model); GPL-3.0-or-later integration	1.0.0~alpha1

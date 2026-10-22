@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [Desktop Entry]
 Type=Application
-Name=SDE Update Notifier
-Comment=Checks for system updates and shows a notification
+Name=Software Updater Notifier
+Comment=Checks for software updates and shows a notification
 Exec=sde-update --notifier
 TryExec=sde-update
 OnlyShowIn=SDE;

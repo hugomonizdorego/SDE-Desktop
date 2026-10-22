@@ -317,9 +317,9 @@ void build_first_steps(Page *page) {
   build_colors(page);
   build_panel_layout(page);
 
-  shell::step(page, {"system-software-update", "software-update-available"}, _("Update Manager"),
-              _("Updates fix security problems and bugs. SDE Update checks for them and shows a "
-                "notification; install them regularly. Security and kernel updates are marked."),
+  shell::step(page, {"system-software-update", "software-update-available"}, _("Software Updater"),
+              _("Updates fix security problems and bugs. Software Updater checks for them and shows a "
+                "notification; install them regularly. Critical, security, main and Flatpak updates are grouped."),
               {{_("Launch"), [] { shell::launch({"sde-update"}); }, true}});
 
   shell::step(page, {"jockey", "preferences-system", "application-x-firmware", "computer"},

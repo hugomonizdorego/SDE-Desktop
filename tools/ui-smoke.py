@@ -71,19 +71,15 @@ if args.themes_dir and (args.themes_dir / "SDE-Graphite-Light-Blue/openbox-3/the
 (home / "qa").mkdir()
 fixtures = home / "fixtures"
 fixtures.mkdir()
-(fixtures / "apt_pkg.py").write_text("SELSTATE_HOLD = 1\n")
-(fixtures / "apt.py").write_text("""from types import SimpleNamespace as N
-def pkg(name, source, security=False):
-    c=N(source_name=source,source_version='2.0',version='2.0',size=4096,
-        raw_description='UI test fixture',description='UI test fixture',section='utils',
-        origins=[N(origin='Debian',site='fixture.invalid',archive='testing',
-                   label='Debian-Security' if security else 'Debian',component='main')])
-    return N(name=name,candidate=c,installed=N(version='1.0'),is_installed=True,
-             is_upgradable=True,_pkg=N(selected_state=0))
-def Cache():
-    return [pkg('example-security','example-security',True),
-            pkg('example-common','example'),pkg('example','example')]
-""")
+# Software Updater: fake python-apt, flatpak and desktop files so that the
+# Critical, Security, Main and Flatpak groups all appear (tools/update_fixture.py).
+import sys as _sys  # noqa: E402
+
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+import update_fixture  # noqa: E402
+
+update_fixture.write(fixtures, home / "bin", home / "update-root")
+env["SDE_UPDATE_ROOT"] = str(home / "update-root")
 env["PYTHONPATH"] = str(fixtures)
 env["SDE_UI_OPEN"] = str(home / "opened-uri")
 (home / "bin/xdg-open").write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$SDE_UI_OPEN"\n')
@@ -456,18 +452,31 @@ try:
         app.terminate()
         app.wait()
     metadata = run("sde-update", "--check").stdout
-    assert (
-        metadata.startswith("SDE-UPDATES\t2\n") and "example-security" in metadata
-    ), metadata
-    assert len(metadata.splitlines()) == 3, metadata
-    update = spawn("sde-update")
-    updater = find("^SDE Update$")
-    g = geom(updater)
-    assert g["X"] >= 0 and g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
-    time.sleep(1)
-    shot("09-update")
-    update.terminate()
-    update.wait()
+    records = [line.split("\t") for line in metadata.splitlines()[1:]]
+    assert metadata.startswith("SDE-UPDATES\t2\n") and "example-security" in metadata, metadata
+    assert len(records) == 8 and all(len(r) == 19 for r in records), metadata
+    assert {r[1] for r in records} == {"kernel", "security", "package"}, metadata
+    assert any(r[14] == "required" for r in records), metadata  # glibc: Critical
+    assert any(r[17] == "Firefox ESR" for r in records), metadata  # desktop file name
+    plan = run("sde-update", "--plan", "flatpak", "system:app/org.gimp.GIMP/x86_64/stable").stdout
+    assert plan.splitlines()[1:3] == ["update", "--system"], plan
+    for theme in ("light", "dark"):
+        config(theme=theme)
+        update = spawn("sde-update")
+        updater = find("^Software Updater$")
+        g = geom(updater)
+        assert g["X"] >= 0 and g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
+        assert g["X"] + g["WIDTH"] <= W, g
+        time.sleep(2)  # check.py and flatpak.py
+        shot("09-update-" + theme)
+        if theme == "light":
+            # The technical description (Tab from the tree to its expander).
+            run("xdotool", "key", "--window", str(updater), "Tab", "space")
+            time.sleep(1)
+            shot("09-update-technical")
+        update.terminate()
+        update.wait()
+    config()
     if args.scale == 100:
         # Overview card -> Panel page -> Short preview; verify persisted live change.
         app = spawn("sde-settings")

@@ -246,6 +246,7 @@ void usage(FILE *out) {
           _("Usage: sde-update [--page NAME] [--version]\n"
             "       sde-update --check | --history | --sources\n"
             "       sde-update --plan refresh|upgrade|autoremove|clean|repair [PACKAGE...]\n"
+            "       sde-update --plan flatpak system|user:REF...\n"
             "       sde-update --transaction refresh|upgrade\n"
             "       sde-update --notifier [--once]\n\n"
             "  --page NAME     open updates, history, sources, maintenance, settings or about\n"
