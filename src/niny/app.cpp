@@ -21,6 +21,7 @@
 #include <cstring>
 #include <ctime>
 
+#include "about.h"
 #include "config.h"
 #include "i18n.h"
 #include "niny.h"
@@ -632,13 +633,18 @@ void App::popup_status(int id, int x, int y) {
 }
 
 void App::about() {
-  ask(std::string("Niny ") + NINY_VERSION,
-      format(_("A simple text editor for the Selviana Desktop Environment.\n\n"
-               "Developer: DebION Dev-Team\n"
-               "Copyright (C) 2026 DebION Dev-Team. Niny is free software under the GNU General Public "
-               "License, version 3 or later.\n\nSettings: %s"),
-             home_relative(settings_path()).c_str()),
-      {_("Close")}, 0, 0);
+  // The common SDE About window, like every other SDE program.
+  sde::AppInfo info;
+  info.name = "Niny";
+  info.program = "niny";
+  info.version = NINY_VERSION;
+  info.icon = "org.debion.Niny";
+  info.description = format(_("A simple text editor for the Selviana Desktop Environment.\n"
+                              "Settings are kept in %s"),
+                            home_relative(settings_path()).c_str());
+  info.credits = {sde::toolkit_credit()};
+  info.logo = [](Painter &p, double x, double y, double size) { icon::logo(p, x, y, size); };
+  sde::show_about(info);
 }
 
 void App::new_window() {

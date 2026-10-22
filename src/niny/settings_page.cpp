@@ -245,6 +245,13 @@ void SettingsPage::build() {
   rows_.clear();
   clear();  // deletes the old controls
   back_ = nullptr;
+  // build() runs from the constructor, while App's constructor has the window
+  // open with begin(), and later from rebuild(). Restore whatever group was
+  // current: end() would make the window current (later popups must not join
+  // it), and clearing it in the constructor left the widgets App creates after
+  // this page (find bar, palette, question sheet) without a window, so the
+  // first ask() (About Niny) dereferenced a null window().
+  Fl_Group *outer = Fl_Group::current();
   begin();
   App *app = app_;
   auto changed = [app] { app->apply_settings(true); };
@@ -431,7 +438,7 @@ void SettingsPage::build() {
     rows_.push_back(r);
   }
   end();
-  Fl_Group::current(nullptr);  // end() made the window current; later widgets must not join it
+  Fl_Group::current(outer);
   // Mark the first and last rows of each group for the rounded corners.
   for (size_t i = 0; i < rows_.size(); ++i) {
     Row *r = rows_[i];

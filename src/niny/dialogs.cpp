@@ -48,6 +48,7 @@ void Sheet::layout_card() {
 
 int Sheet::ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
                int default_button, int cancel_button) {
+  if (!window() || active_) return cancel_button;  // not in a window, or already asking
   for (auto *b : buttons_) {
     remove(b);
     Fl::delete_widget(b);
