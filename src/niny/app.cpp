@@ -17,6 +17,7 @@
 #include <cerrno>
 #include <climits>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -94,6 +95,17 @@ App::App(int w, int h) : BufferedWindow(w, h, "Niny") {
   palette_ = new Palette(this, 0, 0, S(600), S(300));
   sheet_ = new Sheet(this, 0, 0, w, h);
   end();
+  // Every part must be a child of this window (alpha 50: the settings page
+  // left the current group empty, and About Niny crashed in the sheet).
+  const std::pair<Fl_Widget *, const char *> parts[] = {
+      {editor_, "editor"}, {mdview_, "Markdown view"}, {info_, "info bar"}, {sidebar_, "side panel"},
+      {tabs_, "tab bar"}, {toolbar_, "menu row"}, {status_, "status bar"}, {settings_page_, "settings page"},
+      {find_, "find bar"}, {palette_, "command palette"}, {sheet_, "question sheet"}};
+  for (const auto &part : parts)
+    if (part.first->parent() != this) {
+      fprintf(stderr, "niny: BUG: the %s is not part of the window\n", part.second);
+      add(part.first);
+    }
   resizable(nullptr);
   size_range(S(480), S(320));
   xclass("Niny");
