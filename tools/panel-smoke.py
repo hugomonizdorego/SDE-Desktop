@@ -378,11 +378,16 @@ def panel_checks_a50():
     # A screenshot tool that holds the pointer and keyboard while the
     # search or the menu opens: typing must still reach them afterwards.
     grab=str(a.test_dir.resolve()/'sde-grab-fixture')
-    g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--search');g.wait();time.sleep(.5)
+    g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--search');g.wait()
+    find('^SDE Search$');time.sleep(.8)
     run('xdotool','type','--delay','40','wget')
-    waitfor(lambda:'query:wget' in layout('SDE Search'),'search took no typing after a screenshot grab')
+    try:waitfor(lambda:'query:wget' in layout('SDE Search'),'search took no typing after a screenshot grab')
+    except AssertionError:
+        shot('debug-grab-search');print(layout('SDE Search').keys(),run('xdotool','getwindowfocus','getwindowname',check=False).stdout,flush=True);raise
     escape('SDE Search')
-    g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--menu');g.wait();time.sleep(.5)
+    g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--menu');g.wait()
+    if not visible('^SDE Menu$'):shot('debug-grab-menu')
+    command(['--menu'],'SDE Menu');time.sleep(.8)
     run('xdotool','type','--delay','40','zeal')
     waitfor(lambda:'query:zeal' in layout('SDE Search'),'menu took no typing after a screenshot grab')
     escape('SDE Search')
@@ -675,7 +680,14 @@ try:
     waitfor(lambda:log_has('BT StopDiscovery'),'discovery did not stop on close')
 
     # Media controls live in the Action Center: --section media opens it.
-    ac=command(['--section','media'],'Action Center');time.sleep(.6);shot('08-media-action-center')
+    ac=command(['--section','media'],'Action Center');time.sleep(.6)
+    # Small screens: scroll over the tiles (the wheel over the volume row
+    # would change the volume) until the player card is in view.
+    for _ in range(12):
+        if in_view('Action Center','Pause'):break
+        g=geom(ac);body=layout('Action Center')['@body']
+        run('xdotool','mousemove',g['x']+body[0]+round(30*scale),g['y']+body[1]+round(12*scale),'click','5');time.sleep(.3)
+    shot('08-media-action-center')
     press('Action Center','Pause');waitfor(lambda:log_has('MPRIS PlayPause'),'MPRIS play/pause command missing')
     press('Action Center','Previous',active=False);time.sleep(.4);assert not log_has('MPRIS Previous')
     mode('no-control');item('Action Center','Play',active=False);press('Action Center','Play',active=False);time.sleep(.4)
