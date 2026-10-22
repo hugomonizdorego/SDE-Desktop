@@ -143,6 +143,12 @@ target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJ
 target_link_libraries(sde-weather-tests PRIVATE sde-common)
 add_test(NAME sde-weather-model COMMAND sde-weather-tests)
 
+# Clock "Sync time zone": geolocation answers, zone names, the timedatectl plan.
+add_executable(sde-timezone-tests test_timezone.cpp ../src/panel/timezone.cpp ../src/panel/weather.cpp)
+target_compile_definitions(sde-timezone-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(sde-timezone-tests PRIVATE sde-common)
+add_test(NAME sde-timezone-model COMMAND sde-timezone-tests)
+
 # alpha50 panel status rules (tooltips, network LED, keyboard indicators,
 # UDisks2 drives, touchpad properties) and the grab helper of panel-smoke.
 add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
@@ -161,9 +167,10 @@ target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
 add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
 
 # debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
-# --quick --json verdicts, against fixtures and stub commands.
+# --quick --json verdicts and the verified DNS repair (--fix, --dns-fallback)
+# against a simulated NetworkManager, with fixtures and stub commands.
 add_test(NAME debion-network-check COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_network_check.py)
-set_tests_properties(debion-network-check PROPERTIES TIMEOUT 120)
+set_tests_properties(debion-network-check PROPERTIES TIMEOUT 300)
 
 # Caption buttons and their migration, transparency contrast, icon theme
 # lookup (tests/fixtures/icon-themes) and the build history of Settings > About.

@@ -62,6 +62,87 @@ section to return to the automatic layout.
 
 ## Wi-Fi or Ethernet shows "connected" but there is no internet
 
+### "No name server" still broken after `--fix` (alpha 51)
+
+Report: Debian standard ISO in VirtualBox (NAT, `enp0s3`, `10.0.2.15`,
+gateway `10.0.2.2`). `debion-network-check` says NetworkManager runs, the
+default route is fine, `connectivity = connected:full`, but
+`/etc/resolv.conf has no name server` and `deb.debian.org does not resolve`.
+`sudo debion-network-check --fix` printed "/etc/resolv.conf is now written by
+NetworkManager only." and nothing changed.
+
+**Why `--fix` lied.** Up to alpha 50 it truncated `/etc/resolv.conf`,
+restarted NetworkManager and printed success without looking again. An empty
+file only helps when NetworkManager is willing and able to write it, and on
+a Debian install that is often not the case:
+
+- `[main] dns=none` or `rc-manager=unmanaged` in `NetworkManager.conf` or a
+  `conf.d` file: NetworkManager never writes the file;
+- `rc-manager=auto` (Debian's default) with a `resolvconf`/`openresolv`
+  binary installed (or systemd-resolved's `resolvconf` link left behind):
+  NetworkManager hands the servers to resolvconf, which writes
+  `/run/resolvconf/resolv.conf`, not `/etc/resolv.conf`;
+- `dns=systemd-resolved` (or a stub symlink) while systemd-resolved is not
+  running, and `rc-manager=symlink`/`auto` with a symlink NetworkManager
+  must not replace;
+- `chattr +i /etc/resolv.conf` (immutable: nothing can write it);
+- the connection profile has `ipv4.ignore-auto-dns yes` without servers of
+  its own, or the DHCP lease carries no DNS server;
+- the device is `unmanaged`, or "connected (externally)" because ifupdown's
+  dhclient configured it: NetworkManager did no DHCP and has no servers;
+- the netinst installer's dhclient wrote the file, and the handover left an
+  empty one behind.
+
+`connected:full` is not a contradiction: NetworkManager's own check asks
+the connection's DNS servers directly, while every program resolves names
+through `/etc/resolv.conf`. The report now says so when DNS fails.
+
+**What `--fix` does now** (DNS part), and only then claims success:
+
+1. reports `NetworkManager --print-config` `dns=`/`rc-manager=`, the device's
+   DNS servers (`nmcli -g IP4.DNS device show <dev>`), the DHCP lease, the
+   profile's `ipv4.ignore-auto-dns`, resolvconf, systemd-resolved and the
+   immutable flag;
+2. removes the immutable flag; moves a broken, dangling, dhclient-written or
+   systemd-resolved-without-resolved file aside (`/etc/resolv.conf.debion-<date>`)
+   and leaves a running systemd-resolved with its stub alone;
+3. writes `/etc/NetworkManager/conf.d/90-debion-dns.conf` (`dns=default`,
+   `rc-manager=file`) when NetworkManager would not write the file, and
+   restarts NetworkManager (it warns if another file still overrides it);
+4. takes over unmanaged/externally connected devices, clears
+   `ipv4.ignore-auto-dns` when the profile has no servers of its own, and
+   reapplies the profile (`nmcli device reapply`, else `nmcli connection up`);
+5. waits up to 10 s until `/etc/resolv.conf` has a name server **and**
+   `getent ahosts deb.debian.org` works; if NetworkManager knows servers but
+   the file stays empty it writes them itself (with `rc-manager=file`
+   NetworkManager owns that file anyway);
+6. prints `DNS works now: deb.debian.org resolves to …`, or exactly what still
+   fails, and exits with status 4:
+   - the network gives no DNS server, or the server does not answer: run
+     `sudo debion-network-check --dns-fallback` (asked interactively on a
+     terminal), which sets `ipv4.dns "1.1.1.1 9.9.9.9"` on the active profile,
+     reapplies and verifies; `--dns-fallback off` undoes it. Settings >
+     Network > Troubleshooting has a **Use Public DNS** button for it;
+   - even public servers do not answer: the network blocks DNS (port 53),
+     ask its administrator (a proxy may be required).
+
+On installation `debion-desktop-base` runs `debion-network-check
+--postinst-dns`: when `/etc/resolv.conf` is missing, empty or dangling (or
+points to a stopped systemd-resolved) and no `dns=`/`rc-manager=` was set by
+the administrator, it writes the same `90-debion-dns.conf` and reloads
+NetworkManager. A working `resolv.conf` is never touched. Remove the file to
+go back to NetworkManager's defaults.
+
+Checking by hand:
+
+```sh
+NetworkManager --print-config | grep -E '^(dns|rc-manager)='
+nmcli -g IP4.DNS device show enp0s3
+nmcli -g ipv4.ignore-auto-dns,ipv4.dns connection show "Wired connection 1"
+ls -l /etc/resolv.conf; lsattr /etc/resolv.conf; cat /etc/resolv.conf
+getent ahosts deb.debian.org
+```
+
 ### "Connected · Internet access", but Firefox cannot connect (alpha 50)
 
 Report: SDE installed on top of Debian's *standard system* (netinst without a
@@ -336,3 +417,24 @@ without a warning; otherwise a system without the check reports a false "no
 internet". `nmcli -t -f STATE,CONNECTIVITY general` gives the same values as
 text (`connected:full`, `connected:limited`, `connected:portal`,
 `connected:unknown`).
+
+## The clock shows the wrong time zone (alpha 51)
+
+Open the calendar (click the panel clock, then *Calendar and agenda*). The
+**Time zone** row under the month shows the zone and its UTC offset
+(`Asia/Jakarta · UTC+7`). **Sync** asks ipapi.co (then ip-api.com, the same
+services as the weather) for this network's time zone, sets it with
+`timedatectl set-timezone` (polkit; `pkexec` when that is refused), turns on
+network time and switches NTP off and on so that systemd-timesyncd
+synchronizes at once, then shows `Synced · <zone>` or the error. Without
+internet the button is disabled. **Automatic time zone** (`[clock]
+auto_timezone=true` in `sde.conf`) does the same when a connection reaches the
+internet, at most once an hour and never with a password prompt (when polkit
+would ask, the row says to press Sync). The same controls are on Settings >
+Power & Updates > Date and time. By hand:
+
+```sh
+curl -s https://ipapi.co/json/ | grep timezone
+timedatectl set-timezone Asia/Jakarta && timedatectl set-ntp true
+timedatectl status
+```

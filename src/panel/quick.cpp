@@ -22,6 +22,7 @@
 
 #include "build_config.h"
 #include "calendar.h"
+#include "timezone.h"
 #include "config.h"
 #include "agenda.h"
 #include "alarm_popup.h"
@@ -128,6 +129,12 @@ void SystemStatus::start(std::function<void()> changed) {
   start_connectivity();
   // The Action Center's weather reports a fetch through the usual change.
   weather::Service::get().set_listener([this] { this->changed(); });
+  // "Sync time zone" reports its progress the same way.
+  tzsync::Sync::get().set_listener([this] {
+    this->changed();
+    if (Panel::instance && tzsync::Sync::get().state() == tzsync::Sync::DONE)
+      Panel::instance->time_zone_changed();
+  });
   if (!Panel::safe_mode)
     nightlight::Controller::get().start(
         []() -> const Config * { return Panel::instance ? &Panel::instance->config() : nullptr; });
@@ -1504,6 +1511,9 @@ std::string QuickSettings::structure() const {
     for (const char *key : {"enabled", "schedule", "from", "to"})
       out << '|' << cfg.get("night_light", key);
     out << '|' << cfg.get("power", "idle_dim_battery") << cfg.get("brightness", "external_monitor");
+    const auto &tz = tzsync::Sync::get();
+    out << "|tz" << int(tz.state()) << tz.message() << cfg.get("clock", "auto_timezone")
+        << tzsync::current_zone() << weather_online();
   }
   for (const auto &a : c.streams) out << '|' << a.id << a.app << a.title << a.muted;
   for (const auto &d : c.drives) out << '|' << d.path << d.mountpoint();
@@ -2710,6 +2720,7 @@ void QuickSettings::build_center(SectionBuilder &b) {
       };
       cal->picked = [this](int y, int m, int d) { agenda_pick(y, m, d); };
       b.y += calendar_->h();
+      timezone_rows(b);
     }
     b.end_card(card);
     if (open) agenda_card(b);
@@ -2723,6 +2734,48 @@ void QuickSettings::build_center(SectionBuilder &b) {
                : _("No new notifications"));
     b.end_card(card);
   }
+}
+
+// ------------------------------------------------------------- time zone
+
+// Under the calendar: "Time zone · Asia/Jakarta · UTC+7" with Sync, the
+// progress or outcome of the last sync, and the Automatic time zone switch.
+void QuickSettings::timezone_rows(SectionBuilder &b) {
+  const auto &cfg = Panel::instance->config();
+  auto &tz = tzsync::Sync::get();
+  int pad = b.pad, inner = b.inner, bw = S(78);
+  bool online = weather_online();
+  b.y += S(4);
+  // The labels name the rows for the QA dump (they are not drawn).
+  auto *zone = new ActionLabel(pad + S(12), b.y, inner - S(32) - bw, S(32), [] {
+    return std::string(_("Time zone")) + " \xc2\xb7 " + tzsync::current_label();
+  });
+  zone->copy_label(("Time zone: " + tzsync::current_label()).c_str());
+  auto *sync = new CommandButton(pad + inner - S(12) - bw, b.y, bw, S(32),
+                                 tz.busy() ? _("Syncing") : _("Sync"),
+                                 [] { tzsync::Sync::get().start(weather_online()); });
+  sync->copy_tooltip(online ? _("Sync time zone")
+                            : _("Sync time zone: connect to the internet to detect the time zone"));
+  if (!online || tz.busy()) sync->deactivate();
+  b.y += S(34);
+  if (!tz.message().empty()) {
+    auto *status = new ActionLabel(pad + S(12), b.y, inner - S(24), S(24),
+                                   [] { return tzsync::Sync::get().message(); }, 2);
+    status->copy_label(("Time zone status: " + tz.message()).c_str());
+    b.y += S(24);
+  }
+  auto *automatic = new Switch(pad + S(12), b.y, inner - S(24), S(32));
+  automatic->copy_label(_("Automatic time zone"));
+  automatic->copy_tooltip(_("Automatic time zone"));
+  automatic->value(cfg.get_bool("clock", "auto_timezone", false) ? 1 : 0);
+  automatic->callback([](Fl_Widget *w, void *) {
+    bool on = static_cast<Switch *>(w)->value() != 0;
+    later([on] {
+      Panel::instance->set_setting("clock", "auto_timezone", on ? "true" : "false");
+      if (on) tzsync::Sync::get().automatic(true, weather_online());
+    });
+  });
+  b.y += S(36);
 }
 
 // ---------------------------------------------------------------- agenda

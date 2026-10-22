@@ -30,9 +30,29 @@ network_handover() {
     fi
 }
 
+# An /etc/resolv.conf without any name server (left empty or dangling by
+# the installer, dhclient or a removed systemd-resolved) breaks every name
+# lookup although NetworkManager says "connected". Unless the administrator
+# configured NetworkManager's DNS handling, let NetworkManager write it
+# (conf.d/90-debion-dns.conf: dns=default, rc-manager=file); the reload
+# below applies it. A working resolv.conf is never touched.
+dns_repair() {
+    [ -x /usr/sbin/debion-network-check ] || return 0
+    /usr/sbin/debion-network-check --postinst-dns || true
+}
+
+reload_nm() {
+    if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 &&
+       systemctl is-active --quiet NetworkManager.service; then
+        systemctl reload NetworkManager.service >/dev/null 2>&1 || true
+    fi
+}
+
 if [ "$1" = "triggered" ]; then
     # NetworkManager was installed after this package.
     network_handover
+    dns_repair
+    reload_nm
     exit 0
 fi
 
@@ -66,14 +86,12 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-remov
 
     if [ "$1" = "configure" ]; then
         network_handover
+        dns_repair
     fi
 
-    # NetworkManager: load the connectivity check (a configuration reload
-    # does not drop connections).
-    if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 &&
-       systemctl is-active --quiet NetworkManager.service; then
-        systemctl reload NetworkManager.service >/dev/null 2>&1 || true
-    fi
+    # NetworkManager: load the connectivity check and the DNS setting (a
+    # configuration reload does not drop connections).
+    reload_nm
 
     # Refresh the GRUB background when GRUB is the boot loader.
     if [ -e /boot/grub/grub.cfg ] && command -v update-grub >/dev/null 2>&1; then

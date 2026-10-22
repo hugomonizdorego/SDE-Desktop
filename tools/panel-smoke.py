@@ -30,6 +30,8 @@ display=f':{a.display}'
 e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),XDG_CACHE_HOME=str(home/'.cache'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),SDE_PANEL_FAKE_TOUCHPAD='1',PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
 # The Action Center's weather comes from a fixed report (no network in QA).
 e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
+# ...and so does the clock's "Sync time zone" (timedatectl is a logging stub).
+e['SDE_TZ_FIXTURE']=os.environ.get('SDE_TZ_FIXTURE','Asia/Jakarta')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
 # alpha51: a battery (SDE_POWER_SUPPLY_DIR, see refresh_battery in quick.cpp):
@@ -386,6 +388,41 @@ def weather_checks():
     waitfor(lambda:not any(k.startswith('@weather-') for k in layout('Action Center')),'weather shown while disabled')
     escape('Action Center');config(overflow=False);reload()
     command(['--action-center'],'Action Center');time.sleep(.5)
+def reveal(title,name):
+    """Scrolls the popup body until all of |name| is in view (screenshots)."""
+    win=find('^'+re.escape(title)+'$')
+    for _ in range(30):
+        if in_view(title,name):return
+        L=layout(title);body=L.get('@body');g=geom(win)
+        if not body:return
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+body[3]//2,'click','5');time.sleep(.25)
+def timezone_checks():
+    """Clock (alpha51): the calendar card's Time zone row. Sync detects the
+    zone (SDE_TZ_FIXTURE), sets it with timedatectl and turns network time
+    on; Automatic time zone is saved as [clock] auto_timezone."""
+    if visible('^Action Center$'):escape('Action Center')
+    ac=command(['--calendar'],'Action Center');time.sleep(.5)
+    waitfor(lambda:any(k.startswith('Time zone: ') for k in layout('Action Center')),'time zone row missing')
+    item('Action Center','Automatic time zone',active=False)
+    press('Action Center','Sync time zone')
+    zone=e['SDE_TZ_FIXTURE']
+    waitfor(lambda:commands('TIMEDATECTL set-timezone '+zone),'Sync did not set the time zone')
+    waitfor(lambda:commands('TIMEDATECTL set-ntp true'),'Sync did not turn on network time')
+    waitfor(lambda:'Time zone status: Synced \u00b7 '+zone in layout('Action Center'),'no "Synced" outcome: '+str([k for k in layout('Action Center') if 'zone' in k]))
+    if zone=='Asia/Jakarta':
+        waitfor(lambda:'Time zone: Asia/Jakarta \u00b7 UTC+7' in layout('Action Center'),'zone row not updated: '+str([k for k in layout('Action Center') if 'zone' in k]))
+    press('Action Center','Automatic time zone');time.sleep(.4)
+    waitfor(lambda:'auto_timezone=true' in conf(),'Automatic time zone not saved')
+    item('Action Center','Sync time zone');reveal('Action Center','Automatic time zone');time.sleep(.6);shot('24-clock-timezone-synced')
+    escape('Action Center')
+def timezone_offline_checks():
+    """Without internet the Sync button is disabled and says why."""
+    ac=command(['--calendar'],'Action Center');time.sleep(.5)
+    r=item('Action Center','Sync time zone: connect to the internet to detect the time zone',active=False)
+    assert not r[4],'Sync active while offline'
+    press('Action Center','Sync time zone: connect to the internet to detect the time zone',active=False)
+    reveal('Action Center','Automatic time zone');time.sleep(.6);shot('24-clock-timezone-offline')
+    escape('Action Center')
 def brightness_settings_checks():
     """The brightness row's gear: Night Light (gamma), schedule, auto-dim on
     battery and dim level for sde-power, the DDC/CI monitor, Display settings."""
@@ -634,7 +671,7 @@ elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n1
 elif a[:2]==['-t','networking']:print('full')
 ''')
 # Session actions, the browser and sound players only log what they were asked.
-for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY')]:
+for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY'),('timedatectl','TIMEDATECTL')]:
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
 ''')
@@ -831,6 +868,7 @@ try:
     waitfor(lambda:commands('NM connection up id QA Wired LAN'),'Troubleshoot did not reconnect')
     waitfor(lambda:layout('SDE Panel').get('@led:yellow:pulse') or layout('SDE Panel').get('@led:yellow:steady'),'LED not yellow without internet')
     escape('Network');shot('22-panel-no-internet')
+    timezone_offline_checks()
     mode('nm-portal');fl=open_section('network','Network')
     item('Network','Sign in to network',active=False);shot('23-network-portal')
     press('Network','Open sign-in page');gone('^Network$')
@@ -924,6 +962,8 @@ try:
         config(theme=theme,look=look);reload()
         ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac);shot(f'13-theme-{look.split(chr(10))[0]}-{theme}');escape('Action Center')
         fl=open_section('sound','Sound');flyout_bounds(fl,'sound');shot(f'13-theme-{look.split(chr(10))[0]}-{theme}-sound');escape('Sound')
+    # Last: Sync changes the panel's time zone (alarms and agenda use it).
+    config(theme='light');reload();timezone_checks()
     config(moved=False);reload();fl=open_section('tray','Tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('14-keep-tray-on-panel');escape('Tray')
     fixture.terminate();fixture.wait();sni.terminate();sni.wait();time.sleep(.6)
     assert panel_proc.poll() is None,'service disappearance crashed panel'
@@ -931,6 +971,7 @@ try:
     command(['--action-center'],'Action Center');escape('Action Center')
     preview_checks()
     assert panel_proc.poll() is None,'panel exited'
+    print('PANEL a51: clock time zone row (Sync sets the detected zone with timedatectl and turns NTP on, Automatic time zone saved, disabled offline) PASS',flush=True)
     print('PANEL a50: tooltips name the hovered icon at once, no media icon, one keyboard indicator, network LED and switches, drives (open/eject/busy/notify/automount), touchpad indicator, popups take input after a screenshot grab PASS',flush=True)
     print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
 finally:
