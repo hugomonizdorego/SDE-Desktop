@@ -23,6 +23,7 @@
 #include "desktop_entry.h"
 #include "i18n.h"
 #include "link.h"
+#include "menu.h"
 #include "menubar.h"
 #include "photo.h"
 #include "process.h"
@@ -1174,6 +1175,30 @@ void PhotoWindow::toggle_fullscreen() {
   else fullscreen();
 }
 
+void PhotoWindow::context_menu() {
+  bool have = current() != nullptr, loaded = source_ != nullptr;
+  ContextMenu m;
+  m.item(_("Copy Image"), [this] { copy_to_clipboard(); }, {"copy", FL_CTRL + 'c', loaded});
+  m.item(_("Draw and Annotate…"), [this] { open_draw(); }, {"", 'd', loaded});
+  m.item(_("Adjust Colours…"), [this] {
+    if (!panel_->visible() || panel_->mode() != SidePanel::Edit) toggle_panel(SidePanel::Edit);
+    panel_->set_tab(SidePanel::Adjust);
+  }, {"", 'e', loaded});
+  m.item(_("Crop…"), [this] { start_crop(); }, {"", 'c', loaded});
+  m.item(_("Rotate Right"), [this] { rotate(1); }, {"", 'r', loaded, true});
+  if (drawing() && canvas_->selected_mark() >= 0)
+    m.item(_("Delete Annotation"), [this] { delete_selected_mark(); }, {"delete", FL_Delete, true, true});
+  m.item(_("Show in Gallery"), [this] { show_in_gallery(); }, {"image", FL_CTRL + 'g', have});
+  m.item(_("Slideshow in Gallery"), [this] { slideshow_in_gallery(); }, {"", FL_F + 5, have && photos_.size() > 1});
+  m.item(_("Open With…"), [this] { open_with(); }, {"open", 0, have});
+  m.item(_("Show in Files"), [this] { show_in_files(); }, {"folder", 0, have});
+  m.item(_("Set as Wallpaper"), [this] { set_wallpaper(); }, {"", 0, have, true});
+  m.item(_("Information"), [this] { toggle_panel(SidePanel::Info); }, {"info", 'i', have});
+  m.item(_("Move to Trash…"), [this] { trash(); }, {"trash", FL_Delete, have});
+  m.popup();
+  redraw();
+}
+
 void PhotoWindow::slideshow_in_gallery() {
   // Slideshows of a folder or album are Gallery's: hand over the photo.
   const Photo *p = current();
@@ -1320,14 +1345,18 @@ void PhotoWindow::layout_buttons() {
     add(icon::Save, _("Save (Ctrl+S)"), [this] { save(); })->toggled = true;
     group_after.push_back(int(buttons_.size()));
   }
-  add(icon::ZoomOut, _("Zoom Out (−)"), [this] { canvas_->zoom_by(1 / 1.25); });
+  // Narrow windows keep the name readable: zooming stays on the wheel and
+  // the keys, full screen on F11.
+  bool narrow = w() < S(820);
+  if (!narrow) add(icon::ZoomOut, _("Zoom Out (−)"), [this] { canvas_->zoom_by(1 / 1.25); });
   bool fit = canvas_->zoom_mode() == ZoomMode::Fit;
   add(icon::Fit, fit ? _("Actual Size (1)") : _("Best Fit (0)"),
       [this, fit] { canvas_->set_zoom_mode(fit ? ZoomMode::Actual : ZoomMode::Fit); });
-  add(icon::ZoomIn, _("Zoom In (+)"), [this] { canvas_->zoom_by(1.25); });
+  if (!narrow) add(icon::ZoomIn, _("Zoom In (+)"), [this] { canvas_->zoom_by(1.25); });
   group_after.push_back(int(buttons_.size()));
   add(icon::Rotate, _("Rotate Right (R)"), [this] { rotate(1); });
-  add(fullscreen_active() ? icon::Unfullscreen : icon::Fullscreen, _("Full Screen (F11)"), [this] { toggle_fullscreen(); });
+  if (!narrow)
+    add(fullscreen_active() ? icon::Unfullscreen : icon::Fullscreen, _("Full Screen (F11)"), [this] { toggle_fullscreen(); });
   group_after.push_back(int(buttons_.size()));
   auto *dr = add(icon::Edit, _("Draw and Annotate (D)"), [this] {
     if (drawing()) toggle_panel(SidePanel::Edit);

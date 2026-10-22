@@ -413,19 +413,27 @@ bool erase_at(Marks &marks, Pt p, double radius) {
       continue;
     }
     changed = true;
-    // Cut the stroke: keep the runs of points outside the circle.
+    // Cut the stroke where it is under the eraser: follow the drawn curve
+    // closely (points every few pixels), so that sparse strokes lose only
+    // the part that was rubbed out.
+    std::vector<Pt> dense = m.pts.size() >= 3 ? smooth_stroke(m.pts, std::max(0.5, r / 4)) : m.pts;
+    if (dense.size() == 2) {
+      int n = std::max(1, int(std::ceil(dist(dense[0], dense[1]) / std::max(0.5, r / 4))));
+      std::vector<Pt> line;
+      for (int k = 0; k <= n; ++k)
+        line.push_back({dense[0].x + (dense[1].x - dense[0].x) * k / n, dense[0].y + (dense[1].y - dense[0].y) * k / n});
+      dense = line;
+    }
     std::vector<std::vector<Pt>> pieces(1);
-    for (size_t i = 0; i < m.pts.size(); ++i) {
-      bool inside = dist(m.pts[i], p) <= r;
-      if (!inside) pieces.back().push_back(m.pts[i]);
+    for (size_t i = 0; i < dense.size(); ++i) {
+      bool inside = dist(dense[i], p) <= r;
+      if (!inside) pieces.back().push_back(dense[i]);
       else if (!pieces.back().empty()) pieces.emplace_back();
-      if (!inside && i + 1 < m.pts.size() && dist(m.pts[i + 1], p) > r && seg_dist(p, m.pts[i], m.pts[i + 1]) <= r)
-        pieces.emplace_back();  // the segment between passes through the eraser
     }
     for (auto &piece : pieces) {
       if (piece.size() < 2) continue;  // no stray dots
       Mark part = m;
-      part.pts = std::move(piece);
+      part.pts = thin_points(piece, std::max(0.5, r / 4));
       out.push_back(std::move(part));
     }
   }

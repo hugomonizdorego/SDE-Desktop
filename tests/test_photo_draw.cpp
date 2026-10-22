@@ -469,6 +469,24 @@ static void test_hit_and_edit() {
   sparse.items.push_back(s2);
   CHECK(erase_at(sparse, {50, 50}, 3));
   CHECK(sparse.items.size() == 2);
+  // Only the part under the eraser goes, not the whole long segment.
+  if (sparse.items.size() == 2) {
+    double left_end = 0, right_start = 100;
+    for (const Pt &p : sparse.items[0].pts) left_end = std::max(left_end, p.x);
+    for (const Pt &p : sparse.items[1].pts) right_start = std::min(right_start, p.x);
+    CHECK(left_end > 42 && left_end < 47);
+    CHECK(right_start > 53 && right_start < 58);
+    CHECK(near(sparse.items[0].pts.front(), {0, 50}) && near(sparse.items[1].pts.back(), {100, 50}));
+  }
+  // A two-point stroke is cut too.
+  Marks two;
+  two.w = two.h = 100;
+  Mark t2;
+  t2.kind = MarkKind::Highlighter;
+  t2.width = 2;
+  t2.pts = {{0, 10}, {100, 10}};
+  two.items.push_back(t2);
+  CHECK(erase_at(two, {30, 10}, 4) && two.items.size() == 2);
 }
 
 static void test_undo_redo() {

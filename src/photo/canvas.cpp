@@ -546,7 +546,7 @@ int Canvas::handle(int event) {
         return 1;
       }
       if (Fl::event_button() == FL_RIGHT_MOUSE) {
-        app_->menu_->popup();
+        app_->context_menu();
         return 1;
       }
       if (Fl::event_clicks()) {

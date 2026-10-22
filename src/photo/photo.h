@@ -322,6 +322,7 @@ class PhotoWindow : public sde::BufferedWindow {
   // View.
   void toggle_fullscreen();
   void slideshow_in_gallery();
+  void context_menu();  // right click on the photo
   void toggle_panel(SidePanel::Mode m);
   bool panel_open() const;
   void toggle_filmstrip();

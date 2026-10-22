@@ -265,7 +265,16 @@ int Canvas::draw_event(int event, int mx, int my) {
       if (middle_pan_) return 0;  // the canvas pans
       if (erasing_) {
         Edits e = app_->edits_for_marks();
-        if (erase_at(e.marks, p, d.width[int(Tool::Eraser)] / 2 / k)) {
+        double r = d.width[int(Tool::Eraser)] / 2 / k;
+        // Erase along the way from the last position: fast drags leave no
+        // gaps.
+        Pt from = event == FL_PUSH ? p : press_img_;
+        int steps = std::max(1, int(std::ceil(std::hypot(p.x - from.x, p.y - from.y) / std::max(1e-6, r * 0.5))));
+        bool any = false;
+        for (int s = 1; s <= steps; ++s)
+          any |= erase_at(e.marks, {from.x + (p.x - from.x) * s / steps, from.y + (p.y - from.y) * s / steps}, r);
+        press_img_ = p;
+        if (any) {
           app_->apply(e, erased_);  // one undo step per drag
           erased_ = true;
         }
