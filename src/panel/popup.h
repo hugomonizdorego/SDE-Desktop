@@ -10,6 +10,11 @@
 
 #include "buffered_window.h"
 
+namespace sde {
+class Painter;
+struct Color;
+}  // namespace sde
+
 class PanelPopup : public sde::BufferedWindow {
  public:
   // True when root coordinates are inside the popup, or inside where it was
@@ -32,6 +37,12 @@ class PanelPopup : public sde::BufferedWindow {
   bool has_input() const;
 
   int handle(int event) override;
+  void resize(int x, int y, int w, int h) override;
+  // alpha51: soft rounded corners (popup_style::radius()); a corner popup
+  // keeps square corners on the side that touches the panel.
+  int corner_radius() const;
+  // Draws the popup's border along the rounded outline.
+  void stroke_outline(sde::Painter &p, const sde::Color &c) const;
 
  protected:
   // Called before the window is placed; set the popup's size here.
@@ -55,6 +66,8 @@ class PanelPopup : public sde::BufferedWindow {
   bool grabbing_ = false;
   int input_tries_ = 0;
   bool closing_ = false;
+  void apply_shape();
+  int shaped_w_ = 0, shaped_h_ = 0;
   int anchor_x_ = 0;
   int align_ = 0;  // 0 left edge, 1 right edge, 2 center at anchor_x_
 };
