@@ -1,16 +1,30 @@
 .TH SDE-GALLERY 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-sde-gallery \- browse the photo library on the SDE desktop
+sde-gallery \- Gallery, the SDE photo library
 .SH SYNOPSIS
 .B sde-gallery
-[\-\-select FILE] [\-\-version | \-\-help]
+[\-\-select FILE] [\-\-slideshow FILE] [\-\-import] [\fIFOLDER\fR]
+.br
+.B sde-gallery
+\-\-version | \-\-help
 .SH DESCRIPTION
+Gallery organizes your photos: it browses them by date, folder, album and
+device, keeps favorites and the albums you make, searches, imports from
+cameras and memory cards, plays slideshows and works on many photos at
+once. It does not edit single photos: opening a photo starts Photo
+.RB ( sde-view (1)),
+the image viewer and editor, and Gallery's quick preview has an
+.B Edit in Photo
+button.
+.PP
 Gallery shows the pictures in your XDG Pictures folder (see
 .BR xdg-user-dir (1))
 and in folders you add, grouped by month of their modification time.
 The sidebar offers All Photos, Favorites, Recent (the last 30 days),
-Screenshots (the Screenshots folder inside Pictures), the folder list and,
-under
+Screenshots (the Screenshots folder inside Pictures), the folder list,
+your
+.B Albums
+and, under
 .BR Devices ,
 the cameras, SD cards, USB drives and other removable media mounted below
 .I /media
@@ -30,19 +44,58 @@ through the freedesktop.org thumbnail cache in
 .IR ~/.cache/thumbnails/normal
 and
 .IR ~/.cache/thumbnails/large .
+.SS Albums
+.B New Album
+(Ctrl+N, or the sidebar) makes an album; photos are added with
+.B Add to Album
+(Ctrl+L, the selection bar or the photo menu) and removed with
+.BR "Remove from Album" .
+An album only lists photos: removing a photo from an album, or deleting an
+album, never deletes files. Albums follow photos that are moved with
+.B Move to Folder
+and forget photos moved to the Trash. Right-click an album in the sidebar
+to play a slideshow, rename or delete it.
+.SS Working with many photos
+Select photos with Ctrl+click, Shift+click or Ctrl+A. The selection bar
+offers Favorite, Add to Album, More and Move to Trash; the photo menu
+(right click, or More) also has:
+.TP
+.B Slideshow
+of the selected photos (or of the whole view, F5).
+.TP
+.B Rotate Left, Rotate Right
+JPEG photos are turned without loss of quality by changing their EXIF
+orientation; PNG, WebP and TIFF are encoded again.
+.TP
+.B Resize and Export
+Writes copies to a folder, at the original size or with the longest side
+at 3840, 2048, 1280 or 640 pixels. JPEG copies keep the camera details;
+GIF and SVG are exported as PNG. Existing files are never overwritten: the
+copies get a number, as in
+.IR "IMG_0001 (2).jpg" .
+.TP
+.B Copy to Folder, Move to Folder
+Moving keeps favorites and albums up to date.
+.TP
+.B Share by Email
+Opens a new message with the photos attached
+.RB ( xdg-email (1)).
 .SS Menus
 .TP
 .B File
 Open File (opens it in Photo), Open Folder (browse any folder without
-adding it), Import from Device, Add Folder to Library, Refresh, Quit.
+adding it), Import from Device, Add Folder to Library, New Album,
+Refresh, Quit.
 .TP
 .B Edit
-Select All, Select None, Add to Favorites, Copy Path, Move to Trash, Open
-in Photo, Set as Wallpaper, Show in Files.
+Select All, Select None, Add to Favorites, Add to Album, Remove from
+Album, Rotate Left/Right, Resize and Export, Copy to Folder, Move to
+Folder, Share by Email, Copy Path, Move to Trash, Edit in Photo, Quick
+Preview, Set as Wallpaper, Show in Files.
 .TP
 .B View
-Sort order, thumbnail size, Show Sidebar, Open Photos in Photo, Full
-Screen.
+Sort order, thumbnail size, Show Sidebar, Open Photos in Photo,
+Slideshow, Full Screen.
 .TP
 .B Help
 Keyboard Shortcuts, About Gallery.
@@ -54,18 +107,22 @@ the date being the day each photo was taken by the camera (its
 modification time). Photos imported before (same name and size) are
 skipped; other name clashes get a number, as in
 .IR "DSC_0001 (2).JPG" .
+Gallery is the default application for camera media
+.RB ( x-content/image-dcf ),
+so a file manager can offer it when a card is inserted.
 .SS Photo
-Double-click a photo or press Enter to open the built-in viewer, or, with
+Double-click a photo or press Enter to open it in Photo (with
 .B View > Open Photos in Photo
-set, Photo
-.RB ( sde-view (1)).
-Ctrl+E always opens the photo in Photo. Gallery starts Photo with
+unset, or without Photo installed, in the quick preview instead; Ctrl+P
+always opens the preview, Ctrl+E always opens Photo). Gallery starts Photo
+with
 .BI \-\-album= ID
 and the current sort order, so that Photo steps through the same photos in
-the same order (search results are passed as a list). Edits, favorites,
+the same order (search results and albums are passed as lists). Edits,
 deletions and new files made in Photo appear in Gallery at once; Photo's
 .B Show in Gallery
-selects the photo in the running Gallery.
+selects the photo in the running Gallery, and Photo's slideshow (F5) plays
+in Gallery.
 .PP
 Files are never deleted permanently: Move to Trash uses the
 freedesktop.org Trash through GIO.
@@ -77,30 +134,47 @@ Move between photos. Shift extends the selection.
 .B Ctrl+click, Shift+click, Space, Ctrl+A, Esc
 Select photos, select all, clear the selection.
 .TP
-.B Enter
-Open the photo.
+.B Enter, Ctrl+E, Ctrl+P
+Open the photo in Photo, edit in Photo, quick preview.
 .TP
 .B + \- , Ctrl+mouse wheel
-Change the thumbnail size (zoom in the viewer).
+Change the thumbnail size (zoom in the preview).
 .TP
-.B Ctrl+F, Ctrl+O, Ctrl+Shift+O, Ctrl+I, F5
+.B Ctrl+F, Ctrl+O, Ctrl+Shift+O, Ctrl+I, Ctrl+R
 Search, open a photo, open a folder, import from a device, reload.
 .TP
-.B Ctrl+D, Ctrl+C, Ctrl+E, Delete
-Toggle favorite, copy paths, open in Photo, move to the Trash.
+.B Ctrl+D, Ctrl+L, Ctrl+N, Ctrl+C, Delete
+Toggle favorite, add to an album, new album, copy paths, move to the
+Trash.
+.TP
+.B Ctrl+Shift+L, Ctrl+Shift+R, Ctrl+Shift+E, F5
+Rotate left, rotate right, resize and export, slideshow.
 .TP
 .B F1, F9, F11, Ctrl+Q
 Keyboard shortcuts, sidebar, full screen, quit.
 .TP
-.B Viewer: 0, 1, R, I, F5, F11, Esc
-Fit, actual size, rotate, details, slideshow, full screen, back.
+.B Preview: 0, 1, I, F5, F11, Ctrl+E, Esc
+Fit, actual size, details, slideshow, full screen, edit in Photo, back.
 .SH OPTIONS
+.TP
+.I FOLDER
+Show the photos of
+.I FOLDER
+(a file: its folder, with the file selected).
 .TP
 .BI \-\-select " FILE"
 Show and select
 .IR FILE .
 When Gallery is already running, the running window does it and is
 raised; only one Gallery runs per display.
+.TP
+.BI \-\-slideshow " FILE"
+Play a slideshow of the folder (or library view) of
+.IR FILE ,
+starting with it.
+.TP
+.B \-\-import
+Import photos from a connected camera or card.
 .TP
 .B \-\-version
 Print the version and exit.
@@ -120,15 +194,22 @@ keeps
 .BR sort= ,
 .B sidebar=
 and
-.BR open_in_photo= .
+.BR open_in_photo=
+(default true).
 Set as Wallpaper writes
 .B wallpaper=
 in
 .BR [appearance] .
+.TP
+.I ~/.local/share/sde/gallery/albums/NAME.album
+An album: one absolute path per line, in the album's order
+.RB ( $XDG_DATA_HOME
+is honoured).
 .SH SEE ALSO
 .BR sde-view (1),
 .BR liria (1),
 .BR sde-settings (1),
-.BR xdg-user-dir (1)
+.BR xdg-user-dir (1),
+.BR xdg-email (1)
 .SH AUTHORS
 Written from scratch by the DebION Dev-Team. GPL-3.0-or-later.

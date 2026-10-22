@@ -15,7 +15,9 @@ enum Kind {
   Picture, Broken, Check, Small, Large,
   // Added for storage media and Photo.
   Drive, Import, Eject, Menu, RotateLeft, FlipH, FlipV, Crop, Undo, Redo, Adjust, Filters, Save,
-  Fullscreen, Unfullscreen, MapPin, Camera, Print, Resize, Gallery, Film
+  Fullscreen, Unfullscreen, MapPin, Camera, Print, Resize, Gallery, Film,
+  // Gallery's albums.
+  Album
 };
 // Draws |kind| in a size x size box at (x, y).
 void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde::Color &c);

@@ -18,6 +18,7 @@
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
+#include "link.h"
 #include "photo.h"
 #include "theme.h"
 #include "util.h"
@@ -52,15 +53,17 @@ std::string absolute(const std::string &arg) {
 
 void usage() {
   printf("%s", _("Usage: sde-view [OPTIONS] [FILE|URI|FOLDER...]\n\n"
-                 "Photo shows pictures and edits them: rotate, flip, crop, resize, adjust the\n"
-                 "colours and apply filters. The information panel shows the camera details\n"
-                 "and the location of a photo.\n\n"
+                 "Photo views and edits one image at a time: rotate, flip, crop, resize,\n"
+                 "adjust the colours, apply filters, and draw on it (pen, highlighter, shapes,\n"
+                 "arrows, text, blur and pixelate). The information panel shows the camera\n"
+                 "details and the location. Albums, favorites and slideshows are in Gallery.\n\n"
                  "Options:\n"
                  "  --album=ID      step through a Gallery album: all, favorites, recent,\n"
                  "                  screenshots, folder:PATH, device:PATH, dir:PATH, list:FILE\n"
                  "  --sort=ORDER    newest, oldest or name (default: Gallery's order)\n"
-                 "  --slideshow     start a slideshow\n"
+                 "  --slideshow     play a slideshow of the folder in Gallery\n"
                  "  --fullscreen    start in full screen\n"
+                 "  --draw          open the drawing tools (Draw tab)\n"
                  "  --version       print the version\n"
                  "  --help          show this help\n\n"
                  "Settings are kept in the [photo] section of ~/.config/sde/sde.conf.\n"));
@@ -72,7 +75,7 @@ int main(int argc, char **argv) {
   init_i18n();
   std::vector<std::string> files;
   std::string album_arg, sort_arg;
-  bool slideshow = false, full = false, options = true;
+  bool slideshow = false, full = false, draw = false, options = true;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (options && a == "--") {
@@ -89,6 +92,7 @@ int main(int argc, char **argv) {
         return 0;
       }
       if (a == "--slideshow") slideshow = true;
+      else if (a == "--draw") draw = true;
       else if (a == "--fullscreen") full = true;
       else if (starts_with(a, "--album=")) album_arg = a.substr(8);
       else if (a == "--album" && i + 1 < argc) album_arg = argv[++i];
@@ -148,6 +152,8 @@ int main(int argc, char **argv) {
   }
 
   fl_open_display();
+  // Slideshows are Gallery's; hand them over when it is installed.
+  if (slideshow && !first.empty() && gallery::slideshow_in_gallery(first)) return 0;
   auto theme = Theme::from_config(config);
   theme.apply_to_fltk();
   fl_register_images();
@@ -174,7 +180,8 @@ int main(int argc, char **argv) {
   } else if (explicit_album) {
     window->open("", album, true, sort);
   }
-  if (slideshow) window->toggle_slideshow();
+  if (slideshow) window->toast(_("Slideshows need Gallery (sde-gallery)"));
+  if (draw) window->open_draw_when_loaded();
   Fl::focus(window->canvas());
   int status = Fl::run();
   delete window;
