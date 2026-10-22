@@ -17,6 +17,7 @@
 #include "paint.h"
 #include "panel.h"
 #include "panel_widgets.h"
+#include "popup_style.h"
 #include "theme.h"
 #include "util.h"
 #include "widgets.h"
@@ -80,7 +81,7 @@ class Label : public Fl_Widget {
       : Fl_Widget(x, y, w, h), text_(std::move(text)), style_(style) {}
   void draw() override {
     const Theme &t = Panel::instance->theme();
-    int size = t.font_size + (style_ == 1 ? 1 : style_ == 3 ? 14 : style_ == 4 ? 18 : 0);
+    int size = t.font_size + (style_ == 3 ? 8 : style_ == 4 ? 14 : 0);
     text_font(size, style_ == 1 || style_ >= 3);
     draw_text(text_(), x(), y(), w(), h(), style_ == 2 ? t.text_dim : t.text, style_ == 5 ? 1 : 0);
   }
@@ -101,9 +102,9 @@ class Card : public Fl_Group {
     {
       Painter p(window()->w(), window()->h());
       Color bg = accent_ ? t.surface_alt.mix(t.accent, t.dark ? 0.3 : 0.16) : t.surface_alt;
-      p.fill_rounded(x(), y(), w(), h(), S(14), bg);
+      p.fill_rounded(x(), y(), w(), h(), S(8), bg);
       if (t.glass || accent_)
-        p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(14), accent_ ? t.accent : t.border);
+        p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(8), accent_ ? t.accent : t.border);
     }
     draw_children();
   }
@@ -204,12 +205,12 @@ class AlarmRow : public DrawnButton {
     const Theme &t = Panel::instance->theme();
     {
       Painter p(window()->w(), window()->h());
-      if (Fl::belowmouse() == this) p.fill_rounded(x(), y(), w(), h(), S(10), t.hover);
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(10));
+      if (Fl::belowmouse() == this) p.fill_rounded(x(), y(), w(), h(), S(6), t.hover);
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(6));
     }
     Color ink = alarm_.enabled || alarm_.snoozed_until ? t.text : t.text_dim;
-    text_font(t.font_size + 10, true);
-    draw_text(time_text(alarm_.hour, alarm_.minute), x() + S(10), y() + S(4), w() - S(20), S(34), ink);
+    text_font(t.font_size + 6, true);
+    draw_text(time_text(alarm_.hour, alarm_.minute), x() + S(8), y() + S(2), w() - S(16), S(26), ink);
     std::string sub = alarm_.label.empty() ? std::string(_("Alarm")) : alarm_.label;
     sub += " · " + repeat_text(alarm_.days);
     if (alarm_.snoozed_until)
@@ -217,7 +218,7 @@ class AlarmRow : public DrawnButton {
                             time_text(int(localtime_hour(alarm_.snoozed_until)),
                                       int(localtime_minute(alarm_.snoozed_until))).c_str());
     text_font(t.font_size - 1);
-    draw_text(sub, x() + S(10), y() + S(36), w() - S(20), S(20), t.text_dim);
+    draw_text(sub, x() + S(8), y() + S(27), w() - S(16), S(18), t.text_dim);
   }
 
  private:
@@ -478,10 +479,10 @@ void AlarmPopup::rebuild() {
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
   auto *panel = Panel::instance;
-  int W = std::min(S(360), mw - S(16));
-  int pad = S(14), scrollbar = S(8), inner = W - 2 * pad - scrollbar;
+  int W = std::min(S(popup_style::kFlyoutW), mw - S(16));
+  int pad = S(popup_style::kPad), scrollbar = S(6), inner = W - 2 * pad - scrollbar;
   int available = std::max(S(160), (t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my) - S(16));
-  header_ = S(74);
+  header_ = S(58);
   begin();
   body_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_));
   body_->type(Fl_Scroll::VERTICAL);
@@ -490,16 +491,16 @@ void AlarmPopup::rebuild() {
   body_->box(FL_FLAT_BOX);
   body_->color(t.surface.fl());
   new Fl_Box(body_->x(), body_->y(), 1, 1);
-  int y = header_ + S(10);
+  int y = header_ + S(8);
   auto &alarms = Alarms::get();
   auto label = [&](std::function<std::string()> text, int style, int h, int indent = 0) {
     new Label(pad + indent, y, inner - indent, S(h), std::move(text), style);
     y += S(h);
   };
   auto end_card = [&](Card *card) {
-    card->size(inner, y - card->y() + S(10));
+    card->size(inner, y - card->y() + S(8));
     card->end();
-    y += S(22);
+    y += S(16);
   };
 
   // Ringing alarms come first.
@@ -520,7 +521,7 @@ void AlarmPopup::rebuild() {
   }
 
   if (!editing_) {
-    label([] { return std::string(_("Alarms")); }, 1, 28);
+    label([] { return std::string(_("Alarms")); }, 1, 24);
     if (!message_.empty()) {
       std::string m = message_;
       label([m] { return m; }, 2, 22);
@@ -538,21 +539,21 @@ void AlarmPopup::rebuild() {
           return format(_("Next alarm: %s %s (%s)"), day, time_text(lt.tm_hour, lt.tm_min).c_str(),
                         until_text(next).c_str());
         },
-        2, 24);
-    y += S(6);
+        2, 22);
+    y += S(4);
     for (const auto &a : alarms.alarms()) {
       auto *card = new Card(pad, y, inner);
-      int sw = S(46), del = S(30);
-      new AlarmRow(pad + S(4), y + S(4), inner - sw - del - S(28), S(58), a, this);
-      new AlarmSwitch(pad + inner - sw - del - S(20), y + S(20), sw, S(26), a);
+      int sw = S(40), del = S(28);
+      new AlarmRow(pad + S(4), y + S(3), inner - sw - del - S(24), S(46), a, this);
+      new AlarmSwitch(pad + inner - sw - del - S(16), y + S(15), sw, S(22), a);
       int id = a.id;
-      new IconButton(pad + inner - del - S(10), y + S(18), del, del,
+      new IconButton(pad + inner - del - S(8), y + S(12), del, del,
                      format(_("Delete alarm %s"), alarm_name(a).c_str()), cross_icon(),
                      [id] { later([id] { Alarms::get().remove_alarm(id); }); });
-      y += S(66);
-      card->size(inner, S(66));
+      y += S(52);
+      card->size(inner, S(52));
       card->end();
-      y += S(8);
+      y += S(6);
     }
     if (alarms.alarms().empty()) {
       label([] { return std::string(_("No alarms yet.")); }, 0, 24);
@@ -623,7 +624,7 @@ void AlarmPopup::rebuild() {
 
   // Fixed header: the time and date, and the calendar link.
   begin();
-  new Label(pad + S(2), S(8), W - 2 * pad - S(56), S(36),
+  new Label(pad + S(4), S(6), W - 2 * pad - S(52), S(28),
             [] {
               time_t now = time(nullptr);
               struct tm lt;
@@ -631,7 +632,7 @@ void AlarmPopup::rebuild() {
               return time_text(lt.tm_hour, lt.tm_min);
             },
             3);
-  new Label(pad + S(2), S(42), W - 2 * pad - S(56), S(24),
+  new Label(pad + S(4), S(32), W - 2 * pad - S(52), S(20),
             [] {
               time_t now = time(nullptr);
               struct tm lt;
@@ -641,7 +642,7 @@ void AlarmPopup::rebuild() {
               return trim(date);
             },
             2);
-  new IconButton(W - pad - S(40), (header_ - S(40)) / 2, S(40), S(40), _("Calendar and agenda"),
+  new IconButton(W - pad - S(32), (header_ - S(32)) / 2, S(32), S(32), _("Calendar and agenda"),
                  calendar_icon(), [this] {
                    later([this] {
                      close();
@@ -661,8 +662,8 @@ void AlarmPopup::draw() {
     Painter p(w(), h());
     p.fill_rect(0, 0, w(), h(), t.surface);
     if (t.glass) p.fill_rect(0, 0, w(), header_, t.surface_alt.mix(t.surface, 0.55));
-    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
-    p.line(S(14), header_ - 0.5, w() - S(14), header_ - 0.5, t.border);
+    stroke_outline(p, t.border);
+    p.line(S(popup_style::kPad), header_ - 0.5, w() - S(popup_style::kPad), header_ - 0.5, t.border);
   }
   draw_children();
   if (qa_dump_enabled() && body_)

@@ -28,6 +28,8 @@ pkg_check_modules(RSVG REQUIRED IMPORTED_TARGET librsvg-2.0)
 pkg_check_modules(DBUS REQUIRED IMPORTED_TARGET dbus-1)
 pkg_check_modules(XRANDR REQUIRED IMPORTED_TARGET xrandr)
 pkg_check_modules(XINPUT REQUIRED IMPORTED_TARGET xi)
+# Optional: taskbar previews read composited window pixmaps (alpha51).
+pkg_check_modules(XCOMPOSITE IMPORTED_TARGET xcomposite)
 
 # SDE-FLTK: the DebION Dev-Team fork of FLTK 1.3.11 in sde-fltk/, built here
 # and linked statically, so SDE does not depend on the distribution's FLTK

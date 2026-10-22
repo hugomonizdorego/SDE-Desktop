@@ -93,3 +93,30 @@ std::string human_size(long long bytes);
 // or `lsof -Fc` output: program names without duplicates.
 std::vector<std::string> parse_busy_programs(const std::string &text);
 
+// ------------------------------------------------------- battery (alpha51)
+
+// "3 hours 57 minutes", "1 hour", "45 minutes"; "" for an unknown time.
+std::string battery_duration_text(int minutes);
+// The second line of the battery flyout: "Using battery power - 3 hours 57
+// minutes remaining", "Charging - 1 hour 10 minutes until full", "Fully
+// charged", "Charging" or "Using battery power".
+std::string battery_status_line(bool charging, bool full, int minutes);
+// The battery's name from sysfs: "<manufacturer> <model_name>", either part
+// when the other is missing, "" when both are.
+std::string battery_model_name(const std::string &manufacturer, const std::string &model);
+// power-profiles-daemon profiles in the applet's order: Power Saver,
+// Balanced, Performance, then any other profile as reported.
+std::vector<std::string> ordered_power_profiles(const std::vector<std::string> &profiles);
+
+// ------------------------------------------------ taskbar previews (alpha51)
+
+struct PreviewSize {
+  int w = 0, h = 0;
+};
+// A window of |win_w| x |win_h| scaled to fit |max_w| x |max_h| keeping its
+// aspect ratio (never enlarged, at least 1x1).
+PreviewSize preview_fit(int win_w, int win_h, int max_w, int max_h);
+// Width of each of |count| thumbnails side by side with |gap| between them
+// so that the row fits |available| (at most |preferred|, at least |minimum|).
+int preview_column_width(int count, int preferred, int minimum, int gap, int available);
+

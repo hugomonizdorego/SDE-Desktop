@@ -150,6 +150,9 @@ target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
 add_executable(sde-grab-fixture grab_fixture.cpp)
 target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
+# alpha51: a plain application window for the taskbar preview checks.
+add_executable(sde-preview-window preview_window_fixture.cpp)
+target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
 
 # SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.

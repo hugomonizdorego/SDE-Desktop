@@ -1699,7 +1699,7 @@ void AppMenu::draw() {
     p.fill_rect(0, 0, W, H, t.surface);
     // The rail is a shade apart from the list; the tiles sit on the surface.
     p.fill_rect(0, 0, rail_w_, H, t.surface_alt.alpha(t.dark ? 0.35 : 0.55));
-    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
+    stroke_outline(p, t.border);
 
     for (auto &it : items_) {
       if (!it.visible || it.kind == K_RAIL) continue;

@@ -35,9 +35,11 @@
 #include "i18n.h"
 #include "icons.h"
 #include "panel.h"
+#include "popup_style.h"
 #include "power.h"
 #include "process.h"
 #include "sni.h"
+#include "status_model.h"
 #include "spawn.h"
 #include "theme.h"
 #include "tray.h"
@@ -354,8 +356,11 @@ void SystemStatus::start_audio_stream() {
 
 void SystemStatus::refresh_battery() {
   BatteryState b;
-  for (auto &dev : list_dir("/sys/class/power_supply")) {
-    std::string base = "/sys/class/power_supply/" + dev, type, cap, status, scope;
+  // SDE_POWER_SUPPLY_DIR replaces the class directory in tests (alpha51).
+  const char *dir_env = getenv("SDE_POWER_SUPPLY_DIR");
+  std::string dir = dir_env && *dir_env ? dir_env : "/sys/class/power_supply";
+  for (auto &dev : list_dir(dir)) {
+    std::string base = dir + "/" + dev, type, cap, status, scope;
     if (!read_file(base + "/type", type) || trim(type) != "Battery") continue;
     if (read_file(base + "/scope", scope) && trim(scope) == "Device") continue;  // mice etc.
     if (!read_file(base + "/capacity", cap)) continue;
@@ -365,6 +370,10 @@ void SystemStatus::refresh_battery() {
     status = trim(status);
     b.charging = status == "Charging";
     b.full = status == "Full" || (status == "Not charging" && b.percent >= 95);
+    std::string vendor, model;
+    read_file(base + "/manufacturer", vendor);
+    read_file(base + "/model_name", model);
+    b.model = battery_model_name(vendor, model);
     // Remaining time from energy (µWh) / power (µW), or charge / current.
     std::string now, full, rate;
     bool ok = read_file(base + "/energy_now", now) && read_file(base + "/energy_full", full) &&
@@ -382,7 +391,7 @@ void SystemStatus::refresh_battery() {
   }
   bool diff = b.present != battery.present || b.percent != battery.percent ||
               b.charging != battery.charging || b.full != battery.full ||
-              b.minutes != battery.minutes;
+              b.minutes != battery.minutes || b.model != battery.model;
   battery = b;
   if (diff) changed();
 }
@@ -709,19 +718,23 @@ class ActionLabel : public Fl_Widget {
       : Fl_Widget(x, y, w, h), text_(std::move(text)), style_(style) {}
   void draw() override {
     const Theme &t = Panel::instance->theme();
-    int size = t.font_size + (style_ == 1 ? 1 : style_ == 3 ? 12 : 0);
-    text_font(size, style_ == 1 || style_ == 3);
-    draw_text(text_(), x(), y(), w(), h(), style_ == 2 ? t.text_dim : t.text, style_ == 4 ? 2 : 0);
+    int size = t.font_size + (style_ == 3 ? 12 : style_ == 5 ? -1 : 0);
+    text_font(size, style_ == 1 || style_ == 3 || style_ == 5);
+    draw_text(text_(), x(), y(), w(), h(), style_ == 2 || style_ == 5 ? t.text_dim : t.text,
+              style_ == 4 ? 2 : 0);
   }
 
  private:
   StringFn text_;
-  int style_;  // 0 text, 1 title, 2 dim, 3 large, 4 right aligned
+  int style_;  // 0 text, 1 title, 2 dim, 3 large, 4 right aligned, 5 section caption
 };
 
+// A group of rows. alpha51: in the flyouts a group is plain text rows with
+// a thin separator above it (no card); the Action Center keeps soft cards.
 class ActionCard : public Fl_Group {
  public:
-  ActionCard(int x, int y, int w) : Fl_Group(x, y, w, S(40)) {
+  ActionCard(int x, int y, int w, bool flat = false, bool rule = false)
+      : Fl_Group(x, y, w, S(40)), flat_(flat), rule_(rule) {
     box(FL_NO_BOX);
     resizable(nullptr);
   }
@@ -729,11 +742,18 @@ class ActionCard : public Fl_Group {
     const Theme &t = Panel::instance->theme();
     {
       Painter p(window()->w(), window()->h());
-      p.fill_rounded(x(), y(), w(), h(), S(14), t.surface_alt);
-      if (t.glass) p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(14), t.border);
+      if (flat_) {
+        if (rule_) p.line(x(), y() + 0.5, x() + w(), y() + 0.5, t.border);
+      } else {
+        p.fill_rounded(x(), y(), w(), h(), S(8), t.surface_alt);
+        if (t.glass) p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(8), t.border);
+      }
     }
     draw_children();
   }
+
+ private:
+  bool flat_, rule_;
 };
 
 class ActionButton : public DrawnButton {
@@ -762,29 +782,42 @@ class ActionButton : public DrawnButton {
     bool multi =
         Panel::instance->config().get_bool("action_center", "multicolor", false) && color_ >= 0;
     Color accent = multi ? Color::hex(colors[color_ % 6]) : t.accent;
-    Color bg = on ? accent : t.surface_alt;
-    if (multi && !on) bg = t.surface.mix(accent, t.dark ? 0.18 : 0.08);
-    if (hot || value()) bg = bg.mix(on ? t.on_accent : t.text, value() ? 0.15 : 0.06);
     Color white = Color::hex(0xFFFFFF), black = Color::hex(0x101820);
-    Color ink = on ? (white.contrast(accent) >= 4.5 ? white : black) : t.text;
+    Color ink, bg;
+    bool fill = true;
+    if (row_) {
+      // alpha51: a plain text row; hover and "on" are a soft tint, the icon
+      // takes the accent when on.
+      bg = on ? accent.alpha(t.dark ? 0.24 : 0.14) : t.hover;
+      fill = on || hot || value();
+      if (value()) bg = bg.mix(t.text, 0.08);
+      ink = t.text;
+    } else {
+      bg = on ? accent : t.surface_alt;
+      if (multi && !on) bg = t.surface.mix(accent, t.dark ? 0.18 : 0.08);
+      if (hot || value()) bg = bg.mix(on ? t.on_accent : t.text, value() ? 0.15 : 0.06);
+      ink = on ? (white.contrast(accent) >= 4.5 ? white : black) : t.text;
+    }
     if (!active_r()) ink = t.text_dim;
+    int radius = row_ ? S(6) : S(8);
     {
       Painter p(window()->w(), window()->h());
-      p.fill_rounded(x(), y(), w(), h(), S(12), bg);
-      if (hot || on) p.stroke_rounded(x(), y(), w(), h(), S(12), on ? accent : t.border);
-      double size = S(row_ ? 20 : 23);
-      icon_(p, row_ && !title_.empty() ? x() + S(12) : x() + (w() - size) / 2.0,
-            row_ ? y() + (h() - size) / 2.0 : y() + S(10), size, ink);
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(12));
+      if (fill) p.fill_rounded(x(), y(), w(), h(), radius, bg);
+      if (!row_ && (hot || on)) p.stroke_rounded(x(), y(), w(), h(), radius, on ? accent : t.border);
+      double size = S(row_ ? popup_style::kIcon : 20);
+      Color icon_ink = row_ && on && active_r() ? t.accent_text : ink;
+      icon_(p, row_ && !title_.empty() ? x() + S(8) : x() + (w() - size) / 2.0,
+            row_ ? y() + (h() - size) / 2.0 : y() + S(8), size, icon_ink);
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), radius);
     }
-    text_font(t.font_size - (row_ ? 0 : S(1)), true);
+    text_font(t.font_size - (row_ ? 0 : S(1)), !row_);
     if (!row_ && text_width(title_) > w() - S(8))
       text_font(std::max(S(9), t.font_size - S(2)), true);
-    int tx = row_ ? x() + S(42) : x() + S(4), tw = row_ ? w() - S(52) : w() - S(8);
-    draw_text(title_, tx, row_ ? y() : y() + S(36), tw, row_ ? h() : S(20), ink, row_ ? 0 : 1);
+    int tx = row_ ? x() + S(32) : x() + S(4), tw = row_ ? w() - S(40) : w() - S(8);
+    draw_text(title_, tx, row_ ? y() : y() + S(30), tw, row_ ? h() : S(18), ink, row_ ? 0 : 1);
     if (sub_ && !row_) {
       text_font(std::max(S(9), t.font_size - 2));
-      draw_text(sub_(), tx, y() + S(55), tw, S(16), on ? ink : t.text_dim, 1);
+      draw_text(sub_(), tx, y() + S(46), tw, S(16), on ? ink : t.text_dim, 1);
     }
   }
 
@@ -831,7 +864,7 @@ class QuickTile : public DrawnButton {
         t->click_();
     });
   }
-  int button_h() const { return h() - S(22); }
+  int button_h() const { return h() - S(20); }
   int split() const { return x() + w() * 62 / 100; }
   void draw() override {
     const Theme &t = Panel::instance->theme();
@@ -849,23 +882,23 @@ class QuickTile : public DrawnButton {
     int bh = button_h();
     {
       Painter p(window()->w(), window()->h());
-      p.fill_rounded(x(), y(), w(), bh, S(12), bg);
-      p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, bh - 1, S(12),
+      p.fill_rounded(x(), y(), w(), bh, S(8), bg);
+      p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, bh - 1, S(8),
                        on ? accent.mix(t.text, 0.1) : t.border);
-      double size = S(20);
+      double size = S(popup_style::kIcon);
       double ix = more_ ? x() + (split() - x() - size) / 2.0 : x() + (w() - size) / 2.0;
       icon_(p, ix, y() + (bh - size) / 2.0, size, ink);
       if (more_) {
-        p.line(split() + 0.5, y() + S(10), split() + 0.5, y() + bh - S(10), ink.alpha(0.35));
-        double cs = S(12);
+        p.line(split() + 0.5, y() + S(8), split() + 0.5, y() + bh - S(8), ink.alpha(0.35));
+        double cs = S(10);
         glyph::chevron(p, split() + (x() + w() - split() - cs) / 2.0, y() + (bh - cs) / 2.0, cs,
                        true, ink);
       }
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), bh, S(12));
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), bh, S(8));
     }
     std::string caption = caption_ ? caption_() : title_;
     text_font(std::max(S(9), t.font_size - S(2)));
-    draw_text(caption, x() - S(2), y() + bh + S(2), w() + S(4), S(20), t.text, 1);
+    draw_text(caption, x() - S(2), y() + bh + S(1), w() + S(4), S(18), t.text, 1);
   }
 
  private:
@@ -1287,39 +1320,47 @@ void network_icon(Painter &p, double x, double y, double z, const Color &ink) {
 }  // namespace
 
 // Layout state of the scrolled body while a page is built.
+// alpha51: flyouts (|flat|) use plain text rows grouped under a dim caption
+// with a thin separator between groups; the Action Center keeps cards.
 struct SectionBuilder {
   QuickSettings *qs;
   int pad, inner, y;
+  bool flat = false;
+  int groups = 0;
+  // Horizontal inset of rows inside a group.
+  int inset() const { return flat ? 0 : S(6); }
   void label(std::string text, int style = 0, int height = 24) {
     new ActionLabel(pad, y, inner, S(height), [text] { return text; }, style);
     y += S(height);
   }
   ActionButton *row(std::string text, IconFn icon, std::function<void()> fn, bool enabled = true,
                     std::function<bool()> on = nullptr) {
-    auto *b = new ActionButton(pad + S(8), y, inner - S(16), S(36), text, icon, fn, on, -1, true);
+    auto *b = new ActionButton(pad + inset(), y, inner - 2 * inset(), S(popup_style::kRow), text,
+                               icon, fn, on, -1, true);
     if (!enabled) b->deactivate();
-    y += S(42);
+    y += S(popup_style::kRow) + S(2);
     return b;
   }
   void info(std::string text) {
-    new ActionLabel(pad + S(12), y, inner - S(24), S(24), [text] { return text; }, 2);
-    y += S(24);
+    new ActionLabel(pad + inset() + S(8), y, inner - 2 * inset() - S(16), S(22),
+                    [text] { return text; }, 2);
+    y += S(22);
   }
   ActionCard *start_card(std::string title) {
-    auto *card = new ActionCard(pad, y, inner);
-    y += S(10);
+    auto *card = new ActionCard(pad, y, inner, flat, flat && groups > 0);
+    ++groups;
+    y += flat ? (groups > 1 ? S(6) : 0) : S(6);
     if (!title.empty()) {
-      new ActionLabel(pad + S(12), y, inner - S(24), S(24), [title] { return title; }, 1);
-      y += S(28);
-    } else {
-      y += S(2);
+      new ActionLabel(pad + inset() + S(8), y, inner - 2 * inset() - S(16),
+                      S(popup_style::kSection), [title] { return title; }, 5);
+      y += S(popup_style::kSection);
     }
     return card;
   }
   void end_card(ActionCard *card) {
-    card->size(inner, y - card->y() + S(6));
+    card->size(inner, y - card->y() + (flat ? 0 : S(4)));
     card->end();
-    y += S(12);
+    y += flat ? S(4) : S(8);
   }
   // Closes the popup and starts |cmd|.
   std::function<void()> launch(std::vector<std::string> cmd) {
@@ -1331,6 +1372,16 @@ struct SectionBuilder {
   }
   // Settings link at the end of a flyout.
   void settings_row(const std::string &title, std::vector<std::string> cmd) {
+    if (flat) {
+      // A separator, then the settings link as a plain row.
+      auto *card = new ActionCard(pad, y, inner, true, groups > 0);
+      ++groups;
+      y += S(6);
+      row(title, gear_icon(), launch(std::move(cmd)));
+      card->size(inner, y - card->y());
+      card->end();
+      return;
+    }
     y += S(2);
     row(title, gear_icon(), launch(std::move(cmd)));
   }
@@ -1575,9 +1626,9 @@ void QuickSettings::sync_native_tray() {
 
 void QuickSettings::volume_row(SectionBuilder &b, bool more) {
   const auto &s = SystemStatus::get();
-  int x = b.pad + S(8), right = b.pad + b.inner - S(8);
+  int x = b.pad + b.inset(), right = b.pad + b.inner - b.inset(), rh = S(popup_style::kRow);
   auto *mute = new ActionButton(
-      x, b.y, S(38), S(36), "",
+      x, b.y, S(32), rh, "",
       [](Painter &p, double x, double y, double z, const Color &ink) {
         const auto &a = SystemStatus::get().audio;
         glyph::speaker(p, x, y, z, a.volume > 66 ? 3 : a.volume > 33 ? 2 : a.volume > 0 ? 1 : 0,
@@ -1586,9 +1637,9 @@ void QuickSettings::volume_row(SectionBuilder &b, bool more) {
       [] { SystemStatus::get().toggle_mute(); }, [] { return SystemStatus::get().audio.muted; },
       -1, true);
   mute->copy_tooltip(_("Mute"));
-  int more_w = more ? S(36) : 0;
-  int pct = S(44);
-  volume_ = new Slider(x + S(46), b.y, right - more_w - pct - (x + S(46)) - S(4), S(36));
+  int more_w = more ? S(32) : 0;
+  int pct = S(40);
+  volume_ = new Slider(x + S(36), b.y, right - more_w - pct - (x + S(36)) - S(4), rh);
   volume_->bounds(0, 100);
   volume_->value(s.audio.volume);
   volume_->tooltip(_("Output volume"));
@@ -1596,13 +1647,13 @@ void QuickSettings::volume_row(SectionBuilder &b, bool more) {
     SystemStatus::get().set_volume(int(static_cast<Fl_Slider *>(w)->value()));
   });
   new ActionLabel(
-      right - more_w - pct, b.y, pct, S(36),
+      right - more_w - pct, b.y, pct, rh,
       [] { return std::to_string(SystemStatus::get().audio.volume) + "%"; }, 4);
   if (more)
-    icon_button(right - more_w + S(2), b.y, more_w - S(2), S(36),
+    icon_button(right - more_w + S(2), b.y, more_w - S(2), rh,
                 _("Sound output and applications"), chevron_icon(),
                 [] { later([] { Panel::instance->open_flyout("sound"); }); });
-  b.y += S(42);
+  b.y += rh + S(4);
 }
 
 namespace {
@@ -1636,18 +1687,19 @@ void QuickSettings::set_brightness_menu(bool open) {
 
 void QuickSettings::brightness_row(SectionBuilder &b) {
   const auto &s = SystemStatus::get();
-  int x = b.pad + S(8), right = b.pad + b.inner - S(8), pct = S(44), more_w = S(36);
-  auto *icon = new ActionButton(x, b.y, S(38), S(36), "", sun_icon(), [] {}, nullptr, -1, true);
+  int x = b.pad + b.inset(), right = b.pad + b.inner - b.inset(), pct = S(40), more_w = S(32),
+      rh = S(popup_style::kRow);
+  auto *icon = new ActionButton(x, b.y, S(32), rh, "", sun_icon(), [] {}, nullptr, -1, true);
   icon->clear_visible_focus();
   // The gear at the end opens brightness and Night Light settings.
   bool open = brightness_open_;
   auto *more = new ActionButton(
-      right - more_w + S(2), b.y, more_w - S(2), S(36), "", gear_icon(),
+      right - more_w + S(2), b.y, more_w - S(2), rh, "", gear_icon(),
       [this, open] { later([this, open] { set_brightness_menu(!open); }); },
       [this] { return brightness_open_; }, -1, true);
   more->copy_tooltip(_("Brightness settings"));
   right -= more_w;
-  brightness_ = new Slider(x + S(46), b.y, right - pct - (x + S(46)) - S(4), S(36));
+  brightness_ = new Slider(x + S(36), b.y, right - pct - (x + S(36)) - S(4), rh);
   brightness_->bounds(1, 100);
   brightness_->value(s.brightness.percent());
   brightness_->tooltip(_("Brightness"));
@@ -1655,9 +1707,9 @@ void QuickSettings::brightness_row(SectionBuilder &b) {
     SystemStatus::get().set_brightness(int(static_cast<Fl_Slider *>(w)->value()));
   });
   new ActionLabel(
-      right - pct, b.y, pct, S(36),
+      right - pct, b.y, pct, rh,
       [] { return std::to_string(SystemStatus::get().brightness.percent()) + "%"; }, 4);
-  b.y += S(42);
+  b.y += rh + S(4);
 }
 
 void QuickSettings::brightness_settings(SectionBuilder &b) {
@@ -1666,7 +1718,7 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
   int pad = b.pad, inner = b.inner;
   auto *card = b.start_card(_("Brightness and Night Light"));
   brightness_card_ = card;
-  icon_button(pad + inner - S(46), card->y() + S(6), S(34), S(32), _("Close brightness settings"),
+  icon_button(pad + inner - S(46), card->y() + S(6), S(34), S(30), _("Close brightness settings"),
               cross_icon(), [this] { later([this] { set_brightness_menu(false); }); });
   auto refresh = [this] { later([this] { status_changed(); }); };
   // Night Light: warm colors through the XRandR gamma ramps.
@@ -1679,9 +1731,9 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
           refresh();
         },
         true, [] { return nightlight::Settings::from_config(Panel::instance->config()).enabled; });
-  int x = pad + S(12), w = inner - S(24), lw = S(92), vw = S(64);
-  new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("Warmth")); }, 2);
-  auto *warm = new Slider(x + lw, b.y, w - lw - vw, S(32));
+  int x = pad + S(14), w = inner - S(28), lw = S(92), vw = S(64);
+  new ActionLabel(x, b.y, lw, S(30), [] { return std::string(_("Warmth")); }, 2);
+  auto *warm = new Slider(x + lw, b.y, w - lw - vw, S(30));
   // Right is warmer.
   warm->bounds(6500, 2500);
   warm->step(100);
@@ -1694,12 +1746,12 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
     wd->window()->redraw();
   });
   new ActionLabel(
-      x + w - vw, b.y, vw, S(32),
+      x + w - vw, b.y, vw, S(30),
       [warm] { return std::to_string(int(warm->value())) + " K"; }, 4);
-  b.y += S(38);
+  b.y += S(34);
   {
-    new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("Schedule")); }, 2);
-    auto *sched = new Fl_Choice(x + lw, b.y, w - lw, S(32));
+    new ActionLabel(x, b.y, lw, S(30), [] { return std::string(_("Schedule")); }, 2);
+    auto *sched = new Fl_Choice(x + lw, b.y, w - lw, S(30));
     sched->tooltip(_("Night Light schedule"));
     sched->textsize(t.font_size);
     sched->add(choice_label(_("Sunset to sunrise")).c_str());
@@ -1714,13 +1766,13 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
       nightlight::Controller::get().update();
       later([d] { static_cast<QuickSettings *>(d)->status_changed(); });
     }, this);
-    b.y += S(38);
+    b.y += S(34);
   }
   if (nl.schedule == "custom") {
     int half = (w - lw - S(8)) / 2;
-    new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("From – to")); }, 2);
+    new ActionLabel(x, b.y, lw, S(30), [] { return std::string(_("From – to")); }, 2);
     for (int which = 0; which < 2; ++which) {
-      auto *c = new Fl_Choice(x + lw + which * (half + S(8)), b.y, half, S(32));
+      auto *c = new Fl_Choice(x + lw + which * (half + S(8)), b.y, half, S(30));
       c->tooltip(which ? _("Night Light ends") : _("Night Light starts"));
       c->textsize(t.font_size);
       int cur = which ? nl.to : nl.from, sel = 0;
@@ -1739,7 +1791,7 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
           },
           which ? reinterpret_cast<void *>(1) : nullptr);
     }
-    b.y += S(38);
+    b.y += S(34);
   } else if (nl.enabled && nl.schedule == "sunset") {
     int from, to;
     double lat = 0, lon = 0;
@@ -1773,8 +1825,8 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
           refresh();
         },
         true, [] { return Panel::instance->config().get_int("power", "idle_dim_battery", 120) > 0; });
-  new ActionLabel(x, b.y, lw, S(32), [] { return std::string(_("Dim level")); }, 2);
-  auto *level = new Slider(x + lw, b.y, w - lw - vw, S(32));
+  new ActionLabel(x, b.y, lw, S(30), [] { return std::string(_("Dim level")); }, 2);
+  auto *level = new Slider(x + lw, b.y, w - lw - vw, S(30));
   level->bounds(10, 90);
   level->step(5);
   level->value(std::max(10, std::min(90, cfg.get_int("power", "dim_level", 30))));
@@ -1785,9 +1837,9 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
     wd->window()->redraw();
   });
   new ActionLabel(
-      x + w - vw, b.y, vw, S(32),
+      x + w - vw, b.y, vw, S(30),
       [level] { return std::to_string(int(level->value())) + "%"; }, 4);
-  b.y += S(38);
+  b.y += S(34);
   // External monitors through DDC/CI.
   bool ddc = !find_program("ddcutil").empty();
   auto *ext = b.row(ddc ? _("External monitor (DDC/CI)") : _("External monitor: install ddcutil"),
@@ -1814,7 +1866,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
   const auto &t = Panel::instance->theme();
   int pad = b.pad, inner = b.inner;
   auto *card = b.start_card("");
-  int x = pad + S(12), w = inner - S(24), art = S(56);
+  int x = pad + S(12), w = inner - S(24), art = S(48);
   // Album art (mpris:artUrl) or a note on an accent tile.
   std::string url = p.art_url;
   struct Cover : Fl_Widget {
@@ -1849,9 +1901,9 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
   std::string artist = !p.artist.empty() ? p.artist : p.title.empty() ? std::string() : p.name;
   if (!p.album.empty() && !p.artist.empty()) artist += " — " + p.album;
   int tx = x + art + S(12), tw = w - art - S(12);
-  auto *tl = new ActionLabel(tx, b.y + S(6), tw, S(22), [title] { return title; }, 1);
+  auto *tl = new ActionLabel(tx, b.y + S(3), tw, S(22), [title] { return title; }, 1);
   tl->copy_tooltip((std::string(_("Now playing")) + ": " + title).c_str());
-  auto *al = new ActionLabel(tx, b.y + S(30), tw, S(20), [artist] { return artist; }, 2);
+  auto *al = new ActionLabel(tx, b.y + S(25), tw, S(20), [artist] { return artist; }, 2);
   if (!artist.empty()) al->copy_tooltip((std::string(_("Artist")) + ": " + artist).c_str());
   b.y += art + S(8);
   // Seek bar with the elapsed and total time.
@@ -1886,7 +1938,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
                   [f = time_of(true)] { return f(); }, 4);
   b.y += S(20);
   // Only previous, play/pause and next.
-  int bw = S(44), gap = S(14), cx = x + (w - 3 * bw - 2 * gap) / 2;
+  int bw = S(40), gap = S(12), cx = x + (w - 3 * bw - 2 * gap) / 2;
   bool playing = p.status == "Playing";
   struct B {
     const char *tip, *cmd;
@@ -1898,7 +1950,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
                  {N_("Next"), "Next", 3, p.control && p.next}};
   for (int i = 0; i < 3; ++i) {
     std::string cmd = buttons[i].cmd;
-    auto *btn = new ActionButton(cx + i * (bw + gap), b.y, bw, S(40), "",
+    auto *btn = new ActionButton(cx + i * (bw + gap), b.y, bw, S(32), "",
                                  transport_icon(buttons[i].icon),
                                  [service, cmd] { PanelControls::get().media_command(service, cmd); },
                                  i == 1 ? std::function<bool()>([] { return true; }) : nullptr, -1,
@@ -1907,7 +1959,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
     if (!buttons[i].on) btn->deactivate();
   }
   (void)t;
-  b.y += S(46);
+  b.y += S(34);
   b.end_card(card);
 }
 
@@ -1923,7 +1975,7 @@ void QuickSettings::sound_section(SectionBuilder &b) {
   if (s.audio.available) {
     volume_row(b, false);
     if (!s.audio.sinks.empty()) {
-      auto *choice = new Fl_Choice(pad + S(12), b.y, inner - S(24), S(30));
+      auto *choice = new Fl_Choice(pad + b.inset() + S(4), b.y, inner - 2 * b.inset() - S(8), S(28));
       choice->textsize(t.font_size);
       choice->tooltip(_("Output device"));
       for (size_t i = 0; i < s.audio.sinks.size(); ++i) {
@@ -1935,7 +1987,7 @@ void QuickSettings::sound_section(SectionBuilder &b) {
         const auto &v = SystemStatus::get().audio.sinks;
         if (i >= 0 && i < int(v.size())) SystemStatus::get().set_default_sink(v[size_t(i)].first);
       });
-      b.y += S(38);
+      b.y += S(32);
     }
   } else {
     b.info(_("Sound service is unavailable"));
@@ -1949,16 +2001,16 @@ void QuickSettings::sound_section(SectionBuilder &b) {
           glyph::microphone(p, x, y, z, ink);
         },
         [] { PanelControls::get().microphone_mute(); });
-    microphone_ = new Slider(pad + S(14), b.y, inner - S(28), S(36));
+    microphone_ = new Slider(pad + b.inset() + S(4), b.y, inner - 2 * b.inset() - S(8), S(28));
     microphone_->bounds(0, 100);
     microphone_->value(c.mic_volume);
     microphone_->tooltip(_("Microphone volume"));
     microphone_->callback([](Fl_Widget *w, void *) {
       PanelControls::get().microphone_volume(int(static_cast<Fl_Slider *>(w)->value()));
     });
-    b.y += S(42);
+    b.y += S(32);
     if (!c.sources.empty()) {
-      auto *choice = new Fl_Choice(pad + S(12), b.y, inner - S(24), S(30));
+      auto *choice = new Fl_Choice(pad + b.inset() + S(4), b.y, inner - 2 * b.inset() - S(8), S(28));
       choice->textsize(t.font_size);
       choice->tooltip(_("Input device"));
       for (size_t i = 0; i < c.sources.size(); ++i) {
@@ -1970,7 +2022,7 @@ void QuickSettings::sound_section(SectionBuilder &b) {
         const auto &v = PanelControls::get().sources;
         if (i >= 0 && i < int(v.size())) PanelControls::get().microphone_source(v[size_t(i)].first);
       });
-      b.y += S(38);
+      b.y += S(32);
     }
     b.end_card(card);
   }
@@ -1981,7 +2033,7 @@ void QuickSettings::sound_section(SectionBuilder &b) {
     for (const auto &a : c.streams) {
       if (++count > 32) break;
       b.info(a.app + (a.title.empty() ? "" : " · " + a.title));
-      auto *slider = new Slider(pad + S(14), b.y, inner - S(84), S(34));
+      auto *slider = new Slider(pad + b.inset() + S(4), b.y, inner - 2 * b.inset() - S(48), S(28));
       slider->bounds(0, 100);
       slider->value(a.volume);
       slider->copy_tooltip(a.app.c_str());
@@ -1993,14 +2045,14 @@ void QuickSettings::sound_section(SectionBuilder &b) {
           reinterpret_cast<void *>(uintptr_t(a.id)));
       stream_sliders_[a.id] = slider;
       auto *mute = new ActionButton(
-          pad + inner - S(62), b.y, S(50), S(34), "",
+          pad + inner - b.inset() - S(36), b.y, S(36), S(28), "",
           [muted = a.muted](Painter &p, double x, double y, double z, const Color &ink) {
             glyph::speaker(p, x, y, z, 3, muted, ink);
           },
           [id = a.id, muted = !a.muted] { PanelControls::get().mute_stream(id, muted); },
           [muted = a.muted] { return muted; }, -1, true);
       mute->copy_tooltip(a.muted ? _("Unmute application") : _("Mute application"));
-      b.y += S(40);
+      b.y += S(32);
       auto player = match_media_player(a, c.players());
       if (!player.empty())
         b.row(_("Open player"), media_icon,
@@ -2198,60 +2250,162 @@ void QuickSettings::media_section(SectionBuilder &b) {
   b.end_card(card);
 }
 
+namespace {
+// The battery flyout's first line: battery icon, then "45% LGES AP23A8L" in
+// bold (alpha51, after the Cinnamon power applet). Named for UI tests.
+class BatteryHeader : public Fl_Widget {
+ public:
+  BatteryHeader(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
+    clear_visible_focus();
+    copy_label(text().c_str());
+    labeltype(FL_NO_LABEL);
+  }
+  static std::string text() {
+    const auto &b = SystemStatus::get().battery;
+    if (!b.present) return _("No battery");
+    std::string s = std::to_string(b.percent) + "%";
+    if (!b.model.empty()) s += " " + b.model;
+    return s;
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    const auto &b = SystemStatus::get().battery;
+    double size = S(popup_style::kIcon);
+    {
+      Painter p(window()->w(), window()->h());
+      if (b.present)
+        glyph::battery(p, x(), y() + (h() - size) / 2.0, size, b.percent, b.charging, t.text,
+                       b.percent <= 10 && !b.charging ? t.error : t.text);
+      else
+        glyph::power(p, x(), y() + (h() - size) / 2.0, size, t.text);
+    }
+    text_font(t.font_size, true);
+    draw_text(text(), x() + S(24), y(), w() - S(24), h(), t.text);
+  }
+};
+
+// A plain text row of a flyout: optional dot before the text marking the
+// current choice (shown bold), hover tint, keyboard activation.
+class TextRow : public Fl_Button {
+ public:
+  TextRow(int x, int y, int w, int h, std::string text, std::function<void()> action,
+          bool dot = false, bool current = false)
+      : Fl_Button(x, y, w, h), text_(std::move(text)), action_(std::move(action)), dot_(dot),
+        current_(current) {
+    box(FL_NO_BOX);
+    down_box(FL_NO_BOX);
+    copy_tooltip(text_.c_str());
+    callback([](Fl_Widget *w, void *) {
+      auto fn = static_cast<TextRow *>(w)->action_;
+      if (fn) later(fn);  // the action may rebuild the flyout
+    });
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    bool hot = Fl::belowmouse() == this && active_r();
+    {
+      Painter p(window()->w(), window()->h());
+      if (hot || value()) p.fill_rounded(x(), y(), w(), h(), S(6), t.hover);
+      if (dot_ && current_) p.circle(x() + S(10), y() + h() / 2.0, Sd(3), t.text);
+      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(6));
+    }
+    text_font(t.font_size, current_);
+    draw_text(text_, x() + (dot_ ? S(22) : S(8)), y(), w() - S(30), h(),
+              active_r() ? t.text : t.text_dim);
+  }
+  int handle(int event) override {
+    if (event == FL_ENTER || event == FL_LEAVE || event == FL_FOCUS || event == FL_UNFOCUS) {
+      redraw();
+      return 1;
+    }
+    if (event == FL_KEYBOARD && Fl::focus() == this &&
+        (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter ||
+         Fl::event_key() == ' ')) {
+      do_callback();
+      return 1;
+    }
+    return Fl_Button::handle(event);
+  }
+
+ private:
+  std::string text_;
+  std::function<void()> action_;
+  bool dot_, current_;
+};
+
+// A thin separator line across the body.
+class Rule : public Fl_Widget {
+ public:
+  Rule(int x, int y, int w) : Fl_Widget(x, y, w, 1) { clear_visible_focus(); }
+  void draw() override {
+    Painter p(window()->w(), window()->h());
+    p.line(x(), y() + 0.5, x() + w(), y() + 0.5, Panel::instance->theme().border);
+  }
+};
+}  // namespace
+
+// The battery flyout (alpha51), in the spirit of the Cinnamon power applet:
+// battery and model, the state with the remaining time, a brightness
+// slider, the power profiles as text rows (a dot marks the active one) and
+// a Power Settings link. No cards, no tiles.
 void QuickSettings::power_section(SectionBuilder &b) {
   const auto &s = SystemStatus::get();
   const auto &c = PanelControls::get();
-  int pad = b.pad, inner = b.inner;
-  auto *card = b.start_card(_("Battery"));
-  if (s.battery.present) {
-    new ActionLabel(
-        pad + S(12), b.y, inner - S(24), S(40),
-        [] { return std::to_string(SystemStatus::get().battery.percent) + "%"; }, 3);
-    b.y += S(40);
-    new ActionLabel(
-        pad + S(12), b.y, inner - S(24), S(24),
+  int x = b.pad, w = b.inner, rh = S(popup_style::kRow);
+  new BatteryHeader(x + S(8), b.y, w - S(16), S(28));
+  b.y += S(28);
+  {
+    auto *state = new ActionLabel(
+        x + S(8), b.y, w - S(16), S(24),
         [] {
-          const auto &b = SystemStatus::get().battery;
-          std::string text = b.charging ? _("Charging") : b.full ? _("Fully charged") : _("On battery");
-          if (b.minutes > 0 && !b.full)
-            text += " · " + format(b.charging ? _("%d h %02d min until full")
-                                              : _("%d h %02d min remaining"),
-                                   b.minutes / 60, b.minutes % 60);
-          return text;
+          const auto &bt = SystemStatus::get().battery;
+          if (!bt.present) return std::string(_("The computer runs on mains power."));
+          return battery_status_line(bt.charging, bt.full, bt.minutes);
         },
-        2);
-    b.y += S(26);
-  } else {
-    b.info(_("No battery: the computer runs on mains power."));
+        0);
+    // Named for UI tests with the text it shows.
+    state->copy_tooltip(s.battery.present
+                            ? battery_status_line(s.battery.charging, s.battery.full,
+                                                  s.battery.minutes)
+                                  .c_str()
+                            : _("The computer runs on mains power."));
+    b.y += S(24);
   }
-  b.end_card(card);
-  // power-profiles-daemon modes, when the service is installed.
-  if (!c.power_profiles.empty()) {
-    card = b.start_card(_("Power mode"));
-    int n = int(c.power_profiles.size()), gap = S(6), bw = (inner - S(24) - (n - 1) * gap) / n;
-    static const std::map<std::string, std::string> names = {
-        {"power-saver", _("Power Saver")}, {"balanced", _("Balanced")},
-        {"performance", _("Performance")}};
-    for (int i = 0; i < n; ++i) {
-      const auto &id = c.power_profiles[size_t(i)];
-      std::string label = names.count(id) ? names.at(id) : id;
-      if (id == c.power_profile) label = "✓ " + label;
-      new CommandButton(pad + S(12) + i * (bw + gap), b.y, bw, S(34), label,
-                        [id] { PanelControls::get().set_power_profile(id); });
-    }
-    b.y += S(42);
-    b.end_card(card);
-  }
+  b.y += S(8);
   if (s.brightness.available) {
-    card = b.start_card(_("Brightness"));
-    brightness_row(b);
-    b.end_card(card);
+    auto *icon = new ActionButton(x, b.y, S(32), rh, "", sun_icon(), [] {}, nullptr, -1, true);
+    icon->clear_visible_focus();
+    brightness_ = new Slider(x + S(36), b.y, w - S(36) - S(4), rh);
+    brightness_->bounds(1, 100);
+    brightness_->value(s.brightness.percent());
+    brightness_->tooltip(_("Brightness"));
+    brightness_->callback([](Fl_Widget *wd, void *) {
+      SystemStatus::get().set_brightness(int(static_cast<Fl_Slider *>(wd)->value()));
+    });
+    b.y += rh + S(6);
   }
+  // power-profiles-daemon modes (powerprofilesctl), when the service runs.
+  if (!c.power_profiles.empty()) {
+    static const std::map<std::string, const char *> names = {{"power-saver", N_("Power Saver")},
+                                                              {"balanced", N_("Balanced")},
+                                                              {"performance", N_("Performance")}};
+    for (const auto &id : ordered_power_profiles(c.power_profiles)) {
+      std::string label = names.count(id) ? _(names.at(id)) : id;
+      new TextRow(x, b.y, w, rh, label, [id] { PanelControls::get().set_power_profile(id); }, true,
+                  id == c.power_profile);
+      b.y += rh;
+    }
+    b.y += S(4);
+  }
+  new Rule(x + S(8), b.y, w - S(16));
+  b.y += S(5);
   std::string prefs = first_program({"sde-power-preferences", "xfce4-power-manager-settings"});
-  b.settings_row(_("Power settings"),
-                 settings_for("power", prefs.empty() ? std::vector<std::string>{"sde-settings",
-                                                                                "--page", "system"}
-                                                     : std::vector<std::string>{prefs}));
+  std::vector<std::string> cmd =
+      settings_page("power") || prefs.empty()
+          ? std::vector<std::string>{"sde-settings", "--page", "power"}
+          : std::vector<std::string>{prefs};
+  new TextRow(x, b.y, w, rh, _("Power Settings"), b.launch(cmd));
+  b.y += rh;
 }
 
 void QuickSettings::drives_section(SectionBuilder &b) {
@@ -2333,27 +2487,27 @@ void QuickSettings::tray_section(SectionBuilder &b) {
   bool moved = cfg.get_bool("action_center", "move_status", true);
   bool legacy = tray && tray->count() && moved;
   auto *card = b.start_card(_("Tray applications"));
-  int cell = S(36), columns = std::max(1, (inner - S(24)) / cell);
+  int cell = S(36), columns = std::max(1, (inner - S(8)) / cell);
   if (items.empty() && !legacy) b.info(_("No applications are in the tray."));
   for (size_t i = 0; i < items.size(); ++i)
-    new TrayIndicator(pad + S(12) + int(i % columns) * cell, b.y + int(i / columns) * cell, cell,
+    new TrayIndicator(pad + S(4) + int(i % columns) * cell, b.y + int(i / columns) * cell, cell,
                       *items[i]);
   // XEmbed icons continue on the last StatusNotifier row when there is room.
   int last = int(items.size() % size_t(columns)),
       rows = int((items.size() + columns - 1) / columns);
-  int tx = pad + S(12), ty = b.y + rows * cell;
+  int tx = pad + S(4), ty = b.y + rows * cell;
   if (legacy) {
-    int slot = tray->icon_size() + S(6), room = inner - S(24) - last * cell;
+    int slot = tray->icon_size() + S(6), room = inner - S(8) - last * cell;
     if (rows && last && room >= slot) {
       tx += last * cell;
       ty -= cell;
       tray_columns_ = std::max(1, room / slot);
     } else {
-      tray_columns_ = std::max(1, (inner - S(24)) / slot);
+      tray_columns_ = std::max(1, (inner - S(8)) / slot);
     }
     int th = tray->grid_height(tray_columns_);
     tray_box_ = new Fl_Box(tx, ty + std::max(0, (cell - th) / 2),
-                           inner - S(24) - (tx - pad - S(12)), th);
+                           inner - S(8) - (tx - pad - S(4)), th);
     b.y = std::max(ty + std::max(cell, th), b.y + rows * cell) + S(6);
   } else {
     b.y += rows * cell;
@@ -2501,21 +2655,21 @@ void QuickSettings::build_center(SectionBuilder &b) {
                      return std::string(buf);
                    },
                    nullptr});
-  int columns = cfg.get_int("action_center", "tile_columns", 4) == 3 ? 3 : 4, gap = S(8),
-      tw = (inner - (columns - 1) * gap) / columns, th = S(74);
+  int columns = cfg.get_int("action_center", "tile_columns", 4) == 3 ? 3 : 4, gap = S(6),
+      tw = (inner - (columns - 1) * gap) / columns, th = S(popup_style::kTile);
   for (size_t i = 0; i < tiles.size(); ++i) {
     const auto &v = tiles[i];
     new QuickTile(pad + int(i % columns) * (tw + gap), b.y + int(i / columns) * (th + gap), tw, th,
                   v.title, v.icon, v.click, v.on, v.caption, v.more, int(i));
   }
-  b.y += int((tiles.size() + columns - 1) / columns) * (th + gap) + S(6);
+  b.y += int((tiles.size() + columns - 1) / columns) * (th + gap) + S(2);
 
   // Sliders.
   if (s.audio.available || s.brightness.available) {
     auto *card = b.start_card("");
     if (s.audio.available) volume_row(b, true);
     if (s.brightness.available) brightness_row(b);
-    b.y -= S(4);
+    b.y -= S(2);
     b.end_card(card);
   }
   if (brightness_open_) brightness_settings(b);
@@ -2535,17 +2689,17 @@ void QuickSettings::build_center(SectionBuilder &b) {
     char date[128];
     strftime(date, sizeof date, "%A, %e %B %Y", &lt);
     std::string today = trim(date);
-    new ActionLabel(pad + S(12), b.y - S(4), inner - S(70), S(32), [today] { return today; }, 1);
-    icon_button(pad + inner - S(46), b.y - S(4), S(34), S(32),
+    new ActionLabel(pad + S(10), b.y - S(4), inner - S(60), S(28), [today] { return today; }, 1);
+    icon_button(pad + inner - S(38), b.y - S(4), S(32), S(28),
                 open ? _("Hide calendar") : _("Show calendar"), fold_icon(open), [this, open] {
                   calendar_view_ = false;
                   Panel::instance->set_setting("action_center", "show_calendar",
                                                open ? "false" : "true");
                   status_changed();
                 });
-    b.y += S(32);
+    b.y += S(26);
     if (open) {
-      auto *cal = new MonthCalendar(pad + S(12), b.y, inner - S(24));
+      auto *cal = new MonthCalendar(pad + S(8), b.y, inner - S(16));
       calendar_ = cal;
       if (shown_year_) cal->show_month(shown_year_, shown_month_);
       cal->select(agenda_year_, agenda_month_, agenda_day_);
@@ -2562,7 +2716,7 @@ void QuickSettings::build_center(SectionBuilder &b) {
   }
   if (cfg.get_bool("action_center", "show_notifications", true)) {
     auto *card = b.start_card(_("Notifications"));
-    icon_button(pad + inner - S(46), card->y() + S(6), S(34), S(32), _("Notification settings"),
+    icon_button(pad + inner - S(38), card->y() + S(4), S(32), S(28), _("Notification settings"),
                 gear_icon(), b.launch({"sde-settings", "--page", "notifications"}));
     b.info(cfg.get_bool("notifications", "do_not_disturb", false)
                ? _("Do Not Disturb is on: notifications are silenced.")
@@ -2762,7 +2916,7 @@ void QuickSettings::set_power_menu(bool open) {
 // row above it with Sleep, Log Out, Restart and Shut Down (the sde-logout
 // actions); Power again closes it.
 void QuickSettings::footer(int W, int H, int pad) {
-  int fy = H - S(58) + S(11), fb = S(36);
+  int fy = H - footer_ + (power_open_ ? S(44) : 0) + S(8), fb = S(32);
   auto launch = [this](std::vector<std::string> cmd) {
     return [this, cmd] {
       close();
@@ -2780,7 +2934,7 @@ void QuickSettings::footer(int W, int H, int pad) {
                                    {_("Shut Down"), "poweroff"}};
     int gap = S(6), n = int(choices.size()), bw = (W - 2 * pad - (n - 1) * gap) / n;
     for (int i = 0; i < n; ++i)
-      new CommandButton(pad + i * (bw + gap), H - footer_ + S(10), bw, fb,
+      new CommandButton(pad + i * (bw + gap), H - footer_ + S(8), bw, fb,
                         choices[size_t(i)].name,
                         launch({"sde-logout", "--action", choices[size_t(i)].action}));
   }
@@ -2835,14 +2989,21 @@ void QuickSettings::rebuild() {
   bool fly = mode_ == FLYOUT;
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
-  int W = fly ? std::min(S(360), mw - S(16)) : std::min(S(400), mw);
-  int pad = S(14), scrollbar = S(8), inner = W - 2 * pad - scrollbar;
+  // alpha51: compact widths (popup_style.h); the battery flyout is a little
+  // wider for "45% <battery model>" and the remaining time on one line.
+  int fly_w = section_ == "power" ? popup_style::kBatteryW : popup_style::kFlyoutW;
+  int W = fly ? std::min(S(fly_w), mw - S(16)) : std::min(S(popup_style::kCenterW), mw);
+  int pad = S(popup_style::kPad), scrollbar = S(6), inner = W - 2 * pad - scrollbar;
   auto *panel = Panel::instance;
   int available =
       std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
   if (fly) available = std::max(S(120), available - S(16));
-  header_ = fly ? S(48) : wx ? S(92) : S(70);
-  footer_ = fly ? 0 : power_open_ ? S(104) : S(58);
+  // The Action Center stays compact on tall screens too; the body scrolls.
+  else available = std::min(available, S(popup_style::kCenterMaxH));
+  // The battery flyout has no title bar: its first line names the battery.
+  bool titled = !(fly && section_ == "power");
+  header_ = fly ? (titled ? S(popup_style::kHeader) : S(4)) : wx ? S(72) : S(56);
+  footer_ = fly ? 0 : power_open_ ? S(92) : S(48);
 
   begin();
   body_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_ - footer_));
@@ -2854,7 +3015,8 @@ void QuickSettings::rebuild() {
   // Give Fl_Scroll a stable zero origin. Otherwise its padding is reported as
   // negative scroll and repeated service rebuilds accumulate blank space.
   new Fl_Box(body_->x(), body_->y(), 1, 1);
-  SectionBuilder b{this, pad, inner, header_ + S(4)};
+  SectionBuilder b{this, pad, inner, header_ + (fly ? S(6) : S(4))};
+  b.flat = fly;
   if (!s.message.empty() || !c.message.empty()) {
     new ActionLabel(
         pad, b.y, inner, S(28),
@@ -2881,17 +3043,19 @@ void QuickSettings::rebuild() {
   // compact/expanded switch.
   if (fly) {
     std::string title = section_title(section_);
-    new ActionLabel(pad + S(4), S(8), W - 2 * pad, S(34), [title] { return title; }, 1);
+    if (titled)
+      new ActionLabel(pad + S(8), S(4), W - 2 * pad - S(16), header_ - S(4),
+                      [title] { return title; }, 1);
   } else {
-    int toggle = S(36);
+    int toggle = S(32);
     if (wx)
-      clock_ = new ClockCard(pad, S(8), W - 2 * pad - 2 * toggle - S(14), header_ - S(16), true,
+      clock_ = new ClockCard(pad, S(6), W - 2 * pad - 2 * toggle - S(12), header_ - S(12), true,
                              wx, wset.fahrenheit, wset.animate);
     else if (cfg.get_bool("action_center", "show_clock", true))
-      clock_ = new ClockCard(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(18), header_ - S(14),
+      clock_ = new ClockCard(pad + S(4), S(6), W - 2 * pad - 2 * toggle - S(16), header_ - S(10),
                              true);
     else
-      new ActionLabel(pad + S(4), S(8), W - 2 * pad - 2 * toggle - S(6), header_ - S(14),
+      new ActionLabel(pad + S(4), S(6), W - 2 * pad - 2 * toggle - S(6), header_ - S(10),
                       [] { return std::string(_("Action Center")); }, 1);
     bool open = expanded();
     icon_button(W - pad - 2 * toggle - S(6), (header_ - toggle) / 2, toggle, toggle,
@@ -2938,9 +3102,13 @@ void QuickSettings::draw() {
       p.fill_rect(0, 0, w(), header_, t.surface_alt.mix(t.surface, 0.55));
       if (footer_) p.fill_rect(0, h() - footer_, w(), footer_, t.surface_alt.mix(t.surface, 0.4));
     }
-    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
-    p.line(S(14), header_ - 0.5, w() - S(14), header_ - 0.5, t.border);
-    if (footer_) p.line(S(14), h() - footer_ + 0.5, w() - S(14), h() - footer_ + 0.5, t.border);
+    stroke_outline(p, t.border);
+    if (header_ > S(8))
+      p.line(S(popup_style::kPad), header_ - 0.5, w() - S(popup_style::kPad), header_ - 0.5,
+             t.border);
+    if (footer_)
+      p.line(S(popup_style::kPad), h() - footer_ + 0.5, w() - S(popup_style::kPad),
+             h() - footer_ + 0.5, t.border);
   }
   draw_children();
   sync_native_tray();
@@ -2966,7 +3134,7 @@ int QuickSettings::handle(int event) {
     for (Fl_Slider *sl : {volume_, brightness_}) {
       // Only on the card itself: the margins and the scroll bar scroll.
       if (!sl || !sl->visible_r() || Fl::event_y() < sl->y() || Fl::event_y() >= sl->y() + sl->h() ||
-          Fl::event_x() < S(14) || Fl::event_x() >= w() - S(22))
+          Fl::event_x() < S(popup_style::kPad) || Fl::event_x() >= w() - S(20))
         continue;
       sl->value(sl->clamp(sl->value() - Fl::event_dy() * 5));
       sl->do_callback();

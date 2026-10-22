@@ -26,6 +26,7 @@ class QuickSettings;
 class SearchFlyout;
 class SniHost;
 class StatusFlyout;
+class TaskPreview;
 class Tray;
 
 struct Task {
@@ -185,6 +186,14 @@ class Panel : public sde::BufferedWindow {
   void update_task(Task &t, bool icon = true);
   Target hit(int x, int y) const;
   void task_clicked(int index, int button);
+  // Taskbar window previews (alpha51, preview.h): [panel] window_previews.
+  bool previews_enabled() const;
+  void preview_hover(const Target &t);
+  void show_preview(int index);
+  static void preview_timeout(void *);
+  static void thumbnail_tick(void *);
+  std::unique_ptr<TaskPreview> preview_;
+  Window preview_pending_ = 0;
   void pinned_menu(int index);
   void tray_item_clicked(int index, int button);
   void show_context_menu();

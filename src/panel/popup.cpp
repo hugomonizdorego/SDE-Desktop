@@ -12,8 +12,14 @@
 
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Scroll.H>
+#include <X11/extensions/shape.h>
 
+#include <cmath>
+#include <vector>
+
+#include "paint.h"
 #include "panel.h"
+#include "popup_style.h"
 #include "theme.h"
 #include "x11.h"
 
@@ -35,6 +41,7 @@ void PanelPopup::open(int anchor_x, int align) {
   align_ = align;
   reposition();
   show();
+  apply_shape();
   // FLTK omits WM titles for override-redirect popups. Keep a readable name
   // for window inspection and assistive tools as well as normal windows.
   if (label()) {
@@ -154,6 +161,69 @@ void PanelPopup::reposition() {
     previous_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
   }
   resize(xx, yy, ww, hh);
+}
+
+void PanelPopup::resize(int x, int y, int w, int h) {
+  BufferedWindow::resize(x, y, w, h);
+  if (shown() && (w != shaped_w_ || h != shaped_h_)) apply_shape();
+}
+
+int PanelPopup::corner_radius() const {
+  return std::max(0, std::min({popup_style::radius(), w() / 4, h() / 4}));
+}
+
+namespace {
+// Corners to round: 1 top-left, 2 top-right, 4 bottom-right, 8 bottom-left.
+int rounded_corners(bool corner_popup) {
+  if (!corner_popup) return 15;
+  // The Action Center sits on the panel: square on the panel's side.
+  return Panel::instance && Panel::instance->theme().panel_top ? 4 | 8 : 1 | 2;
+}
+}  // namespace
+
+void apply_rounded_shape(Window xid, int w, int h, int r, int corners) {
+  int event, error;
+  if (!xid || !XShapeQueryExtension(fl_display, &event, &error)) return;
+  if (r <= 0) {
+    XShapeCombineMask(fl_display, xid, ShapeBounding, 0, 0, None, ShapeSet);
+    return;
+  }
+  // One rectangle per row inside the rounded outline (as the panel's shape).
+  std::vector<XRectangle> rows;
+  for (int row = 0; row < h; ++row) {
+    bool top = row < r, bottom = row >= h - r;
+    double dy = top ? r - row - 0.5 : bottom ? row - (h - r) + 0.5 : 0;
+    int inset = dy > 0 ? int(std::ceil(r - std::sqrt(std::max(0.0, r * r - dy * dy)))) : 0;
+    int left = (top && (corners & 1)) || (bottom && (corners & 8)) ? inset : 0;
+    int right = (top && (corners & 2)) || (bottom && (corners & 4)) ? inset : 0;
+    rows.push_back({short(left), short(row),
+                    static_cast<unsigned short>(std::max(1, w - left - right)), 1});
+  }
+  XShapeCombineRectangles(fl_display, xid, ShapeBounding, 0, 0, rows.data(), int(rows.size()),
+                          ShapeSet, YXBanded);
+}
+
+void PanelPopup::apply_shape() {
+  if (!shown() || !fl_xid(this)) return;
+  shaped_w_ = w(), shaped_h_ = h();
+  apply_rounded_shape(fl_xid(this), w(), h(), corner_radius(), rounded_corners(corner_popup()));
+}
+
+void PanelPopup::stroke_outline(Painter &p, const Color &c) const {
+  double r = corner_radius(), x = 0.5, y = 0.5, ww = w() - 1, hh = h() - 1;
+  int corners = rounded_corners(corner_popup());
+  cairo_t *cr = p.cr();
+  auto rad = [&](int bit) { return (corners & bit) ? r : 0.0; };
+  cairo_new_path(cr);
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, x + ww - rad(2), y + rad(2), rad(2), -M_PI / 2, 0);
+  cairo_arc(cr, x + ww - rad(4), y + hh - rad(4), rad(4), 0, M_PI / 2);
+  cairo_arc(cr, x + rad(8), y + hh - rad(8), rad(8), M_PI / 2, M_PI);
+  cairo_arc(cr, x + rad(1), y + rad(1), rad(1), M_PI, 3 * M_PI / 2);
+  cairo_close_path(cr);
+  p.set(c);
+  cairo_set_line_width(cr, 1.0);
+  cairo_stroke(cr);
 }
 
 bool PanelPopup::contains_root(int rx, int ry) const {

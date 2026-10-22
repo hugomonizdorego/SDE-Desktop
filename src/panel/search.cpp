@@ -895,7 +895,7 @@ void SearchFlyout::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
+    stroke_outline(p, t.border);
     p.line(pad, list_top_ - S(5) + 0.5, W - pad, list_top_ - S(5) + 0.5, t.border);
     if (preview)
       p.fill_rounded(pad + lw + S(8), list_top_, area - lw - S(8), list_bottom_ - list_top_,
