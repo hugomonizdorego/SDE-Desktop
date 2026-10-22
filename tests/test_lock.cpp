@@ -329,6 +329,9 @@ static void test_input_recovery() {
   f.w = 1280;  // full screen: desktop, compositor overlay
   f.h = 800;
   CHECK(!releasable_popup(f));
+  f = menu;
+  f.w = f.h = 1;  // a toolkit's or window manager's helper window
+  CHECK(!releasable_popup(f));
   for (const char *type : {"_NET_WM_WINDOW_TYPE_DOCK", "_NET_WM_WINDOW_TYPE_DESKTOP",
                            "_NET_WM_WINDOW_TYPE_NOTIFICATION"}) {
     f = menu;

@@ -7,6 +7,7 @@ must not unlock the session (the daemon keeps a black grab and relaunches it).
 Run under dbus-run-session. No password is ever accepted here (real PAM)."""
 import os
 import shutil
+import signal
 import subprocess as sp
 import sys
 import tempfile
@@ -29,6 +30,25 @@ def dbus(env, method, *args, dest='org.freedesktop.ScreenSaver', path='/org/free
 def children(pid):
     out = sp.run(['ps', '-o', 'pid=', '--ppid', str(pid)], capture_output=True, text=True).stdout
     return [int(p) for p in out.split()]
+
+
+GRAB_PROBE = '''
+import ctypes
+x = ctypes.cdll.LoadLibrary("libX11.so.6")
+x.XOpenDisplay.restype = ctypes.c_void_p
+d = x.XOpenDisplay(None)
+x.XDefaultRootWindow.restype = ctypes.c_ulong
+x.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+x.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]
+print(x.XGrabKeyboard(d, x.XDefaultRootWindow(d), 0, 1, 1, 0))
+'''
+GRAB_HOLD = GRAB_PROBE + '''
+import sys, time
+sys.stdout.flush()
+x.XFlush.argtypes = [ctypes.c_void_p]
+x.XFlush(d)
+time.sleep(60)
+'''
 
 
 def query(env):
@@ -138,7 +158,56 @@ print(x.XGrabKeyboard(d, x.XDefaultRootWindow(d), 0, 1, 1, 0))
         # SetActive(false) never unlocks.
         dbus(env, 'SetActive', 'boolean:false')
         assert query(env) == 'locked'
-        print('sde-lock daemon: inhibitors, lock, crash watchdog passed.')
+
+        # Alpha 51: a lock screen that hangs (stopped here; a blocked X or
+        # input method connection on real hardware) shows a screen that
+        # ignores the keyboard forever. The daemon replaces it with a fresh
+        # one when its heartbeat stops.
+        hung = children(daemon.pid)
+        assert len(hung) == 1, hung
+        time.sleep(1.5)  # it has sent heartbeats
+        os.kill(hung[0], signal.SIGSTOP)
+        for _ in range(250):
+            fresh = children(daemon.pid)
+            if fresh and fresh != hung:
+                break
+            time.sleep(0.1)
+        assert fresh and fresh != hung, 'the hung lock screen was not replaced'
+        assert query(env) == 'locked'
+        time.sleep(1.0)
+        probe = sp.run([sys.executable, '-c', GRAB_PROBE], env=env, capture_output=True, text=True)
+        assert probe.stdout.strip() == '1', 'keyboard free after replacing the hung lock screen'
+        if shots and shutil.which('import'):
+            sp.run(['import', '-window', 'root', str(Path(shots) / 'daemon-after-hang.png')], env=env)
+
+        # Locking while another program holds the keyboard (an open menu, a
+        # screenshot tool): the screen is covered and locked ("W") instead
+        # of the lock being refused, and the lock screen takes the keyboard
+        # as soon as it is released.
+        for c in children(daemon.pid):
+            os.kill(c, 9)
+        daemon.kill()
+        daemon.wait()
+        holder = sp.Popen([sys.executable, '-c', GRAB_HOLD], env=env, stdout=sp.PIPE, text=True)
+        assert holder.stdout.readline().strip() == '0', 'test grab failed'
+        daemon = sp.Popen([str(lock), '--daemon'], env=env)
+        for _ in range(100):
+            if dbus(env, 'GetActive').returncode == 0:
+                break
+            time.sleep(0.05)
+        assert sp.run([str(lock), '--lock'], env=env, timeout=30).returncode == 0, 'lock refused'
+        assert query(env) == 'locked'
+        assert len(children(daemon.pid)) == 1
+        holder.kill()
+        holder.wait()
+        for _ in range(40):
+            probe = sp.run([sys.executable, '-c', GRAB_PROBE], env=env, capture_output=True, text=True)
+            if probe.stdout.strip() == '1':
+                break
+            time.sleep(0.1)
+        assert probe.stdout.strip() == '1', 'the lock screen did not take the released keyboard'
+        assert query(env) == 'locked'
+        print('sde-lock daemon: inhibitors, lock, crash and hang watchdog, busy keyboard passed.')
     finally:
         if daemon:
             for c in children(daemon.pid):
