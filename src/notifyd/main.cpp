@@ -5,6 +5,12 @@
 // Specification 1.2): popups with icon, summary, body, action buttons and
 // images, urgency levels and a Do Not Disturb mode that only lets critical
 // notifications through.
+//
+// alpha52: a history of the notifications (org.sde.Notifications on the same
+// object) for the panel's notifications button and flyout: GetHistory,
+// MarkRead, Dismiss, DismissApp, Clear, InvokeAction and the HistoryChanged
+// signal (unread, total). Expired and silenced (Do Not Disturb) notifications
+// stay in the history until dismissed there; transient ones are not kept.
 #include <FL/Fl.H>
 #include <FL/Fl_Button.H>
 #include <FL/fl_draw.H>
@@ -39,6 +45,7 @@ namespace {
 
 const char *kPath = "/org/freedesktop/Notifications";
 const char *kIface = "org.freedesktop.Notifications";
+const char *kHistoryIface = "org.sde.Notifications";
 
 enum CloseReason : uint32_t { EXPIRED = 1, DISMISSED = 2, CLOSED_BY_CALL = 3 };
 
@@ -163,6 +170,33 @@ struct Notification {
 std::vector<std::unique_ptr<Notification>> g_notes;
 uint32_t g_next_id = 1;
 
+// The notification history (oldest first), shown by the panel.
+struct HistoryEntry {
+  uint32_t id = 0;
+  std::string app, icon, summary, body;
+  std::vector<std::pair<std::string, std::string>> actions;
+  uint32_t time = 0;
+  uint32_t urgency = 1;
+  bool unread = true;
+};
+std::vector<HistoryEntry> g_history;
+constexpr size_t kHistoryMax = 100;
+
+void emit_history_changed() {
+  uint32_t unread = 0;
+  for (const auto &h : g_history) unread += h.unread ? 1 : 0;
+  DBusMessage *s = dbus::signal(kPath, kHistoryIface, "HistoryChanged");
+  dbus::Writer(s).u32(unread).u32(uint32_t(g_history.size()));
+  g_bus->send(s);
+}
+
+bool history_remove(uint32_t id) {
+  auto it = std::find_if(g_history.begin(), g_history.end(), [&](auto &h) { return h.id == id; });
+  if (it == g_history.end()) return false;
+  g_history.erase(it);
+  return true;
+}
+
 Notification *find_note(uint32_t id) {
   for (auto &n : g_notes)
     if (n->id == id) return n.get();
@@ -249,7 +283,10 @@ void Popup::rebuild() {
             std::string k = pair->second;
             emit_action(nid, k);
             Notification *note = find_note(nid);
-            if (note && !note->resident) close_notification(nid, DISMISSED);
+            if (note && !note->resident) {
+              if (history_remove(nid)) emit_history_changed();
+              close_notification(nid, DISMISSED);
+            }
           },
           keys_.emplace_back(new std::pair<uint32_t, std::string>(id, key)).get());
     }
@@ -328,7 +365,11 @@ int Popup::handle(int e) {
       bool has_default = false;
       for (auto &a : n_->actions)
         if (a.first == "default") has_default = true;
-      if (has_default) emit_action(id, "default");
+      if (has_default) {
+        emit_action(id, "default");
+        // Opened: it leaves the history too.
+        if (history_remove(id)) emit_history_changed();
+      }
       close_notification(id, DISMISSED);
       return 1;
     }
@@ -403,6 +444,9 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
   uint32_t replaces = uint32_t(args[1].num());
   Notification *n = replaces ? find_note(replaces) : nullptr;
   std::unique_ptr<Notification> fresh;
+  // A replacement of a notification whose bubble is gone takes its place
+  // in the history (progress updates, a chat's latest message).
+  if (!n && replaces) history_remove(replaces);
   if (!n) {
     fresh = std::make_unique<Notification>();
     fresh->id = g_next_id++;
@@ -453,6 +497,27 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
   dbus::Writer(reply).u32(id);
   g_bus->send(reply);
 
+  bool transient = false;
+  if (const dbus::Value *t = hints.get("transient")) transient = t->boolean();
+  if (!transient) {
+    auto it = std::find_if(g_history.begin(), g_history.end(), [&](auto &h) { return h.id == id; });
+    if (it == g_history.end()) {
+      g_history.emplace_back();
+      it = g_history.end() - 1;
+    }
+    it->id = id;
+    it->app = n->app;
+    it->icon = n->icon;
+    it->summary = n->summary;
+    it->body = n->body;
+    it->actions = n->actions;
+    it->time = uint32_t(::time(nullptr));
+    it->urgency = uint32_t(n->urgency);
+    it->unread = true;
+    while (g_history.size() > kHistoryMax) g_history.erase(g_history.begin());
+    emit_history_changed();
+  }
+
   bool dnd = g_cfg.get_bool("notifications", "do_not_disturb", false);
   if (fresh) g_notes.push_back(std::move(fresh));
   if (dnd && n->urgency < 2) {
@@ -464,6 +529,67 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
   else n->popup->rebuild();
   relayout();
   schedule_expiry(n);
+  return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+// org.sde.Notifications: the history for the panel.
+DBusHandlerResult on_history(DBusMessage *msg, const std::string &m) {
+  auto args = dbus::read_args(msg);
+  DBusMessage *r = dbus_message_new_method_return(msg);
+  bool changed = false;
+  if (m == "GetHistory") {
+    dbus::Writer w(r);
+    {
+      dbus::Writer list(w.iter(), DBUS_TYPE_ARRAY, "(ussssasuub)");
+      for (const auto &h : g_history) {
+        dbus::Writer st(list.iter(), DBUS_TYPE_STRUCT, nullptr);
+        std::vector<std::string> acts;
+        for (const auto &a : h.actions) {
+          acts.push_back(a.first);
+          acts.push_back(a.second);
+        }
+        st.u32(h.id).str(h.app).str(h.icon).str(h.summary).str(h.body).strings(acts).u32(h.time)
+            .u32(h.urgency).boolean(h.unread);
+      }
+    }
+  } else if (m == "MarkRead") {
+    for (auto &h : g_history)
+      if (h.unread) {
+        h.unread = false;
+        changed = true;
+      }
+  } else if (m == "Dismiss" && !args.empty()) {
+    uint32_t id = uint32_t(args[0].num());
+    changed = history_remove(id);
+    close_notification(id, DISMISSED);
+  } else if (m == "DismissApp" && !args.empty()) {
+    std::string app = args[0].str();
+    std::vector<uint32_t> ids;
+    for (const auto &h : g_history)
+      if (h.app == app) ids.push_back(h.id);
+    for (uint32_t id : ids) {
+      history_remove(id);
+      close_notification(id, DISMISSED);
+    }
+    changed = !ids.empty();
+  } else if (m == "Clear") {
+    std::vector<uint32_t> ids;
+    for (const auto &h : g_history) ids.push_back(h.id);
+    g_history.clear();
+    for (uint32_t id : ids) close_notification(id, DISMISSED);
+    changed = !ids.empty();
+  } else if (m == "InvokeAction" && args.size() >= 2) {
+    uint32_t id = uint32_t(args[0].num());
+    emit_action(id, args[1].str());
+    changed = history_remove(id);
+    close_notification(id, DISMISSED);
+  } else {
+    dbus_message_unref(r);
+    g_bus->send(dbus::Bus::error(msg, DBUS_ERROR_UNKNOWN_METHOD, "Unknown method " + m));
+    return DBUS_HANDLER_RESULT_HANDLED;
+  }
+  g_bus->send(r);
+  if (changed) emit_history_changed();
   return DBUS_HANDLER_RESULT_HANDLED;
 }
 
@@ -488,12 +614,21 @@ DBusHandlerResult on_message(DBusMessage *msg) {
         "<arg type=\"s\" direction=\"out\"/><arg type=\"s\" direction=\"out\"/></method>"
         "<signal name=\"NotificationClosed\"><arg type=\"u\"/><arg type=\"u\"/></signal>"
         "<signal name=\"ActionInvoked\"><arg type=\"u\"/><arg type=\"s\"/></signal>"
+        "</interface><interface name=\"org.sde.Notifications\">"
+        "<method name=\"GetHistory\"><arg type=\"a(ussssasuub)\" direction=\"out\"/></method>"
+        "<method name=\"MarkRead\"/>"
+        "<method name=\"Dismiss\"><arg type=\"u\" direction=\"in\"/></method>"
+        "<method name=\"DismissApp\"><arg type=\"s\" direction=\"in\"/></method>"
+        "<method name=\"Clear\"/>"
+        "<method name=\"InvokeAction\"><arg type=\"u\" direction=\"in\"/><arg type=\"s\" direction=\"in\"/></method>"
+        "<signal name=\"HistoryChanged\"><arg type=\"u\"/><arg type=\"u\"/></signal>"
         "</interface></node>";
     DBusMessage *r = dbus_message_new_method_return(msg);
     dbus::Writer(r).str(xml);
     g_bus->send(r);
     return DBUS_HANDLER_RESULT_HANDLED;
   }
+  if (dbus_message_has_interface(msg, kHistoryIface)) return on_history(msg, m);
   if (!dbus_message_has_interface(msg, kIface)) return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
   if (m == "Notify") return on_notify(msg);
   DBusMessage *r = dbus_message_new_method_return(msg);
@@ -503,7 +638,11 @@ DBusHandlerResult on_message(DBusMessage *msg) {
     dbus::Writer(r).str("SDE Notifications").str("Selviana Desktop Environment").str(SDE_VERSION).str("1.2");
   } else if (m == "CloseNotification") {
     auto args = dbus::read_args(msg);
-    if (!args.empty()) close_notification(uint32_t(args[0].num()), CLOSED_BY_CALL);
+    if (!args.empty()) {
+      // Withdrawn by the application: gone from the history as well.
+      if (history_remove(uint32_t(args[0].num()))) emit_history_changed();
+      close_notification(uint32_t(args[0].num()), CLOSED_BY_CALL);
+    }
   } else {
     dbus_message_unref(r);
     g_bus->send(dbus::Bus::error(msg, DBUS_ERROR_UNKNOWN_METHOD, "Unknown method " + m));
