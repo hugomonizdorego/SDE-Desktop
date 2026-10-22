@@ -89,7 +89,9 @@ Since alpha52 (`src/liria-sde-ribbon.c`, `src/liria-sde-model.c` and
   files dropped on folder and drive cards are copied, moved or linked by
   Liria (application action `sde-drop`), locations dropped on Quick
   access or the Pinned heading are pinned, and a right-button drag of
-  icons asks Move/Copy/Link Here (Alt+drag belongs to SDE WM).
+  icons asks Move/Copy/Link Here (Alt+drag belongs to SDE WM). The SDE
+  desktop accepts files dragged from Liria (moved on the same drive,
+  copied otherwise) and its files can be dragged into Liria.
   `tools/liria-dnd-smoke.py --prefix <built prefix>` checks real drags on
   Xvfb; `sde-tools/test-liria-sde-model.c` tests the pin-on-drop,
   ribbon-preference and Home layout decisions.
