@@ -971,6 +971,24 @@ repair_imported_profiles() {
     done
 }
 
+# Only real network cards: veth (containers), vboxnet and other virtual
+# devices are unmanaged on purpose, as is anything udev marks NM_UNMANAGED.
+real_card() {
+    [ -d "$SYSNET" ] || return 0
+    [ -e "$SYSNET/$1/device" ] || [ -L "$SYSNET/$1/device" ] || return 1
+    if have udevadm && udevadm info -q property -p "$SYSNET/$1" 2>/dev/null | grep -q '^NM_UNMANAGED=1'; then
+        return 1
+    fi
+    return 0
+}
+
+# Ethernet/Wi-Fi cards that NetworkManager does not manage.
+unmanaged_cards() {
+    have nmcli || return 0
+    nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | awk -F: '($2 == "ethernet" || $2 == "wifi") && $3 == "unmanaged" { print $1 }' |
+        while IFS= read -r d; do real_card "$d" && printf '%s\n' "$d"; done
+}
+
 repair_devices() {
     have nmcli && nm_running || return 0
     if unit_active systemd-networkd.service; then
@@ -982,6 +1000,7 @@ repair_devices() {
     for line in $(nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | tr ' ' '_'); do
         dev=${line%%:*}; rest=${line#*:}; type=${rest%%:*}; state=${rest#*:}
         case "$type" in ethernet|wifi) ;; *) continue ;; esac
+        real_card "$dev" || continue
         case "$state" in
             unmanaged)
                 case "$mentioned" in *" $dev "*) continue ;; esac
@@ -1263,10 +1282,8 @@ if [ "$MODE" = quick ]; then
         empty) [ "$dns" = false ] && repairable=true ;;
         systemd-resolved) unit_active systemd-resolved.service || repairable=true ;;
     esac
-    [ -n "$conflicts" ] && repairable=true
-    if have nmcli && nmcli -t -f TYPE,STATE device 2>/dev/null | grep -qE '^(ethernet|wifi):unmanaged$'; then
-        repairable=true
-    fi
+    [ -n "$conflicts" ] && [ ! -e "${DEBION_KEEP_FILE:-/etc/debion/keep-ifupdown}" ] && repairable=true
+    [ -n "$(unmanaged_cards)" ] && repairable=true
     auto=true; auto_repair_enabled || auto=false
     printf '"proxy_mode":%s,"proxy_url":%s,"wpad_url":%s,"apt_proxy":%s,"clock_skew":%s,"repairable":%s,"auto_repair":%s}\n' \
         "$(json_str "$pmode")" "$(json_str "$purl")" "$(json_str "$wpad")" "$(json_str "$aptp")" "${skew:-null}" "$repairable" "$auto"

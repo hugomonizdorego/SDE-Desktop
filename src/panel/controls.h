@@ -113,7 +113,9 @@ class PanelControls {
   // Repairs the network through pkexec: the safe repair
   // (/usr/libexec/debion-network-repair) when polkit allows it without a
   // password, else (or with |full|) debion-network-check --fix.
-  void repair_network(bool full);
+  // |interactive| false (the automatic repair after login) never asks for
+  // a password: when the safe repair is not enough it offers "Fix now".
+  void repair_network(bool full, bool interactive = true);
   // Flyout "Troubleshoot": NetworkManager's check, then the verdict; DNS
   // problems are repaired, others reconnect.
   void troubleshoot_network();

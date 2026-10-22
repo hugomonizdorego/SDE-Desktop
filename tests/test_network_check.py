@@ -548,7 +548,6 @@ if a[:2] == ["device", "set"] and a[3:] == ["managed", "yes"]:
     st["state"] = "100 (connected)"; save(st); sys.exit(0)
 # --boot-repair / --postinst-repair / --quick
 if j == "-t -f STATE general": out("connected" if managed(st) else "disconnected")
-if j == "-t -f TYPE,STATE device": out("ethernet:" + st["state"].split("(", 1)[1].rstrip(")"))
 if j == "-t -f UUID,TYPE,AUTOCONNECT connection show":
     out(st["uuid"] + ":802-3-ethernet:" + st.get("autoconnect", "yes"))
 if len(a) == 5 and a[0] == "-g" and a[2:4] == ["connection", "show"] and a[4] == st["uuid"]:
@@ -902,6 +901,16 @@ class BootRepair(RepairSim):
         self.state({"base_conf": "[keyfile]\nunmanaged-devices=interface-name:enp0s3\n"})
         self.boot()
         self.assertNotIn("device set", self.calls())
+        # Nor a virtual device (veth, vboxnet: no "device" link in sysfs).
+        self.state({"base_conf": "[main]\nplugins=ifupdown,keyfile\n"})
+        sysfs = os.path.join(self.dir, "sysfs")
+        os.makedirs(os.path.join(sysfs, "enp0s3"))
+        self.env["DEBION_SYS_CLASS_NET"] = sysfs
+        self.boot()
+        self.assertNotIn("device set", self.calls())
+        # A real card is.
+        os.symlink("../../devices/pci0000:00/0000:00:03.0", os.path.join(sysfs, "enp0s3", "device"))
+        self.assertIn("NetworkManager manages enp0s3 now", self.boot())
 
     def test_cable_without_autoconnect_profile(self):
         self.state({"state": "30 (disconnected)", "autoconnect": "no"})

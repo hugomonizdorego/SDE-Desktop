@@ -166,7 +166,7 @@ void PanelControls::verdict_in(bool auto_repair) {
       run_async({"pkcheck", "--action-id", "org.debion.network-check.repair", "--process", process},
                 [this](const std::string &, int status) {
                   if (status == 0)
-                    repair_network(false);
+                    repair_network(false, false);
                   else
                     offer_repair();
                 });
@@ -204,7 +204,7 @@ void PanelControls::offer_repair() {
   });
 }
 
-void PanelControls::repair_network(bool full) {
+void PanelControls::repair_network(bool full, bool interactive) {
   if (net_repair_state == "running") return;
   // polkit's action names /usr/sbin/debion-network-check (the /usr/bin
   // link would need pkexec's generic authorization).
@@ -231,7 +231,7 @@ void PanelControls::repair_network(bool full) {
   net_repair_state = "running";
   net_repair_text = _("Repairing the network connection...");
   changed();
-  run_async(argv, [this, full](const std::string &out, int status) {
+  run_async(argv, [this, full, interactive](const std::string &out, int status) {
     std::string summary = network_repair_summary(out, status);
     if (status == 126 || status == 127) {
       net_repair_state = "failed";
@@ -239,14 +239,19 @@ void PanelControls::repair_network(bool full) {
     } else if (summary == "ok") {
       net_repair_state = "ok";
       net_repair_text = _("Repaired: names (DNS) resolve again.");
-    } else if (summary == "done" && !full) {
-      // The safe repair found nothing it may change: the full one may.
+    } else if (!full) {
+      // The safe repair did not make DNS work: the full one may (it asks
+      // for a password, so only when the user asked for a repair).
       net_repair_state = "";
       net_repair_text.clear();
-      repair_network(true);
+      if (interactive)
+        repair_network(true);
+      else
+        offer_repair();
+      changed();
       return;
     } else {
-      net_repair_state = status == 0 ? "ok" : "failed";
+      net_repair_state = status == 0 && summary == "done" ? "ok" : "failed";
       net_repair_text = summary == "done" ? std::string(_("The repair finished.")) : summary;
     }
     changed();
