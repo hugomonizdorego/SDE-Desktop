@@ -1,0 +1,5 @@
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+/dev/sr0 /cdrom iso9660 ro,noatime,nojoliet,check=s,map=n,blocksize=2048 0 0
+/dev/loop0 /rofs squashfs ro,noatime,errors=continue 0 0
+/cow / overlay rw,relatime,lowerdir=/rofs,upperdir=/cow/upper,workdir=/cow/work 0 0
