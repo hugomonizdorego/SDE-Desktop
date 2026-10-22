@@ -557,7 +557,10 @@ def preview_checks():
     # The installed SDE WM (an Openbox fork) in CI, stock Openbox on dev machines.
     import shutil
     wm_bin=shutil.which('sde-wm') or 'openbox'
-    wm=spawn(wm_bin,'--replace','--sm-disable')
+    # Like sde-session: the SDE rc.xml names an installed SDE theme (stock
+    # Openbox defaults to Clearlooks, which SDE does not ship).
+    rc=next((str(c) for c in (Path('/usr/share/sde/openbox/rc.xml'),Path(__file__).resolve().parent.parent/'data/openbox/rc.xml') if c.exists()),None)
+    wm=spawn(wm_bin,'--replace','--sm-disable',*(['--config-file',rc] if rc else []))
     def wm_log():return (home/(Path(wm_bin).name+'.log')).read_text(errors='replace')[-2000:]
     waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'the window manager did not start')
     time.sleep(.5)
