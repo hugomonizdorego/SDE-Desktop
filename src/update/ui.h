@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// SDE Update widgets: cards, badges, vector icons, a virtual list view, a
+// Software Updater widgets: cards, badges, vector icons, a virtual list view, a
 // search field and a themed text view. They follow active_theme(), the SDE
 // theme family (SDE, Aero, Liquid Glass) and the UI scale.
 #pragma once
@@ -59,6 +59,8 @@ enum class Icon {
   Search, Restart, Trash, Broom, Wrench, Terminal, Package, Clock, Close, Info, Check
 };
 void paint_icon(Painter &p, Icon icon, double x, double y, double size, const Color &c);
+// Disclosure triangle of a collapsible section or tree row.
+void paint_disclosure(Painter &p, double x, double y, double size, bool open, const Color &c);
 
 // Push button in the SDE style. Liquid Glass makes it a pill.
 class Button : public Fl_Button {
@@ -91,6 +93,7 @@ class Button : public Fl_Button {
 class SearchField : public Fl_Input {
  public:
   SearchField(int x, int y, int w, int h, const std::string &placeholder);
+  void restyle();  // after a theme change
   void draw() override;
   int handle(int event) override;
 
@@ -112,6 +115,8 @@ class ListView : public Fl_Widget {
   std::function<void(int row, int x, int clicks)> clicked;
   std::function<void(int row)> selection_changed;
   std::function<void(int row)> toggled;  // space bar
+  // Other keys (e.g. Left/Right to collapse a tree row); true when handled.
+  std::function<bool(int row, int key)> key_pressed;
   // Shown when count() is 0.
   std::string empty_title, empty_text;
   Icon empty_icon = Icon::Info;
@@ -145,12 +150,17 @@ class TextView : public Fl_Text_Display {
   void set(const std::string &text);
   void append(const std::string &text);
   void scroll_to_end();
+  void restyle();  // after a theme change
 
  private:
   Fl_Text_Buffer *buffer_;
+  bool mono_;
 };
 
 void style_choice(Fl_Choice *c);
+// Re-applies the active theme to the TextViews, SearchFields and choices
+// below |w| (their colors are set when they are created).
+void restyle_tree(Fl_Widget *w);
 std::string menu_escape(const std::string &s);
 
 // A modal question in the SDE style. |details| is shown in a text box when
