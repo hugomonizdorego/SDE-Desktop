@@ -135,6 +135,12 @@ void PanelControls::verdict_in(bool auto_repair) {
     net_retries_ = 0;
     return;
   }
+  if (net_repair_state == "ok") {
+    // "Repaired" no longer holds.
+    net_repair_state.clear();
+    net_repair_text.clear();
+    changed();
+  }
   // Check again later: DHCP, the boot repair or the user may fix it.
   Fl::add_timeout(std::min(300, 20 << std::min(net_retries_, 4)), net_retry, this);
   ++net_retries_;
@@ -264,7 +270,7 @@ void PanelControls::troubleshoot_network() {
   s.check_connectivity(true, [this](int) {
     check_network([this] {
       auto &st = SystemStatus::get();
-      if (net_verdict == "ok") {
+      if (net_verdict == "ok" && !st.network.no_internet() && !st.network.portal()) {
         st.message = _("Internet access works.");
         st.changed_now();
       } else if (network_verdict_fixable(net_verdict, net_repairable)) {

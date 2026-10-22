@@ -626,6 +626,31 @@ def preview_checks():
     away();config();reload()
     for proc in (one,other):proc.terminate()
     print('PANEL a51: taskbar previews (delay, grouped thumbnails, instant swap, cached thumbnail of a minimized window, click activates, close button, setting) PASS',flush=True)
+def led(color):return any(k.startswith('@led:'+color) for k in layout('SDE Panel'))
+def network_repair_checks():
+    """alpha52: DNS fails although NetworkManager says FULL. A connectivity
+    change runs the verdict again; polkit allows the safe repair, so the
+    panel runs it without asking and the LED turns green. The next time on
+    the same connection a notification offers "Fix now", and the Network
+    flyout repairs inline and shows the outcome."""
+    (home/'verdict').write_text('no-dns');(home/'repairable').write_text('true');(home/'pkcheck').write_text('0')
+    mode('nm-limited');mode('nm-full')
+    waitfor(lambda:commands('PKCHECK --action-id org.debion.network-check.repair --process'),'safe repair not checked with polkit')
+    waitfor(lambda:commands('PKEXEC '+str(home/'bin/debion-network-repair')),'safe repair not run without a prompt')
+    waitfor(lambda:led('green'),'LED not green after the automatic repair')
+    (home/'verdict').write_text('no-dns')
+    mode('nm-limited');mode('nm-full')
+    waitfor(lambda:led('yellow'),'LED not yellow while DNS fails')
+    waitfor(lambda:notified('Internet needs a quick repair'),'no "quick repair" notification')
+    assert notified('Fix now'),'quick repair notification without "Fix now"'
+    fl=open_section('network','Network');item('Network','Repair the connection');shot('24-network-repair')
+    runs=(home/'commands.log').read_text().count('PKEXEC')
+    press('Network','Repair the connection')
+    waitfor(lambda:(home/'commands.log').read_text().count('PKEXEC')>runs,'"Repair the connection" did not run pkexec')
+    waitfor(lambda:'Repair again' in layout('Network'),'repair outcome not shown in the flyout')
+    shot('24-network-repaired');escape('Network')
+    waitfor(lambda:led('green'),'LED not green after the flyout repair')
+    (home/'repairable').write_text('false')
 def battery_checks():
     """alpha51 battery flyout in the spirit of the Cinnamon power applet:
     battery and model, state with the remaining time, brightness, power
@@ -687,8 +712,21 @@ echo "{tag} $*" >> "$HOME/commands.log"
 (home/'bin/debion-network-check').write_text('''#!/bin/sh
 v=$(cat "$HOME/verdict" 2>/dev/null || echo ok)
 echo "CHECK $*" >> "$HOME/commands.log"
-printf '{"version":2,"verdict":"%s"}\\n' "$v"
+printf '{"version":2,"verdict":"%s","repairable":%s,"auto_repair":true}\\n' "$v" "$(cat "$HOME/repairable" 2>/dev/null || echo false)"
 ''')
+# alpha52 network repair: pkcheck answers from $HOME/pkcheck (0: polkit
+# allows the safe repair without a password); pkexec "repairs" DNS.
+(home/'bin/pkcheck').write_text('''#!/bin/sh
+echo "PKCHECK $*" >> "$HOME/commands.log"
+exit "$(cat "$HOME/pkcheck" 2>/dev/null || echo 1)"
+''')
+(home/'bin/pkexec').write_text('''#!/bin/sh
+echo "PKEXEC $*" >> "$HOME/commands.log"
+echo ok > "$HOME/verdict"
+echo "nothing to repair"
+echo "DNS works now: deb.debian.org resolves to 192.0.2.80 (name servers: 192.0.2.53)."
+''')
+(home/'bin/debion-network-repair').write_text('#!/bin/sh\nexit 0\n')
 (home/'bin/pactl').write_text('''#!/usr/bin/env python3
 import sys,os,json
 from pathlib import Path
@@ -737,6 +775,10 @@ try:
     spawn('sde-desktop');find('^SDE Desktop$');time.sleep(.3);panel_proc=spawn('sde-panel');panel=find('^SDE Panel$');time.sleep(.6)
     fixture=spawn(str(a.test_dir.resolve()/'sde-panel-service-fixture'),str(home/'service.log'))
     waitfor(lambda:(home/'service.log').exists() and log_has('READY'),'fixture not ready')
+    # alpha52 login: the panel asks debion-network-check at once (nothing
+    # opened), and the LED turns green only with its verdict.
+    waitfor(lambda:commands('CHECK --quick --json'),'no network verdict at login')
+    waitfor(lambda:led('green'),'LED not green at login')
     sni=spawn(str(a.test_dir.resolve()/'sde-sni-demo'))
     icon=find('^SDE XEmbed fixture$',visible_only=False);host=parent(icon);waitfor(lambda:parent(str(host))==int(panel),'tray not docked in panel')
     waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:touchpad' in layout('SDE Panel'),'status icons missing')
@@ -893,6 +935,7 @@ try:
     escape('Network');(home/'verdict').write_text('ok');fl=open_section('network','Network')
     waitfor(lambda:'Proxy settings' not in layout('Network'),'Proxy settings row stayed');escape('Network')
     waitfor(lambda:any(k.startswith('@led:green') for k in layout('SDE Panel')),'LED not green again')
+    network_repair_checks()
 
     # Each status icon opens its own flyout above it; another icon switches
     # with one click, the same icon closes it.
@@ -982,7 +1025,7 @@ try:
     assert panel_proc.poll() is None,'panel exited'
     print('PANEL a51: clock time zone row (Sync sets the detected zone with timedatectl and turns NTP on, Automatic time zone saved, disabled offline) PASS',flush=True)
     print('PANEL a50: tooltips name the hovered icon at once, no media icon, one keyboard indicator, network LED and switches, drives (open/eject/busy/notify/automount), touchpad indicator, popups take input after a screenshot grab PASS',flush=True)
-    print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
+    print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot, verdict at login, DNS repair: silent/notification/flyout), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
 finally:
     for proc in reversed(processes):
         if proc.poll() is None:proc.terminate()

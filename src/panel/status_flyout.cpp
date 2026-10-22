@@ -612,7 +612,7 @@ void StatusFlyout::network_section(FlyBuilder &b) {
           [] {
             const auto &pc = PanelControls::get();
             if (!pc.net_repair_text.empty()) return pc.net_repair_text;
-            return std::string(_("Gives DNS back to NetworkManager and checks it"));
+            return std::string(_("Repairs DNS and checks it"));
           },
           nullptr, c.net_repair_state != "running");
   if (c.net_verdict == "proxy-required" || c.net_verdict == "no-dns" || c.net_verdict == "clock")
