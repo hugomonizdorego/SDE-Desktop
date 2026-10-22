@@ -27,13 +27,13 @@ a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
 display=f':{a.display}'
-e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),XDG_CACHE_HOME=str(home/'.cache'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
+e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),XDG_CACHE_HOME=str(home/'.cache'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),SDE_PANEL_FAKE_TOUCHPAD='1',PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
 # The Action Center's weather comes from a fixed report (no network in QA).
 e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
 (home/'backlight/qa_backlight').mkdir(parents=True);(home/'backlight/qa_backlight/brightness').write_text('60\n');(home/'backlight/qa_backlight/max_brightness').write_text('100\n')
-FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Tray','Alarms']
+FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Touchpad','Tray','Alarms']
 def spawn(*cmd):
     log=open(home/(Path(cmd[0]).name+'.log'),'w');proc=sp.Popen(cmd,env=e,stdout=log,stderr=sp.STDOUT);processes.append(proc);return proc
 def run(*cmd,check=True):return sp.run(list(map(str,cmd)),env=e,check=check,stdout=sp.PIPE,stderr=sp.PIPE,text=True)
@@ -431,6 +431,86 @@ def brightness_checks(ac):
         if level()!=before+10:break
     waitfor(lambda:level()==before-10,f'sde-panel --brightness did not change it ({level()})')
     shot('02-action-center-brightness')
+def hover_panel(name):
+    x,y=panel_button(name);run('xdotool','mousemove',x,y);time.sleep(.15)
+def tooltip():
+    return next((k[9:] for k in layout('SDE Panel') if k.startswith('@tooltip:')),'')
+def panel_checks_a50():
+    """alpha50: tooltips, keyboard indicator de-duplication, grabs."""
+    # Regression (alpha16 "^G"/garbage tooltips): moving from icon to icon
+    # hands Fl_Tooltip the new name at once, and the old text stays valid.
+    for name,expect in [('status:sound','Volume'),('status:network','Wired network'),('status:keyboard','Keyboard layout'),('status:sound','Volume'),('action-center','Action Center')]:
+        hover_panel(name);waitfor(lambda:tooltip().startswith(expect),f'tooltip of {name} is {tooltip()!r}')
+    hover_panel('status:network');time.sleep(1.4);shot('00-panel-tooltip')
+    assert tooltip().startswith('Wired network'),tooltip()
+    run('xdotool','mousemove','600','300');time.sleep(.3)
+    # An input method's own indicator replaces SDE's layout indicator; a
+    # plain XKB applet is hidden instead.
+    im=spawn(str(a.test_dir.resolve()/'sde-sni-demo'),'input-keyboard','ibus','IBus')
+    waitfor(lambda:'status:keyboard' not in layout('SDE Panel'),'SDE keyboard indicator kept next to IBus')
+    shot('00-panel-ibus');im.terminate();im.wait()
+    waitfor(lambda:'status:keyboard' in layout('SDE Panel'),'SDE keyboard indicator did not come back')
+    xkb=spawn(str(a.test_dir.resolve()/'sde-sni-demo'),'input-keyboard','gxkb','gxkb')
+    time.sleep(1.2);assert 'status:keyboard' in layout('SDE Panel');shot('00-panel-gxkb-hidden');xkb.terminate();xkb.wait()
+    # A screenshot tool that holds the pointer and keyboard while the
+    # search or the menu opens: typing must still reach them afterwards.
+    grab=str(a.test_dir.resolve()/'sde-grab-fixture')
+    g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--search');g.wait()
+    find('^SDE Search$');time.sleep(.8)
+    run('xdotool','type','--delay','40','wget')
+    try:waitfor(lambda:'query:wget' in layout('SDE Search'),'search took no typing after a screenshot grab')
+    except AssertionError:
+        shot('debug-grab-search');print(layout('SDE Search').keys(),run('xdotool','getwindowfocus','getwindowname',check=False).stdout,flush=True);raise
+    escape('SDE Search')
+    g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--menu');g.wait()
+    if not visible('^SDE Menu$'):shot('debug-grab-menu')
+    command(['--menu'],'SDE Menu');time.sleep(.8)
+    run('xdotool','type','--delay','40','zeal')
+    waitfor(lambda:'query:zeal' in layout('SDE Search'),'menu took no typing after a screenshot grab')
+    escape('SDE Search')
+    # A press whose release went to the grabbing client leaves nothing stuck.
+    x,y=panel_button('start');run('xdotool','mousemove',x,y,'mousedown','1');time.sleep(.2)
+    g=sp.Popen([grab,'0.8'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('xdotool','mouseup','1');g.wait();time.sleep(.5)
+    if visible('^SDE Menu$'):escape('SDE Menu')
+    click_panel('start','^SDE Menu$');escape('SDE Menu')
+    # Touchpad indicator: the fake touchpad is the XTEST pointer here, so a
+    # click animates it and its flyout switches tap-to-click with xinput.
+    fl=click_panel('status:touchpad','^Touchpad$');time.sleep(.4);flyout_bounds(fl,'touchpad')
+    g=geom(fl);r=item('Touchpad','Touchpad preview',active=False)
+    # The flash of the clicked half lasts 350 ms: capture at once.
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');run('import','-window','root',out/'15-touchpad-flyout.png')
+    press('Touchpad','Tap to click');waitfor(lambda:commands('XINPUT set-prop') and commands('libinput Tapping Enabled 0'),'tap to click not applied with xinput')
+    waitfor(lambda:'touchpad_tap=false' in conf(),'tap to click not saved')
+    press('Touchpad','Touchpad settings...');gone('^Touchpad$');waitfor(lambda:commands('SETTINGS --page touchpad'),'Touchpad settings link missing')
+    hover_panel('status:touchpad');run('xdotool','click','2');run('import','-window','root',out/'15-touchpad-indicator-click.png')
+    fl=find('^Touchpad$');escape('Touchpad')
+def drive_checks():
+    """Removable drives through UDisks2: open (mount + Liria), eject while
+    busy (programs named), eject (unmount + power off), new drive (notify,
+    automount)."""
+    waitfor(lambda:'status:drives' in layout('SDE Panel'),'no Drives icon for the USB stick')
+    fl=click_panel('status:drives','^Drives$');time.sleep(.5);flyout_bounds(fl,'drives')
+    for name in ['Drive QA-STICK','Open QA-STICK','Eject QA-STICK']:item('Drives',name)
+    shot('10-drives')
+    press('Drives','Open QA-STICK');gone('^Drives$')
+    waitfor(lambda:log_has('UDISKS Mount'),'Open did not mount through UDisks2')
+    waitfor(lambda:commands('LIRIA --no-desktop /tmp/sde-qa-media/QA-STICK'),'Open did not show the files in Liria')
+    mode('drive-busy');fl=click_panel('status:drives','^Drives$');time.sleep(.6)
+    press('Drives','Eject QA-STICK');waitfor(lambda:log_has('UDISKS Unmount'),'Eject did not unmount')
+    waitfor(lambda:any('in use' in k for k in layout('Drives')) and any('Close its files' in k for k in layout('Drives')),'busy drive without a message')
+    waitfor(lambda:commands('FUSER -vm /tmp/sde-qa-media/QA-STICK'),'busy drive: fuser not asked')
+    shot('10-drives-busy')
+    mode('drive-free');press('Drives','Eject QA-STICK')
+    waitfor(lambda:log_has('UDISKS PowerOff'),'Eject did not power the stick off')
+    waitfor(lambda:any('can be removed safely' in k for k in layout('Drives')),'no "can be removed safely"')
+    shot('10-drives-removed');escape('Drives')
+    waitfor(lambda:'status:drives' not in layout('SDE Panel'),'Drives icon stayed after power-off')
+    mounts=(home/'service.log').read_text().count('UDISKS Mount')
+    mode('drive-insert')
+    waitfor(lambda:notified('USB drive connected'),'no notification for a new USB drive')
+    waitfor(lambda:(home/'service.log').read_text().count('UDISKS Mount')>mounts,'new drive not mounted automatically')
+    waitfor(lambda:'status:drives' in layout('SDE Panel'),'Drives icon missing for the new drive')
+    time.sleep(.5);shot('10-drives-inserted')
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
 import sys,os
 from pathlib import Path
@@ -445,9 +525,14 @@ elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n1
 elif a[:2]==['-t','networking']:print('full')
 ''')
 # Session actions, the browser and sound players only log what they were asked.
-for name,tag in [('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY')]:
+for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY')]:
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
+''')
+(home/'bin/debion-network-check').write_text('''#!/bin/sh
+v=$(cat "$HOME/verdict" 2>/dev/null || echo ok)
+echo "CHECK $*" >> "$HOME/commands.log"
+printf '{"version":2,"verdict":"%s"}\\n' "$v"
 ''')
 (home/'bin/pactl').write_text('''#!/usr/bin/env python3
 import sys,os,json
@@ -490,8 +575,12 @@ try:
     waitfor(lambda:(home/'service.log').exists() and log_has('READY'),'fixture not ready')
     sni=spawn(str(a.test_dir.resolve()/'sde-sni-demo'))
     icon=find('^SDE XEmbed fixture$',visible_only=False);host=parent(icon);waitfor(lambda:parent(str(host))==int(panel),'tray not docked in panel')
-    waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:media' in layout('SDE Panel'),'status icons missing')
-    time.sleep(1);shot('00-panel-indicators')
+    waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:touchpad' in layout('SDE Panel'),'status icons missing')
+    # alpha50: a playing MPRIS player puts no media icon on the panel.
+    time.sleep(1)
+    assert 'status:media' not in layout('SDE Panel'),'media icon on the panel'
+    shot('00-panel-indicators')
+    panel_checks_a50()
     menu_checks()
     search_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
@@ -618,8 +707,10 @@ try:
     item('Network','Connected, no internet',active=False)
     waitfor(lambda:log_has('NM CheckConnectivity'),'opening the Network flyout did not check connectivity')
     shot('22-network-no-internet')
-    press('Network','Troubleshoot')
+    press('Network','More network options');time.sleep(.5);shot('22-network-menu')
+    run('xdotool','key','Down','Return')  # Troubleshoot, the first item
     waitfor(lambda:commands('NM connection up id QA Wired LAN'),'Troubleshoot did not reconnect')
+    waitfor(lambda:layout('SDE Panel').get('@led:yellow:pulse') or layout('SDE Panel').get('@led:yellow:steady'),'LED not yellow without internet')
     escape('Network');shot('22-panel-no-internet')
     mode('nm-portal');fl=open_section('network','Network')
     item('Network','Sign in to network',active=False);shot('23-network-portal')
@@ -627,10 +718,19 @@ try:
     waitfor(lambda:commands('OPEN http://nmcheck.example.test/'),'portal sign-in page not opened')
     mode('nm-full');fl=open_section('network','Network')
     item('Network','Connected · Internet access',active=False);escape('Network')
+    waitfor(lambda:any(k.startswith('@led:green') for k in layout('SDE Panel')),'LED not green with internet')
+    # debion-network-check says a proxy is needed (HTTP works, HTTPS does
+    # not): yellow LED and a Proxy settings row, although NM says FULL.
+    (home/'verdict').write_text('proxy-required');fl=open_section('network','Network')
+    item('Network','Proxy settings');shot('23-network-proxy-required')
+    waitfor(lambda:any(k.startswith('@led:yellow') for k in layout('SDE Panel')),'LED not yellow when a proxy is required')
+    escape('Network');(home/'verdict').write_text('ok');fl=open_section('network','Network')
+    waitfor(lambda:'Proxy settings' not in layout('Network'),'Proxy settings row stayed');escape('Network')
+    waitfor(lambda:any(k.startswith('@led:green') for k in layout('SDE Panel')),'LED not green again')
 
     # Each status icon opens its own flyout above it; another icon switches
     # with one click, the same icon closes it.
-    for section,title in [('sound','Sound'),('network','Network'),('bluetooth','Bluetooth'),('media','Media'),('keyboard','Keyboard')]:
+    for section,title in [('sound','Sound'),('network','Network'),('bluetooth','Bluetooth'),('drives','Drives'),('touchpad','Touchpad'),('keyboard','Keyboard')]:
         fl=click_panel('status:'+section,'^'+title+'$');time.sleep(.5)
         flyout_bounds(fl,section);only_open(title);shot('05-flyout-'+section)
     click_panel('status:keyboard');gone('^Keyboard$')
@@ -641,8 +741,12 @@ try:
     press('Action Center','Sound output and applications');find('^Sound$');gone('^Action Center$');escape('Sound')
 
     fl=open_section('network','Network');flyout_bounds(fl,'network')
-    for name in ['Turn Wi-Fi Off','Airplane mode','Scan Wi-Fi networks','QA Library · Secured','Disconnect LAN']:item('Network',name,active=False)
+    for name in ['Wi-Fi','Ethernet','Scan Wi-Fi networks','QA Library · Secured','More network options','Network settings']:item('Network',name,active=False)
     shot('06-network-lan-wifi')
+    # The switches: Ethernet disconnects the wired device, Wi-Fi turns the radio off.
+    press('Network','Ethernet');waitfor(lambda:commands('NM device disconnect eth0'),'Ethernet switch did not disconnect')
+    press('Network','Wi-Fi');waitfor(lambda:commands('NM radio wifi off'),'Wi-Fi switch did not turn the radio off')
+    fl=find('^Network$');shot('06-network-switches')
     run('xdotool','mousemove','10','10','click','1');gone('^Network$')
 
     fl=open_section('bluetooth','Bluetooth');flyout_bounds(fl,'bluetooth');shot('07-bluetooth')
@@ -656,15 +760,20 @@ try:
     escape('Bluetooth')
     waitfor(lambda:log_has('BT StopDiscovery'),'discovery did not stop on close')
 
-    fl=open_section('media','Media');flyout_bounds(fl,'media');shot('08-media')
-    press('Media','Pause');waitfor(lambda:log_has('MPRIS PlayPause'),'MPRIS play/pause command missing')
-    # Previous is unsupported by the fixture and must not be sent.
-    press('Media','Previous',active=False);time.sleep(.4);assert not log_has('MPRIS Previous')
-    shot('08-media-paused')
-    mode('no-control');item('Media','Play',active=False);press('Media','Play',active=False);time.sleep(.4)
+    # Media controls live in the Action Center: --section media opens it.
+    ac=command(['--section','media'],'Action Center');time.sleep(.6)
+    # Small screens: scroll over the tiles (the wheel over the volume row
+    # would change the volume) until the player card is in view.
+    for _ in range(12):
+        if in_view('Action Center','Pause'):break
+        g=geom(ac);body=layout('Action Center')['@body']
+        run('xdotool','mousemove',g['x']+body[0]+round(30*scale),g['y']+body[1]+round(12*scale),'click','5');time.sleep(.3)
+    shot('08-media-action-center')
+    press('Action Center','Pause');waitfor(lambda:log_has('MPRIS PlayPause'),'MPRIS play/pause command missing')
+    press('Action Center','Previous',active=False);time.sleep(.4);assert not log_has('MPRIS Previous')
+    mode('no-control');item('Action Center','Play',active=False);press('Action Center','Play',active=False);time.sleep(.4)
     assert (home/'service.log').read_text().count('MPRIS PlayPause')==1,'CanControl=false ignored'
-    escape('Media')
-
+    escape('Action Center');assert 'status:media' not in layout('SDE Panel')
     config(extra='show_media=false\n');reload()
     fl=open_section('sound','Sound');flyout_bounds(fl,'sound');shot('09-sound-microphone-apps')
     press('Sound','Output volume',.3);waitfor(lambda:commands('AUDIO set-sink-volume'),'master volume command missing')
@@ -674,7 +783,8 @@ try:
     press('Sound','Mute application');waitfor(lambda:commands('AUDIO set-sink-input-mute 0 1'),'per-application mute command missing')
     shot('09-sound-mixer-scrolled')
     escape('Sound')
-    for section,title in [('power','Power'),('drives','Drives'),('keyboard','Keyboard')]:
+    drive_checks()
+    for section,title in [('power','Power'),('drives','Drives'),('keyboard','Keyboard'),('touchpad','Touchpad')]:
         fl=open_section(section,title);flyout_bounds(fl,section);shot('10-flyout-'+section);escape(title)
 
     # Refreshes must keep the native host and its client alive in place.
@@ -700,6 +810,7 @@ try:
     fl=open_section('bluetooth','Bluetooth');shot('15-services-disconnected');escape('Bluetooth')
     command(['--action-center'],'Action Center');escape('Action Center')
     assert panel_proc.poll() is None,'panel exited'
+    print('PANEL a50: tooltips name the hovered icon at once, no media icon, one keyboard indicator, network LED and switches, drives (open/eject/busy/notify/automount), touchpad indicator, popups take input after a screenshot grab PASS',flush=True)
     print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
 finally:
     for proc in reversed(processes):

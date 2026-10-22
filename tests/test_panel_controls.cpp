@@ -3,7 +3,10 @@
 #include <iostream>
 
 #include "../src/panel/controls.h"
+#include "../src/panel/panel.h"
 #include "../src/panel/quick.h"
+// drives.cpp reads [drives] keys through the panel; there is none here.
+Panel* Panel::instance = nullptr;
 // The parser/backend unit executable does not start a desktop or system services.
 SystemStatus& SystemStatus::get() {
   static SystemStatus s;

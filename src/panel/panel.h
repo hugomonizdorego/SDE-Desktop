@@ -17,6 +17,7 @@
 #include "config.h"
 #include "desktop_entry.h"
 #include "theme.h"
+#include "tooltip_text.h"
 
 class AlarmPopup;
 class AppMenu;
@@ -24,6 +25,7 @@ class PanelPopup;
 class QuickSettings;
 class SearchFlyout;
 class SniHost;
+class StatusFlyout;
 class Tray;
 
 struct Task {
@@ -60,10 +62,14 @@ class Panel : public sde::BufferedWindow {
   // The flyout of one status icon (sound, network, bluetooth, power, media,
   // drives, keyboard, tray), anchored above that icon; toggles.
   void open_flyout(const std::string &section);
+  // Network, Drives and Touchpad (status_flyout.h); toggles like open_flyout.
+  void open_status_flyout(const std::string &section);
   // The clock's popup: alarms (sde-panel --alarms); with |add| it opens the
   // editor for a new alarm. Toggles.
   void open_alarms(bool add = false);
   bool native_popup_input() const { return input_display_ != nullptr; }
+  // The status icon of |section| needs a repaint (network LED, touchpad).
+  void status_icon_changed(const std::string &section);
   // The popup that currently holds the panel's XEmbed tray icons (the Tray
   // flyout with [action_center] move_status), or nullptr.
   QuickSettings *tray_host() const;
@@ -94,6 +100,11 @@ class Panel : public sde::BufferedWindow {
   void set_do_not_disturb(bool on);
   // Saves one key in the user's sde.conf and announces the change.
   void set_setting(const std::string &section, const std::string &key, const std::string &value);
+  struct Setting {
+    std::string section, key, value;
+  };
+  // Several keys, saved and announced once.
+  void set_settings(const std::vector<Setting> &settings);
 
   // Shows a menu next to the panel (above it, or below a top panel), with its
   // left edge at root x |root_x|. Returns the picked item or nullptr.
@@ -122,8 +133,9 @@ class Panel : public sde::BufferedWindow {
     SOUND_STATUS,
     CONTROLS_STATUS,
     OVERFLOW_STATUS,
-    DRIVE_STATUS,  // a USB drive or memory card is plugged in
-    DND_STATUS     // Do Not Disturb is on
+    DRIVE_STATUS,     // a USB drive or memory card is plugged in
+    DND_STATUS,       // Do Not Disturb is on
+    TOUCHPAD_STATUS   // a touchpad exists ([panel] touchpad_indicator)
   };
   struct Target {
     Hit kind = NONE;
@@ -133,6 +145,32 @@ class Panel : public sde::BufferedWindow {
 
   void load_config();
   std::string status_tooltip(StatusIcon icon) const;
+  // Tooltips of the panel's parts (see tooltip_text.h): the text for the
+  // hovered target, handed to Fl_Tooltip for that target's rectangle.
+  std::string tooltip_for(const Target &t) const;
+  bool target_rect(const Target &t, int &x, int &w) const;
+  void update_tooltip();
+  TooltipText tip_;
+ public:
+  const char *qa_tooltip() const;
+ private:
+  // An input method (IBus, Fcitx) shows its own keyboard indicator in the
+  // tray: SDE's layout indicator then stays hidden (see relayout()).
+  bool input_method_indicator() const;
+  // Network LED: a small dot on the network icon, pulsing gently.
+  static void led_tick(void *);
+  void led_update();
+  int status_index(StatusIcon icon) const;
+  bool led_running_ = false;
+  std::string led_connection_;  // kind|connection the verdict is for
+  double led_phase_ = 0;
+  bool led_probe_failed_ = false, led_probe_pending_ = false;
+  long long led_probe_at_ = 0;
+  // The touchpad indicator: animates while hovered or just after use.
+  static void touchpad_tick(void *);
+  void touchpad_activity();
+  bool touchpad_motion_wanted() const;
+  bool touchpad_tick_pending_ = false;
   static std::string status_section(StatusIcon icon);
   // Root x of the center of the visible status icon for |section|.
   bool status_anchor(const std::string &section, int &center_x) const;
@@ -165,6 +203,7 @@ class Panel : public sde::BufferedWindow {
  private:
   static void input_event(int, void *);
   void outside_pointer_press(unsigned long time);
+  void recover_input();
 
   // Auto-hide.
   void set_revealed(bool revealed);
@@ -193,6 +232,8 @@ class Panel : public sde::BufferedWindow {
   std::unique_ptr<SearchFlyout> search_;
   std::unique_ptr<QuickSettings> quick_;
   std::unique_ptr<QuickSettings> flyout_;
+  // Network, Drives and Touchpad flyouts (status_flyout.h).
+  std::unique_ptr<StatusFlyout> status_flyout_;
   std::unique_ptr<AlarmPopup> alarms_;
   std::unique_ptr<Tray> tray_;
   std::unique_ptr<SniHost> sni_;

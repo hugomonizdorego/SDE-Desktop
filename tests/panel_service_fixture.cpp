@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <fstream>
+#include <functional>
 #include <string>
 
 #include "dbus.h"
@@ -87,13 +88,144 @@ void nm_changed() {
   }
   bus->send(m);
 }
+
+// ------------------------------------------------------------- UDisks2
+// One USB stick "QA-STICK" (sdq, partition sdq1, vfat), unmounted until
+// Mount; PowerOff removes it. Modes: drive-busy (Unmount fails with
+// DeviceBusy), drive-remove, drive-insert.
+const std::string ud = "/org/freedesktop/UDisks2", ud_drive = ud + "/drives/QA_Stick",
+                  ud_disk = ud + "/block_devices/sdq", ud_part = ud + "/block_devices/sdq1";
+bool drive_present = true, drive_busy = false;
+std::string mount_point;
+void bytes(dbus::Writer& w, const char* k, const std::string& v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k);
+  dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "ay");
+  dbus::Writer a(var.iter(), DBUS_TYPE_ARRAY, "y");
+  for (char c : v + std::string(1, '\0')) {
+    unsigned char b = (unsigned char)c;
+    dbus_message_iter_append_basic(a.iter(), DBUS_TYPE_BYTE, &b);
+  }
+}
+void u64(dbus::Writer& w, const char* k, uint64_t v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k);
+  dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "t");
+  dbus_message_iter_append_basic(var.iter(), DBUS_TYPE_UINT64, &v);
+}
+void block_props(dbus::Writer& w, const std::string& dev, uint64_t size, const std::string& label,
+                 const std::string& type) {
+  bytes(w, "Device", dev);
+  bytes(w, "PreferredDevice", dev);
+  str(w, "Drive", ud_drive, true);
+  u64(w, "Size", size);
+  str(w, "IdLabel", label);
+  str(w, "IdType", type);
+  str(w, "IdUsage", type.empty() ? "" : "filesystem");
+  flag(w, "HintIgnore", false);
+  flag(w, "HintSystem", false);
+  flag(w, "HintAuto", true);
+  str(w, "HintName", "");
+  str(w, "CryptoBackingDevice", "/", true);
+}
+void iface_begin(dbus::Writer& interfaces, const char* name,
+                 const std::function<void(dbus::Writer&)>& props) {
+  dbus::Writer iface(interfaces.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  iface.str(name);
+  dbus::Writer p(iface.iter(), DBUS_TYPE_ARRAY, "{sv}");
+  props(p);
+}
+void ud_object(dbus::Writer& objects, const std::string& path) {
+  dbus::Writer object(objects.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  object.path(path);
+  dbus::Writer interfaces(object.iter(), DBUS_TYPE_ARRAY, "{sa{sv}}");
+  if (path == ud_drive) {
+    iface_begin(interfaces, "org.freedesktop.UDisks2.Drive", [](dbus::Writer& p) {
+      str(p, "Vendor", "QA");
+      str(p, "Model", "Flash Stick");
+      str(p, "ConnectionBus", "usb");
+      str(p, "Media", "");
+      u64(p, "Size", 8000000000ULL);
+      flag(p, "Removable", true);
+      flag(p, "MediaRemovable", true);
+      flag(p, "Ejectable", false);
+      flag(p, "CanPowerOff", true);
+      dbus::Writer e(p.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+      e.str("RotationRate").variant_i32(0);
+    });
+  } else if (path == ud_disk) {
+    iface_begin(interfaces, "org.freedesktop.UDisks2.Block",
+                [](dbus::Writer& p) { block_props(p, "/dev/sdq", 8000000000ULL, "", ""); });
+    iface_begin(interfaces, "org.freedesktop.UDisks2.PartitionTable",
+                [](dbus::Writer& p) { str(p, "Type", "dos"); });
+  } else {
+    iface_begin(interfaces, "org.freedesktop.UDisks2.Block",
+                [](dbus::Writer& p) { block_props(p, "/dev/sdq1", 7990000000ULL, "QA-STICK", "vfat"); });
+    iface_begin(interfaces, "org.freedesktop.UDisks2.Partition",
+                [](dbus::Writer& p) { str(p, "Table", ud_disk, true); });
+    iface_begin(interfaces, "org.freedesktop.UDisks2.Filesystem", [](dbus::Writer& p) {
+      dbus::Writer e(p.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+      e.str("MountPoints");
+      dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "aay");
+      dbus::Writer a(var.iter(), DBUS_TYPE_ARRAY, "ay");
+      if (!mount_point.empty()) {
+        dbus::Writer m(a.iter(), DBUS_TYPE_ARRAY, "y");
+        for (char c : mount_point + std::string(1, '\0')) {
+          unsigned char b = (unsigned char)c;
+          dbus_message_iter_append_basic(m.iter(), DBUS_TYPE_BYTE, &b);
+        }
+      }
+    });
+  }
+}
+void ud_signal(const char* member, const std::string& path) {
+  auto* m = dbus::signal(ud, "org.freedesktop.DBus.ObjectManager", member);
+  {
+    dbus::Writer w(m);
+    w.path(path);
+    if (std::string(member) == "InterfacesAdded") {
+      dbus::Writer interfaces(w.iter(), DBUS_TYPE_ARRAY, "{sa{sv}}");
+    } else {
+      w.strings({"org.freedesktop.UDisks2.Block"});
+    }
+  }
+  bus->send(m);
+}
+void ud_changed() { changed(ud_part, "org.freedesktop.UDisks2.Filesystem"); }
+DBusMessage* ud_error(DBusMessage* m, const char* name, const char* text) {
+  return dbus_message_new_error(m, name, text);
+}
 DBusHandlerResult handle(DBusMessage* m) {
   if (dbus_message_get_type(m) != DBUS_MESSAGE_TYPE_METHOD_CALL)
     return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
   const std::string path = dbus_message_get_path(m), method = dbus_message_get_member(m);
   auto args = dbus::read_args(m);
   auto* r = dbus_message_new_method_return(m);
-  if (path == nm && method == "GetAll") {
+  if (path == ud && method == "GetManagedObjects") {
+    dbus::Writer w(r);
+    dbus::Writer objects(w.iter(), DBUS_TYPE_ARRAY, "{oa{sa{sv}}}");
+    if (drive_present)
+      for (const auto& p : {ud_drive, ud_disk, ud_part}) ud_object(objects, p);
+  } else if (path == ud_part && method == "Mount") {
+    log("UDISKS Mount");
+    mount_point = "/tmp/sde-qa-media/QA-STICK";
+    dbus::Writer(r).str(mount_point);
+    ud_changed();
+  } else if (path == ud_part && method == "Unmount") {
+    log("UDISKS Unmount");
+    if (drive_busy) {
+      dbus_message_unref(r);
+      r = ud_error(m, "org.freedesktop.UDisks2.Error.DeviceBusy", "target is busy");
+    } else {
+      mount_point.clear();
+      ud_changed();
+    }
+  } else if (path == ud_drive && (method == "PowerOff" || method == "Eject")) {
+    log("UDISKS " + method);
+    drive_present = false;
+    mount_point.clear();
+    ud_signal("InterfacesRemoved", ud_part);
+  } else if (path == nm && method == "GetAll") {
     dbus::Writer w(r);
     dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
     nm_props(props);
@@ -198,6 +330,17 @@ DBusHandlerResult handle(DBusMessage* m) {
     device_present = mode != "no-device";
     control = mode != "no-control";
     if (mode == "unpaired") paired = false;
+    if (mode == "drive-busy") drive_busy = true;
+    if (mode == "drive-free") drive_busy = false;
+    if (mode == "drive-mounted") {
+      mount_point = "/tmp/sde-qa-media/QA-STICK";
+      ud_changed();
+    }
+    if (mode == "drive-remove" || mode == "drive-insert") {
+      drive_present = mode == "drive-insert";
+      mount_point.clear();
+      ud_signal(drive_present ? "InterfacesAdded" : "InterfacesRemoved", ud_part);
+    }
     if (mode.rfind("nm-", 0) == 0) {
       connectivity = mode == "nm-none" ? 1 : mode == "nm-portal" ? 2 : mode == "nm-limited" ? 3 : 4;
       nm_changed();
@@ -256,9 +399,11 @@ int main(int argc, char** argv) {
   }
   bus = dbus::Bus::session();
   if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez") ||
-      !bus->request_name("org.freedesktop.NetworkManager"))
+      !bus->request_name("org.freedesktop.NetworkManager") ||
+      !bus->request_name("org.freedesktop.UDisks2"))
     return 1;
-  for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm})
+  for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm,
+                           ud, ud_drive, ud_disk, ud_part})
     bus->export_object(path, handle);
   display = XOpenDisplay(nullptr);
   if (!display) return 1;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "sni.h"
+#include "status_model.h"
 
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
@@ -291,7 +292,19 @@ void SniHost::set_hidden(std::vector<std::string> names) {
   hidden_ = std::move(names);
 }
 
+bool SniHost::has_input_method() const {
+  for (auto &i : items_) {
+    if (!i->loaded || i->status == "Passive") continue;
+    for (const std::string &v : {i->id, i->title, i->service})
+      if (keyboard_applet(v) == KeyboardApplet::INPUT_METHOD) return true;
+  }
+  return false;
+}
+
 bool SniHost::is_hidden(const Item &item) const {
+  if (hide_layout_applets_)
+    for (const std::string &v : {item.id, item.title})
+      if (keyboard_applet(v) == KeyboardApplet::LAYOUT) return true;
   if (hidden_.empty()) return false;
   for (const std::string &value : {item.id, item.title, item.service}) {
     std::string v = lower(value);
@@ -342,6 +355,10 @@ void SniHost::apply_properties(Item &item, const dbus::Value &props) {
     if (t.items.size() >= 3 && !t.items[2].s.empty()) item.tooltip = t.items[2].s;
   }
   item.loaded = true;
+}
+
+std::string SniHost::display_name(const Item &item) {
+  return tray_item_name(item.title, item.tooltip, item.id, item.service);
 }
 
 std::vector<const SniHost::Item *> SniHost::visible_items() const {

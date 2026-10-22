@@ -438,7 +438,28 @@ void pending_done(DBusPendingCall *pending, void *data) {
   dbus_pending_call_unref(pending);
 }
 void free_reply_fn(void *data) { delete static_cast<Bus::ReplyFn *>(data); }
+void pending_any(DBusPendingCall *pending, void *data) {
+  auto *fn = static_cast<Bus::ReplyFn *>(data);
+  DBusMessage *reply = dbus_pending_call_steal_reply(pending);
+  (*fn)(reply);
+  if (reply) dbus_message_unref(reply);
+  dbus_pending_call_unref(pending);
+}
 }  // namespace
+
+void Bus::call_async_any(DBusMessage *msg, ReplyFn fn, int timeout_ms) {
+  if (!msg) return;
+  DBusPendingCall *pending = nullptr;
+  if (!dbus_connection_send_with_reply(conn_, msg, &pending, timeout_ms) || !pending) {
+    dbus_message_unref(msg);
+    if (fn) fn(nullptr);
+    return;
+  }
+  dbus_message_unref(msg);
+  auto *copy = new ReplyFn(fn ? std::move(fn) : ReplyFn([](DBusMessage *) {}));
+  dbus_pending_call_set_notify(pending, pending_any, copy, free_reply_fn);
+  dbus_connection_flush(conn_);
+}
 
 void Bus::call_async(DBusMessage *msg, ReplyFn fn, int timeout_ms) {
   if (!msg) return;

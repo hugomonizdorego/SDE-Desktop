@@ -2,7 +2,7 @@
 // sde-sni-demo: a minimal StatusNotifierItem with a dbusmenu, used to test
 // the panel's AppIndicator support. Not installed.
 //
-//   sde-sni-demo [icon-name]
+//   sde-sni-demo [icon-name [id [title]]]
 #include <FL/Fl.H>
 #include <unistd.h>
 
@@ -16,7 +16,7 @@ using namespace sde;
 namespace {
 
 dbus::Bus *g_bus;
-std::string g_icon = "utilities-terminal";
+std::string g_icon = "utilities-terminal", g_id = "sde-sni-demo", g_title = "SDE tray demo";
 
 void add_prop(dbus::Writer &dict, const char *key, const std::string &value, char type = 's') {
   dbus::Writer e(dict.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
@@ -50,8 +50,8 @@ DBusHandlerResult on_item(DBusMessage *m) {
     dbus::Writer w(r);
     dbus::Writer dict(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
     add_prop(dict, "Category", "ApplicationStatus");
-    add_prop(dict, "Id", "sde-sni-demo");
-    add_prop(dict, "Title", "SDE tray demo");
+    add_prop(dict, "Id", g_id);
+    add_prop(dict, "Title", g_title);
     add_prop(dict, "Status", "Active");
     add_prop(dict, "IconName", g_icon);
     add_prop(dict, "Menu", "/MenuBar", 'o');
@@ -105,6 +105,8 @@ DBusHandlerResult on_menu(DBusMessage *m) {
 
 int main(int argc, char **argv) {
   if (argc > 1) g_icon = argv[1];
+  if (argc > 2) g_id = argv[2];
+  if (argc > 3) g_title = argv[3];
   g_bus = dbus::Bus::session();
   if (!g_bus) return 1;
   std::string name = "org.kde.StatusNotifierItem-" + std::to_string(getpid()) + "-1";

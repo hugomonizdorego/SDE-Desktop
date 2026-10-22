@@ -37,7 +37,8 @@ if(SDE_XVFB)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_display_preview.py $<TARGET_FILE:sde-display-preview-probe>)
 endif()
 
-add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp)
+add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp
+  ../src/panel/status_model.cpp ../src/panel/drives.cpp)
 target_link_libraries(sde-panel-controls-tests PRIVATE sde-common)
 add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 add_executable(sde-menu-model-tests test_menu_model.cpp ../src/panel/menu_model.cpp)
@@ -137,6 +138,15 @@ add_executable(sde-weather-tests test_weather.cpp ../src/panel/weather.cpp ../sr
 target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 target_link_libraries(sde-weather-tests PRIVATE sde-common)
 add_test(NAME sde-weather-model COMMAND sde-weather-tests)
+
+# alpha50 panel status rules (tooltips, network LED, keyboard indicators,
+# UDisks2 drives, touchpad properties) and the grab helper of panel-smoke.
+add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
+target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
+add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
+add_executable(sde-grab-fixture grab_fixture.cpp)
+target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
+
 # SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.
 add_executable(sde-sysreport-tests test_sysreport.cpp)

@@ -42,7 +42,13 @@ void PanelPopup::open(int anchor_x, int align) {
     x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
   }
   x11::set_opacity(fl_xid(this), panel->theme().popup_opacity);
-  if (!native_children() || !panel->native_popup_input()) Fl::grab(this);
+  grabbing_ = !native_children() || !panel->native_popup_input();
+  if (grabbing_) {
+    // A grab of FLTK that is left over from a popup that went away without
+    // closing would make Fl::grab() skip the X grabs for this one.
+    if (Fl::grab() && Fl::grab() != this && !Fl::grab()->shown()) Fl::grab(nullptr);
+    Fl::grab(this);
+  }
   // Override-redirect menus are outside WM focus management. Claim keyboard
   // focus explicitly, including after a GTK4 client has closed its window.
   XSetInputFocus(fl_display, fl_xid(this), RevertToPointerRoot, CurrentTime);
@@ -51,6 +57,9 @@ void PanelPopup::open(int anchor_x, int align) {
   // still own the keyboard when the popup maps. Claim focus again shortly
   // after, unless the popup already has it.
   for (double delay : {0.06, 0.25}) Fl::add_timeout(delay, refocus, this);
+  input_tries_ = 0;
+  Fl::remove_timeout(ensure_input, this);
+  Fl::add_timeout(0.1, ensure_input, this);
   panel->popup_opened(this);
   redraw();
   // Keyboard users start on the first control.
@@ -68,6 +77,49 @@ void PanelPopup::open(int anchor_x, int align) {
         self->take_focus();
       },
       this);
+}
+
+bool PanelPopup::viewable() const {
+  if (!const_cast<PanelPopup *>(this)->shown()) return false;
+  XWindowAttributes attr;
+  if (!XGetWindowAttributes(fl_display, fl_xid(this), &attr)) return false;
+  return attr.map_state == IsViewable;
+}
+
+bool PanelPopup::has_input() const {
+  if (!is_open()) return false;
+  Window focused = 0;
+  int revert = 0;
+  XGetInputFocus(fl_display, &focused, &revert);
+  return focused == fl_xid(this);
+}
+
+void PanelPopup::ensure_input(void *data) {
+  auto *self = static_cast<PanelPopup *>(data);
+  if (!self->is_open() || !fl_xid(self)) return;
+  bool ok = true;
+  Window xid = fl_xid(self);
+  if (self->grabbing_ && Fl::grab() == self) {
+    // Grabbing again is harmless when we hold the grab; it fails with
+    // AlreadyGrabbed while another client (the screenshot tool) holds it.
+    int pointer = XGrabPointer(fl_display, xid, True,
+                               ButtonPressMask | ButtonReleaseMask | ButtonMotionMask |
+                                   PointerMotionMask,
+                               GrabModeAsync, GrabModeAsync, None, 0, CurrentTime);
+    int keyboard = XGrabKeyboard(fl_display, xid, True, GrabModeAsync, GrabModeAsync, CurrentTime);
+    ok = pointer == GrabSuccess && keyboard == GrabSuccess;
+  }
+  Window focused = 0;
+  int revert = 0;
+  XGetInputFocus(fl_display, &focused, &revert);
+  if (focused != xid) {
+    XSetInputFocus(fl_display, xid, RevertToPointerRoot, CurrentTime);
+    ok = false;
+  }
+  XFlush(fl_display);
+  // Every 100 ms for 5 s, then every second while the popup stays open.
+  ++self->input_tries_;
+  if (!ok) Fl::repeat_timeout(self->input_tries_ < 50 ? 0.1 : 1.0, ensure_input, data);
 }
 
 void PanelPopup::refocus(void *data) {
@@ -113,7 +165,9 @@ bool PanelPopup::contains_root(int rx, int ry) const {
 void PanelPopup::close() {
   if (!shown()) return;
   Fl::remove_timeout(refocus, this);
+  Fl::remove_timeout(ensure_input, this);
   if (Fl::grab() == this) Fl::grab(nullptr);
+  grabbing_ = false;
   // FLTK 1.3 hide() destroys this X window. Return native tray children to
   // the panel before that happens, while reporting this popup as closed.
   closing_ = true;

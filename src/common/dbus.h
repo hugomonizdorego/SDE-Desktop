@@ -103,6 +103,9 @@ class Bus {
   // Asynchronous call; |fn| runs when the reply arrives (or with nullptr on
   // error/timeout). Takes ownership of |msg|.
   void call_async(DBusMessage *msg, ReplyFn fn, int timeout_ms = 5000);
+  // The same, but |fn| also receives error replies (check the message type
+  // and dbus_message_get_error_name); nullptr only when no reply came.
+  void call_async_any(DBusMessage *msg, ReplyFn fn, int timeout_ms = 5000);
   // Blocking call with a short timeout. Caller unrefs the reply.
   DBusMessage *call(DBusMessage *msg, int timeout_ms = 2000);
 

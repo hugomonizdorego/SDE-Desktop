@@ -20,6 +20,7 @@ add_library(sde-common STATIC
   common/spawn.cpp
   common/suite.cpp
   common/theme.cpp
+  common/touchpad.cpp
   common/tray_icons.cpp
   common/util.cpp
   common/widgets.cpp
@@ -62,7 +63,11 @@ add_executable(sde-panel
   panel/panel_widgets.cpp
   panel/weather.cpp
   panel/nightlight.cpp
-  panel/art.cpp)
+  panel/art.cpp
+  panel/status_model.cpp
+  panel/status_flyout.cpp
+  panel/drives.cpp
+  panel/touchpad_monitor.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 
 add_executable(sde-desktop desktop/main.cpp)
@@ -78,6 +83,7 @@ add_executable(sde-settings
   settings/input.cpp
   settings/system.cpp
   settings/power.cpp
+  settings/touchpad.cpp
   settings/network.cpp)
 # Display-free helpers (graphics card detection, wallpaper scan, pactl/
 # nmcli/bluetoothctl parsers), unit
