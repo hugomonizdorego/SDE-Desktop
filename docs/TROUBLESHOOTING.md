@@ -97,7 +97,8 @@ system:
   `--fix` (an administrator's decision) overrides it;
 - Ethernet/Wi-Fi devices that are `unmanaged` although nothing else
   configures them (not in `/etc/network/interfaces`, not in
-  `unmanaged-devices`, no systemd-networkd) are managed by NetworkManager;
+  `unmanaged-devices`, no systemd-networkd; physical cards only, never veth,
+  vboxnet or devices udev marks `NM_UNMANAGED`) are managed by NetworkManager;
 - profiles imported from `/etc/network/interfaces` connect automatically
   (`autoconnect=true`); an Ethernet port with a cable but no automatic
   profile gets its wired profile switched to `autoconnect yes` and connected;
