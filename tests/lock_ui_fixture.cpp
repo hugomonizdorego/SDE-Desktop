@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <string>
 #include <unistd.h>
 
 #include "i18n.h"
@@ -29,5 +31,19 @@ int main(int argc, char **argv) {
                                                  : sde::lock::AuthResult::Rejected;
     return r;
   };
+  // SDE_LOCK_FIXTURE_MONITORS=FILE: the monitors ("x y w h" per line) are
+  // read from FILE whenever the lock screen looks at them, so the test can
+  // simulate RandR changes on Xvfb (whose single output cannot change).
+  if (const char *file = getenv("SDE_LOCK_FIXTURE_MONITORS")) {
+    std::string path = file;
+    o.monitors = [path] {
+      std::vector<sde::lock::Monitor> out;
+      std::ifstream in(path);
+      sde::lock::Monitor m;
+      while (in >> m.x >> m.y >> m.w >> m.h)
+        if (m.w > 0 && m.h > 0) out.push_back(m);
+      return out;
+    };
+  }
   return sde::lock::run_lock_ui(o);
 }

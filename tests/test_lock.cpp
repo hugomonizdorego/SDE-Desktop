@@ -291,6 +291,63 @@ static void test_backoff() {
   CHECK(b.crashed(200) < 0.5);  // old crashes are forgotten
 }
 
+// Alpha 51: the lock screen never gives up on the grabs, and only unmaps
+// small override-redirect popups of other programs to end their grabs.
+static void test_input_recovery() {
+  using namespace lock;
+  CHECK(input_step(0) == InputStep::Retry);
+  CHECK(input_step(0.9) == InputStep::Retry);
+  CHECK(input_step(1.0) == InputStep::ClosePopups);
+  CHECK(input_step(2.5) == InputStep::ReleasePopups);
+  CHECK(input_step(3.0) == InputStep::ShowWaiting);
+  CHECK(input_step(3600) == InputStep::ShowWaiting);
+
+  ForeignWindow menu;
+  menu.override_redirect = menu.viewable = true;
+  menu.w = 220;
+  menu.h = 300;
+  menu.screen_w = 1280;
+  menu.screen_h = 800;
+  menu.types = {"_NET_WM_WINDOW_TYPE_POPUP_MENU"};
+  CHECK(releasable_popup(menu));
+  ForeignWindow f = menu;
+  f.types.clear();  // an FLTK or panel popup has no type
+  CHECK(releasable_popup(f));
+  f = menu;
+  f.override_redirect = false;  // managed by the window manager
+  CHECK(!releasable_popup(f));
+  f = menu;
+  f.viewable = false;
+  CHECK(!releasable_popup(f));
+  f = menu;
+  f.input_only = true;
+  CHECK(!releasable_popup(f));
+  f = menu;
+  f.name = "SDE Screen Lock";  // the daemon's curtain
+  CHECK(!releasable_popup(f));
+  f = menu;
+  f.w = 1280;  // full screen: desktop, compositor overlay
+  f.h = 800;
+  CHECK(!releasable_popup(f));
+  for (const char *type : {"_NET_WM_WINDOW_TYPE_DOCK", "_NET_WM_WINDOW_TYPE_DESKTOP",
+                           "_NET_WM_WINDOW_TYPE_NOTIFICATION"}) {
+    f = menu;
+    f.types = {type};
+    CHECK(!releasable_popup(f));
+  }
+
+  CHECK(!ui_unresponsive(100, 0));  // never heard yet
+  CHECK(!ui_unresponsive(100, 95));
+  CHECK(ui_unresponsive(100, 100 - kUiHeartbeatTimeout - 0.5));
+
+  std::vector<Monitor> mons = {{0, 0, 1280, 800}, {1280, 0, 1920, 1080}};
+  CHECK(monitor_at(mons, 10, 10) == 0);
+  CHECK(monitor_at(mons, 1290, 10) == 1);
+  CHECK(monitor_at(mons, 1500, 1000) == 1);
+  CHECK(monitor_at(mons, -50, 400) == 0);  // off every monitor: the nearest
+  CHECK(monitor_at({}, 5, 5) == 0);
+}
+
 static void test_power_policy() {
   using namespace power;
   IdleTimeouts t{60, 300, 900};
@@ -392,6 +449,7 @@ int main() {
   test_inhibitors();
   test_idle_lock();
   test_backoff();
+  test_input_recovery();
   test_power_policy();
   test_brightness();
   if (g_failures) {

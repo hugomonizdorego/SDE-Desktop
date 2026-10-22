@@ -75,6 +75,49 @@ bool should_idle_lock(long idle_ms, int idle_lock, bool inhibited, bool locked) 
   return idle_ms >= long(idle_lock) * 1000;
 }
 
+InputStep input_step(double waited) {
+  if (waited >= 3.0) return InputStep::ShowWaiting;
+  if (waited >= 2.0) return InputStep::ReleasePopups;
+  if (waited >= 1.0) return InputStep::ClosePopups;
+  return InputStep::Retry;
+}
+
+bool releasable_popup(const ForeignWindow &w) {
+  if (!w.override_redirect || !w.viewable || w.input_only) return false;
+  if (w.name == "SDE Screen Lock") return false;
+  for (const std::string &t : w.types)
+    if (t == "_NET_WM_WINDOW_TYPE_DESKTOP" || t == "_NET_WM_WINDOW_TYPE_DOCK" ||
+        t == "_NET_WM_WINDOW_TYPE_NOTIFICATION" || t == "_NET_WM_WINDOW_TYPE_SPLASH")
+      return false;
+  // Menus and popups are smaller than the screen; a window that covers
+  // (nearly) all of it is a desktop, a compositor overlay or a full-screen
+  // program, not something holding a menu grab.
+  if (w.w <= 0 || w.h <= 0) return false;
+  if (w.screen_w > 0 && w.screen_h > 0 && double(w.w) * w.h >= 0.8 * double(w.screen_w) * w.screen_h)
+    return false;
+  return true;
+}
+
+int monitor_at(const std::vector<Monitor> &monitors, int x, int y) {
+  int best = 0;
+  long best_d = -1;
+  for (size_t i = 0; i < monitors.size(); ++i) {
+    const Monitor &m = monitors[i];
+    long dx = x < m.x ? m.x - x : x >= m.x + m.w ? x - (m.x + m.w - 1) : 0;
+    long dy = y < m.y ? m.y - y : y >= m.y + m.h ? y - (m.y + m.h - 1) : 0;
+    long d = dx * dx + dy * dy;
+    if (best_d < 0 || d < best_d) {
+      best_d = d;
+      best = int(i);
+    }
+  }
+  return best;
+}
+
+bool ui_unresponsive(double now, double last_heard, double timeout) {
+  return last_heard > 0 && now - last_heard > timeout;
+}
+
 double CrashBackoff::crashed(double now) {
   times_.push_back(now);
   // Only the last minute counts.

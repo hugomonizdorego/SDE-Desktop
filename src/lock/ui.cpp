@@ -15,7 +15,11 @@
 #include <atomic>
 #include <cerrno>
 #include <cmath>
+#include <csignal>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -31,6 +35,7 @@
 #include "spawn.h"
 #include "theme.h"
 #include "util.h"
+#include "x11.h"
 
 namespace sde {
 namespace lock {
@@ -113,20 +118,48 @@ cairo_surface_t *make_background(const std::string &path, const std::string &mod
 
 class LockWindow;
 
+// One password check, shared with its worker thread: a PAM stack that never
+// answers (a fingerprint reader, a network directory) cannot keep the lock
+// screen busy forever; the screen gives up on it after kAuthTimeout and the
+// late answer is thrown away.
+struct Attempt {
+  explicit Attempt(const SecretBuffer &pw) : password(pw.c_str(), pw.c_str() + pw.size()) {
+    password.push_back(0);
+  }
+  ~Attempt() { secure_wipe(password.data(), password.size()); }
+  std::vector<char> password;
+  AuthResult result;
+  unsigned id = 0;
+};
+
+const double kAuthTimeout = 30.0;
+
 struct Ui {
   UiOptions opt;
   Config cfg;
   Theme theme;
-  std::vector<LockWindow *> windows;
-  LockWindow *primary = nullptr;
-  bool ready = false;  // the grabs are held: content may be drawn
+  std::vector<LockWindow *> windows;  // one per monitor
+  LockWindow *primary = nullptr;      // the one with the password form
+  bool ready = false;  // content may be drawn (the keyboard is ours, or the waiting message)
   bool done = false;
+
+  // Input. The grabs are checked (taken again) all the time: another
+  // client may hold them when the lock starts, and a lost grab must come
+  // back without the user noticing.
+  bool has_keyboard = false, has_pointer = false;
+  bool input_ok = false;      // both grabs held ("L" reported)
+  bool waiting = false;       // shown without the grabs ("W" reported)
+  double lost_since = -1;     // since when the grabs are missing
+  int step = 0;               // InputStep reached in this episode
+  double last_wait_log = 0;
+  bool raise_pending = false;
+  std::string input_note;     // why typing may not work right now
 
   SecretBuffer password;
   AttemptLimiter limiter;
   std::atomic<bool> busy{false};
-  std::thread worker;
-  AuthResult result;
+  unsigned attempt_id = 0;
+  double attempt_started = 0;
   std::string message;
   bool message_error = false;
   bool caps = false;
@@ -141,6 +174,29 @@ struct Ui {
   int enter_x = 0, enter_y = 0, enter_r = 0;
 };
 Ui *g = nullptr;
+
+// SIGUSR1 from the daemon (the computer resumed): take the grabs again,
+// raise, look at the monitors and wake them.
+std::atomic<bool> g_reassert{false};
+void on_sigusr1(int) { g_reassert = true; }
+
+// Timestamped lines on stderr, which sde-session writes to
+// ~/.local/state/sde/session.log.
+void log_line(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void log_line(const char *fmt, ...) {
+  char when[32];
+  time_t t = time(nullptr);
+  struct tm tm;
+  localtime_r(&t, &tm);
+  strftime(when, sizeof(when), "%H:%M:%S", &tm);
+  char buf[512];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  fprintf(stderr, "sde-lock[%d] %s: %s\n", int(getpid()), when, buf);
+  fflush(stderr);
+}
 
 bool caps_lock_on() {
   XkbStateRec st;
@@ -174,27 +230,28 @@ void submit();
 
 class LockWindow : public BufferedWindow {
  public:
-  LockWindow(int x, int y, int w, int h, bool primary)
-      : BufferedWindow(x, y, w, h, "SDE Screen Lock"), primary_(primary) {
+  LockWindow(int x, int y, int w, int h) : BufferedWindow(x, y, w, h, "SDE Screen Lock") {
     end();
     set_override();
     border(0);
     color(FL_BLACK);
   }
-  ~LockWindow() override {
-    if (bg_) cairo_surface_destroy(bg_);
-  }
+  ~LockWindow() override { drop_background(); }
 
   void prepare_background() {
     if (!bg_) bg_ = make_background(g->wallpaper, g->wallpaper_mode, w(), h());
+  }
+  void drop_background() {
+    if (bg_) cairo_surface_destroy(bg_);
+    bg_ = nullptr;
   }
 
   void draw() override;
   int handle(int e) override;
 
  private:
+  bool primary() const { return this == g->primary; }
   void draw_form(Painter &p, int cx, int top);
-  bool primary_;
   cairo_surface_t *bg_ = nullptr;
 };
 
@@ -216,7 +273,7 @@ void LockWindow::draw() {
     else
       shake = std::sin(t * 6 * M_PI) * (1 - t) * Sd(18);
   }
-  int clock_y = int(H * (primary_ ? 0.16 : 0.34));
+  int clock_y = int(H * (primary() ? 0.16 : 0.34));
   int form_top = int(H * 0.44);
   int cx = W / 2;
   {
@@ -225,9 +282,9 @@ void LockWindow::draw() {
       p.surface(bg_, 0, 0);
     else
       p.fill_rect(0, 0, W, H, Color::hex(0x101820));
-    if (primary_) draw_form(p, cx + int(shake), form_top);
+    if (primary()) draw_form(p, cx + int(shake), form_top);
     // Switch user (LightDM).
-    if (primary_ && g->opt.switch_user) {
+    if (primary() && g->opt.switch_user) {
       g->switch_w = S(150);
       g->switch_h = S(40);
       g->switch_x = S(28);
@@ -238,11 +295,11 @@ void LockWindow::draw() {
     p.flush();
   }
   // Text (FLTK/Xft) on top of the cairo drawing.
-  text_font(S(primary_ ? 92 : 110));
-  draw_text(clock_text(), 0, clock_y, W, S(primary_ ? 110 : 130), kWhite, 1);
-  text_font(S(primary_ ? 20 : 24));
-  draw_text(date_text(), 0, clock_y + S(primary_ ? 108 : 128), W, S(30), kWhite.alpha(0.9), 1);
-  if (!primary_) return;
+  text_font(S(primary() ? 92 : 110));
+  draw_text(clock_text(), 0, clock_y, W, S(primary() ? 110 : 130), kWhite, 1);
+  text_font(S(primary() ? 20 : 24));
+  draw_text(date_text(), 0, clock_y + S(primary() ? 108 : 128), W, S(30), kWhite.alpha(0.9), 1);
+  if (!primary()) return;
   int fx = cx + int(shake);
   int name_y = form_top + S(118);
   text_font(S(20), true);
@@ -269,6 +326,13 @@ void LockWindow::draw() {
   if (g->caps) {
     text_font(S(13));
     draw_text(_("Caps Lock is on"), fx - S(200), line_y, S(400), S(22), Color::hex(0xFFE08A), 1);
+    line_y += S(24);
+  }
+  if (!g->input_note.empty()) {
+    // The grabs are missing (another program holds them): say so instead
+    // of a lock screen that silently ignores the keyboard.
+    text_font(S(13), true);
+    draw_text(g->input_note, fx - S(300), line_y, S(600), S(22), Color::hex(0xFFE08A), 1);
   }
   if (g->opt.switch_user) {
     text_font(S(14));
@@ -330,13 +394,285 @@ void redraw_all() {
   for (auto *w : g->windows) w->redraw();
 }
 
+bool ours(Window w) {
+  for (auto *lw : g->windows)
+    if (lw->shown() && fl_xid(lw) == w) return true;
+  return false;
+}
+
+bool viewable(Window w) {
+  XWindowAttributes a;
+  return w && XGetWindowAttributes(fl_display, w, &a) && a.map_state == IsViewable;
+}
+
+void raise_all() {
+  for (auto *w : g->windows)
+    if (w->shown() && fl_xid(w)) XRaiseWindow(fl_display, fl_xid(w));
+  XFlush(fl_display);
+}
+
+void raise_cb(void *) {
+  g->raise_pending = false;
+  raise_all();
+}
+
+// Raises shortly (coalesced, at most ten times a second: a program that
+// also keeps raising itself must not start a raise war at full speed).
+void schedule_raise() {
+  if (g->raise_pending) return;
+  g->raise_pending = true;
+  Fl::add_timeout(0.1, raise_cb);
+}
+
+void set_primary(LockWindow *w) {
+  if (!w || w == g->primary) return;
+  LockWindow *old = g->primary;
+  g->primary = w;
+  if (old) old->redraw();
+  w->redraw();
+  Fl::focus(w);
+}
+
+void become_ready() {
+  if (g->ready) return;
+  report(g->opt.report_fd, 'H');
+  for (auto *w : g->windows) {
+    w->prepare_background();
+    report(g->opt.report_fd, 'H');  // a big monitor takes a moment
+  }
+  g->ready = true;
+  g->caps = caps_lock_on();
+  if (g->primary) Fl::focus(g->primary);
+  redraw_all();
+}
+
+// Takes (or confirms: taking a grab again is harmless when this client
+// holds it) the keyboard and the pointer grabs on the primary window and
+// gives it the input focus. The keyboard is kept even when the pointer
+// cannot be had: typing the password is what matters.
+bool take_grabs() {
+  Window w = g->primary && g->primary->shown() ? fl_xid(g->primary) : 0;
+  if (!w || !viewable(w)) {
+    g->has_keyboard = g->has_pointer = false;
+    return false;
+  }
+  int kb = XGrabKeyboard(fl_display, w, False, GrabModeAsync, GrabModeAsync, CurrentTime);
+  int ptr = XGrabPointer(fl_display, w, True, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                         GrabModeAsync, GrabModeAsync, None, None, CurrentTime);
+  g->has_keyboard = kb == GrabSuccess;
+  g->has_pointer = ptr == GrabSuccess;
+  // Focus too: without the keyboard grab the keys still reach the focus
+  // window, and the input context follows the focus.
+  Window focus = 0;
+  int revert = 0;
+  XGetInputFocus(fl_display, &focus, &revert);
+  if (!ours(focus)) XSetInputFocus(fl_display, w, RevertToPointerRoot, CurrentTime);
+  XFlush(fl_display);
+  return g->has_keyboard && g->has_pointer;
+}
+
+// Popups of other clients that keep a grab (a GTK menu, a panel popup):
+// unmapping a window ends the grabs held on it. Logged one by one.
+void release_foreign_popups() {
+  Window root = RootWindow(fl_display, fl_screen), parent = 0, *kids = nullptr;
+  unsigned n = 0;
+  if (!XQueryTree(fl_display, root, &root, &parent, &kids, &n)) return;
+  XWindowAttributes ra;
+  XGetWindowAttributes(fl_display, root, &ra);
+  for (unsigned i = 0; i < n; ++i) {
+    Window w = kids[i];
+    if (ours(w)) continue;
+    XWindowAttributes a;
+    if (!XGetWindowAttributes(fl_display, w, &a)) continue;
+    ForeignWindow f;
+    f.override_redirect = a.override_redirect;
+    f.viewable = a.map_state == IsViewable;
+    f.input_only = a.c_class == InputOnly;
+    f.w = a.width;
+    f.h = a.height;
+    f.screen_w = ra.width;
+    f.screen_h = ra.height;
+    if (!releasable_popup(f)) continue;  // cheap checks first
+    for (Atom t : x11::get_atoms(w, "_NET_WM_WINDOW_TYPE")) {
+      char *name = XGetAtomName(fl_display, t);
+      if (name) {
+        f.types.push_back(name);
+        XFree(name);
+      }
+    }
+    f.name = x11::window_title(w);
+    if (!releasable_popup(f)) continue;
+    log_line("unmapping popup 0x%lx (%s, %dx%d) of another program: it may hold the keyboard grab",
+             static_cast<unsigned long>(w), x11::window_class(w).c_str(), a.width, a.height);
+    XUnmapWindow(fl_display, w);
+  }
+  if (kids) XFree(kids);
+  XFlush(fl_display);
+}
+
+void update_input_note() {
+  std::string note;
+  if (!g->has_keyboard)
+    note = _("Another program is holding the keyboard. The lock screen keeps trying to get it...");
+  else if (!g->has_pointer)
+    note = _("Another program is holding the mouse. You can type your password.");
+  if (note != g->input_note) {
+    g->input_note = note;
+    if (g->primary) g->primary->redraw();
+  }
+}
+
+// Every 100 ms while the grabs are missing, every second while they are
+// held (a grab can be lost: its window unmapped by someone else).
+void input_check(void *) {
+  double t = now_s();
+  // A window of ours unmapped by another client lost its grabs with it.
+  for (auto *w : g->windows)
+    if (w->shown() && fl_xid(w) && !viewable(fl_xid(w))) {
+      log_line("a lock screen window is not mapped any more; mapping it again");
+      XMapRaised(fl_display, fl_xid(w));
+      XSync(fl_display, False);
+    }
+  bool ok = take_grabs();
+  if (ok) {
+    if (!g->input_ok) {
+      if (g->lost_since >= 0 && t - g->lost_since > 0.5)
+        log_line("keyboard and pointer grabbed after %.1f s", t - g->lost_since);
+      g->input_ok = true;
+      report(g->opt.report_fd, 'L');
+      session::reset_idle();
+    }
+    g->lost_since = -1;
+    g->step = 0;
+    g->waiting = false;
+    become_ready();
+    update_input_note();
+    Fl::repeat_timeout(1.0, input_check);
+    return;
+  }
+  if (g->input_ok) {
+    log_line("lost the %s grab; taking it again", !g->has_keyboard ? "keyboard" : "pointer");
+    g->input_ok = false;
+  }
+  if (g->lost_since < 0) g->lost_since = t;
+  double waited = t - g->lost_since;
+  // With the keyboard the password can be typed: show the form now.
+  if (g->has_keyboard) become_ready();
+  auto step = int(input_step(waited));
+  if (step >= int(InputStep::ClosePopups) && g->step < int(InputStep::ClosePopups)) {
+    log_line("another program holds the %s; asking the panel to close its popups",
+             !g->has_keyboard ? "keyboard" : "pointer");
+    x11::send_command("close-popups");
+    raise_all();
+  }
+  if (step >= int(InputStep::ReleasePopups) && g->step < int(InputStep::ReleasePopups))
+    release_foreign_popups();
+  if (step >= int(InputStep::ShowWaiting) && !g->waiting) {
+    // The safety valve: never a black screen that ignores the user. The
+    // lock screen shows itself with the reason and keeps trying.
+    g->waiting = true;
+    g->last_wait_log = t;
+    log_line("cannot get the %s after %.0f s; showing the lock screen and retrying",
+             !g->has_keyboard ? "keyboard" : "pointer", waited);
+    report(g->opt.report_fd, 'W');
+    become_ready();
+  } else if (g->waiting && t - g->last_wait_log >= 30) {
+    g->last_wait_log = t;
+    log_line("still waiting for the %s (%.0f s)", !g->has_keyboard ? "keyboard" : "pointer", waited);
+    release_foreign_popups();  // popups opened meanwhile
+  }
+  g->step = std::max(g->step, step);
+  if (g->ready) update_input_note();
+  Fl::repeat_timeout(waited < 10 ? 0.1 : 0.25, input_check);
+}
+
+void restart_input_check() {
+  Fl::remove_timeout(input_check);
+  Fl::add_timeout(0, input_check);
+}
+
+std::vector<Monitor> current_monitors() {
+  std::vector<Monitor> out;
+  if (g->opt.monitors) out = g->opt.monitors();
+  if (out.empty())
+    for (int i = 0; i < std::max(1, Fl::screen_count()); ++i) {
+      Monitor m;
+      Fl::screen_xywh(m.x, m.y, m.w, m.h, i);
+      out.push_back(m);
+    }
+  return out;
+}
+
+// Monitors added, removed or resized (RandR; a resume with another monitor
+// layout): one window per monitor again, the form under the pointer, the
+// grabs on a window that is still mapped.
+void reconfigure_screens() {
+  std::vector<Monitor> mons = current_monitors();
+  int n = int(mons.size());
+  bool same = int(g->windows.size()) == n;
+  for (int i = 0; same && i < n; ++i) {
+    LockWindow *w = g->windows[size_t(i)];
+    same = Monitor{w->x(), w->y(), w->w(), w->h()} == mons[size_t(i)];
+  }
+  if (same) return;
+  int mx = 0, my = 0;
+  Fl::get_mouse(mx, my);
+  int pointer_screen = monitor_at(mons, mx, my);
+  log_line("the monitors changed (%d now); moving the lock screen", n);
+  for (int i = 0; i < n; ++i) {
+    int sx = mons[size_t(i)].x, sy = mons[size_t(i)].y, sw = mons[size_t(i)].w, sh = mons[size_t(i)].h;
+    if (i < int(g->windows.size())) {
+      LockWindow *w = g->windows[size_t(i)];
+      if (w->x() != sx || w->y() != sy || w->w() != sw || w->h() != sh) {
+        w->drop_background();
+        w->resize(sx, sy, sw, sh);
+      }
+    } else {
+      auto *w = new LockWindow(sx, sy, sw, sh);
+      g->windows.push_back(w);
+      w->show();
+    }
+  }
+  std::vector<LockWindow *> extra(g->windows.begin() + n, g->windows.end());
+  g->windows.resize(size_t(n));
+  LockWindow *want = g->windows[size_t(std::max(0, std::min(n - 1, pointer_screen)))];
+  if (std::find(extra.begin(), extra.end(), g->primary) != extra.end()) g->primary = nullptr;
+  if (!g->primary) g->primary = want;
+  set_primary(want);
+  XSync(fl_display, False);
+  // Move the grabs before a window that held them goes away.
+  take_grabs();
+  for (auto *w : extra) {
+    w->hide();
+    Fl::delete_widget(w);
+  }
+  if (g->ready)
+    for (auto *w : g->windows) w->prepare_background();
+  raise_all();
+  redraw_all();
+  restart_input_check();
+}
+
+void reassert() {
+  log_line("re-checking the lock screen (resume)");
+  Fl::call_screen_init();
+  reconfigure_screens();
+  raise_all();
+  g->blanked = false;
+  session::reset_idle();
+  restart_input_check();
+}
+
 int LockWindow::handle(int e) {
   switch (e) {
+    case FL_ENTER:
+    case FL_MOVE:
+      // The form follows the pointer to the monitor the user looks at.
+      if (g->ready) set_primary(this);
+      return 1;
     case FL_FOCUS:
     case FL_UNFOCUS:
-    case FL_ENTER:
     case FL_LEAVE:
-    case FL_MOVE:
     case FL_DRAG:
     case FL_RELEASE:
     case FL_MOUSEWHEEL:
@@ -344,16 +680,18 @@ int LockWindow::handle(int e) {
       return 1;
     case FL_PUSH: {
       if (!g->ready) return 1;
+      if (!primary()) {
+        set_primary(this);
+        return 1;
+      }
       int ex = Fl::event_x(), ey = Fl::event_y();
-      if (primary_ && g->opt.switch_user && ex >= g->switch_x && ex < g->switch_x + g->switch_w &&
+      if (g->opt.switch_user && ex >= g->switch_x && ex < g->switch_x + g->switch_w &&
           ey >= g->switch_y && ey < g->switch_y + g->switch_h) {
         spawn_detached({"dm-tool", "switch-to-greeter"});
         return 1;
       }
-      if (primary_) {
-        double dx = ex - g->enter_x, dy = ey - g->enter_y;
-        if (dx * dx + dy * dy <= double(g->enter_r) * g->enter_r) submit();
-      }
+      double dx = ex - g->enter_x, dy = ey - g->enter_y;
+      if (dx * dx + dy * dy <= double(g->enter_r) * g->enter_r) submit();
       return 1;
     }
     case FL_KEYBOARD:
@@ -388,11 +726,12 @@ int LockWindow::handle(int e) {
   }
 }
 
-void auth_done(void *) {
-  if (g->worker.joinable()) g->worker.join();
+void auth_done(void *data) {
+  std::unique_ptr<std::shared_ptr<Attempt>> holder(static_cast<std::shared_ptr<Attempt> *>(data));
+  std::shared_ptr<Attempt> a = *holder;
+  if (!g || a->id != g->attempt_id || !g->busy) return;  // given up on (timeout)
   g->password.clear();
-  AuthResult r = std::move(g->result);
-  g->result = AuthResult();
+  AuthResult r = std::move(a->result);
   g->busy = false;
   if (r.status == AuthResult::Accepted) {
     g->limiter.success();
@@ -419,17 +758,33 @@ void submit() {
     return;
   }
   g->busy = true;
+  g->attempt_started = now_s();
   g->message = _("Checking...");
   g->message_error = false;
   if (g->primary) g->primary->redraw();
   Fl::flush();
-  g->worker = std::thread([] {
-    g->result = g->opt.authenticate(g->password.c_str());
-    Fl::awake(auth_done, nullptr);
-  });
+  auto attempt = std::make_shared<Attempt>(g->password);
+  attempt->id = ++g->attempt_id;
+  std::function<AuthResult(const char *)> check = g->opt.authenticate;
+  std::thread([attempt, check] {
+    attempt->result = check(attempt->password.data());
+    Fl::awake(auth_done, new std::shared_ptr<Attempt>(attempt));
+  }).detach();
+}
+
+void auth_watchdog() {
+  if (!g->busy || now_s() - g->attempt_started < kAuthTimeout) return;
+  log_line("the password check did not answer in %.0f s; giving up on it", kAuthTimeout);
+  ++g->attempt_id;  // its answer is ignored
+  g->busy = false;
+  g->password.clear();
+  g->message = _("The password check did not answer. Try again.");
+  g->message_error = true;
+  redraw_all();
 }
 
 void tick(void *) {
+  report(g->opt.report_fd, 'H');  // heartbeat for the daemon's watchdog
   time_t t = time(nullptr);
   struct tm tm;
   localtime_r(&t, &tm);
@@ -437,6 +792,7 @@ void tick(void *) {
   bool dirty = tm.tm_min != g->last_minute || caps != g->caps || g->limiter.wait(now_s()) > 0;
   g->last_minute = tm.tm_min;
   g->caps = caps;
+  auth_watchdog();
   long idle = session::idle_ms();
   if (idle >= 0) {
     if (idle < g->last_idle) g->blanked = false;
@@ -451,9 +807,11 @@ void tick(void *) {
       dirty = true;
     }
   }
+  // FLTK's monitor list is refreshed by RRScreenChangeNotify and root
+  // ConfigureNotify; polling it would make the X server probe the outputs.
+  reconfigure_screens();
   // Stay above everything (notifications, menus opened before the lock).
-  for (auto *w : g->windows)
-    if (fl_xid(w)) XRaiseWindow(fl_display, fl_xid(w));
+  raise_all();
   if (dirty) redraw_all();
   Fl::repeat_timeout(1.0, tick);
 }
@@ -467,39 +825,51 @@ void animate(void *) {
   }
 }
 
-bool ours(Window w) {
-  for (auto *lw : g->windows)
-    if (fl_xid(lw) == w) return true;
-  return false;
-}
-
-int x_events(int) {
-  if (!fl_xevent || !g) return 0;
+int x_events(int event) {
+  if (!g) return 0;
+  if (event == FL_SCREEN_CONFIGURATION_CHANGED) {
+    reconfigure_screens();
+    return 0;
+  }
+  if (!fl_xevent) return 0;
   const XEvent &e = *fl_xevent;
-  if (e.type == MapNotify && !ours(e.xmap.window)) {
-    for (auto *w : g->windows)
-      if (fl_xid(w)) XRaiseWindow(fl_display, fl_xid(w));
+  Window root = RootWindow(fl_display, fl_screen);
+  switch (e.type) {
+    case MapNotify:
+      if (!ours(e.xmap.window)) schedule_raise();
+      break;
+    case ConfigureNotify:
+      if (e.xconfigure.window == root) {
+        // The screen size changed (RandR): the monitors did too.
+        Fl::call_screen_init();
+        reconfigure_screens();
+      } else if (e.xconfigure.event == root && !ours(e.xconfigure.window)) {
+        // Another top-level window was restacked (raised above us) or moved.
+        schedule_raise();
+      }
+      break;
+    case VisibilityNotify:
+      if (ours(e.xvisibility.window) && e.xvisibility.state != VisibilityUnobscured) schedule_raise();
+      break;
+    case UnmapNotify:
+      // One of ours unmapped by another client: its grabs ended with it.
+      if (e.xunmap.event == e.xunmap.window && ours(e.xunmap.window) && !g->done) {
+        log_line("a lock screen window was unmapped by another program; mapping it again");
+        XMapRaised(fl_display, e.xunmap.window);
+        restart_input_check();
+      }
+      break;
+    default: break;
   }
   return 0;
 }
 
-bool viewable(Window w) {
+void select_extra_events(LockWindow *w) {
+  if (!w->shown() || !fl_xid(w)) return;
   XWindowAttributes a;
-  return XGetWindowAttributes(fl_display, w, &a) && a.map_state == IsViewable;
-}
-
-bool grab_input(Window w) {
-  for (int i = 0; i < 60; ++i) {
-    if (XGrabKeyboard(fl_display, w, False, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess) {
-      if (XGrabPointer(fl_display, w, True, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
-                       GrabModeAsync, GrabModeAsync, None, None, CurrentTime) == GrabSuccess)
-        return true;
-      XUngrabKeyboard(fl_display, CurrentTime);
-    }
-    XFlush(fl_display);
-    Fl::wait(0.1);
-  }
-  return false;
+  long want = VisibilityChangeMask | StructureNotifyMask;
+  if (XGetWindowAttributes(fl_display, fl_xid(w), &a) && (a.your_event_mask & want) != want)
+    XSelectInput(fl_display, fl_xid(w), a.your_event_mask | want);
 }
 
 }  // namespace
@@ -529,7 +899,14 @@ int run_lock_ui(const UiOptions &options) {
   Ui ui;
   g = &ui;
   ui.opt = options;
+  signal(SIGUSR1, on_sigusr1);
   Fl::lock();  // enables Fl::awake() from the PAM thread
+  // No X input method. An input method (IBus, Fcitx) filters every key
+  // before FLTK sees it: when its server is busy, restarting or has not
+  // followed the focus to this override-redirect window, the keys never
+  // come back and the password cannot be typed. A password does not belong
+  // in an input method either (it would see it in clear).
+  setenv("XMODIFIERS", "@im=none", 1);
   fl_open_display();
   ui.cfg.load();
   ui.theme = Theme::from_config(ui.cfg);
@@ -548,13 +925,12 @@ int run_lock_ui(const UiOptions &options) {
   // The form goes on the monitor with the pointer.
   int mx = 0, my = 0;
   Fl::get_mouse(mx, my);
-  int primary_screen = Fl::screen_num(mx, my);
-  for (int i = 0; i < Fl::screen_count(); ++i) {
-    int sx, sy, sw, sh;
-    Fl::screen_xywh(sx, sy, sw, sh, i);
-    auto *w = new LockWindow(sx, sy, sw, sh, i == primary_screen);
+  std::vector<Monitor> mons = current_monitors();
+  int primary_screen = monitor_at(mons, mx, my);
+  for (size_t i = 0; i < mons.size(); ++i) {
+    auto *w = new LockWindow(mons[i].x, mons[i].y, mons[i].w, mons[i].h);
     ui.windows.push_back(w);
-    if (i == primary_screen) ui.primary = w;
+    if (int(i) == primary_screen) ui.primary = w;
   }
   if (!ui.primary) ui.primary = ui.windows.front();
   for (auto *w : ui.windows) w->show();
@@ -566,34 +942,34 @@ int run_lock_ui(const UiOptions &options) {
     mapped = true;
     for (auto *w : ui.windows) mapped &= fl_xid(w) && viewable(fl_xid(w));
   }
-  for (auto *w : ui.windows)
-    if (fl_xid(w)) XRaiseWindow(fl_display, fl_xid(w));
+  raise_all();
   report(ui.opt.report_fd, 'M');
-  if (!mapped || !grab_input(fl_xid(ui.primary))) {
-    fprintf(stderr, "sde-lock: %s\n",
-            _("cannot grab the keyboard and pointer; the screen is NOT locked"));
+  if (!mapped) {
+    log_line("%s", _("cannot map the lock screen windows; the screen is NOT locked"));
     report(ui.opt.report_fd, 'F');
     for (auto *w : ui.windows) w->hide();
     XFlush(fl_display);
     g = nullptr;
     return 3;
   }
-  // Locked: now the lock screen may be drawn.
-  for (auto *w : ui.windows) w->prepare_background();
-  ui.ready = true;
-  report(ui.opt.report_fd, 'L');
-  session::reset_idle();
-  ui.caps = caps_lock_on();
-  Fl::focus(ui.primary);
+  for (auto *w : ui.windows) select_extra_events(w);
   Window root = RootWindow(fl_display, fl_screen);
   XWindowAttributes attr;
   XGetWindowAttributes(fl_display, root, &attr);
-  XSelectInput(fl_display, root, attr.your_event_mask | SubstructureNotifyMask);
+  XSelectInput(fl_display, root, attr.your_event_mask | SubstructureNotifyMask | StructureNotifyMask);
   Fl::add_handler(x_events);
+  // Grab at once (typing must work right after the lock), then keep
+  // checking. The screen stays black until the keyboard is ours or the
+  // waiting message is due.
+  ui.lost_since = now_s();
+  Fl::add_timeout(0, input_check);
   Fl::add_timeout(1.0, tick);
   Fl::add_timeout(0.05, animate);
-  redraw_all();
-  while (!ui.done) Fl::wait(1.0);
+  while (!ui.done) {
+    Fl::wait(0.25);
+    if (g_reassert.exchange(false)) reassert();
+    for (auto *w : ui.windows) select_extra_events(w);  // windows of a monitor change
+  }
   XUngrabKeyboard(fl_display, CurrentTime);
   XUngrabPointer(fl_display, CurrentTime);
   for (auto *w : ui.windows) w->hide();
@@ -601,6 +977,8 @@ int run_lock_ui(const UiOptions &options) {
   Fl::remove_handler(x_events);
   Fl::remove_timeout(tick);
   Fl::remove_timeout(animate);
+  Fl::remove_timeout(input_check);
+  Fl::remove_timeout(raise_cb);
   if (ui.avatar) cairo_surface_destroy(ui.avatar);
   g = nullptr;
   return 0;
