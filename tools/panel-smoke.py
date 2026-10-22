@@ -554,8 +554,10 @@ def preview_checks():
         run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2)
     def away():run('xdotool','mousemove',W//2,round(60*scale));time.sleep(.6)
     def active():return run('xdotool','getactivewindow',check=False).stdout.strip()
-    spawn('openbox','--sm-disable')
-    waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'openbox did not start')
+    # The installed SDE WM (an Openbox fork) in CI, stock Openbox on dev machines.
+    import shutil
+    spawn(shutil.which('sde-wm') or 'openbox','--sm-disable')
+    waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'the window manager did not start')
     window=str(a.test_dir.resolve()/'sde-preview-window')
     one=sp.Popen([window,'SDE Preview QA One','2563EB'],env=e,stdout=open(home/'preview-one.log','w'))
     two=sp.Popen([window,'SDE Preview QA Two','16A34A'],env=e,stdout=open(home/'preview-two.log','w'))
