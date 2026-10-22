@@ -372,13 +372,14 @@ try:
     # Session and settings buttons live in the Action Center footer.
     for name in ("SDE Settings", "Lock Screen", "Power"):
         control("Action Center", name)
-    # The weather picture behind the clock (SDE_WEATHER_FIXTURE), inside
-    # the header above the scrolled body.
+    # The weather picture behind the clock (SDE_WEATHER_FIXTURE): since
+    # alpha52 the Action Center has no scrolled body; the clock hero sits
+    # inside the popup and only its own buttons are drawn on it.
     names = [l.split("\t")[0] for l in (home / "qa" / "Action-Center.txt").read_text().splitlines()]
     sky = [n for n in names if n.startswith("@weather-")]
     assert sky, names
     wx, wy, ww, wh = control("Action Center", sky[0])
-    assert wy >= 0 and wy + wh <= control("Action Center", "@body")[1], (wy, wh)
+    assert wx >= 0 and wy >= 0 and wy + wh <= g["HEIGHT"], (wx, wy, ww, wh)
     assert any(n.startswith("Weather: ") for n in names), names
     run("xdotool", "key", "Escape")
     app = spawn("sde-settings")
