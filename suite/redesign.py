@@ -95,6 +95,7 @@ def liria(staged):
     liria_context_menus(staged)
     liria_home(staged)
     liria_sidebar(staged)
+    liria_quick_access(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
@@ -673,6 +674,76 @@ def liria_sidebar(staged):
     edit_once(sidebar, 'liria_icon_info_lookup_from_name ("media-eject", icon_size, icon_scale);',
               'liria_icon_info_lookup_from_name (gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), '
               '"media-eject-symbolic") ? "media-eject-symbolic" : "media-eject", icon_size, icon_scale);')
+
+
+def liria_quick_access(staged):
+    """alpha50: Quick access on the Home overview is the user's own list of
+    pinned folders, files and locations (src/liria-sde-pins.c, an overlay;
+    stored in ~/.config/sde/liria-quick-access, one URI per line with an
+    optional TAB and label). The window builds the pin list code for the
+    sidebar's "Pin to Quick Access" item; the SDE Tools extension builds
+    the same file (sde-tools/liria-sde-pins.c includes it) for the file
+    menus and the overview, and "make check" runs its unit test."""
+    src = staged / "src"
+    edit_once(src / "Makefile.am", "\tliria-sde-ui.c \\\n",
+              "\tliria-sde-pins.c \\\n\tliria-sde-pins.h \\\n\tliria-sde-ui.c \\\n")
+    sidebar = src / "liria-places-sidebar.c"
+    edit_once(sidebar, '#include "liria-sde-ui.h"\n', '#include "liria-sde-ui.h"\n#include "liria-sde-pins.h"\n')
+    edit_once(sidebar, "    GtkWidget *popup_menu_open_in_new_tab_item;\n",
+              "    GtkWidget *popup_menu_open_in_new_tab_item;\n    GtkWidget *popup_menu_sde_pin_item; /* SDE */\n")
+    edit_once(sidebar, "    sidebar->popup_menu_remove_item = NULL;\n",
+              "    sidebar->popup_menu_remove_item = NULL;\n    sidebar->popup_menu_sde_pin_item = NULL;\n")
+    edit_once(sidebar, "    gtk_widget_show (sidebar->popup_menu_open_in_new_tab_item);\n",
+              """    gtk_widget_show (sidebar->popup_menu_open_in_new_tab_item);
+
+    /* SDE: Pin to / Unpin from Quick Access on the Home overview. */
+    gtk_widget_set_visible (sidebar->popup_menu_sde_pin_item, uri != NULL);
+    gtk_menu_item_set_label (GTK_MENU_ITEM (sidebar->popup_menu_sde_pin_item),
+                             uri != NULL && liria_sde_pins_is_pinned (uri) ? _("Unpin from Quick Access")
+                                                                           : _("Pin to Quick Access"));
+""")
+    edit_once(sidebar, "/* Rename the selected bookmark */\n", """/* SDE: pins or unpins the selected place in Quick access. */
+static void
+sde_pin_shortcut_cb (GtkMenuItem        *item,
+                     LiriaPlacesSidebar *sidebar)
+{
+    GtkTreeIter iter;
+    char *uri = NULL;
+
+    if (!get_selected_iter (sidebar, &iter))
+    {
+        return;
+    }
+    gtk_tree_model_get (GTK_TREE_MODEL (sidebar->filter_model), &iter,
+                        PLACES_SIDEBAR_COLUMN_URI, &uri, -1);
+    if (uri != NULL)
+    {
+        const char *uris[] = { uri, NULL };
+
+        if (liria_sde_pins_is_pinned (uri))
+            liria_sde_pins_remove (uris);
+        else
+            liria_sde_pins_add (uris, -1);
+        g_free (uri);
+    }
+}
+
+/* Rename the selected bookmark */
+""")
+    edit_once(sidebar, """                      G_CALLBACK (open_shortcut_in_new_window_cb), sidebar);
+    gtk_widget_show (item);
+    gtk_menu_shell_append (GTK_MENU_SHELL (sidebar->popup_menu), item);
+""", """                      G_CALLBACK (open_shortcut_in_new_window_cb), sidebar);
+    gtk_widget_show (item);
+    gtk_menu_shell_append (GTK_MENU_SHELL (sidebar->popup_menu), item);
+
+    item = eel_image_menu_item_new_from_icon ("view-pin-symbolic", _("Pin to Quick Access"));
+    sidebar->popup_menu_sde_pin_item = item;
+    g_signal_connect (item, "activate",
+                      G_CALLBACK (sde_pin_shortcut_cb), sidebar);
+    gtk_widget_show (item);
+    gtk_menu_shell_append (GTK_MENU_SHELL (sidebar->popup_menu), item);
+""")
 
 
 def liria_copy_engine(staged):
