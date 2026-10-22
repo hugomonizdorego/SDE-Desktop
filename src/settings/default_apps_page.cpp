@@ -24,7 +24,6 @@
 #include "config.h"
 #include "default_apps.h"
 #include "desktop_entry.h"
-#include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
 #include "paint.h"
@@ -134,6 +133,9 @@ Fl_RGB_Image *menu_icon(const std::vector<std::string> &names, int size) {
     cairo_surface_destroy(flat);
     img = new Fl_RGB_Image(data, size, size, 4);
     img->alloc_array = 1;
+    // Registers the image label type that Fl_Multi_Label draws with.
+    Fl_Menu_Item probe = {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0};
+    img->label(&probe);
   }
   images[key] = img;
   return img;
@@ -215,16 +217,19 @@ class AppChoice : public Fl_Choice {
       double r = Sd(8);
       p.fill_rounded(x(), y(), w(), h(), r, hot ? t.hover.mix(t.surface_alt, 0.4) : t.surface_alt);
       p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, hot ? t.text_dim.alpha(0.5) : t.border);
-      if (a || active_r()) {
+      if (a) {
         int is = S(20);
         p.image(IconLoader::get(app_icons(a), is), x() + S(10), y() + (h() - is) / 2.0, is,
                 active_r() ? 1.0 : 0.5);
       }
-      glyph::chevron(p, x() + w() - S(22), y() + (h() - S(12)) / 2.0, S(12), false, t.text_dim);
+      // Down chevron.
+      double cx = x() + w() - S(18), cy = y() + h() / 2.0, k = Sd(4);
+      p.line(cx - k, cy - k / 2, cx, cy + k / 2, t.text_dim, Sd(1.5));
+      p.line(cx, cy + k / 2, cx + k, cy - k / 2, t.text_dim, Sd(1.5));
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
     }
     text_font(t.font_size + 1);
-    draw_text(text, x() + S(38), y(), w() - S(66), h(), active_r() ? t.text : t.text_dim);
+    draw_text(text, x() + (a ? S(38) : S(12)), y(), w() - S(66), h(), a && active_r() ? t.text : t.text_dim);
   }
 
  private:
