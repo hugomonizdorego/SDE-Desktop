@@ -815,6 +815,10 @@ def a52_checks():
     waitfor(lambda:'search=box' in conf() and ('search' in layout('SDE Panel') or (W<1200 and 'search-icon' in layout('SDE Panel'))),'search box did not come back')
     shot('44-search-box')
     # 3) Notifications: badge, flyout grouped by application, dismiss, clear, DND.
+    # Earlier checks (alarms, agenda, drives) left notifications: clear the
+    # history over D-Bus (org.sde.Notifications) first.
+    run('gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.sde.Notifications.Clear')
+    waitfor(lambda:'@badge:0' in layout('SDE Panel'),'history not cleared over D-Bus')
     notify('QA Chat','Hello from Ada','Lunch at noon?');notify('QA Chat','Second message','See you there');notify('QA Mail','New mail','Quarterly report')
     waitfor(lambda:'@badge:3' in layout('SDE Panel'),'unread count not 3: '+str([k for k in layout('SDE Panel') if k.startswith('@badge')]))
     time.sleep(.5);shot('45-notifications-badge')
