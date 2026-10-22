@@ -12,7 +12,8 @@
 //  * led: seven-segment LED digits drawn with cairo (glow in the hero);
 //  * analog: a round face with hands.
 //
-// SDE_CLOCK_FIXTURE=2026-10-22T21:30[:SS] fixes the clock's start time (UI
+// SDE_CLOCK_FIXTURE=2026-10-22T21:30[:SS] (or "@file" holding it, re-read
+// while the panel runs) fixes the clock's start time (UI
 // tests: day and night pictures); it then runs on from there.
 //
 // The model (formats, seven-segment masks, the day/night decision) is unit

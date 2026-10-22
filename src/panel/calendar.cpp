@@ -49,7 +49,8 @@ const int kHeader = 34, kWeekdays = 22, kRow = 29, kNav = 28;
 
 }  // namespace
 
-MonthCalendar::MonthCalendar(int x, int y, int w) : Fl_Widget(x, y, w, height_for(w)) {
+MonthCalendar::MonthCalendar(int x, int y, int w, int row)
+    : Fl_Widget(x, y, w, height_for(w, row)), row_(row > 0 ? row : kRow) {
   // Named for window inspection; the widget draws its own content.
   label(_("Calendar"));
   labeltype(FL_NO_LABEL);
@@ -67,7 +68,9 @@ MonthCalendar::MonthCalendar(int x, int y, int w) : Fl_Widget(x, y, w, height_fo
   today();
 }
 
-int MonthCalendar::height_for(int) { return S(kHeader) + S(kWeekdays) + 6 * S(kRow); }
+int MonthCalendar::height_for(int, int row) {
+  return S(kHeader) + S(kWeekdays) + 6 * S(row > 0 ? row : kRow);
+}
 
 void MonthCalendar::today() {
   time_t now = time(nullptr);
@@ -113,7 +116,7 @@ void MonthCalendar::shift_month(int delta) {
 
 void MonthCalendar::layout(int &cell_w, int &cell_h, int &grid_y) const {
   cell_w = w() / 7;
-  cell_h = S(kRow);
+  cell_h = S(row_);
   grid_y = y() + S(kHeader) + S(kWeekdays);
 }
 

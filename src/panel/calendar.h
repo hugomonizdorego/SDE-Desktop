@@ -10,11 +10,13 @@
 
 class MonthCalendar : public Fl_Widget {
  public:
-  MonthCalendar(int x, int y, int w);
+  // |row|: the height of a week row at 100 % (0: the default, 29 px;
+  // alpha52: smaller on small screens, so the Action Center never scrolls).
+  MonthCalendar(int x, int y, int w, int row = 0);
   void draw() override;
   int handle(int event) override;
   // Height for a given width: header row, weekday names and six weeks.
-  static int height_for(int w);
+  static int height_for(int w, int row = 0);
   // Back to the current month.
   void today();
   // Shown month (month 1-12) and the selected day (the agenda's date).
@@ -36,6 +38,7 @@ class MonthCalendar : public Fl_Widget {
   int year_ = 0, month_ = 0;        // shown month (month 0-11)
   int first_weekday_ = 1;           // 0 Sunday, 1 Monday
   int hover_ = 0;
+  int row_ = 29;
   int focus_day_ = 0;
   int sel_year_ = 0, sel_month_ = -1, sel_day_ = 0;
 };

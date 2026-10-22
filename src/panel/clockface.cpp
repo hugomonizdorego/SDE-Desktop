@@ -129,23 +129,50 @@ unsigned seven_segment(char c) {
 // ------------------------------------------------------------- the time
 
 namespace {
+// SDE_CLOCK_FIXTURE: the time itself, or "@<file>" holding it (UI tests
+// switch between day and night by writing the file; a missing or empty
+// file means the real time). The fixed time runs on from when it was read.
 struct Fixture {
   bool active = false;
   time_t start = 0;  // the fixture's time
-  std::chrono::steady_clock::time_point since;
+  std::chrono::steady_clock::time_point since, checked;
+  std::string file, text;
 };
-const Fixture &fixture() {
-  static const Fixture f = [] {
+Fixture &fixture() {
+  static Fixture f = [] {
     Fixture f;
     const char *v = getenv("SDE_CLOCK_FIXTURE");
+    std::string value = v ? v : "";
+    if (!value.empty() && value[0] == '@') {
+      f.file = value.substr(1);
+      return f;
+    }
     struct tm t{};
-    if (v && *v && parse_fixture(v, t)) {
+    if (!value.empty() && parse_fixture(value, t)) {
       f.active = true;
       f.start = mktime(&t);
       f.since = std::chrono::steady_clock::now();
     }
     return f;
   }();
+  if (!f.file.empty()) {
+    auto now = std::chrono::steady_clock::now();
+    if (f.checked.time_since_epoch().count() == 0 || now - f.checked > std::chrono::milliseconds(300)) {
+      f.checked = now;
+      std::string text;
+      if (!read_file(f.file, text)) text.clear();
+      text = trim(text);
+      if (text != f.text) {
+        f.text = text;
+        struct tm t{};
+        f.active = parse_fixture(text, t);
+        if (f.active) {
+          f.start = mktime(&t);
+          f.since = now;
+        }
+      }
+    }
+  }
   return f;
 }
 }  // namespace
@@ -177,7 +204,7 @@ bool parse_fixture(const std::string &text, struct tm &out) {
 bool fixture_active() { return fixture().active; }
 
 time_t now() {
-  const Fixture &f = fixture();
+  Fixture &f = fixture();
   if (!f.active) return time(nullptr);
   auto run = std::chrono::steady_clock::now() - f.since;
   return f.start + time_t(std::chrono::duration_cast<std::chrono::seconds>(run).count());

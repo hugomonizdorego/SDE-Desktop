@@ -92,6 +92,7 @@ add_executable(sde-settings
   settings/power.cpp
   settings/touchpad.cpp
   settings/network.cpp
+  settings/clock.cpp
   # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
   panel/timezone.cpp
   panel/weather.cpp
