@@ -30,7 +30,7 @@
   </placement>
   <theme>
     <name>SDE-Graphite-Light-Blue</name>
-    <titleLayout>CIML</titleLayout>
+    <titleLayout>NLIMC</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>no</animateIconify>
     <font place="ActiveWindow"><name>Sans</name><size>10</size><weight>Bold</weight><slant>Normal</slant></font>
