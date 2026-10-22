@@ -19,6 +19,7 @@
 
 #include "alarm_popup.h"
 #include "alarms.h"
+#include "clockface.h"
 #include "controls.h"
 #include "glyphs.h"
 #include "tray_icons.h"
@@ -1057,12 +1058,11 @@ void Panel::relayout() {
   text_font(theme_.font_size, false);
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   bool two_lines = H >= S(40) && show_date;
-  std::string sample = cfg_.get_bool("panel", "clock_24h", true) ? "88:88" : "88:88 PM";
-  int cw = text_width(sample);
-  if (show_date) {
-    int dw = text_width(clock_date_.empty() ? "Wed 30 Sep" : clock_date_);
-    cw = two_lines ? std::max(cw, dw) : cw + dw + S(10);
-  }
+  // alpha52: [clock] style (digital, blink, LED, analog), seconds, format.
+  int cw = clockface::panel_width(clockface::Settings::from_config(cfg_), theme_, H,
+                                  show_date ? (clock_date_.empty() ? "Wed 30 Sep" : clock_date_)
+                                            : std::string(),
+                                  two_lines);
   clock_w_ = cw + S(24);
   clock_x_ = right - clock_w_;
   right = clock_x_ - S(4);
@@ -1458,16 +1458,8 @@ void Panel::draw() {
               task.minimized ? t.text_dim : t.text);
   }
   bool show_date = cfg_.get_bool("panel", "show_date", true);
-  if (H >= S(40) && show_date) {
-    text_font(t.font_size, true);
-    draw_text(clock_time_, clock_x_, H / 2 - S(17) + S(2), clock_w_, S(18), t.text, 1);
-    text_font(t.font_size - 1);
-    draw_text(clock_date_, clock_x_, H / 2 - S(1), clock_w_, S(18), t.text_dim, 1);
-  } else {
-    text_font(t.font_size, true);
-    std::string str = show_date ? clock_date_ + "  " + clock_time_ : clock_time_;
-    draw_text(str, clock_x_, 0, clock_w_, H, t.text, 1);
-  }
+  clockface::draw_panel(clockface::Settings::from_config(cfg_), t, w(), h(), clock_x_, clock_w_,
+                        H, show_date ? clock_date_ : std::string(), H >= S(40) && show_date);
   if (qa_dump_enabled()) qa_dump_panel();
 }
 
@@ -1952,6 +1944,7 @@ bool Panel::handle_x(const XEvent &e) {
       if (!autohide_) revealed_ = true;
       place_on_screen();
       for (auto &t : tasks_) update_task(t);
+      clock_tick(this);  // [clock] style, seconds and format apply at once
       relayout();
       redraw();
       quick_->status_changed();
@@ -2007,14 +2000,13 @@ void Panel::clock_tick(void *data) {
   // Follows a new /etc/localtime (timedatectl, Settings) within a minute;
   // with TZ unset glibc only re-reads it on tzset().
   tzset();
-  time_t now = time(nullptr);
-  struct tm lt;
-  localtime_r(&now, &lt);
+  struct tm lt = clockface::local_now();
   char buf[64];
-  bool h24 = p->cfg_.get_bool("panel", "clock_24h", true);
-  strftime(buf, sizeof buf, h24 ? "%H:%M" : "%I:%M %p", &lt);
-  std::string tstr = buf;
-  if (!h24 && tstr[0] == '0') tstr.erase(0, 1);
+  auto clock = clockface::Settings::from_config(p->cfg_);
+  std::string tstr = clockface::format_time(lt, clock.h24, clock.seconds);
+  // Blinking colons and seconds change every second.
+  if (clock.style == clockface::Style::Analog && !clock.seconds) tstr = "analog";
+  if (clockface::ticks_seconds(clock)) tstr += std::to_string(lt.tm_sec);
   strftime(buf, sizeof buf, "%a %e %b", &lt);
   std::string dstr = trim(buf);
   if (tstr != p->clock_time_ || dstr != p->clock_date_) {
@@ -2026,7 +2018,15 @@ void Panel::clock_tick(void *data) {
     if (p->quick_ && p->quick_->is_open()) p->quick_->redraw();
     if (p->alarms_ && p->alarms_->is_open()) p->alarms_->redraw();
   }
-  // Wake up right after the next full minute.
+  // Wake up right after the next full minute (second).
   Fl::remove_timeout(clock_tick, data);
-  Fl::add_timeout(60 - lt.tm_sec + 0.2, clock_tick, data);
+  if (clockface::ticks_seconds(clock)) {
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::system_clock::now().time_since_epoch())
+                  .count() %
+              1000;
+    Fl::add_timeout((1000 - ms) / 1000.0 + 0.02, clock_tick, data);
+  } else {
+    Fl::add_timeout(60 - lt.tm_sec + 0.2, clock_tick, data);
+  }
 }

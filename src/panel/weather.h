@@ -104,6 +104,17 @@ bool parse_cache(const std::string &json, Report &out, std::string &key);
 bool use_fahrenheit(const std::string &unit, const std::string &locale);
 std::string locale_for_units();  // the environment's measurement locale
 std::string format_temperature(double celsius, bool fahrenheit);  // "21°C"
+// alpha52: [weather] unit=auto|celsius|fahrenheit|kelvin and
+// wind_unit=auto|kmh|mph|ms|knots (auto: mph where Fahrenheit is used and
+// in the United Kingdom, else km/h).
+enum class TempUnit { Celsius, Fahrenheit, Kelvin };
+enum class WindUnit { Kmh, Mph, Ms, Knots };
+TempUnit temp_unit(const std::string &unit, const std::string &locale);
+WindUnit wind_unit(const std::string &unit, const std::string &locale);
+const char *temp_unit_name(TempUnit u);  // "celsius", "fahrenheit", "kelvin"
+const char *wind_unit_name(WindUnit u);  // "kmh", "mph", "ms", "knots"
+std::string format_temperature(double celsius, TempUnit u);  // "21°C", "70°F", "294 K"
+std::string format_wind(double kmh, WindUnit u);  // "12 km/h", "7 mph", "3.3 m/s", "6 kn"
 
 // Fixed reports for SDE_WEATHER_FIXTURE; false for an unknown name or
 // "offline".
@@ -114,7 +125,9 @@ struct Settings {
   bool enabled = true;
   std::string location = "auto";
   bool fahrenheit = false;
-  bool animate = true;     // false: a still picture (reduced motion)
+  TempUnit temp = TempUnit::Celsius;
+  WindUnit wind = WindUnit::Kmh;
+  bool animate = true;    // false: a still picture (reduced motion)
   int cache_minutes = 25;
   int fps = 24;
   static Settings from_config(const sde::Config &cfg);
@@ -135,6 +148,9 @@ class Service {
   const Report *current(const Settings &s, bool online) const;
   bool busy() const { return busy_; }
   static std::string cache_path();
+  // The location of the last report, even offline or when it is old (the
+  // sky's sunrise and sunset); nullptr when none is known.
+  const Location *known_location() const;
 
  private:
   void load_cache();

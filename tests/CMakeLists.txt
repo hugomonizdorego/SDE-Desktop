@@ -143,6 +143,11 @@ target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJ
 target_link_libraries(sde-weather-tests PRIVATE sde-common)
 add_test(NAME sde-weather-model COMMAND sde-weather-tests)
 
+# Clock faces (alpha52): formats, seven-segment masks, day or night.
+add_executable(sde-clockface-tests test_clockface.cpp ../src/panel/clockface.cpp ../src/panel/nightlight.cpp ../src/panel/weather.cpp)
+target_link_libraries(sde-clockface-tests PRIVATE sde-common)
+add_test(NAME sde-clockface-model COMMAND sde-clockface-tests)
+
 # Clock "Sync time zone": geolocation answers, zone names, the timedatectl plan.
 add_executable(sde-timezone-tests test_timezone.cpp ../src/panel/timezone.cpp ../src/panel/weather.cpp)
 target_compile_definitions(sde-timezone-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
