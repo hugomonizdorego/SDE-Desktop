@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Driver Manager
+GenericName=Drivers and Firmware
+Comment=Install non-free drivers and firmware for your hardware
+Exec=sde-drivers
+TryExec=sde-drivers
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=driver;firmware;nvidia;wifi;bluetooth;microcode;non-free;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=sde-drivers
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team

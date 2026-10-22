@@ -1,0 +1,8 @@
+Detected NVIDIA GPUs:
+01:00.0 VGA compatible controller [0300]: NVIDIA Corporation GK104 [GeForce GTX 770] [10de:1184] (rev a1)
+
+Checking card:  NVIDIA Corporation GK104 [GeForce GTX 770] (rev a1)
+Your card is only supported by the Tesla 470 drivers series.
+It is recommended to install the
+    nvidia-tesla-470-driver
+package.

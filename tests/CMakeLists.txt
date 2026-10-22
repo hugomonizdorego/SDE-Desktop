@@ -116,3 +116,9 @@ endif()
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
 target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
 add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)
+
+# SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
+# heuristics, APT sources rewriting, crash log parsing, issue URLs.
+add_executable(sde-sysreport-tests test_sysreport.cpp)
+target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
+add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)

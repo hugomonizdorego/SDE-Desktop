@@ -352,3 +352,6 @@ install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)
+
+# SDE Welcome, Driver Manager and System Reports (docs/MINT-CONCEPTS.md).
+add_subdirectory(welcome)

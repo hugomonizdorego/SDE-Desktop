@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=System Reports
+GenericName=Crash Reports
+Comment=Crash reports of SDE programs and system information for bug reports
+Exec=sde-system-reports
+TryExec=sde-system-reports
+Icon=dialog-warning
+Terminal=false
+Categories=System;Monitor;
+Keywords=crash;report;bug;backtrace;system information;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=sde-system-reports
+X-Developer=DebION Dev-Team
+X-DebION-Developer=DebION Dev-Team
