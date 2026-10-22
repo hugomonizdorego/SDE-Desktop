@@ -1,0 +1,1 @@
+BOOT_IMAGE=/casper/vmlinuz file=/cdrom/preseed/debion.seed boot=casper quiet splash ---

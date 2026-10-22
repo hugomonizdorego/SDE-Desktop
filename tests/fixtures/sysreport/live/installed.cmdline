@@ -1,0 +1,1 @@
+BOOT_IMAGE=/boot/vmlinuz-6.12.38+deb13-amd64 root=UUID=4f2c1b7e-9a43-4d1f-8f0e-2b7c3a9d6e51 ro quiet splash

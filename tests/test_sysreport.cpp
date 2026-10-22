@@ -255,21 +255,284 @@ static void test_welcome() {
   CHECK_EQ(std::to_string(missing.size()), "3");
   CHECK_EQ(std::to_string(welcome::panel_layouts().size()), "3");
 
-  // [welcome] show defaults to true and round-trips through sde.conf.
+  // [welcome] show defaults to false (alpha51: the first login opens SDE
+  // Welcome through the stamp instead) and round-trips through sde.conf.
   char tmpl[] = "/tmp/sde-sysreport-XXXXXX";
   std::string home = mkdtemp(tmpl) ? tmpl : "/tmp";
   setenv("XDG_CONFIG_HOME", home.c_str(), 1);
   Config cfg;
   cfg.load();
-  CHECK(welcome::show_at_startup(cfg));
-  welcome::set_show_at_startup(cfg, false);
+  CHECK(!welcome::show_at_startup(cfg));
+  // First login: no stamp, no [welcome] in the user's sde.conf.
+  CHECK(!welcome::welcome_done());
+  CHECK(welcome::mark_welcome_done());
+  CHECK(welcome::welcome_done());
+  CHECK(file_exists(home + "/sde/welcome-done"));
+  unlink((home + "/sde/welcome-done").c_str());
+  welcome::set_show_at_startup(cfg, true);
   CHECK(cfg.save());
   Config again;
   again.load();
-  CHECK(!welcome::show_at_startup(again));
+  CHECK(welcome::show_at_startup(again));
+  // Upgrades from alpha50: a [welcome] section in the user's file counts as seen.
+  CHECK(welcome::welcome_done());
   unlink((home + "/sde/sde.conf").c_str());
   rmdir((home + "/sde").c_str());
   rmdir(home.c_str());
+
+  // Autostart: never live; first login always; later only with the check box.
+  CHECK(!welcome::should_autostart(true, false, true));
+  CHECK(!welcome::should_autostart(true, true, true));
+  CHECK(welcome::should_autostart(false, false, false));
+  CHECK(!welcome::should_autostart(false, true, false));
+  CHECK(welcome::should_autostart(false, true, true));
+}
+
+static welcome::LiveProbe live_probe(const std::string &name) {
+  welcome::LiveProbe p;
+  p.cmdline = fixture("live/" + name + ".cmdline");
+  p.mounts = fixture("live/" + name + ".mounts");
+  p.user = "anna";
+  return p;
+}
+
+static void test_live_session() {
+  // Debian live ISO (live-boot): boot=live, / is an overlay on the squashfs.
+  welcome::LiveProbe live = live_probe("debian-live");
+  CHECK(welcome::is_live_session(live));
+  CHECK_EQ(welcome::live_reason(live), "kernel command line: boot=live");
+  live.cmdline = "BOOT_IMAGE=/live/vmlinuz quiet";  // the mounts alone are enough
+  CHECK_EQ(welcome::live_reason(live), "root file system: overlay on squashfs (/run/live/rootfs/filesystem.squashfs)");
+  live.cmdline = "boot=live toram";
+  CHECK_EQ(welcome::live_reason(live), "kernel command line: boot=live toram");
+
+  // Installed system (a snap squashfs elsewhere does not count).
+  welcome::LiveProbe inst = live_probe("installed");
+  CHECK(!welcome::is_live_session(inst));
+  CHECK_EQ(welcome::live_reason(inst), "");
+  // toram alone (e.g. a GRUB entry typo) is not a live boot.
+  inst.cmdline += " toram";
+  CHECK(!welcome::is_live_session(inst));
+  inst.cmdline = fixture("live/installed.cmdline");
+
+  // Installed system with overlayroot: the lower layer is ext4, not squashfs.
+  welcome::LiveProbe ovl = live_probe("overlayroot");
+  CHECK(!welcome::is_live_session(ovl));
+  // ... but the same overlay over a squashfs image is live.
+  ovl.mounts += "/dev/loop9 /media/root-ro squashfs ro 0 0\n";
+  CHECK(welcome::is_live_session(ovl));
+
+  // Ubuntu-style casper.
+  welcome::LiveProbe casper = live_probe("casper");
+  CHECK_EQ(welcome::live_reason(casper), "kernel command line: boot=casper");
+  casper.cmdline = "quiet splash";
+  CHECK_EQ(welcome::live_reason(casper), "root file system: overlay on squashfs (/rofs)");
+
+  // Other live markers on an otherwise installed-looking system.
+  welcome::LiveProbe m = inst;
+  m.cmdline = "rd.live.image root=live:CDLABEL=DebION";
+  CHECK(welcome::is_live_session(m));
+  m = inst;
+  m.cmdline = "live-media=/dev/sdb1 quiet";
+  CHECK(welcome::is_live_session(m));
+  m = inst;
+  m.run_live = true;
+  CHECK_EQ(welcome::live_reason(m), "/run/live exists");
+  m = inst;
+  m.live_medium = true;
+  CHECK(welcome::is_live_session(m));
+  m = inst;
+  m.mounts = "tmpfs / tmpfs rw 0 0\n/dev/loop0 /lib/live/mount/rootfs/filesystem.squashfs squashfs ro 0 0\n";
+  CHECK(welcome::is_live_session(m));
+  m = inst;
+  m.user = "user";
+  CHECK(!welcome::is_live_session(m));  // "user" alone is a valid login name
+  m.live_config = true;
+  CHECK_EQ(welcome::live_reason(m), "live user with live-config");
+  m = inst;
+  m.installer_launcher = true;
+  CHECK_EQ(welcome::live_reason(m), "installer launcher on the desktop");
+
+  // probe_live_session() with the paths redirected.
+  char tmpl[] = "/tmp/sde-live-XXXXXX";
+  std::string root = mkdtemp(tmpl) ? tmpl : "/tmp/sde-live";
+  setenv("SDE_PROC_CMDLINE", join_path(g_dir, "live/installed.cmdline").c_str(), 1);
+  setenv("SDE_PROC_MOUNTS", join_path(g_dir, "live/installed.mounts").c_str(), 1);
+  setenv("SDE_LIVE_ROOT", root.c_str(), 1);
+  setenv("SDE_DESKTOP_DIR", (root + "/Desktop").c_str(), 1);
+  CHECK(!welcome::is_live_session());
+  make_dirs(root + "/Desktop");
+  write_file_atomic(root + "/Desktop/install-debian.desktop", "[Desktop Entry]\n");
+  CHECK(welcome::probe_live_session().installer_launcher);
+  CHECK(welcome::is_live_session());
+  unlink((root + "/Desktop/install-debian.desktop").c_str());
+  make_dirs(root + "/run/live");
+  CHECK(welcome::probe_live_session().run_live);
+  rmdir((root + "/run/live").c_str());
+  make_dirs(root + "/etc/live/config.conf.d");
+  CHECK(welcome::probe_live_session().live_config);
+  setenv("SDE_PROC_CMDLINE", join_path(g_dir, "live/debian-live.cmdline").c_str(), 1);
+  CHECK(welcome::is_live_session());
+  rmdir((root + "/etc/live/config.conf.d").c_str());
+  rmdir((root + "/etc/live").c_str());
+  rmdir((root + "/etc").c_str());
+  rmdir((root + "/run").c_str());
+  rmdir((root + "/Desktop").c_str());
+  rmdir(root.c_str());
+  unsetenv("SDE_PROC_CMDLINE");
+  unsetenv("SDE_PROC_MOUNTS");
+  unsetenv("SDE_LIVE_ROOT");
+  unsetenv("SDE_DESKTOP_DIR");
+}
+
+static void test_driver_choices() {
+  using drivers::DeviceKind;
+  CHECK_EQ(drivers::dkms_device("rtw89-dkms"), "Realtek Wi-Fi");
+  CHECK_EQ(drivers::dkms_device("r8168-dkms"), "Realtek Ethernet");
+  CHECK_EQ(drivers::dkms_device("broadcom-sta-dkms"), "Broadcom Wi-Fi");
+  CHECK_EQ(drivers::dkms_device("virtualbox-dkms"), "");
+  CHECK_EQ(drivers::dkms_device("nvidia-kernel-dkms"), "");
+  CHECK_EQ(drivers::dkms_device("rtw89"), "");
+  CHECK(drivers::is_firmware_package("firmware-realtek"));
+  CHECK(drivers::is_firmware_package("intel-microcode"));
+  CHECK(!drivers::is_firmware_package("rtw89-dkms"));
+  CHECK(drivers::is_free_driver("rtw89-dkms", "main"));
+  CHECK(!drivers::is_free_driver("nvidia-driver", "non-free"));
+  CHECK(!drivers::is_free_driver("firmware-iwlwifi", "non-free-firmware"));
+  CHECK(drivers::pci_kind("0x028000") == DeviceKind::Wifi);
+  CHECK(drivers::pci_kind("020000") == DeviceKind::Network);
+  CHECK(drivers::pci_kind("0x0d1100") == DeviceKind::Bluetooth);
+  CHECK(drivers::pci_kind("0x040300") == DeviceKind::Audio);
+  CHECK(drivers::pci_kind("0x030000") == DeviceKind::Graphics);
+  CHECK(drivers::pci_kind("0x060400") == DeviceKind::Other);
+
+  // PCI devices from a fake sysfs (graphics cards are left to detect_gpus).
+  setenv("SDE_PCI_IDS", join_path(g_dir, "missing-pci.ids").c_str(), 1);
+  auto pci = drivers::detect_pci_devices(join_path(g_dir, "pci"));
+  CHECK_EQ(std::to_string(pci.size()), "2");
+  if (pci.size() == 2) {
+    CHECK_EQ(pci[0].vendor_id, "8086");
+    CHECK_EQ(pci[1].device_id, "b852");
+    CHECK(drivers::pci_kind(pci[1].class_id) == DeviceKind::Wifi);
+  }
+
+  // apt output.
+  auto pol = drivers::parse_apt_policy(
+      "rtw89-dkms:\n  Installed: 7.3+klbkresolute\n  Candidate: 7.3+klbkresolute\n  Version table:\n"
+      " *** 7.3+klbkresolute 100\n        100 /var/lib/dpkg/status\n"
+      "firmware-realtek:\n  Installed: (none)\n  Candidate: 20250410-1\n"
+      "nvidia-driver:amd64:\n  Installed: (none)\n  Candidate: (none)\n");
+  CHECK_EQ(pol["rtw89-dkms"].installed, "7.3+klbkresolute");
+  CHECK_EQ(pol["firmware-realtek"].installed, "");
+  CHECK_EQ(pol["firmware-realtek"].candidate, "20250410-1");
+  CHECK(pol.count("nvidia-driver") == 1);
+  CHECK_EQ(pol["nvidia-driver"].candidate, "");
+  auto sum = drivers::parse_apt_summaries(
+      "Package: firmware-realtek\nVersion: 20250410-1\nDescription-en: Binary firmware for Realtek "
+      "wired/wifi/BT adapters\n Long text.\n\nPackage: rtw89-dkms\nDescription: rtw89 DKMS modules for "
+      "Debian\n");
+  CHECK_EQ(sum["firmware-realtek"], "Binary firmware for Realtek wired/wifi/BT adapters");
+  CHECK_EQ(sum["rtw89-dkms"], "rtw89 DKMS modules for Debian");
+  double pct = -1;
+  std::string what;
+  CHECK(drivers::parse_apt_status("dlstatus:1:50.0:Retrieving file 1 of 2", &pct, &what));
+  CHECK(pct > 14.9 && pct < 15.1);
+  CHECK_EQ(what, "Retrieving file 1 of 2");
+  CHECK(drivers::parse_apt_status("pmstatus:nvidia-driver:100:Installed nvidia-driver (535:1)", &pct, &what));
+  CHECK(pct > 99.9);
+  CHECK_EQ(what, "Installed nvidia-driver (535:1)");
+  CHECK(!drivers::parse_apt_status("Reading package lists...", &pct, &what));
+  CHECK(!drivers::parse_apt_status("pmstatus:broken", &pct, &what));
+  CHECK_EQ(drivers::cpu_model_name("processor\t: 0\nvendor_id\t: GenuineIntel\nmodel name\t: Intel(R) "
+                                   "Core(TM) i5-8250U CPU @ 1.60GHz\n"),
+           "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz");
+
+  // Grouping: an NVIDIA card with the proprietary driver and the firmware
+  // for nouveau (installed), a Realtek Wi-Fi card that runs a DKMS driver
+  // installed by hand, and processor microcode.
+  std::vector<drivers::Recommendation> recs(5);
+  recs[0] = {"intel-microcode", "Intel(R) Core(TM) i5-8250U", "Microcode.", "non-free-firmware", true, true};
+  recs[1] = {"firmware-realtek", "Realtek Wi-Fi", "The kernel could not load rtw89/x.bin.", "non-free-firmware",
+             false, true};
+  recs[2] = {"nvidia-driver", "NVIDIA GeForce RTX 3070", "Proprietary NVIDIA driver. More text.", "non-free",
+             false, true};
+  recs[3] = {"firmware-nvidia-graphics", "NVIDIA GeForce RTX 3070", "Firmware for nouveau.",
+             "non-free-firmware", true, false};
+  recs[4] = {"rtw89-dkms", "Realtek Wi-Fi", "DKMS.", "main", true, false};
+  std::vector<drivers::PciDevice> devs(1);
+  devs[0].class_id = "028000";
+  devs[0].vendor_id = "10ec";
+  devs[0].device_id = "b852";
+  devs[0].vendor = "Realtek Semiconductor Co., Ltd.";
+  devs[0].model = "RTL8852BE PCIe 802.11ax Wireless Network Controller";
+  auto devices = drivers::group_devices(recs, devs, pol, sum);
+  CHECK_EQ(std::to_string(devices.size()), "3");
+  if (devices.size() != 3) return;
+  CHECK(devices[0].kind == DeviceKind::Graphics);
+  CHECK_EQ(devices[0].name, "NVIDIA GeForce RTX 3070");
+  CHECK_EQ(devices[0].options[0].package, "nvidia-driver");
+  CHECK_EQ(devices[0].options[0].summary, "Proprietary NVIDIA driver.");
+  CHECK(devices[1].kind == DeviceKind::Wifi);
+  CHECK_EQ(devices[1].name, "Realtek Semiconductor Co., Ltd.: RTL8852BE PCIe 802.11ax Wireless Network Controller");
+  CHECK_EQ(devices[1].options[0].package, "firmware-realtek");
+  CHECK_EQ(devices[1].options[0].version, "20250410-1");
+  CHECK(!devices[1].options[0].free_software);
+  CHECK_EQ(devices[1].options[1].package, "rtw89-dkms");
+  CHECK_EQ(devices[1].options[1].version, "7.3+klbkresolute");
+  CHECK_EQ(devices[1].options[1].summary, "rtw89 DKMS modules for Debian");
+  CHECK(devices[1].options[1].free_software);
+  CHECK(devices[2].kind == DeviceKind::Processor);
+
+  auto initial = drivers::initial_selection(devices);
+  CHECK_EQ(std::to_string(initial[0]), "1");  // firmware for nouveau
+  CHECK_EQ(std::to_string(initial[1]), "1");  // the DKMS driver, not the firmware
+  CHECK_EQ(std::to_string(initial[2]), "0");
+  CHECK(drivers::device_state(devices[0], initial[0]) == drivers::DeviceState::Alternative);
+  CHECK(drivers::device_state(devices[1], initial[1]) == drivers::DeviceState::Alternative);
+  CHECK(drivers::device_state(devices[2], initial[2]) == drivers::DeviceState::Recommended);
+  CHECK(drivers::device_state(devices[2], drivers::kNoDriver) == drivers::DeviceState::NoDriver);
+  CHECK_EQ(std::to_string(drivers::proprietary_in_use(devices)), "2");
+
+  // Nothing changed (or Revert): nothing to do.
+  CHECK(drivers::plan_changes(devices, initial, initial).empty());
+  CHECK(drivers::apt_arguments(drivers::plan_changes(devices, initial, initial)).empty());
+
+  // NVIDIA driver: installed, the nouveau firmware is kept.
+  auto sel = initial;
+  sel[0] = 0;
+  auto c = drivers::plan_changes(devices, initial, sel);
+  CHECK_EQ(std::to_string(c.install.size()), "1");
+  CHECK_EQ(c.install[0], "nvidia-driver");
+  CHECK(c.remove.empty());
+
+  // Back to the recommended firmware for Wi-Fi: the DKMS driver goes.
+  sel = initial;
+  sel[1] = 0;
+  c = drivers::plan_changes(devices, initial, sel);
+  CHECK_EQ(c.install[0], "firmware-realtek");
+  CHECK_EQ(c.remove[0], "rtw89-dkms");
+
+  // "Do not use the device" removes everything, firmware included.
+  sel = initial;
+  sel[2] = drivers::kNoDriver;
+  sel[0] = 0;
+  sel[1] = 0;
+  c = drivers::plan_changes(devices, initial, sel);
+  std::string args;
+  for (auto &a : drivers::apt_arguments(c)) args += a + " ";
+  CHECK_EQ(args, "install -y nvidia-driver firmware-realtek rtw89-dkms- intel-microcode- ");
+
+  // Choosing an option that is installed already only removes the others.
+  sel = initial;
+  sel[0] = 0;
+  devices[0].options[0].installed = true;
+  initial = drivers::initial_selection(devices);
+  CHECK_EQ(std::to_string(initial[0]), "0");  // the driver wins over the firmware
+  sel = initial;
+  sel[0] = 1;
+  c = drivers::plan_changes(devices, initial, sel);
+  CHECK(c.install.empty());
+  CHECK_EQ(c.remove[0], "nvidia-driver");
 }
 
 int main(int argc, char **argv) {
@@ -284,6 +547,8 @@ int main(int argc, char **argv) {
   test_sources();
   test_reports();
   test_welcome();
+  test_live_session();
+  test_driver_choices();
   if (g_failures) fprintf(stderr, "%d check(s) failed\n", g_failures);
   else printf("sysreport: all checks passed\n");
   return g_failures ? 1 : 0;
