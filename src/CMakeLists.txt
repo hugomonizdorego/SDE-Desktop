@@ -164,6 +164,7 @@ add_executable(sde-view
   photo/window.cpp
   photo/canvas.cpp
   photo/panels.cpp
+  photo/drawing.cpp
   photo/clipboard.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
 install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

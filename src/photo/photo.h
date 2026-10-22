@@ -172,6 +172,7 @@ class Canvas : public Fl_Widget {
   bool hover_in_ = false;  // pointer over the image (eraser outline)
   int hover_x_ = 0, hover_y_ = 0;
   bool middle_pan_ = false;
+};
 
 // The panel on the right: photo information, or the editing tools.
 class SidePanel : public Fl_Group {
@@ -312,6 +313,7 @@ class PhotoWindow : public sde::BufferedWindow {
 
   // View.
   void toggle_fullscreen();
+  void slideshow_in_gallery();
   void toggle_panel(SidePanel::Mode m);
   bool panel_open() const;
   void toggle_filmstrip();
