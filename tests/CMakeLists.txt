@@ -116,3 +116,9 @@ endif()
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
 target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
 add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)
+
+# Action Center weather and Night Light models (offline JSON fixtures).
+add_executable(sde-weather-tests test_weather.cpp ../src/panel/weather.cpp ../src/panel/nightlight.cpp)
+target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(sde-weather-tests PRIVATE sde-common)
+add_test(NAME sde-weather-model COMMAND sde-weather-tests)

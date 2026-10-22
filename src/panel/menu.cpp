@@ -3,6 +3,7 @@
 
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
+#include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -144,6 +145,26 @@ void picture_glyph(Painter &p, double x, double y, double s, const Color &c) {
   cairo_line_to(cr, r, b - s * 0.1);
   stroke(p, c, std::max(1.1, s * 0.07));
   p.circle(x + s * 0.67, y + s * 0.36, s * 0.06, c);
+}
+
+// Gallery: two stacked photos.
+void gallery_glyph(Painter &p, double x, double y, double s, const Color &c) {
+  cairo_t *cr = p.cr();
+  double w = std::max(1.1, s * 0.07);
+  cairo_new_path(cr);
+  cairo_move_to(cr, x + s * 0.26, y + s * 0.2);
+  cairo_line_to(cr, x + s * 0.9, y + s * 0.2);
+  cairo_line_to(cr, x + s * 0.9, y + s * 0.66);
+  stroke(p, c, w);
+  cairo_new_path(cr);
+  cairo_rectangle(cr, x + s * 0.1, y + s * 0.32, s * 0.66, s * 0.5);
+  cairo_move_to(cr, x + s * 0.1, y + s * 0.76);
+  cairo_line_to(cr, x + s * 0.32, y + s * 0.54);
+  cairo_line_to(cr, x + s * 0.46, y + s * 0.68);
+  cairo_line_to(cr, x + s * 0.56, y + s * 0.6);
+  cairo_line_to(cr, x + s * 0.76, y + s * 0.78);
+  stroke(p, c, w);
+  p.circle(x + s * 0.58, y + s * 0.44, s * 0.05, c);
 }
 
 void person_glyph(Painter &p, double x, double y, double s, const Color &c) {
@@ -470,10 +491,15 @@ void AppMenu::layout_rail() {
     items_.push_back(it);
   };
   add(0, S(4), _("Start"));
+  // From the bottom: Power off, a small gap, then Settings, Gallery,
+  // Pictures, Documents and the account (read top to bottom: account,
+  // Documents, Pictures, Gallery, Settings ... Power off).
   int y = H - S(4) - bh;
+  add(5, y, _("Power off"));
+  y -= bh + S(10);
   const char *names[] = {nullptr, nullptr, N_("Documents"), N_("Pictures"), N_("Settings"),
-                         N_("Power")};
-  for (int i = 5; i >= 1; --i) {
+                         nullptr, N_("Gallery")};
+  for (int i : {4, 6, 3, 2, 1}) {
     add(i, y, i == 1 ? (full_name_.empty() ? std::string(_("Account")) : full_name_)
                      : std::string(_(names[i])));
     y -= bh;
@@ -775,12 +801,12 @@ void AppMenu::rail_action(int index) {
       redraw();
       return;
     case 1: {
+      // The user's name and their account page; locking and logging out
+      // live in the Action Center's footer.
       std::string name = menu_text(full_name_.empty() ? std::string(_("Account")) : full_name_);
       Fl_Menu_Item items[] = {
           {name.c_str(), 0, nullptr, nullptr, FL_MENU_INACTIVE | FL_MENU_DIVIDER, 0, 0, 0, 0},
-          {_("Account and system information"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-          {_("Lock"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-          {_("Log Out"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+          {_("Account and system information"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
           {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
       const Item *it = find({K_RAIL, 1, -1});
       menu_busy_ = true;
@@ -790,8 +816,6 @@ void AppMenu::rail_action(int index) {
       int i = int(m - items);
       close();
       if (i == 1) spawn_detached({"sde-settings", "--page", "about"});
-      else if (i == 2) spawn_detached({"sde-logout", "--action", "lock"});
-      else if (i == 3) spawn_detached({"sde-logout", "--action", "logout"});
       return;
     }
     case 2:
@@ -806,21 +830,22 @@ void AppMenu::rail_action(int index) {
       close();
       spawn_detached({"sde-settings"});
       return;
-    case 5: {
-      Fl_Menu_Item items[] = {{_("Sleep"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                              {_("Shut Down"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                              {_("Restart"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                              {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-      const Item *it = find({K_RAIL, 5, -1});
-      menu_busy_ = true;
-      const Fl_Menu_Item *m = items->popup(it ? it->x + it->w : 0, it ? it->y - S(60) : 0);
-      menu_busy_ = false;
-      if (!m) return;
-      static const char *const actions[] = {"suspend", "poweroff", "reboot"};
+    case 6:
       close();
-      spawn_detached({"sde-logout", "--action", actions[m - items]});
+      spawn_detached({"sde-gallery"});
       return;
-    }
+    case 5:
+      // The one session button of the menu: Power off, after a question
+      // (sleep, restart and log out are in the Action Center).
+      close();
+      Fl::add_timeout(0, [](void *) {
+        fl_message_title(_("Power off"));
+        int answer = fl_choice("%s", _("Cancel"), _("Power off"), nullptr,
+                               _("Shut down the computer now? Unsaved work in open "
+                                 "applications may be lost."));
+        if (answer == 1) spawn_detached({"sde-logout", "--action", "poweroff"});
+      });
+      return;
   }
 }
 
@@ -1765,7 +1790,12 @@ void AppMenu::draw() {
         case 2: document_glyph(p, gx, gy, g, t.text); break;
         case 3: picture_glyph(p, gx, gy, g, t.text); break;
         case 4: glyph::gear(p, gx, gy, g, t.text); break;
-        case 5: glyph::power(p, gx, gy, g, t.text); break;
+        case 5:
+          glyph::power(p, gx, gy, g, t.text);
+          // Apart from the places above it.
+          p.line(S(12), it.y - S(5) + 0.5, rail_w_ - S(12), it.y - S(5) + 0.5, t.border);
+          break;
+        case 6: gallery_glyph(p, gx, gy, g, t.text); break;
       }
     }
 
@@ -1941,7 +1971,8 @@ void AppMenu::qa_dump_menu() {
     line("@" + n, a.x, a.y, a.w, a.h, 1, 0);
     line("@" + n + "-scroll", *a.scroll, std::max(0, a.content - a.h), 0, 0, 1, 0);
   }
-  static const char *const rail[] = {"menu", "account", "documents", "pictures", "settings", "power"};
+  static const char *const rail[] = {"menu",     "account", "documents", "pictures",
+                                     "settings", "power",   "gallery"};
   for (auto &it : items_) {
     if (!it.visible) continue;
     int cx = it.x + it.w / 2, cy = it.y + it.h / 2;

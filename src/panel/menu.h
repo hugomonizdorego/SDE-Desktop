@@ -2,7 +2,9 @@
 // The SDE Start menu.
 //
 //  * Left rail: the menu button (expands the rail with labels) and, at the
-//    bottom, the account, Documents, Pictures, Settings and Power.
+//    bottom, the account, Documents, Pictures, Gallery, Settings and, apart,
+//    Power off (asks first; the other session actions are in the Action
+//    Center).
 //  * Middle: "Recently added" and "Most used" applications, then every
 //    application A-Z under letter headings (click a heading for the letter
 //    grid). A small category filter at the top narrows the list.
@@ -53,7 +55,7 @@ class AppMenu : public PanelPopup {
  private:
   enum Kind {
     K_NONE,
-    K_RAIL,        // index: 0 menu, 1 account, 2 documents, 3 pictures, 4 settings, 5 power
+    K_RAIL,        // index: 0 menu, 1 account, 2 documents, 3 pictures, 4 settings, 5 power off, 6 gallery
     K_FILTER,      // category filter of the list
     K_ROW,         // application in the list; group: 0 A-Z, 1 recently added, 2 most used
     K_LETTER,      // letter heading in the list

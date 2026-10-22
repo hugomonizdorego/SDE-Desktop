@@ -62,5 +62,47 @@ Sink Input #oops
       "LAN\nwlan0:wifi:disconnected:\nlo:loopback:connected:lo\nbroken\n");
   assert(n.size() == 2 && n[0].device == "eth0" && n[0].connection == "School: LAN" &&
          n[1].kind == "wifi");
-  std::cout << "Audio streams, escaped network fields and media matching passed\n";
+  // The Action Center's media card: the playing player (the most recently
+  // started one), else the most recently active paused one.
+  {
+    MediaPlayer music, video, browser;
+    music.service = "org.mpris.MediaPlayer2.music";
+    music.title = "Song";
+    music.status = "Paused";
+    music.active_ms = 500;
+    video.service = "org.mpris.MediaPlayer2.vlc";
+    video.title = "Holiday.mp4";
+    video.status = "Paused";
+    video.active_ms = 900;
+    browser.service = "org.mpris.MediaPlayer2.firefox.instance_1_23";
+    browser.status = "Stopped";
+    browser.active_ms = 2000;
+    if (choose_player({}) != -1) return 11;
+    if (choose_player({music, video, browser}) != 1) return 12;  // most recent paused
+    browser.status = "Playing";
+    browser.title = "A video - YouTube";
+    if (choose_player({music, video, browser}) != 2) return 13;  // playing wins
+    music.status = "Playing";
+    music.active_ms = 3000;
+    if (choose_player({music, video, browser}) != 0) return 14;  // most recently started
+    // A titled player beats an empty one of the same state.
+    MediaPlayer empty;
+    empty.status = "Paused";
+    empty.active_ms = 99999;
+    video.active_ms = 1;
+    if (choose_player({empty, video}) != 1) return 15;
+    // Position: moves while playing at the rate, clamped to the length.
+    MediaPlayer t;
+    t.status = "Playing";
+    t.position_us = 10000000;
+    t.position_ms = 1000;
+    t.length_us = 12000000;
+    if (t.position_now(2000) != 11000000 || t.position_now(9000) != 12000000) return 16;
+    t.status = "Paused";
+    if (t.position_now(9000) != 10000000) return 17;
+    if (format_media_time(187000000) != "3:07" || format_media_time(3723000000LL) != "1:02:03" ||
+        format_media_time(-5) != "0:00")
+      return 18;
+  }
+  std::cout << "Audio streams, escaped network fields, media matching and player choice passed\n";
 }
