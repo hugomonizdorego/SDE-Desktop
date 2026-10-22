@@ -7,25 +7,7 @@ window.background:not(.popup):not(.tooltip) { background-color: @sde_background;
 headerbar { background-color: @sde_titlebar; }
 window:backdrop headerbar { background-color: @sde_titlebar_inactive; }
 
-windowcontrols > button.minimize,
-windowcontrols > button.maximize,
-windowcontrols > button.close {
-  color: @sde_text;
-  background-color: transparent;
-  background-image: none;
-  border-radius: @RADIUS_SMALL@;
-  min-width: 34px;
-  min-height: 28px;
-  margin: 0;
-  padding: 0;
-  box-shadow: none;
-}
-windowcontrols > button > image { background: none; box-shadow: none; color: inherit; }
-windowcontrols > button:hover { background-color: alpha(@sde_text, 0.08); background-image: none; }
-windowcontrols > button:active { background-color: alpha(@sde_text, 0.14); background-image: none; }
-windowcontrols > button.close:hover { background-color: #C42B1C; color: #FFFFFF; }
-windowcontrols > button.close:active { background-color: #B0271A; color: #FFFFFF; }
-window:backdrop windowcontrols > button { color: @sde_text_dim; background-color: transparent; }
+/* Caption buttons: caption-gtk-4.0.css, shared by every SDE family. */
 
 entry, spinbutton:not(.vertical), dropdown > button, button.text-button { border-radius: @RADIUS_SMALL@; }
 popover > contents { border-radius: @RADIUS@; }
