@@ -732,9 +732,13 @@ def a52_checks():
         'status:keyboard':(['Keyboard Settings...'],'40-menu-keyboard'),
         'status:touchpad':(['Touchpad','Touchpad Settings...'],'40-menu-touchpad'),
     }
+    # Small screens: [panel] search=auto is an icon there.
+    search_name='search' if 'search' in layout('SDE Panel') else 'search-icon'
     for name,(want,png) in expected.items():
+        menu_id=name
+        if name=='search':name=search_name
         if name not in layout('SDE Panel'):print('A52 skip (not on the panel):',name,flush=True);continue
-        items=right_click_panel(name,name)
+        items=right_click_panel(name,menu_id)
         missing=[w for w in want if w not in labels(items)]
         assert not missing,(name,missing,items)
         assert 'About SDE' not in labels(items),(name,'generic panel menu',items)
@@ -792,7 +796,8 @@ def a52_checks():
     ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids[0].startswith('@menu:tray:'),ids
     print('A52 menu',ids[0][6:],':',', '.join(labels(menu_items())),flush=True);shot('43-menu-tray-dbusmenu');close_menu()
     # 2) Search: box, icon only, hidden (Super still searches), back.
-    items=right_click_panel('search','search');assert ('Show Search Box',True,True) in items,items
+    items=right_click_panel(search_name,'search')
+    assert ('Show Search Box' if search_name=='search' else 'Show Search Icon Only',True,True) in items,items
     pick(items,'Show Search Icon Only')
     waitfor(lambda:'search=icon' in conf() and 'search-icon' in layout('SDE Panel'),'search icon mode not applied')
     shot('44-search-icon');items=right_click_panel('search-icon','search');assert ('Show Search Icon Only',True,True) in items,items
@@ -806,10 +811,8 @@ def a52_checks():
     items=right_click_at(*empty_spot(),'panel')
     active=[i[0] for i in items if i[1]]
     run('xdotool','key',*(['Down']*(active.index('Search')+1)),'Right');time.sleep(.4);run('xdotool','key','Return');time.sleep(.5)
-    if 'search=box' not in conf():run('xdotool','key','Escape');set_back=True
-    else:set_back=False
-    if set_back:config(overflow=False,extra='[panel]\nsearch=box\n');reload()
-    waitfor(lambda:'search' in layout('SDE Panel'),'search box did not come back')
+    waitfor(lambda:'search=box' in conf(),"the panel menu's Search submenu did not bring the search box back")
+    waitfor(lambda:'search=box' in conf() and ('search' in layout('SDE Panel') or (W<1200 and 'search-icon' in layout('SDE Panel'))),'search box did not come back')
     shot('44-search-box')
     # 3) Notifications: badge, flyout grouped by application, dismiss, clear, DND.
     notify('QA Chat','Hello from Ada','Lunch at noon?');notify('QA Chat','Second message','See you there');notify('QA Mail','New mail','Quarterly report')
