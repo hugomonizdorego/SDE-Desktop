@@ -19,7 +19,7 @@ they are not duplicated inside SDE.
 | SDE Screen Lock | `sde-lock` (Settings > Lock Screen) | native SDE application (DebION Dev-Team, alpha16) |
 | Calculator | `calculator` | native SDE application (DebION Dev-Team, alpha50; replaced the GTK4 scientific-calculator frontend) |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
-| SDE Update | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model and Debian PackageKit |
+| Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit and Flatpak |
 
 These GTK forks retain their upstream C/C++ implementation. SDE's configuration,
 panel geometry, autostart and suite diagnostics use Rust; the shell and update
@@ -119,32 +119,46 @@ Select SDE at the login screen. Debug-symbol packages are optional and are not
 needed for normal installation. `dpkg -i` alone does not fetch missing libraries
 or system services; use `sudo apt --fix-broken install` to repair that state.
 
-## SDE Update
+## Software Updater
 
-SDE Update 2 is a native FLTK window with six pages, drawn with the SDE theme
-family (SDE, Aero and Liquid Glass, light and dark) at every UI scale:
+Software Updater (`sde-update`, called SDE Update before Alpha 51) is a native
+FLTK window in the style of a classic software updater, drawn with the active
+SDE theme (colors and radii follow the theme, also when it changes while the
+window is open) at every UI scale:
 
-- **Updates**: status header (up to date / N updates, security count, download
-  size, last refresh), Refresh and Install buttons, a reboot-required banner,
-  search, type filters and a list grouped into Security, Kernel, Software and
-  Backports with check boxes. The details pane shows versions, packages, origin
-  and the changelog (`apt-get changelog`, PackageKit `get-update-detail`, then
-  the installed changelog), loaded in the background with a time limit.
-- **History** from `/var/log/apt/history.log*`, **Sources** (read-only one-line
+- **Updater**: the question "Updated software is available for this computer.
+  Do you want to install it now?" (or "up to date" with the last check), a
+  collapsible **Details of updates** tree with the groups Critical, Security,
+  Main and Flatpak (tri-state check boxes, sizes, application names and icons
+  from the packages' desktop files), a collapsible **Technical description**
+  (versions, origin, size and the changelog from `apt-get changelog`,
+  PackageKit `get-update-detail`, then the installed changelog, loaded in the
+  background), the download size, and **Settings…**, **Remind Me Later** and
+  **Install Now**. Progress, the log and a **Restart Now** / **Later** notice
+  appear in the same window.
+- Critical: Priority required/important, the kernel, libc, systemd, D-Bus,
+  APT/dpkg, boot loader, firmware and microcode, urgency high/critical, and
+  anything that needs a restart. Security: the Debian security archive. Main:
+  everything else (backports included). Flatpak: `flatpak remote-ls --updates`
+  of the system and user installations (`data/update/flatpak.py`).
+- **Settings…** opens the other pages with a sidebar (Escape goes back):
+  **History** from `/var/log/apt/history.log*`, **Sources** (read-only one-line
   and deb822 entries, Software Sources when installed), **Maintenance** (refresh,
   clean cache, remove unused packages after review, repair, terminal update),
   **Settings** (`[update]` in sde.conf) and **About** with the mintupdate credits.
 
 The read-only Python APT provider (`data/update/check.py`, protocol
-`SDE-UPDATES 2`) uses the `Update` class adapted from Mint Update: candidates
+`SDE-UPDATES 2`, with optional priority, section, urgency and application
+fields since Alpha 51) uses the `Update` class adapted from Mint Update: candidates
 are grouped by source, held packages are excluded and counted, Debian backports
 get their own type. Mint repositories and Mint-only policies are not imported.
 
 Transactions run in `transaction.py`, which streams progress (status, percent,
 per-package items) to the window. It uses `pkcon` when PackageKit is running,
 so polkit authorizes and the user can cancel; otherwise, and for cache cleaning
-and autoremove, `apt-get` runs through `pkexec`. Names are validated and no
-options or repository URLs are accepted. `sde-update --notifier` (autostarted)
+and autoremove, `apt-get` runs through `pkexec`. Names and Flatpak references are
+validated and no options or repository URLs are accepted; checked Flatpak refs
+are updated with `flatpak update` as the user after the APT part. `sde-update --notifier` (autostarted)
 checks in the background and notifies; nothing is installed automatically.
 `--check`, `--history` and `--sources` print the helper protocols; `--plan`
 prints a transaction's argument vector without changing the system. Debian

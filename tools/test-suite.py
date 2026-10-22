@@ -60,7 +60,7 @@ for doc in ['COPYING','AUTHORS','copyright']:
     assert (caja_docs/doc).is_file() or (caja_docs/(doc+'.gz')).is_file(),doc
 assert (binary.parent/'share/liria/help/index.html').is_file()
 
-# SDE Update 2 streams PackageKit transactions through pkcon; without pkcon
+# Software Updater (sde-update) streams PackageKit transactions through pkcon; without pkcon
 # (PackageKit 1.4 ships only pkgcli) it uses APT through pkexec.
 if os.access('/usr/bin/pkcon',os.X_OK):
     plans=[('refresh',['/usr/bin/pkcon','-p','refresh','force']),('upgrade',['/usr/bin/pkcon','-p','-y','update'])]

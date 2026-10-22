@@ -187,7 +187,7 @@ def config(style=None, theme="light", scale=None, analog=False, top=False, compa
         scale = args.scale
     extra = "show_clock=false\nshow_media=false\nshow_tray=false\nmove_status=false\n" if compact else ""
     (home / ".config/sde/sde.conf").write_text(
-        f'[appearance]\ntheme={theme}\nscale={scale}\n{args.theme.encode().decode("unicode_escape")}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}'
+        f'[appearance]\ntheme={theme}\nscale={scale}\n{args.theme.encode().decode("unicode_escape")}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}\n[update]\n# No PackageKit/APT refresh from QA runs.\nauto_refresh=false\n'
     )
 
 
