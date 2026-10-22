@@ -1,0 +1,9 @@
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+udev /dev devtmpfs rw,nosuid,relatime,size=8031220k,nr_inodes=2007805,mode=755,inode64 0 0
+tmpfs /run tmpfs rw,nosuid,nodev,noexec,relatime,size=1611256k,mode=755,inode64 0 0
+/dev/nvme0n1p2 / ext4 rw,relatime,errors=remount-ro 0 0
+/dev/nvme0n1p1 /boot/efi vfat rw,relatime,fmask=0077,dmask=0077,codepage=437,iocharset=ascii,shortname=mixed,utf8,errors=remount-ro 0 0
+/dev/loop3 /snap/core22/1380 squashfs ro,nodev,relatime,errors=continue,threads=single 0 0
+/dev/nvme0n1p3 /home/user/My\040Files ext4 rw,relatime 0 0
+tmpfs /tmp tmpfs rw,nosuid,nodev,relatime,inode64 0 0
