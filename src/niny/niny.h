@@ -354,6 +354,7 @@ class MarkdownView : public Fl_Widget {
 class SettingsPage : public Fl_Group {
  public:
   SettingsPage(App *app, int x, int y, int w, int h);
+  ~SettingsPage() override;
   void draw() override;
   int handle(int event) override;
   void resize(int x, int y, int w, int h) override;
@@ -434,6 +435,7 @@ class FindBar : public Fl_Group {
  private:
   sde::DrawnButton *chip(const char *label, bool *flag);
   sde::DrawnButton *icon_button(icon::Kind kind, std::function<void()> fn, const char *tip);
+  std::vector<std::unique_ptr<std::function<void()>>> actions_;  // icon_button callbacks
   App *app_;
   Field *find_, *replace_;
   sde::DrawnButton *toggle_, *case_, *word_, *regex_, *prev_, *next_, *close_;

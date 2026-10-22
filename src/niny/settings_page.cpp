@@ -234,6 +234,10 @@ SettingsPage::SettingsPage(App *app, int x, int y, int w, int h) : Fl_Group(x, y
   build();
 }
 
+SettingsPage::~SettingsPage() {
+  for (Row *r : rows_) delete r;
+}
+
 void SettingsPage::rebuild() {
   build();
   relayout();
