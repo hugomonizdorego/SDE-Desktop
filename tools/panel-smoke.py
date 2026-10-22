@@ -420,7 +420,7 @@ def drive_checks():
     waitfor(lambda:commands('LIRIA --no-desktop /tmp/sde-qa-media/QA-STICK'),'Open did not show the files in Liria')
     mode('drive-busy');fl=click_panel('status:drives','^Drives$');time.sleep(.6)
     press('Drives','Eject QA-STICK');waitfor(lambda:log_has('UDISKS Unmount'),'Eject did not unmount')
-    waitfor(lambda:any('in use' in k for k in layout('Drives')),'busy drive without a message')
+    waitfor(lambda:any('in use' in k for k in layout('Drives')) and any('Close its files' in k for k in layout('Drives')),'busy drive without a message')
     waitfor(lambda:commands('FUSER -vm /tmp/sde-qa-media/QA-STICK'),'busy drive: fuser not asked')
     shot('10-drives-busy')
     mode('drive-free');press('Drives','Eject QA-STICK')

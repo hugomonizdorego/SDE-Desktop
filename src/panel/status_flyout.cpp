@@ -728,8 +728,17 @@ void StatusFlyout::drives_section(FlyBuilder &b) {
       if (d.parts.size() > 1) line = part + ": " + line;
       b.info(line);
     }
-    if (task != c.drive_tasks.end() && !task->second.text.empty())
-      b.info(task->second.text, task->second.state == "busy" || task->second.state == "error" ? 3 : 2);
+    if (task != c.drive_tasks.end() && !task->second.text.empty()) {
+      // One sentence per line, so "in use by ..." and the advice both show.
+      int style = task->second.state == "busy" || task->second.state == "error" ? 3 : 2;
+      std::string text = task->second.text;
+      size_t at;
+      while ((at = text.find(". ")) != std::string::npos) {
+        b.info(text.substr(0, at + 1), style);
+        text = text.substr(at + 2);
+      }
+      if (!trim(text).empty()) b.info(text, style);
+    }
     int bw = (b.inner - S(24) - gap) / 2;
     auto *open = new FlyButton(b.pad + S(12), b.y + S(4), bw, S(32), _("Open"), "Open " + label, [this, name] {
       close();
