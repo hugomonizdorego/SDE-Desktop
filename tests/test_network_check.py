@@ -63,6 +63,8 @@ class Base(unittest.TestCase):
             "DEBION_BACKUP_DIR": os.path.join(self.dir, "backups"),
             "DEBION_NM_CONNECTIONS": os.path.join(self.dir, "system-connections"),
             "DEBION_KEEP_FILE": os.path.join(self.dir, "keep-ifupdown"),
+            "DEBION_NM_RUN_CONF": os.path.join(self.dir, "run-nm"),
+            "DEBION_NET_TIMEOUT": "1",
             "DEBION_UUID": "11111111-2222-4333-8444-555555555555",
             "DEBION_UID": "1000",
         })
@@ -245,6 +247,13 @@ class Handover(Base):
                                  DEBIAN_INSTALLER)
         profiles = os.listdir(os.path.join(self.dir, "system-connections"))
         self.assertEqual(profiles, ["ifupdown-wlp2s0-Casa_Rede.nmconnection"])
+        # NetworkManager keeps away from them until the next boot (/run).
+        conf = read(os.path.join(self.dir, "run-nm", "90-debion-handover.conf"))
+        self.assertIn("\n[keyfile]\nunmanaged-devices+=interface-name:enp1s0;interface-name:enp9s0;"
+                      "interface-name:wlp2s0\n", conf)
+        self.assertIn("# backup: " + os.path.join(self.dir, "backups", backups[0]), conf)
+        self.assertIn("enp1s0 enp9s0 wlp2s0 move from ifupdown to NetworkManager at the next boot",
+                      self.run_check())
         # Running again changes nothing.
         self.assertEqual(self.run_check("--handover"), "")
 
@@ -254,9 +263,17 @@ class Handover(Base):
         self.assertEqual(self.run_check("--handover"), "")
         self.assertEqual(read(self.ifaces), DEBIAN_INSTALLER)
         os.unlink(os.path.join(self.dir, "keep-ifupdown"))
+        # Without NetworkManager nothing changes, and the status asks the
+        # package to try again once it is installed.
         self.env["DEBION_NM_BINARY"] = os.path.join(self.dir, "missing")
-        self.assertEqual(self.run_check("--handover"), "")
+        p = subprocess.run([SHELL, SCRIPT, "--handover"], env=self.env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 3)
         self.assertEqual(read(self.ifaces), DEBIAN_INSTALLER)
+
+    def test_handover_fixes_dangling_resolv_conf(self):
+        os.symlink("/nonexistent/stub-resolv.conf", os.path.join(self.dir, "resolv.conf"))
+        self.run_check("--handover")
+        self.assertEqual(self.run_check("--resolv-owner").strip(), "empty")
 
 
 class Parsers(Base):

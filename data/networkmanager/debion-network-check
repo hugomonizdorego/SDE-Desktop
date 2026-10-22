@@ -55,6 +55,7 @@ RESOLV=${DEBION_RESOLV_CONF:-/etc/resolv.conf}
 SYSNET=${DEBION_SYS_CLASS_NET:-/sys/class/net}
 NMCONN=${DEBION_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 BACKUPS=${DEBION_BACKUP_DIR:-/var/backups/debion-network}
+NM_RUN_CONF=${DEBION_NM_RUN_CONF:-/run/NetworkManager/conf.d}
 STATE_DIR=${DEBION_STATE_DIR:-/var/lib/debion-desktop-base}
 TEST_HOST=deb.debian.org
 TIMEOUT=${DEBION_NET_TIMEOUT:-5}
@@ -227,9 +228,7 @@ wifi_profiles() {
 # interfaces are taken down by ifupdown first (while the old configuration
 # is still there) and NetworkManager is restarted afterwards.
 handover() {
-    list=$1; now=$2
-    mkdir -p "$BACKUPS"
-    dest="$BACKUPS/$(stamp)"
+    list=$1; now=$2; dest=$3
     mkdir -p "$dest"
     if [ "$now" = 1 ] && have ifdown; then
         for n in $list; do ifdown --force "$n" >/dev/null 2>&1 || true; done
@@ -249,11 +248,17 @@ handover() {
     echo "Moved to NetworkManager: $list"
     echo "Backup: $dest"
     if [ "$now" = 1 ]; then
+        rm -f "$NM_RUN_CONF/90-debion-handover.conf"
         if have systemctl && [ -d /run/systemd/system ]; then
             systemctl restart NetworkManager.service 2>/dev/null || true
         fi
     fi
 }
+
+# Interfaces whose handover waits for the next boot (see --handover), and
+# the backup that still describes them for ifdown.
+pending_handover() { sed -n 's/^unmanaged-devices+=//p' "$NM_RUN_CONF/90-debion-handover.conf" 2>/dev/null | tr ';' '\n' | sed -n 's/^interface-name://p' | tr '\n' ' ' | sed 's/ $//'; }
+pending_backup() { sed -n 's/^# backup: //p' "$NM_RUN_CONF/90-debion-handover.conf" 2>/dev/null; }
 
 # ---------------------------------------------------------- DHCP clients
 
@@ -467,15 +472,34 @@ fi
 # working for the rest of the installation (and over SSH), and the next
 # boot brings the interfaces up with NetworkManager only, so that there is
 # never a second DHCP client. Opt out: /etc/debion/keep-ifupdown.
+# Exit status 3: NetworkManager is not installed yet (try again later).
 if [ "$MODE" = handover ]; then
     [ -e "${DEBION_KEEP_FILE:-/etc/debion/keep-ifupdown}" ] && exit 0
-    [ -x "${DEBION_NM_BINARY:-/usr/sbin/NetworkManager}" ] || exit 0
+    [ -x "${DEBION_NM_BINARY:-/usr/sbin/NetworkManager}" ] || exit 3
+    # A dangling /etc/resolv.conf (systemd-resolved removed) cannot work
+    # for anyone; an empty file is what NetworkManager writes into.
+    if [ "$(resolv_owner)" = dangling ]; then
+        mv "$RESOLV" "$RESOLV.debion-$(stamp)" && : > "$RESOLV" && chmod 644 "$RESOLV"
+        echo "debion-desktop-base: $RESOLV pointed nowhere; NetworkManager writes it now"
+    fi
     [ -f "$IFACES" ] || exit 0
     list=$(ifupdown_dhcp_ifaces | tr '\n' ' ')
     list=${list% }
     [ -n "$list" ] || exit 0
     echo "debion-desktop-base: handing $list from ifupdown to NetworkManager"
-    handover "$list" 0 | sed 's/^/  /'
+    # Until the next boot, ifupdown's DHCP client still owns the
+    # interfaces: keep NetworkManager away from them even if it is reloaded
+    # or restarted now, so that there are never two DHCP clients. /run is
+    # emptied at boot, and then NetworkManager alone manages them.
+    dest="$BACKUPS/$(stamp)"
+    if mkdir -p "$NM_RUN_CONF" 2>/dev/null; then
+        spec=""
+        for n in $list; do spec="${spec:+$spec;}interface-name:$n"; done
+        printf '%s\n' "# debion-desktop-base: ifupdown still runs these until the next boot." \
+            "# backup: $dest/$(printf '%s' "$IFACES" | tr / _)" \
+            "[keyfile]" "unmanaged-devices+=$spec" > "$NM_RUN_CONF/90-debion-handover.conf"
+    fi
+    handover "$list" 0 "$dest" | sed 's/^/  /'
     echo "  This takes effect at the next boot (no connection is dropped now)."
     echo "  Undo: restore the backup above; opt out: touch /etc/debion/keep-ifupdown"
     exit 0
@@ -561,6 +585,10 @@ if [ -n "$conflicts" ]; then
     more "Fix: sudo debion-network-check --fix   (backs the files up first)"
 else
     ok "no DHCP/Wi-Fi interfaces in /etc/network/interfaces compete with NetworkManager"
+fi
+pending=$(pending_handover)
+if [ -n "$pending" ]; then
+    info "$pending move from ifupdown to NetworkManager at the next boot (or: sudo debion-network-check --fix)"
 fi
 
 dup=""
@@ -806,8 +834,24 @@ if [ "$MODE" = fix ]; then
         # Over SSH the handover waits for the next boot unless --now.
         now=1
         if [ -n "${SSH_CONNECTION:-}" ] && [ "$NOW" != 1 ]; then now=0; fi
-        handover "$list" "$now"
+        handover "$list" "$now" "$BACKUPS/$(stamp)"
         [ "$now" = 0 ] && echo "Reboot to finish (or run again with --now; this drops the SSH connection)."
+        fixed=1
+    fi
+    pending=$(pending_handover)
+    if [ -n "$pending" ]; then
+        if [ -n "${SSH_CONNECTION:-}" ] && [ "$NOW" != 1 ]; then
+            echo "The handover of $pending finishes at the next boot (or run with --now)."
+        else
+            # ifdown needs the old configuration to release the leases.
+            old=$(pending_backup)
+            for n in $pending; do
+                if [ -f "$old" ] && have ifdown; then ifdown --force -i "$old" "$n" >/dev/null 2>&1 || true; fi
+            done
+            rm -f "$NM_RUN_CONF/90-debion-handover.conf"
+            if have systemctl && [ -d /run/systemd/system ]; then systemctl restart NetworkManager.service || true; fi
+            echo "NetworkManager now manages $pending."
+        fi
         fixed=1
     fi
     if [ -n "$dup" ] && have ifdown; then

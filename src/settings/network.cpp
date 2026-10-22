@@ -360,6 +360,23 @@ void build_network_diagnostics(Page *page) {
   } else {
     std::string text = verdict_text(g_diag.verdict);
     if (!text.empty()) page->note(text);
+    const NetworkVerdict &v = g_diag.verdict;
+    if (v.verdict == "proxy-required" && g_proxy.loaded && g_proxy.saved.mode == ProxySettings::NONE &&
+        (valid_pac_url(v.wpad_url) || !v.apt_proxy.empty()))
+      page->row(_("Use the proxy of this network for the desktop"), S(160), S(34),
+                [](int x, int y, int w, int h) {
+                  return button(x, y, w, h, _("Use Proxy"), true, [] {
+                    const NetworkVerdict &found = g_diag.verdict;
+                    if (valid_pac_url(found.wpad_url)) {
+                      g_proxy.choice = C_PAC;
+                      g_proxy.pac = found.wpad_url;
+                    } else {
+                      g_proxy.choice = C_MANUAL;
+                      g_proxy.address = found.apt_proxy;
+                    }
+                    apply_proxy();
+                  });
+                });
   }
   page->row(_("Network diagnostics"), S(120), S(34), [](int x, int y, int w, int h) {
     auto *b = button(x, y, w, h, _("Run"), false, [] { run_report(false); });
