@@ -526,6 +526,8 @@ void Panel::outside_pointer_press(unsigned long time) {
                   : alarms_ && alarms_->is_open() ? static_cast<PanelPopup *>(alarms_.get())
                   : status_flyout_ && status_flyout_->is_open()
                       ? static_cast<PanelPopup *>(status_flyout_.get())
+                  : notify_flyout_ && notify_flyout_->is_open()
+                      ? static_cast<PanelPopup *>(notify_flyout_.get())
                       : nullptr;
   if (!q || Fl::grab()) return;
   // XI2 arrives on a separate connection: the press of the click that opened
