@@ -154,9 +154,10 @@ target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
 add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
 
 # debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
-# --quick --json verdicts, against fixtures and stub commands.
+# --quick --json verdicts and the verified DNS repair (--fix, --dns-fallback)
+# against a simulated NetworkManager, with fixtures and stub commands.
 add_test(NAME debion-network-check COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_network_check.py)
-set_tests_properties(debion-network-check PROPERTIES TIMEOUT 120)
+set_tests_properties(debion-network-check PROPERTIES TIMEOUT 300)
 
 # Caption buttons and their migration, transparency contrast, icon theme
 # lookup (tests/fixtures/icon-themes) and the build history of Settings > About.
