@@ -227,10 +227,14 @@ class Card : public Fl_Group {
       bool hot = Fl::belowmouse() == this || (Fl::belowmouse() && Fl::belowmouse()->parent() == this);
       p.fill_rounded(x(), y(), w(), h(), S(8), hot ? t.hover : t.surface_alt);
       if (e_.urgency >= 2) p.fill_rounded(x() + S(2), y() + S(8), S(3), h() - S(16), Sd(1.5), t.error);
-      if (e_.unread) p.circle(x() + w() - pad - S(32), y() + pad + S(10), S(3), t.accent);
       cairo_surface_t *img = IconLoader::get(
           {e_.icon, lower(e_.app), "dialog-information", "preferences-desktop-notification"}, icon);
       p.image(img, x() + pad, y() + pad, icon);
+      // Not seen yet: a dot on the icon's corner.
+      if (e_.unread) {
+        p.circle(x() + pad + icon - Sd(1), y() + pad + Sd(1), Sd(4.5), hot ? t.hover : t.surface_alt);
+        p.circle(x() + pad + icon - Sd(1), y() + pad + Sd(1), Sd(3), t.accent);
+      }
     }
     std::string stamp = time_label(e_.time);
     text_font(std::max(S(9), t.font_size - 1));

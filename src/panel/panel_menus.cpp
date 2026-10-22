@@ -45,7 +45,7 @@ std::function<void()> settings(const std::string &page) {
 int menu_seq = 0;
 
 // <qa>/context-menu.txt: "@menu:<id>" then one "item:<label>" line per item
-// ("item:<submenu>/<label>" inside submenus), its active flag as the sixth
+// ("sub:<submenu>/<label>" inside submenus), its active flag as the sixth
 // field and ":on" for checked toggles and radios.
 void qa_menu(const std::string &id, const Fl_Menu_Item *items) {
   const char *dir = getenv("SDE_PANEL_QA_DIR");
@@ -58,7 +58,7 @@ void qa_menu(const std::string &id, const Fl_Menu_Item *items) {
           std::string label = m->text;
           label.erase(std::remove(label.begin(), label.end(), '\t'), label.end());
           bool on = (m->flags & (FL_MENU_TOGGLE | FL_MENU_RADIO)) && (m->flags & FL_MENU_VALUE);
-          text += "item:" + prefix + label + (on ? ":on" : "") + "\t0\t0\t0\t0\t" +
+          text += (prefix.empty() ? "item:" : "sub:" + prefix) + label + (on ? ":on" : "") + "\t0\t0\t0\t0\t" +
                   std::to_string(m->active() ? 1 : 0) + "\n";
           if (m->submenu()) walk(m + 1, prefix + label + "/");
         }
@@ -293,7 +293,7 @@ void Panel::task_menu(int index) {
   if (windows.size() > 1) {
     std::vector<Window> all;
     for (const auto &w : windows) all.push_back(w.first);
-    m.item(format(_("Close All %d Windows"), int(all.size())), [all] {
+    m.item(_("Close All Windows"), [all] {
       for (Window w : all) x11::close_window(w);
     });
   }

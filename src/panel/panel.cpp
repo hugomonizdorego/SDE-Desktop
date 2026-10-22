@@ -1578,6 +1578,13 @@ void Panel::qa_dump_panel() {
     if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
     text += line("status:" + name, status_x_ + int(i) * S(26), S(26));
   }
+  // StatusNotifier items on the panel (alpha52 right-click menus).
+  if (sni_ && sni_w_ > 0) {
+    auto items = sni_->visible_items();
+    for (size_t i = 0; i < items.size(); ++i)
+      text += line("tray-item:" + SniHost::display_name(*items[i]),
+                   sni_x_ + int(i) * (tray_icon_ + S(10)), tray_icon_ + S(10));
+  }
   // Taskbar buttons (alpha51 window previews).
   for (const auto &t : tasks_)
     if (t.w > 0)
