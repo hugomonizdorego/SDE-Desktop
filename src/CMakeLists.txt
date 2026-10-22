@@ -76,9 +76,13 @@ if(XCOMPOSITE_FOUND)
   target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
 endif()
 
-add_executable(sde-desktop desktop/main.cpp)
+# Desktop drag and drop model and file operations (unit tested).
+add_library(sde-desktop-model STATIC desktop/desktop_model.cpp desktop/file_ops.cpp)
+target_include_directories(sde-desktop-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/desktop)
+target_link_libraries(sde-desktop-model PUBLIC sde-common)
+add_executable(sde-desktop desktop/main.cpp desktop/xdnd.cpp)
 # WebP and other pixbuf wallpapers are decoded with the Gallery core.
-target_link_libraries(sde-desktop PRIVATE sde-gallery-core sde-common)
+target_link_libraries(sde-desktop PRIVATE sde-desktop-model sde-gallery-core sde-common)
 # Function names in crash backtraces.
 set_target_properties(sde-panel sde-desktop PROPERTIES ENABLE_EXPORTS ON)
 

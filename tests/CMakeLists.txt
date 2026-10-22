@@ -180,3 +180,8 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+
+# Desktop drag and drop: drop actions, URI lists, positions, file operations.
+add_executable(sde-desktop-tests test_desktop.cpp)
+target_link_libraries(sde-desktop-tests PRIVATE sde-desktop-model)
+add_test(NAME sde-desktop-model COMMAND sde-desktop-tests)
