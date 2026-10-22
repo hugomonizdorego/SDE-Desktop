@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# SDE Welcome at login. It exits at once when sde.conf [welcome] show=false
-# (the "Show this dialog at startup" switch in its sidebar).
+# SDE Welcome at login. It exits at once in the live session of the ISO, and
+# after the first login of each user when sde.conf [welcome] show=false (the
+# "Show this dialog at startup" check box). See docs/MINT-CONCEPTS.md.
 [Desktop Entry]
 Type=Application
 Name=SDE Welcome

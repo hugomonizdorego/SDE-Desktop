@@ -15,6 +15,7 @@
 // Nothing here touches FLTK, so the parsers are unit tested with fixtures.
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,10 @@ struct Recommendation {
   std::string reason;     // why it is recommended
   std::string component;  // Debian archive area: "main", "contrib", "non-free", "non-free-firmware"
   bool installed = false;
+  // The preferred choice for its device. False for alternatives such as
+  // firmware for nouveau next to nvidia-driver, or a DKMS driver that was
+  // installed by hand (since 0.1.0~alpha51).
+  bool recommended = true;
 };
 
 // File names from "firmware: failed to load X (-2)", "Direct firmware load
@@ -78,6 +83,110 @@ std::string enable_components(const std::string &text, bool deb822,
 // Merges recommendations by package (first device wins, reasons joined).
 std::vector<Recommendation> merge(const std::vector<Recommendation> &list);
 
+// ---- Devices and driver choices (Driver Manager window, 0.1.0~alpha51)
+//
+// The window shows one row per device with its driver packages as radio
+// choices plus "Do not use the device", like Linux Mint's Driver Manager.
+// Recommendations are grouped by device here; the selection model computes
+// what to install and remove. Display-free, unit tested.
+
+enum class DeviceKind { Graphics, Wifi, Bluetooth, Network, Audio, Processor, Other };
+
+// A PCI device of /sys/bus/pci/devices (or $SDE_PCI_SYSFS).
+struct PciDevice {
+  std::string slot;       // "0000:02:00.0"
+  std::string vendor_id;  // "10ec" (lower-case hex, no 0x)
+  std::string device_id;  // "b852"
+  std::string class_id;   // "028000"
+  std::string vendor;     // "Realtek Semiconductor Co., Ltd."
+  std::string model;      // "RTL8852BE PCIe 802.11ax Wireless Network Controller"
+  std::string driver;     // bound kernel driver, "" when none
+};
+// Network, Bluetooth and audio controllers below |sysfs| (default
+// $SDE_PCI_SYSFS or /sys/bus/pci/devices), named from pci.ids.
+std::vector<PciDevice> detect_pci_devices(const std::string &sysfs = "");
+// PCI class -> kind: 0280 Wi-Fi, 02xx network, 0d11 Bluetooth, 0403 audio,
+// 03xx graphics.
+DeviceKind pci_kind(const std::string &class_id);
+// The kind of device a recommendation is for (from its package and device text).
+DeviceKind device_kind(const Recommendation &r);
+
+// Hardware DKMS packages: "rtw89-dkms" -> "Realtek Wi-Fi". "" for packages
+// that are not drivers for a device (virtualbox-dkms, zfs-dkms ...) and for
+// nvidia's own DKMS modules (part of nvidia-driver).
+std::string dkms_device(const std::string &package);
+// Firmware and microcode packages: kept when the user switches to another
+// driver of the same device, since that driver usually needs them too.
+bool is_firmware_package(const std::string &package);
+// Free software (shown "open-source") or not ("proprietary"): main and
+// DKMS packages are free, non-free and non-free-firmware are not.
+bool is_free_driver(const std::string &package, const std::string &component);
+
+struct DriverOption {
+  std::string package;
+  std::string version;  // installed version, else the candidate; "" unknown
+  std::string summary;  // one line (apt's description, else the reason)
+  bool free_software = false;
+  bool recommended = false;
+  bool installed = false;
+};
+
+struct Device {
+  DeviceKind kind = DeviceKind::Other;
+  std::string name;                   // vendor and model
+  std::vector<DriverOption> options;  // recommended first
+};
+
+struct AptVersions {
+  std::string installed, candidate;  // "" for "(none)"
+};
+
+// Groups recommendations into devices. A recommendation goes to the PCI
+// device of the same kind and vendor when there is one (so it is named
+// "Realtek Semiconductor Co., Ltd.: RTL8852BE ..."); otherwise its device
+// text names it. |versions| and |summaries| come from apt (may be empty).
+std::vector<Device> group_devices(const std::vector<Recommendation> &recs,
+                                  const std::vector<PciDevice> &pci,
+                                  const std::map<std::string, AptVersions> &versions = {},
+                                  const std::map<std::string, std::string> &summaries = {});
+
+// The selection: per device the chosen option index, or kNoDriver for
+// "Do not use the device".
+constexpr int kNoDriver = -1;
+// What is installed now: the installed driver (a non-firmware package
+// first), else the installed firmware, else kNoDriver.
+std::vector<int> initial_selection(const std::vector<Device> &devices);
+
+enum class DeviceState { Recommended, Alternative, NoDriver };
+DeviceState device_state(const Device &d, int selected);
+
+struct Changes {
+  std::vector<std::string> install, remove;
+  bool empty() const { return install.empty() && remove.empty(); }
+};
+// Packages to install and remove to go from |initial| to |selection|. Only
+// devices whose choice changed count. The chosen package is installed and
+// the device's other installed packages are removed, except firmware, which
+// is kept unless the user chose "Do not use the device".
+Changes plan_changes(const std::vector<Device> &devices, const std::vector<int> &initial,
+                     const std::vector<int> &selection);
+// apt-get arguments: install -y A B C- (a trailing "-" removes a package in
+// the same transaction). Empty when nothing changes.
+std::vector<std::string> apt_arguments(const Changes &changes);
+// Installed proprietary packages (for "N proprietary drivers in use").
+int proprietary_in_use(const std::vector<Device> &devices);
+
+// "apt-cache policy A B" -> installed and candidate versions.
+std::map<std::string, AptVersions> parse_apt_policy(const std::string &output);
+// "apt-cache show --no-all-versions A B" -> package -> short description.
+std::map<std::string, std::string> parse_apt_summaries(const std::string &output);
+// One line of apt's status descriptor (APT::Status-Fd):
+// "dlstatus:1:12.5:Downloading x", "pmstatus:pkg:42.0:Installing pkg".
+// Returns false for other lines. Downloads are the first 30 %.
+bool parse_apt_status(const std::string &line, double *percent, std::string *text);
+// "model name : Intel(R) Core(TM) i5-8250U ..." of /proc/cpuinfo, or "".
+std::string cpu_model_name(const std::string &cpuinfo);
+
 // Everything above for this computer: reads /sys, the kernel log (journalctl
 // -k or dmesg), /proc/cpuinfo, runs nvidia-detect / isenkram-lookup when
 // installed and marks installed packages. Takes a second or two.
@@ -90,6 +199,7 @@ struct Scan {
   bool contrib_non_free = false;    // contrib and non-free enabled
   bool kernel_log_readable = true;  // false when dmesg/journal were refused
   bool isenkram = false;            // isenkram-lookup was used
+  std::vector<Device> devices;      // |items| grouped by device (alpha51)
 };
 Scan scan_system();
 
