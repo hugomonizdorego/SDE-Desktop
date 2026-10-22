@@ -220,6 +220,8 @@ Depends: ${misc:Depends},
          udisks2,
          debion-desktop-base (>= ${source:Version})
 Recommends: papirus-icon-theme,
+            qt5-gtk-platformtheme,
+            qt6-gtk-platformtheme,
             lightdm-gtk-greeter,
             firefox-esr | firefox,
             network-manager-gnome,

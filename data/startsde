@@ -12,6 +12,10 @@ export XDG_CURRENT_DESKTOP=SDE-Desktop:SDE
 export XDG_SESSION_DESKTOP=SDE-Desktop
 export DESKTOP_SESSION=sde-desktop
 export XDG_MENU_PREFIX="${XDG_MENU_PREFIX:-}"
+# Qt applications draw with the GTK theme's palette (the SDE theme, which
+# follows the theme and accent chosen in Settings) unless the user chose
+# another platform theme (qt5ct, ...).
+export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
 
 # Make sure the XDG base directories exist.
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
