@@ -311,6 +311,26 @@ class LiriaAlpha16Test(unittest.TestCase):
         for name in ('liria_home_view', 'liria_right_drag'):
             self.assertIn(name + '(staged)', recipe)
 
+    def test_sidebar_pinned_colour_icons_and_pathbar(self):
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        for name in ('liria_sidebar_pinned', 'liria_pathbar'):
+            self.assertIn(name + '(staged)', recipe)
+        helpers = self.redesign.SIDEBAR_PINNED_HELPERS
+        for needle in ('liria_sde_pins_load', 'SECTION_COMPUTER', 'liria_sde_ui_sidebar_collapsed',
+                       'liria_sde_ui_sidebar_toggle', 'view-pin-symbolic', 'g_file_monitor_file',
+                       'pan-end-symbolic'):
+            self.assertIn(needle, helpers)
+        for needle in ('_("Pinned")', '_("Drives")', 'liria_sde_pins_add ((const char * const *) uris, position)',
+                       'need_sliders = FALSE', 'liria_sde_ui_sidebar_icon_pixels ()'):
+            self.assertIn(needle, recipe)
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        # Full-colour theme icons in the sidebar, no symbolic-first lookup.
+        self.assertNotIn('liria_sde_ui_symbolic_icon', ui + recipe)
+        for needle in ('liria_sde_ui_sidebar_icon', 'gtk-xft-dpi', 'sde_location_area_pressed',
+                       'liria_navigation_window_pane_show_navigation_bar_temporarily',
+                       '"sidebar", "collapsed"'):
+            self.assertIn(needle, ui)
+
     def test_home_view_recipe_restores_view(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:

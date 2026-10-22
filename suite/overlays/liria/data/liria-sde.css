@@ -76,7 +76,7 @@
 
 /* ------------------------------------------- breadcrumb path and entry */
 
-.liria-navigation-window .sde-location-item > box {
+.liria-navigation-window .sde-location-item box.sde-location-row {
   min-height: 30px;
   padding: 0 2px;
   border: 1px solid alpha(@theme_fg_color, 0.14);
@@ -85,8 +85,8 @@
 }
 
 .liria-navigation-window .sde-location-item .liria-pathbar button,
-.liria-navigation-window .sde-location-item > box > button,
-.liria-navigation-window .sde-location-item > box > togglebutton {
+.liria-navigation-window .sde-location-item box.sde-location-row > button,
+.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton {
   min-height: 20px;
   padding: 2px 7px;
   margin: 2px 0;
@@ -99,8 +99,8 @@
 }
 
 .liria-navigation-window .sde-location-item .liria-pathbar button:hover,
-.liria-navigation-window .sde-location-item > box > button:hover,
-.liria-navigation-window .sde-location-item > box > togglebutton:hover {
+.liria-navigation-window .sde-location-item box.sde-location-row > button:hover,
+.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton:hover {
   background-color: alpha(@theme_fg_color, 0.08);
 }
 
@@ -110,7 +110,7 @@
   font-weight: bold;
 }
 
-.liria-navigation-window .sde-location-item > box > togglebutton:checked {
+.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton:checked {
   background-color: alpha(@theme_selected_bg_color, 0.20);
 }
 

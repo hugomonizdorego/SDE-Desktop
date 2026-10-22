@@ -31,7 +31,10 @@
 #include <libliria-private/liria-view-factory.h>
 
 #include "liria-sde-ui.h"
+#include "liria-sde-model.h"
+#include "liria-sde-pins.h"
 #include "liria-bookmark-list.h"
+#include "liria-location-bar.h"
 #include "liria-navigation-window.h"
 #include "liria-navigation-window-pane.h"
 #include "liria-side-pane.h"
@@ -67,10 +70,13 @@ sde_icon (const char *first, ...)
     return name != NULL ? name : last;
 }
 
-/* A themed icon with the -symbolic variant of each name first, so places
- * and drives use small monochrome icons that follow the text colour. */
+/* alpha52: places and drives use the icon theme's normal full-colour
+ * icons, like the folder view (the symbolic monochrome glyphs of alpha16
+ * clashed with coloured folders such as Papirus). A themed icon gets the
+ * full-colour name of each -symbolic name first; the symbolic ones stay
+ * as the last fallback. */
 GIcon *
-liria_sde_ui_symbolic_icon (GIcon *icon)
+liria_sde_ui_sidebar_icon (GIcon *icon)
 {
     const char * const *names;
     GPtrArray *list;
@@ -83,17 +89,63 @@ liria_sde_ui_symbolic_icon (GIcon *icon)
     list = g_ptr_array_new_with_free_func (g_free);
     for (i = 0; names != NULL && names[i] != NULL; i++)
     {
-        if (g_str_has_suffix (names[i], "-symbolic"))
-            g_ptr_array_add (list, g_strdup (names[i]));
+        char *name = g_str_has_suffix (names[i], "-symbolic")
+                     ? g_strndup (names[i], strlen (names[i]) - strlen ("-symbolic"))
+                     : g_strdup (names[i]);
+
+        if (!g_ptr_array_find_with_equal_func (list, name, g_str_equal, NULL))
+            g_ptr_array_add (list, name);
         else
-            g_ptr_array_add (list, g_strconcat (names[i], "-symbolic", NULL));
+            g_free (name);
     }
     for (i = 0; names != NULL && names[i] != NULL; i++)
-        g_ptr_array_add (list, g_strdup (names[i]));
+    {
+        if (g_str_has_suffix (names[i], "-symbolic"))
+            g_ptr_array_add (list, g_strdup (names[i]));
+    }
     g_ptr_array_add (list, NULL);
     result = g_themed_icon_new_from_names ((char **) list->pdata, -1);
     g_ptr_array_free (list, TRUE);
     return result;
+}
+
+/* Sidebar icons: 18 px at 100 %, scaled with SDE's interface scale
+ * (Xft/DPI); the sidebar renders them at exactly this size. */
+gint
+liria_sde_ui_sidebar_icon_pixels (void)
+{
+    GtkSettings *settings = gtk_settings_get_default ();
+    gint dpi = -1, pixels;
+
+    if (settings != NULL)
+        g_object_get (settings, "gtk-xft-dpi", &dpi, NULL);
+    pixels = dpi > 0 ? (gint) (18.0 * dpi / 1024.0 / 96.0 + 0.5) : 18;
+    return CLAMP (pixels, 16, 40);
+}
+
+/* Collapsed sidebar sections ([sidebar] collapsed in liria.conf), shared
+ * by every window of the process. */
+static char *sde_sidebar_collapsed_list = NULL;
+
+gboolean
+liria_sde_ui_sidebar_collapsed (const char *section)
+{
+    if (section == NULL)
+        return FALSE;
+    if (sde_sidebar_collapsed_list == NULL)
+        sde_sidebar_collapsed_list = liria_sde_prefs_get_string ("sidebar", "collapsed", "");
+    return liria_sde_flags_contain (sde_sidebar_collapsed_list, section);
+}
+
+void
+liria_sde_ui_sidebar_toggle (const char *section)
+{
+    gboolean collapse = !liria_sde_ui_sidebar_collapsed (section);
+    char *list = liria_sde_flags_with (sde_sidebar_collapsed_list, section, collapse);
+
+    g_free (sde_sidebar_collapsed_list);
+    sde_sidebar_collapsed_list = list;
+    liria_sde_prefs_set_string ("sidebar", "collapsed", list);
 }
 
 static GtkAction *
@@ -674,6 +726,30 @@ sde_toolbar_index (GtkWidget *toolbar, GtkUIManager *ui_manager, const char *pat
     return gtk_toolbar_get_item_index (GTK_TOOLBAR (toolbar), GTK_TOOL_ITEM (widget));
 }
 
+/* A click on the empty part of the path box (after the last folder)
+ * opens the location entry, as in other file managers; Escape, a
+ * location change or leaving the entry brings the breadcrumbs back. The
+ * event box lies below the buttons, so it only sees clicks between them. */
+static gboolean
+sde_location_area_pressed (GtkWidget *area, GdkEventButton *event, LiriaNavigationWindowPane *pane)
+{
+    if (event->type != GDK_BUTTON_PRESS || event->button != 1 ||
+        !liria_navigation_window_pane_path_bar_showing (pane))
+        return FALSE;
+    liria_window_set_active_pane (LIRIA_WINDOW_PANE (pane)->window, LIRIA_WINDOW_PANE (pane));
+    liria_navigation_window_pane_show_navigation_bar_temporarily (pane);
+    return TRUE;
+}
+
+static gboolean
+sde_location_entry_left (GtkWidget *entry, GdkEventFocus *event, LiriaNavigationWindowPane *pane)
+{
+    /* Only a temporary entry, never the "always use the entry" mode. */
+    if (pane->temporary_navigation_bar && gtk_widget_get_mapped (entry))
+        liria_navigation_window_pane_hide_temporary_bars (pane);
+    return FALSE;
+}
+
 /* The first pane's location row (path bar, edit toggle and search field)
  * moves into the header after the Parent button. */
 static void
@@ -681,11 +757,20 @@ sde_merge_location_row (GtkWidget *toolbar, GtkUIManager *ui_manager, LiriaNavig
 {
     GtkToolItem *item = gtk_tool_item_new ();
     GtkWidget *row = pane->location_bar;
+    GtkWidget *area = gtk_event_box_new ();
     gint index = sde_toolbar_index (toolbar, ui_manager, "/Toolbar/Up");
 
     g_object_ref (row);
     gtk_container_remove (GTK_CONTAINER (gtk_widget_get_parent (row)), row);
-    gtk_container_add (GTK_CONTAINER (item), row);
+    gtk_style_context_add_class (gtk_widget_get_style_context (row), "sde-location-row");
+    gtk_event_box_set_visible_window (GTK_EVENT_BOX (area), FALSE);
+    gtk_event_box_set_above_child (GTK_EVENT_BOX (area), FALSE);
+    gtk_container_add (GTK_CONTAINER (area), row);
+    gtk_container_add (GTK_CONTAINER (item), area);
+    gtk_widget_show (area);
+    g_signal_connect (area, "button-press-event", G_CALLBACK (sde_location_area_pressed), pane);
+    g_signal_connect (liria_location_bar_get_entry (LIRIA_LOCATION_BAR (pane->navigation_bar)), "focus-out-event",
+                      G_CALLBACK (sde_location_entry_left), pane);
     g_object_unref (row);
     gtk_container_set_border_width (GTK_CONTAINER (row), 0);
     gtk_box_set_spacing (GTK_BOX (row), 4);

@@ -96,8 +96,10 @@ def liria(staged):
     liria_home(staged)
     liria_sidebar(staged)
     liria_quick_access(staged)
+    liria_sidebar_pinned(staged)
     liria_home_view(staged)
     liria_right_drag(staged)
+    liria_pathbar(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
@@ -619,8 +621,9 @@ def liria_home(staged):
 def liria_sidebar(staged):
     """Sidebar sections read Favorites (Home and the personal folders),
     Devices (the file system and drives), Bookmarks and Network, with
-    16 px symbolic icons that follow the text colour (a GIcon column drawn
-    by the cell renderer instead of pre-rendered colour pixbufs)."""
+    icons of the theme drawn from a GIcon column by the cell renderer (since
+    alpha52 the full-colour icons at the scaled sidebar size, see
+    liria_sidebar_pinned)."""
     sidebar = staged / "src/liria-places-sidebar.c"
     edit(sidebar, '    last_iter = add_heading (sidebar, SECTION_COMPUTER,\n                             _("Computer"));',
          '    last_iter = add_heading (sidebar, SECTION_COMPUTER,\n                             _("Favorites"));')
@@ -655,7 +658,7 @@ def liria_sidebar(staged):
     if (surface != NULL)""", """                        PLACES_SIDEBAR_COLUMN_SECTION_TYPE, section_type,
                         -1);
     {
-        GIcon *symbolic = liria_sde_ui_symbolic_icon (icon);
+        GIcon *symbolic = liria_sde_ui_sidebar_icon (icon);
 
         gtk_list_store_set (sidebar->store, &iter, PLACES_SIDEBAR_COLUMN_GICON, symbolic, -1);
         if (symbolic != NULL)
@@ -663,16 +666,21 @@ def liria_sidebar(staged):
     }
 
     if (surface != NULL)""")
-    edit_once(sidebar, """    cell = gtk_cell_renderer_pixbuf_new ();
-    gtk_tree_view_column_pack_start (col, cell, FALSE);
-    gtk_tree_view_column_set_attributes (col, cell,
-                                         "surface", PLACES_SIDEBAR_COLUMN_ICON,
-                                         NULL);""", """    cell = gtk_cell_renderer_pixbuf_new ();
-    g_object_set (cell, "stock-size", GTK_ICON_SIZE_MENU, NULL);
-    gtk_tree_view_column_pack_start (col, cell, FALSE);
-    gtk_tree_view_column_set_attributes (col, cell,
-                                         "gicon", PLACES_SIDEBAR_COLUMN_GICON,
-                                         NULL);""")
+    # The row icon is rendered at exactly the sidebar size (themes such as
+    # Papirus lack some icons at 18 px and would make those rows taller).
+    edit_once(sidebar, """    icon_size = liria_get_icon_size_for_stock_size (GTK_ICON_SIZE_MENU);
+    icon_scale = gtk_widget_get_scale_factor (GTK_WIDGET (sidebar));
+    icon_info = liria_icon_info_lookup (icon, icon_size, icon_scale);
+""", """    icon_size = liria_sde_ui_sidebar_icon_pixels (); /* SDE */
+    icon_scale = gtk_widget_get_scale_factor (GTK_WIDGET (sidebar));
+    {
+        GIcon *colour = liria_sde_ui_sidebar_icon (icon);
+
+        icon_info = liria_icon_info_lookup (colour != NULL ? colour : icon, icon_size, icon_scale);
+        if (colour != NULL)
+            g_object_unref (colour);
+    }
+""")
     edit_once(sidebar, 'liria_icon_info_lookup_from_name ("media-eject", icon_size, icon_scale);',
               'liria_icon_info_lookup_from_name (gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), '
               '"media-eject-symbolic") ? "media-eject-symbolic" : "media-eject", icon_size, icon_scale);')
@@ -786,6 +794,408 @@ def liria_home_view(staged):
     gtk_box_set_child_packing (GTK_BOX (slot->content_box), slot->extra_location_frame,
                                FALSE, FALSE, 0, GTK_PACK_START);
 """)
+
+
+SIDEBAR_PINNED_HELPERS = r'''/* SDE (alpha52): the sidebar as in Windows 11. Home on its own, then
+ * "Pinned" (the Quick access pins, ~/.config/sde/liria-quick-access, in
+ * their order; a drop on the heading or between two pins pins folders),
+ * Bookmarks, "Drives" and Network. Headings collapse on click (stored in
+ * ~/.config/sde/liria.conf [sidebar] collapsed) and a pinned row shows a
+ * pin while the pointer is over it. Icons are the icon theme's normal
+ * full-colour icons, as in the folder view. */
+static const char *
+sde_section_name (SectionType section)
+{
+    switch (section)
+    {
+    case SECTION_COMPUTER:
+        return "pinned";
+    case SECTION_DEVICES:
+        return "drives";
+    case SECTION_BOOKMARKS:
+        return "bookmarks";
+    case SECTION_NETWORK:
+        return "network";
+    default:
+        return NULL;
+    }
+}
+
+static gboolean
+sde_row_visible (GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
+{
+    PlaceType type = PLACES_BUILT_IN;
+    SectionType section = SECTION_HOME;
+
+    gtk_tree_model_get (model, iter, PLACES_SIDEBAR_COLUMN_ROW_TYPE, &type,
+                        PLACES_SIDEBAR_COLUMN_SECTION_TYPE, &section, -1);
+    return type == PLACES_HEADING || !liria_sde_ui_sidebar_collapsed (sde_section_name (section));
+}
+
+static void
+sde_heading_arrow_func (GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeModel *model,
+                        GtkTreeIter *iter, gpointer data)
+{
+    PlaceType type = PLACES_BUILT_IN;
+    SectionType section = SECTION_HOME;
+
+    gtk_tree_model_get (model, iter, PLACES_SIDEBAR_COLUMN_ROW_TYPE, &type,
+                        PLACES_SIDEBAR_COLUMN_SECTION_TYPE, &section, -1);
+    g_object_set (cell, "visible", type == PLACES_HEADING,
+                  "icon-name", liria_sde_ui_sidebar_collapsed (sde_section_name (section))
+                               ? "pan-end-symbolic" : "pan-down-symbolic", NULL);
+}
+
+/* The pin of the pinned row under the pointer. */
+static void
+sde_pin_marker_func (GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeModel *model,
+                     GtkTreeIter *iter, gpointer data)
+{
+    LiriaPlacesSidebar *sidebar = data;
+    GtkTreePath *hover = g_object_get_data (G_OBJECT (sidebar), "sde-hover-path");
+    gboolean pinned = FALSE, show = FALSE;
+
+    gtk_tree_model_get (model, iter, PLACES_SIDEBAR_COLUMN_SDE_PINNED, &pinned, -1);
+    if (pinned && hover != NULL)
+    {
+        GtkTreePath *path = gtk_tree_model_get_path (model, iter);
+
+        show = gtk_tree_path_compare (path, hover) == 0;
+        gtk_tree_path_free (path);
+    }
+    /* Pinned rows keep the room, so the text does not move on hover. */
+    g_object_set (cell, "visible", pinned, "icon-name", show ? "view-pin-symbolic" : NULL, NULL);
+}
+
+static gboolean
+sde_sidebar_hover (GtkWidget *tree_view, GdkEventMotion *event, LiriaPlacesSidebar *sidebar)
+{
+    GtkTreePath *path = NULL;
+
+    if (event != NULL)
+        gtk_tree_view_get_path_at_pos (GTK_TREE_VIEW (tree_view), (int) event->x, (int) event->y,
+                                       &path, NULL, NULL, NULL);
+    g_object_set_data_full (G_OBJECT (sidebar), "sde-hover-path", path, (GDestroyNotify) gtk_tree_path_free);
+    gtk_widget_queue_draw (tree_view);
+    return FALSE;
+}
+
+static gboolean
+sde_sidebar_left (GtkWidget *tree_view, GdkEventCrossing *event, LiriaPlacesSidebar *sidebar)
+{
+    return sde_sidebar_hover (tree_view, NULL, sidebar);
+}
+
+/* A click on a heading collapses or expands its section. */
+static gboolean
+sde_heading_clicked (LiriaPlacesSidebar *sidebar, GdkEventButton *event)
+{
+    GtkTreePath *path = NULL;
+    GtkTreeIter iter;
+    PlaceType type = PLACES_BUILT_IN;
+    SectionType section = SECTION_HOME;
+
+    if (event->button != 1 ||
+        !gtk_tree_view_get_path_at_pos (sidebar->tree_view, (int) event->x, (int) event->y, &path, NULL, NULL, NULL))
+        return FALSE;
+    if (gtk_tree_model_get_iter (sidebar->filter_model, &iter, path))
+        gtk_tree_model_get (sidebar->filter_model, &iter, PLACES_SIDEBAR_COLUMN_ROW_TYPE, &type,
+                            PLACES_SIDEBAR_COLUMN_SECTION_TYPE, &section, -1);
+    gtk_tree_path_free (path);
+    if (type != PLACES_HEADING || sde_section_name (section) == NULL)
+        return FALSE;
+    liria_sde_ui_sidebar_toggle (sde_section_name (section));
+    gtk_tree_model_filter_refilter (GTK_TREE_MODEL_FILTER (sidebar->filter_model));
+    gtk_widget_queue_draw (GTK_WIDGET (sidebar->tree_view));
+    return TRUE;
+}
+
+static GIcon *
+sde_pin_icon (const char *uri)
+{
+    GFile *file;
+    char *path;
+    GIcon *icon = NULL;
+    int i;
+
+    if (g_str_has_prefix (uri, "trash:"))
+        return liria_trash_monitor_get_icon ();
+    file = g_file_new_for_uri (uri);
+    path = g_file_get_path (file);
+    if (path != NULL)
+    {
+        if (g_strcmp0 (path, g_get_home_dir ()) == 0)
+            icon = g_themed_icon_new (LIRIA_ICON_HOME);
+        for (i = 0; icon == NULL && i < G_USER_N_DIRECTORIES; i++)
+        {
+            if (g_strcmp0 (path, g_get_user_special_dir (i)) != 0)
+                continue;
+            icon = i == G_USER_DIRECTORY_DESKTOP ? g_themed_icon_new (LIRIA_ICON_DESKTOP)
+                                                 : liria_user_special_directory_get_gicon (i);
+        }
+        if (icon == NULL && g_file_test (path, G_FILE_TEST_EXISTS) && !g_file_test (path, G_FILE_TEST_IS_DIR))
+        {
+            char *type = g_content_type_guess (path, NULL, 0, NULL);
+
+            icon = g_content_type_get_icon (type);
+            g_free (type);
+        }
+    }
+    if (icon == NULL)
+        icon = g_themed_icon_new_with_default_fallbacks (g_file_is_native (file) ? LIRIA_ICON_FOLDER : "folder-remote");
+    g_free (path);
+    g_object_unref (file);
+    return icon;
+}
+
+static void
+sde_add_pinned_places (LiriaPlacesSidebar *sidebar, const char *location, const char *last_uri,
+                       GtkTreePath **select_path)
+{
+    GPtrArray *pins = liria_sde_pins_load ();
+    guint i;
+
+    for (i = 0; i < pins->len; i++)
+    {
+        LiriaSdePin *pin = pins->pdata[i];
+        gboolean trash = g_str_has_prefix (pin->uri, "trash:");
+        GFile *file = g_file_new_for_uri (pin->uri);
+        char *base = g_file_get_basename (file), *where = g_file_get_parse_name (file), *name;
+        GIcon *icon = sde_pin_icon (pin->uri);
+        GtkTreeIter iter;
+
+        if (pin->label != NULL)
+            name = g_strdup (pin->label);
+        else if (trash)
+            name = g_strdup (_("Trash"));
+        else if (base != NULL && g_strcmp0 (base, "/") != 0)
+            name = g_filename_display_name (base);
+        else
+            name = g_strdup (where);
+        iter = add_place (sidebar, PLACES_BUILT_IN, SECTION_COMPUTER, name, icon, pin->uri,
+                          NULL, NULL, NULL, (int) i, trash ? _("Open the trash") : where);
+        compare_for_selection (sidebar, location, pin->uri, last_uri, &iter, select_path);
+        g_object_unref (icon);
+        g_free (name);
+        g_free (where);
+        g_free (base);
+        g_object_unref (file);
+    }
+    g_ptr_array_unref (pins);
+}
+
+static gboolean
+sde_pins_reload (gpointer data)
+{
+    LiriaPlacesSidebar *sidebar = data;
+
+    g_object_set_data (G_OBJECT (sidebar), "sde-pins-reload", NULL);
+    if (sidebar->tree_view != NULL && sidebar->window != NULL)
+        update_places (sidebar);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+sde_pins_changed (LiriaPlacesSidebar *sidebar, GFile *file, GFile *other, GFileMonitorEvent event)
+{
+    if (event == G_FILE_MONITOR_EVENT_ATTRIBUTE_CHANGED ||
+        g_object_get_data (G_OBJECT (sidebar), "sde-pins-reload") != NULL)
+        return;
+    g_object_set_data (G_OBJECT (sidebar), "sde-pins-reload", GINT_TO_POINTER (1));
+    g_timeout_add_full (G_PRIORITY_DEFAULT, 100, sde_pins_reload, g_object_ref (sidebar), g_object_unref);
+}
+
+static void
+sde_watch_pins (LiriaPlacesSidebar *sidebar)
+{
+    char *path = g_build_filename (g_get_user_config_dir (), "sde", NULL);
+    GFile *file;
+    GFileMonitor *monitor;
+
+    g_mkdir_with_parents (path, 0700);
+    g_free (path);
+    path = liria_sde_pins_path ();
+    file = g_file_new_for_path (path);
+    monitor = g_file_monitor_file (file, G_FILE_MONITOR_NONE, NULL, NULL);
+    if (monitor != NULL)
+    {
+        g_signal_connect_object (monitor, "changed", G_CALLBACK (sde_pins_changed), sidebar, G_CONNECT_SWAPPED);
+        g_object_set_data_full (G_OBJECT (sidebar), "sde-pins-monitor", monitor, g_object_unref);
+    }
+    g_object_unref (file);
+    g_free (path);
+}
+
+static void
+update_places (LiriaPlacesSidebar *sidebar)
+'''
+
+
+def liria_sidebar_pinned(staged):
+    """alpha52: Windows 11 style sidebar: Home, Pinned (the Quick access
+    pins, droppable), Bookmarks, Drives, Network; collapsible headings; a
+    pin on the hovered pinned row; full-colour theme icons (see
+    SIDEBAR_PINNED_HELPERS)."""
+    sidebar = staged / "src/liria-places-sidebar.c"
+    edit_once(sidebar, "    SECTION_NETWORK,\n} SectionType;", "    SECTION_NETWORK,\n    SECTION_HOME, /* SDE */\n} SectionType;")
+    edit_once(sidebar, "    PLACES_SIDEBAR_COLUMN_GICON, /* SDE */\n",
+              "    PLACES_SIDEBAR_COLUMN_GICON, /* SDE */\n    PLACES_SIDEBAR_COLUMN_SDE_PINNED, /* SDE */\n")
+    edit_once(sidebar, "                                         G_TYPE_STRING,\n                                         G_TYPE_ICON);\n",
+              "                                         G_TYPE_STRING,\n                                         G_TYPE_ICON,\n"
+              "                                         G_TYPE_BOOLEAN);\n")
+    edit_once(sidebar, "\nstatic void\nupdate_places (LiriaPlacesSidebar *sidebar)\n",
+              "\nstatic void update_places (LiriaPlacesSidebar *sidebar);\n\n" + SIDEBAR_PINNED_HELPERS)
+    # A row of a collapsed section has no visible iter.
+    edit_once(sidebar, """    int res;
+
+    res = g_strcmp0 (added_uri, last_uri);
+""", """    int res;
+
+    if (iter->stamp == 0) /* SDE: hidden in a collapsed section */
+    {
+        return;
+    }
+    res = g_strcmp0 (added_uri, last_uri);
+""")
+    # Home, then the pins under "Pinned".
+    text = sidebar.read_text()
+    start = text.index("    /* COMPUTER */\n    last_iter = add_heading (sidebar, SECTION_COMPUTER,\n")
+    end = text.index("    /* file system root */\n", start)
+    sidebar.write_text(text[:start] + """    /* SDE: Home on its own, then the Quick access pins. */
+    mount_uri = liria_get_home_directory_uri ();
+    icon = g_themed_icon_new (LIRIA_ICON_HOME);
+    last_iter = add_place (sidebar, PLACES_BUILT_IN,
+                           SECTION_HOME,
+                           _("Home"), icon,
+                           mount_uri, NULL, NULL, NULL, 0,
+                           _("Open your personal folder"));
+    g_object_unref (icon);
+    compare_for_selection (sidebar,
+                           location, mount_uri, last_uri,
+                           &last_iter, &select_path);
+    g_free (mount_uri);
+
+    add_heading (sidebar, SECTION_COMPUTER, _("Pinned"));
+    sde_add_pinned_places (sidebar, location, last_uri, &select_path);
+
+""" + text[end:])
+    edit_once(sidebar, "    char *location, *mount_uri, *name, *desktop_path, *last_uri;\n    const gchar *path;\n",
+              "    char *location, *mount_uri, *name, *last_uri;\n")
+    edit_once(sidebar, "    GList *network_mounts;\n    GList *xdg_dirs;\n", "    GList *network_mounts;\n")
+    edit(sidebar, '            add_heading (sidebar, SECTION_DEVICES,\n                     _("Devices"));',
+         '            add_heading (sidebar, SECTION_DEVICES,\n                     _("Drives"));')
+    # Pinned rows are marked (the hover pin and drops between them).
+    edit_once(sidebar, "        gtk_list_store_set (sidebar->store, &iter, PLACES_SIDEBAR_COLUMN_GICON, symbolic, -1);\n",
+              "        gtk_list_store_set (sidebar->store, &iter, PLACES_SIDEBAR_COLUMN_GICON, symbolic,\n"
+              "                            PLACES_SIDEBAR_COLUMN_SDE_PINNED, section_type == SECTION_COMPUTER, -1);\n")
+    # Drops: on the Pinned heading or between two pins they pin folders.
+    edit_once(sidebar, """    if (place_type == PLACES_HEADING &&
+        section_type != SECTION_BOOKMARKS &&
+        section_type != SECTION_NETWORK) {""", """    if (place_type == PLACES_HEADING &&
+        section_type != SECTION_BOOKMARKS &&
+        section_type != SECTION_NETWORK &&
+        section_type != SECTION_COMPUTER) {""")
+    edit_once(sidebar, """    if (place_type == PLACES_HEADING && section_type == SECTION_BOOKMARKS) {
+        *pos = GTK_TREE_VIEW_DROP_AFTER;""", """    if (place_type == PLACES_HEADING && (section_type == SECTION_BOOKMARKS || section_type == SECTION_COMPUTER)) {
+        *pos = GTK_TREE_VIEW_DROP_AFTER;
+    } else if (section_type == SECTION_COMPUTER &&
+               (*pos == GTK_TREE_VIEW_DROP_BEFORE || *pos == GTK_TREE_VIEW_DROP_AFTER)) {
+        /* SDE: the edge of a pinned row: a new pin goes there */""")
+    edit_once(sidebar, """        if (section_type != SECTION_BOOKMARKS &&
+            !(section_type == SECTION_NETWORK && place_type == PLACES_HEADING)) {
+            goto out;
+        }
+""", """        if (section_type == SECTION_COMPUTER)
+        {
+            /* SDE: pin the dropped folders at that place. */
+            char **uris = info == TEXT_URI_LIST ? gtk_selection_data_get_uris (selection_data) : NULL;
+
+            if (place_type == PLACES_HEADING)
+                position = 0;
+            else if (tree_pos == GTK_TREE_VIEW_DROP_AFTER)
+                position++;
+            success = uris != NULL && liria_sde_pins_add ((const char * const *) uris, position);
+            g_strfreev (uris);
+            goto out;
+        }
+        if (section_type != SECTION_BOOKMARKS &&
+            !(section_type == SECTION_NETWORK && place_type == PLACES_HEADING)) {
+            goto out;
+        }
+""")
+    # Headings: an arrow, a click collapses; the pin of the hovered row.
+    edit_once(sidebar, """    gtk_tree_view_column_set_cell_data_func (col, cell,
+                         heading_cell_renderer_func,
+                         sidebar, NULL);
+""", """    gtk_tree_view_column_set_cell_data_func (col, cell,
+                         heading_cell_renderer_func,
+                         sidebar, NULL);
+
+    /* SDE: the collapse arrow after the heading */
+    cell = gtk_cell_renderer_pixbuf_new ();
+    g_object_set (cell, "stock-size", GTK_ICON_SIZE_MENU, "xpad", 4, NULL);
+    gtk_tree_view_column_pack_start (col, cell, FALSE);
+    gtk_tree_view_column_set_cell_data_func (col, cell, sde_heading_arrow_func, sidebar, NULL);
+""")
+    edit_once(sidebar, """    g_signal_connect (cell, "editing-canceled",
+                      G_CALLBACK (bookmarks_editing_canceled), sidebar);
+""", """    g_signal_connect (cell, "editing-canceled",
+                      G_CALLBACK (bookmarks_editing_canceled), sidebar);
+
+    /* SDE: a pin on the pinned row under the pointer */
+    cell = gtk_cell_renderer_pixbuf_new ();
+    g_object_set (cell, "stock-size", GTK_ICON_SIZE_MENU, "xpad", 4, "xalign", 1.0,
+                  "width", 16 + 2 * 4, NULL);
+    gtk_tree_view_column_pack_end (col, cell, FALSE);
+    gtk_tree_view_column_set_cell_data_func (col, cell, sde_pin_marker_func, sidebar, NULL);
+""")
+    edit_once(sidebar, """    sidebar->filter_model = liria_shortcuts_model_filter_new (sidebar,
+                            GTK_TREE_MODEL (sidebar->store),
+                            NULL);
+""", """    sidebar->filter_model = liria_shortcuts_model_filter_new (sidebar,
+                            GTK_TREE_MODEL (sidebar->store),
+                            NULL);
+    gtk_tree_model_filter_set_visible_func (GTK_TREE_MODEL_FILTER (sidebar->filter_model),
+                                            sde_row_visible, sidebar, NULL);
+""")
+    edit_once(sidebar, """    g_signal_connect (tree_view, "motion-notify-event",
+                      G_CALLBACK (bookmarks_motion_event_cb), sidebar);
+""", """    g_signal_connect (tree_view, "motion-notify-event",
+                      G_CALLBACK (bookmarks_motion_event_cb), sidebar);
+    g_signal_connect (tree_view, "motion-notify-event",
+                      G_CALLBACK (sde_sidebar_hover), sidebar);
+    g_signal_connect (tree_view, "leave-notify-event",
+                      G_CALLBACK (sde_sidebar_left), sidebar);
+    sde_watch_pins (sidebar);
+""")
+    edit_once(sidebar, """    if (event->type != GDK_BUTTON_PRESS)
+    {
+        /* ignore multiple clicks */
+        return TRUE;
+    }
+
+    if (event->button == 2)""", """    if (event->type != GDK_BUTTON_PRESS)
+    {
+        /* ignore multiple clicks */
+        return TRUE;
+    }
+
+    if (sde_heading_clicked (sidebar, event))
+    {
+        return TRUE;
+    }
+
+    if (event->button == 2)""")
+
+
+def liria_pathbar(staged):
+    """alpha52: the path bar's scroll arrows were always shown, even when
+    every folder fitted, and then did nothing (Caja computed need_sliders
+    as TRUE before measuring); they now appear only when the path is too
+    long. A click on the empty part of the path opens the location entry
+    (liria-sde-ui.c)."""
+    edit_once(staged / "src/liria-pathbar.c", "    need_sliders = TRUE;\n    up_slider_offset = 0;\n",
+              "    need_sliders = FALSE; /* SDE: only when the buttons do not fit */\n    up_slider_offset = 0;\n")
 
 
 def liria_right_drag(staged):
