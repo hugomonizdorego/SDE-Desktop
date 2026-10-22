@@ -220,7 +220,7 @@ static void test_theme_migration() {
   CHECK(cfg.get("appearance", "style") == "fluent");
   CHECK(cfg.get("appearance", "theme") == "dark");
   CHECK(cfg.get("appearance", "accent_name") == "purple");
-  CHECK(cfg.get("appearance", "accent") == "#962AC3");
+  CHECK(cfg.get("appearance", "accent") == theme_accent_color("fluent", "purple", false).to_hex());
   CHECK(theme_dir(cfg) == "SDE-Fluent-Dark-Purple");
   CHECK(!migrate_theme_config(cfg));
   cfg.set("appearance", "style", "liquid-glass");
@@ -351,7 +351,7 @@ static void test_gtk_preferences() {
   double glass_frame = frame_opacity();
   CHECK(glass_frame > 0.6 && glass_frame < 0.95);
   CHECK(text.find("blur-background = true;") != std::string::npos);
-  CHECK(text.find("corner-radius = 16;") != std::string::npos);
+  CHECK(text.find("corner-radius = 12;") != std::string::npos);  // Glass: the softest corners (alpha51)
   // Fluent: lightly translucent frames, Acrylic (translucent, blurred) menus, 8 px corners.
   cfg.set("appearance", "style", "fluent");
   CHECK(read_file(write_compositor_config(cfg), text));
@@ -359,6 +359,12 @@ static void test_gtk_preferences() {
   CHECK(text.find("blur-background = true;") != std::string::npos);
   CHECK(text.find("corner-radius = 8;") != std::string::npos);
   CHECK(text.find("popup_menu = { opacity = 1.00") == std::string::npos);
+  // The lite profile keeps soft corners since alpha51 (only blur and fades go).
+  cfg.set("compositor", "effects", "lite");
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("corner-radius = 8;") != std::string::npos);
+  CHECK(text.find("blur-background") == std::string::npos);
+  cfg.set("compositor", "effects", "full");
   cfg.set("aero", "enabled", "false");
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);

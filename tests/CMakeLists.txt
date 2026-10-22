@@ -164,5 +164,5 @@ add_executable(sde-theme-tests test_theme.cpp)
 target_link_libraries(sde-theme-tests PRIVATE sde-settings-model sde-common)
 target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
-add_dependencies(sde-theme-tests sde-build-info)
+add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)

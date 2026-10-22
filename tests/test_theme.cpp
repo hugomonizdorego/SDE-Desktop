@@ -3,10 +3,14 @@
 // of saved SDE WM layouts, the transparency model (contrast at the highest
 // transparency of every family, mode and accent), icon theme lookup with
 // inheritance (tests/fixtures/icon-themes) and the build history parser.
+// Alpha51: calm palettes (low-chroma neutrals, muted accents, readable
+// text), soft corner radius tokens that follow the UI scale, Mint-Y like
+// caption colors and the SDE WM caption masks and hit area.
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -186,6 +190,112 @@ static void test_icon_lookup() {
   CHECK(IconLoader::theme() == "Papirus");
 }
 
+// HSV saturation and chroma of a color (0-1).
+static double chroma(const Color &c) {
+  return std::max({c.r, c.g, c.b}) - std::min({c.r, c.g, c.b});
+}
+static double saturation(const Color &c) {
+  double mx = std::max({c.r, c.g, c.b});
+  return mx > 0 ? chroma(c) / mx : 0;
+}
+
+static Theme theme_at(const std::string &family, const char *mode, const std::string &accent, int scale) {
+  Config cfg;
+  cfg.set("appearance", "style", family);
+  cfg.set("appearance", "theme", mode);
+  cfg.set("appearance", "accent_name", accent);
+  cfg.set("appearance", "scale", std::to_string(scale));
+  return Theme::from_config(cfg);
+}
+
+// Alpha51: calm, natural palettes with soft corners in every family.
+static void test_soft_palettes() {
+  for (const auto &fam : theme_families())
+    for (const char *mode : {"light", "dark"})
+      for (const auto &accent : theme_accents()) {
+        Theme t = theme_at(fam.id, mode, accent, 100);
+        std::string what = fam.id + " " + mode + " " + accent;
+        bool ok = true;
+        auto need = [&](const char *name, bool cond) {
+          if (!cond) fprintf(stderr, "  %s: %s\n", what.c_str(), name);
+          ok = ok && cond;
+        };
+        // Neutral surfaces: grays with at most a faint warm or cool tint.
+        for (const Color *c : {&t.background, &t.surface, &t.surface_alt, &t.hover, &t.border, &t.menu_bg,
+                               &t.panel_bg, &t.titlebar_bg, &t.text, &t.text_dim})
+          need("neutral surface", chroma(*c) <= 0.05);
+        // Accents: muted, no neon (a gray accent is fine).
+        need("muted accent", chroma(t.accent) <= 0.55 && saturation(t.accent) <= 0.72);
+        // Readable text everywhere (WCAG AA), including dimmed text on sidebars.
+        need("text", t.text.contrast(t.background) >= 7 && t.text.contrast(t.surface) >= 7);
+        need("dim text", t.text_dim.contrast(t.surface_alt) >= 4.5 && t.text_dim.contrast(t.menu_bg) >= 4.5 &&
+                             t.text_dim.contrast(t.panel_bg) >= 4.5);
+        need("title", t.titlebar_text.contrast(t.titlebar_bg) >= 7);
+        need("menu highlight", t.menu_hover_text.contrast(t.menu_hover) >= 4.5);
+        need("status", t.error.contrast(t.surface) >= 3 && t.success.contrast(t.surface) >= 3 &&
+                           t.warning.contrast(t.surface) >= 3);
+        // Soft corners: small for controls, medium for windows and menus,
+        // large for big surfaces; never square.
+        need("radii", t.radius_small >= 5 && t.radius_small < t.radius && t.radius >= 8 && t.radius <= 12 &&
+                          t.radius_large >= 12 && t.radius_large <= 16 && t.radius <= t.radius_large);
+        need("radius_for", t.radius_for(8) == 4 && t.radius_for(40) == t.radius_small);
+        // Caption buttons: a clear glyph, a soft but visible disc, a close
+        // red that keeps its white cross readable; no traffic lights.
+        need("caption glyph", t.caption_glyph.contrast(t.titlebar_bg) >= 4.5);
+        double disc = t.caption_disc.contrast(t.titlebar_bg);
+        need("caption disc", disc >= 1.6 && disc <= 3.6);
+        need("caption close", t.caption_close.contrast(Color::hex(0xFFFFFF)) >= 3.0 &&
+                                  chroma(t.caption_close) <= 0.55);
+        need("caption press", t.caption_press.contrast(t.titlebar_bg) > disc);
+        CHECK(ok);
+        // Radii follow the interface scale.
+        Theme big = theme_at(fam.id, mode, accent, 150);
+        CHECK(big.radius == int(std::lround(t.radius * 1.5)) &&
+              big.radius_small == int(std::lround(t.radius_small * 1.5)) &&
+              big.radius_large == int(std::lround(t.radius_large * 1.5)));
+        set_ui_scale(1.0);
+      }
+  // Accents of earlier palettes (alpha16 to alpha50) move to the new ones.
+  Config cfg;
+  cfg.set("appearance", "style", "graphite");
+  cfg.set("appearance", "accent", "#3684DD");
+  cfg.set("appearance", "accent_name", "blue");
+  CHECK(migrate_theme_config(cfg));
+  CHECK(cfg.get("appearance", "accent", "") == theme_accent_color("graphite", "blue", false).to_hex());
+  ThemeChoice c = map_theme_choice("fluent", "dark", "#2777FF", "");
+  CHECK(c.accent == "blue" && c.custom_accent.empty());
+}
+
+// The SDE WM themes built next to the tests (build/themes): Mint-Y like
+// caption buttons with a hit area of at least 28 px at 100 %.
+static void test_caption_frames() {
+  std::string dir = std::string(SDE_TEST_BINARY_DIR) + "/themes/SDE-Graphite-Light-Blue/openbox-3/";
+  std::string rc, xbm;
+  if (!read_file(dir + "themerc", rc)) {
+    fprintf(stderr, "  note: %s not built, skipping the frame checks\n", dir.c_str());
+    return;
+  }
+  auto value = [&](const std::string &key) {
+    size_t at = rc.find("\n" + key + ": ");
+    return at == std::string::npos ? std::string() : rc.substr(at + key.size() + 3, rc.find('\n', at + 1) - at - key.size() - 3);
+  };
+  int width = atoi(value("window.button.width.percent").c_str());
+  int height = atoi(value("window.button.height.percent").c_str());
+  int pad = atoi(value("padding.height").c_str());
+  // The title is at least a 15 px label (10 pt bold) plus the padding.
+  int title = 15 + 2 * pad;
+  CHECK(title * width / 100 >= 28 && title * height / 100 >= 28);
+  CHECK(value("window.active.button.hover.bg") == "parentrelative");  // no square hover layer
+  CHECK(value("window.active.button.close.hover.bg") == "parentrelative");
+  CHECK(!value("window.active.button.close.unpressed.image.color").empty());
+  CHECK(rc.find("gradient") == std::string::npos);
+  for (const char *mask : {"close", "close_hover", "iconify", "iconify_hover", "max", "max_hover", "max_toggled",
+                           "max_hover_toggled"}) {
+    CHECK(read_file(dir + mask + ".xbm", xbm));
+    CHECK(xbm.find("_width 18") != std::string::npos && xbm.find("_height 18") != std::string::npos);
+  }
+}
+
 static void test_build_history() {
   BuildHistory h;
   std::string json =
@@ -217,6 +327,8 @@ int main() {
   g_tmp = mkdtemp(tmpl);
   test_caption_layout();
   test_transparency_contrast();
+  test_soft_palettes();
+  test_caption_frames();
   test_icon_lookup();
   test_build_history();
   std::string cmd = "rm -rf '" + g_tmp + "'";
