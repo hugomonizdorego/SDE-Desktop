@@ -190,7 +190,8 @@ print(x.XGrabKeyboard(d, x.XDefaultRootWindow(d), 0, 1, 1, 0))
         daemon.wait()
         holder = sp.Popen([sys.executable, '-c', GRAB_HOLD], env=env, stdout=sp.PIPE, text=True)
         assert holder.stdout.readline().strip() == '0', 'test grab failed'
-        daemon = sp.Popen([str(lock), '--daemon'], env=env)
+        daemon_log = Path(temp, 'daemon.log')
+        daemon = sp.Popen([str(lock), '--daemon'], env=env, stderr=open(daemon_log, 'w'))
         for _ in range(100):
             if dbus(env, 'GetActive').returncode == 0:
                 break
@@ -207,7 +208,28 @@ print(x.XGrabKeyboard(d, x.XDefaultRootWindow(d), 0, 1, 1, 0))
             time.sleep(0.1)
         assert probe.stdout.strip() == '1', 'the lock screen did not take the released keyboard'
         assert query(env) == 'locked'
-        print('sde-lock daemon: inhibitors, lock, crash and hang watchdog, busy keyboard passed.')
+
+        # A lock screen that keeps dying before it shows its password field
+        # (a crash in it, a broken install): the daemon shows its own rescue
+        # password prompt instead of a black, grabbed screen.
+        seen = set()
+        end = time.time() + 6
+        while time.time() < end:
+            for c in children(daemon.pid):
+                if c not in seen:
+                    seen.add(c)
+                    os.kill(c, 9)
+            if 'rescue password prompt' in daemon_log.read_text():
+                break
+            time.sleep(0.02)
+        assert 'rescue password prompt' in daemon_log.read_text(), daemon_log.read_text()
+        assert query(env) == 'locked'
+        time.sleep(0.3)
+        probe = sp.run([sys.executable, '-c', GRAB_PROBE], env=env, capture_output=True, text=True)
+        assert probe.stdout.strip() == '1', 'keyboard free while the rescue prompt is shown'
+        if shots and shutil.which('import'):
+            sp.run(['import', '-window', 'root', str(Path(shots) / 'daemon-rescue.png')], env=env)
+        print('sde-lock daemon: inhibitors, lock, crash and hang watchdog, busy keyboard, rescue prompt passed.')
     finally:
         if daemon:
             for c in children(daemon.pid):

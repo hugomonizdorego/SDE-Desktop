@@ -263,6 +263,21 @@ with tempfile.TemporaryDirectory(prefix='sde-lock-input-') as temp:
         shot(env, 'input-3-two-monitors.png')
         unlock_by_typing(env, ui, r, click=enter_button((640, 0, 640, 800)))
         print('3./4. monitor changes and resume: windows follow, click and typing unlock')
+
+        # 5. The daemon's rescue password prompt (shown when the lock screen
+        # process keeps failing): a plain field that takes the password.
+        ui, r = start_ui(env, '--rescue')
+        got = read_reports(r, b'L', timeout=8)
+        assert b'L' in got, got
+        assert not keyboard_free(env), 'keyboard not grabbed on the rescue prompt'
+        sp.run([xdotool, 'type', '--delay', '25', 'wrong'], env=env, check=True)
+        sp.run([xdotool, 'key', 'Return'], env=env, check=True)
+        time.sleep(0.6)
+        shot(env, 'input-5-rescue-prompt.png')
+        assert ui.poll() is None, 'a wrong password closed the rescue prompt'
+        time.sleep(0.8)  # the attempt delay after one failure is 1 s
+        unlock_by_typing(env, ui, r)
+        print('5. rescue prompt: wrong password rejected, right one accepted')
         print('Lock screen input recovery: all passed.')
     finally:
         for h in helpers:

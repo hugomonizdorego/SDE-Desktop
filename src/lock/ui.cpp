@@ -522,7 +522,7 @@ void update_input_note() {
   }
 }
 
-// Every 100 ms while the grabs are missing, every second while they are
+// Every 10-100 ms while the grabs are missing, every second while they are
 // held (a grab can be lost: its window unmapped by someone else).
 void input_check(void *) {
   double t = now_s();
@@ -583,7 +583,9 @@ void input_check(void *) {
   }
   g->step = std::max(g->step, step);
   if (g->ready) update_input_note();
-  Fl::repeat_timeout(waited < 10 ? 0.1 : 0.25, input_check);
+  // Tight at first: the daemon releases its fallback grab when it reads
+  // "M", and keys typed before ours is taken would reach the session.
+  Fl::repeat_timeout(waited < 1 ? 0.01 : waited < 10 ? 0.1 : 0.25, input_check);
 }
 
 void restart_input_check() {
