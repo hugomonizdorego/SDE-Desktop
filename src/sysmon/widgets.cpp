@@ -18,26 +18,19 @@ const Palette &palette() {
     Palette q;
     const sde::Theme &t = sde::active_theme();
     q.cpu = t.accent;
-    q.memory = Color::hex(0x8a5cf6);
-    q.swap = Color::hex(0xd946a8);
-    q.disk = Color::hex(0x16a34a);
-    q.disk_write = Color::hex(0x0ea5a4);
-    q.net = Color::hex(0xea7a1a);
-    q.net_send = Color::hex(0xd4a017);
-    q.gpu = Color::hex(0x0891d1);
-    q.battery = Color::hex(0x65a30d);
-    q.danger = Color::hex(t.dark ? 0xf87171 : 0xdc2626);
-    q.warning = Color::hex(t.dark ? 0xfbbf24 : 0xd97706);
-    if (t.dark) {
-      q.memory = Color::hex(0xa78bfa);
-      q.disk = Color::hex(0x34d399);
-      q.disk_write = Color::hex(0x2dd4bf);
-      q.net = Color::hex(0xfb923c);
-      q.net_send = Color::hex(0xfacc15);
-      q.gpu = Color::hex(0x38bdf8);
-      q.battery = Color::hex(0xa3e635);
-      q.swap = Color::hex(0xf472b6);
-    }
+    // Series colors are the theme family's muted accents (alpha51), so the
+    // graphs match the rest of SDE in every family, mode and accent.
+    auto accent = [&](const char *name) { return sde::theme_accent_color(t.family, name, t.dark); };
+    q.memory = accent("purple");
+    q.swap = accent("pink");
+    q.disk = accent("green");
+    q.disk_write = accent("teal");
+    q.net = accent("orange");
+    q.net_send = accent("yellow");
+    q.gpu = accent("blue");
+    q.battery = accent("green");
+    q.danger = t.error;
+    q.warning = t.warning;
     return q;
   }();
   return p;

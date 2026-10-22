@@ -292,7 +292,7 @@ static void test_caption_frames() {
   for (const char *mask : {"close", "close_hover", "iconify", "iconify_hover", "max", "max_hover", "max_toggled",
                            "max_hover_toggled"}) {
     CHECK(read_file(dir + mask + ".xbm", xbm));
-    CHECK(xbm.find("_width 18") != std::string::npos && xbm.find("_height 18") != std::string::npos);
+    CHECK(xbm.find("_width 14") != std::string::npos && xbm.find("_height 14") != std::string::npos);
   }
 }
 

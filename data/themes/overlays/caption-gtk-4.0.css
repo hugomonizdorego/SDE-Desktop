@@ -5,10 +5,12 @@
  * the close cross and behind the other glyphs while hovered, a muted red
  * close only while hovered. The disc is the content box (background-clip),
  * so the hit area stays 30 px. The window and :not(.suggested-action) parts
- * outweigh the upstream buttons. @CAPTION_*@ come from tools/build-themes.py.
+ * (and the :not(.titlebutton):not(.pill) that outweigh the soft layer's
+ * button corners) outweigh the upstream buttons. @CAPTION_*@ come from
+ * tools/build-themes.py.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
-window windowcontrols > button:not(.suggested-action):not(.destructive-action) {
+window windowcontrols > button:not(.suggested-action):not(.destructive-action):not(.titlebutton):not(.pill) {
   min-width: 18px;
   min-height: 18px;
   margin: 0 1px;
@@ -23,14 +25,14 @@ window windowcontrols > button:not(.suggested-action):not(.destructive-action) {
   outline: none;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action) > image {
-  min-width: 12px;
-  min-height: 12px;
-  padding: 3px;
+  min-width: 14px;
+  min-height: 14px;
+  padding: 2px;
   margin: 0;
   color: inherit;
   background: none;
   box-shadow: none;
-  -gtk-icon-size: 12px;
+  -gtk-icon-size: 14px;
 }
 window windowcontrols > button:not(.suggested-action):not(.destructive-action):hover {
   background-color: @CAPTION_DISC@;

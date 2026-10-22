@@ -203,13 +203,14 @@ def grid(size, inside):
 def soft_caption_masks():
     """Caption glyphs since 0.1.0~alpha51, after Mint-Y: small, thin glyphs
     (a 6 px minimize dash on the baseline of a 6 px maximize square, two
-    overlapping squares for restore) and close as a soft 16 px disc with the
+    overlapping squares for restore) and close as a soft 14 px disc with the
     cross cut out. Hovered or pressed, minimize and maximize get the same disc
     with their glyph cut out, so every state stays round; the theme colors the
-    disc (gray, the close button muted red while hovered). The masks are 18 px:
-    SDE WM centers them in the larger caption button, which keeps the hit area
-    at the title height."""
-    n, c, R = 18, 9.0, 8.2
+    disc (gray, the close button muted red while hovered). The masks are 14 px,
+    the size of stock Openbox buttons with a 10 pt title; SDE WM centers them
+    in its larger caption buttons, which keep the hit area at the title
+    height."""
+    n, c, R = 14, 7.0, 6.8
 
     def disc(x, y):
         return (x - c) ** 2 + (y - c) ** 2 <= R * R
@@ -218,19 +219,19 @@ def soft_caption_masks():
         return lo <= int(v) <= hi
 
     def dash(x, y):
-        return cell(6, 11, x) and int(y) == 11
+        return cell(4, 9, x) and int(y) == 9
 
     def square(x, y):
-        return cell(6, 11, x) and cell(6, 11, y) and not (cell(7, 10, x) and cell(7, 10, y))
+        return cell(4, 9, x) and cell(4, 9, y) and not (cell(5, 8, x) and cell(5, 8, y))
 
     def restore(x, y):
-        front = cell(5, 10, x) and cell(7, 12, y) and not (cell(6, 9, x) and cell(8, 11, y))
-        back = (cell(7, 12, x) and int(y) == 5) or (int(x) == 12 and cell(5, 10, y))
+        front = cell(3, 8, x) and cell(5, 10, y) and not (cell(4, 7, x) and cell(6, 9, y))
+        back = (cell(5, 10, x) and int(y) == 3) or (int(x) == 10 and cell(3, 8, y))
         return front or back
 
     def cross(x, y):
         dx, dy = x - c, y - c
-        return max(abs(dx), abs(dy)) <= 3.6 and (abs(dx - dy) < 0.8 or abs(dx + dy) < 0.8)
+        return max(abs(dx), abs(dy)) <= 2.6 and (abs(dx - dy) < 0.8 or abs(dx + dy) < 0.8)
 
     def cut(glyph):
         return lambda x, y: disc(x, y) and not glyph(x, y)
@@ -239,7 +240,7 @@ def soft_caption_masks():
         return (x - c) ** 2 + (y - c) ** 2 <= 6.5
 
     def shade(x, y):
-        return int(y) == 6 and cell(6, 11, x)
+        return int(y) == 4 and cell(4, 9, x)
 
     m = {'iconify': grid(n, dash), 'max': grid(n, square), 'max_toggled': grid(n, restore),
          'close': grid(n, cut(cross)), 'desk': grid(n, desk), 'shade': grid(n, shade)}
