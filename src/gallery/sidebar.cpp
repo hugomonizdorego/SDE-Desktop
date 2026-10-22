@@ -107,7 +107,7 @@ std::vector<Sidebar::Row> Sidebar::rows() const {
   add(ah, hh);
   for (const auto &a : app_->user_albums()) {
     View v{ViewKind::Album, a.file};
-    r = Row{a.name, icon::Gallery, a.count, v};
+    r = Row{a.name, icon::Album, a.count, v};
     r.album = true;
     r.removable = true;  // the hover button deletes the album (not the photos)
     add(r, rh);

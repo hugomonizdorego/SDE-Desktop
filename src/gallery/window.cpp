@@ -1334,7 +1334,11 @@ void GalleryWindow::update_header_widgets() {
   // Leave the view title room before adding the optional controls.
   text_font(theme_.font_size + S(5), true);
   int title_w = std::max(S(150), std::min(S(320), text_width(view_title(view_kind_)) + S(24)));
-  bool show_zoom = avail - title_w > S(180) + S(234) + S(220), show_sort = avail - title_w > S(234) + S(170);
+  // While photos are selected, the selection actions take the room of the
+  // sort and size controls.
+  bool selecting = !grid_->selection().empty();
+  bool show_zoom = !selecting && avail - title_w > S(180) + S(234) + S(220);
+  bool show_sort = !selecting && avail - title_w > S(234) + S(170);
   if (show_zoom) {
     zoom_ctl_->resize(right - S(120) - S(22), cy - S(14), S(120), S(28));
     zoom_ctl_->show();
