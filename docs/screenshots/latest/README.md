@@ -27,3 +27,15 @@ display (commit `e11fa5eeecbad22727c80b418ebbd6e4e0af85bf`). Network, sound and 
 
 ![12-update](12-update.png)
 
+
+![13-network](13-network.png)
+
+![14-drives](14-drives.png)
+
+![15-touchpad](15-touchpad.png)
+
+![16-photo-draw](16-photo-draw.png)
+
+![17-settings-about](17-settings-about.png)
+
+![18-window-buttons](18-window-buttons.png)
