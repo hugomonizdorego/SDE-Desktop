@@ -9,6 +9,8 @@
 #include <FL/Fl_Button.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
+#include <X11/extensions/shape.h>
+#include <cmath>
 
 #include <algorithm>
 #include <cstdio>
@@ -196,12 +198,29 @@ Popup::Popup(Notification *n) : BufferedWindow(0, 0, 10, 10, "Notification"), n_
   rebuild();
 }
 
+// alpha51 compact popups: 340 px wide, 12 px padding, 32 px icon and soft
+// rounded corners, like the panel's flyouts.
+constexpr int kPopupW = 340, kPad = 12, kIcon = 32, kRadius = 10;
+
+void round_corners(Window xid, int w, int h) {
+  int event, error, r = std::min({S(kRadius), w / 4, h / 4});
+  if (!xid || r <= 0 || !XShapeQueryExtension(fl_display, &event, &error)) return;
+  std::vector<XRectangle> rows;
+  for (int row = 0; row < h; ++row) {
+    double dy = row < r ? r - row - 0.5 : row >= h - r ? row - (h - r) + 0.5 : 0;
+    int inset = dy > 0 ? int(std::ceil(r - std::sqrt(std::max(0.0, r * r - dy * dy)))) : 0;
+    rows.push_back({short(inset), short(row), static_cast<unsigned short>(std::max(1, w - 2 * inset)), 1});
+  }
+  XShapeCombineRectangles(fl_display, xid, ShapeBounding, 0, 0, rows.data(), int(rows.size()),
+                          ShapeSet, YXBanded);
+}
+
 void Popup::rebuild() {
   clear();  // note: also resets resizable()
   resizable(nullptr);  // keep child positions when the card changes height
   keys_.clear();
   begin();
-  int W = S(360), pad = S(14), icon = S(40);
+  int W = S(kPopupW), pad = S(kPad), icon = S(kIcon);
   int text_x = pad + icon + S(12), text_w = W - text_x - pad - S(20);
   text_font(g_theme.font_size);
   int bw = text_w, bh = 0;
@@ -220,7 +239,7 @@ void Popup::rebuild() {
     int n = std::min<int>(3, int(buttons.size()));
     int gap = S(8), bw2 = (W - 2 * pad - gap * (n - 1)) / n;
     for (int i = 0; i < n; ++i) {
-      auto *b = new ActionButton(pad + i * (bw2 + gap), y, bw2, S(32), buttons[size_t(i)].second);
+      auto *b = new ActionButton(pad + i * (bw2 + gap), y, bw2, S(28), buttons[size_t(i)].second);
       std::string key = buttons[size_t(i)].first;
       uint32_t id = n_->id;
       b->callback(
@@ -234,7 +253,7 @@ void Popup::rebuild() {
           },
           keys_.emplace_back(new std::pair<uint32_t, std::string>(id, key)).get());
     }
-    y += S(32);
+    y += S(28);
   }
   height_ = y + pad;
   end();
@@ -244,12 +263,12 @@ void Popup::rebuild() {
 
 void Popup::draw() {
   const Theme &t = g_theme;
-  int W = w(), H = h(), pad = S(14), icon = S(40);
+  int W = w(), H = h(), pad = S(kPad), icon = S(kIcon);
   int text_x = pad + icon + S(12), text_w = W - text_x - pad - S(20);
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
+    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, std::min({S(kRadius), W / 4, H / 4}), t.border);
     if (n_->urgency == 2) p.fill_rect(0, 0, S(4), H, Color::hex(0xD64545));
     cairo_surface_t *img = n_->image;
     if (!img) img = IconLoader::get({n_->icon, "dialog-information", "preferences-desktop-notification"}, icon);
@@ -276,7 +295,7 @@ void Popup::draw() {
 }
 
 int Popup::handle(int e) {
-  int pad = S(14);
+  int pad = S(kPad);
   bool on_close = Fl::event_x() >= w() - pad - S(22) && Fl::event_y() < pad + S(24);
   switch (e) {
     case FL_ENTER:
@@ -340,6 +359,7 @@ void relayout() {
     int py = top ? y : y - h;
     p->resize(px, py, p->w(), h);
     if (!p->shown()) p->show();
+    round_corners(fl_xid(p), p->w(), h);
     y = top ? y + h + gap : y - h - gap;
     ++shown;
   }
@@ -407,7 +427,7 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
   }
   for (const char *key : {"image-data", "image_data", "icon_data"}) {
     if (const dbus::Value *img = hints.get(key)) {
-      n->image = image_from_hint(*img, S(40));
+      n->image = image_from_hint(*img, S(kIcon));
       if (n->image) break;
     }
   }
