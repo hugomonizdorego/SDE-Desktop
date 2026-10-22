@@ -12,10 +12,12 @@
 #include <string>
 #include <vector>
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 
 #include "album.h"
+#include "collections.h"
 #include "exif.h"
 #include "library.h"
 #include "media.h"
@@ -479,6 +481,86 @@ static void test_album_files() {
   if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", root);
 }
 
+static void test_user_albums() {
+  char tmpl[] = "/tmp/sde-useralbum-test-XXXXXX";
+  char *root = mkdtemp(tmpl);
+  if (!root) return;
+  std::string dir = std::string(root) + "/albums";
+  // Names.
+  std::string clean;
+  CHECK(valid_album_name("  Holidays 2026 ", &clean) && clean == "Holidays 2026");
+  CHECK(!valid_album_name(""));
+  CHECK(!valid_album_name("   "));
+  CHECK(!valid_album_name("a/b"));
+  CHECK(!valid_album_name(".."));
+  CHECK(!valid_album_name("tab\there"));
+  // Creating, listing (sorted, case-insensitive), duplicates refused.
+  std::string f1, f2, err;
+  CHECK(create_album(dir, "zoo", &f1));
+  CHECK(create_album(dir, "Beach", &f2));
+  CHECK(!create_album(dir, "BEACH", nullptr, &err) && err == "exists");
+  CHECK(!create_album(dir, "x/y", nullptr, &err));
+  auto albums = list_user_albums(dir);
+  CHECK(albums.size() == 2 && albums[0].name == "Beach" && albums[1].name == "zoo");
+  CHECK(albums[0].count == 0);
+  // Adding keeps the order and skips duplicates; removing.
+  CHECK(add_to_album(f2, {"/p/a.jpg", "/p/b.jpg"}) == 2);
+  CHECK(add_to_album(f2, {"/p/b.jpg", "/p/c.jpg", "relative.jpg"}) == 1);
+  auto list = read_album_list(f2);
+  CHECK(list.size() == 3 && list[0] == "/p/a.jpg" && list[2] == "/p/c.jpg");
+  CHECK(list_user_albums(dir)[0].count == 3);
+  CHECK(remove_from_album(f2, {"/p/a.jpg", "/p/zzz.jpg"}) == 1);
+  CHECK(read_album_list(f2).size() == 2);
+  // Photo opens an album as a list album.
+  Album a;
+  CHECK(parse_album("list:" + f2, a) && a.kind == AlbumKind::List && a.path == f2);
+  // Renaming and following moved or deleted files.
+  std::string f3;
+  CHECK(rename_album(f2, "Sea", &f3) && f3 == dir + "/Sea.album");
+  CHECK(!sde::file_exists(f2) && read_album_list(f3).size() == 2);
+  CHECK(!rename_album(f3, "zoo", nullptr, &err) && err == "exists");
+  CHECK(rename_album(f3, "sea", &f3));  // only the case changes
+  album_path_changed(dir, "/p/b.jpg", "/q/b.jpg");
+  CHECK(read_album_list(f3)[0] == "/q/b.jpg");
+  album_path_changed(dir, "/p/c.jpg", "");
+  CHECK(read_album_list(f3).size() == 1);
+  CHECK(delete_album(f1) && list_user_albums(dir).size() == 1);
+  // The default folder follows XDG_DATA_HOME.
+  std::string saved = sde::env("XDG_DATA_HOME");
+  setenv("XDG_DATA_HOME", "/data/home", 1);
+  CHECK(albums_dir() == "/data/home/sde/gallery/albums");
+  if (saved.empty()) unsetenv("XDG_DATA_HOME");
+  else setenv("XDG_DATA_HOME", saved.c_str(), 1);
+  std::string cmd = "rm -rf '" + std::string(root) + "'";
+  if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", root);
+}
+
+static void test_batch_plans() {
+  std::vector<std::string> existing = {"/out/a.jpg", "/out/a (2).jpg", "/out/b.png"};
+  auto exists = [&](const std::string &p) { return std::find(existing.begin(), existing.end(), p) != existing.end(); };
+  CHECK(unique_destination("/out", "new.jpg", exists) == "/out/new.jpg");
+  CHECK(unique_destination("/out", "a.jpg", exists) == "/out/a (3).jpg");
+  CHECK(unique_destination("/out", "b.tiff", exists, {}, "png") == "/out/b (2).png");
+  CHECK(unique_destination("/out", "README", exists) == "/out/README");
+  // Two sources with the same name get distinct destinations.
+  auto plan = plan_copy({"/x/a.jpg", "/y/a.jpg", "/x/c.jpg"}, "/out", exists);
+  CHECK(plan.size() == 3);
+  CHECK(plan[0].dest == "/out/a (3).jpg" && plan[1].dest == "/out/a (4).jpg" && plan[2].dest == "/out/c.jpg");
+  CHECK(plan[1].source == "/y/a.jpg");
+  // Resizing for export: never enlarged, proportions kept.
+  int w, h;
+  fit_size(4000, 3000, 2048, w, h);
+  CHECK(w == 2048 && h == 1536);
+  fit_size(3000, 4000, 1280, w, h);
+  CHECK(w == 960 && h == 1280);
+  fit_size(800, 600, 2048, w, h);
+  CHECK(w == 800 && h == 600);
+  fit_size(5000, 10, 100, w, h);
+  CHECK(w == 100 && h == 1);
+  fit_size(4000, 3000, 0, w, h);
+  CHECK(w == 4000 && h == 3000);
+}
+
 int main() {
   setenv("TZ", "UTC", 1);
   tzset();
@@ -494,6 +576,8 @@ int main() {
   test_import_plan();
   test_albums();
   test_album_files();
+  test_user_albums();
+  test_batch_plans();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);
     return 1;
