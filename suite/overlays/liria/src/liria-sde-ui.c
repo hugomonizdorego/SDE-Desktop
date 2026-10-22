@@ -33,6 +33,7 @@
 #include "liria-sde-ui.h"
 #include "liria-sde-model.h"
 #include "liria-sde-pins.h"
+#include "liria-sde-ribbon.h"
 #include "liria-bookmark-list.h"
 #include "liria-location-bar.h"
 #include "liria-navigation-window.h"
@@ -415,14 +416,15 @@ sde_add_list_sort_items (GtkWidget *menu, GtkTreeView *tree)
     sde_append (menu, item);
 }
 
-static void
-sde_add_sort_menu (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIManager *ui_manager)
+/* The sort orders of the current view (also the ribbon's Sort by menu). */
+void
+liria_sde_ui_add_sort_items (GtkWidget *sort, LiriaNavigationWindow *window)
 {
     static const char *icon_actions[] = {
         "Sort by Name", "Sort by Size", "Sort by Type", "Sort by Modification Date",
         "Sort by Extension", "Sort by Trash Time", NULL
     };
-    GtkWidget *sort = sde_submenu (menu, _("_Sort"));
+    GtkUIManager *ui_manager = liria_window_get_ui_manager (LIRIA_WINDOW (window));
     GtkTreeView *tree = sde_list_tree_view (window);
     int i;
 
@@ -438,7 +440,21 @@ sde_add_sort_menu (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIManager 
         sde_action_item (sort, ui_manager, "Reversed Order", NULL);
         sde_action_item (sort, ui_manager, "Keep Aligned", NULL);
     }
+}
+
+static void
+sde_add_sort_menu (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIManager *ui_manager)
+{
+    GtkWidget *sort = sde_submenu (menu, _("_Sort"));
+
+    liria_sde_ui_add_sort_items (sort, window);
     sde_drop_if_empty (sort);
+}
+
+void
+liria_sde_ui_switch_view (LiriaNavigationWindow *window, const char *id)
+{
+    sde_switch_view (window, id);
 }
 
 /* ------------------------------------------------------------ sidebar */
@@ -592,7 +608,11 @@ sde_build_main_menu (LiriaNavigationWindow *window)
     sde_action_item (sub, ui_manager, "Show Hide Extra Pane", _("_Extra Pane"));
     sde_action_item (sub, ui_manager, "Show Backup Files", NULL);
     sde_separator (sub);
+    liria_sde_ribbon_add_mode_items (sde_submenu (sub, _("Ri_bbon")));
+    sde_separator (sub);
     sde_action_item (sub, ui_manager, "Reload", NULL);
+
+    liria_sde_ribbon_add_mode_items (sde_submenu (menu, _("Ri_bbon")));
 
     sub = sde_submenu (menu, _("_Edit"));
     sde_action_item (sub, ui_manager, "Undo", NULL);
@@ -705,7 +725,6 @@ sde_main_menu_item (LiriaNavigationWindow *window)
     /* F10 opens the main menu, as it opened the menu bar before. */
     sde_connect_accel (accel, "F10", G_CALLBACK (sde_accel_main_menu), button);
     sde_connect_accel (accel, "<Control>question", G_CALLBACK (sde_accel_window_call), liria_sde_ui_show_shortcuts);
-    sde_connect_accel (accel, "<Control>F1", G_CALLBACK (sde_accel_window_call), liria_sde_ui_show_shortcuts);
     sde_connect_accel (accel, "<Control>1", G_CALLBACK (sde_accel_view), (gpointer) SDE_ICON_VIEW_ID);
     sde_connect_accel (accel, "<Control>2", G_CALLBACK (sde_accel_view), (gpointer) SDE_LIST_VIEW_ID);
     sde_connect_accel (accel, "<Control>3", G_CALLBACK (sde_accel_view), (gpointer) SDE_COMPACT_VIEW_ID);
@@ -857,6 +876,9 @@ liria_sde_ui_setup_header (LiriaNavigationWindow *window,
 
     g_object_set_data (G_OBJECT (window), "sde-go-to-uri", sde_go_to_uri);
     g_object_set_data (G_OBJECT (window), "sde-home-replaces-view", sde_home_replaces_view);
+
+    /* alpha52: the ribbon under the header (liria-sde-ribbon.c). */
+    liria_sde_ribbon_setup (window, ui_manager);
 }
 
 /* The sidebar header ("Places" chooser and close button) is replaced by
@@ -933,7 +955,8 @@ liria_sde_ui_show_shortcuts (GtkWindow *parent)
         { "<Control>1", N_("Icons") }, { "<Control>2", N_("List") }, { "<Control>3", N_("Compact") },
         { "<Control>plus", N_("Zoom in") }, { "<Control>minus", N_("Zoom out") },
         { "<Control>0", N_("Normal size") }, { "<Control>H", N_("Show hidden files") },
-        { "F9", N_("Show or hide the sidebar") }, { "F10", N_("Main menu") }, { NULL, NULL }
+        { "F9", N_("Show or hide the sidebar") }, { "F10", N_("Main menu") },
+        { "<Control>F1", N_("Collapse or expand the ribbon") }, { NULL, NULL }
     };
     static const SdeShortcut files[] = {
         { "<Control>O", N_("Open") }, { "<Control>C", N_("Copy") }, { "<Control>X", N_("Cut") },

@@ -98,6 +98,7 @@ def liria(staged):
     liria_quick_access(staged)
     liria_sidebar_pinned(staged)
     liria_home_view(staged)
+    liria_ribbon(staged)
     liria_right_drag(staged)
     liria_pathbar(staged)
     liria_copy_engine(staged)
@@ -1196,6 +1197,15 @@ def liria_pathbar(staged):
     (liria-sde-ui.c)."""
     edit_once(staged / "src/liria-pathbar.c", "    need_sliders = TRUE;\n    up_slider_offset = 0;\n",
               "    need_sliders = FALSE; /* SDE: only when the buttons do not fit */\n    up_slider_offset = 0;\n")
+
+
+def liria_ribbon(staged):
+    """alpha52: an optional ribbon under the header of every folder window
+    (src/liria-sde-ribbon.c): Home, Share and View tabs, contextual Drive
+    and Archive tabs; full, collapsed (Ctrl+F1) or off, remembered in
+    ~/.config/sde/liria.conf [ribbon] mode."""
+    edit_once(staged / "src/Makefile.am", "\tliria-sde-model.h \\\n",
+              "\tliria-sde-model.h \\\n\tliria-sde-ribbon.c \\\n\tliria-sde-ribbon.h \\\n")
 
 
 def liria_right_drag(staged):

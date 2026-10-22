@@ -331,6 +331,33 @@ class LiriaAlpha16Test(unittest.TestCase):
                        '"sidebar", "collapsed"'):
             self.assertIn(needle, ui)
 
+    def test_ribbon(self):
+        ribbon = (self.overlay / 'src/liria-sde-ribbon.c').read_text()
+        # Tabs, contextual tabs and the commands asked for.
+        for needle in ('_("Home")', '_("Share")', '_("View")', '_("Drive")', '_("Archive")',
+                       '_("Pin to Quick access")', '"Copy"', '"Paste"', '"Cut"', '_("Copy path")',
+                       '_("Paste shortcut")', '_("Move to")', '_("Copy to")', '"Trash"', '"Rename"',
+                       '"New Folder"', '"New Empty File"', '"Properties"', '"Open"', '"OtherApplication1"',
+                       '"Select All"', '_("Select none")', '"Invert Selection"', '"xdg-email"', '"--add"',
+                       '_("Copy to drive")', '"Show Hide Sidebar"', '"Show Hide Extra Pane"', '"Show Hidden Files"',
+                       '_("Sort by")', '"Self Eject Volume"', '"--extract-here"', 'GDK_ACTION_LINK'):
+            self.assertIn(needle, ribbon)
+        # Three modes, remembered, Ctrl+F1, sensitivity from the selection model.
+        for needle in ('liria_sde_ribbon_mode_save', 'liria_sde_ribbon_mode_toggle', 'GDK_KEY_F1',
+                       'LIRIA_SDE_RIBBON_OFF', 'LIRIA_SDE_RIBBON_COLLAPSED', 'liria_sde_selection_commands',
+                       'gtk_application_get_windows', '"actions-changed"', '"selection-changed"'):
+            self.assertIn(needle, ribbon)
+        # Symbolic icons of the theme only, no product branding.
+        self.assertNotRegex(ribbon, r'(?i)microsoft|windows explorer')
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        self.assertIn('liria_sde_ribbon_setup (window, ui_manager)', ui)
+        self.assertIn('liria_sde_ribbon_add_mode_items (sde_submenu (menu, _("Ri_bbon")))', ui)
+        self.assertNotIn('"<Control>F1", G_CALLBACK (sde_accel_window_call)', ui)
+        self.assertIn('liria_ribbon(staged)', (self.root / 'suite/redesign.py').read_text())
+        css = (self.overlay / 'data/liria-sde.css').read_text()
+        for needle in ('button.sde-ribbon-tab:checked', 'button.sde-ribbon-button', '.sde-ribbon-group-label'):
+            self.assertIn(needle, css)
+
     def test_home_view_recipe_restores_view(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
