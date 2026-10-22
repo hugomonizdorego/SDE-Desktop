@@ -201,6 +201,9 @@ bool confirm_power_off() {
   win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
   win->set_modal();
   win->show();
+  // Keys go to the question even without a window manager to focus it.
+  win->wait_for_expose();
+  if (fl_xid(win)) XSetInputFocus(fl_display, fl_xid(win), RevertToParent, CurrentTime);
   ok->take_focus();
   while (win->shown()) Fl::wait();
   bool yes = win->confirmed;

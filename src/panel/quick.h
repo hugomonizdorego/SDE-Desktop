@@ -206,6 +206,7 @@ class QuickSettings : public PanelPopup {
   class Fl_Slider *media_slider_ = nullptr;  // the media card's seek bar
   std::string media_service_;
   bool weather_frame_ = false;  // the next draw only animates the weather
+  int weather_fps_ = 24;
   std::map<unsigned, class Fl_Slider *> stream_sliders_;
   int tray_columns_ = 1;
   std::string structure_;

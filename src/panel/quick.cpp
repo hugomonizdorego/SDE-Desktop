@@ -1383,7 +1383,7 @@ void QuickSettings::weather_tick(void *data) {
   if (!q->is_open() || !q->clock_) return;
   q->weather_frame_ = true;
   q->clock_->redraw();
-  Fl::repeat_timeout(1.0 / weather_settings().fps, weather_tick, data);
+  Fl::repeat_timeout(1.0 / q->weather_fps_, weather_tick, data);
 }
 // The seek bar and times follow a playing track once a second.
 void QuickSettings::media_tick(void *data) {
@@ -1850,12 +1850,10 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
   bar->tooltip(_("Playback position"));
   bar->when(FL_WHEN_RELEASE);
   bar->callback([](Fl_Widget *wd, void *d) {
-    (void)d;
+    // The player this card shows (kept on the popup across rebuilds).
+    auto *q = static_cast<QuickSettings *>(d);
     auto *sl = static_cast<Fl_Slider *>(wd);
-    const auto players = PanelControls::get().players();
-    if (players.empty()) return;
-    PanelControls::get().media_seek(players.front().service,
-                                    (long long)(sl->value() * 1000000.0));
+    PanelControls::get().media_seek(q->media_service_, (long long)(sl->value() * 1000000.0));
   }, this);
   if (!(p.control && p.seek && p.length_us > 0)) bar->deactivate();
   media_slider_ = bar;
@@ -2903,6 +2901,7 @@ void QuickSettings::rebuild() {
     body_->scroll_to(0, std::max(0, std::min(scroll, content_height_ - body_->h())));
     scroll_to_calendar_ = false;
   }
+  weather_fps_ = wset.fps;
   if (wx && wset.animate) Fl::add_timeout(1.0 / wset.fps, weather_tick, this);
   if (media_slider_) Fl::add_timeout(1.0, media_tick, this);
   sync();
@@ -2951,7 +2950,9 @@ int QuickSettings::handle(int event) {
     // The wheel anywhere on the volume or brightness row (icon, slider,
     // percentage) moves that slider.
     for (Fl_Slider *sl : {volume_, brightness_}) {
-      if (!sl || !sl->visible_r() || Fl::event_y() < sl->y() || Fl::event_y() >= sl->y() + sl->h())
+      // Only on the card itself: the margins and the scroll bar scroll.
+      if (!sl || !sl->visible_r() || Fl::event_y() < sl->y() || Fl::event_y() >= sl->y() + sl->h() ||
+          Fl::event_x() < S(14) || Fl::event_x() >= w() - S(22))
         continue;
       sl->value(sl->clamp(sl->value() - Fl::event_dy() * 5));
       sl->do_callback();

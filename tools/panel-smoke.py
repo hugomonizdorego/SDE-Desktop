@@ -417,7 +417,7 @@ def brightness_checks(ac):
     for _ in range(12):
         b=layout('Action Center')['Brightness'];body=layout('Action Center')['@body'];cy=b[1]+b[3]//2
         if body[1]<=cy<=body[1]+body[3]-2:break
-        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+round(10*scale),'click','5' if cy>body[1]+body[3] else '4');time.sleep(.3)
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+round(10*scale),'click','5' if cy>body[1]+body[3]-2 else '4');time.sleep(.3)
     before=level()
     run('xdotool','mousemove',g['x']+b[0]-round(20*scale),g['y']+b[1]+b[3]//2,'click','4');time.sleep(.2);run('xdotool','click','4')
     waitfor(lambda:level()==before+10,f'wheel did not raise the brightness ({level()})')
