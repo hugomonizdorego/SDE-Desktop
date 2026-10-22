@@ -191,8 +191,9 @@ class SidePanel : public Fl_Group {
   void sync();
   void info_changed() { redraw(); }
 
- private:
   void layout();
+
+ private:
   void draw_info(sde::Painter *p);
   void draw_filters(sde::Painter &p);
   int filter_at(int mx, int my) const;

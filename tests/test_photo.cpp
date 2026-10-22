@@ -311,6 +311,40 @@ static void test_saving() {
     }
     cairo_surface_destroy(out);
     cairo_surface_destroy(orig);
+    // Drawings are flattened into the saved pixels at full size, and the
+    // camera metadata is kept.
+    {
+      Edits d;
+      d.marks.w = 64;
+      d.marks.h = 32;
+      Mark m;
+      m.kind = MarkKind::Rect;
+      m.fill = true;
+      m.color = 0xFF00FF00;
+      m.width = 1;
+      m.pts = {{40, 8}, {60, 24}};
+      d.marks.items.push_back(m);
+      CHECK(!lossless_possible(src, d, dst));
+      cairo_surface_t *o2 = gallery::decode_image(src, 0);
+      cairo_surface_t *flat = render(o2, d);
+      std::string drawn = dir + "/cam-drawn.jpg";
+      CHECK(save_edits(src, d, flat, drawn, 95) == SaveResult::Encoded);
+      gallery::PhotoInfo di;
+      CHECK(gallery::read_photo_info_builtin(drawn, di));
+      CHECK(di.make == "Canon" && di.iso == 200);
+      int dw = 0, dh = 0;
+      cairo_surface_t *back2 = gallery::decode_image(drawn, 0, &dw, &dh);
+      CHECK(back2 && dw == 64 && dh == 32);
+      if (back2) {
+        uint32_t p = pixel(back2, 50, 16);
+        CHECK(((p >> 8) & 0xFF) > 200 && ((p >> 16) & 0xFF) < 60);  // green box
+        uint32_t q = pixel(back2, 10, 16);
+        CHECK(((q >> 16) & 0xFF) > 180);  // red half untouched
+        cairo_surface_destroy(back2);
+      }
+      cairo_surface_destroy(flat);
+      cairo_surface_destroy(o2);
+    }
     // Saving as PNG from a JPEG is never lossless.
     e = Edits();
     e.orient = {1, false};

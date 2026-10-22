@@ -64,17 +64,44 @@ ViewMap Canvas::screen_map() const {
 }
 
 void Canvas::select_mark(int i) {
+  if (i == selected_) return;
   selected_ = i;
+  const auto &items = app_->edits().marks.items;
+  if (i >= 0 && i < int(items.size())) {
+    // Show the selected mark's style in the panel (in screen pixels).
+    const Mark &m = items[size_t(i)];
+    DrawSettings &d = app_->draw_settings();
+    double k = std::max(1e-6, screen_map().scale());
+    int tool = m.kind == MarkKind::Pen ? int(Tool::Pen) : m.kind == MarkKind::Highlighter ? int(Tool::Highlighter)
+             : m.kind == MarkKind::Line ? int(Tool::Line) : m.kind == MarkKind::Arrow ? int(Tool::Arrow)
+             : m.kind == MarkKind::Rect ? int(Tool::Rect) : m.kind == MarkKind::Ellipse ? int(Tool::Ellipse)
+             : m.kind == MarkKind::Blur ? int(Tool::Blur) : m.kind == MarkKind::Pixelate ? int(Tool::Pixelate)
+                                        : int(Tool::Text);
+    if (m.kind == MarkKind::Text) {
+      d.text_size = std::max(8.0, std::min(160.0, std::round(m.size * k)));
+      d.font = m.font;
+      d.text_box = m.box;
+    } else {
+      d.width[tool] = std::max(1.0, std::round(m.width * k));
+    }
+    if (!m.effect()) {
+      d.color = m.color;
+      d.opacity[tool] = std::round(m.opacity * 100);
+    }
+    if (m.kind == MarkKind::Rect || m.kind == MarkKind::Ellipse) d.fill = m.fill;
+  }
+  // The panel shows the options of the selected mark.
+  if (app_->panel_ && app_->panel_->tab() == SidePanel::Draw) app_->panel_->layout();
   redraw();
   app_->redraw();
 }
 
 void Canvas::cancel_drawing() {
   live_on_ = false;
-  selected_ = -1;
   mark_drag_ = -1;
   erasing_ = false;
   middle_pan_ = false;
+  select_mark(-1);
   redraw();
 }
 
