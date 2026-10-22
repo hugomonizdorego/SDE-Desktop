@@ -22,7 +22,15 @@
 #                                     this network publishes (WPAD), if any
 #   sudo debion-network-check --apt-proxy URL|none
 #                                     set (or remove) the proxy used by APT
+#   sudo debion-network-check --boot-repair
+#                                     the quick, unattended repair run at
+#                                     every boot (debion-network-repair.service):
+#                                     only safe, idempotent changes, then
+#                                     check that DNS works
 #   debion-network-check --postinst   used by the package scripts
+#
+# Opt out of every automatic repair (boot, package upgrades, the panel):
+# [network] auto_repair=false in /etc/debion/network.conf.
 #
 # It never touches static, bridge, bond, VLAN or wpa-conf/wpa-roam
 # configurations: those are deliberate server-style setups.
@@ -33,6 +41,12 @@ MODE=report
 NOW=0
 APT_PROXY_ARG=""
 FALLBACK_OFF=0
+FIRST_INSTALL=0
+# pkexec clears the environment already; never let path overrides (meant for
+# the tests) reach a run that polkit authorized.
+if [ -n "${PKEXEC_UID:-}" ]; then
+    for v in $(env | sed -n 's/^\(DEBION_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+fi
 while [ $# -gt 0 ]; do
     case "$1" in
         --fix) MODE=fix ;;
@@ -46,11 +60,18 @@ while [ $# -gt 0 ]; do
         --dns-fallback) MODE=dns-fallback
             if [ "${2:-}" = off ]; then FALLBACK_OFF=1; shift; fi ;;
         --postinst-dns) MODE=postinst-dns ;;
+        --postinst-repair) MODE=postinst-repair ;;
+        --first-install) FIRST_INSTALL=1 ;;
+        --boot-repair)
+            # Also the mode the passwordless polkit action runs (through
+            # /usr/libexec/debion-network-repair): nothing may follow it.
+            if [ $# -gt 1 ]; then echo "debion-network-check: --boot-repair takes no other option" >&2; exit 2; fi
+            MODE=boot-repair ;;
         # Building blocks, used by the tests.
         --list-convertible|--convert-interfaces|--dhcp-clients|--wpad-candidates|--explain-curl|--resolv-owner|--wifi-profiles)
             MODE=${1#--} ;;
         -h|--help)
-            sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,36p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) [ "${MODE}" = explain-curl ] || [ "$MODE" = wifi-profiles ] && break
            echo "usage: debion-network-check [--quick --json | --fix [--now] | --dns-fallback [off] | --wpad | --apt-proxy URL|none]" >&2; exit 2 ;;
@@ -67,6 +88,9 @@ NM_RUN_CONF=${DEBION_NM_RUN_CONF:-/run/NetworkManager/conf.d}
 NM_CONF_DIR=${DEBION_NM_CONF_DIR:-/etc/NetworkManager/conf.d}
 NM_BIN=${DEBION_NM_BINARY:-/usr/sbin/NetworkManager}
 SYSTEMD_RUN=${DEBION_SYSTEMD_RUN:-/run/systemd/system}
+NM_MAIN_CONF=${DEBION_NM_MAIN_CONF:-/etc/NetworkManager/NetworkManager.conf}
+NET_CONF=${DEBION_NETWORK_CONF:-/etc/debion/network.conf}
+LOGFILE=${DEBION_NETWORK_LOG:-/var/log/debion-network-check.log}
 # How long --fix waits for NetworkManager to write working DNS servers.
 DNS_WAIT=${DEBION_DNS_WAIT:-10}
 FALLBACK_DNS="1.1.1.1 9.9.9.9"
@@ -74,7 +98,7 @@ TEST_HOST=deb.debian.org
 TIMEOUT=${DEBION_NET_TIMEOUT:-5}
 
 problems=0
-say() { case "$MODE" in postinst|handover|quick) ;; *) printf '%s\n' "$*" ;; esac; }
+say() { case "$MODE" in postinst|handover|quick|boot-repair|postinst-repair) ;; *) printf '%s\n' "$*" ;; esac; }
 ok() { say "  OK    $*"; }
 warn() { problems=$((problems + 1)); say "  WARN  $*"; }
 info() { say "  INFO  $*"; }
@@ -91,6 +115,12 @@ nm_running() {
 }
 
 unit_active() { have systemctl && [ -d "$SYSTEMD_RUN" ] && systemctl is-active --quiet "$1" 2>/dev/null; }
+have_timesyncd() {
+    for t in ${DEBION_TIMESYNCD:-/lib/systemd/systemd-timesyncd /usr/lib/systemd/systemd-timesyncd}; do
+        [ -x "$t" ] && return 0
+    done
+    return 1
+}
 
 stamp() { date +%Y%m%d-%H%M%S; }
 
@@ -213,6 +243,7 @@ wifi_profiles() {
                 echo "uuid=$uuid"
                 echo "type=wifi"
                 echo "interface-name=$dev"
+                echo "autoconnect=true"
                 echo ""
                 echo "[wifi]"
                 echo "mode=infrastructure"
@@ -776,6 +807,260 @@ clock_skew() {
 
 abs() { case "$1" in -*) echo "${1#-}" ;; *) echo "$1" ;; esac; }
 
+# ------------------------------------------------------ automatic repair
+#
+# --boot-repair (debion-network-repair.service, every boot; the SDE panel
+# through polkit) and --postinst-repair (debion-desktop-base's postinst) only
+# make changes that cannot break a working network and that an administrator
+# did not choose against:
+#   - an /etc/resolv.conf that cannot work (missing, a dangling symlink, the
+#     stub of a stopped systemd-resolved, left behind by the installer's
+#     dhclient) is moved aside so that NetworkManager writes it;
+#   - NetworkManager is told to write it (conf.d/90-debion-dns.conf) when its
+#     configuration would not, unless /etc/NetworkManager sets dns= or
+#     rc-manager= itself (then only --fix, run by an administrator, does);
+#   - Ethernet and Wi-Fi devices that nothing else configures (not in
+#     /etc/network/interfaces, not in unmanaged-devices, no systemd-networkd)
+#     are managed by NetworkManager;
+#   - profiles imported from /etc/network/interfaces connect automatically,
+#     and an Ethernet port with a cable but no automatic profile gets one;
+#   - /etc/resolv.conf is readable by everyone.
+# Then it checks that DNS works. Everything is logged to $LOGFILE. Static,
+# bridge, bond, VLAN and wpa-conf setups are never touched.
+
+repairs=0
+rlog() {
+    printf '%s\n' "$*"
+    { printf '%s %s: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$MODE" "$*" >> "$LOGFILE"; } 2>/dev/null || true
+}
+repaired() { repairs=$((repairs + 1)); rlog "$@"; }
+
+# A key of /etc/debion/network.conf ("" when not set).
+conf_value() {
+    awk -v s="$1" -v k="$2" '
+        /^[ \t]*[#;]/ { next }
+        /^[ \t]*\[/ { sec = $0; gsub(/[][ \t]/, "", sec); next }
+        sec == s && index($0, "=") {
+            n = index($0, "="); key = substr($0, 1, n - 1); gsub(/[ \t]/, "", key)
+            if (key == k) { v = substr($0, n + 1); gsub(/^[ \t]+|[ \t]+$/, "", v) }
+        }
+        END { print v }' "$NET_CONF" 2>/dev/null
+}
+auto_repair_enabled() {
+    case "$(conf_value network auto_repair)" in
+        false|no|off|0|False|No|Off) return 1 ;;
+    esac
+    return 0
+}
+
+in_chroot() {
+    case "${DEBION_CHROOT:-}" in 1) return 0 ;; 0) return 1 ;; esac
+    have ischroot && ischroot 2>/dev/null
+}
+
+# The administrator set NetworkManager's DNS handling (dns= or rc-manager=
+# in /etc/NetworkManager, other than in our own file).
+admin_dns_set() {
+    for f in "$NM_MAIN_CONF" "$NM_CONF_DIR"/*.conf; do
+        [ -f "$f" ] || continue
+        [ "${f##*/}" = 90-debion-dns.conf ] && continue
+        grep -qsE '^[ \t]*(dns|rc-manager)[ \t]*=' "$f" && return 0
+    done
+    return 1
+}
+
+# NetworkManager's configuration (see dns_state) would not put the name
+# servers into a plain /etc/resolv.conf.
+nm_wont_write() {
+    case "$D_MODE" in
+        none) return 0 ;;
+        systemd-resolved) [ "$D_RESOLVED" = yes ] || return 0 ;;
+    esac
+    case "$D_RC" in
+        unmanaged|netconfig|resolvconf) return 0 ;;
+        auto) [ -n "$D_RESOLVCONF" ] && return 0 ;;
+    esac
+    return 1
+}
+
+# Interfaces that /etc/network/interfaces mentions at all.
+ifupdown_mentions() {
+    interfaces_files | while IFS= read -r f; do cat "$f" 2>/dev/null; echo; done |
+        awk '{ sub(/^[ \t]+/, "") } $1 == "iface" || $1 ~ /^(auto|allow-)/ { for (i = 2; i <= NF; i++) if ($i != "lo") print $i }' |
+        sort -u
+}
+
+# Moves an /etc/resolv.conf that cannot work aside and leaves an empty
+# file that NetworkManager writes into.
+replace_resolv() {
+    bk="$RESOLV.debion-$(stamp)"
+    if [ -e "$RESOLV" ] || [ -L "$RESOLV" ]; then
+        mv "$RESOLV" "$bk" 2>/dev/null || { rlog "could not move $RESOLV aside"; return 1; }
+        : > "$RESOLV" && chmod 644 "$RESOLV"
+        repaired "$RESOLV ($1) cannot work; NetworkManager writes it now (old file: $bk)"
+    else
+        : > "$RESOLV" && chmod 644 "$RESOLV"
+        repaired "$RESOLV was missing; NetworkManager writes it now"
+    fi
+}
+
+repair_dns_config() {
+    dns_state
+    owner=$(resolv_owner)
+    [ "$owner" = systemd-resolved ] && [ "$D_RESOLVED" != yes ] && owner=resolved-off
+    case "$owner" in
+        systemd-resolved) return 0 ;;          # systemd-resolved runs and owns it
+        resolvconf) has_ns && return 0 ;;      # resolvconf works
+    esac
+    nm_will=1
+    if nm_wont_write; then
+        if admin_dns_set; then
+            case "$owner" in
+                dangling|missing|empty|resolved-off)
+                    rlog "$RESOLV has no name server, and /etc/NetworkManager sets dns=$D_MODE, rc-manager=$D_RC:"
+                    rlog "  not changed automatically; run: sudo debion-network-check --fix" ;;
+            esac
+            return 0
+        fi
+        if write_dns_conf; then
+            NM_CHANGED=1
+            repaired "NetworkManager writes $RESOLV now ($NM_CONF_DIR/90-debion-dns.conf; it was dns=$D_MODE, rc-manager=$D_RC)"
+        else
+            nm_will=0
+        fi
+    fi
+    if [ "$nm_will" = 1 ]; then
+        case "$owner" in
+            dangling) replace_resolv "a symlink to the missing $(readlink "$RESOLV")" ;;
+            resolved-off) replace_resolv "the stub of systemd-resolved, which is not running" ;;
+            missing) replace_resolv missing ;;
+            dhclient)
+                # Written by the installer's dhclient; nobody renews it.
+                if [ -z "$(dhcp_clients)" ] && have nmcli && nm_running; then
+                    replace_resolv "written by a DHCP client outside NetworkManager"
+                    NM_CHANGED=1
+                fi ;;
+        esac
+    fi
+    if [ -f "$RESOLV" ] && [ ! -L "$RESOLV" ]; then
+        case "$(stat -c %a "$RESOLV" 2>/dev/null)" in
+            *[4567]|"") ;;
+            *) chmod a+r "$RESOLV" && repaired "$RESOLV is readable by everyone again" ;;
+        esac
+    fi
+}
+
+reload_nm_now() {
+    if have systemctl && [ -d "$SYSTEMD_RUN" ]; then
+        systemctl reload NetworkManager.service 2>/dev/null || nmcli general reload 2>/dev/null || true
+    else
+        nmcli general reload 2>/dev/null || true
+    fi
+}
+
+# Profiles that debion-network-check imported connect automatically.
+repair_imported_profiles() {
+    [ -d "$NMCONN" ] || return 0
+    for f in "$NMCONN"/*.nmconnection; do
+        [ -f "$f" ] || continue
+        grep -q '^# Imported from /etc/network/interfaces by debion-network-check' "$f" 2>/dev/null || continue
+        grep -qE '^autoconnect[ \t]*=[ \t]*(false|no|0)' "$f" || continue
+        sed -i 's/^autoconnect[ \t]*=.*/autoconnect=true/' "$f" &&
+            repaired "the imported profile ${f##*/} connects automatically again"
+        PROFILES_CHANGED=1
+    done
+}
+
+repair_devices() {
+    have nmcli && nm_running || return 0
+    if unit_active systemd-networkd.service; then
+        rlog "systemd-networkd runs as well: network devices are left alone"
+        return 0
+    fi
+    mentioned=" $(ifupdown_mentions | tr '\n' ' ') $(pending_handover) "
+    unmanaged_conf=$("$NM_BIN" --print-config 2>/dev/null | sed -n 's/^[ \t]*unmanaged-devices[ \t]*=[ \t]*//p' | tr '\n' ';')
+    for line in $(nmcli -t -f DEVICE,TYPE,STATE device 2>/dev/null | tr ' ' '_'); do
+        dev=${line%%:*}; rest=${line#*:}; type=${rest%%:*}; state=${rest#*:}
+        case "$type" in ethernet|wifi) ;; *) continue ;; esac
+        case "$state" in
+            unmanaged)
+                case "$mentioned" in *" $dev "*) continue ;; esac
+                # Deliberately unmanaged in NetworkManager's configuration.
+                case ";$unmanaged_conf;" in
+                    *"$dev"*|*'*'*|*mac:*|*type:*|*driver:*|*except:*) continue ;;
+                esac
+                nmcli device set "$dev" managed yes >/dev/null 2>&1 &&
+                    repaired "NetworkManager manages $dev now (it was unmanaged)" ;;
+            disconnected)
+                [ "$type" = ethernet ] || continue
+                # A cable is in (otherwise "unavailable"): is there a profile
+                # that connects by itself?
+                profiles=$(nmcli -t -f UUID,TYPE,AUTOCONNECT connection show 2>/dev/null)
+                printf '%s\n' "$profiles" | grep -q ':802-3-ethernet:yes$' && continue
+                for u in $(printf '%s\n' "$profiles" | sed -n 's/^\(.*\):802-3-ethernet:no$/\1/p'); do
+                    ifn=$(nmcli -g connection.interface-name connection show "$u" 2>/dev/null)
+                    [ -z "$ifn" ] || [ "$ifn" = "$dev" ] || continue
+                    nmcli connection modify "$u" connection.autoconnect yes >/dev/null 2>&1 &&
+                        repaired "the wired profile \"$(nmcli -g connection.id connection show "$u" 2>/dev/null)\" connects automatically again"
+                    break
+                done
+                nmcli -w 8 device connect "$dev" >/dev/null 2>&1 &&
+                    repaired "connected $dev (a cable is plugged in, but nothing connected it)" ;;
+        esac
+    done
+}
+
+# Waits until NetworkManager has a connection, then until names resolve.
+verify_dns() {
+    have nmcli && nm_running || { rlog "NetworkManager is not running: DNS is not checked"; return 0; }
+    i=0
+    while :; do
+        case "$(nmcli -t -f STATE general 2>/dev/null)" in connected*) break ;; esac
+        if [ "$i" -ge "$DNS_WAIT" ]; then
+            rlog "no network connection yet: the desktop checks DNS again when it connects"
+            return 0
+        fi
+        sleep 1; i=$((i + 1))
+    done
+    if wait_dns; then rlog "$(dns_success)"; return 0; fi
+    dns_state
+    if ! has_ns && [ -n "$D_NMDNS" ] && ! { nm_wont_write && admin_dns_set; }; then
+        write_resolv "$D_NMDNS" &&
+            repaired "NetworkManager knows the DNS servers $D_NMDNS but did not write them; they are in $RESOLV now"
+        if wait_dns; then rlog "$(dns_success)"; return 0; fi
+    fi
+    if has_ns; then
+        rlog "DNS does not work yet: $RESOLV lists $(resolv_servers), but $TEST_HOST does not resolve"
+    else
+        rlog "DNS does not work yet: $RESOLV has no name server (NetworkManager has: ${D_NMDNS:-none})"
+    fi
+    rlog "  run: sudo debion-network-check --fix"
+    return 1
+}
+
+safe_repair() {
+    NM_CHANGED=0; PROFILES_CHANGED=0
+    if in_chroot; then
+        # An image build: /etc/resolv.conf belongs to the build host. The
+        # boot service repairs the installed system.
+        repair_imported_profiles
+        return 0
+    fi
+    repair_dns_config
+    repair_imported_profiles
+    if have nmcli && nm_running; then
+        if [ "$NM_CHANGED" = 1 ]; then
+            reload_nm_now
+            dns_state
+            # NetworkManager writes resolv.conf when it applies a connection.
+            if [ -n "$D_DEV" ]; then nmcli device reapply "$D_DEV" >/dev/null 2>&1 || true; fi
+        fi
+        if [ "$PROFILES_CHANGED" = 1 ]; then nmcli connection reload >/dev/null 2>&1 || true; fi
+        repair_devices
+    fi
+    return 0
+}
+
 # ========================================================== building blocks
 case "$MODE" in
     list-convertible) ifupdown_dhcp_ifaces; exit 0 ;;
@@ -808,7 +1093,7 @@ if [ "$MODE" = postinst-dns ]; then
     esac
     [ -x "$NM_BIN" ] || exit 0
     [ -e "$NM_CONF_DIR/90-debion-dns.conf" ] && exit 0
-    if grep -qsE '^[ \t]*(dns|rc-manager)[ \t]*=' "${DEBION_NM_MAIN_CONF:-/etc/NetworkManager/NetworkManager.conf}" "$NM_CONF_DIR"/*.conf; then
+    if admin_dns_set; then
         echo "debion-desktop-base: $RESOLV has no name server, and /etc/NetworkManager sets dns= or rc-manager=;"
         echo "  if names cannot be resolved, run 'sudo debion-network-check --fix'."
         exit 0
@@ -818,6 +1103,45 @@ if [ "$MODE" = postinst-dns ]; then
         : > "$RESOLV" && chmod 644 "$RESOLV"
     fi
     write_dns_conf && echo "debion-desktop-base: $RESOLV had no name server; NetworkManager writes it now ($NM_CONF_DIR/90-debion-dns.conf)"
+    exit 0
+fi
+
+# --------------------------------------------- automatic (unattended) repair
+# --boot-repair: debion-network-repair.service at every boot, and the SDE
+# panel (through /usr/libexec/debion-network-repair and polkit) when DNS
+# fails after login. --postinst-repair [--first-install]: the package
+# scripts. Both always exit 0 when they ran (a network that is down is not
+# an error of the unit); the output (and $LOGFILE) says what happened.
+if [ "$MODE" = boot-repair ] || [ "$MODE" = postinst-repair ]; then
+    if [ "$(id -u)" != 0 ]; then echo "debion-network-check --$MODE must run as root." >&2; exit 1; fi
+    if ! auto_repair_enabled; then
+        [ "$MODE" = boot-repair ] && rlog "automatic repair is off ([network] auto_repair=false in $NET_CONF)"
+        exit 0
+    fi
+    [ -x "$NM_BIN" ] || exit 0
+    # At boot the whole run stays within the unit's 30 s.
+    [ "$MODE" = boot-repair ] && DNS_WAIT=${DEBION_DNS_WAIT:-6}
+    safe_repair
+    if [ "$MODE" = boot-repair ]; then
+        verify_dns || true
+        [ "$repairs" = 0 ] && rlog "nothing to repair"
+        exit 0
+    fi
+    # A new installation turns network time on (HTTPS fails with a wrong
+    # clock); an upgrade keeps the administrator's choice.
+    if [ "$FIRST_INSTALL" = 1 ] && have timedatectl && [ -d "$SYSTEMD_RUN" ] && ! in_chroot &&
+       [ "$(timedatectl show -p NTP --value 2>/dev/null)" = no ] &&
+       have_timesyncd; then
+        timedatectl set-ntp true 2>/dev/null && repaired "network time (systemd-timesyncd) is on"
+    fi
+    if ! in_chroot && have nmcli && nm_running && [ "$(nmcli -t -f STATE general 2>/dev/null)" = connected ]; then
+        DNS_WAIT=${DEBION_DNS_WAIT:-3}
+        if wait_dns; then
+            [ "$repairs" = 0 ] || rlog "DNS works: $TEST_HOST resolves (name servers: $(resolv_servers))"
+        else
+            rlog "DNS does not work yet; run: sudo debion-network-check --fix"
+        fi
+    fi
     exit 0
 fi
 
@@ -932,8 +1256,20 @@ if [ "$MODE" = quick ]; then
     fi
     printf '{"version":%s,"verdict":%s,"nm":%s,"default_route":%s,"dns":%s,' "$VERSION" "$(json_str "$verdict")" "$(json_str "$nmstate")" "$route" "$dns"
     printf '"http_direct":%s,"https_direct":%s,"https_proxy":%s,' "$http_d" "$https_d" "${https_p:-null}"
-    printf '"proxy_mode":%s,"proxy_url":%s,"wpad_url":%s,"apt_proxy":%s,"clock_skew":%s}\n' \
-        "$(json_str "$pmode")" "$(json_str "$purl")" "$(json_str "$wpad")" "$(json_str "$aptp")" "${skew:-null}"
+    # Something --boot-repair / --fix repairs (the panel offers "Fix now").
+    repairable=false
+    case "$resolv" in
+        dangling|missing|resolved-off|dhclient) repairable=true ;;
+        empty) [ "$dns" = false ] && repairable=true ;;
+        systemd-resolved) unit_active systemd-resolved.service || repairable=true ;;
+    esac
+    [ -n "$conflicts" ] && repairable=true
+    if have nmcli && nmcli -t -f TYPE,STATE device 2>/dev/null | grep -qE '^(ethernet|wifi):unmanaged$'; then
+        repairable=true
+    fi
+    auto=true; auto_repair_enabled || auto=false
+    printf '"proxy_mode":%s,"proxy_url":%s,"wpad_url":%s,"apt_proxy":%s,"clock_skew":%s,"repairable":%s,"auto_repair":%s}\n' \
+        "$(json_str "$pmode")" "$(json_str "$purl")" "$(json_str "$wpad")" "$(json_str "$aptp")" "${skew:-null}" "$repairable" "$auto"
     exit 0
 fi
 
