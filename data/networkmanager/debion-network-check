@@ -25,7 +25,6 @@ set -u
 
 VERSION=2
 MODE=report
-JSON=0
 NOW=0
 APT_PROXY_ARG=""
 while [ $# -gt 0 ]; do
@@ -35,7 +34,7 @@ while [ $# -gt 0 ]; do
         --postinst) MODE=postinst ;;
         --handover) MODE=handover ;;
         --quick) MODE=quick ;;
-        --json) JSON=1; [ "$MODE" = report ] && MODE=quick ;;
+        --json) [ "$MODE" = report ] && MODE=quick ;;
         --wpad) MODE=wpad ;;
         --apt-proxy) MODE=apt-proxy; APT_PROXY_ARG=${2:-}; [ $# -gt 1 ] && shift ;;
         # Building blocks, used by the tests.
@@ -56,7 +55,6 @@ SYSNET=${DEBION_SYS_CLASS_NET:-/sys/class/net}
 NMCONN=${DEBION_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 BACKUPS=${DEBION_BACKUP_DIR:-/var/backups/debion-network}
 NM_RUN_CONF=${DEBION_NM_RUN_CONF:-/run/NetworkManager/conf.d}
-STATE_DIR=${DEBION_STATE_DIR:-/var/lib/debion-desktop-base}
 TEST_HOST=deb.debian.org
 TIMEOUT=${DEBION_NET_TIMEOUT:-5}
 
