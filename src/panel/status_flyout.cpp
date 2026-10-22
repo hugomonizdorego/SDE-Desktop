@@ -127,7 +127,7 @@ class FlyRow : public Fl_Button {
         if (!active_r()) track = track.alpha(0.5);
         p.fill_rounded(sx, sy, sw, sh, sh / 2, track);
         p.circle(on ? sx + sw - sh / 2 : sx + sh / 2, sy + sh / 2, sh / 2 - Sd(3),
-                 on ? t.on_accent : t.surface);
+                 on ? Color::hex(0xFFFFFF) : t.surface);
       }
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(10));
     }
