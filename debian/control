@@ -73,8 +73,6 @@ Build-Depends: debhelper-compat (= 13),
                libice-dev,
                liblcms2-dev,
                chrpath,
-               libgtk-4-dev (>= 4.8),
-               libjavascriptcoregtk-4.1-dev,
                meson,
                ninja-build,
                libxcursor-dev,
@@ -188,7 +186,7 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  .
  Applications written from scratch by the DebION Dev-Team: Niny (text
  editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
- Gallery, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
+ Gallery, Calculator, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
  SDE fork: Liria (Caja).
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.

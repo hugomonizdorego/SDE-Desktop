@@ -17,7 +17,7 @@ they are not duplicated inside SDE.
 | SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
 | SDE Power | `sde-power` (Settings > Power) | native SDE application (DebION Dev-Team, alpha16) |
 | SDE Screen Lock | `sde-lock` (Settings > Lock Screen) | native SDE application (DebION Dev-Team, alpha16) |
-| Calculator | `calculator` | [scientific-calculator](https://github.com/raad-altaie/scientific-calculator) engine, native GTK4 frontend |
+| Calculator | `calculator` | native SDE application (DebION Dev-Team, alpha50; replaced the GTK4 scientific-calculator frontend) |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
 | SDE Update | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model and Debian PackageKit |
 
@@ -161,3 +161,32 @@ shells shipped in SDE. `upstream/sources.lock.json` and `tools/suite-source.py`
 prepare those original reference trees independently of the actual build lock.
 
 See [alpha8 notes](ALPHA8.md) for current category placement and Display Settings.
+
+## Calculator (alpha50)
+
+Calculator (`calculator`, desktop id `org.debion.Calculator`) is a native
+SDE-FLTK application written from scratch by the DebION Dev-Team
+(`src/calculator/`). It replaces the GTK4 frontend of the scientific-calculator
+component, which cleared the input instead of computing "2 + 2".
+
+* Modes: Standard, Scientific (deg/rad/grad, 2nd and hyp functions, log/ln,
+  powers and roots, n!, π, e, parentheses, %, EXP, memory MC/MR/M+/M−/MS),
+  Programmer (HEX/DEC/OCT/BIN, clickable bit view, AND/OR/XOR/NOT/NAND/NOR,
+  shifts, BYTE/WORD/DWORD/QWORD) and Converter (length, mass, temperature,
+  area, volume, speed, time, data and currency with an offline table that
+  `~/.config/sde/calculator-currency.conf` can override).
+* Expressions are typed or clicked: operator precedence, right associative
+  `^` (2^3^2 = 512), unary minus (-2^2 = -4), implicit multiplication (2π,
+  2(3+4)), pocket-calculator percent (200 + 10% = 220), live preview, inline
+  errors ("Cannot divide by zero") that keep the input. Results use 64-bit
+  mantissas shown with 16 significant digits (0.1 + 0.2 = 0.3).
+* History panel (click to reuse, right click for more), persisted in
+  `$XDG_STATE_HOME/sde/calculator-history.tsv`; preferences and memory in
+  `$XDG_STATE_HOME/sde/calculator.ini`.
+* `calculator --eval EXPR [--angle deg|rad|grad]`, `--eval EXPR --base hex
+  [--bits 32]` and `--convert VALUE FROM TO` work without a display.
+* `SDE_CALC_QA_FILE=path` makes the window write its mode, expression,
+  result and error to `path` after every change (used by `tools/ui-smoke.py`).
+
+Tests: `calculator-engine` (tests/test_calculator.cpp) and `sde-calculator`
+(tests/test_calculator.py).

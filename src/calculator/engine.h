@@ -55,8 +55,7 @@ struct Result {
 
 struct Context {
   Angle angle = Angle::Degrees;
-  Number ans = 0;     // value of "Ans"
-  Number memory = 0;  // value of "M" (memory recall)
+  Number ans = 0;  // value of "Ans"
 };
 
 // Evaluates |expr|. Never throws; errors are reported in the Result.

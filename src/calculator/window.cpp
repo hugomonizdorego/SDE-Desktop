@@ -307,7 +307,6 @@ void CalcWindow::build_keys() {
 }
 
 void CalcWindow::press(const std::string &id) {
-  bool sci = mode_ == Mode::Scientific;
   bool prog = mode_ == Mode::Programmer;
   if (id.size() == 1 && (std::isdigit((unsigned char)id[0]) || (prog && id[0] >= 'A' && id[0] <= 'F'))) {
     if (prog && !digit_in_base(id[0], settings_.base)) return;
@@ -356,7 +355,6 @@ void CalcWindow::press(const std::string &id) {
   else if (id == "shr") insert(" >> ", true);
   else if (id == "mc" || id == "mr" || id == "m+" || id == "m-" || id == "ms") memory(id);
   else if (id == "swap") swap_units();
-  (void)sci;
   input_->take_focus();
 }
 

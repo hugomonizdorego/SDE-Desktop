@@ -2,7 +2,8 @@
 Type=Application
 Name=Calculator
 GenericName=Scientific Calculator
-Comment=Scientific calculations with an offline native GTK4 interface
+Comment=Standard, scientific and programmer calculations and unit conversion
+Keywords=calculator;math;arithmetic;scientific;programmer;hex;binary;convert;units;
 Exec=calculator
 TryExec=calculator
 Icon=org.debion.Calculator
