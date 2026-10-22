@@ -191,7 +191,7 @@ class App {
   std::set<std::string> open_updates;  // update rows that show their packages
   int current = -1;                    // update in the technical description
   int current_group = -1;              // or a group header
-  bool details_open = true, tech_open = false, log_open = false;
+  bool details_open = true, tech_open = false, log_open = true;
   bool reboot = false;
   std::vector<std::string> reboot_packages;
   std::map<std::string, cairo_surface_t *> icons;  // icon name -> surface (or null)
@@ -425,7 +425,7 @@ class TechPane : public Fl_Group {
  public:
   TechPane() : Fl_Group(0, 0, 10, 10) {
     box(FL_NO_BOX);
-    text = new TextView(0, 0, 10, 10);
+    text = new TextView(0, 0, 10, 10, false);
     end();
   }
   void resize(int X, int Y, int W, int H) override {
@@ -499,7 +499,10 @@ class TechPane : public Fl_Group {
                                   "published by the application developers."));
     } else {
       auto it = a.changelogs.find(u->main_package);
-      std::string head = u->description.empty() ? "" : u->description + "\n\n";
+      // The long description, unless it only repeats the summary.
+      std::string d = trim(u->description);
+      if (!d.empty() && d.back() == '.') d.pop_back();
+      std::string head = d.empty() || lower(d) == lower(trim(u->summary)) ? "" : u->description + "\n\n";
       text->set(head + (it != a.changelogs.end() ? it->second : std::string(_("Loading the changelog…"))));
     }
     layout();
@@ -555,10 +558,6 @@ class TechPane : public Fl_Group {
       draw_text(row.first, px, fy, lw, S(20), t.text_dim);
       draw_text(row.second, px + lw, fy, pw - lw, S(20), t.text);
       fy += S(20);
-    }
-    if (u && !u->flatpak && a.changelog_pending == u->main_package && text->visible()) {
-      text_font(t.font_size - S(2));
-      draw_text(_("Loading the changelog…"), px + lw, y() + S(6), pw - lw - bw_total - S(8), S(24), t.text_dim, 2);
     }
     draw_children();
     fl_pop_clip();
@@ -861,7 +860,7 @@ class UpdaterPage : public Page {
   void place(Button *b, int x, int y, int min_w) {
     b->size(std::max(min_w, b->preferred_width()), S(34));
     b->position(x, y);
-    b->show();
+    want_.insert(b);
   }
 
   void layout() override {
@@ -869,10 +868,12 @@ class UpdaterPage : public Page {
     View v = a.view();
     int p = P(), X = x() + p, W = w() - 2 * p;
     int by = y() + h() - p - S(34);
+    all_.clear();
     for (Fl_Widget *wd : std::initializer_list<Fl_Widget *>{
              details, list, tech_exp, tech, log_exp, log, settings, remind, install, check, close, cancel, back, retry,
              later, restart_now, restart_small})
-      wd->hide();
+      all_.push_back(wd);
+    want_.clear();
     header_y = y() + p;
     header_h = header_height(v);
     int cy = header_y + header_h + S(8);
@@ -881,12 +882,13 @@ class UpdaterPage : public Page {
       banner_y = cy;
       restart_small->size(restart_small->preferred_width(), S(28));
       restart_small->position(X + W - S(6) - restart_small->w(), cy + S(3));
-      restart_small->show();
+      want_.insert(restart_small);
       cy += S(34) + S(8);
     }
     progress_y = -1;
     download_y = -1;
     tree_y = tree_h = 0;
+    log_h = 0;
     // Bottom buttons.
     auto right_to_left = [&](std::initializer_list<Button *> buttons) {
       int bx = X + W;
@@ -894,7 +896,7 @@ class UpdaterPage : public Page {
         b->size(std::max(S(96), b->preferred_width()), S(34));
         bx -= b->w();
         b->position(bx, by);
-        b->show();
+        want_.insert(b);
         bx -= S(8);
       }
     };
@@ -916,20 +918,20 @@ class UpdaterPage : public Page {
         tech_h = std::max(S(60), avail);
       }
       details->resize(X, cy, std::min(W, details->preferred_width()), exp_h);
-      details->show();
+      want_.insert(details);
       cy += exp_h + S(4);
       if (a.details_open) {
         tree_y = cy;
         list->resize(X + S(3), cy + S(26), W - S(6), tree_h - S(29));
-        list->show();
+        want_.insert(list);
         cy += tree_h + S(6);
       }
       tech_exp->resize(X, cy, std::min(W, tech_exp->preferred_width()), exp_h);
-      tech_exp->show();
+      want_.insert(tech_exp);
       cy += exp_h + S(4);
       if (a.tech_open) {
         tech->resize(X, cy, W, tech_h);
-        tech->show();
+        want_.insert(tech);
       }
     } else if (v == View::Checking || v == View::Installing || v == View::Failed || v == View::Restart) {
       if (v == View::Checking || v == View::Installing) {
@@ -939,11 +941,13 @@ class UpdaterPage : public Page {
       bool has_log = !a.progress.log.empty() || !a.earlier_log.empty() || v == View::Installing;
       if (has_log) {
         log_exp->resize(X, cy, std::min(W, log_exp->preferred_width()), S(26));
-        log_exp->show();
+        want_.insert(log_exp);
         cy += S(30);
         if (a.log_open) {
-          log->resize(X, cy, W, std::max(S(40), by - S(10) - cy));
-          log->show();
+          log_y = cy;
+          log_h = std::max(S(40), by - S(10) - cy);
+          log->resize(X + S(6), cy + S(6), W - S(12), log_h - S(12));
+          want_.insert(log);
         }
       }
       if (v == View::Checking) {
@@ -967,7 +971,14 @@ class UpdaterPage : public Page {
     else check->activate();
     if (a.busy() || a.list.selected_count() == 0) install->deactivate();
     else install->activate();
+    // Only change what changes, so the focused control keeps the focus.
+    for (Fl_Widget *wd : all_) {
+      if (!want_.count(wd)) wd->hide();
+      else if (!wd->visible()) wd->show();
+    }
   }
+  std::vector<Fl_Widget *> all_;
+  std::set<Fl_Widget *> want_;
 
   void sync() {
     App &a = app();
@@ -1009,6 +1020,7 @@ class UpdaterPage : public Page {
         paint_card(pp, X, tree_y, W, tree_h);
         pp.line(X + S(8), tree_y + S(26) + 0.5, X + W - S(8), tree_y + S(26) + 0.5, t.border);
       }
+      if (log_h > 0 && a.log_open) paint_card(pp, X, log_y, W, log_h);
       if (progress_y >= 0) {
         paint_progress(pp, X, progress_y + S(4), W, S(8), a.busy() ? a.progress.percent : -1, a.phase);
       }
@@ -1069,6 +1081,7 @@ class UpdaterPage : public Page {
   TextView *log;
   Button *settings, *remind, *install, *check, *close, *cancel, *back, *retry, *later, *restart_now, *restart_small;
   int header_y = 0, header_h = 0, banner_y = 0, tree_y = 0, tree_h = 0, progress_y = -1, download_y = -1;
+  int log_y = 0, log_h = 0;
   bool banner = false;
 };
 
@@ -1480,7 +1493,7 @@ class SettingsPage : public Page {
     end();
   }
   int content_height() const override {
-    return heading_bottom() - y() + S(16) + int(rows().size()) * row_h() + S(16) + S(92) + pad();
+    return heading_bottom() - y() + S(16) + int(rows().size()) * row_h() + S(16) + note_h() + pad();
   }
   Switch *make_switch(const char *key, bool fallback) {
     auto *s = new Switch(0, 0, 10, 10);
@@ -1535,7 +1548,7 @@ class SettingsPage : public Page {
         double ly = card_y + S(8) + i * row_h() + 0.5;
         pp.line(card_x + S(20), ly, card_x + card_w - S(20), ly, t.border.alpha(0.7));
       }
-      paint_card(pp, card_x, card_y + ch + S(16), card_w, S(92));
+      paint_card(pp, card_x, card_y + ch + S(16), card_w, note_h());
       paint_icon(pp, Icon::Info, card_x + S(20), card_y + ch + S(16) + S(20), S(22), t.accent_text);
     }
     for (size_t i = 0; i < r.size(); ++i) {
@@ -1551,10 +1564,17 @@ class SettingsPage : public Page {
     text_font(t.font_size, true);
     draw_text(_("Updates are never installed automatically"), card_x + S(54), ny + S(16), card_w - S(74), S(24), t.text);
     text_font(t.font_size - S(1));
-    draw_wrapped(_("Automatic checks only read package information. Installing always asks for "
-                   "administrator rights through PackageKit or pkexec. Settings are saved "
-                   "automatically in the [update] section of sde.conf."),
-                 card_x + S(54), ny + S(42), card_w - S(74), S(44), t.text_dim);
+    draw_wrapped(note(), card_x + S(54), ny + S(42), card_w - S(74), note_h() - S(48), t.text_dim);
+  }
+  static const char *note() {
+    return _("Automatic checks only read package information. Installing always asks for "
+             "administrator rights through PackageKit or pkexec. Settings are saved "
+             "automatically in the [update] section of sde.conf.");
+  }
+  int note_h() const {
+    text_font(active_theme().font_size - S(1));
+    int cw = std::min(w() - 2 * pad(), S(760));
+    return S(54) + wrapped_height(note(), cw - S(74));
   }
   Fl_Choice *interval;
   Fl_Choice *remind;
@@ -1751,8 +1771,12 @@ class ActivityStrip : public Fl_Group {
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  int row_h() const { return S(42); }
-  int row_y(int i) const { return y() + S(86) + i * row_h() + (i >= P_SETTINGS ? S(20) : 0); }
+  // Compact on short screens (1024x600 at 150%).
+  bool compact() const { return h() < S(470); }
+  int row_h() const { return compact() ? S(34) : S(42); }
+  int row_y(int i) const {
+    return y() + (compact() ? S(66) : S(86)) + i * row_h() + (i >= P_SETTINGS ? (compact() ? S(16) : S(20)) : 0);
+  }
   void draw() override {
     const Theme &t = active_theme();
     App &a = app();
@@ -1791,6 +1815,7 @@ class Sidebar : public Fl_Widget {
       }
     }
     text_font(t.font_size + S(2), true);
+    if (text_width(_("Software Updater")) > w() - S(70)) text_font(t.font_size, true);
     draw_text(_("Software Updater"), x() + S(64), y() + S(24), w() - S(70), S(34), t.text);
     text_font(t.font_size - S(2), true);
     draw_text(_("SYSTEM"), x() + S(22) + inset / 2, row_y(P_SETTINGS) - S(22), w() - S(30), S(18), t.text_dim);
@@ -1810,6 +1835,8 @@ class Sidebar : public Fl_Widget {
     }
     text_font(t.font_size - S(2));
     std::string backend = a.packagekit_client.empty() ? _("APT via pkexec") : _("Debian PackageKit");
+    // The footer only where it does not cover the last page.
+    if (row_y(P_COUNT - 1) + row_h() + S(46) > y() + h() - inset) return;
     draw_text(backend, x() + S(22) + inset / 2, y() + h() - S(40) - inset, w() - S(36), S(18), t.text_dim);
     draw_text(_("Based on mintupdate"), x() + S(22) + inset / 2, y() + h() - S(22) - inset, w() - S(36), S(18),
               t.text_dim);
