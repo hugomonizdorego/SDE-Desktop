@@ -1027,6 +1027,14 @@ class ClockHero : public Fl_Group {
       // Text beside the face: date, then the weather lines.
       clock_y = clock_h = 0;
     }
+    // A low hero (the calendar view on small screens): the clock on the
+    // left over the full height, the date and weather beside it.
+    bool flat = H < S(100) && clock_h > 0;
+    if (flat) {
+      clock_y = y();
+      clock_h = H;
+      big = std::min(S(44), int(H * .56));
+    }
     {
       Painter p(window()->w(), window()->h());
       weather::draw_scene(p, x(), y(), w(), H, S(14), wx_, animate_ ? anim_seconds() : 2.0);
@@ -1077,8 +1085,11 @@ class ClockHero : public Fl_Group {
       draw_children();
       return;
     }
-    text_font(t.font_size + (small ? 0 : 1), true);
-    shadowed(date, left, date_y, text_w, date_h, ink);
+    if (!flat) {
+      text_font(t.font_size + (small ? 0 : 1), true);
+      shadowed(date, left, date_y, text_w, date_h, ink);
+    }
+    int clock_right = led_right_;
     // The clock.
     if (clock_.style == clockface::Style::Led) {
       if (!suffix.empty()) {
@@ -1099,10 +1110,26 @@ class ClockHero : public Fl_Group {
       clockface::draw_blink_text(main, left + 1, clock_y + 1, tw, clock_h, shade.alpha(.45),
                                  colon);
       clockface::draw_blink_text(main, left, clock_y, tw, clock_h, ink, colon);
+      clock_right = left + tw;
       if (!ampm.empty()) {
         text_font(t.font_size + 2, true);
         shadowed(ampm, left + tw + S(8), clock_y, S(60), clock_h, soft);
+        clock_right += S(8) + text_width(ampm);
       }
+    }
+    if (flat) {
+      int rx = clock_right + S(16), rw = std::max(0, right - S(76) - rx);
+      int mid = y() + H / 2;
+      text_font(t.font_size, true);
+      shadowed(date, rx, mid - S(22), rw, S(20), ink);
+      if (weather_)
+        info_line(rx, mid, rw, S(20), shadowed, ink, soft);
+      else if (greet_) {
+        text_font(t.font_size, false);
+        shadowed(greeting(lt), rx, mid, rw, S(20), soft);
+      }
+      draw_children();
+      return;
     }
     if (weather_)
       info_line(left, info_y, text_w, info_h, shadowed, ink, soft);
@@ -3033,7 +3060,7 @@ void QuickSettings::agenda_card(SectionBuilder &b) {
                remind_label(it.remind);
     for (char &c : extra)
       if (c == '\n') c = ' ';
-    if (!extra.empty()) {
+    if (!extra.empty() && !agenda_tight_) {
       new ActionLabel(pad + S(50), b.y - S(4), inner - S(62), S(22), [extra] { return extra; }, 2);
       b.y += S(20);
     }
@@ -3234,6 +3261,7 @@ struct QuickSettings::CenterPlan {
   bool calendar = false, tz = false, agenda = false, notif = false;
   int cal_row = 29;        // calendar week row height at 100 %
   bool bright_right = false;  // the brightness settings card in the right column
+  bool focus = false;  // calendar view: time zone and agenda in place of the controls
 };
 
 
@@ -3246,13 +3274,18 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
   int pad = S(popup_style::kPad), gap = S(10), sp = S(10);
-  W = plan.two ? std::min(S(2 * popup_style::kCenterW), mw - S(8))
-               : std::min(S(popup_style::kCenterW), mw);
+  // Anchored at the panel's right end: no wider than the room left of it.
+  auto *panel = Panel::instance;
+  int room = std::min(mw, panel->x() + panel->w() - mx);
+  W = plan.two ? std::min(S(2 * popup_style::kCenterW), room - S(8))
+               : std::min(S(popup_style::kCenterW), room);
   int colw = plan.two ? (W - 2 * pad - gap) / 2 : W - 2 * pad;
   if (plan.two && colw < S(296)) return false;
   header_ = 0;
   footer_ = power_open_ ? S(92) : S(48);
-  agenda_tight_ = plan.cal_row <= 22;
+  agenda_tight_ = plan.cal_row <= 22 || plan.focus;
+  // The calendar view on a small screen takes a lower hero.
+  int hero_min = S(plan.focus ? 72 : popup_style::kHeroMin);
 
   // Left column: the controls.
   begin();
@@ -3269,9 +3302,16 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
         2);
     bl.y += S(30);
   }
-  tiles_part(bl, plan.tiles_all);
-  sliders_part(bl, !plan.bright_right);
-  if (plan.media == 1) media_part(bl);
+  if (plan.focus) {
+    // The calendar view on a small screen: time zone and agenda under the
+    // hero, the month beside them.
+    // With 22 px week rows the agenda fits under the month instead.
+    calendar_part(bl, plan.cal_row, plan.tz, plan.agenda && plan.cal_row != 22, false);
+  } else {
+    tiles_part(bl, plan.tiles_all);
+    sliders_part(bl, !plan.bright_right);
+    if (plan.media == 1) media_part(bl);
+  }
   if (!plan.two) {
     calendar_part(bl, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
   }
@@ -3287,7 +3327,10 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
     SectionBuilder br{this, pad + colw + gap, colw, 0};
     if (plan.bright_right && brightness_open_) brightness_settings(br);
     if (plan.media >= 2) media_part(br, plan.media == 3);
-    calendar_part(br, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
+    if (plan.focus)
+      calendar_part(br, plan.cal_row, false, plan.agenda && plan.cal_row == 22, plan.calendar);
+    else
+      calendar_part(br, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
     right->end();
     rh = br.y;
   }
@@ -3303,13 +3346,13 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
   if (plan.two) {
     int wide_hero = limit - bottom - top - sp - std::max(lh, rh);
     int narrow_hero = std::min(limit - bottom - top - sp - lh, S(popup_style::kHeroMax));
-    wide = wide_hero >= S(popup_style::kHeroMin) &&
+    wide = wide_hero >= hero_min &&
            (wide_hero >= narrow_hero || top + rh + right_bottom > limit);
   }
   int column = wide ? std::max(lh, rh) : lh;
   int hero = std::min(S(popup_style::kHeroMax), limit - bottom - top - sp - column);
-  bool fits = hero >= S(popup_style::kHeroMin) && (wide || top + rh + right_bottom <= limit);
-  hero = std::max(S(popup_style::kHeroMin), hero);
+  bool fits = hero >= hero_min && (wide || top + rh + right_bottom <= limit);
+  hero = std::max(hero_min, hero);
   int body_top = top + hero + sp;
   left->resize(pad, body_top, colw, std::max(1, lh));
   if (right) right->resize(pad + colw + gap, wide ? body_top : top, colw, std::max(1, rh));
@@ -3374,6 +3417,20 @@ void QuickSettings::rebuild_center() {
     // stay, the media card goes (it is in the compact view). The time zone
     // row too, with week rows of 22 px and a one-line agenda.
     plans.push_back({"calendar-two", true, false, 0, true, true, true, false, 22});
+    if (calendar_view_ || agenda_form_) {
+      CenterPlan focus{"calendar-focus", true, false, 0, true, true, true, false, 24};
+      focus.focus = true;
+      plans.push_back(focus);
+      focus.cal_row = 22;
+      plans.push_back(focus);
+      focus.cal_row = 24;
+      focus.agenda = false;
+      plans.push_back(focus);
+      focus.agenda = true;
+      focus.tz = false;
+      plans.push_back(focus);
+    }
+    plans.push_back({"calendar-two", true, false, 0, true, true, false, false, 22});
     plans.push_back({"calendar-two", true, false, 0, true, false, true, false, 24});
     plans.push_back({"calendar-two", true, false, 0, true, false, false, false, 24});
     plans.push_back({"calendar", false, false, 0, true, false, false, false, 24});
