@@ -3,3 +3,8 @@ data/desktop-base/debion-logos usr/share/desktop-base/
 data/desktop-base/plymouth/debion usr/share/plymouth/themes/
 data/networkmanager/20-debion-connectivity.conf usr/lib/NetworkManager/conf.d/
 data/networkmanager/debion-network-check usr/sbin/
+data/networkmanager/debion-network-repair usr/libexec/
+data/networkmanager/debion-network-repair.service usr/lib/systemd/system/
+data/networkmanager/org.debion.network-check.policy usr/share/polkit-1/actions/
+data/networkmanager/50-debion-network-repair.rules usr/share/polkit-1/rules.d/
+data/networkmanager/network.conf etc/debion/

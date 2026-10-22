@@ -58,6 +58,30 @@ int main() {
   CHECK(parse_network_verdict("{\"version\":2,\"verdict\":\"no-dns\",\"nm\":\"\"}") == "no-dns");
   CHECK(parse_network_verdict("garbage").empty());
   CHECK(!network_verdict_text("proxy-required").empty() && network_verdict_text("ok").empty());
+  // Login (alpha52): NetworkManager says FULL before DNS works; no green
+  // until the first verdict for the connection is in; a check that failed
+  // ("unknown") falls back to NetworkManager.
+  CHECK(network_led(true, 4, false, "checking") == NetLed::YELLOW);
+  CHECK(network_led(false, 4, false, "checking") == NetLed::RED);
+  CHECK(network_led(true, 4, false, "no-dns") == NetLed::YELLOW);
+  CHECK(network_led(true, 4, false, "unknown") == NetLed::GREEN);
+  CHECK(network_verdict_text("checking") == "Checking internet access...");
+  {
+    std::string j = "{\"verdict\":\"no-dns\",\"clock_skew\":null,\"repairable\":true,\"auto_repair\": false}";
+    CHECK(parse_json_bool(j, "repairable"));
+    CHECK(!parse_json_bool(j, "auto_repair", true));
+    CHECK(parse_json_bool("{\"version\":2}", "auto_repair", true));
+    CHECK(!parse_json_bool("{\"version\":2}", "repairable"));
+  }
+  CHECK(network_verdict_fixable("no-dns", false));
+  CHECK(network_verdict_fixable("no-route", true) && !network_verdict_fixable("no-route", false));
+  CHECK(!network_verdict_fixable("proxy-required", true) && !network_verdict_fixable("ok", true));
+  CHECK(network_repair_summary("Fixing\nDNS works now: deb.debian.org resolves to 1.2.3.4\n", 0) == "ok");
+  CHECK(network_repair_summary("  connected enp0s3\n  DNS works now: x\n", 0) == "ok");
+  CHECK(network_repair_summary("DNS still does not work: the network gives no DNS server\nNext: x\n", 4) ==
+        "DNS still does not work: the network gives no DNS server");
+  CHECK(network_repair_summary("nothing to repair\n", 0) == "done");
+  CHECK(network_repair_summary("", 126).empty());
   // Keyboard applets.
   CHECK(keyboard_applet("ibus-ui-gtk3") == KeyboardApplet::INPUT_METHOD);
   CHECK(keyboard_applet("Fcitx") == KeyboardApplet::INPUT_METHOD);

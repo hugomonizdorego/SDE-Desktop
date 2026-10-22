@@ -275,6 +275,7 @@ void PanelControls::start(std::function<void()> fn) {
         });
   }
   start_drives();
+  start_network();
   refresh();
   Fl::add_timeout(3, tick, this);
 }
@@ -724,7 +725,7 @@ void PanelControls::refresh_devices() {
                    changed();
                    if (visible_)
                      for (const auto& d : devices)
-                       if (d.state == "connected") {
+                       if (starts_with(d.state, "connected")) {
                          auto dev = d.device;
                          run_async({"nmcli", "-g", "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS", "device",
                                     "show", dev},
@@ -754,8 +755,27 @@ void PanelControls::refresh_devices() {
   });
 }
 void PanelControls::network_device(const std::string& name, bool connect) {
-  if (std::none_of(devices.begin(), devices.end(), [&](const auto& d) { return d.device == name; }))
+  auto dev = std::find_if(devices.begin(), devices.end(), [&](const auto& d) { return d.device == name; });
+  if (dev == devices.end()) return;
+  if (connect && dev->state == "unmanaged") {
+    // Not managed by NetworkManager (left over from ifupdown): "nmcli
+    // device connect" would only fail. Manage it first (polkit's
+    // network-control, allowed in an active local session).
+    message = _("Connecting...");
+    changed();
+    run_async({"nmcli", "device", "set", name, "managed", "yes"},
+              [this, name](const std::string&, int code) {
+                if (code) {
+                  message = _("NetworkManager does not manage this device: run debion-network-check --fix");
+                  changed();
+                  return;
+                }
+                for (auto& d : devices)
+                  if (d.device == name) d.state = "disconnected";
+                network_device(name, true);
+              });
     return;
+  }
   run_async({"nmcli", "device", connect ? "connect" : "disconnect", name},
             [this](const std::string& out, int code) {
               message = code ? (trim(out).empty() ? _("Network operation failed") : trim(out))

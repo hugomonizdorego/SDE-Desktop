@@ -97,9 +97,30 @@ class PanelControls {
   // debion-network-check --quick --json (when installed): its verdict for
   // the current connection, "" until it answered. Run on connection
   // changes and when the Network flyout opens, never on a timer.
+  // "checking" until the first answer for a connection (the LED is not
+  // green before it), "unknown" when the check failed.
   std::string net_verdict;
   bool network_checker() const;
-  void check_network();
+  // |done| runs once the verdict is in.
+  void check_network(std::function<void()> done = {});
+  // --quick --json said a repair would change something.
+  bool net_repairable = false;
+  // The panel's view of the network (kind|connection, "" offline, and
+  // NetworkManager's connectivity): checks again on a new connection, a
+  // connectivity change and, while the verdict is bad, after 20 s, 40 s...
+  // (at most every 5 minutes). Offers the repair once per connection.
+  void network_state(const std::string& key, int connectivity);
+  // Repairs the network through pkexec: the safe repair
+  // (/usr/libexec/debion-network-repair) when polkit allows it without a
+  // password, else (or with |full|) debion-network-check --fix.
+  // |interactive| false (the automatic repair after login) never asks for
+  // a password: when the safe repair is not enough it offers "Fix now".
+  void repair_network(bool full, bool interactive = true);
+  // Flyout "Troubleshoot": NetworkManager's check, then the verdict; DNS
+  // problems are repaired, others reconnect.
+  void troubleshoot_network();
+  // "running", "ok", "failed" (or ""), and the sentence the flyout shows.
+  std::string net_repair_state, net_repair_text;
   // power-profiles-daemon (powerprofilesctl).
   void refresh_power_profiles();
   void set_power_profile(const std::string& profile);
@@ -139,6 +160,17 @@ class PanelControls {
                     RemovableDrive drive, bool power_off);
   void power_off(const RemovableDrive& drive, bool power_off);
   bool verdict_pending_ = false, verdict_again_ = false;
+  // Network (drives.cpp, "debion-network-check").
+  void start_network();
+  void verdict_in(bool auto_repair);
+  void offer_repair();
+  static void net_retry(void*);
+  static void net_refresh(void*);
+  std::vector<std::function<void()>> verdict_waiters_;
+  std::string net_key_;
+  int net_connectivity_ = -1, net_retries_ = 0;
+  bool net_offered_ = false, net_auto_tried_ = false, net_refresh_pending_ = false;
+  uint32_t net_notification_ = 0;
   bool udisks_ = false, drives_scanned_ = false, notify_listening_ = false;
   std::vector<std::string> known_drives_;
   std::map<uint32_t, std::string> drive_notifications_;  // notification id -> drive name

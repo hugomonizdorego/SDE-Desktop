@@ -433,7 +433,8 @@ std::string StatusFlyout::structure() const {
   if (section_ == "network") {
     sig += std::to_string(s.network.available) + std::to_string(s.network.has_wifi) +
            std::to_string(s.network.wifi_enabled) + s.network.kind + s.network.connection +
-           std::to_string(s.network.connectivity) + std::to_string(c.airplane) + c.net_verdict;
+           std::to_string(s.network.connectivity) + std::to_string(c.airplane) + c.net_verdict +
+           std::to_string(c.net_repairable) + c.net_repair_state + c.net_repair_text;
     for (const auto &w : s.wifi) sig += "|" + w.ssid + std::to_string(w.active) + std::to_string(w.signal / 25);
     for (const auto &d : c.devices) sig += "|" + d.device + d.state + d.connection + d.ip;
   } else if (section_ == "drives") {
@@ -557,7 +558,8 @@ void StatusFlyout::network_menu() {
   const auto &n = SystemStatus::get().network;
   bool airplane = PanelControls::get().airplane;
   std::vector<std::pair<std::string, std::function<void()>>> actions;
-  actions.push_back({_("Troubleshoot"), [] { SystemStatus::get().troubleshoot_network(); }});
+  // The result shows in the flyout (message line, repair row).
+  actions.push_back({_("Troubleshoot"), [] { PanelControls::get().troubleshoot_network(); }});
   actions.push_back({_("Check internet connection"), [] {
                        auto &s = SystemStatus::get();
                        s.message = _("Checking the internet connection...");
@@ -602,6 +604,17 @@ void StatusFlyout::network_section(FlyBuilder &b) {
   b.y += S(44);
   std::string message = !c.message.empty() ? c.message : s.message;
   if (!message.empty()) b.info(message);
+  // DNS fails (or a device/profile the repair fixes): repair right here;
+  // the outcome stays on the row.
+  if (n.connected() && (!c.net_repair_state.empty() || network_verdict_fixable(c.net_verdict, c.net_repairable)))
+    b.row(c.net_repair_state == "ok" ? _("Repair again") : _("Repair the connection"), wired_icon(),
+          [] { PanelControls::get().repair_network(false); },
+          [] {
+            const auto &pc = PanelControls::get();
+            if (!pc.net_repair_text.empty()) return pc.net_repair_text;
+            return std::string(_("Repairs DNS and checks it"));
+          },
+          nullptr, c.net_repair_state != "running");
   if (c.net_verdict == "proxy-required" || c.net_verdict == "no-dns" || c.net_verdict == "clock")
     b.row(c.net_verdict == "proxy-required" ? _("Proxy settings")
           : c.net_verdict == "clock"        ? _("Date and time settings")
@@ -648,7 +661,9 @@ void StatusFlyout::network_section(FlyBuilder &b) {
               if (dd.device != device) continue;
               if (dd.state == "unavailable") return std::string(_("Cable unplugged"));
               if (starts_with(dd.state, "connecting")) return std::string(_("Connecting..."));
-              if (dd.state == "connected") {
+              if (dd.state == "unmanaged") return std::string(_("Not managed by NetworkManager"));
+              // "connected (externally)": up, but not by NetworkManager.
+              if (starts_with(dd.state, "connected")) {
                 std::string text = std::string(_("Connected")) + " · " + dd.connection;
                 return text;
               }
@@ -662,7 +677,7 @@ void StatusFlyout::network_section(FlyBuilder &b) {
             return false;
           },
           plugged);
-    if (d.state == "connected" && !d.ip.empty()) {
+    if (starts_with(d.state, "connected") && !d.ip.empty()) {
       std::string line = "IP " + d.ip + (d.gateway.empty() ? "" : " · " + std::string(_("Gateway")) + " " + d.gateway);
       new FlyLabel(b.pad + S(32), b.y - S(4), b.inner - S(40), S(18), [line] { return line; }, 2);
       b.y += S(16);

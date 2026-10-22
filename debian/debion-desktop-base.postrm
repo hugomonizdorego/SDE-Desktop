@@ -3,6 +3,9 @@
 set -e
 if [ "$1" = "purge" ]; then
     rm -rf /var/lib/debion-desktop-base
+    # The repair log; NetworkManager keeps conf.d/90-debion-dns.conf (it
+    # keeps DNS working without this package).
+    rm -f /var/log/debion-network-check.log
 fi
 #DEBHELPER#
 exit 0

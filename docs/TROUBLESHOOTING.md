@@ -62,6 +62,94 @@ section to return to the automatic layout.
 
 ## Wi-Fi or Ethernet shows "connected" but there is no internet
 
+### Internet only worked after running `--fix` by hand (alpha 52)
+
+Report: after installing SDE on a Debian standard system the internet
+connected only after `sudo debion-network-check --fix`; it must work right
+after the installation and at every login. Nothing has to be run by hand
+any more:
+
+**At installation and every upgrade** the `debion-desktop-base` postinst
+hands DHCP/Wi-Fi interfaces from `/etc/network/interfaces` to NetworkManager
+(once per system, effective at the next boot; static, bridge, bond, VLAN
+and hook setups are never touched; opt out: `/etc/debion/keep-ifupdown`)
+and runs `debion-network-check --postinst-repair` (`--first-install` on a
+new installation). It prints what it changed (`debion-desktop-base: …`) and
+logs it to `/var/log/debion-network-check.log`.
+
+**At every boot** `debion-network-repair.service` (oneshot,
+`After=NetworkManager.service`, at most 30 s, nothing waits for it, so it
+never delays the login screen) runs `debion-network-check --boot-repair`.
+Both modes make only safe, idempotent changes and do nothing on a healthy
+system:
+
+- an `/etc/resolv.conf` that cannot work (missing, dangling symlink, stub of
+  a stopped systemd-resolved, left by the installer's dhclient while no such
+  client runs) is moved aside (`/etc/resolv.conf.debion-<date>`) so that
+  NetworkManager writes it; a running systemd-resolved or a working
+  resolvconf is left alone;
+- when NetworkManager's configuration would not write the file (`dns=none`,
+  `rc-manager=unmanaged`/`resolvconf`/`netconfig`, `rc-manager=auto` with a
+  resolvconf binary, `dns=systemd-resolved` without it), it writes
+  `conf.d/90-debion-dns.conf` (`dns=default`, `rc-manager=file`) and reloads
+  NetworkManager — **unless** `dns=`/`rc-manager=` is set in
+  `/etc/NetworkManager` by the administrator: then it only logs a hint and
+  `--fix` (an administrator's decision) overrides it;
+- Ethernet/Wi-Fi devices that are `unmanaged` although nothing else
+  configures them (not in `/etc/network/interfaces`, not in
+  `unmanaged-devices`, no systemd-networkd; physical cards only, never veth,
+  vboxnet or devices udev marks `NM_UNMANAGED`) are managed by NetworkManager;
+- profiles imported from `/etc/network/interfaces` connect automatically
+  (`autoconnect=true`); an Ethernet port with a cable but no automatic
+  profile gets its wired profile switched to `autoconnect yes` and connected;
+- `/etc/resolv.conf` is made world-readable;
+- a new installation turns network time on (`timedatectl set-ntp true` when
+  systemd-timesyncd is installed); upgrades keep the administrator's choice;
+- `--boot-repair` then waits (briefly) for a connection and checks that
+  `deb.debian.org` resolves; if NetworkManager knows DNS servers but the file
+  stayed empty, it writes them.
+
+In an image build (`ischroot`) only imported profiles are touched;
+`/etc/resolv.conf` belongs to the build host there.
+
+**At login** the panel asks NetworkManager at once (nmcli, D-Bus), runs
+`debion-network-check --quick --json` as soon as it sees a connection and
+again on every connectivity change, after resume and — while the result is
+bad — after 20 s, 40 s, … (at most every 5 minutes). The LED stays yellow
+("Checking internet access…") until that verdict is in: NetworkManager
+reports full connectivity before the browser can resolve a single name.
+NetworkManager's state and device signals refresh the network at once (a
+cable plugged in after login). When DNS fails (or `--quick` reports
+`"repairable": true`):
+
+- if polkit allows it without a password (`pkcheck`), the panel runs the
+  safe repair silently: `pkexec /usr/libexec/debion-network-repair`;
+- otherwise a notification "Internet needs a quick repair" offers **Fix
+  now** (`pkexec /usr/sbin/debion-network-check --fix`, an administrator's
+  password);
+- the Network flyout shows **Repair the connection** with the outcome on
+  the row, and **⋯ > Troubleshoot** repairs DNS problems (other problems
+  still reconnect the profile).
+
+**Security of the passwordless repair.** `org.debion.network-check.repair`
+(`/usr/share/polkit-1/actions/org.debion.network-check.policy`) requires an
+administrator's password by default; `50-debion-network-repair.rules` lets
+only *active, local* members of group `sudo` run it without one — people
+who can already run `sudo debion-network-check --fix`. The action's program
+`/usr/libexec/debion-network-repair` takes no arguments and only executes
+`debion-network-check --boot-repair`, which refuses any further option;
+pkexec clears the environment and the script ignores its `DEBION_*` path
+overrides under pkexec. The worst a program of that user can cause is the
+same idempotent repair (a NetworkManager reload at most). SSH sessions,
+inactive sessions and other users still need a password, and the full
+`--fix` (`org.debion.network-check.fix`) always does.
+
+**Opting out.** `[network] auto_repair=false` in `/etc/debion/network.conf`
+turns off the boot, package and panel repairs (`--fix` by hand still
+works); `systemctl disable debion-network-repair.service` turns off only the
+boot run. What happened: `journalctl -u debion-network-repair` and
+`/var/log/debion-network-check.log`.
+
 ### "No name server" still broken after `--fix` (alpha 51)
 
 Report: Debian standard ISO in VirtualBox (NAT, `enp0s3`, `10.0.2.15`,
@@ -126,8 +214,8 @@ through `/etc/resolv.conf`. The report now says so when DNS fails.
    - even public servers do not answer: the network blocks DNS (port 53),
      ask its administrator (a proxy may be required).
 
-On installation `debion-desktop-base` runs `debion-network-check
---postinst-dns`: when `/etc/resolv.conf` is missing, empty or dangling (or
+In alpha 51, on installation `debion-desktop-base` ran `debion-network-check
+--postinst-dns` (alpha 52: `--postinst-repair`, see above): when `/etc/resolv.conf` is missing, empty or dangling (or
 points to a stopped systemd-resolved) and no `dns=`/`rc-manager=` was set by
 the administrator, it writes the same `90-debion-dns.conf` and reloads
 NetworkManager. A working `resolv.conf` is never touched. Remove the file to

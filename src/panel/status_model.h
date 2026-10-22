@@ -35,8 +35,21 @@ NetLed network_led(bool connected, int connectivity, bool probe_failed,
                    const std::string &verdict = "");
 // The "verdict" of debion-network-check --quick --json output ("" if none).
 std::string parse_network_verdict(const std::string &json);
-// A sentence for the Network flyout ("" for ok/unknown/none).
+// A sentence for the Network flyout ("" for ok/unknown/none). The panel's
+// own verdict "checking" (the first check of a connection has not answered
+// yet) is yellow too: NetworkManager reports FULL as soon as its own check
+// passes, before the browser can resolve a single name.
 std::string network_verdict_text(const std::string &verdict);
+// A boolean member of a flat JSON object (|fallback| when absent).
+bool parse_json_bool(const std::string &json, const std::string &key, bool fallback = false);
+// Whether debion-network-check's repair is likely to help: DNS fails, or
+// --quick reported "repairable" (an unmanaged device, ifupdown DHCP, a
+// resolv.conf nobody writes) for a network without route or internet.
+bool network_verdict_fixable(const std::string &verdict, bool repairable);
+// The outcome of a --fix/--boot-repair run for the flyout: "ok" when DNS
+// works afterwards, the line that says what still fails, "done" for a
+// successful run without a DNS line, else the last line.
+std::string network_repair_summary(const std::string &output, int status);
 
 // ------------------------------------------------------- keyboard indicators
 
