@@ -4,13 +4,14 @@
   <id>org.debion.Update</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <name>SDE Update</name>
-  <summary>Keep DebION up to date</summary>
+  <name>Software Updater</name>
+  <summary>Install critical, security, main and Flatpak updates</summary>
   <developer id="org.debion">
     <name>DebION Dev-Team</name>
   </developer>
   <description>
-    <p>SDE Update installs security, software and kernel updates for DebION GNU/Linux from the configured sources, using PackageKit.</p>
+    <p>Software Updater installs critical, security and main updates for DebION GNU/Linux from the configured package sources, using PackageKit or APT, and updates Flatpak applications. Updates are grouped like in a classic software updater; each group and package can be unchecked before choosing Install Now.</p>
+    <p>Software Updater was called SDE Update before Alpha 51; the command is still sde-update.</p>
     <p>Update model adapted from Linux Mint's Update Manager (mintupdate) by Clement Lefebvre and the Linux Mint team.</p>
     <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
   </description>

@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 SDE contributors.
-# Runs one fixed package transaction for SDE Update and reports its progress.
+# Runs one fixed package transaction for the Software Updater (sde-update)
+# and reports its progress.
 #
 # This helper runs as the user. It never becomes root itself: PackageKit
 # (pkcon) performs the transaction under the system's polkit policy, and the
@@ -11,6 +12,10 @@
 #   transaction.py [--plan] [--backend auto|packagekit|apt] ACTION [PACKAGE...]
 #   ACTION: refresh, upgrade (all, or the named packages), autoremove, clean,
 #           repair
+#   transaction.py [--plan] flatpak INSTALLATION:REF...
+#           updates the named Flatpak refs (INSTALLATION is system or user,
+#           REF is app|runtime/ID/ARCH/BRANCH). It runs `flatpak update` as
+#           the user; Flatpak's own polkit rules cover system installations.
 #
 # Output protocol (tab separated, one record per line):
 #   SDE-TRANSACTION  1
@@ -34,6 +39,9 @@ import sys
 PROTOCOL = "SDE-TRANSACTION\t1"
 ACTIONS = ("refresh", "upgrade", "autoremove", "clean", "repair")
 NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]*(:[a-z0-9]+)?$")
+FLATPAK_REF = re.compile(
+    r"^(system|user):(app|runtime)/[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_]+/[A-Za-z0-9_.-]+$"
+)
 PK_INFOS = (
     "Downloading",
     "Updating",
@@ -68,6 +76,50 @@ def clean(value):
 
 def valid_name(name):
     return bool(NAME.match(name or ""))
+
+
+def valid_flatpak(item):
+    return bool(FLATPAK_REF.match(item or "")) and ".." not in item
+
+
+def flatpak_commands(items):
+    """One `flatpak update` argv per installation, or None when invalid."""
+    if not items or not all(valid_flatpak(i) for i in items):
+        return None
+    flatpak = which("flatpak") or "/usr/bin/flatpak"
+    commands = []
+    for installation in ("system", "user"):
+        refs = [i.split(":", 1)[1] for i in items if i.startswith(installation + ":")]
+        if refs:
+            commands.append(
+                [flatpak, "update", "--" + installation, "-y", "--noninteractive"] + refs
+            )
+    return commands
+
+
+def parse_flatpak(line):
+    """Translates `flatpak update --noninteractive` output into records."""
+    text = line.strip()
+    if not text:
+        return []
+    if text.lower().startswith("error:"):
+        return [("ERROR", clean(text[6:]))]
+    records = []
+    percent = re.search(r"(\d{1,3})%", text)
+    if percent:
+        records.append(("PERCENT", str(max(0, min(100, int(percent.group(1)))))))
+    match = re.match(r"^(Updating|Installing|Downloading)\b[^A-Za-z]*(?:\S+\s+)?"
+                     r"((?:app|runtime)/[^\s/]+/[^\s/]+/[^\s]+)", text)
+    if match:
+        info = match.group(1)
+        ref = match.group(2)
+        records.append(("STATUS", "Updating packages"))
+        records.append(("ITEM", "Updating" if info != "Downloading" else info,
+                        ref.split("/")[1], ref.split("/")[3]))
+        return records
+    if not percent:
+        records.append(("LOG", clean(text)))
+    return records
 
 
 def which(name):
@@ -119,7 +171,10 @@ def command(backend, action, packages=()):
 
 
 def backend_of(argv):
-    return "packagekit" if argv and os.path.basename(argv[0]) == "pkcon" else "apt"
+    base = os.path.basename(argv[0]) if argv else ""
+    if base == "flatpak":
+        return "flatpak"
+    return "packagekit" if base == "pkcon" else "apt"
 
 
 def split_printable(printable, known=()):
@@ -213,10 +268,10 @@ def write(*fields, output=sys.stdout):
     print("\t".join(clean(f) for f in fields), file=output, flush=True)
 
 
-def run(argv, known=(), output=sys.stdout):
+def run(argv, known=(), output=sys.stdout, final=True):
     backend = backend_of(argv)
     write("BACKEND", backend, output=output)
-    write("CANCELLABLE", "1" if backend == "packagekit" else "0", output=output)
+    write("CANCELLABLE", "1" if backend in ("packagekit", "flatpak") else "0", output=output)
     write("STATUS", "Waiting for authentication" if backend == "apt" else "Starting",
           output=output)
     write("PERCENT", "-1", output=output)
@@ -236,7 +291,7 @@ def run(argv, known=(), output=sys.stdout):
 
     def cancel(signum, frame):
         state["cancelled"] = True
-        if backend == "packagekit":
+        if backend in ("packagekit", "flatpak"):
             try:
                 child.send_signal(signal.SIGINT)
             except OSError:
@@ -249,14 +304,46 @@ def run(argv, known=(), output=sys.stdout):
         line = raw.decode("utf-8", "replace").rstrip("\n")
         if "Failed to contact PackageKit" in line:
             contact_failed = True
-        records = parse_pkcon(line, known) if backend == "packagekit" else parse_apt(line)
+        if backend == "packagekit":
+            records = parse_pkcon(line, known)
+        elif backend == "flatpak":
+            records = parse_flatpak(line)
+        else:
+            records = parse_apt(line)
         for record in records:
             write(*record, output=output)
     code = child.wait()
     if contact_failed and not state["cancelled"]:
         return -2  # caller may retry with APT
-    write("EXIT", str(code), outcome(backend, code, state["cancelled"]), output=output)
+    if final or code != 0 or state["cancelled"]:
+        write("EXIT", str(code), outcome(backend, code, state["cancelled"]), output=output)
+        if state["cancelled"] and not code:
+            code = 1
     return code
+
+
+def main_flatpak(items, plan):
+    commands = flatpak_commands(items)
+    if commands is None:
+        print("Invalid Flatpak reference.", file=sys.stderr)
+        return 2
+    if plan:
+        for i, argv in enumerate(commands):
+            if i:
+                print("--")
+            for arg in argv:
+                print(arg)
+        return 0
+    print(PROTOCOL, flush=True)
+    code = 0
+    for i, argv in enumerate(commands):
+        # One EXIT record for the whole transaction: the last command's, or
+        # that of the first one that fails (run() writes it then).
+        last = i == len(commands) - 1
+        code = run(argv, (), sys.stdout, final=last)
+        if code != 0:
+            return 1
+    return 0
 
 
 def main(args):
@@ -271,9 +358,12 @@ def main(args):
         else:
             print("Unknown option: " + option, file=sys.stderr)
             return 2
+    if args and args[0] == "flatpak":
+        return main_flatpak(args[1:], plan)
     if not args or args[0] not in ACTIONS:
         print("Usage: transaction.py [--plan] [--backend auto|packagekit|apt] "
-              "refresh|upgrade|autoremove|clean|repair [PACKAGE...]", file=sys.stderr)
+              "refresh|upgrade|autoremove|clean|repair [PACKAGE...]\n"
+              "       transaction.py [--plan] flatpak INSTALLATION:REF...", file=sys.stderr)
         return 2
     action, packages = args[0], args[1:]
     if packages and action != "upgrade":

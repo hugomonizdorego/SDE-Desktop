@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""SDE lock screen on a private Xvfb: grabs before drawing, refuses to lock
-without the grabs, rejects a wrong password, unlocks with the right one.
+"""SDE lock screen on a private Xvfb: grabs before drawing, waits (visibly)
+for a grab another client holds, rejects a wrong password, unlocks with the
+right one.
 
 Uses the QA fixture (fake authenticator, password "sde-test").
 SDE_LOCK_SCREENSHOTS=DIR saves screenshots of each step."""
@@ -62,7 +63,11 @@ with tempfile.TemporaryDirectory(prefix='sde-lock-ui-') as temp:
         else:
             raise RuntimeError('Xvfb did not start')
 
-        # 1. Another client holds the keyboard: the lock must refuse.
+        # 1. Another client holds the keyboard (a stuck menu, a screenshot
+        # tool). Before alpha 51 the lock refused after 6 s and left the
+        # session open; now it covers the screen, says why ("W") and keeps
+        # retrying: once the grab is released the keyboard is ours ("L")
+        # and the password can be typed.
         holder = sp.Popen([sys.executable, '-c', '''
 import ctypes, sys, time
 x = ctypes.cdll.LoadLibrary("libX11.so.6")
@@ -81,12 +86,21 @@ time.sleep(30)
         r, w = os.pipe()
         ui = sp.Popen([str(fixture), str(w)], env=env, pass_fds=(w,))
         os.close(w)
-        got = read_reports(r, b'F', timeout=12)
-        assert b'F' in got and b'L' not in got, got
-        assert ui.wait(timeout=10) == 3, 'must exit with status 3 without the grabs'
-        os.close(r)
+        got = read_reports(r, b'MW', timeout=12)
+        assert b'W' in got and b'L' not in got and b'F' not in got, got
+        assert ui.poll() is None, 'the lock screen gave up'
+        time.sleep(0.5)
+        shot(env, 'lock-waiting-for-keyboard.png')
         holder.kill()
         holder.wait()
+        got = read_reports(r, b'L', timeout=5)
+        assert b'L' in got, 'no grab after the other client released it: %r' % got
+        sp.run([xdotool, 'type', '--delay', '30', 'sde-test'], env=env, check=True)
+        sp.run([xdotool, 'key', 'Return'], env=env, check=True)
+        got = read_reports(r, b'U', timeout=5)
+        assert b'U' in got, got
+        assert ui.wait(timeout=5) == 0
+        os.close(r)
 
         # 2. Normal lock.
         r, w = os.pipe()
@@ -125,7 +139,7 @@ print(x.XGrabKeyboard(d, x.XDefaultRootWindow(d), 0, 1, 1, 0))
         assert ui.wait(timeout=5) == 0
         os.close(r)
         shot(env, 'unlocked.png')
-        print('Lock screen: refused without grabs, grabbed, rejected, unlocked.')
+        print('Lock screen: waited for the grab, grabbed, rejected, unlocked.')
     finally:
         server.terminate()
         server.wait()

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// SDE Update: native UI over a mintupdate-derived model and Debian PackageKit.
+// Software Updater (sde-update): native UI over a mintupdate-derived model,
+// Debian PackageKit/APT and Flatpak.
 //
 //   sde-update [--page NAME]        the window
 //   sde-update --notifier [--once]  background checks ([update] in sde.conf)
@@ -65,7 +66,7 @@ int run_terminal_transaction(const std::string &action) {
     for (auto &arg : command) args.push_back(const_cast<char *>(arg.c_str()));
     args.push_back(nullptr);
     execv(args[0], args.data());
-    perror("SDE Update");
+    perror("Software Updater");
     _exit(127);
   }
   int status = 0;
@@ -73,7 +74,7 @@ int run_terminal_transaction(const std::string &action) {
     if (errno != EINTR) return 1;
   }
   int result = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
-  printf("\nSDE Update: %s (exit %d). Press Enter to close.\n", result == 0 ? "completed" : "not completed",
+  printf("\nSoftware Updater: %s (exit %d). Press Enter to close.\n", result == 0 ? "completed" : "not completed",
          result);
   fflush(stdout);
   if (isatty(STDIN_FILENO)) {
@@ -98,29 +99,8 @@ int exec_helper(const std::string &name, const std::vector<std::string> &extra =
 
 // ---------------------------------------------------------------- notifier
 
-struct NotifierState {
-  std::time_t last_check = 0;
-  std::string notified;  // signature of the last update set we notified about
-};
-
-std::string state_path() { return join_path(state_home(), "sde/update-notifier"); }
-
-NotifierState load_state() {
-  NotifierState s;
-  std::string text;
-  if (!read_file(state_path(), text)) return s;
-  for (auto &line : split(text, '\n')) {
-    if (starts_with(line, "last_check=")) s.last_check = std::time_t(atoll(line.c_str() + 11));
-    if (starts_with(line, "notified=")) s.notified = line.substr(9);
-  }
-  return s;
-}
-
-void save_state(const NotifierState &s) {
-  make_dirs(join_path(state_home(), "sde"));
-  write_file_atomic(state_path(), format("last_check=%lld\nnotified=%s\n", (long long)s.last_check,
-                                         s.notified.c_str()));
-}
+NotifierState load_state() { return load_notifier_state(); }
+void save_state(const NotifierState &s) { save_notifier_state(s); }
 
 uint32_t g_notification = 0;
 
@@ -128,15 +108,15 @@ void notify(const std::string &summary, const std::string &body) {
   auto *bus = dbus::Bus::session();
   if (!bus) {
     if (!find_program("notify-send").empty())
-      run_sync({"notify-send", "-a", _("SDE Update"), "-i", "system-software-update", summary, body});
+      run_sync({"notify-send", "-a", _("Software Updater"), "-i", "system-software-update", summary, body});
     return;
   }
   DBusMessage *msg = dbus::method("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                                   "org.freedesktop.Notifications", "Notify");
   {
     dbus::Writer w(msg);
-    w.str(_("SDE Update")).u32(g_notification).str("system-software-update").str(summary).str(body);
-    w.strings({"default", _("Open SDE Update")});
+    w.str(_("Software Updater")).u32(g_notification).str("system-software-update").str(summary).str(body);
+    w.strings({"default", _("Open Software Updater")});
     { dbus::Writer hints(w.iter(), DBUS_TYPE_ARRAY, "{sv}"); }
     w.i32(-1);
   }
@@ -182,7 +162,10 @@ class Notifier {
     NotifierState state = load_state();
     std::time_t now = std::time(nullptr);
     std::time_t due = state.last_check + std::time_t(std::max(1, hours)) * 3600;
-    if (!once_ && state.last_check && now < due) return later(std::min<double>(double(due - now), 900));
+    // Remind Me Later just ended: check (and notify) again now.
+    bool remind_over = state.remind_until && now >= state.remind_until && state.last_check < state.remind_until;
+    if (!once_ && !remind_over && state.last_check && now < due)
+      return later(std::min<double>(double(due - now), 900));
     bool refresh = cfg.get_bool("update", "auto_refresh", true) && is_executable("/usr/bin/pkcon");
     if (refresh) {
       // PackageKit lets the active session refresh without a password.
@@ -203,18 +186,28 @@ class Notifier {
         std::string signature;
         for (auto &u : list.updates) signature += u.name + "=" + u.new_version + ";";
         signature = std::to_string(std::hash<std::string>()(signature));
-        int count = int(list.updates.size()), security = list.count(Kind::Security);
-        bool wanted = cfg.get_bool("update", "notify", true) &&
-                      (!cfg.get_bool("update", "notify_security_only", false) || security > 0);
+        int count = int(list.updates.size()), security = list.count(Group::Security),
+            critical = list.count(Group::Critical);
+        bool snoozed = state.remind_until && std::time(nullptr) < state.remind_until;
+        bool wanted = cfg.get_bool("update", "notify", true) && !snoozed &&
+                      (!cfg.get_bool("update", "notify_security_only", false) || security + critical > 0);
         if (count && wanted && signature != state.notified) {
-          std::string summary = count == 1 ? std::string(_("1 update is available"))
-                                           : format(_("%d updates are available"), count);
-          std::string body =
-              security ? format(_("%d of them are security updates. Open SDE Update to install them."), security)
-                       : format(_("%s to download. Open SDE Update to review them."),
-                                format_size(list.total_size()).c_str());
+          std::string summary = count == 1 ? std::string(_("1 software update is available"))
+                                           : format(_("%d software updates are available"), count);
+          std::string body;
+          if (critical && security)
+            body = format(_("%d critical and %d security updates. Open Software Updater to install them."),
+                          critical, security);
+          else if (critical)
+            body = format(_("%d of them are critical updates. Open Software Updater to install them."), critical);
+          else if (security)
+            body = format(_("%d of them are security updates. Open Software Updater to install them."), security);
+          else
+            body = format(_("%s to download. Open Software Updater to review them."),
+                          format_size(list.total_size()).c_str());
           notify(summary, body);
           state.notified = signature;
+          state.remind_until = 0;
         }
         if (!count) state.notified.clear();
         printf("sde-update: %d updates (%d security)\n", count, security);
@@ -222,7 +215,11 @@ class Notifier {
       }
       save_state(state);
       int hours = cfg.get_int("update", "check_interval", 24);
-      later(hours > 0 ? hours * 3600.0 : 900);
+      double next = hours > 0 ? hours * 3600.0 : 900;
+      // Wake up when Remind Me Later ends.
+      std::time_t now = std::time(nullptr);
+      if (state.remind_until > now) next = std::min(next, double(state.remind_until - now) + 5);
+      later(next);
     });
   }
   bool once_;
@@ -249,6 +246,7 @@ void usage(FILE *out) {
           _("Usage: sde-update [--page NAME] [--version]\n"
             "       sde-update --check | --history | --sources\n"
             "       sde-update --plan refresh|upgrade|autoremove|clean|repair [PACKAGE...]\n"
+            "       sde-update --plan flatpak system|user:REF...\n"
             "       sde-update --transaction refresh|upgrade\n"
             "       sde-update --notifier [--once]\n\n"
             "  --page NAME     open updates, history, sources, maintenance, settings or about\n"

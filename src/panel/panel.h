@@ -26,6 +26,7 @@ class QuickSettings;
 class SearchFlyout;
 class SniHost;
 class StatusFlyout;
+class TaskPreview;
 class Tray;
 
 struct Task {
@@ -163,6 +164,7 @@ class Panel : public sde::BufferedWindow {
   int status_index(StatusIcon icon) const;
   bool led_running_ = false;
   std::string led_connection_;  // kind|connection the verdict is for
+  bool tz_pending_ = false;     // automatic time zone sync for this connection
   double led_phase_ = 0;
   bool led_probe_failed_ = false, led_probe_pending_ = false;
   long long led_probe_at_ = 0;
@@ -185,6 +187,14 @@ class Panel : public sde::BufferedWindow {
   void update_task(Task &t, bool icon = true);
   Target hit(int x, int y) const;
   void task_clicked(int index, int button);
+  // Taskbar window previews (alpha51, preview.h): [panel] window_previews.
+  bool previews_enabled() const;
+  void preview_hover(const Target &t);
+  void show_preview(int index);
+  static void preview_timeout(void *);
+  static void thumbnail_tick(void *);
+  std::unique_ptr<TaskPreview> preview_;
+  Window preview_pending_ = 0;
   void pinned_menu(int index);
   void tray_item_clicked(int index, int button);
   void show_context_menu();
@@ -200,6 +210,8 @@ class Panel : public sde::BufferedWindow {
   // clock while the Action Center is open, ...) closes the popup and opens
   // that button's popup at once. Returns true when it did.
   bool switch_popup(int root_x, int root_y, PanelPopup *from);
+  // The time zone was set ("Sync time zone"): the clock shows it at once.
+  void time_zone_changed() { clock_tick(this); }
  private:
   static void input_event(int, void *);
   void outside_pointer_press(unsigned long time);

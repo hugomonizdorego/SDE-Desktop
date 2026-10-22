@@ -111,6 +111,10 @@ if(SDE_XVFB)
   add_test(NAME sde-lock-screen COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_ui.py $<TARGET_FILE:sde-lock-ui-fixture>)
   set_tests_properties(sde-lock-screen PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+  # Alpha 51: grabs held by other clients, monitor changes, resume.
+  add_test(NAME sde-lock-input COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_input.py $<TARGET_FILE:sde-lock-ui-fixture>)
+  set_tests_properties(sde-lock-input PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif()
 if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-lock-daemon COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
@@ -139,6 +143,12 @@ target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJ
 target_link_libraries(sde-weather-tests PRIVATE sde-common)
 add_test(NAME sde-weather-model COMMAND sde-weather-tests)
 
+# Clock "Sync time zone": geolocation answers, zone names, the timedatectl plan.
+add_executable(sde-timezone-tests test_timezone.cpp ../src/panel/timezone.cpp ../src/panel/weather.cpp)
+target_compile_definitions(sde-timezone-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(sde-timezone-tests PRIVATE sde-common)
+add_test(NAME sde-timezone-model COMMAND sde-timezone-tests)
+
 # alpha50 panel status rules (tooltips, network LED, keyboard indicators,
 # UDisks2 drives, touchpad properties) and the grab helper of panel-smoke.
 add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
@@ -146,6 +156,9 @@ target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
 add_executable(sde-grab-fixture grab_fixture.cpp)
 target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
+# alpha51: a plain application window for the taskbar preview checks.
+add_executable(sde-preview-window preview_window_fixture.cpp)
+target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
 
 # SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.
@@ -154,9 +167,10 @@ target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
 add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
 
 # debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
-# --quick --json verdicts, against fixtures and stub commands.
+# --quick --json verdicts and the verified DNS repair (--fix, --dns-fallback)
+# against a simulated NetworkManager, with fixtures and stub commands.
 add_test(NAME debion-network-check COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_network_check.py)
-set_tests_properties(debion-network-check PROPERTIES TIMEOUT 120)
+set_tests_properties(debion-network-check PROPERTIES TIMEOUT 300)
 
 # Caption buttons and their migration, transparency contrast, icon theme
 # lookup (tests/fixtures/icon-themes) and the build history of Settings > About.

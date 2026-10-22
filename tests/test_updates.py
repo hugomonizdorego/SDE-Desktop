@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Tests for the SDE Update helpers in data/update (no APT, network or root).
+# Tests for the Software Updater (sde-update) helpers in data/update (no APT, network or root).
 import gzip
 import io
 import os
@@ -11,7 +11,9 @@ from types import SimpleNamespace as NS
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "data/update"))
 from check import collect, emit, clean, PROTOCOL  # noqa: E402
+import check  # noqa: E402
 import changelog  # noqa: E402
+import flatpak  # noqa: E402
 import history  # noqa: E402
 import sources  # noqa: E402
 import transaction  # noqa: E402
@@ -27,8 +29,10 @@ def package(
     archive="testing",
     label=None,
     section="utils",
+    priority="optional",
 ):
     candidate = NS(
+        priority=priority,
         source_name=source,
         source_version="2",
         version="2",
@@ -107,7 +111,7 @@ class CheckTest(unittest.TestCase):
         lines = output.getvalue().splitlines()
         self.assertEqual(lines[0], PROTOCOL)
         fields = lines[1].split("\t")
-        self.assertEqual(len(fields), 14)
+        self.assertEqual(len(fields), 19)
         self.assertEqual(fields[0], "U")
         self.assertEqual(fields[1], "package")
         self.assertEqual(fields[3], "test")
@@ -115,8 +119,114 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(fields[8], "test, test-doc")
         self.assertEqual(fields[9:11], ["debian", "testing"])
         self.assertEqual(fields[13], "Example package with a long description")
+        self.assertEqual(fields[14:19], ["optional", "utils", "", "", ""])
         self.assertEqual(lines[2], "H\tpinned")
         self.assertEqual(clean("a\tb\nc"), "a b c")
+
+
+class PriorityAndApplicationTest(unittest.TestCase):
+    def test_group_keeps_the_strongest_priority(self):
+        updates = collect(
+            [package("libfoo1", "foo"), package("foo-bin", "foo", priority="important")], 1
+        )
+        self.assertEqual(updates[0].priority, "important")
+        self.assertEqual(updates[0].section, "utils")
+
+    def test_application_name_and_icon_from_the_desktop_file(self):
+        with tempfile.TemporaryDirectory() as root:
+            info = Path(root, "var/lib/dpkg/info")
+            apps = Path(root, "usr/share/applications")
+            info.mkdir(parents=True)
+            apps.mkdir(parents=True)
+            Path(info, "viewer.list").write_text(
+                "/usr/bin/viewer\n/usr/share/applications/hidden.desktop\n"
+                "/usr/share/applications/viewer.desktop\n"
+            )
+            Path(apps, "hidden.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Hidden\nNoDisplay=true\n"
+            )
+            Path(apps, "viewer.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Image Viewer\nIcon=viewer-icon\n"
+            )
+            old = check.ROOT
+            check.ROOT = root
+            try:
+                update = collect([package("viewer", "viewer")], 1)[0]
+                self.assertEqual(
+                    check.application_of(update, str(info)), ("Image Viewer", "viewer-icon")
+                )
+                output = io.StringIO()
+                emit([update], output, info_dir=str(info))
+                fields = output.getvalue().splitlines()[1].split("\t")
+                self.assertEqual(fields[17:19], ["Image Viewer", "viewer-icon"])
+                other = collect([package("other", "other")], 1)[0]
+                self.assertEqual(check.application_of(other, str(info)), ("", ""))
+            finally:
+                check.ROOT = old
+
+
+REMOTE_LS = (
+    "app/org.gimp.GIMP/x86_64/stable\tGIMP\torg.gimp.GIMP\t2.10.38\tstable\tflathub\t52.0 MB\t"
+    "GNU Image Manipulation Program\n"
+    "runtime/org.gnome.Platform/x86_64/47\tGNOME Application Platform\torg.gnome.Platform\t\t47\t"
+    "flathub\t1,5 kB\tShared libraries\n"
+    "broken line\n"
+    "app/bad ref/x86_64/stable\tBad\tbad\t1\tstable\tflathub\t1 MB\tx\n"
+)
+
+FAKE_FLATPAK = r"""#!/bin/sh
+case "$1 $2" in
+'remote-ls --system') printf 'app/org.gimp.GIMP/x86_64/stable\tGIMP\torg.gimp.GIMP\t2.10.38\tstable\tflathub\t52.0 MB\tImages\n' ;;
+'remote-ls --user') echo 'error: No remotes found' >&2; exit 1 ;;
+'list --system') printf 'app/org.gimp.GIMP/x86_64/stable\t2.10.36\n' ;;
+esac
+"""
+
+
+class FlatpakTest(unittest.TestCase):
+    def test_sizes(self):
+        self.assertEqual(flatpak.parse_size("52.0 MB"), 52000000)
+        self.assertEqual(flatpak.parse_size("1,5 kB"), 1500)
+        self.assertEqual(flatpak.parse_size("512 bytes"), 512)
+        self.assertEqual(flatpak.parse_size("2 MiB"), 2 * 1024 * 1024)
+        self.assertEqual(flatpak.parse_size("4096"), 4096)
+        self.assertEqual(flatpak.parse_size("unknown"), 0)
+
+    def test_remote_ls_and_list(self):
+        rows = flatpak.parse_remote_ls(REMOTE_LS, "system")
+        self.assertEqual(
+            [r["ref"] for r in rows],
+            ["app/org.gimp.GIMP/x86_64/stable", "runtime/org.gnome.Platform/x86_64/47"],
+        )
+        self.assertEqual(rows[0]["size"], 52000000)
+        self.assertEqual(rows[0]["installation"], "system")
+        self.assertEqual(rows[1]["branch"], "47")
+        versions = flatpak.parse_list("app/org.gimp.GIMP/x86_64/stable\t2.10.36\nnot a ref\n")
+        self.assertEqual(versions, {"app/org.gimp.GIMP/x86_64/stable": "2.10.36"})
+
+    def test_emit_protocol(self):
+        output = io.StringIO()
+        rows = flatpak.parse_remote_ls(REMOTE_LS, "user")
+        flatpak.emit(rows, output, True, ["remote unreachable"])
+        lines = output.getvalue().splitlines()
+        self.assertEqual(lines[:2], [flatpak.PROTOCOL, "I\t1"])
+        self.assertEqual(len(lines[2].split("\t")), 11)
+        self.assertEqual(lines[2].split("\t")[1:3], ["user", "app/org.gimp.GIMP/x86_64/stable"])
+        self.assertEqual(lines[-1], "E\tremote unreachable")
+        output = io.StringIO()
+        flatpak.emit([], output, installed=False)
+        self.assertEqual(output.getvalue().splitlines(), [flatpak.PROTOCOL, "I\t0"])
+
+    def test_collect_with_a_fake_flatpak(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake = Path(directory, "flatpak")
+            fake.write_text(FAKE_FLATPAK)
+            fake.chmod(0o755)
+            errors = []
+            rows = flatpak.collect(str(fake), errors)
+            self.assertEqual(errors, [])
+            self.assertEqual(len(rows), 1)
+            self.assertEqual((rows[0]["old"], rows[0]["new"]), ("2.10.36", "2.10.38"))
 
 
 HISTORY = """
@@ -252,6 +362,42 @@ class TransactionTest(unittest.TestCase):
         self.assertIsNone(transaction.command("apt", "upgrade", ["bash; rm -rf /"]))
         self.assertIsNone(transaction.command("apt", "upgrade", ["-oAPT::X=1"]))
         self.assertIsNone(transaction.command("apt", "dist-upgrade"))
+
+    def test_flatpak_commands(self):
+        commands = transaction.flatpak_commands(
+            [
+                "system:app/org.gimp.GIMP/x86_64/stable",
+                "user:runtime/org.gnome.Platform/x86_64/47",
+                "system:runtime/org.gnome.Platform/x86_64/47",
+            ]
+        )
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(os.path.basename(commands[0][0]), "flatpak")
+        self.assertEqual(
+            commands[0][1:],
+            [
+                "update", "--system", "-y", "--noninteractive",
+                "app/org.gimp.GIMP/x86_64/stable", "runtime/org.gnome.Platform/x86_64/47",
+            ],
+        )
+        self.assertEqual(commands[1][2], "--user")
+        self.assertIsNone(transaction.flatpak_commands([]))
+        self.assertIsNone(transaction.flatpak_commands(["app/org.gimp.GIMP/x86_64/stable"]))
+        self.assertIsNone(transaction.flatpak_commands(["root:app/org.gimp.GIMP/x86_64/stable"]))
+        self.assertIsNone(transaction.flatpak_commands(["user:app/x;rm -rf/x86_64/stable"]))
+        self.assertIsNone(transaction.flatpak_commands(["user:--help"]))
+        self.assertEqual(transaction.main(["--plan", "flatpak", "user:--help"]), 2)
+
+    def test_flatpak_output(self):
+        f = transaction.parse_flatpak
+        self.assertEqual(
+            f("Updating 1/2… app/org.gimp.GIMP/x86_64/stable"),
+            [("STATUS", "Updating packages"), ("ITEM", "Updating", "org.gimp.GIMP", "stable")],
+        )
+        self.assertEqual(f("[####    ] 45%"), [("PERCENT", "45")])
+        self.assertEqual(f("error: No such ref"), [("ERROR", "No such ref")])
+        self.assertEqual(f("Looking for updates…"), [("LOG", "Looking for updates…")])
+        self.assertEqual(transaction.backend_of(["/usr/bin/flatpak", "update"]), "flatpak")
 
     def test_plan_rejects_names_for_other_actions(self):
         self.assertEqual(transaction.main(["clean", "bash"]), 2)

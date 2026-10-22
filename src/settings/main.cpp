@@ -31,6 +31,7 @@
 #include <thread>
 #include <vector>
 
+#include "../panel/timezone.h"
 #include "about.h"
 #include "crash.h"
 #include "buffered_window.h"
@@ -1782,7 +1783,7 @@ void build_suite(Page *page) {
     page->end_card();
   }
   page->note(
-      _("Original application licenses and copyrights are retained. SDE Update credits mintupdate; "
+      _("Original application licenses and copyrights are retained. Software Updater credits mintupdate; "
         "PackageKit "
         "performs Debian transactions."));
   page->finish();
@@ -2185,13 +2186,46 @@ std::string profile_label(const std::string &p) {
   return p;
 }
 
+// Date and time: the time zone (with the panel clock's "Sync time zone")
+// and network time. The panel's "Date and time settings" link opens this
+// page.
+void build_date_time(Page *page) {
+  if (find_program("timedatectl").empty()) return;
+  static bool listening = false;
+  if (!listening) {
+    listening = true;
+    tzsync::Sync::get().set_listener([] { refresh_if_shown("system"); });
+  }
+  auto &tz = tzsync::Sync::get();
+  page->begin_card(_("Date and time"));
+  page->row(format(_("Time zone: %s"), tzsync::current_label().c_str()), S(112), S(34),
+            [](int x, int y, int w, int h) {
+              auto *b = new FlatButton(x, y, w, h, tzsync::Sync::get().busy() ? _("Syncing") : _("Sync"),
+                                       true);
+              b->callback([](Fl_Widget *, void *) { tzsync::Sync::get().start(true); });
+              b->tooltip(_("Detect the time zone from the network, set it and synchronize the clock"));
+              if (tzsync::Sync::get().busy()) b->deactivate();
+              return b;
+            },
+            _("Detected from this network's location (ipapi.co or ip-api.com). Needs an "
+              "administrator password."));
+  if (!tz.message().empty()) page->note(tz.message());
+  page->switch_row(
+      _("Automatic time zone"), g_cfg.get_bool("clock", "auto_timezone", false),
+      [](bool on) { set_bool("clock", "auto_timezone", on); },
+      _("The panel sets the time zone from the network at login and when the network changes, at "
+        "most once an hour, without asking for a password."));
+  page->end_card();
+}
+
 void build_suite_system(Page *page) {
   page->heading(_("Power & Updates"), _("System tools included with SDE"));
+  build_date_time(page);
   const std::vector<std::pair<std::string, std::vector<std::string>>> tools = {
       {_("Power"), {"sde-settings", "--page", "power"}},
       {_("Lock Screen"), {"sde-settings", "--page", "lock"}},
       {_("System Monitor"), {"sde-system-monitor"}},
-      {_("System Updates"), {"sde-update"}},
+      {_("Software Updater"), {"sde-update"}},
   };
   if (!g_refreshing || !g_power.loaded) load_power_profiles();
   if (g_power.loaded && !g_power.profiles.empty()) {
@@ -2653,6 +2687,8 @@ const std::pair<const char *, const char *> kPageAliases[] = {
     {"battery", "system"},     {"updates", "system"},       {"applications", "suite"},
     {"apps", "suite"},         {"quick", "action-center"},  {"animations", "effects"},
     {"compositor", "effects"}, {"info", "about"},           {"graphics", "about"},
+    {"time", "system"},        {"date", "system"},          {"timezone", "system"},
+    {"clock", "system"},
 };
 
 // Page id for |name| (an id or an alias, any case), or "".

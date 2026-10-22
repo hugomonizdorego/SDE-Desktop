@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// SDE Update: native window over the mintupdate-derived APT model and
+// Software Updater (sde-update): native window over the mintupdate-derived APT model and
 // Debian PackageKit transactions. All package work runs in helper processes
 // (data/update/*.py) so the window never blocks.
 #include "app.h"
@@ -32,6 +32,7 @@
 #include "ui.h"
 #include "util.h"
 #include "widgets.h"
+#include "x11.h"
 
 namespace sde {
 namespace update {
@@ -127,6 +128,7 @@ std::string action_title(const std::string &action) {
   if (action == "autoremove") return _("Removing unused packages");
   if (action == "clean") return _("Cleaning the package cache");
   if (action == "repair") return _("Repairing interrupted installations");
+  if (action == "flatpak") return _("Updating Flatpak applications");
   return action;
 }
 
@@ -145,14 +147,19 @@ int wrapped_height(const std::string &text, int w) {
 
 // ------------------------------------------------------------------ state
 
+// One line of the "Details of updates" tree.
 struct Row {
-  bool header = false;
-  Kind kind = Kind::Software;
-  int index = -1;  // into App::list.updates
+  enum Type { GroupRow, UpdateRow, PackageRow } type = UpdateRow;
+  Group group = Group::Main;
+  int index = -1;       // into App::list.updates (UpdateRow, PackageRow)
+  std::string package;  // PackageRow: a binary package of the update
 };
 
+// What the updater window shows.
+enum class View { Checking, Available, UpToDate, Error, Installing, Failed, Restart };
+
 class Page;
-class UpdatesPage;
+class UpdaterPage;
 class HistoryPage;
 class SourcesPage;
 class MaintenancePage;
@@ -169,17 +176,25 @@ class App {
   Page *pages[P_COUNT] = {};
   ActivityStrip *strip = nullptr;
   int page = P_UPDATES;
+  int updater_w = 0, updater_h = 0;  // window size of the updater view
 
-  // Updates.
+  // Updates (APT from check.py, Flatpak from flatpak.py).
   UpdateList list;
-  bool loading = false, loaded_once = false;
+  bool loading = false, loaded_once = false, focused_once = false;
+  int pending_loads = 0;
+  std::string apt_output, flatpak_output;
+  int apt_status = -1;
   std::string load_error;
   std::time_t refreshed = 0;
-  int filter = -1;  // -1 = all, else Kind
-  std::string query;
   std::vector<Row> rows;
+  bool group_open[kGroupCount] = {true, true, true, true};
+  std::set<std::string> open_updates;  // update rows that show their packages
+  int current = -1;                    // update in the technical description
+  int current_group = -1;              // or a group header
+  bool details_open = true, tech_open = false, log_open = true;
   bool reboot = false;
   std::vector<std::string> reboot_packages;
+  std::map<std::string, cairo_surface_t *> icons;  // icon name -> surface (or null)
 
   // Changelogs, cached by package.
   std::map<std::string, std::string> changelogs;
@@ -205,25 +220,40 @@ class App {
   double phase = 0;
   std::string packagekit_client;  // pkcon, or "" (APT through pkexec)
 
+  // Install Now: the transactions still to run, and the log of earlier ones.
+  std::vector<std::vector<std::string>> queue;
+  std::vector<std::string> earlier_log;
+  bool installing = false;
+  bool reboot_expected = false;
+  bool show_failure = false, show_restart = false;
+  int install_steps = 0;
+
   void show_page(int index);
   void layout();
-  void relayout_pages();
   bool busy() const { return job != 0; }
   void changed();  // redraw everything that shows update state
+  View view() const;
 
   void load_updates();
+  void merge_updates();
   void rebuild_rows();
   void select_changelog(int index);
   void load_history(bool force = false);
   void load_sources(bool force = false);
   void load_maintenance();
   void start(const std::string &action, const std::vector<std::string> &packages = {});
+  void run_next();
   void cancel();
   void finished();
   void install_selected();
+  void remind_later();
+  void restart_now();
   void open_terminal_transaction();
   void maybe_auto_refresh();
   void request_close();
+  void apply_theme();
+  std::string full_log() const;
+  cairo_surface_t *icon(const std::string &name, int size);
 
   static void tick(void *);
 };
@@ -233,7 +263,49 @@ App &app() {
   return a;
 }
 
+std::string update_key(const Update &u) { return u.flatpak ? u.flatpak_item() : u.name; }
+
+Color group_color(Group g) {
+  const Theme &t = active_theme();
+  switch (g) {
+    case Group::Critical: return danger_color();
+    case Group::Security: return warning_color();
+    case Group::Flatpak: return t.accent.mix(success_color(), 0.5);
+    default: return t.accent;
+  }
+}
+
+View App::view() const {
+  if (installing || (busy() && (progress.action == "upgrade" || progress.action == "flatpak")))
+    return View::Installing;
+  if (show_restart) return View::Restart;
+  if (show_failure) return View::Failed;
+  if ((busy() && progress.action == "refresh") || (loading && !loaded_once)) return View::Checking;
+  if (!load_error.empty()) return View::Error;
+  if (list.updates.empty()) return loading ? View::Checking : View::UpToDate;
+  return View::Available;
+}
+
+std::string App::full_log() const {
+  std::vector<std::string> all = earlier_log;
+  all.insert(all.end(), progress.log.begin(), progress.log.end());
+  return join(all, "\n");
+}
+
+cairo_surface_t *App::icon(const std::string &name, int size) {
+  if (name.empty()) return nullptr;
+  std::string key = name + "@" + std::to_string(size);
+  auto it = icons.find(key);
+  if (it != icons.end()) return it->second;
+  cairo_surface_t *s = nullptr;
+  if (!IconLoader::lookup(name, size).empty()) s = IconLoader::get({name}, size);
+  icons[key] = s;
+  return s;
+}
+
 // ------------------------------------------------------------------ pages
+
+void relayout_pages();
 
 class Page : public Fl_Group {
  public:
@@ -244,9 +316,35 @@ class Page : public Fl_Group {
   }
   virtual void layout() {}
   virtual void activated() {}
+  // Height the page needs, or 0 when it fits any height (lists stretch).
+  // Taller pages scroll with the mouse wheel on small screens.
+  virtual int content_height() const { return 0; }
+  int scroll = 0, view_h = 0;
+  int max_scroll() const { return std::max(0, h() - view_h); }
   void draw() override {
     paint();
     draw_children();
+    if (max_scroll() > 0) {
+      // A thin indicator of the visible part (the page moves, not the bar).
+      const Theme &t = active_theme();
+      Painter p(window()->w(), window()->h());
+      double track = view_h - S(16);
+      double th = std::max(double(S(28)), track * view_h / h());
+      double ty = scroll + S(8) + (track - th) * scroll / double(max_scroll());
+      p.fill_rounded(x() + w() - S(8), y() + ty, S(4), th, S(2), t.text_dim.alpha(0.35));
+    }
+  }
+  int handle(int e) override {
+    int r = Fl_Group::handle(e);
+    if (!r && e == FL_MOUSEWHEEL && max_scroll() > 0) {
+      int next = std::max(0, std::min(max_scroll(), scroll + Fl::event_dy() * S(48)));
+      if (next != scroll) {
+        scroll = next;
+        relayout_pages();
+      }
+      return 1;
+    }
+    return r;
   }
   virtual void paint() {}
 
@@ -263,93 +361,39 @@ class Page : public Fl_Group {
   }
 };
 
-// Filter chips: All, Security, Kernel, Software, Backports with counts.
-class Chips : public Fl_Widget {
+// "▸ Details of updates": a disclosure line that opens a section.
+class Expander : public Fl_Widget {
  public:
-  Chips(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  std::function<void(int)> changed;
-  struct Item {
-    int id;
-    std::string label;
-    int x = 0, w = 0;
-  };
-  std::vector<Item> items;
-  int value = -1;
-  void set_counts(const UpdateList &list) {
-    items.clear();
-    items.push_back({-1, format("%s  %d", _("All"), int(list.updates.size()))});
-    for (int k = 0; k < kKindCount; ++k) {
-      int n = list.count(Kind(k));
-      static const char *names[] = {N_("Security"), N_("Kernel"), N_("Software"), N_("Backports")};
-      if (n) items.push_back({k, format("%s  %d", gettext(names[k]), n)});
-    }
-    bool found = false;
-    for (auto &i : items) found |= i.id == value;
-    if (!found) value = -1;
-    redraw();
-  }
-  void measure() {
-    const Theme &t = active_theme();
-    int cx = x();
-    for (auto &i : items) {
-      text_font(t.font_size - S(1), true);
-      i.w = text_width(i.label) + (i.id >= 0 ? S(28) : S(20));
-      i.x = cx;
-      cx += i.w + S(4);
-    }
+  Expander(const std::string &label, bool *state) : Fl_Widget(0, 0, 10, 10), label_(label), state_(state) {}
+  std::function<void()> changed;
+  int preferred_width() const {
+    text_font(active_theme().font_size);
+    return text_width(label_) + S(30);
   }
   void draw() override {
     const Theme &t = active_theme();
-    measure();
+    bool hot = hover_ || Fl::focus() == this;
     {
       Painter p(window()->w(), window()->h());
-      for (auto &i : items) {
-        if (i.x + i.w > x() + w()) break;
-        bool on = i.id == value, hot = i.id == hover_;
-        Color bg = on ? t.accent : hot ? t.hover : t.surface_alt;
-        if (look().liquid() && !on) bg = bg.alpha(0.75);
-        p.fill_rounded(i.x, y(), i.w, h(), h() / 2.0, bg);
-        if (!on) p.stroke_rounded(i.x, y(), i.w, h(), h() / 2.0, t.border);
-        if (i.id >= 0 && !on)
-          p.circle(i.x + S(11), y() + h() / 2.0, S(3.5), kind_color(Kind(i.id)));
-      }
-      if (Fl::focus() == this)
-        for (auto &i : items)
-          if (i.id == value) focus_ring(p, i.x, y(), i.w, h(), h() / 2.0);
+      if (Fl::focus() == this) focus_ring(p, x(), y() + S(2), w(), h() - S(4), look().control_radius(h() - S(4)));
+      paint_disclosure(p, x() + S(4), y() + (h() - S(12)) / 2.0, S(12), *state_, hot ? t.text : t.text_dim);
     }
-    for (auto &i : items) {
-      if (i.x + i.w > x() + w()) break;
-      bool on = i.id == value;
-      text_font(t.font_size - S(1), on);
-      if (i.id >= 0 && !on)
-        draw_text(i.label, i.x + S(19), y(), i.w - S(21), h(), t.text);
-      else
-        draw_text(i.label, i.x, y(), i.w, h(), on ? t.on_accent : t.text, 1);
-    }
+    text_font(t.font_size);
+    draw_text(label_, x() + S(22), y(), w() - S(24), h(), hot ? t.accent_text : t.text);
   }
-  int at(int ex) const {
-    for (auto &i : items)
-      if (ex >= i.x && ex < i.x + i.w) return i.id;
-    return -2;
+  void toggle() {
+    *state_ = !*state_;
+    if (changed) changed();
   }
   int handle(int e) override {
     switch (e) {
-      case FL_PUSH: {
-        int id = at(Fl::event_x());
-        if (id != -2) choose(id);
+      case FL_PUSH:
+        if (Fl::visible_focus()) take_focus();
+        toggle();
         return 1;
-      }
       case FL_ENTER:
-      case FL_MOVE: {
-        int id = at(Fl::event_x());
-        if (id != hover_) {
-          hover_ = id;
-          redraw();
-        }
-        return 1;
-      }
       case FL_LEAVE:
-        hover_ = -2;
+        hover_ = e == FL_ENTER;
         redraw();
         return 1;
       case FL_FOCUS:
@@ -358,488 +402,730 @@ class Chips : public Fl_Widget {
         return 1;
       case FL_KEYBOARD: {
         int k = Fl::event_key();
-        if (k != FL_Left && k != FL_Right) return 0;
-        for (size_t i = 0; i < items.size(); ++i)
-          if (items[i].id == value) {
-            int j = int(i) + (k == FL_Right ? 1 : -1);
-            if (j >= 0 && j < int(items.size())) choose(items[size_t(j)].id);
-            break;
-          }
-        return 1;
+        if (k == ' ' || k == FL_Enter || k == FL_KP_Enter || (k == FL_Right && !*state_) ||
+            (k == FL_Left && *state_)) {
+          toggle();
+          return 1;
+        }
+        return 0;
       }
     }
     return Fl_Widget::handle(e);
   }
-  void choose(int id) {
-    value = id;
-    redraw();
-    if (changed) changed(id);
-  }
 
  private:
-  int hover_ = -2;
+  std::string label_;
+  bool *state_;
+  bool hover_ = false;
 };
 
-// Details of the selected update: versions, size, origin and changelog.
-class DetailsPane : public Fl_Group {
+// "Technical description": versions, origin, size and the changelog of the
+// selected update (or a summary of the selected group).
+class TechPane : public Fl_Group {
  public:
-  DetailsPane(int x, int y, int w, int h) : Fl_Group(x, y, w, h) {
+  TechPane() : Fl_Group(0, 0, 10, 10) {
     box(FL_NO_BOX);
-    text = new TextView(x, y, w, h);
+    text = new TextView(0, 0, 10, 10, false);
     end();
   }
-  int index = -1;
   void resize(int X, int Y, int W, int H) override {
     Fl_Widget::resize(X, Y, W, H);
     layout();
   }
+  const Update *current() const {
+    App &a = app();
+    if (a.current < 0 || a.current >= int(a.list.updates.size())) return nullptr;
+    return &a.list.updates[size_t(a.current)];
+  }
+  std::vector<std::pair<std::string, std::string>> facts() const {
+    App &a = app();
+    std::vector<std::pair<std::string, std::string>> f;
+    const Update *u = current();
+    if (!u && a.current_group >= 0) {
+      Group g = Group(a.current_group);
+      int n = 0, on = 0;
+      long long sel = 0;
+      for (auto &x : a.list.updates)
+        if (x.group == g) {
+          ++n;
+          if (x.selected) {
+            ++on;
+            sel += x.size;
+          }
+        }
+      f.push_back({_("Updates"), format(_("%d selected of %d"), on, n)});
+      f.push_back({_("Download"), format(_("%s of %s"), format_size(sel).c_str(), format_size(a.list.size(g)).c_str())});
+      return f;
+    }
+    if (!u) return f;
+    std::string versions = u->old_version.empty() ? u->new_version : u->old_version + "  →  " + u->new_version;
+    if (u->flatpak) {
+      f.push_back({_("Reference"), u->ref});
+      f.push_back({_("Version"), versions.empty() ? u->branch : versions});
+      f.push_back({_("Remote"), u->origin + "  ·  " + (u->installation == "user" ? _("user installation")
+                                                                                  : _("system installation"))});
+      f.push_back({_("Download"), format_size(u->size)});
+      return f;
+    }
+    f.push_back({_("Package"), u->packages.size() > 1
+                                   ? format(_("%s and %d more"), u->main_package.c_str(), int(u->packages.size()) - 1)
+                                   : u->main_package});
+    f.push_back({_("Version"), versions});
+    std::string origin = u->origin;
+    if (!u->archive.empty()) origin += (origin.empty() ? "" : " · ") + u->archive;
+    if (!u->site.empty()) origin += (origin.empty() ? "" : " · ") + u->site;
+    if (!origin.empty()) f.push_back({_("Origin"), origin});
+    std::string size = format_size(u->size);
+    if (u->reboot) size += "  ·  " + std::string(_("needs a restart"));
+    f.push_back({_("Download"), size});
+    return f;
+  }
+  // On short screens the facts go into the scrolling text with the changelog.
+  int full_info_height() const { return S(34) + int(facts().size()) * S(20) + S(6); }
+  int info_height() const { return compact_ && current() ? S(34) : full_info_height(); }
   void layout() {
+    bool compact = h() < full_info_height() + S(84);
+    if (compact != compact_) {
+      compact_ = compact;
+      set_text();
+    }
     int top = y() + info_height();
-    int room = y() + h() - top - S(14);
-    text->resize(x() + S(14), top, w() - S(28), std::max(S(40), room));
-    // The changelog needs a few lines to be useful.
-    if (index < 0 || room < S(60)) text->hide();
+    int room = y() + h() - top - S(8);
+    text->resize(x() + S(10), top, w() - S(20), std::max(S(30), room));
+    if (!current() || room < S(36)) text->hide();
     else text->show();
   }
-  void show_update(int i) {
-    index = i;
-    refresh_text();
+  void set_text() {
+    App &a = app();
+    const Update *u = current();
+    std::string facts_text;
+    if (u && compact_)
+      for (auto &f : facts()) facts_text += f.first + ":  " + f.second + "\n";
+    if (!facts_text.empty()) facts_text += "\n";
+    if (!u) {
+      text->set("");
+    } else if (u->flatpak) {
+      std::string body = u->summary.empty() ? std::string(_("No description is available.")) : u->summary;
+      text->set(facts_text + body + "\n\n" +
+                _("Flatpak applications are updated from their remote; their changes are "
+                  "published by the application developers."));
+    } else {
+      auto it = a.changelogs.find(u->main_package);
+      // The long description, unless it only repeats the summary.
+      std::string d = trim(u->description);
+      if (!d.empty() && d.back() == '.') d.pop_back();
+      std::string head = d.empty() || lower(d) == lower(trim(u->summary)) ? "" : u->description + "\n\n";
+      text->set(facts_text + head +
+                (it != a.changelogs.end() ? it->second : std::string(_("Loading the changelog…"))));
+    }
+  }
+  void refresh() {
+    set_text();
     layout();
     redraw();
   }
-  void refresh_text() {
-    App &a = app();
-    if (index < 0 || index >= int(a.list.updates.size())) {
-      text->set("");
-      return;
-    }
-    const Update &u = a.list.updates[size_t(index)];
-    auto it = a.changelogs.find(u.main_package);
-    if (it != a.changelogs.end()) text->set(it->second);
-    else text->set(_("Loading the changelog…"));
-  }
-  const Update *current() const {
-    App &a = app();
-    if (index < 0 || index >= int(a.list.updates.size())) return nullptr;
-    return &a.list.updates[size_t(index)];
-  }
-  std::vector<std::pair<std::string, std::string>> facts(const Update &u) const {
-    std::vector<std::pair<std::string, std::string>> f;
-    f.push_back({_("Installed"), u.old_version.empty() ? _("Not installed") : u.old_version});
-    f.push_back({_("Available"), u.new_version});
-    f.push_back({_("Download"), format_size(u.size)});
-    f.push_back({format(_("Packages (%d)"), int(u.packages.size())), join(u.packages, ", ")});
-    std::string origin = u.origin;
-    if (!u.archive.empty()) origin += (origin.empty() ? "" : " · ") + u.archive;
-    if (!u.site.empty()) origin += (origin.empty() ? "" : " · ") + u.site;
-    if (!origin.empty()) f.push_back({_("Origin"), origin});
-    return f;
-  }
-  int description_height() const {
-    const Update *u = current();
-    if (!u || u->description.empty()) return 0;
-    text_font(active_theme().font_size - S(1));
-    return std::min(S(66), wrapped_height(u->description, w() - S(36)));
-  }
-  int info_height() const {
-    const Update *u = current();
-    if (!u) return h();
-    return S(96) + description_height() + S(8) + int(facts(*u).size()) * S(24) + S(44);
-  }
+  bool compact_ = false;
   void draw() override {
-    fl_push_clip(x(), y(), w(), h());
-    draw_inner();
-    fl_pop_clip();
-  }
-  void draw_inner() {
     const Theme &t = active_theme();
+    App &a = app();
     const Update *u = current();
-    int px = x() + S(18), pw = w() - S(36);
+    int px = x() + S(12), pw = w() - S(24);
+    std::string title;
+    std::vector<std::pair<std::string, Color>> badges;
+    if (u) {
+      title = u->title();
+      badges.push_back({group_badge(u->group), group_color(u->group)});
+      if (!u->archive.empty()) badges.push_back({u->archive, t.text_dim});
+    } else if (a.current_group >= 0) {
+      title = group_title(Group(a.current_group));
+    }
+    fl_push_clip(x(), y(), w(), h());
     {
       Painter p(window()->w(), window()->h());
       paint_card(p, x(), y(), w(), h());
-      if (!u) {
-        paint_icon(p, Icon::Package, x() + w() / 2.0 - S(20), y() + h() / 2.0 - S(50), S(40),
-                   t.text_dim.alpha(0.7));
-      } else {
-        p.fill_rounded(px, y() + S(18), S(40), S(40), look().liquid() ? S(20) : S(10),
-                       kind_color(u->kind).alpha(0.14));
-        paint_icon(p, u->kind == Kind::Security ? Icon::Shield : Icon::Package, px + S(8),
-                   y() + S(26), S(24), kind_text(u->kind));
-        int bx = px;
-        std::vector<std::pair<std::string, Color>> badges = {
-            {kind_badge(u->kind), kind_color(u->kind)}};
-        if (!u->archive.empty()) badges.push_back({u->archive, t.text_dim});
-        for (auto &b : badges) {
-          int bw = badge_width(b.first);
-          paint_badge(p, bx, y() + S(68), bw, S(20), b.second);
-          bx += bw + S(6);
-        }
-        int fy = y() + S(96) + description_height() + S(8);
-        for (size_t i = 0; i < facts(*u).size(); ++i)
-          if (i) p.line(px, fy + i * S(24) + 0.5, px + pw, fy + i * S(24) + 0.5, t.border.alpha(0.6));
-        if (text->visible()) {
-          int ty = text->y();
-          p.line(px, ty - S(36) + 0.5, px + pw, ty - S(36) + 0.5, t.border);
-          p.fill_rect(text->x(), text->y(), text->w(), text->h(), t.surface);
-        }
+      int bx = x() + w() - S(12);
+      for (auto it = badges.rbegin(); it != badges.rend(); ++it) {
+        int bw = badge_width(it->first);
+        bx -= bw;
+        paint_badge(p, bx, y() + S(8), bw, S(20), it->second);
+        bx -= S(6);
       }
+      if (text->visible()) p.fill_rect(text->x(), text->y(), text->w(), text->h(), t.surface);
     }
-    if (!u) {
-      text_font(t.font_size);
-      draw_text(_("Select an update to see its details."), x() + S(16), y() + h() / 2 + S(2),
-                w() - S(32), S(24), t.text_dim, 1);
+    if (title.empty()) {
+      text_font(t.font_size - S(1));
+      draw_text(_("Select an update to see its technical description."), px, y(), pw, std::min(h(), S(40)), t.text_dim);
+      fl_pop_clip();
       return;
     }
-    text_font(t.font_size + S(3), true);
-    draw_text(u->name, px + S(52), y() + S(16), pw - S(52), S(24), t.text);
-    text_font(t.font_size - S(1));
-    draw_text(u->summary.empty() ? u->main_package : u->summary, px + S(52), y() + S(40),
-              pw - S(52), S(20), t.text_dim);
-    int bx = px;
-    std::vector<std::pair<std::string, Color>> badges = {{kind_badge(u->kind), kind_color(u->kind)}};
-    if (!u->archive.empty()) badges.push_back({u->archive, t.text_dim});
-    for (auto &b : badges) {
-      int bw = badge_width(b.first);
-      draw_badge_text(b.first, bx, y() + S(68), bw, S(20), b.second);
-      bx += bw + S(6);
+    int bx = x() + w() - S(12), bw_total = 0;
+    for (auto it = badges.rbegin(); it != badges.rend(); ++it) {
+      int bw = badge_width(it->first);
+      bx -= bw;
+      draw_badge_text(it->first, bx, y() + S(8), bw, S(20), it->second);
+      bx -= S(6);
+      bw_total += bw + S(6);
     }
-    int dh = description_height();
-    if (dh) {
-      text_font(t.font_size - S(1));
-      draw_wrapped(u->description, px, y() + S(96), pw, dh, t.text);
-    }
-    int fy = y() + S(96) + dh + S(8);
-    auto f = facts(*u);
-    int lw = std::min(S(130), pw / 3);
-    for (size_t i = 0; i < f.size(); ++i) {
-      text_font(t.font_size - S(1));
-      draw_text(f[i].first, px, fy + int(i) * S(24), lw, S(24), t.text_dim);
-      draw_text(f[i].second, px + lw, fy + int(i) * S(24), pw - lw, S(24), t.text);
-    }
-    if (!text->visible()) return;
     text_font(t.font_size, true);
-    int ty = text->y();
-    draw_text(_("Changelog"), px, ty - S(32), pw / 2, S(26), t.text);
-    App &a = app();
-    std::string state;
-    if (a.changelog_pending == u->main_package) state = _("Loading…");
-    else if (a.changelogs.count(u->main_package)) state = u->main_package;
-    text_font(t.font_size - S(2));
-    draw_text(state, px + pw / 2, ty - S(32), pw / 2, S(26), t.text_dim, 2);
+    draw_text(title, px, y() + S(6), pw - bw_total - S(8), S(24), t.text);
+    auto f = facts();
+    if (compact_ && u) f.clear();
+    int lw = std::min(S(110), pw / 3), fy = y() + S(32);
+    text_font(t.font_size - S(1));
+    for (auto &row : f) {
+      draw_text(row.first, px, fy, lw, S(20), t.text_dim);
+      draw_text(row.second, px + lw, fy, pw - lw, S(20), t.text);
+      fy += S(20);
+    }
     draw_children();
+    fl_pop_clip();
   }
   TextView *text;
 };
 
-class UpdatesPage : public Page {
+// The Software Updater view: the question, the update tree, the technical
+// description, the download size and the buttons; progress and results of
+// Install Now inline.
+class UpdaterPage : public Page {
  public:
-  UpdatesPage() {
-    refresh = new Button(0, 0, 10, 10, _("Refresh"));
-    refresh->icon(Icon::Restart);
-    refresh->callback([](Fl_Widget *, void *) { app().start("refresh"); });
-    install = new Button(0, 0, 10, 10, _("Install Updates"), Button::Primary);
-    install->icon(Icon::Download);
-    install->callback([](Fl_Widget *, void *) { app().install_selected(); });
-    restart = new Button(0, 0, 10, 10, _("Restart…"));
-    restart->callback([](Fl_Widget *, void *) {
-      if (!find_program("sde-logout").empty()) spawn_detached({"sde-logout"});
-      else if (confirm(app().window, _("Restart the computer?"),
-                       _("Save your work first. Open applications will be closed."), "",
-                       _("Restart"), true))
-        spawn_detached({"systemctl", "reboot"});
-    });
-    search = new SearchField(0, 0, 10, 10, _("Search updates"));
-    search->callback(
-        [](Fl_Widget *w, void *) {
-          app().query = static_cast<SearchField *>(w)->value();
-          app().rebuild_rows();
-        },
-        nullptr);
-    chips = new Chips(0, 0, 10, 10);
-    chips->changed = [](int id) {
-      app().filter = id;
-      app().rebuild_rows();
+  UpdaterPage() {
+    details = new Expander(_("Details of updates"), &app().details_open);
+    // On short screens the two sections take turns (an accordion).
+    details->changed = [] {
+      App &a = app();
+      if (a.details_open && updater()->short_screen()) a.tech_open = false;
+      a.changed();
     };
-    all = new Button(0, 0, 10, 10, _("Select All"), Button::Ghost);
-    all->callback([](Fl_Widget *, void *) { select_all(!all_selected()); });
-    none = new Button(0, 0, 10, 10, _("Select None"), Button::Ghost);
-    none->callback([](Fl_Widget *, void *) { select_all(false); });
     list = new ListView(0, 0, 10, 10);
+    list->framed = false;
     setup_list();
-    details = new DetailsPane(0, 0, 10, 10);
+    tech_exp = new Expander(_("Technical description"), &app().tech_open);
+    tech_exp->changed = [] {
+      App &a = app();
+      if (a.tech_open && updater()->short_screen()) a.details_open = false;
+      if (a.tech_open && a.current >= 0) a.select_changelog(a.current);
+      a.changed();
+    };
+    tech = new TechPane();
+    log_exp = new Expander(_("Details"), &app().log_open);
+    log_exp->changed = [] { app().changed(); };
+    log = new TextView(0, 0, 10, 10);
+    settings = new Button(0, 0, 10, 10, _("Settings…"));
+    settings->callback([](Fl_Widget *, void *) { app().show_page(P_SETTINGS); });
+    remind = new Button(0, 0, 10, 10, _("Remind Me Later"));
+    remind->callback([](Fl_Widget *, void *) { app().remind_later(); });
+    install = new Button(0, 0, 10, 10, _("Install Now"), Button::Primary);
+    install->callback([](Fl_Widget *, void *) { app().install_selected(); });
+    check = new Button(0, 0, 10, 10, _("Check Again"));
+    check->callback([](Fl_Widget *, void *) {
+      App &a = app();
+      a.show_failure = false;
+      a.start("refresh");
+    });
+    close = new Button(0, 0, 10, 10, _("OK"), Button::Primary);
+    close->callback([](Fl_Widget *, void *) { app().request_close(); });
+    cancel = new Button(0, 0, 10, 10, _("Cancel"));
+    cancel->callback([](Fl_Widget *, void *) { app().cancel(); });
+    back = new Button(0, 0, 10, 10, _("Back to Updates"));
+    back->callback([](Fl_Widget *, void *) {
+      App &a = app();
+      a.show_failure = false;
+      a.show_restart = false;
+      a.changed();
+    });
+    retry = new Button(0, 0, 10, 10, _("Try Again"), Button::Primary);
+    retry->callback([](Fl_Widget *, void *) {
+      App &a = app();
+      a.show_failure = false;
+      a.install_selected();
+    });
+    later = new Button(0, 0, 10, 10, _("Later"));
+    later->callback([](Fl_Widget *, void *) {
+      App &a = app();
+      a.show_restart = false;
+      a.changed();
+    });
+    restart_now = new Button(0, 0, 10, 10, _("Restart Now"), Button::Primary);
+    restart_now->callback([](Fl_Widget *, void *) { app().restart_now(); });
+    restart_small = new Button(0, 0, 10, 10, _("Restart…"), Button::Ghost);
+    restart_small->callback([](Fl_Widget *, void *) { app().restart_now(); });
     end();
   }
 
-  // Whether every update shown with the current filter and search is selected.
-  static bool all_selected() {
-    App &a = app();
-    for (auto &r : a.rows)
-      if (!r.header && !a.list.updates[size_t(r.index)].selected) return false;
-    return true;
+  static int group_state(Group g) {
+    int on = 0, total = 0;
+    for (auto &u : app().list.updates)
+      if (u.group == g) {
+        ++total;
+        on += u.selected;
+      }
+    return on == 0 ? 0 : on == total ? 1 : 2;
   }
-  static void select_all(bool on) {
+  static void toggle_group(Group g) {
     App &a = app();
-    // Only the updates that are visible with the current filter and search.
-    for (auto &r : a.rows)
-      if (!r.header) a.list.updates[size_t(r.index)].selected = on;
+    bool any_off = group_state(g) != 1;
+    for (auto &u : a.list.updates)
+      if (u.group == g) u.selected = any_off;
     a.changed();
+  }
+  static void toggle_open(const Row &r, int force = -1) {
+    App &a = app();
+    if (r.type == Row::GroupRow) {
+      bool &open = a.group_open[int(r.group)];
+      open = force < 0 ? !open : force == 1;
+    } else if (r.type == Row::UpdateRow) {
+      const Update &u = a.list.updates[size_t(r.index)];
+      if (u.packages.size() < 2) return;
+      std::string key = update_key(u);
+      bool open = a.open_updates.count(key);
+      bool want = force < 0 ? !open : force == 1;
+      if (want) a.open_updates.insert(key);
+      else a.open_updates.erase(key);
+    }
+    a.rebuild_rows();
   }
 
   void setup_list() {
     list->count = [] { return int(app().rows.size()); };
-    list->row_height = [](int i) { return app().rows[size_t(i)].header ? S(36) : S(56); };
-    list->selectable = [](int i) { return !app().rows[size_t(i)].header; };
+    list->row_height = [](int i) { return app().rows[size_t(i)].type == Row::PackageRow ? S(24) : S(30); };
     list->paint_row = [](Painter &p, int i, int x, int y, int w, int h, bool sel, bool hover) {
       const Theme &t = active_theme();
       App &a = app();
       const Row &r = a.rows[size_t(i)];
-      if (r.header) {
-        int on = 0, total = 0;
-        for (auto &u : a.list.updates)
-          if (u.kind == r.kind) {
-            ++total;
-            on += u.selected;
-          }
-        paint_checkbox(p, x + S(14), y + (h - S(18)) / 2.0 + S(3), S(18),
-                       on == 0 ? 0 : on == total ? 1 : 2, false);
-        p.circle(x + S(48), y + h / 2.0 + S(3), S(4), kind_color(r.kind));
-        if (i) p.line(x + S(10), y + 0.5, x + w - S(10), y + 0.5, t.border.alpha(0.7));
+      double rr = std::min<double>(look().control_radius(h - S(2)), S(8));
+      if (sel) p.fill_rounded(x + S(2), y + S(1), w - S(4), h - S(2), rr, t.selection_bg.alpha(t.dark ? 0.55 : 0.35));
+      else if (hover) p.fill_rounded(x + S(2), y + S(1), w - S(4), h - S(2), rr, t.hover.alpha(0.8));
+      if (r.type == Row::GroupRow) {
+        paint_disclosure(p, x + S(8), y + (h - S(12)) / 2.0, S(12), a.group_open[int(r.group)], t.text_dim);
+        paint_checkbox(p, x + S(26), y + (h - S(16)) / 2.0, S(16), group_state(r.group), false);
         return;
       }
-      double rr = look().liquid() ? S(14) : S(8);
-      if (sel) p.fill_rounded(x + S(4), y + S(2), w - S(8), h - S(4), rr, t.accent.alpha(t.dark ? 0.25 : 0.13));
-      else if (hover) p.fill_rounded(x + S(4), y + S(2), w - S(8), h - S(4), rr, t.hover.alpha(0.8));
+      if (r.type == Row::PackageRow) {
+        p.circle(x + S(104), y + h / 2.0, S(2), t.text_dim.alpha(0.7));
+        return;
+      }
       const Update &u = a.list.updates[size_t(r.index)];
-      paint_checkbox(p, x + S(14), y + (h - S(18)) / 2.0, S(18), u.selected ? 1 : 0, hover);
+      if (u.packages.size() > 1)
+        paint_disclosure(p, x + S(30), y + (h - S(10)) / 2.0, S(10), a.open_updates.count(update_key(u)) != 0,
+                         t.text_dim);
+      paint_checkbox(p, x + S(48), y + (h - S(16)) / 2.0, S(16), u.selected ? 1 : 0, hover);
+      int is = S(20);
+      cairo_surface_t *img = a.icon(u.icon, is);
+      if (!img && u.flatpak) img = a.icon(u.application, is);
+      if (!img) img = a.icon(u.flatpak ? "application-x-executable" : "package-x-generic", is);
+      if (img) p.image(img, x + S(72), y + (h - is) / 2.0, is);
+      else paint_icon(p, Icon::Package, x + S(72), y + (h - is) / 2.0, is, t.text_dim);
     };
     list->text_row = [](int i, int x, int y, int w, int h, bool sel, bool) {
       const Theme &t = active_theme();
       App &a = app();
       const Row &r = a.rows[size_t(i)];
-      if (r.header) {
-        int n = 0;
-        for (auto &row : a.rows) n += !row.header && row.kind == r.kind;
-        text_font(t.font_size - S(1), true);
-        std::string title = kind_title(r.kind);
-        draw_text(title, x + S(60), y + S(6), w - S(140), h - S(6), t.text);
-        int tw = text_width(title);
+      Color fg = sel ? t.text : t.text;
+      int right = S(86);
+      if (r.type == Row::GroupRow) {
+        int n = a.list.count(r.group);
+        text_font(t.font_size, true);
+        std::string title = group_title(r.group);
+        int tw = std::min(text_width(title), w - S(50) - right - S(40));
+        draw_text(title, x + S(50), y, tw, h, fg);
         text_font(t.font_size - S(1));
-        draw_text(format("%d", n), x + S(68) + tw, y + S(6), S(60), h - S(6), t.text_dim);
+        draw_text(format("%d", n), x + S(58) + tw, y, S(40), h, t.text_dim);
+        text_font(t.font_size - S(1), true);
+        draw_text(format_size(a.list.size(r.group)), x + w - right - S(8), y, right, h, fg, 2);
+        return;
+      }
+      if (r.type == Row::PackageRow) {
+        text_font(t.font_size - S(2));
+        draw_text(r.package, x + S(112), y, w - S(112) - right - S(8), h, t.text_dim);
         return;
       }
       const Update &u = a.list.updates[size_t(r.index)];
-      int right = std::min(S(220), w * 2 / 5);
-      int tx = x + S(44), tw = w - S(44) - right - S(16);
-      text_font(t.font_size, true);
-      draw_text(u.name, tx, y + S(8), tw, S(22), t.text);
+      text_font(t.font_size);
+      draw_text(u.title(), x + S(100), y, w - S(100) - right - S(14), h, fg);
       text_font(t.font_size - S(1));
-      draw_text(u.summary.empty() ? join(u.packages, ", ") : u.summary, tx, y + S(28), tw, S(20),
-                t.text_dim);
-      std::string versions = u.old_version.empty() ? u.new_version : u.old_version + "  →  " + u.new_version;
-      text_font(t.font_size - S(2));
-      draw_text(versions, x + w - right - S(12), y + S(8), right, S(22), sel ? t.text : t.text_dim, 2);
-      draw_text(format_size(u.size), x + w - right - S(12), y + S(28), right, S(20), t.text_dim, 2);
+      draw_text(format_size(u.size), x + w - right - S(8), y, right, h, t.text_dim, 2);
     };
-    list->clicked = [](int i, int rx, int) {
+    list->clicked = [](int i, int rx, int clicks) {
       App &a = app();
-      const Row &r = a.rows[size_t(i)];
-      if (rx >= S(40)) return;
-      if (r.header) {
-        bool any_off = false;
-        for (auto &u : a.list.updates)
-          if (u.kind == r.kind && !u.selected) any_off = true;
-        for (auto &u : a.list.updates)
-          if (u.kind == r.kind) u.selected = any_off;
-      } else {
+      if (i < 0 || i >= int(a.rows.size())) return;
+      Row r = a.rows[size_t(i)];
+      if (r.type == Row::GroupRow) {
+        if (rx >= S(22) && rx < S(46)) toggle_group(r.group);
+        else if (rx < S(22) || clicks == 2) toggle_open(r);
+      } else if (r.type == Row::UpdateRow) {
         auto &u = a.list.updates[size_t(r.index)];
-        u.selected = !u.selected;
+        if (rx >= S(26) && rx < S(44) && u.packages.size() > 1) {
+          toggle_open(r);
+        } else if ((rx >= S(44) && rx < S(68)) || clicks == 2) {
+          u.selected = !u.selected;
+          a.changed();
+        }
       }
-      a.changed();
     };
     list->toggled = [](int i) {
       App &a = app();
       const Row &r = a.rows[size_t(i)];
-      if (!r.header) {
+      if (r.type == Row::GroupRow) {
+        toggle_group(r.group);
+      } else if (r.type == Row::UpdateRow) {
         auto &u = a.list.updates[size_t(r.index)];
         u.selected = !u.selected;
         a.changed();
       }
     };
+    list->key_pressed = [this](int i, int key) {
+      App &a = app();
+      Row r = a.rows[size_t(i)];
+      if (key == FL_Right && r.type != Row::PackageRow) {
+        toggle_open(r, 1);
+        return true;
+      }
+      if (key == FL_Left) {
+        if (r.type == Row::PackageRow || (r.type == Row::UpdateRow && !a.open_updates.count(update_key(a.list.updates[size_t(r.index)])))) {
+          // Up to the parent row.
+          for (int j = i - 1; j >= 0; --j) {
+            const Row &p = a.rows[size_t(j)];
+            if ((r.type == Row::PackageRow && p.type == Row::UpdateRow) ||
+                (r.type == Row::UpdateRow && p.type == Row::GroupRow)) {
+              list->select(j);
+              break;
+            }
+          }
+          return true;
+        }
+        toggle_open(r, 0);
+        return true;
+      }
+      return false;
+    };
     list->selection_changed = [](int i) {
       App &a = app();
-      int index = i >= 0 && !a.rows[size_t(i)].header ? a.rows[size_t(i)].index : -1;
-      a.select_changelog(index);
+      a.current = -1;
+      a.current_group = -1;
+      if (i >= 0 && i < int(a.rows.size())) {
+        const Row &r = a.rows[size_t(i)];
+        if (r.type == Row::GroupRow) a.current_group = int(r.group);
+        else a.current = r.index;
+      }
+      if (a.tech_open && a.current >= 0) a.select_changelog(a.current);
+      else updater()->tech->refresh();
     };
     list->empty_icon = Icon::Shield;
+  }
+  static UpdaterPage *updater() { return static_cast<UpdaterPage *>(app().pages[P_UPDATES]); }
+
+  int P() const { return h() < S(460) ? S(10) : S(16); }
+  bool short_screen() const { return h() < S(480); }
+
+  // Header text for the current view.
+  void header_text(View v, std::string &title, std::string &sub) const {
+    App &a = app();
+    std::string age = format(_("Last checked %s"), format_age(a.refreshed, std::time(nullptr)).c_str());
+    switch (v) {
+      case View::Checking:
+        title = _("Checking for updates…");
+        sub = a.busy() ? status_text(a.progress.status) : std::string(_("Reading the package information"));
+        break;
+      case View::Error:
+        title = _("Software information could not be read.");
+        sub = a.load_error;
+        break;
+      case View::UpToDate:
+        title = _("The software on this computer is up to date.");
+        sub = age;
+        if (!a.list.held.empty())
+          sub += "  ·  " + format(_("%d held back by the administrator"), int(a.list.held.size()));
+        break;
+      case View::Installing:
+        title = _("Installing updates…");
+        sub = a.install_steps > 1 ? format(_("Step %d of %d: %s"), a.install_steps - int(a.queue.size()),
+                                           a.install_steps, action_title(a.progress.action).c_str())
+                                  : action_title(a.progress.action);
+        break;
+      case View::Failed: {
+        const Progress &p = a.progress;
+        if (p.outcome == "cancelled") title = _("Installing the updates was cancelled.");
+        else if (p.outcome == "denied") title = _("The updates were not installed: authentication failed.");
+        else title = _("The updates could not be installed.");
+        if (!p.errors.empty()) sub = p.errors.back();
+        else if (p.outcome == "denied") sub = _("Authentication was cancelled or refused.");
+        else if (p.outcome == "cancelled") sub = _("Some updates may have been installed already.");
+        else sub = format(_("Exit code %d. Open Details for the full log."), p.exit_code);
+        break;
+      }
+      case View::Restart:
+        title = _("The computer needs to restart to finish installing updates.");
+        sub = _("Save your work before restarting.");
+        if (!a.reboot_packages.empty()) sub += "  " + format(_("Requested by %s."), join(a.reboot_packages, ", ").c_str());
+        break;
+      case View::Available: {
+        title = _("Updated software is available for this computer. Do you want to install it now?");
+        std::vector<std::string> parts;
+        int n = int(a.list.updates.size());
+        parts.push_back(n == 1 ? std::string(_("1 update")) : format(_("%d updates"), n));
+        if (int c = a.list.count(Group::Critical)) parts.push_back(format(_("%d critical"), c));
+        if (int s = a.list.count(Group::Security)) parts.push_back(format(_("%d security"), s));
+        if (int f = a.list.count(Group::Flatpak)) parts.push_back(format(_("%d Flatpak"), f));
+        if (!a.list.held.empty()) parts.push_back(format(_("%d held back"), int(a.list.held.size())));
+        sub = join(parts, "  ·  ") + "  ·  " + age;
+        break;
+      }
+    }
+  }
+  int header_height(View v) const {
+    const Theme &t = active_theme();
+    std::string title, sub;
+    header_text(v, title, sub);
+    int tw = w() - 2 * P() - S(62);
+    text_font(t.font_size + S(2), true);
+    int th = std::max(S(22), std::min(S(60), wrapped_height(title, tw)));
+    return std::max(S(48), th + S(4) + S(20));
+  }
+
+  void place(Button *b, int x, int y, int min_w) {
+    b->size(std::max(min_w, b->preferred_width()), S(34));
+    b->position(x, y);
+    want_.insert(b);
   }
 
   void layout() override {
     App &a = app();
-    int p = pad(), X = x() + p, W = w() - 2 * p;
-    hero_y = y() + S(20);
-    hero_h = S(108);
-    int bh = S(38);
-    install->size(std::max(S(150), install->preferred_width()), bh);
-    refresh->size(std::max(S(116), refresh->preferred_width()), bh);
-    install->position(X + W - S(20) - install->w(), hero_y + (hero_h - bh) / 2);
-    refresh->position(install->x() - S(10) - refresh->w(), install->y());
-    int cy = hero_y + hero_h + S(14);
-    banner_y = cy;
-    if (a.reboot) {
-      restart->resize(X + W - S(12) - S(120), cy + S(8), S(120), S(32));
-      restart->show();
-      cy += S(48) + S(12);
-    } else {
-      restart->hide();
+    View v = a.view();
+    int p = P(), X = x() + p, W = w() - 2 * p;
+    int by = y() + h() - p - S(34);
+    all_.clear();
+    for (Fl_Widget *wd : std::initializer_list<Fl_Widget *>{
+             details, list, tech_exp, tech, log_exp, log, settings, remind, install, check, close, cancel, back, retry,
+             later, restart_now, restart_small})
+      all_.push_back(wd);
+    want_.clear();
+    header_y = y() + p;
+    header_h = header_height(v);
+    int cy = header_y + header_h + S(8);
+    banner = a.reboot && v != View::Restart && v != View::Installing;
+    if (banner) {
+      banner_y = cy;
+      restart_small->size(restart_small->preferred_width(), S(28));
+      restart_small->position(X + W - S(6) - restart_small->w(), cy + S(3));
+      want_.insert(restart_small);
+      cy += S(34) + S(8);
     }
-    int th = S(34);
-    search->resize(X, cy, std::min(S(190), W / 4), th);
-    // One button toggles between Select All and Select None.
-    none->hide();
-    none->size(none->preferred_width() - S(12), th);
-    all->size(none->w(), th);
-    all->position(X + W - all->w(), cy);
-    chips->resize(search->x() + search->w() + S(12), cy + S(2), all->x() - search->x() - search->w() - S(24), th - S(4));
-    int by = cy + th + S(12), bhh = y() + h() - p + S(8) - by;
-    int lw = W >= S(760) ? W * 56 / 100 : W;
-    list->resize(X, by, lw, bhh);
-    if (W >= S(760)) {
-      details->resize(X + lw + S(14), by, W - lw - S(14), bhh);
-      details->show();
-    } else {
-      details->hide();
+    progress_y = -1;
+    download_y = -1;
+    tree_y = tree_h = 0;
+    log_h = 0;
+    // Bottom buttons.
+    auto right_to_left = [&](std::initializer_list<Button *> buttons) {
+      int bx = X + W;
+      for (Button *b : buttons) {
+        b->size(std::max(S(96), b->preferred_width()), S(34));
+        bx -= b->w();
+        b->position(bx, by);
+        want_.insert(b);
+        bx -= S(8);
+      }
+    };
+    if (v == View::Available) {
+      place(settings, X, by, S(96));
+      right_to_left({install, remind});
+      int line_h = S(26);
+      // On short screens the download size goes between the buttons when it
+      // fits, and the tree has no column header: more rows stay visible.
+      int free_x = settings->x() + settings->w() + S(12), free_w = remind->x() - S(12) - free_x;
+      text_font(active_theme().font_size);
+      download_inline = short_screen() && text_width(download_text(true)) + S(30) <= free_w;
+      download_x = download_inline ? free_x : X;
+      download_w = download_inline ? free_w : W;
+      download_y = download_inline ? by + (S(34) - line_h) / 2 : by - S(8) - line_h;
+      int exp_h = S(26);
+      int bottom = download_inline ? by - S(8) : download_y - S(4);
+      int avail = bottom - exp_h - S(4) - cy - exp_h - S(4);
+      tree_head = short_screen() ? 0 : S(26);
+      int tech_h = 0;
+      if (a.details_open && a.tech_open) {
+        tree_h = std::max(S(84), avail * 55 / 100);
+        tech_h = std::max(S(60), avail - tree_h - S(6));
+        if (tree_h + tech_h + S(6) > avail) tree_h = std::max(S(60), avail - tech_h - S(6));
+      } else if (a.details_open) {
+        tree_h = std::max(S(60), avail);
+      } else if (a.tech_open) {
+        tech_h = std::max(S(60), avail);
+      }
+      details->resize(X, cy, std::min(W, details->preferred_width()), exp_h);
+      want_.insert(details);
+      cy += exp_h + S(4);
+      if (a.details_open) {
+        tree_y = cy;
+        list->resize(X + S(3), cy + (tree_head ? tree_head : S(3)), W - S(6), tree_h - tree_head - S(6) + (tree_head ? S(3) : 0));
+        want_.insert(list);
+        cy += tree_h + S(6);
+      }
+      tech_exp->resize(X, cy, std::min(W, tech_exp->preferred_width()), exp_h);
+      want_.insert(tech_exp);
+      cy += exp_h + S(4);
+      if (a.tech_open) {
+        tech->resize(X, cy, W, tech_h);
+        want_.insert(tech);
+      }
+    } else if (v == View::Checking || v == View::Installing || v == View::Failed || v == View::Restart) {
+      if (v == View::Checking || v == View::Installing) {
+        progress_y = cy;
+        cy += S(70);
+      }
+      bool has_log = !a.progress.log.empty() || !a.earlier_log.empty() || v == View::Installing;
+      if (has_log) {
+        log_exp->resize(X, cy, std::min(W, log_exp->preferred_width()), S(26));
+        want_.insert(log_exp);
+        cy += S(30);
+        if (a.log_open) {
+          log_y = cy;
+          log_h = std::max(S(40), by - S(10) - cy);
+          log->resize(X + S(6), cy + S(6), W - S(12), log_h - S(12));
+          want_.insert(log);
+        }
+      }
+      if (v == View::Checking) {
+        place(settings, X, by, S(96));
+        if (a.busy() && a.progress.cancellable) right_to_left({cancel});
+      } else if (v == View::Installing) {
+        right_to_left({cancel});
+        if (a.progress.cancellable && !a.progress.cancel_requested) cancel->activate();
+        else cancel->deactivate();
+      } else if (v == View::Failed) {
+        place(settings, X, by, S(96));
+        right_to_left({retry, back});
+      } else {
+        right_to_left({restart_now, later});
+      }
+    } else {  // UpToDate, Error
+      place(settings, X, by, S(96));
+      right_to_left({close, check});
+    }
+    if (a.busy() && v != View::Installing) check->deactivate();
+    else check->activate();
+    if (a.busy() || a.list.selected_count() == 0) install->deactivate();
+    else install->activate();
+    // Only change what changes, so the focused control keeps the focus.
+    for (Fl_Widget *wd : all_) {
+      if (!want_.count(wd)) wd->hide();
+      else if (!wd->visible()) wd->show();
     }
   }
+  std::vector<Fl_Widget *> all_;
+  std::set<Fl_Widget *> want_;
 
   void sync() {
     App &a = app();
-    chips->set_counts(a.list);
-    bool every = false;
-    auto pkgs = selected_packages(a.list.updates, &every);
-    int n = int(std::count_if(a.list.updates.begin(), a.list.updates.end(),
-                              [](const Update &u) { return u.selected; }));
-    all->text(!a.rows.empty() && all_selected() ? _("Select None") : _("Select All"));
-    install->text(every || !n ? std::string(_("Install Updates")) : format(_("Install %d Selected"), n));
-    if (n && !a.busy() && a.list.valid) install->activate();
-    else install->deactivate();
-    if (a.busy() || a.loading) refresh->deactivate();
-    else refresh->activate();
-    if (a.list.updates.empty()) {
-      all->deactivate();
-    } else {
-      all->activate();
-    }
-    list->loading = a.loading && a.list.updates.empty();
-    if (a.loading) {
-      list->empty_title = "";
-    } else if (!a.load_error.empty()) {
-      list->empty_icon = Icon::Warning;
-      list->empty_title = _("Updates could not be read");
-      list->empty_text = a.load_error;
-    } else if (a.list.updates.empty()) {
-      list->empty_icon = Icon::Shield;
-      list->empty_title = _("Your system is up to date");
-      list->empty_text = _("Refresh to check the package sources for new updates.");
-    } else {
-      list->empty_icon = Icon::Search;
-      list->empty_title = _("No matching updates");
-      list->empty_text = _("Try another search or filter.");
-    }
+    log->set(a.full_log());
+    log->scroll_to_end();
+    tech->refresh();
     layout();
     redraw();
-  }
-
-  void hero_text(std::string &title, std::string &subtitle, Icon &icon, Color &color) const {
-    App &a = app();
-    const Theme &t = active_theme();
-    std::string age = format(_("Last refreshed %s"), format_age(a.refreshed, std::time(nullptr)).c_str());
-    if (a.busy() && a.progress.action == "refresh") {
-      title = _("Checking for updates…");
-      subtitle = status_text(a.progress.status);
-      icon = Icon::Restart;
-      color = t.accent;
-    } else if (a.loading && !a.loaded_once) {
-      title = _("Checking for updates…");
-      subtitle = _("Reading the package lists");
-      icon = Icon::Restart;
-      color = t.accent;
-    } else if (!a.load_error.empty()) {
-      title = _("Updates could not be read");
-      subtitle = a.load_error;
-      icon = Icon::Warning;
-      color = warning_color();
-    } else if (a.list.updates.empty()) {
-      title = _("Your system is up to date");
-      subtitle = age;
-      icon = Icon::Shield;
-      color = success_color();
-    } else {
-      int n = int(a.list.updates.size());
-      title = n == 1 ? std::string(_("1 update available")) : format(_("%d updates available"), n);
-      std::vector<std::string> parts;
-      int sec = a.list.count(Kind::Security);
-      if (sec) parts.push_back(sec == 1 ? std::string(_("1 security update")) : format(_("%d security updates"), sec));
-      parts.push_back(format(_("%s to download"), format_size(a.list.total_size()).c_str()));
-      subtitle = join(parts, "  ·  ");
-      std::vector<std::string> second = {age};
-      if (!a.list.held.empty()) second.push_back(format(_("%d held back by the administrator"), int(a.list.held.size())));
-      if (a.packagekit_client.empty()) second.push_back(_("Installs through APT and pkexec"));
-      subtitle += "\n" + join(second, "  ·  ");
-      icon = sec ? Icon::Shield : Icon::Download;
-      color = sec ? danger_color() : t.accent;
-    }
   }
 
   void paint() override {
     const Theme &t = active_theme();
     App &a = app();
-    int p = pad(), X = x() + p, W = w() - 2 * p;
-    std::string title, subtitle;
-    Icon icon;
-    Color color;
-    hero_text(title, subtitle, icon, color);
-    int text_x = X + S(100), text_w = refresh->x() - text_x - S(12);
+    View v = a.view();
+    int p = P(), X = x() + p, W = w() - 2 * p;
+    std::string title, sub;
+    header_text(v, title, sub);
+    int is = S(48), tx = X + is + S(14), tw = W - is - S(14);
     {
       Painter pp(window()->w(), window()->h());
-      paint_card(pp, X, hero_y, W, hero_h, true);
-      double cs = S(60), cx = X + S(22), cy = hero_y + (hero_h - cs) / 2;
-      pp.fill_rounded(cx, cy, cs, cs, look().liquid() ? cs / 2 : S(16), color.alpha(t.dark ? 0.22 : 0.14));
-      if (a.loading && !a.loaded_once)
-        paint_spinner(pp, cx + cs / 2, cy + cs / 2, S(15), a.phase, color);
-      else
-        paint_icon(pp, icon, cx + S(14), cy + S(14), S(32), readable_on(color, t.surface));
-      if (a.reboot) {
+      bool problem = v == View::Error || v == View::Failed;
+      if (problem || v == View::Restart) {
+        Color c = problem ? danger_color() : warning_color();
+        pp.fill_rounded(X, header_y, is, is, look().card_radius(), c.alpha(t.dark ? 0.22 : 0.14));
+        paint_icon(pp, problem ? Icon::Warning : Icon::Restart, X + S(10), header_y + S(10), S(28),
+                   readable_on(c, t.background));
+      } else {
+        pp.image(IconLoader::get({"system-software-update", "software-update-available", "sde-logo"}, is), X,
+                 header_y, is);
+      }
+      if (banner) {
         double r = look().card_radius();
         Color wc = warning_color();
-        pp.fill_rounded(X, banner_y, W, S(48), r, wc.alpha(t.dark ? 0.18 : 0.12));
-        pp.stroke_rounded(X, banner_y, W, S(48), r, wc.alpha(0.45));
-        paint_icon(pp, Icon::Restart, X + S(14), banner_y + S(13), S(22), readable_on(wc, t.background));
+        pp.fill_rounded(X, banner_y, W, S(34), r, wc.alpha(t.dark ? 0.18 : 0.12));
+        pp.stroke_rounded(X, banner_y, W, S(34), r, wc.alpha(0.45));
+        paint_icon(pp, Icon::Restart, X + S(10), banner_y + S(8), S(18), readable_on(wc, t.background));
       }
+      if (tree_h > 0) {
+        paint_card(pp, X, tree_y, W, tree_h);
+        if (tree_head) pp.line(X + S(8), tree_y + tree_head + 0.5, X + W - S(8), tree_y + tree_head + 0.5, t.border);
+      }
+      if (log_h > 0 && a.log_open) paint_card(pp, X, log_y, W, log_h);
+      if (progress_y >= 0) {
+        paint_progress(pp, X, progress_y + S(4), W, S(8), a.busy() ? a.progress.percent : -1, a.phase);
+      }
+      if (download_y >= 0)
+        paint_icon(pp, Icon::Package, download_x + S(2), download_y + S(4), S(18), t.accent_text);
     }
-    auto lines = split(subtitle, '\n');
-    int ty = hero_y + (lines.size() > 1 ? S(14) : S(24));
-    text_font(t.font_size + S(7), true);
-    draw_text(title, text_x, ty, text_w, S(32), t.text);
-    text_font(t.font_size);
-    for (size_t i = 0; i < lines.size(); ++i)
-      draw_text(lines[i], text_x, ty + S(34) + int(i) * S(22), text_w, S(22), t.text_dim);
-    if (a.reboot) {
-      std::string msg = _("Restart to finish installing updates");
+    text_font(t.font_size + S(2), true);
+    int th = std::max(S(22), std::min(S(60), wrapped_height(title, tw)));
+    draw_wrapped(title, tx, header_y, tw, th, t.text);
+    text_font(t.font_size - S(1));
+    draw_text(sub, tx, header_y + th + S(4), tw, S(20), v == View::Failed ? danger_color() : t.text_dim);
+    if (banner) {
+      std::string msg = _("Restart to finish installing earlier updates");
       if (!a.reboot_packages.empty()) msg += "  ·  " + join(a.reboot_packages, ", ");
-      text_font(t.font_size, true);
-      draw_text(msg, X + S(46), banner_y, W - S(46) - S(144), S(48), t.text);
+      text_font(t.font_size - S(1), true);
+      draw_text(msg, X + S(36), banner_y, restart_small->x() - X - S(44), S(34), t.text);
+    }
+    if (tree_h > 0 && tree_head) {
+      text_font(t.font_size - S(1));
+      draw_text(_("Install"), X + S(12), tree_y, W / 2, S(26), t.text_dim);
+      draw_text(_("Download"), X + W / 2, tree_y, W / 2 - S(12), S(26), t.text_dim, 2);
+    }
+    if (progress_y >= 0) {
+      const Progress &pr = a.progress;
+      std::string status = a.busy() ? status_text(pr.status) : std::string(_("Reading the package information"));
+      if (a.busy() && pr.percent >= 0) status += format("  ·  %d%%", pr.percent);
+      if (pr.cancel_requested) status = _("Cancelling…");
+      text_font(t.font_size);
+      draw_text(status, X, progress_y + S(16), W, S(24), t.text);
+      std::string item;
+      if (a.busy() && !pr.item_name.empty())
+        item = pr.item_info + " " + pr.item_name + (pr.item_version.empty() ? "" : " " + pr.item_version);
+      if (a.busy() && pr.items_seen > 1) item += (item.empty() ? "" : "  ·  ") + format(_("%d packages"), pr.items_seen);
+      text_font(t.font_size - S(1));
+      draw_text(item, X, progress_y + S(40), W, S(22), t.text_dim);
+    }
+    if (download_y >= 0) {
+      text_font(t.font_size);
+      draw_text(download_text(download_inline), download_x + S(28), download_y, download_w - S(28), S(26), t.text);
     }
   }
 
-  void activated() override { Fl::focus(list); }
+  // "80.0 MB will be downloaded." (|brief| leaves out the selection and restart).
+  std::string download_text(bool brief) const {
+    App &a = app();
+    long long size = a.list.selected_size();
+    int n = a.list.selected_count();
+    std::string line;
+    if (!n) line = _("No updates are selected.");
+    else if (!size) line = _("Nothing needs to be downloaded.");
+    else line = format(_("%s will be downloaded."), format_size(size).c_str());
+    if (brief) return line;
+    if (n && n < int(a.list.updates.size()))
+      line += "  " + format(_("(%d of %d updates selected)"), n, int(a.list.updates.size()));
+    if (n && a.list.needs_reboot()) line += "  ·  " + std::string(_("A restart will be required."));
+    return line;
+  }
 
-  Button *refresh, *install, *restart, *all, *none;
-  SearchField *search;
-  Chips *chips;
+  void activated() override {
+    if (list->visible()) Fl::focus(list);
+  }
+
+  Expander *details, *tech_exp, *log_exp;
   ListView *list;
-  DetailsPane *details;
-  int hero_y = 0, hero_h = 0, banner_y = 0;
+  TechPane *tech;
+  TextView *log;
+  Button *settings, *remind, *install, *check, *close, *cancel, *back, *retry, *later, *restart_now, *restart_small;
+  int header_y = 0, header_h = 0, banner_y = 0, tree_y = 0, tree_h = 0, progress_y = -1, download_y = -1;
+  int log_y = 0, log_h = 0, tree_head = 0, download_x = 0, download_w = 0;
+  bool download_inline = false;
+  bool banner = false;
 };
 
 // ---------------------------------------------------------------- history
@@ -1208,6 +1494,9 @@ class MaintenancePage : public Page {
     }
   }
   void activated() override { app().load_maintenance(); }
+  int content_height() const override {
+    return heading_bottom() - y() + int(actions.size()) * (S(78) + S(10)) + pad();
+  }
   std::vector<Action> actions;
 };
 
@@ -1232,7 +1521,22 @@ class SettingsPage : public Page {
     refresh = make_switch("auto_refresh", true);
     notify = make_switch("notify", true);
     security = make_switch("notify_security_only", false);
+    remind = new Fl_Choice(0, 0, 10, 10);
+    style_choice(remind);
+    int rh = a.cfg.get_int("update", "remind_hours", 24), rindex = 2;
+    for (size_t i = 0; i < remind_hours().size(); ++i) {
+      remind->add(menu_escape(remind_label(remind_hours()[i])).c_str());
+      if (remind_hours()[i] == rh) rindex = int(i);
+    }
+    remind->value(rindex);
+    remind->callback([](Fl_Widget *w, void *) {
+      int v = static_cast<Fl_Choice *>(w)->value();
+      if (v >= 0) save("remind_hours", std::to_string(remind_hours()[size_t(v)]));
+    });
     end();
+  }
+  int content_height() const override {
+    return heading_bottom() - y() + S(16) + int(rows().size()) * row_h() + S(16) + note_h() + pad();
   }
   Switch *make_switch(const char *key, bool fallback) {
     auto *s = new Switch(0, 0, 10, 10);
@@ -1257,19 +1561,21 @@ class SettingsPage : public Page {
         {_("Refresh package sources automatically"),
          _("Download new package lists through PackageKit before each automatic check.")},
         {_("Show a notification"), _("Tell me when updates are available.")},
-        {_("Only for security updates"), _("Notify only when at least one security update is available.")},
+        {_("Only for security updates"), _("Notify only when at least one critical or security update is available.")},
+        {_("Remind Me Later"), _("When to notify again after you choose Remind Me Later.")},
     };
   }
-  int row_h() const { return S(66); }
+  int row_h() const { return S(62); }
   void layout() override {
     int p = pad(), X = x() + p, W = std::min(w() - 2 * p, S(760));
     card_x = X;
     card_w = W;
     card_y = heading_bottom();
-    Fl_Widget *controls[] = {interval, refresh, notify, security};
-    for (int i = 0; i < 4; ++i) {
+    Fl_Widget *controls[] = {interval, refresh, notify, security, remind};
+    int cw = std::min(S(200), W / 3);
+    for (int i = 0; i < 5; ++i) {
       int ry = card_y + S(8) + i * row_h();
-      if (i == 0) controls[i]->resize(X + W - S(20) - S(200), ry + (row_h() - S(32)) / 2, S(200), S(32));
+      if (i == 0 || i == 4) controls[i]->resize(X + W - S(20) - cw, ry + (row_h() - S(32)) / 2, cw, S(32));
       else controls[i]->resize(X + W - S(20) - S(48), ry + (row_h() - S(28)) / 2, S(48), S(28));
     }
   }
@@ -1285,12 +1591,12 @@ class SettingsPage : public Page {
         double ly = card_y + S(8) + i * row_h() + 0.5;
         pp.line(card_x + S(20), ly, card_x + card_w - S(20), ly, t.border.alpha(0.7));
       }
-      paint_card(pp, card_x, card_y + ch + S(16), card_w, S(92));
+      paint_card(pp, card_x, card_y + ch + S(16), card_w, note_h());
       paint_icon(pp, Icon::Info, card_x + S(20), card_y + ch + S(16) + S(20), S(22), t.accent_text);
     }
     for (size_t i = 0; i < r.size(); ++i) {
       int ry = card_y + S(8) + int(i) * row_h();
-      int tw = card_w - S(40) - (i == 0 ? S(220) : S(68));
+      int tw = card_w - S(40) - (i == 0 || i == 4 ? std::min(S(200), card_w / 3) + S(20) : S(68));
       bool dim = i == 3 && !notify->value();
       text_font(t.font_size + S(1));
       draw_text(r[i].title, card_x + S(20), ry + S(10), tw, S(24), dim ? t.text_dim : t.text);
@@ -1301,12 +1607,20 @@ class SettingsPage : public Page {
     text_font(t.font_size, true);
     draw_text(_("Updates are never installed automatically"), card_x + S(54), ny + S(16), card_w - S(74), S(24), t.text);
     text_font(t.font_size - S(1));
-    draw_wrapped(_("Automatic checks only read package information. Installing always asks for "
-                   "administrator rights through PackageKit or pkexec. Settings are saved "
-                   "automatically in the [update] section of sde.conf."),
-                 card_x + S(54), ny + S(42), card_w - S(74), S(44), t.text_dim);
+    draw_wrapped(note(), card_x + S(54), ny + S(42), card_w - S(74), note_h() - S(48), t.text_dim);
+  }
+  static const char *note() {
+    return _("Automatic checks only read package information. Installing always asks for "
+             "administrator rights through PackageKit or pkexec. Settings are saved "
+             "automatically in the [update] section of sde.conf.");
+  }
+  int note_h() const {
+    text_font(active_theme().font_size - S(1));
+    int cw = std::min(w() - 2 * pad(), S(760));
+    return S(54) + wrapped_height(note(), cw - S(74));
   }
   Fl_Choice *interval;
+  Fl_Choice *remind;
   Switch *refresh, *notify, *security;
   int card_x = 0, card_y = 0, card_w = 0;
 };
@@ -1323,15 +1637,15 @@ class AboutPage : public Page {
       std::string path = helper("COPYRIGHT");
       open_uri(file_exists("/usr/share/doc/sde/copyright") ? "/usr/share/doc/sde/copyright" : path);
     });
-    about = new Button(0, 0, 10, 10, _("About SDE Update"));
+    about = new Button(0, 0, 10, 10, _("About Software Updater"));
     about->callback([](Fl_Widget *, void *) {
       AppInfo info;
-      info.name = _("SDE Update");
+      info.name = _("Software Updater");
       info.program = "sde-update";
       info.version = SDE_UPDATE_VERSION;
       info.icon = "system-software-update";
-      info.description = _("Keeps DebION GNU/Linux up to date: security, software and kernel updates "
-                           "from the configured sources.");
+      info.description = _("Keeps DebION GNU/Linux up to date: critical, security, main and Flatpak "
+                           "updates from the configured sources.");
       info.credits = {_("Update model adapted from Linux Mint's Update Manager (mintupdate), "
                         "© 2007–2015 Clement Lefebvre and the Linux Mint team, GPL-3.0-or-later"),
                       toolkit_credit()};
@@ -1339,6 +1653,7 @@ class AboutPage : public Page {
     });
     end();
   }
+  int content_height() const override { return S(186) + S(150) + S(14) + S(120) + pad(); }
   void layout() override {
     int p = pad(), X = x() + p;
     int by = y() + S(186) + S(150) - S(52);
@@ -1361,9 +1676,9 @@ class AboutPage : public Page {
       paint_card(pp, X, y() + S(186) + S(150) + S(14), W, S(120));
     }
     text_font(t.font_size + S(10), true);
-    draw_text(_("SDE Update"), X + S(92), y() + S(32), W - S(92), S(38), t.text);
+    draw_text(_("Software Updater"), X + S(92), y() + S(32), W - S(92), S(38), t.text);
     text_font(t.font_size);
-    draw_text(format(_("Version %s · System updates for DebION GNU/Linux"), SDE_UPDATE_VERSION), X + S(92),
+    draw_text(format(_("Version %s · Critical, security, main and Flatpak updates"), SDE_UPDATE_VERSION), X + S(92),
               y() + S(70), W - S(92), S(24), t.text_dim);
     text_font(t.font_size - S(1));
     draw_text(developer_line(), X + S(92), y() + S(94), W - S(92), S(22), t.text_dim);
@@ -1499,8 +1814,12 @@ class ActivityStrip : public Fl_Group {
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  int row_h() const { return S(42); }
-  int row_y(int i) const { return y() + S(86) + i * row_h() + (i >= P_SETTINGS ? S(20) : 0); }
+  // Compact on short screens (1024x600 at 150%).
+  bool compact() const { return h() < S(470); }
+  int row_h() const { return compact() ? S(34) : S(42); }
+  int row_y(int i) const {
+    return y() + (compact() ? S(66) : S(86)) + i * row_h() + (i >= P_SETTINGS ? (compact() ? S(16) : S(20)) : 0);
+  }
   void draw() override {
     const Theme &t = active_theme();
     App &a = app();
@@ -1539,7 +1858,8 @@ class Sidebar : public Fl_Widget {
       }
     }
     text_font(t.font_size + S(2), true);
-    draw_text(_("Update"), x() + S(64), y() + S(24), w() - S(70), S(34), t.text);
+    if (text_width(_("Software Updater")) > w() - S(70)) text_font(t.font_size, true);
+    draw_text(_("Software Updater"), x() + S(64), y() + S(24), w() - S(70), S(34), t.text);
     text_font(t.font_size - S(2), true);
     draw_text(_("SYSTEM"), x() + S(22) + inset / 2, row_y(P_SETTINGS) - S(22), w() - S(30), S(18), t.text_dim);
     for (int i = 0; i < P_COUNT; ++i) {
@@ -1558,6 +1878,8 @@ class Sidebar : public Fl_Widget {
     }
     text_font(t.font_size - S(2));
     std::string backend = a.packagekit_client.empty() ? _("APT via pkexec") : _("Debian PackageKit");
+    // The footer only where it does not cover the last page.
+    if (row_y(P_COUNT - 1) + row_h() + S(46) > y() + h() - inset) return;
     draw_text(backend, x() + S(22) + inset / 2, y() + h() - S(40) - inset, w() - S(36), S(18), t.text_dim);
     draw_text(_("Based on mintupdate"), x() + S(22) + inset / 2, y() + h() - S(22) - inset, w() - S(36), S(18),
               t.text_dim);
@@ -1611,7 +1933,7 @@ class Sidebar : public Fl_Widget {
 
 class MainWindow : public BufferedWindow {
  public:
-  MainWindow(int w, int h) : BufferedWindow(w, h, _("SDE Update")) {}
+  MainWindow(int w, int h) : BufferedWindow(w, h, _("Software Updater")) {}
   void draw() override {
     {
       Painter p(w(), h());
@@ -1631,10 +1953,6 @@ class MainWindow : public BufferedWindow {
         app().start("refresh");
         return 1;
       }
-      if (k == 'f' && app().page == P_UPDATES) {
-        Fl::focus(static_cast<UpdatesPage *>(app().pages[P_UPDATES])->search);
-        return 1;
-      }
       if (k == 'q' || k == 'w') {
         app().request_close();
         return 1;
@@ -1644,25 +1962,49 @@ class MainWindow : public BufferedWindow {
         return 1;
       }
     }
+    // Escape on a settings page goes back to the updater (searches clear
+    // themselves first).
+    if ((e == FL_KEYBOARD || e == FL_SHORTCUT) && Fl::event_key() == FL_Escape && app().page != P_UPDATES &&
+        !(Fl::event_state() & (FL_CTRL | FL_ALT))) {
+      if (BufferedWindow::handle(e)) return 1;
+      app().show_page(P_UPDATES);
+      return 1;
+    }
     return BufferedWindow::handle(e);
   }
 };
 
-UpdatesPage *updates_page() { return static_cast<UpdatesPage *>(app().pages[P_UPDATES]); }
+void relayout_pages() { app().layout(); }
+
+UpdaterPage *updater_page() { return static_cast<UpdaterPage *>(app().pages[P_UPDATES]); }
 
 // ----------------------------------------------------------- App methods
 
 void App::layout() {
   if (!window) return;
   int W = window->w(), H = window->h();
-  int side = W < S(860) ? S(188) : S(224);
-  sidebar->resize(0, 0, side, H);
-  int strip_h = strip_visible ? S(64) : 0;
+  // The updater is a compact window of its own; the settings, history,
+  // sources, maintenance and about pages get the sidebar.
+  bool updater = page == P_UPDATES;
+  int side = updater ? 0 : W < S(860) ? S(188) : S(224);
+  if (updater) {
+    sidebar->hide();
+  } else {
+    sidebar->resize(0, 0, side, H);
+    sidebar->show();
+  }
+  bool strip_on = strip_visible && !updater;
+  int strip_h = strip_on ? S(64) : 0;
   int cx = side, cw = W - side;
-  int ph = H - (strip_visible ? strip_h + S(16) : 0);
-  for (auto *p : pages) p->resize(cx, 0, cw, ph);
+  int ph = H - (strip_on ? strip_h + S(16) : 0);
+  for (auto *p : pages) {
+    p->view_h = ph;
+    int ch = std::max(ph, p->content_height());
+    p->scroll = std::max(0, std::min(p->scroll, ch - ph));
+    p->resize(cx, -p->scroll, cw, ch);
+  }
   int sp = cw < S(620) ? S(16) : S(28);
-  if (strip_visible) {
+  if (strip_on) {
     strip->resize(cx + sp, H - strip_h - S(16), cw - 2 * sp, strip_h);
     strip->show();
   } else {
@@ -1673,17 +2015,37 @@ void App::layout() {
 
 void App::show_page(int index) {
   if (index < 0 || index >= P_COUNT) return;
+  bool was_updater = page == P_UPDATES, updater = index == P_UPDATES;
   page = index;
   for (int i = 0; i < P_COUNT; ++i) {
     if (i == index) pages[i]->show();
     else pages[i]->hide();
   }
+  if (window && window->shown() && was_updater != updater) {
+    // The settings pages need more room than the compact updater.
+    int sx, sy, sw, sh;
+    Fl::screen_work_area(sx, sy, sw, sh, window->x(), window->y());
+    int W = window->w(), H = window->h();
+    if (!updater) {
+      updater_w = W;
+      updater_h = H;
+      W = std::max(W, std::min(S(940), sw - S(24)));
+      H = std::max(H, std::min(S(640), sh - S(60)));
+    } else if (updater_w > 0) {
+      W = updater_w;
+      H = updater_h;
+    }
+    int X = std::max(sx, std::min(window->x() - (W - window->w()) / 2, sx + sw - W));
+    int Y = std::max(sy, std::min(window->y(), sy + sh - H));
+    window->resize(X, Y, W, H);
+  }
+  layout();
   pages[index]->activated();
-  window->redraw();
+  if (window) window->redraw();
 }
 
 void App::changed() {
-  updates_page()->sync();
+  updater_page()->sync();
   static_cast<MaintenancePage *>(pages[P_MAINTENANCE])->sync();
   strip->sync();
   window->redraw();
@@ -1695,7 +2057,7 @@ void App::tick(void *) {
   if (!animate) return;
   a.phase += 1.0 / 22;
   if (a.phase > 1) a.phase -= 1;
-  updates_page()->list->phase = a.phase;
+  updater_page()->list->phase = a.phase;
   static_cast<HistoryPage *>(a.pages[P_HISTORY])->list->phase = a.phase;
   static_cast<SourcesPage *>(a.pages[P_SOURCES])->list->phase = a.phase;
   a.window->redraw();
@@ -1708,38 +2070,79 @@ void start_ticking() {
 }
 
 void App::rebuild_rows() {
-  int keep = -1;
-  UpdatesPage *pg = updates_page();
+  UpdaterPage *pg = updater_page();
+  // Keep the selected row (by what it shows) across rebuilds.
   int sel = pg->list->selected();
-  if (sel >= 0 && sel < int(rows.size()) && !rows[size_t(sel)].header) keep = rows[size_t(sel)].index;
+  Row keep;
+  bool had = sel >= 0 && sel < int(rows.size());
+  std::string keep_key;
+  if (had) {
+    keep = rows[size_t(sel)];
+    if (keep.index >= 0) keep_key = update_key(list.updates[size_t(keep.index)]);
+  }
   rows.clear();
-  for (int k = 0; k < kKindCount; ++k) {
-    if (filter >= 0 && filter != k) continue;
+  for (int g = 0; g < kGroupCount; ++g) {
     std::vector<int> items;
     for (size_t i = 0; i < list.updates.size(); ++i)
-      if (int(list.updates[i].kind) == k && matches(list.updates[i], query)) items.push_back(int(i));
+      if (int(list.updates[i].group) == g) items.push_back(int(i));
     if (items.empty()) continue;
-    rows.push_back({true, Kind(k), -1});
-    for (int i : items) rows.push_back({false, Kind(k), i});
+    rows.push_back({Row::GroupRow, Group(g), -1, ""});
+    if (!group_open[g]) continue;
+    for (int i : items) {
+      const Update &u = list.updates[size_t(i)];
+      rows.push_back({Row::UpdateRow, Group(g), i, ""});
+      if (u.packages.size() > 1 && open_updates.count(update_key(u)))
+        for (auto &p : u.packages) rows.push_back({Row::PackageRow, Group(g), i, p});
+    }
   }
   int new_sel = -1;
-  for (size_t r = 0; r < rows.size(); ++r)
-    if (!rows[r].header && (keep < 0 || rows[r].index == keep)) {
-      if (keep >= 0 || new_sel < 0) new_sel = int(r);
-      if (keep >= 0) break;
+  if (had) {
+    for (size_t r = 0; r < rows.size(); ++r) {
+      const Row &row = rows[r];
+      bool same = row.type == keep.type && row.group == keep.group &&
+                  (row.index < 0 || update_key(list.updates[size_t(row.index)]) == keep_key) &&
+                  row.package == keep.package;
+      if (same) {
+        new_sel = int(r);
+        break;
+      }
     }
+    // A collapsed child: select its group or update instead.
+    if (new_sel < 0)
+      for (size_t r = 0; r < rows.size(); ++r)
+        if ((rows[r].type == Row::UpdateRow && !keep_key.empty() &&
+             update_key(list.updates[size_t(rows[r].index)]) == keep_key) ||
+            (rows[r].type == Row::GroupRow && rows[r].group == keep.group && new_sel < 0)) {
+          new_sel = int(r);
+          if (rows[r].type == Row::UpdateRow) break;
+        }
+  }
+  if (new_sel < 0)
+    for (size_t r = 0; r < rows.size(); ++r)
+      if (rows[r].type == Row::UpdateRow) {
+        new_sel = int(r);
+        break;
+      }
+  // Size the tree for the current view first: the selection scrolls into
+  // view against the real height.
+  pg->layout();
   pg->list->select(-1, false);
-  if (keep < 0) pg->list->reset_scroll();
+  if (!had) pg->list->reset_scroll();
   pg->list->select(new_sel);
-  if (new_sel < 0) select_changelog(-1);
+  if (new_sel < 0) {
+    current = -1;
+    current_group = -1;
+  }
   changed();
 }
 
 void App::select_changelog(int index) {
-  DetailsPane *d = updates_page()->details;
-  d->show_update(index);
-  if (index < 0) return;
-  std::string pkg = list.updates[size_t(index)].main_package;
+  TechPane *d = updater_page()->tech;
+  d->refresh();
+  if (index < 0 || index >= int(list.updates.size())) return;
+  const Update &u = list.updates[size_t(index)];
+  if (u.flatpak) return;
+  std::string pkg = u.main_package;
   if (changelogs.count(pkg) || !valid_package_name(pkg)) return;
   // Wait a moment so that arrowing through the list does not start a
   // download for every row.
@@ -1775,14 +2178,12 @@ void App::select_changelog(int index) {
                              "installed version:")) + "\n\n" + text;
       a.changelogs[pkg] = text;
       if (a.changelog_pending == pkg) a.changelog_pending.clear();
-      DetailsPane *d = updates_page()->details;
-      if (d->current() && d->current()->main_package == pkg) d->refresh_text();
-      d->redraw();
+      updater_page()->tech->refresh();
     });
     if (!ok) {
       a.changelogs[pkg] = _("Python 3 is missing; changelogs cannot be shown.");
       a.changelog_pending.clear();
-      updates_page()->details->refresh_text();
+      updater_page()->tech->refresh();
     }
   }, new Req{request, pkg});
 }
@@ -1794,33 +2195,60 @@ void App::load_updates() {
   reboot = reboot_required(&reboot_packages);
   start_ticking();
   changed();
+  // APT (check.py) and Flatpak (flatpak.py) are read in parallel.
+  pending_loads = 2;
+  apt_output.clear();
+  flatpak_output.clear();
+  apt_status = -1;
   bool started = run_async({kPython, helper("check.py")}, [](const std::string &output, int status) {
     App &a = app();
-    a.loading = false;
-    a.refreshed = lists_mtime();
-    UpdateList fresh = parse_updates(output);
-    if (status != 0 || !fresh.valid) {
-      a.load_error = _("Cannot read the APT package information. Make sure python3-apt is installed and "
-                       "your package sources are valid.");
-      a.list = UpdateList{};
-    } else {
-      // Keep the user's selection for updates that are still offered.
-      std::set<std::string> off;
-      for (auto &u : a.list.updates)
-        if (!u.selected) off.insert(u.name + "=" + u.new_version);
-      for (auto &u : fresh.updates)
-        if (off.count(u.name + "=" + u.new_version)) u.selected = false;
-      a.list = std::move(fresh);
-    }
-    a.loaded_once = true;
-    a.rebuild_rows();
-    a.maybe_auto_refresh();
+    a.apt_output = output;
+    a.apt_status = status;
+    if (--a.pending_loads == 0) a.merge_updates();
   });
   if (!started) {
     loading = false;
+    pending_loads = 0;
     load_error = _("Python 3 is missing. Reinstall the sde package and its dependencies.");
     changed();
+    return;
   }
+  bool flatpak = run_async({kPython, helper("flatpak.py")}, [](const std::string &output, int) {
+    App &a = app();
+    a.flatpak_output = output;
+    if (--a.pending_loads == 0) a.merge_updates();
+  });
+  if (!flatpak) --pending_loads;
+}
+
+void App::merge_updates() {
+  loading = false;
+  refreshed = lists_mtime();
+  UpdateList fresh = parse_updates(apt_output);
+  if (apt_status != 0 || !fresh.valid) {
+    load_error = _("Cannot read the APT package information. Make sure python3-apt is installed and "
+                   "your package sources are valid.");
+    list = UpdateList{};
+  } else {
+    parse_flatpaks(flatpak_output, fresh);
+    // Keep the user's choices for updates that are still offered.
+    std::set<std::string> off;
+    for (auto &u : list.updates)
+      if (!u.selected) off.insert(update_key(u) + "=" + u.new_version);
+    for (auto &u : fresh.updates)
+      if (off.count(update_key(u) + "=" + u.new_version)) u.selected = false;
+    list = std::move(fresh);
+  }
+  icons.clear();
+  loaded_once = true;
+  bool first = !focused_once;
+  rebuild_rows();
+  // The tree takes the keyboard focus once it first appears.
+  if (first && page == P_UPDATES && updater_page()->list->visible()) {
+    focused_once = true;
+    Fl::focus(updater_page()->list);
+  }
+  maybe_auto_refresh();
 }
 
 void App::maybe_auto_refresh() {
@@ -1900,6 +2328,12 @@ void App::start(const std::string &action, const std::vector<std::string> &packa
         App &a = app();
         apply_transaction_line(a.progress, line);
         a.strip->sync();
+        UpdaterPage *pg = updater_page();
+        if (pg->log->visible()) {
+          pg->log->set(a.full_log());
+          pg->log->scroll_to_end();
+        }
+        pg->layout();
         a.window->redraw();
       },
       [] { app().finished(); });
@@ -1912,11 +2346,22 @@ void App::start(const std::string &action, const std::vector<std::string> &packa
   layout();
   start_ticking();
   changed();
+  if (!job) finished();
+}
+
+void App::run_next() {
+  if (queue.empty()) return;
+  std::vector<std::string> next = queue.front();
+  queue.erase(queue.begin());
+  std::string action = next.front();
+  next.erase(next.begin());
+  start(action, next);
 }
 
 void App::cancel() {
   if (!busy() || !progress.cancellable) return;
   progress.cancel_requested = true;
+  queue.clear();
   signal_stream(job, SIGINT);
   changed();
 }
@@ -1928,7 +2373,27 @@ void App::finished() {
     if (progress.outcome.empty()) progress.outcome = "failed";
   }
   std::string action = progress.action;
-  if (action == "refresh" || action == "upgrade" || action == "autoremove" || action == "repair") {
+  if (installing) {
+    if (progress.ok() && !queue.empty()) {
+      // The next part of Install Now (e.g. Flatpak after the APT packages).
+      earlier_log.insert(earlier_log.end(), progress.log.begin(), progress.log.end());
+      earlier_log.push_back("");
+      run_next();
+      return;
+    }
+    installing = false;
+    queue.clear();
+    if (progress.ok()) {
+      reboot = reboot_required(&reboot_packages);
+      show_restart = reboot || reboot_expected;
+    } else {
+      show_failure = true;
+      log_open = true;
+    }
+    strip_visible = false;
+  }
+  if (action == "refresh" || action == "upgrade" || action == "flatpak" || action == "autoremove" ||
+      action == "repair") {
     changelogs.clear();
     load_updates();
   }
@@ -1940,11 +2405,31 @@ void App::finished() {
 
 void App::install_selected() {
   if (busy()) return;
-  bool all = false;
-  auto packages = selected_packages(list.updates, &all);
-  if (packages.empty()) return;
-  if (all) packages.clear();  // the whole system: lets PackageKit add new dependencies
-  start("upgrade", packages);
+  queue = install_commands(list.updates);
+  if (queue.empty()) return;
+  install_steps = int(queue.size());
+  earlier_log.clear();
+  installing = true;
+  show_failure = show_restart = false;
+  reboot_expected = list.needs_reboot();
+  run_next();
+}
+
+void App::remind_later() {
+  // The notifier stays quiet until then, and notifies again afterwards.
+  int hours = std::max(1, cfg.get_int("update", "remind_hours", 24));
+  NotifierState s = load_notifier_state();
+  s.remind_until = std::time(nullptr) + std::time_t(hours) * 3600;
+  s.notified.clear();
+  save_notifier_state(s);
+  request_close();
+}
+
+void App::restart_now() {
+  if (!find_program("sde-logout").empty()) spawn_detached({"sde-logout"});
+  else if (confirm(window, _("Restart the computer?"), _("Save your work first. Open applications will be closed."),
+                   "", _("Restart Now"), true))
+    spawn_detached({"systemctl", "reboot"});
 }
 
 void App::open_terminal_transaction() {
@@ -1953,7 +2438,7 @@ void App::open_terminal_transaction() {
     inform(window, _("No terminal available"), _("Install xterm to run update transactions in a terminal."));
     return;
   }
-  run_async({"xterm", "-T", _("SDE Update"), "-e", "sde-update", "--transaction", "upgrade"},
+  run_async({"xterm", "-T", _("Software Updater"), "-e", "sde-update", "--transaction", "upgrade"},
             [](const std::string &, int) { app().load_updates(); });
 }
 
@@ -1966,6 +2451,32 @@ void App::request_close() {
     return;
   }
   window->hide();
+}
+
+void App::apply_theme() {
+  cfg.load();
+  Theme theme = Theme::from_config(cfg);
+  theme.apply_to_fltk();
+  set_look(Look::from_config(cfg));
+  IconLoader::set_theme(cfg.get("appearance", "icon_theme", "auto"));
+  icons.clear();
+  for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) {
+    restyle_tree(w);
+    w->redraw();
+  }
+  layout();
+  changed();
+}
+
+// The SDE settings bump _SDE_CONFIG_SERIAL on the root window whenever the
+// appearance changes: follow the new theme without a restart.
+int config_watch(int) {
+  if (!fl_xevent || !app().window) return 0;
+  const XEvent &e = *fl_xevent;
+  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
+      e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL"))
+    app().apply_theme();
+  return 0;
 }
 
 void minute_tick(void *) {
@@ -1983,6 +2494,27 @@ void minute_tick(void *) {
 
 }  // namespace
 
+std::string notifier_state_path() { return join_path(state_home(), "sde/update-notifier"); }
+
+NotifierState load_notifier_state() {
+  NotifierState s;
+  std::string text;
+  if (!read_file(notifier_state_path(), text)) return s;
+  for (auto &line : split(text, '\n')) {
+    if (starts_with(line, "last_check=")) s.last_check = std::time_t(atoll(line.c_str() + 11));
+    if (starts_with(line, "notified=")) s.notified = line.substr(9);
+    if (starts_with(line, "remind_until=")) s.remind_until = std::time_t(atoll(line.c_str() + 13));
+  }
+  return s;
+}
+
+void save_notifier_state(const NotifierState &s) {
+  make_dirs(join_path(state_home(), "sde"));
+  write_file_atomic(notifier_state_path(),
+                    format("last_check=%lld\nnotified=%s\nremind_until=%lld\n", (long long)s.last_check,
+                           s.notified.c_str(), (long long)s.remind_until));
+}
+
 int run_app(const std::string &page_name) {
   App &a = app();
   a.cfg.load();
@@ -1996,11 +2528,12 @@ int run_app(const std::string &page_name) {
 
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int W = std::min(S(1080), sw - S(24)), H = std::min(S(720), sh - S(60));
+  // Compact, like a dialog; the settings pages widen it (see show_page()).
+  int W = std::min(S(700), sw - S(24)), H = std::min(S(640), sh - S(60));
   auto *win = new MainWindow(W, H);
   a.window = win;
   a.sidebar = new Sidebar(0, 0, S(224), H);
-  a.pages[P_UPDATES] = new UpdatesPage();
+  a.pages[P_UPDATES] = new UpdaterPage();
   a.pages[P_HISTORY] = new HistoryPage();
   a.pages[P_SOURCES] = new SourcesPage();
   a.pages[P_MAINTENANCE] = new MaintenancePage();
@@ -2009,20 +2542,31 @@ int run_app(const std::string &page_name) {
   a.strip = new ActivityStrip();
   win->end();
   win->resizable(nullptr);
-  win->size_range(std::min(W, S(720)), std::min(H, S(520)));
+  win->size_range(std::min(W, S(460)), std::min(H, S(340)));
   win->xclass("sde-update");
   win->callback([](Fl_Widget *, void *) {
     // Escape clears searches; it should not close the whole window.
     if (Fl::event() == FL_SHORTCUT && Fl::event_key() == FL_Escape) return;
     app().request_close();
   });
-  a.layout();
   int index = P_UPDATES;
   for (int i = 0; i < P_COUNT; ++i)
     if (page_name == kPages[i].id) index = i;
+  a.page = index;
+  if (index != P_UPDATES) {
+    // Opened on a settings page: start with the wide window.
+    a.updater_w = W;
+    a.updater_h = H;
+    win->size(std::max(W, std::min(S(940), sw - S(24))), std::max(H, std::min(S(640), sh - S(60))));
+  }
   a.show_page(index);
-  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->position(sx + (sw - win->w()) / 2, sy + (sh - win->h()) / 2);
+  Fl::add_handler(config_watch);
   win->show();
+  Window root = RootWindow(fl_display, fl_screen);
+  XWindowAttributes attr;
+  XGetWindowAttributes(fl_display, root, &attr);
+  XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask);
   a.load_updates();
   a.load_maintenance();
   Fl::add_timeout(60, minute_tick);

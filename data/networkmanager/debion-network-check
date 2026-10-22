@@ -12,7 +12,12 @@
 #                                     /etc/network/interfaces to NetworkManager,
 #                                     stop a second DHCP client, give
 #                                     /etc/resolv.conf back to one owner and
-#                                     turn on network time
+#                                     turn on network time; then wait
+#                                     and check that DNS really works
+#   sudo debion-network-check --dns-fallback [off]
+#                                     use public DNS servers (1.1.1.1,
+#                                     9.9.9.9) on the active connection when
+#                                     the network gives none (off: undo)
 #   debion-network-check --wpad       print the proxy auto-configuration URL
 #                                     this network publishes (WPAD), if any
 #   sudo debion-network-check --apt-proxy URL|none
@@ -27,6 +32,7 @@ VERSION=2
 MODE=report
 NOW=0
 APT_PROXY_ARG=""
+FALLBACK_OFF=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --fix) MODE=fix ;;
@@ -37,14 +43,17 @@ while [ $# -gt 0 ]; do
         --json) [ "$MODE" = report ] && MODE=quick ;;
         --wpad) MODE=wpad ;;
         --apt-proxy) MODE=apt-proxy; APT_PROXY_ARG=${2:-}; [ $# -gt 1 ] && shift ;;
+        --dns-fallback) MODE=dns-fallback
+            if [ "${2:-}" = off ]; then FALLBACK_OFF=1; shift; fi ;;
+        --postinst-dns) MODE=postinst-dns ;;
         # Building blocks, used by the tests.
         --list-convertible|--convert-interfaces|--dhcp-clients|--wpad-candidates|--explain-curl|--resolv-owner|--wifi-profiles)
             MODE=${1#--} ;;
         -h|--help)
-            sed -n '3,24p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,28p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) [ "${MODE}" = explain-curl ] || [ "$MODE" = wifi-profiles ] && break
-           echo "usage: debion-network-check [--quick --json | --fix [--now] | --wpad | --apt-proxy URL|none]" >&2; exit 2 ;;
+           echo "usage: debion-network-check [--quick --json | --fix [--now] | --dns-fallback [off] | --wpad | --apt-proxy URL|none]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -55,6 +64,12 @@ SYSNET=${DEBION_SYS_CLASS_NET:-/sys/class/net}
 NMCONN=${DEBION_NM_CONNECTIONS:-/etc/NetworkManager/system-connections}
 BACKUPS=${DEBION_BACKUP_DIR:-/var/backups/debion-network}
 NM_RUN_CONF=${DEBION_NM_RUN_CONF:-/run/NetworkManager/conf.d}
+NM_CONF_DIR=${DEBION_NM_CONF_DIR:-/etc/NetworkManager/conf.d}
+NM_BIN=${DEBION_NM_BINARY:-/usr/sbin/NetworkManager}
+SYSTEMD_RUN=${DEBION_SYSTEMD_RUN:-/run/systemd/system}
+# How long --fix waits for NetworkManager to write working DNS servers.
+DNS_WAIT=${DEBION_DNS_WAIT:-10}
+FALLBACK_DNS="1.1.1.1 9.9.9.9"
 TEST_HOST=deb.debian.org
 TIMEOUT=${DEBION_NET_TIMEOUT:-5}
 
@@ -68,14 +83,14 @@ more() { say "        $*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 nm_running() {
-    if have systemctl && [ -d /run/systemd/system ]; then
+    if have systemctl && [ -d "$SYSTEMD_RUN" ]; then
         systemctl is-active --quiet NetworkManager.service
     else
         pidof NetworkManager >/dev/null 2>&1
     fi
 }
 
-unit_active() { have systemctl && [ -d /run/systemd/system ] && systemctl is-active --quiet "$1" 2>/dev/null; }
+unit_active() { have systemctl && [ -d "$SYSTEMD_RUN" ] && systemctl is-active --quiet "$1" 2>/dev/null; }
 
 stamp() { date +%Y%m%d-%H%M%S; }
 
@@ -247,7 +262,7 @@ handover() {
     echo "Backup: $dest"
     if [ "$now" = 1 ]; then
         rm -f "$NM_RUN_CONF/90-debion-handover.conf"
-        if have systemctl && [ -d /run/systemd/system ]; then
+        if have systemctl && [ -d "$SYSTEMD_RUN" ]; then
             systemctl restart NetworkManager.service 2>/dev/null || true
         fi
     fi
@@ -322,6 +337,337 @@ resolv_owner() {
     elif grep -qi 'dhclient\|dhcpcd' "$RESOLV"; then echo dhclient
     else echo static
     fi
+}
+
+# ------------------------------------------------- DNS: who blocks it
+#
+# NetworkManager knows the DNS servers of a connection (its connectivity
+# check asks them directly), but programs only use /etc/resolv.conf. It
+# stays without a name server when NetworkManager is told not to write it
+# (dns=none, rc-manager=unmanaged), hands it to resolvconf/netconfig or a
+# systemd-resolved that is not running, finds a symlink it must not replace
+# (rc-manager=symlink/auto), cannot write it (chattr +i), has no servers for
+# it (ipv4.ignore-auto-dns, a DHCP lease without DNS) or does not manage the
+# device at all (unmanaged, "connected (externally)" by ifupdown).
+
+has_ns() { [ -r "$RESOLV" ] && grep -q '^[ \t]*nameserver' "$RESOLV" 2>/dev/null; }
+dns_works() { has_ns && getent ahosts "$TEST_HOST" >/dev/null 2>&1; }
+resolv_servers() { awk '$1 == "nameserver" {print $2}' "$RESOLV" 2>/dev/null | tr '\n' ' ' | sed 's/ $//'; }
+resolved_to() { getent ahosts "$TEST_HOST" 2>/dev/null | awk '{print $1}' | sort -u | head -n3 | tr '\n' ' ' | sed 's/ $//'; }
+
+# A [main] key of NetworkManager's merged configuration
+# (NetworkManager --print-config), or |default| when it is not set.
+nm_main_value() {
+    v=""
+    if [ -x "$NM_BIN" ]; then
+        v=$("$NM_BIN" --print-config 2>/dev/null | awk -v k="$1" '
+            /^[ \t]*\[/ { s = $0; gsub(/[][ \t]/, "", s); next }
+            s == "main" {
+                line = $0; sub(/^[ \t]+/, "", line)
+                if (line ~ /^#/) next
+                if (index(line, k "=") == 1) { v = substr(line, length(k) + 2); gsub(/[ \t]/, "", v) }
+            }
+            END { print v }')
+    fi
+    echo "${v:-$2}"
+}
+
+nm_list() { tr '|,' '\n\n' | tr -d ' \t' | grep . | awk '!seen[$0]++' | tr '\n' ' ' | sed 's/ $//'; }
+
+# Fills D_*: the device with the default route (or the first Ethernet/Wi-Fi
+# device), its state and connection, the DNS servers NetworkManager has for
+# it, what the DHCP lease said, the connection's ipv4.ignore-auto-dns and
+# ipv4.dns, NetworkManager's dns= and rc-manager=, and the state of
+# systemd-resolved, resolvconf and the immutable flag.
+dns_state() {
+    D_DEV=""; D_STATE=""; D_CON=""; D_CON_NAME=""; D_NMDNS=""; D_DHCPDNS=unknown
+    D_IGNORE=""; D_CONDNS=""
+    D_MODE=$(nm_main_value dns default)
+    D_RC=$(nm_main_value rc-manager auto)
+    D_RESOLVED=no; unit_active systemd-resolved.service && D_RESOLVED=yes
+    D_RESOLVCONF=""
+    for p in ${DEBION_RESOLVCONF-/usr/sbin/resolvconf /sbin/resolvconf /usr/bin/resolvconf}; do
+        [ -x "$p" ] && { D_RESOLVCONF=$p; break; }
+    done
+    D_IMMUTABLE=no
+    if [ -f "$RESOLV" ] && have lsattr; then
+        case "$(lsattr -d "$RESOLV" 2>/dev/null | awk '{print $1}')" in *i*) D_IMMUTABLE=yes ;; esac
+    fi
+    have nmcli && nm_running || return 0
+    have ip && D_DEV=$(ip -4 route show default 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }')
+    if [ -z "$D_DEV" ]; then
+        D_DEV=$(nmcli -t -f DEVICE,TYPE device 2>/dev/null | awk -F: '$2 == "ethernet" || $2 == "wifi" { print $1; exit }')
+    fi
+    [ -n "$D_DEV" ] || return 0
+    D_STATE=$(nmcli -g GENERAL.STATE device show "$D_DEV" 2>/dev/null | head -n1)
+    D_CON_NAME=$(nmcli -g GENERAL.CONNECTION device show "$D_DEV" 2>/dev/null | head -n1)
+    D_CON=$(nmcli -g GENERAL.CON-UUID device show "$D_DEV" 2>/dev/null | head -n1)
+    [ -n "$D_CON" ] || D_CON=$D_CON_NAME
+    D_NMDNS=$( { nmcli -g IP4.DNS device show "$D_DEV" 2>/dev/null; nmcli -g IP6.DNS device show "$D_DEV" 2>/dev/null; } | nm_list)
+    dhcp=$(nmcli -t -f DHCP4 device show "$D_DEV" 2>/dev/null)
+    if [ -n "$dhcp" ]; then
+        D_DHCPDNS=$(printf '%s\n' "$dhcp" | sed -n 's/^DHCP4\.OPTION\[[0-9]*\]:domain_name_servers *= *//p' | head -n1)
+        [ -n "$D_DHCPDNS" ] || D_DHCPDNS=none
+    fi
+    if [ -n "$D_CON" ]; then
+        D_IGNORE=$(nmcli -g ipv4.ignore-auto-dns connection show "$D_CON" 2>/dev/null | head -n1)
+        D_CONDNS=$(nmcli -g ipv4.dns connection show "$D_CON" 2>/dev/null | nm_list)
+    fi
+}
+
+# Prints why NetworkManager does not (or cannot) put name servers into
+# /etc/resolv.conf, one finding per line (for the report).
+dns_findings() {
+    dns_state
+    owner=$(resolv_owner)
+    info "NetworkManager configuration: dns=$D_MODE, rc-manager=$D_RC (NetworkManager --print-config)"
+    if [ -n "$D_DEV" ]; then
+        info "$D_DEV (${D_CON_NAME:-no connection}, ${D_STATE:-unknown state}): NetworkManager's DNS servers: ${D_NMDNS:-none}"
+    fi
+    [ "$D_IMMUTABLE" = yes ] && warn "$RESOLV is immutable (chattr +i): nothing can write name servers into it"
+    case "$D_MODE" in
+        none) warn "NetworkManager is configured with dns=none: it never writes $RESOLV" ;;
+        systemd-resolved) [ "$D_RESOLVED" = yes ] || warn "NetworkManager is configured with dns=systemd-resolved, but systemd-resolved is not running" ;;
+    esac
+    case "$D_RC" in
+        unmanaged) warn "NetworkManager is configured with rc-manager=unmanaged: it never writes $RESOLV" ;;
+        resolvconf|netconfig) warn "NetworkManager hands DNS to $D_RC (rc-manager=$D_RC) instead of writing $RESOLV" ;;
+        symlink) [ -L "$RESOLV" ] && warn "rc-manager=symlink and $RESOLV is a symlink: NetworkManager leaves it alone" ;;
+        auto)
+            if [ -n "$D_RESOLVCONF" ] && [ "$owner" != resolvconf ] && [ "$owner" != systemd-resolved ]; then
+                warn "$D_RESOLVCONF is installed, so NetworkManager (rc-manager=auto) gives DNS to it, but $RESOLV is not resolvconf's"
+            elif [ -L "$RESOLV" ] && [ "$owner" != systemd-resolved ] && [ "$owner" != resolvconf ]; then
+                warn "$RESOLV is a symlink to $(readlink "$RESOLV"): NetworkManager (rc-manager=auto) does not replace it"
+            fi ;;
+    esac
+    if [ -n "$D_DEV" ]; then
+        case "$D_STATE" in
+            *unmanaged*) warn "$D_DEV is not managed by NetworkManager: it has no DNS servers to write" ;;
+            *externally*) warn "$D_DEV is connected outside NetworkManager (\"connected (externally)\", ifupdown or a script): NetworkManager has no DNS servers for it" ;;
+        esac
+        if [ "$D_IGNORE" = yes ] && [ -z "$D_CONDNS" ]; then
+            warn "the connection \"$D_CON_NAME\" ignores the network's DNS servers (ipv4.ignore-auto-dns yes) and has none of its own"
+        fi
+        if [ "$D_DHCPDNS" = none ] && [ -z "$D_CONDNS" ]; then
+            warn "the DHCP server of this network gave no DNS server"
+            more "Use public DNS servers: sudo debion-network-check --dns-fallback"
+        fi
+        if [ -n "$D_NMDNS" ] && ! has_ns; then
+            warn "NetworkManager knows DNS servers ($D_NMDNS), but they are not in $RESOLV"
+        fi
+    fi
+    more "Fix: sudo debion-network-check --fix   (repairs this and checks that DNS works)"
+}
+
+write_dns_conf() {
+    mkdir -p "$NM_CONF_DIR" || return 1
+    {
+        echo "# Written by debion-network-check: NetworkManager writes /etc/resolv.conf"
+        echo "# itself with the DNS servers of the active connections. Remove this file"
+        echo "# to go back to NetworkManager's defaults."
+        echo "[main]"
+        echo "dns=default"
+        echo "rc-manager=file"
+    } > "$NM_CONF_DIR/90-debion-dns.conf.new" && chmod 644 "$NM_CONF_DIR/90-debion-dns.conf.new" &&
+        mv "$NM_CONF_DIR/90-debion-dns.conf.new" "$NM_CONF_DIR/90-debion-dns.conf"
+}
+
+# Writes |servers| (at most three: the C library reads no more) into
+# /etc/resolv.conf, the way NetworkManager does with rc-manager=file.
+write_resolv() {
+    doms=""
+    [ -n "$D_DEV" ] && doms=$(nmcli -g IP4.DOMAIN device show "$D_DEV" 2>/dev/null | nm_list)
+    {
+        echo "# Generated by NetworkManager"
+        echo "# (written by debion-network-check from NetworkManager's DNS servers)"
+        [ -n "$doms" ] && echo "search $doms"
+        n=0
+        for s in $1; do
+            n=$((n + 1)); [ "$n" -le 3 ] && echo "nameserver $s"
+        done
+    } > "$RESOLV.debion-new" && chmod 644 "$RESOLV.debion-new" && mv "$RESOLV.debion-new" "$RESOLV"
+}
+
+restart_nm() {
+    if have systemctl && [ -d "$SYSTEMD_RUN" ]; then
+        systemctl restart NetworkManager.service 2>/dev/null || nmcli general reload 2>/dev/null
+    else
+        nmcli general reload 2>/dev/null
+    fi
+    i=0
+    while [ "$i" -lt "$DNS_WAIT" ]; do
+        [ "$(nmcli -t -f RUNNING general 2>/dev/null)" = running ] && break
+        sleep 1; i=$((i + 1))
+    done
+}
+
+# Waits up to DNS_WAIT seconds until TEST_HOST resolves.
+wait_dns() {
+    i=0
+    while :; do
+        dns_works && return 0
+        [ "$i" -ge "$DNS_WAIT" ] && return 1
+        sleep 1; i=$((i + 1))
+    done
+}
+
+dns_success() { echo "DNS works now: $TEST_HOST resolves to $(resolved_to) (name servers: $(resolv_servers))."; }
+
+offer_fallback() {
+    [ "${FALLBACK_TRIED:-0}" = 1 ] && return 1
+    if [ -n "$D_CON" ] && [ -t 0 ] && [ -t 1 ] && [ -z "${DEBION_NO_ASK:-}" ]; then
+        printf 'Use the public DNS servers %s (Cloudflare, Quad9) for "%s"? [y/N] ' "$FALLBACK_DNS" "$D_CON_NAME"
+        read -r answer || answer=""
+        case "$answer" in
+            y|Y|yes|Yes) dns_fallback; return $? ;;
+        esac
+    fi
+    echo "Next: sudo debion-network-check --dns-fallback"
+    echo "  (uses the public DNS servers $FALLBACK_DNS on \"${D_CON_NAME:-the active connection}\"; also"
+    echo "  Settings > Network > Troubleshooting > Use Public DNS)"
+    return 1
+}
+
+# Makes NetworkManager write working name servers into /etc/resolv.conf and
+# checks that $TEST_HOST resolves. Prints what it did and the truthful
+# outcome; 0 when DNS works afterwards.
+dns_repair() {
+    dns_state
+    owner=$(resolv_owner)
+    if [ "$owner" = systemd-resolved ] && [ "$D_RESOLVED" != yes ]; then owner=resolved-off; fi
+    if ! have nmcli || ! nm_running; then
+        echo "DNS is not repaired: NetworkManager is not running (sudo systemctl enable --now NetworkManager)."
+        return 1
+    fi
+    if [ "$D_IMMUTABLE" = yes ]; then
+        if have chattr && chattr -i "$RESOLV" 2>/dev/null; then
+            echo "$RESOLV was immutable (chattr +i); it can be written again."
+        else
+            echo "DNS is not repaired: $RESOLV is immutable. Run: sudo chattr -i $RESOLV"
+            return 1
+        fi
+    fi
+    # Who should write the file: systemd-resolved when it runs and the file
+    # is its stub; otherwise NetworkManager, as a plain file.
+    takeover=0
+    case "$owner" in
+        dangling|missing|empty|dhclient|resolved-off) takeover=1 ;;
+        resolvconf) dns_works || takeover=1 ;;
+        static) if ! dns_works && [ -n "$D_NMDNS" ]; then takeover=1; fi ;;
+    esac
+    restart=0
+    if [ "$takeover" = 1 ]; then
+        if [ -e "$RESOLV" ] || [ -L "$RESOLV" ]; then
+            bk="$RESOLV.debion-$(stamp)"
+            if ! mv "$RESOLV" "$bk" 2>/dev/null; then
+                echo "DNS is not repaired: $RESOLV cannot be moved aside ($(ls -ld "$RESOLV" 2>&1))."
+                return 1
+            fi
+            echo "Saved the old $RESOLV ($owner) as $bk."
+        fi
+        : > "$RESOLV" && chmod 644 "$RESOLV"
+        restart=1
+    fi
+    if [ "$owner" != systemd-resolved ]; then
+        need=0
+        case "$D_MODE" in default) ;; *) need=1 ;; esac
+        case "$D_RC" in
+            file|symlink) ;;
+            auto) [ -n "$D_RESOLVCONF" ] && [ "$owner" != resolvconf ] && need=1 ;;
+            *) need=1 ;;
+        esac
+        if [ "$need" = 1 ]; then
+            if write_dns_conf; then
+                echo "Wrote $NM_CONF_DIR/90-debion-dns.conf (dns=default, rc-manager=file; it was dns=$D_MODE, rc-manager=$D_RC)."
+                restart=1
+            else
+                echo "Could not write $NM_CONF_DIR/90-debion-dns.conf."
+            fi
+        fi
+    fi
+    if [ "$restart" = 1 ]; then
+        restart_nm
+        m=$(nm_main_value dns default); r=$(nm_main_value rc-manager auto)
+        if [ "$owner" != systemd-resolved ] && { [ "$m" != default ] || { [ "$r" != file ] && [ "$r" != symlink ] && [ "$r" != auto ]; }; }; then
+            echo "Another NetworkManager configuration file still sets dns=$m, rc-manager=$r:"
+            echo "  grep -rnE '^(dns|rc-manager)=' /etc/NetworkManager /usr/lib/NetworkManager/conf.d /run/NetworkManager/conf.d"
+        fi
+        dns_state
+    fi
+    if [ -n "$D_DEV" ]; then
+        pend=" $(pending_handover) $(printf '%s\n' "${conflicts:-}" | tr '\n' ' ') "
+        case "$D_STATE" in
+            *unmanaged*)
+                case "$pend" in
+                    *" $D_DEV "*) echo "$D_DEV is still configured by ifupdown; reboot (or run --fix --now) first." ;;
+                    *) nmcli device set "$D_DEV" managed yes >/dev/null 2>&1 &&
+                           echo "NetworkManager manages $D_DEV now." ;;
+                esac ;;
+            *externally*)
+                nmcli device connect "$D_DEV" >/dev/null 2>&1 &&
+                    echo "NetworkManager took over $D_DEV (it was connected outside NetworkManager)." ;;
+        esac
+        if [ "$D_IGNORE" = yes ] && [ -z "$D_CONDNS" ] && [ -n "$D_CON" ]; then
+            nmcli connection modify "$D_CON" ipv4.ignore-auto-dns no >/dev/null 2>&1 &&
+                echo "The connection \"$D_CON_NAME\" uses the network's DNS servers again (ipv4.ignore-auto-dns no)."
+        fi
+        # Apply the profile again (no disconnection); reconnect if that fails.
+        if ! nmcli device reapply "$D_DEV" >/dev/null 2>&1 && [ -n "$D_CON" ]; then
+            nmcli connection up "$D_CON" >/dev/null 2>&1 || true
+        fi
+    else
+        echo "NetworkManager has no Ethernet or Wi-Fi device with a connection."
+    fi
+    if wait_dns; then dns_success; return 0; fi
+    dns_state
+    if ! has_ns && [ -n "$D_NMDNS" ]; then
+        if write_resolv "$D_NMDNS"; then
+            echo "NetworkManager knows the DNS servers $D_NMDNS but did not write them; they are in $RESOLV now."
+            if wait_dns; then dns_success; return 0; fi
+        fi
+    fi
+    # Still not working: say exactly what fails.
+    if has_ns; then
+        echo "DNS still does not work: $RESOLV lists $(resolv_servers), but $TEST_HOST does not resolve."
+        if [ "${FALLBACK_TRIED:-0}" = 1 ]; then
+            echo "  Even public DNS servers do not answer: this network blocks DNS (port 53). Ask its"
+            echo "  administrator; it may require a proxy (Settings > Network > Proxy)."
+            return 1
+        fi
+        echo "  The DNS server does not answer (down, or blocked by this network)."
+    elif [ -z "$D_NMDNS" ]; then
+        echo "DNS still does not work: the network gives no DNS server (DHCP on ${D_DEV:-the connection})."
+    else
+        echo "DNS still does not work: $RESOLV has no name server although NetworkManager has $D_NMDNS."
+        echo "  Check: NetworkManager --print-config | grep -E '^(dns|rc-manager)='; ls -l $RESOLV; lsattr $RESOLV"
+        return 1
+    fi
+    offer_fallback
+}
+
+# --dns-fallback [off]: public DNS servers on the active connection.
+dns_fallback() {
+    FALLBACK_TRIED=1
+    dns_state
+    if [ -z "$D_CON" ]; then
+        echo "No active NetworkManager connection to give DNS servers to."
+        return 1
+    fi
+    if [ "$FALLBACK_OFF" = 1 ]; then
+        nmcli connection modify "$D_CON" ipv4.dns "" >/dev/null 2>&1 || { echo "nmcli could not change \"$D_CON_NAME\"."; return 1; }
+        echo "\"$D_CON_NAME\" uses only the network's DNS servers again."
+        nmcli device reapply "$D_DEV" >/dev/null 2>&1 || nmcli connection up "$D_CON" >/dev/null 2>&1 || true
+        if wait_dns; then dns_success; return 0; fi
+        echo "DNS does not work without the public servers: run sudo debion-network-check --dns-fallback again."
+        return 1
+    fi
+    if ! nmcli connection modify "$D_CON" ipv4.dns "$FALLBACK_DNS" >/dev/null 2>&1; then
+        echo "nmcli could not set DNS servers on \"$D_CON_NAME\"."
+        return 1
+    fi
+    echo "\"$D_CON_NAME\" uses the public DNS servers $FALLBACK_DNS (as well as the network's)."
+    echo "  Undo: sudo debion-network-check --dns-fallback off"
+    dns_repair
 }
 
 # Search domains of this network, most specific first, then candidate WPAD
@@ -442,6 +788,39 @@ case "$MODE" in
     wpad) find_wpad || exit 1; exit 0 ;;
 esac
 
+# ------------------------------------------------------ public DNS servers
+if [ "$MODE" = dns-fallback ]; then
+    if [ "$(id -u)" != 0 ]; then echo "debion-network-check --dns-fallback must run as root (sudo)." >&2; exit 1; fi
+    if dns_fallback; then exit 0; fi
+    exit 4
+fi
+
+# ---------------------------------------------- package scripts: DNS
+# Called by debion-desktop-base's postinst (which reloads NetworkManager
+# afterwards): when /etc/resolv.conf has no name server at all and nothing
+# else is meant to write it, let NetworkManager write it as a plain file.
+# An administrator's own dns= or rc-manager= setting is left alone.
+if [ "$MODE" = postinst-dns ]; then
+    case "$(resolv_owner)" in
+        dangling|missing|empty) ;;
+        systemd-resolved) unit_active systemd-resolved.service && exit 0 ;;
+        *) exit 0 ;;
+    esac
+    [ -x "$NM_BIN" ] || exit 0
+    [ -e "$NM_CONF_DIR/90-debion-dns.conf" ] && exit 0
+    if grep -qsE '^[ \t]*(dns|rc-manager)[ \t]*=' "${DEBION_NM_MAIN_CONF:-/etc/NetworkManager/NetworkManager.conf}" "$NM_CONF_DIR"/*.conf; then
+        echo "debion-desktop-base: $RESOLV has no name server, and /etc/NetworkManager sets dns= or rc-manager=;"
+        echo "  if names cannot be resolved, run 'sudo debion-network-check --fix'."
+        exit 0
+    fi
+    if [ -L "$RESOLV" ] || [ ! -e "$RESOLV" ]; then
+        { [ -L "$RESOLV" ] && mv "$RESOLV" "$RESOLV.debion-$(stamp)"; } || true
+        : > "$RESOLV" && chmod 644 "$RESOLV"
+    fi
+    write_dns_conf && echo "debion-desktop-base: $RESOLV had no name server; NetworkManager writes it now ($NM_CONF_DIR/90-debion-dns.conf)"
+    exit 0
+fi
+
 # ------------------------------------------------------------ APT proxy
 if [ "$MODE" = apt-proxy ]; then
     if [ "$(id -u)" != 0 ]; then echo "debion-network-check --apt-proxy must run as root." >&2; exit 1; fi
@@ -473,7 +852,7 @@ fi
 # Exit status 3: NetworkManager is not installed yet (try again later).
 if [ "$MODE" = handover ]; then
     [ -e "${DEBION_KEEP_FILE:-/etc/debion/keep-ifupdown}" ] && exit 0
-    [ -x "${DEBION_NM_BINARY:-/usr/sbin/NetworkManager}" ] || exit 3
+    [ -x "$NM_BIN" ] || exit 3
     # A dangling /etc/resolv.conf (systemd-resolved removed) cannot work
     # for anyone; an empty file is what NetworkManager writes into.
     if [ "$(resolv_owner)" = dangling ]; then
@@ -667,10 +1046,13 @@ if grep -q '^hosts:' /etc/nsswitch.conf 2>/dev/null; then
         *) warn "/etc/nsswitch.conf does not use DNS for host names (hosts: $hosts)" ;;
     esac
 fi
+dns_ok=1
 if getent ahosts "$TEST_HOST" >/dev/null 2>&1; then
     ok "$TEST_HOST resolves: $(getent ahosts "$TEST_HOST" | awk '{print $1}' | sort -u | head -n4 | tr '\n' ' ')"
 else
+    dns_ok=0
     warn "$TEST_HOST does not resolve (DNS does not work for this user)"
+    dns_findings
 fi
 
 # ---------------------------------------------------------------- clock
@@ -810,6 +1192,13 @@ if have nmcli && nm_running; then
     say "NetworkManager"
     state=$(nmcli -t -f STATE,CONNECTIVITY general 2>/dev/null || true)
     info "state:connectivity = ${state:-unknown} (the check is plain HTTP to network-test.debian.org; it passes behind a transparent proxy)"
+    case "$state" in
+        *:full)
+            if [ "$dns_ok" = 0 ]; then
+                more "\"full\" is wrong here: NetworkManager's own check asks the network's DNS servers"
+                more "directly, but programs (Firefox, APT) resolve names through $RESOLV, which does not work."
+            fi ;;
+    esac
     check=$(nmcli networking connectivity 2>/dev/null || true)
     if [ "$check" = unknown ] && ! ls /usr/lib/NetworkManager/conf.d/*connectivity* /etc/NetworkManager/conf.d/*connectivity* >/dev/null 2>&1; then
         warn "connectivity checking is off; install debion-desktop-base or network-manager-config-connectivity-debian"
@@ -847,7 +1236,7 @@ if [ "$MODE" = fix ]; then
                 if [ -f "$old" ] && have ifdown; then ifdown --force -i "$old" "$n" >/dev/null 2>&1 || true; fi
             done
             rm -f "$NM_RUN_CONF/90-debion-handover.conf"
-            if have systemctl && [ -d /run/systemd/system ]; then systemctl restart NetworkManager.service || true; fi
+            if have systemctl && [ -d "$SYSTEMD_RUN" ]; then systemctl restart NetworkManager.service || true; fi
             echo "NetworkManager now manages $pending."
         fi
         fixed=1
@@ -864,21 +1253,22 @@ if [ "$MODE" = fix ]; then
         done
         fixed=1
     fi
-    case "$resolv" in
-        dangling|resolved-off|missing|empty|dhclient)
-            [ -e "$RESOLV" ] || [ -L "$RESOLV" ] && mv "$RESOLV" "$RESOLV.debion-$(stamp)"
-            : > "$RESOLV"; chmod 644 "$RESOLV"
-            if nm_running; then
-                if have systemctl; then systemctl restart NetworkManager.service; else nmcli general reload; fi
-            fi
-            echo "$RESOLV is now written by NetworkManager only."
-            fixed=1 ;;
-    esac
     if [ -f "$RESOLV" ] && [ ! -L "$RESOLV" ]; then
         case "$(stat -c %a "$RESOLV" 2>/dev/null)" in
             *[4567]|"") ;;
             *) chmod a+r "$RESOLV" && echo "$RESOLV is readable by everyone again." && fixed=1 ;;
         esac
+    fi
+    # DNS: give /etc/resolv.conf back to one owner, make NetworkManager write
+    # its servers into it, and check the result instead of hoping.
+    dns_rc=0
+    case "$resolv" in
+        dangling|resolved-off|missing|empty|dhclient) broken_owner=1 ;;
+        *) broken_owner=0 ;;
+    esac
+    if [ "$broken_owner" = 1 ] || ! dns_works; then
+        dns_repair; dns_rc=$?
+        fixed=1
     fi
     if have timedatectl && [ "$(timedatectl show -p NTP --value 2>/dev/null)" = no ] &&
        { [ -x /lib/systemd/systemd-timesyncd ] || [ -x /usr/lib/systemd/systemd-timesyncd ]; }; then
@@ -889,6 +1279,8 @@ if [ "$MODE" = fix ]; then
         have hwclock && hwclock --systohc >/dev/null 2>&1 || true
     fi
     [ "$fixed" = 1 ] || echo "Nothing to fix automatically."
+    # 4: DNS still does not work (the output says what to do next).
+    [ "$dns_rc" = 0 ] || exit 4
     exit 0
 fi
 

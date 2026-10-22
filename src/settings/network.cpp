@@ -231,22 +231,25 @@ void run_quick_check() {
   });
 }
 
-void run_report(bool fix) {
+// Runs debion-network-check with |args| (as root through pkexec when
+// |root|) and shows its output under |title|.
+void run_checker(std::vector<std::string> args, bool root, const std::string &title) {
   std::string check = checker();
   if (check.empty() || g_diag.running) return;
   std::vector<std::string> argv{check};
-  if (fix) {
+  if (root) {
     if (find_program("pkexec").empty()) return;
-    argv = {"pkexec", check, "--fix"};
+    argv = {"pkexec", check};
   }
+  argv.insert(argv.end(), args.begin(), args.end());
   g_diag.running = true;
-  g_diag.title = fix ? _("Repair") : _("Diagnostics");
+  g_diag.title = title;
   g_diag.output.clear();
   refresh_if_shown(kPage);
-  run_async(timed(argv, fix ? 300 : 120), [fix](const std::string &out, int status) {
+  run_async(timed(argv, root ? 300 : 120), [root](const std::string &out, int status) {
     g_diag.running = false;
     g_diag.output = out;
-    if (fix && status == 126) g_diag.output = _("Authentication was cancelled.");
+    if (root && status == 126) g_diag.output = _("Authentication was cancelled.");
     if (g_diag.output.empty())
       g_diag.output = format(_("debion-network-check exited with status %d."), status);
     refresh_if_shown(kPage);
@@ -254,10 +257,17 @@ void run_report(bool fix) {
   });
 }
 
+void run_report(bool fix) {
+  if (fix) run_checker({"--fix"}, true, _("Repair"));
+  else run_checker({}, false, _("Diagnostics"));
+}
+
 std::string verdict_text(const NetworkVerdict &v) {
   if (v.verdict == "ok") return _("Websites can be reached (HTTPS works).");
   if (v.verdict == "no-route") return _("There is no gateway: the network is connected but has no way to the internet.");
-  if (v.verdict == "no-dns") return _("Names cannot be resolved: DNS does not work on this network.");
+  if (v.verdict == "no-dns")
+    return _("Names cannot be resolved: DNS does not work on this network. Fix Problems repairs "
+             "/etc/resolv.conf; if the network gives no working DNS server, use public DNS.");
   if (v.verdict == "proxy-required") {
     std::string s = _("Plain HTTP works but HTTPS does not: this network probably requires a proxy. "
                       "That is why the panel says \"Internet access\" while the browser cannot connect.");
@@ -378,6 +388,16 @@ void build_network_diagnostics(Page *page) {
                   });
                 });
   }
+  if (g_diag.quick_done && g_diag.verdict.verdict == "no-dns" && !find_program("pkexec").empty())
+    page->row(_("Use public DNS servers (1.1.1.1 and 9.9.9.9) for this connection"), S(160), S(34),
+              [](int x, int y, int w, int h) {
+                auto *b = button(x, y, w, h, _("Use Public DNS"), true,
+                                 [] { run_checker({"--dns-fallback"}, true, _("Public DNS")); });
+                if (g_diag.running) b->deactivate();
+                return b;
+              },
+              _("For networks whose DHCP server gives no working DNS server. Needs an administrator "
+                "password; undo with: sudo debion-network-check --dns-fallback off"));
   page->row(_("Network diagnostics"), S(120), S(34), [](int x, int y, int w, int h) {
     auto *b = button(x, y, w, h, _("Run"), false, [] { run_report(false); });
     if (g_diag.running) b->deactivate();
@@ -389,7 +409,8 @@ void build_network_diagnostics(Page *page) {
       if (g_diag.running) b->deactivate();
       return b;
     }, _("Hands interfaces from /etc/network/interfaces to NetworkManager, repairs "
-         "/etc/resolv.conf and turns on network time. Needs an administrator password."));
+         "/etc/resolv.conf (and checks that names resolve afterwards) and turns on network time. "
+         "Needs an administrator password."));
   if (g_diag.running) page->note(format(_("%s running..."), g_diag.title.c_str()));
   if (!g_diag.output.empty()) {
     // One note per finding; indented lines continue the previous one.

@@ -17,14 +17,22 @@
 // Idle: locks after [lock] idle_lock seconds unless an inhibitor is held.
 //
 // The lock screen runs in a child process ("sde-lock --ui FD", ui.cpp).
-// While locked, the daemon keeps black override-redirect "curtain" windows
-// mapped below it. If the lock screen process dies without a successful
-// password check, the daemon grabs the keyboard and pointer itself on the
-// curtain (the screen stays black and locked) and starts it again. Only a
-// "U" from the lock screen (PAM success) or logind's Unlock ends a lock.
+// While locked, the daemon keeps a black override-redirect "curtain" window
+// over the whole screen (resized with it) mapped below it. If the lock
+// screen process dies without a successful password check, the daemon grabs
+// the keyboard and pointer itself on the curtain (the screen stays black
+// and locked) and starts it again. A lock screen that stops sending its
+// heartbeat (hung on a blocked X or input method connection) is killed and
+// replaced by a fresh one the same way. After a resume the lock screen is
+// told (SIGUSR1) to check the monitors and its grabs again. Only a "U" from
+// the lock screen (PAM success) or logind's Unlock ends a lock.
+// Before X11: Xlib.h defines Status, a name auth.h uses.
+#include "rescue.h"
+
 #include <FL/Fl.H>
 #include <FL/x.H>
 #include <fcntl.h>
+#include <pwd.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -32,6 +40,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdarg>
 #include <climits>
 #include <cstdio>
 #include <cstring>
@@ -63,6 +72,23 @@ double now_s() {
   return double(ts.tv_sec) + ts.tv_nsec / 1e9;
 }
 
+// Timestamped lines on stderr (~/.local/state/sde/session.log).
+void log_line(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void log_line(const char *fmt, ...) {
+  char when[32];
+  time_t t = time(nullptr);
+  struct tm tm;
+  localtime_r(&t, &tm);
+  strftime(when, sizeof(when), "%H:%M:%S", &tm);
+  char buf[512];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  fprintf(stderr, "sde-lock %s: %s\n", when, buf);
+  fflush(stderr);
+}
+
 enum class State { Unlocked, Locking, Locked };
 
 struct Daemon {
@@ -85,6 +111,9 @@ struct Daemon {
   bool child_unlocked = false;
   bool child_grab_failed = false;
   bool forced_unlock = false;
+  double child_heard = 0;  // last byte (heartbeat) from the lock screen
+  bool child_killed = false;
+  int failed_starts = 0;  // lock screens that died before showing a password field
   CrashBackoff backoff;
 
   std::vector<Window> curtain;
@@ -95,20 +124,21 @@ struct Daemon {
 
 // ------------------------------------------------------------ curtain
 
+// One window over the whole root window: it covers every monitor whatever
+// RandR does, and is resized with the root window (x_events).
 void map_curtain() {
   if (d.curtain.empty()) {
     XSetWindowAttributes a;
     a.override_redirect = True;
     a.background_pixel = BlackPixel(fl_display, fl_screen);
-    for (int i = 0; i < Fl::screen_count(); ++i) {
-      int x, y, w, h;
-      Fl::screen_xywh(x, y, w, h, i);
-      Window win = XCreateWindow(fl_display, RootWindow(fl_display, fl_screen), x, y, unsigned(w),
-                                 unsigned(h), 0, CopyFromParent, InputOutput, CopyFromParent,
-                                 CWOverrideRedirect | CWBackPixel, &a);
-      XStoreName(fl_display, win, "SDE Screen Lock");
-      d.curtain.push_back(win);
-    }
+    Window root = RootWindow(fl_display, fl_screen);
+    XWindowAttributes ra;
+    XGetWindowAttributes(fl_display, root, &ra);
+    Window win = XCreateWindow(fl_display, root, 0, 0, unsigned(std::max(1, ra.width)),
+                               unsigned(std::max(1, ra.height)), 0, CopyFromParent, InputOutput,
+                               CopyFromParent, CWOverrideRedirect | CWBackPixel, &a);
+    XStoreName(fl_display, win, "SDE Screen Lock");
+    d.curtain.push_back(win);
   }
   for (Window w : d.curtain) {
     XMapRaised(fl_display, w);
@@ -127,22 +157,30 @@ void unmap_curtain() {
   XFlush(fl_display);
 }
 
-// The fallback grab while no lock screen process holds one.
-bool grab_curtain() {
+// The fallback grab while no lock screen process holds one. The keyboard
+// is what matters (no keys reach the session); the pointer is taken too
+// when it can be.
+void raise_rescue() {
+  if (Window r = rescue_prompt_window()) XRaiseWindow(fl_display, r);
+}
+
+bool grab_curtain(int tries = 30) {
   if (d.curtain.empty()) map_curtain();
-  for (Window w : d.curtain) XRaiseWindow(fl_display, w);
-  Window w = d.curtain.front();
-  for (int i = 0; i < 30; ++i) {
-    if (XGrabKeyboard(fl_display, w, False, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess &&
-        XGrabPointer(fl_display, w, False, ButtonPressMask | ButtonReleaseMask, GrabModeAsync,
-                     GrabModeAsync, None, None, CurrentTime) == GrabSuccess) {
+  for (Window w : d.curtain) XMapRaised(fl_display, w);
+  raise_rescue();
+  XSync(fl_display, False);
+  // On the rescue prompt while it is shown: its password field gets the keys.
+  Window w = rescue_prompt_window() ? rescue_prompt_window() : d.curtain.front();
+  for (int i = 0; i < tries; ++i) {
+    bool kb = XGrabKeyboard(fl_display, w, False, GrabModeAsync, GrabModeAsync, CurrentTime) == GrabSuccess;
+    XGrabPointer(fl_display, w, False, ButtonPressMask | ButtonReleaseMask, GrabModeAsync, GrabModeAsync,
+                 None, None, CurrentTime);
+    XFlush(fl_display);
+    if (kb) {
       d.curtain_grabbed = true;
-      XFlush(fl_display);
       return true;
     }
-    XUngrabKeyboard(fl_display, CurrentTime);
-    XFlush(fl_display);
-    usleep(50000);
+    if (i + 1 < tries) usleep(50000);
   }
   return false;
 }
@@ -220,6 +258,8 @@ void became_unlocked() {
   d.state = State::Unlocked;
   d.locked_at = 0;
   d.backoff.reset();
+  d.failed_starts = 0;
+  hide_rescue_prompt();
   unmap_curtain();
   emit_active(false);
   set_locked_hint(false);
@@ -233,7 +273,36 @@ void lock_failed(const std::string &why) {
   answer_waiting(false, why);
   session::notify(_("SDE Screen Lock"), "dialog-warning", _("The screen could not be locked"),
                   why, 2, 0);
-  fprintf(stderr, "sde-lock: %s\n", why.c_str());
+  log_line("%s", why.c_str());
+}
+
+void rescue_unlocked() {
+  log_line("unlocked with the rescue password prompt");
+  if (d.child > 0) {
+    d.forced_unlock = true;
+    kill(d.child, SIGTERM);
+  } else {
+    became_unlocked();
+  }
+}
+
+// The lock screen keeps failing before it shows its password field: the
+// daemon's own plain password prompt, so that the session can always be
+// unlocked (instead of a black, grabbed screen until a power-off).
+void show_rescue() {
+  if (rescue_prompt_window()) return;
+  log_line("the lock screen failed %d times in a row; showing the rescue password prompt",
+           d.failed_starts);
+  RescueOptions o;
+  if (struct passwd *pw = getpwuid(getuid())) o.user = pw->pw_name ? pw->pw_name : "";
+  std::string user = o.user;
+  o.authenticate = [user](const char *password) {
+    return authenticate(system_pam(), "sde-lock", user, password);
+  };
+  o.unlocked = rescue_unlocked;
+  show_rescue_prompt(o);
+  d.curtain_grabbed = false;
+  grab_curtain(10);
 }
 
 void respawn_cb(void *) {
@@ -253,22 +322,23 @@ void child_exited(int status) {
     return;
   }
   if (d.state == State::Locking && grab_failed) {
-    lock_failed(_("Another program holds the keyboard or the pointer (an open menu?). "
-                  "Close it and lock again."));
+    lock_failed(_("The lock screen could not be shown."));
     return;
   }
   // The lock screen died without an accepted password: stay locked behind
   // the black curtain and start it again.
-  fprintf(stderr, "sde-lock: the lock screen exited (status %d); keeping the session locked\n", status);
-  if (!d.curtain_grabbed && !grab_curtain()) {
-    if (d.state == State::Locking) {
-      lock_failed(_("Another program holds the keyboard or the pointer."));
-      return;
-    }
-    fprintf(stderr, "sde-lock: cannot hold the fallback grab either; retrying\n");
-  }
-  if (d.state == State::Locking && d.curtain_grabbed) became_locked();
-  Fl::add_timeout(d.backoff.crashed(now_s()), respawn_cb);
+  bool killed = d.child_killed;
+  d.child_killed = false;
+  ++d.failed_starts;
+  log_line("the lock screen %s (status %d); keeping the session locked",
+           killed ? "stopped answering and was replaced" : "exited", status);
+  if (!d.curtain_grabbed && !grab_curtain())
+    log_line("cannot hold the fallback grab either (another program holds the keyboard); retrying");
+  // The curtain covers the screen either way: locked.
+  if (d.state == State::Locking) became_locked();
+  if (d.failed_starts >= 3) show_rescue();
+  // A hung lock screen is replaced at once, a crashing one with a backoff.
+  Fl::add_timeout(killed ? 0.1 : d.backoff.crashed(now_s()), respawn_cb);
 }
 
 void child_readable(int fd, void *) {
@@ -276,6 +346,7 @@ void child_readable(int fd, void *) {
   ssize_t n = read(fd, buf, sizeof(buf));
   if (n < 0 && (errno == EINTR || errno == EAGAIN)) return;
   if (n > 0) {
+    d.child_heard = now_s();
     for (ssize_t i = 0; i < n; ++i) {
       switch (buf[i]) {
         case 'M':
@@ -284,8 +355,20 @@ void child_readable(int fd, void *) {
           break;
         case 'L':
           d.backoff.reset();
+          d.failed_starts = 0;
+          hide_rescue_prompt();
           became_locked();
           break;
+        case 'W':
+          // Covered, still waiting for a grab another program holds: the
+          // screen is locked (nothing of the session is visible) and the
+          // lock screen says so and keeps trying.
+          log_line("the lock screen is up but another program holds the keyboard or the pointer");
+          d.failed_starts = 0;
+          hide_rescue_prompt();
+          became_locked();
+          break;
+        case 'H': break;  // heartbeat
         case 'F': d.child_grab_failed = true; break;
         case 'U': d.child_unlocked = true; break;
         default: break;
@@ -332,6 +415,8 @@ void spawn_ui() {
   close(fds[1]);
   d.child = pid;
   d.child_fd = fds[0];
+  d.child_heard = now_s();
+  d.child_killed = false;
   Fl::add_fd(fds[0], FL_READ, child_readable);
 }
 
@@ -525,6 +610,15 @@ void setup_logind() {
         } else {
           take_sleep_inhibitor();
           session::reset_idle();
+          // Resumed: the monitors may have changed while asleep. The lock
+          // screen checks them, its stacking and its grabs at once.
+          if (d.state != State::Unlocked) {
+            log_line("resumed while locked; re-checking the lock screen");
+            if (d.child > 0)
+              kill(d.child, SIGUSR1);
+            else if (!d.curtain_grabbed)
+              grab_curtain(1);
+          }
         }
       });
   take_sleep_inhibitor();
@@ -553,6 +647,17 @@ void load_config() {
   if (!was && d.lock_on_suspend && d.state == State::Unlocked) take_sleep_inhibitor();
 }
 
+// A lock screen process that stopped sending its heartbeat is hung (it
+// would show a lock screen that ignores the keyboard forever): replace it.
+void watchdog() {
+  if (d.state == State::Unlocked || d.child <= 0 || d.child_killed) return;
+  if (!ui_unresponsive(now_s(), d.child_heard)) return;
+  log_line("the lock screen (pid %d) has not answered for %.0f s; starting a fresh one",
+           int(d.child), now_s() - d.child_heard);
+  d.child_killed = true;
+  kill(d.child, SIGKILL);
+}
+
 void idle_tick(void *) {
   long idle = session::idle_ms();
   double next = 5;
@@ -562,15 +667,29 @@ void idle_tick(void *) {
     long left = long(d.idle_lock) * 1000 - idle;
     next = std::max(0.5, std::min(10.0, left / 1000.0 + 0.05));
   }
-  // Keep the curtain on top while no lock screen covers it.
-  if (d.state != State::Unlocked && d.child < 0)
+  // Keep the curtain on top (and the keyboard) while no lock screen covers it.
+  if (d.state != State::Unlocked && d.child < 0) {
     for (Window w : d.curtain) XRaiseWindow(fl_display, w);
+    raise_rescue();
+    if (!d.curtain_grabbed) grab_curtain(1);
+    XFlush(fl_display);
+  }
+  if (d.state != State::Unlocked) next = std::min(next, 2.0);
+  watchdog();
   Fl::repeat_timeout(next, idle_tick);
 }
 
 int x_events(int) {
   if (!fl_xevent) return 0;
   const XEvent &e = *fl_xevent;
+  if (e.type == ConfigureNotify && e.xconfigure.window == RootWindow(fl_display, fl_screen)) {
+    // RandR changed the screen size: the curtain follows.
+    for (Window w : d.curtain)
+      XMoveResizeWindow(fl_display, w, 0, 0, unsigned(std::max(1, e.xconfigure.width)),
+                        unsigned(std::max(1, e.xconfigure.height)));
+    XFlush(fl_display);
+    return 0;
+  }
   if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
       e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL"))
     load_config();
@@ -593,6 +712,9 @@ std::string own_executable() {
 int run_daemon(bool lock_now) {
   signal(SIGPIPE, SIG_IGN);
   d.exe = own_executable();
+  Fl::lock();  // Fl::awake() from the rescue prompt's PAM thread
+  // No X input method for the rescue prompt's password (see ui.cpp).
+  setenv("XMODIFIERS", "@im=none", 1);
   fl_open_display();
   fcntl(ConnectionNumber(fl_display), F_SETFD, FD_CLOEXEC);
   d.session = dbus::Bus::session();
@@ -613,7 +735,7 @@ int run_daemon(bool lock_now) {
   Window root = RootWindow(fl_display, fl_screen);
   XWindowAttributes attr;
   XGetWindowAttributes(fl_display, root, &attr);
-  XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask);
+  XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask | StructureNotifyMask);
   Fl::add_handler(x_events);
   Fl::add_timeout(2.0, idle_tick);
   if (lock_now) lock(nullptr);

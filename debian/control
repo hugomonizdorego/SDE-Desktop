@@ -11,6 +11,7 @@ Build-Depends: debhelper-compat (= 13),
                libxfixes-dev,
                libxext-dev,
                libxrender-dev,
+               libxcomposite-dev,
                libfontconfig-dev,
                libpng-dev,
                libjpeg-dev,
@@ -194,7 +195,8 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  SDE fork: Liria (Caja).
  These executables and their resources are included in this package;
  no corresponding MATE application packages are required.
- SDE Update uses an attributed mintupdate model and Debian PackageKit.
+ Software Updater (sde-update) uses an attributed mintupdate model, Debian
+ PackageKit and Flatpak.
 
 Package: sde-desktop
 Architecture: all

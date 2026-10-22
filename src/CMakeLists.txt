@@ -62,13 +62,19 @@ add_executable(sde-panel
   panel/alarm_popup.cpp
   panel/panel_widgets.cpp
   panel/weather.cpp
+  panel/timezone.cpp
   panel/nightlight.cpp
   panel/art.cpp
   panel/status_model.cpp
   panel/status_flyout.cpp
   panel/drives.cpp
-  panel/touchpad_monitor.cpp)
+  panel/touchpad_monitor.cpp
+  panel/preview.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
+if(XCOMPOSITE_FOUND)
+  target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
+  target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
+endif()
 
 add_executable(sde-desktop desktop/main.cpp)
 # WebP and other pixbuf wallpapers are decoded with the Gallery core.
@@ -84,7 +90,10 @@ add_executable(sde-settings
   settings/system.cpp
   settings/power.cpp
   settings/touchpad.cpp
-  settings/network.cpp)
+  settings/network.cpp
+  # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
+  panel/timezone.cpp
+  panel/weather.cpp)
 # Display-free helpers (graphics card detection, wallpaper scan, pactl/
 # nmcli/bluetoothctl parsers), unit
 # tested; thumbnails come from the Gallery core (decoding threads and the
@@ -364,7 +373,7 @@ pkg_check_modules(PAM REQUIRED IMPORTED_TARGET pam)
 add_library(sde-lock-core STATIC lock/auth.cpp lock/policy.cpp)
 target_include_directories(sde-lock-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/lock)
 target_link_libraries(sde-lock-core PUBLIC PkgConfig::PAM)
-add_library(sde-lock-ui STATIC lock/ui.cpp)
+add_library(sde-lock-ui STATIC lock/ui.cpp lock/rescue.cpp)
 target_link_libraries(sde-lock-ui PUBLIC sde-lock-core sde-power-core Threads::Threads)
 add_executable(sde-lock lock/main.cpp lock/daemon.cpp)
 target_link_libraries(sde-lock PRIVATE sde-lock-ui)

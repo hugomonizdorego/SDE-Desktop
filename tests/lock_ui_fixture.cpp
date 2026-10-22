@@ -8,10 +8,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <string>
 #include <unistd.h>
 
 #include "i18n.h"
+#include "../src/lock/rescue.h"
 #include "../src/lock/ui.h"
+
+#include <FL/Fl.H>
+#include <FL/x.H>
 
 int main(int argc, char **argv) {
   sde::init_i18n();
@@ -29,5 +35,42 @@ int main(int argc, char **argv) {
                                                  : sde::lock::AuthResult::Rejected;
     return r;
   };
+  // SDE_LOCK_FIXTURE_MONITORS=FILE: the monitors ("x y w h" per line) are
+  // read from FILE whenever the lock screen looks at them, so the test can
+  // simulate RandR changes on Xvfb (whose single output cannot change).
+  if (const char *file = getenv("SDE_LOCK_FIXTURE_MONITORS")) {
+    std::string path = file;
+    o.monitors = [path] {
+      std::vector<sde::lock::Monitor> out;
+      std::ifstream in(path);
+      sde::lock::Monitor m;
+      while (in >> m.x >> m.y >> m.w >> m.h)
+        if (m.w > 0 && m.h > 0) out.push_back(m);
+      return out;
+    };
+  }
+  if (argc > 2 && !strcmp(argv[2], "--rescue")) {
+    // The daemon's rescue password prompt alone, grabbed like the daemon
+    // does: "L" once the keyboard is held, "U" after the password.
+    Fl::lock();
+    setenv("XMODIFIERS", "@im=none", 1);
+    fl_open_display();
+    static bool done = false;
+    sde::lock::RescueOptions r;
+    r.user = o.user;
+    r.authenticate = o.authenticate;
+    r.unlocked = [] { done = true; };
+    sde::lock::show_rescue_prompt(r);
+    for (int i = 0; i < 100; ++i) {
+      if (XGrabKeyboard(fl_display, sde::lock::rescue_prompt_window(), False, GrabModeAsync,
+                        GrabModeAsync, CurrentTime) == GrabSuccess)
+        break;
+      Fl::wait(0.05);
+    }
+    if (write(o.report_fd, "L", 1) < 0) return 1;
+    while (!done) Fl::wait(0.25);
+    sde::lock::hide_rescue_prompt();
+    return write(o.report_fd, "U", 1) == 1 ? 0 : 1;
+  }
   return sde::lock::run_lock_ui(o);
 }

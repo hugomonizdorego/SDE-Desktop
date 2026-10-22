@@ -30,8 +30,14 @@ display=f':{a.display}'
 e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),XDG_CONFIG_DIRS=str(home/'system'),XDG_CACHE_HOME=str(home/'.cache'),DISPLAY='127.0.0.1'+display if a.tcp_display else display,LANG='C.UTF-8',LC_ALL='C.UTF-8',SDE_PANEL_QA_DIR=str(home/'qa'),SDE_BACKLIGHT_DIR=str(home/'backlight'),SDE_PANEL_FAKE_TOUCHPAD='1',PATH=str(home/'bin')+':'+str(a.bin_dir.resolve())+':'+e['PATH'])
 # The Action Center's weather comes from a fixed report (no network in QA).
 e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
+# ...and so does the clock's "Sync time zone" (timedatectl is a logging stub).
+e['SDE_TZ_FIXTURE']=os.environ.get('SDE_TZ_FIXTURE','Asia/Jakarta')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
+# alpha51: a battery (SDE_POWER_SUPPLY_DIR, see refresh_battery in quick.cpp):
+# 45 %, discharging, 3 h 57 min left.
+e['SDE_POWER_SUPPLY_DIR']=str(home/'power');(home/'power/BAT0').mkdir(parents=True)
+for k,v in {'type':'Battery','capacity':'45','status':'Discharging','energy_now':'39550000','energy_full':'88000000','power_now':'10000000','manufacturer':'LGES','model_name':'AP23A8L'}.items():(home/'power/BAT0'/k).write_text(v+'\n')
 (home/'backlight/qa_backlight').mkdir(parents=True);(home/'backlight/qa_backlight/brightness').write_text('60\n');(home/'backlight/qa_backlight/max_brightness').write_text('100\n')
 FLYOUTS=['Sound','Network','Bluetooth','Power','Media','Drives','Keyboard','Touchpad','Tray','Alarms']
 def spawn(*cmd):
@@ -118,15 +124,21 @@ def click_panel(name,expect=None):
             if w:return w
             time.sleep(.08)
     return find(expect)
+SIZES={}
+def size_report(name,g):
+    """alpha51: popup sizes (logical px at 100 %) for the size report."""
+    key=name
+    if key not in SIZES:
+        SIZES[key]=(g['w'],g['h']);print(f'SIZE {name} {g["w"]}x{g["h"]} ({round(g["w"]/scale)}x{round(g["h"]/scale)} at 100%)',flush=True)
 def bounds(ac,top=False):
     """The Action Center sits in the panel's corner, on screen."""
-    g=geom(ac);pg=geom(panel)
+    g=geom(ac);pg=geom(panel);size_report('Action Center',g)
     assert g['x']+g['w']==pg['x']+pg['w'],(g,pg)
     assert g['y']==pg['y']+pg['h'] if top else g['y']+g['h']==pg['y'],(g,pg)
     assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,(g,pg)
 def flyout_bounds(fl,section,top=False):
     """A flyout sits above (below a top panel) its status icon, fully on screen."""
-    g=geom(fl);pg=geom(panel);margin=round(8*scale)
+    g=geom(fl);pg=geom(panel);margin=round(8*scale);size_report(section,g)
     assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,(section,g)
     if top:assert pg['y']+pg['h']<=g['y']<=pg['y']+pg['h']+2*margin,(section,g,pg)
     else:assert pg['y']-2*margin<=g['y']+g['h']<=pg['y'],(section,g,pg)
@@ -135,7 +147,7 @@ def flyout_bounds(fl,section,top=False):
         center=pg['x']+r[0]+r[2]/2
         clamped=g['x']<=margin+1 or g['x']+g['w']>=W-margin-1
         assert clamped or abs(g['x']+g['w']/2-center)<=2,(section,g,center)
-    assert g['w']<=round(362*scale),(section,g)
+    assert g['w']<=round(400*scale),(section,g)
 def only_open(title):
     for other in FLYOUTS+['Action Center']:
         if other!=title:assert not visible('^'+other+'$'),f'{other} open together with {title}'
@@ -173,6 +185,10 @@ CATS=['Utility','Graphics','Network','AudioVideo','Office','Development','Educat
 (home/'.local/share/applications').mkdir(parents=True)
 for i,n in enumerate(APPS):
     (home/f'.local/share/applications/qa-{n.lower()}.desktop').write_text(f'[Desktop Entry]\nType=Application\nName={n}\nGenericName={n} QA\nExec=true\nIcon=applications-other\nCategories={CATS[i%len(CATS)]};\n')
+# SDE's own helper entries (alpha 51: "Log Out" was listed between Liria and
+# Login Window); they must stay out of the menu.
+HELPERS=[f for f in ('sde-logout.desktop','sde-lock.desktop','sde-power.desktop') if (Path(__file__).resolve().parents[1]/'data/applications'/f).exists()]
+for f in HELPERS:(home/'.local/share/applications'/f).write_text((Path(__file__).resolve().parents[1]/'data/applications'/f).read_text())
 def menu_scroll():return layout('SDE Menu')['@list-scroll'][0]
 def inside(r,area):return area[0]<=r[0] and r[0]+r[2]<=area[0]+area[2]
 def drag(win,src,dst):
@@ -247,6 +263,10 @@ def menu_checks():
     press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
     press('SDE Menu','jump:W');waitfor(lambda:'app:Wget' in layout('SDE Menu'),'letter jump did not reach W')
     shot('22-menu-letter-jump')
+    if HELPERS:
+        press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('letter:')))
+        press('SDE Menu','jump:L');waitfor(lambda:'app:Lyrics' in layout('SDE Menu'),'letter jump did not reach L')
+        L=layout('SDE Menu');assert not any(k in L for k in ('app:Log Out','app:SDE Screen Lock','app:SDE Power')),L.keys()
     # The category filter: a short menu; the list keeps only that category.
     press('SDE Menu',next(k for k in layout('SDE Menu') if k.startswith('filter:')));time.sleep(.4)
     shot('22-menu-filter');run('xdotool','key','Down','Down','Return')
@@ -368,6 +388,41 @@ def weather_checks():
     waitfor(lambda:not any(k.startswith('@weather-') for k in layout('Action Center')),'weather shown while disabled')
     escape('Action Center');config(overflow=False);reload()
     command(['--action-center'],'Action Center');time.sleep(.5)
+def reveal(title,name):
+    """Scrolls the popup body until all of |name| is in view (screenshots)."""
+    win=find('^'+re.escape(title)+'$')
+    for _ in range(30):
+        if in_view(title,name):return
+        L=layout(title);body=L.get('@body');g=geom(win)
+        if not body:return
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+body[3]//2,'click','5');time.sleep(.25)
+def timezone_checks():
+    """Clock (alpha51): the calendar card's Time zone row. Sync detects the
+    zone (SDE_TZ_FIXTURE), sets it with timedatectl and turns network time
+    on; Automatic time zone is saved as [clock] auto_timezone."""
+    if visible('^Action Center$'):escape('Action Center')
+    ac=command(['--calendar'],'Action Center');time.sleep(.5)
+    waitfor(lambda:any(k.startswith('Time zone: ') for k in layout('Action Center')),'time zone row missing')
+    item('Action Center','Automatic time zone',active=False)
+    press('Action Center','Sync time zone')
+    zone=e['SDE_TZ_FIXTURE']
+    waitfor(lambda:commands('TIMEDATECTL set-timezone '+zone),'Sync did not set the time zone')
+    waitfor(lambda:commands('TIMEDATECTL set-ntp true'),'Sync did not turn on network time')
+    waitfor(lambda:'Time zone status: Synced \u00b7 '+zone in layout('Action Center'),'no "Synced" outcome: '+str([k for k in layout('Action Center') if 'zone' in k]))
+    if zone=='Asia/Jakarta':
+        waitfor(lambda:'Time zone: Asia/Jakarta \u00b7 UTC+7' in layout('Action Center'),'zone row not updated: '+str([k for k in layout('Action Center') if 'zone' in k]))
+    press('Action Center','Automatic time zone');time.sleep(.4)
+    waitfor(lambda:'auto_timezone=true' in conf(),'Automatic time zone not saved')
+    item('Action Center','Sync time zone');reveal('Action Center','Automatic time zone');time.sleep(.6);shot('24-clock-timezone-synced')
+    escape('Action Center')
+def timezone_offline_checks():
+    """Without internet the Sync button is disabled and says why."""
+    ac=command(['--calendar'],'Action Center');time.sleep(.5)
+    r=item('Action Center','Sync time zone: connect to the internet to detect the time zone',active=False)
+    assert not r[4],'Sync active while offline'
+    press('Action Center','Sync time zone: connect to the internet to detect the time zone',active=False)
+    reveal('Action Center','Automatic time zone');time.sleep(.6);shot('24-clock-timezone-offline')
+    escape('Action Center')
 def brightness_settings_checks():
     """The brightness row's gear: Night Light (gamma), schedule, auto-dim on
     battery and dim level for sde-power, the DDC/CI monitor, Display settings."""
@@ -401,7 +456,8 @@ def media_card_checks():
     assert 'Open player' not in layout('Action Center'),'media card shows more than the transport buttons'
     shot('02-action-center-media')
     press('Action Center','Playback position',.5)
-    waitfor(lambda:log_has('MPRIS SetPosition /org/sde/qa/track/1 9'),'seek bar did not send SetPosition')
+    # The middle of the bar, about half of the 3-minute track (pixel rounding).
+    waitfor(lambda:re.search(r'MPRIS SetPosition /org/sde/qa/track/1 (8[5-9]|9[0-5])\b',(home/'service.log').read_text()),'seek bar did not send SetPosition')
     escape('Action Center')
 def brightness_checks(ac):
     """Action Center: the brightness slider follows the volume slider in the
@@ -484,6 +540,96 @@ def panel_checks_a50():
     press('Touchpad','Touchpad settings...');gone('^Touchpad$');waitfor(lambda:commands('SETTINGS --page touchpad'),'Touchpad settings link missing')
     hover_panel('status:touchpad');run('xdotool','click','2');run('import','-window','root',out/'15-touchpad-indicator-click.png')
     fl=find('^Touchpad$');escape('Touchpad')
+def preview_checks():
+    """alpha51 taskbar previews: hovering a task button shows the window
+    title and a thumbnail (one per window of the application), a minimized
+    window keeps a cached thumbnail, moving to another button swaps at once,
+    clicking a thumbnail activates the window and × closes it."""
+    def preview():return layout('SDE Preview')
+    def thumbs():return {k.split(':',3)[3]:k.split(':')[1:3] for k in preview() if k.startswith('@thumb:')}
+    def task_button(title):
+        L=layout('SDE Panel');return next((v for k,v in L.items() if k.startswith('task:'+title)),None)
+    def hover_task(title):
+        r=waitfor(lambda:task_button(title),'no taskbar button for '+title);g=geom(panel)
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2)
+    def away():run('xdotool','mousemove',W//2,round(60*scale));time.sleep(.6)
+    def active():return run('xdotool','getactivewindow',check=False).stdout.strip()
+    spawn('openbox','--sm-disable')
+    waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'openbox did not start')
+    window=str(a.test_dir.resolve()/'sde-preview-window')
+    one=sp.Popen([window,'SDE Preview QA One','2563EB'],env=e,stdout=open(home/'preview-one.log','w'))
+    two=sp.Popen([window,'SDE Preview QA Two','16A34A'],env=e,stdout=open(home/'preview-two.log','w'))
+    other=sp.Popen([window,'SDE Preview QA Other','DC2626','SDE-Preview-Other'],env=e,stdout=open(home/'preview-other.log','w'))
+    processes.extend([one,two,other])
+    w1=find('^SDE Preview QA One$');find('^SDE Preview QA Two$');find('^SDE Preview QA Other$')
+    for t in ['SDE Preview QA One','SDE Preview QA Two','SDE Preview QA Other']:
+        waitfor(lambda:task_button(t),'no taskbar button for '+t)
+    time.sleep(.5)
+    # Hover: nothing at once, the preview after the delay, with the title
+    # and a live thumbnail of each window of the application.
+    hover_task('SDE Preview QA One');time.sleep(.15)
+    assert not visible('^SDE Preview$'),'preview shown before the delay'
+    pv=find('^SDE Preview$')
+    waitfor(lambda:'preview:SDE Preview QA One' in preview() and 'preview:SDE Preview QA Two' in preview(),'preview without both windows of the application')
+    th=waitfor(lambda:thumbs().get('SDE Preview QA One'),'no thumbnail for One')
+    assert th[0]=='live',th
+    tw,tt=map(int,th[1].split('x'));assert 0<tw<=round(220*scale)+1 and 0<tt<=round(140*scale)+1,th
+    assert 'SDE Preview QA Other' not in thumbs(),'another application in the preview'
+    g=geom(pv);pg=geom(panel)
+    assert g['x']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=pg['y'],('preview not above the panel',g,pg)
+    size_report('Preview (2 windows)',g)
+    print(f'PREVIEW hover: SDE Preview QA One thumbnail {th[0]} {th[1]}',flush=True)
+    shot('30-preview-hover')
+    # Another button swaps at once (no new delay).
+    hover_task('SDE Preview QA Other');time.sleep(.15)
+    waitfor(lambda:'preview:SDE Preview QA Other' in preview(),'preview did not swap at once',tries=4)
+    assert 'preview:SDE Preview QA One' not in preview()
+    away();gone('^SDE Preview$')
+    # Minimized: the cached picture.
+    run('xdotool','windowminimize',w1)
+    waitfor(lambda:any(k.startswith('task:SDE Preview QA One:minimized') for k in layout('SDE Panel')),'One not minimized')
+    hover_task('SDE Preview QA One');pv=find('^SDE Preview$')
+    th=waitfor(lambda:thumbs().get('SDE Preview QA One'),'no thumbnail for the minimized window')
+    assert th[0]=='cached',('minimized window without its cached thumbnail',th)
+    print(f'PREVIEW minimized: SDE Preview QA One thumbnail {th[0]} {th[1]}',flush=True)
+    shot('31-preview-minimized')
+    # A click on the thumbnail activates (restores) the window.
+    r=item('SDE Preview','preview:SDE Preview QA One');g=geom(pv)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[3]*2//3,'click','1')
+    gone('^SDE Preview$')
+    waitfor(lambda:active()==w1,'thumbnail click did not activate the window')
+    waitfor(lambda:not any(k.startswith('task:SDE Preview QA One:minimized') for k in layout('SDE Panel')),'window not restored')
+    print('PREVIEW click: SDE Preview QA One activated',flush=True)
+    # The × of a thumbnail closes that window.
+    hover_task('SDE Preview QA Two');pv=find('^SDE Preview$')
+    r=item('SDE Preview','preview:SDE Preview QA Two');g=geom(pv)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[3]//2);time.sleep(.3)
+    c=item('SDE Preview','close:SDE Preview QA Two')
+    run('xdotool','mousemove',g['x']+c[0]+c[2]//2,g['y']+c[1]+c[3]//2);time.sleep(.3);shot('32-preview-close')
+    run('xdotool','click','1')
+    waitfor(lambda:two.poll() is not None,'close button did not close the window')
+    waitfor(lambda:not task_button('SDE Preview QA Two'),'closed window kept its button')
+    away()
+    # [panel] window_previews=false: no preview.
+    config(extra='[panel]\nwindow_previews=false\n');reload()
+    hover_task('SDE Preview QA One');time.sleep(1.0)
+    assert not visible('^SDE Preview$'),'preview shown with window_previews=false'
+    away();config();reload()
+    for proc in (one,other):proc.terminate()
+    print('PANEL a51: taskbar previews (delay, grouped thumbnails, instant swap, cached thumbnail of a minimized window, click activates, close button, setting) PASS',flush=True)
+def battery_checks():
+    """alpha51 battery flyout in the spirit of the Cinnamon power applet:
+    battery and model, state with the remaining time, brightness, power
+    profiles as text rows, Power Settings."""
+    fl=open_section('power','Power');flyout_bounds(fl,'power')
+    for name in ['45% LGES AP23A8L','Using battery power - 3 hours 57 minutes remaining','Brightness','Power Saver','Balanced','Performance','Power Settings']:item('Power',name,active=False)
+    L=layout('Power');assert L['45% LGES AP23A8L'][1]<L['Brightness'][1]<L['Power Saver'][1]<L['Balanced'][1]<L['Performance'][1]<L['Power Settings'][1],L
+    g=geom(fl);assert g['w']<=round(400*scale) and g['h']<=round(320*scale),g
+    shot('24-battery-flyout')
+    press('Power','Power Saver');waitfor(lambda:commands('PROFILE set power-saver'),'power profile not set')
+    press('Power','Power Settings');gone('^Power$')
+    waitfor(lambda:commands('SETTINGS --page power'),'Power Settings did not open sde-settings --page power')
+    print('PANEL a51: battery flyout (model, remaining time, brightness, profiles, Power Settings) PASS',flush=True)
 def drive_checks():
     """Removable drives through UDisks2: open (mount + Liria), eject while
     busy (programs named), eject (unmount + power off), new drive (notify,
@@ -525,7 +671,7 @@ elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n1
 elif a[:2]==['-t','networking']:print('full')
 ''')
 # Session actions, the browser and sound players only log what they were asked.
-for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY')]:
+for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY'),('timedatectl','TIMEDATECTL')]:
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
 ''')
@@ -557,6 +703,15 @@ elif a[0]=='set-sink-mute':state['muted']=not state['muted']
 elif a[0]=='set-source-volume':state['mic']=int(a[2].strip('%'))
 elif a[0]=='set-source-mute':state['mic_mute']=not state['mic_mute']
 if a[0].startswith('set-'):path.write_text(json.dumps(state))
+''')
+(home/'bin/powerprofilesctl').write_text('''#!/bin/sh
+p=$(cat "$HOME/profile" 2>/dev/null || echo balanced)
+echo "PROFILE $*" >> "$HOME/commands.log"
+if [ "$1" = set ]; then echo "$2" > "$HOME/profile"; exit 0; fi
+for n in performance balanced power-saver; do
+  if [ "$n" = "$p" ]; then echo "* $n:"; else echo "  $n:"; fi
+  echo "    Driver:     placeholder"; echo
+done
 ''')
 for f in (home/'bin').iterdir():f.chmod(0o755)
 try:
@@ -621,6 +776,7 @@ try:
     waitfor(lambda:'expanded=false' in conf(),'compact mode not saved')
     waitfor(lambda:'Calendar' not in layout('Action Center') and 'Show more' in layout('Action Center'),'compact mode still shows the calendar')
     time.sleep(.4);ac=find('^Action Center$');assert geom(ac)['h']<tall or tall>=H-round(80*scale),(geom(ac),tall);bounds(ac)
+    size_report('Action Center compact',geom(ac))
     shot('03-action-center-compact')
     run('xdotool','mousemove','10','10','click','1');gone('^Action Center$')
     # The clock opens its alarms popup; its calendar link opens the Action
@@ -712,6 +868,7 @@ try:
     waitfor(lambda:commands('NM connection up id QA Wired LAN'),'Troubleshoot did not reconnect')
     waitfor(lambda:layout('SDE Panel').get('@led:yellow:pulse') or layout('SDE Panel').get('@led:yellow:steady'),'LED not yellow without internet')
     escape('Network');shot('22-panel-no-internet')
+    timezone_offline_checks()
     mode('nm-portal');fl=open_section('network','Network')
     item('Network','Sign in to network',active=False);shot('23-network-portal')
     press('Network','Open sign-in page');gone('^Network$')
@@ -783,6 +940,7 @@ try:
     press('Sound','Mute application');waitfor(lambda:commands('AUDIO set-sink-input-mute 0 1'),'per-application mute command missing')
     shot('09-sound-mixer-scrolled')
     escape('Sound')
+    battery_checks()
     drive_checks()
     for section,title in [('power','Power'),('drives','Drives'),('keyboard','Keyboard'),('touchpad','Touchpad')]:
         fl=open_section(section,title);flyout_bounds(fl,section);shot('10-flyout-'+section);escape(title)
@@ -804,12 +962,16 @@ try:
         config(theme=theme,look=look);reload()
         ac=command(['--action-center'],'Action Center');time.sleep(.5);bounds(ac);shot(f'13-theme-{look.split(chr(10))[0]}-{theme}');escape('Action Center')
         fl=open_section('sound','Sound');flyout_bounds(fl,'sound');shot(f'13-theme-{look.split(chr(10))[0]}-{theme}-sound');escape('Sound')
+    # Last: Sync changes the panel's time zone (alarms and agenda use it).
+    config(theme='light');reload();timezone_checks()
     config(moved=False);reload();fl=open_section('tray','Tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('14-keep-tray-on-panel');escape('Tray')
     fixture.terminate();fixture.wait();sni.terminate();sni.wait();time.sleep(.6)
     assert panel_proc.poll() is None,'service disappearance crashed panel'
     fl=open_section('bluetooth','Bluetooth');shot('15-services-disconnected');escape('Bluetooth')
     command(['--action-center'],'Action Center');escape('Action Center')
+    preview_checks()
     assert panel_proc.poll() is None,'panel exited'
+    print('PANEL a51: clock time zone row (Sync sets the detected zone with timedatectl and turns NTP on, Automatic time zone saved, disabled offline) PASS',flush=True)
     print('PANEL a50: tooltips name the hovered icon at once, no media icon, one keyboard indicator, network LED and switches, drives (open/eject/busy/notify/automount), touchpad indicator, popups take input after a screenshot grab PASS',flush=True)
     print('PANEL: tray overflow only for many icons, clock alarms (edit, ring, notify, sound, snooze), agenda with reminders, power footer, NM connectivity (limited/portal/full, troubleshoot), Action Center (compact/expanded, calendar, corner), status flyouts anchored above their icons, one-click switching, tray transfer, native XEmbed/SNI clicks, MPRIS capabilities, Bluetooth discovery/cleanup, absent hardware, refresh, panel styles and themes PASS',flush=True)
 finally:

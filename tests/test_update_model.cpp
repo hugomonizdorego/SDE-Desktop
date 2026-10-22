@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// SDE Update: C++ side of the helper protocols (src/update/model.cpp), plus
+// Software Updater (sde-update): C++ side of the helper protocols (src/update/model.cpp), plus
 // an end-to-end run of the real Python helpers on fixture files.
 #include <cstdio>
 #include <cstdlib>
@@ -38,22 +38,29 @@ static void updates() {
   UpdateList list = parse_updates(v2);
   CHECK(list.valid && list.protocol == 2);
   CHECK(list.updates.size() == 4);
-  CHECK(list.updates[0].kind == Kind::Security && list.updates[0].name == "openssl");
-  CHECK(list.updates[1].kind == Kind::Kernel);
-  CHECK(list.updates[2].kind == Kind::Software && list.updates[2].summary == "Web browser");
-  CHECK(list.updates[3].kind == Kind::Backport && list.updates[3].archive == "trixie-backports");
-  CHECK(list.updates[0].packages.size() == 2 && list.updates[0].packages[1] == "openssl");
+  // Groups: the kernel is Critical, openssl Security, the rest Main (sorted
+  // by title: "Mesa" (backport) before "Web browser").
+  CHECK(list.updates[0].kind == Kind::Kernel && list.updates[0].group == Group::Critical);
+  CHECK(list.updates[0].reboot);
+  CHECK(list.updates[1].kind == Kind::Security && list.updates[1].name == "openssl");
+  CHECK(list.updates[1].group == Group::Security);
+  CHECK(list.updates[2].kind == Kind::Backport && list.updates[2].archive == "trixie-backports");
+  CHECK(list.updates[2].group == Group::Main);
+  CHECK(list.updates[3].kind == Kind::Software && list.updates[3].summary == "Web browser");
+  CHECK(list.updates[3].title() == "Web browser");
+  CHECK(list.updates[1].packages.size() == 2 && list.updates[1].packages[1] == "openssl");
   CHECK(list.total_size() == 70000000LL + 2500000 + 90000000 + 1000);
   CHECK(list.count(Kind::Security) == 1);
+  CHECK(list.count(Group::Main) == 2 && list.size(Group::Main) == 70001000LL);
   CHECK(list.held.size() == 1 && list.held[0] == "pinned-package");
-  CHECK(matches(list.updates[0], "SSL"));
-  CHECK(matches(list.updates[0], "libssl3"));
-  CHECK(!matches(list.updates[0], "firefox"));
+  CHECK(matches(list.updates[1], "SSL"));
+  CHECK(matches(list.updates[1], "libssl3"));
+  CHECK(!matches(list.updates[1], "firefox"));
 
   bool all = false;
   auto pkgs = selected_packages(list.updates, &all);
   CHECK(all && pkgs.size() == 5);
-  list.updates[2].selected = false;
+  list.updates[3].selected = false;
   pkgs = selected_packages(list.updates, &all);
   CHECK(!all && pkgs.size() == 4);
 
@@ -63,6 +70,132 @@ static void updates() {
   CHECK(!parse_updates("SDE-UPDATES\t2\nU\tpackage\tbroken\n").valid);
   CHECK(!parse_updates("garbage").valid);
   CHECK(parse_updates("SDE-UPDATES\t2\n").valid);
+}
+
+static Update apt_update(const std::string &name, const std::string &kind = "package") {
+  Update u;
+  u.kind = kind_from_id(kind);
+  u.name = u.source = u.main_package = name;
+  u.packages = {name};
+  u.archive = "testing";
+  return u;
+}
+
+static void classifier() {
+  // Origins.
+  Update sec = apt_update("openssl", "security");
+  CHECK(classify(sec) == Group::Security);
+  Update suite = apt_update("curl");
+  suite.archive = "trixie-security";
+  CHECK(classify(suite) == Group::Security);
+  Update site = apt_update("curl");
+  site.site = "security.debian.org";
+  CHECK(classify(site) == Group::Security);
+  CHECK(classify(apt_update("firefox-esr")) == Group::Main);
+  Update backport = apt_update("mesa", "backport");
+  CHECK(classify(backport) == Group::Main);
+  // Priorities and urgency.
+  Update req = apt_update("coreutils");
+  req.priority = "required";
+  CHECK(classify(req) == Group::Critical);
+  Update imp = apt_update("cron");
+  imp.priority = "important";
+  CHECK(classify(imp) == Group::Critical);
+  Update opt = apt_update("gimp");
+  opt.priority = "optional";
+  CHECK(classify(opt) == Group::Main);
+  Update urgent = apt_update("tool");
+  urgent.urgency = "high";
+  CHECK(classify(urgent) == Group::Critical);
+  // Kernel, libc, systemd, apt/dpkg, firmware: critical even from security.
+  Update kernel = apt_update("linux-signed-amd64", "security");
+  kernel.packages = {"linux-image-6.11.0-1-amd64", "linux-image-amd64"};
+  CHECK(needs_reboot(kernel) && classify(kernel) == Group::Critical);
+  Update image = apt_update("linux-image-amd64");
+  CHECK(needs_reboot(image) && classify(image) == Group::Critical);
+  Update libc = apt_update("glibc");
+  libc.packages = {"libc6:amd64", "libc-bin"};
+  CHECK(needs_reboot(libc) && classify(libc) == Group::Critical);
+  CHECK(classify(apt_update("systemd")) == Group::Critical);
+  CHECK(!needs_reboot(apt_update("apt")) && classify(apt_update("apt")) == Group::Critical);
+  CHECK(classify(apt_update("dpkg")) == Group::Critical);
+  CHECK(classify(apt_update("firmware-nonfree")) == Group::Critical);
+  CHECK(classify(apt_update("intel-microcode")) == Group::Critical);
+  CHECK(!needs_reboot(apt_update("libreoffice")));
+  // linux-libc-dev and linux-headers do not need a restart.
+  CHECK(!needs_reboot(apt_update("linux-libc-dev")));
+
+  // Optional Alpha 51 fields of the U record.
+  UpdateList l = parse_updates(
+      "SDE-UPDATES\t2\n"
+      "U\tpackage\tfirefox-esr\tfirefox-esr\tfirefox-esr\t1\t2\t300\tfirefox-esr\tdebian\ttesting\t"
+      "deb.debian.org\tMozilla Firefox web browser\tlong\toptional\tweb\t\tFirefox ESR\tfirefox-esr\n"
+      "U\tpackage\tbash\tbash\tbash\t5.2\t5.3\t200\tbash\tdebian\ttesting\tdeb.debian.org\t"
+      "GNU Bourne Again SHell\tlong\trequired\tshells\tmedium\t\t\n");
+  CHECK(l.valid && l.updates.size() == 2);
+  CHECK(l.updates[0].name == "bash" && l.updates[0].group == Group::Critical);
+  CHECK(l.updates[0].priority == "required" && l.updates[0].urgency == "medium");
+  CHECK(l.updates[1].title() == "Firefox ESR" && l.updates[1].icon == "firefox-esr");
+  CHECK(l.updates[1].section == "web" && l.updates[1].group == Group::Main);
+
+  // Flatpak parsing.
+  CHECK(!parse_flatpaks("SDE-UPDATES\t2\n", l));
+  UpdateList none;
+  CHECK(parse_flatpaks("SDE-FLATPAK\t1\nI\t0\n", none) && !none.flatpak_installed);
+  CHECK(parse_flatpaks(
+      "SDE-FLATPAK\t1\nI\t1\n"
+      "F\tsystem\tapp/org.gimp.GIMP/x86_64/stable\tGIMP\torg.gimp.GIMP\tstable\tflathub\t2.10.36\t"
+      "2.10.38\t52000000\tGNU Image Manipulation Program\n"
+      "F\tuser\truntime/org.gnome.Platform/x86_64/47\tGNOME Application Platform\t"
+      "org.gnome.Platform\t47\tflathub\t\t47.2\t1000\tShared libraries\n"
+      "F\tsystem\tapp/bad ref\tBad\tbad\tstable\tflathub\t\t\t1\t\n"
+      "F\troot\tapp/org.x.Y/x86_64/stable\tY\torg.x.Y\tstable\tflathub\t\t\t1\t\n"
+      "E\tUnable to load summary from remote fedora\n",
+      l));
+  CHECK(l.flatpak_installed && l.flatpak_errors.size() == 1);
+  CHECK(l.updates.size() == 4 && l.count(Group::Flatpak) == 2);
+  CHECK(l.updates[2].flatpak && l.updates[2].title() == "GIMP" && l.updates[2].icon == "org.gimp.GIMP");
+  CHECK(l.updates[3].installation == "user" && l.updates[3].group == Group::Flatpak);
+  CHECK(!l.updates[2].reboot);
+
+  // Size totals and the selection.
+  CHECK(l.total_size() == 300 + 200 + 52000000LL + 1000);
+  CHECK(l.size(Group::Flatpak) == 52001000LL && l.size(Group::Critical) == 200);
+  CHECK(l.selected_count() == 4 && l.selected_size() == l.total_size());
+  CHECK(l.needs_reboot() == false);
+
+  // Selection -> helper command lines.
+  auto cmds = install_commands(l.updates);
+  CHECK(cmds.size() == 2);
+  CHECK(cmds.size() == 2 && cmds[0] == std::vector<std::string>({"upgrade"}));
+  CHECK(cmds.size() == 2 &&
+        cmds[1] == std::vector<std::string>({"flatpak", "system:app/org.gimp.GIMP/x86_64/stable",
+                                             "user:runtime/org.gnome.Platform/x86_64/47"}));
+  l.updates[1].selected = false;  // firefox-esr
+  l.updates[3].selected = false;  // the GNOME runtime
+  cmds = install_commands(l.updates);
+  CHECK(cmds.size() == 2 && cmds[0] == std::vector<std::string>({"upgrade", "bash"}));
+  CHECK(cmds.size() == 2 && cmds[1].size() == 2);
+  CHECK(l.selected_size() == 200 + 52000000LL && l.selected_count() == 2);
+  for (auto &u : l.updates) u.selected = u.flatpak && u.installation == "system";
+  cmds = install_commands(l.updates);
+  CHECK(cmds.size() == 1 && cmds[0][0] == "flatpak");
+  for (auto &u : l.updates) u.selected = false;
+  CHECK(install_commands(l.updates).empty());
+  bool all = true;
+  CHECK(selected_packages(l.updates, &all).empty() && !all);
+
+  CHECK(valid_flatpak_ref("app/org.gimp.GIMP/x86_64/stable"));
+  CHECK(valid_flatpak_ref("runtime/org.freedesktop.Platform.GL.default/x86_64/24.08"));
+  CHECK(!valid_flatpak_ref("app/../x86_64/stable"));
+  CHECK(!valid_flatpak_ref("app/org.x/x86_64"));
+  CHECK(!valid_flatpak_ref("app/org.x/x86 64/stable"));
+  CHECK(!valid_flatpak_ref("--help/a/b/c"));
+  CHECK(valid_flatpak_item("user:app/org.gimp.GIMP/x86_64/stable"));
+  CHECK(!valid_flatpak_item("root:app/org.gimp.GIMP/x86_64/stable"));
+  CHECK(!valid_flatpak_item("app/org.gimp.GIMP/x86_64/stable"));
+  CHECK(std::string(group_title(Group::Critical)) == "Critical updates");
+  CHECK(remind_label(24) == "Tomorrow");
 }
 
 static void history() {
@@ -176,18 +309,25 @@ static void end_to_end() {
   CHECK(status == 0 && out.find("--only-upgrade\nbash\n") != std::string::npos);
   run_sync({"python3", dir + "/transaction.py", "--plan", "upgrade", "bad;name"}, &status, 20000);
   CHECK(status == 2);
+  out = run_sync({"python3", dir + "/transaction.py", "--plan", "flatpak", "user:app/org.gimp.GIMP/x86_64/stable"},
+                 &status, 20000);
+  CHECK(status == 0 && out.find("update\n--user\n-y\n--noninteractive\napp/org.gimp.GIMP/x86_64/stable\n") !=
+                           std::string::npos);
+  run_sync({"python3", dir + "/transaction.py", "--plan", "flatpak", "user:app/x;rm/x86_64/stable"}, &status, 20000);
+  CHECK(status == 2);
   run_sync({"rm", "-rf", tmp});
 }
 
 int main() {
   setenv("LANGUAGE", "C", 1);
   updates();
+  classifier();
   history();
   sources();
   transactions();
   helpers();
   end_to_end();
   if (failures) fprintf(stderr, "%d update model checks failed\n", failures);
-  else printf("SDE Update model and protocol checks passed.\n");
+  else printf("Software Updater model and protocol checks passed.\n");
   return failures ? 1 : 0;
 }

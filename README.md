@@ -73,7 +73,7 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
-| `sde-update` | Updates, history, sources and maintenance; PackageKit transactions with progress and background notifications |
+| `sde-update` | Software Updater: critical, security, main and Flatpak updates with check boxes, history, sources and maintenance; PackageKit/APT and Flatpak transactions with progress and background notifications |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
@@ -83,7 +83,7 @@ output device, systemd-logind for screen brightness and the kernel for the batte
 
 The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
 **Xanara**, **Taca**, **Photo** (formerly SDE View), **SDE System Monitor**, **SDE Power Manager**
-and **SDE Update**. Settings → Applications provides short clickable source links
+and **Software Updater** (formerly SDE Update). Settings → Applications provides short clickable source links
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
 
@@ -91,7 +91,7 @@ Alpha6 builds the GTK applications from pinned source as native SDE forks.
 `niny`, `liria`, `xanara`, `taca` and the other suite executables are included in
 one `sde` package with their resources and preserved copyrights. The original
 MATE application packages are not installed. Shared GTK/MATE libraries remain
-normal dependencies. SDE Update has a native interface, an attributed Mint Update
+normal dependencies. Software Updater has a native interface, an attributed Mint Update
 model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
 and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [Desktop Entry]
 Type=Application
-Name=SDE Update
-GenericName=System Updates
-Comment=System Updates for SDE, based on mintupdate
+Name=Software Updater
+GenericName=Software Updates
+Comment=Install critical, security, main and Flatpak updates
+Keywords=update;updates;upgrade;security;critical;flatpak;apt;packages;kernel;SDE Update;Update Manager;
 Exec=sde-update
 TryExec=sde-update
 Icon=system-software-update

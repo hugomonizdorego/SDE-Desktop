@@ -43,11 +43,13 @@ Look Look::from_config(const Config &cfg) {
 }
 
 double Look::card_radius() const {
-  return liquid() ? Sd(18) : aero() ? Sd(12) : Sd(10);
+  // The theme radius (already scaled); Liquid Glass rounds a little more.
+  const Theme &t = active_theme();
+  return liquid() ? std::max<double>(t.radius_large, t.radius) : double(t.radius);
 }
 
 double Look::control_radius(double h) const {
-  return liquid() ? h / 2 : aero() ? Sd(8) : Sd(7);
+  return liquid() ? h / 2 : std::min<double>(active_theme().radius_small, h / 2);
 }
 
 // ---------------------------------------------------------------- colors
@@ -60,20 +62,16 @@ Color readable_on(const Color &c, const Color &bg) {
   return out;
 }
 
-static Color tone(uint32_t light, uint32_t dark) {
-  return Color::hex(active_theme().dark ? dark : light);
-}
-
-Color success_color() { return tone(0x1E8E4E, 0x3CC47C); }
-Color warning_color() { return tone(0xC77700, 0xF0A73A); }
-Color danger_color() { return tone(0xC93636, 0xF06A6A); }
+Color success_color() { return active_theme().success; }
+Color warning_color() { return active_theme().warning; }
+Color danger_color() { return active_theme().error; }
 
 Color kind_color(Kind kind) {
   switch (kind) {
   case Kind::Security:
     return danger_color();
   case Kind::Kernel:
-    return tone(0x7A4FD6, 0xA98BFA);
+    return active_theme().accent.mix(active_theme().error, 0.35);
   case Kind::Backport:
     return warning_color();
   default:
@@ -94,8 +92,8 @@ static void paint_blobs(cairo_t *cr, int w, int h) {
     Color c;
   } blobs[] = {
       {0.18, 0.08, 0.55, t.accent.alpha(t.dark ? 0.20 : 0.16)},
-      {0.92, 0.85, 0.60, Color::hex(0x9B6CF0, t.dark ? 0.16 : 0.12)},
-      {0.62, 0.30, 0.35, Color::hex(0x3CC4C4, t.dark ? 0.10 : 0.10)},
+      {0.92, 0.85, 0.60, t.accent.mix(t.error, 0.45).alpha(t.dark ? 0.16 : 0.12)},
+      {0.62, 0.30, 0.35, t.accent.mix(t.success, 0.5).alpha(0.10)},
   };
   for (auto &b : blobs) {
     double r = std::max(w, h) * b.fr;
@@ -427,6 +425,24 @@ void paint_icon(Painter &p, Icon icon, double x, double y, double s,
   cairo_restore(cr);
 }
 
+void paint_disclosure(Painter &p, double x, double y, double s, bool open, const Color &c) {
+  cairo_t *cr = p.cr();
+  cairo_save(cr);
+  p.set(c);
+  if (open) {
+    cairo_move_to(cr, x + s * 0.15, y + s * 0.32);
+    cairo_line_to(cr, x + s * 0.85, y + s * 0.32);
+    cairo_line_to(cr, x + s * 0.5, y + s * 0.74);
+  } else {
+    cairo_move_to(cr, x + s * 0.32, y + s * 0.15);
+    cairo_line_to(cr, x + s * 0.74, y + s * 0.5);
+    cairo_line_to(cr, x + s * 0.32, y + s * 0.85);
+  }
+  cairo_close_path(cr);
+  cairo_fill(cr);
+  cairo_restore(cr);
+}
+
 // ---------------------------------------------------------------- button
 
 Button::Button(int x, int y, int w, int h, const std::string &text, Kind kind)
@@ -482,7 +498,7 @@ void Button::draw() {
     if (kind_ == Primary)
       fg = t.on_accent;
     if (kind_ == Danger)
-      fg = Color::hex(0xFFFFFF);
+      fg = readable_on(t.on_accent, danger_color());
     if (kind_ == Ghost)
       fg = t.accent_text;
     if (!active_r())
@@ -519,14 +535,18 @@ int Button::handle(int event) {
 SearchField::SearchField(int x, int y, int w, int h,
                          const std::string &placeholder)
     : Fl_Input(x, y, w, h), placeholder_(placeholder) {
-  const Theme &t = active_theme();
   box(FL_NO_BOX);
+  when(FL_WHEN_CHANGED);
+  restyle();
+}
+
+void SearchField::restyle() {
+  const Theme &t = active_theme();
   textcolor(t.text.fl());
   textsize(t.font_size);
   textfont(FL_HELVETICA);
   cursor_color(t.accent.fl());
   selection_color(t.accent.alpha(0.35).mix(t.surface, 0.5).fl());
-  when(FL_WHEN_CHANGED);
 }
 
 void SearchField::draw() {
@@ -814,6 +834,8 @@ int ListView::handle(int event) {
     } else if (k == ' ' && selected_ >= 0 && toggled) {
       toggled(selected_);
       redraw();
+    } else if (key_pressed && selected_ >= 0 && key_pressed(selected_, k)) {
+      redraw();
     } else {
       return 0;
     }
@@ -827,18 +849,23 @@ int ListView::handle(int event) {
 // -------------------------------------------------------------- text view
 
 TextView::TextView(int x, int y, int w, int h, bool mono)
-    : Fl_Text_Display(x, y, w, h) {
-  const Theme &t = active_theme();
+    : Fl_Text_Display(x, y, w, h), mono_(mono) {
   buffer_ = new Fl_Text_Buffer();
   buffer(buffer_);
   box(FL_FLAT_BOX);
+  wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
+  scrollbar_align(FL_ALIGN_RIGHT);
+  restyle();
+}
+
+void TextView::restyle() {
+  const Theme &t = active_theme();
+  bool mono = mono_;
   color(t.surface.fl(), t.accent.alpha(0.3).mix(t.surface, 0.5).fl());
   textcolor(t.text.fl());
   textfont(mono ? FL_COURIER : FL_HELVETICA);
   textsize(mono ? std::max(S(10), t.font_size - S(1)) : t.font_size);
-  wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
   scrollbar_width(S(10));
-  scrollbar_align(FL_ALIGN_RIGHT);
   for (Fl_Widget *bar : {static_cast<Fl_Widget *>(mVScrollBar),
                          static_cast<Fl_Widget *>(mHScrollBar)}) {
     bar->box(FL_FLAT_BOX);
@@ -846,6 +873,7 @@ TextView::TextView(int x, int y, int w, int h, bool mono)
     bar->selection_color(t.border.fl());
     bar->labelcolor(t.text_dim.fl());
   }
+  redraw();
 }
 
 TextView::~TextView() {
@@ -875,6 +903,20 @@ void style_choice(Fl_Choice *c) {
   c->textsize(t.font_size);
   c->labelsize(t.font_size);
   c->selection_color(t.accent.fl());
+}
+
+void restyle_tree(Fl_Widget *w) {
+  if (!w)
+    return;
+  if (auto *v = dynamic_cast<TextView *>(w))
+    v->restyle();
+  else if (auto *f = dynamic_cast<SearchField *>(w))
+    f->restyle();
+  else if (auto *c = dynamic_cast<Fl_Choice *>(w))
+    style_choice(c);
+  if (auto *g = w->as_group())
+    for (int i = 0; i < g->children(); ++i)
+      restyle_tree(g->child(i));
 }
 
 std::string menu_escape(const std::string &s) {

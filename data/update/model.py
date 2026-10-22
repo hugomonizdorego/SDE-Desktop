@@ -5,9 +5,17 @@
 # Source: https://github.com/linuxmint/mintupdate
 # Revision: b4c586f9839d2943944390f4117a10acd4ba865a
 # Changes: standalone model; remove Mint settings/GI and Mint/browser heuristics;
-#          Debian backports type, origin label and summary fields for SDE Update 2.
+#          Debian backports type, origin label and summary fields for SDE Update 2;
+#          Debian priority and section for the Software Updater groups (Alpha 51).
 # Full upstream copyright and license are in COPYRIGHT and COPYING.
 SOURCE_PACKAGE_NAME_OVERRIDES = ["linux-libc-dev"]
+# Debian priorities, most important first; the group keeps the strongest one.
+PRIORITY_ORDER = ["required", "important", "standard", "optional", "extra"]
+
+
+def stronger_priority(a, b):
+    rank = lambda p: PRIORITY_ORDER.index(p) if p in PRIORITY_ORDER else len(PRIORITY_ORDER)
+    return a if rank(a) <= rank(b) else b
 
 
 def is_backport(archive, label):
@@ -50,6 +58,9 @@ class Update:
             self.site = ""
             self.label = ""
 
+            self.priority = str(getattr(package.candidate, "priority", "") or "")
+            self.section = str(getattr(package.candidate, "section", "") or "")
+
             self.type = "package"
             self.origin = ""
             for origin in package.candidate.origins:
@@ -88,6 +99,9 @@ class Update:
             "%s=%s" % (pkg.candidate.source_name, pkg.candidate.source_version)
         )
         self.size += pkg.candidate.size
+        self.priority = stronger_priority(
+            self.priority, str(getattr(pkg.candidate, "priority", "") or "")
+        )
         if self.main_package_name is None or pkg.name == self.source_name:
             self.overwrite_main_package(pkg)
             return

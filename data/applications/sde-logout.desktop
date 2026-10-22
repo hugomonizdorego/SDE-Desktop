@@ -6,6 +6,7 @@ Exec=sde-logout
 Icon=system-log-out
 Categories=System;
 OnlyShowIn=SDE;
+NoDisplay=true
 StartupNotify=false
 X-Developer=DebION Dev-Team
 X-DebION-Developer=DebION Dev-Team

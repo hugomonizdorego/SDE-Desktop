@@ -67,6 +67,7 @@ struct BatteryState {
   bool charging = false;
   bool full = false;
   int minutes = -1;  // time to empty or full, -1 if unknown
+  std::string model;  // "<manufacturer> <model_name>" (alpha51), may be empty
 };
 
 class SystemStatus {
@@ -178,6 +179,7 @@ class QuickSettings : public PanelPopup {
   static void weather_tick(void *);
   static void media_tick(void *);
   void agenda_card(struct SectionBuilder &b);
+  void timezone_rows(struct SectionBuilder &b);
   void footer(int W, int H, int pad);
  public:
   // Agenda form actions (used by its buttons).
