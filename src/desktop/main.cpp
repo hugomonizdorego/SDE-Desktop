@@ -14,10 +14,24 @@
 //    unless the icon theme changes;
 //  * repaints draw only the icons inside the damaged area.
 // SDE_PERF_STATS=1 prints how long a refresh takes.
+//
+// Drag and drop (alpha 52):
+//  * icons are placed freely on a grid; positions are kept per file name in
+//    ~/.config/sde/desktop-positions.ini (they follow renames) and new
+//    files take the first free cell; Arrange Icons sorts them again;
+//  * click, Ctrl+click and rubber-band selection; a selection is dragged as
+//    a whole, onto another cell, a folder, the Trash or a launcher;
+//  * icons dragged to other programs are offered as text/uri-list and drops
+//    from them are accepted (xdnd.cpp); files are moved, copied or linked
+//    on a worker thread (file_ops.cpp), never overwriting anything.
 #include <FL/Fl.H>
 #include "crash.h"
 #include "buffered_window.h"
+#include <FL/Fl_Box.H>
+#include <FL/Fl_Button.H>
+#include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Menu_Item.H>
+#include <FL/Fl_Progress.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -32,6 +46,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -43,6 +58,8 @@
 #include "build_config.h"
 #include "config.h"
 #include "desktop_entry.h"
+#include "desktop_model.h"
+#include "file_ops.h"
 #include "i18n.h"
 #include "icons.h"
 #include "paint.h"
@@ -52,8 +69,11 @@
 #include "theme.h"
 #include "util.h"
 #include "x11.h"
+#include "xdnd.h"
 
 using namespace sde;
+using desk::DropAction;
+using desk::TargetKind;
 
 namespace {
 
@@ -285,11 +305,106 @@ class WallpaperWorker {
   bool pending_ = false;
 };
 
+// File operations from drops run on a worker thread; a small progress
+// window appears when they take longer than half a second.
+class FileJob {
+ public:
+  FileJob(std::vector<desk::FileOp> ops, std::function<void()> done) : ops_(std::move(ops)), done_(std::move(done)) {
+    auto progress = progress_;
+    auto ops_copy = ops_;
+    auto finished = finished_;
+    auto errors = errors_;
+    std::thread([progress, ops_copy, finished, errors] {
+      std::vector<std::string> errs;
+      desk::run_file_ops(ops_copy, progress.get(), &errs);
+      {
+        std::lock_guard<std::mutex> lock(progress->mutex);
+        *errors = errs;
+      }
+      *finished = true;
+    }).detach();
+    started_ = perf::now_ms();
+    Fl::add_timeout(0.1, poll, this);
+  }
+  ~FileJob() {
+    Fl::remove_timeout(poll, this);
+    delete window_;
+  }
+
+ private:
+  static void poll(void *data) {
+    auto *job = static_cast<FileJob *>(data);
+    if (*job->finished_) {
+      std::vector<std::string> errors;
+      {
+        std::lock_guard<std::mutex> lock(job->progress_->mutex);
+        errors = *job->errors_;
+      }
+      if (job->window_) job->window_->hide();
+      bool cancelled = job->progress_->cancel;
+      auto done = job->done_;
+      std::string text;
+      for (size_t i = 0; i < errors.size() && i < 5; ++i) text += errors[i] + "\n";
+      if (errors.size() > 5) text += format(_("... and %d more"), int(errors.size() - 5));
+      delete job;  // before any dialog: nothing refers to it any more
+      if (done) done();
+      if (!text.empty() && !(cancelled && text.find("Cancelled") != std::string::npos))
+        fl_alert("%s\n\n%s", _("Some items could not be copied or moved:"), text.c_str());
+      return;
+    }
+    if (!job->window_ && perf::now_ms() - job->started_ > 500) job->show_window();
+    if (job->window_) job->update_window();
+    Fl::repeat_timeout(0.1, poll, data);
+  }
+
+  void show_window() {
+    int W = S(380), H = S(118);
+    window_ = new Fl_Double_Window(W, H, _("Copying Files"));
+    label_ = new Fl_Box(S(16), S(12), W - S(32), S(40));
+    label_->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_CLIP | FL_ALIGN_WRAP);
+    bar_ = new Fl_Progress(S(16), S(54), W - S(32), S(16));
+    bar_->minimum(0);
+    bar_->maximum(1);
+    bar_->selection_color(FL_SELECTION_COLOR);
+    auto *cancel = new Fl_Button(W - S(112), H - S(40), S(96), S(30), _("Cancel"));
+    cancel->callback([](Fl_Widget *, void *d) { static_cast<FileJob *>(d)->progress_->cancel = true; }, this);
+    window_->end();
+    window_->set_non_modal();
+    window_->show();
+  }
+
+  void update_window() {
+    long long total = progress_->total, done = progress_->done;
+    std::string current;
+    {
+      std::lock_guard<std::mutex> lock(progress_->mutex);
+      current = progress_->current;
+    }
+    label_text_ = current.empty() ? std::string(_("Preparing...")) : basename_of(current);
+    label_->label(label_text_.c_str());
+    bar_->value(total > 0 ? float(double(done) / double(total)) : 0.f);
+    bar_text_ = total > 0 ? format("%d %%", int(100.0 * double(done) / double(total))) : std::string();
+    bar_->label(bar_text_.c_str());
+  }
+
+  std::vector<desk::FileOp> ops_;
+  std::function<void()> done_;
+  std::shared_ptr<desk::FileProgress> progress_ = std::make_shared<desk::FileProgress>();
+  std::shared_ptr<std::atomic<bool>> finished_ = std::make_shared<std::atomic<bool>>(false);
+  std::shared_ptr<std::vector<std::string>> errors_ = std::make_shared<std::vector<std::string>>();
+  double started_ = 0;
+  Fl_Double_Window *window_ = nullptr;
+  Fl_Box *label_ = nullptr;
+  Fl_Progress *bar_ = nullptr;
+  std::string label_text_, bar_text_;
+};
+
 class Desktop : public sde::BufferedWindow {
  public:
   Desktop() : sde::BufferedWindow(0, 0, 100, 100, "SDE Desktop"), worker_(on_wallpaper_ready, this) {
     end();
     border(0);
+    positions_.load(desk::default_positions_path());
     load();
   }
 
@@ -320,6 +435,7 @@ class Desktop : public sde::BufferedWindow {
     XGetWindowAttributes(fl_display, root, &attr);
     XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask | StructureNotifyMask);
     watch_desktop_dir();
+    setup_dnd(xid);
   }
 
   // Config changed (or startup): theme, icon size, places and sort order may
@@ -402,6 +518,9 @@ class Desktop : public sde::BufferedWindow {
   void rebuild_items() {
     std::string sel = selected_ >= 0 && selected_ < int(items_.size())
                           ? items_[size_t(selected_)].uri : std::string();
+    // Indexes change: a drag in progress ends (a rubber band goes on, it
+    // works with uris).
+    if (drag_state_ == DRAG_ITEMS || drag_state_ == DRAG_PRESSED) cancel_drag();
     // Places keep their loaded icons across rebuilds.
     std::map<std::string, Item> places;
     for (auto &it : items_)
@@ -433,8 +552,12 @@ class Desktop : public sde::BufferedWindow {
     sort_items();
     selected_ = -1;
     hover_ = -1;
-    for (size_t i = 0; i < items_.size(); ++i)
+    std::set<std::string> still;
+    for (size_t i = 0; i < items_.size(); ++i) {
       if (!sel.empty() && items_[i].uri == sel) selected_ = int(i);
+      if (sel_.count(items_[i].uri)) still.insert(items_[i].uri);
+    }
+    sel_.swap(still);
     layout_items();
     schedule_icons();
   }
@@ -513,13 +636,57 @@ class Desktop : public sde::BufferedWindow {
     cell_w_ = icon_ + S(48);
     cell_h_ = icon_ + S(48);
     int usable = mh - theme_.panel_height - S(24);
-    int rows = std::max(1, usable / cell_h_);
+    rows_ = std::max(1, usable / cell_h_);
+    cols_ = std::max(1, (mw - S(24)) / cell_w_);
+    grid_x_ = mx + S(12);
+    grid_y_ = my + S(12) + (theme_.panel_top ? theme_.panel_height : 0);
+    std::vector<std::string> keys;
+    for (auto &it : items_) keys.push_back(item_key(it));
+    std::vector<desk::Cell> cells = desk::place_icons(keys, cols_, rows_, positions_);
     text_font(theme_.font_size);
     for (size_t i = 0; i < items_.size(); ++i) {
-      items_[i].x = mx + S(12) + int(i) / rows * cell_w_;
-      items_[i].y = my + S(12) + (theme_.panel_top ? theme_.panel_height : 0) + int(i) % rows * cell_h_;
+      items_[i].x = grid_x_ + cells[i].col * cell_w_;
+      items_[i].y = grid_y_ + cells[i].row * cell_h_;
       items_[i].shown = ellipsize(items_[i].label, cell_w_ - S(12));
     }
+    // Tests read where the icons are (tests/test_desktop_dnd.py).
+    if (const char *dump = getenv("SDE_DESKTOP_LAYOUT_FILE")) {
+      std::string out;
+      for (auto &it : items_)
+        out += item_key(it) + "\t" + std::to_string(it.x) + "\t" + std::to_string(it.y) + "\t" +
+               std::to_string(cell_w_) + "\t" + std::to_string(cell_h_) + "\n";
+      write_file_atomic(dump, out);
+    }
+  }
+
+  // The key of an item in the position store: the file name, or "@home",
+  // "@trash", "@computer" for the places.
+  std::string item_key(const Item &it) const {
+    if (it.uri == "computer:///") return "@computer";
+    if (it.uri == "trash:///") return "@trash";
+    if (!is_file(it)) return "@home";
+    return basename_of(it.path);
+  }
+
+  desk::Cell cell_of(const Item &it) const {
+    return desk::Cell{std::max(0, (it.x - grid_x_ + cell_w_ / 2) / cell_w_),
+                      std::max(0, (it.y - grid_y_ + cell_h_ / 2) / cell_h_)};
+  }
+
+  // The grid cell under a point (clamped to the grid).
+  desk::Cell cell_at(int x, int y) const {
+    int c = (x - grid_x_) / std::max(1, cell_w_), r = (y - grid_y_) / std::max(1, cell_h_);
+    return desk::Cell{std::max(0, std::min(cols_ - 1, c)), std::max(0, std::min(rows_ - 1, r))};
+  }
+
+  void save_positions() {
+    if (!positions_.save()) fprintf(stderr, "sde-desktop: cannot write %s\n", positions_.path().c_str());
+  }
+
+  // Remembers where every icon is now, so that new files never push the
+  // others around (called before the first manual move).
+  void pin_all_positions() {
+    for (auto &it : items_) positions_.set(item_key(it), cell_of(it));
   }
 
   void watch_desktop_dir() {
@@ -548,6 +715,18 @@ class Desktop : public sde::BufferedWindow {
         auto *ev = reinterpret_cast<struct inotify_event *>(p);
         if (ev->mask & (IN_Q_OVERFLOW | IN_DELETE_SELF | IN_MOVE_SELF | IN_IGNORED)) d->full_rescan_ = true;
         else if (ev->len && ev->name[0] && ev->name[0] != '.') d->changed_.insert(ev->name);
+        // Renames keep the icon where it was.
+        if (ev->len && (ev->mask & IN_MOVED_FROM)) d->moved_from_[ev->cookie] = ev->name;
+        if (ev->len && (ev->mask & IN_MOVED_TO)) {
+          auto from = d->moved_from_.find(ev->cookie);
+          if (from != d->moved_from_.end()) {
+            if (d->positions_.get(from->second, nullptr)) {
+              d->positions_.rename(from->second, ev->name);
+              d->positions_dirty_ = true;
+            }
+            d->moved_from_.erase(from);
+          }
+        }
         p += sizeof(struct inotify_event) + ev->len;
       }
     }
@@ -557,6 +736,10 @@ class Desktop : public sde::BufferedWindow {
 
   static void apply_inotify(void *data) {
     auto *d = static_cast<Desktop *>(data);
+    if (d->drag_state_ == DRAG_ITEMS || d->drag_state_ == DRAG_PRESSED) {
+      Fl::repeat_timeout(0.3, apply_inotify, data);  // after the drag
+      return;
+    }
     double t0 = perf::enabled() ? perf::now_ms() : 0;
     size_t changes = d->changed_.size();
     if (d->full_rescan_) {
@@ -567,6 +750,11 @@ class Desktop : public sde::BufferedWindow {
       for (const auto &name : d->changed_) d->update_file(name, d->files_);
     }
     d->changed_.clear();
+    d->moved_from_.clear();
+    if (d->positions_dirty_) {
+      d->positions_dirty_ = false;
+      d->save_positions();
+    }
     d->rebuild_items();
     d->redraw();  // positions may shift, so the icon area is repainted
     if (perf::enabled())
@@ -662,12 +850,36 @@ class Desktop : public sde::BufferedWindow {
       for (size_t i = 0; i < items_.size(); ++i) {
         const Item &it = items_[i];
         if (!fl_not_clipped(it.x, it.y, cell_w_, cell_h_)) continue;
-        if (int(i) == selected_)
+        bool dragged = drag_state_ == DRAG_ITEMS && is_selected(int(i));
+        if (int(i) == drop_target_) {
+          p.fill_rounded(it.x + S(4), it.y + S(2), cell_w_ - S(8), cell_h_ - S(6), S(10), theme_.accent.alpha(0.35));
+          p.stroke_rounded(it.x + S(4), it.y + S(2), cell_w_ - S(8), cell_h_ - S(6), S(10), theme_.accent, Sd(2));
+        } else if (is_selected(int(i))) {
           p.fill_rounded(it.x + S(4), it.y + S(2), cell_w_ - S(8), cell_h_ - S(6), S(10), theme_.accent.alpha(0.45));
-        else if (int(i) == hover_)
+        } else if (int(i) == hover_) {
           p.fill_rounded(it.x + 4, it.y + 2, cell_w_ - 8, cell_h_ - 6, 10, Color::hex(0xFFFFFF, 0.16));
-        if (it.icon_ready && it.icon)
+        }
+        if (int(i) == selected_ && Fl::focus() == this && sel_.size() > 1)
+          p.stroke_rounded(it.x + S(4), it.y + S(2), cell_w_ - S(8), cell_h_ - S(6), S(10), Color::hex(0xFFFFFF, 0.7), 1);
+        if (it.icon_ready && it.icon) {
+          if (dragged) cairo_push_group(p.cr());
           p.image(it.icon, it.x + (cell_w_ - icon_) / 2.0, it.y + S(8), icon_);
+          if (dragged) {
+            cairo_pop_group_to_source(p.cr());
+            cairo_paint_with_alpha(p.cr(), 0.5);
+          }
+        }
+      }
+      // Where a rearranged icon will land.
+      if (drag_state_ == DRAG_ITEMS && drag_local_ && drop_target_ < 0 && !positions_.auto_arrange) {
+        int gx = grid_x_ + drag_cell_.col * cell_w_, gy = grid_y_ + drag_cell_.row * cell_h_;
+        p.stroke_rounded(gx + S(4), gy + S(2), cell_w_ - S(8), cell_h_ - S(6), S(10), Color::hex(0xFFFFFF, 0.8), Sd(1.5));
+      }
+      if (drag_state_ == DRAG_BAND) {
+        int bx = std::min(band_x0_, band_x1_), by = std::min(band_y0_, band_y1_);
+        int bw = std::abs(band_x1_ - band_x0_), bh = std::abs(band_y1_ - band_y0_);
+        p.fill_rect(bx, by, bw, bh, theme_.accent.alpha(0.22));
+        p.stroke_rounded(bx + 0.5, by + 0.5, std::max(1, bw - 1), std::max(1, bh - 1), 0, theme_.accent, 1);
       }
     }
     text_font(theme_.font_size);
@@ -774,6 +986,9 @@ class Desktop : public sde::BufferedWindow {
     if (r != 0) {
       if (errno == EEXIST) fl_alert(_("\"%s\" already exists."), name.c_str());
       else fl_alert("%s", _("Could not rename the item."));
+    } else if (dir == desktop_dir_ && positions_.get(old_name, nullptr)) {
+      positions_.rename(old_name, name);
+      save_positions();
     }
   }
 
@@ -783,8 +998,36 @@ class Desktop : public sde::BufferedWindow {
 
   void trash_item(const Item &it) {
     if (!is_file(it)) return;
-    if (!spawn_detached({"gio", "trash", it.path}))
-      fl_alert("%s", _("Moving to the trash needs the gio program (package libglib2.0-bin)."));
+    trash_paths({it.path});
+  }
+
+  // Selected files (or the item under the keyboard focus).
+  std::vector<std::string> selected_paths() const {
+    std::vector<std::string> out;
+    for (size_t i = 0; i < items_.size(); ++i)
+      if (is_file(items_[i]) && (sel_.count(items_[i].uri) || (sel_.empty() && int(i) == selected_)))
+        out.push_back(items_[i].path);
+    return out;
+  }
+
+  // The freedesktop.org home trash for files on the home file system; gio
+  // for the others (it knows the per-volume trash folders).
+  void trash_paths(const std::vector<std::string> &paths) {
+    std::vector<desk::FileOp> ops;
+    std::string trash = desk::home_trash_dir();
+    make_dirs(trash + "/files");
+    for (auto &p : paths) {
+      if (desk::same_filesystem(p, trash + "/files")) {
+        desk::FileOp op;
+        op.kind = desk::FileOp::TRASH;
+        op.src = p;
+        ops.push_back(op);
+      } else if (!spawn_detached({"gio", "trash", p})) {
+        fl_alert("%s", _("Moving to the trash needs the gio program (package libglib2.0-bin)."));
+        return;
+      }
+    }
+    if (!ops.empty()) start_job(std::move(ops));
   }
 
   void new_folder() {
@@ -816,6 +1059,18 @@ class Desktop : public sde::BufferedWindow {
       return;
     }
     if (!write_file_atomic(target, "")) fl_alert("%s", _("Could not create the document."));
+  }
+
+  // Arrange Icons > By ...: forgets the free positions and sorts again.
+  void arrange(const char *key) {
+    positions_.clear();
+    save_positions();
+    if (cfg_.get("desktop", "sort", "name") == key) {
+      rebuild_items();
+      redraw();
+    } else {
+      set_option("sort", key);  // reloads and rebuilds
+    }
   }
 
   void set_option(const char *key, const char *value) {
@@ -854,7 +1109,9 @@ class Desktop : public sde::BufferedWindow {
         Fl::copy(path.c_str(), int(path.size()), 1);  // clipboard
         Fl::copy(path.c_str(), int(path.size()), 0);  // primary selection
       } else if (m == &items[3]) {
-        if (file) trash_item(it);
+        std::vector<std::string> paths = selected_paths();
+        if (file && paths.size() > 1) trash_paths(paths);
+        else if (file) trash_item(it);
         else hide_place(it);
       } else if (m == &items[4]) {
         if (fl_choice("%s", _("Cancel"), _("Empty Trash"), nullptr,
@@ -869,28 +1126,30 @@ class Desktop : public sde::BufferedWindow {
     std::string size = cfg_.get("desktop", "icon_size", "medium");
     std::string sort = cfg_.get("desktop", "sort", "name");
     auto radio = [](bool on) { return FL_MENU_RADIO | (on ? FL_MENU_VALUE : 0); };
+    int autoflag = FL_MENU_TOGGLE | (positions_.auto_arrange ? FL_MENU_VALUE : 0);
     Fl_Menu_Item items[] = {
         {_("View"), 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},                              // 0
         {_("Large Icons"), 0, nullptr, nullptr, radio(size == "large"), 0, 0, 0, 0},            // 1
         {_("Medium Icons"), 0, nullptr, nullptr, radio(size == "medium"), 0, 0, 0, 0},          // 2
         {_("Small Icons"), 0, nullptr, nullptr, radio(size == "small"), 0, 0, 0, 0},            // 3
         {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 4
-        {_("Sort By"), 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},                           // 5
-        {_("Name"), 0, nullptr, nullptr, radio(sort == "name"), 0, 0, 0, 0},                    // 6
-        {_("Size"), 0, nullptr, nullptr, radio(sort == "size"), 0, 0, 0, 0},                    // 7
-        {_("Type"), 0, nullptr, nullptr, radio(sort == "type"), 0, 0, 0, 0},                    // 8
-        {_("Date Modified"), 0, nullptr, nullptr, radio(sort == "modified"), 0, 0, 0, 0},       // 9
-        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 10
-        {_("Refresh"), FL_F + 5, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},                // 11
-        {_("New"), 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},              // 12
-        {_("Folder"), FL_CTRL + FL_SHIFT + 'n', nullptr, nullptr, 0, 0, 0, 0, 0},               // 13
-        {_("Empty Document"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                             // 14
-        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 15
-        {_("Open Terminal Here"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                         // 16
-        {_("Open in File Manager"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},          // 17
-        {_("Display Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 18
-        {_("Change Wallpaper..."), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                        // 19
-        {_("Desktop Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 20
+        {_("Arrange Icons"), 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},                     // 5
+        {_("By Name"), 0, nullptr, nullptr, radio(sort == "name"), 0, 0, 0, 0},                 // 6
+        {_("By Size"), 0, nullptr, nullptr, radio(sort == "size"), 0, 0, 0, 0},                 // 7
+        {_("By Type"), 0, nullptr, nullptr, radio(sort == "type"), 0, 0, 0, 0},                 // 8
+        {_("By Date Modified"), 0, nullptr, nullptr, radio(sort == "modified") | FL_MENU_DIVIDER, 0, 0, 0, 0},  // 9
+        {_("Auto-arrange"), 0, nullptr, nullptr, autoflag, 0, 0, 0, 0},                         // 10
+        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 11
+        {_("Refresh"), FL_F + 5, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},                // 12
+        {_("New"), 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},              // 13
+        {_("Folder"), FL_CTRL + FL_SHIFT + 'n', nullptr, nullptr, 0, 0, 0, 0, 0},               // 14
+        {_("Empty Document"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                             // 15
+        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 16
+        {_("Open Terminal Here"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                         // 17
+        {_("Open in File Manager"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},          // 18
+        {_("Display Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 19
+        {_("Change Wallpaper..."), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                        // 20
+        {_("Desktop Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 21
         {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
     const Fl_Menu_Item *m = items->popup(mx, my);
     if (!m) return;
@@ -900,21 +1159,27 @@ class Desktop : public sde::BufferedWindow {
       case 1: set_option("icon_size", "large"); break;
       case 2: set_option("icon_size", "medium"); break;
       case 3: set_option("icon_size", "small"); break;
-      case 6: set_option("sort", "name"); break;
-      case 7: set_option("sort", "size"); break;
-      case 8: set_option("sort", "type"); break;
-      case 9: set_option("sort", "modified"); break;
-      case 11: refresh(); break;
-      case 13: new_folder(); break;
-      case 14: new_document(); break;
-      case 16: open_terminal({}, dir_exists(desk) ? desk : home_dir()); break;
-      case 17:
+      case 6: arrange("name"); break;
+      case 7: arrange("size"); break;
+      case 8: arrange("type"); break;
+      case 9: arrange("modified"); break;
+      case 10:
+        positions_.auto_arrange = !positions_.auto_arrange;
+        save_positions();
+        rebuild_items();
+        redraw();
+        break;
+      case 12: refresh(); break;
+      case 14: new_folder(); break;
+      case 15: new_document(); break;
+      case 17: open_terminal({}, dir_exists(desk) ? desk : home_dir()); break;
+      case 18:
         make_dirs(desk);
         open_uri(desk);
         break;
-      case 18: spawn_detached({"sde-settings", "--page", "display"}); break;
-      case 19: spawn_detached({"sde-settings", "--page", "wallpaper"}); break;
-      case 20: spawn_detached({"sde-settings", "--page", "desktop"}); break;
+      case 19: spawn_detached({"sde-settings", "--page", "display"}); break;
+      case 20: spawn_detached({"sde-settings", "--page", "wallpaper"}); break;
+      case 21: spawn_detached({"sde-settings", "--page", "desktop"}); break;
       default: break;
     }
   }
@@ -942,36 +1207,52 @@ class Desktop : public sde::BufferedWindow {
     }
     if (k == FL_Escape) {
       selected_ = -1;
+      sel_.clear();
       redraw();
       return 1;
     }
     if (!n) return 0;
+    if (ctrl && (k == 'a' || k == 'A')) {
+      for (auto &it : items_) sel_.insert(it.uri);
+      redraw();
+      return 1;
+    }
     if ((k == FL_Enter || k == FL_KP_Enter) && selected_ >= 0) {
-      open_item(selected_);
+      // Every selected icon (copies: opening may run dialogs).
+      std::vector<Item> open;
+      for (size_t i = 0; i < items_.size(); ++i)
+        if (is_selected(int(i)) || int(i) == selected_) open.push_back(items_[i]);
+      for (auto &it : open) open_item(it);
       return 1;
     }
     if (k == FL_F + 2 && selected_ >= 0) {
       rename_item(selected_);
       return 1;
     }
-    if (k == FL_Delete && selected_ >= 0) {
-      trash_item(selected_);
+    if (k == FL_Delete && (selected_ >= 0 || !sel_.empty())) {
+      std::vector<std::string> paths = selected_paths();
+      if (!paths.empty()) trash_paths(paths);
       return 1;
     }
-    // Arrow keys move the selection (icons are laid out in columns).
-    int rows = 1;
-    while (rows < n && items_[size_t(rows)].x == items_[0].x) ++rows;
+    // Arrow keys move to the nearest icon in that direction.
     int s = selected_ < 0 ? 0 : selected_;
-    if (k == FL_Down) s = std::min(n - 1, s + 1);
-    else if (k == FL_Up) s = std::max(0, s - 1);
-    else if (k == FL_Right) s = std::min(n - 1, s + rows);
-    else if (k == FL_Left) s = std::max(0, s - rows);
-    else if (k == FL_Home) s = 0;
-    else if (k == FL_End) s = n - 1;
+    int next = -2;
+    if (k == FL_Down) next = neighbor(s, 0, 1);
+    else if (k == FL_Up) next = neighbor(s, 0, -1);
+    else if (k == FL_Right) next = neighbor(s, 1, 0);
+    else if (k == FL_Left) next = neighbor(s, -1, 0);
+    else if (k == FL_Home) next = 0;
+    else if (k == FL_End) next = n - 1;
     else return 0;
-    damage_item(selected_);
-    selected_ = s;
-    damage_item(selected_);
+    if (selected_ < 0) next = 0;
+    if (next < 0) return 1;
+    if (shift) {
+      sel_.insert(items_[size_t(next)].uri);
+      selected_ = next;
+      redraw();
+    } else {
+      select_only(next);
+    }
     return 1;
   }
 
@@ -982,17 +1263,485 @@ class Desktop : public sde::BufferedWindow {
     return n;
   }
 
+  // ------------------------------------------------------------ selection
+
+  bool is_selected(int i) const {
+    return i >= 0 && i < int(items_.size()) && sel_.count(items_[size_t(i)].uri) != 0;
+  }
+
+  void select_only(int i) {
+    sel_.clear();
+    if (i >= 0 && i < int(items_.size())) sel_.insert(items_[size_t(i)].uri);
+    selected_ = i;
+    redraw();
+  }
+
+  // Items whose cell intersects the rubber band (added to what was selected
+  // before when Ctrl is held).
+  void update_band() {
+    int x0 = std::min(band_x0_, band_x1_), x1 = std::max(band_x0_, band_x1_);
+    int y0 = std::min(band_y0_, band_y1_), y1 = std::max(band_y0_, band_y1_);
+    sel_ = band_base_;
+    for (auto &it : items_) {
+      int ix0 = it.x + S(4), ix1 = it.x + cell_w_ - S(4), iy0 = it.y + S(2), iy1 = it.y + cell_h_ - S(4);
+      if (ix0 < x1 && ix1 > x0 && iy0 < y1 && iy1 > y0) sel_.insert(it.uri);
+    }
+  }
+
+  static unsigned mods_from_fl(int state) {
+    unsigned m = 0;
+    if (state & FL_SHIFT) m |= desk::MOD_SHIFT;
+    if (state & FL_CTRL) m |= desk::MOD_CTRL;
+    if (state & FL_ALT) m |= desk::MOD_ALT;
+    return m;
+  }
+
+  // ------------------------------------------------------------ drop targets
+
+  // Folders (and Home), the Trash and application launchers take drops; a
+  // drop anywhere else lands on the desktop itself.
+  TargetKind target_kind(int i) const {
+    if (i < 0 || i >= int(items_.size())) return TargetKind::Desktop;
+    const Item &it = items_[size_t(i)];
+    if (it.uri == "trash:///") return TargetKind::Trash;
+    if (it.uri == "computer:///") return TargetKind::NoTarget;
+    if (it.is_dir || !is_file(it)) return TargetKind::Folder;
+    if (it.is_launcher) return TargetKind::Launcher;
+    return TargetKind::Desktop;
+  }
+
+  std::string drop_dir() const { return desktop_dir_.empty() ? user_dir("DESKTOP") : desktop_dir_; }
+
+  static std::string parent_of(const std::string &path) {
+    size_t slash = path.find_last_of('/');
+    return slash == std::string::npos || slash == 0 ? std::string("/") : path.substr(0, slash);
+  }
+
+  // Alt-drops and sources that ask: "Move Here / Copy Here / Link Here".
+  DropAction ask_action(int x, int y, const desk::ActionSet &allowed) {
+    Fl_Menu_Item items[] = {
+        {_("Move Here"), 0, nullptr, nullptr, allowed.move ? 0 : FL_MENU_INACTIVE, 0, 0, 0, 0},
+        {_("Copy Here"), 0, nullptr, nullptr, allowed.copy ? 0 : FL_MENU_INACTIVE, 0, 0, 0, 0},
+        {_("Link Here"), 0, nullptr, nullptr, (allowed.link ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER, 0, 0, 0, 0},
+        {_("Cancel"), FL_Escape, nullptr, nullptr, 0, 0, 0, 0, 0},
+        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
+    const Fl_Menu_Item *m = items->popup(x, y);
+    if (m == &items[0]) return DropAction::Move;
+    if (m == &items[1]) return DropAction::Copy;
+    if (m == &items[2]) return DropAction::Link;
+    return DropAction::NoDrop;
+  }
+
+  // 0 skip, 1 keep both, 2 replace.
+  int ask_conflict(const std::string &name, bool is_dir) {
+    return fl_choice(is_dir ? _("A folder named \"%s\" already exists here.\nReplace it, keep both or skip this item?")
+                            : _("A file named \"%s\" already exists here.\nReplace it, keep both or skip this item?"),
+                     _("Skip"), _("Keep Both"), _("Replace"), name.c_str());
+  }
+
+  void start_job(std::vector<desk::FileOp> ops) {
+    if (ops.empty()) return;
+    // Deletes itself when done; inotify brings the changes to the icons.
+    new FileJob(std::move(ops), [] {
+      if (instance_) Fl::add_timeout(0.3, [](void *) {
+        if (instance_) instance_->refresh();
+      });
+    });
+  }
+
+  // Gives |names| (about to appear in ~/Desktop) the free cells nearest to
+  // |cell|, so that dropped files land where they were dropped.
+  void place_new_names(const std::vector<std::string> &names, desk::Cell cell) {
+    if (positions_.auto_arrange || names.empty()) return;
+    pin_all_positions();
+    std::set<desk::Cell> taken;
+    for (auto &it : items_)
+      if (std::find(names.begin(), names.end(), item_key(it)) == names.end()) taken.insert(cell_of(it));
+    for (auto &n : names) {
+      desk::Cell c = nearest_free(cell, taken);
+      positions_.set(n, c);
+      taken.insert(c);
+    }
+    save_positions();
+  }
+
+  desk::Cell nearest_free(desk::Cell want, const std::set<desk::Cell> &taken) const {
+    if (!taken.count(want)) return want;
+    int limit = std::max(cols_, rows_) + 1;
+    for (int r = 1; r <= limit; ++r) {
+      desk::Cell best{-1, -1};
+      int best_d = 1 << 30;
+      for (int dc = -r; dc <= r; ++dc)
+        for (int dr = -r; dr <= r; ++dr) {
+          if (std::max(std::abs(dc), std::abs(dr)) != r) continue;
+          desk::Cell c{want.col + dc, want.row + dr};
+          if (c.col < 0 || c.row < 0 || c.col >= cols_ || c.row >= rows_ || taken.count(c)) continue;
+          int d = dc * dc * 2 + dr * dr;  // prefer the same column (icons flow down)
+          if (d < best_d) best_d = d, best = c;
+        }
+      if (best.col >= 0) return best;
+    }
+    // The grid is full: the first column beyond it.
+    desk::Cell c{cols_, 0};
+    while (taken.count(c)) {
+      if (++c.row >= rows_) c.row = 0, ++c.col;
+    }
+    return c;
+  }
+
+  // Drops local |paths| on item |ti| (or the desktop) at (x, y). Returns
+  // what was done (None when nothing happened).
+  DropAction drop_files(const std::vector<std::string> &paths, int ti, unsigned mods, DropAction suggested,
+                        const desk::ActionSet &allowed, int x, int y) {
+    if (paths.empty()) return DropAction::NoDrop;
+    TargetKind kind = target_kind(ti);
+    Item target = ti >= 0 && ti < int(items_.size()) ? items_[size_t(ti)] : Item();  // a copy (dialogs follow)
+    if (kind == TargetKind::NoTarget) return DropAction::NoDrop;
+    if (kind == TargetKind::Launcher) {
+      DesktopEntry e;
+      if (e.load(target.path) && e.type == "Application") {
+        if (access(target.path.c_str(), X_OK) != 0) {
+          if (fl_choice(_("\"%s\" is not marked as trusted.\nDo you want to trust and launch it?"), _("Cancel"),
+                        _("Trust and Launch"), nullptr, target.label.c_str()) != 1)
+            return DropAction::NoDrop;
+          struct stat st;
+          if (stat(target.path.c_str(), &st) == 0) chmod(target.path.c_str(), st.st_mode | S_IXUSR);
+        }
+        return launch_entry(e, paths) ? DropAction::Copy : DropAction::NoDrop;
+      }
+      kind = TargetKind::Desktop;
+      ti = -1;
+    }
+    if (kind == TargetKind::Trash) {
+      trash_paths(paths);
+      return DropAction::Move;
+    }
+    std::string dir = kind == TargetKind::Folder ? target.path : drop_dir();
+    make_dirs(dir);
+    bool same_fs = desk::same_filesystem(paths[0], dir);
+    DropAction a = desk::choose_drop_action(kind, mods, same_fs, suggested, allowed);
+    if (a == DropAction::Ask) a = ask_action(x, y, allowed);
+    if (a == DropAction::NoDrop) return DropAction::NoDrop;
+    std::vector<desk::FileOp> ops;
+    std::vector<std::string> names;
+    for (auto &src : paths) {
+      std::string name = basename_of(src);
+      if (name.empty() || !desk::path_exists(src)) continue;
+      bool here = parent_of(src) == dir;
+      if (here && a == DropAction::Move) continue;  // already there
+      if (a != DropAction::Link && desk::path_inside(dir, src)) {
+        fl_alert(_("\"%s\" cannot be moved or copied into itself."), name.c_str());
+        continue;
+      }
+      struct stat st;
+      bool is_dir = stat(src.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+      desk::FileOp op;
+      op.kind = a == DropAction::Move ? desk::FileOp::MOVE
+                : a == DropAction::Link ? desk::FileOp::LINK
+                                        : desk::FileOp::COPY;
+      op.src = src;
+      auto taken = [](const std::string &n, void *d) {
+        return desk::path_exists(*static_cast<std::string *>(d) + "/" + n);
+      };
+      if (desk::path_exists(dir + "/" + name)) {
+        int c = here ? 1 : ask_conflict(name, is_dir);
+        if (c == 0) continue;
+        if (c == 1) name = desk::keep_both_name(name, is_dir, taken, &dir);
+        else op.replace = true;
+      }
+      op.dst = dir + "/" + name;
+      ops.push_back(op);
+      names.push_back(name);
+    }
+    if (ops.empty()) return DropAction::NoDrop;
+    if (dir == desktop_dir_ && ti < 0) place_new_names(names, cell_at(x, y));
+    start_job(std::move(ops));
+    return a;
+  }
+
+  // Text and links dropped from other programs: a link (.desktop) per URL,
+  // or "Dropped text.txt".
+  DropAction drop_other(const desk::DropPayload &payload, int ti, int x, int y) {
+    TargetKind kind = target_kind(ti);
+    if (kind == TargetKind::Launcher && !payload.urls.empty()) {
+      DesktopEntry e;
+      if (e.load(items_[size_t(ti)].path) && e.type == "Application")
+        return launch_entry(e, payload.urls) ? DropAction::Copy : DropAction::NoDrop;
+    }
+    if (kind == TargetKind::Launcher) kind = TargetKind::Desktop, ti = -1;
+    if (kind != TargetKind::Desktop && kind != TargetKind::Folder) return DropAction::NoDrop;
+    std::string dir = kind == TargetKind::Folder ? items_[size_t(ti)].path : drop_dir();
+    make_dirs(dir);
+    auto taken = [](const std::string &n, void *d) {
+      return desk::path_exists(*static_cast<std::string *>(d) + "/" + n);
+    };
+    std::vector<std::string> names;
+    auto write_new = [&](std::string name, const std::string &content, mode_t mode) {
+      if (desk::path_exists(dir + "/" + name)) name = desk::keep_both_name(name, false, taken, &dir);
+      std::string path = dir + "/" + name;
+      int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode);
+      if (fd < 0) return false;
+      bool ok = write(fd, content.data(), content.size()) == ssize_t(content.size());
+      close(fd);
+      if (ok) names.push_back(name);
+      return ok;
+    };
+    bool any = false;
+    for (auto &url : payload.urls) {
+      std::string file = desk::link_file_name(url);
+      // Trusted from the start: the user made it.
+      any = write_new(file, desk::link_desktop_entry(url, file.substr(0, file.size() - 8)), 0755) || any;
+    }
+    if (!payload.text.empty())
+      any = write_new(std::string(_("Dropped text")) + ".txt", payload.text, 0644) || any;
+    if (!any) return DropAction::NoDrop;
+    if (dir == desktop_dir_ && ti < 0) place_new_names(names, cell_at(x, y));
+    return DropAction::Copy;
+  }
+
+  // ------------------------------------------------------------ dragging
+
+  void setup_dnd(Window xid) {
+    desk::Xdnd::Hooks h;
+    h.over = [this](int x, int y, unsigned mods, DropAction suggested, const desk::ActionSet &allowed,
+                    bool files) {
+      int i = item_at(x - this->x(), y - this->y());
+      TargetKind k = target_kind(i);
+      if (!files && k != TargetKind::Desktop && k != TargetKind::Folder) k = TargetKind::Desktop;
+      int hl = (k == TargetKind::Folder || k == TargetKind::Trash || k == TargetKind::Launcher) ? i : -1;
+      if (hl != drop_target_) {
+        damage_item(drop_target_);
+        drop_target_ = hl;
+        damage_item(drop_target_);
+      }
+      if (k == TargetKind::NoTarget) return DropAction::NoDrop;
+      if (!files) return allowed.copy ? DropAction::Copy : DropAction::NoDrop;  // text makes a new file
+      // The file system is not known before the data arrives: the answer
+      // assumes one file system, the drop decides for real.
+      return desk::choose_drop_action(k, mods, true, suggested, allowed);
+    };
+    h.leave = [this] {
+      damage_item(drop_target_);
+      drop_target_ = -1;
+    };
+    h.drop = [this](int x, int y, DropAction action, const std::string &data, bool uri_list) {
+      desk::DropPayload payload = desk::classify_drop(data, uri_list);
+      int lx = x - this->x(), ly = y - this->y();
+      int i = item_at(lx, ly);
+      damage_item(drop_target_);
+      drop_target_ = -1;
+      Window r, c;
+      int rx, ry, wx, wy;
+      unsigned mask = 0;
+      XQueryPointer(fl_display, RootWindow(fl_display, fl_screen), &r, &c, &rx, &ry, &wx, &wy, &mask);
+      unsigned mods = desk::Xdnd::modifiers_from_state(mask);
+      DropAction done = DropAction::NoDrop;
+      if (!payload.files.empty())
+        done = drop_files(payload.files, i, mods, action == DropAction::Ask ? DropAction::Ask : DropAction::Copy,
+                          xdnd_->source_actions(), lx, ly);
+      if (!payload.urls.empty() || !payload.text.empty()) {
+        DropAction other = drop_other(payload, payload.files.empty() ? i : -1, lx, ly);
+        if (done == DropAction::NoDrop) done = other;
+      }
+      return done;
+    };
+    h.finished = [](bool accepted, DropAction action) {
+      // The target moved the files away (or not): look again soon.
+      if (accepted && action == DropAction::Move && instance_)
+        Fl::add_timeout(0.5, [](void *) {
+          if (instance_) instance_->refresh();
+        });
+    };
+    xdnd_.reset(new desk::Xdnd(fl_display, xid, h));
+  }
+
+  void start_drag() {
+    if (press_item_ < 0 || press_item_ >= int(items_.size())) return;
+    drag_paths_.clear();
+    for (auto &it : items_)
+      if (sel_.count(it.uri) && is_file(it)) drag_paths_.push_back(it.path);
+    drag_state_ = DRAG_ITEMS;
+    drag_local_ = true;
+    drag_offset_x_ = press_x_ - items_[size_t(press_item_)].x;
+    drag_offset_y_ = press_y_ - items_[size_t(press_item_)].y;
+    drag_cell_ = cell_of(items_[size_t(press_item_)]);
+    // Only files leave the desktop; Home, Trash and Computer are moved
+    // around on it but never offered to other programs.
+    if (xdnd_ && !drag_paths_.empty())
+      xdnd_->begin_drag(drag_paths_, items_[size_t(press_item_)].icon, icon_, int(drag_paths_.size()),
+                        fl_event_time);
+    redraw();
+  }
+
+  void drag_motion(int xr, int yr, int x, int y) {
+    unsigned mods = mods_from_fl(Fl::event_state());
+    bool local = true;
+    if (xdnd_ && xdnd_->dragging()) local = xdnd_->motion(xr, yr, mods, fl_event_time);
+    drag_local_ = local;
+    drop_target_ = -1;
+    if (local) {
+      int i = item_at(x, y);
+      if (i >= 0 && !is_selected(i) && !drag_paths_.empty()) {
+        TargetKind k = target_kind(i);
+        if (k == TargetKind::Folder || k == TargetKind::Trash || k == TargetKind::Launcher) drop_target_ = i;
+      }
+      drag_cell_ = cell_at(x - drag_offset_x_ + cell_w_ / 2, y - drag_offset_y_ + cell_h_ / 2);
+      cursor(FL_CURSOR_MOVE);
+    } else {
+      cursor(xdnd_->remote_accepts() ? FL_CURSOR_MOVE : FL_CURSOR_DEFAULT);
+    }
+    redraw();
+  }
+
+  void cancel_drag() {
+    if (xdnd_ && xdnd_->dragging()) xdnd_->cancel();
+    drag_state_ = DRAG_NONE;
+    drop_target_ = -1;
+    cursor(FL_CURSOR_DEFAULT);
+    redraw();
+  }
+
+  // Moves the selected icons by the offset the pointer moved the pressed one.
+  void move_selection_to(desk::Cell target) {
+    if (positions_.auto_arrange || press_item_ < 0 || press_item_ >= int(items_.size())) return;
+    desk::Cell origin = cell_of(items_[size_t(press_item_)]);
+    int dc = target.col - origin.col, dr = target.row - origin.row;
+    if (!dc && !dr) return;
+    pin_all_positions();
+    std::set<desk::Cell> taken;
+    std::vector<size_t> moving;
+    for (size_t i = 0; i < items_.size(); ++i) {
+      if (is_selected(int(i))) moving.push_back(i);
+      else taken.insert(cell_of(items_[i]));
+    }
+    // The pressed icon first: it goes exactly where it was dropped.
+    std::stable_sort(moving.begin(), moving.end(),
+                     [&](size_t a, size_t b) { return int(a) == press_item_ && int(b) != press_item_; });
+    for (size_t i : moving) {
+      desk::Cell c = cell_of(items_[i]);
+      c.col = std::max(0, std::min(cols_ - 1, c.col + dc));
+      c.row = std::max(0, std::min(rows_ - 1, c.row + dr));
+      c = nearest_free(c, taken);
+      positions_.set(item_key(items_[i]), c);
+      taken.insert(c);
+    }
+    save_positions();
+    layout_items();
+  }
+
+  void finish_drag(int x, int y) {
+    int ti = drop_target_;
+    bool local = drag_local_;
+    std::vector<std::string> paths = drag_paths_;
+    desk::Cell cell = drag_cell_;
+    unsigned mods = mods_from_fl(Fl::event_state());
+    drag_state_ = DRAG_NONE;
+    drop_target_ = -1;
+    cursor(FL_CURSOR_DEFAULT);
+    if (!local && xdnd_ && xdnd_->dragging()) {
+      xdnd_->drop(fl_event_time);
+      redraw();
+      return;
+    }
+    if (xdnd_) xdnd_->cancel();
+    if (ti >= 0) drop_files(paths, ti, mods, DropAction::Copy, desk::ActionSet(), x, y);
+    else move_selection_to(cell);
+    redraw();
+  }
+
+  // The nearest icon in a direction (icons are placed freely on the grid).
+  int neighbor(int from, int dx, int dy) const {
+    int best = -1;
+    long best_d = 1L << 40;
+    for (size_t j = 0; j < items_.size(); ++j) {
+      if (int(j) == from) continue;
+      long ddx = items_[j].x - items_[size_t(from)].x, ddy = items_[j].y - items_[size_t(from)].y;
+      long primary = dx ? ddx * dx : ddy * dy;
+      if (primary <= 0) continue;
+      long secondary = dx ? std::labs(ddy) : std::labs(ddx);
+      long d = primary + 3 * secondary;
+      if (d < best_d) best_d = d, best = int(j);
+    }
+    return best;
+  }
+
   int handle(int e) override {
     switch (e) {
       case FL_PUSH: {
-        int i = item_at(Fl::event_x(), Fl::event_y());
-        if (i != selected_) {
-          damage_item(selected_);
-          selected_ = i;
-          damage_item(selected_);
+        int x = Fl::event_x(), y = Fl::event_y();
+        int i = item_at(x, y);
+        int state = Fl::event_state();
+        bool ctrl = state & FL_CTRL, shift = state & FL_SHIFT;
+        if (Fl::focus() != this) take_focus();
+        if (drag_state_ == DRAG_ITEMS) cancel_drag();
+        if (Fl::event_button() == FL_RIGHT_MOUSE) {
+          if (i < 0 || !is_selected(i)) select_only(i);
+          context_menu(i, x, y);
+          return 1;
         }
-        if (Fl::event_button() == FL_RIGHT_MOUSE) context_menu(i, Fl::event_x(), Fl::event_y());
-        else if (Fl::event_clicks() && i >= 0) open_item(i);
+        if (Fl::event_button() != FL_LEFT_MOUSE) return 1;
+        if (i < 0) {
+          if (!ctrl) sel_.clear();
+          band_base_ = sel_;
+          selected_ = -1;
+          drag_state_ = DRAG_BAND;
+          band_x0_ = band_x1_ = x;
+          band_y0_ = band_y1_ = y;
+          redraw();
+          return 1;
+        }
+        if (Fl::event_clicks() && !ctrl && !shift) {
+          drag_state_ = DRAG_NONE;
+          open_item(i);
+          return 1;
+        }
+        if (ctrl) {
+          if (is_selected(i)) sel_.erase(items_[size_t(i)].uri);
+          else sel_.insert(items_[size_t(i)].uri);
+        } else if (shift && selected_ >= 0 && selected_ < int(items_.size())) {
+          // Everything in the rectangle between the focused icon and this one.
+          band_base_.clear();
+          band_x0_ = std::min(items_[size_t(selected_)].x, items_[size_t(i)].x) + S(5);
+          band_x1_ = std::max(items_[size_t(selected_)].x, items_[size_t(i)].x) + cell_w_ - S(5);
+          band_y0_ = std::min(items_[size_t(selected_)].y, items_[size_t(i)].y) + S(3);
+          band_y1_ = std::max(items_[size_t(selected_)].y, items_[size_t(i)].y) + cell_h_ - S(5);
+          update_band();
+        } else if (!is_selected(i)) {
+          select_only(i);
+        }
+        selected_ = i;
+        press_item_ = i;
+        press_x_ = x;
+        press_y_ = y;
+        drag_state_ = is_selected(i) ? DRAG_PRESSED : DRAG_NONE;
+        redraw();
+        return 1;
+      }
+      case FL_DRAG: {
+        int x = Fl::event_x(), y = Fl::event_y();
+        if (drag_state_ == DRAG_PRESSED && (std::abs(x - press_x_) > S(6) || std::abs(y - press_y_) > S(6)))
+          start_drag();
+        if (drag_state_ == DRAG_ITEMS) {
+          drag_motion(Fl::event_x_root(), Fl::event_y_root(), x, y);
+        } else if (drag_state_ == DRAG_BAND) {
+          band_x1_ = x;
+          band_y1_ = y;
+          update_band();
+          redraw();
+        }
+        return 1;
+      }
+      case FL_RELEASE: {
+        int state = Fl::event_state();
+        if (drag_state_ == DRAG_ITEMS) {
+          finish_drag(Fl::event_x(), Fl::event_y());
+        } else if (drag_state_ == DRAG_PRESSED) {
+          // A plain click inside a multiple selection selects that icon only.
+          if (!(state & (FL_CTRL | FL_SHIFT)) && sel_.size() > 1) select_only(press_item_);
+        } else if (drag_state_ == DRAG_BAND) {
+          redraw();
+        }
+        drag_state_ = DRAG_NONE;
         return 1;
       }
       case FL_ENTER:
@@ -1013,6 +1762,10 @@ class Desktop : public sde::BufferedWindow {
       case FL_UNFOCUS:
         return 1;
       case FL_KEYBOARD:
+        if (Fl::event_key() == FL_Escape && drag_state_ != DRAG_NONE) {
+          cancel_drag();
+          return 1;
+        }
         return key(Fl::event_key(), Fl::event_state());
       default:
         return sde::BufferedWindow::handle(e);
@@ -1054,8 +1807,22 @@ class Desktop : public sde::BufferedWindow {
   WallpaperWorker worker_;
   bool wallpaper_checked_ = false, config_dirty_ = true;
   std::string desktop_dir_, watched_dir_;
-  int selected_ = -1, hover_ = -1;
+  int selected_ = -1, hover_ = -1;  // keyboard focus and hovered icon
+  std::set<std::string> sel_, band_base_;  // selected items (by uri)
   int cell_w_ = 96, cell_h_ = 96, icon_ = 0;
+  int rows_ = 1, cols_ = 1, grid_x_ = 0, grid_y_ = 0;
+  desk::PositionStore positions_;
+  bool positions_dirty_ = false;
+  std::map<uint32_t, std::string> moved_from_;  // inotify rename cookies
+  enum DragState { DRAG_NONE, DRAG_PRESSED, DRAG_ITEMS, DRAG_BAND };
+  DragState drag_state_ = DRAG_NONE;
+  int press_item_ = -1, press_x_ = 0, press_y_ = 0, drag_offset_x_ = 0, drag_offset_y_ = 0;
+  int band_x0_ = 0, band_y0_ = 0, band_x1_ = 0, band_y1_ = 0;
+  int drop_target_ = -1;
+  bool drag_local_ = true;
+  desk::Cell drag_cell_;
+  std::vector<std::string> drag_paths_;
+  std::unique_ptr<desk::Xdnd> xdnd_;
   int inotify_fd_ = -1, watch_ = -1;
   double draw_t0_ = 0, wallpaper_t0_ = 0;
 };

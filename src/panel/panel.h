@@ -21,6 +21,7 @@
 
 class AlarmPopup;
 class AppMenu;
+class NotifyFlyout;
 class PanelPopup;
 class QuickSettings;
 class SearchFlyout;
@@ -28,6 +29,9 @@ class SniHost;
 class StatusFlyout;
 class TaskPreview;
 class Tray;
+namespace sde {
+class ContextMenu;
+}
 
 struct Task {
   Window win = 0;
@@ -68,6 +72,9 @@ class Panel : public sde::BufferedWindow {
   // The clock's popup: alarms (sde-panel --alarms); with |add| it opens the
   // editor for a new alarm. Toggles.
   void open_alarms(bool add = false);
+  // alpha52: the notifications button's flyout (toggles) and closing it.
+  void open_notifications();
+  void close_notifications();
   bool native_popup_input() const { return input_display_ != nullptr; }
   // The status icon of |section| needs a repaint (network LED, touchpad).
   void status_icon_changed(const std::string &section);
@@ -110,6 +117,13 @@ class Panel : public sde::BufferedWindow {
   // Shows a menu next to the panel (above it, or below a top panel), with its
   // left edge at root x |root_x|. Returns the picked item or nullptr.
   const struct Fl_Menu_Item *popup_menu(const struct Fl_Menu_Item *items, int root_x);
+  // alpha52: shows |menu| like popup_menu() and runs the chosen action. |id|
+  // names the menu for the UI tests (SDE_PANEL_QA_DIR/context-menu.txt).
+  bool run_menu(const std::string &id, sde::ContextMenu &menu, int root_x);
+  // popup_menu() for a menu built elsewhere (a tray item's dbusmenu), named
+  // |id| for the UI tests like run_menu().
+  const struct Fl_Menu_Item *popup_named(const std::string &id, const struct Fl_Menu_Item *items,
+                                         int root_x);
 
   // Bookkeeping for the pop-up windows.
   void popup_opened(PanelPopup *p);
@@ -123,7 +137,7 @@ class Panel : public sde::BufferedWindow {
   static bool safe_mode;
 
  private:
-  enum Hit { NONE, START, SEARCH, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP };
+  enum Hit { NONE, START, SEARCH, PINNED, TASK, TRAY_ITEM, STATUS, CLOCK, ACTION_CENTER, SHOW_DESKTOP, NOTIFY };
   enum StatusIcon {
     INPUT_STATUS,
     BLUETOOTH_STATUS,
@@ -195,9 +209,19 @@ class Panel : public sde::BufferedWindow {
   static void thumbnail_tick(void *);
   std::unique_ptr<TaskPreview> preview_;
   Window preview_pending_ = 0;
-  void pinned_menu(int index);
   void tray_item_clicked(int index, int button);
-  void show_context_menu();
+  // alpha52 right-click menus, one per kind of panel item (panel_menus.cpp).
+  void context_menu_for(const Target &t);
+  void show_context_menu();  // the empty panel area
+  void start_context_menu();
+  void search_context_menu();
+  void pinned_menu(int index);
+  void task_menu(int index);
+  void status_menu(int index);
+  void clock_menu();
+  void notifications_menu(bool action_center);
+  void notifications_items(sde::ContextMenu &m);
+  void power_items(sde::ContextMenu &m);
   bool handle_x(const XEvent &e);
   void save_pins();
   bool find_entry_for(const Task &t, sde::DesktopEntry &out) const;
@@ -247,6 +271,7 @@ class Panel : public sde::BufferedWindow {
   // Network, Drives and Touchpad flyouts (status_flyout.h).
   std::unique_ptr<StatusFlyout> status_flyout_;
   std::unique_ptr<AlarmPopup> alarms_;
+  std::unique_ptr<NotifyFlyout> notify_flyout_;
   std::unique_ptr<Tray> tray_;
   std::unique_ptr<SniHost> sni_;
   PanelPopup *open_popup_ = nullptr;
@@ -259,6 +284,7 @@ class Panel : public sde::BufferedWindow {
   int icon_ = 24, tray_icon_ = 22;
   int search_x_ = 0, search_w_ = 0, search_mode_ = 0;  // mode: 0 hidden, 1 icon, 2 box
   int action_x_ = 0, action_w_ = 0;
+  int notify_x_ = 0, notify_w_ = 0;  // the notifications button (alpha52)
   std::vector<StatusIcon> status_icons_;
   bool compact_status_ = false;
   Display *input_display_ = nullptr;

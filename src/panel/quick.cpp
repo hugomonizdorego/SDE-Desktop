@@ -2855,21 +2855,9 @@ void QuickSettings::calendar_part(SectionBuilder &b, int row, bool tz, bool agen
     b.end_card(card);
   }
   if (agenda) agenda_card(b);
-}
-
-// The notification list moves out of the Action Center (its own panel
-// button); until then this card is the first part left out for room.
-void QuickSettings::notifications_part(SectionBuilder &b) {
-  const auto &cfg = Panel::instance->config();
-  if (!cfg.get_bool("action_center", "show_notifications", true)) return;
-  int pad = b.pad, inner = b.inner;
-  auto *card = b.start_card(_("Notifications"));
-  icon_button(pad + inner - S(38), card->y() + S(4), S(32), S(28), _("Notification settings"),
-              gear_icon(), b.launch({"sde-settings", "--page", "notifications"}));
-  b.info(cfg.get_bool("notifications", "do_not_disturb", false)
-             ? _("Do Not Disturb is on: notifications are silenced.")
-             : _("No new notifications"));
-  b.end_card(card);
+  // alpha52: the notifications moved to the panel's notifications button
+  // (notify_center.h); the Action Center keeps toggles, sliders, media,
+  // calendar and power.
 }
 
 // ------------------------------------------------------------- time zone
@@ -3020,7 +3008,9 @@ void QuickSettings::agenda_card(SectionBuilder &b) {
                 [this] { later([this] { agenda_edit(0); }); });
   b.y += S(32);
   auto items = agenda::items_on(Alarms::get().items(), agenda_year_, agenda_month_, agenda_day_);
-  if (items.empty() && !agenda_form_) b.info(_("Nothing planned. Add an item with +."));
+  // Tight layouts (small screens) leave out the empty-day hint.
+  if (items.empty() && !agenda_form_ && !agenda_tight_)
+    b.info(_("Nothing planned. Add an item with +."));
   for (const auto &it : items) {
     std::string text =
         (it.timed() ? format("%02d:%02d", it.hour, it.minute) : std::string(_("All day"))) +
@@ -3262,6 +3252,7 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
   if (plan.two && colw < S(296)) return false;
   header_ = 0;
   footer_ = power_open_ ? S(92) : S(48);
+  agenda_tight_ = plan.cal_row <= 22;
 
   // Left column: the controls.
   begin();
@@ -3283,7 +3274,6 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
   if (plan.media == 1) media_part(bl);
   if (!plan.two) {
     calendar_part(bl, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
-    if (plan.notif) notifications_part(bl);
   }
   left->end();
   int lh = bl.y;
@@ -3298,7 +3288,6 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
     if (plan.bright_right && brightness_open_) brightness_settings(br);
     if (plan.media >= 2) media_part(br, plan.media == 3);
     calendar_part(br, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
-    if (plan.notif) notifications_part(br);
     right->end();
     rh = br.y;
   }
@@ -3369,9 +3358,7 @@ void QuickSettings::rebuild_center() {
   // smaller calendar rows; then what matters least goes first.
   std::vector<CenterPlan> plans;
   if (exp) {
-    plans.push_back({"expanded", false, true, m, true, true, true, true, 29});
     plans.push_back({"expanded", false, true, m, true, true, true, false, 29});
-    plans.push_back({"expanded-two", true, true, m, true, true, true, true, 29});
     plans.push_back({"expanded-two", true, true, m, true, true, true, false, 29});
     if (media) plans.push_back({"expanded-two", true, true, 2, true, true, true, false, 29});
     plans.push_back({"expanded-two", true, true, m, true, true, true, false, 24});
@@ -3384,7 +3371,9 @@ void QuickSettings::rebuild_center() {
   }
   if (exp || calendar_view_ || agenda_form_) {
     // The calendar and agenda (or the agenda form) were asked for: they
-    // stay, the media card goes (it is in the compact view).
+    // stay, the media card goes (it is in the compact view). The time zone
+    // row too, with week rows of 22 px and a one-line agenda.
+    plans.push_back({"calendar-two", true, false, 0, true, true, true, false, 22});
     plans.push_back({"calendar-two", true, false, 0, true, false, true, false, 24});
     plans.push_back({"calendar-two", true, false, 0, true, false, false, false, 24});
     plans.push_back({"calendar", false, false, 0, true, false, false, false, 24});
@@ -3455,7 +3444,8 @@ void QuickSettings::rebuild_center() {
       if (build_center_plan(plan, limit, W, H) && H <= limit) {
         center_plan_ = plan.name + (plan.media == 2 ? "+media-right" : "") +
                        (plan.media == 3 ? "+mini-media" : "") +
-                       (plan.calendar && plan.cal_row != 29 ? "+small-calendar" : "");
+                       (plan.calendar && plan.cal_row != 29 ? "+small-calendar" : "") +
+                       (plan.tz ? "+timezone" : "");
         done = true;
         break;
       }

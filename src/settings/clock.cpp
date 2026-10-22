@@ -125,7 +125,8 @@ class StylePicker : public Fl_Widget {
   }
   void choose(int i) {
     selected_ = i;
-    settings_config().set("clock", "style", clockface::style_name(kStyles[i]));
+    settings_config().set("action_center", "clock_style", clockface::style_name(kStyles[i]));
+    settings_config().unset("clock", "style");
     apply_change();
     redraw();
   }
@@ -167,8 +168,9 @@ void build_clock_page(Page *page) {
   page->choice_row(_("Time format"), {_("Automatic"), _("24-hour"), _("12-hour")},
                    format == "24h" ? 1 : format == "12h" ? 2 : 0, [](int v) { set_format(v); },
                    _("Automatic follows the language and region."));
-  page->switch_row(_("Show seconds"), cfg.get_bool("clock", "seconds", false), [](bool on) {
-    settings_config().set("clock", "seconds", on ? "true" : "false");
+  page->switch_row(_("Show seconds"), clockface::Settings::from_config(cfg).seconds, [](bool on) {
+    settings_config().set("panel", "clock_seconds", on ? "true" : "false");
+    settings_config().unset("clock", "seconds");
     apply_change();
   });
   page->switch_row(_("Show the date on the panel"), cfg.get_bool("panel", "show_date", true),

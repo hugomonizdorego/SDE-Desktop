@@ -185,3 +185,22 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+
+# Desktop drag and drop: drop actions, URI lists, positions, file operations.
+add_executable(sde-desktop-tests test_desktop.cpp)
+target_link_libraries(sde-desktop-tests PRIVATE sde-desktop-model)
+add_test(NAME sde-desktop-model COMMAND sde-desktop-tests)
+# Test helper: an independent XDND source and target (Xlib only).
+find_package(X11 REQUIRED)
+add_executable(sde-xdnd-peer xdnd_peer.cpp)
+target_link_libraries(sde-xdnd-peer PRIVATE ${X11_LIBRARIES})
+if(SDE_XVFB)
+  add_test(NAME sde-desktop-dnd COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_desktop_dnd.py $<TARGET_FILE:sde-desktop> $<TARGET_FILE:sde-xdnd-peer>)
+  set_tests_properties(sde-desktop-dnd PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
+
+# Settings > Default Applications: categories, mimeapps.list, defaults.
+add_executable(sde-default-apps-tests test_default_apps.cpp)
+target_link_libraries(sde-default-apps-tests PRIVATE sde-settings-model)
+add_test(NAME sde-default-apps COMMAND sde-default-apps-tests)

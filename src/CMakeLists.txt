@@ -70,16 +70,22 @@ add_executable(sde-panel
   panel/status_flyout.cpp
   panel/drives.cpp
   panel/touchpad_monitor.cpp
-  panel/preview.cpp)
+  panel/preview.cpp
+  panel/panel_menus.cpp
+  panel/notify_center.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
   target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
 endif()
 
-add_executable(sde-desktop desktop/main.cpp)
+# Desktop drag and drop model and file operations (unit tested).
+add_library(sde-desktop-model STATIC desktop/desktop_model.cpp desktop/file_ops.cpp)
+target_include_directories(sde-desktop-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/desktop)
+target_link_libraries(sde-desktop-model PUBLIC sde-common)
+add_executable(sde-desktop desktop/main.cpp desktop/xdnd.cpp)
 # WebP and other pixbuf wallpapers are decoded with the Gallery core.
-target_link_libraries(sde-desktop PRIVATE sde-gallery-core sde-common)
+target_link_libraries(sde-desktop PRIVATE sde-desktop-model sde-gallery-core sde-common)
 # Function names in crash backtraces.
 set_target_properties(sde-panel sde-desktop PROPERTIES ENABLE_EXPORTS ON)
 
@@ -93,6 +99,7 @@ add_executable(sde-settings
   settings/touchpad.cpp
   settings/network.cpp
   settings/clock.cpp
+  settings/default_apps_page.cpp
   # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
   panel/timezone.cpp
   panel/weather.cpp
@@ -104,7 +111,7 @@ add_executable(sde-settings
 # tested; thumbnails come from the Gallery core (decoding threads and the
 # freedesktop.org thumbnail cache).
 add_library(sde-settings-model STATIC settings/gpu.cpp settings/wallpapers.cpp
-  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp)
+  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp settings/default_apps.cpp)
 target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/settings)
 target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common)
 target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)

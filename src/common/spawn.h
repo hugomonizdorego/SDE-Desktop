@@ -19,7 +19,13 @@ bool launch_entry(const DesktopEntry &entry, const std::vector<std::string> &fil
 // Opens a file, folder or URL with the user's preferred application.
 bool open_uri(const std::string &uri);
 
-// Starts the preferred terminal emulator, optionally running |argv|.
+// Starts the preferred terminal emulator ([applications] terminal in
+// sde.conf, else x-terminal-emulator and the usual ones), optionally
+// running |argv|.
 bool open_terminal(const std::vector<std::string> &argv = {}, const std::string &work_dir = "");
+
+// The argument a terminal wants before a command ("-e", "--", "-x" or ""):
+// X-TerminalArgExec= of its desktop entry when present.
+std::string terminal_exec_arg(const std::string &program, const DesktopEntry *entry = nullptr);
 
 }  // namespace sde

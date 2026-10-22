@@ -1,7 +1,7 @@
 # Latest SDE screenshots
 
 Captured automatically by CI from the native programs on a virtual X11
-display (commit `cfdb7a447e1aed93c6d3ca824e5dda4709cc74aa`). Network, sound and Bluetooth values are test fixtures.
+display (commit `bfecac78ccc31569027db4823c47bc0ceda51b14`). Network, sound and Bluetooth values are test fixtures.
 
 ![01-action-center](01-action-center.png)
 
@@ -24,6 +24,4 @@ display (commit `cfdb7a447e1aed93c6d3ca824e5dda4709cc74aa`). Network, sound and 
 ![10-taca](10-taca.png)
 
 ![11-calculator](11-calculator.png)
-
-![12-update](12-update.png)
 

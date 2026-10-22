@@ -22,6 +22,9 @@ struct DesktopEntry {
   std::string startup_wm_class;  // StartupWMClass=, matches WM_CLASS of windows
   std::vector<std::string> keywords;
   std::vector<std::string> categories;
+  std::vector<std::string> mime_types;  // MimeType=
+  std::string exec_arg;                 // X-TerminalArgExec= (or X-ExecArg=)
+  bool has_exec_arg = false;
   std::vector<std::string> only_show_in;
   std::vector<std::string> not_show_in;
   bool terminal = false;

@@ -2,10 +2,12 @@
 // Clock faces (alpha52) shared by the panel clock and the Action Center's
 // clock hero: one setting for both,
 //
-//   [clock] style=digital|blink|led|analog
-//           seconds=false
-//           format=auto|24h|12h   (auto: the locale's time format; an
+//   [action_center] clock_style=digital|blink|led|analog
+//   [panel] clock_seconds=false
+//   [clock] format=auto|24h|12h   (auto: the locale's time format; an
 //                                  older [panel] clock_24h still counts)
+//   ([clock] style and [clock] seconds are read as aliases when the keys
+//   above are not set.)
 //
 //  * digital: plain text "21:30";
 //  * blink: the same with the colon blinking once a second;

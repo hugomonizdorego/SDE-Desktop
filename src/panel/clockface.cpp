@@ -62,11 +62,15 @@ bool use_24h(const Config &cfg) {
 
 Settings Settings::from_config(const Config &cfg) {
   Settings s;
-  std::string style = cfg.get("clock", "style", "");
-  // Older configurations: [action_center] clock_style=analog.
-  if (trim(style).empty()) style = cfg.get("action_center", "clock_style", "digital");
+  // [action_center] clock_style (the clock's right-click menu, Settings);
+  // [clock] style is read as an alias when it is not set.
+  std::string style = cfg.get("action_center", "clock_style", "");
+  if (trim(style).empty()) style = cfg.get("clock", "style", "digital");
   s.style = parse_style(style);
-  s.seconds = cfg.get_bool("clock", "seconds", false);
+  // [panel] clock_seconds, with [clock] seconds as its alias.
+  std::string seconds = trim(cfg.get("panel", "clock_seconds", ""));
+  s.seconds = seconds.empty() ? cfg.get_bool("clock", "seconds", false)
+                              : cfg.get_bool("panel", "clock_seconds", false);
   s.h24 = use_24h(cfg);
   s.show_date = cfg.get_bool("panel", "show_date", true);
   return s;

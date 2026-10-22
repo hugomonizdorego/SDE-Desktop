@@ -23,7 +23,7 @@ p.add_argument('--scale',type=int,default=100)
 p.add_argument('--display',type=int,default=96)
 p.add_argument('--tcp-display',action='store_true')
 p.add_argument('--tcp-bus',action='store_true',help='Private localhost bus for containers without Unix sockets')
-p.add_argument('--only',default='',help='Run only one group of checks (action-center: the alpha52 Action Center and clock checks)')
+p.add_argument('--only',choices=['a52','action-center'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks')
 a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
@@ -445,10 +445,10 @@ def ac52_checks():
     assert '@sky-day' in L and not any(k.startswith('@weather-') for k in L);shot('52-ac-sky-day')
     # Clock styles: the panel clock and the hero follow [clock] style.
     for style in ['digital','blink','led','analog']:
-        conf52(f'expanded=false\n[clock]\nstyle={style}\n');ac();L=fit('compact '+style)
+        conf52(f'expanded=false\nclock_style={style}\n');ac();L=fit('compact '+style)
         assert '@clock-'+style in L,[k for k in L if k.startswith('@clock')]
         item('SDE Panel','clock',active=False);shot('52-clock-'+style)
-    conf52('expanded=false\n[clock]\nstyle=led\nseconds=true\nformat=12h\n');ac();fit('led 12h seconds');shot('52-clock-led-12h-seconds')
+    conf52('expanded=false\nclock_style=led\n[clock]\nseconds=true\nformat=12h\n');ac();fit('led 12h seconds');shot('52-clock-led-12h-seconds')
     conf52('expanded=false\n[clock]\nstyle=analog\nseconds=true\n');ac();fit('analog seconds');shot('52-clock-analog-seconds')
     # Units: the hero's temperature (the "rain" fixture: 21 °C, 12 km/h).
     for unit,wind,expect in [('celsius','kmh','21°C'),('fahrenheit','mph','70°F'),('kelvin','ms','294 K'),('auto','knots','21°C')]:
@@ -752,6 +752,193 @@ def drive_checks():
     waitfor(lambda:(home/'service.log').read_text().count('UDISKS Mount')>mounts,'new drive not mounted automatically')
     waitfor(lambda:'status:drives' in layout('SDE Panel'),'Drives icon missing for the new drive')
     time.sleep(.5);shot('10-drives-inserted')
+def menu_layout():return layout('context-menu')
+def menu_seq():return next((int(k[5:]) for k in menu_layout() if k.startswith('@seq:')),0)
+def menu_items(sub=False):
+    """The open context menu's items: [(label, active, checked)], top level
+    (or the submenu entries with sub=True, "Parent/label")."""
+    out=[]
+    for k,v in menu_layout().items():
+        if k.startswith('sub:' if sub else 'item:'):
+            label=k.split(':',1)[1];on=label.endswith(':on')
+            out.append((label[:-3] if on else label,bool(v[4]),on))
+    return out
+def right_click_at(x,y,expect):
+    """Right-clicks root x, y and waits for the menu named |expect|."""
+    for attempt in range(2):
+        seq=menu_seq();run('xdotool','mousemove',x,y,'click','3')
+        for _ in range(40):
+            if menu_seq()>seq:break
+            time.sleep(.08)
+        if menu_seq()>seq:break
+    waitfor(lambda:menu_seq()>seq,f'no context menu after a right click for {expect}')
+    ids=[k for k in menu_layout() if k.startswith('@menu:')]
+    assert ids==['@menu:'+expect],(expect,ids,menu_items())
+    time.sleep(.3);return menu_items()
+def right_click_panel(name,expect):
+    x,y=panel_button(name);return right_click_at(x,y,expect)
+def close_menu():run('xdotool','key','Escape');time.sleep(.3)
+def labels(items):return [i[0] for i in items]
+def pick(items,label):
+    """Chooses |label| in the open menu with the keyboard (FLTK skips
+    inactive items)."""
+    active=[i[0] for i in items if i[1]]
+    assert label in active,(label,items)
+    run('xdotool','key',*(['Down']*(active.index(label)+1)),'Return');time.sleep(.5)
+def notify(app,summary,body='',*extra):
+    run('notify-send','-a',app,*extra,summary,body)
+def empty_spot():
+    """Root coordinates of empty panel space: left of the tray and status icons."""
+    L=layout('SDE Panel');pg=geom(panel)
+    left=min(v[0] for k,v in L.items() if k.startswith(('status:','tray-item:','clock')))
+    return pg['x']+left-round(40*scale),pg['y']+pg['h']//2
+def a52_checks():
+    """alpha52: every panel item has its own right-click menu; search box,
+    icon or hidden from the search's menu; notifications in the panel."""
+    import shutil
+    if '_NET_SUPPORTING_WM_CHECK(WINDOW)' not in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout:
+        wm_bin=shutil.which('sde-wm') or 'openbox'
+        rc=next((str(c) for c in (Path('/usr/share/sde/openbox/rc.xml'),Path(__file__).resolve().parent.parent/'data/openbox/rc.xml') if c.exists()),None)
+        spawn(wm_bin,'--replace','--sm-disable',*(['--config-file',rc] if rc else []))
+        waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'the window manager did not start')
+    config(overflow=False);reload()
+    run('xdotool','mousemove',W//2,H//2);time.sleep(.3)
+    # 1) Per-item menus.
+    expected={
+        'start':(['Settings','System Monitor','Run Command...','Software Updater','Lock','Log Out...','Power','Panel Settings...'],'40-menu-start'),
+        'search':(['Show Search Box','Show Search Icon Only','Hidden','Search Settings...'],'40-menu-search'),
+        'clock':(['Adjust Date and Time...','Sync Time Zone','Clock Style','Show Seconds','24-Hour Clock','Show the Date','Alarms','Calendar'],'40-menu-clock'),
+        'notifications':(['Do Not Disturb','Clear All Notifications','Notification Settings...'],'40-menu-notifications'),
+        'action-center':(['Open Action Center','Do Not Disturb','Clear All Notifications','Notification Settings...','Action Center Settings...'],'40-menu-action-center'),
+        'status:network':(['Wi-Fi','Airplane Mode','Troubleshoot','Network Settings...'],'40-menu-network'),
+        'status:sound':(['Mute','Open Mixer','Sound Settings...'],'40-menu-sound'),
+        'status:bluetooth':(['Bluetooth','Show Devices','Bluetooth Settings...'],'40-menu-bluetooth'),
+        'status:power':(['Power Settings...'],'40-menu-battery'),
+        'status:keyboard':(['Keyboard Settings...'],'40-menu-keyboard'),
+        'status:touchpad':(['Touchpad','Touchpad Settings...'],'40-menu-touchpad'),
+    }
+    # Small screens: [panel] search=auto is an icon there.
+    search_name='search' if 'search' in layout('SDE Panel') else 'search-icon'
+    for name,(want,png) in expected.items():
+        menu_id=name
+        if name=='search':name=search_name
+        if name not in layout('SDE Panel'):print('A52 skip (not on the panel):',name,flush=True);continue
+        items=right_click_panel(name,menu_id)
+        missing=[w for w in want if w not in labels(items)]
+        assert not missing,(name,missing,items)
+        assert 'About SDE' not in labels(items),(name,'generic panel menu',items)
+        print(f'A52 menu {name}: {", ".join(labels(items))}',flush=True)
+        shot(png);close_menu()
+    sub=None
+    right_click_panel('start','start');sub=menu_items(sub=True);close_menu()
+    assert ['Power/Sleep','Power/Restart','Power/Shut Down']==[s[0] for s in sub],sub
+    right_click_panel('status:power','status:power');bat=menu_items();close_menu()
+    assert any(l.startswith('Battery ') for l in labels(bat)) and 'Balanced' in labels(bat),bat
+    # The empty panel: the generic menu.
+    pg=geom(panel)
+    items=right_click_at(*empty_spot(),'panel')
+    for w in ['Show Desktop','Search','Lock the Panel','System Monitor','Panel Settings...','About SDE']:assert w in labels(items),(w,items)
+    shot('40-menu-panel');close_menu()
+    # Choosing items runs them: Mute, Lock the Panel, Show Seconds.
+    items=right_click_panel('status:sound','status:sound');pick(items,'Mute')
+    waitfor(lambda:commands('AUDIO set-sink-mute'),'Mute from the sound menu did not mute')
+    checks=(home/'service.log').read_text().count('NM CheckConnectivity')
+    items=right_click_panel('status:network','status:network');pick(items,'Troubleshoot')
+    waitfor(lambda:(home/'service.log').read_text().count('NM CheckConnectivity')>checks,'Troubleshoot from the network menu did not check the connection')
+    items=right_click_panel('clock','clock');pick(items,'Show Seconds')
+    waitfor(lambda:'clock_seconds=true' in conf(),'Show Seconds not saved')
+    time.sleep(1.2);shot('41-clock-seconds')
+    items=right_click_panel('clock','clock');assert ('Show Seconds',True,True) in items,items;pick(items,'Show Seconds')
+    waitfor(lambda:'clock_seconds=false' in conf(),'Show Seconds not turned off')
+    items=right_click_panel('status:touchpad','status:touchpad') if 'status:touchpad' in layout('SDE Panel') else None
+    if items:close_menu()
+    # Taskbar buttons: the windows of the application, pin, new window,
+    # minimize, maximize, workspaces, close.
+    window=str(a.test_dir.resolve()/'sde-preview-window')
+    w1=sp.Popen([window,'SDE Menu QA One','2563EB'],env=e,stdout=sp.DEVNULL);w2=sp.Popen([window,'SDE Menu QA Two','16A34A'],env=e,stdout=sp.DEVNULL);processes.extend([w1,w2])
+    find('^SDE Menu QA One$');find('^SDE Menu QA Two$')
+    def task_button(title):return next((v for k,v in layout('SDE Panel').items() if k.startswith('task:'+title)),None)
+    r=waitfor(lambda:task_button('SDE Menu QA One'),'no task button');time.sleep(.5);r=task_button('SDE Menu QA One')
+    seq=menu_seq();run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
+    waitfor(lambda:menu_seq()>seq,'no taskbar menu');time.sleep(.3)
+    ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids and ids[0].startswith('@menu:task:'),ids
+    items=menu_items()
+    for want in ['SDE Menu QA One','SDE Menu QA Two','Minimize','Maximize','Close Window']:assert want in labels(items),(want,items)
+    assert any(l.startswith('Close All') for l in labels(items)),items
+    print('A52 menu task:',', '.join(labels(items)),flush=True);shot('42-menu-task')
+    pick(items,'Minimize')
+    waitfor(lambda:any(k.startswith('task:SDE Menu QA One:minimized') for k in layout('SDE Panel')),'Minimize from the taskbar menu did nothing')
+    r=task_button('SDE Menu QA One')
+    seq=menu_seq();run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3');waitfor(lambda:menu_seq()>seq,'no taskbar menu')
+    items=menu_items();assert 'Restore' in labels(items),items
+    pick(items,next(l for l in labels(items) if l.startswith('Close All')))
+    waitfor(lambda:w1.poll() is not None and w2.poll() is not None,'Close All Windows did not close both windows')
+    # Tray items: the application's own dbusmenu.
+    t=waitfor(lambda:next((k for k in layout('SDE Panel') if k.startswith('tray-item:')),None),'no tray item on the panel')
+    r=layout('SDE Panel')[t]
+    seq=menu_seq();run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
+    waitfor(lambda:menu_seq()>seq,'no dbusmenu for the tray item');time.sleep(.3)
+    ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids[0].startswith('@menu:tray:'),ids
+    print('A52 menu',ids[0][6:],':',', '.join(labels(menu_items())),flush=True);shot('43-menu-tray-dbusmenu');close_menu()
+    # 2) Search: box, icon only, hidden (Super still searches), back.
+    items=right_click_panel(search_name,'search')
+    assert ('Show Search Box' if search_name=='search' else 'Show Search Icon Only',True,True) in items,items
+    pick(items,'Show Search Icon Only')
+    waitfor(lambda:'search=icon' in conf() and 'search-icon' in layout('SDE Panel'),'search icon mode not applied')
+    shot('44-search-icon');items=right_click_panel('search-icon','search');assert ('Show Search Icon Only',True,True) in items,items
+    pick(items,'Hidden')
+    waitfor(lambda:'search=hidden' in conf() and 'search' not in layout('SDE Panel') and 'search-icon' not in layout('SDE Panel'),'hidden search mode not applied')
+    shot('44-search-hidden')
+    command(['--menu'],'SDE Menu');time.sleep(.6);run('xdotool','type','--delay','40','zeal')
+    waitfor(lambda:'query:zeal' in layout('SDE Search'),'Super did not search with the search hidden')
+    shot('44-search-hidden-super');escape('SDE Search')
+    # The panel menu's Search submenu brings it back.
+    items=right_click_at(*empty_spot(),'panel')
+    active=[i[0] for i in items if i[1]]
+    run('xdotool','key',*(['Down']*(active.index('Search')+1)),'Right');time.sleep(.4);run('xdotool','key','Return');time.sleep(.5)
+    waitfor(lambda:'search=box' in conf(),"the panel menu's Search submenu did not bring the search box back")
+    waitfor(lambda:'search=box' in conf() and ('search' in layout('SDE Panel') or (W<1200 and 'search-icon' in layout('SDE Panel'))),'search box did not come back')
+    shot('44-search-box')
+    # 3) Notifications: badge, flyout grouped by application, dismiss, clear, DND.
+    # Earlier checks (alarms, agenda, drives) left notifications: clear the
+    # history over D-Bus (org.sde.Notifications) first.
+    run('gdbus','call','--session','--dest','org.freedesktop.Notifications','--object-path','/org/freedesktop/Notifications','--method','org.sde.Notifications.Clear')
+    waitfor(lambda:'@badge:0' in layout('SDE Panel'),'history not cleared over D-Bus')
+    notify('QA Chat','Hello from Ada','Lunch at noon?');notify('QA Chat','Second message','See you there');notify('QA Mail','New mail','Quarterly report')
+    waitfor(lambda:'@badge:3' in layout('SDE Panel'),'unread count not 3: '+str([k for k in layout('SDE Panel') if k.startswith('@badge')]))
+    time.sleep(.5);shot('45-notifications-badge')
+    fl=click_panel('notifications','^Notifications$');time.sleep(.6)
+    for name in ['Notification Hello from Ada','Notification Second message','Notification New mail','Clear QA Chat','Clear QA Mail','Clear all','Do Not Disturb','Notification settings...']:item('Notifications',name,active=False)
+    L=list(layout('Notifications'));assert L.index('Notification Second message')<L.index('Notification Hello from Ada'),'not newest first'
+    flyout_bounds_simple(fl);shot('46-notifications-flyout')
+    assert not visible('^Action Center$')
+    press('Notifications','Dismiss Hello from Ada')
+    waitfor(lambda:'Notification Hello from Ada' not in layout('Notifications') and '@count:2' in layout('Notifications'),'dismiss did not remove the notification')
+    escape('Notifications');waitfor(lambda:'@badge:0' in layout('SDE Panel'),'badge not cleared after opening the flyout')
+    fl=click_panel('notifications','^Notifications$');time.sleep(.4)
+    press('Notifications','Clear all');waitfor(lambda:'@count:0' in layout('Notifications'),'Clear all left notifications')
+    item('Notifications','No new notifications',active=False);shot('47-notifications-empty')
+    press('Notifications','Do Not Disturb');waitfor(lambda:'do_not_disturb=true' in conf(),'DND not saved')
+    waitfor(lambda:'@dnd:on' in layout('SDE Panel'),'panel does not show DND')
+    escape('Notifications')
+    notify('QA Chat','Silenced','while DND is on');time.sleep(.8)
+    assert not visible('^Notification$'),'bubble shown during DND'
+    shot('48-notifications-dnd')
+    fl=click_panel('notifications','^Notifications$');time.sleep(.4)
+    item('Notifications','Notification Silenced',active=False);shot('48-notifications-dnd-flyout');escape('Notifications')
+    items=right_click_panel('notifications','notifications');assert ('Do Not Disturb',True,True) in items,items
+    pick(items,'Do Not Disturb');waitfor(lambda:'do_not_disturb=false' in conf(),'DND not turned off from the menu')
+    items=right_click_panel('notifications','notifications');pick(items,'Clear All Notifications')
+    waitfor(lambda:'@badge:0' in layout('SDE Panel'),'menu Clear All failed')
+    # The Action Center no longer lists notifications.
+    ac=command(['--action-center'],'Action Center');time.sleep(.5)
+    assert 'Notification settings' not in layout('Action Center') and 'No new notifications' not in layout('Action Center'),'notifications still in the Action Center'
+    escape('Action Center')
+    print('PANEL a52: per-item context menus (start, search, pinned/task, status icons, clock, notifications, Action Center, tray dbusmenu, empty panel), search box/icon/hidden, notifications button (badge, grouped flyout, dismiss, clear all, DND) PASS',flush=True)
+def flyout_bounds_simple(fl):
+    g=geom(fl);pg=geom(panel);size_report('Notifications',g)
+    assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,g
+    assert g['y']+g['h']<=pg['y'] or g['y']>=pg['y']+pg['h'],(g,pg)
 (home/'bin/nmcli').write_text('''#!/usr/bin/env python3
 import sys,os
 from pathlib import Path
@@ -833,6 +1020,8 @@ try:
         ac52_checks();print('PANEL a52: Action Center fits without scrolling (compact, expanded, two columns), clock hero (day/night, weather), clock styles, units PASS',flush=True)
         raise SystemExit(0)
     shot('00-panel-indicators')
+    if a.only=='a52':
+        a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     panel_checks_a50()
     menu_checks()
     search_checks()
@@ -1064,6 +1253,8 @@ try:
     # Last: Sync changes the panel's time zone (alarms and agenda use it).
     config(theme='light');reload();timezone_checks()
     config(moved=False);reload();fl=open_section('tray','Tray');time.sleep(.5);assert parent(str(host))==int(panel),'move_status=false ignored';shot('14-keep-tray-on-panel');escape('Tray')
+    # alpha52, while the NetworkManager/BlueZ fixture and the tray demo run.
+    a52_checks();config();reload()
     fixture.terminate();fixture.wait();sni.terminate();sni.wait();time.sleep(.6)
     assert panel_proc.poll() is None,'service disappearance crashed panel'
     fl=open_section('bluetooth','Bluetooth');shot('15-services-disconnected');escape('Bluetooth')

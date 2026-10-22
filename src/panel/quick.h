@@ -193,7 +193,6 @@ class QuickSettings : public PanelPopup {
   void sliders_part(struct SectionBuilder &b, bool settings = true);
   bool media_part(struct SectionBuilder &b, bool mini = false);
   void calendar_part(struct SectionBuilder &b, int row, bool tz, bool agenda, bool calendar);
-  void notifications_part(struct SectionBuilder &b);
  public:
   // Agenda form actions (used by its buttons).
   void agenda_pick(int year, int month, int day);
@@ -236,6 +235,7 @@ class QuickSettings : public PanelPopup {
   bool rebuild_pending_ = false;
   bool calendar_view_ = false, scroll_to_calendar_ = false;
   bool media_view_ = false;
+  bool agenda_tight_ = false;  // the agenda without its empty-day hint
   // Agenda: the selected date, the calendar's shown month and the draft of
   // the add/edit form (kept across rebuilds).
   int agenda_year_ = 0, agenda_month_ = 0, agenda_day_ = 0, shown_year_ = 0, shown_month_ = 0;

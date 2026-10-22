@@ -492,7 +492,8 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
   menu.push_back(Fl_Menu_Item{});
 
   (void)y;
-  const Fl_Menu_Item *picked = Panel::instance->popup_menu(menu.data(), x);
+  const Fl_Menu_Item *picked =
+      Panel::instance->popup_named("tray:" + display_name(item), menu.data(), x);
   if (!picked || (picked->flags & FL_SUBMENU)) return true;
   DBusMessage *ev = dbus::method(item.service, item.menu_path, iface, "Event");
   {

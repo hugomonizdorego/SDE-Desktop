@@ -157,6 +157,10 @@ bool DesktopEntry::load(const std::string &file, const std::string &file_id) {
   url = unescape(get("URL"));
   keywords = list_value(localized("Keywords"));
   categories = list_value(get("Categories"));
+  mime_types = list_value(get("MimeType"));
+  // Terminal emulators: the argument before a command (xdg-terminal-exec).
+  has_exec_arg = values.count("X-TerminalArgExec") || values.count("X-ExecArg");
+  exec_arg = unescape(values.count("X-TerminalArgExec") ? get("X-TerminalArgExec") : get("X-ExecArg"));
   only_show_in = list_value(get("OnlyShowIn"));
   not_show_in = list_value(get("NotShowIn"));
   terminal = get("Terminal") == "true";
