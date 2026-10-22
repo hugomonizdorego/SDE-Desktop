@@ -62,6 +62,7 @@ add_executable(sde-panel
   panel/alarm_popup.cpp
   panel/panel_widgets.cpp
   panel/weather.cpp
+  panel/timezone.cpp
   panel/nightlight.cpp
   panel/art.cpp
   panel/status_model.cpp
@@ -84,7 +85,10 @@ add_executable(sde-settings
   settings/system.cpp
   settings/power.cpp
   settings/touchpad.cpp
-  settings/network.cpp)
+  settings/network.cpp
+  # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
+  panel/timezone.cpp
+  panel/weather.cpp)
 # Display-free helpers (graphics card detection, wallpaper scan, pactl/
 # nmcli/bluetoothctl parsers), unit
 # tested; thumbnails come from the Gallery core (decoding threads and the

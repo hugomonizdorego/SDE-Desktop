@@ -35,6 +35,7 @@
 #include "status_flyout.h"
 #include "status_model.h"
 #include "touchpad_monitor.h"
+#include "timezone.h"
 #include "tray.h"
 #include "util.h"
 #include "wm.h"
@@ -894,6 +895,13 @@ void Panel::led_update() {
     led_connection_ = key;
     controls.net_verdict.clear();
     if (!key.empty()) controls.check_network();
+    tz_pending_ = !key.empty();
+  }
+  // [clock] auto_timezone: once the new connection reaches the internet
+  // (at most once an hour; never asks for a password).
+  if (tz_pending_ && n.connected() && !n.no_internet() && !n.portal()) {
+    tz_pending_ = false;
+    tzsync::Sync::get().automatic(cfg_.get_bool("clock", "auto_timezone", false), true);
   }
   bool checker = controls.network_checker();
   // NetworkManager does not check connectivity: a quick probe of our own,

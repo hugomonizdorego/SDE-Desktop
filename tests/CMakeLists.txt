@@ -139,6 +139,12 @@ target_compile_definitions(sde-weather-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJ
 target_link_libraries(sde-weather-tests PRIVATE sde-common)
 add_test(NAME sde-weather-model COMMAND sde-weather-tests)
 
+# Clock "Sync time zone": geolocation answers, zone names, the timedatectl plan.
+add_executable(sde-timezone-tests test_timezone.cpp ../src/panel/timezone.cpp ../src/panel/weather.cpp)
+target_compile_definitions(sde-timezone-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+target_link_libraries(sde-timezone-tests PRIVATE sde-common)
+add_test(NAME sde-timezone-model COMMAND sde-timezone-tests)
+
 # alpha50 panel status rules (tooltips, network LED, keyboard indicators,
 # UDisks2 drives, touchpad properties) and the grab helper of panel-smoke.
 add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
