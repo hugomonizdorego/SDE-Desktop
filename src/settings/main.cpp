@@ -265,7 +265,7 @@ class FamilyCard : public PickCard {
 
  private:
   std::string short_desc() const {
-    if (id_ == "graphite") return N_("Apple HIG · soft depth");
+    if (id_ == "graphite") return N_("Calm colors · soft depth");
     if (id_ == "fluent") return N_("Fluent Design · Mica, Acrylic");
     return N_("Frosted, rounded glass");
   }
@@ -1275,7 +1275,7 @@ void build_appearance(Page *page) {
     std::vector<Item> items;
     items.push_back({"auto", _("Automatic"),
                      auto_theme == "Papirus" || auto_theme == "Papirus-Dark"
-                         ? std::string(_("Papirus, light or dark with the mode"))
+                         ? std::string(_("Papirus, light or dark"))
                          : format(_("%s, follows the mode"), auto_theme.c_str())});
     for (const auto &i : infos) {
       std::string detail = i.id == "Papirus" ? _("Recommended")
@@ -2302,9 +2302,11 @@ void build_history_card(Page *page) {
       page->advance(sh);
     }
     for (const auto &item : e.items) {
-      std::string line = "•  " + item;
-      int ih = Label::measure(line, w - S(12), Label::NORMAL) + S(2);
-      new Label(x + S(12), page->cursor(), w - S(12), ih, line, Label::NORMAL, true);
+      // A hanging bullet: wrapped lines start under the text.
+      int tx = x + S(28), tw = w - S(28);
+      int ih = Label::measure(item, tw, Label::NORMAL) + S(2);
+      new Label(x + S(12), page->cursor(), S(16), S(22), "•", Label::NORMAL);
+      new Label(tx, page->cursor(), tw, ih, item, Label::NORMAL, true);
       page->advance(ih);
     }
     page->advance(S(10));

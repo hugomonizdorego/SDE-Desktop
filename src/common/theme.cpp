@@ -363,7 +363,9 @@ static bool compositor_lite(const Config &cfg) {
 static void apply_transparency(Theme &t, const palettes::Family &f) {
   t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = 1.0;
   if (!t.translucent || t.transparency <= 0) return;
-  double s = t.transparency / 100.0 * (0.75 + 0.25 * std::min(1.0, f.translucency / 0.22));
+  // A square-root curve: the first steps of the slider (Subtle) already
+  // show, the last ones (Glass) approach the readable limit gently.
+  double s = std::sqrt(t.transparency / 100.0) * (0.75 + 0.25 * std::min(1.0, f.translucency / 0.22));
   if (t.lite) s *= 0.5;
   auto floor_of = [](std::initializer_list<double> floors) { return std::max(floors); };
   auto toward = [s](double floor) { return 1.0 - s * (1.0 - floor); };
