@@ -971,9 +971,7 @@ class ClockCard : public Fl_Widget {
         // A still picture at reduced motion (always the same moment).
         weather::draw_scene(p, x(), y(), w(), h(), S(14), wx_, animate_ ? anim_seconds() : 2.0);
       } else if (!flat_) {
-        // Soft accent glow on the card: a two-stop gradient instead of a flat fill.
-        p.fill_gradient(x(), y(), w(), h(), S(16),
-                        t.surface_alt.mix(t.accent, t.dark ? 0.24 : 0.14), t.surface_alt, true);
+        p.fill_rounded(x(), y(), w(), h(), S(16), t.surface_alt);
         p.stroke_rounded(x(), y(), w(), h(), S(16), t.border);
       }
       if (analog) {
@@ -1064,8 +1062,7 @@ class UserBadge : public Fl_Widget {
     std::string initial = name.empty() ? "?" : std::string(1, char(toupper((unsigned char)name[0])));
     {
       Painter p(window()->w(), window()->h());
-      p.fill_gradient(x(), y(), h(), h(), h() / 2.0, t.accent.mix(Color::hex(0xFFFFFF), 0.2),
-                      t.accent.mix(Color::hex(0x000000), 0.1));
+      p.circle(x() + h() / 2.0, y() + h() / 2.0, h() / 2.0, t.accent);
     }
     text_font(t.font_size, true);
     draw_text(initial, x(), y(), h(), h(), t.on_accent, 1);
@@ -1897,8 +1894,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
         cairo_paint(cr);
         cairo_restore(cr);
       } else {
-        pt.fill_gradient(x(), y(), w(), h(), S(10), th.accent.mix(Color::hex(0xFFFFFF), 0.15),
-                         th.accent.mix(Color::hex(0x000000), 0.15), true);
+        pt.fill_rounded(x(), y(), w(), h(), S(10), th.accent);
         double g = w() * .5;
         glyph::media(pt, x() + (w() - g) / 2, y() + (h() - g) / 2, g, th.on_accent);
       }

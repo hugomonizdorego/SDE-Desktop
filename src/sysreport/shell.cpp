@@ -169,17 +169,12 @@ class Hero : public Fl_Widget {
     int isz = S(76);
     {
       Painter p(window()->w(), window()->h());
-      Color a = t.accent, b = t.accent.mix(t.dark ? Color::hex(0x000000) : Color::hex(0x1b1f3a), 0.45);
-      p.fill_gradient(x(), y(), w(), h(), t.radius_large, a, b, true);
-      // Soft circles for depth (no artwork, only shapes).
-      p.circle(x() + w() - S(70), y() + S(30), S(90), Color::hex(0xffffff, 0.07));
-      p.circle(x() + w() - S(10), y() + h() - S(10), S(60), Color::hex(0xffffff, 0.06));
-      p.fill_rounded(x() + S(26), y() + (h() - isz - S(16)) / 2.0, isz + S(16), isz + S(16), S(22),
-                     Color::hex(0xffffff, 0.16));
+      // A calm card in the theme colours: no gradient, no decorative shapes.
+      p.fill_rounded(x(), y(), w(), h(), t.radius_large, t.surface);
+      p.stroke_rounded(x(), y(), w(), h(), t.radius_large, t.border);
       p.image(IconLoader::get(icons_, isz), x() + S(34), y() + (h() - isz) / 2.0, isz);
     }
-    // The gradient ends dark: white text reads on every accent.
-    Color fg = Color::hex(0xffffff);
+    Color fg = t.text;
     int tx = x() + S(26) + isz + S(36);
     text_font(t.font_size + 12, true);
     draw_text(title_, tx, y() + h() / 2 - S(40), w() - (tx - x()) - S(20), S(40), fg);

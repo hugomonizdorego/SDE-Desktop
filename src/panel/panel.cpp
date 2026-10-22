@@ -1364,9 +1364,9 @@ void Panel::draw() {
             // internet; pulsing gently (led_tick) unless steady.
             NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_,
                                      controls.net_verdict);
-            Color c = led == NetLed::GREEN    ? Color::hex(0x22C55E)
-                      : led == NetLed::YELLOW ? Color::hex(0xEAB308)
-                                              : Color::hex(0xEF4444);
+            Color c = led == NetLed::GREEN    ? t.success
+                      : led == NetLed::YELLOW ? t.warning
+                                              : t.error;
             double pulse = led_running_ ? 0.5 + 0.5 * std::cos(2 * M_PI * led_phase_) : 1.0;
             double r = gs * 0.17, lx = gx + gs - r * 0.6, ly = gy + gs - r * 0.6;
             p.circle(lx, ly, r + Sd(1.2), t.surface);

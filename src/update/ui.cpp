@@ -85,53 +85,9 @@ Color kind_text(Kind kind) {
 
 // ----------------------------------------------------------- backgrounds
 
-static void paint_blobs(cairo_t *cr, int w, int h) {
-  const Theme &t = active_theme();
-  struct Blob {
-    double fx, fy, fr;
-    Color c;
-  } blobs[] = {
-      {0.18, 0.08, 0.55, t.accent.alpha(t.dark ? 0.20 : 0.16)},
-      {0.92, 0.85, 0.60, t.accent.mix(t.error, 0.45).alpha(t.dark ? 0.16 : 0.12)},
-      {0.62, 0.30, 0.35, t.accent.mix(t.success, 0.5).alpha(0.10)},
-  };
-  for (auto &b : blobs) {
-    double r = std::max(w, h) * b.fr;
-    cairo_pattern_t *g = cairo_pattern_create_radial(w * b.fx, h * b.fy, 0,
-                                                     w * b.fx, h * b.fy, r);
-    cairo_pattern_add_color_stop_rgba(g, 0, b.c.r, b.c.g, b.c.b, b.c.a);
-    cairo_pattern_add_color_stop_rgba(g, 1, b.c.r, b.c.g, b.c.b, 0);
-    cairo_set_source(cr, g);
-    cairo_rectangle(cr, 0, 0, w, h);
-    cairo_fill(cr);
-    cairo_pattern_destroy(g);
-  }
-}
-
+// Calm, flat backgrounds in every family: no coloured light blobs or sheens.
 void paint_window_background(Painter &p, int w, int h) {
-  const Theme &t = active_theme();
-  p.fill_rect(0, 0, w, h, t.background);
-  if (look().liquid()) {
-    // Soft colored light behind frosted cards, rendered once per size: the
-    // radial gradients are too slow to repeat for every animation frame.
-    static cairo_surface_t *cache = nullptr;
-    static int cache_w = 0, cache_h = 0;
-    if (!cache || cache_w != w || cache_h != h) {
-      if (cache)
-        cairo_surface_destroy(cache);
-      cache = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-      cache_w = w;
-      cache_h = h;
-      cairo_t *cr = cairo_create(cache);
-      paint_blobs(cr, w, h);
-      cairo_destroy(cr);
-    }
-    cairo_set_source_surface(p.cr(), cache, 0, 0);
-    cairo_paint(p.cr());
-  } else if (look().aero()) {
-    p.fill_gradient(0, 0, w, Sd(220), 0, t.accent.alpha(t.dark ? 0.10 : 0.07),
-                    t.background.alpha(0));
-  }
+  p.fill_rect(0, 0, w, h, active_theme().background);
 }
 
 void paint_card(Painter &p, double x, double y, double w, double h, bool hero) {
@@ -140,24 +96,13 @@ void paint_card(Painter &p, double x, double y, double w, double h, bool hero) {
   if (look().liquid()) {
     p.shadow(x, y + Sd(2), w, h, r, t.shadow.alpha(t.dark ? 0.30 : 0.10), S(6));
     p.fill_rounded(x, y, w, h, r, t.surface.alpha(t.dark ? 0.72 : 0.68));
-    if (hero)
-      p.fill_gradient(x, y, w, h, r, t.accent.alpha(t.dark ? 0.22 : 0.14),
-                      t.surface.alpha(0), true);
-    p.fill_gradient(x, y, w, h * 0.5, r,
-                    Color::hex(0xFFFFFF, t.dark ? 0.07 : 0.45),
-                    Color::hex(0xFFFFFF, 0));
+    (void)hero;
     p.stroke_rounded(x + Sd(1), y + Sd(1), w - Sd(2), h - Sd(2), r - Sd(1),
                      Color::hex(0xFFFFFF, t.dark ? 0.10 : 0.65));
     p.stroke_rounded(x, y, w, h, r, t.border.alpha(t.dark ? 0.8 : 0.55));
     return;
   }
   p.fill_rounded(x, y, w, h, r, t.surface);
-  if (hero) {
-    p.fill_gradient(x, y, w, h, r, t.accent.alpha(t.dark ? 0.20 : 0.12),
-                    t.surface.alpha(0), true);
-    if (look().aero())
-      p.glass_sheen(x, y, w, h, r, t.dark);
-  }
   p.stroke_rounded(x, y, w, h, r, t.border);
 }
 
@@ -168,9 +113,6 @@ void paint_progress(Painter &p, double x, double y, double w, double h,
   if (percent >= 0) {
     double fw = std::max(h, w * std::min(100, percent) / 100.0);
     p.fill_rounded(x, y, fw, h, h / 2, t.accent);
-    if (look().liquid() || look().aero())
-      p.fill_gradient(x, y, fw, h / 2, h / 4, Color::hex(0xFFFFFF, 0.35),
-                      Color::hex(0xFFFFFF, 0));
   } else {
     // Indeterminate: a segment sliding back and forth.
     double seg = w * 0.28;
@@ -485,9 +427,6 @@ void Button::draw() {
     if (look().liquid() && !strong && kind_ != Ghost)
       bg = bg.alpha(hot ? 0.95 : 0.72);
     p.fill_rounded(x(), y(), w(), h(), r, bg);
-    if (strong && (look().liquid() || look().aero()) && active_r())
-      p.fill_gradient(x(), y(), w(), h() / 2.0, r, Color::hex(0xFFFFFF, 0.22),
-                      Color::hex(0xFFFFFF, 0));
     if (!strong && kind_ != Ghost)
       p.stroke_rounded(x(), y(), w(), h(), r,
                        look().liquid()

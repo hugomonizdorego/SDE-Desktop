@@ -43,9 +43,8 @@ void later(std::function<void()> fn) {
 const Theme &theme() { return Panel::instance->theme(); }
 
 Color led_color(NetLed led) {
-  return led == NetLed::GREEN    ? Color::hex(0x22C55E)
-         : led == NetLed::YELLOW ? Color::hex(0xEAB308)
-                                 : Color::hex(0xEF4444);
+  const Theme &t = theme();
+  return led == NetLed::GREEN ? t.success : led == NetLed::YELLOW ? t.warning : t.error;
 }
 
 // A group of rows. alpha51: plain rows with a thin separator above every
