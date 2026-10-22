@@ -101,6 +101,21 @@ std::vector<Sidebar::Row> Sidebar::rows() const {
           app_->count_for(cur), cur};
     add(b, rh);
   }
+  Row ah;
+  ah.label = _("Albums");
+  ah.header = true;
+  add(ah, hh);
+  for (const auto &a : app_->user_albums()) {
+    View v{ViewKind::Album, a.file};
+    r = Row{a.name, icon::Gallery, a.count, v};
+    r.album = true;
+    r.removable = true;  // the hover button deletes the album (not the photos)
+    add(r, rh);
+  }
+  r = Row{_("New Album…"), icon::Plus, 0, View{}};
+  r.add = true;
+  r.new_album = true;
+  add(r, rh);
   if (!app_->devices().empty()) {
     Row d;
     d.label = _("Devices");
@@ -238,6 +253,22 @@ int Sidebar::handle(int event) {
       focus_ = r;
       auto rs = rows();
       const Row &row = rs[size_t(r)];
+      if (Fl::event_button() == FL_RIGHT_MOUSE && row.album) {
+        ContextMenu m;
+        View v = row.view;
+        GalleryWindow *app = app_;
+        m.item(_("Open"), [app, v] { app->set_view(v); }, {"open"});
+        m.item(_("Slideshow"), [app, v] {
+          app->set_view(v);
+          app->slideshow({});
+        });
+        m.separator();
+        m.item(_("Rename…"), [app, v] { app->rename_album(v.folder); }, {"rename"});
+        m.item(_("Delete Album…"), [app, v] { app->delete_album(v.folder); }, {"delete"});
+        m.popup();
+        redraw();
+        return 1;
+      }
       if (Fl::event_button() == FL_RIGHT_MOUSE && row.device) {
         Fl_Menu_Item items[4];
         memset(items, 0, sizeof items);
@@ -278,12 +309,14 @@ int Sidebar::handle(int event) {
         return 1;
       }
       if ((k == FL_Enter || k == FL_KP_Enter || k == ' ') && focus_ >= 0 && focus_ < int(rs.size())) {
-        if (rs[size_t(focus_)].add) app_->add_folder();
+        if (rs[size_t(focus_)].new_album) app_->new_album();
+        else if (rs[size_t(focus_)].add) app_->add_folder();
         else app_->set_view(rs[size_t(focus_)].view);
         return 1;
       }
       if (k == FL_Delete && focus_ >= 0 && focus_ < int(rs.size()) && rs[size_t(focus_)].removable) {
         if (rs[size_t(focus_)].device) app_->eject(rs[size_t(focus_)].view.folder);
+        else if (rs[size_t(focus_)].album) app_->delete_album(rs[size_t(focus_)].view.folder);
         else app_->remove_folder(rs[size_t(focus_)].view.folder);
         return 1;
       }
@@ -294,10 +327,13 @@ int Sidebar::handle(int event) {
 }
 
 void Sidebar::activate(const Row &row) {
-  if (row.add) {
+  if (row.new_album) {
+    app_->new_album();
+  } else if (row.add) {
     app_->add_folder();
   } else if (row.removable && hover_remove_ && !compact()) {
     if (row.device) app_->eject(row.view.folder);
+    else if (row.album) app_->delete_album(row.view.folder);
     else app_->remove_folder(row.view.folder);
     hover_ = -1;
   } else {

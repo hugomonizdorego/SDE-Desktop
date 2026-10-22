@@ -152,8 +152,10 @@ add_executable(sde-gallery
   gallery/window.cpp
   gallery/sidebar.cpp
   gallery/grid.cpp
-  gallery/viewer.cpp)
-target_link_libraries(sde-gallery PRIVATE sde-gallery-ui)
+  gallery/viewer.cpp
+  gallery/organize.cpp)
+# Batch rotate/export use Photo's encoder (lossless JPEG rotation, EXIF).
+target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
 # the DebION Dev-Team on top of sde-gallery-core.
