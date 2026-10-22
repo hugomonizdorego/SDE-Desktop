@@ -6,6 +6,36 @@
 # all follow this one. Debian's themes have priority 50 or less.
 set -e
 DB=/usr/share/desktop-base
+
+# A desktop installed on top of Debian's "standard system" (netinst without
+# a desktop task) inherits /etc/network/interfaces with "allow-hotplug
+# <nic> / iface <nic> inet dhcp" (plus wpa-ssid/wpa-psk for Wi-Fi). Then
+# ifupdown's DHCP client and NetworkManager both claim the network: the
+# panel cannot control the interface, routes compete and resolv.conf is
+# rewritten behind NetworkManager's back. Once per system, hand plain
+# DHCP/Wi-Fi interfaces to NetworkManager; static, bridge, bond, VLAN and
+# hook configurations (servers) are never touched. It takes effect at the
+# next boot, so nothing is dropped during the installation or over SSH.
+# Backups: /var/backups/debion-network/. Opt out: /etc/debion/keep-ifupdown.
+network_handover() {
+    state=/var/lib/debion-desktop-base/network-handover
+    [ -x /usr/sbin/debion-network-check ] || return 0
+    [ -e "$state" ] && return 0
+    rc=0
+    /usr/sbin/debion-network-check --handover || rc=$?
+    # 3: NetworkManager is not unpacked yet; the trigger runs this again.
+    if [ "$rc" != 3 ]; then
+        mkdir -p "${state%/*}"
+        : > "$state"
+    fi
+}
+
+if [ "$1" = "triggered" ]; then
+    # NetworkManager was installed after this package.
+    network_handover
+    exit 0
+fi
+
 if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-remove" ]; then
     update-alternatives --install $DB/active-theme desktop-theme $DB/debion-theme 60
 
@@ -34,16 +64,15 @@ if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-remov
         esac
     fi
 
+    if [ "$1" = "configure" ]; then
+        network_handover
+    fi
+
     # NetworkManager: load the connectivity check (a configuration reload
-    # does not drop connections), and explain interfaces that ifupdown still
-    # manages. /etc/network/interfaces belongs to the administrator, so it is
-    # only changed by an explicit "debion-network-check --fix".
+    # does not drop connections).
     if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 &&
        systemctl is-active --quiet NetworkManager.service; then
         systemctl reload NetworkManager.service >/dev/null 2>&1 || true
-    fi
-    if [ -z "$2" ] && [ -x /usr/sbin/debion-network-check ]; then
-        /usr/sbin/debion-network-check --postinst || true
     fi
 
     # Refresh the GRUB background when GRUB is the boot loader.

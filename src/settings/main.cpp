@@ -76,6 +76,10 @@ bool g_refreshing = false;
 
 }  // namespace
 
+void refresh_if_shown(const char *page_id) {
+  if (g_restart_page == page_id) Fl::add_timeout(0, [](void *) { refresh_page(); });
+}
+
 Config &settings_config() { return g_cfg; }
 const Theme &settings_theme() { return g_theme; }
 
@@ -1771,6 +1775,8 @@ void build_network(Page *page) {
   page->heading(_("Network"), _("Wi-Fi, wired and mobile connections"));
   if (find_program("nmcli").empty()) {
     page->note(_("Network settings need NetworkManager (package network-manager)."));
+    build_network_diagnostics(page);
+    build_network_proxy(page);
     page->finish();
     return;
   }
@@ -1821,8 +1827,10 @@ void build_network(Page *page) {
               state);
   }
   page->end_card();
+  build_network_diagnostics(page);
+  build_network_proxy(page);
   if (!find_program("nm-connection-editor").empty())
-    page->row(_("VPN, proxies and advanced settings"), S(160), S(34),
+    page->row(_("VPN and advanced connection settings"), S(160), S(34),
               [](int x, int y, int w, int h) {
                 return action_button(x, y, w, h, _("Connections"), {"nm-connection-editor"});
               });
