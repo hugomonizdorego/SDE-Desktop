@@ -4,7 +4,9 @@
  * SDE Tools for Liria: everyday actions in the context menus - Compress
  * and Extract Here with Taca, Edit with Niny, Edit in Photo, Set as
  * Wallpaper, Send To a removable drive, and under "More Actions" Open
- * Terminal Here, Copy Path, Show Checksum and Open as Administrator; on the
+ * Terminal Here, Copy Path, Show Checksum, Set Default Application (the
+ * applications for the file's type, and Settings > Default Applications)
+ * and Open as Administrator; on the
  * folder background Open Terminal Here and New Text Document. Pin to /
  * Unpin from Quick Access adds files, folders and locations to the Home
  * overview's Quick access cards (src/liria-sde-pins.c). Programs are
@@ -443,6 +445,83 @@ pin_item (const gchar *name, GList *files)
 	return menu_item;
 }
 
+/* ------------------------------------------------- default applications */
+
+static void
+set_default_cb (LiriaMenuItem *menu_item, gpointer data)
+{
+	GAppInfo *app = g_object_get_data (G_OBJECT (menu_item), "sde-app");
+	const gchar *type = g_object_get_data (G_OBJECT (menu_item), "sde-type");
+	GError *error = NULL;
+
+	/* GIO writes [Default Applications] in ~/.config/mimeapps.list, the file
+	 * Settings > Default Applications reads too. */
+	if (app && type && !g_app_info_set_as_default_for_type (app, type, &error)) {
+		g_warning ("SDE Tools: %s", error->message);
+		g_error_free (error);
+	}
+}
+
+static void
+default_apps_cb (LiriaMenuItem *menu_item, gpointer data)
+{
+	const gchar *argv[] = { "sde-settings", "--page", "default-apps", NULL };
+
+	spawn (argv, NULL);
+}
+
+/* "Set Default Application" > the applications for the file's type (the
+ * current one marked), then "Default Applications..." in SDE Settings. */
+static LiriaMenuItem *
+set_default_item (LiriaFileInfo *file)
+{
+	gchar *type = liria_file_info_get_mime_type (file);
+	GList *apps = type ? g_app_info_get_all_for_type (type) : NULL;
+	GAppInfo *current = type ? g_app_info_get_default_for_type (type, FALSE) : NULL;
+	LiriaMenuItem *parent, *settings;
+	LiriaMenu *menu;
+	int n = 0;
+
+	parent = liria_menu_item_new ("SdeTools::SetDefault", _("Set Default Application"),
+	                              _("Choose the application that opens files of this type"),
+	                              "preferences-desktop-default-applications");
+	menu = liria_menu_new ();
+	for (GList *l = apps; l && n < 15; l = l->next) {
+		GAppInfo *app = l->data;
+		gboolean is_current = current && g_app_info_equal (app, current);
+		gchar *id = g_strdup_printf ("SdeTools::SetDefault%d", n++);
+		gchar *label = is_current ? g_strdup_printf (_("%s (current)"), g_app_info_get_display_name (app))
+		                          : g_strdup (g_app_info_get_display_name (app));
+		gchar *tip = g_strdup_printf (_("Open every \"%s\" file with %s"), type,
+		                              g_app_info_get_display_name (app));
+		GIcon *gicon = g_app_info_get_icon (app);
+		gchar *icon = gicon ? g_icon_to_string (gicon) : NULL;
+		LiriaMenuItem *menu_item = liria_menu_item_new (id, label, tip, icon);
+
+		g_object_set_data_full (G_OBJECT (menu_item), "sde-app", g_object_ref (app), g_object_unref);
+		g_object_set_data_full (G_OBJECT (menu_item), "sde-type", g_strdup (type), g_free);
+		g_signal_connect (menu_item, "activate", G_CALLBACK (set_default_cb), NULL);
+		liria_menu_append_item (menu, menu_item);
+		g_object_unref (menu_item);
+		g_free (id);
+		g_free (label);
+		g_free (tip);
+		g_free (icon);
+	}
+	settings = liria_menu_item_new ("SdeTools::DefaultApps", _("Default Applications..."),
+	                                _("Open Settings > Default Applications"), "preferences-system");
+	g_signal_connect (settings, "activate", G_CALLBACK (default_apps_cb), NULL);
+	liria_menu_append_item (menu, settings);
+	g_object_unref (settings);
+	liria_menu_item_set_submenu (parent, menu);
+	g_object_unref (menu);
+	g_list_free_full (apps, g_object_unref);
+	if (current)
+		g_object_unref (current);
+	g_free (type);
+	return parent;
+}
+
 /* ------------------------------------------------------------- menu items */
 
 static LiriaMenuItem *
@@ -567,6 +646,8 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 		append_owned (more, item ("SdeTools::Checksum", _("Show Checksum"),
 		                                    _("Show the SHA-256 checksum"), "dialog-information",
 		                                    G_CALLBACK (checksum_cb), files));
+	if (count == 1 && !any_dir)
+		append_owned (more, set_default_item (files->data));
 	if (count == 1 && any_dir)
 		append_owned (more, item ("SdeTools::Admin", _("Open as Administrator"),
 		                                    _("Open this folder in Liria as root (asks for your password)"),
