@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <sstream>
 
+#include "i18n.h"
 #include "util.h"
 
 using namespace sde;
@@ -390,3 +391,64 @@ std::vector<std::string> parse_busy_programs(const std::string &text) {
   return out;
 }
 
+
+// ------------------------------------------------------- battery (alpha51)
+
+std::string battery_duration_text(int minutes) {
+  if (minutes <= 0) return "";
+  int h = minutes / 60, m = minutes % 60;
+  char hours[64] = "", mins[64] = "";
+  if (h) snprintf(hours, sizeof hours, ngettext("%d hour", "%d hours", (unsigned long)h), h);
+  if (m) snprintf(mins, sizeof mins, ngettext("%d minute", "%d minutes", (unsigned long)m), m);
+  if (h && m) return std::string(hours) + " " + mins;
+  return h ? hours : mins;
+}
+
+std::string battery_status_line(bool charging, bool full, int minutes) {
+  if (full) return _("Fully charged");
+  std::string time = battery_duration_text(minutes);
+  char buf[192];
+  if (charging) {
+    if (time.empty()) return _("Charging");
+    snprintf(buf, sizeof buf, _("Charging - %s until full"), time.c_str());
+    return buf;
+  }
+  if (time.empty()) return _("Using battery power");
+  snprintf(buf, sizeof buf, _("Using battery power - %s remaining"), time.c_str());
+  return buf;
+}
+
+std::string battery_model_name(const std::string &manufacturer, const std::string &model) {
+  std::string a = trim(manufacturer), b = trim(model);
+  if (a.empty()) return b;
+  if (b.empty()) return a;
+  // Some firmware repeats the vendor in the model name.
+  if (b.compare(0, a.size(), a) == 0) return b;
+  return a + " " + b;
+}
+
+std::vector<std::string> ordered_power_profiles(const std::vector<std::string> &profiles) {
+  std::vector<std::string> out;
+  for (const char *known : {"power-saver", "balanced", "performance"})
+    if (std::find(profiles.begin(), profiles.end(), known) != profiles.end()) out.push_back(known);
+  for (const auto &p : profiles)
+    if (std::find(out.begin(), out.end(), p) == out.end()) out.push_back(p);
+  return out;
+}
+
+// ------------------------------------------------ taskbar previews (alpha51)
+
+PreviewSize preview_fit(int win_w, int win_h, int max_w, int max_h) {
+  PreviewSize s;
+  if (win_w <= 0 || win_h <= 0 || max_w <= 0 || max_h <= 0) return s;
+  double k = std::min({1.0, double(max_w) / win_w, double(max_h) / win_h});
+  s.w = std::max(1, int(win_w * k + 0.5));
+  s.h = std::max(1, int(win_h * k + 0.5));
+  return s;
+}
+
+int preview_column_width(int count, int preferred, int minimum, int gap, int available) {
+  if (count <= 0) return preferred;
+  int fit = (available - (count - 1) * gap) / count;
+  return std::max(minimum, std::min(preferred, fit));
+}
