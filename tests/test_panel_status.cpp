@@ -50,6 +50,14 @@ int main() {
   CHECK(network_led(true, 1, false) == NetLed::YELLOW);
   CHECK(network_led(true, 0, false) == NetLed::GREEN);
   CHECK(network_led(true, 0, true) == NetLed::YELLOW);
+  // debion-network-check: FULL alone is not enough when it says otherwise.
+  CHECK(network_led(true, 4, false, "proxy-required") == NetLed::YELLOW);
+  CHECK(network_led(true, 4, false, "ok") == NetLed::GREEN);
+  CHECK(network_led(true, 0, true, "ok") == NetLed::GREEN);
+  CHECK(network_led(false, 4, false, "ok") == NetLed::RED);
+  CHECK(parse_network_verdict("{\"version\":2,\"verdict\":\"no-dns\",\"nm\":\"\"}") == "no-dns");
+  CHECK(parse_network_verdict("garbage").empty());
+  CHECK(!network_verdict_text("proxy-required").empty() && network_verdict_text("ok").empty());
   // Keyboard applets.
   CHECK(keyboard_applet("ibus-ui-gtk3") == KeyboardApplet::INPUT_METHOD);
   CHECK(keyboard_applet("Fcitx") == KeyboardApplet::INPUT_METHOD);

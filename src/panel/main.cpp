@@ -58,6 +58,12 @@ int main(int argc, char **argv) {
           !StatusFlyout::handles(section))
         return 2;
       command = "quick:" + section;
+    } else if (!strcmp(argv[i], "--show-desktop")) {
+      // A plain EWMH request: works without a running panel too.
+      fl_open_display();
+      sde::x11::set_showing_desktop(!sde::x11::showing_desktop());
+      XFlush(fl_display);
+      return 0;
     } else if (!strcmp(argv[i], "--safe")) {
       Panel::safe_mode = true;
     } else if (!strcmp(argv[i], "--calendar")) {
@@ -83,6 +89,7 @@ int main(int argc, char **argv) {
                      "                    and agenda\n"
                      "  --alarms          open or close the clock's alarms\n"
                      "  --new-alarm       open the alarms with a new alarm\n"
+                     "  --show-desktop    minimize every window, or bring them back\n"
                      "  --safe            start without tray icons and device status (after crashes)\n"));
       return strcmp(argv[i], "--help") ? 2 : 0;
     }

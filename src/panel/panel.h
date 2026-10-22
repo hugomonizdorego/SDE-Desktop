@@ -162,6 +162,7 @@ class Panel : public sde::BufferedWindow {
   void led_update();
   int status_index(StatusIcon icon) const;
   bool led_running_ = false;
+  std::string led_connection_;  // kind|connection the verdict is for
   double led_phase_ = 0;
   bool led_probe_failed_ = false, led_probe_pending_ = false;
   long long led_probe_at_ = 0;

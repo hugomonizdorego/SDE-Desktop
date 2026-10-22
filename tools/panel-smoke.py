@@ -447,6 +447,11 @@ for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-l
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
 ''')
+(home/'bin/debion-network-check').write_text('''#!/bin/sh
+v=$(cat "$HOME/verdict" 2>/dev/null || echo ok)
+echo "CHECK $*" >> "$HOME/commands.log"
+printf '{"version":2,"verdict":"%s"}\\n' "$v"
+''')
 (home/'bin/pactl').write_text('''#!/usr/bin/env python3
 import sys,os,json
 from pathlib import Path
@@ -628,6 +633,14 @@ try:
     mode('nm-full');fl=open_section('network','Network')
     item('Network','Connected · Internet access',active=False);escape('Network')
     waitfor(lambda:any(k.startswith('@led:green') for k in layout('SDE Panel')),'LED not green with internet')
+    # debion-network-check says a proxy is needed (HTTP works, HTTPS does
+    # not): yellow LED and a Proxy settings row, although NM says FULL.
+    (home/'verdict').write_text('proxy-required');fl=open_section('network','Network')
+    item('Network','Proxy settings');shot('23-network-proxy-required')
+    waitfor(lambda:any(k.startswith('@led:yellow') for k in layout('SDE Panel')),'LED not yellow when a proxy is required')
+    escape('Network');(home/'verdict').write_text('ok');fl=open_section('network','Network')
+    waitfor(lambda:'Proxy settings' not in layout('Network'),'Proxy settings row stayed');escape('Network')
+    waitfor(lambda:any(k.startswith('@led:green') for k in layout('SDE Panel')),'LED not green again')
 
     # Each status icon opens its own flyout above it; another icon switches
     # with one click, the same icon closes it.

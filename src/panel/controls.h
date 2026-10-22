@@ -73,6 +73,12 @@ class PanelControls {
   // Free bytes of each mounted filesystem (by mount point).
   std::map<std::string, long long> drive_free;
   bool udisks() const { return udisks_; }
+  // debion-network-check --quick --json (when installed): its verdict for
+  // the current connection, "" until it answered. Run on connection
+  // changes and when the Network flyout opens, never on a timer.
+  std::string net_verdict;
+  bool network_checker() const;
+  void check_network();
   // power-profiles-daemon (powerprofilesctl).
   void refresh_power_profiles();
   void set_power_profile(const std::string& profile);
@@ -111,6 +117,7 @@ class PanelControls {
   void unmount_next(std::shared_ptr<std::vector<DrivePartition>> parts, size_t i,
                     RemovableDrive drive, bool power_off);
   void power_off(const RemovableDrive& drive, bool power_off);
+  bool verdict_pending_ = false, verdict_again_ = false;
   bool udisks_ = false, drives_scanned_ = false, notify_listening_ = false;
   std::vector<std::string> known_drives_;
   std::map<uint32_t, std::string> drive_notifications_;  // notification id -> drive name

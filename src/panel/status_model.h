@@ -26,8 +26,17 @@ std::string tray_item_name(const std::string &title, const std::string &tooltip,
 // local network (NetworkManager Connectivity NONE/PORTAL/LIMITED while a
 // connection is active). UNKNOWN with a connection counts as green unless a
 // quick probe of our own failed.
+// |verdict| is debion-network-check's (--quick --json): "" when it is not
+// installed or has not answered yet; anything but "ok"/"unknown" (no-dns,
+// proxy-required, clock, tls-intercepted, ...) means the browser will not
+// reach the internet although NetworkManager may say FULL.
 enum class NetLed { RED, YELLOW, GREEN };
-NetLed network_led(bool connected, int connectivity, bool probe_failed);
+NetLed network_led(bool connected, int connectivity, bool probe_failed,
+                   const std::string &verdict = "");
+// The "verdict" of debion-network-check --quick --json output ("" if none).
+std::string parse_network_verdict(const std::string &json);
+// A sentence for the Network flyout ("" for ok/unknown/none).
+std::string network_verdict_text(const std::string &verdict);
 
 // ------------------------------------------------------- keyboard indicators
 

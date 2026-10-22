@@ -71,8 +71,11 @@ std::string tray_item_name(const std::string &title, const std::string &tooltip,
 
 // ------------------------------------------------------------ network LED
 
-NetLed network_led(bool connected, int connectivity, bool probe_failed) {
+NetLed network_led(bool connected, int connectivity, bool probe_failed,
+                   const std::string &verdict) {
   if (!connected) return NetLed::RED;
+  if (!verdict.empty() && verdict != "ok" && verdict != "unknown") return NetLed::YELLOW;
+  if (verdict == "ok" && connectivity == 0) return NetLed::GREEN;
   switch (connectivity) {
     case 4:
       return NetLed::GREEN;
@@ -83,6 +86,27 @@ NetLed network_led(bool connected, int connectivity, bool probe_failed) {
     default:  // UNKNOWN: NetworkManager does not check
       return probe_failed ? NetLed::YELLOW : NetLed::GREEN;
   }
+}
+
+std::string parse_network_verdict(const std::string &json) {
+  size_t k = json.find("\"verdict\"");
+  if (k == std::string::npos) return "";
+  size_t q1 = json.find('"', json.find(':', k) + 1);
+  if (q1 == std::string::npos) return "";
+  size_t q2 = json.find('"', q1 + 1);
+  if (q2 == std::string::npos) return "";
+  return json.substr(q1 + 1, q2 - q1 - 1);
+}
+
+std::string network_verdict_text(const std::string &v) {
+  // Plain English here; the flyout translates the sentence.
+  if (v == "proxy-required") return "Proxy required: open Settings > Network";
+  if (v == "no-dns") return "Name servers (DNS) do not answer";
+  if (v == "no-route") return "No route to the internet (gateway)";
+  if (v == "clock") return "The clock is wrong: secure sites fail";
+  if (v == "tls-intercepted") return "Secure connections are intercepted";
+  if (v == "offline") return "The network does not reach the internet";
+  return "";
 }
 
 // ---------------------------------------------------- keyboard indicators

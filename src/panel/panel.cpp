@@ -795,6 +795,8 @@ std::string Panel::tooltip_for(const Target &t) const {
     return _("Action Center · Super+A");
   } else if (t.kind == CLOCK) {
     return _("Clock and alarms · Super+C opens the calendar");
+  } else if (t.kind == SHOW_DESKTOP) {
+    return _("Show Desktop · Super+D");
   } else if (t.kind == START) {
     return _("Start · Super");
   } else if (t.kind == TASK && t.index >= 0 && t.index < int(tasks_.size())) {
@@ -833,6 +835,9 @@ bool Panel::target_rect(const Target &t, int &x, int &w) const {
       return true;
     case ACTION_CENTER:
       x = action_x_, w = action_w_;
+      return true;
+    case SHOW_DESKTOP:
+      x = show_desktop_x_, w = show_desktop_w_;
       return true;
     default:
       return false;
@@ -882,9 +887,18 @@ void Panel::status_icon_changed(const std::string &section) {
 void Panel::led_update() {
   const auto &n = SystemStatus::get().network;
   bool shown_led = cfg_.get_bool("panel", "network_led", true) && status_index(NETWORK_STATUS) >= 0;
+  auto &controls = PanelControls::get();
+  // A new connection: ask debion-network-check (proxy, DNS, clock...).
+  std::string key = n.connected() ? n.kind + "|" + n.connection : "";
+  if (key != led_connection_) {
+    led_connection_ = key;
+    controls.net_verdict.clear();
+    if (!key.empty()) controls.check_network();
+  }
+  bool checker = controls.network_checker();
   // NetworkManager does not check connectivity: a quick probe of our own,
   // at most once a minute, tells local-only networks apart.
-  if (shown_led && n.connected() && n.connectivity == NetworkState::UNKNOWN &&
+  if (shown_led && !checker && n.connected() && n.connectivity == NetworkState::UNKNOWN &&
       !led_probe_pending_ && steady_ms() - led_probe_at_ > 60000) {
     led_probe_at_ = steady_ms();
     std::string uri = n.check_uri.empty() ? "http://nmcheck.gnome.org/check_network_status.txt"
@@ -973,7 +987,7 @@ std::string Panel::status_signature() const {
                     std::to_string(s.audio.available) + std::to_string(s.audio.volume) +
                     std::to_string(s.audio.muted) + std::to_string(s.battery.present) +
                     std::to_string(s.battery.percent) + std::to_string(s.battery.charging) +
-                    c.keyboard + std::to_string(c.drives.size()) + std::to_string(c.adapters.size());
+                    c.keyboard + std::to_string(c.drives.size()) + std::to_string(c.adapters.size()) + c.net_verdict;
   if (const auto *a = c.adapter()) sig += std::to_string(a->powered);
   for (const auto &d : c.bluetooth) sig += std::to_string(d.connected);
   auto players = c.players();
@@ -1014,15 +1028,16 @@ void Panel::relayout() {
   start_w_ = H + S(46);
   pin_w_ = H;
 
-  // The Action Center has its own button in the corner of the panel; the
-  // optional Show Desktop strip sits just before it.
+  // The Show Desktop strip sits at the very end of the panel (an easy
+  // target in the screen corner, as in Linux Mint and Windows); the Action
+  // Center button comes just before it.
   int right = w();
+  show_desktop_w_ = cfg_.get_bool("panel", "show_desktop_button", true) ? S(12) : 0;
+  show_desktop_x_ = right - show_desktop_w_;
+  right = show_desktop_x_;
   action_w_ = H >= S(40) ? S(40) : S(34);
   action_x_ = right - action_w_ - S(4);
   right = action_x_ - S(2);
-  show_desktop_w_ = cfg_.get_bool("panel", "show_desktop_button", false) ? S(10) : 0;
-  show_desktop_x_ = right - show_desktop_w_;
-  right = show_desktop_x_ - (show_desktop_w_ ? S(4) : 0);
   text_font(theme_.font_size, false);
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   bool two_lines = H >= S(40) && show_date;
@@ -1331,7 +1346,8 @@ void Panel::draw() {
           if (cfg_.get_bool("panel", "network_led", true)) {
             // The LED: red offline, yellow local network only, green
             // internet; pulsing gently (led_tick) unless steady.
-            NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_);
+            NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_,
+                                     controls.net_verdict);
             Color c = led == NetLed::GREEN    ? Color::hex(0x22C55E)
                       : led == NetLed::YELLOW ? Color::hex(0xEAB308)
                                               : Color::hex(0xEF4444);
@@ -1394,7 +1410,7 @@ void Panel::draw() {
     if (show_desktop_w_) {
       if (hover_ == Target{SHOW_DESKTOP, 0})
         p.fill_rect(show_desktop_x_, 0, show_desktop_w_, H, t.hover);
-      p.line(show_desktop_x_ + 0.5, S(10), show_desktop_x_ + 0.5, H - S(10), t.border);
+      p.line(show_desktop_x_ + S(2) + 0.5, S(10), show_desktop_x_ + S(2) + 0.5, H - S(10), t.border);
     }
 
     // The launcher being dragged follows the pointer.
@@ -1455,7 +1471,8 @@ void Panel::qa_dump_panel() {
   if (!tip_.current().empty()) text += "@tooltip:" + tip_.current() + "\t0\t0\t0\t0\t1\n";
   {
     const auto &n = SystemStatus::get().network;
-    NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_);
+    NetLed led = network_led(n.connected(), n.connectivity, led_probe_failed_,
+                             PanelControls::get().net_verdict);
     if (cfg_.get_bool("panel", "network_led", true) && status_index(NETWORK_STATUS) >= 0)
       text += std::string("@led:") +
               (led == NetLed::GREEN ? "green" : led == NetLed::YELLOW ? "yellow" : "red") +

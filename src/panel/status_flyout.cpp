@@ -243,7 +243,7 @@ class NetworkHeader : public Fl_Widget {
         tray_icon::wifi(p, ix, iy, size, std::max(1, (n.signal + 24) / 25), true, t.text);
       else
         tray_icon::offline(p, ix, iy, size, t.text);
-      NetLed led = network_led(n.connected(), n.connectivity, false);
+      NetLed led = network_led(n.connected(), n.connectivity, false, PanelControls::get().net_verdict);
       double r = Sd(4.5);
       p.circle(ix + size + Sd(1), iy + size - Sd(1), r + Sd(1.5), t.surface_alt);
       p.circle(ix + size + Sd(1), iy + size - Sd(1), r, led_color(led));
@@ -257,6 +257,8 @@ class NetworkHeader : public Fl_Widget {
       state = _("NetworkManager is not running");
     else if (!n.connected())
       state = _("No network connection");
+    else if (!network_verdict_text(PanelControls::get().net_verdict).empty())
+      state = _(network_verdict_text(PanelControls::get().net_verdict).c_str());
     else if (n.connectivity == NetworkState::FULL)
       state = std::string(n.kind == "wifi" ? _("Wi-Fi") : _("Ethernet")) + " · " + _("Internet access");
     else if (n.portal())
@@ -392,6 +394,7 @@ void StatusFlyout::select_section(const std::string &section) {
 void StatusFlyout::prepare() {
   rebuild();
   if (section_ == "network") {
+    PanelControls::get().check_network();
     SystemStatus::get().check_connectivity();
     SystemStatus::get().refresh_network();
   }
@@ -418,7 +421,7 @@ std::string StatusFlyout::structure() const {
   if (section_ == "network") {
     sig += std::to_string(s.network.available) + std::to_string(s.network.has_wifi) +
            std::to_string(s.network.wifi_enabled) + s.network.kind + s.network.connection +
-           std::to_string(s.network.connectivity) + std::to_string(c.airplane);
+           std::to_string(s.network.connectivity) + std::to_string(c.airplane) + c.net_verdict;
     for (const auto &w : s.wifi) sig += "|" + w.ssid + std::to_string(w.active) + std::to_string(w.signal / 25);
     for (const auto &d : c.devices) sig += "|" + d.device + d.state + d.connection + d.ip;
   } else if (section_ == "drives") {
@@ -587,6 +590,12 @@ void StatusFlyout::network_section(FlyBuilder &b) {
   b.y += S(52);
   std::string message = !c.message.empty() ? c.message : s.message;
   if (!message.empty()) b.info(message);
+  if (c.net_verdict == "proxy-required" || c.net_verdict == "no-dns" || c.net_verdict == "clock")
+    b.row(c.net_verdict == "proxy-required" ? _("Proxy settings")
+          : c.net_verdict == "clock"        ? _("Date and time settings")
+                                            : _("DNS settings"),
+          gear_icon(), b.launch({"sde-settings", "--page", c.net_verdict == "clock" ? "system" : "network"}),
+          [] { return std::string(_(network_verdict_text(PanelControls::get().net_verdict).c_str())); });
   if (n.portal())
     b.row(_("Open sign-in page"), wifi_icon(4), [this] {
       close();

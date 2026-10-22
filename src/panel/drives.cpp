@@ -7,6 +7,7 @@
 // system bus the panel falls back to lsblk, udevadm and udisksctl.
 #include <FL/Fl.H>
 #include <sys/statvfs.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <memory>
@@ -55,6 +56,41 @@ void options(DBusMessage *m, bool no_interaction = false) {
   }
 }
 }  // namespace
+
+// ------------------------------------------------- debion-network-check
+
+namespace {
+std::string network_checker_path() {
+  std::string p = find_program("debion-network-check");
+  if (p.empty() && access("/usr/sbin/debion-network-check", X_OK) == 0)
+    p = "/usr/sbin/debion-network-check";
+  return p;
+}
+}  // namespace
+
+bool PanelControls::network_checker() const { return !network_checker_path().empty(); }
+
+void PanelControls::check_network() {
+  std::string checker = network_checker_path();
+  if (checker.empty()) return;
+  if (verdict_pending_) {
+    verdict_again_ = true;
+    return;
+  }
+  verdict_pending_ = true;
+  run_async({"timeout", "25", checker, "--quick", "--json"}, [this](const std::string &out, int) {
+    verdict_pending_ = false;
+    std::string v = parse_network_verdict(out);
+    if (v != net_verdict) {
+      net_verdict = v;
+      changed();
+    }
+    if (verdict_again_) {
+      verdict_again_ = false;
+      check_network();
+    }
+  });
+}
 
 void PanelControls::drives_later(void *d) { static_cast<PanelControls *>(d)->refresh_drives(); }
 
