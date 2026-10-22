@@ -395,11 +395,12 @@ def panel_checks_a50():
     # click animates it and its flyout switches tap-to-click with xinput.
     fl=click_panel('status:touchpad','^Touchpad$');time.sleep(.4);flyout_bounds(fl,'touchpad')
     g=geom(fl);r=item('Touchpad','Touchpad preview',active=False)
-    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.1);shot('15-touchpad-flyout')
+    # The flash of the clicked half lasts 350 ms: capture at once.
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');run('import','-window','root',out/'15-touchpad-flyout.png')
     press('Touchpad','Tap to click');waitfor(lambda:commands('XINPUT set-prop') and commands('libinput Tapping Enabled 0'),'tap to click not applied with xinput')
     waitfor(lambda:'touchpad_tap=false' in conf(),'tap to click not saved')
     press('Touchpad','Touchpad settings...');gone('^Touchpad$');waitfor(lambda:commands('SETTINGS --page touchpad'),'Touchpad settings link missing')
-    hover_panel('status:touchpad');run('xdotool','click','1');time.sleep(.05);shot('15-touchpad-indicator-click')
+    hover_panel('status:touchpad');run('xdotool','click','2');run('import','-window','root',out/'15-touchpad-indicator-click.png')
     fl=find('^Touchpad$');escape('Touchpad')
 def drive_checks():
     """Removable drives through UDisks2: open (mount + Liria), eject while

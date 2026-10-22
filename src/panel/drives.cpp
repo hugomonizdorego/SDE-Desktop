@@ -363,7 +363,7 @@ void PanelControls::drive_open(const std::string &name) {
       DBusMessage *m =
           dbus::method(kUDisks, p.object, "org.freedesktop.UDisks2.Filesystem", "Mount");
       options(m);
-      system_->call_async(m, [this, opened, name, label](DBusMessage *r) {
+      system_->call_async_any(m, [this, opened, name, label](DBusMessage *r) {
         auto a = r ? dbus::read_args(r) : std::vector<dbus::Value>{};
         std::string err = dbus_error(r);
         if (err.empty() && !a.empty()) {
@@ -447,12 +447,12 @@ void PanelControls::unmount_next(std::shared_ptr<std::vector<DrivePartition>> pa
   if (udisks_ && !p.object.empty()) {
     DBusMessage *m = dbus::method(kUDisks, p.object, "org.freedesktop.UDisks2.Filesystem", "Unmount");
     options(m);
-    system_->call_async(m, [this, parts, i, drive, power_off_drive, busy](DBusMessage *r) {
+    system_->call_async_any(m, [this, parts, i, drive, power_off_drive, busy](DBusMessage *r) {
       std::string err = dbus_error(r);
       if (err.empty() || err.find("NotMounted") != std::string::npos) {
         unmount_next(parts, i + 1, drive, power_off_drive);
-      } else if (err.find("DeviceBusy") != std::string::npos) {
-        busy("");
+      } else if (err.find("DeviceBusy") != std::string::npos || err.find("Failed") != std::string::npos) {
+        busy(err.find("DeviceBusy") != std::string::npos ? "" : dbus_error_text(r));
       } else {
         drive_task(drive.name, "error",
                    format(_("%s could not be ejected. %s"), drive.label.c_str(),
@@ -491,7 +491,7 @@ void PanelControls::power_off(const RemovableDrive &drive, bool power_off_drive)
     const char *method = drive.can_power_off ? "PowerOff" : "Eject";
     DBusMessage *m = dbus::method(kUDisks, drive.object, "org.freedesktop.UDisks2.Drive", method);
     options(m);
-    system_->call_async(m, [done](DBusMessage *r) {
+    system_->call_async_any(m, [done](DBusMessage *r) {
       std::string err = dbus_error(r);
       done(err.empty(), err.empty() ? "" : dbus_error_text(r));
     }, 60000);

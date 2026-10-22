@@ -602,6 +602,9 @@ void StatusFlyout::network_section(FlyBuilder &b) {
             const auto &nn = SystemStatus::get().network;
             if (!nn.wifi_enabled) return std::string(_("Off"));
             if (nn.kind == "wifi") return std::string(_("Connected")) + " · " + nn.connection;
+            // Wired first in NetworkState, Wi-Fi connected as well.
+            for (const auto &w : SystemStatus::get().wifi)
+              if (w.active) return std::string(_("Connected")) + " · " + w.ssid;
             return std::string(_("On · not connected"));
           },
           [] { return SystemStatus::get().network.wifi_enabled; }, !c.airplane);
