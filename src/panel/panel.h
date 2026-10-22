@@ -201,6 +201,8 @@ class Panel : public sde::BufferedWindow {
   // clock while the Action Center is open, ...) closes the popup and opens
   // that button's popup at once. Returns true when it did.
   bool switch_popup(int root_x, int root_y, PanelPopup *from);
+  // The time zone was set ("Sync time zone"): the clock shows it at once.
+  void time_zone_changed() { clock_tick(this); }
  private:
   static void input_event(int, void *);
   void outside_pointer_press(unsigned long time);

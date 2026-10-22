@@ -370,6 +370,14 @@ def weather_checks():
     waitfor(lambda:not any(k.startswith('@weather-') for k in layout('Action Center')),'weather shown while disabled')
     escape('Action Center');config(overflow=False);reload()
     command(['--action-center'],'Action Center');time.sleep(.5)
+def reveal(title,name):
+    """Scrolls the popup body until all of |name| is in view (screenshots)."""
+    win=find('^'+re.escape(title)+'$')
+    for _ in range(30):
+        if in_view(title,name):return
+        L=layout(title);body=L.get('@body');g=geom(win)
+        if not body:return
+        run('xdotool','mousemove',g['x']+body[0]+round(4*scale),g['y']+body[1]+body[3]//2,'click','5');time.sleep(.25)
 def timezone_checks():
     """Clock (alpha51): the calendar card's Time zone row. Sync detects the
     zone (SDE_TZ_FIXTURE), sets it with timedatectl and turns network time
@@ -387,7 +395,7 @@ def timezone_checks():
         waitfor(lambda:'Time zone: Asia/Jakarta \u00b7 UTC+7' in layout('Action Center'),'zone row not updated: '+str([k for k in layout('Action Center') if 'zone' in k]))
     press('Action Center','Automatic time zone');time.sleep(.4)
     waitfor(lambda:'auto_timezone=true' in conf(),'Automatic time zone not saved')
-    item('Action Center','Sync time zone');time.sleep(.6);shot('24-clock-timezone-synced')
+    item('Action Center','Sync time zone');reveal('Action Center','Automatic time zone');time.sleep(.6);shot('24-clock-timezone-synced')
     escape('Action Center')
 def timezone_offline_checks():
     """Without internet the Sync button is disabled and says why."""
@@ -395,7 +403,7 @@ def timezone_offline_checks():
     r=item('Action Center','Sync time zone: connect to the internet to detect the time zone',active=False)
     assert not r[4],'Sync active while offline'
     press('Action Center','Sync time zone: connect to the internet to detect the time zone',active=False)
-    time.sleep(.6);shot('24-clock-timezone-offline')
+    reveal('Action Center','Automatic time zone');time.sleep(.6);shot('24-clock-timezone-offline')
     escape('Action Center')
 def brightness_settings_checks():
     """The brightness row's gear: Night Light (gamma), schedule, auto-dim on

@@ -1897,6 +1897,9 @@ int Panel::x_event_handler(int event) {
 
 void Panel::clock_tick(void *data) {
   auto *p = static_cast<Panel *>(data);
+  // Follows a new /etc/localtime (timedatectl, Settings) within a minute;
+  // with TZ unset glibc only re-reads it on tzset().
+  tzset();
   time_t now = time(nullptr);
   struct tm lt;
   localtime_r(&now, &lt);

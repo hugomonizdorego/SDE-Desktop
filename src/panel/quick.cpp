@@ -128,7 +128,11 @@ void SystemStatus::start(std::function<void()> changed) {
   // The Action Center's weather reports a fetch through the usual change.
   weather::Service::get().set_listener([this] { this->changed(); });
   // "Sync time zone" reports its progress the same way.
-  tzsync::Sync::get().set_listener([this] { this->changed(); });
+  tzsync::Sync::get().set_listener([this] {
+    this->changed();
+    if (Panel::instance && tzsync::Sync::get().state() == tzsync::Sync::DONE)
+      Panel::instance->time_zone_changed();
+  });
   if (!Panel::safe_mode)
     nightlight::Controller::get().start(
         []() -> const Config * { return Panel::instance ? &Panel::instance->config() : nullptr; });
