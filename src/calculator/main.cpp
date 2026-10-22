@@ -12,15 +12,18 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "config.h"
 #include "converter.h"
 #include "engine.h"
 #include "i18n.h"
+#include "icons.h"
 #include "programmer.h"
 #include "state.h"
 #include "theme.h"
 #include "ui.h"
+#include "x11.h"
 
 #ifndef SDE_APP_VERSION
 #define SDE_APP_VERSION "2.0.0"
@@ -97,6 +100,43 @@ int convert_cli(const std::string &value, const std::string &from, const std::st
   return 2;
 }
 
+// _NET_WM_ICON from the installed application icon, so the title bar and
+// the taskbar show the Calculator icon instead of a generic one.
+void set_window_icon(Window win) {
+  std::vector<long> data;
+  for (int size : {32, 64}) {
+    std::string path = sde::IconLoader::lookup("org.debion.Calculator", size);
+    if (path.empty()) path = sde::IconLoader::lookup("accessories-calculator", size);
+    if (path.empty()) return;
+    cairo_surface_t *s = sde::load_image(path, size, size);
+    if (!s) return;
+    int w = cairo_image_surface_get_width(s), h = cairo_image_surface_get_height(s);
+    if (w != size || h != size) {
+      cairo_surface_destroy(s);
+      continue;
+    }
+    cairo_surface_flush(s);
+    const unsigned char *px = cairo_image_surface_get_data(s);
+    int stride = cairo_image_surface_get_stride(s);
+    data.push_back(w);
+    data.push_back(h);
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        uint32_t p = *reinterpret_cast<const uint32_t *>(px + y * stride + x * 4);
+        uint32_t a = p >> 24;
+        uint32_t r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+        if (a && a < 255) {  // cairo is premultiplied, _NET_WM_ICON is not
+          r = std::min(255u, r * 255 / a);
+          g = std::min(255u, g * 255 / a);
+          b = std::min(255u, b * 255 / a);
+        }
+        data.push_back(long((a << 24) | (r << 16) | (g << 8) | b));
+      }
+    cairo_surface_destroy(s);
+  }
+  if (!data.empty()) sde::x11::set_cardinals(win, "_NET_WM_ICON", data);
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -168,6 +208,7 @@ int main(int argc, char **argv) {
   window->show(1, argv);
   XClassHint hint{const_cast<char *>("calculator"), const_cast<char *>("org.debion.Calculator")};
   XSetClassHint(fl_display, fl_xid(window), &hint);
+  set_window_icon(fl_xid(window));
   Window root = RootWindow(fl_display, fl_screen);
   XWindowAttributes attr;
   XGetWindowAttributes(fl_display, root, &attr);

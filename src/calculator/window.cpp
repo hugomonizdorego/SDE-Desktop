@@ -380,7 +380,15 @@ void CalcWindow::insert(const std::string &text, bool continues) {
   }
   error_.clear();
   int a = input_->position(), b = input_->mark();
-  input_->replace(std::min(a, b), std::max(a, b), text.c_str(), int(text.size()));
+  int lo = std::min(a, b), hi = std::max(a, b);
+  std::string t = text;
+  // No double spaces around word operators (" AND ", " mod ", " << ").
+  if (!t.empty() && t[0] == ' ' && lo > 0 && input_->value()[lo - 1] == ' ') t.erase(0, 1);
+  if (t.empty()) {
+    update();
+    return;
+  }
+  input_->replace(lo, hi, t.c_str(), int(t.size()));
   input_changed();
 }
 
@@ -716,8 +724,16 @@ int CalcWindow::key_event() {
       case '!': return via_key("not");
       case '(': return via_key("(");
       case ')': return via_key(")");
-      case '<': insert(" << ", true); return 1;
-      case '>': insert(" >> ", true); return 1;
+      case '<':
+      case '>': {
+        // "<<" typed as two characters gives one shift operator.
+        std::string op = c == '<' ? " << " : " >> ";
+        std::string before = std::string(input_->value()).substr(0, size_t(input_->position()));
+        if (!evaluated_ && ends_with(before, op)) return 1;
+        insert(op, true);
+        flash_key_for(c == '<' ? "shl" : "shr");
+        return 1;
+      }
       default: break;
     }
     std::string up = text;
