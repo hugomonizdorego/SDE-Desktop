@@ -647,6 +647,14 @@ class Desktop : public sde::BufferedWindow {
       items_[i].y = grid_y_ + cells[i].row * cell_h_;
       items_[i].shown = ellipsize(items_[i].label, cell_w_ - S(12));
     }
+    // Tests read where the icons are (tests/test_desktop_dnd.py).
+    if (const char *dump = getenv("SDE_DESKTOP_LAYOUT_FILE")) {
+      std::string out;
+      for (auto &it : items_)
+        out += item_key(it) + "\t" + std::to_string(it.x) + "\t" + std::to_string(it.y) + "\t" +
+               std::to_string(cell_w_) + "\t" + std::to_string(cell_h_) + "\n";
+      write_file_atomic(dump, out);
+    }
   }
 
   // The key of an item in the position store: the file name, or "@home",
@@ -1501,6 +1509,7 @@ class Desktop : public sde::BufferedWindow {
         damage_item(drop_target_);
       }
       if (k == TargetKind::NoTarget) return DropAction::NoDrop;
+      if (!files) return allowed.copy ? DropAction::Copy : DropAction::NoDrop;  // text makes a new file
       // The file system is not known before the data arrives: the answer
       // assumes one file system, the drop decides for real.
       return desk::choose_drop_action(k, mods, true, suggested, allowed);

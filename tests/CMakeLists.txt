@@ -185,3 +185,12 @@ add_test(NAME sde-theme COMMAND sde-theme-tests)
 add_executable(sde-desktop-tests test_desktop.cpp)
 target_link_libraries(sde-desktop-tests PRIVATE sde-desktop-model)
 add_test(NAME sde-desktop-model COMMAND sde-desktop-tests)
+# Test helper: an independent XDND source and target (Xlib only).
+find_package(X11 REQUIRED)
+add_executable(sde-xdnd-peer xdnd_peer.cpp)
+target_link_libraries(sde-xdnd-peer PRIVATE ${X11_LIBRARIES})
+if(SDE_XVFB)
+  add_test(NAME sde-desktop-dnd COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_desktop_dnd.py $<TARGET_FILE:sde-desktop> $<TARGET_FILE:sde-xdnd-peer>)
+  set_tests_properties(sde-desktop-dnd PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
