@@ -1411,6 +1411,19 @@ void build_panel(Page *page) {
       _("Hide automatically"), g_cfg.get_bool("panel", "autohide", false),
       [](bool on) { set_bool("panel", "autohide", on); },
       _("The panel appears when the pointer touches the screen edge."));
+  {
+    // alpha52: also in the search's right-click menu on the panel.
+    std::string mode = g_cfg.get("panel", "search", "auto");
+    int index = mode == "box" ? 1 : mode == "icon" ? 2 : mode == "hidden" ? 3 : 0;
+    page->choice_row(
+        _("Search"), {_("Automatic"), _("Search box"), _("Search icon only"), _("Hidden")}, index,
+        [](int v) {
+          static const char *vals[] = {"auto", "box", "icon", "hidden"};
+          if (v >= 0 && v < 4) g_cfg.set("panel", "search", vals[v]);
+          apply_change();
+        },
+        _("Hidden: Super still opens the Start menu, which searches as you type."));
+  }
   page->end_card();
 
   page->begin_card(_("Clock and status"));
@@ -1430,7 +1443,8 @@ void build_panel(Page *page) {
            {"show_media", _("Media player button")},
            {"show_network", _("Network indicator")},
            {"show_sound", _("Sound indicator")},
-           {"show_tray", _("System tray button")}})
+           {"show_tray", _("System tray button")},
+           {"show_notifications", _("Notifications button")}})
     page->switch_row(item.second, g_cfg.get_bool("panel", item.first, true),
                      [key = item.first](bool on) { set_bool("panel", key.c_str(), on); });
   page->switch_row(

@@ -2721,15 +2721,9 @@ void QuickSettings::build_center(SectionBuilder &b) {
     b.end_card(card);
     if (open) agenda_card(b);
   }
-  if (cfg.get_bool("action_center", "show_notifications", true)) {
-    auto *card = b.start_card(_("Notifications"));
-    icon_button(pad + inner - S(38), card->y() + S(4), S(32), S(28), _("Notification settings"),
-                gear_icon(), b.launch({"sde-settings", "--page", "notifications"}));
-    b.info(cfg.get_bool("notifications", "do_not_disturb", false)
-               ? _("Do Not Disturb is on: notifications are silenced.")
-               : _("No new notifications"));
-    b.end_card(card);
-  }
+  // alpha52: the notifications moved to the panel's notifications button
+  // (notify_center.h); the Action Center keeps toggles, sliders, media,
+  // calendar and power.
 }
 
 // ------------------------------------------------------------- time zone

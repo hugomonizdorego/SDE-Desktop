@@ -69,7 +69,9 @@ add_executable(sde-panel
   panel/status_flyout.cpp
   panel/drives.cpp
   panel/touchpad_monitor.cpp
-  panel/preview.cpp)
+  panel/preview.cpp
+  panel/panel_menus.cpp
+  panel/notify_center.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)

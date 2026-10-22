@@ -25,6 +25,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "menu.h"
+#include "notify_center.h"
 #include "paint.h"
 #include "preview.h"
 #include "process.h"
@@ -67,6 +68,7 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   flyout_.reset(new QuickSettings(QuickSettings::FLYOUT));
   status_flyout_.reset(new StatusFlyout());
   alarms_.reset(new AlarmPopup());
+  notify_flyout_.reset(new NotifyFlyout());
   preview_.reset(new TaskPreview());
 }
 
@@ -243,6 +245,10 @@ void Panel::setup() {
   sni_->set_hide_layout_applets(cfg_.get_bool("panel", "show_keyboard", true));
   sni_->start();
   SystemStatus::get().start([this] { status_update(); });
+  NotifyCenter::get().start([this] {
+    if (notify_w_ > 0) damage_rect(notify_x_, 0, notify_w_, h());
+    if (notify_flyout_) notify_flyout_->status_changed();
+  });
   TouchpadMonitor::get().start([this] { touchpad_activity(); },
                                [this] {
                                  status_signature_.clear();
@@ -309,7 +315,7 @@ void Panel::popup_opened(PanelPopup *p) {
   preview_pending_ = 0;
   if (preview_ && preview_->showing()) preview_->hide_now();
   if (p == quick_.get() || p == flyout_.get() || p == alarms_.get() ||
-      p == status_flyout_.get()) {
+      p == status_flyout_.get() || p == notify_flyout_.get()) {
     popup_opened_at_ = steady_ms();
     // Presses queued before the popup opened belong to earlier clicks. A
     // popup opened by a command (a client message carries no time) would
@@ -520,6 +526,8 @@ void Panel::outside_pointer_press(unsigned long time) {
                   : alarms_ && alarms_->is_open() ? static_cast<PanelPopup *>(alarms_.get())
                   : status_flyout_ && status_flyout_->is_open()
                       ? static_cast<PanelPopup *>(status_flyout_.get())
+                  : notify_flyout_ && notify_flyout_->is_open()
+                      ? static_cast<PanelPopup *>(notify_flyout_.get())
                       : nullptr;
   if (!q || Fl::grab()) return;
   // XI2 arrives on a separate connection: the press of the click that opened
@@ -549,6 +557,7 @@ std::string Panel::popup_key(const PanelPopup *p) const {
   if (p == flyout_.get()) return "flyout:" + flyout_->section();
   if (p == status_flyout_.get()) return "flyout:" + status_flyout_->section();
   if (p == alarms_.get()) return "alarms";
+  if (p == notify_flyout_.get()) return "notifications";
   return "";
 }
 std::string Panel::target_key(const Target &t) const {
@@ -561,6 +570,8 @@ std::string Panel::target_key(const Target &t) const {
       return "alarms";
     case ACTION_CENTER:
       return "center";
+    case NOTIFY:
+      return "notifications";
     case STATUS:
       if (t.index >= 0 && t.index < int(status_icons_.size())) {
         StatusIcon icon = status_icons_[size_t(t.index)];
@@ -677,6 +688,22 @@ void Panel::open_alarms(bool add) {
   if (add) alarms_->start_new();
   alarms_->open_centered(x() + clock_x_ + clock_w_ / 2);
 }
+void Panel::open_notifications() {
+  if (notify_flyout_->is_open()) {
+    notify_flyout_->close();
+    return;
+  }
+  if (recently_closed("notifications")) return;
+  if (open_popup_ && open_popup_ != notify_flyout_.get()) open_popup_->close();
+  set_revealed(true);
+  if (notify_w_ > 0)
+    notify_flyout_->open_centered(x() + notify_x_ + notify_w_ / 2);
+  else
+    notify_flyout_->open_at(x() + action_x_ + action_w_, true);
+}
+void Panel::close_notifications() {
+  if (notify_flyout_ && notify_flyout_->is_open()) notify_flyout_->close();
+}
 bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
   if (!shown() || root_x < x() || root_x >= x() + w() || root_y < y() || root_y >= y() + h())
     return false;
@@ -701,6 +728,8 @@ bool Panel::switch_popup(int root_x, int root_y, PanelPopup *from) {
       self->open_alarms();
     else if (p->key == "center")
       self->open_action_center();
+    else if (p->key == "notifications")
+      self->open_notifications();
     else if (starts_with(p->key, "flyout:"))
       self->open_flyout(p->key.substr(7));
   }, pending);
@@ -800,6 +829,11 @@ std::string Panel::tooltip_for(const Target &t) const {
     return _("Search apps, settings and files");
   } else if (t.kind == ACTION_CENTER) {
     return _("Action Center · Super+A");
+  } else if (t.kind == NOTIFY) {
+    int unread = NotifyCenter::get().unread();
+    if (cfg_.get_bool("notifications", "do_not_disturb", false))
+      return _("Notifications · Do Not Disturb is on");
+    return unread ? format(_("Notifications · %d new"), unread) : std::string(_("Notifications"));
   } else if (t.kind == CLOCK) {
     return _("Clock and alarms · Super+C opens the calendar");
   } else if (t.kind == SHOW_DESKTOP) {
@@ -848,6 +882,9 @@ bool Panel::target_rect(const Target &t, int &x, int &w) const {
     case SHOW_DESKTOP:
       x = show_desktop_x_, w = show_desktop_w_;
       return true;
+    case NOTIFY:
+      x = notify_x_, w = notify_w_;
+      return notify_w_ > 0;
     default:
       return false;
   }
@@ -1054,10 +1091,17 @@ void Panel::relayout() {
   action_w_ = H >= S(40) ? S(40) : S(34);
   action_x_ = right - action_w_ - S(4);
   right = action_x_ - S(2);
+  // alpha52: the notifications button (bell and unread count) between the
+  // clock and the Action Center button; [panel] show_notifications.
+  notify_w_ = !safe_mode && cfg_.get_bool("panel", "show_notifications", true) ? S(32) : 0;
+  notify_x_ = right - notify_w_;
+  right = notify_x_ - (notify_w_ ? S(2) : 0);
   text_font(theme_.font_size, false);
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   bool two_lines = H >= S(40) && show_date;
-  std::string sample = cfg_.get_bool("panel", "clock_24h", true) ? "88:88" : "88:88 PM";
+  bool seconds = cfg_.get_bool("panel", "clock_seconds", false);
+  std::string sample = cfg_.get_bool("panel", "clock_24h", true) ? (seconds ? "88:88:88" : "88:88")
+                                                                 : (seconds ? "88:88:88 PM" : "88:88 PM");
   int cw = text_width(sample);
   if (show_date) {
     int dw = text_width(clock_date_.empty() ? "Wed 30 Sep" : clock_date_);
@@ -1108,7 +1152,9 @@ void Panel::relayout() {
   add(TOUCHPAD_STATUS, "show_touchpad",
       cfg_.get("panel", "touchpad_indicator", "auto") != "never" &&
           TouchpadMonitor::get().present());
-  add(DND_STATUS, "show_do_not_disturb", cfg_.get_bool("notifications", "do_not_disturb", false));
+  // The notifications button shows Do Not Disturb (a crossed bell) itself.
+  add(DND_STATUS, "show_do_not_disturb",
+      notify_w_ == 0 && cfg_.get_bool("notifications", "do_not_disturb", false));
   add(NETWORK_STATUS, "show_network", s.network.available);
   add(SOUND_STATUS, "show_sound", s.audio.available);
   add(BATTERY_STATUS, "show_battery", s.battery.present);
@@ -1204,6 +1250,7 @@ Panel::Target Panel::hit(int x, int y) const {
     return {STATUS, std::max(0, (x - status_x_) / S(26))};
   if (x >= clock_x_ && x < clock_x_ + clock_w_) return {CLOCK, 0};
   if (x >= action_x_ && x < action_x_ + action_w_) return {ACTION_CENTER, 0};
+  if (notify_w_ && x >= notify_x_ && x < notify_x_ + notify_w_) return {NOTIFY, 0};
   if (show_desktop_w_ && x >= show_desktop_x_ && x < show_desktop_x_ + show_desktop_w_)
     return {SHOW_DESKTOP, 0};
   return t;
@@ -1423,6 +1470,23 @@ void Panel::draw() {
                              t.on_accent);
     button_bg(clock_x_, clock_w_, {CLOCK, 0},
               (center_open && quick_->calendar_view()) || (alarms_ && alarms_->is_open()));
+    if (notify_w_) {
+      // The bell, crossed while Do Not Disturb is on, with the unread count.
+      bool dnd = cfg_.get_bool("notifications", "do_not_disturb", false);
+      button_bg(notify_x_, notify_w_, {NOTIFY, 0}, notify_flyout_ && notify_flyout_->is_open());
+      double bx = notify_x_ + (notify_w_ - gs) / 2.;
+      glyph::bell(p, bx, gy, gs, dnd, dnd ? t.text_dim : t.text);
+      int unread = NotifyCenter::get().unread();
+      if (unread > 0 && !dnd) {
+        std::string count = unread > 9 ? "9+" : std::to_string(unread);
+        text_font(std::max(S(8), t.font_size - 3), true);
+        double bw = std::max<double>(S(14), text_width(count) + S(6)), bh = S(14);
+        double rx = std::min<double>(notify_x_ + notify_w_ - bw - S(1), bx + gs - bw / 2),
+               ry = gy - S(4);
+        p.fill_rounded(rx - Sd(1.5), ry - Sd(1.5), bw + Sd(3), bh + Sd(3), (bh + Sd(3)) / 2, t.surface);
+        p.fill_rounded(rx, ry, bw, bh, bh / 2, t.accent);
+      }
+    }
     if (show_desktop_w_) {
       if (hover_ == Target{SHOW_DESKTOP, 0})
         p.fill_rect(show_desktop_x_, 0, show_desktop_w_, H, t.hover);
@@ -1468,6 +1532,17 @@ void Panel::draw() {
     std::string str = show_date ? clock_date_ + "  " + clock_time_ : clock_time_;
     draw_text(str, clock_x_, 0, clock_w_, H, t.text, 1);
   }
+  if (notify_w_ && !cfg_.get_bool("notifications", "do_not_disturb", false)) {
+    int unread = NotifyCenter::get().unread();
+    if (unread > 0) {
+      std::string count = unread > 9 ? "9+" : std::to_string(unread);
+      double gs = S(18), gy = (H - gs) / 2., bx = notify_x_ + (notify_w_ - gs) / 2.;
+      text_font(std::max(S(8), t.font_size - 3), true);
+      int bw = std::max(S(14), text_width(count) + S(6)), bh = S(14);
+      int rx = int(std::min<double>(notify_x_ + notify_w_ - bw - S(1), bx + gs - bw / 2.));
+      draw_text(count, rx, int(gy) - S(4), bw, bh, t.on_accent, 1);
+    }
+  }
   if (qa_dump_enabled()) qa_dump_panel();
 }
 
@@ -1482,7 +1557,13 @@ void Panel::qa_dump_panel() {
                      (search_w_ ? line(search_box_shown() ? "search" : "search-icon", search_x_,
                                        search_w_)
                                 : std::string()) +
-                     line("action-center", action_x_, action_w_);
+                     line("action-center", action_x_, action_w_) +
+                     (notify_w_ ? line("notifications", notify_x_, notify_w_) +
+                                      "@badge:" + std::to_string(NotifyCenter::get().unread()) +
+                                      "\t0\t0\t0\t0\t1\n"
+                                : std::string());
+  if (cfg_.get_bool("notifications", "do_not_disturb", false)) text += "@dnd:on\t0\t0\t0\t0\t1\n";
+  text += "@search-mode:" + std::to_string(search_mode_) + "\t0\t0\t0\t0\t1\n";
   // The tooltip the panel handed to Fl_Tooltip for the hovered part.
   if (!tip_.current().empty()) text += "@tooltip:" + tip_.current() + "\t0\t0\t0\t0\t1\n";
   {
@@ -1498,6 +1579,13 @@ void Panel::qa_dump_panel() {
     std::string name = status_section(status_icons_[i]);
     if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
     text += line("status:" + name, status_x_ + int(i) * S(26), S(26));
+  }
+  // StatusNotifier items on the panel (alpha52 right-click menus).
+  if (sni_ && sni_w_ > 0) {
+    auto items = sni_->visible_items();
+    for (size_t i = 0; i < items.size(); ++i)
+      text += line("tray-item:" + SniHost::display_name(*items[i]),
+                   sni_x_ + int(i) * (tray_icon_ + S(10)), tray_icon_ + S(10));
   }
   // Taskbar buttons (alpha51 window previews).
   for (const auto &t : tasks_)
@@ -1542,7 +1630,8 @@ int Panel::handle(int event) {
       preview_pending_ = 0;
       if (preview_ && preview_->showing()) preview_->hide_now();
       pressed_ = hit(Fl::event_x(), Fl::event_y());
-      if (pressed_.kind == PINNED && Fl::event_button() == FL_LEFT_MOUSE) {
+      if (pressed_.kind == PINNED && Fl::event_button() == FL_LEFT_MOUSE &&
+          !cfg_.get_bool("panel", "locked", false)) {
         drag_index_ = pressed_.index;
         drag_start_x_ = drag_x_ = Fl::event_x();
         dragging_ = false;
@@ -1584,10 +1673,10 @@ int Panel::handle(int event) {
       redraw();
       if (!(t == p)) return 1;
       int button = Fl::event_button();
-      if (button == FL_RIGHT_MOUSE &&
-          (t.kind == NONE || t.kind == START || t.kind == SEARCH || t.kind == CLOCK || t.kind == SHOW_DESKTOP ||
-           t.kind == STATUS || t.kind == ACTION_CENTER)) {
-        show_context_menu();
+      // alpha52: every panel item has its own right-click menu; tray
+      // items show their application's menu (tray_item_clicked).
+      if (button == FL_RIGHT_MOUSE && t.kind != TRAY_ITEM) {
+        context_menu_for(t);
         return 1;
       }
       switch (t.kind) {
@@ -1598,10 +1687,7 @@ int Panel::handle(int event) {
           open_search();
           break;
         case PINNED:
-          if (button == FL_RIGHT_MOUSE)
-            pinned_menu(t.index);
-          else
-            launch_entry(pinned_[size_t(t.index)].entry);
+          launch_entry(pinned_[size_t(t.index)].entry);
           break;
         case TASK:
           task_clicked(t.index, button);
@@ -1614,6 +1700,9 @@ int Panel::handle(int event) {
           break;
         case ACTION_CENTER:
           open_action_center();
+          break;
+        case NOTIFY:
+          open_notifications();
           break;
         case CLOCK:
           // The clock opens the alarms; Super+C (sde-panel --calendar) and
@@ -1657,30 +1746,6 @@ void Panel::tray_item_clicked(int index, int button) {
     sni_->secondary_activate(*items[size_t(index)], x, y);
   else
     sni_->context_menu(*items[size_t(index)], x, y);
-}
-
-void Panel::pinned_menu(int index) {
-  if (index < 0 || index >= int(pinned_.size())) return;
-  DesktopEntry e = pinned_[size_t(index)].entry;
-  Fl_Menu_Item items[] = {
-      {_("Open"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-      {_("Move Left"), 0, nullptr, nullptr, index == 0 ? FL_MENU_INACTIVE : 0, 0, 0, 0, 0},
-      {_("Move Right"), 0, nullptr, nullptr,
-       (index + 1 >= int(pinned_.size()) ? FL_MENU_INACTIVE : 0) | FL_MENU_DIVIDER, 0, 0, 0, 0},
-      {_("Unpin from Panel"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-      {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-  const Fl_Menu_Item *m = popup_menu(items, Fl::event_x_root());
-  if (m == &items[0]) {
-    launch_entry(e);
-  } else if (m == &items[1] || m == &items[2]) {
-    int other = m == &items[1] ? index - 1 : index + 1;
-    std::swap(pinned_[size_t(index)], pinned_[size_t(other)]);
-    save_pins();
-    relayout();
-    redraw();
-  } else if (m == &items[3]) {
-    unpin(e.id);
-  }
 }
 
 // ------------------------------------------------------- window previews
@@ -1759,70 +1824,13 @@ void Panel::task_clicked(int index, int button) {
     return;
   }
   if (button == FL_RIGHT_MOUSE) {
-    Window win = t.win;
-    bool minimized = t.minimized;
-    DesktopEntry entry;
-    bool has_entry = find_entry_for(t, entry);
-    bool pinned = has_entry && is_pinned(entry.id);
-    Fl_Menu_Item items[] = {
-        {minimized ? _("Restore") : _("Minimize"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-        {_("Maximize / Restore Size"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-        {pinned ? _("Unpin from Panel") : _("Pin to Panel"), 0, nullptr, nullptr,
-         (has_entry ? 0 : FL_MENU_INACTIVE) | FL_MENU_DIVIDER, 0, 0, 0, 0},
-        {_("Close"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-    const Fl_Menu_Item *m = popup_menu(items, Fl::event_x_root());
-    if (!m) return;
-    if (m == &items[0]) {
-      if (minimized)
-        x11::activate_window(win);
-      else
-        x11::minimize_window(win);
-    } else if (m == &items[1]) {
-      x11::toggle_maximize(win);
-    } else if (m == &items[2]) {
-      if (pinned)
-        unpin(entry.id);
-      else
-        pin(entry.id);
-    } else if (m == &items[3]) {
-      x11::close_window(win);
-    }
+    task_menu(index);
     return;
   }
   if (t.win == active_ && !t.minimized)
     x11::minimize_window(t.win);
   else
     x11::activate_window(t.win);
-}
-
-void Panel::show_context_menu() {
-  auto radio = [&](int mode) { return FL_MENU_RADIO | (search_mode_ == mode ? FL_MENU_VALUE : 0); };
-  Fl_Menu_Item items[] = {{_("Search"), 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},
-                          {_("Show Search Box"), 0, nullptr, nullptr, radio(2), 0, 0, 0, 0},
-                          {_("Show Search Icon"), 0, nullptr, nullptr, radio(1), 0, 0, 0, 0},
-                          {_("Hidden"), 0, nullptr, nullptr, radio(0), 0, 0, 0, 0},
-                          {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                          {_("Panel Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                          {_("Appearance Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                          {_("Run Command..."), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
-                          {_("About SDE"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-                          {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-  const Fl_Menu_Item *m = popup_menu(items, Fl::event_x_root());
-  if (m == &items[1])
-    set_setting("panel", "search", "box");
-  else if (m == &items[2])
-    set_setting("panel", "search", "icon");
-  else if (m == &items[3])
-    set_setting("panel", "search", "hidden");
-  else if (m == &items[5])
-    spawn_detached({"sde-settings", "--page", "panel"});
-  else if (m == &items[6])
-    spawn_detached({"sde-settings", "--page", "appearance"});
-  else if (m == &items[7])
-    spawn_detached({"sde-run"});
-  else if (m == &items[8])
-    spawn_detached({"sde-settings", "--page", "about"});
 }
 
 // ------------------------------------------------------------ X11 / tasks
@@ -1920,6 +1928,7 @@ bool Panel::handle_x(const XEvent &e) {
         if (flyout_->is_open()) flyout_->close();
         if (status_flyout_->is_open()) status_flyout_->close();
         if (alarms_->is_open()) alarms_->close();
+        close_notifications();
       }
       refresh_tasks();
     } else if (a == x11::atom("_SDE_COMMAND")) {
@@ -1952,11 +1961,13 @@ bool Panel::handle_x(const XEvent &e) {
       if (!autohide_) revealed_ = true;
       place_on_screen();
       for (auto &t : tasks_) update_task(t);
+      clock_tick(this);
       relayout();
       redraw();
       quick_->status_changed();
       flyout_->status_changed();
       status_flyout_->status_changed();
+      notify_flyout_->status_changed();
       led_update();
       TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
       Alarms::get().reload();
@@ -2012,13 +2023,15 @@ void Panel::clock_tick(void *data) {
   localtime_r(&now, &lt);
   char buf[64];
   bool h24 = p->cfg_.get_bool("panel", "clock_24h", true);
-  strftime(buf, sizeof buf, h24 ? "%H:%M" : "%I:%M %p", &lt);
+  // [panel] clock_seconds (alpha52, the clock's right-click menu).
+  bool seconds = p->cfg_.get_bool("panel", "clock_seconds", false);
+  strftime(buf, sizeof buf, h24 ? (seconds ? "%H:%M:%S" : "%H:%M") : (seconds ? "%I:%M:%S %p" : "%I:%M %p"), &lt);
   std::string tstr = buf;
   if (!h24 && tstr[0] == '0') tstr.erase(0, 1);
   strftime(buf, sizeof buf, "%a %e %b", &lt);
   std::string dstr = trim(buf);
   if (tstr != p->clock_time_ || dstr != p->clock_date_) {
-    bool relayout_needed = dstr.size() != p->clock_date_.size();
+    bool relayout_needed = dstr.size() != p->clock_date_.size() || tstr.size() != p->clock_time_.size();
     p->clock_time_ = tstr;
     p->clock_date_ = dstr;
     if (relayout_needed) p->relayout();
@@ -2026,7 +2039,9 @@ void Panel::clock_tick(void *data) {
     if (p->quick_ && p->quick_->is_open()) p->quick_->redraw();
     if (p->alarms_ && p->alarms_->is_open()) p->alarms_->redraw();
   }
-  // Wake up right after the next full minute.
+  // Wake up right after the next full minute (or second).
   Fl::remove_timeout(clock_tick, data);
-  Fl::add_timeout(60 - lt.tm_sec + 0.2, clock_tick, data);
+  Fl::add_timeout(seconds ? 1.02 - std::fmod(double(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()) / 1000.0, 1.0)
+                          : 60 - lt.tm_sec + 0.2,
+                  clock_tick, data);
 }
