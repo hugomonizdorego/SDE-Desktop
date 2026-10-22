@@ -116,3 +116,12 @@ endif()
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
 target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
 add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)
+
+# Caption buttons and their migration, transparency contrast, icon theme
+# lookup (tests/fixtures/icon-themes) and the build history of Settings > About.
+add_executable(sde-theme-tests test_theme.cpp)
+target_link_libraries(sde-theme-tests PRIVATE sde-settings-model sde-common)
+target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                   SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(sde-theme-tests sde-build-info)
+add_test(NAME sde-theme COMMAND sde-theme-tests)

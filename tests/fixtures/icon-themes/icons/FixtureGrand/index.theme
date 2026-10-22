@@ -1,0 +1,11 @@
+[Icon Theme]
+Name=FixtureGrand
+Comment=FixtureGrand (SDE test fixture)
+Directories=scalable/places
+
+[scalable/places]
+Size=48
+Type=Scalable
+Context=Places
+MinSize=8
+MaxSize=512

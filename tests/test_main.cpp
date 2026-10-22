@@ -232,7 +232,7 @@ static void test_theme_migration() {
   CHECK(theme_dir("graphite") == "SDE-Graphite-Light-Blue");
   CHECK(theme_dir("aero", true) == "SDE-Fluent-Dark-Blue");
   CHECK(theme_dir("glass", false, "graphite") == "SDE-Glass-Light-Graphite");
-  CHECK(theme_title_layout("graphite") == "CIML");
+  CHECK(theme_title_layout("graphite") == "NLIMC");  // right-hand buttons since alpha50
   CHECK(theme_title_layout("fluent") == "NLIMC");
   std::tm noon{};
   noon.tm_year = 126, noon.tm_mon = 0, noon.tm_mday = 10, noon.tm_hour = 12, noon.tm_isdst = -1;
@@ -305,7 +305,7 @@ static void test_gtk_preferences() {
   CHECK(sde || name == "Adwaita-dark");
   CHECK(read_file(std::string(root) + "/gtk-4.0/settings.ini", text));
   CHECK(text.find("gtk-theme-name=" + name) != std::string::npos);
-  CHECK(text.find("gtk-decoration-layout=close,minimize,maximize:menu") != std::string::npos);
+  CHECK(text.find("gtk-decoration-layout=:minimize,maximize,close") != std::string::npos);
   CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
   CHECK(text.find("Net/ThemeName \"" + name + "\"") != std::string::npos);
   CHECK(text.find("Gtk/DecorationLayout") != std::string::npos);
@@ -327,7 +327,7 @@ static void test_gtk_preferences() {
   CHECK(text.find("SDE Aero: managed") == std::string::npos);
   CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
   CHECK(text.find("gtk-theme-name=" + name) != std::string::npos);
-  CHECK(text.find("gtk-decoration-layout=menu:minimize,maximize,close") != std::string::npos);
+  CHECK(text.find("gtk-decoration-layout=:minimize,maximize,close") != std::string::npos);
   cfg.set("appearance", "style", "liquid-glass");
   CHECK(theme_style(cfg) == "glass");
   CHECK(theme_dir(cfg) == "SDE-Glass-Dark-Teal");
@@ -343,13 +343,19 @@ static void test_gtk_preferences() {
   std::string conf = write_compositor_config(cfg);
   CHECK(read_file(conf, text));
   CHECK(text.find("backend = \"xrender\";") != std::string::npos);
-  CHECK(text.find("frame-opacity = 0.64;") != std::string::npos);
+  // Frames follow [aero] transparency (Theme::frame_opacity): Glass the most.
+  auto frame_opacity = [&]() {
+    size_t at = text.find("frame-opacity = ");
+    return at == std::string::npos ? -1.0 : atof(text.c_str() + at + 16);
+  };
+  double glass_frame = frame_opacity();
+  CHECK(glass_frame > 0.6 && glass_frame < 0.95);
   CHECK(text.find("blur-background = true;") != std::string::npos);
   CHECK(text.find("corner-radius = 16;") != std::string::npos);
-  // Fluent: opaque frames, Acrylic (translucent, blurred) menus, 8 px corners.
+  // Fluent: lightly translucent frames, Acrylic (translucent, blurred) menus, 8 px corners.
   cfg.set("appearance", "style", "fluent");
   CHECK(read_file(write_compositor_config(cfg), text));
-  CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);
+  CHECK(frame_opacity() > glass_frame && frame_opacity() < 1.0);
   CHECK(text.find("blur-background = true;") != std::string::npos);
   CHECK(text.find("corner-radius = 8;") != std::string::npos);
   CHECK(text.find("popup_menu = { opacity = 1.00") == std::string::npos);

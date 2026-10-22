@@ -1,0 +1,9 @@
+[Icon Theme]
+Name=EmblemsOnly
+Comment=EmblemsOnly (SDE test fixture)
+Directories=16x16/emblems
+
+[16x16/emblems]
+Size=16
+Type=Fixed
+Context=Emblems
