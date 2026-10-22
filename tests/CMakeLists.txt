@@ -194,3 +194,8 @@ if(SDE_XVFB)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_desktop_dnd.py $<TARGET_FILE:sde-desktop> $<TARGET_FILE:sde-xdnd-peer>)
   set_tests_properties(sde-desktop-dnd PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 endif()
+
+# Settings > Default Applications: categories, mimeapps.list, defaults.
+add_executable(sde-default-apps-tests test_default_apps.cpp)
+target_link_libraries(sde-default-apps-tests PRIVATE sde-settings-model)
+add_test(NAME sde-default-apps COMMAND sde-default-apps-tests)

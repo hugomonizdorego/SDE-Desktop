@@ -838,6 +838,12 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
     p.line(x + size * .3, y + size * .72, x + size * .7, y + size * .72, c, size * .06);
     return;
   }
+  if (id == "default-apps") {
+    // A window with a check mark: "the one that opens it".
+    p.stroke_rounded(x, y + size * .08, size, size * .84, size * .14, c, size * .075);
+    glyph::check(p, x + size * .2, y + size * .22, size * .6, c);
+    return;
+  }
   p.stroke_rounded(x, y + size * .1, size, size * .65, size * .08, c, size * .075);
   if (id == "panel") {
     p.fill_rounded(x + size * .1, y + size * .57, size * .8, size * .1, size * .03, c);
@@ -2503,6 +2509,10 @@ const std::vector<PageInfo> &pages() {
       {"lock", N_("Lock Screen"), {"system-lock-screen", "preferences-desktop-screensaver"},
        build_lock_page},
       {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite},
+      {"default-apps",
+       N_("Default Applications"),
+       {"preferences-desktop-default-applications", "applications-other"},
+       build_default_apps_page},
       {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
       {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
   };
@@ -2689,6 +2699,11 @@ const std::pair<const char *, const char *> kPageAliases[] = {
     {"compositor", "effects"}, {"info", "about"},           {"graphics", "about"},
     {"time", "system"},        {"date", "system"},          {"timezone", "system"},
     {"clock", "system"},
+    {"defaults", "default-apps"}, {"default apps", "default-apps"},
+    {"default-applications", "default-apps"}, {"default applications", "default-apps"},
+    {"mime", "default-apps"},  {"file-types", "default-apps"},  {"open-with", "default-apps"},
+    {"browser", "default-apps"}, {"mail", "default-apps"},     {"email", "default-apps"},
+    {"terminal", "default-apps"},
 };
 
 // Page id for |name| (an id or an alias, any case), or "".

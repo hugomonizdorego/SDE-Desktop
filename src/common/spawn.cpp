@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "config.h"
 #include "util.h"
 
 namespace sde {
@@ -51,7 +52,32 @@ bool spawn_detached(const std::vector<std::string> &argv, const std::string &wor
   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+std::string terminal_exec_arg(const std::string &program, const DesktopEntry *entry) {
+  if (entry && entry->has_exec_arg) return entry->exec_arg;
+  std::string p = basename_of(program);
+  if (p == "gnome-terminal" || p == "kgx" || p == "ptyxis" || p == "gnome-console") return "--";
+  if (p == "xfce4-terminal" || p == "terminator" || p == "mate-terminal") return "-x";
+  if (p == "kitty" || p == "foot" || p == "footclient" || p == "st") return "";
+  return "-e";
+}
+
 bool open_terminal(const std::vector<std::string> &argv, const std::string &work_dir) {
+  // The terminal chosen in Settings > Default Applications.
+  Config cfg;
+  cfg.load();
+  std::string id = cfg.get("applications", "terminal", "auto");
+  DesktopEntry entry;
+  if (!id.empty() && id != "auto" && find_application(id, entry)) {
+    std::vector<std::string> cmd = entry.command({});
+    if (!cmd.empty() && !find_program(cmd[0]).empty()) {
+      if (!argv.empty()) {
+        std::string arg = terminal_exec_arg(cmd[0], &entry);
+        if (!arg.empty()) cmd.push_back(arg);
+        cmd.insert(cmd.end(), argv.begin(), argv.end());
+      }
+      if (spawn_detached(cmd, work_dir.empty() ? home_dir() : work_dir)) return true;
+    }
+  }
   static const char *terminals[] = {"x-terminal-emulator", "xfce4-terminal", "lxterminal",
                                     "qterminal", "mate-terminal", "gnome-terminal",
                                     "konsole", "xterm"};
@@ -59,8 +85,9 @@ bool open_terminal(const std::vector<std::string> &argv, const std::string &work
     if (find_program(t).empty()) continue;
     std::vector<std::string> cmd{t};
     if (!argv.empty()) {
-      // gnome-terminal wants "--", everything else understands "-e".
-      cmd.push_back(std::string(t) == "gnome-terminal" ? "--" : "-e");
+      // gnome-terminal wants "--", xfce4-terminal "-x", most others "-e".
+      std::string arg = terminal_exec_arg(t);
+      if (!arg.empty()) cmd.push_back(arg);
       cmd.insert(cmd.end(), argv.begin(), argv.end());
     }
     return spawn_detached(cmd, work_dir.empty() ? home_dir() : work_dir);

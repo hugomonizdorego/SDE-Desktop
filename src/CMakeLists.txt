@@ -95,6 +95,7 @@ add_executable(sde-settings
   settings/power.cpp
   settings/touchpad.cpp
   settings/network.cpp
+  settings/default_apps_page.cpp
   # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
   panel/timezone.cpp
   panel/weather.cpp)
@@ -103,7 +104,7 @@ add_executable(sde-settings
 # tested; thumbnails come from the Gallery core (decoding threads and the
 # freedesktop.org thumbnail cache).
 add_library(sde-settings-model STATIC settings/gpu.cpp settings/wallpapers.cpp
-  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp)
+  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp settings/default_apps.cpp)
 target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/settings)
 target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common)
 target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)
