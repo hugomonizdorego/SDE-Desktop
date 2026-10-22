@@ -67,8 +67,13 @@ add_executable(sde-panel
   panel/status_model.cpp
   panel/status_flyout.cpp
   panel/drives.cpp
-  panel/touchpad_monitor.cpp)
+  panel/touchpad_monitor.cpp
+  panel/preview.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
+if(XCOMPOSITE_FOUND)
+  target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
+  target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
+endif()
 
 add_executable(sde-desktop desktop/main.cpp)
 # WebP and other pixbuf wallpapers are decoded with the Gallery core.

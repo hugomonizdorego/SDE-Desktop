@@ -78,3 +78,7 @@ class PanelPopup : public sde::BufferedWindow {
 // |extra| lines are written first. Does nothing without the variable.
 bool qa_dump_enabled();
 void qa_dump(Fl_Window *win, const std::string &extra = "");
+
+// Shapes X window |xid| (|w| x |h|) with rounded corners of radius |r|;
+// |corners|: 1 top-left, 2 top-right, 4 bottom-right, 8 bottom-left.
+void apply_rounded_shape(unsigned long xid, int w, int h, int r, int corners = 15);

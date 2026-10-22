@@ -26,6 +26,7 @@
 #include "icons.h"
 #include "menu.h"
 #include "paint.h"
+#include "preview.h"
 #include "process.h"
 #include "quick.h"
 #include "rust_layout.h"
@@ -65,6 +66,7 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   flyout_.reset(new QuickSettings(QuickSettings::FLYOUT));
   status_flyout_.reset(new StatusFlyout());
   alarms_.reset(new AlarmPopup());
+  preview_.reset(new TaskPreview());
 }
 
 Panel::~Panel() {
@@ -251,6 +253,7 @@ void Panel::setup() {
   refresh_tasks();
   clock_tick(this);
   if (autohide_) Fl::add_timeout(1.5, hide_timeout, this);
+  Fl::add_timeout(5.0, thumbnail_tick, this);
 }
 
 // ------------------------------------------------------------- auto-hide
@@ -301,6 +304,9 @@ void Panel::open_popup(PanelPopup *p, int anchor_x, bool align_right) {
 
 void Panel::popup_opened(PanelPopup *p) {
   open_popup_ = p;
+  Fl::remove_timeout(preview_timeout, this);
+  preview_pending_ = 0;
+  if (preview_ && preview_->showing()) preview_->hide_now();
   if (p == quick_.get() || p == flyout_.get() || p == alarms_.get() ||
       p == status_flyout_.get()) {
     popup_opened_at_ = steady_ms();
@@ -800,6 +806,8 @@ std::string Panel::tooltip_for(const Target &t) const {
   } else if (t.kind == START) {
     return _("Start · Super");
   } else if (t.kind == TASK && t.index >= 0 && t.index < int(tasks_.size())) {
+    // The window preview names the window (alpha51).
+    if (previews_enabled()) return "";
     // A narrow task button shows only the icon: its title as tooltip.
     const Task &task = tasks_[size_t(t.index)];
     if (task.w < h() + S(20)) return printable_text(task.title.empty() ? task.wm_class : task.title);
@@ -1483,6 +1491,12 @@ void Panel::qa_dump_panel() {
     if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
     text += line("status:" + name, status_x_ + int(i) * S(26), S(26));
   }
+  // Taskbar buttons (alpha51 window previews).
+  for (const auto &t : tasks_)
+    if (t.w > 0)
+      text += line("task:" + printable_text(t.title.empty() ? t.wm_class : t.title) +
+                       (t.minimized ? ":minimized" : ""),
+                   t.x, t.w);
   qa_dump(this, text);
 }
 
@@ -1504,15 +1518,21 @@ int Panel::handle(int event) {
         TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
         redraw();
       }
+      preview_hover(t);
       return 1;
     }
     case FL_LEAVE:
+      preview_hover(Target{});
       hover_ = Target{};
       TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
       redraw();
       if (autohide_) Fl::add_timeout(0.8, hide_timeout, this);
       return 1;
     case FL_PUSH:
+      // A click on the panel closes the window preview at once.
+      Fl::remove_timeout(preview_timeout, this);
+      preview_pending_ = 0;
+      if (preview_ && preview_->showing()) preview_->hide_now();
       pressed_ = hit(Fl::event_x(), Fl::event_y());
       if (pressed_.kind == PINNED && Fl::event_button() == FL_LEFT_MOUSE) {
         drag_index_ = pressed_.index;
@@ -1655,9 +1675,77 @@ void Panel::pinned_menu(int index) {
   }
 }
 
+// ------------------------------------------------------- window previews
+
+bool Panel::previews_enabled() const { return cfg_.get_bool("panel", "window_previews", true); }
+
+// Hovering a task button shows its preview after [panel] preview_delay_ms;
+// another button while a preview shows swaps it at once; anything else
+// hides it after 250 ms (unless the pointer moves onto the preview).
+void Panel::preview_hover(const Target &t) {
+  if (!preview_) return;
+  bool task = t.kind == TASK && t.index >= 0 && t.index < int(tasks_.size()) &&
+              previews_enabled() && !any_popup_open() && !Fl::pushed();
+  if (!task) {
+    Fl::remove_timeout(preview_timeout, this);
+    preview_pending_ = 0;
+    if (preview_->showing()) preview_->hide_soon();
+    return;
+  }
+  Window win = tasks_[size_t(t.index)].win;
+  if (preview_->showing()) {
+    preview_->cancel_hide();
+    if (preview_->hovered() != win) show_preview(t.index);
+    return;
+  }
+  if (preview_pending_ == win) return;
+  preview_pending_ = win;
+  Fl::remove_timeout(preview_timeout, this);
+  int delay = std::max(0, std::min(5000, cfg_.get_int("panel", "preview_delay_ms", 400)));
+  Fl::add_timeout(delay / 1000.0, preview_timeout, this);
+}
+
+void Panel::preview_timeout(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  Window win = p->preview_pending_;
+  p->preview_pending_ = 0;
+  if (!(p->hover_.kind == TASK) || p->any_popup_open()) return;
+  for (size_t i = 0; i < p->tasks_.size(); ++i)
+    if (p->tasks_[i].win == win && int(i) == p->hover_.index) p->show_preview(int(i));
+}
+
+void Panel::show_preview(int index) {
+  if (index < 0 || index >= int(tasks_.size())) return;
+  const Task &hovered = tasks_[size_t(index)];
+  // The windows of the same application side by side, in taskbar order.
+  std::vector<TaskPreview::Item> items;
+  for (const auto &t : tasks_) {
+    bool same = &t == &hovered || (!hovered.wm_class.empty() && t.wm_class == hovered.wm_class);
+    if (same) items.push_back({t.win, printable_text(t.title.empty() ? t.wm_class : t.title), t.icon});
+  }
+  preview_->show_items(items, x() + hovered.x + hovered.w / 2, hovered.win);
+}
+
+// The active window's picture, every few seconds while the panel is idle:
+// a window minimized with its title bar button still has a recent one.
+void Panel::thumbnail_tick(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  if (p->previews_enabled() && p->active_ && !p->any_popup_open() &&
+      !(p->preview_ && p->preview_->showing())) {
+    for (const auto &t : p->tasks_)
+      if (t.win == p->active_ && !t.minimized) {
+        TaskPreview::capture(t.win);
+        break;
+      }
+  }
+  Fl::repeat_timeout(5.0, thumbnail_tick, data);
+}
+
 void Panel::task_clicked(int index, int button) {
   if (index < 0 || index >= int(tasks_.size())) return;
   Task &t = tasks_[size_t(index)];
+  // Keep a picture of a window the panel minimizes (alpha51 previews).
+  if (previews_enabled() && !t.minimized) TaskPreview::capture(t.win);
   if (button == FL_MIDDLE_MOUSE) {
     x11::close_window(t.win);
     return;
@@ -1765,7 +1853,13 @@ void Panel::refresh_tasks() {
   if (!configured_) return;
   Window root = RootWindow(fl_display, fl_screen);
   auto clients = x11::get_windows(root, "_NET_CLIENT_LIST");
+  Window was_active = active_;
   active_ = x11::get_window(root, "_NET_ACTIVE_WINDOW");
+  // The window that loses the focus is still on screen: keep its picture
+  // for the preview (it may be minimized next).
+  if (was_active && was_active != active_ && previews_enabled())
+    for (const auto &t : tasks_)
+      if (t.win == was_active && !t.minimized) TaskPreview::capture(t.win);
   std::vector<Task> next;
   for (Window w : clients) {
     if (!x11::window_is_normal(w) || x11::window_has_state(w, "_NET_WM_STATE_SKIP_TASKBAR"))
@@ -1785,6 +1879,14 @@ void Panel::refresh_tasks() {
   for (auto &t : tasks_)
     if (t.icon) cairo_surface_destroy(t.icon);
   tasks_ = std::move(next);
+  // Closed windows drop their thumbnails; the preview follows the list.
+  std::vector<Window> alive;
+  for (const auto &t : tasks_) alive.push_back(t.win);
+  TaskPreview::retain(alive);
+  if (preview_ && preview_->showing()) {
+    if (std::find(alive.begin(), alive.end(), preview_->hovered()) == alive.end())
+      preview_->hide_now();
+  }
   relayout();
   redraw();
 }
@@ -1871,7 +1973,10 @@ bool Panel::handle_x(const XEvent &e) {
           refresh_tasks();
           return true;
         }
+        bool was_minimized = t.minimized;
         update_task(t, a == x11::atom("_NET_WM_ICON") || a == XA_WM_HINTS);
+        // Minimized: a last picture while the window may still be mapped.
+        if (t.minimized && !was_minimized && previews_enabled()) TaskPreview::capture(t.win);
         redraw();
       }
       return true;

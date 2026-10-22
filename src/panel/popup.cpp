@@ -181,29 +181,32 @@ int rounded_corners(bool corner_popup) {
 }
 }  // namespace
 
-void PanelPopup::apply_shape() {
-  if (!shown() || !fl_xid(this)) return;
+void apply_rounded_shape(Window xid, int w, int h, int r, int corners) {
   int event, error;
-  if (!XShapeQueryExtension(fl_display, &event, &error)) return;
-  shaped_w_ = w(), shaped_h_ = h();
-  int r = corner_radius(), corners = rounded_corners(corner_popup());
+  if (!xid || !XShapeQueryExtension(fl_display, &event, &error)) return;
   if (r <= 0) {
-    XShapeCombineMask(fl_display, fl_xid(this), ShapeBounding, 0, 0, None, ShapeSet);
+    XShapeCombineMask(fl_display, xid, ShapeBounding, 0, 0, None, ShapeSet);
     return;
   }
   // One rectangle per row inside the rounded outline (as the panel's shape).
   std::vector<XRectangle> rows;
-  for (int row = 0; row < h(); ++row) {
-    bool top = row < r, bottom = row >= h() - r;
-    double dy = top ? r - row - 0.5 : bottom ? row - (h() - r) + 0.5 : 0;
+  for (int row = 0; row < h; ++row) {
+    bool top = row < r, bottom = row >= h - r;
+    double dy = top ? r - row - 0.5 : bottom ? row - (h - r) + 0.5 : 0;
     int inset = dy > 0 ? int(std::ceil(r - std::sqrt(std::max(0.0, r * r - dy * dy)))) : 0;
     int left = (top && (corners & 1)) || (bottom && (corners & 8)) ? inset : 0;
     int right = (top && (corners & 2)) || (bottom && (corners & 4)) ? inset : 0;
     rows.push_back({short(left), short(row),
-                    static_cast<unsigned short>(std::max(1, w() - left - right)), 1});
+                    static_cast<unsigned short>(std::max(1, w - left - right)), 1});
   }
-  XShapeCombineRectangles(fl_display, fl_xid(this), ShapeBounding, 0, 0, rows.data(),
-                          int(rows.size()), ShapeSet, YXBanded);
+  XShapeCombineRectangles(fl_display, xid, ShapeBounding, 0, 0, rows.data(), int(rows.size()),
+                          ShapeSet, YXBanded);
+}
+
+void PanelPopup::apply_shape() {
+  if (!shown() || !fl_xid(this)) return;
+  shaped_w_ = w(), shaped_h_ = h();
+  apply_rounded_shape(fl_xid(this), w(), h(), corner_radius(), rounded_corners(corner_popup()));
 }
 
 void PanelPopup::stroke_outline(Painter &p, const Color &c) const {
