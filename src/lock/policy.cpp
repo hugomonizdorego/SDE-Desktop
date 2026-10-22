@@ -92,7 +92,9 @@ bool releasable_popup(const ForeignWindow &w) {
   // Menus and popups are smaller than the screen; a window that covers
   // (nearly) all of it is a desktop, a compositor overlay or a full-screen
   // program, not something holding a menu grab.
-  if (w.w <= 0 || w.h <= 0) return false;
+  // Tiny windows (1x1 helper windows of toolkits and window managers) are
+  // no menus.
+  if (w.w < 16 || w.h < 16) return false;
   if (w.screen_w > 0 && w.screen_h > 0 && double(w.w) * w.h >= 0.8 * double(w.screen_w) * w.screen_h)
     return false;
   return true;

@@ -864,12 +864,17 @@ int x_events(int event) {
   return 0;
 }
 
+// Extra events and a name (FLTK names no override-redirect window) for a
+// lock window, once.
 void select_extra_events(LockWindow *w) {
   if (!w->shown() || !fl_xid(w)) return;
   XWindowAttributes a;
   long want = VisibilityChangeMask | StructureNotifyMask;
-  if (XGetWindowAttributes(fl_display, fl_xid(w), &a) && (a.your_event_mask & want) != want)
+  if (XGetWindowAttributes(fl_display, fl_xid(w), &a) && (a.your_event_mask & want) != want) {
     XSelectInput(fl_display, fl_xid(w), a.your_event_mask | want);
+    XStoreName(fl_display, fl_xid(w), "SDE Screen Lock");
+    x11::set_string(fl_xid(w), "_NET_WM_NAME", "SDE Screen Lock");
+  }
 }
 
 }  // namespace
