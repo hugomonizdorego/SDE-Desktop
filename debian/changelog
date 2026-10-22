@@ -1,3 +1,23 @@
+sde (0.1.0~alpha52) unstable; urgency=medium
+
+  * Drag and drop on the desktop (XDND source and target, free icon
+    placement, Arrange Icons) and in Liria (Home cards, pin on drop,
+    right-drag ask menu).
+  * Liria: optional Ribbon (full, tabs only, off), Home overview without the
+    duplicate folder grid, Quick access with pins and frequent folders, drive
+    cards in a grid, collapsible Windows 11-like sidebar with colour icons,
+    clickable path bar fixes.
+  * Settings: Default Applications page; Clock & Weather page.
+  * Panel: a context menu for every icon, search box/icon/hidden, a
+    notifications button with history (sde-notifyd keeps it).
+  * Action Center never scrolls; clock hero with day/night and weather; clock
+    styles digital, blink, LED and analog; temperature and wind units.
+  * Network works at login: repair at install and every boot
+    (debion-network-repair.service), verdict-checked LED, quick repair from
+    the panel.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Fri, 23 Oct 2026 09:00:00 +0900
+
 sde (0.1.0~alpha51) unstable; urgency=medium
 
   * debion-network-check --fix repairs and verifies DNS (NetworkManager

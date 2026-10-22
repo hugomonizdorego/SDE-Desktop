@@ -2,11 +2,18 @@
 
 **A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
 
-Development version **0.1 Alpha 51** (`0.1.0~alpha51`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.1 Alpha 52** (`0.1.0~alpha52`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
 ![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
 
-**New in Alpha 51:** [fixes and a calmer look](docs/ALPHA51.md) — DNS repair that
+**New in Alpha 52:** [drag & drop and a smarter panel](docs/ALPHA52.md) — drag & drop
+on the desktop and in Liria, an optional Ribbon in Liria with a Windows 11-like Home
+and sidebar, Default Applications in Settings, a right-click menu for every panel
+icon, search box/icon/hidden, notifications in their own panel button, an Action
+Center that never scrolls with LED/analog/blinking clocks and weather units, and
+internet that works right after login.
+
+**Alpha 51:** [fixes and a calmer look](docs/ALPHA51.md) — DNS repair that
 is verified (internet on Debian standard installs), lock screen that always takes
 the keyboard, time zone sync in the clock, Software Updater (Critical, Security,
 Main, Flatpak), taskbar window previews, compact popups and battery flyout,

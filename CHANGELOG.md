@@ -1,3 +1,14 @@
+# Alpha52 patch · 2026-10-23 — drag & drop, Liria Ribbon, smarter panel
+
+- Drag and drop on the desktop and in Liria.
+- Liria: optional Ribbon, Windows 11-like Home and sidebar, path bar fixes.
+- Settings: Default Applications, Clock & Weather.
+- Panel: right-click menu per icon, search modes, notifications button.
+- Action Center without scrolling; LED, analog and blinking clocks; weather
+  units; day/night sky.
+- Internet works right after login (install and boot repair). See
+  docs/ALPHA52.md.
+
 # Alpha51 patch · 2026-10-22 — DNS fix, lock screen, Software Updater, calmer look
 
 - debion-network-check repairs DNS and verifies it; public DNS fallback.
