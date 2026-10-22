@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -695,9 +696,14 @@ class Desktop : public sde::BufferedWindow {
     return -1;
   }
 
+  // Item actions take a copy of the entry: menus and dialogs run nested
+  // event loops, during which inotify or a config change may rebuild items_
+  // (a reference would dangle and an index could name another file).
   void open_item(int i) {
-    if (i < 0 || i >= int(items_.size())) return;
-    Item it = items_[size_t(i)];
+    if (i >= 0 && i < int(items_.size())) open_item(items_[size_t(i)]);
+  }
+
+  void open_item(const Item it) {
     if (it.is_launcher) {
       // Launchers copied to the desktop must be marked executable (trusted)
       // before they run, like in other desktops.
@@ -724,8 +730,7 @@ class Desktop : public sde::BufferedWindow {
   }
 
   // Hides Computer, Home or Trash (the switches in Settings > Desktop).
-  void hide_place(int i) {
-    const Item &it = items_[size_t(i)];
+  void hide_place(const Item &it) {
     const char *key = it.uri == "computer:///" ? "show_computer"
                       : it.uri == "trash:///"  ? "show_trash"
                                                : "show_home";
@@ -733,28 +738,52 @@ class Desktop : public sde::BufferedWindow {
   }
 
   bool is_file_item(int i) const { return i >= first_file_index() && i < int(items_.size()); }
+  static bool is_file(const Item &it) { return !it.path.empty() && it.path != home_dir(); }
+
+  // A new name for a file in |dir|: not empty, no "/", not "." or "..".
+  static bool valid_name(const char *name) {
+    return name && *name && !strchr(name, '/') && strcmp(name, ".") != 0 && strcmp(name, "..") != 0;
+  }
 
   void rename_item(int i) {
-    if (!is_file_item(i)) return;
-    const Item &it = items_[size_t(i)];
+    if (is_file_item(i)) rename_item(items_[size_t(i)]);
+  }
+
+  void rename_item(const Item it) {
+    if (!is_file(it)) return;
     std::string old_name = basename_of(it.path);
-    const char *name = fl_input("%s", old_name.c_str(), _("New name:"));
-    if (!name || !*name || old_name == name) return;
-    if (strchr(name, '/')) {
+    std::string dir = it.path.substr(0, it.path.size() - old_name.size() - 1);
+    const char *input = fl_input("%s", old_name.c_str(), _("New name:"));
+    if (!input) return;
+    std::string name = input;  // fl_input's buffer is reused by the next dialog
+    if (name.empty() || name == old_name) return;
+    if (!valid_name(name.c_str())) {
       fl_alert("%s", _("A name cannot contain \"/\"."));
       return;
     }
-    std::string target = desktop_dir_ + "/" + name;
-    if (file_exists(target) || dir_exists(target)) {
-      fl_alert(_("\"%s\" already exists."), name);
+    std::string target = dir + "/" + name;
+    struct stat st;
+    if (lstat(target.c_str(), &st) == 0) {
+      fl_alert(_("\"%s\" already exists."), name.c_str());
       return;
     }
-    if (rename(it.path.c_str(), target.c_str()) != 0) fl_alert("%s", _("Could not rename the item."));
+    // RENAME_NOREPLACE: never overwrite a file created meanwhile.
+    int r = renameat2(AT_FDCWD, it.path.c_str(), AT_FDCWD, target.c_str(), RENAME_NOREPLACE);
+    if (r != 0 && (errno == EINVAL || errno == ENOSYS))  // file systems without the flag
+      r = rename(it.path.c_str(), target.c_str());
+    if (r != 0) {
+      if (errno == EEXIST) fl_alert(_("\"%s\" already exists."), name.c_str());
+      else fl_alert("%s", _("Could not rename the item."));
+    }
   }
 
   void trash_item(int i) {
-    if (!is_file_item(i)) return;
-    if (!spawn_detached({"gio", "trash", items_[size_t(i)].path}))
+    if (is_file_item(i)) trash_item(items_[size_t(i)]);
+  }
+
+  void trash_item(const Item &it) {
+    if (!is_file(it)) return;
+    if (!spawn_detached({"gio", "trash", it.path}))
       fl_alert("%s", _("Moving to the trash needs the gio program (package libglib2.0-bin)."));
   }
 
@@ -762,9 +791,10 @@ class Desktop : public sde::BufferedWindow {
     std::string desk = user_dir("DESKTOP");
     make_dirs(desk);
     std::string path = unique_path(desk, _("New Folder"));
-    const char *name = fl_input("%s", basename_of(path).c_str(), _("Folder name:"));
-    if (!name || !*name) return;
-    if (strchr(name, '/') || mkdir((desk + "/" + name).c_str(), 0755) != 0)
+    const char *input = fl_input("%s", basename_of(path).c_str(), _("Folder name:"));
+    if (!input || !*input) return;
+    std::string name = input;
+    if (!valid_name(name.c_str()) || mkdir((desk + "/" + name).c_str(), 0755) != 0)
       fl_alert("%s", _("Could not create the folder."));
   }
 
@@ -772,11 +802,17 @@ class Desktop : public sde::BufferedWindow {
     std::string desk = user_dir("DESKTOP");
     make_dirs(desk);
     std::string path = unique_path(desk, _("New Document"), ".txt");
-    const char *name = fl_input("%s", basename_of(path).c_str(), _("Document name:"));
-    if (!name || !*name || strchr(name, '/')) return;
+    const char *input = fl_input("%s", basename_of(path).c_str(), _("Document name:"));
+    if (!input || !*input) return;
+    std::string name = input;
+    if (!valid_name(name.c_str())) {
+      fl_alert("%s", _("Could not create the document."));
+      return;
+    }
     std::string target = desk + "/" + name;
-    if (file_exists(target)) {
-      fl_alert(_("\"%s\" already exists."), name);
+    struct stat st;
+    if (lstat(target.c_str(), &st) == 0) {
+      fl_alert(_("\"%s\" already exists."), name.c_str());
       return;
     }
     if (!write_file_atomic(target, "")) fl_alert("%s", _("Could not create the document."));
@@ -795,7 +831,7 @@ class Desktop : public sde::BufferedWindow {
     if (i >= 0) {
       bool file = is_file_item(i);
       int fflag = file ? 0 : FL_MENU_INACTIVE;
-      const Item &it = items_[size_t(i)];
+      const Item it = items_[size_t(i)];  // a copy: popup() runs a nested event loop
       bool trash = it.uri == "trash:///";
       // Places (Computer, Home, Trash) share the file layout of the menu;
       // entries that do not apply are shown disabled, and the last entry
@@ -811,15 +847,15 @@ class Desktop : public sde::BufferedWindow {
           {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
       if (!file) items[3].flags |= FL_MENU_DIVIDER;
       const Fl_Menu_Item *m = items->popup(mx, my);
-      if (m == &items[0]) open_item(i);
-      else if (m == &items[1]) rename_item(i);
+      if (m == &items[0]) open_item(it);
+      else if (m == &items[1]) rename_item(it);
       else if (m == &items[2]) {
         const std::string &path = it.path.empty() ? it.uri : it.path;
         Fl::copy(path.c_str(), int(path.size()), 1);  // clipboard
         Fl::copy(path.c_str(), int(path.size()), 0);  // primary selection
       } else if (m == &items[3]) {
-        if (file) trash_item(i);
-        else hide_place(i);
+        if (file) trash_item(it);
+        else hide_place(it);
       } else if (m == &items[4]) {
         if (fl_choice("%s", _("Cancel"), _("Empty Trash"), nullptr,
                       _("Permanently delete all items in the Trash?")) == 1 &&
