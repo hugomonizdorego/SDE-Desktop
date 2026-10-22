@@ -213,8 +213,13 @@ class LiriaAlpha16Test(unittest.TestCase):
                        'GDK_KEY_Delete', 'GDK_KEY_F2', 'gtk_file_chooser_dialog_new', 'G_FILE_ATTRIBUTE_THUMBNAIL_PATH',
                        'g_content_type_get_description', 'popup-menu'):
             self.assertIn(needle, home)
-        # Drops never ask the source to delete what was dropped.
-        self.assertNotIn('GDK_ACTION_MOVE', home)
+        # Drops never ask the source to delete what was dropped (Liria moves
+        # files itself), and cards dragged out never offer a move.
+        import re
+        self.assertNotIn('gtk_drag_finish (context, TRUE, TRUE', home)
+        self.assertRegex(home, r'gtk_drag_finish \(context, [^,]+, FALSE, time\)')
+        for call in re.findall(r'gtk_drag_source_set \([^;]*;', home):
+            self.assertNotIn('GDK_ACTION_MOVE', call)
         tools = (self.overlay / 'sde-tools/liria-sde-tools.c').read_text()
         for needle in ('Pin to Quick Access', 'Unpin from Quick Access', 'liria_sde_pins_add', 'liria_sde_pins_remove'):
             self.assertIn(needle, tools)
@@ -267,6 +272,62 @@ class LiriaAlpha16Test(unittest.TestCase):
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('ok 3 /liria/pins/defaults-and-edits', result.stdout)
+
+    def test_model_unit(self):
+        """Ribbon modes and preferences, Home view suggestions and grid,
+        pin-on-drop decisions (src/liria-sde-model.c)."""
+        import shutil
+        import subprocess
+        import tempfile
+        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
+                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
+            self.skipTest('gcc and gio-2.0 development files are needed')
+        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
+                               check=True).stdout.split()
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / 'test-liria-sde-model'
+            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
+                            str(self.overlay / 'sde-tools/test-liria-sde-model.c')] + flags, check=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name in ('ribbon-modes', 'prefs', 'commands', 'frequent-folders', 'columns', 'drop-decisions',
+                         'pin-on-drop'):
+                self.assertIn('/liria/model/' + name, result.stdout)
+        make = (self.overlay / 'sde-tools/Makefile.am').read_text()
+        self.assertIn('test-liria-sde-model', make)
+        self.assertIn('liria-sde-model.c', make)
+
+    def test_home_view_replaces_folder_grid(self):
+        home = (self.overlay / 'sde-tools/liria-sde-home.c').read_text()
+        for needle in ('"sde-home-replaces-view"', 'liria_sde_home_frequent_folders', 'liria_sde_drop_decide',
+                       '"sde-drop"', 'sde-home-section-button', 'liria_sde_prefs_set_flag ("home", "collapsed"',
+                       'drive_drag_dest', 'card_drag_source', 'Frequent folder', '"sde-drag-ask"'):
+            self.assertIn(needle, home)
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        for needle in ('"sde-home-replaces-view"', 'gtk_widget_set_visible (slot->view_box, !replace)',
+                       '"sde-drop"', 'liria_drag_drop_action_ask'):
+            self.assertIn(needle, ui)
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        for name in ('liria_home_view', 'liria_right_drag'):
+            self.assertIn(name + '(staged)', recipe)
+
+    def test_home_view_recipe_restores_view(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            src = staged / 'src'
+            src.mkdir()
+            (src / 'Makefile.am').write_text('\tliria-sde-pins.h \\\n')
+            (src / 'liria-window-slot.c').write_text(
+                '    gtk_container_foreach (GTK_CONTAINER (slot->extra_location_widgets),\n'
+                '                           remove_all,\n'
+                '                           slot->extra_location_widgets);\n'
+                '    gtk_widget_hide (slot->extra_location_frame);\n}\n')
+            self.redesign.liria_home_view(staged)
+            self.assertIn('liria-sde-model.c', (src / 'Makefile.am').read_text())
+            slot = (src / 'liria-window-slot.c').read_text()
+            self.assertIn('gtk_widget_show (slot->view_box);', slot)
+            self.assertIn('gtk_box_set_child_packing', slot)
 
     def test_prepared_tree_has_no_brand_leaks(self):
         source = self.root / 'vendor/suite/liria'

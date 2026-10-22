@@ -96,6 +96,8 @@ def liria(staged):
     liria_home(staged)
     liria_sidebar(staged)
     liria_quick_access(staged)
+    liria_home_view(staged)
+    liria_right_drag(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
@@ -763,6 +765,121 @@ sde_pin_shortcut_cb (GtkMenuItem        *item,
     gtk_widget_show (item);
     gtk_menu_shell_append (GTK_MENU_SHELL (sidebar->popup_menu), item);
 """)
+
+
+def liria_home_view(staged):
+    """alpha52: the Home overview is the Home view. While it is shown the
+    slot hides its folder view (liria-sde-ui.c, "sde-home-replaces-view"),
+    so the home folder's icons no longer appear a second time below it;
+    leaving the home folder restores the view. src/liria-sde-model.c holds
+    the preferences (~/.config/sde/liria.conf) and the widget-free
+    decisions of the ribbon, the Home view and drops (unit tested)."""
+    src = staged / "src"
+    edit_once(src / "Makefile.am", "\tliria-sde-pins.h \\\n",
+              "\tliria-sde-pins.h \\\n\tliria-sde-model.c \\\n\tliria-sde-model.h \\\n")
+    edit_once(src / "liria-window-slot.c", """                           slot->extra_location_widgets);
+    gtk_widget_hide (slot->extra_location_frame);
+""", """                           slot->extra_location_widgets);
+    gtk_widget_hide (slot->extra_location_frame);
+    /* SDE: the Home overview may have replaced the folder view. */
+    gtk_widget_show (slot->view_box);
+    gtk_box_set_child_packing (GTK_BOX (slot->content_box), slot->extra_location_frame,
+                               FALSE, FALSE, 0, GTK_PACK_START);
+""")
+
+
+def liria_right_drag(staged):
+    """alpha52: dragging icons with the right mouse button asks what to do
+    (Move Here, Copy Here, Link Here, Cancel), as in Windows; a right click
+    without a drag opens the context menu when the button is released.
+    Alt+drag is taken by the window manager (it moves windows); the middle
+    button keeps asking as before."""
+    private = staged / "libliria-private"
+    edit_once(private / "liria-icon-private.h", "    guint drag_button;\n",
+              "    guint drag_button;\n    GdkEvent *sde_menu_event; /* SDE: right click waiting for a drag */\n")
+    container = private / "liria-icon-container.c"
+    edit_once(container, """    if (event->button == DRAG_BUTTON
+            || event->button == DRAG_MENU_BUTTON)
+    {
+        details->drag_button = event->button;""", """    if (event->button == DRAG_BUTTON
+            || event->button == DRAG_MENU_BUTTON
+            || event->button == CONTEXTUAL_MENU_BUTTON)
+    {
+        details->drag_button = event->button;""")
+    edit_once(container, """    if (event->button == CONTEXTUAL_MENU_BUTTON)
+    {
+        g_signal_emit (container,
+                       signals[CONTEXT_CLICK_SELECTION], 0,
+                       event);
+    }
+
+    return TRUE;
+}""", """    if (event->button == CONTEXTUAL_MENU_BUTTON)
+    {
+        /* SDE: the menu opens on release unless the icons are dragged. */
+        g_clear_pointer (&details->sde_menu_event, gdk_event_free);
+        details->sde_menu_event = gdk_event_copy ((GdkEvent *) event);
+    }
+
+    return TRUE;
+}""")
+    edit_once(container, """        case DRAG_STATE_MOVE_OR_COPY:
+            if (!details->drag_started)
+            {
+                liria_icon_container_did_not_drag (container, event);
+            }""", """        case DRAG_STATE_MOVE_OR_COPY:
+            if (!details->drag_started && event->button == CONTEXTUAL_MENU_BUTTON)
+            {
+                GdkEvent *press = details->sde_menu_event;
+
+                details->sde_menu_event = NULL;
+                g_signal_emit (container, signals[CONTEXT_CLICK_SELECTION], 0,
+                               press != NULL ? (GdkEventButton *) press : event);
+                if (press != NULL)
+                    gdk_event_free (press);
+            }
+            else if (!details->drag_started)
+            {
+                liria_icon_container_did_not_drag (container, event);
+            }""")
+    edit_once(container, "                details->drag_started = TRUE;\n                details->drag_state = DRAG_STATE_MOVE_OR_COPY;\n",
+              "                details->drag_started = TRUE;\n                details->drag_state = DRAG_STATE_MOVE_OR_COPY;\n"
+              "                g_clear_pointer (&details->sde_menu_event, gdk_event_free);\n")
+    # GTK suggests "ask" for middle-button drags only. A right-button drag
+    # is marked on the display ("sde-drag-ask") until it ends, and every
+    # Liria drop target (folder views, sidebar, path bar, Home cards) then
+    # asks instead of choosing the default action.
+    dnd = private / "liria-icon-dnd.c"
+    edit_once(dnd, """void
+liria_icon_dnd_begin_drag (LiriaIconContainer *container,""", """static void
+sde_right_drag_ended (GtkWidget *widget, GdkDragContext *context, gpointer data)
+{
+    g_object_set_data (G_OBJECT (gdk_display_get_default ()), "sde-drag-ask", NULL);
+    g_signal_handlers_disconnect_by_func (widget, sde_right_drag_ended, data);
+}
+
+void
+liria_icon_dnd_begin_drag (LiriaIconContainer *container,""")
+    edit_once(dnd, """    /* start the drag */
+    gtk_drag_begin_with_coordinates (GTK_WIDGET (container),""", """    /* SDE: a right-button drag asks what to do on drop. */
+    g_object_set_data (G_OBJECT (gdk_display_get_default ()), "sde-drag-ask", GINT_TO_POINTER (button == 3));
+    if (button == 3)
+        g_signal_connect (container, "drag-end", G_CALLBACK (sde_right_drag_ended), NULL);
+
+    /* start the drag */
+    gtk_drag_begin_with_coordinates (GTK_WIDGET (container),""")
+    edit_once(private / "liria-dnd.c", """    if (gdk_drag_context_get_suggested_action (context) == GDK_ACTION_ASK)
+    {
+        /* Don't override ask */""", """    if (gdk_drag_context_get_suggested_action (context) == GDK_ACTION_ASK ||
+        (g_object_get_data (G_OBJECT (gdk_display_get_default ()), "sde-drag-ask") != NULL &&
+         (gdk_drag_context_get_actions (context) & GDK_ACTION_ASK)))
+    {
+        *action = GDK_ACTION_ASK;
+        return;
+    }
+    if (gdk_drag_context_get_suggested_action (context) == GDK_ACTION_ASK)
+    {
+        /* Don't override ask */""")
 
 
 def liria_copy_engine(staged):

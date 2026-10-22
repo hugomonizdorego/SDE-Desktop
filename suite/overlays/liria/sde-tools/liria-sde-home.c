@@ -21,6 +21,20 @@
  * that suite/redesign.py adds to the navigation window; without it they are
  * opened with the default handler. Slow file systems are queried
  * asynchronously and every pending request is cancelled with the widget.
+ *
+ * Since alpha52 the overview is the Home view (as in Windows 11): while it
+ * is shown, the window's "sde-home-replaces-view" hook hides the folder
+ * grid below it and the overview scrolls on its own; "Hide overview" brings
+ * the plain folder view back. Quick access lists the pins first (with a
+ * pin marker), then folders suggested from recently used files (marked
+ * "Frequent", with a Pin button on hover). Quick access, Drives and Recent
+ * files have collapsible headers (remembered in ~/.config/sde/liria.conf)
+ * and the drives are a grid of cards. Every card is a drag source
+ * (text/uri-list) for Liria, the desktop and other applications; files
+ * dropped on a folder or drive card are copied, moved or linked into it
+ * (Shift moves, Ctrl copies, Ctrl+Shift links, Alt or the middle button
+ * ask) through the window's "sde-drop" action, and locations dropped on
+ * the Quick access area, a gap or the "+" card are pinned there.
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -33,67 +47,47 @@
 #include <gtk/gtk.h>
 
 #include "../src/liria-sde-pins.h"
+#include "../src/liria-sde-model.h"
 
 GtkWidget *sde_home_overview_new (const char *uri, GtkWidget *window);
 
 typedef void (*SdeGoToUri) (GtkWidget *window, const char *uri);
+/* Window hook (liria-sde-ui.c): the overview replaces the folder view. */
+typedef void (*SdeReplacesView) (GtkWidget *overview, gboolean replace);
 
 typedef struct {
 	GtkWidget *window;
 	GtkWidget *root;
-	GtkWidget *revealer;
+	GtkWidget *scroller;
 	GtkWidget *toggle_label;
 	GtkWidget *toggle_icon;
 	GtkWidget *drives;
 	GtkWidget *recent;
 	GtkWidget *recent_clear;
 	GtkWidget *quick;
+	GtkWidget *drop_card;   /* the card highlighted by a drag over Quick access */
 	GCancellable *quick_cancellable;
 	GFileMonitor *pins_monitor;
 	guint reload_id;
 	gchar *focus_uri;
 	GVolumeMonitor *monitor;
 	GCancellable *cancellable;
+	gboolean expanded;
 	gboolean destroyed;
 } Overview;
 
 /* ------------------------------------------------------------ settings */
 
-static gchar *
-config_file (void)
-{
-	return g_build_filename (g_get_user_config_dir (), "sde", "liria.conf", NULL);
-}
-
 static gboolean
 overview_expanded (void)
 {
-	GKeyFile *key = g_key_file_new ();
-	gchar *file = config_file ();
-	gboolean expanded = TRUE;
-
-	if (g_key_file_load_from_file (key, file, G_KEY_FILE_NONE, NULL) &&
-	    g_key_file_has_key (key, "home", "show-overview", NULL))
-		expanded = g_key_file_get_boolean (key, "home", "show-overview", NULL);
-	g_key_file_unref (key);
-	g_free (file);
-	return expanded;
+	return liria_sde_prefs_get_bool ("home", "show-overview", TRUE);
 }
 
 static void
 save_expanded (gboolean expanded)
 {
-	GKeyFile *key = g_key_file_new ();
-	gchar *file = config_file ();
-	gchar *dir = g_path_get_dirname (file);
-
-	g_mkdir_with_parents (dir, 0700);
-	g_key_file_load_from_file (key, file, G_KEY_FILE_KEEP_COMMENTS, NULL);
-	g_key_file_set_boolean (key, "home", "show-overview", expanded);
-	g_key_file_save_to_file (key, file, NULL);
-	g_key_file_unref (key);
-	g_free (dir);
-	g_free (file);
+	liria_sde_prefs_set_bool ("home", "show-overview", expanded);
 }
 
 /* ----------------------------------------------------------- navigation */
@@ -542,8 +536,19 @@ enum {
 
 enum { DROP_PIN, DROP_URIS };
 
+/* Pin cards are dragged to a new place (the pin target) or, like every
+ * other card, into Liria, the desktop and other applications. */
 static const GtkTargetEntry pin_source_targets[] = {
 	{ (gchar *) PIN_TARGET, GTK_TARGET_SAME_APP, DROP_PIN },
+	{ (gchar *) "text/uri-list", 0, DROP_URIS },
+};
+
+static const GtkTargetEntry card_source_targets[] = {
+	{ (gchar *) "text/uri-list", 0, DROP_URIS },
+};
+
+static const GtkTargetEntry file_drop_targets[] = {
+	{ (gchar *) "text/uri-list", 0, DROP_URIS },
 };
 
 static const GtkTargetEntry pin_drop_targets[] = {
@@ -552,6 +557,8 @@ static const GtkTargetEntry pin_drop_targets[] = {
 };
 
 static void fill_quick_access (Overview *o);
+static void set_drop_card (Overview *o, GtkWidget *card);
+static gint recent_newer_first (gconstpointer a, gconstpointer b);
 
 static gint
 pin_kind (GtkWidget *card)
@@ -772,7 +779,7 @@ pin_info_done (GObject *source, GAsyncResult *result, gpointer data)
 /* -- drag and drop */
 
 static void
-pin_drag_begin (GtkWidget *card, GdkDragContext *context, gpointer data)
+card_drag_begin (GtkWidget *card, GdkDragContext *context, gpointer data)
 {
 	GtkAllocation allocation;
 	cairo_surface_t *surface;
@@ -789,44 +796,234 @@ pin_drag_begin (GtkWidget *card, GdkDragContext *context, gpointer data)
 	cairo_surface_destroy (surface);
 }
 
+/* The pin itself (for a new place) or its location as a text/uri-list. */
 static void
-pin_drag_data_get (GtkWidget *card, GdkDragContext *context, GtkSelectionData *data, guint info, guint time,
-                   gpointer user_data)
+card_drag_data_get (GtkWidget *card, GdkDragContext *context, GtkSelectionData *data, guint info, guint time,
+                    gpointer user_data)
 {
 	const gchar *uri = g_object_get_data (G_OBJECT (card), "sde-pin-uri");
 
-	gtk_selection_data_set (data, gtk_selection_data_get_target (data), 8, (const guchar *) uri, strlen (uri));
+	if (info == DROP_PIN && uri) {
+		gtk_selection_data_set (data, gtk_selection_data_get_target (data), 8, (const guchar *) uri, strlen (uri));
+		return;
+	}
+	uri = g_object_get_data (G_OBJECT (card), "sde-uri");
+	if (uri) {
+		gchar *uris[] = { (gchar *) uri, NULL };
+
+		gtk_selection_data_set_uris (data, uris);
+	}
 }
 
-/* The pin index a drop at (x, y) of the card area means. */
-static gint
-drop_index (Overview *o, gint x, gint y)
+/* Every card with a location can be dragged into Liria, onto the desktop or
+ * into another application. Liria copies, moves or links what it receives
+ * itself, so nothing here is ever deleted after the drop. */
+static void
+card_drag_source (GtkWidget *card, gboolean pin)
+{
+	if (pin)
+		gtk_drag_source_set (card, GDK_BUTTON1_MASK | GDK_BUTTON2_MASK, pin_source_targets,
+		                     G_N_ELEMENTS (pin_source_targets), GDK_ACTION_COPY | GDK_ACTION_LINK | GDK_ACTION_ASK);
+	else
+		gtk_drag_source_set (card, GDK_BUTTON1_MASK | GDK_BUTTON2_MASK, card_source_targets,
+		                     G_N_ELEMENTS (card_source_targets), GDK_ACTION_COPY | GDK_ACTION_LINK | GDK_ACTION_ASK);
+	g_signal_connect (card, "drag-begin", G_CALLBACK (card_drag_begin), NULL);
+	g_signal_connect (card, "drag-data-get", G_CALLBACK (card_drag_data_get), NULL);
+}
+
+static gboolean
+same_file_system (const gchar *a, const gchar *b)
+{
+	const gchar *uris[] = { a, b };
+	gchar *ids[2] = { NULL, NULL };
+	gboolean same;
+
+	for (guint i = 0; i < 2; i++) {
+		GFile *file = g_file_new_for_uri (uris[i]);
+		GFileInfo *info = g_file_query_info (file, G_FILE_ATTRIBUTE_ID_FILESYSTEM, G_FILE_QUERY_INFO_NONE, NULL, NULL);
+
+		if (info) {
+			ids[i] = g_strdup (g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_ID_FILESYSTEM));
+			g_object_unref (info);
+		}
+		g_object_unref (file);
+	}
+	same = ids[0] && ids[1] && g_strcmp0 (ids[0], ids[1]) == 0;
+	g_free (ids[0]);
+	g_free (ids[1]);
+	return same;
+}
+
+/* What a file drop does, as in Liria's folder views: Shift moves, Ctrl
+ * copies, Ctrl+Shift links, Alt or a middle-button drag asks; otherwise
+ * files on the same file system are moved and others copied. */
+static GdkDragAction
+file_drop_action (GtkWidget *widget, GdkDragContext *context, const gchar *first_uri, const gchar *target)
+{
+	GdkModifierType mask = 0;
+	GdkDevice *device = gdk_drag_context_get_device (context);
+	GdkWindow *window = gtk_widget_get_window (widget);
+
+	/* GTK suggests "ask" for middle-button drags; Liria marks its
+	 * right-button drags on the display. */
+	if (gdk_drag_context_get_suggested_action (context) == GDK_ACTION_ASK ||
+	    g_object_get_data (G_OBJECT (gdk_display_get_default ()), "sde-drag-ask"))
+		return GDK_ACTION_ASK;
+	if (device && window)
+		gdk_window_get_device_position (window, device, NULL, NULL, &mask);
+	if (mask & GDK_MOD1_MASK)
+		return GDK_ACTION_ASK;
+	if ((mask & GDK_CONTROL_MASK) && (mask & GDK_SHIFT_MASK))
+		return GDK_ACTION_LINK;
+	if (mask & GDK_CONTROL_MASK)
+		return GDK_ACTION_COPY;
+	if (mask & GDK_SHIFT_MASK)
+		return GDK_ACTION_MOVE;
+	if (first_uri && target && same_file_system (first_uri, target))
+		return GDK_ACTION_MOVE;
+	return GDK_ACTION_COPY;
+}
+
+/* Hands the files to the window's "sde-drop" action (liria-sde-ui.c),
+ * which runs Liria's own copy, move or link with progress and undo, and
+ * asks with the Move Here / Copy Here / Link Here menu for "ask". */
+static void
+drop_files (gchar **uris, const gchar *target, GdkDragAction action)
+{
+	GApplication *app = g_application_get_default ();
+	GVariantBuilder list;
+	const gchar *name = action == GDK_ACTION_ASK ? "ask"
+	                    : action == GDK_ACTION_LINK ? "link"
+	                    : action == GDK_ACTION_COPY ? "copy" : "move";
+
+	if (!app || !uris || !uris[0] || !target)
+		return;
+	g_variant_builder_init (&list, G_VARIANT_TYPE ("as"));
+	for (guint i = 0; uris[i]; i++)
+		g_variant_builder_add (&list, "s", uris[i]);
+	if (g_action_group_has_action (G_ACTION_GROUP (app), "sde-drop"))
+		g_action_group_activate_action (G_ACTION_GROUP (app), "sde-drop",
+		                                g_variant_new ("(asss)", &list, target, name));
+	else
+		g_action_group_activate_action (G_ACTION_GROUP (app), "sde-copy-to", g_variant_new ("(ass)", &list, target));
+}
+
+/* The card under (x, y) of the Quick access area and where it lies. */
+static GtkWidget *
+quick_card_at (Overview *o, gint x, gint y, LiriaSdeDropTarget *where, gint *index)
 {
 	GtkFlowBoxChild *child = gtk_flow_box_get_child_at_pos (GTK_FLOW_BOX (o->quick), x, y);
-	GtkWidget *card;
+	GtkWidget *card = child ? gtk_bin_get_child (GTK_BIN (child)) : NULL;
 	GtkAllocation allocation;
-	gint index;
+	gint edge;
 
-	if (!child)
-		return -1;
-	card = gtk_bin_get_child (GTK_BIN (child));
-	if (!card || !g_object_get_data (G_OBJECT (card), "sde-pin-uri"))
-		return -1;
-	index = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (card), "sde-pin-index"));
+	*where = LIRIA_SDE_DROP_AREA;
+	*index = -1;
+	if (!card)
+		return NULL;
 	gtk_widget_get_allocation (GTK_WIDGET (child), &allocation);
-	if (x > allocation.x + allocation.width / 2)
-		index++;
-	return index;
+	if (g_object_get_data (G_OBJECT (card), "sde-pin-uri"))
+		*index = liria_sde_drop_pin_index (GPOINTER_TO_INT (g_object_get_data (G_OBJECT (card), "sde-pin-index")),
+		                                   x, allocation.x, allocation.width);
+	if (!g_object_get_data (G_OBJECT (card), "sde-uri"))
+		return card; /* the "+" card */
+	/* The outer fifth of a card is a gap between two cards. */
+	edge = allocation.width / 5;
+	if (x < allocation.x + edge || x > allocation.x + allocation.width - edge)
+		return card;
+	if (pin_kind (card) == PIN_FOLDER || g_object_get_data (G_OBJECT (card), "sde-frequent"))
+		*where = LIRIA_SDE_DROP_FOLDER_CARD;
+	else if (g_object_get_data (G_OBJECT (card), "sde-pin-uri"))
+		*where = LIRIA_SDE_DROP_FILE_CARD;
+	return card;
+}
+
+static void
+set_drop_card (Overview *o, GtkWidget *card)
+{
+	if (o->drop_card == card)
+		return;
+	if (o->drop_card) {
+		gtk_style_context_remove_class (gtk_widget_get_style_context (o->drop_card), "sde-drop-target");
+		g_object_remove_weak_pointer (G_OBJECT (o->drop_card), (gpointer *) &o->drop_card);
+	}
+	o->drop_card = card;
+	if (card) {
+		gtk_style_context_add_class (gtk_widget_get_style_context (card), "sde-drop-target");
+		g_object_add_weak_pointer (G_OBJECT (card), (gpointer *) &o->drop_card);
+	}
+}
+
+static gboolean
+quick_drag_motion (GtkWidget *widget, GdkDragContext *context, gint x, gint y, guint time, Overview *o)
+{
+	GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
+	gboolean from_pin = target == gdk_atom_intern_static_string (PIN_TARGET);
+	LiriaSdeDropTarget where;
+	gint index;
+	GtkWidget *card;
+
+	if (target == GDK_NONE) {
+		gdk_drag_status (context, 0, time);
+		return FALSE;
+	}
+	card = quick_card_at (o, x, y, &where, &index);
+	switch (liria_sde_drop_decide (where, from_pin, 1)) {
+	case LIRIA_SDE_DROP_FILES: {
+		GdkDragAction action = gdk_drag_context_get_suggested_action (context);
+
+		set_drop_card (o, card);
+		gtk_drag_unhighlight (widget);
+		/* Shown as the source suggests; the real action is chosen on drop. */
+		gdk_drag_status (context, action ? action : GDK_ACTION_COPY, time);
+		return TRUE;
+	}
+	case LIRIA_SDE_DROP_PIN:
+	case LIRIA_SDE_DROP_REORDER:
+		set_drop_card (o, NULL);
+		gtk_drag_highlight (widget);
+		gdk_drag_status (context, gdk_drag_context_get_actions (context) & GDK_ACTION_LINK ? GDK_ACTION_LINK
+		                          : GDK_ACTION_COPY, time);
+		return TRUE;
+	default:
+		gdk_drag_status (context, 0, time);
+		return TRUE;
+	}
+}
+
+static void
+quick_drag_leave (GtkWidget *widget, GdkDragContext *context, guint time, Overview *o)
+{
+	set_drop_card (o, NULL);
+	gtk_drag_unhighlight (widget);
+}
+
+static gboolean
+quick_drag_drop (GtkWidget *widget, GdkDragContext *context, gint x, gint y, guint time, Overview *o)
+{
+	GdkAtom target = gtk_drag_dest_find_target (widget, context, NULL);
+
+	if (target == GDK_NONE)
+		return FALSE;
+	gtk_drag_get_data (widget, context, target, time);
+	return TRUE;
 }
 
 static void
 quick_drag_data_received (GtkWidget *widget, GdkDragContext *context, gint x, gint y, GtkSelectionData *data,
                           guint info, guint time, Overview *o)
 {
-	gint index = drop_index (o, x, y);
+	LiriaSdeDropTarget where;
+	gint index;
+	GtkWidget *card = quick_card_at (o, x, y, &where, &index);
 	gboolean done = FALSE;
+	gchar **uris = info == DROP_URIS ? gtk_selection_data_get_uris (data) : NULL;
+	guint n = uris ? g_strv_length (uris) : (gtk_selection_data_get_length (data) > 0 ? 1 : 0);
 
-	if (info == DROP_PIN && gtk_selection_data_get_length (data) > 0) {
+	set_drop_card (o, NULL);
+	gtk_drag_unhighlight (widget);
+	switch (liria_sde_drop_decide (where, info == DROP_PIN, n)) {
+	case LIRIA_SDE_DROP_REORDER: {
 		gchar *uri = g_strndup ((const gchar *) gtk_selection_data_get_data (data),
 		                        gtk_selection_data_get_length (data));
 		GPtrArray *pins = liria_sde_pins_load ();
@@ -843,15 +1040,81 @@ quick_drag_data_received (GtkWidget *widget, GdkDragContext *context, gint x, gi
 		}
 		g_ptr_array_unref (pins);
 		g_free (uri);
-	} else if (info == DROP_URIS) {
-		gchar **uris = gtk_selection_data_get_uris (data);
-
-		done = uris && liria_sde_pins_add ((const gchar *const *) uris, index);
-		g_strfreev (uris);
+		break;
 	}
-	/* GTK_DEST_DEFAULT_DROP finishes the drop (never as a move). */
+	case LIRIA_SDE_DROP_PIN:
+		done = liria_sde_pins_add ((const gchar *const *) uris, index);
+		break;
+	case LIRIA_SDE_DROP_FILES: {
+		const gchar *dest = card ? g_object_get_data (G_OBJECT (card), "sde-uri") : NULL;
+
+		drop_files (uris, dest, file_drop_action (widget, context, uris[0], dest));
+		break;
+	}
+	default:
+		break;
+	}
+	/* Never a move for the source: Liria itself moves what it was given. */
+	gtk_drag_finish (context, n > 0, FALSE, time);
+	g_strfreev (uris);
 	if (done)
 		schedule_reload (o);
+}
+
+/* Drive cards: dropped files go into the drive. */
+static gboolean
+drive_drag_motion (GtkWidget *card, GdkDragContext *context, gint x, gint y, guint time, gpointer data)
+{
+	if (gtk_drag_dest_find_target (card, context, NULL) == GDK_NONE) {
+		gdk_drag_status (context, 0, time);
+		return FALSE;
+	}
+	gtk_style_context_add_class (gtk_widget_get_style_context (card), "sde-drop-target");
+	gdk_drag_status (context, gdk_drag_context_get_suggested_action (context), time);
+	return TRUE;
+}
+
+static void
+drive_drag_leave (GtkWidget *card, GdkDragContext *context, guint time, gpointer data)
+{
+	gtk_style_context_remove_class (gtk_widget_get_style_context (card), "sde-drop-target");
+}
+
+static gboolean
+drive_drag_drop (GtkWidget *card, GdkDragContext *context, gint x, gint y, guint time, gpointer data)
+{
+	GdkAtom target = gtk_drag_dest_find_target (card, context, NULL);
+
+	if (target == GDK_NONE)
+		return FALSE;
+	gtk_drag_get_data (card, context, target, time);
+	return TRUE;
+}
+
+static void
+drive_drag_data_received (GtkWidget *card, GdkDragContext *context, gint x, gint y, GtkSelectionData *data,
+                          guint info, guint time, gpointer user_data)
+{
+	gchar **uris = gtk_selection_data_get_uris (data);
+	const gchar *dest = g_object_get_data (G_OBJECT (card), "sde-uri");
+
+	gtk_style_context_remove_class (gtk_widget_get_style_context (card), "sde-drop-target");
+	if (uris && uris[0] && dest &&
+	    liria_sde_drop_decide (LIRIA_SDE_DROP_DRIVE_CARD, FALSE, g_strv_length (uris)) == LIRIA_SDE_DROP_FILES)
+		drop_files (uris, dest, file_drop_action (card, context, uris[0], dest));
+	gtk_drag_finish (context, uris && uris[0], FALSE, time);
+	g_strfreev (uris);
+}
+
+static void
+drive_drag_dest (GtkWidget *card)
+{
+	gtk_drag_dest_set (card, 0, file_drop_targets, G_N_ELEMENTS (file_drop_targets),
+	                   GDK_ACTION_COPY | GDK_ACTION_MOVE | GDK_ACTION_LINK | GDK_ACTION_ASK);
+	g_signal_connect (card, "drag-motion", G_CALLBACK (drive_drag_motion), NULL);
+	g_signal_connect (card, "drag-leave", G_CALLBACK (drive_drag_leave), NULL);
+	g_signal_connect (card, "drag-drop", G_CALLBACK (drive_drag_drop), NULL);
+	g_signal_connect (card, "drag-data-received", G_CALLBACK (drive_drag_data_received), NULL);
 }
 
 /* -- actions */
@@ -961,7 +1224,7 @@ reset_pins (Overview *o)
 }
 
 typedef enum {
-	TASK_OPEN, TASK_OPEN_FOLDER, TASK_RENAME, TASK_LEFT, TASK_RIGHT, TASK_UNPIN, TASK_RESET, TASK_ADD
+	TASK_OPEN, TASK_OPEN_FOLDER, TASK_RENAME, TASK_LEFT, TASK_RIGHT, TASK_UNPIN, TASK_RESET, TASK_ADD, TASK_PIN
 } TaskKind;
 
 typedef struct {
@@ -1034,6 +1297,15 @@ pin_task_idle (gpointer data)
 		case TASK_ADD:
 			choose_and_pin (o);
 			break;
+		case TASK_PIN: {
+			const gchar *uris[] = { t->uri, NULL };
+
+			g_free (o->focus_uri);
+			o->focus_uri = g_strdup (t->uri);
+			if (liria_sde_pins_add (uris, -1))
+				schedule_reload (o);
+			break;
+		}
 		}
 	}
 	pin_task_free (t);
@@ -1049,6 +1321,8 @@ pin_task_new (Overview *o, GtkWidget *card, TaskKind kind)
 	t->kind = kind;
 	if (card) {
 		t->uri = g_strdup (g_object_get_data (G_OBJECT (card), "sde-pin-uri"));
+		if (!t->uri)
+			t->uri = g_strdup (g_object_get_data (G_OBJECT (card), "sde-uri"));
 		t->title = g_strdup (g_object_get_data (G_OBJECT (card), "sde-pin-label"));
 		t->neighbour = g_strdup (g_object_get_data (G_OBJECT (card), "sde-pin-neighbour"));
 		t->index = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (card), "sde-pin-index"));
@@ -1122,6 +1396,14 @@ pin_card_popup (GtkWidget *card, Overview *o, const GdkEvent *event)
 
 	if (g_object_get_data (G_OBJECT (card), "sde-add")) {
 		add_popup (o, card, event);
+		return TRUE;
+	}
+	if (g_object_get_data (G_OBJECT (card), "sde-frequent")) {
+		menu = gtk_menu_new ();
+		task_item (menu, _("_Open"), o, card, TASK_OPEN, TRUE);
+		gtk_menu_shell_append (GTK_MENU_SHELL (menu), gtk_separator_menu_item_new ());
+		task_item (menu, _("_Pin to Quick Access"), o, card, TASK_PIN, TRUE);
+		popup_menu (menu, card, event);
 		return TRUE;
 	}
 	if (!g_object_get_data (G_OBJECT (card), "sde-pin-uri"))
@@ -1212,15 +1494,41 @@ static GtkWidget *
 card_box (GtkWidget *card, GtkWidget *image, GtkWidget *title, GtkWidget *subtitle)
 {
 	GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
+	GtkWidget *overlay = gtk_overlay_new ();
 
-	gtk_image_set_pixel_size (GTK_IMAGE (image), 36);
+	gtk_image_set_pixel_size (GTK_IMAGE (image), 32);
 	gtk_widget_set_halign (image, GTK_ALIGN_START);
 	gtk_style_context_add_class (gtk_widget_get_style_context (image), "sde-card-icon");
 	gtk_box_pack_start (GTK_BOX (box), image, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (box), title, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (box), subtitle, FALSE, FALSE, 0);
-	gtk_container_add (GTK_CONTAINER (card), box);
+	gtk_container_add (GTK_CONTAINER (overlay), box);
+	gtk_container_add (GTK_CONTAINER (card), overlay);
+	g_object_set_data (G_OBJECT (card), "sde-overlay", overlay);
 	return box;
+}
+
+/* A small marker in the card's top right corner: the pin of a pinned
+ * card, or the Pin button of a suggested folder (shown on hover). */
+static void
+card_marker (GtkWidget *card, GtkWidget *marker, const gchar *style_class)
+{
+	GtkWidget *overlay = g_object_get_data (G_OBJECT (card), "sde-overlay");
+
+	gtk_widget_set_halign (marker, GTK_ALIGN_END);
+	gtk_widget_set_valign (marker, GTK_ALIGN_START);
+	gtk_style_context_add_class (gtk_widget_get_style_context (marker), style_class);
+	gtk_overlay_add_overlay (GTK_OVERLAY (overlay), marker);
+}
+
+static GtkWidget *
+pin_marker_new (void)
+{
+	GtkWidget *image = gtk_image_new_from_icon_name ("view-pin-symbolic", GTK_ICON_SIZE_MENU);
+
+	gtk_image_set_pixel_size (GTK_IMAGE (image), 12);
+	gtk_widget_set_tooltip_text (image, _("Pinned"));
+	return image;
 }
 
 static GtkWidget *
@@ -1269,11 +1577,8 @@ pin_card (Overview *o, GPtrArray *pins, guint index)
 		                        g_strdup (((LiriaSdePin *) pins->pdata[index + 1 < pins->len ? index + 1 : index - 1])->uri),
 		                        g_free);
 	set_pin_kind (card, PIN_UNKNOWN);
-
-	gtk_drag_source_set (card, GDK_BUTTON1_MASK, pin_source_targets, G_N_ELEMENTS (pin_source_targets),
-	                     GDK_ACTION_COPY);
-	g_signal_connect (card, "drag-begin", G_CALLBACK (pin_drag_begin), NULL);
-	g_signal_connect (card, "drag-data-get", G_CALLBACK (pin_drag_data_get), NULL);
+	card_marker (card, pin_marker_new (), "sde-card-pin");
+	card_drag_source (card, TRUE);
 
 	q = g_new0 (PinQuery, 1);
 	q->card = g_object_ref (card);
@@ -1312,9 +1617,83 @@ add_card (Overview *o, gboolean empty)
 }
 
 static void
+frequent_pin_clicked (GtkButton *button, Overview *o)
+{
+	GtkWidget *card = g_object_get_data (G_OBJECT (button), "sde-card");
+
+	if (card)
+		run_task (o, card, TASK_PIN);
+}
+
+/* A folder suggested from recently used files: marked "Frequent", with a
+ * Pin button on hover and "Pin to Quick Access" in its menu. */
+static GtkWidget *
+frequent_card (Overview *o, const gchar *uri)
+{
+	GFile *file = g_file_new_for_uri (uri);
+	gchar *where = g_file_get_parse_name (file), *base = g_file_get_basename (file);
+	gchar *name = base ? g_filename_display_name (base) : g_strdup (where);
+	gchar *tip = g_strdup_printf (_("%s\nOften used: pin it to keep it in Quick access"), where);
+	GtkWidget *card = card_new (o, "sde-quick-card", uri, tip);
+	GtkWidget *image = gtk_image_new_from_icon_name ("folder", GTK_ICON_SIZE_DIALOG);
+	GtkWidget *pin = gtk_button_new_from_icon_name ("view-pin-symbolic", GTK_ICON_SIZE_MENU);
+
+	gtk_style_context_add_class (gtk_widget_get_style_context (card), "sde-quick-frequent");
+	card_box (card, image, label_new (name, "sde-card-title", TRUE),
+	          label_new (_("Frequent folder"), "sde-card-subtitle", TRUE));
+	g_object_set_data (G_OBJECT (card), "sde-frequent", GINT_TO_POINTER (TRUE));
+	gtk_button_set_relief (GTK_BUTTON (pin), GTK_RELIEF_NONE);
+	gtk_widget_set_focus_on_click (pin, FALSE);
+	gtk_widget_set_tooltip_text (pin, _("Pin to Quick Access"));
+	g_object_set_data (G_OBJECT (pin), "sde-card", card);
+	g_signal_connect (pin, "clicked", G_CALLBACK (frequent_pin_clicked), o);
+	card_marker (card, pin, "sde-card-pin-button");
+	card_drag_source (card, FALSE);
+	atk_object_set_name (gtk_widget_get_accessible (card), name);
+	g_free (tip);
+	g_free (name);
+	g_free (base);
+	g_free (where);
+	g_object_unref (file);
+	return card;
+}
+
+/* Parent folders of the recently used files, without the pins. */
+static GPtrArray *
+frequent_folders (GPtrArray *pins)
+{
+	GList *items = g_list_sort (gtk_recent_manager_get_items (gtk_recent_manager_get_default ()),
+	                            recent_newer_first);
+	GPtrArray *recent = g_ptr_array_new (), *pinned = g_ptr_array_new (), *folders;
+	gchar *home = g_filename_to_uri (g_get_home_dir (), NULL, NULL);
+
+	for (GList *l = items; l; l = l->next)
+		g_ptr_array_add (recent, (gpointer) gtk_recent_info_get_uri (l->data));
+	g_ptr_array_add (recent, NULL);
+	for (guint i = 0; i < pins->len; i++)
+		g_ptr_array_add (pinned, ((LiriaSdePin *) pins->pdata[i])->uri);
+	g_ptr_array_add (pinned, NULL);
+	folders = liria_sde_home_frequent_folders ((const gchar *const *) recent->pdata,
+	                                           (const gchar *const *) pinned->pdata, home, 4);
+	/* Only folders that still exist. */
+	for (guint i = folders->len; i > 0; i--) {
+		gchar *path = g_filename_from_uri (folders->pdata[i - 1], NULL, NULL);
+
+		if (!path || !g_file_test (path, G_FILE_TEST_IS_DIR))
+			g_ptr_array_remove_index (folders, i - 1);
+		g_free (path);
+	}
+	g_ptr_array_unref (recent);
+	g_ptr_array_unref (pinned);
+	g_list_free_full (items, (GDestroyNotify) gtk_recent_info_unref);
+	g_free (home);
+	return folders;
+}
+
+static void
 fill_quick_access (Overview *o)
 {
-	GPtrArray *pins = liria_sde_pins_load ();
+	GPtrArray *pins = liria_sde_pins_load (), *frequent;
 	GtkWidget *focus = NULL, *plus;
 
 	if (o->quick_cancellable) {
@@ -1322,6 +1701,7 @@ fill_quick_access (Overview *o)
 		g_object_unref (o->quick_cancellable);
 	}
 	o->quick_cancellable = g_cancellable_new ();
+	set_drop_card (o, NULL);
 	clear_container (o->quick);
 	for (guint i = 0; i < pins->len; i++) {
 		GtkWidget *card = pin_card (o, pins, i);
@@ -1330,6 +1710,10 @@ fill_quick_access (Overview *o)
 		if (o->focus_uri && g_strcmp0 (o->focus_uri, ((LiriaSdePin *) pins->pdata[i])->uri) == 0)
 			focus = card;
 	}
+	frequent = frequent_folders (pins);
+	for (guint i = 0; i < frequent->len; i++)
+		flow_add (o->quick, frequent_card (o, frequent->pdata[i]));
+	g_ptr_array_unref (frequent);
 	plus = add_card (o, pins->len == 0);
 	flow_add (o->quick, plus);
 	if (g_strcmp0 (o->focus_uri, "sde:add") == 0)
@@ -1352,8 +1736,13 @@ quick_access_new (Overview *o)
 	gtk_event_box_set_visible_window (GTK_EVENT_BOX (area), FALSE);
 	gtk_container_add (GTK_CONTAINER (area), o->quick);
 	g_signal_connect (area, "button-press-event", G_CALLBACK (quick_area_pressed), o);
-	gtk_drag_dest_set (o->quick, GTK_DEST_DEFAULT_ALL, pin_drop_targets, G_N_ELEMENTS (pin_drop_targets),
-	                   GDK_ACTION_COPY | GDK_ACTION_LINK);
+	/* Pins are moved, dropped locations pinned and files dropped on a
+	 * folder card copied or moved into it (quick_drag_*). */
+	gtk_drag_dest_set (o->quick, 0, pin_drop_targets, G_N_ELEMENTS (pin_drop_targets),
+	                   GDK_ACTION_COPY | GDK_ACTION_MOVE | GDK_ACTION_LINK | GDK_ACTION_ASK);
+	g_signal_connect (o->quick, "drag-motion", G_CALLBACK (quick_drag_motion), o);
+	g_signal_connect (o->quick, "drag-leave", G_CALLBACK (quick_drag_leave), o);
+	g_signal_connect (o->quick, "drag-drop", G_CALLBACK (quick_drag_drop), o);
 	g_signal_connect (o->quick, "drag-data-received", G_CALLBACK (quick_drag_data_received), o);
 	fill_quick_access (o);
 
@@ -1441,6 +1830,9 @@ drive_card (Overview *o, GFile *root, const gchar *name, GIcon *icon)
 	gtk_box_pack_start (GTK_BOX (row), image, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (row), text, TRUE, TRUE, 0);
 	gtk_container_add (GTK_CONTAINER (card), row);
+	gtk_widget_set_size_request (card, 220, -1);
+	card_drag_source (card, FALSE);
+	drive_drag_dest (card);
 
 	u->bar = g_object_ref (bar);
 	u->label = g_object_ref (detail);
@@ -1565,6 +1957,7 @@ fill_recent (Overview *o)
 		gtk_box_pack_start (GTK_BOX (row), image, FALSE, FALSE, 0);
 		gtk_box_pack_start (GTK_BOX (row), text, TRUE, TRUE, 0);
 		gtk_container_add (GTK_CONTAINER (card), row);
+		card_drag_source (card, FALSE);
 		flow_add (o->recent, card);
 		shown++;
 		if (icon)
@@ -1597,30 +1990,44 @@ recent_changed (GtkWidget *root)
 
 /* ------------------------------------------------------------- overview */
 
+/* The overview is the Home view while it is shown: the window hides the
+ * folder grid below it (no second copy of Desktop, Documents...). */
 static void
-update_toggle (Overview *o)
+apply_expanded (Overview *o)
 {
-	gboolean expanded = gtk_revealer_get_reveal_child (GTK_REVEALER (o->revealer));
+	SdeReplacesView replaces = o->window ? g_object_get_data (G_OBJECT (o->window), "sde-home-replaces-view") : NULL;
 
-	gtk_label_set_text (GTK_LABEL (o->toggle_label), expanded ? _("Hide overview") : _("Show overview"));
-	gtk_image_set_from_icon_name (GTK_IMAGE (o->toggle_icon), expanded ? "pan-up-symbolic" : "pan-down-symbolic",
+	gtk_widget_set_visible (o->scroller, o->expanded);
+	gtk_widget_set_vexpand (o->root, o->expanded);
+	gtk_label_set_text (GTK_LABEL (o->toggle_label), o->expanded ? _("Hide overview") : _("Show overview"));
+	gtk_image_set_from_icon_name (GTK_IMAGE (o->toggle_icon), o->expanded ? "pan-up-symbolic" : "pan-down-symbolic",
 	                              GTK_ICON_SIZE_BUTTON);
+	gtk_widget_set_tooltip_text (gtk_widget_get_parent (gtk_widget_get_parent (o->toggle_label)),
+	                             o->expanded ? _("Show the files of the home folder instead")
+	                                         : _("Show Quick access, drives and recent files"));
+	if (replaces && gtk_widget_get_parent (o->root))
+		replaces (o->root, o->expanded);
 }
 
 static void
 toggle_clicked (GtkButton *button, Overview *o)
 {
-	gboolean expanded = !gtk_revealer_get_reveal_child (GTK_REVEALER (o->revealer));
+	o->expanded = !o->expanded;
+	apply_expanded (o);
+	save_expanded (o->expanded);
+}
 
-	gtk_revealer_set_reveal_child (GTK_REVEALER (o->revealer), expanded);
-	update_toggle (o);
-	save_expanded (expanded);
+static void
+overview_mapped (GtkWidget *root, Overview *o)
+{
+	apply_expanded (o);
 }
 
 static void
 overview_destroyed (GtkWidget *root, Overview *o)
 {
 	o->destroyed = TRUE;
+	set_drop_card (o, NULL);
 	g_cancellable_cancel (o->cancellable);
 	if (o->quick_cancellable)
 		g_cancellable_cancel (o->quick_cancellable);
@@ -1652,33 +2059,6 @@ overview_free (Overview *o)
 	g_free (o);
 }
 
-/* Drives and Recent files sit side by side, or stacked in a narrow pane
- * (split view). The orientation changes after the current layout pass. */
-static gboolean
-lower_reorient (gpointer data)
-{
-	GtkWidget *box = data;
-	gint width = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (box), "sde-width"));
-	GtkOrientation wanted = width > 0 && width < 700 ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL;
-
-	g_object_set_data (G_OBJECT (box), "sde-idle", NULL);
-	if (gtk_widget_in_destruction (box) == FALSE &&
-	    gtk_orientable_get_orientation (GTK_ORIENTABLE (box)) != wanted)
-		gtk_orientable_set_orientation (GTK_ORIENTABLE (box), wanted);
-	g_object_unref (box);
-	return G_SOURCE_REMOVE;
-}
-
-static void
-lower_allocated (GtkWidget *box, GtkAllocation *allocation, gpointer data)
-{
-	g_object_set_data (G_OBJECT (box), "sde-width", GINT_TO_POINTER (allocation->width));
-	if (!g_object_get_data (G_OBJECT (box), "sde-idle")) {
-		g_object_set_data (G_OBJECT (box), "sde-idle", GINT_TO_POINTER (1));
-		g_idle_add (lower_reorient, g_object_ref (box));
-	}
-}
-
 static const gchar *
 greeting (void)
 {
@@ -1693,21 +2073,102 @@ greeting (void)
 	return _("Good evening");
 }
 
-static GtkWidget *
-section (const gchar *title, GtkWidget *content)
-{
-	GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+/* -- collapsible sections */
 
-	gtk_box_pack_start (GTK_BOX (box), label_new (title, "sde-home-section", FALSE), FALSE, FALSE, 0);
-	gtk_box_pack_start (GTK_BOX (box), content, FALSE, FALSE, 0);
+static void
+section_update (GtkWidget *header)
+{
+	GtkWidget *revealer = g_object_get_data (G_OBJECT (header), "sde-revealer");
+	GtkWidget *arrow = g_object_get_data (G_OBJECT (header), "sde-arrow");
+	gboolean open = gtk_revealer_get_reveal_child (GTK_REVEALER (revealer));
+
+	gtk_image_set_from_icon_name (GTK_IMAGE (arrow), open ? "pan-down-symbolic" : "pan-end-symbolic",
+	                              GTK_ICON_SIZE_MENU);
+	gtk_widget_set_tooltip_text (header, open ? _("Collapse this section") : _("Expand this section"));
+	atk_object_set_role (gtk_widget_get_accessible (header), ATK_ROLE_TOGGLE_BUTTON);
+}
+
+static void
+section_toggled (GtkButton *header, gpointer data)
+{
+	GtkWidget *revealer = g_object_get_data (G_OBJECT (header), "sde-revealer");
+	const gchar *name = g_object_get_data (G_OBJECT (header), "sde-section");
+	gboolean open = !gtk_revealer_get_reveal_child (GTK_REVEALER (revealer));
+
+	gtk_revealer_set_reveal_child (GTK_REVEALER (revealer), open);
+	section_update (GTK_WIDGET (header));
+	liria_sde_prefs_set_flag ("home", "collapsed", name, !open);
+}
+
+/* A section with a header button (arrow and title) that collapses it, as
+ * in Windows 11; end is an optional widget at the end of the header row. */
+static GtkWidget *
+section (const gchar *name, const gchar *title, GtkWidget *content, GtkWidget *end)
+{
+	GtkWidget *box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 4);
+	GtkWidget *row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+	GtkWidget *header = gtk_button_new ();
+	GtkWidget *inner = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+	GtkWidget *arrow = gtk_image_new ();
+	GtkWidget *revealer = gtk_revealer_new ();
+
+	gtk_button_set_relief (GTK_BUTTON (header), GTK_RELIEF_NONE);
+	gtk_widget_set_focus_on_click (header, FALSE);
+	gtk_style_context_add_class (gtk_widget_get_style_context (header), "sde-home-section-button");
+	gtk_box_pack_start (GTK_BOX (inner), arrow, FALSE, FALSE, 0);
+	gtk_box_pack_start (GTK_BOX (inner), label_new (title, "sde-home-section", FALSE), FALSE, FALSE, 0);
+	gtk_container_add (GTK_CONTAINER (header), inner);
+	gtk_box_pack_start (GTK_BOX (row), header, FALSE, FALSE, 0);
+	if (end)
+		gtk_box_pack_end (GTK_BOX (row), end, FALSE, FALSE, 0);
+	gtk_revealer_set_transition_type (GTK_REVEALER (revealer), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+	gtk_revealer_set_transition_duration (GTK_REVEALER (revealer), 150);
+	gtk_container_add (GTK_CONTAINER (revealer), content);
+	gtk_revealer_set_reveal_child (GTK_REVEALER (revealer), !liria_sde_prefs_has_flag ("home", "collapsed", name));
+	g_object_set_data (G_OBJECT (header), "sde-revealer", revealer);
+	g_object_set_data (G_OBJECT (header), "sde-arrow", arrow);
+	g_object_set_data_full (G_OBJECT (header), "sde-section", g_strdup (name), g_free);
+	g_signal_connect (header, "clicked", G_CALLBACK (section_toggled), NULL);
+	section_update (header);
+	gtk_box_pack_start (GTK_BOX (box), row, FALSE, FALSE, 0);
+	gtk_box_pack_start (GTK_BOX (box), revealer, FALSE, FALSE, 0);
+	gtk_style_context_add_class (gtk_widget_get_style_context (box), "sde-home-block");
 	return box;
+}
+
+/* Drive and recent file cards: as many per row as fit, at most three. */
+static gboolean
+grid_columns_idle (gpointer data)
+{
+	GtkWidget *flow = data;
+	gint width = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (flow), "sde-width"));
+	guint columns = liria_sde_home_columns (width, 220, 8, 3);
+
+	g_object_set_data (G_OBJECT (flow), "sde-idle", NULL);
+	if (!gtk_widget_in_destruction (flow) &&
+	    gtk_flow_box_get_max_children_per_line (GTK_FLOW_BOX (flow)) != columns) {
+		gtk_flow_box_set_min_children_per_line (GTK_FLOW_BOX (flow), columns);
+		gtk_flow_box_set_max_children_per_line (GTK_FLOW_BOX (flow), columns);
+	}
+	g_object_unref (flow);
+	return G_SOURCE_REMOVE;
+}
+
+static void
+grid_allocated (GtkWidget *flow, GtkAllocation *allocation, gpointer data)
+{
+	g_object_set_data (G_OBJECT (flow), "sde-width", GINT_TO_POINTER (allocation->width));
+	if (!g_object_get_data (G_OBJECT (flow), "sde-idle")) {
+		g_object_set_data (G_OBJECT (flow), "sde-idle", GINT_TO_POINTER (1));
+		g_idle_add (grid_columns_idle, g_object_ref (flow));
+	}
 }
 
 GtkWidget *
 sde_home_overview_new (const char *uri, GtkWidget *window)
 {
 	Overview *o;
-	GtkWidget *root, *header, *titles, *title, *toggle, *toggle_box, *body, *lower, *drives, *recent_box;
+	GtkWidget *root, *header, *title, *toggle, *toggle_box, *body, *viewport;
 	gchar *home_uri = g_filename_to_uri (g_get_home_dir (), NULL, NULL);
 	gchar *hello;
 	const gchar *real_name;
@@ -1722,25 +2183,22 @@ sde_home_overview_new (const char *uri, GtkWidget *window)
 	o->window = window;
 	o->cancellable = g_cancellable_new ();
 	o->monitor = g_volume_monitor_get ();
+	o->expanded = overview_expanded ();
 
-	root = gtk_box_new (GTK_ORIENTATION_VERTICAL, 10);
+	root = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
 	o->root = root;
 	gtk_style_context_add_class (gtk_widget_get_style_context (root), "sde-home-overview");
 	g_object_set_data_full (G_OBJECT (root), "sde-overview", o, (GDestroyNotify) overview_free);
 	g_signal_connect (root, "destroy", G_CALLBACK (overview_destroyed), o);
+	g_signal_connect (root, "map", G_CALLBACK (overview_mapped), o);
 
-	/* Header: a greeting and the collapse button. */
+	/* Header: a one-line greeting and the overview switch. */
 	header = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
-	titles = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
 	real_name = g_get_real_name ();
 	if (!real_name || !*real_name || g_strcmp0 (real_name, "Unknown") == 0)
 		real_name = g_get_user_name ();
 	hello = g_strdup_printf ("%s, %s", greeting (), real_name);
 	title = label_new (hello, "sde-home-title", TRUE);
-	gtk_box_pack_start (GTK_BOX (titles), title, FALSE, FALSE, 0);
-	gtk_box_pack_start (GTK_BOX (titles),
-	                    label_new (_("Your folders, drives and recent files at a glance"), "sde-home-subtitle", TRUE),
-	                    FALSE, FALSE, 0);
 	g_free (hello);
 
 	toggle = gtk_button_new ();
@@ -1753,21 +2211,24 @@ sde_home_overview_new (const char *uri, GtkWidget *window)
 	gtk_container_add (GTK_CONTAINER (toggle), toggle_box);
 	gtk_widget_set_valign (toggle, GTK_ALIGN_CENTER);
 	g_signal_connect (toggle, "clicked", G_CALLBACK (toggle_clicked), o);
-
-	gtk_box_pack_start (GTK_BOX (header), titles, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (header), title, TRUE, TRUE, 0);
 	gtk_box_pack_end (GTK_BOX (header), toggle, FALSE, FALSE, 0);
+	gtk_style_context_add_class (gtk_widget_get_style_context (header), "sde-home-header");
 	gtk_box_pack_start (GTK_BOX (root), header, FALSE, FALSE, 0);
 
-	/* Body: Quick access on top; drives and recent files side by side. */
-	body = gtk_box_new (GTK_ORIENTATION_VERTICAL, 12);
-	gtk_box_pack_start (GTK_BOX (body), section (_("Quick access"), quick_access_new (o)), FALSE, FALSE, 0);
+	/* Body: Quick access, Drives and Recent files, scrolled together. */
+	body = gtk_box_new (GTK_ORIENTATION_VERTICAL, 10);
+	gtk_style_context_add_class (gtk_widget_get_style_context (body), "sde-home-body");
+	gtk_box_pack_start (GTK_BOX (body), section ("quick", _("Quick access"), quick_access_new (o), NULL),
+	                    FALSE, FALSE, 0);
 
-	lower = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 18);
-	o->drives = gtk_box_new (GTK_ORIENTATION_VERTICAL, 8);
-	gtk_style_context_add_class (gtk_widget_get_style_context (o->drives), "sde-drives");
-	gtk_widget_set_size_request (o->drives, 280, -1);
+	o->drives = flow_new (1, 3, "sde-drives");
+	g_signal_connect (o->drives, "size-allocate", G_CALLBACK (grid_allocated), NULL);
 	fill_drives (o);
+	gtk_box_pack_start (GTK_BOX (body), section ("drives", _("Drives"), o->drives, NULL), FALSE, FALSE, 0);
+
 	o->recent = flow_new (1, 3, "sde-recent-files");
+	g_signal_connect (o->recent, "size-allocate", G_CALLBACK (grid_allocated), NULL);
 	o->recent_clear = gtk_button_new_with_mnemonic (_("C_lear"));
 	gtk_widget_set_tooltip_text (o->recent_clear, _("Clear the list of recent files"));
 	gtk_style_context_add_class (gtk_widget_get_style_context (o->recent_clear), "sde-home-clear");
@@ -1775,36 +2236,21 @@ sde_home_overview_new (const char *uri, GtkWidget *window)
 	gtk_widget_set_valign (o->recent_clear, GTK_ALIGN_CENTER);
 	g_signal_connect (o->recent_clear, "clicked", G_CALLBACK (clear_clicked), o);
 	fill_recent (o);
-	drives = section (_("Drives"), o->drives);
-	/* Ellipsized card labels expand; only Recent files takes the extra width. */
-	gtk_widget_set_hexpand (drives, FALSE);
-	gtk_widget_set_halign (drives, GTK_ALIGN_START);
-	gtk_box_pack_start (GTK_BOX (lower), drives, FALSE, FALSE, 0);
-	recent_box = section (_("Recent files"), o->recent);
-	{
-		/* The Clear button sits at the end of the section title row. */
-		GList *children = gtk_container_get_children (GTK_CONTAINER (recent_box));
-		GtkWidget *title_label = children->data, *title_row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+	gtk_box_pack_start (GTK_BOX (body), section ("recent", _("Recent files"), o->recent, o->recent_clear),
+	                    FALSE, FALSE, 0);
 
-		g_object_ref (title_label);
-		gtk_container_remove (GTK_CONTAINER (recent_box), title_label);
-		gtk_box_pack_start (GTK_BOX (title_row), title_label, TRUE, TRUE, 0);
-		gtk_box_pack_end (GTK_BOX (title_row), o->recent_clear, FALSE, FALSE, 0);
-		g_object_unref (title_label);
-		gtk_box_pack_start (GTK_BOX (recent_box), title_row, FALSE, FALSE, 0);
-		gtk_box_reorder_child (GTK_BOX (recent_box), title_row, 0);
-		g_list_free (children);
-	}
-	gtk_box_pack_start (GTK_BOX (lower), recent_box, TRUE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (body), lower, FALSE, FALSE, 0);
-	g_signal_connect (lower, "size-allocate", G_CALLBACK (lower_allocated), NULL);
-
-	o->revealer = gtk_revealer_new ();
-	gtk_revealer_set_transition_type (GTK_REVEALER (o->revealer), GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
-	gtk_container_add (GTK_CONTAINER (o->revealer), body);
-	gtk_revealer_set_reveal_child (GTK_REVEALER (o->revealer), overview_expanded ());
-	gtk_box_pack_start (GTK_BOX (root), o->revealer, FALSE, FALSE, 0);
-	update_toggle (o);
+	o->scroller = gtk_scrolled_window_new (NULL, NULL);
+	gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (o->scroller), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+	gtk_scrolled_window_set_propagate_natural_height (GTK_SCROLLED_WINDOW (o->scroller), FALSE);
+	gtk_widget_set_vexpand (o->scroller, TRUE);
+	gtk_style_context_add_class (gtk_widget_get_style_context (o->scroller), "sde-home-scroller");
+	viewport = gtk_viewport_new (NULL, NULL);
+	gtk_viewport_set_shadow_type (GTK_VIEWPORT (viewport), GTK_SHADOW_NONE);
+	gtk_container_add (GTK_CONTAINER (viewport), body);
+	gtk_container_add (GTK_CONTAINER (o->scroller), viewport);
+	gtk_widget_show_all (o->scroller);
+	gtk_widget_set_no_show_all (o->scroller, TRUE);
+	gtk_box_pack_start (GTK_BOX (root), o->scroller, TRUE, TRUE, 0);
 
 	g_signal_connect_object (o->monitor, "mount-added", G_CALLBACK (mounts_changed), root, G_CONNECT_SWAPPED);
 	g_signal_connect_object (o->monitor, "mount-removed", G_CALLBACK (mounts_changed), root, G_CONNECT_SWAPPED);
@@ -1812,5 +2258,6 @@ sde_home_overview_new (const char *uri, GtkWidget *window)
 	                         G_CONNECT_SWAPPED);
 
 	gtk_widget_show_all (root);
+	apply_expanded (o);
 	return root;
 }

@@ -25,6 +25,7 @@
 #include <glib/gi18n.h>
 
 #include <libliria-private/liria-bookmark.h>
+#include <libliria-private/liria-dnd.h>
 #include <libliria-private/liria-file-operations.h>
 #include <libliria-private/liria-sidebar.h>
 #include <libliria-private/liria-view-factory.h>
@@ -709,6 +710,36 @@ sde_go_to_uri (GtkWidget *widget, const char *uri)
     g_object_unref (location);
 }
 
+/* SDE: the Home overview (an extension) is the Home view while it is
+ * shown. It calls this through the "sde-home-replaces-view" object data:
+ * the slot showing it hides its folder view and lets the overview take
+ * the height; liria_window_slot_remove_extra_location_widgets () puts the
+ * view back when the slot leaves the home folder. */
+static void
+sde_home_replaces_view (GtkWidget *overview, gboolean replace)
+{
+    GtkWidget *toplevel = gtk_widget_get_toplevel (overview);
+    GList *p, *s;
+
+    if (!LIRIA_IS_WINDOW (toplevel))
+        return;
+    for (p = LIRIA_WINDOW (toplevel)->details->panes; p != NULL; p = p->next)
+    {
+        for (s = LIRIA_WINDOW_PANE (p->data)->slots; s != NULL; s = s->next)
+        {
+            LiriaWindowSlot *slot = s->data;
+
+            if (slot->extra_location_widgets == NULL ||
+                !gtk_widget_is_ancestor (overview, slot->extra_location_widgets))
+                continue;
+            gtk_widget_set_visible (slot->view_box, !replace);
+            gtk_box_set_child_packing (GTK_BOX (slot->content_box), slot->extra_location_frame,
+                                       replace, replace, 0, GTK_PACK_START);
+            return;
+        }
+    }
+}
+
 void
 liria_sde_ui_setup_header (LiriaNavigationWindow *window,
                            GtkWidget *toolbar,
@@ -740,6 +771,7 @@ liria_sde_ui_setup_header (LiriaNavigationWindow *window,
     gtk_widget_set_no_show_all (win->details->menubar, TRUE);
 
     g_object_set_data (G_OBJECT (window), "sde-go-to-uri", sde_go_to_uri);
+    g_object_set_data (G_OBJECT (window), "sde-home-replaces-view", sde_home_replaces_view);
 }
 
 /* The sidebar header ("Places" chooser and close button) is replaced by
@@ -980,15 +1012,54 @@ sde_copy_to_activate (GSimpleAction *action, GVariant *parameter, gpointer data)
     g_list_free_full (uris, g_free);
 }
 
+/* "sde-drop" (as, s, s): files dropped on a Home overview card (a pinned
+ * folder or a drive) or on a pinned sidebar place. The last string is
+ * "move", "copy", "link" or "ask"; "ask" shows the usual Move Here /
+ * Copy Here / Link Here / Cancel menu at the pointer. */
+static void
+sde_drop_activate (GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+    GtkApplication *application = data;
+    GVariantIter *iter;
+    const char *uri, *target, *how;
+    GList *uris = NULL;
+    GdkDragAction drop = GDK_ACTION_COPY;
+
+    g_variant_get (parameter, "(as&s&s)", &iter, &target, &how);
+    while (g_variant_iter_next (iter, "&s", &uri))
+        uris = g_list_prepend (uris, g_strdup (uri));
+    g_variant_iter_free (iter);
+    uris = g_list_reverse (uris);
+    if (g_strcmp0 (how, "move") == 0)
+        drop = GDK_ACTION_MOVE;
+    else if (g_strcmp0 (how, "link") == 0)
+        drop = GDK_ACTION_LINK;
+    else if (g_strcmp0 (how, "ask") == 0)
+    {
+        GtkWindow *window = gtk_application_get_active_window (application);
+
+        drop = window != NULL ? liria_drag_drop_action_ask (GTK_WIDGET (window),
+                                                            GDK_ACTION_MOVE | GDK_ACTION_COPY | GDK_ACTION_LINK)
+                              : 0;
+    }
+    if (uris != NULL && drop != 0 && target != NULL && *target != '\0')
+        liria_file_operations_copy_move (uris, NULL, target, drop, NULL, NULL, NULL);
+    g_list_free_full (uris, g_free);
+}
+
 void
 liria_sde_ui_startup (GApplication *application)
 {
     GSimpleAction *copy_to = g_simple_action_new ("sde-copy-to", G_VARIANT_TYPE ("(ass)"));
+    GSimpleAction *drop = g_simple_action_new ("sde-drop", G_VARIANT_TYPE ("(asss)"));
     GtkCssProvider *provider = gtk_css_provider_new ();
 
     g_signal_connect (copy_to, "activate", G_CALLBACK (sde_copy_to_activate), NULL);
     g_action_map_add_action (G_ACTION_MAP (application), G_ACTION (copy_to));
     g_object_unref (copy_to);
+    g_signal_connect (drop, "activate", G_CALLBACK (sde_drop_activate), application);
+    g_action_map_add_action (G_ACTION_MAP (application), G_ACTION (drop));
+    g_object_unref (drop);
 
     /* Liria's own look: only standard theme colours, so it matches every
      * SDE theme (light, dark, accent) and other GTK themes. */
