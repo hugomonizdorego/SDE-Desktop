@@ -9,6 +9,9 @@ SDE-FLTK changes (DebION Dev-Team)
     Fl_File_Chooser are passed to the style before they are shown.
     Left/Right move along the quick row. Without a style nothing changes.
   - Menus that would leave the work area move into it (styled menus only).
+  - X11 drag and drop: a file list that Fl::dnd() announces as
+    "text/uri-list" is also served in that type, so GTK file managers
+    accept files dragged from SDE programs (the desktop).
 
 1.3.11-sde1  2026-10-20
   - Imported FLTK 1.3.11 into the SDE repository as SDE-FLTK.

@@ -20,7 +20,8 @@
 <h1>Liria</h1>
 <p class="muted">The SDE file manager &middot; Developer: DebION Dev-Team</p>
 <nav>
-  <a href="#window">The window</a><a href="#menus">Menus</a><a href="#bookmarks">Bookmarks</a>
+  <a href="#window">The window</a><a href="#ribbon">Ribbon</a><a href="#home">Home</a>
+  <a href="#dnd">Drag and drop</a><a href="#menus">Menus</a><a href="#bookmarks">Bookmarks</a>
   <a href="#removable">Removable drives</a><a href="#connect-server">Network</a>
   <a href="#views">Preferences</a><a href="#shortcuts">Shortcuts</a>
 </nav>
@@ -28,17 +29,49 @@
 <h2 id="window">The window</h2>
 <p>The header row holds <b>Back</b>, <b>Forward</b> and <b>Parent Folder</b>, the path of the
 current folder, the view switcher (icons, list, compact), <b>Search</b> and the <b>main menu</b>.
-Click a part of the path to go there; click the pencil button, or press <kbd>Ctrl</kbd>+<kbd>L</kbd>,
-to type a location instead.</p>
-<p>The sidebar lists <b>Favorites</b> (your home and personal folders), <b>Devices</b> (the file
-system and drives), <b>Bookmarks</b> and <b>Network</b>. Press <kbd>F9</kbd> to show or hide it.
-Above your home folder, the <b>Home overview</b> shows Quick access, drives with their
-free space and your recent files.</p>
+Click a part of the path to go there, or right-click it for its menu. To type a location, click
+the empty part of the path, click the pencil button or press <kbd>Ctrl</kbd>+<kbd>L</kbd>;
+<kbd>Escape</kbd> brings the path back. The small arrows at the ends of the path appear only when
+the path is too long for the window and scroll it. Files dropped on a part of the path are moved
+or copied into that folder.</p>
+<p>The sidebar shows <b>Home</b>, then <b>Pinned</b> (the same pins as Quick access, with a pin
+next to the item under the pointer), <b>Bookmarks</b>, <b>Drives</b> and <b>Network</b>, with the
+colour icons of your icon theme. Click a heading to collapse or expand its section; Liria
+remembers it. Drop a folder on the <b>Pinned</b> heading, or between two pinned items, to pin
+it there; drop files on a place to move or copy them into it. Press <kbd>F9</kbd> to show or
+hide the sidebar.</p>
+
+<h2 id="ribbon">Ribbon</h2>
+<p>Below the header, the ribbon groups the file commands in tabs. <b>Home</b>: Pin to Quick
+access, Copy, Paste, Cut, Copy path, Paste shortcut (links to the copied files), Move to, Copy
+to, Delete, Rename, New folder, New document, Properties, Open, Open with, Select all, Select
+none and Invert selection. <b>Share</b>: Email (attaches the selected files), Compress, Copy to
+drive and Make link. <b>View</b>: navigation pane, extra pane, status bar, icons, details or
+compact view, icon size, Sort by, hidden and backup files and the ribbon mode. A <b>Drive</b>
+tab appears in folders of a drive that can be ejected, and an <b>Archive</b> tab (Extract here,
+Extract to) when only archives are selected. Buttons that do not apply to the selection are
+greyed out.</p>
+<p>The ribbon has three modes, chosen in Main Menu &rsaquo; Ribbon (also under View), with the
+<b>Ribbon</b> button of the View tab or with the arrow at the end of the tabs: the full
+<b>Ribbon</b>, <b>Ribbon Tabs Only</b> (click a tab to drop its commands down; they close after
+a command, with <kbd>Escape</kbd> or when you click the files) and <b>Compact Header (No
+Ribbon)</b>. <kbd>Ctrl</kbd>+<kbd>F1</kbd> switches between the full ribbon and tabs only. The
+choice applies to every Liria window and is kept in <code>~/.config/sde/liria.conf</code>. On
+small screens the ribbon starts with tabs only.</p>
+
+<h2 id="home">Home</h2>
+<p>Your home folder opens on the <b>Home</b> view with <b>Quick access</b>, <b>Drives</b> (cards
+with their free space) and <b>Recent files</b>; click a section heading to collapse it. <b>Hide
+overview</b> shows the files of the home folder instead, and <b>Show overview</b> brings Home
+back.</p>
 
 <p><b>Quick access</b> holds what you pin: folders, documents, pictures, archives, server
-locations or folders on a USB drive. Pin an item with <b>Pin to Quick Access</b> in its
-right-click menu (in the file view or the sidebar), by dropping it on the Quick access cards or
-with the <b>+</b> card. A folder opens in the window; a file opens in its usual application.
+locations or folders on a USB drive. Pinned cards carry a small pin. Folders you use often (where
+your recent files are) follow as <i>Frequent folder</i> cards; pin one with the pin button that
+appears over it or with <b>Pin to Quick Access</b> in its menu. Pin an item with <b>Pin to Quick
+Access</b> in its right-click menu (in the file view or the sidebar), with the ribbon, by
+dropping it on the Quick access area or with the <b>+</b> card. A folder opens in the window; a
+file opens in its usual application.
 Right-click a card (or press <kbd>Shift</kbd>+<kbd>F10</kbd>) to rename it, move it left or
 right, unpin it or reset Quick access to the default folders. Drag a card to move it,
 <kbd>Delete</kbd> unpins the focused card, <kbd>F2</kbd> renames it and
@@ -46,6 +79,17 @@ right, unpin it or reset Quick access to the default folders. Drag a card to mov
 moved, deleted or are on a drive that is not connected are dimmed and marked
 <i>Not available</i>. The list is kept in <code>~/.config/sde/liria-quick-access</code>, one
 location per line, and every open window follows changes to it.</p>
+
+<h2 id="dnd">Drag and drop</h2>
+<p>Drag files and folders between Liria windows, tabs and panes, onto places and drives in the
+sidebar, onto a part of the path, onto folder and drive cards of the Home view, and to or from
+other applications. On the same drive files are moved, to another drive they are copied:
+hold <kbd>Shift</kbd> to move, <kbd>Ctrl</kbd> to copy or <kbd>Ctrl</kbd>+<kbd>Shift</kbd> to
+make links. Drag with the <b>right</b> (or middle) mouse button to choose <b>Move Here</b>,
+<b>Copy Here</b>, <b>Link Here</b> or <b>Cancel</b> when you drop. A folder dropped on the Quick
+access area (not on a card) or on the sidebar's Pinned heading is pinned; files dropped on a
+folder card or a drive card go into that folder or drive. Cards of the Home view can be dragged
+into folders and other applications too.</p>
 
 <h2 id="menus">Menus</h2>
 <p>The main menu (<kbd>F10</kbd>) opens new windows and tabs, a terminal in the current folder,
@@ -101,7 +145,7 @@ whether the Delete command bypasses the trash.</p>
 <kbd>Ctrl</kbd>+<kbd>T</kbd> new tab, <kbd>Ctrl</kbd>+<kbd>F</kbd> search,
 <kbd>Ctrl</kbd>+<kbd>H</kbd> hidden files, <kbd>Ctrl</kbd>+<kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>
 icons/list/compact view, <kbd>F2</kbd> rename, <kbd>Delete</kbd> move to trash,
-<kbd>F3</kbd> extra pane.</p>
+<kbd>F3</kbd> extra pane, <kbd>Ctrl</kbd>+<kbd>F1</kbd> collapse or expand the ribbon.</p>
 
 <h2 id="about">About</h2>
 <p>Liria is part of SDE for DebION GNU/Linux and is developed by the DebION Dev-Team. It is free

@@ -213,8 +213,13 @@ class LiriaAlpha16Test(unittest.TestCase):
                        'GDK_KEY_Delete', 'GDK_KEY_F2', 'gtk_file_chooser_dialog_new', 'G_FILE_ATTRIBUTE_THUMBNAIL_PATH',
                        'g_content_type_get_description', 'popup-menu'):
             self.assertIn(needle, home)
-        # Drops never ask the source to delete what was dropped.
-        self.assertNotIn('GDK_ACTION_MOVE', home)
+        # Drops never ask the source to delete what was dropped (Liria moves
+        # files itself), and cards dragged out never offer a move.
+        import re
+        self.assertNotIn('gtk_drag_finish (context, TRUE, TRUE', home)
+        self.assertRegex(home, r'gtk_drag_finish \(context, [^,]+, FALSE, time\)')
+        for call in re.findall(r'gtk_drag_source_set \([^;]*;', home):
+            self.assertNotIn('GDK_ACTION_MOVE', call)
         tools = (self.overlay / 'sde-tools/liria-sde-tools.c').read_text()
         for needle in ('Pin to Quick Access', 'Unpin from Quick Access', 'liria_sde_pins_add', 'liria_sde_pins_remove'):
             self.assertIn(needle, tools)
@@ -267,6 +272,127 @@ class LiriaAlpha16Test(unittest.TestCase):
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('ok 3 /liria/pins/defaults-and-edits', result.stdout)
+
+    def test_model_unit(self):
+        """Ribbon modes and preferences, Home view suggestions and grid,
+        pin-on-drop decisions (src/liria-sde-model.c)."""
+        import shutil
+        import subprocess
+        import tempfile
+        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
+                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
+            self.skipTest('gcc and gio-2.0 development files are needed')
+        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
+                               check=True).stdout.split()
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / 'test-liria-sde-model'
+            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
+                            str(self.overlay / 'sde-tools/test-liria-sde-model.c')] + flags, check=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name in ('ribbon-modes', 'prefs', 'commands', 'frequent-folders', 'columns', 'drop-decisions',
+                         'pin-on-drop'):
+                self.assertIn('/liria/model/' + name, result.stdout)
+        make = (self.overlay / 'sde-tools/Makefile.am').read_text()
+        self.assertIn('test-liria-sde-model', make)
+        self.assertIn('liria-sde-model.c', make)
+
+    def test_home_view_replaces_folder_grid(self):
+        home = (self.overlay / 'sde-tools/liria-sde-home.c').read_text()
+        for needle in ('"sde-home-replaces-view"', 'liria_sde_home_frequent_folders', 'liria_sde_drop_decide',
+                       '"sde-drop"', 'sde-home-section-button', 'liria_sde_prefs_set_flag ("home", "collapsed"',
+                       'drive_drag_dest', 'card_drag_source', 'Frequent folder', '"sde-drag-ask"'):
+            self.assertIn(needle, home)
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        for needle in ('"sde-home-replaces-view"', 'gtk_widget_set_visible (slot->view_box, !replace)',
+                       '"sde-drop"', 'liria_drag_drop_action_ask'):
+            self.assertIn(needle, ui)
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        for name in ('liria_home_view', 'liria_right_drag'):
+            self.assertIn(name + '(staged)', recipe)
+
+    def test_sidebar_pinned_colour_icons_and_pathbar(self):
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        for name in ('liria_sidebar_pinned', 'liria_pathbar'):
+            self.assertIn(name + '(staged)', recipe)
+        helpers = self.redesign.SIDEBAR_PINNED_HELPERS
+        for needle in ('liria_sde_pins_load', 'SECTION_COMPUTER', 'liria_sde_ui_sidebar_collapsed',
+                       'liria_sde_ui_sidebar_toggle', 'view-pin-symbolic', 'g_file_monitor_file',
+                       'pan-end-symbolic'):
+            self.assertIn(needle, helpers)
+        for needle in ('_("Pinned")', '_("Drives")', 'liria_sde_pins_add ((const char * const *) uris, position)',
+                       'need_sliders = FALSE', 'liria_sde_ui_sidebar_icon_pixels ()', 'sde_crumb_click_check',
+                       'slot->pending_location'):
+            self.assertIn(needle, recipe)
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        # Full-colour theme icons in the sidebar, no symbolic-first lookup.
+        self.assertNotIn('liria_sde_ui_symbolic_icon', ui + recipe)
+        for needle in ('liria_sde_ui_sidebar_icon', 'gtk-xft-dpi', 'sde_location_area_pressed',
+                       'liria_navigation_window_pane_show_navigation_bar_temporarily',
+                       '"sidebar", "collapsed"'):
+            self.assertIn(needle, ui)
+
+    def test_ribbon(self):
+        ribbon = (self.overlay / 'src/liria-sde-ribbon.c').read_text()
+        # Tabs, contextual tabs and the commands asked for.
+        for needle in ('_("Home")', '_("Share")', '_("View")', '_("Drive")', '_("Archive")',
+                       '_("Pin to Quick access")', '"Copy"', '"Paste"', '"Cut"', '_("Copy path")',
+                       '_("Paste shortcut")', '_("Move to")', '_("Copy to")', '"Trash"', '"Rename"',
+                       '"New Folder"', '"New Empty File"', '"Properties"', '"Open"', '"OtherApplication1"',
+                       '"Select All"', '_("Select none")', '"Invert Selection"', '"xdg-email"', '"--add"',
+                       '_("Copy to drive")', '"Show Hide Sidebar"', '"Show Hide Extra Pane"', '"Show Hidden Files"',
+                       '_("Sort by")', '"Self Eject Volume"', '"--extract-here"', 'GDK_ACTION_LINK'):
+            self.assertIn(needle, ribbon)
+        # Three modes, remembered, Ctrl+F1, sensitivity from the selection model.
+        for needle in ('liria_sde_ribbon_mode_save', 'liria_sde_ribbon_mode_toggle', 'GDK_KEY_F1',
+                       'LIRIA_SDE_RIBBON_OFF', 'LIRIA_SDE_RIBBON_COLLAPSED', 'liria_sde_selection_commands',
+                       'gtk_application_get_windows', '"actions-changed"', '"selection-changed"'):
+            self.assertIn(needle, ribbon)
+        # Symbolic icons of the theme only, no product branding.
+        self.assertNotRegex(ribbon, r'(?i)microsoft|windows explorer')
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        self.assertIn('liria_sde_ribbon_setup (window, ui_manager)', ui)
+        self.assertIn('liria_sde_ribbon_add_mode_items (sde_submenu (menu, _("Ri_bbon")))', ui)
+        self.assertNotIn('"<Control>F1", G_CALLBACK (sde_accel_window_call)', ui)
+        self.assertIn('liria_ribbon(staged)', (self.root / 'suite/redesign.py').read_text())
+        css = (self.overlay / 'data/liria-sde.css').read_text()
+        for needle in ('button.sde-ribbon-tab:checked', 'button.sde-ribbon-button', '.sde-ribbon-group-label'):
+            self.assertIn(needle, css)
+
+    def test_drag_and_drop_smoke(self):
+        """Real drags on Xvfb with xdotool (tools/liria-dnd-smoke.py) when a
+        built Liria is named by SDE_LIRIA_PREFIX (e.g. a DESTDIR stage/usr)."""
+        import os
+        import subprocess
+        import sys
+        script = self.root / 'tools/liria-dnd-smoke.py'
+        self.assertIn('right-button drag asks', script.read_text())
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        result = subprocess.run([sys.executable, str(script), '--prefix', prefix], capture_output=True, text=True,
+                                timeout=300)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_home_view_recipe_restores_view(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            src = staged / 'src'
+            src.mkdir()
+            (src / 'Makefile.am').write_text('\tliria-sde-pins.h \\\n')
+            (src / 'liria-window-slot.c').write_text(
+                '    gtk_container_foreach (GTK_CONTAINER (slot->extra_location_widgets),\n'
+                '                           remove_all,\n'
+                '                           slot->extra_location_widgets);\n'
+                '    gtk_widget_hide (slot->extra_location_frame);\n}\n')
+            self.redesign.liria_home_view(staged)
+            self.assertIn('liria-sde-model.c', (src / 'Makefile.am').read_text())
+            slot = (src / 'liria-window-slot.c').read_text()
+            self.assertIn('gtk_widget_show (slot->view_box);', slot)
+            self.assertIn('gtk_box_set_child_packing', slot)
 
     def test_prepared_tree_has_no_brand_leaks(self):
         source = self.root / 'vendor/suite/liria'

@@ -25,12 +25,17 @@
 #include <glib/gi18n.h>
 
 #include <libliria-private/liria-bookmark.h>
+#include <libliria-private/liria-dnd.h>
 #include <libliria-private/liria-file-operations.h>
 #include <libliria-private/liria-sidebar.h>
 #include <libliria-private/liria-view-factory.h>
 
 #include "liria-sde-ui.h"
+#include "liria-sde-model.h"
+#include "liria-sde-pins.h"
+#include "liria-sde-ribbon.h"
 #include "liria-bookmark-list.h"
+#include "liria-location-bar.h"
 #include "liria-navigation-window.h"
 #include "liria-navigation-window-pane.h"
 #include "liria-side-pane.h"
@@ -66,10 +71,13 @@ sde_icon (const char *first, ...)
     return name != NULL ? name : last;
 }
 
-/* A themed icon with the -symbolic variant of each name first, so places
- * and drives use small monochrome icons that follow the text colour. */
+/* alpha52: places and drives use the icon theme's normal full-colour
+ * icons, like the folder view (the symbolic monochrome glyphs of alpha16
+ * clashed with coloured folders such as Papirus). A themed icon gets the
+ * full-colour name of each -symbolic name first; the symbolic ones stay
+ * as the last fallback. */
 GIcon *
-liria_sde_ui_symbolic_icon (GIcon *icon)
+liria_sde_ui_sidebar_icon (GIcon *icon)
 {
     const char * const *names;
     GPtrArray *list;
@@ -82,17 +90,63 @@ liria_sde_ui_symbolic_icon (GIcon *icon)
     list = g_ptr_array_new_with_free_func (g_free);
     for (i = 0; names != NULL && names[i] != NULL; i++)
     {
-        if (g_str_has_suffix (names[i], "-symbolic"))
-            g_ptr_array_add (list, g_strdup (names[i]));
+        char *name = g_str_has_suffix (names[i], "-symbolic")
+                     ? g_strndup (names[i], strlen (names[i]) - strlen ("-symbolic"))
+                     : g_strdup (names[i]);
+
+        if (!g_ptr_array_find_with_equal_func (list, name, g_str_equal, NULL))
+            g_ptr_array_add (list, name);
         else
-            g_ptr_array_add (list, g_strconcat (names[i], "-symbolic", NULL));
+            g_free (name);
     }
     for (i = 0; names != NULL && names[i] != NULL; i++)
-        g_ptr_array_add (list, g_strdup (names[i]));
+    {
+        if (g_str_has_suffix (names[i], "-symbolic"))
+            g_ptr_array_add (list, g_strdup (names[i]));
+    }
     g_ptr_array_add (list, NULL);
     result = g_themed_icon_new_from_names ((char **) list->pdata, -1);
     g_ptr_array_free (list, TRUE);
     return result;
+}
+
+/* Sidebar icons: 18 px at 100 %, scaled with SDE's interface scale
+ * (Xft/DPI); the sidebar renders them at exactly this size. */
+gint
+liria_sde_ui_sidebar_icon_pixels (void)
+{
+    GtkSettings *settings = gtk_settings_get_default ();
+    gint dpi = -1, pixels;
+
+    if (settings != NULL)
+        g_object_get (settings, "gtk-xft-dpi", &dpi, NULL);
+    pixels = dpi > 0 ? (gint) (18.0 * dpi / 1024.0 / 96.0 + 0.5) : 18;
+    return CLAMP (pixels, 16, 40);
+}
+
+/* Collapsed sidebar sections ([sidebar] collapsed in liria.conf), shared
+ * by every window of the process. */
+static char *sde_sidebar_collapsed_list = NULL;
+
+gboolean
+liria_sde_ui_sidebar_collapsed (const char *section)
+{
+    if (section == NULL)
+        return FALSE;
+    if (sde_sidebar_collapsed_list == NULL)
+        sde_sidebar_collapsed_list = liria_sde_prefs_get_string ("sidebar", "collapsed", "");
+    return liria_sde_flags_contain (sde_sidebar_collapsed_list, section);
+}
+
+void
+liria_sde_ui_sidebar_toggle (const char *section)
+{
+    gboolean collapse = !liria_sde_ui_sidebar_collapsed (section);
+    char *list = liria_sde_flags_with (sde_sidebar_collapsed_list, section, collapse);
+
+    g_free (sde_sidebar_collapsed_list);
+    sde_sidebar_collapsed_list = list;
+    liria_sde_prefs_set_string ("sidebar", "collapsed", list);
 }
 
 static GtkAction *
@@ -362,14 +416,15 @@ sde_add_list_sort_items (GtkWidget *menu, GtkTreeView *tree)
     sde_append (menu, item);
 }
 
-static void
-sde_add_sort_menu (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIManager *ui_manager)
+/* The sort orders of the current view (also the ribbon's Sort by menu). */
+void
+liria_sde_ui_add_sort_items (GtkWidget *sort, LiriaNavigationWindow *window)
 {
     static const char *icon_actions[] = {
         "Sort by Name", "Sort by Size", "Sort by Type", "Sort by Modification Date",
         "Sort by Extension", "Sort by Trash Time", NULL
     };
-    GtkWidget *sort = sde_submenu (menu, _("_Sort"));
+    GtkUIManager *ui_manager = liria_window_get_ui_manager (LIRIA_WINDOW (window));
     GtkTreeView *tree = sde_list_tree_view (window);
     int i;
 
@@ -385,7 +440,21 @@ sde_add_sort_menu (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIManager 
         sde_action_item (sort, ui_manager, "Reversed Order", NULL);
         sde_action_item (sort, ui_manager, "Keep Aligned", NULL);
     }
+}
+
+static void
+sde_add_sort_menu (GtkWidget *menu, LiriaNavigationWindow *window, GtkUIManager *ui_manager)
+{
+    GtkWidget *sort = sde_submenu (menu, _("_Sort"));
+
+    liria_sde_ui_add_sort_items (sort, window);
     sde_drop_if_empty (sort);
+}
+
+void
+liria_sde_ui_switch_view (LiriaNavigationWindow *window, const char *id)
+{
+    sde_switch_view (window, id);
 }
 
 /* ------------------------------------------------------------ sidebar */
@@ -539,7 +608,11 @@ sde_build_main_menu (LiriaNavigationWindow *window)
     sde_action_item (sub, ui_manager, "Show Hide Extra Pane", _("_Extra Pane"));
     sde_action_item (sub, ui_manager, "Show Backup Files", NULL);
     sde_separator (sub);
+    liria_sde_ribbon_add_mode_items (sde_submenu (sub, _("Ri_bbon")));
+    sde_separator (sub);
     sde_action_item (sub, ui_manager, "Reload", NULL);
+
+    liria_sde_ribbon_add_mode_items (sde_submenu (menu, _("Ri_bbon")));
 
     sub = sde_submenu (menu, _("_Edit"));
     sde_action_item (sub, ui_manager, "Undo", NULL);
@@ -652,7 +725,6 @@ sde_main_menu_item (LiriaNavigationWindow *window)
     /* F10 opens the main menu, as it opened the menu bar before. */
     sde_connect_accel (accel, "F10", G_CALLBACK (sde_accel_main_menu), button);
     sde_connect_accel (accel, "<Control>question", G_CALLBACK (sde_accel_window_call), liria_sde_ui_show_shortcuts);
-    sde_connect_accel (accel, "<Control>F1", G_CALLBACK (sde_accel_window_call), liria_sde_ui_show_shortcuts);
     sde_connect_accel (accel, "<Control>1", G_CALLBACK (sde_accel_view), (gpointer) SDE_ICON_VIEW_ID);
     sde_connect_accel (accel, "<Control>2", G_CALLBACK (sde_accel_view), (gpointer) SDE_LIST_VIEW_ID);
     sde_connect_accel (accel, "<Control>3", G_CALLBACK (sde_accel_view), (gpointer) SDE_COMPACT_VIEW_ID);
@@ -673,6 +745,30 @@ sde_toolbar_index (GtkWidget *toolbar, GtkUIManager *ui_manager, const char *pat
     return gtk_toolbar_get_item_index (GTK_TOOLBAR (toolbar), GTK_TOOL_ITEM (widget));
 }
 
+/* A click on the empty part of the path box (after the last folder)
+ * opens the location entry, as in other file managers; Escape, a
+ * location change or leaving the entry brings the breadcrumbs back. The
+ * event box lies below the buttons, so it only sees clicks between them. */
+static gboolean
+sde_location_area_pressed (GtkWidget *area, GdkEventButton *event, LiriaNavigationWindowPane *pane)
+{
+    if (event->type != GDK_BUTTON_PRESS || event->button != 1 ||
+        !liria_navigation_window_pane_path_bar_showing (pane))
+        return FALSE;
+    liria_window_set_active_pane (LIRIA_WINDOW_PANE (pane)->window, LIRIA_WINDOW_PANE (pane));
+    liria_navigation_window_pane_show_navigation_bar_temporarily (pane);
+    return TRUE;
+}
+
+static gboolean
+sde_location_entry_left (GtkWidget *entry, GdkEventFocus *event, LiriaNavigationWindowPane *pane)
+{
+    /* Only a temporary entry, never the "always use the entry" mode. */
+    if (pane->temporary_navigation_bar && gtk_widget_get_mapped (entry))
+        liria_navigation_window_pane_hide_temporary_bars (pane);
+    return FALSE;
+}
+
 /* The first pane's location row (path bar, edit toggle and search field)
  * moves into the header after the Parent button. */
 static void
@@ -680,11 +776,20 @@ sde_merge_location_row (GtkWidget *toolbar, GtkUIManager *ui_manager, LiriaNavig
 {
     GtkToolItem *item = gtk_tool_item_new ();
     GtkWidget *row = pane->location_bar;
+    GtkWidget *area = gtk_event_box_new ();
     gint index = sde_toolbar_index (toolbar, ui_manager, "/Toolbar/Up");
 
     g_object_ref (row);
     gtk_container_remove (GTK_CONTAINER (gtk_widget_get_parent (row)), row);
-    gtk_container_add (GTK_CONTAINER (item), row);
+    gtk_style_context_add_class (gtk_widget_get_style_context (row), "sde-location-row");
+    gtk_event_box_set_visible_window (GTK_EVENT_BOX (area), FALSE);
+    gtk_event_box_set_above_child (GTK_EVENT_BOX (area), FALSE);
+    gtk_container_add (GTK_CONTAINER (area), row);
+    gtk_container_add (GTK_CONTAINER (item), area);
+    gtk_widget_show (area);
+    g_signal_connect (area, "button-press-event", G_CALLBACK (sde_location_area_pressed), pane);
+    g_signal_connect (liria_location_bar_get_entry (LIRIA_LOCATION_BAR (pane->navigation_bar)), "focus-out-event",
+                      G_CALLBACK (sde_location_entry_left), pane);
     g_object_unref (row);
     gtk_container_set_border_width (GTK_CONTAINER (row), 0);
     gtk_box_set_spacing (GTK_BOX (row), 4);
@@ -707,6 +812,36 @@ sde_go_to_uri (GtkWidget *widget, const char *uri)
 
     liria_window_go_to (LIRIA_WINDOW (widget), location);
     g_object_unref (location);
+}
+
+/* SDE: the Home overview (an extension) is the Home view while it is
+ * shown. It calls this through the "sde-home-replaces-view" object data:
+ * the slot showing it hides its folder view and lets the overview take
+ * the height; liria_window_slot_remove_extra_location_widgets () puts the
+ * view back when the slot leaves the home folder. */
+static void
+sde_home_replaces_view (GtkWidget *overview, gboolean replace)
+{
+    GtkWidget *toplevel = gtk_widget_get_toplevel (overview);
+    GList *p, *s;
+
+    if (!LIRIA_IS_WINDOW (toplevel))
+        return;
+    for (p = LIRIA_WINDOW (toplevel)->details->panes; p != NULL; p = p->next)
+    {
+        for (s = LIRIA_WINDOW_PANE (p->data)->slots; s != NULL; s = s->next)
+        {
+            LiriaWindowSlot *slot = s->data;
+
+            if (slot->extra_location_widgets == NULL ||
+                !gtk_widget_is_ancestor (overview, slot->extra_location_widgets))
+                continue;
+            gtk_widget_set_visible (slot->view_box, !replace);
+            gtk_box_set_child_packing (GTK_BOX (slot->content_box), slot->extra_location_frame,
+                                       replace, replace, 0, GTK_PACK_START);
+            return;
+        }
+    }
 }
 
 void
@@ -740,6 +875,10 @@ liria_sde_ui_setup_header (LiriaNavigationWindow *window,
     gtk_widget_set_no_show_all (win->details->menubar, TRUE);
 
     g_object_set_data (G_OBJECT (window), "sde-go-to-uri", sde_go_to_uri);
+    g_object_set_data (G_OBJECT (window), "sde-home-replaces-view", sde_home_replaces_view);
+
+    /* alpha52: the ribbon under the header (liria-sde-ribbon.c). */
+    liria_sde_ribbon_setup (window, ui_manager);
 }
 
 /* The sidebar header ("Places" chooser and close button) is replaced by
@@ -816,7 +955,8 @@ liria_sde_ui_show_shortcuts (GtkWindow *parent)
         { "<Control>1", N_("Icons") }, { "<Control>2", N_("List") }, { "<Control>3", N_("Compact") },
         { "<Control>plus", N_("Zoom in") }, { "<Control>minus", N_("Zoom out") },
         { "<Control>0", N_("Normal size") }, { "<Control>H", N_("Show hidden files") },
-        { "F9", N_("Show or hide the sidebar") }, { "F10", N_("Main menu") }, { NULL, NULL }
+        { "F9", N_("Show or hide the sidebar") }, { "F10", N_("Main menu") },
+        { "<Control>F1", N_("Collapse or expand the ribbon") }, { NULL, NULL }
     };
     static const SdeShortcut files[] = {
         { "<Control>O", N_("Open") }, { "<Control>C", N_("Copy") }, { "<Control>X", N_("Cut") },
@@ -980,15 +1120,54 @@ sde_copy_to_activate (GSimpleAction *action, GVariant *parameter, gpointer data)
     g_list_free_full (uris, g_free);
 }
 
+/* "sde-drop" (as, s, s): files dropped on a Home overview card (a pinned
+ * folder or a drive) or on a pinned sidebar place. The last string is
+ * "move", "copy", "link" or "ask"; "ask" shows the usual Move Here /
+ * Copy Here / Link Here / Cancel menu at the pointer. */
+static void
+sde_drop_activate (GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+    GtkApplication *application = data;
+    GVariantIter *iter;
+    const char *uri, *target, *how;
+    GList *uris = NULL;
+    GdkDragAction drop = GDK_ACTION_COPY;
+
+    g_variant_get (parameter, "(as&s&s)", &iter, &target, &how);
+    while (g_variant_iter_next (iter, "&s", &uri))
+        uris = g_list_prepend (uris, g_strdup (uri));
+    g_variant_iter_free (iter);
+    uris = g_list_reverse (uris);
+    if (g_strcmp0 (how, "move") == 0)
+        drop = GDK_ACTION_MOVE;
+    else if (g_strcmp0 (how, "link") == 0)
+        drop = GDK_ACTION_LINK;
+    else if (g_strcmp0 (how, "ask") == 0)
+    {
+        GtkWindow *window = gtk_application_get_active_window (application);
+
+        drop = window != NULL ? liria_drag_drop_action_ask (GTK_WIDGET (window),
+                                                            GDK_ACTION_MOVE | GDK_ACTION_COPY | GDK_ACTION_LINK)
+                              : 0;
+    }
+    if (uris != NULL && drop != 0 && target != NULL && *target != '\0')
+        liria_file_operations_copy_move (uris, NULL, target, drop, NULL, NULL, NULL);
+    g_list_free_full (uris, g_free);
+}
+
 void
 liria_sde_ui_startup (GApplication *application)
 {
     GSimpleAction *copy_to = g_simple_action_new ("sde-copy-to", G_VARIANT_TYPE ("(ass)"));
+    GSimpleAction *drop = g_simple_action_new ("sde-drop", G_VARIANT_TYPE ("(asss)"));
     GtkCssProvider *provider = gtk_css_provider_new ();
 
     g_signal_connect (copy_to, "activate", G_CALLBACK (sde_copy_to_activate), NULL);
     g_action_map_add_action (G_ACTION_MAP (application), G_ACTION (copy_to));
     g_object_unref (copy_to);
+    g_signal_connect (drop, "activate", G_CALLBACK (sde_drop_activate), application);
+    g_action_map_add_action (G_ACTION_MAP (application), G_ACTION (drop));
+    g_object_unref (drop);
 
     /* Liria's own look: only standard theme colours, so it matches every
      * SDE theme (light, dark, accent) and other GTK themes. */

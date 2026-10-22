@@ -76,7 +76,7 @@
 
 /* ------------------------------------------- breadcrumb path and entry */
 
-.liria-navigation-window .sde-location-item > box {
+.liria-navigation-window .sde-location-item box.sde-location-row {
   min-height: 30px;
   padding: 0 2px;
   border: 1px solid alpha(@theme_fg_color, 0.14);
@@ -85,8 +85,8 @@
 }
 
 .liria-navigation-window .sde-location-item .liria-pathbar button,
-.liria-navigation-window .sde-location-item > box > button,
-.liria-navigation-window .sde-location-item > box > togglebutton {
+.liria-navigation-window .sde-location-item box.sde-location-row > button,
+.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton {
   min-height: 20px;
   padding: 2px 7px;
   margin: 2px 0;
@@ -99,8 +99,8 @@
 }
 
 .liria-navigation-window .sde-location-item .liria-pathbar button:hover,
-.liria-navigation-window .sde-location-item > box > button:hover,
-.liria-navigation-window .sde-location-item > box > togglebutton:hover {
+.liria-navigation-window .sde-location-item box.sde-location-row > button:hover,
+.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton:hover {
   background-color: alpha(@theme_fg_color, 0.08);
 }
 
@@ -110,7 +110,7 @@
   font-weight: bold;
 }
 
-.liria-navigation-window .sde-location-item > box > togglebutton:checked {
+.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton:checked {
   background-color: alpha(@theme_selected_bg_color, 0.20);
 }
 
@@ -127,6 +127,117 @@
 
 .liria-navigation-window .sde-location-item .liria-search-bar entry {
   background-color: alpha(@theme_fg_color, 0.05);
+}
+
+/* -------------------------------------------------------------- ribbon */
+
+.liria-navigation-window .sde-ribbon {
+  background-color: @theme_bg_color;
+  border-bottom: 1px solid alpha(@theme_fg_color, 0.12);
+}
+
+.sde-ribbon-tabs {
+  padding: 2px 8px 0;
+}
+
+button.sde-ribbon-tab {
+  min-height: 0;
+  padding: 3px 12px 4px;
+  margin: 0;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: alpha(@theme_fg_color, 0.80);
+}
+
+button.sde-ribbon-tab:hover {
+  background-color: alpha(@theme_fg_color, 0.06);
+}
+
+button.sde-ribbon-tab:checked {
+  color: @theme_fg_color;
+  background-color: alpha(@theme_fg_color, 0.04);
+  box-shadow: inset 0 -2px @theme_selected_bg_color;
+}
+
+button.sde-ribbon-contextual {
+  color: @theme_selected_bg_color;
+  font-weight: bold;
+}
+
+button.sde-ribbon-collapse {
+  min-width: 0;
+  min-height: 0;
+  padding: 2px 6px;
+  border: none;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+scrolledwindow.sde-ribbon-scroller,
+scrolledwindow.sde-ribbon-scroller > viewport {
+  border: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+.sde-ribbon-body {
+  padding: 3px 6px 2px;
+  border-top: 1px solid alpha(@theme_fg_color, 0.08);
+}
+
+.sde-ribbon-page > separator {
+  margin: 4px 2px;
+  min-width: 1px;
+  background-color: alpha(@theme_fg_color, 0.10);
+}
+
+.sde-ribbon-group-label {
+  margin-top: 1px;
+  font-size: 0.80em;
+  color: alpha(@theme_fg_color, 0.60);
+}
+
+button.sde-ribbon-button {
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: @theme_fg_color;
+}
+
+button.sde-ribbon-button.sde-ribbon-large {
+  padding: 3px 6px;
+}
+
+button.sde-ribbon-button.sde-ribbon-small {
+  padding: 1px 6px;
+}
+
+button.sde-ribbon-button:hover {
+  border-color: alpha(@theme_selected_bg_color, 0.35);
+  background-color: alpha(@theme_selected_bg_color, 0.10);
+}
+
+button.sde-ribbon-button:active,
+button.sde-ribbon-button:checked {
+  border-color: alpha(@theme_selected_bg_color, 0.45);
+  background-color: alpha(@theme_selected_bg_color, 0.20);
+}
+
+button.sde-ribbon-button:disabled {
+  color: alpha(@theme_fg_color, 0.38);
+}
+
+button.sde-ribbon-button:disabled image {
+  opacity: 0.45;
 }
 
 /* ------------------------------------------------------------- sidebar */
@@ -369,6 +480,90 @@ flowbox.sde-quick-access:drop(active) {
 button.sde-recent-card {
   min-width: 170px;
   padding: 6px 10px;
+}
+
+/* alpha52: the Home view. Collapsible section headers, the pin marker of
+ * pinned cards, the Pin button of suggested folders (on hover) and the
+ * card that receives a drop. */
+.sde-home-overview {
+  padding: 8px 10px 0;
+}
+
+.sde-home-header {
+  padding: 0 4px;
+}
+
+scrolledwindow.sde-home-scroller,
+scrolledwindow.sde-home-scroller > viewport {
+  border: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+.sde-home-body {
+  padding: 0 4px 10px;
+}
+
+button.sde-home-section-button {
+  min-height: 0;
+  padding: 2px 6px 2px 2px;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: alpha(@theme_text_color, 0.75);
+}
+
+button.sde-home-section-button:hover {
+  background-color: alpha(@theme_fg_color, 0.07);
+}
+
+button.sde-home-section-button .sde-home-section {
+  margin-top: 0;
+}
+
+.sde-card-pin {
+  margin: 0;
+  opacity: 0.45;
+}
+
+button.sde-card-pin-button {
+  min-width: 0;
+  min-height: 0;
+  padding: 2px;
+  margin: -4px -4px 0 0;
+  border: none;
+  border-radius: 6px;
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  opacity: 0;
+}
+
+button.sde-quick-card:hover button.sde-card-pin-button,
+button.sde-quick-card:focus button.sde-card-pin-button,
+button.sde-card-pin-button:focus {
+  opacity: 1;
+}
+
+button.sde-card-pin-button:hover {
+  background-color: alpha(@theme_selected_bg_color, 0.18);
+}
+
+button.sde-quick-frequent {
+  border-style: dashed;
+}
+
+button.sde-card.sde-drop-target {
+  border-color: @theme_selected_bg_color;
+  box-shadow: inset 0 0 0 1px @theme_selected_bg_color;
+  background-color: alpha(@theme_selected_bg_color, 0.16);
+}
+
+button.sde-drive-card {
+  padding: 8px 10px;
 }
 
 .sde-card-title {

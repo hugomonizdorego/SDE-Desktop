@@ -1755,11 +1755,14 @@ int fl_handle(const XEvent& thisevent)
               e.target == fl_XaText ||
               e.target == fl_Xatextplain ||
               e.target == fl_Xatextplainutf ||
-              e.target == fl_Xatextplainutf2) {
+              e.target == fl_Xatextplainutf2 ||
+              // SDE: Fl::dnd() announces a file list as "text/uri-list"
+              // (see fl_dnd_x.cxx); serve it, so file managers get the files.
+              (e.target == fl_XdndURIList && !clipboard)) {
             // clobber the target type, this seems to make some applications
             // behave that insist on asking for XA_TEXT instead of UTF8_STRING
             // Does not change XA_STRING as that breaks xclipboard.
-            if (e.target != XA_STRING) e.target = fl_XaUtf8String;
+            if (e.target != XA_STRING && e.target != fl_XdndURIList) e.target = fl_XaUtf8String;
             XChangeProperty(fl_display, e.requestor, e.property,
                             e.target, 8, 0,
                             (unsigned char *)fl_selection_buffer[clipboard],
