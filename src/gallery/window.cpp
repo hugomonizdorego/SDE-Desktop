@@ -1370,18 +1370,26 @@ void GalleryWindow::update_header_widgets() {
     int w;
   } acts[] = {{sel_fav_, text_width(_("Favorite")) + S(28)},
               {sel_album_, text_width(_("Add to Album")) + S(28)},
-              {sel_more_, text_width(_("More…")) + S(28)},
               {sel_trash_, text_width(_("Move to Trash")) + S(28)}};
   int bw_done = std::max(S(76), text_width(_("Done")) + S(32));
+  // "More…" (every action) always stays, next to Done.
+  int bw_more = text_width(_("More…")) + S(28);
   int x = bx;
   for (auto &a : acts) {
-    if (sel && x + a.w + S(8) + bw_done <= right) {
+    if (sel && x + a.w + S(8) + bw_more + S(8) + bw_done <= right) {
       a.b->resize(x, cy - S(16), a.w, S(32));
       a.b->show();
       x += a.w + S(8);
     } else {
       a.b->hide();
     }
+  }
+  if (sel && x + bw_more + S(8) + bw_done <= right) {
+    sel_more_->resize(x, cy - S(16), bw_more, S(32));
+    sel_more_->show();
+    x += bw_more + S(8);
+  } else {
+    sel_more_->hide();
   }
   if (sel) {
     sel_clear_->resize(std::min(x, right - bw_done), cy - S(16), bw_done, S(32));
