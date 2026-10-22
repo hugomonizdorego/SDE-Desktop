@@ -296,7 +296,7 @@ Dialog::Dialog(Request *req, const std::string &message, const std::string &acti
   y += S(40);
   error_ = new Fl_Box(x, y, w, S(20));
   error_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
-  error_->labelcolor(Color::hex(0xD64545).fl());
+  error_->labelcolor(t.error.fl());
   error_->labelsize(t.font_size - 1);
   int by = this->h() - S(56), bw = S(120);
   cancel_ = new FlatButton(this->w() - pad - 2 * bw - S(10), by, bw, S(36), _("Cancel"));

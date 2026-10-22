@@ -235,7 +235,7 @@ void PropsPanel::draw() {
                         : it.index == Delete ? _("Delete Annotation")
                         : it.index == Bookmark ? _("Bookmark This Page")
                                                : _(kStamps[it.index - Stamp0]);
-        draw_text(s, it.x, it.y, it.w, it.h, it.index == Delete ? Color::hex(0xE03131) : t.text, 1);
+        draw_text(s, it.x, it.y, it.w, it.h, it.index == Delete ? t.error : t.text, 1);
         break;
       }
       default: break;

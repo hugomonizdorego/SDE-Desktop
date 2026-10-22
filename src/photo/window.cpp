@@ -1436,9 +1436,9 @@ void PhotoWindow::draw() {
       {
         Painter p(w(), h());
         p.shadow(tx, ty, tw, th, Sd(8), theme_.shadow, S(6));
-        p.fill_rounded(tx, ty, tw, th, Sd(8), theme_.dark ? theme_.surface_alt : Color::hex(0x1F2630));
+        p.fill_rounded(tx, ty, tw, th, Sd(8), theme_.dark ? theme_.surface_alt : theme_.text.mix(theme_.background, 0.08));
       }
-      draw_text(b.tip, tx, ty, tw, th, theme_.dark ? theme_.text : Color::hex(0xF5F7FA), 1);
+      draw_text(b.tip, tx, ty, tw, th, theme_.dark ? theme_.text : theme_.background, 1);
     }
   }
   if (!toast_.empty()) {
@@ -1446,8 +1446,8 @@ void PhotoWindow::draw() {
     int tw = std::min(text_width(toast_) + S(40), w() - S(40));
     int th = S(40);
     int tx = (canvas_->w() - tw) / 2, ty = canvas_->y() + canvas_->h() - canvas_->filmstrip_height() - th - S(20);
-    Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : Color::hex(0x1F2630);
-    Color fg = theme_.dark ? theme_.text : Color::hex(0xF5F7FA);
+    Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : theme_.text.mix(theme_.background, 0.08);
+    Color fg = theme_.dark ? theme_.text : theme_.background;
     {
       Painter p(w(), h());
       p.shadow(tx, ty, tw, th, th / 2.0, theme_.shadow, S(8));

@@ -1466,8 +1466,8 @@ void GalleryWindow::draw() {
     int tw = std::min(text_width(toast_) + S(40), w() - S(40));
     int th = S(40);
     int tx = (w() - tw) / 2, ty = h() - th - S(28);
-    Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : Color::hex(0x1F2630);
-    Color fg = theme_.dark ? theme_.text : Color::hex(0xF5F7FA);
+    Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : theme_.text.mix(theme_.background, 0.08);
+    Color fg = theme_.dark ? theme_.text : theme_.background;
     {
       Painter p(w(), h());
       p.shadow(tx, ty, tw, th, th / 2.0, theme_.shadow, S(8));

@@ -216,7 +216,7 @@ void FindBar::draw() {
       p.fill_rounded(in->x() - S(8), in->y() - S(2), in->w() + S(16), in->h() + S(4), fr, L.field);
       if (Fl::focus() == in || err)
         p.stroke_rounded(in->x() - S(8), in->y() - S(2), in->w() + S(16), in->h() + S(4), fr,
-                         err ? Color::hex(0xD1453B) : L.accent, Sd(1.5));
+                         err ? L.theme.error : L.accent, Sd(1.5));
     };
     field_bg(find_, error_);
     if (replace_mode_) field_bg(replace_, false);

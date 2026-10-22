@@ -1764,7 +1764,7 @@ void TacaWindow::draw() {
       Painter p(w(), h());
       draw_progress(p);
       if (!toast_.empty() && !job_) {
-        Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : Color::hex(0x1F2630);
+        Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : theme_.text.mix(theme_.background, 0.08);
         p.shadow(tx, ty, tw, th, th / 2.0, theme_.shadow, S(8));
         p.fill_rounded(tx, ty, tw, th, th / 2.0, bg);
       }
@@ -1773,7 +1773,7 @@ void TacaWindow::draw() {
     if (job_) draw_child(*cancel_);
     if (!toast_.empty() && !job_) {
       text_font(theme_.font_size);
-      draw_text(toast_, tx + S(20), ty, tw - S(40), th, theme_.dark ? theme_.text : Color::hex(0xF5F7FA), 1);
+      draw_text(toast_, tx + S(20), ty, tw - S(40), th, theme_.dark ? theme_.text : theme_.background, 1);
     }
   }
 }

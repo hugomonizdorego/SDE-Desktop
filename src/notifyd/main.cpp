@@ -25,6 +25,7 @@
 #include "dbus.h"
 #include "desktop_entry.h"
 #include "i18n.h"
+#include "menu.h"
 #include "icons.h"
 #include "paint.h"
 #include "theme.h"
@@ -247,10 +248,12 @@ void Popup::draw() {
   int W = w(), H = h(), pad = S(14), icon = S(40);
   int text_x = pad + icon + S(12), text_w = W - text_x - pad - S(20);
   {
+    // Soft corners like every SDE popup (alpha51).
+    shape_rounded(this, t.radius);
     Painter p(W, H);
-    p.fill_rect(0, 0, W, H, t.surface);
-    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, 0, t.border);
-    if (n_->urgency == 2) p.fill_rect(0, 0, S(4), H, Color::hex(0xD64545));
+    p.fill_rect(0, 0, W, H, t.menu_bg);
+    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, t.radius, t.border);
+    if (n_->urgency == 2) p.fill_rounded(S(4), S(10), S(4), H - S(20), S(2), t.error);
     cairo_surface_t *img = n_->image;
     if (!img) img = IconLoader::get({n_->icon, "dialog-information", "preferences-desktop-notification"}, icon);
     p.image(img, pad, pad, icon);

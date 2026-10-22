@@ -161,9 +161,9 @@ class PickCard : public Fl_Widget {
 // popup menu with the highlighted item.
 void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w, double h,
                         double outer_r) {
-  // Backdrop: a soft wallpaper gradient (glass shows through it).
-  p.fill_gradient(x, y, w, h, outer_r, t.dark ? Color::hex(0x2B3445) : Color::hex(0xC9D6EA),
-                  t.dark ? Color::hex(0x3B2B48) : Color::hex(0xE9D8F2), true);
+  // Backdrop: a calm, low-contrast wallpaper (alpha51: no colorful gradient).
+  Color paper = t.dark ? t.panel_bg.mix(Color::hex(0x000000), 0.25) : t.surface_alt.mix(t.border, 0.6);
+  p.fill_gradient(x, y, w, h, outer_r, paper.mix(t.accent, 0.10), paper, true);
   double wx = x + w * 0.08, wy = y + h * 0.12, ww = w * 0.78, wh = h * 0.78;
   double r = std::min(Sd(8), t.radius * 0.6);
   p.shadow(wx, wy, ww, wh, r, t.shadow.alpha(std::min(0.35, t.shadow.a)), int(Sd(6)));
@@ -175,10 +175,7 @@ void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w
   cairo_save(p.cr());
   p.rounded_rect(wx, wy, ww, wh, r);
   cairo_clip(p.cr());
-  if (t.family == "glass")
-    p.fill_gradient(wx, wy, ww, th, 0, t.titlebar_bg.mix(Color::hex(0xFFFFFF), t.dark ? 0.08 : 0.5), t.titlebar_bg);
-  else
-    p.fill_rect(wx, wy, ww, th, t.titlebar_bg);
+  p.fill_rect(wx, wy, ww, th, t.titlebar_bg);
   p.line(wx, wy + th - 0.5, wx + ww, wy + th - 0.5, t.border);
   // Sidebar and content.
   p.fill_rect(wx, wy + th, ww * 0.28, wh - th, t.surface_alt);
@@ -187,23 +184,19 @@ void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w
   p.stroke_rounded(wx + 0.5, wy + 0.5, ww - 1, wh - 1, r, t.border);
   double cy = wy + th / 2;
   {
-    // Caption buttons of every family since alpha50: minimize, maximize and
-    // close on the right, the close button shown hovered (red).
-    Color g = t.titlebar_text;
-    double bw = Sd(14), bx = wx + ww - bw;
-    cairo_save(p.cr());
-    p.rounded_rect(wx, wy, ww, wh, r);
-    cairo_clip(p.cr());
-    p.fill_rect(bx, wy, bw, th - 1, Color::hex(0xC42B1C));
-    cairo_restore(p.cr());
-    double c = bx + bw / 2;
-    Color w = Color::hex(0xFFFFFF);
-    p.line(c - Sd(2.6), cy - Sd(2.6), c + Sd(2.6), cy + Sd(2.6), w, Sd(1));
-    p.line(c - Sd(2.6), cy + Sd(2.6), c + Sd(2.6), cy - Sd(2.6), w, Sd(1));
+    // Caption buttons of every family since alpha51 (Mint-Y like): a thin
+    // minimize dash and maximize square, and close as a soft gray disc with
+    // the cross cut out, as SDE WM and GTK draw them.
+    Color g = t.caption_glyph;
+    double bw = Sd(12), c = wx + ww - Sd(4) - bw / 2;
+    double dr = Sd(4.6), k = Sd(1.8);
+    p.circle(c, cy, dr, t.caption_disc);
+    p.line(c - k, cy - k, c + k, cy + k, t.titlebar_bg, Sd(1));
+    p.line(c - k, cy + k, c + k, cy - k, t.titlebar_bg, Sd(1));
     c -= bw;
-    p.stroke_rounded(c - Sd(2.6), cy - Sd(2.6), Sd(5.2), Sd(5.2), Sd(0.5), g, Sd(1));
+    p.stroke_rounded(c - Sd(2.2), cy - Sd(2.2), Sd(4.4), Sd(4.4), Sd(0.6), g, Sd(0.9));
     c -= bw;
-    p.line(c - Sd(2.6), cy, c + Sd(2.6), cy, g, Sd(1));
+    p.line(c - Sd(2.2), cy + Sd(2.2), c + Sd(2.2), cy + Sd(2.2), g, Sd(0.9));
   }
   // Sidebar rows, the selected one in the accent.
   for (int i = 0; i < 3; ++i) {
@@ -215,13 +208,15 @@ void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w
   p.fill_rounded(cx, wy + th + Sd(9), ww * 0.34, Sd(4), Sd(2), t.text.alpha(0.75));
   p.fill_rounded(cx, wy + th + Sd(18), ww * 0.46, Sd(3), Sd(1.5), t.text_dim.alpha(0.6));
   p.fill_rounded(cx, wy + th + Sd(25), ww * 0.40, Sd(3), Sd(1.5), t.text_dim.alpha(0.6));
-  p.fill_rounded(cx, wy + wh - Sd(16), Sd(30), Sd(10), std::min(Sd(5), double(t.radius_small)), t.accent);
-  // A popup menu overlapping the window, as Acrylic/vibrancy shows it.
+  p.fill_rounded(cx, wy + wh - Sd(16), Sd(30), Sd(10), Sd(5), t.accent);
+  // A popup menu overlapping the window, as Acrylic/vibrancy shows it; its
+  // corners follow the family's radius like the real menus.
   double mx = wx + ww * 0.58, my = wy + wh * 0.42, mw = w * 0.36, mh = Sd(34);
-  p.shadow(mx, my, mw, mh, Sd(5), t.shadow.alpha(std::min(0.3, t.shadow.a)), int(Sd(5)));
-  p.fill_rounded(mx, my, mw, mh, Sd(5), t.menu_bg.alpha(t.translucent ? 0.94 : 1.0));
-  p.stroke_rounded(mx + 0.5, my + 0.5, mw - 1, mh - 1, Sd(5), t.menu_border);
-  p.fill_rounded(mx + Sd(3), my + Sd(12), mw - Sd(6), Sd(10), Sd(3), t.menu_hover);
+  double mr = std::min(Sd(7), t.radius * 0.55);
+  p.shadow(mx, my, mw, mh, mr, t.shadow.alpha(std::min(0.3, t.shadow.a)), int(Sd(5)));
+  p.fill_rounded(mx, my, mw, mh, mr, t.menu_bg.alpha(t.translucent ? 0.94 : 1.0));
+  p.stroke_rounded(mx + 0.5, my + 0.5, mw - 1, mh - 1, mr, t.menu_border);
+  p.fill_rounded(mx + Sd(3), my + Sd(12), mw - Sd(6), Sd(10), Sd(4), t.menu_hover);
   p.fill_rounded(mx + Sd(7), my + Sd(5), mw * 0.5, Sd(3), Sd(1.5), t.menu_text.alpha(0.6));
   p.fill_rounded(mx + Sd(7), my + Sd(15.5), mw * 0.55, Sd(3), Sd(1.5), t.menu_hover_text.alpha(0.9));
   p.fill_rounded(mx + Sd(7), my + Sd(26), mw * 0.4, Sd(3), Sd(1.5), t.menu_text.alpha(0.6));
@@ -614,8 +609,8 @@ class WallpaperGrid : public Fl_Widget {
           // Check mark badge.
           double bx = tx + tw_ - Sd(14), by = ty + Sd(14);
           p.circle(bx, by, Sd(10), g_theme.accent);
-          p.line(bx - Sd(4.5), by, bx - Sd(1), by + Sd(3.5), Color::hex(0xFFFFFF), Sd(2));
-          p.line(bx - Sd(1), by + Sd(3.5), bx + Sd(5), by - Sd(3.5), Color::hex(0xFFFFFF), Sd(2));
+          p.line(bx - Sd(4.5), by, bx - Sd(1), by + Sd(3.5), g_theme.on_accent, Sd(2));
+          p.line(bx - Sd(1), by + Sd(3.5), bx + Sd(5), by - Sd(3.5), g_theme.on_accent, Sd(2));
         } else if (i == hover_) {
           p.stroke_rounded(tx - Sd(2), ty - Sd(2), tw_ + Sd(4), th_ + Sd(4), Sd(9),
                            g_theme.accent.alpha(.55), Sd(2));
@@ -1020,11 +1015,12 @@ class TransparencyCard : public PickCard {
       p.rounded_rect(px, py, pw, ph, Sd(7));
       cairo_clip(p.cr());
       // A busy backdrop shows how much comes through: stripes and a sun.
-      p.fill_gradient(px, py, pw, ph, 0, t.dark ? Color::hex(0x1F4E79) : Color::hex(0x7FB2E5),
-                      t.dark ? Color::hex(0x5B2C6F) : Color::hex(0xF2A65A), true);
+      // (Muted, natural colors since alpha51: a dusky sky over sand.)
+      p.fill_gradient(px, py, pw, ph, 0, t.dark ? Color::hex(0x34475A) : Color::hex(0x8FA9BF),
+                      t.dark ? Color::hex(0x5A4A3C) : Color::hex(0xCDB79A), true);
       for (int i = 0; i < 6; ++i)
-        p.fill_rect(px + i * pw / 6, py, pw / 12, ph, Color::hex(0xFFFFFF).alpha(0.18));
-      p.circle(px + pw * 0.72, py + ph * 0.35, ph * 0.22, Color::hex(0xFFE08A));
+        p.fill_rect(px + i * pw / 6, py, pw / 12, ph, Color::hex(0xFFFFFF).alpha(0.16));
+      p.circle(px + pw * 0.72, py + ph * 0.35, ph * 0.22, Color::hex(0xE9D3A0));
       // A menu with text, at the popup opacity, and the panel at the bottom.
       double mx = px + pw * 0.12, my = py + ph * 0.14, mw = pw * 0.56, mh = ph * 0.52;
       p.fill_rounded(mx, my, mw, mh, Sd(4), t.menu_bg.alpha(t.popup_opacity));

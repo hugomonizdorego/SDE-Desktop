@@ -780,17 +780,17 @@ void XanaraWindow::draw() {
     {
       Painter p(w(), h());
       p.shadow(tx, ty, tw, th, S(6), theme_.shadow, S(5));
-      p.fill_rounded(tx, ty, tw, th, S(6), theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.1) : Color::hex(0x1F2630));
+      p.fill_rounded(tx, ty, tw, th, S(6), theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.1) : theme_.text.mix(theme_.background, 0.08));
     }
-    draw_text(tip_, tx + S(10), ty, tw - S(20), th, theme_.dark ? theme_.text : Color::hex(0xF5F7FA));
+    draw_text(tip_, tx + S(10), ty, tw - S(20), th, theme_.dark ? theme_.text : theme_.background);
   }
   if (!toast_.empty()) {
     text_font(theme_.font_size);
     int tw = std::min(text_width(toast_) + S(40), w() - S(40)), th = S(40);
     int cx = v ? v->x() + v->w() / 2 : w() / 2;
     int tx = std::clamp(cx - tw / 2, S(8), w() - tw - S(8)), ty = h() - th - S(28);
-    Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : Color::hex(0x1F2630);
-    Color fg = theme_.dark ? theme_.text : Color::hex(0xF5F7FA);
+    Color bg = theme_.dark ? theme_.surface_alt.mix(theme_.text, 0.12) : theme_.text.mix(theme_.background, 0.08);
+    Color fg = theme_.dark ? theme_.text : theme_.background;
     {
       Painter p(w(), h());
       p.shadow(tx, ty, tw, th, th / 2.0, theme_.shadow, S(8));

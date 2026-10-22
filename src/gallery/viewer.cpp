@@ -437,7 +437,7 @@ void Viewer::draw() {
         double tx = std::max(double(x() + S(6)), std::min(b.x + b.w / 2 - tw / 2, x() + w() - tw - S(6)));
         double ty = b.y + b.h + S(8);
         p.shadow(tx, ty, tw, th, Sd(8), t.shadow, S(6));
-        p.fill_rounded(tx, ty, tw, th, Sd(8), t.dark ? t.surface_alt : Color::hex(0x1F2630));
+        p.fill_rounded(tx, ty, tw, th, Sd(8), t.dark ? t.surface_alt : t.text.mix(t.background, 0.08));
       }
     }
   }
@@ -508,7 +508,7 @@ void Viewer::draw() {
     int tw = text_width(b.tip) + S(20), th = S(28);
     int tx = int(std::max(double(x() + S(6)), std::min(b.x + b.w / 2 - tw / 2, double(x() + w() - tw - S(6)))));
     int ty = int(b.y + b.h + S(8));
-    draw_text(b.tip, tx, ty, tw, th, t.dark ? t.text : Color::hex(0xF5F7FA), 1);
+    draw_text(b.tip, tx, ty, tw, th, t.dark ? t.text : t.background, 1);
   }
 }
 

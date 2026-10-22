@@ -6,6 +6,8 @@
 #include <FL/Fl.H>
 #include <FL/fl_draw.H>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
@@ -55,42 +57,29 @@ Look make_look(const Config &cfg, const std::string &scheme) {
   L.dark = scheme == "dark" ? true : scheme == "light" ? false : t.dark;
   L.glass = L.style != "sde" && t.glass;
   L.liquid = L.style == "liquid-glass";
-  L.radius = L.liquid ? 12 : L.style == "aero" ? 8 : 6;
+  // The theme's control radius (unscaled; callers scale it with Sd()).
+  L.radius = std::max(5, int(std::lround(t.radius_small / std::max(1.0, t.scale))));
   L.accent = t.accent;
   L.on_accent = t.on_accent;
   L.accent_text = t.accent_text;
-  if (L.dark == t.dark) {
-    L.window = t.background;
-    L.text = t.text;
-    L.dim = t.text_dim;
-    L.border = t.border;
-    L.hover = t.hover;
-    L.card = t.surface;
-    L.field = t.surface_alt;
-  } else if (L.dark) {  // dark editor in a light desktop
-    L.window = Color::hex(0x161B22);
-    L.text = Color::hex(0xEDF2F7);
-    L.dim = Color::hex(0xA9B4C2);
-    L.border = Color::hex(0x384252);
-    L.hover = Color::hex(0x323B48);
-    L.card = Color::hex(0x1F2630);
-    L.field = Color::hex(0x272F3A);
-  } else {
-    L.window = Color::hex(0xF5F7FA);
-    L.text = Color::hex(0x17212B);
-    L.dim = Color::hex(0x5B6675);
-    L.border = Color::hex(0xD5DBE3);
-    L.hover = Color::hex(0xE3E8EF);
-    L.card = Color::hex(0xFFFFFF);
-    L.field = Color::hex(0xEEF1F5);
-  }
+  // A dark editor in a light desktop (or the other way round) takes the
+  // other mode of the same SDE family, so it still matches the theme.
+  Theme other;
+  const Theme &m = L.dark == t.dark ? t : (other = Theme::make(t.family, L.dark, t.accent_name));
+  L.window = m.background;
+  L.text = m.text;
+  L.dim = m.text_dim;
+  L.border = m.border;
+  L.hover = m.hover;
+  L.card = m.surface;
+  L.field = m.surface_alt;
   // Accent text readable on the chosen background.
   L.accent_text = L.accent;
   for (int i = 1; i <= 20 && L.accent_text.contrast(L.card) < 4.5; ++i) L.accent_text = L.accent.mix(L.text, i * 0.05);
   L.shadow = Color::hex(0x000000, L.dark ? 0.5 : 0.18);
   if (L.dark) {
-    L.editor = Color::hex(0x12161D).mix(L.window, 0.35);
-    L.header_top = L.window.mix(L.accent, L.glass ? 0.10 : 0.0);
+    L.editor = L.window.mix(Color::hex(0x000000), 0.18);
+    L.header_top = L.window;
     L.header_bottom = L.window;
     L.sidebar = L.window.mix(Color::hex(0x000000), 0.12);
     L.status = L.window;
@@ -101,22 +90,21 @@ Look make_look(const Config &cfg, const std::string &scheme) {
     L.selection = L.accent.mix(L.editor, 0.52);
     L.margin = Color::hex(0xFFFFFF, 0.07);
   } else {
-    L.editor = Color::hex(0xFFFFFF);
-    L.header_top = L.window.mix(L.accent, L.glass ? 0.09 : 0.0).mix(Color::hex(0xFFFFFF), L.glass ? 0.25 : 0);
-    L.header_bottom = L.window.mix(L.accent, L.glass ? 0.03 : 0.0);
+    L.editor = L.card;
+    L.header_top = L.window.mix(Color::hex(0xFFFFFF), L.glass ? 0.15 : 0);
+    L.header_bottom = L.window;
     L.sidebar = L.window;
     L.status = L.window;
     L.tab_active = L.editor;
     L.current_line = L.accent.alpha(0.065);
-    L.gutter = Color::hex(0xFFFFFF);
+    L.gutter = L.card;
     L.gutter_text = L.dim.mix(L.editor, 0.4);
     L.selection = L.accent.mix(L.editor, 0.58);
     L.margin = L.border.alpha(0.6);
   }
   if (L.liquid) {
     // Frosted: lighter, more translucent looking chrome.
-    L.header_top = L.header_top.mix(Color::hex(0xFFFFFF), L.dark ? 0.04 : 0.35);
-    L.sidebar = L.sidebar.mix(L.accent, 0.035);
+    L.header_top = L.header_top.mix(Color::hex(0xFFFFFF), L.dark ? 0.02 : 0.15);
   }
   L.header_line = L.border.alpha(L.dark ? 0.9 : 0.8);
   L.tab_hover = L.hover.alpha(0.8);
@@ -130,15 +118,16 @@ Look make_look(const Config &cfg, const std::string &scheme) {
   L.bracket = L.accent;
   // Tab strip (tinted like a Mica title bar) and the lighter bar below it.
   if (L.dark) {
-    L.strip = L.window.mix(Color::hex(0x000000), 0.38).mix(L.accent, 0.04);
+    // Neutral since alpha51: the tab strip is the theme's title bar gray.
+    L.strip = L.window.mix(Color::hex(0x000000), 0.30);
     L.bar = L.editor.mix(Color::hex(0xFFFFFF), 0.06);
   } else {
-    L.strip = L.window.mix(L.accent, 0.075).mix(Color::hex(0x8090A8), 0.06);
-    L.bar = Color::hex(0xFBFBFC).mix(L.window, 0.25);
+    L.strip = m.titlebar_bg;
+    L.bar = L.card.mix(L.window, 0.25);
   }
   L.strip_bottom = L.strip;
   if (L.glass) {
-    L.strip = L.strip.mix(L.accent, L.dark ? 0.05 : 0.06).mix(Color::hex(0xFFFFFF), L.dark ? 0.0 : 0.15);
+    L.strip = L.strip.mix(Color::hex(0xFFFFFF), L.dark ? 0.0 : 0.15);
     L.strip_bottom = L.strip.mix(L.window, 0.35);
   }
   L.bar_line = L.border.alpha(L.dark ? 0.75 : 0.7);

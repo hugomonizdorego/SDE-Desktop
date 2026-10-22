@@ -372,7 +372,7 @@ void EditorView::draw_spelling(Painter &p) {
   std::string text(t, size_t(z - a));
   free(t);
   int lh = mMaxsize;
-  Color red = Color::hex(0xE5484D);
+  Color red = look().theme.error;
   cairo_t *cr = p.cr();
   for (auto &w : spell_words(text)) {
     if (!app_->misspelled(text.substr(w.start, w.end - w.start))) continue;
