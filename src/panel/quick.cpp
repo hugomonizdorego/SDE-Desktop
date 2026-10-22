@@ -22,6 +22,7 @@
 
 #include "build_config.h"
 #include "calendar.h"
+#include "clockface.h"
 #include "timezone.h"
 #include "config.h"
 #include "agenda.h"
@@ -937,119 +938,259 @@ double anim_seconds() {
   return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
-class ClockCard : public Fl_Widget {
+
+// The Action Center's clock hero (alpha52): a large clock in the [clock]
+// style over the animated sky, the weather when it is known (sun, clouds,
+// rain, snow, thunder, fog) or just the day or night sky (sunrise and sunset
+// at the weather location, else 06:00-18:00), the date line ("Thursday,
+// 22 October 2026") and the temperature, condition, place and wind. Its
+// buttons (Action Center settings, show more/less) sit in the corner.
+class ClockHero : public Fl_Group {
  public:
-  ClockCard(int x, int y, int w, int h, bool flat = false, const weather::Report *wx = nullptr,
-            bool fahrenheit = false, bool animate = true)
-      : Fl_Widget(x, y, w, h), flat_(flat), animate_(animate), fahrenheit_(fahrenheit) {
+  ClockHero(int x, int y, int w, int h, const weather::Report *wx, const weather::Settings &ws,
+            bool animate)
+      : Fl_Group(x, y, w, h), ws_(ws), animate_(animate) {
+    box(FL_NO_BOX);
+    resizable(nullptr);
     clear_visible_focus();
+    const auto &cfg = Panel::instance->config();
+    clock_ = clockface::Settings::from_config(cfg);
+    show_clock_ = cfg.get_bool("action_center", "show_clock", true);
+    greet_ = cfg.get_bool("action_center", "show_greeting", true);
+    clockface::DayInput in;
+    in.prefer_clock = clockface::fixture_active();
     if (wx) {
       wx_ = *wx;
-      sky_ = true;
-      // Named for UI tests and shown as the tooltip.
-      std::string tip = std::string(_("Weather")) + ": " +
-                        _(weather::from_wmo(wx_.code).text) + ", " +
-                        weather::format_temperature(wx_.temp_c, fahrenheit_);
-      if (!wx_.location.city.empty()) tip += ", " + wx_.location.city;
-      copy_tooltip(tip.c_str());
+      weather_ = true;
+      in.have_report = true;
+      in.report_day = wx->is_day;
     }
+    const weather::Location *loc = wx && wx->location.valid
+                                       ? &wx->location
+                                       : weather::Service::get().known_location();
+    if (loc) {
+      in.have_location = true;
+      in.lat = loc->lat;
+      in.lon = loc->lon;
+    }
+    day_ = clockface::is_daytime(in, clockface::now());
+    if (!weather_) {
+      // No weather: the plain day or night sky.
+      wx_ = weather::Report();
+      wx_.code = 0;
+    }
+    wx_.is_day = day_;
+    std::string tip = std::string(_("Clock")) + ": " + clockface::style_name(clock_.style);
+    if (weather_) {
+      tip = std::string(_("Weather")) + ": " + _(weather::from_wmo(wx_.code).text) + ", " +
+            weather::format_temperature(wx_.temp_c, ws_.temp);
+      if (!wx_.location.city.empty()) tip += ", " + wx_.location.city;
+    }
+    copy_tooltip(tip.c_str());
   }
-  bool sky() const { return sky_; }
+  bool weather() const { return weather_; }
+  bool day() const { return day_; }
   const weather::Report &report() const { return wx_; }
+  const clockface::Settings &clock() const { return clock_; }
+  // Repaints for the clock: every second for seconds and blinking colons.
+  bool ticks_seconds() const {
+    return show_clock_ && (clockface::ticks_seconds(clock_) ||
+                           (clock_.style == clockface::Style::Analog && clock_.seconds));
+  }
   void draw() override {
     const Theme &t = Panel::instance->theme();
-    const Config &cfg = Panel::instance->config();
-    time_t now = time(nullptr);
-    struct tm lt;
-    localtime_r(&now, &lt);
-    bool analog = cfg.get("action_center", "clock_style", "digital") == "analog";
-    double r = std::min(double(S(32)), h() / 2.0 - S(4));
-    double cx = x() + (flat_ && !sky_ ? 0 : S(16)) + r, cy = y() + h() / 2.0;
+    struct tm lt = clockface::local_now();
+    Color ink = Color::hex(0xFFFFFF), soft = Color::hex(0xE6EDF6), shade = Color::hex(0x0B1424);
+    auto shadowed = [&shade](const std::string &s, int x, int y, int w, int h, const Color &c,
+                             int align = 0) {
+      sde::draw_text(s, x + 1, y + 1, w, h, shade.alpha(.55), align);
+      sde::draw_text(s, x, y, w, h, c, align);
+    };
+    int pad = S(16), H = h();
+    bool small = H < S(124);
+    // The clock size follows the hero.
+    int big = std::max(S(26), std::min(S(58), int(H * (small ? .36 : .34))));
+    int date_h = S(20), info_h = S(20);
+    bool analog = show_clock_ && clock_.style == clockface::Style::Analog;
+    double ar = analog ? std::min(H / 2.0 - S(12), double(S(56))) : 0;
+    double acx = x() + pad + ar, acy = y() + H / 2.0;
+    int left = analog ? int(acx + ar + S(14)) : x() + pad;
+    int right = x() + w() - S(12);
+    bool colon = clockface::colon_visible(clock_);
+    std::string suffix;
+    std::string digits = clockface::time_digits(lt, clock_.h24, clock_.seconds, &suffix);
+    // Vertical layout: date line, clock, weather line.
+    int date_y = y() + S(small ? 8 : 12);
+    int info_y = y() + H - S(small ? 8 : 12) - info_h;
+    int clock_y = date_y + date_h, clock_h = std::max(S(20), info_y - clock_y);
+    if (analog || !show_clock_) {
+      // Text beside the face: date, then the weather lines.
+      clock_y = clock_h = 0;
+    }
+    // A low hero (the calendar view on small screens): the clock on the
+    // left over the full height, the date and weather beside it.
+    bool flat = H < S(100) && clock_h > 0;
+    if (flat) {
+      clock_y = y();
+      clock_h = H;
+      big = std::min(S(44), int(H * .56));
+    }
     {
       Painter p(window()->w(), window()->h());
-      if (sky_) {
-        // A still picture at reduced motion (always the same moment).
-        weather::draw_scene(p, x(), y(), w(), h(), S(14), wx_, animate_ ? anim_seconds() : 2.0);
-      } else if (!flat_) {
-        p.fill_rounded(x(), y(), w(), h(), S(16), t.surface_alt);
-        p.stroke_rounded(x(), y(), w(), h(), S(16), t.border);
+      weather::draw_scene(p, x(), y(), w(), H, S(14), wx_, animate_ ? anim_seconds() : 2.0);
+      if (analog)
+        clockface::draw_analog(p, acx, acy, ar, lt, Color::hex(0xFFFFFF, .16), soft.alpha(.85),
+                               ink, t.accent.mix(ink, .25), clock_.seconds, true);
+      else if (show_clock_ && clock_.style == clockface::Style::Led) {
+        double lh = big * .82, lw = clockface::led_width(digits, lh);
+        double ly = clock_y + (clock_h - lh) / 2.0;
+        // Themed LED colour, light enough for the sky.
+        clockface::draw_led(p, digits, left, ly, lh, t.accent.mix(ink, .55), colon, true);
+        led_right_ = int(left + lw);
       }
-      if (analog) {
-        p.circle(cx, cy, r, flat_ ? t.surface_alt : t.surface);
-        for (int i = 0; i < 12; ++i) {
-          double a = i * M_PI / 6;
-          p.line(cx + std::sin(a) * (r - r / 8), cy - std::cos(a) * (r - r / 8),
-                 cx + std::sin(a) * (r - r / 4.5), cy - std::cos(a) * (r - r / 4.5), t.text_dim,
-                 S(1));
-        }
-        double hour = (lt.tm_hour % 12 + lt.tm_min / 60.0) * M_PI / 6;
-        double minute = lt.tm_min * M_PI / 30;
-        p.line(cx, cy, cx + std::sin(hour) * r * 0.48, cy - std::cos(hour) * r * 0.48, t.text,
-               S(3));
-        p.line(cx, cy, cx + std::sin(minute) * r * 0.76, cy - std::cos(minute) * r * 0.76,
-               t.accent, S(2));
-        p.circle(cx, cy, S(3), t.accent);
-      }
+      p.flush();
     }
-    char date[128], clock[64];
-    strftime(clock, sizeof clock, cfg.get_bool("panel", "clock_24h", true) ? "%H:%M" : "%I:%M %p",
-             &lt);
-    strftime(date, sizeof date, "%A, %e %B", &lt);
-    // Time on the left, greeting and date stacked beside it.
-    int left = analog ? int(cx + r + S(14)) : x() + (flat_ && !sky_ ? 0 : S(16));
-    text_font(t.font_size + (analog ? 10 : flat_ ? 16 : 22), true);
-    int cw = text_width(clock) + S(8);
-    if (sky_) {
-      // White text on the sky (the scene shades its left side).
-      Color ink = Color::hex(0xFFFFFF), soft = Color::hex(0xE6EDF6),
-            shade = Color::hex(0x0B1424);
-      // Text with a soft shadow, readable over clouds and snow.
-      auto draw_text = [&shade](const std::string &s, int x, int y, int w, int h,
-                                const Color &c) {
-        sde::draw_text(s, x + 1, y + 1, w, h, shade);
-        sde::draw_text(s, x, y, w, h, c);
-      };
-      // The analog face already tells the time: room for the weather.
-      if (!analog) draw_text(clock, left, y(), cw, h(), ink);
-      int rx = analog ? left : left + cw + S(8), rw = x() + w() - rx - S(8);
-      int mid = y() + h() / 2;
-      std::string cond = _(weather::from_wmo(wx_.code).text);
-      std::string temp = weather::format_temperature(wx_.temp_c, fahrenheit_);
-      text_font(t.font_size + 1, true);
-      int tw = text_width(temp) + S(6);
-      draw_text(temp, rx, mid - S(27), std::min(tw, rw), S(20), ink);
-      text_font(t.font_size, true);
-      draw_text(cond, rx + tw, mid - S(27), std::max(0, rw - tw), S(20), ink);
-      text_font(t.font_size - 1);
-      draw_text(trim(date), rx, mid - S(8), rw, S(18), soft);
-      std::string place = wx_.location.city;
-      if (place.empty() && wx_.location.valid) {
-        char buf[64];
-        snprintf(buf, sizeof buf, "%.2f, %.2f", wx_.location.lat, wx_.location.lon);
-        place = buf;
+    text_font(t.font_size, true);
+    std::string date = clockface::date_line(lt);
+    int text_w = right - left;
+    if (analog || !show_clock_) {
+      // Date and time stacked beside the analog face (or alone).
+      int mid = y() + H / 2;
+      int line = S(small ? 20 : 24);
+      int top = mid - (weather_ ? line * 3 / 2 : line);
+      if (!analog && show_clock_ == false) top = date_y;
+      text_font(t.font_size + (small ? 1 : 3), true);
+      size_t comma = date.find(", ");
+      if (text_width(date) > text_w && comma != std::string::npos && !small) {
+        // "Thursday," over "22 October 2026" beside the face.
+        top -= line / 2;
+        shadowed(date.substr(0, comma + 1), left, top, text_w, line, ink);
+        top += line;
+        shadowed(date.substr(comma + 2), left, top, text_w, line, ink);
+      } else {
+        shadowed(date, left, top, text_w, line, ink);
       }
-      draw_text(place, rx, mid + S(9), rw, S(18), soft);
+      top += line;
+      if (analog) {
+        text_font(t.font_size, false);
+        shadowed(clockface::format_time(lt, clock_.h24, false), left, top, text_w, line, soft);
+        top += line;
+      }
+      if (weather_) {
+        info_line(left, top, text_w, line, shadowed, ink, soft);
+      } else if (greet_) {
+        text_font(t.font_size, false);
+        shadowed(greeting(lt), left, top, text_w, line, soft);
+      }
+      draw_children();
       return;
     }
-    draw_text(clock, left, y(), cw, h(), t.text);
-    int rx = left + cw + S(10), rw = x() + w() - rx - S(4);
-    bool greet = cfg.get_bool("action_center", "show_greeting", true);
-    int mid = y() + h() / 2;
-    if (greet) {
-      const char *greeting = lt.tm_hour < 12   ? _("Good morning")
-                             : lt.tm_hour < 18 ? _("Good afternoon")
-                                               : _("Good evening");
-      text_font(t.font_size, true);
-      draw_text(greeting, rx, mid - S(20), rw, S(20), t.accent_text);
+    if (!flat) {
+      text_font(t.font_size + (small ? 0 : 1), true);
+      shadowed(date, left, date_y, text_w, date_h, ink);
     }
-    text_font(t.font_size - 1);
-    draw_text(trim(date), rx, greet ? mid : mid - S(10), rw, S(20), t.text_dim);
+    int clock_right = led_right_;
+    // The clock.
+    if (clock_.style == clockface::Style::Led) {
+      if (!suffix.empty()) {
+        text_font(t.font_size + 1, true);
+        shadowed(suffix, led_right_ + S(8), clock_y, S(60), clock_h, soft);
+      }
+    } else {
+      text_font(big, true);
+      std::string time_text = clockface::format_time(lt, clock_.h24, clock_.seconds);
+      std::string main = time_text, ampm;
+      size_t sp = time_text.find(' ');
+      if (sp != std::string::npos) {
+        main = time_text.substr(0, sp);
+        ampm = time_text.substr(sp + 1);
+      }
+      int tw = text_width(main);
+      // Shadow, then the digits; the blinking colon keeps its place.
+      clockface::draw_blink_text(main, left + 1, clock_y + 1, tw, clock_h, shade.alpha(.45),
+                                 colon);
+      clockface::draw_blink_text(main, left, clock_y, tw, clock_h, ink, colon);
+      clock_right = left + tw;
+      if (!ampm.empty()) {
+        text_font(t.font_size + 2, true);
+        shadowed(ampm, left + tw + S(8), clock_y, S(60), clock_h, soft);
+        clock_right += S(8) + text_width(ampm);
+      }
+    }
+    if (flat) {
+      int rx = clock_right + S(16), rw = std::max(0, right - S(76) - rx);
+      int mid = y() + H / 2;
+      text_font(t.font_size, true);
+      shadowed(date, rx, mid - S(22), rw, S(20), ink);
+      if (weather_)
+        info_line(rx, mid, rw, S(20), shadowed, ink, soft);
+      else if (greet_) {
+        text_font(t.font_size, false);
+        shadowed(greeting(lt), rx, mid, rw, S(20), soft);
+      }
+      draw_children();
+      return;
+    }
+    if (weather_)
+      info_line(left, info_y, text_w, info_h, shadowed, ink, soft);
+    else if (greet_) {
+      text_font(t.font_size, false);
+      shadowed(greeting(lt), left, info_y, text_w, info_h, soft);
+    }
+    draw_children();
   }
 
  private:
-  bool flat_, animate_, fahrenheit_;
-  bool sky_ = false;
+  static std::string greeting(const struct tm &lt) {
+    return lt.tm_hour < 5 || lt.tm_hour >= 18 ? _("Good evening")
+           : lt.tm_hour < 12                  ? _("Good morning")
+                                              : _("Good afternoon");
+  }
+  // "21°C Rain · Jakarta · 12 km/h"
+  template <class F>
+  void info_line(int x, int y, int w, int h, F &shadowed, const Color &ink, const Color &soft) {
+    const Theme &t = Panel::instance->theme();
+    std::string temp = weather::format_temperature(wx_.temp_c, ws_.temp);
+    text_font(t.font_size + 2, true);
+    int tw = text_width(temp) + S(8);
+    shadowed(temp, x, y, std::min(tw, w), h, ink);
+    std::string rest = _(weather::from_wmo(wx_.code).text);
+    std::string place = wx_.location.city;
+    if (!place.empty()) rest += " \xc2\xb7 " + place;
+    std::string wind = weather::format_wind(wx_.wind_kmh, ws_.wind);
+    text_font(t.font_size, false);
+    if (text_width(rest + " \xc2\xb7 " + wind) <= w - tw) rest += " \xc2\xb7 " + wind;
+    shadowed(rest, x + tw, y, std::max(0, w - tw), h, soft);
+  }
+
+  weather::Settings ws_;
   weather::Report wx_;
+  clockface::Settings clock_;
+  bool animate_, weather_ = false, day_ = true, show_clock_ = true, greet_ = true;
+  int led_right_ = 0;
+};
+
+// Round button on the hero's sky: white icon on a translucent disc.
+class HeroButton : public DrawnButton {
+ public:
+  HeroButton(int x, int y, int s, const std::string &tip, IconFn icon, std::function<void()> fn)
+      : DrawnButton(x, y, s, s, nullptr), icon_(std::move(icon)), fn_(std::move(fn)) {
+    copy_tooltip(tip.c_str());
+    callback([](Fl_Widget *w, void *) { static_cast<HeroButton *>(w)->fn_(); });
+  }
+  void draw() override {
+    bool hot = Fl::belowmouse() == this;
+    Painter p(window()->w(), window()->h());
+    p.circle(x() + w() / 2.0, y() + h() / 2.0, w() / 2.0,
+             Color::hex(0x0B1424, value() ? .55 : hot ? .45 : .30));
+    double z = S(16);
+    icon_(p, x() + (w() - z) / 2.0, y() + (h() - z) / 2.0, z, Color::hex(0xFFFFFF));
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), w() / 2);
+  }
+
+ private:
+  IconFn icon_;
+  std::function<void()> fn_;
 };
 
 // Initial in an accent circle, then the user name.
@@ -1439,7 +1580,16 @@ void QuickSettings::weather_tick(void *data) {
   if (!q->is_open() || !q->clock_) return;
   q->weather_frame_ = true;
   q->clock_->redraw();
-  Fl::repeat_timeout(1.0 / q->weather_fps_, weather_tick, data);
+  if (q->weather_fps_ > 1) {
+    Fl::repeat_timeout(1.0 / q->weather_fps_, weather_tick, data);
+    return;
+  }
+  // A still sky: the clock's next second.
+  auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count() %
+            1000;
+  Fl::add_timeout((1000 - ms) / 1000.0 + 0.02, weather_tick, data);
 }
 // The seek bar and times follow a playing track once a second.
 void QuickSettings::media_tick(void *data) {
@@ -1465,6 +1615,7 @@ void QuickSettings::closed() {
   brightness_open_ = false;
   PanelControls::get().stop_scan();
   calendar_view_ = false;
+  media_view_ = false;
 }
 bool QuickSettings::expanded() const {
   return calendar_view_ || Panel::instance->config().get_bool("action_center", "expanded", true);
@@ -1503,8 +1654,10 @@ std::string QuickSettings::structure() const {
     // The weather picture (condition, temperature, place) and its settings.
     if (const auto *w = weather_report())
       out << "|wx" << w->code << w->is_day << std::lround(w->temp_c * 10) << w->location.city;
-    for (const char *key : {"enabled", "unit", "animation", "location"})
+    for (const char *key : {"enabled", "unit", "wind_unit", "animation", "location"})
       out << '|' << cfg.get("weather", key);
+    for (const char *key : {"style", "seconds", "format"}) out << '|' << cfg.get("clock", key);
+    out << "|players" << c.players().size();
     for (const char *key : {"enabled", "schedule", "from", "to"})
       out << '|' << cfg.get("night_light", key);
     out << '|' << cfg.get("power", "idle_dim_battery") << cfg.get("brightness", "external_monitor");
@@ -1582,28 +1735,31 @@ void QuickSettings::rebuild_timeout(void *data) {
     Fl::add_timeout(.1, rebuild_timeout, data);
     return;
   }
-  int scroll = self->body_ ? std::max(0, self->body_->yposition()) : 0;
+  auto *sc = self->scroll_;
+  int scroll = sc ? std::max(0, sc->yposition()) : 0;
   bool focus = Fl::focus() && Fl::focus()->window() == self;
   std::string focus_name = focused_name(self);
   self->rebuild();
-  if (!self->scroll_to_calendar_)
-    self->body_->scroll_to(
-        0, std::min(scroll, std::max(0, self->content_height_ - self->body_->h())));
-  if (self->reveal_brightness_ && self->brightness_card_) {
+  // Flyouts keep their scroll position (the Action Center never scrolls).
+  sc = self->scroll_;
+  if (sc) sc->scroll_to(0, std::min(scroll, std::max(0, self->content_height_ - sc->h())));
+  if (sc && self->reveal_brightness_ && self->brightness_card_) {
     // Just opened: bring the settings card into view (its top first).
     auto *c = self->brightness_card_;
-    int y = self->body_->yposition();
-    int bottom = c->y() + c->h() - (self->body_->y() + self->body_->h());
-    int top = c->y() - self->body_->y() - S(8);
+    int y = sc->yposition();
+    int bottom = c->y() + c->h() - (sc->y() + sc->h());
+    int top = c->y() - sc->y() - S(8);
     if (bottom > 0) y += std::min(bottom, std::max(0, top));
-    self->body_->scroll_to(0, std::max(0, std::min(y, self->content_height_ - self->body_->h())));
+    sc->scroll_to(0, std::max(0, std::min(y, self->content_height_ - sc->h())));
   }
   self->reveal_brightness_ = false;
   self->reposition();
   if (!focus_name.empty())
     restore_focus(self, focus_name);
-  else if (focus && self->body_->children())
+  else if (focus && self->body_ && self->body_->children())
     self->body_->child(0)->take_focus();
+  else if (focus && self->children())
+    self->child(0)->take_focus();
 }
 void QuickSettings::sync() {
   const auto &s = SystemStatus::get();
@@ -1869,11 +2025,14 @@ void QuickSettings::brightness_settings(SectionBuilder &b) {
   b.end_card(card);
 }
 
-void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
+void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p, bool mini) {
   const auto &t = Panel::instance->theme();
   int pad = b.pad, inner = b.inner;
   auto *card = b.start_card("");
-  int x = pad + S(12), w = inner - S(24), art = S(48);
+  // |mini| (alpha52, small screens): the transport buttons beside the
+  // title and no time labels, about 90 px instead of 150.
+  int x = pad + S(12), w = inner - S(24), art = mini ? S(40) : S(48);
+  int row_y = b.y;
   // Album art (mpris:artUrl) or a note on an accent tile.
   std::string url = p.art_url;
   struct Cover : Fl_Widget {
@@ -1906,12 +2065,13 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
   std::string title = p.title.empty() ? p.name : p.title;
   std::string artist = !p.artist.empty() ? p.artist : p.title.empty() ? std::string() : p.name;
   if (!p.album.empty() && !p.artist.empty()) artist += " — " + p.album;
-  int tx = x + art + S(12), tw = w - art - S(12);
-  auto *tl = new ActionLabel(tx, b.y + S(3), tw, S(22), [title] { return title; }, 1);
+  int tx = x + art + S(12), tw = w - art - S(12) - (mini ? 3 * S(34) + S(4) : 0);
+  int ty = mini ? b.y - S(1) : b.y + S(3);
+  auto *tl = new ActionLabel(tx, ty, tw, S(22), [title] { return title; }, 1);
   tl->copy_tooltip((std::string(_("Now playing")) + ": " + title).c_str());
-  auto *al = new ActionLabel(tx, b.y + S(25), tw, S(20), [artist] { return artist; }, 2);
+  auto *al = new ActionLabel(tx, ty + S(mini ? 20 : 22), tw, S(20), [artist] { return artist; }, 2);
   if (!artist.empty()) al->copy_tooltip((std::string(_("Artist")) + ": " + artist).c_str());
-  b.y += art + S(8);
+  b.y += art + S(mini ? 4 : 8);
   // Seek bar with the elapsed and total time.
   std::string service = p.service;
   media_service_ = service;
@@ -1939,12 +2099,16 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
       return std::string();
     };
   };
-  new ActionLabel(x, b.y, w / 2, S(18), time_of(false), 2);
-  new ActionLabel(x + w / 2, b.y, w - w / 2, S(18),
-                  [f = time_of(true)] { return f(); }, 4);
-  b.y += S(20);
+  if (!mini) {
+    new ActionLabel(x, b.y, w / 2, S(18), time_of(false), 2);
+    new ActionLabel(x + w / 2, b.y, w - w / 2, S(18),
+                    [f = time_of(true)] { return f(); }, 4);
+    b.y += S(20);
+  }
   // Only previous, play/pause and next.
-  int bw = S(40), gap = S(12), cx = x + (w - 3 * bw - 2 * gap) / 2;
+  int bw = mini ? S(34) : S(40), gap = mini ? S(1) : S(12),
+      cx = mini ? x + w - 3 * bw - 2 * gap : x + (w - 3 * bw - 2 * gap) / 2;
+  int by = mini ? row_y + (art - S(32)) / 2 : b.y;
   bool playing = p.status == "Playing";
   struct B {
     const char *tip, *cmd;
@@ -1956,7 +2120,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
                  {N_("Next"), "Next", 3, p.control && p.next}};
   for (int i = 0; i < 3; ++i) {
     std::string cmd = buttons[i].cmd;
-    auto *btn = new ActionButton(cx + i * (bw + gap), b.y, bw, S(32), "",
+    auto *btn = new ActionButton(cx + i * (bw + gap), by, bw, S(32), "",
                                  transport_icon(buttons[i].icon),
                                  [service, cmd] { PanelControls::get().media_command(service, cmd); },
                                  i == 1 ? std::function<bool()>([] { return true; }) : nullptr, -1,
@@ -1965,7 +2129,7 @@ void QuickSettings::player_card(SectionBuilder &b, const MediaPlayer &p) {
     if (!buttons[i].on) btn->deactivate();
   }
   (void)t;
-  b.y += S(34);
+  if (!mini) b.y += S(34);
   b.end_card(card);
 }
 
@@ -2543,15 +2707,18 @@ void QuickSettings::build_flyout(SectionBuilder &b) {
 
 // ---------------------------------------------------------- Action Center
 
-void QuickSettings::build_center(SectionBuilder &b) {
+// ------------------------------------------------------- Action Center parts
+// alpha52: the Action Center is built from parts placed in one or two
+// columns under the clock hero; see rebuild_center().
+
+void QuickSettings::tiles_part(SectionBuilder &b, bool all) {
   const auto &cfg = Panel::instance->config();
   const auto &s = SystemStatus::get();
-  const auto &c = PanelControls::get();
   int pad = b.pad, inner = b.inner;
   auto open_flyout = [](const char *section) {
     return [section] { later([section] { Panel::instance->open_flyout(section); }); };
   };
-  // Quick tiles: toggles first, then shortcuts.
+  // Quick tiles: toggles first (the compact row), then shortcuts.
   struct Tile {
     std::string title;
     IconFn icon;
@@ -2655,22 +2822,24 @@ void QuickSettings::build_center(SectionBuilder &b) {
                      time_t t = time_t(next);
                      struct tm lt;
                      localtime_r(&t, &lt);
-                     char buf[16];
-                     bool h24 = Panel::instance->config().get_bool("panel", "clock_24h", true);
-                     strftime(buf, sizeof buf, h24 ? "%H:%M" : "%I:%M %p", &lt);
-                     return std::string(buf);
+                     return clockface::format_time(lt, clockface::use_24h(Panel::instance->config()),
+                                                   false);
                    },
                    nullptr});
   int columns = cfg.get_int("action_center", "tile_columns", 4) == 3 ? 3 : 4, gap = S(6),
       tw = (inner - (columns - 1) * gap) / columns, th = S(popup_style::kTile);
-  for (size_t i = 0; i < tiles.size(); ++i) {
+  // Compact: one row of toggles.
+  size_t count = all ? tiles.size() : std::min(tiles.size(), size_t(columns));
+  for (size_t i = 0; i < count; ++i) {
     const auto &v = tiles[i];
     new QuickTile(pad + int(i % columns) * (tw + gap), b.y + int(i / columns) * (th + gap), tw, th,
                   v.title, v.icon, v.click, v.on, v.caption, v.more, int(i));
   }
-  b.y += int((tiles.size() + columns - 1) / columns) * (th + gap) + S(2);
+  b.y += int((count + columns - 1) / columns) * (th + gap) + S(2);
+}
 
-  // Sliders.
+void QuickSettings::sliders_part(SectionBuilder &b, bool settings) {
+  const auto &s = SystemStatus::get();
   if (s.audio.available || s.brightness.available) {
     auto *card = b.start_card("");
     if (s.audio.available) volume_row(b, true);
@@ -2678,49 +2847,41 @@ void QuickSettings::build_center(SectionBuilder &b) {
     b.y -= S(2);
     b.end_card(card);
   }
-  if (brightness_open_) brightness_settings(b);
-  if (!expanded()) return;
+  if (brightness_open_ && settings) brightness_settings(b);
+}
 
-  if (cfg.get_bool("action_center", "show_media", true)) {
-    auto players = c.players();
-    if (!players.empty()) player_card(b, players.front());
-  }
-  // Calendar card; the panel clock always shows it.
-  {
-    bool open = calendar_view_ || cfg.get_bool("action_center", "show_calendar", true);
+bool QuickSettings::media_part(SectionBuilder &b, bool mini) {
+  if (!Panel::instance->config().get_bool("action_center", "show_media", true)) return false;
+  auto players = PanelControls::get().players();
+  if (players.empty()) return false;
+  player_card(b, players.front(), mini);
+  return true;
+}
+
+void QuickSettings::calendar_part(SectionBuilder &b, int row, bool tz, bool agenda,
+                                  bool calendar) {
+  int pad = b.pad, inner = b.inner;
+  if (calendar || tz) {
     auto *card = b.start_card("");
-    time_t now = time(nullptr);
-    struct tm lt;
-    localtime_r(&now, &lt);
-    char date[128];
-    strftime(date, sizeof date, "%A, %e %B %Y", &lt);
-    std::string today = trim(date);
-    new ActionLabel(pad + S(10), b.y - S(4), inner - S(60), S(28), [today] { return today; }, 1);
-    icon_button(pad + inner - S(38), b.y - S(4), S(32), S(28),
-                open ? _("Hide calendar") : _("Show calendar"), fold_icon(open), [this, open] {
-                  calendar_view_ = false;
-                  Panel::instance->set_setting("action_center", "show_calendar",
-                                               open ? "false" : "true");
-                  status_changed();
-                });
-    b.y += S(26);
-    if (open) {
-      auto *cal = new MonthCalendar(pad + S(8), b.y, inner - S(16));
+    if (calendar) {
+      auto *cal = new MonthCalendar(pad + S(8), b.y - S(2), inner - S(16), row);
       calendar_ = cal;
       if (shown_year_) cal->show_month(shown_year_, shown_month_);
       cal->select(agenda_year_, agenda_month_, agenda_day_);
-      cal->marked = [](int y, int m, int d) { return agenda::has_items(Alarms::get().items(), y, m, d); };
+      cal->marked = [](int y, int m, int d) {
+        return agenda::has_items(Alarms::get().items(), y, m, d);
+      };
       cal->moved = [this](int y, int m) {
         shown_year_ = y;
         shown_month_ = m;
       };
       cal->picked = [this](int y, int m, int d) { agenda_pick(y, m, d); };
-      b.y += calendar_->h();
-      timezone_rows(b);
+      b.y += calendar_->h() - S(2);
     }
+    if (tz) timezone_rows(b);
     b.end_card(card);
-    if (open) agenda_card(b);
   }
+  if (agenda) agenda_card(b);
   // alpha52: the notifications moved to the panel's notifications button
   // (notify_center.h); the Action Center keeps toggles, sliders, media,
   // calendar and power.
@@ -2874,7 +3035,9 @@ void QuickSettings::agenda_card(SectionBuilder &b) {
                 [this] { later([this] { agenda_edit(0); }); });
   b.y += S(32);
   auto items = agenda::items_on(Alarms::get().items(), agenda_year_, agenda_month_, agenda_day_);
-  if (items.empty() && !agenda_form_) b.info(_("Nothing planned. Add an item with +."));
+  // Tight layouts (small screens) leave out the empty-day hint.
+  if (items.empty() && !agenda_form_ && !agenda_tight_)
+    b.info(_("Nothing planned. Add an item with +."));
   for (const auto &it : items) {
     std::string text =
         (it.timed() ? format("%02d:%02d", it.hour, it.minute) : std::string(_("All day"))) +
@@ -2897,7 +3060,7 @@ void QuickSettings::agenda_card(SectionBuilder &b) {
                remind_label(it.remind);
     for (char &c : extra)
       if (c == '\n') c = ' ';
-    if (!extra.empty()) {
+    if (!extra.empty() && !agenda_tight_) {
       new ActionLabel(pad + S(50), b.y - S(4), inner - S(62), S(22), [extra] { return extra; }, 2);
       b.y += S(20);
     }
@@ -3008,6 +3171,12 @@ void QuickSettings::rebuild() {
   Fl::remove_timeout(rebuild_timeout, this);
   rebuild_pending_ = false;
   structure_ = structure();
+  Fl::remove_timeout(weather_tick, this);
+  Fl::remove_timeout(media_tick, this);
+  if (mode_ == ACTION_CENTER) {
+    rebuild_center();
+    return;
+  }
   clear();
   resizable(nullptr);
   volume_ = brightness_ = microphone_ = nullptr;
@@ -3017,49 +3186,41 @@ void QuickSettings::rebuild() {
   clock_ = nullptr;
   media_slider_ = nullptr;
   media_service_.clear();
-  Fl::remove_timeout(weather_tick, this);
-  Fl::remove_timeout(media_tick, this);
-  // The weather picture behind the clock, while online.
-  const weather::Report *wx = nullptr;
-  weather::Settings wset = weather_settings();
-  if (mode_ == ACTION_CENTER && Panel::instance->config().get_bool("action_center", "show_clock", true))
-    wx = weather_report();
   stream_sliders_.clear();
+  center_plan_.clear();
   const auto &t = Panel::instance->theme();
-  const auto &cfg = Panel::instance->config();
   const auto &s = SystemStatus::get();
   const auto &c = PanelControls::get();
-  bool fly = mode_ == FLYOUT;
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
   // alpha51: compact widths (popup_style.h); the battery flyout is a little
   // wider for "45% <battery model>" and the remaining time on one line.
   int fly_w = section_ == "power" ? popup_style::kBatteryW : popup_style::kFlyoutW;
-  int W = fly ? std::min(S(fly_w), mw - S(16)) : std::min(S(popup_style::kCenterW), mw);
+  int W = std::min(S(fly_w), mw - S(16));
   int pad = S(popup_style::kPad), scrollbar = S(6), inner = W - 2 * pad - scrollbar;
   auto *panel = Panel::instance;
   int available =
       std::max(S(120), t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my);
-  if (fly) available = std::max(S(120), available - S(16));
-  // The Action Center stays compact on tall screens too; the body scrolls.
-  else available = std::min(available, S(popup_style::kCenterMaxH));
+  available = std::max(S(120), available - S(16));
   // The battery flyout has no title bar: its first line names the battery.
-  bool titled = !(fly && section_ == "power");
-  header_ = fly ? (titled ? S(popup_style::kHeader) : S(4)) : wx ? S(72) : S(56);
-  footer_ = fly ? 0 : power_open_ ? S(92) : S(48);
+  bool titled = section_ != "power";
+  header_ = titled ? S(popup_style::kHeader) : S(4);
+  footer_ = 0;
+  footer_w_ = 0;
 
   begin();
-  body_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_ - footer_));
-  body_->type(Fl_Scroll::VERTICAL);
-  body_->resizable(nullptr);
-  body_->scrollbar_size(scrollbar);
-  body_->box(FL_FLAT_BOX);
-  body_->color(t.surface.fl());
+  scroll_ = new Fl_Scroll(S(2), header_, W - S(4), std::max(S(40), available - header_));
+  body_ = scroll_;
+  scroll_->type(Fl_Scroll::VERTICAL);
+  scroll_->resizable(nullptr);
+  scroll_->scrollbar_size(scrollbar);
+  scroll_->box(FL_FLAT_BOX);
+  scroll_->color(t.surface.fl());
   // Give Fl_Scroll a stable zero origin. Otherwise its padding is reported as
   // negative scroll and repeated service rebuilds accumulate blank space.
-  new Fl_Box(body_->x(), body_->y(), 1, 1);
-  SectionBuilder b{this, pad, inner, header_ + (fly ? S(6) : S(4))};
-  b.flat = fly;
+  new Fl_Box(scroll_->x(), scroll_->y(), 1, 1);
+  SectionBuilder b{this, pad, inner, header_ + S(6)};
+  b.flat = true;
   if (!s.message.empty() || !c.message.empty()) {
     new ActionLabel(
         pad, b.y, inner, S(28),
@@ -3070,61 +3231,305 @@ void QuickSettings::rebuild() {
         2);
     b.y += S(30);
   }
-  if (fly)
-    build_flyout(b);
-  else
-    build_center(b);
-
+  build_flyout(b);
   content_height_ = b.y - header_ + S(4);
   new Fl_Box(pad, b.y, inner, S(4));
-  body_->end();
-  int H = std::min(available, header_ + content_height_ + footer_);
-  body_->size(W - S(4), H - header_ - footer_);
+  scroll_->end();
+  int H = std::min(available, header_ + content_height_);
+  scroll_->size(W - S(4), H - header_);
+  body_x_ = scroll_->x(), body_y_ = scroll_->y(), body_w_ = scroll_->w(), body_h_ = scroll_->h();
   begin();
   // Created after the body, so keyboard focus starts on the first control.
-  // Fixed header: the flyout's title, or the Action Center's clock and the
-  // compact/expanded switch.
-  if (fly) {
-    std::string title = section_title(section_);
-    if (titled)
-      new ActionLabel(pad + S(8), S(4), W - 2 * pad - S(16), header_ - S(4),
-                      [title] { return title; }, 1);
-  } else {
-    int toggle = S(32);
-    if (wx)
-      clock_ = new ClockCard(pad, S(6), W - 2 * pad - 2 * toggle - S(12), header_ - S(12), true,
-                             wx, wset.fahrenheit, wset.animate);
-    else if (cfg.get_bool("action_center", "show_clock", true))
-      clock_ = new ClockCard(pad + S(4), S(6), W - 2 * pad - 2 * toggle - S(16), header_ - S(10),
-                             true);
-    else
-      new ActionLabel(pad + S(4), S(6), W - 2 * pad - 2 * toggle - S(6), header_ - S(10),
-                      [] { return std::string(_("Action Center")); }, 1);
-    bool open = expanded();
-    icon_button(W - pad - 2 * toggle - S(6), (header_ - toggle) / 2, toggle, toggle,
-                _("Action Center settings"), gear_icon(),
-                b.launch(settings_for("action-center", {})));
-    icon_button(W - pad - toggle, (header_ - toggle) / 2, toggle, toggle,
-                open ? _("Show less") : _("Show more"), fold_icon(open),
-                [this] { toggle_expanded(); });
-  }
-  if (!fly) footer(W, H, pad);
+  std::string title = section_title(section_);
+  if (titled)
+    new ActionLabel(pad + S(8), S(4), W - 2 * pad - S(16), header_ - S(4),
+                    [title] { return title; }, 1);
   end();
   resizable(nullptr);
   init_sizes();
   size(W, H);
-  if (scroll_to_calendar_ && calendar_) {
-    // Show the whole calendar card when the clock opened the Action Center;
-    // on a small screen at least the month grid from its top.
-    int top = calendar_->y() - body_->y() - S(52);
-    int bottom = calendar_->y() + calendar_->h() + S(12) - body_->y() - body_->h();
-    int scroll = bottom <= top ? bottom : std::min(top + S(52), bottom);
-    body_->scroll_to(0, std::max(0, std::min(scroll, content_height_ - body_->h())));
-    scroll_to_calendar_ = false;
-  }
-  weather_fps_ = wset.fps;
-  if (wx && wset.animate) Fl::add_timeout(1.0 / wset.fps, weather_tick, this);
   if (media_slider_) Fl::add_timeout(1.0, media_tick, this);
+  sync();
+}
+
+// One layout of the Action Center: which parts, in one or two columns.
+struct QuickSettings::CenterPlan {
+  std::string name;
+  bool two = false;        // two columns: calendar beside the controls
+  bool tiles_all = false;  // every tile, else the row of toggles
+  int media = 0;           // the player card: 0 hidden, 1 left, 2 right column, 3 right (mini)
+  bool calendar = false, tz = false, agenda = false, notif = false;
+  int cal_row = 29;        // calendar week row height at 100 %
+  bool bright_right = false;  // the brightness settings card in the right column
+  bool focus = false;  // calendar view: time zone and agenda in place of the controls
+};
+
+
+// Builds the hero, the parts of |plan| and the footer; false when they need
+// more than |limit| pixels (the widgets are then built anyway, the caller
+// clears them to try the next plan). |W| and |H| return the window size.
+bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W, int &H) {
+  const auto &s = SystemStatus::get();
+  const auto &c = PanelControls::get();
+  int mx, my, mw, mh;
+  Panel::instance->monitor(mx, my, mw, mh);
+  int pad = S(popup_style::kPad), gap = S(10), sp = S(10);
+  // Anchored at the panel's right end: no wider than the room left of it.
+  auto *panel = Panel::instance;
+  int room = std::min(mw, panel->x() + panel->w() - mx);
+  W = plan.two ? std::min(S(2 * popup_style::kCenterW), room - S(8))
+               : std::min(S(popup_style::kCenterW), room);
+  int colw = plan.two ? (W - 2 * pad - gap) / 2 : W - 2 * pad;
+  if (plan.two && colw < S(296)) return false;
+  header_ = 0;
+  footer_ = power_open_ ? S(92) : S(48);
+  agenda_tight_ = plan.cal_row <= 22 || plan.focus;
+  // The calendar view on a small screen takes a lower hero.
+  int hero_min = S(plan.focus ? 72 : popup_style::kHeroMin);
+
+  // Left column: the controls.
+  begin();
+  auto *left = new Fl_Group(pad, 0, colw, S(10));
+  left->resizable(nullptr);
+  SectionBuilder bl{this, pad, colw, 0};
+  if (!s.message.empty() || !c.message.empty()) {
+    new ActionLabel(
+        pad, bl.y, colw, S(28),
+        [] {
+          const auto &m = PanelControls::get().message;
+          return m.empty() ? SystemStatus::get().message : m;
+        },
+        2);
+    bl.y += S(30);
+  }
+  if (plan.focus) {
+    // The calendar view on a small screen: time zone and agenda under the
+    // hero, the month beside them.
+    // With 22 px week rows the agenda fits under the month instead.
+    calendar_part(bl, plan.cal_row, plan.tz, plan.agenda && plan.cal_row != 22, false);
+  } else {
+    tiles_part(bl, plan.tiles_all);
+    sliders_part(bl, !plan.bright_right);
+    if (plan.media == 1) media_part(bl);
+  }
+  if (!plan.two) {
+    calendar_part(bl, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
+  }
+  left->end();
+  int lh = bl.y;
+  // Right column: the calendar, agenda and time zone.
+  Fl_Group *right = nullptr;
+  int rh = 0;
+  if (plan.two) {
+    begin();
+    right = new Fl_Group(pad + colw + gap, 0, colw, S(10));
+    right->resizable(nullptr);
+    SectionBuilder br{this, pad + colw + gap, colw, 0};
+    if (plan.bright_right && brightness_open_) brightness_settings(br);
+    if (plan.media >= 2) media_part(br, plan.media == 3);
+    if (plan.focus)
+      calendar_part(br, plan.cal_row, false, plan.agenda && plan.cal_row == 22, plan.calendar);
+    else
+      calendar_part(br, plan.cal_row, plan.tz, plan.agenda, plan.calendar);
+    right->end();
+    rh = br.y;
+  }
+  // The hero takes what is left, between its smallest and largest size;
+  // over both columns when the right one fits under it too.
+  int top = pad, bottom = S(4) + footer_;
+  // Two columns: the wide hero when it gets as much height as the hero
+  // above the left column alone would; else the calendar runs up beside it.
+  bool wide = !plan.two;
+  // Beside the hero, the right column runs from the top down past the
+  // footer, which then stays under the left column.
+  int right_bottom = S(8);
+  if (plan.two) {
+    int wide_hero = limit - bottom - top - sp - std::max(lh, rh);
+    int narrow_hero = std::min(limit - bottom - top - sp - lh, S(popup_style::kHeroMax));
+    wide = wide_hero >= hero_min &&
+           (wide_hero >= narrow_hero || top + rh + right_bottom > limit);
+  }
+  int column = wide ? std::max(lh, rh) : lh;
+  int hero = std::min(S(popup_style::kHeroMax), limit - bottom - top - sp - column);
+  bool fits = hero >= hero_min && (wide || top + rh + right_bottom <= limit);
+  hero = std::max(hero_min, hero);
+  int body_top = top + hero + sp;
+  left->resize(pad, body_top, colw, std::max(1, lh));
+  if (right) right->resize(pad + colw + gap, wide ? body_top : top, colw, std::max(1, rh));
+  H = body_top + lh + bottom;
+  if (right) H = std::max(H, wide ? body_top + rh + bottom : top + rh + right_bottom);
+  footer_w_ = right && !wide ? pad + colw + pad / 2 : W;
+  // Everything above the footer (QA dump; nothing scrolls).
+  body_x_ = 0, body_y_ = 0, body_w_ = W, body_h_ = H - footer_;
+
+  // The clock hero, with its buttons in the corner.
+  begin();
+  weather::Settings wset = weather_settings();
+  const weather::Report *wx = wset.enabled ? weather_report() : nullptr;
+  auto *h = new ClockHero(pad, top, wide ? W - 2 * pad : colw, hero, wx, wset, wset.animate);
+  clock_ = h;
+  int bs = S(30), by = top + hero - bs - S(8), bx = pad + h->w() - S(8) - bs;
+  bool open = expanded();
+  new HeroButton(bx, by, bs, open ? _("Show less") : _("Show more"), fold_icon(open),
+                 [this] { later([this] { toggle_expanded(); }); });
+  new HeroButton(bx - bs - S(6), by, bs, _("Action Center settings"), gear_icon(),
+                 [this] {
+                   close();
+                   spawn_detached(settings_for("action-center", {}));
+                 });
+  h->end();
+  footer(footer_w_, H, pad);
+  end();
+  return fits;
+}
+
+void QuickSettings::rebuild_center() {
+  const auto &t = Panel::instance->theme();
+  const auto &cfg = Panel::instance->config();
+  int mx, my, mw, mh;
+  Panel::instance->monitor(mx, my, mw, mh);
+  auto *panel = Panel::instance;
+  // The room between the panel and the far screen edge.
+  int available =
+      std::max(S(200), (t.panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my) - S(8));
+  bool exp = expanded();
+  bool media = cfg.get_bool("action_center", "show_media", true) &&
+               !PanelControls::get().players().empty();
+  int m = media ? 1 : 0;
+  // From the richest layout to the plainest. Expanded: the whole month and
+  // agenda, the time zone, every tile; two columns when one is too tall;
+  // smaller calendar rows; then what matters least goes first.
+  std::vector<CenterPlan> plans;
+  if (exp) {
+    plans.push_back({"expanded", false, true, m, true, true, true, false, 29});
+    plans.push_back({"expanded-two", true, true, m, true, true, true, false, 29});
+    if (media) plans.push_back({"expanded-two", true, true, 2, true, true, true, false, 29});
+    plans.push_back({"expanded-two", true, true, m, true, true, true, false, 24});
+    if (media) plans.push_back({"expanded-two", true, true, 2, true, true, true, false, 24});
+    plans.push_back({"expanded-two", true, true, m, true, false, true, false, 24});
+    if (media) plans.push_back({"expanded-two", true, true, 2, true, false, true, false, 24});
+    plans.push_back({"expanded-two", true, false, m, true, false, true, false, 24});
+    // Small screens: the small player above the month.
+    if (media) plans.push_back({"expanded-two", true, false, 3, true, false, true, false, 24});
+  }
+  if (exp || calendar_view_ || agenda_form_) {
+    // The calendar and agenda (or the agenda form) were asked for: they
+    // stay, the media card goes (it is in the compact view). The time zone
+    // row too, with week rows of 22 px and a one-line agenda.
+    plans.push_back({"calendar-two", true, false, 0, true, true, true, false, 22});
+    if (calendar_view_ || agenda_form_) {
+      CenterPlan focus{"calendar-focus", true, false, 0, true, true, true, false, 24};
+      focus.focus = true;
+      plans.push_back(focus);
+      focus.cal_row = 22;
+      plans.push_back(focus);
+      focus.cal_row = 24;
+      focus.agenda = false;
+      plans.push_back(focus);
+      focus.agenda = true;
+      focus.tz = false;
+      plans.push_back(focus);
+    }
+    plans.push_back({"calendar-two", true, false, 0, true, true, false, false, 22});
+    plans.push_back({"calendar-two", true, false, 0, true, false, true, false, 24});
+    plans.push_back({"calendar-two", true, false, 0, true, false, false, false, 24});
+    plans.push_back({"calendar", false, false, 0, true, false, false, false, 24});
+    // Only reached first from the media icon (media_view_ below).
+    if (media) plans.push_back({"expanded-two", true, false, 3, true, false, false, false, 24});
+    if (media) plans.push_back({"expanded-two", true, false, 2, true, false, false, false, 24});
+    if (agenda_form_) {
+      plans.push_back({"agenda-two", true, false, 0, false, false, true, false, 24});
+      plans.push_back({"agenda", false, false, 0, false, false, true, false, 24});
+    }
+  }
+  plans.push_back({"compact", false, false, m, false, false, false, false, 24});
+  if (media) {
+    plans.push_back({"compact-two", true, false, 2, false, false, false, false, 24});
+    plans.push_back({"compact", false, false, 0, false, false, false, false, 24});
+  }
+  if (brightness_open_) {
+    // The brightness gear was just pressed: its card comes first, beside
+    // the controls when there is no room under them.
+    std::vector<CenterPlan> first;
+    first.push_back({"brightness", false, false, m, false, false, false, false, 24});
+    first.push_back({"brightness", false, false, 0, false, false, false, false, 24});
+    CenterPlan two{"brightness-two", true, false, 0, false, false, false, false, 24};
+    two.bright_right = true;
+    first.push_back(two);
+    plans.insert(plans.begin() + (exp ? std::min<long>(4, long(plans.size())) : 0), first.begin(),
+                 first.end());
+  }
+  if (calendar_view_ && !exp) {
+    // The clock asked for the calendar in compact mode: try it first.
+    std::stable_partition(plans.begin(), plans.end(),
+                          [](const CenterPlan &p) { return p.calendar; });
+  }
+  if (agenda_form_) {
+    // Adding or editing an agenda item: the form stays in view.
+    std::stable_partition(plans.begin(), plans.end(),
+                          [](const CenterPlan &p) { return p.agenda; });
+  }
+  if (media_view_ && media) {
+    // The media status icon (sde-panel --section media): the player first.
+    std::stable_partition(plans.begin(), plans.end(),
+                          [](const CenterPlan &p) { return p.media != 0; });
+  }
+  auto reset = [this] {
+    clear();
+    resizable(nullptr);
+    volume_ = brightness_ = microphone_ = nullptr;
+    tray_box_ = nullptr;
+    calendar_ = nullptr;
+    brightness_card_ = nullptr;
+    clock_ = nullptr;
+    media_slider_ = nullptr;
+    media_service_.clear();
+    stream_sliders_.clear();
+    body_ = nullptr;
+    scroll_ = nullptr;
+  };
+  // A comfortable height first (one column stays short on tall screens),
+  // then all the room the screen has.
+  int comfort = std::min(available, S(popup_style::kCenterMaxH));
+  int W = 0, H = 0;
+  bool done = false;
+  std::vector<int> limits = {comfort};
+  if (available > comfort) limits.push_back(available);
+  for (int limit : limits) {
+    for (const auto &plan : plans) {
+      reset();
+      if (build_center_plan(plan, limit, W, H) && H <= limit) {
+        center_plan_ = plan.name + (plan.media == 2 ? "+media-right" : "") +
+                       (plan.media == 3 ? "+mini-media" : "") +
+                       (plan.calendar && plan.cal_row != 29 ? "+small-calendar" : "") +
+                       (plan.tz ? "+timezone" : "");
+        done = true;
+        break;
+      }
+    }
+    if (done) break;
+  }
+  if (!done) {
+    // Nothing fits (a tiny screen): the plainest layout, cut at the edge.
+    reset();
+    build_center_plan(plans.back(), available, W, H);
+    H = std::min(H, available);
+    center_plan_ = plans.back().name + "+clipped";
+  }
+  body_ = nullptr;
+  content_height_ = H;
+  resizable(nullptr);
+  init_sizes();
+  size(W, H);
+  // The hero's sky moves at [weather] fps (at most 24); still pictures
+  // (reduced motion) only repaint the clock once a second when it shows
+  // seconds or a blinking colon, else with the panel clock's minute.
+  weather::Settings wset = weather_settings();
+  auto *hero = static_cast<ClockHero *>(clock_);
+  weather_fps_ = wset.animate ? std::min(24, wset.fps) : (hero && hero->ticks_seconds() ? 1 : 0);
+  if (weather_fps_) Fl::add_timeout(1.0 / weather_fps_, weather_tick, this);
+  if (media_slider_) Fl::add_timeout(1.0, media_tick, this);
+  scroll_to_calendar_ = false;
   sync();
 }
 
@@ -3143,41 +3548,51 @@ void QuickSettings::draw() {
     p.fill_rect(0, 0, w(), h(), t.surface);
     if (t.glass) {
       p.fill_rect(0, 0, w(), header_, t.surface_alt.mix(t.surface, 0.55));
-      if (footer_) p.fill_rect(0, h() - footer_, w(), footer_, t.surface_alt.mix(t.surface, 0.4));
+      if (footer_) p.fill_rect(0, h() - footer_, footer_w_ ? footer_w_ : w(), footer_, t.surface_alt.mix(t.surface, 0.4));
     }
     stroke_outline(p, t.border);
     if (header_ > S(8))
       p.line(S(popup_style::kPad), header_ - 0.5, w() - S(popup_style::kPad), header_ - 0.5,
              t.border);
     if (footer_)
-      p.line(S(popup_style::kPad), h() - footer_ + 0.5, w() - S(popup_style::kPad),
-             h() - footer_ + 0.5, t.border);
+      p.line(S(popup_style::kPad), h() - footer_ + 0.5,
+             (footer_w_ ? footer_w_ : w()) - S(popup_style::kPad), h() - footer_ + 0.5, t.border);
   }
   draw_children();
   sync_native_tray();
-  if (qa_dump_enabled() && body_) {
-    std::string extra = "@body\t" + std::to_string(body_->x()) + "\t" +
-                        std::to_string(body_->y()) + "\t" + std::to_string(body_->w()) + "\t" +
-                        std::to_string(body_->h()) + "\t1\n";
-    // "@weather-rain-day" etc. over the clock card while the sky shows.
-    if (auto *cc = dynamic_cast<ClockCard *>(clock_))
-      if (cc->sky())
-        extra += std::string("@weather-") + weather::kind_name(weather::from_wmo(cc->report().code).kind) +
-                 (cc->report().is_day ? "-day" : "-night") + "\t" + std::to_string(cc->x()) +
-                 "\t" + std::to_string(cc->y()) + "\t" + std::to_string(cc->w()) + "\t" +
-                 std::to_string(cc->h()) + "\t1\n";
+  if (qa_dump_enabled()) {
+    std::string extra = "@body\t" + std::to_string(body_x_) + "\t" + std::to_string(body_y_) +
+                        "\t" + std::to_string(body_w_) + "\t" + std::to_string(body_h_) + "\t1\n";
+    if (auto *hero = mode_ == ACTION_CENTER ? static_cast<ClockHero *>(clock_) : nullptr) {
+      auto rect = [hero] {
+        return "\t" + std::to_string(hero->x()) + "\t" + std::to_string(hero->y()) + "\t" +
+               std::to_string(hero->w()) + "\t" + std::to_string(hero->h()) + "\t1\n";
+      };
+      // "@weather-rain-day" etc. over the hero while the weather shows;
+      // "@sky-night", the clock style and the layout plan always.
+      if (hero->weather())
+        extra += std::string("@weather-") +
+                 weather::kind_name(weather::from_wmo(hero->report().code).kind) +
+                 (hero->day() ? "-day" : "-night") + rect();
+      extra += std::string("@sky-") + (hero->day() ? "day" : "night") + rect();
+      extra += std::string("@clock-") + clockface::style_name(hero->clock().style) + rect();
+      extra += "@plan-" + center_plan_ + "\t0\t0\t" + std::to_string(w()) + "\t" +
+               std::to_string(h()) + "\t1\n";
+    }
     qa_dump(this, extra);
   }
 }
 
 int QuickSettings::handle(int event) {
-  if (event == FL_MOUSEWHEEL && body_ && Fl::event_inside(body_) && Fl::event_dy()) {
+  bool in_body = scroll_ ? Fl::event_inside(scroll_) : mode_ == ACTION_CENTER;
+  if (event == FL_MOUSEWHEEL && in_body && Fl::event_dy()) {
     // The wheel anywhere on the volume or brightness row (icon, slider,
     // percentage) moves that slider.
     for (Fl_Slider *sl : {volume_, brightness_}) {
       // Only on the card itself: the margins and the scroll bar scroll.
+      Fl_Widget *card = sl ? sl->parent() : nullptr;
       if (!sl || !sl->visible_r() || Fl::event_y() < sl->y() || Fl::event_y() >= sl->y() + sl->h() ||
-          Fl::event_x() < S(popup_style::kPad) || Fl::event_x() >= w() - S(20))
+          !card || Fl::event_x() < card->x() || Fl::event_x() >= std::min(card->x() + card->w(), w() - S(20)))
         continue;
       sl->value(sl->clamp(sl->value() - Fl::event_dy() * 5));
       sl->do_callback();
@@ -3185,7 +3600,7 @@ int QuickSettings::handle(int event) {
       return 1;
     }
   }
-  if (event == FL_MOUSEWHEEL && body_ && Fl::event_inside(body_)) {
+  if (event == FL_MOUSEWHEEL && scroll_ && Fl::event_inside(scroll_)) {
     // Route wheel gestures explicitly through this override-redirect window;
     // keep application-tray and slider wheel controls local to their widgets.
     auto *target = Fl::belowmouse();
@@ -3195,8 +3610,8 @@ int QuickSettings::handle(int event) {
         (dynamic_cast<Fl_Slider *>(target) || dynamic_cast<TrayIndicator *>(target) ||
          dynamic_cast<Fl_Choice *>(target)))
       return PanelPopup::handle(event);
-    int limit = std::max(0, content_height_ - body_->h());
-    body_->scroll_to(0, std::max(0, std::min(limit, body_->yposition() + Fl::event_dy() * S(36))));
+    int limit = std::max(0, content_height_ - scroll_->h());
+    scroll_->scroll_to(0, std::max(0, std::min(limit, scroll_->yposition() + Fl::event_dy() * S(36))));
     redraw();
     return 1;
   }

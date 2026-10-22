@@ -439,8 +439,8 @@ void Panel::clock_menu() {
   bool date = cfg_.get_bool("panel", "show_date", true);
   std::string style = cfg_.get("action_center", "clock_style", "digital");
   ContextMenu m;
-  // The Action Center page holds the clock settings until a page of its own.
-  m.item(_("Adjust Date and Time..."), settings("action-center"), {"settings"});
+  // Settings > Clock & Weather (alpha52).
+  m.item(_("Adjust Date and Time..."), settings("clock"), {"settings"});
   m.item(_("Sync Time Zone"), [] {
     const auto &n = SystemStatus::get().network;
     tzsync::Sync::get().start(!n.available || (n.connected() && !n.no_internet()));
@@ -450,7 +450,9 @@ void Panel::clock_menu() {
   auto set_style = [this](const char *v) {
     return [this, v] { set_setting("action_center", "clock_style", v); };
   };
-  styles.radio(_("Digital"), style != "led" && style != "analog", set_style("digital"));
+  styles.radio(_("Digital"), style != "led" && style != "analog" && style != "blink",
+               set_style("digital"));
+  styles.radio(_("Blink"), style == "blink", set_style("blink"));
   styles.radio(_("LED"), style == "led", set_style("led"));
   styles.radio(_("Analog"), style == "analog", set_style("analog"));
   m.submenu(_("Clock Style"), std::move(styles));

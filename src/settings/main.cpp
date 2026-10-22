@@ -781,6 +781,14 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
     glyph::gear(p, x, y, size, c);
     return;
   }
+  if (id == "clock") {
+    // A clock face with its hands at ten past ten.
+    double r = size * .46, cx = x + size / 2, cy = y + size / 2;
+    p.stroke_rounded(cx - r, cy - r, 2 * r, 2 * r, r, c, size * .08);
+    p.line(cx, cy, cx - r * .45, cy - r * .3, c, size * .08);
+    p.line(cx, cy, cx + r * .1, cy - r * .62, c, size * .07);
+    return;
+  }
   if (id == "notifications") {
     glyph::bell(p, x, y, size, false, c);
     return;
@@ -963,6 +971,8 @@ void build_home(Page *page) {
       {"panel", N_("Panel"), N_("Full, floating or short"), "preferences-system-windows"},
       {"action-center", N_("Action Center"), N_("Clock, greeting and quick controls"),
        "preferences-system"},
+      {"clock", N_("Clock & Weather"), N_("Clock style, time format and weather units"),
+       "preferences-system-time"},
       {"display", N_("Displays"), N_("Resolution and arrangement"), "video-display"},
       {"input", N_("Keyboard & Mouse"), N_("Layouts, pointer and touchpad"), "input-keyboard"},
       {"sound", N_("Sound"), N_("Volume, speakers and microphones"), "audio-volume-high"},
@@ -1428,7 +1438,10 @@ void build_panel(Page *page) {
 
   page->begin_card(_("Clock and status"));
   page->switch_row(_("24-hour clock"), g_cfg.get_bool("panel", "clock_24h", true),
-                   [](bool on) { set_bool("panel", "clock_24h", on); });
+                   [](bool on) {
+                     g_cfg.set("clock", "format", on ? "24h" : "12h");
+                     set_bool("panel", "clock_24h", on);
+                   });
   page->switch_row(_("Show the date"), g_cfg.get_bool("panel", "show_date", true),
                    [](bool on) { set_bool("panel", "show_date", on); });
   page->switch_row(_("Show Desktop button"), g_cfg.get_bool("panel", "show_desktop_button", false),
@@ -1512,16 +1525,28 @@ void build_action_center(Page *page) {
   page->begin_card(_("Clock card"));
   page->switch_row(_("Show the clock"), g_cfg.get_bool("action_center", "show_clock", true),
                    [](bool on) { set_bool("action_center", "show_clock", on); });
-  page->choice_row(_("Clock style"), {_("Digital"), _("Analog")},
-                   g_cfg.get("action_center", "clock_style", "digital") == "analog" ? 1 : 0,
-                   [](int v) {
-                     g_cfg.set("action_center", "clock_style", v == 1 ? "analog" : "digital");
-                     apply_change();
-                   });
+  {
+    // alpha52: one [clock] style for the panel and the Action Center; more
+    // on the Clock & Weather page.
+    std::string style = g_cfg.get("action_center", "clock_style", "");
+    if (trim(style).empty()) style = g_cfg.get("clock", "style", "digital");
+    style = lower(trim(style));
+    page->choice_row(_("Clock style"), {_("Digital"), _("Blink"), _("LED"), _("Analog")},
+                     style == "blink" ? 1 : style == "led" ? 2 : style == "analog" ? 3 : 0,
+                     [](int v) {
+                       static const char *values[] = {"digital", "blink", "led", "analog"};
+                       g_cfg.set("action_center", "clock_style", values[v < 0 || v > 3 ? 0 : v]);
+                       g_cfg.unset("clock", "style");
+                       apply_change();
+                     });
+  }
   page->switch_row(_("Show a greeting"), g_cfg.get_bool("action_center", "show_greeting", true),
                    [](bool on) { set_bool("action_center", "show_greeting", on); });
   page->switch_row(_("24-hour clock"), g_cfg.get_bool("panel", "clock_24h", true),
-                   [](bool on) { set_bool("panel", "clock_24h", on); });
+                   [](bool on) {
+                     g_cfg.set("clock", "format", on ? "24h" : "12h");
+                     set_bool("panel", "clock_24h", on);
+                   });
   page->end_card();
   page->begin_card(_("Quick controls"));
   page->switch_row(
@@ -2499,6 +2524,10 @@ const std::vector<PageInfo> &pages() {
        N_("Action Center"),
        {"preferences-system", "preferences-desktop"},
        build_action_center},
+      {"clock",
+       N_("Clock & Weather"),
+       {"preferences-system-time", "x-office-calendar", "preferences-system"},
+       build_clock_page},
       {"notifications",
        N_("Notifications"),
        {"preferences-desktop-notification", "notification-active", "dialog-information"},
@@ -2712,7 +2741,7 @@ const std::pair<const char *, const char *> kPageAliases[] = {
     {"apps", "suite"},         {"quick", "action-center"},  {"animations", "effects"},
     {"compositor", "effects"}, {"info", "about"},           {"graphics", "about"},
     {"time", "system"},        {"date", "system"},          {"timezone", "system"},
-    {"clock", "system"},
+    {"weather", "clock"},      {"clocks", "clock"},
     {"defaults", "default-apps"}, {"default apps", "default-apps"},
     {"default-applications", "default-apps"}, {"default applications", "default-apps"},
     {"mime", "default-apps"},  {"file-types", "default-apps"},  {"open-with", "default-apps"},

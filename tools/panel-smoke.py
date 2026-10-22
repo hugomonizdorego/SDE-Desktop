@@ -23,7 +23,7 @@ p.add_argument('--scale',type=int,default=100)
 p.add_argument('--display',type=int,default=96)
 p.add_argument('--tcp-display',action='store_true')
 p.add_argument('--tcp-bus',action='store_true',help='Private localhost bus for containers without Unix sockets')
-p.add_argument('--only',choices=['a52'],help='Run only these checks (after the common setup)')
+p.add_argument('--only',choices=['a52','action-center'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks')
 a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
@@ -32,6 +32,9 @@ e=os.environ.copy();e.update(HOME=str(home),XDG_CONFIG_HOME=str(home/'.config'),
 # The Action Center's weather comes from a fixed report (no network in QA).
 e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
 # ...and so does the clock's "Sync time zone" (timedatectl is a logging stub).
+# alpha52: the clock reads its time from this file while it exists (day and
+# night pictures; see SDE_CLOCK_FIXTURE in src/panel/clockface.h).
+e['SDE_CLOCK_FIXTURE']='@'+str(home/'clock-fixture')
 e['SDE_TZ_FIXTURE']=os.environ.get('SDE_TZ_FIXTURE','Asia/Jakarta')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
@@ -381,13 +384,88 @@ def weather_checks():
     kind=next(k for k in L if k.startswith('@weather-'))
     assert kind=='@weather-'+{'rain':'rain-day','clear-night':'clear-night','snow':'snow-day','thunder':'thunder-day'}.get(e['SDE_WEATHER_FIXTURE'],kind[9:]),kind
     tip=next(k for k in L if k.startswith('Weather: '));assert 'Jakarta' in tip and '°C' in tip,tip
-    w=L[kind];assert w[1]>=0 and w[1]+w[3]<=L['@body'][1],('weather card leaves the header',w,L['@body'])
+    # alpha52: the clock hero; only its own buttons sit on it.
+    w=L[kind];assert w[1]>=0 and w[0]>=0,('weather hero off the popup',w)
+    for k,r in L.items():
+        if k.startswith('@') or k in ('Show less','Show more','Action Center settings') or k.startswith('Weather: '):continue
+        assert r[1]>=w[1]+w[3] or r[1]+r[3]<=w[1] or r[0]>=w[0]+w[2] or r[0]+r[2]<=w[0],('control on the clock hero',k,r,w)
     shot('02-action-center-weather')
     escape('Action Center')
     config(extra='[weather]\nenabled=false\n');reload()
     command(['--action-center'],'Action Center');time.sleep(.5)
     waitfor(lambda:not any(k.startswith('@weather-') for k in layout('Action Center')),'weather shown while disabled')
     escape('Action Center');config(overflow=False);reload()
+    command(['--action-center'],'Action Center');time.sleep(.5)
+def ac52_checks():
+    """alpha52: the Action Center never scrolls and fits the screen, compact
+    (date, toggles, sliders, media) and expanded (calendar, agenda, time zone,
+    every tile; two columns when one is too tall); the clock hero over the
+    day or night sky, with or without weather; the clock styles on the panel
+    and in the hero; temperature and wind units."""
+    clock=home/'clock-fixture'
+    def ac(args=('--action-center',)):
+        if visible('^Action Center$'):escape('Action Center');time.sleep(.5)
+        command(list(args),'Action Center');time.sleep(.7)
+        for _ in range(20):
+            L=layout('Action Center');time.sleep(.15)
+            if L==layout('Action Center'):break
+    def fit(tag):
+        ac_win=find('^Action Center$');g=geom(ac_win);L=layout('Action Center')
+        plan=next((k[6:] for k in L if k.startswith('@plan-')),'?')
+        print(f'AC52 {tag}: {g["w"]}x{g["h"]} ({round(g["w"]/scale)}x{round(g["h"]/scale)} at 100%) plan={plan}',flush=True)
+        assert not plan.endswith('+clipped'),('Action Center does not fit',tag,plan)
+        assert g['x']>=0 and g['y']>=0 and g['x']+g['w']<=W and g['y']+g['h']<=H,('Action Center off screen',tag,g)
+        pg=geom(panel);assert g['y']+g['h']<=pg['y'] or g['y']>=pg['y']+pg['h'],('Action Center over the panel',g,pg)
+        for k,r in L.items():
+            if k.startswith('@'):continue
+            assert not r[5],('scrolled control in the Action Center',tag,k)
+            assert r[0]>=0 and r[1]>=0 and r[0]+r[2]<=g['w']+1 and r[1]+r[3]<=g['h']+1,('control outside the Action Center',tag,k,r,g)
+        return L
+    def conf52(extra=''):config(extra=extra);reload()
+    # Day (08:30 UTC is the afternoon in Jakarta, the weather location).
+    clock.write_text('2026-10-22T08:30');conf52()
+    ac();L=fit('expanded');shot('52-ac-expanded-day')
+    assert '@sky-day' in L and '@weather-rain-day' in L,[k for k in L if k.startswith('@')]
+    for name in ['Calendar','Add agenda item','Wi-Fi','Output volume','Show less']:assert name in L,name
+    assert any(k.startswith('Time zone: ') for k in L) or H/scale<560,'no time zone row in the expanded Action Center'
+    press('Action Center','Show less');waitfor(lambda:'expanded=false' in conf(),'compact mode not saved')
+    waitfor(lambda:'Show more' in layout('Action Center'),'compact mode not shown');time.sleep(.5)
+    L=fit('compact');shot('52-ac-compact-day')
+    assert 'Calendar' not in L and 'Wi-Fi' in L and 'Output volume' in L,list(L)
+    # Media card only while a player plays; the date line is in the hero.
+    assert 'Now playing: Alpha test track' in L or H/scale<500,'compact Action Center without the playing media'
+    press('Action Center','Show more');waitfor(lambda:'expanded=true' in conf(),'expanded mode not saved')
+    # Night: stars and the moon, with and without weather.
+    clock.write_text('2026-10-22T21:30');conf52()
+    ac();L=fit('expanded night');assert '@sky-night' in L and '@weather-rain-night' in L,[k for k in L if k.startswith('@')]
+    shot('52-ac-expanded-night')
+    conf52('[weather]\nenabled=false\n');ac();L=fit('no weather night')
+    assert '@sky-night' in L and not any(k.startswith('@weather-') for k in L);shot('52-ac-sky-night')
+    clock.write_text('2026-10-22T08:30');conf52('[weather]\nenabled=false\n');ac();L=fit('no weather day')
+    assert '@sky-day' in L and not any(k.startswith('@weather-') for k in L);shot('52-ac-sky-day')
+    # Clock styles: the panel clock and the hero follow [clock] style.
+    for style in ['digital','blink','led','analog']:
+        conf52(f'expanded=false\nclock_style={style}\n');ac();L=fit('compact '+style)
+        assert '@clock-'+style in L,[k for k in L if k.startswith('@clock')]
+        item('SDE Panel','clock',active=False);shot('52-clock-'+style)
+    conf52('expanded=false\nclock_style=led\n[clock]\nseconds=true\nformat=12h\n');ac();fit('led 12h seconds');shot('52-clock-led-12h-seconds')
+    conf52('expanded=false\n[clock]\nstyle=analog\nseconds=true\n');ac();fit('analog seconds');shot('52-clock-analog-seconds')
+    # Units: the hero's temperature (the "rain" fixture: 21 °C, 12 km/h).
+    for unit,wind,expect in [('celsius','kmh','21°C'),('fahrenheit','mph','70°F'),('kelvin','ms','294 K'),('auto','knots','21°C')]:
+        conf52(f'expanded=false\n[weather]\nunit={unit}\nwind_unit={wind}\n');ac();L=fit('units '+unit)
+        tip=next(k for k in L if k.startswith('Weather: '));assert tip.endswith(expect+', Jakarta'),(unit,tip)
+        shot(f'52-units-{unit}-{wind}')
+    # Calendar from the clock in compact mode: still no scrolling.
+    conf52('expanded=false\n');ac(('--calendar',));L=fit('calendar view');assert 'Calendar' in L;shot('52-ac-calendar-view')
+    # Settings: Clock & Weather page (the clock's right-click menu opens it).
+    escape('Action Center')
+    # The real program (sde-settings on PATH is a logging stub here).
+    st=spawn(str(a.bin_dir.resolve()/'sde-settings'),'--page','clock')
+    try:
+        find('^Settings$');time.sleep(1.2);shot('52-settings-clock')
+    finally:
+        st.terminate();st.wait()
+    clock.unlink();config(overflow=False);reload()
     command(['--action-center'],'Action Center');time.sleep(.5)
 def reveal(title,name):
     """Scrolls the popup body until all of |name| is in view (screenshots)."""
@@ -430,6 +508,8 @@ def brightness_settings_checks():
     press('Action Center','Brightness settings')
     for name in ['Night Light','Night Light warmth','Night Light schedule','Auto-dim on battery','Dim level','External monitor brightness','Display settings…','Close brightness settings']:
         item('Action Center',name,active=False)
+    # alpha52: the card fits (beside the controls on small screens).
+    assert not any(k.startswith('@plan-') and k.endswith('+clipped') for k in layout('Action Center')),[k for k in layout('Action Center') if k.startswith('@plan')]
     shot('02-action-center-brightness-settings')
     press('Action Center','Night Light');waitfor(lambda:'[night_light]' in conf() and 'enabled=true' in conf().split('[night_light]')[1],'Night Light not saved')
     press('Action Center','Night Light schedule');time.sleep(.4);run('xdotool','key','Down','Return');time.sleep(.5)
@@ -450,6 +530,10 @@ def brightness_settings_checks():
 def media_card_checks():
     """The media card: title, artist (album), cover, seek bar and only
     previous / play-pause / next for the active MPRIS player."""
+    # alpha52: small screens keep the calendar and agenda in the expanded
+    # view; the media icon (--section media) opens it with the player.
+    if 'Now playing: Alpha test track' not in layout('Action Center'):
+        escape('Action Center');command(['--section','media'],'Action Center');time.sleep(.6)
     item('Action Center','Now playing: Alpha test track',active=False)
     item('Action Center','Artist: SDE QA — QA Sessions',active=False)
     for name in ['Playback position','Pause','Next']:item('Action Center',name)
@@ -626,6 +710,7 @@ def preview_checks():
     assert not visible('^SDE Preview$'),'preview shown with window_previews=false'
     away();config();reload()
     for proc in (one,other):proc.terminate()
+    print('PANEL a52: Action Center fits without scrolling (compact, expanded, two columns), clock hero (day/night, weather), clock styles, units PASS',flush=True)
     print('PANEL a51: taskbar previews (delay, grouped thumbnails, instant swap, cached thumbnail of a minimized window, click activates, close button, setting) PASS',flush=True)
 def led(color):return any(k.startswith('@led:'+color) for k in layout('SDE Panel'))
 def network_repair_checks():
@@ -973,6 +1058,9 @@ try:
     # alpha50: a playing MPRIS player puts no media icon on the panel.
     time.sleep(1)
     assert 'status:media' not in layout('SDE Panel'),'media icon on the panel'
+    if a.only=='action-center':
+        ac52_checks();print('PANEL a52: Action Center fits without scrolling (compact, expanded, two columns), clock hero (day/night, weather), clock styles, units PASS',flush=True)
+        raise SystemExit(0)
     shot('00-panel-indicators')
     if a.only=='a52':
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
@@ -1004,11 +1092,12 @@ try:
 
     # The corner button opens the Action Center (expanded by default).
     ac=click_panel('action-center','^Action Center$');time.sleep(.5);bounds(ac);only_open('Action Center')
-    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Dark Mode','Display','Alarms','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']:
+    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']+(['Dark Mode','Display','Alarms'] if H/scale>=560 else []):
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
     brightness_checks(ac)
     weather_checks()
+    ac52_checks()
     brightness_settings_checks()
     media_card_checks()
     ac=command(['--action-center'],'Action Center');time.sleep(.4)

@@ -12,6 +12,7 @@
 #include <functional>
 
 #include "alarms.h"
+#include "clockface.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "paint.h"
@@ -29,7 +30,8 @@ namespace {
 
 using IconFn = std::function<void(Painter &, double, double, double, const Color &)>;
 
-bool clock_24h() { return Panel::instance->config().get_bool("panel", "clock_24h", true); }
+// [clock] format (alpha52; the older [panel] clock_24h still counts).
+bool clock_24h() { return clockface::use_24h(Panel::instance->config()); }
 
 std::string time_text(int hour, int minute) {
   char buf[24];
@@ -363,7 +365,7 @@ std::string AlarmPopup::key() const {
                   std::to_string(draft_.id) + "|" + message_;
   for (const auto &r : Alarms::get().ringing()) k += "|" + std::to_string(r.alarm) + r.title;
   k += cfg.get("appearance", "theme") + cfg.get("appearance", "accent") +
-       cfg.get("appearance", "style") + cfg.get("appearance", "scale") + cfg.get("panel", "clock_24h") +
+       cfg.get("appearance", "style") + cfg.get("appearance", "scale") + cfg.get("panel", "clock_24h") + cfg.get("clock", "format") +
        cfg.get("panel", "position");
   return k;
 }

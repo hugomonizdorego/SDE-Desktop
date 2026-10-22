@@ -27,6 +27,8 @@ void build_lock_page(Page *page);
 // Settings > Network: the Proxy and Troubleshooting cards (network.cpp).
 void build_network_proxy(Page *page);
 void build_network_diagnostics(Page *page);
+// Settings > Clock & Weather (clock.cpp, alpha52).
+void build_clock_page(Page *page);
 // Settings > Default Applications (default_apps_page.cpp).
 void build_default_apps_page(Page *page);
 // Rebuilds the visible page when it is |page_id| (after background work).

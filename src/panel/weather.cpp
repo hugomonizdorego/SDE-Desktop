@@ -494,6 +494,72 @@ std::string format_temperature(double c, bool f) {
   return std::to_string(n) + (f ? "°F" : "°C");
 }
 
+namespace {
+std::string country_of(const std::string &locale) {
+  size_t us = locale.find('_');
+  return us == std::string::npos ? "" : locale.substr(us + 1, 2);
+}
+}  // namespace
+
+TempUnit temp_unit(const std::string &unit, const std::string &locale) {
+  std::string u = lower(trim(unit));
+  if (u == "kelvin" || u == "k") return TempUnit::Kelvin;
+  return use_fahrenheit(unit, locale) ? TempUnit::Fahrenheit : TempUnit::Celsius;
+}
+
+WindUnit wind_unit(const std::string &unit, const std::string &locale) {
+  std::string u = lower(trim(unit));
+  if (u == "kmh" || u == "km/h" || u == "kph") return WindUnit::Kmh;
+  if (u == "mph") return WindUnit::Mph;
+  if (u == "ms" || u == "m/s") return WindUnit::Ms;
+  if (u == "knots" || u == "kn" || u == "kt") return WindUnit::Knots;
+  if (country_of(locale) == "GB" || use_fahrenheit("auto", locale)) return WindUnit::Mph;
+  return WindUnit::Kmh;
+}
+
+const char *temp_unit_name(TempUnit u) {
+  return u == TempUnit::Fahrenheit ? "fahrenheit" : u == TempUnit::Kelvin ? "kelvin" : "celsius";
+}
+
+const char *wind_unit_name(WindUnit u) {
+  switch (u) {
+    case WindUnit::Mph: return "mph";
+    case WindUnit::Ms: return "ms";
+    case WindUnit::Knots: return "knots";
+    case WindUnit::Kmh: break;
+  }
+  return "kmh";
+}
+
+std::string format_temperature(double c, TempUnit u) {
+  if (u != TempUnit::Kelvin) return format_temperature(c, u == TempUnit::Fahrenheit);
+  return std::to_string(std::lround(c + 273.15)) + " K";
+}
+
+std::string format_wind(double kmh, WindUnit u) {
+  kmh = std::max(0.0, kmh);
+  char buf[32];
+  switch (u) {
+    case WindUnit::Mph:
+      snprintf(buf, sizeof buf, "%ld mph", std::lround(kmh / 1.609344));
+      break;
+    case WindUnit::Ms:
+      // One decimal below 10 m/s ("3.3 m/s"), whole numbers above.
+      if (kmh / 3.6 < 9.95)
+        snprintf(buf, sizeof buf, "%.1f m/s", kmh / 3.6);
+      else
+        snprintf(buf, sizeof buf, "%ld m/s", std::lround(kmh / 3.6));
+      break;
+    case WindUnit::Knots:
+      snprintf(buf, sizeof buf, "%ld kn", std::lround(kmh / 1.852));
+      break;
+    case WindUnit::Kmh:
+      snprintf(buf, sizeof buf, "%ld km/h", std::lround(kmh));
+      break;
+  }
+  return buf;
+}
+
 bool fixture_report(const std::string &name, Report &out) {
   struct F {
     const char *name;
@@ -535,7 +601,10 @@ Settings Settings::from_config(const Config &cfg) {
   s.enabled = cfg.get_bool("weather", "enabled", true);
   s.location = trim(cfg.get("weather", "location", "auto"));
   if (s.location.empty()) s.location = "auto";
-  s.fahrenheit = use_fahrenheit(cfg.get("weather", "unit", "auto"), locale_for_units());
+  std::string locale = locale_for_units();
+  s.temp = temp_unit(cfg.get("weather", "unit", "auto"), locale);
+  s.fahrenheit = s.temp == TempUnit::Fahrenheit;
+  s.wind = wind_unit(cfg.get("weather", "wind_unit", "auto"), locale);
   // Reduced motion: [weather] animation=false, or the system-wide switches
   // for older computers and for no animations.
   std::string anim = lower(cfg.get("weather", "animation", "auto"));
@@ -616,6 +685,17 @@ const Report *Service::current(const Settings &s, bool online) const {
   long long age = unix_now() - report_.fetched;
   if (age < -600 || age > kStale) return nullptr;
   return &report_;
+}
+
+const Location *Service::known_location() const {
+  if (!fixture_name().empty()) {
+    // Every fixture (also "offline") is in Jakarta.
+    static Report fixed;
+    static bool ok = fixture_report("clear", fixed);
+    return ok ? &fixed.location : nullptr;
+  }
+  const_cast<Service *>(this)->load_cache();
+  return report_.location.valid ? &report_.location : nullptr;
 }
 
 void Service::request(const Settings &s, bool online) {

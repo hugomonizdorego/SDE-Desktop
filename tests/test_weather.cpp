@@ -119,6 +119,23 @@ int main() {
   CHECK(use_fahrenheit("fahrenheit", "id_ID") && !use_fahrenheit("celsius", "en_US"));
   CHECK(format_temperature(-0.4, false) == "0°C" && format_temperature(27.4, false) == "27°C");
   CHECK(format_temperature(21.6, true) == "71°F" && format_temperature(-40, true) == "-40°F");
+  // alpha52: Kelvin and the wind units.
+  CHECK(temp_unit("kelvin", "en_US") == TempUnit::Kelvin && temp_unit("K", "") == TempUnit::Kelvin);
+  CHECK(temp_unit("auto", "en_US.UTF-8") == TempUnit::Fahrenheit);
+  CHECK(temp_unit("auto", "de_DE.UTF-8") == TempUnit::Celsius && temp_unit("celsius", "en_US") == TempUnit::Celsius);
+  CHECK(format_temperature(21, TempUnit::Celsius) == "21°C" && format_temperature(21, TempUnit::Fahrenheit) == "70°F");
+  CHECK(format_temperature(21, TempUnit::Kelvin) == "294 K" && format_temperature(-273.15, TempUnit::Kelvin) == "0 K");
+  CHECK(wind_unit("auto", "en_US.UTF-8") == WindUnit::Mph && wind_unit("auto", "en_GB.UTF-8") == WindUnit::Mph);
+  CHECK(wind_unit("auto", "id_ID.UTF-8") == WindUnit::Kmh && wind_unit("auto", "") == WindUnit::Kmh);
+  CHECK(wind_unit("ms", "en_US") == WindUnit::Ms && wind_unit("m/s", "") == WindUnit::Ms);
+  CHECK(wind_unit("knots", "") == WindUnit::Knots && wind_unit("kmh", "en_US") == WindUnit::Kmh);
+  CHECK(format_wind(12, WindUnit::Kmh) == "12 km/h" && format_wind(12, WindUnit::Mph) == "7 mph");
+  CHECK(format_wind(12, WindUnit::Ms) == "3.3 m/s" && format_wind(54, WindUnit::Ms) == "15 m/s");
+  CHECK(format_wind(12, WindUnit::Knots) == "6 kn" && format_wind(-3, WindUnit::Kmh) == "0 km/h");
+  for (TempUnit u : {TempUnit::Celsius, TempUnit::Fahrenheit, TempUnit::Kelvin})
+    CHECK(temp_unit(temp_unit_name(u), "en_US") == u);
+  for (WindUnit u : {WindUnit::Kmh, WindUnit::Mph, WindUnit::Ms, WindUnit::Knots})
+    CHECK(wind_unit(wind_unit_name(u), "en_US") == u);
 
   // -------------------------------------------------------- fixtures
   Report f;
