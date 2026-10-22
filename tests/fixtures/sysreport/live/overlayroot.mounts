@@ -1,0 +1,6 @@
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+/dev/sda1 /media/root-ro ext4 ro,relatime 0 0
+tmpfs-root /media/root-rw tmpfs rw,relatime,inode64 0 0
+overlayroot / overlay rw,relatime,lowerdir=/media/root-ro,upperdir=/media/root-rw/overlay,workdir=/media/root-rw/overlay-workdir/_ 0 0
+/dev/loop2 /snap/firefox/4848 squashfs ro,nodev,relatime 0 0

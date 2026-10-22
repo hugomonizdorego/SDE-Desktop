@@ -12,11 +12,11 @@ install Debian's own packages.
 
 | Mint concept | SDE |
 |---|---|
-| Welcome Screen with First Steps, shown at the first login, "Show this dialog at startup" | **SDE Welcome** (`sde-welcome`), autostarted while `[welcome] show=true` |
+| Welcome Screen with First Steps, shown at the first login, "Show this dialog at startup" | **SDE Welcome** (`sde-welcome`): at the first login of each user after installation, later while `[welcome] show=true`, never in the live session (alpha51) |
 | First Steps: desktop colors (light/dark, accent) | Welcome > First Steps > Desktop colors (writes `[appearance] theme`, `accent_name`, `accent`; GTK, Openbox, compositor and `_SDE_CONFIG_SERIAL` follow at once) |
 | First Steps: panel layout (traditional / modern) | Welcome > First Steps > Panel layout (`[panel] style=full|short|floating`, position, Show desktop button) |
 | Update Manager | opens SDE Update (`sde-update`, already modelled on mintupdate) |
-| Driver Manager | **SDE Driver Manager** (`sde-drivers`, also a Welcome page) |
+| Driver Manager | **SDE Driver Manager** (`sde-drivers`; one row per device with radio choices since alpha51) |
 | System Snapshots (Timeshift) | launches Timeshift, or explains it and installs `timeshift` |
 | Firewall (ufw/gufw) | status from `/etc/ufw/ufw.conf`, "Turn On" (`pkexec ufw enable`), installs `ufw gufw` |
 | Multimedia codecs | installs `gstreamer1.0-plugins-good/-bad/-ugly gstreamer1.0-libav` (all in Debian main) |
@@ -26,7 +26,76 @@ install Debian's own packages.
 | "Show desktop" button at the end of the panel | already in the panel as an option; the Welcome turns it on; patch below moves it to the far end and adds `sde-panel --show-desktop` |
 | Workspace switcher applet, hot corners | proposals below (panel and Settings owners) |
 
-## SDE Welcome (`sde-welcome`)
+## SDE Welcome (`sde-welcome`), since 0.1.0~alpha51
+
+One calm window (720 x 480 at 100 %, colours from the active theme, 8-10 px
+rounded corners, no gradients): the DebION logo with "Welcome to DebION" and
+one line, then six first steps as tiles (two columns, one below 520 px),
+each an icon, a label and a one-line hint:
+
+| Tile | Opens |
+|---|---|
+| Appearance | `sde-settings --page appearance` |
+| Software Updater | `sde-update` |
+| Drivers | `sde-drivers` |
+| Snapshots (Timeshift installed) or System Reports | `timeshift-launcher` / `sde-system-reports` |
+| Help | the documentation on GitHub |
+| Donate | https://paypal.me/hugocenturion0311 |
+
+At the bottom: the check box "Show this dialog at startup" (`[welcome]
+show`) and Close. Esc closes, F1 or a right click on empty space shows
+About. The alpha50 sidebar pages (colour and panel pickers, firewall, codecs,
+the embedded Driver Manager and System Reports pages) are gone: each of
+those has its own program, opened from the tiles or the Start menu.
+`--page NAME` is still accepted and ignored.
+
+### Live session and first login
+
+`/etc/xdg/autostart/sde-welcome.desktop` runs `sde-welcome --autostart` at
+every login; `welcome::should_autostart(live, done, show)` decides:
+
+1. **Live session** (the DebION ISO): never. The program exits 0 silently.
+2. **First login of a user after installation** (no stamp): always. Opening
+   the window on an installed system writes the per-user stamp
+   `$XDG_CONFIG_HOME/sde/welcome-done` (`~/.config/sde/welcome-done`).
+   Upgrades from alpha50 and older count as done when the user's sde.conf
+   already has a `[welcome]` section.
+3. **Later logins**: only while "Show this dialog at startup" is ticked
+   (`[welcome] show=true`; the default is `false` since alpha51).
+
+Started from the menu, the window always opens. In a live session the check
+box is hidden and a note reads "Live session — install DebION to keep your
+settings"; no stamp is written.
+
+`welcome::is_live_session()` (`src/welcome/model.cpp`) returns true when
+any one of these signals is present (`live_reason()` names the first found;
+`sde-welcome --live-status` prints it):
+
+* `/proc/cmdline` has `boot=live` (live-boot, Debian live ISOs),
+  `boot=casper` or `casper` (Ubuntu-style), `rd.live.image` (dracut
+  dmsquash-live), `live-media=` or `live-media-path=`. `toram` alone is not
+  enough; it is only reported next to one of these.
+* `/run/live`, `/lib/live/mount/medium` or `/run/live/medium` exists.
+* The root file system (the last `/` entry of `/proc/mounts`) is a
+  squashfs, or an **overlay whose `lowerdir` lies on a squashfs mount**
+  (`/run/live/rootfs/filesystem.squashfs`, casper's `/rofs`), or a tmpfs
+  while a squashfs is mounted. An installed system with **overlayroot**
+  (lower layer `/media/root-ro` on ext4/btrfs) is therefore *installed*;
+  squashfs mounts elsewhere (snaps under `/snap`) do not count.
+* The user is `user` or `live` **and** the live-config marker
+  `/etc/live/config*` exists (the installer removes live-config).
+* A Calamares or debian-installer launcher (`*calamares*.desktop`,
+  `install-debian.desktop`, `debian-installer*.desktop`,
+  `install-debion*.desktop`) is on the desktop.
+
+Test overrides: `SDE_PROC_CMDLINE`, `SDE_PROC_MOUNTS`, `SDE_LIVE_ROOT`
+(prefix for `/run/live`, `/lib/live`, `/etc/live`) and `SDE_DESKTOP_DIR`.
+`tests/fixtures/sysreport/live/` holds command lines and mount tables of a
+Debian live ISO, an installed system, an installed system with overlayroot
+and a casper live system; `sde-sysreport-model` checks each one plus the
+autostart table.
+
+### The alpha50 Welcome (for reference)
 
 Sidebar pages (Ctrl+Page Up/Down moves between them, Esc closes, F1 or a
 right click on empty space shows About):
@@ -58,6 +127,54 @@ apt output is shown when it fails. Installs use `pkexec env
 DEBIAN_FRONTEND=noninteractive apt-get install -y PACKAGES`.
 
 ## SDE Driver Manager (`sde-drivers`)
+
+### The window (since 0.1.0~alpha51)
+
+Like Mint's Driver Manager, only more minimal (`drivers_main.cpp`): the
+line "Additional and proprietary drivers" under the title bar, then one row
+per device: a device icon (graphics, Wi-Fi, Bluetooth, network, audio,
+processor or other, from the icon theme), the vendor and model ("Realtek
+Semiconductor Co., Ltd.: RTL8852BE PCIe 802.11ax Wireless Network
+Controller", named from the PCI device of the same kind and vendor in
+`/sys/bus/pci/devices`), one status line ("This device is using the
+recommended driver." / "... an alternative driver." / "... no additional
+driver."), and radio choices: each package with a muted accent tag
+"(open-source)" / "(proprietary)" plus ", recommended", "Version x.y"
+(installed, else the candidate of `apt-cache policy`) and a one-line
+description (`apt-cache show`), then "Do not use the device". Below a thin
+separator: the status ("No proprietary drivers are in use." / "N
+proprietary drivers in use.") and **Revert** / **Apply Changes**, disabled
+until the selection changes. Without devices it shows "No additional drivers
+are needed." in the middle. The list scrolls (1024x600 at 150 %), arrows
+move between choices, Esc closes.
+
+Selection model (`drivers.h`, unit tested): `group_devices()` groups the
+recommendations by device (recommended first); `initial_selection()` is
+the installed driver (a non-firmware package wins over firmware), else the
+installed firmware, else "Do not use"; `plan_changes(devices, initial,
+selection)` lists what to install and remove for the devices whose choice
+changed: the chosen package is installed and the device's other installed
+packages are removed, except firmware/microcode, which stays unless "Do not
+use the device" was chosen. Installed hardware DKMS drivers (`rtw89-dkms`,
+`rtw88`, `rtl8*`, `r8168`, `r8125`, `broadcom-sta`, `mt76`, `iwlwifi`
+`-dkms`) appear as the alternative driver of their device (`dkms_device()`);
+firmware for nouveau is the alternative to `nvidia-driver`.
+
+**Apply Changes** runs one authorization: `pkexec /bin/sh -c SCRIPT sh
+TMP SOURCES apt-get-args`, where the script first installs the rewritten
+sources file and runs `apt-get update` when a needed area
+(`non-free-firmware`, `contrib non-free`) is off (a notice above the list
+says so), then `DEBIAN_FRONTEND=noninteractive apt-get -o
+APT::Status-Fd=1 install -y A B C-` (a trailing `-` removes C in the same
+transaction). apt's status lines (`parse_apt_status()`) drive a slim
+progress line on the separator and the status text; a failure shows the
+last lines of the output. Afterwards the system is scanned again and the
+status says to restart. **Revert** restores the initial selection.
+
+`SDE_DRIVERS_DEMO=1` (or `=empty`) shows example devices for screenshots
+and installs nothing; `SDE_DRIVERS_DEMO_HOLD=1` freezes the fake progress.
+
+### Detection
 
 `src/sysreport/drivers.{h,cpp}`, display-free and unit tested:
 

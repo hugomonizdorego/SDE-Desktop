@@ -1,0 +1,9 @@
+sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0
+proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0
+udev /dev devtmpfs rw,nosuid,relatime,size=1967124k,nr_inodes=491781,mode=755,inode64 0 0
+tmpfs /run tmpfs rw,nosuid,nodev,noexec,relatime,size=400772k,mode=755,inode64 0 0
+/dev/sr0 /run/live/medium iso9660 ro,noatime,nojoliet,check=s,map=n,blocksize=2048,iocharset=utf8 0 0
+/dev/loop0 /run/live/rootfs/filesystem.squashfs squashfs ro,noatime,errors=continue 0 0
+tmpfs /run/live/overlay tmpfs rw,noatime,size=2003860k,mode=755,inode64 0 0
+overlay / overlay rw,noatime,lowerdir=/run/live/rootfs/filesystem.squashfs/,upperdir=/run/live/overlay/rw,workdir=/run/live/overlay/work,uuid=on 0 0
+tmpfs /tmp tmpfs rw,nosuid,nodev,relatime,inode64 0 0
