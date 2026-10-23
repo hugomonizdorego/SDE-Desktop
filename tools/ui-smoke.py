@@ -253,7 +253,10 @@ def users_page_checks():
     procs.append(app)
     win = find("^Control Center$")
     wait_page("users")
-    control("Control Center", "Real name")
+    # The real name field (inactive here: no AccountsService to change it).
+    names = [l.split("\t")[0] for l in (home / "qa" / "Control-Center.txt").read_text().splitlines()]
+    for name in ("Real name", "Sample forest", "Sample sunrise"):
+        assert name in names, (name, names)
     shot("16-control-center-users")
     click_control(win, "Control Center", "Sample sunrise")
     face = home / ".face"
