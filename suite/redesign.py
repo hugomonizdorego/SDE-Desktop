@@ -336,6 +336,14 @@ def liria_header(staged):
 """)
     edit_once(window, "    if (g_settings_get_boolean (liria_window_state, LIRIA_WINDOW_STATE_START_WITH_TOOLBAR))\n",
               "    if (TRUE) /* SDE: the header row holds the main menu */\n")
+    # 0.2.0: the spinner's spacer after the main menu took half of the free
+    # width of the header, so the location entry was much shorter than the
+    # breadcrumbs and an empty gap followed the main menu. The location item
+    # alone expands now; the spinner (while loading) follows the menu.
+    edit_once(src / "liria-window-toolbars.c",
+              "    gtk_tool_item_set_expand (item, TRUE);\n    gtk_toolbar_insert (GTK_TOOLBAR (window->details->toolbar),\n",
+              "    gtk_tool_item_set_expand (item, FALSE); /* SDE: the location item expands */\n"
+              "    gtk_toolbar_insert (GTK_TOOLBAR (window->details->toolbar),\n")
     edit_once(window, "    show_location_bar = g_settings_get_boolean (liria_window_state, LIRIA_WINDOW_STATE_START_WITH_LOCATION_BAR);\n",
               "    show_location_bar = TRUE; /* SDE: the path is part of the header */\n")
     edit_once(window, "    gtk_widget_show (GTK_WIDGET (window->sidebar));\n}\n",
