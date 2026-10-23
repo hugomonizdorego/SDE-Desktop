@@ -1999,6 +1999,15 @@ int AppMenu::handle(int event) {
       }
       const Item *hit = item_at(ex, ey);
       Item it = hit ? *hit : Item();
+      // A press without a motion before it (a click right after the list
+      // glided) still marks the item under the pointer.
+      Ref at = hit ? Ref{hit->kind, hit->index, hit->group} : Ref{};
+      if (!(at == hover_)) {
+        damage_item(hover_, S(14));
+        damage_tooltip(hover_);
+        hover_ = at;
+        damage_item(hover_, S(14));
+      }
       // The expanded rail closes on a click next to it.
       if (rail_open_ && it.kind != K_RAIL) {
         rail_open_ = false;
