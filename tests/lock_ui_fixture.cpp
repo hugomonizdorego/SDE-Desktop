@@ -25,6 +25,9 @@ int main(int argc, char **argv) {
   sde::lock::default_options(o);
   o.display_name = "Selviana Tester";
   o.avatar.clear();
+  // tools/showcase.py: the sample account's name and picture.
+  if (const char *name = getenv("SDE_LOCK_FIXTURE_NAME")) o.display_name = name;
+  if (const char *avatar = getenv("SDE_LOCK_FIXTURE_AVATAR")) o.avatar = avatar;
   o.switch_user = argc > 2 && !strcmp(argv[2], "--switch-user");
   o.blank_after = 0;
   o.report_fd = argc > 1 ? atoi(argv[1]) : 1;

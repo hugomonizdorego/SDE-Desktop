@@ -7,6 +7,7 @@
 #include <cairo.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <string>
@@ -31,6 +32,12 @@ const std::string nm = "/org/freedesktop/NetworkManager";
 const std::string adapter = "/org/bluez/hci0", device = adapter + "/dev_00_11_22_33_44_55",
                   player = "/org/mpris/MediaPlayer2";
 void log(const std::string& s) { std::ofstream(log_path, std::ios::app) << s << '\n'; }
+// SDE_FIXTURE_NAMES=showcase (tools/showcase.py): everyday sample names
+// instead of the QA ones, and no XEmbed tray icon. The checks of
+// panel-smoke use the QA names (the default).
+bool showcase = false;
+const char* pick(const char* qa, const char* sample) { return showcase ? sample : qa; }
+std::string stick_label() { return pick("QA-STICK", "ALEX-USB"); }
 void str(dbus::Writer& w, const char* k, const std::string& v, bool path = false) {
   dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
   e.str(k);
@@ -44,12 +51,12 @@ void flag(dbus::Writer& w, const char* k, bool v) {
   e.str(k).variant_bool(v);
 }
 void adapter_props(dbus::Writer& w) {
-  str(w, "Alias", "Bluetooth QA adapter");
+  str(w, "Alias", pick("Bluetooth QA adapter", "alex-laptop"));
   flag(w, "Powered", powered);
   flag(w, "Discovering", discovering);
 }
 void device_props(dbus::Writer& w) {
-  str(w, "Alias", "QA headphones");
+  str(w, "Alias", pick("QA headphones", "Wireless Headphones"));
   str(w, "Address", "00:11:22:33:44:55");
   str(w, "Adapter", adapter, true);
   flag(w, "Connected", connected);
@@ -141,8 +148,8 @@ void ud_object(dbus::Writer& objects, const std::string& path) {
   dbus::Writer interfaces(object.iter(), DBUS_TYPE_ARRAY, "{sa{sv}}");
   if (path == ud_drive) {
     iface_begin(interfaces, "org.freedesktop.UDisks2.Drive", [](dbus::Writer& p) {
-      str(p, "Vendor", "QA");
-      str(p, "Model", "Flash Stick");
+      str(p, "Vendor", pick("QA", "Generic"));
+      str(p, "Model", pick("Flash Stick", "USB Flash Drive"));
       str(p, "ConnectionBus", "usb");
       str(p, "Media", "");
       u64(p, "Size", 8000000000ULL);
@@ -160,7 +167,7 @@ void ud_object(dbus::Writer& objects, const std::string& path) {
                 [](dbus::Writer& p) { str(p, "Type", "dos"); });
   } else {
     iface_begin(interfaces, "org.freedesktop.UDisks2.Block",
-                [](dbus::Writer& p) { block_props(p, "/dev/sdq1", 7990000000ULL, "QA-STICK", "vfat"); });
+                [](dbus::Writer& p) { block_props(p, "/dev/sdq1", 7990000000ULL, stick_label(), "vfat"); });
     iface_begin(interfaces, "org.freedesktop.UDisks2.Partition",
                 [](dbus::Writer& p) { str(p, "Table", ud_disk, true); });
     iface_begin(interfaces, "org.freedesktop.UDisks2.Filesystem", [](dbus::Writer& p) {
@@ -208,7 +215,7 @@ DBusHandlerResult handle(DBusMessage* m) {
       for (const auto& p : {ud_drive, ud_disk, ud_part}) ud_object(objects, p);
   } else if (path == ud_part && method == "Mount") {
     log("UDISKS Mount");
-    mount_point = "/tmp/sde-qa-media/QA-STICK";
+    mount_point = "/tmp/sde-qa-media/" + stick_label();
     dbus::Writer(r).str(mount_point);
     ud_changed();
   } else if (path == ud_part && method == "Unmount") {
@@ -257,7 +264,7 @@ DBusHandlerResult handle(DBusMessage* m) {
     dbus::Writer w(r);
     dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
     if (!args.empty() && args[0].str() == "org.mpris.MediaPlayer2") {
-      str(props, "Identity", "SDE Music · QA fixture");
+      str(props, "Identity", pick("SDE Music · QA fixture", "Music"));
       str(props, "DesktopEntry", "sde-qa-music");
       flag(props, "CanRaise", true);
     } else {
@@ -279,8 +286,8 @@ DBusHandlerResult handle(DBusMessage* m) {
       entry.str("Metadata");
       dbus::Writer v(entry.iter(), DBUS_TYPE_VARIANT, "a{sv}");
       dbus::Writer metadata(v.iter(), DBUS_TYPE_ARRAY, "{sv}");
-      str(metadata, "xesam:title", "Alpha test track");
-      str(metadata, "xesam:album", "QA Sessions");
+      str(metadata, "xesam:title", pick("Alpha test track", "Morning Light"));
+      str(metadata, "xesam:album", pick("QA Sessions", "Showcase Sessions"));
       str(metadata, "mpris:trackid", track, true);
       if (!cover.empty()) str(metadata, "mpris:artUrl", "file://" + cover);
       {
@@ -291,7 +298,7 @@ DBusHandlerResult handle(DBusMessage* m) {
         dbus_message_iter_append_basic(v.iter(), DBUS_TYPE_INT64, &len);
       }
       dbus::Writer artist(metadata.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
-      artist.str("xesam:artist").variant_strings({"SDE QA"});
+      artist.str("xesam:artist").variant_strings({pick("SDE QA", "Selviana Ensemble")});
     }
   } else if (path == player && method == "SetPosition" && args.size() == 2) {
     position = args[1].num();
@@ -333,7 +340,7 @@ DBusHandlerResult handle(DBusMessage* m) {
     if (mode == "drive-busy") drive_busy = true;
     if (mode == "drive-free") drive_busy = false;
     if (mode == "drive-mounted") {
-      mount_point = "/tmp/sde-qa-media/QA-STICK";
+      mount_point = "/tmp/sde-qa-media/" + stick_label();
       ud_changed();
     }
     if (mode == "drive-remove" || mode == "drive-insert") {
@@ -376,6 +383,8 @@ void poll(void*) {
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   log_path = argv[1];
+  const char* names = getenv("SDE_FIXTURE_NAMES");
+  showcase = names && std::string(names) == "showcase";
   {
     // A small album cover next to the log.
     cover = log_path.substr(0, log_path.rfind('/') + 1) + "qa-cover.png";
@@ -416,15 +425,17 @@ int main(int argc, char** argv) {
   XChangeProperty(display, icon, info, info, 32, PropModeReplace,
                   reinterpret_cast<unsigned char*>(values), 2);
   Window owner = XGetSelectionOwner(display, XInternAtom(display, "_NET_SYSTEM_TRAY_S0", False));
-  if (!owner) return 1;
-  XEvent event{};
-  event.xclient.type = ClientMessage;
-  event.xclient.window = owner;
-  event.xclient.message_type = XInternAtom(display, "_NET_SYSTEM_TRAY_OPCODE", False);
-  event.xclient.format = 32;
-  event.xclient.data.l[1] = 0;
-  event.xclient.data.l[2] = long(icon);
-  XSendEvent(display, owner, False, NoEventMask, &event);
+  if (!owner && !showcase) return 1;
+  if (!showcase) {  // the showcase has no "Q" test icon in the tray
+    XEvent event{};
+    event.xclient.type = ClientMessage;
+    event.xclient.window = owner;
+    event.xclient.message_type = XInternAtom(display, "_NET_SYSTEM_TRAY_OPCODE", False);
+    event.xclient.format = 32;
+    event.xclient.data.l[1] = 0;
+    event.xclient.data.l[2] = long(icon);
+    XSendEvent(display, owner, False, NoEventMask, &event);
+  }
   XFlush(display);
   log("READY");
   Fl::add_timeout(.02, poll);
