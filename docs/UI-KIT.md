@@ -22,7 +22,7 @@ installs the SDE style at startup (`sde::install_ui_style()`, called from
 Colors, accent, dark mode and scale come from `sde::active_theme()` (set by
 `Theme::apply_to_fltk()`); programs that never call it (the panel) get the
 configured theme, re-read each time a menu opens. Changing the theme in
-Settings therefore applies to the next menu without a restart.
+the Control Center therefore applies to the next menu without a restart.
 Keyboard navigation is FLTK's: arrows, Tab, Enter, Escape, `&` mnemonics
 (underlined while Alt is held), shortcuts; Left/Right move along the quick
 row, Down leaves it.

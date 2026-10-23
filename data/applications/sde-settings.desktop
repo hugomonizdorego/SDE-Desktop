@@ -1,11 +1,14 @@
 [Desktop Entry]
 Type=Application
-Name=SDE Settings
-Comment=Change the appearance, panel and desktop of SDE
+Name=Control Center
+GenericName=System Settings
+Comment=All the settings of SDE in one place: appearance, devices, network, your account and the system tools
+Keywords=Settings;SDE Settings;Preferences;Control Panel;Configuration;System;Appearance;Users;Account;Avatar;Picture;
 Exec=sde-settings
-Icon=preferences-desktop
+Icon=sde-control-center
 Categories=Settings;DesktopSettings;
 OnlyShowIn=SDE;
 StartupNotify=false
+StartupWMClass=sde-settings
 X-Developer=DebION Dev-Team
 X-DebION-Developer=DebION Dev-Team

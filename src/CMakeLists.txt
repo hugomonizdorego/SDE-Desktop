@@ -405,10 +405,12 @@ install(TARGETS sde-lock RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # PAM service of the locker (Debian's common-auth/common-account stacks).
 install(FILES ${PROJECT_SOURCE_DIR}/data/pam/sde-lock DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/pam.d)
 # Compatibility commands of the former SDE Power Manager / SDE Screen Lock
-# forks: they open the Settings pages or call sde-lock.
+# forks: they open the Control Center's pages or call sde-lock. And
+# sde-control-center: the Control Center (sde-settings) under its new name.
 install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
                  ${PROJECT_SOURCE_DIR}/data/compat/sde-screensaver-preferences
                  ${PROJECT_SOURCE_DIR}/data/compat/sde-screensaver-command
+                 ${PROJECT_SOURCE_DIR}/data/compat/sde-control-center
         DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).

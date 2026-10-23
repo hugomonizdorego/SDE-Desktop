@@ -15,8 +15,8 @@ they are not duplicated inside SDE.
 | Taca | `taca` | native SDE application (DebION Dev-Team) |
 | Photo | `sde-view` | native SDE application (DebION Dev-Team) |
 | SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
-| SDE Power | `sde-power` (Settings > Power) | native SDE application (DebION Dev-Team, alpha16) |
-| SDE Screen Lock | `sde-lock` (Settings > Lock Screen) | native SDE application (DebION Dev-Team, alpha16) |
+| SDE Power | `sde-power` (Control Center > Power) | native SDE application (DebION Dev-Team, alpha16) |
+| SDE Screen Lock | `sde-lock` (Control Center > Lock Screen) | native SDE application (DebION Dev-Team, alpha16) |
 | Calculator | `calculator` | native SDE application (DebION Dev-Team, alpha50; replaced the GTK4 scientific-calculator frontend) |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
 | Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit and Flatpak |
@@ -116,8 +116,8 @@ SDE-only XDG autostart entries:
   `/etc/pam.d/sde-lock` (`@include common-auth`, `common-account`).
   Settings in sde.conf `[lock]`.
 
-`sde-power-preferences`, `sde-screensaver-preferences` (open the Settings
-pages) and `sde-screensaver-command` (forwards `--lock`, `--query`, `--poke`
+`sde-power-preferences`, `sde-screensaver-preferences` (open the Control
+Center pages) and `sde-screensaver-command` (forwards `--lock`, `--query`, `--poke`
 to `sde-lock`) remain as small compatibility scripts.
 
 New GTK processes follow SDE light/dark settings, respecting an existing
@@ -126,7 +126,7 @@ overrides. Xanara (native since alpha15) opens, annotates and fills in PDF files
 poppler; page operations use qpdf when it is installed.
 
 The panel defaults to a full-width square-edged rectangle. Floating and short
-styles remain available. Existing saved panel choices are retained. Settings → Applications shows short clickable source names and complete installed copyright
+styles remain available. Existing saved panel choices are retained. Control Center → Applications shows short clickable source names and complete installed copyright
 notices under `/usr/share/doc/sde/upstream/<upstream>/`.
 
 ## Installation

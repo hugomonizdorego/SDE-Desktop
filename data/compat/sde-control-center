@@ -1,0 +1,10 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The Control Center of SDE under its new name: sde-settings keeps its
+# program name, page ids and window class (WM_CLASS sde-settings), so the
+# taskbar shows both commands as one application.
+here=$(dirname "$0")
+if [ -x "$here/sde-settings" ]; then
+  exec "$here/sde-settings" "$@"
+fi
+exec sde-settings "$@"

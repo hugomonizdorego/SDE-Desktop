@@ -82,7 +82,7 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-panel` | Full, floating or short panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, Action Center, calendar, auto-hide |
 | `sde-notifyd` | Desktop notifications (`org.freedesktop.Notifications`) with action buttons and Do Not Disturb |
 | `sde-desktop` | Wallpaper and desktop icons, right-click menu (View, Sort by, Refresh, New, terminal, file manager) and keyboard shortcuts |
-| `sde-settings` | Overview with settings cards; grouped Personalization/System navigation; appearance, panel previews, Action Center, desktop, notifications, displays, keyboard & mouse, about |
+| `sde-settings` | The **Control Center** (also `sde-control-center`): every setting by category on one overview (Personalization, System, Network & Internet, Devices, Administration, About) with a search; appearance, panel, Start menu, displays, sound, power, date & time, Users & Avatar (account picture and name), keyboard & mouse, network, about; tiles start Display Settings, Software Updater, Driver Manager, System Reports and System Monitor |
 | `sde-display-settings` | Native monitor arrangement, EDID, modes, rotation, profiles and scale |
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
@@ -97,7 +97,7 @@ output device, systemd-logind for screen brightness and the kernel for the batte
 
 The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
 **Xanara**, **Taca**, **Photo** (formerly SDE View), **SDE System Monitor**, **SDE Power Manager**
-and **Software Updater** (formerly SDE Update). Settings → Applications provides short clickable source links
+and **Software Updater** (formerly SDE Update). Control Center → Applications provides short clickable source links
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
 
@@ -221,8 +221,12 @@ arrow keys to select.
 
 ## Configuration
 
+The account picture (Control Center > Users & Avatar, or the account button
+of the Start menu) is `~/.face`, 256 x 256 pixels, and the AccountsService
+picture of the login screen; stock pictures come from `/usr/share/Avatar`.
+
 System defaults live in `/etc/xdg/sde/sde.conf`; per-user settings in
-`~/.config/sde/sde.conf` (written by `sde-settings`). The Openbox configuration is
+`~/.config/sde/sde.conf` (written by the Control Center, `sde-settings`). The Openbox configuration is
 copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 `~/.local/state/sde/session.log`.
 

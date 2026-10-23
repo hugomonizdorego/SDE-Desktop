@@ -15,6 +15,9 @@ import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEV = "DebION Dev-Team"
+# AppStream developer names accepted besides DEV: the desktop environment's
+# own project (the Control Center since 0.2).
+DEVELOPERS = {DEV, "Selviana DE Project"}
 errors = []
 
 desktops = {}
@@ -50,7 +53,7 @@ for path in sorted(glob.glob(os.path.join(ROOT, "data/metainfo/*.metainfo.xml"))
         if root.find(tag) is None:
             errors.append(f"{name}: missing <{tag}>")
     dev = root.find("developer")
-    if dev is None or dev.get("id") != "org.debion" or dev.findtext("name") != DEV:
+    if dev is None or dev.get("id") != "org.debion" or dev.findtext("name") not in DEVELOPERS:
         errors.append(f"{name}: <developer id=\"org.debion\"><name>{DEV}</name> missing")
     if root.get("type") == "desktop-application":
         l = root.find("launchable")
