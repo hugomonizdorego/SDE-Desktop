@@ -7,6 +7,8 @@ add_library(sde-common STATIC
   common/crash.cpp
   common/integration.cpp
   common/about.cpp
+  common/avatar.cpp
+  common/avatar_view.cpp
   common/menu.cpp
   common/dbus.cpp
   common/effects.cpp
@@ -35,6 +37,10 @@ target_link_libraries(sde-common PUBLIC
   ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
   sde-rust-config PkgConfig::XRANDR PkgConfig::XINPUT)
 add_dependencies(sde-common sde-rust-build)
+# The user's picture (common/avatar.cpp) decodes JPEG photos with libjpeg,
+# which SDE-FLTK needs anyway.
+find_package(JPEG REQUIRED)
+target_link_libraries(sde-common PUBLIC JPEG::JPEG)
 if(TARGET sde-fltk-static)
   add_dependencies(sde-common sde-fltk-update)
   target_link_libraries(sde-common PUBLIC sde-fltk-static)
