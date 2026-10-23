@@ -1709,7 +1709,7 @@ void AppMenu::draw() {
               std::to_string(a.content);
     int rows = 0, tiles = 0;
     for (auto &it : items_) rows += it.kind == K_ROW, tiles += it.kind == K_TILE;
-    line += " rows=" + std::to_string(rows) + " tiles=" + std::to_string(tiles) +
+    line += " rows=" + std::to_string(rows) + " ntiles=" + std::to_string(tiles) +
             " apps=" + std::to_string(apps_.size());
     menu_perf::log(line);
   }
