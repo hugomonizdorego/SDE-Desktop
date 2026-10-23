@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The window chrome of Xanara: the tab strip (Home and one tab per
 // document), the main toolbar (side panel, pointer, zoom, the mode tabs,

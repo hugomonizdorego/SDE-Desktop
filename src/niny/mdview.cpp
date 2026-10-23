@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // A light rendered view of Markdown documents: headings, paragraphs with
 // bold/italic/code/links, lists, task lists, quotes, code blocks and rules,

@@ -10,5 +10,4 @@ Categories=Settings;DesktopSettings;
 OnlyShowIn=SDE;
 StartupNotify=false
 StartupWMClass=sde-settings
-X-Developer=DebION Dev-Team
-X-DebION-Developer=DebION Dev-Team
+X-Developer=Selviana DE Project

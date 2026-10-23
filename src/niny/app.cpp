@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Niny window: documents, layout, files, session, backups, search and
 // the command registry.
@@ -650,11 +650,13 @@ void App::about() {
   info.name = "Niny";
   info.program = "niny";
   info.version = NINY_VERSION;
-  info.icon = "org.debion.Niny";
+  info.icon = "niny";
+  info.icon_fallbacks = {"org.debion.Niny"};
   info.description = format(_("A simple text editor for the Selviana Desktop Environment.\n"
                               "Settings are kept in %s"),
                             home_relative(settings_path()).c_str());
   info.credits = {sde::toolkit_credit()};
+  // Niny's own drawing when the "niny" icon is not installed.
   info.logo = [](Painter &p, double x, double y, double size) { icon::logo(p, x, y, size); };
   sde::show_about(info);
 }

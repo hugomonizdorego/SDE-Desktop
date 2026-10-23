@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Window shell shared by SDE Welcome, SDE Driver Manager and SDE System
 // Reports: an optional sidebar of pages on the left and a scrolling

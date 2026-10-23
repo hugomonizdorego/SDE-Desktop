@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Calculator engine: expression parser and evaluator for the Standard and
 // Scientific modes, written from scratch for SDE (no display needed).

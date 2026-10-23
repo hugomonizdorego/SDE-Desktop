@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // External programs: 7-Zip (7zz/7z/7za), unrar and rar. They handle what
 // libarchive cannot: encrypted 7z and RAR archives, AES zip without a crypto

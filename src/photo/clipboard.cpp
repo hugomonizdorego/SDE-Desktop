@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Copying a picture to the X clipboard. FLTK 1.3 only offers images as
 // BMP, which most programs do not accept, so Photo owns the CLIPBOARD

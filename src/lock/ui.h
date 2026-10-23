@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE Screen Lock: the lock screen itself (run by the sde-lock daemon as
 // "sde-lock --ui FD", a separate process the daemon relaunches if it dies).

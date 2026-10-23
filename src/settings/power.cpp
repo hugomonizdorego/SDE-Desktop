@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Settings > Power (sde-power, sde.conf [power]) and Settings > Lock Screen
 // (sde-lock, [lock]). The daemons re-read sde.conf when Settings saves it.

@@ -1,4 +1,4 @@
-# SDE applications for DebION GNU/Linux
+# SDE applications
 
 Alpha6 builds eight native application forks from pinned upstream source. Their
 ELF executables, libraries, resources, schemas and helpers are included in the
@@ -9,15 +9,15 @@ they are not duplicated inside SDE.
 
 | Application | Executable | Source |
 | --- | --- | --- |
-| Niny | `niny` | native SDE application (DebION Dev-Team) |
+| Niny | `niny` | native SDE application (Selviana DE Project) |
 | Liria | `liria` | [caja](https://github.com/mate-desktop/caja) |
-| Xanara | `xanara` | native SDE application (DebION Dev-Team) |
-| Taca | `taca` | native SDE application (DebION Dev-Team) |
-| Photo | `sde-view` | native SDE application (DebION Dev-Team) |
-| SDE System Monitor | `sde-system-monitor` | native SDE application (DebION Dev-Team) |
-| SDE Power | `sde-power` (Control Center > Power) | native SDE application (DebION Dev-Team, alpha16) |
-| SDE Screen Lock | `sde-lock` (Control Center > Lock Screen) | native SDE application (DebION Dev-Team, alpha16) |
-| Calculator | `calculator` | native SDE application (DebION Dev-Team, alpha50; replaced the GTK4 scientific-calculator frontend) |
+| Xanara | `xanara` | native SDE application (Selviana DE Project) |
+| Taca | `taca` | native SDE application (Selviana DE Project) |
+| Photo | `sde-view` | native SDE application (Selviana DE Project) |
+| SDE System Monitor | `sde-system-monitor` | native SDE application (Selviana DE Project) |
+| SDE Power | `sde-power` (Control Center > Power) | native SDE application (Selviana DE Project, alpha16) |
+| SDE Screen Lock | `sde-lock` (Control Center > Lock Screen) | native SDE application (Selviana DE Project, alpha16) |
+| Calculator | `calculator` | native SDE application (Selviana DE Project, alpha50; replaced the GTK4 scientific-calculator frontend) |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
 | Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit and Flatpak |
 
@@ -39,7 +39,7 @@ Liria defaults to `--no-desktop`, including direct invocation: SDE retains its
 wallpaper and desktop icons.
 
 Since alpha16 Liria is regenerated from Caja v1.28.0 with complete SDE
-branding (About: Developer DebION Dev-Team; desktop entries, AppStream data,
+branding (About: Developer Selviana DE Project; desktop entries, AppStream data,
 man pages, local help in `/usr/share/liria/help`, translations and
 `liria --version`). The original authors' copyright lines stay in every
 source file, in the License section of the About window and under
@@ -131,8 +131,8 @@ notices under `/usr/share/doc/sde/upstream/<upstream>/`.
 
 ## Installation
 
-The supported full-suite target is **DebION GNU/Linux / Debian testing**.
-DebION image builders should publish `sde` and `sde-desktop` in their own signed
+The supported full-suite target is **Debian testing**. Distributions that ship
+SDE, such as DebION GNU/Linux, should publish `sde` and `sde-desktop` in their own signed
 APT repository and seed `sde-desktop` in the installer:
 
 ```sh
@@ -215,7 +215,7 @@ performs a real update, lock, suspend or shutdown. Current alpha8 menu/display c
 `docs/screenshots/alpha8`; CI uploads the complete capture set, including Calculator
 and the isolated administrator Liria window. Older captures remain as release history.
 Hardware login, power, locking and whole-desktop idle memory remain to be
-validated on DebION. See [THIRD-PARTY.md](THIRD-PARTY.md) for provenance.
+validated on real hardware. See [THIRD-PARTY.md](THIRD-PARTY.md) for provenance.
 
 LXQt, Budgie and COSMIC remain development references rather than extra desktop
 shells shipped in SDE. `upstream/sources.lock.json` and `tools/suite-source.py`
@@ -226,7 +226,7 @@ See [alpha8 notes](ALPHA8.md) for current category placement and Display Setting
 ## Calculator (alpha50)
 
 Calculator (`calculator`, desktop id `org.debion.Calculator`) is a native
-SDE-FLTK application written from scratch by the DebION Dev-Team
+SDE-FLTK application written from scratch by the Selviana DE Project
 (`src/calculator/`). It replaces the GTK4 frontend of the scientific-calculator
 component, which cleared the input instead of computing "2 + 2".
 

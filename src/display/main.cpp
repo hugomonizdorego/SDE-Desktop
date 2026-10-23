@@ -59,11 +59,11 @@ class DisplayWindow : public BufferedWindow {
     info.name = _("Display Settings");
     info.program = "sde-display-settings";
     info.version = SDE_DISPLAY_VERSION;
-    info.icon = "preferences-desktop-display";
+    info.icon = "sde-display-settings";
     info.description = _("Arranges monitors, sets their resolution, refresh rate and scale, and "
                          "saves display profiles.");
-    info.credits = {_("Display profile model based on DisplayProfileManager by zac15987 (MIT)"),
-                    toolkit_credit()};
+    // DisplayProfileManager (MIT) is credited from the legal data.
+    info.credits = {toolkit_credit()};
     return info;
   }
   int handle(int e) override {
@@ -84,11 +84,7 @@ int main(int argc, char** argv) {
   using namespace sde;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--version") {
-      printf("Display Settings %s (SDE alpha; DisplayProfileManager MIT port) - %s\n",
-             SDE_DISPLAY_VERSION, kDeveloper);
-      return 0;
-    }
+    if (a == "--version") return print_version(DisplayWindow::app_info());
     if (a == "--help") {
       puts(
           "Usage: sde-display-settings [--version]\nNative X11 monitor settings and display "

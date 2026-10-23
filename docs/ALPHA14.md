@@ -1,5 +1,10 @@
 # SDE 0.1 Alpha 14 — Gallery, flyouts, new Menu and Action Center, Update, Liria
 
+> **Note (0.2.0 Alpha 1):** these notes are historical. Up to 0.1.0~alpha52 SDE named
+> the "DebION Dev-Team" as its developer; since 0.2.0 Alpha 1 the developer is the
+> **Selviana DE Project**. DebION GNU/Linux is a separate Debian-based distribution
+> that ships SDE. See [LEGAL.md](LEGAL.md).
+
 Development patch for **DebION GNU/Linux** (Debian testing), amd64. Still
 alpha: test it in a virtual machine or a spare installation first.
 

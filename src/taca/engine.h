@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Taca archive engine: format detection, listing, extraction, creation and
 // in-place changes. libarchive does the work for every format it supports;

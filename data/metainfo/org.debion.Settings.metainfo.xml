@@ -1,21 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 DebION Dev-Team -->
+<!-- Copyright 2026 Selviana DE Project and contributors -->
 <component type="desktop-application">
   <id>org.debion.Settings</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>GPL-3.0-or-later AND MIT</project_license>
   <name>Control Center</name>
   <summary>All the settings of SDE in one place</summary>
-  <developer id="org.debion">
+  <developer id="io.github.hugomonizdorego">
     <name>Selviana DE Project</name>
   </developer>
   <description>
     <p>The Control Center gathers every setting of the Selviana Desktop Environment on one overview, by category: Personalization (appearance, desktop, panel, Start menu, clock, notifications), System (display, sound, power, date and time, users and avatar, default and startup applications, keyboard, mouse and touchpad), Network and Internet, Devices, Administration and About, with a search over all of them.</p>
     <p>Users and Avatar changes the account picture, from the stock pictures or a picture of your own, and the real name; the Start menu, the lock screen and the login screen show them.</p>
-    <p>Developed by the Selviana DE Project for the Selviana Desktop Environment.</p>
+    <p>Display profile model based on DisplayProfileManager by zac15987 (MIT).</p>
+    <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
-  <icon type="stock">sde-control-center</icon>
   <launchable type="desktop-id">sde-settings.desktop</launchable>
+  <icon type="stock">sde-control-center</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
   <project_group>SDE</project_group>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The SDE look of FLTK's popups and stock widgets (an Fl_SDE_Style, see
 // FL/Fl_SDE_Style.H in SDE-FLTK) and the ContextMenu builder.

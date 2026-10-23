@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Niny's menus as data: File, Edit and View in the toolbar, the Markdown
 // dropdowns, the tab menu and the editor context menu (quick action row,

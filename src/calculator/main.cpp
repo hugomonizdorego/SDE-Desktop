@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // calculator: the Calculator of the Selviana Desktop Environment.
 // Standard, Scientific, Programmer and Converter modes with a History,
@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "config.h"
 #include "converter.h"
 #include "engine.h"
@@ -105,8 +106,9 @@ int convert_cli(const std::string &value, const std::string &from, const std::st
 void set_window_icon(Window win) {
   std::vector<long> data;
   for (int size : {32, 64}) {
-    std::string path = sde::IconLoader::lookup("org.debion.Calculator", size);
-    if (path.empty()) path = sde::IconLoader::lookup("accessories-calculator", size);
+    std::string path;
+    for (const char *name : {"sde-calculator", "org.debion.Calculator", "accessories-calculator"})
+      if (!(path = sde::IconLoader::lookup(name, size)).empty()) break;
     if (path.empty()) return;
     cairo_surface_t *s = sde::load_image(path, size, size);
     if (!s) return;
@@ -151,10 +153,7 @@ int main(int argc, char **argv) {
       out = argv[++i];
       return true;
     };
-    if (a == "--version" || a == "-V") {
-      printf("calculator %s (DebION Dev-Team)\n", SDE_APP_VERSION);
-      return 0;
-    }
+    if (a == "--version" || a == "-V") return sde::print_version("calculator", SDE_APP_VERSION);
     if (a == "--help" || a == "-h") {
       usage(stdout);
       return 0;
