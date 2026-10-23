@@ -218,11 +218,33 @@ for p in files_paras:
     if 'DebION Dev-Team' in p['Copyright']:
         errors.append(f'debian/copyright: Files: {first} still names the DebION Dev-Team')
 
+SOURCE_DIRS = {'bootstrap', 'data', 'debian', 'docs', 'po', 'release', 'rust', 'sde-fltk', 'src', 'suite',
+               'tests', 'tools', 'upstream', '.github'}
+
+
+def source_tree():
+    """The files of the source tree without git (e.g. in a package build):
+    no build directories, prepared upstream trees or package staging."""
+    out = []
+    for p in ROOT.rglob('*'):
+        rel = p.relative_to(ROOT)
+        if not p.is_file() or '.git' in rel.parts or '__pycache__' in rel.parts:
+            continue
+        if len(rel.parts) > 1 and rel.parts[0] not in SOURCE_DIRS:
+            continue
+        if rel.parts[0] == 'debian' and len(rel.parts) > 2 and rel.parts[1] not in ('source', 'tests'):
+            continue  # debian/sde/..., debian/.debhelper/...
+        out.append(str(rel))
+    return out
+
+
 try:
     tracked = subprocess.run(['git', '-C', str(ROOT), 'ls-files'], capture_output=True, text=True,
                              check=True).stdout.split('\n')
+    if not any(tracked):
+        raise subprocess.CalledProcessError(1, 'git')
 except (OSError, subprocess.CalledProcessError):
-    tracked = [str(p.relative_to(ROOT)) for p in ROOT.rglob('*') if p.is_file() and '.git' not in p.parts]
+    tracked = source_tree()
 tracked = [t for t in tracked if t and not t.startswith(('vendor/', 'build/'))]
 
 SPDX = re.compile(r'SPDX-License-Identifier:\s*([A-Za-z0-9.+ -]+?)(?:\s*(?:-->|\*/|;|$))')
