@@ -21,6 +21,7 @@
 #include "theme.h"
 #include "ui.h"
 #include "widgets.h"
+#include "x11.h"
 
 #ifndef SDE_SYSMON_VERSION
 #define SDE_SYSMON_VERSION "1.0.0"
@@ -295,6 +296,22 @@ class MainWindow : public MonitorWindow {
   uint64_t last_serial_ = 0;
 };
 
+// Settings changed the look (theme, accent, dark mode): sde.conf is read
+// again and every window is drawn anew, the graph colors included.
+int config_events(int) {
+  if (!fl_xevent) return 0;
+  const XEvent &e = *fl_xevent;
+  if (e.type != PropertyNotify || e.xproperty.window != RootWindow(fl_display, fl_screen) ||
+      e.xproperty.atom != sde::x11::atom("_SDE_CONFIG_SERIAL"))
+    return 0;
+  sde::Config config;
+  config.load();
+  sde::Theme::from_config(config).apply_to_fltk();
+  refresh_palette();
+  for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) w->redraw();
+  return 0;
+}
+
 void usage(FILE *out) {
   fprintf(out,
           "Usage: sde-system-monitor [--page processes|performance|disks|startup]\n"
@@ -344,6 +361,7 @@ int main(int argc, char **argv) {
   fl_open_display();
   auto theme = sde::Theme::from_config(config);
   theme.apply_to_fltk();
+  Fl::add_handler(config_events);
   Fl::lock();  // enables Fl::awake() from the sampler thread
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);

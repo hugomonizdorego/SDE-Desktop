@@ -107,6 +107,13 @@ class GraphCard : public Fl_Widget {
   Icon icon_;
   std::string title_;
   Color ca_, cb_;
+
+ public:
+  // The series colors, refreshed with every sample (the theme can change).
+  void colors(const Color &a, const Color &b) {
+    ca_ = a;
+    cb_ = b;
+  }
 };
 
 class CpuCard : public GraphCard {
@@ -219,6 +226,15 @@ class PerformancePage : public Page {
     const Snapshot &s = *snap;
     for (auto &kv : cards_) kv.second->seen = false;
     bool changed = false;
+    const sde::Theme &t = sde::active_theme();
+    if (scroll_->color() != t.background.fl()) {  // the theme changed
+      scroll_->color(t.background.fl());
+      scroll_->scrollbar.color(t.background.fl());
+      scroll_->scrollbar.selection_color(t.border.fl());
+      scroll_->redraw();
+    }
+    cpu_->colors(palette().cpu, palette().cpu);
+    memory_->colors(palette().memory, palette().swap);
 
     // CPU
     cpu_->a.push(s.cpu_total);
@@ -359,6 +375,7 @@ class PerformancePage : public Page {
     auto it = cards_.find(key);
     if (it != cards_.end()) {
       it->second->seen = true;
+      it->second->colors(a, b);
       return it->second;
     }
     auto *c = new GraphCard(icon, title, a, b);
