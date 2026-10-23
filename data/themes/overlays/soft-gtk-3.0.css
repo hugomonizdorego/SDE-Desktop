@@ -61,6 +61,27 @@ tooltip.background label { color: @sde_text; }
 entry { caret-color: @sde_accent; }
 entry:focus { border-color: @sde_accent; }
 link, button.link, *:link { color: @sde_accent; }
+/* Keyboard focus and drop targets (0.2.0). Graphite drew the focus ring at
+ * 10 % and a tree view's drop target at 8 % of the text colour: hardly
+ * visible, a drop target looked like a hovered row. GTK shows focus rings
+ * only after keyboard use. A drop into a row tints it with the accent, a
+ * drop between rows (pinning in Liria's sidebar) is a 2 px accent line. */
+*:focus { outline-color: alpha(currentColor, 0.5); }
+treeview.view:drop(active) {
+  border-style: solid none;
+  border-width: 9999px;
+  border-color: alpha(@sde_accent, 0.28);
+}
+treeview.view:drop(active).before {
+  border-style: solid none none none;
+  border-width: 2px 0 0 0;
+  border-color: @sde_accent;
+}
+treeview.view:drop(active).after {
+  border-style: none none solid none;
+  border-width: 0 0 2px 0;
+  border-color: @sde_accent;
+}
 
 /* ---------------------------------------------------------- corners */
 
