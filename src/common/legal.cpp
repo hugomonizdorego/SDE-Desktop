@@ -424,6 +424,16 @@ cairo_surface_t *load_branding(const std::vector<std::string> &names, int max_w,
   return out;
 }
 
+cairo_surface_t *load_mark(int size, bool dark) {
+  if (size <= 0) return nullptr;
+  if (size <= 32) {
+    int drawn = size >= 32 ? 32 : size >= 24 ? 24 : size >= 22 ? 22 : 16;
+    if (cairo_surface_t *s = load_branding({}, drawn, drawn, {"sde-logo"})) return s;
+  }
+  if (cairo_surface_t *s = load_branding({"sde-mark"}, size, size, {"sde-logo"})) return s;
+  return load_branding({logo_name(dark)}, size, size);
+}
+
 std::string os_pretty_name() {
   std::string v = os_release("PRETTY_NAME");
   return v.empty() ? os_release("NAME") : v;
