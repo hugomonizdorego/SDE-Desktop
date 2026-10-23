@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 DebION Dev-Team -->
+<!-- Copyright 2026 Selviana DE Project and contributors -->
 <component type="desktop-application">
   <id>org.debion.Logout</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Log Out</name>
   <summary>Log out, restart or shut down</summary>
-  <developer id="org.debion">
-    <name>DebION Dev-Team</name>
+  <developer id="io.github.hugomonizdorego">
+    <name>Selviana DE Project</name>
   </developer>
   <description>
     <p>Locks the screen, suspends, logs out, restarts or shuts down the computer.</p>
-    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+    <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">sde-logout.desktop</launchable>
+  <icon type="stock">sde-logout</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
   <project_group>SDE</project_group>

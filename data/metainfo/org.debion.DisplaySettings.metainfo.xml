@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 DebION Dev-Team -->
+<!-- Copyright 2026 Selviana DE Project and contributors -->
 <component type="desktop-application">
   <id>org.debion.DisplaySettings</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later AND MIT</project_license>
   <name>Display Settings</name>
   <summary>Arrange monitors and set resolution and scale</summary>
-  <developer id="org.debion">
-    <name>DebION Dev-Team</name>
+  <developer id="io.github.hugomonizdorego">
+    <name>Selviana DE Project</name>
   </developer>
   <description>
     <p>Display Settings arranges monitors and sets their resolution, refresh rate and interface scale. Display profiles save and restore a whole monitor layout.</p>
     <p>Display profile model based on DisplayProfileManager by zac15987 (MIT).</p>
-    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+    <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">sde-display-settings.desktop</launchable>
+  <icon type="stock">sde-display-settings</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
   <project_group>SDE</project_group>

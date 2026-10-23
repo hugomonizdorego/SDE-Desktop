@@ -6,7 +6,7 @@ GenericName=Text Editor
 Comment=Write notes, Markdown and source code
 Exec=niny %U
 TryExec=niny
-Icon=accessories-text-editor
+Icon=niny
 Terminal=false
 Categories=Utility;TextEditor;
 OnlyShowIn=SDE;
@@ -15,8 +15,7 @@ StartupWMClass=Niny
 Keywords=text;editor;notepad;markdown;notes;
 Actions=new-window;
 MimeType=text/plain;text/x-csrc;text/x-chdr;text/x-c++src;text/x-c++hdr;text/x-python;text/x-python3;application/x-shellscript;text/x-shellscript;application/javascript;text/javascript;application/json;text/html;application/xml;text/xml;text/css;text/markdown;text/x-rust;text/x-go;text/x-makefile;application/x-yaml;text/x-yaml;text/x-diff;text/x-patch;application/x-desktop;text/x-log;
-X-Developer=DebION Dev-Team
-X-DebION-Developer=DebION Dev-Team
+X-Developer=Selviana DE Project
 
 [Desktop Action new-window]
 Name=New Window
