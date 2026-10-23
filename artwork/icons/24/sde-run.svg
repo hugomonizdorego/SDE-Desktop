@@ -2,7 +2,7 @@
 <!-- Run, 24 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
   <rect x="1" y="3" width="22" height="18" rx="2" fill="#2B2B2F"/>
-  <rect x="2" y="4" width="20" height="16" rx="1" fill="#33363C"/>
+  <rect x="2" y="4" width="20" height="16" rx="1" fill="#3D4048"/>
   <rect x="2" y="4" width="20" height="3" rx="1" fill="#E6E0D4"/>
   <rect x="2" y="7" width="20" height="1" fill="#2B2B2F"/>
   <path d="M5 10.5L8.5 13.5L5 16.5" fill="none" stroke="#8FD49A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>

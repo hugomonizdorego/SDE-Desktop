@@ -3,7 +3,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <title>Run</title>
   <defs>
-    <linearGradient id="term" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B3E46"/><stop offset="1" stop-color="#2A2C32"/></linearGradient>
+    <linearGradient id="term" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A4E57"/><stop offset="1" stop-color="#363940"/></linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ECE7DC"/><stop offset="1" stop-color="#DDD6C8"/></linearGradient>
   </defs>
   <rect x="20" y="38" width="216" height="180" rx="18" fill="url(#term)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
