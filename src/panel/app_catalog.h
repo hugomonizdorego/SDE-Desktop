@@ -55,7 +55,8 @@ bool ready();
 // on idle (called once after the panel is shown).
 void start();
 // Without inotify (or when it failed): compares applications_stamp() and
-// refreshes when it changed. Cheap; does nothing while inotify watches.
+// refreshes when it changed. With inotify it only looks whether a data
+// directory that did not exist (nothing to watch) was created since.
 void poll();
 bool watching();
 // Refreshes now (tests, and after a watch overflowed).

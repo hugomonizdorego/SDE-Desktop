@@ -228,7 +228,7 @@ void SearchFlyout::prepare() {
   int H = std::min(S(540), mh - Panel::instance->h() - S(24));
   size(W, H);
   // The panel keeps the applications (app_catalog.h): nothing is parsed here.
-  if (!app_catalog::watching()) app_catalog::poll();
+  app_catalog::poll();  // returns at once while inotify watches
   apps_ = app_catalog::current();
   apps_stale_ = false;
   if (extras_.empty()) {

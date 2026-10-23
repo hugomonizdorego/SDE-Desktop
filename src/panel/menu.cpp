@@ -663,7 +663,7 @@ void AppMenu::prepare() {
   launching_ = false;
   bar_hot_ = 0;
   super_down_ = super_alone_ = false;
-  if (!app_catalog::watching()) app_catalog::poll();
+  app_catalog::poll();  // returns at once while inotify watches
   {
     menu_perf::Step s("reload");
     reload();

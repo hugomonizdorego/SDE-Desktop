@@ -62,6 +62,9 @@ struct State {
   // inotify: applications directories, and data directories without one.
   int fd = -1;
   std::unordered_map<int, std::string> dirs, parents;
+  // Data directories that do not exist (a new account without
+  // ~/.local/share): nothing to watch, poll() looks for them.
+  std::vector<std::string> missing;
   std::string stamp;  // applications_stamp() of the last refresh (fallback)
   std::vector<std::pair<void (*)(void *), void *>> listeners;
 };
@@ -226,15 +229,17 @@ void watch(State &s, const std::vector<std::string> &dirs) {
     if (wd >= 0) s.dirs[wd] = d;
   }
   // A data directory without applications: wait for them to appear.
+  s.missing.clear();
   for (auto &d : data_dirs()) {
     std::string apps = d + "/applications";
     bool watched = false;
     for (auto &kv : s.dirs) watched = watched || kv.second == apps;
     bool parent = false;
     for (auto &kv : s.parents) parent = parent || kv.second == d;
-    if (watched || parent || !dir_exists(d)) continue;
-    int wd = inotify_add_watch(s.fd, d.c_str(), kParentMask);
+    if (watched || parent) continue;
+    int wd = dir_exists(d) ? inotify_add_watch(s.fd, d.c_str(), kParentMask) : -1;
     if (wd >= 0) s.parents[wd] = d;
+    else s.missing.push_back(d);
   }
 }
 
@@ -289,8 +294,9 @@ void on_events(int fd, void *) {
         continue;
       }
       if (s.parents.count(ev->wd)) {
+        // Gone (the refresh notes it as missing), or its applications came.
         if (ev->mask & IN_IGNORED) s.parents.erase(ev->wd);
-        else if (name == "applications") relevant = true;
+        if ((ev->mask & IN_IGNORED) || name == "applications") relevant = true;
         continue;
       }
       if (ev->mask & IN_IGNORED) {
@@ -351,7 +357,16 @@ bool watching() { return state().fd >= 0; }
 
 void poll() {
   State &s = state();
-  if (s.fd >= 0 || !s.snapshot) return;
+  if (!s.snapshot) return;
+  if (s.fd >= 0) {
+    // inotify sees everything but data directories created later.
+    for (auto &d : s.missing)
+      if (dir_exists(d)) {
+        refresh();
+        return;
+      }
+    return;
+  }
   std::string stamp = applications_stamp();
   if (stamp != s.stamp) refresh();
 }

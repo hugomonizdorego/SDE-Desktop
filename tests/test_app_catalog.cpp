@@ -5,8 +5,9 @@
 // the first load (XDG precedence, sub-directories, NoDisplay and broken
 // files, cleaned names, menu order, categories, search keys), then
 // applications installed, changed and removed while the panel runs, a new
-// sub-directory and an applications directory that appears later (inotify;
-// no display is needed). Snapshots stay valid while they are held.
+// sub-directory, an applications directory that appears later (inotify;
+// no display is needed) and a data directory created later (poll()).
+// Snapshots stay valid while they are held.
 #include <FL/Fl.H>
 #include <unistd.h>
 
@@ -61,11 +62,12 @@ int main() {
   char tmpl[] = "/tmp/sde-catalog-test-XXXXXX";
   std::string root = mkdtemp(tmpl);
   std::string home = root + "/home", sys = root + "/sys", late = root + "/late";
+  std::string later = root + "/later";  // a data directory created later
   make_dirs(home + "/applications");
   make_dirs(sys + "/applications/kde");
   make_dirs(late);  // a data directory without applications (yet)
   setenv("XDG_DATA_HOME", home.c_str(), 1);
-  setenv("XDG_DATA_DIRS", (sys + ":" + late).c_str(), 1);
+  setenv("XDG_DATA_DIRS", (sys + ":" + late + ":" + later).c_str(), 1);
   std::string apps = sys + "/applications";
   write(apps + "/zeal.desktop", entry("Zeal", "Categories=Development;\n"));
   write(apps + "/atlas.desktop", entry("Atlas", "Categories=Education;\n"));
@@ -131,6 +133,16 @@ int main() {
   write(late + "/applications/late.desktop", entry("Late Comer"));
   CHECK(wait_for(seen + 5));
   CHECK(app_catalog::current()->find("late.desktop") != nullptr);
+  // A data directory that did not exist (nothing to watch): poll(), which
+  // the menu and the search call when they open, finds it.
+  make_dirs(later + "/applications");
+  write(later + "/applications/later.desktop", entry("Later Still"));
+  app_catalog::poll();
+  CHECK(wait_for(seen + 6));
+  CHECK(app_catalog::current()->find("later.desktop") != nullptr);
+  write(later + "/applications/later2.desktop", entry("Later Again"));
+  CHECK(wait_for(seen + 7));  // and watches it from then on
+  CHECK(app_catalog::current()->find("later2.desktop") != nullptr);
   // Files that do not change the applications: no announcement.
   int before = notified;
   write(apps + "/broken.desktop", "still not a desktop entry\n");
