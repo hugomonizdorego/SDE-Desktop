@@ -354,6 +354,62 @@ esac
 """
 
 
+class AptProxy(Base):
+    """--apt-proxy writes an APT configuration file as root."""
+
+    def setUp(self):
+        super().setUp()
+        self.bin = os.path.join(self.dir, "stubs")
+        os.makedirs(self.bin)
+        path = os.path.join(self.bin, "id")
+        with open(path, "w") as f:
+            f.write("#!/bin/sh\necho 0\n")  # "root", without being root
+        os.chmod(path, 0o755)
+        self.env["PATH"] = self.bin + ":/usr/bin:/bin"
+        self.conf = os.path.join(self.dir, "80debion-proxy")
+        self.env["DEBION_APT_PROXY_CONF"] = self.conf
+
+    def apt_proxy(self, url):
+        p = subprocess.run([SHELL, SCRIPT, "--apt-proxy", url], env=self.env, capture_output=True,
+                           text=True, timeout=60)
+        return p.returncode, p.stdout + p.stderr
+
+    def test_proxy_is_written_and_removed(self):
+        rc, out = self.apt_proxy("http://user:p%40ss@proxy.example.org:3128/")
+        self.assertEqual(rc, 0, out)
+        text = read(self.conf)
+        self.assertIn('Acquire::http::Proxy "http://user:p%40ss@proxy.example.org:3128/";', text)
+        self.assertEqual(len(text.splitlines()), 3)
+        rc, out = self.apt_proxy("none")
+        self.assertEqual(rc, 0, out)
+        self.assertFalse(os.path.exists(self.conf))
+
+    def test_nothing_but_one_proxy_url(self):
+        evil = ['http://proxy:3128/\nAPT::Update::Pre-Invoke {"touch /tmp/pwned";};',
+                'http://proxy:3128/\r\nDPkg::Pre-Invoke {"id";};',
+                'http://proxy:3128/";APT::Update::Pre-Invoke {"id";};//',
+                'http://proxy:3128/ x', 'file:///etc/passwd', '-o', 'http://pro\\xy/']
+        for url in evil:
+            rc, out = self.apt_proxy(url)
+            self.assertEqual(rc, 2, (url, out))
+            self.assertFalse(os.path.exists(self.conf), url)
+
+    def test_pkexec_runs_only_the_desktop_actions(self):
+        # polkit authorizes the program with any arguments: the package
+        # script modes and test building blocks refuse to run under pkexec
+        # before they touch anything.
+        target = os.path.join(self.dir, "profiles")
+        os.makedirs(target)
+        self.env["PKEXEC_UID"] = "1000"
+        for args in (["--wifi-profiles", target], ["--handover"], ["--postinst"],
+                     ["--postinst-repair"], ["--convert-interfaces"]):
+            p = subprocess.run([SHELL, SCRIPT, *args], env=self.env, capture_output=True, text=True,
+                               timeout=60)
+            self.assertEqual(p.returncode, 2, (args, p.stdout, p.stderr))
+            self.assertIn("not available through pkexec", p.stderr)
+        self.assertEqual(os.listdir(target), [])
+
+
 class Quick(Base):
     def setUp(self):
         super().setUp()
