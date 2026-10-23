@@ -80,6 +80,14 @@ jobs:
           path: |
             dist/ui-smoke*/
             dist/panel-smoke*/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: |
+            dist/*.deb
+            dist/*sources*.tar.xz
+            dist/*.sha256
       # Screenshots of everything for the development update (tools/showcase.py):
       # the installed packages in a private Xvfb session with sample content.
       # Papirus as on a desktop install (Recommends), nss_wrapper for the
@@ -100,14 +108,6 @@ jobs:
           path: |
             dist/showcase/
             dist/sde-screenshots_*.zip
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ${{ steps.name.outputs.name }}
-          path: |
-            dist/*.deb
-            dist/*sources*.tar.xz
-            dist/*.sha256
 
   # Keeps GitHub current after every successful build of main (or a manual
   # run): a rolling "alpha-latest" pre-release with the Debian packages and
