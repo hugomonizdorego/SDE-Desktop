@@ -123,15 +123,24 @@ rb_slot (Ribbon *r)
     return liria_window_get_active_slot (LIRIA_WINDOW (r->window));
 }
 
-/* The selected files of the active view (free with liria_file_list_free). */
+/* The selected files of the active view (LiriaFile references, free them
+ * with liria_file_list_free ()). The view's own selection is a list of
+ * GFile locations; using those as files printed critical warnings on every
+ * selection change and gave the commands no URIs (0.2.0). */
 static GList *
 rb_selection (Ribbon *r)
 {
     LiriaWindowSlot *slot = rb_slot (r);
+    GList *locations, *l, *files = NULL;
 
     if (slot == NULL || slot->content_view == NULL)
         return NULL;
-    return liria_view_get_selection (slot->content_view);
+    locations = liria_view_get_selection (slot->content_view);
+    for (l = locations; l != NULL; l = l->next)
+        if (G_IS_FILE (l->data))
+            files = g_list_prepend (files, liria_file_get (l->data));
+    g_list_free_full (locations, g_object_unref);
+    return g_list_reverse (files);
 }
 
 static char *
