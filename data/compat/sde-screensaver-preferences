@@ -1,4 +1,4 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Compatibility command: SDE Screen Lock settings are a page of SDE Settings.
+# Compatibility command: SDE Screen Lock settings are a page of the Control Center.
 exec sde-settings --page lock "$@"

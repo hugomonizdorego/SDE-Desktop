@@ -21,11 +21,11 @@ PROJECT = json.load(open(os.path.join(ROOT, "data/legal/components.json"), encod
 DEV = PROJECT["developer"]          # "Selviana DE Project"
 DEV_ID = PROJECT["developer_id"]    # reverse-DNS id of the namespace the project controls
 OLD_DEV = "DebION Dev-Team"
-# The Control Center's two files are updated together with its rename to
-# "Control Center" (a separate change). Until then they may still carry the
-# old developer; once they are correct this test fails until the entry is
-# removed here, so the exception cannot outlive its reason.
-PENDING = {"sde-settings.desktop", "org.debion.Settings.metainfo.xml"}
+# Files that may lag behind while a rename is under way (none at present:
+# the Control Center's two files were brought up to date with its rename).
+# A file listed here that is correct makes the test fail, so an exception
+# cannot outlive its reason.
+PENDING = set()
 errors, pending_seen = [], []
 
 

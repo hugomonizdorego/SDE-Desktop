@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Touchpad options (alpha50): what SDE Settings > Touchpad and the panel's
+// Touchpad options (alpha50): what Control Center > Touchpad and the panel's
 // touchpad flyout change, saved in sde.conf and applied through libinput's X
 // properties (xinput set-prop). sde-settings --apply, run by sde-session at
 // login, applies them with apply_touchpad().

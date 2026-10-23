@@ -1,23 +1,51 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
 .TH SDE-SETTINGS 1 "October 2026" "SDE 0.1 Alpha" "Selviana Desktop Environment"
 .SH NAME
-sde-settings \- settings for the Selviana Desktop Environment
+sde-settings, sde-control-center \- the Control Center of the Selviana Desktop Environment
 .SH SYNOPSIS
 .B sde-settings
-[\-\-page \fIname\fR] [\-\-list\-pages] [\-\-apply] [\-\-version]
+[\-\-page \fIname\fR] [\-\-list\-pages] [\-\-choose\-avatar] [\-\-apply] [\-\-version]
+.br
+.B sde-control-center
+[\fIthe same options\fR]
 .SH DESCRIPTION
-\fBsde-settings\fR changes the theme (light or dark), accent color, interface size (100 to 200 %), text size, icon theme and wallpaper (a thumbnail grid of every picture in /usr/share/backgrounds, the desktop-base themes and ~/Pictures/Wallpapers, with thumbnails cached in ~/.cache/thumbnails); the panel style, width, position, size, auto-hide, clock and pinned applications; the Action Center clock, greeting and tile colors; desktop icons (Computer, Home, Trash and the Desktop folder); notifications; sound output and input devices and volumes (pactl); Wi-Fi and network devices (nmcli); Bluetooth power and paired devices (bluetoothctl); the power mode (powerprofilesctl); display resolution and arrangement (with an automatic revert after 15 seconds); keyboard layouts, key repeat, mouse and touchpad. Changes apply immediately to running SDE programs. About shows the system, every graphics card (vendor and model from pci.ids or lspci, kernel driver, primary card) and the OpenGL renderer (glxinfo or eglinfo, when installed).
+The \fBControl Center\fR gathers every setting of SDE on one overview, by category, with a search over all of them:
+.TP
+.B Personalization
+Appearance (theme, accent color, interface size, text size, icon theme and the wallpaper grid of /usr/share/backgrounds, the desktop-base themes and ~/Pictures/Wallpapers), Desktop icons, Panel, Start Menu (size, recently added and most used applications), Action Center, Clock & Weather, Notifications, Effects and Lock Screen.
+.TP
+.B System
+Display (\fBsde-display-settings\fR(1) when installed: arrangement, modes, scale and profiles), Sound (pactl), Power, Date & Time (time zone sync and network time), Users & Avatar, Default Applications, Startup Applications (\fBsde-system-monitor\fR(1)), Keyboard, Mouse & Touchpad.
+.TP
+.B Network & Internet
+Network (nmcli), Proxy and Bluetooth (bluetoothctl).
+.TP
+.B Devices
+Drives (gnome-disks, else the panel's Drives flyout) and Printers (system-config-printer, else the CUPS web interface).
+.TP
+.B Administration
+Software Updater (\fBsde-update\fR(1)), Driver Manager, System Reports, System Monitor and the included applications.
+.TP
+.B About
+The system, every graphics card (vendor and model from pci.ids or lspci, kernel driver, primary card) and the OpenGL renderer.
+.PP
+Tiles of separate programs show a small arrow; a program that is not installed falls back to the page of the Control Center, or says what to install. Changes apply immediately to running SDE programs.
+.PP
+\fBUsers & Avatar\fR shows the account picture, the real name (AccountsService \fBRealName\fR, changed with \fBSetRealName\fR), the user name and the account type (Administrator for members of the sudo group, else Standard). A stock picture of \fI/usr/share/Avatar\fR or a PNG, JPEG or SVG picture of your own (at most 10 MB) is cropped to its middle square, scaled to 256 x 256 pixels and written to \fI~/.face\fR (with the \fI~/.face.icon\fR link); AccountsService gets it for the login screen (\fBSetIconFile\fR). \fBRemove avatar\fR brings back the initials. The Start menu's account button offers the same pictures.
 .SH OPTIONS
 .TP
 .BI \-\-page " name"
-Open a page directly (also written \fB\-\-page=\fR\fIname\fR). Page names: home (overview), appearance, panel, desktop, action-center, notifications, effects, display, input, sound, network, bluetooth, suite, system and about. The default is home.
+Open a page directly (also written \fB\-\-page=\fR\fIname\fR). Page names: home (overview), appearance, desktop, panel, start-menu, action-center, clock, notifications, effects, lock, display, sound, power, date-time, users, default-apps, input, touchpad, network, bluetooth, system, suite and about. The default is home.
 .IP
-Also accepted, for the panel's status flyouts and convenience: overview, wallpaper, wallpapers and background (Appearance, scrolled to the wallpapers), theme, icons (desktop), displays, screen, monitor, keyboard, mouse, touchpad (input), audio, volume, media, microphone (sound), wifi, wi-fi, ethernet, vpn (network), power, battery, updates (system, Power & Updates), applications, apps (suite), quick (action-center), animations, compositor (effects), info and graphics (about). An unknown name opens the overview with a warning.
+Also accepted, for the panel's status flyouts and convenience: overview, control-center, wallpaper, wallpapers and background (Appearance, scrolled to the wallpapers), theme, icons (desktop), start, menu (start-menu), displays, screen, monitor, keyboard, mouse (input, scrolled to the mouse), audio, volume, media, microphone (sound), wifi, wi-fi, ethernet, vpn, internet, proxy (network, scrolled to the proxy), battery (power), updates (system), applications, apps (suite), quick (action-center), animations, compositor (effects), info and graphics (about), time, date, timezone (date-time), weather (clock), user, account, accounts, avatar, picture, face (users), screensaver (lock) and the default-apps names. An unknown name opens the overview with a warning.
 .IP
-Examples: \fBsde-settings \-\-page sound\fR, \fBsde-settings \-\-page=bluetooth\fR, \fBsde-settings \-\-page wallpaper\fR.
+Examples: \fBsde-settings \-\-page sound\fR, \fBsde-control-center \-\-page=users\fR, \fBsde-settings \-\-page wallpaper\fR.
 .TP
 .B \-\-list\-pages
 Print the page names, one per line, and exit.
+.TP
+.B \-\-choose\-avatar
+Open Users & Avatar and the file chooser for a picture of your own (the Start menu's \fBChoose a picture\fR).
 .TP
 .B \-\-apply
 Apply the saved display, keyboard and pointer settings and exit (run by \fBsde-session\fR(1) at login).
@@ -30,16 +58,27 @@ Print the version and exit.
 System-wide default settings.
 .TP
 .I ~/.config/sde/sde.conf
-Per-user settings, written by \fBsde-settings\fR(1).
+Per-user settings, written by the Control Center.
+.TP
+.I ~/.face
+The account picture (256 x 256 PNG); \fI~/.face.icon\fR links to it.
+.TP
+.I /usr/share/Avatar
+The stock account pictures.
 .TP
 .I ~/.local/state/sde/session.log
 Messages of the current session (the previous one is kept as \fIsession.log.old\fR).
+.SH ENVIRONMENT
+.TP
+.B SDE_AVATAR_DIR
+Another folder of stock pictures (tests).
 .SH SEE ALSO
 .BR sde-session (1),
 .BR sde-panel (1),
 .BR sde-desktop (1),
 .BR sde-notifyd (1),
-.BR sde-settings (1)
+.BR sde-display-settings (1),
+.BR sde-lock (1)
 .SH BUGS
-SDE 0.1 is an alpha release. Please report problems at
+SDE is in alpha. Please report problems at
 https://github.com/hugomonizdorego/SDE-Desktop/issues

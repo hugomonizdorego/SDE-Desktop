@@ -1176,7 +1176,7 @@ if [ "$MODE" = apt-proxy ]; then
         echo "not a proxy URL: $APT_PROXY_ARG" >&2; exit 2
     fi
     {
-        echo "// Written by debion-network-check (SDE Settings > Network > Proxy)."
+        echo "// Written by debion-network-check (Control Center > Network > Proxy)."
         echo "Acquire::http::Proxy \"$APT_PROXY_ARG\";"
         echo "Acquire::https::Proxy \"$APT_PROXY_ARG\";"
     } > "$conf.new" && chmod 644 "$conf.new" && mv "$conf.new" "$conf"

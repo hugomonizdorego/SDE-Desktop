@@ -41,10 +41,11 @@ OFFICIAL_TRADEMARKS = {
     'debian': 'Debian is a registered trademark owned by Software in the Public Interest, Inc.',
     'paypal': 'PayPal is a trademark of PayPal, Inc.',
 }
-# Files maintained with the Control Center rename (see test_metainfo.py):
-# their differences are reported, not failed, until they are correct; then
-# the entry must go (strict, so the exception cannot outlive its reason).
-PENDING = {'sde-settings.desktop', 'org.debion.Settings.metainfo.xml'}
+# Files that may lag behind while a rename is under way (see
+# test_metainfo.py; none at present): their differences are reported, not
+# failed, until they are correct; then the entry must go (strict, so the
+# exception cannot outlive its reason).
+PENDING = set()
 pending_left = set()
 
 # DEP-5 license names that differ from SPDX.

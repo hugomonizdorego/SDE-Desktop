@@ -13,6 +13,8 @@
 #include <ctime>
 #include <map>
 
+#include "account.h"
+#include "avatar_view.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "glyphs.h"
@@ -231,16 +233,6 @@ void gallery_glyph(Painter &p, double x, double y, double s, const Color &c) {
   p.circle(x + s * 0.58, y + s * 0.44, s * 0.05, c);
 }
 
-void person_glyph(Painter &p, double x, double y, double s, const Color &c) {
-  cairo_t *cr = p.cr();
-  cairo_new_path(cr);
-  cairo_arc(cr, x + s * 0.5, y + s * 0.36, s * 0.17, 0, 2 * M_PI);
-  stroke(p, c, std::max(1.1, s * 0.07));
-  cairo_new_path(cr);
-  cairo_arc(cr, x + s * 0.5, y + s * 0.95, s * 0.33, M_PI * 1.15, M_PI * 1.85);
-  stroke(p, c, std::max(1.1, s * 0.07));
-}
-
 void chevron_down(Painter &p, double x, double y, double s, const Color &c) {
   cairo_t *cr = p.cr();
   cairo_new_path(cr);
@@ -344,13 +336,13 @@ AppMenu::AppMenu() : PanelPopup("SDE Menu") {
   rename_->box(FL_FLAT_BOX);
   rename_->hide();
   end();
+  account_.reset(new AccountPopup);
   callback([](Fl_Widget *w, void *) { static_cast<AppMenu *>(w)->close(); });
 }
 
 AppMenu::~AppMenu() {
   Fl::remove_timeout(poll_applications, this);
   Fl::remove_timeout(animate, this);
-  if (avatar_) cairo_surface_destroy(avatar_);
 }
 
 // ---------------------------------------------------------------------------
@@ -482,14 +474,9 @@ void AppMenu::prepare() {
   load_tiles();
   filter();
 
-  full_name_ = user_name();
-  if (avatar_) cairo_surface_destroy(avatar_);
-  avatar_ = nullptr;
-  int ad = S(28);
-  for (const std::string &f : {home_dir() + "/.face", home_dir() + "/.face.icon",
-                               "/var/lib/AccountsService/icons/" + env("USER")}) {
-    if (file_exists(f) && (avatar_ = load_image(f, ad * 2, ad * 2))) break;
-  }
+  // The account button: the panel's cached name and picture (account.h).
+  account_->close();
+  panel_account::check();
   Fl::remove_timeout(poll_applications, this);
   Fl::add_timeout(2, poll_applications, this);
 }
@@ -498,6 +485,7 @@ void AppMenu::closed() {
   Fl::remove_timeout(animate, this);
   launching_ = false;
   letters_open_ = rail_open_ = false;
+  account_->close();
   dragging_ = false;
   press_ = {};
   rename_->hide();
@@ -561,11 +549,10 @@ void AppMenu::layout_rail() {
   int y = H - S(4) - bh;
   add(5, y, _("Power off"));
   y -= bh + S(10);
-  const char *names[] = {nullptr, nullptr, N_("Documents"), N_("Pictures"), N_("Settings"),
+  const char *names[] = {nullptr, nullptr, N_("Documents"), N_("Pictures"), N_("Control Center"),
                          nullptr, N_("Gallery")};
   for (int i : {4, 6, 3, 2, 1}) {
-    add(i, y, i == 1 ? (full_name_.empty() ? std::string(_("Account")) : full_name_)
-                     : std::string(_(names[i])));
+    add(i, y, i == 1 ? panel_account::name() : std::string(_(names[i])));
     y -= bh;
   }
 }
@@ -865,21 +852,16 @@ void AppMenu::rail_action(int index) {
       redraw();
       return;
     case 1: {
-      // The user's name and their account page; locking and logging out
-      // live in the Action Center's footer.
-      std::string name = menu_text(full_name_.empty() ? std::string(_("Account")) : full_name_);
-      Fl_Menu_Item items[] = {
-          {name.c_str(), 0, nullptr, nullptr, FL_MENU_INACTIVE | FL_MENU_DIVIDER, 0, 0, 0, 0},
-          {_("Account and system information"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
-          {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-      const Item *it = find({K_RAIL, 1, -1});
-      menu_busy_ = true;
-      const Fl_Menu_Item *m = items->popup(it ? it->x + it->w : 0, it ? it->y : 0);
-      menu_busy_ = false;
-      if (!m) return;
-      int i = int(m - items);
-      close();
-      if (i == 1) spawn_detached({"sde-settings", "--page", "about"});
+      // The account popup (account.h): the picture and the name, the stock
+      // pictures, "Choose a picture..." and "Account settings...". Locking
+      // and logging out live in the Action Center's footer.
+      if (account_->is_open()) {
+        account_->close();
+        return;
+      }
+      rail_open_ = false;
+      build_items();
+      if (const Item *it = find({K_RAIL, 1, -1})) account_->open(this, it->x + it->w, it->y, it->h);
       return;
     }
     case 2:
@@ -1410,6 +1392,8 @@ void AppMenu::animate(void *data) {
 // Events
 
 int AppMenu::handle(int event) {
+  // The account popup takes the events while it is open.
+  if (account_->is_open() && account_->handle(event)) return 1;
   if (launching_ && (event == FL_PUSH || event == FL_KEYBOARD || event == FL_SHORTCUT)) return 1;
   switch (event) {
     case FL_PUSH: {
@@ -1827,24 +1811,10 @@ void AppMenu::draw() {
       switch (it.index) {
         case 0: hamburger_glyph(p, gx, gy, g, t.text); break;
         case 1: {
-          double ad = S(26), ax = (rail_w_ - ad) / 2.0, ay = it.y + (it.h - ad) / 2.0;
-          if (avatar_) {
-            cairo_t *cr = p.cr();
-            cairo_save(cr);
-            cairo_new_path(cr);
-            cairo_arc(cr, ax + ad / 2, ay + ad / 2, ad / 2, 0, 2 * M_PI);
-            cairo_clip(cr);
-            int sw = cairo_image_surface_get_width(avatar_), sh = cairo_image_surface_get_height(avatar_);
-            double sc = ad / std::max(1, std::min(sw, sh));
-            cairo_translate(cr, ax + (ad - sw * sc) / 2, ay + (ad - sh * sc) / 2);
-            cairo_scale(cr, sc, sc);
-            cairo_set_source_surface(cr, avatar_, 0, 0);
-            cairo_paint(cr);
-            cairo_restore(cr);
-          } else {
-            p.circle(ax + ad / 2, ay + ad / 2, ad / 2, t.accent);
-            person_glyph(p, ax + ad * 0.15, ay + ad * 0.12, ad * 0.7, t.on_accent);
-          }
+          // The picture in a circle, or the initials on an accent disc.
+          int ad = S(26);
+          double ax = (rail_w_ - ad) / 2.0, ay = it.y + (it.h - ad) / 2.0;
+          avatar::paint_circle(p, panel_account::picture(ad), ax, ay, ad, t.accent);
           break;
         }
         case 2: document_glyph(p, gx, gy, g, t.text); break;
@@ -1985,11 +1955,15 @@ void AppMenu::draw() {
                 it.w - rail_w_ - S(10), it.h, t.text);
     }
   }
-  if (!avatar_) {
-    // The avatar's initial would hide the glyph; nothing to draw.
+  // The account button's initials when there is no picture.
+  if (const Item *acc = find({K_RAIL, 1, -1})) {
+    int ad = S(26);
+    if (!panel_account::picture(ad))
+      avatar::draw_initials(panel_account::name(), (rail_w_ - ad) / 2, acc->y + (acc->h - ad) / 2, ad,
+                            t.on_accent);
   }
   // Tooltips of the collapsed rail.
-  if (hov && hov->kind == K_RAIL && !rail_open_) {
+  if (hov && hov->kind == K_RAIL && !rail_open_ && !account_->is_open()) {
     std::string tip = hov->index == 0 ? std::string(_("Expand")) : hov->label;
     text_font(t.font_size - 1);
     int tw = text_width(tip) + S(16), th = S(26);
@@ -2004,6 +1978,11 @@ void AppMenu::draw() {
     double q = std::min(1.0, (now() - launch_start_) / std::max(0.05, effects_.duration));
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface.alpha(ease_out(q)));
+  }
+  // The account popup over everything else.
+  if (account_->is_open()) {
+    account_->draw_shapes(t);
+    account_->draw_text(t);
   }
   draw_children();
   if (qa_dump_enabled()) qa_dump_menu();
@@ -2026,6 +2005,10 @@ void AppMenu::qa_dump_menu() {
   };
   line("@menu", 0, 0, w(), h(), 1, 0);
   if (rail_open_) line("@rail-open", 0, 0, 0, 0, 1, 0);
+  // The account button: its name and picture ("" for the initials).
+  line("@account-name:" + panel_account::name(), 0, 0, 0, 0, 1, 0);
+  line("@account-picture:" + panel_account::picture_path(), 0, 0, 0, 0, 1, 0);
+  text += account_->qa_lines();
   for (auto &a : areas_) {
     std::string n = a.kind == K_ROW ? "list" : "tiles";
     line("@" + n, a.x, a.y, a.w, a.h, 1, 0);

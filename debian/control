@@ -139,6 +139,7 @@ Depends: ${shlibs:Depends},
          xdg-user-dirs,
          fonts-dejavu-core | fonts-noto-core
 Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
+            accountsservice,
             network-manager,
             bluez,
             blueman,
@@ -173,8 +174,10 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
                    calendar, XEmbed and StatusNotifierItem tray
   * sde-desktop  - wallpaper and desktop icons
   * sde-notifyd  - desktop notifications with Do Not Disturb
-  * sde-settings - appearance, interface scale, panel, notifications,
-                   displays, keyboard and mouse
+  * sde-settings - the Control Center (also sde-control-center): every
+                   setting by category, Users & Avatar (account picture
+                   and name), appearance, panel, Start menu, displays,
+                   sound, power, network, keyboard and mouse
   * sde-display-settings - native monitor profiles, resolution and scale
   * sde-run      - run command dialog (Alt+F2)
   * sde-logout   - log out, lock, suspend, restart and shut down

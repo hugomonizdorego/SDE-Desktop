@@ -8,7 +8,7 @@
 // Drives: every removable drive with its size and free space, Open and
 // Eject ("Safely remove"), progress and which programs keep it busy.
 // Touchpad: on/off, tap to click, natural scrolling, speed and a link to
-// SDE Settings > Touchpad.
+// Control Center > Touchpad.
 // The window title names the section ("Network", "Drives", "Touchpad").
 #pragma once
 
