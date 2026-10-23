@@ -131,8 +131,12 @@ const char *const kUrls[2] = {
     "http://ip-api.com/json/?fields=status,message,timezone",
 };
 std::vector<std::string> curl(const std::string &url) {
-  return {"curl", "-fsSL", "--max-time", "10", "--connect-timeout", "6",
-          "-A", std::string("SDE/") + SDE_VERSION + " (time zone)", url};
+  // An HTTPS request stays HTTPS (no redirect to plain HTTP or another
+  // protocol); the answer is a small JSON object.
+  bool https = starts_with(url, "https://");
+  return {"curl", "-fsSL", "--max-time", "10", "--connect-timeout", "6", "--max-filesize", "65536",
+          "--proto", https ? "=https" : "=http,https", "--proto-redir", https ? "=https" : "=http,https",
+          "-A", std::string("SDE/") + SDE_VERSION + " (time zone)", "--", url};
 }
 bool network_failure(int status) {
   return status == 5 || status == 6 || status == 7 || status == 28 || status == 35 ||
@@ -194,7 +198,10 @@ void Sync::lookup(int step) {
       apply(sync_plan(zone, current_zone(), timesyncd_installed(), interactive_), 0, false);
       return;
     }
-    if (step == 0 && fixture().empty() && !network_failure(st)) {
+    // The second service answers over plain HTTP, which anyone on the
+    // network path can forge: only a Sync the user asked for (and sees the
+    // result of) may use it, never the automatic hourly check.
+    if (step == 0 && interactive_ && fixture().empty() && !network_failure(st)) {
       lookup(1);
       return;
     }

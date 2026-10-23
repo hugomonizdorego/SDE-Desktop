@@ -635,8 +635,13 @@ bool network_failure(int status) {
          status == 56 || status < 0;
 }
 std::vector<std::string> curl(const std::string &url) {
-  return {"curl", "-fsSL", "--max-time", "10", "--connect-timeout", "6",
-          "-A", std::string("SDE/") + SDE_VERSION + " (weather)", url};
+  // HTTPS requests stay HTTPS (no redirect to plain HTTP or another
+  // protocol). Only the second IP location service is plain HTTP; its
+  // answer is validated like the others and can only move the weather.
+  bool https = starts_with(url, "https://");
+  return {"curl", "-fsSL", "--max-time", "10", "--connect-timeout", "6", "--max-filesize", "1048576",
+          "--proto", https ? "=https" : "=http,https", "--proto-redir", https ? "=https" : "=http,https",
+          "-A", std::string("SDE/") + SDE_VERSION + " (weather)", "--", url};
 }
 const long long kStale = 3 * 3600;      // a cached report is shown this long
 const long long kLocationAge = 6 * 3600;  // the IP location is reused this long
