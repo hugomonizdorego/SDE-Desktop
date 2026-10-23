@@ -20,6 +20,8 @@
 #include <ctime>
 #include <sstream>
 
+#include "account.h"
+#include "avatar_view.h"
 #include "build_config.h"
 #include "calendar.h"
 #include "clockface.h"
@@ -1193,22 +1195,46 @@ class HeroButton : public DrawnButton {
   std::function<void()> fn_;
 };
 
-// Initial in an accent circle, then the user name.
+// The user in the footer: the account picture (or the initials) and the
+// name (src/panel/account.h); a click opens Users & Avatar.
 class UserBadge : public Fl_Widget {
  public:
-  UserBadge(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  UserBadge(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) { tooltip(_("Account settings")); }
   void draw() override {
     const Theme &t = Panel::instance->theme();
-    std::string name = user_name();
-    std::string initial = name.empty() ? "?" : std::string(1, char(toupper((unsigned char)name[0])));
+    const std::string &name = panel_account::name();
+    cairo_surface_t *pic = panel_account::picture(h());
     {
       Painter p(window()->w(), window()->h());
-      p.circle(x() + h() / 2.0, y() + h() / 2.0, h() / 2.0, t.accent);
+      if (hot_) p.fill_rounded(x() - S(4), y() - S(2), w() + S(4), h() + S(4), h() / 2.0 + S(2), t.hover);
+      avatar::paint_circle(p, pic, x(), y(), h(), t.accent);
     }
+    if (!pic) avatar::draw_initials(name, x(), y(), h(), t.on_accent);
     text_font(t.font_size, true);
-    draw_text(initial, x(), y(), h(), h(), t.on_accent, 1);
     draw_text(name, x() + h() + S(10), y(), w() - h() - S(10), h(), t.text);
   }
+  int handle(int e) override {
+    switch (e) {
+      case FL_ENTER:
+      case FL_LEAVE:
+        hot_ = e == FL_ENTER;
+        redraw();
+        return 1;
+      case FL_PUSH:
+        return 1;
+      case FL_RELEASE:
+        if (Fl::event_inside(this)) {
+          if (auto *popup = dynamic_cast<PanelPopup *>(window())) popup->close();
+          spawn_detached({"sde-settings", "--page", "users"});
+        }
+        return 1;
+      default:
+        return Fl_Widget::handle(e);
+    }
+  }
+
+ private:
+  bool hot_ = false;
 };
 
 IconFn gear_icon() {
@@ -1411,7 +1437,7 @@ std::string first_program(std::initializer_list<const char *> names) {
   return "";
 }
 // The pages of sde-settings, read once from "sde-settings --help", so that a
-// flyout's settings button opens its own page as soon as SDE Settings has it.
+// flyout's settings button opens its own page as soon as the Control Center has it.
 std::string &settings_help() {
   static std::string text;
   return text;
@@ -1436,8 +1462,8 @@ bool settings_page(const std::string &page) {
   }
   return false;
 }
-// The SDE Settings page |page|, else |fallback| when installed, else the
-// SDE Settings overview.
+// The Control Center page |page|, else |fallback| when installed, else the
+// Control Center overview.
 std::vector<std::string> settings_for(const std::string &page, std::vector<std::string> fallback) {
   if (settings_page(page)) return {"sde-settings", "--page", page};
   if (!fallback.empty() && !fallback[0].empty() && !find_program(fallback[0]).empty())
@@ -2809,7 +2835,7 @@ void QuickSettings::tiles_part(SectionBuilder &b, bool all) {
          },
          nullptr, nullptr, nullptr});
   }
-  // SDE Settings has its button in the footer; the clock's alarms get a tile.
+  // The Control Center has its button in the footer; the clock's alarms get a tile.
   tiles.push_back({_("Alarms"), alarm_icon(),
                    [] { later([] { Panel::instance->open_alarms(); }); }, nullptr,
                    [] {
@@ -3114,7 +3140,7 @@ void QuickSettings::set_power_menu(bool open) {
   status_changed();
 }
 
-// The session row: the user, SDE Settings, Lock and Power. Power opens a
+// The session row: the user, Control Center, Lock and Power. Power opens a
 // row above it with Sleep, Log Out, Restart and Shut Down (the sde-logout
 // actions); Power again closes it.
 void QuickSettings::footer(int W, int H, int pad) {
@@ -3142,7 +3168,7 @@ void QuickSettings::footer(int W, int H, int pad) {
   }
   bool open = power_open_;
   std::vector<std::pair<std::string, std::function<void()>>> foot = {
-      {_("SDE Settings"), launch({"sde-settings"})},
+      {_("Control Center"), launch({"sde-settings"})},
       {_("Lock Screen"), launch({"sde-logout", "--action", "lock"})},
       {open ? _("Close power options") : _("Power"),
        [this, open] { later([this, open] { set_power_menu(!open); }); }}};

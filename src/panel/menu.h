@@ -21,6 +21,7 @@
 #include <FL/Fl_Input.H>
 #include <cairo.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@
 #include "paint.h"
 #include "popup.h"
 #include "theme.h"
+
+class AccountPopup;
 
 // Start tiles from other places (search results, the panel): the tile
 // groups saved in [menu] tiles.
@@ -155,8 +158,8 @@ class AppMenu : public PanelPopup {
   };
   std::vector<Rect> group_rects_;  // heading and tiles of each group (window coordinates)
   Rect new_group_;                 // drop zone for a new group while dragging
-  cairo_surface_t *avatar_ = nullptr;
-  std::string full_name_;
+  // The account button's popup (account.h).
+  std::unique_ptr<AccountPopup> account_;
 
   int category_ = -1;  // list filter, -1 all applications
   int list_scroll_ = 0, tiles_scroll_ = 0;

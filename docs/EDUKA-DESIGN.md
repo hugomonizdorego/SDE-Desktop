@@ -18,7 +18,7 @@ widgets continue to use FLTK/cairo during the staged migration.
 
 ## Panel
 
-Choose **Settings > Panel > Panel style**:
+Choose **Control Center > Panel > Panel style**:
 
 - **Full edge:** fills the top or bottom edge.
 - **Floating:** a centered bar with an edge gap and adjustable width (default 96%).
@@ -46,7 +46,7 @@ NetworkManager, brightness uses the existing logind helper, and battery data
 comes from the kernel. The body scrolls while the settings/lock/power footer
 stays visible. Power opens the existing confirmation dialog.
 
-Configure it in **Settings > Action Center**. No weather service, update service,
+Configure it in **Control Center > Action Center**. No weather service, update service,
 Bluetooth control or notification-history service is added by this design port.
 
 ## Settings

@@ -25,9 +25,15 @@ int main(int argc, char **argv) {
   sde::lock::default_options(o);
   o.display_name = "Selviana Tester";
   o.avatar.clear();
+  o.lookup_account = false;  // no AccountsService lookups in the tests
+  // SDE_LOCK_FIXTURE_AVATAR=FILE: the account picture (screenshots).
+  if (const char *picture = getenv("SDE_LOCK_FIXTURE_AVATAR")) o.avatar = picture;
   o.switch_user = argc > 2 && !strcmp(argv[2], "--switch-user");
   o.blank_after = 0;
   o.report_fd = argc > 1 ? atoi(argv[1]) : 1;
+  // tools/showcase.py: the sample account's name and picture.
+  if (const char *name = getenv("SDE_LOCK_FIXTURE_NAME")) o.display_name = name;
+  if (const char *avatar = getenv("SDE_LOCK_FIXTURE_AVATAR")) o.avatar = avatar;
   o.authenticate = [](const char *password) {
     sde::lock::AuthResult r;
     usleep(150000);  // like a real PAM stack, not instantaneous

@@ -56,7 +56,7 @@ large (95 % of the title height, about 30 x 32 px at 100 %).
 
 * SDE WM: `<titleLayout>NLIMC</titleLayout>` (window icon, title, minimize,
   maximize, close). Configurations with the old left layouts of SDE (`CIML`,
-  `CIMLN`) move to `NLIMC` the next time the session or Settings syncs the
+  `CIMLN`) move to `NLIMC` the next time the session or the Control Center syncs the
   window manager; a layout chosen by hand is kept.
 * GTK: `gtk-decoration-layout=:minimize,maximize,close` in `settings.ini`,
   XSETTINGS (`Gtk/DecorationLayout`) and the theme's `index.theme`. Header
@@ -83,7 +83,7 @@ large (95 % of the title height, about 30 x 32 px at 100 %).
 
 ## Transparency and clarity
 
-Settings > Appearance > Transparency and clarity has presets **Off** (0),
+Control Center > Appearance > Transparency and clarity has presets **Off** (0),
 **Subtle** (25, the default), **Clear** (50) and **Glass** (80) and a slider
 from 0 to 100. One key drives every translucent surface of every family:
 
@@ -113,7 +113,7 @@ blur=true
 
 ## Icons
 
-Settings > Appearance > Icons shows a card for every installed icon theme
+Control Center > Appearance > Icons shows a card for every installed icon theme
 that has application or places icons (folder, home, settings, terminal and
 picture previews), plus **Automatic**:
 
@@ -129,7 +129,7 @@ icon_theme=auto     # or a theme directory name, e.g. Papirus-Dark, Adwaita
 * The same choice goes to GTK (`gtk-icon-theme-name`, XSETTINGS
   `Net/IconThemeName`, GSettings `icon-theme`), so Liria and GTK
   applications follow it, and to every SDE program through `IconLoader`:
-  desktop icons, Start menu, panel and tray fallbacks, Settings, Gallery,
+  desktop icons, Start menu, panel and tray fallbacks, the Control Center, Gallery,
   Taca and the others. Programs reload it when the configuration serial
   changes, so a new choice applies at once.
 * Lookup follows the Icon Theme Specification: the theme, its `Inherits=`

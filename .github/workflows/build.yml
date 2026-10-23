@@ -102,6 +102,26 @@ jobs:
             dist/*.deb
             dist/*sources*.tar.xz
             dist/*.sha256
+      # Screenshots of everything for the development update (tools/showcase.py):
+      # the installed packages in a private Xvfb session with sample content.
+      # Papirus as on a desktop install (Recommends), nss_wrapper for the
+      # sample account's name. A screenshot problem never fails the build.
+      - name: Showcase screenshots
+        if: matrix.image == 'debian:testing'
+        continue-on-error: true
+        timeout-minutes: 35
+        run: |
+          apt-get install -y --no-install-recommends papirus-icon-theme libnss-wrapper tzdata || true
+          python3 tools/showcase.py --test-dir dist/test-tools --output-dir dist/showcase \
+            --zip "dist/sde-screenshots_$(tr '~' '.' < VERSION).zip"
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.image == 'debian:testing'
+        with:
+          name: sde-showcase
+          if-no-files-found: ignore
+          path: |
+            dist/showcase/
+            dist/sde-screenshots_*.zip
 
   # Keeps GitHub current after every successful build of main (or a manual
   # run): a rolling "alpha-latest" pre-release with the Debian packages and
@@ -131,6 +151,11 @@ jobs:
         with:
           name: sde-ui-smoke
           path: smoke
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: sde-showcase
+          path: showcase
       - name: Rolling pre-release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -153,8 +178,16 @@ jobs:
             echo "Then choose **SDE-Desktop** at the login screen."
             echo "Screenshots: docs/screenshots/latest/README.md"
           } > notes.md
+          # The showcase (tools/showcase.py) as one zip; "~" becomes "." like
+          # GitHub does for the other assets.
+          shots="showcase/sde-screenshots_$(echo "$version" | tr '~' '.').zip"
+          if [ -f "$shots" ]; then
+            echo "Development screenshots of everything: \`$(basename "$shots")\` (README.md and contact sheets inside)." >> notes.md
+          else
+            shots=""
+          fi
           gh release delete alpha-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
-          gh release create alpha-latest packages/*.deb packages/*.tar.xz packages/SHA256SUMS \
+          gh release create alpha-latest packages/*.deb packages/*.tar.xz packages/SHA256SUMS ${shots:+"$shots"} \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "SDE $version (latest alpha build)" --notes-file notes.md
       - name: Update the screenshot gallery

@@ -7,6 +7,7 @@
 #include <FL/Fl_Scroll.H>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -70,7 +71,17 @@ class Page : public Fl_Scroll {
   // Ends the page; call once all rows are added.
   void finish();
 
+  // Names the current position (a card about to begin) so that the page can
+  // be opened scrolled to it ("--page proxy" shows the Proxy card).
+  void anchor(const std::string &id) { anchors_[id] = y_ - y(); }
+  // Offset of anchor |id| from the top of the page, or -1.
+  int anchor_offset(const std::string &id) const {
+    auto it = anchors_.find(id);
+    return it == anchors_.end() ? -1 : it->second;
+  }
+
  private:
+  std::map<std::string, int> anchors_;
   int pad_, y_;
   Card *card_ = nullptr;
   int card_y_ = 0;
