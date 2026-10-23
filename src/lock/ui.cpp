@@ -23,6 +23,8 @@
 #include <thread>
 #include <vector>
 
+#include "avatar.h"
+#include "avatar_view.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
@@ -257,6 +259,49 @@ class LockWindow : public BufferedWindow {
 
 const Color kWhite = Color::hex(0xFFFFFF);
 
+// Where things go on a lock window: the clock and the date, then (on the
+// primary monitor) the form: the picture, the name and the password field.
+// Short screens (1024 x 600 at 150 %) get a smaller clock and picture, so
+// that the form fits below the date.
+struct FormLayout {
+  int clock_y = 0, clock_h = 0, clock_font = 0, date_y = 0, date_font = 0;
+  int form_top = 0, picture = 0, name_y = 0, field_y = 0;
+};
+
+FormLayout form_layout(int H, bool primary) {
+  FormLayout l;
+  if (!primary) {
+    l.clock_y = int(H * 0.34);
+    l.clock_h = S(130);
+    l.clock_font = S(110);
+    l.date_y = l.clock_y + S(128);
+    l.date_font = S(24);
+    return l;
+  }
+  if (H < S(640)) {
+    l.clock_y = std::max(S(12), int(H * 0.05));
+    l.clock_h = S(72);
+    l.clock_font = S(60);
+    l.date_y = l.clock_y + S(70);
+    l.date_font = S(17);
+    l.picture = S(84);
+    l.form_top = l.date_y + S(30) + S(18);
+    l.name_y = l.form_top + l.picture + S(10);
+    l.field_y = l.name_y + S(38);
+    return l;
+  }
+  l.clock_y = int(H * 0.16);
+  l.clock_h = S(110);
+  l.clock_font = S(92);
+  l.date_y = l.clock_y + S(108);
+  l.date_font = S(20);
+  l.picture = S(104);
+  l.form_top = int(H * 0.44);
+  l.name_y = l.form_top + S(118);
+  l.field_y = l.name_y + S(44);
+  return l;
+}
+
 void LockWindow::draw() {
   int W = w(), H = h();
   if (!g->ready) {
@@ -273,8 +318,7 @@ void LockWindow::draw() {
     else
       shake = std::sin(t * 6 * M_PI) * (1 - t) * Sd(18);
   }
-  int clock_y = int(H * (primary() ? 0.16 : 0.34));
-  int form_top = int(H * 0.44);
+  FormLayout l = form_layout(H, primary());
   int cx = W / 2;
   {
     Painter p(W, H);
@@ -282,7 +326,7 @@ void LockWindow::draw() {
       p.surface(bg_, 0, 0);
     else
       p.fill_rect(0, 0, W, H, Color::hex(0x101820));
-    if (primary()) draw_form(p, cx + int(shake), form_top);
+    if (primary()) draw_form(p, cx + int(shake), l.form_top);
     // Switch user (LightDM).
     if (primary() && g->opt.switch_user) {
       g->switch_w = S(150);
@@ -295,16 +339,19 @@ void LockWindow::draw() {
     p.flush();
   }
   // Text (FLTK/Xft) on top of the cairo drawing.
-  text_font(S(primary() ? 92 : 110));
-  draw_text(clock_text(), 0, clock_y, W, S(primary() ? 110 : 130), kWhite, 1);
-  text_font(S(primary() ? 20 : 24));
-  draw_text(date_text(), 0, clock_y + S(primary() ? 108 : 128), W, S(30), kWhite.alpha(0.9), 1);
+  text_font(l.clock_font);
+  draw_text(clock_text(), 0, l.clock_y, W, l.clock_h, kWhite, 1);
+  text_font(l.date_font);
+  draw_text(date_text(), 0, l.date_y, W, S(30), kWhite.alpha(0.9), 1);
   if (!primary()) return;
   int fx = cx + int(shake);
-  int name_y = form_top + S(118);
+  // The initials when there is no picture (see draw_form()).
+  if (!g->avatar)
+    avatar::draw_initials(g->opt.display_name, fx - l.picture / 2, l.form_top, l.picture, kWhite);
+  int name_y = l.name_y;
   text_font(S(20), true);
   draw_text(g->opt.display_name, fx - S(200), name_y, S(400), S(30), kWhite, 1);
-  int field_y = name_y + S(44), field_w = S(320), field_h = S(46);
+  int field_y = l.field_y, field_w = S(320), field_h = S(46);
   int field_x = fx - field_w / 2;
   text_font(S(14));
   if (g->password.empty()) {
@@ -344,7 +391,8 @@ void LockWindow::draw() {
 
 void LockWindow::draw_form(Painter &p, int cx, int top) {
   cairo_t *cr = p.cr();
-  int size = S(104);
+  FormLayout l = form_layout(h(), true);
+  int size = l.picture;
   double ax = cx - size / 2.0, ay = top;
   p.circle(cx, ay + size / 2.0, size / 2.0 + Sd(3), kWhite.alpha(0.35));
   if (g->avatar) {
@@ -359,19 +407,10 @@ void LockWindow::draw_form(Painter &p, int cx, int top) {
     cairo_paint(cr);
     cairo_restore(cr);
   } else {
+    // The initials go on it (LockWindow::draw()).
     p.circle(cx, ay + size / 2.0, size / 2.0, g->theme.accent);
-    // A simple person silhouette.
-    p.circle(cx, ay + size * 0.38, size * 0.17, kWhite.alpha(0.92));
-    cairo_save(cr);
-    cairo_arc(cr, cx, ay + size / 2.0, size / 2.0, 0, 2 * M_PI);
-    cairo_clip(cr);
-    cairo_arc(cr, cx, ay + size * 0.98, size * 0.33, M_PI, 2 * M_PI);
-    p.set(kWhite.alpha(0.92));
-    cairo_fill(cr);
-    cairo_restore(cr);
   }
-  int name_y = top + S(118);
-  int field_y = name_y + S(44), field_w = S(320), field_h = S(46);
+  int field_y = l.field_y, field_w = S(320), field_h = S(46);
   int field_x = cx - field_w / 2;
   p.fill_rounded(field_x, field_y, field_w, field_h, field_h / 2.0, kWhite.alpha(0.16));
   p.stroke_rounded(field_x + 0.5, field_y + 0.5, field_w - 1, field_h - 1, field_h / 2.0,
@@ -392,6 +431,24 @@ void LockWindow::draw_form(Painter &p, int cx, int top) {
 
 void redraw_all() {
   for (auto *w : g->windows) w->redraw();
+}
+
+// The account's picture (opt.avatar) as a square, or none (the initials).
+void load_avatar() {
+  if (g->avatar) cairo_surface_destroy(g->avatar);
+  g->avatar = g->opt.avatar.empty() ? nullptr : avatar::load_square(g->opt.avatar, S(208));
+}
+
+// The real name and the picture from AccountsService (src/common/avatar.h),
+// on a worker thread: the lock never waits for them.
+void lookup_account(void *) {
+  avatar::lookup_async([](const avatar::Account &a, const std::string &path) {
+    if (!g) return;
+    if (!a.display_name().empty()) g->opt.display_name = a.display_name();
+    g->opt.avatar = path;
+    load_avatar();
+    redraw_all();
+  });
 }
 
 bool ours(Window w) {
@@ -853,6 +910,14 @@ int x_events(int event) {
     case VisibilityNotify:
       if (ours(e.xvisibility.window) && e.xvisibility.state != VisibilityUnobscured) schedule_raise();
       break;
+    case PropertyNotify:
+      // The picture or the name changed (Control Center, Start menu).
+      if (e.xproperty.window == root && g->opt.lookup_account &&
+          e.xproperty.atom == x11::atom(avatar::kSerialAtom)) {
+        Fl::remove_timeout(lookup_account);
+        Fl::add_timeout(0.2, lookup_account);
+      }
+      break;
     case UnmapNotify:
       // One of ours unmapped by another client: its grabs ended with it.
       if (e.xunmap.event == e.xunmap.window && ours(e.xunmap.window) && !g->done) {
@@ -886,14 +951,10 @@ void default_options(UiOptions &o) {
     o.user = pw->pw_name ? pw->pw_name : "";
     std::string gecos = pw->pw_gecos ? pw->pw_gecos : "";
     o.display_name = trim(gecos.substr(0, gecos.find(',')));
-    std::string home = pw->pw_dir ? pw->pw_dir : home_dir();
-    for (const std::string &p : {home + "/.face", home + "/.face.icon",
-                                 "/var/lib/AccountsService/icons/" + o.user})
-      if (file_exists(p)) {
-        o.avatar = p;
-        break;
-      }
+    // ~/.face until AccountsService answers (the lock comes first).
+    if (access(avatar::face_path().c_str(), R_OK) == 0) o.avatar = avatar::face_path();
   }
+  o.lookup_account = true;
   if (o.display_name.empty()) o.display_name = o.user;
   Config cfg;
   cfg.load();
@@ -926,8 +987,7 @@ int run_lock_ui(const UiOptions &options) {
     ui.wallpaper = base + "/backgrounds/sde/" + name;
     if (!file_exists(ui.wallpaper)) ui.wallpaper = "/usr/share/backgrounds/sde/" + name;
   }
-  if (!ui.opt.avatar.empty())
-    ui.avatar = load_wallpaper(ui.opt.avatar, S(208), S(208), "zoom", 0.2, 0.2, 0.2);
+  load_avatar();
 
   // The form goes on the monitor with the pointer.
   int mx = 0, my = 0;
@@ -963,8 +1023,12 @@ int run_lock_ui(const UiOptions &options) {
   Window root = RootWindow(fl_display, fl_screen);
   XWindowAttributes attr;
   XGetWindowAttributes(fl_display, root, &attr);
-  XSelectInput(fl_display, root, attr.your_event_mask | SubstructureNotifyMask | StructureNotifyMask);
+  XSelectInput(fl_display, root,
+               attr.your_event_mask | SubstructureNotifyMask | StructureNotifyMask | PropertyChangeMask);
   Fl::add_handler(x_events);
+  // The real name and the picture of the account (AccountsService), now
+  // that the screen is locked.
+  if (ui.opt.lookup_account) lookup_account(nullptr);
   // Grab at once (typing must work right after the lock), then keep
   // checking. The screen stays black until the keyboard is ours or the
   // waiting message is due.
