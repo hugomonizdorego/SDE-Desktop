@@ -1896,11 +1896,16 @@ def calculator(s):
     s.shot('calculator-converter', quiet=0.5)
 
 
-@scene('System Monitor', [('system-monitor', 'System Monitor: processes'),
+@scene('System Monitor', [('system-monitor', 'System Monitor: the SDE processes (search "sde")'),
                           ('system-monitor-performance', 'System Monitor: processor, memory and disk graphs')],
        needs=['sde-system-monitor'])
 def system_monitor(s):
     s.app(['sde-system-monitor', '--page', 'processes'], '^System Monitor$')
+    # The session's own programs, not whatever else runs on the machine
+    # (Ctrl+F: the search field).
+    s.key('ctrl+f')
+    s.type('sde', delay=80)
+    time.sleep(1.2)
     s.park_pointer()
     s.shot('system-monitor', quiet=0.8, timeout=4)
     s.stop_scene_procs()
