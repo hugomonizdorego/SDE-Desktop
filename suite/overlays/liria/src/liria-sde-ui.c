@@ -1031,8 +1031,7 @@ liria_sde_ui_show_help (GtkWindow *parent, const char *section)
 #define SDE_ABOUT_GROUP "About"
 #define SDE_DEVELOPER   "Selviana DE Project"
 #define SDE_COPYRIGHT   "Copyright \xC2\xA9 2026 Selviana DE Project and contributors"
-#define SDE_TRADEMARKS  "Selviana Desktop Environment, SDE and the SDE logo are trademarks of the " \
-                        "Selviana DE Project."
+#define SDE_TRADEMARKS  "Selviana Desktop Environment, SDE and the SDE logo are trademarks of the Selviana DE Project."
 
 /* Liria's icon: SDE's "liria" application icon (hicolor), or the generic
  * file manager icon of the icon theme when it is not installed. */
@@ -1076,14 +1075,15 @@ liria_sde_ui_show_about (GtkWindow *parent)
                                 _("Part of Selviana Desktop Environment"), developer);
     copyright = g_strdup_printf ("%s\n%s", SDE_COPYRIGHT, SDE_TRADEMARKS);
     /* The legal notices are not translated, not rebranded; the license
-     * paragraphs are the original ones (translated in every catalog). */
+     * paragraphs are the original ones (translated in every catalog). They
+     * match data/legal/components.json ("liria"). */
     license = g_strjoin ("\n\n",
         "Liria, the file manager of Selviana Desktop Environment (SDE)\n"
         SDE_COPYRIGHT "\n"
         "Liria is a modified version of the Caja file manager 1.28 (MATE), itself derived from GNOME Nautilus:\n"
-        "Copyright \xC2\xA9 1999-2009 The Nautilus authors\n"
-        "Copyright \xC2\xA9 2011-2021 The Caja authors\n"
-        "Copyright \xC2\xA9 2012-2021 The MATE developers",
+        "Copyright \xC2\xA9 1999\xE2\x80\x93" "2009 The Nautilus authors\n"
+        "Copyright \xC2\xA9 2011\xE2\x80\x93" "2021 The Caja authors\n"
+        "Copyright \xC2\xA9 2012\xE2\x80\x93" "2021 The MATE developers",
         _("Liria is free software; you can redistribute it and/or modify it under the terms of the "
           "GNU General Public License as published by the Free Software Foundation; either version 2 "
           "of the License, or (at your option) any later version."),
@@ -1093,11 +1093,12 @@ liria_sde_ui_show_about (GtkWindow *parent)
         _("You should have received a copy of the GNU General Public License along with Liria; if not, "
           "write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, "
           "MA 02110-1301 USA"),
-        "SPDX-License-Identifier: GPL-2.0-or-later. Some parts, such as the extension library, are "
-        "licensed under the GNU Library General Public License, version 2 or later. Further copyright "
-        "holders, among them Eazel, Inc., Red Hat, Inc. and the Free Software Foundation, are named in "
-        "the source files; the original copyright notices, author lists and licenses are installed in "
-        "/usr/share/doc/sde/upstream/caja/.",
+        "License: GPL-2.0-or-later AND LGPL-2.0-or-later. The eel and extension libraries "
+        "(libliria-extension) are licensed under the GNU Library General Public License, version 2 or "
+        "later. Further copyright holders, among them Eazel, Inc., Red Hat, Inc., Novell, Inc. and the "
+        "Free Software Foundation, are named in the source files; as the original COPYING notes, its "
+        "license does not apply to the Eazel trademarks. The original copyright notices, author lists "
+        "and licenses are installed in /usr/share/doc/sde/upstream/caja/.",
         SDE_TRADEMARKS,
         NULL);
 

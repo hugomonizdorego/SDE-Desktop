@@ -165,10 +165,11 @@ class LiriaAlpha16Test(unittest.TestCase):
         for needle in ('#define SDE_DEVELOPER   "Selviana DE Project"', '_("Developer: %s"), SDE_DEVELOPER',
                        '_("Part of Selviana Desktop Environment")',
                        'Copyright \\xC2\\xA9 2026 Selviana DE Project and contributors',
-                       'Selviana Desktop Environment, SDE and the SDE logo are trademarks of the',
-                       'Copyright \\xC2\\xA9 1999-2009 The Nautilus authors',
-                       'Copyright \\xC2\\xA9 2011-2021 The Caja authors',
-                       'Copyright \\xC2\\xA9 2012-2021 The MATE developers',
+                       'Selviana Desktop Environment, SDE and the SDE logo are trademarks of the Selviana DE Project.',
+                       'Copyright \\xC2\\xA9 1999\\xE2\\x80\\x93" "2009 The Nautilus authors',
+                       'Copyright \\xC2\\xA9 2011\\xE2\\x80\\x93" "2021 The Caja authors',
+                       'Copyright \\xC2\\xA9 2012\\xE2\\x80\\x93" "2021 The MATE developers',
+                       'License: GPL-2.0-or-later AND LGPL-2.0-or-later', 'Novell, Inc.', 'Eazel trademarks',
                        'modified version of the Caja file manager 1.28 (MATE), itself derived from GNOME Nautilus',
                        '"Caja 1.28 (MATE) https://github.com/mate-desktop/caja"', '"GNOME Nautilus https://',
                        '_("Based on"), based_on', '_("Original authors")', 'either version 2',
@@ -194,6 +195,26 @@ class LiriaAlpha16Test(unittest.TestCase):
         for path in self.overlay.rglob('*'):
             if path.is_file():
                 self.assertNotIn('DebION', path.read_text(errors='replace'), path)
+
+    def test_about_matches_legal_data(self):
+        """The About window agrees with data/legal/components.json: Liria's
+        copyright lines and license, SDE's developer, website and trademark."""
+        import codecs
+        import re
+        legal = json.loads((self.root / 'data/legal/components.json').read_text())
+        liria = [c for c in legal['components'] if c['id'] == 'liria'][0]
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        about = ui[ui.index('#define SDE_ABOUT_GROUP'):ui.index('/* --------------------------------------------------- application level')]
+        literal = r'"(?:[^"\\\n]|\\.)*"'
+        text = '\n'.join(codecs.escape_decode(''.join(re.findall(r'"((?:[^"\\\n]|\\.)*)"', m.group())).encode())[0]
+                         .decode('utf-8') for m in re.finditer(literal + r'(?:\s*' + literal + ')*', about))
+        for line in liria['copyright']:
+            self.assertIn(line, text)
+        self.assertIn(liria['license'], text)
+        self.assertIn(legal['trademarks']['sde'], text)
+        self.assertIn(legal['project']['developer'], text)
+        self.assertIn('#define SDE_PROJECT_URL     "%s"' % legal['project']['website'], ui)
+        self.assertIn('liria', liria['icons'])
 
     def test_main_menu_and_header(self):
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()

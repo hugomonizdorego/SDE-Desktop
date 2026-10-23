@@ -122,10 +122,17 @@ Since 0.2.0 Alpha 1:
   Copyright © 2026 Selviana DE Project and contributors and the SDE
   trademark notice. Its License page starts with every copyright notice of
   the original work (Nautilus authors, Caja authors, MATE developers) and
-  keeps the GPL-2.0-or-later text; Credits lists the developer, "Based on
-  Caja 1.28 (MATE)" and GNOME Nautilus and the original authors. The logo
-  and the default window icon are `liria` (hicolor), with
-  `system-file-manager` as the fallback.
+  keeps the GPL text, with the license `GPL-2.0-or-later AND
+  LGPL-2.0-or-later` (eel and the extension library are LGPL) as in
+  `data/legal/components.json`, which a unit test compares it with;
+  Credits lists the developer, "Based on Caja 1.28 (MATE)" and GNOME
+  Nautilus and the original authors. The logo and the default window icon
+  are `liria` (hicolor), with `system-file-manager` as the fallback. The
+  ribbon scrolls sideways with the mouse wheel when it is wider than the
+  window, and the location entry is as wide as the breadcrumbs.
+* **Themes.** Keyboard focus rings are visible (half the text colour
+  instead of 10 %) and tree views (the list, the sidebar) show drop
+  targets with the accent: a tinted row, or a 2 px line between rows.
 * **Sidebar and ribbon.** The Pinned and Network headings are as high as
   the others (the bold heading was measured as two lines). The ribbon's
   commands get the selected files (it used the view's GFile locations as
