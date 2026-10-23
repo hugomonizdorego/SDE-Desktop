@@ -221,9 +221,10 @@ Depends: ${misc:Depends},
          adwaita-icon-theme,
          dconf-gsettings-backend,
          upower,
-         udisks2,
-         debion-desktop-base (>= ${source:Version})
-Recommends: papirus-icon-theme,
+         udisks2
+Recommends: debion-desktop-base (>= ${source:Version}),
+            desktop-base,
+            papirus-icon-theme,
             qt5-gtk-platformtheme,
             qt6-gtk-platformtheme,
             lightdm-gtk-greeter,
@@ -238,8 +239,12 @@ Description: Selviana Desktop Environment - full desktop (metapackage)
  and sound services and removable media support.
  .
  It makes SDE-Desktop the default LightDM session and styles the LightDM
- GTK greeter with SDE Graphite and the login background of the installed
- distribution artwork (debion-desktop-base).
+ GTK greeter with SDE Graphite and the login background of the active
+ desktop-base theme of the installed distribution.
+ .
+ SDE does not require a particular distribution. On DebION GNU/Linux the
+ recommended debion-desktop-base package adds the distribution's artwork and
+ network defaults; it is a separate project's package.
  .
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and
