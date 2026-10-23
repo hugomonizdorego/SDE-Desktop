@@ -202,7 +202,7 @@ add_executable(sde-view
   photo/clipboard.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
 install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES photo/sdeview.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+# Its icon (sde-photo, and sdeview for older launchers) is in data/icons.
 
 # Xanara: the SDE document viewer and PDF editor, written from scratch by
 # the DebION Dev-Team on poppler-glib. The document model, renderer and tile
