@@ -650,3 +650,11 @@ finally:
             p.wait(timeout=3)
         except sp.TimeoutExpired:
             p.kill()
+    # Every program's output (GTK, X and D-Bus warnings, crashes) next to
+    # the screenshots, also when the run passed; panel-smoke.py does the same.
+    (out / "logs").mkdir(exist_ok=True)
+    for f in home.glob("*.log"):
+        try:
+            (out / "logs" / f.name).write_text(f.read_text(errors="replace"))
+        except OSError:
+            pass

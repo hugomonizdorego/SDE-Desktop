@@ -337,7 +337,7 @@ class Controller {
 
   bool run() {
     while (!done_ && !levels_.empty() && levels_[0]->shown()) Fl::wait();
-    if (Fl::grab() == levels_[0]) Fl::grab(nullptr);
+    if (!levels_.empty() && Fl::grab() == levels_[0]) Fl::grab(nullptr);
     for (Level *l : levels_) l->hide();
     Fl::flush();
     if (chosen_) {
