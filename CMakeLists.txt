@@ -11,7 +11,27 @@ string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SDE_VERSION_NUMERIC "${SDE_VERSIO
 
 project(sde VERSION ${SDE_VERSION_NUMERIC} LANGUAGES CXX)
 
-set(SDE_VERSION_LABEL "0.1 Alpha 52" CACHE STRING "Human readable release name")
+# The human readable release name follows VERSION ("0.2.0~alpha1" ->
+# "0.2 Alpha 1", "0.2.0~rc2" -> "0.2 RC 2", "0.2.1" -> "0.2.1"), so a version
+# bump never leaves an old label behind in an existing build directory.
+# SDE_VERSION_LABEL_OVERRIDE replaces it when a release needs another name.
+if(SDE_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.[0-9]+~(alpha|beta|rc)([0-9]+)$")
+  set(_sde_stage "${CMAKE_MATCH_3}")
+  if(_sde_stage STREQUAL "alpha")
+    set(_sde_stage "Alpha")
+  elseif(_sde_stage STREQUAL "beta")
+    set(_sde_stage "Beta")
+  else()
+    set(_sde_stage "RC")
+  endif()
+  set(SDE_VERSION_LABEL "${CMAKE_MATCH_1}.${CMAKE_MATCH_2} ${_sde_stage} ${CMAKE_MATCH_4}")
+else()
+  set(SDE_VERSION_LABEL "${SDE_VERSION}")
+endif()
+if(SDE_VERSION_LABEL_OVERRIDE)
+  set(SDE_VERSION_LABEL "${SDE_VERSION_LABEL_OVERRIDE}")
+endif()
+unset(SDE_VERSION_LABEL CACHE)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -196,6 +216,10 @@ install(DIRECTORY "${SDE_THEMES_OUT}/" DESTINATION ${CMAKE_INSTALL_DATADIR}/them
 install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
 install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+# Branding (docs/BRANDING.md): the SDE logo for About windows, Welcome and the
+# login screen, and the sample user pictures offered by the avatar picker.
+install(DIRECTORY data/branding/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/branding)
+install(DIRECTORY data/avatars/ DESTINATION ${CMAKE_INSTALL_DATADIR}/Avatar FILES_MATCHING PATTERN "*.png")
 install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 # AppStream: every SDE program names the Selviana DE Project as its developer.
 install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml")

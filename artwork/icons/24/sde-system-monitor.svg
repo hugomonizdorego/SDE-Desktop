@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SDE System Monitor, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <path d="M4.5 6.5L1.5 8.5V15.5L4.5 17.5Z" fill="#ADA79A" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="5" y="18" width="13" height="4" rx="1" fill="#2B2B2F"/>
+  <rect x="6" y="19" width="11" height="2" fill="#D6CFC0"/>
+  <rect x="4" y="3" width="19" height="16" rx="2" fill="#2B2B2F"/>
+  <rect x="5" y="4" width="17" height="14" rx="1" fill="#ECE6DA"/>
+  <rect x="6" y="5" width="15" height="10" rx="1" fill="#2B2B2F"/>
+  <rect x="7" y="6" width="13" height="8" fill="#26403A"/>
+  <path d="M7.5 10.5H10.5L12 7.5L14 13.5L15.5 9L16.5 10.5H19.5" fill="none" stroke="#8FD49A" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="7" y="16" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="19" y="16" width="1" height="1" fill="#6DBA5A"/>
+  <rect x="14" y="16" width="4" height="1" fill="#A69F90"/>
+</svg>

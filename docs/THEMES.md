@@ -32,7 +32,13 @@ and has `radius_for(h)` for slim controls. They reach:
   (every family) puts the SDE palette on the main surfaces and rounds
   windows, header bars, popovers, menus, buttons, fields, lists, tooltips,
   scroll bars, switches and sliders. SDE Graphite is compiled with the SDE
-  palette; Flat Remix (SDE Fluent) is recolored onto it.
+  palette; Flat Remix (SDE Fluent) is recolored onto it. Since 0.2.0 the
+  rubber band (selection rectangle) is a 20 % accent sheet with a 1 px
+  accent border in GTK 3 and GTK 4, also in icon views that draw it with
+  the `.rubberband` class on the view itself (Liria, Nemo, Thunar, desktop
+  icons), where the layer's view colour had made it an opaque sheet; and
+  the layer no longer has a `:not()` with a compound selector, which
+  GTK 3 rejected with a parsing warning in every application.
 * Qt applications use the GTK palette (`QT_QPA_PLATFORMTHEME=gtk3`, set by
   `startsde` and `sde-session`).
 

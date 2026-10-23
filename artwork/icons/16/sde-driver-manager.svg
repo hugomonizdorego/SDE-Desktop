@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Driver Manager, 16 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <rect x="1" y="5" width="1" height="1" fill="#D8B964"/>
+  <rect x="2" y="5" width="1" height="1" fill="#D8B964"/>
+  <rect x="11" y="5" width="1" height="1" fill="#D8B964"/>
+  <rect x="12" y="5" width="1" height="1" fill="#D8B964"/>
+  <rect x="5" y="1" width="1" height="1" fill="#D8B964"/>
+  <rect x="5" y="2" width="1" height="1" fill="#D8B964"/>
+  <rect x="5" y="11" width="1" height="1" fill="#D8B964"/>
+  <rect x="5" y="12" width="1" height="1" fill="#D8B964"/>
+  <rect x="1" y="7" width="1" height="1" fill="#D8B964"/>
+  <rect x="2" y="7" width="1" height="1" fill="#D8B964"/>
+  <rect x="11" y="7" width="1" height="1" fill="#D8B964"/>
+  <rect x="12" y="7" width="1" height="1" fill="#D8B964"/>
+  <rect x="7" y="1" width="1" height="1" fill="#D8B964"/>
+  <rect x="7" y="2" width="1" height="1" fill="#D8B964"/>
+  <rect x="7" y="11" width="1" height="1" fill="#D8B964"/>
+  <rect x="7" y="12" width="1" height="1" fill="#D8B964"/>
+  <rect x="1" y="9" width="1" height="1" fill="#D8B964"/>
+  <rect x="2" y="9" width="1" height="1" fill="#D8B964"/>
+  <rect x="11" y="9" width="1" height="1" fill="#D8B964"/>
+  <rect x="12" y="9" width="1" height="1" fill="#D8B964"/>
+  <rect x="9" y="1" width="1" height="1" fill="#D8B964"/>
+  <rect x="9" y="2" width="1" height="1" fill="#D8B964"/>
+  <rect x="9" y="11" width="1" height="1" fill="#D8B964"/>
+  <rect x="9" y="12" width="1" height="1" fill="#D8B964"/>
+  <rect x="2" y="2" width="10" height="10" rx="1" fill="#2B2B2F"/>
+  <rect x="3" y="3" width="8" height="8" fill="#4A6689"/>
+  <rect x="5" y="5" width="4" height="4" fill="#6886AE"/>
+  <rect x="4" y="4" width="1" height="1" fill="#B9C9DE"/>
+  <path d="M9.46 7.99L10.9 9.43L9.43 10.9L7.99 9.46A2.72 2.72 0 0 0 11.62 12.98L13.33 14.69A0.96 0.96 0 0 0 14.69 13.33L12.98 11.62A2.72 2.72 0 0 0 9.46 7.99Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

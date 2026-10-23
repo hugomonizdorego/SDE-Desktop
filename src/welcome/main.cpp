@@ -282,8 +282,7 @@ class WelcomeWindow : public BufferedWindow {
       // ... and the desktop, with the SDE logo.
       if (!sde_mark_ || mark_dark_ != t.dark) {
         if (sde_mark_) cairo_surface_destroy(sde_mark_);
-        sde_mark_ = legal::load_branding({"sde-mark"}, msz, msz, {"sde-logo"});
-        if (!sde_mark_) sde_mark_ = legal::load_branding({legal::logo_name(t.dark)}, msz, msz);
+        sde_mark_ = legal::load_mark(msz, t.dark);
         mark_dark_ = t.dark;
       }
       if (sde_mark_)
