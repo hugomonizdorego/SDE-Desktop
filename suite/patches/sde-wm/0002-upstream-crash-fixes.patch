@@ -1,0 +1,113 @@
+SDE WM: upstream Openbox fixes after 3.6.1 (crashes and a hang).
+
+SDE WM is built from the Openbox release-3.6.1 tag; these fixes are in
+Openbox git (github.com/Mikachu/openbox) or Debian's openbox package:
+
+* client_calc_layer(): walk a copy of the stacking list. The
+  client_calc_layer_internal() calls restack windows and change
+  stacking_list while it is walked, so the walk followed freed list
+  nodes; crashes became common once GLib's slice allocator turned into
+  plain malloc (GLib 2.76). Upstream fd558ef1, df655b90 and e4ba54ea
+  (3.7); Debian bug #1033385.
+* screen_pointer_pos(): XQueryPointer() no longer writes its throw-away
+  results into the loop variable (endless loop with more than two X
+  screens). Upstream 49fb7f52; Debian bug #983882.
+* DestroyImlibLoader(): free this loader's own image only; a failed
+  imlib2 load called imlib_free_image() on whatever image the imlib
+  context held. Debian bug #1007147 (Openbox bug 6447), made explicit
+  with imlib_context_set_image().
+
+--- a/openbox/client.c
++++ b/openbox/client.c
+@@ -2701,12 +2701,17 @@
+ 
+ void client_calc_layer(ObClient *self)
+ {
+-    GList *it;
++    GList *it, *fs_start, *fs_end;
++    /* the client_calc_layer_internal calls below modify stacking_list,
++       so we have to make a copy to iterate over */
++    GList *list = g_list_copy(stacking_list);
+ 
+     /* skip over stuff above fullscreen layer */
+-    for (it = stacking_list; it; it = g_list_next(it))
++    for (it = list; it; it = g_list_next(it))
+         if (window_layer(it->data) <= OB_STACKING_LAYER_FULLSCREEN) break;
+ 
++    fs_start = it;
++
+     /* find the windows in the fullscreen layer, and mark them not-visited */
+     for (; it; it = g_list_next(it)) {
+         if (window_layer(it->data) < OB_STACKING_LAYER_FULLSCREEN) break;
+@@ -2714,20 +2719,18 @@
+             WINDOW_AS_CLIENT(it->data)->visited = FALSE;
+     }
+ 
+-    client_calc_layer_internal(self);
++    fs_end = it;
+ 
+-    /* skip over stuff above fullscreen layer */
+-    for (it = stacking_list; it; it = g_list_next(it))
+-        if (window_layer(it->data) <= OB_STACKING_LAYER_FULLSCREEN) break;
++    client_calc_layer_internal(self);
+ 
+-    /* now recalc any windows in the fullscreen layer which have not
++    /* now recalc any windows that were in the fullscreen layer which have not
+        had their layer recalced already */
+-    for (; it; it = g_list_next(it)) {
+-        if (window_layer(it->data) < OB_STACKING_LAYER_FULLSCREEN) break;
+-        else if (WINDOW_IS_CLIENT(it->data) &&
+-                 !WINDOW_AS_CLIENT(it->data)->visited)
++    for (it = fs_start; it != fs_end; it = g_list_next(it))
++        if (WINDOW_IS_CLIENT(it->data) &&
++                !WINDOW_AS_CLIENT(it->data)->visited)
+             client_calc_layer_internal(it->data);
+-    }
++
++    g_list_free(list);
+ }
+ 
+ gboolean client_should_show(ObClient *self)
+--- a/openbox/screen.c
++++ b/openbox/screen.c
+@@ -1903,18 +1903,21 @@
+ 
+ gboolean screen_pointer_pos(gint *x, gint *y)
+ {
+-    Window w;
+     gint i;
+-    guint u;
+     gboolean ret;
+ 
++    /* we don't care about any of these return values, but we can't pass NULL */
++    Window w;
++    guint u;
++    gint j;
++
+     ret = !!XQueryPointer(obt_display, obt_root(ob_screen),
+-                          &w, &w, x, y, &i, &i, &u);
++                          &w, &w, x, y, &j, &j, &u);
+     if (!ret) {
+         for (i = 0; i < ScreenCount(obt_display); ++i)
+             if (i != ob_screen)
+-                if (XQueryPointer(obt_display, obt_root(i),
+-                                  &w, &w, x, y, &i, &i, &u))
++                if ((ret=XQueryPointer(obt_display, obt_root(i),
++                                  &w, &w, x, y, &j, &j, &u)))
+                     break;
+     }
+     return ret;
+--- a/obrender/image.c
++++ b/obrender/image.c
+@@ -481,7 +481,10 @@
+     if (!loader)
+         return;
+ 
+-    imlib_free_image();
++    if (loader->img) {
++        imlib_context_set_image(loader->img);
++        imlib_free_image();
++    }
+     g_slice_free(ImlibLoader, loader);
+ }
+ 
