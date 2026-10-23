@@ -1195,7 +1195,6 @@ class HeroButton : public DrawnButton {
   std::function<void()> fn_;
 };
 
-// Initial in an accent circle, then the user name.
 // The user in the footer: the account picture (or the initials) and the
 // name (src/panel/account.h); a click opens Users & Avatar.
 class UserBadge : public Fl_Widget {
