@@ -197,6 +197,43 @@ class XGrab:
         finally:
             self.x.XDestroyImage(im)
 
+    class XWindowAttributes(ctypes.Structure):
+        _fields_ = [('x', ctypes.c_int), ('y', ctypes.c_int), ('width', ctypes.c_int), ('height', ctypes.c_int),
+                    ('border_width', ctypes.c_int), ('depth', ctypes.c_int), ('visual', ctypes.c_void_p),
+                    ('root', ctypes.c_ulong), ('klass', ctypes.c_int), ('bit_gravity', ctypes.c_int),
+                    ('win_gravity', ctypes.c_int), ('backing_store', ctypes.c_int),
+                    ('backing_planes', ctypes.c_ulong), ('backing_pixel', ctypes.c_ulong),
+                    ('save_under', ctypes.c_int), ('colormap', ctypes.c_ulong), ('map_installed', ctypes.c_int),
+                    ('map_state', ctypes.c_int), ('all_event_masks', ctypes.c_long),
+                    ('your_event_mask', ctypes.c_long), ('do_not_propagate_mask', ctypes.c_long),
+                    ('override_redirect', ctypes.c_int), ('screen', ctypes.c_void_p)]
+
+    def overlays(self):
+        """Mapped override-redirect top-level windows (popups, bubbles):
+        {window: (x, y, w, h)}."""
+        x = self.x
+        x.XQueryTree.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong),
+                                 ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)),
+                                 ctypes.POINTER(ctypes.c_uint)]
+        x.XGetWindowAttributes.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(self.XWindowAttributes)]
+        x.XFree.argtypes = [ctypes.c_void_p]
+        root, parent = ctypes.c_ulong(), ctypes.c_ulong()
+        children, n = ctypes.POINTER(ctypes.c_ulong)(), ctypes.c_uint()
+        out = {}
+        if not x.XQueryTree(self.d, self.root, ctypes.byref(root), ctypes.byref(parent), ctypes.byref(children),
+                            ctypes.byref(n)):
+            return out
+        try:
+            for i in range(n.value):
+                a = self.XWindowAttributes()
+                if x.XGetWindowAttributes(self.d, children[i], ctypes.byref(a)) and a.map_state == 2 and \
+                        a.override_redirect:
+                    out[children[i]] = (a.x, a.y, a.width, a.height)
+        finally:
+            if children:
+                x.XFree(children)
+        return out
+
     def close(self):
         if self.d:
             self.x.XCloseDisplay(self.d)
@@ -621,15 +658,25 @@ class Session:
 
     # ----------------------------------------------------------- settling
 
-    def grab(self):
-        """The screen: (width, height, BGRX bytes, stride, bytes per pixel)."""
+    def x11(self):
+        """The showcase's own libX11 connection (XGrab), or None."""
         if self.xgrab is None:
             try:
                 self.xgrab = XGrab(self.env['DISPLAY'])
             except (OSError, RuntimeError, AttributeError) as e:
                 warn(f'libX11 screen grabs unavailable ({e}); using ImageMagick import')
                 self.xgrab = False
-        if self.xgrab:
+        return self.xgrab or None
+
+    def overlays(self):
+        """Mapped override-redirect windows {id: (x, y, w, h)} (the bubbles
+        of sde-notifyd have no name: this finds them)."""
+        x = self.x11()
+        return x.overlays() if x else {}
+
+    def grab(self):
+        """The screen: (width, height, BGRX bytes, stride, bytes per pixel)."""
+        if self.x11():
             return self.xgrab.grab()
         if shutil.which('import'):
             r = sp.run(['import', '-window', 'root', '-depth', '8', 'xwd:-'], env=self.env, stdout=sp.PIPE,
@@ -682,6 +729,10 @@ class Session:
             warn(f'{self.set.name}/{name}: the window looks blank')
         file = self.out / (self.run_ctx.numbers[name] + '.png')
         file.write_bytes(showcase_content.png_bytes(img[0], img[1], rgb_rows(img)))
+        # The same view under an older number (another build's catalogue).
+        for old in self.out.glob(f'*-{name}.png'):
+            if old != file and re.fullmatch(r'\d+-' + re.escape(name) + r'\.png', old.name):
+                old.unlink()
         caption = dict(self.run_ctx.images_of(self.current)).get(name, name)
         self.run_ctx.index.append({
             'file': f'{self.set.name}/{file.name}', 'name': name, 'caption': caption,
@@ -736,18 +787,16 @@ class Session:
     # ------------------------------------------------------------ cleanup
 
     def dismiss_popups(self):
+        """Closes the panel's popups (Escape), so none shows in a later shot."""
+        pattern = '^(' + '|'.join(POPUPS) + ')$'
         for _ in range(4):
-            open_ = [t for t in POPUPS if self.visible('^' + re.escape(t) + '$')]
-            menu = self.layout('context-menu')
-            if not open_:
-                break
+            if not self.visible_all(pattern):
+                return
             self.key('Escape')
             time.sleep(0.25)
-        for t in POPUPS:
-            if self.visible('^' + re.escape(t) + '$'):
-                warn(f'{t} stayed open; unmapping it')
-                for w in self.visible_all('^' + re.escape(t) + '$'):
-                    self.xdo('windowunmap', w)
+        for w in self.visible_all(pattern):
+            warn(f'{self.title(w)} stayed open; unmapping it')
+            self.xdo('windowunmap', w)
 
     def clean(self):
         """Closes everything the scene opened."""
@@ -1332,6 +1381,7 @@ def notifications(s):
     # Bubbles stay 30 s (instead of 6) while both arrive.
     s.write_config({'notifications': {'timeout': '30'}}, reload=True)
     s.keep_bubbles = True
+    windows = set(s.overlays())
     try:
         # Software Updater's own notification (fixture updates)...
         if s.has('sde-update'):
@@ -1351,10 +1401,12 @@ def notifications(s):
         s.park_pointer()
         time.sleep(0.8)  # the bubbles map (unnamed windows: nothing to wait for)
         s.shot('notification-bubbles', quiet=0.4, timeout=3)
-        # Bubbles away, the history stays for the notifications button.
-        for nid in s.notification_ids():
-            s.close_notification(nid)
-        time.sleep(0.5)
+        # The bubbles away (unmapped as if they had expired); the history
+        # stays for the notifications button. CloseNotification would
+        # withdraw them from the history too.
+        for w in set(s.overlays()) - windows:
+            s.xdo('windowunmap', str(w))
+        time.sleep(0.4)
         s.click_panel('notifications', '^Notifications$')
         s.park_pointer()
         s.shot('panel-notifications', quiet=0.5)
@@ -1374,13 +1426,11 @@ def taskbar_previews(s):
         s.size(a, 900, 560)
         b = s.app(['liria', '--no-desktop', pics], '^Nature$')
         s.size(b, 900, 560)
-        title = 'Nature'
     elif s.test_tool('sde-preview-window'):
         tool = s.test_tool('sde-preview-window')
         s.spawn(tool, 'Garden Planner', '2F6FD6')
         s.spawn(tool, 'Field Report', '16A394')
         s.need('^Field Report$')
-        title = 'Field Report'
     else:
         raise SkipShot('no application with two windows')
     btn = s.wait(lambda: next((v for k, v in s.layout('SDE Panel').items() if k.startswith('task:')), None), 5)
@@ -1453,20 +1503,23 @@ def action_center_more(s):
         s.shot(f'action-center-{style}', quiet=0.6)
         s.key('Escape')
     s.write_config(reload=True)
-    open_ac(s)
-    if s.control('Action Center', 'Power', 2):
-        s.press('Action Center', 'Power')
-        if s.control('Action Center', 'Shut Down', 2):
+    # A footer or a card opens with a click; the click can race the popup
+    # still laying out (services answering): try again then.
+    for button, wanted, name in [('Power', 'Shut Down', 'action-center-power'),
+                                 ('Brightness settings', 'Night Light', 'action-center-brightness')]:
+        open_ac(s)
+        for _ in range(3):
+            if s.control('Action Center', wanted, 0.3):
+                break
+            if s.control('Action Center', button, 2):
+                s.press('Action Center', button)
+                s.control('Action Center', wanted, 2)
+        if s.control('Action Center', wanted, 0.3):
             s.park_pointer()
-            s.shot('action-center-power', quiet=0.5)
+            s.shot(name, quiet=0.5)
+        else:
+            s.skip(name, f'{button} did not open {wanted}')
         s.key('Escape')
-    open_ac(s)
-    if s.control('Action Center', 'Brightness settings', 2):
-        s.press('Action Center', 'Brightness settings')
-        if s.control('Action Center', 'Night Light', 2):
-            s.park_pointer()
-            s.shot('action-center-brightness', quiet=0.5)
-    s.key('Escape')
     s.set_clock(None)
 
 
@@ -1563,7 +1616,7 @@ def about(s):
     s.stop_scene_procs()
     s.kill_windows(SETTINGS_TITLE)
     if s.has('calculator'):
-        c = s.app(['calculator'], '^Calculator$')
+        s.app(['calculator'], '^Calculator$')
         s.key('F1')
         a = s.find('^About Calculator$', 4)
         if a:
@@ -1606,9 +1659,12 @@ def liria_more(s):
     w = s.app(['liria', '--no-desktop', s.home / 'Pictures/Nature'], '^Nature$')
     s.size(w, 1040, 640)
     s.activate(w)
-    # A picture selected with the keyboard, its menu with Shift+F10.
+    # A picture selected with the keyboard, its menu with Shift+F10 (it
+    # opens at the pointer: over the files).
     s.key('Home', 'Right')
     time.sleep(0.3)
+    g = s.geom(w)
+    s.move(g['x'] + g['w'] * 0.42, g['y'] + g['h'] * 0.36)
     box = s.box_of(w)
     before = s.hash_box(box)
     s.key('shift+F10')
@@ -1629,7 +1685,7 @@ def liria_more(s):
        scopes=(FULL, THEMES), needs=['niny'])
 def niny(s):
     docs = s.home / 'Documents'
-    w = s.app(['niny', docs / 'Projects/garden-planner/planner.py', docs / 'Garden Planner.md'], 'Niny$')
+    s.app(['niny', docs / 'Projects/garden-planner/planner.py', docs / 'Garden Planner.md'], 'Niny$')
     s.key('ctrl+shift+m')
     time.sleep(0.6)
     s.park_pointer()
@@ -1689,7 +1745,7 @@ def gallery(s):
                       ('calculator-programmer', 'Calculator: programmer mode with bases and bits'),
                       ('calculator-converter', 'Calculator: unit converter')], needs=['calculator'])
 def calculator(s):
-    w = s.app(['calculator', '--mode', 'standard'], '^Calculator$')
+    s.app(['calculator', '--mode', 'standard'], '^Calculator$')
     for expr in ('1250*12', '15000/12+250', '42.5*4'):
         s.type(expr, 40)
         s.key('Return')
@@ -1836,10 +1892,28 @@ def avatar_picker(s):
 
 
 def write_outputs(run):
+    """index.json, the contact sheets and README.md for everything in the
+    output folder: the images of this run and those of earlier runs into
+    the same folder (other sets or scenes) that are still there."""
     out = run.out
-    sets = [t for t in SETS if any(e['set'] == t.name for e in run.index)]
+    set_names = [t.name for t in SETS]
+    images, skipped = list(run.index), [{'set': s, 'name': n, 'reason': r} for s, n, r in run.skipped]
+    try:
+        old = json.loads((out / 'index.json').read_text())
+    except (OSError, ValueError):
+        old = {}
+    now = {(e['set'], e['name']) for e in images}
+    images += [e for e in old.get('images', []) if (e.get('set'), e.get('name')) not in now and
+               e.get('set') in set_names and (out / e.get('file', '-')).is_file()]
+    have = {(e['set'], e['name']) for e in images}
+    redone = {(s['set'], s['name']) for s in skipped}
+    skipped += [s for s in old.get('skipped', []) if (s.get('set'), s.get('name')) not in redone]
+    skipped = [s for s in skipped if (s['set'], s['name']) not in have]
     order = {name: i for i, (_, name, _) in enumerate(run.catalogue)}
-    run.index.sort(key=lambda e: ([t.name for t in SETS].index(e['set']), order.get(e['name'], 0)))
+    images.sort(key=lambda e: (set_names.index(e['set']), order.get(e['name'], len(order)), e['name']))
+    skipped.sort(key=lambda s: (set_names.index(s['set']) if s['set'] in set_names else 99,
+                                order.get(s['name'], len(order))))
+    sets = [t for t in SETS if any(e['set'] == t.name for e in images)]
     meta = {
         'title': 'SDE development screenshots',
         'version': (ROOT / 'VERSION').read_text().strip() if (ROOT / 'VERSION').exists() else '',
@@ -1847,47 +1921,75 @@ def write_outputs(run):
         'date': dt.date.today().isoformat(),
         'sets': [{'name': t.name, 'label': t.label, 'theme': t.theme, 'size': t.size, 'scale': t.scale}
                  for t in sets],
-        'images': run.index,
-        'skipped': [{'set': s, 'name': n, 'reason': r} for s, n, r in run.skipped],
+        'images': images,
+        'skipped': skipped,
     }
     (out / 'index.json').write_text(json.dumps(meta, indent=2) + '\n')
-    sheets = contact_sheets(run, sets)
-    lines = [f'# SDE {meta["programs"] or meta["version"]} - development screenshots', '',
-             f'Captured on {meta["date"]} by `tools/showcase.py` from the real programs on a virtual X11 '
-             'display, with sample content (all original). Network, sound, Bluetooth, battery, drives, '
-             'weather and updates are test fixtures; "Alex Tester" is a sample account.', '']
-    lines += ['| Set | Theme | Size | Images |', '| --- | --- | --- | --- |']
+    sheets = contact_sheets(run, sets, images)
+    (out / 'README.md').write_text(readme(meta, sets, images, skipped, sheets))
+    info(f'wrote {out / "README.md"}, index.json and {len(sheets)} contact sheets ({len(images)} images)')
+
+
+def readme(meta, sets, images, skipped, sheets):
+    """The gallery: the sets, the themes side by side, then every view by
+    component (the default set, with links to the others)."""
+    by = {(e['set'], e['name']): e for e in images}
+    sets_of = {}
+    for e in images:
+        sets_of.setdefault(e['name'], []).append(e['set'])
+    main = 'graphite-light' if any(t.name == 'graphite-light' for t in sets) else (sets[0].name if sets else '')
+    lines = [f'# SDE {meta["programs"] or meta["version"]}: development screenshots', '',
+             f'Captured on {meta["date"]} with `tools/showcase.py` from the real programs on a virtual X11 '
+             'display, with original sample content. Network, sound, Bluetooth, battery, drives, weather, '
+             'updates and drivers are test data; "Alex Tester" is a sample account. Click an image for '
+             'full size.', '', '| Set | Theme | Screen | Images |', '| --- | --- | --- | --- |']
     for t in sets:
-        n = sum(1 for e in run.index if e['set'] == t.name)
-        sheet = sheets.get(t.name)
-        link = f' ([contact sheet]({sheet}))' if sheet else ''
-        lines.append(f'| `{t.name}` | {t.label} | {t.size} @ {t.scale} % | {n}{link} |')
+        n = sum(1 for e in images if e['set'] == t.name)
+        sheet = f' · [contact sheet]({sheets[t.name]})' if t.name in sheets else ''
+        lines.append(f'| `{t.name}` | {t.label} | {t.size} at {t.scale} % | {n}{sheet} |')
     lines.append('')
-    main = sets[0].name if sets else ''
+    theme_sets = {t.name for t in SETS if t.scope == 'themes'}
+    compare = []
+    for e in images:
+        if e['name'] not in compare and theme_sets & set(sets_of[e['name']]):
+            compare.append(e['name'])
+    if compare and len(sets) > 1:
+        heads = [by[next((s, n) for s in sets_of[n])]['component'] for n in compare]
+        lines += ['## Themes side by side', '', '| | ' + ' | '.join(heads) + ' |',
+                  '| --- |' + ' --- |' * len(compare)]
+        for t in sets:
+            cells = [f'[![{t.label}: {h}]({by[(t.name, n)]["file"]})]({by[(t.name, n)]["file"]})'
+                     if (t.name, n) in by else '' for n, h in zip(compare, heads)]
+            lines.append(f'| {t.label} | ' + ' | '.join(cells) + ' |')
+        lines.append('')
     components = []
-    for e in run.index:
+    for e in images:
         if e['component'] not in components:
             components.append(e['component'])
     for comp in components:
-        lines += [f'## {comp}', '']
-        seen = set()
-        for e in run.index:
-            if e['component'] != comp or e['name'] in seen:
-                continue
-            seen.add(e['name'])
-            others = [x for x in run.index if x['name'] == e['name'] and x['set'] != e['set']]
-            first = next((x for x in run.index if x['name'] == e['name'] and x['set'] == main), e)
-            lines += [f'**{first["caption"]}**', '', f'![{first["caption"]}]({first["file"]})', '']
-            if others:
-                lines += ['Also: ' + ' · '.join(f'[{x["set"]}]({x["file"]})' for x in
-                                               [first] + [o for o in others if o is not first] if x is not first), '']
-    if run.skipped:
-        lines += ['## Not captured in this build', '']
-        for s, n, r in run.skipped:
-            lines.append(f'- `{s}` {n}: {r}')
+        shown, seen = [], set()
+        for e in images:
+            if e['component'] == comp and e['name'] not in seen:
+                seen.add(e['name'])
+                shown.append(by.get((main, e['name']), e))
+        lines += [f'## {comp}', '', '| | |', '| --- | --- |']
+        for i in range(0, len(shown), 2):
+            cells = []
+            for e in shown[i:i + 2]:
+                others = [by[(s, e['name'])] for s in [t.name for t in sets] if s != e['set'] and (s, e['name']) in by]
+                also = ('<br>Also: ' + ' · '.join(f'[{o["set"]}]({o["file"]})' for o in others)) if others else ''
+                note = '' if e['set'] == main else f' ({e["set"]})'
+                cells.append(f'[![{e["caption"]}]({e["file"]})]({e["file"]})<br>{e["caption"]}{note}{also}')
+            cells += [''] * (2 - len(cells))
+            lines.append('| ' + ' | '.join(cells) + ' |')
         lines.append('')
-    (out / 'README.md').write_text('\n'.join(lines))
-    info(f'wrote {out / "README.md"} and index.json ({len(run.index)} images)')
+    if skipped:
+        lines += ['## Not captured', '', 'Views this build does not have yet (or that failed); '
+                  'see the logs of the run.', '']
+        for s in skipped:
+            lines.append(f'- `{s["set"]}` {s["name"]}: {s["reason"]}')
+        lines.append('')
+    return '\n'.join(lines)
 
 
 def program_version(run):
@@ -1901,7 +2003,7 @@ def program_version(run):
         return ''
 
 
-def contact_sheets(run, sets):
+def contact_sheets(run, sets, images):
     """One labelled contact sheet per set (ImageMagick montage)."""
     montage = shutil.which('montage')
     if not montage:
@@ -1909,7 +2011,7 @@ def contact_sheets(run, sets):
         return {}
     out = {}
     for t in sets:
-        files = [e for e in run.index if e['set'] == t.name]
+        files = [e for e in images if e['set'] == t.name]
         if not files:
             continue
         name = f'contact-{t.name}.jpg'
@@ -1917,7 +2019,9 @@ def contact_sheets(run, sets):
         args = [montage, '-background', '#1f2328', '-fill', '#e6edf3', '-font', 'DejaVu-Sans', '-pointsize', '13',
                 '-title', f'SDE showcase - {t.label}']
         for e in files:
-            args += ['-label', e['caption'][:70], str(run.out / e['file'])]
+            num = Path(e['file']).name.split('-', 1)[0]
+            label = f'{num}  {e["caption"]}'
+            args += ['-label', label if len(label) <= 72 else label[:70] + '...', str(run.out / e['file'])]
         args += ['-tile', f'{cols}x', '-geometry', '420x+10+10', '-quality', '86', str(run.out / name)]
         r = sp.run(args, stdout=sp.PIPE, stderr=sp.PIPE, text=True)
         if r.returncode != 0:
@@ -2136,9 +2240,10 @@ def main(argv=None):
     if not sets:
         print('showcase: no set matches --theme/--size', file=sys.stderr)
         return 2
-    for tool in ('Xvfb', 'xdotool', 'xwd', 'xwininfo', 'xprop', 'dbus-daemon'):
+    for tool in ('Xvfb', 'xdotool', 'xwininfo', 'xprop', 'dbus-daemon', 'gdbus', 'dbus-send'):
         if not shutil.which(tool):
-            print(f'showcase: {tool} is required', file=sys.stderr)
+            print(f'showcase: {tool} is required (Debian: xvfb xdotool x11-utils dbus libglib2.0-bin)',
+                  file=sys.stderr)
             return 2
     run.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()

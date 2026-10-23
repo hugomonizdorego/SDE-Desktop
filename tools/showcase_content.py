@@ -569,7 +569,6 @@ def picture_avatar(size=256, seed=5):
 
 def picture_cover(size=320, seed=97):
     """Album cover: concentric rings over a warm gradient."""
-    rnd = random.Random(seed)
     rows = []
     c = size / 2
     for y in range(size):
