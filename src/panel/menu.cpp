@@ -1568,7 +1568,15 @@ void AppMenu::scroll_to(Kind kind, int offset, bool smooth) {
   // The items slide away under the pointer; rehover() follows at the end.
   if (hover_.kind != K_NONE) damage_item(hover_, S(12));
   hover_ = {};
-  if (!Fl::has_timeout(glide, this)) Fl::add_timeout(0, glide, this);
+  // The step is drawn at once, also when the wheel turns on while the area
+  // glides (it waited for the next frame, up to 16 ms), unless a frame was
+  // drawn a moment ago: the frame timer comes soon then (at most 120 fps).
+  if (now() - glide_frame_ >= 1.0 / 120) {
+    Fl::remove_timeout(glide, this);
+    Fl::add_timeout(0, glide, this);
+  } else if (!Fl::has_timeout(glide, this)) {
+    Fl::add_timeout(1.0 / 120, glide, this);
+  }
 }
 
 // One frame of smooth scrolling: only the scrolled area is repainted.
@@ -1576,6 +1584,7 @@ void AppMenu::glide(void *data) {
   auto *self = static_cast<AppMenu *>(data);
   if (!self->shown()) return;
   double t = now();
+  self->glide_frame_ = t;
   bool more = false;
   for (Kind kind : {K_ROW, K_TILE}) {
     Glide &g = kind == K_TILE ? self->tiles_glide_ : self->list_glide_;

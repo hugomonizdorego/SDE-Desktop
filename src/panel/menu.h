@@ -210,6 +210,7 @@ class AppMenu : public PanelPopup {
     int to = 0;
   };
   Glide list_glide_, tiles_glide_;
+  double glide_frame_ = 0;  // when glide() last drew
   bool letters_open_ = false, rail_open_ = false;
   // What the items were last laid out for (build_items()).
   unsigned layout_rev_ = 1, built_rev_ = 0;
