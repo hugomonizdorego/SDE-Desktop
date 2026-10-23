@@ -189,6 +189,8 @@ Target target_of(const Tile &t) {
 
 std::string g_query;           // the overview's search
 Fl_Input *g_search = nullptr;  // its field in the page shown
+class HubTile;
+std::vector<HubTile *> g_results;  // the tiles shown, in order
 
 // An icon from the theme for a few tools, else the native symbol.
 const char *theme_icon(const std::string &id) {
@@ -210,6 +212,7 @@ class HubTile : public Fl_Widget {
     tooltip(title_.c_str());
     if (!target_.usable()) deactivate();
   }
+  ~HubTile() override { g_results.erase(std::remove(g_results.begin(), g_results.end(), this), g_results.end()); }
   void activate_tile() {
     if (target_.tool()) {
       spawn_detached(target_.argv);
@@ -418,7 +421,12 @@ class HubSearch : public Fl_Input {
       Fl::add_timeout(0.0, rebuild);
     });
   }
+  ~HubSearch() override {
+    if (g_search == this) g_search = nullptr;
+  }
   static void rebuild(void *) {
+    // Typed just before another page was opened: nothing to rebuild.
+    if (current_settings_page() != "home") return;
     refresh_page();
     if (g_search) {
       g_search->take_focus();
@@ -451,9 +459,8 @@ class HubSearch : public Fl_Input {
   SearchField *field_;
 };
 
-std::vector<HubTile *> g_results;  // the tiles shown, in order
-
 void first_result(void *) {
+  if (current_settings_page() != "home") return;
   for (HubTile *t : g_results)
     if (t->active_r()) {
       t->activate_tile();
