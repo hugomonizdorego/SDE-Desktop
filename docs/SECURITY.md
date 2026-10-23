@@ -72,7 +72,9 @@ Session services that hold secrets or act for other programs:
   password lives in a locked (`mlock`) buffer and is wiped after every attempt;
   `SetActive(false)` never unlocks; logind's `Lock`/`Unlock` signals are only
   accepted from logind itself; a rescue prompt appears when the lock screen
-  keeps failing. Nothing about passwords is logged.
+  keeps failing; Switch User hands over to the display manager's greeter
+  (`dm-tool switch-to-greeter`) while the session stays locked. Nothing
+  about passwords is logged.
 - **sde-polkit-agent**: the session's polkit authentication agent. The typed
   password is overwritten in the input buffer after it is handed to polkit.
 - **sde-notifyd** (`org.freedesktop.Notifications`): bounds every field
@@ -101,7 +103,8 @@ processes only and never reach a privileged helper.
   configuration library, whose objects (the Rust standard library among
   them) carry no CET notes, so the linker leaves the whole program unmarked
   (see A1-45 in the audit). The Rust parts have no third-party crates.
-- **Warnings:** SDE's own code builds without warnings with `-Wall -Wextra`.
+- **Warnings:** SDE's own code builds without warnings with `-Wall -Wextra`
+  (GCC 13 and Clang 18).
 - **Sanitizers:** the unit and X11 tests pass with
   `-fsanitize=address,undefined` (see `docs/AUDIT-0.2.0-alpha1.md` for the
   procedure).
@@ -115,7 +118,10 @@ processes only and never reach a privileged helper.
   own checks (no absolute paths, no `..`, no symlink/hardlink escapes, no
   set-user-ID bits, no device files); desktop drag and drop never follows a
   symbolic link out of the target and never replaces a file without asking;
-  temporary files use `mkstemp`/`O_EXCL|O_NOFOLLOW` in private directories.
+  account pictures are opened without following links (except the installed
+  stock pictures) and checked for size and pixel dimensions before they are
+  decoded; temporary files use
+  `mkstemp`/`O_EXCL|O_NOFOLLOW` in private directories.
 - **Network:** weather, geocoding, IP location and time zone requests use
   HTTPS without downgrade on redirect (`curl --proto =https`); answers are
   parsed with depth and size limits and range-checked. The only plain-HTTP
