@@ -292,10 +292,22 @@ button.sde-ribbon-button:disabled image {
 
 /* Selected files: a soft accent highlight with the normal text colour,
  * as in the sidebar, in the icon views and in the list. */
-.liria-notebook .view.liria-canvas-item:selected,
 .liria-notebook treeview.view:selected {
   background-image: none;
   background-color: alpha(@theme_selected_bg_color, 0.24);
+  color: @theme_text_color;
+}
+
+/* The icon views multiply selected icons by the background colour of this
+ * context (:selected, :active when the view is not focused), alpha left
+ * aside: a light accent tint keeps them as light as before, while the full
+ * accent or the base colour made icons dark, nearly black in dark themes.
+ * So the colour is that tint, fully transparent, and the label highlight is
+ * a background image. */
+.liria-notebook .view.liria-canvas-item:selected,
+.liria-notebook .view.liria-canvas-item:active {
+  background-color: alpha(mix(white, @theme_selected_bg_color, 0.35), 0);
+  background-image: linear-gradient(alpha(@theme_selected_bg_color, 0.24), alpha(@theme_selected_bg_color, 0.24));
   color: @theme_text_color;
 }
 
