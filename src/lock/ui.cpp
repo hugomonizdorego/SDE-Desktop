@@ -986,6 +986,11 @@ int run_lock_ui(const UiOptions &options) {
   Fl::remove_timeout(animate);
   Fl::remove_timeout(input_check);
   Fl::remove_timeout(raise_cb);
+  // The windows (with a full-screen background each) go as well, so that a
+  // leak checker sees only real leaks.
+  for (auto *w : ui.windows) delete w;
+  ui.windows.clear();
+  ui.primary = nullptr;
   if (ui.avatar) cairo_surface_destroy(ui.avatar);
   g = nullptr;
   return 0;
