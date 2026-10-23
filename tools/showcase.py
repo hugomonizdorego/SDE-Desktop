@@ -46,8 +46,10 @@ import subprocess as sp
 import sys
 import tempfile
 import time
+import threading
 import traceback
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -117,6 +119,7 @@ class Run:
         self.pages = []
         self.numbers = {}
         self.catalogue = []  # (scene, name, caption)
+        self.stop = threading.Event()  # set: the sessions end after their scene
 
     def number(self):
         """Numbers every image of the catalogue (independent of filters and
@@ -178,6 +181,9 @@ class XGrab:
         self.x.XDestroyImage.argtypes = [ctypes.POINTER(self.XImage)]
         self.x.XCloseDisplay.argtypes = [ctypes.c_void_p]
         self.x.XDisplayWidth.argtypes = self.x.XDisplayHeight.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        # Several sessions may grab at once (--jobs), each with its own
+        # connection; libX11 1.8 does this itself, older ones need it.
+        self.x.XInitThreads()
         self.d = self.x.XOpenDisplay(display.encode())
         if not self.d:
             raise RuntimeError(f'cannot open display {display}')
@@ -1336,15 +1342,23 @@ def panel_flyouts(s):
         if not s.run_ctx.selected(s.current, img):
             continue
         s.dismiss_popups()
-        if section != 'power' and not s.control('SDE Panel', 'status:' + section, 1):
-            s.skip(img, f'no {title} icon on the panel')
-            continue
-        try:
-            s.panel_command(['--section', section], title)
-        except SkipShot as e:
-            s.skip(img, str(e))
-            continue
+        s.gone('^' + title + '$', 2)
+        # Like a user: a click on the status icon (sde-panel --section
+        # can get lost while the previous popup closes; it is the fallback).
+        w = None
+        if s.control('SDE Panel', 'status:' + section, 1):
+            try:
+                w = s.click_panel('status:' + section, '^' + title + '$')
+            except SkipShot:
+                w = None
+        if not w:
+            try:
+                w = s.panel_command(['--section', section], title)
+            except SkipShot as e:
+                s.skip(img, f'no {title} flyout ({e})')
+                continue
         s.park_pointer()
+        time.sleep(0.3)  # the icon's tooltip would show after a while
         s.shot(img, quiet=0.5)
         s.key('Escape')
         s.gone('^' + title + '$', 2)
@@ -2083,6 +2097,7 @@ def parse_args(argv=None):
                     help='start the first selected set and wait (prints the environment to explore it)')
     ap.add_argument('--list', action='store_true', help='list the sets and images and exit')
     ap.add_argument('--strict', action='store_true', help='exit with an error when a scene failed')
+    ap.add_argument('--jobs', type=int, default=1, help='sets captured at the same time (own displays)')
     a = ap.parse_args(argv)
     a.xdg_data_dirs = []
     if a.build_dir:
@@ -2175,6 +2190,8 @@ def run_session(run, tset, s):
         return True
     t0 = time.time()
     for sc in SCENES:
+        if run.stop.is_set():
+            break
         if tset.scope not in sc.scopes or not run.selected(sc):
             continue
         missing = [n for n in sc.needs if not s.has(n)]
@@ -2247,15 +2264,34 @@ def main(argv=None):
             return 2
     run.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
-    started = 0
-    display = a.display
+    # The sample pictures once (the sessions copy them, maybe in parallel).
+    showcase_content.make_pictures(run.out / '.cache/pictures')
+    displays, d = [], a.display
     for t in sets:
-        display = free_display(display)
-        if run_set(run, t, display):
-            started += 1
-        display += 1
-        if a.hold:
-            return 0
+        d = free_display(d)
+        displays.append(d)
+        d += 1
+    if a.hold:
+        run_set(run, sets[0], displays[0])
+        return 0
+    jobs = max(1, min(a.jobs, len(sets)))
+    try:
+        if jobs == 1:
+            results = [run_set(run, t, d) for t, d in zip(sets, displays)]
+        else:
+            # Sessions are independent (own display, bus and home): run
+            # several at once; each waits mostly on its programs.
+            with ThreadPoolExecutor(jobs) as pool:
+                futures = [pool.submit(run_set, run, t, d) for t, d in zip(sets, displays)]
+                try:
+                    results = [f.result() for f in futures]
+                except KeyboardInterrupt:
+                    run.stop.set()  # the sessions end after their current scene
+                    raise
+    except KeyboardInterrupt:
+        warn('interrupted; writing what was captured')
+        results = [True]
+    started = sum(1 for r in results if r)
     write_outputs(run)
     if a.zip:
         make_zip(run, a.zip)
