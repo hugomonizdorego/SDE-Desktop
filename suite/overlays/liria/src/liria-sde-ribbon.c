@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 DebION Dev-Team
+ * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Liria's ribbon (alpha52), an open-source take on a file manager ribbon:
  * symbolic icons of the icon theme, theme colours, compact groups.
@@ -123,15 +123,24 @@ rb_slot (Ribbon *r)
     return liria_window_get_active_slot (LIRIA_WINDOW (r->window));
 }
 
-/* The selected files of the active view (free with liria_file_list_free). */
+/* The selected files of the active view (LiriaFile references, free them
+ * with liria_file_list_free ()). The view's own selection is a list of
+ * GFile locations; using those as files printed critical warnings on every
+ * selection change and gave the commands no URIs (0.2.0). */
 static GList *
 rb_selection (Ribbon *r)
 {
     LiriaWindowSlot *slot = rb_slot (r);
+    GList *locations, *l, *files = NULL;
 
     if (slot == NULL || slot->content_view == NULL)
         return NULL;
-    return liria_view_get_selection (slot->content_view);
+    locations = liria_view_get_selection (slot->content_view);
+    for (l = locations; l != NULL; l = l->next)
+        if (G_IS_FILE (l->data))
+            files = g_list_prepend (files, liria_file_get (l->data));
+    g_list_free_full (locations, g_object_unref);
+    return g_list_reverse (files);
 }
 
 static char *
@@ -1257,6 +1266,42 @@ liria_sde_ribbon_add_mode_items (GtkWidget *menu)
     }
 }
 
+/* 0.2.0: the mouse wheel scrolls a ribbon wider than the window sideways
+ * (GTK only does that with Shift held); on a small screen at 150 % the
+ * Open and Select groups were reachable only with the thin overlay
+ * scroll bar. */
+static gboolean
+rb_scroll_sideways (GtkWidget *scroller, GdkEventScroll *event, gpointer data)
+{
+    GtkAdjustment *adjustment = gtk_scrolled_window_get_hadjustment (GTK_SCROLLED_WINDOW (scroller));
+    gdouble page = gtk_adjustment_get_page_size (adjustment);
+    gdouble delta = 0.0, dx = 0.0, dy = 0.0;
+
+    if (gtk_adjustment_get_upper (adjustment) - gtk_adjustment_get_lower (adjustment) <= page)
+        return FALSE;
+    switch (event->direction)
+    {
+    case GDK_SCROLL_UP:
+    case GDK_SCROLL_LEFT:
+        delta = -1.0;
+        break;
+    case GDK_SCROLL_DOWN:
+    case GDK_SCROLL_RIGHT:
+        delta = 1.0;
+        break;
+    case GDK_SCROLL_SMOOTH:
+        if (gdk_event_get_scroll_deltas ((GdkEvent *) event, &dx, &dy))
+            delta = dx + dy;
+        break;
+    default:
+        break;
+    }
+    if (delta == 0.0)
+        return FALSE;
+    gtk_adjustment_set_value (adjustment, gtk_adjustment_get_value (adjustment) + delta * page / 4.0);
+    return TRUE;
+}
+
 void
 liria_sde_ribbon_setup (LiriaNavigationWindow *window, GtkUIManager *ui_manager)
 {
@@ -1299,6 +1344,8 @@ liria_sde_ribbon_setup (LiriaNavigationWindow *window, GtkUIManager *ui_manager)
         gtk_scrolled_window_set_overlay_scrolling (GTK_SCROLLED_WINDOW (scroller), TRUE);
         gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (scroller), GTK_SHADOW_NONE);
         gtk_style_context_add_class (gtk_widget_get_style_context (scroller), "sde-ribbon-scroller");
+        gtk_widget_add_events (scroller, GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK);
+        g_signal_connect (scroller, "scroll-event", G_CALLBACK (rb_scroll_sideways), NULL);
         gtk_container_add (GTK_CONTAINER (scroller), r->stack);
         gtk_container_add (GTK_CONTAINER (r->revealer), scroller);
     }

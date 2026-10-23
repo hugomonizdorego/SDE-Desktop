@@ -222,26 +222,19 @@ void sde_part(Page *page) {
   const Theme &t = settings_theme();
   page->heading(legal::kProjectName, _("The desktop environment: version, build, licenses and credits"));
 
-  // Logo and version. A wide logo (with its name) goes on top; a square
-  // one stands left of the text, or above it in narrow windows. The name
-  // is the part's heading, so the card shows the release.
+  // The official logo, whole and large enough to read its name
+  // (docs/BRANDING.md: at least 200 px wide), with the release below it.
+  // The name is the part's heading, so the card shows the release.
   page->begin_card();
-  int y = page->cursor() + S(14);
+  int y = page->cursor() + S(18);
   int x = page->left() + S(24), w = page->width() - S(48);
-  bool wide = LogoBox::aspect(t.dark) >= 2.0;
   int tx = x, tw = w, logo_bottom = y;
-  if (wide) {
-    int lh = S(64);
-    new LogoBox(x, y, std::min(w, S(380)), lh);
-    y += lh + S(14);
-  } else if (w < S(420)) {
-    new LogoBox(x, y, S(72), S(72));
-    y += S(72) + S(12);
-  } else {
-    new LogoBox(x, y, S(88), S(88));
-    tx = x + S(108);
-    tw = w - S(108);
-    logo_bottom = y + S(88);
+  {
+    double aspect = std::max(0.5, LogoBox::aspect(t.dark));
+    int lw = std::min(w, S(240));
+    int lh = int(std::lround(lw / aspect));
+    new LogoBox(x, y, lw, lh);
+    y += lh + S(16);
   }
   auto line = [&](const std::string &text, Label::Style style) {
     int lh = std::max(S(22), Label::measure(text, tw, style) + S(4));

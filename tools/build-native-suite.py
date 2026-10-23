@@ -122,6 +122,13 @@ def main():
             # Only top-level launchers/autostarts are replaced by SDE entries.
             for desktop in path.glob("*.desktop"):
                 desktop.unlink()
+    # SDE owns the AppStream metadata of its applications too (data/metainfo,
+    # e.g. org.debion.Liria.metainfo.xml); the forks' own files would list
+    # each application twice in software centres.
+    metainfo = args.stage / args.prefix.lstrip("/") / "share/metainfo"
+    if metainfo.exists():
+        for entry in list(metainfo.glob("*.appdata.xml")) + list(metainfo.glob("*.metainfo.xml")):
+            entry.unlink()
     # Some upstream install hooks generate indexes for DESTDIR alone. Those
     # incomplete indexes must never replace the distribution's shared caches.
     mime = args.stage / args.prefix.lstrip("/") / "share/mime"

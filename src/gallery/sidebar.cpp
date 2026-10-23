@@ -13,6 +13,7 @@
 
 #include "gallery.h"
 #include "i18n.h"
+#include "icons.h"
 #include "util.h"
 
 using namespace sde;
@@ -156,7 +157,12 @@ void Sidebar::draw() {
     }
     p.line(x() + w() - 0.5, y(), x() + w() - 0.5, y() + h(), t.border.alpha(0.8));
     double ls = S(32);
-    draw_logo(p, small ? x() + (w() - ls) / 2 : x() + S(20), y() + S(18), ls);
+    double lx = small ? x() + (w() - ls) / 2 : x() + S(20), ly = y() + S(18);
+    // The installed Gallery icon; the drawn tile only when it is missing.
+    if (!IconLoader::lookup("sde-gallery", int(ls)).empty())
+      p.image(IconLoader::get({"sde-gallery"}, int(ls)), lx, ly, ls);
+    else
+      draw_logo(p, lx, ly, ls);
     for (size_t i = 0; i < rs.size(); ++i) {
       const Row &r = rs[i];
       double rx = x() + S(10), rw = w() - S(20);
