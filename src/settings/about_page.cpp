@@ -59,19 +59,18 @@ class LogoBox : public Fl_Widget {
   ~LogoBox() override { drop(); }
   void draw() override {
     const Theme &t = settings_theme();
-    if (!logo_ || dark_ != t.dark || lw_ != w() || lh_ != h()) {
+    if (!loaded_ || dark_ != t.dark || lw_ != w() || lh_ != h()) {
       drop();
       logo_ = legal::load_branding({legal::logo_name(t.dark), "sde-logo", "sde-mark"}, w(), h(),
                                    {"sde-logo", "start-here"});
+      loaded_ = true;
       dark_ = t.dark;
       lw_ = w();
       lh_ = h();
     }
     if (!logo_) return;
     Painter p(window()->w(), window()->h());
-    int iw = cairo_image_surface_get_width(logo_), ih = cairo_image_surface_get_height(logo_);
-    p.surface(logo_, x(), y() + (h() - ih) / 2);
-    (void)iw;
+    p.surface(logo_, x(), y() + (h() - cairo_image_surface_get_height(logo_)) / 2);
   }
   // Width / height of the installed logo (1 when there is none).
   static double aspect(bool dark) {
@@ -89,7 +88,7 @@ class LogoBox : public Fl_Widget {
     logo_ = nullptr;
   }
   cairo_surface_t *logo_ = nullptr;
-  bool dark_ = false;
+  bool loaded_ = false, dark_ = false;
   int lw_ = 0, lh_ = 0;
 };
 
