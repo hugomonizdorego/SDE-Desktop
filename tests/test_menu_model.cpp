@@ -120,7 +120,9 @@ int main() {
   CHECK(menu::fold("\xCE\x91\xCE\x92") == "\xCE\xB1\xCE\xB2");                  // Greek
   CHECK(menu::fold("Bad \xFF") == "bad \xFF");  // not UTF-8: kept as it is
   CHECK(menu::clean_text(" Tab\tName\n ") == "Tab Name");
-  CHECK(menu::clean_text("Qa \xFF Bytes") == "Qa \xEF\xBF\xBD Bytes");
+  // Bytes that are no UTF-8 are read as Windows-1252 (legacy files).
+  CHECK(menu::clean_text("Qa \xFF Bytes") == "Qa \xC3\xBF Bytes");
+  CHECK(menu::clean_text("\xC9" "crire \x96 \x81") == "\xC3\x89" "crire \xE2\x80\x93 ?");
   CHECK(menu::clean_text("\xC3\x89t\xC3\xA9") == "\xC3\x89t\xC3\xA9");
   CHECK(menu::search_terms("  Shut   DOWN ") == std::vector<std::string>({"shut", "down"}));
   {

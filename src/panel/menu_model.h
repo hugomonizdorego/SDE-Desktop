@@ -23,7 +23,8 @@ int match_score(const DesktopEntry &e, const std::vector<std::string> &terms);
 // Cyrillic in lower case; other characters stay as they are.
 std::string fold(const std::string &text);
 // One line of text to draw: control characters become spaces, bytes that
-// are not UTF-8 become U+FFFD, outer spaces are removed.
+// are not UTF-8 are read as Windows-1252 (legacy Latin-1 files), outer
+// spaces are removed.
 std::string clean_text(const std::string &text);
 
 // Search keys of an application, folded once (the panel keeps them with

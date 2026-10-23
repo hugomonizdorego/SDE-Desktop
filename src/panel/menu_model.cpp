@@ -156,7 +156,17 @@ std::string clean_text(const std::string &s) {
     uint32_t cp = 0;
     size_t len = 1;
     if (!decode_utf8(s, i, cp, len)) {
-      out += "\xEF\xBF\xBD";  // U+FFFD REPLACEMENT CHARACTER
+      // Not UTF-8: most likely a legacy Latin-1 (Windows-1252) file. Its
+      // characters are what was meant, and the UI font has them; U+FFFD
+      // was drawn as an empty box (FLTK has no fallback fonts).
+      static const uint16_t cp1252[32] = {
+          0x20AC, 0,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+          0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0,      0x017D, 0,
+          0,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+          0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,      0x017E, 0x0178};
+      uint32_t latin = c >= 0xA0 ? c : cp1252[c - 0x80];
+      if (latin) encode_utf8(latin, out);
+      else out += '?';
       ++i;
       continue;
     }
