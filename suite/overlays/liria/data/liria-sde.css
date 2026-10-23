@@ -283,6 +283,35 @@ button.sde-ribbon-button:disabled image {
   border-radius: 5px;
 }
 
+/* 0.2.0: the rule above matches every state of the views. The icon view
+ * takes the colours of selected labels, the tint of selected icons and
+ * the fill of its rubber band from its own style context (with :selected
+ * or the .rubberband class added), so selected files were hardly visible,
+ * the list showed no selection at all and the rubber band was an opaque
+ * sheet that hid the files being selected. */
+
+/* Selected files: a soft accent highlight with the normal text colour,
+ * as in the sidebar, in the icon views and in the list. */
+.liria-notebook .view.liria-canvas-item:selected,
+.liria-notebook treeview.view:selected {
+  background-image: none;
+  background-color: alpha(@theme_selected_bg_color, 0.24);
+  color: @theme_text_color;
+}
+
+/* The rubber band: a translucent accent sheet with a 1 px accent border,
+ * so the files under it stay visible. The icon views draw it with the
+ * .rubberband class on the view, tree views as a rubberband node. */
+.liria-navigation-window .view.rubberband,
+.liria-navigation-window .rubberband,
+.liria-navigation-window rubberband {
+  border: 1px solid @theme_selected_bg_color;
+  border-radius: 0;
+  background-color: alpha(@theme_selected_bg_color, 0.20);
+  background-image: none;
+  box-shadow: none;
+}
+
 .liria-navigation-window treeview.view header button {
   padding: 3px 8px;
   border-style: none none solid none;
