@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Gallery, 24 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <g transform="rotate(-10 12 9)">
+  <rect x="6" y="2" width="15" height="12" rx="1" fill="#2B2B2F"/>
+  <rect x="7" y="3" width="13" height="10" fill="#FBFAF7"/>
+  <rect x="7" y="3" width="13" height="8" fill="#74B7B1"/>
+  </g>
+  <rect x="2" y="6" width="16" height="16" rx="1" fill="#2B2B2F"/>
+  <rect x="3" y="7" width="14" height="14" fill="#FBFAF7"/>
+  <rect x="4" y="8" width="12" height="9" fill="#E7A3B7"/>
+  <circle cx="10" cy="14" r="2.4" fill="#FBE3A6"/>
+  <path d="M4 15C6.5 13.5 9 13.6 11 15.5C13 14.3 14.5 14.2 16 15V17H4Z" fill="#B9547C"/>
+  <rect x="3.5" y="7.5" width="13" height="10" fill="none" stroke="#2B2B2F" stroke-width="1"/>
+  <path d="M18 22.45C15.3 20.57 13.14 18.68 13.14 16.25C13.14 14.62 14.36 13.54 15.71 13.54C16.79 13.54 17.59 14.22 18 15.03C18.41 14.22 19.21 13.54 20.3 13.54C21.64 13.54 22.86 14.62 22.86 16.25C22.86 18.68 20.7 20.57 18 22.45Z" fill="#D96A87" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

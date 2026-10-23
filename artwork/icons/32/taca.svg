@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Taca, 32 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <rect x="4" y="11" width="24" height="18" rx="2" fill="#2B2B2F"/>
+  <rect x="5" y="12" width="22" height="16" rx="1" fill="#D4A770"/>
+  <rect x="3" y="7" width="26" height="6" rx="2" fill="#2B2B2F"/>
+  <rect x="4" y="8" width="24" height="4" rx="1" fill="#C49456"/>
+  <rect x="14" y="7" width="4" height="22" fill="#2B2B2F"/>
+  <rect x="15" y="8" width="2" height="20" fill="#4A4038"/>
+  <rect x="15" y="9" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="16" y="11" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="15" y="13" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="16" y="15" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="15" y="17" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="16" y="19" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="15" y="21" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="16" y="23" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="15" y="25" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="16" y="27" width="1" height="1" fill="#EDE6D8"/>
+  <rect x="13" y="12" width="6" height="3" rx="1" fill="#2B2B2F"/>
+  <rect x="14" y="13" width="4" height="1" fill="#C9CCD2"/>
+  <rect x="14" y="14" width="4" height="5" rx="1" fill="#2B2B2F"/>
+  <rect x="15" y="15" width="2" height="3" fill="#DDE0E5"/>
+  <rect x="7" y="17" width="5" height="1" fill="#9C7542"/>
+  <rect x="7" y="20" width="4" height="1" fill="#9C7542"/>
+</svg>

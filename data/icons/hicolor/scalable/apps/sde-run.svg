@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Run: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Run</title>
+  <defs>
+    <linearGradient id="term" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B3E46"/><stop offset="1" stop-color="#2A2C32"/></linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ECE7DC"/><stop offset="1" stop-color="#DDD6C8"/></linearGradient>
+  </defs>
+  <rect x="20" y="38" width="216" height="180" rx="18" fill="url(#term)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M20 78V56Q20 38 38 38H218Q236 38 236 56V78Z" fill="url(#bar)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M58 114L88 140L58 166" fill="none" stroke="#8FD49A" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+  <path d="M106 168H150" fill="none" stroke="#8FD49A" stroke-width="15" stroke-linecap="round" class="detail"/>
+</svg>

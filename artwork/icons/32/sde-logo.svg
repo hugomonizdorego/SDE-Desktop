@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SDE, 32 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <rect x="1" y="8" width="5" height="15" rx="1" fill="#000000"/>
+  <rect x="2" y="9" width="3" height="13" fill="#AAA498"/>
+  <rect x="9" y="25" width="15" height="4" rx="1" fill="#000000"/>
+  <rect x="10" y="26" width="13" height="2" fill="#D8D3C3"/>
+  <rect x="5" y="4" width="26" height="22" rx="3" fill="#000000"/>
+  <rect x="6" y="5" width="24" height="20" rx="2" fill="#E6E0D4"/>
+  <rect x="7" y="6" width="22" height="15" rx="2" fill="#000000"/>
+  <rect x="8" y="7" width="20" height="13" rx="1" fill="#D8D3C3"/>
+  <rect x="9" y="7" width="18" height="13" rx="2" fill="#000000"/>
+  <rect x="10" y="8" width="16" height="11" rx="1" fill="#F4F3EE"/>
+  <rect x="10" y="10" width="2" height="2" fill="#FD0207"/>
+  <rect x="24" y="10" width="2" height="2" fill="#FD0207"/>
+  <rect x="10" y="13" width="2" height="2" fill="#15D42D"/>
+  <rect x="24" y="13" width="2" height="2" fill="#15D42D"/>
+  <rect x="10" y="16" width="2" height="2" fill="#0A2DFC"/>
+  <rect x="24" y="16" width="2" height="2" fill="#0A2DFC"/>
+  <rect x="16" y="8" width="1" height="1" fill="#000000"/>
+  <rect x="17" y="8" width="1" height="1" fill="#000000"/>
+  <rect x="18" y="8" width="1" height="1" fill="#000000"/>
+  <rect x="19" y="8" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="16" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="17" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="18" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="19" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="20" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="21" y="9" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="16" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="17" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="18" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="21" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="22" y="10" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="11" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="11" width="1" height="1" fill="#000000"/>
+  <rect x="16" y="11" width="1" height="1" fill="#000000"/>
+  <rect x="22" y="11" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="12" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="12" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="12" width="1" height="1" fill="#000000"/>
+  <rect x="22" y="12" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="13" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="13" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="13" width="1" height="1" fill="#000000"/>
+  <rect x="22" y="13" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="14" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="14" width="1" height="1" fill="#000000"/>
+  <rect x="21" y="14" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="15" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="15" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="15" width="1" height="1" fill="#000000"/>
+  <rect x="21" y="15" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="16" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="16" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="16" width="1" height="1" fill="#000000"/>
+  <rect x="16" y="16" width="1" height="1" fill="#000000"/>
+  <rect x="20" y="16" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="17" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="17" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="17" width="1" height="1" fill="#000000"/>
+  <rect x="21" y="17" width="1" height="1" fill="#000000"/>
+  <rect x="13" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="14" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="15" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="16" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="17" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="20" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="21" y="18" width="1" height="1" fill="#000000"/>
+  <rect x="22" y="18" width="1" height="1" fill="#000000"/>
+  <circle cx="9.5" cy="23" r="1.5" fill="#000000"/>
+  <circle cx="9.5" cy="23" r="0.5" fill="#E6E0D4"/>
+  <circle cx="27.5" cy="23" r="1.1" fill="#5BC236"/>
+</svg>

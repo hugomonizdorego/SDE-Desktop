@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Photo: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Photo</title>
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#ECE8DF"/></linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C5E0F4"/><stop offset="1" stop-color="#8DBDE6"/></linearGradient>
+    <linearGradient id="hill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#66AB72"/><stop offset="1" stop-color="#4A9157"/></linearGradient>
+    <linearGradient id="handle" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E39A5E"/><stop offset="1" stop-color="#C9773F"/></linearGradient>
+    <clipPath id="pic"><rect x="38" y="58" width="156" height="120" rx="6"/></clipPath>
+  </defs>
+  <rect x="20" y="40" width="192" height="156" rx="16" fill="url(#frame)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <g clip-path="url(#pic)">
+    <rect x="38" y="58" width="156" height="120" fill="url(#sky)"/>
+    <circle cx="150" cy="92" r="15" fill="#F2C95E" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <path d="M30 160C60 124 92 116 124 140C146 124 170 122 204 146V190H30Z" fill="#9CCB9F" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <path d="M30 172C62 146 104 140 140 160C160 150 182 152 204 162V190H30Z" fill="url(#hill)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  </g>
+  <rect x="38" y="58" width="156" height="120" rx="6" fill="none" stroke="#2B2B2F" stroke-width="5" class="detail"/>
+  <g transform="translate(150 230) rotate(-50)">
+    <path d="M0 0C6 -12 20 -16 40 -13V13C20 16 6 12 0 0Z" fill="#4C86C6" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <rect x="40" y="-14" width="26" height="28" rx="4" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <path d="M66 -11L124 -7Q134 -6 134 0Q134 6 124 7L66 11Z" fill="url(#handle)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  </g>
+</svg>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Welcome: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Welcome</title>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2EEE5"/><stop offset="1" stop-color="#DED6C6"/></linearGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B8B2A5"/><stop offset="1" stop-color="#A29B8D"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBFAF6"/><stop offset="1" stop-color="#EDEAE2"/></linearGradient>
+  </defs>
+  <path d="M60 56L32 76Q24 82 24 94V166Q24 178 32 184L60 204Z" fill="url(#side)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M96 206L88 226H200L192 206Z" fill="#D2CBBB" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="48" y="38" width="188" height="170" rx="20" fill="url(#body)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="64" y="52" width="156" height="118" rx="12" fill="#D6CFC0" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M84 62H200Q212 62 212 74V148Q212 160 200 160H84Q72 160 72 148V74Q72 62 84 62Z" fill="url(#glass)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M88 90H112M88 111H112M88 132H112" fill="none" stroke="#D45F55" stroke-width="9" stroke-linecap="round" class="detail"/>
+  <path d="M172 90H196" fill="none" stroke="#D45F55" stroke-width="9" stroke-linecap="round" class="detail"/>
+  <path d="M88 111H112M172 111H196" fill="none" stroke="#5AA866" stroke-width="9" stroke-linecap="round" class="detail"/>
+  <path d="M88 132H112M172 132H196" fill="none" stroke="#4F86C6" stroke-width="9" stroke-linecap="round" class="detail"/>
+  <path d="M142 81C145.6 100.2 152.8 107.4 172 111C152.8 114.6 145.6 121.8 142 141C138.4 121.8 131.2 114.6 112 111C131.2 107.4 138.4 100.2 142 81Z" fill="#F2C95E" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M222 14C223.92 24.24 227.76 28.08 238 30C227.76 31.92 223.92 35.76 222 46C220.08 35.76 216.24 31.92 206 30C216.24 28.08 220.08 24.24 222 14Z" fill="#F2C95E" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <circle cx="78" cy="189" r="8" fill="#ECE7DC" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <circle cx="212" cy="189" r="5" fill="#6DBA5A" stroke="#2B2B2F" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+</svg>

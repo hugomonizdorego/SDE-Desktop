@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SDE System Monitor, 32 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <rect x="1" y="8" width="5" height="15" rx="1" fill="#2B2B2F"/>
+  <rect x="2" y="9" width="3" height="13" fill="#ADA79A"/>
+  <rect x="9" y="24" width="15" height="5" rx="1" fill="#2B2B2F"/>
+  <rect x="10" y="25" width="13" height="3" fill="#D6CFC0"/>
+  <rect x="5" y="4" width="26" height="22" rx="3" fill="#2B2B2F"/>
+  <rect x="6" y="5" width="24" height="20" rx="2" fill="#ECE6DA"/>
+  <rect x="7" y="6" width="22" height="15" rx="2" fill="#2B2B2F"/>
+  <rect x="8" y="7" width="20" height="13" rx="1" fill="#D6CFC0"/>
+  <rect x="9" y="7" width="18" height="13" rx="2" fill="#2B2B2F"/>
+  <rect x="10" y="8" width="16" height="11" rx="1" fill="#26403A"/>
+  <path d="M11 13.5H14L16 9.5L18.5 17.5L20.5 11.5L21.8 13.5H25" fill="none" stroke="#8FD49A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="9.5" cy="22.5" r="1.5" fill="#2B2B2F"/>
+  <circle cx="9.5" cy="22.5" r="0.5" fill="#ECE6DA"/>
+  <rect x="18" y="22" width="3" height="1" fill="#2B2B2F"/>
+  <rect x="22" y="22" width="3" height="1" fill="#2B2B2F"/>
+  <circle cx="27.5" cy="22.5" r="1.2" fill="#6DBA5A"/>
+</svg>

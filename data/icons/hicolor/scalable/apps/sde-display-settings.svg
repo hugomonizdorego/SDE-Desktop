@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Display Settings: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Display Settings</title>
+  <defs>
+    <linearGradient id="bezel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A4E57"/><stop offset="1" stop-color="#363940"/></linearGradient>
+    <linearGradient id="scr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7AB0E2"/><stop offset="1" stop-color="#4482C4"/></linearGradient>
+    <linearGradient id="stand" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D2D5DA"/><stop offset="1" stop-color="#AEB2B9"/></linearGradient>
+  </defs>
+  <path d="M112 186L104 214H152L144 186Z" fill="url(#stand)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="70" y="208" width="116" height="18" rx="9" fill="url(#stand)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="18" y="34" width="220" height="152" rx="16" fill="url(#bezel)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="32" y="48" width="192" height="120" rx="6" fill="url(#scr)"/>
+  <path d="M104 94L58 68M82 68H58V88M152 94L198 68M174 68H198V88M104 122L58 148M82 148H58V128M152 122L198 148M174 148H198V128" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+</svg>

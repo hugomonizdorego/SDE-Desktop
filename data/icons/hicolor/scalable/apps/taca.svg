@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Taca: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Taca</title>
+  <defs>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D0A367"/><stop offset="1" stop-color="#B98A50"/></linearGradient>
+    <linearGradient id="box" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#DDB57D"/><stop offset="1" stop-color="#C79957"/></linearGradient>
+  </defs>
+  <path d="M36 96H220V212Q220 226 206 226H50Q36 226 36 212Z" fill="url(#box)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="24" y="50" width="208" height="50" rx="12" fill="url(#lid)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="114" y="50" width="28" height="176" fill="#4A4038" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="116" y="60" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="128" y="73" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="116" y="86" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="128" y="99" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="116" y="112" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="128" y="125" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="116" y="138" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="128" y="151" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="116" y="164" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="128" y="177" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="116" y="190" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="128" y="203" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="116" y="216" width="12" height="7" rx="2" fill="#EDE6D8"/>
+  <rect x="110" y="100" width="36" height="16" rx="5" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M116 116H140V150Q140 160 128 160Q116 160 116 150Z" fill="#DDE0E5" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="123" y="128" width="10" height="20" rx="5" fill="#2B2B2F"/>
+  <path d="M56 136H92M56 156H84" fill="none" stroke="#9C7542" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+</svg>

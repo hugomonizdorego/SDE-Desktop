@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Xanara, 16 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <path d="M3.5 1.5H10.5L13.5 4.5V14.5H3.5Z" fill="#FBFAF7" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M10.5 1.5V4.5H13.5" fill="#E3DED4" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="5" y="1" width="2" height="5" fill="#C9564E"/>
+  <rect x="5" y="6" width="1" height="1" fill="#C9564E"/>
+  <rect x="6" y="6" width="1" height="1" fill="#FBFAF7"/>
+  <rect x="5" y="8" width="7" height="1" fill="#B8BDC6"/>
+  <rect x="5" y="10" width="7" height="1" fill="#B8BDC6"/>
+  <rect x="5" y="12" width="5" height="1" fill="#B8BDC6"/>
+  <rect x="12" y="10" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="13" y="11" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="11" y="11" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="12" y="12" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="13" y="12" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="11" y="12" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="12" y="13" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="10" y="13" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="11" y="14" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="14" y="13" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="13" y="14" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="12" y="15" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="12" y="11" width="1" height="1" fill="#59616D"/>
+  <rect x="11" y="13" width="1" height="1" fill="#59616D"/>
+  <rect x="12" y="14" width="1" height="1" fill="#59616D"/>
+  <rect x="13" y="13" width="1" height="1" fill="#59616D"/>
+</svg>

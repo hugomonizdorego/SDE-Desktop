@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Driver Manager, 32 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <rect x="1" y="7" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="2" y="8" width="3" height="1" fill="#D8B964"/>
+  <rect x="22" y="7" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="23" y="8" width="3" height="1" fill="#D8B964"/>
+  <rect x="7" y="1" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="8" y="2" width="1" height="3" fill="#D8B964"/>
+  <rect x="7" y="22" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="8" y="23" width="1" height="3" fill="#D8B964"/>
+  <rect x="1" y="11" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="2" y="12" width="3" height="1" fill="#D8B964"/>
+  <rect x="22" y="11" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="23" y="12" width="3" height="1" fill="#D8B964"/>
+  <rect x="11" y="1" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="12" y="2" width="1" height="3" fill="#D8B964"/>
+  <rect x="11" y="22" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="12" y="23" width="1" height="3" fill="#D8B964"/>
+  <rect x="1" y="15" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="2" y="16" width="3" height="1" fill="#D8B964"/>
+  <rect x="22" y="15" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="23" y="16" width="3" height="1" fill="#D8B964"/>
+  <rect x="15" y="1" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="16" y="2" width="1" height="3" fill="#D8B964"/>
+  <rect x="15" y="22" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="16" y="23" width="1" height="3" fill="#D8B964"/>
+  <rect x="1" y="19" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="2" y="20" width="3" height="1" fill="#D8B964"/>
+  <rect x="22" y="19" width="5" height="3" fill="#2B2B2F"/>
+  <rect x="23" y="20" width="3" height="1" fill="#D8B964"/>
+  <rect x="19" y="1" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="20" y="2" width="1" height="3" fill="#D8B964"/>
+  <rect x="19" y="22" width="3" height="5" fill="#2B2B2F"/>
+  <rect x="20" y="23" width="1" height="3" fill="#D8B964"/>
+  <rect x="5" y="5" width="18" height="18" rx="3" fill="#2B2B2F"/>
+  <rect x="6" y="6" width="16" height="16" rx="2" fill="#4A6689"/>
+  <rect x="10" y="10" width="8" height="8" rx="1" fill="#2B2B2F"/>
+  <rect x="11" y="11" width="6" height="6" fill="#6886AE"/>
+  <circle cx="8" cy="8" r="1" fill="#B9C9DE"/>
+  <path d="M20.18 17.33L22.97 20.12L20.12 22.97L17.33 20.18A5.27 5.27 0 0 0 24.37 27L31.84 34.48A1.86 1.86 0 0 0 34.48 31.84L27 24.37A5.27 5.27 0 0 0 20.18 17.33Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

@@ -1,35 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SDE Gallery icon. Copyright (C) 2026 DebION Dev-Team. SPDX-License-Identifier: GPL-3.0-or-later -->
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<!-- Gallery: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Gallery</title>
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2BB4D3"/>
-      <stop offset="0.55" stop-color="#177E9C"/>
-      <stop offset="1" stop-color="#0E566C"/>
-    </linearGradient>
-    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#BFEAF4"/>
-      <stop offset="1" stop-color="#E4F6FA"/>
-    </linearGradient>
-    <clipPath id="photo">
-      <rect x="33" y="44" width="68" height="51" rx="3"/>
-    </clipPath>
+    <linearGradient id="p1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FC5C0"/><stop offset="1" stop-color="#5AA49E"/></linearGradient>
+    <linearGradient id="p2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A7CE9A"/><stop offset="1" stop-color="#6FAF6E"/></linearGradient>
+    <linearGradient id="p3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5C2CC"/><stop offset="1" stop-color="#DA8AA2"/></linearGradient>
+    <linearGradient id="heart" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E68AA0"/><stop offset="1" stop-color="#CC5275"/></linearGradient>
+    <clipPath id="ph"><rect x="54" y="82" width="132" height="98" rx="4"/></clipPath>
   </defs>
-  <rect x="6" y="6" width="116" height="116" rx="30" fill="url(#tile)"/>
-  <path d="M 12 40 Q 14 10 44 8 L 84 8 Q 112 10 116 36 Q 70 22 12 40 Z" fill="url(#shine)"/>
-  <!-- back print -->
-  <rect x="24" y="30" width="72" height="58" rx="6" fill="#FFFFFF" fill-opacity="0.45"
-        transform="rotate(-12 60 59)"/>
-  <!-- front print -->
-  <rect x="28" y="39" width="78" height="61" rx="7" fill="#FFFFFF"/>
-  <g clip-path="url(#photo)">
-    <rect x="33" y="44" width="68" height="51" fill="url(#sky)"/>
-    <path d="M 33 95 L 56 64 L 71 82 L 81 72 L 101 92 L 101 95 Z" fill="#177E9C"/>
-    <path d="M 33 95 L 56 64 L 63 73 L 50 95 Z" fill="#0E566C" fill-opacity="0.35"/>
+  <g transform="rotate(-12 120 120)">
+    <rect x="52" y="34" width="148" height="140" rx="10" fill="#FBFAF7" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <rect x="64" y="46" width="124" height="94" rx="4" fill="url(#p1)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   </g>
-  <circle cx="84" cy="58" r="7" fill="#F2B84B"/>
+  <g transform="rotate(7 136 130)">
+    <rect x="60" y="52" width="148" height="140" rx="10" fill="#FBFAF7" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <rect x="72" y="64" width="124" height="94" rx="4" fill="url(#p2)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  </g>
+  <rect x="40" y="68" width="160" height="152" rx="10" fill="#FFFFFF" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <g clip-path="url(#ph)">
+    <rect x="54" y="82" width="132" height="98" fill="url(#p3)"/>
+    <circle cx="120" cy="150" r="24" fill="#FBE3A6" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <path d="M40 162C66 146 92 146 118 166C142 150 166 148 200 160V190H40Z" fill="#B9547C" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  </g>
+  <rect x="54" y="82" width="132" height="98" rx="4" fill="none" stroke="#2B2B2F" stroke-width="5" class="detail"/>
+  <path d="M196 238C176 224 160 210 160 192C160 180 169 172 179 172C187 172 193 177 196 183C199 177 205 172 213 172C223 172 232 180 232 192C232 210 216 224 196 238Z" fill="url(#heart)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
 </svg>

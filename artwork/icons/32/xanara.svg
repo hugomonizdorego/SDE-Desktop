@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Xanara, 32 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <path d="M6.5 2.5H20.5L25.5 7.5V29.5H6.5Z" fill="#FBFAF7" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M20.5 2.5V7.5H25.5" fill="#E3DED4" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M9.5 1.5H13.5V12.5L11.5 10.8L9.5 12.5Z" fill="#C9564E" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="15" y="6" width="4" height="1" fill="#B8BDC6"/>
+  <rect x="15" y="9" width="8" height="1" fill="#B8BDC6"/>
+  <rect x="9" y="15" width="14" height="1" fill="#B8BDC6"/>
+  <rect x="9" y="18" width="14" height="1" fill="#B8BDC6"/>
+  <rect x="9" y="21" width="9" height="1" fill="#B8BDC6"/>
+  <path d="M19.04 27.92C19.3 25.21 19.17 22.54 20.97 20.4L23.49 17.39Q23.85 16.96 24.27 17.32L28.56 20.92Q28.99 21.28 28.63 21.71L26.11 24.72C24.31 26.86 21.66 27.19 19.04 27.92Z" fill="#59616D" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="22.8" cy="23.3" r="1.1" fill="#F4F1E8"/>
+</svg>

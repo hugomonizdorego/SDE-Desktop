@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SDE System Monitor: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>SDE System Monitor</title>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2EEE5"/><stop offset="1" stop-color="#DED6C6"/></linearGradient>
+    <linearGradient id="scr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E4A44"/><stop offset="1" stop-color="#1E302C"/></linearGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B8B2A5"/><stop offset="1" stop-color="#A29B8D"/></linearGradient>
+  </defs>
+  <path d="M60 52L32 72Q24 78 24 90V164Q24 176 32 182L60 202Z" fill="url(#side)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M96 204L88 224H200L192 204Z" fill="#D2CBBB" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="48" y="34" width="188" height="172" rx="20" fill="url(#body)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="64" y="48" width="156" height="120" rx="12" fill="#D6CFC0" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M84 58H200Q212 58 212 70V146Q212 158 200 158H84Q72 158 72 146V70Q72 58 84 58Z" fill="url(#scr)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M84 112H106L118 86L136 140L150 100L160 112H200" fill="none" stroke="#8FD49A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+  <circle cx="78" cy="187" r="8" fill="#ECE7DC" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="148" y="182" width="22" height="10" rx="5" fill="#ECE7DC" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="176" y="182" width="22" height="10" rx="5" fill="#ECE7DC" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <circle cx="212" cy="187" r="5" fill="#6DBA5A" stroke="#2B2B2F" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+</svg>
