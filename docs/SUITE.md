@@ -99,6 +99,47 @@ Since alpha52 (`src/liria-sde-ribbon.c`, `src/liria-sde-model.c` and
   them always, inert); a click on the empty part of the path opens the
   location entry.
 
+Since 0.2.0 Alpha 1:
+
+* **Rubber band and selection.** Dragging a selection rectangle over files
+  shows a translucent accent sheet (20 %) with a 1 px accent border in
+  every theme, so the files being selected stay visible. It was an opaque
+  sheet in the view colour (white in light themes): Liria's style sheet
+  and the SDE themes' soft layer gave every state of `.view` that colour,
+  and the icon view takes the colours of its band, of selected labels and
+  of the tint of selected icons from its own `.view` style context (with
+  `.rubberband` or `:selected`). Selected files now have a soft accent
+  highlight in the icon, compact and list views (the list showed none in
+  some themes) and selected icons keep their lightness in dark themes.
+  `tools/liria-rubberband-smoke.py --prefix <built prefix> [--all]` drags
+  a real rubber band on Xvfb and checks the pixels under it (with `--all`
+  every family, light and dark, 100 and 150 %, without and with a
+  compositor); `tests/test_native_forks.py` checks the style sheet cascade
+  (`LiriaRubberBandCssTest`). The list view has no rubber band (as in
+  Caja); Ctrl+A or Shift/Ctrl+click select there.
+* **About.** Liria's developer is the Selviana DE Project; the About
+  window shows the version, "Part of Selviana Desktop Environment",
+  Copyright © 2026 Selviana DE Project and contributors and the SDE
+  trademark notice. Its License page starts with every copyright notice of
+  the original work (Nautilus authors, Caja authors, MATE developers) and
+  keeps the GPL text, with the license `GPL-2.0-or-later AND
+  LGPL-2.0-or-later` (eel and the extension library are LGPL) as in
+  `data/legal/components.json`, which a unit test compares it with;
+  Credits lists the developer, "Based on Caja 1.28 (MATE)" and GNOME
+  Nautilus and the original authors. The logo and the default window icon
+  are `liria` (hicolor), with `system-file-manager` as the fallback.
+* **Themes.** Keyboard focus rings are visible (half the text colour
+  instead of 10 %) and tree views (the list, the sidebar) show drop
+  targets with the accent: a tinted row, or a 2 px line between rows.
+* **Sidebar, header and ribbon.** The Pinned and Network headings are as
+  high as the others (the bold heading was measured as two lines). The
+  location entry is as wide as the breadcrumbs (Caja's spinner spacer took
+  half of the free width). The ribbon's commands get the selected files (it
+  used the view's GFile locations as files: no URIs for Copy path, Pin,
+  Move to, Share or Extract and critical warnings on every selection
+  change), and the ribbon scrolls sideways with the mouse wheel when it is
+  wider than the window (1024x600 at 150 %).
+
 ## SDE Power and SDE Screen Lock (alpha16)
 
 The former power-manager and screen-saver forks were replaced in alpha16 by

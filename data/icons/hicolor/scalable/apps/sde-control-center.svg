@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Control Center: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Control Center</title>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9A82C5"/><stop offset="1" stop-color="#7A5EA6"/></linearGradient>
+    <linearGradient id="gear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2EEE5"/><stop offset="1" stop-color="#DCD4C4"/></linearGradient>
+  </defs>
+  <rect x="22" y="26" width="196" height="196" rx="40" fill="url(#panel)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="54" y="72" width="132" height="14" rx="7" fill="#5E4689"/>
+  <rect x="54" y="72" width="44" height="14" rx="7" fill="#F4F1E8"/>
+  <circle cx="96" cy="79" r="16" fill="#FFFFFF" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="54" y="118" width="132" height="14" rx="7" fill="#5E4689"/>
+  <rect x="54" y="118" width="96" height="14" rx="7" fill="#F4F1E8"/>
+  <circle cx="148" cy="125" r="16" fill="#FFFFFF" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="54" y="160" width="68" height="36" rx="18" fill="#7FC08A" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <circle cx="104" cy="178" r="13" fill="#FFFFFF" stroke="#2B2B2F" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M181.98 163.27 L187.24 161.7 L188.21 150.38 L199.79 150.38 L200.76 161.7 L207.24 163.77 L212.06 166.38 L220.75 159.06 L228.94 167.25 L221.62 175.94 L224.73 181.98 L226.3 187.24 L237.62 188.21 L237.62 199.79 L226.3 200.76 L224.23 207.24 L221.62 212.06 L228.94 220.75 L220.75 228.94 L212.06 221.62 L206.02 224.73 L200.76 226.3 L199.79 237.62 L188.21 237.62 L187.24 226.3 L180.76 224.23 L175.94 221.62 L167.25 228.94 L159.06 220.75 L166.38 212.06 L163.27 206.02 L161.7 200.76 L150.38 199.79 L150.38 188.21 L161.7 187.24 L163.77 180.76 L166.38 175.94 L159.06 167.25 L167.25 159.06 L175.94 166.38 Z M181 194 A13 13 0 1 0 207 194 A13 13 0 1 0 181 194 Z" fill="url(#gear)" fill-rule="evenodd" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+</svg>

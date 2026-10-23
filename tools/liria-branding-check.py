@@ -7,9 +7,12 @@ Scans a prepared Liria source tree (--source) or an installed prefix
 GtkBuilder files, GSettings schemas, man pages, help, translations (.po in a
 source tree, compiled .mo when installed) and the printable strings of the
 liria executable and its extensions. Legal notices are allowed: lines with a
-copyright mark, the statement that Liria is a modified version of Caja, and
-paths to the installed upstream notices (/usr/share/doc/sde/upstream/caja).
-Exit status 1 when anything else is found.
+copyright mark, the copyright holders of the original work (The Caja and
+Nautilus authors, The MATE developers), the statement that Liria is a
+modified version of Caja, its credit in the About window ("Caja 1.28
+(MATE)") and paths to the installed upstream notices
+(/usr/share/doc/sde/upstream/caja). Exit status 1 when anything else is
+found.
 """
 import argparse
 import re
@@ -18,7 +21,8 @@ import sys
 from pathlib import Path
 
 WORDS = re.compile(r"\bMATE\b|\bCaja\b|\bCAJA\b|mate-desktop\.org|mate-user-guide|help:mate")
-ALLOWED = re.compile(r"^Authors=|copyright|\(c\)|©|modified version of the Caja|The (?:Caja|Nautilus) authors|upstream/caja|SPDX", re.I)
+ALLOWED = re.compile(r"^Authors=|copyright|\(c\)|©|modified version of the Caja|The (?:Caja|Nautilus) authors|"
+                     r"The MATE developers|Caja 1\.28 \(MATE\)|upstream/caja|SPDX", re.I)
 # User-visible text resources in a prepared source tree.
 SOURCE_GLOBS = ["data/*.desktop.in.in", "data/*.appdata.xml.in.in", "data/*.ui", "data/*.css",
                 "data/help/*.html", "data/*.xml.in", "libliria-private/*.gschema.xml", "src/*.ui",

@@ -104,6 +104,13 @@ std::string logo_name(bool dark);
 // Caller owns the surface; nullptr when nothing is installed.
 cairo_surface_t *load_branding(const std::vector<std::string> &names, int max_w, int max_h,
                                const std::vector<std::string> &icons = {});
+// The SDE mark (the monitor without the name) for a |size| x |size| box. Up
+// to 32 px it is the hand-drawn, pixel-aligned "sde-logo" icon at the
+// nearest smaller drawn size (16, 22, 24 or 32), because the detailed mark
+// turns to mud when scaled down; larger boxes get sde-mark, then the icon,
+// then the full logo. Caller owns the surface; nullptr when nothing is
+// installed.
+cairo_surface_t *load_mark(int size, bool dark);
 
 // Operating system names from os-release, never hard-coded:
 // PRETTY_NAME ("Debian GNU/Linux forky/sid") and NAME ("Debian GNU/Linux").

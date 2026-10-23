@@ -40,6 +40,53 @@ def wait_for(predicate, timeout=6.0):
     return predicate()
 
 
+def right_window_icons(env, path):
+    """The icons of the icon view in the window at the right screen edge,
+    found in a screenshot (ImageMagick): x centres left to right and the y of
+    their images. Their positions depend on the window's real width (the
+    window manager keeps Liria's minimum width, which grows with the fonts)
+    and on how the view spreads its columns, so fixed coordinates miss them.
+    The view's empty lower right part gives its colour; the header's border
+    above and the sidebar's separator on the left end the view."""
+    subprocess.run(["import", "-window", "root", "-depth", "8", "ppm:" + str(path)], env=env, check=True)
+    data = Path(path).read_bytes()
+    fields, pos = [], 0
+    while len(fields) < 4:
+        while data[pos:pos + 1].isspace():
+            pos += 1
+        end = pos
+        while not data[end:end + 1].isspace():
+            end += 1
+        fields.append(data[pos:end])
+        pos = end
+    width, height = int(fields[1]), int(fields[2])
+    step = 2 if int(fields[3]) > 255 else 1
+    pixels = data[pos + 1:][::step]
+
+    def at(x, y):
+        i = (y * width + x) * 3
+        return pixels[i:i + 3]
+
+    x0, y0 = width - 30, 450
+    bg = at(x0, y0)
+    top = y0
+    while top > 0 and at(x0, top - 1) == bg:
+        top -= 1
+    lower = range(top + 90, y0, 4)
+    left = x0
+    while left > 0 and sum(1 for y in lower if at(left, y) != bg) < 0.8 * len(lower):
+        left -= 1
+    band = range(top + 3, top + 90)
+    blobs = []
+    for x in range(left + 3, x0):
+        if any(at(x, y) != bg for y in band):
+            if blobs and x - blobs[-1][1] <= 8:
+                blobs[-1][1] = x
+            else:
+                blobs.append([x, x])
+    return [(a + b) // 2 for a, b in blobs if b - a >= 10], top + 30
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prefix", type=Path, default=Path("/usr"))
@@ -154,7 +201,16 @@ def main():
         x("windowactivate", "--sync", x("search", "--onlyvisible", "--name", "^Work$").split()[0])
         x("key", "ctrl+1")
         time.sleep(1.5)
-        drag(1125, 100, 375, 178, button=3)
+        x("mousemove", 1360, 760)
+        time.sleep(0.4)
+        start = (1125, 100)  # b.txt when the window is 666 px wide
+        if shutil.which("import"):
+            centres, row = right_window_icons(env, home / "icons.ppm")
+            if len(centres) == 3:
+                start = (centres[1], row)
+            else:
+                print("note: %d icons found in the folder window, using %s" % (len(centres), start))
+        drag(start[0], start[1], 375, 178, button=3)
         if args.screenshot and shutil.which("import"):
             subprocess.run(["import", "-window", "root", str(args.screenshot.with_suffix(".ask.png"))], env=env)
         x("key", "Down", "Down", "Return")  # Move Here, Copy Here

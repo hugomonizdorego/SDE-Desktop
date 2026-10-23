@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Gallery, 16 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <rect x="4" y="1" width="11" height="9" rx="1" fill="#2B2B2F"/>
+  <rect x="5" y="2" width="9" height="7" fill="#FBFAF7"/>
+  <rect x="5" y="2" width="9" height="5" fill="#74B7B1"/>
+  <rect x="1" y="4" width="11" height="11" rx="1" fill="#2B2B2F"/>
+  <rect x="2" y="5" width="9" height="9" fill="#FBFAF7"/>
+  <rect x="2" y="5" width="9" height="6" fill="#E7A3B7"/>
+  <rect x="2" y="9" width="9" height="2" fill="#B9547C"/>
+  <rect x="5" y="8" width="1" height="1" fill="#FBE3A6"/>
+  <rect x="6" y="8" width="1" height="1" fill="#FBE3A6"/>
+  <rect x="7" y="8" width="1" height="1" fill="#FBE3A6"/>
+  <rect x="11" y="11" width="1" height="1" fill="#D96A87"/>
+  <rect x="13" y="11" width="1" height="1" fill="#D96A87"/>
+  <rect x="11" y="12" width="1" height="1" fill="#D96A87"/>
+  <rect x="12" y="12" width="1" height="1" fill="#D96A87"/>
+  <rect x="13" y="12" width="1" height="1" fill="#D96A87"/>
+  <rect x="12" y="13" width="1" height="1" fill="#D96A87"/>
+  <rect x="10" y="11" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="11" y="10" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="12" y="11" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="13" y="10" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="14" y="11" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="14" y="12" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="13" y="13" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="12" y="14" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="11" y="13" width="1" height="1" fill="#2B2B2F"/>
+  <rect x="10" y="12" width="1" height="1" fill="#2B2B2F"/>
+</svg>

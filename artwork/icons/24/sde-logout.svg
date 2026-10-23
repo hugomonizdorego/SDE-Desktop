@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Log Out, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <circle cx="10.5" cy="10.5" r="9.5" fill="#2B2B2F"/>
+  <circle cx="10.5" cy="10.5" r="8.5" fill="#C9564E"/>
+  <path d="M7.6 7.2A4.6 4.6 0 1 0 13.4 7.2" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M10.5 4.8V9.6" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M14.5 17.5H17.5V15.5L21.5 19L17.5 22.5V20.5H14.5Z" fill="#F4F1E8" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

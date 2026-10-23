@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Control Center, 16 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <rect x="1" y="1" width="13" height="13" rx="3" fill="#2B2B2F"/>
+  <rect x="2" y="2" width="11" height="11" rx="2" fill="#8A6FB5"/>
+  <rect x="3" y="4" width="9" height="1" fill="#5E4689"/>
+  <rect x="3" y="4" width="2" height="1" fill="#ECE6DA"/>
+  <rect x="5" y="3" width="2" height="3" fill="#FFFFFF"/>
+  <rect x="3" y="8" width="9" height="1" fill="#5E4689"/>
+  <rect x="3" y="8" width="6" height="1" fill="#ECE6DA"/>
+  <rect x="9" y="7" width="2" height="3" fill="#FFFFFF"/>
+  <rect x="3" y="11" width="4" height="2" fill="#7FC08A"/>
+  <rect x="5" y="11" width="2" height="2" fill="#FFFFFF"/>
+  <path d="M10.89 9.99 L11.38 9.79 L11.44 8.85 L12.56 8.85 L12.62 9.79 L13.19 10.03 L13.6 10.35 L14.45 9.94 L15.01 10.91 L14.23 11.43 L14.3 12.05 L14.23 12.57 L15.01 13.09 L14.45 14.06 L13.6 13.65 L13.11 14.01 L12.62 14.21 L12.56 15.15 L11.44 15.15 L11.38 14.21 L10.81 13.97 L10.4 13.65 L9.55 14.06 L8.99 13.09 L9.77 12.57 L9.7 11.95 L9.77 11.43 L8.99 10.91 L9.55 9.94 L10.4 10.35 Z M11.1 12 A0.9 0.9 0 1 0 12.9 12 A0.9 0.9 0 1 0 11.1 12 Z" fill="#ECE6DA" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd"/>
+</svg>

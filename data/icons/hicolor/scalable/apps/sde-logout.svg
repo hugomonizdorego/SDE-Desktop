@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Log Out: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Log Out</title>
+  <defs>
+    <linearGradient id="disc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D96B62"/><stop offset="1" stop-color="#B9463F"/></linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#ECE7DC"/></linearGradient>
+  </defs>
+  <circle cx="116" cy="118" r="94" fill="url(#disc)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M88 82A46 46 0 1 0 144 82" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" class="detail"/>
+  <path d="M116 62V116" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" class="detail"/>
+  <path d="M150 184H192V164L232 200L192 236V216H150Z" fill="url(#arrow)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+</svg>
