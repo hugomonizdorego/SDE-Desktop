@@ -101,6 +101,7 @@ add_executable(sde-settings
   settings/network.cpp
   settings/clock.cpp
   settings/default_apps_page.cpp
+  settings/about_page.cpp
   # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
   panel/timezone.cpp
   panel/weather.cpp
