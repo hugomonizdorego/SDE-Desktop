@@ -36,7 +36,7 @@ def clean(value):
 
 
 def valid_ref(ref):
-    return bool(REF.match(ref or ""))
+    return bool(REF.fullmatch(ref or ""))
 
 
 def parse_size(text):

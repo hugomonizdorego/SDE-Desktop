@@ -22,7 +22,7 @@ DETAIL_KEYS = {
 
 
 def valid_name(name):
-    return bool(NAME.match(name or ""))
+    return bool(NAME.fullmatch(name or ""))  # not match(): "$" allows a final newline
 
 
 def run(argv, timeout=TIMEOUT):

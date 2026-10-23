@@ -456,6 +456,11 @@ class ChangelogTest(unittest.TestCase):
         self.assertTrue(changelog.valid_name("libc6:amd64"))
         self.assertFalse(changelog.valid_name("--help"))
         self.assertFalse(changelog.valid_name("a b"))
+        # "$" in a re.match() pattern also matches before a final newline.
+        for check in (changelog.valid_name, transaction.valid_name):
+            self.assertFalse(check("bash\n"))
+        self.assertFalse(transaction.valid_flatpak("user:app/org.x.Y/x86_64/stable\n"))
+        self.assertTrue(transaction.valid_flatpak("user:app/org.x.Y/x86_64/stable"))
 
     def test_packagekit_detail(self):
         text = (
