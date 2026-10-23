@@ -6,12 +6,20 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: jobs read the repository; only "publish" writes.
+permissions:
+  contents: read
+
 jobs:
   rust:
     name: Rust checks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install Rust tools
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
@@ -34,17 +42,23 @@ jobs:
       matrix:
         image: ["debian:testing"]
     container: ${{ matrix.image }}
+    permissions:
+      contents: read
     steps:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: |
           sh tools/install-deps.sh
           sh tools/install-native-deps.sh
       - name: Artifact name
         id: name
-        run: echo "name=sde-$(echo '${{ matrix.image }}' | tr ':' '-')" >> "$GITHUB_OUTPUT"
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: echo "name=sde-$(printf '%s' "$IMAGE" | tr ':' '-')" >> "$GITHUB_OUTPUT"
       - name: Build package
         run: sh tools/build-deb.sh dist
       - name: Install and smoke test
@@ -73,14 +87,14 @@ jobs:
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
           dbus-run-session -- python3 tools/ui-smoke.py --size 1024x600 --scale 150 --output-dir dist/ui-smoke-small
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.image == 'debian:testing'
         with:
           name: sde-ui-smoke
           path: |
             dist/ui-smoke*/
             dist/panel-smoke*/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ${{ steps.name.outputs.name }}
@@ -105,14 +119,15 @@ jobs:
       group: publish-alpha-latest
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      # Credentials stay: the screenshot step pushes to this branch.
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: sde-debian-testing
           path: packages
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: sde-ui-smoke
           path: smoke
