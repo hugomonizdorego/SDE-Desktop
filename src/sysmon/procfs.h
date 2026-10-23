@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE System Monitor: parsers for the text files of /proc and /sys. They take
 // the file contents as a string so that the unit tests can feed fixtures; no

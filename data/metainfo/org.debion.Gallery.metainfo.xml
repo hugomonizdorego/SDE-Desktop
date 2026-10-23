@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 DebION Dev-Team -->
+<!-- Copyright 2026 Selviana DE Project and contributors -->
 <component type="desktop-application">
   <id>org.debion.Gallery</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Gallery</name>
   <summary>Organize photos</summary>
-  <developer id="org.debion">
-    <name>DebION Dev-Team</name>
+  <developer id="io.github.hugomonizdorego">
+    <name>Selviana DE Project</name>
   </developer>
   <description>
     <p>Gallery organizes the photos in your Pictures folder, your own folders and on cameras, SD cards and USB drives: browse them by month, folder and device, search, mark favorites and make your own albums.</p>
     <p>Import from cameras and cards, play slideshows, and rotate, resize and export, copy, move or share many photos at once. Photos open in Photo for viewing and editing.</p>
-    <p>Developed by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+    <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">sde-gallery.desktop</launchable>
+  <icon type="stock">sde-gallery</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
   <project_group>SDE</project_group>

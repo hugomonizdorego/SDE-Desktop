@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
-// SDE Welcome (sde-welcome): the first-login greeting of SDE on DebION,
-// after the welcome screen concept of Linux Mint (no Mint code or artwork).
+// SDE Welcome (sde-welcome): the first-login greeting of SDE, after the
+// welcome screen concept of Linux Mint (no Mint code or artwork). The header
+// keeps the operating system and the desktop apart: "Welcome to <NAME>"
+// with the operating system's logo (both from os-release), and below it the
+// desktop, the Selviana Desktop Environment with the SDE logo and version.
 // Since 0.1.0~alpha51 one calm window: a small header, six first steps
 // (Appearance, Software Updater, Drivers, Snapshots or System Reports, Help,
 // Donate) and "Show this dialog at startup" with Close.
@@ -28,6 +31,7 @@
 #include "config.h"
 #include "i18n.h"
 #include "icons.h"
+#include "legal.h"
 #include "model.h"
 #include "paint.h"
 #include "shell.h"
@@ -199,13 +203,27 @@ std::vector<Step> first_steps() {
                [] { shell::open_url(welcome::kDocsUrl); }});
   s.push_back({{"emblem-favorite", "starred", "face-smile"},
                _("Donate"),
-               _("Support DebION and SDE"),
+               _("Support the development of SDE"),
                [] { shell::open_url(welcome::kDonateUrl); }});
   return s;
 }
 
 int pad() { return S(28); }
-int header_h() { return S(96); }
+int header_h() { return S(118); }
+
+// The operating system's name and logo from os-release (NAME, LOGO); SDE
+// never assumes which distribution it runs on.
+const std::string &os_name() {
+  static const std::string name = legal::os_name();
+  return name;
+}
+std::vector<std::string> os_logo_icons() {
+  std::vector<std::string> names;
+  std::string logo = os_release("LOGO");
+  if (!logo.empty()) names.push_back(logo);
+  for (const char *n : {"distributor-logo", "start-here", "computer"}) names.push_back(n);
+  return names;
+}
 int footer_h() { return S(64); }
 
 class WelcomeWindow : public BufferedWindow {
@@ -253,12 +271,23 @@ class WelcomeWindow : public BufferedWindow {
 
   void draw() override {
     const Theme &t = theme();
-    int lsz = S(48);
+    int lsz = S(48), msz = S(20);
+    int tx = pad() + lsz + S(16);
+    int desk_y = S(84);
     {
       Painter p(w(), h());
       p.fill_rect(0, 0, w(), h(), t.background);
-      p.image(IconLoader::get({"sde-logo", "debion-logo", "start-here", "distributor-logo", "computer"}, lsz),
-              pad(), S(28), lsz);
+      // The operating system ...
+      p.image(IconLoader::get(os_logo_icons(), lsz), pad(), S(26), lsz);
+      // ... and the desktop, with the SDE logo.
+      if (!sde_mark_ || mark_dark_ != t.dark) {
+        if (sde_mark_) cairo_surface_destroy(sde_mark_);
+        sde_mark_ = legal::load_branding({"sde-mark"}, msz, msz, {"sde-logo"});
+        if (!sde_mark_) sde_mark_ = legal::load_branding({legal::logo_name(t.dark)}, msz, msz);
+        mark_dark_ = t.dark;
+      }
+      if (sde_mark_)
+        p.surface(sde_mark_, tx, desk_y + (S(24) - cairo_image_surface_get_height(sde_mark_)) / 2);
       if (g_live) {  // in the footer, where the check box would be
         int ly = h() - footer_h() + (footer_h() - S(32)) / 2;
         p.fill_rounded(pad(), ly, close_->x() - pad() - S(16), S(32), Sd(8), t.surface_alt);
@@ -266,15 +295,28 @@ class WelcomeWindow : public BufferedWindow {
       }
       p.fill_rect(pad(), h() - footer_h(), w() - 2 * pad(), std::max(1, S(1)), t.border);
     }
-    int tx = pad() + lsz + S(16);
     text_font(t.font_size + 7, true);
-    draw_text(_("Welcome to DebION"), tx, S(26), w() - tx - pad(), S(30), t.text);
+    std::string title = os_name().empty() ? std::string(_("Welcome")) : format(_("Welcome to %s"), os_name().c_str());
+    draw_text(title, tx, S(24), w() - tx - pad(), S(30), t.text);
     text_font(t.font_size);
-    draw_text(_("A few first steps to make this computer yours."), tx, S(56), w() - tx - pad(), S(22), t.text_dim);
+    draw_text(_("A few first steps to make this computer yours."), tx, S(54), w() - tx - pad(), S(22), t.text_dim);
+    // "Desktop: Selviana Desktop Environment 0.1 Alpha 52"
+    int dx = tx + (sde_mark_ ? msz + S(8) : 0);
+    text_font(t.font_size - 1);
+    std::string label = std::string(_("Desktop:")) + " ";
+    draw_text(label, dx, desk_y, w() - dx - pad(), S(24), t.text_dim);
+    int lw = text_width(label);
+    text_font(t.font_size - 1, true);
+    draw_text(format("%s %s", legal::kProjectName, SDE_VERSION_LABEL), dx + lw, desk_y, w() - dx - lw - pad(), S(24),
+              t.text);
     if (g_live) {
       text_font(t.font_size - 1);
-      draw_text(_("Live session \xe2\x80\x94 install DebION to keep your settings"), pad() + S(30),
-                h() - footer_h() + (footer_h() - S(32)) / 2, close_->x() - pad() - S(56), S(32), t.text);
+      std::string note = os_name().empty()
+                             ? std::string(_("Live session \xe2\x80\x94 install the system to keep your settings"))
+                             : format(_("Live session \xe2\x80\x94 install %s to keep your settings"),
+                                      os_name().c_str());
+      draw_text(note, pad() + S(30), h() - footer_h() + (footer_h() - S(32)) / 2, close_->x() - pad() - S(56), S(32),
+                t.text);
     }
     draw_children();
   }
@@ -292,7 +334,13 @@ class WelcomeWindow : public BufferedWindow {
 
   AppInfo about;
 
+  ~WelcomeWindow() override {
+    if (sde_mark_) cairo_surface_destroy(sde_mark_);
+  }
+
  private:
+  cairo_surface_t *sde_mark_ = nullptr;
+  bool mark_dark_ = false;
   std::vector<Step> steps_;
   std::vector<Tile *> tiles_;
   CheckBox *check_ = nullptr;
@@ -304,8 +352,9 @@ AppInfo app_info() {
   info.name = _("SDE Welcome");
   info.program = "sde-welcome";
   info.version = SDE_VERSION;
-  info.icon = "sde-logo";
-  info.description = _("First steps with SDE on DebION: appearance, updates, drivers, snapshots and "
+  info.icon = "sde-welcome";
+  info.icon_fallbacks = {"sde-logo"};
+  info.description = _("First steps after installation: appearance, updates, drivers, snapshots and "
                        "help.");
   info.credits = {_("Welcome screen concept after Linux Mint's mintwelcome (no code or artwork "
                     "used)"),
@@ -326,10 +375,7 @@ int main(int argc, char **argv) {
   bool autostart = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--version") {
-      printf("sde-welcome %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
-      return 0;
-    }
+    if (a == "--version") return print_version(app_info());
     if (a == "--autostart") {
       autostart = true;
     } else if (a == "--live-status") {

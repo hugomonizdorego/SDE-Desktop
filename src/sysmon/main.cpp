@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE System Monitor: processes, live performance graphs, file systems and
 // startup apps for the Selviana Desktop Environment.
@@ -238,7 +238,7 @@ class MainWindow : public MonitorWindow {
     info.name = _("System Monitor");
     info.program = "sde-system-monitor";
     info.version = SDE_SYSMON_VERSION;
-    info.icon = "utilities-system-monitor";
+    info.icon = "sde-system-monitor";
     info.description = _("Shows running processes, live CPU, memory, disk and network graphs, "
                          "mounted file systems and the apps that start when you log in.");
     info.credits = {sde::toolkit_credit()};
@@ -316,10 +316,7 @@ int main(int argc, char **argv) {
   int page = 0;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--version" || a == "-V") {
-      printf("sde-system-monitor %s\n", SDE_SYSMON_VERSION);
-      return 0;
-    }
+    if (a == "--version" || a == "-V") return sde::print_version("sde-system-monitor", SDE_SYSMON_VERSION);
     if (a == "--help" || a == "-h") {
       usage(stdout);
       return 0;

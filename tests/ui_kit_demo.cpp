@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Test helper (not installed): stock FLTK widgets, menus and dialogs in the
 // SDE look, for screenshots and UI smoke tests.
 //
 //   sde-ui-kit-demo [--theme light|dark] [--accent #RRGGBB]
 //                   [--show context|menubar|choice|ask|message|input|about|
-//                           tooltip|files]
+//                           licenses|license|tooltip|files]
 #include <FL/Fl.H>
 #include <FL/Fl_Browser.H>
 #include <FL/Fl_Button.H>
@@ -105,6 +105,13 @@ void show_cb(void *) {
     fl_input("Album name:", "Holiday 2026");
   } else if (g_show == "about") {
     about();
+  } else if (g_show == "licenses") {
+    show_open_source_licenses();
+  } else if (g_show == "license") {
+    AppInfo info;
+    info.name = "Taca";
+    info.program = "taca";
+    show_license(info);
   } else if (g_show == "files") {
     Fl_File_Chooser fc(".", "*", Fl_File_Chooser::SINGLE, "Open File");
     fc.show();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The folder tree of an archive: members grouped into folders (including
 // folders that only exist implicitly in member paths), with sizes summed

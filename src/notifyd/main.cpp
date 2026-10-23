@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
@@ -732,10 +733,7 @@ int main(int argc, char **argv) {
   init_i18n();
   install_crash_handler("sde-notifyd");
   for (int i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "--version")) {
-      printf("sde-notifyd %s (%s) - DebION Dev-Team\n", SDE_VERSION, SDE_VERSION_LABEL);
-      return 0;
-    }
+    if (!strcmp(argv[i], "--version")) return print_version("sde-notifyd", SDE_VERSION);
     printf("%s", _("Usage: sde-notifyd [--version]\n\n"
                    "Shows desktop notifications (org.freedesktop.Notifications).\n"));
     return strcmp(argv[i], "--help") ? 2 : 0;

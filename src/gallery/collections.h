@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Gallery's organizing model: albums the user creates, and the planning of
 // batch actions (copy, move, export with resize). Albums are list files

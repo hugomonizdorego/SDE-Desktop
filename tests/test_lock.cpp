@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Unit tests for SDE Screen Lock and SDE Power: the PAM conversation (with
 // a fake PAM stack, built only here), the password buffer, attempt delays,

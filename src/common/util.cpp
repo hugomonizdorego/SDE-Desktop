@@ -227,7 +227,13 @@ std::string find_program(const std::string &name) {
 
 std::string os_release(const std::string &key) {
   std::string content;
-  if (!read_file("/etc/os-release", content) && !read_file("/usr/lib/os-release", content)) return "";
+  // SDE_OS_RELEASE=FILE reads another os-release file (tests, screenshots).
+  std::string forced = env("SDE_OS_RELEASE");
+  if (!forced.empty()) {
+    if (!read_file(forced, content)) return "";
+  } else if (!read_file("/etc/os-release", content) && !read_file("/usr/lib/os-release", content)) {
+    return "";
+  }
   std::istringstream in(content);
   std::string line;
   while (std::getline(in, line)) {

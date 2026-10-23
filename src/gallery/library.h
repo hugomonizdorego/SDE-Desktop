@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Gallery library model: the photos found in the picture folders, how they
 // are sorted, filtered and grouped by month, and where their freedesktop.org

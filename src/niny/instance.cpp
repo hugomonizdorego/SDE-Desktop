@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // One Niny window per display: a second "niny file" hands its files to the
 // running editor through a UNIX socket in $XDG_RUNTIME_DIR and exits.

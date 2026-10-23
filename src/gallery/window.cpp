@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Gallery main window: library state, sources, header and actions.
 #include <FL/Fl.H>
@@ -664,6 +664,7 @@ void GalleryWindow::show_about_dialog() {
   AboutInfo info;
   info.name = _("Gallery");
   info.program = "sde-gallery";
+  info.icon = "sde-gallery";
   info.version = SDE_VERSION;
   info.description = _("Organize your photos: browse them by date, folder, album and device, keep "
                        "favorites and your own albums, search, import from cameras and cards, play "

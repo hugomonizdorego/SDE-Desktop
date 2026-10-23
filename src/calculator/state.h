@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Persistent Calculator state: the history of calculations and the
 // preferences (mode, angle unit, base, word size, memory, history panel).

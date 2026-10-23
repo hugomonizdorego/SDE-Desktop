@@ -106,40 +106,74 @@ the quick row. Without a style (e.g. the system FLTK) the flag is ignored.
 check buttons and choices of a window the same look as the stock dialogs.
 Custom widgets keep drawing themselves (`sde::FlatButton`, `sde::Switch` ...).
 
-## About window and developer identity
+## About window, legal data and developer identity
 
-Every SDE program states **DebION Dev-Team** as its developer.
+Every SDE program is part of the **Selviana Desktop Environment** and names
+the **Selviana DE Project** as its developer (since 0.2.0 Alpha 1; see
+[LEGAL.md](LEGAL.md)).
 
 ```cpp
 #include "about.h"
 
 sde::AppInfo info;
 info.name = _("Gallery");
-info.program = "sde-gallery";
+info.program = "sde-gallery";       // also its entry in data/legal/components.json
 info.version = SDE_VERSION;
-info.icon = "sde-gallery";          // or info.logo = draw function
+info.icon = "sde-gallery";          // official icon; icon_fallbacks: older names
+info.logo = draw_app_icon;          // optional: drawn when the icon is not installed
 info.description = _("Browse your photo library.");
-info.license = "GPL-3.0-or-later";  // SPDX, shown by name
-info.credits = {sde::toolkit_credit(), _("Based on ...")};  // upstream credits
+info.credits = {sde::toolkit_credit(), _("Camera details read with libexif")};
 sde::show_about(info);
 ```
 
-The window always shows "Developer: DebION Dev-Team" (the label is
-translated, the name is the constant `sde::kDeveloper`), the version, the
-license, "© 2026 DebION Dev-Team" (`sde::kCopyright`), the website and the
-credits. Helpers:
+License, copyright lines, upstream projects and trademark notices come from
+the legal data, `data/legal/components.json` (compiled in as
+`generated/legal_data.h` by `tools/legal-data.py`, read through
+`src/common/legal.h`). `AppInfo::license`, `copyright`, `upstream` and
+`trademarks` override or extend it; `component` names another entry than
+`program`. The window has four sections:
 
-* `sde::developer_line()`: "Developer: DebION Dev-Team" for About pages.
+| Section | Content |
+| --- | --- |
+| About | icon, name, version, description, "Part of Selviana Desktop Environment" with the SDE mark, developer and website (button: Website) |
+| Credits | developer, upstream projects (relation, copyright, license, address), acknowledgements, the EDE inspiration note |
+| License | full license name and SPDX id, the standard notice with its warranty disclaimer, other licenses of a compound expression (button: View License, Alt+V: the full texts in a scrollable viewer) |
+| Legal | copyright lines (the program's and its upstream projects') and the trademark notices: SDE's always, Linux and Debian only when the program's texts name them |
+
+It follows the theme (light, dark, glass), fits 1024×600 at 150 % (sections
+scroll) and is keyboard accessible: Ctrl+Tab / Ctrl+Shift+Tab or Ctrl+Page
+Down/Up and Alt+1…4 change the section, Left/Right move along the section
+bar, Up/Down/Page Up/Page Down/Home/End scroll, Tab moves between buttons,
+Enter and Escape close. `SDE_ABOUT_QA_FILE=FILE` logs the shown sections and
+viewers for tests.
+
+Helpers:
+
+* `sde::developer_line()`: "Developer: Selviana DE Project" for About pages;
+  `sde::part_of_line()`: "Part of Selviana Desktop Environment".
 * `sde::handle_about_event(event, info)`: for small dialogs without a menu;
   call it from `handle()`: F1 or an unused right click opens "About ...".
-* `sde::version_line(info)`: "sde-foo 1.0 (DebION Dev-Team)" for `--version`.
+* `sde::show_license(info)`: the license viewer alone (e.g. a "Copyright and
+  License" button); `sde::show_license_viewer(title, text)` shows any text.
+* `sde::show_open_source_licenses()`: every SDE program and bundled
+  component with its license and copyright (Control Center → About).
+* `sde::print_version(info)` / `sde::version_line(info)`: GNU-style
+  `--version` text: "taca (Selviana Desktop Environment) 2.0.0~alpha1", the
+  SDE release, copyright, license and the warranty disclaimer.
 * `sde::toolkit_credit()`: the SDE-FLTK / FLTK credit line.
+* `sde::legal::branding_path("sde-logo")`, `legal::load_branding()`: the
+  official logo files (`/usr/share/sde/branding`, SVG before PNG,
+  `sde-logo-dark` on dark backgrounds, `sde-mark` for the mark alone); code
+  falls back to the `sde-logo` icon and then to drawing nothing.
+* `sde::legal::os_pretty_name()`: the operating system from os-release; SDE
+  never hard-codes a distribution name.
 
-Desktop files carry `X-Developer=DebION Dev-Team` (and `X-DebION-Developer`),
-and `data/metainfo/<id>.metainfo.xml` describes each program for AppStream
-software centers with `<developer id="org.debion"><name>DebION
-Dev-Team</name></developer>`. New programs add both; the
-`sde-developer-metadata` test checks them.
+Desktop files carry `X-Developer=Selviana DE Project`, and
+`data/metainfo/<id>.metainfo.xml` describes each program for AppStream
+software centers with `<developer id="io.github.hugomonizdorego"><name>Selviana
+DE Project</name></developer>` and `<icon type="stock">`. New programs add
+both and an entry in `data/legal/components.json`; the
+`sde-developer-metadata` and `sde-legal-data` tests check them.
 
 ## Adopting it in an app (integration checklist)
 
@@ -148,13 +182,14 @@ Dev-Team</name></developer>`. New programs add both; the
 2. Give edit menus the quick row with `edit_actions()`.
 3. Drop code that colors menus by hand (`labelcolor_`, `labelsize_` on items,
    `Fl_Menu_Bar` subclasses only for colors): the style does it.
-4. Replace private About windows with `sde::show_about()`; keep upstream
-   credits in `AppInfo::credits`.
+4. Replace private About windows with `sde::show_about()`; describe the
+   program (license, copyright, upstream projects) in
+   `data/legal/components.json` and keep other credits in `AppInfo::credits`.
 5. Add `X-Developer` to the desktop file and a metainfo file.
 
 `build/tests/sde-ui-kit-demo [--theme light|dark] [--show
-context|menubar|choice|ask|message|input|about|tooltip|files]` shows all of
-it in one window.
+context|menubar|choice|ask|message|input|about|licenses|license|tooltip|files]`
+shows all of it in one window.
 
 ## SDE-FLTK hooks (for toolkit work)
 

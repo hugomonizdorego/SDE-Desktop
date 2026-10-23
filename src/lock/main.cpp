@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // sde-lock: SDE Screen Lock.
 //
@@ -23,6 +23,8 @@
 #include "i18n.h"
 #include "spawn.h"
 #include "ui.h"
+// After ui.h: about.h pulls in Xlib, whose Status macro clashes with auth.h.
+#include "about.h"
 
 namespace sde {
 namespace lock {
@@ -102,10 +104,7 @@ int main(int argc, char **argv) {
     return lock::run_lock_ui(o);
   }
   install_crash_handler("sde-lock");
-  if (cmd == "--version") {
-    printf("sde-lock %s (%s)\n", SDE_APP_VERSION, SDE_VERSION_LABEL);
-    return 0;
-  }
+  if (cmd == "--version") return print_version("sde-lock", SDE_APP_VERSION);
   if (cmd == "--help" || cmd == "-h") {
     usage(stdout);
     return 0;

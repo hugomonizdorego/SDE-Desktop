@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Taca's tools beyond the archive engine: browsing the file system, name
 // patterns, finding files (on disk and inside archives), repairing damaged

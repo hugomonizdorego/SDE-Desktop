@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Themed popup menus drawn with cairo: rounded hover rows, icons, check
 // marks, shortcuts, cascading submenus, an optional quick action row and

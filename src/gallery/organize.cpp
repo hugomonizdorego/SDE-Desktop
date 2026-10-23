@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Gallery's organizing actions: albums the user makes, the photo menu, and
 // batch actions on many photos (rotate, resize and export, copy or move to

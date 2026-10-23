@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Programmer mode: integer expressions in two's complement with a word size
 // of 8, 16, 32 or 64 bits, entered in hexadecimal, decimal, octal or binary.

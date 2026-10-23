@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "desktop_entry.h"
@@ -606,10 +607,7 @@ int main(int argc, char **argv) {
     if (a == "--logout") return request_logout();
     if (a == "--check") return run_check();
     if (a == "--compositor") return set_compositor(i + 1 < argc ? argv[i + 1] : "");
-    if (a == "--version") {
-      printf("sde-session %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
-      return 0;
-    }
+    if (a == "--version") return print_version("sde-session", SDE_VERSION);
     if (a == "--help" || a == "-h") {
       usage();
       return 0;

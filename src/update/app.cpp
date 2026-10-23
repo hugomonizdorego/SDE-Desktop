@@ -24,6 +24,7 @@
 #include "config.h"
 #include "i18n.h"
 #include "icons.h"
+#include "legal.h"
 #include "model.h"
 #include "paint.h"
 #include "process.h"
@@ -1627,33 +1628,47 @@ class SettingsPage : public Page {
 
 // ------------------------------------------------------------------ about
 
+AppInfo about_info() {
+  AppInfo info;
+  info.name = _("Software Updater");
+  info.program = "sde-update";
+  info.version = SDE_UPDATE_VERSION;
+  info.icon = "sde-software-updater";
+  info.icon_fallbacks = {"system-software-update"};
+  info.description = _("Keeps the operating system and its applications up to date: critical, security, "
+                       "main and Flatpak updates from the configured sources.");
+  // mintupdate (GPL-3.0-or-later, Clement Lefebvre) is credited from the
+  // legal data; PackageKit and APT are Debian's.
+  info.credits = {_("Transactions by PackageKit or APT from Debian"), toolkit_credit()};
+  return info;
+}
+
 class AboutPage : public Page {
  public:
   AboutPage() {
     upstream = new Button(0, 0, 10, 10, _("mintupdate on GitHub"));
     upstream->callback([](Fl_Widget *, void *) { open_uri("https://github.com/linuxmint/mintupdate"); });
     copyright = new Button(0, 0, 10, 10, _("Copyright and License"));
-    copyright->callback([](Fl_Widget *, void *) {
-      std::string path = helper("COPYRIGHT");
-      open_uri(file_exists("/usr/share/doc/sde/copyright") ? "/usr/share/doc/sde/copyright" : path);
-    });
+    copyright->callback([](Fl_Widget *, void *) { show_license(about_info()); });
     about = new Button(0, 0, 10, 10, _("About Software Updater"));
-    about->callback([](Fl_Widget *, void *) {
-      AppInfo info;
-      info.name = _("Software Updater");
-      info.program = "sde-update";
-      info.version = SDE_UPDATE_VERSION;
-      info.icon = "system-software-update";
-      info.description = _("Keeps DebION GNU/Linux up to date: critical, security, main and Flatpak "
-                           "updates from the configured sources.");
-      info.credits = {_("Update model adapted from Linux Mint's Update Manager (mintupdate), "
-                        "© 2007–2015 Clement Lefebvre and the Linux Mint team, GPL-3.0-or-later"),
-                      toolkit_credit()};
-      show_about(info);
-    });
+    about->callback([](Fl_Widget *, void *) { show_about(about_info()); });
     end();
   }
-  int content_height() const override { return S(186) + S(150) + S(14) + S(120) + pad(); }
+  // Copyright and the trademark notices of the names on this page (SDE,
+  // Linux in "Linux Mint", Debian), below the Components card.
+  std::string legal_text() const {
+    std::string text = std::string(kCopyright) + " \xC2\xB7 " + license_name("GPL-3.0-or-later");
+    for (const auto &line : legal::trademarks_for(legal::find("sde-update"))) text += "\n" + line;
+    return text;
+  }
+  int legal_height() const {
+    text_font(active_theme().font_size - S(1));
+    int W = std::min(w() - 2 * pad(), S(760)) - S(4);
+    return wrapped_height(legal_text(), W) + S(8);
+  }
+  int content_height() const override {
+    return S(186) + S(150) + S(14) + S(120) + S(14) + legal_height() + pad();
+  }
   void layout() override {
     int p = pad(), X = x() + p;
     int by = y() + S(186) + S(150) - S(52);
@@ -1670,7 +1685,8 @@ class AboutPage : public Page {
     int p = pad(), X = x() + p, W = std::min(w() - 2 * p, S(760));
     {
       Painter pp(window()->w(), window()->h());
-      pp.image(IconLoader::get({"system-software-update", "software-update-available", "sde-logo"}, S(72)),
+      pp.image(IconLoader::get({"sde-software-updater", "system-software-update", "software-update-available"},
+                               S(72)),
                X, y() + S(28), S(72));
       paint_card(pp, X, y() + S(126), W, S(210) - S(10));
       paint_card(pp, X, y() + S(186) + S(150) + S(14), W, S(120));
@@ -1710,6 +1726,9 @@ class AboutPage : public Page {
       draw_text(r.second, X + S(150), ry, W - S(170), S(22), t.text);
       ry += S(22);
     }
+    text_font(t.font_size - S(1));
+    int ly = sy + S(120) + S(14);
+    draw_wrapped(legal_text(), X + S(2), ly, W - S(4), legal_height(), t.text_dim);
   }
   Button *upstream, *copyright, *about;
 };
