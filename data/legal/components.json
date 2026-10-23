@@ -145,7 +145,7 @@
       "credits": [],
       "trademarks": ["sde"],
       "notices": ["/usr/share/doc/sde/copyright", "/usr/share/doc/sde/upstream/DisplayProfileManager/copyright"],
-      "sources": ["src/display/"]
+      "sources": ["src/display/", "vendor/components/sde-display-settings/"]
     },
     {
       "id": "sde-update",
@@ -421,7 +421,7 @@
       "credits": ["Caja's COPYING notes that its license does not apply to the Eazel trademarks"],
       "trademarks": ["sde"],
       "notices": ["/usr/share/doc/sde/upstream/caja/copyright", "/usr/share/doc/sde/upstream/caja/COPYING"],
-      "sources": ["suite/overlays/liria/", "suite/sde-brand.h"]
+      "sources": ["vendor/suite/", "suite/overlays/liria/", "suite/sde-brand.h"]
     },
     {
       "id": "sde-fltk",
@@ -438,7 +438,7 @@
       "credits": ["Based in part on the work of the FLTK project (https://www.fltk.org)"],
       "trademarks": [],
       "notices": ["/usr/share/doc/sde/sde-fltk/COPYING", "/usr/share/doc/sde/sde-fltk/CREDITS"],
-      "sources": ["sde-fltk/README.SDE-FLTK.md"]
+      "sources": ["sde-fltk/"]
     },
     {
       "id": "sde-wm",
@@ -455,7 +455,7 @@
       "credits": [],
       "trademarks": [],
       "notices": ["/usr/share/doc/sde/upstream/openbox/COPYING", "/usr/share/doc/sde/upstream/openbox/AUTHORS"],
-      "sources": ["suite/patches/sde-wm/"]
+      "sources": ["vendor/components/sde-wm/", "suite/patches/sde-wm/"]
     },
     {
       "id": "sde-compositor",
@@ -472,7 +472,7 @@
       "credits": [],
       "trademarks": [],
       "notices": ["/usr/share/doc/sde/upstream/picom/COPYING", "/usr/share/doc/sde/upstream/picom/LICENSES/MPL-2.0", "/usr/share/doc/sde/upstream/picom/LICENSES/MIT"],
-      "sources": ["data/compositor/"]
+      "sources": ["vendor/components/sde-compositor/"]
     },
     {
       "id": "sde-themes",
@@ -491,7 +491,7 @@
       "credits": [],
       "trademarks": [],
       "notices": ["/usr/share/doc/sde/themes/graphite-gtk-theme/LICENSE", "/usr/share/doc/sde/themes/flat-remix-gtk/LICENSE", "/usr/share/doc/sde/themes/flat-remix-gnome/LICENSE"],
-      "sources": ["data/themes/", "tools/build-themes.py", "tools/prepare-themes.py"]
+      "sources": ["vendor/themes/", "data/themes/", "tools/build-themes.py", "tools/prepare-themes.py"]
     },
     {
       "id": "sde-artwork",

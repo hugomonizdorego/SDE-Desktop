@@ -2,51 +2,105 @@ Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: sde
 Upstream-Contact: Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>
 Source: https://github.com/hugomonizdorego/SDE-Desktop
+Comment: Selviana Desktop Environment (SDE), developed by the Selviana DE
+ Project. Selviana Desktop Environment, SDE and the SDE logo are trademarks
+ of the Selviana DE Project; the copyright licenses below do not grant
+ trademark rights (docs/LEGAL.md, docs/BRANDING.md). The licenses of every
+ program and bundled component are also listed in
+ /usr/share/sde/legal/components.json (data/legal/components.json).
+ .
+ The debion-desktop-base package built from this source is the integration
+ of DebION GNU/Linux, a separate Debian-based distribution that ships SDE.
+ .
+ SDE is inspired by the Equinox Desktop Environment (EDE) and contains no
+ EDE code.
 
 Files: *
-Copyright: 2026 Hugo Moniz do Rego and SDE contributors
+Copyright: 2026 Selviana DE Project and contributors
 License: GPL-3.0-or-later
 
 Files: bootstrap/*
-Copyright: 2026 SDE contributors
+Copyright: 2026 Selviana DE Project and contributors
 License: GPL-2.0-or-later
+Comment: Fetches the original EDE sources for reference only; nothing of EDE
+ is built or installed.
+
+Files: suite/overlays/* suite/patches/* suite/sde-brand.h
+       data/schemas/org.debion.session.gschema.xml
+Copyright: 2026 Selviana DE Project and contributors
+License: GPL-2.0-or-later
+Comment: SDE's additions to the GPL-2.0-or-later application fork Liria
+ (from Caja) and the patches to SDE WM (from Openbox), under the license of
+ the program they become part of.
 
 Files: data/update/model.py data/update/COPYRIGHT
 Copyright: 2007-2015 Clement Lefebvre <root@linuxmint.com>
-           2026 SDE contributors
+           2026 Selviana DE Project and contributors
 License: GPL-3.0-or-later
 Comment: Update class adapted from linuxmint/mintupdate, Classes.py,
  commit b4c586f9839d2943944390f4117a10acd4ba865a.
  Source: https://github.com/linuxmint/mintupdate
- Full upstream notices for the native application forks are installed
- under /usr/share/doc/sde/upstream, with matching complete source archives
- published beside the binaries.
+ data/update/COPYRIGHT is mintupdate's own copyright file (GPL-3+);
+ installed with data/update/COPYING under /usr/share/sde/update.
 
-Files: vendor/suite/*
-Copyright: Original application authors, GNOME and MATE contributors (per file)
-           2026 SDE contributors (downstream changes)
-License: individual-upstream-licenses
- The complete original COPYING, AUTHORS, trademark notices and copyright
- headers are preserved in each source tree. Individual files include GPLv2+,
- LGPL and permissive licenses. Full notices are also installed under
- /usr/share/doc/sde/upstream/COMPONENT; see THIRD-PARTY.md for source links.
+Files: src/display/profile.h src/display/profile.cpp src/display/profile.LICENSE
+       vendor/components/sde-display-settings/*
+Copyright: 2025 zac15987
+           2026 Selviana DE Project and contributors (native C++ port)
+License: MIT
+Comment: Ported profile model and naming from DisplayProfileManager
+ c873b66ba54b6efb111620e736878c21eda22f51.
+ Source: https://github.com/zac15987/DisplayProfileManager
+ Display Settings and the Control Center contain this code; their combined
+ license is GPL-3.0-or-later AND MIT. The notice is installed as
+ /usr/share/doc/sde/upstream/DisplayProfileManager/copyright.
+
+Files: data/branding/* data/icons/* data/avatars/* data/backgrounds/*
+       src/photo/sdeview.svg
+Copyright: 2026 Selviana DE Project
+License: GPL-3.0-or-later
+Comment: SDE artwork: the SDE logo and mark, the application icons, the
+ sample avatars and the SDE wallpapers. The copyright license covers the
+ files only: the SDE name and logo are trademarks of the Selviana DE
+ Project; see docs/BRANDING.md for their use.
+
+Files: data/icons/hicolor/scalable/apps/org.debion.Calculator.svg
+Copyright: 2026 Selviana DE Project and contributors
+License: CC0-1.0
+Comment: The former Calculator icon, kept as a compatibility name; its
+ header dedicates it to the public domain (CC0-1.0).
+
+Files: data/desktop-base/* data/networkmanager/* tools/make-debion-artwork.py
+Copyright: 2026 Selviana DE Project and contributors
+License: GPL-3.0-or-later
+Comment: Integration of DebION GNU/Linux, a separate Debian-based
+ distribution: its artwork for Debian's desktop-base and its network
+ defaults (debion-network-check), installed by the debion-desktop-base
+ package. Nothing here is part of SDE itself.
+
+Files: data/themes/*
+Copyright: 2026 Selviana DE Project and contributors
+License: GPL-3.0-or-later
+Comment: SDE theme palettes, overlays and the generated Openbox themes.
 
 Files: vendor/themes/graphite-gtk-theme/*
 Copyright: 2021-2025 Vince Liu (vinceliuice)
-License: GPL-3.0
+License: GPL-3.0-only
 Comment: Graphite GTK theme, https://github.com/vinceliuice/Graphite-gtk-theme
- commit 364173f47407164948788e4abb5e2eb46600f71a. Built by
- tools/build-themes.py into the SDE-Graphite-* and SDE-Glass-* themes in
- /usr/share/themes. The upstream LICENSE and README are installed under
- /usr/share/doc/sde/themes/graphite-gtk-theme.
+ commit 364173f47407164948788e4abb5e2eb46600f71a. Its LICENSE is the GNU GPL
+ version 3 and no later-version grant was found, so it is treated as
+ version 3 only. Built by tools/build-themes.py into the SDE-Graphite-*
+ and SDE-Glass-* themes in /usr/share/themes. The upstream LICENSE and
+ README are installed under /usr/share/doc/sde/themes/graphite-gtk-theme.
 
 Files: vendor/themes/flat-remix-gtk/*
 Copyright: 2016-2024 Daniel Ruiz de Alegría <daniel@drasite.com>
-License: GPL-3.0
+License: GPL-3.0-only
 Comment: Flat Remix GTK, https://github.com/daniruiz/flat-remix-gtk commit
- 919494f4f4ede88e2efb45cd48b98db7cc23f6ee. Its prebuilt GTK 3, GTK 4 and
- libadwaita variants are the base of the SDE-Fluent-* themes. Notices are
- installed under /usr/share/doc/sde/themes/flat-remix-gtk.
+ 919494f4f4ede88e2efb45cd48b98db7cc23f6ee (LICENSE: GNU GPL version 3, no
+ later-version grant found). Its prebuilt GTK 3, GTK 4 and libadwaita
+ variants are the base of the SDE-Fluent-* themes. Notices are installed
+ under /usr/share/doc/sde/themes/flat-remix-gtk.
 
 Files: vendor/themes/flat-remix-gnome/*
 Copyright: 2017-2025 Daniel Ruiz de Alegría <daniel@drasite.com>
@@ -57,14 +111,57 @@ Comment: Flat Remix GNOME, https://github.com/daniruiz/flat-remix-gnome commit
  is installed except its LICENSE and README under
  /usr/share/doc/sde/themes/flat-remix-gnome.
 
-Files: data/themes/*
-Copyright: 2026 SDE contributors
-License: GPL-3.0-or-later
-Comment: SDE theme palettes, overlays and the generated Openbox themes.
+Files: vendor/suite/*
+Copyright: 1999-2009 The Nautilus authors
+           2011-2021 The Caja authors
+           1999-2001 Eazel, Inc.
+           1999-2000 Red Hat, Inc.
+           2026 Selviana DE Project and contributors (downstream changes)
+License: individual-upstream-licenses
+ Liria, prepared by tools/prepare-native-suite.py from Caja 1.28.0 (commit
+ 27fdb849de02f551eab46eb78f48065da9d1d1ec, https://github.com/mate-desktop/caja).
+ Caja is distributed under the GNU General Public License, version 2 or
+ later; its libraries eel and libcaja-extension under the GNU Library
+ General Public License, version 2 or later. Individual files keep their
+ own copyright and license headers, which are authoritative; the original
+ COPYING, COPYING.LIB, COPYING.EXTENSIONS and AUTHORS are retained and
+ installed under /usr/share/doc/sde/upstream/caja. Caja's COPYING notes
+ that its license does not apply to the Eazel trademarks.
+ .
+ On Debian systems, the complete texts are in
+ "/usr/share/common-licenses/GPL-2" and "/usr/share/common-licenses/LGPL-2".
 
-Files: suite/sde-brand.h data/schemas/org.debion.session.gschema.xml
-Copyright: 2026 SDE contributors
+Files: vendor/components/sde-wm/*
+Copyright: 2002-2007 Dana Jansens
+           2004-2006 Mikael Magnusson
+           2003 Derek Foreman
+           The Openbox contributors listed in AUTHORS
 License: GPL-2.0-or-later
+Comment: SDE WM, built from Openbox (https://github.com/Mikachu/openbox,
+ commit 249020d6237bec9abfefc31953e934e83105c91c) with the patches in
+ suite/patches/sde-wm. All original notices are retained in the complete
+ corresponding source archive; COPYING and AUTHORS are installed under
+ /usr/share/doc/sde/upstream/openbox.
+
+Files: vendor/components/sde-compositor/*
+Copyright: 2003 Keith Packard (xcompmgr)
+           2011-2013 Christopher Jeffrey (Compton)
+           2019-2023 Yuxuan Shui and the picom contributors listed in CONTRIBUTORS
+License: MPL-2.0 and MIT
+Comment: SDE Compositor, built from picom (https://github.com/yshui/picom,
+ commit a456d438d0a681365d90a8adbf0941cede41aaa9). picom's COPYING states
+ "SPDX-License-Identifier: MPL-2.0 AND MIT"; each source file names its
+ license. COPYING, CONTRIBUTORS and LICENSES/ are installed under
+ /usr/share/doc/sde/upstream/picom.
+
+Files: sde-fltk/*
+Copyright: 1998-2025 Bill Spitzak and others (FLTK); see sde-fltk/CREDITS
+           2026 Selviana DE Project and contributors (SDE-FLTK changes)
+License: LGPL-2.0-only with FLTK exception
+Comment: SDE-FLTK is the SDE fork of FLTK 1.3.11. Its license, the GNU
+ Library General Public License version 2 with the FLTK exceptions (SPDX:
+ LGPL-2.0-only WITH FLTK-exception), is in sde-fltk/COPYING and installed
+ as /usr/share/doc/sde/sde-fltk/COPYING.
 
 License: GPL-3.0-or-later
  This program is free software: you can redistribute it and/or modify
@@ -80,57 +177,54 @@ License: GPL-3.0-or-later
  On Debian systems, the complete text of the GNU General Public
  License version 3 can be found in "/usr/share/common-licenses/GPL-3".
 
+License: GPL-3.0-only
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License, version 3, as
+ published by the Free Software Foundation.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 3 can be found in "/usr/share/common-licenses/GPL-3".
+
 License: GPL-2.0-or-later
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
  On Debian systems, the complete text of the GNU General Public
  License version 2 can be found in "/usr/share/common-licenses/GPL-2".
 
-License: GPL-3.0
- The upstream theme projects distribute their work under the GNU General
- Public License, version 3. On Debian systems, the complete text can be
- found in "/usr/share/common-licenses/GPL-3".
+License: LGPL-2.0-only with FLTK exception
+ The FLTK library and included programs are provided under the terms of
+ the GNU Library General Public License (LGPL) with the following
+ exceptions: modifications to the FLTK configure script, config header
+ file and makefiles to support a specific platform, widgets subclassed
+ from FLTK widgets and static linking of applications and widgets to the
+ FLTK library do not constitute a derivative work; programs linked to
+ FLTK need not provide a copy of the FLTK license but must identify their
+ use of FLTK. The full text of the license and its exceptions is in
+ sde-fltk/COPYING.
+ .
+ On Debian systems, the complete text of the GNU Library General Public
+ License version 2 can be found in "/usr/share/common-licenses/LGPL-2".
 
-License: CC-BY-SA-4.0
- Creative Commons Attribution-ShareAlike 4.0 International. The complete
- text is installed in /usr/share/doc/sde/themes/flat-remix-gnome/LICENSE and
- available at https://creativecommons.org/licenses/by-sa/4.0/legalcode.
-
-Files: src/calculator/* tests/test_calculator.cpp tests/test_calculator.py
-Copyright: 2026 DebION Dev-Team
-License: GPL-3.0-or-later
- Calculator was rewritten from scratch by the DebION Dev-Team in
- 0.1.0~alpha50; it contains no code of the scientific-calculator component
- it replaces.
-
-Files: vendor/components/sde-wm/*
-Copyright: Original Openbox contributors; see AUTHORS, COPYING and source headers
-License: GPL-2.0-or-later
- All original notices are retained in the complete corresponding source archive.
-
-Files: vendor/components/sde-compositor/*
-Copyright: Original picom, Compton and xcompmgr contributors; see COPYING and CONTRIBUTORS
-License: MPL-2.0 and MIT
- See the original LICENSES directory in the complete corresponding source archive.
-
-Files: sde-fltk/*
-Copyright: 1998-2026 Bill Spitzak and others (FLTK); see sde-fltk/CREDITS
-           2026 DebION Dev-Team (SDE-FLTK changes)
-License: LGPL-2.0-only with FLTK exceptions
- SDE-FLTK is the DebION Dev-Team fork of FLTK 1.3.11. Its license (the GNU
- Library General Public License version 2 with the FLTK static linking
- exceptions) is in sde-fltk/COPYING and /usr/share/doc/sde/sde-fltk/COPYING.
-
-Files: src/xsettingsd/* src/polkit-agent/* tests/test_xsettings.cpp
-Copyright: 2026 DebION Dev-Team
-License: GPL-3.0-or-later
-
-Files: src/display/profile.h src/display/profile.cpp src/display/profile.LICENSE
-       vendor/components/sde-display-settings/*
-Copyright: 2025 zac15987
-           2026 SDE contributors (native C++ port)
-License: MIT
-Comment: Ported profile model and naming from DisplayProfileManager
- c873b66ba54b6efb111620e736878c21eda22f51.
- Source: https://github.com/zac15987/DisplayProfileManager
+License: MPL-2.0
+ This Source Code Form is subject to the terms of the Mozilla Public
+ License, v. 2.0. If a copy of the MPL was not distributed with this
+ file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ .
+ On Debian systems, the complete text of the Mozilla Public License
+ version 2.0 can be found in "/usr/share/common-licenses/MPL-2.0".
 
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -150,3 +244,17 @@ License: MIT
  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.
+
+License: CC-BY-SA-4.0
+ Creative Commons Attribution-ShareAlike 4.0 International. The complete
+ text is installed in /usr/share/doc/sde/themes/flat-remix-gnome/LICENSE and
+ available at https://creativecommons.org/licenses/by-sa/4.0/legalcode.
+
+License: CC0-1.0
+ To the extent possible under law, the author(s) have dedicated all
+ copyright and related and neighboring rights to this software to the
+ public domain worldwide. This software is distributed without any
+ warranty.
+ .
+ On Debian systems, the complete text of the CC0 1.0 Universal license
+ can be found in "/usr/share/common-licenses/CC0-1.0".
