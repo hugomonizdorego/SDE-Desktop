@@ -199,8 +199,6 @@ class AppMenu : public PanelPopup {
   std::vector<Rect> group_rects_;  // heading and tiles of each group (window coordinates)
   Rect new_group_;                 // drop zone for a new group while dragging
   cairo_surface_t *avatar_ = nullptr;
-  std::string avatar_file_;  // the file avatar_ was read from, and its mtime
-  long long avatar_mtime_ = 0;
   std::string full_name_;
 
   int category_ = -1;  // list filter, -1 all applications

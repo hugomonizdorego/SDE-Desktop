@@ -416,6 +416,9 @@ def start_menu_checks():
     for _ in range(25):run('xdotool','key','Down')
     time.sleep(.5)
     assert sel().startswith(('app:','added:','most-used:','letter:')) and L()['@list-scroll'][0]>0,('Down left the list',sel(),L()['@list-scroll'])
+    # Super+Space (the keyboard layout) neither opens the selection nor closes the menu.
+    s0=sel();run('xdotool','key','super+space');time.sleep(.6)
+    assert visible('^SDE Menu$') and sel()==s0,('Super+Space opened the selection or closed the menu',s0,sel())
     # 5) One wheel click glides over several frames; the wheel over the rail
     # scrolls the list.
     run('xdotool','key','Home');waitfor(lambda:L()['@list-scroll'][0]==0,'Home did not scroll back')

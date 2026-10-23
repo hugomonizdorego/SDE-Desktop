@@ -676,35 +676,14 @@ void AppMenu::prepare() {
     menu_perf::Step s("filter");
     filter();
   }
-  menu_perf::Step avatar_step("avatar");
 
   full_name_ = user_name();
-  // The picture is decoded again only when its file changed.
+  if (avatar_) cairo_surface_destroy(avatar_);
+  avatar_ = nullptr;
   int ad = S(28);
-  bool found = false;
   for (const std::string &f : {home_dir() + "/.face", home_dir() + "/.face.icon",
                                "/var/lib/AccountsService/icons/" + env("USER")}) {
-    struct stat st;
-    if (stat(f.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) continue;
-    long long mtime = (long long)st.st_mtim.tv_sec * 1000000000LL + st.st_mtim.tv_nsec;
-    std::string key = f + "@" + std::to_string(ad);
-    if (avatar_ && key == avatar_file_ && mtime == avatar_mtime_) {
-      found = true;
-      break;
-    }
-    if (cairo_surface_t *img = load_image(f, ad * 2, ad * 2)) {
-      if (avatar_) cairo_surface_destroy(avatar_);
-      avatar_ = img;
-      avatar_file_ = key;
-      avatar_mtime_ = mtime;
-      found = true;
-      break;
-    }
-  }
-  if (!found && avatar_) {
-    cairo_surface_destroy(avatar_);
-    avatar_ = nullptr;
-    avatar_file_.clear();
+    if (file_exists(f) && (avatar_ = load_image(f, ad * 2, ad * 2))) break;
   }
   Fl::remove_timeout(poll_applications, this);
   if (!app_catalog::watching()) Fl::add_timeout(2, poll_applications, this);
@@ -2260,7 +2239,10 @@ int AppMenu::handle(int event) {
         }
         return 1;
       }
-      if (k == FL_Enter || k == FL_KP_Enter || (k == ' ' && keyboard_)) {
+      // Space opens the keyboard selection, but not with a modifier
+      // (Super+Space switches the keyboard layout).
+      bool plain = !(Fl::event_state() & (FL_CTRL | FL_ALT | FL_META));
+      if (k == FL_Enter || k == FL_KP_Enter || (k == ' ' && keyboard_ && plain)) {
         if (found) activate(sel);
         return 1;
       }

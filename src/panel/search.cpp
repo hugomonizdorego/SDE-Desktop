@@ -52,11 +52,8 @@ bool is_file(const DesktopEntry *e) { return e && starts_with(e->id, kFilePrefix
 bool is_app(const DesktopEntry *e) { return e && !is_extra(e) && !is_file(e); }
 
 std::vector<DesktopEntry> extras() {
-  // 0.2: the Settings application is the Control Center; its pages show
-  // that name and every page is found by both names (match_keys() looks at
-  // the words of the keywords).
   std::string settings = _("Control Center");
-  std::vector<DesktopEntry> out = {
+  return {
       extra("appearance", _("Appearance"), settings, "preferences-desktop-theme",
             "sde-settings --page appearance",
             {"theme", "dark", "light", "aero", "glass", "liquid", "wallpaper", "accent", "color",
@@ -99,11 +96,6 @@ std::vector<DesktopEntry> extras() {
             {"logout", "log out", "restart", "reboot", "shutdown", "shut down", "power off",
              "suspend", "matikan"}),
   };
-  for (auto &e : out)
-    if (e.generic_name == settings)
-      for (const char *k : {"settings", "control center", "control panel", "preferences"})
-        e.keywords.push_back(k);
-  return out;
 }
 
 std::vector<menu::Usage> load_usage() {
@@ -239,6 +231,11 @@ void SearchFlyout::prepare() {
       auto k = menu::search_keys(e);
       // The page's own ID ("display"), not the "sde-search:" prefix.
       k.id_parts = {menu::fold(e.id.substr(e.id.find(':') + 1))};
+      // 0.2: Settings is the Control Center; its pages are found by both
+      // names (match_keys() looks at the words of the keywords).
+      if (e.generic_name == _("Control Center"))
+        for (const char *w : {"settings", "control center", "control panel", "preferences"})
+          k.keywords.push_back(w);
       extra_keys_.push_back(k);
     }
   }
@@ -1000,8 +997,10 @@ int SearchFlyout::handle(int event) {
         Panel::instance->search_changed();
         return 1;
       }
+      // Shortcuts with Super or Alt (Super+Space, Alt+F4...) type nothing.
       const char *text = Fl::event_text();
-      if (!ctrl && text && *text && (unsigned char)text[0] >= 0x20 && text[0] != 0x7F) {
+      if (!(Fl::event_state() & (FL_CTRL | FL_ALT | FL_META)) && text && *text &&
+          (unsigned char)text[0] >= 0x20 && text[0] != 0x7F) {
         type(text);
         return 1;
       }
