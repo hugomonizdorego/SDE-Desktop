@@ -1672,9 +1672,8 @@ void AppMenu::move_selection(int key) {
     int target = a->scrolls() ? std::max(0, std::min(a->content - a->h, base + dir * (a->h - S(36))))
                               : base;
     bool moved = target != base;
-    // Choose the item where the area will be, then glide there. ref_y is
-    // where the selection is on screen now.
-    ref_y += base - from;
+    // Choose the item that will be where the selection is on screen now,
+    // then glide there.
     scroll = target;
     build_items();
     Kind kind = list == K_TILE ? K_TILE : K_ROW;

@@ -9,7 +9,8 @@
 // alpha52: a history of the notifications (org.sde.Notifications on the same
 // object) for the panel's notifications button and flyout: GetHistory,
 // MarkRead, Dismiss, DismissApp, Clear, InvokeAction and the HistoryChanged
-// signal (unread, total). Expired and silenced (Do Not Disturb) notifications
+// signal (unread, total). 0.2: HidePopups takes the bubbles off the screen
+// (the panel's flyout opened); they stay in the history as expired ones do. Expired and silenced (Do Not Disturb) notifications
 // stay in the history until dismissed there; transient ones are not kept.
 #include <FL/Fl.H>
 #include <FL/Fl_Button.H>
@@ -553,6 +554,10 @@ DBusHandlerResult on_history(DBusMessage *msg, const std::string &m) {
             .u32(h.urgency).boolean(h.unread);
       }
     }
+  } else if (m == "HidePopups") {
+    std::vector<uint32_t> ids;
+    for (const auto &n : g_notes) ids.push_back(n->id);
+    for (uint32_t id : ids) close_notification(id, EXPIRED);
   } else if (m == "MarkRead") {
     for (auto &h : g_history)
       if (h.unread) {
@@ -618,6 +623,7 @@ DBusHandlerResult on_message(DBusMessage *msg) {
         "</interface><interface name=\"org.sde.Notifications\">"
         "<method name=\"GetHistory\"><arg type=\"a(ussssasuub)\" direction=\"out\"/></method>"
         "<method name=\"MarkRead\"/>"
+        "<method name=\"HidePopups\"/>"
         "<method name=\"Dismiss\"><arg type=\"u\" direction=\"in\"/></method>"
         "<method name=\"DismissApp\"><arg type=\"s\" direction=\"in\"/></method>"
         "<method name=\"Clear\"/>"

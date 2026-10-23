@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 #include "menu_perf.h"
 
 #include <cstdio>
@@ -56,6 +57,11 @@ double now_ms() {
 
 void begin(const char *kind, const char *who) {
   if (!enabled()) return;
+  // The pointer resting where a menu opens moves "into" it: that is still
+  // the opening's first frame.
+  if (g_pending.active && g_pending.who == who && !strcmp(kind, "hover") &&
+      (g_pending.kind == "open" || g_pending.kind == "key-open"))
+    return;
   g_pending.active = true;
   g_pending.kind = kind;
   g_pending.who = who;

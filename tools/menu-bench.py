@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Selviana DE Project and contributors
 """Start menu benchmark (0.2 Alpha 1): how fast and smooth the SDE Start menu is.
 
 Starts a private Xvfb display and D-Bus bus and sde-panel with a generated set

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
+//
 // The installed applications for the Start menu, the panel search and the
 // Start tiles, kept by the long-running panel (0.2 Alpha 1).
 //

@@ -4,10 +4,12 @@
 //
 //   sde-sni-demo [icon-name [id [title]]]
 #include <FL/Fl.H>
+#include <cairo.h>
 #include <unistd.h>
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include "dbus.h"
 
@@ -30,7 +32,41 @@ void add_bool(dbus::Writer &dict, const char *key, bool value) {
   e.str(key).variant_bool(value);
 }
 
-void menu_node(dbus::Writer &parent, int id, const char *label, bool separator) {
+// A 16x16 PNG for the icon-data of a menu item.
+std::vector<unsigned char> demo_png() {
+  cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 16, 16);
+  cairo_t *cr = cairo_create(s);
+  cairo_set_source_rgb(cr, 0.86, 0.15, 0.15);
+  cairo_arc(cr, 8, 8, 7, 0, 6.2832);
+  cairo_fill(cr);
+  cairo_destroy(cr);
+  std::vector<unsigned char> out;
+  cairo_surface_write_to_png_stream(
+      s,
+      [](void *closure, const unsigned char *data, unsigned int n) {
+        auto *o = static_cast<std::vector<unsigned char> *>(closure);
+        o->insert(o->end(), data, data + n);
+        return CAIRO_STATUS_SUCCESS;
+      },
+      &out);
+  cairo_surface_destroy(s);
+  return out;
+}
+
+void add_bytes(dbus::Writer &dict, const char *key, const std::vector<unsigned char> &bytes) {
+  dbus::Writer e(dict.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(key);
+  dbus::Writer v(e.iter(), DBUS_TYPE_VARIANT, "ay");
+  DBusMessageIter arr;
+  dbus_message_iter_open_container(v.iter(), DBUS_TYPE_ARRAY, "y", &arr);
+  const unsigned char *data = bytes.data();
+  dbus_message_iter_append_fixed_array(&arr, DBUS_TYPE_BYTE, &data, int(bytes.size()));
+  dbus_message_iter_close_container(v.iter(), &arr);
+}
+
+// |icon|: an icon-name; "@png": icon-data (0.2: the panel shows both).
+void menu_node(dbus::Writer &parent, int id, const char *label, bool separator,
+               const char *icon = nullptr) {
   dbus::Writer v(parent.iter(), DBUS_TYPE_VARIANT, "(ia{sv}av)");
   dbus::Writer s(v.iter(), DBUS_TYPE_STRUCT, nullptr);
   s.i32(id);
@@ -38,6 +74,8 @@ void menu_node(dbus::Writer &parent, int id, const char *label, bool separator) 
     dbus::Writer props(s.iter(), DBUS_TYPE_ARRAY, "{sv}");
     if (separator) add_prop(props, "type", "separator");
     else add_prop(props, "label", label);
+    if (icon && std::string(icon) == "@png") add_bytes(props, "icon-data", demo_png());
+    else if (icon) add_prop(props, "icon-name", icon);
   }
   dbus::Writer children(s.iter(), DBUS_TYPE_ARRAY, "v");
 }
@@ -82,9 +120,9 @@ DBusHandlerResult on_menu(DBusMessage *m) {
       add_prop(props, "children-display", "submenu");
     }
     dbus::Writer children(root.iter(), DBUS_TYPE_ARRAY, "v");
-    menu_node(children, 1, "_Open Demo Window", false);
+    menu_node(children, 1, "_Open Demo Window", false, "window-new");
     menu_node(children, 2, "", true);
-    menu_node(children, 3, "_Quit", false);
+    menu_node(children, 3, "_Quit", false, "@png");
   } else if (member == "AboutToShow") {
     dbus::Writer(r).boolean(false);
   } else if (member == "Event") {

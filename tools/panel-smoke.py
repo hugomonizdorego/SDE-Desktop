@@ -1070,7 +1070,11 @@ def a52_checks():
     seq=menu_seq();run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
     waitfor(lambda:menu_seq()>seq,'no dbusmenu for the tray item');time.sleep(.3)
     ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids[0].startswith('@menu:tray:'),ids
-    print('A52 menu',ids[0][6:],':',', '.join(labels(menu_items())),flush=True);shot('43-menu-tray-dbusmenu');close_menu()
+    print('A52 menu',ids[0][6:],':',', '.join(labels(menu_items())),flush=True);shot('43-menu-tray-dbusmenu')
+    # 0.2: the items' own icons, by icon-name and by icon-data (PNG bytes).
+    icons=[k for k in menu_layout() if k.startswith('icon:')]
+    assert any(k.endswith('=window-new') for k in icons) and any(k.endswith('.png') for k in icons),('dbusmenu item icons missing',icons,list(menu_layout()))
+    close_menu()
     # 2) Search: box, icon only, hidden (Super still searches), back.
     items=right_click_panel(search_name,'search')
     assert ('Show Search Box' if search_name=='search' else 'Show Search Icon Only',True,True) in items,items
@@ -1098,7 +1102,10 @@ def a52_checks():
     notify('QA Chat','Hello from Ada','Lunch at noon?');notify('QA Chat','Second message','See you there');notify('QA Mail','New mail','Quarterly report')
     waitfor(lambda:'@badge:3' in layout('SDE Panel'),'unread count not 3: '+str([k for k in layout('SDE Panel') if k.startswith('@badge')]))
     time.sleep(.5);shot('45-notifications-badge')
+    assert visible('^Notification$'),'no notification bubble before opening the flyout'
     fl=click_panel('notifications','^Notifications$');time.sleep(.6)
+    # 0.2: the flyout takes the bubbles off the screen; they stay listed in it.
+    waitfor(lambda:not visible('^Notification$'),'notification bubbles stayed on screen with the flyout open')
     for name in ['Notification Hello from Ada','Notification Second message','Notification New mail','Clear QA Chat','Clear QA Mail','Clear all','Do Not Disturb','Notification settings...']:item('Notifications',name,active=False)
     L=list(layout('Notifications'));assert L.index('Notification Second message')<L.index('Notification Hello from Ada'),'not newest first'
     flyout_bounds_simple(fl);shot('46-notifications-flyout')

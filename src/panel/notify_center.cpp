@@ -398,6 +398,8 @@ void NotifyCenter::clear() {
   changed();
 }
 
+void NotifyCenter::hide_popups() { send_call("HidePopups"); }
+
 void NotifyCenter::invoke(uint32_t id, const std::string &key) {
   entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
                                 [&](const NotifyEntry &e) { return e.id == id; }),
@@ -412,6 +414,9 @@ void NotifyCenter::invoke(uint32_t id, const std::string &key) {
 NotifyFlyout::NotifyFlyout() : PanelPopup("Notifications") { end(); }
 
 void NotifyFlyout::prepare() {
+  // The flyout lists what the bubbles show: take them off the screen (they
+  // covered the flyout's corner and kept counting down).
+  NotifyCenter::get().hide_popups();
   NotifyCenter::get().refresh();
   rebuild();
 }
@@ -432,6 +437,8 @@ std::string NotifyFlyout::structure() const {
 
 void NotifyFlyout::status_changed() {
   if (!shown()) return;
+  // A notification that arrives while the flyout is open shows up in it.
+  NotifyCenter::get().hide_popups();
   if (structure() == structure_) {
     redraw();
     return;

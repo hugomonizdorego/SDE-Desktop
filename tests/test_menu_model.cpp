@@ -112,6 +112,41 @@ int main() {
   CHECK(menu::match_score(office, {"spread"}) > 0);
   CHECK(menu::match_score(calc, {"calc", "zzz"}) == 0);
 
+  // 0.2 search keys: folded once, accents and case ignored, ranked prefix >
+  // word > inside > generic > program > keyword > ID part > comment > fuzzy.
+  CHECK(menu::fold("\xC3\x89" "crire \xC3\xA0 Stra\xC3\x9F" "e") == "ecrire a strasse");
+  CHECK(menu::fold("\xC5\x81\xC3\xB3" "d\xC5\xBA") == "lodz");
+  CHECK(menu::fold("\xD0\x9F\xD1\x80\xD0\xB8") == "\xD0\xBF\xD1\x80\xD0\xB8");  // Cyrillic
+  CHECK(menu::fold("\xCE\x91\xCE\x92") == "\xCE\xB1\xCE\xB2");                  // Greek
+  CHECK(menu::fold("Bad \xFF") == "bad \xFF");  // not UTF-8: kept as it is
+  CHECK(menu::clean_text(" Tab\tName\n ") == "Tab Name");
+  CHECK(menu::clean_text("Qa \xFF Bytes") == "Qa \xEF\xBF\xBD Bytes");
+  CHECK(menu::clean_text("\xC3\x89t\xC3\xA9") == "\xC3\x89t\xC3\xA9");
+  CHECK(menu::search_terms("  Shut   DOWN ") == std::vector<std::string>({"shut", "down"}));
+  {
+    auto keys = [](const DesktopEntry &e) { return menu::search_keys(e); };
+    auto ecrire = app("ecrire.desktop", "\xC3\x89" "crire", {"Office"});
+    CHECK(menu::match_keys(keys(ecrire), {"ecrire"}) == 100);
+    auto lo = app("libreoffice-writer.desktop", "LibreOffice Writer", {"Office"}, "Word Processor");
+    CHECK(menu::match_keys(keys(lo), {"writer"}) == 80);    // a word of the name
+    CHECK(menu::match_keys(keys(lo), {"office"}) == 60);    // inside the name
+    CHECK(menu::match_keys(keys(lo), {"processor"}) == 45);  // a word of the generic name
+    CHECK(menu::match_keys(keys(lo), {"lbw"}) == 8);         // letters in order
+    CHECK(menu::match_keys(keys(lo), {"xyz"}) == 0);
+    DesktopEntry files = app("org.gnome.Nautilus.desktop", "Files", {"System"});
+    files.exec = "nautilus --new-window";
+    files.keywords = {"folder", "Shut down"};
+    auto k = keys(files);
+    CHECK(menu::match_keys(k, {"nautilus"}) == 35);  // the program
+    CHECK(menu::match_keys(k, {"gnome"}) == 25);     // a part of the ID
+    CHECK(menu::match_keys(k, {"down"}) == 30);      // a word of a keyword
+    CHECK(menu::match_keys(k, {"shut", "down"}) == 60);
+    // The SDE Settings application is the Control Center: both names find it.
+    auto settings = app("sde-settings.desktop", "Control Center", {"Settings"});
+    CHECK(menu::match_keys(keys(settings), {"settings"}) == 30);
+    CHECK(menu::match_keys(keys(settings), {"control", "center"}) == 180);
+  }
+
   // Letters and the A-Z order: digits and symbols first.
   CHECK(menu::index_letter("vim") == "V");
   CHECK(menu::index_letter("7-Zip") == "#");
@@ -161,6 +196,20 @@ int main() {
   CHECK(index.is_dir(root + "/Docs/Reports") && !index.is_dir(root + "/report.txt"));
   CHECK(index.search({"report", "2026"}, 10).size() == 1);
   CHECK(index.search({}, 10).empty());
+  // 0.2: built in small steps on idle, with the same result.
+  {
+    menu::FileIndex steps;
+    steps.begin({root}, 1000, 2);
+    int n = 0;
+    while (!steps.step(0.0001) && n < 1000) ++n;
+    CHECK(steps.built() && !steps.building() && steps.size() == index.size());
+    CHECK(steps.search({"report"}, 10) == hits);
+    auto dirs = steps.search_hits({"reports"}, 10);
+    CHECK(dirs.size() == 1 && dirs[0].dir);
+    menu::FileIndex unfinished;
+    unfinished.begin({root}, 1000, 2);
+    CHECK(unfinished.search({"report"}, 10).empty());  // nothing until it is built
+  }
   index.build({root}, 2, 2);
   CHECK(index.size() == 2);
   std::string cmd = "rm -rf '" + root + "'";

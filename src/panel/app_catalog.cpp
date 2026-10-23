@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 #include "app_catalog.h"
 
 #include <FL/Fl.H>
@@ -336,6 +337,11 @@ void start() {
   if (s.fd < 0) {
     s.fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
     if (s.fd >= 0) Fl::add_fd(s.fd, FL_READ, on_events, nullptr);
+  }
+  // Loaded already (current() came first): watch the directories now.
+  if (s.snapshot) {
+    refresh();
+    return;
   }
   // A moment after the panel is up, so that its first frames come first.
   Fl::add_timeout(0.4, [](void *) { begin_load(); });

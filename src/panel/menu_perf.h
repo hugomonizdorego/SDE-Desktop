@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
+//
 // Start menu and search timing (0.2 Alpha 1): how long an interaction takes
 // from the event that started it to the frame that shows its result.
 //
