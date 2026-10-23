@@ -1124,6 +1124,22 @@ def liria_sidebar_pinned(staged):
             goto out;
         }
 """)
+    # 0.2.0: the heading text is one line, like the place names. With the
+    # collapse arrow after it, the cell area measured the bold heading at
+    # less than its natural width, Pango wrapped "Pinned" and "Network" into
+    # two lines and those heading rows were drawn taller than the others
+    # (15 px at 100 %); only the measurement wrapped, the text stayed on one
+    # line in the middle of the higher row.
+    edit_once(sidebar, """                  "weight", PANGO_WEIGHT_BOLD,
+                  "weight-set", TRUE,
+                  "ypad", 1,
+                  "xpad", 0,
+                  NULL);""", """                  "weight", PANGO_WEIGHT_BOLD,
+                  "weight-set", TRUE,
+                  "ypad", 1,
+                  "xpad", 0,
+                  "ellipsize", PANGO_ELLIPSIZE_END, /* SDE: one line */
+                  NULL);""")
     # Headings: an arrow, a click collapses; the pin of the hovered row.
     edit_once(sidebar, """    gtk_tree_view_column_set_cell_data_func (col, cell,
                          heading_cell_renderer_func,
