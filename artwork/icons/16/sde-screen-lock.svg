@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Screen Lock, 16 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <path d="M5 8V5.5A3 3 0 0 1 11 5.5V8" fill="none" stroke="#2B2B2F" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M5 8V5.5A3 3 0 0 1 11 5.5V8" fill="none" stroke="#C9CCD2" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="2" y="7" width="12" height="8" rx="1" fill="#2B2B2F"/>
+  <rect x="3" y="8" width="10" height="6" fill="#5A5F6A"/>
+  <rect x="7" y="9" width="2" height="3" fill="#F4F1E8"/>
+</svg>

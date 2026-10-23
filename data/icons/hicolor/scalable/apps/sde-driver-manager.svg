@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Driver Manager: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Driver Manager</title>
+  <defs>
+    <linearGradient id="chip" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#56739B"/><stop offset="1" stop-color="#3C5678"/></linearGradient>
+    <linearGradient id="die" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7593BA"/><stop offset="1" stop-color="#5C7AA2"/></linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#DADDE2"/><stop offset="1" stop-color="#AEB2B9"/></linearGradient>
+  </defs>
+  <rect x="22" y="59" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="172" y="59" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="59" y="18" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="59" y="168" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="22" y="87" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="172" y="87" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="87" y="18" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="87" y="168" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="22" y="115" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="172" y="115" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="115" y="18" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="115" y="168" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="22" y="143" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="172" y="143" width="30" height="14" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="143" y="18" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="143" y="168" width="14" height="30" rx="4" fill="#D8B964" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="42" y="38" width="140" height="140" rx="18" fill="url(#chip)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="76" y="72" width="72" height="72" rx="10" fill="url(#die)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <circle cx="62" cy="58" r="6" fill="#B9C9DE"/>
+  <path d="M160.28 143.73L176.45 159.91L159.91 176.45L143.73 160.28A30.6 30.6 0 0 0 184.61 199.88L214 229.28A10.8 10.8 0 0 0 229.28 214L199.88 184.61A30.6 30.6 0 0 0 160.28 143.73Z" fill="url(#steel)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+</svg>

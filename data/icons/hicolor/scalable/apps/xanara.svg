@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Xanara: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Xanara</title>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#EFEDE7"/></linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D6675E"/><stop offset="1" stop-color="#B9463F"/></linearGradient>
+    <linearGradient id="nib" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#69727F"/><stop offset="1" stop-color="#454C57"/></linearGradient>
+  </defs>
+  <path d="M62 24H162L204 66V218Q204 232 190 232H62Q48 232 48 218V38Q48 24 62 24Z" fill="url(#paper)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M162 24V54Q162 66 174 66H204Z" fill="#E3DED4" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M72 20H100V100L86 88L72 100Z" fill="url(#ribbon)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M116 52H146M116 74H176" fill="none" stroke="#B8BDC6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+  <path d="M72 124H176M72 148H176M72 172H140" fill="none" stroke="#B8BDC6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+  <g transform="translate(184 178) rotate(40)">
+    <path d="M0 44C-11 28 -24 14 -24 -6V-28Q-24 -38 -14 -38H14Q24 -38 24 -28V-6C24 14 11 28 0 44Z" fill="url(#nib)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+    <path d="M0 40V8" fill="none" stroke="#F4F1E8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+    <circle cx="0" cy="2" r="6" fill="#F4F1E8"/>
+    <path d="M-24 -18H24" fill="none" stroke="#2B2B2F" stroke-width="5" class="detail"/>
+  </g>
+</svg>
