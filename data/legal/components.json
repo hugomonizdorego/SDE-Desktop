@@ -414,9 +414,9 @@
       "metainfo": "org.debion.Liria.metainfo.xml",
       "icons": ["liria", "system-file-manager"],
       "license": "GPL-2.0-or-later AND LGPL-2.0-or-later",
-      "copyright": ["Copyright © 1999–2009 The Nautilus authors", "Copyright © 2011–2021 The Caja authors", "Copyright © 2026 Selviana DE Project and contributors"],
+      "copyright": ["Copyright © 1999–2009 The Nautilus authors", "Copyright © 2011–2021 The Caja authors", "Copyright © 2012–2021 The MATE developers", "Copyright © 2026 Selviana DE Project and contributors"],
       "upstream": [
-        {"project": "Caja (MATE)", "url": "https://github.com/mate-desktop/caja", "license": "GPL-2.0-or-later AND LGPL-2.0-or-later", "copyright": "Copyright © 1999–2009 The Nautilus authors; Copyright © 2011–2021 The Caja authors", "relation": "fork"}
+        {"project": "Caja (MATE)", "url": "https://github.com/mate-desktop/caja", "license": "GPL-2.0-or-later AND LGPL-2.0-or-later", "copyright": "Copyright © 1999–2009 The Nautilus authors; Copyright © 2011–2021 The Caja authors; Copyright © 2012–2021 The MATE developers", "relation": "fork"}
       ],
       "credits": ["Caja's COPYING notes that its license does not apply to the Eazel trademarks"],
       "trademarks": ["sde"],
