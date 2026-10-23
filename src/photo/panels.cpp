@@ -281,11 +281,11 @@ SidePanel::SidePanel(PhotoWindow *app, int x, int y, int w, int h) : Fl_Group(x,
                          {N_("Cancel"), [](PhotoWindow *a) { a->cancel_crop(); }}};
   for (size_t i = 0; i < crop.size(); ++i) {
     auto *b = new FlatButton(0, 0, 10, S(34), _(crop[i].label), i == 5);
-    auto *fn = new std::function<void(PhotoWindow *)>(crop[i].fn);  // lives as long as the button
+    crop_fns_.push_back(std::make_unique<std::function<void(PhotoWindow *)>>(crop[i].fn));
     b->callback([](Fl_Widget *w, void *f) {
       auto *panel = static_cast<SidePanel *>(w->parent());
       (*static_cast<std::function<void(PhotoWindow *)> *>(f))(panel->app_);
-    }, fn);
+    }, crop_fns_.back().get());
     crop_buttons_.push_back(b);
   }
   for (size_t i = 0; i < sizeof kAspects / sizeof kAspects[0]; ++i) {
