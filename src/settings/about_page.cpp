@@ -224,28 +224,35 @@ void sde_part(Page *page) {
   page->heading(legal::kProjectName, _("The desktop environment: version, build, licenses and credits"));
 
   // Logo and version. A wide logo (with its name) goes on top; a square
-  // one stands left of the name.
+  // one stands left of the text, or above it in narrow windows. The name
+  // is the part's heading, so the card shows the release.
   page->begin_card();
-  int y = page->cursor();
+  int y = page->cursor() + S(14);
   int x = page->left() + S(24), w = page->width() - S(48);
   bool wide = LogoBox::aspect(t.dark) >= 2.0;
-  int tx = x, tw = w;
+  int tx = x, tw = w, logo_bottom = y;
   if (wide) {
     int lh = S(64);
-    new LogoBox(x, y + S(10), std::min(w, S(380)), lh);
-    y += lh + S(18);
+    new LogoBox(x, y, std::min(w, S(380)), lh);
+    y += lh + S(14);
+  } else if (w < S(420)) {
+    new LogoBox(x, y, S(72), S(72));
+    y += S(72) + S(12);
   } else {
-    new LogoBox(x, y + S(12), S(88), S(88));
+    new LogoBox(x, y, S(88), S(88));
     tx = x + S(108);
     tw = w - S(108);
-    new Label(tx, y + S(12), tw, S(34), legal::kProjectName, Label::TITLE);
-    y += S(48);
+    logo_bottom = y + S(88);
   }
-  new Label(tx, y, tw, S(22), _("Small and fast, with a modern desktop experience."), Label::SUBTITLE);
-  new Label(tx, y + S(24), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION), Label::DIM);
-  new Label(tx, y + S(46), tw, S(22), developer_line(), Label::DIM);
-  int bottom = y + S(46) + S(28);
-  page->advance(std::max(bottom, page->cursor() + S(112)) - page->cursor());
+  auto line = [&](const std::string &text, Label::Style style) {
+    int lh = std::max(S(22), Label::measure(text, tw, style) + S(4));
+    new Label(tx, y, tw, lh, text, style, true);
+    y += lh;
+  };
+  line(format(_("Version %s"), SDE_VERSION_LABEL), Label::TITLE);
+  line(_("Small and fast, with a modern desktop experience."), Label::SUBTITLE);
+  line(format("%s  \xC2\xB7  %s", developer_line().c_str(), SDE_VERSION), Label::DIM);
+  page->advance(std::max(y, logo_bottom) + S(14) - page->cursor());
   page->end_card();
 
   // Build information, embedded at build time (tools/build-info.py).
