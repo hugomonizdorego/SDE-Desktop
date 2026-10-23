@@ -283,7 +283,7 @@ def open_menu_command(park=True):
     sent again."""
     if park:  # away from the menu: no hover while it opens
         xdo("mousemove", W - 2, 2)
-    for attempt in range(4):
+    for attempt in range(6):
         n = len(lines())
         t0 = time.perf_counter()
         sp.run([str(bin_dir / "sde-panel"), "--menu"], env=env)
@@ -320,6 +320,7 @@ def layout():
 
 
 res = {"label": args.label, "size": args.size, "scale": args.scale, "apps": args.apps}
+failed = None
 try:
     xv = start(["Xvfb", args.display, "-screen", "0", args.size + "x24", "-nolisten", "tcp", "-ac"],
                "xvfb.log")
@@ -488,9 +489,15 @@ try:
     xdo("key", "Escape")
     time.sleep(0.4)
 
-    # 4) Many opens (leaks), then the final memory.
+    # 4) Many opens (leaks), then the final memory. A panel that lost
+    # every command for a while (alpha52 under load) only misses an open.
+    res["extra_open_failures"] = 0
     for _ in range(20):
-        open_menu_command()
+        try:
+            open_menu_command()
+        except RuntimeError:
+            res["extra_open_failures"] += 1
+            continue
         xdo("mousemove", mg[0] + lx + lw // 2, mg[1] + ly + lh // 3)
         sp.run(["xdotool", "click", "--repeat", "3", "--delay", "20", "5"], env=env)
         time.sleep(0.1)
@@ -499,6 +506,10 @@ try:
     res["rss_end_mb"] = round(proc_stat(panel.pid)[1] / 1024, 1)
     res["lost_commands"] = len(LOST)
     res["panel_alive"] = panel.poll() is None
+except Exception as e:  # keep what was measured so far
+    failed = e
+    res["error"] = f"{type(e).__name__}: {e}"
+    res["lost_commands"] = len(LOST)
 finally:
     for p in reversed(procs):
         if p.poll() is None:
@@ -526,3 +537,6 @@ table(res, f"SDE Start menu benchmark {args.label} ({args.size} at {args.scale} 
            f"{args.apps} generated applications)")
 if args.json:
     args.json.write_text(json.dumps(res, indent=2))
+if failed:
+    print(f"\nbenchmark stopped early: {res['error']}", file=sys.stderr)
+    sys.exit(1)
