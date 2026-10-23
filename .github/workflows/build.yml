@@ -114,7 +114,7 @@ jobs:
           apt-get install -y --no-install-recommends papirus-icon-theme libnss-wrapper tzdata || true
           python3 tools/showcase.py --test-dir dist/test-tools --output-dir dist/showcase \
             --zip "dist/sde-screenshots_$(tr '~' '.' < VERSION).zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.image == 'debian:testing'
         with:
           name: sde-showcase
@@ -151,7 +151,7 @@ jobs:
         with:
           name: sde-ui-smoke
           path: smoke
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: sde-showcase
