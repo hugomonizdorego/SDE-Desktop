@@ -20,6 +20,10 @@ namespace avatar {
 void paint_circle(Painter &p, cairo_surface_t *pic, double x, double y, double d, const Color &disc);
 // The initials of |name| centred in the circle (FLTK text).
 void draw_initials(const std::string &name, int x, int y, int d, const Color &ink);
+// True when the pictures at |a| and |b| look the same (compared at 12 x 12
+// pixels; cached while the files do not change): ~/.face is a re-encoded
+// copy of the stock picture it was made from.
+bool same_picture(const std::string &a, const std::string &b);
 
 // A picture file decoded at the sizes it is drawn at. It is read again when
 // the path, the file's size or its time changes (check() looks).

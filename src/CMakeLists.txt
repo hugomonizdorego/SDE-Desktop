@@ -78,7 +78,9 @@ add_executable(sde-panel
   panel/touchpad_monitor.cpp
   panel/preview.cpp
   panel/panel_menus.cpp
-  panel/notify_center.cpp)
+  panel/notify_center.cpp
+  # The Start menu's account button and popup, the Action Center's user.
+  panel/account.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)

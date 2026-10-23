@@ -73,44 +73,6 @@ void set_status(const std::string &text, bool error) {
   g_status_error = error;
 }
 
-// A rough look at a picture (12 x 12 pixels): the stock picture that is the
-// current avatar gets a ring (~/.face is a re-encoded copy of it).
-std::vector<unsigned char> signature(const std::string &path) {
-  static std::map<std::string, std::pair<std::string, std::vector<unsigned char>>> cache;
-  std::string key = path;
-  struct stat st;
-  std::string stamp = stat(path.c_str(), &st) == 0
-                          ? std::to_string(st.st_mtime) + ":" + std::to_string(st.st_size)
-                          : std::string();
-  auto it = cache.find(key);
-  if (it != cache.end() && it->second.first == stamp) return it->second.second;
-  std::vector<unsigned char> out;
-  if (cairo_surface_t *s = avatar::load_square(path, 12)) {
-    cairo_surface_flush(s);
-    const unsigned char *d = cairo_image_surface_get_data(s);
-    int stride = cairo_image_surface_get_stride(s);
-    for (int y = 0; y < 12; ++y)
-      for (int x = 0; x < 12; ++x) {
-        uint32_t p = reinterpret_cast<const uint32_t *>(d + y * stride)[x];
-        out.push_back((p >> 16) & 0xFF);
-        out.push_back((p >> 8) & 0xFF);
-        out.push_back(p & 0xFF);
-      }
-    cairo_surface_destroy(s);
-  }
-  cache[key] = {stamp, out};
-  return out;
-}
-
-bool same_picture(const std::string &a, const std::string &b) {
-  if (a.empty() || b.empty()) return false;
-  auto x = signature(a), y = signature(b);
-  if (x.empty() || x.size() != y.size()) return false;
-  long diff = 0;
-  for (size_t i = 0; i < x.size(); ++i) diff += std::abs(int(x[i]) - int(y[i]));
-  return diff / long(x.size()) < 10;
-}
-
 std::string pretty_name(const std::string &path) {
   std::string n = basename_of(path);
   size_t dot = n.rfind('.');
@@ -193,7 +155,7 @@ class StockChoice : public Fl_Widget {
     pic_.set_path(path_);
     if (g_busy) deactivate();
   }
-  bool current() const { return same_picture(path_, g_picture.path()); }
+  bool current() const { return avatar::same_picture(path_, g_picture.path()); }
   void draw() override {
     const Theme &t = settings_theme();
     int inset = S(5), d = w() - 2 * inset;

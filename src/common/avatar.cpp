@@ -671,7 +671,8 @@ bool do_set_avatar(const std::string &source, bool notify, std::string *error, s
   // no) ~/.face is still the picture of SDE.
   std::string why;
   if (!backend().set_icon_file(login_name(), face_path(), &why) && note)
-    *note = format(_("The login screen keeps its picture: %s"), why.c_str());
+    *note = format(_("Your picture is saved for SDE; the login screen keeps its own (%s)"),
+                   why.c_str());
   if (notify) notify_changed();
   return true;
 }
@@ -682,7 +683,7 @@ bool do_clear_avatar(bool notify, std::string *error, std::string *note) {
   ok = remove_file(face, error) && ok;
   std::string why;
   if (!backend().set_icon_file(login_name(), "", &why) && note)
-    *note = format(_("The login screen keeps its picture: %s"), why.c_str());
+    *note = format(_("Removed for SDE; the login screen keeps its picture (%s)"), why.c_str());
   if (notify) notify_changed();
   return ok;
 }

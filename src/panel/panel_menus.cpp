@@ -162,7 +162,7 @@ void Panel::power_items(ContextMenu &m) {
 
 void Panel::start_context_menu() {
   ContextMenu m;
-  m.item(_("Settings"), run({"sde-settings"}), {"settings"});
+  m.item(_("Control Center"), run({"sde-settings"}), {"settings"});
   m.item(_("System Monitor"), run({"sde-system-monitor"}), {"utilities-system-monitor"});
   m.item(_("Run Command..."), run({"sde-run"}), {"system-run"});
   m.item(_("Software Updater"), run({"sde-update"}), {"system-software-update"});
