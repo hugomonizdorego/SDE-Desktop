@@ -30,6 +30,8 @@ only when no session could start at all (or with --strict, when a shot
 failed).
 """
 import argparse
+import ctypes
+import ctypes.util
 import datetime as dt
 import fnmatch
 import glob
@@ -46,7 +48,6 @@ import tempfile
 import time
 import traceback
 import zipfile
-import zlib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -150,6 +151,58 @@ def info(text):
 # ============================================================ X helpers
 
 
+class XGrab:
+    """Screen grabs with XGetImage on the root window through libX11
+    (ctypes): what is on the screen, composited windows included. xwd
+    reads windows of other visuals (GTK's ARGB windows) one by one and
+    returns black or grey areas then. None when libX11 cannot be used."""
+
+    class XImage(ctypes.Structure):
+        _fields_ = [('width', ctypes.c_int), ('height', ctypes.c_int), ('xoffset', ctypes.c_int),
+                    ('format', ctypes.c_int), ('data', ctypes.c_void_p), ('byte_order', ctypes.c_int),
+                    ('bitmap_unit', ctypes.c_int), ('bitmap_bit_order', ctypes.c_int),
+                    ('bitmap_pad', ctypes.c_int), ('depth', ctypes.c_int), ('bytes_per_line', ctypes.c_int),
+                    ('bits_per_pixel', ctypes.c_int), ('red_mask', ctypes.c_ulong),
+                    ('green_mask', ctypes.c_ulong), ('blue_mask', ctypes.c_ulong), ('obdata', ctypes.c_void_p),
+                    ('funcs', ctypes.c_void_p * 6)]
+
+    def __init__(self, display):
+        self.x = ctypes.CDLL(ctypes.util.find_library('X11') or 'libX11.so.6')
+        self.x.XOpenDisplay.restype = ctypes.c_void_p
+        self.x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.x.XDefaultRootWindow.restype = ctypes.c_ulong
+        self.x.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        self.x.XGetImage.restype = ctypes.POINTER(self.XImage)
+        self.x.XGetImage.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_uint,
+                                     ctypes.c_uint, ctypes.c_ulong, ctypes.c_int]
+        self.x.XDestroyImage.argtypes = [ctypes.POINTER(self.XImage)]
+        self.x.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        self.x.XDisplayWidth.argtypes = self.x.XDisplayHeight.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.d = self.x.XOpenDisplay(display.encode())
+        if not self.d:
+            raise RuntimeError(f'cannot open display {display}')
+        self.root = self.x.XDefaultRootWindow(self.d)
+        self.w, self.h = self.x.XDisplayWidth(self.d, 0), self.x.XDisplayHeight(self.d, 0)
+
+    def grab(self):
+        im = self.x.XGetImage(self.d, self.root, 0, 0, self.w, self.h, 0xFFFFFFFF, 2)  # ZPixmap
+        if not im:
+            raise RuntimeError('XGetImage failed')
+        try:
+            i = im.contents
+            if i.bits_per_pixel != 32 or i.byte_order != 0:
+                raise RuntimeError(f'unsupported screen format ({i.bits_per_pixel} bpp)')
+            data = ctypes.string_at(i.data, i.bytes_per_line * i.height)
+            return i.width, i.height, data, i.bytes_per_line, 4
+        finally:
+            self.x.XDestroyImage(im)
+
+    def close(self):
+        if self.d:
+            self.x.XCloseDisplay(self.d)
+            self.d = None
+
+
 def read_xwd(data):
     """(width, height, pixel bytes, stride, bytes per pixel) of an xwd dump
     of a TrueColor screen. Pixels are B, G, R (and X), least significant
@@ -237,6 +290,7 @@ class Session:
         self.captured = []
         self.current = None
         self.env = {}
+        self.xgrab = None
 
     # ------------------------------------------------------------ programs
 
@@ -466,14 +520,13 @@ class Session:
                     pass
         self.gone(pattern, 3)
 
-    def changed(self, box, timeout=1.5):
-        """True when |box| (x, y, w, h dict or tuple) changes within |timeout|
-        (a menu opened)."""
-        if isinstance(box, dict):
-            box = (box['x'], box['y'], box['x'] + box['w'], box['y'] + box['h'])
-        box = (max(0, box[0]), max(0, box[1]), min(self.W, box[2]), min(self.H, box[3]))
-        before = region_hash(self.grab(), box)
-        return bool(self.wait(lambda: region_hash(self.grab(), box) != before, timeout, 0.1))
+    def box_of(self, wid):
+        """(x0, y0, x1, y1) of a window on the screen."""
+        g = self.geom(wid)
+        return (max(0, g['x']), max(0, g['y']), min(self.W, g['x'] + g['w']), min(self.H, g['y'] + g['h']))
+
+    def hash_box(self, box):
+        return region_hash(self.grab(), box)
 
     def skip(self, name, reason):
         if self.run_ctx.selected(self.current, name):
@@ -569,6 +622,20 @@ class Session:
     # ----------------------------------------------------------- settling
 
     def grab(self):
+        """The screen: (width, height, BGRX bytes, stride, bytes per pixel)."""
+        if self.xgrab is None:
+            try:
+                self.xgrab = XGrab(self.env['DISPLAY'])
+            except (OSError, RuntimeError, AttributeError) as e:
+                warn(f'libX11 screen grabs unavailable ({e}); using ImageMagick import')
+                self.xgrab = False
+        if self.xgrab:
+            return self.xgrab.grab()
+        if shutil.which('import'):
+            r = sp.run(['import', '-window', 'root', '-depth', '8', 'xwd:-'], env=self.env, stdout=sp.PIPE,
+                       stderr=sp.DEVNULL, timeout=30)
+            if r.returncode == 0 and r.stdout:
+                return read_xwd(r.stdout)
         r = sp.run(['xwd', '-root', '-silent'], env=self.env, stdout=sp.PIPE, stderr=sp.DEVNULL, timeout=20)
         return read_xwd(r.stdout)
 
@@ -643,16 +710,13 @@ class Session:
             pass
 
     def close_bubbles(self, keep=False):
-        """Closes notification bubbles (they would show in later shots)."""
-        if keep or not self.visible('^Notification$'):
+        """Closes notification bubbles, which would show in later shots, and
+        empties the history (no unread badge). The bubbles are unnamed
+        override-redirect windows: sde-notifyd's history tells instead."""
+        if keep or not self.notification_ids():
             return
-        for nid in self.notification_ids() + self.notifications:
-            self.close_notification(nid)
-        if not self.gone('^Notification$', 3):
-            self.clear_notifications()
-        if not self.gone('^Notification$', 2):
-            for w in self.visible_all('^Notification$'):
-                self.xdo('windowunmap', w)
+        self.clear_notifications()
+        time.sleep(0.3)
 
     def notification_ids(self):
         """Ids in sde-notifyd's history (org.sde.Notifications.GetHistory)."""
@@ -1006,6 +1070,8 @@ class Session:
         if getattr(self, 'closed', False):
             return
         self.closed = True
+        if self.xgrab:
+            self.xgrab.close()
         for p, _ in reversed(self.shot_procs):
             self.stop(p, 1)
         for p, _ in reversed(self.procs):
@@ -1267,35 +1333,36 @@ def notifications(s):
     s.write_config({'notifications': {'timeout': '30'}}, reload=True)
     s.keep_bubbles = True
     try:
-        # The panel's notification for a USB drive plugged in (fixture)...
-        if s.fixture_mode('drive-remove') and s.fixture_mode('drive-insert'):
-            s.wait(lambda: len(s.notification_ids()) >= 1, 6)
-        # ...and Software Updater's own (fixture updates).
+        # Software Updater's own notification (fixture updates)...
         if s.has('sde-update'):
-            before = len(s.notification_ids())
             s.spawn('sde-update', '--notifier', '--once', name='sde-update-notifier')
-            s.wait(lambda: len(s.notification_ids()) > before, 10)
+            s.wait(lambda: len(s.notification_ids()) >= 1, 10)
+        # ...and the panel's for a USB drive plugged in (fixture; it sets
+        # its own, shorter time: last, so both bubbles are on screen).
+        before = len(s.notification_ids())
+        if s.fixture_mode('drive-remove') and s.fixture_mode('drive-insert'):
+            s.wait(lambda: len(s.notification_ids()) > before, 6)
         if not s.notification_ids():
             s.notify('Software Updater', '8 software updates are available',
                      '2 critical and 3 security updates. Open Software Updater to install them.',
                      'system-software-update')
-        if not s.find('^Notification$', 4):
-            raise SkipShot('no notification bubble')
+        if not s.wait(s.notification_ids, 4):
+            raise SkipShot('no notification arrived')
         s.park_pointer()
-        time.sleep(0.6)
-        s.shot('notification-bubbles', quiet=0.5)
+        time.sleep(0.8)  # the bubbles map (unnamed windows: nothing to wait for)
+        s.shot('notification-bubbles', quiet=0.4, timeout=3)
         # Bubbles away, the history stays for the notifications button.
         for nid in s.notification_ids():
             s.close_notification(nid)
-        s.gone('^Notification$', 3)
+        time.sleep(0.5)
+        s.click_panel('notifications', '^Notifications$')
+        s.park_pointer()
+        s.shot('panel-notifications', quiet=0.5)
+        s.key('Escape')
     finally:
         s.keep_bubbles = False
         s.write_config(reload=True)
-    s.click_panel('notifications', '^Notifications$')
-    s.park_pointer()
-    s.shot('panel-notifications', quiet=0.5)
-    s.key('Escape')
-    s.clear_notifications()
+        s.clear_notifications()
 
 
 @scene('Panel', [('panel-previews', 'Taskbar: hovering a button previews the windows of the application')],
@@ -1525,25 +1592,28 @@ def liria_more(s):
     w = s.app(['liria', '--no-desktop', s.home / 'Documents'], '^Documents$')
     s.size(w, 1040, 640)
     s.activate(w)
-    s.key('ctrl+a')
+    # Icons sorted by name: Projects, then the files; the fifth is the PDF.
+    s.key('Home', 'Right', 'Right', 'Right', 'Right')
     s.park_pointer()
     s.shot('liria-ribbon', quiet=0.8)
-    s.stop_scene_procs()
-    w = s.app(['liria', '--no-desktop', s.home / 'Pictures/Nature'], '^Nature$')
-    s.size(w, 1040, 640)
-    s.activate(w)
     s.key('ctrl+2')
     time.sleep(0.8)
     s.park_pointer()
     s.shot('liria-details', quiet=0.8)
-    s.key('ctrl+1')
-    time.sleep(0.8)
-    # The first file: select it with the keyboard, then the menu key.
-    s.key('Home')
-    g = s.geom(w)
-    s.key('Menu')
-    if not s.changed(g, 1.5):
-        s.click(g['x'] + g['w'] * 0.45, g['y'] + g['h'] * 0.45, 3)
+    s.key('ctrl+1')  # back to icons: Liria keeps the view per folder
+    time.sleep(0.5)
+    s.stop_scene_procs()
+    w = s.app(['liria', '--no-desktop', s.home / 'Pictures/Nature'], '^Nature$')
+    s.size(w, 1040, 640)
+    s.activate(w)
+    # A picture selected with the keyboard, its menu with Shift+F10.
+    s.key('Home', 'Right')
+    time.sleep(0.3)
+    box = s.box_of(w)
+    before = s.hash_box(box)
+    s.key('shift+F10')
+    if not s.wait(lambda: s.hash_box(box) != before, 1.5):
+        s.key('Menu')
     s.shot('liria-context-menu', quiet=0.6)
     s.key('Escape')
     s.key('alt+Return')
