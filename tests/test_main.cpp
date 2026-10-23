@@ -385,6 +385,38 @@ static void test_rgba_pixels() {
   CHECK(rgba_pixels(nullptr, 0, 1, 1, 4, true, 4, 16) == nullptr);
 }
 
+// The /tmp fallback of runtime_dir() only uses a private directory of ours.
+static void test_runtime_dir_fallback() {
+  char tmpl[] = "/tmp/sde-runtime-test-XXXXXX";
+  char *made = mkdtemp(tmpl);
+  CHECK(made != nullptr);
+  if (!made) return;
+  std::string base = made, own = base + "/sde-" + std::to_string(getuid());
+  std::string saved = env("XDG_CACHE_HOME");
+  setenv("XDG_CACHE_HOME", (base + "/cache").c_str(), 1);
+  std::string elsewhere = base + "/elsewhere";
+  CHECK(mkdir(elsewhere.c_str(), 0777) == 0);
+  CHECK(symlink(elsewhere.c_str(), own.c_str()) == 0);
+  CHECK(runtime_dir_in(base) == base + "/cache/sde-runtime");  // a planted link is not followed
+  CHECK(unlink(own.c_str()) == 0);
+  CHECK(mkdir(own.c_str(), 0700) == 0 && chmod(own.c_str(), 0777) == 0);
+  CHECK(runtime_dir_in(base) == own);
+  struct stat st;
+  CHECK(lstat(own.c_str(), &st) == 0 && (st.st_mode & 0777) == 0700);  // tightened
+  if (getuid() == 0 && chown(own.c_str(), 54321, 54321) == 0)
+    CHECK(runtime_dir_in(base) == base + "/cache/sde-runtime");  // someone else's
+  // write_file_atomic() never writes through a link at its temporary name.
+  std::string target = base + "/cache/file", victim = base + "/victim";
+  CHECK(symlink(victim.c_str(), (target + ".tmp." + std::to_string(getpid())).c_str()) == 0);
+  CHECK(write_file_atomic(target, "new"));
+  std::string text;
+  CHECK(read_file(target, text) && text == "new" && !file_exists(victim));
+  if (saved.empty()) unsetenv("XDG_CACHE_HOME");
+  else setenv("XDG_CACHE_HOME", saved.c_str(), 1);
+  std::string cmd = "rm -rf '" + base + "'";
+  if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", base.c_str());
+}
+
 static void test_gtk_preferences() {
   char temp[] = "/tmp/sde-gtk-config-XXXXXX";
   char *root = mkdtemp(temp);
@@ -490,6 +522,7 @@ int main() {
   test_dbus_value();
   test_dbus_hardening();
   test_rgba_pixels();
+  test_runtime_dir_fallback();
   test_gtk_preferences();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);

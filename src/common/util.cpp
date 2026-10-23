@@ -2,6 +2,7 @@
 #include "util.h"
 
 #include <dirent.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -86,12 +87,32 @@ std::string config_home() { return env("XDG_CONFIG_HOME", home_dir() + "/.config
 std::string data_home() { return env("XDG_DATA_HOME", home_dir() + "/.local/share"); }
 std::string state_home() { return env("XDG_STATE_HOME", home_dir() + "/.local/state"); }
 
+bool private_dir(const std::string &dir) {
+  if (dir.empty() || (mkdir(dir.c_str(), 0700) != 0 && errno != EEXIST)) return false;
+  struct stat st;
+  // lstat: a symbolic link (to somewhere else) is never accepted.
+  if (lstat(dir.c_str(), &st) != 0 || !S_ISDIR(st.st_mode) || st.st_uid != geteuid()) return false;
+  if ((st.st_mode & 077) != 0 && chmod(dir.c_str(), 0700) != 0) return false;
+  return true;
+}
+
+std::string runtime_dir_in(const std::string &tmp) {
+  // Without a session (no pam_systemd) there is no $XDG_RUNTIME_DIR. In a
+  // shared /tmp, sde-$UID may have been created by another user beforehand
+  // (or be a symbolic link): only a directory that is ours and private is
+  // used, otherwise one in the home directory.
+  std::string r = tmp + "/sde-" + std::to_string(getuid());
+  if (private_dir(r)) return r;
+  r = env("XDG_CACHE_HOME", home_dir() + "/.cache");
+  make_dirs(r);
+  r += "/sde-runtime";
+  return private_dir(r) ? r : "";
+}
+
 std::string runtime_dir() {
   std::string r = env("XDG_RUNTIME_DIR");
   if (!r.empty()) return r;
-  r = "/tmp/sde-" + std::to_string(getuid());
-  mkdir(r.c_str(), 0700);
-  return r;
+  return runtime_dir_in("/tmp");  // checked every time: /tmp may be cleaned meanwhile
 }
 
 std::vector<std::string> data_dirs() {
@@ -149,8 +170,17 @@ bool write_file_atomic(const std::string &path, const std::string &content) {
   size_t slash = path.find_last_of('/');
   if (slash != std::string::npos) make_dirs(path.substr(0, slash));
   std::string tmp = path + ".tmp." + std::to_string(getpid());
-  FILE *f = fopen(tmp.c_str(), "wb");
-  if (!f) return false;
+  // A new file of our own (O_EXCL, never through a symbolic link), as
+  // fopen("wb") would follow a link planted in a shared directory.
+  unlink(tmp.c_str());  // left over by a crashed process with the same pid
+  int fd = open(tmp.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0666);
+  if (fd < 0) return false;
+  FILE *f = fdopen(fd, "wb");
+  if (!f) {
+    close(fd);
+    unlink(tmp.c_str());
+    return false;
+  }
   bool ok = fwrite(content.data(), 1, content.size(), f) == content.size();
   ok = (fflush(f) == 0) && ok;
   ok = (fsync(fileno(f)) == 0) && ok;

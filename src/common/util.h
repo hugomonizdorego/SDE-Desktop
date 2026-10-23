@@ -24,6 +24,13 @@ std::string config_home();                 // ~/.config
 std::string data_home();                   // ~/.local/share
 std::string state_home();                  // ~/.local/state
 std::string runtime_dir();                 // $XDG_RUNTIME_DIR or /tmp/sde-$UID
+// The fallback of runtime_dir() below |tmp|: |tmp|/sde-$UID when that is a
+// real directory owned by this user and private (mode 0700), else
+// ~/.cache/sde-runtime; "" if neither can be had.
+std::string runtime_dir_in(const std::string &tmp);
+// Creates |dir| (mode 0700) or accepts an existing one that is a directory
+// (not a symbolic link) owned by this user, tightening its mode to 0700.
+bool private_dir(const std::string &dir);
 std::vector<std::string> data_dirs();      // data_home + $XDG_DATA_DIRS
 std::vector<std::string> config_dirs();    // $XDG_CONFIG_DIRS (system only)
 
