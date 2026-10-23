@@ -123,9 +123,9 @@ class LockWindow;
 // screen busy forever; the screen gives up on it after kAuthTimeout and the
 // late answer is thrown away.
 struct Attempt {
-  explicit Attempt(const SecretBuffer &pw) : password(pw.c_str(), pw.c_str() + pw.size()) {
-    password.push_back(0);
-  }
+  // One allocation including the terminating NUL (c_str() has it): a
+  // push_back() could reallocate and free a copy that is never wiped.
+  explicit Attempt(const SecretBuffer &pw) : password(pw.c_str(), pw.c_str() + pw.size() + 1) {}
   ~Attempt() { secure_wipe(password.data(), password.size()); }
   std::vector<char> password;
   AuthResult result;
