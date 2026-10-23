@@ -589,6 +589,97 @@ def libadwaita_shapes(fam):
             f'window.dialog.message, window.messagedialog, dialog.alert > sheet {{ border-radius: {rl}px; }}\n')
 
 
+PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+# Graphite's PNG assets in the accent color (0.2.0): the slider of scales
+# with marks and the checked selection-mode check box. The others are gray.
+ACCENT_ASSET = r'(scale-(horz|vert)-marks-(before|after)-slider|selectionmode-checkbox-checked)(-dark)?(@2)?\.png'
+# The inside of the slider knob in upstream's light and dark assets.
+GRAPHITE_ASSET_BASE = {'light': (0xFF, 0xFF, 0xFF), 'dark': (0x2C, 0x2C, 0x2C)}
+
+
+def png_chunks(data):
+    """(type, body) of each chunk of a PNG file."""
+    if not data.startswith(PNG_SIGNATURE):
+        raise ValueError('not a PNG file')
+    pos = len(PNG_SIGNATURE)
+    while pos + 12 <= len(data):
+        n = int.from_bytes(data[pos:pos + 4], 'big')
+        yield data[pos + 4:pos + 8], data[pos + 8:pos + 8 + n]
+        pos += 12 + n
+
+
+def png_palette(data):
+    """The palette of an indexed PNG: [(r, g, b, alpha)], or [] for other PNGs."""
+    plte = trns = b''
+    for kind, body in png_chunks(data):
+        if kind == b'PLTE':
+            plte = body
+        elif kind == b'tRNS':
+            trns = body
+    return [tuple(plte[i:i + 3]) + (trns[i // 3] if i // 3 < len(trns) else 255,)
+            for i in range(0, len(plte) - 2, 3)]
+
+
+def png_with_palette(data, colors):
+    """|data| with its PLTE chunk replaced by |colors| (same length)."""
+    import zlib
+    out = bytearray(PNG_SIGNATURE)
+    for kind, body in png_chunks(data):
+        if kind == b'PLTE':
+            body = bytes(v for c in colors for v in c[:3])
+        out += len(body).to_bytes(4, 'big') + kind + body
+        out += (zlib.crc32(kind + body) & 0xFFFFFFFF).to_bytes(4, 'big')
+    return bytes(out)
+
+
+def move_accent(colors, upstream, base, accent, new_base):
+    """Palette entries on the line from |base| (the knob's inside) to the
+    upstream accent keep their place on it, between |new_base| and |accent|;
+    anything else (shadows, gray) stays."""
+    d = [u - b for u, b in zip(upstream, base)]
+    dd = sum(x * x for x in d) or 1
+    out = []
+    for c in colors:
+        rgb_, alpha = c[:3], c[3]
+        t = sum((v - b) * x for v, b, x in zip(rgb_, base, d)) / dd
+        t = max(0.0, min(1.0, t))
+        off = max(abs(v - (b + t * x)) for v, b, x in zip(rgb_, base, d))
+        # Faint edge pixels (accent with little alpha) are noisier.
+        if alpha and off <= (48 if alpha < 255 and t >= 0.5 else 16):
+            rgb_ = tuple(round(nb + t * (a - nb)) for nb, a in zip(new_base, accent))
+        out.append(tuple(rgb_) + (alpha,))
+    return out
+
+
+def recolor_graphite_assets(folder, light, dark):
+    """Graphite draws a few assets in its own accent color (#1A73E8 for
+    blue), which differs from SDE's: the sliders of scales with marks stood
+    out. Moves them to the SDE accent of |light| and |dark| (theme tokens).
+    Only the palette of the indexed PNGs changes."""
+    import re
+    folder = Path(folder)
+    for mode, t in (('light', light), ('dark', dark)):
+        ref = folder / ('scale-horz-marks-before-slider%s.png' % ('-dark' if mode == 'dark' else ''))
+        if not ref.exists():
+            continue
+        base = GRAPHITE_ASSET_BASE[mode]
+        opaque = [c[:3] for c in png_palette(ref.read_bytes()) if c[3] == 255]
+        if not opaque:
+            continue
+        # The ring of the knob: the opaque color farthest from its inside.
+        upstream = max(opaque, key=lambda c: sum((v - b) ** 2 for v, b in zip(c, base)))
+        accent = tuple(round(v * 255) for v in rgb(t['accent']))
+        new_base = tuple(round(v * 255) for v in rgb(t['surface' if mode == 'light' else 'background']))
+        for path in sorted(folder.glob('*.png')):
+            m = re.fullmatch(ACCENT_ASSET, path.name)
+            if not m or (m.group(4) is not None) != (mode == 'dark'):
+                continue
+            data = path.read_bytes()
+            colors = png_palette(data)
+            if colors:
+                path.write_bytes(png_with_palette(data, move_accent(colors, upstream, base, accent, new_base)))
+
+
 def compile_graphite(src, accent_id, work, pal=None, accent=None):
     """Compiles Graphite's GTK 3/4 Light and Dark style sheets for one accent."""
     tree = Path(work) / ('graphite-' + accent_id)
@@ -640,6 +731,8 @@ def build_graphite(pal, vendor, out, work):
     fam = pal['families']['graphite']
     for accent in pal['accents']:
         css, assets, scalable = compile_graphite(src, fam['upstream_accent'][accent], work, pal, accent)
+        recolor_graphite_assets(assets, tokens(pal, 'graphite', 'light', accent),
+                                tokens(pal, 'graphite', 'dark', accent))
         for mode in MODES:
             name = theme_name(pal, 'graphite', mode, accent)
             d = out / name
