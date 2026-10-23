@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Welcome, 24 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
-  <rect x="1" y="6" width="4" height="11" rx="1" fill="#2B2B2F"/>
-  <rect x="2" y="7" width="2" height="9" fill="#ADA79A"/>
+  <path d="M4.5 6.5L1.5 8.5V15.5L4.5 17.5Z" fill="#ADA79A" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
   <rect x="5" y="18" width="13" height="4" rx="1" fill="#2B2B2F"/>
   <rect x="6" y="19" width="11" height="2" fill="#D6CFC0"/>
   <rect x="4" y="3" width="19" height="16" rx="2" fill="#2B2B2F"/>

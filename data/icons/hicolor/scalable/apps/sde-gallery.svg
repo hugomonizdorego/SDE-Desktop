@@ -7,7 +7,6 @@
     <linearGradient id="p2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A7CE9A"/><stop offset="1" stop-color="#6FAF6E"/></linearGradient>
     <linearGradient id="p3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5C2CC"/><stop offset="1" stop-color="#DA8AA2"/></linearGradient>
     <linearGradient id="heart" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E68AA0"/><stop offset="1" stop-color="#CC5275"/></linearGradient>
-    <clipPath id="ph"><rect x="54" y="82" width="132" height="98" rx="4"/></clipPath>
   </defs>
   <g transform="rotate(-12 120 120)">
     <rect x="52" y="34" width="148" height="140" rx="10" fill="#FBFAF7" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
@@ -18,11 +17,9 @@
     <rect x="72" y="64" width="124" height="94" rx="4" fill="url(#p2)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   </g>
   <rect x="40" y="68" width="160" height="152" rx="10" fill="#FFFFFF" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-  <g clip-path="url(#ph)">
-    <rect x="54" y="82" width="132" height="98" fill="url(#p3)"/>
-    <circle cx="120" cy="150" r="24" fill="#FBE3A6" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-    <path d="M40 162C66 146 92 146 118 166C142 150 166 148 200 160V190H40Z" fill="#B9547C" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-  </g>
+  <rect x="54" y="82" width="132" height="98" rx="4" fill="url(#p3)"/>
+  <circle cx="120" cy="150" r="24" fill="#FBE3A6" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M54 155C72 146 94 148 118 166C142 150 166 148 186 155V176Q186 180 182 180H58Q54 180 54 176Z" fill="#B9547C" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   <rect x="54" y="82" width="132" height="98" rx="4" fill="none" stroke="#2B2B2F" stroke-width="5" class="detail"/>
   <path d="M196 238C176 224 160 210 160 192C160 180 169 172 179 172C187 172 193 177 196 183C199 177 205 172 213 172C223 172 232 180 232 192C232 210 216 224 196 238Z" fill="url(#heart)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
 </svg>
