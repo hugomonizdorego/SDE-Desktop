@@ -141,6 +141,25 @@ def find(name):
     )
 
 
+def open_popup(title, *command):
+    """Sends an sde-panel popup command and returns the popup window. A
+    command can be lost while the panel relayouts after a configuration
+    change (seen under load): it is sent again while the popup does not
+    show, never while it does (the commands toggle)."""
+    for _ in range(3):
+        if run("xdotool", "search", "--onlyvisible", "--name", "^" + title + "$", check=False).stdout.strip():
+            break
+        run("sde-panel", *command)
+        for _ in range(40):
+            if run("xdotool", "search", "--onlyvisible", "--name", "^" + title + "$", check=False).stdout.strip():
+                break
+            time.sleep(0.1)
+        else:
+            continue
+        break
+    return find("^" + title + "$")
+
+
 def control(title, name):
     """Window-relative (x, y, w, h) of a named control from the panel QA dump."""
     path = home / "qa" / (title.replace(" ", "-") + ".txt")
@@ -410,8 +429,7 @@ try:
     assert float(spread) > 0.03, ("Calculator did not paint", spread, cg)
     run("xdotool", "key", "alt+F4")
     # New package metadata becomes searchable while the same menu stays open.
-    run("sde-panel", "--menu")
-    find("^SDE Menu$")
+    open_popup("SDE Menu", "--menu")
     run("xdotool", "type", "SDELiveInstallProbe")
     time.sleep(.3)
     app_dir = home / ".local/share/applications"
@@ -593,8 +611,7 @@ try:
         run("xdotool", "key", "Escape")
         config("short", compact=True)
         reload_panel()
-        run("sde-panel", "--action-center")
-        ac = find("^Action Center$")
+        ac = open_popup("Action Center", "--action-center")
         click_control(ac, "Action Center", "Do Not Disturb")
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.getboolean("notifications", "do_not_disturb")
@@ -606,8 +623,7 @@ try:
     config("short", "dark", 100, True)
     reload_panel()
     print("short", geom(wid), flush=True)
-    run("sde-panel", "--quick-settings")
-    find("^Action Center$")
+    open_popup("Action Center", "--quick-settings")
     shot("05-action-center-dark")
     run("xdotool", "key", "Escape")
     config("full")
@@ -622,8 +638,7 @@ try:
     reload_panel()
     g = geom(wid)
     assert g["Y"] > 0 and g["Y"] < 50, g
-    run("sde-panel", "--action-center")
-    ac = find("^Action Center$")
+    ac = open_popup("Action Center", "--action-center")
     g = geom(ac)
     assert g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
     run(
