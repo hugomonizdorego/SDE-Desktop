@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 DebION Dev-Team
+ * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Liria window chrome for SDE: the compact header bar, the main menu,
  * keyboard shortcuts, the About window and Liria's own style sheet.

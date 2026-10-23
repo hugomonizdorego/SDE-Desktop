@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 DebION Dev-Team
+ * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Liria's ribbon (alpha52): Home, Share and View tabs with the file
  * commands under the header row, plus contextual Drive and Archive tabs.

@@ -187,7 +187,13 @@ class LiriaAlpha16Test(unittest.TestCase):
         import re
         help_page = re.sub(r'<!--[\s\S]*?-->', '', (self.overlay / 'data/help/index.html').read_text())
         self.assertIn('Developer: Selviana DE Project', help_page)
-        self.assertNotIn('DebION', help_page)
+        extension = (self.overlay / 'sde-tools/libliria-sde-tools.so.liria-extension').read_text()
+        self.assertIn('Author=Selviana DE Project', extension)
+        self.assertIn('Version=@SDE_BUILD_VERSION@', extension)
+        self.assertIn('rglob("*.liria-extension")', recipe)
+        for path in self.overlay.rglob('*'):
+            if path.is_file():
+                self.assertNotIn('DebION', path.read_text(errors='replace'), path)
 
     def test_main_menu_and_header(self):
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()

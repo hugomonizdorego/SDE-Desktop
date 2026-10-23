@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 DebION Dev-Team
+ * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * The SDE Tools extension builds its own copy of the window's preference
  * and decision code (src/liria-sde-model.c), like liria-sde-pins.c.

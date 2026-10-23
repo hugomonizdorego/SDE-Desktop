@@ -2146,8 +2146,9 @@ RECIPES = {"liria": liria}
 
 def apply(record, staged):
     overlay(record["id"], staged)
-    # Overlay sources carry the SDE build version as a placeholder.
-    for path in staged.rglob("*.c"):
+    # Overlay sources (and, since 0.2.0, extension descriptions) carry the
+    # SDE build version as a placeholder.
+    for path in list(staged.rglob("*.c")) + list(staged.rglob("*.liria-extension")):
         text = path.read_text(errors="surrogateescape")
         if "@SDE_BUILD_VERSION@" in text:
             path.write_text(text.replace("@SDE_BUILD_VERSION@", record["build_version"]), errors="surrogateescape")
