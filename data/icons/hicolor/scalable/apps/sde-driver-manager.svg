@@ -26,5 +26,5 @@
   <rect x="42" y="38" width="140" height="140" rx="18" fill="url(#chip)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   <rect x="76" y="72" width="72" height="72" rx="10" fill="url(#die)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   <circle cx="62" cy="58" r="6" fill="#B9C9DE"/>
-  <path d="M164.28 147.73L180.45 163.91L163.91 180.45L147.73 164.28A30.6 30.6 0 0 0 188.61 203.88L232 247.28A10.8 10.8 0 0 0 247.28 232L203.88 188.61A30.6 30.6 0 0 0 164.28 147.73Z" fill="url(#steel)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M160.28 143.73L176.45 159.91L159.91 176.45L143.73 160.28A30.6 30.6 0 0 0 184.61 199.88L214 229.28A10.8 10.8 0 0 0 229.28 214L199.88 184.61A30.6 30.6 0 0 0 160.28 143.73Z" fill="url(#steel)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
 </svg>

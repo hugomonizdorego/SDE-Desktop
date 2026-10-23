@@ -9,5 +9,5 @@
   <circle cx="116" cy="118" r="94" fill="url(#disc)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   <path d="M88 82A46 46 0 1 0 144 82" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" class="detail"/>
   <path d="M116 62V116" fill="none" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" class="detail"/>
-  <path d="M150 186H194V164L236 202L194 240V218H150Z" fill="url(#arrow)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M150 184H192V164L232 200L192 236V216H150Z" fill="url(#arrow)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
 </svg>

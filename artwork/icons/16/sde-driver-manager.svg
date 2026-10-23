@@ -29,5 +29,5 @@
   <rect x="3" y="3" width="8" height="8" fill="#4A6689"/>
   <rect x="5" y="5" width="4" height="4" fill="#6886AE"/>
   <rect x="4" y="4" width="1" height="1" fill="#B9C9DE"/>
-  <path d="M10.29 8.73L11.82 10.26L10.26 11.82L8.73 10.29A2.89 2.89 0 0 0 12.59 14.03L16.69 18.13A1.02 1.02 0 0 0 18.13 16.69L14.03 12.59A2.89 2.89 0 0 0 10.29 8.73Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M9.46 7.99L10.9 9.43L9.43 10.9L7.99 9.46A2.72 2.72 0 0 0 11.62 12.98L13.33 14.69A0.96 0.96 0 0 0 14.69 13.33L12.98 11.62A2.72 2.72 0 0 0 9.46 7.99Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>

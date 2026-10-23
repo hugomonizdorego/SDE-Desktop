@@ -7,8 +7,8 @@
   <circle cx="13.5" cy="8.5" r="1.8" fill="#F2C95E"/>
   <path d="M3 13.5C6 10.5 9 10 12 12.5C14 11 16 11 18 12.5V16H3Z" fill="#9CCB9F"/>
   <path d="M3 14.5C6 12.5 10 12.2 13 14C15 13.2 16.5 13.4 18 14V16H3Z" fill="#589E64"/>
-  <rect x="3" y="5" width="15" height="11" fill="none" stroke="#2B2B2F" stroke-width="1" transform="translate(-.5 -.5)" />
-  <path d="M13.5 22C12.64 20.22 13.68 18.98 14.72 17.74L17.48 20.05C16.44 21.3 15.4 22.54 13.5 22Z" fill="#4C86C6" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M14.72 17.74L16.29 15.88L19.04 18.19L17.48 20.05Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M16.56 16.11L21.49 11.08L22.87 12.24L18.77 17.96Z" fill="#D98C55" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect x="3.5" y="5.5" width="14" height="10" fill="none" stroke="#2B2B2F" stroke-width="1"/>
+  <path d="M13.5 22C12.6 20.27 13.57 19.12 14.53 17.97L17.29 20.28C16.33 21.43 15.36 22.58 13.5 22Z" fill="#4C86C6" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M14.53 17.97L15.98 16.25L18.74 18.56L17.29 20.28Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M16.25 16.48L20.85 11.85L22.22 13L18.46 18.33Z" fill="#D98C55" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>

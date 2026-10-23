@@ -18,5 +18,5 @@
   <rect x="7" y="7" width="6" height="6" rx="1" fill="#2B2B2F"/>
   <rect x="8" y="8" width="4" height="4" fill="#6886AE"/>
   <rect x="5" y="5" width="1" height="1" fill="#B9C9DE"/>
-  <path d="M14.94 12.73L17.09 14.89L14.89 17.09L12.73 14.94A4.08 4.08 0 0 0 18.18 20.22L23.97 26A1.44 1.44 0 0 0 26 23.97L20.22 18.18A4.08 4.08 0 0 0 14.94 12.73Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M13.94 11.73L16.09 13.89L13.89 16.09L11.73 13.94A4.08 4.08 0 0 0 17.18 19.22L19.74 21.78A1.44 1.44 0 0 0 21.78 19.74L19.22 17.18A4.08 4.08 0 0 0 13.94 11.73Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>

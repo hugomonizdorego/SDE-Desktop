@@ -9,16 +9,16 @@
   </defs>
   <rect x="40" y="30" width="148" height="198" rx="16" fill="url(#paper)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   <path d="M40 78V46Q40 30 56 30H172Q188 30 188 46V78Z" fill="url(#band)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-  <rect x="64" y="16" width="12" height="30" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-  <rect x="94" y="16" width="12" height="30" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-  <rect x="124" y="16" width="12" height="30" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
-  <rect x="154" y="16" width="12" height="30" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="64" y="19" width="12" height="27" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="94" y="19" width="12" height="27" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="124" y="19" width="12" height="27" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="154" y="19" width="12" height="27" rx="6" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
   <path d="M64 106H164" fill="none" stroke="#9EB0C6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
   <path d="M64 130H164" fill="none" stroke="#9EB0C6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
   <path d="M64 154H164" fill="none" stroke="#9EB0C6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
   <path d="M64 178H150" fill="none" stroke="#9EB0C6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
   <path d="M64 202H120" fill="none" stroke="#9EB0C6" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
-  <g transform="translate(122 218) rotate(-55)">
+  <g transform="translate(118 220) rotate(-55)">
     <path d="M0 0L38 -16H150V16H38Z" fill="url(#wood)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
     <path d="M38 -16H150V-5H38Z" fill="#F4BC86"/>
     <path d="M0 0L38 -16V16Z" fill="#F3DDB9" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>

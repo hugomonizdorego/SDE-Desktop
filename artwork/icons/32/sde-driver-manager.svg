@@ -38,5 +38,5 @@
   <rect x="10" y="10" width="8" height="8" rx="1" fill="#2B2B2F"/>
   <rect x="11" y="11" width="6" height="6" fill="#6886AE"/>
   <circle cx="8" cy="8" r="1" fill="#B9C9DE"/>
-  <path d="M20.18 17.33L22.97 20.12L20.12 22.97L17.33 20.18A5.27 5.27 0 0 0 24.37 27L31.84 34.48A1.86 1.86 0 0 0 34.48 31.84L27 24.37A5.27 5.27 0 0 0 20.18 17.33Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M19.55 16.79L22.24 19.48L19.48 22.24L16.79 19.55A5.1 5.1 0 0 0 23.6 26.15L26.8 29.35A1.8 1.8 0 0 0 29.35 26.8L26.15 23.6A5.1 5.1 0 0 0 19.55 16.79Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 </svg>
