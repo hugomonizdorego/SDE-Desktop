@@ -280,17 +280,13 @@ std::string DesktopEntry::menu_category() const {
   return "Other";
 }
 
-std::vector<DesktopEntry> load_applications(const std::string &desktop) {
-  std::map<std::string, std::string> found;
-  for (auto &dir : data_dirs()) scan_applications(dir + "/applications", "", found);
-  std::vector<DesktopEntry> out;
-  for (auto &kv : found) {
-    DesktopEntry e;
-    if (!e.load(kv.second, kv.first)) continue;
-    if (e.type != "Application" || e.no_display || e.name.empty() || e.exec.empty()) continue;
-    if (!e.visible_in(desktop)) continue;
-    out.push_back(std::move(e));
-  }
+void filter_applications(std::vector<DesktopEntry> &out, const std::string &desktop) {
+  out.erase(std::remove_if(out.begin(), out.end(),
+                           [&](const DesktopEntry &e) {
+                             return e.type != "Application" || e.no_display || e.name.empty() ||
+                                    e.exec.empty() || !e.visible_in(desktop);
+                           }),
+            out.end());
   if (desktop_matches({"SDE", "SDE-Desktop"}, desktop)) {
     std::set<std::string> replaced;
     for (const auto &app : suite_apps()) {
@@ -304,6 +300,17 @@ std::vector<DesktopEntry> load_applications(const std::string &desktop) {
                              [&](const DesktopEntry &e) { return replaced.count(e.id) != 0; }),
               out.end());
   }
+}
+
+std::vector<DesktopEntry> load_applications(const std::string &desktop) {
+  std::map<std::string, std::string> found;
+  for (auto &dir : data_dirs()) scan_applications(dir + "/applications", "", found);
+  std::vector<DesktopEntry> out;
+  for (auto &kv : found) {
+    DesktopEntry e;
+    if (e.load(kv.second, kv.first)) out.push_back(std::move(e));
+  }
+  filter_applications(out, desktop);
   std::sort(out.begin(), out.end(), [](const DesktopEntry &a, const DesktopEntry &b) {
     return lower(a.name) < lower(b.name);
   });
