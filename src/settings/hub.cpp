@@ -480,10 +480,13 @@ bool matches(const Category &c, const Tile &t, const std::vector<std::string> &w
 
 void build_hub(Page *page) {
   g_results.clear();
-  page->heading(_("Control Center"), _("Every setting of your computer, in one place"));
-  int x = page->left(), w = page->width();
-  new AccountCard(x, page->cursor(), w, S(78));
-  page->advance(S(78) + S(14));
+  // Short windows (1024 x 600 at 150 %) start with the account: the
+  // sidebar and the title bar already name the Control Center.
+  bool short_window = page->h() < S(520);
+  if (!short_window) page->heading(_("Control Center"), _("Every setting of your computer, in one place"));
+  int x = page->left(), w = page->width(), card_h = short_window ? S(66) : S(78);
+  new AccountCard(x, page->cursor(), w, card_h);
+  page->advance(card_h + S(14));
   g_search = new HubSearch(new SearchField(x, page->cursor(), w, S(38)));
   g_search->value(g_query.c_str());
   page->advance(S(38) + S(16));
