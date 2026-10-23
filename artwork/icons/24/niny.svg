@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Niny, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <rect x="3" y="2" width="15" height="20" rx="2" fill="#2B2B2F"/>
+  <rect x="4" y="3" width="13" height="18" rx="1" fill="#FBFAF7"/>
+  <rect x="4" y="3" width="13" height="4" rx="1" fill="#4A86C6"/>
+  <rect x="4" y="7" width="13" height="1" fill="#2B2B2F"/>
+  <rect x="6" y="1" width="1" height="1" fill="#E6E0D4"/>
+  <rect x="9" y="1" width="1" height="1" fill="#E6E0D4"/>
+  <rect x="12" y="1" width="1" height="1" fill="#E6E0D4"/>
+  <rect x="15" y="1" width="1" height="1" fill="#E6E0D4"/>
+  <rect x="6" y="1" width="1" height="3" fill="#2B2B2F"/>
+  <rect x="9" y="1" width="1" height="3" fill="#2B2B2F"/>
+  <rect x="12" y="1" width="1" height="3" fill="#2B2B2F"/>
+  <rect x="15" y="1" width="1" height="3" fill="#2B2B2F"/>
+  <rect x="6" y="10" width="9" height="1" fill="#9EB0C6"/>
+  <rect x="6" y="13" width="9" height="1" fill="#9EB0C6"/>
+  <rect x="6" y="16" width="7" height="1" fill="#9EB0C6"/>
+  <rect x="6" y="19" width="4" height="1" fill="#9EB0C6"/>
+  <path d="M11.5 21.5L12.55 16.34L18.67 7.6L22.11 10.01L15.99 18.75Z" fill="#2B2B2F" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M12.55 16.34L15.42 12.24L18.86 14.65L15.99 18.75Z" fill="#E39A5E"/>
+  <path d="M15.42 12.24L16.86 10.18L20.3 12.59L18.86 14.65Z" fill="#C9CCD2"/>
+  <path d="M16.86 10.18L18.67 7.6L22.11 10.01L20.3 12.59Z" fill="#DE8DA9"/>
+  <path d="M11.88 19.61L12.55 16.34L15.99 18.75L13.15 20.5Z" fill="#F3DDB9"/>
+</svg>

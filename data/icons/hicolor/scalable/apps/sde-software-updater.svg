@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Software Updater: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Software Updater</title>
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4FA79F"/><stop offset="1" stop-color="#2B807B"/></linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#72B67C"/><stop offset="1" stop-color="#4A9157"/></linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#ECE7DC"/></linearGradient>
+  </defs>
+  <path d="M31.79 89.17 A96 96 0 0 1 190.47 54.71 L202.86 42.55 L198.03 91.28 L158.12 86.51 L170.5 74.34 A68 68 0 0 0 58.1 98.74 Z" fill="url(#ring)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M212.21 154.83 A96 96 0 0 1 53.53 189.29 L41.14 201.45 L45.97 152.72 L85.88 157.49 L73.5 169.66 A68 68 0 0 0 185.9 145.26 Z" fill="url(#ring)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M108 74H136V114H158L122 156L86 114H108Z" fill="url(#arrow)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M200 164L230 175V196C230 214 217 226 200 233C183 226 170 214 170 196V175Z" fill="url(#shield)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M186 198L196 208L214 188" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" class="detail"/>
+</svg>

@@ -56,19 +56,13 @@ Comment: Ported profile model and naming from DisplayProfileManager
  /usr/share/doc/sde/upstream/DisplayProfileManager/copyright.
 
 Files: data/branding/* data/icons/* data/avatars/* data/backgrounds/*
-       src/photo/sdeview.svg
+       artwork/*
 Copyright: 2026 Selviana DE Project
 License: GPL-3.0-or-later
 Comment: SDE artwork: the SDE logo and mark, the application icons, the
  sample avatars and the SDE wallpapers. The copyright license covers the
  files only: the SDE name and logo are trademarks of the Selviana DE
  Project; see docs/BRANDING.md for their use.
-
-Files: data/icons/hicolor/scalable/apps/org.debion.Calculator.svg
-Copyright: 2026 Selviana DE Project and contributors
-License: CC0-1.0
-Comment: The former Calculator icon, kept as a compatibility name; its
- header dedicates it to the public domain (CC0-1.0).
 
 Files: data/desktop-base/* data/networkmanager/* tools/make-debion-artwork.py
 Copyright: 2026 Selviana DE Project and contributors

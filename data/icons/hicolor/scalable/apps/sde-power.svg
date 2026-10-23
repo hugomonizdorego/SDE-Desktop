@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Power: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Power</title>
+  <defs>
+    <linearGradient id="case" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#ECE8DF"/></linearGradient>
+    <linearGradient id="charge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#86C38E"/><stop offset="1" stop-color="#4F965C"/></linearGradient>
+  </defs>
+  <rect x="206" y="102" width="30" height="52" rx="9" fill="#D2CBBB" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="20" y="62" width="196" height="132" rx="24" fill="url(#case)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="38" y="80" width="120" height="96" rx="10" fill="url(#charge)"/>
+  <path d="M134 70L88 138H118L104 188L154 116H124Z" fill="#F2CF62" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+</svg>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Screen Lock: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Screen Lock</title>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6A707C"/><stop offset="1" stop-color="#4B505A"/></linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E2E4E8"/><stop offset="1" stop-color="#AEB2B9"/></linearGradient>
+  </defs>
+  <path d="M70 118V86A58 58 0 0 1 186 86V118H164V86A36 36 0 0 0 92 86V118Z" fill="url(#steel)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="42" y="106" width="172" height="130" rx="26" fill="url(#body)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M128 146A16 16 0 0 1 138 174L144 204H112L118 174A16 16 0 0 1 128 146Z" fill="#F4F1E8" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M64 124H192" fill="none" stroke="#7E8592" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -196,6 +196,10 @@ install(DIRECTORY "${SDE_THEMES_OUT}/" DESTINATION ${CMAKE_INSTALL_DATADIR}/them
 install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
 install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+# Branding (docs/BRANDING.md): the SDE logo for About windows, Welcome and the
+# login screen, and the sample user pictures offered by the avatar picker.
+install(DIRECTORY data/branding/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/branding)
+install(DIRECTORY data/avatars/ DESTINATION ${CMAKE_INSTALL_DATADIR}/Avatar FILES_MATCHING PATTERN "*.png")
 install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 # AppStream: every SDE program names the Selviana DE Project as its developer.
 install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml")
