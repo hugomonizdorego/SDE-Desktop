@@ -12,6 +12,11 @@ here; DebION's logos, wallpaper, boot splash and login background are in
 `data/desktop-base/` (package `debion-desktop-base`, made by
 `tools/make-debion-artwork.py`). Do not combine the two logos into one mark.
 
+Selviana Desktop Environment, SDE and the SDE logo are trademarks of the
+Selviana DE Project. The copyright license of the files (GPL-3.0-or-later,
+see `debian/copyright` and [LEGAL.md](LEGAL.md)) does not grant rights to
+the name and the logo; this page describes how they may be used.
+
 ## The SDE logo
 
 The official artwork is a retro CRT monitor (cream body, thick black outlines,
@@ -36,7 +41,10 @@ are being reviewed separately).
 | icon `sde-logo` (hicolor 16–512 px and scalable) | The mark as an icon; at 16, 22, 24 and 32 px a hand-simplified, pixel-aligned drawing of the same monitor (cream body, black outline, light screen, RGB stripes, portrait silhouette) | icon slots |
 
 They are installed to `/usr/share/sde/branding/` and
-`/usr/share/icons/hicolor/*/apps/sde-logo.{png,svg}` (package `sde`).
+`/usr/share/icons/hicolor/*/apps/sde-logo.{png,svg}` (package `sde`). The
+About windows, Control Center → About and Welcome load `sde-logo`,
+`sde-logo-dark` (dark themes) and `sde-mark` from there — SVG before PNG,
+`$SDE_BRANDING_DIR` first — and fall back to the `sde-logo` icon.
 
 The PNGs combine the cleaned original colours (with their soft shading)
 under the crisp traced ink; the SVGs are faithful vector traces (black ink
