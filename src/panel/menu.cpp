@@ -549,7 +549,7 @@ void AppMenu::layout_rail() {
   int y = H - S(4) - bh;
   add(5, y, _("Power off"));
   y -= bh + S(10);
-  const char *names[] = {nullptr, nullptr, N_("Documents"), N_("Pictures"), N_("Settings"),
+  const char *names[] = {nullptr, nullptr, N_("Documents"), N_("Pictures"), N_("Control Center"),
                          nullptr, N_("Gallery")};
   for (int i : {4, 6, 3, 2, 1}) {
     add(i, y, i == 1 ? panel_account::name() : std::string(_(names[i])));

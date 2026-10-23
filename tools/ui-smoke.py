@@ -55,6 +55,8 @@ env.update(
     SDE_WEATHER_FIXTURE=os.environ.get("SDE_WEATHER_FIXTURE", "partly"),
     # Calculator writes its display (expression, result, error) here.
     SDE_CALC_QA_FILE=str(home / "qa" / "calculator.txt"),
+    # 0.2: the stock account pictures (/usr/share/Avatar) are test fixtures.
+    SDE_AVATAR_DIR=str(Path(__file__).resolve().parent.parent / "tests/fixtures/avatars"),
 )
 # The smoke check exercises the native interface and process helpers. A real
 # session bus is inherited when available; otherwise fail bus lookups quickly.
@@ -189,6 +191,85 @@ def config(style=None, theme="light", scale=None, analog=False, top=False, compa
     (home / ".config/sde/sde.conf").write_text(
         f'[appearance]\ntheme={theme}\nscale={scale}\n{args.theme.encode().decode("unicode_escape")}\n[panel]\n{("style=" + style) if style else ""}\nposition={'top' if top else 'bottom'}\nwidth_percent=96\n[action_center]\nmulticolor=true\nclock_style={"analog" if analog else "digital"}\n{extra}\n[update]\n# No PackageKit/APT refresh from QA runs.\nauto_refresh=false\n'
     )
+
+
+def wait_page(page):
+    """The Control Center shows |page| (its QA dump names it)."""
+    path = home / "qa" / "Control-Center.txt"
+    for _ in range(80):
+        if path.exists() and path.read_text().startswith("@page:" + page + "\t"):
+            return
+        time.sleep(0.1)
+    raise RuntimeError("Control Center did not show page " + page)
+
+
+def control_center_checks(win):
+    """0.2: SDE Settings is the Control Center: the overview is a hub of
+    every setting by category whose tiles keep inside the page (no sideways
+    scrolling, also at 1024x600 and 150 %), with a search across them."""
+    wait_page("home")
+    g = geom(win)
+    lines = [l.split("\t") for l in (home / "qa" / "Control-Center.txt").read_text().splitlines()]
+    names = [f[0] for f in lines]
+    for category in ("personalization", "system", "network", "devices", "administration", "about"):
+        assert "category:" + category in names, (category, names)
+    for tile in ("appearance", "desktop", "panel", "start-menu", "clock", "notifications", "display",
+                 "sound", "power", "date-time", "users", "default-apps", "startup", "keyboard", "mouse",
+                 "network", "proxy", "bluetooth", "drives", "printers", "updates", "drivers", "reports",
+                 "sysmon", "about"):
+        assert "tile:" + tile in names, (tile, names)
+    for f in lines:
+        if f[0].startswith("tile:") or f[0].startswith("category:"):
+            x, w = int(f[1]), int(f[3])
+            assert x >= 0 and x + w <= g["WIDTH"] - 4, ("sideways overflow", f, g)
+    # The window itself fits the screen.
+    assert g["X"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
+    for page in ("users", "start-menu", "date-time"):
+        assert "nav:" + page in names, (page, names)
+    # The search: "avatar" finds Users & Avatar; Enter opens it.
+    click_control(win, "Control Center", "Find a setting")
+    run("xdotool", "type", "--delay", "40", "avatar")
+    for _ in range(50):
+        text = (home / "qa" / "Control-Center.txt").read_text()
+        if "category:results" in text and "tile:users" in text and "tile:appearance" not in text:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the overview search did not find Users & Avatar")
+    shot("02-settings-overview-search")
+    run("xdotool", "key", "Return")
+    wait_page("users")
+    print("CONTROL CENTER OVERVIEW, CATEGORIES AND SEARCH PASS", flush=True)
+
+
+def users_page_checks():
+    """0.2: Users & Avatar: the stock pictures of SDE_AVATAR_DIR; one click
+    makes ~/.face a 256x256 PNG (with ~/.face.icon), shown at once."""
+    import struct
+    # No AccountsService of the machine running the checks.
+    avatar_env = dict(env, DBUS_SYSTEM_BUS_ADDRESS="unix:path=/nonexistent-sde-ui-smoke-system-bus")
+    log = open(home / "sde-settings-users.log", "w")
+    app = sp.Popen(["sde-settings", "--page", "avatar"], env=avatar_env, stdout=log, stderr=log)
+    procs.append(app)
+    win = find("^Control Center$")
+    wait_page("users")
+    control("Control Center", "Real name")
+    shot("16-control-center-users")
+    click_control(win, "Control Center", "Sample sunrise")
+    face = home / ".face"
+    for _ in range(80):
+        if face.exists():
+            break
+        time.sleep(0.1)
+    data = face.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", data[:16]
+    assert struct.unpack(">II", data[16:24]) == (256, 256), data[16:24]
+    assert os.readlink(home / ".face.icon") == ".face"
+    time.sleep(1.0)
+    shot("16-control-center-users-avatar")
+    app.terminate()
+    app.wait()
+    print("CONTROL CENTER USERS & AVATAR PASS", flush=True)
 
 
 def reload_panel():
@@ -370,7 +451,7 @@ try:
     g = geom(ac)
     assert g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
     # Session and settings buttons live in the Action Center footer.
-    for name in ("SDE Settings", "Lock Screen", "Power"):
+    for name in ("Control Center", "Lock Screen", "Power", "Account settings"):
         control("Action Center", name)
     # The weather picture behind the clock (SDE_WEATHER_FIXTURE): since
     # alpha52 the Action Center has no scrolled body; the clock hero sits
@@ -383,35 +464,40 @@ try:
     assert any(n.startswith("Weather: ") for n in names), names
     run("xdotool", "key", "Escape")
     app = spawn("sde-settings")
-    settings = find("^Settings$")
+    settings = find("^Control Center$")
     shot("02-settings-overview")
+    control_center_checks(settings)
     app.terminate()
     app.wait()
+    users_page_checks()
     app = spawn("sde-settings", "--page", "panel")
-    settings = find("^Settings$")
+    settings = find("^Control Center$")
     shot("03-settings-panel")
     app.terminate()
     app.wait()
     app = spawn("sde-settings", "--page", "action-center")
-    find("^Settings$")
+    find("^Control Center$")
     shot("04-settings-action-center")
     app.terminate()
     app.wait()
     # Every page the panel flyouts open directly, plus the wallpaper grid.
     pages = run("sde-settings", "--list-pages").stdout.split()
     for needed in ["sound", "network", "bluetooth", "display", "input", "appearance",
-                   "desktop", "about", "system"]:
+                   "desktop", "about", "system", "users", "start-menu", "date-time"]:
         assert needed in pages, pages
+    # sde-control-center is the same program under its new name.
+    wrapper = Path(__file__).resolve().parent.parent / "data/compat/sde-control-center"
+    assert run(str(wrapper), "--list-pages").stdout.split() == pages
     for page in ["wallpaper", "desktop", "sound", "network", "bluetooth", "power", "keyboard"]:
         app = spawn("sde-settings", "--page", page)
-        find("^Settings$")
+        find("^Control Center$")
         time.sleep(0.8)
         shot("08-settings-" + page)
         app.terminate()
         app.wait()
     for page in ["suite", "system", "about"]:
         app = spawn("sde-settings", "--page", page)
-        settings = find("^Settings$")
+        settings = find("^Control Center$")
         shot("07-settings-" + page)
         if page == "suite" and args.scale == 100:
             g = geom(settings)
@@ -481,13 +567,12 @@ try:
         update.wait()
     config()
     if args.scale == 100:
-        # Overview card -> Panel page -> Short preview; verify persisted live change.
+        # Overview tile -> Panel page -> Short preview; verify persisted live change.
         app = spawn("sde-settings")
-        settings = find("^Settings$")
-        g = geom(settings)
-        run("xdotool", "mousemove", str(g["X"] + 700), str(g["Y"] + 250), "click", "1")
-        time.sleep(0.3)
-        run("xdotool", "mousemove", str(g["X"] + 780), str(g["Y"] + 190), "click", "1")
+        settings = find("^Control Center$")
+        click_control(settings, "Control Center", "Panel")
+        wait_page("panel")
+        click_control(settings, "Control Center", "Short")
         time.sleep(0.6)
         cfg = configparser.ConfigParser()
         cfg.read(home / ".config/sde/sde.conf")

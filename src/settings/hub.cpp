@@ -498,6 +498,7 @@ void build_hub(Page *page) {
       auto *tile = new HubTile(x + col * (tw + gap), y + row * (th + gap), tw, th, *tiles[i].first,
                                tiles[i].second, compact);
       g_results.push_back(tile);
+      qa_line(std::string("tile:") + tiles[i].first->id, tile->x(), tile->y(), tile->w(), tile->h());
     }
     int rows = int((tiles.size() + size_t(cols) - 1) / size_t(cols));
     page->advance(rows * (th + gap) - gap);

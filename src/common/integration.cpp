@@ -436,7 +436,7 @@ std::string compositor_report(const Config &cfg) {
                                   ? (!vm.empty() ? " (auto: virtual machine)"
                                                  : drm ? " (auto: graphics device found)"
                                                        : " (auto: no DRM graphics device)")
-                                  : " (chosen in Settings)") + "\n";
+                                  : " (chosen in the Control Center)") + "\n";
   if (virt.empty() || virt == "none") virt = vm;
   r += "Virtual machine: " + (virt.empty() || virt == "none" ? std::string("no") : virt) + "\n";
   r += "Graphics: " + detect_graphics_class() + ", effects: " + compositor_effects(cfg, false) +

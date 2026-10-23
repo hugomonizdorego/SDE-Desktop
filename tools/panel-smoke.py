@@ -35,6 +35,8 @@ e['SDE_WEATHER_FIXTURE']=os.environ.get('SDE_WEATHER_FIXTURE','rain')
 # alpha52: the clock reads its time from this file while it exists (day and
 # night pictures; see SDE_CLOCK_FIXTURE in src/panel/clockface.h).
 e['SDE_CLOCK_FIXTURE']='@'+str(home/'clock-fixture')
+# 0.2: the stock account pictures (/usr/share/Avatar) are the test fixtures.
+e['SDE_AVATAR_DIR']=str(Path(__file__).resolve().parents[1]/'tests/fixtures/avatars')
 e['SDE_TZ_FIXTURE']=os.environ.get('SDE_TZ_FIXTURE','Asia/Jakarta')
 processes=[]
 # A backlight the panel may write to (see SDE_BACKLIGHT_DIR in quick.cpp).
@@ -221,6 +223,49 @@ def rail_checks():
     run('xdotool','key','Return');gone('^Power off$')
     waitfor(lambda:commands('LOGOUT --action poweroff'),'Power off did not run sde-logout --action poweroff')
     assert not commands('LOGOUT --action logout') and not commands('LOGOUT --action lock'),'menu ran another session action'
+def account_checks():
+    """0.2: the Start menu's account button shows the AccountsService real
+    name and, after a stock picture is picked in its popup, that picture
+    (~/.face, SetIconFile); Account settings and Choose a picture open the
+    Control Center (users page, file chooser). The Action Center's user
+    opens the users page too."""
+    m=click_panel('start','^SDE Menu$');time.sleep(1.0);g=geom(m)
+    waitfor(lambda:'@account-name:QA Avatar Tester' in layout('SDE Menu'),'account button without the AccountsService name')
+    assert '@account-picture:' in layout('SDE Menu'),'a picture before one was chosen'
+    press('SDE Menu','rail:account');waitfor(lambda:'@account-popup' in layout('SDE Menu'),'account popup did not open')
+    L=layout('SDE Menu')
+    for n in ['account:choose','account:settings','account:avatar:sample-forest.png','account:avatar:sample-sunrise.png','account:name:QA Avatar Tester']:assert n in L,(n,L.keys())
+    pop=L['@account-popup'];assert pop[0]>=0 and pop[1]>=0 and pop[0]+pop[2]<=g['w'] and pop[1]+pop[3]<=g['h'],(pop,g)
+    assert pop[0]>=L['rail:account'][0]+L['rail:account'][2],('popup over the rail',pop)
+    shot('20-menu-account-popup')
+    press('SDE Menu','account:avatar:sample-sunrise.png')
+    waitfor(lambda:log_has('ACCOUNTS SetIconFile '+str(home/'.face')),'the stock picture did not reach AccountsService')
+    waitfor(lambda:'@account-current:sample-sunrise.png' in layout('SDE Menu'),'the picked picture is not marked')
+    waitfor(lambda:'@account-picture:'+str(home/'accounts-icons') in ''.join(layout('SDE Menu')),'the account button did not take the picture')
+    assert (home/'.face').is_file() and os.readlink(home/'.face.icon')=='.face',list(home.iterdir())
+    assert not any(k.startswith('@account-status:') for k in layout('SDE Menu')),layout('SDE Menu').keys()
+    shot('20-menu-account-picked')
+    press('SDE Menu','account:settings');gone('^SDE Menu$')
+    waitfor(lambda:commands('SETTINGS --page users'),'Account settings did not open the Control Center users page')
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    press('SDE Menu','rail:account');waitfor(lambda:'@account-popup' in layout('SDE Menu'),'account popup did not open again')
+    run('xdotool','key','Escape');waitfor(lambda:'@account-popup' not in layout('SDE Menu'),'Escape did not close the account popup')
+    assert visible('^SDE Menu$'),'Escape in the account popup closed the menu'
+    press('SDE Menu','rail:account');waitfor(lambda:'@account-popup' in layout('SDE Menu'),'account popup did not open a third time')
+    press('SDE Menu','account:choose');gone('^SDE Menu$')
+    waitfor(lambda:commands('SETTINGS --choose-avatar'),'Choose a picture did not open the Control Center')
+    # The dark theme, for the screenshots.
+    config(theme='dark',overflow=False);reload()
+    m=click_panel('start','^SDE Menu$');time.sleep(.8)
+    press('SDE Menu','rail:account');waitfor(lambda:'@account-popup' in layout('SDE Menu'),'account popup (dark)')
+    shot('20-menu-account-popup-dark')
+    run('xdotool','key','Escape');waitfor(lambda:'@account-popup' not in layout('SDE Menu'),'Escape did not close the account popup (dark)')
+    escape('SDE Menu')
+    config(overflow=False);reload()
+    # The Action Center's user.
+    ac=command(['--action-center'],'Action Center');time.sleep(.4)
+    press('Action Center','Account settings');gone('^Action Center$')
+    waitfor(lambda:(home/'commands.log').read_text().count('SETTINGS --page users')>=2,'the Action Center user did not open the users page')
 def menu_checks():
     """Start menu: rail, A-Z list with a category filter, live-tile groups
     (drag, resize, move, rename), resizing the menu, typing goes to search."""
@@ -462,7 +507,7 @@ def ac52_checks():
     # The real program (sde-settings on PATH is a logging stub here).
     st=spawn(str(a.bin_dir.resolve()/'sde-settings'),'--page','clock')
     try:
-        find('^Settings$');time.sleep(1.2);shot('52-settings-clock')
+        find('^Control Center$');time.sleep(1.2);shot('52-settings-clock')
     finally:
         st.terminate();st.wait()
     clock.unlink();config(overflow=False);reload()
@@ -830,7 +875,7 @@ def a52_checks():
     run('xdotool','mousemove',W//2,H//2);time.sleep(.3)
     # 1) Per-item menus.
     expected={
-        'start':(['Settings','System Monitor','Run Command...','Software Updater','Lock','Log Out...','Power','Panel Settings...'],'40-menu-start'),
+        'start':(['Control Center','System Monitor','Run Command...','Software Updater','Lock','Log Out...','Power','Panel Settings...'],'40-menu-start'),
         'search':(['Show Search Box','Show Search Icon Only','Hidden','Search Settings...'],'40-menu-search'),
         'clock':(['Adjust Date and Time...','Sync Time Zone','Clock Style','Show Seconds','24-Hour Clock','Show the Date','Alarms','Calendar'],'40-menu-clock'),
         'notifications':(['Do Not Disturb','Clear All Notifications','Notification Settings...'],'40-menu-notifications'),
@@ -1066,6 +1111,7 @@ try:
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     panel_checks_a50()
     menu_checks()
+    account_checks()
     search_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
     config(overflow=False);reload()
@@ -1092,7 +1138,7 @@ try:
 
     # The corner button opens the Action Center (expanded by default).
     ac=click_panel('action-center','^Action Center$');time.sleep(.5);bounds(ac);only_open('Action Center')
-    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']+(['Dark Mode','Display','Alarms'] if H/scale>=560 else []):
+    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','Control Center','Lock Screen','Power','Action Center settings','Account settings']+(['Dark Mode','Display','Alarms'] if H/scale>=560 else []):
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
     brightness_checks(ac)
@@ -1185,8 +1231,8 @@ try:
     press('Action Center','Lock Screen');gone('^Action Center$')
     waitfor(lambda:commands('LOGOUT --action lock'),'Lock Screen did not run sde-logout --action lock')
     ac=command(['--action-center'],'Action Center');time.sleep(.4)
-    press('Action Center','SDE Settings');gone('^Action Center$')
-    waitfor(lambda:commands('SETTINGS \n'),'SDE Settings button did not start sde-settings')
+    press('Action Center','Control Center');gone('^Action Center$')
+    waitfor(lambda:commands('SETTINGS \n'),'Control Center button did not start sde-settings')
 
     # Internet connectivity from NetworkManager: limited, captive portal, full.
     mode('nm-limited');fl=open_section('network','Network')

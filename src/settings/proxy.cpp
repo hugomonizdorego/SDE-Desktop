@@ -217,7 +217,7 @@ std::string join_host_list(const std::vector<std::string> &hosts) {
 
 std::string proxy_environment(const ProxySettings &p) {
   std::string head =
-      "# Written by SDE Settings > Network > Proxy. Read by startsde and the\n"
+      "# Written by Control Center > Network > Proxy. Read by startsde and the\n"
       "# systemd user manager at the next login.\n";
   if (p.mode == ProxySettings::MANUAL && !p.host.empty()) {
     std::string url = proxy_url(p);

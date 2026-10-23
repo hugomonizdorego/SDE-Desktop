@@ -54,18 +54,61 @@ void set_error(std::string *out, const std::string &text) {
   if (out) *out = text;
 }
 
+// The account database with the reentrant calls: the work runs on worker
+// threads while the program's main thread may use getpwuid() too.
+struct PasswdEntry {
+  std::string name, gecos;
+  gid_t gid = 0;
+};
+
+bool passwd_entry(const char *name, PasswdEntry *out) {
+  long size = sysconf(_SC_GETPW_R_SIZE_MAX);
+  std::vector<char> buf(size_t(size > 0 ? size : 16384));
+  struct passwd pw, *found = nullptr;
+  for (int tries = 0; tries < 4; ++tries) {
+    int r = name ? getpwnam_r(name, &pw, buf.data(), buf.size(), &found)
+                 : getpwuid_r(getuid(), &pw, buf.data(), buf.size(), &found);
+    if (r == ERANGE) {
+      buf.resize(buf.size() * 4);
+      continue;
+    }
+    if (r != 0 || !found) return false;
+    out->name = pw.pw_name ? pw.pw_name : "";
+    out->gecos = pw.pw_gecos ? pw.pw_gecos : "";
+    out->gid = pw.pw_gid;
+    return true;
+  }
+  return false;
+}
+
+bool group_id(const char *name, gid_t *gid) {
+  long size = sysconf(_SC_GETGR_R_SIZE_MAX);
+  std::vector<char> buf(size_t(size > 0 ? size : 16384));
+  struct group gr, *found = nullptr;
+  for (int tries = 0; tries < 4; ++tries) {
+    int r = getgrnam_r(name, &gr, buf.data(), buf.size(), &found);
+    if (r == ERANGE) {
+      buf.resize(buf.size() * 4);
+      continue;
+    }
+    if (r != 0 || !found) return false;
+    *gid = gr.gr_gid;
+    return true;
+  }
+  return false;
+}
+
 std::string login_name() {
-  if (struct passwd *pw = getpwuid(getuid()))
-    if (pw->pw_name && *pw->pw_name) return pw->pw_name;
+  PasswdEntry e;
+  if (passwd_entry(nullptr, &e) && !e.name.empty()) return e.name;
   return env("USER", "user");
 }
 
 // The GECOS full name (the part before the first comma), or "".
 std::string gecos_name() {
-  struct passwd *pw = getpwuid(getuid());
-  if (!pw || !pw->pw_gecos) return "";
-  std::string g = pw->pw_gecos;
-  return trim(g.substr(0, g.find(',')));
+  PasswdEntry e;
+  if (!passwd_entry(nullptr, &e)) return "";
+  return trim(e.gecos.substr(0, e.gecos.find(',')));
 }
 
 // A picture file that can be shown: a regular file (links followed), not
@@ -752,18 +795,20 @@ std::string first_letter(const std::string &s) {
 }
 
 bool in_admin_group(const std::string &user) {
-  struct passwd *pw = getpwnam(user.c_str());
-  if (!pw) return false;
+  PasswdEntry e;
+  if (!passwd_entry(user.c_str(), &e)) return false;
   int n = 64;
   std::vector<gid_t> groups(static_cast<size_t>(n));
-  if (getgrouplist(user.c_str(), pw->pw_gid, groups.data(), &n) < 0) {
+  if (getgrouplist(user.c_str(), e.gid, groups.data(), &n) < 0) {
     groups.resize(size_t(std::max(n, 1)));
-    if (getgrouplist(user.c_str(), pw->pw_gid, groups.data(), &n) < 0) return false;
+    if (getgrouplist(user.c_str(), e.gid, groups.data(), &n) < 0) return false;
   }
   groups.resize(size_t(std::max(n, 0)));
-  for (const char *name : {"sudo", "admin", "wheel"})
-    if (struct group *g = getgrnam(name))
-      if (std::find(groups.begin(), groups.end(), g->gr_gid) != groups.end()) return true;
+  for (const char *name : {"sudo", "admin", "wheel"}) {
+    gid_t gid;
+    if (group_id(name, &gid) && std::find(groups.begin(), groups.end(), gid) != groups.end())
+      return true;
+  }
   return false;
 }
 

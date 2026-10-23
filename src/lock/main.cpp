@@ -42,7 +42,7 @@ void usage(FILE *out) {
           _("Usage: sde-lock [--lock]\n"
             "       sde-lock --daemon | --query | --poke | --inhibitors | --version\n\n"
             "SDE Screen Lock. Without options the screen is locked now.\n"
-            "Settings are in sde.conf [lock] (Settings > Lock Screen).\n"));
+            "Settings are in sde.conf [lock] (Control Center > Lock Screen).\n"));
 }
 
 DBusMessage *call(const char *member, int timeout_ms) {

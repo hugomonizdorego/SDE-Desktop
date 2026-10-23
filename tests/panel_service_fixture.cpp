@@ -6,9 +6,13 @@
 
 #include <cairo.h>
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <cstdio>
 #include <fstream>
 #include <functional>
+#include <sstream>
 #include <string>
 
 #include "dbus.h"
@@ -192,6 +196,34 @@ void ud_signal(const char* member, const std::string& path) {
   bus->send(m);
 }
 void ud_changed() { changed(ud_part, "org.freedesktop.UDisks2.Filesystem"); }
+
+// ------------------------------------------------------ AccountsService
+// The account picture and real name (src/common/avatar.h): every user is
+// "QA Avatar Tester" until SetRealName; SetIconFile copies the picture next
+// to the log, as accountsservice copies it to /var/lib/AccountsService.
+const std::string accounts = "/org/freedesktop/Accounts", account_user = accounts + "/User4242";
+std::string real_name = "QA Avatar Tester", icon_file, account_name;
+void account_props(dbus::Writer& w) {
+  str(w, "RealName", real_name);
+  str(w, "IconFile", icon_file);
+  str(w, "UserName", account_name);
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str("AccountType").variant_i32(0);
+}
+void set_icon(const std::string& file) {
+  std::string dir = log_path.substr(0, log_path.rfind('/') + 1) + "accounts-icons";
+  if (file.empty()) {
+    if (!icon_file.empty()) unlink(icon_file.c_str());
+    icon_file.clear();
+    return;
+  }
+  mkdir(dir.c_str(), 0755);
+  std::ifstream in(file, std::ios::binary);
+  std::stringstream data;
+  data << in.rdbuf();
+  icon_file = dir + "/" + (account_name.empty() ? std::string("user") : account_name);
+  std::ofstream(icon_file, std::ios::binary) << data.str();
+}
 DBusMessage* ud_error(DBusMessage* m, const char* name, const char* text) {
   return dbus_message_new_error(m, name, text);
 }
@@ -324,6 +356,22 @@ DBusHandlerResult handle(DBusMessage* m) {
       connected = method == "Connect";
     log("BT " + method);
     changed(device, "org.bluez.Device1");
+  } else if (path == accounts && method == "FindUserByName" && !args.empty()) {
+    account_name = args[0].str();
+    log("ACCOUNTS FindUserByName " + account_name);
+    dbus::Writer(r).path(account_user);
+  } else if (path == account_user && method == "GetAll") {
+    dbus::Writer w(r);
+    dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+    account_props(props);
+  } else if (path == account_user && method == "SetIconFile" && !args.empty()) {
+    log("ACCOUNTS SetIconFile " + args[0].str());
+    set_icon(args[0].str());
+    changed(account_user, "org.freedesktop.Accounts.User");
+  } else if (path == account_user && method == "SetRealName" && !args.empty()) {
+    log("ACCOUNTS SetRealName " + args[0].str());
+    real_name = args[0].str();
+    changed(account_user, "org.freedesktop.Accounts.User");
   } else if (path == "/SDETest" && method == "Mode" && !args.empty()) {
     auto mode = args[0].str();
     adapter_present = mode != "no-adapter";
@@ -400,10 +448,10 @@ int main(int argc, char** argv) {
   bus = dbus::Bus::session();
   if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez") ||
       !bus->request_name("org.freedesktop.NetworkManager") ||
-      !bus->request_name("org.freedesktop.UDisks2"))
+      !bus->request_name("org.freedesktop.UDisks2") || !bus->request_name("org.freedesktop.Accounts"))
     return 1;
   for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm,
-                           ud, ud_drive, ud_disk, ud_part})
+                           ud, ud_drive, ud_disk, ud_part, accounts, account_user})
     bus->export_object(path, handle);
   display = XOpenDisplay(nullptr);
   if (!display) return 1;
