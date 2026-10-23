@@ -2068,7 +2068,10 @@ def readme(meta, sets, images, skipped, sheets):
     for e in images:
         sets_of.setdefault(e['name'], []).append(e['set'])
     main = 'graphite-light' if any(t.name == 'graphite-light' for t in sets) else (sets[0].name if sets else '')
-    lines = [f'# SDE {meta["programs"] or meta["version"]}: development screenshots', '',
+    version = meta['programs'] or meta['version']
+    title = ' '.join(filter(None, ['Selviana Desktop Environment', pretty_version(version)]))
+    lines = [f'# {title}: development screenshots', '',
+             f'SDE `{version}`. ' if version else '',
              f'Captured on {meta["date"]} with `tools/showcase.py` from the real programs on a virtual X11 '
              'display, with original sample content. Network, sound, Bluetooth, battery, drives, weather, '
              'updates and drivers are test data; "Alex Tester" is a sample account. Click an image for '
@@ -2127,10 +2130,22 @@ def program_version(run):
         r = sp.run([shutil.which('sde-panel', path=':'.join(str(d) for d in run.args.bin_dirs) + ':' +
                                  os.environ.get('PATH', '')) or 'sde-panel', '--version'],
                    stdout=sp.PIPE, stderr=sp.DEVNULL, text=True, timeout=10)
-        m = re.search(r'\(([^)]+)\)', r.stdout)
-        return m.group(1) if m else r.stdout.strip()
+        # "sde-panel (Selviana Desktop Environment) 0.1.0~alpha52"
+        first = (r.stdout.splitlines() or [''])[0]
+        m = re.search(r'\b(\d+\.\d+[\w.~+-]*)', first)
+        return m.group(1) if m else first.strip()
     except (OSError, sp.SubprocessError):
         return ''
+
+
+def pretty_version(v):
+    """0.1.0~alpha52 -> 0.1 Alpha 52 (as the About pages write it)."""
+    m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)~(alpha|beta|rc)(\d+)', v or '')
+    if not m:
+        return v or ''
+    major, minor, patch, kind, n = m.groups()
+    return f'{major}.{minor}' + (f'.{patch}' if patch != '0' else '') + \
+        f' {"RC" if kind == "rc" else kind.capitalize()} {n}'
 
 
 def contact_sheets(run, sets, images):
