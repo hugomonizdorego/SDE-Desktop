@@ -157,13 +157,37 @@ class LiriaAlpha16Test(unittest.TestCase):
         self.assertIn('/org/debion/liria/liria-sde.css', ui)
 
     def test_about_names_developer_and_keeps_legal_notice(self):
+        """0.2.0: Liria is made by the Selviana DE Project (SDE and the
+        DebION distribution are separate projects); every copyright notice
+        of the original work stays, in the License and Credits pages."""
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        self.assertIn('Developer: DebION Dev-Team', ui)
-        self.assertIn('"DebION Dev-Team", NULL', ui)
-        self.assertIn('Copyright \\xC2\\xA9 2011-2021 The Caja authors', ui)
-        self.assertIn('Copyright \\xC2\\xA9 1999-2009 The Nautilus authors', ui)
-        self.assertIn('/usr/share/doc/sde/upstream/caja/', ui)
-        self.assertIn('@SDE_BUILD_VERSION@', ui)
+        about = ui[ui.index('#define SDE_ABOUT_GROUP'):ui.index('/* --------------------------------------------------- application level')]
+        for needle in ('#define SDE_DEVELOPER   "Selviana DE Project"', '_("Developer: %s"), SDE_DEVELOPER',
+                       '_("Part of Selviana Desktop Environment")',
+                       'Copyright \\xC2\\xA9 2026 Selviana DE Project and contributors',
+                       'Selviana Desktop Environment, SDE and the SDE logo are trademarks of the',
+                       'Copyright \\xC2\\xA9 1999-2009 The Nautilus authors',
+                       'Copyright \\xC2\\xA9 2011-2021 The Caja authors',
+                       'Copyright \\xC2\\xA9 2012-2021 The MATE developers',
+                       'modified version of the Caja file manager 1.28 (MATE), itself derived from GNOME Nautilus',
+                       '"Caja 1.28 (MATE) https://github.com/mate-desktop/caja"', '"GNOME Nautilus https://',
+                       '_("Based on"), based_on', '_("Original authors")', 'either version 2',
+                       'of the License, or (at your option) any later version', 'GPL-2.0-or-later',
+                       '/usr/share/doc/sde/upstream/caja/', '"version", "@SDE_BUILD_VERSION@"',
+                       '"logo-icon-name", liria_sde_ui_icon_name ()'):
+            self.assertIn(needle, about)
+        self.assertNotIn('DebION', about)
+        # Liria's icon ("liria" in hicolor) with a fallback, also for windows.
+        self.assertIn('gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), "liria") ? "liria" : "system-file-manager"',
+                      about)
+        self.assertIn('gtk_window_set_default_icon_name (liria_sde_ui_icon_name ());', ui)
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        self.assertIn('"liria") ? "liria" : "system-file-manager"); /* SDE */', recipe)
+        self.assertIn('<developer_name>Selviana DE Project</developer_name>', recipe)
+        import re
+        help_page = re.sub(r'<!--[\s\S]*?-->', '', (self.overlay / 'data/help/index.html').read_text())
+        self.assertIn('Developer: Selviana DE Project', help_page)
+        self.assertNotIn('DebION', help_page)
 
     def test_main_menu_and_header(self):
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
@@ -399,6 +423,207 @@ class LiriaAlpha16Test(unittest.TestCase):
         if not source.is_dir():
             self.skipTest('prepare the native suite first')
         self.assertEqual(self.check.scan_source(source), [])
+
+
+class GtkCss:
+    """A small GTK CSS cascade for the style sheet checks: rules in order
+    (a later rule wins at equal specificity), compound selectors with
+    element names, classes and pseudo-classes (also in :not()), descendant
+    and child combinators. Structural pseudo-classes never match."""
+
+    STATES = {'hover', 'active', 'selected', 'focus', 'backdrop', 'disabled', 'checked', 'drop(active)'}
+    SIMPLE = r'(?:\*|[\w-]+|\.[\w-]+|#[\w-]+|:[\w-]+(?:\([^()]*\))?)'
+
+    def __init__(self, *texts):
+        import re
+        self.rules = []
+        text = re.sub(r'/\*.*?\*/', '', '\n'.join(texts), flags=re.S)
+        text = re.sub(r'@(?:define-color|import)[^;]*;', '', text)
+        for selectors, body in re.findall(r'([^{}]+)\{([^{}]*)\}', text):
+            declarations = dict((k.strip(), v.strip()) for k, v in
+                                (d.split(':', 1) for d in body.split(';') if ':' in d))
+            for selector in selectors.split(','):
+                parsed = self.parse(selector.strip())
+                if parsed:
+                    self.rules.append((self.specificity(parsed), len(self.rules), parsed, declarations))
+
+    def parse(self, selector):
+        import re
+        parts, combinator = [], ' '
+        for token in re.findall(r'>|[^\s>]+', selector):
+            if token == '>':
+                combinator = '>'
+                continue
+            simples = re.findall(r':not\(' + self.SIMPLE + r'\)|' + self.SIMPLE, token)
+            if ''.join(simples) != token:
+                return None
+            parts.append((combinator, simples))
+            combinator = ' '
+        return parts
+
+    @staticmethod
+    def specificity(parts):
+        a = b = c = 0
+        for _, simples in parts:
+            for s in simples:
+                s = s[5:-1] if s.startswith(':not(') else s
+                if s.startswith('#'):
+                    a += 1
+                elif s.startswith(('.', ':')):
+                    b += 1
+                elif s != '*':
+                    c += 1
+        return a, b, c
+
+    def matches_simple(self, simple, node):
+        name, classes, states = node
+        if simple.startswith(':not('):
+            return not self.matches_simple(simple[5:-1], node)
+        if simple.startswith('.'):
+            return simple[1:] in classes
+        if simple.startswith(':'):
+            return simple[1:] in states
+        return simple in ('*', name)
+
+    def matches(self, parts, path):
+        def match(i, j):  # parts[:i + 1] with parts[i] on path[j]
+            if not all(self.matches_simple(s, path[j]) for s in parts[i][1]):
+                return False
+            if i == 0:
+                return True
+            if parts[i][0] == '>':
+                return j > 0 and match(i - 1, j - 1)
+            return any(match(i - 1, k) for k in range(j - 1, -1, -1))
+        return match(len(parts) - 1, len(path) - 1)
+
+    def value(self, path, *properties):
+        """The winning declaration of the first of |properties| declared
+        (e.g. 'background-color', 'background') for the last node of
+        |path|, a list of (element, classes, states)."""
+        best = None
+        for spec, order, parts, declarations in self.rules:
+            for prop in properties:
+                if prop in declarations and self.matches(parts, path):
+                    if best is None or (spec, order) > best[0]:
+                        best = ((spec, order), declarations[prop])
+                    break
+        return best[1] if best else None
+
+
+class LiriaRubberBandCssTest(unittest.TestCase):
+    """0.2.0: the rubber band is a translucent accent sheet with a 1 px
+    accent border in every SDE theme and in Liria's own style sheet, and
+    selected files stay visible (the .view rules made the band an opaque
+    sheet over the files being selected)."""
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+        self.overlays = self.root / 'data/themes/overlays'
+        self.liria_css = (self.root / 'suite/overlays/liria/data/liria-sde.css').read_text()
+
+    def overlay(self, name):
+        return (self.overlays / name).read_text()
+
+    def theme_chains(self):
+        """The SDE layers of each family's gtk-3.0/gtk.css, in the order of
+        tools/build-themes.py (Glass imports Graphite)."""
+        graphite = [self.overlay(n + '-gtk-3.0.css') for n in ('graphite', 'soft', 'caption', 'apps')]
+        fluent = [self.overlay(n + '-gtk-3.0.css') for n in ('fluent', 'soft', 'caption', 'apps')]
+        glass = graphite + [self.overlay(n + '-gtk-3.0.css') for n in ('glass', 'soft', 'caption')]
+        return {'graphite': GtkCss(*graphite), 'fluent': GtkCss(*fluent), 'glass': GtkCss(*glass)}
+
+    def assertTranslucentAccent(self, value, accent, what):
+        import re
+        match = re.fullmatch(r'alpha\(\s*' + re.escape(accent) + r'\s*,\s*([0-9.]+)\s*\)', value or '')
+        self.assertIsNotNone(match, '%s: background %r is not a translucent %s' % (what, value, accent))
+        self.assertTrue(0.15 <= float(match.group(1)) <= 0.25, '%s: alpha %s' % (what, match.group(1)))
+
+    # The nodes Liria's icon view (an EelCanvas with the .view class, which
+    # adds .rubberband while it draws the band), another program's icon
+    # view and a tree view (a rubberband node) style the band with.
+    LIRIA = [('window', {'background', 'liria-navigation-window'}, set()), ('box', set(), set()),
+             ('notebook', {'liria-notebook'}, set()), ('scrolledwindow', set(), set())]
+    BANDS = {
+        'Liria icon view': LIRIA + [('widget', {'view', 'rubberband'}, set())],
+        'other icon view': [('window', {'background'}, set()), ('widget', {'view', 'rubberband'}, set())],
+        'tree view': [('window', {'background'}, set()), ('treeview', {'view'}, set()), ('rubberband', set(), set())],
+        'Liria tree view': LIRIA + [('treeview', {'view'}, set()), ('rubberband', set(), set())],
+    }
+
+    def test_theme_rubber_band_is_translucent_accent(self):
+        for family, css in self.theme_chains().items():
+            for what, path in self.BANDS.items():
+                label = '%s, %s' % (family, what)
+                self.assertTranslucentAccent(css.value(path, 'background-color', 'background'), '@sde_accent', label)
+                self.assertEqual(css.value(path, 'border'), '1px solid @sde_accent', label)
+        gtk4 = GtkCss(self.overlay('soft-gtk-4.0.css'))
+        for path in ([('window', set(), set()), ('gridview', {'view'}, set()), ('rubberband', set(), set())],
+                     [('window', set(), set()), ('columnview', {'view'}, set()), ('listview', {'view'}, set()),
+                      ('rubberband', set(), set())]):
+            self.assertTranslucentAccent(gtk4.value(path, 'background-color'), '@sde_accent', 'GTK 4')
+            self.assertEqual(gtk4.value(path, 'border'), '1px solid @sde_accent')
+
+    def test_liria_rubber_band_and_selection(self):
+        css = GtkCss(self.liria_css)
+        for what in ('Liria icon view', 'Liria tree view'):
+            self.assertTranslucentAccent(css.value(self.BANDS[what], 'background-color'),
+                                         '@theme_selected_bg_color', what)
+            self.assertEqual(css.value(self.BANDS[what], 'border'), '1px solid @theme_selected_bg_color')
+        self.assertEqual(css.value(self.LIRIA + [('widget', {'view'}, set())], 'background-color'),
+                         '@theme_base_color')
+        # Selected rows: a soft accent highlight, not the view colour; the
+        # sidebar keeps its own.
+        row = css.value(self.LIRIA + [('treeview', {'view'}, {'selected'})], 'background-color')
+        self.assertTrue(row.startswith('alpha(@theme_selected_bg_color'), row)
+        side = [('window', {'background', 'liria-navigation-window'}, set()), ('widget', {'liria-side-pane'}, set()),
+                ('treeview', {'view'}, {'selected'})]
+        self.assertEqual(css.value(side, 'background-color'), 'alpha(@theme_selected_bg_color, 0.18)')
+        # Selected icons: the canvas multiplies them by the background
+        # colour, so it is a light, fully transparent tint; the label
+        # highlight is an image. Also when the view has no focus (:active).
+        for state in ('selected', 'active'):
+            item = self.LIRIA + [('widget', {'view', 'liria-canvas-item'}, {state})]
+            self.assertEqual(css.value(item, 'background-color'),
+                             'alpha(mix(white, @theme_selected_bg_color, 0.35), 0)')
+            self.assertIn('alpha(@theme_selected_bg_color, 0.24)', css.value(item, 'background-image'))
+        # The theme layers alone keep selected rows out of the view colour.
+        for family, theme in self.theme_chains().items():
+            value = theme.value(self.LIRIA + [('treeview', {'view'}, {'selected'})], 'background-color')
+            self.assertNotIn(value, ('@sde_view', '@sde_surface'), family)
+
+    def test_gtk3_not_takes_simple_selectors(self):
+        """GTK 3 rejects a compound selector in :not() and drops the rule
+        with a parsing warning in every application."""
+        import re
+        sheets = {p.name: p.read_text() for p in self.overlays.glob('*-gtk-3.0.css')}
+        sheets['liria-sde.css'] = self.liria_css
+        for name, text in sheets.items():
+            text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+            for inner in re.findall(r':not\(([^()]*(?:\([^()]*\))?)\)', text):
+                self.assertRegex(inner, r'^(?:[.:#]?[\w-]+|:[\w-]+\([\w-]+\))$', '%s: :not(%s)' % (name, inner))
+
+    def test_rubber_band_smoke(self):
+        """Real drags on Xvfb (tools/liria-rubberband-smoke.py) when a built
+        Liria is named by SDE_LIRIA_PREFIX; SDE_THEMES names the built SDE
+        themes (default build/themes), SDE_RUBBERBAND_ALL=1 runs every
+        family, mode, scale and compositor setting."""
+        import os
+        import subprocess
+        import sys
+        script = self.root / 'tools/liria-rubberband-smoke.py'
+        self.assertIn('files hidden under the band', script.read_text())
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        command = [sys.executable, str(script), '--prefix', prefix]
+        if os.environ.get('SDE_THEMES'):
+            command += ['--themes', os.environ['SDE_THEMES']]
+        if os.environ.get('SDE_RUBBERBAND_ALL') == '1':
+            command.append('--all')
+        result = subprocess.run(command, capture_output=True, text=True, timeout=1800)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
