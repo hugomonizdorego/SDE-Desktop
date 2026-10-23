@@ -18,6 +18,20 @@ textview text selection, entry selection, label selection {
   background-color: @sde_accent;
   color: @sde_on_accent;
 }
+/* Rubber band selection (0.2.0): a translucent accent sheet with a 1 px
+ * accent border, so the items under it stay visible. Tree, icon and flow
+ * box views draw it as a rubberband node; Caja-style icon views (Liria,
+ * Nemo, Thunar, desktop icons) add the .rubberband class to the view's own
+ * style context, which the .view rule above turned into an opaque sheet. */
+.rubberband, rubberband,
+.view.rubberband, .view .rubberband, .view rubberband, iconview.rubberband, iconview rubberband,
+treeview.view rubberband, flowbox rubberband, .content-view rubberband, .content-view .rubberband {
+  border: 1px solid @sde_accent;
+  border-radius: 0;
+  background-color: alpha(@sde_accent, 0.2);
+  background-image: none;
+  box-shadow: none;
+}
 .sidebar, placessidebar, stacksidebar, .sidebar .view { background-color: @sde_surface_alt; }
 headerbar, .titlebar:not(headerbar) {
   background-color: @sde_titlebar;
@@ -81,8 +95,10 @@ menu menuitem, .menu menuitem, .context-menu menuitem {
 popover modelbutton, popover.menu modelbutton { border-radius: @RADIUS_SMALL@; }
 menubar > menuitem { border-radius: @RADIUS_SMALL@; }
 
-/* Buttons and fields. */
-button:not(.titlebutton):not(.circular):not(.image-button.circular),
+/* Buttons and fields. GTK 3 takes only simple selectors in :not() (a
+ * compound one made it drop this whole rule with a parsing warning in
+ * every application); :not(.circular) covers circular image buttons. */
+button:not(.titlebutton):not(.circular),
 entry, spinbutton:not(.vertical), combobox > box > button.combo, combobox button,
 .linked > button.combo { border-radius: @RADIUS_SMALL@; }
 .linked > button:not(:first-child):not(:last-child),

@@ -678,3 +678,29 @@ levelbar.sde-usage-bar block.empty {
   background-image: none;
   background-color: transparent;
 }
+
+/* ====================================================== 0.2.0 Liria */
+
+/* The view rules above match every state of Liria's views, so they also
+ * painted selected rows (the list showed no selection, or white text on
+ * the view colour) and the rubber band, which Liria's icon view draws with
+ * the .rubberband class on the view itself: it was an opaque sheet over
+ * the files being selected. Selected rows get the soft accent highlight
+ * of the icons and the sidebar; the rubber band is a translucent accent
+ * sheet with a 1 px accent border. */
+.liria-navigation-window .liria-notebook treeview.view:selected,
+.liria-navigation-window .liria-notebook treeview.view:selected:focus {
+  background-image: none;
+  background-color: alpha(@sde_accent, 0.24);
+  color: @sde_fg;
+}
+
+.liria-navigation-window .view.rubberband,
+.liria-navigation-window .rubberband,
+.liria-navigation-window rubberband {
+  border: 1px solid @sde_accent;
+  border-radius: 0;
+  background-color: alpha(@sde_accent, 0.2);
+  background-image: none;
+  box-shadow: none;
+}
