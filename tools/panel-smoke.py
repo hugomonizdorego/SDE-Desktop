@@ -158,8 +158,9 @@ def only_open(title):
     for other in FLYOUTS+['Action Center']:
         if other!=title:assert not visible('^'+other+'$'),f'{other} open together with {title}'
 def command(args,title):
-    # A command sent with sde-panel can be lost when it races the previous
-    # popup closing (seen with alpha14 too, ~2 in 80); send it once more.
+    # Commands used to get lost now and then (seen since alpha14, ~2 in 80):
+    # sde-panel exited before the X server had read its request. Since
+    # 0.2.0 it waits for the server (XSync); the retry stays for slow runs.
     for attempt in range(3):
         if visible('^'+title+'$'):return visible('^'+title+'$')
         run('sde-panel',*args)
