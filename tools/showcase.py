@@ -1182,7 +1182,7 @@ class Session:
                 os.kill(pid, signal.SIGTERM)
             except (ProcessLookupError, PermissionError):
                 pass
-        keep = self.run_ctx.out / 'logs' / self.set.name
+        keep = self.run_ctx.out / 'logs' / getattr(self, 'log_name', self.set.name)
         try:
             if keep.exists():
                 shutil.rmtree(keep)
@@ -2324,6 +2324,7 @@ def run_set(run, tset, display):
             except Exception as e:  # noqa: BLE001 - reported, the next set may work
                 if attempt == 1 and not run.stop.is_set():
                     warn(f'{tset.name}: the session did not start ({e}); starting it again')
+                    s.log_name = f'{tset.name}-first-start'  # its logs, beside the second's
                     continue
                 warn(f'{tset.name}: the session did not start: {e}')
                 run.failed.append((tset.name, 'session', str(e)))
