@@ -171,8 +171,10 @@ struct Changes {
 Changes plan_changes(const std::vector<Device> &devices, const std::vector<int> &initial,
                      const std::vector<int> &selection);
 // apt-get arguments: install -y A B C- (a trailing "-" removes a package in
-// the same transaction). Empty when nothing changes.
+// the same transaction). Empty when nothing changes, or when a name is not
+// a valid Debian package name (valid_package_name).
 std::vector<std::string> apt_arguments(const Changes &changes);
+bool valid_package_name(const std::string &name);
 // Installed proprietary packages (for "N proprietary drivers in use").
 int proprietary_in_use(const std::vector<Device> &devices);
 

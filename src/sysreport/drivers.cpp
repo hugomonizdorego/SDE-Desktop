@@ -658,8 +658,25 @@ Changes plan_changes(const std::vector<Device> &devices, const std::vector<int> 
   return c;
 }
 
+bool valid_package_name(const std::string &name) {
+  // Debian Policy 5.6.1: [a-z0-9][a-z0-9+.-]+ (and so never an option).
+  if (name.size() < 2 || name.size() > 128) return false;
+  for (size_t i = 0; i < name.size(); ++i) {
+    char c = name[i];
+    bool alnum = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    if (!alnum && (i == 0 || (c != '+' && c != '.' && c != '-'))) return false;
+  }
+  return true;
+}
+
 std::vector<std::string> apt_arguments(const Changes &changes) {
   if (changes.empty()) return {};
+  // Root runs apt-get with these: nothing but package names, so that a
+  // name from the hardware tables or apt output can never be an option.
+  for (const auto &p : changes.install)
+    if (!valid_package_name(p)) return {};
+  for (const auto &p : changes.remove)
+    if (!valid_package_name(p)) return {};
   std::vector<std::string> out = {"install", "-y"};
   for (const auto &p : changes.install) out.push_back(p);
   for (const auto &p : changes.remove) out.push_back(p + "-");
