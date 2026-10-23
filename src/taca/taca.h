@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "about.h"
 #include "buffered_window.h"
 #include "engine.h"
 #include "model.h"
@@ -331,6 +332,8 @@ bool organize_favorites(Fl_Window *parent, std::vector<std::string> &list);
 void show_text(Fl_Window *parent, const std::string &title, const std::string &text);
 void show_shortcuts(Fl_Window *parent);
 void show_about(Fl_Window *parent);
+// Taca's entry for the common SDE About window and --version.
+sde::AppInfo about_info();
 
 // Directory and file choosers.
 std::string choose_folder(const std::string &title, const std::string &start);

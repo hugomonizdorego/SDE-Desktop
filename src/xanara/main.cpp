@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
@@ -47,7 +48,8 @@ int main(int argc, char **argv) {
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--version" || a == "-v") {
-      printf("xanara %s (poppler %s)\n", SDE_APP_VERSION, poppler_get_version());
+      sde::print_version("xanara", SDE_APP_VERSION);
+      printf("Rendering by poppler %s.\n", poppler_get_version());
       return 0;
     }
     if (a == "--help" || a == "-h") {

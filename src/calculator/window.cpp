@@ -239,10 +239,10 @@ void CalcWindow::show_about() {
   info.name = _("Calculator");
   info.program = "calculator";
   info.version = SDE_APP_VERSION;
-  info.icon = "org.debion.Calculator";
+  info.icon = "sde-calculator";
+  info.icon_fallbacks = {"org.debion.Calculator"};
   info.description = _("Standard, scientific and programmer calculations, unit conversion and a "
                        "history of your results. Works offline.");
-  info.license = "GPL-3.0-or-later";
   info.credits = {sde::toolkit_credit()};
   sde::show_about(info);
 }

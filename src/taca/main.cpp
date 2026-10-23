@@ -271,10 +271,7 @@ int main(int argc, char **argv) {
       }
       return false;
     };
-    if (a == "--version") {
-      printf("taca %s (SDE %s)\n", kVersion, SDE_VERSION);
-      return 0;
-    }
+    if (a == "--version") return sde::print_version(about_info());
     if (a == "--help" || a == "-?") {
       usage();
       return 0;

@@ -2803,8 +2803,7 @@ int main(int argc, char **argv) {
     } else if (a == "--apply") {
       apply = true;
     } else if (a == "--version") {
-      printf("sde-settings %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
-      return 0;
+      return print_version("sde-settings", SDE_VERSION);
     } else {
       printf("%s", usage().c_str());
       return a == "--help" || a == "-h" ? 0 : 2;

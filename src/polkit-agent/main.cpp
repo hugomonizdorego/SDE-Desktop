@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "glyphs.h"
@@ -427,10 +428,7 @@ gboolean on_tick(gpointer) {
 int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "--version")) {
-      printf("sde-polkit-agent %s (DebION Dev-Team)\n", SDE_VERSION);
-      return 0;
-    }
+    if (!strcmp(argv[i], "--version")) return print_version("sde-polkit-agent", SDE_VERSION);
     if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
       printf("%s", _("Usage: sde-polkit-agent [--version]\n\n"
                      "The polkit authentication agent of SDE. sde-session starts it.\n"));

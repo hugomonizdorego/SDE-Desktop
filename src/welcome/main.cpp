@@ -304,8 +304,9 @@ AppInfo app_info() {
   info.name = _("SDE Welcome");
   info.program = "sde-welcome";
   info.version = SDE_VERSION;
-  info.icon = "sde-logo";
-  info.description = _("First steps with SDE on DebION: appearance, updates, drivers, snapshots and "
+  info.icon = "sde-welcome";
+  info.icon_fallbacks = {"sde-logo"};
+  info.description = _("First steps after installation: appearance, updates, drivers, snapshots and "
                        "help.");
   info.credits = {_("Welcome screen concept after Linux Mint's mintwelcome (no code or artwork "
                     "used)"),
@@ -326,10 +327,7 @@ int main(int argc, char **argv) {
   bool autostart = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--version") {
-      printf("sde-welcome %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
-      return 0;
-    }
+    if (a == "--version") return print_version(app_info());
     if (a == "--autostart") {
       autostart = true;
     } else if (a == "--live-status") {

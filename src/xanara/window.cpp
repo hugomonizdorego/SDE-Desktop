@@ -487,7 +487,7 @@ void XanaraWindow::about() {
   info.name = "Xanara";
   info.program = "xanara";
   info.version = SDE_APP_VERSION;
-  info.icon = "x-office-document";
+  info.icon = "xanara";
   info.description = _("Document viewer and PDF editor for SDE.");
   info.credits = {format(_("Rendering by poppler %s; page tools by qpdf."), poppler_get_version()),
                   sde::toolkit_credit()};

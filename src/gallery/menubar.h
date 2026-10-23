@@ -32,14 +32,16 @@ class MenuBar : public Fl_Menu_Bar {
 struct AboutInfo {
   std::string name;         // "Gallery"
   std::string program;      // "sde-gallery"
+  std::string icon;         // "sde-gallery"; |logo| draws it when not installed
+  std::vector<std::string> icon_fallbacks;
   std::string version;
   std::string description;  // one or two sentences
   // Draws the application icon in a size x size box.
   std::function<void(sde::Painter &, double x, double y, double size)> logo;
   std::vector<std::string> credits;  // extra lines (libraries used ...)
 };
-// Modal About window (sde::show_about): developer DebION Dev-Team, licence
-// and credits.
+// Modal About window (sde::show_about): developer, license, copyright,
+// trademarks and credits from the SDE legal data.
 void show_about(const AboutInfo &info);
 
 // Modal list of keyboard shortcuts: sections of (keys, description) rows;

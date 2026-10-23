@@ -13,6 +13,7 @@
 #include <string>
 #include <unistd.h>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "gallery.h"
@@ -28,10 +29,7 @@ int main(int argc, char **argv) {
   std::string select, slideshow, folder;
   bool import = false;
   for (int i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "--version")) {
-      printf("sde-gallery %s\n", SDE_VERSION);
-      return 0;
-    }
+    if (!strcmp(argv[i], "--version")) return sde::print_version("sde-gallery", SDE_VERSION);
     if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
       printf("%s", _("Usage: sde-gallery [OPTIONS] [FOLDER]\n\n"
                      "Gallery organizes your photos: the Pictures folder and the folders you\n"

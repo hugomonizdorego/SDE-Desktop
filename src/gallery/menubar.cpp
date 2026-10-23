@@ -145,13 +145,13 @@ void run_modal(Fl_Window *win, Fl_Window *parent) {
 }  // namespace
 
 void show_about(const AboutInfo &info) {
-  // The common SDE About window (src/common/about.h): DebION Dev-Team is the
-  // developer of every SDE program.
+  // The common SDE About window (src/common/about.h).
   sde::AppInfo app;
   app.name = info.name;
   app.program = info.program;
   app.version = info.version;
-  app.icon = info.program;
+  app.icon = info.icon.empty() ? info.program : info.icon;
+  app.icon_fallbacks = info.icon_fallbacks;
   app.description = info.description;
   app.logo = info.logo;
   app.credits = info.credits;

@@ -11,6 +11,7 @@
 #include <cmath>
 #include <set>
 
+#include "about.h"
 #include "i18n.h"
 #include "niny.h"
 #include "process.h"
@@ -569,10 +570,10 @@ void SettingsPage::draw() {
         draw_text("Niny", tx + S(22), ry + S(16), col_w - S(100), S(28), L.text);
         text_font(L.theme.font_size);
         draw_text(format(_("Version %s"), NINY_VERSION), tx + S(22), ry + S(44), col_w - S(100), S(22), L.dim);
-        draw_text(_("Developer: DebION Dev-Team"), tx + S(22), ry + S(68), col_w - S(100), S(22), L.text);
+        draw_text(developer_line(), tx + S(22), ry + S(68), col_w - S(100), S(22), L.text);
         text_font(L.theme.font_size - S(1));
-        draw_text(_("Copyright © 2026 DebION Dev-Team · GNU General Public License, version 3 or later"), tx + S(22),
-                  ry + S(92), col_w - S(100), S(20), L.dim);
+        draw_text(std::string(kCopyright) + " · " + license_name("GPL-3.0-or-later"), tx + S(22), ry + S(92),
+                  col_w - S(100), S(20), L.dim);
         draw_text(format(_("Settings are kept in %s"), home_relative(settings_path()).c_str()), tx + S(22), ry + S(114),
                   col_w - S(100), S(20), L.dim);
         break;
