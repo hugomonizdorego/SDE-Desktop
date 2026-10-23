@@ -959,6 +959,9 @@ class Session:
             env['GSETTINGS_SCHEMA_DIR'] = ':'.join(schemas)
         if a.update_helpers:
             env['SDE_UPDATE_HELPERS'] = str(a.update_helpers)
+        # The SDE logo: data/branding in a source tree (installed: sde/branding).
+        if (a.data_dir / 'branding/sde-logo.svg').exists():
+            env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
         env.update(self.nss_wrapper())
         self.env = env
 
@@ -1097,10 +1100,10 @@ class Session:
             warn('the window manager did not start')
         self.spawn('sde-notifyd', scene=False)
         self.spawn('sde-desktop', scene=False)
-        if not self.find('^SDE Desktop$', 15):
+        if not self.find('^SDE Desktop$', 30):
             raise RuntimeError('sde-desktop did not start')
         self.spawn('sde-panel', scene=False)
-        if not self.find('^SDE Panel$', 15):
+        if not self.find('^SDE Panel$', 30):
             raise RuntimeError('sde-panel did not start')
         self.start_compositor()
         fixture = self.test_tool('sde-panel-service-fixture')
@@ -2237,20 +2240,35 @@ def discover(run):
 
 
 def run_set(run, tset, display):
-    s = Session(run, tset, display)
-    try:
-        return run_session(run, tset, s)
-    finally:
-        s.close()
+    # A busy machine can delay the first programs: one more try, fresh.
+    for attempt in (1, 2):
+        if attempt == 2:
+            # The same display once its server is gone (the others are
+            # spoken for by the other sets), else one well past them.
+            for _ in range(10):
+                if free_display(display) == display:
+                    break
+                time.sleep(0.5)
+            else:
+                display = free_display(display + 100)
+        s = Session(run, tset, display)
+        try:
+            try:
+                s.start()
+            except Exception as e:  # noqa: BLE001 - reported, the next set may work
+                if attempt == 1 and not run.stop.is_set():
+                    warn(f'{tset.name}: the session did not start ({e}); starting it again')
+                    continue
+                warn(f'{tset.name}: the session did not start: {e}')
+                run.failed.append((tset.name, 'session', str(e)))
+                return False
+            return run_session(run, tset, s)
+        finally:
+            s.close()
+    return False
 
 
 def run_session(run, tset, s):
-    try:
-        s.start()
-    except Exception as e:  # noqa: BLE001 - reported, the next set may work
-        warn(f'{tset.name}: the session did not start: {e}')
-        run.failed.append((tset.name, 'session', str(e)))
-        return False
     if run.args.hold:
         print('\n'.join(f'export {k}={sh_quote(v)}' for k, v in sorted(s.env.items())
                         if k in ('DISPLAY', 'HOME', 'PATH', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_CONFIG_HOME',
