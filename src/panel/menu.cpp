@@ -402,6 +402,11 @@ class RenameInput : public Fl_Input {
 
 }  // namespace
 
+namespace start_apps {
+void show_info(const DesktopEntry &e) { show_app_info(e); }
+void open_location(const DesktopEntry &e) { open_file_location(e); }
+}  // namespace start_apps
+
 // ================================================================ tiles
 
 namespace start_tiles {
@@ -1577,12 +1582,14 @@ void AppMenu::scroll_to(Kind kind, int offset, bool smooth) {
   }
   g.from = scroll;
   g.to = offset;
-  g.start = now();
+  // The first step is drawn at once (as if one frame had passed already),
+  // so the wheel feels as direct as jumping did.
+  g.start = now() - 1.0 / 60;
   g.on = true;
   // The items slide away under the pointer; rehover() follows at the end.
   if (hover_.kind != K_NONE) damage_item(hover_, S(12));
   hover_ = {};
-  if (!Fl::has_timeout(glide, this)) Fl::add_timeout(1.0 / 60, glide, this);
+  if (!Fl::has_timeout(glide, this)) Fl::add_timeout(0, glide, this);
 }
 
 // One frame of smooth scrolling: only the scrolled area is repainted.
@@ -2314,7 +2321,7 @@ void AppMenu::draw() {
     int rows = 0, tiles = 0;
     for (auto &it : items_) rows += it.kind == K_ROW, tiles += it.kind == K_TILE;
     line += " rows=" + std::to_string(rows) + " ntiles=" + std::to_string(tiles) +
-            " apps=" + std::to_string(apps_.size());
+            " apps=" + std::to_string(apps_ ? apps_->apps.size() : 0);
     menu_perf::log(line);
   }
   const Item *hov = find(hover_);

@@ -94,6 +94,22 @@ int main(int argc, char **argv) {
       return strcmp(argv[i], "--help") ? 2 : 0;
     }
   }
+  if (!command.empty()) {
+    // A command only sets a property on the root window: a plain X
+    // connection, without FLTK's display setup (input method, Compose
+    // table, visuals). `sde-panel --menu` runs for every Super key press;
+    // the setup made it take 30-50 ms instead of about 10.
+    fl_display = XOpenDisplay(nullptr);
+    if (!fl_display) {
+      fprintf(stderr, "sde-panel: cannot open the display\n");
+      return 1;
+    }
+    fl_screen = DefaultScreen(fl_display);
+    sde::x11::send_command(command);
+    XCloseDisplay(fl_display);
+    fl_display = nullptr;
+    return 0;
+  }
   // The panel's text fields are the search and the menu's group names. An X input method such
   // as IBus or Fcitx can swallow its keys in FLTK 1.3, so the panel opens
   // its display without XIM. The variable is restored at once, so programs
@@ -105,10 +121,6 @@ int main(int argc, char **argv) {
     fl_open_display();
     if (im) setenv("XMODIFIERS", saved.c_str(), 1);
     else unsetenv("XMODIFIERS");
-  }
-  if (!command.empty()) {
-    sde::x11::send_command(command);
-    return 0;
   }
   if (!claim_instance()) {
     fprintf(stderr, "sde-panel: a panel is already running on this screen\n");

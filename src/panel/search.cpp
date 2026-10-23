@@ -9,6 +9,7 @@
 #include <cmath>
 #include <ctime>
 #include <map>
+#include <unordered_map>
 
 #include "i18n.h"
 #include "icons.h"
@@ -51,8 +52,11 @@ bool is_file(const DesktopEntry *e) { return e && starts_with(e->id, kFilePrefix
 bool is_app(const DesktopEntry *e) { return e && !is_extra(e) && !is_file(e); }
 
 std::vector<DesktopEntry> extras() {
-  std::string settings = _("Settings");
-  return {
+  // 0.2: the Settings application is the Control Center; its pages show
+  // that name and every page is found by both names (match_keys() looks at
+  // the words of the keywords).
+  std::string settings = _("Control Center");
+  std::vector<DesktopEntry> out = {
       extra("appearance", _("Appearance"), settings, "preferences-desktop-theme",
             "sde-settings --page appearance",
             {"theme", "dark", "light", "aero", "glass", "liquid", "wallpaper", "accent", "color",
@@ -95,6 +99,11 @@ std::vector<DesktopEntry> extras() {
             {"logout", "log out", "restart", "reboot", "shutdown", "shut down", "power off",
              "suspend", "matikan"}),
   };
+  for (auto &e : out)
+    if (e.generic_name == settings)
+      for (const char *k : {"settings", "control center", "control panel", "preferences"})
+        e.keywords.push_back(k);
+  return out;
 }
 
 std::vector<menu::Usage> load_usage() {
@@ -181,11 +190,23 @@ using namespace panel_search;
 SearchFlyout::SearchFlyout() : PanelPopup("SDE Search") {
   end();
   callback([](Fl_Widget *w, void *) { static_cast<SearchFlyout *>(w)->close(); });
+  app_catalog::subscribe(catalog_changed, this);
 }
 
-SearchFlyout::~SearchFlyout() { Fl::remove_timeout(blink, this); }
+SearchFlyout::~SearchFlyout() {
+  app_catalog::unsubscribe(this);
+  Fl::remove_timeout(blink, this);
+  Fl::remove_timeout(poll_applications, this);
+  Fl::remove_timeout(index_step, this);
+}
 
 bool SearchFlyout::own_field() const { return !Panel::instance->search_box_shown(); }
+
+void SearchFlyout::config_changed() {
+  if (!is_open()) return;
+  theme_ = Panel::instance->theme();
+  redraw();
+}
 
 void SearchFlyout::open_with(const std::string &text, int anchor_x) {
   if (is_open()) {
@@ -206,20 +227,32 @@ void SearchFlyout::prepare() {
   int W = std::min(S(620), mw - S(16));
   int H = std::min(S(540), mh - Panel::instance->h() - S(24));
   size(W, H);
-  std::string stamp = applications_stamp();
-  if (stamp != apps_stamp_ || apps_.empty()) {
-    apps_stamp_ = stamp;
-    apps_ = load_applications("SDE");
+  // The panel keeps the applications (app_catalog.h): nothing is parsed here.
+  if (!app_catalog::watching()) app_catalog::poll();
+  apps_ = app_catalog::current();
+  apps_stale_ = false;
+  if (extras_.empty()) {
+    // Built once: results point into extras_.
+    extras_ = extras();
+    extra_keys_.clear();
+    for (auto &e : extras_) {
+      auto k = menu::search_keys(e);
+      // The page's own ID ("display"), not the "sde-search:" prefix.
+      k.id_parts = {menu::fold(e.id.substr(e.id.find(':') + 1))};
+      extra_keys_.push_back(k);
+    }
   }
-  extras_ = extras();
   usage_ = load_usage();
-  file_index_.clear();
+  // Files: the index of the last search answers at once while a fresh one
+  // is built on idle (new files show up a moment later).
+  start_file_index();
   tab_ = 0;
   scroll_ = 0;
   hover_ = -1;
   sel_kind_ = K_NONE;
   sel_index_ = -1;
   caret_on_ = true;
+  super_down_ = super_alone_ = false;
   filter();
   // Opened with text (typing in the Start menu): the best match is selected.
   if (!results_.empty()) {
@@ -229,28 +262,86 @@ void SearchFlyout::prepare() {
   Fl::remove_timeout(blink, this);
   Fl::add_timeout(0.55, blink, this);
   Fl::remove_timeout(poll_applications, this);
-  Fl::add_timeout(2, poll_applications, this);
+  if (!app_catalog::watching()) Fl::add_timeout(2, poll_applications, this);
 }
 
-// Applications installed while the flyout is open become searchable.
+// Without inotify: applications installed while the flyout is open become
+// searchable within 2 s (app_catalog::poll() compares the directories).
 void SearchFlyout::poll_applications(void *data) {
   auto *self = static_cast<SearchFlyout *>(data);
   if (!self->is_open()) return;
   Fl::repeat_timeout(2, poll_applications, data);
-  if (self->menu_busy_) return;
-  std::string stamp = applications_stamp();
-  if (stamp == self->apps_stamp_) return;
-  self->apps_stamp_ = stamp;
-  // Results point into apps_: keep the selected position, not the pointers.
-  self->apps_ = load_applications("SDE");
-  self->filter();
-  if (self->sel_kind_ == K_RESULT && self->sel_index_ >= int(self->results_.size()))
-    self->sel_index_ = self->results_.empty() ? -1 : 0;
-  if (self->sel_kind_ != K_RESULT && !self->results_.empty()) {
-    self->sel_kind_ = K_RESULT;
-    self->sel_index_ = 0;
+  app_catalog::poll();
+}
+
+void SearchFlyout::catalog_changed(void *data) {
+  auto *self = static_cast<SearchFlyout *>(data);
+  if (!self->is_open()) return;  // the next opening takes them
+  if (self->menu_busy_) {
+    self->apps_stale_ = true;
+    return;
   }
-  self->redraw();
+  self->apply_catalog();
+}
+
+// Applications installed or removed while the flyout is open: search them
+// at once. Results point into apps_: keep the selected position, not the
+// pointers.
+void SearchFlyout::apply_catalog() {
+  apps_stale_ = false;
+  apps_ = app_catalog::current();
+  filter();
+  if (sel_kind_ == K_RESULT && sel_index_ >= int(results_.size()))
+    sel_index_ = results_.empty() ? -1 : 0;
+  if (sel_kind_ != K_RESULT && !results_.empty()) {
+    sel_kind_ = K_RESULT;
+    sel_index_ = 0;
+  }
+  redraw();
+}
+
+namespace {
+menu::FileIndex g_next_index;  // the index being built
+}
+
+void SearchFlyout::start_file_index() {
+  std::vector<std::string> roots = {home_dir()};
+  static const char *const dirs[][2] = {{"DESKTOP", "Desktop"},   {"DOCUMENTS", "Documents"},
+                                        {"DOWNLOAD", "Downloads"}, {"MUSIC", "Music"},
+                                        {"PICTURES", "Pictures"},  {"VIDEOS", "Videos"}};
+  for (auto &d : dirs) {
+    std::string p = user_dir(d[0]);
+    if (p.empty() || p == home_dir()) p = home_dir() + "/" + d[1];
+    roots.push_back(p);
+  }
+  g_next_index.begin(roots);
+  Fl::remove_timeout(index_step, this);
+  Fl::add_timeout(0, index_step, this);
+}
+
+// A few milliseconds of directory scanning per turn of the event loop.
+void SearchFlyout::index_step(void *data) {
+  auto *self = static_cast<SearchFlyout *>(data);
+  if (!g_next_index.building()) return;
+  if (!g_next_index.step(4.0)) {
+    Fl::repeat_timeout(0, index_step, data);
+    return;
+  }
+  self->file_index_ = std::move(g_next_index);
+  g_next_index.clear();
+  if (menu_perf::enabled())
+    menu_perf::log("file-index items=" + std::to_string(self->file_index_.size()));
+  if (self->is_open() && !trim(self->query_).empty() && (self->tab_ == 0 || self->tab_ == 3) &&
+      !self->menu_busy_) {
+    Kind kind = self->sel_kind_;
+    int index = self->sel_index_;
+    self->filter();
+    if (kind == K_RESULT && index >= int(self->results_.size()))
+      index = self->results_.empty() ? -1 : 0;
+    self->sel_kind_ = self->results_.empty() ? K_NONE : kind;
+    self->sel_index_ = self->results_.empty() ? -1 : index;
+    self->redraw();
+  }
 }
 
 void SearchFlyout::closed() {
@@ -259,6 +350,7 @@ void SearchFlyout::closed() {
   query_.clear();
   caret_ = 0;
   select_all_ = false;
+  super_down_ = false;
   if (Panel::instance) Panel::instance->search_changed();
 }
 
@@ -273,42 +365,57 @@ void SearchFlyout::blink(void *data) {
 
 void SearchFlyout::filter() {
   menu_perf::Step step("filter");
-  std::map<std::string, const DesktopEntry *> by_id;
-  for (auto &a : apps_) by_id[a.id] = &a;
+  if (!apps_) apps_ = app_catalog::current();
   long long now = (long long)time(nullptr);
   // Start page: the most used applications (or the Start tiles) and the
   // ones opened last.
   top_.clear();
   for (auto &id : menu::rank_frecent(usage_, now, 32))
-    if (by_id.count(id) && top_.size() < 6) top_.push_back(by_id[id]);
+    if (const DesktopEntry *e = apps_->find(id))
+      if (top_.size() < 6) top_.push_back(e);
   for (auto &id : start_tiles::ids())
-    if (by_id.count(id) && top_.size() < 6 &&
-        std::find(top_.begin(), top_.end(), by_id[id]) == top_.end())
-      top_.push_back(by_id[id]);
+    if (const DesktopEntry *e = apps_->find(id))
+      if (top_.size() < 6 && std::find(top_.begin(), top_.end(), e) == top_.end()) top_.push_back(e);
   recent_.clear();
   for (auto &id : menu::by_last_use(usage_, 12))
-    if (by_id.count(id) && recent_.size() < 5) recent_.push_back(by_id[id]);
+    if (const DesktopEntry *e = apps_->find(id))
+      if (recent_.size() < 5) recent_.push_back(e);
 
   results_.clear();
   files_.clear();
-  std::string q = lower(trim(query_));
-  if (q.empty()) return;
-  auto terms = split(q, ' ');
-  std::vector<std::pair<int, const DesktopEntry *>> scored;
+  // The keys were folded once by the catalog: a keystroke only compares.
+  auto terms = menu::search_terms(trim(query_));
+  if (terms.empty()) return;
+  // Rank: the match (prefix, word, inside, ... see match_keys()), then how
+  // often and how recently the application was opened, then A-Z.
+  std::unordered_map<std::string, double> used;
+  for (auto &u : usage_) used[u.id] = menu::frecency(u, now);
+  struct Hit {
+    int score;
+    double used;
+    size_t order;
+    const DesktopEntry *e;
+  };
+  std::vector<Hit> hits;
   if (tab_ == 0 || tab_ == 1)
-    for (auto &a : apps_) {
-      int s = menu::match_score(a, terms);
-      if (s) scored.push_back({s, &a});
+    for (size_t i = 0; i < apps_->apps.size(); ++i) {
+      int s = menu::match_keys(apps_->keys[i], terms);
+      if (!s) continue;
+      auto u = used.find(apps_->apps[i].id);
+      hits.push_back({s, u == used.end() ? 0.0 : u->second, i, &apps_->apps[i]});
     }
   // Settings pages and actions follow applications with the same score.
   if (tab_ == 0 || tab_ == 2)
-    for (auto &e : extras_) {
-      int s = menu::match_score(e, terms);
-      if (s) scored.push_back({s - 1, &e});
+    for (size_t i = 0; i < extras_.size(); ++i) {
+      int s = menu::match_keys(extra_keys_[i], terms);
+      if (s) hits.push_back({s - 1, 0.0, apps_->apps.size() + i, &extras_[i]});
     }
-  std::stable_sort(scored.begin(), scored.end(),
-                   [](auto &a, auto &b) { return a.first > b.first; });
-  for (auto &s : scored) results_.push_back(s.second);
+  std::sort(hits.begin(), hits.end(), [](const Hit &a, const Hit &b) {
+    if (a.score != b.score) return a.score > b.score;
+    if (a.used != b.used) return a.used > b.used;
+    return a.order < b.order;
+  });
+  for (auto &h : hits) results_.push_back(h.e);
   // The best match first, then applications before Settings pages, each
   // kind in one block under its heading.
   if (results_.size() > 2)
@@ -316,22 +423,11 @@ void SearchFlyout::filter() {
                           [](const DesktopEntry *e) { return is_app(e); });
   if (tab_ != 0 && tab_ != 3) return;
   // Files and folders of the home folder, after everything else.
-  if (!file_index_.built()) {
-    std::vector<std::string> roots = {home_dir()};
-    static const char *const dirs[][2] = {{"DESKTOP", "Desktop"},   {"DOCUMENTS", "Documents"},
-                                          {"DOWNLOAD", "Downloads"}, {"MUSIC", "Music"},
-                                          {"PICTURES", "Pictures"},  {"VIDEOS", "Videos"}};
-    for (auto &d : dirs) {
-      std::string p = user_dir(d[0]);
-      if (p.empty() || p == home_dir()) p = home_dir() + "/" + d[1];
-      roots.push_back(p);
-    }
-    file_index_.build(roots);
-  }
   std::string home = home_dir();
-  for (auto &path : file_index_.search(terms, tab_ == 3 ? 40 : 8)) {
+  for (auto &hit : file_index_.search_hits(terms, tab_ == 3 ? 40 : 8)) {
+    const std::string &path = hit.path;
     DesktopEntry e;
-    bool dir = file_index_.is_dir(path);
+    bool dir = hit.dir;
     e.id = kFilePrefix + path;
     e.type = "Link";
     e.url = path;
@@ -668,16 +764,27 @@ void SearchFlyout::item_menu(const Item &it, int px, int py) {
   if (file) add(_("Open file location"), 2);
   if (app) {
     add(start ? _("Unpin from Start") : _("Pin to Start"), 3);
-    add(panel ? _("Unpin from panel") : _("Pin to panel"), 4);
+    add(panel ? _("Unpin from panel") : _("Pin to panel"), 4, FL_MENU_DIVIDER);
+    // As in the Start menu (0.2).
+    add(_("Open file location"), 5, e->path.empty() ? FL_MENU_INACTIVE : 0);
+    add(_("App info..."), 6);
   }
   add(nullptr, 0);
+  DesktopEntry copy = *e;  // the results may be rebuilt meanwhile
   menu_busy_ = true;
   const Fl_Menu_Item *m = items.data()->popup(px, py);
   menu_busy_ = false;
   if (!m) return;
+  long code = reinterpret_cast<long>(m->user_data());
+  if (code == 5 || code == 6) {
+    close();
+    if (code == 5) start_apps::open_location(copy);
+    else start_apps::show_info(copy);
+    return;
+  }
   Item action = it;
   action.kind = K_ACTION;
-  action.index = int(reinterpret_cast<long>(m->user_data())) - 1;
+  action.index = int(code) - 1;
   activate(action);
 }
 
@@ -714,7 +821,17 @@ void SearchFlyout::ensure_visible() {
 // ---------------------------------------------------------------- events
 
 int SearchFlyout::handle(int event) {
+  if (apps_stale_ && !menu_busy_ && event != FL_HIDE && event != FL_SHOW) apply_catalog();
   switch (event) {
+    case FL_KEYUP: {
+      // Super pressed and released alone closes the search (as the menu).
+      int k = Fl::event_key();
+      if ((k == FL_Meta_L || k == FL_Meta_R) && super_down_) {
+        super_down_ = false;
+        if (super_alone_) close();
+      }
+      return 1;
+    }
     case FL_PUSH: {
       int ex = Fl::event_x(), ey = Fl::event_y();
       if (ex < 0 || ey < 0 || ex >= w() || ey >= h()) {
@@ -787,6 +904,12 @@ int SearchFlyout::handle(int event) {
     case FL_KEYBOARD: {
       int k = Fl::event_key();
       bool ctrl = Fl::event_state() & FL_CTRL;
+      if (k == FL_Meta_L || k == FL_Meta_R) {
+        super_down_ = true;
+        super_alone_ = true;
+        return 1;
+      }
+      super_alone_ = false;
       menu_perf::begin("key", "search");
       caret_on_ = true;
       if (k == FL_Escape) {
@@ -911,6 +1034,7 @@ void SearchFlyout::flush() {
 void SearchFlyout::draw() {
   const Theme &t = theme_;
   int W = w(), H = h(), pad = S(12);
+  int row_icon = start_row_icon_size();
   build();
   const Item *sel = selected_item();
   bool query = !trim(query_).empty();
@@ -964,7 +1088,8 @@ void SearchFlyout::draw() {
           else if (hv) p.fill_rounded(it.x, it.y, it.w, it.h, r, t.hover);
           if (s && it.kind == K_RESULT)
             p.fill_rounded(it.x + S(2), it.y + it.h / 2.0 - S(8), S(3), S(16), S(1.5), t.accent);
-          int is = it.kind == K_TOP ? S(36) : it.kind == K_RESULT && it.index == 0 ? S(36) : S(24);
+          // Rows use the Start menu's row size: the icons preloaded for it.
+          int is = it.kind == K_TOP ? S(36) : it.kind == K_RESULT && it.index == 0 ? S(36) : row_icon;
           double ix = it.kind == K_TOP ? it.x + (it.w - is) / 2.0 : it.x + S(12);
           double iy = it.kind == K_TOP ? it.y + S(10) : it.y + (it.h - is) / 2.0;
           p.image(IconLoader::get({it.entry->icon, "application-x-executable"}, is), ix, iy, is);

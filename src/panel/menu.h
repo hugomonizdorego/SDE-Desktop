@@ -47,6 +47,12 @@ void unpin(const std::string &id);
 // that one preloaded icon serves both).
 int start_row_icon_size();
 
+// The right-click actions of an application in the menu and the search.
+namespace start_apps {
+void show_info(const sde::DesktopEntry &e);      // "App info...": a small window
+void open_location(const sde::DesktopEntry &e);  // "Open file location": its .desktop folder
+}  // namespace start_apps
+
 class AppMenu : public PanelPopup {
  public:
   AppMenu();

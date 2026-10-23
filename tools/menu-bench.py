@@ -322,7 +322,10 @@ res = {"label": args.label, "size": args.size, "scale": args.scale, "apps": args
 try:
     xv = start(["Xvfb", args.display, "-screen", "0", args.size + "x24", "-nolisten", "tcp", "-ac"],
                "xvfb.log")
-    wait(lambda: Path(f"/tmp/.X11-unix/X{args.display.lstrip(':')}").exists(), "Xvfb")
+    wait(lambda: Path(f"/tmp/.X11-unix/X{args.display.lstrip(':')}").exists(), "Xvfb", 30)
+    # The socket exists before the server takes connections.
+    wait(lambda: sp.run(["xdotool", "getmouselocation"], env=env, stdout=sp.DEVNULL,
+                        stderr=sp.DEVNULL).returncode == 0, "Xvfb ready", 30)
     bus = sp.run(["dbus-daemon", "--session", "--fork", "--print-address=1", "--print-pid=1"],
                  env=env, stdout=sp.PIPE, text=True)
     bus_pid = None

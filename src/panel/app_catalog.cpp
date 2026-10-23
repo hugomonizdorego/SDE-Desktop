@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 
+#include "icons.h"
 #include "menu_perf.h"
 #include "util.h"
 
@@ -142,6 +143,8 @@ void parse(State &s, const File &f) {
 }
 
 void notify(State &s) {
+  // New applications may have brought their icons.
+  IconLoader::forget_missing();
   auto listeners = s.listeners;
   for (auto &l : listeners) l.first(l.second);
 }

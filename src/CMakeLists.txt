@@ -48,6 +48,7 @@ target_link_libraries(sde-session PRIVATE sde-common)
 add_executable(sde-panel
   panel/main.cpp
   panel/panel.cpp
+  panel/app_catalog.cpp
   panel/menu.cpp
   panel/menu_model.cpp
   panel/menu_perf.cpp
