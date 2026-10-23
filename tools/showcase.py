@@ -2122,8 +2122,8 @@ def readme(meta, sets, images, skipped, sheets):
             lines.append('| ' + ' | '.join(cells) + ' |')
         lines.append('')
     if skipped:
-        lines += ['## Not captured', '', 'Views this build does not have yet (or that failed); '
-                  'see the logs of the run.', '']
+        lines += ['## Not captured', '', 'Views this build does not have yet, or that failed this time (the '
+                  'reason is in the log of the showcase run).', '']
         for s in skipped:
             lines.append(f'- `{s["set"]}` {s["name"]}: {s["reason"]}')
         lines.append('')
