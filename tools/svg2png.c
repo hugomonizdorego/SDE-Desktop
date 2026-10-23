@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Selviana DE Project and contributors
+ *
  * svg2png: render an SVG file to a PNG of the given size with librsvg and
  * cairo, the libraries SDE itself draws icons with.
  *

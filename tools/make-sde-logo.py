@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Selviana DE Project and contributors
 """Build the SDE logo assets from the official artwork.
 
   tools/make-sde-logo.py [--source docs/branding/sde-logo-official.jpg]
@@ -58,8 +59,9 @@ SCREEN = np.array([0xF4, 0xF3, 0xEE], np.float32)   # opaque light screen glass
 LIGHT_TEXT = "#F4F4F2"                               # "DESKTOP ENVIRONMENT" on dark
 INK_LEVEL = 118        # max(R,G,B) below this is black ink (half way to the fills)
 TRACE = 4              # trace at 4x for sub-pixel accurate curves
-COPYRIGHT = ("Selviana Desktop Environment (SDE) logo, traced from docs/branding/sde-logo-official.jpg "
-             "by tools/make-sde-logo.py. Do not recolour, stretch or re-letter it: see docs/BRANDING.md.")
+COPYRIGHT = ("Selviana Desktop Environment (SDE) logo. Copyright (C) 2026 Selviana DE Project. "
+             "Traced from docs/branding/sde-logo-official.jpg by tools/make-sde-logo.py; do not "
+             "recolour, stretch or re-letter it (docs/BRANDING.md).")
 
 
 def log(*args):

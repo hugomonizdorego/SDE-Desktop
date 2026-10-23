@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Selviana Desktop Environment (SDE) logo, traced from docs/branding/sde-logo-official.jpg by tools/make-sde-logo.py. Do not recolour, stretch or re-letter it: see docs/BRANDING.md. SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Selviana Desktop Environment (SDE) logo. Copyright (C) 2026 Selviana DE Project. Traced from docs/branding/sde-logo-official.jpg by tools/make-sde-logo.py; do not recolour, stretch or re-letter it (docs/BRANDING.md). SPDX-License-Identifier: GPL-3.0-or-later -->
 <svg xmlns="http://www.w3.org/2000/svg" width="1362.4" height="1366.4" viewBox="519.8 209.8 1362.4 1366.4">
 <title>Selviana Desktop Environment</title>
 <defs><linearGradient id="wordmark" gradientUnits="userSpaceOnUse" x1="551" y1="0" x2="1855" y2="0">

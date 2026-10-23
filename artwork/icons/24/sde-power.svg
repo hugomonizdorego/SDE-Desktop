@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Power, 24 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Power, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
   <rect x="19" y="9" width="4" height="6" rx="1" fill="#2B2B2F"/>
   <rect x="20" y="10" width="2" height="4" fill="#D2CBBB"/>

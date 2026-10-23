@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Taca, 32 px: SDE icon family. Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Taca, 32 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
   <rect x="4" y="11" width="24" height="18" rx="2" fill="#2B2B2F"/>
   <rect x="5" y="12" width="22" height="16" rx="1" fill="#D4A770"/>

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Selviana DE Project and contributors
 """Render the SDE hicolor application icons from their SVG sources.
 
   tools/render-icons.py [NAME ...]
