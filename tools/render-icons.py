@@ -19,7 +19,8 @@ Sources (see docs/BRANDING.md):
 
 Output: data/icons/hicolor/NxN/apps/NAME.png, committed to the repository
 so package builds do not need this script. ALIASES are copies under the old
-names that older desktop files still use.
+names that older desktop files still use. The sample user pictures
+data/avatars/NAME.svg are rendered to data/avatars/NAME.png (256 px).
 
 Renders with rsvg-convert (librsvg2-bin) or, when it is missing, with
 tools/svg2png.c (built on the fly against librsvg and cairo).
@@ -34,6 +35,8 @@ import tempfile
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 HICOLOR = os.path.join(ROOT, "data", "icons", "hicolor")
 SMALL = os.path.join(ROOT, "artwork", "icons")
+AVATARS = os.path.join(ROOT, "data", "avatars")
+AVATAR_SIZE = 256
 SIZES = [16, 22, 24, 32, 48, 64, 128, 256]
 EXTRA_SIZES = {"sde-logo": [512]}
 STROKE_SCALE = {48: 1.5, 64: 1.3}
@@ -86,29 +89,23 @@ def cropped(text, margin):
 
 def render(name, draw, tmp):
     master = os.path.join(HICOLOR, "scalable", "apps", name + ".svg")
-    with open(master) as f:
-        master_text = f.read()
     written = []
     for size in SIZES + EXTRA_SIZES.get(name, []):
-        source, text = master, master_text
         small = os.path.join(SMALL, str(24 if size == 22 else size), name + ".svg")
-        if os.path.exists(small):
-            source = small
-            with open(small) as f:
-                text = f.read()
-            if size == 22:
-                text = cropped(text, 1)
-        elif size in STROKE_SCALE:
+        source = small if os.path.exists(small) else master
+        with open(source) as f:
+            text = f.read()
+        if source == small and size == 22:
+            text = cropped(text, 1)
+        elif source == master and size in STROKE_SCALE:
             text = thicker(text, STROKE_SCALE[size])
-        if text is not master_text or source is not master:
-            path = os.path.join(tmp, "%s-%d.svg" % (name, size))
-            with open(path, "w") as f:
-                f.write(text)
-            source = path
+        path = os.path.join(tmp, "%s-%d.svg" % (name, size))
+        with open(path, "w") as f:
+            f.write(text)
         out_dir = os.path.join(HICOLOR, "%dx%d" % (size, size), "apps")
         os.makedirs(out_dir, exist_ok=True)
         out = os.path.join(out_dir, name + ".png")
-        draw(source, out, size, size)
+        draw(path, out, size, size)
         written.append(out)
     return written
 
@@ -133,6 +130,12 @@ def main():
             if os.path.exists(src):
                 shutil.copyfile(src, os.path.join(os.path.dirname(src), alias + ".png"))
         print("render-icons: %-24s copy of %s" % (alias, target))
+    if not sys.argv[1:]:
+        with tempfile.TemporaryDirectory() as tmp:
+            draw = Renderer(tmp)
+            for svg in sorted(f for f in os.listdir(AVATARS) if f.endswith(".svg")):
+                draw(os.path.join(AVATARS, svg), os.path.join(AVATARS, svg[:-4] + ".png"), AVATAR_SIZE, AVATAR_SIZE)
+                print("render-icons: avatar %-17s %d px" % (svg[:-4], AVATAR_SIZE))
 
 
 if __name__ == "__main__":

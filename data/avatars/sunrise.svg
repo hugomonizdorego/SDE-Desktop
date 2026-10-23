@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sunrise: sample user picture (SDE icon family). Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Sunrise</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9DB6E4"/>
+      <stop offset="0.45" stop-color="#E7B9C8"/>
+      <stop offset="0.75" stop-color="#F8CFA6"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="128" cy="150" r="96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF1C9" stop-opacity="0.9"/>
+      <stop offset="0.45" stop-color="#FFE3A6" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFE3A6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FCD777"/><stop offset="1" stop-color="#F2A957"/></linearGradient>
+    <linearGradient id="far" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8FB4C4"/><stop offset="1" stop-color="#7AA2B6"/></linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8CC58F"/><stop offset="1" stop-color="#6DAE74"/></linearGradient>
+    <linearGradient id="near" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5FA36A"/><stop offset="1" stop-color="#3F8450"/></linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="url(#sky)"/>
+  <circle cx="128" cy="150" r="96" fill="url(#halo)"/>
+  <g fill="#FFF6E2" fill-opacity="0.55">
+    <path d="M128 150L112 28H144Z"/>
+    <path d="M128 150L48 54L72 38Z" />
+    <path d="M128 150L208 54L184 38Z"/>
+    <path d="M128 150L12 104L20 82Z"/>
+    <path d="M128 150L244 104L236 82Z"/>
+  </g>
+  <circle cx="128" cy="150" r="44" fill="url(#sun)"/>
+  <path d="M74 62C74 52 84 46 94 50C98 40 114 38 120 48C130 46 138 54 134 62Z" fill="#FFFFFF" fill-opacity="0.8"/>
+  <path d="M164 84C164 77 171 73 178 76C181 69 192 68 196 75C203 74 208 79 205 84Z" fill="#FFFFFF" fill-opacity="0.7"/>
+  <path d="M0 158C40 136 78 132 112 150C144 166 176 160 204 146C224 136 242 134 256 138V256H0Z" fill="url(#far)"/>
+  <path d="M0 182C34 166 70 164 104 178C136 191 168 190 200 176C222 166 242 166 256 170V256H0Z" fill="url(#mid)"/>
+  <path d="M0 214C28 196 66 192 100 204C128 214 150 214 176 206C204 196 232 196 256 204V256H0Z" fill="url(#near)"/>
+  <path d="M118 256C126 236 140 222 160 212C170 207 180 206 188 208C170 214 154 226 146 256Z" fill="#E9D7A6" fill-opacity="0.7"/>
+</svg>

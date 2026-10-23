@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SDE Retro: sample user picture (SDE icon family). Copyright (C) 2026 SDE contributors. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>SDE Retro</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#BFE3DE"/><stop offset="1" stop-color="#7DBAB4"/></linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.5"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4F0E7"/><stop offset="1" stop-color="#DED6C6"/></linearGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#BBB5A8"/><stop offset="1" stop-color="#A29B8D"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FCFBF8"/><stop offset="1" stop-color="#EDEAE2"/></linearGradient>
+  </defs>
+  <rect width="256" height="256" fill="url(#bg)"/>
+  <rect width="256" height="256" fill="url(#glow)"/>
+  <ellipse cx="130" cy="220" rx="84" ry="11" fill="#2B2B2F" fill-opacity="0.14"/>
+  <g transform="translate(128 140) scale(1.08) translate(-128 -140)">
+  <!-- the monitor -->
+  <path d="M82 84L58 100Q50 106 50 117V163Q50 174 58 180L82 196Z" fill="url(#side)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M108 196L100 214H172L164 196Z" fill="#D2CBBB" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round"/>
+  <rect x="72" y="62" width="134" height="138" rx="22" fill="url(#body)" stroke="#2B2B2F" stroke-width="7"/>
+  <rect x="84" y="72" width="110" height="94" rx="12" fill="#D6CFC0" stroke="#2B2B2F" stroke-width="5"/>
+  <path d="M104 80H174Q186 80 186 92V146Q186 158 174 158H104Q92 158 92 146V92Q92 80 104 80Z" fill="url(#glass)" stroke="#2B2B2F" stroke-width="7"/>
+  <!-- RGB stripes, as on the SDE logo -->
+  <path d="M100 103H110M168 103H178" fill="none" stroke="#DC5A51" stroke-width="7" stroke-linecap="round"/>
+  <path d="M100 119H110M168 119H178" fill="none" stroke="#55AD62" stroke-width="7" stroke-linecap="round"/>
+  <path d="M100 135H110M168 135H178" fill="none" stroke="#4C83C9" stroke-width="7" stroke-linecap="round"/>
+  <!-- face -->
+  <ellipse cx="126" cy="113" rx="6.5" ry="8.5" fill="#2B2B2F"/>
+  <ellipse cx="152" cy="113" rx="6.5" ry="8.5" fill="#2B2B2F"/>
+  <circle cx="128.2" cy="109.6" r="2.4" fill="#FFFFFF"/>
+  <circle cx="154.2" cy="109.6" r="2.4" fill="#FFFFFF"/>
+  <ellipse cx="119" cy="132" rx="6" ry="3.6" fill="#EE9FAE" fill-opacity="0.85"/>
+  <ellipse cx="159" cy="132" rx="6" ry="3.6" fill="#EE9FAE" fill-opacity="0.85"/>
+  <path d="M130 131Q139 140 148 131" fill="none" stroke="#2B2B2F" stroke-width="5" stroke-linecap="round"/>
+  <!-- front panel -->
+  <circle cx="94" cy="183" r="7" fill="#ECE7DC" stroke="#2B2B2F" stroke-width="5"/>
+  <rect x="136" y="178" width="14" height="9" rx="4.5" fill="#E05A51" stroke="#2B2B2F" stroke-width="4"/>
+  <rect x="154" y="178" width="14" height="9" rx="4.5" fill="#55AD62" stroke="#2B2B2F" stroke-width="4"/>
+  <rect x="172" y="178" width="14" height="9" rx="4.5" fill="#4C83C9" stroke="#2B2B2F" stroke-width="4"/>
+  <!-- a little sparkle -->
+  <path d="M204 50C205 58 208 61 216 62C208 63 205 66 204 74C203 66 200 63 192 62C200 61 203 58 204 50Z" fill="#F2C95E" stroke="#2B2B2F" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+</svg>
