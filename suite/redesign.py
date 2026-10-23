@@ -1324,6 +1324,28 @@ def liria_right_drag(staged):
     Alt+drag is taken by the window manager (it moves windows); the middle
     button keeps asking as before."""
     private = staged / "libliria-private"
+    # 0.2.0: a drag that hovers a folder row expands it after a moment; the
+    # expired timeout kept its ID, so leaving the row or ending the drag
+    # removed it again and GLib printed a critical warning (Caja bug).
+    dest = private / "liria-tree-view-drag-dest.c"
+    edit_once(dest, """expand_timeout (gpointer data)
+{
+    GtkTreeView *tree_view;
+    GtkTreePath *drop_path;
+
+    tree_view = GTK_TREE_VIEW (data);
+""", """expand_timeout (gpointer data)
+{
+    LiriaTreeViewDragDest *dest = data; /* SDE */
+    GtkTreeView *tree_view;
+    GtkTreePath *drop_path;
+
+    dest->details->expand_id = 0; /* SDE: this source ends now */
+    tree_view = GTK_TREE_VIEW (dest->details->tree_view);
+""")
+    edit_once(dest, """                                           expand_timeout,
+                                           dest->details->tree_view);""", """                                           expand_timeout,
+                                           dest);""")
     edit_once(private / "liria-icon-private.h", "    guint drag_button;\n",
               "    guint drag_button;\n    GdkEvent *sde_menu_event; /* SDE: right click waiting for a drag */\n")
     container = private / "liria-icon-container.c"
