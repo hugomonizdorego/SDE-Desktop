@@ -325,6 +325,20 @@ static void test_gtk_preferences() {
   CHECK(read_file(std::string(root) + "/gtk-3.0/gtk.css", text));
   CHECK(text.find(".mine { color: red; }") != std::string::npos);
   CHECK(text.find("SDE Aero: managed") == std::string::npos);
+  // SDE's own block only with an installed SDE theme (not with Adwaita).
+  bool sde_block = name != "Adwaita-dark";
+  CHECK(sde_block == (text.find("/* SDE theme: managed by the Control Center - begin */") != std::string::npos));
+  // A block from before 0.2 (named after SDE Settings) is replaced too.
+  CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/gtk.css",
+                          "/* SDE theme: managed by SDE Settings - begin */\n@define-color "
+                          "sde_accent #000000;\n/* SDE theme: managed by SDE Settings - end */\n"
+                          ".mine { color: red; }\n"));
+  sync_gtk_settings(cfg);
+  CHECK(read_file(std::string(root) + "/gtk-3.0/gtk.css", text));
+  CHECK(text.find(".mine { color: red; }") != std::string::npos);
+  CHECK(text.find("managed by SDE Settings") == std::string::npos);
+  CHECK(text.find("sde_accent #000000") == std::string::npos);
+  CHECK(sde_block == (text.find("/* SDE theme: managed by the Control Center - end */") != std::string::npos));
   CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
   CHECK(text.find("gtk-theme-name=" + name) != std::string::npos);
   CHECK(text.find("gtk-decoration-layout=:minimize,maximize,close") != std::string::npos);
