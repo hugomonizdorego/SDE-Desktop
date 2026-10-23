@@ -1155,6 +1155,11 @@ try:
     size_report('Action Center compact',geom(ac))
     shot('03-action-center-compact')
     run('xdotool','mousemove','10','10','click','1');gone('^Action Center$')
+    # No window manager runs yet: when this click gives the desktop the focus,
+    # FLTK (without EWMH) maps it raised over the panel. That happens once the
+    # desktop has had the pointer focus, as after the account checks above.
+    # SDE WM keeps the desktop below the panel; here the panel goes back on top.
+    run('xdotool','windowraise',panel);time.sleep(.2)
     # The clock opens its alarms popup; its calendar link opens the Action
     # Center with the calendar in view, even in compact mode.
     al=click_panel('clock','^Alarms$');time.sleep(.5);only_open('Alarms');flyout_bounds(al,'clock')
