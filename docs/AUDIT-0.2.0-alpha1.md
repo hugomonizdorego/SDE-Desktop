@@ -7,11 +7,11 @@ problems were fixed with small commits and tests; the rest is listed under
 [Open items](#open-items) with a recommendation.
 
 - **Base:** `claude/kind-goodall-dktuun` at 0.1.0~alpha52 (`636e15c`), with
-  the About/legal work (`263af2b`) and the branding work merged during the
-  audit and reviewed with it.
+  the About/legal work (`263af2b`) and the branding, Liria and suite work
+  (`8882c8f`, up to `df408bf`) merged during the audit and reviewed with it.
 - **Environment:** Ubuntu 24.04.5 container (the CI images are Debian 12/13
   and Ubuntu 24.04), GCC 13.3, Clang 18.1.3, cppcheck 2.13, clang-tidy 18,
-  ShellCheck 0.9.0, pyflakes 3.x, bandit 1.9.4, poppler-glib 24.02,
+  ShellCheck 0.9.0, pyflakes 4.0, bandit 1.9.4, poppler-glib 24.02,
   libdbus 1.14.10, GLib 2.80, polkit 124.
 - **Severity:** *High*: code execution or privilege escalation;
   *Medium*: memory-safety bugs reachable from untrusted input (files,
@@ -25,8 +25,8 @@ problems were fixed with small commits and tests; the rest is listed under
 | --- | --- | --- | --- |
 | High | 1 | 1 | 0 |
 | Medium | 8 | 8 | 0 |
-| Low | 16 | 10 | 6 |
-| Info | 16 | 5 | 11 |
+| Low | 19 | 12 | 7 |
+| Info | 19 | 7 | 12 |
 
 The one High finding needed code already running in an administrator's
 session (and an approval that polkit kept, or the administrator approving
@@ -51,7 +51,7 @@ keeps them). "Verified" says how the fix was checked.
 | A1-06 | Medium | Xanara (poppler-glib) | `poppler_annot_stamp_set_custom_image()` (poppler 24.02; the loop is the same in other versions) reads each pixel's alpha after stepping to the next pixel: 3 bytes past the image. Large images are `mmap()`ed and can end at a page boundary, so adding a stamp, drawing or signature could crash. | Fixed `f456991` (work-around): poppler gets an ARGB32 copy with 64 spare bytes. To report upstream. | AddressSanitizer run of `sde-xanara-tests` (heap-buffer-overflow before, clean after). |
 | A1-07 | Medium | Xanara links | URI links of any scheme (`file:`, `smb:`, custom handlers) and `Launch`/`GoToR` actions (any file next to the document) were passed to `xdg-open` on one click. | Fixed `554e59f`: web and mail links open directly; others show their target and open only after **Open**, as other PDF viewers do; PDFs still open in Xanara. | Build, `sde-xanara` tests, code review. |
 | A1-08 | Medium | `runtime_dir()` fallback, `write_file_atomic()` | Without `$XDG_RUNTIME_DIR` (no `pam_systemd`), `/tmp/sde-$UID` was used even when another user had created it (or a symlink) first. The Driver Manager writes the new APT sources there for root to install; Niny's socket and the session pid file live there too. `write_file_atomic()` opened its temporary file with `fopen("wb")`, following a planted symlink. | Fixed `1ae4803`: only a real directory owned by the user (mode tightened to 0700), else `~/.cache/sde-runtime`; temporary files `O_CREAT\|O_EXCL\|O_NOFOLLOW`. | `sde-tests` `test_runtime_dir_fallback` (symlink, loose mode, other owner, link at the temporary name). |
-| A1-09 | Medium | SDE WM (Openbox 3.6.1) | Upstream fixes missing: `client_calc_layer()` walked `stacking_list` while restacking (use-after-free with GLib ≥ 2.76, Debian #1033385); `screen_pointer_pos()` reused its loop variable (endless loop with more than two X screens, Debian #983882); `DestroyImlibLoader()` freed an image it did not load (Debian #1007147). | Fixed `608e283` (`suite/patches/sde-wm/0002-upstream-crash-fixes.patch`). | `tools/prepare-components.py` applies 0001–0003 to `release-3.6.1`; built with `tools/build-session-components.py` (Debian build flags); `tools/ui-smoke.py` and the window-preview checks of `tools/panel-smoke.py` ran with it. |
+| A1-09 | Medium | SDE WM (Openbox 3.6.1) | Upstream fixes missing: `client_calc_layer()` walked `stacking_list` while restacking (use-after-free with GLib ≥ 2.76, Debian #1033385); `screen_pointer_pos()` reused its loop variable (endless loop with more than two X screens, Debian #983882); `DestroyImlibLoader()` freed an image it did not load (Debian #1007147). | Fixed `608e283` (`suite/patches/sde-wm/0002-upstream-crash-fixes.patch`). | `tools/prepare-components.py` applies 0001–0003 to `release-3.6.1`; built with `tools/build-session-components.py` (Debian build flags); `tools/ui-smoke.py` ran with it. |
 | A1-10 | Low | Panel network fetches (`weather.cpp`, `timezone.cpp`, `art.cpp`) | HTTPS requests could be redirected to plain HTTP. The automatic hourly time-zone check fell back to `ip-api.com`, which only answers over plain HTTP, so anyone on the network path could choose the system time zone. Album-art URLs come from any media player on the bus. | Fixed `b4a0c60`: `--proto`/`--proto-redir =https` for HTTPS URLs, `--max-filesize`, `--` before the URL; the automatic zone check uses HTTPS services only (a **Sync** the user presses may still use the fallback and shows the result); album art: web protocols only. | curl 8.5 accepts the options and refuses plain `http:` and `file:` URLs with them; `sde-weather-tests`, `sde-timezone-tests`. |
 | A1-11 | Low | libdbus wrapper | Received `UNIX_FD` arguments were never closed (one descriptor leaked per message: descriptor exhaustion); each byte of an `ay` array became a ~120-byte value (a 10 MB `image-data` hint cost more than 1 GB). | Fixed `8918fe6`: descriptors closed, byte arrays kept as one block. | `test_dbus_hardening` (fd closing, byte arrays). |
 | A1-12 | Low | `sde-lock` daemon | logind's `Lock`/`Unlock`/`PrepareForSleep` handlers checked only the object path; the match rules already limited the sender, but any broader match rule on the connection later would have let a forged `Session.Unlock` end the lock. | Fixed `e4a4605`: the sender must be the current owner of `org.freedesktop.login1` (looked up again after a logind restart). | Build, lock fixture tests, code review. |
@@ -65,10 +65,12 @@ keeps them). "Verified" says how the fix was checked.
 | A1-20 | Info | CI (`.github/workflows`) | `actions/checkout`, `upload-artifact`, `download-artifact` v4 run on the deprecated Node 20; default token permissions; matrix values expanded with `${{ }}` inside `run:` scripts. | Fixed `5703ad2`: checkout v7, upload-artifact v7, download-artifact v8 (node24); `permissions: contents: read` (write only for publish/release); `persist-credentials: false` where nothing is pushed; values through `env`. | Tags and `action.yml` (`using: node24`) checked in the upstream repositories. |
 | A1-21 | Info | Build warnings | ~380 GCC `-Wcast-function-type` warnings per program from four SDE-FLTK header lines, and a few in SDE's code; Clang `-Wmismatched-tags` from `Fl_SDE_Style.H` and three unused entities (Taca, Niny). | Fixed `48b0bef`, `03ed484`. | GCC 13 and Clang 18 builds with `-Wall -Wextra`: no warnings in SDE's code. |
 | A1-22 | Info | System Monitor | Unfinished item: the graphs, chips, search field and scroll area kept the colors of the theme they started with. | Fixed `96f9844`: follows `_SDE_CONFIG_SERIAL` like the other programs. | Xvfb: light/blue → dark/green through `sde.conf` + `_SDE_CONFIG_SERIAL`, screenshots before/after. |
-| A1-23 | Info | UI tests (`tools/panel-smoke.py`) | Known flaky checks: "tray not docked" kept the first answer for the icon's parent (the root window, before the dock); after a screenshot grab the search/menu were typed into after a fixed pause. | Fixed `fdef382`, `11c317f`: ask for both parents every time; popups mark `<SDE_PANEL_QA_DIR>/<title>.input` once they hold both grabs and the focus, and the test types only then. A screenshot (`debug-failure.png`) is saved at any failed wait. | panel-smoke at both sizes. |
+| A1-23 | Info | UI tests (`tools/panel-smoke.py`, `tools/ui-smoke.py`) | Known flaky checks: "tray not docked" kept the first answer for the icon's parent (the root window, before the dock); after a screenshot grab the search/menu were typed into after a fixed pause; Escape was pressed before a popup had the keyboard. Commands that "got lost" were a product bug (A1-47). | Fixed `fdef382`, `11c317f`, `93c2cc4`: ask for both parents every time; popups mark `<SDE_PANEL_QA_DIR>/<title>.input` once they hold their grabs and the focus, and the tests type or press Escape only then (and wait until the popup is gone). A screenshot (`debug-failure.png`) is saved at any failed wait. | panel-smoke and ui-smoke at both sizes. |
 | A1-24 | Info | `tools/ui-smoke.py` | Program logs (GTK, X and D-Bus warnings) were only kept when a run failed. | Fixed `fb1300b`: always copied to `<output-dir>/logs`. | ui-smoke runs. |
 | A1-40 | Info | SDE Graphite theme assets | Unfinished item: the PNG assets Graphite ships in its accent color (the knob of scales with marks, the checked selection-mode check box) kept upstream's accent (#1A73E8 for blue, #FB8C00 for orange) next to SDE's calmer CSS-drawn accents. | Fixed `7a5c7bd`: `tools/build-themes.py` moves the palettes of those 20 indexed PNGs per accent to the SDE accent (edges keep their alpha; grays, shadows and disabled assets stay; no new build dependency). | `tests/test_theme_assets.py` (synthetic palettes, CRCs, all nine upstream accents); GTK 3.24 on Xvfb with SDE-Graphite-Light-Blue and -Dark-Orange: the marks sliders match the plain sliders. |
 | A1-42 | Info | Gallery | "Copy/Move to Folder" showed "Moving 0 photos…": `steps.size()` and `std::move(steps)` were arguments of the same call, and GCC builds the by-value parameter first (clang-tidy `bugprone-use-after-move`; the vector itself was used correctly). | Fixed `11c317f`. | Build; review. |
+| A1-46 | Low | `sde-panel` popups | The panel closes its popups when another window becomes active (after a 500 ms grace period). The Action Center and the flyouts do not grab the pointer, and when one takes the keyboard Openbox sets `_NET_ACTIVE_WINDOW` to None ("focus went to a black hole"); when that change arrived after the 500 ms (a busy system), the popup closed right after it opened. | Fixed `93c2cc4`: only a real window becoming active closes the popups. | Without a window manager, `_NET_ACTIVE_WINDOW` set to 0 0.8 s after opening the Action Center: closed 3 of 3 times before, open 3 of 3 after; now a panel-smoke check. |
+| A1-47 | Low | `sde-panel --menu`, `--quick-settings`, `--calendar`, `--section`, `--show-desktop` | These commands (Super, Super+A, Super+C, search results) set a root property or send a client message and exited right after `XFlush()`. Under load the X server sometimes closed the client before it had read the request, so the command never reached the panel: Super did not open the menu, ui-smoke failed in 3 of 3 runs with "window not found" after a command, and panel-smoke had retried commands since alpha14 ("~2 in 80"). | Fixed `106a6ba`: `XSync()` (a round trip) before exiting. | Xvfb with six busy loops: 60 runs gave 55 `_SDE_COMMAND` PropertyNotify events before (`xev -root`), 60 of 60 and 100 of 100 after; opening the Action Center right after a configuration reload failed 4–6 times in 24 before, 0 in 24 after. |
 
 ### Open items
 
@@ -89,9 +91,10 @@ keeps them). "Verified" says how the fix was checked.
 | A1-37 | Info | Packaging | A full `dpkg-buildpackage` (with the native suite) is not possible in this container; the core was built with the `debian/rules` flags instead (see [Builds](#builds-and-hardening)) and the source package was checked with lintian (A1-43). | Run lintian on the built packages in CI. |
 | A1-38 | Info | Static-analysis leftovers | cppcheck `noCopyConstructor` for `OtherTypesDialog` (never copied), two `containerOutOfBounds` false positives (`niny/markdown.cpp`, `panel/controls.cpp`); pyflakes: unused variables in test tools; bandit B324 (SHA-1 for Git object IDs in `bootstrap/fetch_source.py`, as Git's format requires; sizes and SHA-256 are checked too). | No action needed. |
 | A1-39 | Info | WM caption buttons at 150 % | Design item, not changed: `sde-session` scales the title font with the desktop scale (`sync_openbox()`), so caption buttons grow, but the glyph masks stay 1-bit 14 px bitmaps (`soft_caption_masks()`): at 150 % the close disc and glyphs look small and jagged in the larger buttons. | Generate the masks from the same geometry at 21 px (150 %) and 28 px (200 %) into Openbox-only theme variants (`<theme>-150/openbox-3`, `<theme>-200/openbox-3`, themerc linked to the 100 % one), and let `sync_openbox()` pick the variant from `Theme::scale` (≥ 1.25 → 150, ≥ 1.75 → 200). Theme pickers must skip directories without `gtk-3.0`. Antialiased glyphs would need image buttons in SDE WM. |
+| A1-41 | Info | About/legal and branding merges | Reviewed `src/common/legal.*`, `about.*`, `data/legal/components.json`, `tools/legal-data.py`, the branding tools and install rules: local, read-only data; JSON parsed with size limits; no new privileged or network code. | — |
 | A1-43 | Info | Debian source package | `lintian --pedantic` on the source package (`dpkg-source -b` of a clean export): no errors; warnings: `debian/copyright` names `vendor/*` paths that only exist after `tools/prepare-*.py` (`superfluous-file-pattern`), the AppStream files say `CC0-1.0` while `debian/copyright` gives `data/metainfo/*` GPL-3.0-or-later (`inconsistent-appstream-metadata-license`), the CC-BY-SA-4.0 text is abbreviated, and `xterm \| x-terminal-emulator` and `xdg-user-dirs` are in both Depends and Recommends of `sde`. | For the packaging/legal owners: a `Files: data/metainfo/*` stanza with `CC0-1.0`, the full CC-BY-SA-4.0 text (or a pointer to `/usr/share/common-licenses` when Debian ships it), and dropping the duplicates from Recommends. |
 | A1-44 | Info | Liria "Open as Administrator" | Runs `x-terminal-emulator -e sudo liria --no-desktop PATH` (argument vector; Debian requires xterm-style `-e`). A whole GTK program as root on the user's X display can be driven by every other X client of the session (X11 does not isolate clients). | Prefer GVfs `admin://` (polkit per operation, the file manager stays unprivileged) when `gvfs-backends` is installed. |
-| A1-41 | Info | About/legal and branding merges | Reviewed `src/common/legal.*`, `about.*`, `data/legal/components.json`, `tools/legal-data.py`, the branding tools and install rules: local, read-only data; JSON parsed with size limits; no new privileged or network code. | — |
+| A1-45 | Low | CET marking of the C++ programs | 22 of the 23 C++ programs are not marked for CET (IBT/shadow stack) although they are compiled with `-fcf-protection`: they link SDE's Rust configuration library, whose objects carry no CET notes (stable Rust cannot build them with `-Z cf-protection`). User-space shadow stacks need Linux 6.6+, a CET-enabled glibc and marked programs; an unmarked program simply runs without them, so nothing breaks, but SECURITY.md must not claim CET. | Keep the Rust library out of programs that do not need it, or link it into one helper; revisit when Rust's `cf-protection` is stable. SECURITY.md says so. |
 
 ## Security review notes
 
@@ -129,10 +132,28 @@ Reviewed and found sound (no change needed):
 | --- | --- |
 | GCC 13, Release, `-Wall -Wextra` (`CMakeLists.txt`) | no warnings in SDE's code (after A1-21) |
 | Clang 18, Release, `-Wall -Wextra` | no warnings in SDE's code (after A1-21) |
-| `dpkg-buildflags` with `hardening=+all` (as `debian/rules`), core programs | see below |
+| `dpkg-buildflags` with `hardening=+all` (as `debian/rules`), core programs | builds; `hardening-check` below |
 | SDE WM with `dpkg-buildflags` (`tools/build-session-components.py`) | `hardening-check`: all "yes" (after A1-16) |
 
-HARDENING_RESULTS
+The core (`-DSDE_BUILD_NATIVE_SUITE=OFF -DSDE_BUILD_COMPONENTS=OFF`) was
+configured with the environment debhelper gives CMake: `dpkg-buildflags`
+with `DEB_BUILD_MAINT_OPTIONS="hardening=+all optimize=-lto"` (no LTO, as on
+Debian; Ubuntu enables it by default), `DEB_CXXFLAGS_MAINT_APPEND=-O2`, and
+`CPPFLAGS` appended to `CFLAGS`/`CXXFLAGS`. Installed with `DESTDIR`,
+`hardening-check` over the 25 programs:
+
+| Protection | Result |
+| --- | --- |
+| PIE, full RELRO, immediate binding | 25 of 25 |
+| Stack protector, fortified functions | 23 of 23 C++ programs; "no" for the two Rust programs (`sde-autostart`, `sde-suite`), as expected for Rust |
+| CET (IBT/shadow stack) | 1 of 25 (`sde-xsettingsd`): see A1-45 |
+| Stack clash protection | "unknown" everywhere (`hardening-check` cannot tell on x86-64) |
+
+A1-45 in detail: every object of SDE (`libsde-common.a`: 26 of 26) and of
+SDE-FLTK (`libfltk.a`: 157 of 157) carries the `IBT, SHSTK` property, but
+the C++ programs also link `libsde_config_ffi.a`, whose 309 objects (the
+Rust standard library among them) carry none, so the linker clears the
+marking for the whole program. `sde-xsettingsd` does not link it.
 
 ## Sanitizers
 
@@ -179,7 +200,7 @@ the run are A1-06, A1-18 and A1-19.
 | Tool | Scope | Result |
 | --- | --- | --- |
 | cppcheck 2.13 (`--enable=warning,performance,portability --std=c++17`) | `src/`, `tests/` | 3 `containerOutOfBounds` (1 real: A1-17), 1 copy-constructor note, performance notes (`passedByValue`, `substr`) |
-| clang-tidy 18 (`bugprone-*`, `cert-*`, `clang-analyzer-*`, noisy checks off) | `src/`, `tests/` | CLANG_TIDY_RESULTS |
+| clang-tidy 18 (`bugprone-*`, `cert-*`, `clang-analyzer-*`, noisy checks off) | 250 files of `src/`, `tests/` | 271 diagnostics, 1 real bug (A1-42). The rest: `atoi()` in configuration and theme parsing where 0 is the wanted fallback (`cert-err34-c`, 95); FLTK widgets owned by their parent group reported as leaks (`NewDeleteLeaks`, 82); integer division and rounding in drawing code (37); `system()` in tests (14); a dozen path-sensitive reports checked by hand and found infeasible (size formatters, Xanara note placement, popup QA path, ...) and style notes |
 | ShellCheck 0.9.0 | `data/`, `tools/`, maintainer scripts | style notes only (`A && B \|\| C`, unused variables in a GRUB theme file) |
 | pyflakes | Python helpers and tools | unused variables/imports in test tools |
 | bandit 1.9.4 (medium and high) | `data/update`, `bootstrap`, `tools` | B324 (Git SHA-1, expected), B310 (fixed HTTPS URL), B108 (X socket path): no issue |

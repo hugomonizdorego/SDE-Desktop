@@ -94,7 +94,13 @@ processes only and never reach a privileged helper.
   (SDE WM, the compositor, Liria) are configured with the same environment
   (`CFLAGS`, `CPPFLAGS`, `LDFLAGS` from debhelper). SDE WM is a release (not
   debug) build since 0.2.0 Alpha 1, so `_FORTIFY_SOURCE` takes effect there
-  too. The Rust parts have no third-party crates.
+  too. `hardening-check` of a core build with these flags: PIE, full RELRO
+  and immediate binding for every program, stack protector and fortified
+  functions for every C++ program. CET marking (IBT/shadow stack) is only
+  complete in `sde-xsettingsd`: the other C++ programs link SDE's Rust
+  configuration library, whose objects (the Rust standard library among
+  them) carry no CET notes, so the linker leaves the whole program unmarked
+  (see A1-45 in the audit). The Rust parts have no third-party crates.
 - **Warnings:** SDE's own code builds without warnings with `-Wall -Wextra`.
 - **Sanitizers:** the unit and X11 tests pass with
   `-fsanitize=address,undefined` (see `docs/AUDIT-0.2.0-alpha1.md` for the
