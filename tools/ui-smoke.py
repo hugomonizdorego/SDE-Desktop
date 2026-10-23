@@ -274,10 +274,10 @@ def users_page_checks():
     wait_page("users")
     # The real name field (inactive here: no AccountsService to change it).
     names = [l.split("\t")[0] for l in (home / "qa" / "Control-Center.txt").read_text().splitlines()]
-    for name in ("Real name", "Sample forest", "Sample sunrise"):
+    for name in ("Real name", "Sample Forest", "Sample Sunrise"):
         assert name in names, (name, names)
     shot("16-control-center-users")
-    click_control(win, "Control Center", "Sample sunrise")
+    click_control(win, "Control Center", "Sample Sunrise")
     face = home / ".face"
     for _ in range(80):
         if face.exists():

@@ -74,14 +74,29 @@ void set_status(const std::string &text, bool error) {
   g_status_error = error;
 }
 
+// "sde-retro.png" -> "SDE Retro", "sunrise.png" -> "Sunrise" (the names of
+// docs/BRANDING.md): words capitalized, SDE in capitals.
 std::string pretty_name(const std::string &path) {
   std::string n = basename_of(path);
   size_t dot = n.rfind('.');
   if (dot != std::string::npos) n.erase(dot);
-  for (char &c : n)
-    if (c == '-' || c == '_') c = ' ';
-  if (!n.empty()) n[0] = char(toupper((unsigned char)n[0]));
-  return n;
+  std::string out, word;
+  auto flush = [&]() {
+    if (word.empty()) return;
+    std::string lower;
+    for (char c : word) lower += char(tolower((unsigned char)c));
+    if (lower == "sde") word = "SDE";
+    else word[0] = char(toupper((unsigned char)word[0]));
+    if (!out.empty()) out += ' ';
+    out += word;
+    word.clear();
+  };
+  for (char c : n) {
+    if (c == '-' || c == '_' || c == ' ') flush();
+    else word += c;
+  }
+  flush();
+  return out;
 }
 
 void finished(const avatar::Result &r, const std::string &done_text) {
