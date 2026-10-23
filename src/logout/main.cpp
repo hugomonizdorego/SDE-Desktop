@@ -50,7 +50,7 @@ AppInfo app_info() {
   info.name = _("Leave SDE");
   info.program = "sde-logout";
   info.version = SDE_VERSION;
-  info.icon = "system-log-out";
+  info.icon = "sde-logout";
   info.description = _("Locks the screen, suspends, logs out, restarts or shuts down the computer.");
   info.credits = {toolkit_credit()};
   return info;
@@ -155,10 +155,7 @@ class LogoutWindow : public sde::BufferedWindow {
 int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "--version")) {
-      printf("sde-logout %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
-      return 0;
-    }
+    if (!strcmp(argv[i], "--version")) return print_version(app_info());
     // sde-logout --action NAME runs one action without the dialog (the
     // Action Center's power buttons).
     if (!strcmp(argv[i], "--action") && i + 1 < argc) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Line icons for Gallery. They are drawn on a 24-unit grid with round caps,
 // so they stay crisp at every UI scale and follow the theme's colors.

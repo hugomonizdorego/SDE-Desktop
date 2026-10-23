@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Niny command palette: ">" runs commands, ":" goes to a line, and plain
 // text quickly opens documents, files of the current folder and recent files.

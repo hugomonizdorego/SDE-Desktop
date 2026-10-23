@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Photo window: opening and navigating photos, the header bar and its
 // menu, editing, saving and the actions on the file.
@@ -1231,6 +1231,8 @@ void PhotoWindow::show_about() {
   gallery::AboutInfo info;
   info.name = _("Photo");
   info.program = "sde-view";
+  info.icon = "sde-photo";
+  info.icon_fallbacks = {"sdeview"};
   info.version = SDE_VERSION;
   info.description = _("View and edit one image at a time: read its camera details and location, rotate, "
                        "crop, resize, adjust the colours, apply filters, and draw on it with pens, highlighters, "

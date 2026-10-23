@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 DebION Dev-Team
+# Copyright (C) 2026 Selviana DE Project and contributors
 """Exercise the native Calculator executable without a display: --eval,
 programmer --base, --convert, --version and invalid input."""
 import json
@@ -42,6 +42,6 @@ assert run('--convert', '1', 'km', 'kg').returncode == 2
 
 version = json.loads((root / 'suite/versions.json').read_text())['calculator']
 output = run('--version').stdout
-assert version in output and 'DebION Dev-Team' in output, output
+assert version in output and 'Selviana DE Project' in output and 'NO WARRANTY' in output, output
 assert run('--bogus').returncode == 2
 print('Calculator: --eval, programmer, converter, errors and version passed')

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // niny: the Niny Text Editor for the Selviana Desktop Environment.
 #include <FL/Fl.H>
@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
@@ -44,10 +45,7 @@ int main(int argc, char **argv) {
   bool new_window = false, only_files = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (!only_files && (a == "--version" || a == "-v")) {
-      printf("niny %s (SDE %s)\n", NINY_VERSION, SDE_VERSION);
-      return 0;
-    }
+    if (!only_files && (a == "--version" || a == "-v")) return sde::print_version("niny", NINY_VERSION);
     if (!only_files && (a == "--help" || a == "-h")) {
       usage();
       return 0;

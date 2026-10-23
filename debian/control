@@ -160,8 +160,10 @@ Suggests: eduka-icons, unrar, hunspell, tesseract-ocr, ghostscript,
 Provides: x-session-manager, notification-daemon
 Description: Selviana Desktop Environment - small, fast and modern desktop
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
- for DebION GNU/Linux and Debian testing, with a Rust configuration core and autostart helper,
- a C++17 interface using FLTK, cairo and Xlib, and a source-built SDE WM (Openbox) and SDE compositor (picom).
+ developed by the Selviana DE Project, with a Rust configuration core and
+ autostart helper, a C++17 interface using FLTK, cairo and Xlib, and a
+ source-built SDE WM (Openbox) and SDE compositor (picom). It is built and
+ tested on Debian testing.
  .
  This 0.1 Alpha release contains:
   * sde-session  - session manager with crash recovery, rescue dialog,
@@ -185,11 +187,11 @@ Description: Selviana Desktop Environment - small, fast and modern desktop
  Select "SDE-Desktop" in your display manager to start it. This is an alpha
  release meant for testing; expect missing features.
  .
- Its own ecosystem: SDE-FLTK (the DebION Dev-Team fork of FLTK, linked
- statically), sde-xsettingsd and sde-polkit-agent (written from scratch),
- and source builds of SDE WM (Openbox) and SDE compositor (picom).
+ Its own ecosystem: SDE-FLTK (the SDE fork of FLTK, linked statically),
+ sde-xsettingsd and sde-polkit-agent (written from scratch), and source
+ builds of SDE WM (Openbox) and SDE compositor (picom).
  .
- Applications written from scratch by the DebION Dev-Team: Niny (text
+ Applications written from scratch by the Selviana DE Project: Niny (text
  editor), Xanara (PDF viewer and editor), Taca (archive manager), Photo,
  Gallery, Calculator, SDE System Monitor, SDE Power and SDE Screen Lock. Source-built
  SDE fork: Liria (Caja).
@@ -219,9 +221,10 @@ Depends: ${misc:Depends},
          adwaita-icon-theme,
          dconf-gsettings-backend,
          upower,
-         udisks2,
-         debion-desktop-base (>= ${source:Version})
-Recommends: papirus-icon-theme,
+         udisks2
+Recommends: debion-desktop-base (>= ${source:Version}),
+            desktop-base,
+            papirus-icon-theme,
             qt5-gtk-platformtheme,
             qt6-gtk-platformtheme,
             lightdm-gtk-greeter,
@@ -230,13 +233,18 @@ Recommends: papirus-icon-theme,
             glib-networking,
             ca-certificates,
             systemd-timesyncd | time-daemon
-Description: complete SDE desktop and application suite for DebION GNU/Linux
- One installation entry point for the SDE session, display server,
- login manager, network and sound services, removable media support
- and integrated SDE applications on Debian testing and DebION.
+Description: Selviana Desktop Environment - full desktop (metapackage)
+ One installation entry point for the complete Selviana Desktop Environment:
+ the SDE session and applications, display server, login manager, network
+ and sound services and removable media support.
  .
- It makes SDE-Desktop the default LightDM session and styles the
- LightDM GTK greeter with SDE Aero and the DebION login background.
+ It makes SDE-Desktop the default LightDM session and styles the LightDM
+ GTK greeter with SDE Graphite and the login background of the active
+ desktop-base theme of the installed distribution.
+ .
+ SDE does not require a particular distribution. On DebION GNU/Linux the
+ recommended debion-desktop-base package adds the distribution's artwork and
+ network defaults; it is a separate project's package.
  .
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and
@@ -251,7 +259,12 @@ Recommends: network-manager,
             curl,
             ca-certificates,
             systemd-timesyncd | time-daemon
-Description: DebION GNU/Linux artwork and desktop defaults for desktop-base
+Description: DebION GNU/Linux integration for SDE
+ DebION GNU/Linux is a Debian-based distribution that ships the Selviana
+ Desktop Environment; it is a separate project. This package holds its
+ integration: its artwork and desktop defaults for desktop-base and its
+ network defaults.
+ .
  Makes the DebION theme the active desktop-base theme: wallpaper, lock
  screen, login screen and GRUB background follow it in every desktop
  (/usr/share/desktop-base/active-theme). It also provides the DebION vendor

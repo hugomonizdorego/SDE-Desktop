@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // How Gallery and Photo talk to each other on the X display (see album.h):
 // a running Gallery owns the selection _SDE_GALLERY_S<screen>, and Photo

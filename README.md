@@ -1,6 +1,9 @@
 # Selviana Desktop Environment (SDE)
 
-**A lightweight desktop and integrated application suite for DebION GNU/Linux, based on Debian testing.**
+**A lightweight desktop environment and integrated application suite, developed by the Selviana DE Project.**
+
+SDE is built and tested on Debian testing. DebION GNU/Linux, a separate Debian-based
+distribution, ships SDE; see [LEGAL.md](docs/LEGAL.md) for how the two projects relate.
 
 Development version **0.1 Alpha 52** (`0.1.0~alpha52`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
@@ -33,7 +36,7 @@ ideas (Welcome, Driver Manager, System Reports).
 themed menus everywhere, redesigned Taca, Xanara, Niny and Start Menu, search in the
 panel, and no more MATE: Liria re-forked, native SDE Power and Screen Lock.
 
-**Alpha 15:** [native apps by the DebION Dev-Team](docs/ALPHA15.md) —
+**Alpha 15:** [native apps written from scratch](docs/ALPHA15.md) —
 Niny, Xanara (PDF editing), Taca (rar/7z/zip…), Photo and SDE System Monitor written
 from scratch — plus a slimmer Start Menu, alarms and agenda in the panel, a wallpaper
 gallery, reliable USB copies in Liria and a smoother desktop.
@@ -41,7 +44,7 @@ gallery, reliable USB copies in Liria and a smoother desktop.
 **Alpha 14:** [Gallery is back](docs/ALPHA14.md) as a new app, tray icons open
 their own flyouts, a redesigned Action Center (with calendar, compact/expanded), a new
 Start Menu, a complete SDE Update, a modern Liria, SDE-FLTK, and sde-xsettingsd and
-sde-polkit-agent written from scratch by the DebION Dev-Team.
+sde-polkit-agent written from scratch.
 
 **Alpha 13:** [fixes the panel crash after login](docs/ALPHA13.md), new tray
 icons that follow the hardware (USB drives, Bluetooth, battery…), an Action Center
@@ -93,7 +96,7 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
 output device, systemd-logind for screen brightness and the kernel for the battery.
 
-## DebION application suite
+## SDE application suite
 
 The full-edge square panel is now the default. SDE includes **Niny**, **Liria**,
 **Xanara**, **Taca**, **Photo** (formerly SDE View), **SDE System Monitor**, **SDE Power Manager**
@@ -110,9 +113,9 @@ model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
 and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 
 `sudo apt install sde-desktop` is the single entry point when the SDE packages
-are available in the DebION repository. The metapackage installs the session,
-suite, Xorg, login, network, sound and media services. No DebION repository is
-created by this project.
+are available in a distribution's repository (for example DebION GNU/Linux's).
+The metapackage installs the session, suite, Xorg, login, network, sound and media
+services. This project does not run a package repository.
 
 ![Native Niny editor in SDE](docs/screenshots/alpha7/05-native-niny.png)
 
@@ -152,7 +155,7 @@ Wi-Fi).
 
 ## Install
 
-Primary target: **DebION GNU/Linux / Debian testing**. The complete native suite is built and tested on Debian testing (amd64).
+Primary target: **Debian testing** and distributions based on it, such as DebION GNU/Linux. The complete native suite is built and tested on Debian testing (amd64).
 
 Download the package for your distribution from the
 [GitHub releases](https://github.com/hugomonizdorego/SDE-Desktop/releases), check it
@@ -167,7 +170,7 @@ Log out, choose **SDE-Desktop** at the login screen and log in. From a text cons
 use `startx /usr/bin/startsde`.
 
 `release/` holds the older alpha2 Ubuntu 24.04 build. The newest `.deb` packages
-for Debian testing / DebION are published automatically as the
+for Debian testing are published automatically as the
 [`alpha-latest`](https://github.com/hugomonizdorego/SDE-Desktop/releases/tag/alpha-latest)
 pre-release after each successful build of `main`; every branch build also keeps
 them in the `sde-debian-testing` GitHub Actions artifact.
@@ -228,7 +231,8 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 
 ## Documentation
 
-- [DebION suite, installation and source workspace](docs/SUITE.md)
+- [SDE applications, installation and source workspace](docs/SUITE.md)
+- [Legal: copyright, licenses, trademarks, SDE and DebION](docs/LEGAL.md)
 - [Copyright and source credits](docs/THIRD-PARTY.md)
 - [Programming language choice](docs/LANGUAGE.md)
 - [Rust architecture, tests and migration plan](docs/RUST.md)
@@ -244,9 +248,18 @@ not build or ship EDE code.
 
 ## License
 
+Copyright © 2026 Selviana DE Project and contributors.
+
 SDE is free software under the GNU General Public License, version 3 or later.
-See [LICENSE](LICENSE). Bundled application forks retain their individual upstream
-licenses and historical copyright notices; see [source credits](docs/THIRD-PARTY.md).
+See [LICENSE](LICENSE). Bundled application forks and components retain their
+individual upstream licenses and historical copyright notices; see
+[LEGAL.md](docs/LEGAL.md) and [source credits](docs/THIRD-PARTY.md). Every About
+window shows the license, copyright and trademark notices of its program, and
+Control Center → About → Open-source licenses lists all of them.
+
+Selviana Desktop Environment, SDE and the SDE logo are trademarks of the Selviana DE
+Project. Linux® is the registered trademark of Linus Torvalds in the U.S. and other
+countries. Debian is a registered trademark owned by Software in the Public Interest, Inc.
 
 ## Alpha7 patch
 

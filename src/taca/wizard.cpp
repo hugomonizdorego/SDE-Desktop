@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // More of Taca's dialogs: find, repair, the wizard, convert, settings,
 // favorites, text preview, keyboard shortcuts and About.
@@ -11,6 +11,8 @@
 
 #include <algorithm>
 
+#include "about.h"
+#include "build_config.h"
 #include "i18n.h"
 #include "taca.h"
 #include "util.h"
@@ -428,43 +430,26 @@ void show_shortcuts(Fl_Window *parent) {
   d.run(parent);
 }
 
-void show_about(Fl_Window *parent) {
-  FitScale fit(468, 460);
-  Dialog d(S(460), S(468), "");
-  d.copy_label(_("About Taca"));
-  const Theme &t = d.theme();
-  std::string version = format(_("Version %s"), SDE_APP_VERSION);
+sde::AppInfo about_info() {
+  sde::AppInfo info;
+  info.name = "Taca";
+  info.program = "taca";
+  info.version = SDE_APP_VERSION;
+  info.icon = "taca";
+  info.description = _("The archive manager of the Selviana Desktop Environment. Browse, create, extract, "
+                       "test and repair archives.");
   std::string engines = std::string(archive_version_string());
   if (!seven_zip_program().empty()) engines += " · 7-Zip";
   if (!unrar_program().empty()) engines += " · unrar";
   if (!rar_program().empty()) engines += " · rar";
-  d.extra_paint = [&](Painter &p) {
-    if (t.glass) p.glass_sheen(0, 0, d.w(), S(150), 0, t.dark);
-    icon::badge(p, (d.w() - S(76)) / 2.0, S(24), S(76), t.accent);
+  info.credits = {format(_("Engines: %s"), engines.c_str()), sde::toolkit_credit()};
+  // Taca's own badge when the "taca" icon is not installed.
+  info.logo = [](Painter &p, double x, double y, double size) {
+    icon::badge(p, x, y, size, active_theme().accent);
   };
-  d.extra_text = [&]() {
-    int y = S(116);
-    text_font(t.font_size + S(8), true);
-    draw_text("Taca", 0, y, d.w(), S(34), t.text, 1);
-    y += S(34);
-    text_font(t.font_size - S(1));
-    draw_text(version + "  ·  taca", 0, y, d.w(), S(20), t.text_dim, 1);
-    y += S(32);
-    text_font(t.font_size);
-    draw_text(_("The archive manager of the Selviana Desktop Environment."), S(24), y, d.w() - S(48), S(22), t.text, 1);
-    y += S(22);
-    draw_text(_("Browse, create, extract, test and repair archives."), S(24), y, d.w() - S(48), S(22), t.text, 1);
-    y += S(36);
-    text_font(t.font_size, true);
-    draw_text(_("Developer: DebION Dev-Team"), 0, y, d.w(), S(22), t.text, 1);
-    y += S(26);
-    text_font(t.font_size - S(1));
-    draw_text(_("License: GNU GPL version 3 or later"), 0, y, d.w(), S(20), t.text_dim, 1);
-    y += S(22);
-    draw_text(format(_("Engines: %s"), engines.c_str()), S(24), y, d.w() - S(48), S(20), t.text_dim, 1);
-  };
-  d.buttons({_("Close")}, 0);
-  d.run(parent);
+  return info;
 }
+
+void show_about(Fl_Window *) { sde::show_about(about_info()); }
 
 }  // namespace taca

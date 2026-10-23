@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Photo metadata shared by Gallery and Photo: a small EXIF (TIFF) reader,
 // colour profile names, the embedded JPEG preview, and the EXIF orientation

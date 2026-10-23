@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // QA fixture (never installed): the SDE lock screen with a fake
 // authenticator that accepts only the password "sde-test", for the Xvfb

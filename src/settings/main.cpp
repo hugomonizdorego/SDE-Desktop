@@ -1767,22 +1767,6 @@ void build_notifications(Page *page) {
   page->finish();
 }
 
-std::string read_first(const std::string &path, const std::string &prefix) {
-  std::ifstream in(path);
-  std::string line;
-  while (std::getline(in, line))
-    if (starts_with(line, prefix)) return trim(line.substr(line.find(':') + 1));
-  return "";
-}
-
-std::string wm_name() {
-  Window root = RootWindow(fl_display, fl_screen);
-  Window check = x11::get_window(root, "_NET_SUPPORTING_WM_CHECK");
-  if (!check) return _("none");
-  std::string n = x11::get_utf8(check, "_NET_WM_NAME");
-  return n.empty() ? _("unknown") : n;
-}
-
 // Source names are short clickable links. Licenses open the installed fork's
 // complete copyright file, including all historical contributors.
 FlatButton *action_button(int x, int y, int w, int h, const std::string &label,
@@ -1798,7 +1782,7 @@ FlatButton *action_button(int x, int y, int w, int h, const std::string &label,
 }
 
 void build_suite(Page *page) {
-  page->heading(_("Applications"), _("Applications for DebION GNU/Linux"));
+  page->heading(_("Applications"), _("Applications of the Selviana Desktop Environment"));
   page->note(
       _("Development edition. Native SDE applications are included in one package. "
         "Original authors and licenses remain credited."));
@@ -2314,203 +2298,6 @@ void build_suite_system(Page *page) {
   page->finish();
 }
 
-// A "key: value" line of the About page; |detail| is a dim second line.
-void info_row(Page *page, const std::string &key, const std::string &value,
-              const std::string &detail = "") {
-  int ry = page->cursor(), x = page->left() + S(20), w = page->width() - S(40);
-  int kw = std::min(S(190), w / 3), vw = w - kw - S(10);
-  int vh = std::max(S(30), Label::measure(value, vw, Label::NORMAL) + S(6));
-  new Label(x, ry, kw, S(30), key, Label::DIM);
-  new Label(x + kw + S(10), ry, vw, vh, value, Label::NORMAL, true);
-  page->advance(vh);
-  if (!detail.empty()) {
-    int dh = Label::measure(detail, vw, Label::DIM) + S(4);
-    new Label(x + kw + S(10), page->cursor() - S(4), vw, dh, detail, Label::DIM, true);
-    page->advance(dh);
-  }
-}
-
-// OpenGL renderer from "glxinfo -B" (or "eglinfo -B"), asked once per run
-// in the background with a time limit. 0 unknown, 1 running, 2 known.
-int g_gl_state = 0;
-std::string g_gl_renderer;
-void start_gl_query() {
-  static bool started = false;
-  if (started) return;
-  started = true;
-  std::vector<std::string> argv;
-  if (!find_program("glxinfo").empty())
-    argv = {"glxinfo", "-B"};
-  else if (!find_program("eglinfo").empty())
-    argv = {"eglinfo", "-B"};
-  if (argv.empty()) return;
-  g_gl_state = 1;
-  bool ok = run_async(with_timeout(argv, 5), [](const std::string &out, int) {
-    g_gl_renderer = parse_gl_renderer(out);
-    g_gl_state = g_gl_renderer.empty() ? 0 : 2;
-    if (g_restart_page == "about") refresh_page();
-  });
-  if (!ok) g_gl_state = 0;
-}
-
-const char *const kDonateUrl = "https://paypal.me/hugocenturion0311";
-bool g_history_all = false;
-
-// "What's new in each build": the newest entries of build-history.json
-// (from CHANGELOG.md); the three newest are open, the others behind a button.
-void build_history_card(Page *page) {
-  static bool loaded = false;
-  static BuildHistory history;
-  if (!loaded) {
-    loaded = true;
-    std::string source = build_history_path(), text;
-    if (source.empty() || !read_file(source, text) || !parse_build_history(text, history)) history = BuildHistory();
-  }
-  page->begin_card(_("What's new in each build"));
-  if (history.entries.empty()) {
-    page->note(_("The development log (build-history.json) is not installed."));
-    page->end_card();
-    return;
-  }
-  int x = page->left() + S(20), w = page->width() - S(40);
-  size_t shown = g_history_all ? history.entries.size() : std::min<size_t>(3, history.entries.size());
-  for (size_t k = 0; k < shown; ++k) {
-    const BuildEntry &e = history.entries[k];
-    std::string head = e.title + (e.date.empty() ? "" : "  ·  " + e.date);
-    new Label(x, page->cursor(), w, S(26), head, Label::BOLD);
-    page->advance(S(26));
-    if (!e.summary.empty()) {
-      int sh = Label::measure(e.summary, w, Label::DIM) + S(2);
-      new Label(x, page->cursor(), w, sh, e.summary, Label::DIM, true);
-      page->advance(sh);
-    }
-    for (const auto &item : e.items) {
-      // A hanging bullet: wrapped lines start under the text.
-      int tx = x + S(28), tw = w - S(28);
-      int ih = Label::measure(item, tw, Label::NORMAL) + S(2);
-      new Label(x + S(12), page->cursor(), S(16), S(22), "•", Label::NORMAL);
-      new Label(tx, page->cursor(), tw, ih, item, Label::NORMAL, true);
-      page->advance(ih);
-    }
-    page->advance(S(10));
-  }
-  if (history.entries.size() > 3) {
-    std::string label = g_history_all ? std::string(_("Show fewer builds"))
-                                      : format(_("Show all %d builds"), int(history.entries.size()));
-    page->row(_("Development log"), S(200), S(34), [label](int bx, int by, int bw, int bh) {
-      auto *b = new FlatButton(bx, by, bw, bh, label);
-      b->callback([](Fl_Widget *, void *) {
-        g_history_all = !g_history_all;
-        Fl::add_timeout(0, [](void *) { refresh_page(); });
-      });
-      return b;
-    });
-  }
-  page->end_card();
-}
-
-void build_about(Page *page) {
-  page->begin_card();
-  int y = page->cursor();
-  new ImageBox(page->left() + S(24), y + S(16), S(88), {"sde-logo", "start-here"});
-  int tx = page->left() + S(132), tw = page->width() - S(152);
-  new Label(tx, y + S(14), tw, S(34), "Selviana Desktop Environment", Label::TITLE);
-  new Label(tx, y + S(50), tw, S(22), _("Small and fast, with a modern desktop experience."),
-            Label::SUBTITLE);
-  new Label(tx, y + S(76), tw, S(22), format(_("Version %s (%s)"), SDE_VERSION_LABEL, SDE_VERSION),
-            Label::DIM);
-  new Label(tx, y + S(98), tw, S(22), developer_line(), Label::DIM);
-  page->advance(S(126));
-  page->end_card();
-
-  // Build information, embedded at build time (tools/build-info.py).
-  page->begin_card(_("Build"));
-  info_row(page, _("Version"), format("%s (%s)", SDE_VERSION_LABEL, SDE_VERSION));
-  info_row(page, _("Build"), std::string(SDE_BUILD_NUMBER).empty() ? std::string(_("Unknown"))
-                                                                   : std::string(SDE_BUILD_NUMBER));
-  info_row(page, _("Build date"), SDE_BUILD_DATE);
-  info_row(page, _("Commit"), std::string(SDE_BUILD_COMMIT).empty()
-                                  ? std::string(_("Unknown (not built from a source repository)"))
-                                  : std::string(SDE_BUILD_COMMIT));
-  info_row(page, _("Developer"), kDeveloper);
-  page->end_card();
-
-  build_history_card(page);
-
-  // Support development: an honest note and a PayPal link.
-  page->begin_card(_("Support development"));
-  {
-    std::string text = _("SDE is in alpha. The developer keeps monitoring it and improving it with every "
-                         "build. Donations are optional and help keep that work going; SDE stays free "
-                         "software either way.");
-    int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::NORMAL) + S(8);
-    new Label(page->left() + S(20), page->cursor(), lw, lh, text, Label::NORMAL, true);
-    page->advance(lh + S(6));
-  }
-  page->row(_("PayPal"), S(200), S(36), [](int x, int yy, int w, int h) {
-    auto *b = new FlatButton(x, yy, w, h, _("Donate via PayPal"), true);
-    b->callback([](Fl_Widget *, void *) { spawn_detached({"xdg-open", kDonateUrl}); });
-    b->tooltip(kDonateUrl);
-    return b;
-  }, kDonateUrl);
-  page->end_card();
-
-  struct utsname u;
-  uname(&u);
-  std::string mem = read_first("/proc/meminfo", "MemTotal");
-  if (!mem.empty()) mem = format("%.1f GiB", atof(mem.c_str()) / 1024.0 / 1024.0);
-  std::string cpu = read_first("/proc/cpuinfo", "model name");
-  int sx, sy, sw, sh;
-  Fl::screen_xywh(sx, sy, sw, sh, 0);
-  std::vector<std::pair<std::string, std::string>> rows = {
-      {_("Operating system"), os_release("PRETTY_NAME")},
-      {_("Kernel"), std::string(u.sysname) + " " + u.release},
-      {_("Processor"), cpu.empty() ? u.machine : cpu},
-      {_("Memory"), mem},
-      {_("Display"), format("%d x %d", sw, sh)},
-      {_("Interface size"), format("%d %%", int(std::lround(g_theme.scale * 100)))},
-      {_("Window manager"), wm_name()},
-      {_("Toolkit"), "SDE-FLTK " SDE_FLTK_VERSION},
-      {_("Theme"), g_theme.gtk_theme},
-  };
-  page->begin_card(_("System"));
-  for (auto &r : rows) info_row(page, r.first, r.second);
-  page->end_card();
-
-  // Graphics: every display controller (hybrid laptops have two), its
-  // kernel driver and the OpenGL renderer actually used for drawing.
-  static bool gpus_read = false;
-  static std::vector<Gpu> gpus;
-  if (!gpus_read) {
-    gpus = detect_gpus();
-    gpus_read = true;
-  }
-  start_gl_query();
-  page->begin_card(_("Graphics"));
-  int in_use = g_gl_state == 2 ? renderer_gpu(gpus, g_gl_renderer) : -1;
-  if (gpus.empty()) info_row(page, _("Graphics card"), _("No PCI graphics card found"));
-  for (size_t i = 0; i < gpus.size(); ++i) {
-    const Gpu &g = gpus[i];
-    std::string key = gpus.size() > 1 ? format(_("Graphics card %d"), int(i) + 1)
-                                      : std::string(_("Graphics card"));
-    std::string detail = g.driver.empty() ? std::string(_("No driver in use"))
-                                          : format(_("Driver: %s"), g.driver.c_str());
-    if (g.boot_vga && gpus.size() > 1) detail += std::string("  ·  ") + _("Primary");
-    if (int(i) == in_use) detail += std::string("  ·  ") + _("Drawing the desktop");
-    detail += "  ·  " + format("PCI %s [%s:%s]", g.slot.c_str(), g.vendor_id.c_str(),
-                               g.device_id.c_str());
-    info_row(page, key, gpu_label(g), detail);
-  }
-  std::string gl = g_gl_state == 2   ? g_gl_renderer
-                   : g_gl_state == 1 ? std::string(_("Checking..."))
-                                     : std::string(_("Unknown (install mesa-utils for glxinfo)"));
-  info_row(page, _("OpenGL renderer"), gl);
-  page->end_card();
-  page->note(_("Free software under the GNU General Public License, version 3 or later."));
-  page->note(_("Copyright (C) 2026 Hugo Moniz do Rego and the SDE contributors."));
-  page->finish();
-}
-
 const std::vector<PageInfo> &pages() {
   static const std::vector<PageInfo> list = {
       {"home", N_("Overview"), {"preferences-system", "computer"}, build_home},
@@ -2803,8 +2590,7 @@ int main(int argc, char **argv) {
     } else if (a == "--apply") {
       apply = true;
     } else if (a == "--version") {
-      printf("sde-settings %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
-      return 0;
+      return print_version("sde-settings", SDE_VERSION);
     } else {
       printf("%s", usage().c_str());
       return a == "--help" || a == "-h" ? 0 : 2;

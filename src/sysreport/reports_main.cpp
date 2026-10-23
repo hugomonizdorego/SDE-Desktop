@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE System Reports (sde-system-reports): crash reports of SDE programs
 // from the session logs, with "Copy report" and "Report on GitHub", and a
@@ -20,10 +20,7 @@ int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--version") {
-      printf("sde-system-reports %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
-      return 0;
-    }
+    if (a == "--version") return print_version("sde-system-reports", SDE_VERSION);
     if (a == "--summary") {
       fputs(reports::system_summary().c_str(), stdout);
       return 0;
@@ -46,7 +43,8 @@ int main(int argc, char **argv) {
   o.about.name = _("System Reports");
   o.about.program = "sde-system-reports";
   o.about.version = SDE_VERSION;
-  o.about.icon = "apport";
+  o.about.icon = "sde-system-reports";
+  o.about.icon_fallbacks = {"apport"};
   o.about.description = _("Lists crash reports of SDE programs and helps send them to the developers.");
   o.about.credits = {_("Concept after Linux Mint's System Reports (no code used)"), toolkit_credit()};
   o.width = 820;

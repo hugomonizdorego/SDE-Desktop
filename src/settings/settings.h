@@ -31,6 +31,9 @@ void build_network_diagnostics(Page *page);
 void build_clock_page(Page *page);
 // Settings > Default Applications (default_apps_page.cpp).
 void build_default_apps_page(Page *page);
+// Control Center > About: the Selviana Desktop Environment and, separately,
+// the system it runs on (about_page.cpp).
+void build_about(Page *page);
 // Rebuilds the visible page when it is |page_id| (after background work).
 void refresh_if_shown(const char *page_id);
 

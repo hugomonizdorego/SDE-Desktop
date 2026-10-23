@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Image decoding and the asynchronous thumbnail service. Decoding runs on
 // worker threads; finished images are handed to the FLTK main thread with

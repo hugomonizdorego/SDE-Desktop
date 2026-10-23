@@ -1,20 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 DebION Dev-Team -->
+<!-- Copyright 2026 Selviana DE Project and contributors -->
 <component type="desktop-application">
   <id>org.debion.Welcome</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>SDE Welcome</name>
-  <summary>First steps with SDE on DebION</summary>
-  <developer id="org.debion">
-    <name>DebION Dev-Team</name>
+  <summary>First steps after installation</summary>
+  <developer id="io.github.hugomonizdorego">
+    <name>Selviana DE Project</name>
   </developer>
   <description>
     <p>SDE Welcome opens at the first login and guides through setting up the computer: light or dark colors and the accent, the panel layout and its Show desktop button, system updates, drivers and firmware, system snapshots with Timeshift, the firewall, multimedia codecs and a software center.</p>
     <p>It also links to the documentation, the bug tracker, System Reports and the ways to contribute or donate. A switch turns it off at startup.</p>
-    <p>The welcome screen concept follows Linux Mint's; SDE Welcome is written from scratch by the DebION Dev-Team for the Selviana Desktop Environment.</p>
+    <p>The welcome screen concept follows Linux Mint's; SDE Welcome is written from scratch by the Selviana DE Project for the Selviana Desktop Environment.</p>
   </description>
   <launchable type="desktop-id">sde-welcome.desktop</launchable>
+  <icon type="stock">sde-welcome</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
   <url type="donation">https://paypal.me/hugocenturion0311</url>

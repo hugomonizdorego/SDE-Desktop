@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The on-screen display of SDE Power: a small themed card near the bottom of
 // the screen with the pointer that shows the brightness after a key press.

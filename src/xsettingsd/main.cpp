@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // sde-xsettingsd: the XSETTINGS manager of SDE. GTK and other toolkits read
 // the theme, icon theme, fonts and DPI from it. It owns _XSETTINGS_S<n> on
@@ -131,7 +131,13 @@ int main(int argc, char **argv) {
     if ((a == "--config" || a == "-c") && i + 1 < argc) g_config = argv[++i];
     else if (a == "--replace") replace = true;
     else if (a == "--version") {
-      printf("sde-xsettingsd %s (DebION Dev-Team)\n", SDE_VERSION);
+      // The format of sde::version_line() (about.h), which needs sde-common.
+      printf("sde-xsettingsd (Selviana Desktop Environment) %s\n"
+             "Copyright \xC2\xA9 2026 Selviana DE Project and contributors\n"
+             "License GPL-3.0-or-later: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl-3.0.html>.\n"
+             "This is free software: you are free to change and redistribute it.\n"
+             "There is NO WARRANTY, to the extent permitted by law.\n",
+             SDE_VERSION);
       return 0;
     } else if (a == "--help" || a == "-h") {
       usage();

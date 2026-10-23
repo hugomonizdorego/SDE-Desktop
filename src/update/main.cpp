@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "app.h"
 #include "build_config.h"
 #include "config.h"
@@ -264,10 +265,7 @@ int main(int argc, char **argv) {
   init_i18n();
   std::vector<std::string> args(argv + 1, argv + argc);
   std::string first = args.empty() ? "" : args[0];
-  if (first == "--version" && args.size() == 1) {
-    printf("sde-update %s\n", SDE_UPDATE_VERSION);
-    return 0;
-  }
+  if (first == "--version" && args.size() == 1) return print_version("sde-update", SDE_UPDATE_VERSION);
   if (first == "--help") {
     usage(stdout);
     return 0;

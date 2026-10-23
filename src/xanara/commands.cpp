@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The commands of Xanara's modes. Annotations are made by poppler in
 // memory; everything that changes the structure of the PDF (pages, links,
