@@ -116,8 +116,11 @@ static cairo_surface_t *scale_to(cairo_surface_t *src, int bw, int bh, int size)
 
 cairo_surface_t *rgba_pixels(const uint8_t *data, size_t len, int w, int h, int stride,
                              bool has_alpha, int channels, int size) {
-  if (w <= 0 || h <= 0 || w > 4096 || h > 4096 || channels < 3 || stride < w * channels ||
-      len < size_t(stride) * size_t(h - 1) + size_t(w * channels))
+  // The values come from other programs (notification image-data): only
+  // the layouts the specification allows (8-bit RGB or RGBA), so that
+  // w * channels cannot overflow and every row read stays inside |data|.
+  if (!data || w <= 0 || h <= 0 || w > 4096 || h > 4096 || (channels != 3 && channels != 4) ||
+      stride < w * channels || len < size_t(stride) * size_t(h - 1) + size_t(w) * size_t(channels))
     return nullptr;
   cairo_surface_t *src = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
   unsigned char *px = cairo_image_surface_get_data(src);

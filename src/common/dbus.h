@@ -25,6 +25,10 @@ struct Value {
   std::string s;       // s o g
   std::vector<Value> items;  // a ( { v: children; for 'v' items[0] is the content
   std::string element_signature;  // for arrays
+  // The contents of an 'ay' array (icons, UDisks paths), kept as one block
+  // instead of one Value per byte: a client's 1 MB pixmap must not cost
+  // 100+ MB here. |items| stays empty for byte arrays read by read_args().
+  std::string data;
 
   bool valid() const { return type != DBUS_TYPE_INVALID; }
   bool is_string() const { return type == 's' || type == 'o' || type == 'g'; }
@@ -41,7 +45,26 @@ struct Value {
 
 std::vector<Value> read_args(DBusMessage *msg);
 
-// Appending arguments.
+// True when |s| can be sent as a D-Bus string (valid UTF-8, no NUL), an
+// object path, or a bus name. libdbus aborts the whole program when it is
+// handed anything else, so names and paths that come from other programs
+// (tray items, menus) are checked with these first.
+bool valid_utf8(const std::string &s);
+bool valid_path(const std::string &path);
+bool valid_bus_name(const std::string &name);
+// |s| with invalid UTF-8 sequences replaced by U+FFFD.
+std::string sanitize_utf8(const std::string &s);
+
+// True when process |pid| (a D-Bus peer, from GetConnectionUnixProcessID)
+// runs in an application sandbox: Flatpak (/.flatpak-info in its root; the
+// Flatpak D-Bus proxy has it too) or Snap (AppArmor label "snap.*"). Also
+// true when that cannot be checked. |proc| is for the tests.
+bool sandboxed_process(long pid, const std::string &proc = "/proc");
+
+// Appending arguments. A Writer for a null message (see method()) ignores
+// everything; strings that are not valid UTF-8 are sent sanitized and an
+// invalid object path is sent as "/", so that bad data from elsewhere can
+// never make libdbus abort the program.
 class Writer {
  public:
   explicit Writer(DBusMessage *msg);
@@ -65,11 +88,14 @@ class Writer {
   Writer &variant_strings(const std::vector<std::string> &v);
   Writer &variant_path(const std::string &v);
 
-  DBusMessageIter *iter() { return &it_; }
+  // The iterator to append to, or nullptr when this Writer is not usable
+  // (a nested Writer constructed from nullptr ignores everything as well).
+  DBusMessageIter *iter() { return ok_ ? &it_ : nullptr; }
 
  private:
   DBusMessageIter it_;
   DBusMessageIter *parent_ = nullptr;
+  bool ok_ = false;
 };
 
 class Bus {
@@ -129,7 +155,8 @@ class Bus {
   std::vector<Watch> signals_;
 };
 
-// Convenience constructors.
+// Convenience constructors. They return nullptr (which Writer and Bus
+// accept and ignore) when a name or path is not valid D-Bus syntax.
 DBusMessage *method(const std::string &dest, const std::string &path, const std::string &iface,
                     const std::string &member);
 DBusMessage *signal(const std::string &path, const std::string &iface, const std::string &member);

@@ -44,6 +44,7 @@ void send_call(const char *member, const std::function<void(dbus::Writer &)> &ar
   dbus::Bus *bus = Panel::safe_mode ? nullptr : dbus::Bus::session();
   if (!bus) return;
   DBusMessage *m = dbus::method(kService, kPath, kIface, member);
+  if (!m) return;
   if (args) {
     dbus::Writer w(m);
     args(w);

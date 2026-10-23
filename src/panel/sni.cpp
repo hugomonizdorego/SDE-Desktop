@@ -226,7 +226,12 @@ void SniHost::add_item(const std::string &service, const std::string &sender) {
     item->service = service.substr(0, slash);
     if (slash != std::string::npos) item->path = service.substr(slash);
   }
-  if (item->service.empty()) return;
+  // Any program on the session bus can register an item: a name or path
+  // that is not valid D-Bus syntax would make libdbus abort the panel when
+  // it calls the item, so such registrations are ignored.
+  if (item->service.empty() || !dbus::valid_bus_name(item->service) || !dbus::valid_path(item->path))
+    return;
+  if (items_.size() >= 256) return;  // a runaway client cannot grow the tray without bound
   if (item->service[0] == ':') item->owner = item->service;
   else if (!sender.empty()) item->owner = sender;
   // An application can register the same item twice: once by object path
@@ -341,6 +346,7 @@ void SniHost::apply_properties(Item &item, const dbus::Value &props) {
   item.attention_icon_name = str("AttentionIconName");
   item.icon_theme_path = str("IconThemePath");
   item.menu_path = str("Menu");
+  if (!dbus::valid_path(item.menu_path)) item.menu_path.clear();  // also sent as a plain string
   const dbus::Value *menu_flag = props.get("ItemIsMenu");
   item.item_is_menu = menu_flag && menu_flag->boolean();
   if (item.pixmap) cairo_surface_destroy(item.pixmap);
@@ -496,6 +502,7 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
       Panel::instance->popup_named("tray:" + display_name(item), menu.data(), x);
   if (!picked || (picked->flags & FL_SUBMENU)) return true;
   DBusMessage *ev = dbus::method(item.service, item.menu_path, iface, "Event");
+  if (!ev) return true;
   {
     dbus::Writer w(ev);
     w.i32(int32_t(reinterpret_cast<intptr_t>(picked->user_data_))).str("clicked").variant_i32(0).u32(0);
