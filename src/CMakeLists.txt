@@ -7,6 +7,7 @@ add_library(sde-common STATIC
   common/crash.cpp
   common/integration.cpp
   common/about.cpp
+  common/legal.cpp
   common/menu.cpp
   common/dbus.cpp
   common/effects.cpp

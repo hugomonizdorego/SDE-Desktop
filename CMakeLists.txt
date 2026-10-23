@@ -119,6 +119,17 @@ if(NOT SDE_PALETTE_RESULT EQUAL 0)
   message(FATAL_ERROR "tools/build-themes.py --header failed")
 endif()
 
+# Legal data (licenses, copyright, trademarks) of every SDE program for the
+# About windows, from data/legal/components.json (docs/LEGAL.md).
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             "${PROJECT_SOURCE_DIR}/data/legal/components.json" "${PROJECT_SOURCE_DIR}/tools/legal-data.py")
+execute_process(COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/legal-data.py"
+                        --header "${CMAKE_CURRENT_BINARY_DIR}/generated/legal_data.h"
+                RESULT_VARIABLE SDE_LEGAL_RESULT)
+if(NOT SDE_LEGAL_RESULT EQUAL 0)
+  message(FATAL_ERROR "tools/legal-data.py --header failed (data/legal/components.json)")
+endif()
+
 add_subdirectory(rust)
 add_subdirectory(suite)
 add_subdirectory(src)
@@ -192,6 +203,7 @@ file(GLOB SDE_MANPAGES CONFIGURE_DEPENDS data/man/*.1)
 install(FILES ${SDE_MANPAGES} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 install(FILES data/compositor/sde.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/compositor)
+install(FILES data/legal/components.json DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/legal)
 install(FILES data/sudoers/sde-liria DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d
         PERMISSIONS OWNER_READ GROUP_READ)
 
