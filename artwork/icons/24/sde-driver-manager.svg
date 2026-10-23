@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Driver Manager, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <rect x="1" y="7" width="3" height="1" fill="#D8B964"/>
+  <rect x="16" y="7" width="3" height="1" fill="#D8B964"/>
+  <rect x="7" y="1" width="1" height="3" fill="#D8B964"/>
+  <rect x="7" y="16" width="1" height="3" fill="#D8B964"/>
+  <rect x="1" y="10" width="3" height="1" fill="#D8B964"/>
+  <rect x="16" y="10" width="3" height="1" fill="#D8B964"/>
+  <rect x="10" y="1" width="1" height="3" fill="#D8B964"/>
+  <rect x="10" y="16" width="1" height="3" fill="#D8B964"/>
+  <rect x="1" y="13" width="3" height="1" fill="#D8B964"/>
+  <rect x="16" y="13" width="3" height="1" fill="#D8B964"/>
+  <rect x="13" y="1" width="1" height="3" fill="#D8B964"/>
+  <rect x="13" y="16" width="1" height="3" fill="#D8B964"/>
+  <rect x="3" y="3" width="14" height="14" rx="2" fill="#2B2B2F"/>
+  <rect x="4" y="4" width="12" height="12" rx="1" fill="#4A6689"/>
+  <rect x="7" y="7" width="6" height="6" rx="1" fill="#2B2B2F"/>
+  <rect x="8" y="8" width="4" height="4" fill="#6886AE"/>
+  <rect x="5" y="5" width="1" height="1" fill="#B9C9DE"/>
+  <path d="M13.94 11.73L16.09 13.89L13.89 16.09L11.73 13.94A4.08 4.08 0 0 0 17.18 19.22L19.74 21.78A1.44 1.44 0 0 0 21.78 19.74L19.22 17.18A4.08 4.08 0 0 0 13.94 11.73Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

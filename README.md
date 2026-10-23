@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="data/branding/sde-logo-dark.png">
+    <img src="data/branding/sde-logo.png" alt="Selviana Desktop Environment" width="320">
+  </picture>
+</p>
+
 # Selviana Desktop Environment (SDE)
 
 **A lightweight desktop environment and integrated application suite, developed by the Selviana DE Project.**
@@ -238,6 +245,7 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 - [Rust architecture, tests and migration plan](docs/RUST.md)
 - [Building, dependencies and releases](docs/BUILD.md)
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
+- [Logo, icons and user pictures](docs/BRANDING.md)
 - [Roadmap from 0.1 Alpha to 1.0](docs/ROADMAP.md)
 - [Translating SDE](po/README.md)
 - [Changelog](CHANGELOG.md)

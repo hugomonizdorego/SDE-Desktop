@@ -53,7 +53,7 @@ original notice:
 | SDE WM | GPL-2.0-or-later | © 2002–2007 Dana Jansens, © 2004–2006 Mikael Magnusson, © 2003 Derek Foreman and the Openbox contributors | built from [Openbox](https://github.com/Mikachu/openbox) with SDE patches |
 | SDE Compositor | MPL-2.0 AND MIT | © 2003 Keith Packard (xcompmgr), © 2011–2013 Christopher Jeffrey (Compton), © 2019–2023 Yuxuan Shui and the picom contributors | built from [picom](https://github.com/yshui/picom) |
 | SDE themes | GPL-3.0-only (Graphite, Flat Remix GTK) with SDE's GPL-3.0-or-later overlays; CC-BY-SA-4.0 (Flat Remix GNOME, palette reference only) | © 2021–2025 Vince Liu; © 2016–2025 Daniel Ruiz de Alegría; Selviana DE Project and contributors | see [THIRD-PARTY.md](THIRD-PARTY.md) |
-| SDE artwork (logo, mark, application icons, wallpapers, sample avatars) | GPL-3.0-or-later (the former Calculator icon: CC0-1.0) | © 2026 Selviana DE Project | made for SDE; the name and logo are trademarks, see below |
+| SDE artwork (logo, mark, application icons, wallpapers, sample avatars) | GPL-3.0-or-later | © 2026 Selviana DE Project | made for SDE; the name and logo are trademarks, see below |
 | DebION integration (`debion-desktop-base`) | GPL-3.0-or-later | Selviana DE Project and contributors | distribution integration, not part of SDE |
 
 The theme sources' LICENSE files contain the GNU GPL version 3 without a

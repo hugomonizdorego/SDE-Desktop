@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Photo, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <rect x="1" y="3" width="19" height="15" rx="2" fill="#2B2B2F"/>
+  <rect x="2" y="4" width="17" height="13" rx="1" fill="#F6F3EC"/>
+  <rect x="3" y="5" width="15" height="11" fill="#A9CFEE"/>
+  <circle cx="13.5" cy="8.5" r="1.8" fill="#F2C95E"/>
+  <path d="M3 13.5C6 10.5 9 10 12 12.5C14 11 16 11 18 12.5V16H3Z" fill="#9CCB9F"/>
+  <path d="M3 14.5C6 12.5 10 12.2 13 14C15 13.2 16.5 13.4 18 14V16H3Z" fill="#589E64"/>
+  <rect x="3.5" y="5.5" width="14" height="10" fill="none" stroke="#2B2B2F" stroke-width="1"/>
+  <path d="M13.5 22C12.6 20.27 13.57 19.12 14.53 17.97L17.29 20.28C16.33 21.43 15.36 22.58 13.5 22Z" fill="#4C86C6" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M14.53 17.97L15.98 16.25L18.74 18.56L17.29 20.28Z" fill="#C9CCD2" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M16.25 16.48L20.85 11.85L22.22 13L18.46 18.33Z" fill="#D98C55" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

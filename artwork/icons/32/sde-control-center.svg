@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Control Center, 32 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <rect x="2" y="2" width="25" height="25" rx="6" fill="#2B2B2F"/>
+  <rect x="3" y="3" width="23" height="23" rx="5" fill="#8A6FB5"/>
+  <rect x="6" y="8" width="17" height="2" rx="1" fill="#5E4689"/>
+  <rect x="6" y="8" width="6" height="2" rx="1" fill="#ECE6DA"/>
+  <circle cx="10.5" cy="9" r="2.5" fill="#2B2B2F"/>
+  <circle cx="10.5" cy="9" r="1.5" fill="#FFFFFF"/>
+  <rect x="6" y="14" width="17" height="2" rx="1" fill="#5E4689"/>
+  <rect x="6" y="14" width="12" height="2" rx="1" fill="#ECE6DA"/>
+  <circle cx="17.5" cy="15" r="2.5" fill="#2B2B2F"/>
+  <circle cx="17.5" cy="15" r="1.5" fill="#FFFFFF"/>
+  <rect x="6" y="19" width="9" height="5" rx="3" fill="#2B2B2F"/>
+  <rect x="7" y="20" width="7" height="3" rx="2" fill="#7FC08A"/>
+  <circle cx="12.5" cy="21.5" r="2" fill="#2B2B2F"/>
+  <circle cx="12.5" cy="21.5" r="1" fill="#FFFFFF"/>
+  <path d="M22.82 20.22 L23.56 20 L23.68 18.35 L25.32 18.35 L25.44 20 L26.34 20.29 L27.02 20.65 L28.27 19.58 L29.42 20.73 L28.35 21.98 L28.78 22.82 L29 23.56 L30.65 23.68 L30.65 25.32 L29 25.44 L28.71 26.34 L28.35 27.02 L29.42 28.27 L28.27 29.42 L27.02 28.35 L26.18 28.78 L25.44 29 L25.32 30.65 L23.68 30.65 L23.56 29 L22.66 28.71 L21.98 28.35 L20.73 29.42 L19.58 28.27 L20.65 27.02 L20.22 26.18 L20 25.44 L18.35 25.32 L18.35 23.68 L20 23.56 L20.29 22.66 L20.65 21.98 L19.58 20.73 L20.73 19.58 L21.98 20.65 Z M22.7 24.5 A1.8 1.8 0 1 0 26.3 24.5 A1.8 1.8 0 1 0 22.7 24.5 Z" fill="#ECE6DA" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd"/>
+</svg>
