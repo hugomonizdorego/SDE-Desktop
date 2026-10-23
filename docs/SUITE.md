@@ -127,17 +127,18 @@ Since 0.2.0 Alpha 1:
   `data/legal/components.json`, which a unit test compares it with;
   Credits lists the developer, "Based on Caja 1.28 (MATE)" and GNOME
   Nautilus and the original authors. The logo and the default window icon
-  are `liria` (hicolor), with `system-file-manager` as the fallback. The
-  ribbon scrolls sideways with the mouse wheel when it is wider than the
-  window, and the location entry is as wide as the breadcrumbs.
+  are `liria` (hicolor), with `system-file-manager` as the fallback.
 * **Themes.** Keyboard focus rings are visible (half the text colour
   instead of 10 %) and tree views (the list, the sidebar) show drop
   targets with the accent: a tinted row, or a 2 px line between rows.
-* **Sidebar and ribbon.** The Pinned and Network headings are as high as
-  the others (the bold heading was measured as two lines). The ribbon's
-  commands get the selected files (it used the view's GFile locations as
-  files: no URIs for Copy path, Pin, Move to, Share or Extract and critical
-  warnings on every selection change).
+* **Sidebar, header and ribbon.** The Pinned and Network headings are as
+  high as the others (the bold heading was measured as two lines). The
+  location entry is as wide as the breadcrumbs (Caja's spinner spacer took
+  half of the free width). The ribbon's commands get the selected files (it
+  used the view's GFile locations as files: no URIs for Copy path, Pin,
+  Move to, Share or Extract and critical warnings on every selection
+  change), and the ribbon scrolls sideways with the mouse wheel when it is
+  wider than the window (1024x600 at 150 %).
 
 ## SDE Power and SDE Screen Lock (alpha16)
 
