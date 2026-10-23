@@ -78,6 +78,9 @@ class PanelPopup : public sde::BufferedWindow {
 // |extra| lines are written first. Does nothing without the variable.
 bool qa_dump_enabled();
 void qa_dump(Fl_Window *win, const std::string &extra = "");
+// UI test hook: <dir>/<window title>.input exists while a popup holds the
+// keyboard (its grabs and the input focus), so that tests type only then.
+void qa_mark_input(Fl_Window *win, bool has_input);
 
 // Shapes X window |xid| (|w| x |h|) with rounded corners of radius |r|;
 // |corners|: 1 top-left, 2 top-right, 4 bottom-right, 8 bottom-left.

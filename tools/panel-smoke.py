@@ -597,7 +597,10 @@ def panel_checks_a50():
     # search or the menu opens: typing must still reach them afterwards.
     grab=str(a.test_dir.resolve()/'sde-grab-fixture')
     g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--search');g.wait()
-    find('^SDE Search$');time.sleep(.8)
+    find('^SDE Search$')
+    # Type once the search holds the keyboard again (it retries its grabs
+    # every 100 ms); under load that is later than any fixed pause.
+    waitfor(lambda:(home/'qa'/'SDE-Search.input').exists(),'search never took the keyboard back after a screenshot grab')
     run('xdotool','type','--delay','40','wget')
     try:waitfor(lambda:'query:wget' in layout('SDE Search'),'search took no typing after a screenshot grab')
     except AssertionError:
@@ -605,7 +608,8 @@ def panel_checks_a50():
     escape('SDE Search')
     g=sp.Popen([grab,'1.0'],env=e,stdout=sp.DEVNULL);time.sleep(.3);run('sde-panel','--menu');g.wait()
     if not visible('^SDE Menu$'):shot('debug-grab-menu')
-    command(['--menu'],'SDE Menu');time.sleep(.8)
+    command(['--menu'],'SDE Menu')
+    waitfor(lambda:(home/'qa'/'SDE-Menu.input').exists(),'menu never took the keyboard back after a screenshot grab')
     run('xdotool','type','--delay','40','zeal')
     waitfor(lambda:'query:zeal' in layout('SDE Search'),'menu took no typing after a screenshot grab')
     escape('SDE Search')
@@ -1053,7 +1057,11 @@ try:
     waitfor(lambda:commands('CHECK --quick --json'),'no network verdict at login')
     waitfor(lambda:led('green'),'LED not green at login')
     sni=spawn(str(a.test_dir.resolve()/'sde-sni-demo'))
-    icon=find('^SDE XEmbed fixture$',visible_only=False);host=parent(icon);waitfor(lambda:parent(str(host))==int(panel),'tray not docked in panel')
+    # The icon is reparented into its tray socket (a child of the panel)
+    # only after the panel takes the dock request: ask for both parents
+    # every time instead of keeping the first answer.
+    icon=find('^SDE XEmbed fixture$',visible_only=False)
+    waitfor(lambda:parent(str(parent(icon)))==int(panel),'tray not docked in panel')
     waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:touchpad' in layout('SDE Panel'),'status icons missing')
     # alpha50: a playing MPRIS player puts no media icon on the panel.
     time.sleep(1)

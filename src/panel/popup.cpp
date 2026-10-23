@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <string>
 
+#include <unistd.h>
+
 #include <FL/Fl_Group.H>
 #include <FL/Fl_Scroll.H>
 #include <X11/extensions/shape.h>
@@ -65,6 +67,7 @@ void PanelPopup::open(int anchor_x, int align) {
   // after, unless the popup already has it.
   for (double delay : {0.06, 0.25}) Fl::add_timeout(delay, refocus, this);
   input_tries_ = 0;
+  qa_mark_input(this, false);
   Fl::remove_timeout(ensure_input, this);
   Fl::add_timeout(0.1, ensure_input, this);
   panel->popup_opened(this);
@@ -127,6 +130,7 @@ void PanelPopup::ensure_input(void *data) {
   // Every 100 ms for 5 s, then every second while the popup stays open.
   ++self->input_tries_;
   if (!ok) Fl::repeat_timeout(self->input_tries_ < 50 ? 0.1 : 1.0, ensure_input, data);
+  else qa_mark_input(self, true);
 }
 
 void PanelPopup::refocus(void *data) {
@@ -236,6 +240,7 @@ void PanelPopup::close() {
   if (!shown()) return;
   Fl::remove_timeout(refocus, this);
   Fl::remove_timeout(ensure_input, this);
+  qa_mark_input(this, false);
   if (Fl::grab() == this) Fl::grab(nullptr);
   grabbing_ = false;
   // FLTK 1.3 hide() destroys this X window. Return native tray children to
@@ -292,14 +297,30 @@ void qa_collect(Fl_Widget *w, std::string &out, bool scrolled) {
 }
 }  // namespace
 
+namespace {
+std::string qa_path(Fl_Window *win, const char *suffix) {
+  std::string name = win->label();
+  for (char &c : name)
+    if (c == '/' || c == ' ') c = '-';
+  return std::string(getenv("SDE_PANEL_QA_DIR")) + "/" + name + suffix;
+}
+}  // namespace
+
+void qa_mark_input(Fl_Window *win, bool has_input) {
+  if (!qa_dump_enabled() || !win->label()) return;
+  std::string path = qa_path(win, ".input");
+  if (!has_input) {
+    unlink(path.c_str());
+  } else if (FILE *f = fopen(path.c_str(), "w")) {
+    fclose(f);
+  }
+}
+
 void qa_dump(Fl_Window *win, const std::string &extra) {
   if (!qa_dump_enabled() || !win->label()) return;
   std::string text = extra;
   for (int i = 0; i < win->children(); ++i) qa_collect(win->child(i), text, false);
-  std::string name = win->label();
-  for (char &c : name)
-    if (c == '/' || c == ' ') c = '-';
-  std::string path = std::string(getenv("SDE_PANEL_QA_DIR")) + "/" + name + ".txt";
+  std::string path = qa_path(win, ".txt");
   std::string tmp = path + ".tmp";
   if (FILE *f = fopen(tmp.c_str(), "w")) {
     fwrite(text.data(), 1, text.size(), f);
