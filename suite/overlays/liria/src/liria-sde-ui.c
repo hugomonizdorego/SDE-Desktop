@@ -1029,16 +1029,39 @@ liria_sde_ui_show_help (GtkWindow *parent, const char *section)
 /* ------------------------------------------------------------- about */
 
 #define SDE_ABOUT_GROUP "About"
+#define SDE_DEVELOPER   "Selviana DE Project"
+#define SDE_COPYRIGHT   "Copyright \xC2\xA9 2026 Selviana DE Project and contributors"
+#define SDE_TRADEMARKS  "Selviana Desktop Environment, SDE and the SDE logo are trademarks of the " \
+                        "Selviana DE Project."
 
+/* Liria's icon: SDE's "liria" application icon (hicolor), or the generic
+ * file manager icon of the icon theme when it is not installed. */
+const char *
+liria_sde_ui_icon_name (void)
+{
+    return gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), "liria") ? "liria" : "system-file-manager";
+}
+
+/* 0.2.0: the About window states who makes Liria (the Selviana DE
+ * Project, not a distribution that ships SDE), its version and license,
+ * SDE's copyright and trademarks and, in the License and Credits pages,
+ * every copyright notice and the credits of the original work, as the GPL
+ * requires. */
 void
 liria_sde_ui_show_about (GtkWindow *parent)
 {
-    const char *developers[] = { "DebION Dev-Team", NULL };
+    const char *developers[] = { SDE_DEVELOPER, NULL };
+    /* Credits of the original work: not translated, not rebranded. */
+    const char *based_on[] = {
+        "Caja 1.28 (MATE) https://github.com/mate-desktop/caja",
+        "GNOME Nautilus https://gitlab.gnome.org/GNOME/nautilus",
+        NULL
+    };
     char **authors = NULL;
     gsize n_authors = 0, i;
     GKeyFile *key_file = g_key_file_new ();
     GtkWidget *about;
-    char *license, *comments;
+    char *license, *comments, *copyright, *developer;
 
     /* The original authors, kept as the upstream credits require. */
     if (g_key_file_load_from_file (key_file, LIRIA_DATADIR G_DIR_SEPARATOR_S "liria.about", 0, NULL))
@@ -1047,25 +1070,35 @@ liria_sde_ui_show_about (GtkWindow *parent)
     for (i = 0; i < n_authors; i++)
         g_strdelimit (authors[i], "%", '@');
 
-    comments = g_strdup_printf ("%s\n\n%s", _("Browse and organize the files and folders on your "
-                                              "computer, removable drives and network."),
-                                _("Developer: DebION Dev-Team"));
+    developer = g_strdup_printf (_("Developer: %s"), SDE_DEVELOPER);
+    comments = g_strdup_printf ("%s\n\n%s\n%s",
+                                _("Liria lets you organize files and folders, both on your computer and online."),
+                                _("Part of Selviana Desktop Environment"), developer);
+    copyright = g_strdup_printf ("%s\n%s", SDE_COPYRIGHT, SDE_TRADEMARKS);
+    /* The legal notices are not translated, not rebranded; the license
+     * paragraphs are the original ones (translated in every catalog). */
     license = g_strjoin ("\n\n",
+        "Liria, the file manager of Selviana Desktop Environment (SDE)\n"
+        SDE_COPYRIGHT "\n"
+        "Liria is a modified version of the Caja file manager 1.28 (MATE), itself derived from GNOME Nautilus:\n"
+        "Copyright \xC2\xA9 1999-2009 The Nautilus authors\n"
+        "Copyright \xC2\xA9 2011-2021 The Caja authors\n"
+        "Copyright \xC2\xA9 2012-2021 The MATE developers",
         _("Liria is free software; you can redistribute it and/or modify it under the terms of the "
           "GNU General Public License as published by the Free Software Foundation; either version 2 "
           "of the License, or (at your option) any later version."),
         _("Liria is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without "
-          "even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the "
+          "even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the "
           "GNU General Public License for more details."),
         _("You should have received a copy of the GNU General Public License along with Liria; if not, "
           "write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, "
           "MA 02110-1301 USA"),
-        /* Legal notice of the original work: not translated, not rebranded. */
-        "Liria is a modified version of the Caja file manager 1.28.\n"
-        "Copyright \xC2\xA9 1999-2009 The Nautilus authors\n"
-        "Copyright \xC2\xA9 2011-2021 The Caja authors\n"
-        "The original copyright and license notices are installed in "
+        "SPDX-License-Identifier: GPL-2.0-or-later. Some parts, such as the extension library, are "
+        "licensed under the GNU Library General Public License, version 2 or later. Further copyright "
+        "holders, among them Eazel, Inc., Red Hat, Inc. and the Free Software Foundation, are named in "
+        "the source files; the original copyright notices, author lists and licenses are installed in "
         "/usr/share/doc/sde/upstream/caja/.",
+        SDE_TRADEMARKS,
         NULL);
 
     about = gtk_about_dialog_new ();
@@ -1074,15 +1107,16 @@ liria_sde_ui_show_about (GtkWindow *parent)
                   "title", _("About Liria"),
                   "version", "@SDE_BUILD_VERSION@",
                   "comments", comments,
-                  "copyright", "Copyright \xC2\xA9 2026 DebION Dev-Team",
+                  "copyright", copyright,
                   "license", license,
                   "wrap-license", TRUE,
                   "translator-credits", _("translator-credits"),
-                  "logo-icon-name", "system-file-manager",
+                  "logo-icon-name", liria_sde_ui_icon_name (),
                   "website", SDE_PROJECT_URL,
-                  "website-label", _("SDE website"),
+                  "website-label", _("Selviana Desktop Environment website"),
                   NULL);
     gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (about), _("Developer"), developers);
+    gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (about), _("Based on"), based_on);
     if (authors != NULL && n_authors > 0)
         gtk_about_dialog_add_credit_section (GTK_ABOUT_DIALOG (about), _("Original authors"),
                                              (const char **) authors);
@@ -1097,6 +1131,8 @@ liria_sde_ui_show_about (GtkWindow *parent)
     g_strfreev (authors);
     g_free (license);
     g_free (comments);
+    g_free (copyright);
+    g_free (developer);
 }
 
 /* --------------------------------------------------- application level */
@@ -1176,6 +1212,10 @@ liria_sde_ui_startup (GApplication *application)
                                                GTK_STYLE_PROVIDER (provider),
                                                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref (provider);
+
+    /* 0.2.0: SDE's Liria icon for dialogs and other windows without an
+     * icon of their own (folder windows show their folder's icon). */
+    gtk_window_set_default_icon_name (liria_sde_ui_icon_name ());
 }
 
 G_GNUC_END_IGNORE_DEPRECATIONS

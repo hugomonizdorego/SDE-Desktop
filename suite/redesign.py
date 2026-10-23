@@ -73,9 +73,11 @@ def overlay(record_id, staged):
 
 
 def brand_leaks(text):
-    """Original product names in text, outside copyright lines."""
+    """Original product names in text, outside copyright lines and the
+    About window's credit of the original work ("Caja 1.28 (MATE)")."""
     return [line for line in text.splitlines()
-            if BRAND_WORDS.search(line) and not re.search(r"copyright|\(c\)|©|modified version of the Caja", line, re.I)]
+            if BRAND_WORDS.search(line)
+            and not re.search(r"copyright|\(c\)|©|modified version of the Caja|Caja 1\.28 \(MATE\)", line, re.I)]
 
 
 def liria(staged):
@@ -164,9 +166,10 @@ def liria_branding(staged):
                     "   removable drives and the network. It has tabs, an extra pane, a Home\n"
                     "   overview with quick access, drives and recent files, safe copying to USB\n"
                     "   drives and extensions for archives and terminals.\n  </p>\n"
-                    "  <p>\n   Liria is part of SDE for DebION GNU/Linux, developed by the DebION Dev-Team.\n  </p>\n"
+                    "  <p>\n   Liria is part of Selviana Desktop Environment (SDE), developed by the\n"
+                    "   Selviana DE Project.\n  </p>\n"
                     " </description>\n"
-                    " <developer_name>DebION Dev-Team</developer_name>\n"
+                    " <developer_name>Selviana DE Project</developer_name>\n"
                     " <url type=\"homepage\">@PACKAGE_URL@</url>\n"
                     " <url type=\"bugtracker\">@PACKAGE_BUGREPORT@</url>\n"
                     " <project_group>SDE</project_group>\n")
@@ -236,6 +239,12 @@ def liria_branding(staged):
     edit_once(staged / "data/liria-file-management-properties.ui",
               '<property name="title" translatable="yes">File Management Preferences</property>',
               '<property name="title" translatable="yes">Liria Preferences</property>')
+    # 0.2.0: the preferences window has Liria's icon ("liria", installed by
+    # SDE in hicolor; the generic one when the icon theme lacks it), like
+    # the About window and Liria's other dialogs (liria_sde_ui_startup).
+    edit_once(prefs, 'gtk_window_set_icon_name (GTK_WINDOW (dialog), "system-file-manager");',
+              'gtk_window_set_icon_name (GTK_WINDOW (dialog), gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), '
+              '"liria") ? "liria" : "system-file-manager"); /* SDE */')
 
     # Only the authors list is read (About > Credits > Original authors);
     # the full author and documenter lists stay in AUTHORS and the docs.
@@ -258,8 +267,8 @@ def liria_branding(staged):
         (docs / (name + ".1")).write_text(
             ".\\\" SPDX-License-Identifier: GPL-2.0-or-later\n"
             ".TH %s 1 \"October 2026\" \"SDE\" \"User Commands\"\n.SH NAME\n%s \\- %s\n"
-            ".SH SYNOPSIS\n.B %s\n.SH DESCRIPTION\n%s\nIt is part of the Liria file manager of SDE,\n"
-            "developed by the DebION Dev-Team.\n.SH SEE ALSO\n.BR liria (1)\n"
+            ".SH SYNOPSIS\n.B %s\n.SH DESCRIPTION\n%s\nIt is part of the Liria file manager of Selviana\n"
+            "Desktop Environment (SDE), developed by the Selviana DE Project.\n.SH SEE ALSO\n.BR liria (1)\n"
             % (name.upper(), name.replace("-", "\\-"), summary, name, description))
 
 
