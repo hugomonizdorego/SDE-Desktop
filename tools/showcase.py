@@ -962,6 +962,8 @@ class Session:
         # The SDE logo: data/branding in a source tree (installed: sde/branding).
         if (a.data_dir / 'branding/sde-logo.svg').exists():
             env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
+        if (self.home / '.fixtures/avatars').is_dir():
+            env['SDE_AVATAR_DIR'] = str(self.home / '.fixtures/avatars')
         env.update(self.nss_wrapper())
         self.env = env
 
@@ -1037,6 +1039,13 @@ class Session:
             if src.is_file():
                 shutil.copyfile(src, self.home / '.config/sde-mimeapps.list')
                 break
+        # The stock account pictures from a source tree, as installed (PNG
+        # only, /usr/share/Avatar); SDE_AVATAR_DIR below.
+        if (a.data_dir / 'avatars').is_dir() and not Path('/usr/share/Avatar').is_dir():
+            stock = self.home / '.fixtures/avatars'
+            stock.mkdir(parents=True, exist_ok=True)
+            for p in sorted((a.data_dir / 'avatars').glob('*.png')):
+                shutil.copyfile(p, stock / p.name)
         self.write_stubs()
         if a.themes_dir:
             (self.home / '.local/share').mkdir(parents=True, exist_ok=True)
@@ -1113,6 +1122,7 @@ class Session:
             if not self.wait(lambda: (self.logs / 'service.log').exists() and
                              'READY' in (self.logs / 'service.log').read_text(errors='replace'), 10):
                 warn('the panel service fixture did not start')
+            self.sample_account()
         else:
             warn('sde-panel-service-fixture not found (--test-dir): no Bluetooth, drive or music player')
         time.sleep(1.0)
@@ -1120,6 +1130,22 @@ class Session:
         self.settle(quiet=0.8, timeout=12)
         self.baseline = set(self.visible_all())
         info(f'{self.set.name}: session on :{self.display} ready in {time.time() - t0:.1f} s')
+
+    def sample_account(self):
+        """Alex Tester and ~/.face in the fixture's AccountsService, when the
+        fixture has one (the panel, lock screen and Control Center ask it)."""
+        call = ['dbus-send', '--session', '--print-reply', '--dest=org.freedesktop.Accounts']
+        r = self.run(*call, '/org/freedesktop/Accounts', 'org.freedesktop.Accounts.FindUserByName',
+                     f'string:{showcase_content.USER_LOGIN}', timeout=5)
+        m = re.search(r'object path "([^"]+)"', r.stdout)
+        if r.returncode != 0 or not m:
+            return
+        user = m.group(1)
+        self.run(*call, user, 'org.freedesktop.Accounts.User.SetRealName', f'string:{showcase_content.USER_NAME}',
+                 timeout=5)
+        if (self.home / '.face').exists():
+            self.run(*call, user, 'org.freedesktop.Accounts.User.SetIconFile', f'string:{self.home / ".face"}',
+                     timeout=5)
 
     def start_compositor(self):
         conf = self.args.data_dir / 'compositor/sde.conf'
@@ -1603,11 +1629,15 @@ PAGE_CAPTIONS = {
     'default-apps': 'default applications for files and links',
     'system': 'system information and maintenance',
     'about': 'version, build and the development log',
+    'start-menu': 'size, the lists and the account on the rail',
+    'date-time': 'time zone and network time',
 }
+# The account page has its own image (avatar-picker).
+ACCOUNT_PAGES = ('users', 'account', 'accounts', 'user', 'avatar')
 
 
 def control_center_images(run):
-    pages = [p for p in run.pages if p != 'home'] or list(PAGE_CAPTIONS)
+    pages = [p for p in run.pages if p != 'home' and p not in ACCOUNT_PAGES] or list(PAGE_CAPTIONS)
     return [(f'control-center-{p}', f'Control Center, {p.replace("-", " ").title()}: ' +
              PAGE_CAPTIONS.get(p, 'settings')) for p in pages]
 
@@ -1978,9 +2008,10 @@ def lock_screen(s):
         os.close(r)
 
 
-@scene('Accounts', [('avatar-picker', 'The account picture')], needs=['sde-settings'])
+@scene('Accounts', [('avatar-picker', 'Control Center, Users & Avatar: the account picture, the name and '
+                                       'the stock pictures')], needs=['sde-settings'])
 def avatar_picker(s):
-    page = next((p for p in s.run_ctx.pages if p in ('account', 'accounts', 'users', 'user', 'avatar')), None)
+    page = next((p for p in s.run_ctx.pages if p in ACCOUNT_PAGES), None)
     if not page:
         raise SkipShot('no account page in this build')
     settings_page(s, page)
