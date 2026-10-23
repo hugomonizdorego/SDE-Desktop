@@ -7,6 +7,7 @@ add_library(sde-common STATIC
   common/crash.cpp
   common/integration.cpp
   common/about.cpp
+  common/legal.cpp
   common/menu.cpp
   common/dbus.cpp
   common/effects.cpp
@@ -102,6 +103,7 @@ add_executable(sde-settings
   settings/network.cpp
   settings/clock.cpp
   settings/default_apps_page.cpp
+  settings/about_page.cpp
   # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
   panel/timezone.cpp
   panel/weather.cpp
@@ -130,7 +132,7 @@ target_link_libraries(sde-notifyd PRIVATE sde-common)
 add_executable(sde-update update/main.cpp update/app.cpp update/model.cpp update/ui.cpp)
 target_link_libraries(sde-update PRIVATE sde-common)
 
-# Written from scratch by the DebION Dev-Team: the XSETTINGS manager and the
+# Written from scratch by the Selviana DE Project: the XSETTINGS manager and the
 # polkit authentication agent of SDE.
 add_library(sde-xsettings-model STATIC xsettingsd/xsettings.cpp)
 target_include_directories(sde-xsettings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xsettingsd)
@@ -191,7 +193,7 @@ add_executable(sde-gallery
 target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
-# the DebION Dev-Team on top of sde-gallery-core.
+# the Selviana DE Project on top of sde-gallery-core.
 add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp)
 target_include_directories(sde-photo-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/photo)
 target_link_libraries(sde-photo-core PUBLIC sde-gallery-core)
@@ -207,7 +209,7 @@ install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES photo/sdeview.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 
 # Xanara: the SDE document viewer and PDF editor, written from scratch by
-# the DebION Dev-Team on poppler-glib. The document model, renderer and tile
+# the Selviana DE Project on poppler-glib. The document model, renderer and tile
 # cache are a separate library so the unit tests run without a display.
 pkg_check_modules(POPPLER_GLIB REQUIRED IMPORTED_TARGET poppler-glib)
 include(CheckCXXSourceCompiles)
@@ -273,7 +275,7 @@ add_executable(xanara
 target_link_libraries(xanara PRIVATE sde-xanara-core)
 install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# Taca: the SDE archive manager, written from scratch by the DebION Dev-Team.
+# Taca: the SDE archive manager, written from scratch by the Selviana DE Project.
 # The archive engine is a separate library for the unit tests (no display).
 pkg_check_modules(LIBARCHIVE REQUIRED IMPORTED_TARGET libarchive>=3.6)
 add_library(taca-core STATIC
@@ -313,7 +315,7 @@ install(TARGETS sde-session sde-panel sde-desktop sde-settings sde-run sde-logou
         sde-xsettingsd sde-gallery
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# Calculator: native from-scratch SDE application (DebION Dev-Team) that
+# Calculator: native from-scratch SDE application (Selviana DE Project) that
 # replaced the GTK4 frontend of the scientific-calculator component. The
 # parser, programmer mode, converter and history live in calculator-core,
 # which the unit tests link.
@@ -332,7 +334,7 @@ target_link_libraries(calculator PRIVATE calculator-core)
 sde_app_version(calculator calculator)
 install(TARGETS calculator RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# SDE System Monitor: native from-scratch rewrite (DebION Dev-Team).
+# SDE System Monitor: native from-scratch rewrite (Selviana DE Project).
 # The /proc and /sys parsers live in a small library shared with the tests.
 add_library(sde-sysmon-core STATIC sysmon/procfs.cpp sysmon/sampler.cpp)
 target_include_directories(sde-sysmon-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/sysmon)
@@ -367,7 +369,7 @@ if(SDE_BUILD_COMPONENTS)
 endif()
 
 # SDE Power and SDE Screen Lock: the power manager and the screen locker,
-# written from scratch by the DebION Dev-Team (src/power, src/lock). Their
+# written from scratch by the Selviana DE Project (src/power, src/lock). Their
 # decisions (idle stages, battery levels, inhibitors, PAM conversation,
 # attempt delays) are small libraries shared with the unit tests.
 pkg_check_modules(XSS REQUIRED IMPORTED_TARGET xscrnsaver)

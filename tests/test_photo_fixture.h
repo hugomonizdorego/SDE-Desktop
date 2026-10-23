@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Test fixtures for Gallery and Photo: an EXIF (TIFF) writer and small
 // JPEG files built in memory.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // sde-view: Photo, the SDE photo viewer and editor.
 #include <FL/Fl.H>
@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
@@ -83,10 +84,7 @@ int main(int argc, char **argv) {
       continue;
     }
     if (options && a.size() > 1 && a[0] == '-') {
-      if (a == "--version") {
-        printf("sde-view %s\n", SDE_APP_VERSION);
-        return 0;
-      }
+      if (a == "--version") return sde::print_version("sde-view", SDE_APP_VERSION);
       if (a == "--help" || a == "-h") {
         usage();
         return 0;

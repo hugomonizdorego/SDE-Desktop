@@ -127,8 +127,10 @@ if(SDE_XVFB)
   add_test(NAME sde-about-windows COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_about_ui.py
     niny=$<TARGET_FILE:niny> sysmon=$<TARGET_FILE:sde-system-monitor>
-    run=$<TARGET_FILE:sde-run> display=$<TARGET_FILE:sde-display-settings>)
-  set_tests_properties(sde-about-windows PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+    run=$<TARGET_FILE:sde-run> display=$<TARGET_FILE:sde-display-settings>
+    calculator=$<TARGET_FILE:calculator> welcome=$<TARGET_FILE:sde-welcome>
+    reports=$<TARGET_FILE:sde-system-reports> licenses=$<TARGET_FILE:sde-ui-kit-demo>)
+  set_tests_properties(sde-about-windows PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 
 # Test helper: stock FLTK menus, dialogs and widgets in the SDE look (not
@@ -136,6 +138,9 @@ endif()
 add_executable(sde-ui-kit-demo ui_kit_demo.cpp)
 target_link_libraries(sde-ui-kit-demo PRIVATE sde-common)
 add_test(NAME sde-developer-metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_metainfo.py)
+# Legal data (data/legal/components.json) against the desktop files, metainfo,
+# suite.tsv, the SPDX headers of the sources and debian/copyright.
+add_test(NAME sde-legal-data COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_legal_data.py)
 
 # Action Center weather and Night Light models (offline JSON fixtures).
 add_executable(sde-weather-tests test_weather.cpp ../src/panel/weather.cpp ../src/panel/nightlight.cpp)

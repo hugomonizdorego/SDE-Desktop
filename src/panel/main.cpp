@@ -7,6 +7,7 @@
 #include <cstring>
 #include <string>
 
+#include "about.h"
 #include "build_config.h"
 #include "crash.h"
 #include "i18n.h"
@@ -73,8 +74,7 @@ int main(int argc, char **argv) {
     } else if (!strcmp(argv[i], "--new-alarm")) {
       command = "alarms:new";
     } else if (!strcmp(argv[i], "--version")) {
-      printf("sde-panel %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
-      return 0;
+      return sde::print_version("sde-panel", SDE_VERSION);
     } else {
       printf("%s", _("Usage: sde-panel [--menu | --search [TEXT] | --action-center | --calendar | --alarms | --version]\n\n"
                      "  --menu            open or close the application menu of the running panel\n"

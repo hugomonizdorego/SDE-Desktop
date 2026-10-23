@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Home tab: quick actions (open, merge, create a PDF from images) and
 // the recently opened documents as a grid of first page thumbnails, which

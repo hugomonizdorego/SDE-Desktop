@@ -15,8 +15,7 @@ StartupNotify=true
 StartupWMClass=SDE-Gallery
 MimeType=x-content/image-dcf;x-content/image-picturecd;
 Actions=Import;
-X-Developer=DebION Dev-Team
-X-DebION-Developer=DebION Dev-Team
+X-Developer=Selviana DE Project
 
 [Desktop Action Import]
 Name=Import from Device

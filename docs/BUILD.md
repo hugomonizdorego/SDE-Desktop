@@ -1,6 +1,7 @@
 # Building SDE
 
-The complete native suite targets **DebION GNU/Linux / Debian testing**. Older
+The complete native suite targets **Debian testing** (and distributions based on it,
+such as DebION GNU/Linux). Older
 Debian and Ubuntu releases are not full-suite CI targets: the selected stable
 GTK application sources require libmate-desktop 1.27.1 or later.
 
@@ -52,7 +53,7 @@ are installed under `/usr/share/doc/sde/upstream`.
 
 For shell-only development on an older distribution, explicitly configure
 `-DSDE_BUILD_NATIVE_SUITE=OFF`. That option omits the suite and must not be used
-for the complete DebION package.
+for the complete SDE package.
 
 ## Tests
 
@@ -87,7 +88,7 @@ GitHub pre-release. No release is created merely by opening a PR.
 
 Measurements from alpha2 and older screenshots do not describe the resource use
 of this complete suite. Test real display-manager login, polkit authorization,
-notification delivery, screen locking and power policies on DebION before
+notification delivery, screen locking and power policies on the target distribution before
 releasing an installer image.
 
 ## Alpha7 components

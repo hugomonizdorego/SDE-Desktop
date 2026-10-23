@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE Screen Lock: rules without I/O, unit tested in tests/test_lock.cpp.
 #pragma once

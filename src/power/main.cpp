@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // sde-power: the SDE power manager.
 //
@@ -33,6 +33,7 @@
 #include <string>
 #include <vector>
 
+#include "about.h"
 #include "build_config.h"
 #include "config.h"
 #include "crash.h"
@@ -625,10 +626,7 @@ int main(int argc, char **argv) {
   install_crash_handler("sde-power");
   std::string cmd = argc > 1 ? argv[1] : "--daemon";
   std::string arg = argc > 2 ? argv[2] : "";
-  if (cmd == "--version") {
-    printf("sde-power %s (%s)\n", SDE_APP_VERSION, SDE_VERSION_LABEL);
-    return 0;
-  }
+  if (cmd == "--version") return print_version("sde-power", SDE_APP_VERSION);
   if (cmd == "--help" || cmd == "-h") {
     usage(stdout);
     return 0;

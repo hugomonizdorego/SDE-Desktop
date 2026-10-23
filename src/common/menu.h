@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE menus. Every SDE program draws FLTK's popups (context menus, menu bar
 // dropdowns, Fl_Choice lists), menu bars, scroll bars, tooltips and stock

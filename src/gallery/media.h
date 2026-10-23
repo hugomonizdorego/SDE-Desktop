@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Storage media for Gallery: USB drives, SD cards and other removable media
 // mounted below /media or /run/media (udisks) are read from

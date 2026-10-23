@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE Driver Manager (sde-drivers): Debian's non-free firmware, proprietary
 // and DKMS drivers for the devices of this computer. Since 0.1.0~alpha51 a
@@ -650,7 +650,8 @@ AppInfo app_info() {
   a.name = _("Driver Manager");
   a.program = "sde-drivers";
   a.version = SDE_VERSION;
-  a.icon = "jockey";
+  a.icon = "sde-driver-manager";
+  a.icon_fallbacks = {"jockey"};
   a.description = _("Finds hardware that needs non-free drivers or firmware and installs Debian's "
                     "packages for it.");
   a.credits = {_("Concept after Linux Mint's Driver Manager (no code used)"), toolkit_credit()};
@@ -663,10 +664,7 @@ int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
-    if (a == "--version") {
-      printf("sde-drivers %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
-      return 0;
-    }
+    if (a == "--version") return print_version(app_info());
     if (a == "--list") {
       // Text report for terminals and bug reports.
       drivers::Scan s = drivers::scan_system();

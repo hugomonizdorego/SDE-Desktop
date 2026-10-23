@@ -1,7 +1,15 @@
 # Copyright and source credits
 
-SDE shell and integration code: Copyright © 2026 Hugo Moniz do Rego and SDE
+SDE shell and integration code: Copyright © 2026 Selviana DE Project and
 contributors, GPL-3.0-or-later. Names below are clickable source links.
+
+The same information, per program and component, is the legal data in
+[`data/legal/components.json`](../data/legal/components.json) (installed as
+`/usr/share/sde/legal/components.json`), which the About windows and Control
+Center → About → Open-source licenses show; `debian/copyright` is the packaging
+form. Copyright, licenses, trademarks and the relation between SDE and DebION
+GNU/Linux are summarised in [LEGAL.md](LEGAL.md). The `sde-legal-data` test
+keeps the three consistent.
 
 ## Code adapted into this repository
 
@@ -59,35 +67,39 @@ Python/PyQt5 panel, Action Center and settings (effects model and capability
 rule, compositor modes and report, removable drives, power profiles) into
 SDE's C++/FLTK code while keeping SDE's own design.
 
-## Native application forks
+## Native application fork and former forks
 
-Eight application source trees are prepared and compiled by SDE. Exact upstream
-versions and commits are recorded in `suite/forks.lock.json`. No upstream
-copyright ownership is replaced by an SDE name. The original COPYING, AUTHORS,
-COPYRIGHT, ChangeLog and trademark notices are preserved, as are copyright
-comments in transformed source. Installed combined notices include original
-copyright headers and full top-level licenses. Complete corresponding sources
-and submodules are published with the binaries.
+One application source tree is prepared and compiled by SDE: **Liria**, from
+Caja. Its exact upstream version and commit are recorded in
+`suite/forks.lock.json`. No upstream copyright ownership is replaced by an SDE
+name. The original COPYING, COPYING.LIB, AUTHORS, ChangeLog and trademark
+notices are preserved, as are copyright comments in transformed source.
+Installed combined notices include original copyright headers and full
+top-level licenses. Complete corresponding sources and submodules are
+published with the binaries.
 
-| SDE fork | Source | Historical authors | Installed notice directory |
-| --- | --- | --- | --- |
-| Niny | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| Liria | [caja](https://github.com/mate-desktop/caja) | Caja/Nautilus, Eazel, GNOME and MATE contributors | `sde/upstream/caja` |
-| Xanara | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| Taca | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| Photo (SDE View) | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| SDE System Monitor | written by the DebION Dev-Team (alpha15) | DebION Dev-Team | `sde` |
-| SDE Power | written by the DebION Dev-Team (alpha16) | DebION Dev-Team | `sde` |
-| SDE Screen Lock | written by the DebION Dev-Team (alpha16) | DebION Dev-Team | `sde` |
+| Program | Source | Authors | License | Installed notice directory |
+| --- | --- | --- | --- | --- |
+| Liria | fork of [caja](https://github.com/mate-desktop/caja) 1.28.0 | Nautilus authors (1999–2009), Caja authors (2011–2021), Eazel, Red Hat, GNOME and MATE contributors; Selviana DE Project (SDE changes) | GPL-2.0-or-later; its libraries eel and libcaja-extension LGPL-2.0-or-later | `sde/upstream/caja` |
+| Niny | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| Xanara | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| Taca | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| Photo (SDE View) | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| SDE System Monitor | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| SDE Power | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| SDE Screen Lock | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde` |
 
-Directories in the last column are relative to `/usr/share/doc`; each contains
-`copyright` and the retained license files. These projects principally use
-GPL-2.0-or-later. Individual libraries, translations, documentation and bundled
-files retain their own LGPL, permissive or other licenses; the full source is
-authoritative. Application rebranding is not a relicensing of those files.
-SDE-specific theme glue is GPL-2.0-or-later; the shell's GPLv3 license remains
-separate. Shared distribution libraries and PackageKit are dependencies with
-their own distribution copyright notices.
+Until alpha14/alpha16 the programs written from scratch were forks of MATE
+applications; nothing of those forks remains. Directories in the last column
+are relative to `/usr/share/doc`; each contains `copyright` and the retained
+license files. In Liria, individual libraries, translations, documentation
+and bundled files retain their own licenses; the full source is
+authoritative. Rebranding is not a relicensing of those files. SDE's
+additions to Liria (`suite/overlays/liria`) and the SDE WM patches
+(`suite/patches/sde-wm`) are GPL-2.0-or-later like the programs they become
+part of; the shell's GPL-3.0-or-later license remains separate. Shared
+distribution libraries and PackageKit are dependencies with their own
+distribution copyright notices.
 
 ## Design and development references
 
@@ -112,10 +124,10 @@ that its code is licensed under SDE's GPLv3 or that it is installed with SDE.
 |---|---|---|---|
 | SDE WM | [openbox](https://github.com/Mikachu/openbox) | GPL-2.0-or-later; all original contributors retained | Private source build, SDE executable/WM identity, SDE rc.xml and themes |
 | SDE Compositor | [picom](https://github.com/yshui/picom) | MPL-2.0 AND MIT | Private source build and independent build version; lightweight XRender defaults |
-| SDE-FLTK | fork of [FLTK 1.3.11](https://github.com/fltk/fltk), in `sde-fltk/` | LGPL-2.0 with FLTK static-linking exceptions; FLTK copyrights retained | DebION Dev-Team fork kept in this repository, linked statically into every SDE program (alpha14) |
+| SDE-FLTK | fork of [FLTK 1.3.11](https://github.com/fltk/fltk), in `sde-fltk/` | LGPL-2.0-only WITH FLTK-exception (GNU LGPL version 2 with the FLTK static-linking exceptions); FLTK copyrights retained | SDE fork kept in this repository, linked statically into every SDE program (alpha14) |
 
 sde-xsettingsd and sde-polkit-agent (alpha14) are new programs written from
-scratch by the DebION Dev-Team (GPL-3.0-or-later); alpha13 used builds of
+scratch by the Selviana DE Project (GPL-3.0-or-later); alpha13 used builds of
 xsettingsd and mate-polkit instead.
 
 Exact revisions are in `suite/components.lock.json`. Preparation retains complete
@@ -128,7 +140,7 @@ files are under `/usr/share/doc/sde/upstream/`.
 Up to alpha49 Calculator was a GTK4 frontend around the pinned engine of
 [scientific-calculator](https://github.com/raad-altaie/scientific-calculator)
 (AGPL-3.0-only, Copyright (c) 2026 Raad Altaie). Since 0.1.0~alpha50 it is a
-native SDE application written from scratch by the DebION Dev-Team
+native SDE application written from scratch by the Selviana DE Project
 (`src/calculator/`, GPL-3.0-or-later): its parser, programmer mode and unit
 converter contain no code of that project, the component is no longer fetched
 (`suite/components.lock.json`) and its files are no longer installed. GTK4 and

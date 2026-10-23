@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Niny syntax highlighting: language definitions and a line-oriented
 // tokenizer. Each line is highlighted from the state the previous line

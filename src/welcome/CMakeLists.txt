@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 DebION Dev-Team
+# Copyright (C) 2026 Selviana DE Project and contributors
 #
 # SDE Welcome (sde-welcome), SDE Driver Manager (sde-drivers) and SDE System
 # Reports (sde-system-reports): first-login guide and system tools after the
 # Linux Mint concepts in docs/MINT-CONCEPTS.md, written from scratch by the
-# DebION Dev-Team. The parsers are a display-free library for the tests.
+# Selviana DE Project. The parsers are a display-free library for the tests.
 set(_src ${PROJECT_SOURCE_DIR}/src)
 
 add_library(sde-sysreport-core STATIC

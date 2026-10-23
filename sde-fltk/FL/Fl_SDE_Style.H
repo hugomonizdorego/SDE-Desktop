@@ -1,7 +1,7 @@
 //
 // SDE-FLTK drawing hooks.
 //
-// Copyright 2026 DebION Dev-Team. Same license as FLTK (LGPL-2 with the FLTK
+// Copyright 2026 Selviana DE Project and contributors. Same license as FLTK (LGPL-2 with the FLTK
 // exceptions, see COPYING).
 //
 // SDE-FLTK lets the desktop draw FLTK's own popups and stock widgets in its

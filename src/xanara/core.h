@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Xanara core: the PDF document model (poppler-glib), sharp tile rendering,
 // the memory bounded tile cache, the background renderer and the reading

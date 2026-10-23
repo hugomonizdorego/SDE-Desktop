@@ -40,7 +40,7 @@ AppInfo app_info() {
   info.name = _("Run Command");
   info.program = "sde-run";
   info.version = SDE_VERSION;
-  info.icon = "system-run";
+  info.icon = "sde-run";
   info.description = _("Starts a program, a command or a web address (Alt+F2).");
   info.credits = {toolkit_credit()};
   return info;
@@ -153,10 +153,7 @@ void on_run(Fl_Widget *, void *data) {
 int main(int argc, char **argv) {
   init_i18n();
   for (int i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "--version")) {
-      printf("sde-run %s (%s) - %s\n", SDE_VERSION, SDE_VERSION_LABEL, kDeveloper);
-      return 0;
-    }
+    if (!strcmp(argv[i], "--version")) return print_version(app_info());
     printf("Usage: sde-run [--version]\n");
     return strcmp(argv[i], "--help") ? 2 : 0;
   }

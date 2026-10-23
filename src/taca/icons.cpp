@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Taca's line icons and file cards, drawn with cairo on a 24-unit grid so
 // they stay sharp at every UI scale and follow the theme colors.
