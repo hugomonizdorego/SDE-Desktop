@@ -261,7 +261,11 @@ void send_command(const std::string &command) {
   std::string value = command + "\n" + std::to_string(time(nullptr)) + "." +
                       std::to_string(clock());
   set_string(root(), "_SDE_COMMAND", value);
-  XFlush(fl_display);
+  // Wait until the server has the property: `sde-panel --menu` (the Super
+  // key) exits right after sending, and requests still buffered in the
+  // connection of a client that is gone can be dropped by the server
+  // (seen as 1 to 10 in 100 lost Start menu openings before 0.2).
+  XSync(fl_display, False);
 }
 
 std::string read_command() {
@@ -273,7 +277,8 @@ void notify_config_changed() {
   auto v = get_cardinals(root(), "_SDE_CONFIG_SERIAL");
   long serial = v.empty() ? 1 : long(v[0]) + 1;
   set_cardinals(root(), "_SDE_CONFIG_SERIAL", {serial});
-  XFlush(fl_display);
+  // As send_command(): short-lived programs exit right after this.
+  XSync(fl_display, False);
 }
 
 bool wm_running(Display *dpy) {
