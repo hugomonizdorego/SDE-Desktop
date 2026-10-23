@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 DebION Dev-Team
+ * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Unit test for Liria's SDE preferences and widget-free decisions
  * (src/liria-sde-model.c): ribbon modes and their stored preference,

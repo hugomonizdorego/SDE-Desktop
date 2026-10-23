@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Copyright (C) 2026 DebION Dev-Team
+ * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Liria window chrome for SDE: the compact header bar, the main menu,
  * keyboard shortcuts, the About window and Liria's own style sheet.
@@ -19,6 +19,7 @@ void liria_sde_ui_setup_header   (LiriaNavigationWindow *window,
 void liria_sde_ui_tidy_sidebar   (LiriaNavigationWindow *window);
 void liria_sde_ui_startup        (GApplication *application);
 void liria_sde_ui_show_about     (GtkWindow *parent);
+const char *liria_sde_ui_icon_name (void);
 void liria_sde_ui_show_shortcuts (GtkWindow *parent);
 void liria_sde_ui_show_help      (GtkWindow *parent, const char *section);
 void liria_sde_ui_switch_view    (LiriaNavigationWindow *window, const char *id);

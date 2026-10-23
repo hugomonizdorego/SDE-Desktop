@@ -556,10 +556,8 @@ class AboutWindow : public BufferedWindow {
   void draw_mark(Painter &p, const Theme &t, double x, double y, int size) {
     if (!mark_ || mark_size_ != size || mark_dark_ != t.dark) {
       if (mark_) cairo_surface_destroy(mark_);
-      // The mark alone, else the square sde-logo icon; the full logo (which
-      // may carry the name) only when neither is installed.
-      mark_ = legal::load_branding({"sde-mark"}, size, size, {"sde-logo"});
-      if (!mark_) mark_ = legal::load_branding({legal::logo_name(t.dark)}, size, size);
+      // The mark alone (hand-drawn at small sizes), else the full logo.
+      mark_ = legal::load_mark(size, t.dark);
       mark_size_ = size;
       mark_dark_ = t.dark;
     }

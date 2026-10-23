@@ -73,9 +73,11 @@ def overlay(record_id, staged):
 
 
 def brand_leaks(text):
-    """Original product names in text, outside copyright lines."""
+    """Original product names in text, outside copyright lines and the
+    About window's credit of the original work ("Caja 1.28 (MATE)")."""
     return [line for line in text.splitlines()
-            if BRAND_WORDS.search(line) and not re.search(r"copyright|\(c\)|©|modified version of the Caja", line, re.I)]
+            if BRAND_WORDS.search(line)
+            and not re.search(r"copyright|\(c\)|©|modified version of the Caja|Caja 1\.28 \(MATE\)", line, re.I)]
 
 
 def liria(staged):
@@ -164,9 +166,10 @@ def liria_branding(staged):
                     "   removable drives and the network. It has tabs, an extra pane, a Home\n"
                     "   overview with quick access, drives and recent files, safe copying to USB\n"
                     "   drives and extensions for archives and terminals.\n  </p>\n"
-                    "  <p>\n   Liria is part of SDE for DebION GNU/Linux, developed by the DebION Dev-Team.\n  </p>\n"
+                    "  <p>\n   Liria is part of Selviana Desktop Environment (SDE), developed by the\n"
+                    "   Selviana DE Project.\n  </p>\n"
                     " </description>\n"
-                    " <developer_name>DebION Dev-Team</developer_name>\n"
+                    " <developer_name>Selviana DE Project</developer_name>\n"
                     " <url type=\"homepage\">@PACKAGE_URL@</url>\n"
                     " <url type=\"bugtracker\">@PACKAGE_BUGREPORT@</url>\n"
                     " <project_group>SDE</project_group>\n")
@@ -236,6 +239,12 @@ def liria_branding(staged):
     edit_once(staged / "data/liria-file-management-properties.ui",
               '<property name="title" translatable="yes">File Management Preferences</property>',
               '<property name="title" translatable="yes">Liria Preferences</property>')
+    # 0.2.0: the preferences window has Liria's icon ("liria", installed by
+    # SDE in hicolor; the generic one when the icon theme lacks it), like
+    # the About window and Liria's other dialogs (liria_sde_ui_startup).
+    edit_once(prefs, 'gtk_window_set_icon_name (GTK_WINDOW (dialog), "system-file-manager");',
+              'gtk_window_set_icon_name (GTK_WINDOW (dialog), gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), '
+              '"liria") ? "liria" : "system-file-manager"); /* SDE */')
 
     # Only the authors list is read (About > Credits > Original authors);
     # the full author and documenter lists stay in AUTHORS and the docs.
@@ -258,8 +267,8 @@ def liria_branding(staged):
         (docs / (name + ".1")).write_text(
             ".\\\" SPDX-License-Identifier: GPL-2.0-or-later\n"
             ".TH %s 1 \"October 2026\" \"SDE\" \"User Commands\"\n.SH NAME\n%s \\- %s\n"
-            ".SH SYNOPSIS\n.B %s\n.SH DESCRIPTION\n%s\nIt is part of the Liria file manager of SDE,\n"
-            "developed by the DebION Dev-Team.\n.SH SEE ALSO\n.BR liria (1)\n"
+            ".SH SYNOPSIS\n.B %s\n.SH DESCRIPTION\n%s\nIt is part of the Liria file manager of Selviana\n"
+            "Desktop Environment (SDE), developed by the Selviana DE Project.\n.SH SEE ALSO\n.BR liria (1)\n"
             % (name.upper(), name.replace("-", "\\-"), summary, name, description))
 
 
@@ -327,6 +336,14 @@ def liria_header(staged):
 """)
     edit_once(window, "    if (g_settings_get_boolean (liria_window_state, LIRIA_WINDOW_STATE_START_WITH_TOOLBAR))\n",
               "    if (TRUE) /* SDE: the header row holds the main menu */\n")
+    # 0.2.0: the spinner's spacer after the main menu took half of the free
+    # width of the header, so the location entry was much shorter than the
+    # breadcrumbs and an empty gap followed the main menu. The location item
+    # alone expands now; the spinner (while loading) follows the menu.
+    edit_once(src / "liria-window-toolbars.c",
+              "    gtk_tool_item_set_expand (item, TRUE);\n    gtk_toolbar_insert (GTK_TOOLBAR (window->details->toolbar),\n",
+              "    gtk_tool_item_set_expand (item, FALSE); /* SDE: the location item expands */\n"
+              "    gtk_toolbar_insert (GTK_TOOLBAR (window->details->toolbar),\n")
     edit_once(window, "    show_location_bar = g_settings_get_boolean (liria_window_state, LIRIA_WINDOW_STATE_START_WITH_LOCATION_BAR);\n",
               "    show_location_bar = TRUE; /* SDE: the path is part of the header */\n")
     edit_once(window, "    gtk_widget_show (GTK_WIDGET (window->sidebar));\n}\n",
@@ -1124,6 +1141,22 @@ def liria_sidebar_pinned(staged):
             goto out;
         }
 """)
+    # 0.2.0: the heading text is one line, like the place names. With the
+    # collapse arrow after it, the cell area measured the bold heading at
+    # less than its natural width, Pango wrapped "Pinned" and "Network" into
+    # two lines and those heading rows were drawn taller than the others
+    # (15 px at 100 %); only the measurement wrapped, the text stayed on one
+    # line in the middle of the higher row.
+    edit_once(sidebar, """                  "weight", PANGO_WEIGHT_BOLD,
+                  "weight-set", TRUE,
+                  "ypad", 1,
+                  "xpad", 0,
+                  NULL);""", """                  "weight", PANGO_WEIGHT_BOLD,
+                  "weight-set", TRUE,
+                  "ypad", 1,
+                  "xpad", 0,
+                  "ellipsize", PANGO_ELLIPSIZE_END, /* SDE: one line */
+                  NULL);""")
     # Headings: an arrow, a click collapses; the pin of the hovered row.
     edit_once(sidebar, """    gtk_tree_view_column_set_cell_data_func (col, cell,
                          heading_cell_renderer_func,
@@ -1291,6 +1324,28 @@ def liria_right_drag(staged):
     Alt+drag is taken by the window manager (it moves windows); the middle
     button keeps asking as before."""
     private = staged / "libliria-private"
+    # 0.2.0: a drag that hovers a folder row expands it after a moment; the
+    # expired timeout kept its ID, so leaving the row or ending the drag
+    # removed it again and GLib printed a critical warning (Caja bug).
+    dest = private / "liria-tree-view-drag-dest.c"
+    edit_once(dest, """expand_timeout (gpointer data)
+{
+    GtkTreeView *tree_view;
+    GtkTreePath *drop_path;
+
+    tree_view = GTK_TREE_VIEW (data);
+""", """expand_timeout (gpointer data)
+{
+    LiriaTreeViewDragDest *dest = data; /* SDE */
+    GtkTreeView *tree_view;
+    GtkTreePath *drop_path;
+
+    dest->details->expand_id = 0; /* SDE: this source ends now */
+    tree_view = GTK_TREE_VIEW (dest->details->tree_view);
+""")
+    edit_once(dest, """                                           expand_timeout,
+                                           dest->details->tree_view);""", """                                           expand_timeout,
+                                           dest);""")
     edit_once(private / "liria-icon-private.h", "    guint drag_button;\n",
               "    guint drag_button;\n    GdkEvent *sde_menu_event; /* SDE: right click waiting for a drag */\n")
     container = private / "liria-icon-container.c"
@@ -2091,8 +2146,9 @@ RECIPES = {"liria": liria}
 
 def apply(record, staged):
     overlay(record["id"], staged)
-    # Overlay sources carry the SDE build version as a placeholder.
-    for path in staged.rglob("*.c"):
+    # Overlay sources (and, since 0.2.0, extension descriptions) carry the
+    # SDE build version as a placeholder.
+    for path in list(staged.rglob("*.c")) + list(staged.rglob("*.liria-extension")):
         text = path.read_text(errors="surrogateescape")
         if "@SDE_BUILD_VERSION@" in text:
             path.write_text(text.replace("@SDE_BUILD_VERSION@", record["build_version"]), errors="surrogateescape")
