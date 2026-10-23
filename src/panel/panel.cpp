@@ -26,6 +26,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "menu.h"
+#include "menu_perf.h"
 #include "notify_center.h"
 #include "paint.h"
 #include "preview.h"
@@ -357,7 +358,10 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
   return items->popup(root_x - ox, root_y - oy);
 }
 
-void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
+void Panel::toggle_menu() {
+  if (!menu_->is_open()) menu_perf::begin("open", "menu");
+  open_popup(menu_.get(), x() + S(4), false);
+}
 
 void Panel::open_search(const std::string &text, bool keep_popup) {
   recover_input();
@@ -368,6 +372,7 @@ void Panel::open_search(const std::string &text, bool keep_popup) {
     return;
   }
   if (text.empty() && recently_closed("search")) return;
+  if (text.empty()) menu_perf::begin("open", "search");
   if (open_popup_ && open_popup_ != search_.get() && !keep_popup) open_popup_->close();
   set_revealed(true);
   // Above the search box (or the Start button when the box is hidden).

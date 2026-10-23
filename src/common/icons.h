@@ -76,6 +76,14 @@ class IconLoader {
   // current theme, e.g. for previews of other themes in Settings.
   static std::string lookup_in(const std::string &theme, const std::string &name, int size);
   static void clear_cache();
+
+  // Icons loaded from disk so far (cache misses) and the time spent (ms),
+  // for timing hooks (src/panel/menu_perf.h).
+  struct Stats {
+    unsigned long loads = 0;
+    double ms = 0;
+  };
+  static Stats stats();
 };
 
 }  // namespace sde

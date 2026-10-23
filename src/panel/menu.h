@@ -49,6 +49,7 @@ class AppMenu : public PanelPopup {
 
   void draw() override;
   int handle(int event) override;
+  void flush() override;  // timing hook (menu_perf.h)
   // The group name editor commits or cancels (Enter, Escape, focus lost).
   void finish_rename(bool commit);
 
@@ -135,6 +136,7 @@ class AppMenu : public PanelPopup {
   void start_hover(const Ref &r);
   static void animate(void *);
   void qa_dump_menu();
+  bool perf_layout_ = false;  // log the layout with the first frame (menu_perf.h)
 
   sde::Theme theme_;
   sde::Effects effects_;

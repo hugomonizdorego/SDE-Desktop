@@ -63,6 +63,7 @@ class SearchFlyout : public PanelPopup {
 
   void draw() override;
   int handle(int event) override;
+  void flush() override;  // timing hook (menu_perf.h)
 
  private:
   enum Kind { K_NONE, K_TAB, K_FIELD, K_RESULT, K_TOP, K_RECENT, K_CHIP, K_ACTION, K_HEADING };

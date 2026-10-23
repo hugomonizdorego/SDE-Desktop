@@ -13,6 +13,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "menu.h"
+#include "menu_perf.h"
 #include "panel.h"
 #include "spawn.h"
 #include "util.h"
@@ -198,6 +199,7 @@ void SearchFlyout::open_with(const std::string &text, int anchor_x) {
 }
 
 void SearchFlyout::prepare() {
+  menu_perf::Step step("prepare");
   theme_ = Panel::instance->theme();
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
@@ -270,6 +272,7 @@ void SearchFlyout::blink(void *data) {
 }
 
 void SearchFlyout::filter() {
+  menu_perf::Step step("filter");
   std::map<std::string, const DesktopEntry *> by_id;
   for (auto &a : apps_) by_id[a.id] = &a;
   long long now = (long long)time(nullptr);
@@ -775,6 +778,7 @@ int SearchFlyout::handle(int event) {
       return 1;
     }
     case FL_PASTE: {
+      menu_perf::begin("key", "search");
       std::string text = Fl::event_text() ? Fl::event_text() : "";
       type(text);
       return 1;
@@ -783,6 +787,7 @@ int SearchFlyout::handle(int event) {
     case FL_KEYBOARD: {
       int k = Fl::event_key();
       bool ctrl = Fl::event_state() & FL_CTRL;
+      menu_perf::begin("key", "search");
       caret_on_ = true;
       if (k == FL_Escape) {
         close();
@@ -884,6 +889,24 @@ int SearchFlyout::handle(int event) {
 }
 
 // ---------------------------------------------------------------- drawing
+
+void SearchFlyout::flush() {
+  if (!menu_perf::enabled()) {
+    PanelPopup::flush();
+    return;
+  }
+  double t0 = menu_perf::now_ms();
+  IconLoader::Stats icons = IconLoader::stats();
+  PanelPopup::flush();
+  double t1 = menu_perf::now_ms();
+  XSync(fl_display, False);
+  IconLoader::Stats after = IconLoader::stats();
+  if (after.loads != icons.loads) {
+    menu_perf::note("icons", double(after.loads - icons.loads));
+    menu_perf::note("icon_ms", after.ms - icons.ms);
+  }
+  menu_perf::frame("search", t1 - t0, menu_perf::now_ms() - t1);
+}
 
 void SearchFlyout::draw() {
   const Theme &t = theme_;

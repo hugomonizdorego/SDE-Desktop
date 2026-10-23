@@ -18,6 +18,7 @@
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
+#include "menu_perf.h"
 #include "panel.h"
 #include "search.h"
 #include "spawn.h"
@@ -444,6 +445,8 @@ void AppMenu::filter() {
 // Opening
 
 void AppMenu::prepare() {
+  menu_perf::Step step("prepare");
+  perf_layout_ = menu_perf::enabled();
   handing_to_search_ = false;
   theme_ = Panel::instance->theme();
   effects_ = effects_from_config(Panel::instance->config());
@@ -478,9 +481,19 @@ void AppMenu::prepare() {
   resize_edge_ = cursor_edge_ = 0;
   keyboard_ = false;
   launching_ = false;
-  reload();
-  load_tiles();
-  filter();
+  {
+    menu_perf::Step s("reload");
+    reload();
+  }
+  {
+    menu_perf::Step s("tiles");
+    load_tiles();
+  }
+  {
+    menu_perf::Step s("filter");
+    filter();
+  }
+  menu_perf::Step avatar_step("avatar");
 
   full_name_ = user_name();
   if (avatar_) cairo_surface_destroy(avatar_);
@@ -1173,6 +1186,7 @@ void AppMenu::redirect_to_search(const std::string &text) {
   // one are still queued for this window and are forwarded from here.
   bool first = !handing_to_search_;
   handing_to_search_ = true;
+  menu_perf::begin(first ? "key-open" : "key", "search");
   Panel::instance->open_search(text, true);
   if (first)
     Fl::add_timeout(0.25, [](void *d) {
@@ -1500,6 +1514,7 @@ int AppMenu::handle(int event) {
         return 1;
       }
       if (drag_area_ != K_NONE) {
+        menu_perf::begin("drag", "menu");
         drag_scrollbar(ey);
         return 1;
       }
@@ -1566,6 +1581,7 @@ int AppMenu::handle(int event) {
       const Item *hit = item_at(ex, ey);
       Ref r = hit ? Ref{hit->kind, hit->index, hit->group} : Ref{};
       if (!(r == hover_)) {
+        menu_perf::begin("hover", "menu");
         hover_ = r;
         if (hit && hit->entry) {
           selected_ = r;
@@ -1592,6 +1608,7 @@ int AppMenu::handle(int event) {
       int ex = Fl::event_x_root() - x_root(), ey = Fl::event_y_root() - y_root();
       int dy = Fl::event_dy() ? Fl::event_dy() : Fl::event_dx();
       if (!dy || menu_busy_) return 1;
+      menu_perf::begin("wheel", "menu");
       build_items();
       const Area *a = area_at(ex, ey);
       if (!a) a = area(ex >= tiles_x_ ? K_TILE : K_ROW);
@@ -1638,6 +1655,7 @@ int AppMenu::handle(int event) {
       }
       if (k == FL_Down || k == FL_Up || k == FL_Left || k == FL_Right || k == FL_Page_Down ||
           k == FL_Page_Up) {
+        menu_perf::begin("nav", "menu");
         move_selection(k);
         return 1;
       }
@@ -1658,11 +1676,43 @@ int AppMenu::handle(int event) {
 // ---------------------------------------------------------------------------
 // Drawing
 
+void AppMenu::flush() {
+  if (!menu_perf::enabled()) {
+    PanelPopup::flush();
+    return;
+  }
+  double t0 = menu_perf::now_ms();
+  IconLoader::Stats icons = IconLoader::stats();
+  PanelPopup::flush();
+  double t1 = menu_perf::now_ms();
+  XSync(fl_display, False);
+  IconLoader::Stats after = IconLoader::stats();
+  if (after.loads != icons.loads) {
+    menu_perf::note("icons", double(after.loads - icons.loads));
+    menu_perf::note("icon_ms", after.ms - icons.ms);
+  }
+  menu_perf::frame("menu", t1 - t0, menu_perf::now_ms() - t1);
+}
+
 void AppMenu::draw() {
   const Theme &t = theme_;
   int W = w(), H = h();
   double tnow = now();
   build_items();
+  if (perf_layout_) {
+    perf_layout_ = false;
+    std::string line = "layout menu window=" + std::to_string(x_root()) + "," +
+                       std::to_string(y_root()) + "," + std::to_string(W) + "," + std::to_string(H);
+    for (auto &a : areas_)
+      line += std::string(a.kind == K_ROW ? " list=" : " tiles=") + std::to_string(a.x) + "," +
+              std::to_string(a.y) + "," + std::to_string(a.w) + "," + std::to_string(a.h) + "," +
+              std::to_string(a.content);
+    int rows = 0, tiles = 0;
+    for (auto &it : items_) rows += it.kind == K_ROW, tiles += it.kind == K_TILE;
+    line += " rows=" + std::to_string(rows) + " tiles=" + std::to_string(tiles) +
+            " apps=" + std::to_string(apps_.size());
+    menu_perf::log(line);
+  }
   const Item *hov = find(hover_);
   const Item *sel = find(selected_);
   auto is_sel = [&](const Item &it) { return sel == &it && (keyboard_ || it.entry); };

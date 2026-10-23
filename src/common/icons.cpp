@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <ctime>
 #include <cstdint>
 #include <cmath>
 #include <map>
@@ -525,6 +526,17 @@ std::string IconLoader::lookup_in(const std::string &theme, const std::string &n
   return with_extension_fallback(chain_for(theme), name, size);
 }
 
+namespace {
+IconLoader::Stats g_stats;
+double stats_now_ms() {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
+}
+}  // namespace
+
+IconLoader::Stats IconLoader::stats() { return g_stats; }
+
 cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size) {
   std::vector<std::string> all = names;
   all.push_back("application-x-executable");
@@ -537,6 +549,7 @@ cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size
       continue;
     }
     cairo_surface_t *result = nullptr;
+    double t0 = stats_now_ms();
     std::string path = lookup(name, size);
     if (!path.empty()) {
       cairo_surface_t *raw = load_image(path, size, size);
@@ -559,6 +572,8 @@ cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size
       }
     }
     g_surface_cache[key] = result;
+    ++g_stats.loads;
+    g_stats.ms += stats_now_ms() - t0;
     if (result) return result;
   }
   return nullptr;
