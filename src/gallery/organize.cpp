@@ -309,7 +309,10 @@ void GalleryWindow::copy_files_to(const std::vector<std::string> &paths, bool mo
     toast(_("The photos are in that folder already"));
     return;
   }
-  run_batch(format(move ? _("Moving %zu photos…") : _("Copying %zu photos…"), steps.size()), std::move(steps),
+  // Counted first: the order of the arguments is unspecified, and GCC moves
+  // |steps| into run_batch() before formatting the text.
+  size_t count = steps.size();
+  run_batch(format(move ? _("Moving %zu photos…") : _("Copying %zu photos…"), count), std::move(steps),
             [this, plan, move, dir](size_t done, size_t failed, const std::string &error) {
               if (move) {
                 // Albums and favorites follow the moved photos.

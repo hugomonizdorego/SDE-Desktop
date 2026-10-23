@@ -54,6 +54,8 @@ def waitfor(fn,why,tries=100):
         time.sleep(.08)
     print('Processes', [(proc.args,proc.poll()) for proc in processes],flush=True)
     print(run('xdotool','search','--onlyvisible','--name','.',check=False).stdout,flush=True)
+    # The screen at the failure, for the CI artifacts.
+    run('import','-window','root',out/'debug-failure.png',check=False)
     raise AssertionError(why)
 def visible(name):
     r=run('xdotool','search','--onlyvisible','--name',name,check=False)
@@ -1061,7 +1063,10 @@ try:
     # only after the panel takes the dock request: ask for both parents
     # every time instead of keeping the first answer.
     icon=find('^SDE XEmbed fixture$',visible_only=False)
-    waitfor(lambda:parent(str(parent(icon)))==int(panel),'tray not docked in panel')
+    def docked_host():
+        try:h=parent(icon);return h if parent(str(h))==int(panel) else None
+        except sp.CalledProcessError:return None  # a socket that just went away
+    host=waitfor(docked_host,'tray not docked in panel')
     waitfor(lambda:'status:bluetooth' in layout('SDE Panel') and 'status:touchpad' in layout('SDE Panel'),'status icons missing')
     # alpha50: a playing MPRIS player puts no media icon on the panel.
     time.sleep(1)
