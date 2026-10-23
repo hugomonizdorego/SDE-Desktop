@@ -316,7 +316,8 @@ std::string format_items(const std::vector<Item> &items) {
   std::ostringstream out;
   out << "# SDE agenda (sde-panel). remind: minutes before the start, -1 for none.\n";
   for (const auto &it : items) {
-    char date[16], time[8] = "";
+    // Room for any int (the fields are range-checked when parsed).
+    char date[40], time[24] = "";
     snprintf(date, sizeof date, "%04d-%02d-%02d", it.year, it.month, it.day);
     if (it.timed()) snprintf(time, sizeof time, "%02d:%02d", it.hour, it.minute);
     out << "\n[item " << it.id << "]\nid=" << it.id << "\ndate=" << date << "\ntime=" << time

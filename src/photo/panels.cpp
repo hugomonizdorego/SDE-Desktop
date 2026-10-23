@@ -623,7 +623,7 @@ void SidePanel::draw_draw_tab(Painter *p) {
   const Theme &t = app_->theme();
   DrawSettings &d = app_->draw_settings();
   Tool shown = panel_tool(app_);
-  int px = x() + S(20), pw = w() - S(40), top = y() + S(64);
+  int px = x() + S(20), pw = w() - S(40);
   bool selection = app_->canvas()->selected_mark() >= 0;
   bool any = !app_->edits().marks.empty();
   for (const auto &b : draw_boxes_) {

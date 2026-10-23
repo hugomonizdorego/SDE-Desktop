@@ -68,7 +68,7 @@ struct UdisksBlock {
   long long size = 0;
   bool hint_ignore = false, hint_system = false, hint_auto = false;
   bool filesystem = false, partition = false, partition_table = false;
-  std::vector<std::string> mount_points;
+  std::vector<std::string> mount_points{};
 };
 struct UdisksDrive {
   std::string object, vendor, model, connection_bus, media;
