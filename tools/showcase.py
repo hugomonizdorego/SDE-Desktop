@@ -947,6 +947,10 @@ class Session:
             SDE_BACKLIGHT_DIR=str(self.home / '.fixtures/backlight'),
             SDE_PANEL_FAKE_TOUCHPAD='1', SDE_DRIVERS_DEMO='1',
             SDE_UPDATE_ROOT=str(self.home / '.fixtures/update-root'),
+            # The distribution SDE runs on is named from os-release: DebION.
+            SDE_OS_RELEASE=str(self.home / '.fixtures/os-release'),
+            # About windows log their sections (Alt+1..4) for the waits.
+            SDE_ABOUT_QA_FILE=str(self.home / 'qa/about.log'),
             PYTHONPATH=str(self.home / '.fixtures/python'),
         )
         schemas = [str(Path(p) / 'share/glib-2.0/schemas') for p in a.prefixes
@@ -1012,6 +1016,18 @@ class Session:
         for old, new in UPDATE_NAMES:
             text = text.replace(old, new)
         apt.write_text(text)
+        # DebION GNU/Linux as the distribution (os-release via SDE_OS_RELEASE),
+        # with its logo as the LOGO icon (debion-desktop-base, or the source).
+        logo = next((p for p in (Path('/usr/share/desktop-base/debion-logos/logo-256.png'),
+                                 ROOT / 'data/desktop-base/debion-logos/logo-256.png') if p.is_file()), None)
+        if logo:
+            icons = self.home / '.local/share/icons/hicolor/256x256/apps'
+            icons.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(logo, icons / 'debion-logo.png')
+        (self.home / '.fixtures/os-release').write_text(
+            'PRETTY_NAME="DebION GNU/Linux"\nNAME="DebION GNU/Linux"\nID=debion\nID_LIKE=debian\n'
+            'VERSION_CODENAME=forky\nHOME_URL="https://github.com/hugomonizdorego/SDE-Desktop"\n' +
+            ('LOGO=debion-logo\n' if logo else ''))
         # The default applications of SDE (Photo for pictures, Xanara for
         # PDFs...), as the installed /etc/xdg/sde-mimeapps.list gives them.
         for src in (Path('/etc/xdg/sde-mimeapps.list'), ROOT / 'data/sde-mimeapps.list'):
@@ -1252,8 +1268,18 @@ def desktop_menu(s):
 
 
 def open_menu(s):
+    """The Start Menu, opened with a click on the Start button (sde-panel
+    --menu is the fallback: a command can get lost while the panel starts
+    or a popup closes)."""
     s.dismiss_popups()
-    w = s.panel_command(['--menu'], 'SDE Menu')
+    s.gone('^SDE Menu$', 2)
+    w = None
+    if s.control('SDE Panel', 'start', 3):
+        try:
+            w = s.click_panel('start', '^SDE Menu$')
+        except SkipShot:
+            w = None
+    w = w or s.panel_command(['--menu'], 'SDE Menu')
     s.control('SDE Menu', '@tiles', 5)
     s.park_pointer()
     return w
@@ -1538,6 +1564,7 @@ def action_center_more(s):
 
 
 SETTINGS_TITLE = '^(Settings|Control Center|SDE Settings)$'
+ABOUT_SCROLL = 6  # wheel steps from the top of Control Center > About to its licenses card
 
 
 def settings_page(s, page):
@@ -1597,11 +1624,8 @@ def control_center_pages(s):
         s.gone(SETTINGS_TITLE, 3)
 
 
-@scene('About', [('about-sde', 'About SDE (from the panel menu): version, build, licenses and legal notices'),
-                 ('about-app', 'An application\'s About window: developer, version, license and credits')],
-       needs=['sde-settings'])
-def about(s):
-    # The panel's "About SDE" opens Control Center > About; scrolled to its end.
+def about_sde_window(s):
+    """Control Center > About as the panel's "About SDE" opens it."""
     w = None
     try:
         L = s.layout('SDE Panel')
@@ -1621,23 +1645,81 @@ def about(s):
         w = settings_page(s, 'about')
     s.fit(w)
     s.window_settle(w)
+    return w
+
+
+@scene('About', [('about-sde', 'About SDE (the panel menu): copyright, the license and the open-source licenses'),
+                 ('about-licenses', 'Open-source licenses: every SDE program and bundled component')],
+       needs=['sde-settings'])
+def about_sde(s):
+    w = about_sde_window(s)
+    # Down to the "Copyright and licenses" card.
     g = s.geom(w)
     s.move(g['x'] + g['w'] * 0.7, g['y'] + g['h'] * 0.6)
-    for _ in range(30):
+    for _ in range(ABOUT_SCROLL):
         s.xdo('click', '5')
     s.park_pointer()
     s.shot('about-sde', quiet=0.6)
-    s.stop_scene_procs()
-    s.kill_windows(SETTINGS_TITLE)
-    if s.has('calculator'):
-        s.app(['calculator'], '^Calculator$')
-        s.key('F1')
-        a = s.find('^About Calculator$', 4)
-        if a:
-            s.window_settle(a)
-            s.park_pointer()
-            s.shot('about-app', quiet=0.5)
-            s.key('Escape')
+    # Its "Show Licenses" dialog. Control Center lists no controls for
+    # tests, so the same dialog comes from the UI kit helper (test tools),
+    # over the About page; the helper's own window is hidden.
+    demo = s.test_tool('sde-ui-kit-demo')
+    if not demo:
+        s.skip('about-licenses', 'sde-ui-kit-demo not found (--test-dir)')
+        return
+    s.spawn(demo, '--show', 'licenses', name='ui-kit-demo')
+    d = s.find('^Open-Source Licenses$', 15)
+    if not d:
+        s.skip('about-licenses', 'the Open-Source Licenses dialog did not open')
+        return
+    for helper in s.visible_all('^UI Kit Demo$'):
+        s.xdo('windowunmap', helper)
+    s.fit(d)
+    s.window_settle(d, quiet=0.6)
+    s.park_pointer()
+    s.shot('about-licenses', quiet=0.6)
+
+
+ABOUT_SECTIONS = [('about', 'about-app', 'About Calculator: the About section (Selviana Desktop Environment, '
+                                          'version, developer)'),
+                  ('credits', 'about-app-credits', 'About Calculator: Credits'),
+                  ('license', 'about-app-license', 'About Calculator: License (GNU GPL notice, View License)'),
+                  ('legal', 'about-app-legal', 'About Calculator: Legal (copyright and trademarks)')]
+
+
+@scene('About', [(img, cap) for _, img, cap in ABOUT_SECTIONS] +
+       [('about-app-license-text', 'About Calculator: the full license text')], needs=['calculator'])
+def about_app(s):
+    s.app(['calculator'], '^Calculator$')
+    qa = s.home / 'qa/about.log'
+    s.key('F1')
+    a = s.find('^About Calculator$', 5)
+    if not a:
+        raise SkipShot('About Calculator did not open (F1)')
+    s.fit(a)
+    for i, (section, img, _) in enumerate(ABOUT_SECTIONS, 1):
+        if i > 1:
+            # Alt+1..4 choose a section (the About window logs it for tests).
+            before = qa.read_text().count('section ') if qa.exists() else 0
+            s.key(f'alt+{i}')
+            if not s.wait(lambda: qa.exists() and qa.read_text().count('section ') > before, 3):
+                s.skip(img, f'Alt+{i} did not show the {section} section (an older About window)')
+                continue
+        s.window_settle(a, quiet=0.4)
+        s.park_pointer()
+        s.shot(img, quiet=0.4)
+    s.key('alt+3')
+    time.sleep(0.4)
+    s.key('alt+v')
+    v = s.find('^Calculator .* License$', 5)
+    if not v:
+        s.skip('about-app-license-text', 'no license viewer (Alt+V)')
+        return
+    s.fit(v)
+    s.window_settle(v, quiet=0.5)
+    s.park_pointer()
+    s.shot('about-app-license-text', quiet=0.5)
+    s.key('Escape')
 
 
 @scene('Liria', [('liria', 'Liria: the home folder with Quick access pins, recent files and drives')],
