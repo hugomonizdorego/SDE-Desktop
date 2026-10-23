@@ -716,15 +716,14 @@ class Session:
 
     # ------------------------------------------------------------ capture
 
-    def shot(self, name, settle_box=None, quiet=0.5, timeout=6.0, wid=None, hide_pointer=True):
+    def shot(self, name, settle_box=None, quiet=0.5, timeout=6.0, wid=None):
         """Captures image |name| (declared by the running scene) when the
-        screen (or |wid|, or |settle_box|) has settled."""
+        screen (or |wid|, or |settle_box|) has settled. Xvfb draws no
+        pointer; park_pointer() keeps it from hovering anything."""
         if name not in self.run_ctx.numbers:
             raise RuntimeError(f'undeclared image {name!r}')
         if not self.run_ctx.selected(self.current, name):
             return None
-        if hide_pointer is True:
-            pass  # Xvfb draws no cursor; nothing to hide
         if wid:
             g = self.geom(wid)
             settle_box = (max(0, g['x']), max(0, g['y']), min(self.W, g['x'] + g['w']),
