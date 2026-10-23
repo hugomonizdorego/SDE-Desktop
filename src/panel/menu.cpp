@@ -1607,6 +1607,8 @@ void AppMenu::glide(void *data) {
     if (p >= 1.0) {
       pos = g.to;
       g.on = false;
+      self->qa_dumped_ = 0;  // the UI tests see the final place at once
+      self->damage_area(kind);
     } else {
       more = true;
     }
@@ -2682,9 +2684,10 @@ void AppMenu::draw() {
     p.fill_rect(0, 0, W, H, t.surface.alpha(ease_out(q)));
   }
   draw_children();
-  if (qa_dump_enabled()) {
-    // At most every 50 ms while frames follow each other (smooth scrolling,
-    // effects); the last state is always written.
+  if (qa_dump_enabled() && !list_glide_.on && !tiles_glide_.on) {
+    // At most every 50 ms while frames follow each other (effects); the
+    // last state is always written. While an area glides it shows where it
+    // goes once it got there (glide() asks for that frame's dump).
     if (tnow - qa_dumped_ >= 0.05) {
       qa_dumped_ = tnow;
       Fl::remove_timeout(qa_dump_later, this);
@@ -2720,6 +2723,9 @@ void AppMenu::qa_dump_menu() {
   };
   line("@menu", 0, 0, w(), h(), 1, 0);
   if (rail_open_) line("@rail-open", 0, 0, 0, 0, 1, 0);
+  // 0.2: the theme the menu draws with, and how many applications it has.
+  line(std::string("@theme:") + (theme_.dark ? "dark" : "light"), 0, 0, 0, 0, 1, 0);
+  line("@apps:" + std::to_string(apps_ ? apps_->apps.size() : 0), 0, 0, 0, 0, 1, 0);
   for (auto &a : areas_) {
     std::string n = a.kind == K_ROW ? "list" : "tiles";
     line("@" + n, a.x, a.y, a.w, a.h, 1, 0);
@@ -2727,31 +2733,33 @@ void AppMenu::qa_dump_menu() {
   }
   static const char *const rail[] = {"menu",     "account", "documents", "pictures",
                                      "settings", "power",   "gallery"};
+  auto name_of = [&](const Item &it) -> std::string {
+    switch (it.kind) {
+      case K_RAIL: return std::string("rail:") + rail[it.index];
+      case K_FILTER: return "filter:" + it.label;
+      case K_ROW:
+        return (it.group == 1 ? "added:" : it.group == 2 ? "most-used:" : "app:") + it.entry->name;
+      case K_LETTER: return "letter:" + it.label;
+      case K_JUMP: return "jump:" + it.label;
+      case K_GROUP: return "group:" + it.label;
+      case K_TILE: return "tile:" + it.entry->name;
+      case K_HEADING: return it.index == 0 ? "heading:" + it.label : "";
+      default: return "";
+    }
+  };
+  // The selection (keyboard: 1, pointer: 0 in the "active" column), with
+  // its place even when it is scrolled out of view.
+  if (const Item *s = find(selected_))
+    line("@selected:" + name_of(*s), s->x, s->y, s->w, s->h, keyboard_ ? 1 : 0, s->visible ? 0 : 1);
   for (auto &it : items_) {
     if (!it.visible) continue;
     int cx = it.x + it.w / 2, cy = it.y + it.h / 2;
     if (it.clipped() && !(cx >= it.cx && cx < it.cx + it.cw && cy >= it.cy && cy < it.cy + it.ch))
       continue;
-    std::string name;
-    switch (it.kind) {
-      case K_RAIL: name = std::string("rail:") + rail[it.index]; break;
-      case K_FILTER: name = "filter:" + it.label; break;
-      case K_ROW:
-        name = (it.group == 1 ? "added:" : it.group == 2 ? "most-used:" : "app:") + it.entry->name;
-        break;
-      case K_LETTER: name = "letter:" + it.label; break;
-      case K_JUMP: name = "jump:" + it.label; break;
-      case K_GROUP: name = "group:" + it.label; break;
-      case K_TILE:
-        name = "tile:" + it.entry->name;
-        line("@tile-size:" + it.entry->name, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
-        break;
-      case K_HEADING:
-        if (it.index == 0) name = "heading:" + it.label;
-        else continue;
-        break;
-      default: continue;
-    }
+    std::string name = name_of(it);
+    if (name.empty()) continue;
+    if (it.kind == K_TILE)
+      line("@tile-size:" + it.entry->name, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
     line(name, it.x, it.y, it.w, it.h, 1, it.clipped() ? 1 : 0);
   }
   qa_dump(this, text);
