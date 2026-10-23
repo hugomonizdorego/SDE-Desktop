@@ -1914,8 +1914,11 @@ bool Panel::handle_x(const XEvent &e) {
     if (a == x11::atom("_NET_CLIENT_LIST") || a == x11::atom("_NET_ACTIVE_WINDOW")) {
       // Activating another window closes the popups, except for the focus
       // change that follows an application quitting just before they opened.
-      if (a == x11::atom("_NET_ACTIVE_WINDOW") && !Fl::grab() &&
-          steady_ms() - popup_opened_at_ > 500) {
+      // A popup that takes the keyboard makes the window manager report no
+      // active window (focus went to a window it does not manage); on a busy
+      // system that comes later than 500 ms and must not close the popup.
+      if (a == x11::atom("_NET_ACTIVE_WINDOW") && !Fl::grab() && steady_ms() - popup_opened_at_ > 500 &&
+          x11::get_window(root, "_NET_ACTIVE_WINDOW") != None) {
         if (quick_->is_open()) quick_->close();
         if (flyout_->is_open()) flyout_->close();
         if (status_flyout_->is_open()) status_flyout_->close();

@@ -1108,6 +1108,14 @@ try:
     for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','SDE Settings','Lock Screen','Power','Action Center settings']+(['Dark Mode','Display','Alarms'] if H/scale>=560 else []):
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
+    # 0.2.0: a popup that takes the keyboard makes the window manager report
+    # no active window (Openbox: focus went to a window it does not manage).
+    # On a busy system that comes after the popup's first half second and
+    # closed the Action Center (ui-smoke under load); only another window
+    # becoming active closes the popups.
+    time.sleep(.6)
+    run('xprop','-root','-f','_NET_ACTIVE_WINDOW','32x','-set','_NET_ACTIVE_WINDOW','0x0');time.sleep(.8)
+    assert visible('^Action Center$'),'"no active window" closed the Action Center'
     brightness_checks(ac)
     weather_checks()
     ac52_checks()
