@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 // Control Center > Overview: the hub of every setting.
 //
 // The account at the top (picture and name, a click opens Users & Avatar),

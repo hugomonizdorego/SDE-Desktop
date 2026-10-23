@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 // The user's picture (src/common/avatar.h): PNG, JPEG (with its EXIF
 // orientation) and SVG decoding, centre crop and scale, the checks of
 // set_avatar() (links, FIFOs, sizes, not a picture), ~/.face and

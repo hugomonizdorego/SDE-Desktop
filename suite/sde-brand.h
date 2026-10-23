@@ -102,7 +102,7 @@ static void __attribute__((constructor)) sde_native_theme(int argc, char **argv,
   sde_liria_root(argc, argv);
   if (g_getenv("GTK_THEME")) return;
   /* In an SDE session XSETTINGS carries the theme, so windows follow
-   * changes made in SDE Settings at once; GTK_THEME would pin it. */
+   * changes made in the Control Center at once; GTK_THEME would pin it. */
   if (g_getenv("SDE_SESSION_VERSION") && g_getenv("DISPLAY")) return;
   gchar *theme = g_strdup("light"), *style = g_strdup("graphite"), *accent = g_strdup("");
   gchar *accent_name = g_strdup("");

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 // Drawing the user's picture (see avatar.h): a circle with the picture, or
 // the initials on an accent disc when there is none. Shared by the Control
 // Center, the panel and the lock screen.

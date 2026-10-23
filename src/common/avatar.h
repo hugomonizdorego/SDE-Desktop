@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 // The user's picture (avatar) and name, shared by the Control Center (Users
 // & Avatar), the panel (Start menu account button, Action Center) and the
 // lock screen.

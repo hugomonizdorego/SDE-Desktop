@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Selviana DE Project and contributors
 // The user's account in the panel: the picture and the name of the Start
 // menu's account button and of the Action Center, and the account popup of
 // the Start menu.
