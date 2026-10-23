@@ -1517,9 +1517,18 @@ def taskbar_previews(s):
     s.park_pointer()
 
 
-def open_ac(s, args=('--action-center',)):
+def open_ac(s):
+    """The Action Center, opened with a click on its panel button
+    (sde-panel --action-center is the fallback, as for the Start Menu)."""
     s.dismiss_popups()
-    w = s.panel_command(list(args), 'Action Center')
+    s.gone('^Action Center$', 2)
+    w = None
+    if s.control('SDE Panel', 'action-center', 3):
+        try:
+            w = s.click_panel('action-center', '^Action Center$')
+        except SkipShot:
+            w = None
+    w = w or s.panel_command(['--action-center'], 'Action Center')
     s.wait(lambda: '@body' in s.layout('Action Center'), 3)
     last = None
     for _ in range(20):  # the layout settles when the services answered
@@ -1552,42 +1561,47 @@ def action_center(s):
     ('action-center-brightness', 'Action Center: brightness settings with Night Light'),
 ], needs=['sde-panel'])
 def action_center_more(s):
-    s.set_clock('10:42')
-    s.write_config({'action_center': {'expanded': 'false'}}, reload=True)
-    open_ac(s)
-    s.shot('action-center-compact', quiet=0.6)
-    s.key('Escape')
-    s.write_config(reload=True)
-    s.set_clock('21:30')
-    open_ac(s)
-    s.shot('action-center-night', quiet=0.6)
-    s.key('Escape')
-    s.set_clock('10:42')
+    # Each view on its own: one that does not open skips only its image.
+    def view(name, config, clock='10:42', ready=None):
+        try:
+            s.set_clock(clock)
+            s.write_config(config, reload=True)
+            open_ac(s)
+            if ready:
+                s.wait(lambda: ready in s.layout('Action Center'), 3)
+            s.shot(name, quiet=0.6)
+        except SkipShot as e:
+            s.skip(name, str(e))
+        finally:
+            s.key('Escape')
+
+    view('action-center-compact', {'action_center': {'expanded': 'false'}})
+    view('action-center-night', {}, clock='21:30')
     for style in ('led', 'analog'):
-        s.write_config({'action_center': {'expanded': 'false', 'clock_style': style}, 'clock': {'style': style}},
-                       reload=True)
-        open_ac(s)
-        s.wait(lambda: f'@clock-{style}' in s.layout('Action Center'), 3)
-        s.shot(f'action-center-{style}', quiet=0.6)
-        s.key('Escape')
+        view(f'action-center-{style}', {'action_center': {'expanded': 'false', 'clock_style': style},
+                                        'clock': {'style': style}}, ready=f'@clock-{style}')
     s.write_config(reload=True)
+    s.set_clock('10:42')
     # A footer or a card opens with a click; the click can race the popup
     # still laying out (services answering): try again then.
     for button, wanted, name in [('Power', 'Shut Down', 'action-center-power'),
                                  ('Brightness settings', 'Night Light', 'action-center-brightness')]:
-        open_ac(s)
-        for _ in range(3):
-            if s.control('Action Center', wanted, 0.3):
-                break
-            if s.control('Action Center', button, 2):
-                s.press('Action Center', button)
-                s.control('Action Center', wanted, 2)
-        if s.control('Action Center', wanted, 0.3):
+        try:
+            open_ac(s)
+            for _ in range(3):
+                if s.control('Action Center', wanted, 0.3):
+                    break
+                if s.control('Action Center', button, 2):
+                    s.press('Action Center', button)
+                    s.control('Action Center', wanted, 2)
+            if not s.control('Action Center', wanted, 0.3):
+                raise SkipShot(f'{button} did not open {wanted}')
             s.park_pointer()
             s.shot(name, quiet=0.5)
-        else:
-            s.skip(name, f'{button} did not open {wanted}')
-        s.key('Escape')
+        except SkipShot as e:
+            s.skip(name, str(e))
+        finally:
+            s.key('Escape')
     s.set_clock(None)
 
 
