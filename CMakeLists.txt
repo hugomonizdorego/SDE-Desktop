@@ -31,7 +31,7 @@ pkg_check_modules(XINPUT REQUIRED IMPORTED_TARGET xi)
 # Optional: taskbar previews read composited window pixmaps (alpha51).
 pkg_check_modules(XCOMPOSITE IMPORTED_TARGET xcomposite)
 
-# SDE-FLTK: the DebION Dev-Team fork of FLTK 1.3.11 in sde-fltk/, built here
+# SDE-FLTK: the SDE fork of FLTK 1.3.11 in sde-fltk/, built here
 # and linked statically, so SDE does not depend on the distribution's FLTK
 # packages. -DSDE_BUNDLED_FLTK=OFF uses the system FLTK (fltk-config).
 option(SDE_BUNDLED_FLTK "Build and statically link SDE-FLTK" ON)
@@ -197,13 +197,14 @@ install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMA
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
 install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
 install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
-# AppStream: every SDE program names the DebION Dev-Team as its developer.
+# AppStream: every SDE program names the Selviana DE Project as its developer.
 install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml")
 file(GLOB SDE_MANPAGES CONFIGURE_DEPENDS data/man/*.1)
 install(FILES ${SDE_MANPAGES} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 install(FILES data/compositor/sde.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/compositor)
 install(FILES data/legal/components.json DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/legal)
+install(FILES docs/LEGAL.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/sudoers/sde-liria DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d
         PERMISSIONS OWNER_READ GROUP_READ)
 
