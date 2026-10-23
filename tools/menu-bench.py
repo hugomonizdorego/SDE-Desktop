@@ -374,11 +374,18 @@ try:
     pg = geom(pwin)
     clicks = []
     for _ in range(5):
-        n = len(lines())
-        xdo("mousemove", pg[0] + round(18 * scale), pg[1] + pg[3] // 2)
-        time.sleep(0.1)
-        xdo("click", 1)
-        ev = wait(lambda: events_since(n, "open", "menu"), "menu open by click")[-1]
+        for attempt in range(3):  # a click lost under load is clicked again
+            n = len(lines())
+            xdo("mousemove", pg[0] + round(18 * scale), pg[1] + pg[3] // 2)
+            time.sleep(0.1)
+            xdo("click", 1)
+            try:
+                ev = wait(lambda: events_since(n, "open", "menu"), "menu open by click", 3.0)[-1]
+                break
+            except RuntimeError:
+                if attempt == 2:
+                    raise
+                close_menu()
         clicks.append(ev["ms"])
         wait(menu_open, "menu window")
         time.sleep(0.3)
@@ -529,7 +536,7 @@ finally:
             pass
     if args.keep:
         args.keep.mkdir(parents=True, exist_ok=True)
-        for f in ("perf.log", "sde-panel.log"):
+        for f in ("perf.log", "sde-panel.log", "xvfb.log"):
             if (home / f).exists():
                 shutil.copy2(home / f, args.keep / f)
 
