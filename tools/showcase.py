@@ -2076,8 +2076,8 @@ def readme(meta, sets, images, skipped, sheets):
     version = meta['programs'] or meta['version']
     title = ' '.join(filter(None, ['Selviana Desktop Environment', pretty_version(version)]))
     lines = [f'# {title}: development screenshots', '',
-             f'SDE `{version}`. ' if version else '',
-             f'Captured on {meta["date"]} with `tools/showcase.py` from the real programs on a virtual X11 '
+             f'Captured on {meta["date"]}' + (f' from SDE `{version}`' if version else '') +
+             ' with `tools/showcase.py`: the real programs on a virtual X11 '
              'display, with original sample content. Network, sound, Bluetooth, battery, drives, weather, '
              'updates and drivers are test data; "Alex Tester" is a sample account. Click an image for '
              'full size.', '', '| Set | Theme | Screen | Images |', '| --- | --- | --- | --- |']
@@ -2171,7 +2171,9 @@ def contact_sheets(run, sets, images):
         for e in files:
             num = Path(e['file']).name.split('-', 1)[0]
             label = f'{num}  {e["caption"]}'
-            args += ['-label', label if len(label) <= 72 else label[:70] + '...', str(run.out / e['file'])]
+            if len(label) > 56:  # what fits under a 420 px tile at 13 px
+                label = label[:53].rsplit(' ', 1)[0].rstrip(',:;') + '...'
+            args += ['-label', label, str(run.out / e['file'])]
         args += ['-tile', f'{cols}x', '-geometry', '420x+10+10', '-quality', '86', str(run.out / name)]
         r = sp.run(args, stdout=sp.PIPE, stderr=sp.PIPE, text=True)
         if r.returncode != 0:
