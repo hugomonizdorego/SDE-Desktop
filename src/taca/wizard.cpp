@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // More of Taca's dialogs: find, repair, the wizard, convert, settings,
 // favorites, text preview, keyboard shortcuts and About.

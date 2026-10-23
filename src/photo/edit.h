@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Photo's editing model. Edits are non-destructive: an Edits value
 // describes rotation/flip, crop, resize, tone adjustments and a filter, and

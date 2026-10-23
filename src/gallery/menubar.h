@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Pieces of user interface shared by Gallery and Photo: a menu bar drawn in
 // the SDE theme, and the About and Keyboard Shortcuts windows.

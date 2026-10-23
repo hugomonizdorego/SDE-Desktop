@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // calculator: the Calculator of the Selviana Desktop Environment.
 // Standard, Scientific, Programmer and Converter modes with a History,

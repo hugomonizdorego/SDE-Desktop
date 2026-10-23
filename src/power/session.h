@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Session services shared by sde-power and sde-lock: the X idle counter
 // (MIT-SCREEN-SAVER), DPMS, desktop notifications and systemd-logind.

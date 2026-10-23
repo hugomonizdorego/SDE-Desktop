@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // sde-xsettingsd: the XSETTINGS manager of SDE. GTK and other toolkits read
 // the theme, icon theme, fonts and DPI from it. It owns _XSETTINGS_S<n> on

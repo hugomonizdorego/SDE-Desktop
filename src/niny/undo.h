@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Niny undo/redo history. Every buffer change is recorded as an Edit;
 // consecutive typing or deleting merges into one step, and compound commands

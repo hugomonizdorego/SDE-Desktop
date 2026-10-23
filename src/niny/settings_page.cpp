@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Settings page, shown inside the window like Notepad's: rows grouped
 // under headings (Appearance, Text formatting, View, Opening files,

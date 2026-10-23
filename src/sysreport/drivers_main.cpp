@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE Driver Manager (sde-drivers): Debian's non-free firmware, proprietary
 // and DKMS drivers for the devices of this computer. Since 0.1.0~alpha51 a

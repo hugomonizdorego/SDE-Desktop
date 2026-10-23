@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE System Monitor: tells applications from background processes. A
 // process is an app when it owns a top-level window (_NET_WM_PID) or was

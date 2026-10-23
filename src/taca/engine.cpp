@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The libarchive engine: listing, safe extraction, integrity tests, creating
 // archives and rewriting them for add, delete and rename. External tools

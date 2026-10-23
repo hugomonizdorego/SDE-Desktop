@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE Welcome (sde-welcome): the first-login greeting of SDE, after the
 // welcome screen concept of Linux Mint (no Mint code or artwork). The header

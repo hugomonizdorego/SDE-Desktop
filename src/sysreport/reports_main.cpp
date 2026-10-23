@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // SDE System Reports (sde-system-reports): crash reports of SDE programs
 // from the session logs, with "Copy report" and "Report on GitHub", and a

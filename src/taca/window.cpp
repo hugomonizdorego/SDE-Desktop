@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Taca main window: menu bar, toolbar, address bar, the details list
 // and a status bar. The list browses the file system; double-clicking an

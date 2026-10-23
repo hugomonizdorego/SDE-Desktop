@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The page canvas. Pages are drawn from 512 px tiles rendered at the exact
 // device scale (zoom x 96/72 x UI scale) and placed on whole pixels, so text
