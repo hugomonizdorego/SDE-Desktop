@@ -283,7 +283,7 @@ def open_menu_command(park=True):
     sent again."""
     if park:  # away from the menu: no hover while it opens
         xdo("mousemove", W - 2, 2)
-    for attempt in range(6):
+    for attempt in range(12):  # alpha52 under load lost many in a row
         n = len(lines())
         t0 = time.perf_counter()
         sp.run([str(bin_dir / "sde-panel"), "--menu"], env=env)
@@ -322,8 +322,11 @@ def layout():
 res = {"label": args.label, "size": args.size, "scale": args.scale, "apps": args.apps}
 failed = None
 try:
-    xv = start(["Xvfb", args.display, "-screen", "0", args.size + "x24", "-nolisten", "tcp", "-ac"],
-               "xvfb.log")
+    # -noreset: without it the server resets when its last client (the
+    # readiness check below) disconnects, and the panel starting right then
+    # cannot open the display.
+    xv = start(["Xvfb", args.display, "-screen", "0", args.size + "x24", "-nolisten", "tcp", "-ac",
+                "-noreset"], "xvfb.log")
     wait(lambda: Path(f"/tmp/.X11-unix/X{args.display.lstrip(':')}").exists(), "Xvfb", 30)
     # The socket exists before the server takes connections.
     wait(lambda: sp.run(["xdotool", "getmouselocation"], env=env, stdout=sp.DEVNULL,
