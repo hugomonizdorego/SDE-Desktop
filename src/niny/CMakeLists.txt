@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 DebION Dev-Team
+# Copyright (C) 2026 Selviana DE Project and contributors
 #
 # Niny Text Editor. The text model (codec, highlighter, search, undo,
 # settings, text operations) is a separate library so the unit tests can use

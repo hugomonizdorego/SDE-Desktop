@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The properties panel: colour, opacity, line width, font size and
 // alignment of the armed tool or the selected annotation, and the

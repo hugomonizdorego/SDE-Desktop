@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The left icon rail and its side panel: search results, a grid of page
 // thumbnails (drag to reorder pages), the outline, bookmarks, the list of

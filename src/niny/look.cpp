@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Niny's colors: chrome derived from the SDE theme family and accent, and
 // two syntax palettes (light and dark) tuned for contrast on the editor.

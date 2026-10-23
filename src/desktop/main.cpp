@@ -25,6 +25,7 @@
 //    from them are accepted (xdnd.cpp); files are moved, copied or linked
 //    on a worker thread (file_ops.cpp), never overwriting anything.
 #include <FL/Fl.H>
+#include "about.h"
 #include "crash.h"
 #include "buffered_window.h"
 #include <FL/Fl_Box.H>
@@ -1837,10 +1838,7 @@ int main(int argc, char **argv) {
   init_i18n();
   install_crash_handler("sde-desktop");
   for (int i = 1; i < argc; ++i) {
-    if (!strcmp(argv[i], "--version")) {
-      printf("sde-desktop %s (%s)\n", SDE_VERSION, SDE_VERSION_LABEL);
-      return 0;
-    }
+    if (!strcmp(argv[i], "--version")) return print_version("sde-desktop", SDE_VERSION);
     printf("Usage: sde-desktop [--version]\n\nDraws the wallpaper and desktop icons.\n");
     return strcmp(argv[i], "--help") ? 2 : 0;
   }

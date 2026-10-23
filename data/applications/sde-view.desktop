@@ -6,7 +6,7 @@ GenericName=Image Viewer and Editor
 Comment=View and edit images
 Exec=sde-view %U
 TryExec=sde-view
-Icon=sdeview
+Icon=sde-photo
 Terminal=false
 Categories=Graphics;RasterGraphics;Viewer;
 Keywords=Picture;Photo;Image;Viewer;Editor;Crop;Rotate;Filter;Draw;Annotate;Markup;Blur;Pixelate;
@@ -15,8 +15,7 @@ StartupNotify=true
 StartupWMClass=Sdeview
 MimeType=image/png;image/jpeg;image/pjpeg;image/gif;image/webp;image/tiff;image/bmp;image/x-bmp;image/svg+xml;image/svg+xml-compressed;image/avif;image/heic;image/heif;image/jxl;
 Actions=Draw;
-X-Developer=DebION Dev-Team
-X-DebION-Developer=DebION Dev-Team
+X-Developer=Selviana DE Project
 
 [Desktop Action Draw]
 Name=Draw and Annotate

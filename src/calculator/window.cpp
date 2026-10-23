@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Calculator window: display, keypads of the four modes, programmer
 // bases and bits, converter and the History panel.
@@ -239,10 +239,10 @@ void CalcWindow::show_about() {
   info.name = _("Calculator");
   info.program = "calculator";
   info.version = SDE_APP_VERSION;
-  info.icon = "org.debion.Calculator";
+  info.icon = "sde-calculator";
+  info.icon_fallbacks = {"org.debion.Calculator"};
   info.description = _("Standard, scientific and programmer calculations, unit conversion and a "
                        "history of your results. Works offline.");
-  info.license = "GPL-3.0-or-later";
   info.credits = {sde::toolkit_credit()};
   sde::show_about(info);
 }

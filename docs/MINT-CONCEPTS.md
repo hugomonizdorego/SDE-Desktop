@@ -1,13 +1,13 @@
 # Linux Mint concepts in SDE (0.1.0~alpha50)
 
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Copyright (C) 2026 DebION Dev-Team -->
+<!-- Copyright (C) 2026 Selviana DE Project and contributors -->
 
 The request: take the ideas a new Linux Mint user meets in the first hour
 (the "Using Linux Mint for the first time" walkthrough on reallinuxuser.com)
 and apply them to SDE and the SDE Panel. Mint's code, names and artwork are
-**not** used: the programs below are written from scratch by the DebION
-Dev-Team in C++17 on SDE-FLTK, cairo and Xlib, under GPL-3.0-or-later, and
+**not** used: the programs below are written from scratch by the Selviana DE
+Project in C++17 on SDE-FLTK, cairo and Xlib, under GPL-3.0-or-later, and
 install Debian's own packages.
 
 | Mint concept | SDE |
@@ -29,8 +29,10 @@ install Debian's own packages.
 ## SDE Welcome (`sde-welcome`), since 0.1.0~alpha51
 
 One calm window (720 x 480 at 100 %, colours from the active theme, 8-10 px
-rounded corners, no gradients): the DebION logo with "Welcome to DebION" and
-one line, then six first steps as tiles (two columns, one below 520 px),
+rounded corners, no gradients): the operating system's logo with "Welcome to
+<NAME>" (both from os-release, since 0.2.0 Alpha 1 never a hard-coded
+distribution), one line, and the desktop apart from it: the SDE logo with
+"Desktop: Selviana Desktop Environment <version>"; then six first steps as tiles (two columns, one below 520 px),
 each an icon, a label and a one-line hint:
 
 | Tile | Opens |
@@ -54,7 +56,7 @@ those has its own program, opened from the tiles or the Start menu.
 `/etc/xdg/autostart/sde-welcome.desktop` runs `sde-welcome --autostart` at
 every login; `welcome::should_autostart(live, done, show)` decides:
 
-1. **Live session** (the DebION ISO): never. The program exits 0 silently.
+1. **Live session** (a distribution's live ISO): never. The program exits 0 silently.
 2. **First login of a user after installation** (no stamp): always. Opening
    the window on an installed system writes the per-user stamp
    `$XDG_CONFIG_HOME/sde/welcome-done` (`~/.config/sde/welcome-done`).
@@ -64,8 +66,8 @@ every login; `welcome::should_autostart(live, done, show)` decides:
    (`[welcome] show=true`; the default is `false` since alpha51).
 
 Started from the menu, the window always opens. In a live session the check
-box is hidden and a note reads "Live session — install DebION to keep your
-settings"; no stamp is written.
+box is hidden and a note reads "Live session — install <NAME> to keep your
+settings" (NAME from os-release); no stamp is written.
 
 `welcome::is_live_session()` (`src/welcome/model.cpp`) returns true when
 any one of these signals is present (`live_reason()` names the first found;
@@ -101,7 +103,7 @@ Sidebar pages (Ctrl+Page Up/Down moves between them, Esc closes, F1 or a
 right click on empty space shows About):
 
 * **Welcome**: banner with the SDE logo, version and OS name, links to First
-  Steps and the documentation, a short "About DebION and SDE".
+  Steps and the documentation, a short "About" of the system and SDE.
 * **First Steps**: Desktop colors (Light / Dark / Auto preview tiles and the
   accent swatches; "Appearance Settings" opens `sde-settings --page
   appearance`), Panel layout (Traditional / Centered / Floating tiles,

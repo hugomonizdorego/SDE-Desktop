@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // A Niny document: text and style buffers, file I/O with encoding and line
 // ending handling, undo/redo, and incremental syntax highlighting.

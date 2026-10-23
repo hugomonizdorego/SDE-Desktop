@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Niny text codec: character encoding and line ending detection, decoding
 // files into the UTF-8/LF text the editor works with, and encoding it back.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Gallery's quick preview: a large view with zoom, slideshows, details and
 // actions. Editing is Photo's: "Edit in Photo" opens the photo there.

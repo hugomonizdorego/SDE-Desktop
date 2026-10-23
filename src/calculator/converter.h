@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 DebION Dev-Team
+// Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Unit converter: length, mass, temperature, area, volume, speed, time,
 // data and currency. Every unit but temperatures is a factor of the

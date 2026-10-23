@@ -1,22 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Copyright 2026 DebION Dev-Team -->
+<!-- Copyright 2026 Selviana DE Project and contributors -->
 <component type="generic">
   <id>org.debion.SDE</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Selviana Desktop Environment</name>
-  <summary>The desktop of DebION GNU/Linux</summary>
-  <developer id="org.debion">
-    <name>DebION Dev-Team</name>
+  <summary>Small and fast desktop environment with a modern look</summary>
+  <developer id="io.github.hugomonizdorego">
+    <name>Selviana DE Project</name>
   </developer>
   <description>
-    <p>The Selviana Desktop Environment (SDE) is a small and fast desktop with a modern look for
-    DebION GNU/Linux. It includes the panel with the Start menu, the desktop with icons and
-    wallpapers, the session manager, notifications, the run dialog and its own settings.</p>
-    <p>SDE programs are built with SDE-FLTK, the DebION Dev-Team fork of FLTK 1.3 by Bill
-    Spitzak and others.</p>
-    <p>Developed by the DebION Dev-Team.</p>
+    <p>The Selviana Desktop Environment (SDE) is a small and fast desktop with a modern look. It
+    includes the panel with the Start menu, the desktop with icons and wallpapers, the session
+    manager, notifications, the run dialog and the Control Center.</p>
+    <p>SDE programs are built with SDE-FLTK, the SDE fork of FLTK 1.3 by Bill Spitzak and
+    others. SDE is inspired by the Equinox Desktop Environment (EDE) and contains no EDE code.</p>
+    <p>Developed by the Selviana DE Project. Selviana Desktop Environment, SDE and the SDE logo are
+    trademarks of the Selviana DE Project.</p>
   </description>
+  <icon type="stock">sde-logo</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
   <project_group>SDE</project_group>
