@@ -175,7 +175,7 @@ int message(Fl_Window *parent, const std::string &title, const std::string &text
   Dialog d(w, std::min(h, S(560)), title);
   std::string body = text;
   const Theme &t = d.theme();
-  d.extra_paint = [&d, warning, &t](Painter &p) {
+  d.extra_paint = [warning, &t](Painter &p) {
     icon::draw(p, warning ? icon::Warning : icon::Info, S(24), S(62), S(26), warning ? Color::hex(0xD9822B) : t.accent_text);
   };
   d.extra_text = [&d, body, &t]() {
