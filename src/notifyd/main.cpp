@@ -9,9 +9,10 @@
 // alpha52: a history of the notifications (org.sde.Notifications on the same
 // object) for the panel's notifications button and flyout: GetHistory,
 // MarkRead, Dismiss, DismissApp, Clear, InvokeAction and the HistoryChanged
-// signal (unread, total). 0.2: HidePopups takes the bubbles off the screen
-// (the panel's flyout opened); they stay in the history as expired ones do. Expired and silenced (Do Not Disturb) notifications
-// stay in the history until dismissed there; transient ones are not kept.
+// signal (unread, total). Expired and silenced (Do Not Disturb)
+// notifications stay in the history until dismissed there; transient ones
+// are not kept. 0.2: HidePopups takes the bubbles off the screen (the
+// panel's flyout opened); they stay in the history as expired ones do.
 #include <FL/Fl.H>
 #include <FL/Fl_Button.H>
 #include <FL/fl_draw.H>

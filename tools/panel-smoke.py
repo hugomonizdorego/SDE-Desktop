@@ -443,6 +443,7 @@ def start_menu_checks():
     jump('T');waitfor(lambda:'app:Tab Name QA' in L(),'tab in a name not cleaned')
     jump('Q');k=waitfor(lambda:next((k for k in L() if k.startswith('app:Quite Long')),None),'very long name missing')
     assert inside(L()[k],L()['@list']),('long name outside the list',L()[k])
+    waitfor(lambda:'app:Qa Bad \u00ff Bytes' in L(),'a name that is no UTF-8 was not read as Latin-1')
     jump('I');waitfor(lambda:'app:Iconless QA' in L(),'application without an icon missing')
     assert not any('Broken' in k for k in L()),'broken .desktop file listed'
     shot('60-menu-odd-entries')
@@ -978,6 +979,11 @@ def pick(items,label):
     run('xdotool','key',*(['Down']*(active.index(label)+1)),'Return');time.sleep(.5)
 def notify(app,summary,body='',*extra):
     run('notify-send','-a',app,*extra,summary,body)
+def bubbles():
+    """The notification bubbles on screen: override-redirect windows have no
+    WM_NAME, so they are found by sde-notifyd's _NET_WM_PID."""
+    r=run('xdotool','search','--onlyvisible','--pid',notifyd.pid,check=False)
+    return r.stdout.split() if r.returncode==0 else []
 def empty_spot():
     """Root coordinates of empty panel space: left of the tray and status icons."""
     L=layout('SDE Panel');pg=geom(panel)
@@ -1102,10 +1108,10 @@ def a52_checks():
     notify('QA Chat','Hello from Ada','Lunch at noon?');notify('QA Chat','Second message','See you there');notify('QA Mail','New mail','Quarterly report')
     waitfor(lambda:'@badge:3' in layout('SDE Panel'),'unread count not 3: '+str([k for k in layout('SDE Panel') if k.startswith('@badge')]))
     time.sleep(.5);shot('45-notifications-badge')
-    assert visible('^Notification$'),'no notification bubble before opening the flyout'
+    assert bubbles(),'no notification bubble before opening the flyout'
     fl=click_panel('notifications','^Notifications$');time.sleep(.6)
     # 0.2: the flyout takes the bubbles off the screen; they stay listed in it.
-    waitfor(lambda:not visible('^Notification$'),'notification bubbles stayed on screen with the flyout open')
+    waitfor(lambda:not bubbles(),'notification bubbles stayed on screen with the flyout open')
     for name in ['Notification Hello from Ada','Notification Second message','Notification New mail','Clear QA Chat','Clear QA Mail','Clear all','Do Not Disturb','Notification settings...']:item('Notifications',name,active=False)
     L=list(layout('Notifications'));assert L.index('Notification Second message')<L.index('Notification Hello from Ada'),'not newest first'
     flyout_bounds_simple(fl);shot('46-notifications-flyout')
@@ -1120,7 +1126,7 @@ def a52_checks():
     waitfor(lambda:'@dnd:on' in layout('SDE Panel'),'panel does not show DND')
     escape('Notifications')
     notify('QA Chat','Silenced','while DND is on');time.sleep(.8)
-    assert not visible('^Notification$'),'bubble shown during DND'
+    assert not bubbles(),'bubble shown during DND'
     shot('48-notifications-dnd')
     fl=click_panel('notifications','^Notifications$');time.sleep(.4)
     item('Notifications','Notification Silenced',active=False);shot('48-notifications-dnd-flyout');escape('Notifications')
@@ -1216,7 +1222,7 @@ try:
     e['DBUS_SYSTEM_BUS_ADDRESS']=e['DBUS_SESSION_BUS_ADDRESS']
     transport=['-nolisten','unix','-nolisten','local','-listen','tcp','-ac'] if a.tcp_display else ['-nolisten','tcp','-ac']
     config(overflow=False);xv=spawn('Xvfb',display,'-screen','0',a.size+'x24',*transport);time.sleep(.6);assert xv.poll() is None
-    spawn('sde-notifyd');time.sleep(.3)
+    notifyd=spawn('sde-notifyd');time.sleep(.3)
     spawn('dbus-monitor','--session',"interface='org.freedesktop.Notifications'")
     spawn('sde-desktop');find('^SDE Desktop$');time.sleep(.3);panel_proc=spawn('sde-panel');panel=find('^SDE Panel$');time.sleep(.6)
     fixture=spawn(str(a.test_dir.resolve()/'sde-panel-service-fixture'),str(home/'service.log'))
