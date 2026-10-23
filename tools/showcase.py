@@ -519,8 +519,18 @@ class Session:
         exe = self.which(cmd[0])
         if not exe:
             raise SkipShot(f'{cmd[0]} is not installed')
-        self.spawn(*cmd)
-        w = self.need(title, timeout, what=f'the {cmd[0]} window')
+        p = self.spawn(*cmd)
+        w = self.find(title, timeout)
+        if not w:
+            # Once more, as a user would: the program ended without a window
+            # (its exit status is in the log) or its window never showed.
+            code = p.poll()
+            warn(f'{self.set.name}: no {cmd[0]} window after {timeout:.0f} s ' +
+                 (f'(it exited with status {code})' if code is not None else '(still running)') +
+                 '; starting it again')
+            self.stop(p, 1)
+            p = self.spawn(*cmd)
+            w = self.need(title, timeout, what=f'the {cmd[0]} window')
         if fit:
             self.fit(w)
         self.activate(w)
@@ -1973,22 +1983,23 @@ def display_settings(s):
 @scene('Run and Log Out', [('run-dialog', 'Run Command (Alt+F2)'),
                            ('logout-dialog', 'Leave SDE: lock, suspend, log out, restart or shut down')])
 def run_and_logout(s):
-    if s.has('sde-run'):
+    # Each dialog on its own: one that does not open skips only its image.
+    try:
         s.app(['sde-run'], '^Run Command$')
         s.type('liria ~/Pictures', 50)
         s.park_pointer()
         s.shot('run-dialog', quiet=0.5)
         s.key('Escape')
-        s.stop_scene_procs()
-    else:
-        s.skip('run-dialog', 'sde-run is not installed')
-    if s.has('sde-logout'):
+    except SkipShot as e:
+        s.skip('run-dialog', str(e))
+    s.stop_scene_procs()
+    try:
         s.app(['sde-logout'], '^Leave SDE$|^Log Out$')
         s.park_pointer()
         s.shot('logout-dialog', quiet=0.5)
         s.key('Escape')  # cancels
-    else:
-        s.skip('logout-dialog', 'sde-logout is not installed')
+    except SkipShot as e:
+        s.skip('logout-dialog', str(e))
 
 
 @scene('Lock Screen', [('lock-screen', 'The lock screen (test fixture: nothing is locked)')])
