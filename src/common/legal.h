@@ -106,7 +106,7 @@ cairo_surface_t *load_branding(const std::vector<std::string> &names, int max_w,
                                const std::vector<std::string> &icons = {});
 
 // Operating system names from os-release, never hard-coded:
-// PRETTY_NAME ("DebION GNU/Linux 1 (testing)") and NAME ("DebION GNU/Linux").
+// PRETTY_NAME ("Debian GNU/Linux forky/sid") and NAME ("Debian GNU/Linux").
 // Empty when os-release is missing.
 std::string os_pretty_name();
 std::string os_name();
