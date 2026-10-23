@@ -163,8 +163,9 @@ dh_icons refreshes the icon cache on installation.
   accents (`data/themes/palettes.json`), for example red #C9564E, green
   #4A9157, blue #3876B9 and teal #2B807B — not the logo's neon stripe
   colours, which only the logo and the `sde-logo` icon use.
-- No letters (the `>_` prompt is the only symbol), no copies of other icon
-  themes, no third-party logos or trademarks.
+- No text: no letters or digits (the `>_` prompt of Run is the only
+  typographic glyph); no copies of other icon themes, no third-party logos or
+  trademarks.
 
 ### Editing
 
