@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// sde-settings: the SDE settings center.
+// sde-settings: the SDE Control Center (also started as sde-control-center).
 //
-// Pages: Appearance, Panel, Desktop, Notifications, Displays, Keyboard &
-// Mouse and About. Every change is saved immediately to
-// ~/.config/sde/sde.conf and announced to the running desktop.
+// The overview is a hub of every setting by category (hub.cpp): the pages
+// of this window (Appearance, Panel, Start Menu, Displays, Sound, Users &
+// Avatar ...) and tiles that start the separate tools (Display Settings,
+// Software Updater, Driver Manager, System Reports, System Monitor,
+// printers). Every change is saved immediately to ~/.config/sde/sde.conf
+// and announced to the running desktop. The program and its page ids keep
+// their names: "sde-settings --page NAME" opens a page.
 //
 // "sde-settings --apply" applies the saved display, keyboard and pointer
 // settings without opening a window (run by sde-session at login).
@@ -33,6 +37,8 @@
 
 #include "../panel/timezone.h"
 #include "about.h"
+#include "avatar.h"
+#include "avatar_view.h"
 #include "crash.h"
 #include "buffered_window.h"
 #include "build_config.h"
@@ -72,8 +78,9 @@ Theme g_theme;
 BufferedWindow *g_window = nullptr;
 std::string g_argv0;
 std::string g_restart_page = "appearance";
-// Page offset of the Wallpaper card ("--page wallpaper" scrolls to it).
-int g_wallpaper_anchor = 0;
+// The anchor ("wallpaper", "proxy", "mouse" ...) the next page shown
+// scrolls to (see Page::anchor()), from --page or an overview tile.
+std::string g_open_anchor;
 // True while refresh_page() rebuilds the visible page (not a new visit).
 bool g_refreshing = false;
 
@@ -758,13 +765,18 @@ struct PageInfo {
   const char *title;
   std::vector<std::string> icons;
   void (*build)(Page *);
+  // The sidebar caption above this page when it begins a group of pages
+  // ("" for a small gap without a caption); nullptr inside a group.
+  const char *section;
 };
 
 const std::vector<PageInfo> &pages();
 void show_page(int index);
-void open_page(const char *id) {
+// Shows page |id|, scrolled to its |anchor| (see Page::anchor()) if given.
+void open_page(const char *id, const char *anchor = nullptr) {
   for (size_t i = 0; i < pages().size(); ++i)
     if (std::string(pages()[i].id) == id) {
+      g_open_anchor = anchor ? anchor : "";
       show_page(int(i));
       return;
     }
@@ -773,6 +785,8 @@ void open_page(const char *id) {
 // Native category symbols remain distinct even without an optional icon theme.
 void settings_glyph(Painter &p, const std::string &id, double x, double y, double size,
                     const Color &c) {
+  // The overview's tools and the newer pages (users, start-menu, date-time).
+  if (hub_glyph(p, id, x, y, size, c)) return;
   if (id == "appearance") {
     glyph::sun(p, x, y, size, c);
     return;
@@ -865,44 +879,12 @@ void settings_glyph(Painter &p, const std::string &id, double x, double y, doubl
   }
 }
 
-class SettingsLink : public DrawnButton {
- public:
-  SettingsLink(int x, int y, int w, const std::string &title, const std::string &hint,
-               std::vector<std::string> icons, const char *page)
-      : DrawnButton(x, y, w, S(100), nullptr),
-        title_(title),
-        hint_(hint),
-        icons_(std::move(icons)),
-        page_(page) {
-    callback([](Fl_Widget *w, void *) { open_page(static_cast<SettingsLink *>(w)->page_); });
-    copy_tooltip(title.c_str());
-  }
-  void draw() override {
-    bool hot = Fl::belowmouse() == this;
-    {
-      Painter p(window()->w(), window()->h());
-      p.fill_rounded(x(), y(), w(), h(), S(14), hot ? g_theme.hover : g_theme.surface);
-      p.stroke_rounded(x(), y(), w(), h(), S(14), hot ? g_theme.accent : g_theme.border);
-      p.fill_rounded(x() + S(14), y() + S(16), S(36), S(36), S(10), g_theme.accent.alpha(.12));
-      settings_glyph(p, page_, x() + S(20), y() + S(22), S(24), g_theme.accent_text);
-      if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), S(14));
-    }
-    text_font(g_theme.font_size + 1, true);
-    draw_text(title_, x() + S(62), y() + S(15), w() - S(76), S(28), g_theme.text);
-    text_font(g_theme.font_size - 1);
-    draw_text(hint_, x() + S(16), y() + S(64), w() - S(32), S(22), g_theme.text_dim);
-  }
-
- private:
-  std::string title_, hint_;
-  std::vector<std::string> icons_;
-  const char *page_;
-};
-
 class PanelStyleCard : public Fl_Widget {
  public:
   PanelStyleCard(int x, int y, int w, int h, std::string style, std::string title)
-      : Fl_Widget(x, y, w, h), style_(std::move(style)), title_(std::move(title)) {}
+      : Fl_Widget(x, y, w, h), style_(std::move(style)), title_(std::move(title)) {
+    tooltip(title_.c_str());
+  }
   void draw() override {
     bool selected = g_cfg.get("panel", "style", "full") == style_;
     {
@@ -950,50 +932,6 @@ class PanelStyleCard : public Fl_Widget {
  private:
   std::string style_, title_;
 };
-
-void build_home(Page *page) {
-  page->heading(_("System Settings"), _("Personalize your desktop and manage your devices"));
-  page->begin_card();
-  int x = page->left() + S(20), y = page->cursor();
-  new ImageBox(x, y + S(8), S(46), {"computer", "sde-logo"});
-  new Label(x + S(62), y, page->width() - S(102), S(30), user_name(), Label::BOLD);
-  new Label(x + S(62), y + S(30), page->width() - S(102), S(24), os_release("PRETTY_NAME"),
-            Label::DIM);
-  page->advance(S(66));
-  page->end_card();
-  int gap = S(12), width = (page->width() - gap) / 2;
-  struct Link {
-    const char *id, *title, *hint, *icon;
-  };
-  const Link links[] = {
-      {"appearance", N_("Appearance"), N_("Themes, colors and wallpaper"),
-       "preferences-desktop-theme"},
-      {"panel", N_("Panel"), N_("Full, floating or short"), "preferences-system-windows"},
-      {"action-center", N_("Action Center"), N_("Clock, greeting and quick controls"),
-       "preferences-system"},
-      {"clock", N_("Clock & Weather"), N_("Clock style, time format and weather units"),
-       "preferences-system-time"},
-      {"display", N_("Displays"), N_("Resolution and arrangement"), "video-display"},
-      {"input", N_("Keyboard & Mouse"), N_("Layouts, pointer and touchpad"), "input-keyboard"},
-      {"sound", N_("Sound"), N_("Volume, speakers and microphones"), "audio-volume-high"},
-      {"network", N_("Network"), N_("Wi-Fi and wired connections"), "network-wireless"},
-      {"bluetooth", N_("Bluetooth"), N_("Pair and connect devices"), "bluetooth"},
-      {"power", N_("Power"), N_("Battery, sleep and brightness"), "preferences-system-power"},
-      {"notifications", N_("Notifications"), N_("Alerts and Do Not Disturb"),
-       "preferences-desktop-notification"},
-      {"suite", N_("Applications"), N_("Applications and source credits"), "applications-other"},
-      {"system", N_("Power & Updates"), N_("Power, packages and processes"),
-       "utilities-system-monitor"},
-  };
-  y = page->cursor();
-  for (size_t i = 0; i < sizeof(links) / sizeof(links[0]); ++i)
-    new SettingsLink(page->left() + int(i % 2) * (width + gap), y + int(i / 2) * S(112), width,
-                     _(links[i].title), _(links[i].hint), {links[i].icon, "preferences-system"},
-                     links[i].id);
-  page->advance(int((sizeof(links) / sizeof(links[0]) + 1) / 2) * S(112));
-  page->note(_("Changes are saved automatically."));
-  page->finish();
-}
 
 void reload_compositor_later(void *) {
   write_compositor_config(g_cfg);
@@ -1321,7 +1259,7 @@ void build_appearance(Page *page) {
   }
   page->end_card();
 
-  g_wallpaper_anchor = page->cursor() - page->y();
+  page->anchor("wallpaper");
   page->begin_card(_("Wallpaper"));
   std::string cm = g_cfg.get("appearance", "wallpaper_mode", "zoom");
   static const char *modes[] = {"zoom", "fit", "stretch", "center", "tile"};
@@ -1727,7 +1665,7 @@ void send_test_notification() {
                                 "org.freedesktop.Notifications", "Notify");
   {
     dbus::Writer w(m);
-    w.str("SDE Settings")
+    w.str(_("Control Center"))
         .u32(0)
         .str("preferences-desktop-notification")
         .str(_("Notifications work"))
@@ -2239,7 +2177,10 @@ void build_date_time(Page *page) {
   static bool listening = false;
   if (!listening) {
     listening = true;
-    tzsync::Sync::get().set_listener([] { refresh_if_shown("system"); });
+    tzsync::Sync::get().set_listener([] {
+      refresh_if_shown("system");
+      refresh_if_shown("date-time");
+    });
   }
   auto &tz = tzsync::Sync::get();
   page->begin_card(_("Date and time"));
@@ -2261,6 +2202,69 @@ void build_date_time(Page *page) {
       _("The panel sets the time zone from the network at login and when the network changes, at "
         "most once an hour, without asking for a password."));
   page->end_card();
+}
+
+// Control Center > Date & Time: the time zone card and the way to the clock.
+void build_date_time_page(Page *page) {
+  page->heading(_("Date & Time"), _("Time zone, network time and the panel clock"));
+  if (find_program("timedatectl").empty())
+    page->note(_("Date and time settings need timedatectl (package systemd)."));
+  else
+    build_date_time(page);
+  page->begin_card(_("Clock"));
+  page->row(_("Clock style, 12 or 24 hours and the weather"), S(170), S(34),
+            [](int x, int y, int w, int h) {
+              auto *b = new FlatButton(x, y, w, h, _("Clock & Weather"));
+              b->callback([](Fl_Widget *, void *) { open_page("clock"); });
+              return b;
+            });
+  page->end_card();
+  page->finish();
+}
+
+// Control Center > Start Menu: [menu] in sde.conf, read by the panel each
+// time the menu opens.
+void build_start_menu_page(Page *page) {
+  page->heading(_("Start Menu"), _("Size, application lists and your account"));
+  page->begin_card(_("Layout"));
+  std::string size = g_cfg.get("menu", "size", "medium");
+  bool dragged = g_cfg.get_int("menu", "width", 0) > 0 && g_cfg.get_int("menu", "height", 0) > 0;
+  page->choice_row(
+      _("Size"), {_("Small"), _("Medium"), _("Large")},
+      size == "small" ? 0
+      : size == "large" ? 2
+                        : 1,
+      [](int v) {
+        static const char *vals[] = {"small", "medium", "large"};
+        if (v < 0 || v > 2) return;
+        g_cfg.set("menu", "size", vals[v]);
+        // A size dragged at the menu's edges wins over the presets.
+        g_cfg.set("menu", "width", "0");
+        g_cfg.set("menu", "height", "0");
+        apply_change();
+        refresh_if("start-menu");
+      },
+      dragged ? _("The menu keeps the size you dragged at its edges until you choose one here.")
+              : _("You can also drag the menu's outer edges."));
+  page->switch_row(_("Show recently added applications"),
+                   g_cfg.get_bool("menu", "show_recently_added", true),
+                   [](bool on) { set_bool("menu", "show_recently_added", on); });
+  page->switch_row(_("Show most used applications"),
+                   g_cfg.get_bool("menu", "show_most_used", g_cfg.get_bool("menu", "show_recent", true)),
+                   [](bool on) { set_bool("menu", "show_most_used", on); });
+  page->end_card();
+  page->begin_card(_("Account"));
+  page->row(_("Your picture and your name"), S(170), S(34),
+            [](int x, int y, int w, int h) {
+              auto *b = new FlatButton(x, y, w, h, _("Users & Avatar"));
+              b->callback([](Fl_Widget *, void *) { open_page("users"); });
+              return b;
+            },
+            _("The account button of the Start menu shows them; click it to pick another picture."));
+  page->end_card();
+  page->note(_("To pin an application, right-click it in the Start menu. Drag tiles to arrange "
+               "them in groups."));
+  page->finish();
 }
 
 void build_suite_system(Page *page) {
@@ -2512,52 +2516,70 @@ void build_about(Page *page) {
 }
 
 const std::vector<PageInfo> &pages() {
+  // Grouped as the overview's categories; the ids never change.
   static const std::vector<PageInfo> list = {
-      {"home", N_("Overview"), {"preferences-system", "computer"}, build_home},
+      {"home", N_("Overview"), {"sde-control-center", "preferences-system"}, build_hub, nullptr},
       {"appearance",
        N_("Appearance"),
        {"preferences-desktop-theme", "preferences-desktop-wallpaper"},
-       build_appearance},
-      {"panel", N_("Panel"), {"preferences-system-windows", "preferences-desktop"}, build_panel},
-      {"desktop", N_("Desktop"), {"user-desktop", "preferences-desktop-wallpaper"}, build_desktop},
+       build_appearance,
+       N_("PERSONALIZATION")},
+      {"desktop", N_("Desktop"), {"user-desktop", "preferences-desktop-wallpaper"}, build_desktop, nullptr},
+      {"panel", N_("Panel"), {"preferences-system-windows", "preferences-desktop"}, build_panel, nullptr},
+      {"start-menu", N_("Start Menu"), {"start-here", "preferences-desktop"}, build_start_menu_page,
+       nullptr},
       {"action-center",
        N_("Action Center"),
        {"preferences-system", "preferences-desktop"},
-       build_action_center},
+       build_action_center,
+       nullptr},
       {"clock",
        N_("Clock & Weather"),
        {"preferences-system-time", "x-office-calendar", "preferences-system"},
-       build_clock_page},
+       build_clock_page,
+       nullptr},
       {"notifications",
        N_("Notifications"),
        {"preferences-desktop-notification", "notification-active", "dialog-information"},
-       build_notifications},
+       build_notifications,
+       nullptr},
       {"effects",
        N_("Effects"),
        {"preferences-desktop-effects", "applications-graphics", "preferences-desktop"},
-       build_effects},
+       build_effects,
+       nullptr},
+      {"lock", N_("Lock Screen"), {"system-lock-screen", "preferences-desktop-screensaver"},
+       build_lock_page, nullptr},
       {"display",
        N_("Displays"),
        {"preferences-desktop-display", "video-display", "computer"},
-       build_display_page},
-      {"input",
-       N_("Keyboard & Mouse"),
-       {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
-       build_input_page},
-      {"touchpad", N_("Touchpad"), {"input-touchpad", "input-mouse"}, build_touchpad_page},
-      {"sound", N_("Sound"), {"preferences-desktop-sound", "audio-volume-high"}, build_sound},
-      {"network", N_("Network"), {"preferences-system-network", "network-wireless"}, build_network},
-      {"bluetooth", N_("Bluetooth"), {"bluetooth", "preferences-bluetooth"}, build_bluetooth},
-      {"power", N_("Power"), {"preferences-system-power", "battery"}, build_power_page},
-      {"lock", N_("Lock Screen"), {"system-lock-screen", "preferences-desktop-screensaver"},
-       build_lock_page},
-      {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite},
+       build_display_page,
+       N_("SYSTEM")},
+      {"sound", N_("Sound"), {"preferences-desktop-sound", "audio-volume-high"}, build_sound, nullptr},
+      {"power", N_("Power"), {"preferences-system-power", "battery"}, build_power_page, nullptr},
+      {"date-time", N_("Date & Time"), {"preferences-system-time"}, build_date_time_page, nullptr},
+      {"users", N_("Users & Avatar"), {"system-users", "avatar-default"}, build_users_page, nullptr},
       {"default-apps",
        N_("Default Applications"),
        {"preferences-desktop-default-applications", "applications-other"},
-       build_default_apps_page},
-      {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system},
-      {"about", N_("About"), {"help-about", "dialog-information"}, build_about},
+       build_default_apps_page,
+       nullptr},
+      {"input",
+       N_("Keyboard & Mouse"),
+       {"preferences-desktop-keyboard", "input-keyboard", "input-mouse"},
+       build_input_page,
+       nullptr},
+      {"touchpad", N_("Touchpad"), {"input-touchpad", "input-mouse"}, build_touchpad_page, nullptr},
+      {"network",
+       N_("Network"),
+       {"preferences-system-network", "network-wireless"},
+       build_network,
+       N_("NETWORK & INTERNET")},
+      {"bluetooth", N_("Bluetooth"), {"bluetooth", "preferences-bluetooth"}, build_bluetooth, nullptr},
+      {"system", N_("Power & Updates"), {"utilities-system-monitor"}, build_suite_system,
+       N_("ADMINISTRATION")},
+      {"suite", N_("Applications"), {"applications-other", "sde-logo"}, build_suite, nullptr},
+      {"about", N_("About"), {"help-about", "dialog-information"}, build_about, ""},
   };
   return list;
 }
@@ -2566,6 +2588,8 @@ const std::vector<PageInfo> &pages() {
 
 class Sidebar;
 Sidebar *g_sidebar = nullptr;
+std::vector<std::string> g_qa_lines;  // extra QA lines of the page being shown
+void qa_dump_window();
 Fl_Scroll *g_sidebar_scroll = nullptr;
 Page *g_page = nullptr;
 int g_page_index = 0;
@@ -2576,12 +2600,18 @@ void show_page(int index);
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  int row_h() const {
-    return std::max(S(18), std::min(S(44), (h() - S(144)) / int(pages().size())));
-  }
+  // Rows keep a comfortable height; the sidebar scrolls when the window is
+  // too short for all of them.
+  int row_h() const { return S(32); }
+  // A caption before each group of pages (a small gap for an untitled one).
   int row_y(int i) const {
-    return y() + S(80) + i * row_h() + (i >= 1 ? S(24) : 0) + (i >= 5 ? S(24) : 0);
+    int top = y() + S(80);
+    for (int k = 0; k <= i && k < int(pages().size()); ++k)
+      if (const char *section = pages()[size_t(k)].section) top += *section ? S(26) : S(10);
+    return top + i * row_h();
   }
+  // The height that shows every row and the footer.
+  int content_h() const { return row_y(int(pages().size())) - y() + S(48); }
   void draw() override {
     {
       Painter p(window()->w(), window()->h());
@@ -2604,12 +2634,26 @@ class Sidebar : public Fl_Widget {
                        g_theme.accent_text);
       }
     }
-    text_font(g_theme.font_size + 2, true);
-    draw_text(_("Settings"), x() + S(64), y() + S(22), w() - S(70), S(32), g_theme.text);
+    {
+      // "Control Center", on two lines when the sidebar is narrow.
+      std::string title = _("Control Center");
+      int tw = w() - S(70);
+      text_font(g_theme.font_size + 2, true);
+      if (text_width(title) > tw) text_font(g_theme.font_size + 1, true);
+      size_t space = title.rfind(' ');
+      if (text_width(title) > tw && space != std::string::npos) {
+        draw_text(title.substr(0, space), x() + S(64), y() + S(19), tw, S(20), g_theme.text);
+        draw_text(title.substr(space + 1), x() + S(64), y() + S(37), tw, S(20), g_theme.text);
+      } else {
+        draw_text(title, x() + S(64), y() + S(22), tw, S(32), g_theme.text);
+      }
+    }
     text_font(g_theme.font_size - 2, true);
-    draw_text(_("PERSONALIZATION"), x() + S(22), row_y(1) - S(23), w() - S(30), S(20),
-              g_theme.text_dim);
-    draw_text(_("SYSTEM"), x() + S(22), row_y(5) - S(23), w() - S(30), S(20), g_theme.text_dim);
+    for (size_t i = 0; i < pages().size(); ++i)
+      if (const char *section = pages()[i].section)
+        if (*section)
+          draw_text(_(section), x() + S(22), row_y(int(i)) - S(24), w() - S(30), S(20),
+                    g_theme.text_dim);
     for (size_t i = 0; i < pages().size(); ++i) {
       bool cur = int(i) == g_page_index;
       text_font(g_theme.font_size, cur);
@@ -2676,15 +2720,63 @@ class Sidebar : public Fl_Widget {
 
 class SettingsWindow : public BufferedWindow {
  public:
-  SettingsWindow(int w, int h) : BufferedWindow(w, h, _("Settings")) {}
+  SettingsWindow(int w, int h) : BufferedWindow(w, h, _("Control Center")) {}
   void draw() override {
     {
       Painter p(w(), h());
       p.fill_rect(0, 0, w(), h(), g_theme.background);
     }
     draw_children();
+    qa_dump_window();
   }
 };
+
+// UI test hook, as the panel's (src/panel/popup.h): with SDE_PANEL_QA_DIR
+// set, <dir>/Control-Center.txt lists the named controls (tooltip or label)
+// and the sidebar rows ("nav:<page>"), one
+// "name<TAB>x<TAB>y<TAB>w<TAB>h<TAB>active<TAB>scrolled" line each, in window
+// pixels. "active" is 1 for a usable control that is fully in view.
+void qa_collect(Fl_Widget *w, const Fl_Widget *view, std::string &out) {
+  if (!w->visible()) return;
+  const char *name = w->tooltip() ? w->tooltip() : w->label();
+  if (name && *name && w != w->window()) {
+    std::string n = name;
+    for (char &c : n)
+      if (c == '\t' || c == '\n') c = ' ';
+    bool shown = !view || (w->y() >= view->y() && w->y() + w->h() <= view->y() + view->h() &&
+                           w->x() >= view->x() && w->x() + w->w() <= view->x() + view->w());
+    out += n + "\t" + std::to_string(w->x()) + "\t" + std::to_string(w->y()) + "\t" +
+           std::to_string(w->w()) + "\t" + std::to_string(w->h()) + "\t" +
+           std::to_string(w->active_r() && shown ? 1 : 0) + "\t" + (view ? "1" : "0") + "\n";
+  }
+  if (auto *g = w->as_group()) {
+    const Fl_Widget *inner = dynamic_cast<Fl_Scroll *>(w) ? w : view;
+    for (int i = 0; i < g->children(); ++i) qa_collect(g->child(i), inner, out);
+  }
+}
+
+void qa_dump_window() {
+  const char *dir = getenv("SDE_PANEL_QA_DIR");
+  if (!dir || !*dir || !g_window) return;
+  std::string text = "@page:" + g_restart_page + "\t0\t0\t0\t0\t1\t0\n";
+  for (const std::string &line : g_qa_lines) text += line;
+  if (g_sidebar && g_sidebar_scroll)
+    for (size_t i = 0; i < pages().size(); ++i) {
+      int ry = g_sidebar->row_y(int(i)), rh = g_sidebar->row_h() - S(4);
+      bool shown = ry >= g_sidebar_scroll->y() && ry + rh <= g_sidebar_scroll->y() + g_sidebar_scroll->h();
+      text += std::string("nav:") + pages()[i].id + "\t" + std::to_string(g_sidebar->x() + S(10)) +
+              "\t" + std::to_string(ry) + "\t" + std::to_string(g_sidebar->w() - S(20)) + "\t" +
+              std::to_string(rh) + "\t" + (shown ? "1" : "0") + "\t1\n";
+    }
+  for (int i = 0; i < g_window->children(); ++i)
+    if (g_window->child(i) != g_sidebar_scroll) qa_collect(g_window->child(i), nullptr, text);
+  std::string path = std::string(dir) + "/Control-Center.txt", tmp = path + ".tmp";
+  if (FILE *f = fopen(tmp.c_str(), "w")) {
+    fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    rename(tmp.c_str(), path.c_str());
+  }
+}
 
 void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
@@ -2705,9 +2797,15 @@ void show_page(int index) {
     Fl::delete_widget(g_page);
   }
   g_window->begin();
+  g_qa_lines.clear();
   g_page = new Page(g_content_x, 0, g_content_w, g_window->h());
   pages()[size_t(index)].build(g_page);
   g_window->end();
+  if (!g_open_anchor.empty()) {
+    int offset = g_page->anchor_offset(g_open_anchor);
+    if (offset >= 0) g_page->scroll_to(0, std::max(0, offset - S(8)));
+    g_open_anchor.clear();
+  }
   g_window->redraw();
 }
 
@@ -2721,6 +2819,23 @@ void refresh_page() {
   if (g_page && scroll > 0) g_page->scroll_to(0, scroll);
 }
 
+void open_settings_page(const std::string &id, const std::string &anchor) {
+  open_page(id.c_str(), anchor.empty() ? nullptr : anchor.c_str());
+}
+
+const std::string &current_settings_page() { return g_restart_page; }
+
+void draw_settings_glyph(Painter &p, const std::string &id, double x, double y, double size,
+                         const Color &c) {
+  settings_glyph(p, id, x, y, size, c);
+}
+
+void qa_line(const std::string &name, int x, int y, int w, int h) {
+  if (!getenv("SDE_PANEL_QA_DIR")) return;
+  g_qa_lines.push_back(name + "\t" + std::to_string(x) + "\t" + std::to_string(y) + "\t" +
+                       std::to_string(w) + "\t" + std::to_string(h) + "\t1\t0\n");
+}
+
 }  // namespace sde
 
 using namespace sde;
@@ -2728,41 +2843,61 @@ using namespace sde;
 namespace {
 
 // Other names accepted by --page (the panel's flyout names and common
-// words), mapped to page ids. "wallpaper" also scrolls to the Wallpaper card.
-const std::pair<const char *, const char *> kPageAliases[] = {
-    {"overview", "home"},      {"wallpaper", "appearance"}, {"wallpapers", "appearance"},
-    {"theme", "appearance"},   {"background", "appearance"}, {"icons", "desktop"},
-    {"displays", "display"},   {"screen", "display"},       {"monitor", "display"},
-    {"keyboard", "input"},     {"mouse", "input"},          {"touchpad", "input"},
-    {"audio", "sound"},        {"volume", "sound"},         {"media", "sound"},
-    {"microphone", "sound"},   {"wifi", "network"},         {"wi-fi", "network"},
-    {"ethernet", "network"},   {"vpn", "network"},          {"power", "system"},
-    {"battery", "system"},     {"updates", "system"},       {"applications", "suite"},
-    {"apps", "suite"},         {"quick", "action-center"},  {"animations", "effects"},
-    {"compositor", "effects"}, {"info", "about"},           {"graphics", "about"},
-    {"time", "system"},        {"date", "system"},          {"timezone", "system"},
-    {"weather", "clock"},      {"clocks", "clock"},
-    {"defaults", "default-apps"}, {"default apps", "default-apps"},
-    {"default-applications", "default-apps"}, {"default applications", "default-apps"},
-    {"mime", "default-apps"},  {"file-types", "default-apps"},  {"open-with", "default-apps"},
-    {"browser", "default-apps"}, {"mail", "default-apps"},     {"email", "default-apps"},
-    {"terminal", "default-apps"},
+// words), mapped to page ids and, for some, the card the page scrolls to.
+struct PageAlias {
+  const char *name, *page, *anchor;
+};
+const PageAlias kPageAliases[] = {
+    {"overview", "home", nullptr},        {"control-center", "home", nullptr},
+    {"wallpaper", "appearance", "wallpaper"}, {"wallpapers", "appearance", "wallpaper"},
+    {"theme", "appearance", nullptr},     {"background", "appearance", "wallpaper"},
+    {"icons", "desktop", nullptr},        {"start", "start-menu", nullptr},
+    {"menu", "start-menu", nullptr},      {"startmenu", "start-menu", nullptr},
+    {"displays", "display", nullptr},     {"screen", "display", nullptr},
+    {"monitor", "display", nullptr},      {"keyboard", "input", nullptr},
+    {"mouse", "input", "mouse"},          {"audio", "sound", nullptr},
+    {"volume", "sound", nullptr},         {"media", "sound", nullptr},
+    {"microphone", "sound", nullptr},     {"wifi", "network", nullptr},
+    {"wi-fi", "network", nullptr},        {"ethernet", "network", nullptr},
+    {"vpn", "network", nullptr},          {"internet", "network", nullptr},
+    {"proxy", "network", "proxy"},        {"battery", "power", nullptr},
+    {"updates", "system", nullptr},       {"applications", "suite", nullptr},
+    {"apps", "suite", nullptr},           {"quick", "action-center", nullptr},
+    {"animations", "effects", nullptr},   {"compositor", "effects", nullptr},
+    {"info", "about", nullptr},           {"graphics", "about", nullptr},
+    {"time", "date-time", nullptr},       {"date", "date-time", nullptr},
+    {"timezone", "date-time", nullptr},   {"datetime", "date-time", nullptr},
+    {"weather", "clock", nullptr},        {"clocks", "clock", nullptr},
+    {"user", "users", nullptr},           {"account", "users", nullptr},
+    {"accounts", "users", nullptr},       {"avatar", "users", "avatar"},
+    {"picture", "users", "avatar"},       {"face", "users", "avatar"},
+    {"screensaver", "lock", nullptr},     {"lock-screen", "lock", nullptr},
+    {"defaults", "default-apps", nullptr}, {"default apps", "default-apps", nullptr},
+    {"default-applications", "default-apps", nullptr},
+    {"default applications", "default-apps", nullptr},
+    {"mime", "default-apps", nullptr},    {"file-types", "default-apps", nullptr},
+    {"open-with", "default-apps", nullptr}, {"browser", "default-apps", nullptr},
+    {"mail", "default-apps", nullptr},    {"email", "default-apps", nullptr},
+    {"terminal", "default-apps", nullptr},
 };
 
 // Page id for |name| (an id or an alias, any case), or "".
-std::string resolve_page(std::string name) {
+std::string resolve_page(std::string name, std::string *anchor = nullptr) {
   name = lower(trim(name));
   for (auto &p : pages())
     if (name == p.id) return p.id;
   for (auto &a : kPageAliases)
-    if (name == a.first) return a.second;
+    if (name == a.name) {
+      if (anchor && a.anchor) *anchor = a.anchor;
+      return a.page;
+    }
   return "";
 }
 
 std::string usage() {
   std::string ids, aliases;
   for (auto &p : pages()) ids += std::string(ids.empty() ? "" : ", ") + p.id;
-  for (auto &a : kPageAliases) aliases += std::string(aliases.empty() ? "" : ", ") + a.first;
+  for (auto &a : kPageAliases) aliases += std::string(aliases.empty() ? "" : ", ") + a.name;
   auto wrap = [](const std::string &text) {
     std::string out, line;
     for (auto &word : split(text, ' ')) {
@@ -2775,10 +2910,14 @@ std::string usage() {
     if (!line.empty()) out += "               " + line + "\n";
     return out;
   };
-  return std::string(_("Usage: sde-settings [--page NAME] [--list-pages] [--apply] [--version]\n\n"
+  // The panel reads the page list after the last "--page NAME" (quick.cpp).
+  return std::string(_("The Control Center of SDE (also started as sde-control-center).\n\n"
+                       "Usage: sde-settings [--page NAME] [--list-pages] [--choose-avatar] [--apply]\n"
+                       "                    [--version]\n\n"
                        "  --page NAME  open a page directly (also --page=NAME). Pages:\n")) +
          wrap(ids) + _("               Also accepted:\n") + wrap(aliases) +
          _("  --list-pages print the page names, one per line\n"
+           "  --choose-avatar  open Users & Avatar and choose a picture for the account\n"
            "  --apply      apply the saved display, keyboard and mouse settings and exit\n"
            "  --version    print the version and exit\n");
 }
@@ -2789,8 +2928,8 @@ int main(int argc, char **argv) {
   init_i18n();
   install_crash_handler("sde-settings");
   g_argv0 = argv[0];
-  std::string page = "home", requested;
-  bool apply = false;
+  std::string page = "home", requested, anchor;
+  bool apply = false, choose_avatar = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--page" && i + 1 < argc) {
@@ -2800,6 +2939,9 @@ int main(int argc, char **argv) {
     } else if (a == "--list-pages") {
       for (auto &p : pages()) printf("%s\n", p.id);
       return 0;
+    } else if (a == "--choose-avatar") {
+      requested = "users";
+      choose_avatar = true;
     } else if (a == "--apply") {
       apply = true;
     } else if (a == "--version") {
@@ -2810,15 +2952,12 @@ int main(int argc, char **argv) {
       return a == "--help" || a == "-h" ? 0 : 2;
     }
   }
-  bool to_wallpaper = false;
   if (!requested.empty()) {
-    std::string id = resolve_page(requested);
+    std::string id = resolve_page(requested, &anchor);
     if (id.empty())
       fprintf(stderr, "sde-settings: unknown page \"%s\" (see --list-pages)\n", requested.c_str());
     else
       page = id;
-    std::string r = lower(requested);
-    to_wallpaper = r == "wallpaper" || r == "wallpapers" || r == "background";
   }
   g_cfg.load();
   if (migrate_theme_config(g_cfg)) g_cfg.save();
@@ -2848,8 +2987,8 @@ int main(int argc, char **argv) {
   g_sidebar_scroll->scrollbar_size(S(10));
   g_sidebar_scroll->scrollbar.color(g_theme.surface.fl());
   g_sidebar_scroll->scrollbar.selection_color(g_theme.border.fl());
-  int sidebar_height = std::max(H, S(144) + int(pages().size()) * S(44));
-  g_sidebar = new Sidebar(0, 0, side - S(10), sidebar_height);
+  g_sidebar = new Sidebar(0, 0, side - S(10), H);
+  g_sidebar->size(g_sidebar->w(), std::max(H, g_sidebar->content_h()));
   g_sidebar_scroll->end();
   g_content_x = side;
   g_content_w = W - side;
@@ -2862,11 +3001,15 @@ int main(int argc, char **argv) {
     if (page == pages()[i].id) index = int(i);
   // Worker threads (thumbnails, wallpaper scan) wake the loop with Fl::awake().
   Fl::lock();
+  g_open_anchor = anchor;
   show_page(index);
-  if (to_wallpaper && g_page) g_page->scroll_to(0, std::max(0, g_wallpaper_anchor - S(8)));
   win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
   start_display_watch();
+  // The account and its picture (AccountsService may take a moment), and
+  // their changes made elsewhere (the Start menu, the lock screen).
+  watch_account();
   win->show();
+  if (choose_avatar) Fl::add_timeout(0.3, [](void *) { choose_avatar_picture(); });
   int status = Fl::run();
   g_thumbnailer.reset();  // joins the decoding threads
   return status;
