@@ -220,7 +220,7 @@ ui-smoke with SDE WM from the patched components build.
 | --- | --- |
 | `ctest` (42 tests, among them `sde-theme-assets`, `sde-avatar`, `sde-native-branding` = `tests/test_native_forks.py`, `debion-network-check`) | 42 of 42 pass |
 | `ctest` under ASan + UBSan (procedure above) | 42 of 42 pass, no sanitizer report |
-| `tools/panel-smoke.py` 1366×768 | PASS (all groups: a50, a51, a52, tray, Action Center, network, Bluetooth, drives, themes, previews) |
+| `tools/panel-smoke.py` 1366×768 | PASS (all groups: a50, a51, a52, account, tray, Action Center incl. the A1-46 check, network, Bluetooth, drives, themes, previews) |
 | `tools/panel-smoke.py` 1024×600 at 150 % | PASS (all groups, incl. the new account checks and the A1-46 check) |
 | `tools/ui-smoke.py` 1366×768 | PASS (6 groups, incl. the Control Center overview and Users & Avatar) |
 | `tools/ui-smoke.py` 1024×600 at 150 % | PASS (5 groups; the live panel-style group runs at 100 % only) |
