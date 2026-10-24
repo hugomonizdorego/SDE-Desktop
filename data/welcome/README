@@ -1,0 +1,40 @@
+SDE Welcome
+===========
+
+SDE Welcome (sde-welcome) greets every user at the first login after the
+installation. Everything it shows comes from this folder, so a distribution
+can change the texts, the icons and the commands without rebuilding SDE.
+
+  welcome.conf         title, subtitle, logo, window size, columns
+  steps/*.desktop      one tile per file, in the order of the file names
+  icons/               (optional) images that the files above name
+
+Keep your changes out of this folder: put them in /etc/SDE-Welcome/, which
+has the same layout and wins.
+
+  * /etc/SDE-Welcome/welcome.conf: only the keys you change.
+  * /etc/SDE-Welcome/steps/<name>.desktop: replaces the tile of the same
+    name; a file with "Hidden=true" removes it; new names add tiles.
+  * $SDE_WELCOME_DIR: one more folder searched first, to try changes out:
+        SDE_WELCOME_DIR=$HOME/welcome-test sde-welcome
+
+A tile is a Desktop Entry:
+
+  [Desktop Entry]
+  Type=Application              (or Link, with URL= instead of Exec=)
+  Name=Software
+  Comment=Find and install applications
+  Icon=merkadu                  icon name, or a file (icons/shop.svg)
+  X-SDE-Fallback-Icons=system-software-install;applications-other
+  Exec=merkadu                  no shell; a relative program path such as
+                                scripts/setup.sh runs from this folder
+                                (sde-settings is the Control Center, also
+                                called sde-control-center)
+  TryExec=merkadu               the tile shows only if this is installed
+  X-SDE-Welcome-Fallback=21-software-gnome.desktop
+  X-SDE-Gettext-Domain=sde      translate Name/Comment with these .mo files
+
+Name[id]=, Comment[de]= ... translate a tile. When the program of a tile is
+not installed, the tile named by X-SDE-Welcome-Fallback is shown instead;
+such fallback tiles carry NoDisplay=true so that they never show on their
+own.

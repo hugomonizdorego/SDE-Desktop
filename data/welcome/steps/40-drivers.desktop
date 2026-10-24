@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Drivers
+Comment=Additional and proprietary drivers
+Icon=sde-driver-manager
+X-SDE-Fallback-Icons=jockey;preferences-system;application-x-firmware;computer
+Exec=sde-drivers
+X-SDE-Gettext-Domain=sde

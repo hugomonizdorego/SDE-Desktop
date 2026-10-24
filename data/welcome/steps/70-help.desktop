@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Link
+Name=Help
+Comment=Guides and troubleshooting
+Icon=help-browser
+X-SDE-Fallback-Icons=system-help;help-contents
+URL=https://github.com/hugomonizdorego/SDE-Desktop/tree/main/docs
+X-SDE-Gettext-Domain=sde
