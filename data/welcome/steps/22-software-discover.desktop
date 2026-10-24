@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Software
+Comment=Find and install applications
+Icon=plasmadiscover
+X-SDE-Fallback-Icons=system-software-install;applications-other
+Exec=plasma-discover
+NoDisplay=true
+X-SDE-Welcome-Fallback=23-software-synaptic.desktop
+X-SDE-Gettext-Domain=sde

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Appearance
+Comment=Theme, accent and wallpaper
+Icon=preferences-desktop-theme
+X-SDE-Fallback-Icons=preferences-desktop-appearance;preferences-desktop
+Exec=sde-settings --page appearance
+X-SDE-Gettext-Domain=sde

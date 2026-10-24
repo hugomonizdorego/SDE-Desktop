@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
-// SDE Welcome model: the start-up preference, firewall and codec status and
-// the tools the First Steps open. Display-free, unit tested.
+// SDE Welcome model: the start-up preference, the live-session detection,
+// firewall and codec status, and the window's content (texts, icons and
+// commands) read from /usr/share/SDE-Welcome. Display-free, unit tested.
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace sde {
 class Config;
 namespace welcome {
-
-extern const char *const kProjectUrl;  // SDE on GitHub
-extern const char *const kIssuesUrl;
-extern const char *const kDonateUrl;   // PayPal
-extern const char *const kDocsUrl;     // docs/ on GitHub
 
 // sde.conf [welcome] show: open SDE Welcome at every login (the "Show this
 // dialog at startup" check box). Default false since 0.1.0~alpha51: the
@@ -86,17 +83,63 @@ const std::vector<std::string> &codec_packages();
 std::vector<std::string> missing_packages(const std::vector<std::string> &wanted,
                                           const std::vector<std::string> &installed);
 
-// A program the First Steps start, first installed candidate wins.
-struct Tool {
-  std::string name;               // "GNOME Software"
-  std::vector<std::string> argv;  // "gnome-software"
+// ---- Content (0.2 Alpha 2)
+//
+// The texts, icons and commands of the window are files that distributions
+// edit, not code:
+//   /usr/share/SDE-Welcome/welcome.conf      title, subtitle, logo, size
+//   /usr/share/SDE-Welcome/steps/*.desktop   one tile per file, in the order
+//                                            of the file names
+// A file of the same name in /etc/SDE-Welcome takes the place of the
+// packaged one (Hidden=true there removes a tile); keys set in
+// /etc/SDE-Welcome/welcome.conf replace the packaged keys one by one.
+// $SDE_WELCOME_DIR, when set, is searched first (trying out a
+// customization); $SDE_WELCOME_DIRS replaces all folders (unit tests).
+// docs/WELCOME.md describes the format.
+
+// Folders searched, most important first.
+std::vector<std::string> content_dirs();
+
+// The window: welcome.conf [Welcome].
+struct Content {
+  std::string title;     // %OS% already replaced by the system's name
+  std::string subtitle;
+  std::string logo;      // icon name or absolute file; "" uses os-release LOGO
+  bool desktop_line = true;  // "Desktop: Selviana Desktop Environment 0.2 ..."
+  int width = 720, height = 540;  // pixels at 100 %
+  int columns = 2;
 };
-// Software centers in order of preference (installed ones only).
-std::vector<Tool> software_centers();
-// Timeshift's launcher (asks for the password itself), or an empty argv.
-Tool snapshot_tool();
-// A firewall front end (gufw), or an empty argv.
-Tool firewall_tool();
+// |os_name| is NAME from os-release ("" when unknown: the title is then
+// "Welcome").
+Content load_content(const std::string &os_name);
+
+// One tile: steps/NN-name.desktop.
+struct Step {
+  std::string file;                // "10-appearance.desktop"
+  std::string name, comment;
+  std::vector<std::string> icons;  // names or absolute files, first found wins
+  std::vector<std::string> argv;   // Exec=, or empty when |url| is opened
+  std::string url;                 // Type=Link
+};
+// The tiles to show: visible steps whose program is installed (TryExec, or
+// the program of Exec=), or else the step named by X-SDE-Welcome-Fallback.
+std::vector<Step> load_steps();
+
+// Desktop-entry style key file: [Group], Key=value, Key[ll_CC]=value,
+// # comments. Exposed for the tests.
+struct KeyFile {
+  std::vector<std::pair<std::string, std::vector<std::pair<std::string, std::string>>>> groups;
+  bool load(const std::string &path);
+  void parse(const std::string &text);
+  bool has(const std::string &group, const std::string &key) const;
+  std::string get(const std::string &group, const std::string &key, const std::string &fallback = "") const;
+  // The value for the current language (LC_ALL, LC_MESSAGES, LANG) when the
+  // file has one; otherwise the plain value, translated in the gettext
+  // domain the group names with X-SDE-Gettext-Domain, if any.
+  std::string localized(const std::string &group, const std::string &key) const;
+  // Replaces or adds the keys of |other| (an /etc override).
+  void merge(const KeyFile &other);
+};
 
 // Panel layouts offered by the First Steps ([panel] style).
 struct Layout {
