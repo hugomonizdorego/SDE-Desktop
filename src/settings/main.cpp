@@ -2664,8 +2664,9 @@ void show_page(int index) {
   pages()[size_t(index)].build(g_page);
   g_window->end();
   if (!g_open_anchor.empty()) {
+    // The card at the top, or the end of the page when it is near the end.
     int offset = g_page->anchor_offset(g_open_anchor);
-    if (offset >= 0) g_page->scroll_to(0, std::max(0, offset - S(8)));
+    if (offset >= 0) g_page->scroll_to(0, std::max(0, std::min(offset - S(8), g_page->max_scroll())));
     g_open_anchor.clear();
   }
   g_window->redraw();
