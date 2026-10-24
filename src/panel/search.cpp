@@ -777,9 +777,15 @@ void SearchFlyout::item_menu(const Item &it, int px, int py) {
   }
   add(nullptr, 0);
   DesktopEntry copy = *e;  // the results may be rebuilt meanwhile
+  std::string typed;
   menu_busy_ = true;
-  const Fl_Menu_Item *m = items.data()->popup(px, py);
+  const Fl_Menu_Item *m = popup_menu(items.data(), px, py, &typed);
   menu_busy_ = false;
+  if (!typed.empty()) {
+    // Typing in the menu goes on with the query.
+    type(typed);
+    return;
+  }
   if (!m) return;
   long code = reinterpret_cast<long>(m->user_data());
   if (code == 5 || code == 6) {

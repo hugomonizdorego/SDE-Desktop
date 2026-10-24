@@ -14,6 +14,7 @@ namespace sde {
 class Painter;
 struct Color;
 }  // namespace sde
+struct Fl_Menu_Item;
 
 class PanelPopup : public sde::BufferedWindow {
  public:
@@ -43,6 +44,14 @@ class PanelPopup : public sde::BufferedWindow {
   int corner_radius() const;
   // Draws the popup's border along the rounded outline.
   void stroke_outline(sde::Painter &p, const sde::Color &c) const;
+  // A context menu or dropdown of this popup at window coordinates |x|, |y|
+  // (Fl_Menu_Item::popup()). 0.2 Alpha 2: typing a character there closes
+  // it (nothing is chosen) and puts the text in |typed|, so that the caller
+  // can search for it; afterwards this popup has the pointer and keyboard
+  // grabs and the focus back (FLTK releases every grab when a popup menu
+  // closes: clicks outside went to the desktop, keys could follow them).
+  const Fl_Menu_Item *popup_menu(const Fl_Menu_Item *items, int x, int y,
+                                 std::string *typed = nullptr);
 
  protected:
   // Called before the window is placed; set the popup's size here.
@@ -71,6 +80,11 @@ class PanelPopup : public sde::BufferedWindow {
   int anchor_x_ = 0;
   int align_ = 0;  // 0 left edge, 1 right edge, 2 center at anchor_x_
 };
+
+// The text a key press types: printable characters without Ctrl, Alt or
+// Super (shortcuts type nothing), else "". When an input method keeps the
+// text back, a plain Latin-1 key still types its character.
+std::string typed_key_text();
 
 // UI test hook: with SDE_PANEL_QA_DIR set, panel windows write the geometry of
 // their named widgets (tooltip or label) to <dir>/<window title>.txt, one

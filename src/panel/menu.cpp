@@ -1133,6 +1133,21 @@ void AppMenu::rail_action(int index) {
   }
 }
 
+// The menu's context menus and its category filter. Typing in one of them
+// searches, as everywhere in the menu (0.2 Alpha 2: the letters were lost
+// there, and the menu lost its grabs when one closed).
+const Fl_Menu_Item *AppMenu::run_menu(const Fl_Menu_Item *items, int x, int y) {
+  std::string typed;
+  menu_busy_ = true;
+  const Fl_Menu_Item *m = popup_menu(items, x, y, &typed);
+  menu_busy_ = false;
+  if (!typed.empty()) {
+    redirect_to_search(typed);
+    return nullptr;
+  }
+  return m;
+}
+
 // The category filter: a short menu instead of a row of chips.
 void AppMenu::filter_menu() {
   std::vector<std::string> labels;
@@ -1149,9 +1164,7 @@ void AppMenu::filter_menu() {
                      0, 0, 0, 0});
   items.push_back({nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0});
   const Item *f = find({K_FILTER, -1, -1});
-  menu_busy_ = true;
-  const Fl_Menu_Item *m = items.data()->popup(f ? f->x : 0, f ? f->y + f->h : 0);
-  menu_busy_ = false;
+  const Fl_Menu_Item *m = run_menu(items.data(), f ? f->x : 0, f ? f->y + f->h : 0);
   if (!m) return;
   category_ = int(m - items.data()) - 1;
   scroll_to(K_ROW, 0, false);
@@ -1196,9 +1209,7 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   add(_("Open file location"), LOCATION, entry.path.empty() ? FL_MENU_INACTIVE : 0);
   add(_("App info..."), INFO);
   add(nullptr, 0);
-  menu_busy_ = true;
-  const Fl_Menu_Item *m = items.data()->popup(px, py);
-  menu_busy_ = false;
+  const Fl_Menu_Item *m = run_menu(items.data(), px, py);
   if (!m) return;
   long code = reinterpret_cast<long>(m->user_data());
   auto &tiles = g.tiles;
@@ -1246,9 +1257,7 @@ void AppMenu::group_menu(int group, int px, int py) {
        (group + 1 >= int(groups_.size()) ? FL_MENU_INACTIVE : 0) | FL_MENU_DIVIDER, 0, 0, 0, 0},
       {_("Unpin Group from Start"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
       {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-  menu_busy_ = true;
-  const Fl_Menu_Item *m = items->popup(px, py);
-  menu_busy_ = false;
+  const Fl_Menu_Item *m = run_menu(items, px, py);
   if (!m) return;
   switch (int(m - items)) {
     case 0: start_rename(group); return;
@@ -1281,9 +1290,7 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
   add(_("Open file location"), LOCATION, e.path.empty() ? FL_MENU_INACTIVE : 0);
   add(_("App info..."), INFO);
   add(nullptr, 0);
-  menu_busy_ = true;
-  const Fl_Menu_Item *m = items.data()->popup(px, py);
-  menu_busy_ = false;
+  const Fl_Menu_Item *m = run_menu(items.data(), px, py);
   if (!m) return;
   switch (reinterpret_cast<long>(m->user_data())) {
     case OPEN: launch(it); return;
@@ -1344,9 +1351,7 @@ void AppMenu::background_menu(int px, int py) {
       {_("Restore Default Menu Size"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
       {_("Effects and Animations..."), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
       {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
-  menu_busy_ = true;
-  const Fl_Menu_Item *m = items->popup(px, py);
-  menu_busy_ = false;
+  const Fl_Menu_Item *m = run_menu(items, px, py);
   if (!m) return;
   Panel *p = Panel::instance;
   switch (int(m - items)) {
@@ -1943,6 +1948,15 @@ void AppMenu::preload(void *data) {
 // Events
 
 int AppMenu::handle(int event) {
+  // Typing searches, also while the account popup is open (0.2 Alpha 2).
+  if ((event == FL_KEYBOARD || event == FL_SHORTCUT) && account_->is_open() && rename_group_ < 0) {
+    std::string text = typed_key_text();
+    if (!text.empty()) {
+      account_->close();
+      redirect_to_search(text);
+      return 1;
+    }
+  }
   // The account popup takes the events while it is open.
   if (account_->is_open() && account_->handle(event)) return 1;
   if (launching_ && (event == FL_PUSH || event == FL_KEYBOARD || event == FL_SHORTCUT)) return 1;
@@ -2255,10 +2269,10 @@ int AppMenu::handle(int event) {
         move_end(k == FL_End);
         return 1;
       }
-      // Typing goes to the search box of the panel.
-      const char *text = Fl::event_text();
-      if (!(Fl::event_state() & (FL_CTRL | FL_ALT | FL_META)) && text && *text &&
-          (unsigned char)text[0] >= 0x21 && text[0] != 0x7F) {
+      // Typing goes to the search box of the panel, wherever the selection
+      // is: the list, the jump grid, the tiles, the rail or the filter.
+      std::string text = typed_key_text();
+      if (!text.empty() && !dragging_) {
         redirect_to_search(text);
         return 1;
       }

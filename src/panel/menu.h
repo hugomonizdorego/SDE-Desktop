@@ -138,6 +138,8 @@ class AppMenu : public PanelPopup {
   void activate(const Item &it);
   void launch(const Item &it);
   void rail_action(int index);
+  // Fl_Menu_Item::popup() for the menus below; typing in one searches.
+  const Fl_Menu_Item *run_menu(const Fl_Menu_Item *items, int x, int y);
   void filter_menu();
   void tile_menu(const Item &it, int px, int py);
   void group_menu(int group, int px, int py);
