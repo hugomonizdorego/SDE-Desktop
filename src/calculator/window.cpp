@@ -629,6 +629,13 @@ void CalcWindow::equals() {
 
 int CalcWindow::key_event() {
   int key = Fl::event_key();
+  // F1 opens About whatever modifier bits come with it, as in the other SDE
+  // programs (sde::handle_about_event()): with some X keymaps a synthetic F1
+  // carries Ctrl or Alt, and the checks below ignored it.
+  if (key == FL_F + 1) {
+    show_about();
+    return 1;
+  }
   int state = Fl::event_state();
   std::string text = Fl::event_text() ? Fl::event_text() : "";
   bool prog = mode_ == Mode::Programmer;
@@ -678,7 +685,6 @@ int CalcWindow::key_event() {
       }
       evaluated_ = false;
       return 0;
-    case FL_F + 1: show_about(); return 1;
     case FL_Left:
     case FL_Right:
     case FL_Home:
