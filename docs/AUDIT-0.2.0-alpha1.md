@@ -193,9 +193,11 @@ leak:libpoppler.so
 leak:libpoppler-glib.so
 ```
 
-Result: 38/38 tests pass (before the About/legal merge added
-`sde-legal-data`), no UndefinedBehaviorSanitizer reports; the findings of
-the run are A1-06, A1-18 and A1-19.
+Result: 38 of 38 tests passed before the merges, and 42 of 42 on the final
+tree (with the new `sde-legal-data`, `sde-theme-assets`, `sde-avatar` and
+`sde-avatar-accountsservice`), without AddressSanitizer, LeakSanitizer or
+UndefinedBehaviorSanitizer reports. The findings of the first run are
+A1-06, A1-18 and A1-19.
 
 ## Static analysis
 
@@ -209,7 +211,34 @@ the run are A1-06, A1-18 and A1-19.
 
 ## Tests run
 
-TEST_RESULTS
+Final runs on the tree after the last merge (`10f30e9`; only CI and
+documentation changed after it), GCC Release build; the UI suites on Xvfb
+with their own display numbers (two suites at a time, so under load);
+ui-smoke with SDE WM from the patched components build.
+
+| Suite | Result |
+| --- | --- |
+| `ctest` (42 tests, among them `sde-theme-assets`, `sde-avatar`, `sde-native-branding` = `tests/test_native_forks.py`, `debion-network-check`) | 42 of 42 pass |
+| `ctest` under ASan + UBSan (procedure above) | 42 of 42 pass, no sanitizer report |
+| `tools/panel-smoke.py` 1366×768 | PASS (all groups: a50, a51, a52, tray, Action Center, network, Bluetooth, drives, themes, previews) |
+| `tools/panel-smoke.py` 1024×600 at 150 % | PASS (all groups, incl. the new account checks and the A1-46 check) |
+| `tools/ui-smoke.py` 1366×768 | PASS (6 groups, incl. the Control Center overview and Users & Avatar) |
+| `tools/ui-smoke.py` 1024×600 at 150 % | PASS (5 groups; the live panel-style group runs at 100 % only) |
+| Reproductions | A1-46 (`_NET_ACTIVE_WINDOW` = 0 after 0.8 s), A1-47 (command events under load, reload + command), A1-40 (GTK 3 scales), A1-22 (System Monitor theme switch) |
+
+Program logs of the UI runs (kept in the output directories since A1-24):
+no crashes, X errors, GTK CSS warnings or D-Bus errors from SDE. What is
+there is expected: "cannot connect to the D-Bus system bus" (no system bus
+in the test container), SDE WM's "Unable to find a valid menu file
+menu.xml" (SDE's `rc.xml` has no root menu; the window menu is built in)
+and its "XIO: fatal IO error" when Xvfb stops first at the end, and
+Xvfb's `xkbcomp` keysym warnings.
+
+Flaky checks seen during the audit and their causes: lost `sde-panel`
+commands (A1-47: ui-smoke failed in 3 of 3 runs under load; most likely
+also panel-smoke's "window not found: ^Bluetooth$" once in 3 runs), the
+tray dock and typing/Escape before a popup had the keyboard (A1-23). None
+was seen in the final runs.
 
 ## Upstream pins
 
