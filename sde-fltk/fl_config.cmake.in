@@ -103,9 +103,12 @@
  *
  * Do we want FLTK to read and write SVG-formatted files ?
  *
+ * SDE-FLTK: undefined when not (as in fl_config.in): the sources test it
+ * with #ifdef, so FLTK_USE_SVG 0 would still build the SVG code.
+ *
  */
 
-#cmakedefine01 FLTK_USE_SVG
+#cmakedefine FLTK_USE_SVG 1
 
 
 #endif /* _FL_fl_config_h_ */

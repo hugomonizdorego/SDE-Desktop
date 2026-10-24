@@ -431,7 +431,7 @@ class HubSearch : public Fl_Input {
     refresh_page();
     if (g_search) {
       g_search->take_focus();
-      g_search->position(g_search->size());
+      g_search->insert_position(g_search->size());
     }
   }
   void draw() override {

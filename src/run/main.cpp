@@ -76,7 +76,7 @@ class RunInput : public Fl_Input {
     if (e == FL_KEYBOARD && !g_history.empty()) {
       if (Fl::event_key() == FL_Up && g_history_pos > 0) {
         value(g_history[--g_history_pos].c_str());
-        position(size());
+        insert_position(size());
         return 1;
       }
       if (Fl::event_key() == FL_Down) {
@@ -85,7 +85,7 @@ class RunInput : public Fl_Input {
           g_history_pos = g_history.size();
           value("");
         }
-        position(size());
+        insert_position(size());
         return 1;
       }
     }

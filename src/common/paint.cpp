@@ -71,9 +71,10 @@ Painter::Painter(int w, int h) {
   }
   cr_ = cairo_create(surface_);
   // Respect FLTK's clipping (e.g. inside Fl_Scroll), which cairo does not see.
+  // (Fl_Region is opaque in FLTK 1.4; FLTK's Xlib drawing makes it an X Region.)
   if (Fl_Region r = fl_clip_region()) {
     XRectangle box;
-    XClipBox(r, &box);
+    XClipBox(static_cast<Region>(r), &box);
     cairo_rectangle(cr_, box.x, box.y, box.width, box.height);
     cairo_clip(cr_);
   }
@@ -289,14 +290,14 @@ void BufferedWindow::flush() {
   bool clipped = false;
   if (region && !fresh) {
     XRectangle box;
-    XClipBox(region, &box);
+    XClipBox(static_cast<Region>(region), &box);
     cx = box.x;
     cy = box.y;
     cw = box.width;
     ch = box.height;
     clipped = true;
   }
-  if (region) XDestroyRegion(region);
+  if (region) XDestroyRegion(static_cast<Region>(region));
 
   uchar d = damage();
   if (fresh || (d & ~FL_DAMAGE_EXPOSE)) {

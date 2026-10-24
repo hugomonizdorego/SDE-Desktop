@@ -1011,7 +1011,7 @@ bool ContextMenu::popup_below(Fl_Widget *anchor) {
 void show_input_context_menu(Fl_Input_ *in) {
   if (!in) return;
   bool ro = in->readonly();
-  bool sel = in->position() != in->mark();
+  bool sel = in->insert_position() != in->mark();
   bool empty = in->size() == 0;
   Fl_Widget_Tracker alive(in);
   ContextMenu menu;
@@ -1020,7 +1020,7 @@ void show_input_context_menu(Fl_Input_ *in) {
   a.copy = [in, &alive] { if (alive.exists()) in->copy(1); };
   a.paste = [in, &alive] { if (alive.exists()) Fl::paste(*in, 1); };
   a.del = [in, &alive] { if (alive.exists()) { in->cut(); in->do_callback(); } };
-  a.select_all = [in, &alive] { if (alive.exists()) in->position(in->size(), 0); };
+  a.select_all = [in, &alive] { if (alive.exists()) in->insert_position(in->size(), 0); };
   a.can_cut = !ro && sel && in->input_type() != FL_SECRET_INPUT;
   a.can_copy = sel && in->input_type() != FL_SECRET_INPUT;
   a.can_paste = !ro && Fl::clipboard_contains(Fl::clipboard_plain_text);

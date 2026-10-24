@@ -367,7 +367,7 @@ void CalcWindow::flash_key_for(const std::string &id) {
 
 void CalcWindow::set_expression(const std::string &text) {
   input_->value(text.c_str());
-  input_->position(input_->size());
+  input_->insert_position(input_->size());
 }
 
 void CalcWindow::insert(const std::string &text, bool continues) {
@@ -379,7 +379,7 @@ void CalcWindow::insert(const std::string &text, bool continues) {
       set_expression("");
   }
   error_.clear();
-  int a = input_->position(), b = input_->mark();
+  int a = input_->insert_position(), b = input_->mark();
   int lo = std::min(a, b), hi = std::max(a, b);
   std::string t = text;
   // No double spaces around word operators (" AND ", " mod ", " << ").
@@ -444,7 +444,7 @@ void CalcWindow::clear_entry() {
 void CalcWindow::backspace() {
   evaluated_ = false;
   error_.clear();
-  int pos = input_->position(), mark = input_->mark();
+  int pos = input_->insert_position(), mark = input_->mark();
   if (pos != mark) {
     input_->cut();
     input_changed();
@@ -522,7 +522,7 @@ void CalcWindow::apply_function(const std::string &name) {
     input_changed();
     return;
   }
-  int a = input_->position(), b = input_->mark();
+  int a = input_->insert_position(), b = input_->mark();
   if (a != b) {
     std::string s = input_->value();
     int lo = std::min(a, b), hi = std::max(a, b);
@@ -609,7 +609,7 @@ void CalcWindow::equals() {
     if (!r.ok) {
       error_ = r.message;
       if (r.position >= 0 && r.position <= input_->size() && r.error != ErrorKind::Incomplete)
-        input_->position(r.position);
+        input_->insert_position(r.position);
     } else {
       ctx_.ans = r.value;
       raw_result_ = format_number(r.value);
@@ -642,7 +642,7 @@ int CalcWindow::key_event() {
   if (state & (FL_CTRL | FL_META)) {
     int k = std::tolower(key);
     if (k == 'c') {
-      if (input_->position() != input_->mark()) return 0;  // copies the selection
+      if (input_->insert_position() != input_->mark()) return 0;  // copies the selection
       if (state & FL_SHIFT) copy_expression();
       else copy_result();
       return 1;
@@ -678,7 +678,7 @@ int CalcWindow::key_event() {
       backspace();
       return 1;
     case FL_Delete:
-      if (input_->position() == input_->size() && input_->mark() == input_->position()) {
+      if (input_->insert_position() == input_->size() && input_->mark() == input_->insert_position()) {
         flash_key_for("ce");
         clear_all();
         return 1;
@@ -734,7 +734,7 @@ int CalcWindow::key_event() {
       case '>': {
         // "<<" typed as two characters gives one shift operator.
         std::string op = c == '<' ? " << " : " >> ";
-        std::string before = std::string(input_->value()).substr(0, size_t(input_->position()));
+        std::string before = std::string(input_->value()).substr(0, size_t(input_->insert_position()));
         if (!evaluated_ && ends_with(before, op)) return 1;
         insert(op, true);
         flash_key_for(c == '<' ? "shl" : "shr");
@@ -768,7 +768,7 @@ int CalcWindow::key_event() {
     case 'x':
     case 'X': {
       // "2x3": a multiplication sign after a number.
-      std::string s = std::string(input_->value()).substr(0, size_t(input_->position()));
+      std::string s = std::string(input_->value()).substr(0, size_t(input_->insert_position()));
       size_t n = s.size();
       while (n > 0 && s[n - 1] == ' ') --n;
       if (evaluated_ || (n > 0 && (std::isdigit((unsigned char)s[n - 1]) || s[n - 1] == ')' || s[n - 1] == '.')))
@@ -887,7 +887,7 @@ void CalcWindow::set_mode(Mode m) {
   input_->color(mode_ == Mode::Converter ? theme_.surface.fl() : theme_.background.fl());
   build_keys();
   // Typing replaces the converter's sample value.
-  if (m == Mode::Converter) input_->position(0, input_->size());
+  if (m == Mode::Converter) input_->insert_position(0, input_->size());
   // Programmer needs room for the bases and bits.
   int want = m == Mode::Programmer ? S(640) : m == Mode::Scientific ? S(560) : S(500);
   if (h() < want) {

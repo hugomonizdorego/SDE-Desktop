@@ -98,6 +98,19 @@ extern Fl_Widget *fl_selection_requestor;
 
 static void open_display_i(Display *d); // open display (internal)
 
+////////////////////////////////////////////////////////////////
+
+// SDE-FLTK: the "boxcheat" of FLTK 1.3, disabled in FLTK 1.4. A window whose
+// box is a filled rectangle gets its color as the X background pixel, so
+// the X server paints a newly mapped (or exposed, or enlarged) window in
+// that color instead of leaving garbage until the first draw; SDE windows
+// and popups open without a black or stale frame, as they did with 1.3.
+#define ENABLE_BOXCHEAT 1
+static int fl_background_pixel = -1;
+static inline int can_boxcheat(Fl_Boxtype b) {
+  return (b == 1 || ((b & 2) && b <= 15));
+}
+
 
 extern int fl_send_system_handlers(void *e);
 

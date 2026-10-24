@@ -1395,7 +1395,7 @@ void AppMenu::start_rename(int group) {
   Fl::grab_ = nullptr;
   rename_->take_focus();
   Fl::grab_ = grab;
-  rename_->position(rename_->size(), 0);
+  rename_->insert_position(rename_->size(), 0);
   redraw();
 }
 

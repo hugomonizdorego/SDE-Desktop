@@ -32,7 +32,7 @@ bool ask_find(Fl_Window *parent, const std::string &where, FindChoice &c) {
   auto *pat = new Fl_Input(left + S(8), S(110), fw - S(16), S(28));
   style_input(pat, d.theme());
   pat->value(c.pattern.c_str());
-  pat->position(0, pat->size());
+  pat->insert_position(0, pat->size());
   d.field(pat);
   d.label(left, S(144), fw, _("Wildcards such as *.txt; separate several patterns with “;”"), true);
   Switch *sub = nullptr, *inside = nullptr;

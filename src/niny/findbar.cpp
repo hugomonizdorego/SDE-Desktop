@@ -189,7 +189,7 @@ void FindBar::open(bool replace, const std::string &seed) {
   show();
   app_->layout();
   find_->take_focus();
-  find_->position(find_->size(), 0);
+  find_->insert_position(find_->size(), 0);
   redraw();
 }
 

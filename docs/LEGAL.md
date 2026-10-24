@@ -49,7 +49,7 @@ original notice:
 | Display Settings, Control Center (display profile model) | GPL-3.0-or-later AND MIT | Selviana DE Project and contributors; © 2025 zac15987 | profile model ported from [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) (MIT) |
 | Software Updater (update model, `data/update/model.py`) | GPL-3.0-or-later | © 2007–2015 Clement Lefebvre; Selviana DE Project and contributors | adapted from [mintupdate](https://github.com/linuxmint/mintupdate) (GPL-3+) |
 | Liria | GPL-2.0-or-later AND LGPL-2.0-or-later | © 1999–2009 The Nautilus authors, © 2011–2021 The Caja authors (and Eazel, Red Hat, Novell and others per file); Selviana DE Project and contributors (SDE changes) | fork of [Caja](https://github.com/mate-desktop/caja) 1.28.0; eel and libcaja-extension are LGPL |
-| SDE-FLTK | LGPL-2.0-only WITH FLTK-exception | © 1998–2025 Bill Spitzak and others; Selviana DE Project and contributors (SDE-FLTK changes) | fork of [FLTK](https://www.fltk.org) 1.3.11 |
+| SDE-FLTK | LGPL-2.0-only WITH FLTK-exception | © 1998–2026 Bill Spitzak and others; Selviana DE Project and contributors (SDE-FLTK changes) | fork of [FLTK](https://www.fltk.org) 1.4.5 |
 | SDE WM | GPL-2.0-or-later | © 2002–2007 Dana Jansens, © 2004–2006 Mikael Magnusson, © 2003 Derek Foreman and the Openbox contributors | built from [Openbox](https://github.com/Mikachu/openbox) with SDE patches |
 | SDE Compositor | MPL-2.0 AND MIT | © 2003 Keith Packard (xcompmgr), © 2011–2013 Christopher Jeffrey (Compton), © 2019–2023 Yuxuan Shui and the picom contributors | built from [picom](https://github.com/yshui/picom) |
 | SDE themes | GPL-3.0-only (Graphite, Flat Remix GTK) with SDE's GPL-3.0-or-later overlays; CC-BY-SA-4.0 (Flat Remix GNOME, palette reference only) | © 2021–2025 Vince Liu; © 2016–2025 Daniel Ruiz de Alegría; Selviana DE Project and contributors | see [THIRD-PARTY.md](THIRD-PARTY.md) |
@@ -132,7 +132,7 @@ project gets its own domain.
   the warranty disclaimer.
 * **Packages**: `/usr/share/doc/sde/copyright` (`debian/copyright`),
   `/usr/share/sde/legal/components.json`, `/usr/share/doc/sde/upstream/*`,
-  `/usr/share/doc/sde/sde-fltk/COPYING`, `/usr/share/doc/sde/themes/*`.
+  `/usr/share/doc/sde/sde-fltk/COPYING` and `CREDITS.txt`, `/usr/share/doc/sde/themes/*`.
 
 ## Keeping it consistent
 

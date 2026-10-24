@@ -196,6 +196,6 @@ shows all of it in one window.
 `Fl_SDE_Style` (FL/Fl_SDE_Style.H) has virtual methods for popup metrics and
 drawing (`menu_*`), `menubar_draw`, `choice_draw`, `scrollbar_draw`,
 `tooltip_margin`/`tooltip_draw` and `dialog`. `fl_sde_style(style)` installs
-one; with none installed SDE-FLTK draws exactly like FLTK 1.3.11. No FLTK
+one; with none installed SDE-FLTK draws exactly like FLTK 1.4.5. No FLTK
 structure changed size. `sde-common` implements the hooks in
 `src/common/menu.cpp`.

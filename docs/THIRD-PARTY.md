@@ -124,7 +124,7 @@ that its code is licensed under SDE's GPLv3 or that it is installed with SDE.
 |---|---|---|---|
 | SDE WM | [openbox](https://github.com/Mikachu/openbox) | GPL-2.0-or-later; all original contributors retained | Private source build, SDE executable/WM identity, SDE rc.xml and themes |
 | SDE Compositor | [picom](https://github.com/yshui/picom) | MPL-2.0 AND MIT | Private source build and independent build version; lightweight XRender defaults |
-| SDE-FLTK | fork of [FLTK 1.3.11](https://github.com/fltk/fltk), in `sde-fltk/` | LGPL-2.0-only WITH FLTK-exception (GNU LGPL version 2 with the FLTK static-linking exceptions); FLTK copyrights retained | SDE fork kept in this repository, linked statically into every SDE program (alpha14) |
+| SDE-FLTK | fork of [FLTK 1.4.5](https://github.com/fltk/fltk) (1.3.11 until 0.2 Alpha 1), in `sde-fltk/` | LGPL-2.0-only WITH FLTK-exception (GNU LGPL version 2 with the FLTK static-linking exceptions); FLTK copyrights retained | SDE fork kept in this repository, linked statically into every SDE program (alpha14); X11 build without the bundled zlib, libjpeg, libpng, libdecor and nanosvg |
 
 sde-xsettingsd and sde-polkit-agent (alpha14) are new programs written from
 scratch by the Selviana DE Project (GPL-3.0-or-later); alpha13 used builds of

@@ -195,7 +195,7 @@ bool ask_name(Fl_Window *parent, const std::string &title, const std::string &cu
   in->value(current.c_str());
   // Select the name without its extension.
   size_t dot = current.find('.', 1);
-  in->position(0, int(dot == std::string::npos ? current.size() : dot));
+  in->insert_position(0, int(dot == std::string::npos ? current.size() : dot));
   d.field(in);
   d.end();
   d.buttons({_("Cancel"), _("Rename")}, 1);

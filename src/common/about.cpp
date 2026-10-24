@@ -17,7 +17,7 @@
 
 #include "buffered_window.h"
 #include "build_config.h"
-// The toolkit credit names SDE-FLTK's own version ("1.3.11-sde3"), not the
+// The toolkit credit names SDE-FLTK's own version ("1.4.5-sde1"), not the
 // FLTK release that fltk-config reports.
 #undef SDE_FLTK_VERSION
 #include <FL/sde_fltk.h>

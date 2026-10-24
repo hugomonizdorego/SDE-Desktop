@@ -1292,7 +1292,7 @@ void GalleryWindow::toast_cb(void *p) {
 void GalleryWindow::focus_search() {
   if (viewer_open()) return;
   Fl::focus(search_);
-  search_->position(search_->size(), 0);
+  search_->insert_position(search_->size(), 0);
   redraw();
 }
 
