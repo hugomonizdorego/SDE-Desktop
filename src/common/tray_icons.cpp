@@ -181,6 +181,85 @@ void battery(Painter &p, double x, double y, double size, int percent, bool char
   }
 }
 
+void battery(Painter &p, double x, double y, double size, double level, BatteryMark mark,
+             const Color &c, const Color &fill, const Color &outline, double sweep, double pulse) {
+  Grid g(p, x, y, size);
+  level = std::clamp(level, 0.0, 100.0);
+  pulse = std::clamp(pulse, 0.0, 1.0);
+  // Body and tip.
+  g.rrect(2.5, 7, 17, 10, 2.6);
+  g.stroke(outline);
+  g.rrect(20.2, 10, 2, 4, 0.8);
+  g.fill(outline);
+  // The inner room for the level: x 4.3-17.7, y 8.8-15.2.
+  const double ix = 4.3, iw = 13.4, iy = 8.8, ih = 6.4;
+  double w = iw * level / 100.0;
+  Color strong = fill.alpha(fill.a * (0.45 + 0.55 * pulse));
+  // Critically low: the "!" alone says it (a sliver beside it read "||!").
+  if (mark == BatteryMark::ALERT) w = 0;
+  if (w > 0.4) {
+    g.rrect(ix, iy, std::max(1.2, w), ih, 1.2);
+    g.fill(strong);
+  }
+  if (sweep >= 0 && w < iw - 0.3) {
+    // Charging: a translucent band grows from the level to the end (ease
+    // out over 70 % of the period), then fades away.
+    double grow = std::min(1.0, sweep / 0.7), u = 1 - grow;
+    double fade = sweep < 0.7 ? 1.0 : 1 - (sweep - 0.7) / 0.3;
+    double bw = (iw - w) * (1 - u * u * u);
+    cairo_save(g.cr);
+    g.rrect(ix, iy, iw, ih, 1.2);
+    cairo_clip(g.cr);
+    cairo_rectangle(g.cr, g.X(ix + w), g.Y(iy), bw * g.u, ih * g.u);
+    g.fill(fill.alpha(fill.a * 0.42 * fade));
+    cairo_restore(g.cr);
+  }
+  // The mark, cut out of the fill with an edge in the panel colour's opposite.
+  Color edge = c.r + c.g + c.b > 1.5 ? Color::hex(0x101010) : Color::hex(0xFFFFFF);
+  if (mark == BatteryMark::BOLT) {
+    g.move(12.4, 5.2);
+    g.to(8.4, 12.6);
+    g.to(11.4, 12.6);
+    g.to(10.6, 18.8);
+    g.to(14.8, 11.2);
+    g.to(11.8, 11.2);
+    cairo_close_path(g.cr);
+    p.set(c);
+    cairo_fill_preserve(g.cr);
+    g.stroke(edge, 1.1);
+  } else if (mark == BatteryMark::PLUG) {
+    // A plug drawn bold enough for 18 px: two prongs on a body that
+    // narrows into the cord, with an edge like the bolt.
+    auto plug = [&g] {
+      g.move(9.6, 7.6);
+      g.to(9.6, 10.2);
+      g.move(13.4, 7.6);
+      g.to(13.4, 10.2);
+      g.move(8.2, 10.4);
+      g.to(14.8, 10.4);
+      g.to(14.8, 11.6);
+      g.to(12.6, 14.0);
+      g.to(12.6, 16.4);
+      g.to(10.4, 16.4);
+      g.to(10.4, 14.0);
+      g.to(8.2, 11.6);
+      cairo_close_path(g.cr);
+    };
+    plug();
+    g.stroke(edge, 3.4);
+    plug();
+    g.stroke(c, 1.5);
+    plug();
+    g.fill(c);
+  } else if (mark == BatteryMark::ALERT) {
+    // "!" in the empty body.
+    g.move(11.5, 9.4);
+    g.to(11.5, 12.6);
+    g.stroke(strong, 2.0);
+    g.dot(11.5, 14.6, 1.1, strong);
+  }
+}
+
 void bluetooth(Painter &p, double x, double y, double size, bool powered, bool connected,
                const Color &c) {
   Grid g(p, x, y, size);

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
-// Settings > Power (sde-power, sde.conf [power]) and Settings > Lock Screen
+// Settings > Power (sde-power, sde.conf [power]; the panel's battery icon,
+// [panel] battery_display and battery_time) and Settings > Lock Screen
 // (sde-lock, [lock]). The daemons re-read sde.conf when Settings saves it.
 #include <FL/Fl.H>
 
@@ -171,6 +172,26 @@ void build_power_page(Page *page) {
   page->end_card();
 
   page->begin_card(_("Battery"));
+  // 0.2 Alpha 2: what follows the battery icon on the panel (its right-click
+  // menu has the same choices).
+  std::string shown = lower(trim(cfg.get("panel", "battery_display", "icon")));
+  page->choice_row(_("On the panel"),
+                   {_("Icon only"), _("Icon and percentage"), _("Icon and label"),
+                    _("Icon, label and percentage")},
+                   shown == "percent" ? 1 : shown == "label" ? 2 : shown == "label-percent" ? 3 : 0,
+                   [](int v) {
+                     static const char *values[] = {"icon", "percent", "label", "label-percent"};
+                     settings_config().set("panel", "battery_display", values[v < 0 || v > 3 ? 0 : v]);
+                     apply_change();
+                   },
+                   _("The label tells the state: Charging, On battery, Full, Low battery."));
+  page->switch_row(_("Show the time remaining in the label"),
+                   cfg.get_bool("panel", "battery_time", false),
+                   [](bool v) {
+                     settings_config().set("panel", "battery_time", v ? "true" : "false");
+                     apply_change();
+                   },
+                   _("\"3 h 57 min left\" or \"1 h 10 min to full\" instead of the state."));
   page->switch_row(_("Warn when the battery is low"), cfg.get_bool("power", "notify_battery", true),
                    [](bool v) {
                      settings_config().set("power", "notify_battery", v ? "true" : "false");

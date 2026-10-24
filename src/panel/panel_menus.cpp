@@ -18,6 +18,7 @@
 #include <cstdlib>
 
 #include "../common/menu.h"
+#include "clockface.h"
 #include "controls.h"
 #include "i18n.h"
 #include "notify_center.h"
@@ -345,9 +346,30 @@ void Panel::status_menu(int index) {
       break;
     }
     case BATTERY_STATUS: {
-      m.item(format(s.battery.charging ? _("Battery %d%% · charging") : _("Battery %d%%"),
-                    s.battery.percent),
+      m.item(battery_tooltip(s.battery.phase, s.battery.percent, s.battery.minutes,
+                             s.battery.calculating),
              nullptr, {"", 0, false, true});
+      // 0.2 Alpha 2: what follows the icon on the panel (also in Settings >
+      // Power), and the estimate in the label.
+      {
+        BatteryDisplay shown = parse_battery_display(cfg_.get("panel", "battery_display", "icon"));
+        bool time = cfg_.get_bool("panel", "battery_time", false);
+        auto set = [this](BatteryDisplay d) {
+          return [this, d] { set_setting("panel", "battery_display", battery_display_name(d)); };
+        };
+        ContextMenu show;
+        show.radio(_("Icon Only"), shown == BatteryDisplay::ICON, set(BatteryDisplay::ICON));
+        show.radio(_("Percentage"), shown == BatteryDisplay::PERCENT, set(BatteryDisplay::PERCENT));
+        show.radio(_("Label"), shown == BatteryDisplay::LABEL, set(BatteryDisplay::LABEL));
+        show.radio(_("Label and Percentage"), shown == BatteryDisplay::LABEL_PERCENT,
+                   set(BatteryDisplay::LABEL_PERCENT));
+        show.separator();
+        show.check(_("Time Remaining in the Label"), time,
+                   [this, time] { set_setting("panel", "battery_time", time ? "false" : "true"); },
+                   shown == BatteryDisplay::LABEL || shown == BatteryDisplay::LABEL_PERCENT);
+        m.submenu(_("Show on the Panel"), std::move(show));
+        m.separator();
+      }
       c.refresh_power_profiles();
       struct Profile {
         const char *id, *label;
@@ -436,11 +458,32 @@ void Panel::status_menu(int index) {
   run_menu("status:" + section, m, Fl::event_x_root());
 }
 
-void Panel::clock_menu() {
-  bool seconds = cfg_.get_bool("panel", "clock_seconds", false);
+// The clock style and its options, chosen independently (0.2 Alpha 2):
+// the panel clock's and the Action Center clock's menus.
+void Panel::clock_items(ContextMenu &m) {
+  auto clock = clockface::Settings::from_config(cfg_);
   bool h24 = cfg_.get_bool("panel", "clock_24h", true);
+  ContextMenu styles;
+  auto set_style = [this](const char *v) {
+    return [this, v] { set_setting("action_center", "clock_style", v); };
+  };
+  styles.radio(_("Digital"), clock.style == clockface::Style::Digital, set_style("digital"));
+  styles.radio(_("LED"), clock.style == clockface::Style::Led, set_style("led"));
+  styles.radio(_("Analog"), clock.style == clockface::Style::Analog, set_style("analog"));
+  m.submenu(_("Clock Style"), std::move(styles));
+  m.check(_("Show Seconds"), clock.seconds, [this, on = clock.seconds] {
+    set_setting("panel", "clock_seconds", on ? "false" : "true");
+  });
+  // The analog face has no colon to blink.
+  m.check(_("Blink the Colon"), clock.blink, [this, on = clock.blink] {
+    set_setting("panel", "clock_blink", on ? "false" : "true");
+  }, clock.style != clockface::Style::Analog);
+  m.check(_("24-Hour Clock"), h24,
+          [this, h24] { set_setting("panel", "clock_24h", h24 ? "false" : "true"); });
+}
+
+void Panel::clock_menu() {
   bool date = cfg_.get_bool("panel", "show_date", true);
-  std::string style = cfg_.get("action_center", "clock_style", "digital");
   ContextMenu m;
   // Settings > Clock & Weather (alpha52).
   m.item(_("Adjust Date and Time..."), settings("clock"), {"settings"});
@@ -449,26 +492,23 @@ void Panel::clock_menu() {
     tzsync::Sync::get().start(!n.available || (n.connected() && !n.no_internet()));
   }, {"refresh", 0, !tzsync::Sync::get().busy()});
   m.separator();
-  ContextMenu styles;
-  auto set_style = [this](const char *v) {
-    return [this, v] { set_setting("action_center", "clock_style", v); };
-  };
-  styles.radio(_("Digital"), style != "led" && style != "analog" && style != "blink",
-               set_style("digital"));
-  styles.radio(_("Blink"), style == "blink", set_style("blink"));
-  styles.radio(_("LED"), style == "led", set_style("led"));
-  styles.radio(_("Analog"), style == "analog", set_style("analog"));
-  m.submenu(_("Clock Style"), std::move(styles));
-  m.check(_("Show Seconds"), seconds,
-          [this, seconds] { set_setting("panel", "clock_seconds", seconds ? "false" : "true"); });
-  m.check(_("24-Hour Clock"), h24,
-          [this, h24] { set_setting("panel", "clock_24h", h24 ? "false" : "true"); });
+  clock_items(m);
   m.check(_("Show the Date"), date,
           [this, date] { set_setting("panel", "show_date", date ? "false" : "true"); });
   m.separator();
   m.item(_("Alarms"), [this] { open_alarms(); });
   m.item(_("Calendar"), [this] { open_action_center(true); });
   run_menu("clock", m, Fl::event_x_root());
+}
+
+void Panel::clock_options_menu() {
+  ContextMenu m;
+  clock_items(m);
+  m.separator();
+  m.item(_("Clock & Weather Settings..."), settings("clock"), {"settings"});
+  // At the pointer, inside the Action Center.
+  qa_menu("action-center-clock", m.items());
+  m.popup();
 }
 
 void Panel::notifications_items(ContextMenu &m) {

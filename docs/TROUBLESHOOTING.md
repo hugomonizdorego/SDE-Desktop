@@ -46,7 +46,7 @@ Quick settings use the system's services and hide what is not available:
 | Network | NetworkManager (`network-manager`, command `nmcli`) |
 | Sound | PulseAudio or PipeWire with `pactl` (`pulseaudio-utils`) |
 | Brightness | a backlight in `/sys/class/backlight` and systemd-logind |
-| Battery | a battery in `/sys/class/power_supply` |
+| Battery | UPower (`upower`), or a battery in `/sys/class/power_supply` (see [PANEL.md](PANEL.md)) |
 
 ## Tray icons are missing
 

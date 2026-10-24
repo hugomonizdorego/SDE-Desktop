@@ -35,6 +35,7 @@
 #include <thread>
 #include <vector>
 
+#include "../panel/clockface.h"
 #include "../panel/timezone.h"
 #include "about.h"
 #include "avatar.h"
@@ -1466,17 +1467,26 @@ void build_action_center(Page *page) {
   {
     // alpha52: one [clock] style for the panel and the Action Center; more
     // on the Clock & Weather page.
-    std::string style = g_cfg.get("action_center", "clock_style", "");
-    if (trim(style).empty()) style = g_cfg.get("clock", "style", "digital");
-    style = lower(trim(style));
-    page->choice_row(_("Clock style"), {_("Digital"), _("Blink"), _("LED"), _("Analog")},
-                     style == "blink" ? 1 : style == "led" ? 2 : style == "analog" ? 3 : 0,
+    // 0.2 Alpha 2: seconds and the blinking colon are options of their own.
+    clockface::Settings clock = clockface::Settings::from_config(g_cfg);
+    page->choice_row(_("Clock style"), {_("Digital"), _("LED"), _("Analog")},
+                     clock.style == clockface::Style::Led      ? 1
+                     : clock.style == clockface::Style::Analog ? 2
+                                                               : 0,
                      [](int v) {
-                       static const char *values[] = {"digital", "blink", "led", "analog"};
-                       g_cfg.set("action_center", "clock_style", values[v < 0 || v > 3 ? 0 : v]);
+                       static const char *values[] = {"digital", "led", "analog"};
+                       g_cfg.set("action_center", "clock_style", values[v < 0 || v > 2 ? 0 : v]);
                        g_cfg.unset("clock", "style");
                        apply_change();
                      });
+    page->switch_row(_("Show seconds"), clock.seconds, [](bool on) {
+      g_cfg.unset("clock", "seconds");
+      set_bool("panel", "clock_seconds", on);
+    });
+    page->switch_row(_("Blink the colon"), clock.blink, [](bool on) {
+      g_cfg.unset("clock", "blink");
+      set_bool("panel", "clock_blink", on);
+    }, _("Digital and LED clocks."));
   }
   page->switch_row(_("Show a greeting"), g_cfg.get_bool("action_center", "show_greeting", true),
                    [](bool on) { set_bool("action_center", "show_greeting", on); });
@@ -2747,7 +2757,11 @@ int main(int argc, char **argv) {
       page = id;
   }
   g_cfg.load();
-  if (migrate_theme_config(g_cfg)) g_cfg.save();
+  // The theme values of alpha15 and earlier, and (0.2 Alpha 2) the old
+  // "blink" clock style, are rewritten once.
+  bool migrated = migrate_theme_config(g_cfg);
+  if (clockface::migrate_config(g_cfg)) migrated = true;
+  if (migrated) g_cfg.save();
   if (apply) {
     sync_gtk_settings(g_cfg);
     sync_openbox(g_cfg);

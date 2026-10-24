@@ -908,8 +908,9 @@ class Session:
                            'wallpaper': self.wallpaper() or 'auto', 'wallpaper_mode': 'zoom'},
             'panel': {'pinned': 'liria.desktop;niny.desktop;sde-gallery.desktop;xanara.desktop;sde-settings.desktop',
                       'search': 'auto',
-                      # A steady LED: the screenshots wait until the screen stops changing.
-                      'network_led_blink': 'false'},
+                      # A steady LED and battery icon (its colours and marks
+                      # stay): the screenshots wait until the screen stops changing.
+                      'network_led_blink': 'false', 'battery_animation': 'false'},
             'menu': {'tiles': 'Work,liria.desktop:w,niny.desktop:m,xanara.desktop:m,org.debion.Calculator.desktop:s,'
                               'taca.desktop:s;Photos and media,sde-gallery.desktop:w,sde-view.desktop:m;System,'
                               'sde-settings.desktop:m,sde-update.desktop:s,sde-system-monitor.desktop:s'},
@@ -1465,6 +1466,61 @@ def panel_flyouts(s):
         s.gone('^' + title + '$', 2)
 
 
+# The fixture's UPower battery (battery_mode in tests/panel_service_fixture.cpp);
+# SHOWCASE_BATTERY is the one of the other scenes (78 %, 4 h 12 min left).
+SHOWCASE_BATTERY = 'state=discharging percent=78 energy=46.8 full=60 rate=11.14 tte=15124 ttf=0 warning=1'
+
+
+@scene('Panel', [
+    ('panel-battery-charging', 'Battery: charging, with the time until full and the percentage on the panel'),
+    ('panel-battery-low', 'Battery: a low battery in amber, with its label and percentage on the panel'),
+    ('panel-battery-menu', 'Battery: right-click to show the percentage, a label or the time remaining'),
+], needs=['sde-panel'])
+def panel_battery(s):
+    def flyout(name, battery, panel):
+        try:
+            s.dismiss_popups()
+            s.write_config({'panel': panel}, reload=True)
+            if not s.fixture_mode('battery ' + battery):
+                raise SkipShot('no battery in the service fixture')
+            s.wait(lambda: s.control('SDE Panel', 'status:power', 1), 3)
+            time.sleep(0.4)  # the panel lays out its new text
+            s.click_panel('status:power', '^Power$')
+            s.park_pointer()
+            s.shot(name, quiet=0.5)
+        except SkipShot as e:
+            s.skip(name, str(e))
+        finally:
+            s.key('Escape')
+
+    # 64 % of 60 Wh at 24 W: 54 minutes until full.
+    flyout('panel-battery-charging', 'state=charging percent=64 energy=38.4 full=60 rate=24 ttf=3240 tte=0',
+           {'battery_display': 'label-percent', 'battery_time': 'true'})
+    flyout('panel-battery-low', 'state=discharging percent=14 energy=8.4 full=60 rate=9.2 tte=3287 ttf=0',
+           {'battery_display': 'label-percent'})
+    try:
+        s.dismiss_popups()
+        s.write_config({'panel': {'battery_display': 'percent'}}, reload=True)
+        s.fixture_mode('battery ' + SHOWCASE_BATTERY)
+        pos = s.panel_button('status:power')
+        if not pos:
+            raise SkipShot('no battery icon on the panel')
+        items = [k[5:] for k in s.right_click_at(*pos) if k.startswith('item:')]
+        active = [i for i in items if not i.startswith('Battery ')]
+        if 'Show on the Panel' not in active:
+            raise SkipShot('no "Show on the Panel" in the battery menu')
+        # Down to the submenu and open it (its first entry selected).
+        s.key(*(['Down'] * (active.index('Show on the Panel') + 1)), 'Right')
+        time.sleep(0.3)
+        s.shot('panel-battery-menu', quiet=0.4)
+    except SkipShot as e:
+        s.skip('panel-battery-menu', str(e))
+    finally:
+        s.key('Escape', 'Escape')
+        s.fixture_mode('battery ' + SHOWCASE_BATTERY)
+        s.write_config(reload=True)
+
+
 @scene('Panel', [('panel-clock', 'The clock: date, alarms and the way to the calendar')], needs=['sde-panel'])
 def panel_clock(s):
     s.panel_command(['--alarms'], 'Alarms')
@@ -1602,8 +1658,8 @@ def action_center(s):
 @scene('Action Center', [
     ('action-center-compact', 'Action Center, compact: quick settings, sliders and the music player'),
     ('action-center-night', 'Action Center at night: stars and the moon behind the clock'),
-    ('action-center-led', 'Clock styles: LED digits in the Action Center and on the panel'),
-    ('action-center-analog', 'Clock styles: an analog clock'),
+    ('action-center-led', 'Clock styles: LED digits with a blinking colon, in the Action Center and on the panel'),
+    ('action-center-analog', 'Clock styles: an analog clock with the seconds hand'),
     ('action-center-power', 'Action Center: sleep, log out, restart and shut down'),
     ('action-center-brightness', 'Action Center: brightness settings with Night Light'),
 ], needs=['sde-panel'])
@@ -1624,9 +1680,11 @@ def action_center_more(s):
 
     view('action-center-compact', {'action_center': {'expanded': 'false'}})
     view('action-center-night', {}, clock='21:30')
-    for style in ('led', 'analog'):
+    # Seconds and the blinking colon are options of their own (0.2 Alpha 2).
+    for style, option in (('led', 'clock_blink'), ('analog', 'clock_seconds')):
         view(f'action-center-{style}', {'action_center': {'expanded': 'false', 'clock_style': style},
-                                        'clock': {'style': style}}, ready=f'@clock-{style}')
+                                        'clock': {'style': style}, 'panel': {option: 'true'}},
+             ready=f'@clock-{style}')
     s.write_config(reload=True)
     s.set_clock('10:42')
     # A footer or a card opens with a click; the click can race the popup

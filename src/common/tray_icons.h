@@ -25,6 +25,16 @@ void speaker(Painter &p, double x, double y, double size, int level, bool muted,
 // Battery with its level; charging adds a bolt; low draws the level in |alert|.
 void battery(Painter &p, double x, double y, double size, int percent, bool charging,
              const Color &c, const Color &alert);
+// The panel's battery (0.2 Alpha 2): |level| 0-100 (fractional while it
+// eases to a new percentage) filled in |fill|, the body drawn in |outline|,
+// and |mark| inside it in |c|: a bolt while charging, a plug on mains power
+// (full, or not charging), "!" when critically low (in |fill|). |sweep|
+// (0-1 through its period, < 0 none) animates charging: a lighter band
+// fills the rest of the battery and fades. |pulse| (0-1, 1 steady) is the
+// strength of the fill and the mark (the low and critical pulse).
+enum class BatteryMark { NONE, BOLT, PLUG, ALERT };
+void battery(Painter &p, double x, double y, double size, double level, BatteryMark mark,
+             const Color &c, const Color &fill, const Color &outline, double sweep, double pulse);
 // Bluetooth rune; !powered dims it with a slash; connected adds two dots.
 void bluetooth(Painter &p, double x, double y, double size, bool powered, bool connected,
                const Color &c);
