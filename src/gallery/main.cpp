@@ -22,6 +22,7 @@
 #include "link.h"
 #include "theme.h"
 #include "util.h"
+#include "wm.h"
 
 using namespace sde;
 
@@ -111,11 +112,10 @@ int main(int argc, char **argv) {
   // Worker threads hand thumbnails to the main loop with Fl::awake().
   Fl::lock();
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int w = std::min(S(1200), sw - S(40)), h = std::min(S(800), sh - S(40));
+  int wx = 0, wy = 0, w = S(1200), h = S(800);
+  fit_to_work_area(wx, wy, w, h);
   auto *window = new gallery::GalleryWindow(std::max(w, S(560)), std::max(h, S(400)));
-  window->position(sx + (sw - window->w()) / 2, sy + (sh - window->h()) / 2);
+  window->position(wx, wy);
   window->show();
   XClassHint hint{const_cast<char *>("sde-gallery"), const_cast<char *>("SDE-Gallery")};
   XSetClassHint(fl_display, fl_xid(window), &hint);
