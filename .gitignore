@@ -15,3 +15,5 @@ debian/*.debhelper.log
 debian/sde-desktop/
 debian/sde-desktop.substvars
 .claude/worktrees/
+# tools/build-info.py --stamp (package builds)
+/BUILD-INFO

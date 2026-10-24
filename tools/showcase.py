@@ -1011,6 +1011,10 @@ class Session:
             env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
         if (self.home / '.fixtures/avatars').is_dir():
             env['SDE_AVATAR_DIR'] = str(self.home / '.fixtures/avatars')
+        # SDE Welcome's tiles: data/welcome of a source tree when SDE is not
+        # installed (installed: /usr/share/SDE-Welcome).
+        if not Path('/usr/share/SDE-Welcome/steps').is_dir() and (a.data_dir / 'welcome/steps').is_dir():
+            env['SDE_WELCOME_DIR'] = str(a.data_dir / 'welcome')
         env.update(self.nss_wrapper())
         self.env = env
 

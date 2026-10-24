@@ -2,21 +2,21 @@
 // Copyright (C) 2026 Selviana DE Project and contributors
 #include "model.h"
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <sstream>
 
+#include "build_config.h"
 #include "config.h"
+#include "desktop_entry.h"
 #include "i18n.h"
 #include "util.h"
 
 namespace sde {
 namespace welcome {
-
-const char *const kProjectUrl = "https://github.com/hugomonizdorego/SDE-Desktop";
-const char *const kIssuesUrl = "https://github.com/hugomonizdorego/SDE-Desktop/issues";
-const char *const kDonateUrl = "https://paypal.me/hugocenturion0311";
-const char *const kDocsUrl = "https://github.com/hugomonizdorego/SDE-Desktop/tree/main/docs";
 
 bool show_at_startup(const Config &cfg) { return cfg.get_bool("welcome", "show", false); }
 
@@ -221,35 +221,278 @@ std::vector<std::string> missing_packages(const std::vector<std::string> &wanted
   return out;
 }
 
-namespace {
-Tool first_installed(const std::vector<Tool> &candidates) {
-  for (const auto &t : candidates)
-    if (!t.argv.empty() && !find_program(t.argv[0]).empty()) return t;
-  return Tool();
-}
-}  // namespace
+// ---- content
 
-std::vector<Tool> software_centers() {
-  std::vector<Tool> all = {
-      {"GNOME Software", {"gnome-software"}},
-      {"KDE Discover", {"plasma-discover"}},
-      {"Synaptic", {"synaptic-pkexec"}},
-      {"Synaptic", {"synaptic"}},
-  };
-  std::vector<Tool> out;
-  for (auto &t : all)
-    if (!find_program(t.argv[0]).empty()) {
-      bool dup = std::any_of(out.begin(), out.end(), [&](const Tool &o) { return o.name == t.name; });
-      if (!dup) out.push_back(t);
+namespace {
+
+// Language keys to try for Name[xx], most specific first: ll_CC@modifier,
+// ll_CC, ll@modifier, ll (as in desktop_entry.cpp).
+std::vector<std::string> language_keys() {
+  std::string lang = env("LC_ALL");
+  if (lang.empty()) lang = env("LC_MESSAGES");
+  if (lang.empty()) lang = env("LANG");
+  std::vector<std::string> keys;
+  if (lang.empty() || lang == "C" || lang == "POSIX" || starts_with(lang, "C.")) return keys;
+  std::string modifier;
+  size_t at = lang.find('@');
+  if (at != std::string::npos) {
+    modifier = lang.substr(at);
+    lang = lang.substr(0, at);
+  }
+  lang = lang.substr(0, lang.find('.'));
+  std::string ll = lang.substr(0, lang.find('_'));
+  if (!modifier.empty()) keys.push_back(lang + modifier);
+  keys.push_back(lang);
+  if (!modifier.empty()) keys.push_back(ll + modifier);
+  if (ll != lang) keys.push_back(ll);
+  return keys;
+}
+
+// Desktop Entry escapes: \s \n \t \r \\ (and \; inside lists).
+std::string unescape_value(const std::string &v) {
+  std::string out;
+  for (size_t i = 0; i < v.size(); ++i) {
+    if (v[i] == '\\' && i + 1 < v.size()) {
+      char n = v[++i];
+      out += n == 's' ? ' ' : n == 'n' ? '\n' : n == 't' ? '\t' : n == 'r' ? '\r' : n;
+    } else {
+      out += v[i];
     }
+  }
   return out;
 }
 
-Tool snapshot_tool() {
-  return first_installed({{"Timeshift", {"timeshift-launcher"}}, {"Timeshift", {"timeshift-gtk"}}});
+// "a;b\;c;" -> {"a", "b;c"}
+std::vector<std::string> list_of(const std::string &raw) {
+  std::vector<std::string> out;
+  std::string cur;
+  for (size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == ';') {
+      cur += ';';
+      ++i;
+    } else if (raw[i] == ';') {
+      if (!trim(cur).empty()) out.push_back(unescape_value(trim(cur)));
+      cur.clear();
+    } else {
+      cur += raw[i];
+    }
+  }
+  if (!trim(cur).empty()) out.push_back(unescape_value(trim(cur)));
+  return out;
 }
 
-Tool firewall_tool() { return first_installed({{"Firewall Configuration (gufw)", {"gufw"}}}); }
+const std::string kEntry = "Desktop Entry";
+
+// A value naming a file relative to the content folder ("icons/logo.svg",
+// "scripts/setup.sh") becomes the first such file that exists.
+std::string resolve(const std::string &value, const std::vector<std::string> &dirs) {
+  if (value.empty() || value[0] == '/' || value.find('/') == std::string::npos) return value;
+  for (const auto &d : dirs)
+    if (file_exists(join_path(d, value))) return join_path(d, value);
+  return value;
+}
+
+bool installed(const std::string &program) {
+  if (program.empty()) return false;
+  if (program[0] == '/') return access(program.c_str(), X_OK) == 0;
+  return !find_program(program).empty();
+}
+
+}  // namespace
+
+std::vector<std::string> content_dirs() {
+  std::vector<std::string> dirs;
+  // The unit tests replace the system folders (colon separated).
+  std::string only = env("SDE_WELCOME_DIRS");
+  if (!only.empty()) {
+    for (auto &d : split(only, ':'))
+      if (!d.empty()) dirs.push_back(d);
+    return dirs;
+  }
+  std::string own = env("SDE_WELCOME_DIR");
+  if (!own.empty()) dirs.push_back(own);
+  dirs.push_back(join_path(SDE_SYSCONFDIR, "SDE-Welcome"));
+  dirs.push_back(SDE_WELCOME_DATADIR);
+  return dirs;
+}
+
+bool KeyFile::load(const std::string &path) {
+  std::string text;
+  if (!read_file(path, text)) return false;
+  parse(text);
+  return true;
+}
+
+void KeyFile::parse(const std::string &text) {
+  std::istringstream in(text);
+  std::string line;
+  decltype(groups)::value_type *group = nullptr;
+  while (std::getline(in, line)) {
+    line = trim(line);
+    if (line.empty() || line[0] == '#') continue;
+    if (line[0] == '[' && line.back() == ']') {
+      std::string name = line.substr(1, line.size() - 2);
+      group = nullptr;
+      for (auto &g : groups)
+        if (g.first == name) group = &g;
+      if (!group) {
+        groups.push_back({name, {}});
+        group = &groups.back();
+      }
+      continue;
+    }
+    size_t eq = line.find('=');
+    if (!group || eq == std::string::npos) continue;
+    std::string key = trim(line.substr(0, eq)), value = trim(line.substr(eq + 1));
+    bool replaced = false;
+    for (auto &kv : group->second)
+      if (kv.first == key) {
+        kv.second = value;
+        replaced = true;
+      }
+    if (!replaced) group->second.push_back({key, value});
+  }
+}
+
+bool KeyFile::has(const std::string &group, const std::string &key) const {
+  for (const auto &g : groups)
+    if (g.first == group)
+      for (const auto &kv : g.second)
+        if (kv.first == key) return true;
+  return false;
+}
+
+static const std::string *raw_value(const KeyFile &kf, const std::string &group, const std::string &key) {
+  for (const auto &g : kf.groups)
+    if (g.first == group)
+      for (const auto &kv : g.second)
+        if (kv.first == key) return &kv.second;
+  return nullptr;
+}
+
+std::string KeyFile::get(const std::string &group, const std::string &key, const std::string &fallback) const {
+  const std::string *v = raw_value(*this, group, key);
+  return v ? unescape_value(*v) : fallback;
+}
+
+std::string KeyFile::localized(const std::string &group, const std::string &key) const {
+  static const std::vector<std::string> langs = language_keys();
+  for (const auto &l : langs) {
+    std::string v = get(group, key + "[" + l + "]");
+    if (!v.empty()) return v;
+  }
+  std::string v = get(group, key);
+  std::string domain = get(group, "X-SDE-Gettext-Domain");
+  if (!v.empty() && !domain.empty()) return dgettext(domain.c_str(), v.c_str());
+  return v;
+}
+
+void KeyFile::merge(const KeyFile &other) {
+  for (const auto &g : other.groups) {
+    auto mine = std::find_if(groups.begin(), groups.end(), [&](const auto &x) { return x.first == g.first; });
+    if (mine == groups.end()) {
+      groups.push_back(g);
+      continue;
+    }
+    for (const auto &kv : g.second) {
+      auto it = std::find_if(mine->second.begin(), mine->second.end(),
+                             [&](const auto &x) { return x.first == kv.first; });
+      if (it != mine->second.end()) it->second = kv.second;
+      else mine->second.push_back(kv);
+    }
+  }
+}
+
+Content load_content(const std::string &os_name) {
+  auto dirs = content_dirs();
+  KeyFile kf;
+  for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) {  // /etc and $SDE_WELCOME_DIR win
+    KeyFile one;
+    if (one.load(join_path(*it, "welcome.conf"))) kf.merge(one);
+  }
+  const std::string g = "Welcome";
+  Content c;
+  std::string title = kf.localized(g, "Title"), subtitle = kf.localized(g, "Subtitle");
+  if (title.empty()) {
+    c.title = os_name.empty() ? std::string(_("Welcome")) : format(_("Welcome to %s"), os_name.c_str());
+  } else if (title.find("%OS%") != std::string::npos && os_name.empty()) {
+    c.title = _("Welcome");
+  } else {
+    for (size_t at; (at = title.find("%OS%")) != std::string::npos;) title.replace(at, 4, os_name);
+    c.title = title;
+  }
+  c.subtitle = kf.has(g, "Subtitle") ? subtitle : _("A few first steps to make this computer yours.");
+  c.logo = resolve(kf.get(g, "Logo"), dirs);
+  c.desktop_line = kf.get(g, "ShowDesktopLine", "true") != "false";
+  auto number = [&](const char *key, int fallback, int lo, int hi) {
+    std::string v = kf.get(g, key);
+    int n = v.empty() ? fallback : atoi(v.c_str());
+    return n <= 0 ? fallback : std::max(lo, std::min(hi, n));
+  };
+  c.width = number("Width", c.width, 420, 1600);
+  c.height = number("Height", c.height, 360, 1200);
+  c.columns = number("Columns", c.columns, 1, 4);
+  return c;
+}
+
+std::vector<Step> load_steps() {
+  // File name -> (content folder, path); the first folder that has a name wins.
+  std::map<std::string, std::pair<std::string, std::string>> files;
+  for (const auto &dir : content_dirs())
+    for (const auto &name : list_dir(join_path(dir, "steps")))
+      if (ends_with(name, ".desktop") && !files.count(name)) files[name] = {dir, join_path(dir, "steps/" + name)};
+
+  // A step as shown, or false when it cannot be (hidden, not installed).
+  auto make = [&](const std::string &name, Step &out, std::string &fallback, bool &no_display) {
+    auto it = files.find(name);
+    if (it == files.end()) return false;
+    KeyFile kf;
+    if (!kf.load(it->second.second) || !kf.has(kEntry, "Name")) return false;
+    fallback = kf.get(kEntry, "X-SDE-Welcome-Fallback");
+    no_display = kf.get(kEntry, "NoDisplay") == "true";
+    if (kf.get(kEntry, "Hidden") == "true") {
+      fallback.clear();
+      return false;
+    }
+    std::vector<std::string> here = {it->second.first};
+    out = Step();
+    out.file = name;
+    out.name = kf.localized(kEntry, "Name");
+    out.comment = kf.localized(kEntry, "Comment");
+    std::string icon = kf.get(kEntry, "Icon");
+    if (!icon.empty()) out.icons.push_back(resolve(icon, here));
+    for (const auto &i : list_of(kf.get(kEntry, "X-SDE-Fallback-Icons"))) out.icons.push_back(resolve(i, here));
+    if (kf.get(kEntry, "Type") == "Link") {
+      out.url = kf.get(kEntry, "URL");
+      return !out.url.empty();
+    }
+    for (auto &a : split_command(kf.get(kEntry, "Exec"))) {
+      if (a.size() == 2 && a[0] == '%' && std::string("fFuUick").find(a[1]) != std::string::npos) continue;
+      out.argv.push_back(a == "%%" ? "%" : a);
+    }
+    if (out.argv.empty()) return false;
+    out.argv[0] = resolve(out.argv[0], here);
+    std::string try_exec = resolve(kf.get(kEntry, "TryExec"), here);
+    return installed(try_exec.empty() ? out.argv[0] : try_exec);
+  };
+
+  std::vector<Step> steps;
+  for (const auto &f : files) {
+    Step step;
+    std::string fallback;
+    bool no_display = false;
+    bool ok = make(f.first, step, fallback, no_display);
+    if (no_display) continue;  // only used as another step's fallback
+    // Follow the fallbacks (at most a few, they could loop).
+    for (int depth = 0; !ok && !fallback.empty() && depth < 8; ++depth) {
+      std::string next = fallback;
+      bool ignored = false;
+      ok = make(next, step, fallback, ignored);
+    }
+    if (ok) steps.push_back(step);
+  }
+  return steps;
+}
 
 const std::vector<Layout> &panel_layouts() {
   static const std::vector<Layout> list = {

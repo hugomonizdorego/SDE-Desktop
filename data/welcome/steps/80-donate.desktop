@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Link
+Name=Donate
+Comment=Support the development of SDE
+Icon=emblem-favorite
+X-SDE-Fallback-Icons=starred;face-smile
+URL=https://paypal.me/hugocenturion0311
+X-SDE-Gettext-Domain=sde
