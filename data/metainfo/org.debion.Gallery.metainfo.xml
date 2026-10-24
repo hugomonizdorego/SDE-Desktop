@@ -15,6 +15,11 @@
     <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">sde-gallery.desktop</launchable>
+  <categories>
+    <category>Graphics</category>
+    <category>Photography</category>
+    <category>Viewer</category>
+  </categories>
   <icon type="stock">sde-gallery</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>

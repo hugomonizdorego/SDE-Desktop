@@ -15,6 +15,11 @@
     <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">sde-display-settings.desktop</launchable>
+  <categories>
+    <category>Settings</category>
+    <category>HardwareSettings</category>
+    <category>DesktopSettings</category>
+  </categories>
   <icon type="stock">sde-display-settings</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>

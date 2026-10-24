@@ -15,6 +15,10 @@
     <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">org.debion.Calculator.desktop</launchable>
+  <categories>
+    <category>Utility</category>
+    <category>Calculator</category>
+  </categories>
   <icon type="stock">sde-calculator</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>

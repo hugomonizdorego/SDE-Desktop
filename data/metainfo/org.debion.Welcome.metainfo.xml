@@ -15,6 +15,10 @@
     <p>The welcome screen concept follows Linux Mint's; SDE Welcome is written from scratch by the Selviana DE Project for the Selviana Desktop Environment.</p>
   </description>
   <launchable type="desktop-id">sde-welcome.desktop</launchable>
+  <categories>
+    <category>System</category>
+    <category>Settings</category>
+  </categories>
   <icon type="stock">sde-welcome</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>

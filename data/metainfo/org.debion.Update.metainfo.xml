@@ -16,6 +16,11 @@
     <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
   </description>
   <launchable type="desktop-id">sde-update.desktop</launchable>
+  <categories>
+    <category>System</category>
+    <category>Settings</category>
+    <category>PackageManager</category>
+  </categories>
   <icon type="stock">sde-software-updater</icon>
   <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
   <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
