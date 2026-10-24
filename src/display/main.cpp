@@ -38,9 +38,12 @@ void refresh_page() {
   page = new Page(0, 0, win->w(), win->h());
   build_display_page(page);
   win->end();
-  if (scroll) page->scroll_to(0, scroll);
+  if (scroll) page->scroll_to(0, std::min(scroll, page->max_scroll()));
   win->redraw();
 }
+namespace {
+void relayout(void*) { refresh_page(); }
+}  // namespace
 void apply_change() {
   double old = theme.scale;
   cfg.save();
@@ -54,6 +57,17 @@ void apply_change() {
 class DisplayWindow : public BufferedWindow {
  public:
   DisplayWindow(int w, int h) : BufferedWindow(w, h, _("Display Settings")) {}
+  // Maximized or resized: the page covers the window at once and is built
+  // again for the new size once it settles (as in the Control Center).
+  void resize(int x, int y, int w, int h) override {
+    bool sized = w != this->w() || h != this->h();
+    BufferedWindow::resize(x, y, w, h);
+    if (!sized || !page) return;
+    page->resize(0, 0, w, h);
+    Fl::remove_timeout(relayout);
+    Fl::add_timeout(.08, relayout);
+    redraw();
+  }
   static AppInfo app_info() {
     AppInfo info;
     info.name = _("Display Settings");

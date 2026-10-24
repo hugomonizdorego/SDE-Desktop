@@ -75,8 +75,16 @@ Page::Page(int x, int y, int w, int h) : Fl_Scroll(x, y, w, h) {
   scrollbar.selection_color(t.border.fl());
   scrollbar.box(FL_FLAT_BOX);
   scrollbar.slider(FL_FLAT_BOX);
-  pad_ = S(28);
   y_ = y + S(24);
+  max_width(S(860));
+}
+
+void Page::max_width(int w) {
+  // The usual margins, and more on both sides of content that is wider
+  // than |w|: a maximized window on a large screen keeps lines readable.
+  max_w_ = w;
+  int inner = this->w() - scrollbar_size() - 2 * S(28);
+  pad_ = S(28) + std::max(0, (inner - max_w_) / 2);
 }
 
 void Page::heading(const std::string &title, const std::string &subtitle) {

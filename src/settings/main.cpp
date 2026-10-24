@@ -15,6 +15,7 @@
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_File_Chooser.H>
+#include <FL/Fl_Input_.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <sys/stat.h>
@@ -2384,6 +2385,9 @@ int g_content_x = 0, g_content_w = 0;
 
 void show_page(int index);
 
+// The sidebar of a window |w| pixels wide.
+int sidebar_width(int w) { return w < S(760) ? S(176) : S(220); }
+
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
@@ -2505,9 +2509,19 @@ class Sidebar : public Fl_Widget {
   int hover_ = -1;
 };
 
+void layout_window();
+
+// The window does not let FLTK stretch its children (resizable(nullptr)):
+// every size change goes through layout_window(), which gives the sidebar
+// and the page the whole window (maximized, tiled or dragged).
 class SettingsWindow : public BufferedWindow {
  public:
   SettingsWindow(int w, int h) : BufferedWindow(w, h, _("Control Center")) {}
+  void resize(int x, int y, int w, int h) override {
+    bool sized = w != this->w() || h != this->h();
+    BufferedWindow::resize(x, y, w, h);
+    if (sized) layout_window();
+  }
   void draw() override {
     {
       Painter p(w(), h());
@@ -2517,6 +2531,47 @@ class SettingsWindow : public BufferedWindow {
     qa_dump_window();
   }
 };
+
+// Scrolls the sidebar (as little as needed) so that row |index| is shown,
+// and never past its end: the header and the first rows show whenever the
+// window is tall enough.
+void reveal_sidebar_row(int index) {
+  if (!g_sidebar_scroll || !g_sidebar) return;
+  int view = g_sidebar_scroll->h(), top = g_sidebar->row_y(index) - g_sidebar_scroll->y();
+  int bottom = top + g_sidebar->row_h();
+  int scroll = g_sidebar_scroll->yposition();
+  if (top < 0)
+    scroll += top - S(8);
+  else if (bottom > view)
+    scroll += bottom - view + S(8);
+  scroll = std::max(0, std::min(scroll, g_sidebar->h() - view));
+  if (scroll != g_sidebar_scroll->yposition()) g_sidebar_scroll->scroll_to(0, scroll);
+}
+
+// Builds the page again for the window's new size (refresh_page() keeps the
+// scroll position and the focused control).
+void relayout_page(void *) {
+  if (g_page && g_window) refresh_page();
+}
+
+void layout_window() {
+  if (!g_window || !g_sidebar_scroll || !g_sidebar) return;
+  int W = g_window->w(), H = g_window->h(), side = sidebar_width(W);
+  g_sidebar_scroll->resize(0, 0, side, H);
+  g_sidebar->size(side - S(10), std::max(H, g_sidebar->content_h()));
+  reveal_sidebar_row(g_page_index);
+  g_content_x = side;
+  g_content_w = W - side;
+  if (g_page) {
+    // At once the page covers the window (no band of background below or
+    // beside it); its content follows once the size stops changing, as
+    // the window manager sends many sizes while a border is dragged.
+    g_page->resize(g_content_x, 0, g_content_w, H);
+    Fl::remove_timeout(relayout_page);
+    Fl::add_timeout(0.08, relayout_page);
+  }
+  g_window->redraw();
+}
 
 // UI test hook, as the panel's (src/panel/popup.h): with SDE_PANEL_QA_DIR
 // set, <dir>/Control-Center.txt lists the named controls (tooltip or label)
@@ -2569,16 +2624,8 @@ void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
   g_page_index = index;
   g_restart_page = pages()[size_t(index)].id;
-  if (g_sidebar_scroll && g_sidebar) {
-    int top = g_sidebar->row_y(index), bottom = top + g_sidebar->row_h();
-    int scroll = g_sidebar_scroll->yposition();
-    if (top < 0)
-      scroll += top - S(8);
-    else if (bottom > g_sidebar_scroll->h())
-      scroll += bottom - g_sidebar_scroll->h() + S(8);
-    scroll = std::max(0, std::min(scroll, g_sidebar->h() - g_sidebar_scroll->h()));
-    g_sidebar_scroll->scroll_to(0, scroll);
-  }
+  reveal_sidebar_row(index);
+  Fl::remove_timeout(relayout_page);  // built for the current size now
   if (g_page) {
     g_window->remove(g_page);
     Fl::delete_widget(g_page);
@@ -2600,10 +2647,32 @@ void show_page(int index) {
 
 void refresh_page() {
   int scroll = g_page ? g_page->yposition() : 0;
+  // The control with the keyboard focus (by its name) gets it back.
+  std::string focused;
+  if (Fl_Widget *f = Fl::focus())
+    if (g_page && g_page->contains(f) && f != g_page)
+      focused = f->tooltip() ? f->tooltip() : f->label() ? f->label() : "";
   g_refreshing = true;
   show_page(g_page_index);
   g_refreshing = false;
-  if (g_page && scroll > 0) g_page->scroll_to(0, scroll);
+  // The same place, or the end when the page got shorter (a wider window).
+  if (g_page && scroll > 0) g_page->scroll_to(0, std::min(scroll, g_page->max_scroll()));
+  if (g_page && !focused.empty()) {
+    std::function<Fl_Widget *(Fl_Group *)> find = [&](Fl_Group *g) -> Fl_Widget * {
+      for (int i = 0; i < g->children(); ++i) {
+        Fl_Widget *c = g->child(i);
+        const char *name = c->tooltip() ? c->tooltip() : c->label();
+        if (name && focused == name && c->visible() && c->active_r()) return c;
+        if (Fl_Group *sub = c->as_group())
+          if (Fl_Widget *w = find(sub)) return w;
+      }
+      return nullptr;
+    };
+    if (Fl_Widget *w = find(g_page)) {
+      w->take_focus();
+      if (auto *in = dynamic_cast<Fl_Input_ *>(w)) in->position(in->size());
+    }
+  }
 }
 
 void open_settings_page(const std::string &id, const std::string &anchor) {
@@ -2764,7 +2833,7 @@ int main(int argc, char **argv) {
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);
   int W = std::min(S(940), sw - S(24)), H = std::min(S(660), sh - S(60));
-  int side = W < S(760) ? S(176) : S(220);
+  int side = sidebar_width(W);
   auto *win = new SettingsWindow(W, H);
   g_window = win;
   g_sidebar_scroll = new Fl_Scroll(0, 0, side, H);

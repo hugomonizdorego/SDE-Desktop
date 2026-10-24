@@ -927,6 +927,8 @@ Account account() {
   return a;
 }
 
+bool administrator(const std::string &user) { return in_admin_group(user); }
+
 bool valid_real_name(const std::string &name, std::string *error) {
   if (name.size() > 128) {
     set_error(error, _("The name is too long (at most 128 characters)."));

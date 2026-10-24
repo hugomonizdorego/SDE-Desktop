@@ -481,6 +481,8 @@ bool matches(const Category &c, const Tile &t, const std::vector<std::string> &w
 
 void build_hub(Page *page) {
   g_results.clear();
+  // Wide windows get three roomy tiles a row, not a stretched grid.
+  page->max_width(S(1080));
   // Short windows (1024 x 600 at 150 %) start with the account: the
   // sidebar and the title bar already name the Control Center.
   bool short_window = page->h() < S(520);
