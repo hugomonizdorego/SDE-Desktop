@@ -380,7 +380,7 @@ void change(const std::string &working, const std::string &done_text, std::funct
       });
 }
 
-// "sam · Administrator · Locked · Logged in now"
+// "sam · Administrator · Locked · Logged in"
 std::string user_detail(const accounts::User &u) {
   std::string d = u.name + "  ·  " + accounts::type_label(u.type);
   if (u.locked) d += "  ·  " + std::string(_("Locked"));
@@ -876,6 +876,7 @@ void submit_own_password() {
            } else {
              g_draft.message = error;  // the form stays open: type them again
              g_focus_next = _("Current password");
+             set_own_status("", StatusKind::done);
            }
          },
          true);
@@ -905,23 +906,26 @@ void submit_add_user() {
   wipe(n.again);
   std::vector<accounts::User> all = g_users;
   std::string name = n.name;
+  auto created = std::make_shared<bool>(false);
   change(format(_("Adding the account \"%s\"..."), name.c_str()),
          format(_("The account of %s was added."), n.real_name.c_str()),
-         [job, all](std::string *error) {
-           bool ok = accounts::add_user(*job, all, error);
+         [job, all, created](std::string *error) {
+           bool ok = accounts::add_user(*job, all, error, created.get());
            wipe(job->password);
            wipe(job->again);
            return ok;
          },
-         [name](bool ok, const std::string &error) {
+         [name, created](bool ok, const std::string &error) {
            wipe_secrets();
-           if (ok) {
+           if (ok || *created) {
+             // The account exists (its card sets the password when that failed).
              g_form = Form::none;
              g_draft = Draft();
              g_selected = name;
              g_reveal_selected = true;
            } else {
-             g_draft.message = error;
+             g_draft.message = error;  // shown in the form, which stays open
+             set_change_status("", StatusKind::done);
            }
          });
 }
@@ -949,8 +953,12 @@ void submit_user_password(const accounts::User &u) {
            return ok;
          },
          [](bool ok, const std::string &error) {
-           if (ok) close_form();
-           else g_draft.message = error;
+           if (ok) {
+             close_form();
+           } else {
+             g_draft.message = error;  // shown in the form, which stays open
+             set_change_status("", StatusKind::done);
+           }
          });
 }
 

@@ -122,6 +122,7 @@ int main() {
   CHECK(save_display_profile({"Small", 75, hardware}) && load_display_profile("Small", p, hardware) && p.scale == 75);
   CHECK(save_display_profile({"Auto", 0, hardware}) && load_display_profile("Auto", p, hardware) && p.scale == 0);
   CHECK(!save_display_profile({"Odd", 90, hardware}) && !save_display_profile({"Tiny", 50, hardware}));
+  CHECK(delete_display_profile("Small") && delete_display_profile("Auto"));
   CHECK(display_scale_valid(175) && !display_scale_valid(225));
   {
     Config sc;

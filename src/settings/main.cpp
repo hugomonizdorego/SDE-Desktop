@@ -2571,10 +2571,38 @@ void reveal_sidebar_row(int index) {
   if (scroll != g_sidebar_scroll->yposition()) g_sidebar_scroll->scroll_to(0, scroll);
 }
 
+// The controls of |page| in the order they were added (not its scroll bars).
+std::vector<Fl_Widget *> page_controls(Page *page) {
+  std::vector<Fl_Widget *> out;
+  for (int i = 0; i < page->children(); ++i) {
+    Fl_Widget *c = page->child(i);
+    if (c != &page->scrollbar && c != &page->hscrollbar) out.push_back(c);
+  }
+  return out;
+}
+
 // Builds the page again for the window's new size (refresh_page() keeps the
-// scroll position and the focused control).
+// focused control). The control at the top of the page stays there: text
+// wraps differently at another width, so the same scroll offset would show
+// another part of the page.
 void relayout_page(void *) {
-  if (g_page && g_window) refresh_page();
+  if (!g_page || !g_window) return;
+  int index = -1, delta = 0;
+  if (g_page->yposition() > 0) {
+    auto before = page_controls(g_page);
+    for (size_t i = 0; i < before.size(); ++i)
+      if (before[i]->y() + before[i]->h() > g_page->y()) {
+        index = int(i);
+        delta = before[i]->y() - g_page->y();
+        break;
+      }
+  }
+  refresh_page();
+  auto after = page_controls(g_page);
+  if (index >= 0 && index < int(after.size())) {
+    int top = after[size_t(index)]->y() + g_page->yposition() - g_page->y();
+    g_page->scroll_to(0, std::max(0, std::min(top - delta, g_page->max_scroll())));
+  }
 }
 
 // The sidebar's frame and its list for a window |W| x |H|.
@@ -2757,7 +2785,7 @@ const PageAlias kPageAliases[] = {
     {"timezone", "date-time", nullptr},   {"datetime", "date-time", nullptr},
     {"weather", "clock", nullptr},        {"clocks", "clock", nullptr},
     {"user", "users", nullptr},           {"account", "users", nullptr},
-    {"accounts", "users", nullptr},       {"avatar", "users", "avatar"},
+    {"accounts", "users", "accounts"},    {"avatar", "users", "avatar"},
     {"picture", "users", "avatar"},       {"face", "users", "avatar"},
     {"screensaver", "lock", nullptr},     {"lock-screen", "lock", nullptr},
     {"defaults", "default-apps", nullptr}, {"default apps", "default-apps", nullptr},

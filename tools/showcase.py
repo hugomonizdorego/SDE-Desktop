@@ -2098,6 +2098,33 @@ def avatar_picker(s):
     s.shot('avatar-picker', quiet=0.6)
 
 
+@scene('Accounts', [('user-accounts', 'Control Center, Users & Avatar: the users of this computer, their type '
+                                      'and state'),
+                    ('user-add', 'Control Center, Users & Avatar: adding a user (the user name follows the full '
+                                 'name; the strength of the password)')], needs=['sde-settings'])
+def user_accounts(s):
+    """The fixture's AccountsService: Alex, Mia and Sam."""
+    if not any(p in ACCOUNT_PAGES for p in s.run_ctx.pages):
+        raise SkipShot('no account page in this build')
+    settings_page(s, 'accounts')
+    if not s.control('Control Center', 'user:mia', 4):
+        raise SkipShot('no AccountsService (the service fixture) in this session')
+    s.shot('user-accounts', quiet=0.6)
+    try:
+        s.press('Control Center', 'Add User...')
+        s.control('Control Center', "New user's full name", 3, active=True)
+        s.press('Control Center', "New user's full name")
+        s.type('Jordan Lee')
+        s.press('Control Center', "New user's password")
+        s.type('a long sunny walk')
+        s.press('Control Center', "Confirm the new user's password")
+        s.type('a long sunny walk')
+        s.park_pointer()
+        s.shot('user-add', quiet=0.6)
+    except SkipShot as e:
+        s.skip('user-add', str(e))
+
+
 # ================================================================== output
 
 

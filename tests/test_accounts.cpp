@@ -259,10 +259,12 @@ static void test_changes(const std::string &tmp) {
   fake.fail = "create";
   CHECK(!add_user(n, all, &error) && error == "refused by the fake");
   CHECK(fake.calls.size() == 1);
+  bool created = true;
+  CHECK(!add_user(n, all, &error, &created) && !created);
   // The account was made, its password not.
   fake.calls.clear();
   fake.fail = "password";
-  CHECK(!add_user(n, all, &error) && error.find("zqrobin") != std::string::npos &&
+  CHECK(!add_user(n, all, &error, &created) && created && error.find("zqrobin") != std::string::npos &&
         error.find("refused by the fake") != std::string::npos);
   fake.fail.clear();
 

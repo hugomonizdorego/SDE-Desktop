@@ -745,7 +745,8 @@ std::vector<User> local_users() {
 
 // ================================================================ changes
 
-bool add_user(const NewUser &n, const std::vector<User> &all, std::string *error) {
+bool add_user(const NewUser &n, const std::vector<User> &all, std::string *error, bool *created) {
+  if (created) *created = false;
   std::vector<std::string> taken;
   for (const User &u : all) taken.push_back(u.name);
   std::string why = user_name_problem(n.name, taken);
@@ -767,6 +768,7 @@ bool add_user(const NewUser &n, const std::vector<User> &all, std::string *error
   u.real_name = real;
   u.type = n.type;
   if (!backend().create(n.name, real, n.type, &u.path, error)) return false;
+  if (created) *created = true;
   std::string failed;
   bool ok = n.password_at_login ? backend().set_password_mode(u, PasswordMode::set_at_login, &failed)
                                 : backend().set_password(u, hash, &failed);

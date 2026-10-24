@@ -143,8 +143,9 @@ struct NewUser {
   std::string password, again;     // else this one, typed twice
 };
 // CreateUser, then SetPassword with the hash (or SetPasswordMode 1). The
-// account exists even when setting its password failed: *error says so.
-bool add_user(const NewUser &n, const std::vector<User> &all, std::string *error);
+// account exists even when setting its password failed: *created is true
+// then and *error says so.
+bool add_user(const NewUser &n, const std::vector<User> &all, std::string *error, bool *created = nullptr);
 // Another person's password (SetPassword with a hash), or "they choose one
 // at the next login" (SetPasswordMode 1) when |at_login|.
 bool set_password(const User &u, bool at_login, const std::string &password, const std::string &again,

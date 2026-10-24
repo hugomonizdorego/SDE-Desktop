@@ -100,6 +100,11 @@ the page is open.
   name. Or **let the person choose one at the first login**
   (`SetPasswordMode` 1: no password until then).
 
+The new account's card opens once it is added. When AccountsService refuses
+(polkit, a name taken meanwhile) the form stays open with the reason; when
+the account was made but its password could not be set, its card opens so
+that the password can be set there.
+
 Choosing an account in the list opens its card below the list: **Full
 name**, **Picture** (cropped to a 256 × 256 PNG that AccountsService copies
 for the login screen, or removed), **Account type**, **Set Password…** (a new
