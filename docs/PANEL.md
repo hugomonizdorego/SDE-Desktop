@@ -66,7 +66,8 @@ state while there is one: `3 h 57 min left`, `1 h 10 min to full`,
 Both are chosen from the battery icon's right-click menu (**Show on the
 Panel**: Icon Only, Percentage, Label, Label and Percentage, Time Remaining
 in the Label) and in Control Center > **Power** > Battery (**On the panel**,
-**Show the time remaining in the label**). The panel lays itself out again
+**Show the time remaining in the label**); the menu's **Power Settings...**
+opens that card (`sde-settings --page battery`). The panel lays itself out again
 at once, in every panel style and position. The text's width is measured
 with every digit as "8", so the panel does not move each time a digit
 changes; when the status area has no room for it, a label gives way to the
