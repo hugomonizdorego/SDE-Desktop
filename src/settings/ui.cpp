@@ -125,6 +125,14 @@ void Page::note(const std::string &text) {
   y_ += h + S(6);
 }
 
+void Page::control_box(int control_w, int *x, int *w) const {
+  int inner_x = card_ ? left() + S(20) : left();
+  int inner_w = card_ ? width() - S(40) : width();
+  bool stacked = inner_w - control_w - S(16) < S(160);
+  *x = stacked ? inner_x : inner_x + inner_w - control_w;
+  *w = stacked ? inner_w : control_w;
+}
+
 Fl_Widget *Page::row(const std::string &label, int control_w, int control_h,
                      const std::function<Fl_Widget *(int, int, int, int)> &make, const std::string &hint) {
   int inner_x = card_ ? left() + S(20) : left();

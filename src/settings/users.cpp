@@ -835,11 +835,12 @@ DraftInput *field(Page *page, const std::string &label, const std::string &name,
   return in;
 }
 
+// The strength meter, right under the password field.
 void meter_row(Page *page) {
-  page->row("", S(300), S(22), [&](int x, int y, int w, int h) {
-    g_meter = new StrengthMeter(x, y, w, h);
-    return g_meter;
-  });
+  int x, w;
+  page->control_box(S(300), &x, &w);
+  g_meter = new StrengthMeter(x, page->cursor(), w, S(22));
+  page->advance(S(30));
 }
 
 void message_row(Page *page) {

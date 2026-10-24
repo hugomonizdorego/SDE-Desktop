@@ -67,6 +67,9 @@ class Page : public Fl_Scroll {
   // Free-standing paragraph.
   void note(const std::string &text);
 
+  // Where row() puts a control |control_w| wide: in the column at the
+  // right, or across the card when rows stack on a narrow page.
+  void control_box(int control_w, int *x, int *w) const;
   // A row: label on the left, a control of |control_w| on the right.
   // |make| creates the control at the given box.
   Fl_Widget *row(const std::string &label, int control_w, int control_h,

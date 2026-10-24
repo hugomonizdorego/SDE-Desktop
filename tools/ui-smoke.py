@@ -332,13 +332,15 @@ def cc_names():
 def cc_reveal(win, name):
     """Wheels the Control Center page until control |name| is fully shown."""
     g = geom(win)
-    for _ in range(60):
+    for _ in range(80):
         rows = [f for f in cc_names() if f[0] == name]
         if rows and rows[0][5] == "1":
             return
         down = not rows or int(rows[0][2]) > g["HEIGHT"] // 2
+        # Several wheel steps while it is far away (one step is a few lines).
+        far = 1 if not rows else max(1, min(12, abs(int(rows[0][2]) - g["HEIGHT"] // 2) // 60))
         run("xdotool", "mousemove", str(g["X"] + g["WIDTH"] - 40), str(g["Y"] + g["HEIGHT"] // 2),
-            "click", "5" if down else "4")
+            "click", "--repeat", str(far), "--delay", "15", "5" if down else "4")
         time.sleep(0.15)
     raise AssertionError(("Control Center: cannot scroll to", name, [f[0] for f in cc_names()]))
 
