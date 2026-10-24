@@ -16,6 +16,14 @@
 // Search lives in the panel (see search.h): typing while the menu is open
 // moves to the panel's search. The menu can be resized by dragging its
 // outer edges; [menu] in sde.conf keeps the tiles and the size.
+//
+// 0.2 Alpha 2: the tile groups start out by category (start_tiles below).
+// Tiles are dragged between groups, applications from the list or from the
+// search results into a group, onto empty space for a new group; a group
+// name is renamed by a click and moved by a drag; a group without tiles
+// has a remove button. While dragging, a bar shows where the tile goes,
+// the group under the pointer is highlighted and the tiles scroll near
+// their top and bottom edges. See docs/START-MENU.md.
 #pragma once
 
 #include <FL/Fl_Input.H>
@@ -87,6 +95,11 @@ class AppMenu : public PanelPopup {
   // The size the menu opens at ([menu] width/height or size, kept on the
   // monitor) and whether that is the compact layout.
   static void preferred_size(int &w, int &h);
+  // An application dragged out of the search results (0.2 Alpha 2): the
+  // open menu goes on with the drag, the mouse button still down, and drops
+  // it into the tile group under the pointer.
+  void start_drag(const std::string &id);
+  static AppMenu *instance;
 
  private:
   enum Kind {
@@ -98,7 +111,8 @@ class AppMenu : public PanelPopup {
     K_JUMP,        // letter in the jump grid; index: letter
     K_GROUP,       // tile group heading; index: group
     K_TILE,        // tile; index: tile number, group: group
-    K_HEADING,     // text only
+    K_GROUP_REMOVE,  // remove button of a group without tiles; index: group
+    K_HEADING,     // text only; index 5: the drop hint of a group without tiles
   };
   struct Area {
     Kind kind = K_NONE;  // K_ROW (list) or K_TILE (tiles)
@@ -153,6 +167,8 @@ class AppMenu : public PanelPopup {
   void layout_list();
   void layout_tiles();
   const sde::DesktopEntry *app(const std::string &id) const;
+  // A group's name, or "Name group" for one without a name.
+  std::string group_label(int group) const;
   void activate(const Item &it);
   void launch(const Item &it);
   void rail_action(int index);
@@ -182,6 +198,14 @@ class AppMenu : public PanelPopup {
   void apply_size(int w, int h);
   void drop_target(int x, int y, int &group, int &index) const;
   void drop(int x, int y);
+  // Where a dragged group goes: the index to insert it at (-1: outside the
+  // tiles); |anchor| and |below| tell where to draw the bar.
+  int group_target(int x, int y, int *anchor = nullptr, bool *below = nullptr) const;
+  void drop_group(int x, int y);
+  // Near the top or bottom of the tiles a drag scrolls them, faster closer
+  // to the edge: pixels per frame (0: not there).
+  int autoscroll_speed() const;
+  static void autoscroll(void *);
   void redirect_to_search(const std::string &text);
   bool handing_to_search_ = false;
   void start_hover(const Ref &r);
@@ -250,10 +274,11 @@ class AppMenu : public PanelPopup {
   unsigned preload_rev_ = 0;
   Kind drag_area_ = K_NONE;  // scrollbar drag
   int drag_y_ = 0, drag_scroll_ = 0;
-  // Pressed tile or list row, and its drag to a new place.
+  // Pressed tile, list row or group name, and its drag to a new place.
   Ref press_;
   int press_x_ = 0, press_y_ = 0, drag_x_ = 0, drag_y2_ = 0;
   bool dragging_ = false;
+  int drag_group_ = -1;  // the group being moved by its name, else a tile or application
   std::string drag_id_;
   sde::menu::TileSize drag_size_ = sde::menu::TileSize::Medium;
   // Resizing the menu by its edge.

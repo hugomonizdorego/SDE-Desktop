@@ -225,6 +225,7 @@ void SearchFlyout::open_with(const std::string &text, int anchor_x) {
 
 void SearchFlyout::prepare() {
   menu_perf::Step step("prepare");
+  press_kind_ = K_NONE;
   theme_ = Panel::instance->theme();
   int mx, my, mw, mh;
   Panel::instance->monitor(mx, my, mw, mh);
@@ -878,7 +879,44 @@ int SearchFlyout::handle(int event) {
         redraw();
         return 1;
       }
+      // An application opens on release: dragged instead, it goes to the
+      // Start menu's tiles (0.2 Alpha 2).
+      if ((it.kind == K_RESULT || it.kind == K_TOP || it.kind == K_RECENT) && is_app(it.entry) &&
+          Fl::event_button() == FL_LEFT_MOUSE) {
+        press_kind_ = it.kind;
+        press_index_ = it.index;
+        press_x_ = ex;
+        press_y_ = ey;
+        press_id_ = it.entry->id;
+        return 1;
+      }
       activate(it);
+      return 1;
+    }
+    case FL_DRAG: {
+      if (press_kind_ == K_NONE) return 1;
+      if (std::abs(Fl::event_x() - press_x_) + std::abs(Fl::event_y() - press_y_) <= S(10)) return 1;
+      // Out of the results into a tile group: the Start menu opens and goes
+      // on with the drag (the button is still down).
+      std::string id = press_id_;
+      press_kind_ = K_NONE;
+      close();
+      if (AppMenu::instance && !AppMenu::instance->is_open()) Panel::instance->toggle_menu();
+      if (AppMenu::instance && AppMenu::instance->is_open()) AppMenu::instance->start_drag(id);
+      return 1;
+    }
+    case FL_RELEASE: {
+      if (press_kind_ == K_NONE) return 1;
+      Kind kind = Kind(press_kind_);
+      int index = press_index_;
+      press_kind_ = K_NONE;
+      build();
+      for (auto &it : items_)
+        if (it.kind == kind && it.index == index && it.contains(Fl::event_x(), Fl::event_y())) {
+          Item copy = it;
+          activate(copy);
+          break;
+        }
       return 1;
     }
     case FL_MOVE: {

@@ -580,7 +580,10 @@ void unpin(const std::string &id) {
 
 // ================================================================= menu
 
+AppMenu *AppMenu::instance = nullptr;
+
 AppMenu::AppMenu() : PanelPopup("SDE Menu") {
+  instance = this;
   rename_ = new RenameInput(this);
   rename_->box(FL_FLAT_BOX);
   rename_->hide();
@@ -591,7 +594,9 @@ AppMenu::AppMenu() : PanelPopup("SDE Menu") {
 }
 
 AppMenu::~AppMenu() {
+  if (instance == this) instance = nullptr;
   app_catalog::unsubscribe(this);
+  Fl::remove_timeout(autoscroll, this);
   Fl::remove_timeout(poll_applications, this);
   Fl::remove_timeout(animate, this);
   Fl::remove_timeout(glide, this);
@@ -759,6 +764,7 @@ void AppMenu::prepare() {
   letters_open_ = rail_open_ = false;
   hover_ = selected_ = anim_ = press_ = {};
   dragging_ = false;
+  drag_group_ = -1;
   resize_edge_ = cursor_edge_ = 0;
   keyboard_ = false;
   launching_ = false;
@@ -794,6 +800,8 @@ void AppMenu::closed() {
   letters_open_ = rail_open_ = false;
   account_->close();
   dragging_ = false;
+  drag_group_ = -1;
+  Fl::remove_timeout(autoscroll, this);
   press_ = {};
   rename_->hide();
   rename_group_ = -1;
@@ -1074,7 +1082,28 @@ void AppMenu::layout_tiles() {
       tiles.push_back(t);
       ++shown;
     }
-    if (!shown) rows = 2;  // room to drop tiles into an empty group
+    if (!shown) {
+      // Room to drop tiles into a group without tiles, a hint there and
+      // a button that removes the group.
+      rows = 2;
+      Item x;
+      x.kind = K_GROUP_REMOVE;
+      x.index = int(g);
+      x.label = groups_[g].name;
+      x.w = x.h = S(28);
+      x.x = gx + group_w_ - x.w - S(2);
+      x.y = gy + (head - x.h) / 2;
+      tiles.push_back(x);
+      Item hint;
+      hint.kind = K_HEADING;
+      hint.index = 5;
+      hint.label = _("Drag apps here");
+      hint.x = gx;
+      hint.y = gy + head;
+      hint.w = group_w_;
+      hint.h = 2 * cell_ + gap_;
+      tiles.push_back(hint);
+    }
     int gh = head + rows * (cell_ + gap_);
     group_rects_.push_back({gx, gy, group_w_, gh});
     heights[col] = gy + gh + S(14);
@@ -1110,6 +1139,12 @@ void AppMenu::layout_tiles() {
     items_.push_back(t);
   }
   areas_.push_back(a);
+}
+
+std::string AppMenu::group_label(int group) const {
+  if (group < 0 || group >= int(groups_.size())) return "";
+  const std::string &n = groups_[size_t(group)].name;
+  return n.empty() ? std::string(_("Name group")) : n;
 }
 
 const AppMenu::Item *AppMenu::find(const Ref &r) const {
@@ -1166,6 +1201,13 @@ void AppMenu::activate(const Item &it) {
       break;
     }
     case K_GROUP: start_rename(it.index); return;
+    case K_GROUP_REMOVE:
+      if (it.index >= 0 && it.index < int(groups_.size())) {
+        groups_.erase(groups_.begin() + it.index);
+        hover_ = selected_ = {};
+        save_tiles();
+      }
+      break;
     case K_ROW:
     case K_TILE: launch(it); return;
     default: return;
@@ -1522,6 +1564,13 @@ void AppMenu::start_rename(int group) {
   if (group < 0 || group >= int(groups_.size())) return;
   build_items();
   const Item *hd = find({K_GROUP, group, -1});
+  // A group out of view (a new one at the end) comes into view first.
+  if (hd && hd->clipped() && (hd->y < hd->cy || hd->y + hd->h > hd->cy + hd->ch)) {
+    Item copy = *hd;
+    ensure_visible(copy);
+    build_items();
+    hd = find({K_GROUP, group, -1});
+  }
   if (!hd || !hd->visible) return;
   rename_group_ = group;
   rename_->resize(hd->x, hd->y + S(4), hd->w, hd->h - S(8));
@@ -1542,14 +1591,17 @@ void AppMenu::finish_rename(bool commit) {
   rename_group_ = -1;
   rename_->hide();
   take_focus();
-  if (commit && g >= 0 && g < int(groups_.size())) {
-    groups_[size_t(g)].name = trim(rename_->value());
+  if (g >= 0 && g < int(groups_.size())) {
+    TileGroup &group = groups_[size_t(g)];
+    if (commit) group.name = trim(rename_->value());
     // A new group left without a name and without tiles is not kept.
-    if (groups_[size_t(g)].name.empty() && groups_[size_t(g)].tiles.empty())
-      groups_.erase(groups_.begin() + g);
-    start_tiles::save(groups_);
-    tiles_default_ = false;
-    invalidate();
+    bool gone = group.name.empty() && group.tiles.empty();
+    if (gone) groups_.erase(groups_.begin() + g);
+    if (commit || gone) {
+      start_tiles::save(groups_);
+      tiles_default_ = false;
+      invalidate();
+    }
   }
   redraw();
 }
@@ -1599,8 +1651,11 @@ void AppMenu::drop_target(int x, int y, int &group, int &index) const {
 
 void AppMenu::drop(int x, int y) {
   int group, index;
+  // Where it goes in the layout of the drag (with the new group's place,
+  // scrolled as it was), then the drag ends.
   build_items();
   drop_target(x, y, group, index);
+  dragging_ = false;
   if (group < 0) return;
   Tile tile{drag_id_, drag_size_};
   // Take the tile out of its place first (a tile moved, or an application
@@ -1628,6 +1683,81 @@ void AppMenu::drop(int x, int y) {
   save_tiles(source == group ? -1 : source);
   // A group made by the drop is named at once (Enter keeps the name).
   if (fresh) start_rename(int(groups_.size()) - 1);
+}
+
+int AppMenu::group_target(int x, int y, int *anchor, bool *below) const {
+  const Area *a = area(K_TILE);
+  if (!a || x < a->x || x >= a->x + a->w || y < a->y - S(40) || y >= a->y + a->h + S(40)) return -1;
+  // The group under the pointer, or the nearest one of its column: the
+  // dragged group goes before it (upper half) or after it (lower half).
+  int best = -1;
+  long best_d = -1;
+  bool after = false;
+  for (size_t g = 0; g < group_rects_.size(); ++g) {
+    const Rect &r = group_rects_[g];
+    if (x < r.x - S(12) || x >= r.x + r.w + S(12)) continue;
+    long d = y < r.y ? r.y - y : y >= r.y + r.h ? y - (r.y + r.h) + 1 : 0;
+    if (best < 0 || d < best_d) best = int(g), best_d = d, after = y >= r.y + r.h / 2;
+  }
+  if (anchor) *anchor = best;
+  if (below) *below = after;
+  if (best < 0) return int(groups_.size());
+  return best + (after ? 1 : 0);
+}
+
+void AppMenu::drop_group(int x, int y) {
+  build_items();
+  int from = drag_group_, to = group_target(x, y);
+  dragging_ = false;
+  drag_group_ = -1;
+  if (from < 0 || from >= int(groups_.size()) || to < 0) return;
+  if (to > from) --to;
+  if (to == from) return;
+  TileGroup g = groups_[size_t(from)];
+  groups_.erase(groups_.begin() + from);
+  groups_.insert(groups_.begin() + to, g);
+  hover_ = selected_ = {};
+  save_tiles();
+}
+
+int AppMenu::autoscroll_speed() const {
+  const Area *a = area(K_TILE);
+  if (!dragging_ || !a || !a->scrolls() || drag_x_ < a->x) return 0;
+  int zone = S(44), fast = S(16);
+  if (drag_y2_ < a->y + zone)
+    return -std::max(1, std::min(zone, a->y + zone - drag_y2_) * fast / zone);
+  if (drag_y2_ > a->y + a->h - zone)
+    return std::max(1, std::min(zone, drag_y2_ - (a->y + a->h - zone)) * fast / zone);
+  return 0;
+}
+
+void AppMenu::autoscroll(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (!self->shown() || !self->dragging_) return;
+  self->build_items();
+  int v = self->autoscroll_speed(), before = self->tiles_scroll_;
+  if (!v) return;
+  self->scroll_to(K_TILE, before + v, false);
+  if (self->tiles_scroll_ == before) return;  // at the end
+  self->redraw();
+  Fl::repeat_timeout(1.0 / 60, autoscroll, data);
+}
+
+void AppMenu::start_drag(const std::string &id) {
+  if (!is_open() || id.empty()) return;
+  build_items();
+  // Nothing in the menu was pressed: no list row or tile fades.
+  press_ = {K_ROW, -1, -1};
+  press_x_ = drag_x_ = Fl::event_x_root() - x_root();
+  press_y_ = drag_y2_ = Fl::event_y_root() - y_root();
+  dragging_ = true;
+  drag_group_ = -1;
+  drag_id_ = id;
+  drag_size_ = TileSize::Medium;
+  rail_open_ = letters_open_ = false;
+  // The button is still down: its motion and release come here.
+  Fl::pushed(this);
+  redraw();
 }
 
 // ---------------------------------------------------------------------------
@@ -2186,12 +2316,14 @@ int AppMenu::handle(int event) {
         redraw();
         return 1;
       }
-      if (left && (it.kind == K_TILE || it.kind == K_ROW)) {
-        // Opens on release, unless the press becomes a drag.
+      if (left && (it.kind == K_TILE || it.kind == K_ROW || it.kind == K_GROUP)) {
+        // Opens (a group name: renames) on release, unless the press
+        // becomes a drag.
         press_ = {it.kind, it.index, it.group};
         press_x_ = drag_x_ = ex;
         press_y_ = drag_y2_ = ey;
         dragging_ = false;
+        drag_group_ = -1;
         drag_id_ = it.entry ? it.entry->id : "";
         drag_size_ = it.kind == K_TILE ? it.size : TileSize::Medium;
         return 1;
@@ -2216,17 +2348,18 @@ int AppMenu::handle(int event) {
       if (press_.kind != K_NONE) {
         if (!dragging_ && std::abs(ex - press_x_) + std::abs(ey - press_y_) > S(8)) {
           dragging_ = true;
+          drag_group_ = press_.kind == K_GROUP ? press_.index : -1;
           rail_open_ = letters_open_ = false;
         }
         drag_x_ = ex;
         drag_y2_ = ey;
         if (dragging_) {
-          // Near the top or bottom of the tiles: scroll them.
-          const Area *a = area(K_TILE);
-          if (a && ex >= a->x) {
-            if (ey < a->y + S(24)) scroll_to(K_TILE, tiles_scroll_ - S(12), false);
-            else if (ey > a->y + a->h - S(24)) scroll_to(K_TILE, tiles_scroll_ + S(12), false);
-          }
+          menu_perf::begin("drag", "menu");
+          build_items();
+          // Near the top or bottom of the tiles they scroll, also while the
+          // pointer rests there.
+          if (autoscroll_speed() && !Fl::has_timeout(autoscroll, this))
+            Fl::add_timeout(1.0 / 60, autoscroll, this);
           redraw();
         }
         return 1;
@@ -2251,9 +2384,13 @@ int AppMenu::handle(int event) {
       if (press_.kind != K_NONE) {
         Ref pressed = press_;
         press_ = {};
+        Fl::remove_timeout(autoscroll, this);
         if (dragging_) {
+          // The drops end the drag (the target is found in its layout).
+          if (drag_group_ >= 0) drop_group(Fl::event_x(), Fl::event_y());
+          else drop(Fl::event_x(), Fl::event_y());
           dragging_ = false;
-          drop(Fl::event_x(), Fl::event_y());
+          drag_group_ = -1;
           redraw();
           return 1;
         }
@@ -2363,7 +2500,9 @@ int AppMenu::handle(int event) {
       if (k == FL_Escape) {
         if (dragging_) {
           dragging_ = false;
+          drag_group_ = -1;
           press_ = {};
+          Fl::remove_timeout(autoscroll, this);
         } else if (letters_open_) {
           letters_open_ = false;
         } else if (rail_open_) {
@@ -2474,7 +2613,8 @@ void AppMenu::draw() {
   auto is_sel = [&](const Item &it) { return sel == &it && (keyboard_ || it.entry); };
   auto is_hov = [&](const Item &it) { return hov == &it; };
   int drop_group = -1, drop_index = 0;
-  if (dragging_) drop_target(drag_x_, drag_y2_, drop_group, drop_index);
+  bool tile_drag = dragging_ && drag_group_ < 0;
+  if (tile_drag) drop_target(drag_x_, drag_y2_, drop_group, drop_index);
 
   // The hover effect of an item: lift (wave, bounce), scale (pop), slide
   // to the right (slide) and a glow behind the icon (glow; it pulses for a
@@ -2549,22 +2689,51 @@ void AppMenu::draw() {
         case K_JUMP:
           p.fill_rounded(it.x, it.y, it.w, it.h, S(6), hv || s ? t.accent : t.surface_alt);
           break;
-        case K_GROUP:
-          if (hv && rename_group_ != it.index) {
-            p.fill_rounded(it.x, it.y + S(4), it.w, it.h - S(8), S(4), t.hover);
-            // Rename handle (two short lines) at the right, as on hover.
-            double hx = it.x + it.w - S(22), hy = it.y + it.h / 2.0;
-            p.line(hx, hy - S(3), hx + S(12), hy - S(3), t.text_dim, Sd(1.5));
-            p.line(hx, hy + S(3), hx + S(12), hy + S(3), t.text_dim, Sd(1.5));
+        case K_GROUP: {
+          // The group a tile would drop into: tinted under its tiles.
+          if (tile_drag && drop_group == it.index) {
+            const Rect &r = group_rects_[size_t(it.index)];
+            p.fill_rounded(r.x - S(5), r.y - S(1), r.w + S(10), r.h + S(4), S(8),
+                           t.accent.alpha(t.dark ? 0.14 : 0.08));
+            p.stroke_rounded(r.x - S(5) + 0.5, r.y - S(1) + 0.5, r.w + S(10) - 1, r.h + S(4) - 1, S(8),
+                             t.accent.alpha(0.6), Sd(1.5));
           }
+          bool moving = dragging_ && drag_group_ == it.index;
+          if (hv && rename_group_ != it.index && !dragging_) {
+            p.fill_rounded(it.x, it.y + S(4), it.w, it.h - S(8), S(4), t.hover);
+            // Move handle (two short lines) at the right: drag the name to
+            // move the group, click it to rename it.
+            double hx = it.x + it.w - S(22), hy = it.y + it.h / 2.0;
+            if (!find({K_GROUP_REMOVE, it.index, -1})) {
+              p.line(hx, hy - S(3), hx + S(12), hy - S(3), t.text_dim, Sd(1.5));
+              p.line(hx, hy + S(3), hx + S(12), hy + S(3), t.text_dim, Sd(1.5));
+            }
+          }
+          if (moving) p.fill_rounded(it.x, it.y + S(4), it.w, it.h - S(8), S(4), t.accent.alpha(0.12));
           if (s && keyboard_)
             p.stroke_rounded(it.x + 1, it.y + S(4), it.w - 2, it.h - S(8), S(4), t.accent, Sd(2));
-          if (drop_group == it.index && dragging_)
-            p.stroke_rounded(group_rects_[size_t(it.index)].x - S(3),
-                             group_rects_[size_t(it.index)].y - S(1),
-                             group_rects_[size_t(it.index)].w + S(6),
-                             group_rects_[size_t(it.index)].h + S(2), S(6), t.accent.alpha(0.5),
-                             Sd(1.5));
+          break;
+        }
+        case K_GROUP_REMOVE: {
+          // An x; a round hover behind it.
+          double cx = it.x + it.w / 2.0, cy = it.y + it.h / 2.0, k = Sd(4.5);
+          if (hv) p.circle(cx, cy, it.w / 2.0, t.hover.mix(t.text, 0.08));
+          p.line(cx - k, cy - k, cx + k, cy + k, hv ? t.text : t.text_dim, Sd(1.6));
+          p.line(cx - k, cy + k, cx + k, cy - k, hv ? t.text : t.text_dim, Sd(1.6));
+          break;
+        }
+        case K_HEADING:
+          if (it.index == 5) {
+            // The drop area of a group without tiles: a dashed outline.
+            bool target = tile_drag && drop_group >= 0 && drop_group < int(groups_.size()) &&
+                          group_rects_[size_t(drop_group)].contains(it.x + 1, it.y + 1);
+            cairo_t *cr = p.cr();
+            double dash = Sd(5);
+            cairo_set_dash(cr, &dash, 1, 0);
+            p.stroke_rounded(it.x + 0.5, it.y + 0.5, it.w - 1, it.h - 1, S(6),
+                             target ? t.accent : t.text_dim.alpha(0.45), Sd(1.2));
+            cairo_set_dash(cr, nullptr, 0, 0);
+          }
           break;
         case K_ROW: {
           Fx fx = hover_of(it);
@@ -2597,11 +2766,15 @@ void AppMenu::draw() {
           if (fx.glow > 0)
             p.circle(ix + is / 2, iy + is / 2 - fx.lift, is * 0.72, t.accent.alpha(0.28 * fx.glow));
           p.image(icon(*it.entry, base, fx.scale), ix, iy - fx.lift, is, pressed ? 0.35 : 1.0);
-          // Drop position: a bar before or after this tile.
-          if (dragging_ && drop_group == it.group && (drop_index == it.index || drop_index == it.index + 1)) {
-            double bx = drop_index == it.index ? it.x - gap_ / 2.0 - Sd(1.5) : it.x + it.w + gap_ / 2.0 - Sd(1.5);
-            if (drop_index == it.index || !find({K_TILE, it.index + 1, it.group}))
-              p.fill_rounded(bx, it.y, Sd(3), it.h, Sd(1.5), t.accent);
+          // Drop position: a bar before or after this tile, with round ends.
+          if (tile_drag && drop_group == it.group && (drop_index == it.index || drop_index == it.index + 1)) {
+            double bw = Sd(4);
+            double bx = drop_index == it.index ? it.x - gap_ / 2.0 - bw / 2 : it.x + it.w + gap_ / 2.0 - bw / 2;
+            if (drop_index == it.index || !find({K_TILE, it.index + 1, it.group})) {
+              p.fill_rounded(bx, it.y - S(2), bw, it.h + S(4), bw / 2, t.accent);
+              p.circle(bx + bw / 2, it.y - S(2), bw, t.accent);
+              p.circle(bx + bw / 2, it.y + it.h + S(2), bw, t.accent);
+            }
           }
           break;
         }
@@ -2609,10 +2782,49 @@ void AppMenu::draw() {
       }
       cairo_restore(p.cr());
     }
-    // New group drop zone.
-    if (dragging_ && drop_group == int(groups_.size()))
-      p.stroke_rounded(new_group_.x, new_group_.y, new_group_.w, new_group_.h, S(6),
-                       t.accent.alpha(0.7), Sd(1.5));
+    // While a tile is dragged: the place for a new group (dashed, and
+    // tinted when the tile would go there).
+    if (tile_drag) {
+      bool target = drop_group == int(groups_.size());
+      cairo_t *cr = p.cr();
+      cairo_save(cr);
+      if (const Area *a = area(K_TILE)) {
+        cairo_rectangle(cr, a->x, a->y, a->w, a->h);
+        cairo_clip(cr);
+      }
+      if (target)
+        p.fill_rounded(new_group_.x, new_group_.y, new_group_.w, new_group_.h, S(8),
+                       t.accent.alpha(t.dark ? 0.14 : 0.08));
+      double dash = Sd(5);
+      cairo_set_dash(cr, &dash, 1, 0);
+      p.stroke_rounded(new_group_.x + 0.5, new_group_.y + 0.5, new_group_.w - 1, new_group_.h - 1, S(8),
+                       target ? t.accent : t.text_dim.alpha(0.4), Sd(1.5));
+      cairo_restore(cr);
+    }
+    // While a group is dragged: it fades where it is, and a bar shows
+    // where it goes.
+    if (dragging_ && drag_group_ >= 0 && drag_group_ < int(group_rects_.size())) {
+      const Area *a = area(K_TILE);
+      cairo_save(p.cr());
+      if (a) {
+        cairo_rectangle(p.cr(), a->x, a->y, a->w, a->h);
+        cairo_clip(p.cr());
+      }
+      const Rect &src = group_rects_[size_t(drag_group_)];
+      p.fill_rect(src.x - S(4), src.y, src.w + S(8), src.h, t.surface.alpha(0.6));
+      int anchor = -1;
+      bool below = false;
+      int to = group_target(drag_x_, drag_y2_, &anchor, &below);
+      if (to >= 0 && anchor >= 0 && to != drag_group_ && to != drag_group_ + 1) {
+        const Rect &r = group_rects_[size_t(anchor)];
+        double by = below ? r.y + r.h + S(5) : r.y - S(6), bh = Sd(4);
+        if (a) by = std::max(by, a->y + bh * 1.5);  // the first group: inside the tiles
+        p.fill_rounded(r.x, by - bh / 2, r.w, bh, bh / 2, t.accent);
+        p.circle(r.x, by, bh, t.accent);
+        p.circle(r.x + r.w, by, bh, t.accent);
+      }
+      cairo_restore(p.cr());
+    }
 
     // Scrollbars: thin, wider while hovered or dragged.
     int mx = Fl::event_x_root() - x_root(), my = Fl::event_y_root() - y_root();
@@ -2662,21 +2874,6 @@ void AppMenu::draw() {
           p.line(S(12), it.y - S(5) + 0.5, rail_w_ - S(12), it.y - S(5) + 0.5, t.border);
           break;
         case 6: gallery_glyph(p, gx, gy, g, t.text); break;
-      }
-    }
-
-    // The tile being dragged follows the pointer.
-    if (dragging_ && !drag_id_.empty()) {
-      const DesktopEntry *e = app(drag_id_);
-      int tw = 2 * cell_ + gap_;
-      double dx = drag_x_ - tw / 2.0, dy = drag_y2_ - tw / 2.0;
-      p.shadow(dx, dy, tw, tw, S(4), t.shadow, S(8));
-      p.fill_rounded(dx, dy, tw, tw, S(4), tile_hover.alpha(0.95));
-      p.stroke_rounded(dx + 0.5, dy + 0.5, tw - 1, tw - 1, S(4), t.accent, Sd(1.5));
-      if (e) {
-        double is = tw * 0.42;
-        p.image(IconLoader::get({IconLoader::app_icon(*e, int(is)), "application-x-executable"}, int(is)),
-                dx + (tw - is) / 2, dy + (tw - is) / 2 - tw * 0.07, is);
       }
     }
 
@@ -2745,6 +2942,9 @@ void AppMenu::draw() {
         } else if (it.index == 2) {
           text_font(t.font_size);
           draw_text(it.label, it.x, it.y, it.w, it.h, t.text_dim, 1);
+        } else if (it.index == 5) {
+          text_font(t.font_size - 1);
+          draw_text(it.label, it.x + S(8), it.y, it.w - S(16), it.h, t.text_dim, 1);
         } else {
           text_font(t.font_size - 1, true);
           draw_text(it.label, it.x, it.y, it.w, it.h, t.text_dim);
@@ -2763,8 +2963,8 @@ void AppMenu::draw() {
       case K_GROUP:
         if (rename_group_ == it.index) break;
         text_font(t.font_size + 1, true);
-        draw_text(it.label.empty() ? std::string(_("Name group")) : it.label, it.x + S(4), it.y,
-                  it.w - S(36), it.h, it.label.empty() ? t.text_dim : t.text);
+        draw_text(group_label(it.index), it.x + S(4), it.y, it.w - S(36), it.h,
+                  it.label.empty() ? t.text_dim : t.text);
         break;
       case K_ROW: {
         text_font(t.font_size);
@@ -2782,6 +2982,49 @@ void AppMenu::draw() {
       default: break;
     }
     if (clipped) fl_pop_clip();
+  }
+  if (dragging_) {
+    if (const Area *a = area(K_TILE)) fl_push_clip(a->x, a->y, a->w, a->h);
+    if (drag_group_ < 0) {
+      text_font(t.font_size - 1, true);
+      draw_text(_("New group"), new_group_.x, new_group_.y, new_group_.w, new_group_.h,
+                t.text_dim, 1);
+    }
+    fl_pop_clip();
+    // What is dragged follows the pointer, over everything: a tile, or a
+    // group's name on a pill.
+    if (drag_group_ >= 0 && drag_group_ < int(groups_.size())) {
+      std::string name = group_label(drag_group_);
+      text_font(t.font_size + 1, true);
+      int gw = std::min(group_w_, text_width(name) + S(36)), gh = S(34);
+      int gx = drag_x_ - S(18), gy = drag_y2_ - gh / 2;
+      {
+        Painter p(W, H);
+        p.shadow(gx, gy, gw, gh, gh / 2.0, t.shadow, S(8));
+        p.fill_rounded(gx, gy, gw, gh, gh / 2.0, tile_hover.mix(t.surface, 0.3));
+        p.stroke_rounded(gx + 0.5, gy + 0.5, gw - 1, gh - 1, gh / 2.0, t.accent, Sd(1.5));
+      }
+      draw_text(name, gx + S(18), gy, gw - S(36), gh, t.text);
+    } else if (!drag_id_.empty()) {
+      const DesktopEntry *e = app(drag_id_);
+      int tw = 2 * cell_ + gap_;
+      int dx = drag_x_ - tw / 2, dy = drag_y2_ - tw / 2;
+      {
+        Painter p(W, H);
+        p.shadow(dx, dy, tw, tw, S(4), t.shadow, S(8));
+        p.fill_rounded(dx, dy, tw, tw, S(4), tile_hover.mix(t.surface, 0.3));
+        p.stroke_rounded(dx + 0.5, dy + 0.5, tw - 1, tw - 1, S(4), t.accent, Sd(1.5));
+        if (e) {
+          double is = tw * 0.42;
+          p.image(IconLoader::get({IconLoader::app_icon(*e, int(is)), "application-x-executable"}, int(is)),
+                  dx + (tw - is) / 2, dy + (tw - is) / 2 - tw * 0.07, is);
+        }
+      }
+      if (e) {
+        text_font(t.font_size - 1);
+        draw_text(e->name, dx + S(7), dy + tw - S(24), tw - S(12), S(20), t.text);
+      }
+    }
   }
   if (rail_open_) {
     fl_pop_clip();
@@ -2884,11 +3127,23 @@ void AppMenu::qa_dump_menu() {
       case K_LETTER: return "letter:" + it.label;
       case K_JUMP: return "jump:" + it.label;
       case K_GROUP: return "group:" + it.label;
+      case K_GROUP_REMOVE: return "group-remove:" + it.label;
       case K_TILE: return "tile:" + it.entry->name;
       case K_HEADING: return it.index == 0 ? "heading:" + it.label : "";
       default: return "";
     }
   };
+  // 0.2 Alpha 2: a drag in progress and where it would drop: "@drop:" with
+  // the group (its count for a new group) and the index in it as x and y;
+  // "@group-drop:" with the index the moved group would take.
+  if (dragging_ && drag_group_ < 0) {
+    int g = -1, i = 0;
+    drop_target(drag_x_, drag_y2_, g, i);
+    line("@drop:" + drag_id_, g, i, 0, 0, 1, 0);
+    line("@new-group-zone", new_group_.x, new_group_.y, new_group_.w, new_group_.h, 1, 0);
+  } else if (dragging_) {
+    line("@group-drop:" + group_label(drag_group_), group_target(drag_x_, drag_y2_), drag_group_, 0, 0, 1, 0);
+  }
   // The selection (keyboard: 1, pointer: 0 in the "active" column), with
   // its place even when it is scrolled out of view.
   if (const Item *s = find(selected_))

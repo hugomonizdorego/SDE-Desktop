@@ -135,4 +135,8 @@ class SearchFlyout : public PanelPopup {
   int scroll_ = 0, content_h_ = 0, list_top_ = 0, list_bottom_ = 0;
   bool menu_busy_ = false;
   int field_y_ = 0, field_h_ = 0;
+  // A pressed application result (it opens on release, or is dragged to
+  // the Start menu's tiles).
+  int press_kind_ = K_NONE, press_index_ = -1, press_x_ = 0, press_y_ = 0;
+  std::string press_id_;
 };
