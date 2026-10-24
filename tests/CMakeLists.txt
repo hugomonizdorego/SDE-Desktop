@@ -227,3 +227,13 @@ if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-avatar-accountsservice COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-avatar-tests> --dbus)
   set_tests_properties(sde-avatar-accountsservice PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
 endif()
+
+# Merkadu: catalog merging, search, departments (Ubuntu Software Center's
+# menu), AppStream conversion, snapd's JSON and HTTP framing, history and
+# uninstall decisions (fixtures in tests/fixtures/merkadu).
+if(TARGET merkadu-core)
+  add_executable(merkadu-tests test_merkadu.cpp)
+  target_compile_definitions(merkadu-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+  target_link_libraries(merkadu-tests PRIVATE merkadu-core)
+  add_test(NAME merkadu-model COMMAND merkadu-tests)
+endif()

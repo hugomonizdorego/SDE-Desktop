@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu test fixture: a small AppStream catalog of a Debian archive. -->
+<components version="1.0" origin="debian-forky-main">
+  <component type="desktop-application">
+    <id>org.gimp.GIMP</id>
+    <pkgname>gimp</pkgname>
+    <name>GIMP</name>
+    <summary>Create images and edit photographs</summary>
+    <description>
+      <p>GIMP is an advanced picture editor.</p>
+      <ul>
+        <li>Layers</li>
+        <li>Filters</li>
+      </ul>
+    </description>
+    <icon type="stock">gimp</icon>
+    <categories>
+      <category>Graphics</category>
+      <category>RasterGraphics</category>
+    </categories>
+    <keywords>
+      <keyword>photoshop</keyword>
+    </keywords>
+    <url type="homepage">https://www.gimp.org/</url>
+    <project_license>GPL-3.0-or-later</project_license>
+    <launchable type="desktop-id">gimp.desktop</launchable>
+    <screenshots>
+      <screenshot type="default">
+        <caption>Editing a photo</caption>
+        <image type="source" width="1920" height="1080">https://example.org/gimp.png</image>
+        <image type="thumbnail" width="224" height="126">https://example.org/gimp-224.png</image>
+        <image type="thumbnail" width="624" height="351">https://example.org/gimp-624.png</image>
+      </screenshot>
+    </screenshots>
+    <releases>
+      <release version="2.10.36" timestamp="1700000000"/>
+      <release version="2.10.38" timestamp="1720000000"/>
+    </releases>
+  </component>
+  <component type="console-application">
+    <id>org.example.Tool</id>
+    <pkgname>example-tool</pkgname>
+    <name>Example Tool</name>
+    <summary>A command-line tool</summary>
+    <categories>
+      <category>Utility</category>
+    </categories>
+  </component>
+  <component type="addon">
+    <id>org.example.addon</id>
+    <extends>org.gimp.GIMP</extends>
+    <pkgname>gimp-addon</pkgname>
+    <name>An add-on</name>
+    <summary>Adds something</summary>
+  </component>
+</components>
