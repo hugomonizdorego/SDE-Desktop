@@ -1,6 +1,4 @@
 //
-// "$Id$"
-//
 // Label drawing routines for the Fast Light Tool Kit (FLTK).
 //
 // Copyright 1998-2010 by Bill Spitzak and others.
@@ -9,11 +7,11 @@
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 // Drawing code for the (one) common label types.
@@ -34,7 +32,7 @@ fl_normal_label(const Fl_Label* o, int X, int Y, int W, int H, Fl_Align align)
 {
   fl_font(o->font, o->size);
   fl_color((Fl_Color)o->color);
-  fl_draw(o->value, X, Y, W, H, align, o->image);
+  fl_draw(o->value, X, Y, W, H, align, o->image, 1, o->spacing);
 }
 
 void
@@ -42,8 +40,16 @@ fl_normal_measure(const Fl_Label* o, int& W, int& H) {
   fl_font(o->font, o->size);
   fl_measure(o->value, W, H);
   if (o->image) {
-    if (o->image->w() > W) W = o->image->w();
-    H += o->image->h();
+    int iw = o->image->w(), ih = o->image->h();
+    if (o->align_ & FL_ALIGN_IMAGE_BACKDROP) {          // backdrop: ignore
+      // ignore backdrop image for calculation
+    } else if (o->align_ & FL_ALIGN_IMAGE_NEXT_TO_TEXT) { // text and image side by side
+      W += iw + o->spacing;
+      if (ih > H) H = ih;
+    } else {
+      if (iw > W) W = iw;
+      H += ih + o->spacing;
+    }
   }
 }
 
@@ -52,11 +58,11 @@ fl_normal_measure(const Fl_Label* o, int& W, int& H) {
 static Fl_Label_Draw_F* table[MAX_LABELTYPE] = {
   fl_normal_label,
   fl_no_label,
-  fl_normal_label,	// _FL_SHADOW_LABEL,
-  fl_normal_label,	// _FL_ENGRAVED_LABEL,
-  fl_normal_label,	// _FL_EMBOSSED_LABEL,
-  fl_no_label,		// _FL_MULTI_LABEL,
-  fl_no_label,		// _FL_ICON_LABEL,
+  fl_normal_label,      // _FL_SHADOW_LABEL,
+  fl_normal_label,      // _FL_ENGRAVED_LABEL,
+  fl_normal_label,      // _FL_EMBOSSED_LABEL,
+  fl_no_label,          // _FL_MULTI_LABEL,
+  fl_no_label,          // _FL_ICON_LABEL,
   // FL_FREE_LABELTYPE+n:
   fl_no_label, fl_no_label, fl_no_label,
   fl_no_label, fl_no_label, fl_no_label,
@@ -66,7 +72,7 @@ static Fl_Label_Draw_F* table[MAX_LABELTYPE] = {
 static Fl_Label_Measure_F* measure[MAX_LABELTYPE];
 
 /** Sets the functions to call to draw and measure a specific labeltype. */
-void Fl::set_labeltype(Fl_Labeltype t,Fl_Label_Draw_F* f,Fl_Label_Measure_F*m) 
+void Fl::set_labeltype(Fl_Labeltype t,Fl_Label_Draw_F* f,Fl_Label_Measure_F*m)
 {
   table[t] = f; measure[t] = m;
 }
@@ -76,9 +82,19 @@ void Fl::set_labeltype(Fl_Labeltype t,Fl_Label_Draw_F* f,Fl_Label_Measure_F*m)
 /** Draws a label with arbitrary alignment in an arbitrary box. */
 void Fl_Label::draw(int X, int Y, int W, int H, Fl_Align align) const {
   if (!value && !image) return;
+  switch (align&(FL_ALIGN_TOP|FL_ALIGN_BOTTOM)) {
+    case 0: Y += v_margin_; H -= 2*v_margin_; break;
+    case FL_ALIGN_TOP: Y += v_margin_; H -= v_margin_; break;
+    case FL_ALIGN_BOTTOM: H -= v_margin_; break;
+  }
+  switch (align&(FL_ALIGN_LEFT|FL_ALIGN_RIGHT)) {
+    case 0: X += h_margin_; W -= 2*h_margin_; break;
+    case FL_ALIGN_LEFT: X += h_margin_; W -= h_margin_; break;
+    case FL_ALIGN_RIGHT: W -= h_margin_; break;
+  }
   table[type](this, X, Y, W, H, align);
 }
-/** 
+/**
     Measures the size of the label.
     \param[in,out] W, H : this is the requested size for the label text plus image;
          on return, this will contain the size needed to fit the label
@@ -89,6 +105,7 @@ void Fl_Label::measure(int& W, int& H) const {
     return;
   }
 
+//  if (W > 0) W -= h_margin_;
   Fl_Label_Measure_F* f = ::measure[type]; if (!f) f = fl_normal_measure;
   f(this, W, H);
 }
@@ -129,7 +146,3 @@ void Fl_Widget::draw_label(int X, int Y, int W, int H, Fl_Align a) const {
 // include these vars here so they can be referenced without including
 // Fl_Input_ code:
 #include <FL/Fl_Input_.H>
-
-//
-// End of "$Id$".
-//

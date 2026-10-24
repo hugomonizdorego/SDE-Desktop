@@ -1,6 +1,4 @@
 //
-// "$Id$"
-//
 // Return button widget for the Fast Light Tool Kit (FLTK).
 //
 // Copyright 1998-2010 by Bill Spitzak and others.
@@ -9,17 +7,16 @@
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 #include <FL/Fl.H>
 #include <FL/Fl_Return_Button.H>
 #include <FL/fl_draw.H>
-#include <FL/Fl_SDE_Style.H>
 
 int fl_return_arrow(int x, int y, int w, int h) {
   int size = w; if (h<size) size = h;
@@ -41,8 +38,6 @@ int fl_return_arrow(int x, int y, int w, int h) {
 
 void Fl_Return_Button::draw() {
   if (type() == FL_HIDDEN_BUTTON) return;
-  // SDE-FLTK: themed default buttons are marked by their color, not an arrow.
-  if (fl_sde_style()) { Fl_Button::draw(); return; }
   Fl_Boxtype bt = value() ? (down_box()?down_box():fl_down(box())) : box();
   int dx = Fl::box_dx(bt);
   draw_box(bt, value() ? selection_color() : color());
@@ -57,7 +52,7 @@ int Fl_Return_Button::handle(int event) {
   if (event == FL_SHORTCUT &&
       (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter)) {
     simulate_key_action();
-    do_callback();
+    do_callback(FL_REASON_SELECTED);
     return 1;
   } else
     return Fl_Button::handle(event);
@@ -65,11 +60,6 @@ int Fl_Return_Button::handle(int event) {
 
 
 Fl_Return_Button::Fl_Return_Button(int X, int Y, int W, int H,const char *l)
-: Fl_Button(X,Y,W,H,l) 
+: Fl_Button(X,Y,W,H,l)
 {
 }
-
-
-//
-// End of "$Id$".
-//

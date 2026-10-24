@@ -1,23 +1,21 @@
 //
-// "$Id$"
-//
 // Common menu code for the Fast Light Tool Kit (FLTK).
 //
-// Copyright 1998-2016 by Bill Spitzak and others.
+// Copyright 1998-2024 by Bill Spitzak and others.
 //
 // This library is free software. Distribution and use rights are outlined in
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 // This is a base class for all items that have a menu:
-//	Fl_Menu_Bar, Fl_Menu_Button, Fl_Choice
+//      Fl_Menu_Bar, Fl_Menu_Button, Fl_Choice
 // This provides storage for a menu item, functions to add/modify/delete
 // items, and a call for when the user picks a menu item.
 
@@ -57,9 +55,9 @@
     \endcode
 
     \returns
-	-   0 : OK (name has menuitem's pathname)
-	-  -1 : item not found (name="")
-	-  -2 : 'name' not large enough (name="")
+        -   0 : OK (name has menuitem's pathname)
+        -  -1 : item not found (name="")
+        -  -2 : 'name' not large enough (name="")
     \see find_item()
 */
 int Fl_Menu_::item_pathname(char *name, int namelen, const Fl_Menu_Item *finditem) const {
@@ -68,61 +66,61 @@ int Fl_Menu_::item_pathname(char *name, int namelen, const Fl_Menu_Item *findite
 }
 
 // INTERNAL: Descend into a specific menu hierarchy
-int Fl_Menu_::item_pathname_(char *name, 
-			     int namelen,
-			     const Fl_Menu_Item *finditem,
-			     const Fl_Menu_Item *menu) const {
+int Fl_Menu_::item_pathname_(char *name,
+                             int namelen,
+                             const Fl_Menu_Item *finditem,
+                             const Fl_Menu_Item *menu) const {
   int len = 0;
   int level = 0;
-  finditem = finditem ? finditem : mvalue();    
+  finditem = finditem ? finditem : mvalue();
   menu = menu ? menu : this->menu();
   for ( int t=0; t<size(); t++ ) {
     const Fl_Menu_Item *m = menu + t;
-    if (m->submenu()) {				// submenu? descend
+    if (m->submenu()) {                         // submenu? descend
       if (m->flags & FL_SUBMENU_POINTER) {
         // SUBMENU POINTER? Recurse to descend
-        int slen = strlen(name);
-	const Fl_Menu_Item *submenu = (const Fl_Menu_Item*)m->user_data();
+        int slen = (int)strlen(name);
+        const Fl_Menu_Item *submenu = (const Fl_Menu_Item*)m->user_data();
         if (m->label()) {
           if (*name) SAFE_STRCAT("/");
-	  SAFE_STRCAT(m->label());
+          SAFE_STRCAT(m->label());
         }
         if (item_pathname_(name, len, finditem, submenu) == 0)
-	  return 0;
-	name[slen] = 0;				// continue from where we were
+          return 0;
+        name[slen] = 0;                         // continue from where we were
       } else {
         // REGULAR SUBMENU? DESCEND
-	++level;
+        ++level;
         if (*name) SAFE_STRCAT("/");
         if (m->label()) SAFE_STRCAT(m->label());
-        if (m == finditem) return(0);		// found? done.
+        if (m == finditem) return(0);           // found? done.
       }
     } else {
-      if (m->label()) {				// menu item?
-	if ( m == finditem ) {			// found? tack on itemname, done.
-	  SAFE_STRCAT("/");
-	  SAFE_STRCAT(m->label());
-	  return(0);
-	}
-      } else {					// end of submenu? pop
+      if (m->label()) {                         // menu item?
+        if ( m == finditem ) {                  // found? tack on itemname, done.
+          SAFE_STRCAT("/");
+          SAFE_STRCAT(m->label());
+          return(0);
+        }
+      } else {                                  // end of submenu? pop
         if ( --level < 0 ) {
-	  *name = '\0';
-	  return -1;
-	}
-	char *ss = strrchr(name, '/');
-	if ( ss ) { *ss = 0; len = (int) strlen(name); }	// "File/Edit" -> "File"
-	else { name[0] = '\0'; len = 0; }	// "File" -> ""
-	continue;
+          *name = '\0';
+          return -1;
+        }
+        char *ss = strrchr(name, '/');
+        if ( ss ) { *ss = 0; len = (int) strlen(name); }        // "File/Edit" -> "File"
+        else { name[0] = '\0'; len = 0; }       // "File" -> ""
+        continue;
       }
     }
   }
   *name = '\0';
-  return(-1);					// item not found
+  return(-1);                                   // item not found
 }
 
 /**
  Find the menu item for a given menu \p pathname, such as "Edit/Copy".
- 
+
  This method finds a menu item in the menu array, also traversing submenus, but
  not submenu pointers (FL_SUBMENU_POINTER).
 
@@ -137,16 +135,16 @@ int Fl_Menu_::item_pathname_(char *name,
     // [..]
     Fl_Menu_Item *item;
     if ( ( item = (Fl_Menu_Item*)menubar->find_item("File/&Open") ) != NULL ) {
-	item->labelcolor(FL_RED);
+        item->labelcolor(FL_RED);
     }
     if ( ( item = (Fl_Menu_Item*)menubar->find_item("Edit/&Copy") ) != NULL ) {
-	item->labelcolor(FL_GREEN);
+        item->labelcolor(FL_GREEN);
     }
   \endcode
 
   \param pathname The path and name of the menu item
   \returns The item found, or NULL if not found
-  \see find_index(const char*), find_item(Fl_Callback*), item_pathname() 
+  \see find_index(const char*), find_item(Fl_Callback*), item_pathname()
 */
 const Fl_Menu_Item * Fl_Menu_::find_item(const char *pathname) {
   int i = find_index(pathname);
@@ -187,7 +185,7 @@ int Fl_Menu_::find_index(const Fl_Menu_Item *item) const {
 
 /**
  Find the index into the menu array for a given callback \p cb.
- 
+
  This method finds a menu item's index position, also traversing submenus, but
  \b not submenu pointers (FL_SUBMENU_POINTER). This is useful if an
  application uses internationalisation and a menu item can not be found
@@ -206,7 +204,7 @@ int Fl_Menu_::find_index(Fl_Callback *cb) const {
 
 /**
  Find the menu item index for a given menu \p pathname, such as "Edit/Copy".
- 
+
  This method finds a menu item's index position for the given menu pathname,
  also traversing submenus, but \b not submenu pointers (FL_SUBMENU_POINTER).
 
@@ -218,7 +216,7 @@ int Fl_Menu_::find_index(Fl_Callback *cb) const {
 
 */
 int Fl_Menu_::find_index(const char *pathname) const {
-  char menupath[1024] = "";	// File/Export
+  char menupath[1024] = "";     // File/Export
   for ( int t=0; t < size(); t++ ) {
     Fl_Menu_Item *m = menu_ + t;
     if (m->flags&FL_SUBMENU) {
@@ -229,14 +227,14 @@ int Fl_Menu_::find_index(const char *pathname) const {
       if (!strcmp(menupath, pathname)) return(t);
     } else {
       if (!m->label()) {
-	// END OF SUBMENU? Pop back one level.
-	char *ss = strrchr(menupath, '/');
-	if ( ss ) *ss = 0;
-	else menupath[0] = '\0';
-	continue;
+        // END OF SUBMENU? Pop back one level.
+        char *ss = strrchr(menupath, '/');
+        if ( ss ) *ss = 0;
+        else menupath[0] = '\0';
+        continue;
       }
       // IT'S A MENU ITEM
-      char itempath[1024];	// eg. Edit/Copy
+      char itempath[1024];      // eg. Edit/Copy
       strcpy(itempath, menupath);
       if (itempath[0]) strlcat(itempath, "/", sizeof(itempath));
       strlcat(itempath, m->label(), sizeof(itempath));
@@ -248,12 +246,12 @@ int Fl_Menu_::find_index(const char *pathname) const {
 
 /**
  Find the menu item for the given callback \p cb.
- 
+
  This method finds a menu item in a menu array, also traversing submenus, but
- not submenu pointers. This is useful if an application uses 
+ not submenu pointers. This is useful if an application uses
  internationalisation and a menu item can not be found using its label. This
  search is also much faster.
- 
+
  \param[in] cb find the first item with this callback
  \returns The item found, or NULL if not found
  \see find_item(const char*)
@@ -269,21 +267,120 @@ const Fl_Menu_Item * Fl_Menu_::find_item(Fl_Callback *cb) {
 }
 
 /**
-  The value is the index into menu() of the last item chosen by
-  the user.  It is zero initially.  You can set it as an integer, or set
-  it with a pointer to a menu item.  The set routines return non-zero if
-  the new value is different than the old one.
+ Find the menu item for the given user data \p v.
+
+ \param[in] v find the first item with this user data
+ \returns The item found, or NULL if not found
+ \see find_item(const char*)
+ */
+const Fl_Menu_Item* Fl_Menu_::find_item_with_user_data(void *v) {
+  for ( int t=0; t < size(); t++ ) {
+    const Fl_Menu_Item *m = menu_ + t;
+    if (m->user_data_==v) {
+      return m;
+    }
+  }
+  return (const Fl_Menu_Item *)NULL;
+}
+
+/**
+ Find the menu item for the given user argument \p v.
+
+ \param[in] v find the first item with this user argument
+ \returns The item found, or NULL if not found
+ \see find_item(const char*)
+ */
+const Fl_Menu_Item* Fl_Menu_::find_item_with_argument(long v) {
+  for ( int t=0; t < size(); t++ ) {
+    const Fl_Menu_Item *m = menu_ + t;
+    if (m->argument()==v) {
+      return m;
+    }
+  }
+  return (const Fl_Menu_Item *)NULL;
+}
+
+/**
+  Set the value of a menu to the menu item \c m.
+
+  The \e value of the menu is the index into the menu() of the last
+  item chosen by the user or -1.
+
+  It is \c -1 initially (if no item has been chosen) or if the chosen
+  menu item is part of a submenu addressed by an FL_SUBMENU_POINTER.
+
+  \note All menu items are located in a contiguous array of Fl_Menu_Item's
+    unless an item has the FL_SUBMENU_POINTER flag which redirects the
+    submenu to an independent submenu array. This submenu array is not
+    counted in the size() of the menu, and menu items in this submenu can't
+    return a valid index into the \b main menu. Therefore menu items that
+    are located in such a submenu return -1 when value() is called.
+    This may be changed in a future version.
+
+  The menu item can be any menu item, even one in a detached submenu
+  (see note about FL_SUBMENU_POINTER above).
+
+  \param[in]  m   Pointer to any menu item.
+
+  \return     Whether the new value is different than the old one.
+  \retval  0  The value didn't change.
+  \retval  1  The value was changed.
+
+  \see int value(int)
+  \see int value()
+  \see const Fl_Menu_Item *mvalue()
 */
 int Fl_Menu_::value(const Fl_Menu_Item* m) {
   clear_changed();
-  if (value_ != m) {value_ = m; return 1;}
+  if (value_ != m) {
+    prev_value_ = value_;
+    value_ = m;
+    return 1;
+  }
   return 0;
 }
 
-/** 
- When user picks a menu item, call this.  It will do the callback.
- Unfortunately this also casts away const for the checkboxes, but this
- was necessary so non-checkbox menus can really be declared const...
+/** Return the index into the menu() of the last item chosen by the user.
+
+  The \e value of the menu is the index into the menu() of the last
+  item chosen by the user or -1.
+
+  It is \c -1 initially (if no item has been chosen) or if the chosen
+  menu item is part of a submenu addressed by an FL_SUBMENU_POINTER.
+
+  \note All menu items are located in a contiguous array of Fl_Menu_Item's
+    unless an item has the FL_SUBMENU_POINTER flag which redirects the
+    submenu to an independent submenu array. This submenu array is not
+    counted in the size() of the menu, and menu items in this submenu can't
+    return a valid index into the \b main menu. Therefore menu items that
+    are located in such a submenu return -1 when value() is called.
+    This may be changed in a future version.
+
+  You can use mvalue() instead to retrieve the last picked menu item directly.
+
+  \returns  Index of the last chosen menu item or -1 (see description).
+
+  \see const Fl_Menu_Item *mvalue()
+*/
+int Fl_Menu_::value() const {
+  if (!value_)
+    return -1;
+  if (menu() && value_ >= menu() && value_ < menu() + size())
+    return (int)(value_ - menu_);
+  return -1;
+}
+
+/**
+  When user picks a menu item, call this.
+
+  It will do the callback.
+
+  Unfortunately this also casts away const for the checkboxes, but this
+  was necessary so non-checkbox menus can really be declared 'const'.
+
+  \param[in]  v   The menu item that was picked by the user.
+
+  \returns    The same Fl_Menu_Item* that was set (\c v).
 */
 const Fl_Menu_Item* Fl_Menu_::picked(const Fl_Menu_Item* v) {
   if (v) {
@@ -300,11 +397,12 @@ const Fl_Menu_Item* Fl_Menu_::picked(const Fl_Menu_Item* v) {
     } else if (v != value_) { // normal item
       set_changed();
     }
+    prev_value_ = value_;
     value_ = v;
     if (when()&(FL_WHEN_CHANGED|FL_WHEN_RELEASE)) {
       if (changed() || when()&FL_WHEN_NOT_CHANGED) {
-	if (value_ && value_->callback_) value_->do_callback((Fl_Widget*)this);
-	else do_callback();
+        if (value_ && value_->callback_) value_->do_callback((Fl_Widget*)this);
+        else do_callback();
       }
     }
   }
@@ -347,7 +445,7 @@ void Fl_Menu_::setonly(Fl_Menu_Item* item) {
   if (!first) return; // item does not belong to our menu
   item->flags |= FL_MENU_RADIO | FL_MENU_VALUE;
   Fl_Menu_Item* j;
-  for (j = item; ; ) {	// go down
+  for (j = item; ; ) {  // go down
     if (j->flags & FL_MENU_DIVIDER) break; // stop on divider lines
     j++;
     if (!j->text || !j->radio()) break; // stop after group
@@ -361,21 +459,23 @@ void Fl_Menu_::setonly(Fl_Menu_Item* item) {
 }
 
 /** Turns the radio item "on" for the menu item and turns "off" adjacent radio items set.
- \deprecated This method is dangerous if radio items are first in the menu.
- Use Fl_Menu_::setonly(Fl_Menu_Item*) instead.
+ \note This method is dangerous if radio items are first in the menu.
+ Make sure that \p first is set ciorrectly or use Fl_Menu_::setonly(Fl_Menu_Item*) instead.
+ \param[in] first start of menu array or NULL (default) if the radio group is not the first item
  */
-void Fl_Menu_Item::setonly() {
+void Fl_Menu_Item::setonly(Fl_Menu_Item const* first) {
   flags |= FL_MENU_RADIO | FL_MENU_VALUE;
   Fl_Menu_Item* j;
-  for (j = this; ; ) {	// go down
+  for (j = this; ; ) {  // go down
     if (j->flags & FL_MENU_DIVIDER) break; // stop on divider lines
     j++;
     if (!j->text || !j->radio()) break; // stop after group
     j->clear();
   }
-  for (j = this-1; ; j--) { // go up
+  if (this != first) for (j = this-1; ; j--) { // go up
     if (!j->text || (j->flags&FL_MENU_DIVIDER) || !j->radio()) break;
     j->clear();
+    if (j == first) break;
   }
 }
 
@@ -384,17 +484,21 @@ void Fl_Menu_Item::setonly() {
  and label string.  menu() is initialized to null.
  */
 Fl_Menu_::Fl_Menu_(int X,int Y,int W,int H,const char* l)
-: Fl_Widget(X,Y,W,H,l) {
+: Fl_Widget(X,Y,W,H,l),
+  menu_(NULL),
+  value_(NULL),
+  prev_value_(NULL),
+  alloc(0),
+  down_box_(FL_NO_BOX),
+  menu_box_(FL_NO_BOX),
+  textfont_(FL_HELVETICA),
+  textsize_(FL_NORMAL_SIZE),
+  textcolor_(FL_FOREGROUND_COLOR)
+{
   set_flag(SHORTCUT_LABEL);
   box(FL_UP_BOX);
   when(FL_WHEN_RELEASE_ALWAYS);
-  value_ = menu_ = 0;
-  alloc = 0;
   selection_color(FL_SELECTION_COLOR);
-  textfont(FL_HELVETICA);
-  textsize(FL_NORMAL_SIZE);
-  textcolor(FL_FOREGROUND_COLOR);
-  down_box(FL_NO_BOX);
 }
 
 /**
@@ -417,18 +521,19 @@ int Fl_Menu_::size() const {
 */
 void Fl_Menu_::menu(const Fl_Menu_Item* m) {
   clear();
+  prev_value_ = NULL;
   value_ = menu_ = (Fl_Menu_Item*)m;
 }
 
 // this version is ok with new Fl_Menu_add code with fl_menu_array_owner:
 
-/** 
-  Sets the menu array pointer with a copy of m that will be automatically deleted. 
+/**
+  Sets the menu array pointer with a copy of m that will be automatically deleted.
   If userdata \p ud is not NULL, then all user data pointers are changed in the menus as well.
-  See void Fl_Menu_::menu(const Fl_Menu_Item* m). 
+  See void Fl_Menu_::menu(const Fl_Menu_Item* m).
 */
 void Fl_Menu_::copy(const Fl_Menu_Item* m, void* ud) {
-  int n = m->size();
+  unsigned int n = m->size();
   Fl_Menu_Item* newMenu = new Fl_Menu_Item[n];
   memcpy(newMenu, m, n*sizeof(Fl_Menu_Item));
   menu(newMenu);
@@ -451,21 +556,46 @@ Fl_Menu_* fl_menu_array_owner = 0;
 /**
   Same as menu(NULL), set the array pointer to null, indicating
   a zero-length menu.
-  
+
   Menus must not be cleared during a callback to the same menu.
 */
 void Fl_Menu_::clear() {
   if (alloc) {
-    if (alloc>1) for (int i = size(); i--;)
-      if (menu_[i].text) free((void*)menu_[i].text);
+
+    if (alloc > 1) {
+
+      // See GitHub issue #875: we can't release "everything"
+      // for several reasons. Maybe we can do better if we create
+      // a new menu system based on Fl_Widget in 1.5.0 or later.
+
+      // Fl_Image's and Fl_Multi_Label's and their linked objects
+      // can't be released automatically. However, we must take care
+      // not to free() images or Fl_Multi_Label's because they can
+      // either be static or are allocated by operator new.
+
+      for (int i = size(); i--;) {
+        if (!menu_[i].text)
+          continue;
+        switch(menu_[i].labeltype_) {
+          case _FL_IMAGE_LABEL:
+            break;
+          case _FL_MULTI_LABEL:
+            break;
+          default:
+            free((void*)menu_[i].text);
+            break;
+        }
+      }
+    }
+
     if (this == fl_menu_array_owner)
       fl_menu_array_owner = 0;
     else
       delete[] menu_;
-    menu_ = 0;
-    value_ = 0;
     alloc = 0;
   }
+  menu_ = 0;
+  value_ = prev_value_ = 0;
 }
 
 /**
@@ -476,9 +606,9 @@ void Fl_Menu_::clear() {
  that shows the last few files that have been opened.
 
  The specified \p index must point to a submenu.
- 
+
  The submenu is cleared with remove().
- If the menu array was directly set with menu(x), then copy() 
+ If the menu array was directly set with menu(x), then copy()
  is done to make a private array.
 
  \warning Since this method can change the internal menu array, any menu
@@ -501,14 +631,10 @@ void Fl_Menu_::clear() {
 int Fl_Menu_::clear_submenu(int index) {
   if ( index < 0 || index >= size() ) return(-1);
   if ( ! (menu_[index].flags & FL_SUBMENU) ) return(-1);
-  ++index;					// advance to first item in submenu
+  ++index;                                      // advance to first item in submenu
   while ( index < size() ) {                    // keep remove()ing top item until end is reached
-    if ( menu_[index].text == 0 ) break;	// end of this submenu? done
-    remove(index);				// remove items/submenus
+    if ( menu_[index].text == 0 ) break;        // end of this submenu? done
+    remove(index);                              // remove items/submenus
   }
   return(0);
 }
-
-//
-// End of "$Id$".
-//

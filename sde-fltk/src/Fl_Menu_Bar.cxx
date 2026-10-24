@@ -1,6 +1,4 @@
 //
-// "$Id$"
-//
 // Menu bar widget for the Fast Light Tool Kit (FLTK).
 //
 // Copyright 1998-2010 by Bill Spitzak and others.
@@ -9,37 +7,18 @@
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/fl_draw.H>
-#include <FL/Fl_SDE_Style.H>
-
-// SDE-FLTK: the menu bar under the pointer and the hovered title.
-static Fl_Menu_Bar *sde_hover_bar = 0;
-static int sde_hover_item = -1;
-
-static int sde_title_at(Fl_Menu_Bar *b, int mx) {
-  if (!b->menu() || !b->menu()->text) return -1;
-  int X = b->x() + 6, i = 0;
-  for (const Fl_Menu_Item *m = b->menu()->first(); m->text; m = m->next(), i++) {
-    int W = m->measure(0, b) + 16;
-    if (mx >= X && mx < X + W) return i;
-    X += W;
-  }
-  return -1;
-}
 
 void Fl_Menu_Bar::draw() {
-  if (fl_sde_style() &&
-      fl_sde_style()->menubar_draw(this, sde_hover_bar == this ? sde_hover_item : -1))
-    return;
   draw_box();
   if (!menu() || !menu()->text) return;
   const Fl_Menu_Item* m;
@@ -65,20 +44,9 @@ int Fl_Menu_Bar::handle(int event) {
   const Fl_Menu_Item* v;
   if (menu() && menu()->text) switch (event) {
   case FL_ENTER:
-  case FL_MOVE:
   case FL_LEAVE:
-    if (fl_sde_style()) {
-      int i = event == FL_LEAVE ? -1 : sde_title_at(this, Fl::event_x());
-      if (sde_hover_bar != this || sde_hover_item != i) {
-        if (sde_hover_bar && sde_hover_bar != this) sde_hover_bar->redraw();
-        sde_hover_bar = i < 0 ? 0 : this;
-        sde_hover_item = i;
-        redraw();
-      }
-    }
     return 1;
   case FL_PUSH:
-    if (sde_hover_bar == this) { sde_hover_bar = 0; sde_hover_item = -1; redraw(); }
     v = 0;
   J1:
     v = menu()->pulldown(x(), y(), w(), h(), v, this, 0, 1);
@@ -96,10 +64,14 @@ int Fl_Menu_Bar::handle(int event) {
 
 
 Fl_Menu_Bar::Fl_Menu_Bar(int X, int Y, int W, int H,const char *l)
-: Fl_Menu_(X,Y,W,H,l) 
+: Fl_Menu_(X,Y,W,H,l)
 {
 }
 
-//
-// End of "$Id$".
-//
+
+void Fl_Menu_Bar::play_menu(const Fl_Menu_Item *v) {
+  if (v) {
+    v = menu()->pulldown(x(), y(), w(), h(), v, this, 0, 1);
+    picked(v);
+  }
+}

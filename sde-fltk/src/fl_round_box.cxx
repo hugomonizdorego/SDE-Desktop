@@ -1,6 +1,4 @@
 //
-// "$Id$"
-//
 // Round box drawing routines for the Fast Light Tool Kit (FLTK).
 //
 // Copyright 1998-2010 by Bill Spitzak and others.
@@ -9,11 +7,11 @@
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 // Box drawing code for an obscure box type.
@@ -46,20 +44,29 @@ static void draw(int which, int x,int y,int w,int h, int inset, Fl_Color color)
   void (*f)(int,int,int,int,double,double);
   f = (which==FILL) ? fl_pie : fl_arc_i;
   if (which >= CLOSED) {
-    f(x+w-d, y, d, d, w<=h ? 0 : -90, w<=h ? 180 : 90);
-    f(x, y+h-d, d, d, w<=h ? 180 : 90, w<=h ? 360 : 270);
+    if (w == h) f(x, y, d, d, 0, 360);
+    else {
+      f(x+w-d, y, d, d, w<=h ? 0 : -90, w<=h ? 180 : 90);
+      f(x, y+h-d, d, d, w<=h ? 180 : 90, w<=h ? 360 : 270);
+    }
   } else if (which == UPPER_LEFT) {
-    f(x+w-d, y, d, d, 45, w<=h ? 180 : 90);
-    f(x, y+h-d, d, d, w<=h ? 180 : 90, 225);
+    if (w == h) f(x, y, d, d, 45, 225);
+    else {
+      f(x+w-d, y, d, d, 45, w<=h ? 180 : 90);
+      f(x, y+h-d, d, d, w<=h ? 180 : 90, 225);
+    }
   } else { // LOWER_RIGHT
-    f(x, y+h-d, d, d, 225, w<=h ? 360 : 270);
-    f(x+w-d, y, d, d, w<=h ? 360 : 270, 360+45);
+    if (w == h) f(x, y, d, d, 225, 405);
+    else {
+      f(x, y+h-d, d, d, 225, w<=h ? 360 : 270);
+      f(x+w-d, y, d, d, w<=h ? 360 : 270, 360+45);
+    }
   }
   if (which == FILL) {
     if (w < h)
-      fl_rectf(x, y+d/2, w, h-(d&-2));
+      fl_rectf(x, y+d/2, w, h-(d&-2)+1);
     else if (w > h)
-      fl_rectf(x+d/2, y, w-(d&-2), h);
+      fl_rectf(x+d/2, y, w-(d&-2)+1, h);
   } else {
     if (w < h) {
       if (which != UPPER_LEFT) fl_yxline(x+w-1, y+d/2-1, y+h-d/2+1);
@@ -75,7 +82,7 @@ extern const uchar* fl_gray_ramp();
 
 void fl_round_down_box(int x, int y, int w, int h, Fl_Color bgcolor) {
   const uchar *g = fl_gray_ramp();
-  draw(FILL,	    x,   y, w,   h, 2, Fl::box_color(bgcolor));
+  draw(FILL,        x,   y, w,   h, 2, Fl::box_color(bgcolor));
   draw(UPPER_LEFT,  x+1, y, w-2, h, 0, (Fl_Color)g[(int)'N']);
   draw(UPPER_LEFT,  x+1, y, w-2, h, 1, (Fl_Color)g[(int)'H']);
   draw(UPPER_LEFT,  x,   y, w,   h, 0, (Fl_Color)g[(int)'N']);
@@ -84,12 +91,12 @@ void fl_round_down_box(int x, int y, int w, int h, Fl_Color bgcolor) {
   draw(LOWER_RIGHT, x+1, y, w-2, h, 0, (Fl_Color)g[(int)'U']);
   draw(LOWER_RIGHT, x,   y, w,   h, 1, (Fl_Color)g[(int)'U']);
   draw(LOWER_RIGHT, x+1, y, w-2, h, 1, (Fl_Color)g[(int)'W']);
-  draw(CLOSED,	    x,   y, w,   h, 2, (Fl_Color)g[(int)'A']);
+  draw(CLOSED,      x,   y, w,   h, 2, (Fl_Color)g[(int)'A']);
 }
 
 void fl_round_up_box(int x, int y, int w, int h, Fl_Color bgcolor) {
   const uchar *g = fl_gray_ramp();
-  draw(FILL,	    x,   y, w,   h, 2, Fl::box_color(bgcolor));
+  draw(FILL,        x,   y, w,   h, 2, Fl::box_color(bgcolor));
   draw(LOWER_RIGHT, x+1, y, w-2, h, 0, (Fl_Color)g[(int)'H']);
   draw(LOWER_RIGHT, x+1, y, w-2, h, 1, (Fl_Color)g[(int)'N']);
   draw(LOWER_RIGHT, x,   y, w,   h, 1, (Fl_Color)g[(int)'H']);
@@ -98,16 +105,24 @@ void fl_round_up_box(int x, int y, int w, int h, Fl_Color bgcolor) {
   draw(UPPER_LEFT,  x+1, y, w-2, h, 1, (Fl_Color)g[(int)'S']);
   draw(UPPER_LEFT,  x,   y, w,   h, 1, (Fl_Color)g[(int)'W']);
   draw(UPPER_LEFT,  x+1, y, w-2, h, 0, (Fl_Color)g[(int)'U']);
-  draw(CLOSED,	    x,   y, w,   h, 0, (Fl_Color)g[(int)'A']);
+  draw(CLOSED,      x,   y, w,   h, 0, (Fl_Color)g[(int)'A']);
 }
 
-extern void fl_internal_boxtype(Fl_Boxtype, Fl_Box_Draw_F*);
+void fl_round_focus(Fl_Boxtype bt, int x, int y, int w, int h, Fl_Color fg, Fl_Color bg) {
+  x += Fl::box_dx(bt);
+  y += Fl::box_dy(bt);
+  w -= Fl::box_dw(bt);
+  h -= Fl::box_dh(bt);
+  Fl_Color savecolor = fl_color();
+  fl_line_style(FL_DOT);
+  draw(CLOSED, x, y, w, h, 0, fl_contrast(fg, bg));
+  fl_line_style(FL_SOLID);
+  fl_color(savecolor);
+}
+
+extern void fl_internal_boxtype(Fl_Boxtype, Fl_Box_Draw_F*, Fl_Box_Draw_Focus_F* =NULL);
 Fl_Boxtype fl_define_FL_ROUND_UP_BOX() {
-  fl_internal_boxtype(_FL_ROUND_DOWN_BOX, fl_round_down_box);
-  fl_internal_boxtype(_FL_ROUND_UP_BOX, fl_round_up_box);
+  fl_internal_boxtype(_FL_ROUND_DOWN_BOX, fl_round_down_box, fl_round_focus);
+  fl_internal_boxtype(_FL_ROUND_UP_BOX, fl_round_up_box, fl_round_focus);
   return _FL_ROUND_UP_BOX;
 }
-
-//
-// End of "$Id$".
-//
