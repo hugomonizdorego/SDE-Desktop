@@ -183,7 +183,8 @@ void build_power_page(Page *page) {
                    shown == "percent" ? 1 : shown == "label" ? 2 : shown == "label-percent" ? 3 : 0,
                    [](int v) {
                      static const char *values[] = {"icon", "percent", "label", "label-percent"};
-                     settings_config().set("panel", "battery_display", values[v < 0 || v > 3 ? 0 : v]);
+                     settings_config().set("panel", "battery_display",
+                                           values[v < 0 || v > 3 ? 0 : v]);
                      apply_change();
                    },
                    _("The label tells the state: Charging, On battery, Full, Low battery."));

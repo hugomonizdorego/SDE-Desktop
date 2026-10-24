@@ -515,13 +515,16 @@ bool battery_on_battery(BatteryPhase phase) {
 }
 
 int battery_low_level(int power_low) { return std::max(20, std::min(50, power_low)); }
-int battery_critical_level(int power_critical) { return std::max(10, std::min(30, power_critical)); }
+int battery_critical_level(int power_critical) {
+  return std::max(10, std::min(30, power_critical));
+}
 
 BatteryDisplay parse_battery_display(const std::string &name) {
   std::string n = lower(trim(name));
   if (n == "percent" || n == "percentage") return BatteryDisplay::PERCENT;
   if (n == "label") return BatteryDisplay::LABEL;
-  if (n == "label-percent" || n == "label+percent" || n == "both") return BatteryDisplay::LABEL_PERCENT;
+  if (n == "label-percent" || n == "label+percent" || n == "both")
+    return BatteryDisplay::LABEL_PERCENT;
   return BatteryDisplay::ICON;
 }
 
@@ -646,7 +649,8 @@ BatteryFrame BatteryAnimation::frame(double t) const {
   double u = 1 - e;
   f.level = from_ + (to_ - from_) * (1 - u * u * u);  // ease-out cubic
   if (!motion_ || !battery_animated(phase_)) return f;
-  double period = battery_pulse_period(phase_), cycle = std::fmod(std::max(0.0, t - start_), period) / period;
+  double period = battery_pulse_period(phase_);
+  double cycle = std::fmod(std::max(0.0, t - start_), period) / period;
   if (phase_ == BatteryPhase::CHARGING)
     f.sweep = cycle;
   else  // a soft pulse from full strength down to 45 % and back

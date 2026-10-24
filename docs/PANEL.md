@@ -105,8 +105,9 @@ The clock on the panel and the Action Center's clock share one setting:
 * **Show seconds** (`[panel] clock_seconds`): the seconds in the digital and
   LED clocks, a seconds hand on the analog face.
 * **Blink the colon** (`[panel] clock_blink`): the colon of the digital and
-  LED clocks flashes once a second. The analog face has no colon; the
-  option is greyed out there.
+  LED clocks flashes once a second. The analog face has no colon: the
+  clock menus grey the option out while it is shown, and the choice stays
+  for the digital and LED faces.
 
 Seconds and the blinking colon are chosen independently, in Control Center
 > **Clock & Weather** (three style cards and two switches), in Control

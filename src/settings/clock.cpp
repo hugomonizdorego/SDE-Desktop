@@ -39,11 +39,6 @@ constexpr int kStyleCount = 3;
 // when those options are on.
 class StylePicker : public Fl_Widget {
  public:
-  // "Blink the colon" means nothing to the analog face (it has no colon).
-  void set_blink_switch(Fl_Widget *w) {
-    blink_ = w;
-    update_blink_switch();
-  }
   StylePicker(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
     label(_("Clock style"));
     labeltype(FL_NO_LABEL);
@@ -143,16 +138,8 @@ class StylePicker : public Fl_Widget {
     selected_ = i;
     settings_config().set("action_center", "clock_style", clockface::style_name(kStyles[i]));
     settings_config().unset("clock", "style");
-    update_blink_switch();
     apply_change();
     redraw();
-  }
-  void update_blink_switch() {
-    if (!blink_) return;
-    if (kStyles[selected_] == clockface::Style::Analog)
-      blink_->deactivate();
-    else
-      blink_->activate();
   }
   static void tick(void *d) {
     auto *self = static_cast<StylePicker *>(d);
@@ -160,7 +147,6 @@ class StylePicker : public Fl_Widget {
     Fl::repeat_timeout(1.0, tick, d);
   }
   int selected_ = 0, hover_ = -1;
-  Fl_Widget *blink_ = nullptr;
 };
 
 // [clock] format, kept in step with the older [panel] clock_24h (the lock
@@ -184,10 +170,9 @@ void build_clock_page(Page *page) {
   page->heading(_("Clock & Weather"),
                 _("The clock on the panel and in the Action Center, and the weather behind it"));
   page->begin_card(_("Clock"));
-  StylePicker *picker;
   {
     int x = page->left() + S(20), y = page->cursor(), w = page->width() - S(40), h = S(124);
-    picker = new StylePicker(x, y + S(8), w, h);
+    new StylePicker(x, y + S(8), w, h);
     page->advance(h + S(18));
   }
   std::string format = lower(trim(cfg.get("clock", "format", "auto")));
@@ -200,11 +185,12 @@ void build_clock_page(Page *page) {
     settings_config().unset("clock", "seconds");
     apply_change();
   }, _("The analog clock shows a seconds hand."));
-  picker->set_blink_switch(page->switch_row(_("Blink the colon"), clock.blink, [](bool on) {
+  // A preference of the digital and LED faces (the analog one has no colon).
+  page->switch_row(_("Blink the colon"), clock.blink, [](bool on) {
     settings_config().set("panel", "clock_blink", on ? "true" : "false");
     settings_config().unset("clock", "blink");
     apply_change();
-  }, _("The colon of the digital and LED clocks flashes once a second.")));
+  }, _("The colon of the digital and LED clocks flashes once a second."));
   page->switch_row(_("Show the date on the panel"), cfg.get_bool("panel", "show_date", true),
                    [](bool on) {
                      settings_config().set("panel", "show_date", on ? "true" : "false");

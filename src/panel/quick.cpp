@@ -373,13 +373,11 @@ const char *kUPowerPath = "/org/freedesktop/UPower";
 const char *kDisplayDevice = "/org/freedesktop/UPower/devices/DisplayDevice";
 // The low and critical levels of the icon: 20 % and 10 %, or sde-power's
 // warnings ([power] battery_low, battery_critical) when they are higher.
-int low_level() {
-  return battery_low_level(Panel::instance ? Panel::instance->config().get_int("power", "battery_low", 10) : 10);
+int power_level(const char *key, int fallback) {
+  return Panel::instance ? Panel::instance->config().get_int("power", key, fallback) : fallback;
 }
-int critical_level() {
-  return battery_critical_level(
-      Panel::instance ? Panel::instance->config().get_int("power", "battery_critical", 5) : 5);
-}
+int low_level() { return battery_low_level(power_level("battery_low", 10)); }
+int critical_level() { return battery_critical_level(power_level("battery_critical", 5)); }
 void upower_changed(void *) { SystemStatus::get().refresh_battery(); }
 }  // namespace
 
@@ -426,7 +424,9 @@ void SystemStatus::read_sysfs_battery(BatteryState &b, BatteryReading &r) {
     // Energy (µWh) and power (µW), or charge (µAh) and current (µA).
     std::string now, full, rate;
     bool energy = read_file(base + "/energy_now", now) && read_file(base + "/energy_full", full);
-    if (energy || (read_file(base + "/charge_now", now) && read_file(base + "/charge_full", full))) {
+    bool charge = !energy && read_file(base + "/charge_now", now) &&
+                  read_file(base + "/charge_full", full);
+    if (energy || charge) {
       r.energy = atof(now.c_str()) / 1e6;
       r.energy_full = atof(full.c_str()) / 1e6;
       if (read_file(base + (energy ? "/power_now" : "/current_now"), rate))
@@ -530,7 +530,8 @@ void SystemStatus::start_upower() {
             path + "'",
         [path](DBusMessage *m) {
           const char *p = dbus_message_get_path(m);
-          return dbus_message_is_signal(m, "org.freedesktop.DBus.Properties", "PropertiesChanged") &&
+          return dbus_message_is_signal(m, "org.freedesktop.DBus.Properties",
+                                        "PropertiesChanged") &&
                  p && std::string(p) == path;
         },
         [](DBusMessage *) {
@@ -1837,7 +1838,8 @@ std::string QuickSettings::structure() const {
       out << "|wx" << w->code << w->is_day << std::lround(w->temp_c * 10) << w->location.city;
     for (const char *key : {"enabled", "unit", "wind_unit", "animation", "location"})
       out << '|' << cfg.get("weather", key);
-    for (const char *key : {"style", "seconds", "blink", "format"}) out << '|' << cfg.get("clock", key);
+    for (const char *key : {"style", "seconds", "blink", "format"})
+      out << '|' << cfg.get("clock", key);
     out << "|players" << c.players().size();
     for (const char *key : {"enabled", "schedule", "from", "to"})
       out << '|' << cfg.get("night_light", key);
