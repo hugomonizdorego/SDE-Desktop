@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "wm.h"
 
+#include <FL/Fl.H>
+
 #include <algorithm>
 #include <iterator>
 
@@ -142,6 +144,18 @@ std::vector<std::string> window_manager_command(const std::string &configured) {
 
 void reconfigure_window_manager() {
   if (!find_program("sde-wm").empty()) spawn_detached({"sde-wm", "--reconfigure"});
+}
+
+void fit_to_work_area(int &x, int &y, int &w, int &h) {
+  int sx, sy, sw, sh;
+  Fl::screen_work_area(sx, sy, sw, sh);
+  // SDE WM title bar: the scaled title font plus 2 x 8 px padding and the
+  // border (build-themes.py), with a little air around the frame.
+  const int title = S(26) + 18, border = 2, air = S(12);
+  w = std::max(1, std::min(w, sw - 2 * border - 2 * air));
+  h = std::max(1, std::min(h, sh - title - border - 2 * air));
+  x = sx + (sw - w) / 2;
+  y = sy + title + (sh - title - border - h) / 2;
 }
 
 }  // namespace sde

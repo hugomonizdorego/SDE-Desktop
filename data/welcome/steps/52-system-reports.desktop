@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=System Reports
+Comment=Crashes and system details
+Icon=sde-system-reports
+X-SDE-Fallback-Icons=apport;utilities-system-monitor;dialog-information
+Exec=sde-system-reports
+NoDisplay=true
+X-SDE-Gettext-Domain=sde

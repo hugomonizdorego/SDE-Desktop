@@ -22,6 +22,7 @@
 #include "niny.h"
 #include "theme.h"
 #include "util.h"
+#include "wm.h"
 
 using namespace sde;
 
@@ -83,11 +84,10 @@ int main(int argc, char **argv) {
   theme.apply_to_fltk();
   Fl::visual(FL_RGB);
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int w = std::min(S(1100), sw - S(40)), h = std::min(S(760), sh - S(40));
+  int wx = 0, wy = 0, w = S(1100), h = S(760);
+  fit_to_work_area(wx, wy, w, h);
   auto *app = new niny::App(std::max(w, S(480)), std::max(h, S(320)));
-  app->position(sx + (sw - app->w()) / 2, sy + (sh - app->h()) / 2);
+  app->position(wx, wy);
   // A second window keeps to its own files; the session belongs to the first.
   if (new_window && niny::another_instance_running()) app->set_secondary(true);
   else app->restore_session();

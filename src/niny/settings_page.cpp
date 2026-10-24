@@ -8,10 +8,13 @@
 #include <FL/fl_draw.H>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <set>
 
 #include "about.h"
+#include "config.h"
+#include "effects.h"
 #include "i18n.h"
 #include "niny.h"
 #include "process.h"
@@ -44,6 +47,13 @@ std::vector<std::string> font_families() {
 }
 
 Color hover_color() { return look().dark ? Color::hex(0xFFFFFF, 0.07) : Color::hex(0x000000, 0.045); }
+
+const double kGlideTime = 0.13;  // seconds from one scroll position to the next, as in the Start Menu
+
+double now() {
+  using namespace std::chrono;
+  return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
 
 // On/off switch drawn with Niny's colors, with an "On"/"Off" caption.
 class Toggle : public Fl_Widget {
@@ -232,10 +242,14 @@ struct SettingsPage::Row {
 SettingsPage::SettingsPage(App *app, int x, int y, int w, int h) : Fl_Group(x, y, w, h), app_(app) {
   box(FL_NO_BOX);
   end();
+  Config cfg;
+  cfg.load();
+  smooth_ = !cfg.get_bool("appearance", "low_resource", false);
   build();
 }
 
 SettingsPage::~SettingsPage() {
+  Fl::remove_timeout(glide_cb, this);
   for (Row *r : rows_) delete r;
 }
 
@@ -459,7 +473,6 @@ void SettingsPage::resize(int X, int Y, int W, int H) {
 }
 
 void SettingsPage::relayout() {
-  const Look &L = look();
   int col_w = std::min(w() - 2 * S(20), S(980));
   int x0 = x() + (w() - col_w) / 2;
   int yy = S(76);
@@ -477,28 +490,126 @@ void SettingsPage::relayout() {
     yy += r->h + (r->kind == Row::Heading ? 0 : S(3));
   }
   content_h_ = yy + S(32);
-  scroll_ = std::max(0, std::min(scroll_, content_h_ - h()));
+  scroll_ = std::max(0, std::min(scroll_, max_scroll()));
   int oy = y() - scroll_;
   if (back_) back_->resize(x0 - S(4), oy + S(18), S(40), S(40));
-  int vis_top = y(), vis_bottom = y() + h();
+  // Controls show while any part of them is on the page: draw() clips them
+  // to the page, and clicks outside the page never reach it. The controls
+  // that scrolled away are hidden so that they cannot take clicks or focus;
+  // a focused one hands the focus to the page, which keeps the keys working
+  // (alpha 2: it went to the window and Page Down stopped scrolling).
+  auto place = [this](Fl_Widget *c, int cx, int cy) {
+    c->resize(cx, cy, c->w(), c->h());
+    bool on_page = cy < y() + h() && cy + c->h() > y();
+    if (on_page) {
+      c->show();
+    } else if (c->visible()) {
+      bool had_focus = c->contains(Fl::focus());
+      c->hide();
+      if (had_focus) take_focus();
+    }
+  };
   for (Row *r : rows_) {
     int xr = x0 + col_w - S(18);
     // Narrow windows: controls keep their width, the text gets the rest.
     for (int i = int(r->controls.size()) - 1; i >= 0; --i) {
       Fl_Widget *c = r->controls[size_t(i)];
       int cw = c->w();
-      int cy = oy + r->y + (r->h - c->h()) / 2;
-      c->resize(xr - cw, cy, cw, c->h());
+      place(c, xr - cw, oy + r->y + (r->h - c->h()) / 2);
       xr -= cw + S(10);
-      if (cy >= vis_top && cy + c->h() <= vis_bottom) c->show();
-      else c->hide();
     }
   }
-  if (back_) {
-    if (back_->y() >= vis_top) back_->show();
-    else back_->hide();
+  if (back_) place(back_, back_->x(), back_->y());
+}
+
+// Smooth scrolling like the Start Menu: the wheel and the Page keys glide
+// from where the page is now; a wheel turned again while it glides goes on
+// from where it was heading. Low-resource mode jumps.
+void SettingsPage::scroll_to(int offset, bool smooth) {
+  offset = std::max(0, std::min(offset, max_scroll()));
+  if (!smooth || !smooth_ || !visible_r() || std::abs(offset - scroll_) <= 1) {
+    gliding_ = false;
+    Fl::remove_timeout(glide_cb, this);
+    if (offset != scroll_) {
+      scroll_ = offset;
+      relayout();
+      redraw();
+    }
+    return;
   }
-  (void)L;
+  glide_from_ = scroll_;
+  glide_to_ = offset;
+  glide_start_ = now() - 1.0 / 60;  // the first step is drawn at once
+  gliding_ = true;
+  Fl::remove_timeout(glide_cb, this);
+  Fl::add_timeout(0, glide_cb, this);
+}
+
+void SettingsPage::glide_cb(void *data) {
+  auto *self = static_cast<SettingsPage *>(data);
+  if (!self->gliding_) return;
+  double p = std::min(1.0, (now() - self->glide_start_) / kGlideTime);
+  int pos = int(std::lround(self->glide_from_ + (self->glide_to_ - self->glide_from_) * ease_out(p)));
+  if (p >= 1.0) {
+    pos = self->glide_to_;
+    self->gliding_ = false;
+  }
+  if (pos != self->scroll_) {
+    self->scroll_ = pos;
+    self->relayout();
+    self->redraw();
+  }
+  if (self->gliding_) Fl::repeat_timeout(1.0 / 60, glide_cb, data);
+}
+
+bool SettingsPage::thumb(int &ty, int &th) const {
+  if (content_h_ <= h()) return false;
+  int track = h() - S(8);
+  th = std::max(S(30), int(double(track) * h() / content_h_));
+  ty = y() + S(4) + int(double(track - th) * scroll_ / std::max(1, max_scroll()));
+  return true;
+}
+
+// Tab, Shift+Tab and the arrow keys go through every control in reading
+// order, also those scrolled out of the page, which is scrolled to show them.
+void SettingsPage::move_focus(int dir) {
+  std::vector<Fl_Widget *> order;
+  if (back_) order.push_back(back_);
+  for (Row *r : rows_)
+    for (Fl_Widget *c : r->controls)
+      if (c->active()) order.push_back(c);
+  if (order.empty()) return;
+  int cur = -1;
+  for (size_t i = 0; i < order.size(); ++i)
+    if (order[i]->contains(Fl::focus())) cur = int(i);
+  int n = int(order.size());
+  int next = cur < 0 ? (dir > 0 ? 0 : n - 1) : (cur + dir + n) % n;
+  Fl_Widget *target = order[size_t(next)];
+  ensure_visible(target);
+  target->take_focus();
+  redraw();
+}
+
+void SettingsPage::ensure_visible(Fl_Widget *control) {
+  int top = 0, bottom = 0;
+  if (control == back_) {
+    bottom = S(64);
+  } else {
+    bool found = false;
+    for (Row *r : rows_)
+      for (Fl_Widget *c : r->controls)
+        if (c == control) {
+          top = r->y;
+          bottom = r->y + r->h;
+          found = true;
+        }
+    if (!found) return;
+  }
+  int margin = S(16), target = scroll_;
+  if (top - margin < scroll_) target = std::max(0, top - margin - (control == back_ ? 0 : S(40)));
+  else if (bottom + margin > scroll_ + h()) target = bottom + margin - h();
+  if (control == back_) target = 0;
+  scroll_to(target, false);
 }
 
 void SettingsPage::draw() {
@@ -580,45 +691,112 @@ void SettingsPage::draw() {
       }
     }
   }
-  // Scroll thumb.
-  if (content_h_ > h()) {
-    Painter p(window()->w(), window()->h());
-    double track = h() - S(8);
-    double len = std::max<double>(S(30), track * h() / content_h_);
-    double pos = (track - len) * scroll_ / std::max(1, content_h_ - h());
-    p.fill_rounded(x() + w() - S(9), y() + S(4) + pos, S(5), len, Sd(2.5), L.dim.alpha(0.35));
-  }
   draw_children();
+  // Scroll bar: a thin thumb that widens, with its track, under the pointer.
+  int ty = 0, th = 0;
+  if (thumb(ty, th)) {
+    Painter p(window()->w(), window()->h());
+    bool wide = bar_hot_ || drag_ >= 0;
+    int bw = wide ? S(8) : S(5);
+    int bx = x() + w() - S(4) - bw;
+    if (wide) p.fill_rounded(bx - S(2), y() + S(2), bw + S(4), h() - S(4), (bw + S(4)) / 2.0, L.dim.alpha(0.12));
+    p.fill_rounded(bx, ty, bw, th, bw / 2.0, L.dim.alpha(drag_ >= 0 ? 0.7 : wide ? 0.55 : 0.35));
+  }
   fl_pop_clip();
 }
 
 int SettingsPage::handle(int event) {
-  if (event == FL_MOUSEWHEEL) {
-    int old = scroll_;
-    scroll_ = std::max(0, std::min(content_h_ - h(), scroll_ + Fl::event_dy() * S(56)));
-    if (scroll_ != old) {
-      relayout();
-      redraw();
+  switch (event) {
+    case FL_MOUSEWHEEL: {
+      if (!Fl::event_dy()) return 0;
+      int from = gliding_ ? glide_to_ : scroll_;
+      scroll_to(from + Fl::event_dy() * S(56), true);
+      return 1;
     }
-    return 1;
-  }
-  if (event == FL_KEYBOARD) {
-    int k = Fl::event_key(), old = scroll_;
-    if (k == FL_Page_Down) scroll_ += h() - S(60);
-    else if (k == FL_Page_Up) scroll_ -= h() - S(60);
-    else if (k == FL_Home && !Fl::focus()) scroll_ = 0;
-    else return Fl_Group::handle(event);
-    scroll_ = std::max(0, std::min(content_h_ - h(), scroll_));
-    if (scroll_ != old) {
-      relayout();
-      redraw();
+    case FL_PUSH: {
+      int ty = 0, th = 0;
+      if (Fl::event_button() == FL_LEFT_MOUSE && in_scrollbar(Fl::event_x()) && thumb(ty, th)) {
+        if (Fl::event_y() >= ty && Fl::event_y() < ty + th) {
+          drag_ = Fl::event_y() - ty;
+          redraw();
+        } else {
+          // The track pages towards the pointer, like other scroll bars.
+          int page = h() - S(60);
+          scroll_to((gliding_ ? glide_to_ : scroll_) + (Fl::event_y() < ty ? -page : page), true);
+        }
+        return 1;
+      }
+      int r = Fl_Group::handle(event);
+      if (!r && !Fl::focus()) take_focus();
+      return 1;
     }
-    return 1;
+    case FL_DRAG:
+      if (drag_ >= 0) {
+        int ty = 0, th = 0;
+        if (thumb(ty, th)) {
+          int track = h() - S(8) - th;
+          int pos = Fl::event_y() - drag_ - y() - S(4);
+          scroll_to(int(std::lround(double(pos) * max_scroll() / std::max(1, track))), false);
+        }
+        return 1;
+      }
+      break;
+    case FL_RELEASE:
+      if (drag_ >= 0) {
+        drag_ = -1;
+        bar_hot_ = Fl::event_inside(this) && in_scrollbar(Fl::event_x());
+        redraw();
+        return 1;
+      }
+      break;
+    case FL_ENTER:
+    case FL_MOVE: {
+      bool hot = in_scrollbar(Fl::event_x()) && content_h_ > h();
+      if (hot != bar_hot_) {
+        bar_hot_ = hot;
+        redraw();
+      }
+      Fl_Group::handle(event);
+      return 1;
+    }
+    case FL_LEAVE:
+      if (bar_hot_) {
+        bar_hot_ = false;
+        redraw();
+      }
+      break;
+    case FL_FOCUS:
+      return 1;
+    case FL_KEYBOARD: {
+      int k = Fl::event_key(), state = Fl::event_state() & (FL_SHIFT | FL_CTRL | FL_ALT | FL_META);
+      bool on_page = Fl::focus() == this;
+      int from = gliding_ ? glide_to_ : scroll_, page = h() - S(60);
+      if (k == FL_Tab && (state & ~FL_SHIFT) == 0) {
+        move_focus(state & FL_SHIFT ? -1 : 1);
+        return 1;
+      }
+      if (state) break;
+      switch (k) {
+        case FL_Page_Down: scroll_to(from + page, true); return 1;
+        case FL_Page_Up: scroll_to(from - page, true); return 1;
+        case FL_Home: scroll_to(0, true); return 1;
+        case FL_End: scroll_to(max_scroll(), true); return 1;
+        case FL_Down:
+        case FL_Up:
+          if (on_page) scroll_to(from + (k == FL_Down ? S(56) : -S(56)), true);
+          else move_focus(k == FL_Down ? 1 : -1);
+          return 1;
+        case ' ':
+          if (on_page) {
+            scroll_to(from + page, true);
+            return 1;
+          }
+          break;
+      }
+      break;
+    }
   }
-  if (event == FL_FOCUS) return 1;
-  int r = Fl_Group::handle(event);
-  if (event == FL_PUSH || event == FL_MOVE || event == FL_ENTER) return 1;
-  return r;
+  return Fl_Group::handle(event);
 }
 
 }  // namespace niny

@@ -10,6 +10,10 @@ if(XGETTEXT_EXECUTABLE)
   file(GLOB_RECURSE SDE_I18N_SOURCES RELATIVE ${CMAKE_SOURCE_DIR}
        ${CMAKE_SOURCE_DIR}/src/*.cpp ${CMAKE_SOURCE_DIR}/src/*.h)
   list(SORT SDE_I18N_SOURCES)
+  # SDE Welcome's texts are data files (X-SDE-Gettext-Domain=sde).
+  file(GLOB SDE_I18N_DATA RELATIVE ${CMAKE_SOURCE_DIR}
+       ${CMAKE_SOURCE_DIR}/data/welcome/welcome.conf ${CMAKE_SOURCE_DIR}/data/welcome/steps/*.desktop)
+  list(SORT SDE_I18N_DATA)
   # "make pot" refreshes po/sde.pot from the sources.
   add_custom_target(pot
     COMMAND ${XGETTEXT_EXECUTABLE} --from-code=UTF-8 --language=C++ --keyword=_ --keyword=N_
@@ -18,6 +22,9 @@ if(XGETTEXT_EXECUTABLE)
             --msgid-bugs-address=https://github.com/hugomonizdorego/SDE-Desktop/issues
             --add-comments=TRANSLATORS: --sort-by-file
             -o ${CMAKE_CURRENT_SOURCE_DIR}/sde.pot ${SDE_I18N_SOURCES}
+    COMMAND ${XGETTEXT_EXECUTABLE} --join-existing --from-code=UTF-8 --language=Desktop
+            --keyword=Name --keyword=Comment --keyword=Title --keyword=Subtitle --sort-by-file
+            -o ${CMAKE_CURRENT_SOURCE_DIR}/sde.pot ${SDE_I18N_DATA}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Updating po/sde.pot"
     VERBATIM)

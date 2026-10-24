@@ -24,6 +24,7 @@
 #include "photo.h"
 #include "theme.h"
 #include "util.h"
+#include "wm.h"
 
 using namespace sde;
 
@@ -159,11 +160,10 @@ int main(int argc, char **argv) {
   fl_register_images();
   Fl::lock();  // worker threads wake the main loop
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int w = std::min(S(1280), sw - S(40)), h = std::min(S(840), sh - S(40));
+  int wx = 0, wy = 0, w = S(1280), h = S(840);
+  fit_to_work_area(wx, wy, w, h);
   auto *window = new photo::PhotoWindow(std::max(w, S(480)), std::max(h, S(360)));
-  window->position(sx + (sw - window->w()) / 2, sy + (sh - window->h()) / 2);
+  window->position(wx, wy);
   window->show();
   XClassHint hint{const_cast<char *>("sde-view"), const_cast<char *>("Sdeview")};
   XSetClassHint(fl_display, fl_xid(window), &hint);

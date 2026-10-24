@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Software
+Comment=Find and install applications
+Icon=synaptic
+X-SDE-Fallback-Icons=system-software-install;applications-other
+Exec=synaptic-pkexec
+NoDisplay=true
+X-SDE-Gettext-Domain=sde

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Software Updater
+Comment=Install security fixes and updates
+Icon=sde-software-updater
+X-SDE-Fallback-Icons=system-software-update;software-update-available;update-manager
+Exec=sde-update
+X-SDE-Gettext-Domain=sde

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Control Center
+Comment=Every setting in one place
+Icon=sde-control-center
+X-SDE-Fallback-Icons=preferences-system;preferences-desktop
+Exec=sde-settings
+X-SDE-Gettext-Domain=sde
