@@ -83,6 +83,12 @@ jobs:
         if: matrix.image == 'debian:testing'
         run: |
           apt-get install -y --no-install-recommends python3 xvfb xdotool imagemagick dbus-x11 libnotify-bin libglib2.0-bin dconf-gsettings-backend adwaita-icon-theme
+          # The About windows of the installed programs (tests/test_about_ui.py
+          # is skipped in the package build, which has no display).
+          dbus-run-session -- python3 tests/test_about_ui.py niny=/usr/bin/niny \
+            sysmon=/usr/bin/sde-system-monitor run=/usr/bin/sde-run display=/usr/bin/sde-display-settings \
+            calculator=/usr/bin/calculator welcome=/usr/bin/sde-welcome reports=/usr/bin/sde-system-reports \
+            licenses=dist/test-tools/sde-ui-kit-demo
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke

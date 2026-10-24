@@ -210,6 +210,7 @@ with tempfile.TemporaryDirectory(prefix='sde-about-ui-') as temp:
                 failures.append('%s: unknown program' % name)
                 continue
             title, about, keys = CASES[name]
+            failed_before = len(failures)
             log = open(Path(temp) / ('%s.log' % name), 'w+')
             proc = sp.Popen([binary], env=env, stdout=log, stderr=sp.STDOUT)
             try:
@@ -258,6 +259,11 @@ with tempfile.TemporaryDirectory(prefix='sde-about-ui-') as temp:
                         failures.append('niny: exited (%s) using find bar/palette/settings' % proc.returncode)
             finally:
                 stop(proc)
+                if len(failures) > failed_before:
+                    # What the program wrote, so that a build log shows why.
+                    log.seek(0)
+                    for line in log.read().splitlines()[-20:]:
+                        print('%s output: %s' % (name, line))
                 failures += log_problems(name, log)
 
         # Control Center > About > Open-source licenses (the same dialog).

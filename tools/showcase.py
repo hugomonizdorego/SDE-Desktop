@@ -1746,11 +1746,21 @@ ABOUT_SECTIONS = [('about', 'about-app', 'About Calculator: the About section (S
 @scene('About', [(img, cap) for _, img, cap in ABOUT_SECTIONS] +
        [('about-app-license-text', 'About Calculator: the full license text')], needs=['calculator'])
 def about_app(s):
-    s.app(['calculator'], '^Calculator$')
+    calc = s.app(['calculator'], '^Calculator$')
     qa = s.home / 'qa/about.log'
     s.key('F1')
     a = s.find('^About Calculator$', 5)
     if not a:
+        # Once more with the window activated again; then say what is on the
+        # screen and what Calculator wrote, so a build log shows the cause.
+        s.activate(calc)
+        s.key('F1')
+        a = s.find('^About Calculator$', 5)
+    if not a:
+        names = [s.title(w) for w in s.visible_all()]
+        log = s.logs / 'calculator.log'
+        tail = log.read_text(errors='replace').splitlines()[-15:] if log.exists() else []
+        warn(f'{s.set.name}: about-app: windows {names}; calculator.log: ' + ' | '.join(tail))
         raise SkipShot('About Calculator did not open (F1)')
     s.fit(a)
     for i, (section, img, _) in enumerate(ABOUT_SECTIONS, 1):
