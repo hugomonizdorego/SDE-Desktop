@@ -38,7 +38,11 @@ namespace lock {
 struct UiOptions {
   std::string user;          // login name
   std::string display_name;  // full name, or the login name
-  std::string avatar;        // image path, or empty
+  std::string avatar;        // image path, or empty (the initials are shown)
+  // Look the real name and the picture up (AccountsService, see
+  // src/common/avatar.h) once the screen is locked, and again when they
+  // change (_SDE_AVATAR_SERIAL). default_options() turns it on.
+  bool lookup_account = false;
   bool switch_user = false;  // offer "Switch User" (LightDM's dm-tool)
   int blank_after = 30;      // seconds without input before the monitors turn off (0 = never)
   int report_fd = -1;
@@ -49,7 +53,8 @@ struct UiOptions {
   std::function<AuthResult(const char *password)> authenticate;
 };
 
-// Fills user, display_name, avatar and switch_user for the current user.
+// Fills user, display_name, avatar and switch_user for the current user
+// (quickly: the GECOS name and ~/.face; AccountsService is asked later).
 void default_options(UiOptions &o);
 
 // Returns 0 after a successful unlock, 3 when the windows could not be mapped.

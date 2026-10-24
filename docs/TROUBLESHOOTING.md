@@ -209,7 +209,7 @@ through `/etc/resolv.conf`. The report now says so when DNS fails.
    - the network gives no DNS server, or the server does not answer: run
      `sudo debion-network-check --dns-fallback` (asked interactively on a
      terminal), which sets `ipv4.dns "1.1.1.1 9.9.9.9"` on the active profile,
-     reapplies and verifies; `--dns-fallback off` undoes it. Settings >
+     reapplies and verifies; `--dns-fallback off` undoes it. Control Center >
      Network > Troubleshooting has a **Use Public DNS** button for it;
    - even public servers do not answer: the network blocks DNS (port 53),
      ask its administrator (a proxy may be required).
@@ -319,7 +319,7 @@ In Firefox: `about:networking#dns` (resolution and TRR), `about:preferences`
 
 #### Fixing it
 
-* **Proxy (1):** Settings → Network shows the verdict of
+* **Proxy (1):** Control Center → Network shows the verdict of
   `debion-network-check --quick --json` in *Troubleshooting*; when the network
   publishes a WPAD file, or APT has a proxy, "Use Proxy" applies it. Otherwise
   choose *Proxy*: Automatic (detect), Automatic configuration URL or Manual
@@ -341,7 +341,7 @@ In Firefox: `about:networking#dns` (resolution and TRR), `about:preferences`
 
 SDE itself does not change networking: `startsde` and `sde-session` export no
 proxy variables and set no GSettings proxy (since alpha 50 only the proxy the
-user chooses in Settings → Network), SDE starts no `nm-applet` or other
+user chooses in Control Center → Network), SDE starts no `nm-applet` or other
 network daemon (it only hides duplicate tray icons), and it ships no polkit
 rules for NetworkManager. The panel reads and controls NetworkManager through
 `nmcli`. What it shows as "connected" is NetworkManager's *device* state
@@ -428,7 +428,7 @@ copying the backup from `/var/backups/debion-network/` back.
 
 ### Proxy settings (alpha 50)
 
-Settings → Network → Proxy writes GNOME's `org.gnome.system.proxy`
+Control Center → Network → Proxy (`sde-settings --page proxy`) writes GNOME's `org.gnome.system.proxy`
 (mode `none`/`auto`/`manual`, `autoconfig-url`, `http`/`https` host and port,
 `ignore-hosts`), which Firefox, GTK/GIO and libproxy read immediately, and
 `~/.config/environment.d/90-sde-proxy.conf` (`http_proxy`, `https_proxy`,
@@ -518,7 +518,7 @@ synchronizes at once, then shows `Synced · <zone>` or the error. Without
 internet the button is disabled. **Automatic time zone** (`[clock]
 auto_timezone=true` in `sde.conf`) does the same when a connection reaches the
 internet, at most once an hour and never with a password prompt (when polkit
-would ask, the row says to press Sync). The same controls are on Settings >
+would ask, the row says to press Sync). The same controls are on Control Center >
 Power & Updates > Date and time. By hand:
 
 ```sh

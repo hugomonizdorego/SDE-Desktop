@@ -214,3 +214,14 @@ endif()
 add_executable(sde-default-apps-tests test_default_apps.cpp)
 target_link_libraries(sde-default-apps-tests PRIVATE sde-settings-model)
 add_test(NAME sde-default-apps COMMAND sde-default-apps-tests)
+
+# The user's picture (src/common/avatar.h): decoding, centre crop, ~/.face,
+# link and size checks with an in-memory AccountsService; then the D-Bus
+# calls against a fake org.freedesktop.Accounts (needs dbus-run-session).
+add_executable(sde-avatar-tests test_avatar.cpp)
+target_link_libraries(sde-avatar-tests PRIVATE sde-common)
+add_test(NAME sde-avatar COMMAND sde-avatar-tests)
+if(SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-avatar-accountsservice COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-avatar-tests> --dbus)
+  set_tests_properties(sde-avatar-accountsservice PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+endif()

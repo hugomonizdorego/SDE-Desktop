@@ -213,8 +213,8 @@ void build_lock_page(Page *page) {
                      apply_change();
                    },
                    _("Shown with LightDM, which keeps both sessions running."));
-  page->note(_("The lock screen shows your wallpaper blurred, the clock, your picture (~/.face) "
-               "and your name. Lock it now with Ctrl+Alt+L."));
+  page->note(_("The lock screen shows your wallpaper blurred, the clock, your picture and your "
+               "name (Users & Avatar). Lock it now with Ctrl+Alt+L."));
   page->row(_("Lock the screen now"), S(112), S(34), [](int x, int y, int w, int h) {
     auto *b = new FlatButton(x, y, w, h, _("Lock"), true);
     b->callback([](Fl_Widget *, void *) { spawn_detached({"sde-lock", "--lock"}); });

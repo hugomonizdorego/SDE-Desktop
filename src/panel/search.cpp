@@ -51,6 +51,8 @@ bool is_extra(const DesktopEntry *e) { return e && starts_with(e->id, kExtraPref
 bool is_file(const DesktopEntry *e) { return e && starts_with(e->id, kFilePrefix); }
 bool is_app(const DesktopEntry *e) { return e && !is_extra(e) && !is_file(e); }
 
+// Pages of the Control Center (sde-settings) and session actions; the
+// Control Center itself is an application (sde-settings.desktop).
 std::vector<DesktopEntry> extras() {
   std::string settings = _("Control Center");
   return {
@@ -89,6 +91,12 @@ std::vector<DesktopEntry> extras() {
              "file types", "open with", "mime", "aplikasi default"}),
       extra("about", _("About This Computer"), settings, "dialog-information",
             "sde-settings --page about", {"about", "version", "system", "info"}),
+      extra("users", _("Users & Avatar"), settings, "system-users", "sde-settings --page users",
+            {"user", "account", "avatar", "picture", "photo", "face", "real name", "pengguna"}),
+      extra("start-menu", _("Start Menu"), settings, "start-here", "sde-settings --page start-menu",
+            {"start", "menu", "recently added", "most used"}),
+      extra("date-time", _("Date & Time"), settings, "preferences-system-time",
+            "sde-settings --page date-time", {"date", "time", "time zone", "timezone", "waktu"}),
       extra("lock", _("Lock Screen"), _("Session"), "system-lock-screen", "sde-lock",
             {"lock", "kunci"}),
       extra("logout", _("Log Out, Restart or Shut Down"), _("Session"), "system-shutdown",

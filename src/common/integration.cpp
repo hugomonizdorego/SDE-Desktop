@@ -40,9 +40,12 @@ std::string rgba(const Color &c, double alpha) {
   return buf;
 }
 
-const char *kCssBegin = "/* SDE theme: managed by SDE Settings - begin */";
-const char *kCssEnd = "/* SDE theme: managed by SDE Settings - end */";
-// Blocks written by alpha10 used this name; they are replaced as well.
+const char *kCssBegin = "/* SDE theme: managed by the Control Center - begin */";
+const char *kCssEnd = "/* SDE theme: managed by the Control Center - end */";
+// Blocks written before 0.2 (SDE Settings) and by alpha10 (SDE Aero) are
+// replaced as well.
+const char *kSettingsBegin = "/* SDE theme: managed by SDE Settings - begin */";
+const char *kSettingsEnd = "/* SDE theme: managed by SDE Settings - end */";
 const char *kOldBegin = "/* SDE Aero: managed by SDE Settings - begin */";
 const char *kOldEnd = "/* SDE Aero: managed by SDE Settings - end */";
 
@@ -51,7 +54,8 @@ void write_user_css(const std::string &path, const std::string &block) {
   std::string text;
   bool exists = read_file(path, text);
   std::string rest = text;
-  for (auto markers : {std::make_pair(kCssBegin, kCssEnd), std::make_pair(kOldBegin, kOldEnd)}) {
+  for (auto markers : {std::make_pair(kCssBegin, kCssEnd), std::make_pair(kSettingsBegin, kSettingsEnd),
+                       std::make_pair(kOldBegin, kOldEnd)}) {
     size_t a = rest.find(markers.first), b = rest.find(markers.second);
     if (a != std::string::npos && b != std::string::npos && b > a) {
       size_t end = b + std::string(markers.second).size();
@@ -128,7 +132,7 @@ void sync_gtk_settings(const Config &cfg) {
     if (cfg.get_bool("suite", "libadwaita", true) && file_exists(lib))
       block4 = "@import url(\"file://" + lib + "\");\n";
     block4 += defs;
-    // Transparency (Settings > Appearance): menus and popovers get a
+    // Transparency (Control Center > Appearance): menus and popovers get a
     // translucent background while their text stays opaque; the compositor
     // blurs what is behind. GTK marks windows .csd only while a compositor
     // runs, so without one everything stays opaque.
@@ -436,7 +440,7 @@ std::string compositor_report(const Config &cfg) {
                                   ? (!vm.empty() ? " (auto: virtual machine)"
                                                  : drm ? " (auto: graphics device found)"
                                                        : " (auto: no DRM graphics device)")
-                                  : " (chosen in Settings)") + "\n";
+                                  : " (chosen in the Control Center)") + "\n";
   if (virt.empty() || virt == "none") virt = vm;
   r += "Virtual machine: " + (virt.empty() || virt == "none" ? std::string("no") : virt) + "\n";
   r += "Graphics: " + detect_graphics_class() + ", effects: " + compositor_effects(cfg, false) +

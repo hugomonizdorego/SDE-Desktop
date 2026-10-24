@@ -7,6 +7,8 @@ add_library(sde-common STATIC
   common/crash.cpp
   common/integration.cpp
   common/about.cpp
+  common/avatar.cpp
+  common/avatar_view.cpp
   common/legal.cpp
   common/menu.cpp
   common/dbus.cpp
@@ -36,6 +38,10 @@ target_link_libraries(sde-common PUBLIC
   ${FLTK_LDFLAGS} PkgConfig::CAIRO PkgConfig::RSVG PkgConfig::DBUS ${X11_LIBRARIES}
   sde-rust-config PkgConfig::XRANDR PkgConfig::XINPUT)
 add_dependencies(sde-common sde-rust-build)
+# The user's picture (common/avatar.cpp) decodes JPEG photos with libjpeg,
+# which SDE-FLTK needs anyway.
+find_package(JPEG REQUIRED)
+target_link_libraries(sde-common PUBLIC JPEG::JPEG)
 if(TARGET sde-fltk-static)
   add_dependencies(sde-common sde-fltk-update)
   target_link_libraries(sde-common PUBLIC sde-fltk-static)
@@ -75,7 +81,9 @@ add_executable(sde-panel
   panel/touchpad_monitor.cpp
   panel/preview.cpp
   panel/panel_menus.cpp
-  panel/notify_center.cpp)
+  panel/notify_center.cpp
+  # The Start menu's account button and popup, the Action Center's user.
+  panel/account.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
@@ -104,6 +112,9 @@ add_executable(sde-settings
   settings/clock.cpp
   settings/default_apps_page.cpp
   settings/about_page.cpp
+  # The overview hub and Users & Avatar (the Control Center).
+  settings/hub.cpp
+  settings/users.cpp
   # Date and time: the panel clock's "Sync time zone" (and its JSON reader).
   panel/timezone.cpp
   panel/weather.cpp
@@ -398,10 +409,12 @@ install(TARGETS sde-lock RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # PAM service of the locker (Debian's common-auth/common-account stacks).
 install(FILES ${PROJECT_SOURCE_DIR}/data/pam/sde-lock DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/pam.d)
 # Compatibility commands of the former SDE Power Manager / SDE Screen Lock
-# forks: they open the Settings pages or call sde-lock.
+# forks: they open the Control Center's pages or call sde-lock. And
+# sde-control-center: the Control Center (sde-settings) under its new name.
 install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
                  ${PROJECT_SOURCE_DIR}/data/compat/sde-screensaver-preferences
                  ${PROJECT_SOURCE_DIR}/data/compat/sde-screensaver-command
+                 ${PROJECT_SOURCE_DIR}/data/compat/sde-control-center
         DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).

@@ -17,9 +17,11 @@
 #include <cstdlib>
 #include <ctime>
 
+#include "account.h"
 #include "alarm_popup.h"
 #include "alarms.h"
 #include "app_catalog.h"
+#include "avatar.h"
 #include "clockface.h"
 #include "controls.h"
 #include "glyphs.h"
@@ -1965,6 +1967,9 @@ bool Panel::handle_x(const XEvent &e) {
         open_alarms(true);
       else if (cmd == "close-popups" && open_popup_)
         open_popup_->close();  // the screen locks: give the keyboard grab back
+    } else if (a == x11::atom(avatar::kSerialAtom)) {
+      // The account picture or name changed (Control Center, Start menu).
+      panel_account::reload();
     } else if (a == x11::atom("_SDE_CONFIG_SERIAL")) {
       bool was_autohide = autohide_;
       load_config();
