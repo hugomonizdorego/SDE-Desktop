@@ -199,7 +199,8 @@ void battery(Painter &p, double x, double y, double size, double level, BatteryM
   if (mark == BatteryMark::ALERT) w = 0;
   if (w > 0.4) {
     g.rrect(ix, iy, std::max(1.2, w), ih, 1.2);
-    g.fill(strong);
+    // Under a plug the level is lighter, so that the plug stands out at 18 px.
+    g.fill(mark == BatteryMark::PLUG ? strong.alpha(strong.a * 0.45) : strong);
   }
   if (sweep >= 0 && w < iw - 0.3) {
     // Charging: a translucent band grows from the level to the end (ease
@@ -246,17 +247,17 @@ void battery(Painter &p, double x, double y, double size, double level, BatteryM
       cairo_close_path(g.cr);
     };
     plug();
-    g.stroke(edge, 3.4);
+    g.stroke(edge, 2.6);
     plug();
     g.stroke(c, 1.5);
     plug();
     g.fill(c);
   } else if (mark == BatteryMark::ALERT) {
-    // "!" in the empty body.
-    g.move(11.5, 9.4);
-    g.to(11.5, 12.6);
-    g.stroke(strong, 2.0);
-    g.dot(11.5, 14.6, 1.1, strong);
+    // A bold "!" in the empty body.
+    g.move(11.5, 8.9);
+    g.to(11.5, 12.4);
+    g.stroke(strong, 2.6);
+    g.dot(11.5, 14.9, 1.45, strong);
   }
 }
 

@@ -1505,8 +1505,8 @@ def panel_battery(s):
         pos = s.panel_button('status:power')
         if not pos:
             raise SkipShot('no battery icon on the panel')
-        items = [k[5:] for k in s.right_click_at(*pos) if k.startswith('item:')]
-        active = [i for i in items if not i.startswith('Battery ')]
+        # FLTK's Down skips inactive items (the battery's state line).
+        active = [k[5:] for k, v in s.right_click_at(*pos).items() if k.startswith('item:') and v[4]]
         if 'Show on the Panel' not in active:
             raise SkipShot('no "Show on the Panel" in the battery menu')
         # Down to the submenu and open it (its first entry selected).

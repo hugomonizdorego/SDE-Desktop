@@ -1151,7 +1151,7 @@ def clock_a2_checks():
     items=menu_items();sub=menu_items(sub=True)
     assert ('Clock Style/Analog',True,True) in sub and ('Show Seconds',True,True) in items,(items,sub)
     assert ('Blink the Colon',False,False) in items,('the analog clock offers a blinking colon',items)
-    assert 'Clock & Weather Settings...' in labels(items),items
+    assert 'Clock & Weather Settings...' in [l.replace('&&','&') for l in labels(items)],items  # FLTK escapes '&'
     shot('a2-clock-action-center-menu');pick(items,'Show Seconds')
     waitfor(lambda:'clock_seconds=false' in conf(),'Show Seconds from the Action Center clock not saved')
     waitfor(lambda:visible('^Action Center$') and '@clock-seconds' not in layout('Action Center'),'the Action Center clock still shows seconds')
