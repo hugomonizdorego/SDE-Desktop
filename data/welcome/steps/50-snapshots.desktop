@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Snapshots
+Comment=Restore the system if an update breaks it
+Icon=timeshift
+X-SDE-Fallback-Icons=document-revert;backup;drive-harddisk
+Exec=timeshift-launcher
+X-SDE-Welcome-Fallback=51-snapshots-gtk.desktop
+X-SDE-Gettext-Domain=sde

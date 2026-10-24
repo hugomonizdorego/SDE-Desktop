@@ -6,9 +6,11 @@
 // keeps the operating system and the desktop apart: "Welcome to <NAME>"
 // with the operating system's logo (both from os-release), and below it the
 // desktop, the Selviana Desktop Environment with the SDE logo and version.
-// Since 0.1.0~alpha51 one calm window: a small header, six first steps
-// (Appearance, Software Updater, Drivers, Snapshots or System Reports, Help,
-// Donate) and "Show this dialog at startup" with Close.
+// Since 0.1.0~alpha51 one calm window: a small header, the first steps and
+// "Show this dialog at startup" with Close. Since 0.2 Alpha 2 the texts,
+// icons and commands come from /usr/share/SDE-Welcome (welcome.conf and
+// steps/*.desktop), which distributions override in /etc/SDE-Welcome
+// (welcome::load_content, welcome::load_steps; docs/WELCOME.md).
 //
 // /etc/xdg/autostart/sde-welcome.desktop runs "sde-welcome --autostart" at
 // every login. It opens the window at the first login of each user after
@@ -173,41 +175,23 @@ struct Step {
   std::function<void()> run;
 };
 
+// The tiles of steps/*.desktop.
 std::vector<Step> first_steps() {
   std::vector<Step> s;
-  s.push_back({{"preferences-desktop-theme", "preferences-desktop-appearance", "preferences-desktop"},
-               _("Appearance"),
-               _("Theme, accent and wallpaper"),
-               [] { shell::launch({"sde-settings", "--page", "appearance"}); }});
-  s.push_back({{"system-software-update", "software-update-available", "update-manager"},
-               _("Software Updater"),
-               _("Install security fixes and updates"),
-               [] { shell::launch({"sde-update"}); }});
-  s.push_back({{"jockey", "preferences-system", "application-x-firmware", "computer"},
-               _("Drivers"),
-               _("Additional and proprietary drivers"),
-               [] { shell::launch({"sde-drivers"}); }});
-  welcome::Tool ts = welcome::snapshot_tool();
-  if (!ts.argv.empty())
-    s.push_back({{"timeshift", "document-revert", "backup", "drive-harddisk"},
-                 _("Snapshots"),
-                 _("Restore the system if an update breaks it"),
-                 [ts] { shell::launch(ts.argv); }});
-  else
-    s.push_back({{"apport", "utilities-system-monitor", "dialog-information"},
-                 _("System Reports"),
-                 _("Crashes and system details"),
-                 [] { shell::launch({"sde-system-reports"}); }});
-  s.push_back({{"help-browser", "system-help", "help-contents"},
-               _("Help"),
-               _("Guides and troubleshooting"),
-               [] { shell::open_url(welcome::kDocsUrl); }});
-  s.push_back({{"emblem-favorite", "starred", "face-smile"},
-               _("Donate"),
-               _("Support the development of SDE"),
-               [] { shell::open_url(welcome::kDonateUrl); }});
+  for (auto &step : welcome::load_steps()) {
+    auto argv = step.argv;
+    auto url = step.url;
+    std::vector<std::string> icons = step.icons;
+    icons.push_back("application-x-executable");
+    s.push_back({icons, step.name, step.comment, [argv, url] {
+                   if (!argv.empty()) shell::launch(argv);
+                   else shell::open_url(url);
+                 }});
+  }
   return s;
 }
+
+const welcome::Content &content();
 
 int pad() { return S(28); }
 int header_h() { return S(118); }
@@ -218,8 +202,14 @@ const std::string &os_name() {
   static const std::string name = legal::os_name();
   return name;
 }
+const welcome::Content &content() {
+  static const welcome::Content c = welcome::load_content(os_name());
+  return c;
+}
+// welcome.conf Logo=, or the operating system's logo from os-release.
 std::vector<std::string> os_logo_icons() {
   std::vector<std::string> names;
+  if (!content().logo.empty()) names.push_back(content().logo);
   std::string logo = os_release("LOGO");
   if (!logo.empty()) names.push_back(logo);
   for (const char *n : {"distributor-logo", "start-here", "computer"}) names.push_back(n);
@@ -254,7 +244,7 @@ class WelcomeWindow : public BufferedWindow {
   void layout() {
     int top = header_h();
     int gap = S(12);
-    int cols = w() < S(520) ? 1 : 2;
+    int cols = w() < S(520) ? 1 : std::max(1, std::min(content().columns, w() / S(250)));
     int rows = int((tiles_.size() + size_t(cols) - 1) / size_t(cols));
     int gw = w() - 2 * pad();
     int gh = h() - top - footer_h() - S(14);
@@ -286,7 +276,7 @@ class WelcomeWindow : public BufferedWindow {
         sde_mark_ = legal::load_mark(msz, t.dark);
         mark_dark_ = t.dark;
       }
-      if (sde_mark_)
+      if (sde_mark_ && content().desktop_line)
         p.surface(sde_mark_, tx, desk_y + (S(24) - cairo_image_surface_get_height(sde_mark_)) / 2);
       if (g_live) {  // in the footer, where the check box would be
         int ly = h() - footer_h() + (footer_h() - S(32)) / 2;
@@ -296,19 +286,26 @@ class WelcomeWindow : public BufferedWindow {
       p.fill_rect(pad(), h() - footer_h(), w() - 2 * pad(), std::max(1, S(1)), t.border);
     }
     text_font(t.font_size + 7, true);
-    std::string title = os_name().empty() ? std::string(_("Welcome")) : format(_("Welcome to %s"), os_name().c_str());
-    draw_text(title, tx, S(24), w() - tx - pad(), S(30), t.text);
+    draw_text(content().title, tx, S(24), w() - tx - pad(), S(30), t.text);
     text_font(t.font_size);
-    draw_text(_("A few first steps to make this computer yours."), tx, S(54), w() - tx - pad(), S(22), t.text_dim);
-    // "Desktop: Selviana Desktop Environment 0.2 Alpha 1"
-    int dx = tx + (sde_mark_ ? msz + S(8) : 0);
-    text_font(t.font_size - 1);
-    std::string label = std::string(_("Desktop:")) + " ";
-    draw_text(label, dx, desk_y, w() - dx - pad(), S(24), t.text_dim);
-    int lw = text_width(label);
-    text_font(t.font_size - 1, true);
-    draw_text(format("%s %s", legal::kProjectName, SDE_VERSION_LABEL), dx + lw, desk_y, w() - dx - lw - pad(), S(24),
-              t.text);
+    draw_text(content().subtitle, tx, S(54), w() - tx - pad(), S(22), t.text_dim);
+    // "Desktop: Selviana Desktop Environment 0.2 Alpha 2"
+    if (content().desktop_line) {
+      int dx = tx + (sde_mark_ ? msz + S(8) : 0);
+      text_font(t.font_size - 1);
+      std::string label = std::string(_("Desktop:")) + " ";
+      draw_text(label, dx, desk_y, w() - dx - pad(), S(24), t.text_dim);
+      int lw = text_width(label);
+      text_font(t.font_size - 1, true);
+      draw_text(format("%s %s", legal::kProjectName, SDE_VERSION_LABEL), dx + lw, desk_y, w() - dx - lw - pad(),
+                S(24), t.text);
+    }
+    if (steps_.empty()) {
+      text_font(t.font_size);
+      std::string note = format(_("No first steps are installed (%s)."),
+                                (std::string(SDE_WELCOME_DATADIR) + "/steps").c_str());
+      draw_text(note, pad(), header_h(), w() - 2 * pad(), S(40), t.text_dim);
+    }
     if (g_live) {
       text_font(t.font_size - 1);
       std::string note = os_name().empty()
@@ -354,8 +351,8 @@ AppInfo app_info() {
   info.version = SDE_VERSION;
   info.icon = "sde-welcome";
   info.icon_fallbacks = {"sde-logo"};
-  info.description = _("First steps after installation: appearance, updates, drivers, snapshots and "
-                       "help.");
+  info.description = _("First steps after installation: appearance, software, updates, drivers, snapshots "
+                       "and help.");
   info.credits = {_("Welcome screen concept after Linux Mint's mintwelcome (no code or artwork "
                     "used)"),
                   toolkit_credit()};
@@ -400,7 +397,7 @@ int main(int argc, char **argv) {
   }
   shell::init();
   if (!g_live) welcome::mark_welcome_done();
-  int X = 0, Y = 0, W = S(720), H = S(480);
+  int X = 0, Y = 0, W = S(content().width), H = S(content().height);
   fit_to_work_area(X, Y, W, H);
   auto *win = new WelcomeWindow(W, H, _("Welcome"));
   win->about = app_info();

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Software
+Comment=Find and install applications
+Icon=org.gnome.Software
+X-SDE-Fallback-Icons=system-software-install;applications-other
+Exec=gnome-software
+NoDisplay=true
+X-SDE-Welcome-Fallback=22-software-discover.desktop
+X-SDE-Gettext-Domain=sde
