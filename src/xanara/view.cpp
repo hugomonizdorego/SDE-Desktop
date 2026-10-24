@@ -1762,7 +1762,7 @@ int DocView::handle(int event) {
         else if (dy < 0) prev_page();
         return 1;
       }
-      if (Fl::event_state() & FL_SHIFT) std::swap(dx, dy);
+      // Shift+wheel arrives as a horizontal wheel (event_dx) since FLTK 1.4.
       scroll_by(dx * S(64), dy * S(64));
       return 1;
     }

@@ -199,3 +199,30 @@ drawing (`menu_*`), `menubar_draw`, `choice_draw`, `scrollbar_draw`,
 one; with none installed SDE-FLTK draws exactly like FLTK 1.4.5. No FLTK
 structure changed size. `sde-common` implements the hooks in
 `src/common/menu.cpp`.
+
+## SDE-FLTK 1.4 for SDE code
+
+Since 0.2 Alpha 2 SDE-FLTK follows FLTK 1.4.5 (1.4.5-sde1; the changes are
+listed in `sde-fltk/CHANGES.SDE-FLTK`). What SDE code needs to know:
+
+* **Pixels, as before.** FLTK 1.4's own GUI scaling is off in SDE-FLTK: every
+  screen keeps the scale factor 1, FLTK ignores `Xft.dpi` and
+  `FLTK_SCALING_FACTOR`, and Ctrl+/-/0 do not zoom windows. Sizes come from
+  `sde::S()` and the SDE scale setting only.
+* **Drawing** uses Xlib with Xft fonts, as with 1.3: `fl_window` is the X
+  drawable being drawn, the window or the pixmap of an offscreen
+  (`fl_begin_offscreen()`, now an `Fl_Image_Surface` inside FLTK), which
+  `sde::Painter` wraps in a cairo surface. `Fl_Region` is opaque in 1.4;
+  with Xlib drawing it is an X `Region` (`static_cast<Region>(r)`).
+  `Fl_Double_Window` draws into a plain pixmap (1.4 has no Xdbe).
+* **Internals**: with `FL_INTERNALS`, `FL/platform.H` (included by
+  `FL/x.H`) declares `Fl_X`; `Fl_X::i(win)->region`, `Fl_X::first` and
+  SDE-FLTK's `Fl_X::before_map` work as before.
+* **Renamed API**: `Fl_Input_::insert_position()` replaces `position()`,
+  `Fl_Browser_::vposition()` replaces `Fl_Browser_::position()` (the old
+  names are deprecated and warn).
+* **Wheel**: Shift+wheel arrives as a horizontal wheel (`Fl::event_dx()`),
+  and the back/forward mouse buttons (X buttons 8 and 9) as
+  `FL_PUSH`/`FL_RELEASE` of buttons 4 and 5.
+* **Dialogs**: the `fl_ask.H` dialogs are built by FLTK's `Fl_Message`;
+  `Fl_SDE_Style::dialog()` still restyles them before they are shown.

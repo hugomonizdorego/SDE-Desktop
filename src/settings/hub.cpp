@@ -14,6 +14,7 @@
 // the overview never scrolls sideways (1024 x 600 at 150 % has two).
 #include <FL/Fl.H>
 #include <FL/Fl_Input.H>
+#include <FL/Fl_Window.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
