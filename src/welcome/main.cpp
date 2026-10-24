@@ -38,6 +38,7 @@
 #include "theme.h"
 #include "util.h"
 #include "widgets.h"
+#include "wm.h"
 
 using namespace sde;
 
@@ -399,13 +400,12 @@ int main(int argc, char **argv) {
   }
   shell::init();
   if (!g_live) welcome::mark_welcome_done();
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int W = std::min(S(720), sw - S(16)), H = std::min(S(480), sh - S(40));
+  int X = 0, Y = 0, W = S(720), H = S(480);
+  fit_to_work_area(X, Y, W, H);
   auto *win = new WelcomeWindow(W, H, _("Welcome"));
   win->about = app_info();
   win->xclass("sde-welcome");
-  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->position(X, Y);
   win->size_range(std::min(W, S(420)), std::min(H, S(360)));
   win->resizable(win);
   win->show();

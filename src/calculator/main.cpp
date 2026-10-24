@@ -25,6 +25,7 @@
 #include "theme.h"
 #include "ui.h"
 #include "x11.h"
+#include "wm.h"
 
 #ifndef SDE_APP_VERSION
 #define SDE_APP_VERSION "2.0.0"
@@ -193,16 +194,16 @@ int main(int argc, char **argv) {
   fl_open_display();
   sde::Theme::from_config(config).apply_to_fltk();
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
   double scale = sde::ui_scale() > 0 ? sde::ui_scale() : 1;
   int w = settings.width > 0 ? int(settings.width * scale) : sde::S(360) + (settings.history_visible ? sde::S(270) : 0);
   int h = settings.height > 0 ? int(settings.height * scale)
                               : (settings.mode == Mode::Programmer ? sde::S(660) : sde::S(600));
-  w = std::max(sde::S(300), std::min(w, sw - sde::S(20)));
-  h = std::max(sde::S(470), std::min(h, sh - sde::S(20)));
+  int wx = 0, wy = 0;
+  sde::fit_to_work_area(wx, wy, w, h);
+  w = std::max(sde::S(300), w);
+  h = std::max(sde::S(470), h);
   auto *window = new CalcWindow(w, h, settings);
-  window->position(sx + (sw - w) / 2, sy + (sh - h) / 2);
+  window->position(wx, wy);
   Fl::add_handler(CalcWindow::x_event_handler);
   window->show(1, argv);
   XClassHint hint{const_cast<char *>("calculator"), const_cast<char *>("org.debion.Calculator")};

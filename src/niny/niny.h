@@ -11,6 +11,7 @@
 #include <FL/Fl_Widget.H>
 #include <sys/stat.h>
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
@@ -364,9 +365,25 @@ class SettingsPage : public Fl_Group {
   struct Row;
   void build();
   void relayout();
+  // Scrolling (alpha 2): the wheel and the Page keys glide; the scroll bar
+  // can be dragged and its track clicked; Tab and the arrow keys move between
+  // the controls and scroll the focused one into view.
+  int max_scroll() const { return std::max(0, content_h_ - h()); }
+  void scroll_to(int offset, bool smooth);
+  static void glide_cb(void *data);
+  bool thumb(int &ty, int &th) const;  // thumb position on the track
+  bool in_scrollbar(int ex) const { return ex >= x() + w() - sde::S(16); }
+  void move_focus(int dir);
+  void ensure_visible(Fl_Widget *control);
   App *app_;
   std::vector<Row *> rows_;
   int scroll_ = 0, content_h_ = 0;
+  bool smooth_ = true;
+  bool gliding_ = false;
+  double glide_from_ = 0, glide_start_ = 0;
+  int glide_to_ = 0;
+  int drag_ = -1;          // pointer offset in the thumb while it is dragged
+  bool bar_hot_ = false;   // pointer over the scroll bar
   sde::DrawnButton *back_ = nullptr;
 };
 
