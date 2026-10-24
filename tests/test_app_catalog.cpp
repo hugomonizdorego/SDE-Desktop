@@ -134,12 +134,15 @@ int main() {
   CHECK(wait_for(seen + 5));
   CHECK(app_catalog::current()->find("late.desktop") != nullptr);
   // A data directory that did not exist (nothing to watch): poll(), which
-  // the menu and the search call when they open, finds it.
+  // the menu and the search call when they open, and every 2 s while they
+  // are open as long as needs_poll() says so, finds it.
+  CHECK(app_catalog::needs_poll());
   make_dirs(later + "/applications");
   write(later + "/applications/later.desktop", entry("Later Still"));
   app_catalog::poll();
   CHECK(wait_for(seen + 6));
   CHECK(app_catalog::current()->find("later.desktop") != nullptr);
+  CHECK(!app_catalog::needs_poll());  // inotify sees everything now
   write(later + "/applications/later2.desktop", entry("Later Again"));
   CHECK(wait_for(seen + 7));  // and watches it from then on
   CHECK(app_catalog::current()->find("later2.desktop") != nullptr);

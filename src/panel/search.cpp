@@ -267,14 +267,15 @@ void SearchFlyout::prepare() {
   Fl::remove_timeout(blink, this);
   Fl::add_timeout(0.55, blink, this);
   Fl::remove_timeout(poll_applications, this);
-  if (!app_catalog::watching()) Fl::add_timeout(2, poll_applications, this);
+  if (app_catalog::needs_poll()) Fl::add_timeout(2, poll_applications, this);
 }
 
-// Without inotify: applications installed while the flyout is open become
-// searchable within 2 s (app_catalog::poll() compares the directories).
+// Without inotify, or while a data directory is missing
+// (app_catalog::needs_poll()): applications installed while the flyout is
+// open become searchable within 2 s.
 void SearchFlyout::poll_applications(void *data) {
   auto *self = static_cast<SearchFlyout *>(data);
-  if (!self->is_open()) return;
+  if (!self->is_open() || !app_catalog::needs_poll()) return;
   Fl::repeat_timeout(2, poll_applications, data);
   app_catalog::poll();
 }

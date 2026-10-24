@@ -525,11 +525,11 @@ void AppMenu::save_tiles() {
   invalidate();
 }
 
-// Without inotify (app_catalog::watching()): compare the applications
-// directories every 2 s while the menu is open, as before 0.2.
+// Without inotify, or while a data directory is missing
+// (app_catalog::needs_poll()): look every 2 s while the menu is open.
 void AppMenu::poll_applications(void *data) {
   auto *self = static_cast<AppMenu *>(data);
-  if (!self->shown()) return;
+  if (!self->shown() || !app_catalog::needs_poll()) return;
   Fl::repeat_timeout(2, poll_applications, data);
   app_catalog::poll();
 }
@@ -673,7 +673,7 @@ void AppMenu::prepare() {
   account_->close();
   panel_account::check();
   Fl::remove_timeout(poll_applications, this);
-  if (!app_catalog::watching()) Fl::add_timeout(2, poll_applications, this);
+  if (app_catalog::needs_poll()) Fl::add_timeout(2, poll_applications, this);
 }
 
 void AppMenu::closed() {

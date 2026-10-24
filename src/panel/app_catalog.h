@@ -59,6 +59,10 @@ void start();
 // directory that did not exist (nothing to watch) was created since.
 void poll();
 bool watching();
+// Whether an open menu has to call poll() now and then: without inotify,
+// or while a data directory does not exist yet (a new account without
+// ~/.local/share), whose applications inotify cannot see coming.
+bool needs_poll();
 // Refreshes now (tests, and after a watch overflowed).
 void refresh();
 

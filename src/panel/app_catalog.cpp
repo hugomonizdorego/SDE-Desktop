@@ -355,6 +355,11 @@ void start() {
 
 bool watching() { return state().fd >= 0; }
 
+bool needs_poll() {
+  State &s = state();
+  return s.fd < 0 || !s.missing.empty();
+}
+
 void poll() {
   State &s = state();
   if (!s.snapshot) return;
