@@ -223,11 +223,12 @@ bool showing_desktop() {
   return !v.empty() && v[0] != 0;
 }
 
-void remap(Window w) {
-  XWithdrawWindow(fl_display, w, fl_screen);
-  XSync(fl_display, False);
+bool map_if_unmapped(Window w) {
+  XWindowAttributes attr;
+  if (!XGetWindowAttributes(fl_display, w, &attr) || attr.map_state != IsUnmapped) return false;
   XMapWindow(fl_display, w);
   XFlush(fl_display);
+  return true;
 }
 
 void set_window_type(Window w, const char *type) { set_atoms(w, "_NET_WM_WINDOW_TYPE", {type}); }

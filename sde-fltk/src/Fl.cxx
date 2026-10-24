@@ -727,6 +727,9 @@ int Fl::ready() {
 
 #ifndef FL_DOXYGEN
 Fl_X* Fl_X::first;
+#if !defined(WIN32) && !defined(__APPLE__)
+void (*Fl_X::before_map)(Fl_Window *, Window) = 0;
+#endif
 #endif
 
 Fl_Window* fl_find(Window xid) {

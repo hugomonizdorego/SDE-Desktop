@@ -171,8 +171,12 @@ void Panel::resize(int x, int y, int w, int h) {
   relayout();
 }
 
-void Panel::setup() {
-  Window xid = fl_xid(this);
+// Called by SDE-FLTK right before the panel window is first mapped (see
+// main.cpp): window managers read the window type and states only when they
+// start managing a window. Setting them after the map and then withdrawing
+// and mapping the window again raced a window manager that was still
+// starting, and could leave the panel unmapped.
+void Panel::prepare_xid(Window xid) {
   x11::set_window_type(xid, "_NET_WM_WINDOW_TYPE_DOCK");
   x11::set_atoms(xid, "_NET_WM_STATE",
                  {"_NET_WM_STATE_STICKY", "_NET_WM_STATE_SKIP_TASKBAR", "_NET_WM_STATE_SKIP_PAGER",
@@ -180,13 +184,26 @@ void Panel::setup() {
   x11::set_cardinals(xid, "_NET_WM_DESKTOP", {long(0xFFFFFFFF)});
   XClassHint hint{const_cast<char *>("sde-panel"), const_cast<char *>("SDE-Panel")};
   XSetClassHint(fl_display, xid, &hint);
+}
+
+// A window manager that was busy starting may still drop the first map;
+// look again a few times during the first seconds.
+void Panel::check_mapped(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  if (p->shown() && x11::map_if_unmapped(fl_xid(p)))
+    fprintf(stderr, "sde-panel: the window was left unmapped; mapped it again\n");
+  if (++p->map_checks_ < 5) Fl::repeat_timeout(1.5 * p->map_checks_, check_mapped, data);
+}
+
+void Panel::setup() {
+  Window xid = fl_xid(this);
   apply_strut();
   apply_shape();
   XSetWindowBackground(fl_display, xid, theme_.surface.fl() >> 8);
   x11::set_opacity(xid, theme_.opacity);
-  x11::remap(xid);
-  // Keep the requested position after the WM re-manages the window.
+  // Keep the requested position once the WM manages the window.
   XMoveResizeWindow(fl_display, xid, x(), y(), unsigned(w()), unsigned(h()));
+  Fl::add_timeout(1.0, check_mapped, this);
 
   Window root = RootWindow(fl_display, fl_screen);
   XWindowAttributes attr;

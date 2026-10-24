@@ -2854,6 +2854,7 @@ void Fl_X::make_xid(Fl_Window* win, XVisualInfo *visual, Colormap colormap)
   if (win->shape_data_) {
     win->combine_mask();
     }
+  if (Fl_X::before_map && !win->parent()) Fl_X::before_map(win, xp->xid);
   XMapWindow(fl_display, xp->xid);
   if (showit) {
     win->set_visible();

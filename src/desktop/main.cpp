@@ -24,6 +24,8 @@
 //  * icons dragged to other programs are offered as text/uri-list and drops
 //    from them are accepted (xdnd.cpp); files are moved, copied or linked
 //    on a worker thread (file_ops.cpp), never overwriting anything.
+// Fl_X::before_map (SDE-FLTK) is declared with the FLTK internals.
+#define FL_INTERNALS 1
 #include <FL/Fl.H>
 #include "about.h"
 #include "crash.h"
@@ -419,8 +421,12 @@ class Desktop : public sde::BufferedWindow {
     }
   }
 
-  void setup() {
-    Window xid = fl_xid(this);
+  // Called by SDE-FLTK right before the window is first mapped (see main):
+  // window managers read the window type and states only when they start
+  // managing a window. Setting them after the map and then withdrawing and
+  // mapping the window again raced a window manager that was still
+  // starting, and left the desktop unmapped.
+  static void prepare_xid(Window xid) {
     x11::set_window_type(xid, "_NET_WM_WINDOW_TYPE_DESKTOP");
     x11::set_atoms(xid, "_NET_WM_STATE",
                    {"_NET_WM_STATE_STICKY", "_NET_WM_STATE_SKIP_TASKBAR", "_NET_WM_STATE_SKIP_PAGER",
@@ -428,8 +434,21 @@ class Desktop : public sde::BufferedWindow {
     x11::set_cardinals(xid, "_NET_WM_DESKTOP", {long(0xFFFFFFFF)});
     XClassHint hint{const_cast<char *>("sde-desktop"), const_cast<char *>("SDE-Desktop")};
     XSetClassHint(fl_display, xid, &hint);
-    x11::remap(xid);
+  }
+
+  // A window manager that was busy starting may still drop the first map;
+  // look again a few times during the first seconds.
+  static void check_mapped(void *data) {
+    auto *d = static_cast<Desktop *>(data);
+    if (d->shown() && x11::map_if_unmapped(fl_xid(d)))
+      fprintf(stderr, "sde-desktop: the window was left unmapped; mapped it again\n");
+    if (++d->map_checks_ < 5) Fl::repeat_timeout(1.5 * d->map_checks_, check_mapped, data);
+  }
+
+  void setup() {
+    Window xid = fl_xid(this);
     XMoveResizeWindow(fl_display, xid, 0, 0, unsigned(w()), unsigned(h()));
+    Fl::add_timeout(1.0, check_mapped, this);
 
     Window root = RootWindow(fl_display, fl_screen);
     XWindowAttributes attr;
@@ -1797,6 +1816,7 @@ class Desktop : public sde::BufferedWindow {
   static Desktop *instance_;
 
  private:
+  int map_checks_ = 0;  // check_mapped() rounds so far
   Config cfg_;
   Theme theme_;
   std::vector<Item> items_;                 // places, then files in display order
@@ -1846,6 +1866,9 @@ int main(int argc, char **argv) {
   XSetErrorHandler(ignore_x_errors);
   Desktop *d = new Desktop();
   Desktop::instance_ = d;
+  Fl_X::before_map = [](Fl_Window *win, Window xid) {
+    if (win == Desktop::instance_) Desktop::prepare_xid(xid);
+  };
   d->show();
   d->setup();
   Fl::add_handler(Desktop::x_event_handler);

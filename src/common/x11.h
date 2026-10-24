@@ -41,9 +41,10 @@ void toggle_maximize(Window w);
 void set_showing_desktop(bool show);
 bool showing_desktop();
 
-// Re-maps an already mapped FLTK window so that the window manager notices
-// type, strut and state properties set after FLTK's show().
-void remap(Window w);
+// Maps |w| again when a window manager left it unmapped (for example when
+// it was still starting while the window was first mapped). Returns true
+// when it had to map the window.
+bool map_if_unmapped(Window w);
 
 // Window type and struts for panels and the desktop window.
 void set_window_type(Window w, const char *type);

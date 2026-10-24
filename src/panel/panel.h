@@ -57,6 +57,9 @@ class Panel : public sde::BufferedWindow {
   // Called once after show(): sets the dock type and strut, starts the tray
   // and subscribes to root window events.
   void setup();
+  // Window type and states set right before the first map (SDE-FLTK's
+  // Fl_X::before_map; see main.cpp).
+  static void prepare_xid(Window xid);
   void draw() override;
   int handle(int event) override;
   void resize(int x, int y, int w, int h) override;
@@ -237,6 +240,8 @@ class Panel : public sde::BufferedWindow {
   // The time zone was set ("Sync time zone"): the clock shows it at once.
   void time_zone_changed() { clock_tick(this); }
  private:
+  static void check_mapped(void *data);
+  int map_checks_ = 0;  // check_mapped() rounds so far
   static void input_event(int, void *);
   void outside_pointer_press(unsigned long time);
   void recover_input();

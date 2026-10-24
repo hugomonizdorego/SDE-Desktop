@@ -138,6 +138,11 @@ public:
   char wait_for_expose;
   char backbuffer_bad; // used for XDBE
   static Fl_X* first;
+  // SDE-FLTK: called right before a new top-level window is mapped for the
+  // first time. A program sets window properties there that window managers
+  // read only when they start managing a window (_NET_WM_WINDOW_TYPE,
+  // _NET_WM_STATE), instead of unmapping and mapping the window again.
+  static void (*before_map)(Fl_Window *win, Window xid);
   static Fl_X* i(const Fl_Window* wi) {return wi->i;}
   void setwindow(Fl_Window* wi) {w=wi; wi->i=this;}
   void sendxjunk();

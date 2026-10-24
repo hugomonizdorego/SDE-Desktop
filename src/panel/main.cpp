@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Fl_X::before_map (SDE-FLTK) is declared with the FLTK internals.
+#define FL_INTERNALS 1
 #include <FL/Fl.H>
 #include <FL/x.H>
 
@@ -117,6 +119,10 @@ int main(int argc, char **argv) {
   XSetErrorHandler(ignore_x_errors);
 
   Panel *panel = new Panel();
+  static Panel *the_panel = panel;
+  Fl_X::before_map = [](Fl_Window *win, Window xid) {
+    if (win == the_panel) Panel::prepare_xid(xid);
+  };
   panel->show();
   panel->setup();
   Fl::add_handler(Panel::x_event_handler);
