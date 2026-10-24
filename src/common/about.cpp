@@ -916,6 +916,7 @@ void show_license(const AppInfo &info) {
 }
 
 void show_about(const AppInfo &info) {
+  qa_log("start " + info.name);
   fl_open_display();
   // Programs that draw their own icons never pick an icon theme; without one
   // the About logo would fall back to the letter tile.
@@ -926,6 +927,7 @@ void show_about(const AppInfo &info) {
   }
   const Theme &t = about_theme();
   Resolved r = resolve(info);
+  qa_log("resolved " + info.name);
   Fl_Window *parent = owner_window(nullptr);
   int sx, sy, sw, sh;
   work_area(parent, sx, sy, sw, sh);

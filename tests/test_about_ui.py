@@ -75,6 +75,24 @@ def geometry(env, wid):
             if v.lstrip('-').isdigit()}
 
 
+def diagnose(env, proc, qa):
+    """What a build log needs when a window did not open: the About log,
+    the program's state (R: busy, S: waiting) and where it waits, the
+    focused window and every named window."""
+    parts = ['qa: %s' % qa_lines(qa)]
+    try:
+        status = Path('/proc/%d/status' % proc.pid).read_text()
+        parts.append('state: ' + next((l for l in status.splitlines() if l.startswith('State:')), '?'))
+        parts.append('wchan: ' + Path('/proc/%d/wchan' % proc.pid).read_text().strip())
+    except OSError as e:
+        parts.append('proc: %s' % e)
+    focused = xdo(env, 'getwindowfocus', 'getwindowname').stdout.strip()
+    parts.append('focus: %s' % focused)
+    names = xdo(env, 'search', '--name', '.', 'getwindowname', '%@').stdout.strip().split('\n')
+    parts.append('windows: %s' % [n for n in names if n])
+    return '; '.join(parts)
+
+
 def qa_lines(path):
     try:
         return Path(path).read_text().splitlines()
@@ -233,7 +251,7 @@ with tempfile.TemporaryDirectory(prefix='sde-about-ui-') as temp:
                         failures.append('%s: exited (%s) while opening About' % (name, proc.returncode))
                         break
                     if not win:
-                        failures.append('%s: "%s" did not open' % (name, about))
+                        failures.append('%s: "%s" did not open (%s)' % (name, about, diagnose(env, proc, qa)))
                         break
                     shot(env, 'about-%s-%d.png' % (name, attempt))
                     if attempt == 0:
