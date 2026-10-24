@@ -128,6 +128,7 @@ void Panel::load_config() {
     Fl_Window::color(theme_.surface.fl());
     XSetWindowBackground(fl_display, fl_xid(this), theme_.surface.fl() >> 8);
     x11::set_opacity(fl_xid(this), theme_.opacity);
+    x11::set_surface(fl_xid(this), cfg_.get("panel", "style", "full") == "full" ? "panel" : "panel-round");
   }
 }
 
@@ -212,6 +213,7 @@ void Panel::setup() {
   apply_shape();
   XSetWindowBackground(fl_display, xid, theme_.surface.fl() >> 8);
   x11::set_opacity(xid, theme_.opacity);
+  x11::set_surface(xid, cfg_.get("panel", "style", "full") == "full" ? "panel" : "panel-round");
   // Keep the requested position once the WM manages the window.
   XMoveResizeWindow(fl_display, xid, x(), y(), unsigned(w()), unsigned(h()));
   Fl::add_timeout(1.0, check_mapped, this);
@@ -1313,14 +1315,22 @@ void Panel::draw() {
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
-    // SDE Aero: a soft glass sheen; the compositor supplies blur and opacity.
-    bool glass = t.glass;
+    // SDE Liquid Glass: the compositor's glass shader turns the flat surface
+    // into glass (Theme::liquid); without it SDE draws the glass light itself.
+    bool glass = t.glass && !t.liquid;
+    bool full = cfg_.get("panel", "style", "full") == "full";
     if (glass) {
-      p.fill_gradient(0, 0, W, H, 0, t.surface.mix(t.accent, t.dark ? 0.10 : 0.05),
-                      t.surface.mix(t.dark ? Color::hex(0x000000) : Color::hex(0xFFFFFF), 0.12));
-      p.glass_sheen(0, 0, W, H, 0, t.dark);
+      // A full-width panel has its rim only along the inner edge (the
+      // others are at the screen's edges).
+      p.fill_gradient(0, 0, W, H, 0, t.surface.mix(t.accent, t.dark ? 0.06 : 0.03), t.surface);
+      if (full)
+        p.glass_surface(-4, t.panel_top ? -4 : 0, W + 8, H + 4, 0, t.border, t.dark);
+      else
+        p.glass_surface(0, 0, W, H, std::min(S(16), H / 2.0), t.border, t.dark);
     }
-    if (cfg_.get("panel", "style", "full") == "full")
+    if (t.liquid)
+      ;  // the glass shader draws the edge
+    else if (full)
       p.line(0, edge, W, edge, t.border);
     else
       p.stroke_rounded(0, 0, W, H, std::min(S(16), H / 2), t.border);

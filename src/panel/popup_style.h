@@ -31,11 +31,12 @@ constexpr int kHeroMax = 168;   // ...and largest height
 constexpr int kTile = 56;       // Action Center quick tile (button + caption)
 constexpr int kSection = 24;    // dim section caption ("Output", "Devices")
 
-// Corner radius of popups (already scaled). A local helper until the theme
-// grows a dedicated popup radius token: the theme's card radius, kept in
-// the soft 8-10 px range of the compact style.
+// Corner radius of popups (already scaled): the theme's radius for big
+// surfaces (0.2.0 Alpha 2; Graphite 14, Fluent 8, Liquid Glass 24 px at
+// 100 %), the same the compositor rounds them with.
 inline int radius() {
-  return sde::S(10);
+  const sde::Theme &t = sde::active_theme();
+  return t.radius_large > 0 ? t.radius_large : sde::S(10);
 }
 
 }  // namespace popup_style
