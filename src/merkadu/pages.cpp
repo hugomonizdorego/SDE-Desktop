@@ -167,10 +167,9 @@ void loading(Page *page, const std::string &text) {
   logo->running(true);
   logo->tooltip(_("Loading"));
   page->advance(S(40) + size + S(16));
-  auto *l = new Label(page->left(), page->cursor(), page->width(), S(24), text, Label::DIM);
-  l->align(FL_ALIGN_CENTER);
-  int tw = Label::measure(text, page->width(), Label::DIM);
-  (void)tw;
+  text_font(active_theme().font_size - 1);
+  int tw = std::min(page->width(), text_width(text) + S(8));
+  new Label(page->left() + (page->width() - tw) / 2, page->cursor(), tw, S(24), text, Label::DIM);
   page->advance(S(30));
 }
 
@@ -863,8 +862,10 @@ void build_progress(Page *page) {
         current = &j;
         break;
       }
-  page->heading(_("In Progress"), st.active_jobs() ? format(_("%d changes to make"), st.active_jobs())
-                                                   : std::string(_("Nothing is being installed or removed.")));
+  int active = st.active_jobs();
+  page->heading(_("In Progress"), active == 1 ? std::string(_("1 change to make"))
+                                  : active    ? format(_("%d changes to make"), active)
+                                              : std::string(_("Nothing is being installed or removed.")));
   int x = page->left(), w = page->width();
   if (current) {
     int y = page->cursor(), size = std::min(S(150), page->h() / 3);
@@ -876,8 +877,9 @@ void build_progress(Page *page) {
     qa_line("logo", logo->x(), logo->y(), logo->w(), logo->h());
     int ty = y + S(20) + size + S(14);
     std::string title = action_progress_label(current->action) + " " + current->title;
-    auto *l = new Label(x + S(20), ty, w - S(40), S(30), title, Label::BOLD);
-    l->align(FL_ALIGN_CENTER);
+    text_font(active_theme().font_size + 1, true);
+    int tw = std::min(w - S(40), text_width(title) + S(8));
+    new Label(x + (w - tw) / 2, ty, tw, S(30), title, Label::BOLD);
     int pw = std::min(w - S(80), S(520));
     new JobProgress(x + (w - pw) / 2, ty + S(34), pw, S(40), current->id);
     qa_line("job:" + std::to_string(current->id), x + (w - pw) / 2, ty + S(34), pw, S(40));

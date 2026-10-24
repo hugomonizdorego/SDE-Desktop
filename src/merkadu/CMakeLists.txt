@@ -35,3 +35,31 @@ target_include_directories(merkadu-core PUBLIC ${_src}/merkadu)
 target_compile_definitions(merkadu-core PUBLIC MERKADU_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/merkadu")
 target_link_libraries(merkadu-core PUBLIC sde-common PkgConfig::LIBXML2 PkgConfig::APPSTREAM ZLIB::ZLIB
                       Threads::Threads)
+
+# The program: the window, the uninstall dialog, the backends and the fakes
+# of MERKADU_FAKE (the UI checks). The page widgets come from the Control
+# Center (settings/ui.cpp).
+add_executable(merkadu
+  ${_src}/merkadu/main.cpp
+  ${_src}/merkadu/store.cpp
+  ${_src}/merkadu/window.cpp
+  ${_src}/merkadu/pages.cpp
+  ${_src}/merkadu/ui.cpp
+  ${_src}/merkadu/uninstall.cpp
+  ${_src}/merkadu/logo_anim.cpp
+  ${_src}/merkadu/image_cache.cpp
+  ${_src}/merkadu/packagekit.cpp
+  ${_src}/merkadu/flatpak.cpp
+  ${_src}/merkadu/snap.cpp
+  ${_src}/merkadu/fake.cpp
+  ${_src}/settings/ui.cpp)
+target_link_libraries(merkadu PRIVATE merkadu-core)
+if(FLATPAK_FOUND)
+  target_compile_definitions(merkadu PRIVATE MERKADU_HAVE_FLATPAK=1)
+  target_link_libraries(merkadu PRIVATE PkgConfig::FLATPAK)
+else()
+  message(WARNING "Merkadu: libflatpak not found, building without the Flatpak source")
+endif()
+install(TARGETS merkadu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/categories.menu ${PROJECT_SOURCE_DIR}/data/merkadu/merkadu.conf
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/merkadu)

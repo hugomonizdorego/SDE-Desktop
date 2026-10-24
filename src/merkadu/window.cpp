@@ -8,6 +8,7 @@
 #include <FL/fl_draw.H>
 
 #include <algorithm>
+#include <climits>
 #include <cstdio>
 #include <map>
 
@@ -367,15 +368,27 @@ void qa_dump() {
   }
 }
 
+// Scrolls a new page to where the old one was. Fl_Scroll counts its
+// position from the top of its content, which starts a padding below the
+// page's top: |ypos| is the old page's yposition().
+void restore_scroll(int ypos) {
+  int top = INT_MAX, bottom = 0;
+  for (int i = 0; i < g_page->children(); ++i) {
+    Fl_Widget *c = g_page->child(i);
+    if (c == &g_page->scrollbar || c == &g_page->hscrollbar) continue;
+    top = std::min(top, c->y() - g_page->y());
+    bottom = std::max(bottom, c->y() + c->h() - g_page->y());
+  }
+  if (top == INT_MAX) return;
+  int target = std::min(ypos + top, bottom - g_page->h());
+  if (target > 0) g_page->scroll_to(0, target);
+}
+
 void do_rebuild(void *) {
   g_rebuild_pending = false;
   if (!g_win) return;
   // The same view keeps its place; a new one starts at the top.
-  int scroll = g_page && g_built == g_view ? g_page->yposition() : 0;
-  Fl_Widget *focus = Fl::focus();
-  bool focus_in_page = false;
-  for (Fl_Widget *w = focus; w; w = w->parent())
-    if (w == g_page) focus_in_page = true;
+  int scroll = g_page && g_built == g_view ? g_page->yposition() : INT_MIN / 2;
   if (g_page) {
     g_win->remove(g_page);
     Fl::delete_widget(g_page);
@@ -384,23 +397,20 @@ void do_rebuild(void *) {
   g_win->begin();
   g_qa_lines.clear();
   g_page = new Page(g_content_x, topbar_h(), g_win->w() - g_content_x, g_win->h() - topbar_h());
+  // A new Fl_Scroll starts with both scrollbars "visible" until its first
+  // draw finds out; drawing around a horizontal one that never shows left
+  // a strip of stale text at the bottom of the page.
+  g_page->hscrollbar.clear_visible();
   build_page(g_page, g_view);
   g_built = g_view;
   g_win->end();
-  int max_scroll = 0;
-  for (int i = 0; i < g_page->children(); ++i) {
-    Fl_Widget *c = g_page->child(i);
-    if (c == &g_page->scrollbar || c == &g_page->hscrollbar) continue;
-    max_scroll = std::max(max_scroll, c->y() + c->h() - g_page->y() - g_page->h());
-  }
-  if (scroll > 0) g_page->scroll_to(0, std::max(0, std::min(scroll, max_scroll)));
+  restore_scroll(scroll);
   if (g_back) {
     if (g_back_stack.empty())
       g_back->hide();
     else
       g_back->show();
   }
-  if (focus_in_page && g_search) g_search->take_focus();
   if (g_sidebar) {
     g_sidebar->size(g_sidebar->w(), std::max(g_sidebar_scroll->h(), g_sidebar->content_h()));
     g_sidebar_scroll->redraw();
@@ -507,7 +517,7 @@ void go_back() {
   g_view = prev.first;
   if (g_search) g_search->value(g_view.kind == View::Search ? g_view.arg.c_str() : "");
   do_rebuild(nullptr);
-  if (g_page && prev.second > 0) g_page->scroll_to(0, prev.second);
+  if (g_page) restore_scroll(prev.second);
   if (g_sidebar) g_sidebar->redraw();
 }
 
