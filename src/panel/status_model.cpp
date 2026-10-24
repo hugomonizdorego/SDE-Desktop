@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
@@ -459,6 +460,265 @@ std::string battery_status_line(bool charging, bool full, int minutes) {
   if (time.empty()) return _("Using battery power");
   snprintf(buf, sizeof buf, _("Using battery power - %s remaining"), time.c_str());
   return buf;
+}
+
+// ------------------------------------------- battery indicator (0.2 Alpha 2)
+
+BatteryPhase battery_phase(int state, double percent, int warning, bool on_battery, int low,
+                           int critical) {
+  switch (state) {
+    case 1:
+      return BatteryPhase::CHARGING;
+    case 4:
+      return BatteryPhase::FULL;
+    case 5:
+      return BatteryPhase::PLUGGED;
+    case 2:
+    case 3:
+    case 6:
+      break;
+    default:
+      // Unknown: on mains power it is not charging, else it discharges.
+      if (!on_battery) return percent >= 99 ? BatteryPhase::FULL : BatteryPhase::PLUGGED;
+  }
+  if (state == 3 || warning >= 4 || percent <= critical) return BatteryPhase::CRITICAL;
+  if (warning == 3 || percent <= low) return BatteryPhase::LOW;
+  return BatteryPhase::DISCHARGING;
+}
+
+int battery_state_from_sysfs(const std::string &status, double percent, bool ac_online) {
+  std::string s = lower(trim(status));
+  if (s == "charging") return 1;
+  if (s == "discharging") return 2;
+  if (s == "full") return 4;
+  // "Not charging" (a charge limit, or full on some firmware) and
+  // "Unknown" on mains power.
+  if (s == "not charging" || ac_online) return percent >= 95 ? 4 : 5;
+  return 2;
+}
+
+const char *battery_phase_name(BatteryPhase phase) {
+  switch (phase) {
+    case BatteryPhase::LOW: return "low";
+    case BatteryPhase::CRITICAL: return "critical";
+    case BatteryPhase::CHARGING: return "charging";
+    case BatteryPhase::FULL: return "full";
+    case BatteryPhase::PLUGGED: return "plugged";
+    case BatteryPhase::DISCHARGING: break;
+  }
+  return "discharging";
+}
+
+bool battery_on_battery(BatteryPhase phase) {
+  return phase == BatteryPhase::DISCHARGING || phase == BatteryPhase::LOW ||
+         phase == BatteryPhase::CRITICAL;
+}
+
+int battery_low_level(int power_low) { return std::max(20, std::min(50, power_low)); }
+int battery_critical_level(int power_critical) { return std::max(10, std::min(30, power_critical)); }
+
+BatteryDisplay parse_battery_display(const std::string &name) {
+  std::string n = lower(trim(name));
+  if (n == "percent" || n == "percentage") return BatteryDisplay::PERCENT;
+  if (n == "label") return BatteryDisplay::LABEL;
+  if (n == "label-percent" || n == "label+percent" || n == "both") return BatteryDisplay::LABEL_PERCENT;
+  return BatteryDisplay::ICON;
+}
+
+const char *battery_display_name(BatteryDisplay display) {
+  switch (display) {
+    case BatteryDisplay::PERCENT: return "percent";
+    case BatteryDisplay::LABEL: return "label";
+    case BatteryDisplay::LABEL_PERCENT: return "label-percent";
+    case BatteryDisplay::ICON: break;
+  }
+  return "icon";
+}
+
+std::string battery_label(BatteryPhase phase) {
+  switch (phase) {
+    case BatteryPhase::LOW: return _("Low battery");
+    case BatteryPhase::CRITICAL: return _("Critically low");
+    case BatteryPhase::CHARGING: return _("Charging");
+    case BatteryPhase::FULL: return _("Full");
+    case BatteryPhase::PLUGGED: return _("Plugged in");
+    case BatteryPhase::DISCHARGING: break;
+  }
+  return _("On battery");
+}
+
+std::string battery_duration_short(int minutes) {
+  if (minutes <= 0) return "";
+  int h = minutes / 60, m = minutes % 60;
+  if (h && m) return format(_("%d h %d min"), h, m);
+  return h ? format(_("%d h"), h) : format(_("%d min"), m);
+}
+
+std::string battery_time_label(BatteryPhase phase, int minutes, bool calculating) {
+  if (!battery_on_battery(phase) && phase != BatteryPhase::CHARGING) return "";
+  std::string time = battery_duration_short(minutes);
+  if (time.empty()) return calculating ? _("Calculating…") : "";
+  return format(phase == BatteryPhase::CHARGING ? _("%s to full") : _("%s left"), time.c_str());
+}
+
+std::string battery_panel_text(BatteryDisplay display, BatteryPhase phase, int percent, int minutes,
+                               bool calculating, bool time) {
+  if (display == BatteryDisplay::ICON) return "";
+  std::string pct = format("%d%%", std::max(0, std::min(100, percent)));
+  if (display == BatteryDisplay::PERCENT) return pct;
+  std::string label = time ? battery_time_label(phase, minutes, calculating) : "";
+  if (label.empty()) label = battery_label(phase);
+  return display == BatteryDisplay::LABEL ? label : label + " · " + pct;
+}
+
+std::string battery_phase_line(BatteryPhase phase, int minutes, bool calculating) {
+  if (phase == BatteryPhase::FULL) return _("Fully charged");
+  if (phase == BatteryPhase::PLUGGED) return _("Plugged in, not charging");
+  std::string state = phase == BatteryPhase::CHARGING   ? _("Charging")
+                      : phase == BatteryPhase::LOW      ? _("Low battery")
+                      : phase == BatteryPhase::CRITICAL ? _("Critically low")
+                                                        : _("Using battery power");
+  std::string time = battery_duration_text(minutes);
+  if (!time.empty())
+    return state + " - " +
+           format(phase == BatteryPhase::CHARGING ? _("%s until full") : _("%s remaining"),
+                  time.c_str());
+  if (calculating) return state + " - " + _("Calculating…");
+  if (phase == BatteryPhase::CRITICAL) return state + " - " + _("plug in the charger");
+  return state;
+}
+
+std::string battery_tooltip(BatteryPhase phase, int percent, int minutes, bool calculating) {
+  std::string tip = format(_("Battery %d%%"), std::max(0, std::min(100, percent)));
+  if (phase == BatteryPhase::FULL) return tip + " · " + _("fully charged");
+  if (phase == BatteryPhase::PLUGGED) return tip + " · " + _("plugged in, not charging");
+  if (phase == BatteryPhase::CHARGING) tip += std::string(" · ") + _("charging");
+  if (phase == BatteryPhase::LOW) tip += std::string(" · ") + _("low");
+  if (phase == BatteryPhase::CRITICAL) tip += std::string(" · ") + _("critically low");
+  std::string time = battery_duration_text(minutes);
+  if (!time.empty())
+    tip += " · " + format(phase == BatteryPhase::CHARGING ? _("%s until full") : _("%s remaining"),
+                          time.c_str());
+  else if (calculating)
+    tip += std::string(" · ") + _("calculating…");
+  return tip;
+}
+
+bool battery_motion(const std::string &mode, const std::string &effects, bool low_resource,
+                    bool reduced_motion, bool animations) {
+  std::string m = lower(trim(mode)), e = lower(trim(effects));
+  if (m == "false" || m == "off" || m == "no" || m == "0") return false;
+  if (m == "true" || m == "on" || m == "yes" || m == "1") return true;
+  bool effects_off = e == "false" || e == "off" || e == "no" || e == "0";
+  return !effects_off && !low_resource && !reduced_motion && animations;
+}
+
+bool battery_animated(BatteryPhase phase) {
+  return phase == BatteryPhase::CHARGING || phase == BatteryPhase::LOW ||
+         phase == BatteryPhase::CRITICAL;
+}
+
+double battery_pulse_period(BatteryPhase phase) {
+  if (phase == BatteryPhase::CRITICAL) return 1.2;
+  return battery_animated(phase) ? 2.0 : 0;
+}
+
+void BatteryAnimation::set(int percent, BatteryPhase phase, bool motion, double t) {
+  double level = std::max(0, std::min(100, percent));
+  if (!started_) {
+    started_ = true;
+    from_ = to_ = level;
+    since_ = start_ = t;
+  } else if (level != to_) {
+    // From wherever the level is shown now.
+    from_ = motion ? frame(t).level : level;
+    to_ = level;
+    since_ = t;
+  }
+  if (phase != phase_) start_ = t;  // the sweep and pulse start from their beginning
+  phase_ = phase;
+  motion_ = motion;
+}
+
+BatteryFrame BatteryAnimation::frame(double t) const {
+  BatteryFrame f;
+  double e = motion_ && kEase > 0 ? std::max(0.0, std::min(1.0, (t - since_) / kEase)) : 1.0;
+  double u = 1 - e;
+  f.level = from_ + (to_ - from_) * (1 - u * u * u);  // ease-out cubic
+  if (!motion_ || !battery_animated(phase_)) return f;
+  double period = battery_pulse_period(phase_), cycle = std::fmod(std::max(0.0, t - start_), period) / period;
+  if (phase_ == BatteryPhase::CHARGING)
+    f.sweep = cycle;
+  else  // a soft pulse from full strength down to 45 % and back
+    f.pulse = 0.725 + 0.275 * std::cos(2 * M_PI * cycle);
+  return f;
+}
+
+bool BatteryAnimation::running(double t) const {
+  if (!started_) return false;
+  if (motion_ && battery_animated(phase_)) return true;
+  return motion_ && from_ != to_ && t - since_ < kEase;
+}
+
+namespace {
+// 0 not moving (full, plugged in), 1 discharging, 2 charging.
+int battery_group(BatteryPhase phase) {
+  if (phase == BatteryPhase::CHARGING) return 2;
+  return battery_on_battery(phase) ? 1 : 0;
+}
+}  // namespace
+
+void BatteryEstimator::reset() { *this = BatteryEstimator(); }
+
+void BatteryEstimator::update(const BatteryReading &r) {
+  if (!started_ || battery_group(r.phase) != battery_group(phase_)) {
+    // A new direction: the old rate says nothing about the new one.
+    reset();
+    started_ = true;
+    since_ = last_t_ = r.t;
+  }
+  phase_ = r.phase;
+  int group = battery_group(r.phase);
+  if (group == 0) {
+    minutes_ = -1;
+    calculating_ = false;
+    return;
+  }
+  // The energy in the reading's unit; without it the percentage.
+  bool energy = r.energy_full > 0 && r.energy >= 0;
+  double now = energy ? std::min(r.energy, r.energy_full) : r.percent;
+  double full = energy ? r.energy_full : 100;
+  double rate = energy ? std::fabs(r.rate) : 0;
+  if (rate <= 0) {
+    // No reported rate: how fast the charge moved over at least a minute.
+    if (mark_t_ < 0) {
+      mark_t_ = r.t;
+      mark_energy_ = now;
+    } else if (r.t - mark_t_ >= 60 && now != mark_energy_) {
+      rate = std::fabs(now - mark_energy_) / ((r.t - mark_t_) / 3600.0);
+      mark_t_ = r.t;
+      mark_energy_ = now;
+    }
+  }
+  if (rate > 0) {
+    // Exponential smoothing weighted by the time since the last rate.
+    if (rate_ <= 0)
+      rate_ = rate;
+    else
+      rate_ += (1 - std::exp(-std::max(0.0, r.t - last_t_) / kRateTau)) * (rate - rate_);
+    last_t_ = r.t;
+  }
+  long long upower = group == 2 ? r.time_to_full : r.time_to_empty;
+  int m = -1;
+  if (upower > 0) {
+    m = int((upower + 30) / 60);
+  } else if (rate_ > 0) {
+    double hours = (group == 2 ? full - now : now) / rate_;
+    if (hours >= 0) m = std::max(1, int(hours * 60 + 0.5));
+  }
+  if (m > kMaxHours * 60) m = -1;
+  minutes_ = m;
+  calculating_ = m < 0 && r.t - since_ < kCalculatingFor;
 }
 
 std::string battery_model_name(const std::string &manufacturer, const std::string &model) {
