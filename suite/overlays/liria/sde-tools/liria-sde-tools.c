@@ -471,7 +471,7 @@ default_apps_cb (LiriaMenuItem *menu_item, gpointer data)
 }
 
 /* "Set Default Application" > the applications for the file's type (the
- * current one marked), then "Default Applications..." in SDE Settings. */
+ * current one marked), then "Default Applications..." in the Control Center. */
 static LiriaMenuItem *
 set_default_item (LiriaFileInfo *file)
 {

@@ -4,6 +4,7 @@
 #include <FL/Fl_Image.H>
 #include <FL/Fl_Pixmap.H>
 #include <FL/Fl_Shared_Image.H>
+#include <FL/Fl_Window.H>
 #include <librsvg/rsvg.h>
 
 #include <algorithm>
@@ -596,6 +597,56 @@ cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size
     if (result) return result;
   }
   return nullptr;
+}
+
+void set_default_window_icon(const std::vector<std::string> &names) {
+  std::vector<std::unique_ptr<Fl_RGB_Image>> images;
+  for (int size : {32, 64}) {
+    std::string path;
+    for (const auto &name : names)
+      if (!(path = IconLoader::lookup(name, size)).empty()) break;
+    if (path.empty()) return;
+    cairo_surface_t *src = load_image(path, size, size);
+    if (!src) continue;
+    // Bitmaps come at their own size: draw them scaled into size x size.
+    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+    cairo_t *cr = cairo_create(s);
+    double sw = cairo_image_surface_get_width(src), sh = cairo_image_surface_get_height(src);
+    if (sw > 0 && sh > 0) cairo_scale(cr, size / sw, size / sh);
+    cairo_set_source_surface(cr, src, 0, 0);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(src);
+    cairo_surface_flush(s);
+    // Fl_RGB_Image wants RGBA bytes without premultiplied alpha.
+    const unsigned char *px = cairo_image_surface_get_data(s);
+    int stride = cairo_image_surface_get_stride(s);
+    auto *rgba = new uchar[size_t(size) * size * 4];
+    for (int y = 0; y < size; ++y)
+      for (int x = 0; x < size; ++x) {
+        uint32_t p = *reinterpret_cast<const uint32_t *>(px + y * stride + x * 4);
+        uint32_t a = p >> 24, r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+        if (a && a < 255) {
+          r = std::min(255u, r * 255 / a);
+          g = std::min(255u, g * 255 / a);
+          b = std::min(255u, b * 255 / a);
+        }
+        uchar *o = rgba + (size_t(y) * size + x) * 4;
+        o[0] = uchar(r);
+        o[1] = uchar(g);
+        o[2] = uchar(b);
+        o[3] = uchar(a);
+      }
+    cairo_surface_destroy(s);
+    auto image = std::make_unique<Fl_RGB_Image>(rgba, size, size, 4);
+    image->alloc_array = 1;  // the image frees |rgba|
+    images.push_back(std::move(image));
+  }
+  if (images.empty()) return;
+  std::vector<const Fl_RGB_Image *> list;
+  for (const auto &image : images) list.push_back(image.get());
+  Fl_Window::default_icons(list.data(), int(list.size()));  // copied
 }
 
 }  // namespace sde

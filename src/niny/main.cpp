@@ -18,6 +18,7 @@
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
+#include "icons.h"
 #include "niny.h"
 #include "theme.h"
 #include "util.h"
@@ -41,6 +42,7 @@ static void usage() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"niny"});  // title bar and taskbar
   std::vector<std::string> args;
   bool new_window = false, only_files = false;
   for (int i = 1; i < argc; ++i) {

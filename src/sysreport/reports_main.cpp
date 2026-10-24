@@ -10,6 +10,7 @@
 #include "about.h"
 #include "build_config.h"
 #include "i18n.h"
+#include "icons.h"
 #include "pages.h"
 #include "reports.h"
 #include "shell.h"
@@ -18,6 +19,7 @@ using namespace sde;
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-system-reports"});  // title bar and taskbar
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--version") return print_version("sde-system-reports", SDE_VERSION);

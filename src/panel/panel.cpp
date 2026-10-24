@@ -496,7 +496,12 @@ bool Panel::find_entry_for(const Task &t, DesktopEntry &out) const {
   // Exact desktop file names first ("firefox.desktop", "org.gnome.Nautilus.desktop").
   for (const std::string &n : {name, cls})
     if (!n.empty() && find_application(n + ".desktop", out)) return true;
-  for (auto &e : load_applications("SDE")) {
+  // The Start Menu's catalog when it has read the applications; reading
+  // every .desktop file again costs tens of milliseconds.
+  auto snap = app_catalog::ready() ? app_catalog::current() : nullptr;
+  std::vector<DesktopEntry> loaded;
+  if (!snap) loaded = load_applications("SDE");
+  for (const auto &e : snap ? snap->apps : loaded) {
     std::string wm = lower(e.startup_wm_class);
     auto cmd = e.command();
     std::string exec = cmd.empty() ? "" : lower(basename_of(cmd[0]));
@@ -1888,8 +1893,15 @@ void Panel::update_task(Task &t, bool icon) {
   if (t.icon) cairo_surface_destroy(t.icon);
   t.icon = x11::window_icon(t.win, size);
   if (!t.icon) {
-    // Fall back to an icon theme lookup by WM_CLASS ("Firefox" -> "firefox").
-    cairo_surface_t *themed = IconLoader::get({lower(t.wm_class), lower(t.wm_name)}, size);
+    // Without _NET_WM_ICON: the icon of the window's application (the
+    // Control Center's class is sde-settings, its icon sde-control-center),
+    // then an icon theme lookup by WM_CLASS ("Firefox" -> "firefox").
+    std::vector<std::string> names;
+    DesktopEntry entry;
+    if (find_entry_for(t, entry) && !entry.icon.empty()) names.push_back(entry.icon);
+    names.push_back(lower(t.wm_class));
+    names.push_back(lower(t.wm_name));
+    cairo_surface_t *themed = IconLoader::get(names, size);
     if (themed) t.icon = cairo_surface_reference(themed);
   }
 }

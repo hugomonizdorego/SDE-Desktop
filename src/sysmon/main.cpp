@@ -17,6 +17,7 @@
 #include "about.h"
 #include "config.h"
 #include "i18n.h"
+#include "icons.h"
 #include "menu.h"
 #include "theme.h"
 #include "ui.h"
@@ -330,6 +331,7 @@ void usage(FILE *out) {
 int main(int argc, char **argv) {
   using namespace sysmon;
   sde::init_i18n();
+  sde::set_default_window_icon({"sde-system-monitor"});  // title bar and taskbar
   int page = 0;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];

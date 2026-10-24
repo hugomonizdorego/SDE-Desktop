@@ -180,18 +180,23 @@ def click_control(win, title, name):
     time.sleep(0.5)
 
 
-def escape_popup(title):
-    """Escape closes a panel popup. Pressed only once the popup holds the
-    keyboard (<qa>/<title>.input, see qa_mark_input in src/panel/popup.cpp):
-    under load an earlier key reaches another window and the popup stays
-    open, so the next command toggles it closed instead of opening it."""
+def wait_input(title):
+    """Waits until a panel popup holds the keyboard (<qa>/<title>.input, see
+    qa_mark_input in src/panel/popup.cpp): under load keys sent earlier
+    reach another window."""
     marker = home / "qa" / (title.replace(" ", "-") + ".input")
     for _ in range(100):
         if marker.exists():
-            break
+            return
         time.sleep(0.1)
-    else:
-        raise AssertionError(f"{title} never took the keyboard")
+    raise AssertionError(f"{title} never took the keyboard")
+
+
+def escape_popup(title):
+    """Escape closes a panel popup. Pressed only once the popup holds the
+    keyboard: otherwise the popup stays open, and the next command toggles
+    it closed instead of opening it."""
+    wait_input(title)
     run("xdotool", "key", "Escape")
     for _ in range(80):
         if run("xdotool", "search", "--onlyvisible", "--name", f"^{title}$", check=False).returncode != 0:
@@ -450,6 +455,7 @@ try:
     run("xdotool", "key", "alt+F4")
     # New package metadata becomes searchable while the same menu stays open.
     open_popup("SDE Menu", "--menu")
+    wait_input("SDE Menu")
     run("xdotool", "type", "SDELiveInstallProbe")
     time.sleep(.3)
     app_dir = home / ".local/share/applications"

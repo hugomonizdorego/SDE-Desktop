@@ -18,6 +18,7 @@
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
+#include "icons.h"
 #include "spawn.h"
 #include "theme.h"
 #include "util.h"
@@ -43,6 +44,7 @@ static void usage() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"xanara"});  // title bar and taskbar
   std::vector<std::string> files;
   int page = -1;
   for (int i = 1; i < argc; ++i) {

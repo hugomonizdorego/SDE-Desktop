@@ -206,8 +206,9 @@ void ud_changed() { changed(ud_part, "org.freedesktop.UDisks2.Filesystem"); }
 
 // ------------------------------------------------------ AccountsService
 // The account picture and real name (src/common/avatar.h): every user is
-// "QA Avatar Tester" until SetRealName; SetIconFile copies the picture next
-// to the log, as accountsservice copies it to /var/lib/AccountsService.
+// "QA Avatar Tester" ("Alex Tester" in the showcase) until SetRealName;
+// SetIconFile copies the picture next to the log, as accountsservice copies
+// it to /var/lib/AccountsService.
 const std::string accounts = "/org/freedesktop/Accounts", account_user = accounts + "/User4242";
 std::string real_name = "QA Avatar Tester", icon_file, account_name;
 void account_props(dbus::Writer& w) {
@@ -433,6 +434,7 @@ int main(int argc, char** argv) {
   log_path = argv[1];
   const char* names = getenv("SDE_FIXTURE_NAMES");
   showcase = names && std::string(names) == "showcase";
+  real_name = pick("QA Avatar Tester", "Alex Tester");
   {
     // A small album cover next to the log.
     cover = log_path.substr(0, log_path.rfind('/') + 1) + "qa-cover.png";

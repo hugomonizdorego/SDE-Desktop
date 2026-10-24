@@ -18,6 +18,7 @@
 #include "config.h"
 #include "gallery.h"
 #include "i18n.h"
+#include "icons.h"
 #include "link.h"
 #include "theme.h"
 #include "util.h"
@@ -26,6 +27,7 @@ using namespace sde;
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-gallery"});  // title bar and taskbar
   std::string select, slideshow, folder;
   bool import = false;
   for (int i = 1; i < argc; ++i) {

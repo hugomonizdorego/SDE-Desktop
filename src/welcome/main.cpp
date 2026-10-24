@@ -299,7 +299,7 @@ class WelcomeWindow : public BufferedWindow {
     draw_text(title, tx, S(24), w() - tx - pad(), S(30), t.text);
     text_font(t.font_size);
     draw_text(_("A few first steps to make this computer yours."), tx, S(54), w() - tx - pad(), S(22), t.text_dim);
-    // "Desktop: Selviana Desktop Environment 0.1 Alpha 52"
+    // "Desktop: Selviana Desktop Environment 0.2 Alpha 1"
     int dx = tx + (sde_mark_ ? msz + S(8) : 0);
     text_font(t.font_size - 1);
     std::string label = std::string(_("Desktop:")) + " ";
@@ -371,6 +371,7 @@ const char *kUsage =
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-welcome"});  // title bar and taskbar
   bool autostart = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];

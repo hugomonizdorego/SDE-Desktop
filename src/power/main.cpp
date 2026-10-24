@@ -39,6 +39,7 @@
 #include "crash.h"
 #include "dbus.h"
 #include "i18n.h"
+#include "icons.h"
 #include "osd.h"
 #include "policy.h"
 #include "power.h"
@@ -623,6 +624,7 @@ int status_command() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-power"});  // title bar and taskbar
   install_crash_handler("sde-power");
   std::string cmd = argc > 1 ? argv[1] : "--daemon";
   std::string arg = argc > 2 ? argv[2] : "";

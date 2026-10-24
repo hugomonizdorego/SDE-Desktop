@@ -89,4 +89,10 @@ class IconLoader {
   static Stats stats();
 };
 
+// Sets the icon of every window the program shows from now on
+// (_NET_WM_ICON: the title bar and the taskbar) to the first of |names| in
+// the icon theme, at 32 and 64 pixels. Call it before the first show();
+// nothing changes when none of the names is installed.
+void set_default_window_icon(const std::vector<std::string> &names);
+
 }  // namespace sde

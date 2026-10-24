@@ -42,7 +42,10 @@ bool g_account_loaded = false;
 avatar::Picture g_picture;
 bool g_busy = false;           // a change is being made
 std::string g_status;          // its outcome
-bool g_status_error = false;
+// How the outcome is shown: in the accent color (working, done), in the
+// normal text color (done, with a note) or in the error color (failed).
+enum class StatusKind { done, note, error };
+StatusKind g_status_kind = StatusKind::done;
 std::string g_name_draft;      // the Real name field while it is edited
 bool g_name_edited = false;
 bool g_lookup_running = false, g_lookup_again = false;
@@ -69,9 +72,9 @@ void refresh_account_pages() {
   refresh_if_shown("users");
 }
 
-void set_status(const std::string &text, bool error) {
+void set_status(const std::string &text, StatusKind kind) {
   g_status = text;
-  g_status_error = error;
+  g_status_kind = kind;
 }
 
 // "sde-retro.png" -> "SDE Retro", "sunrise.png" -> "Sunrise" (the names of
@@ -102,9 +105,11 @@ std::string pretty_name(const std::string &path) {
 void finished(const avatar::Result &r, const std::string &done_text) {
   g_busy = false;
   if (!r.ok)
-    set_status(r.error.empty() ? std::string(_("The change did not work.")) : r.error, true);
-  else
-    set_status(r.note.empty() ? done_text : r.note, !r.note.empty());
+    set_status(r.error.empty() ? std::string(_("The change did not work.")) : r.error, StatusKind::error);
+  else if (r.note.empty())
+    set_status(done_text, StatusKind::done);
+  else  // done, but only for SDE (for example without AccountsService)
+    set_status(r.note, StatusKind::note);
   reload_account();
   refresh_account_pages();
 }
@@ -112,7 +117,7 @@ void finished(const avatar::Result &r, const std::string &done_text) {
 void apply_picture(const std::string &path) {
   if (g_busy) return;
   g_busy = true;
-  set_status(_("Changing your picture..."), false);
+  set_status(_("Changing your picture..."), StatusKind::done);
   refresh_account_pages();
   avatar::set_avatar_async(path, [](const avatar::Result &r) { finished(r, _("Your picture was changed.")); });
 }
@@ -120,7 +125,7 @@ void apply_picture(const std::string &path) {
 void remove_picture() {
   if (g_busy) return;
   g_busy = true;
-  set_status(_("Removing your picture..."), false);
+  set_status(_("Removing your picture..."), StatusKind::done);
   refresh_account_pages();
   avatar::clear_avatar_async([](const avatar::Result &r) {
     finished(r, _("Your picture was removed: your initials are shown instead."));
@@ -132,12 +137,12 @@ void save_name() {
   std::string name = trim(g_name_draft);
   std::string why;
   if (!avatar::valid_real_name(name, &why)) {
-    set_status(why, true);
+    set_status(why, StatusKind::error);
     refresh_if_shown("users");
     return;
   }
   g_busy = true;
-  set_status(_("Changing your name..."), false);
+  set_status(_("Changing your name..."), StatusKind::done);
   refresh_if_shown("users");
   avatar::set_real_name_async(name, [](const avatar::Result &r) {
     g_name_edited = false;
@@ -229,22 +234,25 @@ class StockChoice : public Fl_Widget {
   bool hot_ = false;
 };
 
-// A line of text in the accent (done) or error color.
+// A line of text in the color of its StatusKind.
 class StatusLine : public Fl_Widget {
  public:
-  StatusLine(int x, int y, int w, int h, std::string text, bool error)
-      : Fl_Widget(x, y, w, h), text_(std::move(text)), error_(error) {}
+  StatusLine(int x, int y, int w, int h, std::string text, StatusKind kind)
+      : Fl_Widget(x, y, w, h), text_(std::move(text)), kind_(kind) {}
   void draw() override {
     const Theme &t = settings_theme();
     text_font(t.font_size);
-    fl_color((error_ ? t.error : t.accent_text).fl());
+    fl_color((kind_ == StatusKind::error ? t.error
+              : kind_ == StatusKind::note ? t.text
+                                          : t.accent_text)
+                 .fl());
     fl_draw(text_.c_str(), x(), y(), w(), h(),
             Fl_Align(FL_ALIGN_TOP_LEFT | FL_ALIGN_WRAP | FL_ALIGN_INSIDE | FL_ALIGN_CLIP), nullptr, 0);
   }
 
  private:
   std::string text_;
-  bool error_;
+  StatusKind kind_;
 };
 
 class NameInput : public Fl_Input {
@@ -351,7 +359,7 @@ void build_users_page(Page *page) {
     new Label(tx, y + S(44), tw, S(22), a.user + "  ·  " + kind, Label::DIM);
     if (!g_status.empty()) {
       int sh = std::max(S(24), Label::measure(g_status, tw, Label::NORMAL) + S(4));
-      new StatusLine(tx, y + S(70), tw, sh, g_status, g_status_error);
+      new StatusLine(tx, y + S(70), tw, sh, g_status, g_status_kind);
       page->advance(std::max(d + S(8), S(70) + sh + S(4)));
     } else {
       page->advance(d + S(8));

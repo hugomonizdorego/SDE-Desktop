@@ -94,6 +94,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   init_i18n();
+  sde::set_default_window_icon({"sde-display-settings"});  // title bar and taskbar
   cfg.load();
   fl_open_display();
   theme = Theme::from_config(cfg);

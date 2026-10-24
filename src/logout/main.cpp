@@ -154,6 +154,7 @@ class LogoutWindow : public sde::BufferedWindow {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-logout"});  // title bar and taskbar
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) return print_version(app_info());
     // sde-logout --action NAME runs one action without the dialog (the

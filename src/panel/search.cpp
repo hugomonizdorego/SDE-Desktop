@@ -498,7 +498,7 @@ void SearchFlyout::build() {
     items_.push_back(f);
   }
   // Tabs.
-  static const char *const tabs[] = {N_("All"), N_("Apps"), N_("Settings"), N_("Files")};
+  static const char *const tabs[] = {N_("All"), N_("Apps"), N_("Control Center"), N_("Files")};
   text_font(t.font_size, true);
   int tx = pad;
   for (int i = 0; i < 4; ++i) {
@@ -643,7 +643,7 @@ void SearchFlyout::build() {
     if (i == 1 || (i > 1 && (is_app(e) != is_app(results_[i - 1]) ||
                              is_file(e) != is_file(results_[i - 1])))) {
       y += S(4);
-      add_heading(is_file(e) ? _("Files and folders") : is_extra(e) ? _("Settings") : _("Apps"));
+      add_heading(is_file(e) ? _("Files and folders") : is_extra(e) ? _("Control Center") : _("Apps"));
     }
     Item r;
     r.kind = K_RESULT;

@@ -2404,7 +2404,7 @@ class Sidebar : public Fl_Widget {
       Painter p(window()->w(), window()->h());
       p.fill_rect(x(), y(), w(), h(), g_theme.surface);
       p.line(x() + w() - 0.5, y(), x() + w() - 0.5, y() + h(), g_theme.border);
-      p.image(IconLoader::get({"sde-logo", "start-here"}, S(36)), x() + S(20), y() + S(20), S(36));
+      p.image(IconLoader::get({"sde-control-center", "sde-logo", "start-here"}, S(36)), x() + S(20), y() + S(20), S(36));
       for (size_t i = 0; i < pages().size(); ++i) {
         int ry = row_y(int(i));
         if (int(i) == g_page_index) {
@@ -2713,6 +2713,7 @@ std::string usage() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-control-center"});  // title bar and taskbar
   install_crash_handler("sde-settings");
   g_argv0 = argv[0];
   std::string page = "home", requested, anchor;

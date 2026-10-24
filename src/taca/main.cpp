@@ -20,6 +20,7 @@
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
+#include "icons.h"
 #include "spawn.h"
 #include "taca.h"
 #include "theme.h"
@@ -251,6 +252,7 @@ void print_formats() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"taca"});  // title bar and taskbar
   enum class Mode { Open, ExtractHere, ExtractTo, Extract, AddTo, Add, List, Test } mode = Mode::Open;
   std::string target, default_dir;
   bool force = false;

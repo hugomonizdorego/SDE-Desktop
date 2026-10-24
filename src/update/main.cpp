@@ -26,6 +26,7 @@
 #include "config.h"
 #include "dbus.h"
 #include "i18n.h"
+#include "icons.h"
 #include "model.h"
 #include "process.h"
 #include "spawn.h"
@@ -263,6 +264,7 @@ void usage(FILE *out) {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-software-updater"});  // title bar and taskbar
   std::vector<std::string> args(argv + 1, argv + argc);
   std::string first = args.empty() ? "" : args[0];
   if (first == "--version" && args.size() == 1) return print_version("sde-update", SDE_UPDATE_VERSION);

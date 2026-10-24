@@ -1133,11 +1133,13 @@ class ClockHero : public Fl_Group {
       draw_children();
       return;
     }
+    // The weather line shares the bottom row with the corner buttons.
+    int info_w = std::max(0, text_w - S(76));
     if (weather_)
-      info_line(left, info_y, text_w, info_h, shadowed, ink, soft);
+      info_line(left, info_y, info_w, info_h, shadowed, ink, soft);
     else if (greet_) {
       text_font(t.font_size, false);
-      shadowed(greeting(lt), left, info_y, text_w, info_h, soft);
+      shadowed(greeting(lt), left, info_y, info_w, info_h, soft);
     }
     draw_children();
   }

@@ -152,6 +152,7 @@ void on_run(Fl_Widget *, void *data) {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-run"});  // title bar and taskbar
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) return print_version(app_info());
     printf("Usage: sde-run [--version]\n");

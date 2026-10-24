@@ -19,6 +19,7 @@
 #include "build_config.h"
 #include "config.h"
 #include "i18n.h"
+#include "icons.h"
 #include "link.h"
 #include "photo.h"
 #include "theme.h"
@@ -74,6 +75,7 @@ void usage() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  sde::set_default_window_icon({"sde-photo", "sdeview"});  // title bar and taskbar
   std::vector<std::string> files;
   std::string album_arg, sort_arg;
   bool slideshow = false, full = false, draw = false, options = true;
