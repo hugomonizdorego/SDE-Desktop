@@ -11,6 +11,7 @@
 #include <climits>
 #include <ctime>
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -19,6 +20,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "desktop_entry.h"
 #include "theme.h"
 #include "util.h"
 
@@ -272,6 +274,8 @@ std::unordered_map<std::string, cairo_surface_t *> g_surface_cache;
 // looking one up again walks every directory of every theme (Papirus has
 // hundreds).
 std::unordered_set<std::string> g_missing;
+// IconLoader::app_icon(): the name chosen for a desktop entry.
+std::unordered_map<std::string, std::string> g_app_icons;
 
 // Themes are cached per process; a different XDG_DATA_DIRS (tests, or a
 // program that changes it) starts again.
@@ -283,6 +287,7 @@ void check_dirs() {
   g_themes.clear();
   g_lookup_cache.clear();
   g_missing.clear();
+  g_app_icons.clear();
 }
 
 IconTheme *load_theme(const std::string &name) {
@@ -416,8 +421,12 @@ std::vector<std::string> chain_for(const std::string &theme) {
   std::set<std::string> seen;
   add_chain(theme, chain, seen);
   // Recent Adwaita releases moved traditional app/category icons into a
-  // separate theme (AdwaitaLegacy).
-  for (const char *fallback : {"Adwaita", "AdwaitaLegacy", "hicolor"}) add_chain(fallback, chain, seen);
+  // separate theme (AdwaitaLegacy). Papirus (recommended by the sde
+  // package) has the most application and category icons: it fills in what
+  // the other themes and the applications' own hicolor icons leave out
+  // (0.2 Alpha 2), before the old /usr/share/pixmaps.
+  for (const char *fallback : {"Adwaita", "AdwaitaLegacy", "hicolor", "Papirus"})
+    add_chain(fallback, chain, seen);
   return chain;
 }
 
@@ -511,6 +520,8 @@ std::vector<std::string> IconLoader::theme_chain() { return current_chain(); }
 
 void IconLoader::forget_missing() {
   g_missing.clear();
+  // Near matches and category icons may give way to the real icon now.
+  g_app_icons.clear();
   for (auto it = g_lookup_cache.begin(); it != g_lookup_cache.end();)
     it = it->second.empty() ? g_lookup_cache.erase(it) : std::next(it);
   for (auto it = g_surface_cache.begin(); it != g_surface_cache.end();)
@@ -520,6 +531,7 @@ void IconLoader::forget_missing() {
 void IconLoader::clear_cache() {
   g_lookup_cache.clear();
   g_missing.clear();
+  g_app_icons.clear();
   g_chain.clear();
   for (auto &kv : g_surface_cache)
     if (kv.second) cairo_surface_destroy(kv.second);
@@ -544,6 +556,211 @@ std::string IconLoader::lookup_in(const std::string &theme, const std::string &n
   if (name.empty()) return "";
   if (name[0] == '/') return file_exists(name) ? name : "";
   return with_extension_fallback(chain_for(theme), name, size);
+}
+
+// ---------------------------------------------------------- application icons
+
+namespace {
+
+// Generic names of the Icon Naming Specification that applications give as
+// their icon.
+bool stock_icon(const std::string &name) {
+  static const char *const prefixes[] = {"accessories-", "applications-", "help-",      "internet-",
+                                         "multimedia-",  "network-",      "office-",    "preferences-",
+                                         "system-",      "utilities-",    "x-office-"};
+  for (const char *p : prefixes)
+    if (starts_with(name, p)) return true;
+  return name == "web-browser" || name == "mail-client" || name == "text-editor";
+}
+
+// Programs that only start another one (its icon is the other's).
+bool wrapper_program(const std::string &p) {
+  static const char *const names[] = {
+      "env",        "sh",        "bash",       "dash",     "zsh",      "nice",         "ionice",
+      "nohup",      "setsid",    "stdbuf",     "taskset",  "sudo",     "pkexec",       "gksu",
+      "gksudo",     "kdesu",     "kdesudo",    "beesu",    "firejail", "torsocks",     "gamemoderun",
+      "prime-run",  "primusrun", "optirun",    "padsp",    "aoss",     "dbus-launch",  "exo-open",
+      "xdg-open",   "gtk-launch", "kioclient", "kioclient5", "java",   "mono",         "wine",
+      "wine64",     "perl",      "ruby",       "node",     "nodejs",   "gjs",          "lua"};
+  for (const char *n : names)
+    if (p == n) return true;
+  // python, python3, python3.13...
+  return starts_with(p, "python");
+}
+
+// The program an Exec= line starts: "env A=1 python3 /opt/foo/foo.py %U"
+// -> "foo", "flatpak run --branch=stable org.foo.Bar" -> "org.foo.Bar".
+std::string program_of(const std::string &exec) {
+  auto argv = split_command(exec);
+  bool flatpak = false;
+  for (size_t i = 0; i < argv.size(); ++i) {
+    const std::string &a = argv[i];
+    if (a.empty() || a[0] == '-' || a[0] == '%') continue;  // options, field codes
+    if (a.find('=') != std::string::npos && a[0] != '/') continue;  // env VAR=value
+    std::string base = basename_of(a);
+    if (base == "flatpak" || base == "snap") {
+      flatpak = true;
+      continue;
+    }
+    if (flatpak && base == "run") continue;
+    if (flatpak) return base;  // the application ID
+    if (wrapper_program(base)) continue;
+    // Scripts and jars: their name without the extension.
+    for (const char *ext : {".py", ".sh", ".pl", ".rb", ".jar", ".exe", ".AppImage", ".appimage"})
+      if (ends_with(base, ext) && base.size() > strlen(ext)) return base.substr(0, base.size() - strlen(ext));
+    return base;
+  }
+  return "";
+}
+
+void add_name(std::vector<std::string> &out, const std::string &n) {
+  if (n.empty() || n.find('/') != std::string::npos || n.find(' ') != std::string::npos) return;
+  if (std::find(out.begin(), out.end(), n) == out.end()) out.push_back(n);
+}
+
+// |name| and its near forms: without an image file extension, without
+// "-symbolic", in lower case, the last part of a reverse-DNS name.
+void add_forms(std::vector<std::string> &out, std::string name) {
+  for (const char *ext : {".png", ".svg", ".svgz", ".xpm", ".jpg", ".jpeg", ".ico", ".gif", ".bmp"})
+    if (ends_with(lower(name), ext)) {
+      name.resize(name.size() - strlen(ext));
+      break;
+    }
+  if (name.empty()) return;
+  std::vector<std::string> bases = {name};
+  if (ends_with(name, "-symbolic") && name.size() > 9) bases.push_back(name.substr(0, name.size() - 9));
+  for (auto &b : bases) {
+    add_name(out, b);
+    add_name(out, lower(b));
+    // "org.gnome.Nautilus": at least two dots, then the last part.
+    if (std::count(b.begin(), b.end(), '.') >= 2) {
+      std::string last = b.substr(b.rfind('.') + 1);
+      add_name(out, last);
+      add_name(out, lower(last));
+    }
+  }
+}
+
+}  // namespace
+
+std::vector<std::string> app_icon_names(const DesktopEntry &e) {
+  std::vector<std::string> given, own;
+  std::string icon = trim(e.icon);
+  // An absolute path that is gone: its name may still be in the theme.
+  if (!icon.empty() && icon[0] == '/') icon = basename_of(icon);
+  add_forms(given, icon);
+  std::string id = e.id;
+  if (ends_with(id, ".desktop")) id.resize(id.size() - 8);
+  if (id.find(':') != std::string::npos) id.clear();  // no desktop file ID ("sde-search:...")
+  add_forms(own, id);
+  add_forms(own, program_of(e.exec));
+  add_forms(own, trim(e.startup_wm_class));
+  // SDE's own drawing for a common application that no theme draws well
+  // (hicolor, "sde-app-" + the desktop file ID; see docs/BRANDING.md).
+  if (!id.empty()) add_name(own, "sde-app-" + id);
+  bool own_first = !icon.empty() && stock_icon(icon);
+  std::vector<std::string> out = own_first ? own : given;
+  for (auto &n : own_first ? given : own) add_name(out, n);
+  return out;
+}
+
+std::vector<std::string> category_icon_names(const DesktopEntry &e) {
+  auto has = [&](const char *c) {
+    return std::find(e.categories.begin(), e.categories.end(), c) != e.categories.end();
+  };
+  std::vector<std::string> out;
+  auto add = [&](std::initializer_list<const char *> names) {
+    for (const char *n : names) add_name(out, n);
+  };
+  // Network settings (nm-connection-editor): also Adwaita's network-workgroup
+  // and NetworkManager's own nm-device-wired.
+  if (has("X-GNOME-NetworkSettings") || (has("Network") && has("Settings")))
+    add({"preferences-system-network", "network-workgroup", "nm-device-wired"});
+  static const struct {
+    const char *category, *icon, *other;
+  } specific[] = {
+      {"TerminalEmulator", "utilities-terminal", nullptr},
+      {"FileManager", "system-file-manager", "folder"},
+      {"WebBrowser", "web-browser", "internet-web-browser"},
+      {"Email", "internet-mail", "mail-client"},
+      {"Chat", "internet-chat", nullptr},
+      {"InstantMessaging", "internet-chat", nullptr},
+      {"IRCClient", "internet-chat", nullptr},
+      {"Feed", "internet-feed-reader", nullptr},
+      {"News", "internet-news-reader", nullptr},
+      {"TextEditor", "accessories-text-editor", nullptr},
+      {"Calculator", "accessories-calculator", nullptr},
+      {"Dictionary", "accessories-dictionary", nullptr},
+      {"Archiving", "utilities-file-archiver", "package-x-generic"},
+      {"Compression", "utilities-file-archiver", "package-x-generic"},
+      {"Monitor", "utilities-system-monitor", nullptr},
+      {"PackageManager", "system-software-install", "package-x-generic"},
+      {"Accessibility", "preferences-desktop-accessibility", nullptr},
+      {"Printing", "printer", nullptr},
+      {"Security", "preferences-system-privacy", "security-high"},
+      {"WordProcessor", "x-office-document", nullptr},
+      {"Spreadsheet", "x-office-spreadsheet", nullptr},
+      {"Presentation", "x-office-presentation", nullptr},
+      {"Calendar", "x-office-calendar", nullptr},
+      {"ContactManagement", "x-office-address-book", nullptr},
+      {"Video", "multimedia-video-player", "video-x-generic"},
+      {"Audio", "multimedia-audio-player", "audio-x-generic"},
+      {"Music", "multimedia-audio-player", "audio-x-generic"},
+      {"Photography", "image-x-generic", nullptr},
+      {"HardwareSettings", "preferences-desktop-peripherals", nullptr},
+      {"DesktopSettings", "preferences-desktop", nullptr},
+  };
+  for (auto &s : specific)
+    if (has(s.category)) {
+      add_name(out, s.icon);
+      if (s.other) add_name(out, s.other);
+    }
+  // The main category of the menu, with an icon plain Adwaita has last.
+  std::string cat = e.menu_category();
+  if (cat == "Internet") add({"applications-internet", "network-workgroup"});
+  else if (cat == "Office") add({"applications-office", "x-office-document"});
+  else if (cat == "Multimedia") add({"applications-multimedia", "video-x-generic"});
+  else if (cat == "Graphics") add({"applications-graphics", "image-x-generic"});
+  else if (cat == "Development") add({"applications-development", "text-x-script"});
+  else if (cat == "Games") add({"applications-games", "input-gaming"});
+  else if (cat == "Education") add({"applications-education"});
+  else if (cat == "Science") add({"applications-science"});
+  else if (cat == "Settings") add({"preferences-desktop", "preferences-system"});
+  else if (cat == "System") add({"applications-system", "computer"});
+  else if (cat == "Accessories") add({"applications-accessories", "applications-utilities"});
+  else add({"applications-other"});
+  return out;
+}
+
+std::vector<std::string> app_icon_list(const DesktopEntry &e, bool by_category) {
+  std::vector<std::string> out;
+  if (!e.icon.empty() && e.icon[0] == '/') out.push_back(e.icon);
+  for (auto &n : app_icon_names(e)) out.push_back(n);
+  if (by_category)
+    for (auto &n : category_icon_names(e)) add_name(out, n);
+  return out;
+}
+
+std::string IconLoader::app_icon(const DesktopEntry &e, int size, bool by_category) {
+  current_chain();  // a changed XDG_DATA_DIRS clears the caches first
+  std::string key = e.path;
+  key += '\n';
+  key += e.id;
+  key += '\n';
+  key += e.icon;
+  if (!by_category) key += "\n-";
+  auto it = g_app_icons.find(key);
+  if (it != g_app_icons.end()) return it->second;
+  // Whether an icon exists does not depend on the size; asking at the size
+  // it is drawn at fills the cache the drawing reads next.
+  std::string found;
+  for (auto &n : app_icon_list(e, by_category))
+    if (!lookup(n, size).empty()) {
+      found = n;
+      break;
+    }
+  g_app_icons[key] = found;
+  return found;
 }
 
 namespace {

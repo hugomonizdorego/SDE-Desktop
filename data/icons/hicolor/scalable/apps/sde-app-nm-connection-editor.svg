@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Advanced Network Configuration: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Advanced Network Configuration</title>
+  <defs>
+    <linearGradient id="globe" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6FA6DC"/><stop offset="1" stop-color="#3876B9"/></linearGradient>
+    <linearGradient id="gear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2EDE3"/><stop offset="1" stop-color="#D8D1C2"/></linearGradient>
+  </defs>
+  <circle cx="114" cy="112" r="90" fill="url(#globe)" stroke="#2B2B2F" stroke-width="7" class="outline"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-opacity="0.9" class="detail">
+    <ellipse cx="114" cy="112" rx="40" ry="88"/>
+    <path d="M114 24V200M26 112H202M40 66C80 80 148 80 188 66M40 158C80 144 148 144 188 158"/>
+  </g>
+  <path d="M180.97 151.03 L181.46 138.71 L198.54 138.71 L199.03 151.03 L211.17 156.06 L220.23 147.69 L232.31 159.77 L223.94 168.83 L228.97 180.97 L241.29 181.46 L241.29 198.54 L228.97 199.03 L223.94 211.17 L232.31 220.23 L220.23 232.31 L211.17 223.94 L199.03 228.97 L198.54 241.29 L181.46 241.29 L180.97 228.97 L168.83 223.94 L159.77 232.31 L147.69 220.23 L156.06 211.17 L151.03 199.03 L138.71 198.54 L138.71 181.46 L151.03 180.97 L156.06 168.83 L147.69 159.77 L159.77 147.69 L168.83 156.06 Z" fill="url(#gear)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <circle cx="190" cy="190" r="17" fill="#3876B9" stroke="#2B2B2F" stroke-width="6" class="detail"/>
+</svg>
