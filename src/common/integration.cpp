@@ -295,6 +295,13 @@ std::string auto_compositor_backend() {
   return detect_graphics_class() == "hardware" ? "glx" : "xrender";
 }
 
+std::string compositor_backend(const Config &cfg) {
+  if (lower(cfg.get("compositor", "mode", "auto")) == "off") return "";
+  if (file_exists(config_home() + "/sde/compositor.conf")) return "";
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  return backend == "glx" || backend == "xrender" ? backend : auto_compositor_backend();
+}
+
 std::string compositor_effects(const Config &cfg, bool safe) {
   std::string effects = lower(cfg.get("compositor", "effects", "auto"));
   if (effects == "full" || effects == "lite") return effects;
@@ -305,6 +312,145 @@ std::string compositor_effects(const Config &cfg, bool safe) {
   if (backend == "glx" || backend == "xrender") return "full";
   return detect_graphics_class() == "hardware" ? "full" : "lite";
 }
+
+namespace {
+// The Liquid Glass window shader (0.2.0 Alpha 2) for SDE Compositor, which
+// gives window shaders the backdrop of the window (suite/patches/
+// sde-compositor). @NAME@ values come from the theme (write_liquid_shader()).
+const char *kLiquidShader = R"GLSL(#version 330
+// SDE Liquid Glass for @THEME@: written by SDE (src/common/integration.cpp)
+// from the theme and [aero] settings, and replaced when they change; see
+// docs/THEMES.md. SDE draws its glass surfaces (marked _SDE_SURFACE) flat in
+// their surface color, and this shader turns that color into glass: what is
+// behind the window (already blurred by the compositor), saturated and
+// brightened, bent along the edges like the rim of a lens, tinted with the
+// surface color by the window's opacity and lit by a thin rim. Text, icons
+// and highlights keep their colors.
+in vec2 texcoord;
+uniform sampler2D tex;
+uniform vec2 effective_size;
+uniform float opacity;
+uniform float dim;
+uniform float corner_radius;
+uniform vec4 backdrop_rect;
+vec4 backdrop_at(vec2 offset);
+
+const vec3 KEY_A = vec3(@KEY_A@);  // panel and popups (surface)
+const vec3 KEY_B = vec3(@KEY_B@);  // menus and notifications (menu_bg)
+const float DARK = @DARK@;
+const float SATURATION = @SATURATION@;
+const float BRIGHTNESS = @BRIGHTNESS@;
+const float LENS_BAND = @LENS_BAND@;    // px
+const float LENS_SHIFT = @LENS_SHIFT@;  // px at the very edge
+const float RIM = @RIM@;
+const float RIM_WIDTH = @RIM_WIDTH@;    // px
+const float KEY_RANGE = @KEY_RANGE@;
+const int SQUARE = @SQUARE@;            // 1: square bottom corners, 2: square top corners
+
+// Signed distance to the window's rounded rectangle (negative inside).
+float shape(vec2 p, vec2 h, float r) {
+	if ((SQUARE == 1 && p.y > 0.0) || (SQUARE == 2 && p.y < 0.0)) {
+		r = 0.0;
+	}
+	vec2 q = abs(p) - h + vec2(r);
+	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+vec4 window_shader() {
+	vec2 h = effective_size * 0.5;
+	vec2 p = texcoord - h;
+	// Window y grows downwards whatever the orientation of the textures.
+	if (dFdy(texcoord.y) * backdrop_rect.z < 0.0) {
+		p.y = -p.y;
+	}
+	float r = min(corner_radius, min(h.x, h.y));
+	float d = shape(p, h, r);
+	float cover = clamp(0.5 - d, 0.0, 1.0);
+	if (cover <= 0.0) {
+		return vec4(0.0);
+	}
+	vec2 e = vec2(0.5, 0.0);
+	vec2 n = vec2(shape(p + e.xy, h, r) - shape(p - e.xy, h, r),
+	              shape(p + e.yx, h, r) - shape(p - e.yx, h, r));
+	n /= max(length(n), 1e-4);
+	float depth = max(-d, 0.0);
+	// The lens: towards the edge the glass shows what is further in.
+	float band = max(min(LENS_BAND, 0.8 * min(h.x, h.y)), 1.0);
+	float t = clamp(1.0 - depth / band, 0.0, 1.0);
+	vec3 back = backdrop_at(-n * LENS_SHIFT * (band / LENS_BAND) * pow(t, 2.2)).rgb;
+	float luma = dot(back, vec3(0.2126, 0.7152, 0.0722));
+	back = clamp(mix(vec3(luma), back, SATURATION) * BRIGHTNESS, 0.0, 1.0);
+	// The surface color nearest this pixel, and how far it is from it.
+	vec4 c = texture(tex, texcoord / vec2(textureSize(tex, 0)));
+	vec3 da = c.rgb - KEY_A, db = c.rgb - KEY_B;
+	float ma = max(max(abs(da.r), abs(da.g)), abs(da.b));
+	float mb = max(max(abs(db.r), abs(db.g)), abs(db.b));
+	vec3 key = ma <= mb ? KEY_A : KEY_B;
+	vec3 delta = ma <= mb ? da : db;
+	float content = clamp(min(ma, mb) / KEY_RANGE, 0.0, 1.0);
+	// The glass: the backdrop tinted with the surface color by the
+	// window's opacity, more clearly in the lens, where no text is.
+	float tint = clamp(opacity, 0.0, 1.0) * (1.0 - 0.45 * t);
+	vec3 glass = mix(back, key, tint);
+	// Close to the surface color: glass with the difference on top (soft
+	// fills, hover tints); far from it: the window's own color (text).
+	vec3 col = mix(clamp(glass + delta, 0.0, 1.0), c.rgb, content);
+	// Light from the top, a little from the left: a thin rim where the
+	// edge faces it, a fainter one opposite, a glow in the lens.
+	vec2 light = normalize(vec2(-0.42, -0.91));
+	float facing = dot(n, light);
+	float rim = exp(-depth / RIM_WIDTH) * RIM *
+	            (0.30 + 0.70 * max(facing, 0.0) + 0.40 * max(-facing, 0.0));
+	float glow = t * t * RIM * 0.14 * (0.55 + 0.45 * max(facing, 0.0));
+	col += (1.0 - col) * clamp(rim + glow, 0.0, 1.0);
+	// A faint hairline away from the light keeps the glass apart from
+	// bright backdrops.
+	col *= 1.0 - exp(-depth / 0.8) * (0.06 + 0.10 * DARK) * max(-facing, 0.0);
+	col *= 1.0 - dim;
+	// Fading in and out: the compositor animates the opacity from 0.
+	float fade = clamp(opacity * 2.0, 0.0, 1.0);
+	return vec4(col, 1.0) * cover * fade;
+}
+)GLSL";
+
+std::string glsl_number(double v) {
+  char buf[32];
+  snprintf(buf, sizeof buf, "%.4f", v);
+  return buf;
+}
+
+std::string glsl_vec3(const Color &c) {
+  return glsl_number(c.r) + ", " + glsl_number(c.g) + ", " + glsl_number(c.b);
+}
+
+// Writes the Liquid Glass shader for |t| (|square|: see SQUARE above) to
+// ~/.config/sde/liquid-glass[-top|-bottom].glsl and returns its path.
+std::string write_liquid_shader(const Theme &t, int square) {
+  LiquidMaterial m = theme_liquid_material(t.family, t.dark);
+  std::string text = kLiquidShader;
+  auto put = [&](const std::string &key, const std::string &value) {
+    for (size_t at; (at = text.find("@" + key + "@")) != std::string::npos;)
+      text.replace(at, key.size() + 2, value);
+  };
+  put("THEME", t.gtk_theme);
+  put("KEY_A", glsl_vec3(t.surface));
+  put("KEY_B", glsl_vec3(t.menu_bg));
+  put("DARK", t.dark ? "1.0" : "0.0");
+  put("SATURATION", glsl_number(m.saturation));
+  put("BRIGHTNESS", glsl_number(m.brightness));
+  put("LENS_BAND", glsl_number(m.lens_band * t.scale));
+  put("LENS_SHIFT", glsl_number(m.lens_shift * t.scale));
+  put("RIM", glsl_number(m.rim));
+  put("RIM_WIDTH", glsl_number(m.rim_width * t.scale));
+  put("KEY_RANGE", glsl_number(m.key_range));
+  put("SQUARE", std::to_string(square));
+  std::string path = config_home() + "/sde/liquid-glass" +
+                     (square == 1 ? "-top" : square == 2 ? "-bottom" : "") + ".glsl";
+  std::string old;
+  if (!read_file(path, old) || old != text) write_file_atomic(path, text);
+  return path;
+}
+}  // namespace
 
 std::string write_compositor_config(const Config &cfg, bool safe) {
   Theme t = Theme::from_config(cfg);
@@ -322,9 +468,12 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // lite profile: picom rounds them with a cheap mask on XRender too, and
   // square frames were the most visible difference to the SDE look there.
   bool round = cfg.get_bool("aero", "rounded_corners", true);
-  bool liquid = t.family == "glass";
   bool motion = cfg.get_bool("aero", "animations", true) && !lite;
-  int strength = std::max(1, std::min(12, cfg.get_int("aero", "blur_strength", 6) + (liquid ? 2 : 0)));
+  LiquidMaterial glass = theme_liquid_material(t.family, t.dark);
+  // Liquid Glass keeps the backdrop recognizable (a lighter blur, see
+  // palettes.json); [aero] blur_strength moves it like the others.
+  int user_strength = cfg.get_int("aero", "blur_strength", 6);
+  int strength = std::max(1, std::min(12, glass.on ? glass.blur + user_strength - 6 : user_strength));
   double frame = t.frame_opacity;
   // GTK menus draw their own translucent background with opaque text (the
   // CSS block of sync_gtk_settings()); other toolkits' menus get the
@@ -354,27 +503,44 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // Fullscreen games and videos bypass the compositor on a real GPU.
   bool unredir = cfg.get_bool("compositor", "unredirect_fullscreen", gfx == "hardware");
   c += std::string("unredir-if-possible = ") + (unredir ? "true" : "false") + ";\n";
-  if (lite)
-    c += "shadow = true;\nshadow-radius = 8;\nshadow-opacity = " + f(t.dark ? 0.36 : 0.20) +
-         ";\nshadow-offset-x = -6;\nshadow-offset-y = -4;\n";
-  else
-    c += "shadow = true;\nshadow-radius = " + std::to_string(int(t.shadow_radius / t.scale)) +
-         ";\nshadow-opacity = " + f(std::min(0.55, t.shadow.a + (t.dark ? 0.0 : 0.06))) +
-         ";\nshadow-offset-x = -" + std::to_string(int(t.shadow_radius / t.scale) - 2) +
-         ";\nshadow-offset-y = -" + std::to_string(int(t.shadow_radius / t.scale) / 2 + 2) + ";\n";
+  // Soft shadows that fall a little downwards, as from a light above
+  // (0.2.0 Alpha 2: also on the lite profile, where they cost little).
+  int sr = lite ? 12 : int(t.shadow_radius / t.scale);
+  double so = lite ? (t.dark ? 0.40 : 0.20) : std::min(0.55, t.shadow.a + (t.dark ? 0.0 : 0.06));
+  c += "shadow = true;\nshadow-radius = " + std::to_string(sr) + ";\nshadow-opacity = " + f(so) +
+       ";\nshadow-offset-x = -" + std::to_string(sr) + ";\nshadow-offset-y = -" +
+       std::to_string(sr - sr / 3) + ";\n";
   c += "shadow-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
-       "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@:c\"];\n";
+       "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@\"];\n";
   if (motion)
     // About 10 frames per fade (~100 ms): smooth without long busy periods.
     c += "fading = true;\nfade-in-step = 0.10;\nfade-out-step = 0.12;\nfade-delta = 10;\n"
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
-  // Window corners follow the family: Fluent 8, Graphite 10, Glass 12.
+  // Window corners follow the family: Fluent 8, Graphite 10, Liquid Glass 16.
   c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
-  c += "rounded-corners-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
-       "\"window_type = 'tooltip'\", \"window_type = 'dropdown_menu'\", "
-       "\"window_type = 'popup_menu'\", \"window_type = 'menu'\", \"fullscreen\"];\n";
+  // SDE's own surfaces (x11::set_surface()) are rounded with the radius they
+  // are shaped with (already scaled): smooth corners over their XShape.
+  struct Surface {
+    const char *kind;
+    int radius, square;  // square: see kLiquidShader
+  };
+  const Surface surfaces[] = {
+      {"panel", 0, 0}, {"panel-round", std::min(S(16), t.panel_height / 2), 0},
+      {"popup", t.radius_large, 0}, {"popup-top", t.radius_large, 1}, {"popup-bottom", t.radius_large, 2},
+      {"menu", t.radius, 0}, {"tooltip", t.radius_small, 0}};
+  auto is = [](const char *kind) { return std::string("_SDE_SURFACE = '") + kind + "'"; };
+  c += "rounded-corners-exclude = [\"window_type = 'desktop'\", \"fullscreen\"";
+  for (const char *type : {"dock", "tooltip", "dropdown_menu", "popup_menu", "menu"})
+    c += std::string(", \"window_type = '") + type + "' && !_SDE_SURFACE\"";
+  c += "];\n";
+  if (round) {
+    std::string rules;
+    for (const auto &s : surfaces)
+      rules += std::string(rules.empty() ? "" : ", ") + "\"" + std::to_string(s.radius) + ":" + is(s.kind) + "\"";
+    c += "corner-radius-rules = [" + rules + "];\n";
+  }
   c += "frame-opacity = " + f(frame) + ";\n";
   c += "detect-client-opacity = true;\n";
   if (blur) {
@@ -386,8 +552,20 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
       // Above 8 dual_kawase costs much more for little visible difference.
       c += "blur: { method = \"dual_kawase\"; strength = " + std::to_string(std::min(strength, 8)) + "; };\n";
     c += "blur-background = true;\nblur-background-frame = true;\nblur-background-fixed = false;\n";
-    c += "blur-background-exclude = [\"window_type = 'desktop'\", \"_GTK_FRAME_EXTENTS@:c\", "
+    c += "blur-background-exclude = [\"window_type = 'desktop'\", \"_GTK_FRAME_EXTENTS@\", "
          "\"class_g = 'Xfce4-screenshooter'\", \"fullscreen\"];\n";
+  }
+  // Liquid Glass (OpenGL only): SDE's surfaces are drawn by the glass shader,
+  // one for each set of rounded corners.
+  if (t.liquid && !safe) {
+    std::string rules;
+    for (int square : {0, 1, 2}) {
+      std::string match;
+      for (const auto &s : surfaces)
+        if (s.square == square) match += std::string(match.empty() ? "" : " || ") + is(s.kind);
+      rules += std::string(rules.empty() ? "" : ", ") + "\"" + write_liquid_shader(t, square) + ":" + match + "\"";
+    }
+    c += "window-shader-fg-rule = [" + rules + "];\n";
   }
   c += "wintypes: {\n"
        "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.92, t.popup_opacity)) + "; };\n"

@@ -32,8 +32,21 @@ class Painter {
   // top to bottom, or top-left to bottom-right when |diagonal|.
   void fill_gradient(double x, double y, double w, double h, double r, const Color &from,
                      const Color &to, bool diagonal = false);
-  // SDE Glass: a faint light fading out over the upper part of a surface.
+  // SDE Liquid Glass: a faint light fading out over the upper part of a surface.
   void glass_sheen(double x, double y, double w, double h, double r, bool dark);
+  // The edge of a surface (0.2.0 Alpha 2): a 1 px |border| on the outline
+  // and, inside it, a light rim that is brightest at the top (|rim|: its
+  // strength, 0 for none). |corners| as in Painter::rounded_corners():
+  // 1 top-left, 2 top-right, 4 bottom-right, 8 bottom-left.
+  void surface_edge(double x, double y, double w, double h, double r, const Color &border, double rim,
+                    bool dark, int corners = 15);
+  // SDE Liquid Glass drawn by SDE itself, when the compositor's glass shader
+  // does not run (lite profile, XRender): over a surface already filled, a
+  // light from the top that fades out and the light rim of surface_edge().
+  void glass_surface(double x, double y, double w, double h, double r, const Color &border, bool dark,
+                     int corners = 15);
+  // A rounded rectangle path with only |corners| rounded (see surface_edge()).
+  void rounded_corners(double x, double y, double w, double h, double r, int corners);
   // Soft drop shadow made of a few translucent rounded rectangles.
   void shadow(double x, double y, double w, double h, double r, const Color &c, int spread = 8);
   // Draws an image scaled into a |size| square. Image surfaces are uploaded

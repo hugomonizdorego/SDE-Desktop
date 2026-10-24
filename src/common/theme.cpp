@@ -298,6 +298,23 @@ Color theme_accent_color(const std::string &family, const std::string &accent, b
   return Color::hex(family_info(family).accent[a < 0 ? 0 : a][dark ? 1 : 0]);
 }
 
+LiquidMaterial theme_liquid_material(const std::string &family, bool dark) {
+  const palettes::Liquid &q = family_info(family).liquid;
+  LiquidMaterial m;
+  if (!q.on) return m;
+  int i = dark ? 1 : 0;
+  m.on = true;
+  m.blur = q.blur;
+  m.saturation = q.saturation;
+  m.brightness = q.brightness[i];
+  m.lens_band = q.lens_band;
+  m.lens_shift = q.lens_shift;
+  m.rim = q.rim[i];
+  m.rim_width = q.rim_width;
+  m.key_range = q.key_range;
+  return m;
+}
+
 // Fills the palette of |t| from family/mode/accent (t.accent may already
 // hold a custom color).
 static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
@@ -376,11 +393,15 @@ static void apply_transparency(Theme &t, const palettes::Family &f) {
   if (t.lite) s *= 0.5;
   auto floor_of = [](std::initializer_list<double> floors) { return std::max(floors); };
   auto toward = [s](double floor) { return 1.0 - s * (1.0 - floor); };
-  t.opacity = toward(floor_of({readable_opacity(t.text, t.panel_bg, 4.5, true),
-                               readable_opacity(t.text_dim, t.panel_bg, 3.0, true)}));
-  t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, true),
-                                     readable_opacity(t.text_dim, t.menu_bg, 3.0, true),
-                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, true)}));
+  // Liquid Glass: the shader tints only the surface color with the backdrop
+  // and keeps text and icons opaque, so the limit is that of a translucent
+  // background with opaque text (like GTK menus), not of a faded window.
+  bool fade = !t.liquid;
+  t.opacity = toward(floor_of({readable_opacity(t.text, t.panel_bg, 4.5, fade),
+                               readable_opacity(t.text_dim, t.panel_bg, 3.0, fade)}));
+  t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, fade),
+                                     readable_opacity(t.text_dim, t.menu_bg, 3.0, fade),
+                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, fade)}));
   // Frames: translucent title bars need blur behind them to stay calm;
   // Glass goes all the way, the other families part of it.
   double frame = toward(readable_opacity(t.titlebar_text, t.titlebar_bg, 4.5, true));
@@ -429,6 +450,10 @@ Theme Theme::from_config(const Config &cfg) {
   t.transparency = std::max(0, std::min(100, cfg.get_int("aero", "transparency", 25)));
   t.lite = compositor_lite(cfg);
   t.blur = t.translucent && !t.lite && cfg.get_bool("aero", "blur", true);
+  // Liquid Glass needs SDE's own OpenGL configuration of the compositor
+  // (blur and the shader): not on the lite profile, with XRender, with the
+  // compositor off or with a compositor.conf of the user's own.
+  t.liquid = f.liquid.on && t.glass && t.blur && t.transparency > 0 && compositor_backend(cfg) == "glx";
   apply_transparency(t, f);
   return t;
 }

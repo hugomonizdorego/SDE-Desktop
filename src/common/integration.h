@@ -38,5 +38,9 @@ std::string virtual_machine_name();
 std::string auto_compositor_backend();
 // "full" or "lite" compositor effects for [compositor] effects=auto|full|lite.
 std::string compositor_effects(const Config &cfg, bool safe = false);
+// The backend SDE's generated configuration uses: "glx" or "xrender"
+// ([compositor] backend, auto resolved), or "" when the compositor is off or
+// runs a compositor.conf of the user's own.
+std::string compositor_backend(const Config &cfg);
 void migrate_legacy_suite_shortcuts();
 }

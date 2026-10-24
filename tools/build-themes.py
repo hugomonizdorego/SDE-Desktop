@@ -120,6 +120,13 @@ def write_header(pal, path):
         out.append(f'  unsigned {k};')
     out.append('  double shadow_alpha;')
     out.append('};')
+    out.append('// The Liquid Glass material (palettes.json "liquid"; on = false without one):')
+    out.append('// [2] values are light, dark.')
+    out.append('struct Liquid {')
+    out.append('  bool on;')
+    out.append('  int blur;')
+    out.append('  double saturation, brightness[2], lens_band, lens_shift, rim[2], rim_width, key_range;')
+    out.append('};')
     out.append('struct Family {')
     out.append('  const char *id, *label, *description, *prefix, *buttons, *title_layout, *menu_highlight;')
     out.append('  int radius, radius_small, radius_large, shadow_radius;')
@@ -128,6 +135,7 @@ def write_header(pal, path):
     out.append('  unsigned close_hover;  // caption close button while hovered')
     out.append(f'  unsigned accent[{len(acc)}][2];')
     out.append('  Mode light, dark;')
+    out.append('  Liquid liquid;')
     out.append('};')
     out.append('struct Legacy { const char *from, *to; };')
     out.append('')
@@ -159,7 +167,14 @@ def write_header(pal, path):
                    f"{'true' if f['glass'] else 'false'}, {f['mica']}, {f['translucency']}, "
                    f"{u(f['caption']['close_hover'])},")
         out.append('   {' + ', '.join('{' + u(accents[a][0]) + ', ' + u(accents[a][1]) + '}' for a in acc) + '},')
-        out.append('   ' + ', '.join(modes) + '},')
+        out.append('   ' + ', '.join(modes) + ',')
+        q = f.get('liquid')
+        if q:
+            out.append(f"   {{true, {q['blur']}, {q['saturation']}, {{{q['brightness'][0]}, {q['brightness'][1]}}}, "
+                       f"{q['lens_band']}, {q['lens_shift']}, {{{q['rim'][0]}, {q['rim'][1]}}}, {q['rim_width']}, "
+                       f"{q['key_range']}}}}},")
+        else:
+            out.append('   {false, 0, 1, {1, 1}, 0, 0, {0, 0}, 1, 0}},')
     out.append('};')
     leg = pal['legacy']
     out.append('constexpr Legacy kLegacyStyles[] = {' +
