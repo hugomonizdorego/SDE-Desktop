@@ -1199,17 +1199,20 @@ void build_appearance(Page *page) {
   page->end_card();
 
   page->begin_card(_("Size and text"));
-  std::string sc = g_cfg.get("appearance", "scale", "auto");
-  std::vector<std::string> scales = {_("Automatic"), "100 %", "125 %", "150 %", "175 %", "200 %"};
-  int sc_i = sc == "auto" ? 0 : std::max(0, std::min(5, (atoi(sc.c_str()) - 100) / 25 + 1));
+  // 75 % to 200 % in quarters; another number shows as the nearest.
+  static const char *scale_values[] = {"auto", "75", "100", "125", "150", "175", "200"};
+  std::string sc = lower(trim(g_cfg.get("appearance", "scale", "auto")));
+  std::vector<std::string> scales = {_("Automatic"), "75 %", "100 %", "125 %", "150 %", "175 %", "200 %"};
+  int pct = g_cfg.get_int("appearance", "scale", 100);
+  int sc_i = sc == "auto" || sc.empty() ? 0 : std::max(1, std::min(6, (pct - 50 + 12) / 25));
   page->choice_row(
       _("Interface size"), scales, sc_i,
       [](int v) {
-        static const char *vals[] = {"auto", "100", "125", "150", "175", "200"};
-        if (v >= 0 && v < 6) g_cfg.set("appearance", "scale", vals[v]);
+        if (v >= 0 && v < 7) g_cfg.set("appearance", "scale", scale_values[v]);
         apply_change();
       },
-      _("Larger sizes help on high-resolution screens. Automatic follows the screen's DPI."));
+      _("Larger sizes help on high-resolution screens, 75 % fits more on a small one. Automatic "
+        "follows the screen's DPI."));
   int pt = g_cfg.get_int("appearance", "font_size", 10);
   std::vector<std::string> sizes;
   for (int s = 8; s <= 14; ++s) sizes.push_back(format(_("%d pt"), s));

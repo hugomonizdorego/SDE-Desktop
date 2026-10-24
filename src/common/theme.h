@@ -38,7 +38,7 @@ struct Color {
   double contrast(const Color &other) const;
 };
 
-// User interface scale factor (1.0 = 100 %, up to 2.0). Set by
+// User interface scale factor (1.0 = 100 %; 0.75 to 2.0). Set by
 // Theme::from_config(); every SDE program multiplies its pixel sizes by it.
 double ui_scale();
 void set_ui_scale(double scale);

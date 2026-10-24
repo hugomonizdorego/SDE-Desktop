@@ -99,8 +99,10 @@ const std::vector<Category> &categories() {
             "battery sleep suspend lid brightness dim", nullptr, false},
            {"date-time", N_("Date & Time"), N_("Time zone and network time"), "date-time", nullptr, {},
             "date time zone timezone clock ntp", nullptr, false},
-           {"users", N_("Users & Avatar"), N_("Your picture and your name"), "users", nullptr, {},
-            "user account avatar picture photo face name password", nullptr, false},
+           {"users", N_("Users & Avatar"), N_("Accounts, pictures and passwords"), "users", nullptr, {},
+            "user users account accounts avatar picture photo face name password add new remove delete "
+            "administrator admin sudo standard lock automatic login autologin",
+            nullptr, false},
            {"default-apps", N_("Default Applications"), N_("Browser, mail, music and more"),
             "default-apps", nullptr, {},
             "default browser mail email music video image viewer pdf terminal file types open with",

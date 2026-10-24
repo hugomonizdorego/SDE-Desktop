@@ -18,11 +18,14 @@ parser.add_argument(
 )
 parser.add_argument("--themes-dir", type=Path, default=Path(__file__).resolve().parent.parent / "build/themes",
                     help="SDE themes built by tools/build-themes.py (default: build/themes)")
+parser.add_argument("--test-dir", type=Path, default=None,
+                    help="QA fixtures (sde-panel-service-fixture); default: dist/test-tools or build/tests "
+                         "when there. Without them the account administration checks are skipped.")
 parser.add_argument("--theme", default="",
                     help="[appearance] lines, e.g. 'style=fluent\\ntheme=dark\\naccent_name=green'")
 parser.add_argument("--size", default="1366x768")
 parser.add_argument("--display", type=int, default=98, help="Xvfb display number")
-parser.add_argument("--scale", type=int, default=100, choices=[100, 125, 150, 175, 200])
+parser.add_argument("--scale", type=int, default=100, choices=[75, 100, 125, 150, 175, 200])
 parser.add_argument(
     "--tcp-display",
     action="store_true",
@@ -297,10 +300,12 @@ def users_page_checks():
     procs.append(app)
     win = find("^Control Center$")
     wait_page("users")
-    # The real name field (inactive here: no AccountsService to change it).
+    # The full name field (inactive here: no AccountsService to change it).
     names = [l.split("\t")[0] for l in (home / "qa" / "Control-Center.txt").read_text().splitlines()]
-    for name in ("Real name", "Sample Forest", "Sample Sunrise"):
+    for name in ("Your full name", "Sample Forest", "Sample Sunrise"):
         assert name in names, (name, names)
+    # Without AccountsService the accounts are listed, nothing is offered.
+    assert any(n.startswith("user:") for n in names) and "Add User..." not in names, names
     shot("16-control-center-users")
     click_control(win, "Control Center", "Sample Sunrise")
     face = home / ".face"
@@ -317,6 +322,161 @@ def users_page_checks():
     app.terminate()
     app.wait()
     print("CONTROL CENTER USERS & AVATAR PASS", flush=True)
+
+
+def cc_names():
+    path = home / "qa" / "Control-Center.txt"
+    return [l.split("\t") for l in path.read_text().splitlines()] if path.exists() else []
+
+
+def cc_reveal(win, name):
+    """Wheels the Control Center page until control |name| is fully shown."""
+    g = geom(win)
+    for _ in range(60):
+        rows = [f for f in cc_names() if f[0] == name]
+        if rows and rows[0][5] == "1":
+            return
+        down = not rows or int(rows[0][2]) > g["HEIGHT"] // 2
+        run("xdotool", "mousemove", str(g["X"] + g["WIDTH"] - 40), str(g["Y"] + g["HEIGHT"] // 2),
+            "click", "5" if down else "4")
+        time.sleep(0.15)
+    raise AssertionError(("Control Center: cannot scroll to", name, [f[0] for f in cc_names()]))
+
+
+def cc_press(win, name):
+    for _ in range(80):
+        if any(f[0] == name for f in cc_names()):
+            break
+        time.sleep(0.1)
+    cc_reveal(win, name)
+    click_control(win, "Control Center", name)
+
+
+def user_admin_checks():
+    """0.2 Alpha 2: Users & Avatar manages the users of this computer through
+    AccountsService (the fixture's fake one, on the session bus): add a user
+    (user name made from the full name, password hashed with crypt(3)), make
+    it an administrator, lock it, remove it with its files; your own password
+    with passwd(1) (a fake one that checks the conversation)."""
+    tests = [d for d in ([args.test_dir] if args.test_dir else
+                         [Path("dist/test-tools"), Path(__file__).resolve().parent.parent / "build/tests"])
+             if d and (d / "sde-panel-service-fixture").is_file()]
+    if not tests:
+        print("SKIP account administration: no sde-panel-service-fixture (--test-dir)", flush=True)
+        return
+    bus = env["DBUS_SESSION_BUS_ADDRESS"]
+    log = home / "accounts.log"
+    fenv = dict(env, SDE_FIXTURE_SERVICES="accounts")
+    out_log = open(home / "accounts-fixture.log", "w")
+    fixture = sp.Popen([str(tests[0].resolve() / "sde-panel-service-fixture"), str(log)], env=fenv,
+                       stdout=out_log, stderr=out_log)
+    procs.append(fixture)
+    for _ in range(80):
+        if log.exists() and "READY" in log.read_text():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the AccountsService fixture did not start")
+
+    def logged(text):
+        for _ in range(100):
+            if text in log.read_text():
+                return
+            time.sleep(0.1)
+        raise AssertionError(("not asked of AccountsService", text, log.read_text()))
+
+    (home / "bin/passwd").write_text(
+        "#!/bin/sh\nstty -echo 2>/dev/null\n"
+        "printf 'Current password: '; read cur; printf '\\n'\n"
+        "[ \"$cur\" = 'old secret 1' ] || { echo 'passwd: Authentication token manipulation error'; exit 10; }\n"
+        "printf 'New password: '; read new; printf '\\n'\n"
+        "printf 'Retype new password: '; read again; printf '\\n'\n"
+        "[ \"$new\" = \"$again\" ] || exit 4\n"
+        "echo \"$new\" > \"$HOME/passwd-changed\"\n"
+        "echo 'passwd: password updated successfully'\n")
+    (home / "bin/passwd").chmod(0o755)
+    app_log = open(home / "sde-settings-accounts.log", "w")
+    app = sp.Popen(["sde-settings", "--page", "accounts"], env=dict(env, DBUS_SYSTEM_BUS_ADDRESS=bus),
+                   stdout=app_log, stderr=app_log)
+    procs.append(app)
+    win = find("^Control Center$")
+    wait_page("users")
+    for _ in range(80):
+        names = [f[0] for f in cc_names()]
+        if "user:sam" in names and "user:mia" in names and "Add User..." in names:
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(("the accounts are not listed", names))
+    g = geom(win)
+    for f in cc_names():
+        if f[0].startswith("user:"):
+            x, w = int(f[1]), int(f[3])
+            assert x >= 0 and x + w <= g["WIDTH"], ("sideways overflow", f, g)
+    shot("16-control-center-users-list")
+    # Add Robin Example: the user name follows the full name.
+    cc_press(win, "Add User...")
+    cc_press(win, "New user's full name")
+    run("xdotool", "type", "--delay", "30", "Robin Example")
+    cc_press(win, "New user's password")
+    run("xdotool", "type", "--delay", "30", "correct horse battery")
+    cc_press(win, "Confirm the new user's password")
+    run("xdotool", "type", "--delay", "30", "correct horse battery")
+    time.sleep(0.4)
+    shot("16-control-center-users-add")
+    cc_press(win, "Add User")
+    logged("ACCOUNTS CreateUser robin Robin Example 0")
+    for _ in range(50):
+        if re.search(r"ACCOUNTS SetPassword robin \$(y|6)\$", log.read_text()):
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(("no crypt(3) hash for robin", log.read_text()))
+    assert "plain" not in log.read_text(), log.read_text()
+    # Robin's card: an administrator, then locked, then removed with the files.
+    for _ in range(50):
+        if any(f[0] == "Lock account" for f in cc_names()):
+            break
+        time.sleep(0.1)
+    cc_press(win, "Account type")
+    run("xdotool", "key", "Down", "Return")
+    logged("ACCOUNTS SetAccountType robin 1")
+    time.sleep(0.8)
+    cc_press(win, "Lock account")
+    logged("ACCOUNTS SetLocked robin true")
+    time.sleep(0.8)
+    cc_reveal(win, "user:robin")
+    shot("16-control-center-users-card")
+    cc_press(win, "Remove User...")
+    cc_press(win, "Delete Files")
+    logged("ACCOUNTS DeleteUser robin remove-files")
+    for _ in range(50):
+        if not any(f[0] == "user:robin" for f in cc_names()):
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("Robin is still listed")
+    # Your own password, through passwd(1).
+    cc_press(win, "Change Password...")
+    cc_press(win, "Current password")
+    run("xdotool", "type", "--delay", "30", "old secret 1")
+    cc_press(win, "New password")
+    run("xdotool", "type", "--delay", "30", "a new secret 22")
+    cc_press(win, "Confirm new password")
+    run("xdotool", "type", "--delay", "30", "a new secret 22")
+    cc_press(win, "Change Password")
+    for _ in range(80):
+        if (home / "passwd-changed").exists():
+            break
+        time.sleep(0.1)
+    assert (home / "passwd-changed").read_text().strip() == "a new secret 22"
+    (home / "passwd-changed").unlink()
+    (home / "bin/passwd").unlink()
+    app.terminate()
+    app.wait()
+    fixture.terminate()
+    fixture.wait()
+    print("CONTROL CENTER USER ACCOUNTS PASS", flush=True)
 
 
 def reload_panel():
@@ -517,6 +677,7 @@ try:
     app.terminate()
     app.wait()
     users_page_checks()
+    user_admin_checks()
     app = spawn("sde-settings", "--page", "panel")
     settings = find("^Control Center$")
     shot("03-settings-panel")
