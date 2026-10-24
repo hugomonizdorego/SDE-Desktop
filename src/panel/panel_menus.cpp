@@ -60,6 +60,9 @@ void qa_menu(const std::string &id, const Fl_Menu_Item *items) {
           bool on = (m->flags & (FL_MENU_TOGGLE | FL_MENU_RADIO)) && (m->flags & FL_MENU_VALUE);
           text += (prefix.empty() ? "item:" : "sub:" + prefix) + label + (on ? ":on" : "") + "\t0\t0\t0\t0\t" +
                   std::to_string(m->active() ? 1 : 0) + "\n";
+          // 0.2: "icon:<label>=<icon>" for items with their own icon.
+          std::string icon = sde::menu_icon(m);
+          if (!icon.empty()) text += "icon:" + label + "=" + icon + "\t0\t0\t0\t0\t1\n";
           if (m->submenu()) walk(m + 1, prefix + label + "/");
         }
       };

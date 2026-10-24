@@ -20,6 +20,7 @@
 #include "account.h"
 #include "alarm_popup.h"
 #include "alarms.h"
+#include "app_catalog.h"
 #include "avatar.h"
 #include "clockface.h"
 #include "controls.h"
@@ -28,6 +29,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "menu.h"
+#include "menu_perf.h"
 #include "notify_center.h"
 #include "paint.h"
 #include "preview.h"
@@ -96,8 +98,17 @@ void Panel::load_config() {
   cfg_.load();
   theme_ = Theme::from_config(cfg_);
   theme_.apply_to_fltk();
-  IconLoader::set_theme(cfg_.get("appearance", "icon_theme", "auto"));
-  IconLoader::clear_cache();
+  // Every saved setting (a tile pinned, the menu resized, ...) reloads the
+  // config: keep the icons unless the icon theme or the dark mode that
+  // "auto" follows changed. Up to alpha52 every change dropped them all and
+  // the next frame of the Start menu loaded every icon again.
+  static std::string icon_key;
+  std::string key = cfg_.get("appearance", "icon_theme", "auto") + (theme_.dark ? "|dark" : "|light");
+  if (key != icon_key) {
+    icon_key = key;
+    IconLoader::set_theme(cfg_.get("appearance", "icon_theme", "auto"));
+    IconLoader::clear_cache();
+  }
   autohide_ = cfg_.get_bool("panel", "autohide", false);
   pinned_.clear();
   std::vector<std::string> seen_exec;
@@ -214,6 +225,9 @@ void Panel::setup() {
   XWindowAttributes own;
   XGetWindowAttributes(fl_display, xid, &own);
   XSelectInput(fl_display, xid, own.your_event_mask | SubstructureNotifyMask);
+  // The Start menu's and the search's applications: parsed once on idle and
+  // kept up to date with inotify (app_catalog.h).
+  app_catalog::start();
 
   input_display_ = XOpenDisplay(nullptr);
   if (input_display_) {
@@ -376,7 +390,10 @@ const Fl_Menu_Item *Panel::popup_menu(const Fl_Menu_Item *items, int root_x) {
   return items->popup(root_x - ox, root_y - oy);
 }
 
-void Panel::toggle_menu() { open_popup(menu_.get(), x() + S(4), false); }
+void Panel::toggle_menu() {
+  if (!menu_->is_open()) menu_perf::begin("open", "menu");
+  open_popup(menu_.get(), x() + S(4), false);
+}
 
 void Panel::open_search(const std::string &text, bool keep_popup) {
   recover_input();
@@ -387,6 +404,7 @@ void Panel::open_search(const std::string &text, bool keep_popup) {
     return;
   }
   if (text.empty() && recently_closed("search")) return;
+  if (text.empty()) menu_perf::begin("open", "search");
   if (open_popup_ && open_popup_ != search_.get() && !keep_popup) open_popup_->close();
   set_revealed(true);
   // Above the search box (or the Start button when the box is hidden).
@@ -1985,6 +2003,9 @@ bool Panel::handle_x(const XEvent &e) {
       flyout_->status_changed();
       status_flyout_->status_changed();
       notify_flyout_->status_changed();
+      // An open Start menu or search follows the theme and accent at once.
+      menu_->config_changed();
+      search_->config_changed();
       led_update();
       TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
       Alarms::get().reload();

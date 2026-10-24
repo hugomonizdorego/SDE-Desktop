@@ -47,6 +47,8 @@ class NotifyCenter {
   void dismiss_app(const std::string &app);
   void clear();
   void invoke(uint32_t id, const std::string &key);
+  // 0.2: the bubbles on screen go away (the flyout shows them).
+  void hide_popups();
 
  private:
   void changed();

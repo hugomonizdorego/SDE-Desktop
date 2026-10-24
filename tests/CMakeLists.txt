@@ -44,6 +44,11 @@ add_test(NAME sde-panel-controls COMMAND sde-panel-controls-tests)
 add_executable(sde-menu-model-tests test_menu_model.cpp ../src/panel/menu_model.cpp)
 target_link_libraries(sde-menu-model-tests PRIVATE sde-common)
 add_test(NAME sde-menu-model COMMAND sde-menu-model-tests)
+# 0.2: the panel's application catalog (inotify; no display needed).
+add_executable(sde-app-catalog-tests test_app_catalog.cpp ../src/panel/app_catalog.cpp
+  ../src/panel/menu_model.cpp ../src/panel/menu_perf.cpp)
+target_link_libraries(sde-app-catalog-tests PRIVATE sde-common)
+add_test(NAME sde-app-catalog COMMAND sde-app-catalog-tests)
 # QA-only D-Bus/XEmbed fixtures: deliberately not installed in the packages.
 add_executable(sde-panel-service-fixture panel_service_fixture.cpp)
 target_link_libraries(sde-panel-service-fixture PRIVATE sde-common)

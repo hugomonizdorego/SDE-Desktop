@@ -23,7 +23,7 @@ p.add_argument('--scale',type=int,default=100)
 p.add_argument('--display',type=int,default=96)
 p.add_argument('--tcp-display',action='store_true')
 p.add_argument('--tcp-bus',action='store_true',help='Private localhost bus for containers without Unix sockets')
-p.add_argument('--only',choices=['a52','action-center'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks')
+p.add_argument('--only',choices=['a52','action-center','start-menu'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks; start-menu: the Start menu and search checks (0.2)')
 a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
@@ -392,6 +392,176 @@ def menu_checks():
     shot('27-menu-resized');escape('SDE Menu')
     m=click_panel('start','^SDE Menu$');time.sleep(.6);assert geom(m)['w']<w0-20,'menu size not kept';escape('SDE Menu')
     config();reload()
+def perf_log():
+    """Lines of the Start menu timing hook (src/panel/menu_perf.h)."""
+    try:text=(home/'qa'/'menu-perf.log').read_text().splitlines()
+    except FileNotFoundError:return []
+    out=[]
+    for l in text:
+        f=l.split()
+        if len(f)<2:continue
+        ev={'kind':f[0],'who':f[1]}
+        for part in f[2:]:
+            if '=' in part:
+                k,v=part.split('=',1)
+                try:ev[k]=float(v)
+                except ValueError:ev[k]=v
+        out.append(ev)
+    return out
+def within(fn,seconds):
+    end=time.time()+seconds
+    while time.time()<end:
+        v=fn()
+        if v:return v
+        time.sleep(.04)
+    return None
+def start_menu_checks():
+    """0.2.0 Alpha 1 Start menu: Super opens it every time and closes it,
+    keyboard zones (Tab, Home/End, Down past the visible rows), smooth
+    wheel scrolling, the wheel over the rail, live theme, applications
+    installed and removed while it is open, broken and odd .desktop files,
+    App info and Open file location, one Power off question, search by
+    accents, letters in order and both Control Center names, no frames
+    while the pointer rests (glow), timing limits, screenshots."""
+    apps_dir=home/'.local/share/applications'
+    odd={'qa-broken-nogroup.desktop':b'Name=Broken\nExec=true\n','qa-broken-binary.desktop':bytes(range(256))*4,'qa-broken-empty.desktop':b'',
+         'qa-bad-utf8.desktop':b'[Desktop Entry]\nType=Application\nName=Qa Bad \xff Bytes\nExec=true\nCategories=Utility;\n',
+         'qa-long.desktop':('[Desktop Entry]\nType=Application\nName='+('Quite Long Application Name '*6).strip()+'\nExec=true\nCategories=Utility;\n').encode(),
+         'qa-noicon.desktop':b'[Desktop Entry]\nType=Application\nName=Iconless QA\nExec=true\nIcon=qa-no-such-icon\nCategories=Utility;\n',
+         'qa-ecrire.desktop':'[Desktop Entry]\nType=Application\nName=Écrire QA\nExec=true\nCategories=Office;\n'.encode(),
+         'qa-tabs.desktop':b'[Desktop Entry]\nType=Application\nName=Tab\\tName QA\nExec=true\nCategories=Office;\n'}
+    for name,data in odd.items():(apps_dir/name).write_bytes(data)
+    time.sleep(1.0)  # the panel's catalog sees them (inotify, then 0.3 s quiet)
+    def L():return layout('SDE Menu')
+    def sel():return next((k[10:] for k in L() if k.startswith('@selected:')),'')
+    def jump(letter):
+        press('SDE Menu',next(k for k in L() if k.startswith('letter:')));press('SDE Menu','jump:'+letter)
+    # 1) Super runs `sde-panel --menu`: every command opens the menu (before
+    # 0.2 the X server dropped some of them when the command exited at once).
+    lost=0
+    for _ in range(20):
+        run('sde-panel','--menu')
+        if not within(lambda:visible('^SDE Menu$'),2.0):lost+=1;continue
+        run('xdotool','key','Escape');gone('^SDE Menu$')
+    assert lost==0,f'{lost} of 20 Super commands did not open the menu'
+    # 2) Super pressed while the menu or the search is open closes it.
+    command(['--menu'],'SDE Menu');time.sleep(.5);run('xdotool','key','super');gone('^SDE Menu$')
+    command(['--search'],'SDE Search');time.sleep(.5);run('xdotool','key','super');gone('^SDE Search$')
+    # 3) Tab: Start button, filter, list, tiles, the rail's places; Shift+Tab back.
+    m=command(['--menu'],'SDE Menu');time.sleep(.6)
+    order=[]
+    for _ in range(5):
+        run('xdotool','key','Tab');time.sleep(.25);order.append(sel())
+    assert order[0]=='rail:menu' and order[1].startswith('filter:') and order[2].startswith(('app:','added:','most-used:')) and order[3].startswith('tile:') and order[4]=='rail:account',order
+    run('xdotool','key','shift+Tab');time.sleep(.25);assert sel().startswith('tile:'),sel()
+    run('xdotool','key','shift+Tab');time.sleep(.25);assert sel().startswith(('app:','added:','most-used:')),sel()
+    # 4) End and Home; Down past the last visible row scrolls the list with
+    # the selection (it jumped to the rail before).
+    run('xdotool','key','End')
+    waitfor(lambda:L()['@list-scroll'][1]>0 and L()['@list-scroll'][0]==L()['@list-scroll'][1],'End did not scroll to the last application')
+    assert sel().startswith('app:'),sel()
+    run('xdotool','key','Home');waitfor(lambda:L()['@list-scroll'][0]==0,'Home did not scroll back')
+    for _ in range(25):run('xdotool','key','Down')
+    time.sleep(.5)
+    assert sel().startswith(('app:','added:','most-used:','letter:')) and L()['@list-scroll'][0]>0,('Down left the list',sel(),L()['@list-scroll'])
+    # Super+Space (the keyboard layout) neither opens the selection nor closes the menu.
+    s0=sel();run('xdotool','key','super+space');time.sleep(.6)
+    assert visible('^SDE Menu$') and sel()==s0,('Super+Space opened the selection or closed the menu',s0,sel())
+    # 5) One wheel click glides over several frames; the wheel over the rail
+    # scrolls the list.
+    run('xdotool','key','Home');waitfor(lambda:L()['@list-scroll'][0]==0,'Home did not scroll back')
+    g=geom(m);a=L()['@list']
+    run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2);time.sleep(.4)
+    n=len(perf_log());run('xdotool','click','5');time.sleep(.6)
+    frames=[ev for ev in perf_log()[n:] if ev['who']=='menu' and ev['kind'] in ('frame','wheel')]
+    assert len(frames)>=3 and L()['@list-scroll'][0]>0,('wheel did not glide',len(frames),L()['@list-scroll'])
+    s0=L()['@list-scroll'][0];r=L()['rail:documents']
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','5')
+    waitfor(lambda:L()['@list-scroll'][0]>s0,'the wheel over the rail did not scroll the list')
+    # 6) The open menu follows a theme change at once.
+    config(theme='dark',overflow=False);reload()
+    waitfor(lambda:'@theme:dark' in L(),'the open menu did not follow the dark theme')
+    config(overflow=False);reload();waitfor(lambda:'@theme:light' in L(),'the open menu did not follow the light theme')
+    escape('SDE Menu')
+    # 7) Installed and removed while the menu is open (inotify, no reopening).
+    m=command(['--menu'],'SDE Menu');time.sleep(.6)
+    fresh=apps_dir/'qa-fresh-install.desktop'
+    fresh.write_text('[Desktop Entry]\nType=Application\nName=Fresh Install QA\nExec=true\nCategories=Utility;\n')
+    waitfor(lambda:'added:Fresh Install QA' in L(),'an application installed while the menu is open did not show')
+    fresh.unlink();waitfor(lambda:'added:Fresh Install QA' not in L(),'a removed application stayed in the open menu')
+    # 8) Odd entries: cleaned names, very long names inside their rows, no crash.
+    assert panel_proc.poll() is None,'panel exited with odd .desktop files'
+    jump('T');waitfor(lambda:'app:Tab Name QA' in L(),'tab in a name not cleaned')
+    jump('Q');k=waitfor(lambda:next((k for k in L() if k.startswith('app:Quite Long')),None),'very long name missing')
+    assert inside(L()[k],L()['@list']),('long name outside the list',L()[k])
+    waitfor(lambda:'app:Qa Bad \u00ff Bytes' in L(),'a name that is no UTF-8 was not read as Latin-1')
+    jump('I');waitfor(lambda:'app:Iconless QA' in L(),'application without an icon missing')
+    assert not any('Broken' in k for k in L()),'broken .desktop file listed'
+    shot('60-menu-odd-entries')
+    # 9) App info and Open file location from an application's menu.
+    jump('A');r=item('SDE Menu','app:Atlas');g=geom(m)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
+    shot('61-menu-app-context-menu')
+    run('xdotool','key','Up','Return')  # the last item: App info...
+    find('^App info$');waitfor(lambda:'@app-info:qa-atlas.desktop' in layout('App info'),'App info shows another application')
+    time.sleep(.3);shot('61-menu-app-info');run('xdotool','key','Escape');gone('^App info$')
+    m=command(['--menu'],'SDE Menu');time.sleep(.6);jump('A');r=item('SDE Menu','app:Atlas');g=geom(m)
+    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
+    run('xdotool','key','Up','Up','Return');gone('^SDE Menu$')
+    waitfor(lambda:commands('LIRIA --no-desktop '+str(apps_dir)),'Open file location did not open the folder of the .desktop file')
+    # 10) One Power off question, even when Power off is chosen again.
+    before=(home/'commands.log').read_text().count('LOGOUT --action poweroff')
+    m=command(['--menu'],'SDE Menu');time.sleep(.6);press('SDE Menu','rail:power');find('^Power off$');time.sleep(.4)
+    m=command(['--menu'],'SDE Menu');time.sleep(.6);press('SDE Menu','rail:power');time.sleep(.8)
+    count=len(run('xdotool','search','--onlyvisible','--name','^Power off$',check=False).stdout.split())
+    assert count==1,f'{count} Power off questions at once'
+    run('xdotool','key','Escape');gone('^Power off$');time.sleep(.4)
+    assert (home/'commands.log').read_text().count('LOGOUT --action poweroff')==before,'Power off ran without being confirmed'
+    # 11) Search: accents, letters in order, the Control Center by both names.
+    m=command(['--menu'],'SDE Menu');time.sleep(.5)
+    run('xdotool','type','--delay','40','ecrire');waitfor(lambda:'result:Écrire QA' in layout('SDE Search'),'accent-insensitive search failed')
+    escape('SDE Search')
+    command(['--search','blf'],'SDE Search');waitfor(lambda:'result:Bluefish' in layout('SDE Search'),'letters-in-order search failed');escape('SDE Search')
+    for words in ('control center','settings'):
+        command(['--search',words],'SDE Search')
+        waitfor(lambda:'result:Appearance' in layout('SDE Search'),f'Control Center pages not found by {words!r}');escape('SDE Search')
+    # 12) A pointer resting on a tile draws nothing once the glow has pulsed
+    # (it repainted the whole menu 60 times a second before 0.2).
+    config(extra='[effects]\nenabled=true\nhover=glow\n',overflow=False);reload()
+    m=command(['--menu'],'SDE Menu');time.sleep(.6);g=geom(m)
+    t=next(v for k,v in L().items() if k.startswith('tile:'))
+    run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]//2);time.sleep(3.0)
+    n=len(perf_log());time.sleep(2.0)
+    idle=[ev for ev in perf_log()[n:] if ev['who']=='menu']
+    assert len(idle)<=1,(f'{len(idle)} menu frames in 2 s with the pointer resting on a tile',idle[:3])
+    escape('SDE Menu');config(overflow=False);reload()
+    # 13) Timing limits (generous: shared QA machines, Xvfb draws on the CPU).
+    log=perf_log()
+    def med(v):return sorted(v)[len(v)//2] if v else 0
+    opens=[ev['ms'] for ev in log if ev['kind']=='open' and ev['who']=='menu']
+    keys=[ev['ms'] for ev in log if ev['kind']=='key' and ev['who']=='search']
+    filt=[ev['filter'] for ev in log if ev['kind']=='key' and 'filter' in ev]
+    frames=[ev['draw']+ev['sync'] for ev in log if ev['kind'] in ('frame','wheel') and ev['who']=='menu']
+    print(f'START-MENU timings: open median {med(opens):.1f} ms max {max(opens):.1f} (n={len(opens)}); keystroke median {med(keys):.1f} ms (filter {med(filt):.2f}); menu frame median {med(frames):.1f} ms (n={len(frames)})',flush=True)
+    assert opens and med(opens)<150,('Start menu opens too slowly',opens)
+    assert keys and med(keys)<60,('search keystrokes too slow',keys)
+    assert frames and med(frames)<25,('menu frames too slow',med(frames))
+    # 14) Screenshots: home, all apps, an application's menu and the search, light and dark.
+    for theme in ('light','dark'):
+        config(theme=theme,overflow=False);reload()
+        m=command(['--menu'],'SDE Menu');time.sleep(1.0);shot(f'62-start-{theme}-home')
+        g=geom(m);a=L()['@list']
+        run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2,'click','--repeat','4','--delay','60','5');time.sleep(.8)
+        shot(f'62-start-{theme}-all-apps')
+        r=next(v for k,v in L().items() if k.startswith('app:'))
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.7)
+        shot(f'62-start-{theme}-app-menu');run('xdotool','key','Escape');time.sleep(.4)
+        run('xdotool','type','--delay','60','writ');waitfor(lambda:'result:Writer' in layout('SDE Search'),'search for the screenshot failed')
+        time.sleep(.5);shot(f'62-start-{theme}-search');escape('SDE Search')
+    config(overflow=False);reload()
+    for name in odd:(apps_dir/name).unlink()
+    assert panel_proc.poll() is None,'panel exited'
+    print('PANEL 0.2 start menu: Super opens 20 of 20 and closes, Tab/Home/End/Down keys, smooth wheel, wheel over the rail, live theme, apps installed/removed while open, odd .desktop files, App info, Open file location, one Power off question, accent/typo/Control Center search, no idle frames, timing limits PASS',flush=True)
 def search_checks():
     """Panel search: box with placeholder, flyout with results, keyboard,
     icon and hidden styles."""
@@ -864,6 +1034,11 @@ def pick(items,label):
     run('xdotool','key',*(['Down']*(active.index(label)+1)),'Return');time.sleep(.5)
 def notify(app,summary,body='',*extra):
     run('notify-send','-a',app,*extra,summary,body)
+def bubbles():
+    """The notification bubbles on screen: override-redirect windows have no
+    WM_NAME, so they are found by sde-notifyd's _NET_WM_PID."""
+    r=run('xdotool','search','--onlyvisible','--pid',notifyd.pid,check=False)
+    return r.stdout.split() if r.returncode==0 else []
 def empty_spot():
     """Root coordinates of empty panel space: left of the tray and status icons."""
     L=layout('SDE Panel');pg=geom(panel)
@@ -956,7 +1131,11 @@ def a52_checks():
     seq=menu_seq();run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
     waitfor(lambda:menu_seq()>seq,'no dbusmenu for the tray item');time.sleep(.3)
     ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids[0].startswith('@menu:tray:'),ids
-    print('A52 menu',ids[0][6:],':',', '.join(labels(menu_items())),flush=True);shot('43-menu-tray-dbusmenu');close_menu()
+    print('A52 menu',ids[0][6:],':',', '.join(labels(menu_items())),flush=True);shot('43-menu-tray-dbusmenu')
+    # 0.2: the items' own icons, by icon-name and by icon-data (PNG bytes).
+    icons=[k for k in menu_layout() if k.startswith('icon:')]
+    assert any(k.endswith('=window-new') for k in icons) and any(k.endswith('.png') for k in icons),('dbusmenu item icons missing',icons,list(menu_layout()))
+    close_menu()
     # 2) Search: box, icon only, hidden (Super still searches), back.
     items=right_click_panel(search_name,'search')
     assert ('Show Search Box' if search_name=='search' else 'Show Search Icon Only',True,True) in items,items
@@ -984,7 +1163,10 @@ def a52_checks():
     notify('QA Chat','Hello from Ada','Lunch at noon?');notify('QA Chat','Second message','See you there');notify('QA Mail','New mail','Quarterly report')
     waitfor(lambda:'@badge:3' in layout('SDE Panel'),'unread count not 3: '+str([k for k in layout('SDE Panel') if k.startswith('@badge')]))
     time.sleep(.5);shot('45-notifications-badge')
+    assert bubbles(),'no notification bubble before opening the flyout'
     fl=click_panel('notifications','^Notifications$');time.sleep(.6)
+    # 0.2: the flyout takes the bubbles off the screen; they stay listed in it.
+    waitfor(lambda:not bubbles(),'notification bubbles stayed on screen with the flyout open')
     for name in ['Notification Hello from Ada','Notification Second message','Notification New mail','Clear QA Chat','Clear QA Mail','Clear all','Do Not Disturb','Notification settings...']:item('Notifications',name,active=False)
     L=list(layout('Notifications'));assert L.index('Notification Second message')<L.index('Notification Hello from Ada'),'not newest first'
     flyout_bounds_simple(fl);shot('46-notifications-flyout')
@@ -999,7 +1181,7 @@ def a52_checks():
     waitfor(lambda:'@dnd:on' in layout('SDE Panel'),'panel does not show DND')
     escape('Notifications')
     notify('QA Chat','Silenced','while DND is on');time.sleep(.8)
-    assert not visible('^Notification$'),'bubble shown during DND'
+    assert not bubbles(),'bubble shown during DND'
     shot('48-notifications-dnd')
     fl=click_panel('notifications','^Notifications$');time.sleep(.4)
     item('Notifications','Notification Silenced',active=False);shot('48-notifications-dnd-flyout');escape('Notifications')
@@ -1095,7 +1277,7 @@ try:
     e['DBUS_SYSTEM_BUS_ADDRESS']=e['DBUS_SESSION_BUS_ADDRESS']
     transport=['-nolisten','unix','-nolisten','local','-listen','tcp','-ac'] if a.tcp_display else ['-nolisten','tcp','-ac']
     config(overflow=False);xv=spawn('Xvfb',display,'-screen','0',a.size+'x24',*transport);time.sleep(.6);assert xv.poll() is None
-    spawn('sde-notifyd');time.sleep(.3)
+    notifyd=spawn('sde-notifyd');time.sleep(.3)
     spawn('dbus-monitor','--session',"interface='org.freedesktop.Notifications'")
     spawn('sde-desktop');find('^SDE Desktop$');time.sleep(.3);panel_proc=spawn('sde-panel');panel=find('^SDE Panel$');time.sleep(.6)
     fixture=spawn(str(a.test_dir.resolve()/'sde-panel-service-fixture'),str(home/'service.log'))
@@ -1123,10 +1305,13 @@ try:
     shot('00-panel-indicators')
     if a.only=='a52':
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
+    if a.only=='start-menu':
+        panel_checks_a50();menu_checks();search_checks();start_menu_checks();raise SystemExit(0)
     panel_checks_a50()
     menu_checks()
     account_checks()
     search_checks()
+    start_menu_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
     config(overflow=False);reload()
     waitfor(lambda:'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons')

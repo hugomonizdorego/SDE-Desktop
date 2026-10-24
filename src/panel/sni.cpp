@@ -11,6 +11,7 @@
 #include <deque>
 #include <map>
 
+#include "../common/menu.h"
 #include "dbus.h"
 #include "icons.h"
 #include "panel.h"
@@ -442,6 +443,28 @@ void SniHost::context_menu(const Item &item, int x, int y) {
   bus_->call_async(m, nullptr);
 }
 
+namespace {
+// An item's icon-data (PNG bytes) as a file the menu style can load by
+// path (IconLoader caches it by path and size); named by its content, kept
+// in the runtime directory.
+std::string menu_icon_file(const std::vector<uint8_t> &png) {
+  static const uint8_t sig[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+  if (png.size() < sizeof sig || png.size() > (1u << 20) || !std::equal(sig, sig + 8, png.begin()))
+    return "";
+  uint64_t h = 1469598103934665603ULL;  // FNV-1a
+  for (uint8_t b : png) h = (h ^ b) * 1099511628211ULL;
+  std::string dir = runtime_dir() + "/sde-panel-menu-icons";
+  char name[40];
+  snprintf(name, sizeof name, "/%016llx.png", (unsigned long long)h);
+  std::string path = dir + name;
+  if (!file_exists(path)) {
+    make_dirs(dir);
+    if (!write_file_atomic(path, std::string(png.begin(), png.end()))) return "";
+  }
+  return path;
+}
+}  // namespace
+
 bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
   const char *iface = "com.canonical.dbusmenu";
   DBusMessage *about = dbus::method(item.service, item.menu_path, iface, "AboutToShow");
@@ -449,8 +472,9 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
   if (DBusMessage *r = bus_->call(about, 500)) dbus_message_unref(r);
 
   DBusMessage *get = dbus::method(item.service, item.menu_path, iface, "GetLayout");
-  dbus::Writer(get).i32(0).i32(-1).strings(
-      {"type", "label", "enabled", "visible", "toggle-type", "toggle-state", "children-display"});
+  dbus::Writer(get).i32(0).i32(-1).strings({"type", "label", "enabled", "visible", "toggle-type",
+                                             "toggle-state", "children-display", "icon-name",
+                                             "icon-data"});
   DBusMessage *reply = bus_->call(get, 1500);
   if (!reply) return false;
   auto args = dbus::read_args(reply);
@@ -459,6 +483,8 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
 
   std::deque<std::string> labels;  // stable storage for menu labels
   std::vector<Fl_Menu_Item> menu;
+  // 0.2: the items' own icons (icon-name, or icon-data PNG bytes), by index.
+  std::vector<std::pair<size_t, std::string>> icons;
   std::function<void(const dbus::Value &)> add_children = [&](const dbus::Value &node) {
     if (node.items.size() < 3) return;
     for (auto &child_v : node.items[2].items) {
@@ -483,6 +509,9 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
       if (!toggle.empty() && prop("toggle-state") && prop("toggle-state")->num() == 1) mi.flags |= FL_MENU_VALUE;
       bool submenu = !child.items[2].items.empty() ||
                      (prop("children-display") && prop("children-display")->str() == "submenu");
+      std::string icon = prop("icon-name") ? prop("icon-name")->str() : "";
+      if (icon.empty() && prop("icon-data")) icon = menu_icon_file(prop("icon-data")->bytes());
+      if (!icon.empty() && toggle.empty()) icons.push_back({menu.size(), icon});
       if (submenu) {
         mi.flags |= FL_SUBMENU;
         menu.push_back(mi);
@@ -498,8 +527,12 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
   menu.push_back(Fl_Menu_Item{});
 
   (void)y;
+  // Icons by item address: set them once the vector holds every item, and
+  // forget them when the menu is gone.
+  for (auto &ic : icons) sde::set_menu_icon(&menu[ic.first], ic.second);
   const Fl_Menu_Item *picked =
       Panel::instance->popup_named("tray:" + display_name(item), menu.data(), x);
+  for (auto &ic : icons) sde::set_menu_icon(&menu[ic.first], "");
   if (!picked || (picked->flags & FL_SUBMENU)) return true;
   DBusMessage *ev = dbus::method(item.service, item.menu_path, iface, "Event");
   if (!ev) return true;

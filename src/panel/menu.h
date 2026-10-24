@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include "app_catalog.h"
 #include "desktop_entry.h"
 #include "effects.h"
 #include "menu_model.h"
@@ -45,6 +46,16 @@ void pin(const std::string &id);
 void unpin(const std::string &id);
 }  // namespace start_tiles
 
+// Icon size of the Start menu's list rows (and the search's result rows, so
+// that one preloaded icon serves both).
+int start_row_icon_size();
+
+// The right-click actions of an application in the menu and the search.
+namespace start_apps {
+void show_info(const sde::DesktopEntry &e);      // "App info...": a small window
+void open_location(const sde::DesktopEntry &e);  // "Open file location": its .desktop folder
+}  // namespace start_apps
+
 class AppMenu : public PanelPopup {
  public:
   AppMenu();
@@ -52,8 +63,14 @@ class AppMenu : public PanelPopup {
 
   void draw() override;
   int handle(int event) override;
+  void flush() override;  // timing hook (menu_perf.h)
   // The group name editor commits or cancels (Enter, Escape, focus lost).
   void finish_rename(bool commit);
+  // sde.conf changed: an open menu follows the theme, accent and effects.
+  void config_changed();
+  // The size the menu opens at ([menu] width/height or size, kept on the
+  // monitor) and whether that is the compact layout.
+  static void preferred_size(int &w, int &h);
 
  private:
   enum Kind {
@@ -105,9 +122,15 @@ class AppMenu : public PanelPopup {
   void load_tiles();
   void save_tiles();
   static void poll_applications(void *);
+  // The application catalog published a new snapshot (app_catalog.h).
+  static void catalog_changed(void *);
+  void apply_catalog();
+  bool busy() const;
   void filter();
   void metrics();
+  // Lays the items out; cheap when nothing changed since the last call.
   void build_items();
+  void invalidate() { ++layout_rev_; }
   void layout_rail();
   void layout_list();
   void layout_tiles();
@@ -122,8 +145,14 @@ class AppMenu : public PanelPopup {
   void background_menu(int px, int py);
   void start_rename(int group);
   void move_selection(int key);
+  void move_zone(bool back);  // Tab / Shift+Tab
+  void move_end(bool end);    // Home / End
   void ensure_visible(const Item &it);
   void scroll_by(Kind area, int dy);
+  // Scrolls |area| to |offset|: at once, or gliding there (smooth scrolling).
+  void scroll_to(Kind area, int offset, bool smooth);
+  static void glide(void *);
+  void rehover();
   const Area *area(Kind kind) const;
   const Area *area_at(int x, int y) const;
   void drag_scrollbar(int y);
@@ -137,14 +166,28 @@ class AppMenu : public PanelPopup {
   bool handing_to_search_ = false;
   void start_hover(const Ref &r);
   static void animate(void *);
+  // Repaints one item (and |grow| pixels around it), or one scrolled area.
+  void damage_item(const Ref &r, int grow = 0);
+  void damage_area(Kind kind);
+  void damage_tooltip(const Ref &r);
+  // Icons of the list rows and tiles, loaded on idle after the panel
+  // started, so that opening and scrolling never wait for the disk.
+  void schedule_preload(double delay);
+  static void preload(void *);
   void qa_dump_menu();
+  static void qa_dump_later(void *);
+  double qa_dumped_ = 0;
+  bool perf_layout_ = false;  // log the layout with the first frame (menu_perf.h)
 
   sde::Theme theme_;
   sde::Effects effects_;
+  bool smooth_ = true;  // smooth scrolling ([appearance] low_resource turns it off)
   Fl_Input *rename_;  // group name editor
   int rename_group_ = -1;
-  std::vector<sde::DesktopEntry> apps_;
-  std::string apps_stamp_;
+  // The applications shown (kept while a context menu or a drag runs; a
+  // newer snapshot is taken when the menu is not busy).
+  app_catalog::SnapshotPtr apps_;
+  bool apps_stale_ = false;
   std::vector<std::string> categories_;
   std::vector<const sde::DesktopEntry *> sorted_, list_apps_, added_, most_used_;
   std::vector<sde::menu::TileGroup> groups_;
@@ -163,7 +206,27 @@ class AppMenu : public PanelPopup {
 
   int category_ = -1;  // list filter, -1 all applications
   int list_scroll_ = 0, tiles_scroll_ = 0;
+  // Smooth scrolling: where each area glides to.
+  struct Glide {
+    bool on = false;
+    double from = 0, start = 0;
+    int to = 0;
+  };
+  Glide list_glide_, tiles_glide_;
+  double glide_frame_ = 0;  // when glide() last drew
   bool letters_open_ = false, rail_open_ = false;
+  // What the items were last laid out for (build_items()).
+  unsigned layout_rev_ = 1, built_rev_ = 0;
+  int built_w_ = -1, built_h_ = -1, built_list_ = -1, built_tiles_ = -1, built_category_ = -2;
+  bool built_letters_ = false, built_rail_ = false, built_dragging_ = false;
+  int bar_hot_ = 0;  // scrollbar under the pointer: 1 list, 2 tiles
+  // The Super key closes the menu (the menu holds the keyboard, so the
+  // window manager's Super binding cannot see it).
+  bool super_down_ = false, super_alone_ = false;
+  // Icons waiting to be preloaded: name, size.
+  std::vector<std::pair<std::string, int>> preload_;
+  size_t preload_next_ = 0;
+  unsigned preload_rev_ = 0;
   Kind drag_area_ = K_NONE;  // scrollbar drag
   int drag_y_ = 0, drag_scroll_ = 0;
   // Pressed tile or list row, and its drag to a new place.

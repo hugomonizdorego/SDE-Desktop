@@ -20,6 +20,7 @@
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
+#include "menu_perf.h"
 #include "panel.h"
 #include "search.h"
 #include "spawn.h"
@@ -183,9 +184,20 @@ class PowerOffDialog : public BufferedWindow {
   }
 };
 
+PowerOffDialog *g_power_dialog = nullptr;
+
 bool confirm_power_off() {
+  // One question at a time: Power off chosen again (the menu reopened
+  // meanwhile) brings the open question back instead of a second one.
+  if (g_power_dialog) {
+    g_power_dialog->show();
+    if (fl_xid(g_power_dialog))
+      XSetInputFocus(fl_display, fl_xid(g_power_dialog), RevertToParent, CurrentTime);
+    return false;
+  }
   int W = S(440), H = S(140), bw = S(112), bh = S(34);
   auto *win = new PowerOffDialog(W, H);
+  g_power_dialog = win;
   win->copy_label(_("Power off"));
   win->xclass("sde-panel");
   auto *cancel = new FlatButton(W - S(16) - 2 * bw - S(10), H - S(16) - bh, bw, bh, _("Cancel"));
@@ -209,6 +221,7 @@ bool confirm_power_off() {
   ok->take_focus();
   while (win->shown()) Fl::wait();
   bool yes = win->confirmed;
+  g_power_dialog = nullptr;
   Fl::delete_widget(win);
   return yes;
 }
@@ -254,6 +267,112 @@ std::string user_folder(const char *key, const char *fallback) {
   return p;
 }
 
+// "Open file location" of an application: the folder of its .desktop file.
+void open_file_location(const DesktopEntry &e) {
+  if (e.path.empty()) return;
+  std::string dir = e.path.substr(0, e.path.rfind('/'));
+  if (!dir.empty()) open_folder(dir);
+}
+
+void close_app_info();
+
+// "App info...": what the menu knows about an application, with Open and
+// Open file location. One at a time; Escape or Close closes it.
+class AppInfoDialog : public BufferedWindow {
+ public:
+  DesktopEntry entry;
+  AppInfoDialog(int w, int h, const DesktopEntry &e) : BufferedWindow(w, h), entry(e) {}
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    int is = S(48);
+    {
+      Painter p(w(), h());
+      p.fill_rect(0, 0, w(), h(), t.surface);
+      p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
+      p.image(IconLoader::get({entry.icon, "application-x-executable"}, is), S(20), S(20), is);
+    }
+    int tx = S(84), tw = w() - tx - S(20);
+    text_font(t.font_size + 3, true);
+    draw_text(entry.name, tx, S(20), tw, S(26), t.text);
+    text_font(t.font_size);
+    draw_text(entry.generic_name.empty() ? std::string(_("Application")) : entry.generic_name, tx,
+              S(46), tw, S(22), t.text_dim);
+    struct Row {
+      const char *label;
+      std::string value;
+    } rows[] = {{N_("Description"), entry.comment},
+                {N_("Category"), category_label(entry.menu_category())},
+                {N_("Command"), entry.exec},
+                {N_("Desktop file"), entry.path}};
+    int y = S(84), lw = S(112);
+    std::string qa = "@app-info:" + entry.id + "\t0\t0\t0\t0\t1\t0\n";
+    for (auto &r : rows) {
+      if (r.value.empty()) continue;
+      text_font(t.font_size - 1, true);
+      draw_text(_(r.label), S(20), y, lw, S(22), t.text_dim);
+      text_font(t.font_size - 1);
+      draw_text(r.value, S(20) + lw, y, w() - lw - S(40), S(22), t.text);
+      qa += std::string("info:") + r.label + "\t" + std::to_string(S(20)) + "\t" + std::to_string(y) +
+            "\t" + std::to_string(w() - S(40)) + "\t" + std::to_string(S(22)) + "\t1\t0\n";
+      y += S(24);
+    }
+    draw_children();
+    if (qa_dump_enabled()) qa_dump(this, qa);
+  }
+  int handle(int event) override {
+    if ((event == FL_KEYBOARD || event == FL_SHORTCUT) && Fl::event_key() == FL_Escape) {
+      close_app_info();
+      return 1;
+    }
+    return BufferedWindow::handle(event);
+  }
+};
+
+AppInfoDialog *g_app_info = nullptr;
+
+void close_app_info() {
+  if (!g_app_info) return;
+  g_app_info->hide();
+  Fl::delete_widget(g_app_info);
+  g_app_info = nullptr;
+}
+
+void show_app_info(const DesktopEntry &e) {
+  close_app_info();
+  int W = S(520), H = S(250), bw = S(150), bh = S(34);
+  auto *win = new AppInfoDialog(W, H, e);
+  g_app_info = win;
+  win->copy_label(_("App info"));
+  win->xclass("sde-panel");
+  auto *open = new FlatButton(S(20), H - S(16) - bh, S(100), bh, _("Open"), true);
+  open->copy_tooltip(_("Open"));
+  open->callback([](Fl_Widget *b, void *) {
+    DesktopEntry entry = static_cast<AppInfoDialog *>(b->window())->entry;
+    close_app_info();
+    panel_search::record_launch(entry.id);
+    launch_entry(entry);
+  });
+  auto *where = new FlatButton(S(130), H - S(16) - bh, bw, bh, _("Open file location"));
+  where->copy_tooltip(_("Open file location"));
+  where->callback([](Fl_Widget *b, void *) {
+    DesktopEntry entry = static_cast<AppInfoDialog *>(b->window())->entry;
+    close_app_info();
+    open_file_location(entry);
+  });
+  auto *close = new FlatButton(W - S(20) - S(100), H - S(16) - bh, S(100), bh, _("Close"));
+  close->copy_tooltip(_("Close"));
+  close->callback([](Fl_Widget *, void *) { close_app_info(); });
+  win->callback([](Fl_Widget *, void *) { close_app_info(); });
+  win->end();
+  int sx, sy, sw, sh;
+  Fl::screen_work_area(sx, sy, sw, sh, Fl::event_x_root(), Fl::event_y_root());
+  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->show();
+  win->wait_for_expose();
+  if (fl_xid(win)) XSetInputFocus(fl_display, fl_xid(win), RevertToParent, CurrentTime);
+  close->take_focus();
+}
+
 // Group name editor: Enter keeps the name, Escape restores it.
 class RenameInput : public Fl_Input {
  public:
@@ -275,6 +394,11 @@ class RenameInput : public Fl_Input {
 
 }  // namespace
 
+namespace start_apps {
+void show_info(const DesktopEntry &e) { show_app_info(e); }
+void open_location(const DesktopEntry &e) { open_file_location(e); }
+}  // namespace start_apps
+
 // ================================================================ tiles
 
 namespace start_tiles {
@@ -283,12 +407,28 @@ std::vector<TileGroup> load() {
   const Config &cfg = Panel::instance->config();
   const std::string sentinel = "\x01";
   std::string v = cfg.get("menu", "tiles", sentinel);
-  if (v != sentinel) return menu::parse_tile_groups(v);
-  // alpha15 and older: up to 12 favorites. They become the first group.
-  std::string fav = cfg.get("menu", "favorites", sentinel);
-  bool user = fav != sentinel;
-  auto ids = user ? menu::parse_id_list(fav) : menu::default_favorites(load_applications("SDE"), 8);
-  return menu::groups_from_favorites(ids, user, _("Productivity"), _("Explore"));
+  std::string fav = v == sentinel ? cfg.get("menu", "favorites", sentinel) : std::string();
+  // The search asks for every keystroke and every result it shows: parse
+  // once per change of the setting (the default tiles: of the installed
+  // applications).
+  bool defaults = v == sentinel && fav == sentinel;
+  app_catalog::SnapshotPtr apps = defaults ? app_catalog::current() : nullptr;
+  std::string key = v + '\x02' + fav + '\x02' + (apps ? std::to_string(apps->generation) : "");
+  static std::string cached_key;
+  static std::vector<TileGroup> cached;
+  if (key == cached_key) return cached;
+  std::vector<TileGroup> groups;
+  if (v != sentinel) {
+    groups = menu::parse_tile_groups(v);
+  } else {
+    // alpha15 and older: up to 12 favorites. They become the first group.
+    bool user = fav != sentinel;
+    auto ids = user ? menu::parse_id_list(fav) : menu::default_favorites(apps->apps, 8);
+    groups = menu::groups_from_favorites(ids, user, _("Productivity"), _("Explore"));
+  }
+  cached_key = key;
+  cached = groups;
+  return groups;
 }
 
 void save(const std::vector<TileGroup> &groups) {
@@ -338,33 +478,33 @@ AppMenu::AppMenu() : PanelPopup("SDE Menu") {
   end();
   account_.reset(new AccountPopup);
   callback([](Fl_Widget *w, void *) { static_cast<AppMenu *>(w)->close(); });
+  app_catalog::subscribe(catalog_changed, this);
 }
 
 AppMenu::~AppMenu() {
+  app_catalog::unsubscribe(this);
   Fl::remove_timeout(poll_applications, this);
   Fl::remove_timeout(animate, this);
+  Fl::remove_timeout(glide, this);
+  Fl::remove_timeout(preload, this);
+  Fl::remove_timeout(qa_dump_later, this);
 }
 
 // ---------------------------------------------------------------------------
 // Data
 
 void AppMenu::reload() {
-  apps_stamp_ = applications_stamp();
-  apps_ = load_applications("SDE");
-  sorted_ = menu::alphabetical(apps_);
-  categories_.clear();
-  for (auto &c : menu_categories())
-    for (auto &a : apps_)
-      if (a.menu_category() == c) {
-        categories_.push_back(c);
-        break;
-      }
+  apps_ = app_catalog::current();
+  apps_stale_ = false;
+  sorted_.clear();
+  sorted_.reserve(apps_->apps.size());
+  for (auto &a : apps_->apps) sorted_.push_back(&a);
+  categories_ = apps_->categories;
+  invalidate();
 }
 
 const DesktopEntry *AppMenu::app(const std::string &id) const {
-  for (auto &a : apps_)
-    if (a.id == id) return &a;
-  return nullptr;
+  return apps_ ? apps_->find(id) : nullptr;
 }
 
 void AppMenu::load_tiles() {
@@ -372,6 +512,7 @@ void AppMenu::load_tiles() {
                    Panel::instance->config().get("menu", "favorites", "\x01") == "\x01";
   groups_ = start_tiles::load();
   usage_ = panel_search::load_usage();
+  invalidate();
 }
 
 void AppMenu::save_tiles() {
@@ -381,36 +522,58 @@ void AppMenu::save_tiles() {
                 groups_.end());
   tiles_default_ = false;
   start_tiles::save(groups_);
+  invalidate();
 }
 
-// Refresh XDG application entries during package installs/removals without
-// restarting the panel, keeping the scroll positions.
+// Without inotify (app_catalog::watching()): compare the applications
+// directories every 2 s while the menu is open, as before 0.2.
 void AppMenu::poll_applications(void *data) {
   auto *self = static_cast<AppMenu *>(data);
   if (!self->shown()) return;
   Fl::repeat_timeout(2, poll_applications, data);
-  if (self->menu_busy_ || self->launching_ || self->dragging_ || self->rename_group_ >= 0) return;
-  // Parsing every .desktop file every 2 s while the menu is open showed up
-  // as periodic hitches; only reload when an applications directory changed.
-  std::string stamp = applications_stamp();
-  if (stamp == self->apps_stamp_) return;
-  std::string category = self->category_ >= 0 && self->category_ < int(self->categories_.size())
-                             ? self->categories_[size_t(self->category_)]
+  app_catalog::poll();
+}
+
+// Applications were installed or removed while the panel runs. An open menu
+// shows them at once, keeping its scroll positions and category; while a
+// context menu, a drag or a rename runs it keeps the snapshot it shows
+// (its items point into it) and takes the new one afterwards.
+void AppMenu::catalog_changed(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  self->schedule_preload(0.5);
+  if (!self->is_open()) return;  // the next opening takes them
+  if (self->busy()) {
+    self->apps_stale_ = true;
+    return;
+  }
+  self->apply_catalog();
+}
+
+bool AppMenu::busy() const {
+  return menu_busy_ || launching_ || dragging_ || press_.kind != K_NONE || rename_group_ >= 0 ||
+         resize_edge_ || drag_area_ != K_NONE;
+}
+
+void AppMenu::apply_catalog() {
+  std::string category = category_ >= 0 && category_ < int(categories_.size())
+                             ? categories_[size_t(category_)]
                              : "";
-  self->reload();
-  if (self->tiles_default_) self->groups_ = start_tiles::load();
-  auto cat = std::find(self->categories_.begin(), self->categories_.end(), category);
-  self->category_ = cat != self->categories_.end() ? int(cat - self->categories_.begin()) : -1;
-  self->filter();
-  self->redraw();
+  reload();
+  if (tiles_default_) groups_ = start_tiles::load();
+  auto cat = std::find(categories_.begin(), categories_.end(), category);
+  category_ = cat != categories_.end() ? int(cat - categories_.begin()) : -1;
+  filter();
+  hover_ = anim_ = {};
+  redraw();
 }
 
 void AppMenu::filter() {
+  invalidate();
   list_apps_.clear();
-  for (auto *a : sorted_)
-    if (category_ < 0 || (category_ < int(categories_.size()) &&
-                          a->menu_category() == categories_[size_t(category_)]))
-      list_apps_.push_back(a);
+  const std::string *cat =
+      category_ >= 0 && category_ < int(categories_.size()) ? &categories_[size_t(category_)] : nullptr;
+  for (size_t i = 0; i < apps_->apps.size(); ++i)
+    if (category_ < 0 || (cat && apps_->category[i] == *cat)) list_apps_.push_back(&apps_->apps[i]);
   most_used_.clear();
   if (show_most_used_)
     for (auto &id : menu::rank_frecent(usage_, epoch_now(), 32))
@@ -418,13 +581,11 @@ void AppMenu::filter() {
         if (most_used_.size() < kMaxMostUsed) most_used_.push_back(e);
   added_.clear();
   if (show_added_) {
+    // The catalog keeps the files' times: no stat() of every entry here.
     std::vector<std::pair<long long, const DesktopEntry *>> fresh;
     long long limit = epoch_now() - kRecentlyAdded;
-    for (auto &a : apps_) {
-      struct stat st;
-      if (!a.path.empty() && stat(a.path.c_str(), &st) == 0 && (long long)st.st_mtime > limit)
-        fresh.push_back({(long long)st.st_mtime, &a});
-    }
+    for (size_t i = 0; i < apps_->apps.size(); ++i)
+      if (apps_->mtime[i] > limit) fresh.push_back({apps_->mtime[i], &apps_->apps[i]});
     std::stable_sort(fresh.begin(), fresh.end(),
                      [](auto &x, auto &y) { return x.first > y.first; });
     for (auto &f : fresh)
@@ -435,15 +596,11 @@ void AppMenu::filter() {
 // ---------------------------------------------------------------------------
 // Opening
 
-void AppMenu::prepare() {
-  handing_to_search_ = false;
-  theme_ = Panel::instance->theme();
-  effects_ = effects_from_config(Panel::instance->config());
-  const Config &cfg = Panel::instance->config();
-  show_added_ = cfg.get_bool("menu", "show_recently_added", true);
-  show_most_used_ = cfg.get_bool("menu", "show_most_used", cfg.get_bool("menu", "show_recent", true));
+void AppMenu::preferred_size(int &w, int &h) {
+  Panel *panel = Panel::instance;
+  const Config &cfg = panel->config();
   int mx, my, mw, mh;
-  Panel::instance->monitor(mx, my, mw, mh);
+  panel->monitor(mx, my, mw, mh);
   // [menu] width/height (dragged by the user, in unscaled pixels), else the
   // size preset.
   int lw = cfg.get_int("menu", "width", 0), lh = cfg.get_int("menu", "height", 0);
@@ -452,8 +609,32 @@ void AppMenu::prepare() {
     lw = sz == "small" ? 600 : sz == "large" ? 940 : 680;
     lh = sz == "small" ? 560 : sz == "large" ? 700 : 620;
   }
-  size(std::max(S(360), std::min(S(lw), mw - S(16))),
-       std::max(S(300), std::min(S(lh), mh - Panel::instance->h() - S(24))));
+  w = std::max(S(360), std::min(S(lw), mw - S(16)));
+  h = std::max(S(300), std::min(S(lh), mh - panel->h() - S(24)));
+  // PanelPopup::reposition() keeps it between the panel and the screen edge.
+  int available = panel->theme().panel_top ? my + mh - panel->y() - panel->h() : panel->y() - my;
+  h = std::min(h, std::max(1, available - 2 * S(8)));
+}
+
+int start_row_icon_size() {
+  int w, h;
+  AppMenu::preferred_size(w, h);
+  return h < S(470) ? S(22) : S(26);  // compact_ in AppMenu::metrics()
+}
+
+void AppMenu::prepare() {
+  menu_perf::Step step("prepare");
+  perf_layout_ = menu_perf::enabled();
+  handing_to_search_ = false;
+  theme_ = Panel::instance->theme();
+  effects_ = effects_from_config(Panel::instance->config());
+  const Config &cfg = Panel::instance->config();
+  smooth_ = !cfg.get_bool("appearance", "low_resource", false);
+  show_added_ = cfg.get_bool("menu", "show_recently_added", true);
+  show_most_used_ = cfg.get_bool("menu", "show_most_used", cfg.get_bool("menu", "show_recent", true));
+  int W, H;
+  preferred_size(W, H);
+  size(W, H);
   rename_->color(theme_.surface_alt.fl());
   rename_->textcolor(theme_.text.fl());
   rename_->cursor_color(theme_.accent.fl());
@@ -463,6 +644,8 @@ void AppMenu::prepare() {
   rename_group_ = -1;
   category_ = -1;
   list_scroll_ = tiles_scroll_ = 0;
+  list_glide_ = tiles_glide_ = Glide();
+  Fl::remove_timeout(glide, this);
   drag_area_ = K_NONE;
   letters_open_ = rail_open_ = false;
   hover_ = selected_ = anim_ = press_ = {};
@@ -470,19 +653,34 @@ void AppMenu::prepare() {
   resize_edge_ = cursor_edge_ = 0;
   keyboard_ = false;
   launching_ = false;
-  reload();
-  load_tiles();
-  filter();
+  bar_hot_ = 0;
+  super_down_ = super_alone_ = false;
+  app_catalog::poll();  // returns at once while inotify watches
+  {
+    menu_perf::Step s("reload");
+    reload();
+  }
+  {
+    menu_perf::Step s("tiles");
+    load_tiles();
+  }
+  {
+    menu_perf::Step s("filter");
+    filter();
+  }
 
   // The account button: the panel's cached name and picture (account.h).
   account_->close();
   panel_account::check();
   Fl::remove_timeout(poll_applications, this);
-  Fl::add_timeout(2, poll_applications, this);
+  if (!app_catalog::watching()) Fl::add_timeout(2, poll_applications, this);
 }
 
 void AppMenu::closed() {
   Fl::remove_timeout(animate, this);
+  Fl::remove_timeout(glide, this);
+  Fl::remove_timeout(poll_applications, this);
+  list_glide_.on = tiles_glide_.on = false;
   launching_ = false;
   letters_open_ = rail_open_ = false;
   account_->close();
@@ -490,7 +688,35 @@ void AppMenu::closed() {
   press_ = {};
   rename_->hide();
   rename_group_ = -1;
+  super_down_ = false;
   cursor(FL_CURSOR_DEFAULT);
+}
+
+// sde.conf changed while the menu is open (Settings, dark mode from the
+// Action Center, another accent): follow it at once.
+void AppMenu::config_changed() {
+  schedule_preload(0.8);  // the icon theme may have changed
+  if (!is_open()) return;
+  theme_ = Panel::instance->theme();
+  effects_ = effects_from_config(Panel::instance->config());
+  const Config &cfg = Panel::instance->config();
+  smooth_ = !cfg.get_bool("appearance", "low_resource", false);
+  bool added = cfg.get_bool("menu", "show_recently_added", true);
+  bool used = cfg.get_bool("menu", "show_most_used", cfg.get_bool("menu", "show_recent", true));
+  rename_->color(theme_.surface_alt.fl());
+  rename_->textcolor(theme_.text.fl());
+  rename_->cursor_color(theme_.accent.fl());
+  rename_->selection_color(theme_.accent.fl());
+  show_added_ = added;
+  show_most_used_ = used;
+  if (!busy()) {
+    // Tiles pinned from the search or Settings; the menu itself saves
+    // every change at once, so this is what it shows anyway.
+    load_tiles();
+    filter();
+  }
+  invalidate();
+  redraw();
 }
 
 // ---------------------------------------------------------------------------
@@ -520,12 +746,28 @@ void AppMenu::metrics() {
 }
 
 void AppMenu::build_items() {
+  // Every event and every frame asks for the layout; it only changes with
+  // the size, the scroll positions, the views and the data (invalidate()).
+  if (built_rev_ == layout_rev_ && built_w_ == w() && built_h_ == h() &&
+      built_list_ == list_scroll_ && built_tiles_ == tiles_scroll_ &&
+      built_category_ == category_ && built_letters_ == letters_open_ &&
+      built_rail_ == rail_open_ && built_dragging_ == dragging_)
+    return;
   items_.clear();
   areas_.clear();
   metrics();
   layout_list();
   layout_tiles();
   layout_rail();  // on top: the expanded rail covers the list
+  built_rev_ = layout_rev_;
+  built_w_ = w();
+  built_h_ = h();
+  built_list_ = list_scroll_;
+  built_tiles_ = tiles_scroll_;
+  built_category_ = category_;
+  built_letters_ = letters_open_;
+  built_rail_ = rail_open_;
+  built_dragging_ = dragging_;
 }
 
 void AppMenu::layout_rail() {
@@ -808,7 +1050,7 @@ void AppMenu::activate(const Item &it) {
       build_items();
       for (auto &h : items_)
         if (h.kind == K_LETTER && h.label == it.label) {
-          list_scroll_ += h.y - list_top_;
+          scroll_to(K_ROW, list_scroll_ + h.y - list_top_, false);
           if (keyboard_) selected_ = {K_LETTER, h.index, -1};
           break;
         }
@@ -896,8 +1138,7 @@ void AppMenu::filter_menu() {
   std::vector<std::string> labels;
   labels.push_back(format("%s (%d)", _("All apps"), int(sorted_.size())));
   for (auto &c : categories_) {
-    int n = 0;
-    for (auto *a : sorted_) n += a->menu_category() == c;
+    int n = int(std::count(apps_->category.begin(), apps_->category.end(), c));
     labels.push_back(format("%s (%d)", menu_text(category_label(c)).c_str(), n));
   }
   std::vector<Fl_Menu_Item> items;
@@ -913,7 +1154,7 @@ void AppMenu::filter_menu() {
   menu_busy_ = false;
   if (!m) return;
   category_ = int(m - items.data()) - 1;
-  list_scroll_ = 0;
+  scroll_to(K_ROW, 0, false);
   letters_open_ = false;
   selected_ = {};
   filter();
@@ -925,10 +1166,11 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   TileGroup &g = groups_[size_t(it.group)];
   if (it.index < 0 || it.index >= int(g.tiles.size())) return;
   Tile tile = g.tiles[size_t(it.index)];
+  DesktopEntry entry = it.entry ? *it.entry : DesktopEntry();
   bool pinned = Panel::instance->is_pinned(tile.id);
   std::vector<std::string> texts;
   texts.reserve(groups_.size() + 2);
-  enum { OPEN = 1, UNPIN, SMALL, MEDIUM, WIDE, LARGE, PANEL, NEW_GROUP, GROUP0 = 100 };
+  enum { OPEN = 1, UNPIN, SMALL, MEDIUM, WIDE, LARGE, PANEL, NEW_GROUP, LOCATION, INFO, GROUP0 = 100 };
   std::vector<Fl_Menu_Item> items;
   auto add = [&](const char *text, long code, int flags = 0) {
     items.push_back({text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0});
@@ -950,7 +1192,9 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   }
   add(_("New Group"), NEW_GROUP);
   add(nullptr, 0);
-  add(pinned ? _("Unpin from Panel") : _("Pin to Panel"), PANEL);
+  add(pinned ? _("Unpin from Panel") : _("Pin to Panel"), PANEL, FL_MENU_DIVIDER);
+  add(_("Open file location"), LOCATION, entry.path.empty() ? FL_MENU_INACTIVE : 0);
+  add(_("App info..."), INFO);
   add(nullptr, 0);
   menu_busy_ = true;
   const Fl_Menu_Item *m = items.data()->popup(px, py);
@@ -960,6 +1204,14 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   auto &tiles = g.tiles;
   switch (code) {
     case OPEN: launch(it); return;
+    case LOCATION:
+      close();
+      open_file_location(entry);
+      return;
+    case INFO:
+      close();
+      show_app_info(entry);
+      return;
     case UNPIN: tiles.erase(tiles.begin() + it.index); break;
     case SMALL:
     case MEDIUM:
@@ -1016,7 +1268,7 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
   bool used = std::find_if(usage_.begin(), usage_.end(),
                            [&](const menu::Usage &u) { return u.id == e.id; }) != usage_.end();
   bool pinned = Panel::instance->is_pinned(e.id);
-  enum { OPEN = 1, START, PANEL, DESKTOP, FORGET };
+  enum { OPEN = 1, START, PANEL, DESKTOP, FORGET, LOCATION, INFO };
   std::vector<Fl_Menu_Item> items;
   auto add = [&](const char *text, long code, int flags = 0) {
     items.push_back({text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0});
@@ -1025,7 +1277,9 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
   add(tile ? _("Unpin from Start") : _("Pin to Start"), START);
   add(pinned ? _("Unpin from Panel") : _("Pin to Panel"), PANEL);
   add(_("Add to Desktop"), DESKTOP, used ? 0 : FL_MENU_DIVIDER);
-  if (used) add(_("Remove from Most Used"), FORGET);
+  if (used) add(_("Remove from Most Used"), FORGET, FL_MENU_DIVIDER);
+  add(_("Open file location"), LOCATION, e.path.empty() ? FL_MENU_INACTIVE : 0);
+  add(_("App info..."), INFO);
   add(nullptr, 0);
   menu_busy_ = true;
   const Fl_Menu_Item *m = items.data()->popup(px, py);
@@ -1033,6 +1287,14 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
   if (!m) return;
   switch (reinterpret_cast<long>(m->user_data())) {
     case OPEN: launch(it); return;
+    case LOCATION:
+      close();
+      open_file_location(e);
+      return;
+    case INFO:
+      close();
+      show_app_info(e);
+      return;
     case START:
       if (tile) {
         for (auto &g : groups_)
@@ -1094,6 +1356,7 @@ void AppMenu::background_menu(int px, int py) {
       groups_.push_back(TileGroup{"", {}});
       // An empty group is kept until it is named or gets tiles.
       start_tiles::save(groups_);
+      invalidate();
       start_rename(int(groups_.size()) - 1);
       return;
     case 3:
@@ -1145,6 +1408,7 @@ void AppMenu::finish_rename(bool commit) {
     groups_[size_t(g)].name = trim(rename_->value());
     start_tiles::save(groups_);
     tiles_default_ = false;
+    invalidate();
   }
   redraw();
 }
@@ -1155,6 +1419,7 @@ void AppMenu::redirect_to_search(const std::string &text) {
   // one are still queued for this window and are forwarded from here.
   bool first = !handing_to_search_;
   handing_to_search_ = true;
+  menu_perf::begin(first ? "key-open" : "key", "search");
   Panel::instance->open_search(text, true);
   if (first)
     Fl::add_timeout(0.25, [](void *d) {
@@ -1223,14 +1488,16 @@ void AppMenu::drop(int x, int y) {
 // Keyboard and scrolling
 
 void AppMenu::ensure_visible(const Item &it) {
-  auto fit = [&](int &scroll) {
-    if (!it.clipped()) return;
-    if (it.y < it.cy) scroll -= it.cy - it.y;
-    else if (it.y + it.h > it.cy + it.ch) scroll += it.y + it.h - (it.cy + it.ch);
-    scroll = std::max(0, scroll);
-  };
-  if (it.kind == K_ROW || it.kind == K_LETTER) fit(list_scroll_);
-  else if (it.kind == K_TILE || it.kind == K_GROUP) fit(tiles_scroll_);
+  if (!it.clipped()) return;
+  Kind kind = it.kind == K_ROW || it.kind == K_LETTER   ? K_ROW
+              : it.kind == K_TILE || it.kind == K_GROUP ? K_TILE
+                                                        : K_NONE;
+  if (kind == K_NONE) return;
+  int scroll = kind == K_TILE ? tiles_scroll_ : list_scroll_;
+  if (it.y < it.cy) scroll -= it.cy - it.y;
+  else if (it.y + it.h > it.cy + it.ch) scroll += it.y + it.h - (it.cy + it.ch);
+  else return;
+  scroll_to(kind, scroll, false);
 }
 
 const AppMenu::Area *AppMenu::area(Kind kind) const {
@@ -1245,12 +1512,100 @@ const AppMenu::Area *AppMenu::area_at(int x, int y) const {
   return nullptr;
 }
 
+namespace {
+const double kGlideTime = 0.13;  // seconds from one scroll position to the next
+}
+
+// Wheel and Page keys glide from where the area is now; a wheel turned
+// on while it glides goes on from where it was heading.
 void AppMenu::scroll_by(Kind kind, int dy) {
+  build_items();
   const Area *a = area(kind);
   if (!a || !a->scrolls()) return;
-  *a->scroll = std::max(0, std::min(*a->scroll + dy, a->content - a->h));
+  const Glide &g = kind == K_TILE ? tiles_glide_ : list_glide_;
+  scroll_to(kind, (g.on ? g.to : *a->scroll) + dy, true);
+}
+
+void AppMenu::scroll_to(Kind kind, int offset, bool smooth) {
+  int &scroll = kind == K_TILE ? tiles_scroll_ : list_scroll_;
+  Glide &g = kind == K_TILE ? tiles_glide_ : list_glide_;
+  build_items();
+  const Area *a = area(kind);
+  offset = std::max(0, std::min(offset, a ? std::max(0, a->content - a->h) : offset));
+  if (!smooth || !smooth_ || !shown() || std::abs(offset - scroll) <= 1) {
+    g.on = false;
+    if (scroll != offset) {
+      scroll = offset;
+      hover_ = {};
+      damage_area(kind);
+    }
+    return;
+  }
+  g.from = scroll;
+  g.to = offset;
+  // The first step is drawn at once (as if one frame had passed already),
+  // so the wheel feels as direct as jumping did.
+  g.start = now() - 1.0 / 60;
+  g.on = true;
+  // The items slide away under the pointer; rehover() follows at the end.
+  if (hover_.kind != K_NONE) damage_item(hover_, S(12));
   hover_ = {};
-  redraw();
+  // The step is drawn at once, also when the wheel turns on while the area
+  // glides (it waited for the next frame, up to 16 ms), unless a frame was
+  // drawn a moment ago: the frame timer comes soon then (at most 120 fps).
+  if (now() - glide_frame_ >= 1.0 / 120) {
+    Fl::remove_timeout(glide, this);
+    Fl::add_timeout(0, glide, this);
+  } else if (!Fl::has_timeout(glide, this)) {
+    Fl::add_timeout(1.0 / 120, glide, this);
+  }
+}
+
+// One frame of smooth scrolling: only the scrolled area is repainted.
+void AppMenu::glide(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (!self->shown()) return;
+  double t = now();
+  self->glide_frame_ = t;
+  bool more = false;
+  for (Kind kind : {K_ROW, K_TILE}) {
+    Glide &g = kind == K_TILE ? self->tiles_glide_ : self->list_glide_;
+    if (!g.on) continue;
+    int &scroll = kind == K_TILE ? self->tiles_scroll_ : self->list_scroll_;
+    double p = std::min(1.0, (t - g.start) / kGlideTime);
+    int pos = int(std::lround(g.from + (g.to - g.from) * ease_out(p)));
+    if (p >= 1.0) {
+      pos = g.to;
+      g.on = false;
+      self->qa_dumped_ = 0;  // the UI tests see the final place at once
+      self->damage_area(kind);
+    } else {
+      more = true;
+    }
+    if (pos != scroll) {
+      scroll = pos;
+      self->damage_area(kind);
+    }
+  }
+  if (more) Fl::repeat_timeout(1.0 / 60, glide, data);
+  else self->rehover();
+}
+
+// The item under a pointer that did not move (after scrolling).
+void AppMenu::rehover() {
+  if (!shown() || busy()) return;
+  int mx = Fl::event_x_root() - x_root(), my = Fl::event_y_root() - y_root();
+  build_items();
+  const Item *hit = mx >= 0 && my >= 0 && mx < w() && my < h() ? item_at(mx, my) : nullptr;
+  Ref r = hit ? Ref{hit->kind, hit->index, hit->group} : Ref{};
+  if (r == hover_) return;
+  damage_item(hover_, S(12));
+  hover_ = r;
+  if (hit && hit->entry && !keyboard_) {
+    damage_item(selected_, S(4));
+    selected_ = r;
+  }
+  damage_item(hover_, S(12));
 }
 
 // Scrollbar thumb dragged to window y |y| (see FL_DRAG).
@@ -1260,9 +1615,7 @@ void AppMenu::drag_scrollbar(int y) {
   double track = a->h - S(8);
   double len = std::max(Sd(24), track * a->h / a->content);
   double per_px = (a->content - a->h) / std::max(1.0, track - len);
-  *a->scroll = std::max(0, std::min(a->content - a->h,
-                                    drag_scroll_ + int(std::lround((y - drag_y_) * per_px))));
-  redraw();
+  scroll_to(drag_area_, drag_scroll_ + int(std::lround((y - drag_y_) * per_px)), false);
 }
 
 // Moves the selection to the nearest item in the direction of |key|, across
@@ -1274,6 +1627,7 @@ void AppMenu::move_selection(int key) {
   };
   build_items();
   const Item *cur = find(selected_);
+  Ref old = selected_;
   keyboard_ = true;
   if (key == FL_Page_Down || key == FL_Page_Up) {
     int dir = key == FL_Page_Down ? 1 : -1;
@@ -1282,10 +1636,15 @@ void AppMenu::move_selection(int key) {
     if (!a) return;
     bool keep = cur && (cur->kind == K_ROW || cur->kind == K_TILE) && cur->visible;
     int ref_x = keep ? cur->x : a->x, ref_y = keep ? cur->y : a->y;
-    int before = *a->scroll;
-    if (a->scrolls())
-      *a->scroll = std::max(0, std::min(a->content - a->h, *a->scroll + dir * (a->h - S(36))));
-    bool moved = *a->scroll != before;
+    int &scroll = list == K_TILE ? tiles_scroll_ : list_scroll_;
+    const Glide &g = list == K_TILE ? tiles_glide_ : list_glide_;
+    int from = scroll, base = g.on ? g.to : scroll;
+    int target = a->scrolls() ? std::max(0, std::min(a->content - a->h, base + dir * (a->h - S(36))))
+                              : base;
+    bool moved = target != base;
+    // Choose the item that will be where the selection is on screen now,
+    // then glide there.
+    scroll = target;
     build_items();
     Kind kind = list == K_TILE ? K_TILE : K_ROW;
     const Item *best = nullptr;
@@ -1303,9 +1662,16 @@ void AppMenu::move_selection(int key) {
         }
     if (best) {
       selected_ = {best->kind, best->index, best->group};
-      ensure_visible(*best);
+      if (best->clipped()) {
+        if (best->y < best->cy) target -= best->cy - best->y;
+        else if (best->y + best->h > best->cy + best->ch)
+          target += best->y + best->h - (best->cy + best->ch);
+      }
     }
-    redraw();
+    scroll = from;
+    damage_item(old, S(4));
+    scroll_to(list, target, true);
+    damage_item(selected_, S(4));
     return;
   }
   if (!cur) {
@@ -1323,15 +1689,18 @@ void AppMenu::move_selection(int key) {
           break;
         }
     if (first) selected_ = {first->kind, first->index, first->group};
-    redraw();
+    damage_item(selected_, S(4));
     return;
   }
   double cx = cur->x + cur->w / 2.0, cy = cur->y + cur->h / 2.0;
   const Item *best = nullptr;
   double best_score = 1e18;
   for (auto &it : items_) {
-    if (&it == cur || !selectable(it.kind) || !it.visible) continue;
-    // The expanded rail covers the list.
+    if (&it == cur || !selectable(it.kind)) continue;
+    // Items scrolled out of view count in the area of the selection (Down
+    // on the last visible row goes to the next row, not to the rail).
+    bool same_area = it.clipped() && cur->clipped() && it.cx == cur->cx && it.cy == cur->cy;
+    if (!it.visible && !same_area) continue;
     double ix = it.x + it.w / 2.0, iy = it.y + it.h / 2.0;
     double along, across;
     if (key == FL_Down) along = iy - cy, across = ix - cx;
@@ -1347,45 +1716,227 @@ void AppMenu::move_selection(int key) {
   }
   if (best) {
     selected_ = {best->kind, best->index, best->group};
-    ensure_visible(*best);
+    Item copy = *best;
+    damage_item(old, S(4));
+    ensure_visible(copy);
+    damage_item(selected_, S(4));
   }
-  redraw();
+}
+
+namespace {
+// Keyboard zones of the menu, in Tab order.
+enum Zone { Z_NONE = -1, Z_START, Z_FILTER, Z_LIST, Z_TILES, Z_RAIL, Z_COUNT };
+}  // namespace
+
+// Tab and Shift+Tab: the Start button, the category filter, the list, the
+// tiles and the places of the rail, in turn.
+void AppMenu::move_zone(bool back) {
+  build_items();
+  auto zone_of = [](const Item &it) {
+    switch (it.kind) {
+      case K_RAIL: return it.index == 0 ? Z_START : Z_RAIL;
+      case K_FILTER: return Z_FILTER;
+      case K_ROW:
+      case K_LETTER:
+      case K_JUMP: return Z_LIST;
+      case K_GROUP:
+      case K_TILE: return Z_TILES;
+      default: return Z_NONE;
+    }
+  };
+  // The top left item of a zone that is in view, applications and tiles
+  // before headings (the rail from its top: the account).
+  auto first_of = [&](int zone) -> const Item * {
+    const Item *best = nullptr;
+    for (int pass = 0; pass < 2 && !best; ++pass)
+      for (auto &it : items_) {
+        if (zone_of(it) != zone || !it.visible) continue;
+        if (pass == 0 && (it.kind == K_LETTER || it.kind == K_GROUP)) continue;
+        if (!best || it.y < best->y || (it.y == best->y && it.x < best->x)) best = &it;
+      }
+    return best;
+  };
+  const Item *cur = find(selected_);
+  int zone = cur ? zone_of(*cur) : Z_NONE;
+  Ref old = selected_;
+  for (int step = 1; step <= Z_COUNT; ++step) {
+    int next = zone == Z_NONE ? (back ? Z_COUNT - step : step - 1) : zone + (back ? -step : step);
+    next = (next % Z_COUNT + Z_COUNT) % Z_COUNT;
+    if (const Item *it = first_of(next)) {
+      keyboard_ = true;
+      selected_ = {it->kind, it->index, it->group};
+      break;
+    }
+  }
+  damage_item(old, S(4));
+  damage_item(selected_, S(4));
+}
+
+// Home and End: the first or last item of the list (or of the tiles when a
+// tile is selected), scrolled into view.
+void AppMenu::move_end(bool end) {
+  build_items();
+  const Item *cur = find(selected_);
+  bool tiles = cur && (cur->kind == K_TILE || cur->kind == K_GROUP);
+  Kind kind = tiles ? K_TILE : letters_open_ ? K_JUMP : K_ROW;
+  const Item *pick = nullptr;
+  for (auto &it : items_)
+    if (it.kind == kind) {
+      pick = &it;
+      if (!end) break;
+    }
+  if (!pick) return;
+  Ref old = selected_;
+  keyboard_ = true;
+  selected_ = {pick->kind, pick->index, pick->group};
+  damage_item(old, S(4));
+  if (kind != K_JUMP) {
+    const Area *a = area(tiles ? K_TILE : K_ROW);
+    if (a) scroll_to(a->kind, end ? a->content : 0, true);
+  }
+  damage_item(selected_, S(4));
 }
 
 // ---------------------------------------------------------------------------
 // Animations
+
+namespace {
+// The glow of a hovered item pulses this long, then it stays still: a
+// pointer resting on a tile costs no frames (it pulsed forever before 0.2).
+const double kGlowPulse = 2.0;
+}  // namespace
 
 void AppMenu::start_hover(const Ref &r) {
   anim_ = r;
   anim_hover_ = 0;
   anim_start_ = now();
   if (!effects_.on || effects_.hover == "none") return;
-  Fl::remove_timeout(animate, this);
-  Fl::add_timeout(1.0 / 60, animate, this);
+  if (!Fl::has_timeout(animate, this)) Fl::add_timeout(1.0 / 60, animate, this);
 }
 
+// One frame of the hover effect (only the hovered item is repainted) or of
+// the launch effect (the menu until it closes).
 void AppMenu::animate(void *data) {
   auto *self = static_cast<AppMenu *>(data);
   if (!self->shown()) return;
   double t = now();
-  bool more = false;
   if (self->launching_) {
     if (t - self->launch_start_ >= self->effects_.duration) {
       self->launching_ = false;
       self->close();
       return;
     }
-    more = true;
+    self->redraw();
+    Fl::repeat_timeout(1.0 / 60, animate, data);
+    return;
   }
+  bool more = false;
   if (self->anim_.kind != K_NONE && self->hover_ == self->anim_) {
     double hover_time = 0.18 * (self->effects_.duration / 0.32);
-    self->anim_hover_ = std::min(1.0, (t - self->anim_start_) / hover_time);
+    double e = t - self->anim_start_;
+    self->anim_hover_ = std::min(1.0, e / hover_time);
     const std::string &h = self->effects_.hover;
-    more = more || self->anim_hover_ < 1.0 || h == "glow" ||
-           (h == "bounce" && t - self->anim_start_ < 1.0);
+    more = self->anim_hover_ < 1.0 || (h == "glow" && e < kGlowPulse) || (h == "bounce" && e < 1.0);
+    self->damage_item(self->anim_, S(14));
   }
-  self->redraw();
   if (more) Fl::repeat_timeout(1.0 / 60, animate, data);
+}
+
+// ---------------------------------------------------------------------------
+// Partial repaints
+
+void AppMenu::damage_item(const Ref &r, int grow) {
+  if (r.kind == K_NONE || !shown()) return;
+  build_items();
+  const Item *it = find(r);
+  if (!it || !it->visible) return;
+  int x0 = it->x - grow, y0 = it->y - grow, x1 = it->x + it->w + grow, y1 = it->y + it->h + grow;
+  if (it->clipped()) {
+    x0 = std::max(x0, it->cx);
+    y0 = std::max(y0, it->cy);
+    x1 = std::min(x1, it->cx + it->cw);
+    y1 = std::min(y1, it->cy + it->ch);
+  }
+  if (x1 > x0 && y1 > y0) damage_rect(x0, y0, x1 - x0, y1 - y0);
+}
+
+void AppMenu::damage_area(Kind kind) {
+  build_items();
+  if (const Area *a = area(kind)) damage_rect(a->x, a->y, a->w, a->h);
+  else redraw();
+}
+
+// The tooltip of a collapsed rail button, drawn beside the rail.
+void AppMenu::damage_tooltip(const Ref &r) {
+  if (r.kind != K_RAIL || rail_open_) return;
+  const Item *it = find(r);
+  if (!it) return;
+  int th = S(26), ty = std::min(h() - th - S(4), it->y + (it->h - th) / 2);
+  damage_rect(rail_w_, ty - S(2), w() - rail_w_, th + S(4));
+}
+
+// ---------------------------------------------------------------------------
+// Icons on idle
+
+// The icons the menu shows (tiles, the list rows, the search's top apps),
+// loaded a few at a time when the panel has nothing else to do: the first
+// opening and scrolling to new rows no longer wait for SVG files (a cold
+// first opening took 680 ms on Xvfb, 650 of them for 18 icons).
+void AppMenu::schedule_preload(double delay) {
+  if (!app_catalog::ready()) return;
+  ++preload_rev_;
+  preload_.clear();
+  preload_next_ = 0;
+  Fl::remove_timeout(preload, this);
+  Fl::add_timeout(delay, preload, this);
+}
+
+void AppMenu::preload(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (self->preload_.empty() && self->preload_next_ == 0) {
+    // Lay the menu out as it will open (hidden: only the item list).
+    if (!self->is_open()) {
+      int W, H;
+      preferred_size(W, H);
+      self->size(W, H);
+      self->reload();
+      self->load_tiles();
+      self->filter();
+    }
+    self->build_items();
+    auto add = [&](const std::string &icon, int size) {
+      if (size > 0) self->preload_.push_back({icon, size});
+    };
+    int row = start_row_icon_size();
+    for (auto &it : self->items_)
+      if (it.kind == K_TILE && it.entry) {
+        double is = std::min(it.w, it.h) *
+                    (it.size == TileSize::Small ? 0.62 : it.size == TileSize::Large ? 0.38 : 0.42);
+        add(it.entry->icon, int(std::lround(is)));
+      }
+    for (auto *e : self->most_used_) add(e->icon, row);
+    for (auto *e : self->added_) add(e->icon, row);
+    for (auto &a : self->apps_->apps) add(a.icon, row);
+    // The search's start page: the top apps.
+    for (auto *e : self->most_used_) add(e->icon, S(36));
+    self->preload_next_ = 0;
+    if (menu_perf::enabled())
+      menu_perf::log("preload icons=" + std::to_string(self->preload_.size()));
+  }
+  // A few milliseconds per turn of the event loop, so that input and
+  // frames always come first.
+  double end = menu_perf::now_ms() + 4.0;
+  while (self->preload_next_ < self->preload_.size() && menu_perf::now_ms() < end) {
+    auto &p = self->preload_[self->preload_next_++];
+    IconLoader::get({p.first, "application-x-executable"}, p.second);
+  }
+  if (self->preload_next_ < self->preload_.size()) {
+    Fl::repeat_timeout(self->is_open() ? 0.05 : 0.01, preload, data);
+    return;
+  }
+  if (menu_perf::enabled()) menu_perf::log("preload done");
+  self->preload_.clear();
+  self->preload_next_ = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1395,6 +1946,8 @@ int AppMenu::handle(int event) {
   // The account popup takes the events while it is open.
   if (account_->is_open() && account_->handle(event)) return 1;
   if (launching_ && (event == FL_PUSH || event == FL_KEYBOARD || event == FL_SHORTCUT)) return 1;
+  // Applications changed during a context menu or a drag: take them now.
+  if (apps_stale_ && !busy() && event != FL_HIDE && event != FL_SHOW) apply_catalog();
   switch (event) {
     case FL_PUSH: {
       int ex = Fl::event_x(), ey = Fl::event_y();
@@ -1418,6 +1971,15 @@ int AppMenu::handle(int event) {
       }
       const Item *hit = item_at(ex, ey);
       Item it = hit ? *hit : Item();
+      // A press without a motion before it (a click right after the list
+      // glided) still marks the item under the pointer.
+      Ref at = hit ? Ref{hit->kind, hit->index, hit->group} : Ref{};
+      if (!(at == hover_)) {
+        damage_item(hover_, S(14));
+        damage_tooltip(hover_);
+        hover_ = at;
+        damage_item(hover_, S(14));
+      }
       // The expanded rail closes on a click next to it.
       if (rail_open_ && it.kind != K_RAIL) {
         rail_open_ = false;
@@ -1433,22 +1995,25 @@ int AppMenu::handle(int event) {
           double track = a.h - S(8);
           double len = std::max(Sd(24), track * a.h / a.content);
           double pos = a.y + S(4) + (track - len) * *a.scroll / std::max(1, a.content - a.h);
-          drag_area_ = a.kind;
+          Kind kind = a.kind;
+          scroll_to(kind, *a.scroll, false);  // stop a glide where it is
+          drag_area_ = kind;
           drag_y_ = ey;
-          drag_scroll_ = *a.scroll;
+          drag_scroll_ = kind == K_TILE ? tiles_scroll_ : list_scroll_;
           if (ey < pos || ey > pos + len) {
             drag_y_ = int(pos + len / 2);
             drag_scrollbar(ey);
             drag_y_ = ey;
-            drag_scroll_ = *a.scroll;
+            drag_scroll_ = kind == K_TILE ? tiles_scroll_ : list_scroll_;
           }
-          redraw();
+          damage_area(kind);
           return 1;
         }
       if (Fl::event_button() == FL_RIGHT_MOUSE) {
         if (it.kind == K_TILE || it.kind == K_ROW) {
+          damage_item(selected_, S(4));
           selected_ = {it.kind, it.index, it.group};
-          redraw();
+          damage_item(selected_, S(4));
         }
         if (it.kind == K_TILE) tile_menu(it, ex, ey);
         else if (it.kind == K_ROW) row_menu(it, ex, ey);
@@ -1484,6 +2049,7 @@ int AppMenu::handle(int event) {
         return 1;
       }
       if (drag_area_ != K_NONE) {
+        menu_perf::begin("drag", "menu");
         drag_scrollbar(ey);
         return 1;
       }
@@ -1498,8 +2064,8 @@ int AppMenu::handle(int event) {
           // Near the top or bottom of the tiles: scroll them.
           const Area *a = area(K_TILE);
           if (a && ex >= a->x) {
-            if (ey < a->y + S(24)) scroll_by(K_TILE, -S(12));
-            else if (ey > a->y + a->h - S(24)) scroll_by(K_TILE, S(12));
+            if (ey < a->y + S(24)) scroll_to(K_TILE, tiles_scroll_ - S(12), false);
+            else if (ey > a->y + a->h - S(24)) scroll_to(K_TILE, tiles_scroll_ + S(12), false);
           }
           redraw();
         }
@@ -1511,13 +2077,15 @@ int AppMenu::handle(int event) {
       if (resize_edge_) {
         resize_edge_ = 0;
         double sc = ui_scale();
-        Panel::instance->set_setting("menu", "width", std::to_string(int(std::lround(w() / sc))));
-        Panel::instance->set_setting("menu", "height", std::to_string(int(std::lround(h() / sc))));
+        Panel::instance->set_settings(
+            {{"menu", "width", std::to_string(int(std::lround(w() / sc)))},
+             {"menu", "height", std::to_string(int(std::lround(h() / sc)))}});
         return 1;
       }
       if (drag_area_ != K_NONE) {
+        Kind kind = drag_area_;
         drag_area_ = K_NONE;
-        redraw();
+        damage_area(kind);
         return 1;
       }
       if (press_.kind != K_NONE) {
@@ -1531,7 +2099,10 @@ int AppMenu::handle(int event) {
         }
         build_items();
         const Item *it = find(pressed);
-        if (it && it->contains(Fl::event_x(), Fl::event_y())) activate(*it);
+        if (it && it->contains(Fl::event_x(), Fl::event_y())) {
+          Item copy = *it;
+          activate(copy);
+        }
         return 1;
       }
       return PanelPopup::handle(event);
@@ -1550,13 +2121,30 @@ int AppMenu::handle(int event) {
       const Item *hit = item_at(ex, ey);
       Ref r = hit ? Ref{hit->kind, hit->index, hit->group} : Ref{};
       if (!(r == hover_)) {
+        // Only the item left and the item entered are repainted.
+        menu_perf::begin("hover", "menu");
+        Ref old_hover = hover_, old_sel = selected_;
+        bool was_keyboard = keyboard_;
         hover_ = r;
         if (hit && hit->entry) {
           selected_ = r;
           keyboard_ = false;
           start_hover(r);
         }
-        redraw();
+        damage_item(old_hover, S(14));
+        damage_tooltip(old_hover);
+        damage_item(hover_, S(14));
+        damage_tooltip(hover_);
+        if (!(old_sel == selected_) || was_keyboard != keyboard_) damage_item(old_sel, S(4));
+      }
+      int hot = 0;
+      for (auto &a : areas_)
+        if (a.scrolls() && ex >= a.bar_x() - S(5) && ex < a.x + a.w && ey >= a.y && ey < a.y + a.h)
+          hot = a.kind == K_TILE ? 2 : 1;
+      if (hot != bar_hot_) {
+        if (bar_hot_) damage_area(bar_hot_ == 2 ? K_TILE : K_ROW);
+        if (hot) damage_area(hot == 2 ? K_TILE : K_ROW);
+        bar_hot_ = hot;
       }
       return 1;
     }
@@ -1566,8 +2154,13 @@ int AppMenu::handle(int event) {
         cursor(FL_CURSOR_DEFAULT);
       }
       if (hover_.kind != K_NONE) {
+        damage_item(hover_, S(14));
+        damage_tooltip(hover_);
         hover_ = {};
-        redraw();
+      }
+      if (bar_hot_) {
+        damage_area(bar_hot_ == 2 ? K_TILE : K_ROW);
+        bar_hot_ = 0;
       }
       return PanelPopup::handle(event);
     case FL_MOUSEWHEEL: {
@@ -1576,16 +2169,37 @@ int AppMenu::handle(int event) {
       int ex = Fl::event_x_root() - x_root(), ey = Fl::event_y_root() - y_root();
       int dy = Fl::event_dy() ? Fl::event_dy() : Fl::event_dx();
       if (!dy || menu_busy_) return 1;
+      menu_perf::begin("wheel", "menu");
       build_items();
       const Area *a = area_at(ex, ey);
       if (!a) a = area(ex >= tiles_x_ ? K_TILE : K_ROW);
       if (a) scroll_by(a->kind, dy * (compact_ ? S(64) : S(72)));
       return 1;
     }
+    case FL_KEYUP: {
+      // Super pressed and released alone closes the menu, as Super opened
+      // it (the window manager does not see the key while the menu holds
+      // the keyboard).
+      int k = Fl::event_key();
+      if ((k == FL_Meta_L || k == FL_Meta_R) && super_down_) {
+        super_down_ = false;
+        if (super_alone_ && rename_group_ < 0) {
+          close();
+          return 1;
+        }
+      }
+      return 1;
+    }
     case FL_SHORTCUT:
     case FL_KEYBOARD: {
-      if (rename_group_ >= 0) return rename_->handle(FL_KEYBOARD);
       int k = Fl::event_key();
+      if (k == FL_Meta_L || k == FL_Meta_R) {
+        super_down_ = true;
+        super_alone_ = true;
+        return 1;
+      }
+      super_alone_ = false;
+      if (rename_group_ >= 0) return rename_->handle(FL_KEYBOARD);
       if (k == FL_Escape) {
         if (dragging_) {
           dragging_ = false;
@@ -1596,7 +2210,7 @@ int AppMenu::handle(int event) {
           rail_open_ = false;
         } else if (category_ >= 0) {
           category_ = -1;
-          list_scroll_ = 0;
+          scroll_to(K_ROW, 0, false);
           filter();
         } else {
           close();
@@ -1606,23 +2220,39 @@ int AppMenu::handle(int event) {
         return 1;
       }
       build_items();
-      const Item *sel = find(selected_);
-      if (k == FL_Menu) {
-        if (sel) {
-          int px = sel->x + sel->w / 2, py = sel->y + sel->h / 2;
-          if (sel->kind == K_TILE) tile_menu(*sel, px, py);
-          else if (sel->kind == K_ROW) row_menu(*sel, px, py);
-          else if (sel->kind == K_GROUP) group_menu(sel->index, px, py);
+      const Item *found = find(selected_);
+      // A copy: the items are laid out again while a context menu is open.
+      Item sel = found ? *found : Item();
+      if (k == FL_Menu || (k == FL_F + 10 && (Fl::event_state() & FL_SHIFT))) {
+        if (found) {
+          int px = sel.x + sel.w / 2, py = sel.y + sel.h / 2;
+          if (sel.kind == K_TILE) tile_menu(sel, px, py);
+          else if (sel.kind == K_ROW) row_menu(sel, px, py);
+          else if (sel.kind == K_GROUP) group_menu(sel.index, px, py);
         }
         return 1;
       }
-      if (k == FL_Enter || k == FL_KP_Enter || (k == ' ' && keyboard_)) {
-        if (sel) activate(*sel);
+      // Space opens the keyboard selection, but not with a modifier
+      // (Super+Space switches the keyboard layout).
+      bool plain = !(Fl::event_state() & (FL_CTRL | FL_ALT | FL_META));
+      if (k == FL_Enter || k == FL_KP_Enter || (k == ' ' && keyboard_ && plain)) {
+        if (found) activate(sel);
         return 1;
       }
       if (k == FL_Down || k == FL_Up || k == FL_Left || k == FL_Right || k == FL_Page_Down ||
           k == FL_Page_Up) {
+        menu_perf::begin("nav", "menu");
         move_selection(k);
+        return 1;
+      }
+      if (k == FL_Tab) {
+        menu_perf::begin("nav", "menu");
+        move_zone(Fl::event_state() & FL_SHIFT);
+        return 1;
+      }
+      if (k == FL_Home || k == FL_End) {
+        menu_perf::begin("nav", "menu");
+        move_end(k == FL_End);
         return 1;
       }
       // Typing goes to the search box of the panel.
@@ -1642,11 +2272,43 @@ int AppMenu::handle(int event) {
 // ---------------------------------------------------------------------------
 // Drawing
 
+void AppMenu::flush() {
+  if (!menu_perf::enabled()) {
+    PanelPopup::flush();
+    return;
+  }
+  double t0 = menu_perf::now_ms();
+  IconLoader::Stats icons = IconLoader::stats();
+  PanelPopup::flush();
+  double t1 = menu_perf::now_ms();
+  XSync(fl_display, False);
+  IconLoader::Stats after = IconLoader::stats();
+  if (after.loads != icons.loads) {
+    menu_perf::note("icons", double(after.loads - icons.loads));
+    menu_perf::note("icon_ms", after.ms - icons.ms);
+  }
+  menu_perf::frame("menu", t1 - t0, menu_perf::now_ms() - t1);
+}
+
 void AppMenu::draw() {
   const Theme &t = theme_;
   int W = w(), H = h();
   double tnow = now();
   build_items();
+  if (perf_layout_) {
+    perf_layout_ = false;
+    std::string line = "layout menu window=" + std::to_string(x_root()) + "," +
+                       std::to_string(y_root()) + "," + std::to_string(W) + "," + std::to_string(H);
+    for (auto &a : areas_)
+      line += std::string(a.kind == K_ROW ? " list=" : " tiles=") + std::to_string(a.x) + "," +
+              std::to_string(a.y) + "," + std::to_string(a.w) + "," + std::to_string(a.h) + "," +
+              std::to_string(a.content);
+    int rows = 0, tiles = 0;
+    for (auto &it : items_) rows += it.kind == K_ROW, tiles += it.kind == K_TILE;
+    line += " rows=" + std::to_string(rows) + " ntiles=" + std::to_string(tiles) +
+            " apps=" + std::to_string(apps_ ? apps_->apps.size() : 0);
+    menu_perf::log(line);
+  }
   const Item *hov = find(hover_);
   const Item *sel = find(selected_);
   auto is_sel = [&](const Item &it) { return sel == &it && (keyboard_ || it.entry); };
@@ -1654,18 +2316,31 @@ void AppMenu::draw() {
   int drop_group = -1, drop_index = 0;
   if (dragging_) drop_target(drag_x_, drag_y2_, drop_group, drop_index);
 
-  auto hover_of = [&](const Item &it, double &lift, double &scale) {
-    lift = 0;
-    scale = 1;
-    if (!effects_.on || !(Ref{it.kind, it.index, it.group} == anim_) || !(anim_ == hover_)) return;
-    double p = ease_out(anim_hover_), k = effects_.size;
+  // The hover effect of an item: lift (wave, bounce), scale (pop), slide
+  // to the right (slide) and a glow behind the icon (glow; it pulses for a
+  // moment and then stays).
+  struct Fx {
+    double lift = 0, scale = 1, slide = 0, glow = 0;
+  };
+  auto hover_of = [&](const Item &it) {
+    Fx fx;
+    if (!effects_.on || !(Ref{it.kind, it.index, it.group} == anim_) || !(anim_ == hover_)) return fx;
+    double p = ease_out(anim_hover_), k = effects_.size, e = tnow - anim_start_;
     const std::string &h = effects_.hover;
-    if (h == "wave") lift = Sd(4) * p * k;
-    else if (h == "pop") scale = 1 + 0.12 * p * k;
-    else if (h == "bounce") {
-      double e = tnow - anim_start_;
-      lift = e < 1.0 ? Sd(7) * k * std::fabs(std::sin(e * M_PI * 3)) * (1 - e) : 0;
-    }
+    if (h == "wave") fx.lift = Sd(4) * p * k;
+    else if (h == "pop") fx.scale = 1 + 0.12 * p * k;
+    else if (h == "slide") fx.slide = Sd(6) * p * k;
+    else if (h == "glow")
+      fx.glow = p * (0.85 + 0.15 * std::sin(e * 5.0) * std::max(0.0, 1 - e / kGlowPulse));
+    else if (h == "bounce")
+      fx.lift = e < 1.0 ? Sd(7) * k * std::fabs(std::sin(e * M_PI * 3)) * (1 - e) : 0;
+    return fx;
+  };
+  // An icon drawn at |size|; while it grows (pop) the largest size is used
+  // and scaled down, instead of a new rendering for every frame.
+  auto icon = [&](const std::string &name, double base, double scale) {
+    int load = int(std::lround(scale > 1.0001 ? base * (1 + 0.12 * effects_.size) : base));
+    return IconLoader::get({name, "application-x-executable"}, load);
   };
   // Tiles: Fluent-like surfaces tinted with the accent.
   Color tile_bg = t.surface_alt.mix(t.accent, t.dark ? 0.16 : 0.10);
@@ -1687,6 +2362,8 @@ void AppMenu::draw() {
 
     for (auto &it : items_) {
       if (!it.visible || it.kind == K_RAIL) continue;
+      // Outside the repainted part (a hover change, one scrolled area).
+      if (!fl_not_clipped(it.x - S(14), it.y - S(14), it.w + S(28), it.h + S(28))) continue;
       cairo_save(p.cr());
       if (it.clipped()) {
         cairo_rectangle(p.cr(), it.cx, it.cy, it.cw, it.ch);
@@ -1730,23 +2407,21 @@ void AppMenu::draw() {
                              Sd(1.5));
           break;
         case K_ROW: {
-          double lift, scale;
-          hover_of(it, lift, scale);
+          Fx fx = hover_of(it);
           bool pressed = dragging_ && press_ == Ref{it.kind, it.index, it.group};
           if (s) p.fill_rounded(it.x, it.y, it.w, it.h, S(6), t.accent.alpha(t.dark ? 0.28 : 0.16));
           else if (hv) p.fill_rounded(it.x, it.y, it.w, it.h, S(6), t.hover);
           if (s && keyboard_)
             p.stroke_rounded(it.x + 1, it.y + 1, it.w - 2, it.h - 2, S(6), t.accent, Sd(1.5));
-          double is = (compact_ ? S(22) : S(26)) * scale;
-          p.image(IconLoader::get({it.entry->icon, "application-x-executable"}, int(std::lround(is))),
-                  it.x + S(10) + (S(26) - is) / 2, it.y + (it.h - is) / 2.0 - lift, is,
-                  pressed ? 0.4 : 1.0);
+          double base = compact_ ? S(22) : S(26), is = base * fx.scale;
+          double ix = it.x + S(10) + (S(26) - is) / 2 + fx.slide, iy = it.y + (it.h - is) / 2.0 - fx.lift;
+          if (fx.glow > 0) p.circle(ix + is / 2, iy + is / 2, is * 0.72, t.accent.alpha(0.28 * fx.glow));
+          p.image(icon(it.entry->icon, base, fx.scale), ix, iy, is, pressed ? 0.4 : 1.0);
           break;
         }
         case K_TILE: {
           bool pressed = dragging_ && press_ == Ref{it.kind, it.index, it.group};
-          double lift, scale;
-          hover_of(it, lift, scale);
+          Fx fx = hover_of(it);
           double r = S(4);
           Color bg = hv ? tile_hover : tile_bg;
           if (pressed) bg = bg.alpha(0.35);
@@ -1755,12 +2430,13 @@ void AppMenu::draw() {
           if (hv && !pressed) p.stroke_rounded(it.x + 0.5, it.y + 0.5, it.w - 1, it.h - 1, r, t.text.alpha(0.28));
           if (s && keyboard_)
             p.stroke_rounded(it.x + 1, it.y + 1, it.w - 2, it.h - 2, r, t.accent, Sd(2));
-          double is = icon_size(it) * scale;
-          double ix = it.x + (it.w - is) / 2.0;
+          double base = std::round(icon_size(it)), is = base * fx.scale;
+          double ix = it.x + (it.w - is) / 2.0 + fx.slide;
           double iy = it.size == TileSize::Small ? it.y + (it.h - is) / 2.0
                                                  : it.y + (it.h - is) / 2.0 - it.h * 0.07;
-          p.image(IconLoader::get({it.entry->icon, "application-x-executable"}, int(std::lround(is))),
-                  ix, iy - lift, is, pressed ? 0.35 : 1.0);
+          if (fx.glow > 0)
+            p.circle(ix + is / 2, iy + is / 2 - fx.lift, is * 0.72, t.accent.alpha(0.28 * fx.glow));
+          p.image(icon(it.entry->icon, base, fx.scale), ix, iy - fx.lift, is, pressed ? 0.35 : 1.0);
           // Drop position: a bar before or after this tile.
           if (dragging_ && drop_group == it.group && (drop_index == it.index || drop_index == it.index + 1)) {
             double bx = drop_index == it.index ? it.x - gap_ / 2.0 - Sd(1.5) : it.x + it.w + gap_ / 2.0 - Sd(1.5);
@@ -1892,6 +2568,7 @@ void AppMenu::draw() {
   if (rail_open_) fl_push_clip(rail_right, 0, W - rail_right, H);
   for (auto &it : items_) {
     if (!it.visible || it.kind == K_RAIL) continue;
+    if (!fl_not_clipped(it.x - S(14), it.y - S(14), it.w + S(28), it.h + S(28))) continue;
     bool clipped = it.clipped();
     if (clipped) fl_push_clip(it.cx, it.cy, it.cw, it.ch);
     switch (it.kind) {
@@ -1931,8 +2608,8 @@ void AppMenu::draw() {
         break;
       case K_ROW: {
         text_font(t.font_size);
-        int tx = it.x + S(46);
-        draw_text(it.entry->name, tx, it.y, it.w - (tx - it.x) - S(6), it.h, t.text);
+        int tx = it.x + S(46) + int(std::lround(hover_of(it).slide));
+        draw_text(it.entry->name, tx, it.y, it.x + it.w - S(6) - tx, it.h, t.text);
         break;
       }
       case K_TILE: {
@@ -1985,7 +2662,26 @@ void AppMenu::draw() {
     account_->draw_text(t);
   }
   draw_children();
-  if (qa_dump_enabled()) qa_dump_menu();
+  if (qa_dump_enabled() && !list_glide_.on && !tiles_glide_.on) {
+    // At most every 50 ms while frames follow each other (effects); the
+    // last state is always written. While an area glides it shows where it
+    // goes once it got there (glide() asks for that frame's dump).
+    if (tnow - qa_dumped_ >= 0.05) {
+      qa_dumped_ = tnow;
+      Fl::remove_timeout(qa_dump_later, this);
+      qa_dump_menu();
+    } else if (!Fl::has_timeout(qa_dump_later, this)) {
+      Fl::add_timeout(0.06, qa_dump_later, this);
+    }
+  }
+}
+
+void AppMenu::qa_dump_later(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (!self->shown()) return;
+  self->qa_dumped_ = now();
+  self->build_items();
+  self->qa_dump_menu();
 }
 
 // UI test hook (see qa_dump in popup.h): the menu draws its own controls, so
@@ -2005,6 +2701,9 @@ void AppMenu::qa_dump_menu() {
   };
   line("@menu", 0, 0, w(), h(), 1, 0);
   if (rail_open_) line("@rail-open", 0, 0, 0, 0, 1, 0);
+  // 0.2: the theme the menu draws with, and how many applications it has.
+  line(std::string("@theme:") + (theme_.dark ? "dark" : "light"), 0, 0, 0, 0, 1, 0);
+  line("@apps:" + std::to_string(apps_ ? apps_->apps.size() : 0), 0, 0, 0, 0, 1, 0);
   // The account button: its name and picture ("" for the initials).
   line("@account-name:" + panel_account::name(), 0, 0, 0, 0, 1, 0);
   line("@account-picture:" + panel_account::picture_path(), 0, 0, 0, 0, 1, 0);
@@ -2016,31 +2715,33 @@ void AppMenu::qa_dump_menu() {
   }
   static const char *const rail[] = {"menu",     "account", "documents", "pictures",
                                      "settings", "power",   "gallery"};
+  auto name_of = [&](const Item &it) -> std::string {
+    switch (it.kind) {
+      case K_RAIL: return std::string("rail:") + rail[it.index];
+      case K_FILTER: return "filter:" + it.label;
+      case K_ROW:
+        return (it.group == 1 ? "added:" : it.group == 2 ? "most-used:" : "app:") + it.entry->name;
+      case K_LETTER: return "letter:" + it.label;
+      case K_JUMP: return "jump:" + it.label;
+      case K_GROUP: return "group:" + it.label;
+      case K_TILE: return "tile:" + it.entry->name;
+      case K_HEADING: return it.index == 0 ? "heading:" + it.label : "";
+      default: return "";
+    }
+  };
+  // The selection (keyboard: 1, pointer: 0 in the "active" column), with
+  // its place even when it is scrolled out of view.
+  if (const Item *s = find(selected_))
+    line("@selected:" + name_of(*s), s->x, s->y, s->w, s->h, keyboard_ ? 1 : 0, s->visible ? 0 : 1);
   for (auto &it : items_) {
     if (!it.visible) continue;
     int cx = it.x + it.w / 2, cy = it.y + it.h / 2;
     if (it.clipped() && !(cx >= it.cx && cx < it.cx + it.cw && cy >= it.cy && cy < it.cy + it.ch))
       continue;
-    std::string name;
-    switch (it.kind) {
-      case K_RAIL: name = std::string("rail:") + rail[it.index]; break;
-      case K_FILTER: name = "filter:" + it.label; break;
-      case K_ROW:
-        name = (it.group == 1 ? "added:" : it.group == 2 ? "most-used:" : "app:") + it.entry->name;
-        break;
-      case K_LETTER: name = "letter:" + it.label; break;
-      case K_JUMP: name = "jump:" + it.label; break;
-      case K_GROUP: name = "group:" + it.label; break;
-      case K_TILE:
-        name = "tile:" + it.entry->name;
-        line("@tile-size:" + it.entry->name, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
-        break;
-      case K_HEADING:
-        if (it.index == 0) name = "heading:" + it.label;
-        else continue;
-        break;
-      default: continue;
-    }
+    std::string name = name_of(it);
+    if (name.empty()) continue;
+    if (it.kind == K_TILE)
+      line("@tile-size:" + it.entry->name, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
     line(name, it.x, it.y, it.w, it.h, 1, it.clipped() ? 1 : 0);
   }
   qa_dump(this, text);

@@ -14,7 +14,36 @@ namespace sde {
 namespace menu {
 
 // Higher is better; 0 means "does not match". |terms| are lower case.
+// match_keys(search_keys(e), terms) for one entry.
 int match_score(const DesktopEntry &e, const std::vector<std::string> &terms);
+
+// ---------------------------------------------------------------- search
+// Text folded for matching: lower case, Latin letters without accents
+// (E acute "crire" -> "ecrire", "Stra" sharp-s "e" -> "strasse"), Greek and
+// Cyrillic in lower case; other characters stay as they are.
+std::string fold(const std::string &text);
+// One line of text to draw: control characters become spaces, bytes that
+// are not UTF-8 are read as Windows-1252 (legacy Latin-1 files), outer
+// spaces are removed.
+std::string clean_text(const std::string &text);
+
+// Search keys of an application, folded once (the panel keeps them with
+// its application list, see src/panel/app_catalog.h).
+struct SearchKeys {
+  std::string name, generic, comment, exec;
+  std::vector<std::string> keywords;
+  std::vector<std::string> id_parts;  // "org.gnome.Nautilus.desktop": gnome, nautilus
+};
+SearchKeys search_keys(const DesktopEntry &e);
+// The folded terms of a query, split at spaces.
+std::vector<std::string> search_terms(const std::string &query);
+// Higher is better, 0: no match; every term must match. Per term: name
+// prefix 100, start of a word of the name 80, inside the name 60, start of a
+// word of the generic name 45, inside it 40, the program 35, a keyword (or a
+// word of one) 30, a part of the desktop file ID 25, inside the comment 15,
+// the letters of the name in order from a word start (3 letters or more:
+// "lbo" finds LibreOffice) 8.
+int match_keys(const SearchKeys &k, const std::vector<std::string> &terms);
 
 // "a.desktop;b.desktop;" <-> {"a.desktop", "b.desktop"} (trimmed, no
 // duplicates, no empty items).
@@ -118,12 +147,22 @@ std::vector<TileCell> pack_tiles(const std::vector<Tile> &tiles, int columns, in
 class FileIndex {
  public:
   void build(const std::vector<std::string> &roots, size_t limit = 6000, int depth = 3);
+  // The same in steps, so that a big home folder does not stall the panel:
+  // begin(), then step() on idle until it returns true.
+  void begin(const std::vector<std::string> &roots, size_t limit = 6000, int depth = 3);
+  bool step(double budget_ms);
+  bool building() const { return building_; }
   bool built() const { return built_; }
   void clear();
   size_t size() const { return items_.size(); }
   // Paths whose base name contains every term; names starting with the first
   // term come first, folders before files of equal rank.
   std::vector<std::string> search(const std::vector<std::string> &terms, size_t max) const;
+  struct Hit {
+    std::string path;
+    bool dir = false;
+  };
+  std::vector<Hit> search_hits(const std::vector<std::string> &terms, size_t max) const;
   bool is_dir(const std::string &path) const;
 
  private:
@@ -131,9 +170,17 @@ class FileIndex {
     std::string path, name_lower;
     bool dir;
   };
-  void scan(const std::string &dir, int depth, size_t limit);
+  struct Pending {
+    std::string dir;
+    int depth;
+  };
+  void scan_one(const std::string &dir, int depth);
+  void finish();
   std::vector<Item> items_;
-  bool built_ = false;
+  std::vector<Pending> stack_;        // directories left to scan, depth first
+  std::vector<Pending> roots_;        // roots not started yet
+  size_t limit_ = 6000;
+  bool built_ = false, building_ = false;
 };
 
 }  // namespace menu

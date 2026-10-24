@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "app_catalog.h"
 #include "desktop_entry.h"
 #include "menu_model.h"
 #include "paint.h"
@@ -63,6 +64,9 @@ class SearchFlyout : public PanelPopup {
 
   void draw() override;
   int handle(int event) override;
+  void flush() override;  // timing hook (menu_perf.h)
+  // sde.conf changed: an open flyout follows the theme and accent.
+  void config_changed();
 
  private:
   enum Kind { K_NONE, K_TAB, K_FIELD, K_RESULT, K_TOP, K_RECENT, K_CHIP, K_ACTION, K_HEADING };
@@ -95,17 +99,30 @@ class SearchFlyout : public PanelPopup {
   void qa_dump_search();
   static void blink(void *);
   static void poll_applications(void *);
+  // The application catalog published a new snapshot (app_catalog.h).
+  static void catalog_changed(void *);
+  void apply_catalog();
+  // The file index is built in slices on idle (a big home folder must not
+  // stall the first keystroke) and kept for a while between searches.
+  void start_file_index();
+  static void index_step(void *);
 
   sde::Theme theme_;
   std::string query_;
   size_t caret_ = 0;
   bool caret_on_ = true, select_all_ = false;
   int tab_ = 0;  // 0 all, 1 apps, 2 settings, 3 files
-  std::vector<sde::DesktopEntry> apps_;
-  std::string apps_stamp_;
+  // The applications searched (kept while a context menu runs, see
+  // AppMenu::apps_), with their search keys.
+  app_catalog::SnapshotPtr apps_;
+  bool apps_stale_ = false;
   std::vector<sde::DesktopEntry> extras_, files_;
+  std::vector<sde::menu::SearchKeys> extra_keys_;
   sde::menu::FileIndex file_index_;
+  double file_index_at_ = 0;  // when the index was built (steady seconds)
   std::vector<sde::menu::Usage> usage_;
+  // Super pressed alone closes the search, as in the Start menu.
+  bool super_down_ = false, super_alone_ = false;
   std::vector<const sde::DesktopEntry *> results_, top_, recent_;
   std::vector<Item> items_;
   // The selected item (keyboard, or the result shown in the preview).

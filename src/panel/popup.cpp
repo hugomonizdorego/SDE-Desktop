@@ -19,6 +19,7 @@
 #include <cmath>
 #include <vector>
 
+#include "menu_perf.h"
 #include "paint.h"
 #include "panel.h"
 #include "popup_style.h"
@@ -42,8 +43,10 @@ void PanelPopup::open(int anchor_x, int align) {
   anchor_x_ = anchor_x;
   align_ = align;
   reposition();
+  double shown_at = menu_perf::enabled() ? menu_perf::now_ms() : 0;
   show();
   apply_shape();
+  if (shown_at > 0) menu_perf::note("show", menu_perf::now_ms() - shown_at);
   // FLTK omits WM titles for override-redirect popups. Keep a readable name
   // for window inspection and assistive tools as well as normal windows.
   if (label()) {

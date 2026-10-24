@@ -278,7 +278,8 @@ void notify_config_changed() {
   auto v = get_cardinals(root(), "_SDE_CONFIG_SERIAL");
   long serial = v.empty() ? 1 : long(v[0]) + 1;
   set_cardinals(root(), "_SDE_CONFIG_SERIAL", {serial});
-  XFlush(fl_display);
+  // As send_command(): short-lived programs exit right after this.
+  XSync(fl_display, False);
 }
 
 bool wm_running(Display *dpy) {

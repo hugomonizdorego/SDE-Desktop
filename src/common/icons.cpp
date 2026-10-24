@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <ctime>
 #include <cstdint>
 #include <cmath>
 #include <map>
@@ -266,6 +267,10 @@ std::string g_dirs_key;  // icon_base_dirs() the theme cache was built for
 std::map<std::string, std::unique_ptr<IconTheme>> g_themes;
 std::unordered_map<std::string, std::string> g_lookup_cache;
 std::unordered_map<std::string, cairo_surface_t *> g_surface_cache;
+// Names no theme has: missing at one size means missing at every size, and
+// looking one up again walks every directory of every theme (Papirus has
+// hundreds).
+std::unordered_set<std::string> g_missing;
 
 // Themes are cached per process; a different XDG_DATA_DIRS (tests, or a
 // program that changes it) starts again.
@@ -276,6 +281,7 @@ void check_dirs() {
   g_dirs_key = key;
   g_themes.clear();
   g_lookup_cache.clear();
+  g_missing.clear();
 }
 
 IconTheme *load_theme(const std::string &name) {
@@ -502,8 +508,17 @@ std::string IconLoader::theme() { return g_theme_name; }
 
 std::vector<std::string> IconLoader::theme_chain() { return current_chain(); }
 
+void IconLoader::forget_missing() {
+  g_missing.clear();
+  for (auto it = g_lookup_cache.begin(); it != g_lookup_cache.end();)
+    it = it->second.empty() ? g_lookup_cache.erase(it) : std::next(it);
+  for (auto it = g_surface_cache.begin(); it != g_surface_cache.end();)
+    it = it->second ? std::next(it) : g_surface_cache.erase(it);
+}
+
 void IconLoader::clear_cache() {
   g_lookup_cache.clear();
+  g_missing.clear();
   g_chain.clear();
   for (auto &kv : g_surface_cache)
     if (kv.second) cairo_surface_destroy(kv.second);
@@ -517,8 +532,10 @@ std::string IconLoader::lookup(const std::string &name, int size) {
   std::string key = name + "@" + std::to_string(size);
   auto it = g_lookup_cache.find(key);
   if (it != g_lookup_cache.end()) return it->second;
+  if (g_missing.count(name)) return "";
   std::string found = with_extension_fallback(chain, name, size);
   g_lookup_cache[key] = found;
+  if (found.empty()) g_missing.insert(name);
   return found;
 }
 
@@ -527,6 +544,17 @@ std::string IconLoader::lookup_in(const std::string &theme, const std::string &n
   if (name[0] == '/') return file_exists(name) ? name : "";
   return with_extension_fallback(chain_for(theme), name, size);
 }
+
+namespace {
+IconLoader::Stats g_stats;
+double stats_now_ms() {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
+}
+}  // namespace
+
+IconLoader::Stats IconLoader::stats() { return g_stats; }
 
 cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size) {
   std::vector<std::string> all = names;
@@ -540,6 +568,7 @@ cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size
       continue;
     }
     cairo_surface_t *result = nullptr;
+    double t0 = stats_now_ms();
     std::string path = lookup(name, size);
     if (!path.empty()) {
       cairo_surface_t *raw = load_image(path, size, size);
@@ -562,6 +591,8 @@ cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size
       }
     }
     g_surface_cache[key] = result;
+    ++g_stats.loads;
+    g_stats.ms += stats_now_ms() - t0;
     if (result) return result;
   }
   return nullptr;

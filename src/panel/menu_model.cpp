@@ -6,35 +6,245 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 #include "util.h"
 
 namespace sde {
 namespace menu {
 
-int match_score(const DesktopEntry &e, const std::vector<std::string> &terms) {
-  std::string name = lower(e.name), generic = lower(e.generic_name), comment = lower(e.comment);
+namespace {
+
+// Decodes the UTF-8 sequence at |i|: false when it is not valid UTF-8
+// (stray continuation bytes, overlong forms, surrogates, > U+10FFFF).
+bool decode_utf8(const std::string &s, size_t i, uint32_t &cp, size_t &len) {
+  unsigned char c = static_cast<unsigned char>(s[i]);
+  if (c < 0x80) {
+    cp = c;
+    len = 1;
+    return true;
+  }
+  if (c >= 0xC2 && c <= 0xDF) len = 2, cp = c & 0x1F;
+  else if (c >= 0xE0 && c <= 0xEF) len = 3, cp = c & 0x0F;
+  else if (c >= 0xF0 && c <= 0xF4) len = 4, cp = c & 0x07;
+  else return false;
+  if (i + len > s.size()) return false;
+  for (size_t k = 1; k < len; ++k) {
+    unsigned char d = static_cast<unsigned char>(s[i + k]);
+    if ((d & 0xC0) != 0x80) return false;
+    cp = (cp << 6) | (d & 0x3F);
+  }
+  if ((len == 3 && cp < 0x800) || (len == 4 && (cp < 0x10000 || cp > 0x10FFFF)) ||
+      (cp >= 0xD800 && cp <= 0xDFFF))
+    return false;
+  return true;
+}
+
+void encode_utf8(uint32_t cp, std::string &out) {
+  if (cp < 0x80) {
+    out += char(cp);
+  } else if (cp < 0x800) {
+    out += char(0xC0 | (cp >> 6));
+    out += char(0x80 | (cp & 0x3F));
+  } else if (cp < 0x10000) {
+    out += char(0xE0 | (cp >> 12));
+    out += char(0x80 | ((cp >> 6) & 0x3F));
+    out += char(0x80 | (cp & 0x3F));
+  } else {
+    out += char(0xF0 | (cp >> 18));
+    out += char(0x80 | ((cp >> 12) & 0x3F));
+    out += char(0x80 | ((cp >> 6) & 0x3F));
+    out += char(0x80 | (cp & 0x3F));
+  }
+}
+
+// Base letters of U+00C0..U+017F; "" keeps the character (x and division
+// signs), nullptr: not a Latin letter of these blocks.
+const char *latin_base(uint32_t cp) {
+  static const char *const latin1[64] = {
+      "a", "a", "a", "a", "a", "a", "ae", "c", "e", "e", "e", "e", "i", "i", "i", "i",
+      "d", "n", "o", "o", "o", "o", "o", "",  "o", "u", "u", "u", "u", "y", "th", "ss",
+      "a", "a", "a", "a", "a", "a", "ae", "c", "e", "e", "e", "e", "i", "i", "i", "i",
+      "d", "n", "o", "o", "o", "o", "o", "",  "o", "u", "u", "u", "u", "y", "th", "y"};
+  if (cp >= 0xC0 && cp <= 0xFF) return latin1[cp - 0xC0];
+  // Latin Extended-A: runs of letters with the same base, upper and lower.
+  static const struct {
+    uint32_t last;
+    const char *base;
+  } ext[] = {{0x105, "a"}, {0x10D, "c"}, {0x111, "d"}, {0x11B, "e"}, {0x123, "g"},
+             {0x127, "h"}, {0x131, "i"}, {0x133, "ij"}, {0x135, "j"}, {0x138, "k"},
+             {0x142, "l"}, {0x14B, "n"}, {0x151, "o"}, {0x153, "oe"}, {0x159, "r"},
+             {0x161, "s"}, {0x167, "t"}, {0x173, "u"}, {0x175, "w"}, {0x178, "y"},
+             {0x17E, "z"}, {0x17F, "s"}};
+  if (cp >= 0x100 && cp <= 0x17F)
+    for (auto &r : ext)
+      if (cp <= r.last) return r.base;
+  return nullptr;
+}
+
+bool separator(char c) {
+  return c == ' ' || c == '-' || c == '_' || c == '.' || c == '(' || c == '/' || c == ',' ||
+         c == ':' || c == '+' || c == '&' || c == '[';
+}
+
+// |term| starts a word of |text| (not at its very beginning).
+bool word_start(const std::string &text, const std::string &term) {
+  for (size_t p = text.find(term, 1); p != std::string::npos; p = text.find(term, p + 1))
+    if (separator(text[p - 1])) return true;
+  return false;
+}
+
+// The letters of |term| appear in |text| in order, the first one at the
+// start of a word.
+bool fuzzy(const std::string &text, const std::string &term) {
+  for (size_t w = 0; w < text.size(); ++w) {
+    if ((w > 0 && !separator(text[w - 1])) || text[w] != term[0]) continue;
+    size_t j = 1;
+    for (size_t i = w + 1; i < text.size() && j < term.size(); ++i)
+      if (text[i] == term[j]) ++j;
+    if (j == term.size()) return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+std::string fold(const std::string &s) {
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size();) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c < 0x80) {
+      out += char(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+      ++i;
+      continue;
+    }
+    uint32_t cp = 0;
+    size_t len = 1;
+    if (!decode_utf8(s, i, cp, len)) {
+      out += s[i++];
+      continue;
+    }
+    i += len;
+    if (const char *base = latin_base(cp)) {
+      if (*base) {
+        out += base;
+        continue;
+      }
+    }
+    if (cp >= 0x391 && cp <= 0x3A9 && cp != 0x3A2) cp += 0x20;  // Greek capitals
+    else if (cp >= 0x410 && cp <= 0x42F) cp += 0x20;            // Cyrillic capitals
+    else if (cp >= 0x400 && cp <= 0x40F) cp += 0x50;            // Cyrillic with signs
+    encode_utf8(cp, out);
+  }
+  return out;
+}
+
+std::string clean_text(const std::string &s) {
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size();) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c < 0x20 || c == 0x7F) {
+      out += ' ';
+      ++i;
+      continue;
+    }
+    uint32_t cp = 0;
+    size_t len = 1;
+    if (!decode_utf8(s, i, cp, len)) {
+      // Not UTF-8: most likely a legacy Latin-1 (Windows-1252) file. Its
+      // characters are what was meant, and the UI font has them; U+FFFD
+      // was drawn as an empty box (FLTK has no fallback fonts).
+      static const uint16_t cp1252[32] = {
+          0x20AC, 0,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
+          0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, 0,      0x017D, 0,
+          0,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+          0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0,      0x017E, 0x0178};
+      uint32_t latin = c >= 0xA0 ? c : cp1252[c - 0x80];
+      if (latin) encode_utf8(latin, out);
+      else out += '?';
+      ++i;
+      continue;
+    }
+    out.append(s, i, len);
+    i += len;
+  }
+  return trim(out);
+}
+
+SearchKeys search_keys(const DesktopEntry &e) {
+  SearchKeys k;
+  k.name = fold(e.name);
+  k.generic = fold(e.generic_name);
+  k.comment = fold(e.comment);
   auto argv = e.exec.empty() ? std::vector<std::string>() : e.command();
-  std::string exec = lower(basename_of(argv.empty() ? "" : argv[0]));
+  k.exec = fold(basename_of(argv.empty() ? "" : argv[0]));
+  for (auto &kw : e.keywords) k.keywords.push_back(fold(kw));
+  std::string id = fold(e.id);
+  if (ends_with(id, ".desktop")) id.resize(id.size() - 8);
+  std::string part;
+  for (size_t i = 0; i <= id.size(); ++i) {
+    if (i < id.size() && id[i] != '.' && id[i] != '-' && id[i] != '_') {
+      part += id[i];
+      continue;
+    }
+    if (part.size() >= 3 && part != "org" && part != "com" && part != "net")
+      k.id_parts.push_back(part);
+    part.clear();
+  }
+  // 0.2: SDE Settings becomes the Control Center; both names find it.
+  if (e.id == "sde-settings.desktop")
+    for (const char *alias : {"settings", "control center", "control panel", "preferences"})
+      k.keywords.push_back(alias);
+  return k;
+}
+
+std::vector<std::string> search_terms(const std::string &query) {
+  std::vector<std::string> out;
+  for (auto &t : split(fold(query), ' '))
+    if (!t.empty()) out.push_back(t);
+  return out;
+}
+
+int match_keys(const SearchKeys &k, const std::vector<std::string> &terms) {
   int total = 0;
   for (auto &t : terms) {
     if (t.empty()) continue;
     int best = 0;
-    if (starts_with(name, t)) best = 100;
-    else if (name.find(" " + t) != std::string::npos) best = 80;
-    else if (name.find(t) != std::string::npos) best = 60;
-    else if (generic.find(t) != std::string::npos) best = 40;
-    else if (!exec.empty() && starts_with(exec, t)) best = 35;
+    if (starts_with(k.name, t)) best = 100;
+    else if (word_start(k.name, t)) best = 80;
+    else if (k.name.find(t) != std::string::npos) best = 60;
+    else if (starts_with(k.generic, t) || word_start(k.generic, t)) best = 45;
+    else if (k.generic.find(t) != std::string::npos) best = 40;
+    else if (!k.exec.empty() && starts_with(k.exec, t)) best = 35;
     if (!best)
-      for (auto &k : e.keywords)
-        if (starts_with(lower(k), t)) best = 30;
-    if (!best && comment.find(t) != std::string::npos) best = 15;
+      for (auto &kw : k.keywords)
+        if (starts_with(kw, t) || word_start(kw, t)) {
+          best = 30;
+          break;
+        }
+    if (!best)
+      for (auto &part : k.id_parts)
+        if (starts_with(part, t)) {
+          best = 25;
+          break;
+        }
+    if (!best && k.comment.find(t) != std::string::npos) best = 15;
+    if (!best && t.size() >= 3 && fuzzy(k.name, t)) best = 8;
     if (!best) return 0;
     total += best;
   }
   return total;
+}
+
+int match_score(const DesktopEntry &e, const std::vector<std::string> &terms) {
+  std::vector<std::string> folded;
+  for (auto &t : terms) folded.push_back(fold(t));
+  return match_keys(search_keys(e), folded);
 }
 
 std::vector<std::string> parse_id_list(const std::string &list) {
@@ -379,30 +589,35 @@ std::string file_icon(const std::string &path, bool dir) {
 
 void FileIndex::clear() {
   items_.clear();
-  built_ = false;
+  stack_.clear();
+  roots_.clear();
+  built_ = building_ = false;
 }
 
-void FileIndex::scan(const std::string &dir, int depth, size_t limit) {
-  if (depth < 0 || items_.size() >= limit) return;
+// Lists one directory; its sub-directories are scanned next, in name order
+// (as the recursive scan of alpha 15 did).
+void FileIndex::scan_one(const std::string &dir, int depth) {
+  if (depth < 0 || items_.size() >= limit_) return;
   DIR *d = opendir(dir.c_str());
   if (!d) return;
   std::vector<std::string> subdirs;
   while (dirent *ent = readdir(d)) {
-    if (items_.size() >= limit) break;
+    if (items_.size() >= limit_) break;
     std::string name = ent->d_name;
     if (name.empty() || name[0] == '.') continue;
     std::string path = dir + "/" + name;
     bool is_dir = ent->d_type == DT_DIR || (ent->d_type == DT_UNKNOWN && dir_exists(path));
-    items_.push_back({path, lower(name), is_dir});
+    items_.push_back({path, fold(name), is_dir});
     if (is_dir) subdirs.push_back(path);
   }
   closedir(d);
   std::sort(subdirs.begin(), subdirs.end());
-  for (auto &s : subdirs) scan(s, depth - 1, limit);
+  for (auto it = subdirs.rbegin(); it != subdirs.rend(); ++it) stack_.push_back({*it, depth - 1});
 }
 
-void FileIndex::build(const std::vector<std::string> &roots, size_t limit, int depth) {
-  items_.clear();
+void FileIndex::begin(const std::vector<std::string> &roots, size_t limit, int depth) {
+  clear();
+  limit_ = limit;
   std::vector<std::string> seen;
   for (auto &r : roots) {
     if (r.empty() || std::find(seen.begin(), seen.end(), r) != seen.end() || !dir_exists(r))
@@ -410,32 +625,72 @@ void FileIndex::build(const std::vector<std::string> &roots, size_t limit, int d
     seen.push_back(r);
     // Roots below the home folder are scanned on their own; the home folder
     // itself only one level deep, so that its big trees do not dominate.
-    scan(r, r == home_dir() ? std::min(depth, 1) : depth, limit);
+    roots_.push_back({r, r == home_dir() ? std::min(depth, 1) : depth});
   }
+  std::reverse(roots_.begin(), roots_.end());
+  building_ = true;
+}
+
+bool FileIndex::step(double budget_ms) {
+  if (!building_) return built_;
+  struct timespec t0;
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  auto elapsed = [&] {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (t.tv_sec - t0.tv_sec) * 1000.0 + (t.tv_nsec - t0.tv_nsec) / 1e6;
+  };
+  while (items_.size() < limit_) {
+    if (stack_.empty()) {
+      if (roots_.empty()) break;
+      stack_.push_back(roots_.back());
+      roots_.pop_back();
+    }
+    Pending p = stack_.back();
+    stack_.pop_back();
+    scan_one(p.dir, p.depth);
+    if (budget_ms > 0 && elapsed() >= budget_ms) return false;
+  }
+  finish();
+  return true;
+}
+
+void FileIndex::finish() {
+  stack_.clear();
+  roots_.clear();
   // A folder can be reached from two roots (home and ~/Documents).
   std::sort(items_.begin(), items_.end(), [](const Item &a, const Item &b) { return a.path < b.path; });
   items_.erase(std::unique(items_.begin(), items_.end(),
                            [](const Item &a, const Item &b) { return a.path == b.path; }),
                items_.end());
+  building_ = false;
   built_ = true;
 }
 
-bool FileIndex::is_dir(const std::string &path) const {
-  for (auto &i : items_)
-    if (i.path == path) return i.dir;
-  return false;
+void FileIndex::build(const std::vector<std::string> &roots, size_t limit, int depth) {
+  begin(roots, limit, depth);
+  step(0);
 }
 
-std::vector<std::string> FileIndex::search(const std::vector<std::string> &terms,
-                                           size_t max) const {
+bool FileIndex::is_dir(const std::string &path) const {
+  auto it = std::lower_bound(items_.begin(), items_.end(), path,
+                             [](const Item &a, const std::string &p) { return a.path < p; });
+  return it != items_.end() && it->path == path && it->dir;
+}
+
+std::vector<FileIndex::Hit> FileIndex::search_hits(const std::vector<std::string> &terms,
+                                                   size_t max) const {
   std::vector<std::pair<int, const Item *>> hits;
   bool any = false;
   for (auto &t : terms) any = any || !t.empty();
-  if (!any) return {};
+  if (!any || !built_) return {};
   for (auto &i : items_) {
     bool all = true;
     for (auto &t : terms)
-      if (!t.empty() && i.name_lower.find(t) == std::string::npos) all = false;
+      if (!t.empty() && i.name_lower.find(t) == std::string::npos) {
+        all = false;
+        break;
+      }
     if (!all) continue;
     int rank = starts_with(i.name_lower, terms[0]) ? 0 : 2;
     if (!i.dir) rank += 1;
@@ -445,11 +700,18 @@ std::vector<std::string> FileIndex::search(const std::vector<std::string> &terms
     if (a.first != b.first) return a.first < b.first;
     return a.second->path.size() < b.second->path.size();
   });
-  std::vector<std::string> out;
+  std::vector<Hit> out;
   for (auto &h : hits) {
     if (out.size() >= max) break;
-    out.push_back(h.second->path);
+    out.push_back({h.second->path, h.second->dir});
   }
+  return out;
+}
+
+std::vector<std::string> FileIndex::search(const std::vector<std::string> &terms,
+                                           size_t max) const {
+  std::vector<std::string> out;
+  for (auto &h : search_hits(terms, max)) out.push_back(h.path);
   return out;
 }
 
