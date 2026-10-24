@@ -196,6 +196,8 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+# Build number and commit of package builds (BUILD-INFO, tools/build-info.py).
+add_test(NAME sde-build-info COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_build_info.py)
 # Graphite's accent-colored PNG assets move to the SDE accent (tools/build-themes.py).
 add_test(NAME sde-theme-assets COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_assets.py)
 

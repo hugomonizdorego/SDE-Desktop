@@ -39,6 +39,9 @@ python3 "$ROOT/tools/prepare-themes.py"
 mkdir -p "$WORK/sde-$VERSION"
 tar -C "$ROOT" --exclude=.git --exclude=dist --exclude=build --exclude=target --exclude=obj-* --exclude=source-work --exclude=__pycache__ -cf - . |
     tar -C "$WORK/sde-$VERSION" -xf -
+# The copy has no .git: keep the commit and build number of this checkout
+# for Control Center > About (tools/build-info.py reads BUILD-INFO).
+python3 "$ROOT/tools/build-info.py" --stamp "$WORK/sde-$VERSION/BUILD-INFO"
 if [ -n "$SUFFIX" ]; then
     # Prepend a changelog entry carrying the distribution suffix.
     (cd "$WORK/sde-$VERSION" &&
