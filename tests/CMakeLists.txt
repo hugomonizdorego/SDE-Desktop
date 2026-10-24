@@ -179,7 +179,8 @@ target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.
 add_executable(sde-sysreport-tests test_sysreport.cpp)
 target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
-add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
+add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport
+                                         ${CMAKE_SOURCE_DIR}/data/welcome)
 
 # debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
 # --quick --json verdicts and the verified DNS repair (--fix, --dns-fallback)
