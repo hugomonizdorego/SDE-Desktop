@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <time.h>
@@ -851,6 +852,7 @@ bool change_own_password(const std::string &current, const std::string &password
   envp.push_back(nullptr);
   std::string arg0 = "passwd";
   char *argv[] = {&arg0[0], nullptr};
+  long open_max = std::min(65536L, std::max(1024L, sysconf(_SC_OPEN_MAX)));
 
   int master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
   char slave_name[128] = "";
@@ -874,7 +876,9 @@ bool change_own_password(const std::string &current, const std::string &password
     dup2(slave, 0);
     dup2(slave, 1);
     dup2(slave, 2);
-    if (slave > 2) close(slave);
+    // Nothing else of this program (its X and D-Bus connections) is passed on.
+    if (syscall(SYS_close_range, 3U, ~0U, 0U) != 0)
+      for (long fd = 3; fd < open_max; ++fd) close(int(fd));
     execve(prog.c_str(), argv, envp.data());
     _exit(127);
   }

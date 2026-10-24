@@ -2375,7 +2375,9 @@ const std::vector<PageInfo> &pages() {
 // --------------------------------------------------------------- window
 
 class Sidebar;
+class SidebarFrame;
 Sidebar *g_sidebar = nullptr;
+SidebarFrame *g_sidebar_frame = nullptr;
 std::vector<std::string> g_qa_lines;  // extra QA lines of the page being shown
 void qa_dump_window();
 Fl_Scroll *g_sidebar_scroll = nullptr;
@@ -2388,27 +2390,65 @@ void show_page(int index);
 // The sidebar of a window |w| pixels wide.
 int sidebar_width(int w) { return w < S(760) ? S(176) : S(220); }
 
+// The sidebar's frame, always in view: the logo and "Control Center" above
+// the list of pages and "Saved automatically" below it (when the window is
+// tall enough). Only the list scrolls between them, so a short window or a
+// large interface size never scrolls the header away.
+class SidebarFrame : public Fl_Widget {
+ public:
+  SidebarFrame(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  static int header_h() { return S(72); }
+  static int footer_h(int window_h) { return window_h >= S(560) ? S(40) : 0; }
+  void draw() override {
+    // The list's width: the frame also covers the list's scroll bar.
+    int lw = w() - S(10);
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rect(x(), y(), w(), h(), g_theme.surface);
+      p.line(x() + lw - 0.5, y(), x() + lw - 0.5, y() + h(), g_theme.border);
+      p.image(IconLoader::get({"sde-control-center", "sde-logo", "start-here"}, S(36)), x() + S(20),
+              y() + S(20), S(36));
+    }
+    // "Control Center", on two lines when the sidebar is narrow.
+    std::string title = _("Control Center");
+    int tw = lw - S(70);
+    text_font(g_theme.font_size + 2, true);
+    if (text_width(title) > tw) text_font(g_theme.font_size + 1, true);
+    size_t space = title.rfind(' ');
+    if (text_width(title) > tw && space != std::string::npos) {
+      draw_text(title.substr(0, space), x() + S(64), y() + S(19), tw, S(20), g_theme.text);
+      draw_text(title.substr(space + 1), x() + S(64), y() + S(37), tw, S(20), g_theme.text);
+    } else {
+      draw_text(title, x() + S(64), y() + S(22), tw, S(32), g_theme.text);
+    }
+    if (int fh = footer_h(h())) {
+      text_font(g_theme.font_size - 1);
+      draw_text(_("Saved automatically"), x() + S(20), y() + h() - fh + S(6), lw - S(30), S(20),
+                g_theme.text_dim);
+    }
+  }
+};
+
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  // Rows keep a comfortable height; the sidebar scrolls when the window is
+  // Rows keep a comfortable height; the list scrolls when the window is
   // too short for all of them.
   int row_h() const { return S(32); }
   // A caption before each group of pages (a small gap for an untitled one).
   int row_y(int i) const {
-    int top = y() + S(80);
+    int top = y() + S(8);
     for (int k = 0; k <= i && k < int(pages().size()); ++k)
       if (const char *section = pages()[size_t(k)].section) top += *section ? S(26) : S(10);
     return top + i * row_h();
   }
-  // The height that shows every row and the footer.
-  int content_h() const { return row_y(int(pages().size())) - y() + S(48); }
+  // The height that shows every row.
+  int content_h() const { return row_y(int(pages().size())) - y() + S(8); }
   void draw() override {
     {
       Painter p(window()->w(), window()->h());
       p.fill_rect(x(), y(), w(), h(), g_theme.surface);
       p.line(x() + w() - 0.5, y(), x() + w() - 0.5, y() + h(), g_theme.border);
-      p.image(IconLoader::get({"sde-control-center", "sde-logo", "start-here"}, S(36)), x() + S(20), y() + S(20), S(36));
       for (size_t i = 0; i < pages().size(); ++i) {
         int ry = row_y(int(i));
         if (int(i) == g_page_index) {
@@ -2425,20 +2465,6 @@ class Sidebar : public Fl_Widget {
                        g_theme.accent_text);
       }
     }
-    {
-      // "Control Center", on two lines when the sidebar is narrow.
-      std::string title = _("Control Center");
-      int tw = w() - S(70);
-      text_font(g_theme.font_size + 2, true);
-      if (text_width(title) > tw) text_font(g_theme.font_size + 1, true);
-      size_t space = title.rfind(' ');
-      if (text_width(title) > tw && space != std::string::npos) {
-        draw_text(title.substr(0, space), x() + S(64), y() + S(19), tw, S(20), g_theme.text);
-        draw_text(title.substr(space + 1), x() + S(64), y() + S(37), tw, S(20), g_theme.text);
-      } else {
-        draw_text(title, x() + S(64), y() + S(22), tw, S(32), g_theme.text);
-      }
-    }
     text_font(g_theme.font_size - 2, true);
     for (size_t i = 0; i < pages().size(); ++i)
       if (const char *section = pages()[i].section)
@@ -2452,12 +2478,6 @@ class Sidebar : public Fl_Widget {
         text_font(std::max(S(9), g_theme.font_size - S(2)), cur);
       draw_text(_(pages()[i].title), x() + S(56), row_y(int(i)), w() - S(66), row_h() - S(4),
                 cur ? g_theme.accent_text : g_theme.text);
-    }
-    // The version line only when it does not collide with the page list.
-    if (row_y(int(pages().size())) + S(8) < y() + h() - S(36)) {
-      text_font(g_theme.font_size - 1);
-      draw_text(_("Saved automatically"), x() + S(20), y() + h() - S(36), w() - S(30), S(20),
-                g_theme.text_dim);
     }
   }
   int index_at(int ey) const {
@@ -2554,11 +2574,19 @@ void relayout_page(void *) {
   if (g_page && g_window) refresh_page();
 }
 
+// The sidebar's frame and its list for a window |W| x |H|.
+void layout_sidebar(int W, int H) {
+  int side = sidebar_width(W), top = SidebarFrame::header_h();
+  int list_h = std::max(S(40), H - top - SidebarFrame::footer_h(H));
+  g_sidebar_frame->resize(0, 0, side, H);
+  g_sidebar_scroll->resize(0, top, side, list_h);
+  g_sidebar->size(side - S(10), std::max(list_h, g_sidebar->content_h()));
+}
+
 void layout_window() {
-  if (!g_window || !g_sidebar_scroll || !g_sidebar) return;
+  if (!g_window || !g_sidebar_scroll || !g_sidebar || !g_sidebar_frame) return;
   int W = g_window->w(), H = g_window->h(), side = sidebar_width(W);
-  g_sidebar_scroll->resize(0, 0, side, H);
-  g_sidebar->size(side - S(10), std::max(H, g_sidebar->content_h()));
+  layout_sidebar(W, H);
   reveal_sidebar_row(g_page_index);
   g_content_x = side;
   g_content_w = W - side;
@@ -2830,12 +2858,13 @@ int main(int argc, char **argv) {
   IconLoader::set_theme(g_cfg.get("appearance", "icon_theme", "auto"));
   Fl::visible_focus(1);
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int W = std::min(S(940), sw - S(24)), H = std::min(S(660), sh - S(60));
+  // Centred in the work area with room for the title bar (StaticGravity).
+  int wx = 0, wy = 0, W = S(940), H = S(660);
+  fit_to_work_area(wx, wy, W, H);
   int side = sidebar_width(W);
   auto *win = new SettingsWindow(W, H);
   g_window = win;
+  g_sidebar_frame = new SidebarFrame(0, 0, side, H);
   g_sidebar_scroll = new Fl_Scroll(0, 0, side, H);
   g_sidebar_scroll->type(Fl_Scroll::VERTICAL);
   g_sidebar_scroll->box(FL_FLAT_BOX);
@@ -2844,8 +2873,8 @@ int main(int argc, char **argv) {
   g_sidebar_scroll->scrollbar.color(g_theme.surface.fl());
   g_sidebar_scroll->scrollbar.selection_color(g_theme.border.fl());
   g_sidebar = new Sidebar(0, 0, side - S(10), H);
-  g_sidebar->size(g_sidebar->w(), std::max(H, g_sidebar->content_h()));
   g_sidebar_scroll->end();
+  layout_sidebar(W, H);
   g_content_x = side;
   g_content_w = W - side;
   win->end();
@@ -2859,7 +2888,7 @@ int main(int argc, char **argv) {
   Fl::lock();
   g_open_anchor = anchor;
   show_page(index);
-  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->position(wx, wy);
   start_display_watch();
   // The account and its picture (AccountsService may take a moment), and
   // their changes made elsewhere (the Start menu, the lock screen).

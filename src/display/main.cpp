@@ -17,6 +17,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "ui.h"
+#include "wm.h"
 #include "x11.h"
 namespace sde {
 namespace {
@@ -114,14 +115,17 @@ int main(int argc, char** argv) {
   theme = Theme::from_config(cfg);
   theme.apply_to_fltk();
   IconLoader::set_theme(cfg.get("appearance", "icon_theme", "auto"));
-  int x, y, w, h;
-  Fl::screen_work_area(x, y, w, h, 0);
-  int W = std::min(S(780), w - S(24)), H = std::min(S(760), h - S(48));
+  // Centred in the work area with room for the title bar (StaticGravity).
+  int x = 0, y = 0, W = S(780), H = S(760);
+  fit_to_work_area(x, y, W, H);
   win = new DisplayWindow(W, H);
   win->end();
   win->xclass("sde-display-settings");
-  win->position(x + (w - W) / 2, y + (h - H) / 2);
+  win->position(x, y);
   win->resizable(nullptr);
+  // Resizable and maximizable: DisplayWindow::resize() builds the page for
+  // the new size (without a size range FLTK would fix the window's size).
+  win->size_range(std::min(W, S(520)), std::min(H, S(400)));
   refresh_page();
   start_display_watch();
   win->show();
