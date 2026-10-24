@@ -500,7 +500,7 @@
       "summary": "SDE logo, application icons, wallpapers and avatars",
       "programs": [],
       "icons": ["sde-logo"],
-      "license": "GPL-3.0-or-later AND CC0-1.0",
+      "license": "GPL-3.0-or-later",
       "copyright": ["Copyright © 2026 Selviana DE Project"],
       "upstream": [],
       "credits": ["The SDE name and logo are trademarks; see docs/BRANDING.md for their use"],

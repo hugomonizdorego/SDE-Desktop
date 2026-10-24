@@ -14,11 +14,13 @@ if(XGETTEXT_EXECUTABLE)
   add_custom_target(pot
     COMMAND ${XGETTEXT_EXECUTABLE} --from-code=UTF-8 --language=C++ --keyword=_ --keyword=N_
             --package-name=sde --package-version=${SDE_VERSION}
+            "--copyright-holder=Selviana DE Project and contributors"
             --msgid-bugs-address=https://github.com/hugomonizdorego/SDE-Desktop/issues
             --add-comments=TRANSLATORS: --sort-by-file
             -o ${CMAKE_CURRENT_SOURCE_DIR}/sde.pot ${SDE_I18N_SOURCES}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    COMMENT "Updating po/sde.pot")
+    COMMENT "Updating po/sde.pot"
+    VERBATIM)
 endif()
 
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/LINGUAS SDE_LINGUAS REGEX "^[^#]")
