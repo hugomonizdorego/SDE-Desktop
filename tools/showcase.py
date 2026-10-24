@@ -240,6 +240,30 @@ class XGrab:
                 x.XFree(children)
         return out
 
+    def press(self, keysyms):
+        """Presses keys by their keycodes through XTEST (first to last,
+        released in reverse): exactly these keys, with no modifier added.
+        False when XTEST or a keysym is not available."""
+        try:
+            t = ctypes.CDLL(ctypes.util.find_library('Xtst') or 'libXtst.so.6')
+        except OSError:
+            return False
+        self.x.XStringToKeysym.restype = ctypes.c_ulong
+        self.x.XStringToKeysym.argtypes = [ctypes.c_char_p]
+        self.x.XKeysymToKeycode.restype = ctypes.c_ubyte
+        self.x.XKeysymToKeycode.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        self.x.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        t.XTestFakeKeyEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_int, ctypes.c_ulong]
+        codes = [self.x.XKeysymToKeycode(self.d, self.x.XStringToKeysym(k.encode())) for k in keysyms]
+        if not all(codes):
+            return False
+        for c in codes:
+            t.XTestFakeKeyEvent(self.d, c, 1, 0)
+        for c in reversed(codes):
+            t.XTestFakeKeyEvent(self.d, c, 0, 0)
+        self.x.XSync(self.d, 0)
+        return True
+
     def close(self):
         if self.d:
             self.x.XCloseDisplay(self.d)
@@ -463,6 +487,19 @@ class Session:
     def key(self, *keys, wid=None):
         args = ['key', '--delay', '40'] + (['--window', wid] if wid else []) + list(keys)
         self.xdo(*args)
+        time.sleep(0.15)
+
+    def raw_key(self, combo):
+        """A key combination ("F1", "shift+F10") by keycodes through XTEST.
+        With the keymaps of Debian testing, "xdotool key F1" sends Alt+F1
+        (and Alt+Shift+F10): the window manager takes Alt+F1 for the Start
+        Menu, and Liria opens no context menu."""
+        mods = {'shift': 'Shift_L', 'ctrl': 'Control_L', 'alt': 'Alt_L', 'super': 'Super_L'}
+        keysyms = [mods.get(k.lower(), k) for k in combo.split('+')]
+        x = self.x11()
+        if not x or not x.press(keysyms):
+            self.key(combo)
+            return
         time.sleep(0.15)
 
     def type(self, text, delay=25):
@@ -1748,13 +1785,13 @@ ABOUT_SECTIONS = [('about', 'about-app', 'About Calculator: the About section (S
 def about_app(s):
     calc = s.app(['calculator'], '^Calculator$')
     qa = s.home / 'qa/about.log'
-    s.key('F1')
+    s.raw_key('F1')
     a = s.find('^About Calculator$', 5)
     if not a:
         # Once more with the window activated again; then say what is on the
         # screen and what Calculator wrote, so a build log shows the cause.
         s.activate(calc)
-        s.key('F1')
+        s.raw_key('F1')
         a = s.find('^About Calculator$', 5)
     if not a:
         names = [s.title(w) for w in s.visible_all()]
@@ -1829,7 +1866,7 @@ def liria_more(s):
     s.move(g['x'] + g['w'] * 0.42, g['y'] + g['h'] * 0.36)
     box = s.box_of(w)
     before = s.hash_box(box)
-    s.key('shift+F10')
+    s.raw_key('shift+F10')
     if not s.wait(lambda: s.hash_box(box) != before, 1.5):
         s.key('Menu')
     s.shot('liria-context-menu', quiet=0.6)
