@@ -51,7 +51,10 @@ protected:
 public:
 #if USE_XFT // scaling does not work without Xft
   float current_xft_dpi; // current value of the Xft.dpi X resource
-  APP_SCALING_CAPABILITY rescalable() FL_OVERRIDE { return PER_SCREEN_APP_SCALING; }
+  // SDE-FLTK: SDE programs scale themselves with the SDE scale setting.
+  // FLTK's GUI scaling (from Xft.dpi, FLTK_SCALING_FACTOR or Ctrl+/-/0)
+  // would scale them a second time, so it is off: every scale factor stays 1.
+  APP_SCALING_CAPABILITY rescalable() FL_OVERRIDE { return NO_APP_SCALING; }
   float scale(int n) FL_OVERRIDE {return screens[n].scale;}
   void scale(int n, float f) FL_OVERRIDE { screens[n].scale = f;}
   void desktop_scale_factor() FL_OVERRIDE;

@@ -62,6 +62,11 @@ public:
   static void make_xid(Fl_Window*, XVisualInfo* =fl_visual, Colormap=fl_colormap);
   static Fl_X* set_xid(Fl_Window*, Window);
   static inline Fl_X* i(const Fl_Window* w) {return flx(w);}
+  // SDE-FLTK: called right before a new top-level window is mapped for the
+  // first time. A program sets window properties there that window managers
+  // read only when they start managing a window (_NET_WM_WINDOW_TYPE,
+  // _NET_WM_STATE), instead of unmapping and mapping the window again.
+  static void (*before_map)(Fl_Window *win, Window xid);
 #  endif
 };
 

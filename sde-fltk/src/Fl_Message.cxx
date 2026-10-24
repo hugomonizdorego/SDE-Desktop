@@ -56,6 +56,7 @@
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Secret_Input.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -355,6 +356,7 @@ int Fl_Message::innards(const char *fmt, va_list ap, const char *b0, const char 
     button_[2]->hide();
 
   resizeform();
+  if (fl_sde_style()) fl_sde_style()->dialog(window_);  // SDE-FLTK theme
 
   if (button_[1]->visible() && !input_->visible())
     button_[1]->take_focus();

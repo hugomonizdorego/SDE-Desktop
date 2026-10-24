@@ -340,6 +340,7 @@
 //
 
 #include <FL/Fl_File_Chooser.H>
+#include <FL/Fl_SDE_Style.H>
 #include "Fl_System_Driver.H"
 #include <FL/Fl.H>
 #include <FL/filename.H>
@@ -1557,6 +1558,7 @@ Fl_File_Chooser::value(const char *filename)
 /** Shows the Fl_File_Chooser window.*/
 void Fl_File_Chooser::show()
 {
+  if (fl_sde_style()) fl_sde_style()->dialog(window);  // SDE-FLTK theme
   window->hotspot(fileList);
   window->show();
   Fl::flush();

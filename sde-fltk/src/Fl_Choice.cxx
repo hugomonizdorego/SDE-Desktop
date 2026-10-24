@@ -17,6 +17,7 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Choice.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 #include "flstring.h"
 
 // Emulates the Forms choice widget.  This is almost exactly the same
@@ -29,6 +30,7 @@
 // Albrecht
 
 void Fl_Choice::draw() {
+  if (fl_sde_style() && fl_sde_style()->choice_draw(this)) return;  // SDE-FLTK
   Fl_Boxtype btype = Fl::scheme() ? FL_UP_BOX           // non-default uses up box
                                   : FL_DOWN_BOX;        // default scheme uses down box
   int dx = Fl::box_dx(btype);

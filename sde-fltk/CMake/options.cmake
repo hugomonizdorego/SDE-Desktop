@@ -277,7 +277,8 @@ if(UNIX)
   option(FLTK_INSTALL_LINKS "create backwards compatibility links" OFF)
   list(APPEND FLTK_LDLIBS -lm)
   if(NOT APPLE)
-    option(FLTK_BACKEND_WAYLAND "support the Wayland backend" ON)
+    # SDE-FLTK: SDE is an X11 desktop; libdecor is not in this tree.
+    option(FLTK_BACKEND_WAYLAND "support the Wayland backend" OFF)
   endif(NOT APPLE)
   if(FLTK_BACKEND_WAYLAND)
     pkg_check_modules(WLDCLIENT IMPORTED_TARGET wayland-client>=1.18)
@@ -609,7 +610,8 @@ endif(FLTK_OPTION_CAIRO_WINDOW OR FLTK_OPTION_CAIRO_EXT)
 
 #######################################################################
 
-option(FLTK_OPTION_SVG "read/write SVG image files" ON)
+# SDE-FLTK: SDE renders SVG with librsvg; nanosvg is not in this tree.
+option(FLTK_OPTION_SVG "read/write SVG image files" OFF)
 
 if(FLTK_OPTION_SVG)
   set(FLTK_USE_SVG 1)

@@ -26,8 +26,15 @@
 #include <FL/Fl_Menu_Window.H>
 #include <FL/Fl_Menu_.H>
 #include <FL/fl_draw.H>
+#include <FL/Fl_SDE_Style.H>
 #include <stdio.h>
 #include "flstring.h"
+
+// SDE-FLTK: the installed theme hooks (FL/Fl_SDE_Style.H).
+static Fl_SDE_Style *sde_style_ = 0;
+Fl_SDE_Style::~Fl_SDE_Style() {}
+Fl_SDE_Style *fl_sde_style() { return sde_style_; }
+void fl_sde_style(Fl_SDE_Style *s) { sde_style_ = s; }
 
 /** Size of the menu starting from this menu item.
 
@@ -153,6 +160,14 @@ public:
   int selected;
   int drawn_selected;   // last redraw has this selected
   int shortcutWidth;
+  // SDE-FLTK layout (fl_sde_style() installed): item tops and heights,
+  // quick-action row, icon column width.
+  int sde_;
+  int *ys_, *hs_;
+  int quick_n_, pad_, lead_, quick_size_, divider_h_;
+  void sde_layout(int X, int Y, int Wp, int Hp, const Fl_Menu_Item* m,
+                  const Fl_Menu_Item* t, int menubar_title, int tx, int ty);
+  int item_top(int n) const;
   menuwindow(const Fl_Menu_Item* m, int X, int Y, int W, int H,
              const Fl_Menu_Item* picked, const Fl_Menu_Item* title,
              int menubar = 0, int menubar_title = 0, int right_edge = 0);
@@ -161,6 +176,7 @@ public:
   int find_selected(int mx, int my);
   int titlex(int);
   void autoscroll(int);
+  void show() FL_OVERRIDE;
   void position(int x, int y);
   int is_inside(int x, int y);
   menuwindow* as_menuwindow() FL_OVERRIDE { return this; }
@@ -339,6 +355,48 @@ void Fl_Menu_Item::draw(int x, int y, int w, int h, const Fl_Menu_* m,
   fl_draw_shortcut = 0;
 }
 
+// SDE-FLTK helpers for styles.
+static void sde_label(Fl_Label &l, const Fl_Menu_Item *mi, const Fl_Menu_ *m) {
+  l.value   = mi->text;
+  l.image   = 0;
+  l.deimage = 0;
+  l.type    = mi->labeltype_;
+  l.font    = mi->labelsize_ || mi->labelfont_ ? mi->labelfont_ : (m ? m->textfont() : FL_HELVETICA);
+  l.size    = mi->labelsize_ ? mi->labelsize_ : m ? m->textsize() : FL_NORMAL_SIZE;
+  l.color   = mi->labelcolor_ ? mi->labelcolor_ : m ? m->textcolor() : int(FL_FOREGROUND_COLOR);
+  l.align_  = FL_ALIGN_LEFT;
+  l.h_margin_ = l.v_margin_ = l.spacing = 0;
+}
+
+void fl_sde_draw_menu_label(const Fl_Menu_Item *mi, const Fl_Menu_ *m, int x, int y, int w,
+                            int h, Fl_Color c, int mnemonic) {
+  Fl_Label l;
+  sde_label(l, mi, m);
+  l.color = c;
+  char save = fl_draw_shortcut;
+  fl_draw_shortcut = mnemonic ? 1 : 2;
+  l.draw(x, y, w > 0 ? w : 0, h, FL_ALIGN_LEFT);
+  fl_draw_shortcut = save;
+}
+
+int fl_sde_measure_menu_label(const Fl_Menu_Item *mi, const Fl_Menu_ *m, int *hp) {
+  Fl_Label l;
+  sde_label(l, mi, m);
+  int w = 0, h = 0;
+  char save = fl_draw_shortcut;
+  fl_draw_shortcut = 1;
+  l.measure(w, h);
+  fl_draw_shortcut = save;
+  if (hp) *hp = h;
+  return w;
+}
+
+void fl_sde_menu_font(const Fl_Menu_Item *mi, const Fl_Menu_ *m) {
+  fl_font(mi->labelsize_ || mi->labelfont_ ? (Fl_Font)mi->labelfont_ :
+              m ? m->textfont() : FL_HELVETICA,
+          mi->labelsize_ ? mi->labelsize_ : m ? m->textsize() : FL_NORMAL_SIZE);
+}
+
 menutitle::menutitle(int X, int Y, int W, int H, const Fl_Menu_Item* L, bool inbar) :
   window_with_items(X, Y, W, H, L) {
   in_menubar = inbar;
@@ -358,6 +416,8 @@ menuwindow::menuwindow(const Fl_Menu_Item* m, int X, int Y, int Wp, int Hp,
   Fl_Window_Driver::driver(this)->menu_window_area(scr_x, scr_y, scr_w, scr_h, n);
   if (!right_edge || right_edge > scr_x+scr_w) right_edge = scr_x+scr_w;
 
+  sde_ = 0; ys_ = hs_ = 0;
+  quick_n_ = pad_ = lead_ = quick_size_ = divider_h_ = 0;
   if (m) m = m->first(); // find the first item that needs to be rendered
   drawn_selected = -1;
   if (button) {
@@ -386,6 +446,12 @@ menuwindow::menuwindow(const Fl_Menu_Item* m, int X, int Y, int Wp, int Hp,
   if (menubar) {
     itemheight = 0;
     title = 0;
+    sde_ = sde_style_ ? 1 : 0;
+    return;
+  }
+
+  if (sde_style_) {
+    sde_layout(X, Y, Wp, Hp, m, t, menubar_title, tx, ty);
     return;
   }
 
@@ -483,9 +549,109 @@ menuwindow::menuwindow(const Fl_Menu_Item* m, int X, int Y, int Wp, int Hp,
   }
 }
 
+// SDE-FLTK: padded layout with variable item heights and the quick row.
+// The menu stays inside the work area of the screen it opens on.
+void menuwindow::sde_layout(int X, int Y, int Wp, int Hp, const Fl_Menu_Item* m,
+                            const Fl_Menu_Item* t, int menubar_title, int tx, int ty) {
+  Fl_SDE_Style *st = sde_style_;
+  sde_ = 1;
+  itemheight = 1; // not a menubar
+  int scr_x, scr_y, scr_w, scr_h;
+  Fl_Window_Driver::driver(this)->menu_window_area(scr_x, scr_y, scr_w, scr_h,
+                                                   Fl::screen_num(X, Y));
+  pad_ = st->menu_padding();
+  quick_size_ = st->menu_quick_size();
+  divider_h_ = st->menu_divider_height();
+  lead_ = m ? st->menu_leading_width(m, button) : 0;
+  ys_ = new int[numitems + 1];
+  hs_ = new int[numitems + 1];
+  const Fl_Menu_Item* m1 = m;
+  quick_n_ = 0;
+  if (m1) for (; m1->text && (m1->flags & FL_MENU_SDE_QUICK); m1 = m1->next()) quick_n_++;
+  if (quick_n_ == numitems) quick_n_ = 0; // a menu of quick items only: show a list
+  int yy = pad_, W = 0, sw = 0, j = 0;
+  if (quick_n_) {
+    for (j = 0; j < quick_n_; j++) { ys_[j] = yy; hs_[j] = quick_size_; }
+    yy += quick_size_ + divider_h_;
+    W = quick_n_ * quick_size_;
+  } else {
+    m1 = m;
+  }
+  int labels = 0;
+  if (m1) for (; m1->text; m1 = m1->next(), j++) {
+    int hh = 0;
+    int w1 = fl_sde_measure_menu_label(m1, button, &hh);
+    int ih = st->menu_item_height(m1, button, hh);
+    ys_[j] = yy; hs_[j] = ih;
+    yy += ih;
+    if ((m1->flags & FL_MENU_DIVIDER) && j < numitems - 1) yy += divider_h_;
+    if (w1 > labels) labels = w1;
+    if (m1->shortcut_) {
+      fl_sde_menu_font(m1, button);
+      int s = int(fl_width(fl_shortcut_label(m1->shortcut_))) + 1;
+      if (s > sw) sw = s;
+    }
+  }
+  ys_[numitems] = yy;
+  hs_[numitems] = 0;
+  shortcutWidth = sw;
+  int Wl = lead_ + labels + (sw ? st->menu_shortcut_gap() + sw : 0) + st->menu_trailing_width();
+  if (Wl > W) W = Wl;
+  W += 2 * pad_;
+  int Wtitle = 0, Htitle = 0;
+  if (t) Wtitle = t->measure(&Htitle, button) + 16;
+  if (!menubar_title && Wtitle > W) W = Wtitle;
+  if (Wp > W) W = Wp;
+  if (selected >= 0 && !Wp) X -= W/2;
+  if (X > scr_x+scr_w-W) X = scr_x+scr_w-W;
+  if (X < scr_x) X = scr_x;
+  int H = yy + pad_;
+  if (selected >= 0) {
+    Y = Y + (Hp - hs_[selected]) / 2 - ys_[selected];
+  } else {
+    Y = Y + Hp;
+    if (Y + H > scr_y + scr_h) {
+      // Below a widget or a menu bar: open above it when there is room;
+      // anywhere else move the menu up into the work area.
+      if (Hp > 1 && Y - Hp - H >= scr_y) Y = Y - Hp - H;
+      else Y = scr_y + scr_h - H;
+      if (Y < scr_y) Y = scr_y;
+    }
+  }
+  if (m) { x(X); y(Y); w(W); h(H); }
+  else { x(X); y(Y-2); w(1); h(1); }
+  if (t) {
+    if (menubar_title) {
+      int ht = button->h();
+      title = new menutitle(tx, ty-ht, Wtitle, ht, t, true);
+    } else {
+      int ht = st->menu_item_height(t, button, Htitle);
+      title = new menutitle(X, Y-ht-2, W, ht, t);
+    }
+  } else {
+    title = 0;
+  }
+}
+
+int menuwindow::item_top(int n) const {
+  if (sde_ && ys_) {
+    if (n < 0) n = 0;
+    if (n > numitems) n = numitems;
+    return ys_[n];
+  }
+  return n * itemheight;
+}
+
+void menuwindow::show() {
+  window_with_items::show();
+  if (sde_ && sde_style_) sde_style_->menu_window_shown(this);
+}
+
 menuwindow::~menuwindow() {
   hide();
   delete title;
+  delete[] ys_;
+  delete[] hs_;
 }
 
 void menuwindow::position(int X, int Y) {
@@ -500,6 +666,21 @@ void menuwindow::autoscroll(int n) {
   int Y = y()+Fl::box_dx(box())+2+n*itemheight;
 
   int xx, ww;
+  if (sde_ && ys_) {
+    // SDE-FLTK: variable item heights; scroll only when the item is outside
+    // the work area of the screen with the pointer.
+    int ih = itemheight;
+    if (n >= 0 && n < numitems) { Y = y()+ys_[n]; ih = hs_[n]; }
+    Fl_Window_Driver::driver(this)->menu_window_area(xx, scr_y, ww, scr_h, -1);
+    if (Y <= scr_y) Y = scr_y-Y+10;
+    else {
+      Y = Y+ih-scr_h-scr_y;
+      if (Y < 0) return;
+      Y = -Y-10;
+    }
+    Fl_Window_Driver::driver(this)->reposition_menu_window(x(), y()+Y);
+    return;
+  }
   Fl_Window_Driver::driver(this)->menu_window_area(xx, scr_y, ww, scr_h, this->screen_num());
   if (n==0 && Y <= scr_y + itemheight) {
     Y = scr_y - Y + 10;
@@ -518,6 +699,24 @@ void menuwindow::autoscroll(int n) {
 
 void menuwindow::drawentry(const Fl_Menu_Item* m, int n, int eraseit) {
   if (!m) return; // this happens if -1 is selected item and redrawn
+  if (sde_ && ys_) {
+    Fl_SDE_Style *st = sde_style_;
+    if (!st || n < 0 || n >= numitems) return;
+    int ix, iw;
+    if (n < quick_n_) { ix = pad_ + n * quick_size_; iw = quick_size_; }
+    else { ix = pad_; iw = w() - 2 * pad_; }
+    int iy = ys_[n], ih = hs_[n];
+    if (eraseit) {
+      fl_push_clip(ix, iy, iw, ih);
+      st->menu_draw_background(w(), h());
+      fl_pop_clip();
+    }
+    if (n < quick_n_) st->menu_draw_quick(m, button, ix, iy, iw, ih, n == selected);
+    else st->menu_draw_item(m, button, ix, iy, iw, ih, n == selected, lead_, shortcutWidth);
+    if (!eraseit && n >= quick_n_ && (m->flags & FL_MENU_DIVIDER) && n < numitems - 1)
+      st->menu_draw_divider(pad_, iy + ih, w() - 2 * pad_, divider_h_);
+    return;
+  }
 
   int BW = Fl::box_dx(box());
   int xx = BW;
@@ -574,10 +773,30 @@ void menuwindow::drawentry(const Fl_Menu_Item* m, int n, int eraseit) {
 }
 
 void menutitle::draw() {
+  if (sde_style_) {
+    sde_style_->menu_draw_title(menu, button, w(), h(), in_menubar ? 1 : 0);
+    return;
+  }
   menu->draw(0, 0, w(), h(), button, 2);
 }
 
 void menuwindow::draw() {
+  if (sde_ && ys_ && sde_style_) {
+    if (damage() != FL_DAMAGE_CHILD) {
+      sde_style_->menu_draw_background(w(), h());
+      if (quick_n_)
+        sde_style_->menu_draw_divider(pad_, pad_ + quick_size_, w() - 2 * pad_, divider_h_);
+      if (menu) {
+        const Fl_Menu_Item* m; int j;
+        for (m=menu->first(), j=0; m->text; j++, m = m->next()) drawentry(m, j, 0);
+      }
+    } else if (selected != drawn_selected) {
+      drawentry(menu->next(drawn_selected), drawn_selected, 1);
+      drawentry(menu->next(selected), selected, 1);
+    }
+    drawn_selected = selected;
+    return;
+  }
   if (damage() != FL_DAMAGE_CHILD) {    // complete redraw
     if ( box() != FL_FLAT_BOX && ( Fl::is_scheme( "gtk+" ) ||
         Fl::is_scheme( "plastic") || Fl::is_scheme( "gleam" ) )) {
@@ -611,7 +830,7 @@ int menuwindow::find_selected(int mx, int my) {
   my -= y();
   if (my < 0 || my >= h()) return -1;
   if (!itemheight) { // menubar
-    int xx = 3; int n = 0;
+    int xx = sde_ ? 6 : 3; int n = 0;
     const Fl_Menu_Item* m = menu->first();
     for (; ; m = m->next(), n++) {
       if (!m->text) return -1;
@@ -619,6 +838,16 @@ int menuwindow::find_selected(int mx, int my) {
       if (xx > mx) break;
     }
     return n;
+  }
+  if (sde_ && ys_) {
+    if (mx < 0 || mx >= w()) return -1;
+    if (quick_n_ && my >= ys_[0] && my < ys_[0] + quick_size_) {
+      int k = mx < pad_ ? -1 : (mx - pad_) / quick_size_;
+      return k < quick_n_ ? k : -1;
+    }
+    for (int j = quick_n_; j < numitems; j++)
+      if (my >= ys_[j] && my < ys_[j] + hs_[j]) return j;
+    return -1;
   }
   if (mx < Fl::box_dx(box()) || mx >= w()) return -1;
   int n = (my-Fl::box_dx(box())-1)/itemheight;
@@ -629,7 +858,7 @@ int menuwindow::find_selected(int mx, int my) {
 // return horizontal position for item n in a menubar:
 int menuwindow::titlex(int n) {
   const Fl_Menu_Item* m;
-  int xx = 3;
+  int xx = sde_ ? 6 : 3;
   for (m=menu->first(); n--; m = m->next()) xx += m->measure(0, button) + 16;
   return xx;
 }
@@ -747,6 +976,19 @@ static int backward(int menu) { // previous item in menu menu if possible
   return 0;
 }
 
+// SDE-FLTK: Left and Right move along the quick-action row.
+static int sde_quick_step(int dir) {
+  menustate &pp = *p;
+  if (pp.menu_number < 0 || pp.item_number < 0) return 0;
+  menuwindow &m = *(pp.p[pp.menu_number]);
+  if (pp.item_number >= m.quick_n_) return 0;
+  for (int item = pp.item_number + dir; item >= 0 && item < m.quick_n_; item += dir) {
+    const Fl_Menu_Item* m1 = m.menu->next(item);
+    if (m1->activevisible()) { setitem(m1, pp.menu_number, item); return 1; }
+  }
+  return 1; // stay in the row
+}
+
 int menuwindow::handle(int e) {
   /* In FLTK 1.3.4, the equivalent of handle_part2() is called for the Mac OS and X11 platforms
    and "svn blame" shows it is here to fix STR #449.
@@ -826,6 +1068,10 @@ int menuwindow::handle_part1(int e) {
       if (Fl::event_shift()) goto BACKTAB;
       if (pp.menubar && pp.menu_number == 0) goto RIGHT;
     case FL_Down:
+      // SDE-FLTK: Down leaves the quick-action row.
+      if (Fl::event_key() == FL_Down && pp.menu_number >= 0 && pp.item_number >= 0 &&
+          pp.item_number < pp.p[pp.menu_number]->quick_n_)
+        pp.item_number = pp.p[pp.menu_number]->quick_n_ - 1;
       if (pp.menu_number || !pp.menubar) {
         forward(pp.menu_number);
       } else if (pp.menu_number < pp.nummenus-1) {
@@ -833,12 +1079,14 @@ int menuwindow::handle_part1(int e) {
       }
       return 1;
     case FL_Right:
+      if (sde_quick_step(+1)) return 1;
     RIGHT:
       if (pp.menubar && (pp.menu_number<=0 || (pp.menu_number == pp.nummenus-1)))
         forward(0);
       else if (pp.menu_number < pp.nummenus-1) forward(pp.menu_number+1);
       return 1;
     case FL_Left:
+      if (sde_quick_step(-1)) return 1;
       if (pp.menubar && pp.menu_number<=1) backward(0);
       else if (pp.menu_number>0)
         setitem(pp.menu_number-1, pp.p[pp.menu_number-1]->selected);
@@ -984,6 +1232,7 @@ const Fl_Menu_Item* Fl_Menu_Item::pulldown(
   Fl_Widget_Tracker wp((Fl_Widget *)pbutton);
 
   button = pbutton;
+  if (sde_style_) sde_style_->menu_begin();
   if (pbutton && pbutton->window()) {
     menuwindow::parent_ = pbutton->top_window();
     for (Fl_Window* w = pbutton->window(); w; w = w->window()) {
@@ -1099,6 +1348,7 @@ const Fl_Menu_Item* Fl_Menu_Item::pulldown(
       } else {
         nX = cw.x() + cw.w();
         nY = cw.y() + pp.item_number * cw.itemheight;
+        if (cw.sde_) nY = cw.y() + cw.item_top(pp.item_number) - cw.pad_;
         title = 0;
       }
       if (initial_item) { // bring up submenu containing initial item:

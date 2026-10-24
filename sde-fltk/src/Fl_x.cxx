@@ -1235,7 +1235,8 @@ static void react_to_screen_reconfiguration() {
     }
   }
   delete[] sizes;
-  if (nochange || (old_count == 1 && Fl::screen_count() == 1)) {
+  if (nochange || (old_count == 1 && Fl::screen_count() == 1) ||
+      !Fl::screen_driver()->rescalable()) { // SDE-FLTK: no GUI scaling
     // screen sizes did not change or single screen: re-use previous screen scale values
     for (int screen = 0; screen < old_count; screen++)
       Fl::screen_driver()->scale(screen, scales[screen]);
@@ -1348,7 +1349,8 @@ int fl_handle(const XEvent& thisevent)
     Fl_X11_Screen_Driver *d = (Fl_X11_Screen_Driver*)Fl::screen_driver();
     d->init_workarea();
 #if USE_XFT
-    after_display_rescale(&(d->current_xft_dpi));
+    if (d->rescalable()) // SDE-FLTK: no GUI scaling (Fl_X11_Screen_Driver.H)
+      after_display_rescale(&(d->current_xft_dpi));
 #endif // USE_XFT
   }
 
@@ -1552,11 +1554,14 @@ int fl_handle(const XEvent& thisevent)
               e.target == fl_XaText ||
               e.target == fl_Xatextplain ||
               e.target == fl_Xatextplainutf ||
-              e.target == fl_Xatextplainutf2) {
+              e.target == fl_Xatextplainutf2 ||
+              // SDE-FLTK: Fl::dnd() announces a file list as "text/uri-list"
+              // (see fl_dnd_x.cxx); serve it, so file managers get the files.
+              (e.target == fl_XdndURIList && !clipboard)) {
             // clobber the target type, this seems to make some applications
             // behave that insist on asking for XA_TEXT instead of UTF8_STRING
             // Does not change XA_STRING as that breaks xclipboard.
-            if (e.target != XA_STRING) e.target = fl_XaUtf8String;
+            if (e.target != XA_STRING && e.target != fl_XdndURIList) e.target = fl_XaUtf8String;
             XChangeProperty(fl_display, e.requestor, e.property,
                             e.target, 8, 0,
                             (unsigned char *)fl_selection_buffer[clipboard],
@@ -2550,6 +2555,9 @@ ExposureMask|StructureNotifyMask
 |PropertyChangeMask
 |PointerMotionMask;
 
+// SDE-FLTK: see FL/platform.H.
+void (*Fl_X::before_map)(Fl_Window *, Window) = 0;
+
 void Fl_X::make_xid(Fl_Window* win, XVisualInfo *visual, Colormap colormap)
 {
   Fl_Group::current(0); // get rid of very common user bug: forgot end()
@@ -2807,6 +2815,7 @@ void Fl_X::make_xid(Fl_Window* win, XVisualInfo *visual, Colormap colormap)
   if (win->shape()) {
     Fl_X11_Window_Driver::driver(win)->combine_mask();
     }
+  if (Fl_X::before_map && !win->parent()) Fl_X::before_map(win, xp->xid);  // SDE-FLTK
   XMapWindow(fl_display, xp->xid);
   if (showit) {
     win->set_visible();

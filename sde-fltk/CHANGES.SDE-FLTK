@@ -1,5 +1,34 @@
 SDE-FLTK changes (Selviana DE Project)
 
+1.4.5-sde1  2026-10-24
+  - Imported FLTK 1.4.5 (tag release-1.4.5, upstream revision
+    a9b1113516ffd15fc7602a6d425a317df30f4720) in place of FLTK 1.3.11, the
+    way 1.3.11 was imported: without the test and example programs, the
+    upstream CI files (.github, .gitlab-ci.yml, public/), the documentation
+    sources (the man pages stay) and the bundled libraries (zlib, libjpeg and
+    libpng; the system libraries are used). The bundled libdecor and nanosvg
+    are left out too: SDE-FLTK is built for X11 only and without SVG images,
+    so CMake/options.cmake defaults FLTK_BACKEND_WAYLAND and FLTK_OPTION_SVG
+    to OFF. Drawing uses Xlib with Xft fonts as with 1.3 (no cairo or pango
+    graphics driver): SDE programs draw with Xlib and cairo themselves.
+  - X11: FLTK's GUI scaling is off (Fl_X11_Screen_Driver::rescalable()).
+    SDE programs scale themselves with the SDE scale setting; FLTK 1.4 would
+    scale them a second time from Xft.dpi, FLTK_SCALING_FACTOR, Ctrl+/-/0
+    and later Xft.dpi changes. Every screen keeps the scale factor 1, so
+    windows, fonts and coordinates are in pixels as with FLTK 1.3.
+  - The SDE changes of 1.3.11-sde1 to -sde3, re-applied to the FLTK 1.4
+    code: the FL/Fl_SDE_Style.H theme hooks (popup menus with the padded
+    layout, icons and the quick-action row; Fl_Menu_Bar with hover,
+    Fl_Choice, Fl_Scrollbar, Fl_Return_Button, tooltips; the fl_ask.H
+    dialogs, now built by Fl_Message, and Fl_File_Chooser), styled menus
+    kept inside the work area, X11 drag and drop serving text/uri-list and
+    Fl_X::before_map (now declared in FL/platform.H). The Fl_Callback0/
+    Fl_Callback1 cast change is not needed any more: FLTK 1.4 casts through
+    void * and fl_intptr_t itself.
+  - Fl_Menu_Bar: the menu bar under the pointer is a watched widget pointer
+    (Fl::watch_widget_pointer), so a hovered menu bar that is deleted no
+    longer leaves a dangling pointer behind.
+
 1.3.11-sde3  2026-10-24
   - X11: Fl_X::before_map, called right before a new top-level window is
     mapped for the first time, so programs can set _NET_WM_WINDOW_TYPE and
