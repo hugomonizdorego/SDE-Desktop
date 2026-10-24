@@ -119,6 +119,7 @@ class Run:
         self.pages = []
         self.numbers = {}
         self.catalogue = []  # (scene, name, caption)
+        self.sets = []       # the selected sets (selected_sets())
         self.stop = threading.Event()  # set: the sessions end after their scene
 
     def number(self):
@@ -2121,7 +2122,9 @@ def write_outputs(run):
     output folder: the images of this run and those of earlier runs into
     the same folder (other sets or scenes) that are still there."""
     out = run.out
-    set_names = [t.name for t in SETS]
+    # The sets of this run first when it renamed them (--resolution, --scale).
+    known = list(run.sets) + [t for t in SETS if t.name not in {s.name for s in run.sets}]
+    set_names = [t.name for t in known]
     images, skipped = list(run.index), [{'set': s, 'name': n, 'reason': r} for s, n, r in run.skipped]
     try:
         old = json.loads((out / 'index.json').read_text())
@@ -2138,7 +2141,7 @@ def write_outputs(run):
     images.sort(key=lambda e: (set_names.index(e['set']), order.get(e['name'], len(order)), e['name']))
     skipped.sort(key=lambda s: (set_names.index(s['set']) if s['set'] in set_names else 99,
                                 order.get(s['name'], len(order))))
-    sets = [t for t in SETS if any(e['set'] == t.name for e in images)]
+    sets = [t for t in known if any(e['set'] == t.name for e in images)]
     meta = {
         'title': 'SDE development screenshots',
         'version': (ROOT / 'VERSION').read_text().strip() if (ROOT / 'VERSION').exists() else '',
@@ -2176,7 +2179,7 @@ def readme(meta, sets, images, skipped, sheets):
         sheet = f' · [contact sheet]({sheets[t.name]})' if t.name in sheets else ''
         lines.append(f'| `{t.name}` | {t.label} | {t.size} at {t.scale} % | {n}{sheet} |')
     lines.append('')
-    theme_sets = {t.name for t in SETS if t.scope == 'themes'}
+    theme_sets = {t.name for t in sets if t.scope == 'themes' or t.family != 'graphite'}
     compare = []
     for e in images:
         if e['name'] not in compare and theme_sets & set(sets_of[e['name']]):
@@ -2509,7 +2512,7 @@ def main(argv=None):
     run = Run(a)
     discover(run)
     run.number()
-    sets = selected_sets(a)
+    sets = run.sets = selected_sets(a)
     if a.list:
         for t in SETS:
             print(f'set {t.name}: {t.label}, {t.size} @ {t.scale} % ({t.scope})')
