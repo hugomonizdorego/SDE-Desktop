@@ -1010,6 +1010,10 @@ class Session:
             env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
         if (self.home / '.fixtures/avatars').is_dir():
             env['SDE_AVATAR_DIR'] = str(self.home / '.fixtures/avatars')
+        if a.effects == 'full':
+            # Every SDE program draws for the full effects of a real GPU
+            # (Xvfb has OpenGL through Mesa's software renderer).
+            env['SDE_GRAPHICS'] = 'hardware'
         env.update(self.nss_wrapper())
         self.env = env
 
@@ -1201,12 +1205,27 @@ class Session:
         if not prog or not conf.is_file():
             warn('no compositor (sde-compositor): no shadows or rounded corners')
             return
-        radius = {'fluent': 8, 'graphite': 10, 'glass': 12}.get(self.set.family, 10)
-        text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};', conf.read_text())
-        if self.set.mode == 'dark':
-            text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
         mine = self.home / '.config/sde/showcase-compositor.conf'
-        mine.write_text(text)
+        generated = None
+        if self.args.effects == 'full':
+            # What sde-session starts on a real GPU (OpenGL, blur, shaders).
+            r = self.run('sde-session', '--compositor-config', timeout=20)
+            path = Path(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
+            if prog != 'sde-compositor':
+                warn('--effects full needs sde-compositor; using the lite configuration')
+            elif path and path.is_file():
+                generated = path
+            else:
+                warn(f'sde-session --compositor-config failed ({r.stderr.strip()[:200]}); using the lite one')
+        if generated:
+            mine = generated
+        else:
+            radius = {'fluent': 8, 'graphite': 10, 'glass': 12}.get(self.set.family, 10)
+            text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};',
+                          conf.read_text())
+            if self.set.mode == 'dark':
+                text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
+            mine.write_text(text)
         p = self.spawn(prog, '--config', mine, scene=False)
         time.sleep(0.8)
         if p.poll() is not None:
@@ -2297,6 +2316,16 @@ def parse_args(argv=None):
     ap.add_argument('--theme', help='sets to capture (comma-separated names or globs, e.g. graphite-light,'
                     "'glass-*'); default: all")
     ap.add_argument('--size', help='only sets of this size, e.g. 1366x768')
+    ap.add_argument('--resolution', help='capture the selected sets at this screen size instead, e.g. '
+                    '1024x600 (the set names get the size and scale)')
+    ap.add_argument('--scale', type=int, help='capture the selected sets at this interface scale, in percent')
+    ap.add_argument('--scope', choices=('full', 'themes', 'hero'),
+                    help="scenes of this scope in every set, e.g. 'full' for all scenes in the Fluent and "
+                         "Glass sets (default: each set's own)")
+    ap.add_argument('--effects', choices=('lite', 'full'), default='lite',
+                    help='compositor effects: lite (XRender with data/compositor/sde.conf, as in CI) or full '
+                         '(OpenGL with the configuration sde-session writes for a real GPU: blur, translucency '
+                         'and the Liquid Glass shader; needs sde-compositor)')
     ap.add_argument('--only', help='scenes or images (comma-separated globs, e.g. "start-menu*,control-center-*")')
     ap.add_argument('--zip', type=Path, help='also write one shareable zip')
     ap.add_argument('--display', type=int, default=140, help='first Xvfb display number to try')
@@ -2342,6 +2371,14 @@ def selected_sets(a):
             continue
         if a.size and t.size != a.size:
             continue
+        if a.resolution or a.scale:
+            # The same theme at another size or scale, under its own name.
+            size, scale = a.resolution or t.size, a.scale or t.scale
+            base = t.name.split('-1920x1080')[0]
+            t = ThemeSet(f'{base}-{size}-{scale}', t.family, t.mode, size, scale, t.scope,
+                         f'{t.label.split(",")[0]}, {size} at {scale} %')
+        if a.scope:
+            t = ThemeSet(t.name, t.family, t.mode, t.size, t.scale, a.scope, t.label)
         out.append(t)
     return out
 

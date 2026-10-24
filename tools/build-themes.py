@@ -307,6 +307,96 @@ def caption_masks(glyph='thin'):
             'max_toggled': grid(n, restore), 'desk': grid(n, desk), 'shade': grid(n, shade)}
 
 
+def png_rgba(width, height, rows):
+    """A PNG file (8-bit RGBA) of |rows|: lists of (r, g, b, a) tuples."""
+    import struct
+    import zlib
+
+    def chunk(kind, body):
+        return (len(body).to_bytes(4, 'big') + kind + body
+                + (zlib.crc32(kind + body) & 0xFFFFFFFF).to_bytes(4, 'big'))
+
+    raw = b''.join(b'\x00' + bytes(v for px in row for v in px) for row in rows)
+    ihdr = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+    return (PNG_SIGNATURE + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(raw, 9))
+            + chunk(b'IEND', b''))
+
+
+_CAPTION_PICTURES = {}
+
+
+def caption_pictures(n=96):
+    """Antialiased caption buttons for SDE WM (0.2.0 Alpha 2; audit A1-39):
+    the glyphs of soft_caption_masks() as 8-bit masks of |n| x |n| pixels,
+    white on transparent, named like the XBM masks (close.png, max_hover.png,
+    ...). SDE WM tints each with its state's image.color and scales it with
+    the button, which follows the title height and so the interface scale,
+    so the disc and the glyphs stay smooth from 100 % to 200 % (stock
+    Openbox ignores them and keeps the 14 px XBM masks). Drawn with signed
+    distances: one unit is a pixel of a 30 px button at 100 %; the disc is
+    16 units across, the strokes 1.3 units."""
+    if n in _CAPTION_PICTURES:
+        return _CAPTION_PICTURES[n]
+    import math
+    u = n / 30.0
+    R, w = 8.0 * u, 1.3 * u
+
+    def box(x, y, hx, hy, r=0.0):
+        qx, qy = abs(x) - hx + r, abs(y) - hy + r
+        return min(max(qx, qy), 0.0) + math.hypot(max(qx, 0.0), max(qy, 0.0)) - r
+
+    def seg(x, y, ax, ay, bx, by):
+        dx, dy = bx - ax, by - ay
+        t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+        return math.hypot(x - ax - t * dx, y - ay - t * dy)
+
+    def cover(d):
+        return max(0.0, min(1.0, 0.5 - d))
+
+    def dash(x, y):
+        return cover(box(x, y - 0.4 * u, 3.6 * u, w / 2, w / 2))
+
+    def square(x, y):
+        return cover(abs(box(x, y, 3.4 * u, 3.4 * u, 0.9 * u)) - w / 2)
+
+    def restore(x, y):
+        front = cover(abs(box(x + 1.0 * u, y - 1.0 * u, 2.7 * u, 2.7 * u, 0.7 * u)) - w / 2)
+        back = cover(abs(box(x - 1.0 * u, y + 1.0 * u, 2.7 * u, 2.7 * u, 0.7 * u)) - w / 2)
+        inside = cover(box(x + 1.0 * u, y - 1.0 * u, 2.7 * u + w / 2, 2.7 * u + w / 2, 0.7 * u))
+        return max(front, back * (1 - inside))
+
+    def cross(x, y):
+        k = 3.1 * u
+        return cover(min(seg(x, y, -k, -k, k, k), seg(x, y, -k, k, k, -k)) - w / 2)
+
+    def disc(x, y):
+        return cover(math.hypot(x, y) - R)
+
+    def dot(x, y):
+        return cover(math.hypot(x, y) - 2.6 * u)
+
+    def bar(x, y):
+        return cover(box(x, y + 2.6 * u, 3.6 * u, w / 2, w / 2))
+
+    def cut(glyph):
+        return lambda x, y: disc(x, y) * (1.0 - glyph(x, y))
+
+    shapes = {'iconify': dash, 'max': square, 'max_toggled': restore, 'close': cut(cross),
+              'desk': dot, 'shade': bar}
+    for state in ('hover', 'pressed'):
+        shapes[f'iconify_{state}'] = cut(dash)
+        shapes[f'max_{state}'] = cut(square)
+        shapes[f'max_{state}_toggled'] = cut(restore)
+        shapes[f'close_{state}'] = shapes['close']
+    c = n / 2.0
+    out = {}
+    for name, f in shapes.items():
+        rows = [[(255, 255, 255, round(255 * f(i + 0.5 - c, j + 0.5 - c))) for i in range(n)] for j in range(n)]
+        out[name] = png_rgba(n, n, rows)
+    _CAPTION_PICTURES[n] = out
+    return out
+
+
 def bullet_mask(fluent):
     n = 8 if fluent else 7
 
@@ -327,6 +417,10 @@ def openbox_theme(pal, family, mode, accent, outdir):
     masks = caption_masks(cap['glyph'])
     for name, rows in masks.items():
         (ob / f'{name}.xbm').write_text(xbm(name, rows))
+    if cap['glyph'] == 'soft':
+        # SDE WM draws these smooth pictures instead of the XBM masks.
+        for name, data in caption_pictures().items():
+            (ob / f'{name}.png').write_bytes(data)
     (ob / 'bullet.xbm').write_text(xbm('bullet', bullet_mask(fluent)))
     sel_bg = t['accent'] if fam['menu_highlight'] == 'accent' else t['hover']
     sel_fg = t['on_accent'] if fam['menu_highlight'] == 'accent' else t['text']
@@ -351,7 +445,10 @@ def openbox_theme(pal, family, mode, accent, outdir):
          # Stock Openbox ignores these keys and keeps its small buttons.
          f'window.button.width.percent: {cap["width"]}',
          f'window.button.height.percent: {cap["height"]}',
-         f'window.button.spacing: {cap["spacing"]}', '',
+         f'window.button.spacing: {cap["spacing"]}',
+         # SDE WM (0.2.0 Alpha 2): the paddings follow the title font too, so
+         # the whole title bar grows with the interface scale (8 px at 100 %).
+         'padding.width.percent: 52', 'padding.height.percent: 52', '',
          f'window.active.border.color: {border_active}',
          f'window.inactive.border.color: {t["border"]}',
          f'window.active.title.separator.color: {t["titlebar"]}',
