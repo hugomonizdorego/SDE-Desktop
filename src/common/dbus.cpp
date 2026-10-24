@@ -2,9 +2,13 @@
 #include "dbus.h"
 
 #include <FL/Fl.H>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <set>
 
@@ -36,10 +40,70 @@ const Value *Value::get(const std::string &key) const {
 }
 
 std::vector<uint8_t> Value::bytes() const {
-  std::vector<uint8_t> out;
   const Value &v = inner();
+  if (!v.data.empty() || v.items.empty()) return std::vector<uint8_t>(v.data.begin(), v.data.end());
+  std::vector<uint8_t> out;
   out.reserve(v.items.size());
   for (auto &b : v.items) out.push_back(uint8_t(b.i));
+  return out;
+}
+
+bool valid_utf8(const std::string &s) {
+  return s.find('\0') == std::string::npos && dbus_validate_utf8(s.c_str(), nullptr);
+}
+
+bool valid_path(const std::string &path) { return valid_utf8(path) && dbus_validate_path(path.c_str(), nullptr); }
+
+bool valid_bus_name(const std::string &name) {
+  return valid_utf8(name) && dbus_validate_bus_name(name.c_str(), nullptr);
+}
+
+bool sandboxed_process(long pid, const std::string &proc) {
+  if (pid <= 0) return true;
+  std::string base = proc + "/" + std::to_string(pid);
+  struct stat st;
+  if (lstat((base + "/root/.flatpak-info").c_str(), &st) == 0) return true;
+  if (errno != ENOENT) return true;  // cannot look into it: do not trust it
+  if (lstat(base.c_str(), &st) != 0) return true;  // gone already
+  FILE *f = fopen((base + "/attr/current").c_str(), "re");
+  if (f) {
+    char label[64] = "";
+    size_t n = fread(label, 1, sizeof label - 1, f);
+    fclose(f);
+    label[n] = 0;
+    if (strncmp(label, "snap.", 5) == 0) return true;
+  }
+  return false;
+}
+
+std::string sanitize_utf8(const std::string &s) {
+  if (valid_utf8(s)) return s;
+  std::string out;
+  out.reserve(s.size());
+  const unsigned char *p = reinterpret_cast<const unsigned char *>(s.data());
+  size_t n = s.size(), i = 0;
+  while (i < n) {
+    unsigned char c = p[i];
+    size_t len = c < 0x80 ? 1 : c >= 0xC2 && c <= 0xDF ? 2 : c >= 0xE0 && c <= 0xEF ? 3
+                 : c >= 0xF0 && c <= 0xF4 ? 4 : 0;
+    bool ok = len > 0 && i + len <= n && c != 0;
+    for (size_t k = 1; ok && k < len; ++k) ok = (p[i + k] & 0xC0) == 0x80;
+    if (ok && len == 3) {
+      unsigned cp = (c & 0x0Fu) << 12 | (p[i + 1] & 0x3Fu) << 6 | (p[i + 2] & 0x3Fu);
+      ok = cp >= 0x800 && (cp < 0xD800 || cp > 0xDFFF);
+    } else if (ok && len == 4) {
+      unsigned cp = (c & 0x07u) << 18 | (p[i + 1] & 0x3Fu) << 12 | (p[i + 2] & 0x3Fu) << 6 |
+                    (p[i + 3] & 0x3Fu);
+      ok = cp >= 0x10000 && cp <= 0x10FFFF;
+    }
+    if (ok) {
+      out.append(s, i, len);
+      i += len;
+    } else {
+      out += "\xEF\xBF\xBD";  // U+FFFD
+      ++i;
+    }
+  }
   return out;
 }
 
@@ -71,11 +135,21 @@ static Value read_value(DBusMessageIter *it) {
       v.i = x;
       break;
     }
-    case DBUS_TYPE_INT32:
-    case DBUS_TYPE_UNIX_FD: {
+    case DBUS_TYPE_INT32: {
       int32_t x;
       dbus_message_iter_get_basic(it, &x);
       v.i = x;
+      break;
+    }
+    case DBUS_TYPE_UNIX_FD: {
+      // libdbus hands out a duplicate that the reader must close; nothing
+      // read through read_args() keeps descriptors (logind's inhibitor fd
+      // is taken with dbus_message_get_args), so a client sending fds
+      // cannot make SDE programs run out of them.
+      int x = -1;
+      dbus_message_iter_get_basic(it, &x);
+      if (x >= 0) close(x);
+      v.i = -1;
       break;
     }
     case DBUS_TYPE_UINT32: {
@@ -124,11 +198,7 @@ static Value read_value(DBusMessageIter *it) {
           const uint8_t *data = nullptr;
           int n = 0;
           dbus_message_iter_get_fixed_array(&sub, &data, &n);
-          v.items.resize(size_t(n));
-          for (int k = 0; k < n; ++k) {
-            v.items[size_t(k)].type = DBUS_TYPE_BYTE;
-            v.items[size_t(k)].i = data[k];
-          }
+          if (data && n > 0) v.data.assign(reinterpret_cast<const char *>(data), size_t(n));
           break;
         }
       }
@@ -157,75 +227,80 @@ std::vector<Value> read_args(DBusMessage *msg) {
 
 // ------------------------------------------------------------------ writer
 
-Writer::Writer(DBusMessage *msg) { dbus_message_iter_init_append(msg, &it_); }
+Writer::Writer(DBusMessage *msg) : ok_(msg != nullptr) {
+  if (ok_) dbus_message_iter_init_append(msg, &it_);
+}
 
 Writer::Writer(DBusMessageIter *parent, int container, const char *signature) : parent_(parent) {
-  dbus_message_iter_open_container(parent, container, signature, &it_);
+  ok_ = parent && dbus_message_iter_open_container(parent, container, signature, &it_);
 }
 
 Writer::~Writer() {
-  if (parent_) dbus_message_iter_close_container(parent_, &it_);
+  if (ok_ && parent_) dbus_message_iter_close_container(parent_, &it_);
 }
 
 Writer &Writer::str(const std::string &v) {
-  const char *c = v.c_str();
+  if (!ok_) return *this;
+  std::string safe = sanitize_utf8(v.find('\0') == std::string::npos ? v : v.substr(0, v.find('\0')));
+  const char *c = safe.c_str();
   dbus_message_iter_append_basic(&it_, DBUS_TYPE_STRING, &c);
   return *this;
 }
 Writer &Writer::path(const std::string &v) {
-  const char *c = v.c_str();
+  if (!ok_) return *this;
+  const char *c = valid_path(v) ? v.c_str() : "/";
   dbus_message_iter_append_basic(&it_, DBUS_TYPE_OBJECT_PATH, &c);
   return *this;
 }
 Writer &Writer::u32(uint32_t v) {
-  dbus_message_iter_append_basic(&it_, DBUS_TYPE_UINT32, &v);
+  if (ok_) dbus_message_iter_append_basic(&it_, DBUS_TYPE_UINT32, &v);
   return *this;
 }
 Writer &Writer::i32(int32_t v) {
-  dbus_message_iter_append_basic(&it_, DBUS_TYPE_INT32, &v);
+  if (ok_) dbus_message_iter_append_basic(&it_, DBUS_TYPE_INT32, &v);
   return *this;
 }
 Writer &Writer::boolean(bool v) {
   dbus_bool_t b = v;
-  dbus_message_iter_append_basic(&it_, DBUS_TYPE_BOOLEAN, &b);
+  if (ok_) dbus_message_iter_append_basic(&it_, DBUS_TYPE_BOOLEAN, &b);
   return *this;
 }
 Writer &Writer::f64(double v) {
-  dbus_message_iter_append_basic(&it_, DBUS_TYPE_DOUBLE, &v);
+  if (ok_) dbus_message_iter_append_basic(&it_, DBUS_TYPE_DOUBLE, &v);
   return *this;
 }
 Writer &Writer::strings(const std::vector<std::string> &v) {
-  Writer a(&it_, DBUS_TYPE_ARRAY, "s");
+  Writer a(iter(), DBUS_TYPE_ARRAY, "s");
   for (auto &s : v) a.str(s);
   return *this;
 }
 Writer &Writer::variant_str(const std::string &v) {
-  Writer x(&it_, DBUS_TYPE_VARIANT, "s");
+  Writer x(iter(), DBUS_TYPE_VARIANT, "s");
   x.str(v);
   return *this;
 }
 Writer &Writer::variant_u32(uint32_t v) {
-  Writer x(&it_, DBUS_TYPE_VARIANT, "u");
+  Writer x(iter(), DBUS_TYPE_VARIANT, "u");
   x.u32(v);
   return *this;
 }
 Writer &Writer::variant_i32(int32_t v) {
-  Writer x(&it_, DBUS_TYPE_VARIANT, "i");
+  Writer x(iter(), DBUS_TYPE_VARIANT, "i");
   x.i32(v);
   return *this;
 }
 Writer &Writer::variant_bool(bool v) {
-  Writer x(&it_, DBUS_TYPE_VARIANT, "b");
+  Writer x(iter(), DBUS_TYPE_VARIANT, "b");
   x.boolean(v);
   return *this;
 }
 Writer &Writer::variant_strings(const std::vector<std::string> &v) {
-  Writer x(&it_, DBUS_TYPE_VARIANT, "as");
+  Writer x(iter(), DBUS_TYPE_VARIANT, "as");
   x.strings(v);
   return *this;
 }
 Writer &Writer::variant_path(const std::string &v) {
-  Writer x(&it_, DBUS_TYPE_VARIANT, "o");
+  Writer x(iter(), DBUS_TYPE_VARIANT, "o");
   x.path(v);
   return *this;
 }
@@ -486,15 +561,31 @@ DBusMessage *Bus::call(DBusMessage *msg, int timeout_ms) {
 }
 
 DBusMessage *Bus::error(DBusMessage *call, const char *name, const std::string &text) {
-  return dbus_message_new_error(call, name, text.c_str());
+  if (!call) return nullptr;
+  return dbus_message_new_error(call, name, sanitize_utf8(text).c_str());
 }
+
+namespace {
+bool valid_interface(const std::string &s) {
+  return valid_utf8(s) && dbus_validate_interface(s.c_str(), nullptr);
+}
+bool valid_member(const std::string &s) { return valid_utf8(s) && dbus_validate_member(s.c_str(), nullptr); }
+}  // namespace
 
 DBusMessage *method(const std::string &dest, const std::string &path, const std::string &iface,
                     const std::string &member) {
-  return dbus_message_new_method_call(dest.c_str(), path.c_str(), iface.c_str(), member.c_str());
+  if ((!dest.empty() && !valid_bus_name(dest)) || !valid_path(path) ||
+      (!iface.empty() && !valid_interface(iface)) || !valid_member(member)) {
+    fprintf(stderr, "sde: not calling %s on %s %s: invalid D-Bus name\n",
+            sanitize_utf8(member).c_str(), sanitize_utf8(dest).c_str(), sanitize_utf8(path).c_str());
+    return nullptr;
+  }
+  return dbus_message_new_method_call(dest.empty() ? nullptr : dest.c_str(), path.c_str(),
+                                      iface.empty() ? nullptr : iface.c_str(), member.c_str());
 }
 
 DBusMessage *signal(const std::string &path, const std::string &iface, const std::string &member) {
+  if (!valid_path(path) || !valid_interface(iface) || !valid_member(member)) return nullptr;
   return dbus_message_new_signal(path.c_str(), iface.c_str(), member.c_str());
 }
 

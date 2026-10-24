@@ -32,7 +32,10 @@ and has `radius_for(h)` for slim controls. They reach:
   (every family) puts the SDE palette on the main surfaces and rounds
   windows, header bars, popovers, menus, buttons, fields, lists, tooltips,
   scroll bars, switches and sliders. SDE Graphite is compiled with the SDE
-  palette; Flat Remix (SDE Fluent) is recolored onto it. Since 0.2.0 the
+  palette; Flat Remix (SDE Fluent) is recolored onto it. Since 0.2.0
+  Graphite's few accent-colored PNG assets (the sliders of scales with
+  marks, the checked selection-mode check box) are moved to the SDE accent
+  too (`recolor_graphite_assets()`: only their palettes change), and the
   rubber band (selection rectangle) is a 20 % accent sheet with a 1 px
   accent border in GTK 3 and GTK 4, also in icon views that draw it with
   the `.rubberband` class on the view itself (Liria, Nemo, Thunar, desktop

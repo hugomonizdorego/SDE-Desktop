@@ -4,12 +4,15 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "config.h"
 #include "integration.h"
 #include "dbus.h"
 #include "desktop_entry.h"
+#include "icons.h"
 #include "rust_layout.h"
 #include "theme.h"
 #include "util.h"
@@ -279,6 +282,141 @@ static void test_dbus_value() {
   CHECK(dict.get("missing") == nullptr);
 }
 
+static int open_fds() {
+  int n = 0;
+  for (auto &name : list_dir("/proc/self/fd")) n += name.empty() ? 0 : 1;
+  return n;
+}
+
+// Data from other programs never reaches libdbus unchecked: libdbus aborts
+// the whole program on an invalid name, path or UTF-8 string.
+static void test_dbus_hardening() {
+  CHECK(dbus::method("org.example.App", "/bad//path", "org.example.I", "M") == nullptr);
+  CHECK(dbus::method("bad..name", "/ok", "org.example.I", "M") == nullptr);
+  CHECK(dbus::method("org.example.App", "relative", "org.example.I", "M") == nullptr);
+  CHECK(dbus::method("org.example.App", "/ok", "org.example.I", "bad member") == nullptr);
+  CHECK(dbus::signal("/ok", "not an interface", "M") == nullptr);
+  CHECK(dbus::valid_bus_name(":1.42") && dbus::valid_bus_name("org.kde.StatusNotifierItem-12-1"));
+  CHECK(!dbus::valid_path("") && dbus::valid_path("/StatusNotifierItem"));
+  {
+    // A Writer for no message ignores everything (and so do nested ones).
+    dbus::Writer none(nullptr);
+    none.str("x").u32(1).strings({"a"}).variant_str("v").path("/p");
+    dbus::Writer nested(none.iter(), DBUS_TYPE_ARRAY, "s");
+    nested.str("y");
+    CHECK(none.iter() == nullptr && nested.iter() == nullptr);
+  }
+  DBusMessage *m = dbus::method("org.example.App", "/org/example", "org.example.I", "Method");
+  CHECK(m != nullptr);
+  if (m) {
+    int null_fd = open("/dev/null", O_RDONLY);
+    {
+      dbus::Writer w(m);
+      w.str(std::string("bad \xff\xfe utf-8")).path("not a path").str(std::string("nul\0cut", 7));
+      dbus::Writer bytes(w.iter(), DBUS_TYPE_ARRAY, "y");
+      for (int i = 0; i < 300; ++i) {
+        unsigned char b = static_cast<unsigned char>(i & 0xff);
+        dbus_message_iter_append_basic(bytes.iter(), DBUS_TYPE_BYTE, &b);
+      }
+    }
+    if (null_fd >= 0) {
+      DBusMessageIter it;
+      dbus_message_iter_init_append(m, &it);
+      dbus_message_iter_append_basic(&it, DBUS_TYPE_UNIX_FD, &null_fd);
+    }
+    int before = open_fds();
+    auto args = dbus::read_args(m);
+    CHECK(open_fds() == before);  // the descriptor libdbus duplicated for us is closed
+    CHECK(args.size() == 5);
+    if (args.size() == 5) {
+      CHECK(args[0].s == "bad \xEF\xBF\xBD\xEF\xBF\xBD utf-8");
+      CHECK(args[1].s == "/");
+      CHECK(args[2].s == "nul");
+      // Byte arrays are one block, not one Value per byte.
+      std::vector<uint8_t> b = args[3].bytes();
+      CHECK(args[3].items.empty() && b.size() == 300 && b[299] == 299 % 256);
+      CHECK(args[4].type == DBUS_TYPE_UNIX_FD && args[4].i == -1);
+    }
+    dbus_message_unref(m);
+    if (null_fd >= 0) close(null_fd);
+  }
+  // Sandboxed D-Bus peers (sde-notifyd's history API refuses them).
+  CHECK(!dbus::sandboxed_process(long(getpid())));
+  CHECK(dbus::sandboxed_process(0) && dbus::sandboxed_process(-5));
+  char ptmpl[] = "/tmp/sde-proc-test-XXXXXX";
+  if (char *proc = mkdtemp(ptmpl)) {
+    std::string p = proc;
+    make_dirs(p + "/100/root");
+    make_dirs(p + "/200/root");
+    make_dirs(p + "/300/root");
+    make_dirs(p + "/300/attr");
+    CHECK(write_file_atomic(p + "/200/root/.flatpak-info", "[Application]\nname=org.example.App\n"));
+    CHECK(write_file_atomic(p + "/300/attr/current", "snap.example.app (enforce)\n"));
+    CHECK(!dbus::sandboxed_process(100, p));
+    CHECK(dbus::sandboxed_process(200, p));
+    CHECK(dbus::sandboxed_process(300, p));
+    CHECK(dbus::sandboxed_process(400, p));  // no such process
+    std::string cmd = "rm -rf '" + p + "'";
+    if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", proc);
+  }
+  // Whatever the bytes, the sanitized string is valid; valid text is kept.
+  CHECK(dbus::sanitize_utf8("ok \xc3\xa9 \xe2\x82\xac \xf0\x9f\x99\x82") == "ok \xc3\xa9 \xe2\x82\xac \xf0\x9f\x99\x82");
+  unsigned seed = 12345;
+  for (int round = 0; round < 2000; ++round) {
+    std::string s;
+    for (int i = 0; i < 12; ++i) {
+      seed = seed * 1103515245u + 12345u;
+      s += char((seed >> 16) & 0xff);
+    }
+    CHECK(dbus::valid_utf8(dbus::sanitize_utf8(s.substr(0, s.find('\0')))));
+  }
+}
+
+// Notification image-data: only 8-bit RGB/RGBA layouts that fit the data.
+static void test_rgba_pixels() {
+  std::vector<uint8_t> px(64, 0x80);
+  cairo_surface_t *s = rgba_pixels(px.data(), px.size(), 4, 4, 16, true, 4, 16);
+  CHECK(s != nullptr);
+  if (s) cairo_surface_destroy(s);
+  CHECK(rgba_pixels(px.data(), px.size(), 4, 1, 0, true, 1 << 30, 16) == nullptr);  // w * channels overflow
+  CHECK(rgba_pixels(px.data(), px.size(), 4, 4, 16, true, 2, 16) == nullptr);
+  CHECK(rgba_pixels(px.data(), 10, 4, 4, 16, true, 4, 16) == nullptr);
+  CHECK(rgba_pixels(px.data(), px.size(), 4, 4, -1, true, 4, 16) == nullptr);
+  CHECK(rgba_pixels(nullptr, 0, 1, 1, 4, true, 4, 16) == nullptr);
+}
+
+// The /tmp fallback of runtime_dir() only uses a private directory of ours.
+static void test_runtime_dir_fallback() {
+  char tmpl[] = "/tmp/sde-runtime-test-XXXXXX";
+  char *made = mkdtemp(tmpl);
+  CHECK(made != nullptr);
+  if (!made) return;
+  std::string base = made, own = base + "/sde-" + std::to_string(getuid());
+  std::string saved = env("XDG_CACHE_HOME");
+  setenv("XDG_CACHE_HOME", (base + "/cache").c_str(), 1);
+  std::string elsewhere = base + "/elsewhere";
+  CHECK(mkdir(elsewhere.c_str(), 0777) == 0);
+  CHECK(symlink(elsewhere.c_str(), own.c_str()) == 0);
+  CHECK(runtime_dir_in(base) == base + "/cache/sde-runtime");  // a planted link is not followed
+  CHECK(unlink(own.c_str()) == 0);
+  CHECK(mkdir(own.c_str(), 0700) == 0 && chmod(own.c_str(), 0777) == 0);
+  CHECK(runtime_dir_in(base) == own);
+  struct stat st;
+  CHECK(lstat(own.c_str(), &st) == 0 && (st.st_mode & 0777) == 0700);  // tightened
+  if (getuid() == 0 && chown(own.c_str(), 54321, 54321) == 0)
+    CHECK(runtime_dir_in(base) == base + "/cache/sde-runtime");  // someone else's
+  // write_file_atomic() never writes through a link at its temporary name.
+  std::string target = base + "/cache/file", victim = base + "/victim";
+  CHECK(symlink(victim.c_str(), (target + ".tmp." + std::to_string(getpid())).c_str()) == 0);
+  CHECK(write_file_atomic(target, "new"));
+  std::string text;
+  CHECK(read_file(target, text) && text == "new" && !file_exists(victim));
+  if (saved.empty()) unsetenv("XDG_CACHE_HOME");
+  else setenv("XDG_CACHE_HOME", saved.c_str(), 1);
+  std::string cmd = "rm -rf '" + base + "'";
+  if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", base.c_str());
+}
+
 static void test_gtk_preferences() {
   char temp[] = "/tmp/sde-gtk-config-XXXXXX";
   char *root = mkdtemp(temp);
@@ -396,6 +534,9 @@ int main() {
   test_theme_migration();
   test_scale();
   test_dbus_value();
+  test_dbus_hardening();
+  test_rgba_pixels();
+  test_runtime_dir_fallback();
   test_gtk_preferences();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);

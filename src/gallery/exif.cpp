@@ -313,7 +313,9 @@ bool read_webp(const std::string &path, PhotoInfo &out) {
     if (len > data.size() - at - 8) break;
     size_t body = at + 8;
     if (type == "EXIF") {
-      size_t skip = data.compare(body, 6, std::string("Exif\0\0", 6)) == 0 ? 6 : 0;
+      // The "Exif\0\0" prefix only counts inside the chunk: a shorter chunk
+      // followed by those bytes must not make len - skip wrap around.
+      size_t skip = len >= 6 && data.compare(body, 6, std::string("Exif\0\0", 6)) == 0 ? 6 : 0;
       found |= parse_exif_tiff(reinterpret_cast<const unsigned char *>(data.data()) + body + skip,
                                len - skip, out, (long long)(body + skip));
     } else if (type == "ICCP") {
@@ -516,6 +518,7 @@ std::string icc_description(const std::string &icc) {
       return s;
     }
     if (type == "mluc") {
+      if (size < 16) return "";  // the record count and size follow the 12-byte header
       uint32_t records = be32(icc, off + 8), rsize = be32(icc, off + 12);
       if (!records || rsize < 12 || 16 + size_t(records) * rsize > size) return "";
       // Prefer English, else the first record.

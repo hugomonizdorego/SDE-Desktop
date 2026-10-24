@@ -12,13 +12,16 @@ on:
         description: "Tag to create the release for (e.g. v0.1.0-alpha2)"
         required: true
 
+# Least privilege: building only reads; the release job writes.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: true
       matrix:
@@ -28,13 +31,17 @@ jobs:
     steps:
       - name: Install git
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install build dependencies
         run: |
           sh tools/install-deps.sh
           sh tools/install-native-deps.sh
       - name: Build package
-        run: sh tools/build-deb.sh --suffix ${{ matrix.suffix }} dist
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+        run: sh tools/build-deb.sh --suffix "$SUFFIX" dist
       - name: Install and smoke test
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
@@ -45,13 +52,15 @@ jobs:
           python3 tools/check-installed-suite.py
           apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb
       - name: Name the package after the distribution
+        env:
+          DISTRO: ${{ matrix.name }}
         run: |
           version=$(cat VERSION | tr '~' '-')
           mkdir -p out
-          cp dist/sde_*_amd64.deb "out/sde_${version}_${{ matrix.name }}_amd64.deb"
-          cp dist/sde-desktop_*_all.deb "out/sde-desktop_${version}_${{ matrix.name }}_all.deb"
+          cp dist/sde_*_amd64.deb "out/sde_${version}_${DISTRO}_amd64.deb"
+          cp dist/sde-desktop_*_all.deb "out/sde-desktop_${version}_${DISTRO}_all.deb"
           cp dist/*sources*.tar.xz out/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.name }}
           path: out/*
@@ -59,9 +68,13 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: deb-*

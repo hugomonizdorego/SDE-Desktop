@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
       // A plain EWMH request: works without a running panel too.
       fl_open_display();
       sde::x11::set_showing_desktop(!sde::x11::showing_desktop());
-      XFlush(fl_display);
+      XSync(fl_display, False);  // processed before this process exits (see send_command)
       return 0;
     } else if (!strcmp(argv[i], "--safe")) {
       Panel::safe_mode = true;

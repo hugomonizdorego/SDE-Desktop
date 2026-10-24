@@ -262,7 +262,11 @@ void send_command(const std::string &command) {
   std::string value = command + "\n" + std::to_string(time(nullptr)) + "." +
                       std::to_string(clock());
   set_string(root(), "_SDE_COMMAND", value);
-  XFlush(fl_display);
+  // A round trip, not just a flush: "sde-panel --menu" and the other
+  // commands exit right after this, and the X server drops requests it has
+  // not read yet when it closes a client that went away (seen under load: 5
+  // of 60 commands lost, so Super did not always open the menu).
+  XSync(fl_display, False);
 }
 
 std::string read_command() {

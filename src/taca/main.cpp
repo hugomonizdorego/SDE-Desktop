@@ -30,8 +30,6 @@ using namespace taca;
 
 namespace {
 
-const char *kVersion = SDE_APP_VERSION;
-
 void usage() {
   printf("%s", _("Usage: taca [OPTION...] [FILE...]\n"
                  "\n"

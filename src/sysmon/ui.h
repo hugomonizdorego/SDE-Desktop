@@ -34,6 +34,8 @@ struct Palette {
   Color cpu, memory, swap, disk, disk_write, net, net_send, gpu, battery, danger, warning;
 };
 const Palette &palette();
+// Recomputes palette() from sde::active_theme() (after a theme change).
+void refresh_palette();
 
 // Draws |c| at |x|,|y| filling |size| for the navigation and page icons.
 enum class Icon { App, Processes, Performance, Disks, Startup, Search, Drive, Folder, Chip, Network, Battery, Memory, Gpu };

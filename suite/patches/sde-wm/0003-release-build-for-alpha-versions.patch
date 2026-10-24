@@ -1,0 +1,23 @@
+SDE WM: an "alpha" version is a release build.
+
+Openbox's configure turns every version containing "alpha" or "beta" into
+a debug build: -DDEBUG -O0 -ggdb -fno-inline instead of -DNDEBUG
+-DG_DISABLE_ASSERT, and the -O2 and hardening flags of the package build
+lose their effect (_FORTIFY_SOURCE needs optimization; hardening-check
+reported "Fortify Source functions: no"). SDE WM's version is
+1.0.0~alpha1, so the shipped window manager was unoptimized and aborted
+on internal assertions. --enable-debug still makes a debug build.
+
+--- a/m4/openbox.m4
++++ b/m4/openbox.m4
+@@ -34,7 +34,9 @@
+     TEST=""
+     test "${PACKAGE_VERSION%*alpha*}" != "$PACKAGE_VERSION" && TEST="yes"
+     test "${PACKAGE_VERSION%*beta*}" != "$PACKAGE_VERSION" && TEST="yes"
+-    test "$TEST" = "yes" && DEBUG="yes"
++    dnl SDE: SDE WM versions look like 1.0.0~alpha1; a test release is no
++    dnl longer built as a debug build (-DDEBUG -O0, assertions on, which also
++    dnl disables _FORTIFY_SOURCE). Only --enable-debug makes one.
+ 
+     if test "$DEBUG" = "yes"; then
+ 	MSG="DEBUG"

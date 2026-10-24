@@ -144,13 +144,20 @@ static void test_render_and_edit(const std::string &dir) {
 
   // Annotations of every kind.
   CHECK(doc->annotations(0).empty());
-  CHECK(doc->add_markup(0, MarkupKind::Highlight, boxes, Rgb{1, 0.85, 0.1}) != nullptr);
-  CHECK(doc->add_markup(0, MarkupKind::Underline, hits, Rgb{0, 0.4, 1}) != nullptr);
-  CHECK(doc->add_note(0, 400, 90, "Remember this", Rgb{1, 0.8, 0}) != nullptr);
-  CHECK(doc->add_square(0, Box{300, 400, 450, 480}, Rgb{0, 0.6, 0.2}, 2) != nullptr);
-  CHECK(doc->add_line(0, Point{80, 500}, Point{300, 560}, Rgb{0.2, 0.2, 0.9}, 2) != nullptr);
-  CHECK(doc->add_ink(1, {{{100, 600}, {150, 620}, {200, 610}}}, Rgb{0.9, 0, 0.3}, 2.5) != nullptr);
-  CHECK(doc->add_free_text(1, Box{100, 300, 300, 360}, "Free text box", Rgb{0, 0, 0}, 12) != nullptr);
+  // The add_* calls return a reference for the caller (the viewer keeps it
+  // on its undo stack); the test gives it back at once.
+  auto added = [](PopplerAnnot *a) {
+    if (!a) return false;
+    g_object_unref(a);
+    return true;
+  };
+  CHECK(added(doc->add_markup(0, MarkupKind::Highlight, boxes, Rgb{1, 0.85, 0.1})));
+  CHECK(added(doc->add_markup(0, MarkupKind::Underline, hits, Rgb{0, 0.4, 1})));
+  CHECK(added(doc->add_note(0, 400, 90, "Remember this", Rgb{1, 0.8, 0})));
+  CHECK(added(doc->add_square(0, Box{300, 400, 450, 480}, Rgb{0, 0.6, 0.2}, 2)));
+  CHECK(added(doc->add_line(0, Point{80, 500}, Point{300, 560}, Rgb{0.2, 0.2, 0.9}, 2)));
+  CHECK(added(doc->add_ink(1, {{{100, 600}, {150, 620}, {200, 610}}}, Rgb{0.9, 0, 0.3}, 2.5)));
+  CHECK(added(doc->add_free_text(1, Box{100, 300, 300, 360}, "Free text box", Rgb{0, 0, 0}, 12)));
   CHECK(doc->modified());
   size_t n0 = doc->annotations(0).size();
   CHECK(n0 == 5);
@@ -218,7 +225,9 @@ static void test_render_and_edit(const std::string &dir) {
 static cairo_surface_t *tile(int w, int h) { return cairo_image_surface_create(CAIRO_FORMAT_RGB24, w, h); }
 
 static void test_cache() {
-  size_t one = TileCache::surface_bytes(tile(64, 64));  // leaks one tiny surface; fine in a test
+  cairo_surface_t *probe = tile(64, 64);
+  size_t one = TileCache::surface_bytes(probe);
+  cairo_surface_destroy(probe);
   CHECK(one == 64 * 64 * 4);
   TileCache cache(one * 3);
   auto key = [](int page, int col) {

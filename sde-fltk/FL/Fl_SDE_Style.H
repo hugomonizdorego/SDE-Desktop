@@ -29,7 +29,7 @@
 #include "Fl_Export.H"
 #include "Enumerations.H"
 
-class Fl_Menu_Item;
+struct Fl_Menu_Item;  // a struct in FLTK (Clang -Wmismatched-tags)
 class Fl_Menu_;
 class Fl_Menu_Bar;
 class Fl_Choice;

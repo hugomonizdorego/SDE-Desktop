@@ -140,12 +140,13 @@ with tempfile.TemporaryDirectory(prefix='sde-desktop-dnd-') as temp:
         # 1. Free placement.
         target = (lay['note.txt'][0] + 4 * w, lay['note.txt'][1] + h)
         drag(env, center(lay['note.txt']), (target[0] + w // 2, target[1] + h // 3))
+        wait_for(lambda: layout(layout_file).get('note.txt', (0, 0))[:2] == target)
         lay2 = layout(layout_file)
         check(lay2.get('note.txt', (0, 0))[:2] == target, 'icon moved to the empty cell (%s -> %s)'
               % (lay['note.txt'][:2], lay2.get('note.txt')))
-        positions = (config / 'sde' / 'desktop-positions.ini').read_text() if (
-            config / 'sde' / 'desktop-positions.ini').exists() else ''
-        check('note.txt=' in positions, 'position stored in desktop-positions.ini')
+        ini = config / 'sde' / 'desktop-positions.ini'
+        check(wait_for(lambda: ini.exists() and 'note.txt=' in ini.read_text()),
+              'position stored in desktop-positions.ini')
         shot(env, 'dnd-1-moved.png')
         os.rename(desk / 'note.txt', desk / 'renamed.txt')
         check(wait_for(lambda: 'renamed.txt' in layout(layout_file)), 'renamed file shown')
@@ -182,8 +183,11 @@ with tempfile.TemporaryDirectory(prefix='sde-desktop-dnd-') as temp:
         shot(env, 'dnd-4-band.png')
         dest = (lay['renamed.txt'][0] + w, lay['renamed.txt'][1] - 2 * h)
         drag(env, center(p1), (dest[0] + w // 2, dest[1] + h // 3))
+        # The layout dump follows the drop; under load (sanitizer builds,
+        # parallel tests) that takes longer than the drag's own pause.
+        check(wait_for(lambda: layout(layout_file).get('pair-1.txt', (0, 0))[:2] == dest),
+              'first selected icon at the drop cell')
         lay2 = layout(layout_file)
-        check(lay2.get('pair-1.txt', (0, 0))[:2] == dest, 'first selected icon at the drop cell')
         moved2 = lay2.get('pair-2.txt', (0, 0))[:2]
         check(moved2 != p2[:2] and moved2[0] == dest[0] + (p2[0] - p1[0]),
               'second selected icon moved with it (%s -> %s)' % (p2[:2], moved2))

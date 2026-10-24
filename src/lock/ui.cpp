@@ -125,9 +125,9 @@ class LockWindow;
 // screen busy forever; the screen gives up on it after kAuthTimeout and the
 // late answer is thrown away.
 struct Attempt {
-  explicit Attempt(const SecretBuffer &pw) : password(pw.c_str(), pw.c_str() + pw.size()) {
-    password.push_back(0);
-  }
+  // One allocation including the terminating NUL (c_str() has it): a
+  // push_back() could reallocate and free a copy that is never wiped.
+  explicit Attempt(const SecretBuffer &pw) : password(pw.c_str(), pw.c_str() + pw.size() + 1) {}
   ~Attempt() { secure_wipe(password.data(), password.size()); }
   std::vector<char> password;
   AuthResult result;
@@ -1050,6 +1050,11 @@ int run_lock_ui(const UiOptions &options) {
   Fl::remove_timeout(animate);
   Fl::remove_timeout(input_check);
   Fl::remove_timeout(raise_cb);
+  // The windows (with a full-screen background each) go as well, so that a
+  // leak checker sees only real leaks.
+  for (auto *w : ui.windows) delete w;
+  ui.windows.clear();
+  ui.primary = nullptr;
   if (ui.avatar) cairo_surface_destroy(ui.avatar);
   g = nullptr;
   return 0;

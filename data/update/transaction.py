@@ -75,11 +75,12 @@ def clean(value):
 
 
 def valid_name(name):
-    return bool(NAME.match(name or ""))
+    # fullmatch: with match(), "$" also accepts a trailing newline.
+    return bool(NAME.fullmatch(name or ""))
 
 
 def valid_flatpak(item):
-    return bool(FLATPAK_REF.match(item or "")) and ".." not in item
+    return bool(FLATPAK_REF.fullmatch(item or "")) and ".." not in item
 
 
 def flatpak_commands(items):

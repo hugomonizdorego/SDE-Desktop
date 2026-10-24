@@ -226,6 +226,8 @@ class SidePanel : public Fl_Group {
   std::vector<std::string> slider_labels_;
   sde::Slider *strength_ = nullptr;
   std::vector<sde::FlatButton *> crop_buttons_, aspect_buttons_;
+  // The crop buttons' actions (their callback data), freed with the panel.
+  std::vector<std::unique_ptr<std::function<void(PhotoWindow *)>>> crop_fns_;
   Fl_Int_Input *res_w_ = nullptr, *res_h_ = nullptr;
   sde::FlatButton *res_apply_ = nullptr, *reset_ = nullptr, *save_ = nullptr, *save_as_ = nullptr;
   bool res_lock_ = true;

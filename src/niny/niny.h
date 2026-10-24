@@ -487,7 +487,7 @@ class Sheet : public Fl_Group {
 
  private:
   void layout_card();
-  App *app_;
+  [[maybe_unused]] App *app_;  // kept for the dialogs' owner (not read yet)
   std::string title_, message_;
   std::vector<sde::FlatButton *> buttons_;
   int result_ = -1, cancel_ = 0, default_ = 0;

@@ -324,6 +324,25 @@ static void test_exif_files() {
   icc[144 + 11] = 9;
   icc.replace(156, 9, "Test RGB");
   CHECK(icc_description(icc) == "Test RGB");
+  // An "mluc" tag of only 12 bytes at the very end: its record count would
+  // lie past the profile.
+  std::string short_mluc = icc;
+  short_mluc[132 + 7] = char(188);
+  short_mluc[132 + 11] = 12;
+  short_mluc.replace(188, 4, "mluc");
+  CHECK(icc_description(short_mluc).empty());
+  // WebP with a 2-byte EXIF chunk followed by bytes that complete
+  // "Exif\0\0": the length must not wrap around (out-of-bounds read).
+  std::string webp = std::string("RIFF\0\0\0\0WEBP", 12);
+  webp += std::string("EXIF\x02\0\0\0Ex", 10);
+  webp += std::string("if\0\0", 4);          // the next chunk's type...
+  webp += std::string("II*\0", 4);           // ...its length (a TIFF header)
+  webp += std::string("\0\0\x10\0", 4);      // IFD offset 1 MB away
+  webp += std::string(16, '\0');
+  std::string wpath = dir + "/short-exif.webp";
+  CHECK(sde::write_file_atomic(wpath, webp));
+  PhotoInfo winfo;
+  CHECK(!read_photo_info_builtin(wpath, winfo));
   std::string cmd = "rm -rf '" + dir + "'";
   if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", root);
 }

@@ -1308,11 +1308,6 @@ IconFn cross_icon() {
     p.line(x + s * .72, y + s * .28, x + s * .28, y + s * .72, c, s * .09);
   };
 }
-IconFn back_icon() {
-  return [](Painter &p, double x, double y, double s, const Color &c) {
-    glyph::chevron(p, x + s * .2, y + s * .2, s * .6, false, c);
-  };
-}
 IconFn power_icon() {
   return [](Painter &p, double x, double y, double s, const Color &c) {
     glyph::power(p, x, y, s, c);

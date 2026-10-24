@@ -59,7 +59,13 @@ class Dialog : public Fl_Double_Window {
   void error(const std::string &text);
   void busy(bool on);
   std::string password() const { return input_->value(); }
-  void clear_password() { input_->value(""); }
+  void clear_password() {
+    // value(text, n) copies |text| over the input's own buffer (which holds
+    // the typed password); value("") alone would leave the password there.
+    // (replace() is not used: it keeps the removed text for undo.)
+    if (int n = input_->size()) input_->value(std::string(size_t(n), ' ').c_str(), n);
+    input_->value("");
+  }
   void draw() override;
   int handle(int e) override;
 

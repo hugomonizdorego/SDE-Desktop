@@ -180,6 +180,26 @@ def click_control(win, title, name):
     time.sleep(0.5)
 
 
+def escape_popup(title):
+    """Escape closes a panel popup. Pressed only once the popup holds the
+    keyboard (<qa>/<title>.input, see qa_mark_input in src/panel/popup.cpp):
+    under load an earlier key reaches another window and the popup stays
+    open, so the next command toggles it closed instead of opening it."""
+    marker = home / "qa" / (title.replace(" ", "-") + ".input")
+    for _ in range(100):
+        if marker.exists():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(f"{title} never took the keyboard")
+    run("xdotool", "key", "Escape")
+    for _ in range(80):
+        if run("xdotool", "search", "--onlyvisible", "--name", f"^{title}$", check=False).returncode != 0:
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"{title} still open after Escape")
+
+
 def geom(w):
     # xdotool can include frame offsets twice for reparented FLTK windows.
     # XWinInfo reports the actual client origin used by our widget coordinates.
@@ -483,7 +503,7 @@ try:
     wx, wy, ww, wh = control("Action Center", sky[0])
     assert wx >= 0 and wy >= 0 and wy + wh <= g["HEIGHT"], (wx, wy, ww, wh)
     assert any(n.startswith("Weather: ") for n in names), names
-    run("xdotool", "key", "Escape")
+    escape_popup("Action Center")
     app = spawn("sde-settings")
     settings = find("^Control Center$")
     shot("02-settings-overview")
@@ -608,7 +628,7 @@ try:
         assert g["X"] >= 0 and g["X"] + g["WIDTH"] <= W, (g, pg)
         assert g["Y"] + g["HEIGHT"] <= pg["Y"], (g, pg)
         shot("06-network-connections")
-        run("xdotool", "key", "Escape")
+        escape_popup("Network")
         config("short", compact=True)
         reload_panel()
         ac = open_popup("Action Center", "--action-center")
@@ -618,14 +638,14 @@ try:
         click_control(ac, "Action Center", "Dark Mode")
         cfg.read(home / ".config/sde/sde.conf")
         assert cfg.get("appearance", "theme") == "dark"
-        run("xdotool", "key", "Escape")
+        escape_popup("Action Center")
         print("OVERVIEW NAVIGATION, LIVE PANEL STYLE, NETWORK AND DND PASS", flush=True)
     config("short", "dark", 100, True)
     reload_panel()
     print("short", geom(wid), flush=True)
     open_popup("Action Center", "--quick-settings")
     shot("05-action-center-dark")
-    run("xdotool", "key", "Escape")
+    escape_popup("Action Center")
     config("full")
     reload_panel()
     g = geom(wid)
@@ -651,7 +671,7 @@ try:
         "click",
         "5",
     )
-    run("xdotool", "key", "Escape")
+    escape_popup("Action Center")
     print("PANEL STYLES, TOP PLACEMENT AND POPUP BOUNDS PASS", flush=True)
     if args.suite_apps:
         import zipfile
@@ -753,3 +773,11 @@ finally:
             p.wait(timeout=3)
         except sp.TimeoutExpired:
             p.kill()
+    # Every program's output (GTK, X and D-Bus warnings, crashes) next to
+    # the screenshots, also when the run passed; panel-smoke.py does the same.
+    (out / "logs").mkdir(exist_ok=True)
+    for f in home.glob("*.log"):
+        try:
+            (out / "logs" / f.name).write_text(f.read_text(errors="replace"))
+        except OSError:
+            pass

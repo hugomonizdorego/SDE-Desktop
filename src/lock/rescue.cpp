@@ -163,8 +163,8 @@ void Prompt::submit() {
   busy = true;
   message.clear();
   auto c = std::make_shared<Check>();
-  c->password.assign(password.c_str(), password.c_str() + password.size());
-  c->password.push_back(0);
+  // Including the NUL in one allocation (no reallocated, unwiped copy).
+  c->password.assign(password.c_str(), password.c_str() + password.size() + 1);
   c->id = ++check_id;
   auto check = opt.authenticate;
   std::thread([c, check] {

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
 #include "core.h"
 
@@ -864,9 +865,46 @@ PopplerAnnot *Document::add_circle(int page, const Box &box, Rgb color, double w
   return annot;
 }
 
+#if POPPLER_CHECK_VERSION(22, 7, 0)
+// poppler_annot_stamp_set_custom_image() (poppler-glib 24.02 and others)
+// reads each pixel's alpha after stepping to the next pixel, so for the
+// last pixel it reads 3 bytes past the image data (found with
+// AddressSanitizer; a crash when the buffer ends at a page boundary). An
+// ARGB32 image goes to poppler as a copy with spare bytes behind it.
+static cairo_surface_t *padded_copy(cairo_surface_t *image) {
+  if (cairo_surface_get_type(image) != CAIRO_SURFACE_TYPE_IMAGE ||
+      cairo_image_surface_get_format(image) != CAIRO_FORMAT_ARGB32)
+    return cairo_surface_reference(image);
+  int w = cairo_image_surface_get_width(image), h = cairo_image_surface_get_height(image);
+  int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w);
+  if (w <= 0 || h <= 0 || stride <= 0) return nullptr;
+  auto *buf = static_cast<unsigned char *>(calloc(1, size_t(stride) * size_t(h) + 64));
+  if (!buf) return nullptr;
+  cairo_surface_t *copy = cairo_image_surface_create_for_data(buf, CAIRO_FORMAT_ARGB32, w, h, stride);
+  static cairo_user_data_key_t key;
+  if (cairo_surface_status(copy) != CAIRO_STATUS_SUCCESS ||
+      cairo_surface_set_user_data(copy, &key, buf, free) != CAIRO_STATUS_SUCCESS) {
+    cairo_surface_destroy(copy);
+    free(buf);
+    return nullptr;
+  }
+  cairo_t *cr = cairo_create(copy);
+  cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+  cairo_set_source_surface(cr, image, 0, 0);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+  cairo_surface_flush(copy);
+  return copy;
+}
+#endif
+
 PopplerAnnot *Document::add_image(int page, const Box &box, cairo_surface_t *image, const std::string &label) {
   if (page < 0 || page >= count() || !image) return nullptr;
 #if POPPLER_CHECK_VERSION(22, 7, 0)
+  cairo_surface_t *padded = padded_copy(image);
+  if (!padded) return nullptr;
+  std::unique_ptr<cairo_surface_t, void (*)(cairo_surface_t *)> padded_guard(padded, cairo_surface_destroy);
+  image = padded;
   PopplerAnnot *annot;
   {
     std::lock_guard<std::mutex> lock(mu_);

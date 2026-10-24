@@ -13,8 +13,11 @@
 
 namespace sysmon {
 
-const Palette &palette() {
-  static Palette p = [] {
+namespace {
+Palette g_palette;
+bool g_palette_ready = false;
+
+Palette build_palette() {
     Palette q;
     const sde::Theme &t = sde::active_theme();
     q.cpu = t.accent;
@@ -32,8 +35,17 @@ const Palette &palette() {
     q.danger = t.error;
     q.warning = t.warning;
     return q;
-  }();
-  return p;
+}
+}  // namespace
+
+const Palette &palette() {
+  if (!g_palette_ready) refresh_palette();
+  return g_palette;
+}
+
+void refresh_palette() {
+  g_palette = build_palette();
+  g_palette_ready = true;
 }
 
 // ----------------------------------------------------------------- icons
@@ -322,7 +334,7 @@ void TextLine::text(const std::string &t) {
 
 void TextLine::draw() {
   const sde::Theme &t = sde::active_theme();
-  fl_color(bg.fl());
+  fl_color(t.background.fl());  // the current theme (it can change while running)
   fl_rectf(x(), y(), w(), h());
   sde::text_font(t.font_size + size_delta_, bold_);
   sde::draw_text(text_, x(), y(), w(), h(), dim_ ? t.text_dim : t.text);
@@ -342,7 +354,7 @@ void Chip::draw() {
   bool on = value() != 0, hot = Fl::belowmouse() == this;
   {
     Painter p(window()->w(), window()->h());
-    p.fill_rect(x(), y(), w(), h(), bg);
+    p.fill_rect(x(), y(), w(), h(), t.background);
     double r = h() / 2.0;
     Color fill = on ? t.accent.alpha(t.dark ? 0.28 : 0.16) : hot ? t.hover : t.surface_alt;
     p.fill_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, fill);
@@ -414,10 +426,15 @@ std::string SearchField::value() const { return input_->value() ? input_->value(
 
 void SearchField::draw() {
   const sde::Theme &t = sde::active_theme();
+  // The input follows the current theme (Settings can change it live).
+  input_->color(t.surface.fl());
+  input_->selection_color(t.accent.fl());
+  input_->textcolor(t.text.fl());
+  input_->cursor_color(t.text.fl());
   if (damage() & ~FL_DAMAGE_CHILD) {
     {
       Painter p(window()->w(), window()->h());
-      p.fill_rect(x(), y(), w(), h(), bg);
+      p.fill_rect(x(), y(), w(), h(), t.background);
       bool focus = Fl::focus() == input_;
       p.fill_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, Sd(10), t.surface);
       p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, Sd(10), focus ? t.accent : t.border,

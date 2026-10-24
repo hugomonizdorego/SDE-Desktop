@@ -8,6 +8,7 @@
 // has settled.
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
+#include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
@@ -641,10 +642,26 @@ void DocView::animate() {
   if (animating_) Fl::repeat_timeout(1.0 / 60, animate_cb, this);
 }
 
+namespace {
+// A document's links come from its author: web and mail links open at
+// once; anything else (file:, smb:, other URI handlers, the files a Launch
+// action names) only after the user has seen where it goes.
+bool confirm_open(const std::string &target) {
+  fl_message_title(_("Open Link"));
+  return fl_choice(_("This document wants to open:\n\n%s\n\nOpen it?"), _("Cancel"), _("Open"), nullptr,
+                   target.c_str()) == 1;
+}
+bool web_link(const std::string &uri) {
+  std::string l = lower(uri.substr(0, 8));
+  return starts_with(l, "http://") || starts_with(l, "https://") || starts_with(l, "mailto:");
+}
+}  // namespace
+
 void DocView::follow(const LinkTarget &t) {
   switch (t.kind) {
     case LinkTarget::Page: go_to(t.page, t.top, true); break;
     case LinkTarget::Uri:
+      if (!web_link(t.text) && !confirm_open(t.text)) break;
       if (!open_uri(t.text)) app_->toast(_("No application can open this link"));
       break;
     case LinkTarget::File: {
@@ -652,7 +669,7 @@ void DocView::follow(const LinkTarget &t) {
       if (!f.empty() && f[0] != '/' && doc_) f = doc_->path().substr(0, doc_->path().rfind('/') + 1) + f;
       if (!file_exists(f)) app_->toast(format(_("“%s” was not found"), t.text.c_str()));
       else if (ends_with(lower(f), ".pdf")) spawn_detached({"xanara", f});
-      else open_uri(file_uri(f));
+      else if (confirm_open(f)) open_uri(file_uri(f));
       break;
     }
     case LinkTarget::Named:

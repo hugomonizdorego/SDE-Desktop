@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -89,6 +90,47 @@ std::string strip_markup(const std::string &in) {
     out += c;
   }
   return trim(out);
+}
+
+// Any program on the session bus may send notifications: what one of them
+// sends is kept within these limits (the popup shows a few lines anyway,
+// and the history keeps up to kHistoryMax entries).
+constexpr size_t kMaxName = 256, kMaxIcon = 4096, kMaxSummary = 1024, kMaxBody = 16 * 1024;
+constexpr size_t kMaxActions = 16, kMaxActionText = 256;
+
+// |s| cut to at most |max| bytes without splitting a UTF-8 character.
+std::string clip(const std::string &s, size_t max) {
+  if (s.size() <= max) return s;
+  size_t n = max;
+  while (n > 0 && (static_cast<unsigned char>(s[n]) & 0xC0) == 0x80) --n;
+  return s.substr(0, n);
+}
+
+// org.sde.Notifications holds every program's notifications (chat
+// messages, codes, mail subjects) and can trigger their actions: it is for
+// the desktop shell, not for sandboxed applications. A Flatpak application
+// that may talk to org.freedesktop.Notifications reaches this object too
+// (the D-Bus proxy filters by name), so callers are identified by their
+// process (dbus::sandboxed_process); unknown callers are refused.
+bool sandboxed_sender(DBusMessage *msg) {
+  const char *sender = dbus_message_get_sender(msg);
+  if (!sender || !g_bus) return true;
+  static std::map<std::string, bool> cache;  // unique names are never reused
+  auto it = cache.find(sender);
+  if (it != cache.end()) return it->second;
+  bool sandboxed = true;
+  DBusMessage *m = dbus::method("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                "GetConnectionUnixProcessID");
+  dbus::Writer(m).str(sender);
+  if (DBusMessage *r = g_bus->call(m, 1000)) {
+    auto args = dbus::read_args(r);
+    if (dbus_message_get_type(r) == DBUS_MESSAGE_TYPE_METHOD_RETURN && !args.empty())
+      sandboxed = dbus::sandboxed_process(long(args[0].num()));
+    dbus_message_unref(r);
+  }
+  if (cache.size() >= 512) cache.clear();
+  cache[sender] = sandboxed;
+  return sandboxed;
 }
 
 void emit_closed(uint32_t id, uint32_t reason) {
@@ -424,6 +466,7 @@ void close_notification(uint32_t id, uint32_t reason) {
 cairo_surface_t *image_from_hint(const dbus::Value &v, int size) {
   const dbus::Value &s = v.inner();
   if (s.type != DBUS_TYPE_STRUCT || s.items.size() < 7) return nullptr;
+  if (s.items[4].num() != 8) return nullptr;  // bits per sample: always 8 (specification)
   int w = int(s.items[0].num()), h = int(s.items[1].num()), stride = int(s.items[2].num());
   bool alpha = s.items[3].boolean();
   int channels = int(s.items[5].num());
@@ -454,14 +497,15 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
     if (g_next_id == 0) g_next_id = 1;
     n = fresh.get();
   }
-  n->app = args[0].str();
-  n->icon = icon_from_path(args[2].str());
-  n->summary = strip_markup(args[3].str());
-  n->body = strip_markup(args[4].str());
+  n->app = clip(args[0].str(), kMaxName);
+  n->icon = clip(icon_from_path(args[2].str()), kMaxIcon);
+  n->summary = clip(strip_markup(clip(args[3].str(), 4 * kMaxSummary)), kMaxSummary);
+  n->body = clip(strip_markup(clip(args[4].str(), 4 * kMaxBody)), kMaxBody);
   n->sender = dbus_message_get_sender(msg) ? dbus_message_get_sender(msg) : "";
   n->actions.clear();
   const auto &acts = args[5].items;
-  for (size_t i = 0; i + 1 < acts.size(); i += 2) n->actions.push_back({acts[i].s, acts[i + 1].s});
+  for (size_t i = 0; i + 1 < acts.size() && n->actions.size() < kMaxActions; i += 2)
+    n->actions.push_back({clip(acts[i].s, kMaxActionText), clip(acts[i + 1].s, kMaxActionText)});
   const dbus::Value &hints = args[6];
   n->urgency = 1;
   if (const dbus::Value *u = hints.get("urgency")) n->urgency = int(u->num());
@@ -480,15 +524,19 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
   if (!n->image) {
     for (const char *key : {"image-path", "image_path"}) {
       if (const dbus::Value *p = hints.get(key)) {
-        n->icon = icon_from_path(p->str());
+        n->icon = clip(icon_from_path(p->str()), kMaxIcon);
         break;
       }
     }
   }
   if (n->icon.empty()) {
     if (const dbus::Value *e = hints.get("desktop-entry")) {
+      // A desktop file ID, never a path.
+      std::string id = e->str();
       DesktopEntry entry;
-      if (find_application(e->str() + ".desktop", entry)) n->icon = entry.icon;
+      if (!id.empty() && id.size() < kMaxName && id.find('/') == std::string::npos && id[0] != '.' &&
+          find_application(id + ".desktop", entry))
+        n->icon = clip(entry.icon, kMaxIcon);
     }
   }
   n->timeout_ms = int(args[7].num());
@@ -535,6 +583,11 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
 
 // org.sde.Notifications: the history for the panel.
 DBusHandlerResult on_history(DBusMessage *msg, const std::string &m) {
+  if (sandboxed_sender(msg)) {
+    g_bus->send(dbus::Bus::error(msg, DBUS_ERROR_ACCESS_DENIED,
+                                 "The notification history is not available to sandboxed applications"));
+    return DBUS_HANDLER_RESULT_HANDLED;
+  }
   auto args = dbus::read_args(msg);
   DBusMessage *r = dbus_message_new_method_return(msg);
   bool changed = false;

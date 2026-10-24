@@ -558,6 +558,13 @@ void apply_changes() {
   if (!comps.empty() && !g_demo) {
     bool deb822 = false;
     sources_path = drivers::main_sources_file(&deb822);
+    // Root installs the edited copy there: only the system's own files,
+    // never a path from the environment (SDE_APT_SOURCES is for --list).
+    if (sources_path != "/etc/apt/sources.list" &&
+        sources_path != "/etc/apt/sources.list.d/debian.sources") {
+      fl_alert(_("%s is not a system software source file."), sources_path.c_str());
+      return;
+    }
     std::string text;
     if (!read_file(sources_path, text)) {
       fl_alert(_("Cannot read %s."), sources_path.c_str());
@@ -617,8 +624,15 @@ void apply_changes() {
       "if [ $rc -eq 0 ]; then DEBIAN_FRONTEND=noninteractive apt-get -o APT::Status-Fd=1 "
       "-o Dpkg::Use-Pty=0 \"$@\" || rc=$?; fi\n"
       "echo \"sde-status:$rc\"\n";
+  std::vector<std::string> apt = drivers::apt_arguments(c);
+  if (apt.empty()) {
+    g_busy = false;
+    fl_alert("%s", _("The selected changes contain an invalid package name."));
+    if (g_win) g_win->rebuild();
+    return;
+  }
   std::vector<std::string> argv = {"pkexec", "/bin/sh", "-c", script, "sh", sources_tmp, sources_path};
-  for (auto &a : drivers::apt_arguments(c)) argv.push_back(a);
+  for (auto &a : apt) argv.push_back(a);
   g_stream = stream_lines(
       argv,
       [](const std::string &line) {

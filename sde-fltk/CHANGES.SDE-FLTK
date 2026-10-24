@@ -4,6 +4,12 @@ SDE-FLTK changes (Selviana DE Project)
   - X11: Fl_X::before_map, called right before a new top-level window is
     mapped for the first time, so programs can set _NET_WM_WINDOW_TYPE and
     _NET_WM_STATE before a window manager starts managing the window.
+  - FL/Fl_Widget.H, FL/Fl_Menu_Item.H: the Fl_Callback0/Fl_Callback1
+    setters cast through void (*)() so that programs built with -Wextra
+    (GCC -Wcast-function-type) no longer get a warning per widget call.
+    No change in behavior or ABI.
+  - FL/Fl_SDE_Style.H declares Fl_Menu_Item as the struct it is (Clang
+    -Wmismatched-tags in every program that includes it).
 
 1.3.11-sde2  2026-10-21
   - FL/Fl_SDE_Style.H: theme hooks. With a style installed (fl_sde_style()),

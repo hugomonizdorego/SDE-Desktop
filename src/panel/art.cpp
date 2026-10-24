@@ -155,8 +155,11 @@ cairo_surface_t *get(const std::string &url, int size, std::function<void()> rea
     if (file_exists(file)) {
       later([url, file] { done(url, file); });
     } else {
+      // The URL comes from a media player (any program on the bus): web
+      // protocols only, also after redirects.
       bool started = run_async({"curl", "-fsSL", "--max-time", "10", "--max-filesize", "4000000",
-                                "-o", file + ".part", url},
+                                "--proto", "=http,https", "--proto-redir", "=http,https",
+                                "-o", file + ".part", "--", url},
                                [url, file](const std::string &, int status) {
                                  if (status == 0) rename((file + ".part").c_str(), file.c_str());
                                  else remove((file + ".part").c_str());

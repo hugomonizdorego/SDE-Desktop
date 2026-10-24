@@ -560,6 +560,28 @@ DBusHandlerResult on_message(DBusMessage *msg) {
 
 // ------------------------------------------------------------ logind
 
+// Anyone may broadcast signals on the system bus. The match rules ask the
+// bus for logind's only (sender='org.freedesktop.login1'); the sender is
+// checked here as well, so that no other rule on this connection could
+// ever let an "Unlock" from another program through.
+bool from_logind(DBusMessage *s) {
+  const char *sender = dbus_message_get_sender(s);
+  if (!sender || !d.system) return false;
+  static std::string owner;
+  if (!owner.empty() && owner == sender) return true;
+  // First signal, or logind was restarted: ask the bus who owns the name.
+  DBusMessage *m = dbus::method("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                "GetNameOwner");
+  dbus::Writer(m).str(kLogin);
+  owner.clear();
+  if (DBusMessage *r = d.system->call(m, 1000)) {
+    auto a = dbus::read_args(r);
+    if (!a.empty()) owner = a[0].str();
+    dbus_message_unref(r);
+  }
+  return !owner.empty() && owner == sender;
+}
+
 void setup_logind() {
   d.system = dbus::Bus::system();
   if (!d.system) return;
@@ -584,7 +606,7 @@ void setup_logind() {
         "path='" + path + "'",
         [path](DBusMessage *s) {
           const char *p = dbus_message_get_path(s);
-          return p && path == p;
+          return p && path == p && from_logind(s);
         },
         [](DBusMessage *s) {
           if (dbus_message_is_signal(s, "org.freedesktop.login1.Session", "Lock")) lock(nullptr);
@@ -595,7 +617,8 @@ void setup_logind() {
       "type='signal',sender='org.freedesktop.login1',interface='org.freedesktop.login1.Manager',"
       "member='PrepareForSleep'",
       [](DBusMessage *s) {
-        return dbus_message_is_signal(s, "org.freedesktop.login1.Manager", "PrepareForSleep");
+        return dbus_message_is_signal(s, "org.freedesktop.login1.Manager", "PrepareForSleep") &&
+               from_logind(s);
       },
       [](DBusMessage *s) {
         auto a = dbus::read_args(s);

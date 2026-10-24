@@ -2130,8 +2130,8 @@ void load_power_profiles() {
     while (std::getline(in, line)) {
       // "* balanced:" marks the active profile.
       std::string t = trim(line);
-      if (t.empty() || t.back() != ':' || t.find(' ') != std::string::npos &&
-                                              !starts_with(t, "* "))
+      if (t.empty() || t.back() != ':' ||
+          (t.find(' ') != std::string::npos && !starts_with(t, "* ")))
         continue;
       bool active = starts_with(t, "* ");
       std::string name = trim(t.substr(active ? 2 : 0, t.size() - (active ? 3 : 1)));

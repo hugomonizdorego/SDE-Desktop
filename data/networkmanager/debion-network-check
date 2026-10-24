@@ -79,6 +79,17 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# polkit (org.debion.network-check.fix) authorizes this program, whatever
+# its arguments: through pkexec only what the desktop offers may run. The
+# package-script modes and the test building blocks (--wifi-profiles DIR
+# writes files as root into any directory) are for root and the tests.
+if [ -n "${PKEXEC_UID:-}" ]; then
+    case "$MODE" in
+        report|quick|wpad|fix|dns-fallback|apt-proxy|boot-repair) ;;
+        *) echo "debion-network-check: --$MODE is not available through pkexec" >&2; exit 2 ;;
+    esac
+fi
+
 IFACES=${DEBION_NETWORK_INTERFACES:-/etc/network/interfaces}
 RESOLV=${DEBION_RESOLV_CONF:-/etc/resolv.conf}
 SYSNET=${DEBION_SYS_CLASS_NET:-/sys/class/net}
@@ -1167,12 +1178,20 @@ fi
 # ------------------------------------------------------------ APT proxy
 if [ "$MODE" = apt-proxy ]; then
     if [ "$(id -u)" != 0 ]; then echo "debion-network-check --apt-proxy must run as root." >&2; exit 1; fi
-    conf=/etc/apt/apt.conf.d/80debion-proxy
+    conf=${DEBION_APT_PROXY_CONF:-/etc/apt/apt.conf.d/80debion-proxy}
     case "$APT_PROXY_ARG" in
         none|"") rm -f "$conf"; echo "APT connects directly."; exit 0 ;;
     esac
-    # Only plain proxy URLs: nothing that could end the APT string.
-    if ! printf '%s\n' "$APT_PROXY_ARG" | grep -Eq '^https?://([A-Za-z0-9._~%!$&()*+,;=-]+(:[A-Za-z0-9._~%!$&()*+,;=-]*)?@)?[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'; then
+    # Only plain proxy URLs: nothing that could end the APT string. One line
+    # only: grep matches line by line, so "URL<newline>APT::Update::..."
+    # would otherwise pass with its first line and add APT options (run as
+    # root) after it.
+    nl='
+'
+    case "$APT_PROXY_ARG" in
+        *"$nl"*|*"$(printf '\r')"*) echo "not a proxy URL: it has more than one line" >&2; exit 2 ;;
+    esac
+    if ! printf '%s\n' "$APT_PROXY_ARG" | grep -Eqx 'https?://([A-Za-z0-9._~%!$&()*+,;=-]+(:[A-Za-z0-9._~%!$&()*+,;=-]*)?@)?[A-Za-z0-9.-]+(:[0-9]{1,5})?/?'; then
         echo "not a proxy URL: $APT_PROXY_ARG" >&2; exit 2
     fi
     {

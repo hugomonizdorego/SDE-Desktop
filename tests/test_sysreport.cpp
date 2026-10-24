@@ -521,6 +521,13 @@ static void test_driver_choices() {
   std::string args;
   for (auto &a : drivers::apt_arguments(c)) args += a + " ";
   CHECK_EQ(args, "install -y nvidia-driver firmware-realtek rtw89-dkms- intel-microcode- ");
+  // Root's apt-get only ever gets package names (never an option).
+  CHECK(drivers::valid_package_name("nvidia-driver") && drivers::valid_package_name("g++-14"));
+  CHECK(!drivers::valid_package_name("-o") && !drivers::valid_package_name("Nvidia"));
+  CHECK(!drivers::valid_package_name("a b") && !drivers::valid_package_name("x"));
+  drivers::Changes bad = c;
+  bad.install.push_back("--allow-unauthenticated");
+  CHECK(drivers::apt_arguments(bad).empty());
 
   // Choosing an option that is installed already only removes the others.
   sel = initial;
