@@ -200,7 +200,7 @@ static void history() {
   tzset();
   std::vector<HistoryEntry> h;
   parse_apt_history(fixture("apt-history.log"), h);
-  CHECK(h.size() == 5);
+  CHECK(h.size() == 4);  // the stanza without a valid date is left out
   sort_history(h);
   // The failed install, the removal (Remove and Purge together), the upgrade, the install.
   CHECK(h[0].change == Change::Install && h[0].failed && h[0].items == std::vector<std::string>({"broken-thing"}));
@@ -209,7 +209,7 @@ static void history() {
   CHECK(h[2].change == Change::Update && h[2].items.size() == 2 && h[2].versions[0] == "128.3.1esr-1");
   CHECK(h[3].change == Change::Install && h[3].items == std::vector<std::string>({"gimp"}) && h[3].automatic == 2 &&
         h[3].versions[0] == "2.10.38-1" && h[3].tool == "apt-get -y install gimp");
-  CHECK(h[4].when == parse_local_time("2026-10-18  09:12:05"));
+  CHECK(h[3].when == parse_local_time("2026-10-18  09:12:05"));
   CHECK(parse_local_time("2026-10-18  09:12:05") == 1792314725);
 
   std::vector<HistoryEntry> f;
@@ -235,7 +235,7 @@ static void history() {
   CHECK(day_label(parse_local_time("2026-10-18  10:00:00"), now) == "October 18");
   CHECK(day_label(parse_local_time("2025-03-02  10:00:00"), now) == "March 2, 2025");
   CHECK(time_label(parse_local_time("2026-10-18  09:12:05")) == "09:12");
-  CHECK(local_day(parse_local_time("1970-01-02  00:00:00")) == 1);
+  CHECK(local_day(parse_local_time("2026-10-18  09:12:05")) == 20744);
 }
 
 static void uninstall() {

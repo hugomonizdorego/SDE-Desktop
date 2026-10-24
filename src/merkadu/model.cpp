@@ -166,6 +166,8 @@ std::string normalize_id(const std::string &appstream_id) {
 }
 
 std::string description_text(const std::string &markup) {
+  // Plain text (snaps, some catalogs) keeps its own lines.
+  if (markup.find('<') == std::string::npos) return trim(markup);
   std::string out, para;
   bool in_list = false, ordered = false;
   int number = 0;
@@ -239,8 +241,6 @@ std::string description_text(const std::string &markup) {
     ++i;
   }
   flush();
-  // Plain text without markup keeps its own paragraphs.
-  if (out.empty()) return trim(markup);
   return out;
 }
 
@@ -376,6 +376,18 @@ void Catalog::prune(Source source, const std::set<std::string> &keep) {
     if (!a.origins.empty()) kept.push_back(std::move(a));
   }
   apps_ = std::move(kept);
+  by_id_.clear();
+  by_origin_.clear();
+  by_desktop_.clear();
+  for (size_t i = 0; i < apps_.size(); ++i) index(i);
+}
+
+void Catalog::remove_empty() {
+  bool any = false;
+  for (auto &a : apps_) any = any || a.origins.empty();
+  if (!any) return;
+  apps_.erase(std::remove_if(apps_.begin(), apps_.end(), [](const App &a) { return a.origins.empty(); }),
+              apps_.end());
   by_id_.clear();
   by_origin_.clear();
   by_desktop_.clear();

@@ -135,6 +135,8 @@ class Catalog {
   // catalog (|keep|: Origin::key() values to keep), and apps left without
   // any origin.
   void prune(Source source, const std::set<std::string> &keep);
+  // Removes the apps without any origin.
+  void remove_empty();
   std::vector<App> &apps() { return apps_; }
   const std::vector<App> &apps() const { return apps_; }
   size_t size() const { return apps_.size(); }
