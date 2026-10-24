@@ -166,13 +166,15 @@ jobs:
           sha256sum ./*.deb ./*.tar.xz > SHA256SUMS
           cd ..
           {
-            echo "Automatic build of \`$GITHUB_SHA\` (SDE $version, Debian testing / DebION, amd64)."
+            echo "Automatic build of \`$GITHUB_SHA\` (SDE $version, Debian testing, amd64)."
             echo
             echo "This is alpha software for testing. Install the packages with:"
             echo
             echo '```sh'
             echo 'sha256sum -c SHA256SUMS --ignore-missing'
-            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb ./debion-desktop-base_*.deb'
+            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb'
+            echo '# DebION GNU/Linux integration (optional, a separate project):'
+            echo 'sudo apt install ./debion-desktop-base_*.deb'
             echo '```'
             echo
             echo "Then choose **SDE-Desktop** at the login screen."

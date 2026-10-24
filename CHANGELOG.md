@@ -1,3 +1,23 @@
+# 0.2 Alpha 1 · 2026-10-24 — official logo, Control Center, faster Start Menu
+
+- First release of the 0.2 series (0.2.0~alpha1); roadmap to 1.0 in
+  docs/ROADMAP.md.
+- The official SDE logo in About windows, Control Center → About, Welcome
+  and the login session entry; a new icon for every SDE application.
+- About windows with About, Credits, License (full text, open-source
+  licenses) and Legal (copyright, trademark notices).
+- SDE Settings is now the Control Center: overview with search and
+  categories; new Users & Avatar, Start Menu and Date & Time pages.
+- User pictures from the Start Menu or the Control Center; samples in
+  /usr/share/Avatar.
+- Start Menu opens in about 4 ms, search answers in about 2 ms, smooth
+  scrolling, Super no longer lost; App info and Open file location.
+- Liria: the rubber-band selection no longer hides the files.
+- Release audit: every High and Medium finding fixed (see
+  docs/AUDIT-0.2.0-alpha1.md); desktop and panel always visible at login.
+- SDE and DebION GNU/Linux kept apart; screenshots of everything with every
+  build. See docs/0.2-ALPHA1.md.
+
 # Alpha52 patch · 2026-10-23 — drag & drop, Liria Ribbon, smarter panel
 
 - Drag and drop on the desktop and in Liria.

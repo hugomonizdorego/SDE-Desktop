@@ -12,11 +12,20 @@
 SDE is built and tested on Debian testing. DebION GNU/Linux, a separate Debian-based
 distribution, ships SDE; see [LEGAL.md](docs/LEGAL.md) for how the two projects relate.
 
-Development version **0.1 Alpha 52** (`0.1.0~alpha52`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.2 Alpha 1** (`0.2.0~alpha1`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE Alpha 10 with SDE Aero: Liria and the panel](docs/screenshots/alpha10/01-liria-aero.png)
+![SDE 0.2 Alpha 1: the Start Menu in SDE Graphite Light](docs/screenshots/0.2-alpha1/03-start-menu.jpg)
 
-**New in Alpha 52:** [drag & drop and a smarter panel](docs/ALPHA52.md) — drag & drop
+**New in 0.2 Alpha 1:** [identity, Control Center and a faster Start Menu](docs/0.2-ALPHA1.md) —
+the first release of the 0.2 series: the official SDE logo, a new icon for every SDE
+application, About windows with copyright, license and trademark information, SDE
+Settings renamed **Control Center** (one central hub), user pictures from the Start
+Menu or the Control Center (samples in `/usr/share/Avatar`), a Start Menu that opens
+in about 4 ms and no longer misses a Super press, a visible rubber-band selection in Liria, a
+security audit with every High and Medium finding fixed, and screenshots of
+everything with every build ([screenshots](docs/screenshots/0.2-alpha1/README.md)). [Roadmap to 1.0](docs/ROADMAP.md).
+
+**0.1 Alpha 52:** [drag & drop and a smarter panel](docs/ALPHA52.md) — drag & drop
 on the desktop and in Liria, an optional Ribbon in Liria with a Windows 11-like Home
 and sidebar, Default Applications in Settings, a right-click menu for every panel
 icon, search box/icon/hidden, notifications in their own panel button, an Action
@@ -79,8 +88,8 @@ to Rust is underway; the panel, desktop and settings interface remain C++.
 The earlier alpha2 session measured about **22 MB of private memory**; alpha3
 and the complete native suite have not yet been profiled. See the [Rust migration guide](docs/RUST.md).
 
-> **Alpha software.** 0.1 is the first series of SDE builds. It is meant for testing
-> and development, not for daily use yet. See the [roadmap](docs/ROADMAP.md).
+> **Alpha software.** 0.2 Alpha builds are meant for testing and development, not
+> for daily use yet. See the [roadmap to 1.0](docs/ROADMAP.md).
 
 ## Components
 
@@ -250,7 +259,8 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 - [Building, dependencies and releases](docs/BUILD.md)
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Logo, icons and user pictures](docs/BRANDING.md)
-- [Roadmap from 0.1 Alpha to 1.0](docs/ROADMAP.md)
+- [Roadmap from 0.2 Alpha 1 to 1.0 Final](docs/ROADMAP.md)
+- [Security policy](docs/SECURITY.md) and the [0.2 Alpha 1 audit](docs/AUDIT-0.2.0-alpha1.md)
 - [Translating SDE](po/README.md)
 - [Changelog](CHANGELOG.md)
 

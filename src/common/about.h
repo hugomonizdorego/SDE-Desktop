@@ -110,7 +110,7 @@ int handle_about_event(int event, const AppInfo &info);
 //   License GPL-3.0-or-later: GNU GPL version 3 or later <https://...>.
 //   This is free software: you are free to change and redistribute it.
 //   There is NO WARRANTY, to the extent permitted by law.
-// The SDE release ("SDE 0.1 Alpha 52 (0.1.0~alpha52)") follows the first
+// The SDE release ("SDE 0.2 Alpha 1 (0.2.0~alpha1)") follows the first
 // line when the program has its own version.
 std::string version_line(const AppInfo &info);
 std::string version_line(const std::string &program, const std::string &version);

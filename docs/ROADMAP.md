@@ -65,6 +65,9 @@ Alpha 2 and later:
 - [ ] Settings coverage in Control Center: printers, region and language,
       online accounts (evaluate), accessibility page
 - [ ] Upgrade path tests from every 0.1 alpha to 0.2 (configuration migration)
+- [ ] Open items of the [0.2 Alpha 1 audit](AUDIT-0.2.0-alpha1.md): a Driver
+      Manager helper with its own polkit action, a bounded tray icon cache,
+      sharper window buttons at 150 %, picom v13
 
 Beta (feature freeze) → RC → **0.2.0**:
 

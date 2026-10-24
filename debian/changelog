@@ -1,3 +1,37 @@
+sde (0.2.0~alpha1) unstable; urgency=medium
+
+  * First release of the 0.2 series; docs/ROADMAP.md describes the way from
+    0.2 Alpha 1 to 1.0 Final.
+  * Official SDE logo (/usr/share/sde/branding, sde-logo icon) in the About
+    windows, Control Center > About, Welcome and the session entry; a new
+    icon family for every SDE application, shown in title bars and on
+    taskbar buttons too.
+  * About windows: About, Credits, License (full text, open-source licenses)
+    and Legal sections from data/legal/components.json; GNU --version.
+  * SDE Settings renamed Control Center (sde-control-center command): an
+    overview with search and categories; Users & Avatar, Start Menu and
+    Date & Time pages.
+  * User pictures from the Start Menu account button or the Control Center
+    (~/.face and AccountsService); sample pictures in /usr/share/Avatar.
+  * Start Menu on an application catalog: about 4 ms to open, 2 ms per
+    keystroke, smooth scrolling, Super commands no longer lost, keyboard
+    navigation, App info and Open file location.
+  * Liria: translucent rubber-band selection in every SDE theme.
+  * Release audit (docs/AUDIT-0.2.0-alpha1.md, docs/SECURITY.md):
+    debion-network-check --apt-proxy only takes a single-line URL and its
+    pkexec action only the desktop modes; panel, notification, Gallery and
+    Xanara memory-safety fixes; no plain-HTTP fallbacks; SDE WM crash fixes
+    and release build.
+  * Desktop and panel set their window type before the first map
+    (SDE-FLTK 1.3.11-sde3), so they stay visible when the window manager
+    starts at the same moment.
+  * sde-desktop recommends debion-desktop-base instead of depending on it;
+    AppStream metadata is CC0-1.0 in debian/copyright.
+  * tools/showcase.py: screenshots of every component, attached to every CI
+    build as sde-screenshots_<version>.zip.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sat, 24 Oct 2026 09:00:00 +0900
+
 sde (0.1.0~alpha52) unstable; urgency=medium
 
   * Drag and drop on the desktop (XDND source and target, free icon
