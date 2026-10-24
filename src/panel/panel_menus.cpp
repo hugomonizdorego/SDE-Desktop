@@ -386,7 +386,8 @@ void Panel::status_menu(int index) {
                 !c.power_profiles.empty());
       }
       m.separator();
-      m.item(_("Power Settings..."), settings("power"), {"settings"});
+      // The Power page at its Battery card (the panel display, warnings).
+      m.item(_("Power Settings..."), settings("battery"), {"settings"});
       break;
     }
     case POWER_STATUS:

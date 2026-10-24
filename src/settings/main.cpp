@@ -2657,7 +2657,7 @@ const PageAlias kPageAliases[] = {
     {"microphone", "sound", nullptr},     {"wifi", "network", nullptr},
     {"wi-fi", "network", nullptr},        {"ethernet", "network", nullptr},
     {"vpn", "network", nullptr},          {"internet", "network", nullptr},
-    {"proxy", "network", "proxy"},        {"battery", "power", nullptr},
+    {"proxy", "network", "proxy"},        {"battery", "power", "battery"},
     {"updates", "system", nullptr},       {"applications", "suite", nullptr},
     {"apps", "suite", nullptr},           {"quick", "action-center", nullptr},
     {"animations", "effects", nullptr},   {"compositor", "effects", nullptr},

@@ -1732,7 +1732,7 @@ PAGE_CAPTIONS = {
     'panel': 'panel style and position, search, clock and status icons',
     'desktop': 'desktop icons',
     'action-center': 'clock card, quick settings and what the Action Center shows',
-    'clock': 'clock styles, time format and weather',
+    'clock': 'Digital, LED or Analog clock, seconds and the blinking colon, time format and weather',
     'notifications': 'Do Not Disturb and how long notifications stay',
     'effects': 'animations and the compositor',
     'display': 'monitors, resolution and scale',
@@ -1741,7 +1741,7 @@ PAGE_CAPTIONS = {
     'sound': 'output and input devices and volume',
     'network': 'connections, Wi-Fi and proxy',
     'bluetooth': 'adapter and devices',
-    'power': 'battery, idle times, lid and power button',
+    'power': 'the battery on the panel and its warnings, idle times, lid and power button',
     'lock': 'screen lock',
     'suite': 'the DebION applications, sources and licenses',
     'default-apps': 'default applications for files and links',
@@ -1760,6 +1760,11 @@ def control_center_images(run):
              PAGE_CAPTIONS.get(p, 'settings')) for p in pages]
 
 
+# Pages shown scrolled to a card (sde-settings --page <alias>): Power at its
+# Battery card, with the battery's display on the panel (0.2 Alpha 2).
+PAGE_ANCHORS = {'power': 'battery'}
+
+
 @scene('Control Center', control_center_images, needs=['sde-settings'])
 def control_center_pages(s):
     for name, _ in s.run_ctx.images_of(s.current):
@@ -1767,7 +1772,7 @@ def control_center_pages(s):
             continue
         page = name[len('control-center-'):]
         try:
-            settings_page(s, page)
+            settings_page(s, PAGE_ANCHORS.get(page, page))
             s.shot(name, quiet=0.6)
         except SkipShot as e:
             s.skip(name, str(e))

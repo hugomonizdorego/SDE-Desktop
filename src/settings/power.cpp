@@ -171,6 +171,8 @@ void build_power_page(Page *page) {
               {"nothing", N_("Do nothing")}, {"logind", N_("Let the system decide")}});
   page->end_card();
 
+  // "--page battery" (the battery icon's menu) opens the page here.
+  page->anchor("battery");
   page->begin_card(_("Battery"));
   // 0.2 Alpha 2: what follows the battery icon on the panel (its right-click
   // menu has the same choices).
