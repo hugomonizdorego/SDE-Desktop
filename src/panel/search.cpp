@@ -51,6 +51,10 @@ bool is_extra(const DesktopEntry *e) { return e && starts_with(e->id, kExtraPref
 bool is_file(const DesktopEntry *e) { return e && starts_with(e->id, kFilePrefix); }
 bool is_app(const DesktopEntry *e) { return e && !is_extra(e) && !is_file(e); }
 
+std::string entry_icon(const DesktopEntry *e, int size) {
+  return is_app(e) ? IconLoader::app_icon(*e, size) : e->icon;
+}
+
 // Pages of the Control Center (sde-settings) and session actions; the
 // Control Center itself is an application (sde-settings.desktop).
 std::vector<DesktopEntry> extras() {
@@ -773,7 +777,9 @@ void SearchFlyout::item_menu(const Item &it, int px, int py) {
     add(panel ? _("Unpin from panel") : _("Pin to panel"), 4, FL_MENU_DIVIDER);
     // As in the Start menu (0.2).
     add(_("Open file location"), 5, e->path.empty() ? FL_MENU_INACTIVE : 0);
-    add(_("App info..."), 6);
+    bool removable = start_apps::can_uninstall(*e);
+    add(_("App info..."), 6, removable ? FL_MENU_DIVIDER : 0);
+    if (removable) add(_("Uninstall..."), 7);
   }
   add(nullptr, 0);
   DesktopEntry copy = *e;  // the results may be rebuilt meanwhile
@@ -788,10 +794,11 @@ void SearchFlyout::item_menu(const Item &it, int px, int py) {
   }
   if (!m) return;
   long code = reinterpret_cast<long>(m->user_data());
-  if (code == 5 || code == 6) {
+  if (code == 5 || code == 6 || code == 7) {
     close();
     if (code == 5) start_apps::open_location(copy);
-    else start_apps::show_info(copy);
+    else if (code == 6) start_apps::show_info(copy);
+    else start_apps::uninstall(copy);
     return;
   }
   Item action = it;
@@ -1106,7 +1113,7 @@ void SearchFlyout::draw() {
           int is = it.kind == K_TOP ? S(36) : it.kind == K_RESULT && it.index == 0 ? S(36) : row_icon;
           double ix = it.kind == K_TOP ? it.x + (it.w - is) / 2.0 : it.x + S(12);
           double iy = it.kind == K_TOP ? it.y + S(10) : it.y + (it.h - is) / 2.0;
-          p.image(IconLoader::get({it.entry->icon, "application-x-executable"}, is), ix, iy, is);
+          p.image(IconLoader::get({entry_icon(it.entry, is), "application-x-executable"}, is), ix, iy, is);
           break;
         }
         default: break;
@@ -1117,7 +1124,7 @@ void SearchFlyout::draw() {
       bool small = list_bottom_ - list_top_ < S(330);
       int px = pad + lw + S(8), pw = area - lw - S(8), is = small ? S(40) : S(64);
       int ly = list_top_ + (small ? S(100) : S(140));
-      p.image(IconLoader::get({shown->icon, "application-x-executable"}, is), px + (pw - is) / 2.0,
+      p.image(IconLoader::get({entry_icon(shown, is), "application-x-executable"}, is), px + (pw - is) / 2.0,
               list_top_ + (small ? S(10) : S(18)), is);
       p.line(px + S(16), ly + 0.5, px + pw - S(16), ly + 0.5, t.border);
     }

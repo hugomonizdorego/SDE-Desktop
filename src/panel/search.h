@@ -26,6 +26,9 @@ namespace panel_search {
 bool is_extra(const sde::DesktopEntry *e);  // Settings page or session action
 bool is_file(const sde::DesktopEntry *e);
 bool is_app(const sde::DesktopEntry *e);
+// The icon to draw at |size|: for applications the near match or the
+// category icon when the theme lacks their own (IconLoader::app_icon()).
+std::string entry_icon(const sde::DesktopEntry *e, int size);
 
 // Settings pages and session actions that search finds.
 std::vector<sde::DesktopEntry> extras();

@@ -36,12 +36,17 @@
 class AccountPopup;
 
 // Start tiles from other places (search results, the panel): the tile
-// groups saved in [menu] tiles.
+// groups saved in [menu] tiles. 0.2 Alpha 2: without saved tiles, groups by
+// category of the installed applications (menu::category_groups()); tiles
+// saved by older versions are migrated (menu::migrate_tile_groups()).
 namespace start_tiles {
+// Group names by menu::TileCategory, translated.
+std::vector<std::string> group_names();
 std::vector<sde::menu::TileGroup> load();
 void save(const std::vector<sde::menu::TileGroup> &groups);
 std::vector<std::string> ids();
 bool pinned(const std::string &id);
+// Into the group of the application's category (menu::pin_by_category()).
 void pin(const std::string &id);
 void unpin(const std::string &id);
 }  // namespace start_tiles
@@ -54,6 +59,17 @@ int start_row_icon_size();
 namespace start_apps {
 void show_info(const sde::DesktopEntry &e);      // "App info...": a small window
 void open_location(const sde::DesktopEntry &e);  // "Open file location": its .desktop folder
+// SDE's own applications: "sde-*" and every desktop file that SDE installs
+// (a copy of each is in <datadir>/sde/applications).
+bool sde_app(const sde::DesktopEntry &e);
+// "Uninstall..." (0.2 Alpha 2) is offered when Merkadu is installed, for
+// applications with a desktop file that are not SDE's own.
+bool can_uninstall(const sde::DesktopEntry &e);
+// Runs `merkadu --uninstall <desktop file>`, which asks first and shows the
+// progress (exit 0: removed, 1: failed, 2: cancelled). Once the application
+// is gone its tiles, panel pin and launch history go too; the menu and the
+// search drop it with the next catalog snapshot (app_catalog.h).
+void uninstall(const sde::DesktopEntry &e);
 }  // namespace start_apps
 
 class AppMenu : public PanelPopup {
@@ -120,7 +136,9 @@ class AppMenu : public PanelPopup {
   void closed() override;
   void reload();
   void load_tiles();
-  void save_tiles();
+  // Saves the groups; |emptied|: the group a tile just left, removed when
+  // that was its last tile.
+  void save_tiles(int emptied = -1);
   static void poll_applications(void *);
   // The application catalog published a new snapshot (app_catalog.h).
   static void catalog_changed(void *);
@@ -225,8 +243,9 @@ class AppMenu : public PanelPopup {
   // The Super key closes the menu (the menu holds the keyboard, so the
   // window manager's Super binding cannot see it).
   bool super_down_ = false, super_alone_ = false;
-  // Icons waiting to be preloaded: name, size.
-  std::vector<std::pair<std::string, int>> preload_;
+  // Icons waiting to be preloaded: application, size (of preload_apps_).
+  std::vector<std::pair<const sde::DesktopEntry *, int>> preload_;
+  app_catalog::SnapshotPtr preload_apps_;
   size_t preload_next_ = 0;
   unsigned preload_rev_ = 0;
   Kind drag_area_ = K_NONE;  // scrollbar drag

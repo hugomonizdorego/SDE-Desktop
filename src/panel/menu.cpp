@@ -4,7 +4,10 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
 #include <FL/fl_draw.H>
+#include <fcntl.h>
+#include <signal.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -38,6 +41,8 @@ namespace {
 // "Recently added": applications installed in the last two weeks.
 const long long kRecentlyAdded = 14 * 86400;
 const size_t kMaxAdded = 3, kMaxMostUsed = 5;
+// Tiles per group of the default groups (two rows of medium tiles).
+const size_t kDefaultTiles = 6;
 
 double now() {
   using namespace std::chrono;
@@ -289,7 +294,8 @@ class AppInfoDialog : public BufferedWindow {
       Painter p(w(), h());
       p.fill_rect(0, 0, w(), h(), t.surface);
       p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, 0, t.border);
-      p.image(IconLoader::get({entry.icon, "application-x-executable"}, is), S(20), S(20), is);
+      p.image(IconLoader::get({IconLoader::app_icon(entry, is), "application-x-executable"}, is), S(20),
+              S(20), is);
     }
     int tx = S(84), tw = w() - tx - S(20);
     text_font(t.font_size + 3, true);
@@ -394,37 +400,139 @@ class RenameInput : public Fl_Input {
 
 }  // namespace
 
+namespace {
+
+// "Uninstall..." runs Merkadu; its exit code says what happened.
+struct Uninstall {
+  pid_t pid;
+  DesktopEntry entry;
+};
+std::vector<Uninstall> g_uninstalls;
+
+// Merkadu removed the application: its tiles, panel pin and launch history
+// go too, unless another copy of it is still installed.
+void uninstalled(const DesktopEntry &e) {
+  app_catalog::refresh();  // at once, also without inotify
+  if (app_catalog::current()->find(e.id)) return;
+  if (start_tiles::pinned(e.id)) start_tiles::unpin(e.id);
+  if (Panel::instance->is_pinned(e.id)) Panel::instance->unpin(e.id);
+  auto usage = panel_search::load_usage();
+  menu::forget(usage, e.id);
+  panel_search::save_usage(usage);
+}
+
+void watch_uninstalls(void *) {
+  for (size_t i = 0; i < g_uninstalls.size();) {
+    int status = 0;
+    pid_t r = waitpid(g_uninstalls[i].pid, &status, WNOHANG);
+    if (r == 0) {
+      ++i;
+      continue;
+    }
+    Uninstall done = g_uninstalls[i];
+    g_uninstalls.erase(g_uninstalls.begin() + long(i));
+    if (r == done.pid && WIFEXITED(status) && WEXITSTATUS(status) == 0) uninstalled(done.entry);
+  }
+  if (!g_uninstalls.empty()) Fl::repeat_timeout(0.4, watch_uninstalls);
+}
+
+}  // namespace
+
 namespace start_apps {
 void show_info(const DesktopEntry &e) { show_app_info(e); }
 void open_location(const DesktopEntry &e) { open_file_location(e); }
+
+bool sde_app(const DesktopEntry &e) {
+  return starts_with(e.id, "sde-") || file_exists(std::string(SDE_DATADIR) + "/applications/" + e.id);
+}
+
+bool can_uninstall(const DesktopEntry &e) {
+  return !e.path.empty() && e.path[0] == '/' && !sde_app(e) && !find_program("merkadu").empty();
+}
+
+void uninstall(const DesktopEntry &e) {
+  if (!can_uninstall(e)) return;
+  std::vector<std::string> argv = {"merkadu", "--uninstall", e.path};
+  std::vector<char *> args;
+  for (auto &a : argv) args.push_back(const_cast<char *>(a.c_str()));
+  args.push_back(nullptr);
+  // A child of the panel (not detached) so that its exit code arrives; its
+  // own session, no X connection, no output pipe that could break.
+  pid_t pid = fork();
+  if (pid < 0) return;
+  if (pid == 0) {
+    setsid();
+    signal(SIGCHLD, SIG_DFL);
+    signal(SIGPIPE, SIG_DFL);
+    sigset_t none;
+    sigemptyset(&none);
+    sigprocmask(SIG_SETMASK, &none, nullptr);
+    for (int fd = 3; fd < 1024; ++fd) close(fd);
+    int devnull = open("/dev/null", O_RDWR);
+    if (devnull >= 0) {
+      dup2(devnull, 0);
+      dup2(devnull, 1);
+      if (devnull > 1) close(devnull);
+    }
+    execvp(args[0], args.data());
+    _exit(127);
+  }
+  g_uninstalls.push_back({pid, e});
+  Fl::remove_timeout(watch_uninstalls);
+  Fl::add_timeout(0.4, watch_uninstalls);
+}
 }  // namespace start_apps
 
 // ================================================================ tiles
 
 namespace start_tiles {
 
+std::vector<std::string> group_names() {
+  return {_("Internet"),    _("Office"),          _("Multimedia"),       _("Graphics"),
+          _("Development"), _("Games"),           _("Education & Science"), _("System & Settings"),
+          _("Accessories"), _("Other")};
+}
+
+// SDE's own applications (the default groups prefer them within a role).
+std::vector<std::string> sde_ids(const app_catalog::Snapshot &apps) {
+  std::vector<std::string> out;
+  for (auto &a : apps.apps)
+    if (start_apps::sde_app(a)) out.push_back(a.id);
+  return out;
+}
+
 std::vector<TileGroup> load() {
   const Config &cfg = Panel::instance->config();
   const std::string sentinel = "\x01";
   std::string v = cfg.get("menu", "tiles", sentinel);
   std::string fav = v == sentinel ? cfg.get("menu", "favorites", sentinel) : std::string();
+  // Saved before 0.2 Alpha 2 ([menu] tiles_version below 2): the default
+  // groups "Productivity" and "Explore" become category groups.
+  bool old = v != sentinel && cfg.get_int("menu", "tiles_version", 1) < 2;
   // The search asks for every keystroke and every result it shows: parse
-  // once per change of the setting (the default tiles: of the installed
-  // applications).
-  bool defaults = v == sentinel && fav == sentinel;
-  app_catalog::SnapshotPtr apps = defaults ? app_catalog::current() : nullptr;
-  std::string key = v + '\x02' + fav + '\x02' + (apps ? std::to_string(apps->generation) : "");
+  // once per change of the setting (the default tiles and the migration:
+  // of the installed applications).
+  app_catalog::SnapshotPtr apps = v == sentinel || old ? app_catalog::current() : nullptr;
+  std::string key = v + '\x02' + fav + '\x02' + (old ? "1" : "2") + '\x02' +
+                    (apps ? std::to_string(apps->generation) : "");
   static std::string cached_key;
   static std::vector<TileGroup> cached;
   if (key == cached_key) return cached;
   std::vector<TileGroup> groups;
+  auto names = group_names();
   if (v != sentinel) {
     groups = menu::parse_tile_groups(v);
+    if (old)
+      groups = menu::migrate_tile_groups(groups, {"Productivity", "Explore", _("Productivity"), _("Explore")},
+                                         apps->apps, names);
+  } else if (fav != sentinel) {
+    // alpha15 and older: up to 12 favorites, each in the group of its
+    // category (favorites that are not installed any more are left out).
+    for (auto &id : menu::parse_id_list(fav))
+      if (const DesktopEntry *e = apps->find(id)) menu::pin_by_category(groups, *e, apps->apps, names);
   } else {
-    // alpha15 and older: up to 12 favorites. They become the first group.
-    bool user = fav != sentinel;
-    auto ids = user ? menu::parse_id_list(fav) : menu::default_favorites(apps->apps, 8);
-    groups = menu::groups_from_favorites(ids, user, _("Productivity"), _("Explore"));
+    // Never arranged: groups by category of the installed applications.
+    groups = menu::category_groups(apps->apps, sde_ids(*apps), names, kDefaultTiles);
   }
   cached_key = key;
   cached = groups;
@@ -432,10 +540,11 @@ std::vector<TileGroup> load() {
 }
 
 void save(const std::vector<TileGroup> &groups) {
-  Panel::instance->set_setting("menu", "tiles", menu::format_tile_groups(groups));
-  // Older SDE versions read the flat list.
+  // Older SDE versions read the flat list of favorites.
   std::string ids = menu::join_id_list(menu::tile_ids(groups));
-  Panel::instance->set_setting("menu", "favorites", ids.empty() ? ";" : ids);
+  Panel::instance->set_settings({{"menu", "tiles", menu::format_tile_groups(groups)},
+                                 {"menu", "favorites", ids.empty() ? ";" : ids},
+                                 {"menu", "tiles_version", "2"}});
 }
 
 std::vector<std::string> ids() { return menu::tile_ids(load()); }
@@ -447,23 +556,23 @@ bool pinned(const std::string &id) {
 
 void pin(const std::string &id) {
   auto groups = load();
-  for (auto &g : groups)
-    for (auto &t : g.tiles)
-      if (t.id == id) return;
-  if (groups.empty()) groups.push_back(TileGroup{_("Productivity"), {}});
-  groups.front().tiles.push_back(Tile{id, TileSize::Medium});
-  save(groups);
+  auto apps = app_catalog::current();
+  DesktopEntry unknown;
+  unknown.id = id;
+  const DesktopEntry *e = apps->find(id);
+  if (menu::pin_by_category(groups, e ? *e : unknown, apps->apps, group_names())) save(groups);
 }
 
 void unpin(const std::string &id) {
   auto groups = load();
-  for (auto &g : groups)
-    g.tiles.erase(std::remove_if(g.tiles.begin(), g.tiles.end(),
-                                 [&](const Tile &t) { return t.id == id; }),
-                  g.tiles.end());
-  groups.erase(std::remove_if(groups.begin(), groups.end(),
-                              [](const TileGroup &g) { return g.tiles.empty(); }),
-               groups.end());
+  // A group whose last tile this was goes with it.
+  for (size_t g = 0; g < groups.size(); ++g) {
+    auto &tiles = groups[g].tiles;
+    size_t before = tiles.size();
+    tiles.erase(std::remove_if(tiles.begin(), tiles.end(), [&](const Tile &t) { return t.id == id; }),
+                tiles.end());
+    if (before && tiles.empty()) groups.erase(groups.begin() + long(g--));
+  }
   save(groups);
 }
 
@@ -515,11 +624,11 @@ void AppMenu::load_tiles() {
   invalidate();
 }
 
-void AppMenu::save_tiles() {
-  // Groups emptied by a drag or by unpinning disappear.
-  groups_.erase(std::remove_if(groups_.begin(), groups_.end(),
-                               [](const TileGroup &g) { return g.tiles.empty(); }),
-                groups_.end());
+void AppMenu::save_tiles(int emptied) {
+  // A group whose last tile was dragged away or unpinned goes with it;
+  // empty groups the user made stay until they get tiles or are removed.
+  if (emptied >= 0 && emptied < int(groups_.size()) && groups_[size_t(emptied)].tiles.empty())
+    groups_.erase(groups_.begin() + emptied);
   tiles_default_ = false;
   start_tiles::save(groups_);
   invalidate();
@@ -1079,7 +1188,7 @@ void AppMenu::launch(const Item &it) {
   launch_size_ = big ? std::min(it.w, it.h) * 0.45 : S(24);
   launch_cx_ = big ? it.x + it.w / 2.0 : it.x + S(12) + launch_size_ / 2;
   launch_cy_ = it.y + it.h / 2.0;
-  launch_icon_ = e.icon;
+  launch_icon_ = IconLoader::app_icon(e, int(launch_size_ * 3));
   launching_ = true;
   launch_effect_ = effects_.launch;
   launch_start_ = now();
@@ -1183,7 +1292,8 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   bool pinned = Panel::instance->is_pinned(tile.id);
   std::vector<std::string> texts;
   texts.reserve(groups_.size() + 2);
-  enum { OPEN = 1, UNPIN, SMALL, MEDIUM, WIDE, LARGE, PANEL, NEW_GROUP, LOCATION, INFO, GROUP0 = 100 };
+  enum { OPEN = 1, UNPIN, SMALL, MEDIUM, WIDE, LARGE, PANEL, NEW_GROUP, LOCATION, INFO, UNINSTALL,
+         GROUP0 = 100 };
   std::vector<Fl_Menu_Item> items;
   auto add = [&](const char *text, long code, int flags = 0) {
     items.push_back({text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0});
@@ -1207,12 +1317,15 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
   add(nullptr, 0);
   add(pinned ? _("Unpin from Panel") : _("Pin to Panel"), PANEL, FL_MENU_DIVIDER);
   add(_("Open file location"), LOCATION, entry.path.empty() ? FL_MENU_INACTIVE : 0);
-  add(_("App info..."), INFO);
+  bool removable = it.entry && start_apps::can_uninstall(entry);
+  add(_("App info..."), INFO, removable ? FL_MENU_DIVIDER : 0);
+  if (removable) add(_("Uninstall..."), UNINSTALL);
   add(nullptr, 0);
   const Fl_Menu_Item *m = run_menu(items.data(), px, py);
   if (!m) return;
   long code = reinterpret_cast<long>(m->user_data());
   auto &tiles = g.tiles;
+  bool new_group = false;
   switch (code) {
     case OPEN: launch(it); return;
     case LOCATION:
@@ -1222,6 +1335,10 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
     case INFO:
       close();
       show_app_info(entry);
+      return;
+    case UNINSTALL:
+      close();
+      start_apps::uninstall(entry);
       return;
     case UNPIN: tiles.erase(tiles.begin() + it.index); break;
     case SMALL:
@@ -1235,6 +1352,7 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
     case NEW_GROUP:
       tiles.erase(tiles.begin() + it.index);
       groups_.push_back(TileGroup{"", {tile}});
+      new_group = true;
       break;
     default:
       if (code >= GROUP0 && code - GROUP0 < long(groups_.size())) {
@@ -1244,18 +1362,21 @@ void AppMenu::tile_menu(const Item &it, int px, int py) {
         return;
       }
   }
-  save_tiles();
+  save_tiles(it.group);
+  // The new group is named at once.
+  if (new_group) start_rename(int(groups_.size()) - 1);
   redraw();
 }
 
 void AppMenu::group_menu(int group, int px, int py) {
   if (group < 0 || group >= int(groups_.size())) return;
+  bool empty = groups_[size_t(group)].tiles.empty();
   Fl_Menu_Item items[] = {
       {_("Rename Group"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},
       {_("Move Group Up"), 0, nullptr, nullptr, group == 0 ? FL_MENU_INACTIVE : 0, 0, 0, 0, 0},
       {_("Move Group Down"), 0, nullptr, nullptr,
        (group + 1 >= int(groups_.size()) ? FL_MENU_INACTIVE : 0) | FL_MENU_DIVIDER, 0, 0, 0, 0},
-      {_("Unpin Group from Start"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
+      {empty ? _("Remove Group") : _("Unpin Group from Start"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},
       {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
   const Fl_Menu_Item *m = run_menu(items, px, py);
   if (!m) return;
@@ -1277,7 +1398,7 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
   bool used = std::find_if(usage_.begin(), usage_.end(),
                            [&](const menu::Usage &u) { return u.id == e.id; }) != usage_.end();
   bool pinned = Panel::instance->is_pinned(e.id);
-  enum { OPEN = 1, START, PANEL, DESKTOP, FORGET, LOCATION, INFO };
+  enum { OPEN = 1, START, PANEL, DESKTOP, FORGET, LOCATION, INFO, UNINSTALL };
   std::vector<Fl_Menu_Item> items;
   auto add = [&](const char *text, long code, int flags = 0) {
     items.push_back({text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0});
@@ -1288,7 +1409,9 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
   add(_("Add to Desktop"), DESKTOP, used ? 0 : FL_MENU_DIVIDER);
   if (used) add(_("Remove from Most Used"), FORGET, FL_MENU_DIVIDER);
   add(_("Open file location"), LOCATION, e.path.empty() ? FL_MENU_INACTIVE : 0);
-  add(_("App info..."), INFO);
+  bool removable = start_apps::can_uninstall(e);
+  add(_("App info..."), INFO, removable ? FL_MENU_DIVIDER : 0);
+  if (removable) add(_("Uninstall..."), UNINSTALL);
   add(nullptr, 0);
   const Fl_Menu_Item *m = run_menu(items.data(), px, py);
   if (!m) return;
@@ -1302,18 +1425,28 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
       close();
       show_app_info(e);
       return;
-    case START:
+    case UNINSTALL:
+      close();
+      start_apps::uninstall(e);
+      return;
+    case START: {
+      // Unpinned: a group left without tiles goes too. Pinned: into the
+      // group of its category (Internet, Office...).
+      int emptied = -1;
       if (tile) {
-        for (auto &g : groups_)
-          g.tiles.erase(std::remove_if(g.tiles.begin(), g.tiles.end(),
-                                       [&](const Tile &t) { return t.id == e.id; }),
-                        g.tiles.end());
+        for (size_t g = 0; g < groups_.size(); ++g) {
+          auto &tiles = groups_[g].tiles;
+          size_t before = tiles.size();
+          tiles.erase(std::remove_if(tiles.begin(), tiles.end(), [&](const Tile &t) { return t.id == e.id; }),
+                      tiles.end());
+          if (tiles.size() != before) emptied = int(g);
+        }
       } else {
-        if (groups_.empty()) groups_.push_back(TileGroup{_("Productivity"), {}});
-        groups_.front().tiles.push_back(Tile{e.id, TileSize::Medium});
+        menu::pin_by_category(groups_, e, apps_->apps, start_tiles::group_names());
       }
-      save_tiles();
+      save_tiles(emptied);
       break;
+    }
     case PANEL:
       if (pinned) Panel::instance->unpin(e.id);
       else Panel::instance->pin(e.id);
@@ -1365,8 +1498,8 @@ void AppMenu::background_menu(int px, int py) {
       start_rename(int(groups_.size()) - 1);
       return;
     case 3:
-      p->set_setting("menu", "tiles", "");
-      p->set_setting("menu", "favorites", "");
+      // The groups by category of the installed applications again.
+      p->set_settings({{"menu", "tiles", ""}, {"menu", "favorites", ""}, {"menu", "tiles_version", ""}});
       break;
     case 4:
       p->set_setting("menu", "width", "");
@@ -1411,6 +1544,9 @@ void AppMenu::finish_rename(bool commit) {
   take_focus();
   if (commit && g >= 0 && g < int(groups_.size())) {
     groups_[size_t(g)].name = trim(rename_->value());
+    // A new group left without a name and without tiles is not kept.
+    if (groups_[size_t(g)].name.empty() && groups_[size_t(g)].tiles.empty())
+      groups_.erase(groups_.begin() + g);
     start_tiles::save(groups_);
     tiles_default_ = false;
     invalidate();
@@ -1469,6 +1605,7 @@ void AppMenu::drop(int x, int y) {
   Tile tile{drag_id_, drag_size_};
   // Take the tile out of its place first (a tile moved, or an application
   // from the list that was already pinned).
+  int source = -1;
   for (size_t g = 0; g < groups_.size(); ++g) {
     auto &tiles = groups_[g].tiles;
     for (size_t i = 0; i < tiles.size(); ++i)
@@ -1476,17 +1613,21 @@ void AppMenu::drop(int x, int y) {
         tile.size = tiles[i].size;
         tiles.erase(tiles.begin() + long(i));
         if (int(g) == group && int(i) < index) --index;
+        source = int(g);
         break;
       }
   }
-  if (group >= int(groups_.size())) {
+  bool fresh = group >= int(groups_.size());
+  if (fresh) {
     groups_.push_back(TileGroup{"", {tile}});
   } else {
     auto &tiles = groups_[size_t(group)].tiles;
     index = std::max(0, std::min(index, int(tiles.size())));
     tiles.insert(tiles.begin() + index, tile);
   }
-  save_tiles();
+  save_tiles(source == group ? -1 : source);
+  // A group made by the drop is named at once (Enter keeps the name).
+  if (fresh) start_rename(int(groups_.size()) - 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -1892,6 +2033,7 @@ void AppMenu::schedule_preload(double delay) {
   ++preload_rev_;
   preload_.clear();
   preload_next_ = 0;
+  preload_apps_.reset();
   Fl::remove_timeout(preload, this);
   Fl::add_timeout(delay, preload, this);
 }
@@ -1909,21 +2051,22 @@ void AppMenu::preload(void *data) {
       self->filter();
     }
     self->build_items();
-    auto add = [&](const std::string &icon, int size) {
-      if (size > 0) self->preload_.push_back({icon, size});
+    self->preload_apps_ = self->apps_;  // keeps the entries below alive
+    auto add = [&](const DesktopEntry *e, int size) {
+      if (size > 0) self->preload_.push_back({e, size});
     };
     int row = start_row_icon_size();
     for (auto &it : self->items_)
       if (it.kind == K_TILE && it.entry) {
         double is = std::min(it.w, it.h) *
                     (it.size == TileSize::Small ? 0.62 : it.size == TileSize::Large ? 0.38 : 0.42);
-        add(it.entry->icon, int(std::lround(is)));
+        add(it.entry, int(std::lround(is)));
       }
-    for (auto *e : self->most_used_) add(e->icon, row);
-    for (auto *e : self->added_) add(e->icon, row);
-    for (auto &a : self->apps_->apps) add(a.icon, row);
+    for (auto *e : self->most_used_) add(e, row);
+    for (auto *e : self->added_) add(e, row);
+    for (auto &a : self->apps_->apps) add(&a, row);
     // The search's start page: the top apps.
-    for (auto *e : self->most_used_) add(e->icon, S(36));
+    for (auto *e : self->most_used_) add(e, S(36));
     self->preload_next_ = 0;
     if (menu_perf::enabled())
       menu_perf::log("preload icons=" + std::to_string(self->preload_.size()));
@@ -1933,7 +2076,9 @@ void AppMenu::preload(void *data) {
   double end = menu_perf::now_ms() + 4.0;
   while (self->preload_next_ < self->preload_.size() && menu_perf::now_ms() < end) {
     auto &p = self->preload_[self->preload_next_++];
-    IconLoader::get({p.first, "application-x-executable"}, p.second);
+    // The near match or category icon of an application whose icon the
+    // theme lacks is found here too (icons.h), not while drawing.
+    IconLoader::get({IconLoader::app_icon(*p.first, p.second), "application-x-executable"}, p.second);
   }
   if (self->preload_next_ < self->preload_.size()) {
     Fl::repeat_timeout(self->is_open() ? 0.05 : 0.01, preload, data);
@@ -1942,6 +2087,7 @@ void AppMenu::preload(void *data) {
   if (menu_perf::enabled()) menu_perf::log("preload done");
   self->preload_.clear();
   self->preload_next_ = 0;
+  self->preload_apps_.reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -2352,9 +2498,9 @@ void AppMenu::draw() {
   };
   // An icon drawn at |size|; while it grows (pop) the largest size is used
   // and scaled down, instead of a new rendering for every frame.
-  auto icon = [&](const std::string &name, double base, double scale) {
+  auto icon = [&](const DesktopEntry &e, double base, double scale) {
     int load = int(std::lround(scale > 1.0001 ? base * (1 + 0.12 * effects_.size) : base));
-    return IconLoader::get({name, "application-x-executable"}, load);
+    return IconLoader::get({IconLoader::app_icon(e, load), "application-x-executable"}, load);
   };
   // Tiles: Fluent-like surfaces tinted with the accent.
   Color tile_bg = t.surface_alt.mix(t.accent, t.dark ? 0.16 : 0.10);
@@ -2430,7 +2576,7 @@ void AppMenu::draw() {
           double base = compact_ ? S(22) : S(26), is = base * fx.scale;
           double ix = it.x + S(10) + (S(26) - is) / 2 + fx.slide, iy = it.y + (it.h - is) / 2.0 - fx.lift;
           if (fx.glow > 0) p.circle(ix + is / 2, iy + is / 2, is * 0.72, t.accent.alpha(0.28 * fx.glow));
-          p.image(icon(it.entry->icon, base, fx.scale), ix, iy, is, pressed ? 0.4 : 1.0);
+          p.image(icon(*it.entry, base, fx.scale), ix, iy, is, pressed ? 0.4 : 1.0);
           break;
         }
         case K_TILE: {
@@ -2450,7 +2596,7 @@ void AppMenu::draw() {
                                                  : it.y + (it.h - is) / 2.0 - it.h * 0.07;
           if (fx.glow > 0)
             p.circle(ix + is / 2, iy + is / 2 - fx.lift, is * 0.72, t.accent.alpha(0.28 * fx.glow));
-          p.image(icon(it.entry->icon, base, fx.scale), ix, iy - fx.lift, is, pressed ? 0.35 : 1.0);
+          p.image(icon(*it.entry, base, fx.scale), ix, iy - fx.lift, is, pressed ? 0.35 : 1.0);
           // Drop position: a bar before or after this tile.
           if (dragging_ && drop_group == it.group && (drop_index == it.index || drop_index == it.index + 1)) {
             double bx = drop_index == it.index ? it.x - gap_ / 2.0 - Sd(1.5) : it.x + it.w + gap_ / 2.0 - Sd(1.5);
@@ -2529,7 +2675,7 @@ void AppMenu::draw() {
       p.stroke_rounded(dx + 0.5, dy + 0.5, tw - 1, tw - 1, S(4), t.accent, Sd(1.5));
       if (e) {
         double is = tw * 0.42;
-        p.image(IconLoader::get({e->icon, "application-x-executable"}, int(is)),
+        p.image(IconLoader::get({IconLoader::app_icon(*e, int(is)), "application-x-executable"}, int(is)),
                 dx + (tw - is) / 2, dy + (tw - is) / 2 - tw * 0.07, is);
       }
     }
