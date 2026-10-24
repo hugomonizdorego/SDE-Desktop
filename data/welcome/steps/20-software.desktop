@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Software
+Comment=Find and install applications
+Icon=merkadu
+X-SDE-Fallback-Icons=system-software-install;applications-other
+Exec=merkadu
+TryExec=merkadu
+X-SDE-Welcome-Fallback=21-software-gnome.desktop
+X-SDE-Gettext-Domain=sde
