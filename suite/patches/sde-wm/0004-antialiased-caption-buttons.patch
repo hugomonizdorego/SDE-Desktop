@@ -1,0 +1,249 @@
+SDE WM: antialiased caption buttons and paddings that follow the title font.
+
+Caption buttons (0.2.0 Alpha 2, audit A1-39): next to its 1-bit XBM masks a
+theme may ship 8-bit masks as PNG pictures, named like them (close.png,
+close_hover.png, max_toggled.png, max_hover_toggled.png, ...): any color on
+transparent, square and larger than the buttons. Each state's picture is the
+mask tinted with the state's image.color (window.active.button.*.image.color
+as before) and is scaled with the button, whose size follows the title height
+(window.button.*.percent), so the disc and the glyphs stay smooth from 100 %
+to 200 %. A missing state falls back like the XBM masks; without
+<button>.png a button keeps its XBM masks. Stock Openbox ignores the
+pictures (and the keys below), so SDE themes still load there.
+
+New themerc keys:
+  padding.width.percent    padding.width, in percent of the title font height
+  padding.height.percent   padding.height, likewise (the theme's padding.width
+                           and padding.height stay the minimum)
+SDE scales the title font with the interface, so the title bar, its buttons
+and the menus' paddings grow with it instead of keeping 100 % paddings.
+
+--- a/obrender/button.c
++++ b/obrender/button.c
+@@ -94,4 +94,11 @@
+     RrAppearanceFree(b->a_unfocused_pressed_toggled);
+     RrAppearanceFree(b->a_focused_hover_toggled);
+     RrAppearanceFree(b->a_unfocused_hover_toggled);
++
++    /* SDE: antialiased pictures */
++    {
++        gint i;
++        for (i = 0; i < 14; ++i)
++            RrImageUnref(b->images[i]);
++    }
+ }
+--- a/obrender/render.h
++++ b/obrender/render.h
+@@ -331,6 +331,9 @@
+     RrAppearance *a_focused_hover_toggled;
+     RrAppearance *a_unfocused_hover_toggled;
+ 
++    /* SDE: antialiased pictures drawn instead of the masks, one per
++       appearance above; NULL where the theme has no PNG mask */
++    RrImage *images[14];
+ };
+ 
+ /* these are the same on all endian machines because it seems to be dependant
+--- a/obrender/theme.h
++++ b/obrender/theme.h
+@@ -64,6 +64,9 @@
+     gint button_width;
+     gint button_height;
+     gint button_spacing;
++    /* SDE: padding.width/height.percent of the title font height */
++    gint padding_width_percent;
++    gint padding_height_percent;
+     gint grip_width;
+     gint menu_title_label_height;
+     gint menu_title_height;
+@@ -179,6 +182,9 @@
+     RrAppearance *osd_focused_button;
+ 
+     gchar *name;
++
++    /* SDE: the antialiased caption button pictures (read_button_images()) */
++    RrImageCache *button_images;
+ };
+ 
+ /*! The font values are all optional. If a NULL is used for any of them, then
+--- a/obrender/theme.c
++++ b/obrender/theme.c
+@@ -184,6 +184,8 @@
+ 
+     theme->inst = inst;
+     theme->name = g_strdup(name ? name : DEFAULT_THEME);
++    /* SDE: antialiased caption buttons, kept at the size last drawn */
++    theme->button_images = RrImageCacheNew(1);
+ 
+     /* init buttons */
+     theme->btn_max = RrButtonNew(inst);
+@@ -275,6 +277,9 @@
+     READ_INT("window.button.width.percent", theme->button_width, 0, 1000, 0);
+     READ_INT("window.button.height.percent", theme->button_height, 0, 100, 0);
+     READ_INT("window.button.spacing", theme->button_spacing, -1, 100, -1);
++    /* SDE: paddings that also follow the font (see the font heights below) */
++    READ_INT("padding.width.percent", theme->padding_width_percent, 0, 400, 0);
++    READ_INT("padding.height.percent", theme->padding_height_percent, 0, 400, 0);
+ 
+     /* load colors */
+     READ_COLOR_("window.active.border.color",
+@@ -959,6 +964,16 @@
+     theme->menu_font_height = RrFontHeight(theme->menu_font,
+         theme->a_menu_text_normal->texture[0].data.text.shadow_offset_y);
+ 
++    /* SDE: padding.width/height.percent of the title font height, at least
++       padding.width/height: SDE scales the title font with the interface, so
++       the title bar and its buttons grow with it (125 % to 200 %) */
++    if (theme->padding_width_percent > 0)
++        theme->paddingx = MAX(theme->paddingx,
++            (theme->win_font_height * theme->padding_width_percent + 50) / 100);
++    if (theme->padding_height_percent > 0)
++        theme->paddingy = MAX(theme->paddingy,
++            (theme->win_font_height * theme->padding_height_percent + 50) / 100);
++
+     /* calculate some last extents */
+     {
+         gint ft, fb, fl, fr, ut, ub, ul, ur;
+@@ -1120,6 +1135,9 @@
+         RrAppearanceFree(theme->osd_unpressed_button);
+         RrAppearanceFree(theme->osd_focused_button);
+ 
++        /* SDE: after the buttons, which hold pictures of this cache */
++        RrImageCacheUnref(theme->button_images);
++
+         g_slice_free(RrTheme, theme);
+     }
+ }
+@@ -1473,9 +1491,123 @@
+     return im;
+ }
+ 
+-static void read_button_styles(XrmDatabase db, const RrInstance *inst, 
++/* SDE: a PNG mask of a caption button, or NULL. */
++static RrImage* read_button_png(const gchar *path, const RrTheme *theme,
++                                const gchar *btnname, const gchar *state)
++{
++    RrImage *image = NULL;
++    gchar *file = g_strdup_printf("%s%s.png", btnname, state);
++    gchar *s = g_build_filename(path, file, NULL);
++    if (g_file_test(s, G_FILE_TEST_IS_REGULAR))
++        image = RrImageNewFromName(theme->button_images, s);
++    g_free(s);
++    g_free(file);
++    return image;
++}
++
++/* SDE: |mask| tinted with |color|: the color with the mask's alpha. */
++static RrImage* tint_button_png(const RrTheme *theme, RrImage *mask,
++                                const RrColor *color)
++{
++    RrImagePic *pic;
++    RrPixel32 *data, rgb;
++    RrImage *image;
++    gint i, n;
++
++    if (!mask || !color || mask->set->n_original < 1)
++        return NULL;
++    pic = mask->set->original[0];
++    n = pic->width * pic->height;
++    rgb = ((RrPixel32)(color->r & 0xff) << RrDefaultRedOffset) |
++          ((RrPixel32)(color->g & 0xff) << RrDefaultGreenOffset) |
++          ((RrPixel32)(color->b & 0xff) << RrDefaultBlueOffset);
++    data = g_new(RrPixel32, n);
++    for (i = 0; i < n; ++i)
++        data[i] = rgb | (pic->data[i] & ((RrPixel32)0xff << RrDefaultAlphaOffset));
++    image = RrImageNewFromData(theme->button_images, data, pic->width, pic->height);
++    g_free(data);
++    return image;
++}
++
++/* SDE: antialiased caption buttons. Next to its XBM masks a theme may have
++   8-bit masks as PNG pictures, named like them (close.png, close_hover.png,
++   max_toggled.png, max_hover_toggled.png, ...): any color on transparent,
++   square and larger than the buttons (they are only scaled down). Each
++   state's picture is its mask tinted with the state's image.color, and it is
++   scaled with the button, whose size follows the title height and so the
++   interface scale: the glyphs stay smooth at 125 % or 200 %. A missing state
++   falls back like the XBM masks; without <button>.png the button keeps its
++   XBM masks. Stock Openbox ignores the pictures. */
++static void read_button_images(gchar *path, const RrTheme *theme,
++                               RrButton *btn, const gchar *btnname,
++                               gboolean toggled)
++{
++    enum { UNPRESSED, PRESSED, DISABLED, HOVER,
++           UNPRESSED_TOGGLED, PRESSED_TOGGLED, HOVER_TOGGLED, STATES };
++    static const gchar *const suffix[STATES] = {
++        "", "_pressed", "_disabled", "_hover",
++        "_toggled", "_pressed_toggled", "_hover_toggled" };
++    RrImage *mask[STATES] = { NULL };
++    RrAppearance *focused[STATES] = {
++        btn->a_focused_unpressed, btn->a_focused_pressed,
++        btn->a_focused_disabled, btn->a_focused_hover,
++        btn->a_focused_unpressed_toggled, btn->a_focused_pressed_toggled,
++        btn->a_focused_hover_toggled };
++    RrAppearance *unfocused[STATES] = {
++        btn->a_unfocused_unpressed, btn->a_unfocused_pressed,
++        btn->a_unfocused_disabled, btn->a_unfocused_hover,
++        btn->a_unfocused_unpressed_toggled, btn->a_unfocused_pressed_toggled,
++        btn->a_unfocused_hover_toggled };
++    const RrColor *focused_color[STATES] = {
++        btn->focused_unpressed_color, btn->focused_pressed_color,
++        btn->focused_disabled_color, btn->focused_hover_color,
++        btn->focused_unpressed_toggled_color,
++        btn->focused_pressed_toggled_color,
++        btn->focused_hover_toggled_color };
++    const RrColor *unfocused_color[STATES] = {
++        btn->unfocused_unpressed_color, btn->unfocused_pressed_color,
++        btn->unfocused_disabled_color, btn->unfocused_hover_color,
++        btn->unfocused_unpressed_toggled_color,
++        btn->unfocused_pressed_toggled_color,
++        btn->unfocused_hover_toggled_color };
++    gint i, states = toggled ? STATES : UNPRESSED_TOGGLED;
++
++    if (!(mask[UNPRESSED] = read_button_png(path, theme, btnname, "")))
++        return;
++    for (i = 1; i < states; ++i) {
++        mask[i] = read_button_png(path, theme, btnname, suffix[i]);
++        if (!mask[i]) {
++            /* the same fallbacks as the XBM masks */
++            mask[i] = mask[i > UNPRESSED_TOGGLED ? UNPRESSED_TOGGLED : UNPRESSED];
++            RrImageRef(mask[i]);
++        }
++    }
++    for (i = 0; i < states; ++i) {
++        gint f;
++        for (f = 0; f < 2; ++f) {
++            RrAppearance *a = f ? unfocused[i] : focused[i];
++            RrImage *image = tint_button_png(theme, mask[i],
++                                             f ? unfocused_color[i] :
++                                                 focused_color[i]);
++            if (!image)
++                continue;
++            btn->images[i * 2 + f] = image;
++            a->texture[0].type = RR_TEXTURE_IMAGE;
++            a->texture[0].data.image.image = image;
++            a->texture[0].data.image.alpha = 255;
++            a->texture[0].data.image.tx = 0;
++            a->texture[0].data.image.ty = 0;
++            a->texture[0].data.image.twidth = 0;
++            a->texture[0].data.image.theight = 0;
++        }
++    }
++    for (i = 0; i < states; ++i)
++        RrImageUnref(mask[i]);
++}
++
++static void read_button_styles(XrmDatabase db, const RrInstance *inst,
+                                gchar *path,
+-                               const RrTheme *theme, RrButton *btn, 
++                               const RrTheme *theme, RrButton *btn,
+                                const gchar *btnname,
+                                struct fallbacks *fbs,
+                                guchar *normal_mask,
+@@ -1548,4 +1680,6 @@
+         READ_BUTTON_APPEARANCE("pressed.toggled", pressed_toggled, 0);
+         READ_BUTTON_APPEARANCE("hover.toggled", hover_toggled, 0);
+     }
++
++    read_button_images(path, theme, btn, btnname, toggled_mask != NULL);
+ }

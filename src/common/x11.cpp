@@ -98,6 +98,12 @@ void set_opacity(Window w, double opacity) {
                   reinterpret_cast<const unsigned char *>(&value), 1);
 }
 
+void set_surface(Window w, const char *kind) {
+  // Latin-1 STRING: compositor match rules compare it as text.
+  XChangeProperty(fl_display, w, atom("_SDE_SURFACE"), XA_STRING, 8, PropModeReplace,
+                  reinterpret_cast<const unsigned char *>(kind), int(std::strlen(kind)));
+}
+
 void set_string(Window w, const char *prop, const std::string &value) {
   XChangeProperty(fl_display, w, atom(prop), atom("UTF8_STRING"), 8, PropModeReplace,
                   reinterpret_cast<const unsigned char *>(value.data()), int(value.size()));

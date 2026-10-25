@@ -55,6 +55,10 @@ void PanelPopup::open(int anchor_x, int align) {
     x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
   }
   x11::set_opacity(fl_xid(this), panel->theme().popup_opacity);
+  // A glass surface for the compositor, with the corners it is shaped with.
+  x11::set_surface(fl_xid(this), !corner_popup()               ? "popup"
+                                 : panel->theme().panel_top ? "popup-bottom"
+                                                            : "popup-top");
   grabbing_ = !native_children() || !panel->native_popup_input();
   if (grabbing_) {
     // A grab of FLTK that is left over from a popup that went away without
@@ -218,20 +222,18 @@ void PanelPopup::apply_shape() {
 }
 
 void PanelPopup::stroke_outline(Painter &p, const Color &c) const {
-  double r = corner_radius(), x = 0.5, y = 0.5, ww = w() - 1, hh = h() - 1;
+  const Theme &t = Panel::instance->theme();
+  // Liquid Glass: the compositor's glass shader draws the edge and its light.
+  if (t.liquid) return;
+  // 0.2.0 Alpha 2: the outline with a light rim inside it in dark mode (a
+  // lifted surface), and in SDE Liquid Glass the glass light from the top.
+  double r = corner_radius();
   int corners = rounded_corners(corner_popup());
-  cairo_t *cr = p.cr();
-  auto rad = [&](int bit) { return (corners & bit) ? r : 0.0; };
-  cairo_new_path(cr);
-  cairo_new_sub_path(cr);
-  cairo_arc(cr, x + ww - rad(2), y + rad(2), rad(2), -M_PI / 2, 0);
-  cairo_arc(cr, x + ww - rad(4), y + hh - rad(4), rad(4), 0, M_PI / 2);
-  cairo_arc(cr, x + rad(8), y + hh - rad(8), rad(8), M_PI / 2, M_PI);
-  cairo_arc(cr, x + rad(1), y + rad(1), rad(1), M_PI, 3 * M_PI / 2);
-  cairo_close_path(cr);
-  p.set(c);
-  cairo_set_line_width(cr, 1.0);
-  cairo_stroke(cr);
+  cairo_new_path(p.cr());
+  if (t.glass)
+    p.glass_surface(0, 0, w(), h(), r, c, t.dark, corners);
+  else
+    p.surface_edge(0, 0, w(), h(), r, c, t.dark ? 1.0 : 0.0, t.dark, corners);
 }
 
 std::string typed_key_text() {

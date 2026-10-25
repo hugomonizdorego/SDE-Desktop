@@ -32,7 +32,8 @@ const Theme &theme() {
   return g_theme;
 }
 
-double kRadius() { return Sd(14); }
+// The radius of the panel's popups (0.2.0 Alpha 2: the theme's radius_large).
+double kRadius() { return std::min<double>(theme().radius_large, Sd(30)); }
 
 // Rounded window corners with the SHAPE extension (works without a
 // compositor): one rectangle per row near the top and bottom edges.
@@ -74,8 +75,11 @@ class Osd : public BufferedWindow {
     {
       Painter p(W, H);
       p.fill_rect(0, 0, W, H, t.surface);
-      if (t.glass) p.glass_sheen(0, 0, W, H, kRadius(), t.dark);
-      p.stroke_rounded(0.5, 0.5, W - 1, H - 1, kRadius(), t.border);
+      // The edge of the panel's popups; the glass shader draws it in Liquid Glass.
+      if (t.glass && !t.liquid)
+        p.glass_surface(0, 0, W, H, kRadius(), t.border, t.dark);
+      else if (!t.liquid)
+        p.surface_edge(0, 0, W, H, kRadius(), t.border, t.dark ? 1.0 : 0.0, t.dark);
       double gy = (H - icon) / 2.0;
       if (kind_ == OsdKind::Brightness)
         glyph::sun(p, pad, gy, icon, t.text);
@@ -137,6 +141,7 @@ void show_osd(OsdKind kind, int percent, const std::string &label, double second
     if (fl_xid(g_osd.get())) {
       x11::set_window_type(fl_xid(g_osd.get()), "_NET_WM_WINDOW_TYPE_NOTIFICATION");
       x11::set_opacity(fl_xid(g_osd.get()), theme().glass ? theme().popup_opacity : 1.0);
+      x11::set_surface(fl_xid(g_osd.get()), "popup");
       round_corners(fl_xid(g_osd.get()), g_osd->w(), g_osd->h(), int(kRadius()));
     }
   }

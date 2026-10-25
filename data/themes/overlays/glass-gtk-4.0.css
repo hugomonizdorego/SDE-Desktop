@@ -1,6 +1,8 @@
-/* SDE Glass (GTK 4): frosted, rounded layers on SDE Graphite. The SDE
- * compositor adds blur and translucency to frames, menus and the panel; the
- * title bar is flat (alpha51: no sheen gradient).
+/* SDE Liquid Glass (GTK 4), on SDE Graphite. 0.2.0 Alpha 2: the look of
+ * Liquid Glass in applications: capsule buttons, soft large corners, glass
+ * layers (menus, popovers, tooltips) with a light rim along their top edge
+ * and a hairline of light around them. The SDE compositor blurs what is
+ * behind translucent menus and frames; the title bar is flat.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 window.background:not(.popup):not(.tooltip) { background-color: @sde_background; }
@@ -12,6 +14,25 @@ headerbar {
 window:backdrop headerbar { background-color: @sde_titlebar_inactive; background-image: none; }
 .sidebar, .navigation-sidebar, stacksidebar { background-color: alpha(@sde_surface_alt, 0.92); }
 
-entry, spinbutton:not(.vertical), dropdown > button, button.text-button { border-radius: @RADIUS_SMALL@; }
-popover > contents { border-radius: @RADIUS_LARGE@; }
-tooltip { border-radius: @RADIUS_SMALL@; }
+/* Capsules: text buttons, the main actions and drop-down buttons (more
+ * specific than soft-gtk-4.0.css, which comes after this layer). Linked
+ * groups keep their square inner corners. */
+button.text-button:not(.titlebutton):not(.circular):not(.pill),
+button.suggested-action:not(.titlebutton):not(.circular):not(.pill),
+button.destructive-action:not(.titlebutton):not(.circular):not(.pill), dropdown > button:not(.circular) {
+  border-radius: 9999px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.linked > button.text-button:not(.circular):not(:first-child):not(:last-child) { border-radius: 0; }
+.linked:not(.vertical) > button.text-button:not(.circular):first-child:not(:only-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.linked:not(.vertical) > button.text-button:not(.circular):last-child:not(:only-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.linked.vertical > button.text-button:not(.circular):first-child:not(:only-child) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.linked.vertical > button.text-button:not(.circular):last-child:not(:only-child) { border-top-left-radius: 0; border-top-right-radius: 0; }
+entry, spinbutton:not(.vertical) { border-radius: @RADIUS_SMALL@; }
+
+/* Glass layers: a light rim along the top and a hairline of light. */
+popover > contents {
+  box-shadow: inset 0 1px @sde_rim, inset 0 0 0 1px alpha(white, 0.06), 0 6px 18px alpha(black, 0.16);
+}
+tooltip { box-shadow: inset 0 1px @sde_rim; }
