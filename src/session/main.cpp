@@ -587,14 +587,29 @@ int io_error_handler(Display *) {
   _exit(0);
 }
 
+// --compositor-config: writes the configuration the session starts the SDE
+// compositor with (generated from sde.conf, unless ~/.config/sde/compositor.conf
+// is the user's own) and prints its path. For tools such as tools/showcase.py.
+int print_compositor_config() {
+  Config cfg;
+  cfg.load();
+  std::string own = config_home() + "/sde/compositor.conf";
+  printf("%s\n", file_exists(own) ? own.c_str() : write_compositor_config(cfg).c_str());
+  return 0;
+}
+
 void usage() {
-  printf("%s", _("Usage: sde-session [--check | --logout | --compositor MODE | --version | --help]\n\n"
+  printf("%s", _("Usage: sde-session [--check | --logout | --compositor MODE | --compositor-config |\n"
+                 "                   --version | --help]\n\n"
                  "Starts the Selviana Desktop Environment. Normally run by startsde from\n"
                  "the display manager.\n\n"
                  "  --check    check that every SDE component can start, and report problems\n"
                  "  --logout   end the running SDE session on this display\n"
                  "  --compositor off|on|toggle|restart\n"
                  "             turn the compositor off or on (Alt+Shift+F12 toggles it)\n"
+                 "  --compositor-config\n"
+                 "             write the compositor configuration from the settings and print\n"
+                 "             its path\n"
                  "  --version  print the version and exit\n"));
 }
 
@@ -607,6 +622,7 @@ int main(int argc, char **argv) {
     if (a == "--logout") return request_logout();
     if (a == "--check") return run_check();
     if (a == "--compositor") return set_compositor(i + 1 < argc ? argv[i + 1] : "");
+    if (a == "--compositor-config") return print_compositor_config();
     if (a == "--version") return print_version("sde-session", SDE_VERSION);
     if (a == "--help" || a == "-h") {
       usage();

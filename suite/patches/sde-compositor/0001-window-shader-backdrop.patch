@@ -1,0 +1,314 @@
+SDE compositor: window shaders can sample the backdrop of their window.
+
+SDE Liquid Glass (0.2.0 Alpha 2, docs/THEMES.md) draws SDE's panel, popups,
+menus and notifications with a window shader that bends, saturates and
+lights what is behind them. picom gives window shaders only the window's own
+texture; with this patch a window shader (window-shader-fg,
+window-shader-fg-rule) that declares
+
+  uniform vec4 backdrop_rect;
+  vec4 backdrop_at(vec2 offset);
+
+is linked with a function that returns what is drawn behind the window
+`offset` window pixels (x right, y down) from the current fragment: the
+windows below it, already blurred when the window has background blur.
+backdrop_rect.z is the direction of the window's y axis in gl_FragCoord
+(1 or -1) and backdrop_rect.w is 0 when there is no backdrop (the window is
+off the screen). Before such a window is drawn, the OpenGL backend copies
+the target under it into a texture (one per backend, reused). Damage that
+touches such a window grows to cover all of it, because any change under
+it changes all of its pixels near the change (the lens of Liquid Glass).
+
+Shaders that do not mention `backdrop` are linked and drawn as before; the
+XRender backend has no window shaders. picom's documented window shader
+interface (window_shader(), tex, opacity, ...) is unchanged.
+
+--- a/include/picom/backend.h
++++ b/include/picom/backend.h
+@@ -51,6 +51,10 @@
+ 	// Whether the shader needs to be render regardless of whether the window is
+ 	// updated.
+ 	SHADER_ATTRIBUTE_ANIMATED = 1,
++	// SDE: whether the shader samples the window's backdrop (uniform `backdrop`):
++	// what is drawn behind the window, already blurred. Such a window is drawn
++	// again as a whole whenever anything under it changes.
++	SHADER_ATTRIBUTE_BACKDROP = 2,
+ };
+ 
+ struct gaussian_blur_args {
+@@ -147,6 +151,9 @@
+ 	int border_width;
+ 	/// Whether the source image should be inverted.
+ 	bool color_inverted;
++	/// SDE: the shader samples the backdrop (SHADER_ATTRIBUTE_BACKDROP); the
++	/// backend gives it a copy of the target under the source image.
++	bool sample_backdrop;
+ };
+ 
+ enum backend_image_format {
+--- a/src/backend/gl/gl_common.c
++++ b/src/backend/gl/gl_common.c
+@@ -607,6 +607,71 @@
+ 	return nrects;
+ }
+ 
++/// SDE: copies what is on `target_` under the source image of `args` (the backdrop
++/// of a window: the windows below it, already blurred when it has background blur)
++/// into `gd->backdrop_texture`, and sets the `backdrop` uniforms for the shader.
++static void gl_copy_backdrop(struct gl_data *gd, ivec2 origin, image_handle target_,
++                             const struct backend_blit_args *args,
++                             struct gl_uniform_value *uniforms) {
++	auto target = (struct gl_texture *)target_;
++	auto source = (struct gl_texture *)args->source_image;
++	// The source's rectangle on the target, clipped to the target.
++	int x1 = max2(origin.x, 0), y1 = max2(origin.y, 0);
++	int x2 = min2(origin.x + (int)(source->width * args->scale.x + 0.5), target->width);
++	int y2 = min2(origin.y + (int)(source->height * args->scale.y + 0.5), target->height);
++	uniforms[UNIFORM_BACKDROP_RECT_LOC] =
++	    (struct gl_uniform_value){.type = GL_FLOAT_VEC4, .f4 = {0, 0, 1, 0}};
++	if (x2 <= x1 || y2 <= y1) {
++		return;
++	}
++	int w = x2 - x1, h = y2 - y1;
++	if (!gd->backdrop_texture) {
++		gd->backdrop_texture = gl_new_texture();
++		glGenFramebuffers(1, &gd->backdrop_fbo);
++		if (!gd->backdrop_texture || !gd->backdrop_fbo) {
++			return;
++		}
++	}
++	if (gd->backdrop_size.width != w || gd->backdrop_size.height != h) {
++		glActiveTexture(GL_TEXTURE0);
++		glBindTexture(GL_TEXTURE_2D, gd->backdrop_texture);
++		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
++		glBindTexture(GL_TEXTURE_2D, 0);
++		gd->backdrop_size = (ivec2){.width = w, .height = h};
++	}
++	// Our textures are Y-inverted, so a fragment's gl_FragCoord.y grows with the
++	// target's y; the GL back buffer is not, there it shrinks.
++	int ry1 = y1, ry2 = y2;
++	float dir = 1;
++	if (target == &gd->back_image) {
++		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
++		ry1 = target->height - y2;
++		ry2 = target->height - y1;
++		dir = -1;
++	} else {
++		glBindFramebuffer(GL_READ_FRAMEBUFFER, gd->temp_fbo);
++		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
++		                       GL_TEXTURE_2D, target->texture, 0);
++		glReadBuffer(GL_COLOR_ATTACHMENT0);
++	}
++	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gd->backdrop_fbo);
++	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
++	                       gd->backdrop_texture, 0);
++	glDrawBuffer(GL_COLOR_ATTACHMENT0);
++	glBlitFramebuffer(x1, ry1, x2, ry2, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
++	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
++	gl_check_err();
++	uniforms[UNIFORM_BACKDROP_LOC] = (struct gl_uniform_value){
++	    .type = GL_TEXTURE_2D,
++	    .tu = {gd->backdrop_texture, gd->samplers[GL_SAMPLER_BLUR]},
++	};
++	uniforms[UNIFORM_BACKDROP_RECT_LOC].f4[0] = (float)x1;
++	uniforms[UNIFORM_BACKDROP_RECT_LOC].f4[1] = (float)ry1;
++	uniforms[UNIFORM_BACKDROP_RECT_LOC].f4[2] = dir;
++	uniforms[UNIFORM_BACKDROP_RECT_LOC].f4[3] = 1;
++}
++
+ bool gl_blit(backend_t *base, ivec2 origin, image_handle target_,
+              const struct backend_blit_args *args) {
+ 	auto gd = (struct gl_data *)base;
+@@ -627,6 +692,9 @@
+ 	if (nrects == 0) {
+ 		return true;
+ 	}
++	if (shader->uniform_bitmask & (1U << UNIFORM_BACKDROP_LOC)) {
++		gl_copy_backdrop(gd, origin, target_, args, uniforms);
++	}
+ 	if (!target->y_inverted) {
+ 		log_trace("Flipping target texture");
+ 		gl_y_flip_target(nrects, coord, target->height);
+@@ -809,14 +877,18 @@
+ 		char name[32];
+ 		glGetActiveUniformName(shader->prog, (GLuint)i, sizeof(name), NULL, name);
+ 		GLint loc = glGetUniformLocation(shader->prog, name);
+-		assert(loc >= 0 && loc <= UNIFORM_TEXSIZE_LOC);
++		assert(loc >= 0 && loc < NUMBER_OF_UNIFORMS);
+ 		shader->uniform_bitmask |= 1U << loc;
+ 	}
+ }
+ 
+ static bool gl_create_window_shader_inner(struct gl_shader *out_shader, const char *source) {
+ 	const char *vert[2] = {vertex_shader, NULL};
+-	const char *frag[] = {blit_shader_glsl, masking_glsl, source, NULL};
++	const char *frag[] = {blit_shader_glsl, masking_glsl, source, NULL, NULL};
++	if (strstr(source, "backdrop") != NULL) {
++		// SDE: only shaders that use the backdrop get it (see gl_copy_backdrop())
++		frag[3] = backdrop_glsl;
++	}
+ 
+ 	if (!gl_shader_from_stringv(vert, frag, out_shader)) {
+ 		return false;
+@@ -858,6 +930,9 @@
+ 	if (glGetUniformLocation(win_shader->prog, "time") >= 0) {
+ 		ret |= SHADER_ATTRIBUTE_ANIMATED;
+ 	}
++	if (glGetUniformLocation(win_shader->prog, "backdrop") >= 0) {
++		ret |= SHADER_ATTRIBUTE_BACKDROP;
++	}
+ 	return ret;
+ }
+ 
+@@ -1035,6 +1110,12 @@
+ 	gd->brightness_shader.prog = 0;
+ 
+ 	glDeleteTextures(1, &gd->default_mask_texture);
++	if (gd->backdrop_texture) {
++		glDeleteTextures(1, &gd->backdrop_texture);
++		glDeleteFramebuffers(1, &gd->backdrop_fbo);
++		gd->backdrop_texture = gd->backdrop_fbo = 0;
++		gd->backdrop_size = (ivec2){0, 0};
++	}
+ 
+ 	for (int i = 0; i < GL_MAX_SAMPLERS; i++) {
+ 		glDeleteSamplers(1, &gd->samplers[i]);
+--- a/src/backend/gl/gl_common.h
++++ b/src/backend/gl/gl_common.h
+@@ -38,7 +38,11 @@
+ #define UNIFORM_SCALE_LOC 18
+ #define UNIFORM_PROJECTION_LOC 19
+ #define UNIFORM_TEXSIZE_LOC 21
+-#define NUMBER_OF_UNIFORMS (UNIFORM_TEXSIZE_LOC + 1)
++
++// SDE: the backdrop of a window for window shaders (fragment shader uniforms)
++#define UNIFORM_BACKDROP_LOC 22
++#define UNIFORM_BACKDROP_RECT_LOC 23
++#define NUMBER_OF_UNIFORMS (UNIFORM_BACKDROP_RECT_LOC + 1)
+ 
+ struct gl_shader {
+ 	GLuint prog;
+@@ -106,6 +110,12 @@
+ 
+ 	GLuint default_mask_texture;
+ 
++	/// SDE: copy of what is behind the window being drawn, for window shaders
++	/// that sample `backdrop`, and the framebuffer used to fill it.
++	GLuint backdrop_texture;
++	GLuint backdrop_fbo;
++	ivec2 backdrop_size;
++
+ 	/// Called when an gl_texture is decoupled from the texture it refers. Returns
+ 	/// the decoupled user_data
+ 	void *(*decouple_texture_user_data)(backend_t *base, void *user_data);
+@@ -313,4 +323,4 @@
+ extern const char vertex_shader[], blend_with_mask_frag[], masking_glsl[],
+     copy_area_frag[], copy_area_with_dither_frag[], fill_frag[], fill_vert[],
+     interpolating_frag[], interpolating_vert[], blit_shader_glsl[], blit_shader_default[],
+-    present_vertex_shader[], dither_glsl[];
++    present_vertex_shader[], dither_glsl[], backdrop_glsl[];
+--- a/src/backend/gl/shaders.c
++++ b/src/backend/gl/shaders.c
+@@ -198,6 +198,30 @@
+ 	}
+ );
+ 
++// SDE: the backdrop of a window, for window shaders that mention `backdrop`
++// (only those are linked with it). `backdrop` holds what is drawn behind the
++// window's rectangle, already blurred when the window has background blur.
++const char backdrop_glsl[] = GLSL(330,
++	layout(location = UNIFORM_BACKDROP_LOC)
++	uniform sampler2D backdrop;
++	// xy: gl_FragCoord of the first texel of `backdrop`; z: 1 or -1, the
++	// direction of the window's y axis in gl_FragCoord; w: 1 when there is a
++	// backdrop (0 when the window is off the screen).
++	layout(location = UNIFORM_BACKDROP_RECT_LOC)
++	uniform vec4 backdrop_rect;
++	// What is behind the window `offset` window pixels (x right, y down) from
++	// this fragment, or transparent black without a backdrop.
++	vec4 backdrop_at(vec2 offset) {
++		if (backdrop_rect.w < 0.5) {
++			return vec4(0.0);
++		}
++		vec2 size = vec2(textureSize(backdrop, 0));
++		vec2 p = gl_FragCoord.xy + vec2(offset.x, offset.y * backdrop_rect.z) -
++		         backdrop_rect.xy;
++		return texture(backdrop, p / size);
++	}
++);
++
+ const char blit_shader_default[] = GLSL(330,
+ 	in vec2 texcoord;
+ 	uniform sampler2D tex;
+--- a/src/renderer/command_builder.c
++++ b/src/renderer/command_builder.c
+@@ -75,6 +75,8 @@
+ 	    .color_inverted = layer->options.invert_color,
+ 	    .source_mask = NULL,
+ 	    .max_brightness = max_brightness,
++	    .sample_backdrop =
++	        shader != NULL && (shader->attributes & SHADER_ATTRIBUTE_BACKDROP) != 0,
+ 	};
+ 	region_scale(&cmd->target_mask, layer->window.origin, layer->scale);
+ 	region_scale(&cmd->opaque_region, layer->window.origin, layer->scale);
+--- a/src/renderer/damage.c
++++ b/src/renderer/damage.c
+@@ -345,6 +345,36 @@
+ 	pixman_region32_fini(&scratch_region);
+ }
+ 
++void commands_expand_backdrop_damage(const struct layout *layout, region_t *damage) {
++	region_t part;
++	pixman_region32_init(&part);
++	// A grown damage region can touch another such window: repeat while it grows
++	// (a few rounds are plenty for stacked menus).
++	for (int round = 0; round < 4; round++) {
++		bool grew = false;
++		for (unsigned i = layout->first_layer_start; i < layout->number_of_commands; i++) {
++			auto cmd = &layout->commands[i];
++			if (cmd->op != BACKEND_COMMAND_BLIT || !cmd->blit.sample_backdrop) {
++				continue;
++			}
++			pixman_region32_intersect(&part, &cmd->target_mask, damage);
++			if (!pixman_region32_not_empty(&part)) {
++				continue;
++			}
++			pixman_region32_subtract(&part, &cmd->target_mask, damage);
++			if (!pixman_region32_not_empty(&part)) {
++				continue;
++			}
++			pixman_region32_union(damage, damage, &cmd->target_mask);
++			grew = true;
++		}
++		if (!grew) {
++			break;
++		}
++	}
++	pixman_region32_fini(&part);
++}
++
+ void commands_uncull(struct layout *layout) {
+ 	for (auto i = layout->commands;
+ 	     i != &layout->commands[layout->number_of_commands]; i++) {
+--- a/src/renderer/damage.h
++++ b/src/renderer/damage.h
+@@ -40,3 +40,8 @@
+ /// account.
+ void layout_manager_damage(struct layout_manager *lm, unsigned buffer_age,
+                            ivec2 blur_size, region_t *damage);
++
++/// SDE: a window whose shader samples its backdrop (refraction) changes as a whole
++/// when anything under it changes, so damage that touches such a window grows to
++/// cover all of it (and so everything under it is drawn again).
++void commands_expand_backdrop_damage(const struct layout *layout, region_t *damage);
+--- a/src/renderer/renderer.c
++++ b/src/renderer/renderer.c
+@@ -553,6 +553,7 @@
+ 	}
+ 	if (buffer_age > 0 && (unsigned)buffer_age <= layout_manager_max_buffer_age(lm)) {
+ 		layout_manager_damage(lm, (unsigned)buffer_age, blur_size, &damage_region);
++		commands_expand_backdrop_damage(layout, &damage_region);
+ 	}
+ 
+ 	dynarr_resize(r->culled_masks, layout->number_of_commands, pixman_region32_init,

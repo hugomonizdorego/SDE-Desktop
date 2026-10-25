@@ -278,11 +278,14 @@ Popup::Popup(Notification *n) : BufferedWindow(0, 0, 10, 10, "Notification"), n_
 }
 
 // alpha51 compact popups: 340 px wide, 12 px padding, 32 px icon and soft
-// rounded corners, like the panel's flyouts.
-constexpr int kPopupW = 340, kPad = 12, kIcon = 32, kRadius = 10;
+// rounded corners, like the panel's flyouts (0.2.0 Alpha 2: their radius,
+// the theme's radius_large).
+constexpr int kPopupW = 340, kPad = 12, kIcon = 32;
+
+int popup_radius(int w, int h) { return std::min({g_theme.radius_large, w / 4, h / 4}); }
 
 void round_corners(Window xid, int w, int h) {
-  int event, error, r = std::min({S(kRadius), w / 4, h / 4});
+  int event, error, r = popup_radius(w, h);
   if (!xid || r <= 0 || !XShapeQueryExtension(fl_display, &event, &error)) return;
   std::vector<XRectangle> rows;
   for (int row = 0; row < h; ++row) {
@@ -349,9 +352,14 @@ void Popup::draw() {
   int text_x = pad + icon + S(12), text_w = W - text_x - pad - S(20);
   {
     Painter p(W, H);
-    // The window is shaped by round_corners(); theme colors (alpha51).
+    // The window is shaped by round_corners(); theme colors (alpha51) and
+    // the edge of the panel's popups (0.2.0 Alpha 2), drawn by the
+    // compositor's glass shader in Liquid Glass.
     p.fill_rect(0, 0, W, H, t.menu_bg);
-    p.stroke_rounded(0.5, 0.5, W - 1, H - 1, std::min({S(kRadius), W / 4, H / 4}), t.border);
+    if (t.glass && !t.liquid)
+      p.glass_surface(0, 0, W, H, popup_radius(W, H), t.border, t.dark);
+    else if (!t.liquid)
+      p.surface_edge(0, 0, W, H, popup_radius(W, H), t.border, t.dark ? 1.0 : 0.0, t.dark);
     if (n_->urgency == 2) p.fill_rounded(S(4), S(10), S(4), H - S(20), S(2), t.error);
     cairo_surface_t *img = n_->image;
     if (!img) img = IconLoader::get({n_->icon, "dialog-information", "preferences-desktop-notification"}, icon);
@@ -445,7 +453,13 @@ void relayout() {
     int px = sx + sw - p->w() - margin;
     int py = top ? y : y - h;
     p->resize(px, py, p->w(), h);
-    if (!p->shown()) p->show();
+    if (!p->shown()) {
+      p->show();
+      // Translucent like the panel's popups ([aero] transparency, readable
+      // at any level), and a glass surface for the compositor.
+      x11::set_opacity(fl_xid(p), g_theme.translucent ? g_theme.popup_opacity : 1.0);
+      x11::set_surface(fl_xid(p), "popup");
+    }
     round_corners(fl_xid(p), p->w(), h);
     y = top ? y + h + gap : y - h - gap;
     ++shown;

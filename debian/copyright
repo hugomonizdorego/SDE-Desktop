@@ -41,6 +41,13 @@ Comment: SDE's additions to the GPL-2.0-or-later application fork Liria
  and move progress model, is part of Liria (copied in by suite/redesign.py)
  and of the SDE desktop.
 
+Files: suite/patches/sde-compositor/*
+Copyright: 2026 Selviana DE Project and contributors
+License: MPL-2.0
+Comment: SDE's patches to SDE Compositor (from picom; window shaders that
+ sample the backdrop, for SDE Liquid Glass), under the license of the picom
+ files they change.
+
 Files: data/update/model.py data/update/COPYRIGHT
 Copyright: 2007-2015 Clement Lefebvre <root@linuxmint.com>
            2026 Selviana DE Project and contributors

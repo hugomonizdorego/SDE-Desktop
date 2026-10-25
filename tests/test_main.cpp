@@ -525,7 +525,33 @@ static void test_gtk_preferences() {
   double glass_frame = frame_opacity();
   CHECK(glass_frame > 0.6 && glass_frame < 0.95);
   CHECK(text.find("blur-background = true;") != std::string::npos);
-  CHECK(text.find("corner-radius = 12;") != std::string::npos);  // Glass: the softest corners (alpha51)
+  CHECK(text.find("corner-radius = 16;") != std::string::npos);  // Liquid Glass: the softest corners
+  // SDE's own surfaces (x11::set_surface()) keep the radius they are shaped
+  // with; other docks, menus and tooltips stay square. XRender: no glass shader.
+  CHECK(text.find("_SDE_SURFACE = 'popup'\"") != std::string::npos);
+  CHECK(text.find("\"window_type = 'popup_menu' && !_SDE_SURFACE\"") != std::string::npos);
+  CHECK(text.find("window-shader-fg-rule") == std::string::npos);
+  // Liquid Glass on OpenGL (0.2.0 Alpha 2): the glass shader draws SDE's
+  // surfaces, one shader for each set of rounded corners.
+  cfg.set("compositor", "backend", "glx");
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("backend = \"glx\";") != std::string::npos);
+  CHECK(text.find("/sde/liquid-glass.glsl:_SDE_SURFACE = 'panel' || ") != std::string::npos);
+  CHECK(text.find("/sde/liquid-glass-top.glsl:_SDE_SURFACE = 'popup-top'\"") != std::string::npos);
+  CHECK(text.find("/sde/liquid-glass-bottom.glsl:_SDE_SURFACE = 'popup-bottom'\"") != std::string::npos);
+  std::string shader;
+  CHECK(read_file(std::string(root) + "/sde/liquid-glass.glsl", shader));
+  CHECK(shader.find("vec4 window_shader()") != std::string::npos && shader.find("backdrop_at(") != std::string::npos);
+  CHECK(shader.find('@') == std::string::npos);  // every value filled in
+  CHECK(read_file(std::string(root) + "/sde/liquid-glass-top.glsl", shader));
+  CHECK(shader.find("const int SQUARE = 1;") != std::string::npos);
+  // Other families never get it.
+  cfg.set("appearance", "style", "graphite");
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("window-shader-fg-rule") == std::string::npos);
+  cfg.set("appearance", "style", "glass");
+  cfg.set("compositor", "backend", "xrender");
+  CHECK(read_file(write_compositor_config(cfg), text));
   // Fluent: lightly translucent frames, Acrylic (translucent, blurred) menus, 8 px corners.
   cfg.set("appearance", "style", "fluent");
   CHECK(read_file(write_compositor_config(cfg), text));
