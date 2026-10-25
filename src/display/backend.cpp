@@ -360,10 +360,15 @@ std::vector<std::string> display_profiles() {
   std::sort(names.begin(), names.end());
   return names;
 }
+bool display_scale_valid(int scale) { return scale == 0 || (scale >= 75 && scale <= 200 && scale % 25 == 0); }
+int configured_display_scale(const Config &cfg) {
+  std::string sc = lower(trim(cfg.get("appearance", "scale", "auto")));
+  if (sc.empty() || sc == "auto") return 0;
+  int scale = cfg.get_int("appearance", "scale", 100);
+  return display_scale_valid(scale) ? scale : 100;
+}
 bool save_display_profile(const DisplayProfile &p) {
-  if (p.name.empty() || p.name.size() > 100 ||
-      (p.scale != 100 && p.scale != 125 && p.scale != 150 && p.scale != 175 && p.scale != 200))
-    return false;
+  if (p.name.empty() || p.name.size() > 100 || !display_scale_valid(p.scale)) return false;
   GKeyFile *k = g_key_file_new();
   g_key_file_set_integer(k, "Profile", "format", 1);
   g_key_file_set_string(k, "Profile", "name", p.name.c_str());
@@ -438,9 +443,7 @@ bool load_display_profile(const std::string &name, DisplayProfile &profile,
     p.outputs.push_back(o);
   }
   g_key_file_unref(k);
-  ok = ok &&
-       (p.scale == 100 || p.scale == 125 || p.scale == 150 || p.scale == 175 || p.scale == 200) &&
-       validate_display_layout(p.outputs, hardware).empty();
+  ok = ok && display_scale_valid(p.scale) && validate_display_layout(p.outputs, hardware).empty();
   if (ok) profile = p;
   return ok;
 }
@@ -459,7 +462,7 @@ void save_display_layout(Config &cfg, const std::vector<Output> &outputs) {
   cfg.set("display", "outputs", names);
   cfg.set("display", "layout", args);
   cfg.set("display", "hardware", hash(display_signature(outputs)));
-  save_display_profile({"Last confirmed", cfg.get_int("appearance", "scale", 100), outputs});
+  save_display_profile({"Last confirmed", configured_display_scale(cfg), outputs});
   cfg.save();
 }
 bool import_legacy_display_layout(const std::string &text, const std::vector<Output> &hardware,
@@ -528,8 +531,7 @@ bool apply_display_layout(const Config &cfg) {
         !import_legacy_display_layout(cfg.get("display", "layout"), hardware, p.outputs))
       return false;
     p.name = "Last confirmed";
-    p.scale = cfg.get_int("appearance", "scale", 100);
-    if (p.scale != 125 && p.scale != 150 && p.scale != 175 && p.scale != 200) p.scale = 100;
+    p.scale = configured_display_scale(cfg);
   }
   bool primary = false;
   for (const auto &o : hardware) primary |= o.enabled && o.primary;

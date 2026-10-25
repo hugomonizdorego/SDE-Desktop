@@ -6,6 +6,7 @@
 #include <cstdio>
 
 #include "../src/display/backend.h"
+#include "config.h"
 #include "util.h"
 using namespace sde;
 int failures = 0;
@@ -117,6 +118,21 @@ int main() {
   CHECK(!load_display_profile("Desk / 125%", p, replacement));
   CHECK(!load_display_profile("Desk / 125%", p, unplugged));
   CHECK(!save_display_profile({"Invalid", 300, hardware}));
+  // 75 % and Automatic (0) are kept too; other sizes are refused.
+  CHECK(save_display_profile({"Small", 75, hardware}) && load_display_profile("Small", p, hardware) && p.scale == 75);
+  CHECK(save_display_profile({"Auto", 0, hardware}) && load_display_profile("Auto", p, hardware) && p.scale == 0);
+  CHECK(!save_display_profile({"Odd", 90, hardware}) && !save_display_profile({"Tiny", 50, hardware}));
+  CHECK(delete_display_profile("Small") && delete_display_profile("Auto"));
+  CHECK(display_scale_valid(175) && !display_scale_valid(225));
+  {
+    Config sc;
+    sc.set("appearance", "scale", "auto");
+    CHECK(configured_display_scale(sc) == 0);
+    sc.set("appearance", "scale", "75");
+    CHECK(configured_display_scale(sc) == 75);
+    sc.set("appearance", "scale", "90");
+    CHECK(configured_display_scale(sc) == 100);
+  }
   wanted = hardware;
   wanted[1].rate = 144;
   CHECK(save_display_profile({"Invalid mode", 100, wanted}));

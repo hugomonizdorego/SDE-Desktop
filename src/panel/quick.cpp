@@ -110,6 +110,7 @@ void SystemStatus::changed() {
 
 void SystemStatus::start(std::function<void()> changed) {
   changed_ = std::move(changed);
+  start_upower();
   refresh_battery();
   refresh_brightness();
   refresh_network();
@@ -364,46 +365,193 @@ void SystemStatus::start_audio_stream() {
       });
 }
 
+// ------------------------------------------------------------- battery
+
+namespace {
+const char *kUPower = "org.freedesktop.UPower";
+const char *kUPowerPath = "/org/freedesktop/UPower";
+const char *kDisplayDevice = "/org/freedesktop/UPower/devices/DisplayDevice";
+// The low and critical levels of the icon: 20 % and 10 %, or sde-power's
+// warnings ([power] battery_low, battery_critical) when they are higher.
+int power_level(const char *key, int fallback) {
+  return Panel::instance ? Panel::instance->config().get_int("power", key, fallback) : fallback;
+}
+int low_level() { return battery_low_level(power_level("battery_low", 10)); }
+int critical_level() { return battery_critical_level(power_level("battery_critical", 5)); }
+void upower_changed(void *) { SystemStatus::get().refresh_battery(); }
+}  // namespace
+
 void SystemStatus::refresh_battery() {
+  // While UPower reports a battery it is asked (asynchronously, see
+  // read_upower()); otherwise the kernel's power_supply class is read and
+  // UPower is asked whether it is there by now.
+  if (upower_) {
+    read_upower();
+    return;
+  }
   BatteryState b;
-  // SDE_POWER_SUPPLY_DIR replaces the class directory in tests (alpha51).
+  BatteryReading r;
+  read_sysfs_battery(b, r);
+  apply_battery(b, r);
+  read_upower();
+}
+
+// The first battery of the power_supply class (alpha51), and whether a mains
+// adapter is online. SDE_POWER_SUPPLY_DIR replaces the class directory in
+// tests.
+void SystemStatus::read_sysfs_battery(BatteryState &b, BatteryReading &r) {
   const char *dir_env = getenv("SDE_POWER_SUPPLY_DIR");
   std::string dir = dir_env && *dir_env ? dir_env : "/sys/class/power_supply";
+  bool ac = false;
+  std::string status;
   for (auto &dev : list_dir(dir)) {
-    std::string base = dir + "/" + dev, type, cap, status, scope;
-    if (!read_file(base + "/type", type) || trim(type) != "Battery") continue;
+    std::string base = dir + "/" + dev, type, cap, scope, online;
+    if (!read_file(base + "/type", type)) continue;
+    type = trim(type);
     if (read_file(base + "/scope", scope) && trim(scope) == "Device") continue;  // mice etc.
-    if (!read_file(base + "/capacity", cap)) continue;
+    if (type == "Mains" || starts_with(type, "USB")) {
+      ac = ac || (read_file(base + "/online", online) && trim(online) == "1");
+      continue;
+    }
+    if (type != "Battery" || b.present || !read_file(base + "/capacity", cap)) continue;
     b.present = true;
     b.percent = std::max(0, std::min(100, atoi(cap.c_str())));
     read_file(base + "/status", status);
-    status = trim(status);
-    b.charging = status == "Charging";
-    b.full = status == "Full" || (status == "Not charging" && b.percent >= 95);
     std::string vendor, model;
     read_file(base + "/manufacturer", vendor);
     read_file(base + "/model_name", model);
     b.model = battery_model_name(vendor, model);
-    // Remaining time from energy (µWh) / power (µW), or charge / current.
+    // Energy (µWh) and power (µW), or charge (µAh) and current (µA).
     std::string now, full, rate;
-    bool ok = read_file(base + "/energy_now", now) && read_file(base + "/energy_full", full) &&
-              read_file(base + "/power_now", rate);
-    if (!ok)
-      ok = read_file(base + "/charge_now", now) && read_file(base + "/charge_full", full) &&
-           read_file(base + "/current_now", rate);
-    double r = ok ? atof(rate.c_str()) : 0;
-    if (r > 0) {
-      double hours =
-          b.charging ? (atof(full.c_str()) - atof(now.c_str())) / r : atof(now.c_str()) / r;
-      if (hours > 0 && hours < 48) b.minutes = int(hours * 60);
+    bool energy = read_file(base + "/energy_now", now) && read_file(base + "/energy_full", full);
+    bool charge = !energy && read_file(base + "/charge_now", now) &&
+                  read_file(base + "/charge_full", full);
+    if (energy || charge) {
+      r.energy = atof(now.c_str()) / 1e6;
+      r.energy_full = atof(full.c_str()) / 1e6;
+      if (read_file(base + (energy ? "/power_now" : "/current_now"), rate))
+        r.rate = std::fabs(atof(rate.c_str())) / 1e6;
     }
-    break;
   }
+  if (!b.present) return;
+  b.source = "sysfs";
+  int state = battery_state_from_sysfs(status, b.percent, ac);
+  b.phase = battery_phase(state, b.percent, 0, state == 2, low_level(), critical_level());
+  r.phase = b.phase;
+  r.percent = b.percent;
+}
+
+// UPower's DisplayDevice (the batteries combined), on the system bus.
+void SystemStatus::read_upower() {
+  dbus::Bus *bus = Panel::safe_mode ? nullptr : dbus::Bus::system();
+  if (!bus || upower_pending_) return;
+  upower_pending_ = true;
+  // OnBattery decides an unknown state.
+  dbus::get_all_properties(bus, kUPower, kUPowerPath, kUPower, [this, bus](const dbus::Value &d) {
+    if (!d.valid()) {
+      upower_pending_ = false;
+      if (upower_) {  // UPower went away: the power_supply class
+        upower_ = false;
+        refresh_battery();
+      }
+      return;
+    }
+    const auto *ob = d.get("OnBattery");
+    bool on_battery = ob && ob->boolean();
+    dbus::get_all_properties(
+        bus, kUPower, kDisplayDevice, "org.freedesktop.UPower.Device",
+        [this, on_battery](const dbus::Value &v) {
+          upower_pending_ = false;
+          auto num = [&v](const char *key) {
+            const auto *p = v.valid() ? v.get(key) : nullptr;
+            return !p ? 0.0 : p->inner().type == 'd' ? p->inner().d : double(p->num());
+          };
+          const auto *present = v.valid() ? v.get("IsPresent") : nullptr;
+          // Type 2: a battery (UPSes and peripherals are not the computer's).
+          if (!present || !present->boolean() || int(num("Type")) != 2) {
+            if (upower_) {
+              upower_ = false;
+              refresh_battery();
+            }
+            return;
+          }
+          upower_ = true;
+          BatteryState b, sysfs;
+          BatteryReading r, unused;
+          read_sysfs_battery(sysfs, unused);  // the model name
+          b.present = true;
+          b.model = sysfs.model;
+          b.source = "upower";
+          double percent = std::max(0.0, std::min(100.0, num("Percentage")));
+          b.percent = int(percent + 0.5);
+          b.phase = battery_phase(int(num("State")), percent, int(num("WarningLevel")), on_battery,
+                                  low_level(), critical_level());
+          r.phase = b.phase;
+          r.percent = percent;
+          r.energy = num("Energy");
+          r.energy_full = num("EnergyFull");
+          r.rate = std::fabs(num("EnergyRate"));
+          r.time_to_empty = (long long)num("TimeToEmpty");
+          r.time_to_full = (long long)num("TimeToFull");
+          apply_battery(b, r);
+        });
+  });
+}
+
+void SystemStatus::apply_battery(BatteryState b, const BatteryReading &reading) {
+  BatteryReading r = reading;
+  r.t = mono_ms() / 1000.0;
+  // Readings from another source come in other units.
+  if (b.source != battery.source) estimator_.reset();
+  if (b.present) {
+    estimator_.update(r);
+    b.minutes = estimator_.minutes();
+    b.calculating = estimator_.calculating();
+  }
+  b.charging = b.phase == BatteryPhase::CHARGING;
+  b.full = b.phase == BatteryPhase::FULL;
   bool diff = b.present != battery.present || b.percent != battery.percent ||
               b.charging != battery.charging || b.full != battery.full ||
-              b.minutes != battery.minutes || b.model != battery.model;
+              b.minutes != battery.minutes || b.model != battery.model ||
+              b.phase != battery.phase || b.calculating != battery.calculating ||
+              b.source != battery.source;
   battery = b;
   if (diff) changed();
+}
+
+void SystemStatus::start_upower() {
+  dbus::Bus *bus = Panel::safe_mode ? nullptr : dbus::Bus::system();
+  if (!bus) return;
+  // UPower's changes come in bursts: one read for each.
+  for (const char *path : {kUPowerPath, kDisplayDevice})
+    bus->add_signal_handler(
+        std::string("type='signal',interface='org.freedesktop.DBus.Properties',member='"
+                    "PropertiesChanged',path='") +
+            path + "'",
+        [path](DBusMessage *m) {
+          const char *p = dbus_message_get_path(m);
+          return dbus_message_is_signal(m, "org.freedesktop.DBus.Properties",
+                                        "PropertiesChanged") &&
+                 p && std::string(p) == path;
+        },
+        [](DBusMessage *) {
+          Fl::remove_timeout(upower_changed);
+          Fl::add_timeout(0.2, upower_changed);
+        });
+  // UPower starting or going away.
+  bus->add_signal_handler(
+      "type='signal',interface='org.freedesktop.DBus',member='NameOwnerChanged',arg0='"
+      "org.freedesktop.UPower'",
+      [](DBusMessage *m) {
+        auto a = dbus::read_args(m);
+        return bool(dbus_message_is_signal(m, "org.freedesktop.DBus", "NameOwnerChanged")) &&
+               !a.empty() && a[0].str() == kUPower;
+      },
+      [this](DBusMessage *m) {
+        auto a = dbus::read_args(m);
+        if (a.size() >= 3 && a[2].str().empty()) upower_ = false;
+        refresh_battery();
+      });
 }
 
 // The backlight class directory; SDE_BACKLIGHT_DIR replaces it in tests.
@@ -994,6 +1142,17 @@ class ClockHero : public Fl_Group {
   bool day() const { return day_; }
   const weather::Report &report() const { return wx_; }
   const clockface::Settings &clock() const { return clock_; }
+  // 0.2 Alpha 2: a right click on the clock (not on its buttons) offers
+  // the style, seconds and the blinking colon.
+  int handle(int event) override {
+    if (event == FL_PUSH && Fl::event_button() == FL_RIGHT_MOUSE) {
+      for (int i = 0; i < children(); ++i)
+        if (Fl::event_inside(child(i))) return Fl_Group::handle(event);
+      Panel::instance->clock_options_menu();  // may rebuild the Action Center
+      return 1;
+    }
+    return Fl_Group::handle(event);
+  }
   // Repaints for the clock: every second for seconds and blinking colons.
   bool ticks_seconds() const {
     return show_clock_ && (clockface::ticks_seconds(clock_) ||
@@ -1679,7 +1838,8 @@ std::string QuickSettings::structure() const {
       out << "|wx" << w->code << w->is_day << std::lround(w->temp_c * 10) << w->location.city;
     for (const char *key : {"enabled", "unit", "wind_unit", "animation", "location"})
       out << '|' << cfg.get("weather", key);
-    for (const char *key : {"style", "seconds", "format"}) out << '|' << cfg.get("clock", key);
+    for (const char *key : {"style", "seconds", "blink", "format"})
+      out << '|' << cfg.get("clock", key);
     out << "|players" << c.players().size();
     for (const char *key : {"enabled", "schedule", "from", "to"})
       out << '|' << cfg.get("night_light", key);
@@ -1694,6 +1854,9 @@ std::string QuickSettings::structure() const {
   out << c.power_profile;
   for (const auto &d : c.devices)
     out << '|' << d.device << d.state << d.connection << d.ip << d.gateway << d.dns;
+  if (mode_ == FLYOUT && section_ == "power")  // the state line names the estimate
+    out << "|bat" << s.battery.percent << int(s.battery.phase) << s.battery.minutes
+        << s.battery.calculating << s.battery.model;
   if (mode_ == FLYOUT && section_ == "tray") {
     if (auto *h = Panel::instance->status_notifiers())
       for (auto *i : h->visible_items()) out << '|' << i->service << i->path << i->title << i->status;
@@ -1704,7 +1867,8 @@ std::string QuickSettings::structure() const {
         "show_app_volume", "show_microphone", "show_tray", "tile_columns", "expanded",
         "show_calendar", "show_notifications", "show_drives"})
     out << '|' << cfg.get("action_center", key);
-  for (const char *key : {"style", "position", "height", "width_percent", "clock_24h"})
+  for (const char *key : {"style", "position", "height", "width_percent", "clock_24h",
+                          "clock_seconds", "clock_blink"})
     out << '|' << cfg.get("panel", key);
   out << cfg.get("appearance", "accent") << cfg.get("appearance", "theme")
       << cfg.get("appearance", "style") << cfg.get("appearance", "scale")
@@ -2467,9 +2631,16 @@ class BatteryHeader : public Fl_Widget {
     double size = S(popup_style::kIcon);
     {
       Painter p(window()->w(), window()->h());
+      // 0.2 Alpha 2: the colours of the panel icon (green on mains power,
+      // amber when low, red when critically low).
+      Color level = b.phase == BatteryPhase::LOW        ? t.warning
+                    : b.phase == BatteryPhase::CRITICAL ? t.error
+                    : b.phase == BatteryPhase::CHARGING || b.phase == BatteryPhase::FULL
+                        ? t.success
+                        : t.text;
       if (b.present)
         glyph::battery(p, x(), y() + (h() - size) / 2.0, size, b.percent, b.charging, t.text,
-                       b.percent <= 10 && !b.charging ? t.error : t.text);
+                       level);
       else
         glyph::power(p, x(), y() + (h() - size) / 2.0, size, t.text);
     }
@@ -2549,18 +2720,26 @@ void QuickSettings::power_section(SectionBuilder &b) {
   new BatteryHeader(x + S(8), b.y, w - S(16), S(28));
   b.y += S(28);
   {
+    // 0.2 Alpha 2: low and critical, "Calculating…" while the estimate
+    // is not known yet, plugged in without charging.
+    // The label calls this while drawing, with its font set: a line that
+    // does not fit (75 %, long estimates) takes the short duration.
+    int line_w = w - S(16);
     auto *state = new ActionLabel(
-        x + S(8), b.y, w - S(16), S(24),
-        [] {
+        x + S(8), b.y, line_w, S(24),
+        [line_w] {
           const auto &bt = SystemStatus::get().battery;
           if (!bt.present) return std::string(_("The computer runs on mains power."));
-          return battery_status_line(bt.charging, bt.full, bt.minutes);
+          std::string line = battery_phase_line(bt.phase, bt.minutes, bt.calculating);
+          std::string time = battery_time_label(bt.phase, bt.minutes, bt.calculating);
+          if (text_width(line) <= line_w || time.empty() || bt.calculating) return line;
+          return battery_label(bt.phase) + " - " + time;
         },
         0);
     // Named for UI tests with the text it shows.
     state->copy_tooltip(s.battery.present
-                            ? battery_status_line(s.battery.charging, s.battery.full,
-                                                  s.battery.minutes)
+                            ? battery_phase_line(s.battery.phase, s.battery.minutes,
+                                                 s.battery.calculating)
                                   .c_str()
                             : _("The computer runs on mains power."));
     b.y += S(24);
@@ -3600,6 +3779,9 @@ void QuickSettings::draw() {
                  (hero->day() ? "-day" : "-night") + rect();
       extra += std::string("@sky-") + (hero->day() ? "day" : "night") + rect();
       extra += std::string("@clock-") + clockface::style_name(hero->clock().style) + rect();
+      // 0.2 Alpha 2: the clock's options.
+      if (hero->clock().seconds) extra += "@clock-seconds" + rect();
+      if (hero->clock().blink) extra += "@clock-blink" + rect();
       extra += "@plan-" + center_plan_ + "\t0\t0\t" + std::to_string(w()) + "\t" +
                std::to_string(h()) + "\t1\n";
     }

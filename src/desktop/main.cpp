@@ -145,7 +145,9 @@ bool make_file_item(const std::string &dir, const std::string &name, Item &it) {
     DesktopEntry e;
     if (e.load(full) && !e.name.empty()) {
       it.label = e.name;
-      it.icons = {e.icon, "application-x-executable"};
+      // Near matches and the category icon when the theme lacks Icon=.
+      it.icons = app_icon_list(e);
+      it.icons.push_back("application-x-executable");
       it.is_launcher = true;
     }
   }

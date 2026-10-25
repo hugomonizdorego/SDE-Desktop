@@ -127,9 +127,13 @@ add_executable(sde-settings
 # tested; thumbnails come from the Gallery core (decoding threads and the
 # freedesktop.org thumbnail cache).
 add_library(sde-settings-model STATIC settings/gpu.cpp settings/wallpapers.cpp
-  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp settings/default_apps.cpp)
+  settings/devices.cpp settings/proxy.cpp settings/build_history.cpp settings/default_apps.cpp
+  settings/accounts.cpp)
 target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/settings)
-target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common)
+# User accounts (settings/accounts.cpp): passwords are hashed with libxcrypt
+# (crypt_gensalt_rn, yescrypt) before AccountsService sees them.
+pkg_check_modules(LIBCRYPT REQUIRED IMPORTED_TARGET libcrypt)
+target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common PkgConfig::LIBCRYPT)
 target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)
 
 add_executable(sde-run run/main.cpp)

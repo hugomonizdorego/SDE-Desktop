@@ -83,6 +83,8 @@ struct Account {
   const std::string &display_name() const { return real_name.empty() ? user : real_name; }
 };
 Account account();
+// True when |user| is a member of sudo (or admin, wheel): an administrator.
+bool administrator(const std::string &user);
 
 // Changes the real name (AccountsService User.SetRealName, allowed for the
 // user's own account). Names are UTF-8, at most 128 bytes, without control

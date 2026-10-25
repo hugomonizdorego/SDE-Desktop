@@ -6,15 +6,18 @@
 
 #include <cairo.h>
 
+#include <pwd.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "dbus.h"
 using namespace sde;
@@ -204,33 +207,173 @@ void ud_signal(const char* member, const std::string& path) {
 }
 void ud_changed() { changed(ud_part, "org.freedesktop.UDisks2.Filesystem"); }
 
-// ------------------------------------------------------ AccountsService
-// The account picture and real name (src/common/avatar.h): every user is
-// "QA Avatar Tester" ("Alex Tester" in the showcase) until SetRealName;
-// SetIconFile copies the picture next to the log, as accountsservice copies
-// it to /var/lib/AccountsService.
-const std::string accounts = "/org/freedesktop/Accounts", account_user = accounts + "/User4242";
-std::string real_name = "QA Avatar Tester", icon_file, account_name;
-void account_props(dbus::Writer& w) {
-  str(w, "RealName", real_name);
-  str(w, "IconFile", icon_file);
-  str(w, "UserName", account_name);
+// --------------------------------------------------------------- UPower
+// (0.2 Alpha 2) The DisplayDevice of a laptop battery: 45 %, discharging,
+// 3 h 57 min left, like the QA power_supply battery of panel-smoke (the
+// showcase's: 78 %, 4 h 12 min). Mode "battery k=v ..." changes it: state
+// (charging, discharging, empty, full, pending-charge, pending-discharge,
+// unknown), percent, energy and full (Wh), rate (W), tte and ttf
+// (TimeToEmpty/TimeToFull, seconds), warning (WarningLevel: 1 none, 3 low,
+// 4 critical, 5 action), present and ac (0/1; without ac, OnBattery follows
+// the state). Modes upower-off and upower-on give the name up and take it
+// back (the panel then reads the power_supply class).
+const std::string up = "/org/freedesktop/UPower", up_display = up + "/devices/DisplayDevice";
+struct {
+  uint32_t state = 2, warning = 1;
+  double percent = 45, energy = 39.55, full = 88, rate = 10;
+  int64_t tte = 14220, ttf = 0;
+  bool present = true, on_battery = true;
+} battery;
+void dbl(dbus::Writer& w, const char* k, double v) {
   dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
-  e.str("AccountType").variant_i32(0);
+  e.str(k);
+  dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "d");
+  dbus_message_iter_append_basic(var.iter(), DBUS_TYPE_DOUBLE, &v);
 }
-void set_icon(const std::string& file) {
+void i64(dbus::Writer& w, const char* k, int64_t v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k);
+  dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "x");
+  dbus_int64_t x = v;
+  dbus_message_iter_append_basic(var.iter(), DBUS_TYPE_INT64, &x);
+}
+void u32(dbus::Writer& w, const char* k, uint32_t v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k).variant_u32(v);
+}
+void upower_props(dbus::Writer& w) {
+  flag(w, "OnBattery", battery.on_battery);
+  flag(w, "LidIsClosed", false);
+  flag(w, "LidIsPresent", true);
+  str(w, "DaemonVersion", "1.90.2 (QA fixture)");
+}
+void display_props(dbus::Writer& w) {
+  u32(w, "Type", 2);  // battery
+  flag(w, "PowerSupply", true);
+  flag(w, "IsPresent", battery.present);
+  u32(w, "State", battery.state);
+  dbl(w, "Percentage", battery.percent);
+  dbl(w, "Energy", battery.energy);
+  dbl(w, "EnergyFull", battery.full);
+  dbl(w, "EnergyEmpty", 0);
+  dbl(w, "EnergyRate", battery.rate);
+  i64(w, "TimeToEmpty", battery.tte);
+  i64(w, "TimeToFull", battery.ttf);
+  u32(w, "WarningLevel", battery.warning);
+  str(w, "IconName", "battery-good-symbolic");
+}
+void battery_mode(const std::string& args) {
+  std::istringstream in(args);
+  std::string kv;
+  bool ac_given = false;
+  while (in >> kv) {
+    size_t eq = kv.find('=');
+    if (eq == std::string::npos) continue;
+    std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
+    double n = atof(v.c_str());
+    if (k == "state")
+      battery.state = v == "charging"            ? 1
+                      : v == "discharging"       ? 2
+                      : v == "empty"             ? 3
+                      : v == "full"              ? 4
+                      : v == "pending-charge"    ? 5
+                      : v == "pending-discharge" ? 6
+                                                 : 0;
+    else if (k == "percent")
+      battery.percent = n;
+    else if (k == "energy")
+      battery.energy = n;
+    else if (k == "full")
+      battery.full = n;
+    else if (k == "rate")
+      battery.rate = n;
+    else if (k == "tte")
+      battery.tte = int64_t(n);
+    else if (k == "ttf")
+      battery.ttf = int64_t(n);
+    else if (k == "warning")
+      battery.warning = uint32_t(n);
+    else if (k == "present")
+      battery.present = v == "1";
+    else if (k == "ac")
+      ac_given = true, battery.on_battery = v != "1";
+  }
+  if (!ac_given) battery.on_battery = battery.state == 2 || battery.state == 3 || battery.state == 6;
+  changed(up_display, "org.freedesktop.UPower.Device");
+  changed(up, "org.freedesktop.UPower");
+}
+
+// ------------------------------------------------------ AccountsService
+// The session's user (User4242: the real name and picture of
+// src/common/avatar.h, "QA Avatar Tester" or "Alex Tester" in the showcase,
+// an administrator) and two more people for Control Center > Users & Avatar:
+// Sam (standard) and Mia (standard, chooses a password at the next login).
+// SetIconFile copies the picture next to the log, as accountsservice copies
+// it to /var/lib/AccountsService. Changes are logged, a password only as
+// the kind of its hash: "ACCOUNTS SetPassword robin $y$".
+const std::string accounts = "/org/freedesktop/Accounts", account_user = accounts + "/User4242";
+struct Person {
+  std::string path, name, real_name, icon;
+  uint64_t uid = 0;
+  int type = 0, password_mode = 0;
+  bool locked = false, auto_login = false;
+};
+std::vector<Person> people;  // [0]: the session's user
+uint64_t next_uid = 1003;
+Person* person(const std::string& path) {
+  for (auto& p : people)
+    if (p.path == path) return &p;
+  return nullptr;
+}
+void account_props(dbus::Writer& w, const Person& p) {
+  str(w, "RealName", p.real_name);
+  str(w, "IconFile", p.icon);
+  str(w, "UserName", p.name);
+  str(w, "HomeDirectory", "/home/" + p.name);
+  str(w, "Shell", "/bin/bash");
+  flag(w, "Locked", p.locked);
+  flag(w, "AutomaticLogin", p.auto_login);
+  flag(w, "SystemAccount", false);
+  flag(w, "LocalAccount", true);
+  {
+    dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+    e.str("AccountType").variant_i32(p.type);
+  }
+  {
+    dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+    e.str("PasswordMode").variant_i32(p.password_mode);
+  }
+  u64(w, "Uid", p.uid);
+}
+void set_icon(Person& p, const std::string& file) {
   std::string dir = log_path.substr(0, log_path.rfind('/') + 1) + "accounts-icons";
   if (file.empty()) {
-    if (!icon_file.empty()) unlink(icon_file.c_str());
-    icon_file.clear();
+    if (!p.icon.empty()) unlink(p.icon.c_str());
+    p.icon.clear();
     return;
   }
   mkdir(dir.c_str(), 0755);
   std::ifstream in(file, std::ios::binary);
   std::stringstream data;
   data << in.rdbuf();
-  icon_file = dir + "/" + (account_name.empty() ? std::string("user") : account_name);
-  std::ofstream(icon_file, std::ios::binary) << data.str();
+  p.icon = dir + "/" + (p.name.empty() ? std::string("user") : p.name);
+  std::ofstream(p.icon, std::ios::binary) << data.str();
+}
+void accounts_signal(const char* member, const std::string& path) {
+  auto* m = dbus::signal(accounts, "org.freedesktop.Accounts", member);
+  dbus::Writer(m).path(path);
+  bus->send(m);
+}
+void user_changed(const Person& p) {
+  bus->send(dbus::signal(p.path, "org.freedesktop.Accounts.User", "Changed"));
+  changed(p.path, "org.freedesktop.Accounts.User");
+}
+// The scheme of a crypt(3) hash ("$y$", "$6$"), or "plain" for anything
+// else: a password that was not hashed.
+std::string hash_kind(const std::string& hash) {
+  if (hash.size() < 4 || hash[0] != '$') return "plain";
+  size_t end = hash.find('$', 1);
+  return end == std::string::npos ? "plain" : hash.substr(0, end + 1);
 }
 DBusMessage* ud_error(DBusMessage* m, const char* name, const char* text) {
   return dbus_message_new_error(m, name, text);
@@ -265,6 +408,16 @@ DBusHandlerResult handle(DBusMessage* m) {
     drive_present = false;
     mount_point.clear();
     ud_signal("InterfacesRemoved", ud_part);
+  } else if (path == up && method == "GetAll") {
+    dbus::Writer w(r);
+    dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+    upower_props(props);
+  } else if (path == up && method == "GetDisplayDevice") {
+    dbus::Writer(r).path(up_display);
+  } else if (path == up_display && method == "GetAll") {
+    dbus::Writer w(r);
+    dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+    display_props(props);
   } else if (path == nm && method == "GetAll") {
     dbus::Writer w(r);
     dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
@@ -365,21 +518,100 @@ DBusHandlerResult handle(DBusMessage* m) {
     log("BT " + method);
     changed(device, "org.bluez.Device1");
   } else if (path == accounts && method == "FindUserByName" && !args.empty()) {
-    account_name = args[0].str();
-    log("ACCOUNTS FindUserByName " + account_name);
-    dbus::Writer(r).path(account_user);
-  } else if (path == account_user && method == "GetAll") {
+    log("ACCOUNTS FindUserByName " + args[0].str());
+    auto it = std::find_if(people.begin(), people.end(), [&](const Person& p) { return p.name == args[0].str(); });
+    if (it == people.end()) {
+      dbus_message_unref(r);
+      r = ud_error(m, "org.freedesktop.Accounts.Error.Failed", "No such user");
+    } else {
+      dbus::Writer(r).path(it->path);
+    }
+  } else if (path == accounts && method == "ListCachedUsers") {
+    dbus::Writer w(r);
+    dbus::Writer list(w.iter(), DBUS_TYPE_ARRAY, "o");
+    for (const auto& p : people) list.path(p.path);
+  } else if (path == accounts && method == "CreateUser" && args.size() == 3) {
+    std::string name = args[0].str();
+    log("ACCOUNTS CreateUser " + name + " " + args[1].str() + " " + std::to_string(args[2].num()));
+    if (std::any_of(people.begin(), people.end(), [&](const Person& p) { return p.name == name; })) {
+      dbus_message_unref(r);
+      r = ud_error(m, "org.freedesktop.Accounts.Error.UserExists", "A user with that name already exists");
+    } else {
+      Person p;
+      p.uid = next_uid++;
+      p.path = accounts + "/User" + std::to_string(p.uid);
+      p.name = name;
+      p.real_name = args[1].str();
+      p.type = int(args[2].num());
+      p.locked = true;  // until it has a password, as adduser --disabled-password
+      people.push_back(p);
+      bus->export_object(p.path, handle);
+      dbus::Writer(r).path(p.path);
+      accounts_signal("UserAdded", p.path);
+    }
+  } else if (path == accounts && method == "DeleteUser" && args.size() == 2) {
+    auto it = std::find_if(people.begin(), people.end(), [&](const Person& p) { return p.uid == uint64_t(args[0].num()); });
+    if (it == people.end() || it == people.begin()) {
+      dbus_message_unref(r);
+      r = ud_error(m, "org.freedesktop.Accounts.Error.UserDoesNotExist", "No such user");
+    } else {
+      log("ACCOUNTS DeleteUser " + it->name + (args[1].boolean() ? " remove-files" : " keep-files"));
+      std::string gone = it->path;
+      people.erase(it);
+      accounts_signal("UserDeleted", gone);
+    }
+  } else if (person(path) && method == "GetAll") {
     dbus::Writer w(r);
     dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
-    account_props(props);
-  } else if (path == account_user && method == "SetIconFile" && !args.empty()) {
+    account_props(props, *person(path));
+  } else if (person(path) && method == "SetIconFile" && !args.empty()) {
     log("ACCOUNTS SetIconFile " + args[0].str());
-    set_icon(args[0].str());
-    changed(account_user, "org.freedesktop.Accounts.User");
-  } else if (path == account_user && method == "SetRealName" && !args.empty()) {
+    set_icon(*person(path), args[0].str());
+    user_changed(*person(path));
+  } else if (person(path) && method == "SetRealName" && !args.empty()) {
     log("ACCOUNTS SetRealName " + args[0].str());
-    real_name = args[0].str();
-    changed(account_user, "org.freedesktop.Accounts.User");
+    person(path)->real_name = args[0].str();
+    user_changed(*person(path));
+  } else if (person(path) && method == "SetAccountType" && !args.empty()) {
+    Person& p = *person(path);
+    log("ACCOUNTS SetAccountType " + p.name + " " + std::to_string(args[0].num()));
+    p.type = int(args[0].num());
+    user_changed(p);
+  } else if (person(path) && method == "SetPassword" && args.size() == 2) {
+    Person& p = *person(path);
+    log("ACCOUNTS SetPassword " + p.name + " " + hash_kind(args[0].str()));
+    p.password_mode = 0;
+    p.locked = false;  // setting a password unlocks, as accountsservice does
+    user_changed(p);
+  } else if (person(path) && method == "SetPasswordMode" && !args.empty()) {
+    Person& p = *person(path);
+    log("ACCOUNTS SetPasswordMode " + p.name + " " + std::to_string(args[0].num()));
+    p.password_mode = int(args[0].num());
+    p.locked = false;
+    user_changed(p);
+  } else if (person(path) && method == "SetLocked" && !args.empty()) {
+    Person& p = *person(path);
+    log("ACCOUNTS SetLocked " + p.name + (args[0].boolean() ? " true" : " false"));
+    p.locked = args[0].boolean();
+    user_changed(p);
+  } else if (person(path) && method == "SetAutomaticLogin" && !args.empty()) {
+    Person& p = *person(path);
+    log("ACCOUNTS SetAutomaticLogin " + p.name + (args[0].boolean() ? " true" : " false"));
+    for (auto& o : people)
+      if (o.auto_login && args[0].boolean() && o.path != p.path) {
+        o.auto_login = false;  // one account at most, as the display manager has it
+        user_changed(o);
+      }
+    p.auto_login = args[0].boolean();
+    user_changed(p);
+  } else if (path == "/SDETest" && method == "Mode" && !args.empty() &&
+             (args[0].str().rfind("battery ", 0) == 0 || args[0].str().rfind("upower-", 0) == 0)) {
+    // The battery modes leave the other services as they are.
+    auto mode = args[0].str();
+    if (mode.rfind("battery ", 0) == 0) battery_mode(mode.substr(8));
+    if (mode == "upower-off") dbus_bus_release_name(bus->conn(), "org.freedesktop.UPower", nullptr);
+    if (mode == "upower-on") bus->request_name("org.freedesktop.UPower");
+    log("MODE " + mode);
   } else if (path == "/SDETest" && method == "Mode" && !args.empty()) {
     auto mode = args[0].str();
     adapter_present = mode != "no-adapter";
@@ -434,7 +666,45 @@ int main(int argc, char** argv) {
   log_path = argv[1];
   const char* names = getenv("SDE_FIXTURE_NAMES");
   showcase = names && std::string(names) == "showcase";
-  real_name = pick("QA Avatar Tester", "Alex Tester");
+  {
+    // The session's user, then two more people (see AccountsService above).
+    Person self;
+    self.path = account_user;
+    struct passwd* pw = getpwuid(getuid());
+    self.name = pw && pw->pw_name ? pw->pw_name : getenv("USER") ? getenv("USER") : "user";
+    self.real_name = pick("QA Avatar Tester", "Alex Tester");
+    self.uid = getuid();
+    self.type = 1;
+    people.push_back(self);
+    Person sam;
+    sam.path = accounts + "/User1001";
+    sam.name = "sam";
+    sam.real_name = "Sam Rivera";
+    sam.uid = 1001;
+    people.push_back(sam);
+    Person mia = sam;
+    mia.path = accounts + "/User1002";
+    mia.name = "mia";
+    mia.real_name = "Mia Chen";
+    mia.uid = 1002;
+    mia.password_mode = 1;
+    people.push_back(mia);
+  }
+  if (showcase) {  // tools/showcase.py's battery: 46.8 of 60 Wh at 11.14 W
+    battery.percent = 78, battery.energy = 46.8, battery.full = 60, battery.rate = 11.14;
+    battery.tte = 15124;
+  }
+  // SDE_FIXTURE_SERVICES=accounts (tools/ui-smoke.py): AccountsService
+  // only, without an X connection, a tray icon or the other services.
+  const char* services = getenv("SDE_FIXTURE_SERVICES");
+  if (services && std::string(services) == "accounts") {
+    bus = dbus::Bus::session();
+    if (!bus || !bus->request_name("org.freedesktop.Accounts")) return 1;
+    bus->export_object(accounts, handle);
+    for (const auto& p : people) bus->export_object(p.path, handle);
+    log("READY");
+    while (true) Fl::wait(.1);
+  }
   {
     // A small album cover next to the log.
     cover = log_path.substr(0, log_path.rfind('/') + 1) + "qa-cover.png";
@@ -459,11 +729,13 @@ int main(int argc, char** argv) {
   bus = dbus::Bus::session();
   if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez") ||
       !bus->request_name("org.freedesktop.NetworkManager") ||
-      !bus->request_name("org.freedesktop.UDisks2") || !bus->request_name("org.freedesktop.Accounts"))
+      !bus->request_name("org.freedesktop.UDisks2") || !bus->request_name("org.freedesktop.Accounts") ||
+      !bus->request_name("org.freedesktop.UPower"))
     return 1;
   for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm,
-                           ud, ud_drive, ud_disk, ud_part, accounts, account_user})
+                           ud, ud_drive, ud_disk, ud_part, accounts, up, up_display})
     bus->export_object(path, handle);
+  for (const auto& p : people) bus->export_object(p.path, handle);
   display = XOpenDisplay(nullptr);
   if (!display) return 1;
   auto root = DefaultRootWindow(display);
