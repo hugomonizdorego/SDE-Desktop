@@ -378,7 +378,7 @@ def menu_checks():
     r=item('SDE Menu','tile:Atlas');g=geom(m)
     run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
     shot('25-menu-tile-menu')
-    run('xdotool','key','Down','Down','Down','Right','Down','Down','Down','Return');time.sleep(.6)
+    into_submenu(3);run('xdotool','key','Down','Down','Down','Return');time.sleep(.6)
     waitfor(lambda:'qa-atlas.desktop:l' in conf(),'tile resize not saved: '+conf())
     # Rename a group by clicking its name.
     press('SDE Menu','group:Work');time.sleep(.3)
@@ -1323,7 +1323,7 @@ def battery_a2_checks():
     shot('a2-battery-menu')
     # Keyboard: down to the submenu, open it, the second entry (Percentage).
     active=[i[0] for i in items if i[1]]
-    run('xdotool','key',*(['Down']*(active.index('Show on the Panel')+1)),'Right');time.sleep(.4);shot('a2-battery-menu-show')
+    into_submenu(active.index('Show on the Panel')+1);shot('a2-battery-menu-show')
     run('xdotool','key','Down','Return');time.sleep(.5)
     waitfor(lambda:'battery_display=percent' in conf(),'Percentage from the battery menu not saved')
     waitfor(lambda:bat('text')=='45%',f'Percentage from the menu not shown: {bat("text")!r}')
@@ -1439,6 +1439,14 @@ def right_click_panel(name,expect):
     x,y=panel_button(name);return right_click_at(x,y,expect)
 def close_menu():run('xdotool','key','Escape');time.sleep(.3)
 def labels(items):return [i[0] for i in items]
+def into_submenu(downs):
+    """Down |downs| times to a submenu's title, then Right into it. The keys
+    go one by one: FLTK opens a submenu window only after the event that
+    selected its title, and a Right that arrives in the same batch finds no
+    submenu yet and is dropped (more often with FLTK 1.4)."""
+    for _ in range(downs):
+        run('xdotool','key','Down');time.sleep(.08)
+    time.sleep(.3);run('xdotool','key','Right');time.sleep(.4)
 def pick(items,label):
     """Chooses |label| in the open menu with the keyboard (FLTK skips
     inactive items)."""
@@ -1564,7 +1572,7 @@ def a52_checks():
     # The panel menu's Search submenu brings it back.
     items=right_click_at(*empty_spot(),'panel')
     active=[i[0] for i in items if i[1]]
-    run('xdotool','key',*(['Down']*(active.index('Search')+1)),'Right');time.sleep(.4);run('xdotool','key','Return');time.sleep(.5)
+    into_submenu(active.index('Search')+1);run('xdotool','key','Return');time.sleep(.5)
     waitfor(lambda:'search=box' in conf(),"the panel menu's Search submenu did not bring the search box back")
     waitfor(lambda:'search=box' in conf() and ('search' in layout('SDE Panel') or (W<1200 and 'search-icon' in layout('SDE Panel'))),'search box did not come back')
     shot('44-search-box')

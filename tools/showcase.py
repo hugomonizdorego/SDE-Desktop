@@ -1571,8 +1571,13 @@ def panel_battery(s):
         active = [k[5:] for k, v in s.right_click_at(*pos).items() if k.startswith('item:') and v[4]]
         if 'Show on the Panel' not in active:
             raise SkipShot('no "Show on the Panel" in the battery menu')
-        # Down to the submenu and open it (its first entry selected).
-        s.key(*(['Down'] * (active.index('Show on the Panel') + 1)), 'Right')
+        # Down to the submenu and open it (its first entry selected), one key
+        # at a time: a Right in the same batch as the Downs finds no submenu.
+        for _ in range(active.index('Show on the Panel') + 1):
+            s.key('Down')
+            time.sleep(0.08)
+        time.sleep(0.3)
+        s.key('Right')
         time.sleep(0.3)
         s.shot('panel-battery-menu', quiet=0.4)
     except SkipShot as e:
