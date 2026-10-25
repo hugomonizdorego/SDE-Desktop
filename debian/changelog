@@ -21,6 +21,9 @@ sde (0.2.0~alpha2) unstable; urgency=medium
     the animated SDE logo, shared with the desktop's file operations.
   * Themes redesigned; SDE Liquid Glass with a compositor shader (new
     SDE Compositor patch, MPL-2.0); antialiased window buttons.
+  * SDE-FLTK 1.4.5-sde1: FLTK 1.4.5 with the SDE patches (style hooks,
+    menus in the work area, file drag and drop, before_map), X11/Xft only,
+    FLTK's own scaling off.
   * Niny settings page scrolls; windows keep their title bar on screen;
     SDE Welcome reads /usr/share/SDE-Welcome and /etc/SDE-Welcome; package
     builds carry the build number and commit (BUILD-INFO).

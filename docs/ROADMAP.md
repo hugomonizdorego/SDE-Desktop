@@ -62,6 +62,7 @@ cairo and Xlib, with a Rust configuration core.
 - [x] Every theme redesigned; SDE Liquid Glass with a compositor shader;
       sharper window buttons at 125–200 % (audit A1-39)
 - [x] SDE Welcome editable by distributions (`/usr/share/SDE-Welcome`)
+- [x] SDE-FLTK on FLTK 1.4.5
 
 ## 0.2 series — usable every day (target: Q1 2027)
 

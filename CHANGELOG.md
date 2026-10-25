@@ -1,4 +1,4 @@
-# 0.2 Alpha 2 · 2026-10-25 — Merkadu, tile groups, user accounts, Liquid Glass
+# 0.2 Alpha 2 · 2026-10-25 — Merkadu, tile groups, user accounts, Liquid Glass, FLTK 1.4
 
 - Merkadu, the new software center: Debian packages (PackageKit), Flatpak
   (Flathub) and Snap in one window, after Ubuntu Software Center; its own
@@ -15,6 +15,8 @@
   big folders, copy progress with speed graph and the animated SDE logo
   (also on the desktop).
 - Themes redesigned; SDE Liquid Glass with a compositor glass shader.
+- SDE-FLTK follows FLTK 1.4.5 (1.4.5-sde1) with every SDE patch; SDE
+  still scales itself, programs look the same.
 - Niny's Settings page scrolls again; title bars stay on the screen;
   SDE Welcome content in /usr/share/SDE-Welcome. See docs/0.2-ALPHA2.md.
 

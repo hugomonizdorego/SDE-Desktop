@@ -25,8 +25,8 @@ Center that fills a maximized window, and 75 % and 175 % sizes; an animated batt
 icon with time estimates; clock options Show seconds and Blink the colon; Liria with a
 plain folder icon, a color ribbon, much faster big folders and a Windows 10-like copy
 dialog with the animated SDE logo; every theme redesigned and a real **SDE Liquid
-Glass**; Niny's Settings page fixed; SDE Welcome editable by distributions in
-`/usr/share/SDE-Welcome` ([screenshots](docs/screenshots/0.2-alpha2/README.md)).
+Glass**; SDE-FLTK on FLTK 1.4.5; Niny's Settings page fixed; SDE Welcome editable by
+distributions in `/usr/share/SDE-Welcome` ([screenshots](docs/screenshots/0.2-alpha2/README.md)).
 
 **0.2 Alpha 1:** [identity, Control Center and a faster Start Menu](docs/0.2-ALPHA1.md) —
 the first release of the 0.2 series: the official SDE logo, a new icon for every SDE
