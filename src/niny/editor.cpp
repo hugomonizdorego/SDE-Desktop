@@ -60,7 +60,7 @@ void EditorView::apply_look() {
   linenumber_size(std::max(7, font_px_ - S(1)));
   linenumber_bgcolor(L.gutter.fl());
   linenumber_fgcolor(L.gutter_text.fl());
-  scrollbar_width(S(12));
+  scrollbar_size(S(12));
   for (Fl_Scrollbar *sb : {mVScrollBar, mHScrollBar}) {
     sb->box(FL_FLAT_BOX);
     sb->slider(FL_FLAT_BOX);
@@ -397,6 +397,13 @@ void EditorView::draw_gutter(Painter &p) {
   if (gw <= 0) return;
   int gy = text_area.y, gh = text_area.h;
   p.fill_rect(gx, y(), gw, h() - (mHScrollBar->visible() ? mHScrollBar->h() : 0), L.gutter);
+  if (mHScrollBar->visible()) {
+    // Below the gutter, in the row of the horizontal scrollbar, the editor's
+    // background as in the rest of that row (FLTK 1.4 runs its own line
+    // number column down to the bottom edge).
+    p.flush();
+    fl_rectf(gx, mHScrollBar->y(), gw, mHScrollBar->h(), color());
+  }
   if (!app_->settings().line_numbers) return;
   p.line(gx + gw - S(8) - 0.5, gy, gx + gw - S(8) - 0.5, gy + gh, L.border.alpha(L.dark ? 0.25 : 0.35), 1);
   p.flush();

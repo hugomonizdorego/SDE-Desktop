@@ -369,7 +369,7 @@ void show_text(Fl_Window *parent, const std::string &title, const std::string &t
   view->selection_color(t.accent.fl());
   view->textfont(FL_COURIER);
   view->textsize(t.font_size);
-  view->scrollbar_width(S(14));
+  view->scrollbar_size(S(14));
   d.end();
   d.resizable(view);
   d.buttons({_("Close")}, 0);
