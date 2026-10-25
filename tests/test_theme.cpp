@@ -6,6 +6,9 @@
 // Alpha51: calm palettes (low-chroma neutrals, muted accents, readable
 // text), soft corner radius tokens that follow the UI scale, Mint-Y like
 // caption colors and the SDE WM caption masks and hit area.
+// 0.2.0 Alpha 2: per-family radii (Fluent after Windows 11, Liquid Glass the
+// softest), Liquid Glass (glass shader of the OpenGL compositor) and the
+// antialiased SDE WM caption pictures.
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -98,11 +101,13 @@ static void test_transparency_contrast() {
             ok = false;
           }
         };
-        need("panel text", translucent_contrast(t.text, t.panel_bg, t.opacity, true), 4.5);
-        need("panel dim", translucent_contrast(t.text_dim, t.panel_bg, t.opacity, true), 3.0);
-        need("menu text", translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, true), 4.5);
-        need("menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, true), 3.0);
-        need("menu hover", translucent_contrast(t.menu_hover_text, t.menu_hover, t.popup_opacity, true), 3.0);
+        // Liquid Glass (auto picks OpenGL on a real GPU) keeps text opaque.
+        bool fade = !t.liquid;
+        need("panel text", translucent_contrast(t.text, t.panel_bg, t.opacity, fade), 4.5);
+        need("panel dim", translucent_contrast(t.text_dim, t.panel_bg, t.opacity, fade), 3.0);
+        need("menu text", translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, fade), 4.5);
+        need("menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, fade), 3.0);
+        need("menu hover", translucent_contrast(t.menu_hover_text, t.menu_hover, t.popup_opacity, fade), 3.0);
         need("frame title", translucent_contrast(t.titlebar_text, t.titlebar_bg, t.frame_opacity, true), 4.5);
         need("gtk menu", translucent_contrast(t.menu_text, t.menu_bg, t.gtk_menu_alpha, false), 4.5);
         need("gtk menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.gtk_menu_alpha, false), 3.0);
@@ -235,9 +240,14 @@ static void test_soft_palettes() {
         need("status", t.error.contrast(t.surface) >= 3 && t.success.contrast(t.surface) >= 3 &&
                            t.warning.contrast(t.surface) >= 3);
         // Soft corners: small for controls, medium for windows and menus,
-        // large for big surfaces; never square.
-        need("radii", t.radius_small >= 5 && t.radius_small < t.radius && t.radius >= 8 && t.radius <= 12 &&
-                          t.radius_large >= 12 && t.radius_large <= 16 && t.radius <= t.radius_large);
+        // large for big surfaces; never square. 0.2.0 Alpha 2: Fluent after
+        // Windows 11 (4 px controls, 8 px windows and flyouts), Liquid Glass
+        // the softest (pill-like controls, 24 px popups).
+        need("radii", t.radius_small >= 4 && t.radius_small < t.radius && t.radius >= 8 && t.radius <= 16 &&
+                          t.radius_large >= 8 && t.radius_large <= 24 && t.radius <= t.radius_large);
+        if (fam.id == "graphite") need("graphite radii", t.radius_small == 6 && t.radius == 10 && t.radius_large == 14);
+        if (fam.id == "fluent") need("fluent radii", t.radius_small == 4 && t.radius == 8 && t.radius_large == 8);
+        if (fam.id == "glass") need("glass radii", t.radius_small == 10 && t.radius == 16 && t.radius_large == 24);
         need("radius_for", t.radius_for(8) == 4 && t.radius_for(40) == t.radius_small);
         // Caption buttons: a clear glyph, a soft but visible disc, a close
         // red that keeps its white cross readable; no traffic lights.
@@ -264,6 +274,60 @@ static void test_soft_palettes() {
   CHECK(cfg.get("appearance", "accent", "") == theme_accent_color("graphite", "blue", false).to_hex());
   ThemeChoice c = map_theme_choice("fluent", "dark", "#2777FF", "");
   CHECK(c.accent == "blue" && c.custom_accent.empty());
+}
+
+// Liquid Glass (0.2.0 Alpha 2): on the OpenGL compositor profile the glass
+// shader draws SDE's surfaces; it tints the blurred backdrop with the surface
+// color by the surface's opacity and keeps text and icons opaque, so text
+// stays readable over any backdrop (WCAG 2.1 like GTK menus).
+static void test_liquid_glass() {
+  CHECK(theme_liquid_material("glass", false).on && theme_liquid_material("glass", true).on);
+  CHECK(!theme_liquid_material("graphite", false).on && !theme_liquid_material("fluent", true).on);
+  for (const char *mode : {"light", "dark"}) {
+    LiquidMaterial m = theme_liquid_material("glass", std::string(mode) == "dark");
+    CHECK(m.blur >= 1 && m.blur <= 12 && m.saturation >= 1 && m.saturation <= 2);
+    CHECK(m.brightness > 0.5 && m.brightness < 1.5 && m.rim > 0 && m.rim <= 1 && m.rim_width > 0);
+    CHECK(m.lens_band > m.lens_shift && m.lens_shift > 0 && m.key_range > 0 && m.key_range < 1);
+    for (const auto &accent : theme_accents())
+      for (int transparency : {25, 50, 100}) {
+        Config cfg;
+        cfg.set("appearance", "style", "glass");
+        cfg.set("appearance", "theme", mode);
+        cfg.set("appearance", "accent_name", accent);
+        cfg.set("appearance", "scale", "100");
+        cfg.set("aero", "enabled", "true");
+        cfg.set("aero", "transparency", std::to_string(transparency));
+        cfg.set("compositor", "effects", "full");
+        cfg.set("compositor", "backend", "glx");
+        Theme t = Theme::from_config(cfg);
+        CHECK(t.liquid);
+        CHECK(translucent_contrast(t.text, t.panel_bg, t.opacity, false) >= 4.5);
+        CHECK(translucent_contrast(t.text_dim, t.panel_bg, t.opacity, false) >= 3.0);
+        CHECK(translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, false) >= 4.5);
+        CHECK(translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, false) >= 3.0);
+        CHECK(translucent_contrast(t.menu_hover_text, t.menu_hover, t.popup_opacity, false) >= 3.0);
+        // The shader fades the window in with its opacity up to 0.5; above
+        // that only the tint changes.
+        CHECK(t.opacity >= 0.5 && t.popup_opacity >= 0.5);
+        // The drawn glass elsewhere: XRender, the lite profile, no blur,
+        // opaque surfaces and the other families.
+        cfg.set("compositor", "backend", "xrender");
+        CHECK(!Theme::from_config(cfg).liquid);
+        cfg.set("compositor", "backend", "glx");
+        cfg.set("compositor", "effects", "lite");
+        CHECK(!Theme::from_config(cfg).liquid);
+        cfg.set("compositor", "effects", "full");
+        cfg.set("aero", "blur", "false");
+        CHECK(!Theme::from_config(cfg).liquid);
+        cfg.set("aero", "blur", "true");
+        cfg.set("aero", "transparency", "0");
+        CHECK(!Theme::from_config(cfg).liquid);
+        cfg.set("aero", "transparency", "50");
+        cfg.set("appearance", "style", "graphite");
+        CHECK(!Theme::from_config(cfg).liquid);
+      }
+  }
+  set_ui_scale(1.0);
 }
 
 // The SDE WM themes built next to the tests (build/themes): Mint-Y like
@@ -294,6 +358,15 @@ static void test_caption_frames() {
     CHECK(read_file(dir + mask + ".xbm", xbm));
     CHECK(xbm.find("_width 14") != std::string::npos && xbm.find("_height 14") != std::string::npos);
   }
+  // 0.2.0 Alpha 2 (SDE WM patch 0004): antialiased 8-bit pictures next to the
+  // masks, and paddings that follow the title font.
+  std::string png;
+  for (const char *picture : {"close", "close_hover", "close_pressed", "iconify", "iconify_hover", "max",
+                              "max_hover", "max_toggled", "max_hover_toggled", "max_pressed_toggled"}) {
+    CHECK(read_file(dir + picture + ".png", png));
+    CHECK(png.size() > 24 && png.compare(0, 8, "\x89PNG\r\n\x1a\n") == 0);
+  }
+  CHECK(atoi(value("padding.width.percent").c_str()) > 0 && atoi(value("padding.height.percent").c_str()) > 0);
 }
 
 static void test_build_history() {
@@ -328,6 +401,7 @@ int main() {
   test_caption_layout();
   test_transparency_contrast();
   test_soft_palettes();
+  test_liquid_glass();
   test_caption_frames();
   test_icon_lookup();
   test_build_history();
