@@ -710,16 +710,25 @@ def start_menu_checks():
     jump('I');waitfor(lambda:'app:Iconless QA' in L(),'application without an icon missing')
     assert not any('Broken' in k for k in L()),'broken .desktop file listed'
     shot('60-menu-odd-entries')
-    # 9) App info and Open file location from an application's menu.
-    jump('A');r=item('SDE Menu','app:Atlas');g=geom(m)
-    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
+    # 9) App info and Open file location from an application's menu, chosen
+    # by name (with Merkadu installed, Uninstall... comes last).
+    def menu_items():return [k[5:] for k,v in layout('SDE Menu-popup').items() if k.startswith('item:') and v[4]]
+    def menu_seq():return next((int(k[5:]) for k in layout('SDE Menu-popup') if k.startswith('@seq:')),0)
+    def atlas_menu():
+        jump('A');r=item('SDE Menu','app:Atlas');g=geom(find('^SDE Menu$'));s0=menu_seq()
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:menu_seq()>s0,'no context menu for Atlas');time.sleep(.4)
+        return menu_items()
+    def pick(items,label):
+        assert label in items,(label,items)
+        run('xdotool','key',*(['Down']*(items.index(label)+1)),'Return');time.sleep(.3)
+    items=atlas_menu()
     shot('61-menu-app-context-menu')
-    run('xdotool','key','Up','Return')  # the last item: App info...
+    pick(items,'App info...')
     find('^App info$');waitfor(lambda:'@app-info:qa-atlas.desktop' in layout('App info'),'App info shows another application')
     time.sleep(.3);shot('61-menu-app-info');run('xdotool','key','Escape');gone('^App info$')
-    m=command(['--menu'],'SDE Menu');time.sleep(.6);jump('A');r=item('SDE Menu','app:Atlas');g=geom(m)
-    run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3');time.sleep(.6)
-    run('xdotool','key','Up','Up','Return');gone('^SDE Menu$')
+    m=command(['--menu'],'SDE Menu');time.sleep(.6)
+    pick(atlas_menu(),'Open file location');gone('^SDE Menu$')
     waitfor(lambda:commands('LIRIA --no-desktop '+str(apps_dir)),'Open file location did not open the folder of the .desktop file')
     # 10) One Power off question, even when Power off is chosen again.
     before=(home/'commands.log').read_text().count('LOGOUT --action poweroff')
