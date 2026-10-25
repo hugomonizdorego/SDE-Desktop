@@ -28,7 +28,13 @@ maximized, tiled by the window manager or dragged at a border.
   page allows, and the page keeps its place or ends at its last card.
 - A page opened at one of its cards (`sde-settings --page proxy`, an
   overview tile, a form of Users & Avatar) shows that card at the top, or
-  the end of the page when the card is near the end, never empty space.
+  the end of the page when the card is near the end, never empty space. It
+  stays there while content arrives later (the network, the list of
+  users), until the page is scrolled.
+- A page built again (new data, a resize) keeps its place: pages start
+  with an invisible mark at their top, because FLTK measures the scroll
+  position from the top of a scroll's children; without it every rebuild
+  moved the page up by its top margin.
 - The window opens in the middle of the work area with room for its title
   bar (`fit_to_work_area()`).
 

@@ -82,6 +82,11 @@ std::string g_restart_page = "appearance";
 // The anchor ("wallpaper", "proxy", "mouse" ...) the next page shown
 // scrolls to (see Page::anchor()), from --page or an overview tile.
 std::string g_open_anchor;
+// The anchor the page shown was opened at, and where that put it: while the
+// page stays there (nobody scrolled), content that arrives later (the
+// network, the list of users) does not push the card away.
+std::string g_kept_anchor;
+int g_kept_scroll = -1;
 // True while refresh_page() rebuilds the visible page (not a new visit).
 bool g_refreshing = false;
 
@@ -2679,6 +2684,18 @@ void qa_dump_window() {
   }
 }
 
+// Shows the card of g_kept_anchor at the top, or the end of the page when
+// it is near the end.
+void scroll_to_anchor() {
+  int offset = g_page ? g_page->anchor_offset(g_kept_anchor) : -1;
+  if (offset < 0) {
+    g_kept_anchor.clear();
+    return;
+  }
+  g_page->scroll_to(0, std::max(0, std::min(offset - S(8), g_page->max_scroll())));
+  g_kept_scroll = g_page->yposition();
+}
+
 void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
   g_page_index = index;
@@ -2694,11 +2711,11 @@ void show_page(int index) {
   g_page = new Page(g_content_x, 0, g_content_w, g_window->h());
   pages()[size_t(index)].build(g_page);
   g_window->end();
+  if (!g_refreshing) g_kept_anchor.clear();
   if (!g_open_anchor.empty()) {
-    // The card at the top, or the end of the page when it is near the end.
-    int offset = g_page->anchor_offset(g_open_anchor);
-    if (offset >= 0) g_page->scroll_to(0, std::max(0, std::min(offset - S(8), g_page->max_scroll())));
+    g_kept_anchor = g_open_anchor;
     g_open_anchor.clear();
+    scroll_to_anchor();
   }
   g_window->redraw();
 }
@@ -2712,11 +2729,15 @@ void refresh_page() {
   if (Fl_Widget *f = Fl::focus())
     if (g_page && g_page->contains(f) && f != g_page)
       focused = f->tooltip() ? f->tooltip() : f->label() ? f->label() : "";
+  // Still where the page was opened at a card: the card again.
+  bool at_anchor = !g_kept_anchor.empty() && scroll == g_kept_scroll;
+  if (!at_anchor) g_kept_anchor.clear();
   g_refreshing = true;
   show_page(g_page_index);
   g_refreshing = false;
+  if (at_anchor) scroll_to_anchor();
   // The same place, or the end when the page got shorter (a wider window).
-  if (g_page && scroll > 0) g_page->scroll_to(0, std::min(scroll, g_page->max_scroll()));
+  else if (g_page && scroll > 0) g_page->scroll_to(0, std::min(scroll, g_page->max_scroll()));
   if (g_page && !focused.empty()) {
     std::function<Fl_Widget *(Fl_Group *)> find = [&](Fl_Group *g) -> Fl_Widget * {
       for (int i = 0; i < g->children(); ++i) {

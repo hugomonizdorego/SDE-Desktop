@@ -77,6 +77,12 @@ Page::Page(int x, int y, int w, int h) : Fl_Scroll(x, y, w, h) {
   scrollbar.slider(FL_FLAT_BOX);
   y_ = y + S(24);
   max_width(S(860));
+  // Fl_Scroll measures its scroll position from the top of its children:
+  // a mark at the very top makes yposition() the offset from the page's
+  // top (the first heading is S(24) lower). Without it a page built again
+  // at yposition() moved up by S(24) each time.
+  auto *top = new Fl_Box(x, y, 1, 1);
+  top->box(FL_NO_BOX);
 }
 
 void Page::max_width(int w) {
