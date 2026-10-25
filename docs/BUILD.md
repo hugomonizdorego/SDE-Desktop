@@ -78,6 +78,11 @@ sudo sh tools/install-deps.sh --preview
 dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
 ```
 
+ui-smoke also manages user accounts on Control Center → Users & Avatar against
+the fake AccountsService of `sde-panel-service-fixture` when it finds the QA
+fixtures (`--test-dir`, by default `dist/test-tools` or `build/tests`), and
+`--scale 75` checks the smallest interface size.
+
 ## CI and releases
 
 `build.yml` checks Rust stable/MSRV and builds, installs and exercises the complete

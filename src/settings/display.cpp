@@ -21,7 +21,8 @@ namespace sde {
 namespace {
 std::vector<Output> current, pending;
 std::string topology, notice;
-int selected = 0, scale = 100, profile_index = 0;
+// The interface size chosen here: 75 to 200 (%), or 0 for Automatic.
+int selected = 0, scale = 0, profile_index = 0;
 bool loaded = false, applying = false;
 void ensure_primary() {
   bool found = false;
@@ -43,8 +44,7 @@ void load_state(bool detect = false) {
   for (const auto& o : current)
     if (o.connected) pending.push_back(o);
   selected = std::min(selected, std::max(0, int(pending.size()) - 1));
-  scale = settings_config().get_int("appearance", "scale", 100);
-  if (scale != 125 && scale != 150 && scale != 175 && scale != 200) scale = 100;
+  scale = configured_display_scale(settings_config());
   ensure_primary();
   loaded = true;
 }
@@ -281,7 +281,7 @@ void apply_layout() {
   Fl::check();
   ConfirmWindow confirm;
   if (confirm.run() && preview.keep()) {
-    settings_config().set("appearance", "scale", std::to_string(scale));
+    settings_config().set("appearance", "scale", scale ? std::to_string(scale) : std::string("auto"));
     save_display_layout(settings_config(), pending);
     apply_change();
     notice = _("Display settings saved. GTK applications may need to be reopened to resize fully.");
@@ -503,17 +503,18 @@ void build_display_page(Page* page) {
   }
   page->end_card();
   page->begin_card(_("Interface scale"));
-  std::vector<int> scales = {100, 125, 150, 175, 200};
+  std::vector<int> scales = {0, 75, 100, 125, 150, 175, 200};
   int chosen = 0;
   for (size_t i = 0; i < scales.size(); ++i)
     if (scales[i] == scale) chosen = int(i);
   page->choice_row(
-      _("Text and interface size"), {"100%", "125%", "150%", "175%", "200%"}, chosen,
+      _("Text and interface size"), {_("Automatic"), "75%", "100%", "125%", "150%", "175%", "200%"}, chosen,
       [scales](int v) {
         if (v >= 0 && v < int(scales.size())) scale = scales[size_t(v)];
       },
       _("Shared across all X11 displays. Pixel resolution stays unchanged. Applies to SDE and GTK "
-        "text; reopen applications if needed."));
+        "text; reopen applications if needed. Automatic follows the screen's DPI; 75% fits more on a "
+        "small screen."));
   page->end_card();
   page->begin_card(_("Display profiles"));
   auto profiles = display_profiles();

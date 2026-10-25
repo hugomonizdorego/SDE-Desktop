@@ -160,12 +160,15 @@ std::vector<std::string> app_icons(const MimeApp *a) {
 class AppChoice : public Fl_Choice {
  public:
   AppChoice(int x, int y, int w, int h) : Fl_Choice(x, y, w, h) { style_choice(this); }
+  ~AppChoice() override { restore_labels(); }
 
   void set_apps(const std::vector<const MimeApp *> &apps, const std::string &current,
                 const std::string &none_label) {
     apps_ = apps;
+    restore_labels();
     clear();
     labels_.clear();
+    texts_.clear();
     if (apps_.empty()) {
       add(menu_escape(none_label).c_str());
       value(0);
@@ -180,10 +183,12 @@ class AppChoice : public Fl_Choice {
     }
     // Icons in the menu (Fl_Multi_Label: image, then text).
     labels_.resize(apps_.size());
+    texts_.resize(apps_.size(), nullptr);
     for (size_t i = 0; i < apps_.size(); ++i) {
       Fl_RGB_Image *img = menu_icon(app_icons(apps_[i]), S(18));
       if (!img) continue;
       Fl_Menu_Item *item = const_cast<Fl_Menu_Item *>(&menu()[i]);
+      texts_[i] = item->text;  // the menu's own copy, freed by Fl_Menu_::clear()
       Fl_Multi_Label &ml = labels_[i];
       ml.labela = reinterpret_cast<const char *>(img);
       ml.typea = _FL_IMAGE_LABEL;
@@ -242,8 +247,26 @@ class AppChoice : public Fl_Choice {
   }
 
  private:
+  // Fl_Menu_::clear() (also from the destructor) frees the text of every
+  // item, including items whose label became an Fl_Multi_Label of
+  // |labels_|: they get their own text back first. Without this, building
+  // the page again (a resize of the window) freed a pointer into |labels_|.
+  void restore_labels() {
+    const Fl_Menu_Item *m = menu();
+    if (!m) return;
+    for (int i = 0; i < size(); ++i) {
+      auto *item = const_cast<Fl_Menu_Item *>(&m[i]);
+      if (item->labeltype_ != _FL_MULTI_LABEL) continue;
+      for (size_t k = 0; k < labels_.size(); ++k)
+        if (item->text == reinterpret_cast<const char *>(&labels_[k]) && texts_[k]) {
+          item->label(FL_NORMAL_LABEL, texts_[k]);
+          break;
+        }
+    }
+  }
   std::vector<const MimeApp *> apps_;
   std::vector<Fl_Multi_Label> labels_;
+  std::vector<const char *> texts_;  // the item texts the labels replaced
   std::vector<std::string> text_;
   std::string extra_id_;
 };

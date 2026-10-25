@@ -236,7 +236,8 @@ void Painter::line(double x1, double y1, double x2, double y2, const Color &c, d
   cairo_stroke(cr_);
 }
 
-void text_font(int size, bool bold) { fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, size); }
+// Nothing smaller than 9 pixels: "font_size - 2" at 75 % would be 8.
+void text_font(int size, bool bold) { fl_font(bold ? FL_HELVETICA_BOLD : FL_HELVETICA, std::max(9, size)); }
 
 int text_width(const std::string &s) { return int(std::ceil(fl_width(s.c_str()))); }
 
