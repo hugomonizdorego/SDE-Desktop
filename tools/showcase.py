@@ -2161,6 +2161,25 @@ def avatar_picker(s):
     s.shot('avatar-picker', quiet=0.6)
 
 
+def reveal_control(s, title, name, tries=40):
+    """Wheels the page of a Control Center window until control |name| is
+    fully in view (a small screen at a large interface size)."""
+    win = s.find('^' + re.escape(title) + '$', 3)
+    if not win:
+        raise SkipShot(f'no {title} window')
+    g = s.geom(win)
+    for _ in range(tries):
+        r = s.layout(title).get(name)
+        if r and r[4]:
+            return r
+        down = not r or r[1] > g['h'] // 2
+        steps = 1 if not r else max(1, min(12, abs(r[1] - g['h'] // 2) // 60))
+        s.xdo('mousemove', str(g['x'] + g['w'] - 40), str(g['y'] + g['h'] // 2),
+              'click', '--repeat', str(steps), '--delay', '15', '5' if down else '4')
+        time.sleep(0.2)
+    raise SkipShot(f'{title}: cannot scroll to {name!r}')
+
+
 @scene('Accounts', [('user-accounts', 'Control Center, Users & Avatar: the users of this computer, their type '
                                       'and state'),
                     ('user-add', 'Control Center, Users & Avatar: adding a user (the user name follows the full '
@@ -2174,14 +2193,14 @@ def user_accounts(s):
         raise SkipShot('no AccountsService (the service fixture) in this session')
     s.shot('user-accounts', quiet=0.6)
     try:
+        reveal_control(s, 'Control Center', 'Add User...')
         s.press('Control Center', 'Add User...')
-        s.control('Control Center', "New user's full name", 3, active=True)
-        s.press('Control Center', "New user's full name")
-        s.type('Jordan Lee')
-        s.press('Control Center', "New user's password")
-        s.type('a long sunny walk')
-        s.press('Control Center', "Confirm the new user's password")
-        s.type('a long sunny walk')
+        s.control('Control Center', "New user's full name", 3)
+        for name, text in (("New user's full name", 'Jordan Lee'), ("New user's password", 'a long sunny walk'),
+                           ("Confirm the new user's password", 'a long sunny walk')):
+            reveal_control(s, 'Control Center', name)
+            s.press('Control Center', name)
+            s.type(text)
         s.park_pointer()
         s.shot('user-add', quiet=0.6)
     except SkipShot as e:
