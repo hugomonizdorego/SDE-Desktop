@@ -215,11 +215,12 @@ void Fl_Xlib_Graphics_Driver::focus_rect(int x, int y, int w, int h) {
   y = this->floor(y) + floor(offset_y_);
   if (!clip_rect(x, y, w, h)) {
     int lw_save = line_width_;       // preserve current line_width
-    if (line_width_ == 0)
-      line_style(FL_DOT, 1);
-    else
-      line_style(FL_DOT);
-    XDrawRectangle(fl_display, fl_window, gc_, x, y, w, h);
+    // SDE-FLTK: the focus box of FLTK 1.3, a thin dotted line around w x h
+    // pixels as fl_rect() draws them (FLTK 1.4 draws a 1 pixel wide line,
+    // whose dots fall elsewhere, around one more pixel; SDE has no GUI
+    // scaling that would need the wider line).
+    line_style(FL_DOT);
+    XDrawRectangle(fl_display, fl_window, gc_, x, y, w > 0 ? w - 1 : 0, h > 0 ? h - 1 : 0);
     if (lw_save == 0)
       line_style(FL_SOLID, 0);       // restore line type and width
     else
