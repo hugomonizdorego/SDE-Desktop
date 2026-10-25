@@ -6,6 +6,7 @@
 // nvidia-detect / isenkram / dpkg parsers, APT sources rewriting, crash log
 // parsing and grouping, the GitHub issue URL and the Welcome model.
 // Usage: sde-sysreport-tests <tests/fixtures/sysreport>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -17,6 +18,7 @@
 #include "drivers.h"
 #include "gpu.h"
 #include "model.h"
+#include "process.h"
 #include "reports.h"
 #include "util.h"
 
@@ -288,6 +290,126 @@ static void test_welcome() {
   CHECK(welcome::should_autostart(false, true, true));
 }
 
+// 0.2 Alpha 2: the window's texts, icons and commands come from
+// /usr/share/SDE-Welcome, overridden by /etc/SDE-Welcome.
+static void put(const std::string &path, const std::string &text) {
+  make_dirs(path.substr(0, path.rfind('/')));
+  CHECK(write_file_atomic(path, text));
+}
+
+static std::string joined(const std::vector<std::string> &v) {
+  std::string out;
+  for (auto &s : v) out += (out.empty() ? "" : "|") + s;
+  return out;
+}
+
+static void test_welcome_content(const std::string &shipped) {
+  setenv("LANG", "id_ID.UTF-8", 1);  // before the first localized() call
+  welcome::KeyFile kf;
+  kf.parse("# comment\n[Welcome]\nTitle=Hello\nTitle[id]=Halo\nTitle[de]=Hallo\nSubtitle=a\\sb\n"
+           "[Other]\nTitle=x\n");
+  CHECK_EQ(kf.localized("Welcome", "Title"), "Halo");
+  CHECK_EQ(kf.get("Welcome", "Subtitle"), "a b");
+  CHECK_EQ(kf.get("Other", "Title"), "x");
+  CHECK(!kf.has("Welcome", "Logo"));
+  welcome::KeyFile over;
+  over.parse("[Welcome]\nSubtitle=changed\nLogo=icons/x.svg\n");
+  kf.merge(over);
+  CHECK_EQ(kf.get("Welcome", "Subtitle"), "changed");
+  CHECK_EQ(kf.get("Welcome", "Title"), "Hello");
+  CHECK_EQ(kf.get("Welcome", "Logo"), "icons/x.svg");
+
+  char tmpl[] = "/tmp/sde-welcome-XXXXXX";
+  std::string root = mkdtemp(tmpl) ? tmpl : "/tmp/sde-welcome";
+  std::string etc = root + "/etc", usr = root + "/usr", bin = root + "/bin";
+  for (const char *prog : {"tool-a", "tool-b", "tool-c"}) put(bin + "/" + prog, "#!/bin/sh\n");
+  for (const char *prog : {"tool-a", "tool-b", "tool-c"}) chmod((bin + "/" + prog).c_str(), 0755);
+  std::string old_path = env("PATH");
+  setenv("PATH", bin.c_str(), 1);
+  setenv("SDE_WELCOME_DIRS", (etc + ":" + usr).c_str(), 1);
+
+  // Without welcome.conf: the built-in texts.
+  welcome::Content c = welcome::load_content("Debian GNU/Linux");
+  CHECK_EQ(c.title, "Welcome to Debian GNU/Linux");
+  CHECK_EQ(std::to_string(c.columns), "2");
+  put(usr + "/welcome.conf", "[Welcome]\nTitle=Welcome to %OS%!\nSubtitle=Packaged\nWidth=800\nColumns=9\n"
+                             "Logo=icons/logo.svg\n");
+  put(etc + "/welcome.conf", "[Welcome]\nSubtitle=Ours\nSubtitle[id]=Milik kami\nShowDesktopLine=false\n");
+  put(etc + "/icons/logo.svg", "<svg/>");
+  c = welcome::load_content("DebION");
+  CHECK_EQ(c.title, "Welcome to DebION!");
+  CHECK_EQ(c.subtitle, "Milik kami");  // /etc wins, in the user's language
+  CHECK_EQ(std::to_string(c.width), "800");
+  CHECK_EQ(std::to_string(c.columns), "4");  // clamped
+  CHECK(!c.desktop_line);
+  CHECK_EQ(c.logo, etc + "/icons/logo.svg");
+  CHECK_EQ(welcome::load_content("").title, "Welcome");  // no NAME in os-release
+
+  // Steps: file name order; /etc replaces a file or hides it; programs that
+  // are missing hand over to their fallback; NoDisplay files show only so.
+  put(usr + "/steps/10-a.desktop", "[Desktop Entry]\nType=Application\nName=A\nName[id]=A id\nComment=a\n"
+                                    "Icon=icon-a\nX-SDE-Fallback-Icons=icon-b;icons/c.png\nExec=tool-a --page \"x y\" %U\n");
+  put(usr + "/steps/20-missing.desktop", "[Desktop Entry]\nType=Application\nName=Missing\nExec=no-such-tool\n"
+                                          "X-SDE-Welcome-Fallback=21-also-missing.desktop\n");
+  put(usr + "/steps/21-also-missing.desktop", "[Desktop Entry]\nName=Also\nExec=tool-x\nNoDisplay=true\n"
+                                               "X-SDE-Welcome-Fallback=22-there.desktop\n");
+  put(usr + "/steps/22-there.desktop", "[Desktop Entry]\nName=There\nExec=tool-b\nNoDisplay=true\n");
+  put(usr + "/steps/30-link.desktop", "[Desktop Entry]\nType=Link\nName=Link\nURL=https://example.org/\n");
+  put(usr + "/steps/40-hidden-by-etc.desktop", "[Desktop Entry]\nName=Hidden\nExec=tool-a\n");
+  put(usr + "/steps/50-replaced.desktop", "[Desktop Entry]\nName=Old\nExec=tool-a\n");
+  put(usr + "/steps/60-try.desktop", "[Desktop Entry]\nName=Try\nExec=tool-a\nTryExec=no-such-tool\n");
+  put(usr + "/steps/70-loop.desktop", "[Desktop Entry]\nName=Loop\nExec=nothing\n"
+                                       "X-SDE-Welcome-Fallback=70-loop.desktop\n");
+  put(usr + "/steps/80-script.desktop", "[Desktop Entry]\nName=Script\nExec=scripts/run.sh\n");
+  put(usr + "/scripts/run.sh", "#!/bin/sh\n");
+  chmod((usr + "/scripts/run.sh").c_str(), 0755);
+  put(usr + "/steps/notes.txt", "not a step");
+  put(etc + "/steps/40-hidden-by-etc.desktop", "[Desktop Entry]\nName=Hidden\nHidden=true\n");
+  put(etc + "/steps/50-replaced.desktop", "[Desktop Entry]\nName=New\nExec=tool-c\n");
+  put(etc + "/steps/90-added.desktop", "[Desktop Entry]\nName=Added\nExec=tool-a\n");
+  auto steps = welcome::load_steps();
+  std::string names;
+  for (auto &st : steps) names += st.name + ",";
+  CHECK_EQ(names, "A id,There,Link,New,Script,Added,");
+  if (steps.size() == 6) {
+    CHECK_EQ(joined(steps[0].argv), "tool-a|--page|x y");
+    CHECK_EQ(joined(steps[0].icons), "icon-a|icon-b|icons/c.png");  // no such file: kept as given
+    CHECK_EQ(steps[1].file, "22-there.desktop");
+    CHECK_EQ(steps[2].url, "https://example.org/");
+    CHECK(steps[2].argv.empty());
+    CHECK_EQ(steps[3].argv[0], "tool-c");
+    CHECK_EQ(steps[4].argv[0], usr + "/scripts/run.sh");
+  }
+
+  // The files SDE ships: every tile shows when its program is installed.
+  if (!shipped.empty()) {
+    setenv("SDE_WELCOME_DIRS", shipped.c_str(), 1);
+    for (const char *prog : {"sde-settings", "sde-update", "sde-drivers", "sde-system-reports"}) {
+      put(bin + "/" + prog, "#!/bin/sh\n");
+      chmod((bin + "/" + prog).c_str(), 0755);
+    }
+    names.clear();
+    for (auto &st : welcome::load_steps()) names += st.file + ",";
+    CHECK_EQ(names, "10-appearance.desktop,30-updates.desktop,40-drivers.desktop,52-system-reports.desktop,"
+                    "60-control-center.desktop,70-help.desktop,80-donate.desktop,");
+    for (const char *prog : {"merkadu", "timeshift-gtk"}) {
+      put(bin + "/" + prog, "#!/bin/sh\n");
+      chmod((bin + "/" + prog).c_str(), 0755);
+    }
+    names.clear();
+    for (auto &st : welcome::load_steps()) names += st.file + ",";
+    CHECK_EQ(names, "10-appearance.desktop,20-software.desktop,30-updates.desktop,40-drivers.desktop,"
+                    "51-snapshots-gtk.desktop,60-control-center.desktop,70-help.desktop,80-donate.desktop,");
+    c = welcome::load_content("Debian GNU/Linux");
+    CHECK_EQ(c.title, "Welcome to Debian GNU/Linux");
+    CHECK_EQ(c.subtitle, "A few first steps to make this computer yours.");
+    CHECK(c.desktop_line);
+  }
+  unsetenv("SDE_WELCOME_DIRS");
+  setenv("PATH", old_path.c_str(), 1);
+  run_sync({"/bin/rm", "-rf", root});
+}
+
 static welcome::LiveProbe live_probe(const std::string &name) {
   welcome::LiveProbe p;
   p.cmdline = fixture("live/" + name + ".cmdline");
@@ -544,7 +666,7 @@ static void test_driver_choices() {
 
 int main(int argc, char **argv) {
   if (argc < 2) {
-    fprintf(stderr, "usage: sde-sysreport-tests FIXTURE_DIR\n");
+    fprintf(stderr, "usage: sde-sysreport-tests FIXTURE_DIR [WELCOME_DATA_DIR]\n");
     return 2;
   }
   g_dir = argv[1];
@@ -554,6 +676,7 @@ int main(int argc, char **argv) {
   test_sources();
   test_reports();
   test_welcome();
+  test_welcome_content(argc > 2 ? argv[2] : "");
   test_live_session();
   test_driver_choices();
   if (g_failures) fprintf(stderr, "%d check(s) failed\n", g_failures);

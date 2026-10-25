@@ -30,16 +30,18 @@ const int kAccentChoiceCount = int(sizeof(kAccentChoices) / sizeof(kAccentChoice
 static double g_scale = 1.0;
 
 double ui_scale() { return g_scale; }
-void set_ui_scale(double scale) { g_scale = std::fmin(2.0, std::fmax(1.0, scale)); }
+// 75 % (more on a small screen) to 200 %.
+void set_ui_scale(double scale) { g_scale = std::fmin(2.0, std::fmax(0.75, scale)); }
 
 // "auto" follows Xft.dpi (set by most display managers and xrandr --dpi),
-// rounded to the nearest quarter.
+// rounded to the nearest quarter; it never goes below 100 % (75 % is only
+// ever chosen).
 static double auto_scale() {
   if (!fl_display) return 1.0;
   const char *dpi = XGetDefault(fl_display, "Xft", "dpi");
   double d = dpi ? atof(dpi) : 0;
   if (d < 72) return 1.0;
-  return std::round(d / 96.0 * 4) / 4;
+  return std::fmax(1.0, std::round(d / 96.0 * 4) / 4);
 }
 
 Color Color::hex(uint32_t rgb, double alpha) {
@@ -413,11 +415,12 @@ Theme Theme::from_config(const Config &cfg) {
   const palettes::Family &f = family_info(c.family);
   fill_palette(t, f, custom);
   t.font = cfg.get("appearance", "font", "Sans");
-  // Config uses points; at 96 DPI one point is 4/3 pixel.
+  // Config uses points; at 96 DPI one point is 4/3 pixel. Text stays
+  // readable at 75 %: never under 9 pixels.
   int pt = cfg.get_int("appearance", "font_size", 10);
   if (pt < 7) pt = 7;
   if (pt > 20) pt = 20;
-  t.font_size = S(pt * 4.0 / 3.0);
+  t.font_size = std::max(9, S(pt * 4.0 / 3.0));
   int h = cfg.get_int("panel", "height", 40);
   t.panel_size = (h == 32 || h == 48) ? h : 40;
   t.panel_height = S(t.panel_size);

@@ -4,13 +4,21 @@
 
   tools/build-info.py --header generated/build_info.h --history build-history.json
 
-build_info.h defines SDE_BUILD_COMMIT (short git commit, "" outside a git
-checkout), SDE_BUILD_NUMBER (commits on the branch, "" when unknown) and
-SDE_BUILD_DATE (YYYY-MM-DD: SOURCE_DATE_EPOCH for reproducible package
-builds, otherwise the date of the commit, otherwise today). The environment
-variables SDE_BUILD_COMMIT, SDE_BUILD_NUMBER and SDE_BUILD_DATE override
-them (debian/rules, CI). Files are only rewritten when they change, so a
-build without a new commit recompiles nothing.
+build_info.h defines SDE_BUILD_COMMIT (short git commit, "" when unknown),
+SDE_BUILD_NUMBER (commits on the branch, "" when unknown) and SDE_BUILD_DATE
+(YYYY-MM-DD: SOURCE_DATE_EPOCH for reproducible package builds, otherwise
+the date of the commit, otherwise today). The environment variables
+SDE_BUILD_COMMIT, SDE_BUILD_NUMBER and SDE_BUILD_DATE override them.
+Files are only rewritten when they change, so a build without a new commit
+recompiles nothing.
+
+Package builds have no .git: tools/build-deb.sh first writes the values of
+the checkout into BUILD-INFO at the top of the copy it builds
+
+  tools/build-info.py --stamp COPY/BUILD-INFO
+
+and that file then wins over git (0.2 Alpha 2: the About page of the
+packages said "Build: Unknown" and "Commit: Unknown").
 
 build-history.json is the compact development log shown under "What's new
 in each build": the newest entries of CHANGELOG.md, each with its title,
@@ -34,15 +42,33 @@ def git(*args):
         return ''
 
 
+def stamp_values(path=ROOT / 'BUILD-INFO'):
+    """key=value lines of a BUILD-INFO file ({} when there is none)."""
+    out = {}
+    try:
+        for line in path.read_text().splitlines():
+            key, sep, value = line.partition('=')
+            if sep and not key.startswith('#'):
+                out[key.strip()] = value.strip()
+    except OSError:
+        pass
+    return out
+
+
 def build_values():
-    commit = os.environ.get('SDE_BUILD_COMMIT') or git('rev-parse', '--short', 'HEAD')
-    number = os.environ.get('SDE_BUILD_NUMBER') or git('rev-list', '--count', 'HEAD')
+    stamp = stamp_values()
+
+    def pick(key, *git_args):
+        return os.environ.get('SDE_BUILD_' + key.upper()) or stamp.get(key) or git(*git_args)
+
+    commit = pick('commit', 'rev-parse', '--short', 'HEAD')
+    number = pick('number', 'rev-list', '--count', 'HEAD')
     date = os.environ.get('SDE_BUILD_DATE', '')
     if not date and os.environ.get('SOURCE_DATE_EPOCH', '').isdigit():
         date = datetime.datetime.fromtimestamp(int(os.environ['SOURCE_DATE_EPOCH']),
                                                datetime.timezone.utc).strftime('%Y-%m-%d')
     if not date:
-        date = git('log', '-1', '--format=%cs')
+        date = stamp.get('date') or git('log', '-1', '--format=%cs')
     if not date:
         date = datetime.date.today().isoformat()
     return {'commit': commit, 'number': number, 'date': date}
@@ -108,10 +134,16 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('--header', type=Path)
     p.add_argument('--history', type=Path)
+    p.add_argument('--stamp', type=Path, help='write BUILD-INFO for a copy of the tree without .git')
     p.add_argument('--changelog', type=Path, default=ROOT / 'CHANGELOG.md')
     p.add_argument('--limit', type=int, default=30)
     args = p.parse_args()
     b = build_values()
+    if args.stamp:
+        if git('rev-parse', '--is-shallow-repository') == 'true':
+            b['number'] = ''  # a shallow clone counts only the commits it has
+        write_if_changed(args.stamp, '# Written by tools/build-info.py --stamp: the build of this copy has no .git.\n'
+                         f'commit={b["commit"]}\nnumber={b["number"]}\ndate={git("log", "-1", "--format=%cs")}\n')
     if args.header:
         def q(s):
             return json.dumps(s)

@@ -16,6 +16,7 @@
 #include "buffered_window.h"
 #include "config.h"
 #include "desktop_entry.h"
+#include "status_model.h"
 #include "theme.h"
 #include "tooltip_text.h"
 
@@ -127,6 +128,10 @@ class Panel : public sde::BufferedWindow {
   // |id| for the UI tests like run_menu().
   const struct Fl_Menu_Item *popup_named(const std::string &id, const struct Fl_Menu_Item *items,
                                          int root_x);
+  // 0.2 Alpha 2: the Action Center clock's right-click menu (style,
+  // seconds, blinking colon), at the pointer; "action-center-clock" for the
+  // UI tests.
+  void clock_options_menu();
 
   // Bookkeeping for the pop-up windows.
   void popup_opened(PanelPopup *p);
@@ -190,6 +195,22 @@ class Panel : public sde::BufferedWindow {
   void touchpad_activity();
   bool touchpad_motion_wanted() const;
   bool touchpad_tick_pending_ = false;
+  // 0.2 Alpha 2, the battery icon (docs/PANEL.md): the charging sweep, the
+  // low and critical pulse and the level easing to a new percentage run on
+  // a timer only while something moves; only the icon is repainted.
+  static void battery_tick(void *);
+  void battery_update();
+  bool battery_motion() const;
+  bool battery_running_ = false;
+  BatteryAnimation battery_anim_;
+  // The text after the icon ([panel] battery_display), "" for the icon only.
+  std::string battery_panel_text() const;
+  std::string battery_text_;
+  // Status icon slots: x of each from status_x_, and the end. Each icon
+  // takes S(26), the battery more with its text.
+  std::vector<int> status_pos_;
+  int status_slot_x(int index) const;
+  int status_slot_w(int index) const;
   static std::string status_section(StatusIcon icon);
   // Root x of the center of the visible status icon for |section|.
   bool status_anchor(const std::string &section, int &center_x) const;
@@ -222,6 +243,7 @@ class Panel : public sde::BufferedWindow {
   void task_menu(int index);
   void status_menu(int index);
   void clock_menu();
+  void clock_items(sde::ContextMenu &m);
   void notifications_menu(bool action_center);
   void notifications_items(sde::ContextMenu &m);
   void power_items(sde::ContextMenu &m);

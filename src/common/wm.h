@@ -34,4 +34,13 @@ std::vector<std::string> window_manager_command(const std::string &configured);
 // Asks a running Openbox to reload its configuration.
 void reconfigure_window_manager();
 
+// Fits a new window of up to |w| x |h| into the work area of the screen
+// under the pointer, frame included, and sets |x|,|y| to centre it there.
+// FLTK asks for StaticGravity: the window manager keeps the client where it
+// was asked to be and puts the title bar above it, so a window centred
+// without room for the title bar had it cut off at the top of the screen
+// (1920x1080 at 150 %, alpha 2). The frame size is estimated from SDE WM's
+// theme at the current scale, because the window is not mapped yet.
+void fit_to_work_area(int &x, int &y, int &w, int &h);
+
 }  // namespace sde

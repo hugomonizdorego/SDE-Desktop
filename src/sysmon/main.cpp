@@ -23,6 +23,7 @@
 #include "ui.h"
 #include "widgets.h"
 #include "x11.h"
+#include "wm.h"
 
 #ifndef SDE_SYSMON_VERSION
 #define SDE_SYSMON_VERSION "1.0.0"
@@ -365,11 +366,10 @@ int main(int argc, char **argv) {
   theme.apply_to_fltk();
   Fl::add_handler(config_events);
   Fl::lock();  // enables Fl::awake() from the sampler thread
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int w = std::min(S(1180), sw - S(24)), h = std::min(S(760), sh - S(40));
+  int wx = 0, wy = 0, w = S(1180), h = S(760);
+  sde::fit_to_work_area(wx, wy, w, h);
   auto *window = new MainWindow(w, h, page);
-  window->position(sx + (sw - w) / 2, sy + (sh - h) / 2);
+  window->position(wx, wy);
   window->show(1, argv);
   int rc = Fl::run();
   delete window;

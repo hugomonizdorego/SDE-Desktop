@@ -82,6 +82,11 @@ add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
 add_executable(sde-settings-tests test_settings.cpp)
 target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
 add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)
+# Control Center > Users & Avatar: user names, passwords and their hashes,
+# the administrator rules, AccountsService calls and passwd(1).
+add_executable(sde-accounts-tests test_accounts.cpp)
+target_link_libraries(sde-accounts-tests PRIVATE sde-settings-model)
+add_test(NAME sde-accounts-model COMMAND sde-accounts-tests)
 
 add_executable(sde-xanara-tests test_xanara.cpp)
 target_link_libraries(sde-xanara-tests PRIVATE sde-xanara-core)
@@ -179,7 +184,8 @@ target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.
 add_executable(sde-sysreport-tests test_sysreport.cpp)
 target_link_libraries(sde-sysreport-tests PRIVATE sde-sysreport-core)
-add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport)
+add_test(NAME sde-sysreport-model COMMAND sde-sysreport-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/sysreport
+                                         ${CMAKE_SOURCE_DIR}/data/welcome)
 
 # debion-network-check: interfaces handover, DHCP/DNS/WPAD parsers and the
 # --quick --json verdicts and the verified DNS repair (--fix, --dns-fallback)
@@ -195,6 +201,8 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+# Build number and commit of package builds (BUILD-INFO, tools/build-info.py).
+add_test(NAME sde-build-info COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_build_info.py)
 # Graphite's accent-colored PNG assets move to the SDE accent (tools/build-themes.py).
 add_test(NAME sde-theme-assets COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_assets.py)
 

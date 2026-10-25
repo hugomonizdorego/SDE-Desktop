@@ -15,6 +15,7 @@
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Group.H>
 #include <FL/Fl_File_Chooser.H>
+#include <FL/Fl_Input_.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <sys/stat.h>
@@ -35,6 +36,7 @@
 #include <thread>
 #include <vector>
 
+#include "../panel/clockface.h"
 #include "../panel/timezone.h"
 #include "about.h"
 #include "avatar.h"
@@ -81,6 +83,11 @@ std::string g_restart_page = "appearance";
 // The anchor ("wallpaper", "proxy", "mouse" ...) the next page shown
 // scrolls to (see Page::anchor()), from --page or an overview tile.
 std::string g_open_anchor;
+// The anchor the page shown was opened at, and where that put it: while the
+// page stays there (nobody scrolled), content that arrives later (the
+// network, the list of users) does not push the card away.
+std::string g_kept_anchor;
+int g_kept_scroll = -1;
 // True while refresh_page() rebuilds the visible page (not a new visit).
 bool g_refreshing = false;
 
@@ -1198,17 +1205,20 @@ void build_appearance(Page *page) {
   page->end_card();
 
   page->begin_card(_("Size and text"));
-  std::string sc = g_cfg.get("appearance", "scale", "auto");
-  std::vector<std::string> scales = {_("Automatic"), "100 %", "125 %", "150 %", "175 %", "200 %"};
-  int sc_i = sc == "auto" ? 0 : std::max(0, std::min(5, (atoi(sc.c_str()) - 100) / 25 + 1));
+  // 75 % to 200 % in quarters; another number shows as the nearest.
+  static const char *scale_values[] = {"auto", "75", "100", "125", "150", "175", "200"};
+  std::string sc = lower(trim(g_cfg.get("appearance", "scale", "auto")));
+  std::vector<std::string> scales = {_("Automatic"), "75 %", "100 %", "125 %", "150 %", "175 %", "200 %"};
+  int pct = g_cfg.get_int("appearance", "scale", 100);
+  int sc_i = sc == "auto" || sc.empty() ? 0 : std::max(1, std::min(6, (pct - 50 + 12) / 25));
   page->choice_row(
       _("Interface size"), scales, sc_i,
       [](int v) {
-        static const char *vals[] = {"auto", "100", "125", "150", "175", "200"};
-        if (v >= 0 && v < 6) g_cfg.set("appearance", "scale", vals[v]);
+        if (v >= 0 && v < 7) g_cfg.set("appearance", "scale", scale_values[v]);
         apply_change();
       },
-      _("Larger sizes help on high-resolution screens. Automatic follows the screen's DPI."));
+      _("Larger sizes help on high-resolution screens, 75 % fits more on a small one. Automatic "
+        "follows the screen's DPI."));
   int pt = g_cfg.get_int("appearance", "font_size", 10);
   std::vector<std::string> sizes;
   for (int s = 8; s <= 14; ++s) sizes.push_back(format(_("%d pt"), s));
@@ -1466,17 +1476,26 @@ void build_action_center(Page *page) {
   {
     // alpha52: one [clock] style for the panel and the Action Center; more
     // on the Clock & Weather page.
-    std::string style = g_cfg.get("action_center", "clock_style", "");
-    if (trim(style).empty()) style = g_cfg.get("clock", "style", "digital");
-    style = lower(trim(style));
-    page->choice_row(_("Clock style"), {_("Digital"), _("Blink"), _("LED"), _("Analog")},
-                     style == "blink" ? 1 : style == "led" ? 2 : style == "analog" ? 3 : 0,
+    // 0.2 Alpha 2: seconds and the blinking colon are options of their own.
+    clockface::Settings clock = clockface::Settings::from_config(g_cfg);
+    page->choice_row(_("Clock style"), {_("Digital"), _("LED"), _("Analog")},
+                     clock.style == clockface::Style::Led      ? 1
+                     : clock.style == clockface::Style::Analog ? 2
+                                                               : 0,
                      [](int v) {
-                       static const char *values[] = {"digital", "blink", "led", "analog"};
-                       g_cfg.set("action_center", "clock_style", values[v < 0 || v > 3 ? 0 : v]);
+                       static const char *values[] = {"digital", "led", "analog"};
+                       g_cfg.set("action_center", "clock_style", values[v < 0 || v > 2 ? 0 : v]);
                        g_cfg.unset("clock", "style");
                        apply_change();
                      });
+    page->switch_row(_("Show seconds"), clock.seconds, [](bool on) {
+      g_cfg.unset("clock", "seconds");
+      set_bool("panel", "clock_seconds", on);
+    });
+    page->switch_row(_("Blink the colon"), clock.blink, [](bool on) {
+      g_cfg.unset("clock", "blink");
+      set_bool("panel", "clock_blink", on);
+    }, _("Digital and LED clocks."));
   }
   page->switch_row(_("Show a greeting"), g_cfg.get_bool("action_center", "show_greeting", true),
                    [](bool on) { set_bool("action_center", "show_greeting", on); });
@@ -2374,7 +2393,9 @@ const std::vector<PageInfo> &pages() {
 // --------------------------------------------------------------- window
 
 class Sidebar;
+class SidebarFrame;
 Sidebar *g_sidebar = nullptr;
+SidebarFrame *g_sidebar_frame = nullptr;
 std::vector<std::string> g_qa_lines;  // extra QA lines of the page being shown
 void qa_dump_window();
 Fl_Scroll *g_sidebar_scroll = nullptr;
@@ -2384,27 +2405,68 @@ int g_content_x = 0, g_content_w = 0;
 
 void show_page(int index);
 
+// The sidebar of a window |w| pixels wide.
+int sidebar_width(int w) { return w < S(760) ? S(176) : S(220); }
+
+// The sidebar's frame, always in view: the logo and "Control Center" above
+// the list of pages and "Saved automatically" below it (when the window is
+// tall enough). Only the list scrolls between them, so a short window or a
+// large interface size never scrolls the header away.
+class SidebarFrame : public Fl_Widget {
+ public:
+  SidebarFrame(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  static int header_h() { return S(72); }
+  static int footer_h(int window_h) { return window_h >= S(560) ? S(40) : 0; }
+  void draw() override {
+    // The list's width: the frame also covers the list's scroll bar.
+    int lw = w() - S(10);
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rect(x(), y(), w(), h(), g_theme.surface);
+      p.line(x() + lw - 0.5, y(), x() + lw - 0.5, y() + h(), g_theme.border);
+      p.image(IconLoader::get({"sde-control-center", "sde-logo", "start-here"}, S(36)), x() + S(20),
+              y() + S(20), S(36));
+    }
+    // "Control Center", on two lines when the sidebar is narrow.
+    std::string title = _("Control Center");
+    int tw = lw - S(70);
+    text_font(g_theme.font_size + 2, true);
+    if (text_width(title) > tw) text_font(g_theme.font_size + 1, true);
+    size_t space = title.rfind(' ');
+    if (text_width(title) > tw && space != std::string::npos) {
+      draw_text(title.substr(0, space), x() + S(64), y() + S(19), tw, S(20), g_theme.text);
+      draw_text(title.substr(space + 1), x() + S(64), y() + S(37), tw, S(20), g_theme.text);
+    } else {
+      draw_text(title, x() + S(64), y() + S(22), tw, S(32), g_theme.text);
+    }
+    if (int fh = footer_h(h())) {
+      text_font(g_theme.font_size - 1);
+      draw_text(_("Saved automatically"), x() + S(20), y() + h() - fh + S(6), lw - S(30), S(20),
+                g_theme.text_dim);
+    }
+  }
+};
+
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  // Rows keep a comfortable height; the sidebar scrolls when the window is
+  // Rows keep a comfortable height; the list scrolls when the window is
   // too short for all of them.
   int row_h() const { return S(32); }
   // A caption before each group of pages (a small gap for an untitled one).
   int row_y(int i) const {
-    int top = y() + S(80);
+    int top = y() + S(8);
     for (int k = 0; k <= i && k < int(pages().size()); ++k)
       if (const char *section = pages()[size_t(k)].section) top += *section ? S(26) : S(10);
     return top + i * row_h();
   }
-  // The height that shows every row and the footer.
-  int content_h() const { return row_y(int(pages().size())) - y() + S(48); }
+  // The height that shows every row.
+  int content_h() const { return row_y(int(pages().size())) - y() + S(8); }
   void draw() override {
     {
       Painter p(window()->w(), window()->h());
       p.fill_rect(x(), y(), w(), h(), g_theme.surface);
       p.line(x() + w() - 0.5, y(), x() + w() - 0.5, y() + h(), g_theme.border);
-      p.image(IconLoader::get({"sde-control-center", "sde-logo", "start-here"}, S(36)), x() + S(20), y() + S(20), S(36));
       for (size_t i = 0; i < pages().size(); ++i) {
         int ry = row_y(int(i));
         if (int(i) == g_page_index) {
@@ -2421,20 +2483,6 @@ class Sidebar : public Fl_Widget {
                        g_theme.accent_text);
       }
     }
-    {
-      // "Control Center", on two lines when the sidebar is narrow.
-      std::string title = _("Control Center");
-      int tw = w() - S(70);
-      text_font(g_theme.font_size + 2, true);
-      if (text_width(title) > tw) text_font(g_theme.font_size + 1, true);
-      size_t space = title.rfind(' ');
-      if (text_width(title) > tw && space != std::string::npos) {
-        draw_text(title.substr(0, space), x() + S(64), y() + S(19), tw, S(20), g_theme.text);
-        draw_text(title.substr(space + 1), x() + S(64), y() + S(37), tw, S(20), g_theme.text);
-      } else {
-        draw_text(title, x() + S(64), y() + S(22), tw, S(32), g_theme.text);
-      }
-    }
     text_font(g_theme.font_size - 2, true);
     for (size_t i = 0; i < pages().size(); ++i)
       if (const char *section = pages()[i].section)
@@ -2448,12 +2496,6 @@ class Sidebar : public Fl_Widget {
         text_font(std::max(S(9), g_theme.font_size - S(2)), cur);
       draw_text(_(pages()[i].title), x() + S(56), row_y(int(i)), w() - S(66), row_h() - S(4),
                 cur ? g_theme.accent_text : g_theme.text);
-    }
-    // The version line only when it does not collide with the page list.
-    if (row_y(int(pages().size())) + S(8) < y() + h() - S(36)) {
-      text_font(g_theme.font_size - 1);
-      draw_text(_("Saved automatically"), x() + S(20), y() + h() - S(36), w() - S(30), S(20),
-                g_theme.text_dim);
     }
   }
   int index_at(int ey) const {
@@ -2505,9 +2547,19 @@ class Sidebar : public Fl_Widget {
   int hover_ = -1;
 };
 
+void layout_window();
+
+// The window does not let FLTK stretch its children (resizable(nullptr)):
+// every size change goes through layout_window(), which gives the sidebar
+// and the page the whole window (maximized, tiled or dragged).
 class SettingsWindow : public BufferedWindow {
  public:
   SettingsWindow(int w, int h) : BufferedWindow(w, h, _("Control Center")) {}
+  void resize(int x, int y, int w, int h) override {
+    bool sized = w != this->w() || h != this->h();
+    BufferedWindow::resize(x, y, w, h);
+    if (sized) layout_window();
+  }
   void draw() override {
     {
       Painter p(w(), h());
@@ -2517,6 +2569,83 @@ class SettingsWindow : public BufferedWindow {
     qa_dump_window();
   }
 };
+
+// Scrolls the sidebar (as little as needed) so that row |index| is shown,
+// and never past its end: the header and the first rows show whenever the
+// window is tall enough.
+void reveal_sidebar_row(int index) {
+  if (!g_sidebar_scroll || !g_sidebar) return;
+  int view = g_sidebar_scroll->h(), top = g_sidebar->row_y(index) - g_sidebar_scroll->y();
+  int bottom = top + g_sidebar->row_h();
+  int scroll = g_sidebar_scroll->yposition();
+  if (top < 0)
+    scroll += top - S(8);
+  else if (bottom > view)
+    scroll += bottom - view + S(8);
+  scroll = std::max(0, std::min(scroll, g_sidebar->h() - view));
+  if (scroll != g_sidebar_scroll->yposition()) g_sidebar_scroll->scroll_to(0, scroll);
+}
+
+// The controls of |page| in the order they were added (not its scroll bars).
+std::vector<Fl_Widget *> page_controls(Page *page) {
+  std::vector<Fl_Widget *> out;
+  for (int i = 0; i < page->children(); ++i) {
+    Fl_Widget *c = page->child(i);
+    if (c != &page->scrollbar && c != &page->hscrollbar) out.push_back(c);
+  }
+  return out;
+}
+
+// Builds the page again for the window's new size (refresh_page() keeps the
+// focused control). The control at the top of the page stays there: text
+// wraps differently at another width, so the same scroll offset would show
+// another part of the page.
+void relayout_page(void *) {
+  if (!g_page || !g_window) return;
+  int index = -1, delta = 0;
+  if (g_page->yposition() > 0) {
+    auto before = page_controls(g_page);
+    for (size_t i = 0; i < before.size(); ++i)
+      if (before[i]->y() + before[i]->h() > g_page->y()) {
+        index = int(i);
+        delta = before[i]->y() - g_page->y();
+        break;
+      }
+  }
+  refresh_page();
+  auto after = page_controls(g_page);
+  if (index >= 0 && index < int(after.size())) {
+    int top = after[size_t(index)]->y() + g_page->yposition() - g_page->y();
+    g_page->scroll_to(0, std::max(0, std::min(top - delta, g_page->max_scroll())));
+  }
+}
+
+// The sidebar's frame and its list for a window |W| x |H|.
+void layout_sidebar(int W, int H) {
+  int side = sidebar_width(W), top = SidebarFrame::header_h();
+  int list_h = std::max(S(40), H - top - SidebarFrame::footer_h(H));
+  g_sidebar_frame->resize(0, 0, side, H);
+  g_sidebar_scroll->resize(0, top, side, list_h);
+  g_sidebar->size(side - S(10), std::max(list_h, g_sidebar->content_h()));
+}
+
+void layout_window() {
+  if (!g_window || !g_sidebar_scroll || !g_sidebar || !g_sidebar_frame) return;
+  int W = g_window->w(), H = g_window->h(), side = sidebar_width(W);
+  layout_sidebar(W, H);
+  reveal_sidebar_row(g_page_index);
+  g_content_x = side;
+  g_content_w = W - side;
+  if (g_page) {
+    // At once the page covers the window (no band of background below or
+    // beside it); its content follows once the size stops changing, as
+    // the window manager sends many sizes while a border is dragged.
+    g_page->resize(g_content_x, 0, g_content_w, H);
+    Fl::remove_timeout(relayout_page);
+    Fl::add_timeout(0.08, relayout_page);
+  }
+  g_window->redraw();
+}
 
 // UI test hook, as the panel's (src/panel/popup.h): with SDE_PANEL_QA_DIR
 // set, <dir>/Control-Center.txt lists the named controls (tooltip or label)
@@ -2565,20 +2694,24 @@ void qa_dump_window() {
   }
 }
 
+// Shows the card of g_kept_anchor at the top, or the end of the page when
+// it is near the end.
+void scroll_to_anchor() {
+  int offset = g_page ? g_page->anchor_offset(g_kept_anchor) : -1;
+  if (offset < 0) {
+    g_kept_anchor.clear();
+    return;
+  }
+  g_page->scroll_to(0, std::max(0, std::min(offset - S(8), g_page->max_scroll())));
+  g_kept_scroll = g_page->yposition();
+}
+
 void show_page(int index) {
   if (index < 0 || index >= int(pages().size())) return;
   g_page_index = index;
   g_restart_page = pages()[size_t(index)].id;
-  if (g_sidebar_scroll && g_sidebar) {
-    int top = g_sidebar->row_y(index), bottom = top + g_sidebar->row_h();
-    int scroll = g_sidebar_scroll->yposition();
-    if (top < 0)
-      scroll += top - S(8);
-    else if (bottom > g_sidebar_scroll->h())
-      scroll += bottom - g_sidebar_scroll->h() + S(8);
-    scroll = std::max(0, std::min(scroll, g_sidebar->h() - g_sidebar_scroll->h()));
-    g_sidebar_scroll->scroll_to(0, scroll);
-  }
+  reveal_sidebar_row(index);
+  Fl::remove_timeout(relayout_page);  // built for the current size now
   if (g_page) {
     g_window->remove(g_page);
     Fl::delete_widget(g_page);
@@ -2588,10 +2721,11 @@ void show_page(int index) {
   g_page = new Page(g_content_x, 0, g_content_w, g_window->h());
   pages()[size_t(index)].build(g_page);
   g_window->end();
+  if (!g_refreshing) g_kept_anchor.clear();
   if (!g_open_anchor.empty()) {
-    int offset = g_page->anchor_offset(g_open_anchor);
-    if (offset >= 0) g_page->scroll_to(0, std::max(0, offset - S(8)));
+    g_kept_anchor = g_open_anchor;
     g_open_anchor.clear();
+    scroll_to_anchor();
   }
   g_window->redraw();
 }
@@ -2600,10 +2734,36 @@ void show_page(int index) {
 
 void refresh_page() {
   int scroll = g_page ? g_page->yposition() : 0;
+  // The control with the keyboard focus (by its name) gets it back.
+  std::string focused;
+  if (Fl_Widget *f = Fl::focus())
+    if (g_page && g_page->contains(f) && f != g_page)
+      focused = f->tooltip() ? f->tooltip() : f->label() ? f->label() : "";
+  // Still where the page was opened at a card: the card again.
+  bool at_anchor = !g_kept_anchor.empty() && scroll == g_kept_scroll;
+  if (!at_anchor) g_kept_anchor.clear();
   g_refreshing = true;
   show_page(g_page_index);
   g_refreshing = false;
-  if (g_page && scroll > 0) g_page->scroll_to(0, scroll);
+  if (at_anchor) scroll_to_anchor();
+  // The same place, or the end when the page got shorter (a wider window).
+  else if (g_page && scroll > 0) g_page->scroll_to(0, std::min(scroll, g_page->max_scroll()));
+  if (g_page && !focused.empty()) {
+    std::function<Fl_Widget *(Fl_Group *)> find = [&](Fl_Group *g) -> Fl_Widget * {
+      for (int i = 0; i < g->children(); ++i) {
+        Fl_Widget *c = g->child(i);
+        const char *name = c->tooltip() ? c->tooltip() : c->label();
+        if (name && focused == name && c->visible() && c->active_r()) return c;
+        if (Fl_Group *sub = c->as_group())
+          if (Fl_Widget *w = find(sub)) return w;
+      }
+      return nullptr;
+    };
+    if (Fl_Widget *w = find(g_page)) {
+      w->take_focus();
+      if (auto *in = dynamic_cast<Fl_Input_ *>(w)) in->position(in->size());
+    }
+  }
 }
 
 void open_settings_page(const std::string &id, const std::string &anchor) {
@@ -2647,7 +2807,7 @@ const PageAlias kPageAliases[] = {
     {"microphone", "sound", nullptr},     {"wifi", "network", nullptr},
     {"wi-fi", "network", nullptr},        {"ethernet", "network", nullptr},
     {"vpn", "network", nullptr},          {"internet", "network", nullptr},
-    {"proxy", "network", "proxy"},        {"battery", "power", nullptr},
+    {"proxy", "network", "proxy"},        {"battery", "power", "battery"},
     {"updates", "system", nullptr},       {"applications", "suite", nullptr},
     {"apps", "suite", nullptr},           {"quick", "action-center", nullptr},
     {"animations", "effects", nullptr},   {"compositor", "effects", nullptr},
@@ -2656,7 +2816,7 @@ const PageAlias kPageAliases[] = {
     {"timezone", "date-time", nullptr},   {"datetime", "date-time", nullptr},
     {"weather", "clock", nullptr},        {"clocks", "clock", nullptr},
     {"user", "users", nullptr},           {"account", "users", nullptr},
-    {"accounts", "users", nullptr},       {"avatar", "users", "avatar"},
+    {"accounts", "users", "accounts"},    {"avatar", "users", "avatar"},
     {"picture", "users", "avatar"},       {"face", "users", "avatar"},
     {"screensaver", "lock", nullptr},     {"lock-screen", "lock", nullptr},
     {"defaults", "default-apps", nullptr}, {"default apps", "default-apps", nullptr},
@@ -2747,7 +2907,11 @@ int main(int argc, char **argv) {
       page = id;
   }
   g_cfg.load();
-  if (migrate_theme_config(g_cfg)) g_cfg.save();
+  // The theme values of alpha15 and earlier, and (0.2 Alpha 2) the old
+  // "blink" clock style, are rewritten once.
+  bool migrated = migrate_theme_config(g_cfg);
+  if (clockface::migrate_config(g_cfg)) migrated = true;
+  if (migrated) g_cfg.save();
   if (apply) {
     sync_gtk_settings(g_cfg);
     sync_openbox(g_cfg);
@@ -2761,12 +2925,13 @@ int main(int argc, char **argv) {
   IconLoader::set_theme(g_cfg.get("appearance", "icon_theme", "auto"));
   Fl::visible_focus(1);
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int W = std::min(S(940), sw - S(24)), H = std::min(S(660), sh - S(60));
-  int side = W < S(760) ? S(176) : S(220);
+  // Centred in the work area with room for the title bar (StaticGravity).
+  int wx = 0, wy = 0, W = S(940), H = S(660);
+  fit_to_work_area(wx, wy, W, H);
+  int side = sidebar_width(W);
   auto *win = new SettingsWindow(W, H);
   g_window = win;
+  g_sidebar_frame = new SidebarFrame(0, 0, side, H);
   g_sidebar_scroll = new Fl_Scroll(0, 0, side, H);
   g_sidebar_scroll->type(Fl_Scroll::VERTICAL);
   g_sidebar_scroll->box(FL_FLAT_BOX);
@@ -2775,8 +2940,8 @@ int main(int argc, char **argv) {
   g_sidebar_scroll->scrollbar.color(g_theme.surface.fl());
   g_sidebar_scroll->scrollbar.selection_color(g_theme.border.fl());
   g_sidebar = new Sidebar(0, 0, side - S(10), H);
-  g_sidebar->size(g_sidebar->w(), std::max(H, g_sidebar->content_h()));
   g_sidebar_scroll->end();
+  layout_sidebar(W, H);
   g_content_x = side;
   g_content_w = W - side;
   win->end();
@@ -2790,7 +2955,7 @@ int main(int argc, char **argv) {
   Fl::lock();
   g_open_anchor = anchor;
   show_page(index);
-  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->position(wx, wy);
   start_display_watch();
   // The account and its picture (AccountsService may take a moment), and
   // their changes made elsewhere (the Start menu, the lock screen).

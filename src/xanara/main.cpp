@@ -23,6 +23,7 @@
 #include "theme.h"
 #include "util.h"
 #include "xanara.h"
+#include "wm.h"
 
 using namespace sde;
 
@@ -85,11 +86,10 @@ int main(int argc, char **argv) {
   // The renderer thread hands finished tiles to the main loop with Fl::awake().
   Fl::lock();
 
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int w = std::min(S(1240), sw - S(40)), h = std::min(S(860), sh - S(40));
+  int wx = 0, wy = 0, w = S(1240), h = S(860);
+  fit_to_work_area(wx, wy, w, h);
   auto *window = new xanara::XanaraWindow(std::max(w, S(560)), std::max(h, S(400)));
-  window->position(sx + (sw - window->w()) / 2, sy + (sh - window->h()) / 2);
+  window->position(wx, wy);
   window->show();
   XClassHint hint{const_cast<char *>("xanara"), const_cast<char *>("Xanara")};
   XSetClassHint(fl_display, fl_xid(window), &hint);
