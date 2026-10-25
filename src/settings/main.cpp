@@ -1007,16 +1007,18 @@ class TransparencyCard : public PickCard {
         p.fill_rect(px + i * pw / 6, py, pw / 12, ph, Color::hex(0xFFFFFF).alpha(0.16));
       p.circle(px + pw * 0.72, py + ph * 0.35, ph * 0.22, Color::hex(0xE9D3A0));
       // A menu with text, at the popup opacity, and the panel at the bottom.
+      // Liquid Glass tints the glass and keeps text opaque.
+      double text_alpha = t.liquid ? 1.0 : t.popup_opacity, panel_alpha = t.liquid ? 1.0 : t.opacity;
       double mx = px + pw * 0.12, my = py + ph * 0.14, mw = pw * 0.56, mh = ph * 0.52;
       p.fill_rounded(mx, my, mw, mh, Sd(4), t.menu_bg.alpha(t.popup_opacity));
       for (int i = 0; i < 3; ++i)
         p.fill_rounded(mx + Sd(6), my + Sd(6) + i * mh / 3.4, mw * (i == 1 ? 0.5 : 0.66), Sd(3), Sd(1.5),
-                       t.menu_text.alpha(t.popup_opacity));
+                       t.menu_text.alpha(text_alpha));
       double bh = ph * 0.2;
       p.fill_rect(px, py + ph - bh, pw, bh, t.panel_bg.alpha(t.opacity));
       for (int i = 0; i < 4; ++i)
         p.fill_rounded(px + Sd(6) + i * Sd(12), py + ph - bh + bh * 0.25, Sd(8), bh * 0.5, Sd(2),
-                       (i == 0 ? g_theme.accent : t.text_dim).alpha(t.opacity));
+                       (i == 0 ? g_theme.accent : t.text_dim).alpha(panel_alpha));
       cairo_restore(p.cr());
       p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(10), on ? g_theme.accent : g_theme.border,
                        on ? Sd(2) : Sd(1));
@@ -1120,6 +1122,11 @@ Label *g_transparency_note = nullptr;
 std::string transparency_summary(const Theme &t) {
   if (!t.translucent || t.transparency <= 0) return _("Every surface is opaque.");
   auto pc = [](double v) { return int(std::lround(v * 100)); };
+  if (t.liquid)
+    return format(_("Liquid Glass: the glass of the panel and menus is tinted %d %%, window frames are %d %% "
+                    "opaque. Text stays opaque, and the glass adapts behind it where needed, so it keeps "
+                    "its contrast (WCAG AA) over any background."),
+                  pc(t.popup_opacity), pc(t.frame_opacity));
   return format(_("Panel %d %%, menus %d %%, window frames %d %% opaque. At every level text keeps "
                   "its contrast (WCAG AA) over any background."),
                 pc(t.opacity), pc(std::min(t.popup_opacity, t.gtk_menu_alpha)), pc(t.frame_opacity));

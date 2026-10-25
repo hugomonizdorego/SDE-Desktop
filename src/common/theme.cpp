@@ -315,6 +315,16 @@ LiquidMaterial theme_liquid_material(const std::string &family, bool dark) {
   return m;
 }
 
+double liquid_legible_luminance(const Theme &t) {
+  // A little above the WCAG ratios: the shader finds the tint in a few steps.
+  auto limit = [&](const Color &fg, double ratio) {
+    double l = fg.luminance();
+    return t.dark ? (l + 0.05) / ratio - 0.05 : ratio * (l + 0.05) - 0.05;
+  };
+  double text = limit(t.text, 4.6), menu = limit(t.menu_text, 4.6), dim = limit(t.text_dim, 3.1);
+  return t.dark ? std::max(0.0, std::min({text, menu, dim})) : std::min(1.0, std::max({text, menu, dim}));
+}
+
 // Fills the palette of |t| from family/mode/accent (t.accent may already
 // hold a custom color).
 static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
@@ -385,7 +395,7 @@ static bool compositor_lite(const Config &cfg) {
 // Families keep a little character: Glass goes furthest, Graphite least.
 // Without blur (lite profile) surfaces only go part of the way.
 static void apply_transparency(Theme &t, const palettes::Family &f) {
-  t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = 1.0;
+  t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = t.toolkit_menu_opacity = 1.0;
   if (!t.translucent || t.transparency <= 0) return;
   // A square-root curve: the first steps of the slider (Subtle) already
   // show, the last ones (Glass) approach the readable limit gently.
@@ -393,15 +403,20 @@ static void apply_transparency(Theme &t, const palettes::Family &f) {
   if (t.lite) s *= 0.5;
   auto floor_of = [](std::initializer_list<double> floors) { return std::max(floors); };
   auto toward = [s](double floor) { return 1.0 - s * (1.0 - floor); };
-  // Liquid Glass: the shader tints only the surface color with the backdrop
-  // and keeps text and icons opaque, so the limit is that of a translucent
-  // background with opaque text (like GTK menus), not of a faded window.
-  bool fade = !t.liquid;
-  t.opacity = toward(floor_of({readable_opacity(t.text, t.panel_bg, 4.5, fade),
-                               readable_opacity(t.text_dim, t.panel_bg, 3.0, fade)}));
-  t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, fade),
-                                     readable_opacity(t.text_dim, t.menu_bg, 3.0, fade),
-                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, fade)}));
+  t.opacity = toward(floor_of({readable_opacity(t.text, t.panel_bg, 4.5, true),
+                               readable_opacity(t.text_dim, t.panel_bg, 3.0, true)}));
+  t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, true),
+                                     readable_opacity(t.text_dim, t.menu_bg, 3.0, true),
+                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, true)}));
+  // Menus of other toolkits fade as a whole, like SDE's without Liquid Glass.
+  t.toolkit_menu_opacity = t.popup_opacity;
+  if (t.liquid) {
+    // Liquid Glass: the shader tints only the surface color with the
+    // backdrop, keeps text and icons opaque and lifts (or deepens) the glass
+    // under text where the backdrop would make it hard to read, so the glass
+    // can stay clear: a 41 % tint at Subtle (25), 20 % at 100.
+    t.opacity = t.popup_opacity = 0.62 - 0.42 * std::sqrt(t.transparency / 100.0);
+  }
   // Frames: translucent title bars need blur behind them to stay calm;
   // Glass goes all the way, the other families part of it.
   double frame = toward(readable_opacity(t.titlebar_text, t.titlebar_bg, 4.5, true));

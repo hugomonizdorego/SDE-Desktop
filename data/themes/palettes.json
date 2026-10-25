@@ -126,7 +126,7 @@
         "success": "#2B7D4E", "warning": "#8B6411", "error": "#B53B33"
       },
       "dark": {
-        "background": "#1C1D21", "surface": "#26282C", "surface_alt": "#1F2024", "hover": "#33363B",
+        "background": "#1C1D21", "surface": "#26282C", "surface_alt": "#2D2F34", "hover": "#363940",
         "text": "#F1F2F4", "text_dim": "#A4A8B0", "border": "#3A3D44", "shadow": "#000000",
         "shadow_alpha": 0.50, "menu": "#26282C", "panel": "#26282C", "titlebar": "#1E1F23",
         "titlebar_inactive": "#222327", "titlebar_text": "#F1F2F4", "titlebar_text_inactive": "#989CA5",

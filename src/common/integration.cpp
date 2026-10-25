@@ -324,8 +324,9 @@ const char *kLiquidShader = R"GLSL(#version 330
 // their surface color, and this shader turns that color into glass: what is
 // behind the window (already blurred by the compositor), saturated and
 // brightened, bent along the edges like the rim of a lens, tinted with the
-// surface color by the window's opacity and lit by a thin rim. Text, icons
-// and highlights keep their colors.
+// surface color by the window's opacity and lit by a thin rim. Where the
+// backdrop would make text hard to read, the glass is lifted (or deepened)
+// just enough. Text, icons and highlights keep their colors.
 in vec2 texcoord;
 uniform sampler2D tex;
 uniform vec2 effective_size;
@@ -345,7 +346,36 @@ const float LENS_SHIFT = @LENS_SHIFT@;  // px at the very edge
 const float RIM = @RIM@;
 const float RIM_WIDTH = @RIM_WIDTH@;    // px
 const float KEY_RANGE = @KEY_RANGE@;
+const float LEGIBLE = @LEGIBLE@;        // luminance under text: at least (light), at most (dark)
+const float FADE_AT = @FADE_AT@;        // the lowest opacity of a shown surface
 const int SQUARE = @SQUARE@;            // 1: square bottom corners, 2: square top corners
+
+float luminance(vec3 c) {
+	vec3 l = mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c));
+	return dot(l, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// The glass tinted |tint| with the key color, with |delta| (a hover tint, a
+// card) on top, lifted towards the key color until text on it keeps its
+// contrast (the luminance is monotonic in the tint).
+vec3 legible_glass(vec3 back, vec3 key, float tint, vec3 delta) {
+	vec3 glass = clamp(mix(back, key, tint) + delta, 0.0, 1.0);
+	float side = DARK > 0.5 ? -1.0 : 1.0;
+	if ((luminance(glass) - LEGIBLE) * side >= 0.0 ||
+	    (luminance(clamp(key + delta, 0.0, 1.0)) - LEGIBLE) * side < 0.0) {
+		return glass;
+	}
+	float lo = tint, hi = 1.0;
+	for (int i = 0; i < 6; i++) {
+		float mid = 0.5 * (lo + hi);
+		if ((luminance(clamp(mix(back, key, mid) + delta, 0.0, 1.0)) - LEGIBLE) * side >= 0.0) {
+			hi = mid;
+		} else {
+			lo = mid;
+		}
+	}
+	return clamp(mix(back, key, hi) + delta, 0.0, 1.0);
+}
 
 // Signed distance to the window's rounded rectangle (negative inside).
 float shape(vec2 p, vec2 h, float r) {
@@ -388,13 +418,18 @@ vec4 window_shader() {
 	vec3 key = ma <= mb ? KEY_A : KEY_B;
 	vec3 delta = ma <= mb ? da : db;
 	float content = clamp(min(ma, mb) / KEY_RANGE, 0.0, 1.0);
+	// SDE's fills on the glass (hover tints, cards, borders) are darker than
+	// the surface in a light theme and lighter in a dark one; what lies
+	// beyond the surface color (white glyphs and icon parts, a switch's
+	// knob; shadows in a dark theme) is content.
+	vec3 beyond = DARK > 0.5 ? key - c.rgb : c.rgb - key;
+	content = max(content, smoothstep(1.5 / 255.0, 6.0 / 255.0, max(max(beyond.r, beyond.g), beyond.b)));
 	// The glass: the backdrop tinted with the surface color by the
 	// window's opacity, more clearly in the lens, where no text is.
-	float tint = clamp(opacity, 0.0, 1.0) * (1.0 - 0.45 * t);
-	vec3 glass = mix(back, key, tint);
 	// Close to the surface color: glass with the difference on top (soft
 	// fills, hover tints); far from it: the window's own color (text).
-	vec3 col = mix(clamp(glass + delta, 0.0, 1.0), c.rgb, content);
+	float tint = clamp(opacity, 0.0, 1.0) * (1.0 - 0.45 * t);
+	vec3 col = mix(legible_glass(back, key, tint, delta), c.rgb, content);
 	// Light from the top, a little from the left: a thin rim where the
 	// edge faces it, a fainter one opposite, a glow in the lens.
 	vec2 light = normalize(vec2(-0.42, -0.91));
@@ -407,8 +442,9 @@ vec4 window_shader() {
 	// bright backdrops.
 	col *= 1.0 - exp(-depth / 0.8) * (0.06 + 0.10 * DARK) * max(-facing, 0.0);
 	col *= 1.0 - dim;
-	// Fading in and out: the compositor animates the opacity from 0.
-	float fade = clamp(opacity * 2.0, 0.0, 1.0);
+	// Fading in and out: the compositor animates the opacity from 0, so the
+	// window appears up to FADE_AT and the glass fills in above it.
+	float fade = clamp(opacity / FADE_AT, 0.0, 1.0);
 	return vec4(col, 1.0) * cover * fade;
 }
 )GLSL";
@@ -443,6 +479,8 @@ std::string write_liquid_shader(const Theme &t, int square) {
   put("RIM", glsl_number(m.rim));
   put("RIM_WIDTH", glsl_number(m.rim_width * t.scale));
   put("KEY_RANGE", glsl_number(m.key_range));
+  put("LEGIBLE", glsl_number(liquid_legible_luminance(t)));
+  put("FADE_AT", glsl_number(std::max(0.05, std::min(t.opacity, t.popup_opacity))));
   put("SQUARE", std::to_string(square));
   std::string path = config_home() + "/sde/liquid-glass" +
                      (square == 1 ? "-top" : square == 2 ? "-bottom" : "") + ".glsl";
@@ -480,7 +518,7 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // whole-window opacity, which is still readable (readable_opacity()).
   bool gtk_alpha = t.gtk_menu_alpha < 0.999 && cfg.get("suite", "gtk_theme", "auto") != "system" &&
                    starts_with(gtk_theme_name(cfg), "SDE-");
-  double menu = t.translucent ? (gtk_alpha ? 1.0 : t.popup_opacity) : 1.0;
+  double menu = t.translucent ? (gtk_alpha ? 1.0 : t.toolkit_menu_opacity) : 1.0;
   char num[32];
   auto f = [&](double v) {
     snprintf(num, sizeof num, "%.2f", v);
@@ -568,7 +606,7 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
     c += "window-shader-fg-rule = [" + rules + "];\n";
   }
   c += "wintypes: {\n"
-       "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.92, t.popup_opacity)) + "; };\n"
+       "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.92, t.toolkit_menu_opacity)) + "; };\n"
        "  dock = { shadow = false; clip-shadow-above = true; };\n"
        "  dnd = { shadow = false; };\n"
        "  popup_menu = { opacity = " + f(menu) + "; };\n"

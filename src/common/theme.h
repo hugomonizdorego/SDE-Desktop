@@ -133,12 +133,15 @@ struct Theme {
   // the Liquid Glass family with translucency on the full OpenGL compositor
   // profile. SDE then draws those surfaces flat in their surface color
   // (surface, menu_bg) and leaves sheen and rims to the shader; opacity and
-  // popup_opacity become how much of that color tints the glass.
+  // popup_opacity become how much of that color tints the glass (a clear
+  // glass: the shader itself keeps text readable over any backdrop, see
+  // liquid_legible_luminance()).
   bool liquid = false;
   double opacity = 1.0;         // panel (whole window, text included)
   double popup_opacity = 1.0;   // SDE menus, Start menu, Action Center, OSDs
   double frame_opacity = 1.0;   // SDE WM title bars and borders (compositor frame-opacity)
   double gtk_menu_alpha = 1.0;  // GTK menu and popover backgrounds (text stays opaque)
+  double toolkit_menu_opacity = 1.0;  // menus of other toolkits (whole window, text included)
 
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
@@ -202,6 +205,10 @@ struct LiquidMaterial {
   double key_range = 0.4;    // how far a color may be from the surface to count as glass
 };
 LiquidMaterial theme_liquid_material(const std::string &family, bool dark);
+// The relative luminance the Liquid Glass shader keeps the glass at under
+// text: at least this in a light theme, at most this in a dark one, so text
+// keeps 4.5:1 and dimmed text 3:1 (WCAG 2.1) over any backdrop.
+double liquid_legible_luminance(const Theme &t);
 
 // Families and accents for pickers.
 struct ThemeFamilyInfo {

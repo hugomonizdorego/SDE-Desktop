@@ -607,6 +607,17 @@ def css_tokens(pal, family, mode, accent):
               'sde_shadow': rgba(t['shadow'], 0.30 if dark else 0.12)}
     for key, value in legacy.items():
         lines.append(f'@define-color {key} {value};')
+    # Controls drawn like SDE's own (0.2.0 Alpha 2, src/common/widgets.cpp):
+    # the track of a switch that is off and of a slider, the light knob and
+    # its hairline edge, and the light rim of glass layers.
+    knob = '#F2F2F4' if dark else '#FFFFFF'
+    controls = {'sde_control': mix(t['border'], t['text_dim'], 0.30 if dark else 0.42),
+                'sde_trough': mix(t['border'], t['text_dim'], 0.25 if dark else 0.35),
+                'sde_knob': knob,
+                'sde_knob_edge': mix(knob, '#000000', 0.25) if dark else mix(t['border'], t['text_dim'], 0.25),
+                'sde_rim': rgba('#FFFFFF', 0.10 if dark else 0.65)}
+    for key, value in controls.items():
+        lines.append(f'@define-color {key} {value};')
     return '\n'.join(lines) + '\n', t
 
 
@@ -617,7 +628,9 @@ def overlay(name, gtk, t, fam):
         return ''
     text = path.read_text()
     subst = {'RADIUS_SMALL': f'{fam["radius_small"]}px', 'RADIUS_LARGE': f'{fam["radius_large"]}px',
-             'RADIUS': f'{fam["radius"]}px', 'CLOSE_HOVER': fam['caption']['close_hover']}
+             'RADIUS': f'{fam["radius"]}px', 'CLOSE_HOVER': fam['caption']['close_hover'],
+             # The focus ring sits 3 px inside a control's edge.
+             'RADIUS_FOCUS': f'{max(2, fam["radius_small"] - 3)}px'}
     # Caption colors (caption_colors()), resolved per theme so GTK header
     # bars and SDE WM frames match exactly.
     dark = luminance(t['background']) < 0.3

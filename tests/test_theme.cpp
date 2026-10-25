@@ -101,13 +101,16 @@ static void test_transparency_contrast() {
             ok = false;
           }
         };
-        // Liquid Glass (auto picks OpenGL on a real GPU) keeps text opaque.
-        bool fade = !t.liquid;
-        need("panel text", translucent_contrast(t.text, t.panel_bg, t.opacity, fade), 4.5);
-        need("panel dim", translucent_contrast(t.text_dim, t.panel_bg, t.opacity, fade), 3.0);
-        need("menu text", translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, fade), 4.5);
-        need("menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, fade), 3.0);
-        need("menu hover", translucent_contrast(t.menu_hover_text, t.menu_hover, t.popup_opacity, fade), 3.0);
+        // Liquid Glass (auto picks OpenGL on a real GPU) keeps text readable
+        // in the shader instead (test_liquid_glass()).
+        if (!t.liquid) {
+          need("panel text", translucent_contrast(t.text, t.panel_bg, t.opacity, true), 4.5);
+          need("panel dim", translucent_contrast(t.text_dim, t.panel_bg, t.opacity, true), 3.0);
+          need("menu text", translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, true), 4.5);
+          need("menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, true), 3.0);
+          need("menu hover", translucent_contrast(t.menu_hover_text, t.menu_hover, t.popup_opacity, true), 3.0);
+        }
+        need("toolkit menu", translucent_contrast(t.menu_text, t.menu_bg, t.toolkit_menu_opacity, true), 4.5);
         need("frame title", translucent_contrast(t.titlebar_text, t.titlebar_bg, t.frame_opacity, true), 4.5);
         need("gtk menu", translucent_contrast(t.menu_text, t.menu_bg, t.gtk_menu_alpha, false), 4.5);
         need("gtk menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.gtk_menu_alpha, false), 3.0);
@@ -278,8 +281,17 @@ static void test_soft_palettes() {
 
 // Liquid Glass (0.2.0 Alpha 2): on the OpenGL compositor profile the glass
 // shader draws SDE's surfaces; it tints the blurred backdrop with the surface
-// color by the surface's opacity and keeps text and icons opaque, so text
-// stays readable over any backdrop (WCAG 2.1 like GTK menus).
+// color by the surface's opacity, keeps text and icons opaque and lifts (or
+// deepens) the glass to liquid_legible_luminance() wherever the backdrop
+// would make text hard to read, so text keeps WCAG 2.1 contrast over any
+// backdrop while the glass stays clear.
+static Color gray_of_luminance(double l) {
+  double v = l <= 0.0031308 ? 12.92 * l : 1.055 * std::pow(l, 1 / 2.4) - 0.055;
+  Color c;
+  c.r = c.g = c.b = std::max(0.0, std::min(1.0, v));
+  return c;
+}
+
 static void test_liquid_glass() {
   CHECK(theme_liquid_material("glass", false).on && theme_liquid_material("glass", true).on);
   CHECK(!theme_liquid_material("graphite", false).on && !theme_liquid_material("fluent", true).on);
@@ -288,7 +300,8 @@ static void test_liquid_glass() {
     CHECK(m.blur >= 1 && m.blur <= 12 && m.saturation >= 1 && m.saturation <= 2);
     CHECK(m.brightness > 0.5 && m.brightness < 1.5 && m.rim > 0 && m.rim <= 1 && m.rim_width > 0);
     CHECK(m.lens_band > m.lens_shift && m.lens_shift > 0 && m.key_range > 0 && m.key_range < 1);
-    for (const auto &accent : theme_accents())
+    for (const auto &accent : theme_accents()) {
+      double previous = 1.0;
       for (int transparency : {25, 50, 100}) {
         Config cfg;
         cfg.set("appearance", "style", "glass");
@@ -301,14 +314,21 @@ static void test_liquid_glass() {
         cfg.set("compositor", "backend", "glx");
         Theme t = Theme::from_config(cfg);
         CHECK(t.liquid);
-        CHECK(translucent_contrast(t.text, t.panel_bg, t.opacity, false) >= 4.5);
-        CHECK(translucent_contrast(t.text_dim, t.panel_bg, t.opacity, false) >= 3.0);
-        CHECK(translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, false) >= 4.5);
-        CHECK(translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, false) >= 3.0);
-        CHECK(translucent_contrast(t.menu_hover_text, t.menu_hover, t.popup_opacity, false) >= 3.0);
-        // The shader fades the window in with its opacity up to 0.5; above
-        // that only the tint changes.
-        CHECK(t.opacity >= 0.5 && t.popup_opacity >= 0.5);
+        // Glass at the legible luminance: text 4.5:1, dimmed text 3:1; the
+        // surface color itself is on the right side of it (the shader can
+        // always reach it).
+        double l = liquid_legible_luminance(t);
+        Color glass = gray_of_luminance(l);
+        CHECK(t.text.contrast(glass) >= 4.5 && t.menu_text.contrast(glass) >= 4.5);
+        CHECK(t.text_dim.contrast(glass) >= 3.0);
+        CHECK(t.dark ? t.surface.luminance() <= l && t.menu_bg.luminance() <= l
+                     : t.surface.luminance() >= l && t.menu_bg.luminance() >= l);
+        // A clear glass, clearer with the slider; one tint for every surface.
+        CHECK(t.opacity == t.popup_opacity && t.opacity >= 0.15 && t.opacity <= 0.6 && t.opacity < previous);
+        previous = t.opacity;
+        // Other toolkits' menus still fade as a whole and stay readable.
+        CHECK(translucent_contrast(t.menu_text, t.menu_bg, t.toolkit_menu_opacity, true) >= 4.5);
+        CHECK(translucent_contrast(t.text_dim, t.menu_bg, t.toolkit_menu_opacity, true) >= 3.0);
         // The drawn glass elsewhere: XRender, the lite profile, no blur,
         // opaque surfaces and the other families.
         cfg.set("compositor", "backend", "xrender");
@@ -326,6 +346,7 @@ static void test_liquid_glass() {
         cfg.set("appearance", "style", "graphite");
         CHECK(!Theme::from_config(cfg).liquid);
       }
+    }
   }
   set_ui_scale(1.0);
 }
