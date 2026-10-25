@@ -150,8 +150,11 @@ class LiriaAlpha16Test(unittest.TestCase):
         css = (self.overlay / 'data/liria-sde.css').read_text()
         names = set(re.findall(r'@([A-Za-z_]+)', css))
         self.assertTrue(names)
+        # 0.2.0 Alpha 2: the ribbon's tinted glyphs also use the standard
+        # warning, error and success colours of GTK themes.
         self.assertLessEqual(names, {'theme_bg_color', 'theme_fg_color', 'theme_base_color', 'theme_text_color',
-                                     'theme_selected_bg_color', 'theme_selected_fg_color'})
+                                     'theme_selected_bg_color', 'theme_selected_fg_color', 'warning_color',
+                                     'error_color', 'success_color'})
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
         self.assertIn('GTK_STYLE_PROVIDER_PRIORITY_APPLICATION', ui)
         self.assertIn('/org/debion/liria/liria-sde.css', ui)
@@ -648,6 +651,150 @@ class LiriaRubberBandCssTest(unittest.TestCase):
         if os.environ.get('SDE_RUBBERBAND_ALL') == '1':
             command.append('--all')
         result = subprocess.run(command, capture_output=True, text=True, timeout=1800)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class LiriaAlpha2Test(unittest.TestCase):
+    """0.2.0 Alpha 2: Liria's file operations window in the design of SDE's
+    copy and move dialog, on SDE's own model (src/common/transfer_model.h),
+    large files copied in slices so the progress follows them, and the
+    ribbon's icons."""
+
+    def setUp(self):
+        import sys
+        self.root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(self.root / 'suite'))
+        import redesign
+        self.redesign = redesign
+        self.lib = self.root / 'suite/overlays/liria/libliria-private'
+
+    def test_window_uses_the_shared_model_and_texts(self):
+        source = (self.lib / 'liria-sde-progress.c').read_text()
+        for needle in ('#include "liria-sde-transfer-model.h"', 'sde_transfer_update', 'sde_transfer_set_paused',
+                       'sde_transfer_draw_graph', 'sde_transfer_draw_logo', 'sde_transfer_logo_layer_svg',
+                       'sde_transfer_remaining', 'sde_transfer_eta_parts'):
+            self.assertIn(needle, source)
+        dialog = (self.root / 'src/common/transfer_dialog.cpp').read_text()
+        # The same words as the SDE desktop's dialog.
+        for text in ('"Copying %s item from %s to %s", "Copying %s items from %s to %s"',
+                     '"Moving %s item from %s to %s", "Moving %s items from %s to %s"', '"Paused - %d%% complete"',
+                     '"%d%% complete"', '"Speed: %s"', '"About %d second", "About %d seconds"',
+                     '"About %d hour and %d minutes", "About %d hours and %d minutes"', '"A few seconds"',
+                     '"More details"', '"Fewer details"', '"Name:"', '"Time remaining:"', '"Items remaining:"'):
+            self.assertIn(text, source)
+            self.assertIn(text, dialog)
+        # The animated mark at about 30 frames per second, still with
+        # reduced motion; the SDE branding folders, then icons.
+        for needle in ('FRAME_MSEC 33', 'SDE_REDUCED_MOTION', '"gtk-enable-animations"', '"aero", "animations"',
+                       '"appearance", "low_resource"', 'SDE_BRANDING_DIR', '"sde-mark.svg"', '"sde-logo"',
+                       'gtk_widget_get_scale_factor', 'LIRIA_SDE_QA_PROGRESS', 'LIRIA_SDE_QA_COPY_RATE'):
+            self.assertIn(needle, source)
+        model = (self.root / 'src/common/transfer_model.h').read_text()
+        self.assertIn('SPDX-License-Identifier: GPL-2.0-or-later', model)  # part of Liria too
+        self.assertIn(self.root / 'src/common/transfer_model.h', self.redesign.SHARED)
+        css = (self.root / 'suite/overlays/liria/data/liria-sde.css').read_text()
+        for needle in ('button.sde-progress-action', 'progressbar.sde-progress-bar',
+                       '.sde-progress.sde-paused progressbar.sde-progress-bar progress'):
+            self.assertIn(needle, css)
+
+    def test_large_files_are_copied_in_slices(self):
+        source = (self.lib / 'liria-sde-copy.c').read_text()
+        for needle in ('liria_sde_copy_large_file', 'copy_file_range', 'FICLONE', 'SLICE_MIN', 'SLICE_MAX',
+                       'open_destination', 'G_IO_ERROR_EXISTS', 'g_file_delete (source'):
+            self.assertIn(needle, source)
+
+    def test_recipe_edits(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            lib = staged / 'libliria-private'
+            lib.mkdir()
+            for name in ('liria-sde-progress.c', 'liria-sde-progress.h'):
+                (lib / name).write_text((self.lib / name).read_text())
+            (lib / 'Makefile.am').write_text('\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n')
+            (lib / 'liria-progress-info.c').write_text(
+                '#include "liria-global-preferences.h"\n'
+                '    gtk_container_add (GTK_CONTAINER (progress_window),\n                       vbox);\n'
+                '    data->state = newstate;\n'
+                '"media-playback-pause", GTK_ICON_SIZE_BUTTON\n"media-playback-start", GTK_ICON_SIZE_BUTTON\n'
+                'gtk_image_new_from_icon_name ("undo", GTK_ICON_SIZE_BUTTON);\n'
+                '    GtkWidget *label, *progress_bar, *hbox, *vbox, *box, *btcancel, *imgcancel;\n'
+                '    label = gtk_label_new ("status");\n    hbox = NULL;\n    gtk_widget_show_all (data->widget);\n'
+                '                        progress,\n                        FALSE, FALSE, 6);\n')
+            (lib / 'liria-file-operations.c').write_text(
+                '#include "liria-sde-copy.h"\n'
+                '\tliria_progress_info_start (job->common.progress);\n\n\tscan_sources (job->files,\n'
+                '\t\t      &source_info,\n\t\t      common,\n\t\t      OP_KIND_COPY);\n'
+                '\tliria_progress_info_start (job->common.progress);\n\n\tverify_destination (&job->common,\n'
+                '\t\t\t    job->destination,\n\t\t\t    &dest_fs_id,\n\t\t\t    -1);\n'
+                '\tliria_progress_info_set_progress (job->progress, transfer_info->num_bytes, total_size);\n}\n'
+                '\tif (should_skip_file (job, src)) {\n\t\t*skipped_file = TRUE;\n\t\treturn;\n\t}\n\n'
+                '\tunique_name_nr = 1;\n'
+                '\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n'
+                '\t\t\t\t      pdata->transfer_info);\n\t}\n}\n'
+                '\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n'
+                '\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {\n')
+            self.redesign.liria_progress(staged)
+            self.assertEqual((lib / 'liria-sde-transfer-model.h').read_text(),
+                             (self.root / 'src/common/transfer_model.h').read_text())
+            self.assertIn('\tliria-sde-progress.c \\\n', (lib / 'Makefile.am').read_text())
+            self.assertIn('\tliria-sde-transfer-model.h \\\n', (lib / 'Makefile.am').read_text())
+            info = (lib / 'liria-progress-info.c').read_text()
+            for needle in ('#include "liria-sde-progress.h"', 'liria_sde_progress_window_setup (progress_window);',
+                           'liria_sde_progress_set_state (data->widget,', 'liria_sde_progress_build (vbox, info,',
+                           '"media-playback-pause-symbolic"', '"window-close-symbolic"', 'FALSE, FALSE, 0);'):
+                self.assertIn(needle, info)
+            self.assertNotIn('gtk_label_new ("status")', info)
+            ops = (lib / 'liria-file-operations.c').read_text()
+            for needle in ('LIRIA_SDE_TRANSFER_COPY : LIRIA_SDE_TRANSFER_DUPLICATE', 'LIRIA_SDE_TRANSFER_MOVE',
+                           'liria_sde_progress_transfer_counts (job->progress', 'liria_sde_progress_transfer_item',
+                           'liria_sde_progress_transfer_finishing (job->progress);',
+                           'liria_progress_info_get_ready (pdata->job->common.progress);',
+                           'liria_sde_progress_transfer_throttle (new_size);', 'liria_sde_copy_large_file (src, dest'):
+                self.assertIn(needle, ops)
+        self.assertIn('liria_progress(staged)', (self.root / 'suite/redesign.py').read_text())
+
+    def test_ribbon_icon_smoke(self):
+        """The ribbon's icons on Xvfb (tools/liria-ribbon-smoke.py) when a
+        built Liria is named by SDE_LIRIA_PREFIX: full-colour icons of the
+        icon theme or tinted glyphs, their sizes, every tab, a new icon
+        theme while Liria runs."""
+        import os
+        import subprocess
+        import sys
+        script = self.root / 'tools/liria-ribbon-smoke.py'
+        self.assertIn('a new icon theme (xsettingsd) changes the icons while Liria runs', script.read_text())
+        ribbon = (self.root / 'suite/overlays/liria/src/liria-sde-ribbon.c').read_text()
+        self.assertIn('LIRIA_SDE_QA_RIBBON', ribbon)
+        self.assertIn('"tab\\t%s\\t%d,%d,%d,%d\\n"', ribbon)
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        command = [sys.executable, str(script), '--prefix', prefix]
+        if os.environ.get('SDE_THEMES'):
+            command += ['--themes', os.environ['SDE_THEMES']]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_copy_progress_smoke(self):
+        """A real copy on Xvfb (tools/liria-progress-smoke.py) when a built
+        Liria is named by SDE_LIRIA_PREFIX."""
+        import os
+        import subprocess
+        import sys
+        script = self.root / 'tools/liria-progress-smoke.py'
+        self.assertIn('Pause stops the copy in the middle of a large file', script.read_text())
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        command = [sys.executable, str(script), '--prefix', prefix]
+        if os.environ.get('SDE_THEMES'):
+            command += ['--themes', os.environ['SDE_THEMES']]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
         if result.returncode == 77:
             self.skipTest(result.stdout.strip())
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

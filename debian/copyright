@@ -32,12 +32,14 @@ Comment: Fetches the original EDE sources for reference only; nothing of EDE
  is built or installed.
 
 Files: suite/overlays/* suite/patches/* suite/sde-brand.h
-       data/schemas/org.debion.session.gschema.xml
+       data/schemas/org.debion.session.gschema.xml src/common/transfer_model.h
 Copyright: 2026 Selviana DE Project and contributors
 License: GPL-2.0-or-later
 Comment: SDE's additions to the GPL-2.0-or-later application fork Liria
  (from Caja) and the patches to SDE WM (from Openbox), under the license of
- the program they become part of.
+ the program they become part of. src/common/transfer_model.h, the copy
+ and move progress model, is part of Liria (copied in by suite/redesign.py)
+ and of the SDE desktop.
 
 Files: suite/patches/sde-compositor/*
 Copyright: 2026 Selviana DE Project and contributors

@@ -24,6 +24,7 @@ add_library(sde-common STATIC
   common/suite.cpp
   common/theme.cpp
   common/touchpad.cpp
+  common/transfer_dialog.cpp
   common/tray_icons.cpp
   common/util.cpp
   common/widgets.cpp

@@ -67,6 +67,15 @@ class Xdnd {
   // What the current drag source (target side) allows.
   const ActionSet &source_actions() const { return src_actions_; }
 
+  // ---- clipboard (0.2.0 Alpha 2: Paste on the desktop)
+  // Asks for the files on the clipboard as file managers put them there
+  // (x-special/gnome-copied-files: "copy" or "cut", then the URIs; else
+  // text/uri-list). |done| runs from an FLTK timeout with the URI list
+  // (empty when there are no files) and whether the files were cut.
+  void request_clipboard(std::function<void(const std::string &uris, bool cut)> done, unsigned long time);
+  // Whether a program owns the clipboard (Paste is offered then).
+  bool clipboard_owned();
+
   static unsigned modifiers_from_state(unsigned state);
 
  private:
@@ -90,6 +99,10 @@ class Xdnd {
   void show_icon(cairo_surface_t *icon, int size, int count);
   void finish_source(bool accepted, DropAction action);
   static void source_timeout(void *data);
+  // clipboard
+  void on_clipboard(const XSelectionEvent &s);
+  static void clipboard_timeout(void *data);
+  static void deliver_clipboard(void *data);
   Atom atom(const char *name);
   DropAction action_of(Atom a);
   Atom atom_of(DropAction a);
@@ -99,7 +112,7 @@ class Xdnd {
   Hooks hooks_;
   Atom a_aware_, a_proxy_, a_enter_, a_position_, a_status_, a_leave_, a_drop_, a_finished_,
       a_selection_, a_type_list_, a_action_list_, a_action_desc_, a_uri_list_, a_utf8_, a_text_plain_,
-      a_text_plain_utf8_, a_targets_, a_data_;
+      a_text_plain_utf8_, a_targets_, a_data_, a_clipboard_, a_gnome_copied_, a_clip_data_;
 
   // target state
   Window src_ = 0;
@@ -128,6 +141,13 @@ class Xdnd {
   int px_ = 0, py_ = 0;
   unsigned pmods_ = 0;
   unsigned long ptime_ = 0;
+
+  // clipboard state
+  std::function<void(const std::string &, bool)> clip_done_;
+  int clip_stage_ = 0;  // 0 idle, 1 x-special/gnome-copied-files asked, 2 text/uri-list asked
+  unsigned long clip_time_ = 0;
+  std::string clip_uris_;
+  bool clip_cut_ = false;
 };
 
 }  // namespace desk

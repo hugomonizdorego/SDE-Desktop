@@ -15,7 +15,9 @@
  * most ~16 MiB of a file unwritten, progress that counts only data the
  * device accepted, a syncfs() after every 32 MiB / 3 s of small files and
  * a final syncfs() before the operation reports completion. Internal
- * disks keep the normal fast path.
+ * disks keep the normal fast path, except that large files are copied in
+ * slices there (liria_sde_copy_large_file (), 0.2.0 Alpha 2) so that the
+ * progress and Pause follow them.
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -27,9 +29,13 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <linux/fs.h>
+#endif
 
 #include <glib/gi18n.h>
 #include <glib/gstdio.h>
@@ -41,6 +47,9 @@
 #define WINDOW_SIZE (8 * 1024 * 1024)
 #define BATCH_BYTES (32 * 1024 * 1024)
 #define BATCH_USEC (3 * G_USEC_PER_SEC)
+#define LARGE_FILE (32 * 1024 * 1024)
+#define SLICE_MIN (1024 * 1024)
+#define SLICE_MAX (64 * 1024 * 1024)
 
 struct LiriaSdeFlush {
 	char *fs_type;
@@ -249,6 +258,42 @@ set_errno_error (GError **error, int code, const char *format, const char *name)
 	g_free (display);
 }
 
+/* Creates the destination file the way g_file_copy () does: an existing
+ * file is an error unless G_FILE_COPY_OVERWRITE, and never a folder or the
+ * source itself. Returns -1 with |error| set. */
+static int
+open_destination (const struct stat *st, const char *dest_path, GFileCopyFlags flags, GError **error)
+{
+	struct stat dst;
+	int out;
+
+	if ((flags & G_FILE_COPY_OVERWRITE) && lstat (dest_path, &dst) == 0) {
+		if (S_ISDIR (dst.st_mode)) {
+			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_IS_DIRECTORY,
+			                     _("Can’t copy over directory"));
+			return -1;
+		}
+		if (dst.st_dev == st->st_dev && dst.st_ino == st->st_ino) {
+			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_EXISTS, _("Target file exists"));
+			return -1;
+		}
+		unlink (dest_path);
+	}
+	out = open (dest_path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666);
+	if (out < 0) {
+		int code = errno;
+
+		if (code == EEXIST)
+			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_EXISTS, _("Target file exists"));
+		else if (code == EINVAL || code == EILSEQ)
+			g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_FILENAME,
+			             _("Invalid filename %s"), dest_path);
+		else
+			set_errno_error (error, code, _("Error opening file “%s”: %s"), dest_path);
+	}
+	return out;
+}
+
 /* Starts writeback of [offset, offset + length) and waits for it. */
 static gboolean
 write_back (int fd, goffset offset, goffset length, gboolean wait)
@@ -274,8 +319,8 @@ liria_sde_flush_copy_file (LiriaSdeFlush *flush,
                            GError **error)
 {
 	char *src_path = NULL, *dest_path = NULL;
-	struct stat st, dst;
-	int in = -1, out = -1, open_flags;
+	struct stat st;
+	int in = -1, out = -1;
 	goffset written = 0, confirmed = 0, window_start = 0, previous_start = -1, previous_length = 0;
 	gboolean ok = FALSE, created = FALSE;
 
@@ -293,32 +338,9 @@ liria_sde_flush_copy_file (LiriaSdeFlush *flush,
 		set_errno_error (error, errno, _("Error opening file “%s”: %s"), src_path);
 		goto out;
 	}
-	open_flags = O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC;
-	if ((flags & G_FILE_COPY_OVERWRITE) && lstat (dest_path, &dst) == 0) {
-		if (S_ISDIR (dst.st_mode)) {
-			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_IS_DIRECTORY,
-			                     _("Can’t copy over directory"));
-			goto out;
-		}
-		if (dst.st_dev == st.st_dev && dst.st_ino == st.st_ino) {
-			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_EXISTS, _("Target file exists"));
-			goto out;
-		}
-		unlink (dest_path);
-	}
-	out = open (dest_path, open_flags, 0666);
-	if (out < 0) {
-		int code = errno;
-
-		if (code == EEXIST)
-			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_EXISTS, _("Target file exists"));
-		else if (code == EINVAL || code == EILSEQ)
-			g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_FILENAME,
-			             _("Invalid filename %s"), dest_path);
-		else
-			set_errno_error (error, code, _("Error opening file “%s”: %s"), dest_path);
+	out = open_destination (&st, dest_path, flags, error);
+	if (out < 0)
 		goto out;
-	}
 	created = TRUE;
 	posix_fadvise (in, 0, 0, POSIX_FADV_SEQUENTIAL);
 	if (flush->buffer == NULL)
@@ -407,6 +429,147 @@ out:
 		close (out);
 	if (!ok && created && dest_path)
 		unlink (dest_path);
+	g_free (src_path);
+	g_free (dest_path);
+	return ok;
+}
+
+gboolean
+liria_sde_copy_large_file (GFile *source,
+                           GFile *destination,
+                           GFileCopyFlags flags,
+                           gboolean is_move,
+                           GCancellable *cancellable,
+                           GFileProgressCallback progress_callback,
+                           gpointer progress_data,
+                           gboolean *handled,
+                           GError **error)
+{
+	char *src_path = NULL, *dest_path = NULL;
+	struct stat st;
+	int in = -1, out = -1;
+	goffset done = 0, slice = 4 * 1024 * 1024;
+	gboolean ok = FALSE, created = FALSE, kernel = TRUE;
+	guchar *buffer = NULL;
+	gint64 last;
+
+	*handled = FALSE;
+	if (!g_file_is_native (source) || !g_file_is_native (destination) ||
+	    g_strcmp0 (g_getenv ("SDE_LIRIA_SAFE_COPY"), "never") == 0)
+		return FALSE;
+	src_path = g_file_get_path (source);
+	dest_path = g_file_get_path (destination);
+	if (src_path == NULL || dest_path == NULL || lstat (src_path, &st) != 0 || !S_ISREG (st.st_mode) ||
+	    st.st_size < LARGE_FILE)
+		goto out;
+	*handled = TRUE;
+
+	in = open (src_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	if (in < 0) {
+		set_errno_error (error, errno, _("Error opening file “%s”: %s"), src_path);
+		goto out;
+	}
+	out = open_destination (&st, dest_path, flags, error);
+	if (out < 0)
+		goto out;
+	created = TRUE;
+#ifdef FICLONE
+	/* A file system that shares data (Btrfs, XFS) has the copy at once,
+	 * as with g_file_copy (). */
+	if (ioctl (out, FICLONE, in) == 0) {
+		done = st.st_size;
+		if (progress_callback)
+			progress_callback (done, st.st_size, progress_data);
+		goto copied;
+	}
+#endif
+	posix_fadvise (in, 0, 0, POSIX_FADV_SEQUENTIAL);
+	last = g_get_monotonic_time ();
+	for (;;) {
+		ssize_t n;
+		gint64 now;
+
+		if (kernel) {
+			n = copy_file_range (in, NULL, out, NULL, (size_t) slice, 0);
+			if (n < 0 && errno == EINTR)
+				continue;
+			if (n < 0 && done == 0 && (errno == EXDEV || errno == EINVAL || errno == ENOSYS ||
+			                           errno == EOPNOTSUPP || errno == EBADF || errno == EPERM)) {
+				/* Not between these file systems: read and write. */
+				kernel = FALSE;
+				continue;
+			}
+			if (n < 0) {
+				set_errno_error (error, errno, _("Error writing to file “%s”: %s"), dest_path);
+				goto out;
+			}
+		} else {
+			ssize_t written = 0;
+
+			if (buffer == NULL)
+				buffer = g_malloc (BUFFER_SIZE);
+			n = read (in, buffer, (size_t) MIN (slice, BUFFER_SIZE));
+			if (n < 0 && errno == EINTR)
+				continue;
+			if (n < 0) {
+				set_errno_error (error, errno, _("Error reading from file “%s”: %s"), src_path);
+				goto out;
+			}
+			while (written < n) {
+				ssize_t w = write (out, buffer + written, n - written);
+
+				if (w < 0) {
+					if (errno == EINTR)
+						continue;
+					set_errno_error (error, errno, _("Error writing to file “%s”: %s"), dest_path);
+					goto out;
+				}
+				written += w;
+			}
+		}
+		if (n == 0)
+			break;
+		done += n;
+		if (progress_callback)
+			progress_callback (done, st.st_size, progress_data);
+		if (g_cancellable_set_error_if_cancelled (cancellable, error))
+			goto out;
+		/* About ten reports a second, whatever the speed of the disks (the
+		 * time includes a pause in the progress callback). */
+		now = g_get_monotonic_time ();
+		if (now - last < G_USEC_PER_SEC / 20 && slice < SLICE_MAX)
+			slice *= 2;
+		else if (now - last > G_USEC_PER_SEC / 4 && slice > SLICE_MIN)
+			slice /= 2;
+		last = now;
+	}
+
+#ifdef FICLONE
+copied:
+#endif
+	if (close (out) != 0) {
+		out = -1;
+		set_errno_error (error, errno, _("Error closing file “%s”: %s"), dest_path);
+		goto out;
+	}
+	out = -1;
+	if (is_move) {
+		g_file_copy_attributes (source, destination, flags | G_FILE_COPY_ALL_METADATA, cancellable, NULL);
+		if (!g_file_delete (source, cancellable, error)) {
+			created = FALSE; /* keep the complete copy */
+			goto out;
+		}
+	}
+	ok = TRUE;
+
+out:
+	if (in >= 0)
+		close (in);
+	if (out >= 0)
+		close (out);
+	if (!ok && created && dest_path)
+		unlink (dest_path);
+	g_free (buffer);
 	g_free (src_path);
 	g_free (dest_path);
 	return ok;

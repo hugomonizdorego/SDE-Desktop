@@ -140,6 +140,86 @@ Since 0.2.0 Alpha 1:
   change), and the ribbon scrolls sideways with the mouse wheel when it is
   wider than the window (1024x600 at 150 %).
 
+Since 0.2.0 Alpha 2:
+
+* **Icon.** Liria's icon is the folder it had, without the lily emblem
+  (`data/icons/hicolor/scalable/apps/liria.svg` and the hand-tuned 16, 24
+  and 32 px drawings in `artwork/icons/`; [BRANDING.md](BRANDING.md)).
+* **Ribbon icons in colour.** Every command of the ribbon has a list of
+  full-colour icon names (best first; `base+emblem` draws an emblem on a
+  base icon) that is looked up in the current icon theme at the sizes
+  themes draw: 32 and 16 px at 100 %, 48 and 22 px at 125 %, 48 and 24
+  px at 150 % and 64 and 32 px at 200 % (GTK renders them for the
+  screen's scale factor, so they stay sharp on HiDPI screens). An icon
+  that the theme draws in grey only (most action icons of Papirus are such
+  line icons) is replaced by the theme's symbolic glyph in a theme colour:
+  the accent, amber (Paste, Move to, Copy to), green (Open with, Extract
+  here) or red (Cut, Format). The icons are chosen again while Liria runs
+  when the icon theme or the interface scale changes. `tools/liria-ribbon-smoke.py
+  --prefix <built prefix> [--scale 150] [--screenshots DIR]` checks it on
+  Xvfb: an icon for every command, the sizes, colour on the screen, the
+  Home, Share, View and Archive tabs and a change of icon theme
+  (`LIRIA_SDE_QA_RIBBON=FILE` writes the chosen icons and the tabs). The
+  Drive tab appears for folders on ejectable drives only.
+* **Speed.** `tools/liria-perf.py --prefix <built prefix> [--repeat 3]`
+  drives Liria on Xvfb like a user (1366x768, SDE Graphite Light,
+  Papirus, the ribbon shown, folders of 1 000 and 10 000 files and 300
+  pictures) and measures until Liria is idle again. Median of three runs
+  (wall time, Liria's CPU time), the Liria of 0.2.0 Alpha 1 and now:
+
+  | Scenario | Before | After |
+  |---|---|---|
+  | Start until idle (window shown) | 0.54 s (0.35 s) | 0.63 s (0.33 s), the same within the spread of runs |
+  | Open a folder of 1 000 files | 0.41 s, 0.16 s CPU | 0.35 s, 0.13 s CPU |
+  | Open a folder of 10 000 files | 1.41 s, 1.09 s CPU | 1.01 s, 0.67 s CPU |
+  | ... then the list view (Ctrl+2) | 7.86 s, 7.45 s CPU | 3.04 s, 2.65 s CPU |
+  | ... the compact view (Ctrl+3) | 7.94 s, 7.40 s CPU | 1.16 s, 0.66 s CPU |
+  | ... the icon view again (Ctrl+1) | 6.38 s, 5.94 s CPU | 1.33 s, 0.83 s CPU |
+  | Select all 10 000 files (Ctrl+A) | 1.00 s, 0.87 s CPU | 0.49 s, 0.42 s CPU |
+  | Scroll 40 wheel steps (icons, list) | 1.0 s, 0.14 / 0.56 s CPU | the same |
+  | Ten single clicks (the ribbon follows) | 0.32 s CPU | 0.28 s CPU |
+  | Home overview (Alt+Home) | 0.72 s, 0.24 s CPU | 0.73 s, 0.23 s CPU |
+  | 300 thumbnails | 2.97 s | 2.92 s |
+  | Ten bookmarks added (sidebar) | 0.16 s CPU | 0.17 s CPU |
+
+  The causes, found with `perf record --call-graph dwarf` (`--perf`):
+  readiness checks of whole-folder requests scanned every file after every
+  file's answer (quadratic in the folder size); every file got its own
+  file system query and the view waited for all of them; each file looked
+  its folder up by URI for every attribute; any change of the folder's own
+  file (free space, modification time, item count) updated every icon and
+  row; and after every selection change the ribbon and the SDE Tools menu
+  asked every MIME type question of every selected file
+  (`suite/redesign.py` `liria_folder_loading`, `liria-sde-ribbon.c`,
+  `liria-sde-tools.c`). Still slow: the first switch of 10 000 files to
+  the list view, where GTK's tree view measures every row.
+* **File operations.** The file operations window has the design of SDE's
+  copy and move dialog ([UI-KIT.md](UI-KIT.md#copy-and-move-progress-transferdialog)):
+  each operation shows the animated SDE mark, "Copying 63 items from Source
+  to Backup", "42% complete" with Pause, Queue and Cancel and a slim
+  accent bar, and with More details the speed graph with the current
+  speed, the item being copied and the time and items remaining; paused,
+  the bar and graph turn amber and the mark stands still (so it does while
+  queued, while writing the last data to a USB stick and with reduced
+  motion). Several operations are stacked with a line between them; with
+  one, the window title is its percentage. The window takes about 2 % of
+  one CPU core while it shows a copy (1 % for the mark's animation). The
+  model is SDE's own (`src/common/transfer_model.h`, copied in as
+  `libliria-private/liria-sde-transfer-model.h`), so Liria and the SDE
+  desktop estimate and look the same; Delete, Trash and links keep their
+  own texts under the bar. GLib 2.80 copies a local file with one
+  `copy_file_range ()` call and reports its progress when it is there, so
+  a large file sat at 0 % and Pause waited for it: files of 32 MiB and
+  more on internal disks are now copied in slices of about a tenth of a
+  second (a reflink where the file system can share data;
+  `liria_sde_copy_large_file ()` in `liria-sde-copy.c`), and Pause stops
+  a copy in the middle of a file. `tools/liria-progress-smoke.py --prefix
+  <built prefix>` copies real files on Xvfb (slowed down with
+  `LIRIA_SDE_QA_COPY_RATE`) and checks the texts, the animation, More
+  details, Pause in the middle of a file, Resume, Cancel, reduced motion
+  and a complete copy byte for byte (`LIRIA_SDE_QA_PROGRESS=FILE` writes
+  what the window shows).
+
 ## SDE Power and SDE Screen Lock (alpha16)
 
 The former power-manager and screen-saver forks were replaced in alpha16 by

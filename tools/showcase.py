@@ -1998,6 +1998,152 @@ def liria_more(s):
         s.shot('liria-properties', quiet=0.6)
 
 
+def app_with_env(s, cmd, title, extra):
+    """s.app () with extra environment variables for the program (the QA
+    hooks of Liria)."""
+    saved = s.env
+    s.env = dict(saved, **extra)
+    try:
+        return s.app(cmd, title)
+    finally:
+        s.env = saved
+
+
+def qa_pairs(path):
+    """The key=value lines of a QA file."""
+    try:
+        return dict(line.partition('=')[::2] for line in Path(path).read_text().splitlines())
+    except OSError:
+        return {}
+
+
+def qa_box(values, key):
+    try:
+        return tuple(int(v) for v in values[key].split(','))
+    except (KeyError, ValueError):
+        return None
+
+
+def click_box(s, wid, box):
+    """Clicks the middle of a box given in window coordinates (QA files)."""
+    g = s.geom(wid)
+    s.click(g['x'] + box[0] + box[2] // 2, g['y'] + box[1] + box[3] // 2)
+
+
+def ribbon_tabs(path):
+    """The ribbon's tabs from LIRIA_SDE_QA_RIBBON: {page: (x, y, w, h)}."""
+    tabs = {}
+    try:
+        for line in Path(path).read_text().splitlines():
+            f = line.split('\t')
+            if f[0] == 'tab' and len(f) == 3:
+                tabs[f[1]] = tuple(int(v) for v in f[2].split(','))
+    except (OSError, ValueError):
+        pass
+    return tabs
+
+
+@scene('Liria', [
+    ('liria-ribbon-archive', 'Liria: the Archive tab of the ribbon for a selected archive'),
+    ('liria-ribbon-share', 'Liria: the Share tab of the ribbon (email, a removable drive, links)'),
+    ('liria-ribbon-view', 'Liria: the View tab of the ribbon (panes, layout, sorting, hidden files)'),
+], needs=['liria'])
+def liria_ribbon_tabs(s):
+    """The ribbon's other tabs in the icon theme's colours; the tabs' places
+    come from LIRIA_SDE_QA_RIBBON."""
+    qa = s.home / 'qa/liria-ribbon.txt'
+    qa.parent.mkdir(parents=True, exist_ok=True)
+    w = app_with_env(s, ['liria', '--no-desktop', s.home / 'Downloads'], '^Downloads$',
+                     {'LIRIA_SDE_QA_RIBBON': str(qa)})
+    s.size(w, 1040, 640)
+    s.activate(w)
+    if not s.wait(lambda: 'share' in ribbon_tabs(qa), 8):
+        raise SkipShot('the ribbon reported no tabs (LIRIA_SDE_QA_RIBBON)')
+    # The archive selected by typing its name; the Archive tab appears.
+    s.type('Autumn', 60)
+    time.sleep(0.5)
+    s.key('Escape')
+    if s.wait(lambda: 'archive' in ribbon_tabs(qa), 5):
+        click_box(s, w, ribbon_tabs(qa)['archive'])
+        s.park_pointer()
+        s.shot('liria-ribbon-archive', quiet=0.6)
+    else:
+        s.skip('liria-ribbon-archive', 'no Archive tab for the selected archive')
+    for page in ('share', 'view'):
+        click_box(s, w, ribbon_tabs(qa)[page])
+        s.park_pointer()
+        s.shot('liria-ribbon-' + page, quiet=0.6)
+    # Liria remembers the tab: Home again for the next scenes.
+    click_box(s, w, ribbon_tabs(qa)['home'])
+    time.sleep(0.3)
+
+
+@scene('Liria', [('liria-copy-progress', 'Liria: copying videos, with More details: the speed graph, the time '
+                                         'and items remaining and the animated SDE mark')], needs=['liria'])
+def liria_copy_progress(s):
+    """A copy slowed down to about 20 MB/s (LIRIA_SDE_QA_COPY_RATE), the
+    file operations window with More details."""
+    src = s.home / 'Videos/Trip to the Lakes'
+    dst = s.home / 'Backup'
+    src.mkdir(parents=True, exist_ok=True)
+    dst.mkdir(exist_ok=True)
+    large = [('Drone flight over Lake Varen.mp4', 420), ('Kayaking at Moss Lake.mp4', 260),
+             ('Campfire at Stone Bay.mp4', 180)]
+    for name, mib in large:
+        with open(src / name, 'wb') as f:
+            f.truncate(mib << 20)
+    qa = s.home / 'qa/liria-progress.txt'
+    qa.parent.mkdir(parents=True, exist_ok=True)
+    env = {'LIRIA_SDE_QA_PROGRESS': str(qa), 'LIRIA_SDE_QA_COPY_RATE': '20000000'}
+    try:
+        w = app_with_env(s, ['liria', '--no-desktop', src], '^Trip to the Lakes$', env)
+        s.size(w, 900, 560)
+        s.activate(w)
+        s.key('ctrl+a')
+        s.key('ctrl+c')
+        b = app_with_env(s, ['liria', '--no-desktop', dst], '^Backup$', env)
+        s.size(b, 1040, 640)
+        s.activate(b)
+        g = s.geom(b)
+        s.click(g['x'] + g['w'] * 0.7, g['y'] + g['h'] * 0.8)  # the empty view: keyboard focus
+        s.key('ctrl+v')
+        if not s.wait(lambda: qa_box(qa_pairs(qa), 'toggle') and qa_pairs(qa).get('window'), 15):
+            raise SkipShot('no file operations window')
+        progress = qa_pairs(qa)['window']
+        click_box(s, progress, qa_box(qa_pairs(qa), 'toggle'))
+        s.wait(lambda: qa_pairs(qa).get('details') == '1', 3)
+        time.sleep(3.0)  # the graph fills
+        s.park_pointer()
+        # The window changes four times a second: no waiting for stillness.
+        s.shot('liria-copy-progress', quiet=0.2, timeout=0.5)
+        cancel = qa_box(qa_pairs(qa), 'cancel')
+        if cancel:
+            click_box(s, progress, cancel)
+            s.wait(lambda: qa_pairs(qa).get('done') == '1', 10)
+    finally:
+        s.stop_scene_procs()
+        shutil.rmtree(dst, ignore_errors=True)
+        for name, _ in large:
+            (src / name).unlink(missing_ok=True)
+
+
+@scene('Desktop', [('sde-transfer', 'SDE: the copy and move dialog of the desktop with More details (speed '
+                                    'graph, time and items remaining)')])
+def sde_transfer(s):
+    """SDE-FLTK's copy and move dialog (src/common/transfer_dialog.h) with a
+    simulated copy from the test tools."""
+    demo = s.test_tool('sde-transfer-demo')
+    if not demo:
+        raise SkipShot('sde-transfer-demo not found (--test-dir)')
+    s.spawn(demo, '--details', '--at', '0.46', name='transfer-demo')
+    w = s.need('complete$', 10, what='the copy dialog')
+    s.activate(w)
+    time.sleep(1.0)
+    s.park_pointer()
+    # The mark is animated: no waiting for stillness.
+    s.shot('sde-transfer', quiet=0.2, timeout=0.5)
+
+
 @scene('Niny', [('niny', 'Niny: Markdown with its formatted view, tabs and the formatting toolbar')],
        scopes=(FULL, THEMES), needs=['niny'])
 def niny(s):

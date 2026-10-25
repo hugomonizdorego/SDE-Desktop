@@ -236,7 +236,27 @@ button.sde-ribbon-button:disabled {
   color: alpha(@theme_fg_color, 0.38);
 }
 
+/* 0.2.0 Alpha 2: the ribbon shows the icon theme's full-colour icons;
+ * where the theme draws a command only as a grey glyph, the glyph takes a
+ * colour of the theme (liria-sde-ribbon.c, "icons"). */
+button.sde-ribbon-button image.sde-tint-accent {
+  color: @theme_selected_bg_color;
+}
+
+button.sde-ribbon-button image.sde-tint-amber {
+  color: mix(@warning_color, @theme_fg_color, 0.25);
+}
+
+button.sde-ribbon-button image.sde-tint-red {
+  color: @error_color;
+}
+
+button.sde-ribbon-button image.sde-tint-green {
+  color: @success_color;
+}
+
 button.sde-ribbon-button:disabled image {
+  color: @theme_fg_color;
   opacity: 0.45;
 }
 
@@ -646,4 +666,40 @@ levelbar.sde-usage-bar block.filled.sde-critical {
 levelbar.sde-usage-bar block.empty {
   background-image: none;
   background-color: transparent;
+}
+
+/* File operations (0.2.0 Alpha 2, libliria-private/liria-sde-progress.c):
+ * the design of SDE's transfer dialog, with round flat buttons and a slim
+ * accent bar that turns amber while the operation is paused. */
+.sde-progress button.sde-progress-action {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: 9999px;
+}
+
+.sde-progress button.sde-progress-toggle {
+  padding: 2px 8px 2px 4px;
+}
+
+.sde-progress progressbar.sde-progress-bar trough,
+.sde-progress progressbar.sde-progress-bar progress {
+  min-height: 8px;
+  border-radius: 9999px;
+}
+
+.sde-progress progressbar.sde-progress-bar trough {
+  border: none;
+  background-image: none;
+  background-color: alpha(@theme_fg_color, 0.10);
+}
+
+.sde-progress progressbar.sde-progress-bar progress {
+  border: none;
+  background-image: none;
+  background-color: @theme_selected_bg_color;
+}
+
+.sde-progress.sde-paused progressbar.sde-progress-bar progress {
+  background-color: @warning_color;
 }

@@ -2,7 +2,8 @@
  * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Liria's ribbon (alpha52), an open-source take on a file manager ribbon:
- * symbolic icons of the icon theme, theme colours, compact groups.
+ * full-colour icons of the icon theme (0.2.0 Alpha 2, see "icons" below),
+ * theme colours, compact groups.
  *
  *   Home   Clipboard (Pin to Quick access, Copy, Paste, Cut, Copy path,
  *          Paste shortcut), Organize (Move to, Copy to, Delete, Rename),
@@ -64,35 +65,335 @@ typedef struct {
     GList *bound;        /* buttons bound to a GtkAction by name */
     GList *commands;     /* buttons enabled from the selection */
     GList *view_buttons; /* Icons, List, Compact */
+    GList *images;       /* every command's icon (rb_icon_apply ()) */
     gboolean dropped;    /* collapsed mode: the commands are shown */
     gboolean syncing;
     guint refresh_id;
+    guint qa_id;         /* LIRIA_SDE_QA_RIBBON: written after the layout */
 } Ribbon;
 
 static int sde_ribbon_mode = -1;
 
 static void ribbon_apply (Ribbon *r);
 
-/* ------------------------------------------------------------- helpers */
+/* --------------------------------------------------------------- icons */
 
-static const char *
-rb_icon (const char *first, ...)
+/* 0.2.0 Alpha 2: the ribbon shows the icon theme's full-colour icons, like
+ * the folder view and the sidebar, instead of monochrome symbolic glyphs,
+ * and follows the icon theme when it changes. Each command names
+ * full-colour icons, best first ("base+emblem,emblem" draws an emblem on
+ * the base icon, e.g. a folder with a plus). One is used when the theme
+ * has it and draws it in colour: many themes, Papirus among them, draw
+ * their action icons (edit-copy, edit-paste...) as grey glyphs. Otherwise
+ * the theme's symbolic glyph is used, tinted with a colour of the GTK
+ * theme (the accent, warning, error or success colour; liria-sde.css).
+ * Sizes are 32 px (large) and 16 px (small) at 100 %, grown with the
+ * interface scale (liria_sde_ribbon_icon_pixels ()); GTK picks the @2x
+ * icons on HiDPI screens itself. */
+typedef struct {
+    const char *colour[5]; /* full-colour icon names, best first */
+    const char *glyph[4];  /* symbolic icon names: the tinted fallback */
+    const char *tint;      /* "accent", "amber", "red" or "green" */
+} RbIcon;
+
+static const char * const rb_tints[] = { "accent", "amber", "red", "green", NULL };
+
+/* Home */
+static const RbIcon rb_icon_pin = { { "view-pin", "pin", NULL },
+                                    { "view-pin-symbolic", "pin-symbolic", "starred-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_copy = { { "edit-copy", NULL }, { "edit-copy-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_paste = { { "edit-paste", NULL }, { "edit-paste-symbolic", NULL }, "amber" };
+static const RbIcon rb_icon_cut = { { "edit-cut", NULL }, { "edit-cut-symbolic", NULL }, "red" };
+static const RbIcon rb_icon_copy_path = { { "edit-copy", NULL }, { "edit-copy-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_paste_link = { { "insert-link", NULL },
+                                           { "insert-link-symbolic", "emblem-symbolic-link", NULL }, "accent" };
+static const RbIcon rb_icon_move_to = { { "folder-move", NULL },
+                                        { "folder-move-symbolic", "go-jump-symbolic", NULL }, "amber" };
+static const RbIcon rb_icon_copy_to = { { "folder-copy", NULL },
+                                        { "folder-copy-symbolic", "edit-copy-symbolic", NULL }, "amber" };
+static const RbIcon rb_icon_delete = { { "user-trash", "edit-delete", NULL },
+                                       { "user-trash-symbolic", "edit-delete-symbolic", NULL }, "red" };
+static const RbIcon rb_icon_rename = { { "edit-rename", NULL },
+                                       { "edit-rename-symbolic", "document-edit-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_new_folder = { { "folder-new", "folder+emblem-new,list-add", NULL },
+                                           { "folder-new-symbolic", NULL }, "amber" };
+static const RbIcon rb_icon_new_document = { { "document-new", NULL }, { "document-new-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_properties = { { "document-properties", "dialog-information", NULL },
+                                           { "document-properties-symbolic", "preferences-system-symbolic", NULL },
+                                           "accent" };
+static const RbIcon rb_icon_open = { { "document-open", NULL }, { "document-open-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_open_with = { { "system-run", NULL },
+                                          { "system-run-symbolic", "application-x-executable-symbolic", NULL },
+                                          "green" };
+static const RbIcon rb_icon_select_all = { { "edit-select-all", NULL }, { "edit-select-all-symbolic", NULL },
+                                           "accent" };
+static const RbIcon rb_icon_select_none = { { "edit-select-none", NULL },
+                                            { "edit-select-none-symbolic", "edit-clear-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_invert = { { "edit-select-invert", NULL },
+                                       { "edit-select-invert-symbolic", "object-flip-horizontal-symbolic", NULL },
+                                       "accent" };
+/* Share */
+static const RbIcon rb_icon_email = { { "mail-send", "internet-mail", "mail-message-new", NULL },
+                                      { "mail-send-symbolic", "mail-message-new-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_compress = { { "package-x-generic", "application-x-archive", NULL },
+                                         { "package-x-generic-symbolic", "application-x-addon-symbolic", NULL },
+                                         "green" };
+static const RbIcon rb_icon_to_drive = { { "drive-removable-media-usb", "drive-removable-media", "media-removable",
+                                           NULL },
+                                         { "media-removable-symbolic", "drive-removable-media-symbolic", NULL },
+                                         "accent" };
+static const RbIcon rb_icon_make_link = { { "insert-link", NULL }, { "insert-link-symbolic", NULL }, "accent" };
+/* View */
+static const RbIcon rb_icon_nav_pane = { { "sidebar-show", "view-left-pane", NULL },
+                                         { "sidebar-show-symbolic", "view-left-pane-symbolic", "view-dual-symbolic",
+                                           NULL }, "accent" };
+static const RbIcon rb_icon_extra_pane = { { "view-dual", NULL }, { "view-dual-symbolic", "view-paged-symbolic", NULL },
+                                           "accent" };
+static const RbIcon rb_icon_status_bar = { { NULL },
+                                           { "view-continuous-symbolic", "view-more-horizontal-symbolic", NULL },
+                                           "accent" };
+static const RbIcon rb_icon_view_icons = { { "view-grid", NULL }, { "view-grid-symbolic", "view-list-symbolic", NULL },
+                                           "accent" };
+static const RbIcon rb_icon_view_list = { { "view-list", NULL }, { "view-list-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_view_compact = { { "view-compact", NULL },
+                                             { "view-compact-symbolic", "view-list-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_zoom_in = { { "zoom-in", NULL }, { "zoom-in-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_zoom_out = { { "zoom-out", NULL }, { "zoom-out-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_zoom_normal = { { "zoom-original", NULL }, { "zoom-original-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_sort = { { "view-sort-ascending", NULL },
+                                     { "view-sort-ascending-symbolic", "view-sort-descending-symbolic", NULL },
+                                     "accent" };
+static const RbIcon rb_icon_hidden = { { NULL }, { "view-reveal-symbolic", "view-conceal-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_backup = { { NULL }, { "document-revert-symbolic", "edit-undo-symbolic", NULL }, "amber" };
+static const RbIcon rb_icon_ribbon = { { NULL }, { "view-more-horizontal-symbolic", "open-menu-symbolic", NULL },
+                                       "accent" };
+/* Drive */
+static const RbIcon rb_icon_eject = { { "media-eject", NULL }, { "media-eject-symbolic", NULL }, "accent" };
+static const RbIcon rb_icon_format = { { "drive-harddisk", NULL }, { "drive-harddisk-symbolic", NULL }, "red" };
+static const RbIcon rb_icon_disks = { { "org.gnome.DiskUtility", "gnome-disks", "drive-multidisk", NULL },
+                                      { "drive-multidisk-symbolic", "drive-harddisk-symbolic", NULL }, "accent" };
+/* Archive */
+static const RbIcon rb_icon_extract_here = { { "extract-archive", "package-x-generic", "application-x-archive", NULL },
+                                             { "extract-archive-symbolic", "package-x-generic-symbolic", NULL },
+                                             "green" };
+static const RbIcon rb_icon_extract_to = { { "folder-download", NULL },
+                                           { "folder-download-symbolic", "folder-symbolic", NULL }, "amber" };
+
+/* "name/pixels" -> 1 drawn in grey, 2 in colour; emptied when the icon
+ * theme changes. */
+static GHashTable *rb_colour_cache = NULL;
+
+static void
+rb_colour_cache_reset (GtkIconTheme *theme, gpointer data)
 {
-    GtkIconTheme *theme = gtk_icon_theme_get_default ();
-    const char *name = first, *last = first;
-    va_list args;
-
-    va_start (args, first);
-    while (name != NULL)
-    {
-        last = name;
-        if (gtk_icon_theme_has_icon (theme, name))
-            break;
-        name = va_arg (args, const char *);
-    }
-    va_end (args);
-    return name != NULL ? name : last;
+    g_hash_table_remove_all (rb_colour_cache);
 }
+
+static gboolean
+rb_icon_colourful (GtkIconTheme *theme, const char *name, int pixels)
+{
+    char *key;
+    gpointer value;
+    GtkIconInfo *info;
+    gboolean colourful = FALSE;
+
+    if (rb_colour_cache == NULL)
+    {
+        rb_colour_cache = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+        /* Connected before any ribbon's own handler, so the ribbons find
+         * an empty cache when they choose their icons again. */
+        g_signal_connect (theme, "changed", G_CALLBACK (rb_colour_cache_reset), NULL);
+    }
+    key = g_strdup_printf ("%s/%d", name, pixels);
+    if (g_hash_table_lookup_extended (rb_colour_cache, key, NULL, &value))
+    {
+        g_free (key);
+        return GPOINTER_TO_INT (value) == 2;
+    }
+    info = gtk_icon_theme_lookup_icon (theme, name, pixels, GTK_ICON_LOOKUP_FORCE_SIZE);
+    if (info != NULL && !gtk_icon_info_is_symbolic (info))
+    {
+        GdkPixbuf *pixbuf = gtk_icon_info_load_icon (info, NULL);
+
+        if (pixbuf != NULL)
+        {
+            colourful = liria_sde_pixels_colourful (gdk_pixbuf_read_pixels (pixbuf), gdk_pixbuf_get_width (pixbuf),
+                                                    gdk_pixbuf_get_height (pixbuf), gdk_pixbuf_get_rowstride (pixbuf),
+                                                    gdk_pixbuf_get_n_channels (pixbuf));
+            g_object_unref (pixbuf);
+        }
+    }
+    if (info != NULL)
+        g_object_unref (info);
+    g_hash_table_insert (rb_colour_cache, key, GINT_TO_POINTER (colourful ? 2 : 1));
+    return colourful;
+}
+
+/* A GIcon for "name" or "base+emblem,emblem" (the first emblem the theme
+ * has, drawn by GTK on the lower right corner). */
+static GIcon *
+rb_icon_gicon (const char *spec)
+{
+    const char *plus = strchr (spec, '+');
+    char *base;
+    char **emblems;
+    GIcon *icon, *emblem_icon, *emblemed;
+    GEmblem *emblem;
+
+    if (plus == NULL)
+        return g_themed_icon_new (spec);
+    base = g_strndup (spec, plus - spec);
+    emblems = g_strsplit (plus + 1, ",", -1);
+    icon = g_themed_icon_new (base);
+    emblem_icon = g_themed_icon_new_from_names (emblems, -1);
+    emblem = g_emblem_new (emblem_icon);
+    emblemed = g_emblemed_icon_new (icon, emblem);
+    g_object_unref (emblem);
+    g_object_unref (emblem_icon);
+    g_object_unref (icon);
+    g_strfreev (emblems);
+    g_free (base);
+    return emblemed;
+}
+
+static int
+rb_icon_pixels (gboolean large)
+{
+    GtkSettings *settings = gtk_settings_get_default ();
+    gint dpi = -1;
+
+    if (settings != NULL)
+        g_object_get (settings, "gtk-xft-dpi", &dpi, NULL);
+    return liria_sde_ribbon_icon_pixels (dpi, large);
+}
+
+/* Chooses (again) the icon of a command's image, see above. */
+static void
+rb_icon_apply (GtkWidget *image)
+{
+    const RbIcon *icon = g_object_get_data (G_OBJECT (image), "sde-icon");
+    gboolean large = GPOINTER_TO_INT (g_object_get_data (G_OBJECT (image), "sde-icon-large"));
+    GtkIconTheme *theme = gtk_icon_theme_get_default ();
+    GtkStyleContext *style = gtk_widget_get_style_context (image);
+    int pixels = rb_icon_pixels (large);
+    const char *chosen = NULL;
+    guint i;
+
+    for (i = 0; icon->colour[i] != NULL && chosen == NULL; i++)
+    {
+        char *base = g_strndup (icon->colour[i], strcspn (icon->colour[i], "+"));
+
+        if (gtk_icon_theme_has_icon (theme, base) && rb_icon_colourful (theme, base, pixels))
+            chosen = icon->colour[i];
+        g_free (base);
+    }
+    for (i = 0; rb_tints[i] != NULL; i++)
+    {
+        char *tint = g_strconcat ("sde-tint-", rb_tints[i], NULL);
+
+        gtk_style_context_remove_class (style, tint);
+        g_free (tint);
+    }
+    if (chosen != NULL)
+    {
+        GIcon *gicon = rb_icon_gicon (chosen);
+
+        gtk_image_set_from_gicon (GTK_IMAGE (image), gicon, GTK_ICON_SIZE_BUTTON);
+        g_object_unref (gicon);
+        g_object_set_data (G_OBJECT (image), "sde-icon-kind", (gpointer) "colour");
+    }
+    else
+    {
+        char *tint = g_strconcat ("sde-tint-", icon->tint, NULL);
+
+        chosen = icon->glyph[0];
+        for (i = 0; icon->glyph[i] != NULL; i++)
+        {
+            if (gtk_icon_theme_has_icon (theme, icon->glyph[i]))
+            {
+                chosen = icon->glyph[i];
+                break;
+            }
+        }
+        gtk_image_set_from_icon_name (GTK_IMAGE (image), chosen, GTK_ICON_SIZE_BUTTON);
+        gtk_style_context_add_class (style, tint);
+        g_free (tint);
+        g_object_set_data (G_OBJECT (image), "sde-icon-kind", (gpointer) "glyph");
+    }
+    gtk_image_set_pixel_size (GTK_IMAGE (image), pixels);
+    g_object_set_data (G_OBJECT (image), "sde-icon-chosen", (gpointer) chosen);
+}
+
+/* LIRIA_SDE_QA_RIBBON=FILE: the icon of every command (label, icon,
+ * "colour" or "glyph", tint, pixels) and the tabs shown ("tab", page,
+ * x,y,w,h in the window), one per line, for tests and screenshots. */
+static void
+rb_qa (Ribbon *r)
+{
+    const char *path = g_getenv ("LIRIA_SDE_QA_RIBBON");
+    GString *text;
+    GList *l;
+
+    if (path == NULL || *path == '\0')
+        return;
+    text = g_string_new (NULL);
+    for (l = r->images; l != NULL; l = l->next)
+    {
+        const RbIcon *icon = g_object_get_data (G_OBJECT (l->data), "sde-icon");
+        const char *kind = g_object_get_data (G_OBJECT (l->data), "sde-icon-kind");
+
+        g_string_append_printf (text, "%s\t%s\t%s\t%s\t%d\n",
+                                (const char *) g_object_get_data (G_OBJECT (l->data), "sde-icon-label"),
+                                (const char *) g_object_get_data (G_OBJECT (l->data), "sde-icon-chosen"),
+                                kind, g_strcmp0 (kind, "glyph") == 0 ? icon->tint : "-",
+                                gtk_image_get_pixel_size (GTK_IMAGE (l->data)));
+    }
+    for (l = r->tab_buttons; l != NULL; l = l->next)
+    {
+        GtkWidget *tab = l->data;
+        int x = 0, y = 0;
+
+        if (gtk_widget_get_mapped (tab) &&
+            gtk_widget_translate_coordinates (tab, gtk_widget_get_toplevel (tab), 0, 0, &x, &y))
+            g_string_append_printf (text, "tab\t%s\t%d,%d,%d,%d\n",
+                                    (const char *) g_object_get_data (G_OBJECT (tab), "sde-page"), x, y,
+                                    gtk_widget_get_allocated_width (tab), gtk_widget_get_allocated_height (tab));
+    }
+    g_file_set_contents (path, text->str, -1, NULL);
+    g_string_free (text, TRUE);
+}
+
+static gboolean
+rb_qa_idle (gpointer data)
+{
+    Ribbon *r = data;
+
+    r->qa_id = 0;
+    rb_qa (r);
+    return G_SOURCE_REMOVE;
+}
+
+/* The QA file again once GTK has placed a tab that just appeared. */
+static void
+rb_qa_later (Ribbon *r)
+{
+    const char *path = g_getenv ("LIRIA_SDE_QA_RIBBON");
+
+    if (path != NULL && *path != '\0' && r->qa_id == 0)
+        r->qa_id = g_timeout_add_full (G_PRIORITY_LOW, 100, rb_qa_idle, r, NULL);
+}
+
+static void
+rb_icons_apply_all (Ribbon *r)
+{
+    GList *l;
+
+    for (l = r->images; l != NULL; l = l->next)
+        rb_icon_apply (l->data);
+    rb_qa (r);
+}
+
+/* ------------------------------------------------------------- helpers */
 
 static GtkAction *
 rb_action (Ribbon *r, const char *name)
@@ -240,14 +541,19 @@ rb_close_dropdown (GtkWidget *widget, Ribbon *r)
 }
 
 static GtkWidget *
-rb_button_new (const char *label, const char *icon, gboolean large, gboolean toggle)
+rb_button_new (Ribbon *r, const char *label, const RbIcon *icon, gboolean large, gboolean toggle)
 {
     GtkWidget *button = toggle ? gtk_toggle_button_new () : gtk_button_new ();
     GtkWidget *box = gtk_box_new (large ? GTK_ORIENTATION_VERTICAL : GTK_ORIENTATION_HORIZONTAL, large ? 2 : 6);
-    GtkWidget *image = gtk_image_new_from_icon_name (icon, large ? GTK_ICON_SIZE_LARGE_TOOLBAR : GTK_ICON_SIZE_MENU);
+    GtkWidget *image = gtk_image_new ();
     GtkWidget *text = gtk_label_new (label);
 
-    gtk_image_set_pixel_size (GTK_IMAGE (image), large ? 24 : 16);
+    g_object_set_data (G_OBJECT (image), "sde-icon", (gpointer) icon);
+    g_object_set_data (G_OBJECT (image), "sde-icon-large", GINT_TO_POINTER (large));
+    g_object_set_data_full (G_OBJECT (image), "sde-icon-label", g_strdup (label), g_free);
+    gtk_style_context_add_class (gtk_widget_get_style_context (image), "sde-ribbon-icon");
+    r->images = g_list_append (r->images, image);
+    rb_icon_apply (image);
     gtk_label_set_justify (GTK_LABEL (text), GTK_JUSTIFY_CENTER);
     if (large)
     {
@@ -320,10 +626,10 @@ rb_action_clicked (GtkButton *button, Ribbon *r)
 }
 
 static GtkWidget *
-rb_action_button (Ribbon *r, GtkWidget *box, const char *action, const char *label, const char *icon,
+rb_action_button (Ribbon *r, GtkWidget *box, const char *action, const char *label, const RbIcon *icon,
                   gboolean large, gboolean toggle)
 {
-    GtkWidget *button = rb_button_new (label, icon, large, toggle);
+    GtkWidget *button = rb_button_new (r, label, icon, large, toggle);
 
     g_object_set_data_full (G_OBJECT (button), "sde-action", g_strdup (action), g_free);
     g_signal_connect (button, "clicked", G_CALLBACK (rb_action_clicked), r);
@@ -334,10 +640,10 @@ rb_action_button (Ribbon *r, GtkWidget *box, const char *action, const char *lab
 }
 
 static GtkWidget *
-rb_command_button (Ribbon *r, GtkWidget *box, guint needs, const char *label, const char *icon,
+rb_command_button (Ribbon *r, GtkWidget *box, guint needs, const char *label, const RbIcon *icon,
                    gboolean large, GCallback callback)
 {
-    GtkWidget *button = rb_button_new (label, icon, large, FALSE);
+    GtkWidget *button = rb_button_new (r, label, icon, large, FALSE);
 
     g_object_set_data (G_OBJECT (button), "sde-needs", GUINT_TO_POINTER (needs));
     g_signal_connect (button, "clicked", callback, r);
@@ -755,51 +1061,50 @@ rb_build_home (Ribbon *r)
 
     group = rb_group (page, _("Clipboard"));
     rb_command_button (r, group, LIRIA_SDE_CMD_PIN, _("Pin to Quick access"),
-                       rb_icon ("view-pin-symbolic", "starred-symbolic", NULL), TRUE, G_CALLBACK (rb_pin));
-    rb_action_button (r, group, "Copy", _("Copy"), rb_icon ("edit-copy-symbolic", NULL), TRUE, FALSE);
-    rb_action_button (r, group, "Paste", _("Paste"), rb_icon ("edit-paste-symbolic", NULL), TRUE, FALSE);
+                       &rb_icon_pin, TRUE, G_CALLBACK (rb_pin));
+    rb_action_button (r, group, "Copy", _("Copy"), &rb_icon_copy, TRUE, FALSE);
+    rb_action_button (r, group, "Paste", _("Paste"), &rb_icon_paste, TRUE, FALSE);
     column = rb_column (group);
-    rb_action_button (r, column, "Cut", _("Cut"), rb_icon ("edit-cut-symbolic", NULL), FALSE, FALSE);
+    rb_action_button (r, column, "Cut", _("Cut"), &rb_icon_cut, FALSE, FALSE);
     rb_command_button (r, column, LIRIA_SDE_CMD_PIN, _("Copy path"),
-                       rb_icon ("edit-copy-symbolic", NULL), FALSE, G_CALLBACK (rb_copy_path));
+                       &rb_icon_copy_path, FALSE, G_CALLBACK (rb_copy_path));
     rb_command_button (r, column, LIRIA_SDE_CMD_PASTE, _("Paste shortcut"),
-                       rb_icon ("insert-link-symbolic", "emblem-symbolic-link", NULL), FALSE, G_CALLBACK (rb_paste_link));
+                       &rb_icon_paste_link, FALSE, G_CALLBACK (rb_paste_link));
 
     group = rb_group (page, _("Organize"));
     column = rb_column (group);
     rb_command_button (r, column, LIRIA_SDE_CMD_CUT, _("Move to"),
-                       rb_icon ("folder-move-symbolic", "go-jump-symbolic", NULL), FALSE, G_CALLBACK (rb_move_to));
+                       &rb_icon_move_to, FALSE, G_CALLBACK (rb_move_to));
     rb_command_button (r, column, LIRIA_SDE_CMD_COPY, _("Copy to"),
-                       rb_icon ("folder-copy-symbolic", "edit-copy-symbolic", NULL), FALSE, G_CALLBACK (rb_copy_to));
+                       &rb_icon_copy_to, FALSE, G_CALLBACK (rb_copy_to));
     column = rb_column (group);
-    rb_action_button (r, column, "Trash", _("Delete"), rb_icon ("user-trash-symbolic", "edit-delete-symbolic", NULL),
+    rb_action_button (r, column, "Trash", _("Delete"), &rb_icon_delete,
                       FALSE, FALSE);
-    rb_action_button (r, column, "Rename", _("Rename"), rb_icon ("edit-rename-symbolic", "document-edit-symbolic",
-                                                                 NULL), FALSE, FALSE);
+    rb_action_button (r, column, "Rename", _("Rename"), &rb_icon_rename, FALSE, FALSE);
 
     group = rb_group (page, _("New"));
-    rb_action_button (r, group, "New Folder", _("New folder"), rb_icon ("folder-new-symbolic", NULL), TRUE, FALSE);
+    rb_action_button (r, group, "New Folder", _("New folder"), &rb_icon_new_folder, TRUE, FALSE);
     column = rb_column (group);
-    rb_action_button (r, column, "New Empty File", _("New document"), rb_icon ("document-new-symbolic", NULL),
+    rb_action_button (r, column, "New Empty File", _("New document"), &rb_icon_new_document,
                       FALSE, FALSE);
 
     group = rb_group (page, _("Open"));
     rb_action_button (r, group, "Properties", _("Properties"),
-                      rb_icon ("document-properties-symbolic", "preferences-system-symbolic", NULL), TRUE, FALSE);
+                      &rb_icon_properties, TRUE, FALSE);
     column = rb_column (group);
-    rb_action_button (r, column, "Open", _("Open"), rb_icon ("document-open-symbolic", NULL), FALSE, FALSE);
+    rb_action_button (r, column, "Open", _("Open"), &rb_icon_open, FALSE, FALSE);
     rb_action_button (r, column, "OtherApplication1", _("Open with\xE2\x80\xA6"),
-                      rb_icon ("system-run-symbolic", "application-x-executable-symbolic", NULL), FALSE, FALSE);
+                      &rb_icon_open_with, FALSE, FALSE);
 
     group = rb_group (page, _("Select"));
     column = rb_column (group);
-    rb_action_button (r, column, "Select All", _("Select all"), rb_icon ("edit-select-all-symbolic", NULL),
+    rb_action_button (r, column, "Select All", _("Select all"), &rb_icon_select_all,
                       FALSE, FALSE);
     rb_command_button (r, column, LIRIA_SDE_CMD_COPY, _("Select none"),
-                       rb_icon ("edit-select-none-symbolic", "edit-clear-symbolic", NULL), FALSE,
+                       &rb_icon_select_none, FALSE,
                        G_CALLBACK (rb_select_none));
     rb_action_button (r, column, "Invert Selection", _("Invert selection"),
-                      rb_icon ("edit-select-invert-symbolic", "object-flip-horizontal-symbolic", NULL), FALSE, FALSE);
+                      &rb_icon_invert, FALSE, FALSE);
 }
 
 static void
@@ -812,32 +1117,31 @@ rb_build_share (Ribbon *r)
     group = rb_group (page, _("Send"));
     program = g_find_program_in_path ("xdg-email");
     if (program != NULL)
-        rb_command_button (r, group, LIRIA_SDE_CMD_COPY, _("Email"), rb_icon ("mail-send-symbolic",
-                           "mail-message-new-symbolic", NULL), TRUE, G_CALLBACK (rb_email));
+        rb_command_button (r, group, LIRIA_SDE_CMD_COPY, _("Email"), &rb_icon_email, TRUE, G_CALLBACK (rb_email));
     g_free (program);
     program = g_find_program_in_path ("taca");
     if (program != NULL)
         rb_command_button (r, group, LIRIA_SDE_CMD_COMPRESS, _("Compress"),
-                           rb_icon ("package-x-generic-symbolic", "application-x-addon-symbolic", NULL), TRUE,
+                           &rb_icon_compress, TRUE,
                            G_CALLBACK (rb_compress));
     g_free (program);
 
     group = rb_group (page, _("Drives"));
     rb_command_button (r, group, LIRIA_SDE_CMD_COPY, _("Copy to drive"),
-                       rb_icon ("media-removable-symbolic", "drive-removable-media-symbolic", NULL), TRUE,
+                       &rb_icon_to_drive, TRUE,
                        G_CALLBACK (rb_drive_menu));
     column = rb_column (group);
-    rb_action_button (r, column, "Create Link", _("Make link"), rb_icon ("insert-link-symbolic", NULL), FALSE,
+    rb_action_button (r, column, "Create Link", _("Make link"), &rb_icon_make_link, FALSE,
                       FALSE);
 }
 
 static void
 rb_build_view (Ribbon *r)
 {
-    static const struct { const char *id, *label, *icon; } views[] = {
-        { "OAFIID:Liria_File_Manager_Icon_View", N_("Icons"), "view-grid-symbolic" },
-        { "OAFIID:Liria_File_Manager_List_View", N_("Details"), "view-list-symbolic" },
-        { "OAFIID:Liria_File_Manager_Compact_View", N_("Compact"), "view-compact-symbolic" },
+    static const struct { const char *id, *label; const RbIcon *icon; } views[] = {
+        { "OAFIID:Liria_File_Manager_Icon_View", N_("Icons"), &rb_icon_view_icons },
+        { "OAFIID:Liria_File_Manager_List_View", N_("Details"), &rb_icon_view_list },
+        { "OAFIID:Liria_File_Manager_Compact_View", N_("Compact"), &rb_icon_view_compact },
     };
     GtkWidget *page = rb_page (r, "view", _("View"), NULL);
     GtkWidget *group, *column;
@@ -845,20 +1149,19 @@ rb_build_view (Ribbon *r)
 
     group = rb_group (page, _("Panes"));
     rb_action_button (r, group, "Show Hide Sidebar", _("Navigation pane"),
-                      rb_icon ("sidebar-show-symbolic", "view-left-pane-symbolic", "view-dual-symbolic", NULL),
+                      &rb_icon_nav_pane,
                       TRUE, TRUE);
     column = rb_column (group);
     rb_action_button (r, column, "Show Hide Extra Pane", _("Extra pane"),
-                      rb_icon ("view-dual-symbolic", "view-paged-symbolic", NULL), FALSE, TRUE);
+                      &rb_icon_extra_pane, FALSE, TRUE);
     rb_action_button (r, column, "Show Hide Statusbar", _("Status bar"),
-                      rb_icon ("view-continuous-symbolic", "view-more-horizontal-symbolic", NULL), FALSE, TRUE);
+                      &rb_icon_status_bar, FALSE, TRUE);
 
     group = rb_group (page, _("Layout"));
     column = rb_column (group);
     for (i = 0; i < G_N_ELEMENTS (views); i++)
     {
-        GtkWidget *button = rb_button_new (_(views[i].label), rb_icon (views[i].icon, "view-list-symbolic", NULL),
-                                           FALSE, TRUE);
+        GtkWidget *button = rb_button_new (r, _(views[i].label), views[i].icon, FALSE, TRUE);
 
         g_object_set_data (G_OBJECT (button), "sde-view-id", (gpointer) views[i].id);
         g_signal_connect (button, "toggled", G_CALLBACK (rb_view_toggled), r);
@@ -867,24 +1170,24 @@ rb_build_view (Ribbon *r)
         r->view_buttons = g_list_append (r->view_buttons, button);
     }
     column = rb_column (group);
-    rb_action_button (r, column, "Zoom In", _("Larger"), rb_icon ("zoom-in-symbolic", NULL), FALSE, FALSE);
-    rb_action_button (r, column, "Zoom Out", _("Smaller"), rb_icon ("zoom-out-symbolic", NULL), FALSE, FALSE);
-    rb_action_button (r, column, "Zoom Normal", _("Normal size"), rb_icon ("zoom-original-symbolic", NULL),
+    rb_action_button (r, column, "Zoom In", _("Larger"), &rb_icon_zoom_in, FALSE, FALSE);
+    rb_action_button (r, column, "Zoom Out", _("Smaller"), &rb_icon_zoom_out, FALSE, FALSE);
+    rb_action_button (r, column, "Zoom Normal", _("Normal size"), &rb_icon_zoom_normal,
                       FALSE, FALSE);
 
     group = rb_group (page, _("Current view"));
     rb_command_button (r, group, LIRIA_SDE_CMD_PIN, _("Sort by"),
-                       rb_icon ("view-sort-ascending-symbolic", "view-sort-descending-symbolic", NULL), TRUE,
+                       &rb_icon_sort, TRUE,
                        G_CALLBACK (rb_sort_menu));
 
     group = rb_group (page, _("Show/hide"));
     column = rb_column (group);
     rb_action_button (r, column, "Show Hidden Files", _("Hidden items"),
-                      rb_icon ("view-reveal-symbolic", "view-conceal-symbolic", NULL), FALSE, TRUE);
+                      &rb_icon_hidden, FALSE, TRUE);
     rb_action_button (r, column, "Show Backup Files", _("Backup files"),
-                      rb_icon ("document-revert-symbolic", "edit-undo-symbolic", NULL), FALSE, TRUE);
+                      &rb_icon_backup, FALSE, TRUE);
     rb_command_button (r, group, LIRIA_SDE_CMD_PIN, _("Ribbon"),
-                       rb_icon ("view-more-horizontal-symbolic", "open-menu-symbolic", NULL), TRUE,
+                       &rb_icon_ribbon, TRUE,
                        G_CALLBACK (rb_mode_menu));
 }
 
@@ -897,19 +1200,18 @@ rb_build_drive (Ribbon *r)
 
     gtk_style_context_add_class (gtk_widget_get_style_context (r->drive_tab), "sde-ribbon-contextual");
     group = rb_group (page, _("Drive"));
-    rb_action_button (r, group, "Self Eject Volume", _("Eject"), rb_icon ("media-eject-symbolic", NULL), TRUE, FALSE);
+    rb_action_button (r, group, "Self Eject Volume", _("Eject"), &rb_icon_eject, TRUE, FALSE);
     column = rb_column (group);
-    rb_action_button (r, column, "Self Unmount Volume", _("Unmount"), rb_icon ("media-eject-symbolic", NULL),
+    rb_action_button (r, column, "Self Unmount Volume", _("Unmount"), &rb_icon_eject,
                       FALSE, FALSE);
     rb_action_button (r, column, "Self Format Volume", _("Format\xE2\x80\xA6"),
-                      rb_icon ("drive-harddisk-symbolic", NULL), FALSE, FALSE);
+                      &rb_icon_format, FALSE, FALSE);
     group = rb_group (page, _("Manage"));
     rb_action_button (r, group, "LocationProperties", _("Properties"),
-                      rb_icon ("document-properties-symbolic", NULL), TRUE, FALSE);
+                      &rb_icon_properties, TRUE, FALSE);
     program = g_find_program_in_path ("gnome-disks");
     if (program != NULL)
-        rb_command_button (r, group, LIRIA_SDE_CMD_PIN, _("Disks"), rb_icon ("drive-multidisk-symbolic",
-                           "drive-harddisk-symbolic", NULL), TRUE, G_CALLBACK (rb_disks));
+        rb_command_button (r, group, LIRIA_SDE_CMD_PIN, _("Disks"), &rb_icon_disks, TRUE, G_CALLBACK (rb_disks));
     g_free (program);
 }
 
@@ -922,10 +1224,10 @@ rb_build_archive (Ribbon *r)
     gtk_style_context_add_class (gtk_widget_get_style_context (r->archive_tab), "sde-ribbon-contextual");
     group = rb_group (page, _("Extract"));
     rb_command_button (r, group, LIRIA_SDE_CMD_EXTRACT, _("Extract here"),
-                       rb_icon ("extract-archive-symbolic", "package-x-generic-symbolic", NULL), TRUE,
+                       &rb_icon_extract_here, TRUE,
                        G_CALLBACK (rb_extract_here));
     rb_command_button (r, group, LIRIA_SDE_CMD_EXTRACT, _("Extract to\xE2\x80\xA6"),
-                       rb_icon ("folder-download-symbolic", "folder-symbolic", NULL), TRUE,
+                       &rb_icon_extract_to, TRUE,
                        G_CALLBACK (rb_extract_to));
 }
 
@@ -1061,16 +1363,24 @@ rb_refresh_idle (gpointer data)
 
     r->refresh_id = 0;
     rb_rebind (r);
-    files = rb_selection (r);
+    /* 0.2.0 Alpha 2: the contextual Archive tab needs to know whether
+     * every selected item is an archive, so the checks stop at the first
+     * one that is not; they took a quarter of the time of Ctrl+A in a
+     * folder of 10 000 files. */
+    files = slot != NULL && slot->content_view != NULL ? liria_view_get_selection (slot->content_view) : NULL;
+    selection.count = g_list_length (files);
     for (l = files; l != NULL; l = l->next)
     {
-        selection.count++;
-        if (liria_file_is_directory (l->data))
-            selection.folders++;
-        if (rb_is_archive (l->data))
-            selection.archives++;
+        LiriaFile *file = G_IS_FILE (l->data) ? liria_file_get_existing (l->data) : NULL;
+        gboolean archive = file != NULL && rb_is_archive (file);
+
+        if (file != NULL)
+            liria_file_unref (file);
+        if (!archive)
+            break;
+        selection.archives++;
     }
-    liria_file_list_free (files);
+    g_list_free_full (files, g_object_unref);
     /* The folder accepts new files exactly when New Folder works; the
      * clipboard holds files when Paste works. */
     selection.writable = rb_action_usable (r, "New Folder");
@@ -1103,6 +1413,8 @@ rb_refresh_idle (gpointer data)
             rb_sync_tabs (r);
         }
     }
+    rb_qa (r);
+    rb_qa_later (r);
     return G_SOURCE_REMOVE;
 }
 
@@ -1134,6 +1446,23 @@ rb_actions_changed (GtkUIManager *ui_manager, GtkWidget *root)
         rb_queue_refresh (r);
 }
 
+/* Connected swapped to the ribbon's root widget, so they end with it:
+ * the icon theme or the interface scale changed. */
+static void
+rb_icon_theme_changed (GtkWidget *root, GtkIconTheme *theme)
+{
+    Ribbon *r = g_object_get_data (G_OBJECT (root), RIBBON_KEY);
+
+    if (r != NULL)
+        rb_icons_apply_all (r);
+}
+
+static void
+rb_scale_changed (GtkWidget *root, GParamSpec *pspec, GtkSettings *settings)
+{
+    rb_icon_theme_changed (root, NULL);
+}
+
 static void
 rb_window_destroyed (GtkWidget *window, Ribbon *r)
 {
@@ -1150,10 +1479,13 @@ ribbon_free (Ribbon *r)
 {
     if (r->refresh_id != 0)
         g_source_remove (r->refresh_id);
+    if (r->qa_id != 0)
+        g_source_remove (r->qa_id);
     g_list_free (r->tab_buttons);
     g_list_free (r->bound);
     g_list_free (r->commands);
     g_list_free (r->view_buttons);
+    g_list_free (r->images);
     g_free (r);
 }
 
@@ -1377,6 +1709,13 @@ liria_sde_ribbon_setup (LiriaNavigationWindow *window, GtkUIManager *ui_manager)
 
     g_object_set_data (G_OBJECT (r->root), RIBBON_KEY, r);
     g_signal_connect_object (ui_manager, "actions-changed", G_CALLBACK (rb_actions_changed), r->root, 0);
+    /* 0.2.0 Alpha 2: the icons follow the icon theme and the interface
+     * scale while the window is open. */
+    g_signal_connect_object (gtk_icon_theme_get_default (), "changed", G_CALLBACK (rb_icon_theme_changed), r->root,
+                             G_CONNECT_SWAPPED);
+    g_signal_connect_object (gtk_settings_get_default (), "notify::gtk-xft-dpi", G_CALLBACK (rb_scale_changed),
+                             r->root, G_CONNECT_SWAPPED);
+    rb_qa (r);
     g_signal_connect (window, "destroy", G_CALLBACK (rb_window_destroyed), r);
     g_signal_connect (window, "selection-changed", G_CALLBACK (rb_changed), r);
     g_signal_connect (window, "loading-uri", G_CALLBACK (rb_loading_uri), r);

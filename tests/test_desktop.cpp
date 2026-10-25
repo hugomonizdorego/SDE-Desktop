@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "desktop_model.h"
@@ -216,6 +217,9 @@ static void test_file_ops() {
   char buf[64] = {0};
   CHECK(readlink((root + "/dst/dir/link").c_str(), buf, sizeof buf - 1) > 0 && std::string(buf) == "inner/b.txt");
   CHECK(progress.done == (3 << 20));
+  // 0.2.0 Alpha 2: items for the transfer dialog (dir, inner, b.txt, link).
+  CHECK(progress.files_done == 4);
+  CHECK(count_items(root + "/src/dir") == 4);
   CHECK(!copy_path(root + "/src/a.txt", root + "/dst/dir/inner/b.txt", nullptr, &err));  // never overwrites
   CHECK(read_file(root + "/dst/dir/inner/b.txt", text) && text.size() == size_t(3 << 20));
   // A folder never goes into itself.
@@ -247,6 +251,24 @@ static void test_file_ops() {
   CHECK(link_path(root + "/dst/a.txt", root + "/dst/a-link", &err));
   struct stat st;
   CHECK(lstat((root + "/dst/a-link").c_str(), &st) == 0 && S_ISLNK(st.st_mode));
+  // run_file_ops counts bytes and items; a paused copy waits and goes on.
+  {
+    FileProgress paused;
+    paused.pause = true;
+    FileOp copy;
+    copy.kind = FileOp::COPY;
+    copy.src = root + "/dst/dir";
+    copy.dst = root + "/dst/dir-paused";
+    std::thread worker([&] { run_file_ops({copy}, &paused, nullptr); });
+    usleep(200000);
+    CHECK(paused.total == (3 << 20) && paused.files_total == 4);
+    CHECK(paused.done == 0);  // nothing copied while paused
+    paused.pause = false;
+    worker.join();
+    CHECK(paused.done == (3 << 20) && paused.files_done == 4);
+    CHECK(path_exists(root + "/dst/dir-paused/inner/b.txt"));
+    remove_tree(root + "/dst/dir-paused");
+  }
   // Cancelled copies leave nothing behind.
   FileProgress cancelled;
   cancelled.cancel = true;

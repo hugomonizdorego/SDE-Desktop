@@ -69,6 +69,18 @@ typedef enum {
 
 G_GNUC_INTERNAL guint liria_sde_selection_commands (const LiriaSdeSelection *selection);
 
+/* Ribbon icons (0.2.0 Alpha 2): the icon size of a button in pixels, 32
+ * for a large and 16 for a small button at 100 %, grown with the interface
+ * scale (gtk-xft-dpi in 1/1024 dots per inch, 96 dpi = 100 %, -1 when it
+ * is not set) and kept at a size icon themes draw: 16, 22, 24, 32, 48 or
+ * 64 (the nearest one, the larger one on a tie). */
+G_GNUC_INTERNAL gint liria_sde_ribbon_icon_pixels (gint xft_dpi, gboolean large);
+/* TRUE when an icon is drawn in colour rather than as a grey glyph: at
+ * least one in eight of its visible pixels (alpha 50 % or more) is
+ * saturated. RGB or RGBA rows, rowstride bytes apart. */
+G_GNUC_INTERNAL gboolean liria_sde_pixels_colourful (const guchar *pixels, gint width, gint height,
+                                                     gint rowstride, gint n_channels);
+
 /* --------------------------------------------------------------- the Home view */
 
 /* Folders suggested in Quick access: the parent folders of recently used
