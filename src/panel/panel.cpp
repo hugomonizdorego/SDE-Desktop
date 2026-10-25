@@ -1326,7 +1326,7 @@ void Panel::draw() {
       if (full)
         p.glass_surface(-4, t.panel_top ? -4 : 0, W + 8, H + 4, 0, t.border, t.dark);
       else
-        p.glass_surface(0, 0, W, H, std::min(S(16), H / 2.0), t.border, t.dark);
+        p.glass_surface(0, 0, W, H, std::min(S(16), H / 2), t.border, t.dark);
     }
     if (t.liquid)
       ;  // the glass shader draws the edge
