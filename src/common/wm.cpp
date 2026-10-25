@@ -128,8 +128,9 @@ bool set_openbox_font_size(int points) {
 bool sync_openbox(const Config &cfg) {
   Theme t = Theme::from_config(cfg);
   bool changed = set_openbox_theme(t.gtk_theme, theme_title_layout(t.family));
+  // Title bars follow the interface size; 7 points at least (75 %).
   int pt = cfg.get_int("appearance", "font_size", 10);
-  changed = set_openbox_font_size(int(pt * t.scale + 0.5)) || changed;
+  changed = set_openbox_font_size(std::max(7, int(pt * t.scale + 0.5))) || changed;
   return changed;
 }
 

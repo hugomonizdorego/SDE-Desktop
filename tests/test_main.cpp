@@ -256,6 +256,20 @@ static void test_scale() {
   cfg.set("appearance", "scale", "400");
   Theme::from_config(cfg);
   CHECK(ui_scale() == 2.0);
+  // 75 %: everything smaller, text never under 9 pixels.
+  cfg.set("appearance", "scale", "75");
+  t = Theme::from_config(cfg);
+  CHECK(t.scale == 0.75 && S(40) == 30 && t.panel_height == 30);
+  CHECK(t.font_size == 10);
+  cfg.set("appearance", "font_size", "7");
+  CHECK(Theme::from_config(cfg).font_size == 9);
+  cfg.unset("appearance", "font_size");
+  cfg.set("appearance", "scale", "50");
+  Theme::from_config(cfg);
+  CHECK(ui_scale() == 0.75);
+  // Automatic is never under 100 % (no display here: 100 %).
+  cfg.set("appearance", "scale", "auto");
+  CHECK(Theme::from_config(cfg).scale == 1.0);
   cfg.set("appearance", "scale", "100");
   Theme::from_config(cfg);
   CHECK(S(40) == 40);
@@ -448,6 +462,14 @@ static void test_gtk_preferences() {
   CHECK(text.find("Net/ThemeName \"" + name + "\"") != std::string::npos);
   CHECK(text.find("Gtk/DecorationLayout") != std::string::npos);
   CHECK(text.find("Xft/DPI 122880") != std::string::npos);
+  // 75 %: GTK at 72 DPI, over XSETTINGS and in settings.ini.
+  cfg.set("appearance", "scale", "75");
+  sync_gtk_settings(cfg);
+  CHECK(read_file(std::string(root) + "/sde/xsettingsd.conf", text));
+  CHECK(text.find("Xft/DPI 73728") != std::string::npos);
+  CHECK(read_file(std::string(root) + "/gtk-3.0/settings.ini", text));
+  CHECK(text.find("gtk-xft-dpi=73728") != std::string::npos);
+  cfg.set("appearance", "scale", "125");
 
   // Only SDE's block of the user's CSS changes; older blocks are replaced.
   CHECK(write_file_atomic(std::string(root) + "/gtk-3.0/gtk.css",

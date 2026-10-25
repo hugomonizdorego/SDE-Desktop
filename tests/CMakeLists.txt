@@ -82,6 +82,11 @@ add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
 add_executable(sde-settings-tests test_settings.cpp)
 target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
 add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)
+# Control Center > Users & Avatar: user names, passwords and their hashes,
+# the administrator rules, AccountsService calls and passwd(1).
+add_executable(sde-accounts-tests test_accounts.cpp)
+target_link_libraries(sde-accounts-tests PRIVATE sde-settings-model)
+add_test(NAME sde-accounts-model COMMAND sde-accounts-tests)
 
 add_executable(sde-xanara-tests test_xanara.cpp)
 target_link_libraries(sde-xanara-tests PRIVATE sde-xanara-core)
