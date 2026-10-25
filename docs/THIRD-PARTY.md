@@ -51,7 +51,7 @@ of each are installed under `/usr/share/doc/sde/themes/<id>/`.
 | SDE theme | Upstream | Commit | License | Used for |
 |---|---|---|---|---|
 | SDE Graphite (default), `SDE-Graphite-{Light,Dark}-<Accent>` | **[Graphite-gtk-theme](https://github.com/vinceliuice/Graphite-gtk-theme)** by Vince Liu | `364173f47407164948788e4abb5e2eb46600f71a` | GPL-3.0 | GTK 3/4 style sheets compiled with sassc for nine accents (`rimless`, `normal` sidebar tweaks), accent assets |
-| SDE Glass, `SDE-Glass-{Light,Dark}-<Accent>` | Graphite-gtk-theme (as above) | as above | GPL-3.0 | imports SDE Graphite and adds SDE's frosted layer |
+| SDE Liquid Glass, `SDE-Glass-{Light,Dark}-<Accent>` | Graphite-gtk-theme (as above) | as above | GPL-3.0 | imports SDE Graphite and adds SDE's glass layer |
 | SDE Fluent, `SDE-Fluent-{Light,Dark}-<Accent>` | **[flat-remix-gtk](https://github.com/daniruiz/flat-remix-gtk)** by Daniel Ruiz de Alegría | `919494f4f4ede88e2efb45cd48b98db7cc23f6ee` | GPL-3.0 | prebuilt GTK 3, GTK 4 and libadwaita color variants (Blue, Teal, Green, Yellow, Orange, Red, Magenta, Violet, Grey) |
 | SDE Fluent palette (panel, menus, Action Center, frames) | **[flat-remix-gnome](https://github.com/daniruiz/flat-remix-gnome)** by Daniel Ruiz de Alegría | `95cb659507188db7d2ffdaa6f714db0e3555baf4` | CC-BY-SA-4.0 | colors and shapes of the GNOME Shell theme taken as the reference for SDE's own palette; no Shell theme is installed |
 
@@ -69,14 +69,17 @@ The former names `SDE`, `SDE-Dark`, `SDE-Aero(-Dark)` and
 **[GTKAero](https://github.com/User738git/GTKAero)** by User738git, a fork of
 the B00MERANG Project Windows 7 GTK theme — GPL-3.0. The former SDE Aero theme
 (0.1.0~alpha10 to alpha15) took its design idea (glass title and tool bars,
-soft blue selections) from GTKAero; SDE Glass continues the idea. No GTKAero
+soft blue selections) from GTKAero; SDE Liquid Glass continues the idea. No GTKAero
 images or CSS files were copied.
 
 **[Liquid Glass for GNOME Shell](https://github.com/ryohsuke1231/liquid-glass)**
 by Ryosuke Watanabe — MIT. An unofficial fan project, not affiliated with
-Apple. The former SDE Liquid Glass theme and now SDE Glass recreate its look
-(frosted translucent layers, large corners) in CSS; the SDE compositor
-provides the blur. No code, shaders or images are copied.
+Apple. SDE Liquid Glass (0.2.0 Alpha 2; SDE Glass in alpha51 to 0.2.0
+Alpha 1) recreates its look: clear glass that blurs, saturates and bends
+the backdrop along the edges, light rims and capsule shapes. SDE's own
+GLSL shader for the SDE compositor (src/common/integration.cpp) and the
+compositor's backdrop patch (suite/patches/sde-compositor) draw it; no
+code, shaders or images are copied.
 
 **[Eduka-Desktop](https://github.com/hugomonizdorego/Eduka-Desktop)** —
 the Edukasaun desktop suite by the same author. SDE ports behavior from its
@@ -114,7 +117,8 @@ and bundled files retain their own licenses; the full source is
 authoritative. Rebranding is not a relicensing of those files. SDE's
 additions to Liria (`suite/overlays/liria`) and the SDE WM patches
 (`suite/patches/sde-wm`) are GPL-2.0-or-later like the programs they become
-part of; the shell's GPL-3.0-or-later license remains separate. Shared
+part of, and the SDE Compositor patches (`suite/patches/sde-compositor`)
+are MPL-2.0 like the picom files they change; the shell's GPL-3.0-or-later license remains separate. Shared
 distribution libraries and PackageKit are dependencies with their own
 distribution copyright notices.
 

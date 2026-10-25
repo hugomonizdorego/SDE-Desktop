@@ -1,5 +1,5 @@
 {
-  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Since 0.1.0~alpha51 the palettes are calm, low-chroma neutrals (Graphite neutral, Fluent cool slate, Glass warm stone) with muted accents, and every family has soft corners (radius_small for buttons and fields, radius for windows, menus and cards, radius_large for big surfaces). Caption buttons are on the right (minimize, maximize, close) in the style of Mint-Y: thin small glyphs, a soft gray disc behind the close cross (and behind the other glyphs while hovered), a muted red close only while hovered; caption sets the hit area in percent of the title height, the spacing in pixels and that red.",
+  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Since 0.2.0 Alpha 2 (the redesign) every family has its own character on one shared grammar: neutral surfaces in three steps (background, surface, surface_alt), hairline borders, text and dimmed text that keep WCAG AA (also the inactive title), soft corners in three sizes (radius_small for controls, radius for windows, menus and cards, radius_large for popups and big surfaces) and Mint-Y like caption buttons on the right (soft discs, a muted red close while hovered; caption sets the hit area in percent of the title height, the spacing in pixels and that red). SDE Graphite is calm and neutral, SDE Fluent a cool slate with Mica, SDE Liquid Glass luminous glass with the softest corners; its liquid block holds the material of the Liquid Glass compositor shader (see docs/THEMES.md).",
   "default": {"family": "graphite", "mode": "light", "accent": "blue"},
   "accents": ["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "graphite"],
   "accent_labels": {
@@ -9,13 +9,13 @@
   "families": {
     "graphite": {
       "label": "Graphite",
-      "description": "Calm neutral grays with soft corners and muted accents, the default",
+      "description": "Calm neutral grays, crisp hairlines and soft depth, the default",
       "prefix": "SDE-Graphite",
       "upstream": "graphite-gtk-theme",
       "radius": 10,
       "radius_small": 6,
-      "radius_large": 12,
-      "shadow_radius": 18,
+      "radius_large": 14,
+      "shadow_radius": 20,
       "glass": false,
       "mica": 0.0,
       "translucency": 0.1,
@@ -23,52 +23,52 @@
       "title_layout": "NLIMC",
       "title_justify": "center",
       "menu_highlight": "accent",
-      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C4554D"},
+      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C4473F"},
       "accent": {
-        "blue": ["#3876B9", "#6A9FD8"], "teal": ["#2B807B", "#5AB0A9"], "green": ["#4A9157", "#7BBA84"],
-        "yellow": ["#C29C48", "#D8B964"], "orange": ["#C9773F", "#E0955E"], "red": ["#C24D45", "#DD7A72"],
-        "pink": ["#B9547C", "#D883A3"], "purple": ["#7E61A8", "#A58CCB"], "graphite": ["#55585E", "#B4B7BC"]
+        "blue": ["#3672B9", "#6AA4E4"], "teal": ["#237B76", "#54B2AA"], "green": ["#3B8550", "#72BE82"],
+        "yellow": ["#C29C48", "#DDBC66"], "orange": ["#C46C3A", "#E8975F"], "red": ["#BE453D", "#E57C73"],
+        "pink": ["#B24A78", "#E085A8"], "purple": ["#7457A8", "#A98ED6"], "graphite": ["#4F535A", "#B2B6BD"]
       },
       "upstream_accent": {
         "blue": "blue", "teal": "teal", "green": "green", "yellow": "yellow", "orange": "orange",
         "red": "red", "pink": "pink", "purple": "purple", "graphite": "default"
       },
       "light": {
-        "background": "#F6F6F7", "surface": "#FFFFFF", "surface_alt": "#EEEEF0", "hover": "#E5E5E8",
-        "text": "#2B2B2F", "text_dim": "#5F5F66", "border": "#DADADD", "shadow": "#000000",
-        "shadow_alpha": 0.16, "menu": "#FFFFFF", "panel": "#F0F0F2", "titlebar": "#EBEBED",
-        "titlebar_inactive": "#F3F3F4", "titlebar_text": "#3A3A3F", "titlebar_text_inactive": "#8A8A90",
-        "success": "#3F8A4E", "warning": "#9C6B14", "error": "#B8463D"
+        "background": "#F5F5F7", "surface": "#FFFFFF", "surface_alt": "#EEEEF1", "hover": "#E6E6EA",
+        "text": "#1F1F23", "text_dim": "#5A5A62", "border": "#D9D9DE", "shadow": "#000000",
+        "shadow_alpha": 0.16, "menu": "#FFFFFF", "panel": "#F2F2F4", "titlebar": "#EDEDF0",
+        "titlebar_inactive": "#F5F5F7", "titlebar_text": "#26262B", "titlebar_text_inactive": "#696970",
+        "success": "#2F7D45", "warning": "#8F6410", "error": "#B23A31"
       },
       "dark": {
-        "background": "#2C2C2E", "surface": "#343437", "surface_alt": "#262628", "hover": "#3E3E42",
-        "text": "#E6E6E8", "text_dim": "#A6A6AC", "border": "#47474B", "shadow": "#000000",
-        "shadow_alpha": 0.42, "menu": "#313134", "panel": "#232325", "titlebar": "#262628",
-        "titlebar_inactive": "#2A2A2C", "titlebar_text": "#DCDCDE", "titlebar_text_inactive": "#85858B",
-        "success": "#78BE87", "warning": "#D9B060", "error": "#E88079"
+        "background": "#262628", "surface": "#2F2F32", "surface_alt": "#212123", "hover": "#3A3A3E",
+        "text": "#ECECEF", "text_dim": "#A8A8AF", "border": "#424247", "shadow": "#000000",
+        "shadow_alpha": 0.44, "menu": "#2C2C2F", "panel": "#1E1E20", "titlebar": "#222224",
+        "titlebar_inactive": "#262628", "titlebar_text": "#E6E6E9", "titlebar_text_inactive": "#9C9CA3",
+        "success": "#6FBF83", "warning": "#DDB35F", "error": "#EF8379"
       }
     },
     "fluent": {
       "label": "Fluent",
-      "description": "Cool slate grays, light layers and gentle Mica and Acrylic, after the Fluent Design System",
+      "description": "Cool slate grays, Mica and Acrylic layers and crisp small corners, after the Fluent Design System",
       "prefix": "SDE-Fluent",
       "upstream": "flat-remix-gtk",
       "radius": 8,
-      "radius_small": 5,
-      "radius_large": 12,
-      "shadow_radius": 20,
+      "radius_small": 4,
+      "radius_large": 8,
+      "shadow_radius": 22,
       "glass": false,
-      "mica": 0.015,
+      "mica": 0.02,
       "translucency": 0.14,
       "buttons": "caption",
       "title_layout": "NLIMC",
       "title_justify": "left",
       "menu_highlight": "subtle",
-      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#B9473F"},
+      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#B8382D"},
       "accent": {
-        "blue": ["#3A6EAD", "#6B9FDC"], "teal": ["#2A787C", "#57AEB3"], "green": ["#367D50", "#6CBC88"],
-        "yellow": ["#AE8B3E", "#DDBE62"], "orange": ["#B0623A", "#E5935E"], "red": ["#B4433C", "#E3786F"],
-        "pink": ["#A94870", "#DD7FA2"], "purple": ["#6E52A3", "#A48BD5"], "graphite": ["#5C6168", "#A2A6AD"]
+        "blue": ["#3369B0", "#6BA2E2"], "teal": ["#237479", "#55AFB4"], "green": ["#2F7A4C", "#6CBE89"],
+        "yellow": ["#AE8B3E", "#DDBE62"], "orange": ["#B06234", "#E8955E"], "red": ["#B23F37", "#E67A71"],
+        "pink": ["#A6436D", "#DE82A4"], "purple": ["#6B4FA6", "#A68DD8"], "graphite": ["#575C64", "#A5A9B0"]
       },
       "upstream_accent": {
         "blue": "Blue", "teal": "Teal", "green": "Green", "yellow": "Yellow", "orange": "Orange",
@@ -80,30 +80,30 @@
         "pink": ["#CD0245", "#CD0245"], "purple": ["#962AC3", "#962AC3"], "graphite": ["#737680", "#737680"]
       },
       "light": {
-        "background": "#F3F4F6", "surface": "#FCFCFD", "surface_alt": "#EBEDF0", "hover": "#E2E5E9",
-        "text": "#24272C", "text_dim": "#5B5F66", "border": "#D5D9DE", "shadow": "#000000",
-        "shadow_alpha": 0.18, "menu": "#FAFAFB", "panel": "#EDEFF2", "titlebar": "#EEF0F3",
-        "titlebar_inactive": "#F4F5F7", "titlebar_text": "#24272C", "titlebar_text_inactive": "#888C93",
-        "success": "#2F7A4D", "warning": "#8E6512", "error": "#B2423A"
+        "background": "#F3F4F6", "surface": "#FBFBFC", "surface_alt": "#EDEFF2", "hover": "#E3E6EA",
+        "text": "#1B1D21", "text_dim": "#595D65", "border": "#D4D8DE", "shadow": "#000000",
+        "shadow_alpha": 0.18, "menu": "#F9F9FA", "panel": "#EEF0F3", "titlebar": "#EEF0F3",
+        "titlebar_inactive": "#F3F4F6", "titlebar_text": "#1B1D21", "titlebar_text_inactive": "#666B74",
+        "success": "#2B7A4B", "warning": "#8A6212", "error": "#B03E37"
       },
       "dark": {
-        "background": "#24262A", "surface": "#2C2F33", "surface_alt": "#1F2124", "hover": "#363940",
-        "text": "#EBECEE", "text_dim": "#A2A6AD", "border": "#3D4046", "shadow": "#000000",
-        "shadow_alpha": 0.46, "menu": "#2B2D32", "panel": "#1D1F22", "titlebar": "#202226",
-        "titlebar_inactive": "#24262A", "titlebar_text": "#EBECEE", "titlebar_text_inactive": "#7F838A",
-        "success": "#6DBE8B", "warning": "#DDB862", "error": "#EC8A80"
+        "background": "#202226", "surface": "#2B2D31", "surface_alt": "#1C1E21", "hover": "#35383E",
+        "text": "#EEEFF1", "text_dim": "#A3A7AE", "border": "#3C3F45", "shadow": "#000000",
+        "shadow_alpha": 0.48, "menu": "#2A2C30", "panel": "#1A1C1F", "titlebar": "#1E2023",
+        "titlebar_inactive": "#222428", "titlebar_text": "#EEEFF1", "titlebar_text_inactive": "#9A9EA6",
+        "success": "#6CC08C", "warning": "#E0BB64", "error": "#EF8C82"
       }
     },
     "glass": {
-      "label": "Glass",
-      "description": "Warm stone grays, frosted translucency and the softest corners; the successor of SDE Aero and SDE Liquid Glass",
+      "label": "Liquid Glass",
+      "description": "Luminous glass with strong blur, light rims and lens edges, pill shapes and the softest corners; the successor of SDE Aero and SDE Glass",
       "prefix": "SDE-Glass",
       "upstream": "graphite-gtk-theme",
       "base": "graphite",
-      "radius": 12,
-      "radius_small": 8,
-      "radius_large": 16,
-      "shadow_radius": 22,
+      "radius": 16,
+      "radius_small": 10,
+      "radius_large": 24,
+      "shadow_radius": 28,
       "glass": true,
       "mica": 0.0,
       "translucency": 0.22,
@@ -111,26 +111,31 @@
       "title_layout": "NLIMC",
       "title_justify": "center",
       "menu_highlight": "accent",
-      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#BF5A4C"},
+      "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C94A42"},
       "accent": "graphite",
+      "liquid": {
+        "comment": "The glass material of the Liquid Glass compositor shader (src/common/integration.cpp): the blur behind, how much the backdrop is saturated and brightened (light, dark), the lens along the edges (band and shift at the very edge, pixels at 100 %), the light rim (light, dark) and its width, and how far a color may be from the surface to count as glass (key_range, 0-1).",
+        "blur": 5, "saturation": 1.45, "brightness": [1.06, 0.88],
+        "lens_band": 18, "lens_shift": 10, "rim": [0.85, 0.45], "rim_width": 1.5, "key_range": 0.42
+      },
       "light": {
-        "background": "#F4F2EF", "surface": "#FCFBF9", "surface_alt": "#ECE9E5", "hover": "#E3E0DB",
-        "text": "#2C2925", "text_dim": "#625E58", "border": "#D8D4CE", "shadow": "#1A140E",
-        "shadow_alpha": 0.18, "menu": "#FAF9F7", "panel": "#EEEBE7", "titlebar": "#EDEAE6",
-        "titlebar_inactive": "#F3F1EE", "titlebar_text": "#2C2925", "titlebar_text_inactive": "#8B8680",
-        "success": "#47834F", "warning": "#94680F", "error": "#B4473C"
+        "background": "#F2F4F7", "surface": "#F8F9FB", "surface_alt": "#E9ECF0", "hover": "#DFE3E8",
+        "text": "#1A1C20", "text_dim": "#565A62", "border": "#CDD2D9", "shadow": "#0E1620",
+        "shadow_alpha": 0.20, "menu": "#F8F9FB", "panel": "#F8F9FB", "titlebar": "#ECEFF3",
+        "titlebar_inactive": "#F2F4F7", "titlebar_text": "#1A1C20", "titlebar_text_inactive": "#636974",
+        "success": "#2B7D4E", "warning": "#8B6411", "error": "#B53B33"
       },
       "dark": {
-        "background": "#2A2826", "surface": "#33302D", "surface_alt": "#242220", "hover": "#3E3B37",
-        "text": "#ECE8E2", "text_dim": "#AAA59F", "border": "#48443F", "shadow": "#000000",
-        "shadow_alpha": 0.44, "menu": "#302D2A", "panel": "#211F1D", "titlebar": "#262422",
-        "titlebar_inactive": "#2A2826", "titlebar_text": "#ECE8E2", "titlebar_text_inactive": "#89857E",
-        "success": "#7DBB86", "warning": "#DDB565", "error": "#E8857B"
+        "background": "#1C1D21", "surface": "#26282C", "surface_alt": "#2D2F34", "hover": "#363940",
+        "text": "#F1F2F4", "text_dim": "#A4A8B0", "border": "#3A3D44", "shadow": "#000000",
+        "shadow_alpha": 0.50, "menu": "#26282C", "panel": "#26282C", "titlebar": "#1E1F23",
+        "titlebar_inactive": "#222327", "titlebar_text": "#F1F2F4", "titlebar_text_inactive": "#989CA5",
+        "success": "#72C493", "warning": "#E3BE69", "error": "#F28A80"
       }
     }
   },
   "legacy": {
-    "comment": "Old [appearance] style values, the theme directories of 0.1.0~alpha15 and earlier, and the accent colors of earlier palettes (alpha15 swatches and the alpha16 to alpha50 accents), which map to the named accent of the current palette.",
+    "comment": "Old [appearance] style values, the theme directories of 0.1.0~alpha15 and earlier, and the accent colors of earlier palettes (alpha15 swatches, the alpha16 to alpha50 accents and the alpha51 to 0.2.0 Alpha 1 accents), which map to the named accent of the current palette.",
     "styles": {
       "sde": "graphite", "aero": "fluent", "liquid-glass": "glass", "liquid": "glass", "glass": "glass",
       "graphite": "graphite", "fluent": "fluent"
@@ -142,7 +147,11 @@
       "#FFD600": "yellow", "#F57C00": "orange", "#FB8C00": "orange", "#E53935": "red", "#F44336": "red",
       "#EC407A": "pink", "#F06292": "pink", "#AB47BC": "purple", "#BA68C8": "purple", "#333333": "graphite",
       "#E0E0E0": "graphite", "#2777FF": "blue", "#0099A1": "teal", "#06A284": "green", "#FFD86E": "yellow",
-      "#FD7D00": "orange", "#EC0101": "red", "#CD0245": "pink", "#962AC3": "purple", "#737680": "graphite"
+      "#FD7D00": "orange", "#EC0101": "red", "#CD0245": "pink", "#962AC3": "purple", "#737680": "graphite",
+      "#3876B9": "blue", "#2B807B": "teal", "#4A9157": "green", "#C9773F": "orange", "#C24D45": "red",
+      "#B9547C": "pink", "#7E61A8": "purple", "#55585E": "graphite", "#3A6EAD": "blue", "#2A787C": "teal",
+      "#367D50": "green", "#B0623A": "orange", "#B4433C": "red", "#A94870": "pink", "#6E52A3": "purple",
+      "#5C6168": "graphite"
     },
     "directories": {
       "SDE": ["graphite", "light"], "SDE-Dark": ["graphite", "dark"], "SDE-Aero": ["fluent", "light"],

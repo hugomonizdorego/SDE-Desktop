@@ -3,8 +3,9 @@
 // data/themes/palettes.json, the file that also builds the GTK and Openbox
 // themes, so SDE programs, GTK applications and window frames match:
 //
-//   family  graphite (default, Apple HIG), fluent (Fluent Design, Flat
-//           Remix) or glass (frosted; replaces SDE Aero and Liquid Glass)
+//   family  graphite (default, calm neutral), fluent (Fluent Design, Flat
+//           Remix) or glass (SDE Liquid Glass: luminous glass drawn by the
+//           compositor's Liquid Glass shader where it can; replaces SDE Aero)
 //   mode    light, dark or auto (light from 07:00 to 19:00)
 //   accent  blue, teal, green, yellow, orange, red, pink, purple, graphite
 //
@@ -75,11 +76,12 @@ struct Theme {
   Color success, warning, error;
   // Corner radii (already scaled). Since 0.1.0~alpha51 every surface is
   // soft: nothing an SDE program draws has square corners. Use radius_for()
-  // for controls whose height can be small.
-  int radius = 10;        // windows, menus, popups, cards, dialogs
+  // for controls whose height can be small. 0.2.0 Alpha 2: Graphite
+  // 6/10/14, Fluent 4/8/8, Liquid Glass 10/16/24.
+  int radius = 10;        // windows, menus, cards, dialogs
   int radius_small = 6;   // buttons, fields, menu items, list selections, tooltips
-  int radius_large = 12;  // big surfaces: Start menu, Action Center, flyouts
-  int shadow_radius = 18; // blur radius of drop shadows (already scaled)
+  int radius_large = 14;  // big surfaces: panel popups (Start menu, Action Center, flyouts), notifications
+  int shadow_radius = 20; // blur radius of drop shadows (already scaled)
   // Radius for a control |h| pixels high: radius_small, at most half the
   // height (a pill for slim controls).
   double radius_for(double h) const { return std::fmin(radius_small, h / 2.0); }
@@ -123,10 +125,23 @@ struct Theme {
   int transparency = 25;        // the setting, 0-100
   bool lite = false;            // lite compositor profile: no blur, less transparency
   bool blur = true;             // blur behind translucent surfaces
+  // Liquid Glass (0.2.0 Alpha 2): the compositor draws SDE's glass surfaces
+  // (panel, popups, menus, tooltips, notifications, OSDs; marked with
+  // x11::set_surface()) with the Liquid Glass shader: the backdrop blurred,
+  // saturated and bent along the edges like a lens, light rims, and only the
+  // surface color turned into glass, so text and icons stay opaque. True for
+  // the Liquid Glass family with translucency on the full OpenGL compositor
+  // profile. SDE then draws those surfaces flat in their surface color
+  // (surface, menu_bg) and leaves sheen and rims to the shader; opacity and
+  // popup_opacity become how much of that color tints the glass (a clear
+  // glass: the shader itself keeps text readable over any backdrop, see
+  // liquid_legible_luminance()).
+  bool liquid = false;
   double opacity = 1.0;         // panel (whole window, text included)
   double popup_opacity = 1.0;   // SDE menus, Start menu, Action Center, OSDs
   double frame_opacity = 1.0;   // SDE WM title bars and borders (compositor frame-opacity)
   double gtk_menu_alpha = 1.0;  // GTK menu and popover backgrounds (text stays opaque)
+  double toolkit_menu_opacity = 1.0;  // menus of other toolkits (whole window, text included)
 
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
@@ -175,6 +190,26 @@ std::string theme_dir(const Config &cfg);
 std::string theme_title_layout(const std::string &family);
 // GTK decoration layout matching the SDE WM buttons: ":minimize,maximize,close".
 std::string theme_decoration_layout(const std::string &family);
+
+// The glass material of a family's Liquid Glass shader (palettes.json
+// "liquid"), for |dark| or light; on is false for families without one.
+struct LiquidMaterial {
+  bool on = false;
+  int blur = 0;              // dual_kawase strength of the blur behind
+  double saturation = 1.0;   // of the backdrop
+  double brightness = 1.0;   // of the backdrop
+  double lens_band = 0;      // the lens along the edges, pixels at 100 %
+  double lens_shift = 0;     // how far it bends the backdrop at the very edge
+  double rim = 0;            // strength of the light rim
+  double rim_width = 1.0;    // pixels at 100 %
+  double key_range = 0.4;    // how far a color may be from the surface to count as glass
+};
+LiquidMaterial theme_liquid_material(const std::string &family, bool dark);
+// The relative luminance the Liquid Glass shader keeps the glass at under
+// text: at least this in a light theme, at most this in a dark one, so text
+// keeps 4.5:1 and dimmed text 3:1 (WCAG 2.1) over any backdrop, and
+// accent-colored text 3:1 as far as the glass can stay clear for it.
+double liquid_legible_luminance(const Theme &t);
 
 // Families and accents for pickers.
 struct ThemeFamilyInfo {

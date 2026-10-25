@@ -1,6 +1,8 @@
-/* SDE Glass (GTK 3): frosted, rounded layers on SDE Graphite. The SDE
- * compositor adds blur and translucency to frames, menus and the panel; the
- * title bar is flat (alpha51: no sheen gradient).
+/* SDE Liquid Glass (GTK 3), on SDE Graphite. 0.2.0 Alpha 2: the look of
+ * Liquid Glass in applications: capsule buttons, soft large corners, glass
+ * layers (menus, popovers, tooltips) with a light rim along their top edge
+ * and a hairline of light around them. The SDE compositor blurs what is
+ * behind translucent menus and frames; the title bar is flat.
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 window.background:not(.popup):not(.tooltip) { background-color: @sde_background; }
@@ -15,13 +17,28 @@ headerbar:backdrop, .titlebar:not(headerbar):backdrop {
 }
 .sidebar, placessidebar, stacksidebar { background-color: alpha(@sde_surface_alt, 0.92); }
 
-entry, spinbutton:not(.vertical), combobox > box > button.combo,
-button.text-button:not(.titlebutton) { border-radius: @RADIUS_SMALL@; }
+/* Capsules: text buttons, the main actions and combo boxes. Linked groups
+ * keep their square inner corners (soft-gtk-3.0.css, which comes after
+ * this layer: the selectors here are more specific). */
+button.text-button:not(.titlebutton):not(.circular), button.suggested-action:not(.titlebutton):not(.circular),
+button.destructive-action:not(.titlebutton):not(.circular), combobox > box > button.combo:not(.circular) {
+  border-radius: 9999px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+entry, spinbutton:not(.vertical) { border-radius: @RADIUS_SMALL@; }
 .linked > button:not(:first-child):not(:last-child),
 .linked > entry:not(:first-child):not(:last-child) { border-radius: 0; }
 .linked:not(.vertical) > button:first-child:not(:only-child),
 .linked:not(.vertical) > entry:first-child:not(:only-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .linked:not(.vertical) > button:last-child:not(:only-child),
 .linked:not(.vertical) > entry:last-child:not(:only-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
-popover.background { border-radius: @RADIUS_LARGE@; }
-tooltip.background { border-radius: @RADIUS_SMALL@; }
+
+/* Glass layers: a light rim along the top and a hairline of light. */
+popover.background { box-shadow: inset 0 1px @sde_rim, inset 0 0 0 1px alpha(white, 0.06); }
+.csd menu, .csd .menu, .csd .context-menu {
+  border-radius: @RADIUS@;
+  box-shadow: inset 0 1px @sde_rim, inset 0 0 0 1px alpha(white, 0.06);
+}
+menu menuitem, .menu menuitem, .context-menu menuitem { margin: 0 6px; }
+tooltip.background { box-shadow: inset 0 1px @sde_rim; }
