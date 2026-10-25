@@ -59,7 +59,7 @@ def waitfor(fn,why,tries=100):
     print(run('xdotool','search','--onlyvisible','--name','.',check=False).stdout,flush=True)
     # The screen at the failure, for the CI artifacts.
     run('import','-window','root',out/'debug-failure.png',check=False)
-    raise AssertionError(why)
+    raise AssertionError(why() if callable(why) else why)
 def visible(name):
     r=run('xdotool','search','--onlyvisible','--name',name,check=False)
     return r.stdout.splitlines()[-1] if r.returncode==0 and r.stdout.strip() else None
@@ -421,8 +421,7 @@ def a2_menu_checks():
         time.sleep(.4);return find('^SDE Menu$')
     def typed(text,why):
         run('xdotool','type','--delay','60',text)
-        try:waitfor(lambda:query()==text,f'typing {text!r} {why} did not search')
-        except AssertionError as x:raise AssertionError(f'{x} (query {query()!r})') from None
+        waitfor(lambda:query()==text,lambda:f'typing {text!r} {why} did not search (query {query()!r})')
         escape('SDE Search')
     def popup_seq():return next((int(k[5:]) for k in layout('SDE Menu-popup') if k.startswith('@seq:')),0)
     def popup_items():return [k[5:] for k,v in layout('SDE Menu-popup').items() if k.startswith('item:') and v[4]]
@@ -445,6 +444,7 @@ def a2_menu_checks():
         m=re.search(r'tiles=(?:[^\n]*;)?'+re.escape(group)+r',([^;\n]*)',conf())
         return m.group(1).split(',') if m else None
     def drop_target():return next((v for k,v in L().items() if k.startswith('@drop:')),None)
+    def conf_groups():return [g.split(',')[0] for g in conf().split('tiles=')[1].split('\n')[0].split(';')]
     def jump(letter):
         press('SDE Menu',next(k for k in L() if k.startswith('letter:')));press('SDE Menu','jump:'+letter)
     # 1) Typing searches from every place of the menu.
@@ -490,11 +490,11 @@ def a2_menu_checks():
     # lost its last tile goes, tiles_version=2 is saved.
     src=center(item('SDE Menu','tile:Calendar'));editor=item('SDE Menu','tile:Editor')
     g=hold(m,src);glide(g,src,(editor[0]+editor[2]*3//4,editor[1]+editor[3]//2))
-    waitfor(lambda:drop_target()==(1,1,0,0,1,0),'drop target after Editor not shown: '+str(drop_target()))
+    waitfor(lambda:drop_target()==(1,1,0,0,1,0),lambda:'drop target after Editor not shown: '+str(drop_target()))
     assert '@new-group-zone' in L(),L().keys()
     shot('64-menu-drag-between-groups')
     run('xdotool','mouseup','1');time.sleep(.6)
-    waitfor(lambda:tiles_of('Office')==['qa-editor.desktop:w','qa-calendar.desktop:m'],'tile not moved: '+conf())
+    waitfor(lambda:tiles_of('Office')==['qa-editor.desktop:w','qa-calendar.desktop:m'],lambda:'tile not moved: '+conf())
     assert 'tiles=Internet' not in conf() and 'tiles_version=2' in conf(),conf()
     # 5) Held near the bottom of the tiles they scroll to the end; dropped on
     # the place for a new group, the tile makes a group named at once.
@@ -509,28 +509,35 @@ def a2_menu_checks():
     shot('65-menu-new-group-zone')
     run('xdotool','mouseup','1');time.sleep(.6)
     run('xdotool','type','--delay','40','Writing');run('xdotool','key','Return')
-    waitfor(lambda:tiles_of('Writing')==['qa-calendar.desktop:m'],'new group not named: '+conf())
+    waitfor(lambda:tiles_of('Writing')==['qa-calendar.desktop:m'],lambda:'new group not named: '+conf())
     # 6) A click on a group's name renames it; a drag on it moves the group.
     press('SDE Menu','group:Writing');time.sleep(.3)
     run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Texts');run('xdotool','key','Return')
-    waitfor(lambda:tiles_of('Texts')==['qa-calendar.desktop:m'],'group rename by a click not saved: '+conf())
+    waitfor(lambda:tiles_of('Texts')==['qa-calendar.desktop:m'],lambda:'group rename by a click not saved: '+conf())
     above=[k[6:] for k in L() if k.startswith('group:') and k!='group:Texts'][-1]
     src=center(item('SDE Menu','group:Texts'));dst=item('SDE Menu','group:'+above)
     g=hold(m,src);glide(g,src,(dst[0]+dst[2]//2,dst[1]+dst[3]//5))
     waitfor(lambda:any(k=='@group-drop:Texts' for k in L()),'no feedback for the moved group')
+    # Near the top edge the tiles scroll (small screens): once they stop,
+    # the bar shows where the group goes (QA: @group-drop target, source).
+    def settled():
+        before=L().get('@tiles-scroll');time.sleep(.25);return before is not None and L().get('@tiles-scroll')==before
+    waitfor(settled,'the tiles kept scrolling')
+    to,source=L()['@group-drop:Texts'][:2]
+    assert 0<=to<source==len(conf_groups())-1,(to,source,conf_groups())
+    want=conf_groups();want.insert(to,want.pop(source))
     shot('66-menu-move-group')
     run('xdotool','mouseup','1')
-    waitfor(lambda:f';Texts,qa-calendar.desktop:m;{above},' in conf() or f'tiles=Texts,qa-calendar.desktop:m;{above},' in conf(),
-            'group not moved: '+conf())
+    waitfor(lambda:conf_groups()==want,lambda:f'group not moved to {to}: '+conf())
     # 7) An empty group: "Drag apps here" and a remove button.
     t=L()['@tiles'];g=geom(m)
     run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]-round(8*scale),'click','3')
     waitfor(lambda:'New Group' in popup_items(),'no background menu');time.sleep(.3)
     choose(popup_items(),'New Group');run('xdotool','type','--delay','30','Spare');run('xdotool','key','Return')
-    waitfor(lambda:'Spare' in conf(),'empty group not saved: '+conf())
+    waitfor(lambda:'Spare' in conf(),lambda:'empty group not saved: '+conf())
     shot('67-menu-empty-group')
     press('SDE Menu','group-remove:Spare')
-    waitfor(lambda:'Spare' not in conf() and 'group-remove:Spare' not in L(),'empty group not removed: '+conf())
+    waitfor(lambda:'Spare' not in conf() and 'group-remove:Spare' not in L(),lambda:'empty group not removed: '+conf())
     escape('SDE Menu')
     # 8) A search result dragged out of the search into a group.
     open_menu();run('xdotool','type','--delay','50','zeal')
@@ -541,7 +548,7 @@ def a2_menu_checks():
     gm=geom(m);first=item('SDE Menu',next(k for k in L() if k.startswith('tile:')))
     run('xdotool','mousemove',gm['x']+first[0]+first[2]//4,gm['y']+first[1]+first[3]//2);time.sleep(.5)
     shot('68-menu-drag-from-search');run('xdotool','mouseup','1');time.sleep(.6)
-    waitfor(lambda:'qa-zeal.desktop:m' in conf().split('tiles=')[1].split('\n')[0],'search result not dropped: '+conf())
+    waitfor(lambda:'qa-zeal.desktop:m' in conf().split('tiles=')[1].split('\n')[0],lambda:'search result not dropped: '+conf())
     assert not visible('^SDE Search$'),'the search stayed open'
     escape('SDE Menu')
     # 9) Uninstall... runs `merkadu --uninstall <desktop file>`; cancelled
@@ -560,7 +567,7 @@ def a2_menu_checks():
     (home/'merkadu-exit').write_text('0\n')
     open_menu();jump('Z');choose(right_click('app:Zeal'),'Uninstall...')
     waitfor(lambda:not (apps_dir/'qa-zeal.desktop').exists(),'the stub did not remove the application')
-    waitfor(lambda:'qa-zeal.desktop' not in conf(),'the tile of the removed application stayed: '+conf())
+    waitfor(lambda:'qa-zeal.desktop' not in conf(),lambda:'the tile of the removed application stayed: '+conf())
     open_menu();assert 'tile:Zeal' not in L() and 'app:Zeal' not in L(),L().keys()
     escape('SDE Menu')
     # SDE's own applications (sde-*) cannot be removed alone: no
@@ -587,7 +594,7 @@ def a2_menu_checks():
                                                      'Icon=qa-no-icon-at-all\nExec=true\nCategories=Game;\n')
     time.sleep(1.0);open_menu()
     def icons():return {k.split('=',1)[0][6:]:k.split('=',1)[1] for k in L() if k.startswith('@icon:')}
-    waitfor(lambda:'Advanced Network Configuration' in icons() and 'Iconless Game QA' in icons(),'no icon fallbacks: '+str(icons()))
+    waitfor(lambda:'Advanced Network Configuration' in icons() and 'Iconless Game QA' in icons(),lambda:'no icon fallbacks: '+str(icons()))
     assert icons()['Advanced Network Configuration']=='sde-app-nm-connection-editor',icons()
     assert icons()['Iconless Game QA'] not in ('','qa-no-icon-at-all'),icons()
     shot('70-menu-icon-fallbacks');escape('SDE Menu')
