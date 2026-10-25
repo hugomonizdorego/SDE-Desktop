@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
 Name=Postbox
-Icon=org.example.Postbox
+Icon=postbox
 Exec=flatpak run org.example.Postbox
 X-Flatpak=org.example.Postbox

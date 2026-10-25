@@ -21,6 +21,7 @@
 #include "ui.h"
 #include "util.h"
 #include "widgets.h"
+#include "wm.h"
 #include "../settings/ui.h"
 
 namespace sde {
@@ -645,9 +646,9 @@ void request_remove(const std::string &app_id, Source s) {
 
 int run_window(const View &start) {
   Store &st = Store::get();
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, 0);
-  int W = std::min(S(1100), sw - S(24)), H = std::min(S(720), sh - S(60));
+  // Centred in the work area with room for the title bar (fit_to_work_area).
+  int wx = 0, wy = 0, W = S(1100), H = S(720);
+  fit_to_work_area(wx, wy, W, H);
   auto *win = new MainWindow(W, H);
   g_win = win;
   int side = sidebar_w(W);
@@ -694,7 +695,7 @@ int run_window(const View &start) {
   });
   win->layout();
   do_rebuild(nullptr);
-  win->position(sx + (sw - W) / 2, sy + (sh - H) / 2);
+  win->position(wx, wy);
   win->show();
   return Fl::run();
 }

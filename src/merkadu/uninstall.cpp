@@ -30,6 +30,7 @@
 #include "ui.h"
 #include "util.h"
 #include "window.h"
+#include "wm.h"
 
 namespace sde {
 namespace merkadu {
@@ -254,7 +255,14 @@ void finish(int status) {
 
 void set_phase(Phase p) {
   g.phase = p;
-  if (g_dialog) g_dialog->layout();
+  if (!g_dialog) return;
+  g_dialog->layout();
+  // The keyboard starts on the safe button: Cancel while asking, Close after.
+  bool closing = p == Phase::Done || p == Phase::Failed || p == Phase::Refused;
+  if (closing && g_dialog->ok->visible())
+    g_dialog->ok->take_focus();
+  else if (g_dialog->cancel->visible())
+    g_dialog->cancel->take_focus();
 }
 
 void refuse(const std::string &message) {
@@ -311,7 +319,13 @@ void cancel_clicked() {
 }
 
 int Dialog::handle(int e) {
-  if ((e == FL_KEYBOARD || e == FL_SHORTCUT) && Fl::event_key() == FL_Escape) {
+  bool key = e == FL_KEYBOARD || e == FL_SHORTCUT;
+  if (key && (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter) &&
+      (g.phase == Phase::Done || g.phase == Phase::Failed || g.phase == Phase::Refused)) {
+    ok_clicked();  // Close is the default button
+    return 1;
+  }
+  if (key && Fl::event_key() == FL_Escape) {
     if (g.phase == Phase::Working) return 1;
     if (g.phase == Phase::Done) finish(0);
     else if (g.phase == Phase::Failed || g.phase == Phase::Refused) finish(1);
@@ -428,9 +442,9 @@ int run_uninstall(const std::string &desktop_file) {
     finish(g.phase == Phase::Done ? 0 : g.phase == Phase::Failed || g.phase == Phase::Refused ? 1 : 2);
   });
   win->layout();
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh);
-  win->position(sx + (sw - win->w()) / 2, sy + (sh - win->h()) / 3);
+  int wx = 0, wy = 0, ww = win->w(), wh = win->h();
+  fit_to_work_area(wx, wy, ww, wh);
+  win->position(wx, wy);
 
   st.on_job_done = [](const Job &j) {
     if (j.id != g.job) return;

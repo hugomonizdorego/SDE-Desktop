@@ -18,6 +18,7 @@
 #include "theme.h"
 #include "util.h"
 #include "widgets.h"
+#include "wm.h"
 
 namespace sde {
 namespace merkadu {
@@ -1025,13 +1026,12 @@ class ShotWindow : public BufferedWindow {
 
 void show_screenshot(const std::vector<Screenshot> &shots, int index, const std::string &title) {
   if (shots.empty()) return;
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh);
-  int w = std::min(S(1100), sw - S(80)), h = std::min(int(w * 9 / 16.0) + S(24), sh - S(80));
+  int x = 0, y = 0, w = S(1100), h = int(S(1100) * 9 / 16.0) + S(24);
+  fit_to_work_area(x, y, w, h);
   auto *win = new ShotWindow(w, h, shots, std::max(0, std::min(index, int(shots.size()) - 1)), title);
   win->xclass("merkadu");
   win->set_non_modal();
-  win->position(sx + (sw - w) / 2, sy + (sh - h) / 2);
+  win->position(x, y);
   win->callback([](Fl_Widget *w, void *) {
     w->hide();
     Fl::delete_widget(w);

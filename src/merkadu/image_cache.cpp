@@ -214,6 +214,11 @@ cairo_surface_t *icon(const std::string &ref, int size, const std::string &fallb
     std::string file = path(ref);
     return IconLoader::get({file.empty() ? fallback : file, fallback}, size);
   }
+  if (fake_mode()) {
+    // The fake sources' launchers name the icons of DIR/icons.
+    std::string file = fake_dir() + "/icons/" + ref + ".svg";
+    if (file_exists(file)) return IconLoader::get({file, fallback}, size);
+  }
   return IconLoader::get({ref, fallback}, size);
 }
 
