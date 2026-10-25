@@ -2350,7 +2350,10 @@ void Fl_X11_Window_Driver::resize(int X,int Y,int W,int H) {
     }
   } else {
     x(X); y(Y);
-    if (Fl_X11_Screen_Driver::xim_win && Fl::focus()) {
+    // SDE-FLTK: not when a group (e.g. the window itself) has the focus: it
+    // answers FL_FOCUS by giving the focus to its first child, so a popup
+    // that the program moved handed the keyboard focus to its first control.
+    if (Fl_X11_Screen_Driver::xim_win && Fl::focus() && !Fl::focus()->as_group()) {
       // Force the Input Method auxiliary window to move too.
       Fl::focus()->handle(FL_FOCUS);
       fl_set_spot(fl_font(), fl_size(), Fl::focus()->x(), Fl::focus()->y() + fl_size(), Fl::focus()->w(), Fl::focus()->h(), NULL);
