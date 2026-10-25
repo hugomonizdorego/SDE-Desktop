@@ -143,7 +143,16 @@ Fl_RGB_Image *menu_icon(const std::vector<std::string> &names, int size) {
 
 std::vector<std::string> app_icons(const MimeApp *a) {
   if (!a) return {"application-x-executable"};
-  return {a->icon, "application-x-executable"};
+  // As in the Start menu: near matches and the category icon when the
+  // icon theme lacks Icon= (icons.h).
+  DesktopEntry e;
+  e.id = a->id;
+  e.path = a->path;
+  e.icon = a->icon;
+  e.categories = a->categories;
+  auto names = app_icon_list(e);
+  names.push_back("application-x-executable");
+  return names;
 }
 
 // A choice that shows the selected application's icon; the menu entries

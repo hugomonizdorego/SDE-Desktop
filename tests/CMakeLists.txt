@@ -195,6 +195,13 @@ set_tests_properties(debion-network-check PROPERTIES TIMEOUT 300)
 
 # Caption buttons and their migration, transparency contrast, icon theme
 # lookup (tests/fixtures/icon-themes) and the build history of Settings > About.
+# Application icons (0.2 Alpha 2): near matches, SDE drawings and category
+# icons when the theme lacks Icon= (tests/fixtures/icon-themes).
+add_executable(sde-app-icons-tests test_app_icons.cpp)
+target_link_libraries(sde-app-icons-tests PRIVATE sde-common)
+target_compile_definitions(sde-app-icons-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME sde-app-icons COMMAND sde-app-icons-tests)
+
 add_executable(sde-theme-tests test_theme.cpp)
 target_link_libraries(sde-theme-tests PRIVATE sde-settings-model sde-common)
 target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

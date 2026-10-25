@@ -162,8 +162,9 @@ static void test_icon_lookup() {
   CHECK(IconLoader::theme() == "FixtureChild");
   auto chain = IconLoader::theme_chain();
   // Depth first: the parent's own parent comes before the second parent;
-  // hicolor is last.
-  std::vector<std::string> want = {"FixtureChild", "FixtureParent", "FixtureGrand", "FixtureOther", "hicolor"};
+  // then hicolor, and Papirus for what none of them has (0.2 Alpha 2).
+  std::vector<std::string> want = {"FixtureChild", "FixtureParent", "FixtureGrand", "FixtureOther", "hicolor",
+                                   "Papirus"};
   CHECK(chain == want);
   auto in = [&](const std::string &path, const std::string &theme) {
     return path.find("/icons/" + theme + "/") != std::string::npos;

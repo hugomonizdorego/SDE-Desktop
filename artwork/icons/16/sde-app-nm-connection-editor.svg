@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Advanced Network Configuration, 16 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <circle cx="7" cy="7" r="6.5" fill="#2B2B2F"/>
+  <circle cx="7" cy="7" r="5.5" fill="#4F8DCB"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1" stroke-opacity="0.9">
+    <ellipse cx="7" cy="7" rx="2.2" ry="5"/>
+    <path d="M2 7H12"/>
+  </g>
+  <path d="M11.02 9.27 L10.99 8.23 L13.01 8.23 L12.98 9.27 L13.87 9.78 L14.76 9.24 L15.77 10.99 L14.85 11.49 L14.85 12.51 L15.77 13.01 L14.76 14.76 L13.87 14.22 L12.98 14.73 L13.01 15.77 L10.99 15.77 L11.02 14.73 L10.13 14.22 L9.24 14.76 L8.23 13.01 L9.15 12.51 L9.15 11.49 L8.23 10.99 L9.24 9.24 L10.13 9.78 Z" fill="#E9E3D7" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round"/>
+  <circle cx="12" cy="12" r="1" fill="#2B2B2F"/>
+</svg>
