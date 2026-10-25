@@ -361,7 +361,9 @@ class FakeBackend : public Backend {
       return;
     }
     bool fail = false;
-    for (auto &t : fj->job.targets) fail = fail || t == world().fail || t.find(":" + world().fail) != std::string::npos;
+    const std::string &f_target = world().fail;  // a package, a ref ("system:REF" matches REF) or a snap
+    if (!f_target.empty())
+      for (auto &t : fj->job.targets) fail = fail || t == f_target || t.find(":" + f_target) != std::string::npos;
     std::string error;
     if (fail) {
       error = format(_("Simulated failure of %s (MERKADU_FAKE_FAIL)."), fj->job.title.c_str());

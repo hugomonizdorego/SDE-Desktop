@@ -60,6 +60,41 @@ void draw_badge_text(const std::string &text, int x, int y, int w, int h, const 
 
 namespace {
 
+// |text| in at most |max_lines| lines of |w| pixels (current font), drawn
+// from |y| down; the last line ends with an ellipsis when text is left.
+void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
+  std::vector<std::string> words;
+  std::string cur;
+  for (char c : text) {
+    if (c == ' ' || c == '\n' || c == '\t') {
+      if (!cur.empty()) words.push_back(cur);
+      cur.clear();
+    } else {
+      cur += c;
+    }
+  }
+  if (!cur.empty()) words.push_back(cur);
+  std::vector<std::string> lines;
+  std::string line;
+  for (size_t k = 0; k < words.size() && max_lines > 0; ++k) {
+    if (int(lines.size()) == max_lines - 1) {
+      for (size_t j = k; j < words.size(); ++j) line += (line.empty() ? "" : " ") + words[j];
+      break;
+    }
+    std::string candidate = line.empty() ? words[k] : line + " " + words[k];
+    if (line.empty() || fl_width(candidate.c_str()) <= w) {
+      line = candidate;
+      continue;
+    }
+    lines.push_back(line);
+    line = words[k];
+  }
+  if (!line.empty() && max_lines > 0) lines.push_back(line);
+  int lh = fl_height();
+  for (size_t i = 0; i < lines.size(); ++i)
+    fl_draw(ellipsize(lines[i], w).c_str(), x, y + int(i) * lh + lh - fl_descent());
+}
+
 std::vector<Source> badge_sources(const App &a) {
   std::vector<Source> out;
   for (auto &o : a.origins)
@@ -455,10 +490,7 @@ void AppTile::draw() {
   text_font(std::max(S(9), t.font_size - S(1)));
   fl_color(t.text_dim.fl());
   int sh = by - (y() + S(34)) - S(2);
-  fl_push_clip(tx, y() + S(34), tw, std::max(0, sh));
-  fl_draw(a->summary.c_str(), tx, y() + S(34), tw, sh,
-          Fl_Align(FL_ALIGN_TOP_LEFT | FL_ALIGN_WRAP | FL_ALIGN_INSIDE | FL_ALIGN_CLIP), nullptr, 0);
-  fl_pop_clip();
+  draw_lines(a->summary, tx, y() + S(34), tw, std::max(1, sh / std::max(1, fl_height())));
   draw_source_badges(*a, tx, by, badge_h, tw - S(24));
 }
 
@@ -687,8 +719,7 @@ void Banner::draw() {
   draw_text(a->name, tx, y() + h() / 2 - S(38), tw, S(38), t.text);
   text_font(t.font_size + 1);
   fl_color(t.text_dim.fl());
-  fl_draw(a->summary.c_str(), tx, y() + h() / 2 + S(2), tw, S(30),
-          Fl_Align(FL_ALIGN_TOP_LEFT | FL_ALIGN_WRAP | FL_ALIGN_INSIDE | FL_ALIGN_CLIP), nullptr, 0);
+  draw_lines(a->summary, tx, y() + h() / 2 + S(2), tw, std::max(1, S(30) / std::max(1, fl_height())));
   draw_source_badges(*a, tx, y() + h() / 2 + S(34), S(22), tw);
 }
 
