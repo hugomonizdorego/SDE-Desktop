@@ -2285,8 +2285,9 @@ sde_remember_corresponding_file (LiriaDirectory *directory, LiriaFile *file)
 
 def liria_folder_loading(staged):
     """0.2.0 Alpha 2: large folders open and change views quickly. Opening
-    a folder of 10 000 files took 3 s and switching it to the list or
-    compact view 16 s (11 s of CPU), measured with tools/liria-perf.py:
+    a folder of 10 000 files took 1.4 s and switching it to the list,
+    compact or icon view 8, 8 and 6.4 s (all of it CPU time); now 1.0 s
+    and 3.0, 1.2 and 1.3 s (tools/liria-perf.py, median of three runs):
 
     * readiness checks of whole-folder requests scanned every file after
       every file's answer (quadratic): the file found lacking is now

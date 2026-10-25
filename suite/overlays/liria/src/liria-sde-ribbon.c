@@ -69,6 +69,7 @@ typedef struct {
     gboolean dropped;    /* collapsed mode: the commands are shown */
     gboolean syncing;
     guint refresh_id;
+    guint qa_id;         /* LIRIA_SDE_QA_RIBBON: written after the layout */
 } Ribbon;
 
 static int sde_ribbon_mode = -1;
@@ -360,6 +361,26 @@ rb_qa (Ribbon *r)
     }
     g_file_set_contents (path, text->str, -1, NULL);
     g_string_free (text, TRUE);
+}
+
+static gboolean
+rb_qa_idle (gpointer data)
+{
+    Ribbon *r = data;
+
+    r->qa_id = 0;
+    rb_qa (r);
+    return G_SOURCE_REMOVE;
+}
+
+/* The QA file again once GTK has placed a tab that just appeared. */
+static void
+rb_qa_later (Ribbon *r)
+{
+    const char *path = g_getenv ("LIRIA_SDE_QA_RIBBON");
+
+    if (path != NULL && *path != '\0' && r->qa_id == 0)
+        r->qa_id = g_timeout_add_full (G_PRIORITY_LOW, 100, rb_qa_idle, r, NULL);
 }
 
 static void
@@ -1393,6 +1414,7 @@ rb_refresh_idle (gpointer data)
         }
     }
     rb_qa (r);
+    rb_qa_later (r);
     return G_SOURCE_REMOVE;
 }
 
@@ -1457,6 +1479,8 @@ ribbon_free (Ribbon *r)
 {
     if (r->refresh_id != 0)
         g_source_remove (r->refresh_id);
+    if (r->qa_id != 0)
+        g_source_remove (r->qa_id);
     g_list_free (r->tab_buttons);
     g_list_free (r->bound);
     g_list_free (r->commands);
