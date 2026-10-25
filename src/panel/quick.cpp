@@ -2722,12 +2722,18 @@ void QuickSettings::power_section(SectionBuilder &b) {
   {
     // 0.2 Alpha 2: low and critical, "Calculating…" while the estimate
     // is not known yet, plugged in without charging.
+    // The label calls this while drawing, with its font set: a line that
+    // does not fit (75 %, long estimates) takes the short duration.
+    int line_w = w - S(16);
     auto *state = new ActionLabel(
-        x + S(8), b.y, w - S(16), S(24),
-        [] {
+        x + S(8), b.y, line_w, S(24),
+        [line_w] {
           const auto &bt = SystemStatus::get().battery;
           if (!bt.present) return std::string(_("The computer runs on mains power."));
-          return battery_phase_line(bt.phase, bt.minutes, bt.calculating);
+          std::string line = battery_phase_line(bt.phase, bt.minutes, bt.calculating);
+          std::string time = battery_time_label(bt.phase, bt.minutes, bt.calculating);
+          if (text_width(line) <= line_w || time.empty() || bt.calculating) return line;
+          return battery_label(bt.phase) + " - " + time;
         },
         0);
     // Named for UI tests with the text it shows.
