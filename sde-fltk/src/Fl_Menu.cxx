@@ -962,6 +962,8 @@ static int backward(int menu) { // previous item in menu menu if possible
   menustate &pp = *p;
   menuwindow &m = *(pp.p[menu]);
   int item = (menu == pp.menu_number) ? pp.item_number : m.selected;
+  // SDE-FLTK: with nothing selected, Up goes to the last item (FLTK 1.3).
+  if (item < 0) item = m.numitems;
   bool wrapped = false;
   do {
     while (--item >= 0) {
