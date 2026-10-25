@@ -710,27 +710,15 @@ try:
         settings = find("^Control Center$")
         shot("07-settings-" + page)
         if page == "suite" and args.scale == 100:
-            g = geom(settings)
-            run(
-                "xdotool",
-                "mousemove",
-                str(g["X"] + 370),
-                str(g["Y"] + 290),
-                "click",
-                "1",
-            )
-            time.sleep(0.8)
+            # The first suite application's source and copyright buttons,
+            # found by their tooltips (alpha 2: a Merkadu card above them
+            # moved them).
+            click_control(settings, "Control Center", "https://github.com/hugomonizdorego/SDE-Desktop")
+            time.sleep(0.3)
             assert (
                 home / "opened-uri"
             ).read_text().strip() == "https://github.com/hugomonizdorego/SDE-Desktop"
-            run(
-                "xdotool",
-                "mousemove",
-                str(g["X"] + 720),
-                str(g["Y"] + 290),
-                "click",
-                "1",
-            )
+            click_control(settings, "Control Center", "/usr/share/doc/sde/copyright")
             time.sleep(0.3)
             assert (
                 home / "opened-uri"

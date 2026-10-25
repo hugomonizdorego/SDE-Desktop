@@ -1810,9 +1810,12 @@ void build_suite(Page *page) {
     int x = page->left() + S(20), y = page->cursor();
     int available = page->width() - S(40), gap = S(8);
     int source_w = std::min(S(206), (available - gap) * 2 / 3);
-    action_button(x, y, source_w, S(32), app.upstream, {"xdg-open", app.url});
+    // The tooltips name where the buttons lead (and the UI tests find them).
+    action_button(x, y, source_w, S(32), app.upstream, {"xdg-open", app.url})->copy_tooltip(app.url.c_str());
+    std::string copyright = "/usr/share/doc/" + app.package + "/copyright";
     action_button(x + source_w + gap, y, available - source_w - gap, S(32), _("Copyright"),
-                  {"xdg-open", "/usr/share/doc/" + app.package + "/copyright"});
+                  {"xdg-open", copyright})
+        ->copy_tooltip(copyright.c_str());
     page->advance(S(42));
     page->note(app.license);
     page->end_card();
