@@ -1,3 +1,32 @@
+sde (0.2.0~alpha2) unstable; urgency=medium
+
+  * Merkadu, the SDE software center (new binary package merkadu): Debian
+    packages through PackageKit and AppStream, Flatpak (Flathub) and Snap
+    (snapd) in one window, with the departments, lobby, history and
+    progress views of Ubuntu Software Center (GPL-3.0, credited);
+    "merkadu --uninstall <desktop file>"; snap data in ~/.snap/data
+    (hidden-snap-folder) since snapd cannot keep it outside the home.
+  * Start Menu: typed letters always reach the panel search; tile groups
+    by category with drag and drop, new, renamed, moved and removed
+    groups; Uninstall... through Merkadu; icon fallbacks for applications
+    whose icon is missing.
+  * Control Center: sidebar and page follow the window's size (maximized
+    windows); user accounts through AccountsService and polkit; 75 % and
+    175 % interface sizes; Applications opens Merkadu.
+  * Panel: animated battery icon, display modes and time estimates; clock
+    styles Digital, LED and Analog with independent Show seconds and Blink
+    the colon.
+  * Liria: plain folder icon, color ribbon icons following the icon theme,
+    faster large folders, copy and move progress with a speed graph and
+    the animated SDE logo, shared with the desktop's file operations.
+  * Themes redesigned; SDE Liquid Glass with a compositor shader (new
+    SDE Compositor patch, MPL-2.0); antialiased window buttons.
+  * Niny settings page scrolls; windows keep their title bar on screen;
+    SDE Welcome reads /usr/share/SDE-Welcome and /etc/SDE-Welcome; package
+    builds carry the build number and commit (BUILD-INFO).
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sun, 25 Oct 2026 16:00:00 +0000
+
 sde (0.2.0~alpha1) unstable; urgency=medium
 
   * First release of the 0.2 series; docs/ROADMAP.md describes the way from

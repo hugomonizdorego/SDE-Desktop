@@ -12,11 +12,23 @@
 SDE is built and tested on Debian testing. DebION GNU/Linux, a separate Debian-based
 distribution, ships SDE; see [LEGAL.md](docs/LEGAL.md) for how the two projects relate.
 
-Development version **0.2 Alpha 1** (`0.2.0~alpha1`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.2 Alpha 2** (`0.2.0~alpha2`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE 0.2 Alpha 1: the Start Menu in SDE Graphite Light](docs/screenshots/0.2-alpha1/03-start-menu.jpg)
+![SDE 0.2 Alpha 2: the Start Menu with tile groups by category](docs/screenshots/0.2-alpha2/01-start-menu.jpg)
 
-**New in 0.2 Alpha 1:** [identity, Control Center and a faster Start Menu](docs/0.2-ALPHA1.md) —
+**New in 0.2 Alpha 2:** [Merkadu, tile groups, user accounts and Liquid Glass](docs/0.2-ALPHA2.md) —
+**Merkadu**, a new software center for Debian packages, Flatpak and Snap (after Ubuntu
+Software Center); a Start Menu where typing always searches, tiles grouped by category
+with drag and drop, and **Uninstall…** in the right-click menu; **user accounts** in the
+Control Center (add, administrator or standard, password, lock, remove), a Control
+Center that fills a maximized window, and 75 % and 175 % sizes; an animated battery
+icon with time estimates; clock options Show seconds and Blink the colon; Liria with a
+plain folder icon, a color ribbon, much faster big folders and a Windows 10-like copy
+dialog with the animated SDE logo; every theme redesigned and a real **SDE Liquid
+Glass**; Niny's Settings page fixed; SDE Welcome editable by distributions in
+`/usr/share/SDE-Welcome` ([screenshots](docs/screenshots/0.2-alpha2/README.md)).
+
+**0.2 Alpha 1:** [identity, Control Center and a faster Start Menu](docs/0.2-ALPHA1.md) —
 the first release of the 0.2 series: the official SDE logo, a new icon for every SDE
 application, About windows with copyright, license and trademark information, SDE
 Settings renamed **Control Center** (one central hub), user pictures from the Start
@@ -101,11 +113,12 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-panel` | Full, floating or short panel at the bottom or top: searchable application menu, pinned apps (right-click to pin, drag to reorder), taskbar, XEmbed and StatusNotifierItem/AppIndicator tray, Action Center, calendar, auto-hide |
 | `sde-notifyd` | Desktop notifications (`org.freedesktop.Notifications`) with action buttons and Do Not Disturb |
 | `sde-desktop` | Wallpaper and desktop icons, right-click menu (View, Sort by, Refresh, New, terminal, file manager) and keyboard shortcuts |
-| `sde-settings` | The **Control Center** (also `sde-control-center`): every setting by category on one overview (Personalization, System, Network & Internet, Devices, Administration, About) with a search; appearance, panel, Start menu, displays, sound, power, date & time, Users & Avatar (account picture and name), keyboard & mouse, network, about; tiles start Display Settings, Software Updater, Driver Manager, System Reports and System Monitor |
+| `sde-settings` | The **Control Center** (also `sde-control-center`): every setting by category on one overview (Personalization, System, Network & Internet, Devices, Administration, About) with a search; appearance, panel, Start menu, displays, sound, power, date & time, Users & Avatar (your picture and name, and the user accounts of the computer: add, type, password, lock, automatic login, remove), keyboard & mouse, network, about; tiles start Display Settings, Software Updater, Driver Manager, System Reports and System Monitor |
 | `sde-display-settings` | Native monitor arrangement, EDID, modes, rotation, profiles and scale |
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
+| `merkadu` | Merkadu, the software center (own package): Debian packages through PackageKit and AppStream, Flatpak (Flathub) and Snap in one window, departments, Installed, Updates, History; `merkadu --uninstall` for the Start Menu |
 | `sde-update` | Software Updater: critical, security, main and Flatpak updates with check boxes, history, sources and maintenance; PackageKit/APT and Flatpak transactions with progress and background notifications |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
@@ -259,7 +272,9 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 - [Building, dependencies and releases](docs/BUILD.md)
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Logo, icons and user pictures](docs/BRANDING.md)
-- [Roadmap from 0.2 Alpha 1 to 1.0 Final](docs/ROADMAP.md)
+- [Merkadu, the software center](docs/MERKADU.md), [Start Menu](docs/START-MENU.md), [Control Center](docs/CONTROL-CENTER.md), [Panel](docs/PANEL.md) and [themes](docs/THEMES.md)
+- [SDE Welcome for distributions](docs/WELCOME.md)
+- [Roadmap to 1.0 Final](docs/ROADMAP.md)
 - [Security policy](docs/SECURITY.md) and the [0.2 Alpha 1 audit](docs/AUDIT-0.2.0-alpha1.md)
 - [Translating SDE](po/README.md)
 - [Changelog](CHANGELOG.md)

@@ -1,4 +1,4 @@
-# Roadmap — from 0.2.0 Alpha 1 to 1.0 Final
+# Roadmap — from 0.2.0 Alpha 2 to 1.0 Final
 
 Selviana Desktop Environment (SDE) is a desktop environment. DebION GNU/Linux
 is a separate project: a Debian-based distribution (Linux kernel) that ships
@@ -35,7 +35,7 @@ cairo and Xlib, with a Rust configuration core.
   drag and drop on the desktop and in Liria, Default Applications, network
   repair for Debian standard installs.
 
-## Now: 0.2.0 Alpha 1 — identity and consolidation (October 2026)
+## Done: 0.2.0 Alpha 1 — identity and consolidation (October 2026)
 
 - [x] Official SDE logo; a cohesive icon family for all SDE applications
 - [x] About windows with copyright, license and trademark information
@@ -47,9 +47,28 @@ cairo and Xlib, with a Rust configuration core.
 - [x] Release audit: builds, hardening, sanitizers, security review
 - [x] Screenshot showcase of every component for each build
 
+## Now: 0.2.0 Alpha 2 — software, accounts and polish (October 2026)
+
+- [x] **Merkadu**, the SDE software center: Debian packages, Flatpak and Snap
+      ([0.2-ALPHA2.md](0.2-ALPHA2.md), [MERKADU.md](MERKADU.md))
+- [x] Uninstall from the Start Menu; tile groups by category with drag and
+      drop; typing always searches; icons for apps without one
+- [x] User accounts in the Control Center; maximized Control Center; 75 %
+      and 175 % interface sizes
+- [x] Animated battery icon with display modes and time estimates; clock
+      options Show seconds and Blink the colon
+- [x] Liria: plain folder icon, color ribbon, faster big folders, copy
+      progress with the animated SDE logo (also on the desktop)
+- [x] Every theme redesigned; SDE Liquid Glass with a compositor shader;
+      sharper window buttons at 125–200 % (audit A1-39)
+- [x] SDE Welcome editable by distributions (`/usr/share/SDE-Welcome`)
+
 ## 0.2 series — usable every day (target: Q1 2027)
 
-Alpha 2 and later:
+Alpha 3 and later:
+
+- [ ] Merkadu and user accounts validated on real installations (PackageKit,
+      Flatpak, snapd, AccountsService), reviews of featured apps
 
 - [ ] Translations: Indonesian first, then Portuguese and Tetum; translation
       workflow (Weblate or po files in the repository) and 100% string coverage
@@ -67,7 +86,7 @@ Alpha 2 and later:
 - [ ] Upgrade path tests from every 0.1 alpha to 0.2 (configuration migration)
 - [ ] Open items of the [0.2 Alpha 1 audit](AUDIT-0.2.0-alpha1.md): a Driver
       Manager helper with its own polkit action, a bounded tray icon cache,
-      sharper window buttons at 150 %, picom v13
+      picom v13
 
 Beta (feature freeze) → RC → **0.2.0**:
 

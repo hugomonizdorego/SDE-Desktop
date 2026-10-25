@@ -23,7 +23,10 @@ if(XGETTEXT_EXECUTABLE)
             --add-comments=TRANSLATORS: --sort-by-file
             -o ${CMAKE_CURRENT_SOURCE_DIR}/sde.pot ${SDE_I18N_SOURCES}
     COMMAND ${XGETTEXT_EXECUTABLE} --join-existing --from-code=UTF-8 --language=Desktop
-            --keyword=Name --keyword=Comment --keyword=Title --keyword=Subtitle --sort-by-file
+            --keyword=Name --keyword=Comment --keyword=Title --keyword=Subtitle
+            --package-name=sde --package-version=${SDE_VERSION}
+            "--copyright-holder=Selviana DE Project and contributors"
+            --msgid-bugs-address=https://github.com/hugomonizdorego/SDE-Desktop/issues --sort-by-file
             -o ${CMAKE_CURRENT_SOURCE_DIR}/sde.pot ${SDE_I18N_DATA}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Updating po/sde.pot"
