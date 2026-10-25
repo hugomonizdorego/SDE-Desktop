@@ -185,7 +185,8 @@ Compositor):
   (`Theme::opacity`, `popup_opacity`) is how much of the surface color
   tints the glass: 32 % at Subtle (25) down to 14 % at 100.
 * Text stays readable over any backdrop: under text the glass is lifted (in
-  dark mode deepened) just enough for 4.5:1 text and 3:1 dimmed text
+  dark mode deepened) just enough for 4.5:1 text, 3:1 dimmed text and, as
+  far as the glass can stay clear, 3:1 accent-colored text
   (`liquid_legible_luminance()`; the `sde-theme` test checks every accent
   and mode), so the glass is clear over calm backdrops and frosted over
   busy or contrasting ones.

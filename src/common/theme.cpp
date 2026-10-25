@@ -322,7 +322,12 @@ double liquid_legible_luminance(const Theme &t) {
     return t.dark ? (l + 0.05) / ratio - 0.05 : ratio * (l + 0.05) - 0.05;
   };
   double text = limit(t.text, 4.6), menu = limit(t.menu_text, 4.6), dim = limit(t.text_dim, 3.1);
-  return t.dark ? std::max(0.0, std::min({text, menu, dim})) : std::min(1.0, std::max({text, menu, dim}));
+  // Accent-colored text (letter headings, links) gets 3:1 too, as far as
+  // the glass stays glass: never lighter than 0.55 in a light theme or
+  // darker than 0.06 in a dark one for it.
+  double accent = limit(t.accent, 3.1);
+  if (t.dark) return std::max(0.0, std::min({text, menu, dim, std::max(0.06, accent)}));
+  return std::min(1.0, std::max({text, menu, dim, std::min(0.55, accent)}));
 }
 
 // Fills the palette of |t| from family/mode/accent (t.accent may already

@@ -207,7 +207,8 @@ struct LiquidMaterial {
 LiquidMaterial theme_liquid_material(const std::string &family, bool dark);
 // The relative luminance the Liquid Glass shader keeps the glass at under
 // text: at least this in a light theme, at most this in a dark one, so text
-// keeps 4.5:1 and dimmed text 3:1 (WCAG 2.1) over any backdrop.
+// keeps 4.5:1 and dimmed text 3:1 (WCAG 2.1) over any backdrop, and
+// accent-colored text 3:1 as far as the glass can stay clear for it.
 double liquid_legible_luminance(const Theme &t);
 
 // Families and accents for pickers.

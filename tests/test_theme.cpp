@@ -321,6 +321,9 @@ static void test_liquid_glass() {
         Color glass = gray_of_luminance(l);
         CHECK(t.text.contrast(glass) >= 4.5 && t.menu_text.contrast(glass) >= 4.5);
         CHECK(t.text_dim.contrast(glass) >= 3.0);
+        // Accent text (headings, links) where the accent itself is readable
+        // on the surface (not yellow and orange in a light theme).
+        if (t.accent.contrast(t.surface) >= 4.5) CHECK(t.accent.contrast(glass) >= 2.6);
         CHECK(t.dark ? t.surface.luminance() <= l && t.menu_bg.luminance() <= l
                      : t.surface.luminance() >= l && t.menu_bg.luminance() >= l);
         // A clear glass, clearer with the slider; one tint for every surface.
