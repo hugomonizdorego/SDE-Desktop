@@ -35,8 +35,11 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def git(*args):
+    # safe.directory: CI builds in a container as root, in a checkout owned
+    # by the runner's user, and git refuses such "dubious ownership" checkouts
+    # (0.2 Alpha 2: the packages still said "Build: Unknown"). Only reads.
     try:
-        return subprocess.run(['git', '-C', str(ROOT), *args], stdout=subprocess.PIPE,
+        return subprocess.run(['git', '-c', f'safe.directory={ROOT}', '-C', str(ROOT), *args], stdout=subprocess.PIPE,
                               stderr=subprocess.DEVNULL, text=True, timeout=10, check=True).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ''
