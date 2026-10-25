@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <FL/Fl_Group.H>
+#include <FL/Fl_Menu_Item.H>
 #include <FL/Fl_Scroll.H>
 #include <X11/extensions/shape.h>
 
@@ -231,6 +232,108 @@ void PanelPopup::stroke_outline(Painter &p, const Color &c) const {
   p.set(c);
   cairo_set_line_width(cr, 1.0);
   cairo_stroke(cr);
+}
+
+std::string typed_key_text() {
+  if (Fl::event_state() & (FL_CTRL | FL_ALT | FL_META)) return "";
+  const char *text = Fl::event_text();
+  if (text && *text) {
+    // Control characters (Tab, Enter, Backspace...) and the space before
+    // anything else type nothing.
+    unsigned char c = static_cast<unsigned char>(text[0]);
+    return c >= 0x21 && c != 0x7F ? std::string(text) : std::string();
+  }
+  int k = Fl::event_key();
+  if (k <= 0x20 || k >= 0xFF || k == 0x7F || (k >= 0x80 && k < 0xA0)) return "";
+  if (k >= 'a' && k <= 'z' && (Fl::event_state() & (FL_SHIFT | FL_CAPS_LOCK))) k -= 'a' - 'A';
+  std::string out;
+  if (k < 0x80) {
+    out += char(k);
+  } else {  // Latin-1 key symbols are their code points
+    out += char(0xC0 | (k >> 6));
+    out += char(0x80 | (k & 0x3F));
+  }
+  return out;
+}
+
+namespace {
+// While a popup menu of a PanelPopup is open: where a typed character goes.
+std::string *g_menu_typed = nullptr;
+Fl_Event_Dispatch g_dispatch_before = nullptr;
+
+int popup_menu_dispatch(int event, Fl_Window *w) {
+  if (event == FL_KEYBOARD && g_menu_typed) {
+    std::string text = typed_key_text();
+    if (!text.empty()) {
+      // FLTK's popup menus do nothing with letters (no item has an "&"
+      // shortcut): close it as Escape does and keep the text — all of it:
+      // keys typed quickly can arrive together, before the menu is gone.
+      *g_menu_typed += text;
+      Fl::e_keysym = FL_Escape;
+    }
+  }
+  return g_dispatch_before ? g_dispatch_before(event, w) : Fl::handle_(event, w);
+}
+}  // namespace
+
+// UI test hook: <qa>/<title>-popup.txt lists the items of the popup menu
+// that is open ("item:<label>", "sub:<submenu>/<label>", the active flag
+// as the sixth field) after an "@seq:<n>" line that grows with each one.
+static void qa_dump_popup(Fl_Window *win, const Fl_Menu_Item *items) {
+  if (!qa_dump_enabled() || !win->label()) return;
+  static int seq = 0;
+  std::string text = "@seq:" + std::to_string(++seq) + "\t0\t0\t0\t0\t1\n";
+  std::string prefix;
+  int depth = 0;
+  for (const Fl_Menu_Item *m = items; m && (m->text || depth > 0); ++m) {
+    if (!m->text) {  // the end of a submenu
+      --depth;
+      prefix.clear();
+      continue;
+    }
+    std::string label = m->text;
+    label.erase(std::remove(label.begin(), label.end(), '\t'), label.end());
+    text += (depth ? "sub:" + prefix : "item:") + label + "\t0\t0\t0\t0\t" +
+            std::to_string(m->active() ? 1 : 0) + "\n";
+    if (m->flags & FL_SUBMENU) {
+      ++depth;
+      prefix = label + "/";
+    }
+  }
+  std::string name = win->label();
+  for (char &c : name)
+    if (c == '/' || c == ' ') c = '-';
+  std::string path = std::string(getenv("SDE_PANEL_QA_DIR")) + "/" + name + "-popup.txt";
+  if (FILE *f = fopen((path + ".tmp").c_str(), "w")) {
+    fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    rename((path + ".tmp").c_str(), path.c_str());
+  }
+}
+
+const Fl_Menu_Item *PanelPopup::popup_menu(const Fl_Menu_Item *items, int x, int y,
+                                           std::string *typed) {
+  qa_dump_popup(this, items);
+  std::string text;
+  g_menu_typed = &text;
+  g_dispatch_before = Fl::event_dispatch();
+  Fl::event_dispatch(popup_menu_dispatch);
+  const Fl_Menu_Item *m = items->popup(x, y);
+  Fl::event_dispatch(g_dispatch_before);
+  g_dispatch_before = nullptr;
+  g_menu_typed = nullptr;
+  if (typed) *typed = text;
+  // The grabs and the focus come back (the chosen action may close the
+  // popup right after, which releases them again).
+  if (is_open() && fl_xid(this)) {
+    if (grabbing_ && Fl::grab() != this) Fl::grab(this);
+    XSetInputFocus(fl_display, fl_xid(this), RevertToPointerRoot, CurrentTime);
+    XFlush(fl_display);
+    input_tries_ = 0;
+    Fl::remove_timeout(ensure_input, this);
+    Fl::add_timeout(0.1, ensure_input, this);
+  }
+  return text.empty() ? m : nullptr;
 }
 
 bool PanelPopup::contains_root(int rx, int ry) const {
