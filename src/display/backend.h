@@ -20,6 +20,11 @@ void save_display_layout(Config &cfg, const std::vector<Output> &outputs);
 bool apply_display_layout(const Config &cfg);
 bool import_legacy_display_layout(const std::string &text, const std::vector<Output> &hardware,
                                   std::vector<Output> &outputs);
+// Interface sizes a display profile keeps: 0 (Automatic, from Xft.dpi) or
+// 75 to 200 % in steps of 25.
+bool display_scale_valid(int scale);
+// [appearance] scale of |cfg| as a profile keeps it ("auto" is 0).
+int configured_display_scale(const Config &cfg);
 std::vector<std::string> display_profiles();
 bool save_display_profile(const DisplayProfile &profile);
 bool load_display_profile(const std::string &name, DisplayProfile &profile,

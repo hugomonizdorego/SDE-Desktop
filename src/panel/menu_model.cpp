@@ -395,6 +395,220 @@ std::vector<TileGroup> groups_from_favorites(const std::vector<std::string> &fav
   return out;
 }
 
+TileCategory tile_category(const DesktopEntry &e) {
+  std::string c = e.menu_category();
+  if (c == "Internet") return TileCategory::Internet;
+  if (c == "Office") return TileCategory::Office;
+  if (c == "Multimedia") return TileCategory::Multimedia;
+  if (c == "Graphics") return TileCategory::Graphics;
+  if (c == "Development") return TileCategory::Development;
+  if (c == "Games") return TileCategory::Games;
+  if (c == "Education" || c == "Science") return TileCategory::Education;
+  if (c == "Settings" || c == "System") return TileCategory::System;
+  if (c == "Accessories") return TileCategory::Accessories;
+  return TileCategory::Other;
+}
+
+namespace {
+
+// The roles of each category's default tiles, in order; an application
+// fits a role with any of its freedesktop categories.
+const std::vector<std::vector<std::string>> &category_roles(TileCategory c) {
+  static const std::vector<std::vector<std::vector<std::string>>> roles = {
+      // Internet
+      {{"WebBrowser"}, {"Email"}, {"Chat", "InstantMessaging", "IRCClient"},
+       {"VideoConference", "Telephony"}, {"FileTransfer", "P2P"}, {"RemoteAccess"}, {"Feed", "News"}},
+      // Office
+      {{"WordProcessor"}, {"Spreadsheet"}, {"Presentation"}, {"Viewer"},
+       {"Calendar", "ContactManagement", "ProjectManagement"}, {"Database"}, {"Finance"}, {"Dictionary"}},
+      // Multimedia
+      {{"Player"}, {"Music", "Audio"}, {"Video", "TV"}, {"AudioVideoEditing", "Recorder"},
+       {"DiscBurning"}, {"Mixer", "Sequencer"}},
+      // Graphics
+      {{"Photography", "Viewer"}, {"RasterGraphics"}, {"VectorGraphics"}, {"2DGraphics"},
+       {"3DGraphics"}, {"Scanning", "OCR"}},
+      // Development
+      {{"IDE"}, {"TextEditor"}, {"Debugger"}, {"RevisionControl"}, {"GUIDesigner"},
+       {"WebDevelopment"}, {"Building"}, {"Profiling", "Translation"}},
+      // Games, Education & Science: no roles, A-Z
+      {},
+      {},
+      // System & Settings
+      {{"FileManager"}, {"TerminalEmulator"}, {"DesktopSettings"}, {"PackageManager"}, {"Monitor"},
+       {"HardwareSettings"}, {"Security"}},
+      // Accessories
+      {{"TextEditor"}, {"Calculator"}, {"Archiving", "Compression"}, {"Clock"}, {"Accessibility"}},
+  };
+  static const std::vector<std::vector<std::string>> none;
+  int i = int(c);
+  return i >= 0 && i < int(roles.size()) ? roles[size_t(i)] : none;
+}
+
+bool same_name(const std::string &a, const std::string &b) { return lower(trim(a)) == lower(trim(b)); }
+
+int group_named(const std::vector<TileGroup> &groups, const std::string &name) {
+  for (size_t i = 0; i < groups.size(); ++i)
+    if (same_name(groups[i].name, name)) return int(i);
+  return -1;
+}
+
+const std::string &category_name(const std::vector<std::string> &names, TileCategory c) {
+  static const std::string empty;
+  size_t i = size_t(c);
+  return i < names.size() ? names[i] : empty;
+}
+
+bool pinned_in(const std::vector<TileGroup> &groups, const std::string &id) {
+  for (auto &g : groups)
+    for (auto &t : g.tiles)
+      if (t.id == id) return true;
+  return false;
+}
+
+}  // namespace
+
+std::vector<TileGroup> category_groups(const std::vector<DesktopEntry> &apps,
+                                       const std::vector<std::string> &preferred,
+                                       const std::vector<std::string> &names, size_t per_group) {
+  std::vector<TileGroup> out;
+  for (int ci = 0; ci < kTileCategories; ++ci) {
+    TileCategory c = TileCategory(ci);
+    const auto &roles = category_roles(c);
+    struct Candidate {
+      const DesktopEntry *e;
+      size_t role;  // roles.size(): none of them
+      bool sde;
+      std::string sort;
+    };
+    std::vector<Candidate> list;
+    for (auto &a : apps) {
+      if (tile_category(a) != c) continue;
+      size_t role = roles.size();
+      for (size_t r = 0; r < roles.size() && role == roles.size(); ++r)
+        for (auto &cat : roles[r])
+          if (std::find(a.categories.begin(), a.categories.end(), cat) != a.categories.end()) {
+            role = r;
+            break;
+          }
+      bool sde = std::find(preferred.begin(), preferred.end(), a.id) != preferred.end();
+      list.push_back({&a, role, sde, lower(a.name)});
+    }
+    if (list.empty()) continue;
+    std::stable_sort(list.begin(), list.end(), [](const Candidate &x, const Candidate &y) {
+      if (x.role != y.role) return x.role < y.role;
+      if (x.sde != y.sde) return x.sde;
+      return x.sort < y.sort;
+    });
+    // One application per role first (a browser, a mail client, a chat
+    // before a second browser), then the others in the same order.
+    std::vector<const DesktopEntry *> picked;
+    size_t last_role = size_t(-1);
+    for (auto &cand : list)
+      if (cand.role < roles.size() && cand.role != last_role && picked.size() < per_group) {
+        picked.push_back(cand.e);
+        last_role = cand.role;
+      }
+    for (auto &cand : list)
+      if (picked.size() < per_group && std::find(picked.begin(), picked.end(), cand.e) == picked.end())
+        picked.push_back(cand.e);
+    // Full rows of the six-cell group: medium tiles by three; with one,
+    // two, four or five tiles the first of a row is wide (W M, W M / M M M).
+    size_t n = picked.size();
+    TileGroup g{category_name(names, c), {}};
+    for (size_t i = 0; i < n; ++i) {
+      bool wide = n == 1 || (n == 2 && i == 0) || (n == 4 && i % 2 == 0) || (n == 5 && i == 0);
+      g.tiles.push_back(Tile{picked[i]->id, wide ? TileSize::Wide : TileSize::Medium});
+    }
+    out.push_back(g);
+  }
+  return out;
+}
+
+std::vector<TileGroup> migrate_tile_groups(const std::vector<TileGroup> &groups,
+                                           const std::vector<std::string> &old_names,
+                                           const std::vector<DesktopEntry> &apps,
+                                           const std::vector<std::string> &names) {
+  auto is_old = [&](const TileGroup &g) {
+    for (auto &n : old_names)
+      if (same_name(g.name, n)) return true;
+    return false;
+  };
+  if (std::none_of(groups.begin(), groups.end(), is_old)) return groups;
+  std::vector<std::vector<Tile>> by_category(static_cast<size_t>(kTileCategories));
+  std::vector<Tile> unknown;
+  std::vector<TileGroup> out;
+  size_t at = 0;
+  bool found = false;
+  for (auto &g : groups) {
+    if (!is_old(g)) {
+      out.push_back(g);
+      continue;
+    }
+    if (!found) at = out.size(), found = true;
+    for (auto &t : g.tiles) {
+      auto e = std::find_if(apps.begin(), apps.end(), [&](const DesktopEntry &a) { return a.id == t.id; });
+      TileCategory c = e == apps.end() ? TileCategory::Other : tile_category(*e);
+      if (c == TileCategory::Other) unknown.push_back(t);
+      else by_category[size_t(c)].push_back(t);
+    }
+  }
+  std::vector<TileGroup> fresh;
+  for (int ci = 0; ci < kTileCategories; ++ci) {
+    auto &tiles = by_category[size_t(ci)];
+    if (tiles.empty()) continue;
+    const std::string &name = category_name(names, TileCategory(ci));
+    int existing = group_named(out, name);
+    if (existing >= 0) {
+      for (auto &t : tiles)
+        if (!pinned_in(out, t.id)) out[size_t(existing)].tiles.push_back(t);
+    } else {
+      fresh.push_back(TileGroup{name, tiles});
+    }
+  }
+  if (!unknown.empty()) {
+    if (fresh.empty())
+      fresh.push_back(TileGroup{category_name(names, TileCategory::Other), {}});
+    for (auto &t : unknown) fresh.front().tiles.push_back(t);
+  }
+  out.insert(out.begin() + long(at), fresh.begin(), fresh.end());
+  return out;
+}
+
+bool pin_by_category(std::vector<TileGroup> &groups, const DesktopEntry &e,
+                     const std::vector<DesktopEntry> &apps, const std::vector<std::string> &names,
+                     TileSize size) {
+  if (e.id.empty() || pinned_in(groups, e.id)) return false;
+  TileCategory c = tile_category(e);
+  int target = group_named(groups, category_name(names, c));
+  if (target < 0 && c != TileCategory::Other) {
+    // A category group the user renamed: the one with the most
+    // applications of this category.
+    int best = 0;
+    for (size_t g = 0; g < groups.size(); ++g) {
+      int n = 0;
+      for (auto &t : groups[g].tiles) {
+        auto a = std::find_if(apps.begin(), apps.end(), [&](const DesktopEntry &x) { return x.id == t.id; });
+        if (a != apps.end() && tile_category(*a) == c) ++n;
+      }
+      if (n > best) best = n, target = int(g);
+    }
+  }
+  if (target < 0) {
+    // A new group, before the first group of a later category.
+    size_t at = groups.size();
+    for (size_t g = 0; g < groups.size() && at == groups.size(); ++g)
+      for (int later = int(c) + 1; later <= kTileCategories; ++later)
+        if (same_name(groups[g].name, category_name(names, TileCategory(later)))) {
+          at = g;
+          break;
+        }
+    groups.insert(groups.begin() + long(at), TileGroup{category_name(names, c), {}});
+    target = int(at);
+  }
+  groups[size_t(target)].tiles.push_back(Tile{e.id, size});
+  return true;
+}
+
 std::vector<TileCell> pack_tiles(const std::vector<Tile> &tiles, int columns, int *rows) {
   columns = std::max(1, columns);
   std::vector<std::vector<char>> used;  // [row][col]

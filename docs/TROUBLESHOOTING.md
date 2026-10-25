@@ -46,7 +46,7 @@ Quick settings use the system's services and hide what is not available:
 | Network | NetworkManager (`network-manager`, command `nmcli`) |
 | Sound | PulseAudio or PipeWire with `pactl` (`pulseaudio-utils`) |
 | Brightness | a backlight in `/sys/class/backlight` and systemd-logind |
-| Battery | a battery in `/sys/class/power_supply` |
+| Battery | UPower (`upower`), or a battery in `/sys/class/power_supply` (see [PANEL.md](PANEL.md)) |
 
 ## Tray icons are missing
 
@@ -59,6 +59,19 @@ program can own each tray; if another panel or tray runs in the session, SDE log
 Saved layouts are only applied when the same monitors are connected
 (`[display] outputs=` in `~/.config/sde/sde.conf`). Remove the `[display]`
 section to return to the automatic layout.
+
+## Users cannot be added or changed in the Control Center
+
+Control Center → Users & Avatar manages accounts through AccountsService and
+polkit (`docs/CONTROL-CENTER.md`):
+
+| Message or symptom | What to do |
+| --- | --- |
+| "Adding and changing accounts needs AccountsService" | `sudo apt install accountsservice`, then open the page again. |
+| "Not authorized: this needs the password of an administrator" | No password prompt appeared or it was cancelled: the session's polkit agent (`sde-polkit-agent`, started by `sde-session`) must run, and the password must be that of a member of the `sudo` group. |
+| "The current password is not correct" (Change Password…) | passwd checks your current password through PAM; type it again. A rule of the system's password policy (`pam_unix`, `pam_pwquality`) is shown in its own words. |
+| Automatic login has no effect | AccountsService writes the display manager's configuration (LightDM's `autologin-user`, or GDM's); other display managers keep their own setting. |
+| A new account is missing from the list | Accounts with a UID outside `UID_MIN`–`UID_MAX` of `/etc/login.defs` or without a login shell are system accounts and are not listed. |
 
 ## Wi-Fi or Ethernet shows "connected" but there is no internet
 

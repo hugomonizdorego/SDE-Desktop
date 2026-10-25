@@ -909,11 +909,17 @@ class Session:
                            'wallpaper': self.wallpaper() or 'auto', 'wallpaper_mode': 'zoom'},
             'panel': {'pinned': 'liria.desktop;niny.desktop;sde-gallery.desktop;xanara.desktop;sde-settings.desktop',
                       'search': 'auto',
-                      # A steady LED: the screenshots wait until the screen stops changing.
-                      'network_led_blink': 'false'},
-            'menu': {'tiles': 'Work,liria.desktop:w,niny.desktop:m,xanara.desktop:m,org.debion.Calculator.desktop:s,'
-                              'taca.desktop:s;Photos and media,sde-gallery.desktop:w,sde-view.desktop:m;System,'
-                              'sde-settings.desktop:m,sde-update.desktop:s,sde-system-monitor.desktop:s'},
+                      # A steady LED and battery icon (its colours and marks
+                      # stay): the screenshots wait until the screen stops changing.
+                      'network_led_blink': 'false', 'battery_animation': 'false'},
+            # 0.2 Alpha 2: tile groups by category, as SDE makes them from
+            # the installed applications (fixed here so that every run shows
+            # the same tiles).
+            'menu': {'tiles': 'Office,xanara.desktop:w,niny.desktop:m;Graphics,sde-gallery.desktop:w,'
+                              'sde-view.desktop:m;System & Settings,liria.desktop:m,sde-settings.desktop:m,'
+                              'sde-system-monitor.desktop:m,sde-update.desktop:w,sde-display-settings.desktop:m;'
+                              'Accessories,org.debion.Calculator.desktop:m,taca.desktop:m,sde-run.desktop:m',
+                     'tiles_version': '2'},
             'action_center': {'multicolor': 'true', 'expanded': 'true'},
             'desktop': {'show_home': 'true', 'show_trash': 'true'},
             'weather': {'animation': 'false'},
@@ -1397,6 +1403,8 @@ def start_menu(s):
     ('start-menu-letters', 'Start Menu: a letter heading opens the A-Z jump grid'),
     ('start-menu-categories', 'Start Menu: the category filter of the application list'),
     ('start-menu-tile-menu', 'Start Menu: right-click on a tile (resize, move to a group, unpin)'),
+    ('start-menu-app-menu', 'Start Menu: right-click on an application (pin, app info, Uninstall... with Merkadu)'),
+    ('start-menu-drag', 'Start Menu: a tile dragged into another group (the group and the drop place lit)'),
     ('start-menu-account', 'Start Menu: the account on the rail'),
     ('start-menu-power', 'Start Menu: Power off asks first'),
     ('start-menu-search', 'Typing in the Start Menu searches apps, settings and files'),
@@ -1428,6 +1436,30 @@ def start_menu_more(s):
         s.press('SDE Menu', tile, button=3)
         s.shot('start-menu-tile-menu', quiet=0.5)
         s.key('Escape')
+    open_menu(s)
+    app = next((k for k in s.layout('SDE Menu') if k.startswith('app:')), None)
+    if app:
+        s.press('SDE Menu', app, button=3)
+        s.shot('start-menu-app-menu', quiet=0.5)
+        s.key('Escape')
+    # A tile held over another group: Escape ends the drag, nothing moves.
+    w = open_menu(s)
+    lay = s.layout('SDE Menu')
+    tiles = [k for k in lay if k.startswith('tile:')]
+    if w and len(tiles) >= 2 and sum(k.startswith('group:') for k in lay) >= 2:
+        g = s.geom(w)
+        src, dst = lay[tiles[-1]], lay[tiles[0]]
+        sx, sy = g['x'] + src[0] + src[2] // 2, g['y'] + src[1] + src[3] // 2
+        tx, ty = g['x'] + dst[0] + dst[2] * 3 // 4, g['y'] + dst[1] + dst[3] // 2
+        s.xdo('mousemove', str(sx), str(sy), 'mousedown', '1')
+        for k in range(1, 7):
+            s.move(sx + (tx - sx) * k / 6, sy + (ty - sy) * k / 6)
+            time.sleep(0.06)
+        try:
+            s.shot('start-menu-drag', quiet=0.5)
+        finally:
+            s.key('Escape')
+            s.xdo('mouseup', '1')
     open_menu(s)
     if 'rail:account' in s.layout('SDE Menu'):
         s.press('SDE Menu', 'rail:account')
@@ -1487,6 +1519,61 @@ def panel_flyouts(s):
         s.shot(img, quiet=0.5)
         s.key('Escape')
         s.gone('^' + title + '$', 2)
+
+
+# The fixture's UPower battery (battery_mode in tests/panel_service_fixture.cpp);
+# SHOWCASE_BATTERY is the one of the other scenes (78 %, 4 h 12 min left).
+SHOWCASE_BATTERY = 'state=discharging percent=78 energy=46.8 full=60 rate=11.14 tte=15124 ttf=0 warning=1'
+
+
+@scene('Panel', [
+    ('panel-battery-charging', 'Battery: charging, with the time until full and the percentage on the panel'),
+    ('panel-battery-low', 'Battery: a low battery in amber, with its label and percentage on the panel'),
+    ('panel-battery-menu', 'Battery: right-click to show the percentage, a label or the time remaining'),
+], needs=['sde-panel'])
+def panel_battery(s):
+    def flyout(name, battery, panel):
+        try:
+            s.dismiss_popups()
+            s.write_config({'panel': panel}, reload=True)
+            if not s.fixture_mode('battery ' + battery):
+                raise SkipShot('no battery in the service fixture')
+            s.wait(lambda: s.control('SDE Panel', 'status:power', 1), 3)
+            time.sleep(0.4)  # the panel lays out its new text
+            s.click_panel('status:power', '^Power$')
+            s.park_pointer()
+            s.shot(name, quiet=0.5)
+        except SkipShot as e:
+            s.skip(name, str(e))
+        finally:
+            s.key('Escape')
+
+    # 64 % of 60 Wh at 24 W: 54 minutes until full.
+    flyout('panel-battery-charging', 'state=charging percent=64 energy=38.4 full=60 rate=24 ttf=3240 tte=0',
+           {'battery_display': 'label-percent', 'battery_time': 'true'})
+    flyout('panel-battery-low', 'state=discharging percent=14 energy=8.4 full=60 rate=9.2 tte=3287 ttf=0',
+           {'battery_display': 'label-percent'})
+    try:
+        s.dismiss_popups()
+        s.write_config({'panel': {'battery_display': 'percent'}}, reload=True)
+        s.fixture_mode('battery ' + SHOWCASE_BATTERY)
+        pos = s.panel_button('status:power')
+        if not pos:
+            raise SkipShot('no battery icon on the panel')
+        # FLTK's Down skips inactive items (the battery's state line).
+        active = [k[5:] for k, v in s.right_click_at(*pos).items() if k.startswith('item:') and v[4]]
+        if 'Show on the Panel' not in active:
+            raise SkipShot('no "Show on the Panel" in the battery menu')
+        # Down to the submenu and open it (its first entry selected).
+        s.key(*(['Down'] * (active.index('Show on the Panel') + 1)), 'Right')
+        time.sleep(0.3)
+        s.shot('panel-battery-menu', quiet=0.4)
+    except SkipShot as e:
+        s.skip('panel-battery-menu', str(e))
+    finally:
+        s.key('Escape', 'Escape')
+        s.fixture_mode('battery ' + SHOWCASE_BATTERY)
+        s.write_config(reload=True)
 
 
 @scene('Panel', [('panel-clock', 'The clock: date, alarms and the way to the calendar')], needs=['sde-panel'])
@@ -1626,8 +1713,8 @@ def action_center(s):
 @scene('Action Center', [
     ('action-center-compact', 'Action Center, compact: quick settings, sliders and the music player'),
     ('action-center-night', 'Action Center at night: stars and the moon behind the clock'),
-    ('action-center-led', 'Clock styles: LED digits in the Action Center and on the panel'),
-    ('action-center-analog', 'Clock styles: an analog clock'),
+    ('action-center-led', 'Clock styles: LED digits with a blinking colon, in the Action Center and on the panel'),
+    ('action-center-analog', 'Clock styles: an analog clock with the seconds hand'),
     ('action-center-power', 'Action Center: sleep, log out, restart and shut down'),
     ('action-center-brightness', 'Action Center: brightness settings with Night Light'),
 ], needs=['sde-panel'])
@@ -1648,9 +1735,11 @@ def action_center_more(s):
 
     view('action-center-compact', {'action_center': {'expanded': 'false'}})
     view('action-center-night', {}, clock='21:30')
-    for style in ('led', 'analog'):
+    # Seconds and the blinking colon are options of their own (0.2 Alpha 2).
+    for style, option in (('led', 'clock_blink'), ('analog', 'clock_seconds')):
         view(f'action-center-{style}', {'action_center': {'expanded': 'false', 'clock_style': style},
-                                        'clock': {'style': style}}, ready=f'@clock-{style}')
+                                        'clock': {'style': style}, 'panel': {option: 'true'}},
+             ready=f'@clock-{style}')
     s.write_config(reload=True)
     s.set_clock('10:42')
     # A footer or a card opens with a click; the click can race the popup
@@ -1698,7 +1787,7 @@ PAGE_CAPTIONS = {
     'panel': 'panel style and position, search, clock and status icons',
     'desktop': 'desktop icons',
     'action-center': 'clock card, quick settings and what the Action Center shows',
-    'clock': 'clock styles, time format and weather',
+    'clock': 'Digital, LED or Analog clock, seconds and the blinking colon, time format and weather',
     'notifications': 'Do Not Disturb and how long notifications stay',
     'effects': 'animations and the compositor',
     'display': 'monitors, resolution and scale',
@@ -1707,7 +1796,7 @@ PAGE_CAPTIONS = {
     'sound': 'output and input devices and volume',
     'network': 'connections, Wi-Fi and proxy',
     'bluetooth': 'adapter and devices',
-    'power': 'battery, idle times, lid and power button',
+    'power': 'the battery on the panel and its warnings, idle times, lid and power button',
     'lock': 'screen lock',
     'suite': 'the DebION applications, sources and licenses',
     'default-apps': 'default applications for files and links',
@@ -1726,6 +1815,11 @@ def control_center_images(run):
              PAGE_CAPTIONS.get(p, 'settings')) for p in pages]
 
 
+# Pages shown scrolled to a card (sde-settings --page <alias>): Power at its
+# Battery card, with the battery's display on the panel (0.2 Alpha 2).
+PAGE_ANCHORS = {'power': 'battery'}
+
+
 @scene('Control Center', control_center_images, needs=['sde-settings'])
 def control_center_pages(s):
     for name, _ in s.run_ctx.images_of(s.current):
@@ -1733,7 +1827,7 @@ def control_center_pages(s):
             continue
         page = name[len('control-center-'):]
         try:
-            settings_page(s, page)
+            settings_page(s, PAGE_ANCHORS.get(page, page))
             s.shot(name, quiet=0.6)
         except SkipShot as e:
             s.skip(name, str(e))
@@ -2116,6 +2210,52 @@ def avatar_picker(s):
         raise SkipShot('no account page in this build')
     settings_page(s, page)
     s.shot('avatar-picker', quiet=0.6)
+
+
+def reveal_control(s, title, name, tries=40):
+    """Wheels the page of a Control Center window until control |name| is
+    fully in view (a small screen at a large interface size)."""
+    win = s.find('^' + re.escape(title) + '$', 3)
+    if not win:
+        raise SkipShot(f'no {title} window')
+    g = s.geom(win)
+    for _ in range(tries):
+        r = s.layout(title).get(name)
+        if r and r[4]:
+            return r
+        down = not r or r[1] > g['h'] // 2
+        steps = 1 if not r else max(1, min(12, abs(r[1] - g['h'] // 2) // 60))
+        s.xdo('mousemove', str(g['x'] + g['w'] - 40), str(g['y'] + g['h'] // 2),
+              'click', '--repeat', str(steps), '--delay', '15', '5' if down else '4')
+        time.sleep(0.2)
+    raise SkipShot(f'{title}: cannot scroll to {name!r}')
+
+
+@scene('Accounts', [('user-accounts', 'Control Center, Users & Avatar: the users of this computer, their type '
+                                      'and state'),
+                    ('user-add', 'Control Center, Users & Avatar: adding a user (the user name follows the full '
+                                 'name; the strength of the password)')], needs=['sde-settings'])
+def user_accounts(s):
+    """The fixture's AccountsService: Alex, Mia and Sam."""
+    if not any(p in ACCOUNT_PAGES for p in s.run_ctx.pages):
+        raise SkipShot('no account page in this build')
+    settings_page(s, 'accounts')
+    if not s.control('Control Center', 'user:mia', 4):
+        raise SkipShot('no AccountsService (the service fixture) in this session')
+    s.shot('user-accounts', quiet=0.6)
+    try:
+        reveal_control(s, 'Control Center', 'Add User...')
+        s.press('Control Center', 'Add User...')
+        s.control('Control Center', "New user's full name", 3)
+        for name, text in (("New user's full name", 'Jordan Lee'), ("New user's password", 'a long sunny walk'),
+                           ("Confirm the new user's password", 'a long sunny walk')):
+            reveal_control(s, 'Control Center', name)
+            s.press('Control Center', name)
+            s.type(text)
+        s.park_pointer()
+        s.shot('user-add', quiet=0.6)
+    except SkipShot as e:
+        s.skip('user-add', str(e))
 
 
 # ================================================================== output

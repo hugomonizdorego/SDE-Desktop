@@ -257,6 +257,97 @@ int main() {
     CHECK(cells[0].cols == 2 && rows == 2);
   }
 
+  // 0.2 Alpha 2: tile groups by category.
+  {
+    using C = menu::TileCategory;
+    const auto M = menu::TileSize::Medium, W = menu::TileSize::Wide;
+    std::vector<std::string> names = {"Internet", "Office",  "Multimedia",          "Graphics",
+                                      "Development", "Games", "Education & Science", "System & Settings",
+                                      "Accessories", "Other"};
+    std::vector<DesktopEntry> apps = {
+        app("firefox.desktop", "Firefox", {"Network", "WebBrowser"}),
+        app("chromium.desktop", "Chromium", {"Network", "WebBrowser"}),
+        app("thunderbird.desktop", "Thunderbird", {"Network", "Email"}),
+        app("pidgin.desktop", "Pidgin", {"Network", "InstantMessaging"}),
+        app("writer.desktop", "Writer", {"Office", "WordProcessor"}),
+        app("liria.desktop", "Liria", {"System", "FileTools", "FileManager"}),
+        app("xterm.desktop", "XTerm", {"System", "TerminalEmulator"}),
+        app("sde-settings.desktop", "Control Center", {"Settings", "DesktopSettings"}),
+        app("gedit.desktop", "gedit", {"Utility", "TextEditor"}),
+        app("niny.desktop", "Niny", {"Utility", "TextEditor"}),
+        app("calc.desktop", "Calculator", {"Utility", "Calculator"}),
+        app("chess.desktop", "Chess", {"Game", "BoardGame"}),
+        app("odd.desktop", "Odd", {}),
+    };
+    CHECK(menu::tile_category(apps[0]) == C::Internet && menu::tile_category(apps[7]) == C::System);
+    CHECK(menu::tile_category(apps[5]) == C::System && menu::tile_category(apps[12]) == C::Other);
+    CHECK(menu::tile_category(app("x.desktop", "X", {"Science"})) == C::Education);
+    auto groups = menu::category_groups(apps, {"niny.desktop", "liria.desktop"}, names, 3);
+    // Only the categories with applications, in the order of the categories.
+    CHECK(groups.size() == 5 && groups[0].name == "Internet" && groups[1].name == "Office" &&
+          groups[2].name == "Games" && groups[3].name == "System & Settings" && groups[4].name == "Accessories");
+    // One application per role first: a browser, the mail, the chat (not a
+    // second browser).
+    CHECK(groups[0].tiles.size() == 3 && groups[0].tiles[0].id == "chromium.desktop" &&
+          groups[0].tiles[1].id == "thunderbird.desktop" && groups[0].tiles[2].id == "pidgin.desktop");
+    CHECK(groups[3].tiles.size() == 3 && groups[3].tiles[0].id == "liria.desktop" &&
+          groups[3].tiles[1].id == "xterm.desktop" && groups[3].tiles[2].id == "sde-settings.desktop");
+    // SDE's own applications first within a role: Niny before gedit.
+    CHECK(groups[4].tiles[0].id == "niny.desktop" && groups[4].tiles[1].id == "calc.desktop" &&
+          groups[4].tiles[2].id == "gedit.desktop");
+    // Whole rows: three medium tiles; a lone tile is wide.
+    for (auto &t : groups[0].tiles) CHECK(t.size == M);
+    CHECK(groups[1].tiles.size() == 1 && groups[1].tiles[0].size == W);
+    auto six = menu::category_groups(apps, {}, names, 6);
+    CHECK(six[0].tiles.size() == 4 && six[0].tiles[0].size == W && six[0].tiles[1].size == M &&
+          six[0].tiles[2].size == W && six[0].tiles[3].size == M);
+    int rows = 0;
+    menu::pack_tiles(six[0].tiles, menu::kGroupColumns, &rows);
+    CHECK(rows == 4);  // two full rows of tiles two cells high
+    CHECK(menu::category_groups({}, {}, names).empty());
+
+    // Groups of 0.2 Alpha 1: Productivity and Explore become category groups
+    // where Productivity was; "Work" stays; the existing Internet group
+    // gets the Internet tiles; sizes are kept; an application that is not
+    // installed goes with the first new group.
+    std::vector<menu::TileGroup> old = {
+        {"Productivity", {{"liria.desktop", W}, {"firefox.desktop", M}, {"gone.desktop", M}, {"writer.desktop", M}}},
+        {"Work", {{"calc.desktop", M}}},
+        {"Explore", {{"chess.desktop", M}, {"thunderbird.desktop", M}}},
+        {"Internet", {{"chromium.desktop", M}}},
+    };
+    auto moved = menu::migrate_tile_groups(old, {"Productivity", "Explore"}, apps, names);
+    CHECK(moved.size() == 5 && moved[0].name == "Office" && moved[1].name == "Games" &&
+          moved[2].name == "System & Settings" && moved[3].name == "Work" && moved[4].name == "Internet");
+    CHECK(moved[2].tiles.size() == 1 && moved[2].tiles[0].id == "liria.desktop" && moved[2].tiles[0].size == W);
+    CHECK(moved[4].tiles.size() == 3 && moved[4].tiles[1].id == "firefox.desktop" &&
+          moved[4].tiles[2].id == "thunderbird.desktop");
+    CHECK(moved[0].tiles.size() == 2 && moved[0].tiles[1].id == "gone.desktop");
+    CHECK(moved[3].tiles.size() == 1 && moved[3].tiles[0].id == "calc.desktop");
+    // Nothing left to move: unchanged.
+    CHECK(menu::format_tile_groups(menu::migrate_tile_groups(moved, {"Productivity", "Explore"}, apps, names)) ==
+          menu::format_tile_groups(moved));
+    auto lone = menu::migrate_tile_groups({{"productivity", {{"gone.desktop", M}}}}, {"Productivity"}, apps, names);
+    CHECK(lone.size() == 1 && lone[0].name == "Other" && lone[0].tiles.size() == 1);
+
+    // Pin to Start: the group of the category...
+    CHECK(menu::pin_by_category(groups, apps[0], apps, names));
+    CHECK(groups[0].tiles.back().id == "firefox.desktop");
+    CHECK(!menu::pin_by_category(groups, apps[0], apps, names));  // pinned already
+    // ...a new one in the order of the categories...
+    DesktopEntry gimp = app("gimp.desktop", "GIMP", {"Graphics", "RasterGraphics"});
+    CHECK(menu::pin_by_category(groups, gimp, apps, names));
+    CHECK(groups.size() == 6 && groups[2].name == "Graphics" && groups[2].tiles[0].id == "gimp.desktop" &&
+          groups[3].name == "Games");
+    // ...the renamed group that holds the category's applications...
+    groups[0].name = "Web";
+    DesktopEntry web = app("epiphany.desktop", "Web", {"Network", "WebBrowser"});
+    CHECK(menu::pin_by_category(groups, web, apps, names) && groups[0].tiles.back().id == "epiphany.desktop");
+    // ...and "Other" at the end for an application without a category.
+    CHECK(menu::pin_by_category(groups, apps[12], apps, names, menu::TileSize::Small));
+    CHECK(groups.back().name == "Other" && groups.back().tiles[0].size == menu::TileSize::Small);
+  }
+
   if (failures) {
     std::fprintf(stderr, "%d menu model check(s) failed\n", failures);
     return 1;

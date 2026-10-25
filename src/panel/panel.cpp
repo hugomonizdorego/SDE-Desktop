@@ -96,6 +96,9 @@ void Panel::monitor(int &x, int &y, int &w, int &h) const {
 
 void Panel::load_config() {
   cfg_.load();
+  // 0.2 Alpha 2: the old "blink" clock style is the digital clock with the
+  // blinking colon option (rewritten once).
+  if (clockface::migrate_config(cfg_)) cfg_.save();
   theme_ = Theme::from_config(cfg_);
   theme_.apply_to_fltk();
   // Every saved setting (a tile pinned, the menu resized, ...) reloads the
@@ -306,6 +309,7 @@ void Panel::set_revealed(bool revealed) {
   revealed_ = revealed;
   place_on_screen();
   redraw();
+  battery_update();  // no frames while the panel is hidden
 }
 
 void Panel::hide_timeout(void *data) {
@@ -670,10 +674,18 @@ std::string Panel::status_section(StatusIcon icon) {
 bool Panel::status_anchor(const std::string &section, int &center_x) const {
   for (size_t i = 0; i < status_icons_.size(); ++i)
     if (status_section(status_icons_[i]) == section) {
-      center_x = x() + status_x_ + int(i) * S(26) + S(13);
+      center_x = x() + status_slot_x(int(i)) + status_slot_w(int(i)) / 2;
       return true;
     }
   return false;
+}
+int Panel::status_slot_x(int index) const {
+  if (index < 0 || index + 1 >= int(status_pos_.size())) return status_x_ + index * S(26);
+  return status_x_ + status_pos_[size_t(index)];
+}
+int Panel::status_slot_w(int index) const {
+  if (index < 0 || index + 1 >= int(status_pos_.size())) return S(26);
+  return status_pos_[size_t(index) + 1] - status_pos_[size_t(index)];
 }
 void Panel::open_flyout(const std::string &section) {
   // Media controls live in the Action Center (alpha50).
@@ -828,8 +840,8 @@ std::string Panel::status_tooltip(StatusIcon icon) const {
       return _("Bluetooth is on");
     }
     case BATTERY_STATUS:
-      return format(s.battery.charging ? _("Battery %d%% · charging") : _("Battery %d%%"),
-                    s.battery.percent);
+      return battery_tooltip(s.battery.phase, s.battery.percent, s.battery.minutes,
+                             s.battery.calculating);
     case POWER_STATUS:
       return _("Shut down or log out");
     case MEDIA_STATUS:
@@ -917,7 +929,7 @@ bool Panel::target_rect(const Target &t, int &x, int &w) const {
       x = sni_x_ + t.index * (tray_icon_ + S(10)), w = tray_icon_ + S(10);
       return true;
     case STATUS:
-      x = status_x_ + t.index * S(26), w = S(26);
+      x = status_slot_x(t.index), w = status_slot_w(t.index);
       return true;
     case CLOCK:
       x = clock_x_, w = clock_w_;
@@ -974,7 +986,7 @@ void Panel::status_icon_changed(const std::string &section) {
   if (!shown() || (autohide_ && !revealed_)) return;
   for (size_t i = 0; i < status_icons_.size(); ++i)
     if (status_section(status_icons_[i]) == section)
-      damage_rect(status_x_ + int(i) * S(26), 0, S(26), h());
+      damage_rect(status_slot_x(int(i)), 0, status_slot_w(int(i)), h());
 }
 void Panel::led_update() {
   const auto &n = SystemStatus::get().network;
@@ -1044,6 +1056,52 @@ void Panel::led_tick(void *data) {
   p->status_icon_changed("network");
   Fl::repeat_timeout(0.125, led_tick, data);
 }
+// The battery icon (0.2 Alpha 2): animations unless reduced motion is
+// asked for ([panel] battery_animation, the Effects page, low resource mode).
+bool Panel::battery_motion() const {
+  return ::battery_motion(cfg_.get("panel", "battery_animation", "auto"),
+                         cfg_.get("effects", "enabled", "auto"),
+                         cfg_.get_bool("appearance", "low_resource", false),
+                         cfg_.get_bool("appearance", "reduced_motion", false),
+                         cfg_.get_bool("aero", "animations", true));
+}
+void Panel::battery_update() {
+  const auto &b = SystemStatus::get().battery;
+  double now = steady_ms() / 1000.0;
+  if (b.present) battery_anim_.set(b.percent, b.phase, battery_motion(), now);
+  // Frames only while the icon is on screen and something moves.
+  bool run = b.present && status_index(BATTERY_STATUS) >= 0 && shown() &&
+             !(autohide_ && !revealed_) && battery_anim_.running(now);
+  if (run && !battery_running_) {
+    battery_running_ = true;
+    Fl::add_timeout(1.0 / 12, battery_tick, this);
+  } else if (!run && battery_running_) {
+    battery_running_ = false;
+    Fl::remove_timeout(battery_tick, this);
+    status_icon_changed("power");
+  }
+}
+// 12 frames per second (6 on the power saver profile); only the battery's
+// slot is repainted.
+void Panel::battery_tick(void *data) {
+  auto *p = static_cast<Panel *>(data);
+  if (!p->battery_running_) return;
+  p->status_icon_changed("power");
+  if (!p->battery_anim_.running(steady_ms() / 1000.0)) {
+    p->battery_running_ = false;
+    return;
+  }
+  bool saver = PanelControls::get().power_profile == "power-saver";
+  Fl::repeat_timeout(saver ? 1.0 / 6 : 1.0 / 12, battery_tick, data);
+}
+std::string Panel::battery_panel_text() const {
+  const auto &b = SystemStatus::get().battery;
+  if (!b.present) return "";
+  return ::battery_panel_text(parse_battery_display(cfg_.get("panel", "battery_display", "icon")),
+                              b.phase, b.percent, b.minutes, b.calculating,
+                              cfg_.get_bool("panel", "battery_time", false));
+}
+
 bool Panel::touchpad_motion_wanted() const {
   if (!TouchpadMonitor::get().present()) return false;
   bool flyout =
@@ -1087,6 +1145,8 @@ std::string Panel::status_signature() const {
                     std::to_string(s.audio.available) + std::to_string(s.audio.volume) +
                     std::to_string(s.audio.muted) + std::to_string(s.battery.present) +
                     std::to_string(s.battery.percent) + std::to_string(s.battery.charging) +
+                    std::to_string(int(s.battery.phase)) + std::to_string(s.battery.minutes) +
+                    std::to_string(s.battery.calculating) + battery_panel_text() +
                     c.keyboard + std::to_string(c.drives.size()) + std::to_string(c.adapters.size()) + c.net_verdict;
   if (const auto *a = c.adapter()) sig += std::to_string(a->powered);
   for (const auto &d : c.bluetooth) sig += std::to_string(d.connected);
@@ -1119,6 +1179,7 @@ void Panel::status_update_timeout(void *data) {
   p->flyout_->status_changed();
   p->status_flyout_->status_changed();
   p->led_update();
+  p->battery_update();
 }
 
 void Panel::relayout() {
@@ -1171,12 +1232,35 @@ void Panel::relayout() {
   int apps = sn + (tray_ ? tray_->count() : 0);
   std::string overflow_mode = cfg_.get("panel", "tray_overflow", "auto");
   int threshold = std::max(0, cfg_.get_int("panel", "tray_overflow_threshold", 4));
+  // 0.2 Alpha 2: the battery's text ([panel] battery_display) widens its
+  // slot; measured with every digit as "8", so that the panel does not
+  // move each time a digit changes. Short of room a label gives way to the
+  // percentage, then to the icon alone.
+  std::vector<std::string> battery_texts;
+  if (s.battery.present && cfg_.get_bool("panel", "show_battery", true)) {
+    std::string full = battery_panel_text(), pct = format("%d%%", s.battery.percent);
+    if (!full.empty()) battery_texts.push_back(full);
+    if (!full.empty() && full != pct &&
+        parse_battery_display(cfg_.get("panel", "battery_display", "icon")) ==
+            BatteryDisplay::LABEL_PERCENT)
+      battery_texts.push_back(pct);
+  }
+  auto text_extra = [this](const std::string &text) {
+    std::string sample = text;
+    for (char &ch : sample)
+      if (ch >= '0' && ch <= '9') ch = '8';
+    text_font(theme_.font_size, false);
+    return text_width(sample) + S(6);  // the text from S(24), S(8) after it
+  };
+  battery_text_ = battery_texts.empty() ? "" : battery_texts.front();
+  int battery_extra = battery_text_.empty() ? 0 : text_extra(battery_text_);
   {
     int others = 0;  // the status icons other than the overflow button
     for (const char *key : {"show_drives", "show_bluetooth", "show_keyboard", "show_network",
                             "show_sound", "show_battery", "show_touchpad"})
       others += cfg_.get_bool("panel", key, true) ? 1 : 0;
-    bool fits = right - start_w_ - S(100) >= (others + 1) * S(26) + sn * (tray_icon_ + S(10)) + tw;
+    bool fits = right - start_w_ - S(100) >=
+                (others + 1) * S(26) + battery_extra + sn * (tray_icon_ + S(10)) + tw;
     tray_overflow_ = apps > 0 && cfg_.get_bool("panel", "show_tray", true) &&
                      (overflow_mode == "always" ||
                       (overflow_mode != "never" && (apps > threshold || !fits)));
@@ -1209,13 +1293,25 @@ void Panel::relayout() {
   bool keep_xembed = !tray_overflow_ || !cfg_.get_bool("action_center", "move_status", true);
   if (tray_overflow_) sn = 0;
   if (!keep_xembed) tw = 0;
-  compact_status_ = right - start_w_ - S(100) <
-                    int(status_icons_.size()) * S(26) + sn * (tray_icon_ + S(10)) + tw;
-  if (compact_status_) status_icons_.clear();
+  if (status_index(BATTERY_STATUS) < 0) battery_extra = 0, battery_text_.clear();
+  int status_room = right - start_w_ - S(100), others = sn * (tray_icon_ + S(10)) + tw;
+  // Short of room the battery's text goes first, then the whole area.
+  for (size_t i = 0; battery_extra && i < battery_texts.size(); ++i) {
+    battery_text_ = battery_texts[i];
+    battery_extra = text_extra(battery_text_);
+    if (status_room >= int(status_icons_.size()) * S(26) + battery_extra + others) break;
+    if (i + 1 == battery_texts.size()) battery_extra = 0, battery_text_.clear();
+  }
+  compact_status_ = status_room < int(status_icons_.size()) * S(26) + others;
+  if (compact_status_) status_icons_.clear(), battery_text_.clear();
   // While the Tray flyout holds the tray icons they leave the panel; the
   // status icons stay in place so the flyout stays above its button.
   bool moved = tray_host() != nullptr;
-  status_w_ = int(status_icons_.size()) * S(26);
+  status_pos_.assign(1, 0);
+  for (StatusIcon icon : status_icons_)
+    status_pos_.push_back(status_pos_.back() + S(26) +
+                          (icon == BATTERY_STATUS && !battery_text_.empty() ? battery_extra : 0));
+  status_w_ = status_pos_.back();
   status_x_ = right - status_w_;
   right = status_x_;
   sni_w_ = compact_status_ || moved ? 0 : sn * (tray_icon_ + S(10));
@@ -1291,7 +1387,8 @@ Panel::Target Panel::hit(int x, int y) const {
     return {TRAY_ITEM, i};
   }
   if (status_w_ && x >= status_x_ && x < status_x_ + status_w_)
-    return {STATUS, std::max(0, (x - status_x_) / S(26))};
+    for (size_t i = 0; i < status_icons_.size(); ++i)
+      if (x < status_slot_x(int(i)) + status_slot_w(int(i))) return {STATUS, int(i)};
   if (x >= clock_x_ && x < clock_x_ + clock_w_) return {CLOCK, 0};
   if (x >= action_x_ && x < action_x_ + action_w_) return {ACTION_CENTER, 0};
   if (notify_w_ && x >= notify_x_ && x < notify_x_ + notify_w_) return {NOTIFY, 0};
@@ -1374,7 +1471,8 @@ void Panel::draw() {
       bool dragged = dragging_ && int(i) == drag_index_;
       if (dragged) continue;
       button_bg(pinned_[i].x, pin_w_, {PINNED, int(i)}, false);
-      p.image(IconLoader::get({pinned_[i].entry.icon, "application-x-executable"}, icon),
+      p.image(IconLoader::get({IconLoader::app_icon(pinned_[i].entry, icon), "application-x-executable"},
+                              icon),
               pinned_[i].x + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
     }
     if (visible_pins_) p.line(tasks_x_ - S(6), S(10), tasks_x_ - S(6), H - S(10), t.border);
@@ -1416,10 +1514,10 @@ void Panel::draw() {
     const auto &controls = PanelControls::get();
     double gs = S(18), gy = (H - gs) / 2.;
     for (size_t i = 0; i < status_icons_.size(); ++i) {
-      int bx = status_x_ + int(i) * S(26);
+      int bx = status_slot_x(int(i));
       double gx = bx + S(4);
       std::string section = status_section(status_icons_[i]);
-      button_bg(bx, S(26), {STATUS, int(i)},
+      button_bg(bx, status_slot_w(int(i)), {STATUS, int(i)},
                 (flyout_ && flyout_->is_open() && flyout_->section() == section) ||
                     (status_flyout_ && status_flyout_->is_open() &&
                      status_flyout_->section() == section));
@@ -1434,10 +1532,37 @@ void Panel::draw() {
           tray_icon::bluetooth(p, gx, gy, gs, a && a->powered, connected, t.text);
           break;
         }
-        case BATTERY_STATUS:
-          tray_icon::battery(p, gx, gy, gs, system.battery.percent, system.battery.charging,
-                             t.text, Color::hex(0xD64545));
+        case BATTERY_STATUS: {
+          // 0.2 Alpha 2: green on mains power with a bolt (charging, the
+          // sweep) or a plug; amber and pulsing when low, red with "!" when
+          // critically low.
+          using tray_icon::BatteryMark;
+          BatteryFrame f = battery_anim_.frame(steady_ms() / 1000.0);
+          Color fill = t.text, outline = t.text;
+          BatteryMark mark = BatteryMark::NONE;
+          switch (system.battery.phase) {
+            case BatteryPhase::CHARGING:
+              fill = t.success, mark = BatteryMark::BOLT;
+              break;
+            case BatteryPhase::FULL:
+              fill = t.success, mark = BatteryMark::PLUG;
+              break;
+            case BatteryPhase::PLUGGED:
+              mark = BatteryMark::PLUG;
+              break;
+            case BatteryPhase::LOW:
+              fill = t.warning, outline = t.text.mix(t.warning, 0.25 + 0.45 * f.pulse);
+              break;
+            case BatteryPhase::CRITICAL:
+              fill = t.error, outline = t.text.mix(t.error, 0.55 + 0.35 * f.pulse);
+              mark = BatteryMark::ALERT;
+              break;
+            case BatteryPhase::DISCHARGING:
+              break;
+          }
+          tray_icon::battery(p, gx, gy, gs, f.level, mark, t.text, fill, outline, f.sweep, f.pulse);
           break;
+        }
         case POWER_STATUS:
           tray_icon::power(p, gx, gy, gs, t.text);
           break;
@@ -1548,7 +1673,8 @@ void Panel::draw() {
     if (dragging_ && drag_index_ >= 0 && drag_index_ < int(pinned_.size())) {
       int dx = drag_x_ - pin_w_ / 2;
       p.fill_rounded(dx + S(2), S(4), pin_w_ - S(4), H - S(8), S(8), t.accent.alpha(0.2));
-      p.image(IconLoader::get({pinned_[size_t(drag_index_)].entry.icon, "application-x-executable"},
+      p.image(IconLoader::get({IconLoader::app_icon(pinned_[size_t(drag_index_)].entry, icon),
+                               "application-x-executable"},
                               icon),
               dx + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
     }
@@ -1571,6 +1697,11 @@ void Panel::draw() {
     text_font(t.font_size, task.win == active_ && !task.minimized);
     draw_text(task.title, task.x + S(10) + icon + S(8), 0, task.w - icon - S(28), H,
               task.minimized ? t.text_dim : t.text);
+  }
+  // 0.2 Alpha 2: the battery's percentage or label after its icon.
+  if (int bi = battery_text_.empty() ? -1 : status_index(BATTERY_STATUS); bi >= 0) {
+    text_font(t.font_size, false);
+    draw_text(battery_text_, status_slot_x(bi) + S(24), 0, status_slot_w(bi) - S(26), H, t.text);
   }
   bool show_date = cfg_.get_bool("panel", "show_date", true);
   clockface::draw_panel(clockface::Settings::from_config(cfg_), t, w(), h(), clock_x_, clock_w_,
@@ -1621,7 +1752,19 @@ void Panel::qa_dump_panel() {
   for (size_t i = 0; i < status_icons_.size(); ++i) {
     std::string name = status_section(status_icons_[i]);
     if (name.empty()) name = "icon-" + std::to_string(int(status_icons_[i]));
-    text += line("status:" + name, status_x_ + int(i) * S(26), S(26));
+    text += line("status:" + name, status_slot_x(int(i)), status_slot_w(int(i)));
+  }
+  // 0.2 Alpha 2: the battery icon's phase, whether it animates, its text,
+  // the estimate (minutes, -1 or "calculating") and where it comes from.
+  if (status_index(BATTERY_STATUS) >= 0) {
+    const auto &b = SystemStatus::get().battery;
+    auto info = [](const std::string &s) { return s + "\t0\t0\t0\t0\t1\n"; };
+    text += info(std::string("@battery:") + battery_phase_name(b.phase) +
+                 (battery_running_ ? ":anim" : ":steady")) +
+            info("@battery-text:" + battery_text_) +
+            info("@battery-time:" + (b.calculating ? std::string("calculating")
+                                                   : std::to_string(b.minutes))) +
+            info("@battery-source:" + b.source);
   }
   // StatusNotifier items on the panel (alpha52 right-click menus).
   if (sni_ && sni_w_ > 0) {
@@ -1907,9 +2050,14 @@ void Panel::update_task(Task &t, bool icon) {
     // then an icon theme lookup by WM_CLASS ("Firefox" -> "firefox").
     std::vector<std::string> names;
     DesktopEntry entry;
-    if (find_entry_for(t, entry) && !entry.icon.empty()) names.push_back(entry.icon);
+    bool known = find_entry_for(t, entry);
+    // 0.2 Alpha 2: the near matches of the Start menu (icons.h), then the
+    // class, then the application's category icon.
+    if (known) names.push_back(IconLoader::app_icon(entry, size, false));
     names.push_back(lower(t.wm_class));
     names.push_back(lower(t.wm_name));
+    if (known)
+      for (auto &n : category_icon_names(entry)) names.push_back(n);
     cairo_surface_t *themed = IconLoader::get(names, size);
     if (themed) t.icon = cairo_surface_reference(themed);
   }
@@ -2028,6 +2176,9 @@ bool Panel::handle_x(const XEvent &e) {
       menu_->config_changed();
       search_->config_changed();
       led_update();
+      // The battery's display, animation and [power] levels.
+      battery_update();
+      SystemStatus::get().refresh_battery();
       TouchpadMonitor::get().want_motion(touchpad_motion_wanted());
       Alarms::get().reload();
       alarms_->changed();

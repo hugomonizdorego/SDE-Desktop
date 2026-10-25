@@ -2,17 +2,25 @@
 // Clock faces (alpha52) shared by the panel clock and the Action Center's
 // clock hero: one setting for both,
 //
-//   [action_center] clock_style=digital|blink|led|analog
+//   [action_center] clock_style=digital|led|analog
 //   [panel] clock_seconds=false
+//   [panel] clock_blink=false     (0.2 Alpha 2)
 //   [clock] format=auto|24h|12h   (auto: the locale's time format; an
 //                                  older [panel] clock_24h still counts)
-//   ([clock] style and [clock] seconds are read as aliases when the keys
-//   above are not set.)
+//   ([clock] style, [clock] seconds and [clock] blink are read as aliases
+//   when the keys above are not set.)
 //
 //  * digital: plain text "21:30";
-//  * blink: the same with the colon blinking once a second;
 //  * led: seven-segment LED digits drawn with cairo (glow in the hero);
 //  * analog: a round face with hands.
+//
+// Seconds and the blinking colon are options of their own (0.2 Alpha 2,
+// chosen independently in Settings > Clock & Weather, the panel clock's and
+// the Action Center clock's right-click menus): "Show seconds" adds the
+// seconds (a seconds hand on the analog face), "Blink the colon" flashes the
+// colon of the digital and LED faces once a second. Up to 0.2 Alpha 1
+// "blink" was a style of its own: clock_style=blink reads as digital with
+// the blinking colon, and migrate_config() rewrites it once.
 //
 // SDE_CLOCK_FIXTURE=2026-10-22T21:30[:SS] (or "@file" holding it, re-read
 // while the panel runs) fixes the clock's start time (UI
@@ -34,17 +42,24 @@ struct Theme;
 
 namespace clockface {
 
-enum class Style { Digital, Blink, Led, Analog };
-Style parse_style(const std::string &name);  // unknown names: Digital
-const char *style_name(Style s);              // "digital", "blink", "led", "analog"
+enum class Style { Digital, Led, Analog };
+Style parse_style(const std::string &name);  // unknown names and "blink": Digital
+const char *style_name(Style s);              // "digital", "led", "analog"
+// The style names of 0.2 Alpha 1 and earlier that mean a blinking colon.
+bool legacy_blink_style(const std::string &name);
 
 struct Settings {
   Style style = Style::Digital;
   bool seconds = false;
+  bool blink = false;  // the colon flashes once a second (digital, LED)
   bool h24 = true;
   bool show_date = true;  // [panel] show_date
   static Settings from_config(const sde::Config &cfg);
 };
+// Rewrites clock_style=blink ([action_center] clock_style or [clock] style)
+// as digital with [panel] clock_blink=true. True when |cfg| changed (the
+// caller saves it).
+bool migrate_config(sde::Config &cfg);
 
 // A locale time format (nl_langinfo(T_FMT)) uses a 12-hour clock.
 bool format_is_12h(const std::string &t_fmt);
@@ -99,10 +114,11 @@ void draw_analog(sde::Painter &p, double cx, double cy, double r, const struct t
                  const sde::Color &accent, bool seconds, bool shadow);
 
 // ------------------------------------------------------- the panel clock
-// Whether the clock changes every second (seconds shown, blinking colon,
-// LED colon): the panel then ticks once a second instead of a minute.
+// Whether the clock changes every second (seconds shown, blinking colon):
+// the panel then ticks once a second instead of a minute.
 bool ticks_seconds(const Settings &s);
-// The colon of a blinking (blink, LED) clock is on in even seconds.
+// The colon of a blinking clock is on in even seconds (the analog face
+// has none).
 bool colon_visible(const Settings &s);
 // Centered FLTK text whose colons keep their room while hidden.
 void draw_blink_text(const std::string &s, int x, int y, int w, int h, const sde::Color &c,

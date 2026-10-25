@@ -11,6 +11,8 @@
 
 namespace sde {
 
+struct DesktopEntry;
+
 // Loads an image file (SVG, PNG, JPEG, GIF, BMP, XPM) into an ARGB cairo
 // image surface. SVG files are rendered at |w|x|h|; bitmaps are returned at
 // their natural size. Caller owns the surface. Returns nullptr on error.
@@ -57,9 +59,20 @@ class IconLoader {
   // Absolute path of the best icon file for |name| at |size| pixels, or "".
   // |name| may also be an absolute path. Follows the Icon Theme
   // Specification: the theme, then its Inherits= parents depth first, then
-  // Adwaita, AdwaitaLegacy and hicolor, then /usr/share/pixmaps. Scaled
-  // directories (Scale=2: "24x24@2x") count with their pixel size.
+  // Adwaita, AdwaitaLegacy and hicolor, then Papirus for what none of them
+  // has (0.2 Alpha 2), then /usr/share/pixmaps. Scaled directories
+  // (Scale=2: "24x24@2x") count with their pixel size.
   static std::string lookup(const std::string &name, int size);
+
+  // The icon to draw for an application (0.2 Alpha 2): its Icon= when the
+  // icon theme has it, else the first near match the theme has (see
+  // app_icon_names()), else, with |by_category|, an icon for its categories
+  // (category_icon_names()); "" when nothing fits. |size| is the size it
+  // is drawn at (the lookups are cached per size). The answer is cached per
+  // desktop entry until the theme changes or applications are installed;
+  // the Start menu, the search, the taskbar, the desktop and the Control
+  // Center all ask here.
+  static std::string app_icon(const DesktopEntry &e, int size, bool by_category = true);
   // The theme chain lookup() searches, e.g. {"Papirus", "breeze", "hicolor"}
   // (only installed themes).
   static std::vector<std::string> theme_chain();
@@ -88,6 +101,27 @@ class IconLoader {
   };
   static Stats stats();
 };
+
+// Icon names that may be an application's icon, best first: Icon= (also
+// without a file extension, without "-symbolic", in lower case and the last
+// part of a reverse-DNS name: "org.gnome.Maps" -> "Maps", "maps"), then
+// the same made of its desktop file ID, its program (Exec=, past env,
+// interpreters, sudo and "flatpak run") and its window class, and SDE's
+// own drawing for a few common applications ("sde-app-" + ID). When Icon=
+// is a generic name of the Icon Naming Specification ("preferences-system-
+// network", "utilities-terminal"...), the names made of the application
+// come first: an icon drawn for the application itself says more (Papirus
+// draws preferences-system-network as an Ethernet port).
+std::vector<std::string> app_icon_names(const DesktopEntry &e);
+// Generic icons for an application's categories, most specific first
+// (TerminalEmulator: utilities-terminal; network settings:
+// preferences-system-network, network-workgroup...), then its main
+// category (applications-internet...) and icons that plain Adwaita has.
+std::vector<std::string> category_icon_names(const DesktopEntry &e);
+// Everything IconLoader::app_icon() tries, in its order (an absolute Icon=
+// path first): for IconLoader::get(), which tries the names only when the
+// icon is loaded (the desktop loads its icons on idle).
+std::vector<std::string> app_icon_list(const DesktopEntry &e, bool by_category = true);
 
 // Sets the icon of every window the program shows from now on
 // (_NET_WM_ICON: the title bar and the taskbar) to the first of |names| in

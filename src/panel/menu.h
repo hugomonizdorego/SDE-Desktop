@@ -16,6 +16,14 @@
 // Search lives in the panel (see search.h): typing while the menu is open
 // moves to the panel's search. The menu can be resized by dragging its
 // outer edges; [menu] in sde.conf keeps the tiles and the size.
+//
+// 0.2 Alpha 2: the tile groups start out by category (start_tiles below).
+// Tiles are dragged between groups, applications from the list or from the
+// search results into a group, onto empty space for a new group; a group
+// name is renamed by a click and moved by a drag; a group without tiles
+// has a remove button. While dragging, a bar shows where the tile goes,
+// the group under the pointer is highlighted and the tiles scroll near
+// their top and bottom edges. See docs/START-MENU.md.
 #pragma once
 
 #include <FL/Fl_Input.H>
@@ -36,12 +44,17 @@
 class AccountPopup;
 
 // Start tiles from other places (search results, the panel): the tile
-// groups saved in [menu] tiles.
+// groups saved in [menu] tiles. 0.2 Alpha 2: without saved tiles, groups by
+// category of the installed applications (menu::category_groups()); tiles
+// saved by older versions are migrated (menu::migrate_tile_groups()).
 namespace start_tiles {
+// Group names by menu::TileCategory, translated.
+std::vector<std::string> group_names();
 std::vector<sde::menu::TileGroup> load();
 void save(const std::vector<sde::menu::TileGroup> &groups);
 std::vector<std::string> ids();
 bool pinned(const std::string &id);
+// Into the group of the application's category (menu::pin_by_category()).
 void pin(const std::string &id);
 void unpin(const std::string &id);
 }  // namespace start_tiles
@@ -54,6 +67,17 @@ int start_row_icon_size();
 namespace start_apps {
 void show_info(const sde::DesktopEntry &e);      // "App info...": a small window
 void open_location(const sde::DesktopEntry &e);  // "Open file location": its .desktop folder
+// SDE's own applications: "sde-*" and every desktop file that SDE installs
+// (a copy of each is in <datadir>/sde/applications).
+bool sde_app(const sde::DesktopEntry &e);
+// "Uninstall..." (0.2 Alpha 2) is offered when Merkadu is installed, for
+// applications with a desktop file that are not SDE's own.
+bool can_uninstall(const sde::DesktopEntry &e);
+// Runs `merkadu --uninstall <desktop file>`, which asks first and shows the
+// progress (exit 0: removed, 1: failed, 2: cancelled). Once the application
+// is gone its tiles, panel pin and launch history go too; the menu and the
+// search drop it with the next catalog snapshot (app_catalog.h).
+void uninstall(const sde::DesktopEntry &e);
 }  // namespace start_apps
 
 class AppMenu : public PanelPopup {
@@ -71,6 +95,11 @@ class AppMenu : public PanelPopup {
   // The size the menu opens at ([menu] width/height or size, kept on the
   // monitor) and whether that is the compact layout.
   static void preferred_size(int &w, int &h);
+  // An application dragged out of the search results (0.2 Alpha 2): the
+  // open menu goes on with the drag, the mouse button still down, and drops
+  // it into the tile group under the pointer.
+  void start_drag(const std::string &id);
+  static AppMenu *instance;
 
  private:
   enum Kind {
@@ -82,7 +111,8 @@ class AppMenu : public PanelPopup {
     K_JUMP,        // letter in the jump grid; index: letter
     K_GROUP,       // tile group heading; index: group
     K_TILE,        // tile; index: tile number, group: group
-    K_HEADING,     // text only
+    K_GROUP_REMOVE,  // remove button of a group without tiles; index: group
+    K_HEADING,     // text only; index 5: the drop hint of a group without tiles
   };
   struct Area {
     Kind kind = K_NONE;  // K_ROW (list) or K_TILE (tiles)
@@ -120,7 +150,9 @@ class AppMenu : public PanelPopup {
   void closed() override;
   void reload();
   void load_tiles();
-  void save_tiles();
+  // Saves the groups; |emptied|: the group a tile just left, removed when
+  // that was its last tile.
+  void save_tiles(int emptied = -1);
   static void poll_applications(void *);
   // The application catalog published a new snapshot (app_catalog.h).
   static void catalog_changed(void *);
@@ -135,9 +167,13 @@ class AppMenu : public PanelPopup {
   void layout_list();
   void layout_tiles();
   const sde::DesktopEntry *app(const std::string &id) const;
+  // A group's name, or "Name group" for one without a name.
+  std::string group_label(int group) const;
   void activate(const Item &it);
   void launch(const Item &it);
   void rail_action(int index);
+  // Fl_Menu_Item::popup() for the menus below; typing in one searches.
+  const Fl_Menu_Item *run_menu(const Fl_Menu_Item *items, int x, int y);
   void filter_menu();
   void tile_menu(const Item &it, int px, int py);
   void group_menu(int group, int px, int py);
@@ -162,6 +198,14 @@ class AppMenu : public PanelPopup {
   void apply_size(int w, int h);
   void drop_target(int x, int y, int &group, int &index) const;
   void drop(int x, int y);
+  // Where a dragged group goes: the index to insert it at (-1: outside the
+  // tiles); |anchor| and |below| tell where to draw the bar.
+  int group_target(int x, int y, int *anchor = nullptr, bool *below = nullptr) const;
+  void drop_group(int x, int y);
+  // Near the top or bottom of the tiles a drag scrolls them, faster closer
+  // to the edge: pixels per frame (0: not there).
+  int autoscroll_speed() const;
+  static void autoscroll(void *);
   void redirect_to_search(const std::string &text);
   bool handing_to_search_ = false;
   void start_hover(const Ref &r);
@@ -223,16 +267,18 @@ class AppMenu : public PanelPopup {
   // The Super key closes the menu (the menu holds the keyboard, so the
   // window manager's Super binding cannot see it).
   bool super_down_ = false, super_alone_ = false;
-  // Icons waiting to be preloaded: name, size.
-  std::vector<std::pair<std::string, int>> preload_;
+  // Icons waiting to be preloaded: application, size (of preload_apps_).
+  std::vector<std::pair<const sde::DesktopEntry *, int>> preload_;
+  app_catalog::SnapshotPtr preload_apps_;
   size_t preload_next_ = 0;
   unsigned preload_rev_ = 0;
   Kind drag_area_ = K_NONE;  // scrollbar drag
   int drag_y_ = 0, drag_scroll_ = 0;
-  // Pressed tile or list row, and its drag to a new place.
+  // Pressed tile, list row or group name, and its drag to a new place.
   Ref press_;
   int press_x_ = 0, press_y_ = 0, drag_x_ = 0, drag_y2_ = 0;
   bool dragging_ = false;
+  int drag_group_ = -1;  // the group being moved by its name, else a tile or application
   std::string drag_id_;
   sde::menu::TileSize drag_size_ = sde::menu::TileSize::Medium;
   // Resizing the menu by its edge.
