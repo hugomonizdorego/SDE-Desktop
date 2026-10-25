@@ -8,9 +8,11 @@
 Starts a private Xvfb display (1366x768 at 96 DPI, or --size/--scale), a
 D-Bus session bus, xsettingsd and Openbox when they are installed, and
 Liria with the SDE GTK theme and Papirus in a throw-away home that holds
-folders of 1 000 and 10 000 files and 300 pictures. Every scenario is
-driven like a user (xdotool) and measured until Liria is idle again (no
-CPU time for 0.4 s):
+folders of 1 000 and 10 000 files and 300 pictures. Liria is started
+once without measuring (fresh caches after a reboot), then every scenario
+is driven like a user (xdotool) and measured until Liria is idle again
+(no 10 ms with more than 1 ms of CPU time for 0.4 s); thumbnails are
+made again in every run:
 
   startup    process start until the window is mapped ("mapped") and until
              Liria is idle; the Home overview is the first view
@@ -257,8 +259,25 @@ class Bench:
         time.sleep(0.2)
 
     # ---------------------------------------------------------- scenarios
+    def warm_up(self):
+        """Starts Liria once and quits it, so the first measured start does
+        not pay for fresh font, icon and MIME caches (after a reboot it took
+        14 s instead of 0.4 s)."""
+        self.liria = subprocess.Popen([str(self.args.prefix / "bin/liria"), "--no-desktop", str(self.home)],
+                                      env=self.env, cwd=str(self.home), stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL)
+        end = time.monotonic() + 60
+        while time.monotonic() < end and not self.window():
+            time.sleep(0.1)
+        self.idle(time.monotonic(), 1.0, 30)
+        self.liria.terminate()
+        self.liria.wait(timeout=10)
+        self.liria = None
+
     def run(self, only, perf_scenario=None):
         results = {}
+        # Every run makes the thumbnails again.
+        shutil.rmtree(self.home / ".cache/thumbnails", ignore_errors=True)
         log = open(self.home / "liria.log", "w")
         start = time.monotonic()
         self.liria = subprocess.Popen([str(self.args.prefix / "bin/liria"), "--no-desktop", str(self.home)],
@@ -386,6 +405,7 @@ def main():
     bench = Bench(args)
     try:
         bench.start()
+        bench.warm_up()
         for i in range(args.repeat):
             runs.append(bench.run(only, args.perf_scenario if args.perf and i == 0 else None))
             print("run %d: %s" % (i + 1, json.dumps(runs[-1])), flush=True)

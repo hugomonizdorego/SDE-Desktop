@@ -19,6 +19,16 @@ add_test(NAME sde-rust-tests
 add_executable(sde-sni-demo sni_demo.cpp)
 target_link_libraries(sde-sni-demo PRIVATE sde-common)
 
+# 0.2.0 Alpha 2: the copy and move progress (src/common/transfer_model.h,
+# transfer_dialog.*): the model and texts, and the dialog on Xvfb with a
+# simulated copy (sde-transfer-demo, not installed; also for showcase.py).
+add_executable(sde-transfer-tests test_transfer.cpp)
+target_link_libraries(sde-transfer-tests PRIVATE sde-common)
+target_compile_definitions(sde-transfer-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME sde-transfer-model COMMAND sde-transfer-tests)
+add_executable(sde-transfer-demo transfer_demo.cpp)
+target_link_libraries(sde-transfer-demo PRIVATE sde-common)
+
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).
 add_executable(calculator-tests test_calculator.cpp)
@@ -35,6 +45,10 @@ find_program(SDE_XVFB Xvfb)
 if(SDE_XVFB)
   add_test(NAME sde-display-preview COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/test_display_preview.py $<TARGET_FILE:sde-display-preview-probe>)
+  add_test(NAME sde-transfer-dialog COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_transfer_dialog.py $<TARGET_FILE:sde-transfer-demo>)
+  set_tests_properties(sde-transfer-dialog PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120
+    ENVIRONMENT "SDE_BRANDING_DIR=${PROJECT_SOURCE_DIR}/data/branding")
 endif()
 
 add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp

@@ -10,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <cstdlib>
 #include <cstring>
 
 #include "desktop_model.h"
@@ -49,6 +50,19 @@ void keep_times(const std::string &dst, const struct stat &st, bool symlink) {
   utimensat(AT_FDCWD, dst.c_str(), ts, symlink ? AT_SYMLINK_NOFOLLOW : 0);
 }
 
+// SDE_QA_COPY_RATE=<bytes per second> slows copies down for screenshots
+// and UI tests of the transfer dialog (tools/showcase.py); 0 or unset: full
+// speed.
+double qa_copy_rate() {
+  static double rate = -1;
+  if (rate < 0) {
+    const char *v = getenv("SDE_QA_COPY_RATE");
+    rate = v ? atof(v) : 0;
+    if (rate < 0) rate = 0;
+  }
+  return rate;
+}
+
 bool copy_file(const std::string &src, const std::string &dst, const struct stat &st,
                FileProgress *progress, std::string *error) {
   int in = open(src.c_str(), O_RDONLY | O_CLOEXEC);
@@ -67,7 +81,7 @@ bool copy_file(const std::string &src, const std::string &dst, const struct stat
   std::vector<char> buf(kBuf);
   bool ok = true;
   for (;;) {
-    if (progress && progress->cancel) {
+    if (progress && !progress->wait_while_paused()) {
       ok = false;
       if (error) *error = "Cancelled";
       break;
@@ -92,6 +106,7 @@ bool copy_file(const std::string &src, const std::string &dst, const struct stat
     }
     if (!ok) break;
     if (progress) progress->done += n;
+    if (qa_copy_rate() > 0) usleep(useconds_t(1e6 * double(n) / qa_copy_rate()));
   }
   close(in);
   if (ok && fsync(out) != 0 && errno != EINVAL) {
@@ -134,6 +149,7 @@ bool copy_tree(const std::string &src, const std::string &dst, FileProgress *pro
       return false;
     }
     keep_times(dst, st, true);
+    if (progress) progress->files_done++;
     return true;
   }
   if (S_ISDIR(st.st_mode)) {
@@ -141,6 +157,7 @@ bool copy_tree(const std::string &src, const std::string &dst, FileProgress *pro
       fail(error, "Cannot create", dst, errno);
       return false;
     }
+    if (progress) progress->files_done++;
     DIR *d = opendir(src.c_str());
     if (!d) {
       fail(error, "Cannot read", src, errno);
@@ -159,16 +176,41 @@ bool copy_tree(const std::string &src, const std::string &dst, FileProgress *pro
     keep_times(dst, st, false);
     return ok;
   }
-  if (S_ISREG(st.st_mode)) return copy_file(src, dst, st, progress, error);
+  if (S_ISREG(st.st_mode)) {
+    bool ok = copy_file(src, dst, st, progress, error);
+    if (ok && progress) progress->files_done++;
+    return ok;
+  }
   // FIFOs and device nodes: recreate them, like cp -a.
   if (mknod(dst.c_str(), st.st_mode, st.st_rdev) != 0) {
     fail(error, "Cannot create", dst, errno);
     return false;
   }
+  if (progress) progress->files_done++;
   return true;
 }
 
 }  // namespace
+
+bool FileProgress::wait_while_paused() {
+  while (pause && !cancel) usleep(50000);
+  return !cancel;
+}
+
+long count_items(const std::string &path) {
+  struct stat st;
+  if (lstat(path.c_str(), &st) != 0) return 0;
+  long n = 1;
+  if (!S_ISDIR(st.st_mode)) return n;
+  DIR *d = opendir(path.c_str());
+  if (!d) return n;
+  while (struct dirent *e = readdir(d)) {
+    if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+    n += count_items(path + "/" + e->d_name);
+  }
+  closedir(d);
+  return n;
+}
 
 bool path_exists(const std::string &path) {
   struct stat st;
@@ -243,10 +285,7 @@ bool move_path(const std::string &src, const std::string &dst, FileProgress *pro
     if (error) *error = "Cannot move a folder into itself: \"" + src + "\"";
     return false;
   }
-  if (rename_noreplace(src, dst)) {
-    if (progress) progress->done += tree_size(dst);
-    return true;
-  }
+  if (rename_noreplace(src, dst)) return true;  // counted by run_file_ops ()
   if (errno != EXDEV) {
     fail(error, "Cannot move", src, errno);
     return false;
@@ -322,16 +361,31 @@ bool trash_path(const std::string &path, const std::string &trash_dir, std::stri
 
 int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
                  std::vector<std::string> *errors) {
+  // Bytes to copy and items: a copy (or a move to another drive) counts
+  // every item inside, a rename, a link or a trashing one item.
+  std::vector<bool> copies(ops.size(), false);
+  for (size_t i = 0; i < ops.size(); ++i)
+    copies[i] = ops[i].kind == FileOp::COPY ||
+                (ops[i].kind == FileOp::MOVE && !same_filesystem(ops[i].src, parent_of(ops[i].dst)));
   if (progress) {
     long long total = 0;
-    for (auto &op : ops)
-      if (op.kind == FileOp::COPY || (op.kind == FileOp::MOVE && !same_filesystem(op.src, parent_of(op.dst))))
-        total += tree_size(op.src);
+    long items = 0;
+    for (size_t i = 0; i < ops.size(); ++i) {
+      if (copies[i]) {
+        total += tree_size(ops[i].src);
+        items += count_items(ops[i].src);
+      } else {
+        items += 1;
+      }
+    }
     progress->total = total;
+    progress->files_total = items;
   }
   int failed = 0;
-  for (auto &op : ops) {
-    if (progress && progress->cancel) break;
+  for (size_t i = 0; i < ops.size(); ++i) {
+    const FileOp &op = ops[i];
+    if (progress && !progress->wait_while_paused()) break;
+    if (progress) progress->set_current(op.src);
     std::string error, aside;
     bool ok = false;
     if (op.kind == FileOp::TRASH) {
@@ -342,6 +396,7 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
           error = "Cannot replace \"" + op.dst + "\" with an item inside it";
           if (errors) errors->push_back(error);
           ++failed;
+          if (progress) progress->files_done += copies[i] ? count_items(op.src) : 1;
           continue;
         }
         // Keep the old item until the new one is complete.
@@ -356,6 +411,7 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
           fail(&error, "Cannot replace", op.dst, errno);
           if (errors) errors->push_back(error);
           ++failed;
+          if (progress) progress->files_done += copies[i] ? count_items(op.src) : 1;
           continue;
         }
       }
@@ -371,6 +427,7 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
       ++failed;
       if (errors) errors->push_back(error);
     }
+    if (progress && !copies[i]) progress->files_done++;
   }
   return failed;
 }
