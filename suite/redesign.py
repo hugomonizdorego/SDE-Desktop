@@ -16,8 +16,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 OVERLAYS = HERE / "overlays"
-# SDE-owned files copied into the Liria tree (man page shared with CMake).
-SHARED = [ROOT / "data/man/liria.1"]
+# SDE-owned files copied into the Liria tree (man page shared with CMake,
+# the copy and move progress model shared with the SDE desktop).
+SHARED = [ROOT / "data/man/liria.1", ROOT / "src/common/transfer_model.h"]
 # Original product names that must not reach users. Legal notices
 # (copyright lines, license files, the About license text and the
 # installed upstream documentation) are the only allowed exception.
@@ -107,6 +108,7 @@ def liria(staged):
     liria_safe_remove(staged)
     liria_clipboard(staged)
     liria_folder_loading(staged)
+    liria_progress(staged)
     liria_translations(staged)
 
 
@@ -2431,6 +2433,117 @@ def liria_folder_loading(staged):
               "\tview->details->directory_as_file =\n"
               "\t\tliria_directory_get_corresponding_file (directory);\n\tliria_file_unref (old_file);\n"
               "\tview->details->sde_folder_writable = 0;\n")
+
+
+def liria_progress(staged):
+    """0.2.0 Alpha 2: the file operations window in the design of SDE's
+    copy and move dialog (libliria-private/liria-sde-progress.c, an
+    overlay): the animated SDE mark, "Copying 1,234 items from Documents to
+    Backup", "42% complete" with Pause, Queue and Cancel, and with More
+    details the speed graph, the item being copied and the time and items
+    remaining. The model (speed, time remaining, graph, the mark's
+    animation) is SDE's own src/common/transfer_model.h, copied in as
+    liria-sde-transfer-model.h, so Liria and the SDE desktop estimate and
+    look the same. Large files on internal disks are copied in slices
+    (GLib 2.80 reported a file's progress only when it was there) and
+    copies pause in the middle of a file (Caja paused between files)."""
+    lib = staged / "libliria-private"
+    for name in ("liria-sde-progress.c", "liria-sde-progress.h"):
+        if not (lib / name).exists():
+            raise ValueError("%s overlay missing" % name)
+    shutil.copy2(ROOT / "src/common/transfer_model.h", lib / "liria-sde-transfer-model.h")
+    edit_once(lib / "Makefile.am", "\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n",
+              "\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n"
+              "\tliria-sde-progress.c \\\n\tliria-sde-progress.h \\\n\tliria-sde-transfer-model.h \\\n")
+
+    info = lib / "liria-progress-info.c"
+    edit_once(info, '#include "liria-global-preferences.h"\n',
+              '#include "liria-global-preferences.h"\n#include "liria-sde-progress.h"\n')
+    edit_once(info, "    gtk_container_add (GTK_CONTAINER (progress_window),\n                       vbox);\n",
+              "    gtk_container_add (GTK_CONTAINER (progress_window),\n                       vbox);\n"
+              "    liria_sde_progress_window_setup (progress_window);\n")
+    edit_once(info, "    data->state = newstate;\n",
+              "    data->state = newstate;\n"
+              "    /* SDE: the mark, the texts and the model follow the state. */\n"
+              "    liria_sde_progress_set_state (data->widget,\n"
+              "                                  newstate == STATE_PAUSING || newstate == STATE_PAUSED ? 1 :\n"
+              "                                  newstate == STATE_QUEUING || newstate == STATE_QUEUED ? 2 : 0);\n")
+    # The theme's symbolic icons on round flat buttons, like the SDE dialog.
+    edit_once(info, '"media-playback-pause", GTK_ICON_SIZE_BUTTON', '"media-playback-pause-symbolic", GTK_ICON_SIZE_BUTTON')
+    edit_once(info, '"media-playback-start", GTK_ICON_SIZE_BUTTON', '"media-playback-start-symbolic", GTK_ICON_SIZE_BUTTON')
+    edit_once(info, 'gtk_image_new_from_icon_name ("undo", GTK_ICON_SIZE_BUTTON);',
+              'gtk_image_new_from_icon_name ("document-open-recent-symbolic", GTK_ICON_SIZE_BUTTON);')
+    edit_once(info, "    GtkWidget *label, *progress_bar, *hbox, *vbox, *box, *btcancel, *imgcancel;\n",
+              "    GtkWidget *label, *progress_bar, *details, *vbox, *btcancel, *imgcancel;\n")
+    replace_between(info, '    label = gtk_label_new ("status");\n', "    gtk_widget_show_all (data->widget);\n",
+                    "    /* SDE: the layout of SDE's copy and move dialog (liria-sde-progress.c);\n"
+                    "     * the status, the details and the bar of the operation are part of it. */\n"
+                    '    imgcancel = gtk_image_new_from_icon_name ("window-close-symbolic",\n'
+                    "                                              GTK_ICON_SIZE_BUTTON);\n\n"
+                    "    btcancel = gtk_button_new ();\n"
+                    "    gtk_container_add (GTK_CONTAINER (btcancel), imgcancel);\n"
+                    '    atk_object_set_name (gtk_widget_get_accessible (btcancel), _("Cancel"));\n'
+                    '    gtk_widget_set_tooltip_text (btcancel, _("Cancel"));\n'
+                    '    g_signal_connect (btcancel, "clicked", (GCallback)cancel_clicked, data);\n\n'
+                    "    start_button_init (data);\n"
+                    "    queue_button_init (data);\n\n"
+                    "    liria_sde_progress_build (vbox, info, data->btstart, data->btqueue, btcancel,\n"
+                    "                              &label, &progress_bar, &details);\n"
+                    "    data->status = GTK_LABEL (label);\n"
+                    "    data->progress_bar = GTK_PROGRESS_BAR (progress_bar);\n"
+                    "    gtk_progress_bar_set_pulse_step (data->progress_bar, 0.05);\n"
+                    "    data->details = GTK_LABEL (details);\n\n")
+    edit_once(info, "                        progress,\n                        FALSE, FALSE, 6);\n",
+              "                        progress,\n                        FALSE, FALSE, 0);\n")
+
+    ops = lib / "liria-file-operations.c"
+    edit_once(ops, '#include "liria-sde-copy.h"\n', '#include "liria-sde-copy.h"\n#include "liria-sde-progress.h"\n')
+    edit_once(ops, "\tliria_progress_info_start (job->common.progress);\n\n\tscan_sources (job->files,\n"
+                   "\t\t      &source_info,\n\t\t      common,\n\t\t      OP_KIND_COPY);\n",
+              "\tliria_progress_info_start (job->common.progress);\n"
+              "\tliria_sde_progress_transfer_begin (job->common.progress,\n"
+              "\t\t\t\t\t   job->destination != NULL ? LIRIA_SDE_TRANSFER_COPY : LIRIA_SDE_TRANSFER_DUPLICATE,\n"
+              "\t\t\t\t\t   job->files, job->destination);\n\n"
+              "\tscan_sources (job->files,\n\t\t      &source_info,\n\t\t      common,\n\t\t      OP_KIND_COPY);\n")
+    edit_once(ops, "\tliria_progress_info_start (job->common.progress);\n\n\tverify_destination (&job->common,\n"
+                   "\t\t\t    job->destination,\n\t\t\t    &dest_fs_id,\n\t\t\t    -1);\n",
+              "\tliria_progress_info_start (job->common.progress);\n"
+              "\tliria_sde_progress_transfer_begin (job->common.progress, LIRIA_SDE_TRANSFER_MOVE,\n"
+              "\t\t\t\t\t   job->files, job->destination);\n\n"
+              "\tverify_destination (&job->common,\n\t\t\t    job->destination,\n\t\t\t    &dest_fs_id,\n\t\t\t    -1);\n")
+    edit_once(ops, "\tliria_progress_info_set_progress (job->progress, transfer_info->num_bytes, total_size);\n}",
+              "\tliria_progress_info_set_progress (job->progress, transfer_info->num_bytes, total_size);\n"
+              "\t/* SDE: bytes and items for the speed graph and the estimates. */\n"
+              "\tliria_sde_progress_transfer_counts (job->progress, transfer_info->num_bytes, total_size,\n"
+              "\t\t\t\t\t    transfer_info->num_files, source_info->num_files);\n}")
+    edit_once(ops, "\tif (should_skip_file (job, src)) {\n\t\t*skipped_file = TRUE;\n\t\treturn;\n\t}\n\n"
+                   "\tunique_name_nr = 1;\n",
+              "\tif (should_skip_file (job, src)) {\n\t\t*skipped_file = TRUE;\n\t\treturn;\n\t}\n"
+              "\tliria_sde_progress_transfer_item (job->progress, src);\n\n"
+              "\tunique_name_nr = 1;\n")
+    edit_once(ops, "\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n"
+                   "\t\t\t\t      pdata->transfer_info);\n\t}\n}",
+              "\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n"
+              "\t\t\t\t      pdata->transfer_info);\n"
+              "\t\t/* SDE: Pause also stops a copy in the middle of a large file. */\n"
+              "\t\tliria_sde_progress_transfer_throttle (new_size);\n"
+              "\t\tliria_progress_info_get_ready (pdata->job->common.progress);\n\t}\n}")
+    edit_once(ops, "\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n",
+              "\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n"
+              "\tliria_sde_progress_transfer_finishing (job->progress);\n")
+    # GLib 2.80 copies a local file with one copy_file_range () call and
+    # reports it at the end: large files on internal disks are copied in
+    # slices instead (liria-sde-copy.c), so the progress, the graph and
+    # Pause follow them.
+    edit_once(ops, "\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {",
+              "\tif (!sde_handled && copy_job->sde_flush == NULL && !(copy_job->is_move && same_fs)) {\n"
+              "\t\t/* SDE: large files on internal disks in slices, so that the\n"
+              "\t\t * progress, the speed graph and Pause follow them */\n"
+              "\t\tres = liria_sde_copy_large_file (src, dest, flags, copy_job->is_move,\n"
+              "\t\t\t\t\t\t job->cancellable, copy_file_progress_callback,\n"
+              "\t\t\t\t\t\t &pdata, &sde_handled, &error);\n"
+              "\t}\n"
+              "\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {")
 
 
 RECIPES = {"liria": liria}

@@ -46,6 +46,22 @@ gboolean       liria_sde_flush_copy_file    (LiriaSdeFlush *flush,
                                              gboolean *handled,
                                              GError **error);
 
+/* Large regular files (32 MiB and more) on internal disks, copied or moved
+ * in slices of about a tenth of a second with the progress after each, so
+ * the progress, the speed graph and Pause follow them (GLib 2.80 copies a
+ * local file in one call and reports it at the end); shared data (reflink)
+ * where the file system can. *handled is FALSE for other files: the
+ * caller then uses g_file_copy/g_file_move. */
+gboolean       liria_sde_copy_large_file    (GFile *source,
+                                             GFile *destination,
+                                             GFileCopyFlags flags,
+                                             gboolean is_move,
+                                             GCancellable *cancellable,
+                                             GFileProgressCallback progress_callback,
+                                             gpointer progress_data,
+                                             gboolean *handled,
+                                             GError **error);
+
 /* Writes everything still cached for the destination file system to the
  * device (syncfs). Blocks; call it from a job thread. */
 gboolean       liria_sde_flush_sync         (LiriaSdeFlush *flush);
