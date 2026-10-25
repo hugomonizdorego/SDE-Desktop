@@ -222,6 +222,13 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+# --version without an X display, with the icons installed (FLTK 1.4).
+add_test(NAME sde-version-without-display
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data
+                 $<TARGET_FILE:sde-settings> $<TARGET_FILE:sde-run> $<TARGET_FILE:sde-logout> $<TARGET_FILE:niny>
+                 $<TARGET_FILE:sde-welcome> $<TARGET_FILE:sde-display-settings> $<TARGET_FILE:sde-panel>
+                 $<TARGET_FILE:sde-desktop> $<TARGET_FILE:xanara> $<TARGET_FILE:taca>
+                 $<$<TARGET_EXISTS:merkadu>:$<TARGET_FILE:merkadu>>)
 # Build number and commit of package builds (BUILD-INFO, tools/build-info.py).
 add_test(NAME sde-build-info COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_build_info.py)
 # Graphite's accent-colored PNG assets move to the SDE accent (tools/build-themes.py).

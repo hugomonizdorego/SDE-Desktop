@@ -5,12 +5,14 @@
 #include <FL/Fl_Pixmap.H>
 #include <FL/Fl_Shared_Image.H>
 #include <FL/Fl_Window.H>
+#include <FL/platform.H>
 #include <librsvg/rsvg.h>
 
 #include <algorithm>
 #include <climits>
 #include <ctime>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <map>
@@ -820,6 +822,12 @@ cairo_surface_t *IconLoader::get(const std::vector<std::string> &names, int size
 }
 
 void set_default_window_icon(const std::vector<std::string> &names) {
+  // FLTK 1.4 opens the display here and exits when there is none: programs
+  // asked only for --version or --help (CI, scripts) must work without X.
+  // SDE programs set the icon first thing in main(), so no display is open
+  // yet; without DISPLAY there is nothing to show an icon on anyway.
+  const char *display = getenv("DISPLAY");
+  if (!fl_display && (!display || !*display)) return;
   std::vector<std::unique_ptr<Fl_RGB_Image>> images;
   for (int size : {32, 64}) {
     std::string path;
