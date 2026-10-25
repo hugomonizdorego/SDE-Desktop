@@ -496,6 +496,7 @@ def a2_menu_checks():
     run('xdotool','mouseup','1');time.sleep(.6)
     waitfor(lambda:tiles_of('Office')==['qa-editor.desktop:w','qa-calendar.desktop:m'],lambda:'tile not moved: '+conf())
     assert 'tiles=Internet' not in conf() and 'tiles_version=2' in conf(),conf()
+    waitfor(lambda:'group:Internet' not in L(),'the emptied group is still shown')
     # 5) Held near the bottom of the tiles they scroll to the end; dropped on
     # the place for a new group, the tile makes a group named at once.
     t=L()['@tiles'];src=center(item('SDE Menu','tile:Calendar'));g=hold(m,src)
@@ -514,6 +515,8 @@ def a2_menu_checks():
     press('SDE Menu','group:Writing');time.sleep(.3)
     run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Texts');run('xdotool','key','Return')
     waitfor(lambda:tiles_of('Texts')==['qa-calendar.desktop:m'],lambda:'group rename by a click not saved: '+conf())
+    # Saved at once, drawn (and described in the QA file) with the next frame.
+    waitfor(lambda:'group:Texts' in L() and 'group:Writing' not in L(),lambda:'renamed group not shown: '+str(list(L())))
     above=[k[6:] for k in L() if k.startswith('group:') and k!='group:Texts'][-1]
     src=center(item('SDE Menu','group:Texts'));dst=item('SDE Menu','group:'+above)
     g=hold(m,src);glide(g,src,(dst[0]+dst[2]//2,dst[1]+dst[3]//5))
