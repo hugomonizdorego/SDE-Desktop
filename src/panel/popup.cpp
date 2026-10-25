@@ -262,12 +262,13 @@ std::string *g_menu_typed = nullptr;
 Fl_Event_Dispatch g_dispatch_before = nullptr;
 
 int popup_menu_dispatch(int event, Fl_Window *w) {
-  if (event == FL_KEYBOARD && g_menu_typed && g_menu_typed->empty()) {
+  if (event == FL_KEYBOARD && g_menu_typed) {
     std::string text = typed_key_text();
     if (!text.empty()) {
       // FLTK's popup menus do nothing with letters (no item has an "&"
-      // shortcut): close it as Escape does and keep the text.
-      *g_menu_typed = text;
+      // shortcut): close it as Escape does and keep the text — all of it:
+      // keys typed quickly can arrive together, before the menu is gone.
+      *g_menu_typed += text;
       Fl::e_keysym = FL_Escape;
     }
   }

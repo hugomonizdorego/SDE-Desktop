@@ -421,7 +421,8 @@ def a2_menu_checks():
         time.sleep(.4);return find('^SDE Menu$')
     def typed(text,why):
         run('xdotool','type','--delay','60',text)
-        waitfor(lambda:query()==text,f'typing {text!r} {why} did not search (query {query()!r})')
+        try:waitfor(lambda:query()==text,f'typing {text!r} {why} did not search')
+        except AssertionError as x:raise AssertionError(f'{x} (query {query()!r})') from None
         escape('SDE Search')
     def popup_seq():return next((int(k[5:]) for k in layout('SDE Menu-popup') if k.startswith('@seq:')),0)
     def popup_items():return [k[5:] for k,v in layout('SDE Menu-popup').items() if k.startswith('item:') and v[4]]
