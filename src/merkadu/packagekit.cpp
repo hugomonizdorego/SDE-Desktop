@@ -144,7 +144,7 @@ std::string pk_locale() {
 void pk_call(const std::string &method, std::function<void(DBusMessage *)> args, std::shared_ptr<Tx> t) {
   dbus::Bus *bus = pk_bus();
   if (!bus) {
-    t->error = _("There is no connection to the system bus.");
+    t->error = _("PackageKit cannot be reached: there is no connection to the system bus.");
     finish_tx(t, pk::FINISHED_FAILED);
     return;
   }

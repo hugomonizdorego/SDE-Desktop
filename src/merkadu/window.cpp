@@ -40,9 +40,15 @@ DrawnButton *g_back = nullptr;
 SearchField *g_search = nullptr;
 View g_view;
 View g_built;  // the view of g_page
-std::vector<std::pair<View, int>> g_back_stack;  // view and its scroll position
+std::vector<std::pair<View, int>> g_back_stack;  // view and how far it was scrolled
 std::map<std::string, Source> g_chosen;
-std::vector<std::string> g_qa_lines;
+// Named parts of the page for the QA dump, where they were built (page
+// content, unscrolled): name, x, y, w, h.
+struct QaPart {
+  std::string name;
+  int x, y, w, h;
+};
+std::vector<QaPart> g_qa_lines;
 int g_content_x = 0;
 bool g_rebuild_pending = false;
 
@@ -267,6 +273,7 @@ void qa_collect(Fl_Widget *w, const Fl_Widget *view, std::string &out) {
 }
 
 void qa_dump();
+int scrolled();
 
 class MainWindow : public BufferedWindow {
  public:
@@ -351,7 +358,14 @@ void qa_dump() {
   text += "@state:catalog=" + std::string(Store::get().catalog_loaded() ? "1" : "0") +
           ",apps=" + std::to_string(Store::get().catalog().size()) + ",jobs=" +
           std::to_string(Store::get().active_jobs()) + "\t0\t0\t0\t0\t1\t0\n";
-  for (const std::string &line : g_qa_lines) text += line;
+  // Where the parts are now: the page may be scrolled.
+  int dy = scrolled();
+  for (const QaPart &q : g_qa_lines) {
+    int y = q.y - dy;
+    bool shown = g_page && y >= g_page->y() && y + q.h <= g_page->y() + g_page->h();
+    text += q.name + "\t" + std::to_string(q.x) + "\t" + std::to_string(y) + "\t" + std::to_string(q.w) + "\t" +
+            std::to_string(q.h) + "\t" + (shown ? "1" : "0") + "\t1\n";
+  }
   if (g_sidebar && g_sidebar_scroll)
     for (auto &row : g_sidebar->qa_rows()) {
       const auto &b = row.second;
@@ -369,27 +383,45 @@ void qa_dump() {
   }
 }
 
-// Scrolls a new page to where the old one was. Fl_Scroll counts its
-// position from the top of its content, which starts a padding below the
-// page's top: |ypos| is the old page's yposition().
-void restore_scroll(int ypos) {
-  int top = INT_MAX, bottom = 0;
+// Where the page's content starts unscrolled (below its padding), and how
+// far it is scrolled now. Measured on the children, not with yposition():
+// Fl_Scroll only counts that from the content's top once it has drawn, and
+// a page rebuilt before its first draw would scroll by the padding.
+int g_page_top0 = 0;
+
+int content_top() {
+  int top = INT_MAX;
   for (int i = 0; i < g_page->children(); ++i) {
     Fl_Widget *c = g_page->child(i);
     if (c == &g_page->scrollbar || c == &g_page->hscrollbar) continue;
     top = std::min(top, c->y() - g_page->y());
-    bottom = std::max(bottom, c->y() + c->h() - g_page->y());
+  }
+  return top == INT_MAX ? g_page_top0 : top;
+}
+
+int scrolled() { return g_page ? std::max(0, g_page_top0 - content_top()) : 0; }
+
+// Scrolls the page down by |amount| (as far as its content allows).
+void restore_scroll(int amount) {
+  if (!g_page || amount <= 0) return;
+  int top = INT_MAX, bottom = INT_MIN;
+  for (int i = 0; i < g_page->children(); ++i) {
+    Fl_Widget *c = g_page->child(i);
+    if (c == &g_page->scrollbar || c == &g_page->hscrollbar) continue;
+    top = std::min(top, c->y());
+    bottom = std::max(bottom, c->y() + c->h());
   }
   if (top == INT_MAX) return;
-  int target = std::min(ypos + top, bottom - g_page->h());
-  if (target > 0) g_page->scroll_to(0, target);
+  int target = std::min(amount, bottom - top + g_page_top0 - g_page->h());
+  int now = scrolled();
+  if (target > now) g_page->scroll_to(0, g_page->yposition() + (target - now));
 }
 
 void do_rebuild(void *) {
   g_rebuild_pending = false;
   if (!g_win) return;
   // The same view keeps its place; a new one starts at the top.
-  int scroll = g_page && g_built == g_view ? g_page->yposition() : INT_MIN / 2;
+  int scroll = g_page && g_built == g_view ? scrolled() : 0;
   if (g_page) {
     g_win->remove(g_page);
     Fl::delete_widget(g_page);
@@ -405,6 +437,8 @@ void do_rebuild(void *) {
   build_page(g_page, g_view);
   g_built = g_view;
   g_win->end();
+  g_page_top0 = 0;
+  g_page_top0 = content_top();
   restore_scroll(scroll);
   if (g_back) {
     if (g_back_stack.empty())
@@ -503,7 +537,7 @@ const View &current_view() { return g_view; }
 
 void navigate(const View &v) {
   if (v == g_view) return;
-  if (g_page) g_back_stack.push_back({g_view, g_page->yposition()});
+  if (g_page) g_back_stack.push_back({g_view, scrolled()});
   if (g_back_stack.size() > 40) g_back_stack.erase(g_back_stack.begin());
   g_view = v;
   if (v.kind != View::Search && g_search && *g_search->value()) g_search->value("");
@@ -543,8 +577,7 @@ void choose_source(const std::string &app_id, Source s) {
 
 void qa_line(const std::string &name, int x, int y, int w, int h) {
   if (!getenv("SDE_PANEL_QA_DIR")) return;
-  g_qa_lines.push_back(name + "\t" + std::to_string(x) + "\t" + std::to_string(y) + "\t" + std::to_string(w) + "\t" +
-                       std::to_string(h) + "\t1\t1\n");
+  g_qa_lines.push_back({name, x, y, w, h});
 }
 
 AppInfo about_info() {
