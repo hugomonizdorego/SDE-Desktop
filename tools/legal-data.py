@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / 'data/legal/components.json'
 KINDS = ('desktop', 'application', 'toolkit', 'component', 'theme', 'artwork', 'integration')
-RELATIONS = ('fork', 'port', 'adapted', 'build', 'reference')
+RELATIONS = ('fork', 'port', 'adapted', 'based-on', 'build', 'reference')
 
 
 def load(path=DATA):

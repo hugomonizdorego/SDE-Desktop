@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu test fixture: a mock-up screenshot. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<rect width="1280" height="720" fill="#F7F7F8"/>
+<rect width="1280" height="56" fill="#C9564E"/>
+<circle cx="34" cy="28" r="12" fill="#FFFFFF" opacity="0.85"/>
+<rect x="62" y="20" width="180" height="16" rx="8" fill="#FFFFFF" opacity="0.75"/>
+<rect x="0" y="56" width="250" height="664" fill="#ECECEF"/>
+<rect x="24" y="90" width="150" height="18" rx="9" fill="#C9564E" opacity="0.9"/>
+<rect x="24" y="142" width="173" height="18" rx="9" fill="#C9564E" opacity="0.35"/>
+<rect x="24" y="194" width="196" height="18" rx="9" fill="#C9564E" opacity="0.35"/>
+<rect x="24" y="246" width="169" height="18" rx="9" fill="#C9564E" opacity="0.35"/>
+<rect x="24" y="298" width="192" height="18" rx="9" fill="#C9564E" opacity="0.35"/>
+<rect x="24" y="350" width="165" height="18" rx="9" fill="#C9564E" opacity="0.35"/>
+<rect x="24" y="402" width="188" height="18" rx="9" fill="#C9564E" opacity="0.35"/>
+<rect x="290" y="96" width="940" height="580" rx="10" fill="#7BC27B"/>
+<path d="M330 640 C 500 200, 900 700, 1190 160" fill="none" stroke="#5A5A60" stroke-width="90"/>
+<path d="M330 640 C 500 200, 900 700, 1190 160" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="30 26"/>
+<rect x="640" y="400" width="60" height="36" rx="8" fill="#C9564E"/>
+</svg>

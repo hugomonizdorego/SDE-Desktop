@@ -214,6 +214,50 @@ test_pin_on_drop (void)
 	g_free (pins_file);
 }
 
+/* 0.2.0 Alpha 2: ribbon icon sizes follow the interface scale and stay at
+ * sizes icon themes draw; full-colour icons are told from grey glyphs. */
+static void
+test_ribbon_icons (void)
+{
+	guchar grey[4 * 4 * 4], blue[4 * 4 * 4], accent[4 * 4 * 3];
+
+	/* 100 % (96 dpi, or no setting), 125 %, 150 %, 175 % and 200 %. */
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (-1, TRUE), ==, 32);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (-1, FALSE), ==, 16);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (96 * 1024, TRUE), ==, 32);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (96 * 1024, FALSE), ==, 16);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (120 * 1024, FALSE), ==, 22);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (120 * 1024, TRUE), ==, 48);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (144 * 1024, FALSE), ==, 24);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (144 * 1024, TRUE), ==, 48);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (168 * 1024, FALSE), ==, 32);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (192 * 1024, FALSE), ==, 32);
+	g_assert_cmpint (liria_sde_ribbon_icon_pixels (192 * 1024, TRUE), ==, 64);
+	/* A grey glyph (Papirus actions, #444444) with transparent corners. */
+	for (guint i = 0; i < 16; i++) {
+		grey[i * 4] = grey[i * 4 + 1] = grey[i * 4 + 2] = 0x44;
+		grey[i * 4 + 3] = (i % 5 == 0) ? 0 : 255;
+		blue[i * 4] = 0x52, blue[i * 4 + 1] = 0x94, blue[i * 4 + 2] = 0xE2;
+		blue[i * 4 + 3] = 255;
+	}
+	g_assert_false (liria_sde_pixels_colourful (grey, 4, 4, 16, 4));
+	g_assert_true (liria_sde_pixels_colourful (blue, 4, 4, 16, 4));
+	/* Two saturated pixels of the twelve visible ones are enough (1/8
+	 * or more), one is not. */
+	memcpy (blue, grey, sizeof grey);
+	blue[1 * 4] = 0x52, blue[1 * 4 + 1] = 0x94, blue[1 * 4 + 2] = 0xE2;
+	g_assert_false (liria_sde_pixels_colourful (blue, 4, 4, 16, 4));
+	blue[2 * 4] = 0xE2, blue[2 * 4 + 1] = 0x94, blue[2 * 4 + 2] = 0x32;
+	g_assert_true (liria_sde_pixels_colourful (blue, 4, 4, 16, 4));
+	/* Invisible pixels do not count; RGB rows work as well. */
+	memset (grey, 0, sizeof grey);
+	g_assert_false (liria_sde_pixels_colourful (grey, 4, 4, 16, 4));
+	for (guint i = 0; i < 16; i++)
+		accent[i * 3] = 0x38, accent[i * 3 + 1] = 0x76, accent[i * 3 + 2] = 0xB9;
+	g_assert_true (liria_sde_pixels_colourful (accent, 4, 4, 12, 3));
+	g_assert_false (liria_sde_pixels_colourful (NULL, 4, 4, 12, 3));
+}
+
 int
 main (int argc, char **argv)
 {
@@ -231,6 +275,7 @@ main (int argc, char **argv)
 	g_test_add_func ("/liria/model/columns", test_columns);
 	g_test_add_func ("/liria/model/drop-decisions", test_drop_decisions);
 	g_test_add_func ("/liria/model/pin-on-drop", test_pin_on_drop);
+	g_test_add_func ("/liria/model/ribbon-icons", test_ribbon_icons);
 	status = g_test_run ();
 	{
 		gchar *argv_rm[] = { (gchar *) "rm", (gchar *) "-rf", home, NULL };

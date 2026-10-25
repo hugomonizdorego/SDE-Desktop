@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Waveform Studio
+Icon=waveform
+Exec=waveform-studio

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu test fixture: AppStream data of a Flatpak remote. -->
+<components version="0.8" origin="flathub">
+  <component type="desktop-application">
+    <id>org.gimp.GIMP</id>
+    <name>GNU Image Manipulation Program</name>
+    <summary>Create images and edit photographs</summary>
+    <description>
+      <p>The Flatpak build of GIMP.</p>
+    </description>
+    <icon type="cached" width="64" height="64">org.gimp.GIMP.png</icon>
+    <categories>
+      <category>Graphics</category>
+    </categories>
+    <bundle type="flatpak" runtime="org.gnome.Platform/x86_64/47" sdk="org.gnome.Sdk/x86_64/47">app/org.gimp.GIMP/x86_64/stable</bundle>
+    <launchable type="desktop-id">org.gimp.GIMP.desktop</launchable>
+    <releases>
+      <release version="2.10.38" timestamp="1720000000"/>
+    </releases>
+  </component>
+</components>

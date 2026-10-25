@@ -30,11 +30,7 @@
 #include "about.h"
 #include "crash.h"
 #include "buffered_window.h"
-#include <FL/Fl_Box.H>
-#include <FL/Fl_Button.H>
-#include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Menu_Item.H>
-#include <FL/Fl_Progress.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -70,6 +66,7 @@
 #include "spawn.h"
 #include "thumbnails.h"
 #include "theme.h"
+#include "transfer_dialog.h"
 #include "util.h"
 #include "x11.h"
 #include "xdnd.h"
@@ -310,8 +307,10 @@ class WallpaperWorker {
   bool pending_ = false;
 };
 
-// File operations from drops run on a worker thread; a small progress
-// window appears when they take longer than half a second.
+// File operations from drops and Paste run on a worker thread; the transfer
+// dialog (src/common/transfer_dialog.h: speed graph, items and time left,
+// pause, the animated SDE mark) appears when they take longer than half a
+// second.
 class FileJob {
  public:
   FileJob(std::vector<desk::FileOp> ops, std::function<void()> done) : ops_(std::move(ops)), done_(std::move(done)) {
@@ -333,7 +332,7 @@ class FileJob {
   }
   ~FileJob() {
     Fl::remove_timeout(poll, this);
-    delete window_;
+    delete dialog_;
   }
 
  private:
@@ -345,7 +344,7 @@ class FileJob {
         std::lock_guard<std::mutex> lock(job->progress_->mutex);
         errors = *job->errors_;
       }
-      if (job->window_) job->window_->hide();
+      if (job->dialog_) job->dialog_->hide();
       bool cancelled = job->progress_->cancel;
       auto done = job->done_;
       std::string text;
@@ -357,39 +356,55 @@ class FileJob {
         fl_alert("%s\n\n%s", _("Some items could not be copied or moved:"), text.c_str());
       return;
     }
-    if (!job->window_ && perf::now_ms() - job->started_ > 500) job->show_window();
-    if (job->window_) job->update_window();
+    if (!job->dialog_ && perf::now_ms() - job->started_ > 500) job->show_dialog();
+    if (job->dialog_) job->update_dialog();
     Fl::repeat_timeout(0.1, poll, data);
   }
 
-  void show_window() {
-    int W = S(380), H = S(118);
-    window_ = new Fl_Double_Window(W, H, _("Copying Files"));
-    label_ = new Fl_Box(S(16), S(12), W - S(32), S(40));
-    label_->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_CLIP | FL_ALIGN_WRAP);
-    bar_ = new Fl_Progress(S(16), S(54), W - S(32), S(16));
-    bar_->minimum(0);
-    bar_->maximum(1);
-    bar_->selection_color(FL_SELECTION_COLOR);
-    auto *cancel = new Fl_Button(W - S(112), H - S(40), S(96), S(30), _("Cancel"));
-    cancel->callback([](Fl_Widget *, void *d) { static_cast<FileJob *>(d)->progress_->cancel = true; }, this);
-    window_->end();
-    window_->set_non_modal();
-    window_->show();
+  // Folder names for "Copying 3 items from Downloads to Desktop": the
+  // source folder when every item comes from the same one.
+  static std::string folder_name(const std::string &path) {
+    if (path == home_dir()) return _("Home");
+    std::string name = basename_of(path);
+    return name.empty() ? path : name;
   }
 
-  void update_window() {
-    long long total = progress_->total, done = progress_->done;
-    std::string current;
+  void show_dialog() {
+    bool move = !ops_.empty(), trash = !ops_.empty();
+    std::string source;
+    for (size_t i = 0; i < ops_.size(); ++i) {
+      move = move && ops_[i].kind != desk::FileOp::COPY && ops_[i].kind != desk::FileOp::LINK;
+      trash = trash && ops_[i].kind == desk::FileOp::TRASH;
+      std::string dir = ops_[i].src.substr(0, ops_[i].src.find_last_of('/'));
+      if (i == 0) source = dir;
+      else if (dir != source) source.clear();
+    }
+    std::string destination;
+    if (trash) destination = _("Trash");
+    else if (!ops_.empty()) destination = folder_name(ops_[0].dst.substr(0, ops_[0].dst.find_last_of('/')));
+    dialog_ = new sde::TransferDialog(move ? sde::TransferDialog::Operation::Move : sde::TransferDialog::Operation::Copy,
+                                      source.empty() ? std::string() : folder_name(source), destination);
+    auto progress = progress_;
+    dialog_->on_pause = [progress](bool paused) { progress->pause = paused; };
+    dialog_->on_cancel = [progress] {
+      progress->cancel = true;
+      progress->pause = false;
+    };
+    update_dialog();
+    dialog_->show();
+  }
+
+  void update_dialog() {
+    sde::TransferState s;
+    s.bytes_done = progress_->done;
+    s.bytes_total = progress_->total;
+    s.files_done = progress_->files_done;
+    s.files_total = progress_->files_total;
     {
       std::lock_guard<std::mutex> lock(progress_->mutex);
-      current = progress_->current;
+      s.current = basename_of(progress_->current);
     }
-    label_text_ = current.empty() ? std::string(_("Preparing...")) : basename_of(current);
-    label_->label(label_text_.c_str());
-    bar_->value(total > 0 ? float(double(done) / double(total)) : 0.f);
-    bar_text_ = total > 0 ? format("%d %%", int(100.0 * double(done) / double(total))) : std::string();
-    bar_->label(bar_text_.c_str());
+    dialog_->update(s);
   }
 
   std::vector<desk::FileOp> ops_;
@@ -398,10 +413,7 @@ class FileJob {
   std::shared_ptr<std::atomic<bool>> finished_ = std::make_shared<std::atomic<bool>>(false);
   std::shared_ptr<std::vector<std::string>> errors_ = std::make_shared<std::vector<std::string>>();
   double started_ = 0;
-  Fl_Double_Window *window_ = nullptr;
-  Fl_Box *label_ = nullptr;
-  Fl_Progress *bar_ = nullptr;
-  std::string label_text_, bar_text_;
+  sde::TransferDialog *dialog_ = nullptr;
 };
 
 class Desktop : public sde::BufferedWindow {
@@ -1149,6 +1161,7 @@ class Desktop : public sde::BufferedWindow {
     std::string sort = cfg_.get("desktop", "sort", "name");
     auto radio = [](bool on) { return FL_MENU_RADIO | (on ? FL_MENU_VALUE : 0); };
     int autoflag = FL_MENU_TOGGLE | (positions_.auto_arrange ? FL_MENU_VALUE : 0);
+    bool paste_ok = xdnd_ && xdnd_->clipboard_owned();
     Fl_Menu_Item items[] = {
         {_("View"), 0, nullptr, nullptr, FL_SUBMENU, 0, 0, 0, 0},                              // 0
         {_("Large Icons"), 0, nullptr, nullptr, radio(size == "large"), 0, 0, 0, 0},            // 1
@@ -1163,15 +1176,18 @@ class Desktop : public sde::BufferedWindow {
         {_("Auto-arrange"), 0, nullptr, nullptr, autoflag, 0, 0, 0, 0},                         // 10
         {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 11
         {_("Refresh"), FL_F + 5, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},                // 12
-        {_("New"), 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},              // 13
-        {_("Folder"), FL_CTRL + FL_SHIFT + 'n', nullptr, nullptr, 0, 0, 0, 0, 0},               // 14
-        {_("Empty Document"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                             // 15
-        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 16
-        {_("Open Terminal Here"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                         // 17
-        {_("Open in File Manager"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},          // 18
-        {_("Display Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 19
-        {_("Change Wallpaper..."), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                        // 20
-        {_("Desktop Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 21
+        // 0.2.0 Alpha 2: the files copied or cut in a file manager.
+        {_("Paste"), FL_CTRL + 'v', nullptr, nullptr, FL_MENU_DIVIDER | (paste_ok ? 0 : FL_MENU_INACTIVE), 0, 0, 0,
+         0},                                                                                      // 13
+        {_("New"), 0, nullptr, nullptr, FL_SUBMENU | FL_MENU_DIVIDER, 0, 0, 0, 0},              // 14
+        {_("Folder"), FL_CTRL + FL_SHIFT + 'n', nullptr, nullptr, 0, 0, 0, 0, 0},               // 15
+        {_("Empty Document"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                             // 16
+        {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0},                                          // 17
+        {_("Open Terminal Here"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                         // 18
+        {_("Open in File Manager"), 0, nullptr, nullptr, FL_MENU_DIVIDER, 0, 0, 0, 0},          // 19
+        {_("Display Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 20
+        {_("Change Wallpaper..."), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                        // 21
+        {_("Desktop Settings"), 0, nullptr, nullptr, 0, 0, 0, 0, 0},                           // 22
         {nullptr, 0, nullptr, nullptr, 0, 0, 0, 0, 0}};
     const Fl_Menu_Item *m = items->popup(mx, my);
     if (!m) return;
@@ -1192,16 +1208,17 @@ class Desktop : public sde::BufferedWindow {
         redraw();
         break;
       case 12: refresh(); break;
-      case 14: new_folder(); break;
-      case 15: new_document(); break;
-      case 17: open_terminal({}, dir_exists(desk) ? desk : home_dir()); break;
-      case 18:
+      case 13: paste(mx, my); break;
+      case 15: new_folder(); break;
+      case 16: new_document(); break;
+      case 18: open_terminal({}, dir_exists(desk) ? desk : home_dir()); break;
+      case 19:
         make_dirs(desk);
         open_uri(desk);
         break;
-      case 19: spawn_detached({"sde-settings", "--page", "display"}); break;
-      case 20: spawn_detached({"sde-settings", "--page", "wallpaper"}); break;
-      case 21: spawn_detached({"sde-settings", "--page", "desktop"}); break;
+      case 20: spawn_detached({"sde-settings", "--page", "display"}); break;
+      case 21: spawn_detached({"sde-settings", "--page", "wallpaper"}); break;
+      case 22: spawn_detached({"sde-settings", "--page", "desktop"}); break;
       default: break;
     }
   }
@@ -1216,6 +1233,10 @@ class Desktop : public sde::BufferedWindow {
     }
     if (ctrl && shift && (k == 'n' || k == 'N')) {
       new_folder();
+      return 1;
+    }
+    if (ctrl && !shift && (k == 'v' || k == 'V')) {
+      paste(-1, -1);
       return 1;
     }
     if (k == FL_Menu || (shift && k == FL_F + 10)) {
@@ -1444,6 +1465,13 @@ class Desktop : public sde::BufferedWindow {
     DropAction a = desk::choose_drop_action(kind, mods, same_fs, suggested, allowed);
     if (a == DropAction::Ask) a = ask_action(x, y, allowed);
     if (a == DropAction::NoDrop) return DropAction::NoDrop;
+    return transfer_to(paths, dir, ti, a, x, y);
+  }
+
+  // Copies, moves or links |paths| into |dir| (asking about names that are
+  // taken) and starts the job; (x, y) places new desktop icons.
+  DropAction transfer_to(const std::vector<std::string> &paths, const std::string &dir, int ti, DropAction a, int x,
+                         int y) {
     std::vector<desk::FileOp> ops;
     std::vector<std::string> names;
     for (auto &src : paths) {
@@ -1468,7 +1496,8 @@ class Desktop : public sde::BufferedWindow {
       if (desk::path_exists(dir + "/" + name)) {
         int c = here ? 1 : ask_conflict(name, is_dir);
         if (c == 0) continue;
-        if (c == 1) name = desk::keep_both_name(name, is_dir, taken, &dir);
+        std::string where = dir;
+        if (c == 1) name = desk::keep_both_name(name, is_dir, taken, &where);
         else op.replace = true;
       }
       op.dst = dir + "/" + name;
@@ -1479,6 +1508,25 @@ class Desktop : public sde::BufferedWindow {
     if (dir == desktop_dir_ && ti < 0) place_new_names(names, cell_at(x, y));
     start_job(std::move(ops));
     return a;
+  }
+
+  // 0.2.0 Alpha 2: Paste. The files a file manager copied (or cut: they
+  // are moved) go to the desktop, near (x, y) or at the next free places,
+  // with the same questions and progress as a drop.
+  void paste(int x, int y) {
+    if (!xdnd_) return;
+    xdnd_->request_clipboard([this, x, y](const std::string &uris, bool cut) {
+      std::vector<std::string> paths;
+      for (auto &uri : desk::parse_uri_list(uris)) {
+        std::string path = desk::path_from_uri(uri);
+        if (!path.empty()) paths.push_back(path);
+      }
+      if (paths.empty()) return;
+      std::string dir = drop_dir();
+      make_dirs(dir);
+      int px = x >= 0 ? x : w() / 2, py = y >= 0 ? y : h() / 2;
+      transfer_to(paths, dir, -1, cut ? DropAction::Move : DropAction::Copy, px, py);
+    }, fl_event_time);
   }
 
   // Text and links dropped from other programs: a link (.desktop) per URL,

@@ -1,0 +1,1073 @@
+{
+ "distribution": "Debian",
+ "sources": {
+  "flatpak": {
+   "available": true,
+   "remotes": [
+    "flathub"
+   ]
+  },
+  "snap": {
+   "available": true,
+   "hidden_folder": false
+  }
+ },
+ "apps": [
+  {
+   "id": "org.example.Paintbox",
+   "name": "Paintbox",
+   "summary": "Paint, retouch and draw pictures",
+   "description": "Paintbox is a friendly painting program for photos and drawings.\n\n• Layers, masks and blend modes\n• Brushes that feel like real ones\n• Opens and saves PNG, JPEG, WebP and its own layered format\n\nTest data: Paintbox is a fictional app of Merkadu's test fixture.",
+   "icon": "icons/paintbox.svg",
+   "categories": [
+    "Graphics",
+    "RasterGraphics"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/paintbox",
+   "bugtracker": "https://example.org/paintbox/issues",
+   "keywords": [
+    "paint",
+    "draw",
+    "photo"
+   ],
+   "desktop": [
+    "org.example.Paintbox.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "paintbox",
+     "version": "3.2-1",
+     "download": 18000000,
+     "size": 61000000,
+     "remote": "debian-forky-main"
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Paintbox/x86_64/stable",
+     "remote": "flathub",
+     "version": "3.2.1",
+     "download": 54000000,
+     "size": 160000000,
+     "publisher": "Example Project"
+    },
+    {
+     "source": "snap",
+     "id": "paintbox",
+     "remote": "latest/stable",
+     "version": "3.2.1",
+     "download": 71000000,
+     "publisher": "Example Project",
+     "verified": true
+    }
+   ],
+   "releases": [
+    {
+     "version": "3.2",
+     "days": 3,
+     "description": "New smudge brush and a dark mode."
+    }
+   ],
+   "screenshots": [
+    "screenshots/paintbox-0.svg",
+    "screenshots/paintbox-1.svg",
+    "screenshots/paintbox-2.svg"
+   ]
+  },
+  {
+   "id": "org.example.Vectorial",
+   "name": "Vectorial",
+   "summary": "Draw scalable vector illustrations",
+   "description": "Vectorial draws logos, diagrams and illustrations that stay sharp at any size.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/vectorial.svg",
+   "categories": [
+    "Graphics",
+    "VectorGraphics"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/vectorial",
+   "bugtracker": "https://example.org/vectorial/issues",
+   "keywords": [
+    "svg",
+    "vector"
+   ],
+   "desktop": [
+    "org.example.Vectorial.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "vectorial",
+     "version": "1.4-2",
+     "download": 22000000,
+     "size": 88000000,
+     "remote": "debian-forky-main"
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Vectorial/x86_64/stable",
+     "remote": "flathub",
+     "version": "1.4.1",
+     "download": 61000000,
+     "size": 190000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "1.4",
+     "days": 9
+    }
+   ],
+   "screenshots": [
+    "screenshots/vectorial-0.svg",
+    "screenshots/vectorial-1.svg"
+   ]
+  },
+  {
+   "id": "org.example.Lumen",
+   "name": "Lumen",
+   "summary": "Organize and develop your photos",
+   "description": "Lumen imports photos from cameras and phones, sorts them by date and develops raw files.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/lumen.svg",
+   "categories": [
+    "Graphics",
+    "Photography"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/lumen",
+   "bugtracker": "https://example.org/lumen/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Lumen.desktop"
+   ],
+   "origins": [
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Lumen/x86_64/stable",
+     "remote": "flathub",
+     "version": "5.0",
+     "download": 80000000,
+     "size": 230000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "5.0",
+     "days": 1
+    }
+   ],
+   "screenshots": [
+    "screenshots/lumen-0.svg"
+   ]
+  },
+  {
+   "id": "org.example.Starfield",
+   "name": "Starfield",
+   "summary": "A planetarium for your desktop",
+   "description": "Starfield shows the sky as you see it with your eyes, binoculars or a telescope, from anywhere on Earth.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/starfield.svg",
+   "categories": [
+    "Education",
+    "Science",
+    "Astronomy"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/starfield",
+   "bugtracker": "https://example.org/starfield/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Starfield.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "starfield",
+     "version": "24.3-1",
+     "download": 140000000,
+     "size": 380000000,
+     "remote": "debian-forky-main"
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Starfield/x86_64/stable",
+     "remote": "flathub",
+     "version": "24.4",
+     "download": 210000000,
+     "size": 520000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "24.4",
+     "days": 5
+    }
+   ],
+   "screenshots": [
+    "screenshots/starfield-0.svg",
+    "screenshots/starfield-1.svg"
+   ]
+  },
+  {
+   "id": "org.example.Waveform",
+   "name": "Waveform Studio",
+   "summary": "Record and edit audio",
+   "description": "Record voices and instruments, cut, mix and export to every common format.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/waveform.svg",
+   "categories": [
+    "AudioVideo",
+    "Audio"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/waveform",
+   "bugtracker": "https://example.org/waveform/issues",
+   "keywords": [],
+   "desktop": [
+    "waveform-studio.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "waveform-studio",
+     "version": "4.1-1",
+     "download": 12000000,
+     "size": 42000000,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "4.0-3",
+     "update": true
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Waveform/x86_64/stable",
+     "remote": "flathub",
+     "version": "4.1",
+     "download": 48000000,
+     "size": 120000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "4.1",
+     "days": 12
+    }
+   ],
+   "screenshots": [
+    "screenshots/waveform-0.svg"
+   ]
+  },
+  {
+   "id": "org.example.Reel",
+   "name": "Reel",
+   "summary": "Play movies and music",
+   "description": "Reel plays almost every video and audio format, DVDs and network streams.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/reel.svg",
+   "categories": [
+    "AudioVideo",
+    "Video",
+    "Player"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/reel",
+   "bugtracker": "https://example.org/reel/issues",
+   "keywords": [],
+   "desktop": [
+    "reel-player.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "reel-player",
+     "version": "3.0.21-2",
+     "download": 3000000,
+     "size": 9000000,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "3.0.21-2"
+    }
+   ],
+   "releases": [
+    {
+     "version": "3.0.21",
+     "days": 200
+    }
+   ]
+  },
+  {
+   "id": "org.example.Quill",
+   "name": "Quill",
+   "summary": "Write letters, reports and books",
+   "description": "Quill is a word processor with styles, tables of contents and export to PDF.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/quill.svg",
+   "categories": [
+    "Office",
+    "WordProcessor"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/quill",
+   "bugtracker": "https://example.org/quill/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Quill.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "quill",
+     "version": "7.2-1",
+     "download": 30000000,
+     "size": 110000000,
+     "remote": "debian-forky-main"
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Quill/x86_64/stable",
+     "remote": "flathub",
+     "version": "7.2",
+     "download": 90000000,
+     "size": 300000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "7.2",
+     "days": 7
+    }
+   ],
+   "screenshots": [
+    "screenshots/quill-0.svg"
+   ]
+  },
+  {
+   "id": "org.example.Ledger",
+   "name": "Ledger Sheets",
+   "summary": "Spreadsheets with charts",
+   "description": "Calculate budgets, plan projects and draw charts.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/ledger.svg",
+   "categories": [
+    "Office",
+    "Spreadsheet"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/ledger",
+   "bugtracker": "https://example.org/ledger/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Ledger.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "ledger-sheets",
+     "version": "2.8-1",
+     "download": 9000000,
+     "size": 31000000,
+     "remote": "debian-forky-main"
+    }
+   ],
+   "releases": [
+    {
+     "version": "2.8",
+     "days": 60
+    }
+   ]
+  },
+  {
+   "id": "org.example.Orbit",
+   "name": "Orbit",
+   "summary": "Browse the web privately",
+   "description": "Orbit blocks trackers by default and keeps your history on your computer.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/orbit.svg",
+   "categories": [
+    "Network",
+    "WebBrowser"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/orbit",
+   "bugtracker": "https://example.org/orbit/issues",
+   "keywords": [],
+   "desktop": [
+    "orbit-browser.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "orbit-browser",
+     "version": "128.3-1",
+     "download": 70000000,
+     "size": 260000000,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "128.3-1"
+    },
+    {
+     "source": "snap",
+     "id": "orbit",
+     "remote": "latest/stable",
+     "version": "128.4",
+     "download": 95000000,
+     "publisher": "Example Project",
+     "verified": true
+    }
+   ],
+   "releases": [
+    {
+     "version": "128.3",
+     "days": 20
+    }
+   ],
+   "screenshots": [
+    "screenshots/orbit-0.svg"
+   ]
+  },
+  {
+   "id": "org.example.Postbox",
+   "name": "Postbox",
+   "summary": "Read and write email",
+   "description": "Postbox reads mail from any provider, with calendars and an address book.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/postbox.svg",
+   "categories": [
+    "Network",
+    "Email"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/postbox",
+   "bugtracker": "https://example.org/postbox/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Postbox.desktop"
+   ],
+   "origins": [
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Postbox/x86_64/stable",
+     "remote": "flathub",
+     "version": "115.2",
+     "download": 70000000,
+     "size": 240000000,
+     "publisher": "Example Project",
+     "installed": true,
+     "installed_version": "115.1",
+     "update": true
+    }
+   ],
+   "releases": [
+    {
+     "version": "115.2",
+     "days": 2
+    }
+   ]
+  },
+  {
+   "id": "org.example.Chatter",
+   "name": "Chatter",
+   "summary": "Chat with friends and teams",
+   "description": "Group chats, calls and file sharing.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/chatter.svg",
+   "categories": [
+    "Network",
+    "InstantMessaging"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/chatter",
+   "bugtracker": "https://example.org/chatter/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Chatter.desktop"
+   ],
+   "origins": [
+    {
+     "source": "snap",
+     "id": "chatter",
+     "remote": "latest/stable",
+     "version": "2.3.0",
+     "download": 88000000,
+     "publisher": "Example Project",
+     "verified": false
+    }
+   ],
+   "releases": [
+    {
+     "version": "2.3.0",
+     "days": 4
+    }
+   ],
+   "store_only": true
+  },
+  {
+   "id": "org.example.KartRally",
+   "name": "Kart Rally",
+   "summary": "Race karts on tracks around the world",
+   "description": "A fast 3D kart racing game with 20 tracks, power-ups and split-screen races.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/kartrally.svg",
+   "categories": [
+    "Game",
+    "ArcadeGame"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/kartrally",
+   "bugtracker": "https://example.org/kartrally/issues",
+   "keywords": [],
+   "desktop": [
+    "kart-rally_kart-rally.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "kart-rally",
+     "version": "1.4-1",
+     "download": 400000000,
+     "size": 900000000,
+     "remote": "debian-forky-main"
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.KartRally/x86_64/stable",
+     "remote": "flathub",
+     "version": "1.4",
+     "download": 430000000,
+     "size": 950000000,
+     "publisher": "Example Project"
+    },
+    {
+     "source": "snap",
+     "id": "kart-rally",
+     "remote": "latest/stable",
+     "version": "1.4",
+     "download": 440000000,
+     "publisher": "Example Project",
+     "verified": true,
+     "size": 980000000,
+     "installed": true
+    }
+   ],
+   "releases": [
+    {
+     "version": "1.4",
+     "days": 15
+    }
+   ],
+   "screenshots": [
+    "screenshots/kartrally-0.svg",
+    "screenshots/kartrally-1.svg"
+   ]
+  },
+  {
+   "id": "org.example.Chessboard",
+   "name": "Chessboard",
+   "summary": "Play chess against the computer",
+   "description": "Play against a strong engine or a friend, with hints and a move list.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/chessboard.svg",
+   "categories": [
+    "Game",
+    "BoardGame"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/chessboard",
+   "bugtracker": "https://example.org/chessboard/issues",
+   "keywords": [],
+   "desktop": [
+    "chessboard.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "chessboard",
+     "version": "3.40-1",
+     "download": 2000000,
+     "size": 7000000,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "3.40-1"
+    }
+   ],
+   "releases": [
+    {
+     "version": "3.40",
+     "days": 300
+    }
+   ]
+  },
+  {
+   "id": "org.example.CodeForge",
+   "name": "Code Forge",
+   "summary": "Write and debug programs",
+   "description": "An editor for every language, with a debugger, Git and extensions.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/codeforge.svg",
+   "categories": [
+    "Development",
+    "IDE"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/codeforge",
+   "bugtracker": "https://example.org/codeforge/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.CodeForge.desktop"
+   ],
+   "origins": [
+    {
+     "source": "flatpak",
+     "id": "app/org.example.CodeForge/x86_64/stable",
+     "remote": "flathub",
+     "version": "1.94",
+     "download": 110000000,
+     "size": 400000000,
+     "publisher": "Example Project"
+    },
+    {
+     "source": "snap",
+     "id": "code-forge",
+     "remote": "latest/stable",
+     "version": "1.94",
+     "download": 120000000,
+     "publisher": "Example Project",
+     "verified": true,
+     "classic": true
+    }
+   ],
+   "releases": [
+    {
+     "version": "1.94",
+     "days": 6
+    }
+   ],
+   "screenshots": [
+    "screenshots/codeforge-0.svg"
+   ]
+  },
+  {
+   "id": "org.example.PixelPuzzle",
+   "name": "Pixel Puzzle",
+   "summary": "Colorful logic puzzles",
+   "description": "Hundreds of picture puzzles from easy to fiendish.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/pixelpuzzle.svg",
+   "categories": [
+    "Game",
+    "LogicGame"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/pixelpuzzle",
+   "bugtracker": "https://example.org/pixelpuzzle/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.PixelPuzzle.desktop"
+   ],
+   "origins": [
+    {
+     "source": "flatpak",
+     "id": "app/org.example.PixelPuzzle/x86_64/stable",
+     "remote": "flathub",
+     "version": "2.1",
+     "download": 12000000,
+     "size": 30000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "2.1",
+     "days": 8
+    }
+   ]
+  },
+  {
+   "id": "org.example.Atlas",
+   "name": "Atlas",
+   "summary": "Maps of the world, offline",
+   "description": "Download maps of whole countries and find your way without a connection.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/atlas.svg",
+   "categories": [
+    "Education",
+    "Geography"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/atlas",
+   "bugtracker": "https://example.org/atlas/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Atlas.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "atlas-maps",
+     "version": "5.6-1",
+     "download": 15000000,
+     "size": 50000000,
+     "remote": "debian-forky-main"
+    }
+   ],
+   "releases": [
+    {
+     "version": "5.6",
+     "days": 11
+    }
+   ]
+  },
+  {
+   "id": "org.example.Bookshelf",
+   "name": "Bookshelf",
+   "summary": "Read e-books and comics",
+   "description": "Bookshelf keeps your EPUB, PDF and comic book collection in order.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/bookshelf.svg",
+   "categories": [
+    "Office",
+    "Viewer",
+    "X-Publication"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/bookshelf",
+   "bugtracker": "https://example.org/bookshelf/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.Bookshelf.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "bookshelf",
+     "version": "7.18-1",
+     "download": 40000000,
+     "size": 150000000,
+     "remote": "debian-forky-main"
+    },
+    {
+     "source": "flatpak",
+     "id": "app/org.example.Bookshelf/x86_64/stable",
+     "remote": "flathub",
+     "version": "7.19",
+     "download": 120000000,
+     "size": 330000000,
+     "publisher": "Example Project"
+    }
+   ],
+   "releases": [
+    {
+     "version": "7.19",
+     "days": 10
+    }
+   ]
+  },
+  {
+   "id": "org.example.DiskDoctor",
+   "name": "Disk Doctor",
+   "summary": "Check and repair your drives",
+   "description": "See the health of disks and memory cards and repair their file systems.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/diskdoctor.svg",
+   "categories": [
+    "System",
+    "Monitor"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/diskdoctor",
+   "bugtracker": "https://example.org/diskdoctor/issues",
+   "keywords": [],
+   "desktop": [
+    "disk-doctor.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "disk-doctor",
+     "version": "1.12-1",
+     "download": 1000000,
+     "size": 4000000,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "1.12-1"
+    }
+   ],
+   "releases": [
+    {
+     "version": "1.12",
+     "days": 120
+    }
+   ]
+  },
+  {
+   "id": "org.example.Notes",
+   "name": "Notes",
+   "summary": "Quick notes and checklists",
+   "description": "Write things down and tick them off.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/notes.svg",
+   "categories": [
+    "Utility",
+    "TextEditor"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/notes",
+   "bugtracker": "https://example.org/notes/issues",
+   "keywords": [],
+   "desktop": [
+    "quick-notes.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "quick-notes",
+     "version": "0.9-1",
+     "download": 1000000,
+     "size": 3000000,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "0.9-1"
+    }
+   ],
+   "releases": [
+    {
+     "version": "0.9",
+     "days": 90
+    }
+   ]
+  },
+  {
+   "id": "org.example.CloudNotes",
+   "name": "Cloud Notes",
+   "summary": "Notes that sync between your devices",
+   "description": "Write on your phone, read on your computer.\n\nTest data: a fictional app of Merkadu's test fixture.",
+   "icon": "icons/cloudnotes.svg",
+   "categories": [
+    "Office"
+   ],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/cloudnotes",
+   "bugtracker": "https://example.org/cloudnotes/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.CloudNotes.desktop"
+   ],
+   "origins": [
+    {
+     "source": "snap",
+     "id": "cloud-notes",
+     "remote": "latest/stable",
+     "version": "4.2",
+     "download": 60000000,
+     "publisher": "Example Project",
+     "verified": true
+    }
+   ],
+   "releases": [
+    {
+     "version": "4.2",
+     "days": 14
+    }
+   ],
+   "store_only": true
+  },
+  {
+   "id": "org.example.SelvaSans",
+   "name": "Selva Sans",
+   "summary": "A friendly font for screens",
+   "description": "Selva Sans is a humanist sans-serif font family in nine weights.\n\nTest data: a fictional font of Merkadu's test fixture.",
+   "icon": "font-x-generic",
+   "categories": [],
+   "developer": "Example Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/selvasans",
+   "bugtracker": "https://example.org/selvasans/issues",
+   "keywords": [],
+   "desktop": [
+    "org.example.SelvaSans.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "fonts-selva",
+     "version": "2.0-1",
+     "download": 2000000,
+     "size": 6000000,
+     "remote": "debian-forky-main"
+    }
+   ],
+   "releases": [
+    {
+     "version": "2.0",
+     "days": 50
+    }
+   ],
+   "kind": "font"
+  },
+  {
+   "id": "org.debion.Calculator",
+   "name": "Calculator",
+   "summary": "Standard, scientific and programmer calculator",
+   "description": "The calculator of the Selviana Desktop Environment.",
+   "icon": "sde-calculator",
+   "categories": [
+    "Utility",
+    "Calculator"
+   ],
+   "developer": "Selviana DE Project",
+   "license": "GPL-3.0-or-later",
+   "homepage": "https://example.org/calculator",
+   "bugtracker": "https://example.org/calculator/issues",
+   "keywords": [],
+   "desktop": [
+    "org.debion.Calculator.desktop"
+   ],
+   "origins": [
+    {
+     "source": "debian",
+     "id": "sde",
+     "version": "0.2.0~alpha2",
+     "download": 0,
+     "size": 0,
+     "remote": "debian-forky-main",
+     "installed": true,
+     "installed_version": "0.2.0~alpha2"
+    }
+   ],
+   "releases": [
+    {
+     "version": "0.2.0~alpha2",
+     "days": 0
+    }
+   ]
+  }
+ ],
+ "removes": {
+  "waveform-studio": [
+   "waveform-studio",
+   "waveform-studio-data",
+   "libwaveform3"
+  ],
+  "reel-player": [
+   "reel-player",
+   "reel-player-codecs"
+  ],
+  "orbit-browser": [
+   "orbit-browser"
+  ],
+  "fonts-dejavu-core": [
+   "fonts-dejavu-core",
+   "sde"
+  ]
+ },
+ "sizes": {
+  "waveform-studio": 42000000,
+  "waveform-studio-data": 18000000,
+  "libwaveform3": 3000000,
+  "reel-player": 9000000,
+  "reel-player-codecs": 21000000
+ },
+ "history": [
+  {
+   "days": 0,
+   "time": "10:15",
+   "source": "debian",
+   "change": "install",
+   "items": [
+    "orbit-browser"
+   ],
+   "automatic": 2,
+   "by": "alex"
+  },
+  {
+   "days": 0,
+   "time": "09:02",
+   "source": "flatpak",
+   "change": "update",
+   "items": [
+    "app/org.example.Postbox/x86_64/stable"
+   ],
+   "by": "alex"
+  },
+  {
+   "days": 1,
+   "time": "18:40",
+   "source": "debian",
+   "change": "remove",
+   "items": [
+    "old-notes"
+   ],
+   "by": "alex"
+  },
+  {
+   "days": 2,
+   "time": "21:12",
+   "source": "snap",
+   "change": "install",
+   "items": [
+    "kart-rally"
+   ]
+  },
+  {
+   "days": 3,
+   "time": "08:30",
+   "source": "debian",
+   "change": "update",
+   "items": [
+    "libc6",
+    "openssl",
+    "libssl3t64",
+    "firefox-esr",
+    "linux-image-amd64",
+    "mesa-vulkan-drivers",
+    "libgl1-mesa-dri",
+    "tzdata"
+   ],
+   "automatic": 3,
+   "by": "alex"
+  },
+  {
+   "days": 4,
+   "time": "16:05",
+   "source": "debian",
+   "change": "install",
+   "items": [
+    "chessboard"
+   ],
+   "by": "alex"
+  },
+  {
+   "days": 6,
+   "time": "11:47",
+   "source": "debian",
+   "change": "install",
+   "items": [
+    "broken-game"
+   ],
+   "failed": true,
+   "error": "Sub-process /usr/bin/dpkg returned an error code (1)",
+   "by": "alex"
+  },
+  {
+   "days": 10,
+   "time": "14:20",
+   "source": "debian",
+   "change": "install",
+   "items": [
+    "waveform-studio"
+   ],
+   "automatic": 2,
+   "by": "alex"
+  }
+ ]
+}

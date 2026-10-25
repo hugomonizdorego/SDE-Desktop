@@ -1,0 +1,29 @@
+
+Start-Date: 2026-10-18  09:12:05
+Commandline: apt-get -y install gimp
+Requested-By: alex (1000)
+Install: libgimp2.0t64:amd64 (2.10.38-1, automatic), gimp-data:amd64 (2.10.38-1, automatic), gimp:amd64 (2.10.38-1)
+End-Date: 2026-10-18  09:13:44
+
+Start-Date: 2026-10-19  14:02:51
+Commandline: packagekit role='update-packages'
+Requested-By: alex (1000)
+Upgrade: firefox-esr:amd64 (128.3.0esr-1, 128.3.1esr-1), libc6:amd64 (2.40-3, 2.40-4)
+End-Date: 2026-10-19  14:04:10
+
+Start-Date: 2026-10-20  10:15:42
+Commandline: packagekit role='remove-packages'
+Requested-By: alex (1000)
+Remove: vlc:amd64 (3.0.21-2), vlc-plugin-base:amd64 (3.0.21-2, automatic)
+Purge: vlc-data:amd64 (3.0.21-2)
+End-Date: 2026-10-20  10:15:59
+
+Start-Date: 2026-10-21  08:00:01
+Commandline: apt-get install broken-thing
+Install: broken-thing:amd64 (1.0-1)
+Error: Sub-process /usr/bin/dpkg returned an error code (1)
+End-Date: 2026-10-21  08:00:09
+
+Start-Date: not a date
+Install: ignored:amd64 (1.0)
+End-Date: never

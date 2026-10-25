@@ -24,6 +24,7 @@ add_library(sde-common STATIC
   common/suite.cpp
   common/theme.cpp
   common/touchpad.cpp
+  common/transfer_dialog.cpp
   common/tray_icons.cpp
   common/util.cpp
   common/widgets.cpp
@@ -426,3 +427,6 @@ add_subdirectory(niny)
 
 # SDE Welcome, Driver Manager and System Reports (docs/MINT-CONCEPTS.md).
 add_subdirectory(welcome)
+
+# Merkadu, the software center (docs/MERKADU.md).
+add_subdirectory(merkadu)

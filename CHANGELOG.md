@@ -1,3 +1,23 @@
+# 0.2 Alpha 2 · 2026-10-25 — Merkadu, tile groups, user accounts, Liquid Glass
+
+- Merkadu, the new software center: Debian packages (PackageKit), Flatpak
+  (Flathub) and Snap in one window, after Ubuntu Software Center; its own
+  package; snap data hidden in ~/.snap/data.
+- Start Menu: typing always searches; tiles grouped by category with drag
+  and drop, new, renamed and moved groups; Uninstall… in the right-click
+  menu; icons for apps without one.
+- Control Center: fills a maximized window; user accounts (add, type,
+  password, lock, automatic login, remove); 75 % and 175 % sizes; build
+  number and commit in About; Applications opens Merkadu.
+- Panel: animated battery with display modes and time estimates; clock
+  styles Digital, LED and Analog with Show seconds and Blink the colon.
+- Liria: folder icon without the lily, ribbon icons in color, much faster
+  big folders, copy progress with speed graph and the animated SDE logo
+  (also on the desktop).
+- Themes redesigned; SDE Liquid Glass with a compositor glass shader.
+- Niny's Settings page scrolls again; title bars stay on the screen;
+  SDE Welcome content in /usr/share/SDE-Welcome. See docs/0.2-ALPHA2.md.
+
 # 0.2 Alpha 1 · 2026-10-24 — official logo, Control Center, faster Start Menu
 
 - First release of the 0.2 series (0.2.0~alpha1); roadmap to 1.0 in

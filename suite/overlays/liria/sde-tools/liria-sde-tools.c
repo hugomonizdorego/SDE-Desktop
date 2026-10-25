@@ -585,17 +585,24 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 	gboolean local = TRUE, all_text = TRUE, all_images = TRUE, all_archives = TRUE, any_dir = FALSE;
 
 	if (count == 0) return NULL;
+	/* 0.2.0 Alpha 2: each question is asked only until it is answered.
+	 * The menu is built again after every selection change, and asking
+	 * every MIME type question of all files took a quarter of the time
+	 * of Ctrl+A in a folder of 10 000 files. */
 	for (GList *l = files; l; l = l->next) {
-		gchar *path = local_path (l->data);
-		if (!path) local = FALSE;
-		g_free (path);
-		if (liria_file_info_is_directory (l->data)) any_dir = TRUE;
-		if (!is_type (l->data, "text/") && !liria_file_info_is_mime_type (l->data, "application/x-shellscript") &&
+		if (local) {
+			gchar *path = local_path (l->data);
+			if (!path) local = FALSE;
+			g_free (path);
+		}
+		if (!any_dir && liria_file_info_is_directory (l->data)) any_dir = TRUE;
+		if (all_text && !is_type (l->data, "text/") &&
+		    !liria_file_info_is_mime_type (l->data, "application/x-shellscript") &&
 		    !liria_file_info_is_mime_type (l->data, "application/json") &&
 		    !liria_file_info_is_mime_type (l->data, "application/xml"))
 			all_text = FALSE;
-		if (!is_type (l->data, "image/")) all_images = FALSE;
-		if (!is_archive (l->data)) all_archives = FALSE;
+		if (all_images && !is_type (l->data, "image/")) all_images = FALSE;
+		if (all_archives && !is_archive (l->data)) all_archives = FALSE;
 	}
 	pin = pin_item ("SdeTools::", files);
 	if (!local) {

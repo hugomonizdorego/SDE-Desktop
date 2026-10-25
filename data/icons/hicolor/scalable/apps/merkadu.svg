@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Merkadu</title>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ECE6DA"/><stop offset="1" stop-color="#DDD6C8"/></linearGradient>
+    <linearGradient id="stripe" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D66A61"/><stop offset="1" stop-color="#C2534B"/></linearGradient>
+    <linearGradient id="window" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF9F5"/><stop offset="1" stop-color="#EFEAE1"/></linearGradient>
+    <clipPath id="awning">
+      <path d="M28 54Q28 44 38 44H218Q228 44 228 54V92A20 20 0 0 1 188 92A20 20 0 0 1 148 92A20 20 0 0 1 108 92A20 20 0 0 1 68 92A20 20 0 0 1 28 92Z"/>
+    </clipPath>
+  </defs>
+  <!-- legs of the stall -->
+  <rect x="56" y="204" width="20" height="26" rx="5" fill="#ADA79A" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <rect x="180" y="204" width="20" height="26" rx="5" fill="#ADA79A" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <!-- the stall -->
+  <rect x="44" y="88" width="168" height="114" fill="url(#body)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <!-- the shop window with three apps on display -->
+  <rect x="62" y="124" width="132" height="60" rx="9" fill="url(#window)" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" class="detail"/>
+  <rect x="75" y="139" width="30" height="30" rx="8" fill="#C9564E" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" class="detail"/>
+  <rect x="113" y="139" width="30" height="30" rx="8" fill="#4A9157" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" class="detail"/>
+  <rect x="151" y="139" width="30" height="30" rx="8" fill="#3876B9" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" class="detail"/>
+  <!-- the counter -->
+  <rect x="30" y="190" width="196" height="20" rx="7" fill="#C4BDAF" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <!-- the striped awning with a scalloped edge -->
+  <g clip-path="url(#awning)">
+    <rect x="20" y="36" width="216" height="84" fill="#F3EEE4"/>
+    <rect x="20" y="36" width="48" height="84" fill="url(#stripe)"/>
+    <rect x="108" y="36" width="40" height="84" fill="url(#stripe)"/>
+    <rect x="188" y="36" width="48" height="84" fill="url(#stripe)"/>
+  </g>
+  <path d="M28 54Q28 44 38 44H218Q228 44 228 54V92A20 20 0 0 1 188 92A20 20 0 0 1 148 92A20 20 0 0 1 108 92A20 20 0 0 1 68 92A20 20 0 0 1 28 92Z" fill="none" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+</svg>

@@ -188,7 +188,7 @@ install(FILES data/sde-mimeapps.list DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg
 install(DIRECTORY data/autostart/ DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/autostart)
 install(DIRECTORY data/update/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/update
         PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
-install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/ALPHA11.md docs/ALPHA12.md docs/ALPHA13.md docs/ALPHA14.md docs/ALPHA15.md docs/ALPHA16.md docs/ALPHA50.md docs/ALPHA51.md docs/ALPHA52.md docs/0.2-ALPHA1.md docs/ROADMAP.md docs/WELCOME.md docs/BRANDING.md docs/SECURITY.md docs/UI-KIT.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json suite/versions.json
+install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/ALPHA11.md docs/ALPHA12.md docs/ALPHA13.md docs/ALPHA14.md docs/ALPHA15.md docs/ALPHA16.md docs/ALPHA50.md docs/ALPHA51.md docs/ALPHA52.md docs/0.2-ALPHA1.md docs/0.2-ALPHA2.md docs/ROADMAP.md docs/CONTROL-CENTER.md docs/START-MENU.md docs/PANEL.md docs/WELCOME.md docs/BRANDING.md docs/SECURITY.md docs/UI-KIT.md docs/SUITE.md docs/THIRD-PARTY.md upstream/sources.lock.json suite/versions.json
         DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
 install(FILES data/xsessions/sde-desktop.desktop data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)

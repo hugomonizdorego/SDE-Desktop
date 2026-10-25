@@ -1788,6 +1788,18 @@ void build_suite(Page *page) {
         apply_change();
       },
       _("Applies when a suite application next starts."));
+  // 0.2 Alpha 2: Merkadu installs and removes software from Debian, Flatpak
+  // and Snap (a package of its own, so it may be missing).
+  bool merkadu = !find_program("merkadu").empty();
+  page->begin_card(_("Install and remove software"));
+  page->row(_("Merkadu: Debian packages, Flatpak and Snap"), S(112), S(32), [merkadu](int x, int y, int w, int h) {
+    auto *button = action_button(x, y, w, h, _("Open"), {"merkadu"}, true);
+    if (!merkadu) button->deactivate();
+    return button;
+  });
+  page->note(merkadu ? _("To remove an application, right-click it in the Start Menu and choose Uninstall.")
+                     : _("Install the merkadu package to find, install and remove software."));
+  page->end_card();
   for (const auto &app : suite_apps()) {
     page->begin_card(app.name + "  ·  " + app.version);
     page->row(_(app.role.c_str()), S(112), S(32), [&app](int x, int y, int w, int h) {
