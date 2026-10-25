@@ -119,7 +119,7 @@ dominant colour, a consistent charcoal outline (#2B2B2F) and no text.
 
 | Icon name | Application | Drawing | Dominant colour |
 | --- | --- | --- | --- |
-| `liria` | Liria, file manager | folder with a lily emblem ("lírio" is a lily) | amber |
+| `liria` | Liria, file manager | plain folder with a sheet of paper inside, no emblem (the lily of 0.2.0 Alpha 1 was removed in Alpha 2) | amber |
 | `niny` | Niny, text editor | notepad with lines and a pencil | blue |
 | `xanara` | Xanara, PDF reader and editor | document with a folded corner, a red bookmark ribbon and a pen nib | white and red |
 | `taca` | Taca, archive manager | cardboard box closed with a zipper | kraft brown |

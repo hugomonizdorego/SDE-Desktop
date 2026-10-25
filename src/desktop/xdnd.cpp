@@ -39,6 +39,9 @@ Xdnd::Xdnd(Display *display, Window own, Hooks hooks) : dpy_(display), own_(own)
   a_text_plain_utf8_ = atom("text/plain;charset=utf-8");
   a_targets_ = atom("TARGETS");
   a_data_ = atom("_SDE_XDND_DATA");
+  a_clipboard_ = atom("CLIPBOARD");
+  a_gnome_copied_ = atom("x-special/gnome-copied-files");
+  a_clip_data_ = atom("_SDE_CLIPBOARD_DATA");
   long version = kVersion;  // SDE-FLTK announces version 4; the desktop speaks 5
   XChangeProperty(dpy_, own_, a_aware_, XA_ATOM, 32, PropModeReplace, (unsigned char *)&version, 1);
   // The window that owns XdndSelection and receives the targets' answers.
@@ -54,6 +57,8 @@ Xdnd::~Xdnd() {
   Fl::remove_timeout(deliver_drop, this);
   Fl::remove_timeout(drop_timeout, this);
   Fl::remove_timeout(source_timeout, this);
+  Fl::remove_timeout(clipboard_timeout, this);
+  Fl::remove_timeout(deliver_clipboard, this);
   if (icon_win_) XDestroyWindow(dpy_, icon_win_);
   if (icon_pixmap_) XFreePixmap(dpy_, icon_pixmap_);
   if (src_win_) XDestroyWindow(dpy_, src_win_);
@@ -154,7 +159,75 @@ int Xdnd::handle(XEvent &e) {
     return 1;
   }
   if (e.type == SelectionClear && e.xselectionclear.window == src_win_) return 1;
+  if (e.type == SelectionNotify && e.xselection.requestor == own_ && e.xselection.selection == a_clipboard_ &&
+      clip_stage_) {
+    on_clipboard(e.xselection);
+    return 1;
+  }
   return 0;
+}
+
+// ---------------------------------------------------------------- clipboard
+
+bool Xdnd::clipboard_owned() { return XGetSelectionOwner(dpy_, a_clipboard_) != None; }
+
+void Xdnd::request_clipboard(std::function<void(const std::string &, bool)> done, unsigned long time) {
+  clip_done_ = std::move(done);
+  clip_stage_ = 1;
+  clip_time_ = time;
+  clip_uris_.clear();
+  clip_cut_ = false;
+  XConvertSelection(dpy_, a_clipboard_, a_gnome_copied_, a_clip_data_, own_, time);
+  XFlush(dpy_);
+  Fl::remove_timeout(clipboard_timeout, this);
+  Fl::add_timeout(2.0, clipboard_timeout, this);
+}
+
+void Xdnd::on_clipboard(const XSelectionEvent &s) {
+  std::string data;
+  if (s.property != None) {
+    Atom type;
+    int format;
+    unsigned long count = 0, rest = 0;
+    unsigned char *bytes = nullptr;
+    if (XGetWindowProperty(dpy_, own_, a_clip_data_, 0, 0x1000000, True, AnyPropertyType, &type, &format, &count,
+                           &rest, &bytes) == Success &&
+        bytes && format == 8)
+      data.assign((const char *)bytes, count);
+    if (bytes) XFree(bytes);
+  }
+  if (clip_stage_ == 1 && data.empty()) {
+    // No file manager list: try a plain URI list.
+    clip_stage_ = 2;
+    XConvertSelection(dpy_, a_clipboard_, a_uri_list_, a_clip_data_, own_, clip_time_);
+    XFlush(dpy_);
+    return;
+  }
+  if (clip_stage_ == 1) {
+    // "copy\nfile:///a\nfile:///b" (or "cut\n...").
+    size_t nl = data.find('\n');
+    clip_cut_ = data.compare(0, nl, "cut") == 0;
+    clip_uris_ = nl == std::string::npos ? std::string() : data.substr(nl + 1);
+  } else {
+    clip_uris_ = data;
+  }
+  clip_stage_ = 0;
+  Fl::remove_timeout(clipboard_timeout, this);
+  Fl::add_timeout(0, deliver_clipboard, this);
+}
+
+void Xdnd::clipboard_timeout(void *data) {
+  auto *self = static_cast<Xdnd *>(data);
+  self->clip_stage_ = 0;
+  self->clip_uris_.clear();
+  deliver_clipboard(data);
+}
+
+void Xdnd::deliver_clipboard(void *data) {
+  auto *self = static_cast<Xdnd *>(data);
+  auto done = std::move(self->clip_done_);
+  self->clip_done_ = nullptr;
+  if (done) done(self->clip_uris_, self->clip_cut_);
 }
 
 // ------------------------------------------------------------------ target

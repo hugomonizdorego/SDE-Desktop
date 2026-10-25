@@ -16,8 +16,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 OVERLAYS = HERE / "overlays"
-# SDE-owned files copied into the Liria tree (man page shared with CMake).
-SHARED = [ROOT / "data/man/liria.1"]
+# SDE-owned files copied into the Liria tree (man page shared with CMake,
+# the copy and move progress model shared with the SDE desktop).
+SHARED = [ROOT / "data/man/liria.1", ROOT / "src/common/transfer_model.h"]
 # Original product names that must not reach users. Legal notices
 # (copyright lines, license files, the About license text and the
 # installed upstream documentation) are the only allowed exception.
@@ -106,6 +107,8 @@ def liria(staged):
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
+    liria_folder_loading(staged)
+    liria_progress(staged)
     liria_translations(staged)
 
 
@@ -2139,6 +2142,409 @@ liria_clipboard_request_files (GtkClipboard *clipboard, GdkAtom copied_files_ato
     edit_once(ops, "static void\nfinalize_common (CommonJob *common)\n{\n",
          "static void\nfinalize_common (CommonJob *common)\n{\n\tif (g_application_get_default () != NULL) {\n"
          "\t\tg_application_release (g_application_get_default ()); /* SDE */\n\t}\n")
+
+
+# ------------------------------------------------------------ performance
+
+LOADING_HINTS = r'''/* SDE (0.2.0 Alpha 2): a request for all files of a folder is checked
+ * again each time one file gets an attribute, and the check scanned every
+ * file: loading a folder of 10 000 files cost about 10^8 checks. The file
+ * found lacking an attribute is remembered per request type and checked
+ * first. The list is newest first and the work queue serves the oldest
+ * file first, so that file usually keeps lacking it until the folder is
+ * complete, and most checks take one step. */
+static gboolean
+has_problem (LiriaDirectory *directory, LiriaFile *file, FileCheck problem, RequestType type)
+{
+    GList *node;
+    LiriaFile *hint;
+
+    if (file != NULL)
+    {
+        return (* problem) (file);
+    }
+
+    hint = directory->details->sde_lacking[type];
+    if (hint != NULL && (* problem) (hint))
+    {
+        return TRUE;
+    }
+
+    for (node = directory->details->file_list; node != NULL; node = node->next)
+    {
+        if ((* problem) (node->data))
+        {
+            directory->details->sde_lacking[type] = node->data;
+            return TRUE;
+        }
+    }
+
+    directory->details->sde_lacking[type] = NULL;
+    return FALSE;
+}
+
+static FileCheck
+sde_problem_for_type (RequestType type)
+{
+    switch (type)
+    {
+    case REQUEST_DIRECTORY_COUNT: return lacks_directory_count;
+    case REQUEST_FILE_INFO: return lacks_info;
+    case REQUEST_FILESYSTEM_INFO: return lacks_filesystem_info;
+    case REQUEST_TOP_LEFT_TEXT: return lacks_top_left;
+    case REQUEST_LARGE_TOP_LEFT_TEXT: return lacks_large_top_left;
+    case REQUEST_DEEP_COUNT: return lacks_deep_count;
+    case REQUEST_THUMBNAIL: return lacks_thumbnail;
+    case REQUEST_MOUNT: return lacks_mount;
+    case REQUEST_MIME_LIST: return lacks_mime_list;
+    case REQUEST_LINK_INFO: return lacks_link_info;
+    default: return NULL;
+    }
+}
+'''
+
+SHARED_FILESYSTEM_INFO = r'''/* SDE (0.2.0 Alpha 2): the files of a local folder are on the folder's
+ * file system, except mount points and what symbolic links point to. A
+ * folder view waits for the file system of every file before it shows any
+ * (fm-directory-view.c, LIRIA_FILE_ATTRIBUTE_FILESYSTEM_INFO), and each
+ * file was queried on its own: 10 000 queries, one after the other, for a
+ * folder of 10 000 files. One answer now serves every such file. */
+static gboolean
+sde_on_folder_filesystem (LiriaFile *file)
+{
+    return file->details->file_info_is_up_to_date &&
+           !file->details->is_gone &&
+           !file->details->is_symlink &&
+           !file->details->is_mountpoint &&
+           (file->details->type == G_FILE_TYPE_REGULAR || file->details->type == G_FILE_TYPE_DIRECTORY ||
+            file->details->type == G_FILE_TYPE_SPECIAL);
+}
+
+/* TRUE when @file, a file of the local folder @directory, is on the
+ * folder's own file system. */
+gboolean
+liria_directory_sde_on_folder_filesystem (LiriaDirectory *directory, LiriaFile *file)
+{
+    return directory != NULL && directory->details->location != NULL &&
+           g_file_has_uri_scheme (directory->details->location, "file") &&
+           sde_on_folder_filesystem (file);
+}
+
+static void
+sde_share_filesystem_info (LiriaDirectory *directory, LiriaFile *file)
+{
+    GList *node;
+
+    if (!liria_directory_sde_on_folder_filesystem (directory, file))
+    {
+        return;
+    }
+    for (node = directory->details->file_list; node != NULL; node = node->next)
+    {
+        LiriaFile *other = node->data;
+
+        if (other == file || other->details->filesystem_info_is_up_to_date || !sde_on_folder_filesystem (other))
+        {
+            continue;
+        }
+        other->details->filesystem_info_is_up_to_date = TRUE;
+        other->details->filesystem_use_preview = file->details->filesystem_use_preview;
+        other->details->filesystem_readonly = file->details->filesystem_readonly;
+    }
+}
+
+'''
+
+CORRESPONDING_FILE = r'''/* SDE (0.2.0 Alpha 2): every file of a folder asks for the folder's own
+ * file (liria_file_get_parent (): emblems, previews, thumbnails), and it
+ * was found by URI each time: a URI and two GFiles built, parsed and
+ * hashed, a fifth of the time to show a large folder. The file found is
+ * remembered with a weak pointer, for the location object it was found
+ * for (a moved folder gets a new one); a file that is gone is looked up
+ * again. */
+static void
+sde_remember_corresponding_file (LiriaDirectory *directory, LiriaFile *file)
+{
+    if (directory->details->sde_corresponding_file != NULL)
+    {
+        g_object_remove_weak_pointer (G_OBJECT (directory->details->sde_corresponding_file),
+                                      (gpointer *) &directory->details->sde_corresponding_file);
+        directory->details->sde_corresponding_file = NULL;
+    }
+    g_clear_object (&directory->details->sde_corresponding_location);
+    if (file != NULL && directory->details->location != NULL)
+    {
+        directory->details->sde_corresponding_file = file;
+        g_object_add_weak_pointer (G_OBJECT (file), (gpointer *) &directory->details->sde_corresponding_file);
+        directory->details->sde_corresponding_location = g_object_ref (directory->details->location);
+    }
+}
+
+'''
+
+
+def liria_folder_loading(staged):
+    """0.2.0 Alpha 2: large folders open and change views quickly. Opening
+    a folder of 10 000 files took 1.4 s and switching it to the list,
+    compact or icon view 8, 8 and 6.4 s (all of it CPU time); now 1.0 s
+    and 3.0, 1.2 and 1.3 s (tools/liria-perf.py, median of three runs):
+
+    * readiness checks of whole-folder requests scanned every file after
+      every file's answer (quadratic): the file found lacking is now
+      remembered per request type and checked first;
+    * every file of a folder got its own file system query, and the view
+      waits for all of them: one answer now serves the files of a local
+      folder that are on its file system;
+    * a folder's own file was looked up by URI for every file and
+      attribute (parent of each file): it is remembered (weak pointer);
+    * any change of the folder's own file (free space, modification time,
+      item count) updated every icon and row: only a change of the
+      folder's writability does now, the only thing the items show."""
+    lib = staged / "libliria-private"
+    private = lib / "liria-directory-private.h"
+    edit_once(private, "    guint64 free_space; /* (guint)-1 for unknown */\n"
+                       "    time_t free_space_read; /* The time free_space was updated, or 0 for never */\n};",
+              "    guint64 free_space; /* (guint)-1 for unknown */\n"
+              "    time_t free_space_read; /* The time free_space was updated, or 0 for never */\n\n"
+              "    /* SDE: per request type, a file of file_list that lacked that\n"
+              "     * attribute when the list was last checked (not a reference;\n"
+              "     * cleared when the file leaves the list). */\n"
+              "    LiriaFile *sde_lacking[REQUEST_TYPE_LAST];\n"
+              "    /* SDE: the folder's own file as last found by URI (a weak pointer)\n"
+              "     * and the location it was found for (a reference). */\n"
+              "    LiriaFile *sde_corresponding_file;\n"
+              "    GFile *sde_corresponding_location;\n};")
+    anchor = "LiriaDirectory *liria_directory_get_existing                    (GFile                     *location);\n"
+    edit_once(private, anchor, anchor +
+              "/* SDE: TRUE when @file of the local folder @directory is on the folder's file system. */\n"
+              "gboolean        liria_directory_sde_on_folder_filesystem        (LiriaDirectory            *directory,\n"
+              "                                                                 LiriaFile                 *file);\n")
+
+    directory = lib / "liria-directory.c"
+    removed = ("    /* Remove the item from the list. */\n"
+               "    directory->details->file_list = g_list_remove_link\n"
+               "                                    (directory->details->file_list, node);\n"
+               "    g_list_free_1 (node);\n")
+    edit_once(directory, removed, removed +
+              "\n    /* SDE: forget the file as a hint of request_is_satisfied (). */\n"
+              "    for (int i = 0; i < REQUEST_TYPE_LAST; i++)\n    {\n"
+              "        if (directory->details->sde_lacking[i] == file)\n        {\n"
+              "            directory->details->sde_lacking[i] = NULL;\n        }\n    }\n")
+    edit_once(directory, "static void\nliria_directory_finalize (GObject *object)\n",
+              "static void sde_remember_corresponding_file (LiriaDirectory *directory, LiriaFile *file);\n\n"
+              "static void\nliria_directory_finalize (GObject *object)\n")
+    edit_once(directory, "    if (directory->details->location)\n    {\n"
+                         "        g_object_unref (directory->details->location);\n    }\n\n"
+                         "    g_assert (directory->details->file_list == NULL);",
+              "    sde_remember_corresponding_file (directory, NULL);\n\n"
+              "    if (directory->details->location)\n    {\n"
+              "        g_object_unref (directory->details->location);\n    }\n\n"
+              "    g_assert (directory->details->file_list == NULL);")
+    edit_once(directory, "LiriaFile *\nliria_directory_get_corresponding_file (LiriaDirectory *directory)\n",
+              CORRESPONDING_FILE + "LiriaFile *\nliria_directory_get_corresponding_file (LiriaDirectory *directory)\n")
+    edit_once(directory, "        uri = liria_directory_get_uri (directory);\n"
+                         "        file = liria_file_get_by_uri (uri);\n        g_free (uri);\n    }\n",
+              "        uri = liria_directory_get_uri (directory);\n"
+              "        file = liria_file_get_by_uri (uri);\n        g_free (uri);\n"
+              "        sde_remember_corresponding_file (directory, file);\n    }\n")
+    edit_once(directory, "    uri = liria_directory_get_uri (directory);\n"
+                         "    file = liria_file_get_existing_by_uri (uri);\n    g_free (uri);\n    return file;\n}",
+              "    /* SDE (0.2.0 Alpha 2): see sde_remember_corresponding_file (). */\n"
+              "    file = directory->details->sde_corresponding_file;\n"
+              "    if (file != NULL && !file->details->is_gone &&\n"
+              "        directory->details->sde_corresponding_location == directory->details->location)\n    {\n"
+              "        liria_file_ref (file);\n        return file;\n    }\n\n"
+              "    uri = liria_directory_get_uri (directory);\n"
+              "    file = liria_file_get_existing_by_uri (uri);\n    g_free (uri);\n"
+              "    sde_remember_corresponding_file (directory, file);\n    return file;\n}")
+
+    async_c = lib / "liria-directory-async.c"
+    replace_between(async_c, "static gboolean\nhas_problem (LiriaDirectory *directory, LiriaFile *file, FileCheck problem)\n",
+                    "static gboolean\nrequest_is_satisfied (LiriaDirectory *directory,\n", LOADING_HINTS + "\n")
+    for check, request in (("lacks_directory_count", "REQUEST_DIRECTORY_COUNT"), ("lacks_info", "REQUEST_FILE_INFO"),
+                           ("lacks_filesystem_info", "REQUEST_FILESYSTEM_INFO"),
+                           ("lacks_top_left", "REQUEST_TOP_LEFT_TEXT"),
+                           ("lacks_large_top_left", "REQUEST_LARGE_TOP_LEFT_TEXT"),
+                           ("lacks_deep_count", "REQUEST_DEEP_COUNT"), ("lacks_thumbnail", "REQUEST_THUMBNAIL"),
+                           ("lacks_mount", "REQUEST_MOUNT"), ("lacks_mime_list", "REQUEST_MIME_LIST"),
+                           ("lacks_link_info", "REQUEST_LINK_INFO")):
+        edit_once(async_c, "        if (has_problem (directory, file, %s))\n" % check,
+                  "        if (has_problem (directory, file, %s, %s))\n" % (check, request))
+    satisfied = "static gboolean\nrequest_is_satisfied (LiriaDirectory *directory,\n" \
+                "                      LiriaFile *file,\n                      Request request)\n{\n"
+    edit_once(async_c, satisfied, satisfied +
+              "    /* SDE: a request for all files fails at once on a file remembered\n"
+              "     * as lacking one of its attributes (see has_problem ()). */\n"
+              "    if (file == NULL)\n    {\n        int type;\n\n"
+              "        for (type = 0; type < REQUEST_TYPE_LAST; type++)\n        {\n"
+              "            LiriaFile *hint = directory->details->sde_lacking[type];\n"
+              "            FileCheck problem = sde_problem_for_type (type);\n\n"
+              "            if (hint != NULL && problem != NULL && REQUEST_WANTS_TYPE (request, type) && (* problem) (hint))\n"
+              "            {\n                return FALSE;\n            }\n        }\n    }\n\n")
+    edit_once(async_c, "static void\ngot_filesystem_info (FilesystemInfoState *state, GFileInfo *info)\n{",
+              SHARED_FILESYSTEM_INFO + "static void\ngot_filesystem_info (FilesystemInfoState *state, GFileInfo *info)\n{")
+    edit_once(async_c, "            (g_file_info_get_attribute_boolean (info, G_FILE_ATTRIBUTE_FILESYSTEM_READONLY) != FALSE);\n"
+                       "    }\n\n    liria_directory_async_state_changed (directory);\n",
+              "            (g_file_info_get_attribute_boolean (info, G_FILE_ATTRIBUTE_FILESYSTEM_READONLY) != FALSE);\n"
+              "        sde_share_filesystem_info (directory, file);\n"
+              "    }\n\n    liria_directory_async_state_changed (directory);\n")
+
+    edit_once(lib / "liria-file.c", "\tGFilesystemPreviewType use_preview;\n\tLiriaFile *parent;\n\n"
+                                    "\tparent = liria_file_get_parent (file);\n",
+              "\tGFilesystemPreviewType use_preview;\n\tLiriaFile *parent;\n\n"
+              "\t/* SDE (0.2.0 Alpha 2): a file on its folder's file system has the\n"
+              "\t * folder's answer itself (liria-directory-async.c shares it). Looking\n"
+              "\t * the folder up by URI for every file, again for each attribute,\n"
+              "\t * took a tenth of the time to load a large folder. */\n"
+              "\tif (file->details->filesystem_info_is_up_to_date &&\n"
+              "\t    liria_directory_sde_on_folder_filesystem (file->details->directory, file)) {\n"
+              "\t\treturn file->details->filesystem_use_preview;\n\t}\n\n"
+              "\tparent = liria_file_get_parent (file);\n")
+
+    view = staged / "src/file-manager/fm-directory-view.c"
+    edit_once(view, "struct FMDirectoryViewDetails\n{\n\tLiriaWindowInfo *window;\n",
+              "struct FMDirectoryViewDetails\n{\n"
+              "\t/* SDE: whether the folder was writable at its last change: 0 unknown, 1 no, 2 yes. */\n"
+              "\tint sde_folder_writable;\n\tLiriaWindowInfo *window;\n")
+    edit_once(view, "\t * but does change a lot for the file count attribute.\n\t */\n"
+                    "\tif (!liria_file_is_in_trash (file)) {\n\t\tEEL_CALL_METHOD\n"
+                    "\t\t\t(FM_DIRECTORY_VIEW_CLASS, view, emblems_changed, (view));\n\t}\n}",
+              "\t * but does change a lot for the file count attribute.\n"
+              "\t *\n"
+              "\t * SDE (0.2.0 Alpha 2): only when the writability did change. The\n"
+              "\t * folder also changes with its free space, its modification time\n"
+              "\t * and its item count, and each change updated every icon: a folder\n"
+              "\t * of 10 000 files spent half the time it took to open on it, and\n"
+              "\t * again whenever the status bar read a new free space.\n"
+              "\t */\n"
+              "\tif (!liria_file_is_in_trash (file)) {\n"
+              "\t\tint writable = liria_file_can_write (file) ? 2 : 1;\n\n"
+              "\t\tif (writable != view->details->sde_folder_writable) {\n"
+              "\t\t\tview->details->sde_folder_writable = writable;\n"
+              "\t\t\tEEL_CALL_METHOD\n"
+              "\t\t\t\t(FM_DIRECTORY_VIEW_CLASS, view, emblems_changed, (view));\n\t\t}\n\t}\n}")
+    edit_once(view, "\tview->details->metadata_for_directory_as_file_pending = FALSE;\n\n"
+                    "\tfinish_loading_if_all_metadata_loaded (view);\n}",
+              "\tview->details->metadata_for_directory_as_file_pending = FALSE;\n"
+              "\t/* SDE: the writability the icons are shown with (file_changed_callback ()). */\n"
+              "\tview->details->sde_folder_writable = liria_file_can_write (file) ? 2 : 1;\n\n"
+              "\tfinish_loading_if_all_metadata_loaded (view);\n}")
+    edit_once(view, "\tview->details->directory_as_file =\n"
+                    "\t\tliria_directory_get_corresponding_file (directory);\n\tliria_file_unref (old_file);\n",
+              "\tview->details->directory_as_file =\n"
+              "\t\tliria_directory_get_corresponding_file (directory);\n\tliria_file_unref (old_file);\n"
+              "\tview->details->sde_folder_writable = 0;\n")
+
+
+def liria_progress(staged):
+    """0.2.0 Alpha 2: the file operations window in the design of SDE's
+    copy and move dialog (libliria-private/liria-sde-progress.c, an
+    overlay): the animated SDE mark, "Copying 1,234 items from Documents to
+    Backup", "42% complete" with Pause, Queue and Cancel, and with More
+    details the speed graph, the item being copied and the time and items
+    remaining. The model (speed, time remaining, graph, the mark's
+    animation) is SDE's own src/common/transfer_model.h, copied in as
+    liria-sde-transfer-model.h, so Liria and the SDE desktop estimate and
+    look the same. Large files on internal disks are copied in slices
+    (GLib 2.80 reported a file's progress only when it was there) and
+    copies pause in the middle of a file (Caja paused between files)."""
+    lib = staged / "libliria-private"
+    for name in ("liria-sde-progress.c", "liria-sde-progress.h"):
+        if not (lib / name).exists():
+            raise ValueError("%s overlay missing" % name)
+    shutil.copy2(ROOT / "src/common/transfer_model.h", lib / "liria-sde-transfer-model.h")
+    edit_once(lib / "Makefile.am", "\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n",
+              "\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n"
+              "\tliria-sde-progress.c \\\n\tliria-sde-progress.h \\\n\tliria-sde-transfer-model.h \\\n")
+
+    info = lib / "liria-progress-info.c"
+    edit_once(info, '#include "liria-global-preferences.h"\n',
+              '#include "liria-global-preferences.h"\n#include "liria-sde-progress.h"\n')
+    edit_once(info, "    gtk_container_add (GTK_CONTAINER (progress_window),\n                       vbox);\n",
+              "    gtk_container_add (GTK_CONTAINER (progress_window),\n                       vbox);\n"
+              "    liria_sde_progress_window_setup (progress_window);\n")
+    edit_once(info, "    data->state = newstate;\n",
+              "    data->state = newstate;\n"
+              "    /* SDE: the mark, the texts and the model follow the state. */\n"
+              "    liria_sde_progress_set_state (data->widget,\n"
+              "                                  newstate == STATE_PAUSING || newstate == STATE_PAUSED ? 1 :\n"
+              "                                  newstate == STATE_QUEUING || newstate == STATE_QUEUED ? 2 : 0);\n")
+    # The theme's symbolic icons on round flat buttons, like the SDE dialog.
+    edit_once(info, '"media-playback-pause", GTK_ICON_SIZE_BUTTON', '"media-playback-pause-symbolic", GTK_ICON_SIZE_BUTTON')
+    edit_once(info, '"media-playback-start", GTK_ICON_SIZE_BUTTON', '"media-playback-start-symbolic", GTK_ICON_SIZE_BUTTON')
+    edit_once(info, 'gtk_image_new_from_icon_name ("undo", GTK_ICON_SIZE_BUTTON);',
+              'gtk_image_new_from_icon_name ("document-open-recent-symbolic", GTK_ICON_SIZE_BUTTON);')
+    edit_once(info, "    GtkWidget *label, *progress_bar, *hbox, *vbox, *box, *btcancel, *imgcancel;\n",
+              "    GtkWidget *label, *progress_bar, *details, *vbox, *btcancel, *imgcancel;\n")
+    replace_between(info, '    label = gtk_label_new ("status");\n', "    gtk_widget_show_all (data->widget);\n",
+                    "    /* SDE: the layout of SDE's copy and move dialog (liria-sde-progress.c);\n"
+                    "     * the status, the details and the bar of the operation are part of it. */\n"
+                    '    imgcancel = gtk_image_new_from_icon_name ("window-close-symbolic",\n'
+                    "                                              GTK_ICON_SIZE_BUTTON);\n\n"
+                    "    btcancel = gtk_button_new ();\n"
+                    "    gtk_container_add (GTK_CONTAINER (btcancel), imgcancel);\n"
+                    '    atk_object_set_name (gtk_widget_get_accessible (btcancel), _("Cancel"));\n'
+                    '    gtk_widget_set_tooltip_text (btcancel, _("Cancel"));\n'
+                    '    g_signal_connect (btcancel, "clicked", (GCallback)cancel_clicked, data);\n\n'
+                    "    start_button_init (data);\n"
+                    "    queue_button_init (data);\n\n"
+                    "    liria_sde_progress_build (vbox, info, data->btstart, data->btqueue, btcancel,\n"
+                    "                              &label, &progress_bar, &details);\n"
+                    "    data->status = GTK_LABEL (label);\n"
+                    "    data->progress_bar = GTK_PROGRESS_BAR (progress_bar);\n"
+                    "    gtk_progress_bar_set_pulse_step (data->progress_bar, 0.05);\n"
+                    "    data->details = GTK_LABEL (details);\n\n")
+    edit_once(info, "                        progress,\n                        FALSE, FALSE, 6);\n",
+              "                        progress,\n                        FALSE, FALSE, 0);\n")
+
+    ops = lib / "liria-file-operations.c"
+    edit_once(ops, '#include "liria-sde-copy.h"\n', '#include "liria-sde-copy.h"\n#include "liria-sde-progress.h"\n')
+    edit_once(ops, "\tliria_progress_info_start (job->common.progress);\n\n\tscan_sources (job->files,\n"
+                   "\t\t      &source_info,\n\t\t      common,\n\t\t      OP_KIND_COPY);\n",
+              "\tliria_progress_info_start (job->common.progress);\n"
+              "\tliria_sde_progress_transfer_begin (job->common.progress,\n"
+              "\t\t\t\t\t   job->destination != NULL ? LIRIA_SDE_TRANSFER_COPY : LIRIA_SDE_TRANSFER_DUPLICATE,\n"
+              "\t\t\t\t\t   job->files, job->destination);\n\n"
+              "\tscan_sources (job->files,\n\t\t      &source_info,\n\t\t      common,\n\t\t      OP_KIND_COPY);\n")
+    edit_once(ops, "\tliria_progress_info_start (job->common.progress);\n\n\tverify_destination (&job->common,\n"
+                   "\t\t\t    job->destination,\n\t\t\t    &dest_fs_id,\n\t\t\t    -1);\n",
+              "\tliria_progress_info_start (job->common.progress);\n"
+              "\tliria_sde_progress_transfer_begin (job->common.progress, LIRIA_SDE_TRANSFER_MOVE,\n"
+              "\t\t\t\t\t   job->files, job->destination);\n\n"
+              "\tverify_destination (&job->common,\n\t\t\t    job->destination,\n\t\t\t    &dest_fs_id,\n\t\t\t    -1);\n")
+    edit_once(ops, "\tliria_progress_info_set_progress (job->progress, transfer_info->num_bytes, total_size);\n}",
+              "\tliria_progress_info_set_progress (job->progress, transfer_info->num_bytes, total_size);\n"
+              "\t/* SDE: bytes and items for the speed graph and the estimates. */\n"
+              "\tliria_sde_progress_transfer_counts (job->progress, transfer_info->num_bytes, total_size,\n"
+              "\t\t\t\t\t    transfer_info->num_files, source_info->num_files);\n}")
+    edit_once(ops, "\tif (should_skip_file (job, src)) {\n\t\t*skipped_file = TRUE;\n\t\treturn;\n\t}\n\n"
+                   "\tunique_name_nr = 1;\n",
+              "\tif (should_skip_file (job, src)) {\n\t\t*skipped_file = TRUE;\n\t\treturn;\n\t}\n"
+              "\tliria_sde_progress_transfer_item (job->progress, src);\n\n"
+              "\tunique_name_nr = 1;\n")
+    edit_once(ops, "\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n"
+                   "\t\t\t\t      pdata->transfer_info);\n\t}\n}",
+              "\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n"
+              "\t\t\t\t      pdata->transfer_info);\n"
+              "\t\t/* SDE: Pause also stops a copy in the middle of a large file. */\n"
+              "\t\tliria_sde_progress_transfer_throttle (new_size);\n"
+              "\t\tliria_progress_info_get_ready (pdata->job->common.progress);\n\t}\n}")
+    edit_once(ops, "\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n",
+              "\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n"
+              "\tliria_sde_progress_transfer_finishing (job->progress);\n")
+    # GLib 2.80 copies a local file with one copy_file_range () call and
+    # reports it at the end: large files on internal disks are copied in
+    # slices instead (liria-sde-copy.c), so the progress, the graph and
+    # Pause follow them.
+    edit_once(ops, "\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {",
+              "\tif (!sde_handled && copy_job->sde_flush == NULL && !(copy_job->is_move && same_fs)) {\n"
+              "\t\t/* SDE: large files on internal disks in slices, so that the\n"
+              "\t\t * progress, the speed graph and Pause follow them */\n"
+              "\t\tres = liria_sde_copy_large_file (src, dest, flags, copy_job->is_move,\n"
+              "\t\t\t\t\t\t job->cancellable, copy_file_progress_callback,\n"
+              "\t\t\t\t\t\t &pdata, &sde_handled, &error);\n"
+              "\t}\n"
+              "\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {")
 
 
 RECIPES = {"liria": liria}

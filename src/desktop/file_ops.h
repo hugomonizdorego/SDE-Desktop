@@ -8,8 +8,9 @@
 //  * link: a symbolic link;
 //  * trash: the freedesktop.org home trash (~/.local/share/Trash) for files
 //    on the home file system.
-// Everything can run on a worker thread: progress and cancellation go
-// through the atomics of FileProgress.
+// Everything can run on a worker thread: progress, pausing and
+// cancellation go through the atomics of FileProgress (0.2.0 Alpha 2: items
+// and pausing for the transfer dialog, src/common/transfer_dialog.h).
 #pragma once
 
 #include <atomic>
@@ -21,15 +22,21 @@ namespace sde {
 namespace desk {
 
 struct FileProgress {
-  std::atomic<long long> done{0}, total{0};
-  std::atomic<bool> cancel{false};
+  std::atomic<long long> done{0}, total{0};      // bytes copied (copies, moves to another drive)
+  std::atomic<long> files_done{0}, files_total{0};  // items: files, folders, links
+  std::atomic<bool> cancel{false}, pause{false};
   std::mutex mutex;
   std::string current;  // file being copied (under |mutex|)
   void set_current(const std::string &path) {
     std::lock_guard<std::mutex> lock(mutex);
     current = path;
   }
+  // Waits while paused; false once cancelled.
+  bool wait_while_paused();
 };
+
+// Items in |path| itself included (recursive, symlinks not followed).
+long count_items(const std::string &path);
 
 // True when |a| and the directory |dir| are on one file system.
 bool same_filesystem(const std::string &a, const std::string &dir);

@@ -232,6 +232,45 @@ liria_sde_selection_commands (const LiriaSdeSelection *s)
 	return commands;
 }
 
+/* ----------------------------------------------------------- ribbon icons */
+
+gint
+liria_sde_ribbon_icon_pixels (gint xft_dpi, gboolean large)
+{
+	static const gint drawn[] = { 16, 22, 24, 32, 48, 64 };
+	gdouble scale = xft_dpi > 0 ? xft_dpi / 1024.0 / 96.0 : 1.0;
+	gdouble wanted = (large ? 32.0 : 16.0) * CLAMP (scale, 0.5, 4.0);
+	gint best = drawn[0];
+
+	for (guint i = 1; i < G_N_ELEMENTS (drawn); i++)
+		if (ABS (drawn[i] - wanted) <= ABS (best - wanted))
+			best = drawn[i];
+	return best;
+}
+
+gboolean
+liria_sde_pixels_colourful (const guchar *pixels, gint width, gint height, gint rowstride, gint n_channels)
+{
+	guint visible = 0, saturated = 0;
+
+	if (pixels == NULL || width <= 0 || height <= 0 || n_channels < 3)
+		return FALSE;
+	for (gint y = 0; y < height; y++) {
+		const guchar *p = pixels + (gsize) y * rowstride;
+
+		for (gint x = 0; x < width; x++, p += n_channels) {
+			guchar high = MAX (MAX (p[0], p[1]), p[2]), low = MIN (MIN (p[0], p[1]), p[2]);
+
+			if (n_channels > 3 && p[3] < 128)
+				continue;
+			visible++;
+			if (high - low >= 48)
+				saturated++;
+		}
+	}
+	return visible > 0 && saturated * 8 >= visible;
+}
+
 /* --------------------------------------------------------------- the Home view */
 
 typedef struct {
