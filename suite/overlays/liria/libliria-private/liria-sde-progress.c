@@ -442,18 +442,29 @@ mark_path (void)
 static cairo_surface_t *
 render_svg (const char *svg, int size, int scale)
 {
-    GdkPixbufLoader *loader = gdk_pixbuf_loader_new_with_type ("svg", NULL);
     cairo_surface_t *surface = NULL;
-    gboolean ok;
+    int attempt;
 
-    if (loader == NULL)
-        return NULL;
-    gdk_pixbuf_loader_set_size (loader, size * scale, size * scale);
-    ok = gdk_pixbuf_loader_write (loader, (const guchar *) svg, strlen (svg), NULL);
-    ok = gdk_pixbuf_loader_close (loader, NULL) && ok;
-    if (ok && gdk_pixbuf_loader_get_pixbuf (loader) != NULL)
-        surface = gdk_cairo_surface_create_from_pixbuf (gdk_pixbuf_loader_get_pixbuf (loader), scale, NULL);
-    g_object_unref (loader);
+    /* The loader named "svg" first, then by MIME type and by sniffing: not
+     * every gdk-pixbuf build (glycin) has a loader of that name. On Debian
+     * testing the mark fell back to a generic icon (0.2 Alpha 2); when no
+     * loader reads SVG at all, mark_load () takes the PNG beside it. */
+    for (attempt = 0; attempt < 3 && surface == NULL; attempt++)
+    {
+        GdkPixbufLoader *loader = attempt == 0 ? gdk_pixbuf_loader_new_with_type ("svg", NULL)
+                                  : attempt == 1 ? gdk_pixbuf_loader_new_with_mime_type ("image/svg+xml", NULL)
+                                                 : gdk_pixbuf_loader_new ();
+        gboolean ok;
+
+        if (loader == NULL)
+            continue;
+        gdk_pixbuf_loader_set_size (loader, size * scale, size * scale);
+        ok = gdk_pixbuf_loader_write (loader, (const guchar *) svg, strlen (svg), NULL);
+        ok = gdk_pixbuf_loader_close (loader, NULL) && ok;
+        if (ok && gdk_pixbuf_loader_get_pixbuf (loader) != NULL)
+            surface = gdk_cairo_surface_create_from_pixbuf (gdk_pixbuf_loader_get_pixbuf (loader), scale, NULL);
+        g_object_unref (loader);
+    }
     return surface;
 }
 
@@ -505,13 +516,28 @@ mark_load (int size, int scale)
     }
     if (mark_layers.under == NULL && path != NULL)
     {
-        GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_size (path, size * scale, size * scale, NULL);
+        /* The SVG as one picture, else the PNG next to it. */
+        char *png = g_str_has_suffix (path, ".svg") ? g_strdup (path) : NULL;
+        const char *files[2] = { path, NULL };
 
-        if (pixbuf != NULL)
+        if (png != NULL)
         {
-            mark_still = gdk_cairo_surface_create_from_pixbuf (pixbuf, scale, NULL);
-            g_object_unref (pixbuf);
+            strcpy (png + strlen (png) - 3, "png");
+            files[1] = png;
         }
+        for (i = 0; i < 2 && mark_still == NULL; i++)
+        {
+            GdkPixbuf *pixbuf = files[i] != NULL
+                                    ? gdk_pixbuf_new_from_file_at_size (files[i], size * scale, size * scale, NULL)
+                                    : NULL;
+
+            if (pixbuf != NULL)
+            {
+                mark_still = gdk_cairo_surface_create_from_pixbuf (pixbuf, scale, NULL);
+                g_object_unref (pixbuf);
+            }
+        }
+        g_free (png);
     }
     if (mark_layers.under == NULL && mark_still == NULL)
     {
