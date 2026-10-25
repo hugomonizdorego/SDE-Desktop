@@ -562,18 +562,21 @@ def a2_menu_checks():
     waitfor(lambda:not (apps_dir/'qa-zeal.desktop').exists(),'the stub did not remove the application')
     waitfor(lambda:'qa-zeal.desktop' not in conf(),'the tile of the removed application stayed: '+conf())
     open_menu();assert 'tile:Zeal' not in L() and 'app:Zeal' not in L(),L().keys()
-    # SDE's own applications cannot be removed alone: no Uninstall... there.
-    own=next((k for k in L() if k.startswith(('app:','added:','most-used:')) and k.split(':',1)[1] in
-              ('Control Center','SDE System Monitor','Display Settings','Software Updater')),None)
-    if own:assert 'Uninstall...' not in right_click(own),own
+    escape('SDE Menu')
+    # SDE's own applications (sde-*) cannot be removed alone: no
+    # Uninstall... there.
+    (apps_dir/'sde-qa-own.desktop').write_text('[Desktop Entry]\nType=Application\nName=Own QA\nExec=true\n'
+                                               'Icon=sde-logo\nCategories=Settings;\n')
+    time.sleep(1.0);open_menu();jump('O');items=right_click('app:Own QA')
     run('xdotool','key','Escape');time.sleep(.3)
+    assert 'App info...' in items and 'Uninstall...' not in items,items
     (home/'bin/merkadu').unlink()
     others=os.pathsep.join(d for d in e['PATH'].split(os.pathsep) if d!=str(home/'bin'))
     if shutil.which('merkadu',path=others) is None:
         items=right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape')
         assert 'Uninstall...' not in items,items
     else:print('PANEL a2: merkadu is installed: the menu without it is not checked',flush=True)
-    escape('SDE Menu');(apps_dir/'qa-zeal.desktop').write_text(keep)
+    escape('SDE Menu');(apps_dir/'qa-zeal.desktop').write_text(keep);(apps_dir/'sde-qa-own.desktop').unlink()
     # 10) Icons the theme lacks: SDE's drawing of Advanced Network
     # Configuration (its Icon= is a generic name), a category icon for an
     # application without an icon.
