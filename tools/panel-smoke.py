@@ -24,7 +24,7 @@ p.add_argument('--scale',type=int,default=100)
 p.add_argument('--display',type=int,default=96)
 p.add_argument('--tcp-display',action='store_true')
 p.add_argument('--tcp-bus',action='store_true',help='Private localhost bus for containers without Unix sockets')
-p.add_argument('--only',choices=['a52','action-center','start-menu'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks; start-menu: the Start menu and search checks (0.2)')
+p.add_argument('--only',choices=['a52','action-center','start-menu','battery-clock'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks; start-menu: the Start menu and search checks (0.2); battery-clock: the battery indicator and clock options (0.2 Alpha 2)')
 a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
@@ -860,11 +860,15 @@ def ac52_checks():
     assert '@sky-night' in L and not any(k.startswith('@weather-') for k in L);shot('52-ac-sky-night')
     clock.write_text('2026-10-22T08:30');conf52('[weather]\nenabled=false\n');ac();L=fit('no weather day')
     assert '@sky-day' in L and not any(k.startswith('@weather-') for k in L);shot('52-ac-sky-day')
-    # Clock styles: the panel clock and the hero follow [clock] style.
-    for style in ['digital','blink','led','analog']:
+    # Clock styles: the panel clock and the hero follow [clock] style. Since
+    # 0.2 Alpha 2 the blinking colon is an option (the old style migrates).
+    for style in ['digital','led','analog']:
         conf52(f'expanded=false\nclock_style={style}\n');ac();L=fit('compact '+style)
         assert '@clock-'+style in L,[k for k in L if k.startswith('@clock')]
         item('SDE Panel','clock',active=False);shot('52-clock-'+style)
+    conf52('expanded=false\nclock_style=blink\n');ac();L=fit('compact old blink style')
+    assert '@clock-digital' in L and '@clock-blink' in L,[k for k in L if k.startswith('@clock')]
+    shot('52-clock-blink')
     conf52('expanded=false\nclock_style=led\n[clock]\nseconds=true\nformat=12h\n');ac();fit('led 12h seconds');shot('52-clock-led-12h-seconds')
     conf52('expanded=false\n[clock]\nstyle=analog\nseconds=true\n');ac();fit('analog seconds');shot('52-clock-analog-seconds')
     # Units: the hero's temperature (the "rain" fixture: 21 °C, 12 km/h).
@@ -1171,6 +1175,194 @@ def battery_checks():
     press('Power','Power Settings');gone('^Power$')
     waitfor(lambda:commands('SETTINGS --page power'),'Power Settings did not open sde-settings --page power')
     print('PANEL a51: battery flyout (model, remaining time, brightness, profiles, Power Settings) PASS',flush=True)
+def bat(key=''):
+    """0.2 Alpha 2: the panel's battery lines (qa_dump_panel): bat() is
+    "<phase>:<anim|steady>", bat('text') the text after the icon,
+    bat('time') the estimate in minutes (-1, or "calculating"),
+    bat('source') "upower" or "sysfs"."""
+    prefix='@battery'+('-'+key if key else '')+':'
+    return next((k[len(prefix):] for k in layout('SDE Panel') if k.startswith(prefix)),None)
+def battery(args):
+    """Sets the fixture's UPower battery (battery_mode in tests/panel_service_fixture.cpp)."""
+    run('dbus-send','--session','--type=method_call','--print-reply','--dest=org.bluez','/SDETest','org.sde.Test.Mode','string:battery '+args);time.sleep(.6)
+def slot_pixels(name):
+    """The raw pixels of a panel slot (to tell an animated icon from a still one)."""
+    r=layout('SDE Panel')[name];g=geom(panel)
+    return sp.run(['import','-window','root','-crop',f'{r[2]}x{r[3]}+{g["x"]+r[0]}+{g["y"]+r[1]}','rgb:-'],env=e,stdout=sp.PIPE,check=True).stdout
+def animated(name,frames=6):
+    """True when the slot shows different pictures over a second."""
+    seen=set()
+    for _ in range(frames):seen.add(slot_pixels(name));time.sleep(.17)
+    return len(seen)>1
+def status_layout_ok(tag):
+    """The status slots follow each other without gaps or overlaps, inside
+    the panel, left of the clock; the battery slot holds its text."""
+    L=layout('SDE Panel');pg=geom(panel)
+    slots=sorted((v[0],v[2],k) for k,v in L.items() if k.startswith('status:'))
+    for (x1,w1,k1),(x2,w2,k2) in zip(slots,slots[1:]):assert x1+w1==x2,(tag,'status slots overlap or leave a gap',k1,k2,slots)
+    if slots:
+        assert slots[0][0]>=0 and slots[-1][0]+slots[-1][1]<=L['clock'][0],(tag,'status area over the clock',slots,L['clock'])
+        assert all(v[0]+v[2]<=slots[0][0] for k,v in L.items() if k.startswith(('tray-item:','task:')) and v[2]>0),(tag,'tray or task over the status icons')
+    text=bat('text')
+    if text and 'status:power' in L:
+        w=L['status:power'][2];assert w>round(30*scale),(tag,'battery text without room',w,text)
+    return L
+def battery_a2_checks():
+    """0.2 Alpha 2, the battery icon: UPower (the fixture) with the
+    power_supply class as fallback; display modes from sde.conf and the
+    right-click menu, relaid out in every panel style; charging, low,
+    critical, full and plugged-in phases with their animations (still with
+    reduced motion); time estimates from UPower or computed, "Calculating…";
+    tooltip and flyout."""
+    waitfor(lambda:bat('source')=='upower','the panel does not read the battery from UPower')
+    waitfor(lambda:bat()=='discharging:steady' and bat('time')=='237',f'battery not discharging with 237 minutes left: {bat()} {bat("time")}')
+    hover_panel('status:power');waitfor(lambda:tooltip()=='Battery 45% · 3 hours 57 minutes remaining',f'battery tooltip {tooltip()!r}')
+    run('xdotool','mousemove','600','300');time.sleep(.2)
+    icon_w=layout('SDE Panel')['status:power'][2]
+    # Display modes ([panel] battery_display) and the time in the label.
+    small=W/scale<800
+    for display,time_label,want in [('icon',False,''),('percent',False,'45%'),('label',False,'On battery'),('label-percent',False,'On battery · 45%'),('label',True,'3 h 57 min left'),('label-percent',True,'3 h 57 min left · 45%')]:
+        config(overflow=False,extra=f'[panel]\nbattery_display={display}\nbattery_time={str(time_label).lower()}\n');reload()
+        try:waitfor(lambda:bat('text')==want or (small and bat('text') in ('','45%')),f'battery text for {display}: {bat("text")!r}')
+        except AssertionError:print(layout('SDE Panel'));raise
+        L=status_layout_ok(display);w=L['status:power'][2]
+        if bat('text'):assert w>icon_w,(display,w,icon_w)
+        else:assert abs(w-icon_w)<=1,(display,w,icon_w)
+        print(f'A2 battery {display}{" +time" if time_label else ""}: {bat("text")!r} slot {w}px',flush=True)
+        shot(f'a2-battery-{display}{"-time" if time_label else ""}')
+    # Every panel style and position, light and dark, with the longest text.
+    for style,top,theme in [('short',False,'dark'),('floating',True,'light'),('full',True,'dark'),('floating',False,'dark'),('full',False,'light')]:
+        config(style,top,theme=theme,overflow=False,extra='[panel]\nbattery_display=label-percent\nbattery_time=true\n');reload()
+        waitfor(lambda:bat('text') in ('3 h 57 min left · 45%','45%',''),f'battery text in {style}: {bat("text")!r}')
+        time.sleep(.4);status_layout_ok(style+('-top' if top else ''))
+        shot(f'a2-battery-style-{style}{"-top" if top else ""}-{theme}')
+    # Charging: UPower's TimeToFull, then computed from Energy/EnergyFull/EnergyRate.
+    config(overflow=False,extra='[panel]\nbattery_display=label-percent\n');reload()
+    battery('state=charging percent=52 energy=45.76 full=88 rate=25 ttf=4200 tte=0')
+    waitfor(lambda:bat()=='charging:anim' and bat('time')=='70',f'charging not shown: {bat()} {bat("time")}')
+    assert bat('text') in ('Charging · 52%','52%') or small,bat('text')
+    assert animated('status:power'),'the charging icon does not move'
+    hover_panel('status:power');waitfor(lambda:tooltip()=='Battery 52% · charging · 1 hour 10 minutes until full',f'charging tooltip {tooltip()!r}')
+    run('xdotool','mousemove','600','300');shot('a2-battery-charging')
+    fl=open_section('power','Power');item('Power','Charging - 1 hour 10 minutes until full',active=False);shot('a2-battery-charging-flyout');escape('Power')
+    battery('ttf=0')  # (88 - 45.76) Wh at 25 W
+    waitfor(lambda:bat('time')=='101',f'charging estimate not computed from the rate: {bat("time")}')
+    # Unplugged without a rate: "Calculating…" (the label with the time too).
+    config(overflow=False,extra='[panel]\nbattery_display=label-percent\nbattery_time=true\n');reload()
+    battery('state=discharging percent=50 energy=44 rate=0 tte=0 ttf=0')
+    waitfor(lambda:bat('time')=='calculating' and bat()=='discharging:steady',f'no "Calculating…": {bat()} {bat("time")}')
+    assert bat('text') in ('Calculating… · 50%','50%') or small,bat('text')
+    hover_panel('status:power');waitfor(lambda:tooltip()=='Battery 50% · calculating…',f'calculating tooltip {tooltip()!r}')
+    run('xdotool','mousemove','600','300');shot('a2-battery-calculating')
+    fl=open_section('power','Power');item('Power','Using battery power - Calculating…',active=False);escape('Power')
+    # Low (20 % and less): amber and pulsing; the time computed from the rate.
+    config(overflow=False,extra='[panel]\nbattery_display=label-percent\n');reload()
+    battery('percent=15 energy=13.2 rate=12')
+    waitfor(lambda:bat()=='low:anim' and bat('time')=='66',f'low battery not shown: {bat()} {bat("time")}')
+    assert bat('text') in ('Low battery · 15%','15%') or small,bat('text')
+    assert animated('status:power'),'the low battery icon does not pulse'
+    shot('a2-battery-low')
+    fl=open_section('power','Power');item('Power','Low battery - 1 hour 6 minutes remaining',active=False);shot('a2-battery-low-flyout');escape('Power')
+    # Critical: 10 % and less, or UPower's warning level at any percentage.
+    battery('percent=8 energy=7.04')
+    waitfor(lambda:bat()=='critical:anim',f'critical battery not shown: {bat()}')
+    assert bat('text') in ('Critically low · 8%','8%') or small,bat('text')
+    shot('a2-battery-critical')
+    battery('percent=15 energy=13.2 warning=4')
+    waitfor(lambda:bat()=='critical:anim',f'UPower warning level not critical: {bat()}')
+    # Fully charged on AC, and plugged in without charging: still pictures.
+    battery('state=full percent=100 energy=88 rate=0 warning=1')
+    waitfor(lambda:bat()=='full:steady' and bat('time')=='-1',f'full battery not shown: {bat()} {bat("time")}')
+    assert bat('text') in ('Full · 100%','100%') or small,bat('text')
+    assert not animated('status:power'),'the full battery icon keeps moving'
+    hover_panel('status:power');waitfor(lambda:tooltip()=='Battery 100% · fully charged',f'full tooltip {tooltip()!r}')
+    run('xdotool','mousemove','600','300');shot('a2-battery-full')
+    battery('state=pending-charge percent=80 energy=70.4')
+    waitfor(lambda:bat()=='plugged:steady',f'plugged in, not charging, not shown: {bat()}')
+    assert bat('text') in ('Plugged in · 80%','80%') or small,bat('text')
+    shot('a2-battery-plugged')
+    # Reduced motion: Effects off stills the animations; [panel]
+    # battery_animation=true brings them back.
+    config(overflow=False,extra='[panel]\nbattery_display=label-percent\n[effects]\nenabled=false\n');reload()
+    battery('state=charging percent=60 energy=52.8 rate=25 ttf=3600')
+    waitfor(lambda:bat()=='charging:steady',f'charging animates with effects off: {bat()}')
+    assert not animated('status:power'),'the icon moves with reduced motion'
+    config(overflow=False,extra='[panel]\nbattery_display=label-percent\nbattery_animation=true\n[effects]\nenabled=false\n');reload()
+    waitfor(lambda:bat()=='charging:anim',f'battery_animation=true ignored: {bat()}')
+    # The right-click menu: the state, Show on the Panel, the power profiles.
+    config(overflow=False);reload()
+    battery('state=discharging percent=45 energy=39.55 full=88 rate=10 tte=14220 ttf=0 warning=1')
+    waitfor(lambda:bat('time')=='237' and bat('text')=='',f'battery not back to 45 %: {bat()} {bat("time")} {bat("text")!r}')
+    items=right_click_panel('status:power','status:power');sub=menu_items(sub=True)
+    assert labels(items)[0]=='Battery 45% · 3 hours 57 minutes remaining',items
+    want=['Show on the Panel/Icon Only','Show on the Panel/Percentage','Show on the Panel/Label','Show on the Panel/Label and Percentage','Show on the Panel/Time Remaining in the Label']
+    assert [s[0] for s in sub]==want,sub
+    assert ('Show on the Panel/Icon Only',True,True) in sub and ('Show on the Panel/Time Remaining in the Label',False,False) in sub,sub
+    shot('a2-battery-menu')
+    # Keyboard: down to the submenu, open it, the second entry (Percentage).
+    active=[i[0] for i in items if i[1]]
+    run('xdotool','key',*(['Down']*(active.index('Show on the Panel')+1)),'Right');time.sleep(.4);shot('a2-battery-menu-show')
+    run('xdotool','key','Down','Return');time.sleep(.5)
+    waitfor(lambda:'battery_display=percent' in conf(),'Percentage from the battery menu not saved')
+    waitfor(lambda:bat('text')=='45%',f'Percentage from the menu not shown: {bat("text")!r}')
+    # Without UPower: the power_supply class (SDE_POWER_SUPPLY_DIR), and back.
+    mode('upower-off')
+    waitfor(lambda:bat('source')=='sysfs' and bat('time')=='237' and bat()=='discharging:steady',f'no fallback to the power_supply class: {bat("source")} {bat()} {bat("time")}')
+    mode('upower-on')
+    waitfor(lambda:bat('source')=='upower',f'UPower not used again: {bat("source")}',tries=500)
+    config(overflow=False);reload()
+    print('PANEL a2: battery icon (UPower and power_supply, display modes and menu, every panel style, charging/low/critical/full/plugged with animations, reduced motion, estimates and Calculating…) PASS',flush=True)
+def clock_a2_checks():
+    """0.2 Alpha 2, the clock: Digital, LED and Analog styles; seconds and
+    the blinking colon chosen on their own (panel clock menu, Action Center
+    clock menu); clock_style=blink becomes digital with the blinking colon."""
+    clock=home/'clock-fixture';clock.write_text('2026-10-22T21:30')
+    # The old "blink" style is migrated when the panel reads sde.conf.
+    config(overflow=False,extra='clock_style=blink\n');reload()
+    waitfor(lambda:'clock_style=digital' in conf() and 'clock_blink=true' in conf(),'clock_style=blink not migrated:\n'+conf())
+    # The panel clock's menu: three styles, the two options on their own.
+    items=right_click_panel('clock','clock');sub=menu_items(sub=True)
+    assert [s[0] for s in sub]==['Clock Style/Digital','Clock Style/LED','Clock Style/Analog'],sub
+    assert ('Clock Style/Digital',True,True) in sub,sub
+    assert ('Show Seconds',True,False) in items and ('Blink the Colon',True,True) in items,items
+    shot('a2-clock-menu');pick(items,'Show Seconds')
+    waitfor(lambda:'clock_seconds=true' in conf() and 'clock_blink=true' in conf(),'Show Seconds not saved next to the blinking colon')
+    items=right_click_panel('clock','clock');assert ('Show Seconds',True,True) in items and ('Blink the Colon',True,True) in items,items
+    pick(items,'Blink the Colon')
+    waitfor(lambda:'clock_blink=false' in conf() and 'clock_seconds=true' in conf(),'Blink the Colon not turned off on its own')
+    # Every style with every option, on the panel and in the Action Center.
+    def ac():
+        if visible('^Action Center$'):escape('Action Center');time.sleep(.4)
+        command(['--action-center'],'Action Center');time.sleep(.7)
+    for style in ['digital','led','analog']:
+        for seconds,blink in [(False,False),(True,False),(False,True),(True,True)]:
+            config(overflow=False,extra=f'expanded=false\nclock_style={style}\n[panel]\nclock_seconds={str(seconds).lower()}\nclock_blink={str(blink).lower()}\n');reload();ac()
+            L=waitfor(lambda:(lambda L:L if '@clock-'+style in L else None)(layout('Action Center')),f'Action Center clock not {style}')
+            assert ('@clock-seconds' in L)==seconds and ('@clock-blink' in L)==blink,(style,seconds,blink,[k for k in L if k.startswith('@clock')])
+            tag=f'{style}{"-seconds" if seconds else ""}{"-blink" if blink else ""}'
+            if seconds or blink:shot('a2-clock-'+tag)
+    # The Action Center clock's own menu.
+    config(overflow=False,extra='expanded=false\nclock_style=analog\n[panel]\nclock_seconds=true\n');reload();ac()
+    L=layout('Action Center');h=next(v for k,v in L.items() if k.startswith('@clock-'));g=geom(find('^Action Center$'))
+    seq=menu_seq();run('xdotool','mousemove',g['x']+h[0]+round(40*scale),g['y']+h[1]+h[3]//2,'click','3')
+    waitfor(lambda:menu_seq()>seq,'no menu on the Action Center clock');time.sleep(.3)
+    ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids==['@menu:action-center-clock'],ids
+    items=menu_items();sub=menu_items(sub=True)
+    assert ('Clock Style/Analog',True,True) in sub and ('Show Seconds',True,True) in items,(items,sub)
+    assert ('Blink the Colon',False,False) in items,('the analog clock offers a blinking colon',items)
+    assert 'Clock & Weather Settings...' in [l.replace('&&','&') for l in labels(items)],items  # FLTK escapes '&'
+    shot('a2-clock-action-center-menu');pick(items,'Show Seconds')
+    waitfor(lambda:'clock_seconds=false' in conf(),'Show Seconds from the Action Center clock not saved')
+    waitfor(lambda:visible('^Action Center$') and '@clock-seconds' not in layout('Action Center'),'the Action Center clock still shows seconds')
+    escape('Action Center')
+    # Settings > Clock & Weather: three styles, two switches.
+    st=spawn(str(a.bin_dir.resolve()/'sde-settings'),'--page','clock')
+    try:
+        find('^Control Center$');time.sleep(1.2);shot('a2-settings-clock')
+    finally:
+        st.terminate();st.wait()
+    clock.unlink();config(overflow=False);reload()
+    print('PANEL a2: clock styles Digital/LED/Analog, Show Seconds and Blink the Colon on their own (panel menu, Action Center menu), clock_style=blink migrated PASS',flush=True)
 def drive_checks():
     """Removable drives through UDisks2: open (mount + Liria), eject while
     busy (programs named), eject (unmount + power off), new drive (notify,
@@ -1506,6 +1698,9 @@ try:
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     if a.only=='start-menu':
         panel_checks_a50();menu_checks();search_checks();start_menu_checks();a2_menu_checks();raise SystemExit(0)
+    if a.only=='battery-clock':
+        battery_a2_checks();battery_checks();clock_a2_checks()
+        assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     panel_checks_a50()
     menu_checks()
     account_checks()
@@ -1729,7 +1924,9 @@ try:
     press('Sound','Mute application');waitfor(lambda:commands('AUDIO set-sink-input-mute 0 1'),'per-application mute command missing')
     shot('09-sound-mixer-scrolled')
     escape('Sound')
+    battery_a2_checks()
     battery_checks()
+    clock_a2_checks()
     drive_checks()
     for section,title in [('power','Power'),('drives','Drives'),('keyboard','Keyboard'),('touchpad','Touchpad')]:
         fl=open_section(section,title);flyout_bounds(fl,section);shot('10-flyout-'+section);escape(title)

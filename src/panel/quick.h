@@ -3,8 +3,8 @@
 //
 // SystemStatus collects the state from the services the system already has:
 // NetworkManager (nmcli), PulseAudio or PipeWire (pactl), systemd-logind
-// (brightness) and the kernel's power_supply class (battery). Missing
-// services simply hide their section.
+// (brightness) and UPower's DisplayDevice, else the kernel's power_supply
+// class (battery). Missing services simply hide their section.
 #pragma once
 
 #include <functional>
@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "popup.h"
+#include "status_model.h"
 
 struct NetworkState {
   bool available = false;  // NetworkManager is running
@@ -68,6 +69,11 @@ struct BatteryState {
   bool full = false;
   int minutes = -1;  // time to empty or full, -1 if unknown
   std::string model;  // "<manufacturer> <model_name>" (alpha51), may be empty
+  // 0.2 Alpha 2: what the icon shows, and whether the estimate is still
+  // being worked out ("Calculating…"); |source| is "upower" or "sysfs".
+  BatteryPhase phase = BatteryPhase::DISCHARGING;
+  bool calculating = false;
+  std::string source;
 };
 
 class SystemStatus {
@@ -111,6 +117,16 @@ class SystemStatus {
 
  private:
   void changed();
+  // 0.2 Alpha 2: the battery from UPower's DisplayDevice (on the system
+  // bus) while UPower answers, else from the power_supply class; both feed
+  // the time estimate.
+  void start_upower();
+  void read_upower();
+  void read_sysfs_battery(BatteryState &b, BatteryReading &r);
+  void apply_battery(BatteryState b, const BatteryReading &r);
+  bool upower_ = false;          // UPower reports a battery
+  bool upower_pending_ = false;  // a GetAll is under way
+  BatteryEstimator estimator_;
   void start_audio_stream();
   void start_connectivity();
   void refresh_connectivity();

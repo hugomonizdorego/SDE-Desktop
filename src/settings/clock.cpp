@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Settings > Clock & Weather (alpha52, sde-settings --page clock; the panel
 // clock's right-click menu opens it): the clock style shared by the panel
-// and the Action Center's clock hero (digital, blinking colon, LED digits,
-// analog), 12/24-hour time, seconds and the date on the panel; the weather
-// in the Action Center, its units, place and animation. The panel follows
-// every change at once (the config serial).
+// and the Action Center's clock hero (digital, LED digits, analog), 12/24-
+// hour time, and (0.2 Alpha 2) seconds and the blinking colon as two
+// options of their own, the date on the panel; the weather in the Action
+// Center, its units, place and animation. The panel follows every change at
+// once (the config serial).
 #include <FL/Fl.H>
 #include <FL/Fl_Input.H>
 #include <FL/Fl_Window.H>
@@ -29,17 +30,21 @@ namespace sde {
 
 namespace {
 
-const clockface::Style kStyles[] = {clockface::Style::Digital, clockface::Style::Blink,
-                                    clockface::Style::Led, clockface::Style::Analog};
+const clockface::Style kStyles[] = {clockface::Style::Digital, clockface::Style::Led,
+                                    clockface::Style::Analog};
+constexpr int kStyleCount = 3;
 
-// The four clock styles as selectable cards, each with a preview of the
-// current time in that style.
+// The three clock styles as selectable cards, each with a preview of the
+// current time in that style, with the seconds and the blinking colon
+// when those options are on.
 class StylePicker : public Fl_Widget {
  public:
   StylePicker(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
     label(_("Clock style"));
     labeltype(FL_NO_LABEL);
-    selected_ = int(clockface::Settings::from_config(settings_config()).style);
+    clockface::Style style = clockface::Settings::from_config(settings_config()).style;
+    for (int i = 0; i < kStyleCount; ++i)
+      if (kStyles[i] == style) selected_ = i;
     Fl::add_timeout(1.0, tick, this);
   }
   ~StylePicker() override { Fl::remove_timeout(tick, this); }
@@ -47,8 +52,9 @@ class StylePicker : public Fl_Widget {
     const Theme &t = settings_theme();
     clockface::Settings cs = clockface::Settings::from_config(settings_config());
     struct tm lt = clockface::local_now();
-    int n = 4, gap = S(10), cw = (w() - (n - 1) * gap) / n, ph = h() - S(28);
-    static const char *names[] = {N_("Digital"), N_("Blink"), N_("LED"), N_("Analog")};
+    bool colon = !cs.blink || lt.tm_sec % 2 == 0;
+    int n = kStyleCount, gap = S(10), cw = (w() - (n - 1) * gap) / n, ph = h() - S(28);
+    static const char *names[] = {N_("Digital"), N_("LED"), N_("Analog")};
     for (int i = 0; i < n; ++i) {
       int cx = x() + i * (cw + gap);
       bool sel = i == selected_, hot = i == hover_;
@@ -62,10 +68,10 @@ class StylePicker : public Fl_Widget {
           p.stroke_rounded(cx + .5, y() + .5, cw - 1, ph - 1, S(10), t.border, S(1));
         Color ink = Color::hex(0xFFFFFF);
         if (kStyles[i] == clockface::Style::Led) {
-          std::string d = clockface::time_digits(lt, cs.h24, false);
-          double lh = ph * .38, lw = clockface::led_width(d, lh);
+          std::string d = clockface::time_digits(lt, cs.h24, cs.seconds);
+          double lh = ph * (cs.seconds ? .30 : .38), lw = clockface::led_width(d, lh);
           clockface::draw_led(p, d, cx + (cw - lw) / 2, y() + (ph - lh) / 2, lh,
-                              t.accent.mix(ink, .55), lt.tm_sec % 2 == 0, true);
+                              t.accent.mix(ink, .55), colon, true);
         } else if (kStyles[i] == clockface::Style::Analog) {
           double r = ph * .36;
           clockface::draw_analog(p, cx + cw / 2.0, y() + ph / 2.0, r, lt, Color::hex(0xFFFFFF, .16),
@@ -74,10 +80,14 @@ class StylePicker : public Fl_Widget {
         }
         if (Fl::focus() == this && sel) focus_ring(p, cx, y(), cw, ph, S(10));
       }
-      if (kStyles[i] == clockface::Style::Digital || kStyles[i] == clockface::Style::Blink) {
-        text_font(std::max(S(14), ph / 4), true);
-        std::string s = clockface::format_time(lt, cs.h24, false);
-        bool colon = kStyles[i] == clockface::Style::Digital || lt.tm_sec % 2 == 0;
+      if (kStyles[i] == clockface::Style::Digital) {
+        std::string s = clockface::format_time(lt, cs.h24, cs.seconds);
+        // The 12-hour suffix stays out of the preview; it must fit the card.
+        size_t sp = s.find(' ');
+        if (sp != std::string::npos) s = s.substr(0, sp);
+        int size = std::max(S(14), ph / 4);
+        text_font(size, true);
+        while (size > S(10) && text_width(s) > cw - S(16)) text_font(--size, true);
         clockface::draw_blink_text(s, cx, y(), cw, ph, Color::hex(0xFFFFFF), colon);
       }
       text_font(t.font_size, sel);
@@ -111,7 +121,8 @@ class StylePicker : public Fl_Widget {
         return 1;
       case FL_KEYBOARD:
         if (Fl::event_key() == FL_Left && selected_ > 0) return choose(selected_ - 1), 1;
-        if (Fl::event_key() == FL_Right && selected_ < 3) return choose(selected_ + 1), 1;
+        if (Fl::event_key() == FL_Right && selected_ < kStyleCount - 1)
+          return choose(selected_ + 1), 1;
         return 0;
     }
     return Fl_Widget::handle(event);
@@ -119,9 +130,9 @@ class StylePicker : public Fl_Widget {
 
  private:
   int cell_at(int ex) const {
-    int gap = S(10), cw = (w() - 3 * gap) / 4;
+    int gap = S(10), cw = (w() - (kStyleCount - 1) * gap) / kStyleCount;
     int i = (ex - x()) / (cw + gap);
-    return i >= 0 && i < 4 && (ex - x()) - i * (cw + gap) < cw ? i : -1;
+    return i >= 0 && i < kStyleCount && (ex - x()) - i * (cw + gap) < cw ? i : -1;
   }
   void choose(int i) {
     selected_ = i;
@@ -168,18 +179,25 @@ void build_clock_page(Page *page) {
   page->choice_row(_("Time format"), {_("Automatic"), _("24-hour"), _("12-hour")},
                    format == "24h" ? 1 : format == "12h" ? 2 : 0, [](int v) { set_format(v); },
                    _("Automatic follows the language and region."));
-  page->switch_row(_("Show seconds"), clockface::Settings::from_config(cfg).seconds, [](bool on) {
+  clockface::Settings clock = clockface::Settings::from_config(cfg);
+  page->switch_row(_("Show seconds"), clock.seconds, [](bool on) {
     settings_config().set("panel", "clock_seconds", on ? "true" : "false");
     settings_config().unset("clock", "seconds");
     apply_change();
-  });
+  }, _("The analog clock shows a seconds hand."));
+  // A preference of the digital and LED faces (the analog one has no colon).
+  page->switch_row(_("Blink the colon"), clock.blink, [](bool on) {
+    settings_config().set("panel", "clock_blink", on ? "true" : "false");
+    settings_config().unset("clock", "blink");
+    apply_change();
+  }, _("The colon of the digital and LED clocks flashes once a second."));
   page->switch_row(_("Show the date on the panel"), cfg.get_bool("panel", "show_date", true),
                    [](bool on) {
                      settings_config().set("panel", "show_date", on ? "true" : "false");
                      apply_change();
                    });
-  page->note(_("Blink flashes the colon every second; LED draws seven-segment digits. "
-               "Right-click the panel clock to come back here."));
+  page->note(_("LED draws seven-segment digits. Right-click the clock on the panel or in the "
+               "Action Center to change the style, seconds and the blinking colon from there."));
   page->end_card();
 
   weather::Settings ws = weather::Settings::from_config(cfg);
