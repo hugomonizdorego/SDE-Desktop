@@ -157,7 +157,11 @@ class ScreenshotStrip : public Fl_Widget {
   static int preferred_height(int w);
 
  private:
-  int shot_at(int ex) const;
+  struct Box {
+    int x, y, w, h;
+  };
+  std::vector<Box> boxes() const;
+  int shot_at(int ex, int ey) const;
   std::vector<Screenshot> shots_;
   int hover_ = -1;
 };

@@ -6,7 +6,8 @@
 // apps (with their Debian, Flatpak and Snap origins, sizes and installed
 // state), the history and the state of the sources; changes run on a timer
 // and change the fake state. MERKADU_FAKE_FAIL=TARGET makes the changes of
-// a package, ref or snap fail; MERKADU_FAKE_SECONDS sets their duration.
+// a package, ref or snap fail; MERKADU_FAKE_SECONDS sets their duration and
+// MERKADU_FAKE_HOLD=PERCENT stops them there (for screenshots of progress).
 //
 // catalog.json:
 //   {"distribution": "Debian",
@@ -62,6 +63,7 @@ struct FakeWorld {
   SourceStatus status[kSourceCount];
   std::string fail;
   double seconds = 2.5;
+  int hold = -1;  // MERKADU_FAKE_HOLD: changes stop at this percentage (screenshots)
 
   void load(const std::string &d) {
     if (loaded) return;
@@ -70,6 +72,7 @@ struct FakeWorld {
     fail = env("MERKADU_FAKE_FAIL");
     double s = std::atof(env("MERKADU_FAKE_SECONDS", "2.5").c_str());
     if (s > 0.05 && s < 600) seconds = s;
+    if (!env("MERKADU_FAKE_HOLD").empty()) hold = std::max(0, std::min(99, std::atoi(env("MERKADU_FAKE_HOLD").c_str())));
     std::string text;
     Json root;
     if (!read_file(join_path(dir, "catalog.json"), text) || !parse_json(text, root) || !root.is_object()) {
@@ -344,6 +347,11 @@ class FakeBackend : public Backend {
       self->jobs_.erase(it);
       delete fj;
       done(false, true, "");
+      return;
+    }
+    if (world().hold >= 0 && fj->elapsed / world().seconds * 100 >= world().hold) {
+      // Held for a screenshot: the change stays where it is (still cancellable).
+      Fl::add_timeout(0.1, tick, arg.release());
       return;
     }
     fj->elapsed += 0.1;

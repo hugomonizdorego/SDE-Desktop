@@ -374,7 +374,14 @@ void Button::draw() {
   const Theme &t = active_theme();
   bool hot = Fl::belowmouse() == this && active_r(), down = value() != 0;
   bool strong = kind_ == Primary || kind_ == Danger;
-  Color accent = kind_ == Danger ? t.error : t.accent;
+  Color accent = t.accent;
+  if (kind_ == Danger) {
+    // White text on the error color: dark themes have a light one, deepened
+    // until the text reads (4.5:1).
+    accent = t.error;
+    for (int i = 0; i < 12 && Color::hex(0xFFFFFF).contrast(accent) < 4.5; ++i)
+      accent = accent.mix(Color::hex(0x000000), 0.1);
+  }
   {
     Painter p(window()->w(), window()->h());
     double r = t.radius_for(h());
@@ -820,39 +827,58 @@ int ScreenshotStrip::preferred_height(int w) {
   return std::min(S(300), std::max(S(140), int(w * 0.62 * 9 / 16)));
 }
 
-int ScreenshotStrip::shot_at(int ex) const {
-  int sh = h(), sw = sh * 16 / 9, gap = S(12);
-  for (size_t i = 0; i < shots_.size(); ++i) {
-    int sx = x() + int(i) * (sw + gap);
-    if (sx + sw > x() + w()) break;
-    if (ex >= sx && ex < sx + sw) return int(i);
+// The first screenshot large; the next ones (up to three) as a column of
+// thumbnails beside it when there is room.
+std::vector<ScreenshotStrip::Box> ScreenshotStrip::boxes() const {
+  std::vector<Box> out;
+  if (shots_.empty()) return out;
+  int sh = h(), sw = std::min(w(), sh * 16 / 9), gap = S(12);
+  out.push_back({x(), y(), sw, sh});
+  int rest = std::min(3, int(shots_.size()) - 1);
+  if (rest <= 0) return out;
+  int room = w() - sw - gap;
+  int th = (sh - gap * (rest - 1)) / rest, tw = th * 16 / 9;
+  if (tw > room) {
+    tw = room;
+    th = tw * 9 / 16;
   }
+  if (tw < S(80)) return out;
+  for (int i = 0; i < rest; ++i) out.push_back({x() + sw + gap, y() + i * (th + gap), tw, th});
+  return out;
+}
+
+int ScreenshotStrip::shot_at(int ex, int ey) const {
+  std::vector<Box> b = boxes();
+  for (size_t i = 0; i < b.size(); ++i)
+    if (ex >= b[i].x && ex < b[i].x + b[i].w && ey >= b[i].y && ey < b[i].y + b[i].h) return int(i);
   return -1;
 }
 
 void ScreenshotStrip::draw() {
   const Theme &t = active_theme();
-  int sh = h(), sw = sh * 16 / 9, gap = S(12);
   Painter p(window()->w(), window()->h());
-  for (size_t i = 0; i < shots_.size(); ++i) {
-    int sx = x() + int(i) * (sw + gap);
-    if (sx + sw > x() + w()) break;
-    double r = S(10);
-    p.fill_rounded(sx, y(), sw, sh, r, t.surface_alt);
-    cairo_surface_t *img = images::picture(shots_[i].thumbnail, sw, sh);
+  std::vector<Box> b = boxes();
+  for (size_t i = 0; i < b.size(); ++i) {
+    int sx = b[i].x, sy = b[i].y, sw = b[i].w, sh = b[i].h;
+    double r = i == 0 ? S(10) : S(8);
+    p.fill_rounded(sx, sy, sw, sh, r, t.surface_alt);
+    // Thumbnails are about 600 px wide: a larger first screenshot (HiDPI)
+    // uses the full image.
+    bool full = i == 0 && !shots_[i].image.empty() && sw > 640;
+    cairo_surface_t *img = images::picture(full ? shots_[i].image : shots_[i].thumbnail, sw, sh);
     if (img) {
       double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
       cairo_save(p.cr());
-      p.rounded_rect(sx, y(), sw, sh, r);
+      p.rounded_rect(sx, sy, sw, sh, r);
       cairo_clip(p.cr());
-      p.surface(img, sx + (sw - iw) / 2, y() + (sh - ih) / 2);
+      p.surface(img, sx + (sw - iw) / 2, sy + (sh - ih) / 2);
       cairo_restore(p.cr());
     } else {
       // Loading or missing: a picture symbol.
       double s = S(28);
-      paint_symbol(p, Symbol::Folder, sx + (sw - s) / 2, y() + (sh - s) / 2, s, t.text_dim.alpha(0.5));
+      paint_symbol(p, Symbol::Folder, sx + (sw - s) / 2, sy + (sh - s) / 2, s, t.text_dim.alpha(0.5));
     }
-    p.stroke_rounded(sx + 0.5, y() + 0.5, sw - 1, sh - 1, r, int(i) == hover_ ? t.accent : t.border);
+    p.stroke_rounded(sx + 0.5, sy + 0.5, sw - 1, sh - 1, r, int(i) == hover_ ? t.accent : t.border);
   }
 }
 
@@ -860,7 +886,7 @@ int ScreenshotStrip::handle(int e) {
   switch (e) {
     case FL_ENTER:
     case FL_MOVE: {
-      int h2 = shot_at(Fl::event_x());
+      int h2 = shot_at(Fl::event_x(), Fl::event_y());
       if (h2 != hover_) {
         hover_ = h2;
         redraw();
@@ -874,7 +900,7 @@ int ScreenshotStrip::handle(int e) {
     case FL_PUSH:
       return Fl::event_button() == FL_LEFT_MOUSE ? 1 : 0;
     case FL_RELEASE: {
-      int i = shot_at(Fl::event_x());
+      int i = shot_at(Fl::event_x(), Fl::event_y());
       if (i >= 0 && on_open) on_open(i);
       return 1;
     }

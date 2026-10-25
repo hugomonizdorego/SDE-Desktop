@@ -295,7 +295,8 @@ downloads when the `appstream` package is installed (a dependency of
   screenshots in `tests/fixtures/merkadu`): nothing is installed, removed or
   downloaded and no root or network is needed. `MERKADU_FAKE_SECONDS`
   sets how long a change takes (2.5 s), `MERKADU_FAKE_FAIL=TARGET` makes the
-  changes of a package, ref or snap fail. With `SDE_PANEL_QA_DIR=DIR`,
+  changes of a package, ref or snap fail and `MERKADU_FAKE_HOLD=PERCENT`
+  stops them at that point (screenshots of progress). With `SDE_PANEL_QA_DIR=DIR`,
   Merkadu writes what it shows (`Merkadu.txt`, `Merkadu-Uninstall.txt`).
   `MERKADU_LOGO_PHASE=P` freezes the logo animation at moment `P` (0 to
   3.6: stripe `n` fills between `n` and `n+1`) for screenshots.
