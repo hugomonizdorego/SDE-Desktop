@@ -324,7 +324,7 @@ static void test_liquid_glass() {
         CHECK(t.dark ? t.surface.luminance() <= l && t.menu_bg.luminance() <= l
                      : t.surface.luminance() >= l && t.menu_bg.luminance() >= l);
         // A clear glass, clearer with the slider; one tint for every surface.
-        CHECK(t.opacity == t.popup_opacity && t.opacity >= 0.15 && t.opacity <= 0.6 && t.opacity < previous);
+        CHECK(t.opacity == t.popup_opacity && t.opacity >= 0.12 && t.opacity <= 0.5 && t.opacity < previous);
         previous = t.opacity;
         // Other toolkits' menus still fade as a whole and stay readable.
         CHECK(translucent_contrast(t.menu_text, t.menu_bg, t.toolkit_menu_opacity, true) >= 4.5);

@@ -304,7 +304,7 @@ class FamilyCard : public PickCard {
   std::string short_desc() const {
     if (id_ == "graphite") return N_("Calm neutral grays · soft depth");
     if (id_ == "fluent") return N_("Fluent Design · Mica, Acrylic");
-    return N_("Glass with light rims · pill shapes");
+    return N_("Clear glass · light rims");
   }
   std::string id_, label_, desc_;
 };

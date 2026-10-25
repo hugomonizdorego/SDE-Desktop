@@ -183,7 +183,7 @@ Compositor):
   as white glyphs and knobs); SDE's fills on the glass (hover tints, cards,
   borders) are glass with their difference on top. The window opacity
   (`Theme::opacity`, `popup_opacity`) is how much of the surface color
-  tints the glass: 41 % at Subtle (25) down to 20 % at 100.
+  tints the glass: 32 % at Subtle (25) down to 14 % at 100.
 * Text stays readable over any backdrop: under text the glass is lifted (in
   dark mode deepened) just enough for 4.5:1 text and 3:1 dimmed text
   (`liquid_legible_luminance()`; the `sde-theme` test checks every accent

@@ -39,6 +39,13 @@ Comment: SDE's additions to the GPL-2.0-or-later application fork Liria
  (from Caja) and the patches to SDE WM (from Openbox), under the license of
  the program they become part of.
 
+Files: suite/patches/sde-compositor/*
+Copyright: 2026 Selviana DE Project and contributors
+License: MPL-2.0
+Comment: SDE's patches to SDE Compositor (from picom; window shaders that
+ sample the backdrop, for SDE Liquid Glass), under the license of the picom
+ files they change.
+
 Files: data/update/model.py data/update/COPYRIGHT
 Copyright: 2007-2015 Clement Lefebvre <root@linuxmint.com>
            2026 Selviana DE Project and contributors

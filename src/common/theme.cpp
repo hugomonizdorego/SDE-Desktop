@@ -414,8 +414,8 @@ static void apply_transparency(Theme &t, const palettes::Family &f) {
     // Liquid Glass: the shader tints only the surface color with the
     // backdrop, keeps text and icons opaque and lifts (or deepens) the glass
     // under text where the backdrop would make it hard to read, so the glass
-    // can stay clear: a 41 % tint at Subtle (25), 20 % at 100.
-    t.opacity = t.popup_opacity = 0.62 - 0.42 * std::sqrt(t.transparency / 100.0);
+    // can stay clear: a 32 % tint at Subtle (25), 14 % at 100.
+    t.opacity = t.popup_opacity = 0.50 - 0.36 * std::sqrt(t.transparency / 100.0);
   }
   // Frames: translucent title bars need blur behind them to stay calm;
   // Glass goes all the way, the other families part of it.

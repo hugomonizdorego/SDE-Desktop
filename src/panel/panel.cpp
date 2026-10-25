@@ -1328,11 +1328,10 @@ void Panel::draw() {
       else
         p.glass_surface(0, 0, W, H, std::min(S(16), H / 2), t.border, t.dark);
     }
-    if (t.liquid)
-      ;  // the glass shader draws the edge
-    else if (full)
+    // The edge (in Liquid Glass the glass shader draws it).
+    if (!t.liquid && full)
       p.line(0, edge, W, edge, t.border);
-    else
+    else if (!t.liquid)
       p.stroke_rounded(0, 0, W, H, std::min(S(16), H / 2), t.border);
 
     auto button_bg = [&](int x, int bw, Target target, bool active) {
