@@ -66,8 +66,8 @@ jobs:
         run: sh tools/build-deb.sh dist
       - name: Install and smoke test
         run: |
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
-          for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb ./dist/merkadu_*.deb
+          for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update merkadu; do
             "$p" --version
           done
           # SDE's own ecosystem: no distribution FLTK, xsettingsd or polkit agent.
@@ -91,7 +91,7 @@ jobs:
           dbus-run-session -- python3 tests/test_about_ui.py niny=/usr/bin/niny \
             sysmon=/usr/bin/sde-system-monitor run=/usr/bin/sde-run display=/usr/bin/sde-display-settings \
             calculator=/usr/bin/calculator welcome=/usr/bin/sde-welcome reports=/usr/bin/sde-system-reports \
-            licenses=dist/test-tools/sde-ui-kit-demo
+            merkadu=/usr/bin/merkadu licenses=dist/test-tools/sde-ui-kit-demo
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
@@ -181,7 +181,7 @@ jobs:
             echo
             echo '```sh'
             echo 'sha256sum -c SHA256SUMS --ignore-missing'
-            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb'
+            echo 'sudo apt install ./sde_*.deb ./sde-desktop_*.deb ./merkadu_*.deb'
             echo '# DebION GNU/Linux integration (optional, a separate project):'
             echo 'sudo apt install ./debion-desktop-base_*.deb'
             echo '```'
