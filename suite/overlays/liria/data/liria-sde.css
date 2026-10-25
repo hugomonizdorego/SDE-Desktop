@@ -236,7 +236,27 @@ button.sde-ribbon-button:disabled {
   color: alpha(@theme_fg_color, 0.38);
 }
 
+/* 0.2.0 Alpha 2: the ribbon shows the icon theme's full-colour icons;
+ * where the theme draws a command only as a grey glyph, the glyph takes a
+ * colour of the theme (liria-sde-ribbon.c, "icons"). */
+button.sde-ribbon-button image.sde-tint-accent {
+  color: @theme_selected_bg_color;
+}
+
+button.sde-ribbon-button image.sde-tint-amber {
+  color: mix(@warning_color, @theme_fg_color, 0.25);
+}
+
+button.sde-ribbon-button image.sde-tint-red {
+  color: @error_color;
+}
+
+button.sde-ribbon-button image.sde-tint-green {
+  color: @success_color;
+}
+
 button.sde-ribbon-button:disabled image {
+  color: @theme_fg_color;
   opacity: 0.45;
 }
 

@@ -150,8 +150,11 @@ class LiriaAlpha16Test(unittest.TestCase):
         css = (self.overlay / 'data/liria-sde.css').read_text()
         names = set(re.findall(r'@([A-Za-z_]+)', css))
         self.assertTrue(names)
+        # 0.2.0 Alpha 2: the ribbon's tinted glyphs also use the standard
+        # warning, error and success colours of GTK themes.
         self.assertLessEqual(names, {'theme_bg_color', 'theme_fg_color', 'theme_base_color', 'theme_text_color',
-                                     'theme_selected_bg_color', 'theme_selected_fg_color'})
+                                     'theme_selected_bg_color', 'theme_selected_fg_color', 'warning_color',
+                                     'error_color', 'success_color'})
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
         self.assertIn('GTK_STYLE_PROVIDER_PRIORITY_APPLICATION', ui)
         self.assertIn('/org/debion/liria/liria-sde.css', ui)
