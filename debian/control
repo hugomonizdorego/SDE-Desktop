@@ -56,6 +56,8 @@ Build-Depends: debhelper-compat (= 13),
                libwnck-3-dev,
                libxml2-dev,
                libxml2-utils,
+               libappstream-dev (>= 1.0),
+               libflatpak-dev (>= 1.12),
                libexif-dev,
                libexempi-dev,
                libpoppler-glib-dev,
@@ -225,6 +227,7 @@ Depends: ${misc:Depends},
          upower,
          udisks2
 Recommends: debion-desktop-base (>= ${source:Version}),
+            merkadu (>= ${source:Version}),
             desktop-base,
             papirus-icon-theme,
             qt5-gtk-platformtheme,
@@ -251,6 +254,36 @@ Description: Selviana Desktop Environment - full desktop (metapackage)
  This metapackage installs individual maintained components rather than
  another complete desktop environment. Existing user preferences and
  distribution package sources are preserved.
+
+Package: merkadu
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         sde (= ${binary:Version}),
+         packagekit,
+         appstream,
+         curl
+Recommends: flatpak
+Suggests: snapd
+Description: Selviana Desktop Environment - software center
+ Merkadu is the software center of the Selviana Desktop Environment (SDE).
+ It finds, installs, updates and removes apps from three sources in one
+ search:
+  * the Debian archive, through PackageKit and the archive's AppStream
+    catalog;
+  * Flatpak remotes such as Flathub (with flatpak installed; Merkadu offers
+    to add Flathub);
+  * the Snap Store, through snapd (with snapd installed).
+ .
+ An app offered by more than one source is shown once, with the source of
+ each version, and you choose where to install it from. Merkadu has a lobby
+ of featured, new and top apps, departments with subcategories, app pages
+ with screenshots, the installed apps by department, updates, the history of
+ every source and a progress view with the animated SDE logo. The SDE Start
+ menu uses "merkadu --uninstall" to uninstall an app from its launcher.
+ .
+ Merkadu is based on Ubuntu Software Center. Installing and removing are
+ authorized with polkit; Merkadu itself never runs as root.
 
 Package: debion-desktop-base
 Architecture: all

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu test fixture: a fictional app icon. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64">
+<rect x="4" y="4" width="56" height="56" rx="13" fill="#30343F" stroke="#2B2B2F" stroke-width="2"/>
+<path d="M6 17 Q6 6 17 6 H47 Q58 6 58 17 V24 H6 Z" fill="#8FA8D8" opacity="0.35"/>
+<path d="M24 20 L14 32 L24 44 M40 20 L50 32 L40 44" fill="none" stroke="#8FD0FF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M35 17 L29 47" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

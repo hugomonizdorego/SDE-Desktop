@@ -183,6 +183,7 @@ std::string relation_label(const std::string &relation) {
   if (relation == "fork") return _("Fork of");
   if (relation == "port") return _("Ported from");
   if (relation == "adapted") return _("Adapted from");
+  if (relation == "based-on") return _("Based on");
   if (relation == "build") return _("Built from");
   if (relation == "reference") return _("Design reference");
   return relation;

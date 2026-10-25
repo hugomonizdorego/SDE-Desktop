@@ -129,6 +129,7 @@ dominant colour, a consistent charcoal outline (#2B2B2F) and no text.
 | `sde-calculator` | Calculator | calculator with red, green and blue keys | cream |
 | `sde-control-center` | Control Center (`sde-settings`, formerly SDE Settings) | rounded panel with sliders, a toggle and a gear | purple |
 | `sde-software-updater` | Software Updater (`sde-update`) | circular arrows around a download arrow, with a shield | teal |
+| `merkadu` | Merkadu, software center (package `merkadu`) | market stall with a red and cream striped awning and three apps (red, green, blue) in its window | red and cream |
 | `sde-welcome` | Welcome | the SDE monitor with RGB stripes and a sparkle | cream and RGB |
 | `sde-driver-manager` | Driver Manager | microchip with a wrench | navy and gold |
 | `sde-system-reports` | System Reports | clipboard with a bar chart and a magnifier | orange |
@@ -154,7 +155,8 @@ Compatibility copies under old names that existing launchers still use:
 They are generated copies, not separate drawings.
 
 All of them are installed as hicolor icons at 16, 22, 24, 32, 48, 64, 128 and
-256 px (and 512 px for `sde-logo`) plus scalable SVG, in package `sde`;
+256 px (and 512 px for `sde-logo`) plus scalable SVG, in package `sde`
+(`merkadu` in package `merkadu`);
 dh_icons refreshes the icon cache on installation.
 
 ### Drawing rules

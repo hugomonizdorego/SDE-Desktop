@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu, 32 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" shape-rendering="auto">
+  <defs>
+    <clipPath id="awning"><path d="M3.5 6Q3.5 4.5 5 4.5H27Q28.5 4.5 28.5 6V10.5A2.5 2.5 0 0 1 23.5 10.5A2.5 2.5 0 0 1 18.5 10.5A2.5 2.5 0 0 1 13.5 10.5A2.5 2.5 0 0 1 8.5 10.5A2.5 2.5 0 0 1 3.5 10.5Z"/></clipPath>
+  </defs>
+  <rect x="7.5" y="25.5" width="3" height="4" rx="1" fill="#ADA79A" stroke="#2B2B2F" stroke-width="1"/>
+  <rect x="21.5" y="25.5" width="3" height="4" rx="1" fill="#ADA79A" stroke="#2B2B2F" stroke-width="1"/>
+  <rect x="5.5" y="10.5" width="21" height="14" fill="#E6E0D4" stroke="#2B2B2F" stroke-width="1"/>
+  <rect x="8" y="15" width="16" height="7" rx="1.5" fill="#FBF9F5"/>
+  <rect x="9" y="16.5" width="4" height="4" rx="1" fill="#C9564E"/>
+  <rect x="14" y="16.5" width="4" height="4" rx="1" fill="#4A9157"/>
+  <rect x="19" y="16.5" width="4" height="4" rx="1" fill="#3876B9"/>
+  <rect x="3.5" y="22.5" width="25" height="3" rx="1" fill="#C4BDAF" stroke="#2B2B2F" stroke-width="1"/>
+  <g clip-path="url(#awning)">
+    <rect x="3" y="4" width="26" height="10" fill="#F3EEE4"/>
+    <rect x="3" y="4" width="5.5" height="10" fill="#C9564E"/>
+    <rect x="13.5" y="4" width="5" height="10" fill="#C9564E"/>
+    <rect x="23.5" y="4" width="5.5" height="10" fill="#C9564E"/>
+  </g>
+  <path d="M3.5 6Q3.5 4.5 5 4.5H27Q28.5 4.5 28.5 6V10.5A2.5 2.5 0 0 1 23.5 10.5A2.5 2.5 0 0 1 18.5 10.5A2.5 2.5 0 0 1 13.5 10.5A2.5 2.5 0 0 1 8.5 10.5A2.5 2.5 0 0 1 3.5 10.5Z" fill="none" stroke="#2B2B2F" stroke-width="1" stroke-linejoin="round"/>
+</svg>

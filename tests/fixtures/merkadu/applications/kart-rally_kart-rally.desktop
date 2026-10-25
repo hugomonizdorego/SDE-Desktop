@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Kart Rally
+Icon=kartrally
+Exec=/snap/bin/kart-rally
+X-SnapInstanceName=kart-rally

@@ -1,0 +1,393 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (C) 2009-2013 Canonical Ltd.; 2026 Selviana DE Project and contributors -->
+<!-- Merkadu's departments, adapted from Ubuntu Software Center's
+     data/software-center.menu.in: the same categories and sub-categories,
+     with Debian's archive sections (main, contrib and non-free match the
+     same SCSection), AppStream component kinds for fonts and the Directory
+     files replaced by names and icons. Format: see src/merkadu/categories.h.
+     Distributions add or replace categories with drop-ins in
+     /usr/share/merkadu/menu.d/*.menu or /etc/merkadu/menu.d/*.menu; a menu
+     with the same <Name> replaces this one. -->
+<Menu>
+
+  <!-- Accessories -->
+  <Menu>
+    <Name>Accessories</Name>
+    <SCIcon>applications-accessories</SCIcon>
+    <Include>
+      <And>
+        <Category>Utility</Category>
+        <!-- Accessibility applications have their own category -->
+        <Not><Category>Accessibility</Category></Not>
+      </And>
+    </Include>
+  </Menu>
+
+  <!-- Universal Access -->
+  <Menu>
+    <Name>Universal Access</Name>
+    <SCIcon>preferences-desktop-accessibility</SCIcon>
+    <Include>
+      <And>
+        <Category>Accessibility</Category>
+        <Not><Category>Settings</Category></Not>
+      </And>
+    </Include>
+  </Menu>
+
+  <!-- Developer Tools -->
+  <Menu>
+    <Name>Developer Tools</Name>
+    <SCIcon>applications-development</SCIcon>
+    <Include>
+      <Or>
+        <Category>Development</Category>
+        <SCSection>devel</SCSection>
+      </Or>
+    </Include>
+    <Menu>
+      <Name>Debugging</Name>
+      <Include><Category>Debugger</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Graphic Interface Design</Name>
+      <Include><Category>GUIDesigner</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Haskell</Name>
+      <Include><Or><SCSection>haskell</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>IDEs</Name>
+      <Include><Category>IDE</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Java</Name>
+      <Include><Or><SCSection>java</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Libraries</Name>
+      <Include><Or><SCSection>libdevel</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Lisp</Name>
+      <Include><Or><SCSection>lisp</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Localization</Name>
+      <Include><And><Category>Translation</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>Mono/CLI</Name>
+      <Include><Or><SCSection>cli-mono</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>OCaml</Name>
+      <Include><Or><SCSection>ocaml</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Perl</Name>
+      <Include><Or><SCSection>perl</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Profiling</Name>
+      <Include><Category>Profiling</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Python</Name>
+      <Include><Or><SCSection>python</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Ruby</Name>
+      <Include><Or><SCSection>ruby</SCSection></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Version Control</Name>
+      <Include>
+        <Or>
+          <SCSection>vcs</SCSection>
+          <Category>RevisionControl</Category>
+        </Or>
+      </Include>
+    </Menu>
+    <Menu>
+      <Name>Web Development</Name>
+      <Include><And><Category>WebDevelopment</Category></And></Include>
+    </Menu>
+  </Menu>
+
+  <!-- Education -->
+  <Menu>
+    <Name>Education</Name>
+    <SCIcon>applications-education</SCIcon>
+    <Include>
+      <And>
+        <Category>Education</Category>
+        <Not><Category>Science</Category></Not>
+        <Not><Category>X-Publication</Category></Not>
+      </And>
+    </Include>
+  </Menu>
+
+  <!-- Science & Engineering -->
+  <Menu>
+    <Name>Science &amp; Engineering</Name>
+    <SCIcon>applications-science</SCIcon>
+    <Include>
+      <Or>
+        <Category>Science</Category>
+        <Category>Engineering</Category>
+      </Or>
+    </Include>
+    <Menu>
+      <Name>Astronomy</Name>
+      <Include><Category>Astronomy</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Biology</Name>
+      <Include><Category>Biology</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Chemistry</Name>
+      <Include><Category>Chemistry</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Computer Science &amp; Robotics</Name>
+      <Include>
+        <Or>
+          <Category>ArtificialIntelligence</Category>
+          <Category>ComputerScience</Category>
+          <Category>Robotics</Category>
+        </Or>
+      </Include>
+    </Menu>
+    <Menu>
+      <Name>Electronics</Name>
+      <Include><Category>Electronics</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Engineering</Name>
+      <Include><Category>Engineering</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Geography</Name>
+      <Include><Category>Geography</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Geology</Name>
+      <Include><Or><Category>Geology</Category><Category>Geoscience</Category></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Mathematics</Name>
+      <Include>
+        <Or>
+          <Category>DataVisualization</Category>
+          <Category>Math</Category>
+          <Category>NumericalAnalysis</Category>
+          <SCSection>math</SCSection>
+          <SCSection>gnu-r</SCSection>
+        </Or>
+      </Include>
+    </Menu>
+    <Menu>
+      <Name>Physics</Name>
+      <Include><Category>Physics</Category></Include>
+    </Menu>
+  </Menu>
+
+  <!-- Fonts: AppStream font components (USC: ttf-*/otf-* packages) -->
+  <Menu>
+    <Name>Fonts</Name>
+    <SCIcon>preferences-desktop-font</SCIcon>
+    <Include>
+      <Or>
+        <SCType>font</SCType>
+        <SCPkgnameWildcard>fonts-*</SCPkgnameWildcard>
+        <SCPkgnameWildcard>ttf-*</SCPkgnameWildcard>
+        <SCPkgnameWildcard>otf-*</SCPkgnameWildcard>
+        <SCSection>fonts</SCSection>
+      </Or>
+    </Include>
+  </Menu>
+
+  <!-- Games -->
+  <Menu>
+    <Name>Games</Name>
+    <SCIcon>applications-games</SCIcon>
+    <Include>
+      <And>
+        <Category>Game</Category>
+      </And>
+    </Include>
+    <Menu>
+      <Name>Arcade</Name>
+      <Include><Category>ArcadeGame</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Board Games</Name>
+      <Include><Category>BoardGame</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Card Games</Name>
+      <Include><Category>CardGame</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Puzzles</Name>
+      <Include><Category>LogicGame</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Role Playing</Name>
+      <Include><Category>RolePlaying</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Simulation</Name>
+      <Include><Category>Simulation</Category></Include>
+    </Menu>
+    <Menu>
+      <Name>Sports</Name>
+      <Include><Category>SportsGame</Category></Include>
+    </Menu>
+  </Menu>
+
+  <!-- Graphics -->
+  <Menu>
+    <Name>Graphics</Name>
+    <SCIcon>applications-graphics</SCIcon>
+    <Include>
+      <And>
+        <Category>Graphics</Category>
+      </And>
+    </Include>
+    <Menu>
+      <Name>3D Graphics</Name>
+      <Include><And><Category>3DGraphics</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>Drawing</Name>
+      <Include>
+        <And>
+          <Category>VectorGraphics</Category>
+          <Not><Category>Viewer</Category></Not>
+        </And>
+      </Include>
+    </Menu>
+    <Menu>
+      <Name>Painting &amp; Editing</Name>
+      <Include>
+        <And>
+          <Category>RasterGraphics</Category>
+          <Not><Category>Viewer</Category></Not>
+          <Not><Category>Scanning</Category></Not>
+        </And>
+      </Include>
+    </Menu>
+    <Menu>
+      <Name>Photography</Name>
+      <Include><And><Category>Photography</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>Publishing</Name>
+      <Include><And><Category>Publishing</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>Scanning &amp; OCR</Name>
+      <Include>
+        <Or>
+          <Category>Scanning</Category>
+          <Category>OCR</Category>
+        </Or>
+      </Include>
+    </Menu>
+    <Menu>
+      <Name>Viewers</Name>
+      <Include><And><Category>Viewer</Category></And></Include>
+    </Menu>
+  </Menu>
+
+  <!-- Internet -->
+  <Menu>
+    <Name>Internet</Name>
+    <SCIcon>applications-internet</SCIcon>
+    <Include>
+      <And>
+        <Category>Network</Category>
+      </And>
+    </Include>
+    <Menu>
+      <Name>Chat</Name>
+      <Include><And><Category>InstantMessaging</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>File Sharing</Name>
+      <Include><And><Category>FileTransfer</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>Mail</Name>
+      <Include><And><Category>Email</Category></And></Include>
+    </Menu>
+    <Menu>
+      <Name>Web Browsers</Name>
+      <Include><And><Category>WebBrowser</Category></And></Include>
+    </Menu>
+  </Menu>
+
+  <!-- Sound & Video (USC: Multimedia, AudioVideo.directory) -->
+  <Menu>
+    <Name>Sound &amp; Video</Name>
+    <SCIcon>applications-multimedia</SCIcon>
+    <Include>
+      <And>
+        <Category>AudioVideo</Category>
+      </And>
+    </Include>
+    <Menu>
+      <Name>Audio</Name>
+      <Include><Or><Category>Audio</Category><Category>Music</Category></Or></Include>
+    </Menu>
+    <Menu>
+      <Name>Video</Name>
+      <Include><Or><Category>Video</Category><Category>TV</Category></Or></Include>
+    </Menu>
+  </Menu>
+
+  <!-- Office -->
+  <Menu>
+    <Name>Office</Name>
+    <SCIcon>applications-office</SCIcon>
+    <Include>
+      <And>
+        <Category>Office</Category>
+      </And>
+    </Include>
+  </Menu>
+
+  <!-- Themes & Tweaks -->
+  <Menu>
+    <Name>Themes &amp; Tweaks</Name>
+    <SCIcon>preferences-desktop-theme</SCIcon>
+    <Include>
+      <Category>Settings</Category>
+    </Include>
+  </Menu>
+
+  <!-- System: everything no other category takes -->
+  <Menu>
+    <Name>System</Name>
+    <SCIcon>applications-system</SCIcon>
+    <OnlyUnallocated/>
+    <Include>
+    </Include>
+  </Menu>
+
+  <!-- Books & Magazines -->
+  <Menu>
+    <Name>Books &amp; Magazines</Name>
+    <SCIcon>x-office-document</SCIcon>
+    <Include>
+      <And>
+        <Category>X-Publication</Category>
+      </And>
+    </Include>
+  </Menu>
+
+</Menu>

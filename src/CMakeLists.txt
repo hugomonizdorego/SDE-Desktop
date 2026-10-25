@@ -427,3 +427,6 @@ add_subdirectory(niny)
 
 # SDE Welcome, Driver Manager and System Reports (docs/MINT-CONCEPTS.md).
 add_subdirectory(welcome)
+
+# Merkadu, the software center (docs/MERKADU.md).
+add_subdirectory(merkadu)

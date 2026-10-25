@@ -337,6 +337,25 @@
       "sources": ["src/calculator/"]
     },
     {
+      "id": "merkadu",
+      "name": "Merkadu",
+      "kind": "application",
+      "summary": "Software center for Debian packages, Flatpak and Snap",
+      "programs": ["merkadu"],
+      "desktop": ["merkadu.desktop"],
+      "metainfo": "org.debion.Merkadu.metainfo.xml",
+      "icons": ["merkadu", "system-software-install"],
+      "license": "GPL-3.0-or-later AND GPL-3.0-only",
+      "copyright": ["Copyright © 2009–2013 Canonical Ltd.", "Copyright © 2026 Selviana DE Project and contributors"],
+      "upstream": [
+        {"project": "Ubuntu Software Center", "url": "https://github.com/mortenpi/ubuntu-software-center", "license": "GPL-3.0-only", "copyright": "Copyright © 2009–2013 Canonical Ltd.", "relation": "based-on"}
+      ],
+      "credits": ["Departments, lobby, app pages, installed apps and history follow Ubuntu Software Center by Michael Vogt, Gary Lasker, Matthew McGowan and the other Ubuntu Software Center authors; its category parser and menu (commit 897c3933f5a27b6755cde72bb06329a4bc8b97b8) were ported to C++"],
+      "trademarks": ["sde", "linux", "debian"],
+      "notices": ["/usr/share/doc/merkadu/copyright"],
+      "sources": ["src/merkadu/", "data/merkadu/"]
+    },
+    {
       "id": "sde-run",
       "name": "Run Command",
       "kind": "application",

@@ -1,0 +1,13 @@
+{"type":"sync","status-code":200,"status":"OK","result":[
+ {"id":"41","kind":"install-snap","summary":"Install \"hello-world\" snap","status":"Done","ready":true,
+  "spawn-time":"2026-10-16T11:20:30.512+02:00","ready-time":"2026-10-16T11:20:41+02:00",
+  "data":{"snap-names":["hello-world"]}},
+ {"id":"42","kind":"auto-refresh","summary":"Auto-refresh snaps \"core22\", \"firefox\"","status":"Done","ready":true,
+  "spawn-time":"2026-10-17T03:10:00Z","data":{"snap-names":["core22","firefox"]}},
+ {"id":"43","kind":"remove-snap","summary":"Remove \"spotless\" snap","status":"Error","ready":true,
+  "spawn-time":"2026-10-18T12:00:00Z","err":"cannot remove \"spotless\": snap is busy"},
+ {"id":"44","kind":"connect-snap","summary":"Connect firefox:camera","status":"Done","ready":true,
+  "spawn-time":"2026-10-18T12:05:00Z"},
+ {"id":"45","kind":"install-snap","summary":"Install \"krita\" snap","status":"Doing","ready":false,
+  "spawn-time":"2026-10-22T09:00:00Z","data":{"snap-names":["krita"]}}
+]}

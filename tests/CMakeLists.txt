@@ -256,3 +256,20 @@ if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-avatar-accountsservice COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-avatar-tests> --dbus)
   set_tests_properties(sde-avatar-accountsservice PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
 endif()
+
+# Merkadu: catalog merging, search, departments (Ubuntu Software Center's
+# menu), AppStream conversion, snapd's JSON and HTTP framing, history and
+# uninstall decisions (fixtures in tests/fixtures/merkadu).
+if(TARGET merkadu-core)
+  add_executable(merkadu-tests test_merkadu.cpp)
+  target_compile_definitions(merkadu-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+  target_link_libraries(merkadu-tests PRIVATE merkadu-core)
+  add_test(NAME merkadu-model COMMAND merkadu-tests)
+endif()
+# The window and `merkadu --uninstall` with the fake sources (no network or
+# root): pages, an installation, history and the uninstall exit codes.
+if(TARGET merkadu AND SDE_XVFB)
+  add_test(NAME merkadu-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_merkadu_ui.py
+    $<TARGET_FILE:merkadu> ${PROJECT_SOURCE_DIR})
+  set_tests_properties(merkadu-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()

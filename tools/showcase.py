@@ -1025,6 +1025,13 @@ class Session:
         # installed (installed: /usr/share/SDE-Welcome).
         if not Path('/usr/share/SDE-Welcome/steps').is_dir() and (a.data_dir / 'welcome/steps').is_dir():
             env['SDE_WELCOME_DIR'] = str(a.data_dir / 'welcome')
+        # Merkadu: fake sources with fictional apps (nothing is installed or
+        # downloaded), a change that holds at 42 % and a still logo.
+        if (MERKADU_FIXTURES / 'catalog.json').exists():
+            env.update(MERKADU_FAKE=str(MERKADU_FIXTURES), MERKADU_CONFIG=str(MERKADU_FIXTURES / 'merkadu.conf'),
+                       MERKADU_FAKE_HOLD='42', MERKADU_LOGO_PHASE='1.55')
+        if (a.data_dir / 'merkadu/categories.menu').exists():
+            env['MERKADU_DATA_DIR'] = str(a.data_dir / 'merkadu')
         env.update(self.nss_wrapper())
         self.env = env
 
@@ -2260,6 +2267,81 @@ def software_updater(s):
     s.shot('software-updater', quiet=0.6)
 
 
+MERKADU_FIXTURES = ROOT / 'tests/fixtures/merkadu'
+
+
+def merkadu_window(s, args, ready):
+    """Merkadu with its fake sources (make_env), at a page whose QA layout
+    has control |ready|."""
+    s.stop_scene_procs()
+    s.gone('^Merkadu$', 3)
+    w = s.app(['merkadu'] + args, '^Merkadu$', settle=False)
+    if not s.control('Merkadu', ready, timeout=10):
+        raise SkipShot(f'Merkadu did not show {ready} (fake sources: {MERKADU_FIXTURES})')
+    s.park_pointer()
+    return w
+
+
+@scene('Merkadu', [('merkadu', 'Merkadu, the software center: featured, new and top apps from Debian, Flatpak '
+                               'and Snap (test data)'),
+                   ('merkadu-category', 'Merkadu: a department with its subcategories'),
+                   ('merkadu-search', 'Merkadu: one search in every source, with the source of each app'),
+                   ('merkadu-details', 'Merkadu: an app page with its sources, screenshots and details'),
+                   ('merkadu-installed', 'Merkadu: installed apps by department'),
+                   ('merkadu-history', 'Merkadu: installations, updates and removals of every source'),
+                   ('merkadu-progress', 'Merkadu: installing an app, with the animated SDE logo')],
+       needs=['merkadu'])
+def merkadu(s):
+    if not (MERKADU_FIXTURES / 'catalog.json').exists():
+        raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
+    w = merkadu_window(s, [], 'banner:org.example.paintbox')
+    s.shot('merkadu', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--category', 'graphics'], 'app:org.example.vectorial')
+    s.shot('merkadu-category', quiet=0.6, wid=w)
+    w = merkadu_window(s, [], 'banner:org.example.paintbox')
+    s.key('ctrl+f')
+    s.type('write', 60)
+    s.key('Return')  # Enter also asks the Snap Store
+    s.control('Merkadu', 'app:org.example.cloudnotes', timeout=6)
+    s.park_pointer()
+    s.shot('merkadu-search', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--details', 'org.example.Paintbox'], 'source:snap')
+    s.shot('merkadu-details', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--page', 'installed'], 'app:org.example.waveform')
+    s.shot('merkadu-installed', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--page', 'history'], 'history:0')
+    s.shot('merkadu-history', quiet=0.6, wid=w)
+    # The change holds at MERKADU_FAKE_HOLD and the logo at MERKADU_LOGO_PHASE.
+    w = merkadu_window(s, ['--details', 'org.example.Lumen'], 'action:org.example.lumen:Install')
+    s.press('Merkadu', 'action:org.example.lumen:Install')
+    s.control('Merkadu', 'nav:progress', timeout=5)
+    s.press('Merkadu', 'nav:progress')
+    s.control('Merkadu', '@page:progress', timeout=5)
+    s.park_pointer()
+    s.shot('merkadu-progress', quiet=0.6, wid=w)
+
+
+@scene('Merkadu', [('merkadu-uninstall', 'Uninstall from the Start menu (merkadu --uninstall): the packages '
+                                         'removed with the app and the space it frees'),
+                   ('merkadu-uninstall-progress', 'Uninstalling, with the animated SDE logo')],
+       needs=['merkadu'])
+def merkadu_uninstall(s):
+    desktop = MERKADU_FIXTURES / 'applications/waveform-studio.desktop'
+    if not desktop.exists():
+        raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
+    w = s.app(['merkadu', '--uninstall', desktop], '^Uninstall$', settle=False)
+    if not s.control('Merkadu Uninstall', '@state:confirm', timeout=10):
+        raise SkipShot('the uninstall window did not ask')
+    s.park_pointer()
+    s.shot('merkadu-uninstall', quiet=0.6, wid=w)
+    r = s.control('Merkadu Uninstall', 'Uninstall', timeout=3)
+    g = s.geom(w)
+    s.click(g['x'] + r[0] + r[2] / 2, g['y'] + r[1] + r[3] / 2)
+    s.control('Merkadu Uninstall', 'logo', timeout=5)
+    s.park_pointer()
+    s.shot('merkadu-uninstall-progress', quiet=0.6, wid=w)
+
+
 @scene('Welcome', [('welcome', 'Welcome: first steps after installing DebION')], needs=['sde-welcome'])
 def welcome(s):
     s.app(['sde-welcome'], '^Welcome$')
@@ -2633,7 +2715,7 @@ def parse_args(argv=None):
     a.xdg_data_dirs = []
     if a.build_dir:
         b = a.build_dir.resolve()
-        for d in ['src', 'src/niny', 'src/welcome', 'cargo/release', 'rust/release']:
+        for d in ['src', 'src/niny', 'src/welcome', 'src/merkadu', 'cargo/release', 'rust/release']:
             if (b / d).is_dir():
                 a.bin_dirs.append(b / d)
         if (b / 'tests').is_dir():

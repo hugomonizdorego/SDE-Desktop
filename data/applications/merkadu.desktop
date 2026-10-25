@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Merkadu
+GenericName=Software Center
+Comment=Find, install and remove apps from Debian, Flatpak and Snap
+Keywords=software;store;apps;install;remove;uninstall;flatpak;flathub;snap;debian;packages;Software Center;Ubuntu Software Center;
+Exec=merkadu %U
+TryExec=merkadu
+Icon=merkadu
+Terminal=false
+Categories=System;PackageManager;
+MimeType=x-scheme-handler/appstream;
+OnlyShowIn=SDE;
+StartupNotify=true
+StartupWMClass=merkadu
+Actions=Installed;Updates;
+X-SDE-Upstream=https://github.com/mortenpi/ubuntu-software-center
+X-Developer=Selviana DE Project
+
+[Desktop Action Installed]
+Name=Installed Apps
+Exec=merkadu --page installed
+
+[Desktop Action Updates]
+Name=App Updates
+Exec=merkadu --page updates
