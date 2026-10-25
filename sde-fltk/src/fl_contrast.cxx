@@ -31,7 +31,9 @@
 // Initial values of global/static variables defined by fl_contrast_* functions.
 
 // This defines the default contrast mode since FLTK 1.4.0
-static int fl_contrast_mode_ = FL_CONTRAST_CIELAB;
+// SDE-FLTK: the contrast of FLTK 1.3, which the SDE themes are made for (the
+// CIELAB mode picks other text colors on some accents, e.g. for selected text).
+static int fl_contrast_mode_ = FL_CONTRAST_LEGACY;
 
 // This defines the default contrast level per contrast mode
 static int fl_contrast_level_[10] = {

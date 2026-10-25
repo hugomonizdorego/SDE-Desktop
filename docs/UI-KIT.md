@@ -226,3 +226,15 @@ listed in `sde-fltk/CHANGES.SDE-FLTK`). What SDE code needs to know:
   `FL_PUSH`/`FL_RELEASE` of buttons 4 and 5.
 * **Dialogs**: the `fl_ask.H` dialogs are built by FLTK's `Fl_Message`;
   `Fl_SDE_Style::dialog()` still restyles them before they are shown.
+* **Text widgets**: `Fl_Text_Display::scrollbar_width(int)` sets the global
+  `Fl::scrollbar_size()` in 1.4; `scrollbar_size(int)` sets the width of one
+  widget (and takes effect at the next full redraw). The line number column
+  runs down to the bottom edge, below the horizontal scrollbar's row too.
+* **Windows**: a window with a size range (`size_range(min_w, min_h)`)
+  stays resizable when the program resizes it; 1.3 fixed the size of a
+  window without a `resizable()` widget at the first program resize.
+* **Events**: X11 pointer motion is no longer merged (every `FL_MOVE` and
+  `FL_DRAG` arrives), and tooltips hide by themselves after 12 seconds
+  (`Fl_Tooltip::hidedelay()`).
+* **Colors**: `fl_contrast()` keeps the FLTK 1.3 rule in SDE-FLTK, so FLTK's
+  own widgets pick the same text colors as before (selected text, say).

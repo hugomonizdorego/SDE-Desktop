@@ -28,6 +28,22 @@ SDE-FLTK changes (Selviana DE Project)
   - Fl_Menu_Bar: the menu bar under the pointer is a watched widget pointer
     (Fl::watch_widget_pointer), so a hovered menu bar that is deleted no
     longer leaves a dangling pointer behind.
+  - fl_config.cmake.in: FLTK_USE_SVG is left undefined when SVG support is
+    off (#cmakedefine, as in fl_config.in). Upstream's #cmakedefine01
+    defined it as 0, the sources test it with #ifdef, and a build without
+    SVG still compiled the SVG image code and needed the nanosvg headers.
+  - X11: the "boxcheat" of FLTK 1.3 is back (disabled in FLTK 1.4): a
+    single-buffered window with a filled box gets its color as the X
+    background pixel, so a window that is mapped, exposed or enlarged shows
+    that color instead of black or stale pixels until it is drawn.
+  - X11 with an input method: a window that the program moves no longer
+    sends FL_FOCUS again to a focused group (the window itself, say), which
+    answered by giving the focus to its first child; the keyboard focus
+    stays where it was, as with FLTK 1.3.
+  - fl_contrast() uses the FLTK 1.3 rule (FL_CONTRAST_LEGACY) by default:
+    the SDE themes are made for it, and the CIELAB rule of FLTK 1.4 picks
+    other text colors on some accents (selected text on the green and
+    orange accents of Graphite light, for instance).
 
 1.3.11-sde3  2026-10-24
   - X11: Fl_X::before_map, called right before a new top-level window is
