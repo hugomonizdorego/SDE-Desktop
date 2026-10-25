@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Clock faces (alpha52): styles, 12/24-hour formats, the Action Center's
-// date line, seven-segment masks and the sky's day/night decision.
+// Clock faces (alpha52): styles, the seconds and blinking colon options and
+// the migration of the old "blink" style (0.2 Alpha 2), 12/24-hour formats,
+// the Action Center's date line, seven-segment masks and the sky's
+// day/night decision.
 #include <clocale>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <string>
 
+#include "../src/common/config.h"
 #include "../src/panel/clockface.h"
 
 namespace {
@@ -55,17 +58,70 @@ int main() {
 
   // ------------------------------------------------------------ styles
   CHECK(parse_style("digital") == Style::Digital && parse_style("") == Style::Digital);
-  CHECK(parse_style("Blink") == Style::Blink && parse_style(" led ") == Style::Led);
+  CHECK(parse_style(" led ") == Style::Led);
   CHECK(parse_style("analog") == Style::Analog && parse_style("analogue") == Style::Analog);
   CHECK(parse_style("sundial") == Style::Digital);
-  for (Style s : {Style::Digital, Style::Blink, Style::Led, Style::Analog})
+  for (Style s : {Style::Digital, Style::Led, Style::Analog})
     CHECK(parse_style(style_name(s)) == s);
+  // 0.2 Alpha 2: "Blink" is no style any more but an option of its own.
+  CHECK(parse_style("Blink") == Style::Digital && legacy_blink_style(" Blink") &&
+        legacy_blink_style("blinking") && !legacy_blink_style("led"));
   Settings blink;
-  blink.style = Style::Blink;
+  blink.blink = true;
   Settings plain;
   CHECK(ticks_seconds(blink) && !ticks_seconds(plain));
   plain.seconds = true;
   CHECK(ticks_seconds(plain));
+  // The LED colon stays lit unless it blinks; the analog face has none.
+  Settings led;
+  led.style = Style::Led;
+  CHECK(!ticks_seconds(led) && colon_visible(led));
+  Settings analog;
+  analog.style = Style::Analog;
+  analog.blink = true;
+  CHECK(!ticks_seconds(analog) && colon_visible(analog));
+  analog.seconds = true;
+  CHECK(ticks_seconds(analog));
+
+  // --------------------------------- options from sde.conf, the migration
+  {
+    sde::Config cfg;
+    Settings s = Settings::from_config(cfg);
+    CHECK(s.style == Style::Digital && !s.seconds && !s.blink);
+    // The old style: digital with the blinking colon...
+    cfg.set("action_center", "clock_style", "blink");
+    s = Settings::from_config(cfg);
+    CHECK(s.style == Style::Digital && s.blink && !s.seconds);
+    // ...unless clock_blink says otherwise.
+    cfg.set("panel", "clock_blink", "false");
+    CHECK(!Settings::from_config(cfg).blink);
+    cfg.unset("panel", "clock_blink");
+    // Rewritten once.
+    CHECK(migrate_config(cfg));
+    CHECK_EQ(cfg.get("action_center", "clock_style", ""), "digital");
+    CHECK_EQ(cfg.get("panel", "clock_blink", ""), "true");
+    CHECK(!migrate_config(cfg));
+    s = Settings::from_config(cfg);
+    CHECK(s.style == Style::Digital && s.blink);
+    // [clock] style, seconds and blink are aliases; an explicit blink stays.
+    sde::Config old;
+    old.set("clock", "style", "blink");
+    old.set("clock", "seconds", "true");
+    old.set("clock", "blink", "false");
+    s = Settings::from_config(old);
+    CHECK(s.style == Style::Digital && s.seconds && !s.blink);
+    CHECK(migrate_config(old));
+    CHECK_EQ(old.get("clock", "style", ""), "digital");
+    CHECK(old.get("panel", "clock_blink", "").empty() && !Settings::from_config(old).blink);
+    // Every combination: LED with seconds and a blinking colon.
+    sde::Config both;
+    both.set("action_center", "clock_style", "led");
+    both.set("panel", "clock_seconds", "true");
+    both.set("panel", "clock_blink", "true");
+    s = Settings::from_config(both);
+    CHECK(s.style == Style::Led && s.seconds && s.blink && ticks_seconds(s));
+    CHECK(!migrate_config(both));
+  }
 
   // ------------------------------------------------------- 12/24 hours
   CHECK(format_is_12h("%I:%M:%S %p") && format_is_12h("%r") && !format_is_12h("%H:%M:%S"));

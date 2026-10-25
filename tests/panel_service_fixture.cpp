@@ -207,6 +207,102 @@ void ud_signal(const char* member, const std::string& path) {
 }
 void ud_changed() { changed(ud_part, "org.freedesktop.UDisks2.Filesystem"); }
 
+// --------------------------------------------------------------- UPower
+// (0.2 Alpha 2) The DisplayDevice of a laptop battery: 45 %, discharging,
+// 3 h 57 min left, like the QA power_supply battery of panel-smoke (the
+// showcase's: 78 %, 4 h 12 min). Mode "battery k=v ..." changes it: state
+// (charging, discharging, empty, full, pending-charge, pending-discharge,
+// unknown), percent, energy and full (Wh), rate (W), tte and ttf
+// (TimeToEmpty/TimeToFull, seconds), warning (WarningLevel: 1 none, 3 low,
+// 4 critical, 5 action), present and ac (0/1; without ac, OnBattery follows
+// the state). Modes upower-off and upower-on give the name up and take it
+// back (the panel then reads the power_supply class).
+const std::string up = "/org/freedesktop/UPower", up_display = up + "/devices/DisplayDevice";
+struct {
+  uint32_t state = 2, warning = 1;
+  double percent = 45, energy = 39.55, full = 88, rate = 10;
+  int64_t tte = 14220, ttf = 0;
+  bool present = true, on_battery = true;
+} battery;
+void dbl(dbus::Writer& w, const char* k, double v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k);
+  dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "d");
+  dbus_message_iter_append_basic(var.iter(), DBUS_TYPE_DOUBLE, &v);
+}
+void i64(dbus::Writer& w, const char* k, int64_t v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k);
+  dbus::Writer var(e.iter(), DBUS_TYPE_VARIANT, "x");
+  dbus_int64_t x = v;
+  dbus_message_iter_append_basic(var.iter(), DBUS_TYPE_INT64, &x);
+}
+void u32(dbus::Writer& w, const char* k, uint32_t v) {
+  dbus::Writer e(w.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+  e.str(k).variant_u32(v);
+}
+void upower_props(dbus::Writer& w) {
+  flag(w, "OnBattery", battery.on_battery);
+  flag(w, "LidIsClosed", false);
+  flag(w, "LidIsPresent", true);
+  str(w, "DaemonVersion", "1.90.2 (QA fixture)");
+}
+void display_props(dbus::Writer& w) {
+  u32(w, "Type", 2);  // battery
+  flag(w, "PowerSupply", true);
+  flag(w, "IsPresent", battery.present);
+  u32(w, "State", battery.state);
+  dbl(w, "Percentage", battery.percent);
+  dbl(w, "Energy", battery.energy);
+  dbl(w, "EnergyFull", battery.full);
+  dbl(w, "EnergyEmpty", 0);
+  dbl(w, "EnergyRate", battery.rate);
+  i64(w, "TimeToEmpty", battery.tte);
+  i64(w, "TimeToFull", battery.ttf);
+  u32(w, "WarningLevel", battery.warning);
+  str(w, "IconName", "battery-good-symbolic");
+}
+void battery_mode(const std::string& args) {
+  std::istringstream in(args);
+  std::string kv;
+  bool ac_given = false;
+  while (in >> kv) {
+    size_t eq = kv.find('=');
+    if (eq == std::string::npos) continue;
+    std::string k = kv.substr(0, eq), v = kv.substr(eq + 1);
+    double n = atof(v.c_str());
+    if (k == "state")
+      battery.state = v == "charging"            ? 1
+                      : v == "discharging"       ? 2
+                      : v == "empty"             ? 3
+                      : v == "full"              ? 4
+                      : v == "pending-charge"    ? 5
+                      : v == "pending-discharge" ? 6
+                                                 : 0;
+    else if (k == "percent")
+      battery.percent = n;
+    else if (k == "energy")
+      battery.energy = n;
+    else if (k == "full")
+      battery.full = n;
+    else if (k == "rate")
+      battery.rate = n;
+    else if (k == "tte")
+      battery.tte = int64_t(n);
+    else if (k == "ttf")
+      battery.ttf = int64_t(n);
+    else if (k == "warning")
+      battery.warning = uint32_t(n);
+    else if (k == "present")
+      battery.present = v == "1";
+    else if (k == "ac")
+      ac_given = true, battery.on_battery = v != "1";
+  }
+  if (!ac_given) battery.on_battery = battery.state == 2 || battery.state == 3 || battery.state == 6;
+  changed(up_display, "org.freedesktop.UPower.Device");
+  changed(up, "org.freedesktop.UPower");
+}
+
 // ------------------------------------------------------ AccountsService
 // The session's user (User4242: the real name and picture of
 // src/common/avatar.h, "QA Avatar Tester" or "Alex Tester" in the showcase,
@@ -312,6 +408,16 @@ DBusHandlerResult handle(DBusMessage* m) {
     drive_present = false;
     mount_point.clear();
     ud_signal("InterfacesRemoved", ud_part);
+  } else if (path == up && method == "GetAll") {
+    dbus::Writer w(r);
+    dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+    upower_props(props);
+  } else if (path == up && method == "GetDisplayDevice") {
+    dbus::Writer(r).path(up_display);
+  } else if (path == up_display && method == "GetAll") {
+    dbus::Writer w(r);
+    dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
+    display_props(props);
   } else if (path == nm && method == "GetAll") {
     dbus::Writer w(r);
     dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
@@ -498,6 +604,14 @@ DBusHandlerResult handle(DBusMessage* m) {
       }
     p.auto_login = args[0].boolean();
     user_changed(p);
+  } else if (path == "/SDETest" && method == "Mode" && !args.empty() &&
+             (args[0].str().rfind("battery ", 0) == 0 || args[0].str().rfind("upower-", 0) == 0)) {
+    // The battery modes leave the other services as they are.
+    auto mode = args[0].str();
+    if (mode.rfind("battery ", 0) == 0) battery_mode(mode.substr(8));
+    if (mode == "upower-off") dbus_bus_release_name(bus->conn(), "org.freedesktop.UPower", nullptr);
+    if (mode == "upower-on") bus->request_name("org.freedesktop.UPower");
+    log("MODE " + mode);
   } else if (path == "/SDETest" && method == "Mode" && !args.empty()) {
     auto mode = args[0].str();
     adapter_present = mode != "no-adapter";
@@ -576,6 +690,10 @@ int main(int argc, char** argv) {
     mia.password_mode = 1;
     people.push_back(mia);
   }
+  if (showcase) {  // tools/showcase.py's battery: 46.8 of 60 Wh at 11.14 W
+    battery.percent = 78, battery.energy = 46.8, battery.full = 60, battery.rate = 11.14;
+    battery.tte = 15124;
+  }
   // SDE_FIXTURE_SERVICES=accounts (tools/ui-smoke.py): AccountsService
   // only, without an X connection, a tray icon or the other services.
   const char* services = getenv("SDE_FIXTURE_SERVICES");
@@ -611,10 +729,11 @@ int main(int argc, char** argv) {
   bus = dbus::Bus::session();
   if (!bus || !bus->request_name("org.mpris.MediaPlayer2.sdeqa") || !bus->request_name("org.bluez") ||
       !bus->request_name("org.freedesktop.NetworkManager") ||
-      !bus->request_name("org.freedesktop.UDisks2") || !bus->request_name("org.freedesktop.Accounts"))
+      !bus->request_name("org.freedesktop.UDisks2") || !bus->request_name("org.freedesktop.Accounts") ||
+      !bus->request_name("org.freedesktop.UPower"))
     return 1;
   for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm,
-                           ud, ud_drive, ud_disk, ud_part, accounts})
+                           ud, ud_drive, ud_disk, ud_part, accounts, up, up_display})
     bus->export_object(path, handle);
   for (const auto& p : people) bus->export_object(p.path, handle);
   display = XOpenDisplay(nullptr);

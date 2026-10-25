@@ -21,7 +21,6 @@ namespace clockface {
 
 Style parse_style(const std::string &name) {
   std::string n = lower(trim(name));
-  if (n == "blink" || n == "blinking") return Style::Blink;
   if (n == "led" || n == "seven-segment" || n == "7seg") return Style::Led;
   if (n == "analog" || n == "analogue") return Style::Analog;
   return Style::Digital;
@@ -29,12 +28,16 @@ Style parse_style(const std::string &name) {
 
 const char *style_name(Style s) {
   switch (s) {
-    case Style::Blink: return "blink";
     case Style::Led: return "led";
     case Style::Analog: return "analog";
     case Style::Digital: break;
   }
   return "digital";
+}
+
+bool legacy_blink_style(const std::string &name) {
+  std::string n = lower(trim(name));
+  return n == "blink" || n == "blinking";
 }
 
 bool format_is_12h(const std::string &t_fmt) {
@@ -60,6 +63,14 @@ bool use_24h(const Config &cfg) {
                  t_fmt ? t_fmt : "");
 }
 
+namespace {
+// [panel] |key|, with [clock] |alias| when it is not set.
+bool option(const Config &cfg, const char *key, const char *alias, bool fallback) {
+  if (!trim(cfg.get("panel", key, "")).empty()) return cfg.get_bool("panel", key, fallback);
+  return cfg.get_bool("clock", alias, fallback);
+}
+}  // namespace
+
 Settings Settings::from_config(const Config &cfg) {
   Settings s;
   // [action_center] clock_style (the clock's right-click menu, Settings);
@@ -67,13 +78,29 @@ Settings Settings::from_config(const Config &cfg) {
   std::string style = cfg.get("action_center", "clock_style", "");
   if (trim(style).empty()) style = cfg.get("clock", "style", "digital");
   s.style = parse_style(style);
-  // [panel] clock_seconds, with [clock] seconds as its alias.
-  std::string seconds = trim(cfg.get("panel", "clock_seconds", ""));
-  s.seconds = seconds.empty() ? cfg.get_bool("clock", "seconds", false)
-                              : cfg.get_bool("panel", "clock_seconds", false);
+  // [panel] clock_seconds and clock_blink, with [clock] seconds and blink
+  // as their aliases. The old "blink" style blinks unless clock_blink says
+  // otherwise.
+  s.seconds = option(cfg, "clock_seconds", "seconds", false);
+  s.blink = option(cfg, "clock_blink", "blink", legacy_blink_style(style));
   s.h24 = use_24h(cfg);
   s.show_date = cfg.get_bool("panel", "show_date", true);
   return s;
+}
+
+bool migrate_config(Config &cfg) {
+  bool blink = false;
+  for (const char *section : {"action_center", "clock"}) {
+    const char *key = std::string(section) == "clock" ? "style" : "clock_style";
+    if (!legacy_blink_style(cfg.get(section, key, ""))) continue;
+    cfg.set(section, key, "digital");
+    blink = true;
+  }
+  if (!blink) return false;
+  if (trim(cfg.get("panel", "clock_blink", "")).empty() &&
+      trim(cfg.get("clock", "blink", "")).empty())
+    cfg.set("panel", "clock_blink", "true");
+  return true;
 }
 
 std::string format_time(const struct tm &t, bool h24, bool seconds) {
@@ -388,13 +415,13 @@ int analog_size(int h) { return std::max(S(14), std::min(S(30), h - S(12))); }
 }  // namespace
 
 bool colon_visible(const Settings &s) {
-  // Blink and LED: on in even seconds.
-  if (s.style != Style::Blink && s.style != Style::Led) return true;
+  // A blinking colon is on in even seconds.
+  if (!s.blink || s.style == Style::Analog) return true;
   return now() % 2 == 0;
 }
 
 bool ticks_seconds(const Settings &s) {
-  return s.seconds || s.style == Style::Blink || s.style == Style::Led;
+  return s.seconds || (s.blink && s.style != Style::Analog);
 }
 
 void draw_blink_text(const std::string &s, int x, int y, int w, int h, const Color &c,
