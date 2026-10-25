@@ -70,6 +70,11 @@ class StylePicker : public Fl_Widget {
         if (kStyles[i] == clockface::Style::Led) {
           std::string d = clockface::time_digits(lt, cs.h24, cs.seconds);
           double lh = ph * (cs.seconds ? .30 : .38), lw = clockface::led_width(d, lh);
+          // Narrow cards (1024x600 at 150 %): the digits keep a margin.
+          if (lw > cw - S(16)) {
+            lh *= (cw - S(16)) / lw;
+            lw = clockface::led_width(d, lh);
+          }
           clockface::draw_led(p, d, cx + (cw - lw) / 2, y() + (ph - lh) / 2, lh,
                               t.accent.mix(ink, .55), colon, true);
         } else if (kStyles[i] == clockface::Style::Analog) {
