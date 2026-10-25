@@ -10,6 +10,7 @@ import argparse
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess as sp
 import tempfile
 import time
@@ -197,6 +198,9 @@ for i,n in enumerate(APPS):
 # SDE's own helper entries (alpha 51: "Log Out" was listed between Liria and
 # Login Window); they must stay out of the menu.
 HELPERS=[f for f in ('sde-logout.desktop','sde-lock.desktop','sde-power.desktop') if (Path(__file__).resolve().parents[1]/'data/applications'/f).exists()]
+if not Path('/usr/share/icons/hicolor/scalable/apps/sde-app-nm-connection-editor.svg').exists():
+    (home/'.local/share/icons').mkdir(parents=True,exist_ok=True)
+    os.symlink(Path(__file__).resolve().parents[1]/'data/icons/hicolor',home/'.local/share/icons/hicolor')
 for f in HELPERS:(home/'.local/share/applications'/f).write_text((Path(__file__).resolve().parents[1]/'data/applications'/f).read_text())
 def menu_scroll():return layout('SDE Menu')['@list-scroll'][0]
 def inside(r,area):return area[0]<=r[0] and r[0]+r[2]<=area[0]+area[2]
@@ -336,12 +340,13 @@ def menu_checks():
     waitfor(lambda:'result:Log Out, Restart or Shut Down' in layout('SDE Search'),'typing in the menu did not search')
     assert 'query:shut down' in layout('SDE Search'),layout('SDE Search').keys()
     shot('23-menu-typing-searches');escape('SDE Search')
-    # alpha15 favorites become one tile group.
+    # alpha15 favorites go into the groups of their categories (0.2 Alpha 2).
     favs=';'.join(f'qa-{n.lower()}.desktop' for n in APPS[:12])
     config(extra=f'[menu]\nfavorites={favs}\n');reload()
     m=click_panel('start','^SDE Menu$');time.sleep(.8)
-    waitfor(lambda:sum(k.startswith('tile:') for k in layout('SDE Menu'))>=6,'migrated favorites missing')
-    L=layout('SDE Menu');assert [k for k in L if k.startswith('group:')]==['group:Productivity'],L.keys()
+    waitfor(lambda:'group:Internet' in layout('SDE Menu'),'migrated favorites missing')
+    L=layout('SDE Menu');names=[k[6:] for k in L if k.startswith('group:')]
+    assert names and set(names)<=set(TILE_GROUPS) and 'Productivity' not in names,names
     assert 'tiles=' not in conf();escape('SDE Menu')
     # Tile groups and sizes.
     config(extra='[menu]\ntiles=Work,qa-atlas.desktop:m,qa-bluefish.desktop:m,qa-calendar.desktop:w;Play,qa-chess.desktop:s,qa-sudoku.desktop:l\n');reload()
@@ -392,6 +397,199 @@ def menu_checks():
     shot('27-menu-resized');escape('SDE Menu')
     m=click_panel('start','^SDE Menu$');time.sleep(.6);assert geom(m)['w']<w0-20,'menu size not kept';escape('SDE Menu')
     config();reload()
+# The tile groups by category (0.2 Alpha 2), in their order.
+TILE_GROUPS=['Internet','Office','Multimedia','Graphics','Development','Games','Education & Science',
+             'System & Settings','Accessories','Other']
+def a2_menu_checks():
+    """0.2.0 Alpha 2 Start menu: typing searches from every place (after the
+    category filter, in its dropdown, in and after a context menu, from the
+    rail, the jump grid and the account popup; after a popup a click outside
+    still closes the menu); tile groups by category (defaults, Productivity
+    and Explore migrated); drags between groups with drop feedback and
+    autoscroll, a new group named at once, a group renamed by a click and
+    moved by its name, an empty group removed; a search result dragged into
+    a group; Uninstall... (Merkadu) and its absence; icon fallbacks."""
+    apps_dir=home/'.local/share/applications'
+    def L():return layout('SDE Menu')
+    def query():
+        return next((k[6:] for k in layout('SDE Search') if k.startswith('query:')),None) if visible('^SDE Search$') else None
+    def open_menu():
+        for t in ('SDE Search','SDE Menu'):
+            if visible('^'+t+'$'):escape(t)
+        command(['--menu'],'SDE Menu')
+        waitfor(lambda:(home/'qa'/'SDE-Menu.input').exists() and '@menu' in L(),'the menu does not have the keyboard')
+        time.sleep(.4);return find('^SDE Menu$')
+    def typed(text,why):
+        run('xdotool','type','--delay','60',text)
+        waitfor(lambda:query()==text,f'typing {text!r} {why} did not search (query {query()!r})')
+        escape('SDE Search')
+    def popup_seq():return next((int(k[5:]) for k in layout('SDE Menu-popup') if k.startswith('@seq:')),0)
+    def popup_items():return [k[5:] for k,v in layout('SDE Menu-popup').items() if k.startswith('item:') and v[4]]
+    def right_click(name):
+        seq=popup_seq();r=item('SDE Menu',name);g=geom(find('^SDE Menu$'))
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:popup_seq()>seq,'no context menu for '+name);time.sleep(.4)
+        return popup_items()
+    def choose(items,label):
+        assert label in items,(label,items)
+        run('xdotool','key',*(['Down']*(items.index(label)+1)),'Return');time.sleep(.6)
+    def hold(win,src):
+        g=geom(win);run('xdotool','mousemove',g['x']+src[0],g['y']+src[1],'mousedown','1');time.sleep(.2)
+        return g
+    def glide(g,src,dst,steps=6):
+        for k in range(1,steps+1):
+            run('xdotool','mousemove',g['x']+src[0]+(dst[0]-src[0])*k//steps,g['y']+src[1]+(dst[1]-src[1])*k//steps);time.sleep(.07)
+        time.sleep(.4)
+    def tiles_of(group):
+        m=re.search(r'tiles=(?:[^\n]*;)?'+re.escape(group)+r',([^;\n]*)',conf())
+        return m.group(1).split(',') if m else None
+    def drop_target():return next((v for k,v in L().items() if k.startswith('@drop:')),None)
+    def jump(letter):
+        press('SDE Menu',next(k for k in L() if k.startswith('letter:')));press('SDE Menu','jump:'+letter)
+    # 1) Typing searches from every place of the menu.
+    config(overflow=False);reload()
+    open_menu();typed('zea','in the menu')
+    open_menu();press('SDE Menu',next(k for k in L() if k.startswith('filter:')));time.sleep(.5)
+    run('xdotool','key','Down','Down','Return');waitfor(lambda:'filter:Accessories' in L(),'category filter not applied')
+    typed('at','after choosing a category')
+    open_menu();seq=popup_seq();press('SDE Menu',next(k for k in L() if k.startswith('filter:')))
+    waitfor(lambda:popup_seq()>seq,'the category filter did not open');time.sleep(.3)
+    typed('wg','in the open category filter')
+    open_menu();right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape');time.sleep(.4)
+    assert visible('^SDE Menu$'),'Escape in a context menu closed the menu'
+    typed('bl','after a context menu')
+    open_menu();right_click(next(k for k in L() if k.startswith(('app:','added:','most-used:'))))
+    typed('ka','in a context menu')
+    open_menu()
+    for _ in range(5):run('xdotool','key','Tab');time.sleep(.2)
+    typed('no','from the rail')
+    open_menu();press('SDE Menu',next(k for k in L() if k.startswith('letter:')))
+    waitfor(lambda:any(k.startswith('jump:') for k in L()),'no jump grid');typed('xo','from the jump grid')
+    open_menu();press('SDE Menu','rail:account');waitfor(lambda:'@account-popup' in L(),'account popup did not open')
+    typed('ed','in the account popup')
+    # After a popup the menu has its grabs back: a click outside closes it.
+    open_menu();press('SDE Menu',next(k for k in L() if k.startswith('filter:')));time.sleep(.5)
+    run('xdotool','key','Down','Return');time.sleep(.5)
+    run('xdotool','mousemove',W*4//5,H//3,'click','1');gone('^SDE Menu$')
+    # 2) Without saved tiles: groups by category, in the category order.
+    config(overflow=False);reload();open_menu()
+    names=[k[6:] for k in L() if k.startswith('group:')]
+    assert len(names)>=2 and set(names)<=set(TILE_GROUPS) and 'Productivity' not in names,names
+    assert [n for n in TILE_GROUPS if n in names]==names,('groups out of the category order',names)
+    shot('63-menu-category-groups')
+    # 3) Groups of 0.2 Alpha 1: Productivity and Explore become category
+    # groups (sizes kept), the user's own group stays.
+    config(overflow=False,extra='[menu]\ntiles=Productivity,qa-calendar.desktop:m,qa-editor.desktop:w;Explore,qa-inkscape.desktop:s;Mine,qa-atlas.desktop:m\n')
+    reload();m=open_menu()
+    names=[k[6:] for k in L() if k.startswith('group:')]
+    assert names[:2]==['Internet','Office'],names
+    assert L()['@tile-size:Editor'][0]==ord('w'),L()['@tile-size:Editor']
+    # 4) A tile dragged into another group: the group is tinted, a bar shows
+    # the place (QA: @drop with the group and the index), the group that
+    # lost its last tile goes, tiles_version=2 is saved.
+    src=center(item('SDE Menu','tile:Calendar'));editor=item('SDE Menu','tile:Editor')
+    g=hold(m,src);glide(g,src,(editor[0]+editor[2]*3//4,editor[1]+editor[3]//2))
+    waitfor(lambda:drop_target()==(1,1,0,0,1,0),'drop target after Editor not shown: '+str(drop_target()))
+    assert '@new-group-zone' in L(),L().keys()
+    shot('64-menu-drag-between-groups')
+    run('xdotool','mouseup','1');time.sleep(.6)
+    waitfor(lambda:tiles_of('Office')==['qa-editor.desktop:w','qa-calendar.desktop:m'],'tile not moved: '+conf())
+    assert 'tiles=Internet' not in conf() and 'tiles_version=2' in conf(),conf()
+    # 5) Held near the bottom of the tiles they scroll to the end; dropped on
+    # the place for a new group, the tile makes a group named at once.
+    t=L()['@tiles'];src=center(item('SDE Menu','tile:Calendar'));g=hold(m,src)
+    bottom=(t[0]+t[2]//2,t[1]+t[3]-round(6*scale))
+    glide(g,src,bottom)
+    waitfor(lambda:L()['@tiles-scroll'][0]==L()['@tiles-scroll'][1],'the tiles did not scroll to the end while held at the bottom')
+    zone=waitfor(lambda:L().get('@new-group-zone'),'no place for a new group')
+    glide(g,bottom,center(zone))
+    n_groups=conf().split('tiles=')[1].split('\n')[0].count(';')+1
+    assert drop_target()[0]==n_groups,(drop_target(),n_groups)
+    shot('65-menu-new-group-zone')
+    run('xdotool','mouseup','1');time.sleep(.6)
+    run('xdotool','type','--delay','40','Writing');run('xdotool','key','Return')
+    waitfor(lambda:tiles_of('Writing')==['qa-calendar.desktop:m'],'new group not named: '+conf())
+    # 6) A click on a group's name renames it; a drag on it moves the group.
+    press('SDE Menu','group:Writing');time.sleep(.3)
+    run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Texts');run('xdotool','key','Return')
+    waitfor(lambda:tiles_of('Texts')==['qa-calendar.desktop:m'],'group rename by a click not saved: '+conf())
+    above=[k[6:] for k in L() if k.startswith('group:') and k!='group:Texts'][-1]
+    src=center(item('SDE Menu','group:Texts'));dst=item('SDE Menu','group:'+above)
+    g=hold(m,src);glide(g,src,(dst[0]+dst[2]//2,dst[1]+dst[3]//5))
+    waitfor(lambda:any(k=='@group-drop:Texts' for k in L()),'no feedback for the moved group')
+    shot('66-menu-move-group')
+    run('xdotool','mouseup','1')
+    waitfor(lambda:f';Texts,qa-calendar.desktop:m;{above},' in conf() or f'tiles=Texts,qa-calendar.desktop:m;{above},' in conf(),
+            'group not moved: '+conf())
+    # 7) An empty group: "Drag apps here" and a remove button.
+    t=L()['@tiles'];g=geom(m)
+    run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]-round(8*scale),'click','3')
+    waitfor(lambda:'New Group' in popup_items(),'no background menu');time.sleep(.3)
+    choose(popup_items(),'New Group');run('xdotool','type','--delay','30','Spare');run('xdotool','key','Return')
+    waitfor(lambda:'Spare' in conf(),'empty group not saved: '+conf())
+    shot('67-menu-empty-group')
+    press('SDE Menu','group-remove:Spare')
+    waitfor(lambda:'Spare' not in conf() and 'group-remove:Spare' not in L(),'empty group not removed: '+conf())
+    escape('SDE Menu')
+    # 8) A search result dragged out of the search into a group.
+    open_menu();run('xdotool','type','--delay','50','zeal')
+    waitfor(lambda:'result:Zeal' in layout('SDE Search'),'Zeal not found')
+    s=find('^SDE Search$');r=center(item('SDE Search','result:Zeal'));g=hold(s,r)
+    glide(g,r,(r[0],r[1]-round(40*scale)),3)
+    m=find('^SDE Menu$');waitfor(lambda:any(k.startswith('@drop:qa-zeal') for k in L()),'the menu did not take the drag')
+    gm=geom(m);first=item('SDE Menu',next(k for k in L() if k.startswith('tile:')))
+    run('xdotool','mousemove',gm['x']+first[0]+first[2]//4,gm['y']+first[1]+first[3]//2);time.sleep(.5)
+    shot('68-menu-drag-from-search');run('xdotool','mouseup','1');time.sleep(.6)
+    waitfor(lambda:'qa-zeal.desktop:m' in conf().split('tiles=')[1].split('\n')[0],'search result not dropped: '+conf())
+    assert not visible('^SDE Search$'),'the search stayed open'
+    escape('SDE Menu')
+    # 9) Uninstall... runs `merkadu --uninstall <desktop file>`; cancelled
+    # (exit 2) nothing changes, removed (exit 0) the application and its
+    # tile go. Without Merkadu there is no such item.
+    (home/'bin/merkadu').write_text('#!/bin/sh\necho "MERKADU $*" >> "$HOME/commands.log"\n'
+                                   'code=$(cat "$HOME/merkadu-exit" 2>/dev/null || echo 0)\n'
+                                   '[ "$code" = 0 ] && [ "$1" = --uninstall ] && rm -f "$2"\nexit "$code"\n')
+    (home/'bin/merkadu').chmod(0o755)
+    keep=(apps_dir/'qa-zeal.desktop').read_text()
+    (home/'merkadu-exit').write_text('2\n')
+    open_menu();jump('Z');items=right_click('app:Zeal');assert items[-1]=='Uninstall...',items
+    shot('69-menu-uninstall-item');choose(items,'Uninstall...');gone('^SDE Menu$')
+    waitfor(lambda:commands('MERKADU --uninstall '+str(apps_dir/'qa-zeal.desktop')),'Merkadu not asked to uninstall')
+    time.sleep(1.0);assert (apps_dir/'qa-zeal.desktop').exists() and 'qa-zeal.desktop' in conf(),'cancelled, yet removed'
+    (home/'merkadu-exit').write_text('0\n')
+    open_menu();jump('Z');choose(right_click('app:Zeal'),'Uninstall...')
+    waitfor(lambda:not (apps_dir/'qa-zeal.desktop').exists(),'the stub did not remove the application')
+    waitfor(lambda:'qa-zeal.desktop' not in conf(),'the tile of the removed application stayed: '+conf())
+    open_menu();assert 'tile:Zeal' not in L() and 'app:Zeal' not in L(),L().keys()
+    # SDE's own applications cannot be removed alone: no Uninstall... there.
+    own=next((k for k in L() if k.startswith(('app:','added:','most-used:')) and k.split(':',1)[1] in
+              ('Control Center','SDE System Monitor','Display Settings','Software Updater')),None)
+    if own:assert 'Uninstall...' not in right_click(own),own
+    run('xdotool','key','Escape');time.sleep(.3)
+    (home/'bin/merkadu').unlink()
+    others=os.pathsep.join(d for d in e['PATH'].split(os.pathsep) if d!=str(home/'bin'))
+    if shutil.which('merkadu',path=others) is None:
+        items=right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape')
+        assert 'Uninstall...' not in items,items
+    else:print('PANEL a2: merkadu is installed: the menu without it is not checked',flush=True)
+    escape('SDE Menu');(apps_dir/'qa-zeal.desktop').write_text(keep)
+    # 10) Icons the theme lacks: SDE's drawing of Advanced Network
+    # Configuration (its Icon= is a generic name), a category icon for an
+    # application without an icon.
+    nm=apps_dir/'nm-connection-editor.desktop'
+    nm.write_text('[Desktop Entry]\nType=Application\nName=Advanced Network Configuration\nIcon=preferences-system-network\n'
+                  'Exec=nm-connection-editor\nCategories=GNOME;GTK;Settings;X-GNOME-NetworkSettings;\n')
+    (apps_dir/'qa-iconless-game.desktop').write_text('[Desktop Entry]\nType=Application\nName=Iconless Game QA\n'
+                                                     'Icon=qa-no-icon-at-all\nExec=true\nCategories=Game;\n')
+    time.sleep(1.0);open_menu()
+    def icons():return {k.split('=',1)[0][6:]:k.split('=',1)[1] for k in L() if k.startswith('@icon:')}
+    waitfor(lambda:'Advanced Network Configuration' in icons() and 'Iconless Game QA' in icons(),'no icon fallbacks: '+str(icons()))
+    assert icons()['Advanced Network Configuration']=='sde-app-nm-connection-editor',icons()
+    assert icons()['Iconless Game QA'] not in ('','qa-no-icon-at-all'),icons()
+    shot('70-menu-icon-fallbacks');escape('SDE Menu')
+    nm.unlink();(apps_dir/'qa-iconless-game.desktop').unlink()
+    config(overflow=False);reload()
+    print('PANEL a2 start menu: typing searches everywhere, grabs after popups, groups by category, migration, drags between groups with feedback and autoscroll, new/renamed/moved/removed groups, drag from the search, Uninstall..., icon fallbacks PASS',flush=True)
 def perf_log():
     """Lines of the Start menu timing hook (src/panel/menu_perf.h)."""
     try:text=(home/'qa'/'menu-perf.log').read_text().splitlines()
@@ -1306,12 +1504,13 @@ try:
     if a.only=='a52':
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     if a.only=='start-menu':
-        panel_checks_a50();menu_checks();search_checks();start_menu_checks();raise SystemExit(0)
+        panel_checks_a50();menu_checks();search_checks();start_menu_checks();a2_menu_checks();raise SystemExit(0)
     panel_checks_a50()
     menu_checks()
     account_checks()
     search_checks()
     start_menu_checks()
+    a2_menu_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
     config(overflow=False);reload()
     waitfor(lambda:'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons')

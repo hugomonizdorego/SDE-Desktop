@@ -275,8 +275,44 @@ int popup_menu_dispatch(int event, Fl_Window *w) {
 }
 }  // namespace
 
+// UI test hook: <qa>/<title>-popup.txt lists the items of the popup menu
+// that is open ("item:<label>", "sub:<submenu>/<label>", the active flag
+// as the sixth field) after an "@seq:<n>" line that grows with each one.
+static void qa_dump_popup(Fl_Window *win, const Fl_Menu_Item *items) {
+  if (!qa_dump_enabled() || !win->label()) return;
+  static int seq = 0;
+  std::string text = "@seq:" + std::to_string(++seq) + "\t0\t0\t0\t0\t1\n";
+  std::string prefix;
+  int depth = 0;
+  for (const Fl_Menu_Item *m = items; m && (m->text || depth > 0); ++m) {
+    if (!m->text) {  // the end of a submenu
+      --depth;
+      prefix.clear();
+      continue;
+    }
+    std::string label = m->text;
+    label.erase(std::remove(label.begin(), label.end(), '\t'), label.end());
+    text += (depth ? "sub:" + prefix : "item:") + label + "\t0\t0\t0\t0\t" +
+            std::to_string(m->active() ? 1 : 0) + "\n";
+    if (m->flags & FL_SUBMENU) {
+      ++depth;
+      prefix = label + "/";
+    }
+  }
+  std::string name = win->label();
+  for (char &c : name)
+    if (c == '/' || c == ' ') c = '-';
+  std::string path = std::string(getenv("SDE_PANEL_QA_DIR")) + "/" + name + "-popup.txt";
+  if (FILE *f = fopen((path + ".tmp").c_str(), "w")) {
+    fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    rename((path + ".tmp").c_str(), path.c_str());
+  }
+}
+
 const Fl_Menu_Item *PanelPopup::popup_menu(const Fl_Menu_Item *items, int x, int y,
                                            std::string *typed) {
+  qa_dump_popup(this, items);
   std::string text;
   g_menu_typed = &text;
   g_dispatch_before = Fl::event_dispatch();

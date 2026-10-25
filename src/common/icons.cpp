@@ -652,12 +652,15 @@ std::vector<std::string> app_icon_names(const DesktopEntry &e) {
   std::string id = e.id;
   if (ends_with(id, ".desktop")) id.resize(id.size() - 8);
   if (id.find(':') != std::string::npos) id.clear();  // no desktop file ID ("sde-search:...")
+  std::string program = program_of(e.exec);
   add_forms(own, id);
-  add_forms(own, program_of(e.exec));
+  add_forms(own, program);
   add_forms(own, trim(e.startup_wm_class));
   // SDE's own drawing for a common application that no theme draws well
-  // (hicolor, "sde-app-" + the desktop file ID; see docs/BRANDING.md).
+  // (hicolor, "sde-app-" + the desktop file ID or the program; see
+  // docs/BRANDING.md).
   if (!id.empty()) add_name(own, "sde-app-" + id);
+  if (!program.empty() && program.find('.') == std::string::npos) add_name(own, "sde-app-" + program);
   bool own_first = !icon.empty() && stock_icon(icon);
   std::vector<std::string> out = own_first ? own : given;
   for (auto &n : own_first ? given : own) add_name(out, n);

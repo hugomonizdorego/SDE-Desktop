@@ -3157,6 +3157,12 @@ void AppMenu::qa_dump_menu() {
     if (name.empty()) continue;
     if (it.kind == K_TILE)
       line("@tile-size:" + it.entry->name, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
+    // 0.2 Alpha 2: an application drawn with another icon than its Icon=
+    // (a near match or a category icon, IconLoader::app_icon()).
+    if ((it.kind == K_ROW || it.kind == K_TILE) && it.entry) {
+      std::string drawn = IconLoader::app_icon(*it.entry, start_row_icon_size());
+      if (drawn != it.entry->icon) line("@icon:" + it.entry->name + "=" + drawn, 0, 0, 0, 0, 1, 0);
+    }
     line(name, it.x, it.y, it.w, it.h, 1, it.clipped() ? 1 : 0);
   }
   qa_dump(this, text);
