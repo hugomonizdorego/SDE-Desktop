@@ -50,6 +50,13 @@ bool map_if_unmapped(Window w);
 void set_window_type(Window w, const char *type);
 // _NET_WM_WINDOW_OPACITY for compositors; 1.0 removes the property.
 void set_opacity(Window w, double opacity);  // e.g. "_NET_WM_WINDOW_TYPE_DOCK"
+// Marks |w| as an SDE glass surface (_SDE_SURFACE, 0.2.0 Alpha 2) for the
+// Liquid Glass shader of the generated compositor configuration (see
+// Theme::liquid): "panel", "panel-round" (floating and short panels),
+// "popup" (panel popups, notifications, OSDs), "popup-top" / "popup-bottom"
+// (only those corners rounded: the Action Center on a bottom / top panel),
+// "menu" or "tooltip". The surface is drawn flat in its surface color.
+void set_surface(Window w, const char *kind);
 void set_bottom_strut(Window w, int height, int x_start, int x_end, int screen_h);
 // Reserves |height| pixels at the top or bottom edge of the monitor that
 // spans [monitor_y, monitor_y + monitor_h). height 0 removes the strut.

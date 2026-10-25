@@ -472,13 +472,13 @@
       "credits": [],
       "trademarks": [],
       "notices": ["/usr/share/doc/sde/upstream/picom/COPYING", "/usr/share/doc/sde/upstream/picom/LICENSES/MPL-2.0", "/usr/share/doc/sde/upstream/picom/LICENSES/MIT"],
-      "sources": ["vendor/components/sde-compositor/"]
+      "sources": ["vendor/components/sde-compositor/", "suite/patches/sde-compositor/"]
     },
     {
       "id": "sde-themes",
       "name": "SDE themes",
       "kind": "theme",
-      "summary": "SDE Graphite, SDE Fluent and SDE Glass for GTK 3 and GTK 4",
+      "summary": "SDE Graphite, SDE Fluent and SDE Liquid Glass for GTK 3 and GTK 4",
       "programs": [],
       "icons": [],
       "license": "GPL-3.0-or-later AND GPL-3.0-only AND CC-BY-SA-4.0",

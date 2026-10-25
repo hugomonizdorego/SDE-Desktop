@@ -300,6 +300,38 @@ Color theme_accent_color(const std::string &family, const std::string &accent, b
   return Color::hex(family_info(family).accent[a < 0 ? 0 : a][dark ? 1 : 0]);
 }
 
+LiquidMaterial theme_liquid_material(const std::string &family, bool dark) {
+  const palettes::Liquid &q = family_info(family).liquid;
+  LiquidMaterial m;
+  if (!q.on) return m;
+  int i = dark ? 1 : 0;
+  m.on = true;
+  m.blur = q.blur;
+  m.saturation = q.saturation;
+  m.brightness = q.brightness[i];
+  m.lens_band = q.lens_band;
+  m.lens_shift = q.lens_shift;
+  m.rim = q.rim[i];
+  m.rim_width = q.rim_width;
+  m.key_range = q.key_range;
+  return m;
+}
+
+double liquid_legible_luminance(const Theme &t) {
+  // A little above the WCAG ratios: the shader finds the tint in a few steps.
+  auto limit = [&](const Color &fg, double ratio) {
+    double l = fg.luminance();
+    return t.dark ? (l + 0.05) / ratio - 0.05 : ratio * (l + 0.05) - 0.05;
+  };
+  double text = limit(t.text, 4.6), menu = limit(t.menu_text, 4.6), dim = limit(t.text_dim, 3.1);
+  // Accent-colored text (letter headings, links) gets 3:1 too, as far as
+  // the glass stays glass: never lighter than 0.55 in a light theme or
+  // darker than 0.06 in a dark one for it.
+  double accent = limit(t.accent, 3.1);
+  if (t.dark) return std::max(0.0, std::min({text, menu, dim, std::max(0.06, accent)}));
+  return std::min(1.0, std::max({text, menu, dim, std::min(0.55, accent)}));
+}
+
 // Fills the palette of |t| from family/mode/accent (t.accent may already
 // hold a custom color).
 static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
@@ -370,7 +402,7 @@ static bool compositor_lite(const Config &cfg) {
 // Families keep a little character: Glass goes furthest, Graphite least.
 // Without blur (lite profile) surfaces only go part of the way.
 static void apply_transparency(Theme &t, const palettes::Family &f) {
-  t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = 1.0;
+  t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = t.toolkit_menu_opacity = 1.0;
   if (!t.translucent || t.transparency <= 0) return;
   // A square-root curve: the first steps of the slider (Subtle) already
   // show, the last ones (Glass) approach the readable limit gently.
@@ -383,6 +415,15 @@ static void apply_transparency(Theme &t, const palettes::Family &f) {
   t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, true),
                                      readable_opacity(t.text_dim, t.menu_bg, 3.0, true),
                                      readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, true)}));
+  // Menus of other toolkits fade as a whole, like SDE's without Liquid Glass.
+  t.toolkit_menu_opacity = t.popup_opacity;
+  if (t.liquid) {
+    // Liquid Glass: the shader tints only the surface color with the
+    // backdrop, keeps text and icons opaque and lifts (or deepens) the glass
+    // under text where the backdrop would make it hard to read, so the glass
+    // can stay clear: a 32 % tint at Subtle (25), 14 % at 100.
+    t.opacity = t.popup_opacity = 0.50 - 0.36 * std::sqrt(t.transparency / 100.0);
+  }
   // Frames: translucent title bars need blur behind them to stay calm;
   // Glass goes all the way, the other families part of it.
   double frame = toward(readable_opacity(t.titlebar_text, t.titlebar_bg, 4.5, true));
@@ -432,6 +473,10 @@ Theme Theme::from_config(const Config &cfg) {
   t.transparency = std::max(0, std::min(100, cfg.get_int("aero", "transparency", 25)));
   t.lite = compositor_lite(cfg);
   t.blur = t.translucent && !t.lite && cfg.get_bool("aero", "blur", true);
+  // Liquid Glass needs SDE's own OpenGL configuration of the compositor
+  // (blur and the shader): not on the lite profile, with XRender, with the
+  // compositor off or with a compositor.conf of the user's own.
+  t.liquid = f.liquid.on && t.glass && t.blur && t.transparency > 0 && compositor_backend(cfg) == "glx";
   apply_transparency(t, f);
   return t;
 }

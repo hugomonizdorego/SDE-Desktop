@@ -304,7 +304,11 @@ void button_box(int x, int y, int w, int h, Fl_Color c, bool down) {
   if (down) fill = fill.mix(t.text, 0.12);
   double r = t.radius_for(h);
   p.fill_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, fill);
-  p.stroke_rounded(x, y, w, h, r, fill.luminance() < t.border.luminance() - 0.1 ? fill : t.border);
+  // A raised button (0.2.0 Alpha 2): a hairline of light inside the top of
+  // the edge; dark fills (the accent button) keep their color as the edge.
+  bool deep = fill.luminance() < t.border.luminance() - 0.1;
+  p.surface_edge(x, y, w, h, r, deep ? fill.mix(Color::hex(0x000000), 0.12) : t.border, down ? 0.0 : deep ? 0.3 : 0.6,
+                 fill.luminance() < 0.3);
 }
 void button_up(int x, int y, int w, int h, Fl_Color c) { button_box(x, y, w, h, c, false); }
 void button_down(int x, int y, int w, int h, Fl_Color c) { button_box(x, y, w, h, c, true); }
@@ -434,9 +438,11 @@ class SdeStyle : public Fl_SDE_Style {
     const Theme &t = ui_theme();
     // Every family follows [aero] transparency (readable at any level).
     if (t.translucent && t.popup_opacity < 0.999) x11::set_opacity(xid, t.popup_opacity);
+    // A glass surface for the compositor (Liquid Glass draws it with its shader).
+    x11::set_surface(xid, "menu");
   }
 
-  int menu_padding() override { return S(5); }
+  int menu_padding() override { return S(6); }
   int menu_item_height(const Fl_Menu_Item *, const Fl_Menu_ *, int label_h) override {
     return std::max(label_h + S(12), S(30));
   }
@@ -454,9 +460,16 @@ class SdeStyle : public Fl_SDE_Style {
     const Theme &t = ui_theme();
     Painter p(w, h);
     p.fill_rect(0, 0, w, h, t.menu_bg);
-    if (t.glass) p.glass_sheen(0, 0, w, std::min(h, S(80)), 0, t.dark);
+    // 0.2.0 Alpha 2: the edge of every surface (a light rim inside the
+    // outline in dark mode), the glass light in SDE Liquid Glass; with the
+    // compositor's glass shader the menu stays flat and the shader lights it.
+    if (t.liquid) return;
     double r = std::min(double(t.radius), std::min(w, h) / 2.0);
-    p.stroke_rounded(0.5, 0.5, w - 1, h - 1, r, t.dark ? t.menu_border.mix(t.text, 0.08) : t.menu_border);
+    Color edge = t.dark ? t.menu_border.mix(t.text, 0.08) : t.menu_border;
+    if (t.glass)
+      p.glass_surface(0, 0, w, h, r, edge, t.dark);
+    else
+      p.surface_edge(0, 0, w, h, r, edge, t.dark ? 1.0 : 0.0, t.dark);
   }
 
   void menu_draw_item(const Fl_Menu_Item *m, const Fl_Menu_ *b, int x, int y, int w, int h,
@@ -500,7 +513,7 @@ class SdeStyle : public Fl_SDE_Style {
     const Theme &t = ui_theme();
     Painter p(cur_w(), cur_h());
     double yy = std::floor(y + h / 2.0) + 0.5;
-    p.line(x + Sd(6), yy, x + w - Sd(6), yy, t.border, 1.0);
+    p.line(x + Sd(8), yy, x + w - Sd(8), yy, t.menu_separator, 1.0);
   }
 
   void menu_draw_quick(const Fl_Menu_Item *m, const Fl_Menu_ *, int x, int y, int w, int h,
@@ -656,12 +669,16 @@ class SdeStyle : public Fl_SDE_Style {
     last_tip_text = tip_fg;
     Color bg = from_fl(Fl_Tooltip::color());
     {
-      // Soft corners (alpha51): the tooltip window is shaped like popups.
+      // Soft corners (alpha51): the tooltip window is shaped like popups,
+      // and is a glass surface for the compositor (0.2.0 Alpha 2).
       double r = std::min(double(t.radius_small), h / 2.0);
-      if (Fl_Window *win = Fl_Window::current()) shape_rounded(win, int(r));
+      if (Fl_Window *win = Fl_Window::current()) {
+        shape_rounded(win, int(r));
+        if (win->shown()) x11::set_surface(fl_xid(win), "tooltip");
+      }
       Painter p(w, h);
       p.fill_rect(0, 0, w, h, bg);
-      p.stroke_rounded(0.5, 0.5, w - 1, h - 1, r, t.border);
+      if (!t.liquid) p.surface_edge(0, 0, w, h, r, t.border, t.dark ? 0.8 : 0.0, t.dark);
     }
     fl_color(Fl_Tooltip::textcolor());
     fl_font(Fl_Tooltip::font(), Fl_Tooltip::size());

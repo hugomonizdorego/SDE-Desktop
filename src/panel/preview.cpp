@@ -277,6 +277,7 @@ void TaskPreview::show_items(const std::vector<Item> &items, int center_x, Windo
       XStoreName(fl_display, fl_xid(this), label());
       x11::set_string(fl_xid(this), "_NET_WM_NAME", label());
       x11::set_opacity(fl_xid(this), Panel::instance->theme().popup_opacity);
+      x11::set_surface(fl_xid(this), "popup");
     }
   } else {
     resize(x(), y(), w(), h());
@@ -364,7 +365,12 @@ void TaskPreview::draw() {
     cairo_t *cr = p.cr();
     double r = popup_style::radius();
     p.fill_rect(0, 0, w(), h(), t.surface);
-    p.stroke_rounded(0.5, 0.5, w() - 1, h() - 1, r, t.border);
+    // The edge of every panel popup (popup.cpp); the glass shader draws it
+    // in Liquid Glass.
+    if (t.glass && !t.liquid)
+      p.glass_surface(0, 0, w(), h(), r, t.border, t.dark);
+    else if (!t.liquid)
+      p.surface_edge(0, 0, w(), h(), r, t.border, t.dark ? 1.0 : 0.0, t.dark);
     for (size_t i = 0; i < cells_.size() && i < items_.size(); ++i) {
       const Cell &c = cells_[i];
       const Item &it = items_[i];

@@ -171,32 +171,43 @@ class PickCard : public Fl_Widget {
   bool hot_ = false;
 };
 
-// A miniature desktop window drawn with a family's palette: title bar with
-// that family's caption buttons, sidebar, text lines, an accent button and a
-// popup menu with the highlighted item.
+// A miniature desktop drawn with a family's palette and shapes (0.2.0
+// Alpha 2): a window with that family's corners and caption buttons,
+// sidebar, text lines and an accent button, a popup menu with the
+// highlighted item and a slim panel. SDE Liquid Glass shows its glass over
+// a livelier backdrop: translucent layers with light rims, pill shapes.
 void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w, double h,
                         double outer_r) {
-  // Backdrop: a calm, low-contrast wallpaper (alpha51: no colorful gradient).
+  bool glass = t.family == "glass";
+  // Backdrop: a calm wallpaper; behind glass, soft light spots to show it.
   Color paper = t.dark ? t.panel_bg.mix(Color::hex(0x000000), 0.25) : t.surface_alt.mix(t.border, 0.6);
-  p.fill_gradient(x, y, w, h, outer_r, paper.mix(t.accent, 0.10), paper, true);
-  double wx = x + w * 0.08, wy = y + h * 0.12, ww = w * 0.78, wh = h * 0.78;
-  double r = std::min(Sd(8), t.radius * 0.6);
+  if (glass) paper = t.dark ? Color::hex(0x1B2A3A) : Color::hex(0x9CC3DD);
+  p.fill_gradient(x, y, w, h, outer_r, paper.mix(t.accent, glass ? 0.28 : 0.10), paper, true);
+  if (glass) {
+    p.circle(x + w * 0.80, y + h * 0.22, h * 0.22, Color::hex(t.dark ? 0x46607A : 0xF6E7C8, 0.85));
+    p.circle(x + w * 0.18, y + h * 0.92, h * 0.30, Color::hex(t.dark ? 0x2E5B55 : 0x7FB7A7, 0.75));
+  }
+  double s = std::min(1.0, w / Sd(190));  // the miniature's scale
+  double wx = x + w * 0.07, wy = y + h * 0.10, ww = w * 0.74, wh = h * 0.70;
+  double r = std::max(Sd(3), t.radius * 0.6 * s);
   p.shadow(wx, wy, ww, wh, r, t.shadow.alpha(std::min(0.35, t.shadow.a)), int(Sd(6)));
-  Color body = t.background;
-  if (t.family == "glass") body = body.alpha(0.88);
+  Color body = glass ? t.background.alpha(t.dark ? 0.82 : 0.78) : t.background;
   p.fill_rounded(wx, wy, ww, wh, r, body);
   double th = Sd(16);
   // Title bar.
   cairo_save(p.cr());
   p.rounded_rect(wx, wy, ww, wh, r);
   cairo_clip(p.cr());
-  p.fill_rect(wx, wy, ww, th, t.titlebar_bg);
-  p.line(wx, wy + th - 0.5, wx + ww, wy + th - 0.5, t.border);
+  p.fill_rect(wx, wy, ww, th, glass ? t.titlebar_bg.alpha(0.7) : t.titlebar_bg);
+  if (!glass) p.line(wx, wy + th - 0.5, wx + ww, wy + th - 0.5, t.border);
   // Sidebar and content.
-  p.fill_rect(wx, wy + th, ww * 0.28, wh - th, t.surface_alt);
-  p.fill_rect(wx + ww * 0.28, wy + th, ww * 0.72, wh - th, t.surface);
+  p.fill_rect(wx, wy + th, ww * 0.28, wh - th, glass ? t.surface_alt.alpha(0.55) : t.surface_alt);
+  p.fill_rect(wx + ww * 0.28, wy + th, ww * 0.72, wh - th, glass ? t.surface.alpha(0.9) : t.surface);
   cairo_restore(p.cr());
-  p.stroke_rounded(wx + 0.5, wy + 0.5, ww - 1, wh - 1, r, t.border);
+  if (glass)
+    p.surface_edge(wx, wy, ww, wh, r, t.border.alpha(0.7), 1.0, t.dark);
+  else
+    p.stroke_rounded(wx + 0.5, wy + 0.5, ww - 1, wh - 1, r, t.border);
   double cy = wy + th / 2;
   {
     // Caption buttons of every family since alpha51 (Mint-Y like): a thin
@@ -223,18 +234,37 @@ void draw_theme_preview(Painter &p, const Theme &t, double x, double y, double w
   p.fill_rounded(cx, wy + th + Sd(9), ww * 0.34, Sd(4), Sd(2), t.text.alpha(0.75));
   p.fill_rounded(cx, wy + th + Sd(18), ww * 0.46, Sd(3), Sd(1.5), t.text_dim.alpha(0.6));
   p.fill_rounded(cx, wy + th + Sd(25), ww * 0.40, Sd(3), Sd(1.5), t.text_dim.alpha(0.6));
-  p.fill_rounded(cx, wy + wh - Sd(16), Sd(30), Sd(10), Sd(5), t.accent);
+  double br = std::min(Sd(5), t.radius_small * 0.6);  // pill buttons in Liquid Glass
+  p.fill_rounded(cx, wy + wh - Sd(16), Sd(30), Sd(10), glass ? Sd(5) : br, t.accent);
   // A popup menu overlapping the window, as Acrylic/vibrancy shows it; its
   // corners follow the family's radius like the real menus.
   double mx = wx + ww * 0.58, my = wy + wh * 0.42, mw = w * 0.36, mh = Sd(34);
-  double mr = std::min(Sd(7), t.radius * 0.55);
+  double mr = std::max(Sd(3), std::min(Sd(9), t.radius * 0.6));
   p.shadow(mx, my, mw, mh, mr, t.shadow.alpha(std::min(0.3, t.shadow.a)), int(Sd(5)));
-  p.fill_rounded(mx, my, mw, mh, mr, t.menu_bg.alpha(t.translucent ? 0.94 : 1.0));
-  p.stroke_rounded(mx + 0.5, my + 0.5, mw - 1, mh - 1, mr, t.menu_border);
-  p.fill_rounded(mx + Sd(3), my + Sd(12), mw - Sd(6), Sd(10), Sd(4), t.menu_hover);
+  p.fill_rounded(mx, my, mw, mh, mr, t.menu_bg.alpha(glass ? 0.80 : t.translucent ? 0.94 : 1.0));
+  if (glass)
+    p.surface_edge(mx, my, mw, mh, mr, t.menu_border.alpha(0.6), 1.0, t.dark);
+  else
+    p.stroke_rounded(mx + 0.5, my + 0.5, mw - 1, mh - 1, mr, t.menu_border);
+  p.fill_rounded(mx + Sd(3), my + Sd(12), mw - Sd(6), Sd(10), glass ? Sd(5) : Sd(4), t.menu_hover);
   p.fill_rounded(mx + Sd(7), my + Sd(5), mw * 0.5, Sd(3), Sd(1.5), t.menu_text.alpha(0.6));
   p.fill_rounded(mx + Sd(7), my + Sd(15.5), mw * 0.55, Sd(3), Sd(1.5), t.menu_hover_text.alpha(0.9));
   p.fill_rounded(mx + Sd(7), my + Sd(26), mw * 0.4, Sd(3), Sd(1.5), t.menu_text.alpha(0.6));
+  // The panel: a strip along the bottom, a floating glass pill in Liquid Glass.
+  double ph = Sd(11), py = y + h - ph - (glass ? Sd(4) : 0);
+  double px = glass ? x + w * 0.16 : x, pw = glass ? w * 0.68 : w;
+  cairo_save(p.cr());
+  p.rounded_rect(x, y, w, h, outer_r);
+  cairo_clip(p.cr());
+  p.fill_rounded(px, py, pw, glass ? ph : ph + outer_r, glass ? ph / 2 : 0, t.surface.alpha(glass ? 0.72 : 0.97));
+  if (glass)
+    p.surface_edge(px, py, pw, ph, ph / 2, t.border.alpha(0.5), 1.0, t.dark);
+  else
+    p.line(px, py + 0.5, px + pw, py + 0.5, t.border);
+  for (int i = 0; i < 4; ++i)
+    p.fill_rounded(px + (glass ? Sd(6) : Sd(5)) + i * Sd(9), py + Sd(3), Sd(6), ph - Sd(6), Sd(1.5),
+                   i == 0 ? t.accent : t.text_dim.alpha(0.45));
+  cairo_restore(p.cr());
 }
 
 // Theme family card: preview, name and a one-line description.
@@ -279,9 +309,9 @@ class FamilyCard : public PickCard {
 
  private:
   std::string short_desc() const {
-    if (id_ == "graphite") return N_("Calm colors · soft depth");
+    if (id_ == "graphite") return N_("Calm neutral grays · soft depth");
     if (id_ == "fluent") return N_("Fluent Design · Mica, Acrylic");
-    return N_("Frosted, rounded glass");
+    return N_("Clear glass · light rims");
   }
   std::string id_, label_, desc_;
 };
@@ -984,16 +1014,18 @@ class TransparencyCard : public PickCard {
         p.fill_rect(px + i * pw / 6, py, pw / 12, ph, Color::hex(0xFFFFFF).alpha(0.16));
       p.circle(px + pw * 0.72, py + ph * 0.35, ph * 0.22, Color::hex(0xE9D3A0));
       // A menu with text, at the popup opacity, and the panel at the bottom.
+      // Liquid Glass tints the glass and keeps text opaque.
+      double text_alpha = t.liquid ? 1.0 : t.popup_opacity, panel_alpha = t.liquid ? 1.0 : t.opacity;
       double mx = px + pw * 0.12, my = py + ph * 0.14, mw = pw * 0.56, mh = ph * 0.52;
       p.fill_rounded(mx, my, mw, mh, Sd(4), t.menu_bg.alpha(t.popup_opacity));
       for (int i = 0; i < 3; ++i)
         p.fill_rounded(mx + Sd(6), my + Sd(6) + i * mh / 3.4, mw * (i == 1 ? 0.5 : 0.66), Sd(3), Sd(1.5),
-                       t.menu_text.alpha(t.popup_opacity));
+                       t.menu_text.alpha(text_alpha));
       double bh = ph * 0.2;
       p.fill_rect(px, py + ph - bh, pw, bh, t.panel_bg.alpha(t.opacity));
       for (int i = 0; i < 4; ++i)
         p.fill_rounded(px + Sd(6) + i * Sd(12), py + ph - bh + bh * 0.25, Sd(8), bh * 0.5, Sd(2),
-                       (i == 0 ? g_theme.accent : t.text_dim).alpha(t.opacity));
+                       (i == 0 ? g_theme.accent : t.text_dim).alpha(panel_alpha));
       cairo_restore(p.cr());
       p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, S(10), on ? g_theme.accent : g_theme.border,
                        on ? Sd(2) : Sd(1));
@@ -1097,6 +1129,11 @@ Label *g_transparency_note = nullptr;
 std::string transparency_summary(const Theme &t) {
   if (!t.translucent || t.transparency <= 0) return _("Every surface is opaque.");
   auto pc = [](double v) { return int(std::lround(v * 100)); };
+  if (t.liquid)
+    return format(_("Liquid Glass: the glass of the panel and menus is tinted %d %%, window frames are %d %% "
+                    "opaque. Text stays opaque, and the glass adapts behind it where needed, so it keeps "
+                    "its contrast (WCAG AA) over any background."),
+                  pc(t.popup_opacity), pc(t.frame_opacity));
   return format(_("Panel %d %%, menus %d %%, window frames %d %% opaque. At every level text keeps "
                   "its contrast (WCAG AA) over any background."),
                 pc(t.opacity), pc(std::min(t.popup_opacity, t.gtk_menu_alpha)), pc(t.frame_opacity));

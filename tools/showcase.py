@@ -76,8 +76,8 @@ SETS = [
     ThemeSet('graphite-dark', 'graphite', 'dark', label='SDE Graphite Dark'),
     ThemeSet('fluent-light', 'fluent', 'light', scope='themes', label='SDE Fluent Light'),
     ThemeSet('fluent-dark', 'fluent', 'dark', scope='themes', label='SDE Fluent Dark'),
-    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Glass Light'),
-    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Glass Dark'),
+    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Liquid Glass Light'),
+    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Liquid Glass Dark'),
     ThemeSet('hero-1920x1080', 'graphite', 'light', '1920x1080', 125, scope='hero',
              label='SDE Graphite Light, 1920x1080 at 125 %'),
 ]
@@ -119,6 +119,7 @@ class Run:
         self.pages = []
         self.numbers = {}
         self.catalogue = []  # (scene, name, caption)
+        self.sets = []       # the selected sets (selected_sets())
         self.stop = threading.Event()  # set: the sessions end after their scene
 
     def number(self):
@@ -1016,6 +1017,10 @@ class Session:
             env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
         if (self.home / '.fixtures/avatars').is_dir():
             env['SDE_AVATAR_DIR'] = str(self.home / '.fixtures/avatars')
+        if a.effects == 'full':
+            # Every SDE program draws for the full effects of a real GPU
+            # (Xvfb has OpenGL through Mesa's software renderer).
+            env['SDE_GRAPHICS'] = 'hardware'
         # SDE Welcome's tiles: data/welcome of a source tree when SDE is not
         # installed (installed: /usr/share/SDE-Welcome).
         if not Path('/usr/share/SDE-Welcome/steps').is_dir() and (a.data_dir / 'welcome/steps').is_dir():
@@ -1211,12 +1216,27 @@ class Session:
         if not prog or not conf.is_file():
             warn('no compositor (sde-compositor): no shadows or rounded corners')
             return
-        radius = {'fluent': 8, 'graphite': 10, 'glass': 12}.get(self.set.family, 10)
-        text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};', conf.read_text())
-        if self.set.mode == 'dark':
-            text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
         mine = self.home / '.config/sde/showcase-compositor.conf'
-        mine.write_text(text)
+        generated = None
+        if self.args.effects == 'full':
+            # What sde-session starts on a real GPU (OpenGL, blur, shaders).
+            r = self.run('sde-session', '--compositor-config', timeout=20)
+            path = Path(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
+            if prog != 'sde-compositor':
+                warn('--effects full needs sde-compositor; using the lite configuration')
+            elif path and path.is_file():
+                generated = path
+            else:
+                warn(f'sde-session --compositor-config failed ({r.stderr.strip()[:200]}); using the lite one')
+        if generated:
+            mine = generated
+        else:
+            radius = {'fluent': 8, 'graphite': 10, 'glass': 12}.get(self.set.family, 10)
+            text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};',
+                          conf.read_text())
+            if self.set.mode == 'dark':
+                text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
+            mine.write_text(text)
         p = self.spawn(prog, '--config', mine, scene=False)
         time.sleep(0.8)
         if p.poll() is not None:
@@ -2246,7 +2266,9 @@ def write_outputs(run):
     output folder: the images of this run and those of earlier runs into
     the same folder (other sets or scenes) that are still there."""
     out = run.out
-    set_names = [t.name for t in SETS]
+    # The sets of this run first when it renamed them (--resolution, --scale).
+    known = list(run.sets) + [t for t in SETS if t.name not in {s.name for s in run.sets}]
+    set_names = [t.name for t in known]
     images, skipped = list(run.index), [{'set': s, 'name': n, 'reason': r} for s, n, r in run.skipped]
     try:
         old = json.loads((out / 'index.json').read_text())
@@ -2263,7 +2285,7 @@ def write_outputs(run):
     images.sort(key=lambda e: (set_names.index(e['set']), order.get(e['name'], len(order)), e['name']))
     skipped.sort(key=lambda s: (set_names.index(s['set']) if s['set'] in set_names else 99,
                                 order.get(s['name'], len(order))))
-    sets = [t for t in SETS if any(e['set'] == t.name for e in images)]
+    sets = [t for t in known if any(e['set'] == t.name for e in images)]
     meta = {
         'title': 'SDE development screenshots',
         'version': (ROOT / 'VERSION').read_text().strip() if (ROOT / 'VERSION').exists() else '',
@@ -2301,7 +2323,7 @@ def readme(meta, sets, images, skipped, sheets):
         sheet = f' · [contact sheet]({sheets[t.name]})' if t.name in sheets else ''
         lines.append(f'| `{t.name}` | {t.label} | {t.size} at {t.scale} % | {n}{sheet} |')
     lines.append('')
-    theme_sets = {t.name for t in SETS if t.scope == 'themes'}
+    theme_sets = {t.name for t in sets if t.scope == 'themes' or t.family != 'graphite'}
     compare = []
     for e in images:
         if e['name'] not in compare and theme_sets & set(sets_of[e['name']]):
@@ -2441,6 +2463,16 @@ def parse_args(argv=None):
     ap.add_argument('--theme', help='sets to capture (comma-separated names or globs, e.g. graphite-light,'
                     "'glass-*'); default: all")
     ap.add_argument('--size', help='only sets of this size, e.g. 1366x768')
+    ap.add_argument('--resolution', help='capture the selected sets at this screen size instead, e.g. '
+                    '1024x600 (the set names get the size and scale)')
+    ap.add_argument('--scale', type=int, help='capture the selected sets at this interface scale, in percent')
+    ap.add_argument('--scope', choices=('full', 'themes', 'hero'),
+                    help="scenes of this scope in every set, e.g. 'full' for all scenes in the Fluent and "
+                         "Glass sets (default: each set's own)")
+    ap.add_argument('--effects', choices=('lite', 'full'), default='lite',
+                    help='compositor effects: lite (XRender with data/compositor/sde.conf, as in CI) or full '
+                         '(OpenGL with the configuration sde-session writes for a real GPU: blur, translucency '
+                         'and the Liquid Glass shader; needs sde-compositor)')
     ap.add_argument('--only', help='scenes or images (comma-separated globs, e.g. "start-menu*,control-center-*")')
     ap.add_argument('--zip', type=Path, help='also write one shareable zip')
     ap.add_argument('--display', type=int, default=140, help='first Xvfb display number to try')
@@ -2486,6 +2518,14 @@ def selected_sets(a):
             continue
         if a.size and t.size != a.size:
             continue
+        if a.resolution or a.scale:
+            # The same theme at another size or scale, under its own name.
+            size, scale = a.resolution or t.size, a.scale or t.scale
+            base = t.name.split('-1920x1080')[0]
+            t = ThemeSet(f'{base}-{size}-{scale}', t.family, t.mode, size, scale, t.scope,
+                         f'{t.label.split(",")[0]}, {size} at {scale} %')
+        if a.scope:
+            t = ThemeSet(t.name, t.family, t.mode, t.size, t.scale, a.scope, t.label)
         out.append(t)
     return out
 
@@ -2616,7 +2656,7 @@ def main(argv=None):
     run = Run(a)
     discover(run)
     run.number()
-    sets = selected_sets(a)
+    sets = run.sets = selected_sets(a)
     if a.list:
         for t in SETS:
             print(f'set {t.name}: {t.label}, {t.size} @ {t.scale} % ({t.scope})')

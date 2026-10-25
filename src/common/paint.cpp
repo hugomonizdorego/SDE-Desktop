@@ -128,7 +128,7 @@ void Painter::glass_sheen(double x, double y, double w, double h, double r, bool
   // Since 0.1.0~alpha51 a faint, even light from the top that fades out
   // smoothly: no glossy band, no hard edge in the middle.
   cairo_pattern_t *g = cairo_pattern_create_linear(x, y, x, y + h);
-  double top = dark ? 0.035 : 0.14;
+  double top = dark ? 0.05 : 0.18;
   cairo_pattern_add_color_stop_rgba(g, 0, 1, 1, 1, top);
   cairo_pattern_add_color_stop_rgba(g, 0.7, 1, 1, 1, 0);
   cairo_pattern_add_color_stop_rgba(g, 1, 1, 1, 1, 0);
@@ -136,6 +136,55 @@ void Painter::glass_sheen(double x, double y, double w, double h, double r, bool
   cairo_set_source(cr_, g);
   cairo_fill(cr_);
   cairo_pattern_destroy(g);
+}
+
+void Painter::rounded_corners(double x, double y, double w, double h, double r, int corners) {
+  r = std::fmin(r, std::fmin(w, h) / 2);
+  auto rad = [&](int bit) { return (corners & bit) ? r : 0.0; };
+  cairo_new_sub_path(cr_);
+  cairo_arc(cr_, x + w - rad(2), y + rad(2), rad(2), -M_PI / 2, 0);
+  cairo_arc(cr_, x + w - rad(4), y + h - rad(4), rad(4), 0, M_PI / 2);
+  cairo_arc(cr_, x + rad(8), y + h - rad(8), rad(8), M_PI / 2, M_PI);
+  cairo_arc(cr_, x + rad(1), y + rad(1), rad(1), M_PI, 3 * M_PI / 2);
+  cairo_close_path(cr_);
+}
+
+void Painter::surface_edge(double x, double y, double w, double h, double r, const Color &border, double rim,
+                           bool dark, int corners) {
+  if (rim > 0) {
+    // The rim: a hairline just inside the border, lit from the top.
+    cairo_pattern_t *g = cairo_pattern_create_linear(x, y, x, y + h);
+    double top = rim * (dark ? 0.16 : 0.85), bottom = rim * (dark ? 0.04 : 0.25);
+    cairo_pattern_add_color_stop_rgba(g, 0, 1, 1, 1, top);
+    cairo_pattern_add_color_stop_rgba(g, std::fmin(0.5, Sd(36) / std::fmax(h, 1.0)), 1, 1, 1, (top + bottom) / 2);
+    cairo_pattern_add_color_stop_rgba(g, 1, 1, 1, 1, bottom);
+    cairo_set_line_width(cr_, 1.0);
+    rounded_corners(x + 1.5, y + 1.5, w - 3, h - 3, std::fmax(0.0, r - 1.0), corners);
+    cairo_set_source(cr_, g);
+    cairo_stroke(cr_);
+    cairo_pattern_destroy(g);
+  }
+  set(border);
+  cairo_set_line_width(cr_, 1.0);
+  rounded_corners(x + 0.5, y + 0.5, w - 1, h - 1, r, corners);
+  cairo_stroke(cr_);
+}
+
+void Painter::glass_surface(double x, double y, double w, double h, double r, const Color &border, bool dark,
+                            int corners) {
+  // Light from the top that fades out over the first part of the surface,
+  // a little stronger at its very top (where real glass catches the light).
+  cairo_pattern_t *g = cairo_pattern_create_linear(x, y, x, y + h);
+  double reach = std::fmin(1.0, Sd(120) / std::fmax(h, 1.0));
+  cairo_pattern_add_color_stop_rgba(g, 0, 1, 1, 1, dark ? 0.07 : 0.40);
+  cairo_pattern_add_color_stop_rgba(g, reach * 0.25, 1, 1, 1, dark ? 0.035 : 0.20);
+  cairo_pattern_add_color_stop_rgba(g, reach, 1, 1, 1, 0);
+  cairo_pattern_add_color_stop_rgba(g, 1, 1, 1, 1, 0);
+  rounded_corners(x, y, w, h, r, corners);
+  cairo_set_source(cr_, g);
+  cairo_fill(cr_);
+  cairo_pattern_destroy(g);
+  surface_edge(x, y, w, h, r, border, 1.0, dark, corners);
 }
 
 void Painter::stroke_rounded(double x, double y, double w, double h, double r, const Color &c,

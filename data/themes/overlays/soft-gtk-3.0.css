@@ -64,9 +64,18 @@ link, button.link, *:link { color: @sde_accent; }
 /* Keyboard focus and drop targets (0.2.0). Graphite drew the focus ring at
  * 10 % and a tree view's drop target at 8 % of the text colour: hardly
  * visible, a drop target looked like a hovered row. GTK shows focus rings
- * only after keyboard use. A drop into a row tints it with the accent, a
- * drop between rows (pinning in Liria's sidebar) is a 2 px accent line. */
-*:focus { outline-color: alpha(currentColor, 0.5); }
+ * only after keyboard use. 0.2.0 Alpha 2: the ring is the same in every
+ * family and in SDE programs, a solid 2 px accent ring just inside the
+ * control (Flat Remix drew a dashed 1 px one). A drop into a row tints it
+ * with the accent, a drop between rows (pinning in Liria's sidebar) is a
+ * 2 px accent line. */
+* {
+  outline-style: solid;
+  outline-width: 2px;
+  outline-offset: -3px;
+  -gtk-outline-radius: @RADIUS_FOCUS@;
+}
+*:focus { outline-color: alpha(@sde_accent, 0.8); }
 treeview.view:drop(active) {
   border-style: solid none;
   border-width: 9999px;
@@ -166,3 +175,65 @@ scrollbar trough { border-radius: 9999px; }
 switch, switch slider { border-radius: 9999px; }
 scale trough, scale highlight, scale fill, scale slider { border-radius: 9999px; }
 progressbar trough, progressbar progress, levelbar trough, levelbar block { border-radius: 9999px; }
+
+/* ------------------------------------------- controls (0.2.0 Alpha 2) */
+
+/* Switches and sliders look like SDE's own in every family: a filled
+ * track, gray while off and the accent while on, and a light knob with a
+ * soft shadow and a hairline edge (src/common/widgets.cpp). */
+switch {
+  border: none;
+  padding: 0;
+  background-color: @sde_control;
+  background-image: none;
+  box-shadow: none;
+  color: transparent;
+}
+switch:hover { background-color: mix(@sde_control, @sde_text, 0.10); }
+switch:checked { background-color: @sde_accent; }
+switch:checked:hover { background-color: mix(@sde_accent, @sde_text, 0.10); }
+switch:disabled { background-color: mix(@sde_control, @sde_surface_alt, 0.55); }
+switch:checked:disabled { background-color: mix(@sde_accent, @sde_surface_alt, 0.55); }
+switch slider, switch:hover slider, switch:focus slider, switch:focus:hover slider, switch:checked slider {
+  min-width: 18px;
+  min-height: 18px;
+  margin: 2px;
+  border: none;
+  background-color: @sde_knob;
+  background-image: none;
+  box-shadow: 0 1px 2px alpha(black, 0.22), 0 0 0 1px alpha(@sde_knob_edge, 0.55);
+}
+switch:disabled slider { background-color: mix(@sde_knob, @sde_surface_alt, 0.5); box-shadow: none; }
+scale trough { background-color: @sde_trough; background-image: none; border-color: transparent; }
+scale trough:disabled { background-color: alpha(@sde_trough, 0.5); }
+scale highlight { background-color: @sde_accent; background-image: image(@sde_accent); border-color: transparent; }
+/* Scales with marks keep Graphite's pictures (recolored to the accent). */
+scale:not(.marks-before):not(.marks-after) slider {
+  min-width: 18px;
+  min-height: 18px;
+  margin: -8px;
+  border: none;
+  background-color: @sde_knob;
+  background-image: none;
+  box-shadow: 0 1px 2px alpha(black, 0.25), 0 0 0 1px @sde_knob_edge;
+}
+scale:not(.marks-before):not(.marks-after) slider:hover { background-color: mix(@sde_knob, @sde_accent, 0.08); }
+scale:not(.marks-before):not(.marks-after) slider:active { background-color: mix(@sde_knob, @sde_accent, 0.16); }
+scale:not(.marks-before):not(.marks-after) slider:disabled {
+  background-color: mix(@sde_knob, @sde_surface_alt, 0.5);
+  box-shadow: 0 0 0 1px alpha(@sde_knob_edge, 0.6);
+}
+
+/* Menus and tooltips: room around the items, separators inset like SDE's
+ * menus, and a quick fade of the highlight. */
+.csd menu, .csd .menu, .csd .context-menu { padding: 6px 0; }
+menu menuitem, .menu menuitem, .context-menu menuitem {
+  min-height: 26px;
+  padding: 3px 10px;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+menu separator, .menu separator, .context-menu separator { margin: 4px 10px; }
+popover.menu modelbutton, popover modelbutton { min-height: 28px; padding: 2px 10px; }
+popover.background { padding: 6px; }
+tooltip.background, tooltip { padding: 6px 10px; }
+tooltip.background > box { padding: 0; }
