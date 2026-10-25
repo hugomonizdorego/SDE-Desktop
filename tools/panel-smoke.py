@@ -1992,4 +1992,10 @@ finally:
         except sp.TimeoutExpired:proc.kill();proc.wait()
     for f in home.glob('*.log'):
         (out/f.name).write_text(f.read_text())
-    tmp.cleanup()
+    # Programs the panel started (a settings window, D-Bus activated helpers)
+    # can still write into the home for a moment; CI failed once on "Directory
+    # not empty" after every check had passed.
+    for _ in range(5):
+        try:tmp.cleanup();break
+        except OSError:time.sleep(.5)
+    else:shutil.rmtree(tmp.name,ignore_errors=True)
