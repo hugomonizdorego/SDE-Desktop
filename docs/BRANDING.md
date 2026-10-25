@@ -138,6 +138,16 @@ dominant colour, a consistent charcoal outline (#2B2B2F) and no text.
 | `sde-power` | SDE Power | battery with a bolt | green |
 | `sde-logout` | Log Out | power symbol with an exit arrow | red |
 | `sde-logo` | the SDE mark | the logo's monitor | cream and RGB |
+| `sde-app-nm-connection-editor` | Advanced Network Configuration (NetworkManager, not an SDE program) | globe with a gear | blue and cream |
+
+`sde-app-<desktop file ID>` icons are SDE's drawings of common applications
+of other projects that no installed theme draws well (Papirus draws the
+generic `preferences-system-network` of Advanced Network Configuration as
+an Ethernet port; plain Adwaita has no such icon). The Start menu, the
+search, the taskbar, the desktop and the Control Center use them before the
+application's generic Icon= (see "Application icons" in
+[START-MENU.md](START-MENU.md)); the `sde-app-` prefix keeps them apart
+from the icons that the applications' own packages install.
 
 Compatibility copies under old names that existing launchers still use:
 `sdeview` (= `sde-photo`) and `org.debion.Calculator` (= `sde-calculator`).

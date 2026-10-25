@@ -134,6 +134,49 @@ std::vector<TileGroup> groups_from_favorites(const std::vector<std::string> &fav
                                              bool user_list, const std::string &first,
                                              const std::string &second);
 
+// ------------------------------------------------- tile groups by category
+// 0.2 Alpha 2: the first tile groups gather the installed applications by
+// category (a browser, a mail client and a chat in Internet...), and an
+// application pinned later joins the group of its category.
+enum class TileCategory {
+  Internet, Office, Multimedia, Graphics, Development, Games, Education, System, Accessories,
+  Other  // no main category
+};
+const int kTileCategories = 9;  // Internet .. Accessories, the order of the groups
+// The group of an application: its main menu category, with Settings and
+// System together and Education and Science together.
+TileCategory tile_category(const DesktopEntry &e);
+
+// The default groups: per category the applications that fit its roles
+// best, one per role first (Internet: web browser, mail, chat...; System:
+// file manager, terminal, settings...), then the others; within a role the
+// ones in |preferred| (SDE's own applications) first, then A-Z. At most
+// |per_group| tiles each, medium and wide so that they fill whole rows;
+// categories without applications are left out. |names|: the group names
+// by TileCategory (kTileCategories + 1, translated by the caller).
+std::vector<TileGroup> category_groups(const std::vector<DesktopEntry> &apps,
+                                       const std::vector<std::string> &preferred,
+                                       const std::vector<std::string> &names, size_t per_group = 6);
+
+// Tile groups saved by 0.2 Alpha 1 and older: the tiles of the default
+// groups named in |old_names| ("Productivity", "Explore") are sorted into
+// category groups, which take the place of the first of them; the user's
+// own groups stay as they are (a group already named like a category gets
+// that category's tiles). Tiles of applications that are not installed go
+// with the first new group. Groups without old names come back unchanged.
+std::vector<TileGroup> migrate_tile_groups(const std::vector<TileGroup> &groups,
+                                           const std::vector<std::string> &old_names,
+                                           const std::vector<DesktopEntry> &apps,
+                                           const std::vector<std::string> &names);
+
+// Pins |e| as a tile ("Pin to Start"): into the group named after its
+// category, else the group with the most applications of that category,
+// else a new group of the category, placed in the order of the categories.
+// False when it is pinned already.
+bool pin_by_category(std::vector<TileGroup> &groups, const DesktopEntry &e,
+                     const std::vector<DesktopEntry> &apps, const std::vector<std::string> &names,
+                     TileSize size = TileSize::Medium);
+
 // Where a tile sits in its group, in cells.
 struct TileCell {
   int col = 0, row = 0, cols = 2, rows = 2;

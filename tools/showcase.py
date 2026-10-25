@@ -911,9 +911,14 @@ class Session:
                       # A steady LED and battery icon (its colours and marks
                       # stay): the screenshots wait until the screen stops changing.
                       'network_led_blink': 'false', 'battery_animation': 'false'},
-            'menu': {'tiles': 'Work,liria.desktop:w,niny.desktop:m,xanara.desktop:m,org.debion.Calculator.desktop:s,'
-                              'taca.desktop:s;Photos and media,sde-gallery.desktop:w,sde-view.desktop:m;System,'
-                              'sde-settings.desktop:m,sde-update.desktop:s,sde-system-monitor.desktop:s'},
+            # 0.2 Alpha 2: tile groups by category, as SDE makes them from
+            # the installed applications (fixed here so that every run shows
+            # the same tiles).
+            'menu': {'tiles': 'Office,xanara.desktop:w,niny.desktop:m;Graphics,sde-gallery.desktop:w,'
+                              'sde-view.desktop:m;System & Settings,liria.desktop:m,sde-settings.desktop:m,'
+                              'sde-system-monitor.desktop:m,sde-update.desktop:w,sde-display-settings.desktop:m;'
+                              'Accessories,org.debion.Calculator.desktop:m,taca.desktop:m,sde-run.desktop:m',
+                     'tiles_version': '2'},
             'action_center': {'multicolor': 'true', 'expanded': 'true'},
             'desktop': {'show_home': 'true', 'show_trash': 'true'},
             'weather': {'animation': 'false'},
@@ -1378,6 +1383,8 @@ def start_menu(s):
     ('start-menu-letters', 'Start Menu: a letter heading opens the A-Z jump grid'),
     ('start-menu-categories', 'Start Menu: the category filter of the application list'),
     ('start-menu-tile-menu', 'Start Menu: right-click on a tile (resize, move to a group, unpin)'),
+    ('start-menu-app-menu', 'Start Menu: right-click on an application (pin, app info, Uninstall... with Merkadu)'),
+    ('start-menu-drag', 'Start Menu: a tile dragged into another group (the group and the drop place lit)'),
     ('start-menu-account', 'Start Menu: the account on the rail'),
     ('start-menu-power', 'Start Menu: Power off asks first'),
     ('start-menu-search', 'Typing in the Start Menu searches apps, settings and files'),
@@ -1409,6 +1416,30 @@ def start_menu_more(s):
         s.press('SDE Menu', tile, button=3)
         s.shot('start-menu-tile-menu', quiet=0.5)
         s.key('Escape')
+    open_menu(s)
+    app = next((k for k in s.layout('SDE Menu') if k.startswith('app:')), None)
+    if app:
+        s.press('SDE Menu', app, button=3)
+        s.shot('start-menu-app-menu', quiet=0.5)
+        s.key('Escape')
+    # A tile held over another group: Escape ends the drag, nothing moves.
+    w = open_menu(s)
+    lay = s.layout('SDE Menu')
+    tiles = [k for k in lay if k.startswith('tile:')]
+    if w and len(tiles) >= 2 and sum(k.startswith('group:') for k in lay) >= 2:
+        g = s.geom(w)
+        src, dst = lay[tiles[-1]], lay[tiles[0]]
+        sx, sy = g['x'] + src[0] + src[2] // 2, g['y'] + src[1] + src[3] // 2
+        tx, ty = g['x'] + dst[0] + dst[2] * 3 // 4, g['y'] + dst[1] + dst[3] // 2
+        s.xdo('mousemove', str(sx), str(sy), 'mousedown', '1')
+        for k in range(1, 7):
+            s.move(sx + (tx - sx) * k / 6, sy + (ty - sy) * k / 6)
+            time.sleep(0.06)
+        try:
+            s.shot('start-menu-drag', quiet=0.5)
+        finally:
+            s.key('Escape')
+            s.xdo('mouseup', '1')
     open_menu(s)
     if 'rail:account' in s.layout('SDE Menu'):
         s.press('SDE Menu', 'rail:account')

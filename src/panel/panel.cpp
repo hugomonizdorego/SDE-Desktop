@@ -1462,7 +1462,8 @@ void Panel::draw() {
       bool dragged = dragging_ && int(i) == drag_index_;
       if (dragged) continue;
       button_bg(pinned_[i].x, pin_w_, {PINNED, int(i)}, false);
-      p.image(IconLoader::get({pinned_[i].entry.icon, "application-x-executable"}, icon),
+      p.image(IconLoader::get({IconLoader::app_icon(pinned_[i].entry, icon), "application-x-executable"},
+                              icon),
               pinned_[i].x + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
     }
     if (visible_pins_) p.line(tasks_x_ - S(6), S(10), tasks_x_ - S(6), H - S(10), t.border);
@@ -1663,7 +1664,8 @@ void Panel::draw() {
     if (dragging_ && drag_index_ >= 0 && drag_index_ < int(pinned_.size())) {
       int dx = drag_x_ - pin_w_ / 2;
       p.fill_rounded(dx + S(2), S(4), pin_w_ - S(4), H - S(8), S(8), t.accent.alpha(0.2));
-      p.image(IconLoader::get({pinned_[size_t(drag_index_)].entry.icon, "application-x-executable"},
+      p.image(IconLoader::get({IconLoader::app_icon(pinned_[size_t(drag_index_)].entry, icon),
+                               "application-x-executable"},
                               icon),
               dx + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
     }
@@ -2039,9 +2041,14 @@ void Panel::update_task(Task &t, bool icon) {
     // then an icon theme lookup by WM_CLASS ("Firefox" -> "firefox").
     std::vector<std::string> names;
     DesktopEntry entry;
-    if (find_entry_for(t, entry) && !entry.icon.empty()) names.push_back(entry.icon);
+    bool known = find_entry_for(t, entry);
+    // 0.2 Alpha 2: the near matches of the Start menu (icons.h), then the
+    // class, then the application's category icon.
+    if (known) names.push_back(IconLoader::app_icon(entry, size, false));
     names.push_back(lower(t.wm_class));
     names.push_back(lower(t.wm_name));
+    if (known)
+      for (auto &n : category_icon_names(entry)) names.push_back(n);
     cairo_surface_t *themed = IconLoader::get(names, size);
     if (themed) t.icon = cairo_surface_reference(themed);
   }
