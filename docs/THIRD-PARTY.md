@@ -23,6 +23,23 @@ and full license are preserved in `data/update/COPYRIGHT` and `COPYING`, install
 under `/usr/share/sde/update`. The installed package's copyright records this
 adaptation separately. No Mint artwork or trademarks are rebranded.
 
+**[Ubuntu Software Center](https://github.com/mortenpi/ubuntu-software-center)** —
+Copyright © 2009–2013 Canonical Ltd. (Michael Vogt, Matthew McGowan, Gary
+Lasker and the other Ubuntu Software Center authors). Merkadu, SDE's software
+center (package `merkadu`, [MERKADU.md](MERKADU.md)), is based on it: the
+lobby (featured, new and top apps), the departments with their
+subcategories, the app pages, the installed apps grouped by department, the
+history and the progress view follow Ubuntu Software Center.
+`src/merkadu/categories.h` and `categories.cpp` port its `CategoriesParser`
+(`softwarecenter/db/categories.py`) to C++, and `data/merkadu/categories.menu`
+adapts its `data/software-center.menu.in`, at commit
+`897c3933f5a27b6755cde72bb06329a4bc8b97b8`. License: GPL-3.0-only (Ubuntu
+Software Center grants version 3 of the GNU GPL without a later-version
+option), so these files are GPL-3.0-only and Merkadu as a whole is
+GPL-3.0-or-later AND GPL-3.0-only. No Python code is used and no Ubuntu
+artwork, trademarks or online services (ratings and reviews, the software
+center agent, the store) are used.
+
 ## Themes built from upstream sources
 
 The SDE themes in `/usr/share/themes` are built by `tools/build-themes.py`

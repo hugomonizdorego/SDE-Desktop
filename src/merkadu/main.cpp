@@ -5,6 +5,7 @@
 //
 //   merkadu [--page explore|installed|updates|history|progress|sources]
 //           [--search TEXT] [--category ID] [--details APPID]
+//   merkadu appstream://APPID
 //   merkadu --uninstall FILE.desktop   (exit 0 removed, 1 failed, 2 cancelled)
 //   merkadu --version | --help
 #include <FL/Fl.H>
@@ -32,6 +33,7 @@ namespace {
 std::string usage() {
   return _("Merkadu: find, install, update and remove software from the Debian archive, Flatpak and Snap.\n\n"
            "Usage: merkadu [--page NAME] [--search TEXT] [--category ID] [--details APPID]\n"
+           "       merkadu appstream://APPID\n"
            "       merkadu --uninstall FILE.desktop\n"
            "       merkadu --version\n\n"
            "  --page NAME       open a page: explore, installed, updates, history, progress or sources\n"
@@ -81,6 +83,13 @@ int main(int argc, char **argv) {
       view = View{View::Category, v};
     } else if (value("--details", v)) {
       view = View{View::Details, normalize_id(v)};
+    } else if (starts_with(a, "appstream:")) {
+      // appstream://org.gimp.GIMP, the links of app websites (MimeType of
+      // merkadu.desktop).
+      std::string id = a.substr(10);
+      while (!id.empty() && id[0] == '/') id.erase(0, 1);
+      while (!id.empty() && id.back() == '/') id.pop_back();
+      view = View{View::Details, normalize_id(id)};
     } else if (a == "--version") {
       return print_version(about_info());
     } else if (a == "--help" || a == "-h") {

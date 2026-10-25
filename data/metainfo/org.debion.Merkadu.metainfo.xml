@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 Selviana DE Project and contributors -->
+<component type="desktop-application">
+  <id>org.debion.Merkadu</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later AND GPL-3.0-only</project_license>
+  <name>Merkadu</name>
+  <summary>Find, install and remove apps from Debian, Flatpak and Snap</summary>
+  <developer id="io.github.hugomonizdorego">
+    <name>Selviana DE Project</name>
+  </developer>
+  <description>
+    <p>Merkadu is the software center of the Selviana Desktop Environment. It finds, installs, updates and removes apps from the Debian archive (through PackageKit), from Flatpak remotes such as Flathub and from the Snap Store, in one search: when an app is offered by more than one source, Merkadu shows where each version comes from and lets you choose.</p>
+    <ul>
+      <li>Featured, new and popular apps, and departments with subcategories</li>
+      <li>App pages with screenshots, what is new, size, license and links</li>
+      <li>Installed apps by department, updates and the history of changes</li>
+      <li>Progress of every change, with the animated SDE logo</li>
+      <li>Uninstalling an app from the Start menu, with the other packages it takes along</li>
+    </ul>
+    <p>Merkadu is based on Ubuntu Software Center by Canonical Ltd.: its departments, lobby, app pages and history follow it. It does not depend on online services of its own.</p>
+    <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>
+  </description>
+  <launchable type="desktop-id">merkadu.desktop</launchable>
+  <categories>
+    <category>System</category>
+    <category>PackageManager</category>
+  </categories>
+  <keywords>
+    <keyword>software center</keyword>
+    <keyword>flatpak</keyword>
+    <keyword>snap</keyword>
+  </keywords>
+  <icon type="stock">merkadu</icon>
+  <url type="homepage">https://github.com/hugomonizdorego/SDE-Desktop</url>
+  <url type="bugtracker">https://github.com/hugomonizdorego/SDE-Desktop/issues</url>
+  <project_group>SDE</project_group>
+  <provides>
+    <binary>merkadu</binary>
+    <mediatype>x-scheme-handler/appstream</mediatype>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

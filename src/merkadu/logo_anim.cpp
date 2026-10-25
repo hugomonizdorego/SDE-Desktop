@@ -151,20 +151,19 @@ double ease(double t) { return t <= 0 ? 0 : t >= 1 ? 1 : 1 - std::pow(1 - t, 3);
 bool LogoAnimation::reduced_motion() {
   static int cached = -1;
   if (cached < 0) {
-    if (!env("MERKADU_LOGO_PHASE").empty()) {
-      cached = 1;  // frozen for screenshots
-    } else {
-      Config cfg;
-      cfg.load();
-      cached = effects_from_config(cfg).on ? 0 : 1;
-    }
+    Config cfg;
+    cfg.load();
+    cached = effects_from_config(cfg).on ? 0 : 1;
   }
   return cached == 1;
 }
 
+// MERKADU_LOGO_PHASE: a fixed moment of the animation, for screenshots.
+static bool frozen() { return !env("MERKADU_LOGO_PHASE").empty(); }
+
 LogoAnimation::LogoAnimation(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
-  std::string frozen = env("MERKADU_LOGO_PHASE");
-  if (!frozen.empty()) phase_ = std::atof(frozen.c_str());
+  std::string phase = env("MERKADU_LOGO_PHASE");
+  if (!phase.empty()) phase_ = std::atof(phase.c_str());
 }
 
 LogoAnimation::~LogoAnimation() { Fl::remove_timeout(tick, this); }
@@ -173,7 +172,7 @@ void LogoAnimation::running(bool on) {
   if (on == running_) return;
   running_ = on;
   Fl::remove_timeout(tick, this);
-  if (on && !reduced_motion()) Fl::add_timeout(1.0 / kFps, tick, this);
+  if (on && !reduced_motion() && !frozen()) Fl::add_timeout(1.0 / kFps, tick, this);
   redraw();
 }
 
@@ -198,7 +197,7 @@ void LogoAnimation::draw() {
     p.image(IconLoader::get({"sde-logo", "start-here"}, size), ox, oy, size);
     return;
   }
-  bool still = !running_ || reduced_motion();
+  bool still = !running_ || (reduced_motion() && !frozen());
   cairo_t *cr = p.cr();
   p.surface(l->under, ox, oy);
   for (int i = 0; i < 3; ++i) {

@@ -10,6 +10,13 @@ export DEB_CXXFLAGS_MAINT_APPEND = -O2
 override_dh_auto_configure:
 	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release
 
+# Merkadu is a package of its own: debian/merkadu.install takes its files
+# and the other packages (sde.install: usr/*) leave every path that names
+# it.
+override_dh_install:
+	dh_install -pmerkadu
+	dh_install -Nmerkadu -Xmerkadu -XMerkadu
+
 # debion-network-repair.service is enabled (it runs at the next boot), not
 # started: the postinst already runs the same repair.
 override_dh_installsystemd:

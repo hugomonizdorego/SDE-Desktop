@@ -114,8 +114,9 @@ class SnapBackend : public Backend {
           bool hidden = false;
           if (conf.status == 200 && parse_hidden_folder(conf.body, &hidden))
             st.hidden_snap_folder = hidden ? 1 : 0;
-          else if (conf.status == 400)  // the option was never set
-            st.hidden_snap_folder = 0;
+          else  // reading the configuration needs authorization (or the option was never set, 400):
+                // snapd exports its enabled experimental features as files for snap-confine
+            st.hidden_snap_folder = file_exists("/var/lib/snapd/features/hidden-snap-folder") ? 1 : 0;
           return st;
         },
         done);
