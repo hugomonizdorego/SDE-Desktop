@@ -2761,7 +2761,7 @@ void refresh_page() {
     };
     if (Fl_Widget *w = find(g_page)) {
       w->take_focus();
-      if (auto *in = dynamic_cast<Fl_Input_ *>(w)) in->position(in->size());
+      if (auto *in = dynamic_cast<Fl_Input_ *>(w)) in->insert_position(in->size());
     }
   }
 }
