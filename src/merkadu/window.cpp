@@ -434,6 +434,9 @@ void do_rebuild(void *) {
   // draw finds out; drawing around a horizontal one that never shows left
   // a strip of stale text at the bottom of the page.
   g_page->hscrollbar.clear_visible();
+  // Up to four columns of tiles on wide windows; the content is centred
+  // beyond that.
+  g_page->max_width(S(1100));
   build_page(g_page, g_view);
   g_built = g_view;
   g_win->end();
