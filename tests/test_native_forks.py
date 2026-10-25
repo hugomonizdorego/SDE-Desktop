@@ -656,10 +656,11 @@ class LiriaRubberBandCssTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
-class LiriaCopyProgressTest(unittest.TestCase):
+class LiriaAlpha2Test(unittest.TestCase):
     """0.2.0 Alpha 2: Liria's file operations window in the design of SDE's
     copy and move dialog, on SDE's own model (src/common/transfer_model.h),
-    and large files copied in slices so the progress follows them."""
+    large files copied in slices so the progress follows them, and the
+    ribbon's icons."""
 
     def setUp(self):
         import sys
@@ -754,6 +755,30 @@ class LiriaCopyProgressTest(unittest.TestCase):
                            'liria_sde_progress_transfer_throttle (new_size);', 'liria_sde_copy_large_file (src, dest'):
                 self.assertIn(needle, ops)
         self.assertIn('liria_progress(staged)', (self.root / 'suite/redesign.py').read_text())
+
+    def test_ribbon_icon_smoke(self):
+        """The ribbon's icons on Xvfb (tools/liria-ribbon-smoke.py) when a
+        built Liria is named by SDE_LIRIA_PREFIX: full-colour icons of the
+        icon theme or tinted glyphs, their sizes, every tab, a new icon
+        theme while Liria runs."""
+        import os
+        import subprocess
+        import sys
+        script = self.root / 'tools/liria-ribbon-smoke.py'
+        self.assertIn('a new icon theme (xsettingsd) changes the icons while Liria runs', script.read_text())
+        ribbon = (self.root / 'suite/overlays/liria/src/liria-sde-ribbon.c').read_text()
+        self.assertIn('LIRIA_SDE_QA_RIBBON', ribbon)
+        self.assertIn('"tab\\t%s\\t%d,%d,%d,%d\\n"', ribbon)
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        command = [sys.executable, str(script), '--prefix', prefix]
+        if os.environ.get('SDE_THEMES'):
+            command += ['--themes', os.environ['SDE_THEMES']]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_copy_progress_smoke(self):
         """A real copy on Xvfb (tools/liria-progress-smoke.py) when a built

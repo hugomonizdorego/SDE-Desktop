@@ -324,9 +324,10 @@ rb_icon_apply (GtkWidget *image)
 }
 
 /* LIRIA_SDE_QA_RIBBON=FILE: the icon of every command (label, icon,
- * "colour" or "glyph", tint, pixels), one per line, for the tests. */
+ * "colour" or "glyph", tint, pixels) and the tabs shown ("tab", page,
+ * x,y,w,h in the window), one per line, for tests and screenshots. */
 static void
-rb_icons_qa (GList *images)
+rb_qa (Ribbon *r)
 {
     const char *path = g_getenv ("LIRIA_SDE_QA_RIBBON");
     GString *text;
@@ -335,7 +336,7 @@ rb_icons_qa (GList *images)
     if (path == NULL || *path == '\0')
         return;
     text = g_string_new (NULL);
-    for (l = images; l != NULL; l = l->next)
+    for (l = r->images; l != NULL; l = l->next)
     {
         const RbIcon *icon = g_object_get_data (G_OBJECT (l->data), "sde-icon");
         const char *kind = g_object_get_data (G_OBJECT (l->data), "sde-icon-kind");
@@ -346,18 +347,29 @@ rb_icons_qa (GList *images)
                                 kind, g_strcmp0 (kind, "glyph") == 0 ? icon->tint : "-",
                                 gtk_image_get_pixel_size (GTK_IMAGE (l->data)));
     }
+    for (l = r->tab_buttons; l != NULL; l = l->next)
+    {
+        GtkWidget *tab = l->data;
+        int x = 0, y = 0;
+
+        if (gtk_widget_get_mapped (tab) &&
+            gtk_widget_translate_coordinates (tab, gtk_widget_get_toplevel (tab), 0, 0, &x, &y))
+            g_string_append_printf (text, "tab\t%s\t%d,%d,%d,%d\n",
+                                    (const char *) g_object_get_data (G_OBJECT (tab), "sde-page"), x, y,
+                                    gtk_widget_get_allocated_width (tab), gtk_widget_get_allocated_height (tab));
+    }
     g_file_set_contents (path, text->str, -1, NULL);
     g_string_free (text, TRUE);
 }
 
 static void
-rb_icons_apply_all (GList *images)
+rb_icons_apply_all (Ribbon *r)
 {
     GList *l;
 
-    for (l = images; l != NULL; l = l->next)
+    for (l = r->images; l != NULL; l = l->next)
         rb_icon_apply (l->data);
-    rb_icons_qa (images);
+    rb_qa (r);
 }
 
 /* ------------------------------------------------------------- helpers */
@@ -1380,6 +1392,7 @@ rb_refresh_idle (gpointer data)
             rb_sync_tabs (r);
         }
     }
+    rb_qa (r);
     return G_SOURCE_REMOVE;
 }
 
@@ -1419,7 +1432,7 @@ rb_icon_theme_changed (GtkWidget *root, GtkIconTheme *theme)
     Ribbon *r = g_object_get_data (G_OBJECT (root), RIBBON_KEY);
 
     if (r != NULL)
-        rb_icons_apply_all (r->images);
+        rb_icons_apply_all (r);
 }
 
 static void
@@ -1678,7 +1691,7 @@ liria_sde_ribbon_setup (LiriaNavigationWindow *window, GtkUIManager *ui_manager)
                              G_CONNECT_SWAPPED);
     g_signal_connect_object (gtk_settings_get_default (), "notify::gtk-xft-dpi", G_CALLBACK (rb_scale_changed),
                              r->root, G_CONNECT_SWAPPED);
-    rb_icons_qa (r->images);
+    rb_qa (r);
     g_signal_connect (window, "destroy", G_CALLBACK (rb_window_destroyed), r);
     g_signal_connect (window, "selection-changed", G_CALLBACK (rb_changed), r);
     g_signal_connect (window, "loading-uri", G_CALLBACK (rb_loading_uri), r);
