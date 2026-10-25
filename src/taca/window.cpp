@@ -1882,7 +1882,7 @@ int TacaWindow::handle(int event) {
       if (job_) break;
       if (ctrl && key == 'l') {
         Fl::focus(address_);
-        address_->position(0, address_->size());
+        address_->insert_position(0, address_->size());
         redraw();
         return 1;
       }

@@ -11,6 +11,7 @@
 // sources.
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
+#include <FL/Fl_Window.H>
 #include <FL/fl_draw.H>
 
 #include <time.h>

@@ -42,9 +42,12 @@ bool dechunk(const std::string &in, std::string &out) {
     std::string len = in.substr(i, eol - i);
     size_t semi = len.find(';');
     if (semi != std::string::npos) len.resize(semi);
+    // |end| points into the string strtoul() read, so that string must
+    // outlive the check below (not a temporary).
+    std::string hex = trim(len);
     char *end = nullptr;
-    unsigned long n = std::strtoul(trim(len).c_str(), &end, 16);
-    if (!end || *end != '\0' || trim(len).empty()) return false;
+    unsigned long n = std::strtoul(hex.c_str(), &end, 16);
+    if (!end || *end != '\0' || hex.empty()) return false;
     i = eol + 2;
     if (n == 0) return true;
     if (i + n > in.size()) return false;

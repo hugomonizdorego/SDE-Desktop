@@ -1,6 +1,4 @@
 //
-// "$Id$"
-//
 // Menu bar widget for the Fast Light Tool Kit (FLTK).
 //
 // Copyright 1998-2010 by Bill Spitzak and others.
@@ -9,11 +7,11 @@
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 #include <FL/Fl.H>
@@ -21,9 +19,17 @@
 #include <FL/fl_draw.H>
 #include <FL/Fl_SDE_Style.H>
 
-// SDE-FLTK: the menu bar under the pointer and the hovered title.
-static Fl_Menu_Bar *sde_hover_bar = 0;
+// SDE-FLTK: the menu bar under the pointer and the hovered title. FLTK
+// clears the pointer when that menu bar is deleted.
+static Fl_Widget *sde_hover_bar = 0;
 static int sde_hover_item = -1;
+
+static void sde_hover(Fl_Widget *bar, int item) {
+  static int watched = 0;
+  if (!watched) { Fl::watch_widget_pointer(sde_hover_bar); watched = 1; }
+  sde_hover_bar = bar;
+  sde_hover_item = item;
+}
 
 static int sde_title_at(Fl_Menu_Bar *b, int mx) {
   if (!b->menu() || !b->menu()->text) return -1;
@@ -71,14 +77,13 @@ int Fl_Menu_Bar::handle(int event) {
       int i = event == FL_LEAVE ? -1 : sde_title_at(this, Fl::event_x());
       if (sde_hover_bar != this || sde_hover_item != i) {
         if (sde_hover_bar && sde_hover_bar != this) sde_hover_bar->redraw();
-        sde_hover_bar = i < 0 ? 0 : this;
-        sde_hover_item = i;
+        sde_hover(i < 0 ? 0 : this, i);
         redraw();
       }
     }
     return 1;
   case FL_PUSH:
-    if (sde_hover_bar == this) { sde_hover_bar = 0; sde_hover_item = -1; redraw(); }
+    if (sde_hover_bar == this) { sde_hover(0, -1); redraw(); }
     v = 0;
   J1:
     v = menu()->pulldown(x(), y(), w(), h(), v, this, 0, 1);
@@ -96,10 +101,14 @@ int Fl_Menu_Bar::handle(int event) {
 
 
 Fl_Menu_Bar::Fl_Menu_Bar(int X, int Y, int W, int H,const char *l)
-: Fl_Menu_(X,Y,W,H,l) 
+: Fl_Menu_(X,Y,W,H,l)
 {
 }
 
-//
-// End of "$Id$".
-//
+
+void Fl_Menu_Bar::play_menu(const Fl_Menu_Item *v) {
+  if (v) {
+    v = menu()->pulldown(x(), y(), w(), h(), v, this, 0, 1);
+    picked(v);
+  }
+}

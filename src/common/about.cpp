@@ -17,7 +17,7 @@
 
 #include "buffered_window.h"
 #include "build_config.h"
-// The toolkit credit names SDE-FLTK's own version ("1.3.11-sde3"), not the
+// The toolkit credit names SDE-FLTK's own version ("1.4.5-sde1"), not the
 // FLTK release that fltk-config reports.
 #undef SDE_FLTK_VERSION
 #include <FL/sde_fltk.h>
@@ -884,7 +884,7 @@ void show_license_viewer(const std::string &title, const std::string &text) {
   display->textfont(FL_COURIER);
   display->textsize(std::max(S(10), t.font_size - S(1)));
   display->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
-  display->scrollbar_width(S(10));
+  display->scrollbar_size(S(10));
   win->display = display;
   int cw = button_width(_("Close"));
   auto *close = new FlatButton(W - pad - cw, H - pad - bh, cw, bh, _("Close"), true);

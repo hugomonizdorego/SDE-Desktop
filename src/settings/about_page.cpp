@@ -13,6 +13,7 @@
 //    and on distributions based on it, such as DebION GNU/Linux, which are
 //    separate projects. Then the kernel, hardware and graphics.
 #include <FL/Fl.H>
+#include <FL/Fl_Window.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <sys/utsname.h>

@@ -1,7 +1,7 @@
 #
 # RPM spec file for FLTK.
 #
-# Copyright 1998-2023 by Bill Spitzak and others.
+# Copyright 1998-2024 by Bill Spitzak and others.
 #
 # This library is free software. Distribution and use rights are outlined in
 # the file "COPYING" which should have been included with this file.  If this
@@ -57,7 +57,7 @@ Install fltk-games to play Block Attack!, Checkers, or Sudoku on your computer.
 %setup
 
 %build
-CFLAGS="$RPM_OPT_FLAGS" CXXFLAGS="$RPM_OPT_FLAGS" LDFLAGS="$RPM_OPT_FLAGS" ./configure --prefix=%{prefix} --mandir=%{_mandir} --enable-largefile --enable-shared --enable-threads --enable-xft --enable-xdbe --enable-xinerama
+CFLAGS="$RPM_OPT_FLAGS" CXXFLAGS="$RPM_OPT_FLAGS" LDFLAGS="$RPM_OPT_FLAGS" ./configure --prefix=%{prefix} --mandir=%{_mandir} --enable-largefile --enable-shared --enable-threads --enable-xft --enable-xinerama
 
 # If we got this far, all prerequisite libraries must be here.
 make
@@ -83,6 +83,7 @@ rm -rf $RPM_BUILD_ROOT
 
 %dir %{prefix}/bin
 %{prefix}/bin/fltk-config
+%{prefix}/bin/fltk-options
 %{prefix}/bin/fluid
 
 %dir %{prefix}/include/FL

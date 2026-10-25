@@ -51,22 +51,40 @@ pkg_check_modules(XINPUT REQUIRED IMPORTED_TARGET xi)
 # Optional: taskbar previews read composited window pixmaps (alpha51).
 pkg_check_modules(XCOMPOSITE IMPORTED_TARGET xcomposite)
 
-# SDE-FLTK: the SDE fork of FLTK 1.3.11 in sde-fltk/, built here
-# and linked statically, so SDE does not depend on the distribution's FLTK
-# packages. -DSDE_BUNDLED_FLTK=OFF uses the system FLTK (fltk-config).
+# SDE-FLTK: the SDE fork of FLTK 1.4 in sde-fltk/, built here and linked
+# statically, so SDE does not depend on the distribution's FLTK packages.
+# -DSDE_BUNDLED_FLTK=OFF uses the system FLTK (fltk-config), which lacks the
+# SDE-FLTK additions that SDE's sources use (sde-fltk/CHANGES.SDE-FLTK).
 option(SDE_BUNDLED_FLTK "Build and statically link SDE-FLTK" ON)
 set(SDE_TOOLKIT_SOURCE "${PROJECT_SOURCE_DIR}/sde-fltk")
 if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
   set(SDE_TOOLKIT_STAGE "${CMAKE_BINARY_DIR}/sde-fltk/stage")
+  # A build directory made with another SDE-FLTK release (FL/sde_fltk.h, e.g.
+  # 1.3.11-sde3 before 1.4) builds the toolkit again from scratch.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SDE_TOOLKIT_SOURCE}/FL/sde_fltk.h")
+  file(STRINGS "${SDE_TOOLKIT_SOURCE}/FL/sde_fltk.h" SDE_TOOLKIT_RELEASE REGEX "define SDE_FLTK_VERSION ")
+  set(SDE_TOOLKIT_STAMP "${CMAKE_BINARY_DIR}/sde-fltk/release")
+  set(SDE_TOOLKIT_BUILT "")
+  if(EXISTS "${SDE_TOOLKIT_STAMP}")
+    file(READ "${SDE_TOOLKIT_STAMP}" SDE_TOOLKIT_BUILT)
+  endif()
+  if(NOT SDE_TOOLKIT_BUILT STREQUAL SDE_TOOLKIT_RELEASE)
+    file(REMOVE_RECURSE "${SDE_TOOLKIT_STAGE}" "${CMAKE_BINARY_DIR}/sde-fltk/build")
+  endif()
   if(NOT EXISTS "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
     message(STATUS "Building SDE-FLTK from ${SDE_TOOLKIT_SOURCE}")
+    # X11 only, drawn with Xlib and Xft fonts like FLTK 1.3 (SDE draws with
+    # Xlib and cairo itself); no OpenGL, SVG images, FLUID or forms library.
     execute_process(
       COMMAND ${CMAKE_COMMAND} -S "${SDE_TOOLKIT_SOURCE}" -B "${CMAKE_BINARY_DIR}/sde-fltk/build"
               -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=${SDE_TOOLKIT_STAGE}"
-              -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DOPTION_BUILD_SHARED_LIBS=OFF
-              -DFLTK_BUILD_TEST=OFF -DFLTK_BUILD_EXAMPLES=OFF -DOPTION_USE_GL=OFF
-              -DOPTION_BUILD_HTML_DOCUMENTATION=OFF -DOPTION_BUILD_PDF_DOCUMENTATION=OFF
-              -DOPTION_USE_SYSTEM_LIBPNG=ON -DOPTION_USE_SYSTEM_LIBJPEG=ON -DOPTION_USE_SYSTEM_ZLIB=ON
+              -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DFLTK_BUILD_SHARED_LIBS=OFF
+              -DFLTK_BACKEND_X11=ON -DFLTK_BACKEND_WAYLAND=OFF -DFLTK_GRAPHICS_CAIRO=OFF
+              -DFLTK_USE_XFT=ON -DFLTK_USE_PANGO=OFF -DFLTK_OPTION_SVG=OFF -DFLTK_BUILD_GL=OFF
+              -DFLTK_BUILD_FLUID=OFF -DFLTK_BUILD_FLTK_OPTIONS=OFF -DFLTK_BUILD_FORMS=OFF
+              -DFLTK_BUILD_TEST=OFF -DFLTK_BUILD_EXAMPLES=OFF
+              -DFLTK_BUILD_HTML_DOCS=OFF -DFLTK_BUILD_PDF_DOCS=OFF
+              -DFLTK_USE_SYSTEM_LIBPNG=ON -DFLTK_USE_SYSTEM_LIBJPEG=ON -DFLTK_USE_SYSTEM_ZLIB=ON
       RESULT_VARIABLE SDE_TOOLKIT_RESULT OUTPUT_QUIET)
     if(SDE_TOOLKIT_RESULT EQUAL 0)
       execute_process(
@@ -76,6 +94,7 @@ if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
     if(NOT SDE_TOOLKIT_RESULT EQUAL 0)
       message(FATAL_ERROR "Building SDE-FLTK failed")
     endif()
+    file(WRITE "${SDE_TOOLKIT_STAMP}" "${SDE_TOOLKIT_RELEASE}")
   endif()
   set(FLTK_CONFIG "${SDE_TOOLKIT_STAGE}/bin/fltk-config")
   # The step above builds SDE-FLTK once; this target brings the staged copy
@@ -92,13 +111,12 @@ if(SDE_BUNDLED_FLTK AND EXISTS "${SDE_TOOLKIT_SOURCE}/CMakeLists.txt")
   set_target_properties(sde-fltk-static PROPERTIES
                         IMPORTED_LOCATION "${SDE_TOOLKIT_STAGE}/lib/libfltk.a")
   # FLTK's license and notices travel with the statically linked programs.
-  install(FILES "${SDE_TOOLKIT_SOURCE}/COPYING" "${SDE_TOOLKIT_SOURCE}/CREDITS"
+  install(FILES "${SDE_TOOLKIT_SOURCE}/COPYING" "${SDE_TOOLKIT_SOURCE}/CREDITS.txt"
                 "${SDE_TOOLKIT_SOURCE}/README.SDE-FLTK.md" "${SDE_TOOLKIT_SOURCE}/CHANGES.SDE-FLTK"
           DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/sde/sde-fltk" OPTIONAL)
   message(STATUS "Using SDE-FLTK (static)")
 else()
-  # FLTK 1.3 (Debian 12/13, Ubuntu 22.04/24.04) or 1.4. fltk-config is the most
-  # portable way to find it on Debian based systems.
+  # fltk-config is the most portable way to find FLTK on Debian based systems.
   find_program(FLTK_CONFIG fltk-config REQUIRED)
 endif()
 execute_process(COMMAND ${FLTK_CONFIG} --version

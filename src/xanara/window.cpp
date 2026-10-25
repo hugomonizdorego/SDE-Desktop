@@ -370,7 +370,7 @@ void XanaraWindow::show_find(bool show) {
       if (!s.empty() && s.size() < 80 && s.find('\n') == std::string::npos) find_input_->value(s.c_str());
     }
     Fl::focus(find_input_);
-    find_input_->position(0, find_input_->size());
+    find_input_->insert_position(0, find_input_->size());
   } else {
     view()->find_clear();
     Fl::focus(view());
@@ -822,7 +822,7 @@ void XanaraWindow::edit_field(int page, const FormField &f, int fx, int fy, int 
   field_input_->value(value.c_str());
   field_input_->show();
   Fl::focus(field_input_);
-  field_input_->position(field_input_->size(), 0);
+  field_input_->insert_position(field_input_->size(), 0);
   redraw();
 }
 
@@ -1307,7 +1307,7 @@ int XanaraWindow::handle(int event) {
           case 'l':
             if (v && page_input_->visible()) {
               Fl::focus(page_input_);
-              page_input_->position(0, page_input_->size());
+              page_input_->insert_position(0, page_input_->size());
               redraw();
             }
             return 1;

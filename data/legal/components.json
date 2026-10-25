@@ -446,17 +446,17 @@
       "id": "sde-fltk",
       "name": "SDE-FLTK",
       "kind": "toolkit",
-      "summary": "User interface toolkit of every SDE program, a fork of FLTK 1.3.11",
+      "summary": "User interface toolkit of every SDE program, a fork of FLTK 1.4.5",
       "programs": [],
       "icons": [],
       "license": "LGPL-2.0-only WITH FLTK-exception",
-      "copyright": ["Copyright © 1998–2025 Bill Spitzak and others (FLTK)", "Copyright © 2026 Selviana DE Project and contributors (SDE-FLTK changes)"],
+      "copyright": ["Copyright © 1998–2026 Bill Spitzak and others (FLTK)", "Copyright © 2026 Selviana DE Project and contributors (SDE-FLTK changes)"],
       "upstream": [
-        {"project": "FLTK 1.3.11", "url": "https://www.fltk.org", "license": "LGPL-2.0-only WITH FLTK-exception", "copyright": "Copyright © 1998–2025 Bill Spitzak and others", "relation": "fork"}
+        {"project": "FLTK 1.4.5", "url": "https://www.fltk.org", "license": "LGPL-2.0-only WITH FLTK-exception", "copyright": "Copyright © 1998–2026 Bill Spitzak and others", "relation": "fork"}
       ],
       "credits": ["Based in part on the work of the FLTK project (https://www.fltk.org)"],
       "trademarks": [],
-      "notices": ["/usr/share/doc/sde/sde-fltk/COPYING", "/usr/share/doc/sde/sde-fltk/CREDITS"],
+      "notices": ["/usr/share/doc/sde/sde-fltk/COPYING", "/usr/share/doc/sde/sde-fltk/CREDITS.txt"],
       "sources": ["sde-fltk/"]
     },
     {

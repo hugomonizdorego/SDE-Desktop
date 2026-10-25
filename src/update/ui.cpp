@@ -804,7 +804,7 @@ void TextView::restyle() {
   textcolor(t.text.fl());
   textfont(mono ? FL_COURIER : FL_HELVETICA);
   textsize(mono ? std::max(S(10), t.font_size - S(1)) : t.font_size);
-  scrollbar_width(S(10));
+  scrollbar_size(S(10));
   for (Fl_Widget *bar : {static_cast<Fl_Widget *>(mVScrollBar),
                          static_cast<Fl_Widget *>(mHScrollBar)}) {
     bar->box(FL_FLAT_BOX);

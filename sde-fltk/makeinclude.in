@@ -1,7 +1,7 @@
 #
 # Make include file for the Fast Light Tool Kit (FLTK).
 #
-# Copyright 1998-2021 by Bill Spitzak and others.
+# Copyright 1998-2024 by Bill Spitzak and others.
 #
 # This library is free software. Distribution and use rights are outlined in
 # the file "COPYING" which should have been included with this file.  If this
@@ -24,6 +24,11 @@ FL_ABI_VERSION		= @FL_ABI_VERSION@
 
 FLTK_VERSION		= @FLTK_VERSION@
 
+# FLTK configuration options: BUILD = { WIN | OSX | X11 | XFT | CAIROXLIB | WAYLANDX11 | WAYLAND }
+
+BUILD		= @BUILD@
+UNAME           = @UNAME@
+
 # Standard configure variables
 
 prefix		= @prefix@
@@ -37,7 +42,6 @@ mandir		= @mandir@
 srcdir		= @srcdir@
 docdir		= $(datadir)/doc/fltk
 VPATH		= @srcdir@
-USEMMFILES	= @USEMMFILES@
 
 # programs we use...
 DOXYDOC		= @DOXYDOC@
@@ -85,6 +89,9 @@ GLLIBBASENAME	= @GLLIBBASENAME@
 IMGLIBBASENAME	= @IMGLIBBASENAME@
 CAIROLIBBASENAME= @CAIROLIBBASENAME@
 
+# Test programs (optional, --disable-test):
+TESTDIR		= @TESTDIR@
+
 # libraries to link with:
 AUDIOLIBS	= @AUDIOLIBS@
 CAIROLIBS	= @CAIROLIBS@
@@ -102,6 +109,13 @@ FLTKCAIROOPTION = @FLTKCAIROOPTION@
 LINKSHARED	= @DSOLINK@ @LINKSHARED@ $(IMAGELIBS) $(CAIROLIBS)
 IMAGELIBS	= -L../lib @IMAGELIBS@
 
+# optional extra build step for fluid:
+FLUIDDIR  = @FLUIDDIR@
+
+# optional extra build step for libdecor:
+LIBDECORDIR	= @LIBDECORDIR@
+LIBDECORDBUS    = @LIBDECORDBUS@
+
 # image libraries to build...
 IMAGEDIRS	= @JPEG@ @ZLIB@ @PNG@
 CAIRODIR	= @CAIRODIR@
@@ -109,7 +123,7 @@ CAIRODIR	= @CAIRODIR@
 EXEEXT		= @EXEEXT@
 
 # Do we build the OpenGL demos?
-GLDEMOS		= @GLDEMOS@
+GLDEMOS    = @GLDEMOS@
 
 # Do we build the threads demo?
 THREADS		= @THREADS@
@@ -120,6 +134,9 @@ FLUID		= @FLUID@$(EXEEXT)
 # Name and/or path of FLUID executable we use for building:
 # depends on the build type (native or cross-compiler)
 FLUID_BUILD	= @FLUID_BUILD@
+
+# Name of fltk-options executable we install
+FLTK_OPTIONS = @FLTK_OPTIONS@$(EXEEXT)
 
 # Possible steps for OS X build only
 OSX_ONLY	= @OSX_ONLY@

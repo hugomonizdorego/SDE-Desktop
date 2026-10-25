@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Double-buffered FLTK window that always uses an X pixmap as back buffer.
 //
-// FLTK 1.3's Fl_Double_Window draws into an Xdbe back buffer when the X
-// server offers the DOUBLE-BUFFER extension (Xorg does). cairo cannot draw
-// reliably into such a buffer, so SDE windows draw into a plain pixmap
+// FLTK 1.3's Fl_Double_Window drew into an Xdbe back buffer when the X
+// server offered the DOUBLE-BUFFER extension (Xorg does), and cairo cannot
+// draw reliably into such a buffer, so SDE windows draw into a plain pixmap
 // (fl_create_offscreen) and copy it to the window, which works everywhere.
+// FLTK 1.4 (SDE-FLTK 1.4.5) has no Xdbe any more; the class stays for the
+// partial repaints below.
 //
 // Damage handling (alpha 15):
 //  * expose events only copy the exposed part of the back buffer;

@@ -1,6 +1,4 @@
 //
-// "$Id$"
-//
 // Symbol drawing code for the Fast Light Tool Kit (FLTK).
 //
 // Copyright 1998-2010 by Bill Spitzak and others.
@@ -9,11 +7,11 @@
 // the file "COPYING" which should have been included with this file.  If this
 // file is missing or damaged, see the license at:
 //
-//     http://www.fltk.org/COPYING.php
+//     https://www.fltk.org/COPYING.php
 //
-// Please report all bugs and problems on the following page:
+// Please see the following page on how to report bugs and issues:
 //
-//     http://www.fltk.org/str.php
+//     https://www.fltk.org/bugs.php
 //
 
 // These are small graphics drawn by the normal label-drawing
@@ -70,22 +68,23 @@ static void fl_init_symbols(void);
 
 /**
   Adds a symbol to the system.
+  If a symbol with that name is already defined, its draw function is replaced by \p drawit.
   \param[in] name     name of symbol (without the "@")
   \param[in] drawit   function to draw symbol
   \param[in] scalable set to 1 if \p drawit uses scalable vector drawing
-  \returns 1 on success, 0 on failure
+  \returns 1 on success, 0 if the maximum number of symbols has been reached.
   */
 int fl_add_symbol(const char *name, void (*drawit)(Fl_Color), int scalable)
 {
   fl_init_symbols();
   int pos;
-  if (symbnumb > MAXSYMBOL / 2) return 0;	// table is full
+  if (symbnumb > MAXSYMBOL / 2) return 0;       // table is full
   pos = find(name);
+  if (!symbols[pos].notempty) symbnumb++;
   symbols[pos].name = name;
   symbols[pos].drawit = drawit;
   symbols[pos].notempty = 1;
   symbols[pos].scalable = scalable;
-  symbnumb++;
   return 1;
 }
 
@@ -100,7 +99,7 @@ int fl_return_arrow(int x,int y,int w,int h);
   \returns 1 on success, 0 on failure
   */
 // provided for back compatibility:
-int fl_draw_symbol(const char *label,int x,int y,int w,int h,Fl_Color col) {  
+int fl_draw_symbol(const char *label,int x,int y,int w,int h,Fl_Color col) {
   const char *p = label;
   if (*p++ != '@') return 0;
   fl_init_symbols();
@@ -192,7 +191,7 @@ static void rectangle(double x,double y,double x2,double y2,Fl_Color col) {
 
 /* The drawing routines */
 
-static void draw_fltk(Fl_Color col) 
+static void draw_fltk(Fl_Color col)
 {
   fl_color(col);
   // F fill
@@ -226,7 +225,7 @@ static void draw_fltk(Fl_Color col)
   vv(1.3, 0.15); vv(1.3, 0.5); vv(1.1, 0.5); EC;
 }
 
-static void draw_search(Fl_Color col) 
+static void draw_search(Fl_Color col)
 {
   fl_color(col);
   BP; vv(-.4, .13); vv(-1.0, .73); vv(-.73, 1.0); vv(-.13, .4); EP;
@@ -240,8 +239,15 @@ static void draw_search(Fl_Color col)
 static void draw_arrow1(Fl_Color col)
 {
   fl_color(col);
-  BP; vv(-0.8,-0.4); vv(-0.8,0.4); vv(0.0,0.4); vv(0.0,-0.4); EP;
-  BP; vv(0.0,0.8); vv(0.8,0.0); vv(0.0,-0.8); vv(0.0,-0.4); vv(0.0,0.4); EP;
+  if (fl_graphics_driver->can_fill_non_convex_polygon()) {
+    // draw the arrow as a 7-vertex filled polygon
+    BP; vv(-0.8,-0.4); vv(-0.8,0.4); vv(0.0,0.4); vv(0.0,0.8); vv(0.8,0.0);
+    vv(0.0,-0.8); vv(0.0,-0.4); EP;
+  } else {
+    // draw the arrow as a rectangle plus a triangle
+    BP; vv(-0.8,-0.4); vv(-0.8,0.4); vv(0.0,0.4); vv(0.0,-0.4); EP;
+    BP; vv(0.0,0.8); vv(0.8,0.0); vv(0.0,-0.8); vv(0.0,-0.4); vv(0.0,0.4); EP;
+  }
   set_outline_color(col);
   BC; vv(-0.8,-0.4); vv(-0.8,0.4); vv(0.0,0.4); vv(0.0,0.8); vv(0.8,0.0);
       vv(0.0,-0.8); vv(0.0,-0.4); EC;
@@ -301,9 +307,9 @@ static void draw_bararrow(Fl_Color col)
   BC; vv(-0.5,0.8); vv(-0.1,0.8); vv(-0.1,-0.8); vv(-0.5,-0.8); EC;
 }
 
-static void draw_doublebar(Fl_Color col) { 
+static void draw_doublebar(Fl_Color col) {
   rectangle(-0.6,-0.8,-.1,.8,col);
-  rectangle(.1,-0.8,.6,.8,col); 
+  rectangle(.1,-0.8,.6,.8,col);
 }
 
 static void draw_arrow01(Fl_Color col)
@@ -650,39 +656,76 @@ static void draw_redo(Fl_Color c) {
   fl_scale(-1.0, 1.0);
 }
 
+static void draw_open_box(Fl_Color col) {
+  fl_color(col);
+  BCP;
+  vv(-1.0, -1.0); vv(-0.4, -1.0); vv(-0.4, -0.75); vv(-0.75, -0.75);
+  vv(-0.75, 0.75); vv(0.75, 0.75); vv(0.75, 0.4); vv(1.0, 0.4); vv(1.0, 1.0);
+  vv(-1.0, 1.0);
+  ECP;
+  set_outline_color(col);
+  BC;
+  vv(-1.0, -1.0); vv(-0.4, -1.0); vv(-0.4, -0.75); vv(-0.75, -0.75);
+  vv(-0.75, 0.75); vv(0.75, 0.75); vv(0.75, 0.4); vv(1.0, 0.4); vv(1.0, 1.0);
+  vv(-1.0, 1.0);
+  EC;
+}
+
+static void draw_import(Fl_Color col)
+{
+  fl_push_matrix();
+  fl_scale(-1.0, 1.0);
+  draw_open_box(col);
+  fl_scale(-1.0, 1.0);
+  fl_translate(-0.8, -0.3);
+  fl_rotate(45.0+90);
+  draw_round_arrow(col, 3);
+  fl_pop_matrix();
+}
+
+static void draw_export(Fl_Color col)
+{
+  draw_open_box(col);
+  fl_push_matrix();
+  fl_translate(0.7, 0.1);
+  fl_rotate(225.0);
+  draw_round_arrow(col, 3);
+  fl_pop_matrix();
+}
+
 static void fl_init_symbols(void) {
   static char beenhere;
   if (beenhere) return;
   beenhere = 1;
   symbnumb = 0;
 
-  fl_add_symbol("",		draw_arrow1,		1);
-  fl_add_symbol("->",		draw_arrow1,		1);
-  fl_add_symbol(">",		draw_arrow2,		1);
-  fl_add_symbol(">>",		draw_arrow3,		1);
-  fl_add_symbol(">|",		draw_arrowbar,		1);
-  fl_add_symbol(">[]",		draw_arrowbox,		1);
-  fl_add_symbol("|>",		draw_bararrow,		1);
-  fl_add_symbol("<-",		draw_arrow01,		1);
-  fl_add_symbol("<",		draw_arrow02,		1);
-  fl_add_symbol("<<",		draw_arrow03,		1);
-  fl_add_symbol("|<",		draw_0arrowbar,		1);
-  fl_add_symbol("[]<",		draw_0arrowbox,		1);
-  fl_add_symbol("<|",		draw_0bararrow,		1);
-  fl_add_symbol("<->",		draw_doublearrow,	1);
-  fl_add_symbol("-->",		draw_arrow,		1);
-  fl_add_symbol("+",		draw_plus,		1);
-  fl_add_symbol("->|",		draw_arrow1bar,		1);
-  fl_add_symbol("arrow",	draw_arrow,		1);
-  fl_add_symbol("returnarrow",	0,			3);
-  fl_add_symbol("square",	draw_square,		1);
-  fl_add_symbol("circle",	draw_circle,		1);
-  fl_add_symbol("line",		draw_line,		1);
-  fl_add_symbol("plus",		draw_plus,		1);
-  fl_add_symbol("menu",		draw_menu,		1);
-  fl_add_symbol("UpArrow",	draw_uparrow,		1);
-  fl_add_symbol("DnArrow",	draw_downarrow,		1);
-  fl_add_symbol("||",		draw_doublebar,		1);
+  fl_add_symbol("",             draw_arrow1,            1);
+  fl_add_symbol("->",           draw_arrow1,            1);
+  fl_add_symbol(">",            draw_arrow2,            1);
+  fl_add_symbol(">>",           draw_arrow3,            1);
+  fl_add_symbol(">|",           draw_arrowbar,          1);
+  fl_add_symbol(">[]",          draw_arrowbox,          1);
+  fl_add_symbol("|>",           draw_bararrow,          1);
+  fl_add_symbol("<-",           draw_arrow01,           1);
+  fl_add_symbol("<",            draw_arrow02,           1);
+  fl_add_symbol("<<",           draw_arrow03,           1);
+  fl_add_symbol("|<",           draw_0arrowbar,         1);
+  fl_add_symbol("[]<",          draw_0arrowbox,         1);
+  fl_add_symbol("<|",           draw_0bararrow,         1);
+  fl_add_symbol("<->",          draw_doublearrow,       1);
+  fl_add_symbol("-->",          draw_arrow,             1);
+  fl_add_symbol("+",            draw_plus,              1);
+  fl_add_symbol("->|",          draw_arrow1bar,         1);
+  fl_add_symbol("arrow",        draw_arrow,             1);
+  fl_add_symbol("returnarrow",  0,                      3);
+  fl_add_symbol("square",       draw_square,            1);
+  fl_add_symbol("circle",       draw_circle,            1);
+  fl_add_symbol("line",         draw_line,              1);
+  fl_add_symbol("plus",         draw_plus,              1);
+  fl_add_symbol("menu",         draw_menu,              1);
+  fl_add_symbol("UpArrow",      draw_uparrow,           1);
+  fl_add_symbol("DnArrow",      draw_downarrow,         1);
+  fl_add_symbol("||",           draw_doublebar,         1);
   fl_add_symbol("search",       draw_search,            1);
   fl_add_symbol("FLTK",         draw_fltk,              1);
 
@@ -697,9 +740,8 @@ static void fl_init_symbols(void) {
   fl_add_symbol("undo",         draw_undo,              1);
   fl_add_symbol("redo",         draw_redo,              1);
 
+  fl_add_symbol("import",       draw_import,            1);
+  fl_add_symbol("export",       draw_export,            1);
+
 //  fl_add_symbol("file",      draw_file,           1);
 }
-
-//
-// End of "$Id$".
-//

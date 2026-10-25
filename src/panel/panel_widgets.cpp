@@ -78,5 +78,5 @@ void restore_focus(Fl_Window *win, const std::string &name) {
   Fl_Widget *w = find_named(win, name);
   if (!w || !w->visible_r()) return;
   w->take_focus();
-  if (auto *in = dynamic_cast<Fl_Input *>(w)) in->position(in->size());
+  if (auto *in = dynamic_cast<Fl_Input *>(w)) in->insert_position(in->size());
 }

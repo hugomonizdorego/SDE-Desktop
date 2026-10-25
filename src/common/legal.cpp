@@ -72,7 +72,7 @@ std::vector<std::string> strings(const char *const *v, int n) {
     N_("Screen locker"),
     N_("Battery, lid, idle and brightness"),
     N_("File manager"),
-    N_("User interface toolkit of every SDE program, a fork of FLTK 1.3.11"),
+    N_("User interface toolkit of every SDE program, a fork of FLTK 1.4.5"),
     N_("Window manager, built from Openbox"),
     N_("Compositor, built from picom"),
     N_("SDE Graphite, SDE Fluent and SDE Liquid Glass for GTK 3 and GTK 4"),

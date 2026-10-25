@@ -14,6 +14,7 @@
 // the overview never scrolls sideways (1024 x 600 at 150 % has two).
 #include <FL/Fl.H>
 #include <FL/Fl_Input.H>
+#include <FL/Fl_Window.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
@@ -433,7 +434,7 @@ class HubSearch : public Fl_Input {
     refresh_page();
     if (g_search) {
       g_search->take_focus();
-      g_search->position(g_search->size());
+      g_search->insert_position(g_search->size());
     }
   }
   void draw() override {

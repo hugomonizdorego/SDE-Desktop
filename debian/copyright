@@ -179,10 +179,10 @@ Comment: SDE Compositor, built from picom (https://github.com/yshui/picom,
  /usr/share/doc/sde/upstream/picom.
 
 Files: sde-fltk/*
-Copyright: 1998-2025 Bill Spitzak and others (FLTK); see sde-fltk/CREDITS
+Copyright: 1998-2026 Bill Spitzak and others (FLTK); see sde-fltk/CREDITS.txt
            2026 Selviana DE Project and contributors (SDE-FLTK changes)
 License: LGPL-2.0-only with FLTK exception
-Comment: SDE-FLTK is the SDE fork of FLTK 1.3.11. Its license, the GNU
+Comment: SDE-FLTK is the SDE fork of FLTK 1.4.5. Its license, the GNU
  Library General Public License version 2 with the FLTK exceptions (SPDX:
  LGPL-2.0-only WITH FLTK-exception), is in sde-fltk/COPYING and installed
  as /usr/share/doc/sde/sde-fltk/COPYING.

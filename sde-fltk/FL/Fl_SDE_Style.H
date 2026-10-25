@@ -18,9 +18,9 @@
 //  * fl_message()/fl_ask()/fl_choice()/fl_input() and Fl_File_Chooser call
 //    dialog() before their window is shown so that it can restyle it.
 //
-// Without a style (the default) SDE-FLTK draws exactly like FLTK 1.3.11.
+// Without a style (the default) SDE-FLTK draws exactly like FLTK 1.4.5.
 // The hooks only add code paths; no FLTK structure changes size, so the
-// library stays source and binary compatible with FLTK 1.3.
+// library stays source and binary compatible with FLTK 1.4.
 //
 
 #ifndef Fl_SDE_Style_H
