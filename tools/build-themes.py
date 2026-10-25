@@ -975,8 +975,9 @@ def build_glass(pal, out):
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'glass', accent, gtk))
             write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
-            write(d / 'index.theme', index_theme(name, f'SDE Glass {mode.capitalize()} {pal["accent_labels"][accent]}',
-                                                 'SDE Glass: frosted and rounded, built on SDE Graphite', mode == 'dark'))
+            write(d / 'index.theme', index_theme(name, f'SDE {fam["label"]} {mode.capitalize()} {pal["accent_labels"][accent]}',
+                                                 f'SDE {fam["label"]}: clear glass with light rims and capsule '
+                                                 'shapes, built on SDE Graphite', mode == 'dark'))
             openbox_theme(pal, 'glass', mode, accent, d)
 
 

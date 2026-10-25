@@ -76,8 +76,8 @@ SETS = [
     ThemeSet('graphite-dark', 'graphite', 'dark', label='SDE Graphite Dark'),
     ThemeSet('fluent-light', 'fluent', 'light', scope='themes', label='SDE Fluent Light'),
     ThemeSet('fluent-dark', 'fluent', 'dark', scope='themes', label='SDE Fluent Dark'),
-    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Glass Light'),
-    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Glass Dark'),
+    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Liquid Glass Light'),
+    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Liquid Glass Dark'),
     ThemeSet('hero-1920x1080', 'graphite', 'light', '1920x1080', 125, scope='hero',
              label='SDE Graphite Light, 1920x1080 at 125 %'),
 ]
