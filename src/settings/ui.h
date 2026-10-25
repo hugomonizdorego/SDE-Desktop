@@ -6,6 +6,7 @@
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Scroll.H>
 
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <memory>
@@ -41,6 +42,10 @@ class Card : public Fl_Widget {
   void draw() override;
 };
 
+// A page fills the area it is given; its content keeps a readable width
+// (at most max_width(), S(860) unless the page asks for another) and is
+// centred in wider windows. The window builds the page again when its size
+// changes, so pages lay out for the size they are built at.
 class Page : public Fl_Scroll {
  public:
   Page(int x, int y, int w, int h);
@@ -49,6 +54,12 @@ class Page : public Fl_Scroll {
   int width() const { return w() - 2 * pad_ - scrollbar_size(); }
   int cursor() const { return y_; }
   void advance(int dy) { y_ += dy; }
+  // The widest the content may be (the overview's tiles want more room).
+  // Call before adding anything.
+  void max_width(int w);
+  // Height of everything added so far, and the largest scroll position.
+  int content_h() const { return y_ - y(); }
+  int max_scroll() const { return std::max(0, content_h() - h()); }
 
   void heading(const std::string &title, const std::string &subtitle = "");
   void begin_card(const std::string &title = "");
@@ -56,6 +67,9 @@ class Page : public Fl_Scroll {
   // Free-standing paragraph.
   void note(const std::string &text);
 
+  // Where row() puts a control |control_w| wide: in the column at the
+  // right, or across the card when rows stack on a narrow page.
+  void control_box(int control_w, int *x, int *w) const;
   // A row: label on the left, a control of |control_w| on the right.
   // |make| creates the control at the given box.
   Fl_Widget *row(const std::string &label, int control_w, int control_h,
@@ -82,7 +96,7 @@ class Page : public Fl_Scroll {
 
  private:
   std::map<std::string, int> anchors_;
-  int pad_, y_;
+  int pad_, y_, max_w_;
   Card *card_ = nullptr;
   int card_y_ = 0;
   bool first_row_ = true;

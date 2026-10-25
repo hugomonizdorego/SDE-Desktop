@@ -75,8 +75,22 @@ Page::Page(int x, int y, int w, int h) : Fl_Scroll(x, y, w, h) {
   scrollbar.selection_color(t.border.fl());
   scrollbar.box(FL_FLAT_BOX);
   scrollbar.slider(FL_FLAT_BOX);
-  pad_ = S(28);
   y_ = y + S(24);
+  max_width(S(860));
+  // Fl_Scroll measures its scroll position from the top of its children:
+  // a mark at the very top makes yposition() the offset from the page's
+  // top (the first heading is S(24) lower). Without it a page built again
+  // at yposition() moved up by S(24) each time.
+  auto *top = new Fl_Box(x, y, 1, 1);
+  top->box(FL_NO_BOX);
+}
+
+void Page::max_width(int w) {
+  // The usual margins, and more on both sides of content that is wider
+  // than |w|: a maximized window on a large screen keeps lines readable.
+  max_w_ = w;
+  int inner = this->w() - scrollbar_size() - 2 * S(28);
+  pad_ = S(28) + std::max(0, (inner - max_w_) / 2);
 }
 
 void Page::heading(const std::string &title, const std::string &subtitle) {
@@ -115,6 +129,14 @@ void Page::note(const std::string &text) {
   int h = Label::measure(text, w, Label::DIM) + S(6);
   new Label(x, y_, w, h, text, Label::DIM, true);
   y_ += h + S(6);
+}
+
+void Page::control_box(int control_w, int *x, int *w) const {
+  int inner_x = card_ ? left() + S(20) : left();
+  int inner_w = card_ ? width() - S(40) : width();
+  bool stacked = inner_w - control_w - S(16) < S(160);
+  *x = stacked ? inner_x : inner_x + inner_w - control_w;
+  *w = stacked ? inner_w : control_w;
 }
 
 Fl_Widget *Page::row(const std::string &label, int control_w, int control_h,
