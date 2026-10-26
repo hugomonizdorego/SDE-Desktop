@@ -1062,7 +1062,7 @@ void XanaraWindow::draw_chrome_text() {
   // The armed tool's hint left of the context tools.
   if (v && ctx_h_ && ctx_hint_w_ > S(120)) {
     std::string hint = tool_hint(v->tool());
-    if (v->editing_text()) hint = _("Type to change the text; Esc or a click outside ends");
+    if (v->editing_text()) hint = _("Esc ends the editing");
     else if (v->has_selected_image()) hint = _("Drag to move, corners to resize");
     if (!v->redactions().empty() && mode_ == Mode::Protect)
       hint = format(_("%zu area(s) marked for redaction"), v->redactions().size());

@@ -101,7 +101,13 @@ Build-Depends: debhelper-compat (= 13),
                libxcb-sync-dev,
                libxcb-util-dev,
                libxcb-xfixes0-dev,
-               uthash-dev
+               uthash-dev,
+               libqpdf-dev (>= 11),
+               libharfbuzz-dev,
+               libfreetype-dev,
+               libcups2-dev,
+               libtesseract-dev,
+               libleptonica-dev
 Standards-Version: 4.6.2
 Homepage: https://github.com/hugomonizdorego/SDE-Desktop
 Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
@@ -141,7 +147,7 @@ Depends: ${shlibs:Depends},
          xz-utils,
          xdg-user-dirs,
          fonts-dejavu-core | fonts-noto-core
-Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
+Recommends: papirus-icon-theme | adwaita-icon-theme, cups-client, tesseract-ocr-eng,
             accountsservice,
             network-manager,
             bluez,
@@ -153,7 +159,7 @@ Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             dconf-gsettings-backend | gsettings-backend,
             glib-networking,
             lightdm | x-display-manager
-Suggests: eduka-icons, unrar, hunspell, tesseract-ocr, ghostscript,
+Suggests: eduka-icons, unrar, hunspell,
           brightnessctl,
           ddcutil,
           network-manager-gnome,

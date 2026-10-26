@@ -1004,12 +1004,15 @@ void DocView::draw_edit(Painter &p, int page) {
     double ax, ay, aw, ah, cx2, cy2, cw, ch;
     page_box_device(page, Box{c.x, c.top, c.x, c.top}, ax, ay, aw, ah);
     page_box_device(page, Box{c.x, c.bottom, c.x, c.bottom}, cx2, cy2, cw, ch);
-    Color ink = mode_ == ColorMode::Night ? Color::hex(0xF2F4F7) : Color::hex(0x101418);
-    cairo_set_source_rgba(cr, ink.r, ink.g, ink.b, 1);
-    cairo_set_line_width(cr, std::max(1.0, Sd(1.6)));
+    // The inverse of what is under it, so that it shows on any background.
+    cairo_save(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_DIFFERENCE);
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_set_line_width(cr, std::max(1.0, std::round(Sd(1.6))));
     cairo_move_to(cr, std::round(ax) + 0.5, ay);
     cairo_line_to(cr, std::round(cx2) + 0.5, cy2);
     cairo_stroke(cr);
+    cairo_restore(cr);
   }
 }
 

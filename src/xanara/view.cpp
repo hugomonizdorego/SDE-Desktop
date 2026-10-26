@@ -166,8 +166,8 @@ const char *tool_hint(Tool t) {
     case Tool::FillCheck: case Tool::FillCross: case Tool::FillDot: case Tool::FillDate: case Tool::FillInitials:
       return _("Click where it belongs");
     case Tool::Redact: return _("Drag over what must disappear, then Apply Redactions");
-    case Tool::Edit: return _("Click into text to type; drag a picture to move it");
-    case Tool::NewText: return _("Click where the text goes, or drag its width");
+    case Tool::Edit: return _("Click into text to edit it");
+    case Tool::NewText: return _("Click where the new text goes");
     default: return "";
   }
 }
