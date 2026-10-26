@@ -154,7 +154,7 @@ struct StampSpec {
 // Expands {page} {pages} {date} {file} and {bates}.
 std::string expand_stamp(const std::string &tpl, const StampSpec &spec, int page, int count);
 std::string bates_number(const StampSpec &spec, int page);
-// One overlay page per document page, same sizes, for `qpdf --overlay/--underlay`.
+// One overlay page per document page, same sizes, for overlay_pages().
 bool write_stamp_pdf(const std::string &path, const std::vector<Point> &sizes, const StampSpec &spec,
                      std::string &error);
 // A PDF with one page per image (each page sized to the image at 96 dpi,

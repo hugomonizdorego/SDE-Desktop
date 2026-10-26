@@ -237,7 +237,7 @@ struct Lexer {
       }
       if (w == "true" || w == "false") {
         o = Operand();
-        o.kind = Operand::Bool;
+        o.kind = Operand::Boolean;
         o.boolean = w == "true";
         return true;
       }
@@ -284,7 +284,7 @@ size_t inline_length(const Operand &dict) {
   double w = inline_number(dict, "W", "Width", 0), h = inline_number(dict, "H", "Height", 0);
   const Operand *mask = dict.get("IM");
   if (!mask) mask = dict.get("ImageMask");
-  bool is_mask = mask && mask->kind == Operand::Bool && mask->boolean;
+  bool is_mask = mask && mask->kind == Operand::Boolean && mask->boolean;
   double bpc = is_mask ? 1 : inline_number(dict, "BPC", "BitsPerComponent", 8);
   int comps = 1;
   const Operand *cs = dict.get("CS");
@@ -469,7 +469,7 @@ std::string pdf_name(const std::string &name) {
 std::string unparse(const Operand &o) {
   switch (o.kind) {
     case Operand::Number: return pdf_num(o.num, 6);
-    case Operand::Bool: return o.boolean ? "true" : "false";
+    case Operand::Boolean: return o.boolean ? "true" : "false";
     case Operand::Name: return pdf_name(o.str);
     case Operand::String: return o.hex ? pdf_hex(o.str) : pdf_literal(o.str);
     case Operand::Array:

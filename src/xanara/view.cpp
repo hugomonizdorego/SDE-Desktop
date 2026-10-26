@@ -85,7 +85,9 @@ Tool tool_for(Act a, FieldKind *kind) {
     case Act::Measure: return Tool::Measure;
     case Act::Stamp: return Tool::Stamp;
     case Act::Signature: case Act::FillSign: return Tool::Signature;
-    case Act::AddText: case Act::FillText: return Tool::FillText;
+    case Act::EditContent: return Tool::Edit;
+    case Act::AddText: return Tool::NewText;
+    case Act::FillText: return Tool::FillText;
     case Act::AddImage: return Tool::Image;
     case Act::AddLink: return Tool::Link;
     case Act::Crop: return Tool::Crop;
@@ -137,6 +139,8 @@ const char *tool_name(Tool t) {
     case Tool::FillDate: return _("Date");
     case Tool::FillInitials: return _("Initials");
     case Tool::Redact: return _("Redaction");
+    case Tool::Edit: return _("Edit Text and Pictures");
+    case Tool::NewText: return _("New Text");
     case Tool::Count: break;
   }
   return "";
@@ -162,6 +166,8 @@ const char *tool_hint(Tool t) {
     case Tool::FillCheck: case Tool::FillCross: case Tool::FillDot: case Tool::FillDate: case Tool::FillInitials:
       return _("Click where it belongs");
     case Tool::Redact: return _("Drag over what must disappear, then Apply Redactions");
+    case Tool::Edit: return _("Click into text to type; drag a picture to move it");
+    case Tool::NewText: return _("Click where the text goes, or drag its width");
     default: return "";
   }
 }
@@ -171,11 +177,13 @@ bool tool_has_width(Tool t) {
          t == Tool::Measure;
 }
 
-bool tool_has_font(Tool t) { return t == Tool::Text || t == Tool::FillText || t == Tool::FillDate || t == Tool::FillInitials; }
+bool tool_has_font(Tool t) {
+  return t == Tool::Text || t == Tool::FillText || t == Tool::FillDate || t == Tool::FillInitials || t == Tool::NewText;
+}
 
 bool tool_has_color(Tool t) {
   return t != Tool::Select && t != Tool::Hand && t != Tool::Eraser && t != Tool::Image && t != Tool::Link &&
-         t != Tool::Crop && t != Tool::Field && t != Tool::Signature && t != Tool::Redact;
+         t != Tool::Crop && t != Tool::Field && t != Tool::Signature && t != Tool::Redact && t != Tool::Edit;
 }
 
 DocView::DocView(XanaraWindow *app, int x, int y, int w, int h) : Fl_Widget(x, y, w, h), app_(app) {
@@ -202,6 +210,9 @@ DocView::DocView(XanaraWindow *app, int x, int y, int w, int h) : Fl_Widget(x, y
   tool_ink_[tool_index(Tool::Line)] = Rgb{0.85, 0.18, 0.2};
   tool_ink_[tool_index(Tool::Select)] = Rgb{1.0, 0.84, 0.15};
   tool_ink_[tool_index(Tool::Signature)] = Rgb{0.08, 0.12, 0.2};
+  tool_ink_[tool_index(Tool::NewText)] = Rgb{0, 0, 0};
+  new_style_.size = 12;
+  new_style_.paint.n = 1;
 }
 
 DocView::~DocView() {
@@ -210,11 +221,18 @@ DocView::~DocView() {
   Fl::remove_timeout(settle_cb, this);
   Fl::remove_timeout(find_cb, this);
   Fl::remove_timeout(schedule_cb, this);
+  Fl::remove_timeout(blink_cb, this);
+  Fl::remove_timeout(preview_cb, this);
+  Fl::remove_timeout(layouts_cb, this);
   renderer_.reset();
   clear_steps(undo_);
   clear_steps(redo_);
   if (signature_) cairo_surface_destroy(signature_);
   if (image_) cairo_surface_destroy(image_);
+  text_.reset();
+  drop_overlay();
+  if (ghost_) cairo_surface_destroy(ghost_);
+  if (drag_image_) cairo_surface_destroy(drag_image_);
 }
 
 void DocView::set_cache_budget(size_t bytes) { cache_->set_budget(std::max<size_t>(bytes, 32u << 20)); }
@@ -233,6 +251,14 @@ void DocView::set_document(Document *doc) {
   find_clear();
   annot_sel_page_ = -1;
   drag_ = Drag::Idle;
+  text_.reset();
+  drop_overlay();
+  if (ghost_) cairo_surface_destroy(ghost_);
+  ghost_ = nullptr;
+  ghost_page_ = -1;
+  edit_drag_ = EditDrag::Off;
+  sel_image_ = sel_image_page_ = -1;
+  forget_layouts();
   doc_ = doc;
   current_ = 0;
   sx_ = sy_ = tx_ = ty_ = 0;
@@ -242,6 +268,87 @@ void DocView::set_document(Document *doc) {
   }
   relayout(false);
   redraw();
+}
+
+void DocView::swap_document(Document *doc, const std::vector<int> &changed) {
+  renderer_.reset();
+  text_.reset();  // finished before; nothing of it can continue on new objects
+  drop_overlay();
+  forget_layouts();
+  edit_drag_ = EditDrag::Off;
+  if (drag_image_) cairo_surface_destroy(drag_image_);
+  drag_image_ = nullptr;
+  int old_n = doc_ ? doc_->count() : 0;
+  std::vector<uint64_t> revs;
+  for (int i = 0; i < old_n; ++i) revs.push_back(doc_->revision(i));
+  bool moved = !doc || old_n != doc->count() || (changed.size() == 1 && changed[0] == kPagesMoved);
+  bool same = changed.size() == 1 && changed[0] == kSameContent;
+  doc_ = doc;
+  thumb_jobs_.clear();
+  view_jobs_.clear();
+  clear_selection();
+  annot_sel_page_ = -1;
+  drag_ = Drag::Idle;
+  // Annotation steps belong to the old document; a copy of the document
+  // before and after each change of the PDF stays.
+  for (auto *steps : {&undo_, &redo_}) {
+    std::vector<UndoStep> keep;
+    for (auto &u : *steps) {
+      if (u.kind == UndoStep::Snapshot) keep.push_back(u);
+      else if (u.annot) g_object_unref(u.annot);
+    }
+    *steps = keep;
+  }
+  std::vector<int> dirty;
+  if (moved) {
+    cache_->clear();
+    redactions_.clear();
+    find_clear();
+    if (ghost_) cairo_surface_destroy(ghost_);
+    ghost_ = nullptr;
+    ghost_page_ = -1;
+    sel_image_ = sel_image_page_ = -1;
+    if (doc_)
+      for (int i = 0; i < doc_->count(); ++i) dirty.push_back(i);
+  } else if (doc_) {
+    for (int i = 0; i < doc_->count(); ++i) {
+      bool ch = !same && (changed.empty() || std::find(changed.begin(), changed.end(), i) != changed.end());
+      doc_->set_revision(i, revs[size_t(i)] + (ch ? 1 : 0));
+      if (ch) dirty.push_back(i);
+    }
+  }
+  if (doc_) {
+    current_ = std::clamp(current_, 0, doc_->count() - 1);
+    DocView *self = this;
+    renderer_.reset(new Renderer(doc_, [self] { Fl::awake(results_cb, self); }));
+  }
+  relayout(true);
+  // What changed on screen is rendered at once, so that the old content
+  // does not show up again until the renderer gets to it.
+  if (doc_)
+    for (int i : dirty)
+      if (i != ghost_page_) render_now(i);
+  redraw();
+}
+
+void DocView::render_now(int page) {
+  if (!doc_ || page < 0 || page >= int(slots_.size()) || !slots_[size_t(page)].shown || !visible_r()) return;
+  const Slot &s = slots_[size_t(page)];
+  int top = int(std::round(sy_)), left = int(std::round(sx_));
+  if (s.y >= top + h() || s.y + s.h <= top || s.x >= left + w() || s.x + s.w <= left) return;
+  RenderParams rp = params();
+  int sq = quantize_scale(rp.scale);
+  uint64_t rev = doc_->revision(page);
+  int vx0 = std::max(0, left - s.x), vx1 = std::min(s.w, left + w() - s.x);
+  int vy0 = std::max(0, top - s.y), vy1 = std::min(s.h, top + h() - s.y);
+  for (int r = vy0 / kTileSize; r * kTileSize < vy1; ++r)
+    for (int c = vx0 / kTileSize; c * kTileSize < vx1; ++c) {
+      TileKey key{page, c, r, sq, rotation_, mode_key(), rev};
+      if (cache_->contains(key)) continue;
+      int tx = c * kTileSize, ty = r * kTileSize;
+      if (cairo_surface_t *t = doc_->render(page, rp, tx, ty, std::min(kTileSize, s.w - tx), std::min(kTileSize, s.h - ty)))
+        cache_->put(key, t);
+    }
 }
 
 RenderParams DocView::params() const {
@@ -749,8 +856,15 @@ void DocView::draw() {
     if (!s.shown) continue;
     bool visible = s.y < top + h() && s.y + s.h > top && s.x < left + w() && s.x + s.w > left;
     if (visible) {
-      draw_page(p, i, view_jobs_);
+      bool complete = draw_page(p, i, view_jobs_);
+      if (ghost_ && ghost_page_ == i && (complete || !draw_ghost(p, i))) {
+        cairo_surface_destroy(ghost_);
+        ghost_ = nullptr;
+        ghost_page_ = -1;
+      }
+      draw_edit_overlay(p, i);
       draw_overlays(p, i);
+      draw_edit(p, i);
     } else if (settled_ && s.y < top + h() * 2 && s.y + s.h > top - h()) {
       // Prefetch the tiles of the pages just outside the view.
       RenderParams rp = params();
@@ -794,7 +908,7 @@ void DocView::draw() {
   }
 }
 
-void DocView::draw_page(Painter &p, int i, std::vector<RenderJob> &jobs) {
+bool DocView::draw_page(Painter &p, int i, std::vector<RenderJob> &jobs) {
   cairo_t *cr = p.cr();
   const Slot &s = slots_[size_t(i)];
   int ox = x() + s.x - int(std::round(sx_)), oy = y() + s.y - int(std::round(sy_));
@@ -807,7 +921,7 @@ void DocView::draw_page(Painter &p, int i, std::vector<RenderJob> &jobs) {
   uint64_t rev = doc_->revision(i);
   int vx0 = std::max(0, x() - ox), vx1 = std::min(s.w, x() + w() - ox);
   int vy0 = std::max(0, y() - oy), vy1 = std::min(s.h, y() + h() - oy);
-  if (vx1 <= vx0 || vy1 <= vy0) return;
+  if (vx1 <= vx0 || vy1 <= vy0) return true;
   struct Have {
     cairo_surface_t *surface;
     int tx, ty;
@@ -901,6 +1015,7 @@ void DocView::draw_page(Painter &p, int i, std::vector<RenderJob> &jobs) {
                     cairo_image_surface_get_height(hv.surface));
     cairo_fill(cr);
   }
+  return !missing;
 }
 
 void DocView::draw_overlays(Painter &p, int i) {
@@ -1303,6 +1418,8 @@ bool DocView::is_box_tool(Tool t) const {
 }
 
 void DocView::set_tool(Tool t) {
+  if ((t != Tool::Edit && t != Tool::NewText) || (t == Tool::NewText && text_)) finish_text_edit();
+  if (t != Tool::Edit) sel_image_ = sel_image_page_ = -1;
   tool_ = t;
   if (t != Tool::Select) annot_sel_page_ = -1;
   // Picking a markup tool with text selected applies it at once.
@@ -1317,6 +1434,7 @@ void DocView::set_tool(Tool t) {
 }
 
 Rgb DocView::ink() const {
+  if (text_ || tool_ == Tool::NewText) return text_style().paint.rgb();
   if (tool_ == Tool::Select && annot_sel_page_ >= 0) {
     if (const Annotation *a = const_cast<DocView *>(this)->selected_annot())
       if (a->has_color) return a->color;
@@ -1326,6 +1444,19 @@ Rgb DocView::ink() const {
 
 void DocView::set_ink(Rgb c) {
   tool_ink_[tool_index(tool_)] = c;
+  if (text_ || tool_ == Tool::NewText) {
+    Paint pt;
+    pt.n = 3;
+    pt.v[0] = c.r;
+    pt.v[1] = c.g;
+    pt.v[2] = c.b;
+    restyle_text([pt](TextStyle &s) {
+      double a = s.paint.alpha;
+      s.paint = pt;
+      s.paint.alpha = a;
+    });
+    return;
+  }
   if (tool_ == Tool::Select && annot_sel_page_ >= 0) {
     if (const Annotation *a = selected_annot()) {
       UndoStep u{UndoStep::Recolored, annot_sel_page_, POPPLER_ANNOT(g_object_ref(a->annot))};
@@ -1443,11 +1574,45 @@ void DocView::edit_selected_note() {
 void DocView::push_undo(UndoStep s) {
   undo_.push_back(s);
   clear_steps(redo_);
-  if (undo_.size() > 200) {
+  // At most 200 steps, and 40 copies of the document.
+  int copies = 0;
+  for (const auto &u : undo_) copies += u.kind == UndoStep::Snapshot;
+  while (!undo_.empty() && (undo_.size() > 200 || copies > 40)) {
+    if (undo_.front().kind == UndoStep::Snapshot) --copies;
     if (undo_.front().annot) g_object_unref(undo_.front().annot);
     undo_.erase(undo_.begin());
   }
 }
+
+void DocView::push_snapshot(const std::string &before, bool before_working, const std::string &after,
+                            const std::vector<int> &pages) {
+  UndoStep u{UndoStep::Snapshot, pages.empty() || pages[0] < 0 ? current_ : pages[0], nullptr};
+  u.before = before;
+  u.before_working = before_working;
+  u.after = after;
+  u.pages = pages;
+  push_undo(u);
+}
+
+std::vector<int> DocView::annotation_step_pages() const {
+  std::vector<int> out;
+  for (const auto &u : undo_)
+    if (u.kind != UndoStep::Snapshot && std::find(out.begin(), out.end(), u.page) == out.end()) out.push_back(u.page);
+  return out;
+}
+
+void DocView::history_files(std::set<std::string> &out) const {
+  for (const auto *steps : {&undo_, &redo_})
+    for (const auto &u : *steps)
+      if (u.kind == UndoStep::Snapshot) {
+        out.insert(u.before);
+        out.insert(u.after);
+      }
+}
+
+bool DocView::can_undo() const { return (text_ && text_->can_undo()) || !undo_.empty(); }
+
+bool DocView::can_redo() const { return (text_ && text_->can_redo()) || !redo_.empty(); }
 
 void DocView::clear_steps(std::vector<UndoStep> &steps) {
   for (auto &u : steps)
@@ -1476,10 +1641,20 @@ void DocView::apply_step(const UndoStep &u, bool forward) {
       break;
     case UndoStep::Recolored: doc_->set_annot_color(u.page, u.annot, forward ? u.color2 : u.color); break;
     case UndoStep::Faded: doc_->set_annot_opacity(u.page, u.annot, forward ? u.opacity2 : u.opacity); break;
+    case UndoStep::Snapshot:
+      app_->restore_snapshot(forward ? u.after : u.before, forward ? true : u.before_working, u.pages);
+      break;
   }
 }
 
 void DocView::undo() {
+  if (text_) {
+    if (text_->undo()) {
+      edit_changed();
+      return;
+    }
+    finish_text_edit();
+  }
   if (undo_.empty() || !doc_) return;
   UndoStep u = undo_.back();
   undo_.pop_back();
@@ -1491,6 +1666,10 @@ void DocView::undo() {
 }
 
 void DocView::redo() {
+  if (text_) {
+    if (text_->redo()) edit_changed();
+    return;
+  }
   if (redo_.empty() || !doc_) return;
   UndoStep u = redo_.back();
   redo_.pop_back();
@@ -1506,9 +1685,10 @@ void DocView::set_signature(cairo_surface_t *image) {
   signature_ = image;
 }
 
-void DocView::set_image(cairo_surface_t *image) {
+void DocView::set_image(cairo_surface_t *image, const std::string &file) {
   if (image_) cairo_surface_destroy(image_);
   image_ = image;
+  image_file_ = file;
 }
 
 void DocView::set_scroll_pos(double sx, double sy) {
@@ -1678,6 +1858,15 @@ void DocView::update_cursor(int mx, int my) {
     window()->cursor(FL_CURSOR_DEFAULT);
     return;
   }
+  if (edit_tool()) {
+    edit_hover(mx, my, c);
+    if (!hover_tip_.empty()) {
+      hover_tip_.clear();
+      redraw();
+    }
+    window()->cursor(c);
+    return;
+  }
   if (screen_to_page(mx, my, page, px, py, false)) {
     if (tool_ == Tool::Select) {
       if (const FormField *f = field_at(page, px, py)) {
@@ -1741,6 +1930,15 @@ int DocView::handle(int event) {
     case FL_DND_LEAVE:
       return 1;
     case FL_PASTE: {
+      if (paste_pending_) {
+        // Ctrl+V into the text box being edited.
+        paste_pending_ = false;
+        if (text_ && Fl::event_length() > 0) {
+          text_->insert(std::string(Fl::event_text(), size_t(Fl::event_length())));
+          edit_changed();
+        }
+        return 1;
+      }
       // Files dropped from a file manager arrive as a list of URIs; each
       // PDF opens in a tab of its own.
       std::string text(Fl::event_text(), size_t(Fl::event_length()));
@@ -1792,6 +1990,11 @@ int DocView::handle(int event) {
       if (Fl::event_button() == FL_MIDDLE_MOUSE || (tool_ == Tool::Hand && Fl::event_button() == FL_LEFT_MOUSE)) {
         drag_ = Drag::Pan;
         window()->cursor(FL_CURSOR_MOVE);
+        return 1;
+      }
+      if (edit_tool() && Fl::event_button() == FL_LEFT_MOUSE && edit_press(mx, my)) {
+        drag_ = edit_drag_ != EditDrag::Off ? Drag::Edit : Drag::Idle;
+        update_cursor(mx, my);
         return 1;
       }
       int page;
@@ -1887,6 +2090,10 @@ int DocView::handle(int event) {
       return 1;
     }
     case FL_DRAG: {
+      if (drag_ == Drag::Edit) {
+        edit_drag(mx, my);
+        return 1;
+      }
       if (drag_ == Drag::Pan) {
         sx_ = tx_ = press_sx_ - (mx - press_x_);
         sy_ = ty_ = press_sy_ - (my - press_y_);
@@ -1964,6 +2171,12 @@ int DocView::handle(int event) {
       return 1;
     }
     case FL_RELEASE:
+      if (drag_ == Drag::Edit) {
+        drag_ = Drag::Idle;
+        edit_release(mx, my);
+        update_cursor(mx, my);
+        return 1;
+      }
       // The release point ends a shape even when no drag event came first.
       if (drag_ == Drag::Shape && drag_page_ >= 0) {
         double cx = mx - x() + std::round(sx_), cy = my - y() + std::round(sy_);
@@ -1977,6 +2190,7 @@ int DocView::handle(int event) {
       update_cursor(mx, my);
       return 1;
     case FL_KEYBOARD:
+      if (edit_key(Fl::event_key(), Fl::event_state())) return 1;
       return keyboard(Fl::event_key(), Fl::event_state()) ? 1 : 0;
   }
   return Fl_Widget::handle(event);
@@ -2155,6 +2369,14 @@ void DocView::place_at(Tool t, int pg, Point at, const Box &b0, bool moved) {
       finish_added(pg, a);
       break;
     }
+    case Tool::NewText: {
+      // The first line's top left corner: the click is about the middle of
+      // the line.
+      double size = new_style_.size;
+      Box nb = moved && b.w() > 20 ? Box{b.x1, b.y1, b.x2, b.y1 + size} : Box{at.x, at.y - 0.6 * size, at.x, at.y + 0.4 * size};
+      start_new_text(pg, nb);
+      break;
+    }
     case Tool::Signature:
     case Tool::Image: {
       cairo_surface_t *src = t == Tool::Signature ? signature_ : image_;
@@ -2168,6 +2390,17 @@ void DocView::place_at(Tool t, int pg, Point at, const Box &b0, bool moved) {
       double bw = t == Tool::Signature ? 160 : std::min(300.0, iw * 0.75), bh = bw * ih / std::max(1.0, iw);
       Box sb = moved && b.w() > 10 && b.h() > 10 ? b
                                                   : Box{at.x - bw / 2, at.y - bh / 2, at.x + bw / 2, at.y + bh / 2};
+      if (t == Tool::Image) {
+        // Edit › Image: a picture in the page content, not an annotation.
+        if (moved && b.w() > 10 && b.h() > 10) {
+          // Fit the image into the dragged box, keeping its proportions.
+          double k = std::min(b.w() / std::max(1.0, iw), b.h() / std::max(1.0, ih));
+          double w2 = iw * k, h2 = ih * k;
+          sb = Box{b.x1 + (b.w() - w2) / 2, b.y1 + (b.h() - h2) / 2, b.x1 + (b.w() + w2) / 2, b.y1 + (b.h() + h2) / 2};
+        }
+        add_picture(pg, sb);
+        break;
+      }
       PopplerAnnot *a = doc_->add_image(pg, sb, src, t == Tool::Signature ? _("Signature") : _("Image"));
       if (!a) app_->toast(_("This poppler version cannot store images in PDFs"));
       finish_added(pg, a);
@@ -2205,6 +2438,7 @@ void DocView::place_at(Tool t, int pg, Point at, const Box &b0, bool moved) {
 }
 
 void DocView::open_context_menu(int mx, int my) {
+  if (edit_tool() && edit_context_menu(mx, my)) return;
   bool sel = has_selection();
   const Annotation *a = selected_annot();
   bool note = a && (a->type == POPPLER_ANNOT_TEXT || a->type == POPPLER_ANNOT_FREE_TEXT);
@@ -2340,7 +2574,9 @@ bool DocView::keyboard(int key, int state) {
         clear_selection();
         annot_sel_page_ = -1;
         app_->tool_changed();
-      } else if (tool_ != Tool::Select) {
+      } else if (tool_ == Tool::NewText || (tool_ != Tool::Select && tool_ != Tool::Edit && app_->mode() == Mode::Edit)) {
+        set_tool(Tool::Edit);
+      } else if (tool_ != Tool::Select && tool_ != Tool::Edit) {
         set_tool(Tool::Select);
       } else {
         return false;

@@ -23,8 +23,8 @@
 #include "edit.h"
 #include "i18n.h"
 #include "icons.h"
+#include "layout.h"
 #include "ocr.h"
-#include "spawn.h"
 #include "util.h"
 #include "xanara.h"
 
@@ -119,16 +119,54 @@ bool XanaraWindow::working_change(const std::string &out, const std::string &mes
   if (!t) return false;
   int cur = t->view->current_page();
   std::string pw = t->doc->password();
-  bool was_working = t->working_copy;
-  std::string from = before.empty() ? t->doc->path() : before;
-  if (!replace_document(*t, out, pw, true, std::min(cur, std::max(0, t->doc->count() - 1)), true, changed_pages))
-    return false;
-  t->doc->set_modified(true);
+  std::string doc_path = t->doc->path();
+  bool doc_working = t->working_copy;
+  std::string from = before.empty() ? doc_path : before;
+  // Annotations made since the last copy were saved into |from|: they
+  // become one step of undo of their own.
+  std::vector<int> annot_pages = t->view->annotation_step_pages();
+  if (!replace_document(*t, out, pw, true, cur, true, changed_pages)) return false;
+  if (from != doc_path) t->view->push_snapshot(doc_path, doc_working, from, annot_pages);
   // One step of undo: back to the file the change started from.
-  t->view->push_snapshot(from, was_working, out, changed_pages);
+  t->view->push_snapshot(from, from != t->target, out, changed_pages);
+  drop_temps(t->view);
   update_chrome();
   if (!message.empty()) toast(message);
   return true;
+}
+
+bool XanaraWindow::commit_page_edit(DocView *v, int page,
+                                    const std::function<bool(PdfFile &, PageLayout &, std::string &)> &op,
+                                    const PageLayout *expected, const std::string &message) {
+  DocTab *t = tab();
+  if (!t || t->view != v) return false;
+  commit_field();
+  std::string src = current_source();
+  if (src.empty()) return false;
+  std::string error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, t->doc->password(), error);
+  std::unique_ptr<PageLayout> layout = pdf ? PageLayout::read(*pdf, page) : nullptr;
+  if (!layout) {
+    report(_("Edit"), error.empty() ? std::string(_("the page could not be read")) : error);
+    return false;
+  }
+  if (expected && !same_content(*layout, *expected)) {
+    report(_("Edit"), _("the page is not the one that was edited"));
+    return false;
+  }
+  if (!op(*pdf, *layout, error)) {
+    report(_("Edit"), error.empty() ? std::string(_("the change could not be made")) : error);
+    return false;
+  }
+  std::string out = temp_path("edit");
+  bool ok = pdf->write(out, PdfFile::Write::Auto, error);
+  layout.reset();
+  pdf.reset();
+  if (!ok) {
+    report(_("Edit"), error);
+    return false;
+  }
+  return working_change(out, message, src, {page});
 }
 
 bool XanaraWindow::engine_change(const std::function<bool(PdfFile &, std::string &)> &op, const std::string &what,
@@ -159,12 +197,13 @@ bool XanaraWindow::engine_change(const std::function<bool(PdfFile &, std::string
 
 void XanaraWindow::restore_snapshot(const std::string &path, bool working, const std::vector<int> &changed_pages) {
   DocTab *t = tab();
-  if (!t || path.empty() || !file_exists(path)) return;
-  int cur = t->view->current_page();
-  if (!replace_document(*t, path, t->doc->password(), working, std::min(cur, std::max(0, t->doc->count() - 1)), true,
-                        changed_pages))
+  if (!t) return;
+  if (path.empty() || !file_exists(path)) {
+    toast(_("This step cannot be undone: its copy is gone"));
     return;
-  t->doc->set_modified(false);
+  }
+  int cur = t->view->current_page();
+  if (!replace_document(*t, path, t->doc->password(), working, cur, true, changed_pages)) return;
   update_chrome();
 }
 
@@ -211,7 +250,7 @@ void XanaraWindow::run(Act a) {
     FieldKind kind = FieldKind::Text;
     Tool t = tool_for(a, &kind);
     if (tool_toggled(*spec)) {
-      v->set_tool(mode_ == Mode::Edit && t != Tool::Edit ? Tool::Edit : Tool::Select);
+      if (t != Tool::Edit) v->set_tool(mode_ == Mode::Edit ? Tool::Edit : Tool::Select);
       return;
     }
     if (t == Tool::Image && !choose_image()) return;
@@ -434,12 +473,12 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
     if (files.empty()) return;
     int after = op == "append" ? n - 1 : cur;
     if (!engine_change([&](PdfFile &pdf, std::string &e) { return insert_pages(pdf, after, files, e); }, _("Insert"),
-                       _("Pages changed — save to keep the result")))
+                       _("Pages changed — save to keep the result"), {kPagesMoved}))
       return;
     cur = after + 1;
   } else {
     if (!engine_change([&](PdfFile &pdf, std::string &e) { return reorder_pages(pdf, order, e); }, _("Pages"),
-                       _("Pages changed — save to keep the result")))
+                       _("Pages changed — save to keep the result"), {kPagesMoved}))
       return;
     if (op == "delete") cur = std::min(cur, int(order.size()) - 1);
   }
@@ -689,14 +728,7 @@ void XanaraWindow::decrypt() {
     return;
   }
   pdf.reset();
-  int cur = t->view->current_page();
-  bool was_working = t->working_copy;
-  if (replace_document(*t, out, "", true, cur, true)) {
-    t->doc->set_modified(true);
-    t->view->push_snapshot(src, was_working, out, {});
-    update_chrome();
-    toast(_("Password and restrictions removed — save to keep the result"));
-  }
+  working_change(out, _("Password and restrictions removed — save to keep the result"), src, {kSameContent});
 }
 
 void XanaraWindow::apply_redactions() {

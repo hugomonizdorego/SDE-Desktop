@@ -14,8 +14,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <deque>
 
+#include "fonts.h"
 #include "i18n.h"
+#include "ocr.h"
 #include "spawn.h"
 #include "util.h"
 #include "xanara.h"
@@ -343,10 +346,15 @@ void XanaraWindow::layout_toolbar(int y0, int hh) {
 bool XanaraWindow::tool_enabled(const ToolSpec &s, std::string *why) {
   DocView *v = view();
   if (!v) return false;
-  Availability a = tool_availability(s, [this](const std::string &p) { return have(p); });
-  if (!a.ok) {
-    if (why) *why = a.reason;
-    return false;
+  if (s.act == Act::Ocr) {
+    // Whether the language data is installed does not change while Xanara runs.
+    static int ocr = -1;
+    static std::string reason;
+    if (ocr < 0) ocr = ocr_available(reason) ? 1 : 0;
+    if (!ocr) {
+      if (why) *why = reason;
+      return false;
+    }
   }
   if (s.act == Act::ApplyRedactions && v->redactions().empty()) {
     if (why) *why = _("Mark areas with Mark Redaction first");
@@ -366,12 +374,192 @@ bool XanaraWindow::tool_toggled(const ToolSpec &s) const {
   Tool t = tool_for(s.act, &k);
   if (t != v->tool()) return false;
   if (t == Tool::Field) return k == v->field_kind();
-  if (t == Tool::FillText) return (s.act == Act::AddText) == (mode_ == Mode::Edit);
   if (t == Tool::Signature) return (s.act == Act::FillSign) == (mode_ == Mode::Fill);
   return true;
 }
 
+// The Edit mode while text is edited or a picture is picked: the tools for
+// it (font, size, bold, italic, color, alignment; replace, delete) take the
+// place of the less urgent tools of the mode, which go to the More menu.
+bool XanaraWindow::layout_edit_bar(int y0, int hh) {
+  DocView *v = view();
+  if (!v || mode_ != Mode::Edit) return false;
+  bool text = v->editing_text() || v->tool() == Tool::NewText;
+  bool image = !text && v->has_selected_image();
+  if (!text && !image) return false;
+  int bs = S(36), sep = S(17), by = y0 + (hh - bs) / 2;
+  auto tools = tools_for(mode_);
+  std::vector<const ToolSpec *> main_tools, rest;
+  for (const ToolSpec *t : tools)
+    (t->act == Act::EditContent || t->act == Act::AddText || t->act == Act::AddImage ? main_tools : rest).push_back(t);
+  TextStyle st = v->text_style();
+  int align = v->align();
+  static const icon::Kind align_icons[] = {icon::AlignLeft, icon::AlignCenter, icon::AlignRight, icon::AlignJustify};
+  static const char *align_tips[] = {N_("Align left (Ctrl+L)"), N_("Center (Ctrl+E)"), N_("Align right (Ctrl+R)"),
+                                     N_("Justify (Ctrl+J)")};
+  struct Item {
+    Hot h;
+    int group;
+  };
+  text_font(theme_.font_size - S(1));
+  // Builds the bar for a level of compactness; returns its width.
+  std::vector<Item> items;
+  auto build = [&](int level) {
+    items.clear();
+    auto icon_item = [&](icon::Kind g, const std::string &tip, std::function<void()> fn, int group, bool toggled) {
+      Hot h;
+      h.kind = Hot::Icon;
+      h.glyph = g;
+      h.tip = tip;
+      h.action = std::move(fn);
+      h.w = h.h = bs;
+      h.toggled = toggled;
+      items.push_back({h, group});
+    };
+    auto label_item = [&](icon::Kind g, const std::string &label, const std::string &tip, std::function<void()> fn,
+                          int group) {
+      Hot h;
+      h.kind = level >= 1 ? Hot::Icon : Hot::Label;
+      h.glyph = g;
+      h.text = label;
+      h.tip = tip;
+      h.action = std::move(fn);
+      h.w = level >= 1 ? bs : S(36) + text_width(label) + S(12);
+      h.h = bs;
+      items.push_back({h, group});
+    };
+    if (level < 2)
+      for (const ToolSpec *t : main_tools) {
+        Act a = t->act;
+        icon_item(t->glyph, _(t->tip), [this, a] { run(a); }, 0, tool_toggled(*t));
+      }
+    if (text) {
+      Hot f;
+      f.kind = Hot::Dropdown;
+      f.text = v->text_family();
+      f.tip = _("Font");
+      f.w = level >= 4 ? S(96) : S(150);
+      f.h = bs;
+      f.action = [this] {
+        for (const auto &x : hots_)
+          if (x.kind == Hot::Dropdown && x.tip == _("Font")) font_menu(x.x, x.y + x.h + S(4));
+      };
+      items.push_back({f, 1});
+      Hot z;
+      z.kind = Hot::Dropdown;
+      z.text = format("%g", std::round(st.size * 10) / 10);
+      z.tip = _("Font size");
+      z.w = S(66);
+      z.h = bs;
+      z.action = [this] {
+        for (const auto &x : hots_)
+          if (x.kind == Hot::Dropdown && x.tip == _("Font size")) size_menu(x.x, x.y + x.h + S(4));
+      };
+      items.push_back({z, 1});
+      icon_item(icon::Bold, _("Bold (Ctrl+B)"), [this] {
+        if (DocView *dv = view()) {
+          bool on = !dv->text_style().bold;
+          dv->restyle_text([on](TextStyle &s2) { s2.bold = on; });
+        }
+      }, 2, st.bold);
+      icon_item(icon::Italic, _("Italic (Ctrl+I)"), [this] {
+        if (DocView *dv = view()) {
+          bool on = !dv->text_style().italic;
+          dv->restyle_text([on](TextStyle &s2) { s2.italic = on; });
+        }
+      }, 2, st.italic);
+      Hot c;
+      c.kind = Hot::Swatch;
+      c.tip = _("Text color");
+      c.color = st.paint.rgb();
+      c.w = S(50);
+      c.h = bs;
+      c.action = [this] {
+        for (const auto &x : hots_)
+          if (x.kind == Hot::Swatch) color_menu(x.x, x.y + x.h + S(4));
+      };
+      items.push_back({c, 2});
+      if (level >= 3) {
+        Hot a;
+        a.kind = Hot::Dropdown;
+        a.glyph = align_icons[std::clamp(align, 0, 3)];
+        a.tip = _("Alignment");
+        a.w = S(56);
+        a.h = bs;
+        a.action = [this] {
+          for (const auto &x : hots_)
+            if (x.kind == Hot::Dropdown && x.tip == _("Alignment")) align_menu(x.x, x.y + x.h + S(4));
+        };
+        items.push_back({a, 3});
+      } else {
+        for (int k = 0; k < 4; ++k)
+          icon_item(align_icons[k], _(align_tips[k]), [this, k] {
+            if (DocView *dv = view()) dv->set_align(k);
+            tool_changed();
+          }, 3, align == k);
+      }
+      label_item(icon::Check, _("Done"), _("Done: write the text into the page (Esc)"), [this] {
+        if (DocView *dv = view()) {
+          dv->finish_text_edit();
+          if (dv->tool() == Tool::NewText) dv->set_tool(Tool::Edit);
+        }
+      }, 4);
+    } else {
+      label_item(icon::Replace, _("Replace"), _("Replace the picture with an image file"), [this] {
+        if (DocView *dv = view()) dv->replace_selected_image();
+      }, 1);
+      label_item(icon::Trash, _("Delete"), _("Delete the picture (Delete)"), [this] {
+        if (DocView *dv = view()) dv->delete_selected_image();
+      }, 1);
+    }
+    int total = 0;
+    for (size_t k = 0; k < items.size(); ++k) {
+      if (k && items[k].group != items[k - 1].group) total += sep;
+      total += items[k].h.w;
+    }
+    return total + S(8) + bs;  // the More button
+  };
+  int avail = w() - S(24), level = 0, total = 0;
+  for (level = 0; level <= 4; ++level) {
+    total = build(level);
+    if (total <= avail) break;
+  }
+  if (level > 4) level = 4;
+  if (level >= 2) rest.insert(rest.begin(), main_tools.begin(), main_tools.end());
+  int x = std::max(S(12), (w() - total) / 2);
+  ctx_hint_x_ = S(16);
+  ctx_hint_w_ = x - S(32);
+  for (size_t k = 0; k < items.size(); ++k) {
+    if (k && items[k].group != items[k - 1].group) {
+      seps_.push_back({x + sep / 2, by + S(8), bs - S(16)});
+      x += sep;
+    }
+    Hot h = items[k].h;
+    h.x = x;
+    h.y = by;
+    h.row = 2;
+    hots_.push_back(h);
+    x += h.w;
+  }
+  x += S(8);
+  Hot more;
+  more.kind = Hot::Icon;
+  more.glyph = icon::More;
+  more.tip = _("More tools");
+  more.x = x;
+  more.y = by;
+  more.w = more.h = bs;
+  more.row = 2;
+  more.action = [this, rest] {
+    for (const auto &hh2 : hots_)
+      if (hh2.row == 2 && hh2.glyph == icon::More) overflow_menu(hh2.x, hh2.y + hh2.h + S(4), rest);
+  };
+  hots_.push_back(more);
+  return true;
+}
+
 void XanaraWindow::layout_context(int y0, int hh) {
+  if (layout_edit_bar(y0, hh)) return;
   auto tools = tools_for(mode_);
   int bs = S(36), sep = S(17), by = y0 + (hh - bs) / 2;
   text_font(theme_.font_size - S(1));
@@ -472,9 +660,14 @@ namespace {
 
 struct Menu {
   std::vector<Fl_Menu_Item> items;
-  std::vector<std::string> keep;
+  std::deque<std::string> keep;  // the labels; a deque keeps them in place
   const Theme &t;
-  explicit Menu(const Theme &th) : t(th) { keep.reserve(64); }
+  explicit Menu(const Theme &th) : t(th) {}
+  void end_sub() {
+    Fl_Menu_Item it;
+    memset(&it, 0, sizeof it);
+    items.push_back(it);
+  }
   void add(const std::string &text, long id, int flags = 0) {
     keep.push_back(text);
     Fl_Menu_Item it;
@@ -583,6 +776,124 @@ void XanaraWindow::overflow_menu(int x, int y, const std::vector<const ToolSpec 
   if (id > 0) run(tools[size_t(id - 1)]->act);
 }
 
+void XanaraWindow::font_menu(int x, int y) {
+  DocView *v = view();
+  if (!v) return;
+  TextStyle st = v->text_style();
+  std::string current = v->text_family();
+  std::vector<std::string> families = SystemFont::families();
+  auto has = [&](const std::string &f) { return std::find(families.begin(), families.end(), f) != families.end(); };
+  Menu m(theme_);
+  std::vector<std::string> ids;
+  auto add = [&](const std::string &family, const std::string &label, int flags) {
+    ids.push_back(family);
+    m.add(label, long(ids.size()), flags | FL_MENU_RADIO | (family == current || (family.empty() && st.family.empty() && st.font >= 0) ? FL_MENU_VALUE : 0));
+  };
+  if (st.font >= 0 && st.family.empty()) add("", format(_("%s (the document's font)"), current.c_str()), FL_MENU_DIVIDER);
+  static const char *common[] = {"Liberation Sans", "Liberation Serif", "Liberation Mono", "DejaVu Sans", "DejaVu Serif",
+                                 "DejaVu Sans Mono", "Noto Sans", "Noto Serif", "Noto Sans Mono", "Carlito", "Caladea",
+                                 "Cantarell", "Ubuntu", "Open Sans", "Roboto", "Source Sans 3", "Inter"};
+  int shown = 0;
+  for (const char *c : common)
+    if (has(c)) {
+      add(c, c, 0);
+      ++shown;
+    }
+  if (shown) m.items.back().flags |= FL_MENU_DIVIDER;
+  m.add(_("All Fonts"), 0, FL_SUBMENU);
+  for (const auto &f : families) {
+    std::string label;
+    for (char ch : f) {
+      if (ch == '/' || ch == '\\' || ch == '&' || ch == '_') label += '\\';
+      label += ch;
+    }
+    add(f, label, 0);
+  }
+  m.end_sub();
+  long id = m.popup(std::max(0, x), y);
+  if (id <= 0 || id > long(ids.size())) return;
+  std::string family = ids[size_t(id - 1)];
+  if (family.empty()) return;  // the document's font: as it is
+  v->restyle_text([family](TextStyle &s2) { s2.family = family; });
+  tool_changed();
+}
+
+void XanaraWindow::size_menu(int x, int y) {
+  DocView *v = view();
+  if (!v) return;
+  double cur = v->text_style().size;
+  static const double sizes[] = {6, 7, 8, 9, 10, 10.5, 11, 12, 13, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72};
+  Menu m(theme_);
+  int n = int(sizeof sizes / sizeof sizes[0]);
+  for (int k = 0; k < n; ++k)
+    m.add(format("%g", sizes[k]), k + 1, FL_MENU_RADIO | (std::fabs(sizes[k] - cur) < 0.05 ? FL_MENU_VALUE : 0) |
+                                             (k == n - 1 ? FL_MENU_DIVIDER : 0));
+  m.add(_("Other Size…"), 100);
+  long id = m.popup(std::max(0, x), y);
+  double size = 0;
+  if (id >= 1 && id <= n) {
+    size = sizes[id - 1];
+  } else if (id == 100) {
+    std::string t = format("%g", std::round(cur * 10) / 10);
+    if (!ask_text(_("Font Size (points)"), t, false)) return;
+    size = atof(t.c_str());
+  }
+  if (size >= 1 && size <= 999) v->set_font_size(size);
+  tool_changed();
+}
+
+void XanaraWindow::color_menu(int x, int y) {
+  DocView *v = view();
+  if (!v) return;
+  Rgb cur = v->text_style().paint.rgb();
+  struct C {
+    const char *name;
+    Rgb c;
+  };
+  std::vector<C> colors = {{N_("Black"), {0, 0, 0}}, {N_("Dark Gray"), {0.3, 0.3, 0.3}}, {N_("Gray"), {0.55, 0.55, 0.55}},
+                           {N_("White"), {1, 1, 1}}};
+  for (int k = 0; k < kSwatchCount; ++k)
+    if (std::string(kSwatches[k].name) != "Black") colors.push_back({kSwatches[k].name, kSwatches[k].color});
+  Menu m(theme_);
+  auto near = [](Rgb a, Rgb b) { return std::fabs(a.r - b.r) + std::fabs(a.g - b.g) + std::fabs(a.b - b.b) < 0.03; };
+  for (size_t k = 0; k < colors.size(); ++k)
+    m.add(_(colors[k].name), long(k) + 1, FL_MENU_RADIO | (near(colors[k].c, cur) ? FL_MENU_VALUE : 0) |
+                                              (k + 1 == colors.size() ? FL_MENU_DIVIDER : 0));
+  m.add(_("Other Color…"), 100);
+  long id = m.popup(std::max(0, x), y);
+  Rgb c;
+  if (id >= 1 && id <= long(colors.size())) {
+    c = colors[size_t(id - 1)].c;
+  } else if (id == 100) {
+    std::string t = format("#%02X%02X%02X", int(std::lround(cur.r * 255)), int(std::lround(cur.g * 255)),
+                           int(std::lround(cur.b * 255)));
+    if (!ask_text(_("Text Color (#RRGGBB)"), t, false)) return;
+    t = trim(t);
+    if (!t.empty() && t[0] == '#') t = t.substr(1);
+    if (t.size() != 6 || t.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos) {
+      toast(_("Write the color as #RRGGBB, for example #1A73E8"));
+      return;
+    }
+    unsigned long hex = strtoul(t.c_str(), nullptr, 16);
+    c = Rgb{((hex >> 16) & 255) / 255.0, ((hex >> 8) & 255) / 255.0, (hex & 255) / 255.0};
+  } else {
+    return;
+  }
+  v->set_ink(c);
+  tool_changed();
+}
+
+void XanaraWindow::align_menu(int x, int y) {
+  DocView *v = view();
+  if (!v) return;
+  Menu m(theme_);
+  const char *labels[] = {_("Align Left"), _("Center"), _("Align Right"), _("Justify")};
+  for (int k = 0; k < 4; ++k) m.add(labels[k], k + 1, FL_MENU_RADIO | (v->align() == k ? FL_MENU_VALUE : 0));
+  long id = m.popup(std::max(0, x), y);
+  if (id >= 1 && id <= 4) v->set_align(int(id - 1));
+  tool_changed();
+}
+
 void XanaraWindow::mode_menu(int x, int y, const std::vector<int> &modes) {
   Menu m(theme_);
   for (int k = 0; k < kModeCount; ++k)
@@ -656,6 +967,20 @@ void XanaraWindow::draw_hot(Painter &p, const Hot &b, int k) {
       icon::draw(p, b.glyph, b.x + S(6), b.y + (b.h - S(20)) / 2.0, S(20), t.text);
       icon::draw(p, icon::ChevronDown, b.x + b.w - S(18), b.y + (b.h - S(14)) / 2.0, S(14), t.text_dim);
       break;
+    case Hot::Dropdown:
+      p.fill_rounded(b.x + S(2), b.y + S(3), b.w - S(4), b.h - S(6), S(7), hov || down ? t.hover : t.background);
+      p.stroke_rounded(b.x + S(2) + 0.5, b.y + S(3) + 0.5, b.w - S(4) - 1, b.h - S(6) - 1, S(7), t.border);
+      if (b.text.empty()) icon::draw(p, b.glyph, b.x + S(9), b.y + (b.h - S(20)) / 2.0, S(20), fg);
+      icon::draw(p, icon::ChevronDown, b.x + b.w - S(20), b.y + (b.h - S(14)) / 2.0, S(14), t.text_dim);
+      break;
+    case Hot::Swatch: {
+      if (hov || down) p.fill_rounded(b.x + S(1), b.y + S(1), b.w - S(2), b.h - S(2), S(8), t.hover);
+      double r = S(9), cx = b.x + S(16), cy = b.y + b.h / 2.0;
+      p.circle(cx, cy, r + S(1.5), t.border);
+      p.circle(cx, cy, r, Color{b.color.r, b.color.g, b.color.b, 1});
+      icon::draw(p, icon::ChevronDown, b.x + b.w - S(19), b.y + (b.h - S(14)) / 2.0, S(14), t.text_dim);
+      break;
+    }
     case Hot::Icon:
     case Hot::Label: {
       if (b.toggled) p.fill_rounded(b.x + S(1), b.y + S(1), b.w - S(2), b.h - S(2), S(8), t.accent.alpha(0.16));
@@ -725,12 +1050,20 @@ void XanaraWindow::draw_chrome_text() {
         text_font(t.font_size - S(1));
         draw_text(b.text, b.x + S(36), b.y, b.w - S(40), b.h, fg);
         break;
+      case Hot::Dropdown:
+        if (!b.text.empty()) {
+          text_font(t.font_size - S(1));
+          draw_text(b.text, b.x + S(11), b.y, b.w - S(34), b.h, t.text, 0);
+        }
+        break;
       default: break;
     }
   }
   // The armed tool's hint left of the context tools.
   if (v && ctx_h_ && ctx_hint_w_ > S(120)) {
     std::string hint = tool_hint(v->tool());
+    if (v->editing_text()) hint = _("Type to change the text; Esc or a click outside ends");
+    else if (v->has_selected_image()) hint = _("Drag to move, corners to resize");
     if (!v->redactions().empty() && mode_ == Mode::Protect)
       hint = format(_("%zu area(s) marked for redaction"), v->redactions().size());
     if (!hint.empty()) {

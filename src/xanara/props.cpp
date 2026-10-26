@@ -2,8 +2,10 @@
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The properties panel: colour, opacity, line width, font size and
-// alignment of the armed tool or the selected annotation, and the
-// document's information when nothing is selected.
+// alignment of the armed tool or the selected annotation; the font, size,
+// style, colour and alignment of text being edited in the page and the
+// size of a picked picture (Edit mode); the document's information when
+// nothing is selected.
 #include <FL/Fl.H>
 #include <FL/fl_draw.H>
 #include <sys/stat.h>
@@ -24,7 +26,7 @@ namespace {
 const double kWidths[] = {1, 2, 3, 5};
 const double kSizes[] = {8, 10, 12, 14, 18, 24};
 const char *kStamps[] = {N_("APPROVED"), N_("DRAFT"), N_("CONFIDENTIAL"), N_("REJECTED"), N_("FINAL")};
-enum ActionId { EditNote = 0, Delete = 1, Stamp0 = 2, Bookmark = 20 };
+enum ActionId { EditNote = 0, Delete = 1, Stamp0 = 2, Bookmark = 20, Done = 21, ReplaceImage = 22, DeleteImage = 23 };
 
 bool same(Rgb a, Rgb b) { return std::fabs(a.r - b.r) < 0.02 && std::fabs(a.g - b.g) < 0.02 && std::fabs(a.b - b.b) < 0.02; }
 
@@ -76,6 +78,47 @@ void PropsPanel::build() {
   };
   const Annotation *a = v->tool() == Tool::Select ? v->selected_annot() : nullptr;
   Tool t = v->tool();
+  if (v->editing_text() || t == Tool::NewText) {
+    heading(_("Font"));
+    items_.push_back({Item::Font, px, yy, pw, S(34), 0});
+    yy += S(46);
+    heading(_("Size"));
+    int bw = (pw - 5 * S(5)) / 6;
+    for (int k = 0; k < 6; ++k) items_.push_back({Item::FontSize, px + k * (bw + S(5)), yy, bw, S(32), k});
+    yy += S(48);
+    heading(_("Style"));
+    int sw = (pw - S(6)) / 2;
+    items_.push_back({Item::Bold, px, yy, sw, S(32), 0});
+    items_.push_back({Item::Italic, px + sw + S(6), yy, sw, S(32), 0});
+    yy += S(48);
+    heading(_("Color"));
+    int sz = std::min(S(26), (pw - 7 * S(5)) / 8), gap = (pw - 8 * sz) / 7;
+    for (int k = 0; k < kSwatchCount; ++k) items_.push_back({Item::Swatch, px + k * (sz + gap), yy, sz, sz, k});
+    yy += sz + S(18);
+    heading(_("Alignment"));
+    int aw = (pw - 3 * S(6)) / 4;
+    for (int k = 0; k < 4; ++k) items_.push_back({Item::Align, px + k * (aw + S(6)), yy, aw, S(32), k});
+    yy += S(48);
+    if (v->editing_text()) {
+      items_.push_back({Item::Action, px, yy, pw, S(34), Done});
+      yy += S(40);
+    }
+    return;
+  }
+  if (t == Tool::Edit && v->has_selected_image()) {
+    heading(_("Picture"));
+    Box b = v->selected_image_box();
+    row(_("Size on the page"), format("%.0f × %.0f mm", b.w() / 72 * 25.4, b.h() / 72 * 25.4));
+    int iw = 0, ih = 0;
+    v->selected_image_pixels(iw, ih);
+    if (iw > 0 && ih > 0 && b.w() > 0)
+      row(_("Pixels"), format("%d × %d (%.0f dpi)", iw, ih, iw / (b.w() / 72)));
+    items_.push_back({Item::Action, px, yy, pw, S(34), ReplaceImage});
+    yy += S(40);
+    items_.push_back({Item::Action, px, yy, pw, S(34), DeleteImage});
+    yy += S(40);
+    return;
+  }
   bool color = a ? a->has_color : tool_has_color(t);
   if (color) {
     heading(_("Color"));
@@ -122,7 +165,12 @@ void PropsPanel::build() {
     items_.push_back({Item::Action, px, yy, pw, S(34), Delete});
     yy += S(40);
   }
-  if (!a && t == Tool::Select) {
+  if (!a && t == Tool::Edit) {
+    heading(_("Editing"));
+    row(_("Text"), _("Click into it and type"));
+    row(_("Pictures"), _("Drag them; pick one to resize"));
+  }
+  if (!a && (t == Tool::Select || t == Tool::Edit)) {
     heading(_("Document"));
     DocTab *tab = app_->tab();
     row(_("File"), display_name(tab->target));
@@ -178,10 +226,15 @@ void PropsPanel::draw() {
         case Item::Width:
         case Item::FontSize:
         case Item::Align:
-        case Item::Action: {
+        case Item::Action:
+        case Item::Font:
+        case Item::Bold:
+        case Item::Italic: {
           bool on = (it.kind == Item::Width && v && std::fabs(v->stroke() - kWidths[it.index]) < 0.01) ||
                     (it.kind == Item::FontSize && v && std::fabs(v->font_size() - kSizes[it.index]) < 0.01) ||
                     (it.kind == Item::Align && v && v->align() == it.index) ||
+                    (it.kind == Item::Bold && v && v->text_style().bold) ||
+                    (it.kind == Item::Italic && v && v->text_style().italic) ||
                     (it.kind == Item::Action && it.index >= Stamp0 && it.index < Stamp0 + 5 && v &&
                      v->stamp_text() == kStamps[it.index - Stamp0]);
           Color bg = on ? t.accent.alpha(0.16) : hov ? t.hover : t.background;
@@ -192,12 +245,18 @@ void PropsPanel::draw() {
                    Sd(kWidths[it.index]));
           if (it.kind == Item::Align) {
             for (int l = 0; l < 3; ++l) {
-              double lw = l == 1 ? S(12) : S(18);
-              double lx = it.index == 0 ? it.x + it.w / 2.0 - S(9) : it.index == 1 ? it.x + (it.w - lw) / 2.0
-                                                                                     : it.x + it.w / 2.0 + S(9) - lw;
+              double lw = l == 1 && it.index != 3 ? S(12) : S(18);
+              double lx = it.index == 0 || it.index == 3 ? it.x + it.w / 2.0 - S(9)
+                          : it.index == 1                ? it.x + (it.w - lw) / 2.0
+                                                         : it.x + it.w / 2.0 + S(9) - lw;
               p.line(lx, it.y + S(10) + l * S(6), lx + lw, it.y + S(10) + l * S(6), t.text, Sd(1.6));
             }
           }
+          if (it.kind == Item::Font)
+            icon::draw(p, icon::ChevronDown, it.x + it.w - S(22), it.y + (it.h - S(14)) / 2.0, S(14), t.text_dim);
+          if (it.kind == Item::Bold || it.kind == Item::Italic)
+            icon::draw(p, it.kind == Item::Bold ? icon::Bold : icon::Italic, it.x + S(10), it.y + (it.h - S(18)) / 2.0,
+                       S(18), on ? t.accent_text : t.text);
           break;
         }
       }
@@ -208,6 +267,8 @@ void PropsPanel::draw() {
   text_font(t.font_size + S(2), true);
   std::string title = !v ? std::string(_("Properties"))
                       : a ? annot_title(a->type)
+                      : v->editing_text() || v->tool() == Tool::NewText ? std::string(_("Text"))
+                      : v->tool() == Tool::Edit && v->has_selected_image() ? std::string(_("Picture"))
                       : v->tool() == Tool::Select ? std::string(_("Properties"))
                                                   : std::string(tool_name(v->tool()));
   draw_text(title, x() + S(18), y(), w() - S(36), S(48), t.text);
@@ -230,12 +291,22 @@ void PropsPanel::draw() {
         draw_text(format("%d%%", int(std::lround(op * 100))), it.x + it.w + S(8), it.y, S(44), it.h, t.text, 2);
         break;
       case Item::FontSize: draw_text(format("%g", kSizes[it.index]), it.x, it.y, it.w, it.h, t.text, 1); break;
+      case Item::Font:
+        if (v) draw_text(v->text_family(), it.x + S(12), it.y, it.w - S(40), it.h, t.text, 0);
+        break;
+      case Item::Bold:
+      case Item::Italic:
+        draw_text(it.kind == Item::Bold ? _("Bold") : _("Italic"), it.x + S(32), it.y, it.w - S(36), it.h, t.text, 0);
+        break;
       case Item::Action: {
         std::string s = it.index == EditNote ? _("Edit Text…")
                         : it.index == Delete ? _("Delete Annotation")
                         : it.index == Bookmark ? _("Bookmark This Page")
-                                               : _(kStamps[it.index - Stamp0]);
-        draw_text(s, it.x, it.y, it.w, it.h, it.index == Delete ? t.error : t.text, 1);
+                        : it.index == Done ? _("Done")
+                        : it.index == ReplaceImage ? _("Replace Picture…")
+                        : it.index == DeleteImage ? _("Delete Picture")
+                                                  : _(kStamps[it.index - Stamp0]);
+        draw_text(s, it.x, it.y, it.w, it.h, it.index == Delete || it.index == DeleteImage ? t.error : t.text, 1);
         break;
       }
       default: break;
@@ -310,10 +381,24 @@ int PropsPanel::handle(int event) {
           v->set_align(it.index);
           app_->tool_changed();
           break;
+        case Item::Font: app_->font_menu(it.x, it.y + it.h + S(2)); break;
+        case Item::Bold: {
+          bool on = !v->text_style().bold;
+          v->restyle_text([on](TextStyle &st) { st.bold = on; });
+          break;
+        }
+        case Item::Italic: {
+          bool on = !v->text_style().italic;
+          v->restyle_text([on](TextStyle &st) { st.italic = on; });
+          break;
+        }
         case Item::Action:
           if (it.index == EditNote) v->edit_selected_note();
           else if (it.index == Delete) v->delete_selected_annot();
           else if (it.index == Bookmark) app_->toggle_bookmark();
+          else if (it.index == Done) v->finish_text_edit();
+          else if (it.index == ReplaceImage) v->replace_selected_image();
+          else if (it.index == DeleteImage) v->delete_selected_image();
           else {
             v->set_stamp_text(kStamps[it.index - Stamp0]);
             app_->tool_changed();

@@ -298,6 +298,8 @@ class DocView : public Fl_Widget {
   void edit_region(Box &box) const;
   int overlay_key() const;
   void paste_text();
+  bool edit_context_menu(int mx, int my);
+  void render_now(int page);  // the visible tiles of a page, at once
   static void blink_cb(void *p);
   static void preview_cb(void *p);
   static void layouts_cb(void *p);
@@ -384,7 +386,7 @@ class DocView : public Fl_Widget {
   // arrive, so that the old content never flashes.
   cairo_surface_t *ghost_ = nullptr;
   int ghost_x_ = 0, ghost_y_ = 0, ghost_key_ = 0, ghost_page_ = -1;
-  enum class EditDrag { None, Select, Move, Width, Image, ImageCorner } edit_drag_ = EditDrag::None;
+  enum class EditDrag { Off, Select, Move, Width, Image, ImageCorner } edit_drag_ = EditDrag::Off;
   int drag_corner_ = 0;
   Point edit_p0_;                              // where the drag started (page space)
   Box drag_box_;                               // where a picture goes
@@ -485,7 +487,7 @@ class PropsPanel : public Fl_Widget {
 
  private:
   struct Item {
-    enum Kind { Swatch, Opacity, Width, FontSize, Align, Action } kind;
+    enum Kind { Swatch, Opacity, Width, FontSize, Align, Action, Font, Bold, Italic } kind;
     int x, y, w, h;
     int index;  // swatch / width / align / action number
   };
@@ -541,6 +543,7 @@ struct Hot {
   std::function<void()> action;
   int x = 0, y = 0, w = 0, h = 0;
   bool toggled = false, enabled = true, chevron = false;
+  Rgb color;     // Swatch
   int tab = -1;  // tab index
   int row = 0;   // 0 tabs, 1 toolbar, 2 context bar
 };

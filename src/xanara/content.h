@@ -14,7 +14,7 @@
 namespace xanara {
 
 struct Operand {
-  enum Kind { Null, Number, Bool, Name, String, Array, Dict, Other } kind = Null;
+  enum Kind { Null, Number, Boolean, Name, String, Array, Dict, Other } kind = Null;
   double num = 0;
   bool boolean = false;
   bool hex = false;              // a string written as <hex>

@@ -300,9 +300,12 @@ add_executable(xanara
   xanara/home.cpp
   xanara/props.cpp
   xanara/view.cpp
+  xanara/editing.cpp
   xanara/sidebar.cpp
   xanara/icons.cpp)
-target_link_libraries(xanara PRIVATE sde-xanara-core)
+# Printing through libcups (no lp program).
+find_package(Cups REQUIRED)
+target_link_libraries(xanara PRIVATE sde-xanara-core Cups::Cups)
 install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Taca: the SDE archive manager, written from scratch by the Selviana DE Project.
