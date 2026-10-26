@@ -650,13 +650,19 @@ void CollageWindow::add_photos(const std::vector<std::string> &paths) {
   std::set<std::string> extra = gallery::extra_formats();
   for (const auto &p : paths) {
     struct stat st {};
-    if (stat(p.c_str(), &st) != 0 || !S_ISREG(st.st_mode) || !gallery::is_image_name(basename_of(p), extra)) {
+    if (stat(p.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
       ++skipped;
       continue;
     }
     CollageItem it;
     it.path = p;
     image_size(p, it.w, it.h);
+    // A picture by its name, or one that the image loaders can read (Photo
+    // opens it as well: PNM, uncommon names).
+    if (!gallery::is_image_name(basename_of(p), extra) && (it.w <= 0 || it.h <= 0)) {
+      ++skipped;
+      continue;
+    }
     Image &img = images_[p];
     img.mtime = st.st_mtime;
     img.natural = std::max(it.w, it.h);
