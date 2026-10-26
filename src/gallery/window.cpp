@@ -42,7 +42,10 @@ enum MenuId {
   M_SELECT_ALL, M_SELECT_NONE, M_FAVORITE, M_TRASH, M_COPY_PATH, M_OPEN_PHOTO, M_WALLPAPER, M_SHOW_FILES,
   M_SORT_NEWEST, M_SORT_OLDEST, M_SORT_NAME, M_ZOOM_IN, M_ZOOM_OUT, M_SIDEBAR, M_PREFER_PHOTO,
   M_FULLSCREEN, M_SHORTCUTS, M_ABOUT, M_NEW_ALBUM, M_ADD_ALBUM, M_REMOVE_ALBUM, M_ROT_LEFT, M_ROT_RIGHT,
-  M_EXPORT, M_COPY_TO, M_MOVE_TO, M_SHARE, M_PREVIEW, M_SLIDESHOW
+  M_EXPORT, M_COPY_TO, M_MOVE_TO, M_SHARE, M_PREVIEW, M_SLIDESHOW,
+  M_EDIT_WITH, M_COLLAGE, M_DUPLICATES, M_EXTRA_COPIES, M_RENAME, M_CONVERT, M_PRINT, M_CAMERA, M_PLACES,
+  M_SLIDESHOW_SETTINGS, M_PLUGINS,
+  M_ACTION = 1000  // + the index of an action plugin
 };
 
 // The Gallery icon (see sde-gallery.svg), for the About window.
@@ -70,6 +73,8 @@ Album View::album() const {
     case ViewKind::Device: return {AlbumKind::Device, folder};
     case ViewKind::Browse: return {AlbumKind::Folder, folder};
     case ViewKind::Album: return {AlbumKind::List, folder};
+    case ViewKind::Places:
+    case ViewKind::Duplicates: break;  // Photo gets a list of the photos shown
   }
   return {};
 }
@@ -170,6 +175,7 @@ GalleryWindow::~GalleryWindow() {
     close(mounts_fd_);
   }
   if (ext_thread_.joinable()) ext_thread_.join();
+  if (locate_thread_.joinable()) locate_thread_.join();
   Fl::remove_timeout(toast_cb, this);
   if (Fl::has_timeout(save_cb, this)) save_settings();
   Fl::remove_timeout(save_cb, this);
@@ -315,6 +321,9 @@ void GalleryWindow::scan_finished() {
     scan_result_.clear();
   }
   scanning_ = false;
+  // Places: the positions of new photos are read in the background.
+  located_ = false;
+  if (plugin_on("places")) start_locating();
   // Forget thumbnails of files that changed.
   rebuild_view(true);
   if (rescan_wanted_) start_scan();
@@ -328,6 +337,12 @@ void GalleryWindow::scan_finished() {
 bool GalleryWindow::searching() const { return search_ && search_->size() > 0; }
 
 size_t GalleryWindow::count_for(const View &v) const {
+  if (v.kind == ViewKind::Places) return places_count_;
+  if (v.kind == ViewKind::Duplicates) {
+    size_t n = 0;
+    for (const auto &g : duplicates_) n += g.size();
+    return n;
+  }
   if (v.kind == ViewKind::Album) {
     for (const auto &a : albums_)
       if (a.file == v.folder) return a.count;
@@ -363,6 +378,8 @@ std::string GalleryWindow::view_title(const View &v) const {
       for (const auto &a : albums_)
         if (a.file == v.folder) return a.name;
       return _("Album");
+    case ViewKind::Places: return _("Places");
+    case ViewKind::Duplicates: return _("Duplicates");
   }
   return "";
 }
@@ -373,9 +390,15 @@ void GalleryWindow::rebuild_view(bool keep_scroll) {
   std::string focus_path;
   if (grid_ && grid_->focus_index() >= 0 && grid_->focus_index() < int(view_.size()))
     focus_path = view_[size_t(grid_->focus_index())].path;
-  // The same filter and order as Photo uses for this album (album.h).
-  view_ = album_photos(source(), view_kind_.album(), library_settings(), sort_, time(nullptr), query);
-  groups_ = group_photos(view_, sort_);
+  if (view_kind_.kind == ViewKind::Places) {
+    view_ = places_view(groups_);
+  } else if (view_kind_.kind == ViewKind::Duplicates) {
+    view_ = duplicates_view(groups_);
+  } else {
+    // The same filter and order as Photo uses for this album (album.h).
+    view_ = album_photos(source(), view_kind_.album(), library_settings(), sort_, time(nullptr), query);
+    groups_ = group_photos(view_, sort_);
+  }
   if (grid_) {
     if (keep_scroll) grid_->relayout();
     else grid_->reset();
@@ -391,6 +414,8 @@ void GalleryWindow::rebuild_view(bool keep_scroll) {
 
 void GalleryWindow::set_view(const View &v) {
   view_kind_ = v;
+  // Photos that other programs save there show up at once.
+  if (v.kind == ViewKind::Folder || v.kind == ViewKind::Browse) watch_folder(v.folder);
   if (v.kind == ViewKind::Album) album_photos_ = photos_for_paths(read_album_list(v.folder));
   if (v.external() && (ext_root_ != v.folder || ext_photos_.empty())) {
     ext_photos_.clear();
@@ -404,6 +429,9 @@ void GalleryWindow::set_view(const View &v) {
 
 void GalleryWindow::refresh_devices() {
   auto now = current_removable_mounts();
+  // Cameras and phones that GIO has mounted (the Cameras and Phones plugin).
+  if (plugin_on("devices"))
+    for (const auto &c : gvfs_cameras(runtime_dir())) now.push_back(c);
   bool same = now.size() == devices_.size();
   for (size_t i = 0; same && i < now.size(); ++i) same = now[i].mount_point == devices_[i].mount_point;
   if (same) return;
@@ -524,10 +552,15 @@ void GalleryWindow::open_file_dialog() {
 }
 
 void GalleryWindow::eject(const std::string &mount_point) {
-  std::string label = basename_of(mount_point);
+  std::string label = basename_of(mount_point), target = mount_point;
+  for (const auto &d : devices_)
+    if (d.mount_point == mount_point) {
+      label = d.label();
+      if (d.camera()) target = d.uri;  // a camera or phone mounted by GIO
+    }
   std::vector<std::string> argv;
-  if (!find_program("gio").empty()) argv = {"gio", "mount", "-u", mount_point};
-  else if (!find_program("umount").empty()) argv = {"umount", mount_point};
+  if (!find_program("gio").empty()) argv = {"gio", "mount", "-u", target};
+  else if (!find_program("umount").empty() && target == mount_point) argv = {"umount", mount_point};
   else {
     toast(_("Ejecting needs the gio program (libglib2.0-bin)"));
     return;
@@ -725,54 +758,76 @@ std::vector<std::string> GalleryWindow::selected_or_focused() const {
 
 // ----------------------------------------------------------------- menus
 
+void GalleryWindow::rebuild_menu() {
+  menubar_->clear();
+  build_menu();
+  menubar_->redraw();
+}
+
 void GalleryWindow::build_menu() {
-  auto add = [this](const char *label, int shortcut, long id, int flags = 0) {
-    menubar_->add(label, shortcut, menu_cb, reinterpret_cast<void *>(id), flags);
+  auto add = [this](const std::string &label, int shortcut, long id, int flags = 0) {
+    menubar_->add(label.c_str(), shortcut, menu_cb, reinterpret_cast<void *>(id), flags);
   };
   std::string f = std::string(_("&File")) + "/", e = std::string(_("&Edit")) + "/",
-              v = std::string(_("&View")) + "/", h = std::string(_("&Help")) + "/";
-  auto L = [](const std::string &menu, const char *item) {
+              v = std::string(_("&View")) + "/", t = std::string(_("&Tools")) + "/", h = std::string(_("&Help")) + "/";
+  auto L = [](const std::string &menu, const std::string &item) {
     // A slash in a translated label would start a submenu.
     std::string it = item;
     for (auto &c : it)
       if (c == '/') c = '|';
     return menu + it;
   };
-  add(L(f, _("Open File…")).c_str(), FL_CTRL + 'o', M_OPEN_FILE);
-  add(L(f, _("Open Folder…")).c_str(), FL_CTRL + FL_SHIFT + 'o', M_OPEN_FOLDER);
-  add(L(f, _("Import from Device…")).c_str(), FL_CTRL + 'i', M_IMPORT, FL_MENU_DIVIDER);
-  add(L(f, _("Add Folder to Library…")).c_str(), 0, M_ADD_FOLDER);
-  add(L(f, _("New Album…")).c_str(), FL_CTRL + 'n', M_NEW_ALBUM);
-  add(L(f, _("Refresh")).c_str(), FL_CTRL + 'r', M_REFRESH, FL_MENU_DIVIDER);
-  add(L(f, _("Quit")).c_str(), FL_CTRL + 'q', M_QUIT);
-  add(L(e, _("Select All")).c_str(), FL_CTRL + 'a', M_SELECT_ALL);
-  add(L(e, _("Select None")).c_str(), FL_CTRL + FL_SHIFT + 'a', M_SELECT_NONE, FL_MENU_DIVIDER);
-  add(L(e, _("Add to Favorites")).c_str(), FL_CTRL + 'd', M_FAVORITE);
-  add(L(e, _("Add to Album…")).c_str(), FL_CTRL + 'l', M_ADD_ALBUM);
-  add(L(e, _("Remove from Album")).c_str(), 0, M_REMOVE_ALBUM, FL_MENU_DIVIDER);
-  add(L(e, _("Rotate Left")).c_str(), FL_CTRL + FL_SHIFT + 'l', M_ROT_LEFT);
-  add(L(e, _("Rotate Right")).c_str(), FL_CTRL + FL_SHIFT + 'r', M_ROT_RIGHT);
-  add(L(e, _("Resize and Export…")).c_str(), FL_CTRL + FL_SHIFT + 'e', M_EXPORT);
-  add(L(e, _("Copy to Folder…")).c_str(), 0, M_COPY_TO);
-  add(L(e, _("Move to Folder…")).c_str(), 0, M_MOVE_TO);
-  add(L(e, _("Share by Email…")).c_str(), 0, M_SHARE, FL_MENU_DIVIDER);
-  add(L(e, _("Copy Path")).c_str(), FL_CTRL + 'c', M_COPY_PATH);
-  add(L(e, _("Move to Trash…")).c_str(), 0, M_TRASH, FL_MENU_DIVIDER);
-  add(L(e, _("Edit in Photo")).c_str(), FL_CTRL + 'e', M_OPEN_PHOTO);
-  add(L(e, _("Quick Preview")).c_str(), FL_CTRL + 'p', M_PREVIEW);
-  add(L(e, _("Set as Wallpaper")).c_str(), 0, M_WALLPAPER);
-  add(L(e, _("Show in Files")).c_str(), 0, M_SHOW_FILES);
-  add(L(v, _("Newest First")).c_str(), 0, M_SORT_NEWEST, FL_MENU_RADIO);
-  add(L(v, _("Oldest First")).c_str(), 0, M_SORT_OLDEST, FL_MENU_RADIO);
-  add(L(v, _("By Name")).c_str(), 0, M_SORT_NAME, FL_MENU_RADIO | FL_MENU_DIVIDER);
-  add(L(v, _("Larger Thumbnails")).c_str(), FL_CTRL + '=', M_ZOOM_IN);
-  add(L(v, _("Smaller Thumbnails")).c_str(), FL_CTRL + '-', M_ZOOM_OUT, FL_MENU_DIVIDER);
-  add(L(v, _("Show Sidebar")).c_str(), FL_F + 9, M_SIDEBAR, FL_MENU_TOGGLE);
-  add(L(v, _("Open Photos in Photo")).c_str(), 0, M_PREFER_PHOTO, FL_MENU_TOGGLE | FL_MENU_DIVIDER);
-  add(L(v, _("Slideshow")).c_str(), FL_F + 5, M_SLIDESHOW);
-  add(L(v, _("Full Screen")).c_str(), FL_F + 11, M_FULLSCREEN, FL_MENU_TOGGLE);
-  add(L(h, _("Keyboard Shortcuts")).c_str(), FL_F + 1, M_SHORTCUTS);
-  add(L(h, _("About Gallery")).c_str(), 0, M_ABOUT);
+  if (!editor_.empty()) applications();  // the name of the default editor
+  add(L(f, _("Open File…")), FL_CTRL + 'o', M_OPEN_FILE);
+  add(L(f, _("Open Folder…")), FL_CTRL + FL_SHIFT + 'o', M_OPEN_FOLDER);
+  add(L(f, _("Import from Device…")), FL_CTRL + 'i', M_IMPORT, plugin_on("devices") ? 0 : FL_MENU_DIVIDER);
+  if (plugin_on("devices")) add(L(f, _("Import from Camera or Phone…")), 0, M_CAMERA, FL_MENU_DIVIDER);
+  add(L(f, _("Add Folder to Library…")), 0, M_ADD_FOLDER);
+  add(L(f, _("New Album…")), FL_CTRL + 'n', M_NEW_ALBUM);
+  add(L(f, _("Refresh")), FL_CTRL + 'r', M_REFRESH, FL_MENU_DIVIDER);
+  if (plugin_on("print")) add(L(f, _("Print…")), FL_CTRL + FL_SHIFT + 'p', M_PRINT, FL_MENU_DIVIDER);
+  add(L(f, _("Quit")), FL_CTRL + 'q', M_QUIT);
+  add(L(e, _("Select All")), FL_CTRL + 'a', M_SELECT_ALL);
+  add(L(e, _("Select None")), FL_CTRL + FL_SHIFT + 'a', M_SELECT_NONE, FL_MENU_DIVIDER);
+  add(L(e, _("Add to Favorites")), FL_CTRL + 'd', M_FAVORITE);
+  add(L(e, _("Add to Album…")), FL_CTRL + 'l', M_ADD_ALBUM);
+  add(L(e, _("Remove from Album")), 0, M_REMOVE_ALBUM, FL_MENU_DIVIDER);
+  add(L(e, _("Rotate Left")), FL_CTRL + FL_SHIFT + 'l', M_ROT_LEFT);
+  add(L(e, _("Rotate Right")), FL_CTRL + FL_SHIFT + 'r', M_ROT_RIGHT);
+  add(L(e, _("Resize and Export…")), FL_CTRL + FL_SHIFT + 'e', M_EXPORT);
+  if (plugin_on("convert")) add(L(e, _("Convert Format…")), 0, M_CONVERT);
+  if (plugin_on("rename")) add(L(e, _("Rename…")), FL_F + 2, M_RENAME);
+  add(L(e, _("Copy to Folder…")), 0, M_COPY_TO);
+  add(L(e, _("Move to Folder…")), 0, M_MOVE_TO, plugin_on("email") ? 0 : FL_MENU_DIVIDER);
+  if (plugin_on("email")) add(L(e, _("Send by Email…")), 0, M_SHARE, FL_MENU_DIVIDER);
+  add(L(e, _("Copy Path")), FL_CTRL + 'c', M_COPY_PATH);
+  add(L(e, _("Move to Trash…")), 0, M_TRASH, FL_MENU_DIVIDER);
+  add(L(e, format(_("Edit with %s"), default_editor_name().c_str())), FL_CTRL + 'e', M_OPEN_PHOTO);
+  add(L(e, _("Edit With…")), 0, M_EDIT_WITH);
+  add(L(e, _("Quick Preview")), FL_CTRL + 'p', M_PREVIEW);
+  add(L(e, _("Set as Wallpaper")), 0, M_WALLPAPER);
+  add(L(e, _("Show in Files")), 0, M_SHOW_FILES);
+  add(L(v, _("Newest First")), 0, M_SORT_NEWEST, FL_MENU_RADIO);
+  add(L(v, _("Oldest First")), 0, M_SORT_OLDEST, FL_MENU_RADIO);
+  add(L(v, _("By Name")), 0, M_SORT_NAME, FL_MENU_RADIO | FL_MENU_DIVIDER);
+  add(L(v, _("Larger Thumbnails")), FL_CTRL + '=', M_ZOOM_IN);
+  add(L(v, _("Smaller Thumbnails")), FL_CTRL + '-', M_ZOOM_OUT, FL_MENU_DIVIDER);
+  if (plugin_on("places")) add(L(v, _("Places")), 0, M_PLACES, FL_MENU_DIVIDER);
+  add(L(v, _("Show Sidebar")), FL_F + 9, M_SIDEBAR, FL_MENU_TOGGLE);
+  add(L(v, _("Open Photos in Photo")), 0, M_PREFER_PHOTO, FL_MENU_TOGGLE | FL_MENU_DIVIDER);
+  add(L(v, _("Slideshow")), FL_F + 5, M_SLIDESHOW);
+  if (plugin_on("slideshow")) add(L(v, _("Slideshow Settings…")), 0, M_SLIDESHOW_SETTINGS);
+  add(L(v, _("Full Screen")), FL_F + 11, M_FULLSCREEN, FL_MENU_TOGGLE);
+  if (plugin_on("collage")) add(L(t, _("Create Collage…")), 0, M_COLLAGE, plugin_on("duplicates") ? 0 : FL_MENU_DIVIDER);
+  if (plugin_on("duplicates")) {
+    add(L(t, _("Find Duplicates…")), 0, M_DUPLICATES);
+    add(L(t, _("Select Extra Copies")), 0, M_EXTRA_COPIES, FL_MENU_DIVIDER);
+  }
+  for (size_t i = 0; i < actions_.size(); ++i)
+    add(L(t, actions_[i].name), 0, M_ACTION + long(i), i + 1 == actions_.size() ? FL_MENU_DIVIDER : 0);
+  add(L(t, _("Plugins…")), 0, M_PLUGINS);
+  add(L(h, _("Keyboard Shortcuts")), FL_F + 1, M_SHORTCUTS);
+  add(L(h, _("About Gallery")), 0, M_ABOUT);
   update_menu();
 }
 
@@ -790,6 +845,7 @@ void GalleryWindow::update_menu() {
       case M_SIDEBAR: state(show_sidebar_); break;
       case M_PREFER_PHOTO: state(prefer_photo_); break;
       case M_REMOVE_ALBUM: view_kind_.kind == ViewKind::Album ? it.activate() : it.deactivate(); break;
+      case M_EXTRA_COPIES: view_kind_.kind == ViewKind::Duplicates ? it.activate() : it.deactivate(); break;
       case M_FULLSCREEN: state(shown() && fullscreen_active()); break;
       // Items that depend on the selection stay active: the menu cannot
       // follow every focus change, and the actions check for themselves.
@@ -823,15 +879,40 @@ void GalleryWindow::menu_cb(Fl_Widget *, void *data) {
       else self->trash(paths);
       break;
     case M_OPEN_PHOTO:
+    case M_EDIT_WITH:
+      if (paths.empty()) {
+        self->toast(_("Select a photo first"));
+        break;
+      }
+      if (id == M_OPEN_PHOTO) self->edit_with_default(paths);
+      else self->edit_with_popup(paths, self->w() / 2 - S(100), S(80));
+      break;
     case M_WALLPAPER:
     case M_SHOW_FILES:
       if (paths.size() != 1) {
         self->toast(paths.empty() ? _("Select a photo first") : _("Select only one photo"));
         break;
       }
-      if (id == M_OPEN_PHOTO) self->edit_in_photo(paths[0]);
-      else if (id == M_WALLPAPER) self->set_wallpaper(paths[0]);
+      if (id == M_WALLPAPER) self->set_wallpaper(paths[0]);
       else self->show_in_files(paths[0]);
+      break;
+    case M_COLLAGE: self->create_collage(self->grid_->selection().size() > 1 ? paths : std::vector<std::string>()); break;
+    case M_DUPLICATES: self->find_duplicates(); break;
+    case M_EXTRA_COPIES: self->select_extra_copies(); break;
+    case M_PLACES: self->set_view(View{ViewKind::Places, ""}); break;
+    case M_SLIDESHOW_SETTINGS: self->slideshow_settings(); break;
+    case M_CAMERA: self->import_camera(); break;
+    case M_PLUGINS: self->show_plugins(); break;
+    case M_RENAME:
+    case M_CONVERT:
+    case M_PRINT:
+      if (paths.empty()) {
+        self->toast(_("Select photos first"));
+        break;
+      }
+      if (id == M_RENAME) self->rename_files(paths);
+      else if (id == M_CONVERT) self->convert_files(paths);
+      else self->print_files(paths);
       break;
     case M_PREVIEW:
       if (self->grid_->focus_index() >= 0) self->preview(self->grid_->focus_index());
@@ -883,8 +964,14 @@ void GalleryWindow::menu_cb(Fl_Widget *, void *data) {
     case M_FULLSCREEN: self->toggle_fullscreen(); break;
     case M_SHORTCUTS: self->show_shortcuts_dialog(); break;
     case M_ABOUT: self->show_about_dialog(); break;
+    default:
+      if (id >= M_ACTION) {
+        if (paths.empty()) self->toast(_("Select photos first"));
+        else self->run_action(size_t(id - M_ACTION), paths);
+      }
+      break;
   }
-  self->update_menu();
+  if (instance_ == self) self->update_menu();
 }
 
 // --------------------------------------------------------- Photo events
@@ -901,8 +988,9 @@ void GalleryWindow::forget_thumbnails(const std::string &path) {
   dims_.erase(path);
 }
 
-void GalleryWindow::handle_events() {
-  auto events = take_gallery_events();
+void GalleryWindow::handle_events() { file_events(take_gallery_events()); }
+
+void GalleryWindow::file_events(const std::vector<GalleryEvent> &events) {
   if (events.empty()) return;
   bool changed = false, favorites = false;
   std::string select, show;
@@ -954,6 +1042,7 @@ void GalleryWindow::handle_events() {
         }
       }
       changed = true;
+      if (viewer_open()) viewer_->file_changed(e.path);
     }
   }
   if (favorites) save_settings();
@@ -1166,7 +1255,7 @@ void GalleryWindow::remove_folder(const std::string &folder) {
 
 void GalleryWindow::edit_in_photo(const std::string &path) {
   Album album = view_kind_.album();
-  if (searching()) {
+  if (searching() || view_kind_.grouped()) {
     // Photo steps through the search results: hand them over as a list.
     std::vector<std::string> paths;
     for (const auto &p : view_) paths.push_back(p.path);
@@ -1442,6 +1531,13 @@ void GalleryWindow::draw_header_text() {
     std::string sub;
     if (view_kind_.external() && ext_scanning_) sub = _("Looking for photos…");
     else if (scanning_ && all_.empty() && !view_kind_.external()) sub = _("Looking for photos…");
+    else if (view_kind_.kind == ViewKind::Places && (locating_ || !located_)) sub = _("Looking for places in your photos…");
+    else if (view_kind_.kind == ViewKind::Places)
+      sub = view_.empty() ? std::string(_("None of the photos has a location (GPS)"))
+                          : format(_("%zu photos in %zu places"), view_.size(), groups_.size());
+    else if (view_kind_.kind == ViewKind::Duplicates)
+      sub = format(_("%zu photos in %zu groups · the first of each group is the one to keep"), view_.size(),
+                   groups_.size());
     else if (searching()) sub = format(view_.size() == 1 ? _("%zu result") : _("%zu results"), view_.size());
     else sub = format(view_.size() == 1 ? _("%zu photo") : _("%zu photos"), view_.size());
     if (scanning_ && !all_.empty() && !view_kind_.external()) sub += "  ·  " + std::string(_("Updating…"));

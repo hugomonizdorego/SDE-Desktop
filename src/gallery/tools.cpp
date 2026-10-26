@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "config.h"
+#include "forms.h"
 #include "gallery.h"
 #include "i18n.h"
 #include "link.h"

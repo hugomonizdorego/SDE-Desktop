@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <cerrno>
 
 #include "album.h"
 #include "util.h"
@@ -197,6 +199,105 @@ void fit_size(int w, int h, int max_edge, int &ow, int &oh) {
   double k = double(max_edge) / std::max(w, h);
   ow = std::max(1, int(std::lround(w * k)));
   oh = std::max(1, int(std::lround(h * k)));
+}
+
+// ------------------------------------------------------------ batch rename
+
+std::string rename_one(const std::string &pattern, const RenameSource &src, int number, int width) {
+  std::string name = sde::basename_of(src.path), stem = name;
+  size_t dot = name.rfind('.');
+  if (dot != std::string::npos && dot > 0) stem = name.substr(0, dot);
+  std::string dir = src.path.substr(0, src.path.rfind('/'));
+  struct tm tm {};
+  time_t when = src.taken;
+  localtime_r(&when, &tm);
+  char date[32], clock[32];
+  strftime(date, sizeof date, "%Y-%m-%d", &tm);
+  strftime(clock, sizeof clock, "%H.%M.%S", &tm);
+  char num[32];
+  snprintf(num, sizeof num, "%0*d", std::max(1, width), number);
+  std::string out;
+  for (size_t i = 0; i < pattern.size();) {
+    auto token = [&](const char *t) {
+      size_t n = strlen(t);
+      if (pattern.compare(i, n, t) != 0) return false;
+      i += n;
+      return true;
+    };
+    if (token("{name}")) out += stem;
+    else if (token("{n}")) out += num;
+    else if (token("{date}")) out += date;
+    else if (token("{time}")) out += clock;
+    else if (token("{camera}")) out += src.camera;
+    else if (token("{folder}")) out += sde::basename_of(dir);
+    else out += pattern[i++];
+  }
+  return sde::trim(out);
+}
+
+bool plan_rename(const std::vector<RenameSource> &files, const std::string &pattern, int start,
+                 const std::function<bool(const std::string &)> &exists, std::vector<RenameItem> &out,
+                 std::string *error) {
+  out.clear();
+  int last = start + int(files.size()) - 1;
+  int width = int(std::to_string(std::max(1, last)).size());
+  std::vector<std::string> sources;
+  for (const auto &f : files) sources.push_back(f.path);
+  std::vector<std::string> planned;
+  for (size_t i = 0; i < files.size(); ++i) {
+    const std::string &path = files[i].path;
+    std::string stem = rename_one(pattern, files[i], start + int(i), width);
+    if (stem.empty() || stem == "." || stem == ".." || stem.find('/') != std::string::npos) {
+      if (error) *error = stem.find('/') != std::string::npos ? "slash" : "empty";
+      out.clear();
+      return false;
+    }
+    std::string name = sde::basename_of(path), ext;
+    size_t dot = name.rfind('.');
+    if (dot != std::string::npos && dot > 0) ext = name.substr(dot);
+    std::string dir = path.substr(0, path.rfind('/'));
+    // A name is free when no other file has it (the photos being renamed
+    // give theirs up) and no other photo of this batch takes it.
+    auto taken = [&](const std::string &p) {
+      if (std::find(planned.begin(), planned.end(), p) != planned.end()) return true;
+      if (p == path) return false;
+      if (std::find(sources.begin(), sources.end(), p) != sources.end()) return false;
+      return exists && exists(p);
+    };
+    std::string dest = dir + "/" + stem + ext;
+    for (int k = 2; taken(dest); ++k) dest = dir + "/" + stem + " (" + std::to_string(k) + ")" + ext;
+    planned.push_back(dest);
+    if (dest != path) out.push_back({path, dest});
+  }
+  return true;
+}
+
+size_t apply_rename(const std::vector<RenameItem> &items, std::string *error) {
+  // First every photo gets a temporary name, then its new one: "a" -> "b"
+  // and "b" -> "a" works.
+  std::vector<std::string> temps;
+  size_t moved = 0;
+  for (size_t i = 0; i < items.size(); ++i) {
+    std::string dir = items[i].from.substr(0, items[i].from.rfind('/'));
+    std::string tmp = dir + "/.sde-rename-" + std::to_string(getpid()) + "-" + std::to_string(i);
+    if (rename(items[i].from.c_str(), tmp.c_str()) != 0) {
+      if (error) *error = strerror(errno);
+      // Put back what was moved already.
+      for (size_t k = 0; k < temps.size(); ++k) rename(temps[k].c_str(), items[k].from.c_str());
+      return 0;
+    }
+    temps.push_back(tmp);
+  }
+  for (size_t i = 0; i < items.size(); ++i) {
+    // Never replace a file that appeared meanwhile.
+    if (exists_path(items[i].to) || rename(temps[i].c_str(), items[i].to.c_str()) != 0) {
+      if (error) *error = exists_path(items[i].to) ? "exists" : strerror(errno);
+      rename(temps[i].c_str(), items[i].from.c_str());
+      continue;
+    }
+    ++moved;
+  }
+  return moved;
 }
 
 }  // namespace gallery

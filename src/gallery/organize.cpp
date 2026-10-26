@@ -344,21 +344,6 @@ void GalleryWindow::copy_files_to(const std::vector<std::string> &paths, bool mo
             });
 }
 
-void GalleryWindow::share_files(const std::vector<std::string> &paths) {
-  if (paths.empty()) return;
-  if (find_program("xdg-email").empty()) {
-    toast(_("Sharing by email needs xdg-email (xdg-utils)"));
-    return;
-  }
-  std::vector<std::string> argv{"xdg-email", "--subject",
-                                paths.size() == 1 ? basename_of(paths[0]) : format(_("%zu photos"), paths.size())};
-  for (const auto &p : paths) {
-    argv.push_back("--attach");
-    argv.push_back(p);
-  }
-  if (!spawn_detached(argv)) toast(_("No email application is available"));
-}
-
 void GalleryWindow::slideshow(const std::vector<std::string> &paths) {
   if (view_.empty()) {
     toast(_("There are no photos to show"));
@@ -384,7 +369,9 @@ void GalleryWindow::photo_menu(int index, const std::vector<std::string> &paths,
   std::string first = paths[0];
   bool all_fav = std::all_of(paths.begin(), paths.end(), [this](const std::string &p) { return is_favorite(p); });
   ContextMenu m;
-  m.item(_("Open in Photo"), [this, first] { edit_in_photo(first); }, {"image", FL_CTRL + 'e', single});
+  m.item(format(_("Edit with %s"), default_editor_name().c_str()), [this, paths] { edit_with_default(paths); },
+         {"image", FL_CTRL + 'e'});
+  m.submenu(_("Edit With"), edit_with_menu(paths), "open");
   m.item(_("Quick Preview"), [this, index] { preview(index); }, {"", FL_CTRL + 'p', single && index >= 0});
   m.item(single ? _("Slideshow") : format(_("Slideshow of %zu Photos"), paths.size()),
          [this, paths, single] { slideshow(single ? std::vector<std::string>() : paths); }, {"", FL_F + 5, true, true});
@@ -393,6 +380,8 @@ void GalleryWindow::photo_menu(int index, const std::vector<std::string> &paths,
   m.submenu(_("Add to Album"), album_menu(paths));
   if (view_kind_.kind == ViewKind::Album)
     m.item(_("Remove from Album"), [this, paths] { remove_from_album(paths); });
+  if (plugin_on("collage") && !single)
+    m.item(format(_("Create Collage of %zu Photos…"), paths.size()), [this, paths] { create_collage(paths); });
   m.separator();
   m.item(_("Rotate Left"), [this, paths] { rotate_files(paths, -1); });
   m.item(_("Rotate Right"), [this, paths] { rotate_files(paths, 1); });
@@ -401,13 +390,19 @@ void GalleryWindow::photo_menu(int index, const std::vector<std::string> &paths,
     sizes.item(edge ? format(_("Longest side %d px"), edge) : std::string(_("Original size")),
                [this, paths, edge] { export_files(paths, edge); });
   m.submenu(_("Resize and Export"), std::move(sizes));
+  if (plugin_on("convert")) m.item(_("Convert Format…"), [this, paths] { convert_files(paths); });
+  if (plugin_on("rename"))
+    m.item(single ? _("Rename…") : format(_("Rename %zu Photos…"), paths.size()), [this, paths] { rename_files(paths); },
+           {"rename", FL_F + 2});
   m.item(_("Copy to Folder…"), [this, paths] { copy_files_to(paths, false); }, {"copy"});
   m.item(_("Move to Folder…"), [this, paths] { copy_files_to(paths, true); }, {"folder"});
-  m.item(_("Share by Email…"), [this, paths] { share_files(paths); }, {"share", 0, true, true});
+  if (plugin_on("email")) m.item(_("Send by Email…"), [this, paths] { share_files(paths); }, {"share"});
+  if (plugin_on("print")) m.item(_("Print…"), [this, paths] { print_files(paths); }, {"print", FL_CTRL + FL_SHIFT + 'p'});
+  add_action_items(m, paths);
+  m.separator();
   if (single) {
     m.item(_("Set as Wallpaper"), [this, first] { set_wallpaper(first); });
-    m.item(_("Show in Files"), [this, first] { show_in_files(first); }, {"folder"});
-    m.item(_("Open With Other Application"), [this, first] { open_with(first); }, {"open", 0, true, true});
+    m.item(_("Show in Files"), [this, first] { show_in_files(first); }, {"folder", 0, true, true});
   }
   m.item(single ? _("Copy Path") : _("Copy Paths"), [this, paths] { copy_paths(paths); }, {"copy"});
   m.item(_("Move to Trash…"), [this, paths] { trash(paths); }, {"trash"});

@@ -8,6 +8,7 @@
 // album with "sde-view --album=list:<file>". Nothing here needs a display.
 #pragma once
 
+#include <ctime>
 #include <functional>
 #include <string>
 #include <vector>
@@ -57,5 +58,30 @@ std::vector<CopyItem> plan_copy(const std::vector<std::string> &sources, const s
 // The size of a w x h image made to fit in |max_edge| (never enlarged;
 // 0 keeps the size).
 void fit_size(int w, int h, int max_edge, int &ow, int &oh);
+
+// Batch rename (a plugin). Tokens of a pattern: {name} the old name
+// without its extension, {n} a number counting from the start (zero-padded
+// to the widest), {date} and {time} when the photo was taken or else
+// modified (2026-10-26, 14.05.33), {camera} the camera model, {folder} the
+// name of the photo's folder. The extension stays as it is.
+struct RenameSource {
+  std::string path;
+  time_t taken = 0;
+  std::string camera;
+};
+struct RenameItem {
+  std::string from, to;
+};
+std::string rename_one(const std::string &pattern, const RenameSource &src, int number, int width);
+// The renames for |files|: names that would be taken (|exists|, or by two
+// photos) get " (2)", " (3)"... Fails with |error| when a name would be
+// empty or contain "/". Photos whose name does not change are left out.
+bool plan_rename(const std::vector<RenameSource> &files, const std::string &pattern, int start,
+                 const std::function<bool(const std::string &)> &exists, std::vector<RenameItem> &out,
+                 std::string *error = nullptr);
+// Renames in two steps (through temporary names), so that names may be
+// swapped or shifted. Returns how many were renamed; on failure the rest
+// keep their old names.
+size_t apply_rename(const std::vector<RenameItem> &items, std::string *error = nullptr);
 
 }  // namespace gallery

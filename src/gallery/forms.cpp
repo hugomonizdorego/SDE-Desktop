@@ -69,7 +69,7 @@ struct Form::Impl {
     int value = 0;
     std::function<std::string(double)> show;
     bool on = false, enabled = true;
-    Slider *slider = nullptr;
+    sde::Slider *slider = nullptr;
     Fl_Input *input = nullptr;
     std::string text, hint;
     double y = 0, h = 0;
@@ -83,6 +83,7 @@ struct Form::Impl {
    public:
     Win(Impl *impl, int w, int h) : BufferedWindow(w, h), impl_(impl) {}
     void draw() override { impl_->draw(); }
+    void paint_children() { draw_children(); }
     int handle(int event) override { return impl_->handle(event) ? 1 : BufferedWindow::handle(event); }
     Impl *impl_;
   };
@@ -251,7 +252,7 @@ struct Form::Impl {
         text_font(t.font_size);
         draw_text(r.hint, r.input->x() + S(4), r.input->y(), r.input->w() - S(8), r.input->h(), t.text_dim);
       }
-    win->draw_children();
+    win->paint_children();
   }
 
   void notify() {
@@ -397,7 +398,7 @@ int Form::run(const std::vector<std::string> &buttons) {
   win->begin();
   for (auto &r : impl_->rows) {
     if (r.kind == Impl::Row::Slider) {
-      r.slider = new Slider(0, 0, 10, S(26));
+      r.slider = new sde::Slider(0, 0, 10, S(26));
       double lo = atof(r.options[0].c_str()), hi = atof(r.options[1].c_str());
       r.slider->bounds(lo, hi);
       r.slider->step(atof(r.options[2].c_str()));

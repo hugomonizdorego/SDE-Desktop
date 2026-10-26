@@ -174,7 +174,9 @@ add_library(sde-gallery-core STATIC
   gallery/album.cpp
   gallery/collections.cpp
   gallery/plugins.cpp
-  gallery/editors.cpp)
+  gallery/editors.cpp
+  gallery/places.cpp
+  gallery/duplicates.cpp)
 target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
 target_link_libraries(sde-gallery-core PUBLIC sde-common)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
@@ -198,7 +200,8 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(sde-gallery-core PUBLIC Threads::Threads)
 # Drawing shared by Gallery and Photo: line icons and the themed menu bar.
-add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp gallery/plugins_ui.cpp)
+add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp gallery/plugins_ui.cpp
+  gallery/forms.cpp)
 target_link_libraries(sde-gallery-ui PUBLIC sde-gallery-core)
 add_executable(sde-gallery
   gallery/main.cpp
@@ -206,7 +209,9 @@ add_executable(sde-gallery
   gallery/sidebar.cpp
   gallery/grid.cpp
   gallery/viewer.cpp
-  gallery/organize.cpp)
+  gallery/organize.cpp
+  gallery/tools.cpp
+  gallery/batch.cpp)
 # Batch rotate/export use Photo's encoder (lossless JPEG rotation, EXIF).
 target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
 

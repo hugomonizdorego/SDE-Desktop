@@ -8,7 +8,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
+#include <random>
 
+#include "config.h"
+#include "edit.h"
 #include "gallery.h"
 #include "i18n.h"
 #include "util.h"
@@ -20,6 +24,13 @@ namespace gallery {
 namespace {
 
 constexpr int kFullMax = 6144;
+constexpr double kTransitionSeconds = 0.9;
+
+double now_seconds() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + ts.tv_nsec / 1e9;
+}
 
 // Greedy line breaking that also splits long words (paths, file names).
 std::vector<std::string> wrap(const std::string &text, int width, size_t max_lines) {
@@ -72,7 +83,10 @@ Viewer::Viewer(GalleryWindow *app, int x, int y, int w, int h) : Fl_Widget(x, y,
 
 Viewer::~Viewer() {
   Fl::remove_timeout(slideshow_cb, this);
+  Fl::remove_timeout(transition_cb, this);
   if (full_) cairo_surface_destroy(full_);
+  if (screen_) cairo_surface_destroy(screen_);
+  if (previous_) cairo_surface_destroy(previous_);
 }
 
 const Photo *Viewer::photo() const {
@@ -91,6 +105,8 @@ void Viewer::close() {
   stop_slideshow();
   if (full_) cairo_surface_destroy(full_);
   full_ = nullptr;
+  if (screen_) cairo_surface_destroy(screen_);
+  screen_ = nullptr;
   full_path_.clear();
   ++generation_;
 }
@@ -99,6 +115,8 @@ void Viewer::load_current() {
   const Photo *p = photo();
   if (full_) cairo_surface_destroy(full_);
   full_ = nullptr;
+  if (screen_) cairo_surface_destroy(screen_);
+  screen_ = nullptr;
   failed_ = false;
   zoom_ = 0;
   pan_x_ = pan_y_ = 0;
@@ -120,11 +138,23 @@ void Viewer::full_loaded(const Result &r) {
   if (full_) cairo_surface_destroy(full_);
   full_ = r.surface;
   failed_ = !r.surface;
+  if (screen_) cairo_surface_destroy(screen_);
+  screen_ = nullptr;
   if (r.width > 0 && r.height > 0) {
     img_w_ = r.width;
     img_h_ = r.height;
   }
+  if (slideshow_ && waiting_) start_transition();
   redraw();
+}
+
+void Viewer::file_changed(const std::string &path) {
+  if (path == full_path_ && !slideshow_) load_current();
+}
+
+void Viewer::edit_menu(int mx, int my) {
+  const Photo *p = photo();
+  if (p) app_->edit_with_popup({p->path}, mx, my);
 }
 
 void Viewer::photos_changed() {
@@ -220,9 +250,39 @@ void Viewer::set_zoom(double scale, double cx, double cy) {
 void Viewer::toggle_slideshow() {
   slideshow_ = !slideshow_;
   Fl::remove_timeout(slideshow_cb, this);
+  Fl::remove_timeout(transition_cb, this);
+  if (previous_) cairo_surface_destroy(previous_);
+  previous_ = nullptr;
+  transition_ = 1;
+  waiting_ = false;
   if (slideshow_) {
+    // Without the Slideshow Transitions plugin: four seconds a photo.
+    transition_kind_ = NoTransition;
+    interval_ = 4;
+    loop_ = true;
+    bool shuffle = false;
+    if (app_->plugin_on("slideshow")) {
+      Config cfg;
+      cfg.load();
+      std::string t = cfg.get("gallery", "slideshow_transition", "crossfade");
+      transition_kind_ = t == "none" ? NoTransition : t == "slide" ? Slide : t == "kenburns" ? KenBurns : Crossfade;
+      interval_ = std::max(2, std::min(60, cfg.get_int("gallery", "slideshow_seconds", 5)));
+      shuffle = cfg.get_bool("gallery", "slideshow_shuffle", false);
+      loop_ = cfg.get_bool("gallery", "slideshow_loop", true);
+    }
+    if (shuffle) {
+      // The photo shown first, the others in a random order.
+      if (subset_.empty())
+        for (int i = 0; i < int(app_->photos().size()); ++i) subset_.push_back(i);
+      std::mt19937 rng(unsigned(time(nullptr)));
+      std::shuffle(subset_.begin(), subset_.end(), rng);
+      auto it = std::find(subset_.begin(), subset_.end(), index_);
+      if (it != subset_.end()) std::iter_swap(subset_.begin(), it);
+    }
     window()->fullscreen();
-    Fl::add_timeout(4.0, slideshow_cb, this);
+    shown_at_ = now_seconds();
+    Fl::add_timeout(interval_, slideshow_cb, this);
+    if (transition_kind_ == KenBurns) Fl::add_timeout(1.0 / 30, transition_cb, this);
     app_->toast(_("Slideshow · press Esc to stop"));
   } else {
     window()->fullscreen_off();
@@ -245,8 +305,98 @@ void Viewer::stop_slideshow() {
 void Viewer::slideshow_cb(void *p) {
   auto *v = static_cast<Viewer *>(p);
   if (!v->slideshow_) return;
-  v->step(1);
-  Fl::repeat_timeout(4.0, slideshow_cb, p);
+  v->next_slide();
+}
+
+void Viewer::next_slide() {
+  int n = int(app_->photos().size());
+  if (n == 0) return;
+  // At the end, without "start again": the slideshow is over.
+  bool last = subset_.empty() ? index_ + 1 >= n : (!subset_.empty() && subset_.back() == index_);
+  if (last && !loop_) {
+    stop_slideshow();
+    app_->toast(_("The slideshow is over"));
+    return;
+  }
+  if (transition_kind_ != NoTransition) {
+    if (previous_) cairo_surface_destroy(previous_);
+    previous_ = screen_image();
+    if (previous_) cairo_surface_reference(previous_);
+  }
+  int before = index_;
+  step(1);
+  direction_ = -direction_;
+  if (index_ == before || transition_kind_ == NoTransition) {
+    if (previous_) cairo_surface_destroy(previous_);
+    previous_ = nullptr;
+    shown_at_ = now_seconds();
+    Fl::repeat_timeout(interval_, slideshow_cb, this);
+    return;
+  }
+  // The change starts when the next photo is loaded (full_loaded()).
+  waiting_ = true;
+  transition_ = 0;
+  if (full_) start_transition();
+}
+
+void Viewer::start_transition() {
+  waiting_ = false;
+  transition_ = 0;
+  transition_start_ = shown_at_ = now_seconds();
+  Fl::remove_timeout(transition_cb, this);
+  Fl::add_timeout(1.0 / 60, transition_cb, this);
+  Fl::remove_timeout(slideshow_cb, this);
+  Fl::add_timeout(interval_ + kTransitionSeconds, slideshow_cb, this);
+}
+
+void Viewer::transition_cb(void *p) {
+  auto *v = static_cast<Viewer *>(p);
+  if (!v->slideshow_) return;
+  if (v->waiting_) {
+    Fl::repeat_timeout(1.0 / 30, transition_cb, p);
+    return;
+  }
+  double t = (now_seconds() - v->transition_start_) / kTransitionSeconds;
+  v->transition_ = std::max(0.0, std::min(1.0, t));
+  if (v->transition_ >= 1 && v->previous_) {
+    cairo_surface_destroy(v->previous_);
+    v->previous_ = nullptr;
+  }
+  v->redraw();
+  // Ken Burns keeps moving; the others stop when the change is done.
+  if (v->transition_ < 1) Fl::repeat_timeout(1.0 / 60, transition_cb, p);
+  else if (v->transition_kind_ == KenBurns) Fl::repeat_timeout(1.0 / 30, transition_cb, p);
+}
+
+cairo_surface_t *Viewer::screen_image() {
+  if (!full_) {
+    const Photo *ph = photo();
+    return ph ? app_->thumbnail(*ph, true) : nullptr;
+  }
+  if (!screen_) {
+    // Slideshows draw a screen-sized copy, kept on the X server.
+    int limit = int(std::max(w(), h()) * 1.1);
+    screen_ = photo::downscale(full_, limit);
+  }
+  return screen_;
+}
+
+void Viewer::paint_slide(cairo_t *cr, Painter &p, cairo_surface_t *s, double alpha, double dx, double zoom,
+                         double drift) {
+  if (!s || alpha <= 0) return;
+  double sw = cairo_image_surface_get_width(s), sh = cairo_image_surface_get_height(s);
+  double k = std::min(w() / sw, h() / sh) * zoom;
+  cairo_surface_t *src = p.server_copy(s);
+  cairo_save(cr);
+  cairo_rectangle(cr, x(), y(), w(), h());
+  cairo_clip(cr);
+  cairo_translate(cr, x() + w() / 2.0 + dx + drift * w(), y() + h() / 2.0);
+  cairo_scale(cr, k, k);
+  cairo_set_source_surface(cr, src ? src : s, -sw / 2, -sh / 2);
+  cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
+  if (alpha >= 1) cairo_paint(cr);
+  else cairo_paint_with_alpha(cr, alpha);
+  cairo_restore(cr);
 }
 
 void Viewer::layout_buttons() {
@@ -287,7 +437,12 @@ void Viewer::layout_buttons() {
     set_zoom(current_scale() * 1.25, ax + aw / 2, ay + ah / 2);
   });
   add(icon::Play, _("Slideshow (F5)"), [this] { toggle_slideshow(); });
-  add(icon::Edit, _("Edit in Photo (Ctrl+E)"), [this, path] { app_->edit_in_photo(path); });
+  add(icon::Edit, format(_("Edit with %s (Ctrl+E)"), app_->default_editor_name().c_str()),
+      [this, path] { app_->edit_with_default({path}); });
+  add(icon::OpenWith, _("Edit With… (E)"), [this] {
+    for (const auto &b : top_)
+      if (b.glyph == icon::OpenWith) edit_menu(int(b.x), int(b.y + b.h + S(4)));
+  });
   add(icon::Trash, _("Move to Trash (Delete)"), [this, path] { app_->trash({path}); });
   add(icon::Info, _("Details (I)"), [this] {
     info_ = !info_;
@@ -301,7 +456,8 @@ void Viewer::layout_buttons() {
     rx -= bs;
     top_[i].x = rx;
     rx -= gap;
-    if (i == right_start + 1 || i == right_start + 4 || i == right_start + 6) rx -= S(10);  // groups
+    if (i == right_start + 1 || i == right_start + 4 || i == right_start + 5 || i == right_start + 7)
+      rx -= S(10);  // groups
   }
   if (!p) for (auto &b : top_) b.active = b.glyph == icon::Back;
   // Info panel actions.
@@ -321,8 +477,12 @@ void Viewer::layout_buttons() {
     b.active = p != nullptr;
     actions_.push_back(std::move(b));
   };
-  action(icon::Edit, _("Edit in Photo"), [this, path] { app_->edit_in_photo(path); });
-  action(icon::OpenWith, _("Open With Other Application"), [this, path] { app_->open_with(path); });
+  action(icon::Edit, format(_("Edit with %s"), app_->default_editor_name().c_str()),
+         [this, path] { app_->edit_with_default({path}); });
+  action(icon::OpenWith, _("Edit With…"), [this] {
+    for (const auto &b : actions_)
+      if (b.glyph == icon::OpenWith) edit_menu(int(b.x + S(40)), int(b.y));
+  });
   action(icon::Wallpaper, _("Set as Wallpaper"), [this, path] { app_->set_wallpaper(path); });
   action(icon::Files, _("Show in Files"), [this, path] { app_->show_in_files(path); });
   action(icon::Copy, _("Copy Path"), [this, path] { app_->copy_paths({path}); });
@@ -349,6 +509,30 @@ void Viewer::draw() {
     Painter p(window()->w(), window()->h());
     cairo_t *cr = p.cr();
     p.fill_rect(x(), y(), w(), h(), canvas);
+    if (slideshow_) {
+      // The photo at screen size, with the change from the one before.
+      cairo_surface_t *cur = waiting_ ? nullptr : screen_image();
+      double t = transition_, ease = t * t * (3 - 2 * t);
+      double zoom = 1, drift = 0;
+      if (transition_kind_ == KenBurns) {
+        double progress = std::min(1.0, (now_seconds() - shown_at_) / (interval_ + kTransitionSeconds));
+        zoom = 1.0 + 0.08 * progress;
+        drift = direction_ * (progress - 0.5) * 0.03;
+      }
+      if (previous_ && (t < 1 || waiting_)) {
+        if (transition_kind_ == Slide) {
+          paint_slide(cr, p, previous_, 1, -ease * w(), 1, 0);
+          paint_slide(cr, p, cur, 1, (1 - ease) * w(), 1, 0);
+        } else {
+          bool kb = transition_kind_ == KenBurns;
+          paint_slide(cr, p, previous_, 1, 0, kb ? 1.08 : 1, kb ? -direction_ * 0.015 : 0);
+          paint_slide(cr, p, cur, ease, 0, zoom, drift);
+        }
+      } else {
+        paint_slide(cr, p, cur, 1, 0, zoom, drift);
+      }
+      return;
+    }
     // Image.
     cairo_surface_t *s = full_;
     if (!s && ph) s = app_->thumbnail(*ph, true);
@@ -584,7 +768,12 @@ bool Viewer::keyboard(int key, int state) {
     return true;
   }
   if (ctrl && key == 'e' && p) {
-    app_->edit_in_photo(p->path);
+    app_->edit_with_default({p->path});
+    return true;
+  }
+  if (!ctrl && key == 'e' && p && !slideshow_) {
+    for (const auto &b : top_)
+      if (b.glyph == icon::OpenWith) edit_menu(int(b.x), int(b.y + b.h + S(4)));
     return true;
   }
   return false;
