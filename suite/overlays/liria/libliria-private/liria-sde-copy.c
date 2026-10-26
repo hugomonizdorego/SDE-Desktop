@@ -1,23 +1,29 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (C) 2026 SDE contributors.
  *
- * Safe copies to removable and slow drives (added by SDE).
+ * Safe copies to removable, external and network drives (added by SDE).
  *
  * Linux keeps written data in the page cache and writes it back later. A
- * copy to a USB stick therefore "finishes" long before the data is on the
- * stick: the progress bar is wrong, unmounting hangs for minutes and a
- * stick pulled after "done" loses files. A large cache of dirty pages for
+ * copy to a USB stick therefore "finished" long before the data was on the
+ * stick: the progress bar was wrong, unmounting hung for minutes and a
+ * stick pulled after "done" lost files. A large cache of dirty pages for
  * one slow device can also stall the whole desktop.
  *
- * For destinations on removable devices (USB, SD/MMC) and on FAT, exFAT
- * and NTFS file systems, regular files are copied here instead of with
- * g_file_copy(): large buffers, sync_file_range() windows that keep at
- * most ~16 MiB of a file unwritten, progress that counts only data the
- * device accepted, a syncfs() after every 32 MiB / 3 s of small files and
- * a final syncfs() before the operation reports completion. Internal
- * disks keep the normal fast path, except that large files are copied in
- * slices there (liria_sde_copy_large_file (), 0.2.0 Alpha 2) so that the
- * progress and Pause follow them.
+ * Regular files copied to such a drive (liria_sde_flush_new () decides,
+ * with SDE's sde_dest_probe ()) are written here instead of with
+ * g_file_copy (), through SDE's writer (liria-sde-safe-copy.h, a copy of
+ * src/common/safe_copy.h shared with the SDE desktop): at most about a
+ * second of the drive's speed is in flight, the progress counts only data
+ * the drive has taken, checkpoints (syncfs () and fsync () of the folder)
+ * every few seconds and at the end make it durable, and the operation is
+ * reported done only after the last one (0.2.0 Alpha 3). A move deletes
+ * its sources only after a checkpoint, so a stick pulled during a move
+ * never loses a file. The metadata (permissions, times, extended
+ * attributes, SELinux labels) is copied by g_file_copy_attributes () as
+ * GIO does; symbolic links, folders and special files keep GIO's path.
+ * Internal disks keep the page cache, except that large files are copied
+ * in slices there (liria_sde_copy_large_file (), 0.2.0 Alpha 2) so that
+ * the progress and Pause follow them.
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -42,123 +48,95 @@
 #include <gio/gunixmounts.h>
 
 #include "liria-sde-copy.h"
+#include "liria-sde-safe-copy.h"
 
-#define BUFFER_SIZE (4 * 1024 * 1024)
-#define WINDOW_SIZE (8 * 1024 * 1024)
-#define BATCH_BYTES (32 * 1024 * 1024)
-#define BATCH_USEC (3 * G_USEC_PER_SEC)
+#define BUFFER_SIZE (1024 * 1024)
+#define DEFERRED_MAX 2000
 #define LARGE_FILE (32 * 1024 * 1024)
 #define SLICE_MIN (1024 * 1024)
 #define SLICE_MAX (64 * 1024 * 1024)
 
 struct LiriaSdeFlush {
-	char *fs_type;
+	SdeDest dest;
+	SdeWriter writer;
 	char *name;
-	int dir_fd;
-	gboolean dos_names;
-	gboolean limit_4g;
+	gboolean removable;
 	guchar *buffer;
-	goffset unsynced;
-	gint64 last_sync;
+	/* Sources of a move, deleted after the next checkpoint (files first,
+	 * then their folders). */
+	GPtrArray *deferred;
+	GHashTable *source_dirs;   /* folders that lost items (paths) */
+	int delete_failures;
+	char *first_delete_error;
+	void (*reported) (gpointer data, goffset bytes);
+	gboolean (*tick) (gpointer data, goffset written);
+	gpointer report_data;
+	goffset ticked;
 };
 
-static gboolean
-read_sys_flag (const char *dir, const char *name)
+/* sde.conf [files] safe_copy: the user's file, then the system's. */
+static char *
+safe_copy_setting (void)
 {
-	char *file = g_build_filename (dir, name, NULL);
-	char *text = NULL;
-	gboolean set = FALSE;
+	const gchar *const *system = g_get_system_config_dirs ();
+	char *value = NULL;
+	int i;
 
-	if (g_file_get_contents (file, &text, NULL, NULL))
-		set = g_ascii_strtoll (text, NULL, 10) != 0;
-	g_free (text);
-	g_free (file);
-	return set;
-}
+	for (i = -1; value == NULL && (i < 0 || system[i] != NULL); i++) {
+		char *path = g_build_filename (i < 0 ? g_get_user_config_dir () : system[i], "sde", "sde.conf", NULL);
+		GKeyFile *file = g_key_file_new ();
 
-/* TRUE for a block device on USB, MMC/SD or one marked removable. */
-static gboolean
-device_is_removable (const char *device)
-{
-	char *name, *sys, *real;
-	gboolean removable = FALSE;
-
-	if (device == NULL || !g_str_has_prefix (device, "/dev/"))
-		return FALSE;
-	real = realpath (device, NULL);
-	name = g_path_get_basename (real ? real : device);
-	free (real);
-	sys = g_build_filename ("/sys/class/block", name, NULL);
-	real = realpath (sys, NULL);
-	if (real != NULL) {
-		char *partition = g_build_filename (real, "partition", NULL);
-		char *disk = g_file_test (partition, G_FILE_TEST_EXISTS) ? g_path_get_dirname (real) : g_strdup (real);
-
-		g_free (partition);
-		removable = strstr (real, "/usb") != NULL || strstr (real, "/mmc") != NULL ||
-		            read_sys_flag (disk, "removable");
-		g_free (disk);
-		free (real);
+		if (g_key_file_load_from_file (file, path, G_KEY_FILE_NONE, NULL))
+			value = g_key_file_get_string (file, "files", "safe_copy", NULL);
+		g_key_file_unref (file);
+		g_free (path);
 	}
-	g_free (sys);
-	g_free (name);
-	return removable;
+	if (value != NULL)
+		g_strstrip (value);
+	return value;
 }
 
-static gboolean
-type_is (const char *type, const char *const *names)
+static void
+flush_confirmed (void *data, long long bytes)
 {
-	for (; *names; names++)
-		if (g_strcmp0 (type, *names) == 0)
-			return TRUE;
-	return FALSE;
+	LiriaSdeFlush *flush = data;
+
+	if (flush->reported != NULL)
+		flush->reported (flush->report_data, (goffset) bytes);
 }
 
 LiriaSdeFlush *
 liria_sde_flush_new (GFile *destination_dir)
 {
-	static const char *const fat[] = { "vfat", "msdos", "fat", "msdosfs", "fuse.fusefat", "fusefat", NULL };
-	static const char *const dos[] = { "exfat", "fuse.exfat", "ntfs", "ntfs3", "fuseblk", "fuse.ntfs-3g", NULL };
-	static const char *const slow[] = { "udf", "hfsplus", NULL };
-	const char *mode = g_getenv ("SDE_LIRIA_SAFE_COPY");
-	GUnixMountEntry *entry;
 	LiriaSdeFlush *flush;
-	const char *type = NULL;
-	char *path;
-	gboolean is_fat, is_dos, removable = FALSE;
+	SdeDest dest;
+	char *path, *setting;
+	SdeSafeMode mode;
+	int fd;
 
-	if (g_strcmp0 (mode, "never") == 0 || destination_dir == NULL || !g_file_is_native (destination_dir))
+	if (destination_dir == NULL || !g_file_is_native (destination_dir))
 		return NULL;
 	path = g_file_get_path (destination_dir);
 	if (path == NULL)
 		return NULL;
-	entry = g_unix_mount_for (path, NULL);
-	if (entry != NULL) {
-		type = g_unix_mount_get_fs_type (entry);
-		removable = device_is_removable (g_unix_mount_get_device_path (entry));
-	}
-	is_fat = type_is (type, fat);
-	is_dos = is_fat || type_is (type, dos);
-	if (!(removable || is_dos || type_is (type, slow) || g_strcmp0 (mode, "always") == 0)) {
-		if (entry != NULL)
-			g_unix_mount_free (entry);
+	setting = safe_copy_setting ();
+	mode = sde_safe_mode (setting);
+	g_free (setting);
+	if (sde_dest_probe (path, &dest) != 0 || !sde_dest_wants_safe (&dest, mode)) {
 		g_free (path);
 		return NULL;
 	}
 
 	flush = g_new0 (LiriaSdeFlush, 1);
-	flush->fs_type = g_strdup (type ? type : "");
-	flush->dos_names = is_dos;
-	flush->limit_4g = is_fat;
-	flush->dir_fd = open (path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-	flush->last_sync = g_get_monotonic_time ();
-	if (entry != NULL) {
-		const char *mount_path = g_unix_mount_get_mount_path (entry);
-		flush->name = g_filename_display_basename (mount_path && strcmp (mount_path, "/") ? mount_path : path);
-		g_unix_mount_free (entry);
-	} else {
-		flush->name = g_filename_display_basename (path);
-	}
+	flush->dest = dest;
+	flush->removable = dest.kind == SDE_DEST_REMOVABLE || (dest.kind != SDE_DEST_NETWORK && dest.dos_names);
+	flush->name = dest.name[0] != '\0' ? g_filename_display_name (dest.name) : g_filename_display_basename (path);
+	fd = open (path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	sde_writer_init (&flush->writer, sde_writer_method_for (&dest, 1), fd, NULL, NULL);
+	flush->writer.confirmed_cb = flush_confirmed;
+	flush->writer.confirmed_data = flush;
+	flush->deferred = g_ptr_array_new_with_free_func (g_free);
+	flush->source_dirs = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 	g_free (path);
 	return flush;
 }
@@ -168,18 +146,19 @@ liria_sde_flush_free (LiriaSdeFlush *flush)
 {
 	if (flush == NULL)
 		return;
-	if (flush->dir_fd >= 0)
-		close (flush->dir_fd);
+	sde_writer_abandon (&flush->writer);
+	g_ptr_array_unref (flush->deferred);
+	g_hash_table_unref (flush->source_dirs);
 	g_free (flush->buffer);
-	g_free (flush->fs_type);
 	g_free (flush->name);
+	g_free (flush->first_delete_error);
 	g_free (flush);
 }
 
 const char *
 liria_sde_flush_get_fs_type (LiriaSdeFlush *flush)
 {
-	return flush->fs_type;
+	return flush->dest.fs_type;
 }
 
 const char *
@@ -189,15 +168,21 @@ liria_sde_flush_get_name (LiriaSdeFlush *flush)
 }
 
 gboolean
+liria_sde_flush_is_removable (LiriaSdeFlush *flush)
+{
+	return flush->removable;
+}
+
+gboolean
 liria_sde_flush_needs_dos_names (LiriaSdeFlush *flush)
 {
-	return flush->dos_names;
+	return flush->dest.dos_names;
 }
 
 gboolean
 liria_sde_flush_has_4g_limit (LiriaSdeFlush *flush)
 {
-	return flush->limit_4g;
+	return flush->dest.fat;
 }
 
 gboolean
@@ -207,7 +192,7 @@ liria_sde_flush_too_large (LiriaSdeFlush *flush, GFile *file)
 	char *path;
 	gboolean large = FALSE;
 
-	if (flush == NULL || !flush->limit_4g || !g_file_is_native (file))
+	if (flush == NULL || !flush->dest.fat || !g_file_is_native (file))
 		return FALSE;
 	path = g_file_get_path (file);
 	if (path && lstat (path, &st) == 0 && S_ISREG (st.st_mode) &&
@@ -215,6 +200,18 @@ liria_sde_flush_too_large (LiriaSdeFlush *flush, GFile *file)
 		large = TRUE;
 	g_free (path);
 	return large;
+}
+
+void
+liria_sde_flush_set_reporter (LiriaSdeFlush *flush,
+                              void (*reported) (gpointer data, goffset bytes),
+                              gboolean (*tick) (gpointer data, goffset written),
+                              gpointer data)
+{
+	flush->reported = reported;
+	flush->tick = tick;
+	flush->report_data = data;
+	flush->ticked = flush->writer.written;
 }
 
 gboolean
@@ -226,22 +223,123 @@ liria_sde_sync_path (const char *path)
 	if (fd < 0)
 		return FALSE;
 	r = syncfs (fd);
+	fsync (fd);
 	close (fd);
 	return r == 0;
+}
+
+/* The sources that waited for the checkpoint go now; the drives they were
+ * on lose them durably too when those are removable. */
+static void
+delete_deferred (LiriaSdeFlush *flush)
+{
+	GHashTableIter iter;
+	gpointer key;
+	guint i;
+
+	for (i = 0; i < flush->deferred->len; i++) {
+		const char *path = g_ptr_array_index (flush->deferred, i);
+		struct stat st;
+		int r;
+
+		if (lstat (path, &st) != 0)
+			continue;
+		r = S_ISDIR (st.st_mode) ? rmdir (path) : unlink (path);
+		if (r != 0) {
+			int code = errno;
+
+			flush->delete_failures++;
+			if (flush->first_delete_error == NULL) {
+				char *display = g_filename_display_name (path);
+
+				flush->first_delete_error = g_strdup_printf ("%s: %s", display, g_strerror (code));
+				g_free (display);
+			}
+		} else {
+			char *dir = g_path_get_dirname (path);
+
+			g_hash_table_add (flush->source_dirs, dir);
+		}
+	}
+	g_ptr_array_set_size (flush->deferred, 0);
+	if (g_hash_table_size (flush->source_dirs) > 0) {
+		char *setting = safe_copy_setting ();
+		SdeSafeMode mode = sde_safe_mode (setting);
+
+		g_free (setting);
+		g_hash_table_iter_init (&iter, flush->source_dirs);
+		while (g_hash_table_iter_next (&iter, &key, NULL)) {
+			SdeDest dest;
+
+			if (sde_dest_probe (key, &dest) == 0 &&
+			    (dest.major != flush->dest.major || dest.minor != flush->dest.minor) &&
+			    sde_dest_wants_safe (&dest, mode))
+				liria_sde_sync_path (key);
+		}
+		g_hash_table_remove_all (flush->source_dirs);
+	}
 }
 
 gboolean
 liria_sde_flush_sync (LiriaSdeFlush *flush)
 {
-	int r = 0;
+	gboolean ok = sde_writer_checkpoint (&flush->writer) == 0;
 
-	if (flush->dir_fd >= 0)
-		r = syncfs (flush->dir_fd);
+	if (ok)
+		delete_deferred (flush);
+	return ok;
+}
+
+gboolean
+liria_sde_flush_defer_delete (LiriaSdeFlush *flush, GFile *folder)
+{
+	char *path;
+
+	if (flush->deferred->len == 0)
+		return FALSE;
+	path = g_file_get_path (folder);
+	if (path == NULL)
+		return FALSE;
+	g_ptr_array_add (flush->deferred, path);
+	return TRUE;
+}
+
+static void
+set_drive_error (LiriaSdeFlush *flush, GError **error, int code)
+{
+	if (code == ENOSPC || code == EDQUOT)
+		g_set_error (error, G_IO_ERROR, G_IO_ERROR_NO_SPACE, _("There is not enough space on %s."), flush->name);
+	else if (code == EROFS)
+		g_set_error (error, G_IO_ERROR, G_IO_ERROR_READ_ONLY, _("%s is read-only."), flush->name);
+	else if ((code == EIO || code == ENODEV || code == ENXIO) && flush->removable)
+		g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+		             _("Could not write to %s: the drive was removed or does not work."), flush->name);
 	else
-		sync ();
-	flush->unsynced = 0;
-	flush->last_sync = g_get_monotonic_time ();
-	return r == 0;
+		g_set_error (error, G_IO_ERROR, g_io_error_from_errno (code), _("Could not write to %s: %s"),
+		             flush->name, g_strerror (code));
+}
+
+gboolean
+liria_sde_flush_finish (LiriaSdeFlush *flush, GError **error)
+{
+	int code = sde_writer_finish (&flush->writer);
+
+	if (code != 0) {
+		/* The copies may not be complete: the sources stay. */
+		g_ptr_array_set_size (flush->deferred, 0);
+		set_drive_error (flush, error, code);
+		return FALSE;
+	}
+	delete_deferred (flush);
+	return TRUE;
+}
+
+int
+liria_sde_flush_get_delete_failures (LiriaSdeFlush *flush, const char **first_error)
+{
+	if (first_error != NULL)
+		*first_error = flush->first_delete_error;
+	return flush->delete_failures;
 }
 
 static void
@@ -294,16 +392,42 @@ open_destination (const struct stat *st, const char *dest_path, GFileCopyFlags f
 	return out;
 }
 
-/* Starts writeback of [offset, offset + length) and waits for it. */
-static gboolean
-write_back (int fd, goffset offset, goffset length, gboolean wait)
-{
-	unsigned int flags = SYNC_FILE_RANGE_WRITE;
+typedef struct {
+	LiriaSdeFlush *flush;
+	GCancellable *cancellable;
+} StopData;
 
-	if (wait)
-		flags = SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE | SYNC_FILE_RANGE_WAIT_AFTER;
-	return sync_file_range (fd, offset, length, flags) == 0 || errno == ESPIPE || errno == EINVAL ||
-	       errno == ENOSYS;
+/* Between reads: Pause and the QA copy rate (the reporter's tick), Cancel. */
+static int
+copy_stop (void *data)
+{
+	StopData *stop = data;
+	LiriaSdeFlush *flush = stop->flush;
+
+	if (flush->tick != NULL) {
+		goffset written = flush->writer.written - flush->ticked;
+
+		flush->ticked = flush->writer.written;
+		if (flush->tick (flush->report_data, written))
+			return 1;
+	}
+	return g_cancellable_is_cancelled (stop->cancellable) ? 1 : 0;
+}
+
+/* After a checkpoint the sources that waited for it go. */
+static int
+file_done (LiriaSdeFlush *flush)
+{
+	double before = flush->writer.last_checkpoint;
+	int code;
+
+	if (flush->deferred->len >= DEFERRED_MAX)
+		code = sde_writer_checkpoint (&flush->writer);
+	else
+		code = sde_writer_file_done (&flush->writer);
+	if (code == 0 && flush->writer.last_checkpoint != before)
+		delete_deferred (flush);
+	return code;
 }
 
 gboolean
@@ -320,9 +444,10 @@ liria_sde_flush_copy_file (LiriaSdeFlush *flush,
 {
 	char *src_path = NULL, *dest_path = NULL;
 	struct stat st;
-	int in = -1, out = -1;
-	goffset written = 0, confirmed = 0, window_start = 0, previous_start = -1, previous_length = 0;
+	int in = -1, out = -1, code, source_error = 0;
 	gboolean ok = FALSE, created = FALSE;
+	StopData stop = { flush, cancellable };
+	SdeCopyHooks hooks;
 
 	*handled = FALSE;
 	if (!g_file_is_native (source) || !g_file_is_native (destination))
@@ -345,81 +470,50 @@ liria_sde_flush_copy_file (LiriaSdeFlush *flush,
 	posix_fadvise (in, 0, 0, POSIX_FADV_SEQUENTIAL);
 	if (flush->buffer == NULL)
 		flush->buffer = g_malloc (BUFFER_SIZE);
-
-	for (;;) {
-		ssize_t n = read (in, flush->buffer, BUFFER_SIZE);
-		ssize_t done = 0;
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			set_errno_error (error, errno, _("Error reading from file “%s”: %s"), src_path);
-			goto out;
-		}
-		if (n == 0)
-			break;
-		while (done < n) {
-			ssize_t w = write (out, flush->buffer + done, n - done);
-
-			if (w < 0) {
-				if (errno == EINTR)
-					continue;
-				set_errno_error (error, errno, _("Error writing to file “%s”: %s"), dest_path);
-				goto out;
-			}
-			done += w;
-		}
-		written += n;
-		if (written - window_start >= WINDOW_SIZE) {
-			/* Start writing this window; wait for the one before. */
-			write_back (out, window_start, written - window_start, FALSE);
-			if (previous_start >= 0) {
-				if (!write_back (out, previous_start, previous_length, TRUE)) {
-					set_errno_error (error, errno, _("Error writing to file “%s”: %s"), dest_path);
-					goto out;
-				}
-				confirmed = previous_start + previous_length;
-				if (progress_callback)
-					progress_callback (confirmed, st.st_size, progress_data);
-			}
-			previous_start = window_start;
-			previous_length = written - window_start;
-			window_start = written;
-		}
-		if (g_cancellable_set_error_if_cancelled (cancellable, error))
-			goto out;
+	hooks.stop = copy_stop;
+	hooks.data = &stop;
+	code = sde_copy_data (&flush->writer, in, out, st.st_size, flush->buffer, BUFFER_SIZE, &hooks, &source_error);
+	if (code == ECANCELED) {
+		g_cancellable_set_error_if_cancelled (cancellable, error);
+		if (error != NULL && *error == NULL)
+			g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_CANCELLED, _("Operation was cancelled"));
+		goto out;
 	}
-
-	if (written > window_start)
-		write_back (out, window_start, written - window_start, FALSE);
-	if (is_move) {
-		/* The source is deleted below: the copy must be on the device. */
-		if (fdatasync (out) != 0 && errno != EINVAL) {
-			set_errno_error (error, errno, _("Error writing to file “%s”: %s"), dest_path);
-			goto out;
-		}
-	} else {
-		flush->unsynced += written - confirmed;
+	if (code != 0 && source_error != 0) {
+		set_errno_error (error, code, _("Error reading from file “%s”: %s"), src_path);
+		goto out;
+	}
+	if (code == EFBIG) {
+		set_errno_error (error, code, NULL, dest_path);
+		goto out;
+	}
+	if (code != 0) {
+		set_drive_error (flush, error, code);
+		goto out;
 	}
 	if (close (out) != 0) {
 		out = -1;
-		set_errno_error (error, errno, _("Error closing file “%s”: %s"), dest_path);
+		set_drive_error (flush, error, errno);
 		goto out;
 	}
 	out = -1;
-	if (!is_move && (flush->unsynced >= BATCH_BYTES ||
-	                 (flush->unsynced > 0 && g_get_monotonic_time () - flush->last_sync >= BATCH_USEC)))
-		liria_sde_flush_sync (flush);
-	if (progress_callback)
-		progress_callback (written, st.st_size, progress_data);
-
 	if (is_move) {
+		/* What g_file_move () keeps: permissions, times, extended
+		 * attributes and SELinux labels (a copy gets them from
+		 * copy_move_file ()). The source is deleted after the next
+		 * checkpoint (file_done (), the end). */
 		g_file_copy_attributes (source, destination, flags | G_FILE_COPY_ALL_METADATA, cancellable, NULL);
-		if (!g_file_delete (source, cancellable, error)) {
-			created = FALSE; /* keep the complete copy */
-			goto out;
-		}
+		g_ptr_array_add (flush->deferred, src_path);
+		src_path = NULL;
 	}
+	code = file_done (flush);
+	if (code != 0) {
+		set_drive_error (flush, error, code);
+		created = FALSE; /* complete, but the drive failed: keep what is there */
+		goto out;
+	}
+	(void) progress_callback;
+	(void) progress_data;
 	ok = TRUE;
 
 out:
@@ -432,6 +526,90 @@ out:
 	g_free (src_path);
 	g_free (dest_path);
 	return ok;
+}
+
+/* The drives (removable, external, network) of the folders of |files|,
+ * each once. */
+static GPtrArray *
+drives_of (GList *files)
+{
+	GPtrArray *drives = g_ptr_array_new_with_free_func (g_free);
+	char *setting = safe_copy_setting ();
+	SdeSafeMode mode = sde_safe_mode (setting);
+	GList *l;
+
+	g_free (setting);
+	for (l = files; l != NULL; l = l->next) {
+		GFile *parent = G_IS_FILE (l->data) ? g_file_get_parent (l->data) : NULL;
+		char *path = parent != NULL ? g_file_get_path (parent) : NULL;
+		SdeDest *dest = g_new0 (SdeDest, 1);
+		guint i;
+		gboolean known = FALSE;
+
+		if (path != NULL && sde_dest_probe (path, dest) == 0 && sde_dest_wants_safe (dest, mode)) {
+			for (i = 0; i < drives->len && !known; i++)
+				known = strcmp (((SdeDest *) g_ptr_array_index (drives, i))->mount_point, dest->mount_point) == 0;
+			if (!known) {
+				g_ptr_array_add (drives, dest);
+				dest = NULL;
+			}
+		}
+		g_free (dest);
+		g_free (path);
+		g_clear_object (&parent);
+	}
+	return drives;
+}
+
+static void
+sync_drives (GPtrArray *drives, void (*announce) (gpointer data, const char *name), gpointer data)
+{
+	guint i;
+
+	for (i = 0; i < drives->len; i++) {
+		SdeDest *dest = g_ptr_array_index (drives, i);
+		char *name = dest->name[0] != '\0' ? g_filename_display_name (dest->name)
+		                                   : g_filename_display_basename (dest->mount_point);
+
+		if (announce != NULL)
+			announce (data, name);
+		liria_sde_sync_path (dest->mount_point);
+		g_free (name);
+	}
+}
+
+void
+liria_sde_sync_drives_of (GList *files, void (*announce) (gpointer data, const char *name), gpointer data)
+{
+	GPtrArray *drives = drives_of (files);
+
+	sync_drives (drives, announce, data);
+	g_ptr_array_unref (drives);
+}
+
+void
+liria_sde_sync_trash_drives (void (*announce) (gpointer data, const char *name), gpointer data)
+{
+	GList *mounts = g_unix_mounts_get (NULL), *l, *roots = NULL;
+	char *trash = g_strdup_printf (".Trash-%u", (unsigned int) getuid ());
+	GPtrArray *drives;
+
+	for (l = mounts; l != NULL; l = l->next) {
+		const char *root = g_unix_mount_get_mount_path (l->data);
+		char *dir = g_build_filename (root, trash, NULL);
+
+		/* drives_of () looks at the folder of each file: the trash
+		 * folder's own. */
+		if (g_file_test (dir, G_FILE_TEST_IS_DIR))
+			roots = g_list_prepend (roots, g_file_new_build_filename (dir, "files", NULL));
+		g_free (dir);
+	}
+	drives = drives_of (roots);
+	sync_drives (drives, announce, data);
+	g_ptr_array_unref (drives);
+	g_list_free_full (roots, g_object_unref);
+	g_list_free_full (mounts, (GDestroyNotify) g_unix_mount_free);
+	g_free (trash);
 }
 
 gboolean
