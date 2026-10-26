@@ -96,7 +96,8 @@ medium tile, 4×2 on a wide one, 3×3 on a large one) and its name.
   name selected: type another one and press Enter (Escape keeps it).
 - **Open and shut**: a click (or Enter) opens a folder in place: below its
   row a band slides open with its applications as tiles, pointing at the
-  folder, and the tiles below move down; the folder comes into view. A
+  folder, and the tiles below move down; the folder and as much of the
+  band as fits come into view (scroll for the rest on a small screen). A
   click on the folder again, Escape, or a click elsewhere shuts it, gliding
   (at once with *Low resource mode*). One folder is open at a time; every
   opening of the menu starts with the folders shut.

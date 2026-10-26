@@ -476,7 +476,11 @@ def a2_menu_checks():
     # After a popup the menu has its grabs back: a click outside closes it.
     open_menu();press('SDE Menu',next(k for k in L() if k.startswith('filter:')));time.sleep(.5)
     run('xdotool','key','Down','Return');time.sleep(.5)
-    run('xdotool','mousemove',W*4//5,H//3,'click','1');gone('^SDE Menu$')
+    # (Beside the menu, or above it where the menu fills the width: a tile
+    # under the pointer would be opened.)
+    mg=geom(find('^SDE Menu$'))
+    ox,oy=(W*4//5,H//3) if mg['x']+mg['w']<W*4//5-round(8*scale) else (W//2,max(2,mg['y']//2))
+    run('xdotool','mousemove',ox,oy,'click','1');gone('^SDE Menu$')
     # 2) Without saved tiles: the favorites in named groups (0.2 Alpha 3), in
     # their order; never every application (the QA applications fit none of
     # the favorites' roles).
@@ -653,6 +657,17 @@ def a3_menu_checks():
         for k in range(1,steps+1):
             run('xdotool','mousemove',g['x']+src[0]+(dst[0]-src[0])*k//steps,g['y']+src[1]+(dst[1]-src[1])*k//steps);time.sleep(.07)
         time.sleep(.4)
+    def reveal(name,up=False):
+        """Scrolls the tiles with the wheel until |name| is all in view (the
+        open folder's last row is below the fold on small screens), not at
+        an edge where a drag scrolls."""
+        for _ in range(16):
+            lay=L();r=lay.get(name);t=lay['@tiles']
+            if r and r[1]>=t[1] and r[1]+r[3]<=t[1]+t[3]:return r
+            if up and lay['@tiles-scroll'][0]==0 and r:return r
+            g=geom(find('^SDE Menu$'))
+            run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]//2,'click','4' if up else '5');time.sleep(.4)
+        raise AssertionError('not in view: '+name)
     def drag_to(src,dst,want,why):
         g=hold(find('^SDE Menu$'),src);glide(g,src,dst)
         waitfor(lambda:(lambda d:d is not None and want(d))(drop_target()),lambda:why+': '+str(drop_target()))
@@ -756,14 +771,14 @@ def a3_menu_checks():
     waitfor(lambda:'folder:Web/qa-atlas.desktop/qa-browser.desktop/qa-mailer.desktop/qa-chat.desktop:m' in tiles_conf(),
             lambda:'Atlas not dropped into the folder: '+conf())
     shot('73-menu-folder-four')
-    first=item('SDE Menu','folder-app:Atlas')
+    reveal('folder-app:Chat QA');first=item('SDE Menu','folder-app:Atlas')
     drag_to(center(item('SDE Menu','folder-app:Chat QA')),(first[0]+first[2]//6,first[1]+first[3]//2),lambda d:d[2]==2,
             'no place in the folder')
     waitfor(lambda:'folder:Web/qa-chat.desktop/qa-atlas.desktop/qa-browser.desktop/qa-mailer.desktop:m' in tiles_conf(),
             lambda:'Chat QA not moved inside the folder: '+conf())
     # Out again: dragged before the folder, from its menu, unpinned; a
     # folder left with one application becomes that application's tile.
-    f=item('SDE Menu','folder:Web')
+    reveal('folder:Web',up=True);f=item('SDE Menu','folder:Web')
     drag_to(center(item('SDE Menu','folder-app:Atlas')),(f[0]+f[2]//8,f[1]+f[3]//2),lambda d:d[2]==0 and d[1]==0,
             'no place before the folder')
     waitfor(lambda:tiles_conf().startswith('Mine,qa-atlas.desktop:m,folder:Web/qa-chat.desktop/qa-browser.desktop/qa-mailer.desktop:m'),
