@@ -827,7 +827,9 @@ class Session:
         """Ids in sde-notifyd's history (org.sde.Notifications.GetHistory)."""
         r = self.run('gdbus', 'call', '--session', '--dest', 'org.freedesktop.Notifications', '--object-path',
                      '/org/freedesktop/Notifications', '--method', 'org.sde.Notifications.GetHistory', timeout=5)
-        return [int(m) for m in re.findall(r'\(uint32 (\d+),', r.stdout)]
+        # gdbus names the types of the first entry only: "(uint32 1, 'App', ...),
+        # (2, 'App', ...)".
+        return [int(m) for m in re.findall(r"\((?:uint32 )?(\d+), '", r.stdout)]
 
     def close_notification(self, nid):
         self.run('gdbus', 'call', '--session', '--dest', 'org.freedesktop.Notifications', '--object-path',
@@ -1399,8 +1401,9 @@ def open_menu(s):
     return w
 
 
-@scene('Start Menu', [('start-menu', 'Start Menu: tiles in groups, most used and all applications A-Z, '
-                                      'and the rail with the account, folders, settings and power')],
+@scene('Start Menu', [('start-menu', 'Start Menu: favorite apps as tiles in groups and a folder, most used and '
+                                      'all applications A-Z, and the rail with the account, folders, settings '
+                                      'and power')],
        scopes=(FULL, THEMES, HERO), needs=['sde-panel'])
 def start_menu(s):
     open_menu(s)
