@@ -23,9 +23,13 @@ first in the recent servers, without the password. With --refused (a
 computer that has no Windows shares): typing its address explains the
 failure and offers the other protocols. With --sftp: an SSH location
 opens (unknown host keys are asked about by GVfs; --accept-host-key
-answers "Log In Anyway" and checks --known-hosts). --bus ADDRESS uses a session bus that is already
-running (one with GVfs services of a test installation). Exit status 0 =
-passed, 1 = failed, 77 = skipped (no Xvfb, xdotool or Liria).
+answers "Log In Anyway" and checks --known-hosts). With --remember (a
+keyring runs on the session bus): the password goes to the keyring, and
+the share, unmounted and opened again, signs in without asking.
+
+--bus ADDRESS uses a session bus that is already running (one with the
+GVfs services of a test installation). Exit status 0 = passed,
+1 = failed, 77 = skipped (no Xvfb, xdotool or Liria).
 """
 import argparse
 import os
@@ -255,6 +259,12 @@ def run(s):
                 for _ in range(back):
                     s.x("key", "Tab")
             s.x("type", "--delay", "20", args.password)
+            if args.remember:
+                s.check("keyring=1" in line, "with a keyring the dialog offers to remember the password")
+                # Remember follows the password; back to the password for Return.
+                s.x("key", "Tab")
+                s.x("key", "space")
+                s.x("key", "shift+Tab")
             s.x("key", "Return")
         line = s.wait_qa("remembered", share, 20)
         s.check(line is not None, "the share opens and is remembered (%s)" % line)
@@ -264,6 +274,17 @@ def run(s):
         recent = [entry for entry in servers.splitlines() if entry and not entry.startswith("#")]
         s.check(recent[:1] == [share + "/"] and args.password not in servers,
                 "the recent servers start with %s/ and hold no password (%s)" % (share, recent[:2]))
+        if args.remember:
+            s.check(s.wait_qa("sign-in", "answered remember=1") is not None, "... the password went to the keyring")
+            # Unmounted and opened again, the share signs in with the keyring.
+            subprocess.run(["gio", "mount", "-u", share + "/"], env=s.env, capture_output=True, timeout=30)
+            time.sleep(2)
+            signins, shown = len(s.qa_lines("sign-in")), len(s.qa_lines("remembered"))
+            s.type_location(share)
+            line = s.wait_qa("remembered", share, 20, after=shown)
+            s.check(line is not None and len(s.qa_lines("sign-in")) == signins,
+                    "opened again, the share takes the password from the keyring without asking")
+            s.shot("07b-share-from-keyring")
 
     if args.refused:
         failures = len(s.qa_lines("failure"))
@@ -310,6 +331,8 @@ def main():
     parser.add_argument("--smb", help="a Windows share to sign in to, smb://server/share")
     parser.add_argument("--user", default="")
     parser.add_argument("--password", default="")
+    parser.add_argument("--remember", action="store_true",
+                        help="remember the password (a keyring runs on the session bus) and open the share again")
     parser.add_argument("--refused", help="a computer that has no Windows shares")
     parser.add_argument("--sftp", help="an SSH location that opens with the key in --ssh-dir")
     parser.add_argument("--ssh-dir", type=Path, help="~/.ssh of the test user (keys, config)")
