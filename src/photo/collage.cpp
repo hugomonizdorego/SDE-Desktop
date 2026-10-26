@@ -756,12 +756,15 @@ void rounded_path(cairo_t *cr, double x, double y, double w, double h, double r)
   cairo_close_path(cr);
 }
 
-void soft_shadow(cairo_t *cr, double x, double y, double w, double h, double r, double spread, double alpha) {
-  // A few growing translucent shapes: cheap and soft enough.
-  for (int i = 4; i >= 1; --i) {
+void soft_shadow(cairo_t *cr, double x, double y, double w, double h, double r, double spread, double alpha,
+                 bool fast) {
+  // A few growing translucent shapes: cheap and soft enough (one while
+  // something is dragged).
+  int layers = fast ? 1 : 4;
+  for (int i = layers; i >= 1; --i) {
     double g = spread * i / 4;
     rounded_path(cr, x - g * 0.6, y - g * 0.3 + spread * 0.35, w + g * 1.2, h + g * 1.2, r + g);
-    cairo_set_source_rgba(cr, 0, 0, 0, alpha / 4 * (1.2 - i * 0.2));
+    cairo_set_source_rgba(cr, 0, 0, 0, fast ? alpha * 0.5 : alpha / 4 * (1.2 - i * 0.2));
     cairo_fill(cr);
   }
 }
@@ -787,27 +790,38 @@ void placeholder(cairo_t *cr, double x, double y, double w, double h) {
   cairo_fill(cr);
 }
 
+// Fills |shape| (a path within the box x, y, w, h) with the part of the
+// photo the item shows there. Filling with an image pattern, instead of a
+// clip and a paint, keeps rotated and rounded cells cheap to draw.
 void paint_photo(cairo_t *cr, cairo_surface_t *s, const CollageItem &it, double x, double y, double w, double h,
-                 bool fast) {
-  if (!s || w <= 0 || h <= 0) {
+                 bool fast, const std::function<void()> &shape) {
+  if (w <= 0 || h <= 0) return;
+  if (!s) {
+    cairo_save(cr);
+    cairo_new_path(cr);
+    shape();
+    cairo_clip(cr);
     placeholder(cr, x, y, w, h);
+    cairo_restore(cr);
     return;
   }
   int iw = cairo_image_surface_get_width(s), ih = cairo_image_surface_get_height(s);
   double sx, sy, sw, sh;
   cell_source(it, iw, ih, w, h, sx, sy, sw, sh);
-  cairo_save(cr);
-  cairo_rectangle(cr, x, y, w, h);
-  cairo_clip(cr);
-  cairo_translate(cr, x, y);
-  cairo_scale(cr, w / sw, h / sh);
-  cairo_set_source_surface(cr, s, -sx, -sy);
-  cairo_pattern_t *p = cairo_get_source(cr);
+  cairo_pattern_t *p = cairo_pattern_create_for_surface(s);
+  cairo_matrix_t m;  // user space to photo pixels
+  cairo_matrix_init_translate(&m, sx, sy);
+  cairo_matrix_scale(&m, sw / w, sh / h);
+  cairo_matrix_translate(&m, -x, -y);
+  cairo_pattern_set_matrix(p, &m);
   cairo_pattern_set_extend(p, CAIRO_EXTEND_PAD);
   double k = w / sw;
   cairo_pattern_set_filter(p, fast ? CAIRO_FILTER_BILINEAR : k < 0.75 ? CAIRO_FILTER_GOOD : CAIRO_FILTER_BILINEAR);
-  cairo_paint(cr);
-  cairo_restore(cr);
+  cairo_new_path(cr);
+  shape();
+  cairo_set_source(cr, p);
+  cairo_fill(cr);
+  cairo_pattern_destroy(p);
 }
 
 void heart_path(cairo_t *cr, const CollageCell &c) {
@@ -829,7 +843,7 @@ void draw_cell(cairo_t *cr, const Collage &c, const CollageCell &cell, const Col
     double cx = x - cell.card_side, cy = y - cell.card_top;
     double cw = w + 2 * cell.card_side, ch = h + cell.card_top + cell.card_bottom;
     double r = s * 0.004;
-    if (cell.shadow) soft_shadow(cr, cx, cy, cw, ch, r, s * 0.018, 0.34);
+    if (cell.shadow) soft_shadow(cr, cx, cy, cw, ch, r, s * 0.018, 0.34, fast);
     rounded_path(cr, cx, cy, cw, ch, r);
     set_rgba(cr, cell.card_color);
     cairo_fill(cr);
@@ -840,7 +854,7 @@ void draw_cell(cairo_t *cr, const Collage &c, const CollageCell &cell, const Col
       cairo_set_source_rgba(cr, 0, 0, 0, 0.22);
       cairo_fill(cr);
     } else {
-      soft_shadow(cr, x, y, w, h, cell.radius, s * 0.014, 0.4);
+      soft_shadow(cr, x, y, w, h, cell.radius, s * 0.014, 0.4, fast);
     }
   }
   cairo_surface_t *photo = cell.item >= 0 && img.photo ? img.photo(cell.item) : nullptr;
@@ -854,18 +868,18 @@ void draw_cell(cairo_t *cr, const Collage &c, const CollageCell &cell, const Col
       cairo_fill(cr);
       r -= cell.border;
     }
-    cairo_new_sub_path(cr);
-    cairo_arc(cr, 0, 0, std::max(1.0, r), 0, 2 * M_PI);
-    cairo_clip(cr);
-    paint_photo(cr, photo, it ? *it : none, -r, -r, 2 * r, 2 * r, fast);
+    r = std::max(1.0, r);
+    paint_photo(cr, photo, it ? *it : none, -r, -r, 2 * r, 2 * r, fast, [&] {
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, 0, 0, r, 0, 2 * M_PI);
+    });
   } else if (cell.clip == CellClip::Heart) {
     cairo_restore(cr);
     cairo_save(cr);
     heart_path(cr, cell);
     cairo_clip(cr);
-    cairo_rectangle(cr, cell.x, cell.y, cell.w, cell.h);
-    cairo_clip(cr);
-    paint_photo(cr, photo, it ? *it : none, cell.x, cell.y, cell.w, cell.h, fast);
+    paint_photo(cr, photo, it ? *it : none, cell.x, cell.y, cell.w, cell.h, fast,
+                [&] { cairo_rectangle(cr, cell.x, cell.y, cell.w, cell.h); });
   } else {
     if (cell.border > 0) {
       rounded_path(cr, x, y, w, h, cell.radius);
@@ -877,9 +891,8 @@ void draw_cell(cairo_t *cr, const Collage &c, const CollageCell &cell, const Col
       h -= 2 * cell.border;
     }
     if (w > 0 && h > 0) {
-      rounded_path(cr, x, y, w, h, std::max(0.0, cell.radius - cell.border));
-      cairo_clip(cr);
-      paint_photo(cr, photo, it ? *it : none, x, y, w, h, fast);
+      double r = std::max(0.0, cell.radius - cell.border);
+      paint_photo(cr, photo, it ? *it : none, x, y, w, h, fast, [&] { rounded_path(cr, x, y, w, h, r); });
     }
   }
   cairo_restore(cr);

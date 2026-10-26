@@ -197,7 +197,7 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(sde-gallery-core PUBLIC Threads::Threads)
 # Drawing shared by Gallery and Photo: line icons and the themed menu bar.
-add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp)
+add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp gallery/plugins_ui.cpp)
 target_link_libraries(sde-gallery-ui PUBLIC sde-gallery-core)
 add_executable(sde-gallery
   gallery/main.cpp
@@ -220,7 +220,10 @@ add_executable(sde-view
   photo/canvas.cpp
   photo/panels.cpp
   photo/drawing.cpp
-  photo/clipboard.cpp)
+  photo/clipboard.cpp
+  photo/collage_window.cpp
+  photo/collage_panel.cpp
+  photo/tools.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
 install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # Its icon (sde-photo, and sdeview for older launchers) is in data/icons.

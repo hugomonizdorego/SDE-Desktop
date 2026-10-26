@@ -35,6 +35,7 @@
 #include "library.h"
 #include "line_icons.h"
 #include "paint.h"
+#include "plugins.h"
 #include "save.h"
 #include "theme.h"
 #include "thumbnails.h"
@@ -262,9 +263,14 @@ class PhotoWindow : public sde::BufferedWindow {
   void hide() override;
 
   const sde::Theme &theme() const { return theme_; }
+  static PhotoWindow *instance() { return instance_; }
+  // Shows |path| (with its folder) in the Photo window, which is made when
+  // there is none yet (e.g. after "Open in Photo" in the collage editor).
+  static void show_file(const std::string &path);
   // Opening.
   void open(const std::string &path, const gallery::Album &album, bool explicit_album,
             gallery::Sort sort);
+  void new_collage();
   void open_dialog();
   void go(int index);
   void step(int delta);
@@ -336,6 +342,13 @@ class PhotoWindow : public sde::BufferedWindow {
   void update_title();
   Canvas *canvas() { return canvas_; }
 
+  // Plugins (tools.cpp): built-in ones that can be switched off, and
+  // action plugins (*.plugin files) that run a program on the photo.
+  bool plugin_on(const std::string &id) const;
+  void load_plugins();
+  void show_plugins();
+  void run_action(size_t index);
+
  private:
   struct Button {
     gallery::icon::Kind glyph;
@@ -399,6 +412,8 @@ class PhotoWindow : public sde::BufferedWindow {
   DrawSettings draw_;
   bool draw_on_load_ = false;
   std::string toast_;
+  std::map<std::string, bool> plugins_;         // built-in plugin id -> on
+  std::vector<gallery::ActionPlugin> actions_;  // action plugins that are on
 
   Canvas *canvas_ = nullptr;
   SidePanel *panel_ = nullptr;

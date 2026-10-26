@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include "build_config.h"
+#include "collage_ui.h"
 #include "config.h"
 #include "desktop_entry.h"
 #include "i18n.h"
@@ -29,6 +30,7 @@
 #include "process.h"
 #include "spawn.h"
 #include "util.h"
+#include "wm.h"
 #include "x11.h"
 
 using namespace sde;
@@ -49,7 +51,8 @@ enum MenuId {
   M_OPEN = 1, M_SAVE, M_SAVE_AS, M_COPY, M_WALLPAPER, M_PRINT, M_OPEN_WITH, M_SHOW_FILES, M_SHOW_GALLERY,
   M_TRASH, M_CLOSE, M_UNDO, M_REDO, M_ROT_LEFT, M_ROT_RIGHT, M_FLIP_H, M_FLIP_V, M_CROP, M_RESIZE,
   M_ADJUST, M_FILTERS, M_DRAW, M_DELETE_MARK, M_RESET, M_ZOOM_IN, M_ZOOM_OUT, M_FIT, M_ACTUAL, M_FILL, M_INFO,
-  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT
+  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT, M_NEW_COLLAGE, M_PLUGINS,
+  M_ACTION = 1000  // + the index of an action plugin
 };
 
 // The Photo icon (see sdeview.svg).
@@ -146,6 +149,7 @@ PhotoWindow::PhotoWindow(int w, int h) : BufferedWindow(w, h, _("Photo")) {
   resizable(nullptr);
   size_range(S(480), S(360));
   xclass("Sdeview");
+  load_plugins();
   build_menu();
   apply_theme();
   layout();
@@ -212,13 +216,15 @@ int PhotoWindow::x_event_handler(int) {
 // ----------------------------------------------------------------- menu
 
 void PhotoWindow::build_menu() {
+  menu_->clear();  // rebuilt when plugins are switched on or off
   auto add = [this](const std::string &label, int sc, long id, int flags = 0) {
     std::string l = label;
     menu_->add(l.c_str(), sc, menu_cb, reinterpret_cast<void *>(id), flags);
   };
   std::string f = std::string(_("File")) + "/", e = std::string(_("Edit")) + "/", v = std::string(_("View")) + "/",
               h = std::string(_("Help")) + "/";
-  add(f + _("Open…"), FL_CTRL + 'o', M_OPEN, FL_MENU_DIVIDER);
+  add(f + _("Open…"), FL_CTRL + 'o', M_OPEN, plugin_on("collage") ? 0 : FL_MENU_DIVIDER);
+  if (plugin_on("collage")) add(f + _("New Collage…"), FL_CTRL + 'n', M_NEW_COLLAGE, FL_MENU_DIVIDER);
   add(f + _("Save"), FL_CTRL + 's', M_SAVE);
   add(f + _("Save As…"), FL_CTRL + FL_SHIFT + 's', M_SAVE_AS);
   add(f + _("Copy Image"), FL_CTRL + 'c', M_COPY, FL_MENU_DIVIDER);
@@ -251,6 +257,16 @@ void PhotoWindow::build_menu() {
   add(v + _("Filmstrip"), 'b', M_FILMSTRIP, FL_MENU_TOGGLE | FL_MENU_DIVIDER);
   add(v + _("Full Screen"), FL_F + 11, M_FULLSCREEN, FL_MENU_TOGGLE);
   add(v + _("Slideshow in Gallery"), FL_F + 5, M_SLIDESHOW);
+  // Tools: what the plugins add, then the action plugins.
+  std::string tl = std::string(_("Tools")) + "/";
+  if (plugin_on("collage")) add(tl + _("New Collage…"), 0, M_NEW_COLLAGE, FL_MENU_DIVIDER);
+  for (size_t i = 0; i < actions_.size(); ++i) {
+    std::string name = actions_[i].name;
+    for (auto &ch : name)
+      if (ch == '/') ch = '|';  // a slash would start a submenu
+    add(tl + name, 0, M_ACTION + long(i), i + 1 == actions_.size() ? FL_MENU_DIVIDER : 0);
+  }
+  add(tl + _("Plugins…"), 0, M_PLUGINS);
   add(h + _("Keyboard Shortcuts"), FL_F + 1, M_SHORTCUTS);
   add(h + _("About Photo"), 0, M_ABOUT);
 }
@@ -260,6 +276,7 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
   if (!self) return;
   switch (reinterpret_cast<long>(data)) {
     case M_OPEN: self->open_dialog(); break;
+    case M_NEW_COLLAGE: self->new_collage(); break;
     case M_SAVE: self->save(); break;
     case M_SAVE_AS: self->save_as(); break;
     case M_COPY: self->copy_to_clipboard(); break;
@@ -303,6 +320,10 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
     case M_SLIDESHOW: self->slideshow_in_gallery(); break;
     case M_SHORTCUTS: self->show_shortcuts(); break;
     case M_ABOUT: self->show_about(); break;
+    case M_PLUGINS: self->show_plugins(); break;
+    default:
+      if (reinterpret_cast<long>(data) >= M_ACTION) self->run_action(size_t(reinterpret_cast<long>(data) - M_ACTION));
+      break;
   }
   self->redraw();
 }
@@ -406,6 +427,33 @@ void PhotoWindow::open_dialog() {
   std::string dir = path.substr(0, path.rfind('/'));
   history_.reset();
   open(path, Album{AlbumKind::Directory, dir.empty() ? "/" : dir}, false, gallery::Sort::Name);
+}
+
+void PhotoWindow::show_file(const std::string &path) {
+  std::string dir = path.substr(0, path.rfind('/'));
+  Album album{AlbumKind::Directory, dir.empty() ? "/" : dir};
+  if (!instance_) {
+    int wx = 0, wy = 0, w = S(1280), h = S(840);
+    fit_to_work_area(wx, wy, w, h);
+    auto *win = new PhotoWindow(std::max(w, S(480)), std::max(h, S(360)));
+    win->position(wx, wy);
+    win->show();
+    XClassHint hint{const_cast<char *>("sde-view"), const_cast<char *>("Sdeview")};
+    XSetClassHint(fl_display, fl_xid(win), &hint);
+  } else {
+    if (instance_->modified() && !instance_->confirm_discard()) return;
+    instance_->show();
+    x11::activate_window(fl_xid(instance_));
+  }
+  instance_->history_.reset();
+  instance_->open(path, album, false, gallery::Sort::Name);
+}
+
+void PhotoWindow::new_collage() {
+  // The photo shown is the first one; the chooser asks for the others.
+  std::vector<std::string> paths;
+  if (const Photo *p = current()) paths.push_back(p->path);
+  open_collage(paths, true);
 }
 
 void PhotoWindow::go(int index) {
@@ -1472,6 +1520,7 @@ bool PhotoWindow::keyboard(int key, int state) {
       case 's': shift ? save_as() : save(); return true;
       case 'c': if (!typing) { copy_to_clipboard(); return true; } return false;
       case 'o': open_dialog(); return true;
+      case 'n': if (plugin_on("collage")) new_collage(); return true;
       case 'w': case 'q': hide(); return true;
       case 'g': show_in_gallery(); return true;
       case 'p': print(); return true;
