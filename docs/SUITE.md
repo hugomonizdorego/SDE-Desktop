@@ -9,7 +9,7 @@ they are not duplicated inside SDE.
 
 | Application | Executable | Source |
 | --- | --- | --- |
-| Niny | `niny` | native SDE application (Selviana DE Project) |
+| Niny | `niny` | native SDE application (Selviana DE Project); tabs and menu bar: [NINY.md](NINY.md) |
 | Liria | `liria` | [caja](https://github.com/mate-desktop/caja) |
 | Xanara | `xanara` | native SDE application (Selviana DE Project) |
 | Taca | `taca` | native SDE application (Selviana DE Project) |
