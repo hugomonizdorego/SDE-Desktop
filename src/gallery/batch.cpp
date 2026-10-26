@@ -395,7 +395,9 @@ void GalleryWindow::print_files(const std::vector<std::string> &paths) {
     chooser.title(_("Save as PDF"));
     chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
     chooser.directory(user_dir("DOCUMENTS").empty() ? home_dir().c_str() : user_dir("DOCUMENTS").c_str());
-    chooser.preset_file((paths.size() == 1 ? basename_of(paths[0]) + ".pdf" : std::string(_("Photos")) + ".pdf").c_str());
+    std::string stem = basename_of(paths[0]);
+    if (stem.rfind('.') != std::string::npos && stem.rfind('.') > 0) stem = stem.substr(0, stem.rfind('.'));
+    chooser.preset_file(((paths.size() == 1 ? stem : std::string(_("Photos"))) + ".pdf").c_str());
     chooser.filter("PDF\t*.pdf");
     if (chooser.show() != 0 || !chooser.filename()) return;
     pdf = chooser.filename();

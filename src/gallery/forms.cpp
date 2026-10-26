@@ -50,10 +50,24 @@ void style_input(Fl_Input *in, const Theme &t) {
   in->textfont(FL_HELVETICA);
 }
 
+// The work area of the screen the program's window is on.
+void work_area(int &x, int &y, int &w, int &h) {
+  Fl_Window *parent = Fl::first_window();
+  int n = parent ? Fl::screen_num(parent->x() + parent->w() / 2, parent->y() + parent->h() / 2) : 0;
+  Fl::screen_work_area(x, y, w, h, n);
+}
+
 void run_window(Fl_Window *win) {
   Fl_Window *parent = Fl::first_window();
-  if (parent && parent != win)
-    win->position(parent->x() + (parent->w() - win->w()) / 2, parent->y() + std::max(0, (parent->h() - win->h()) / 3));
+  if (parent && parent != win) {
+    int x = parent->x() + (parent->w() - win->w()) / 2, y = parent->y() + std::max(0, (parent->h() - win->h()) / 3);
+    // Whole on the screen, title bar included.
+    int sx, sy, sw, sh;
+    work_area(sx, sy, sw, sh);
+    x = std::max(sx, std::min(x, sx + sw - win->w()));
+    y = std::max(sy + S(28), std::min(y, sy + sh - win->h()));
+    win->position(x, y);
+  }
   win->set_modal();
   win->show();
   while (win->shown()) Fl::wait();
@@ -83,7 +97,18 @@ struct Form::Impl {
    public:
     Win(Impl *impl, int w, int h) : BufferedWindow(w, h), impl_(impl) {}
     void draw() override { impl_->draw(); }
-    void paint_children() { draw_children(); }
+    // The controls of the rows are clipped to the part that scrolls; the
+    // buttons are always whole.
+    void paint_children(int clip_h) {
+      for (int i = 0; i < children(); ++i) {
+        Fl_Widget &c = *child(i);
+        if (!c.visible()) continue;
+        bool row = c.y() < clip_h;
+        if (row) fl_push_clip(0, 0, w(), clip_h);
+        draw_child(c);
+        if (row) fl_pop_clip();
+      }
+    }
     int handle(int event) override { return impl_->handle(event) ? 1 : BufferedWindow::handle(event); }
     Impl *impl_;
   };
@@ -99,14 +124,20 @@ struct Form::Impl {
   Win *win = nullptr;
   int result = 0;
   int hover_row = -1, hover_chip = -1;
+  // On a small screen the rows scroll above the buttons.
+  double scroll = 0;
+  int content_h = 0;
 
   int width() const { return S(520); }
+  // Where the buttons begin (the rows are drawn above).
+  int rows_bottom() const { return win ? win->h() - S(64) : 1 << 20; }
+  bool scrolls() const { return win && content_h > win->h(); }
 
-  // Places the rows; returns the height of the dialog.
+  // Places the rows; returns the height of the whole dialog.
   int layout() {
     const Theme &t = active_theme();
     int x = S(24), w = width() - S(48);
-    double y = S(20) + S(30);
+    double y = S(20) + S(30) - scroll;
     text_font(t.font_size);
     if (!message.empty()) y += S(20) * double(wrap_words(message, w).size()) + S(6);
     y += S(10);
@@ -151,16 +182,30 @@ struct Form::Impl {
       preview_y = y;
       y += S(24) + preview_rows * S(20) + S(16) + S(10);
     }
-    return int(y + S(60));
+    return int(y + scroll + S(60));
+  }
+
+  void scroll_by(double dy) {
+    if (!win) return;
+    double most = std::max(0, content_h - win->h());
+    double s = std::max(0.0, std::min(most, scroll + dy));
+    if (s == scroll) return;
+    scroll = s;
+    layout();
+    win->redraw();
   }
 
   void draw() {
     const Theme &t = active_theme();
     layout();
     int x = S(24), w = width() - S(48);
+    int clip_h = scrolls() ? rows_bottom() : win->h();
     {
       Painter p(win->w(), win->h());
       p.fill_rect(0, 0, win->w(), win->h(), t.surface);
+      cairo_save(p.cr());
+      cairo_rectangle(p.cr(), 0, 0, win->w(), clip_h);
+      cairo_clip(p.cr());
       for (size_t i = 0; i < rows.size(); ++i) {
         const Row &r = rows[i];
         if (r.kind == Row::Choice) {
@@ -183,10 +228,20 @@ struct Form::Impl {
         double py = preview_y + S(24);
         p.fill_rounded(x, py, w, preview_rows * S(20) + S(16), Sd(9), t.surface_alt);
       }
+      cairo_restore(p.cr());
+      if (scrolls()) {
+        // A line above the buttons and a scroll bar show there is more.
+        p.line(0, clip_h - 0.5, win->w(), clip_h - 0.5, t.border.alpha(0.7));
+        double track = clip_h - S(16), thumb = std::max<double>(S(24), track * clip_h / content_h);
+        double most = std::max(1, content_h - win->h());
+        double ty = S(8) + (track - thumb) * scroll / most;
+        p.fill_rounded(win->w() - S(9), ty, S(4), thumb, Sd(2), t.text_dim.alpha(0.45));
+      }
     }
+    fl_push_clip(0, 0, win->w(), clip_h);
     text_font(t.font_size + S(2), true);
-    draw_text(title, x, S(16), w, S(30), t.text);
-    double y = S(50);
+    draw_text(title, x, int(S(16) - scroll), w, S(30), t.text);
+    double y = S(50) - scroll;
     text_font(t.font_size);
     if (!message.empty())
       for (const auto &line : wrap_words(message, w)) {
@@ -252,7 +307,8 @@ struct Form::Impl {
         text_font(t.font_size);
         draw_text(r.hint, r.input->x() + S(4), r.input->y(), r.input->w() - S(8), r.input->h(), t.text_dim);
       }
-    win->paint_children();
+    fl_pop_clip();
+    win->paint_children(clip_h);
   }
 
   void notify() {
@@ -280,9 +336,14 @@ struct Form::Impl {
           return true;
         }
         return false;
+      case FL_MOUSEWHEEL:
+        if (!scrolls()) return false;
+        scroll_by(Fl::event_dy() * S(48));
+        return true;
       case FL_MOVE:
       case FL_ENTER: {
         int hr = -1, hc = -1;
+        if (my >= rows_bottom()) mx = my = -1000000;  // over the buttons
         for (size_t i = 0; i < rows.size(); ++i) {
           const Row &r = rows[i];
           if (r.kind == Row::Choice) {
@@ -391,7 +452,12 @@ void Form::set_enabled(int row, bool on) {
 int Form::run(const std::vector<std::string> &buttons) {
   const Theme &t = active_theme();
   int W = impl_->width();
-  int H = impl_->layout();
+  impl_->scroll = 0;
+  impl_->content_h = impl_->layout();
+  // Taller than the screen: the rows scroll above the buttons.
+  int sx, sy, sw, sh;
+  work_area(sx, sy, sw, sh);
+  int H = std::max(S(240), std::min(impl_->content_h, sh - S(40)));
   auto *win = new Impl::Win(impl_.get(), W, H);
   impl_->win = win;
   win->copy_label(impl_->title.c_str());
