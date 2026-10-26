@@ -280,3 +280,10 @@ if(TARGET merkadu AND SDE_XVFB)
     $<TARGET_FILE:merkadu> ${PROJECT_SOURCE_DIR})
   set_tests_properties(merkadu-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# Debrun (src/debrun): control files, versions (and dpkg's order), relations,
+# .deb files of every compression and broken ones, the changes beyond the
+# files, dpkg's status file, APT's simulation and the helper's contract.
+add_executable(debrun-tests test_debrun.cpp)
+target_link_libraries(debrun-tests PRIVATE debrun-core debrun-base)
+add_test(NAME debrun-model COMMAND debrun-tests)
