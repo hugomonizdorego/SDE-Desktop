@@ -646,6 +646,52 @@ static void test_notepad_tools() {
   CHECK(std::find(got.begin(), got.end(), "3rd") == got.end());
 }
 
+// 0.2 Alpha 3: the menu bar's underlined letters, the numbers of untitled
+// documents, keycaps on the Keyboard Shortcuts page and the Menu Bar setting.
+static void test_menu_bar() {
+  auto m = menu_mnemonics({"&File", "&Edit", "&View", "&Search", "&Document", "&Tools", "&Help"}, "z123456789");
+  CHECK_EQ(m.size(), size_t(7));
+  CHECK_EQ(m[0].text, std::string("File"));
+  CHECK(m[0].index == 0 && m[0].key == 'f');
+  CHECK(m[4].text == "Document" && m[4].key == 'd');
+  CHECK(m[6].key == 'h');
+  // Translations without "&" or with a letter taken: the next free letter.
+  m = menu_mnemonics({"&Berkas", "Sunting", "&Bantuan", "Alat", "Tampilan"});
+  CHECK(m[0].key == 'b' && m[0].index == 0 && m[0].text == "Berkas");
+  CHECK(m[1].key == 's' && m[1].index == 0);
+  CHECK(m[2].key == 'a' && m[2].index == 1 && m[2].text == "Bantuan");  // B is taken
+  CHECK(m[3].key == 'l' && m[3].index == 1);                            // A is taken too
+  CHECK(m[4].key == 't');
+  // Reserved letters (Alt+Z is Word Wrap), "&&", titles without letters.
+  m = menu_mnemonics({"&Zoom", "R&&D", "\xC3\x89" "dition", "123"}, "z");
+  CHECK(m[0].key == 'o' && m[0].index == 1);
+  CHECK(m[1].text == "R&D" && m[1].key == 'r' && m[1].index == 0);
+  CHECK(m[2].key == 'd' && m[2].index == 2);  // after the two bytes of the É
+  CHECK(m[3].key == '1');
+  m = menu_mnemonics({"\xC3\x89\xC3\x89"});
+  CHECK(m[0].key == 0 && m[0].index == -1);
+
+  CHECK_EQ(free_untitled_number({}), 1);
+  CHECK_EQ(free_untitled_number({1, 2, 4}), 3);
+  CHECK_EQ(free_untitled_number({2, 3}), 1);
+
+  CHECK(shortcut_keys("Ctrl+Shift+S") == (std::vector<std::string>{"Ctrl", "Shift", "S"}));
+  CHECK(shortcut_keys("Ctrl++") == (std::vector<std::string>{"Ctrl", "+"}));
+  CHECK(shortcut_keys("Ctrl+Page Down") == (std::vector<std::string>{"Ctrl", "Page Down"}));
+  CHECK(shortcut_keys("Ctrl+,") == (std::vector<std::string>{"Ctrl", ","}));
+  CHECK(shortcut_keys("F10") == (std::vector<std::string>{"F10"}));
+
+  Settings s;
+  CHECK(s.menu_bar);  // shown right away
+  Ini ini;
+  ini.parse("[view]\nmenu_bar=false\n");
+  s.from_ini(ini);
+  CHECK(!s.menu_bar);
+  Ini out;
+  s.to_ini(out);
+  CHECK_EQ(out.get("view", "menu_bar"), std::string("false"));
+}
+
 int main() {
   test_codec();
   test_syntax();
@@ -655,6 +701,7 @@ int main() {
   test_textops();
   test_markdown();
   test_notepad_tools();
+  test_menu_bar();
   printf("niny-tests: %d checks, %d failures\n", checks, failures);
   return failures ? 1 : 0;
 }

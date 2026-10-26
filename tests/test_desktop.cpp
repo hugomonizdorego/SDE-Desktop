@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Unit tests for the sde-desktop drag and drop model: drop actions, URI
 // lists, dropped payloads, "Keep both" names, the icon position store and
-// grid placement, and the POSIX file operations (in a temporary folder).
+// grid placement, and the POSIX file operations (in a temporary folder),
+// also onto a simulated USB stick that is pulled out (0.2.0 Alpha 3).
+#include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -13,6 +17,7 @@
 
 #include "desktop_model.h"
 #include "file_ops.h"
+#include "safe_copy.h"
 #include "util.h"
 
 using namespace sde;
@@ -293,6 +298,138 @@ static void test_file_ops() {
   CHECK(!path_exists(root));
 }
 
+// A USB stick that is pulled out: the safe writer's system calls (src/
+// common/safe_copy.h) go to this drive. Data goes into the files as usual;
+// once |limit| bytes are written the drive's writeback fails (EIO) and so
+// does everything after it; |sync_fails| makes only the final sync fail.
+struct PulledDrive {
+  long long limit = 1LL << 62, written = 0;
+  bool gone = false, sync_fails = false;
+};
+
+static int pulled_sync_range(void *data, int, long long, long long, unsigned int flags) {
+  auto *d = static_cast<PulledDrive *>(data);
+  if (d->gone || ((flags & SYNC_FILE_RANGE_WAIT_AFTER) && d->written >= d->limit)) {
+    d->gone = true;
+    errno = EIO;
+    return -1;
+  }
+  return 0;
+}
+
+static int pulled_sync(void *data, int) {
+  auto *d = static_cast<PulledDrive *>(data);
+  if (d->gone || d->sync_fails) {
+    errno = EIO;
+    return -1;
+  }
+  return 0;
+}
+
+static long long pulled_read(void *, int fd, void *buffer, size_t size, long long offset) {
+  return pread(fd, buffer, size, offset);
+}
+
+static long long pulled_write(void *data, int fd, const void *buffer, size_t size, long long offset) {
+  auto *d = static_cast<PulledDrive *>(data);
+  if (d->gone) {
+    errno = EIO;
+    return -1;
+  }
+  long long n = pwrite(fd, buffer, size, offset);
+  if (n > 0) d->written += n;
+  return n;
+}
+
+static double pulled_now(void *) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return double(ts.tv_sec) + ts.tv_nsec / 1e9;
+}
+
+static void test_pulled_drive() {
+  static const SdeWriterOps ops = {pulled_sync_range, pulled_sync, pulled_sync, pulled_sync,
+                                   pulled_read,       pulled_write, pulled_now};
+  char tmpl[] = "/tmp/sde-desktop-pulled-XXXXXX";
+  std::string root = mkdtemp(tmpl);
+  put(root + "/src/folder/video.bin", std::string(24 << 20, 'v'));  // more than the writer's window
+  put(root + "/src/small/a.txt", std::string(300000, 'a'));          // all in the window
+  for (int i = 0; i < 20; ++i) put(root + "/src/folder/note" + std::to_string(i) + ".txt", std::string(40000, 'n'));
+  put(root + "/src/single.bin", std::string(2 << 20, 's'));
+  make_dirs(root + "/stick");
+  setenv("SDE_SAFE_COPY", "always", 1);  // a temporary folder is no USB stick
+  PulledDrive drive;
+  set_test_writer_ops(&ops, &drive);
+
+  // Pulled out after 1 MiB: the copy fails, says why, leaves no half copy
+  // and still ends (no "done" for what is not on the drive).
+  drive.limit = 1 << 20;
+  FileProgress copying;
+  FileOp copy;
+  copy.kind = FileOp::COPY;
+  copy.src = root + "/src/folder";
+  copy.dst = root + "/stick/folder";
+  std::vector<std::string> errors;
+  CHECK(run_file_ops({copy}, &copying, &errors) >= 1);
+  bool said = false;
+  for (auto &e : errors) said = said || e.find(strerror(EIO)) != std::string::npos;
+  CHECK(said);
+  CHECK(!path_exists(root + "/stick/folder"));
+  CHECK(copying.phase == FileProgress::DONE);
+  CHECK(copying.done < copying.total);
+  CHECK(copying.done <= (2 << 20));  // the progress never claimed more than the drive took
+
+  // The same copy on a drive that stays: complete, durable, every byte.
+  drive = PulledDrive();
+  FileProgress fine;
+  errors.clear();
+  CHECK(run_file_ops({copy}, &fine, &errors) == 0);
+  CHECK(errors.empty());
+  CHECK(fine.done == fine.total && fine.total == (24 << 20) + 20 * 40000);
+  std::string text;
+  CHECK(read_file(root + "/stick/folder/video.bin", text) && text == std::string(24 << 20, 'v'));
+  remove_tree(root + "/stick/folder");
+
+  // Pulled out when everything was written but not yet on the drive: the
+  // last sync says so, and the copy does not stay as if it were complete.
+  drive = PulledDrive();
+  drive.limit = 1;
+  FileOp small;
+  small.kind = FileOp::COPY;
+  small.src = root + "/src/small";
+  small.dst = root + "/stick/small";
+  FileProgress late;
+  errors.clear();
+  CHECK(run_file_ops({small}, &late, &errors) >= 1);
+  CHECK(!errors.empty() && !path_exists(root + "/stick/small"));
+  CHECK(late.done == 0 && late.phase == FileProgress::DONE);
+
+  // A move to another file system (tmpfs, when there is one): pulled out
+  // during the copy, or only at the final sync, the source stays complete
+  // and no unreliable copy is left behind.
+  char shm[] = "/dev/shm/sde-desktop-pulled-XXXXXX";
+  if (path_exists("/dev/shm") && mkdtemp(shm) && !same_filesystem(root + "/src/single.bin", shm)) {
+    std::string dst = std::string(shm) + "/single.bin";
+    for (int round = 0; round < 2; ++round) {
+      drive = PulledDrive();
+      if (round == 0) drive.limit = 512 << 10;
+      else drive.sync_fails = true;
+      FileOp move;
+      move.kind = FileOp::MOVE;
+      move.src = root + "/src/single.bin";
+      move.dst = dst;
+      errors.clear();
+      CHECK(run_file_ops({move}, nullptr, &errors) >= 1);
+      CHECK(read_file(root + "/src/single.bin", text) && text == std::string(2 << 20, 's'));
+      CHECK(!path_exists(dst));
+    }
+    remove_tree(shm);
+  }
+  set_test_writer_ops(nullptr, nullptr);
+  unsetenv("SDE_SAFE_COPY");
+  remove_tree(root);
+}
+
 int main() {
   test_actions();
   test_uris();
@@ -300,6 +437,7 @@ int main() {
   test_names();
   test_positions();
   test_file_ops();
+  test_pulled_drive();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);
     return 1;

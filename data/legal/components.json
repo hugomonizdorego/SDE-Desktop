@@ -440,7 +440,8 @@
       "credits": ["Caja's COPYING notes that its license does not apply to the Eazel trademarks"],
       "trademarks": ["sde"],
       "notices": ["/usr/share/doc/sde/upstream/caja/copyright", "/usr/share/doc/sde/upstream/caja/COPYING"],
-      "sources": ["vendor/suite/", "suite/overlays/liria/", "suite/sde-brand.h", "src/common/transfer_model.h"]
+      "sources": ["vendor/suite/", "suite/overlays/liria/", "suite/sde-brand.h", "src/common/transfer_model.h",
+                  "src/common/transfer_scene.h", "src/common/safe_copy.h"]
     },
     {
       "id": "sde-fltk",

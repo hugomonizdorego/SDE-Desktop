@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
-// The Settings page, shown inside the window like Notepad's: rows grouped
+// The Preferences page, shown inside the window like Notepad's: rows grouped
 // under headings (Appearance, Text formatting, View, Opening files,
 // Spelling and the web, Editing, Files and recovery) and an About section.
+// The same page lists the keyboard shortcuts (Help > Keyboard Shortcuts).
 #include <FL/Fl.H>
 #include <FL/fl_draw.H>
 
@@ -18,15 +19,14 @@
 #include "i18n.h"
 #include "niny.h"
 #include "process.h"
+#include "textops.h"
 #include "util.h"
 
 using namespace sde;
 
 namespace niny {
 
-namespace {
-
-std::vector<std::string> font_families() {
+const std::vector<std::string> &font_families() {
   static std::vector<std::string> cache;
   if (!cache.empty()) return cache;
   std::set<std::string> names;
@@ -44,6 +44,48 @@ std::vector<std::string> font_families() {
   cache.push_back("Sans");
   cache.push_back("Serif");
   return cache;
+}
+
+namespace {
+
+// The keys of a shortcut row as keycaps ending at |right|: a box for each
+// key, a slash between alternatives ("Ctrl+Y, Ctrl+Shift+Z").
+struct Keycap {
+  std::string text;
+  double x = 0, w = 0;
+  bool slash = false;
+};
+std::vector<Keycap> keycaps(const std::string &keys, double right) {
+  std::vector<std::string> alternatives;
+  size_t from = 0;
+  for (size_t at; (at = keys.find(", ", from)) != std::string::npos; from = at + 2)
+    alternatives.push_back(keys.substr(from, at - from));
+  alternatives.push_back(keys.substr(from));
+  text_font(look().theme.font_size - S(1));
+  std::vector<Keycap> caps;
+  double x = 0;
+  for (size_t a = 0; a < alternatives.size(); ++a) {
+    if (a) {
+      Keycap s;
+      s.text = "/";
+      s.slash = true;
+      s.x = x + S(2);
+      s.w = text_width("/") + S(8);
+      caps.push_back(s);
+      x += s.w + S(6);
+    }
+    for (const std::string &k : shortcut_keys(alternatives[a])) {
+      Keycap c;
+      c.text = k;
+      c.x = x;
+      c.w = std::max<double>(S(28), text_width(k) + S(16));
+      caps.push_back(c);
+      x += c.w + S(4);
+    }
+  }
+  double shift = right - (x - S(4));
+  for (Keycap &c : caps) c.x += shift;
+  return caps;
 }
 
 Color hover_color() { return look().dark ? Color::hex(0xFFFFFF, 0.07) : Color::hex(0x000000, 0.045); }
@@ -231,8 +273,9 @@ class Action : public Fl_Widget {
 }  // namespace
 
 struct SettingsPage::Row {
-  enum Kind { Heading, Item, Preview, About } kind = Item;
+  enum Kind { Heading, Item, Preview, About, Shortcut } kind = Item;
   std::string title, desc;
+  std::string keys;  // Shortcut rows: "Ctrl+S", or alternatives separated by ", "
   int icon = -1;
   std::vector<Fl_Widget *> controls;
   int y = 0, h = 0;  // content coordinates
@@ -259,6 +302,12 @@ void SettingsPage::rebuild() {
   redraw();
 }
 
+void SettingsPage::set_mode(Mode m) {
+  if (m != mode_) scroll_ = 0;
+  mode_ = m;
+  rebuild();
+}
+
 void SettingsPage::build() {
   for (Row *r : rows_) delete r;
   rows_.clear();
@@ -272,6 +321,72 @@ void SettingsPage::build() {
   // first ask() (About Niny) dereferenced a null window().
   Fl_Group *outer = Fl_Group::current();
   begin();
+  back_ = new DrawnButton(0, 0, S(40), S(40), [this](Painter &p, bool hot, bool down) {
+    const Look &L = look();
+    if (hot || down) p.fill_rounded(back_->x(), back_->y(), back_->w(), back_->h(), Sd(6), hover_color());
+    icon::draw(p, icon::ChevronLeft, back_->x() + S(10), back_->y() + S(10), S(20), L.text);
+  }, nullptr, Sd(6));
+  back_->tooltip(_("Back (Esc)"));
+  back_->callback([](Fl_Widget *, void *p) { static_cast<App *>(p)->show_settings_page(false); }, app_);
+  if (mode_ == Mode::Shortcuts) build_shortcuts();
+  else build_settings();
+  end();
+  Fl_Group::current(outer);
+  // Mark the first and last rows of each group for the rounded corners.
+  for (size_t i = 0; i < rows_.size(); ++i) {
+    Row *r = rows_[i];
+    if (r->kind == Row::Heading) continue;
+    r->first = i == 0 || rows_[i - 1]->kind == Row::Heading;
+    r->last = i + 1 == rows_.size() || rows_[i + 1]->kind == Row::Heading;
+  }
+}
+
+// Help > Keyboard Shortcuts: the commands that have keys, by the menu that
+// has them, then the keys of the tabs and the menus.
+void SettingsPage::build_shortcuts() {
+  auto heading = [&](const std::string &t) {
+    Row *r = new Row;
+    r->kind = Row::Heading;
+    r->title = t;
+    rows_.push_back(r);
+  };
+  auto keys = [&](const std::string &title, const std::string &k) {
+    Row *r = new Row;
+    r->kind = Row::Shortcut;
+    r->title = title;
+    r->keys = k;
+    rows_.push_back(r);
+  };
+  for (const char *group : {N_("File"), N_("Edit"), N_("Format"), N_("View"), N_("Search"), N_("Document"),
+                            N_("Tools"), N_("Help")}) {
+    bool any = false;
+    for (const Command &c : app_->commands()) {
+      if (c.group != _(group) || c.shortcut_text.empty()) continue;
+      if (!any) heading(_(group));
+      any = true;
+      keys(c.label, c.shortcut_text);
+    }
+  }
+  heading(_("Tabs"));
+  keys(_("Next tab, previous tab"), "Ctrl+Tab, Ctrl+Shift+Tab");
+  keys(_("Tab 1 to 8"), "Alt+1…8");
+  keys(_("Last tab"), "Alt+9");
+  heading(_("Menus"));
+  keys(_("Open the menu bar"), "F10");
+  // Alt and the underlined letter of each title.
+  for (int id = Toolbar::File; id <= Toolbar::Help; ++id)
+    if (int k = Toolbar::mnemonic(id))
+      keys(format(_("%s menu"), Toolbar::title(id).c_str()), std::string("Alt+") + char(toupper(k)));
+  keys(_("Show the menu bar when it is hidden"), "Alt");
+  keys(_("Context menu"), "Menu, Shift+F10");
+  heading(_("More keys"));
+  keys(_("Redo"), "Ctrl+Y");
+  keys(_("Delete the word before or after the cursor"), "Ctrl+Backspace, Ctrl+Delete");
+  keys(_("Zoom with the mouse wheel"), "Ctrl+Wheel");
+  keys(_("Close the find bar, the palette or this page"), "Escape");
+}
+
+void SettingsPage::build_settings() {
   App *app = app_;
   auto changed = [app] { app->apply_settings(true); };
   auto heading = [&](const std::string &t) {
@@ -305,17 +420,6 @@ void SettingsPage::build() {
                       },
                       width);
   };
-  Settings &s = app_->settings();
-  (void)s;
-
-  back_ = new DrawnButton(0, 0, S(40), S(40), [this](Painter &p, bool hot, bool down) {
-    const Look &L = look();
-    if (hot || down) p.fill_rounded(back_->x(), back_->y(), back_->w(), back_->h(), Sd(6), hover_color());
-    icon::draw(p, icon::ChevronLeft, back_->x() + S(10), back_->y() + S(10), S(20), L.text);
-  }, nullptr, Sd(6));
-  back_->tooltip(_("Back (Esc)"));
-  back_->callback([](Fl_Widget *, void *p) { static_cast<App *>(p)->show_settings_page(false); }, app_);
-
   heading(_("Appearance"));
   item(icon::Theme, _("App theme"), _("Follow the desktop, or always use light or dark colors"),
        {choice(
@@ -354,6 +458,8 @@ void SettingsPage::build() {
        {toggle(&Settings::syntax_colors)});
 
   heading(_("View"));
+  item(icon::Menu, _("Menu bar"), _("File, Edit, View and the other menus; Alt or F10 shows them when hidden"),
+       {toggle(&Settings::menu_bar)});
   item(icon::Info, _("Status bar"), _("Line and column, characters, file type, zoom, line ending and encoding"),
        {toggle(&Settings::status_bar)});
   item(icon::ListNumbered, _("Line numbers"), "", {toggle(&Settings::line_numbers)});
@@ -456,15 +562,6 @@ void SettingsPage::build() {
     r->kind = Row::About;
     rows_.push_back(r);
   }
-  end();
-  Fl_Group::current(outer);
-  // Mark the first and last rows of each group for the rounded corners.
-  for (size_t i = 0; i < rows_.size(); ++i) {
-    Row *r = rows_[i];
-    if (r->kind == Row::Heading) continue;
-    r->first = i == 0 || rows_[i - 1]->kind == Row::Heading;
-    r->last = i + 1 == rows_.size() || rows_[i + 1]->kind == Row::Heading;
-  }
 }
 
 void SettingsPage::resize(int X, int Y, int W, int H) {
@@ -486,6 +583,7 @@ void SettingsPage::relayout() {
       case Row::Item: r->h = r->desc.empty() ? S(54) : S(68); r->y = yy; break;
       case Row::Preview: r->h = S(72); r->y = yy; break;
       case Row::About: r->h = S(148); r->y = yy; break;
+      case Row::Shortcut: r->h = S(44); r->y = yy; break;
     }
     yy += r->h + (r->kind == Row::Heading ? 0 : S(3));
   }
@@ -640,11 +738,19 @@ void SettingsPage::draw() {
         p.fill_rounded(x0 + S(54), ry + S(12), col_w - S(72), r->h - S(24), Sd(5), L.editor);
         p.stroke_rounded(x0 + S(54) + 0.5, ry + S(12) + 0.5, col_w - S(72) - 1, r->h - S(24) - 1, Sd(5), L.border, 1);
       }
+      if (r->kind == Row::Shortcut)
+        for (const Keycap &c : keycaps(r->keys, x0 + col_w - S(16)))
+          if (!c.slash) {
+            double ky = ry + (r->h - S(26)) / 2.0;
+            p.fill_rounded(c.x, ky, c.w, S(26), Sd(5), L.field);
+            p.stroke_rounded(c.x + 0.5, ky + 0.5, c.w - 1, S(26) - 1, Sd(5), L.border, 1);
+          }
     }
     cairo_restore(cr);
   }
   text_font(L.theme.font_size + S(12), true);
-  draw_text(_("Settings"), x0 + S(46), oy + S(16), col_w - S(60), S(44), L.text);
+  draw_text(mode_ == Mode::Shortcuts ? _("Keyboard Shortcuts") : _("Preferences"), x0 + S(46), oy + S(16),
+            col_w - S(60), S(44), L.text);
   for (Row *r : rows_) {
     int ry = oy + r->y;
     if (ry > y() + h() || ry + r->h < y()) continue;
@@ -687,6 +793,16 @@ void SettingsPage::draw() {
                   col_w - S(100), S(20), L.dim);
         draw_text(format(_("Settings are kept in %s"), home_relative(settings_path()).c_str()), tx + S(22), ry + S(114),
                   col_w - S(100), S(20), L.dim);
+        break;
+      }
+      case Row::Shortcut: {
+        auto caps = keycaps(r->keys, x0 + col_w - S(16));
+        int left = caps.empty() ? right : int(caps.front().x) - S(16);
+        text_font(L.theme.font_size + S(1));
+        draw_text(r->title, tx, ry, left - tx, r->h, L.text);
+        text_font(L.theme.font_size - S(1));
+        for (const Keycap &c : caps)
+          draw_text(c.text, int(c.x), ry + (r->h - S(26)) / 2, int(c.w), S(26), c.slash ? L.dim : L.text, 1);
         break;
       }
     }

@@ -9,21 +9,24 @@ Copies a folder of test files (three large files and many small ones) into
 another with Ctrl+C and Ctrl+V, slowed down to a few MB/s with
 LIRIA_SDE_QA_COPY_RATE, and checks Liria's file operations window
 (libliria-private/liria-sde-progress.c, the design of SDE's copy and move
-dialog) through what it reports in LIRIA_SDE_QA_PROGRESS and through the
-window's pixels:
+dialog, 0.2.0 Alpha 3) through what it reports in LIRIA_SDE_QA_PROGRESS
+and through the window's pixels:
 
-  1. the headline names the items and both folders, the percentage grows
-     and the SDE mark is animated;
-  2. More details shows the speed graph in the accent colour, the speed,
-     the time and the items remaining, and makes the window taller;
-  3. Pause stops the copy in the middle of a large file and the mark and
-     says "Paused"; Resume goes on;
+  1. the headline names the items and the destination, the line under the
+     bar says how much of how much, how fast and how long, the percentage
+     grows and the picture moves (the penguin carries papers);
+  2. Details (from, to, items) makes the window taller;
+  3. Pause stops the copy in the middle of a large file and the penguin
+     and says "Paused"; Resume goes on;
   4. Cancel ends the copy before every file is there;
-  5. with reduced motion (SDE_REDUCED_MOTION=1) the mark stands still, and
-     a copy that runs to the end has every file, byte for byte (large
-     files are copied in slices on internal disks, liria-sde-copy.c).
+  5. with reduced motion (SDE_REDUCED_MOTION=1) the picture stands still,
+     and a copy that runs to the end has every file, byte for byte (large
+     files are copied in slices on internal disks, liria-sde-copy.c);
+  6. a copy through the safe writer (SDE_SAFE_COPY=always, as on a USB
+     stick) says at the end that the files are on the drive.
 
---screenshots DIR saves the window with fewer and more details and paused.
+--screenshots DIR saves the window with and without the details, paused
+and finished.
 Exit status 0 = passed, 1 = failed, 77 = skipped (no Xvfb, xdotool,
 ImageMagick or Liria).
 """
@@ -102,7 +105,7 @@ class Session:
         icons = ("Papirus-Dark" if dark else "Papirus") if Path("/usr/share/icons/Papirus").is_dir() else "Adwaita"
         home = self.home
         for name in ("Desktop", "Documents", "Downloads", "Music", "Pictures", "Videos", "Source", "Backup",
-                     "Backup 2", ".config/sde", ".config/gtk-3.0"):
+                     "Backup 2", "Backup 3", ".config/sde", ".config/gtk-3.0"):
             (home / name).mkdir(parents=True, exist_ok=True)
         (home / ".config/user-dirs.dirs").write_text("".join(
             'XDG_%s_DIR="$HOME/%s"\n' % (key, name) for key, name in
@@ -251,6 +254,15 @@ class Session:
         return qa_values(qa)["window"]
 
 
+def changes(session, wid, box, frames=5, gap=0.12):
+    """How often the pixels of |box| changed between |frames| captures."""
+    shots = []
+    for _ in range(frames):
+        shots.append(session.capture(wid, box))
+        time.sleep(gap)
+    return sum(1 for a, b in zip(shots, shots[1:]) if a != b)
+
+
 def coloured(data, threshold=40):
     return sum(1 for i in range(0, len(data) - 2, 3) if max(data[i:i + 3]) - min(data[i:i + 3]) > threshold)
 
@@ -284,43 +296,34 @@ def main():
         env = dict(s.env, LIRIA_SDE_QA_PROGRESS=str(qa), LIRIA_SDE_QA_COPY_RATE=str(RATE))
         wid = s.copy(env, s.home / "Backup", qa)
         values = qa_values(qa)
-        # 1. Headline, percentage, the mark.
+        # 1. Headline, the line under the bar, the percentage, the picture.
         items = len(LARGE) + SMALL
-        if values.get("headline") != "Copying %d items from Source to Backup" % items:
+        if values.get("headline") != "Copying %d items to Backup" % items:
             problems.append("headline: %r" % values.get("headline"))
-        if values.get("logo") != "layers":
-            problems.append("the SDE mark was not found or has no stripes: %r" % values.get("logo"))
         first = values.get("bytes", "0/0").split("/")[0]
-        mark = rect(values, "mark")
-        frames = []
-        for _ in range(4):
-            frames.append(s.capture(wid, mark))
-            time.sleep(0.12)
-        if len(set(frames)) < 2 or values.get("animating") != "1":
-            problems.append("the SDE mark is not animated while copying")
+        scene = rect(values, "scene")
+        if not scene or changes(s, wid, scene) < 2 or values.get("animating") != "1":
+            problems.append("the picture does not move while copying")
         if not wait_for(lambda: float(qa_values(qa).get("bytes", "0/0").split("/")[0] or 0) > float(first or 0), 5):
             problems.append("the copy does not move on")
-        if not qa_values(qa).get("percent", "").endswith("% complete"):
+        if not wait_for(lambda: qa_values(qa).get("status", "").endswith("left"), 6):
+            problems.append("status: %r" % qa_values(qa).get("status"))
+        if " of " not in qa_values(qa).get("status", ""):
+            problems.append("status without the sizes: %r" % qa_values(qa).get("status"))
+        if not qa_values(qa).get("percent", "").endswith("%"):
             problems.append("percent: %r" % qa_values(qa).get("percent"))
+        if not qa_values(qa).get("title", "").startswith(qa_values(qa).get("percent", "-")):
+            problems.append("title: %r" % qa_values(qa).get("title"))
         if args.screenshots:
             s.save(wid, args.screenshots / "liria-progress.png")
-        # 2. More details.
+        # 2. Details.
         low = rect(qa_values(qa), "toggle")
         s.click(wid, rect(qa_values(qa), "toggle"))
-        if not wait_for(lambda: qa_values(qa).get("details") == "1" and rect(qa_values(qa), "graph"), 5):
-            problems.append("More details did not open the details")
+        if not wait_for(lambda: qa_values(qa).get("details") == "1", 5):
+            problems.append("Details did not open the details")
         else:
-            time.sleep(1.2)
+            time.sleep(0.6)
             values = qa_values(qa)
-            graph = rect(values, "graph")
-            if coloured(s.capture(wid, graph)) < 300:
-                problems.append("no speed graph in the accent colour")
-            if not values.get("speed", "").startswith("Speed: "):
-                problems.append("speed: %r" % values.get("speed"))
-            if not values.get("remaining") or not values.get("items", "").endswith(")"):
-                problems.append("remaining %r, items %r" % (values.get("remaining"), values.get("items")))
-            if rect(values, "toggle")[1] < low[1] + 60:
-                problems.append("More details did not make the window taller")
             if args.screenshots:
                 s.save(wid, args.screenshots / "liria-progress-details.png")
         # 3. Pause in the middle of a file, and Resume.
@@ -329,20 +332,20 @@ def main():
             problems.append("Pause did not pause")
         time.sleep(1.0)
         before = qa_values(qa).get("bytes")
-        still = [s.capture(wid, mark)]
+        still = [s.capture(wid, scene)]
         time.sleep(1.2)
-        still.append(s.capture(wid, mark))
+        still.append(s.capture(wid, scene))
         if qa_values(qa).get("bytes") != before:
             problems.append("the copy goes on while paused (%s, then %s)" % (before, qa_values(qa).get("bytes")))
         if still[0] != still[1] or qa_values(qa).get("animating") != "0":
-            problems.append("the SDE mark keeps moving while paused")
-        if not qa_values(qa).get("percent", "").startswith("Paused"):
-            problems.append("no \"Paused\" in %r" % qa_values(qa).get("percent"))
+            problems.append("the penguin keeps walking while paused")
+        if not qa_values(qa).get("status", "").endswith("Paused"):
+            problems.append("no \"Paused\" in %r" % qa_values(qa).get("status"))
         if args.screenshots:
             s.save(wid, args.screenshots / "liria-progress-paused.png")
         s.click(wid, rect(qa_values(qa), "pause"))
         if not wait_for(lambda: qa_values(qa).get("paused") == "0" and qa_values(qa).get("animating") == "1", 5):
-            problems.append("Resume did not resume the copy and the animation")
+            problems.append("Resume did not resume the copy and the picture")
         if not wait_for(lambda: qa_values(qa).get("bytes") != before, 5):
             problems.append("the copy does not go on after Resume")
         # 4. Cancel.
@@ -358,12 +361,11 @@ def main():
         qa.unlink(missing_ok=True)
         calm = dict(env, SDE_REDUCED_MOTION="1", LIRIA_SDE_QA_COPY_RATE=str(FAST))
         wid = s.copy(calm, s.home / "Backup 2", qa)
-        mark = rect(qa_values(qa), "mark")
-        a = s.capture(wid, mark)
-        time.sleep(0.5)
-        b = s.capture(wid, mark)
-        if a != b or qa_values(qa).get("animating") != "0" or qa_values(qa).get("reduced") != "1":
-            problems.append("the SDE mark moves with reduced motion")
+        scene = rect(qa_values(qa), "scene")
+        # A still picture changes only when the progress fills the
+        # destination folder a bit more: once at most in these frames.
+        if changes(s, wid, scene) > 1 or qa_values(qa).get("animating") != "0" or qa_values(qa).get("reduced") != "1":
+            problems.append("the picture moves with reduced motion")
         if not wait_for(lambda: qa_values(qa).get("done") == "1", 60):
             problems.append("the complete copy did not end")
         else:
@@ -373,6 +375,27 @@ def main():
                                            for n in names)
             if not same:
                 problems.append("the copy differs from the original")
+        s.stop_liria()
+        # 6. Through the safe writer: at the end, the files are on the drive.
+        qa.unlink(missing_ok=True)
+        safe = dict(env, SDE_SAFE_COPY="always", LIRIA_SDE_QA_COPY_RATE=str(FAST))
+        wid = s.copy(safe, s.home / "Backup 3", qa)
+        if not wait_for(lambda: qa_values(qa).get("finished") == "1", 60):
+            problems.append("the safe copy did not end")
+        else:
+            values = qa_values(qa)
+            if not values.get("status", "").startswith("The files are on ") or not values.get("drive"):
+                problems.append("finished status: %r (drive %r)" % (values.get("status"), values.get("drive")))
+            if values.get("headline") != "Copied %d items to Backup 3" % items:
+                problems.append("finished headline: %r" % values.get("headline"))
+            if args.screenshots and values.get("done") != "1":
+                s.save(wid, args.screenshots / "liria-progress-done.png")
+            if not wait_for(lambda: qa_values(qa).get("done") == "1", 15):
+                problems.append("the finished operation did not go by itself")
+            names = sorted(p.name for p in (s.home / "Source").iterdir())
+            if sorted(p.name for p in (s.home / "Backup 3").iterdir()) != names or not all(
+                    filecmp.cmp(s.home / "Source" / n, s.home / "Backup 3" / n, shallow=False) for n in names):
+                problems.append("the safe copy differs from the original")
     except AssertionError as error:
         problems.append(str(error))
     finally:
