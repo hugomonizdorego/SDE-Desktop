@@ -303,7 +303,11 @@ def menu_checks():
     a=item('SDE Menu','@list');s=menu_scroll()
     run('xdotool','mousemove',g['x']+a[0]+a[2]//2,g['y']+a[1]+a[3]//2)
     for _ in range(3):run('xdotool','click','5');time.sleep(.1)
-    waitfor(lambda:menu_scroll()>s,'wheel did not scroll the list');s=menu_scroll()
+    waitfor(lambda:menu_scroll()>s,'wheel did not scroll the list')
+    # Where the glide ends (under load the first dump comes while it moves).
+    def glided():
+        before=menu_scroll();time.sleep(.25);return menu_scroll()==before
+    waitfor(glided,'the list kept scrolling');s=menu_scroll()
     run('xdotool','click','4');waitfor(lambda:menu_scroll()<s,'wheel up did not scroll back')
     # Scrollbar drag.
     bx=g['x']+a[0]+a[2]-round(4*scale);s=menu_scroll()
