@@ -108,47 +108,57 @@ Custom widgets keep drawing themselves (`sde::FlatButton`, `sde::Switch` ...).
 
 ## Copy and move progress (TransferDialog)
 
-Since 0.2.0 Alpha 2 `sde::TransferDialog` (`src/common/transfer_dialog.h`)
-shows a copy or move like Windows 10 does: the SDE mark, whose red, green
-and blue stripes carry a pulse of light from left to right while the
-operation runs (about 30 frames per second, only the mark is redrawn),
-"Copying 1,234 items from Documents to Backup", "42% complete" with Pause
-and Cancel, a slim progress bar, and with More details a speed graph (the
-part done tinted, the speed along the progress as a filled area, a line at
-the current speed with "Speed: 85.3 MB/s"), the item being copied, the time
-remaining ("About 2 minutes") and the items remaining ("120 (1.2 GB)"). The
-window title is the percentage; closing the window cancels. Paused, the mark
-stands still, the bar and graph turn amber and the text says "Paused - 42%
-complete"; the mark also stands still with reduced motion (`[aero]
-animations=false` or `[appearance] low_resource=true` in sde.conf, or
-`SDE_REDUCED_MOTION=1`). The desktop uses it for drops and Paste
-(`src/desktop/main.cpp`, `FileJob`).
+Since 0.2.0 Alpha 3 `sde::TransferDialog` (`src/common/transfer_dialog.h`)
+shows copies, moves, deletions and the Trash in SDE's own design
+([TRANSFERS.md](TRANSFERS.md)): a penguin that carries papers from one
+folder to the other (a bin for Delete and the Trash; it sits when paused,
+jumps when done, is puzzled on errors), "Copying 3 items to Backup" with
+Pause and Cancel, a slim bar, "780 MB of 1.2 GB · 22 MB/s · About 40
+seconds left", the item being copied and Details (from, to, items). One
+window holds every operation of the program, the first with the picture,
+the others under it as the queue. An operation that ends well says so for a
+few seconds ("The files are on SANDISK — you can remove it." for a
+removable drive); one that failed stays with its errors until its cross is
+clicked. The picture moves at about 30 frames per second while it is
+visible (only it is repainted) and stands still when paused, minimized and
+with reduced motion (`[aero] animations=false` or `[appearance]
+low_resource=true` in sde.conf, or `SDE_REDUCED_MOTION=1`). The window title
+is the progress and the headline; closing the window cancels what still
+runs. The desktop uses it for drops and Paste (`src/desktop/main.cpp`,
+`FileJob`).
 
 ```cpp
 #include "transfer_dialog.h"
 
-auto *dialog = new sde::TransferDialog(sde::TransferDialog::Operation::Copy, "Documents", "Backup");
-dialog->on_pause = [job](bool paused) { job->pause = paused; };
-dialog->on_cancel = [job] { job->cancel = true; };
+auto *dialog = sde::TransferDialog::instance();   // one window for all operations
+int id = dialog->add(sde::TransferDialog::Operation::Copy, "Documents", "Backup");
+dialog->on_pause = [](int id, bool paused) { /* the job of |id| */ };
+dialog->on_cancel = [](int id) { /* ... */ };
 dialog->show();
 // A few times a second, from the FLTK thread:
 sde::TransferState state;
 state.bytes_done = job->done;   state.bytes_total = job->total;  // 0: still counting
 state.files_done = job->items;  state.files_total = job->all_items;
-state.current = "holiday.mov";  state.finishing = job->syncing;  // "Finishing..."
-dialog->update(state);
+state.current = "holiday.mov";
+state.drive = "SANDISK";  state.removable = true;  // the destination drive, if any
+state.finishing = job->syncing;                    // "Writing the last data to SANDISK..."
+dialog->update(id, state);
+// At the end:
+dialog->finish(id, sde::TransferDialog::Result::Done);   // or Failed with the errors, or Cancelled
 ```
 
-The speed (smoothed over about 2 s), the time remaining (the average and the
-current speed together, so it neither jumps nor lags; paused time does not
-count), the graph and the mark's animation come from
-`src/common/transfer_model.h`, plain C that Liria's file operations window
-uses too (copied into Liria as `liria-sde-transfer-model.h`), so both look
-and estimate the same. `build/tests/sde-transfer-demo [--details]
-[--paused] [--move] [--at 0.4]` shows the dialog with a simulated copy;
-`sde-transfer-model` (ctest) tests the model and the texts and
-`tests/test_transfer_dialog.py` the dialog on Xvfb (animation, Pause,
-details, reduced motion, Cancel).
+The picture is `src/common/transfer_scene.h` and the speed and the time
+remaining (smoothed over about 2 s; the average and the current speed
+together, so it neither jumps nor lags; paused time does not count) come
+from `src/common/transfer_model.h`: plain C that Liria's file operations
+window uses too (copied into Liria as `liria-sde-transfer-scene.h` and
+`liria-sde-transfer-model.h`), so both look and estimate the same.
+`build/tests/sde-transfer-demo [--details] [--queue] [--paused] [--move |
+--delete | --trash] [--drive NAME --removable --fat] [--finishing | --done |
+--fail] [--at 0.4]` shows the dialog with a simulated copy;
+`sde-transfer-model` (ctest) tests the model, the picture and the texts and
+`tests/test_transfer_dialog.py` the dialog on Xvfb (the moving and the still
+picture, Pause, Details, reduced motion, Cancel, the queue, done and failed).
 
 ## About window, legal data and developer identity
 

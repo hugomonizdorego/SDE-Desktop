@@ -111,9 +111,11 @@ void Sidebar::draw() {
         if (act) p.fill_rounded(rx, ry + S(2), rw, rh - S(4), Sd(L.radius), L.sidebar_active);
         else if (hot) p.fill_rounded(rx, ry + S(2), rw, rh - S(4), Sd(L.radius), L.hover);
         draw_badge(p, docs[size_t(i)]->lang, rx + S(8), ry + (rh - S(24)) / 2, S(24));
+        // As on the tab strip, the only document has no close button.
         double cs = S(20), ccx = rx + rw - S(26), ccy = ry + (rh - cs) / 2;
-        if (hot && hover_close_) p.fill_rounded(ccx, ccy, cs, cs, cs / 2, L.hover.mix(L.text, 0.08));
-        if (hot) icon::draw(p, icon::Close, ccx + S(3), ccy + S(3), cs - S(6), L.dim);
+        bool closable = app_->can_close_tab();
+        if (hot && hover_close_ && closable) p.fill_rounded(ccx, ccy, cs, cs, cs / 2, L.hover.mix(L.text, 0.08));
+        if (hot && closable) icon::draw(p, icon::Close, ccx + S(3), ccy + S(3), cs - S(6), L.dim);
         else if (docs[size_t(i)]->modified()) icon::draw(p, icon::Dot, ccx + S(2), ccy + S(2), cs - S(4), L.accent);
       } else {
         if (hot) p.fill_rounded(rx, ry + S(1), rw, rh - S(2), Sd(L.radius - 2), L.hover);
@@ -191,7 +193,7 @@ int Sidebar::handle(int event) {
       int h = edge ? -1 : row_at(my);
       int hs = in_seg ? int((mx - seg_x) / (seg_w / 2)) : -1;
       bool up = mode_ == 1 && mx >= x() + S(8) && mx < x() + S(36) && my >= y() + S(52) && my < y() + S(80);
-      bool hc = mode_ == 0 && h >= 0 && mx >= x() + w() - S(42) && mx < x() + w() - S(14);
+      bool hc = mode_ == 0 && h >= 0 && mx >= x() + w() - S(42) && mx < x() + w() - S(14) && app_->can_close_tab();
       if (h != hover_ || hs != hover_seg_ || up != hover_up_ || hc != hover_close_) {
         hover_ = h;
         hover_seg_ = hs;
