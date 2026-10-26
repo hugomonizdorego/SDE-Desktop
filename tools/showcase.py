@@ -2156,7 +2156,7 @@ def sde_transfer(s):
     s.shot('sde-transfer', quiet=0.2, timeout=0.5)
 
 
-@scene('Niny', [('niny', 'Niny: Markdown with its formatted view, tabs and the formatting toolbar')],
+@scene('Niny', [('niny', 'Niny: Markdown with its formatted view, tabs, the menu bar and the formatting toolbar')],
        scopes=(FULL, THEMES), needs=['niny'])
 def niny(s):
     docs = s.home / 'Documents'
@@ -2172,6 +2172,38 @@ def niny_code(s):
     s.app(['niny', s.home / 'Documents/Projects/garden-planner/planner.py'], 'Niny$')
     s.park_pointer()
     s.shot('niny-code', quiet=0.6)
+
+
+@scene('Niny', [('niny-menu', 'Niny: the menu bar (File to Help) with View open: Menu Bar, Font…, zoom and theme'),
+                ('niny-font', 'Niny: View > Font…, the family and size with a preview'),
+                ('niny-shortcuts', 'Niny: Help > Keyboard Shortcuts')], needs=['niny'])
+def niny_menu(s):
+    s.app(['niny', s.home / 'Documents/Meeting Notes.txt'], 'Niny$')
+    s.park_pointer()
+    s.key('alt+v')  # the underlined letter of View
+    time.sleep(0.6)
+    s.shot('niny-menu', quiet=0.6)
+    s.key('f', 'Return')  # the first item that starts with F: Font…
+    time.sleep(0.8)
+    s.shot('niny-font', quiet=0.6)
+    s.key('Escape')
+    time.sleep(0.3)
+    s.raw_key('F1')
+    time.sleep(0.8)
+    s.shot('niny-shortcuts', quiet=0.6)
+
+
+@scene('Niny', [('niny-single-tab', 'Niny: the only tab cannot be closed; its × is inactive and says why')],
+       needs=['niny'])
+def niny_single_tab(s):
+    w = s.app(['niny', s.home / 'Documents/Meeting Notes.txt'], 'Niny$')
+    r = s.control('Niny', 'close:0')  # Niny's QA layout (SDE_PANEL_QA_DIR)
+    if not r:
+        raise SkipShot('Niny wrote no layout of its tabs')
+    g = s.geom(w)
+    s.move(g['x'] + r[0] + r[2] // 2, g['y'] + r[1] + r[3] // 2)
+    time.sleep(1.6)  # the tooltip
+    s.shot('niny-single-tab', quiet=0.5)
 
 
 @scene('Xanara', [('xanara', 'Xanara: a PDF report with thumbnails and the Annotate tools')], needs=['xanara'])
