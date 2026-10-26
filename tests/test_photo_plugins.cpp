@@ -262,6 +262,12 @@ static void test_red_eye() {
   cairo_fill(cr);
   cairo_destroy(cr);
   uint32_t skin = pixel(s, 36, 50), blue = pixel(s, 44, 31);
+  // A click near the pupil finds all of it; a click on skin finds nothing.
+  Box found;
+  CHECK(find_red_eye(s, 53, 47, 15, found));
+  CHECK(std::fabs(found.x0 - 40) <= 2 && std::fabs(found.x1 - 60) <= 2);
+  CHECK(std::fabs(found.y0 - 40) <= 2 && std::fabs(found.y1 - 60) <= 2);
+  CHECK(!find_red_eye(s, 10, 85, 8, found));
   red_eye_region(s, 30, 30, 40, 40);
   uint32_t pupil = pixel(s, 50, 50);
   CHECK(chan(pupil, 16) < 60);  // no longer red

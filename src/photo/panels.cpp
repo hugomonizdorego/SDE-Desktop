@@ -1115,7 +1115,7 @@ void SidePanel::draw() {
                   crop_buttons_[5]->y() + S(44), pw, S(18), t.text_dim);
       }
     }
-    if (tab_ == Draw && draw_compact()) {
+    if ((tab_ == Draw || tab_ == Adjust || tab_ == Effects) && draw_compact()) {
       // No room for a note.
     } else if (tab_ == Draw && !app_->edits().marks.empty()) {
       text_font(t.font_size - S(1));
