@@ -318,8 +318,8 @@ def all_software(s):
         check(s.wait_qa(M, '@refresh:running=0,errors=0,done=1', 10), 'the second refresh did not finish')
 
         s.click(wid, M, 'nav:packages')
-        if not check(s.wait_qa(M, '@page:packages') and s.wait_for(M, lambda l: l.startswith('@packages:loaded=1')),
-                     'All Software did not open: %s' % s.qa(M)[:6]):
+        if not check(s.wait_qa(M, '@page:packages') and s.wait_for(M, lambda l: l.startswith('@packages:loaded=1')) and
+                     s.wait_qa(M, 'table'), 'All Software did not open: %s' % s.qa(M)[:6]):
             return
         c = s.controls(M)
         for name in ('chip:status:all', 'chip:status:installed', 'chip:status:updates', 'chip:status:available',

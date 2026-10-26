@@ -409,7 +409,9 @@ void qa_dump() {
   const char *dir = getenv("SDE_PANEL_QA_DIR");
   if (!dir || !*dir || !g_win) return;
   Store &st = Store::get();
-  std::string text = std::string("@page:") + view_id(g_view.kind) + (g_view.arg.empty() ? "" : ":" + g_view.arg) +
+  // The page that is built (a draw may come between a navigation and its
+  // rebuild): the lines below are its parts.
+  std::string text = std::string("@page:") + view_id(g_built.kind) + (g_built.arg.empty() ? "" : ":" + g_built.arg) +
                      "\t0\t0\t0\t0\t1\t0\n";
   text += "@state:catalog=" + std::string(st.catalog_loaded() ? "1" : "0") +
           ",apps=" + std::to_string(st.catalog().size()) + ",jobs=" + std::to_string(st.active_jobs()) +
