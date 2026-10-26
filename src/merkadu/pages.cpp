@@ -628,7 +628,9 @@ void departments(Page *page) {
 // Well-known apps of the departments the user has apps of: the more apps
 // of a department are installed, the more of it are recommended (local
 // data only, nothing is sent anywhere). |why| names the departments.
-std::vector<const App *> recommendations(std::string *why) {
+// |shown|: apps the page shows already (the Highlights), recommended only
+// when there are not enough others.
+std::vector<const App *> recommendations(std::string *why, const std::vector<const App *> &shown = {}) {
   Store &st = Store::get();
   const Settings &cfg = st.settings();
   std::map<std::string, int> weight;
@@ -646,24 +648,25 @@ std::vector<const App *> recommendations(std::string *why) {
   });
   std::vector<std::string> named;
   std::vector<const App *> out;
-  auto take = [&](const std::string &dept, size_t per) {
+  auto take = [&](const std::string &dept, size_t per, bool again) {
     auto it = cfg.recommended.find(dept);
     if (it == cfg.recommended.end()) return;
     size_t n = 0;
     for (const App *a : resolve_all(it->second)) {
       if (n >= per || out.size() >= 8) break;
       if (a->installed() || std::find(out.begin(), out.end(), a) != out.end()) continue;
+      if (!again && std::find(shown.begin(), shown.end(), a) != shown.end()) continue;
       out.push_back(a);
       ++n;
     }
-    if (n) {
-      const Category *c = st.categories().find(dept);
-      if (c) named.push_back(c->title());
-    }
+    const Category *c = n ? st.categories().find(dept) : nullptr;
+    if (c && std::find(named.begin(), named.end(), c->title()) == named.end()) named.push_back(c->title());
   };
-  for (auto &o : order) take(o.second, 3);
+  for (auto &o : order) take(o.second, 3, false);
   if (out.size() < 4)
-    for (auto &kv : cfg.recommended) take(kv.first, 2);
+    for (auto &kv : cfg.recommended) take(kv.first, 2, false);
+  if (out.size() < 3)
+    for (auto &o : order) take(o.second, 3, true);
   if (why) {
     std::string list;
     for (size_t i = 0; i < named.size() && i < 3; ++i) list += (i ? ", " : "") + named[i];
@@ -708,7 +711,7 @@ void build_explore(Page *page) {
     page->advance(S(14));
   }
   std::string why;
-  std::vector<const App *> recommended = recommendations(&why);
+  std::vector<const App *> recommended = recommendations(&why, highlights);
   if (!recommended.empty()) {
     caption(page, "recommended", _("Recommended for You"), why);
     tile_grid(page, recommended, 1);

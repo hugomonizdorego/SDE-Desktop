@@ -2287,8 +2287,8 @@ def merkadu_window(s, args, ready):
     return w
 
 
-@scene('Merkadu', [('merkadu', 'Merkadu, the software center: featured, new and top apps from Debian, Flatpak '
-                               'and Snap (test data)'),
+@scene('Merkadu', [('merkadu', 'Merkadu, the software center: highlights, recommendations, new and popular apps '
+                               'from Debian, Flathub and Snap (test data)'),
                    ('merkadu-category', 'Merkadu: a department with its subcategories'),
                    ('merkadu-search', 'Merkadu: one search in every source, with the source of each app'),
                    ('merkadu-details', 'Merkadu: an app page with its sources, screenshots and details'),
@@ -2345,6 +2345,35 @@ def merkadu_uninstall(s):
     s.control('Merkadu Uninstall', 'logo', timeout=5)
     s.park_pointer()
     s.shot('merkadu-uninstall-progress', quiet=0.6, wid=w)
+
+
+@scene('Merkadu', [('merkadu-all-software', 'Merkadu: All Software, every package of the archive by section and '
+                                            'status, with changes marked like in Synaptic (test data)'),
+                   ('merkadu-review', 'Merkadu: the marked changes with everything they install, update and remove'),
+                   ('merkadu-updates', 'Merkadu: app updates from Flathub and the Snap Store; the system is '
+                                       'updated by the Software Updater')],
+       needs=['merkadu'])
+def merkadu_all_software(s):
+    if not (MERKADU_FIXTURES / 'catalog.json').exists():
+        raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
+    w = merkadu_window(s, ['--page', 'packages'], 'pkg:curl')
+    s.press('Merkadu', 'pkg:curl')
+    s.press('Merkadu', 'action:mark:Mark for Update')
+    s.press('Merkadu', 'chip:status:available')
+    s.control('Merkadu', '@page:packages:available||', timeout=5)
+    s.key('ctrl+f')
+    s.type('pixel', 60)
+    s.press('Merkadu', 'pkg:python3-pixel')
+    s.press('Merkadu', 'action:mark:Mark for Installation')
+    s.control('Merkadu', 'action:review', timeout=5)
+    s.park_pointer()
+    s.shot('merkadu-all-software', quiet=0.6, wid=w)
+    s.press('Merkadu', 'action:review')
+    s.control('Merkadu', 'action:apply', timeout=8)
+    s.park_pointer()
+    s.shot('merkadu-review', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--page', 'updates'], 'action:software-updater')
+    s.shot('merkadu-updates', quiet=0.6, wid=w)
 
 
 @scene('Welcome', [('welcome', 'Welcome: first steps after installing DebION')], needs=['sde-welcome'])
