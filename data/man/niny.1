@@ -9,14 +9,21 @@ niny \- Niny text editor for the Selviana Desktop Environment
 .SH DESCRIPTION
 .B niny
 is the text editor of SDE, written for SDE with SDE-FLTK and cairo by the
-Selviana DE Project. It looks like a simple notepad: a row of tabs, the File,
-Edit and View menus, a roomy editing area and a status bar with the line
+Selviana DE Project. It looks like a simple notepad: a row of tabs, a menu
+bar (File, Edit, View, Search, Document, Tools and Help), a roomy editing
+area and a status bar with the line
 and column, the number of characters (and of selected characters), the
 file type, the zoom level, the line ending and the encoding. It opens each
 file in a tab, highlights the syntax of C,
 C++, Python, shell, JavaScript, TypeScript, JSON, HTML, XML, CSS, Markdown,
 INI/configuration files, Rust, Go, Makefiles, YAML and diffs, and stays
 responsive with files of tens of megabytes.
+.PP
+A tab's \(mu closes it (asking first when it has unsaved changes). The
+only tab stays open: its \(mu is inactive and Ctrl+W, the middle mouse
+button and Close Tab leave it; closing the window (File \(-> Quit) ends
+Niny. View \(-> Menu Bar hides the menu bar; Alt or F10 shows it again,
+and so does the Niny mark at the start of the tabs.
 .PP
 Files given on the command line open in the running Niny window of the
 display; a file that does not exist yet is created when it is first saved.
@@ -26,7 +33,8 @@ URIs are accepted.
 .PP
 Character encodings (UTF-8, UTF-8 with BOM, UTF-16, ISO-8859-1 and
 Windows-1252) and line endings (LF, CRLF, CR) are detected when a file is
-opened and kept when it is saved; both can be changed in the status bar.
+opened and kept when it is saved; both can be changed in the Document menu
+and the status bar.
 .PP
 In Markdown documents the row under the tabs offers heading levels, lists,
 bold, italic, links, clear formatting and a formatted (rendered, read-only)
@@ -39,9 +47,11 @@ or
 and a dictionary are installed) and "Display and Unicode" (whitespace
 characters, word wrap and Unicode control characters).
 .PP
-The gear opens the Settings page: theme, font, word wrap, status bar,
-whether files from other programs open in a new tab or a new window,
-spell checking, recent files and the editing options.
+View \(-> Font\&... chooses the font and its size with a preview. The gear
+(Edit \(-> Preferences) opens the Preferences page: theme, font, word
+wrap, menu bar, status bar, whether files from other programs open in a new
+tab or a new window, spell checking, recent files and the editing options.
+Help \(-> Keyboard Shortcuts lists every key.
 .SH OPTIONS
 .TP
 .BI + LINE
@@ -65,12 +75,17 @@ Command palette (every command); \fBCtrl+P\fR quickly opens files and
 Find, find and replace (with case, whole word and regular expression
 options), next and previous match.
 .TP
-.B Ctrl+N, Ctrl+Shift+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+W, Ctrl+Shift+T
-New tab, new window, open, save, save as, close and reopen the last closed
-tab.
+.B Ctrl+N, Ctrl+Shift+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+W, Ctrl+Shift+T, Ctrl+Q
+New tab, new window, open, save, save as, close the tab (not the only
+one), reopen the last closed tab and quit.
 .TP
-.B Alt+F, Alt+E, Alt+V, Ctrl+Comma
-Open the File, Edit and View menus; open Settings.
+.B F10, Alt+F, Alt+E, Alt+V, Alt+S, Alt+D, Alt+T, Alt+H
+Open the File menu, or the File, Edit, View, Search, Document, Tools and
+Help menus; Left and Right move between the menus. Alt alone lets the
+menu titles take the keyboard.
+.TP
+.B Ctrl+Comma, F1, Shift+F10
+Preferences, the keyboard shortcuts and the context menu.
 .TP
 .B F5, Ctrl+E
 Insert the date and time; search the web for the selection.
@@ -89,7 +104,7 @@ Zoom, word wrap and the side panel.
 .SH FILES
 .TP
 .I ~/.config/sde/niny.conf
-Settings (also changed on Niny's Settings page).
+Settings (also changed on Niny's Preferences page).
 .TP
 .I ~/.local/state/niny/
 Session, recent files and backups of unsaved changes, used to restore

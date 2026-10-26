@@ -28,6 +28,14 @@ target_compile_definitions(sde-transfer-tests PRIVATE SDE_TEST_SOURCE_DIR="${PRO
 add_test(NAME sde-transfer-model COMMAND sde-transfer-tests)
 add_executable(sde-transfer-demo transfer_demo.cpp)
 target_link_libraries(sde-transfer-demo PRIVATE sde-common)
+# 0.2.0 Alpha 3: safe copying (src/common/safe_copy.h): the writer against a
+# simulated slow drive, and a benchmark for real drives (not installed;
+# tools/safe-copy-bench.py).
+add_executable(sde-safe-copy-tests test_safe_copy.cpp)
+target_link_libraries(sde-safe-copy-tests PRIVATE sde-common)
+add_test(NAME sde-safe-copy COMMAND sde-safe-copy-tests)
+add_executable(sde-safe-copy-bench safe_copy_bench.cpp)
+target_link_libraries(sde-safe-copy-bench PRIVATE sde-desktop-model sde-common)
 
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).
@@ -122,6 +130,13 @@ add_test(NAME sde-photo-draw COMMAND sde-photo-draw-tests)
 add_executable(niny-tests test_niny.cpp)
 target_link_libraries(niny-tests PRIVATE niny-core)
 add_test(NAME niny-core COMMAND niny-tests)
+# Niny's tabs and menu bar on Xvfb (0.2 Alpha 3): each × closes its own tab,
+# the only tab stays, the menus open from the mouse and keyboard and fit.
+if(SDE_XVFB)
+  add_test(NAME niny-tabs-menus COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_niny_ui.py
+    $<TARGET_FILE:niny>)
+  set_tests_properties(niny-tabs-menus PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 
 # SDE Screen Lock and SDE Power: PAM conversation (fake PAM stack), password
 # buffer, attempt delays, inhibitors, idle stages, battery levels, brightness.

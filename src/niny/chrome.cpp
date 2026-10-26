@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
-// Niny chrome: the tab strip, the menu and formatting row under it, the
-// status bar and the notice bar.
+// Niny chrome: the tab strip, the menu bar with the formatting buttons
+// under it, the status bar and the notice bar.
 #include <FL/Fl.H>
 #include <FL/Fl_Tooltip.H>
 #include <FL/fl_draw.H>
@@ -66,25 +66,73 @@ std::vector<TabBar::Tab> TabBar::layout() const {
   return tabs;
 }
 
-double TabBar::plus_x() const {
-  auto t = layout();
+double TabBar::clip_right() const { return x() + w() - S(40); }
+
+double TabBar::plus_x(const std::vector<Tab> &t) const {
   double px = t.empty() ? x() : t.back().x + t.back().w + S(6);
-  return std::min<double>(px, x() + w() - S(40));
+  return std::min<double>(px, clip_right());
+}
+
+void TabBar::close_geometry(const Tab &t, double &cx, double &cy, double &cs) const {
+  cs = S(26);
+  cx = t.x + t.w - S(34);
+  cy = y() + S(6) + (h() - S(6) - cs) / 2;
 }
 
 int TabBar::tab_at(int mx) const {
   auto t = layout();
   for (size_t i = 0; i < t.size(); ++i)
-    if (mx >= t[i].x && mx < t[i].x + t[i].w && mx < x() + w() - S(42)) return int(i);
+    if (mx >= t[i].x && mx < t[i].x + t[i].w && mx < clip_right() - S(2)) return int(i);
   return -1;
 }
 
-bool TabBar::on_close(int index, int mx, int my) const {
-  auto t = layout();
+bool TabBar::on_close(const std::vector<Tab> &t, int index, int mx, int my) const {
   if (index < 0 || index >= int(t.size())) return false;
-  double cx = t[size_t(index)].x + t[size_t(index)].w - S(34);
-  double cy = y() + S(6) + (h() - S(6) - S(26)) / 2.0;
-  return mx >= cx && mx < cx + S(26) && my >= cy && my < cy + S(26);
+  double cx, cy, cs;
+  close_geometry(t[size_t(index)], cx, cy, cs);
+  return mx >= cx && mx < cx + cs && my >= cy && my < cy + cs && mx < clip_right() - S(2);
+}
+
+bool TabBar::on_plus(const std::vector<Tab> &t, int mx, int my) const {
+  double px = plus_x(t);
+  return my >= y() && my < y() + h() && mx >= px && mx < px + S(32) && tab_at(mx) < 0;
+}
+
+TabBar::Box TabBar::tab_box(int index) const {
+  auto t = layout();
+  Box b;
+  if (index < 0 || index >= int(t.size())) return b;
+  const Tab &tab = t[size_t(index)];
+  b.x = int(std::lround(tab.x));
+  b.y = y() + S(6);
+  b.w = int(std::lround(tab.w));
+  b.h = h() - S(6);
+  b.shown = tab.x >= x() - 0.5 && tab.x + tab.w <= clip_right() + 0.5;
+  return b;
+}
+
+TabBar::Box TabBar::close_box(int index) const {
+  auto t = layout();
+  Box b;
+  if (index < 0 || index >= int(t.size())) return b;
+  double cx, cy, cs;
+  close_geometry(t[size_t(index)], cx, cy, cs);
+  b.x = int(std::ceil(cx));
+  b.y = int(std::ceil(cy));
+  b.w = b.h = int(cs) - 1;
+  b.shown = cx >= x() && cx + cs <= clip_right() - S(2);
+  return b;
+}
+
+TabBar::Box TabBar::plus_box() const {
+  auto t = layout();
+  Box b;
+  double px = plus_x(t), ps = S(32);
+  b.x = int(std::ceil(px));
+  b.y = int(std::ceil(y() + S(6) + (h() - S(6) - ps) / 2));
+  b.w = b.h = int(ps) - 1;
+  b.shown = true;
+  return b;
 }
 
 void TabBar::ensure_visible(int index) {
@@ -98,6 +146,7 @@ void TabBar::ensure_visible(int index) {
   for (auto &tab : t) content += tab.w + S(kTabGap);
   scroll_ = std::max(0.0, std::min(scroll_, std::max(0.0, content - (w() - S(48)))));
   redraw();
+  app_->schedule_qa();
 }
 
 void TabBar::draw() {
@@ -105,9 +154,12 @@ void TabBar::draw() {
   const auto &docs = app_->docs();
   auto tabs = layout();
   int active = app_->active_index();
+  bool closable = app_->can_close_tab();
   double ty = y() + S(6), th = h() - S(6);
   double r = Sd(8);
   Color hover_bg = L.dark ? Color::hex(0xFFFFFF, 0.06) : Color::hex(0x000000, 0.05);
+  // The active tab flows into the menu bar, or into the text without it.
+  Color card = app_->menubar_shown() ? L.bar : L.editor;
   {
     Painter p(window()->w(), window()->h());
     cairo_t *cr = p.cr();
@@ -129,13 +181,13 @@ void TabBar::draw() {
         cairo_line_to(cr, tx + tw, ty + th - r);
         cairo_arc_negative(cr, tx + tw + r, ty + th - r, r, M_PI, M_PI / 2);
         cairo_close_path(cr);
-        p.set(L.bar);
+        p.set(card);
         cairo_fill_preserve(cr);
         if (L.dark || L.glass) {
           p.set(L.border.alpha(L.dark ? 0.35 : 0.5));
           cairo_set_line_width(cr, 1);
           cairo_stroke(cr);
-          p.fill_rect(tx - r + 1, ty + th - 1, tw + 2 * r - 2, 2, L.bar);
+          p.fill_rect(tx - r + 1, ty + th - 1, tw + 2 * r - 2, 2, card);
         } else {
           cairo_new_path(cr);
         }
@@ -145,19 +197,24 @@ void TabBar::draw() {
         p.line(tx + tw + S(kTabGap) / 2.0 - 0.5, ty + S(9), tx + tw + S(kTabGap) / 2.0 - 0.5, ty + th - S(11),
                L.border.alpha(0.9), 1);
       }
-      // Close button or modified dot.
-      double cs = S(26), ccx = tx + tw - S(34), ccy = ty + (th - cs) / 2;
+      // Close button, or the dot of a modified document.
+      double cx, cy, cs;
+      close_geometry(tabs[i], cx, cy, cs);
       bool modified = docs[i]->modified();
-      if (hot && hover_close_) p.fill_rounded(ccx, ccy, cs, cs, Sd(5), hover_bg.alpha(L.dark ? 0.1 : 0.08));
-      if (modified && !(hot && hover_close_) && !(act && hot)) {
-        p.circle(ccx + cs / 2, ccy + cs / 2, Sd(4), L.text.mix(L.dim, 0.35));
+      bool on_x = hot && hover_close_;  // only while the × can close its tab
+      if (on_x) p.fill_rounded(cx, cy, cs, cs, Sd(5), hover_bg.alpha(L.dark ? 0.1 : 0.08));
+      if (modified && !on_x && !(act && hot && closable)) {
+        p.circle(cx + cs / 2, cy + cs / 2, Sd(4), L.text.mix(L.dim, 0.35));
+      } else if (!closable) {
+        // The only tab: its × is inactive.
+        icon::draw(p, icon::Close, cx + S(6), cy + S(6), cs - S(12), L.dim.alpha(0.45));
       } else if (act || hot) {
-        icon::draw(p, icon::Close, ccx + S(6), ccy + S(6), cs - S(12), L.text.mix(L.dim, 0.3));
+        icon::draw(p, icon::Close, cx + S(6), cy + S(6), cs - S(12), L.text.mix(L.dim, 0.3));
       }
     }
     cairo_restore(cr);
     // New tab button.
-    double px = plus_x(), ps = S(32), py = ty + (th - ps) / 2;
+    double px = plus_x(tabs), ps = S(32), py = ty + (th - ps) / 2;
     if (hover_plus_) p.fill_rounded(px, py, ps, ps, Sd(6), hover_bg);
     icon::draw(p, icon::Plus, px + S(8), py + S(8), ps - S(16), L.text.mix(L.dim, 0.3));
   }
@@ -173,57 +230,103 @@ void TabBar::draw() {
   fl_pop_clip();
 }
 
+void TabBar::track(int mx, int my) {
+  auto t = layout();
+  bool inside = mx >= x() && mx < x() + w() && my >= y() && my < y() + h();
+  int i = inside ? tab_at(mx) : -1;
+  bool on_x = i >= 0 && on_close(t, i, mx, my);
+  bool hp = inside && i < 0 && on_plus(t, mx, my);
+  bool hc = on_x && app_->can_close_tab();  // the only tab's × has no hover
+  if (i != hover_ || hc != hover_close_ || hp != hover_plus_) {
+    hover_ = i;
+    hover_close_ = hc;
+    hover_plus_ = hp;
+    redraw();
+  }
+  int zone = i >= 0 ? 2 * i + (on_x ? 1 : 0) : hp ? -2 : -1;
+  if (zone == tip_zone_) return;
+  tip_zone_ = zone;
+  // Fl_Tooltip compares the text pointers: alternate two buffers.
+  static std::string tips[2];
+  static int which = 0;
+  which ^= 1;
+  if (on_x) {
+    double cx, cy, cs;
+    close_geometry(t[size_t(i)], cx, cy, cs);
+    Fl_Tooltip::enter_area(this, int(cx) - x(), int(cy) - y(), int(cs), int(cs),
+                           app_->can_close_tab() ? _("Close Tab (Ctrl+W)")
+                                                 : _("Only one tab is open, so it cannot be closed"));
+  } else if (i >= 0) {
+    const Document *d = app_->docs()[size_t(i)].get();
+    std::string &tip = tips[which];
+    tip = d->path.empty() ? d->display_name() : home_relative(d->path);
+    if (d->modified()) tip += "  •  " + std::string(_("modified"));
+    Fl_Tooltip::enter_area(this, int(t[size_t(i)].x - x()), 0, int(t[size_t(i)].w), h(), tip.c_str());
+  } else if (hp) {
+    Fl_Tooltip::enter_area(this, int(plus_x(t) - x()), 0, S(32), h(), _("New tab (Ctrl+N)"));
+  } else {
+    Fl_Tooltip::enter_area(this, 0, 0, 0, 0, nullptr);
+  }
+}
+
 int TabBar::handle(int event) {
   int mx = Fl::event_x(), my = Fl::event_y();
+  // Where the pointer is now: after a tab closed (perhaps after a question)
+  // another tab, or nothing, is under it.
+  auto retrack = [this] {
+    int rx = 0, ry = 0;
+    Fl::get_mouse(rx, ry);
+    if (window()) track(rx - window()->x_root(), ry - window()->y_root());
+  };
   switch (event) {
     case FL_ENTER:
-    case FL_MOVE: {
-      int h = tab_at(mx);
-      bool hc = h >= 0 && on_close(h, mx, my);
-      double px = plus_x();
-      bool hp = h < 0 && mx >= px && mx < px + S(32);
-      if (h != hover_ || hc != hover_close_ || hp != hover_plus_) {
-        hover_ = h;
-        hover_close_ = hc;
-        hover_plus_ = hp;
-        redraw();
-        if (h >= 0) {
-          auto t = layout();
-          const Document *d = app_->docs()[size_t(h)].get();
-          static std::string tip;
-          tip = d->path.empty() ? d->display_name() : home_relative(d->path);
-          if (d->modified()) tip += "  •  " + std::string(_("modified"));
-          Fl_Tooltip::enter_area(this, int(t[size_t(h)].x - x()), 0, int(t[size_t(h)].w), this->h(), tip.c_str());
-        } else if (hp) {
-          Fl_Tooltip::enter_area(this, int(px - x()), 0, S(32), this->h(), _("New tab (Ctrl+N)"));
-        }
-      }
+    case FL_MOVE:
+      track(mx, my);
       return 1;
-    }
     case FL_LEAVE:
       hover_ = -1;
       hover_close_ = hover_plus_ = false;
+      tip_zone_ = -1;
       redraw();
       return 1;
     case FL_PUSH: {
-      int t = tab_at(mx);
-      press_ = t;
+      auto t = layout();
+      int i = tab_at(mx), button = Fl::event_button();
+      bool on_x = i >= 0 && on_close(t, i, mx, my);
+      bool plus = i < 0 && on_plus(t, mx, my);
+      bool empty = i < 0 && !plus;
+      // A double click on the empty strip opens a tab when both clicks were
+      // there. The click after one whose × closed the last tab used to land
+      // on the empty strip and count as a double click (alpha 3).
+      bool double_empty = empty && last_press_empty_ && Fl::event_clicks() > 0;
+      last_press_empty_ = empty && button == FL_LEFT_MOUSE;
+      press_ = i;
       press_x_ = mx;
+      press_close_ = on_x && button == FL_LEFT_MOUSE;
+      press_plus_ = plus && button == FL_LEFT_MOUSE;
       dragging_ = false;
-      drag_from_ = t;
-      if (Fl::event_button() == FL_MIDDLE_MOUSE) {
-        if (t >= 0) app_->close_document(t);
-        return 1;
-      }
-      if (Fl::event_button() == FL_RIGHT_MOUSE) {
-        if (t >= 0) {
-          app_->activate(t);
-          app_->tab_menu(t, Fl::event_x_root(), Fl::event_y_root());
+      drag_from_ = button == FL_LEFT_MOUSE ? i : -1;
+      if (button == FL_MIDDLE_MOUSE) {
+        if (i >= 0) {
+          Fl::event_is_click(0);
+          app_->close_document(i);  // not the only tab
+          retrack();
         }
         return 1;
       }
-      if (t >= 0 && !on_close(t, mx, my)) app_->activate(t);
-      if (t < 0 && Fl::event_clicks() > 0) app_->new_document();
+      if (button == FL_RIGHT_MOUSE) {
+        if (i >= 0) {
+          app_->activate(i);
+          app_->tab_menu(i, Fl::event_x_root(), Fl::event_y_root());
+        }
+        return 1;
+      }
+      if (i >= 0 && !on_x) app_->activate(i);
+      if (double_empty) {
+        Fl::event_is_click(0);
+        last_press_empty_ = false;
+        app_->new_document();
+      }
       return 1;
     }
     case FL_DRAG: {
@@ -239,14 +342,28 @@ int TabBar::handle(int event) {
       return 1;
     }
     case FL_RELEASE: {
-      int t = tab_at(mx);
-      if (!dragging_ && Fl::event_button() == FL_LEFT_MOUSE) {
-        if (t >= 0 && t == press_ && on_close(t, mx, my)) app_->close_document(t);
-        double px = plus_x();
-        if (t < 0 && mx >= px && mx < px + S(32)) app_->new_document();
-      }
-      dragging_ = false;
+      bool dragged = dragging_, was_close = press_close_, was_plus = press_plus_;
+      dragging_ = press_close_ = press_plus_ = false;
       drag_from_ = -1;
+      if (dragged || Fl::event_button() != FL_LEFT_MOUSE) return 1;
+      auto t = layout();
+      int i = tab_at(mx);
+      if (was_close && i == press_ && on_close(t, i, mx, my)) {
+        // The × closes its tab and nothing else happens: whatever slides
+        // under the pointer (a tab, the empty strip, the + button) is left
+        // alone. The only tab's × is inactive.
+        if (app_->can_close_tab()) {
+          Fl::event_is_click(0);
+          app_->close_document(i);
+        }
+        retrack();
+        return 1;
+      }
+      if (was_plus && on_plus(t, mx, my)) {
+        Fl::event_is_click(0);
+        app_->new_document();
+        retrack();
+      }
       return 1;
     }
     case FL_MOUSEWHEEL: {
@@ -265,20 +382,82 @@ int TabBar::handle(int event) {
 
 // ---------------------------------------------------------------- Toolbar
 
+namespace {
+
+struct MenuTitle {
+  int id;
+  const char *label;  // "&" marks the underlined letter
+  const char *qa;
+};
+// The menu bar, in the order of Pluma, Mousepad and Kate.
+const MenuTitle kMenus[] = {
+    {Toolbar::File, N_("&File"), "file"},
+    {Toolbar::Edit, N_("&Edit"), "edit"},
+    {Toolbar::View, N_("&View"), "view"},
+    {Toolbar::Search, N_("&Search"), "search"},
+    {Toolbar::Document, N_("&Document"), "document"},
+    {Toolbar::Tools, N_("&Tools"), "tools"},
+    {Toolbar::Help, N_("&Help"), "help"},
+};
+const int kMenuCount = int(sizeof kMenus / sizeof kMenus[0]);
+// Alt shortcuts of the editor that a title must not take (Word Wrap, tabs).
+const char kAltKeys[] = "z123456789";
+
+// The titles with their underlined letters (the language does not change
+// while Niny runs).
+const std::vector<Mnemonic> &menu_titles() {
+  static const std::vector<Mnemonic> titles = [] {
+    std::vector<std::string> labels;
+    for (const MenuTitle &m : kMenus) labels.push_back(_(m.label));
+    return menu_mnemonics(labels, kAltKeys);
+  }();
+  return titles;
+}
+
+int menu_index(int id) {
+  for (int i = 0; i < kMenuCount; ++i)
+    if (kMenus[i].id == id) return i;
+  return -1;
+}
+
+}  // namespace
+
 Toolbar::Toolbar(App *app, int x, int y, int w, int h) : Fl_Widget(x, y, w, h), app_(app) {}
+
+std::string Toolbar::title(int id) {
+  int i = menu_index(id);
+  return i < 0 ? std::string() : menu_titles()[size_t(i)].text;
+}
+
+int Toolbar::mnemonic(int id) {
+  int i = menu_index(id);
+  return i < 0 ? 0 : menu_titles()[size_t(i)].key;
+}
+
+const char *Toolbar::qa_name(int id) {
+  int i = menu_index(id);
+  if (i >= 0) return kMenus[i].qa;
+  return id == Heading ? "heading" : id == List ? "list" : "toolbar";
+}
 
 std::vector<Toolbar::Item> Toolbar::items() const {
   std::vector<Item> out;
   const Look &L = look();
   text_font(L.theme.font_size);
+  const auto &titles = menu_titles();
+  // Narrow windows and long translations: the titles move closer; the
+  // formatting group gives way first, then the gear (Edit > Preferences).
+  double room = w() - S(6) - S(8) - S(38) - S(16), need = 0;
+  for (const Mnemonic &t : titles) need += text_width(t.text) + S(26) + S(2);
+  double pad = need <= room ? S(26) : S(14);
   double bx = x() + S(6);
-  for (auto m : {std::make_pair(int(File), _("File")), std::make_pair(int(Edit), _("Edit")),
-                 std::make_pair(int(View), _("View"))}) {
+  for (int i = 0; i < kMenuCount; ++i) {
     Item it;
-    it.id = m.first;
-    it.label = m.second;
+    it.id = kMenus[i].id;
+    it.label = titles[size_t(i)].text;
+    it.mnemonic = titles[size_t(i)].index;
     it.x = bx;
-    it.w = text_width(it.label) + S(26);
+    it.w = text_width(it.label) + pad;
     bx += it.w + S(2);
     out.push_back(it);
   }
@@ -299,13 +478,13 @@ std::vector<Toolbar::Item> Toolbar::items() const {
     xr -= S(2);
     out.push_back(it);
   };
-  right(Settings, icon::Gear, S(38), _("Settings (Ctrl+,)"), "", false, app_->settings_visible());
-  Document *d = app_->active();
+  if (xr - S(38) >= bx)
+    right(Settings, icon::Gear, S(38), _("Preferences (Ctrl+,)"), "", false, app_->preferences_visible());
+  niny::Document *d = app_->active();  // Toolbar::Document is the menu
   if (d && app_->is_markdown(d) && !app_->settings_visible()) {
     xr -= S(10);
     right(Preview, icon::Eye, S(38), _("Formatted view (Ctrl+Shift+M)"), "", false, d->preview);
     xr -= S(10);
-    std::vector<Item> fmt;
     right(Clear, icon::ClearFormat, S(38), _("Clear formatting"));
     right(Link, icon::Link, S(38), _("Link (Ctrl+K)"));
     right(Italic, icon::Italic, S(38), _("Italic (Ctrl+I)"));
@@ -314,11 +493,12 @@ std::vector<Toolbar::Item> Toolbar::items() const {
     int h = d->preview ? 0 : app_->current_heading();
     std::string hl = h ? "H" + std::to_string(h) : std::string(_("Text"));
     right(Heading, -1, std::max<double>(S(64), text_width(hl) + S(40)), _("Heading"), hl, true);
-    // Hide the formatting group when it would run into the menus.
+    // Hide the formatting group when it would run into the menus; keep the
+    // formatted view toggle when it fits.
     if (xr < left_end) {
       std::vector<Item> keep;
       for (auto &it : out)
-        if (it.id < Heading || it.id == Settings || it.id == Preview) keep.push_back(it);
+        if (it.id < Heading || it.id == Settings || (it.id == Preview && it.x >= left_end)) keep.push_back(it);
       out = keep;
     }
     for (auto &it : out)
@@ -338,9 +518,11 @@ void Toolbar::draw() {
     double by = y() + S(4), bh = h() - S(8);
     for (size_t i = 0; i < its.size(); ++i) {
       const Item &it = its[i];
-      bool hot = (int(i) == hover_ || it.id == open_) && it.enabled;
+      bool hot = (int(i) == hover_ || it.id == open_ || it.id == focus_) && it.enabled;
       if (it.on) p.fill_rounded(it.x, by, it.w, bh, Sd(5), L.accent.alpha(L.dark ? 0.24 : 0.13));
       else if (hot) p.fill_rounded(it.x, by, it.w, bh, Sd(5), hover_bg);
+      // Alt pressed alone: the title that has the keyboard.
+      if (it.id == focus_ && open_ < 0) focus_ring(p, it.x, by, it.w, bh, Sd(5));
       Color c = !it.enabled ? L.dim.alpha(0.45) : it.on ? L.accent_text : L.text.mix(L.dim, 0.15);
       double is = S(18);
       if (it.icon >= 0) {
@@ -351,24 +533,106 @@ void Toolbar::draw() {
     }
     // Divider between the formatting group and the view toggle / gear.
     for (auto &it : its)
-      if (it.id == Preview || (it.id == Settings && its.size() > 4)) {
+      if (it.id == Preview || (it.id == Settings && its.size() > size_t(kMenuCount) + 1)) {
         double dx = it.x - S(6) + 0.5;
         p.line(dx, y() + S(11), dx, y() + h() - S(11), L.border, 1);
       }
   }
   for (auto &it : its) {
     if (it.label.empty()) continue;
-    bool menu = it.id <= View;
     text_font(L.theme.font_size, false);
     Color c = !it.enabled ? L.dim.alpha(0.45) : L.text;
-    if (menu) draw_text(it.label, int(it.x), y(), int(it.w), h(), c, 1);
-    else draw_text(it.label, int(it.x + S(10)), y(), int(it.w - S(30)), h(), c, 1);
+    if (!is_menu(it.id)) {
+      draw_text(it.label, int(it.x + S(10)), y(), int(it.w - S(30)), h(), c, 1);
+      continue;
+    }
+    draw_text(it.label, int(it.x), y(), int(it.w), h(), c, 1);
+    // The letter that Alt opens the menu with, underlined as FLTK does.
+    if (it.mnemonic >= 0 && it.mnemonic < int(it.label.size())) {
+      int tw = text_width(it.label);
+      int ux = int(it.x) + (int(it.w) - tw) / 2 + text_width(it.label.substr(0, size_t(it.mnemonic)));
+      int uw = text_width(it.label.substr(size_t(it.mnemonic), 1));
+      int base = y() + (h() + fl_height()) / 2 - fl_descent();
+      fl_color(c.fl());
+      fl_rectf(ux, base + std::max(1, S(1.5)), uw, std::max(1, S(1)));
+    }
   }
 }
 
-void Toolbar::open(int id) {
-  auto its = items();
-  for (auto &it : its) {
+int Toolbar::title_at_root(int rx, int ry) const {
+  if (!visible_r() || !window()) return 0;
+  int mx = rx - window()->x_root(), my = ry - window()->y_root();
+  if (my < y() || my >= y() + h()) return 0;
+  for (auto &it : items())
+    if (is_menu(it.id) && mx >= it.x && mx < it.x + it.w) return it.id;
+  return 0;
+}
+
+int Toolbar::neighbour(int id, int dir) const {
+  int i = menu_index(id);
+  if (i < 0) return File;
+  return kMenus[(i + dir + kMenuCount) % kMenuCount].id;
+}
+
+int Toolbar::menu_for_key(int key) const {
+  if (key >= 'A' && key <= 'Z') key += 32;
+  const auto &titles = menu_titles();
+  for (int i = 0; i < kMenuCount; ++i)
+    if (titles[size_t(i)].key && titles[size_t(i)].key == key) return kMenus[i].id;
+  return 0;
+}
+
+void Toolbar::focus_titles(bool on) {
+  int f = on ? int(File) : 0;
+  if (f == focus_) return;
+  focus_ = f;
+  redraw();
+  if (!on) app_->peek_menubar(false);
+  app_->schedule_qa();
+}
+
+int Toolbar::title_key(int key, int state) {
+  if (!focus_ || (state & (FL_CTRL | FL_META))) return 0;
+  switch (key) {
+    case FL_Left:
+    case FL_Right:
+      focus_ = neighbour(focus_, key == FL_Left ? -1 : 1);
+      redraw();
+      app_->schedule_qa();
+      return 1;
+    case FL_Home:
+    case FL_End:
+      focus_ = key == FL_Home ? int(File) : int(Help);
+      redraw();
+      app_->schedule_qa();
+      return 1;
+    case FL_Down:
+    case FL_Up:
+    case FL_Enter:
+    case FL_KP_Enter:
+    case ' ': {
+      int id = focus_;
+      focus_ = 0;
+      open(id, true);
+      return 1;
+    }
+    case FL_Escape:
+    case FL_F + 10:
+      focus_titles(false);
+      return 1;
+  }
+  // The underlined letters work without Alt while the titles are focused.
+  if (int id = menu_for_key(key)) {
+    focus_ = 0;
+    open(id, true);
+    return 1;
+  }
+  return 0;
+}
+
+void Toolbar::open(int id, bool keyboard) {
+  // The formatting buttons act at once.
+  for (auto &it : items()) {
     if (it.id != id || !it.enabled) continue;
     switch (id) {
       case Bold: app_->md_wrap("**"); return;
@@ -376,19 +640,46 @@ void Toolbar::open(int id) {
       case Link: app_->md_link(); return;
       case Clear: app_->md_clear(); return;
       case Preview: app_->toggle_preview(); return;
-      case Settings: app_->show_settings_page(!app_->settings_visible()); return;
+      case Settings: app_->show_settings_page(!app_->preferences_visible()); return;
       default: break;
     }
+  }
+  focus_ = 0;
+  // A menu of the menu bar can hand over to another title (Left, Right,
+  // the pointer, Alt and a letter): open that one next.
+  while (id) {
+    auto its = items();
+    auto it = std::find_if(its.begin(), its.end(), [id](const Item &i) { return i.id == id && i.enabled; });
+    if (it == its.end()) break;
     open_ = id;
     redraw();
     MenuSpec spec = app_->menu_spec(id);
-    int rx = window()->x_root() + int(it.x), ry = window()->y_root() + y() + h() - S(2);
+    spec.keyboard = keyboard;
+    spec.qa_name = qa_name(id);
+    if (is_menu(id)) {
+      auto link = std::make_shared<MenuBarLink>();
+      link->current = id;
+      link->title_at = [this](int rx, int ry) { return title_at_root(rx, ry); };
+      link->title_for_key = [this](int key) { return menu_for_key(key); };
+      link->neighbour = [this, id](int dir) { return neighbour(id, dir); };
+      spec.bar = link;
+    }
+    // Before the chosen command runs (it may open a dialog): the title is
+    // no longer open, and a menu bar shown for Alt or F10 hides again.
+    spec.closed = [this, link = spec.bar] {
+      open_ = -1;
+      hover_ = -1;
+      redraw();
+      if (!link || !link->next) app_->peek_menubar(false);
+    };
+    app_->schedule_qa();
+    int rx = window()->x_root() + int(it->x), ry = window()->y_root() + y() + h() - S(2);
     popup_menu(spec, rx, ry, h());
-    open_ = -1;
-    hover_ = -1;
-    redraw();
-    return;
+    id = spec.bar ? spec.bar->next : 0;
+    keyboard = spec.bar && spec.bar->next_keyboard;
   }
+  app_->peek_menubar(false);
+  app_->schedule_qa();
 }
 
 int Toolbar::handle(int event) {
@@ -421,9 +712,10 @@ int Toolbar::handle(int event) {
       return 1;
     case FL_PUSH: {
       int h = find();
+      focus_ = 0;
       if (h >= 0) {
         int id = items()[size_t(h)].id;
-        if (id <= View || id == Heading || id == List) open(id);
+        if (is_menu(id) || id == Heading || id == List) open(id);
       }
       return 1;
     }
@@ -431,7 +723,7 @@ int Toolbar::handle(int event) {
       int h = find();
       if (h >= 0) {
         int id = items()[size_t(h)].id;
-        if (!(id <= View || id == Heading || id == List)) open(id);
+        if (!(is_menu(id) || id == Heading || id == List)) open(id);
       }
       return 1;
     }

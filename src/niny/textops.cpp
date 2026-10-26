@@ -544,4 +544,63 @@ std::vector<WordSpan> spell_words(const std::string &text) {
   return out;
 }
 
+std::vector<Mnemonic> menu_mnemonics(const std::vector<std::string> &titles, const std::string &reserved) {
+  std::vector<Mnemonic> out(titles.size());
+  std::set<int> taken;
+  for (char c : reserved) taken.insert(tolower(static_cast<unsigned char>(c)));
+  auto usable = [&](char c) {
+    unsigned char u = static_cast<unsigned char>(c);
+    return u < 0x80 && isalnum(u) && !taken.count(tolower(u));
+  };
+  // The marked letters first, in order; then the first free letter of the
+  // titles without one.
+  for (size_t i = 0; i < titles.size(); ++i) {
+    const std::string &t = titles[i];
+    Mnemonic &m = out[i];
+    for (size_t k = 0; k < t.size(); ++k) {
+      if (t[k] == '&' && k + 1 < t.size()) {
+        ++k;
+        if (t[k] != '&' && m.index < 0 && usable(t[k])) {
+          m.index = int(m.text.size());
+          m.key = tolower(static_cast<unsigned char>(t[k]));
+          taken.insert(m.key);
+        }
+      }
+      m.text += t[k];
+    }
+  }
+  for (Mnemonic &m : out) {
+    if (m.index >= 0) continue;
+    for (size_t k = 0; k < m.text.size(); ++k)
+      if (usable(m.text[k])) {
+        m.index = int(k);
+        m.key = tolower(static_cast<unsigned char>(m.text[k]));
+        taken.insert(m.key);
+        break;
+      }
+  }
+  return out;
+}
+
+int free_untitled_number(const std::vector<int> &used) {
+  int n = 1;
+  while (std::find(used.begin(), used.end(), n) != used.end()) ++n;
+  return n;
+}
+
+std::vector<std::string> shortcut_keys(const std::string &text) {
+  std::vector<std::string> keys;
+  std::string cur;
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (text[i] == '+' && !cur.empty()) {
+      keys.push_back(cur);
+      cur.clear();
+    } else {
+      cur += text[i];  // a '+' that starts a key is the key itself
+    }
+  }
+  if (!cur.empty()) keys.push_back(cur);
+  return keys;
+}
+
 }  // namespace niny
