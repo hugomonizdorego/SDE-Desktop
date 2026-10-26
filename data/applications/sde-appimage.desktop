@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The AppImage Runner opens AppImages (double-click in Liria and on the
+# desktop, Open With): it runs those it can verify and explains the others.
+# It is not shown in the Start menu or the Control Center (NoDisplay).
+# docs/APPIMAGE.md.
+[Desktop Entry]
+Type=Application
+Name=AppImage Runner
+GenericName=Application Launcher
+Comment=Run AppImages after checking their signature
+Keywords=appimage;run;launch;signature;verify;
+Exec=sde-appimage %f
+TryExec=sde-appimage
+Icon=sde-appimage
+Terminal=false
+NoDisplay=true
+Categories=System;Utility;
+MimeType=application/vnd.appimage;application/x-iso9660-appimage;
+StartupNotify=false
+X-Developer=Selviana DE Project

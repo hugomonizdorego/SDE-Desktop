@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Debrun: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Debrun</title>
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ECE6DA"/><stop offset="1" stop-color="#DCD4C4"/></linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4EFE6"/><stop offset="1" stop-color="#E6E0D4"/></linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5AA868"/><stop offset="1" stop-color="#4A9157"/></linearGradient>
+  </defs>
+  <path d="M44 116H212V212Q212 226 198 226H58Q44 226 44 212Z" fill="url(#body)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <rect x="30" y="94" width="196" height="38" rx="12" fill="url(#lid)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <rect x="78" y="166" width="100" height="24" rx="12" fill="#C9564E" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" class="outline"/>
+  <path d="M62 204H98M158 204H194" fill="none" stroke="#ADA79A" stroke-width="6" stroke-linecap="round" class="detail"/>
+  <path d="M106 18H150V82H186L128 150L70 82H106Z" fill="url(#arrow)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" class="outline"/>
+  <path d="M118 30V78" fill="none" stroke="#7CC08A" stroke-width="6" stroke-linecap="round" class="detail"/>
+</svg>

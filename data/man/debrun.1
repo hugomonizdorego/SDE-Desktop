@@ -1,0 +1,92 @@
+.TH DEBRUN 1 "October 2026" "SDE" "User Commands"
+.SH NAME
+debrun \- install a Debian package downloaded from the website of its maker
+.SH SYNOPSIS
+.B debrun
+[\fIFILE\fB.deb\fR]
+.br
+.B debrun
+\fB--version\fR | \fB--help\fR
+.SH DESCRIPTION
+\fBDebrun\fR is the installer of Debian packages (\fI.deb\fR files) of the
+Selviana Desktop Environment. Makers of software (web browsers, editors,
+chat programs) often offer their programs as a \fI.deb\fR file on their
+website. Liria and the desktop open such files with Debrun (a double-click,
+or \fBOpen With\fR and \fBInstall with Debrun\fR in the context menu); it is
+not shown in the Start menu or the Control Center.
+.PP
+Before anything is installed, Debrun shows:
+.IP \(bu 2
+the application (its icon and name from the package's launcher), the
+package name, version, architecture, maintainer, homepage, sizes and the
+SHA-256 digest of the file;
+.IP \(bu 2
+that the package does not come from the package sources of the system, so
+nobody checked it, where the browser downloaded it from (when it recorded
+that) and the version the package sources offer of the same package;
+.IP \(bu 2
+what it changes besides its files: an APT package source and signing key
+(as the packages of Chrome and VS Code add), maintainer scripts run as
+root, downloads made by those scripts, scheduled tasks, system services,
+programs started at login, set-user-ID programs, system users, sudo and
+polkit rules, device rules, kernel modules, login (PAM) configuration,
+alternatives and configuration files;
+.IP \(bu 2
+its dependencies, each one installed, provided by another package, to be
+installed from the package sources or missing, with the other packages
+installed or removed with it (APT's own simulation, \fBapt-get --simulate\fR);
+.IP \(bu 2
+whether it is a new installation, an upgrade, the same version again or a
+downgrade, and its files.
+.PP
+\fBInstall\fR (or \fBUpgrade\fR, \fBReinstall\fR, \fBDowngrade\fR) asks for
+an administrator's password and installs the package the Debian way: APT
+installs it with the packages it needs from the configured package
+sources. Changes that remove other packages are confirmed first.
+\fBRemove...\fR removes the installed package of the same name. The
+progress is shown with the animated SDE logo.
+.PP
+Errors are explained: a package made for another architecture, dependencies
+the package sources cannot meet (\fBRefresh Package Lists\fR downloads the
+lists again), held packages, another program using the package system, too
+little disk space, a damaged or incomplete download.
+.SH HOW IT INSTALLS
+Debrun runs as the user. Changes are made by \fB/usr/libexec/sde/debrun-helper\fR,
+started with \fBpkexec\fR(1) (polkit actions \fBorg.debion.sde.debrun.install\fR,
+\fB.remove\fR and \fB.refresh\fR; an administrator's password, remembered for
+a few minutes). The helper opens the file with the user's rights, copies it
+to \fI/var/cache/sde/debrun\fR (writable by root only), checks that the copy
+has the SHA-256 digest, name, version and architecture that Debrun showed,
+simulates the change again and refuses removals that were not shown, then
+runs \fBapt-get install\fR on the copy. Every request is logged to the
+system log; APT and dpkg keep their own logs in \fI/var/log/apt\fR and
+\fI/var/log/dpkg.log\fR.
+.PP
+With \fB[debrun] backend=packagekit\fR in \fIsde.conf\fR (system defaults:
+\fI/etc/xdg/sde/sde.conf\fR) Debrun uses PackageKit's \fBInstallFiles\fR
+instead; \fBbackend=apt\fR forces the helper; the default \fBauto\fR takes
+the helper when \fBpkexec\fR is installed.
+.SH OPTIONS
+.TP
+.B --version
+print the version and exit.
+.TP
+.B --help
+print a short help and exit.
+.SH KEYS
+\fBEnter\fR or \fBSpace\fR press the button with the keyboard focus,
+\fBEscape\fR closes Debrun (not while it installs), \fBCtrl+O\fR opens
+another package, \fBF1\fR shows About Debrun.
+.SH FILES
+.TP
+.I /usr/share/applications/debrun.desktop
+opens \fBapplication/vnd.debian.binary-package\fR files; it is the SDE
+default for them in \fI/etc/xdg/sde-mimeapps.list\fR.
+.TP
+.I /usr/share/polkit-1/actions/org.debion.sde.debrun.policy
+the polkit actions of the helper.
+.SH SEE ALSO
+\fBapt\fR(8), \fBapt-get\fR(8), \fBdpkg\fR(1), \fBpkexec\fR(1),
+\fBmerkadu\fR(1), \fBsde-appimage\fR(1)
+.PP
+The documentation in \fI/usr/share/doc/sde/DEBRUN.md\fR.

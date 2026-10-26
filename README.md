@@ -118,8 +118,8 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-run` | Run Command dialog (Alt+F2) |
 | `sde-logout` | Lock, suspend, log out, restart, shut down |
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
-| `merkadu` | Merkadu, the software center (own package): Debian packages through PackageKit and AppStream, Flatpak (Flathub) and Snap in one window, departments, Installed, Updates, History; `merkadu --uninstall` for the Start Menu |
-| `sde-update` | Software Updater: critical, security, main and Flatpak updates with check boxes, history, sources and maintenance; PackageKit/APT and Flatpak transactions with progress and background notifications |
+| `merkadu` | Merkadu, the software center (own package): Debian packages through PackageKit and AppStream, Flatpak (Flathub, set up out of the box) and Snap in one window; Home with highlights and recommendations, departments, All Software (every package by section and status, marked changes applied together, like Synaptic), Installed, app Updates, History; `merkadu --uninstall` for the Start Menu |
+| `sde-update` | Software Updater: critical, security and main updates of the operating system with check boxes, history, sources and maintenance; PackageKit/APT transactions with progress and background notifications (apps from Flathub and the Snap Store are updated in Merkadu) |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the

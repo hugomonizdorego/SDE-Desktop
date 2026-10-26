@@ -15,6 +15,7 @@
 //
 // MERKADU_PACKAGEKIT_BUS=session talks to a PackageKit on the session bus
 // (the tests' fake service); MERKADU_APT_HISTORY replaces the log path.
+#include <sys/utsname.h>
 #include <zlib.h>
 
 #include <algorithm>
@@ -140,8 +141,10 @@ std::string pk_locale() {
 
 // Creates a transaction, sets its hints and calls |method| with the
 // arguments |args| appends. |t| receives the signals; on_finished always
-// runs once (also when PackageKit cannot be reached).
-void pk_call(const std::string &method, std::function<void(DBusMessage *)> args, std::shared_ptr<Tx> t) {
+// runs once (also when PackageKit cannot be reached). |interactive|: polkit
+// may ask for a password (else an action that needs one fails).
+void pk_call(const std::string &method, std::function<void(DBusMessage *)> args, std::shared_ptr<Tx> t,
+             bool interactive = true) {
   dbus::Bus *bus = pk_bus();
   if (!bus) {
     t->error = _("PackageKit cannot be reached: there is no connection to the system bus.");
@@ -152,7 +155,7 @@ void pk_call(const std::string &method, std::function<void(DBusMessage *)> args,
   DBusMessage *create = dbus::method(kService, kPath, kService, "CreateTransaction");
   bus->call_async(
       create,
-      [bus, method, args, t](DBusMessage *reply) {
+      [bus, method, args, t, interactive](DBusMessage *reply) {
         auto r = reply ? dbus::read_args(reply) : std::vector<dbus::Value>();
         if (r.empty() || r[0].str().empty()) {
           t->error = _("PackageKit is not running or not installed.");
@@ -165,7 +168,8 @@ void pk_call(const std::string &method, std::function<void(DBusMessage *)> args,
         DBusMessage *hints = dbus::method(kService, t->path, kTransaction, "SetHints");
         {
           dbus::Writer w(hints);
-          w.strings({"locale=" + pk_locale(), "interactive=true", "background=false"});
+          w.strings({"locale=" + pk_locale(), interactive ? "interactive=true" : "interactive=false",
+                     interactive ? "background=false" : "background=true"});
         }
         bus->send(hints);
         DBusMessage *call = dbus::method(kService, t->path, kTransaction, method);
@@ -319,6 +323,47 @@ class PackageKitBackend : public Backend {
     pk_call("GetUpdates", [](DBusMessage *m) { append_u64(m, pk::bit(pk::FILTER_NONE)); }, t);
   }
 
+  void refresh(bool force, bool interactive, int min_age, std::function<void(const Progress &)> progress,
+               RefreshFn done) override {
+    std::time_t lists = apt::lists_time();
+    if (!force && lists > 0 && std::time(nullptr) - lists < min_age) {
+      RefreshResult r;
+      r.skipped = true;  // refreshed a moment ago
+      done(r);
+      return;
+    }
+    auto t = std::make_shared<Tx>();
+    t->on_progress = [progress](int percent, unsigned status, bool) {
+      Progress p;
+      p.percent = percent;
+      p.status = pk::status_text(status);
+      progress(p);
+    };
+    t->on_finished = [done](unsigned exit, unsigned code, const std::string &error) {
+      RefreshResult r;
+      if (exit == pk::FINISHED_SUCCESS) {
+        r.changed = true;  // APT's hook has read the new AppStream catalog
+      } else if (code == pk::ERROR_NO_NETWORK) {
+        r.skipped = true;
+        r.message = _("Offline: the lists from the last refresh are shown.");
+      } else if (code == pk::ERROR_NOT_AUTHORIZED) {
+        r.skipped = true;
+        r.message = _("Not refreshed: an administrator has to allow it (click Refresh to try).");
+      } else if (code == pk::ERROR_CANNOT_GET_LOCK) {
+        r.skipped = true;
+        r.message = _("Not refreshed: another program is installing software. Try again when it is done.");
+      } else if (exit == pk::FINISHED_CANCELLED || pk::error_is_cancel(code)) {
+        r.skipped = true;
+        r.message = _("The refresh was cancelled.");
+      } else {
+        r.ok = false;
+        r.message = pk::error_text(code, error);
+      }
+      done(r);
+    };
+    pk_call("RefreshCache", [force](DBusMessage *m) { append_bool(m, force); }, t, interactive);
+  }
+
   void details(const App &app, const Origin &o, std::function<void(Origin)> done) override {
     if (!valid_package_name(o.id)) return;
     auto fetch = [done](const std::string &id, Origin base) {
@@ -401,16 +446,30 @@ class PackageKitBackend : public Backend {
     // Package ids: the installed ones to remove, the new versions to
     // update (known from GetUpdates), the newest available to install.
     if (action == Action::Update) {
-      std::vector<std::string> ids;
+      std::vector<std::string> ids, unknown;
       for (auto &p : job.targets) {
         auto it = updates_.find(p);
-        if (it != updates_.end()) ids.push_back(it->second);
+        if (it != updates_.end())
+          ids.push_back(it->second);
+        else
+          unknown.push_back(p);
       }
-      if (ids.empty()) {
-        done(false, false, _("There is no update for it any more."));
+      if (unknown.empty()) {
+        start(ids);
         return;
       }
-      start(ids);
+      // Updates found in APT's lists: the newest version available.
+      resolve(unknown, false, [ids, unknown, start, done](std::map<std::string, std::string> found, std::string) {
+        std::vector<std::string> all = ids;
+        for (auto &n : unknown) {
+          auto it = found.find(n);
+          if (it != found.end()) all.push_back(it->second);
+        }
+        if (all.empty())
+          done(false, false, _("There is no update for it any more."));
+        else
+          start(all);
+      });
       return;
     }
     std::vector<std::string> names = job.targets;
@@ -435,15 +494,16 @@ class PackageKitBackend : public Backend {
     pk_bus()->call_async(dbus::method(kService, it->second->path, kTransaction, "Cancel"), nullptr);
   }
 
-  void plan_remove(const std::vector<std::string> &packages,
-                   std::function<void(std::vector<std::string>, long long, std::string)> done) override {
+  void plan_remove(const std::vector<std::string> &packages, std::function<void(RemovalCheck)> done) override {
     std::vector<std::string> names = packages;
     resolve(names, true, [names, done](std::map<std::string, std::string> found, std::string error) {
       std::vector<std::string> ids;
       for (auto &n : names)
         if (found.count(n)) ids.push_back(found[n]);
       if (ids.empty()) {
-        done({}, -1, error.empty() ? std::string(_("It is not installed.")) : error);
+        RemovalCheck c;
+        c.error = error.empty() ? std::string(_("It is not installed.")) : error;
+        done(c);
         return;
       }
       auto removed = std::make_shared<std::vector<std::string>>();
@@ -455,17 +515,29 @@ class PackageKitBackend : public Backend {
           removed->push_back(p.name);
       };
       t->on_finished = [removed, names, done](unsigned exit, unsigned code, const std::string &error) {
+        RemovalCheck c;
         if (exit != pk::FINISHED_SUCCESS) {
-          done({}, -1, pk::error_text(code, error));
+          c.error = pk::error_text(code, error);
+          done(c);
           return;
         }
         if (removed->empty()) *removed = names;
-        // The space they take: dpkg's Installed-Size of each (KiB).
-        std::vector<std::string> argv = {"dpkg-query", "-W", "-f=${Installed-Size}\\n"};
-        for (auto &p : *removed) argv.push_back(p);
-        auto list = *removed;
-        if (!run_async(argv, [list, done](const std::string &out, int) { done(list, parse_installed_sizes(out), ""); }))
-          done(list, -1, "");
+        c.removed = *removed;
+        // The space they take (dpkg's Installed-Size, KiB) and the ones the
+        // system needs (Essential, Priority required, the running kernel).
+        std::vector<std::string> argv = {"dpkg-query", "-W",
+                                         "-f=${Package}\\t${Installed-Size}\\t${Essential}\\t${Priority}\\n"};
+        for (auto &p : c.removed) argv.push_back(p);
+        auto check = std::make_shared<RemovalCheck>(c);
+        bool started = run_async(argv, [check, done](const std::string &out, int) {
+          parse_removal_query(out, &check->freed, &check->system);
+          struct utsname u;
+          std::string kernel = uname(&u) == 0 ? running_kernel_package(u.release) : "";
+          if (!kernel.empty() && std::find(check->removed.begin(), check->removed.end(), kernel) != check->removed.end())
+            check->system.insert(kernel);
+          done(*check);
+        });
+        if (!started) done(c);
       };
       pk_call("RemovePackages", [ids](DBusMessage *m) {
         append_u64(m, pk::bit(pk::FLAG_SIMULATE));
@@ -524,8 +596,7 @@ class PackageKitBackend : public Backend {
 std::unique_ptr<Backend> make_packagekit_backend() { return std::unique_ptr<Backend>(new PackageKitBackend()); }
 
 void load_catalog(CatalogFn done) {
-  background<CatalogData>([] { return load_appstream(); },
-                          [done](CatalogData data) { done(std::move(data.apps), data.error); });
+  background<CatalogData>([] { return load_appstream(); }, [done](CatalogData data) { done(std::move(data)); });
 }
 
 }  // namespace merkadu

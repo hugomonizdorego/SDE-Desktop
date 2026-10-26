@@ -2,7 +2,8 @@
  * Copyright (C) 2026 SDE contributors.
  *
  * SDE Tools for Liria: everyday actions in the context menus - Compress
- * and Extract Here with Taca, Edit with Niny, Edit in Photo, Set as
+ * and Extract Here with Taca, Edit with Niny, Edit in Photo, Install with
+ * Debrun (.deb), Check and Run (AppImages, sde-appimage), Set as
  * Wallpaper, Send To a removable drive, and under "More Actions" Open
  * Terminal Here, Copy Path, Show Checksum, Set Default Application (the
  * applications for the file's type, and Settings > Default Applications)
@@ -145,6 +146,21 @@ is_archive (LiriaFileInfo *file)
 	return FALSE;
 }
 
+/* A downloaded Debian package (Debrun) or an AppImage (sde-appimage). */
+static gboolean
+is_deb (LiriaFileInfo *file)
+{
+	return liria_file_info_is_mime_type (file, "application/vnd.debian.binary-package") ||
+	       liria_file_info_is_mime_type (file, "application/x-deb");
+}
+
+static gboolean
+is_appimage (LiriaFileInfo *file)
+{
+	return liria_file_info_is_mime_type (file, "application/vnd.appimage") ||
+	       liria_file_info_is_mime_type (file, "application/x-iso9660-appimage");
+}
+
 /* ------------------------------------------------------------------ actions */
 
 static void
@@ -214,6 +230,19 @@ static void
 photo_cb (LiriaMenuItem *item, gpointer data)
 {
 	open_each_with (data, "sde-view");
+}
+
+static void
+debrun_cb (LiriaMenuItem *item, gpointer data)
+{
+	open_each_with (data, "debrun");
+}
+
+/* sde-appimage verifies the AppImage before it runs it (docs/APPIMAGE.md). */
+static void
+appimage_cb (LiriaMenuItem *item, gpointer data)
+{
+	open_each_with (data, "sde-appimage");
 }
 
 /* Writes [appearance] wallpaper to ~/.config/sde/sde.conf and asks the
@@ -623,6 +652,14 @@ get_file_items (LiriaMenuProvider *provider, GtkWidget *window, GList *files)
 	send = send_to_item (files);
 	if (send)
 		items = g_list_append (items, send);
+	if (count == 1 && !any_dir && is_deb (files->data))
+		items = g_list_append (items, item ("SdeTools::Debrun", _("Install with Debrun"),
+		                                    _("See what the package contains and changes, then install it"),
+		                                    "debrun", G_CALLBACK (debrun_cb), files));
+	if (count == 1 && !any_dir && is_appimage (files->data))
+		items = g_list_append (items, item ("SdeTools::AppImage", _("Check and Run"),
+		                                    _("Verify the signature of the AppImage, then run it"),
+		                                    "sde-appimage", G_CALLBACK (appimage_cb), files));
 	if (all_text && !any_dir)
 		items = g_list_append (items, item ("SdeTools::Niny", _("Edit with Niny"),
 		                                    _("Open in the Niny text editor"), "accessories-text-editor",

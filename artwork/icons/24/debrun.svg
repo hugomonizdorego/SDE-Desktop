@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Debrun, 24 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" shape-rendering="auto">
+  <path d="M8.5 1H15.5V6H19L12 13.5L5 6H8.5Z" fill="#2B2B2F"/>
+  <path d="M9.5 2H14.5V7H16.8L12 12.2L7.2 7H9.5Z" fill="#4A9157"/>
+  <rect x="2" y="10" width="20" height="5" rx="1" fill="#2B2B2F"/>
+  <rect x="3" y="11" width="18" height="3" fill="#F1ECE2"/>
+  <rect x="4" y="13" width="16" height="10" rx="2" fill="#2B2B2F"/>
+  <rect x="5" y="14" width="14" height="8" rx="1" fill="#E2DBCC"/>
+  <rect x="8" y="17" width="8" height="3" rx="1" fill="#2B2B2F"/>
+  <rect x="9" y="18" width="6" height="1" fill="#C9564E"/>
+</svg>

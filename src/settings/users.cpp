@@ -17,7 +17,10 @@
 // from it, Standard or Administrator, a password with its strength, or one
 // the person chooses at the first login). The card of a chosen account
 // changes its name, picture, type, password, automatic login and lock, or
-// removes it, keeping or deleting the home folder. AccountsService makes
+// removes it, keeping or deleting the home folder. Renaming an account
+// (its login name and home folder; yours with your own password) is made
+// at the next restart by sde-account-rename (account_rename.h): the page
+// shows "Will be renamed to ... at the next restart" with Cancel. AccountsService makes
 // every change on a worker thread and polkit asks for an administrator's
 // password (sde-polkit-agent); its signals keep the list current. Without
 // AccountsService the accounts are listed and the page says what to
@@ -28,9 +31,13 @@
 #include <FL/Fl_Input.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
+#include <fcntl.h>
 #include <pwd.h>
+// <spawn.h> would find SDE's own spawn.h (src/common is on the include path).
+#include <../include/spawn.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -43,9 +50,11 @@
 #include <thread>
 #include <vector>
 
+#include "account_rename.h"
 #include "accounts.h"
 #include "avatar.h"
 #include "avatar_view.h"
+#include "build_config.h"
 #include "dbus.h"
 #include "glyphs.h"
 #include "i18n.h"
@@ -87,8 +96,27 @@ std::string g_own_status;      // ...or in the card of your account
 StatusKind g_own_kind = StatusKind::done;
 std::map<std::string, std::unique_ptr<avatar::Picture>> g_user_pictures;
 
+// Renames waiting for the next restart (account_rename.h), read again
+// whenever the page is built.
+std::vector<account_rename::Request> g_renames;
+// The account the rename form is for.
+struct RenameTarget {
+  uid_t uid = 0;
+  std::string name, home, display;
+  bool self = false;
+};
+RenameTarget g_rename_target;
+
+void load_renames() { g_renames = account_rename::load_requests(account_rename::default_dir()); }
+
+const account_rename::Request *rename_request(uid_t uid) {
+  for (const auto &r : g_renames)
+    if (r.uid == uid) return &r;
+  return nullptr;
+}
+
 // The form open in the page, and what was typed in it.
-enum class Form { none, own_password, add_user, user_password, remove_user };
+enum class Form { none, own_password, add_user, user_password, remove_user, rename };
 Form g_form = Form::none;
 struct Draft {
   std::string full_name, user_name, current, password, again, other_name;
@@ -96,6 +124,8 @@ struct Draft {
   int type = 0;      // the add form: 0 Standard, 1 Administrator
   int later = 0;     // 1: the person chooses a password at the (first or) next login
   std::string message;  // what is wrong with what was typed
+  std::string new_login;  // the rename form: the new user name
+  int rename_link = 0;    // 1: a link from the old home folder
 };
 Draft g_draft;
 // The control to give the keyboard to once the page is built.
@@ -388,6 +418,8 @@ std::string user_detail(const accounts::User &u) {
     d += "  ·  " + std::string(_("Password at next login"));
   if (u.auto_login) d += "  ·  " + std::string(_("Automatic login"));
   if (u.logged_in) d += "  ·  " + std::string(_("Logged in"));
+  if (const account_rename::Request *r = rename_request(u.uid))
+    if (r->state == "pending") d += "  ·  " + format(_("Renamed to %s at the next restart"), r->new_name.c_str());
   return d;
 }
 
@@ -783,14 +815,14 @@ void full_name_typed() {
   if (g_user_name_input) g_user_name_input->value(g_draft.user_name.c_str());
   if (g_user_name_hint)
     g_user_name_hint->set(g_draft.user_name.empty() ? std::string(_("Type a user name: lowercase letters, digits, - and _."))
-                                                    : std::string(_("Used to log in. It cannot be changed later.")));
+                                                    : std::string(_("Used to log in.")));
 }
 
 void user_name_typed() {
   g_draft.user_name_edited = true;
   if (!g_user_name_hint || !form_shown()) return;
   std::string why = accounts::user_name_problem(g_draft.user_name, taken_names());
-  g_user_name_hint->set(why.empty() ? std::string(_("Used to log in. It cannot be changed later.")) : why);
+  g_user_name_hint->set(why.empty() ? std::string(_("Used to log in.")) : why);
 }
 
 // Cancel and the form's own button, side by side.
@@ -1017,6 +1049,214 @@ void open_form(Form f, const std::string &anchor, const std::string &focus) {
   open_settings_page("users", anchor);
 }
 
+// ------------------------------------------------------- renaming
+
+// Whether account |uid| is a person's (UID_MIN to UID_MAX of
+// /etc/login.defs): only those are renamed here.
+bool renamable(uid_t uid) {
+  uid_t min = 0, max = 0;
+  account_rename::uid_range("/", &min, &max);
+  return uid >= min && uid <= max;
+}
+
+// Runs sde-account-rename with |args| through pkexec (polkit asks for the
+// password), or SDE_ACCOUNT_RENAME_HELPER directly in the tests, with
+// SDE_ACCOUNT_RENAME_DIR and SDE_ACCOUNT_RENAME_ROOT as its --dir and
+// --root. Blocks: run it on a worker thread.
+bool run_rename_helper(std::vector<std::string> args, std::string *error) {
+  std::vector<std::string> argv;
+  std::string test = env("SDE_ACCOUNT_RENAME_HELPER");
+  if (!test.empty()) {
+    argv = {test};
+    std::string dir = env("SDE_ACCOUNT_RENAME_DIR"), root = env("SDE_ACCOUNT_RENAME_ROOT");
+    if (!dir.empty()) args.insert(args.end(), {"--dir", dir});
+    if (!root.empty()) args.insert(args.end(), {"--root", root});
+  } else {
+    argv = {"pkexec", std::string(SDE_LIBEXECDIR) + "/sde/sde-account-rename"};
+  }
+  argv.insert(argv.end(), args.begin(), args.end());
+  std::vector<char *> a;
+  for (auto &s : argv) a.push_back(&s[0]);
+  a.push_back(nullptr);
+  int fds[2];
+  if (pipe2(fds, O_CLOEXEC) != 0) {
+    *error = strerror(errno);
+    return false;
+  }
+  posix_spawn_file_actions_t fa;
+  posix_spawn_file_actions_init(&fa);
+  posix_spawn_file_actions_addopen(&fa, 0, "/dev/null", O_RDONLY, 0);
+  posix_spawn_file_actions_adddup2(&fa, fds[1], 1);
+  posix_spawn_file_actions_adddup2(&fa, fds[1], 2);
+  pid_t pid = -1;
+  int err = posix_spawnp(&pid, argv[0].c_str(), &fa, nullptr, a.data(), environ);
+  posix_spawn_file_actions_destroy(&fa);
+  close(fds[1]);
+  if (err != 0) {
+    close(fds[0]);
+    *error = format(_("%s cannot be started: %s"), argv[0].c_str(), strerror(err));
+    return false;
+  }
+  std::string out;
+  char buf[4096];
+  for (;;) {
+    ssize_t n = read(fds[0], buf, sizeof buf);
+    if (n < 0 && errno == EINTR) continue;
+    if (n <= 0) break;
+    if (out.size() < 65536) out.append(buf, size_t(n));
+  }
+  close(fds[0]);
+  int st = 0;
+  while (waitpid(pid, &st, 0) < 0 && errno == EINTR) {
+  }
+  int code = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
+  if (code == 0) return true;
+  if (test.empty() && code == 126) {
+    *error = _("Nothing was changed: the password was not given.");
+    return false;
+  }
+  if (test.empty() && code == 127) {
+    *error = _("Nothing was changed: you are not allowed to do this.");
+    return false;
+  }
+  // "ERROR CODE text"
+  for (const auto &line : split(out, '\n'))
+    if (starts_with(line, "ERROR ")) {
+      size_t sp = line.find(' ', 6);
+      *error = sp == std::string::npos ? line.substr(6) : line.substr(sp + 1);
+      return false;
+    }
+  *error = trim(out).empty() ? std::string(_("The change did not work.")) : trim(out);
+  return false;
+}
+
+// What is wrong with the new name ("" when nothing).
+std::string rename_problem() {
+  const RenameTarget &t = g_rename_target;
+  std::string name = trim(g_draft.new_login);
+  if (name.empty()) return _("Type the new user name: lowercase letters, digits, - and _.");
+  if (name == t.name) return format(_("The account is called %s already."), name.c_str());
+  std::vector<std::string> taken = taken_names();
+  for (const auto &r : g_renames)
+    if (r.uid != t.uid) taken.push_back(r.new_name);
+  return accounts::user_name_problem(name, taken);
+}
+
+// The problem, or what becomes of the home folder.
+std::string rename_hint() {
+  const RenameTarget &t = g_rename_target;
+  std::string why = rename_problem();
+  if (!why.empty()) return why;
+  std::string name = trim(g_draft.new_login);
+  std::string home = account_rename::new_home_for(t.home, t.name, name);
+  return home != t.home ? format(_("The home folder %s becomes %s."), t.home.c_str(), home.c_str())
+                        : std::string(_("The home folder keeps its name."));
+}
+
+Label *g_rename_hint = nullptr;
+
+void rename_typed() {
+  if (!form_shown()) return;
+  if (g_rename_hint) g_rename_hint->set(rename_hint());
+  if (!g_draft.message.empty()) show_message("");  // the hint says what is wrong now
+}
+
+void submit_rename() {
+  if (g_changing) return;
+  RenameTarget t = g_rename_target;
+  std::string name = trim(g_draft.new_login);
+  std::string why = rename_problem();
+  if (!why.empty()) {
+    show_message(why);
+    return;
+  }
+  std::vector<std::string> args = {t.self ? "schedule-self" : "schedule", "--uid", std::to_string(t.uid), "--old",
+                                   t.name, "--new", name};
+  if (g_draft.rename_link && account_rename::new_home_for(t.home, t.name, name) != t.home) args.push_back("--link");
+  close_form();
+  g_draft.new_login.clear();
+  change(format(_("Asking to rename %s..."), t.name.c_str()),
+         format(_("%s will be renamed to %s at the next restart."), t.name.c_str(), name.c_str()),
+         [args](std::string *error) { return run_rename_helper(args, error); },
+         [](bool, const std::string &) { load_renames(); }, t.self);
+}
+
+void cancel_rename(const RenameTarget &t, bool failed) {
+  if (g_changing) return;
+  std::vector<std::string> args = {t.self ? "cancel-self" : "cancel", "--uid", std::to_string(t.uid)};
+  change(format(_("Cancelling the rename of %s..."), t.name.c_str()),
+         failed ? std::string(_("Done.")) : format(_("%s keeps its name."), t.name.c_str()),
+         [args](std::string *error) { return run_rename_helper(args, error); },
+         [](bool, const std::string &) { load_renames(); }, t.self);
+}
+
+void open_rename(const RenameTarget &t) {
+  g_rename_target = t;
+  g_draft.new_login.clear();
+  g_draft.rename_link = 0;
+  open_form(Form::rename, t.self ? "own-rename" : "user", _("New user name"));
+}
+
+// The form (under the account's User name row).
+void rename_form(Page *page) {
+  const RenameTarget &t = g_rename_target;
+  page->note(t.self ? std::string(_("Your user name changes at the next restart of the computer, before anyone logs "
+                                    "in; until then you keep using your current name. Your password, files and "
+                                    "settings stay as they are."))
+                    : format(_("The user name of %s changes at the next restart of the computer, before anyone logs "
+                               "in. Their password, files and settings stay as they are."),
+                             t.display.c_str()));
+  field(page, _("New user name"), _("New user name"), &g_draft.new_login, false, rename_typed, submit_rename);
+  {
+    int x = page->left() + S(20), w = page->width() - S(40);
+    std::string hint = rename_hint();
+    int h = std::max(S(22), Label::measure(hint, w, Label::DIM) + S(4));
+    g_rename_hint = new Label(x, page->cursor(), w, h, hint, Label::DIM, true);
+    page->advance(h + S(4));
+  }
+  page->switch_row(
+          _("Link from the old folder"), g_draft.rename_link == 1, [](bool on) { g_draft.rename_link = on ? 1 : 0; },
+          _("Programs that remember the old folder path keep finding the files. The old folder name stays taken."))
+      ->tooltip(_("Link from the old folder"));
+  message_row(page);
+  form_buttons(page, "", _("Rename at Restart"), submit_rename);
+}
+
+// The User name row of an account's card: the name and Rename..., or the
+// rename waiting for the restart with Cancel (also a failed one).
+void user_name_row(Page *page, const RenameTarget &t, const std::string &why_not) {
+  const account_rename::Request *r = rename_request(t.uid);
+  std::string hint;
+  if (r && r->state == "failed")
+    hint = format(_("Renaming to %s failed at the last start: %s"), r->new_name.c_str(), r->error.c_str());
+  else if (r)
+    hint = format(_("Will be renamed to %s at the next restart."), r->new_name.c_str()) +
+           (r->new_home != r->old_home ? " " + format(_("The home folder becomes %s."), r->new_home.c_str())
+                                       : std::string());
+  else
+    hint = why_not.empty() ? std::string(_("Used to log in. A new name is taken at the next restart.")) : why_not;
+  if (r) qa_line("@rename:" + r->old_name + ":" + r->new_name + ":" + r->state, 0, 0, 0, 0);
+  page->row(_("User name"), S(320), S(34), [&](int x, int y, int w, int h) {
+    auto *g = new Fl_Group(x, y, w, h);
+    int bw = std::min(S(150), w / 2);
+    new Label(x, y, w - bw - S(10), h, t.name, Label::BOLD);
+    RenameTarget copy = t;
+    if (r) {
+      bool failed = r->state == "failed";
+      auto *b = button(x + w - bw, y, bw, h, failed ? _("Dismiss") : _("Cancel Rename"),
+                       [copy, failed] { cancel_rename(copy, failed); });
+      b->tooltip(failed ? _("Forget the failed rename") : _("Cancel the rename"));
+    } else {
+      auto *b = button(x + w - bw, y, bw, h, _("Rename..."), [copy] { open_rename(copy); }, false, why_not,
+                       !(g_form == Form::rename && g_rename_target.uid == t.uid));
+      if (why_not.empty()) b->tooltip(t.self ? _("Rename your account") : _("Rename this account"));
+    }
+    g->end();
+    return g;
+  }, hint);
+  if (g_form == Form::rename && g_rename_target.uid == t.uid && !r && why_not.empty()) rename_form(page);
+}
+
 // ------------------------------------------------------------ the cards
 
 // The password form of your account (Change Password...).
@@ -1057,9 +1297,20 @@ void own_account_card(Page *page, const avatar::Account &a) {
       },
       a.accounts_service ? _("Shown in the Start menu, on the lock screen and when you log in.")
                          : _("Changing the name needs AccountsService (package accountsservice)."));
-  page->row(_("User name"), S(220), S(30), [&a](int x, int y, int w, int h) {
-    return new Label(x, y, w, h, a.user, Label::BOLD);
-  });
+  {
+    RenameTarget t;
+    t.uid = getuid();
+    t.name = a.user;
+    struct passwd *pw = getpwuid(t.uid);
+    t.home = pw && pw->pw_dir ? pw->pw_dir : home_dir();
+    t.display = a.display_name();
+    t.self = true;
+    page->anchor("own-rename");
+    user_name_row(page, t,
+                  t.uid == 0         ? std::string(_("The administrator's account (root) keeps its name."))
+                  : !renamable(t.uid) ? std::string(_("Only the accounts of people can be renamed here."))
+                                      : std::string());
+  }
   page->row(
       _("Account type"), S(220), S(30),
       [admin](int x, int y, int w, int h) {
@@ -1109,7 +1360,7 @@ void add_user_form(Page *page) {
   {
     std::string why = g_draft.user_name.empty() ? std::string(_("Type a user name: lowercase letters, digits, - and _."))
                                                 : accounts::user_name_problem(g_draft.user_name, taken_names());
-    std::string hint = why.empty() ? std::string(_("Used to log in. It cannot be changed later.")) : why;
+    std::string hint = why.empty() ? std::string(_("Used to log in.")) : why;
     page->row(_("User name"), S(300), S(34), [&](int x, int y, int w, int h) {
       g_user_name_input = new DraftInput(x, y, w, h, &g_draft.user_name, _("New user name"), false, user_name_typed,
                                          submit_add_user);
@@ -1240,6 +1491,14 @@ void user_card(Page *page, const accounts::User &u) {
         if (g_changing) in->deactivate();
         return in;
       });
+  {
+    RenameTarget t;
+    t.uid = u.uid;
+    t.name = u.name;
+    t.home = u.home.empty() ? "/home/" + u.name : u.home;
+    t.display = u.display_name();
+    user_name_row(page, t, renamable(u.uid) ? std::string() : std::string(_("Only the accounts of people can be renamed here.")));
+  }
   page->row(_("Picture"), S(260), S(34), [&u](int x, int y, int w, int h) {
     auto *g = new Fl_Group(x, y, w, h);
     int bw = (w - S(10)) / 2;
@@ -1425,6 +1684,8 @@ void build_users_page(Page *page) {
   g_user_name_hint = nullptr;
   if (!g_users_loaded && !g_users_loading) load_users();
   watch_users();
+  load_renames();
+  g_rename_hint = nullptr;
   page->heading(_("Users & Avatar"), _("Your picture and account, and the other users of this computer"));
 
   // Who: the picture, the name and the kind of account.

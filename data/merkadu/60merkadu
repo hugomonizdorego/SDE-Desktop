@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Merkadu, the SDE software center (package merkadu): installed as
+// /etc/apt/apt.conf.d/60merkadu.
+//
+// APT downloads the archive's AppStream catalog (DEP-11) because of the
+// appstream package's 50appstream, which leaves the icons of the catalog
+// off. Merkadu shows an icon for every app: the 48 and 64 pixel icons come
+// with the catalog (a few MB, only when they change); larger ones are
+// downloaded when an app page needs them. Set them to "false" here to save
+// the download, or enable "DEP-11-icons-large" (128 pixels) as well.
+Acquire::IndexTargets::deb::DEP-11-icons-small::DefaultEnabled "true";
+Acquire::IndexTargets::deb::DEP-11-icons::DefaultEnabled "true";

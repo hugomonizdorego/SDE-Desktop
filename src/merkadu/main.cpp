@@ -3,8 +3,9 @@
 //
 // merkadu: the SDE software center (docs/MERKADU.md, man merkadu).
 //
-//   merkadu [--page explore|installed|updates|history|progress|sources]
-//           [--search TEXT] [--category ID] [--details APPID]
+//   merkadu [--page home|installed|updates|packages|history|progress|sources]
+//           [--search TEXT] [--category ID] [--details APPID] [--package NAME]
+//   merkadu --self-test [--expect REF,...] [--expect-flatpak N] [--list]
 //   merkadu appstream://APPID
 //   merkadu --uninstall FILE.desktop   (exit 0 removed, 1 failed, 2 cancelled)
 //   merkadu --version | --help
@@ -14,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "about.h"
 #include "config.h"
@@ -32,14 +34,18 @@ namespace {
 
 std::string usage() {
   return _("Merkadu: find, install, update and remove software from the Debian archive, Flatpak and Snap.\n\n"
-           "Usage: merkadu [--page NAME] [--search TEXT] [--category ID] [--details APPID]\n"
+           "Usage: merkadu [--page NAME] [--search TEXT] [--category ID] [--details APPID] [--package NAME]\n"
            "       merkadu appstream://APPID\n"
            "       merkadu --uninstall FILE.desktop\n"
            "       merkadu --version\n\n"
-           "  --page NAME       open a page: explore, installed, updates, history, progress or sources\n"
+           "  --page NAME       open a page: home, installed, updates, packages (All Software),\n"
+           "                    history, progress or sources\n"
            "  --search TEXT     search for apps\n"
            "  --category ID     open a department (games, graphics/photography, ...)\n"
            "  --details APPID   open the page of an app (its AppStream id, e.g. org.gimp.GIMP)\n"
+           "  --package NAME    open the page of a package in All Software\n"
+           "  --self-test       load the catalogs and package lists without a window and report\n"
+           "                    (--expect REF,... --expect-flatpak N --list --simulate install:PKG,...)\n"
            "  --uninstall FILE  uninstall the app of a launcher (the absolute path of its .desktop\n"
            "                    file), asking first; exits with 0 when it was removed, 1 when it\n"
            "                    failed or cannot be removed, 2 when the user cancelled\n"
@@ -50,6 +56,8 @@ std::string usage() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  if (argc > 1 && std::strcmp(argv[1], "--self-test") == 0)
+    return run_self_test(std::vector<std::string>(argv + 2, argv + argc));
   sde::set_default_window_icon({"merkadu", "system-software-install"});  // title bar and taskbar
   install_crash_handler("merkadu");
   View view;
@@ -73,7 +81,7 @@ int main(int argc, char **argv) {
       uninstall = v;
     } else if (value("--page", v)) {
       if (!view_from_id(v, &view.kind) || view.kind == View::Details || view.kind == View::Category ||
-          view.kind == View::Search) {
+          view.kind == View::Search || view.kind == View::Package) {
         fprintf(stderr, "merkadu: unknown page \"%s\"\n", v.c_str());
         return 2;
       }
@@ -83,6 +91,8 @@ int main(int argc, char **argv) {
       view = View{View::Category, v};
     } else if (value("--details", v)) {
       view = View{View::Details, normalize_id(v)};
+    } else if (value("--package", v)) {
+      view = View{View::Package, trim(v)};
     } else if (starts_with(a, "appstream:")) {
       // appstream://org.gimp.GIMP, the links of app websites (MimeType of
       // merkadu.desktop).
