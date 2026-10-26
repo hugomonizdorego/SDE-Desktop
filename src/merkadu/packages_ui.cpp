@@ -660,6 +660,7 @@ void info_pane(int x, int y, int w, int h, const Package *pk) {
     bx += a->w() + S(8);
   }
   if (!block.empty() && bx < x + w - S(120)) new Label(bx + S(4), by, x + w - pad - bx - S(4), S(34), block, Label::DIM);
+  if (!block.empty()) qa_line("protected:" + pk->name, bx, by, S(1), S(1));
   (void)t;
 }
 
@@ -910,6 +911,7 @@ void build_package_page(Page *page, const std::string &name) {
   if (!block.empty()) {
     int h = TextBlock::measure(block, tw, 0) + S(4);
     new TextBlock(tx, cy - S(4), tw, h, block, true);
+    qa_line("protected:" + name, tx, cy - S(4), tw, h);
     cy += h + S(6);
   }
   if (!st.marks().empty()) {
@@ -1044,6 +1046,16 @@ void build_changes_page(Page *page) {
   const ChangePlan &plan = g_plan;
   auto refused = refused_removals(plan, st.system_packages(), st.settings().protected_packages);
   bool can_apply = plan.valid && plan.error.empty() && refused.empty() && plan.changes() > 0;
+  // The plan for the QA dump (tests/test_merkadu_ui.py).
+  for (auto *group : {&plan.install, &plan.upgrade, &plan.downgrade, &plan.remove})
+    for (auto &n : *group)
+      qa_line(std::string("plan:") +
+                  (group == &plan.install ? "install:" : group == &plan.upgrade ? "update:"
+                                                       : group == &plan.downgrade ? "downgrade:"
+                                                                                  : "remove:") +
+                  n,
+              page->left(), page->cursor(), 1, 1);
+  for (auto &r : refused) qa_line("plan:refused:" + r.first, page->left(), page->cursor(), 1, 1);
   // The summary.
   std::vector<std::string> facts;
   std::string counts = plan_counts(plan);
