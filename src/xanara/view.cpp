@@ -789,7 +789,7 @@ void DocView::follow(const LinkTarget &t) {
       std::string f = t.text;
       if (!f.empty() && f[0] != '/' && doc_) f = doc_->path().substr(0, doc_->path().rfind('/') + 1) + f;
       if (!file_exists(f)) app_->toast(format(_("“%s” was not found"), t.text.c_str()));
-      else if (ends_with(lower(f), ".pdf")) spawn_detached({"xanara", f});
+      else if (ends_with(lower(f), ".pdf")) app_->open_path(f);  // a tab of its own
       else if (confirm_open(f)) open_uri(file_uri(f));
       break;
     }

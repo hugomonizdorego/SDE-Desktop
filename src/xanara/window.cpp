@@ -127,6 +127,7 @@ XanaraWindow::XanaraWindow(int w, int h) : BufferedWindow(w, h, "Xanara") {
 }
 
 XanaraWindow::~XanaraWindow() {
+  ocr_shutdown();
   remember_position();
   Fl::remove_handler(x_event_handler);
   Fl::remove_timeout(toast_cb, this);

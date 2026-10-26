@@ -15,10 +15,12 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <ctime>
+#include <thread>
 
 #include "edit.h"
 #include "i18n.h"
@@ -798,9 +800,34 @@ void XanaraWindow::compress() {
                after < before ? format("-%d%%", int(100 - after * 100 / std::max(1L, before))).c_str() : _("no gain")));
 }
 
+// Text recognition takes seconds per page: it runs on a thread of its own
+// with its own copy of the document, and the window stays usable.
+namespace {
+
+struct OcrJob {
+  std::string src, password, lang, text_pdf, out;
+  int pages = 0;
+  std::atomic<int> page{0};
+  std::atomic<bool> cancel{false}, finished{false};
+  bool ok = false;
+  std::string error;
+  std::thread worker;
+};
+std::unique_ptr<OcrJob> g_ocr;
+
+}  // namespace
+
 void XanaraWindow::ocr() {
   DocTab *t = tab();
   if (!t) return;
+  if (g_ocr) {
+    fl_message_title(_("OCR"));
+    if (fl_choice("%s", _("Continue"), _("Stop"), nullptr,
+                  format(_("Text is being recognized (page %d of %d). Stop it?"), g_ocr->page + 1, g_ocr->pages)
+                      .c_str()) == 1)
+      g_ocr->cancel = true;
+    return;
+  }
   std::string why;
   if (!ocr_available(why)) {
     fl_message_title(_("OCR"));
@@ -815,26 +842,73 @@ void XanaraWindow::ocr() {
   if (out.empty()) return;
   std::string src = current_source();
   if (src.empty()) return;
-  std::string text_pdf = temp_path("ocr-text"), error;
-  int n = t->doc->count();
-  bool ok = ocr_text_layer(*t->doc, trim(lang), text_pdf,
-                           [&](int page) {
-                             toast(format(_("Recognizing page %d of %d…"), page + 1, n));
-                             Fl::flush();
-                             return true;
-                           },
-                           error);
-  std::unique_ptr<PdfFile> pdf = ok ? PdfFile::open(src, t->doc->password(), error) : nullptr;
-  ok = pdf && overlay_pages(*pdf, text_pdf, false, error);
-  std::string tmp = ok ? temp_beside(out) : "";
+  auto job = std::make_unique<OcrJob>();
+  job->src = src;
+  job->password = t->doc->password();
+  job->lang = trim(lang);
+  job->text_pdf = temp_path("ocr-text");
+  job->out = out;
+  job->pages = t->doc->count();
+  OcrJob *j = job.get();
+  j->worker = std::thread([j] {
+    std::string error;
+    bool encrypted = false;
+    std::unique_ptr<Document> doc = Document::open(j->src, j->password, error, encrypted);
+    if (doc)
+      j->ok = ocr_text_layer(*doc, j->lang, j->text_pdf,
+                             [j](int page) {
+                               j->page = page;
+                               return !j->cancel;
+                             },
+                             error);
+    j->error = error;
+    j->finished = true;
+  });
+  g_ocr = std::move(job);
+  toast(format(_("Recognizing page %d of %d…"), 1, j->pages));
+  Fl::add_timeout(0.3, ocr_poll, this);
+}
+
+void XanaraWindow::ocr_poll(void *data) {
+  auto *self = static_cast<XanaraWindow *>(data);
+  if (!g_ocr) return;
+  if (!g_ocr->finished) {
+    self->toast(format(_("Recognizing page %d of %d…"), g_ocr->page + 1, g_ocr->pages));
+    Fl::repeat_timeout(0.3, ocr_poll, data);
+    return;
+  }
+  g_ocr->worker.join();
+  std::unique_ptr<OcrJob> j = std::move(g_ocr);
+  std::string error = j->error;
+  bool ok = j->ok;
+  if (!ok) {
+    unlink(j->text_pdf.c_str());
+    if (j->cancel) self->toast(_("Text recognition stopped"));
+    else report(_("OCR"), error);
+    return;
+  }
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(j->src, j->password, error);
+  ok = pdf && overlay_pages(*pdf, j->text_pdf, false, error);
+  std::string tmp = ok ? temp_beside(j->out) : "";
   ok = ok && !tmp.empty() && pdf->write(tmp, PdfFile::Write::Rewrite, error) &&
-       commit_file(tmp, out, t->doc->password(), n, error);
+       commit_file(tmp, j->out, j->password, j->pages, error);
+  pdf.reset();
+  unlink(j->text_pdf.c_str());
   if (!ok) {
     report(_("OCR"), error);
     return;
   }
-  open_path(out);
-  toast(_("Text recognized — the new PDF is searchable"));
+  self->open_path(j->out);
+  self->toast(_("Text recognized — the new PDF is searchable"));
+}
+
+void XanaraWindow::ocr_shutdown() {
+  Fl::remove_timeout(ocr_poll, this);
+  if (!g_ocr) return;
+  g_ocr->cancel = true;
+  g_ocr->worker.join();
+  unlink(g_ocr->text_pdf.c_str());
+  g_ocr.reset();
 }
 
 void XanaraWindow::compare() {

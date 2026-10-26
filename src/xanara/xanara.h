@@ -644,6 +644,7 @@ class XanaraWindow : public sde::BufferedWindow {
   void size_menu(int x, int y);
   void color_menu(int x, int y);
   bool comparing() const { return compare_id_ >= 0; }
+  void ocr_shutdown();  // stops text recognition that is running
 
  private:
   void build_chrome();
@@ -679,6 +680,7 @@ class XanaraWindow : public sde::BufferedWindow {
   bool tool_toggled(const ToolSpec &s) const;
   int tab_x(int index) const;
   void qa_report();  // XANARA_QA_FILE: the state the UI test reads
+  static void ocr_poll(void *p);
   static void toast_cb(void *p);
   static void remember_cb(void *p);
   static void settings_cb(void *p);
