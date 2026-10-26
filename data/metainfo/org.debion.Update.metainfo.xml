@@ -5,12 +5,12 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Software Updater</name>
-  <summary>Install critical, security, main and Flatpak updates</summary>
+  <summary>Install critical, security and main updates of the operating system</summary>
   <developer id="io.github.hugomonizdorego">
     <name>Selviana DE Project</name>
   </developer>
   <description>
-    <p>Software Updater installs critical, security and main updates for the operating system from the configured package sources, using PackageKit or APT, and updates Flatpak applications. Updates are grouped like in a classic software updater; each group and package can be unchecked before choosing Install Now.</p>
+    <p>Software Updater installs critical, security and main updates for the operating system from the configured package sources, using PackageKit or APT; applications from Flathub and the Snap Store are updated in Merkadu, the software center. Updates are grouped like in a classic software updater; each group and package can be unchecked before choosing Install Now.</p>
     <p>Software Updater was called SDE Update before Alpha 51; the command is still sde-update.</p>
     <p>Update model adapted from Linux Mint's Update Manager (mintupdate) by Clement Lefebvre and the Linux Mint team.</p>
     <p>Part of the Selviana Desktop Environment, developed by the Selviana DE Project.</p>

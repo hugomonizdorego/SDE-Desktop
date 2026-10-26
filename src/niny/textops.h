@@ -104,4 +104,25 @@ struct WordSpan {
 };
 std::vector<WordSpan> spell_words(const std::string &text);
 
+// ------------------------------------------------------- menus and tabs
+
+// A menu bar title: "&File" is shown as "File" with the F underlined, and
+// Alt+F opens it. A title without "&", or whose letter another title took
+// first, gets its first letter that is still free; letters in |reserved|
+// (Alt shortcuts of the editor) are never used. "&&" is a plain "&".
+struct Mnemonic {
+  std::string text;  // the title without the marker
+  int index = -1;    // byte offset of the underlined letter, -1 for none
+  int key = 0;       // lower-case ASCII letter or digit, 0 for none
+};
+std::vector<Mnemonic> menu_mnemonics(const std::vector<std::string> &titles, const std::string &reserved = "");
+
+// The number of a new untitled document: the smallest one not in |used|
+// ("Untitled", "Untitled 2", ...).
+int free_untitled_number(const std::vector<int> &used);
+
+// The keys of a shortcut as shown on keycaps: "Ctrl+Shift+S" gives Ctrl,
+// Shift, S and "Ctrl++" gives Ctrl, +.
+std::vector<std::string> shortcut_keys(const std::string &text);
+
 }  // namespace niny

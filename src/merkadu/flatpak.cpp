@@ -153,10 +153,8 @@ class FlatpakBackend : public Backend {
   Source source() const override { return Source::Flatpak; }
 
   void probe(std::function<void(SourceStatus)> done) override {
-    bool refresh = !refreshed_;
-    refreshed_ = true;
     background<SourceStatus>(
-        [refresh] {
+        [] {
           SourceStatus st;
           std::string error;
           bool helper = file_exists("/usr/share/dbus-1/system-services/org.freedesktop.Flatpak.SystemHelper.service");
@@ -170,8 +168,8 @@ class FlatpakBackend : public Backend {
           st.available = true;
           GError *err = nullptr;
           GPtrArray *remotes = flatpak_installation_list_remotes(inst, nullptr, &err);
+          if (err) st.message = err->message;
           g_clear_error(&err);
-          bool changed_any = false;
           for (guint i = 0; remotes && i < remotes->len; ++i) {
             FlatpakRemote *r = FLATPAK_REMOTE(g_ptr_array_index(remotes, i));
             if (flatpak_remote_get_disabled(r)) continue;
@@ -180,35 +178,71 @@ class FlatpakBackend : public Backend {
             if (name == "flathub" || str(url).find("flathub.org") != std::string::npos) st.has_flathub = true;
             g_free(url);
             st.remotes.push_back(name);
-            // The remotes' AppStream data: refreshed once a day.
-            if (refresh) {
-              GFile *stamp = flatpak_remote_get_appstream_timestamp(r, nullptr);
+          }
+          if (remotes) g_ptr_array_unref(remotes);
+          g_object_unref(inst);
+          return st;
+        },
+        done);
+  }
+
+  // The AppStream data of every remote of both installations (the catalog
+  // of Flathub and the others), when older than |min_age| or |force|.
+  void refresh(bool force, bool interactive, int min_age, std::function<void(const Progress &)> progress,
+               RefreshFn done) override {
+    background<RefreshResult>(
+        [force, min_age, progress] {
+          RefreshResult r;
+          int remotes_seen = 0, updated = 0;
+          std::string errors;
+          for (const char *which : {"system", "user"}) {
+            std::string error;
+            FlatpakInstallation *inst = open_installation(which, &error);
+            if (!inst) continue;
+            GError *err = nullptr;
+            GPtrArray *remotes = flatpak_installation_list_remotes(inst, nullptr, &err);
+            g_clear_error(&err);
+            for (guint i = 0; remotes && i < remotes->len; ++i) {
+              FlatpakRemote *rem = FLATPAK_REMOTE(g_ptr_array_index(remotes, i));
+              if (flatpak_remote_get_disabled(rem) || flatpak_remote_get_noenumerate(rem)) continue;
+              std::string name = str(flatpak_remote_get_name(rem));
+              ++remotes_seen;
+              GFile *stamp = flatpak_remote_get_appstream_timestamp(rem, nullptr);
               GFileInfo *info = stamp ? g_file_query_info(stamp, G_FILE_ATTRIBUTE_TIME_MODIFIED, G_FILE_QUERY_INFO_NONE,
                                                           nullptr, nullptr)
                                       : nullptr;
               guint64 mtime = info ? g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_MODIFIED) : 0;
               if (info) g_object_unref(info);
               if (stamp) g_object_unref(stamp);
-              if (guint64(std::time(nullptr)) - mtime > 86400) {
-                gboolean changed = FALSE;
-                if (flatpak_installation_update_appstream_full_sync(inst, name.c_str(), nullptr, nullptr, nullptr,
-                                                                    &changed, nullptr, &err))
-                  changed_any = changed_any || changed;
-                g_clear_error(&err);
+              if (!force && mtime > 0 && guint64(std::time(nullptr)) - mtime < guint64(min_age)) continue;
+              Progress p;
+              p.status = format(_("Downloading the catalog of %s"), name.c_str());
+              post([progress, p] { progress(p); });
+              gboolean changed = FALSE;
+              if (flatpak_installation_update_appstream_full_sync(inst, name.c_str(), nullptr, nullptr, nullptr,
+                                                                  &changed, nullptr, &err)) {
+                ++updated;
+                r.changed = r.changed || changed;
+              } else if (err) {
+                errors += (errors.empty() ? "" : "; ") + name + ": " + err->message;
               }
+              g_clear_error(&err);
             }
+            if (remotes) g_ptr_array_unref(remotes);
+            g_object_unref(inst);
           }
-          if (remotes) g_ptr_array_unref(remotes);
-          g_object_unref(inst);
-          st.message = changed_any ? "appstream-changed" : "";
-          return st;
+          if (remotes_seen == 0) {
+            r.skipped = true;  // the Sources page offers Flathub
+          } else if (!errors.empty()) {
+            // A remote that cannot be reached (offline) keeps its catalog.
+            r.skipped = updated > 0 || errors.find("resolve") != std::string::npos ||
+                        errors.find("network") != std::string::npos || errors.find("connect") != std::string::npos;
+            r.ok = r.skipped;
+            r.message = r.skipped ? format(_("Not every catalog could be downloaded (%s)."), errors.c_str()) : errors;
+          }
+          return r;
         },
-        [done](SourceStatus st) {
-          bool reload = st.message == "appstream-changed";
-          if (reload) st.message.clear();
-          done(st);
-          if (reload) post([] { load_catalog_again(); });
-        });
+        done);
   }
 
   void load_installed(AppsFn done) override {
@@ -299,10 +333,6 @@ class FlatpakBackend : public Backend {
     if (it != running_.end()) g_cancellable_cancel(it->second);
   }
 
-  void plan_remove(const std::vector<std::string> &packages,
-                   std::function<void(std::vector<std::string>, long long, std::string)> done) override {
-    done(packages, -1, "");
-  }
 
   void history(std::function<void(std::vector<HistoryEntry>)> done) override {
     if (find_program("flatpak").empty()) {
@@ -325,12 +355,18 @@ class FlatpakBackend : public Backend {
       return;
     }
     std::string url = env("MERKADU_FLATHUB_URL", "https://dl.flathub.org/repo/flathub.flatpakrepo");
+    std::string shipped = join_path(data_dir(), "flathub.flatpakrepo");
     background<std::string>(
-        [url] {
-          int status = -1;
-          std::string repo = run_sync({"curl", "-fsSL", "--max-time", "60", "--proto", "=https", url}, &status, 70000);
-          if (status != 0 || repo.find("[Flatpak Repo]") == std::string::npos)
-            return std::string(_("The Flathub repository file could not be downloaded."));
+        [url, shipped] {
+          // The repository file Merkadu ships (Flathub's address and key),
+          // else the one Flathub publishes.
+          std::string repo;
+          if (!read_file(shipped, repo) || repo.find("[Flatpak Repo]") == std::string::npos) {
+            int status = -1;
+            repo = run_sync({"curl", "-fsSL", "--max-time", "60", "--proto", "=https", url}, &status, 70000);
+            if (status != 0 || repo.find("[Flatpak Repo]") == std::string::npos)
+              return std::string(_("The Flathub repository file could not be downloaded."));
+          }
           GBytes *bytes = g_bytes_new(repo.data(), repo.size());
           GError *err = nullptr;
           FlatpakRemote *remote = flatpak_remote_new_from_file("flathub", bytes, &err);
@@ -350,23 +386,10 @@ class FlatpakBackend : public Backend {
   }
 
  private:
-  static void load_catalog_again();
-  bool refreshed_ = false;
   std::mutex mutex_;
   std::map<int, GCancellable *> running_;
 };
 
-}  // namespace
-
-}  // namespace merkadu
-}  // namespace sde
-
-#include "store.h"
-
-namespace sde {
-namespace merkadu {
-namespace {
-void FlatpakBackend::load_catalog_again() { Store::get().reload_catalog(); }
 }  // namespace
 
 std::unique_ptr<Backend> make_flatpak_backend() { return std::unique_ptr<Backend>(new FlatpakBackend()); }

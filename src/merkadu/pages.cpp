@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
-// Merkadu's pages, after the panes of Ubuntu Software Center: the lobby
-// (Explore: the featured app, "New & Updated", "Top Apps" and the
-// departments), a department with its sub-departments, search results with
-// the source of every app, the details page (screenshots, description,
-// "What's New" and the version, size, license and source), the installed
-// software grouped by department, updates, the history of changes grouped
-// by day, the changes in progress with the animated SDE logo, and the
-// sources.
+// Merkadu's pages. The application pages follow the panes of Ubuntu
+// Software Center: Home (the highlight, highlights, recommendations, "New
+// & Updated", popular apps and the departments), a department with its
+// sub-departments, search results with the source of every app, the
+// details page (screenshots, description, "What's New" and the version,
+// size, license and source), the installed software grouped by department,
+// the app updates (the system's are Software Updater's), the history of
+// changes grouped by day, the changes in progress with the animated SDE
+// logo, and the sources. All Software (every package) is packages_ui.cpp.
+//
+// No page is ever empty without saying why: while the catalog loads it
+// shows placeholders, and an empty catalog says what is missing (the
+// appstream package, a refresh of the lists, PackageKit) with the button
+// that fixes it.
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Window.H>
+#include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 
 #include <time.h>
@@ -23,6 +30,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "logo_anim.h"
+#include "packages_ui.h"
 #include "spawn.h"
 #include "store.h"
 #include "ui.h"
@@ -40,13 +48,14 @@ int g_search_source = -1;   // -1 all, else Source
 int g_installed_source = -1;
 int g_history_filter = -1;  // -1 all, else Change
 std::map<std::string, size_t> g_limits;  // per view: how many items are shown
+bool g_snap_enabled_now = false;          // Snap support was installed in this session
 
 size_t limit_for(const std::string &key, size_t fallback) {
   auto it = g_limits.find(key);
   return it == g_limits.end() ? fallback : it->second;
 }
 
-int gap() { return S(12); }
+int gap() { return S(14); }
 
 double now_seconds() {
   struct timespec ts;
@@ -57,12 +66,12 @@ double now_seconds() {
 // A caption above a group of tiles or rows.
 void caption(Page *page, const std::string &id, const std::string &title, const std::string &sub = "") {
   int y = page->cursor();
-  new Label(page->left() + S(2), y, page->width(), S(28), title, Label::BOLD);
-  qa_line("section:" + id, page->left(), y, page->width(), S(28));
-  page->advance(S(30));
+  new Label(page->left() + S(2), y, page->width(), S(30), title, Label::TITLE);
+  qa_line("section:" + id, page->left(), y, page->width(), S(30));
+  page->advance(S(34));
   if (!sub.empty()) {
-    new Label(page->left() + S(2), page->cursor(), page->width(), S(20), sub, Label::DIM);
-    page->advance(S(24));
+    new Label(page->left() + S(2), page->cursor() - S(4), page->width(), S(20), sub, Label::DIM);
+    page->advance(S(22));
   }
   page->advance(S(4));
 }
@@ -75,11 +84,11 @@ Button *button(int x, int y, const std::string &text, Button::Kind kind, std::fu
 
 void open_app(const std::string &id) { navigate(View{View::Details, id}); }
 
-int tile_cols(int width) { return std::max(1, std::min(4, (width + gap()) / (S(250) + gap()))); }
+int tile_cols(int width) { return std::max(1, std::min(4, (width + gap()) / (S(260) + gap()))); }
 
 // App tiles in a grid; |rows| limits the rows (0: all).
 void tile_grid(Page *page, const std::vector<const App *> &apps, int rows = 0) {
-  int w = page->width(), cols = tile_cols(w), tw = (w - (cols - 1) * gap()) / cols, th = S(104);
+  int w = page->width(), cols = tile_cols(w), tw = (w - (cols - 1) * gap()) / cols, th = AppTile::height();
   size_t n = apps.size();
   if (rows > 0) n = std::min(n, size_t(rows * cols));
   int y = page->cursor();
@@ -93,8 +102,16 @@ void tile_grid(Page *page, const std::vector<const App *> &apps, int rows = 0) {
   page->advance(used * (th + gap()));
 }
 
+// Placeholders where tiles will be (the catalog is loading).
+void placeholder_grid(Page *page, int rows) {
+  int w = page->width(), cols = tile_cols(w), tw = (w - (cols - 1) * gap()) / cols, th = AppTile::height();
+  for (int i = 0; i < rows * cols; ++i)
+    new Placeholder(page->left() + (i % cols) * (tw + gap()), page->cursor() + (i / cols) * (th + gap()), tw, th);
+  page->advance(rows * (th + gap()));
+}
+
 void row_list(Page *page, const std::vector<const App *> &apps, AppRow::Mode mode, size_t max) {
-  int h = S(72);
+  int h = S(76);
   for (size_t i = 0; i < apps.size() && i < max; ++i) {
     auto *r = new AppRow(page->left(), page->cursor(), page->width(), h, apps[i]->id, mode);
     r->on_open = open_app;
@@ -185,6 +202,29 @@ void info_row(Page *page, const std::string &label, const std::string &value) {
   page->advance(vh + S(6));
 }
 
+// A notice with up to two buttons on its right.
+struct NoticeButton {
+  std::string text;
+  std::function<void()> fn;
+  bool primary = false;
+};
+void notice(Page *page, const std::string &id, const std::string &text, int level, bool busy = false,
+            const std::vector<NoticeButton> &buttons = {}) {
+  int bw = 0;
+  for (auto &b : buttons) bw += Button::fit(b.text) + S(8);
+  int w = page->width(), h = Notice::measure(w, text, bw);
+  auto *n = new Notice(page->left(), page->cursor(), w, h, text, level, busy);
+  n->text_right = bw;
+  qa_line("notice:" + id, n->x(), n->y(), n->w(), n->h());
+  int bx = page->left() + w - S(14) - bw + S(8);
+  for (auto &b : buttons) {
+    Button *btn = button(bx, page->cursor() + (h - S(34)) / 2, b.text, b.primary ? Button::Primary : Button::Normal,
+                         b.fn);
+    bx += btn->w() + S(8);
+  }
+  page->advance(h + S(12));
+}
+
 std::vector<const App *> resolve_all(const std::vector<std::string> &refs) {
   std::vector<const App *> out;
   for (auto &r : refs) {
@@ -207,6 +247,72 @@ std::string release_date(std::time_t t) {
   return out;
 }
 
+// "today at 10:15", "October 20 at 10:15".
+std::string when_label(std::time_t t) {
+  if (t <= 0) return _("never");
+  std::string day = day_label(t, std::time(nullptr));
+  std::string lower = day;
+  if (day == _("Today")) lower = _("today");
+  else if (day == _("Yesterday")) lower = _("yesterday");
+  return format(_("%s at %s"), lower.c_str(), time_label(t).c_str());
+}
+
+// Installs Debian packages for a source or the catalog (flatpak, snapd,
+// appstream), then shows the progress.
+void install_support(const std::string &title, const std::vector<std::string> &packages) {
+  Job j;
+  j.action = Action::Install;
+  j.source = Source::Debian;
+  j.title = title;
+  j.icon = "system-software-install";
+  j.targets = packages;
+  if (Store::get().enqueue(j)) navigate(View{View::Progress, ""});
+}
+
+void setup_flathub() {
+  Store::get().backend(Source::Flatpak)->setup("flathub", [](bool ok, bool, std::string error) {
+    Store::get().probe_sources();
+    if (ok) {
+      // Its catalog: downloaded now, read when it is there.
+      Store::get().refresh(true);
+    } else {
+      fprintf(stderr, "merkadu: adding Flathub failed: %s\n", error.c_str());
+      if (!error.empty()) fl_alert(_("Flathub could not be set up:\n\n%s"), error.c_str());
+    }
+  });
+}
+
+// Snap support, as the Debian tutorial does it: the snapd package, then
+// the snapd snap (snapd's own updates); polkit asks, no terminal.
+void enable_snap() {
+  int c = fl_choice(_("Enable Snap support?\n\nMerkadu installs snapd from %s and then the snapd snap from the Snap "
+                      "Store, like the Debian instructions describe. Your password is asked for.\n\nWhen it is done, "
+                      "restart the computer (or log out and back in): then snap apps start and their commands are "
+                      "found in /snap/bin."),
+                    _("Cancel"), _("Enable Snap Support"), nullptr, source_label(Source::Debian).c_str());
+  if (c != 1) return;
+  Store &st = Store::get();
+  Job deb;
+  deb.action = Action::Install;
+  deb.source = Source::Debian;
+  deb.title = _("Snap support (snapd)");
+  deb.icon = "system-software-install";
+  deb.targets = {"snapd"};
+  int first = st.enqueue(deb);
+  if (!first) return;
+  Job snap;
+  snap.action = Action::Install;
+  snap.source = Source::Snap;
+  snap.title = _("The snapd snap");
+  snap.icon = "system-software-install";
+  snap.targets = {"snapd"};
+  snap.remote = "stable";
+  snap.needs = first;
+  st.enqueue(snap);
+  g_snap_enabled_now = true;
+  navigate(View{View::Progress, ""});
+}
+
 // ---------------------------------------------------------------- widgets
 
 // An app icon.
@@ -217,7 +323,7 @@ class IconView : public Fl_Widget {
     const App *a = Store::get().app(id_);
     if (!a) return;
     Painter p(window()->w(), window()->h());
-    p.image(app_icon(*a, w()), x(), y(), w());
+    paint_app_icon(p, *a, x(), y(), w());
   }
 
  private:
@@ -248,7 +354,7 @@ class JobProgress : public Fl_Widget {
       case Job::Done: text = j->action == Action::Remove ? _("Removed") : j->action == Action::Update ? _("Updated")
                                                                                                       : _("Installed");
         break;
-      case Job::Cancelled: text = _("Cancelled"); break;
+      case Job::Cancelled: text = j->error.empty() ? std::string(_("Cancelled")) : j->error; break;
       case Job::Failed: text = j->error.empty() ? std::string(_("Failed")) : j->error; break;
     }
     text_font(t.font_size);
@@ -346,6 +452,142 @@ class HistoryRow : public Fl_Widget {
   std::string title_;
 };
 
+// A card that leads somewhere: a symbol, a title, a text and a button.
+void promo_card(Page *page, const std::string &id, Symbol s, const std::string &title, const std::string &text,
+                const std::string &action, std::function<void()> fn) {
+  int x = page->left(), w = page->width(), pad = S(20);
+  int bw = Button::fit(action), tx = x + pad + S(56) + S(18), tw = w - (tx - x) - pad - bw - S(16);
+  int th = TextBlock::measure(text, tw, 0);
+  int h = std::max(S(96), S(16) + S(28) + th + S(18));
+  int y = page->cursor();
+  new Card(x, y, w, h);
+  struct Badge : Fl_Widget {
+    Symbol s;
+    Badge(int x, int y, int sz, Symbol sym) : Fl_Widget(x, y, sz, sz), s(sym) {}
+    void draw() override {
+      const Theme &t = active_theme();
+      Painter p(window()->w(), window()->h());
+      p.fill_rounded(x(), y(), w(), h(), w() * 0.25, t.accent.alpha(t.dark ? 0.3 : 0.15));
+      double ss = w() * 0.55;
+      paint_symbol(p, s, x() + (w() - ss) / 2, y() + (h() - ss) / 2, ss, t.accent_text);
+    }
+  };
+  new Badge(x + pad, y + (h - S(56)) / 2, S(56), s);
+  new Label(tx, y + S(14), tw, S(28), title, Label::BOLD);
+  new TextBlock(tx, y + S(42), tw, th + S(2), text, true);
+  Button *b = button(x + w - pad - bw, y + (h - S(34)) / 2, action, Button::Primary, std::move(fn), bw);
+  qa_line("promo:" + id, x, y, w, h);
+  qa_line("action:promo:" + id, b->x(), b->y(), b->w(), b->h());
+  page->advance(h + S(24));
+}
+
+// ------------------------------------------------------- source problems
+
+// What the user should know about the sources before the apps: lists that
+// could not be refreshed, a missing catalog or Flathub, PackageKit down.
+void source_notices(Page *page, bool full, bool catalog = true) {
+  Store &st = Store::get();
+  const RefreshState &r = st.refresh_state();
+  const SourceStatus &deb = st.status(Source::Debian);
+  bool no_packagekit = st.probed(Source::Debian) && !deb.available && !fake_mode();
+  for (auto &e : r.errors) {
+    // Without PackageKit the notice below says it all.
+    if (no_packagekit && starts_with(e, source_label(Source::Debian) + ":")) continue;
+    notice(page, "refresh-error", e, 2, false,
+           {{_("Try Again"), [] { Store::get().refresh(true); }, false}, {_("Sources"), [] {
+                                                                            navigate(View{View::Sources, ""});
+                                                                          }}});
+  }
+  if (full)
+    for (auto &n : r.notes) notice(page, "refresh-note", n, 0);
+  if (no_packagekit)
+    notice(page, "packagekit",
+           format(_("Apps from %s cannot be installed or removed: %s Merkadu needs the PackageKit service "
+                    "(package packagekit); start it or reinstall it with Software Updater or a terminal."),
+                  source_label(Source::Debian).c_str(), deb.message.c_str()),
+           2);
+  const CatalogSources &cs = st.catalog_sources();
+  if (catalog && st.catalog_loaded() && !r.running) {
+    if (!cs.appstream_apt)
+      notice(page, "appstream",
+             format(_("The catalog of the apps of %s is not downloaded: the appstream package is missing."),
+                    source_label(Source::Debian).c_str()),
+             1, false,
+             {{_("Install It"), [] { install_support(_("The software catalog (appstream)"), {"appstream"}); }, true}});
+    else if (cs.dep11 == 0)
+      notice(page, "dep11",
+             format(_("The catalog of the apps of %s has not been downloaded yet: refresh the software lists."),
+                    source_label(Source::Debian).c_str()),
+             1, false, {{_("Refresh"), [] { Store::get().refresh(true); }, true}});
+  }
+  const SourceStatus &fp = st.status(Source::Flatpak);
+  if (st.probed(Source::Flatpak) && st.settings().setup_flathub) {
+    if (!fp.installed)
+      notice(page, "flatpak", _("Flatpak is not installed: the apps of Flathub are not shown."), 1, false,
+             {{_("Install Flatpak"), [] { install_support(_("Flatpak support"), {"flatpak"}); }, true}});
+    else if (fp.available && !fp.has_flathub)
+      notice(page, "flathub", _("Flathub is not set up: thousands of apps are not shown."), 1, false,
+             {{_("Set Up Flathub"), setup_flathub, true}});
+  }
+}
+
+// The page without any app: why, and what fixes it.
+void empty_catalog(Page *page) {
+  Store &st = Store::get();
+  const CatalogSources &cs = st.catalog_sources();
+  const RefreshState &r = st.refresh_state();
+  std::string distro = source_label(Source::Debian);
+  std::string title, text;
+  std::vector<NoticeButton> buttons;
+  bool refresh_button = true;
+  if (r.running) {
+    title = _("Getting the software lists\xE2\x80\xA6");
+    text = _("Merkadu is downloading the lists of the software sources. The apps appear when they are there.");
+    refresh_button = false;
+  } else if (!cs.appstream_apt && !fake_mode()) {
+    title = _("The software catalog is not installed");
+    text = format(_("Merkadu shows the apps of %s with the AppStream catalog, which APT downloads once the appstream "
+                    "package is installed. Install it, then the lists are refreshed."),
+                  distro.c_str());
+    buttons.push_back({_("Install the Catalog"), [] { install_support(_("The software catalog (appstream)"), {"appstream"}); },
+                       true});
+  } else if (cs.dep11 == 0 && cs.flatpak_remotes.empty()) {
+    title = _("The software lists have not been downloaded yet");
+    text = format(_("The catalog of %s comes with the package lists, and Flathub's with its own lists. They have not "
+                    "been downloaded since they were set up: refresh them (this needs a network connection)."),
+                  distro.c_str());
+  } else {
+    title = _("No apps were found");
+    text = format(_("The software catalogs of this computer have no apps (%d catalogs of %s, %zu Flatpak remotes "
+                    "with apps). Refresh the software lists, or see the Sources page."),
+                  cs.dep11, distro.c_str(), cs.flatpak_remotes.size());
+  }
+  if (!r.errors.empty()) {
+    text += "\n\n";
+    for (auto &e : r.errors) text += e + "\n";
+  }
+  if (refresh_button) buttons.push_back({_("Refresh Software Lists"), [] { Store::get().refresh(true); }, buttons.empty()});
+  if (st.packages_available() && !st.packages().empty())
+    buttons.push_back({_("All Software"), [] { navigate(View{View::Packages, ""}); }, false});
+  buttons.push_back({_("Sources"), [] { navigate(View{View::Sources, ""}); }, false});
+  page->advance(S(24));
+  auto *es = new EmptyState(page->left(), page->cursor(), page->width(), r.running ? Symbol::Download : Symbol::Package,
+                            title, text, !r.running);
+  qa_line("empty:" + std::string(r.running ? "loading" : !cs.appstream_apt ? "appstream" : cs.dep11 == 0 ? "lists"
+                                                                                                         : "none"),
+          es->x(), es->y(), es->w(), es->h());
+  page->advance(es->h() + S(16));
+  int bw = 0;
+  for (auto &b : buttons) bw += Button::fit(b.text) + S(10);
+  int bx = page->left() + (page->width() - bw + S(10)) / 2;
+  for (auto &b : buttons) {
+    Button *btn = button(bx, page->cursor(), b.text, b.primary ? Button::Primary : Button::Normal, b.fn);
+    qa_line("action:empty:" + b.text, btn->x(), btn->y(), btn->w(), btn->h());
+    bx += btn->w() + S(10);
+  }
+  page->advance(S(34) + S(24));
+}
+
 // ------------------------------------------------------------- explore
 
 std::map<std::string, int> g_category_counts;
@@ -368,7 +610,7 @@ void departments(Page *page) {
   Store &st = Store::get();
   int w = page->width(), cols = std::max(2, std::min(4, (w + gap()) / (S(200) + gap())));
   bool compact = w / cols < S(210);
-  int tw = (w - (cols - 1) * gap()) / cols, th = compact ? S(58) : S(64);
+  int tw = (w - (cols - 1) * gap()) / cols, th = compact ? S(60) : S(68);
   int y = page->cursor(), i = 0;
   for (const Category *c : st.categories().sorted()) {
     int col = i % cols, row = i / cols;
@@ -383,61 +625,146 @@ void departments(Page *page) {
   page->advance(rows * (th + gap()));
 }
 
+// Well-known apps of the departments the user has apps of: the more apps
+// of a department are installed, the more of it are recommended (local
+// data only, nothing is sent anywhere). |why| names the departments.
+// |shown|: apps the page shows already (the Highlights), recommended only
+// when there are not enough others.
+std::vector<const App *> recommendations(std::string *why, const std::vector<const App *> &shown = {}) {
+  Store &st = Store::get();
+  const Settings &cfg = st.settings();
+  std::map<std::string, int> weight;
+  for (const App *a : st.installed_apps()) {
+    if (!a->is_app()) continue;
+    const Origin *o = a->installed_origin();
+    if (o && o->source == Source::Debian && cfg.protected_packages.count(o->id)) continue;  // SDE's own
+    if (const Category *c = st.categories().category_of(*a)) ++weight[c->id];
+  }
+  std::vector<std::pair<int, std::string>> order;
+  for (auto &w : weight)
+    if (cfg.recommended.count(w.first)) order.push_back({w.second, w.first});
+  std::sort(order.begin(), order.end(), [](const std::pair<int, std::string> &a, const std::pair<int, std::string> &b) {
+    return a.first != b.first ? a.first > b.first : a.second < b.second;
+  });
+  std::vector<std::string> named;
+  std::vector<const App *> out;
+  auto take = [&](const std::string &dept, size_t per, bool again) {
+    auto it = cfg.recommended.find(dept);
+    if (it == cfg.recommended.end()) return;
+    size_t n = 0;
+    for (const App *a : resolve_all(it->second)) {
+      if (n >= per || out.size() >= 8) break;
+      if (a->installed() || std::find(out.begin(), out.end(), a) != out.end()) continue;
+      if (!again && std::find(shown.begin(), shown.end(), a) != shown.end()) continue;
+      out.push_back(a);
+      ++n;
+    }
+    const Category *c = n ? st.categories().find(dept) : nullptr;
+    if (c && std::find(named.begin(), named.end(), c->title()) == named.end()) named.push_back(c->title());
+  };
+  for (auto &o : order) take(o.second, 3, false);
+  if (out.size() < 4)
+    for (auto &kv : cfg.recommended) take(kv.first, 2, false);
+  if (out.size() < 3)
+    for (auto &o : order) take(o.second, 3, true);
+  if (why) {
+    std::string list;
+    for (size_t i = 0; i < named.size() && i < 3; ++i) list += (i ? ", " : "") + named[i];
+    *why = order.empty() || named.empty() ? std::string(_("Well-known apps that are not installed yet"))
+                                          : format(_("Because you use apps of %s"), list.c_str());
+  }
+  return out;
+}
+
 void build_explore(Page *page) {
   Store &st = Store::get();
-  if (!st.catalog_loaded()) {
-    loading(page, _("Loading the software catalog\xE2\x80\xA6"));
+  // An empty catalog says itself what is missing.
+  source_notices(page, false, st.catalog().size() > 0);
+  if (!st.catalog_loaded() || (st.catalog().size() == 0 && st.catalog_loading())) {
+    // The catalog is being read: the shape of the page while it loads.
+    int h = page->h() < S(470) ? S(180) : S(230);
+    new Placeholder(page->left(), page->cursor(), page->width(), h, true);
+    qa_line("loading", page->left(), page->cursor(), page->width(), h);
+    page->advance(h + S(28));
+    caption(page, "loading", _("Loading the software catalog\xE2\x80\xA6"));
+    placeholder_grid(page, 2);
     page->finish();
     return;
   }
-  std::vector<const App *> featured = resolve_all(st.settings().featured);
-  bool short_window = page->h() < S(470);
-  if (!featured.empty()) {
-    int h = short_window ? S(176) : S(212);
-    auto *b = new Banner(page->left(), page->cursor(), page->width(), h, featured[0]->id);
-    b->on_open = open_app;
-    qa_line("banner:" + featured[0]->id, b->x(), b->y(), b->w(), b->h());
-    page->advance(h + S(24));
+  if (st.catalog().size() == 0) {
+    empty_catalog(page);
+    page->finish();
+    return;
   }
-  if (featured.size() > 1) {
-    caption(page, "featured", _("Featured"));
-    tile_grid(page, std::vector<const App *>(featured.begin() + 1, featured.end()), 1);
-    page->advance(S(12));
+  std::vector<const App *> highlights = resolve_all(st.settings().featured);
+  bool short_window = page->h() < S(470);
+  if (!highlights.empty()) {
+    int h = short_window ? S(190) : S(240);
+    auto *b = new Banner(page->left(), page->cursor(), page->width(), h, highlights[0]->id);
+    b->on_open = open_app;
+    qa_line("banner:" + highlights[0]->id, b->x(), b->y(), b->w(), b->h());
+    page->advance(h + S(28));
+  }
+  if (highlights.size() > 1) {
+    caption(page, "featured", _("Highlights"), _("Chosen by your distribution"));
+    tile_grid(page, std::vector<const App *>(highlights.begin() + 1, highlights.end()), short_window ? 1 : 2);
+    page->advance(S(14));
+  }
+  std::string why;
+  std::vector<const App *> recommended = recommendations(&why, highlights);
+  if (!recommended.empty()) {
+    caption(page, "recommended", _("Recommended for You"), why);
+    tile_grid(page, recommended, 1);
+    page->advance(S(14));
   }
   // New & Updated: the newest releases of apps that are not installed.
   if (st.settings().new_count > 0) {
     std::vector<const App *> fresh;
     for (auto &a : st.catalog().apps())
-      if (a.is_app() && !a.installed() && a.newest_release() > 0) fresh.push_back(&a);
+      if (a.is_app() && !a.installed() && a.newest_release() > 0 && a.newest_release() <= std::time(nullptr) + 86400)
+        fresh.push_back(&a);
     std::stable_sort(fresh.begin(), fresh.end(),
                      [](const App *x, const App *y) { return x->newest_release() > y->newest_release(); });
     if (fresh.size() > size_t(st.settings().new_count)) fresh.resize(size_t(st.settings().new_count));
     if (!fresh.empty()) {
-      caption(page, "new", _("New & Updated"));
+      caption(page, "new", _("New & Updated"), _("The newest releases"));
       tile_grid(page, fresh, short_window ? 1 : 2);
-      page->advance(S(12));
+      page->advance(S(14));
     }
   }
   std::vector<const App *> top = resolve_all(st.settings().top);
   if (!top.empty()) {
-    caption(page, "top", _("Top Apps"));
+    caption(page, "top", _("Popular Apps"));
     tile_grid(page, top, 2);
-    page->advance(S(12));
+    page->advance(S(14));
   }
-  caption(page, "departments", _("Departments"));
+  caption(page, "departments", _("Categories"));
   departments(page);
-  page->advance(S(12));
-  // Where the catalog comes from.
-  int counts[kSourceCount] = {0, 0, 0};
-  for (auto &a : st.catalog().apps())
-    for (int s = 0; s < kSourceCount; ++s)
-      if (a.has_source(Source(s))) ++counts[s];
-  std::string from;
+  page->advance(S(18));
+  if (st.packages_available()) {
+    size_t installed = 0;
+    for (auto &p : st.packages()) installed += p.installed;
+    std::string text =
+        st.packages_loaded() && !st.packages().empty()
+            ? format(_("Every package of the repositories, %s of them (%s installed), by section and status, the way "
+                       "Synaptic shows them: for libraries, tools and everything that is not an app."),
+                     format_count(long(st.packages().size())).c_str(), format_count(long(installed)).c_str())
+            : std::string(_("Every package of the repositories by section and status, the way Synaptic shows "
+                            "them: for libraries, tools and everything that is not an app."));
+    promo_card(page, "packages", Symbol::Package, _("All Software"), text, _("Open All Software"),
+               [] { navigate(View{View::Packages, ""}); });
+  }
+  // Where the catalog comes from, and when the lists were refreshed.
+  std::vector<std::string> parts;
   for (int s = 0; s < kSourceCount; ++s)
-    if (counts[s] || st.status(Source(s)).available)
-      from += (from.empty() ? "" : ", ") + source_label(Source(s));
-  page->note(format(_("%s in the catalog from %s. Snaps are found when you search."),
-                    apps_count(st.catalog().size()).c_str(), from.c_str()));
+    if (st.catalog_count(Source(s)))
+      parts.push_back(format(_("%s from %s"), apps_count(size_t(st.catalog_count(Source(s)))).c_str(),
+                             source_label(Source(s)).c_str()));
+  std::string from;
+  for (size_t i = 0; i < parts.size(); ++i) from += (i ? ", " : "") + parts[i];
+  std::time_t refreshed = std::max(st.refresh_state().succeeded, st.catalog_sources().lists_time);
+  page->note(format(_("%s. Snaps are found when you search. The software lists were refreshed %s."), from.c_str(),
+                    when_label(refreshed).c_str()));
   if (!st.catalog_error().empty())
     page->note(format(_("Some software data could not be read: %s"), st.catalog_error().c_str()));
   page->finish();
@@ -462,17 +789,22 @@ void build_category(Page *page, const std::string &id) {
   if (!top->subcategories.empty()) {
     std::vector<ChipDef> defs;
     std::string top_id = top->id;
-    defs.push_back({_("All"), c == top, [top_id] { navigate(View{View::Category, top_id}); }});
+    defs.push_back({_("All"), c == top, [top_id] { replace_view(View{View::Category, top_id}); }});
     for (auto &sub : top->subcategories) {
       std::string sid = sub.id;
-      defs.push_back({sub.title(), &sub == c, [sid] { navigate(View{View::Category, sid}); }});
+      defs.push_back({sub.title(), &sub == c, [sid] { replace_view(View{View::Category, sid}); }});
     }
     chips(page, "sub", defs);
   }
   if (!st.catalog_loaded()) {
-    loading(page, _("Loading the software catalog\xE2\x80\xA6"));
+    placeholder_grid(page, 3);
   } else if (apps.empty()) {
-    page->note(_("There are no apps in this department yet."));
+    auto *es = new EmptyState(page->left(), page->cursor(), page->width(), Symbol::Grid,
+                              _("There are no apps in this department yet"),
+                              st.catalog().size() ? _("Other departments have apps; All Software lists every package.")
+                                                  : _("The software catalog is empty: see Home."),
+                              false);
+    page->advance(es->h() + S(12));
   } else {
     size_t lim = limit_for("category:" + id, 48);
     std::vector<const App *> shown(apps.begin(), apps.begin() + long(std::min(lim, apps.size())));
@@ -515,11 +847,29 @@ void build_search(Page *page, const std::string &query) {
   if (st.store_searching() && st.store_query() == query) page->note(_("Searching the Snap Store\xE2\x80\xA6"));
   if (results.empty() && st.catalog_loaded() && !(st.store_searching() && st.store_query() == query)) {
     page->note(format(_("No apps match \xE2\x80\x9C%s\xE2\x80\x9D."), query.c_str()));
-    page->note(_("Try other words, or add a source on the Sources page."));
+    page->note(_("Try other words, or look in All Software, which has every package."));
   }
   size_t lim = limit_for("search", 40);
   row_list(page, results, AppRow::Browse, lim);
   more_button(page, "search", std::min(lim, results.size()), results.size(), 40);
+  // The packages that match, for what is not an app.
+  if (st.packages_available() && st.packages_loaded()) {
+    PackageFilter f;
+    f.query = query;
+    size_t n = filter_packages(st.packages(), f, st.marks()).size();
+    if (n) {
+      page->advance(S(8));
+      std::string q = query;
+      promo_card(page, "search-packages", Symbol::Package,
+                 format(n == 1 ? _("%s package matches") : _("%s packages match"), format_count(long(n)).c_str()),
+                 _("All Software searches the names and descriptions of every package, also libraries and tools."),
+                 _("Show Packages"), [q] {
+                   PackageFilter pf;
+                   pf.query = q;
+                   navigate(View{View::Packages, packages_view_arg(pf)});
+                 });
+    }
+  }
   page->finish();
 }
 
@@ -531,8 +881,8 @@ void details_header(Page *page, const App &a) {
   const Origin *o = a.origin(chosen);
   const Job *job = st.active_job(a.id);
   int x = page->left(), w = page->width(), y = page->cursor();
-  int pad = S(24), is = w < S(520) ? S(72) : S(96);
-  int tx = x + pad + is + S(24), tw = w - (tx - x) - pad;
+  int pad = S(28), is = w < S(560) ? S(88) : S(128);
+  int tx = x + pad + is + S(28), tw = w - (tx - x) - pad;
   // The height of the text column decides the card's height.
   int summary_h = TextBlock::measure(a.summary, tw, 1);
   auto *card = new Card(x, y, w, S(100));
@@ -583,8 +933,7 @@ void details_header(Page *page, const App &a) {
     logo->running(job->state == Job::Running);
     logo->tooltip(_("Working"));
     int jid = job->id;
-    auto *jp = new JobProgress(tx + ls + S(16), cy + S(6), std::max(S(120), tw - ls - S(16) - S(120)), S(40), jid);
-    (void)jp;
+    new JobProgress(tx + ls + S(16), cy + S(6), std::max(S(120), tw - ls - S(16) - S(120)), S(40), jid);
     if (job->cancellable || job->state == Job::Queued)
       button(tx + tw - S(110), cy + S(10), _("Cancel"), Button::Normal, [jid] { Store::get().cancel(jid); }, S(110));
     qa_line("job:" + std::to_string(jid), tx, cy, tw, ls);
@@ -603,13 +952,27 @@ void details_header(Page *page, const App &a) {
       if (o->update) add(_("Update"), Button::Primary, [id] { Store::get().update(id); });
       if (o->source == Source::Debian && st.settings().protected_packages.count(o->id))
         new Label(bx, cy, tw - (bx - tx), S(34), _("Part of the Selviana Desktop Environment"), Label::DIM);
+      else if (o->source == Source::Debian && st.system_packages().count(o->id))
+        new Label(bx, cy, tw - (bx - tx), S(34), _("Part of the base system"), Label::DIM);
       else
         add(_("Remove"), Button::Danger, [id, chosen] { request_remove(id, chosen); });
     } else {
-      bool available = st.status(chosen).available || fake_mode();
+      const SourceStatus &ss = st.status(chosen);
+      bool available = ss.available || fake_mode();
       if (!available) {
-        new Label(bx, cy, tw, S(34), format(_("%s is not set up on this computer (see Sources)."),
-                                              source_label(chosen).c_str()), Label::DIM);
+        // Why it cannot be installed from here, and the way to fix it.
+        if (chosen == Source::Snap && !ss.installed)
+          add(_("Enable Snap Support"), Button::Primary, enable_snap);
+        else if (chosen == Source::Flatpak && !ss.installed)
+          add(_("Install Flatpak"), Button::Primary, [] { install_support(_("Flatpak support"), {"flatpak"}); });
+        else
+          add(_("Sources"), Button::Normal, [] { navigate(View{View::Sources, ""}); });
+        std::string why = chosen == Source::Snap && !ss.installed
+                              ? std::string(_("Snap support is not enabled on this computer."))
+                          : ss.message.empty()
+                              ? format(_("%s cannot be used on this computer now."), source_label(chosen).c_str())
+                              : format(_("%s cannot be used now: %s"), source_label(chosen).c_str(), ss.message.c_str());
+        new Label(bx, cy, tw - (bx - tx), S(34), why, Label::DIM);
       } else {
         add(_("Install"), Button::Primary, [id, chosen] { request_install(id, chosen); });
         long long size = o->download_size;
@@ -623,23 +986,32 @@ void details_header(Page *page, const App &a) {
   for (auto it = st.jobs().rbegin(); it != st.jobs().rend(); ++it)
     if (it->app_id == a.id) {
       if (it->state == Job::Failed) {
-        int h = TextBlock::measure(it->error, tw) + S(4);
-        new TextBlock(tx, cy - S(6), tw, h, format(_("The last change failed: %s"), it->error.c_str()), false);
+        std::string msg = format(_("The last change failed: %s"), it->error.c_str());
+        int h = TextBlock::measure(msg, tw) + S(4);
+        new TextBlock(tx, cy - S(6), tw, h, msg, false);
         cy += h + S(8);
       }
       break;
     }
   int bottom = std::max(cy, y + pad + is + pad);
   card->size(w, bottom - y);
-  page->advance(bottom - y + S(20));
+  page->advance(bottom - y + S(24));
 }
 
 void build_details(Page *page, const std::string &id) {
   Store &st = Store::get();
   const App *a = st.app(id);
   if (!a) {
-    if (!st.catalog_loaded()) loading(page, _("Loading the software catalog\xE2\x80\xA6"));
-    else page->note(_("This app is not in the catalog."));
+    if (!st.catalog_loaded()) {
+      loading(page, _("Loading the software catalog\xE2\x80\xA6"));
+    } else {
+      auto *es = new EmptyState(page->left(), page->cursor(), page->width(), Symbol::Search,
+                                _("This app is not in the catalog"),
+                                _("It may come from a source that is not set up, or its name changed. Search for it, "
+                                  "or look in All Software."),
+                                false);
+      page->advance(es->h() + S(12));
+    }
     page->finish();
     return;
   }
@@ -692,6 +1064,10 @@ void build_details(Page *page, const std::string &id) {
                                                   : std::string(_("Strict: it runs isolated from the system")));
     if (o->source == Source::Flatpak) info_row(page, _("Isolation"), _("It runs in a sandbox with the permissions "
                                                                        "it asks for"));
+    if (o->source == Source::Debian) {
+      info_row(page, _("Isolation"), _("Not isolated: like the rest of the system"));
+      info_row(page, _("Updates"), o->installed ? _("With the system, by Software Updater") : "");
+    }
     if (o->installed) info_row(page, _("Status"), _("Installed"));
   }
   info_row(page, _("Developer"), a->developer);
@@ -712,6 +1088,14 @@ void build_details(Page *page, const std::string &id) {
   link(_("Help"), a->help);
   link(_("Report a Problem"), a->bugtracker);
   link(_("Donate"), a->donation);
+  // The package behind a Debian app, in All Software.
+  if (o && o->source == Source::Debian && st.packages_available() && st.package(o->id)) {
+    std::string pkg = o->id;
+    Button *b = button(bx, by, format(_("Package %s"), pkg.c_str()), Button::Ghost,
+                       [pkg] { navigate(View{View::Package, pkg}); });
+    qa_line("action:package:" + pkg, b->x(), b->y(), b->w(), b->h());
+    bx += b->w() + S(10);
+  }
   if (bx > page->left()) page->advance(S(34) + S(16));
   page->finish();
   // Sizes, versions and the Snap Store's version arrive later.
@@ -766,8 +1150,9 @@ void build_installed(Page *page) {
     row_list(page, other, AppRow::Installed, 1000);
   }
   if (apps.empty() && st.all_installed_loaded()) page->note(_("No apps from this source are installed."));
-  page->note(_("Apps that come with the Selviana Desktop Environment can only be removed together with it. "
-               "Right-click an app in the Start menu to uninstall it from there."));
+  page->note(_("Apps that came with the system (a web browser, an office suite, an email program) can be removed "
+               "like any other; what goes with them is listed first. Only the parts the system or the Selviana "
+               "Desktop Environment need stay. Everything else that is installed is in All Software."));
   page->finish();
 }
 
@@ -775,26 +1160,63 @@ void build_installed(Page *page) {
 
 void build_updates(Page *page) {
   Store &st = Store::get();
-  std::vector<const App *> apps = st.updatable_apps();
-  page->heading(_("Updates"), apps.empty() ? std::string(_("Your apps are up to date."))
-                                           : format(apps.size() == 1 ? _("%d app can be updated")
-                                                                     : _("%d apps can be updated"),
-                                                    int(apps.size())));
+  // Merkadu updates the apps of Flatpak and Snap; the system (Debian's
+  // packages, its apps too) is Software Updater's.
+  std::vector<const App *> apps, system_apps;
+  for (const App *a : st.updatable_apps()) {
+    bool own = false, debian = false;
+    for (auto &o : a->origins)
+      if (o.installed && o.update) (o.source == Source::Debian ? debian : own) = true;
+    if (own) apps.push_back(a);
+    else if (debian) system_apps.push_back(a);
+  }
+  page->heading(_("Updates"), _("Apps from Flathub and the Snap Store"));
+  if (st.refresh_state().running)
+    notice(page, "refreshing", _("Looking for updates\xE2\x80\xA6"), 0, true);
   if (!apps.empty()) {
-    button(page->left(), page->cursor(), _("Update All"), Button::Primary, [] { Store::get().update_all(); });
+    Button *b = button(page->left(), page->cursor(), format(_("Update All (%d)"), int(apps.size())), Button::Primary,
+                       [] { Store::get().update_all(); });
+    qa_line("action:update-all", b->x(), b->y(), b->w(), b->h());
     page->advance(S(34) + S(18));
     row_list(page, apps, AppRow::Updates, 1000);
   } else if (!st.all_installed_loaded()) {
     loading(page, _("Looking for updates\xE2\x80\xA6"));
+  } else {
+    auto *es = new EmptyState(page->left(), page->cursor(), page->width(), Symbol::Check,
+                              _("Your apps are up to date"),
+                              _("Apps from Flathub and snaps are updated here. Snaps also update themselves in the "
+                                "background."),
+                              false);
+    qa_line("empty:updates", es->x(), es->y(), es->w(), es->h());
+    page->advance(es->h() + S(12));
   }
   page->advance(S(8));
-  page->begin_card(_("System updates"));
-  page->note(_("Updates of the operating system (security fixes, the kernel, libraries) are installed with "
-               "Software Updater."));
-  if (!find_program("sde-update").empty()) {
+  // The system's updates: counted here, installed by Software Updater.
+  size_t packages = 0;
+  for (auto &p : st.packages()) packages += p.upgradable;
+  page->begin_card(_("System Updates"));
+  std::string text;
+  if (packages > 0 || !system_apps.empty()) {
+    std::string names;
+    for (size_t i = 0; i < system_apps.size() && i < 4; ++i) names += (i ? ", " : "") + system_apps[i]->name;
+    if (system_apps.size() > 4) names += format(_(" and %d more"), int(system_apps.size() - 4));
+    if (packages == 1)
+      text = format(_("1 package of %s can be updated."), source_label(Source::Debian).c_str());
+    else if (packages > 1)
+      text = format(_("%s packages of %s can be updated."), format_count(long(packages)).c_str(),
+                    source_label(Source::Debian).c_str());
+    if (!names.empty()) text += (text.empty() ? "" : " ") + format(_("Among them: %s."), names.c_str());
+    text += " ";
+  }
+  text += format(_("The operating system and the apps that come with %s (the kernel, libraries, security fixes) are "
+                   "updated together by Software Updater, not here; an app page can still update its app alone."),
+                 source_label(Source::Debian).c_str());
+  page->note(text);
+  if (!find_program("sde-update").empty() || fake_mode()) {
     page->advance(S(4));
-    button(page->left() + S(20), page->cursor(), _("Open Software Updater"), Button::Normal,
-           [] { spawn_detached({"sde-update"}); });
+    Button *b = button(page->left() + S(20), page->cursor(), _("Open Software Updater"), Button::Normal,
+                       [] { spawn_detached({"sde-update"}); });
+    qa_line("action:software-updater", b->x(), b->y(), b->w(), b->h());
     page->advance(S(34) + S(6));
   }
   page->end_card();
@@ -897,9 +1319,7 @@ void build_progress(Page *page) {
     any_finished = any_finished || !j.active();
     int y = page->cursor(), h = S(66);
     new Card(x, y, w, h);
-    IconView *icon = nullptr;
-    if (!j.app_id.empty() && st.app(j.app_id)) icon = new IconView(x + S(14), y + (h - S(40)) / 2, S(40), j.app_id);
-    (void)icon;
+    if (!j.app_id.empty() && st.app(j.app_id)) new IconView(x + S(14), y + (h - S(40)) / 2, S(40), j.app_id);
     int tx = x + S(68);
     new Label(tx, y + S(8), w - S(88), S(24), action_label(j.action) + ": " + j.title, Label::BOLD);
     new JobProgress(tx, y + S(32), w - S(88), S(30), j.id);
@@ -919,55 +1339,77 @@ void build_progress(Page *page) {
 void build_sources(Page *page) {
   Store &st = Store::get();
   page->heading(_("Sources"), _("Where Merkadu gets software from"));
+  const RefreshState &r = st.refresh_state();
+  for (auto &e : r.errors) notice(page, "refresh-error", e, 2);
+  for (auto &n : r.notes) notice(page, "refresh-note", n, 0);
+  // The refresh of every list.
+  {
+    std::string text = r.running ? r.status
+                                 : format(_("The software lists were refreshed %s. Merkadu refreshes them when it "
+                                            "starts (when they are older than %d minutes) and with Refresh."),
+                                          when_label(std::max(r.succeeded, st.catalog_sources().lists_time)).c_str(),
+                                          st.settings().refresh_minutes);
+    notice(page, "refresh", text, 0, r.running,
+           r.running ? std::vector<NoticeButton>{}
+                     : std::vector<NoticeButton>{{_("Refresh Now"), [] { Store::get().refresh(true); }, true}});
+  }
   // Debian.
   const SourceStatus &deb = st.status(Source::Debian);
+  const CatalogSources &cs = st.catalog_sources();
   page->begin_card(format(_("%s packages"), source_label(Source::Debian).c_str()));
-  page->note(_("Software from the distribution's archive: tested together with the system and updated with it. "
-               "Merkadu installs and removes it with PackageKit; the administrator password is asked when needed."));
+  page->note(_("Software from the distribution's archive: tested together with the system and updated with it by "
+               "Software Updater. Merkadu installs and removes it with PackageKit; the administrator password is "
+               "asked when needed."));
   info_row(page, _("Status"), deb.available ? (deb.message.empty() ? std::string(_("Ready")) : deb.message)
                                             : (deb.message.empty() ? std::string(_("PackageKit is not available"))
                                                                    : deb.message));
-  if (!find_program("sde-update").empty()) {
-    page->advance(S(4));
-    button(page->left() + S(20), page->cursor(), _("Package Sources and Updates"), Button::Normal,
-           [] { spawn_detached({"sde-update", "--page", "sources"}); });
-    page->advance(S(34) + S(6));
+  std::string catalog;
+  if (!cs.appstream_apt)
+    catalog = _("Not downloaded: the appstream package is missing");
+  else if (cs.dep11 == 0)
+    catalog = _("Not downloaded yet: refresh the software lists");
+  else
+    catalog = format(_("%s from %d catalogs; icons: %s"), apps_count(size_t(st.catalog_count(Source::Debian))).c_str(),
+                     cs.dep11, cs.dep11_icons ? _("downloaded") : _("from the catalog's website"));
+  info_row(page, _("App catalog"), catalog);
+  if (st.packages_available() && st.packages_loaded())
+    info_row(page, _("Packages"), format(_("%s in the package lists (All Software)"),
+                                         format_count(long(st.packages().size())).c_str()));
+  page->advance(S(4));
+  int bx = page->left() + S(20);
+  if (!cs.appstream_apt && !fake_mode()) {
+    Button *b = button(bx, page->cursor(), _("Install the Catalog"), Button::Primary,
+                       [] { install_support(_("The software catalog (appstream)"), {"appstream"}); });
+    bx += b->w() + S(10);
   }
+  if (!find_program("sde-update").empty()) {
+    button(bx, page->cursor(), _("Package Sources and Updates"), Button::Normal,
+           [] { spawn_detached({"sde-update", "--page", "sources"}); });
+  }
+  if (bx != page->left() + S(20) || !find_program("sde-update").empty()) page->advance(S(34) + S(6));
   page->end_card();
   // Flatpak.
   const SourceStatus &fp = st.status(Source::Flatpak);
   page->begin_card("Flatpak");
   page->note(_("Apps from Flathub and other Flatpak remotes run isolated from the system with the permissions they "
-               "ask for, and bring the libraries they need. They are installed for every user."));
+               "ask for, and bring the libraries they need. They are installed for every user and updated here."));
   if (!fp.installed) {
     info_row(page, _("Status"), fp.message.empty() ? std::string(_("Flatpak is not installed")) : fp.message);
     page->advance(S(4));
-    button(page->left() + S(20), page->cursor(), _("Install Flatpak Support"), Button::Primary, [] {
-      Job j;
-      j.action = Action::Install;
-      j.source = Source::Debian;
-      j.title = _("Flatpak support");
-      j.icon = "system-software-install";
-      j.targets = {"flatpak"};
-      Store::get().enqueue(j);
-      navigate(View{View::Progress, ""});
-    });
+    button(page->left() + S(20), page->cursor(), _("Install Flatpak Support"), Button::Primary,
+           [] { install_support(_("Flatpak support"), {"flatpak"}); });
     page->advance(S(34) + S(6));
   } else {
     std::string remotes;
-    for (auto &r : fp.remotes) remotes += (remotes.empty() ? "" : ", ") + r;
+    for (auto &rm : fp.remotes) remotes += (remotes.empty() ? "" : ", ") + rm;
     info_row(page, _("Remotes"), remotes.empty() ? std::string(_("None")) : remotes);
+    info_row(page, _("App catalog"), st.catalog_count(Source::Flatpak)
+                                         ? apps_count(size_t(st.catalog_count(Source::Flatpak)))
+                                         : std::string(_("Not downloaded yet: refresh the software lists")));
     if (!fp.has_flathub) {
       page->advance(S(4));
-      button(page->left() + S(20), page->cursor(), _("Add Flathub"), Button::Primary, [] {
-        Store::get().backend(Source::Flatpak)->setup("flathub", [](bool ok, bool, std::string error) {
-          Store::get().probe_sources();
-          if (ok)
-            Store::get().reload_catalog();
-          else
-            fprintf(stderr, "merkadu: adding Flathub failed: %s\n", error.c_str());
-        });
-      });
+      Button *b = button(page->left() + S(20), page->cursor(), _("Set Up Flathub"), Button::Primary, setup_flathub);
+      qa_line("action:flathub", b->x(), b->y(), b->w(), b->h());
       page->advance(S(34) + S(6));
     }
   }
@@ -975,23 +1417,21 @@ void build_sources(Page *page) {
   // Snap.
   const SourceStatus &sn = st.status(Source::Snap);
   page->begin_card("Snap");
-  page->note(_("Snaps come from the Snap Store through snapd. They update themselves in the background."));
+  page->note(_("Snaps come from the Snap Store through snapd, which you install yourself if you want it. They "
+               "update themselves in the background."));
   if (!sn.installed) {
-    info_row(page, _("Status"), sn.message.empty() ? std::string(_("snapd is not installed")) : sn.message);
+    info_row(page, _("Status"), _("Not installed"));
     page->advance(S(4));
-    button(page->left() + S(20), page->cursor(), _("Install Snap Support"), Button::Normal, [] {
-      Job j;
-      j.action = Action::Install;
-      j.source = Source::Debian;
-      j.title = _("Snap support");
-      j.icon = "system-software-install";
-      j.targets = {"snapd"};
-      Store::get().enqueue(j);
-      navigate(View{View::Progress, ""});
-    });
-    page->advance(S(34) + S(6));
+    Button *b = button(page->left() + S(20), page->cursor(), _("Enable Snap Support"), Button::Normal, enable_snap);
+    qa_line("action:enable-snap", b->x(), b->y(), b->w(), b->h());
+    page->advance(S(34) + S(10));
+    page->note(_("Merkadu installs snapd and the snapd snap (as Debian's instructions do, with your password). "
+                 "Restart the computer or log out and back in afterwards."));
   } else {
     info_row(page, _("Status"), sn.available ? std::string(_("snapd is running")) : sn.message);
+    if (g_snap_enabled_now || (!sn.available && sn.installed))
+      page->note(_("Restart the computer (or log out and back in) to finish: then snap apps start, appear in the "
+                   "Start menu and their commands are found in /snap/bin."));
     std::string folder = sn.hidden_snap_folder == 1   ? std::string(_("~/.snap/data (hidden)"))
                          : sn.hidden_snap_folder == 0 ? std::string(_("~/snap"))
                                                       : std::string(_("Unknown"));
@@ -1006,10 +1446,10 @@ void build_sources(Page *page) {
       });
       page->advance(S(34) + S(6));
     }
+    page->note(_("snapd keeps each user's snap data in their home folder: snaps may only write there, and the data "
+                 "belongs to that user. It cannot be moved to a system folder such as /usr/share. Merkadu asks snapd "
+                 "to use the hidden folder ~/.snap/data instead of ~/snap before it installs the first snap."));
   }
-  page->note(_("snapd keeps each user's snap data in their home folder: snaps may only write there, and the data "
-               "belongs to that user. It cannot be moved to a system folder such as /usr/share. Merkadu asks snapd "
-               "to use the hidden folder ~/.snap/data instead of ~/snap before it installs the first snap."));
   page->end_card();
   page->finish();
 }
@@ -1032,7 +1472,10 @@ std::string view_title(const View &v) {
     case View::History: return _("History");
     case View::Progress: return _("In Progress");
     case View::Sources: return _("Sources");
-    default: return _("Explore");
+    case View::Packages: return packages_title(v.arg);
+    case View::Package: return v.arg;
+    case View::Changes: return _("Review Changes");
+    default: return _("Home");
   }
 }
 
@@ -1046,6 +1489,9 @@ void build_page(Page *page, const View &v) {
     case View::History: build_history(page); break;
     case View::Progress: build_progress(page); break;
     case View::Sources: build_sources(page); break;
+    case View::Packages: build_packages_page(page, v.arg); break;
+    case View::Package: build_package_page(page, v.arg); break;
+    case View::Changes: build_changes_page(page); break;
     default: build_explore(page); break;
   }
 }

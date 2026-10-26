@@ -532,6 +532,15 @@ void draw(Painter &p, Kind kind, double x, double y, double size, const Color &c
       arrow_curve(cr, kind == Redo);
       cairo_stroke(cr);
       break;
+    case Keyboard:
+      // A keyboard: rows of keys and the space bar.
+      rrect(cr, 2.5, 6, 19, 12.5, 2.5);
+      cairo_stroke(cr);
+      for (double kx : {6.5, 10.0, 13.5, 17.5}) line(cr, kx, 9.6, kx + 0.01, 9.6);
+      for (double kx : {8.3, 11.8, 15.5}) line(cr, kx, 12.4, kx + 0.01, 12.4);
+      line(cr, 8, 15.2, 16, 15.2);
+      cairo_stroke(cr);
+      break;
   }
   cairo_restore(cr);
 }

@@ -9,7 +9,7 @@ they are not duplicated inside SDE.
 
 | Application | Executable | Source |
 | --- | --- | --- |
-| Niny | `niny` | native SDE application (Selviana DE Project) |
+| Niny | `niny` | native SDE application (Selviana DE Project); tabs and menu bar: [NINY.md](NINY.md) |
 | Liria | `liria` | [caja](https://github.com/mate-desktop/caja) |
 | Xanara | `xanara` | native SDE application (Selviana DE Project) |
 | Taca | `taca` | native SDE application (Selviana DE Project) |
@@ -19,7 +19,7 @@ they are not duplicated inside SDE.
 | SDE Screen Lock | `sde-lock` (Control Center > Lock Screen) | native SDE application (Selviana DE Project, alpha16) |
 | Calculator | `calculator` | native SDE application (Selviana DE Project, alpha50; replaced the GTK4 scientific-calculator frontend) |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
-| Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit and Flatpak |
+| Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit (the operating system; apps are updated in Merkadu) |
 
 These GTK forks retain their upstream C/C++ implementation. SDE's configuration,
 panel geometry, autostart and suite diagnostics use Rust; the shell and update
@@ -193,32 +193,49 @@ Since 0.2.0 Alpha 2:
   (`suite/redesign.py` `liria_folder_loading`, `liria-sde-ribbon.c`,
   `liria-sde-tools.c`). Still slow: the first switch of 10 000 files to
   the list view, where GTK's tree view measures every row.
-* **File operations.** The file operations window has the design of SDE's
-  copy and move dialog ([UI-KIT.md](UI-KIT.md#copy-and-move-progress-transferdialog)):
-  each operation shows the animated SDE mark, "Copying 63 items from Source
-  to Backup", "42% complete" with Pause, Queue and Cancel and a slim
-  accent bar, and with More details the speed graph with the current
-  speed, the item being copied and the time and items remaining; paused,
-  the bar and graph turn amber and the mark stands still (so it does while
-  queued, while writing the last data to a USB stick and with reduced
-  motion). Several operations are stacked with a line between them; with
-  one, the window title is its percentage. The window takes about 2 % of
-  one CPU core while it shows a copy (1 % for the mark's animation). The
-  model is SDE's own (`src/common/transfer_model.h`, copied in as
-  `libliria-private/liria-sde-transfer-model.h`), so Liria and the SDE
-  desktop estimate and look the same; Delete, Trash and links keep their
-  own texts under the bar. GLib 2.80 copies a local file with one
-  `copy_file_range ()` call and reports its progress when it is there, so
-  a large file sat at 0 % and Pause waited for it: files of 32 MiB and
-  more on internal disks are now copied in slices of about a tenth of a
-  second (a reflink where the file system can share data;
-  `liria_sde_copy_large_file ()` in `liria-sde-copy.c`), and Pause stops
-  a copy in the middle of a file. `tools/liria-progress-smoke.py --prefix
-  <built prefix>` copies real files on Xvfb (slowed down with
-  `LIRIA_SDE_QA_COPY_RATE`) and checks the texts, the animation, More
-  details, Pause in the middle of a file, Resume, Cancel, reduced motion
-  and a complete copy byte for byte (`LIRIA_SDE_QA_PROGRESS=FILE` writes
-  what the window shows).
+* **File operations (0.2.0 Alpha 3).** The file operations window has the
+  design of SDE's copy and move dialog ([TRANSFERS.md](TRANSFERS.md)): SDE's
+  own picture of a penguin that carries papers from one folder to the other
+  (a bin for Delete and the Trash; it sits when paused, pushes the last
+  paper in while the last data is written, jumps when done, is puzzled on
+  errors), "Copying 3 items to Backup" with Pause, Queue and Cancel, a slim
+  bar, "780 MB of 1.2 GB · 22 MB/s · About 40 seconds left", the item being
+  copied and Details (from, to, items); further operations stand under the
+  first as its queue. The picture moves at about 30 frames per second while
+  it is visible and stands still when paused, queued, minimized and with
+  reduced motion; it costs about 2 % of a CPU core. The picture and the
+  model are SDE's own (`src/common/transfer_scene.h` and
+  `transfer_model.h`, copied in as
+  `libliria-private/liria-sde-transfer-scene.h` and
+  `liria-sde-transfer-model.h`), so Liria and the SDE desktop look and
+  estimate the same; the Windows-like speed graph of 0.2.0 Alpha 2 is
+  gone. At the end a copy says for a moment "Copied 3 items to Backup"
+  and, for a removable drive, "The files are on SANDISK — you can remove
+  it."; a failed one stays until its cross is clicked, while the queue goes
+  on.
+* **Safe copying (0.2.0 Alpha 3).** Copies and moves to removable and
+  external drives (USB, SD cards, FireWire, Thunderbolt, also under LUKS or
+  LVM), network shares and FAT, exFAT, NTFS, UDF and HFS+ file systems go
+  through SDE's safe writer (`src/common/safe_copy.h`, shared with the
+  desktop and copied in as `liria-sde-safe-copy.h`; `liria-sde-copy.c`):
+  about a second of the drive's speed in flight, progress only for what the
+  drive has taken, checkpoints (`syncfs`, `fsync` of the folder) every 5 s
+  and at the end, "done" only after the last one, the sources of a move
+  deleted only after a checkpoint; deletions, the Trash and an emptied
+  Trash on such drives are written to them before the operation ends. On a
+  drive limited to 20 MB/s Liria said "done" after 0.6 s with nothing on the
+  drive before, and now after 6.2 s with everything on it. Internal disks
+  keep the page cache (`[files] safe_copy = auto | always | never` in
+  sde.conf). GLib 2.80 copies a local file with one `copy_file_range ()`
+  call and reports its progress when it is there, so files of 32 MiB and
+  more on internal disks are copied in slices of about a tenth of a second
+  (`liria_sde_copy_large_file ()`, 0.2.0 Alpha 2), and Pause stops a copy
+  in the middle of a file. `tools/liria-progress-smoke.py --prefix <built
+  prefix>` copies real files on Xvfb (slowed down with
+  `LIRIA_SDE_QA_COPY_RATE`) and checks the texts, the moving and the still
+  picture, Details, Pause in the middle of a file, Resume, Cancel, reduced
+  motion, a complete copy byte for byte and a safe copy's finished state
+  (`LIRIA_SDE_QA_PROGRESS=FILE` writes what the window shows).
 
 ## SDE Power and SDE Screen Lock (alpha16)
 
@@ -278,12 +295,16 @@ or system services; use `sudo apt --fix-broken install` to repair that state.
 Software Updater (`sde-update`, called SDE Update before Alpha 51) is a native
 FLTK window in the style of a classic software updater, drawn with the active
 SDE theme (colors and radii follow the theme, also when it changes while the
-window is open) at every UI scale:
+window is open) at every UI scale. It updates the operating system: the Debian
+packages. Applications from Flathub and the Snap Store are updated in Merkadu,
+the software center ([MERKADU.md](MERKADU.md)), whose Updates page sends system
+updates back here; since 0.2 Alpha 3 the Software Updater has no Flatpak group,
+and its up-to-date view offers **Open Merkadu** when Merkadu is installed.
 
 - **Updater**: the question "Updated software is available for this computer.
   Do you want to install it now?" (or "up to date" with the last check), a
-  collapsible **Details of updates** tree with the groups Critical, Security,
-  Main and Flatpak (tri-state check boxes, sizes, application names and icons
+  collapsible **Details of updates** tree with the groups Critical, Security
+  and Main (tri-state check boxes, sizes, application names and icons
   from the packages' desktop files), a collapsible **Technical description**
   (versions, origin, size and the changelog from `apt-get changelog`,
   PackageKit `get-update-detail`, then the installed changelog, loaded in the
@@ -293,8 +314,7 @@ window is open) at every UI scale:
 - Critical: Priority required/important, the kernel, libc, systemd, D-Bus,
   APT/dpkg, boot loader, firmware and microcode, urgency high/critical, and
   anything that needs a restart. Security: the Debian security archive. Main:
-  everything else (backports included). Flatpak: `flatpak remote-ls --updates`
-  of the system and user installations (`data/update/flatpak.py`).
+  everything else (backports included).
 - **Settings…** opens the other pages with a sidebar (Escape goes back):
   **History** from `/var/log/apt/history.log*`, **Sources** (read-only one-line
   and deb822 entries, Software Sources when installed), **Maintenance** (refresh,
@@ -310,9 +330,8 @@ get their own type. Mint repositories and Mint-only policies are not imported.
 Transactions run in `transaction.py`, which streams progress (status, percent,
 per-package items) to the window. It uses `pkcon` when PackageKit is running,
 so polkit authorizes and the user can cancel; otherwise, and for cache cleaning
-and autoremove, `apt-get` runs through `pkexec`. Names and Flatpak references are
-validated and no options or repository URLs are accepted; checked Flatpak refs
-are updated with `flatpak update` as the user after the APT part. `sde-update --notifier` (autostarted)
+and autoremove, `apt-get` runs through `pkexec`. Package names are validated and
+no options or repository URLs are accepted. `sde-update --notifier` (autostarted)
 checks in the background and notifies; nothing is installed automatically.
 `--check`, `--history` and `--sources` print the helper protocols; `--plan`
 prints a transaction's argument vector without changing the system. Debian

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Software Updater (sde-update): native UI over a mintupdate-derived model,
-// Debian PackageKit/APT and Flatpak.
+// Software Updater (sde-update): native UI over a mintupdate-derived model
+// and Debian PackageKit/APT. It updates the operating system; applications
+// from Flathub and the Snap Store are updated in Merkadu.
 //
 //   sde-update [--page NAME]        the window
 //   sde-update --notifier [--once]  background checks ([update] in sde.conf)
@@ -248,7 +249,6 @@ void usage(FILE *out) {
           _("Usage: sde-update [--page NAME] [--version]\n"
             "       sde-update --check | --history | --sources\n"
             "       sde-update --plan refresh|upgrade|autoremove|clean|repair [PACKAGE...]\n"
-            "       sde-update --plan flatpak system|user:REF...\n"
             "       sde-update --transaction refresh|upgrade\n"
             "       sde-update --notifier [--once]\n\n"
             "  --page NAME     open updates, history, sources, maintenance, settings or about\n"

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Software Updater (sde-update) data model: parsers for the helper protocols
-// in data/update (check.py, flatpak.py, history.py, sources.py,
-// transaction.py), the update groups and formatting helpers.
-// Nothing here touches FLTK, the network or the package system.
+// in data/update (check.py, history.py, sources.py, transaction.py), the
+// update groups and formatting helpers. Nothing here touches FLTK, the
+// network or the package system. The Software Updater updates the operating
+// system (Debian packages); applications from Flathub and the Snap Store are
+// updated in Merkadu (docs/MERKADU.md).
 #pragma once
 
 #include <ctime>
@@ -20,14 +22,13 @@ const char *kind_title(Kind kind);         // translated group title
 const char *kind_badge(Kind kind);         // translated short badge text
 
 // The groups of the Software Updater, in display order. See classify().
-enum class Group { Critical = 0, Security = 1, Main = 2, Flatpak = 3 };
-constexpr int kGroupCount = 4;
+enum class Group { Critical = 0, Security = 1, Main = 2 };
+constexpr int kGroupCount = 3;
 const char *group_title(Group group);  // "Critical updates", ... (translated)
-const char *group_badge(Group group);  // "Critical", "Security", "Main", "Flatpak"
-const char *group_id(Group group);     // critical, security, main, flatpak
+const char *group_badge(Group group);  // "Critical", "Security", "Main"
+const char *group_id(Group group);     // critical, security, main
 
-// One update, grouped by source package (see data/update/model.py), or one
-// Flatpak ref (flatpak == true).
+// One update, grouped by source package (see data/update/model.py).
 struct Update {
   Kind kind = Kind::Software;
   std::string name;          // display name (usually the source package)
@@ -40,24 +41,19 @@ struct Update {
   // Since Alpha 51 (optional fields of the U record).
   std::string priority, section, urgency;  // Debian control fields, changelog urgency
   std::string app_name, icon;              // from the package's desktop file
-  // Flatpak updates.
-  bool flatpak = false;
-  std::string installation, ref, application, branch;  // system|user, kind/id/arch/branch
-  Group group = Group::Main;  // set by parse_updates() / parse_flatpaks()
+  Group group = Group::Main;  // set by parse_updates()
   bool reboot = false;        // installing it needs a restart (see needs_reboot())
   bool selected = true;
   // What the window shows: the application name, else the short description
   // (capitalized), else the package name.
   std::string title() const;
-  // "system:app/org.gimp.GIMP/x86_64/stable" for the transaction helper.
-  std::string flatpak_item() const { return installation + ":" + ref; }
 };
 
 // Critical: Priority required/important, the kernel, libc, systemd, apt,
 // dpkg, boot loader, firmware and microcode, urgency critical/high/emergency,
 // or anything that needs a restart. Security: the Debian security archive
 // (Debian-Security label / *-security suite). Main: everything else from the
-// package archive (including backports). Flatpak: Flatpak refs.
+// package archive (including backports).
 Group classify(const Update &u);
 bool needs_reboot(const Update &u);
 
@@ -66,8 +62,6 @@ struct UpdateList {
   int protocol = 0;
   std::vector<Update> updates;
   std::vector<std::string> held;
-  bool flatpak_installed = false;  // flatpak.py found the flatpak command
-  std::vector<std::string> flatpak_errors;
   long long total_size() const;
   int count(Kind kind) const;
   int count(Group group) const;
@@ -80,24 +74,18 @@ struct UpdateList {
 // Accepts protocol 2 (and the six-field protocol 1 of SDE Update 1.0).
 // Updates are classified and sorted by group, then title.
 UpdateList parse_updates(const std::string &output);
-// Parses flatpak.py output (SDE-FLATPAK 1) and adds its updates to |list|
-// (group Flatpak). Returns false when the output is not valid.
-bool parse_flatpaks(const std::string &output, UpdateList &list);
-// Sorts by group then title (after merging Flatpak updates).
+// Sorts by group then title.
 void sort_updates(std::vector<Update> &updates);
 
 // Case-insensitive search over names, packages and summary.
 bool matches(const Update &u, const std::string &query);
 
-// Binary package names of the selected APT updates. |all| is set when every
-// APT update is selected (then the whole system can be upgraded at once).
-// Flatpak updates are not packages and never counted here.
+// Binary package names of the selected updates. |all| is set when every
+// update is selected (then the whole system can be upgraded at once).
 std::vector<std::string> selected_packages(const std::vector<Update> &updates, bool *all);
-// "installation:ref" items of the selected Flatpak updates.
-std::vector<std::string> selected_flatpaks(const std::vector<Update> &updates);
-// The transaction.py argument lists that install the selection, in order:
-// {"upgrade"} (everything), {"upgrade", pkg...} (apt-get install
-// --only-upgrade), then {"flatpak", item...}. Empty when nothing is selected.
+// The transaction.py argument lists that install the selection: {"upgrade"}
+// (everything) or {"upgrade", pkg...} (apt-get install --only-upgrade).
+// Empty when nothing is selected.
 std::vector<std::vector<std::string>> install_commands(const std::vector<Update> &updates);
 
 struct Change {
@@ -161,9 +149,6 @@ std::string format_date(const std::string &stamp);
 
 // Debian package names as accepted by the helpers.
 bool valid_package_name(const std::string &name);
-// Flatpak refs (kind/id/arch/branch) and "installation:ref" items.
-bool valid_flatpak_ref(const std::string &ref);
-bool valid_flatpak_item(const std::string &item);
 
 // Remind Me Later: choices in hours and their labels.
 const std::vector<int> &remind_hours();

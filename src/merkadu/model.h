@@ -80,12 +80,22 @@ struct Release {
   std::string description;  // plain text
 };
 
+// One icon of an app: an icon name of the theme ("gimp"), a file (cached
+// catalog icons, Flatpak exports), an https URL (catalog media, the Snap
+// Store) or "snap-icon:NAME" (snapd).
+struct IconRef {
+  std::string ref;
+  int size = 0;  // pixels (with the scale), 0 for icon names and unknown sizes
+  bool operator==(const IconRef &o) const { return ref == o.ref && size == o.size; }
+};
+
 struct App {
   std::string id;           // normalize_id() of the AppStream id, or deb:/snap: names
   std::string appstream_id; // as published ("org.gimp.GIMP")
   std::string name, summary;
   std::string description;  // plain text: paragraphs separated by a blank line
   std::string icon;         // icon name, absolute path or https URL
+  std::vector<IconRef> icons;  // every icon the sources have (see icon_candidates())
   std::string kind = "desktop-application";  // AppStream component kind
   std::vector<std::string> categories;       // freedesktop categories
   std::vector<std::string> keywords;
@@ -108,6 +118,18 @@ struct App {
   std::time_t newest_release() const;
   bool is_app() const;  // a desktop or web application (not a font, add-on, tool)
 };
+
+// Adds |icon| to |app| (once); the first one also becomes app.icon.
+void add_icon(App &app, const IconRef &icon);
+// The icons of |app| to try for |px| pixels, best first: icon names (the
+// theme's own drawing, when it has one), then files and URLs of at least
+// |px| (smallest first), then smaller ones (largest first). Files before
+// URLs of the same size.
+std::vector<std::string> icon_candidates(const App &app, int px);
+// Generic icon names for an app without an icon of its own: its kind (fonts,
+// add-ons), its main freedesktop category, its Debian section, then a
+// generic application.
+std::vector<std::string> fallback_icon_names(const App &app);
 
 // Lower case, without a ".desktop" suffix: the key apps are merged by.
 std::string normalize_id(const std::string &appstream_id);
@@ -182,7 +204,8 @@ struct PackageId {
 };
 PackageId parse_package_id(const std::string &id);
 
-// Debian package names as PackageKit and dpkg accept them.
+// Debian package names as PackageKit and dpkg accept them, also with an
+// architecture ("libc6:i386").
 bool valid_package_name(const std::string &name);
 bool valid_snap_name(const std::string &name);
 // Flatpak refs (app|runtime/ID/ARCH/BRANCH).
@@ -253,21 +276,39 @@ Launcher classify_launcher(const std::string &path, const std::string &text, con
 std::vector<std::string> parse_dpkg_owners(const std::string &output, const std::string &path);
 // Sum of `dpkg-query -W -f='${Installed-Size}\n'` lines (KiB) in bytes.
 long long parse_installed_sizes(const std::string &output);
+// `dpkg-query -W -f='${Package}\t${Installed-Size}\t${Essential}\t${Priority}\n'`:
+// the space the packages take (bytes, -1 when unknown) and those the
+// system needs (Essential: yes, Priority: required).
+void parse_removal_query(const std::string &output, long long *freed, std::set<std::string> *system);
 
 // Whether Merkadu may remove |package| when the package system would also
 // remove |removed| (the result of a simulation; may contain |package|).
+// |system_packages| are the packages the system cannot work without
+// (Essential, Priority required, the running kernel): removing them is
+// refused like removing the desktop.
 struct RemovalPlan {
   bool allowed = false;
   // Why not: the package (or one removed with it) is protected.
   std::string protected_package;
+  bool system = false;  // it is a system package (else part of the desktop)
   // Other packages that would go too (sorted, without |package|).
   std::vector<std::string> also_removed;
 };
 RemovalPlan plan_removal(const std::string &package, const std::vector<std::string> &removed,
-                         const std::set<std::string> &protected_packages);
+                         const std::set<std::string> &protected_packages,
+                         const std::set<std::string> &system_packages = {});
+// Why Merkadu refuses the removal of |plan| (for |name|, the app or package
+// asked for), one sentence.
+std::string refusal_text(const RemovalPlan &plan, const std::string &name, const std::string &package);
 // The packages Merkadu never removes: sde, sde-desktop, merkadu and the
 // [Uninstall] protected= list of merkadu.conf.
 std::set<std::string> default_protected_packages();
+// System packages in `dpkg-query -W -f='${Package}\t${Essential}\t${Priority}\n'`
+// output: Essential: yes or Priority: required.
+std::set<std::string> parse_system_packages(const std::string &output);
+// The package of the running kernel ("linux-image-" + release), "" when
+// unknown.
+std::string running_kernel_package(const std::string &release);
 
 // --------------------------------------------------------------- config
 
@@ -288,19 +329,27 @@ class KeyFile {
   std::vector<std::string> list(const std::string &section, const std::string &key) const;
   int get_int(const std::string &section, const std::string &key, int fallback) const;
   bool has(const std::string &section, const std::string &key) const;
+  // The keys of |section| (lower case, sorted).
+  std::vector<std::string> keys(const std::string &section) const;
 
  private:
   std::map<std::string, std::map<std::string, std::string>> values_;
 };
 
 struct Settings {
-  std::vector<std::string> featured;  // app references (see resolve_reference())
-  std::vector<std::string> top;
+  std::vector<std::string> featured;  // [Highlights] (or [Featured]) apps: app references (see resolve_reference())
+  std::vector<std::string> top;       // [Popular] (or [Top]) apps
+  // [Recommended]: department id -> well-known apps of that department,
+  // recommended to people who install apps of it.
+  std::map<std::string, std::vector<std::string>> recommended;
   int new_count = 12;
   std::vector<Source> order = {Source::Debian, Source::Flatpak, Source::Snap};
   std::set<std::string> protected_packages;
   bool hidden_snap_folder = true;  // [Snap] hide-home-folder=
   std::string flathub_url = "https://dl.flathub.org/repo/flathub.flatpakrepo";
+  bool setup_flathub = true;       // [Flatpak] setup-flathub=: offer Flathub when it is missing
+  bool refresh_on_start = true;    // [Refresh] on-start=
+  int refresh_minutes = 30;        // [Refresh] min-age=: lists younger than this are not refreshed on start
   static Settings from(const KeyFile &kf);
 };
 // Reads data_dir()/merkadu.conf (/usr/share/merkadu), then
@@ -309,7 +358,8 @@ struct Settings {
 Settings load_settings();
 
 // An app named in merkadu.conf: an AppStream id ("org.gimp.GIMP"),
-// "deb:PACKAGE", "flatpak:APPID" or "snap:NAME".
+// "deb:PACKAGE", "flatpak:APPID" or "snap:NAME"; alternatives separated by
+// '|' are tried in order ("org.mozilla.firefox|deb:firefox-esr").
 const App *resolve_reference(const Catalog &catalog, const std::string &ref);
 
 // ------------------------------------------------------------- formatting

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Unit tests for the copy and move progress (0.2.0 Alpha 2): the shared
+// Unit tests for the copy and move progress (0.2.0 Alpha 2, 3): the shared
 // model (src/common/transfer_model.h, also built into Liria) — speed, time
-// remaining, pauses, the graph along the progress, the remaining time in
-// words, the mark split into layers and the stripes' pulse — and the
-// texts of the SDE-FLTK dialog (src/common/transfer_dialog.h). No display.
+// remaining, pauses, the remaining time in words — the picture
+// (src/common/transfer_scene.h: it moves only while it should, every state
+// draws, a loop later it is the same) and the texts of the SDE-FLTK dialog
+// (src/common/transfer_dialog.h). No display.
 #include <clocale>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +14,7 @@
 
 #include "transfer_dialog.h"
 #include "transfer_model.h"
+#include "transfer_scene.h"
 #include "util.h"
 
 using namespace sde;
@@ -52,11 +55,6 @@ static void test_steady_speed_and_remaining() {
   CHECK(near(t.speed, 50e6, 0.5e6));
   // 750 MB left at 50 MB/s.
   CHECK(near(sde_transfer_remaining(&t), 15.0, 0.3));
-  // The graph has a point for every 1 % reached, at the speed of the time.
-  for (int i = 0; i <= 24; ++i) CHECK(t.graph[i] >= 0);
-  CHECK(t.graph[26] < 0);
-  CHECK(near(t.graph[20], 50e6, 1e6));
-  CHECK(near(t.peak, 50e6, 1e6));
 }
 
 // The first second is "Calculating...", and so is a copy that has not
@@ -139,52 +137,91 @@ static void test_eta_words() {
   CHECK(sde_transfer_eta_parts(3570, &v, &m) == SDE_TRANSFER_ETA_HOURS && v == 1 && m == 0);
   CHECK(sde_transfer_eta_parts(3600 + 22 * 60, &v, &m) == SDE_TRANSFER_ETA_HOURS && v == 1 && m == 20);
   CHECK(sde_transfer_eta_parts(2 * 3600 + 58 * 60, &v, &m) == SDE_TRANSFER_ETA_HOURS && v == 3 && m == 0);
-  CHECK_EQ(TransferDialog::format_remaining(-1), "Calculating…");
-  CHECK_EQ(TransferDialog::format_remaining(2), "A few seconds");
-  CHECK_EQ(TransferDialog::format_remaining(31), "About 35 seconds");
-  CHECK_EQ(TransferDialog::format_remaining(61), "About 1 minute");
-  CHECK_EQ(TransferDialog::format_remaining(150), "About 3 minutes");
-  CHECK_EQ(TransferDialog::format_remaining(3600 + 22 * 60), "About 1 hour and 20 minutes");
-  CHECK_EQ(TransferDialog::format_remaining(7200), "About 2 hours");
+  CHECK_EQ(TransferDialog::format_left(-1), "Calculating…");
+  CHECK_EQ(TransferDialog::format_left(2), "A few seconds left");
+  CHECK_EQ(TransferDialog::format_left(31), "About 35 seconds left");
+  CHECK_EQ(TransferDialog::format_left(61), "About 1 minute left");
+  CHECK_EQ(TransferDialog::format_left(150), "About 3 minutes left");
+  CHECK_EQ(TransferDialog::format_left(3600 + 22 * 60), "About 1 hour and 20 minutes left");
+  CHECK_EQ(TransferDialog::format_left(7200), "About 2 hours left");
   CHECK_EQ(TransferDialog::format_speed(85.3e6), "85.3\u00a0MB/s");  // GLib keeps number and unit together
 }
 
-// The mark splits into what is under the stripes, each stripe and what is
-// over them; the SDE mark of data/branding has all three stripes.
-static void test_logo_layers() {
-  const char *svg =
-      "<svg viewBox=\"0 0 10 10\"><title>SDE</title>"
-      "<path id=\"base\" d=\"M0 0\"/><path id=\"screen\" d=\"M1 1\"/>"
-      "<path id=\"stripe-red\" fill=\"#F00\" d=\"M2 2\"/><path id=\"stripe-green\" fill=\"#0F0\" d=\"M3 3\"/>"
-      "<path id=\"stripe-blue\" fill=\"#00F\" d=\"M4 4\"/><path id=\"ink\" d=\"M5 5\"/></svg>";
-  char *under = sde_transfer_logo_layer_svg(svg, 0), *green = sde_transfer_logo_layer_svg(svg, 2),
-       *over = sde_transfer_logo_layer_svg(svg, 4);
-  CHECK(under && green && over);
-  std::string u = under ? under : "", g = green ? green : "", o = over ? over : "";
-  CHECK(u.find("id=\"screen\"") != std::string::npos && u.find("stripe") == std::string::npos);
-  CHECK(g.find("stripe-green") != std::string::npos && g.find("stripe-red") == std::string::npos &&
-        g.find("id=\"ink\"") == std::string::npos);
-  CHECK(o.find("id=\"ink\"") != std::string::npos && o.find("stripe") == std::string::npos);
-  CHECK(u.rfind("<svg viewBox=\"0 0 10 10\">", 0) == 0 && o.find("</svg>") != std::string::npos);
-  free(under);
-  free(green);
-  free(over);
-  CHECK(sde_transfer_logo_layer_svg("<svg><path id=\"x\"/></svg>", 0) == nullptr);
-  std::string mark;
-  if (read_file(std::string(SDE_TEST_SOURCE_DIR) + "/data/branding/sde-mark.svg", mark)) {
-    for (int i = 0; i < 5; ++i) {
-      char *layer = sde_transfer_logo_layer_svg(mark.c_str(), i);
-      CHECK(layer != nullptr);
-      free(layer);
-    }
-  }
-  // The pulse crosses the mark from left to right; the stripes follow
-  // each other.
-  CHECK(sde_transfer_pulse_position(0, 0) < 0);
-  CHECK(sde_transfer_pulse_position(SDE_TRANSFER_PULSE_PERIOD * 0.5, 0) > 0.3);
-  CHECK(sde_transfer_pulse_position(SDE_TRANSFER_PULSE_PERIOD * 0.99, 0) > 1.0);
-  CHECK(sde_transfer_pulse_position(SDE_TRANSFER_PULSE_PERIOD * 0.5, 2) <
-        sde_transfer_pulse_position(SDE_TRANSFER_PULSE_PERIOD * 0.5, 0));
+// Pixels of the picture (an image surface, no display).
+static std::string render(const SdeScene &scene, int w = 330, int h = 100) {
+  cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+  cairo_t *cr = cairo_create(s);
+  sde_scene_draw(cr, 0, 0, w, h, &scene);
+  cairo_destroy(cr);
+  cairo_surface_flush(s);
+  std::string pixels(reinterpret_cast<const char *>(cairo_image_surface_get_data(s)),
+                     size_t(cairo_image_surface_get_stride(s)) * h);
+  cairo_surface_destroy(s);
+  return pixels;
+}
+
+// The picture: it moves while the operation runs (the penguin walks from
+// one folder to the other), stands still when paused, with reduced motion
+// and after the jump when done, and every state draws something.
+static void test_scene() {
+  SdeScene scene;
+  memset(&scene, 0, sizeof scene);
+  scene.kind = SDE_SCENE_COPY;
+  scene.state = SDE_SCENE_RUNNING;
+  scene.progress = 0.4;
+  scene.animate = 1;
+  CHECK(sde_scene_moving(&scene));
+  double cycle = sde_scene_cycle();
+  CHECK(cycle > 3.0 && cycle < 7.0);
+  std::string a = render(scene);
+  scene.seconds = cycle * 0.3;
+  std::string b = render(scene);
+  scene.seconds = cycle * 0.3 + cycle;  // a loop later: the same picture
+  std::string c = render(scene);
+  CHECK(a != b);
+  CHECK(b == c);
+  // Something is drawn in every state, light and dark, also still.
+  const SdeSceneState states[] = {SDE_SCENE_RUNNING, SDE_SCENE_PAUSED, SDE_SCENE_QUEUED,
+                                  SDE_SCENE_FINISHING, SDE_SCENE_DONE,  SDE_SCENE_ERROR};
+  std::string empty = std::string(330 * 4 * 100, '\0');
+  for (SdeSceneState st : states)
+    for (int dark = 0; dark < 2; ++dark)
+      for (int kind = 0; kind < 3; ++kind) {
+        scene.state = st;
+        scene.dark = dark;
+        scene.kind = SdeSceneKind(kind);
+        scene.animate = dark;  // still and moving
+        scene.state_seconds = 0.3;
+        CHECK(render(scene) != empty);
+      }
+  // Paused, queued, failed: still pictures; done: still after the jump.
+  scene.kind = SDE_SCENE_COPY;
+  scene.animate = 1;
+  scene.state = SDE_SCENE_PAUSED;
+  CHECK(!sde_scene_moving(&scene));
+  scene.state = SDE_SCENE_ERROR;
+  CHECK(!sde_scene_moving(&scene));
+  scene.state = SDE_SCENE_DONE;
+  scene.state_seconds = 0.5;
+  CHECK(sde_scene_moving(&scene));
+  scene.state_seconds = 3.0;
+  CHECK(!sde_scene_moving(&scene));
+  scene.state = SDE_SCENE_FINISHING;
+  CHECK(sde_scene_moving(&scene));
+  // Reduced motion: the same picture at any time.
+  scene.state = SDE_SCENE_RUNNING;
+  scene.animate = 0;
+  CHECK(!sde_scene_moving(&scene));
+  scene.seconds = 0.1;
+  std::string still = render(scene);
+  scene.seconds = 2.7;
+  CHECK(render(scene) == still);
+  // A move empties the source folder, a copy does not.
+  scene.state = SDE_SCENE_DONE;
+  scene.kind = SDE_SCENE_COPY;
+  std::string copied = render(scene);
+  scene.kind = SDE_SCENE_MOVE;
+  CHECK(render(scene) != copied);
 }
 
 int main() {
@@ -194,7 +231,7 @@ int main() {
   test_speed_change_and_stall();
   test_pause();
   test_eta_words();
-  test_logo_layers();
+  test_scene();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);
     return 1;

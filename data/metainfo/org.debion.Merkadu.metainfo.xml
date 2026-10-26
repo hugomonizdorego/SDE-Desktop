@@ -12,9 +12,11 @@
   <description>
     <p>Merkadu is the software center of the Selviana Desktop Environment. It finds, installs, updates and removes apps from the Debian archive (through PackageKit), from Flatpak remotes such as Flathub and from the Snap Store, in one search: when an app is offered by more than one source, Merkadu shows where each version comes from and lets you choose.</p>
     <ul>
-      <li>Featured, new and popular apps, and departments with subcategories</li>
+      <li>Highlights, recommendations, new and popular apps, and departments with subcategories</li>
       <li>App pages with screenshots, what is new, size, license and links</li>
-      <li>Installed apps by department, updates and the history of changes</li>
+      <li>All Software: every package of the archive by section and status, with changes marked and applied together, like Synaptic</li>
+      <li>Flathub ready to use, and Snap support enabled with one button</li>
+      <li>Installed apps by department, app updates and the history of changes</li>
       <li>Progress of every change, with the animated SDE logo</li>
       <li>Uninstalling an app from the Start menu, with the other packages it takes along</li>
     </ul>

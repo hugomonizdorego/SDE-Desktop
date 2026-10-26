@@ -15,6 +15,13 @@ lines and the named controls with their geometry). Checked:
     with its subcategories, a search with its source chips, an app page;
   * installing a Flatpak: progress, then Open and Remove; the app appears
     in Installed and the change in History; the Sources page; Ctrl+Q;
+  * the refresh of the software lists when Merkadu opens and with the
+    Refresh button; Home with Highlights and Recommended for You; All
+    Software (every package by status, a system package that cannot be
+    removed, the search), marking an update and an installation, the review
+    with what comes with them, Apply; Back, Forward and Home; the Updates
+    page pointing to the Software Updater;
+  * an empty catalog explained, with Refresh Software Lists;
   * `merkadu --uninstall FILE` (the Start menu's contract): a Debian
     package with the packages removed with it and the space freed (exit 0
     after Uninstall), an app of SDE's own package (refused, exit 1), a
@@ -71,8 +78,13 @@ class Screen:
             (stubs / prog).write_text('#!/bin/sh\nexit 0\n')
             (stubs / prog).chmod(0o755)
         self.server = None
+        # SDE_XVFB_DISPLAYS=FIRST-LAST keeps the X servers in a range (tests
+        # running side by side).
+        first, last = 500, 20499
+        if '-' in os.environ.get('SDE_XVFB_DISPLAYS', ''):
+            first, last = (int(v) for v in os.environ['SDE_XVFB_DISPLAYS'].split('-', 1))
         for attempt in range(10):
-            number = 500 + (os.getpid() + attempt * 37) % 20000
+            number = first + (os.getpid() + attempt * 37) % (last - first + 1)
             server = sp.Popen(['Xvfb', ':%d' % number, '-noreset', '-screen', '0', size + 'x24',
                                '-nolisten', 'tcp'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
             self.env = dict(os.environ, DISPLAY=':%d' % number, HOME=str(home),
@@ -128,6 +140,16 @@ class Screen:
                 return True
             time.sleep(0.1)
         return False
+
+    def wait_for(self, name, test, timeout=10.0):
+        """The first QA line of |name| for which |test| is true, or None."""
+        end = time.time() + timeout
+        while time.time() < end:
+            for line in self.controls(name):
+                if test(line):
+                    return line
+            time.sleep(0.1)
+        return None
 
     def window(self, title, timeout=10.0):
         end = time.time() + timeout
@@ -273,6 +295,113 @@ def main_window(s):
         stop(proc)
 
 
+def all_software(s):
+    """The refresh, Home, All Software with marked changes, the navigation."""
+    M = 'Merkadu.txt'
+    proc = s.start(env={'MERKADU_FAKE_REFRESH': '2'})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'all software: the main window did not open'):
+            return
+        # The software lists are refreshed in the background when Merkadu opens.
+        check(s.wait_for(M, lambda l: l.startswith('@refresh:running=1'), 8),
+              'no refresh when Merkadu opened: %s' % s.qa(M)[:5])
+        check(s.wait_qa(M, '@refresh:running=0,errors=0,done=1', 10), 'the refresh did not finish: %s' % s.qa(M)[:5])
+        check(s.wait_qa(M, '@state:catalog=1,apps=20,jobs=0', 10), 'home: the catalog did not load')
+        c = s.controls(M)
+        for name in ('Back', 'Forward', 'Home', 'Refresh the software lists', 'section:featured',
+                     'section:recommended', 'nav:packages', 'nav:updates'):
+            check(name in c, 'home: %s missing' % name)
+        # The Refresh button refreshes again.
+        s.click(wid, M, 'Refresh the software lists')
+        check(s.wait_for(M, lambda l: l.startswith('@refresh:running=1'), 5), 'Refresh did not refresh')
+        check(s.wait_qa(M, '@refresh:running=0,errors=0,done=1', 10), 'the second refresh did not finish')
+
+        s.click(wid, M, 'nav:packages')
+        if not check(s.wait_qa(M, '@page:packages') and s.wait_for(M, lambda l: l.startswith('@packages:loaded=1')) and
+                     s.wait_qa(M, 'table'), 'All Software did not open: %s' % s.qa(M)[:6]):
+            return
+        c = s.controls(M)
+        for name in ('chip:status:all', 'chip:status:installed', 'chip:status:updates', 'chip:status:available',
+                     'table', 'pkg:bash', 'pkg:curl'):
+            check(name in c, 'All Software: %s missing' % name)
+        s.shot('merkadu-all-software.png')
+        # A package of the base system cannot be marked for removal.
+        s.click(wid, M, 'pkg:bash')
+        if check(s.wait_qa(M, 'protected:bash', 5), 'bash is not protected: %s' % s.qa(M)[5:40]):
+            check('action:mark:Mark for Removal' not in s.controls(M), 'bash can be marked for removal')
+        # Updates: curl and the kernel; mark curl.
+        s.click(wid, M, 'chip:status:updates')
+        if check(s.wait_qa(M, '@page:packages:updates||'), 'the Updates filter did not apply'):
+            pkgs = [k for k in s.controls(M) if k.startswith('pkg:')]
+            check('pkg:curl' in pkgs and 'pkg:linux-image-amd64' in pkgs and 'pkg:bash' not in pkgs,
+                  'Updates filter: %s' % pkgs)
+            s.click(wid, M, 'pkg:curl')
+            if check(s.wait_qa(M, 'action:mark:Mark for Update', 5), 'curl: no Mark for Update'):
+                s.click(wid, M, 'action:mark:Mark for Update')
+                check(s.wait_for(M, lambda l: l.startswith('@packages:') and l.endswith(',marks=1'), 5),
+                      'curl was not marked: %s' % s.qa(M)[:5])
+        # The search filters the list in place: mark python3-pixel.
+        s.click(wid, M, 'chip:status:available')
+        s.wait_qa(M, '@page:packages:available||')
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'type', '--delay', '40', 'pixel')
+        if check(s.wait_qa(M, '@page:packages:available||pixel'), 'the search did not filter All Software: %s'
+                 % s.qa(M)[:2]):
+            s.click(wid, M, 'pkg:python3-pixel')
+            if check(s.wait_qa(M, 'action:mark:Mark for Installation', 5), 'python3-pixel: no Mark for Installation'):
+                s.click(wid, M, 'action:mark:Mark for Installation')
+                check(s.wait_for(M, lambda l: l.startswith('@packages:') and l.endswith(',marks=2'), 5),
+                      'python3-pixel was not marked')
+        # The review: what comes with the marked changes.
+        s.click(wid, M, 'action:review')
+        if check(s.wait_qa(M, '@page:changes') and s.wait_qa(M, 'action:apply', 8), 'the review did not open'):
+            c = s.controls(M)
+            for name in ('plan:install:python3-pixel', 'plan:install:libpaint2', 'plan:update:curl'):
+                check(name in c, 'review: %s missing (%s)' % (name, [k for k in c if k.startswith('plan:')]))
+            s.shot('merkadu-review.png')
+            # Back, Forward.
+            s.click(wid, M, 'Back')
+            check(s.wait_qa(M, '@page:packages:available||pixel'), 'Back did not go back to All Software')
+            # Filters replace the page; the review was one step: Home, All Software.
+            check(s.wait_qa(M, '@nav:back=1,forward=1'), 'Back: %s' % s.qa(M)[4:5])
+            s.click(wid, M, 'Forward')
+            check(s.wait_qa(M, '@page:changes') and s.wait_qa(M, 'action:apply', 8), 'Forward did not return')
+            s.click(wid, M, 'action:apply')
+            check(s.wait_qa(M, '@page:progress', 5), 'Apply did not show the progress')
+            check(s.wait_for(M, lambda l: l.startswith('@packages:') and l.endswith(',marks=0'), 5),
+                  'the marks were not cleared after Apply')
+            check(s.wait_for(M, lambda l: l.startswith('@state:') and l.endswith(',jobs=0'), 15),
+                  'the changes did not finish: %s' % s.qa(M)[:3])
+        s.click(wid, M, 'Home')
+        check(s.wait_qa(M, '@page:explore'), 'Home did not go home')
+        # Updates: apps only, the system is the Software Updater's.
+        s.click(wid, M, 'nav:updates')
+        if check(s.wait_qa(M, '@page:updates'), 'Updates did not open'):
+            check(s.wait_qa(M, 'action:software-updater', 5), 'Updates: no Open Software Updater')
+    finally:
+        stop(proc)
+
+
+def empty_catalog(s):
+    """No catalog at all: Merkadu says why and offers the fix."""
+    M = 'Merkadu.txt'
+    proc = s.start(env={'MERKADU_FAKE_EMPTY': 'all', 'MERKADU_FAKE_REFRESH': '2'})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'empty catalog: the main window did not open'):
+            return
+        check(s.wait_qa(M, 'empty:loading', 8), 'empty catalog: no loading state while refreshing: %s' % s.qa(M)[:8])
+        if check(s.wait_qa(M, 'empty:lists', 12), 'empty catalog: not explained: %s' % s.qa(M)[:8]):
+            c = s.controls(M)
+            check('action:empty:Refresh Software Lists' in c and 'action:empty:Sources' in c,
+                  'empty catalog: no Refresh Software Lists or Sources button')
+            s.shot('merkadu-empty.png')
+    finally:
+        stop(proc)
+
+
 def uninstall(s, desktop, steps, expect, title, env=None, check_state=None):
     """Runs merkadu --uninstall DESKTOP; |steps|(wid) acts; checks the exit."""
     U = 'Merkadu-Uninstall.txt'
@@ -389,6 +518,8 @@ def problems(s):
 screen = Screen('1366x768')
 try:
     main_window(screen)
+    all_software(screen)
+    empty_catalog(screen)
     uninstall_cases(screen)
     problems(screen)
 finally:

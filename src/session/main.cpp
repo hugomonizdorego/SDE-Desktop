@@ -370,7 +370,30 @@ void stop_all() {
     if (c.pid > 0) kill(c.pid, SIGKILL);
 }
 
+// Flatpak and Snap export their launchers and icons outside /usr/share. startsde
+// adds the directories to XDG_DATA_DIRS (see the comment there); this covers
+// sessions started without it. Flatpak's order: the user's installation and
+// the system one first; snap launchers last.
+void add_app_data_dirs() {
+  std::vector<std::string> dirs = split(env("XDG_DATA_DIRS", "/usr/local/share:/usr/share"), ':');
+  auto has = [&](const std::string &d) {
+    return std::find(dirs.begin(), dirs.end(), d) != dirs.end() ||
+           std::find(dirs.begin(), dirs.end(), d + "/") != dirs.end();
+  };
+  std::vector<std::string> front;
+  for (const std::string &d : {data_home() + "/flatpak/exports/share", std::string("/var/lib/flatpak/exports/share")})
+    if (!has(d)) front.push_back(d);
+  dirs.insert(dirs.begin(), front.begin(), front.end());
+  if (!has("/var/lib/snapd/desktop")) dirs.push_back("/var/lib/snapd/desktop");
+  std::string value;
+  for (auto &d : dirs) value += (value.empty() ? "" : ":") + d;
+  setenv("XDG_DATA_DIRS", value.c_str(), 1);
+  std::string path = env("PATH", "/usr/local/bin:/usr/bin:/bin");
+  if ((":" + path + ":").find(":/snap/bin:") == std::string::npos) setenv("PATH", (path + ":/snap/bin").c_str(), 1);
+}
+
 void setup_environment() {
+  add_app_data_dirs();
   // Applications and display managers know the session as SDE-Desktop; the
   // short name stays in the list so existing OnlyShowIn=SDE entries match.
   setenv("XDG_CURRENT_DESKTOP", "SDE-Desktop:SDE", 1);

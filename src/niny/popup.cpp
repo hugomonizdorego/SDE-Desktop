@@ -4,7 +4,8 @@
 // Themed popup menus drawn with cairo: rounded hover rows, icons, check
 // marks, shortcuts, cascading submenus, an optional quick action row and
 // keyboard navigation. Each level is an override-redirect window; the first
-// one holds the pointer grab and routes every event by root position.
+// one holds the pointer grab and routes every event by root position. Menus
+// of the menu bar hand over to their neighbours (MenuBarLink).
 #include "popup.h"
 
 #include <FL/Fl.H>
@@ -13,6 +14,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #include "niny.h"
 #include "util.h"
@@ -68,6 +71,24 @@ class Level : public BufferedWindow {
     scroll_ = std::max(0, std::min(scroll_ + d, content_h_ - h()));
     redraw();
   }
+  // Lower rows for a menu taller than |max_h| (small screens at a large
+  // scale): items from 34 down to 24 pixels, dividers from 9 to 7. Only a
+  // menu that is still too tall scrolls (clamp_height()).
+  void fit_height(int max_h) {
+    if (content_h_ <= max_h) return;
+    int items = 0, seps = 0, hints = 0;
+    for (auto &it : *items_) {
+      if (it.separator) ++seps;
+      else if (it.hint.empty()) ++items;
+      else ++hints;
+    }
+    int fixed = rows_top() + S(5) + seps * S(7) + hints * S(14);
+    int n = items + hints;
+    item_h_ = n ? std::max(S(24), std::min(S(34), (max_h - fixed) / n)) : S(34);
+    sep_h_ = S(7);
+    layout_rows();
+    size(w(), content_h_);
+  }
   void clamp_height(int max_h) {
     if (content_h_ > max_h) size(w(), max_h);
   }
@@ -80,9 +101,23 @@ class Level : public BufferedWindow {
   int open_sub_ = -1;  // item whose submenu is open
   int quick_h_ = 0, content_h_ = 0, scroll_ = 0;
   int icon_col_ = 0, label_w_ = 0, short_w_ = 0;
+  int item_h_ = 0, sep_h_ = 0;  // row heights (fit_height() lowers them)
   bool chevrons_ = false;
 
  private:
+  int rows_top() const { return quick_ && !quick_->empty() ? quick_h_ + S(5) : S(5); }
+  void layout_rows() {
+    int y = rows_top();
+    rows_.clear();
+    for (auto &it : *items_) {
+      Row r;
+      r.y = y;
+      r.h = it.separator ? sep_h_ : it.hint.empty() ? item_h_ : item_h_ + S(14);
+      y += r.h;
+      rows_.push_back(r);
+    }
+    content_h_ = y + S(5);
+  }
   void measure(int min_w) {
     const Look &L = look();
     bool icons = false;
@@ -107,23 +142,15 @@ class Level : public BufferedWindow {
     int W = S(6) + icon_col_ + label_w_ + (short_w_ ? S(40) + short_w_ : S(24)) + (chevrons_ ? S(24) : 0) + S(14);
     W = std::max(W, S(min_w));
     W = std::max(W, S(180));
-    int y = S(5);
     if (quick_ && !quick_->empty()) {
       int need = S(12);
       for (auto &q : *quick_) need += std::max(S(58), text_width(q.label) + S(18));
       W = std::max(W, need);
       quick_h_ = S(66);
-      y = quick_h_ + S(5);
     }
-    rows_.clear();
-    for (auto &it : *items_) {
-      Row r;
-      r.y = y;
-      r.h = it.separator ? S(9) : it.hint.empty() ? S(34) : S(48);
-      y += r.h;
-      rows_.push_back(r);
-    }
-    content_h_ = y + S(5);
+    item_h_ = S(34);
+    sep_h_ = S(9);
+    layout_rows();
     size(W, content_h_);
   }
 };
@@ -143,6 +170,7 @@ class Controller {
     auto *l = new Level(this, &spec_.items, &spec_.quick, spec_.min_width);
     int sx, sy, sw, sh;
     Fl::screen_work_area(sx, sy, sw, sh, x, y);
+    l->fit_height(sh - S(16));
     l->clamp_height(sh - S(16));
     int X = x, Y = y;
     if (anchor_h < 0) {
@@ -157,10 +185,13 @@ class Controller {
     X = std::max(sx, X);
     Y = std::max(sy, Y);
     l->position(X, Y);
+    if (spec_.keyboard) l->hover_ = next_enabled(l, -1, 1);
     levels_.push_back(l);
     l->show();
     open_time_ = now_seconds();
+    Fl::get_mouse(open_rx_, open_ry_);
     Fl::grab(l);
+    qa();
   }
 
   void open_sub(size_t level, int index) {
@@ -172,6 +203,7 @@ class Controller {
     auto *l = new Level(this, &it.sub, nullptr, 0);
     int sx, sy, sw, sh;
     Fl::screen_work_area(sx, sy, sw, sh, p->x(), p->y());
+    l->fit_height(sh - S(16));
     l->clamp_height(sh - S(16));
     int X = p->x() + p->w() - S(4);
     if (X + l->w() > sx + sw) X = p->x() - l->w() + S(4);
@@ -182,6 +214,7 @@ class Controller {
     levels_.push_back(l);
     l->show();
     p->redraw();
+    qa();
   }
 
   void close_after(size_t level) {
@@ -193,6 +226,7 @@ class Controller {
     }
     levels_[level]->open_sub_ = -1;
     levels_[level]->redraw();
+    qa();
   }
 
   int level_at(int rx, int ry) const {
@@ -205,6 +239,14 @@ class Controller {
 
   void choose(std::function<void()> fn) {
     chosen_ = std::move(fn);
+    done_ = true;
+  }
+
+  // Menu bar: closes this menu and lets the bar open title |t| instead.
+  void switch_to(int t, bool keyboard) {
+    if (!spec_.bar || !t || t == spec_.bar->current) return;
+    spec_.bar->next = t;
+    spec_.bar->next_keyboard = keyboard;
     done_ = true;
   }
 
@@ -223,6 +265,7 @@ class Controller {
       Level *s = levels_.back();
       s->hover_ = next_enabled(s, -1, 1);
       s->redraw();
+      qa();
       return;
     }
     choose(it.run ? it.run : [] {});
@@ -242,16 +285,26 @@ class Controller {
   int handle(int event) {
     int rx = Fl::event_x_root(), ry = Fl::event_y_root();
     int li = level_at(rx, ry);
+    const MenuBarLink *bar = spec_.bar.get();
     switch (event) {
       case FL_ENTER:
       case FL_MOVE:
       case FL_DRAG: {
-        if (li < 0) return 1;
+        // A pointer that has not moved since the menu opened (it rests on
+        // another title when Alt or F10 opened this one) changes nothing.
+        if (!moved_ && rx == open_rx_ && ry == open_ry_) return 1;
+        moved_ = true;
+        if (li < 0) {
+          // Menu bar: the pointer on another title opens its menu.
+          if (bar && bar->title_at) switch_to(bar->title_at(rx, ry), false);
+          return 1;
+        }
         Level *l = levels_[size_t(li)];
         int h = l->hit(rx - l->x(), ry - l->y());
         if (h != l->hover_) {
           l->hover_ = h;
           l->redraw();
+          qa();
         }
         if (h >= 0) {
           const MenuItem &it = (*l->items_)[size_t(h)];
@@ -265,7 +318,11 @@ class Controller {
       }
       case FL_PUSH:
         if (li < 0) {
-          done_ = true;
+          // A click on another title of the menu bar opens that menu; on
+          // the open title or anywhere else it closes this one.
+          int t = bar && bar->title_at ? bar->title_at(rx, ry) : 0;
+          if (t && t != bar->current) switch_to(t, false);
+          else done_ = true;
           return 1;
         }
         pressed_ = true;
@@ -281,31 +338,53 @@ class Controller {
         return 1;
       }
       case FL_MOUSEWHEEL:
-        if (li >= 0) levels_[size_t(li)]->scroll_by(Fl::event_dy() * S(34));
+        if (li >= 0) levels_[size_t(li)]->scroll_by(Fl::event_dy() * levels_[size_t(li)]->item_h_);
         return 1;
       case FL_KEYBOARD:
       case FL_SHORTCUT: {
         Level *l = levels_.back();
         int key = Fl::event_key();
+        int mods = Fl::event_state() & (FL_SHIFT | FL_CTRL | FL_ALT | FL_META);
         if (key == FL_Escape) {
           if (levels_.size() > 1) close_after(levels_.size() - 2);
           else done_ = true;
           return 1;
         }
+        if (key == FL_F + 10 && !mods) {  // F10 again closes the menus, as in GTK
+          done_ = true;
+          return 1;
+        }
+        if (mods == FL_ALT && bar && bar->title_for_key) {
+          int t = bar->title_for_key(key);
+          if (t) {
+            switch_to(t, true);
+            return 1;
+          }
+        }
         if (key == FL_Down || key == FL_Up || (key == FL_Tab)) {
-          int dir = key == FL_Up || (key == FL_Tab && (Fl::event_state() & FL_SHIFT)) ? -1 : 1;
+          int dir = key == FL_Up || (key == FL_Tab && (mods & FL_SHIFT)) ? -1 : 1;
           l->hover_ = next_enabled(l, l->hover_ < 0 ? -1 : l->hover_, dir);
           l->ensure_visible(l->hover_);
           l->redraw();
+          qa();
+          return 1;
+        }
+        if (key == FL_Home || key == FL_End) {
+          l->hover_ = next_enabled(l, -1, key == FL_Home ? 1 : -1);
+          l->ensure_visible(l->hover_);
+          l->redraw();
+          qa();
           return 1;
         }
         if (key == FL_Right) {
-          if (l->hover_ >= 0 && !(*l->items_)[size_t(l->hover_)].sub.empty())
-            activate(levels_.size() - 1, l->hover_);
+          const MenuItem *it = l->hover_ >= 0 ? &(*l->items_)[size_t(l->hover_)] : nullptr;
+          if (it && !it->sub.empty() && it->enabled) activate(levels_.size() - 1, l->hover_);
+          else if (bar && bar->neighbour) switch_to(bar->neighbour(1), true);
           return 1;
         }
         if (key == FL_Left) {
           if (levels_.size() > 1) close_after(levels_.size() - 2);
+          else if (bar && bar->neighbour) switch_to(bar->neighbour(-1), true);
           return 1;
         }
         if (key == FL_Enter || key == FL_KP_Enter || key == ' ') {
@@ -314,7 +393,7 @@ class Controller {
         }
         // First letter of a label.
         const char *t = Fl::event_text();
-        if (t && t[0] && Fl::event_length() == 1) {
+        if (t && t[0] && Fl::event_length() == 1 && !(mods & (FL_CTRL | FL_ALT | FL_META))) {
           char c = char(tolower(static_cast<unsigned char>(t[0])));
           int n = int(l->items_->size());
           for (int k = 1; k <= n; ++k) {
@@ -325,6 +404,7 @@ class Controller {
               l->hover_ = i;
               l->ensure_visible(i);
               l->redraw();
+              qa();
               break;
             }
           }
@@ -339,7 +419,9 @@ class Controller {
     while (!done_ && !levels_.empty() && levels_[0]->shown()) Fl::wait();
     if (!levels_.empty() && Fl::grab() == levels_[0]) Fl::grab(nullptr);
     for (Level *l : levels_) l->hide();
+    if (spec_.closed) spec_.closed();
     Fl::flush();
+    qa(true);
     if (chosen_) {
       chosen_();
       return true;
@@ -347,11 +429,56 @@ class Controller {
     return false;
   }
 
+  // UI test hook (MenuSpec::qa_name): the open levels and their rows in
+  // root coordinates. A "level:N" line ends with 1 when the level is inside
+  // the work area of its screen, then 1 when it scrolls; an "item:N:<label>"
+  // line with 1 when the item is enabled, then 1 while it is scrolled away.
+  void qa(bool closed = false) const {
+    static const char *dir = getenv("SDE_PANEL_QA_DIR");
+    if (!dir || !*dir) return;
+    auto clean = [](std::string s) {
+      for (char &c : s)
+        if (c == '\t' || c == '\n') c = ' ';
+      return s;
+    };
+    auto box = [](int x, int y, int w, int h) {
+      return std::to_string(x) + "\t" + std::to_string(y) + "\t" + std::to_string(w) + "\t" + std::to_string(h);
+    };
+    std::string text = "@open:" + (closed ? std::string("none") : clean(spec_.qa_name)) + "\t0\t0\t0\t0\t1\t0\n";
+    for (size_t n = 0; !closed && n < levels_.size(); ++n) {
+      const Level *l = levels_[n];
+      int sx, sy, sw, sh;
+      Fl::screen_work_area(sx, sy, sw, sh, l->x(), l->y());
+      bool inside = l->x() >= sx && l->y() >= sy && l->x() + l->w() <= sx + sw && l->y() + l->h() <= sy + sh;
+      text += "level:" + std::to_string(n) + "\t" + box(l->x(), l->y(), l->w(), l->h()) + "\t" +
+              (inside ? "1" : "0") + "\t" + (l->content_h_ > l->h() ? "1" : "0") + "\n";
+      for (size_t i = 0; i < l->rows_.size(); ++i) {
+        const MenuItem &it = (*l->items_)[i];
+        if (it.separator) continue;
+        int top = l->row_top(int(i));
+        bool away = top < 0 || top + l->rows_[i].h > l->h();
+        text += "item:" + std::to_string(n) + ":" + clean(it.label) + "\t" +
+                box(l->x(), l->y() + top, l->w(), l->rows_[i].h) + "\t" + (it.enabled ? "1" : "0") + "\t" +
+                (away ? "1" : "0") + "\n";
+      }
+      if (l->hover_ >= 0)
+        text += "@hover:" + std::to_string(n) + ":" + clean((*l->items_)[size_t(l->hover_)].label) +
+                "\t0\t0\t0\t0\t1\t0\n";
+    }
+    std::string path = std::string(dir) + "/Niny-menu.txt", tmp = path + ".tmp";
+    if (FILE *f = fopen(tmp.c_str(), "w")) {
+      fwrite(text.data(), 1, text.size(), f);
+      fclose(f);
+      rename(tmp.c_str(), path.c_str());
+    }
+  }
+
  private:
   const MenuSpec &spec_;
   std::vector<Level *> levels_;
-  bool done_ = false, pressed_ = false;
+  bool done_ = false, pressed_ = false, moved_ = false;
   double open_time_ = 0;
+  int open_rx_ = 0, open_ry_ = 0;  // the pointer when the menu opened
   std::function<void()> chosen_;
 };
 
@@ -420,7 +547,7 @@ void Level::draw() {
         if (int(i) == hover_) p.fill_rounded(pad, ry + rh / 2 - S(8), Sd(3), S(16), Sd(1.5), L.accent);
       }
       Color tc = it.enabled ? L.text : L.dim.alpha(0.55);
-      double iy = ry + (std::min<double>(rh, S(34)) - S(18)) / 2;
+      double iy = ry + (std::min<double>(rh, item_h_) - S(18)) / 2;
       if (it.icon >= 0) {
         icon::draw(p, icon::Kind(it.icon), pad + S(9), iy, S(18), tc);
       } else if (it.checked && it.radio) {
@@ -451,7 +578,7 @@ void Level::draw() {
     if (ry + rh < 0 || ry > h()) continue;
     Color tc = it.enabled ? L.text : L.dim.alpha(0.6);
     int lx = pad + icon_col_;
-    int lh = std::min(rh, S(34));
+    int lh = std::min(rh, item_h_);
     text_font(L.theme.font_size);
     int right = w() - pad - (chevrons_ ? S(28) : S(10)) - (short_w_ ? short_w_ + S(16) : 0);
     draw_text(it.label, lx, ry, right - lx, lh, tc);
@@ -462,7 +589,7 @@ void Level::draw() {
     }
     if (!it.hint.empty()) {
       text_font(L.theme.font_size - S(2));
-      draw_text(it.hint, lx, ry + S(24), w() - lx - pad - S(8), S(18), L.dim.alpha(0.85));
+      draw_text(it.hint, lx, ry + item_h_ - S(10), w() - lx - pad - S(8), S(18), L.dim.alpha(0.85));
     }
   }
   fl_pop_clip();

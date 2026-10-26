@@ -64,7 +64,6 @@ const char *group_title(Group group) {
   switch (group) {
     case Group::Critical: return _("Critical updates");
     case Group::Security: return _("Security updates");
-    case Group::Flatpak: return _("Flatpak updates");
     default: return _("Main updates");
   }
 }
@@ -73,7 +72,6 @@ const char *group_badge(Group group) {
   switch (group) {
     case Group::Critical: return _("Critical");
     case Group::Security: return _("Security");
-    case Group::Flatpak: return _("Flatpak");
     default: return _("Main");
   }
 }
@@ -82,7 +80,6 @@ const char *group_id(Group group) {
   switch (group) {
     case Group::Critical: return "critical";
     case Group::Security: return "security";
-    case Group::Flatpak: return "flatpak";
     default: return "main";
   }
 }
@@ -120,7 +117,6 @@ bool is_firmware_name(const std::string &n) {
 }  // namespace
 
 bool needs_reboot(const Update &u) {
-  if (u.flatpak) return false;
   if (u.kind == Kind::Kernel) return true;
   static const std::set<std::string> core = {"glibc",       "libc6", "systemd",     "libsystemd0",
                                               "libsystemd-shared", "udev", "dbus", "dbus-daemon",
@@ -131,7 +127,6 @@ bool needs_reboot(const Update &u) {
 }
 
 Group classify(const Update &u) {
-  if (u.flatpak) return Group::Flatpak;
   std::string urgency = lower(u.urgency), priority = lower(u.priority);
   if (urgency == "critical" || urgency == "emergency" || urgency == "high") return Group::Critical;
   if (priority == "required" || priority == "important") return Group::Critical;
@@ -256,42 +251,6 @@ UpdateList parse_updates(const std::string &output) {
   return list;
 }
 
-bool parse_flatpaks(const std::string &output, UpdateList &list) {
-  auto lines = split(output, '\n');
-  if (lines.empty() || lines[0] != "SDE-FLATPAK\t1") return false;
-  for (size_t i = 1; i < lines.size(); ++i) {
-    auto f = fields_of(lines[i]);
-    if (f.empty()) continue;
-    if (f[0] == "I" && f.size() >= 2) {
-      list.flatpak_installed = f[1] == "1";
-    } else if (f[0] == "E" && f.size() >= 2) {
-      list.flatpak_errors.push_back(f[1]);
-    } else if (f[0] == "F" && f.size() >= 11) {
-      Update u;
-      u.flatpak = true;
-      u.installation = f[1];
-      u.ref = f[2];
-      if ((u.installation != "system" && u.installation != "user") || !valid_flatpak_ref(u.ref)) continue;
-      u.app_name = f[3];
-      u.application = f[4];
-      u.branch = f[5];
-      u.origin = f[6];
-      u.old_version = f[7];
-      u.new_version = f[8];
-      u.size = to_ll(f[9]);
-      u.summary = f[10];
-      u.name = u.application.empty() ? u.ref : u.application;
-      u.main_package = u.name;
-      u.source = u.name;
-      u.icon = u.application;
-      u.archive = u.branch;
-      u.group = Group::Flatpak;
-      list.updates.push_back(std::move(u));
-    }
-  }
-  sort_updates(list.updates);
-  return true;
-}
 
 bool matches(const Update &u, const std::string &query) {
   std::string q = lower(trim(query));
@@ -306,9 +265,8 @@ bool matches(const Update &u, const std::string &query) {
 std::vector<std::string> selected_packages(const std::vector<Update> &updates, bool *all) {
   std::vector<std::string> out;
   std::set<std::string> seen;
-  bool every = std::any_of(updates.begin(), updates.end(), [](const Update &u) { return !u.flatpak; });
+  bool every = !updates.empty();
   for (auto &u : updates) {
-    if (u.flatpak) continue;
     if (!u.selected) {
       every = false;
       continue;
@@ -320,15 +278,6 @@ std::vector<std::string> selected_packages(const std::vector<Update> &updates, b
   return out;
 }
 
-std::vector<std::string> selected_flatpaks(const std::vector<Update> &updates) {
-  std::vector<std::string> out;
-  std::set<std::string> seen;
-  for (auto &u : updates)
-    if (u.flatpak && u.selected && valid_flatpak_item(u.flatpak_item()) &&
-        seen.insert(u.flatpak_item()).second)
-      out.push_back(u.flatpak_item());
-  return out;
-}
 
 std::vector<std::vector<std::string>> install_commands(const std::vector<Update> &updates) {
   std::vector<std::vector<std::string>> out;
@@ -338,12 +287,6 @@ std::vector<std::vector<std::string>> install_commands(const std::vector<Update>
     std::vector<std::string> cmd = {"upgrade"};
     // Everything selected: a full upgrade lets APT/PackageKit add new dependencies.
     if (!all) cmd.insert(cmd.end(), packages.begin(), packages.end());
-    out.push_back(std::move(cmd));
-  }
-  auto refs = selected_flatpaks(updates);
-  if (!refs.empty()) {
-    std::vector<std::string> cmd = {"flatpak"};
-    cmd.insert(cmd.end(), refs.begin(), refs.end());
     out.push_back(std::move(cmd));
   }
   return out;
@@ -597,26 +540,6 @@ bool valid_package_name(const std::string &name) {
   return true;
 }
 
-bool valid_flatpak_ref(const std::string &ref) {
-  auto parts = split(ref, '/');
-  if (parts.size() != 4 || ref.size() > 255) return false;
-  if (parts[0] != "app" && parts[0] != "runtime") return false;
-  auto ok = [](const std::string &s, bool dots) {
-    if (s.empty()) return false;
-    if (!(std::isalnum((unsigned char)s[0]) || s[0] == '_')) return false;
-    for (char c : s)
-      if (!(std::isalnum((unsigned char)c) || c == '_' || (dots && (c == '.' || c == '-')))) return false;
-    return true;
-  };
-  return ok(parts[1], true) && ok(parts[2], false) && ok(parts[3], true);
-}
-
-bool valid_flatpak_item(const std::string &item) {
-  size_t colon = item.find(':');
-  if (colon == std::string::npos) return false;
-  std::string inst = item.substr(0, colon);
-  return (inst == "system" || inst == "user") && valid_flatpak_ref(item.substr(colon + 1));
-}
 
 const std::vector<int> &remind_hours() {
   static const std::vector<int> hours = {1, 4, 24, 72, 168};

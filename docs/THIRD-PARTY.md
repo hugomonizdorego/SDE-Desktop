@@ -40,6 +40,20 @@ GPL-3.0-or-later AND GPL-3.0-only. No Python code is used and no Ubuntu
 artwork, trademarks or online services (ratings and reviews, the software
 center agent, the store) are used.
 
+**[Synaptic](https://github.com/mvo5/synaptic)** (GPL-2.0-or-later) is the
+model of Merkadu's All Software page: packages by section and status, marked
+changes applied together after a summary, the way marks are resolved with
+APT's problem resolver. Only the behavior is followed; no Synaptic code,
+text or artwork is used (the page is written with libapt-pkg from Debian's
+APT, GPL-2.0-or-later, linked as a system library).
+
+**Flathub's repository file** (`data/merkadu/flathub.flatpakrepo`, installed
+as `/usr/share/merkadu/flathub.flatpakrepo`) is the file Flathub publishes at
+`https://dl.flathub.org/repo/flathub.flatpakrepo`, unchanged: the
+repository's name, URLs and the public key that signs it. It is
+configuration data, used to add the Flathub remote; the apps of Flathub are
+installed by the user from Flathub and keep their own licenses.
+
 ## Themes built from upstream sources
 
 The SDE themes in `/usr/share/themes` are built by `tools/build-themes.py`

@@ -1,10 +1,10 @@
 .TH MERKADU 1 "October 2026" "SDE" "User Commands"
 .SH NAME
-merkadu \- the SDE software center: find, install and remove apps
+merkadu \- the SDE software center: find, install and remove apps and packages
 .SH SYNOPSIS
 .B merkadu
 [\fB--page\fR \fINAME\fR] [\fB--search\fR \fITEXT\fR] [\fB--category\fR \fIID\fR]
-[\fB--details\fR \fIAPPID\fR]
+[\fB--details\fR \fIAPPID\fR] [\fB--package\fR \fINAME\fR]
 .br
 .B merkadu
 \fBappstream://\fIAPPID\fR
@@ -13,35 +13,58 @@ merkadu \- the SDE software center: find, install and remove apps
 \fB--uninstall\fR \fIFILE\fB.desktop\fR
 .br
 .B merkadu
+\fB--self-test\fR [\fB--expect\fR \fIREF\fR[,\fIREF\fR...]] [\fB--expect-flatpak\fR \fIN\fR] [\fB--list\fR]
+[\fB--simulate\fR \fBinstall:\fIPKG\fR,\fBremove:\fIPKG\fR,\fBupdate:\fIPKG\fR]
+.br
+.B merkadu
 \fB--version\fR | \fB--help\fR
 .SH DESCRIPTION
 \fBMerkadu\fR is the software center of the Selviana Desktop Environment. It
-finds, installs, updates and removes apps from three sources:
+finds, installs, updates and removes software from three sources:
 .TP
 .B Debian
-the packages of the system's APT sources, through PackageKit, described by
-the AppStream catalog of the archive (\fI/usr/share/swcatalog\fR).
+the packages of the system's APT sources, through PackageKit: the apps that
+the archive's AppStream catalog (DEP-11) describes, and in \fBAll
+Software\fR every package.
 .TP
 .B Flatpak
 apps of the Flatpak remotes of the system installation (and those installed
-for the user), with libflatpak. When Flatpak has no Flathub remote, the
-Sources page offers to add it.
+for the user), with libflatpak. Flathub is set up when the \fBmerkadu\fR
+package is installed; when it is missing, Merkadu offers to set it up.
 .TP
 .B Snap
-the Snap Store, through snapd's REST API on \fI/run/snapd.socket\fR. The
-source appears when snapd is installed and running.
+the Snap Store, through snapd's REST API on \fI/run/snapd.socket\fR. Without
+snapd, \fBEnable Snap Support\fR installs the \fBsnapd\fR package and then
+the snapd snap; a restart (or a new login) finishes it.
 .PP
 One search covers every source. An app that more than one source offers is
 shown once, with a badge per source; its page lets you choose the source to
 install from and shows the version, size, license and isolation of each.
 .PP
-The window has a sidebar with \fBExplore\fR (featured apps, new and updated
-apps, top apps and the departments), \fBInstalled\fR (grouped by department),
-\fBUpdates\fR (app updates; system updates belong to Software Updater,
-\fBsde-update\fR(1)), \fBHistory\fR (installations, updates and removals of
-every source, by day), \fBIn Progress\fR (the queue of changes, with the
-animated SDE logo) and \fBSources\fR. The departments and their
-subcategories come from Ubuntu Software Center, on which Merkadu is based.
+The header has \fBBack\fR, \fBForward\fR, \fBHome\fR, the search and
+\fBRefresh\fR. The sidebar has \fBHome\fR (highlights, recommendations, new
+and updated apps, popular apps and the categories), \fBInstalled\fR (grouped
+by department), \fBUpdates\fR (updates of apps from Flatpak remotes and the
+Snap Store; the operating system is updated by Software Updater,
+\fBsde-update\fR(1)), \fBAll Software\fR, \fBHistory\fR (installations,
+updates and removals of every source, by day), \fBSources\fR, \fBIn
+Progress\fR (the queue of changes, with the animated SDE logo) and the
+departments with their subcategories, which come from Ubuntu Software
+Center, on which Merkadu is based.
+.PP
+\fBAll Software\fR lists every package of the repositories by Debian section
+and status (installed, with an update, not installed, marked, settings
+left), like Synaptic. Packages are searched by name and description, changes
+are marked (installation, update, removal) and reviewed together with
+everything they install, update and remove, then applied at once. Packages
+the system needs (Essential, Priority required, the running kernel) and
+SDE's own packages are never removed, and the page says why.
+.PP
+When Merkadu starts, it refreshes the software lists in the background: the
+package lists with the archive's AppStream catalog and its icons (PackageKit),
+and the catalogs of the Flatpak remotes. Lists refreshed less than 30 minutes
+ago are kept; \fBRefresh\fR always refreshes. When there is no catalog,
+Merkadu says why and how to fix it.
 .PP
 Installing, updating and removing ask for authorization with polkit (the SDE
 authentication dialog): PackageKit for Debian packages, the Flatpak system
@@ -50,8 +73,8 @@ as the user and never as root.
 .SH OPTIONS
 .TP
 .BI --page " NAME"
-open a page: \fBexplore\fR, \fBinstalled\fR, \fBupdates\fR, \fBhistory\fR,
-\fBprogress\fR or \fBsources\fR.
+open a page: \fBhome\fR, \fBinstalled\fR, \fBupdates\fR, \fBpackages\fR
+(All Software), \fBhistory\fR, \fBprogress\fR or \fBsources\fR.
 .TP
 .BI --search " TEXT"
 search for \fITEXT\fR.
@@ -62,6 +85,10 @@ open a department, such as \fBgames\fR or \fBgraphics/photography\fR.
 .BI --details " APPID"
 open the page of an app: its AppStream id (\fBorg.gimp.GIMP\fR), or
 \fBdeb:\fIPACKAGE\fR, \fBflatpak:\fIREF\fR or \fBsnap:\fINAME\fR.
+.TP
+.BI --package " NAME"
+open the page of a package in All Software: its description, versions,
+dependencies and the packages that need it.
 .TP
 .BI appstream:// APPID
 the same as \fB--details\fR; Merkadu handles the \fBappstream:\fR links of
@@ -75,8 +102,20 @@ the file, the Flatpak of \fBX-Flatpak=\fR or the snap of
 \fBX-SnapInstanceName=\fR), the disk space it frees and the other packages
 that are removed with it, and asks before removing it. A launcher in the
 user's home that no package installed is removed on its own. Apps of SDE's
-own packages (\fBsde\fR, \fBsde-desktop\fR, \fBmerkadu\fR) are not removed on
-their own, and neither is an app whose removal would take one of them away.
+own packages (\fBsde\fR, \fBsde-desktop\fR, \fBmerkadu\fR) and packages the
+system needs are not removed, and neither is an app whose removal would take
+one of them away.
+.TP
+.B --self-test
+load the catalogs and the package lists without a window and print where
+they come from: whether APT downloads the AppStream catalog, how many
+catalogs and icon archives there are, when the lists were refreshed, the
+Flatpak remotes, how many apps have which kind of icon and how many
+packages there are. \fB--expect\fR checks that apps are there with an icon
+(AppStream ids, \fBdeb:\fIPACKAGE\fR, \fBflatpak:\fIAPPID\fR, alternatives
+separated by \fB|\fR), \fB--expect-flatpak\fR that at least \fIN\fR Flatpak
+apps are, \fB--list\fR prints every app and \fB--simulate\fR prints APT's
+plan for marked changes.
 .TP
 .B --version
 print the version and exit.
@@ -91,8 +130,18 @@ search.
 .B Alt+Left, Backspace, Escape
 back.
 .TP
-.B F5
-reload the sources.
+.B Alt+Right
+forward.
+.TP
+.B Alt+Home
+home.
+.TP
+.B F5, Ctrl+R
+refresh the software lists.
+.TP
+.B Space, +, \-
+in All Software: mark the most likely change, mark for installation (or
+update), mark for removal.
 .TP
 .B F1
 about Merkadu.
@@ -102,20 +151,28 @@ quit.
 .SH EXIT STATUS
 With \fB--uninstall\fR: \fB0\fR when the app was removed, \fB1\fR when it
 could not be removed or Merkadu refused to remove it, \fB2\fR when the user
-cancelled. Otherwise \fB0\fR, or \fB2\fR for a wrong command line.
+cancelled. With \fB--self-test\fR: \fB0\fR when everything expected was
+found, \fB1\fR otherwise. Otherwise \fB0\fR, or \fB2\fR for a wrong command
+line.
 .SH FILES
 .TP
 .I /usr/share/merkadu/merkadu.conf
-the defaults: featured and top apps of the lobby, the number of new apps,
-the order of the sources, the Flathub repository file, whether to hide the
-snap folder and more protected packages. Distributions override it with
-\fI/etc/merkadu/merkadu.conf\fR or a file in
-\fI$XDG_CONFIG_DIRS/merkadu/\fR.
+the defaults: the highlighted, popular and recommended apps of the Home
+page, the number of new apps, the refresh at start, the order of the
+sources, Flathub, whether to hide the snap folder and more protected
+packages. Distributions override it with \fI/etc/merkadu/merkadu.conf\fR or
+a file in \fI$XDG_CONFIG_DIRS/merkadu/\fR.
 .TP
 .I /usr/share/merkadu/categories.menu
 the departments (Ubuntu Software Center's menu format); files in
 \fI/usr/share/merkadu/menu.d/\fR and \fI/etc/merkadu/menu.d/\fR add or
 replace departments.
+.TP
+.I /usr/share/merkadu/flathub.flatpakrepo
+Flathub's repository file, used to set up Flathub.
+.TP
+.I /etc/apt/apt.conf.d/60merkadu
+makes APT download the icons of the archive's AppStream catalog.
 .TP
 .I ~/.cache/merkadu/images
 downloaded icons and screenshots.
@@ -129,8 +186,9 @@ and the Snap history from snapd's changes.
 a configuration file used instead of the ones above.
 .TP
 .B MERKADU_FAKE
-a directory with a fake catalog (\fIcatalog.json\fR): all three sources are
-simulated, nothing is installed or downloaded. For tests and screenshots.
+a directory with a fake catalog (\fIcatalog.json\fR): all three sources and
+the package lists are simulated, nothing is installed or downloaded. For
+tests and screenshots.
 .SH NOTES
 snapd keeps each user's snap data in \fI~/snap\fR. Before the first snap is
 installed, Merkadu sets snapd's \fBexperimental.hidden-snap-folder\fR option,
@@ -140,7 +198,8 @@ folder. See \fI/usr/share/doc/merkadu/MERKADU.md\fR.
 .BR sde-update (1),
 .BR flatpak (1),
 .BR snap (8),
-.BR pkcon (1)
+.BR pkcon (1),
+.BR apt (8)
 .SH AUTHORS
 Selviana DE Project. Based on Ubuntu Software Center, Copyright \(co 2009\(en2013
 Canonical Ltd.

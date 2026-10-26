@@ -80,7 +80,7 @@ enum Kind {
   Folder, File, Up, Gear, Save, Warning, Info, Replace, ReplaceAll, Refresh, Wrap, Dot, Open, Recent,
   Documents, Undo, Redo, Cut, Copy, Paste, SelectAll, Trash, Globe, TextTools, Spelling, Unicode, Bold, Italic,
   Link, ClearFormat, ListBullet, ListNumbered, ListTask, Quote, Eye, Check, Pilcrow, Font, Theme, Window, Clock,
-  Heading, Wrench
+  Heading, Wrench, Keyboard
 };
 void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde::Color &c);
 void logo(sde::Painter &p, double x, double y, double s);
@@ -250,25 +250,45 @@ class Field : public Fl_Input {
   int handle(int event) override;
 };
 
+// The tab strip. A tab's × closes it; while only one tab is open its × is
+// inactive (drawn dim, no hover, a tooltip says why): Niny always keeps one
+// document, and closing the window is how it ends.
 class TabBar : public Fl_Widget {
  public:
   TabBar(App *app, int x, int y, int w, int h);
   void draw() override;
   int handle(int event) override;
   void ensure_visible(int index);
+  // Window geometry of a tab, its close button and the new tab button, for
+  // the UI test hook; |shown| when it is entirely in view.
+  struct Box {
+    int x = 0, y = 0, w = 0, h = 0;
+    bool shown = false;
+  };
+  Box tab_box(int index) const;
+  Box close_box(int index) const;
+  Box plus_box() const;
+  bool scrolled() const { return scroll_ > 0.5; }
 
  private:
   struct Tab {
     double x = 0, w = 0;
   };
   std::vector<Tab> layout() const;
+  double clip_right() const;  // tabs end here; the + button follows
+  // The × of a tab: draw() and the hit tests share it at every scale.
+  void close_geometry(const Tab &t, double &cx, double &cy, double &cs) const;
   int tab_at(int mx) const;
-  bool on_close(int index, int mx, int my) const;
-  double plus_x() const;
+  bool on_close(const std::vector<Tab> &tabs, int index, int mx, int my) const;
+  bool on_plus(const std::vector<Tab> &tabs, int mx, int my) const;
+  double plus_x(const std::vector<Tab> &tabs) const;
+  void track(int mx, int my);  // hover state and tooltips for the pointer
   App *app_;
   int hover_ = -1, press_ = -1, drag_from_ = -1;
   bool hover_close_ = false, hover_plus_ = false, dragging_ = false;
+  bool press_close_ = false, press_plus_ = false, last_press_empty_ = false;
   int press_x_ = 0;
+  int tip_zone_ = -1;  // what the tooltip is about: a tab, a ×, the + button
   double scroll_ = 0;
 };
 
@@ -292,29 +312,50 @@ class StatusBar : public Fl_Widget {
   int hover_ = -1;
 };
 
-// The slim row under the tabs: File/Edit/View menus on the left, Markdown
-// formatting helpers and the settings gear on the right.
+// The row under the tabs: the menu bar (File, Edit, View, Search, Document,
+// Tools, Help, as in other Linux editors) on the left, Markdown formatting
+// helpers and the Preferences gear on the right. View > Menu Bar hides the
+// row; Alt or F10 brings it back for a moment (App::peek_menubar()).
 class Toolbar : public Fl_Widget {
  public:
   Toolbar(App *app, int x, int y, int w, int h);
   void draw() override;
   int handle(int event) override;
-  enum Id { File = 1, Edit, View, Heading = 10, List, Bold, Italic, Link, Clear, Preview, Settings = 20 };
+  enum Id {
+    File = 1, Edit, View, Search, Document, Tools, Help,
+    Heading = 10, List, Bold, Italic, Link, Clear, Preview, Settings = 20
+  };
+  static bool is_menu(int id) { return id >= File && id <= Help; }
   struct Item {
     int id = 0;
     double x = 0, w = 0;
     std::string label;
     int icon = -1;
+    int mnemonic = -1;  // menu titles: byte offset of the underlined letter
     bool dropdown = false, on = false, enabled = true;
     const char *tip = nullptr;
   };
   std::vector<Item> items() const;
-  // Opens the menu of |id| under its button (keyboard: Alt+F/E/V).
-  void open(int id);
+  // Opens the menu of |id| under its title (Alt and its underlined letter,
+  // F10 for File). With |keyboard| its first item is highlighted. Left and
+  // Right, and the pointer on another title, move on to the other menus.
+  void open(int id, bool keyboard = false);
+  // The menu title that Alt+|key| opens, 0 for none.
+  int menu_for_key(int key) const;
+  // Alt pressed and released alone: the titles take the keyboard (Left and
+  // Right choose, Down, Enter or the letter opens, Escape or Alt leaves).
+  void focus_titles(bool on);
+  bool titles_focused() const { return focus_ > 0; }
+  int title_key(int key, int state);
+  static std::string title(int id);    // "File" ... "Help", translated
+  static int mnemonic(int id);         // the letter Alt opens it with, 0 for none
+  static const char *qa_name(int id);  // "file" ... "help", for the UI tests
 
  private:
+  int title_at_root(int rx, int ry) const;
+  int neighbour(int id, int dir) const;
   App *app_;
-  int hover_ = -1, open_ = -1;
+  int hover_ = -1, open_ = -1, focus_ = 0;
 };
 
 // Read-only rendered view of a Markdown document.
@@ -351,19 +392,27 @@ class MarkdownView : public Fl_Widget {
   int hover_link_ = -1;
 };
 
-// Settings as a page inside the window (the gear in the toolbar).
+// Preferences as a page inside the window (the gear in the toolbar, Edit >
+// Preferences); the same page lists the keyboard shortcuts (Help > Keyboard
+// Shortcuts).
 class SettingsPage : public Fl_Group {
  public:
+  enum class Mode { Settings, Shortcuts };
   SettingsPage(App *app, int x, int y, int w, int h);
   ~SettingsPage() override;
   void draw() override;
   int handle(int event) override;
   void resize(int x, int y, int w, int h) override;
   void rebuild();  // after settings changed elsewhere
+  void set_mode(Mode m);
+  Mode mode() const { return mode_; }
 
  private:
   struct Row;
   void build();
+  void build_settings();
+  void build_shortcuts();
+  Mode mode_ = Mode::Settings;
   void relayout();
   // Scrolling (alpha 2): the wheel and the Page keys glide; the scroll bar
   // can be dragged and its track clicked; Tab and the arrow keys move between
@@ -501,15 +550,53 @@ class Sheet : public Fl_Group {
   int ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
           int default_button, int cancel_button);
   bool active() const { return active_; }
+  const std::string &title() const { return title_; }
+  const std::vector<sde::FlatButton *> &buttons() const { return buttons_; }
 
  private:
   void layout_card();
-  [[maybe_unused]] App *app_;  // kept for the dialogs' owner (not read yet)
+  App *app_;
   std::string title_, message_;
   std::vector<sde::FlatButton *> buttons_;
   int result_ = -1, cancel_ = 0, default_ = 0;
   bool active_ = false;
   double cx_ = 0, cy_ = 0, cw_ = 0, ch_ = 0;
+};
+
+// Monospaced font families (fc-list), then Sans and Serif; cached.
+const std::vector<std::string> &font_families();
+
+// View > Font…: the family and size of the text, with a preview, as an
+// in-window card like the question sheet. Typing filters the families, Up
+// and Down choose one, Tab moves to the sizes, Enter selects, Escape cancels.
+class FontDialog : public Fl_Group {
+ public:
+  FontDialog(App *app, int x, int y, int w, int h);
+  void draw() override;
+  int handle(int event) override;
+  // Runs until Select or Cancel; true with the chosen |family| and |size|.
+  bool run(std::string &family, int &size);
+  bool active() const { return active_; }
+
+ private:
+  void layout_card();
+  void filter();
+  int rows_in(int list) const;  // rows that fit in a list (0 families, 1 sizes)
+  void keep_in_view(int list);
+  int &selected(int list) { return list ? size_index_ : family_; }
+  int count(int list) const;
+  [[maybe_unused]] App *app_;
+  Field *search_ = nullptr;
+  sde::FlatButton *default_ = nullptr, *cancel_ = nullptr, *select_ = nullptr;
+  std::vector<std::string> shown_;  // families matching the search
+  std::string family_name_;         // the chosen family, kept while filtering
+  std::string original_;            // the family when the dialog opened (listed even if fc-list misses it)
+  int family_ = 0, size_index_ = 0;
+  int scroll_[2] = {0, 0};
+  int list_ = 0;  // the list the arrow keys move in
+  bool active_ = false, chosen_ = false;
+  double cx_ = 0, cy_ = 0, cw_ = 0, ch_ = 0;
+  int lx_[2] = {0, 0}, lw_[2] = {0, 0}, ly_ = 0, lh_ = 0, py_ = 0, ph_ = 0;
 };
 
 
@@ -542,7 +629,13 @@ class App : public sde::BufferedWindow {
   Document *new_document();
   Document *open_file(const std::string &path, int line = 0, int column = 0, bool activate_it = true);
   void open_files(const std::vector<std::string> &args, const std::string &cwd);
+  // Closes tab |index|, asking first when it has unsaved changes. The only
+  // tab is never closed (its ×, Ctrl+W, the middle button and the menus are
+  // inactive then); closing the window ends Niny.
   bool close_document(int index, bool ask = true);
+  bool can_close_tab() const { return docs_.size() > 1; }
+  // Close All Tabs: every tab, ending with one empty "Untitled".
+  void close_all_documents();
   void move_document(int from, int to);
   int find_document(const std::string &path) const;
   void reopen_closed();
@@ -598,18 +691,33 @@ class App : public sde::BufferedWindow {
   void open_settings() { show_settings_page(true); }
   void show_settings_page(bool on);
   bool settings_visible() const;
+  bool preferences_visible() const;  // the page shows Preferences, not the shortcuts
+  void show_shortcuts();  // Help > Keyboard Shortcuts, on the Preferences page
   void about();
   void toggle_whitespace();
   void toggle_preview();
+  void toggle_setting(bool Settings::*field);  // view options of the menus
   void new_window();
+  void choose_font();          // View > Font…
+  void document_statistics();  // Tools > Document Statistics…
+
+  // Menu bar (shown unless View > Menu Bar is off; Alt and F10 show it for
+  // a moment then).
+  bool menubar_shown() const { return settings_.menu_bar || menubar_peek_; }
+  void peek_menubar(bool on);
+  void main_menu(int root_x, int root_y);  // the Niny mark: every menu in one popup
 
   // Menus (menus.cpp).
-  MenuSpec menu_spec(int toolbar_id);  // File, Edit, View and the toolbar dropdowns
+  MenuSpec menu_spec(int toolbar_id);  // the menu bar's menus and the toolbar dropdowns
   void context_menu(int root_x, int root_y);
   void tab_menu(int index, int root_x, int root_y);
   std::vector<MenuItem> text_tools_items();
-  std::vector<MenuItem> spelling_items();
+  std::vector<MenuItem> spelling_items(bool toggle = true);  // with "Check Spelling as You Type"
   std::vector<MenuItem> display_items();
+  std::vector<MenuItem> file_type_items();  // grouped like Kate and Mousepad
+  std::vector<MenuItem> encoding_items();
+  std::vector<MenuItem> line_ending_items();
+  std::vector<MenuItem> markdown_items();
   MenuItem command_item(const std::string &id, int icon = -1, bool checked = false);
 
   // Markdown helpers and Notepad tools (actions.cpp).
@@ -673,10 +781,20 @@ class App : public sde::BufferedWindow {
   int tabs_h() const { return tabs_h_; }
   void raise_window();
   std::string cwd_folder() const;
+  // UI test hook: with SDE_PANEL_QA_DIR set, <dir>/Niny.txt describes the
+  // tabs ("tab:N:<title>", "close:N" with 1 when the × is active), the new
+  // tab button ("plus") and the menu titles ("menu:file" ...) in window
+  // pixels, after "@tabs:", "@active:", "@menubar:" and "@sheet:" lines.
+  void schedule_qa();
 
  private:
   void build_commands();
   bool global_shortcut(int key, int state);
+  bool menu_key(int event);  // F10, Alt+letter, Alt alone and the focused titles
+  void remove_document(int index);
+  int next_untitled() const;
+  static void qa_cb(void *p);
+  void write_qa();
   static int dispatch(int event, Fl_Window *w);
   static void idle_cb(void *p);
   static void ui_cb(void *p);
@@ -696,7 +814,6 @@ class App : public sde::BufferedWindow {
   Settings settings_;
   std::vector<std::unique_ptr<Document>> docs_;
   int active_ = -1;
-  int untitled_counter_ = 0;
   std::vector<std::string> recent_, closed_;
   std::vector<Command> commands_;
   std::vector<Match> matches_;
@@ -717,7 +834,14 @@ class App : public sde::BufferedWindow {
   FindBar *find_ = nullptr;
   Palette *palette_ = nullptr;
   Sheet *sheet_ = nullptr;
+  FontDialog *font_dialog_ = nullptr;
   int header_h_ = 0, tabs_h_ = 0, status_h_ = 0;
+  bool menubar_peek_ = false;  // a hidden menu bar shown for Alt or F10
+  bool alt_alone_ = false;     // Alt is down and no other key came yet
+  double alt_time_ = 0;
+  int alt_x_ = 0, alt_y_ = 0;  // the pointer when Alt went down
+  bool logo_hover_ = false;
+  bool qa_pending_ = false;
   // Spelling: words known to be wrong / right, and the checker program.
   std::vector<std::string> spell_cmd_;
   int spell_state_ = -1;  // -1 unknown, 0 missing, 1 available
