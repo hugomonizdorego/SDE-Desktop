@@ -299,6 +299,7 @@ class DocView : public Fl_Widget {
                     const std::string &message);
   int edit_handle_at(int mx, int my) const;  // 1 move, 2 width, 10+k image corner k, 0 none
   void edit_region(Box &box) const;
+  bool overlay_area(int &rx, int &ry, int &rx2, int &ry2, int margin) const;
   int overlay_key() const;
   void paste_text();
   bool edit_context_menu(int mx, int my);

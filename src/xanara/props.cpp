@@ -106,7 +106,7 @@ void PropsPanel::build() {
     return;
   }
   if (t == Tool::Edit && v->has_selected_image()) {
-    heading(_("Picture"));
+    heading(_("Details"));
     Box b = v->selected_image_box();
     row(_("Size on the page"), format("%.0f × %.0f mm", b.w() / 72 * 25.4, b.h() / 72 * 25.4));
     int iw = 0, ih = 0;

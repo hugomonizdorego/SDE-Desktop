@@ -238,6 +238,32 @@ void DocView::edit_region(Box &r) const {
   r.y2 = std::min(doc_->height(page), r.y2);
 }
 
+// The device pixels (of the page's own pixel box) the box being edited
+// needs: its area on the page, clamped to the part of the page that is
+// in view or within |margin| pixels of it (at a high zoom a paragraph is
+// far larger than the window).
+bool DocView::overlay_area(int &rx, int &ry, int &rx2, int &ry2, int margin) const {
+  if (!text_ || !doc_) return false;
+  int page = text_->page();
+  if (page < 0 || page >= int(slots_.size())) return false;
+  RenderParams rp = params();
+  double pw = doc_->width(page), ph = doc_->height(page);
+  int pxw, pxh;
+  page_pixels(pw, ph, rp, pxw, pxh);
+  Box region;
+  edit_region(region);
+  double ax, ay, bx, by;
+  page_to_device(pw, ph, rp, region.x1, region.y1, ax, ay);
+  page_to_device(pw, ph, rp, region.x2, region.y2, bx, by);
+  const Slot &s = slots_[size_t(page)];
+  int left = int(std::round(sx_)), top = int(std::round(sy_));
+  rx = std::max({0, int(std::floor(std::min(ax, bx))), left - s.x - margin});
+  ry = std::max({0, int(std::floor(std::min(ay, by))), top - s.y - margin});
+  rx2 = std::min({pxw, int(std::ceil(std::max(ax, bx))), left + w() - s.x + margin});
+  ry2 = std::min({pxh, int(std::ceil(std::max(ay, by))), top + h() - s.y + margin});
+  return rx2 > rx && ry2 > ry;
+}
+
 void DocView::render_overlay() {
   preview_pending_ = false;
   Fl::remove_timeout(preview_cb, this);
@@ -249,22 +275,28 @@ void DocView::render_overlay() {
   double pw = doc_->width(page), ph = doc_->height(page);
   int pxw, pxh;
   page_pixels(pw, ph, rp, pxw, pxh);
-  Box region;
-  edit_region(region);
-  double ax, ay, bx, by;
-  page_to_device(pw, ph, rp, region.x1, region.y1, ax, ay);
-  page_to_device(pw, ph, rp, region.x2, region.y2, bx, by);
-  int rx = std::max(0, int(std::floor(std::min(ax, bx)))), ry = std::max(0, int(std::floor(std::min(ay, by))));
-  int rx2 = std::min(pxw, int(std::ceil(std::max(ax, bx)))), ry2 = std::min(pxh, int(std::ceil(std::max(ay, by))));
-  if (rx2 <= rx || ry2 <= ry) return;
+  int rx, ry, rx2, ry2;
+  if (!overlay_area(rx, ry, rx2, ry2, std::max(w(), h()) / 2)) {
+    if (overlay_) cairo_surface_destroy(overlay_);
+    overlay_ = nullptr;
+    ov_page_ = -1;
+    return;
+  }
   int rw = rx2 - rx, rh = ry2 - ry, key = overlay_key();
+  Box region;
+  {
+    double ax, ay, bx, by;
+    device_to_page(pw, ph, rp, rx, ry, ax, ay);
+    device_to_page(pw, ph, rp, rx2, ry2, bx, by);
+    region = Box{ax, ay, bx, by}.normalized();
+  }
   // The page under the box, for a larger area so that typing seldom needs
   // a new one.
   bool have = bg_ && bg_key_ == key && rx >= bg_x_ && ry >= bg_y_ && rx2 <= bg_x_ + cairo_image_surface_get_width(bg_) &&
               ry2 <= bg_y_ + cairo_image_surface_get_height(bg_);
   if (!have) {
     if (bg_) cairo_surface_destroy(bg_);
-    int pad = std::max(S(64), std::max(rw, rh) / 2);
+    int pad = std::min(std::max(S(64), std::max(rw, rh) / 2), std::max(w(), h()));
     int gx = std::max(0, rx - pad), gy = std::max(0, ry - pad);
     int gx2 = std::min(pxw, rx2 + pad), gy2 = std::min(pxh, ry2 + pad);
     if (bg_doc_) {
@@ -901,12 +933,20 @@ bool DocView::edit_context_menu(int mx, int my) {
 // ---------------------------------------------------------------- drawing
 
 void DocView::draw_edit_overlay(Painter &p, int page) {
-  if (!text_ || text_->page() != page || !overlay_ || ov_page_ != page) return;
+  if (!text_ || text_->page() != page) return;
   cairo_t *cr = p.cr();
   const Slot &s = slots_[size_t(page)];
   int ox = x() + s.x - int(std::round(sx_)), oy = y() + s.y - int(std::round(sy_));
-  if (ov_key_ != overlay_key() && settled_) render_overlay();
-  if (!overlay_) return;
+  if (settled_) {
+    // A new picture when the zoom changed or the view moved past it.
+    int rx, ry, rx2, ry2;
+    bool need = overlay_area(rx, ry, rx2, ry2, 0);
+    bool covered = overlay_ && ov_page_ == page && ov_key_ == overlay_key() && rx >= ov_x_ && ry >= ov_y_ &&
+                   rx2 <= ov_x_ + cairo_image_surface_get_width(overlay_) &&
+                   ry2 <= ov_y_ + cairo_image_surface_get_height(overlay_);
+    if (need && !covered) render_overlay();
+  }
+  if (!overlay_ || ov_page_ != page) return;
   if (ov_key_ == overlay_key()) {
     cairo_set_source_surface(cr, overlay_, ox + ov_x_, oy + ov_y_);
     cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);

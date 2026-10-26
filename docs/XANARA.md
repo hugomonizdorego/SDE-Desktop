@@ -147,6 +147,11 @@ byte of the original, followed by the updates.
 - New characters that the document's font lacks use the installed font
   most like it; a document font that is not embedded (the standard 14
   fonts) is shown by every viewer with its own substitute.
+- Text is laid out from left to right: right-to-left scripts (Arabic,
+  Hebrew) and scripts that need shaping in the document's own font
+  (Indic scripts, for example) are not edited correctly.
+- A single line keeps its width when it is centered or aligned right:
+  make the box wider with its handle to move the text inside it.
 - Fill colours of edited text are written as gray, RGB or CMYK: text in a
   spot colour (Separation, DeviceN) or a pattern becomes the nearest of
   these. Text drawn with a clip, a stroke or a soft mask loses them.
