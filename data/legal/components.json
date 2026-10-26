@@ -356,6 +356,22 @@
       "sources": ["src/merkadu/", "data/merkadu/"]
     },
     {
+      "id": "debrun",
+      "name": "Debrun",
+      "kind": "application",
+      "summary": "Installer of Debian packages downloaded from the websites of their makers",
+      "programs": ["debrun", "debrun-helper"],
+      "desktop": ["debrun.desktop"],
+      "icons": ["debrun", "package-x-generic"],
+      "license": "GPL-3.0-or-later",
+      "copyright": ["Copyright © 2026 Selviana DE Project and contributors"],
+      "upstream": [],
+      "credits": ["The idea of an installer for downloaded .deb files follows GDebi by Michael Vogt; no code was copied"],
+      "trademarks": ["sde", "debian"],
+      "notices": ["/usr/share/doc/sde/copyright"],
+      "sources": ["src/debrun/"]
+    },
+    {
       "id": "sde-run",
       "name": "Run Command",
       "kind": "application",
