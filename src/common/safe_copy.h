@@ -425,7 +425,7 @@ typedef enum {
 
 /* The system calls the writer makes, replaceable for tests. Each returns
  * what the call returns (0 or -1 with errno). */
-typedef struct {
+typedef struct SdeWriterOps {
     int (*sync_range) (void *data, int fd, long long offset, long long length, unsigned int flags);
     int (*datasync) (void *data, int fd);
     int (*sync_fs) (void *data, int fd);
@@ -585,15 +585,16 @@ sde_writer_fail (SdeWriter *w, int error)
         w->error = error != 0 ? error : EIO;
 }
 
-/* The oldest piece is on the drive: account for it, let it go. */
+/* The oldest piece leaves the window; |taken|: the drive has it, so it
+ * counts for the progress (after an error of the drive nothing does). */
 static inline void
-sde_writer_pop (SdeWriter *w)
+sde_writer_pop (SdeWriter *w, int taken)
 {
     SdeWriterPiece *piece = &w->pieces[w->first];
     int next = (w->first + 1) % SDE_WRITER_SLOTS;
     long long bytes = piece->length;
 
-    if (w->method == SDE_WRITER_RANGE && bytes > 0)
+    if (w->method == SDE_WRITER_RANGE && bytes > 0 && taken)
         /* Clean now: no need to keep it in memory. */
         posix_fadvise (piece->fd, (off_t) piece->offset, (off_t) bytes, POSIX_FADV_DONTNEED);
     /* The descriptor goes once the file's last piece goes. */
@@ -602,8 +603,10 @@ sde_writer_pop (SdeWriter *w)
     w->first = next;
     w->count--;
     w->pending -= bytes;
+    if (!taken || bytes <= 0)
+        return;
     w->confirmed += bytes;
-    if (w->confirmed_cb != NULL && bytes > 0)
+    if (w->confirmed_cb != NULL)
         w->confirmed_cb (w->confirmed_data, bytes);
 }
 
@@ -627,7 +630,7 @@ sde_writer_confirm_oldest (SdeWriter *w)
         if (w->ops->datasync (w->ops_data, newest->fd) != 0 && errno != EINVAL && errno != EROFS)
             sde_writer_fail (w, errno);
         while (w->count > 0)
-            sde_writer_pop (w);
+            sde_writer_pop (w, w->error == 0);
     }
     else
     {
@@ -637,7 +640,7 @@ sde_writer_confirm_oldest (SdeWriter *w)
                                     SYNC_FILE_RANGE_WAIT_AFTER) != 0 &&
             errno != ESPIPE && errno != EINVAL && errno != ENOSYS)
             sde_writer_fail (w, errno);
-        sde_writer_pop (w);
+        sde_writer_pop (w, w->error == 0);
     }
     sde_writer_measure (w, w->ops->now (w->ops_data));
     return w->error;
@@ -708,9 +711,12 @@ sde_writer_add (SdeWriter *w, int fd, long long offset, long long length)
             sde_writer_fail (w, errno);
         if (w->method == SDE_WRITER_FSYNC && w->ops->datasync (w->ops_data, fd) != 0 && errno != EINVAL)
             sde_writer_fail (w, errno);
-        w->confirmed += length;
-        if (w->confirmed_cb != NULL && length > 0)
-            w->confirmed_cb (w->confirmed_data, length);
+        if (w->error == 0)
+        {
+            w->confirmed += length;
+            if (w->confirmed_cb != NULL && length > 0)
+                w->confirmed_cb (w->confirmed_data, length);
+        }
         return w->error;
     }
     piece = &w->pieces[slot];

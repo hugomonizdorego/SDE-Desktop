@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Safe copying on a real slow drive (0.2.0 Alpha 3, src/common/safe_copy.h).
 
-  sudo tools/safe-copy-check.py --build-dir build [--prefix LIRIA_PREFIX]
-                                [--rate 20000000] [--display :251]
+  sudo tools/safe-copy-check.py --i-use-a-test-machine --build-dir build
+                                [--prefix LIRIA_PREFIX] [--rate 20000000]
+                                [--display :251]
 
 Makes a slow "USB stick": a loop device on a sparse file with ext4, whose
 writes are limited to --rate bytes per second with the blkio cgroup (the
@@ -22,8 +23,10 @@ written bytes (/sys/block/loopN/stat) every 50 ms. Safe copies must never
 report more than the drive has written, and must say they are done only
 when the drive has everything. The loop device is not removable, so the
 safe runs set SDE_SAFE_COPY=always. Prints the numbers (docs/TRANSFERS.md
-has them). Needs root, losetup, mkfs.ext4 and the blkio cgroup; exit status
-0 passed, 1 failed, 77 skipped.
+has them). Needs root, losetup, mkfs.ext4 and the blkio cgroup (v1), and
+--i-use-a-test-machine: it attaches a loop device and writes a limit into
+/sys, so run it only on a machine of your own for tests, never on a shared
+one or in CI. Exit status 0 passed, 1 failed, 77 skipped.
 """
 import argparse
 import importlib.util
@@ -184,7 +187,12 @@ def main():
     parser.add_argument("--display", default=":251")
     parser.add_argument("--large", type=int, default=96, help="MiB of the large file")
     parser.add_argument("--small", type=int, default=400, help="number of 32 KiB files")
+    parser.add_argument("--i-use-a-test-machine", dest="test_machine", action="store_true",
+                        help="this machine is for tests: a loop device and a write limit in /sys are fine")
     args = parser.parse_args()
+    if not args.test_machine:
+        print("skipped: a loop device and a write limit in /sys; run it with --i-use-a-test-machine on a test machine")
+        return 77
     bench = args.build_dir / "tests/sde-safe-copy-bench"
     if os.geteuid() != 0 or not THROTTLE.exists() or not shutil.which("losetup") or not shutil.which("mkfs.ext4"):
         print("skipped: needs root, losetup, mkfs.ext4 and %s" % THROTTLE)

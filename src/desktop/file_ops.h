@@ -26,6 +26,8 @@
 #include <string>
 #include <vector>
 
+struct SdeWriterOps;  // src/common/safe_copy.h
+
 namespace sde {
 namespace desk {
 
@@ -84,6 +86,10 @@ struct FileOp {
   std::string src, dst;   // dst: full destination path (empty for TRASH)
   bool replace = false;   // dst exists and the user chose Replace
 };
+
+// For tests: the system calls of the safe writer go to |ops| (a simulated
+// drive, e.g. one that is pulled out); nullptr restores the real ones.
+void set_test_writer_ops(const SdeWriterOps *ops, void *data);
 
 // Runs |ops|; a replaced destination is moved aside first and deleted only
 // once the new copy is complete (restored when the operation fails).

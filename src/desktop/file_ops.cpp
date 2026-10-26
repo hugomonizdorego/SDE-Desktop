@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -68,6 +69,9 @@ double qa_copy_rate() {
   return rate;
 }
 
+const SdeWriterOps *g_test_ops = nullptr;
+void *g_test_ops_data = nullptr;
+
 // sde.conf [files] safe_copy (auto, always, never), SDE_SAFE_COPY first.
 SdeSafeMode safe_mode() {
   Config cfg;
@@ -105,7 +109,7 @@ class Writers {
     d->dev = st.st_dev;
     d->safe = sde_dest_probe(dir.c_str(), &d->dest) == 0 && sde_dest_wants_safe(&d->dest, mode_);
     int fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    sde_writer_init(&d->writer, sde_writer_method_for(&d->dest, d->safe ? 1 : 0), fd, nullptr, nullptr);
+    sde_writer_init(&d->writer, sde_writer_method_for(&d->dest, d->safe ? 1 : 0), fd, g_test_ops, g_test_ops_data);
     d->writer.confirmed_cb = confirmed;
     d->writer.confirmed_data = progress_;
     if (progress_ && d->safe && !announced_) {
@@ -144,21 +148,23 @@ class Writers {
   }
 
   // The last checkpoints (FileProgress::FINISHING while they run); their
-  // errors go to |errors|. Returns the number of drives that failed.
-  int finish(std::vector<std::string> *errors) {
+  // errors go to |errors|, the drives that failed to |failed|. Returns their
+  // number.
+  int finish(std::vector<std::string> *errors, std::vector<dev_t> *failed = nullptr) {
     bool safe = false;
     for (auto &d : drives_) safe = safe || d->safe;
     if (progress_ && safe) progress_->phase = FileProgress::FINISHING;
-    int failed = 0;
+    int count = 0;
     for (auto &d : drives_) {
       int err = sde_writer_finish(&d->writer);
       if (err) {
-        ++failed;
+        ++count;
         if (errors) errors->push_back(drive_error(err, d.get(), ""));
+        if (failed) failed->push_back(d->dev);
       }
     }
     drives_.clear();
-    return failed;
+    return count;
   }
 
   // A message for |err| of the destination |drive| while writing |path|
@@ -392,7 +398,10 @@ bool move_path_with(const std::string &src, const std::string &dst, FileProgress
   // once the copy is on the drive.
   if (!copy_path_with(src, dst, progress, writers, error)) return false;
   Writers::Drive *drive = writers.for_dir(parent_of(dst));
-  if (drive && !writers.checkpoint(drive, error)) return false;
+  if (drive && !writers.checkpoint(drive, error)) {
+    remove_tree(dst);  // not reliably there: the source stays
+    return false;
+  }
   if (!remove_tree(src)) {
     if (error) *error = "Copied, but could not remove \"" + src + "\"";
     return false;
@@ -402,6 +411,11 @@ bool move_path_with(const std::string &src, const std::string &dst, FileProgress
 }
 
 }  // namespace
+
+void set_test_writer_ops(const SdeWriterOps *ops, void *data) {
+  g_test_ops = ops;
+  g_test_ops_data = data;
+}
 
 bool FileProgress::wait_while_paused() {
   while (pause && !cancel) usleep(50000);
@@ -582,12 +596,13 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
   }
   int failed = 0;
   Writers writers(progress);
+  std::vector<std::pair<dev_t, std::string>> copied;  // complete copies, by drive
   for (size_t i = 0; i < ops.size(); ++i) {
     const FileOp &op = ops[i];
     if (progress && !progress->wait_while_paused()) break;
     // Every destination drive gets a writer: renames and links there are
     // made durable at the end too.
-    if (op.kind != FileOp::TRASH) writers.for_dir(parent_of(op.dst));
+    Writers::Drive *drive = op.kind != FileOp::TRASH ? writers.for_dir(parent_of(op.dst)) : nullptr;
     if (progress) progress->set_current(op.src);
     std::string error, aside;
     bool ok = false;
@@ -629,13 +644,23 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
     if (!ok) {
       ++failed;
       if (errors) errors->push_back(error);
+    } else if (op.kind == FileOp::COPY && drive) {
+      copied.push_back({drive->dev, op.dst});
     }
     if (progress && !copies[i]) progress->files_done++;
     // A rename out of a removable drive: the drive loses the item too.
     if (ok && op.kind == FileOp::MOVE && !copies[i]) writers.sync_source(parent_of(op.src));
   }
-  // Also after a Cancel: what was written must reach the drive.
-  failed += writers.finish(errors);
+  // Also after a Cancel: what was written must reach the drive. A drive
+  // that failed at the end (pulled out) has no reliable copy: they go, as
+  // a copy that fails on the way does.
+  std::vector<dev_t> lost;
+  writers.finish(errors, &lost);
+  for (auto &c : copied)
+    if (std::find(lost.begin(), lost.end(), c.first) != lost.end()) {
+      remove_tree(c.second);
+      ++failed;
+    }
   if (progress) progress->phase = FileProgress::DONE;
   return failed;
 }

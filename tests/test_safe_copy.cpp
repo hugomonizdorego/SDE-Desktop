@@ -447,7 +447,10 @@ void test_errors_and_cancel() {
     Copy c(10e6);
     c.drive.fail_wait_after = 2;
     CHECK(c.file(src, g_dir + "/err.copy") == EIO);
-    sde_writer_abandon(&c.writer);
+    // The pieces before the error count, the failed one and the rest not.
+    CHECK(c.watch.reported == c.writer.confirmed && c.watch.max_lead <= 0);
+    CHECK(c.writer.confirmed <= c.drive.on_drive);
+    CHECK(sde_writer_finish(&c.writer) == EIO);  // the end says so too
   }
   {
     Copy c(10e6);
