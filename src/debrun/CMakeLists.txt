@@ -16,13 +16,14 @@ add_library(debrun-core STATIC
 target_include_directories(debrun-core PUBLIC ${_src}/debrun ${_src}/common ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(debrun-core PUBLIC PkgConfig::LIBARCHIVE)
 # The string and gettext helpers of sde-common, for the programs that do
-# not link the toolkit (the root helper, the unit tests).
-add_library(debrun-base STATIC ${_src}/common/util.cpp ${_src}/common/i18n.cpp)
-target_include_directories(debrun-base PUBLIC ${_src}/common ${CMAKE_BINARY_DIR}/generated)
+# not link the toolkit (the root helpers, the unit tests of Debrun and
+# sde-appimage).
+add_library(sde-installer-base STATIC ${_src}/common/util.cpp ${_src}/common/i18n.cpp)
+target_include_directories(sde-installer-base PUBLIC ${_src}/common ${CMAKE_BINARY_DIR}/generated)
 
 # The root part, started by pkexec (data/polkit/org.debion.sde.debrun.policy).
 add_executable(debrun-helper ${_src}/debrun/helper_main.cpp)
-target_link_libraries(debrun-helper PRIVATE debrun-core debrun-base)
+target_link_libraries(debrun-helper PRIVATE debrun-core sde-installer-base)
 install(TARGETS debrun-helper RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
 
 configure_file(${PROJECT_SOURCE_DIR}/data/polkit/org.debion.sde.debrun.policy.in

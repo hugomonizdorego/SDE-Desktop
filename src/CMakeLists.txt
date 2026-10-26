@@ -422,8 +422,10 @@ install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
                  ${PROJECT_SOURCE_DIR}/data/compat/sde-control-center
         DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# Debrun, the installer of downloaded .deb files (docs/DEBRUN.md).
+# Debrun, the installer of downloaded .deb files (docs/DEBRUN.md), and
+# sde-appimage, AppImages after verification (docs/APPIMAGE.md).
 add_subdirectory(debrun)
+add_subdirectory(appimage)
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)

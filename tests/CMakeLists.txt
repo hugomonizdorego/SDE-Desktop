@@ -286,7 +286,7 @@ endif()
 # .deb files of every compression and broken ones, the changes beyond the
 # files, dpkg's status file, APT's simulation and the helper's contract.
 add_executable(debrun-tests test_debrun.cpp)
-target_link_libraries(debrun-tests PRIVATE debrun-core debrun-base)
+target_link_libraries(debrun-tests PRIVATE debrun-core sde-installer-base)
 add_test(NAME debrun-model COMMAND debrun-tests)
 # Debrun's window with generated packages and a fake package system
 # (tools/debrun_fixture.py), and the PackageKit backend against a fake
