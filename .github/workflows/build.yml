@@ -70,6 +70,8 @@ jobs:
           for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update merkadu; do
             "$p" --version
           done
+          debrun --version && sde-appimage --version && test -x /usr/libexec/sde/debrun-helper
+          /usr/libexec/sde/sde-account-rename --version && test -f /usr/lib/systemd/system/sde-account-rename.service
           # SDE's own ecosystem: no distribution FLTK, xsettingsd or polkit agent.
           test -x /usr/bin/sde-xsettingsd && test -x /usr/libexec/sde/sde-polkit-agent
           ! ldd /usr/bin/sde-panel | grep -q libfltk
@@ -82,6 +84,18 @@ jobs:
           test "$(readlink -f /usr/share/images/vendor-logos)" = /usr/share/desktop-base/debion-logos
           test -s /usr/share/plymouth/themes/debion/debion.script
           DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb ./dist/debion-desktop-base_*.deb
+      # Merkadu with the real archive and Flathub (docs/MERKADU.md): the
+      # merkadu package set up Flathub; the package lists bring the archive's
+      # AppStream catalog with its icons (appstream's APT hook, Merkadu's
+      # 60merkadu); the headless check loads what the window would show.
+      - name: Merkadu with the real catalogs
+        if: matrix.image == 'debian:testing'
+        timeout-minutes: 20
+        run: |
+          flatpak remotes --system --columns=name | grep -qx flathub
+          apt-get update
+          flatpak update --system --appstream --noninteractive flathub
+          merkadu --self-test --expect deb:firefox-esr,deb:gimp,deb:vlc,org.mozilla.firefox --expect-flatpak 1
       - name: Native UI smoke checks
         if: matrix.image == 'debian:testing'
         run: |
@@ -91,7 +105,10 @@ jobs:
           dbus-run-session -- python3 tests/test_about_ui.py niny=/usr/bin/niny \
             sysmon=/usr/bin/sde-system-monitor run=/usr/bin/sde-run display=/usr/bin/sde-display-settings \
             calculator=/usr/bin/calculator welcome=/usr/bin/sde-welcome reports=/usr/bin/sde-system-reports \
+            debrun=/usr/bin/debrun \
             merkadu=/usr/bin/merkadu licenses=dist/test-tools/sde-ui-kit-demo
+          # Niny: each tab's × closes its tab, the only tab stays, the menu bar.
+          python3 tests/test_niny_ui.py /usr/bin/niny
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke

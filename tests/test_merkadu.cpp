@@ -3,11 +3,15 @@
 //
 // Merkadu's model (src/merkadu): source merging, search, the department
 // menu ported from Ubuntu Software Center, AppStream conversion, snapd's
-// JSON and HTTP framing, the history parsers and the uninstall decisions.
+// JSON and HTTP framing, the history parsers, the uninstall decisions, the
+// icons of an app, All Software (filters, sections, marks, the refused
+// removals) and the diagnosis of the catalog sources.
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -18,6 +22,7 @@
 #include "categories.h"
 #include "json.h"
 #include "model.h"
+#include "packages.h"
 #include "pkenum.h"
 #include "snapd.h"
 #include "util.h"
@@ -279,6 +284,31 @@ static void uninstall() {
   CHECK(!p.allowed && p.protected_package == "sde" && p.also_removed.empty());
   p = plan_removal("vlc", {}, prot);
   CHECK(p.allowed && p.also_removed.empty());
+
+  // The system's own packages (Essential, required, the running kernel).
+  std::set<std::string> sys = {"coreutils", "linux-image-6.16.9-amd64"};
+  p = plan_removal("coreutils", {"coreutils"}, prot, sys);
+  CHECK(!p.allowed && p.system && p.protected_package == "coreutils");
+  CHECK(refusal_text(p, "GNU core utilities", "coreutils").find("base system") != std::string::npos);
+  p = plan_removal("linux-image-amd64", {"linux-image-amd64", "linux-image-6.16.9-amd64"}, prot, sys);
+  CHECK(!p.allowed && p.system && p.protected_package == "linux-image-6.16.9-amd64");
+  CHECK(refusal_text(p, "Linux", "linux-image-amd64").find("would also remove linux-image-6.16.9-amd64") !=
+        std::string::npos);
+  p = plan_removal("xterm", {"xterm", "sde"}, prot, sys);
+  CHECK(!p.allowed && !p.system && refusal_text(p, "XTerm", "xterm").find("Selviana") != std::string::npos);
+  long long freed = 0;
+  std::set<std::string> found;
+  parse_removal_query("gimp\t20000\t\toptional\nbash\t7000\tyes\trequired\nlibc6\t12000\tno\trequired\n"
+                      "Bad Name\t1\tyes\trequired\nshort\t1\n",
+                      &freed, &found);
+  CHECK(freed == 39000LL * 1024 && found == std::set<std::string>({"bash", "libc6"}));
+  parse_removal_query("", &freed, &found);
+  CHECK(freed == -1);
+  CHECK(parse_system_packages("bash\tyes\trequired\nvim\tno\toptional\nlibc6\t\trequired\n") ==
+        std::set<std::string>({"bash", "libc6"}));
+  CHECK(running_kernel_package("6.16.9-amd64\n") == "linux-image-6.16.9-amd64");
+  CHECK(running_kernel_package("") == "" && running_kernel_package("../x") == "");
+  CHECK(valid_package_name("libc6:i386") && !valid_package_name("libc6:") && !valid_package_name("x:I386"));
 }
 
 static void settings() {
@@ -299,6 +329,20 @@ static void settings() {
   Settings d = Settings::from(shipped);
   CHECK(d.featured.size() >= 6 && d.top.size() >= 6 && d.new_count == 12 && d.hidden_snap_folder);
   CHECK(d.order[0] == Source::Debian);
+  CHECK(d.recommended.count("graphics") && d.recommended.count("sound-video") && d.recommended.count("internet"));
+  CHECK(d.refresh_on_start && d.refresh_minutes == 30 && d.setup_flathub);
+  // Firefox: Debian's ESR, else the Flathub id, else another distribution's package.
+  CHECK(std::find(d.featured.begin(), d.featured.end(), "deb:firefox-esr|org.mozilla.firefox|deb:firefox") !=
+        d.featured.end());
+  // The 0.2 Alpha 3 names and keys.
+  KeyFile kf3;
+  kf3.parse("[Highlights]\napps=a.b.C\n[Featured]\napps=old.One\n[Popular]\napps=x.y.Z;deb:vim\n"
+            "[Recommended]\nGraphics=org.gimp.GIMP;org.kde.krita\n[Refresh]\non-start=false\nmin-age=99999\n"
+            "[Flatpak]\nsetup-flathub=no\n");
+  Settings s3 = Settings::from(kf3);
+  CHECK(s3.featured == std::vector<std::string>({"a.b.C"}) && s3.top.size() == 2);
+  CHECK(s3.recommended.size() == 1 && s3.recommended["graphics"].size() == 2);
+  CHECK(!s3.refresh_on_start && s3.refresh_minutes == 24 * 60 && !s3.setup_flathub);
 
   Catalog c;
   c.add(make_app("org.gimp.GIMP", "GIMP", Source::Debian, "gimp"));
@@ -307,6 +351,10 @@ static void settings() {
   CHECK(resolve_reference(c, "org.gimp.GIMP") && resolve_reference(c, "deb:gimp"));
   CHECK(resolve_reference(c, "snap:spotify") && !resolve_reference(c, "deb:vlc"));
   CHECK(resolve_reference(c, "flatpak:org.gimp.GIMP"));  // by its AppStream id
+  // Alternatives: the first one found.
+  CHECK(resolve_reference(c, "org.mozilla.firefox|deb:gimp|snap:spotify") == c.find("org.gimp.GIMP"));
+  CHECK(resolve_reference(c, "org.x.Y|snap:spotify") == c.find("snap:spotify"));
+  CHECK(!resolve_reference(c, "org.x.Y|deb:vlc") && !resolve_reference(c, "|"));
   CHECK(format_size(84200000) == "84.2 MB" && format_size(999) == "999 bytes" && format_count(3512) == "3,512");
   CHECK(apps_count(1) == "1 app" && apps_count(1234) == "1,234 apps");
   CHECK(split_list("a; b,,c") == std::vector<std::string>({"a", "b", "c"}));
@@ -478,6 +526,175 @@ static void appstream_data() {
   CHECK(tool && tool->kind == "console-application");
 }
 
+static void icons() {
+  App a = make_app("org.gimp.GIMP", "GIMP", Source::Debian, "gimp", {"Graphics", "2DGraphics"});
+  add_icon(a, {"https://example.org/media/gimp_128.png", 128});
+  add_icon(a, {"/var/lib/swcatalog/icons/debian/64x64/gimp.png", 64});
+  add_icon(a, {"https://example.org/media/gimp_64.png", 64});
+  add_icon(a, {"gimp", 0});
+  add_icon(a, {"/var/lib/swcatalog/icons/debian/48x48/gimp.png", 48});
+  add_icon(a, {"gimp", 0});  // once
+  CHECK(a.icons.size() == 5 && a.icon == "https://example.org/media/gimp_128.png");
+  // The theme's icon first, then large enough (smallest first, files
+  // first), then smaller ones (largest first).
+  CHECK(icon_candidates(a, 64) == std::vector<std::string>({"gimp", "/var/lib/swcatalog/icons/debian/64x64/gimp.png",
+                                                            "https://example.org/media/gimp_64.png",
+                                                            "https://example.org/media/gimp_128.png",
+                                                            "/var/lib/swcatalog/icons/debian/48x48/gimp.png"}));
+  auto big = icon_candidates(a, 128);
+  CHECK(big.size() == 5 && big[1] == "https://example.org/media/gimp_128.png" &&
+        big[2] == "/var/lib/swcatalog/icons/debian/64x64/gimp.png");
+  // 58 is 90 % of 64: still large enough.
+  CHECK(icon_candidates(a, 58)[1] == "/var/lib/swcatalog/icons/debian/64x64/gimp.png");
+  App none;
+  none.name = "Tool";
+  CHECK(icon_candidates(none, 64).empty());
+  auto f = fallback_icon_names(a);
+  CHECK(!f.empty() && f[0] == "applications-graphics" && f.back() == "package-x-generic");
+  App font;
+  font.kind = "font";
+  font.section = "contrib/fonts";
+  f = fallback_icon_names(font);
+  CHECK(f[0] == "font-x-generic" && f.back() == "package-x-generic");
+  App plain;
+  plain.section = "contrib/games";
+  f = fallback_icon_names(plain);
+  CHECK(f[0] == "applications-games" &&
+        std::find(f.begin(), f.end(), "application-x-executable") != f.end());
+}
+
+static Package pkg(const std::string &name, const std::string &section, bool installed, const std::string &summary,
+                   bool upgradable = false) {
+  Package p;
+  p.name = name;
+  p.section = section;
+  p.installed = installed;
+  p.upgradable = upgradable;
+  p.summary = summary;
+  p.candidate_version = "1.0";
+  if (installed) p.installed_version = upgradable ? "0.9" : "1.0";
+  return p;
+}
+
+static void all_software() {
+  CHECK(section_base("contrib/games") == "games" && section_base("graphics") == "graphics" && section_base("") == "");
+  CHECK(section_component("non-free-firmware/kernel") == "non-free-firmware" && section_component("net") == "main");
+  CHECK(section_title("libdevel") == "Libraries - Development" && section_title("x-unknown") == "x-unknown" &&
+        section_title("") == "Other");
+  CHECK(section_icon_names("games")[0] == "applications-games" &&
+        section_icon_names("nonsense") == std::vector<std::string>({"package-x-generic"}));
+
+  std::vector<Package> list = {pkg("vim", "editors", false, "Vi IMproved - enhanced vi editor"),
+                               pkg("bash", "shells", true, "GNU Bourne Again SHell"),
+                               pkg("gimp", "graphics", true, "GNU Image Manipulation Program", true),
+                               pkg("gimp-data", "graphics", true, "Data files for GIMP"),
+                               pkg("inkscape", "graphics", false, "Vector-based drawing program"),
+                               pkg("libgimp2.0t64", "libs", true, "Libraries for the GNU Image Manipulation Program"),
+                               pkg("game-x", "contrib/games", false, "A game")};
+  list[1].essential = true;
+  Package old = pkg("oldtool", "utils", false, "Removed, its settings are left");
+  old.config_only = true;
+  old.candidate_version.clear();
+  list.push_back(old);
+  sort_packages(list);
+  CHECK(list[0].name == "bash" && list.back().name == "vim");
+  CHECK(list[0].system() && !list[1].system());
+
+  ChangeSet marks;
+  CHECK(marks.empty() && marks.get("vim") == Mark::Unmarked);
+  marks.mark("vim", Mark::Install);
+  marks.mark("gimp", Mark::Upgrade);
+  marks.mark("inkscape", Mark::Install);
+  marks.mark("inkscape", Mark::Unmarked);
+  CHECK(marks.size() == 2 && marks.count(Mark::Install) == 1 && marks.names(Mark::Upgrade) == std::vector<std::string>({"gimp"}));
+
+  auto names = [&](const std::vector<size_t> &idx) {
+    std::vector<std::string> out;
+    for (size_t i : idx) out.push_back(list[i].name);
+    return out;
+  };
+  PackageFilter f;
+  CHECK(filter_packages(list, f, marks).size() == list.size());
+  f.status = PackageStatus::Installed;
+  CHECK(names(filter_packages(list, f, marks)) ==
+        std::vector<std::string>({"bash", "gimp", "gimp-data", "libgimp2.0t64"}));
+  f.status = PackageStatus::Upgradable;
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"gimp"}));
+  f.status = PackageStatus::NotInstalled;  // not the removed one without a candidate
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"game-x", "inkscape", "vim"}));
+  f.status = PackageStatus::Marked;
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"gimp", "vim"}));
+  f.status = PackageStatus::ConfigOnly;
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"oldtool"}));
+  f.status = PackageStatus::All;
+  f.section = "games";  // the base section: contrib/games too
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"game-x"}));
+  // A search: the name first, then the start of a name, then the summary.
+  f.section.clear();
+  f.query = "gimp";
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"gimp", "gimp-data", "libgimp2.0t64"}));
+  f.query = "image manipulation";
+  CHECK(names(filter_packages(list, f, marks)) == std::vector<std::string>({"gimp", "libgimp2.0t64"}));
+  f.query = "gimp nothing";
+  CHECK(filter_packages(list, f, marks).empty());
+  CHECK(package_match_score(list[0], {}) == 0 && package_match_score(list[0], {"bash"}) > 100);
+
+  PackageStatus st = PackageStatus::All;
+  CHECK(package_status_from_id("updates", &st) && st == PackageStatus::Upgradable);
+  CHECK(!package_status_from_id("bogus", &st) && std::string(package_status_id(PackageStatus::NotInstalled)) == "available");
+
+  auto sections = section_counts(list, PackageStatus::All, marks);
+  // By title: Editors, Games, Graphics, Libraries, Shells, Utilities.
+  CHECK(sections.size() == 6 && sections[0].id == "editors" && sections[1].id == "games" &&
+        sections[2].id == "graphics" && sections[2].count == 3);
+  CHECK(section_counts(list, PackageStatus::Upgradable, marks).size() == 1);
+
+  ChangePlan plan;
+  CHECK(plan_counts(plan).empty() && plan.changes() == 0);
+  plan.install = {"vim", "vim-runtime"};
+  plan.remove = {"bash", "sde", "gimp"};
+  plan.upgrade = {"gimp-data"};
+  CHECK(plan_counts(plan) == "2 to install, 1 to update, 3 to remove" && plan.changes() == 6);
+  auto refused = refused_removals(plan, {"bash"}, default_protected_packages());
+  CHECK(refused.size() == 2 && refused[0] == std::make_pair(std::string("bash"), true) &&
+        refused[1] == std::make_pair(std::string("sde"), false));
+}
+
+static void catalog_diagnosis() {
+  char tmpl[] = "/tmp/merkadu-sources-XXXXXX";
+  char *dir = mkdtemp(tmpl);
+  CHECK(dir != nullptr);
+  if (!dir) return;
+  std::string root = dir;
+  // Nothing at all: no catalog, no lists.
+  CatalogSources none = catalog_sources(root);
+  CHECK(!none.appstream_apt && none.dep11 == 0 && none.lists_time == 0 && none.flatpak_remotes.empty());
+  std::string lists = root + "/var/lib/apt/lists/", prefix = lists + "deb.debian.org_debian_dists_testing_";
+  CHECK(make_dirs(root + "/etc/apt/apt.conf.d") && make_dirs(lists) && make_dirs(root + "/var/lib/swcatalog/yaml"));
+  CHECK(make_dirs(root + "/var/lib/flatpak/appstream/flathub/x86_64/active") &&
+        make_dirs(root + "/var/lib/flatpak/appstream/fedora/x86_64/active") &&
+        make_dirs(root + "/var/lib/swcatalog/icons/debian-testing-main/64x64"));
+  write_file_atomic(root + "/etc/apt/apt.conf.d/50appstream", "");
+  write_file_atomic(prefix + "main_dep11_Components-amd64.yml.gz", "x");
+  write_file_atomic(prefix + "contrib_dep11_Components-amd64.yml.gz", "x");
+  write_file_atomic(prefix + "main_dep11_icons-64x64.tar.gz", "x");
+  write_file_atomic(prefix + "InRelease", "x");
+  write_file_atomic(root + "/var/lib/swcatalog/icons/debian-testing-main/64x64/gimp_gimp.png", "x");
+  write_file_atomic(root + "/var/lib/flatpak/appstream/flathub/x86_64/active/appstream.xml.gz", "x");
+  // AppStream links the catalogs it reads; a dangling link does not count.
+  CHECK(symlink((prefix + "main_dep11_Components-amd64.yml.gz").c_str(),
+                (root + "/var/lib/swcatalog/yaml/deb.debian.org_debian_dists_testing_main_dep11_Components-amd64.yml.gz")
+                    .c_str()) == 0);
+  CHECK(symlink((lists + "gone_dep11_Components-amd64.yml.gz").c_str(),
+                (root + "/var/lib/swcatalog/yaml/gone_dep11_Components-amd64.yml.gz").c_str()) == 0);
+  CatalogSources s = catalog_sources(root);
+  CHECK(s.appstream_apt && s.dep11 == 2 && s.dep11_linked == 1 && s.dep11_icons == 1 && s.icon_origins == 1);
+  CHECK(s.unlinked == std::vector<std::string>({prefix + "contrib_dep11_Components-amd64.yml.gz"}));
+  CHECK(s.lists_time > 0 && s.flatpak_remotes == std::vector<std::string>({"flathub"}));
+  std::string cmd = "rm -rf '" + root + "'";
+  CHECK(system(cmd.c_str()) == 0);
+}
+
 int main() {
   set_distribution_name("Debian");
   json();
@@ -492,6 +709,9 @@ int main() {
   snap_json();
   snap_socket();
   appstream_data();
+  icons();
+  all_software();
+  catalog_diagnosis();
   if (failures) {
     fprintf(stderr, "%d merkadu check(s) failed\n", failures);
     return 1;

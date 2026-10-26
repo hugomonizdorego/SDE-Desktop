@@ -18,11 +18,15 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "appstream_catalog.h"
+#include "apt_cache.h"
 #include "model.h"
+#include "packages.h"
 
 namespace sde {
 namespace merkadu {
@@ -42,6 +46,7 @@ struct Job {
   std::vector<std::string> targets;
   std::string remote;   // Flatpak remote to install from; snap channel
   bool classic = false; // a snap with classic confinement
+  int needs = 0;        // a job that must succeed first (else this one is cancelled)
   // Progress, updated while it runs.
   enum State { Queued, Running, Done, Failed, Cancelled };
   State state = Queued;
@@ -59,6 +64,14 @@ struct Progress {
   bool cancellable = false;
 };
 
+// What removing packages would do (a simulation).
+struct RemovalCheck {
+  std::vector<std::string> removed;  // the packages and what goes with them
+  long long freed = -1;              // bytes, -1 unknown
+  std::set<std::string> system;      // of them, those the system needs (Essential, required, the kernel)
+  std::string error;
+};
+
 // What a source can do now (the Sources page).
 struct SourceStatus {
   bool available = false;  // can install and remove
@@ -71,6 +84,15 @@ struct SourceStatus {
 
 using AppsFn = std::function<void(std::vector<App> apps, std::string error)>;
 using DoneFn = std::function<void(bool ok, bool cancelled, std::string error)>;
+
+// How a refresh of a source's software lists went.
+struct RefreshResult {
+  bool ok = true;
+  bool changed = false;  // the lists changed: the catalog is read again
+  bool skipped = false;  // nothing to do or not possible now (no network, no authorization): |message| says why
+  std::string message;   // the error, or why it was skipped
+};
+using RefreshFn = std::function<void(RefreshResult)>;
 
 class Backend {
  public:
@@ -95,12 +117,12 @@ class Backend {
   virtual void cancel(int job_id) {}
   // The source's history of changes.
   virtual void history(std::function<void(std::vector<HistoryEntry>)> done) { done({}); }
-  // Debian: what removing |packages| would also remove, and the space it
-  // frees (bytes, -1 unknown). Others: just the targets.
-  virtual void plan_remove(const std::vector<std::string> &packages,
-                           std::function<void(std::vector<std::string> removed, long long freed,
-                                              std::string error)> done) {
-    done(packages, -1, "");
+  // Debian: what removing |packages| would also remove, the space it frees
+  // and which of them the system needs. Others: just the targets.
+  virtual void plan_remove(const std::vector<std::string> &packages, std::function<void(RemovalCheck)> done) {
+    RemovalCheck c;
+    c.removed = packages;
+    done(c);
   }
   // Debian: the packages that own each of |paths| (dpkg -S); paths no
   // package owns are left out.
@@ -108,11 +130,21 @@ class Backend {
   virtual void owners(const std::vector<std::string> &paths, OwnersFn done) { done({}); }
   // Flatpak: adds the Flathub remote. Snap: hides ~/snap. Debian: nothing.
   virtual void setup(const std::string &what, DoneFn done) { done(false, false, "not supported"); }
+  // Downloads the source's software lists again (Debian: PackageKit's
+  // RefreshCache, which also brings the AppStream catalog; Flatpak: the
+  // remotes' AppStream data). |force|: also lists younger than |min_age|
+  // seconds; |interactive|: polkit may ask for a password.
+  virtual void refresh(bool force, bool interactive, int min_age, std::function<void(const Progress &)> progress,
+                       RefreshFn done) {
+    RefreshResult r;
+    r.skipped = true;
+    done(r);
+  }
 };
 
 // The catalog of AppStream data (Debian and Flatpak): loaded in the
 // background, or from the fake catalog.
-using CatalogFn = std::function<void(std::vector<App> apps, std::string error)>;
+using CatalogFn = std::function<void(CatalogData data)>;
 void load_catalog(CatalogFn done);
 
 std::unique_ptr<Backend> make_packagekit_backend();
@@ -123,6 +155,10 @@ std::unique_ptr<Backend> make_fake_backend(Source source, const std::string &dir
 void load_fake_catalog(const std::string &dir, CatalogFn done);
 bool fake_mode();
 std::string fake_dir();
+// All Software with the fake sources: the fixture's packages (blocking).
+apt::Snapshot fake_package_snapshot();
+apt::Details fake_package_details(const std::string &name);
+ChangePlan fake_simulate(const ChangeSet &marks);
 
 // Runs |fn| on the FLTK thread (from any thread; Fl::lock() must have been
 // called once by main()).

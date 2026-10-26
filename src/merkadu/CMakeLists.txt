@@ -12,6 +12,7 @@ set(_src ${PROJECT_SOURCE_DIR}/src)
 pkg_check_modules(LIBXML2 IMPORTED_TARGET libxml-2.0)
 pkg_check_modules(APPSTREAM IMPORTED_TARGET appstream>=1.0)
 pkg_check_modules(FLATPAK IMPORTED_TARGET flatpak>=1.12)
+pkg_check_modules(APTPKG IMPORTED_TARGET apt-pkg)
 find_package(ZLIB)
 option(SDE_BUILD_MERKADU "Build Merkadu, the software center" ON)
 if(NOT SDE_BUILD_MERKADU)
@@ -30,11 +31,20 @@ add_library(merkadu-core STATIC
   ${_src}/merkadu/categories.cpp
   ${_src}/merkadu/snapd.cpp
   ${_src}/merkadu/pkenum.cpp
-  ${_src}/merkadu/appstream_catalog.cpp)
+  ${_src}/merkadu/appstream_catalog.cpp
+  ${_src}/merkadu/packages.cpp
+  ${_src}/merkadu/apt_cache.cpp)
 target_include_directories(merkadu-core PUBLIC ${_src}/merkadu)
 target_compile_definitions(merkadu-core PUBLIC MERKADU_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/merkadu")
 target_link_libraries(merkadu-core PUBLIC sde-common PkgConfig::LIBXML2 PkgConfig::APPSTREAM ZLIB::ZLIB
                       Threads::Threads)
+# All Software (every package, as Synaptic shows them) needs libapt-pkg.
+if(APTPKG_FOUND)
+  target_compile_definitions(merkadu-core PUBLIC MERKADU_HAVE_APT=1)
+  target_link_libraries(merkadu-core PUBLIC PkgConfig::APTPKG)
+else()
+  message(WARNING "Merkadu: libapt-pkg not found, building without All Software")
+endif()
 
 # The program: the window, the uninstall dialog, the backends and the fakes
 # of MERKADU_FAKE (the UI checks). The page widgets come from the Control
@@ -44,8 +54,10 @@ add_executable(merkadu
   ${_src}/merkadu/store.cpp
   ${_src}/merkadu/window.cpp
   ${_src}/merkadu/pages.cpp
+  ${_src}/merkadu/packages_ui.cpp
   ${_src}/merkadu/ui.cpp
   ${_src}/merkadu/uninstall.cpp
+  ${_src}/merkadu/selftest.cpp
   ${_src}/merkadu/logo_anim.cpp
   ${_src}/merkadu/image_cache.cpp
   ${_src}/merkadu/packagekit.cpp
@@ -62,4 +74,7 @@ else()
 endif()
 install(TARGETS merkadu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/categories.menu ${PROJECT_SOURCE_DIR}/data/merkadu/merkadu.conf
+              ${PROJECT_SOURCE_DIR}/data/merkadu/flathub.flatpakrepo
         DESTINATION ${CMAKE_INSTALL_DATADIR}/merkadu)
+# The icons of the archive's AppStream catalog (APT leaves them off).
+install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/60merkadu DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/apt/apt.conf.d)

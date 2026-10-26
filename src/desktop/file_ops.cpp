@@ -7,13 +7,19 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/xattr.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
+#include "config.h"
 #include "desktop_model.h"
+#include "i18n.h"
+#include "safe_copy.h"
 #include "util.h"
 
 namespace sde {
@@ -63,69 +69,240 @@ double qa_copy_rate() {
   return rate;
 }
 
+const SdeWriterOps *g_test_ops = nullptr;
+void *g_test_ops_data = nullptr;
+
+// sde.conf [files] safe_copy (auto, always, never), SDE_SAFE_COPY first.
+SdeSafeMode safe_mode() {
+  Config cfg;
+  cfg.load();
+  std::string configured = cfg.get("files", "safe_copy", "auto");
+  return sde_safe_mode(configured.c_str());
+}
+
+// The writers of one run of file operations, one for every destination
+// file system (src/common/safe_copy.h): the safe writer for removable,
+// external and network drives, the page cache for internal disks.
+class Writers {
+ public:
+  struct Drive {
+    SdeWriter writer;
+    SdeDest dest;
+    dev_t dev = 0;
+    bool safe = false;
+  };
+
+  explicit Writers(FileProgress *progress) : progress_(progress), mode_(safe_mode()) {}
+  ~Writers() {
+    for (auto &d : drives_) sde_writer_abandon(&d->writer);
+  }
+  Writers(const Writers &) = delete;
+  Writers &operator=(const Writers &) = delete;
+
+  // The writer for files created in the folder |dir|, or nullptr.
+  Drive *for_dir(const std::string &dir) {
+    struct stat st;
+    if (stat(dir.c_str(), &st) != 0) return nullptr;
+    for (auto &d : drives_)
+      if (d->dev == st.st_dev) return d.get();
+    auto d = std::make_unique<Drive>();
+    d->dev = st.st_dev;
+    d->safe = sde_dest_probe(dir.c_str(), &d->dest) == 0 && sde_dest_wants_safe(&d->dest, mode_);
+    int fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    sde_writer_init(&d->writer, sde_writer_method_for(&d->dest, d->safe ? 1 : 0), fd, g_test_ops, g_test_ops_data);
+    d->writer.confirmed_cb = confirmed;
+    d->writer.confirmed_data = progress_;
+    if (progress_ && d->safe && !announced_) {
+      // The dialog names the first drive written to safely.
+      announced_ = true;
+      progress_->removable = d->dest.kind == SDE_DEST_REMOVABLE ||
+                             (d->dest.kind != SDE_DEST_NETWORK && d->dest.dos_names);
+      progress_->fat = d->dest.fat != 0;
+      std::lock_guard<std::mutex> lock(progress_->mutex);
+      progress_->drive = d->dest.name;
+    }
+    drives_.push_back(std::move(d));
+    return drives_.back().get();
+  }
+
+  // Everything written to |drive| so far is on the drive.
+  bool checkpoint(Drive *drive, std::string *error) {
+    int err = sde_writer_checkpoint(&drive->writer);
+    if (err) {
+      if (error) *error = drive_error(err, drive, "");
+      return false;
+    }
+    return true;
+  }
+
+  // A removable drive that lost items (the sources of a move) has them
+  // deleted on the drive too.
+  void sync_source(const std::string &dir) {
+    SdeDest dest;
+    if (sde_dest_probe(dir.c_str(), &dest) != 0 || !sde_dest_wants_safe(&dest, mode_)) return;
+    int fd = open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (fd < 0) return;
+    syncfs(fd);
+    fsync(fd);
+    close(fd);
+  }
+
+  // The last checkpoints (FileProgress::FINISHING while they run); their
+  // errors go to |errors|, the drives that failed to |failed|. Returns their
+  // number.
+  int finish(std::vector<std::string> *errors, std::vector<dev_t> *failed = nullptr) {
+    bool safe = false;
+    for (auto &d : drives_) safe = safe || d->safe;
+    if (progress_ && safe) progress_->phase = FileProgress::FINISHING;
+    int count = 0;
+    for (auto &d : drives_) {
+      int err = sde_writer_finish(&d->writer);
+      if (err) {
+        ++count;
+        if (errors) errors->push_back(drive_error(err, d.get(), ""));
+        if (failed) failed->push_back(d->dev);
+      }
+    }
+    drives_.clear();
+    return count;
+  }
+
+  // A message for |err| of the destination |drive| while writing |path|
+  // ("" for the drive as a whole).
+  static std::string drive_error(int err, const Drive *drive, const std::string &path) {
+    std::string name = drive && drive->safe ? std::string(drive->dest.name) : std::string();
+    std::string file = basename_of(path);
+    switch (err) {
+      case ENOSPC:
+      case EDQUOT:
+        if (!name.empty()) return format(_("There is not enough space on %s."), name.c_str());
+        return format(_("There is not enough space for \"%s\"."), file.c_str());
+      case EROFS:
+        if (!name.empty()) return format(_("%s is read-only."), name.c_str());
+        break;
+      case EFBIG:
+        return format(_("\"%s\" is too large for the file system of the destination."), file.c_str());
+      case EIO:
+      case ENODEV:
+      case ENXIO:
+        if (drive && drive->safe && drive->dest.kind == SDE_DEST_REMOVABLE && !name.empty())
+          return format(_("Could not write to %s: the drive was removed or does not work."), name.c_str());
+        break;
+      default:
+        break;
+    }
+    if (path.empty()) return format(_("Could not write to %s: %s"), name.empty() ? "?" : name.c_str(), strerror(err));
+    return "Cannot write \"" + path + "\": " + strerror(err);
+  }
+
+  unsigned char *buffer() { return buffer_.data(); }
+  size_t buffer_size() const { return buffer_.size(); }
+
+ private:
+  static void confirmed(void *data, long long bytes) {
+    if (data) static_cast<FileProgress *>(data)->done += bytes;
+  }
+
+  FileProgress *progress_;
+  SdeSafeMode mode_;
+  bool announced_ = false;
+  std::vector<std::unique_ptr<Drive>> drives_;
+  std::vector<unsigned char> buffer_ = std::vector<unsigned char>(1 << 20);
+};
+
+// Pausing, Cancel and SDE_QA_COPY_RATE between the reads of a copy.
+struct CopyHook {
+  FileProgress *progress;
+  SdeWriter *writer;
+  long long throttled;
+  static int stop(void *data) {
+    auto *h = static_cast<CopyHook *>(data);
+    if (qa_copy_rate() > 0 && h->writer->written > h->throttled) {
+      usleep(useconds_t(1e6 * double(h->writer->written - h->throttled) / qa_copy_rate()));
+      h->throttled = h->writer->written;
+    }
+    return h->progress && !h->progress->wait_while_paused() ? 1 : 0;
+  }
+};
+
+// The user's extended attributes (tags, origins), where the destination
+// has them; errors do not matter.
+void copy_xattrs(int in, int out) {
+  ssize_t size = flistxattr(in, nullptr, 0);
+  if (size <= 0) return;
+  std::vector<char> names(size_t(size) + 1);
+  size = flistxattr(in, names.data(), names.size());
+  for (ssize_t i = 0; i < size; i += ssize_t(strlen(names.data() + i)) + 1) {
+    const char *name = names.data() + i;
+    if (strncmp(name, "user.", 5) != 0) continue;
+    ssize_t n = fgetxattr(in, name, nullptr, 0);
+    if (n < 0 || n > 65536) continue;
+    std::vector<char> value(size_t(n) + 1);
+    n = fgetxattr(in, name, value.data(), value.size());
+    if (n >= 0 && fsetxattr(out, name, value.data(), size_t(n), 0) != 0 && (errno == ENOTSUP || errno == EROFS))
+      break;
+  }
+}
+
 bool copy_file(const std::string &src, const std::string &dst, const struct stat &st,
-               FileProgress *progress, std::string *error) {
-  int in = open(src.c_str(), O_RDONLY | O_CLOEXEC);
+               FileProgress *progress, Writers &writers, std::string *error) {
+  Writers::Drive *drive = writers.for_dir(parent_of(dst));
+  if (!drive) {
+    fail(error, "Cannot create", dst, errno);
+    return false;
+  }
+  if (drive->dest.fat && (long long)st.st_size > SDE_FAT_MAX_FILE_SIZE) {
+    if (error) *error = Writers::drive_error(EFBIG, drive, src);
+    return false;
+  }
+  int in = open(src.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
   if (in < 0) {
     fail(error, "Cannot read", src, errno);
     return false;
   }
   int out = open(dst.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, st.st_mode & 07777 & ~S_ISUID & ~S_ISGID);
   if (out < 0) {
-    fail(error, "Cannot create", dst, errno);
+    int err = errno;
+    if (error)
+      *error = err == ENOSPC || err == EROFS || err == EDQUOT ? Writers::drive_error(err, drive, dst)
+                                                              : "Cannot create \"" + dst + "\": " + strerror(err);
     close(in);
     return false;
   }
   if (progress) progress->set_current(src);
-  static const size_t kBuf = 1 << 20;
-  std::vector<char> buf(kBuf);
-  bool ok = true;
-  for (;;) {
-    if (progress && !progress->wait_while_paused()) {
-      ok = false;
-      if (error) *error = "Cancelled";
-      break;
-    }
-    ssize_t n = read(in, buf.data(), kBuf);
-    if (n < 0 && errno == EINTR) continue;
-    if (n < 0) {
-      fail(error, "Cannot read", src, errno);
-      ok = false;
-      break;
-    }
-    if (n == 0) break;
-    for (ssize_t off = 0; off < n;) {
-      ssize_t w = write(out, buf.data() + off, size_t(n - off));
-      if (w < 0 && errno == EINTR) continue;
-      if (w <= 0) {
-        fail(error, "Cannot write", dst, errno ? errno : ENOSPC);
-        ok = false;
-        break;
-      }
-      off += w;
-    }
-    if (!ok) break;
-    if (progress) progress->done += n;
-    if (qa_copy_rate() > 0) usleep(useconds_t(1e6 * double(n) / qa_copy_rate()));
-  }
+  posix_fadvise(in, 0, 0, POSIX_FADV_SEQUENTIAL);
+  CopyHook hook{progress, &drive->writer, drive->writer.written};
+  SdeCopyHooks hooks;
+  hooks.stop = CopyHook::stop;
+  hooks.data = &hook;
+  int source_error = 0;
+  int err = sde_copy_data(&drive->writer, in, out, st.st_size, writers.buffer(), writers.buffer_size(), &hooks,
+                          &source_error);
+  if (!err) copy_xattrs(in, out);
   close(in);
-  if (ok && fsync(out) != 0 && errno != EINVAL) {
-    fail(error, "Cannot write", dst, errno);
-    ok = false;
-  }
-  if (close(out) != 0 && ok) {
-    fail(error, "Cannot write", dst, errno);
-    ok = false;
-  }
-  if (!ok) {
+  if (close(out) != 0 && !err) err = errno;
+  if (err) {
+    if (err == ECANCELED) {
+      if (error) *error = "Cancelled";
+    } else if (source_error) {
+      fail(error, "Cannot read", src, source_error);
+    } else if (error) {
+      *error = Writers::drive_error(err, drive, dst);
+    }
     unlink(dst.c_str());
     return false;
   }
   keep_times(dst, st, false);
+  // Every few seconds everything so far is made durable on the drive.
+  err = sde_writer_file_done(&drive->writer);
+  if (err) {
+    if (error) *error = Writers::drive_error(err, drive, dst);
+    return false;
+  }
   return true;
 }
 
-bool copy_tree(const std::string &src, const std::string &dst, FileProgress *progress,
+bool copy_tree(const std::string &src, const std::string &dst, FileProgress *progress, Writers &writers,
                std::string *error) {
   struct stat st;
   if (lstat(src.c_str(), &st) != 0) {
@@ -166,7 +343,7 @@ bool copy_tree(const std::string &src, const std::string &dst, FileProgress *pro
     bool ok = true;
     while (struct dirent *e = readdir(d)) {
       if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-      if (!copy_tree(src + "/" + e->d_name, dst + "/" + e->d_name, progress, error)) {
+      if (!copy_tree(src + "/" + e->d_name, dst + "/" + e->d_name, progress, writers, error)) {
         ok = false;
         break;
       }
@@ -177,7 +354,7 @@ bool copy_tree(const std::string &src, const std::string &dst, FileProgress *pro
     return ok;
   }
   if (S_ISREG(st.st_mode)) {
-    bool ok = copy_file(src, dst, st, progress, error);
+    bool ok = copy_file(src, dst, st, progress, writers, error);
     if (ok && progress) progress->files_done++;
     return ok;
   }
@@ -190,7 +367,55 @@ bool copy_tree(const std::string &src, const std::string &dst, FileProgress *pro
   return true;
 }
 
+bool copy_path_with(const std::string &src, const std::string &dst, FileProgress *progress, Writers &writers,
+                    std::string *error) {
+  if (path_exists(dst)) {
+    fail(error, "Already exists:", dst, EEXIST);
+    return false;
+  }
+  if (path_inside(dst, src)) {
+    if (error) *error = "Cannot copy a folder into itself: \"" + src + "\"";
+    return false;
+  }
+  if (copy_tree(src, dst, progress, writers, error)) return true;
+  remove_tree(dst);  // never leave half a copy behind
+  return false;
+}
+
+bool move_path_with(const std::string &src, const std::string &dst, FileProgress *progress, Writers &writers,
+                    std::string *error) {
+  if (src == dst) return true;
+  if (path_inside(dst, src)) {
+    if (error) *error = "Cannot move a folder into itself: \"" + src + "\"";
+    return false;
+  }
+  if (rename_noreplace(src, dst)) return true;  // counted by run_file_ops ()
+  if (errno != EXDEV) {
+    fail(error, "Cannot move", src, errno);
+    return false;
+  }
+  // Another file system: copy everything, then remove the source, but only
+  // once the copy is on the drive.
+  if (!copy_path_with(src, dst, progress, writers, error)) return false;
+  Writers::Drive *drive = writers.for_dir(parent_of(dst));
+  if (drive && !writers.checkpoint(drive, error)) {
+    remove_tree(dst);  // not reliably there: the source stays
+    return false;
+  }
+  if (!remove_tree(src)) {
+    if (error) *error = "Copied, but could not remove \"" + src + "\"";
+    return false;
+  }
+  writers.sync_source(parent_of(src));
+  return true;
+}
+
 }  // namespace
+
+void set_test_writer_ops(const SdeWriterOps *ops, void *data) {
+  g_test_ops = ops;
+  g_test_ops_data = data;
+}
 
 bool FileProgress::wait_while_paused() {
   while (pause && !cancel) usleep(50000);
@@ -265,38 +490,26 @@ bool remove_tree(const std::string &path) {
 
 bool copy_path(const std::string &src, const std::string &dst, FileProgress *progress,
                std::string *error) {
-  if (path_exists(dst)) {
-    fail(error, "Already exists:", dst, EEXIST);
-    return false;
+  Writers writers(progress);
+  bool ok = copy_path_with(src, dst, progress, writers, error);
+  std::vector<std::string> errors;
+  if (writers.finish(&errors) && ok) {
+    if (error) *error = errors.front();
+    ok = false;
   }
-  if (path_inside(dst, src)) {
-    if (error) *error = "Cannot copy a folder into itself: \"" + src + "\"";
-    return false;
-  }
-  if (copy_tree(src, dst, progress, error)) return true;
-  remove_tree(dst);  // never leave half a copy behind
-  return false;
+  return ok;
 }
 
 bool move_path(const std::string &src, const std::string &dst, FileProgress *progress,
                std::string *error) {
-  if (src == dst) return true;
-  if (path_inside(dst, src)) {
-    if (error) *error = "Cannot move a folder into itself: \"" + src + "\"";
-    return false;
+  Writers writers(progress);
+  bool ok = move_path_with(src, dst, progress, writers, error);
+  std::vector<std::string> errors;
+  if (writers.finish(&errors) && ok) {
+    if (error) *error = errors.front();
+    ok = false;
   }
-  if (rename_noreplace(src, dst)) return true;  // counted by run_file_ops ()
-  if (errno != EXDEV) {
-    fail(error, "Cannot move", src, errno);
-    return false;
-  }
-  // Another file system: copy everything, then remove the source.
-  if (!copy_path(src, dst, progress, error)) return false;
-  if (!remove_tree(src)) {
-    if (error) *error = "Copied, but could not remove \"" + src + "\"";
-    return false;
-  }
-  return true;
+  return ok;
 }
 
 bool link_path(const std::string &src, const std::string &dst, std::string *error) {
@@ -382,9 +595,14 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
     progress->files_total = items;
   }
   int failed = 0;
+  Writers writers(progress);
+  std::vector<std::pair<dev_t, std::string>> copied;  // complete copies, by drive
   for (size_t i = 0; i < ops.size(); ++i) {
     const FileOp &op = ops[i];
     if (progress && !progress->wait_while_paused()) break;
+    // Every destination drive gets a writer: renames and links there are
+    // made durable at the end too.
+    Writers::Drive *drive = op.kind != FileOp::TRASH ? writers.for_dir(parent_of(op.dst)) : nullptr;
     if (progress) progress->set_current(op.src);
     std::string error, aside;
     bool ok = false;
@@ -415,8 +633,8 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
           continue;
         }
       }
-      if (op.kind == FileOp::MOVE) ok = move_path(op.src, op.dst, progress, &error);
-      else if (op.kind == FileOp::COPY) ok = copy_path(op.src, op.dst, progress, &error);
+      if (op.kind == FileOp::MOVE) ok = move_path_with(op.src, op.dst, progress, writers, &error);
+      else if (op.kind == FileOp::COPY) ok = copy_path_with(op.src, op.dst, progress, writers, &error);
       else ok = link_path(op.src, op.dst, &error);
       if (!aside.empty()) {
         if (ok) remove_tree(aside);
@@ -426,9 +644,24 @@ int run_file_ops(const std::vector<FileOp> &ops, FileProgress *progress,
     if (!ok) {
       ++failed;
       if (errors) errors->push_back(error);
+    } else if (op.kind == FileOp::COPY && drive) {
+      copied.push_back({drive->dev, op.dst});
     }
     if (progress && !copies[i]) progress->files_done++;
+    // A rename out of a removable drive: the drive loses the item too.
+    if (ok && op.kind == FileOp::MOVE && !copies[i]) writers.sync_source(parent_of(op.src));
   }
+  // Also after a Cancel: what was written must reach the drive. A drive
+  // that failed at the end (pulled out) has no reliable copy: they go, as
+  // a copy that fails on the way does.
+  std::vector<dev_t> lost;
+  writers.finish(errors, &lost);
+  for (auto &c : copied)
+    if (std::find(lost.begin(), lost.end(), c.first) != lost.end()) {
+      remove_tree(c.second);
+      ++failed;
+    }
+  if (progress) progress->phase = FileProgress::DONE;
   return failed;
 }
 

@@ -30,6 +30,7 @@
 #include <mutex>
 #include <set>
 
+#include "account_rename.h"
 #include "avatar.h"
 #include "dbus.h"
 #include "i18n.h"
@@ -99,16 +100,6 @@ size_t code_points(const std::string &s) {
   }
   return n;
 }
-
-// Names that are no one's account even when this system has no such user
-// or group (yet).
-const char *const kReserved[] = {"root",   "admin",  "administrator", "sudo",  "wheel",  "adm",
-                                 "nobody", "nogroup", "users",        "staff", "daemon", "bin",
-                                 "sys",    "sync",   "games",         "man",   "lp",     "mail",
-                                 "news",   "uucp",   "proxy",         "backup", "list",  "irc",
-                                 "operator", "shadow", "utmp",        "tty",   "disk",   "kmem",
-                                 "dialout", "audio", "video",         "plugdev", "netdev", "lightdm",
-                                 "gdm",    "polkitd", "messagebus",   "systemd-network"};
 
 // Passwords at the top of every list of leaked ones: always weak.
 const char *const kCommon[] = {"password", "password1", "passw0rd", "12345678", "123456789",
@@ -549,14 +540,10 @@ bool name_in_use(const std::string &name) {
 }
 
 std::string user_name_problem(const std::string &name, const std::vector<std::string> &taken) {
-  if (name.empty()) return _("Choose a user name.");
-  if (name.size() > 32) return _("A user name has at most 32 characters.");
-  if (name[0] < 'a' || name[0] > 'z') return _("A user name starts with a lowercase letter (a to z).");
-  for (char c : name)
-    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_'))
-      return _("A user name has only lowercase letters (a to z), digits, - and _.");
-  for (const char *r : kReserved)
-    if (name == r) return format(_("\"%s\" is a name of the system."), name.c_str());
+  // The spelling and the names of the system: the same rules as renaming
+  // an account (account_rename.h).
+  std::string spelling = account_rename::login_name_problem(name);
+  if (!spelling.empty()) return spelling;
   if (std::find(taken.begin(), taken.end(), name) != taken.end() || name_in_use(name))
     return format(_("The user name \"%s\" is in use already."), name.c_str());
   return "";

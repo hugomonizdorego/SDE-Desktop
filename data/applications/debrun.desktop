@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Debrun opens downloaded .deb packages (double-click in Liria and on the
+# desktop, Open With); it is not shown in the Start menu or the Control
+# Center (NoDisplay). docs/DEBRUN.md.
+[Desktop Entry]
+Type=Application
+Name=Debrun
+GenericName=Package Installer
+Comment=Install Debian packages downloaded from the website of their makers
+Keywords=deb;package;install;installer;gdebi;dpkg;apt;
+Exec=debrun %f
+TryExec=debrun
+Icon=debrun
+Terminal=false
+NoDisplay=true
+Categories=System;PackageManager;
+MimeType=application/vnd.debian.binary-package;application/x-deb;application/x-debian-package;
+StartupNotify=true
+StartupWMClass=Debrun
+X-Developer=Selviana DE Project

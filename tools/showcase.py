@@ -1033,6 +1033,8 @@ class Session:
         if (a.data_dir / 'merkadu/categories.menu').exists():
             env['MERKADU_DATA_DIR'] = str(a.data_dir / 'merkadu')
         env.update(self.nss_wrapper())
+        # Users & Avatar reads pending account renames here (the scene writes one).
+        env['SDE_ACCOUNT_RENAME_DIR'] = str(self.home / '.fixtures/account-renames')
         self.env = env
 
     @staticmethod
@@ -1080,7 +1082,7 @@ class Session:
         bl.mkdir(parents=True)
         (bl / 'brightness').write_text('70\n')
         (bl / 'max_brightness').write_text('100\n')
-        # Software Updater: fake APT and Flatpak (tools/update_fixture.py),
+        # Software Updater: fake APT (tools/update_fixture.py),
         # with everyday package names instead of its "example" fixtures.
         import update_fixture
         update_fixture.write(self.home / '.fixtures/python', self.home / 'bin', self.home / '.fixtures/update-root')
@@ -2090,11 +2092,11 @@ def liria_ribbon_tabs(s):
     time.sleep(0.3)
 
 
-@scene('Liria', [('liria-copy-progress', 'Liria: copying videos, with More details: the speed graph, the time '
-                                         'and items remaining and the animated SDE mark')], needs=['liria'])
+@scene('Liria', [('liria-copy-progress', 'Liria: copying videos, with the details: the penguin carries the '
+                                         'files, how much, how fast and how long')], needs=['liria'])
 def liria_copy_progress(s):
     """A copy slowed down to about 20 MB/s (LIRIA_SDE_QA_COPY_RATE), the
-    file operations window with More details."""
+    file operations window with the details (0.2.0 Alpha 3)."""
     src = s.home / 'Videos/Trip to the Lakes'
     dst = s.home / 'Backup'
     src.mkdir(parents=True, exist_ok=True)
@@ -2124,7 +2126,7 @@ def liria_copy_progress(s):
         progress = qa_pairs(qa)['window']
         click_box(s, progress, qa_box(qa_pairs(qa), 'toggle'))
         s.wait(lambda: qa_pairs(qa).get('details') == '1', 3)
-        time.sleep(3.0)  # the graph fills
+        time.sleep(3.0)  # the speed and the time left settle
         s.park_pointer()
         # The window changes four times a second: no waiting for stillness.
         s.shot('liria-copy-progress', quiet=0.2, timeout=0.5)
@@ -2139,24 +2141,40 @@ def liria_copy_progress(s):
             (src / name).unlink(missing_ok=True)
 
 
-@scene('Desktop', [('sde-transfer', 'SDE: the copy and move dialog of the desktop with More details (speed '
-                                    'graph, time and items remaining)')])
+@scene('Desktop', [('sde-transfer', 'SDE: the copy dialog of the desktop: the penguin carries the files, '
+                                    'the time left, the details and a second operation in the queue')])
 def sde_transfer(s):
     """SDE-FLTK's copy and move dialog (src/common/transfer_dialog.h) with a
     simulated copy from the test tools."""
     demo = s.test_tool('sde-transfer-demo')
     if not demo:
         raise SkipShot('sde-transfer-demo not found (--test-dir)')
-    s.spawn(demo, '--details', '--at', '0.46', name='transfer-demo')
-    w = s.need('complete$', 10, what='the copy dialog')
+    s.spawn(demo, '--details', '--queue', '--drive', 'SANDISK', '--removable', '--at', '0.46', name='transfer-demo')
+    w = s.need('Backup Drive$', 10, what='the copy dialog')
     s.activate(w)
     time.sleep(1.0)
     s.park_pointer()
-    # The mark is animated: no waiting for stillness.
+    # The penguin walks: no waiting for stillness.
     s.shot('sde-transfer', quiet=0.2, timeout=0.5)
 
 
-@scene('Niny', [('niny', 'Niny: Markdown with its formatted view, tabs and the formatting toolbar')],
+@scene('Desktop', [('sde-transfer-done', 'SDE: a copy to a USB stick is over only when the files are on it; '
+                                         'then the dialog says the stick can be removed')])
+def sde_transfer_done(s):
+    """The finished state of the copy dialog (0.2.0 Alpha 3, safe copying:
+    src/common/safe_copy.h)."""
+    demo = s.test_tool('sde-transfer-demo')
+    if not demo:
+        raise SkipShot('sde-transfer-demo not found (--test-dir)')
+    s.spawn(demo, '--done', '--drive', 'SANDISK', '--removable', '--fat', name='transfer-demo')
+    w = s.need('Backup Drive$', 10, what='the copy dialog')
+    s.activate(w)
+    time.sleep(1.6)  # after the penguin's jump
+    s.park_pointer()
+    s.shot('sde-transfer-done', quiet=0.2, timeout=0.5)
+
+
+@scene('Niny', [('niny', 'Niny: Markdown with its formatted view, tabs, the menu bar and the formatting toolbar')],
        scopes=(FULL, THEMES), needs=['niny'])
 def niny(s):
     docs = s.home / 'Documents'
@@ -2172,6 +2190,38 @@ def niny_code(s):
     s.app(['niny', s.home / 'Documents/Projects/garden-planner/planner.py'], 'Niny$')
     s.park_pointer()
     s.shot('niny-code', quiet=0.6)
+
+
+@scene('Niny', [('niny-menu', 'Niny: the menu bar (File to Help) with View open: Menu Bar, Font…, zoom and theme'),
+                ('niny-font', 'Niny: View > Font…, the family and size with a preview'),
+                ('niny-shortcuts', 'Niny: Help > Keyboard Shortcuts')], needs=['niny'])
+def niny_menu(s):
+    s.app(['niny', s.home / 'Documents/Meeting Notes.txt'], 'Niny$')
+    s.park_pointer()
+    s.key('alt+v')  # the underlined letter of View
+    time.sleep(0.6)
+    s.shot('niny-menu', quiet=0.6)
+    s.key('f', 'Return')  # the first item that starts with F: Font…
+    time.sleep(0.8)
+    s.shot('niny-font', quiet=0.6)
+    s.key('Escape')
+    time.sleep(0.3)
+    s.raw_key('F1')
+    time.sleep(0.8)
+    s.shot('niny-shortcuts', quiet=0.6)
+
+
+@scene('Niny', [('niny-single-tab', 'Niny: the only tab cannot be closed; its × is inactive and says why')],
+       needs=['niny'])
+def niny_single_tab(s):
+    w = s.app(['niny', s.home / 'Documents/Meeting Notes.txt'], 'Niny$')
+    r = s.control('Niny', 'close:0')  # Niny's QA layout (SDE_PANEL_QA_DIR)
+    if not r:
+        raise SkipShot('Niny wrote no layout of its tabs')
+    g = s.geom(w)
+    s.move(g['x'] + r[0] + r[2] // 2, g['y'] + r[1] + r[3] // 2)
+    time.sleep(1.6)  # the tooltip
+    s.shot('niny-single-tab', quiet=0.5)
 
 
 @scene('Xanara', [('xanara', 'Xanara: a PDF report with thumbnails and the Annotate tools')], needs=['xanara'])
@@ -2262,11 +2312,11 @@ def system_monitor(s):
     s.shot('system-monitor-performance', quiet=0.3, timeout=2)
 
 
-@scene('Software Updater', [('software-updater', 'Software Updater: critical, security, main and Flatpak '
-                                                 'updates (test data)')], needs=['sde-update'])
+@scene('Software Updater', [('software-updater', 'Software Updater: critical, security and main updates of '
+                                                 'the operating system (test data)')], needs=['sde-update'])
 def software_updater(s):
     w = s.app(['sde-update'], '^Software Updater$', settle=False)
-    time.sleep(2.0)  # check.py and flatpak.py
+    time.sleep(2.0)  # check.py
     s.window_settle(w, quiet=0.8, timeout=8)
     s.park_pointer()
     s.shot('software-updater', quiet=0.6)
@@ -2287,8 +2337,8 @@ def merkadu_window(s, args, ready):
     return w
 
 
-@scene('Merkadu', [('merkadu', 'Merkadu, the software center: featured, new and top apps from Debian, Flatpak '
-                               'and Snap (test data)'),
+@scene('Merkadu', [('merkadu', 'Merkadu, the software center: highlights, recommendations, new and popular apps '
+                               'from Debian, Flathub and Snap (test data)'),
                    ('merkadu-category', 'Merkadu: a department with its subcategories'),
                    ('merkadu-search', 'Merkadu: one search in every source, with the source of each app'),
                    ('merkadu-details', 'Merkadu: an app page with its sources, screenshots and details'),
@@ -2345,6 +2395,35 @@ def merkadu_uninstall(s):
     s.control('Merkadu Uninstall', 'logo', timeout=5)
     s.park_pointer()
     s.shot('merkadu-uninstall-progress', quiet=0.6, wid=w)
+
+
+@scene('Merkadu', [('merkadu-all-software', 'Merkadu: All Software, every package of the archive by section and '
+                                            'status, with changes marked like in Synaptic (test data)'),
+                   ('merkadu-review', 'Merkadu: the marked changes with everything they install, update and remove'),
+                   ('merkadu-updates', 'Merkadu: app updates from Flathub and the Snap Store; the system is '
+                                       'updated by the Software Updater')],
+       needs=['merkadu'])
+def merkadu_all_software(s):
+    if not (MERKADU_FIXTURES / 'catalog.json').exists():
+        raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
+    w = merkadu_window(s, ['--page', 'packages'], 'pkg:curl')
+    s.press('Merkadu', 'pkg:curl')
+    s.press('Merkadu', 'action:mark:Mark for Update')
+    s.press('Merkadu', 'chip:status:available')
+    s.control('Merkadu', '@page:packages:available||', timeout=5)
+    s.key('ctrl+f')
+    s.type('pixel', 60)
+    s.press('Merkadu', 'pkg:python3-pixel')
+    s.press('Merkadu', 'action:mark:Mark for Installation')
+    s.control('Merkadu', 'action:review', timeout=5)
+    s.park_pointer()
+    s.shot('merkadu-all-software', quiet=0.6, wid=w)
+    s.press('Merkadu', 'action:review')
+    s.control('Merkadu', 'action:apply', timeout=8)
+    s.park_pointer()
+    s.shot('merkadu-review', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--page', 'updates'], 'action:software-updater')
+    s.shot('merkadu-updates', quiet=0.6, wid=w)
 
 
 @scene('Welcome', [('welcome', 'Welcome: first steps after installing DebION')], needs=['sde-welcome'])
@@ -2489,6 +2568,97 @@ def user_accounts(s):
         s.shot('user-add', quiet=0.6)
     except SkipShot as e:
         s.skip('user-add', str(e))
+
+
+@scene('Accounts', [('user-rename', 'Control Center, Users & Avatar: Sam will be renamed to samuel at the next '
+                                    'restart, with Cancel Rename')], needs=['sde-settings'])
+def user_rename(s):
+    """A rename request for the fixture's Sam (no helper runs)."""
+    if not any(p in ACCOUNT_PAGES for p in s.run_ctx.pages):
+        raise SkipShot('no account page in this build')
+    d = Path(s.env['SDE_ACCOUNT_RENAME_DIR'])
+    d.mkdir(parents=True, exist_ok=True)
+    req = d / '1001.rename'
+    req.write_text('uid=1001\nold=sam\nnew=samuel\nold_home=/home/sam\nnew_home=/home/samuel\nlink=0\nby=1001\n'
+                   'time=0\nstate=pending\n')
+    try:
+        settings_page(s, 'accounts')
+        if not s.control('Control Center', 'user:sam', 4):
+            raise SkipShot('no AccountsService (the service fixture) in this session')
+        reveal_control(s, 'Control Center', 'user:sam')
+        s.press('Control Center', 'user:sam')
+        if not s.control('Control Center', 'Cancel the rename', 5):
+            raise SkipShot('this build cannot rename accounts')
+        reveal_control(s, 'Control Center', 'Cancel the rename')
+        s.park_pointer()
+        s.shot('user-rename', quiet=0.6)
+    finally:
+        req.unlink(missing_ok=True)
+
+
+@scene('Debrun', [('debrun', 'Debrun: a package downloaded from its maker, with what it changes besides its files, '
+                             'its dependencies and the version of the package sources (test data)'),
+                  ('debrun-installing', 'Debrun: installing, with the animated SDE logo (test data)')],
+       needs=['debrun'])
+def debrun(s):
+    """tools/debrun_fixture.py: a vendor package and a fake package system."""
+    sys.path.insert(0, str(ROOT / 'tools'))
+    import debrun_fixture
+    d = s.home / '.fixtures/debrun'
+    env = dict(s.env, DEBRUN_FAKE_HOLD='30', **debrun_fixture.write(d, 'new'))
+    s.spawn('debrun', d / 'packages/waveform-studio_3.2.0-1_amd64.deb', env=env)
+    w = s.need('Debrun$', 15, what='the Debrun window')
+    s.fit(w)
+    s.activate(w)
+    if not s.control('Debrun', '@state:ready', timeout=15):
+        raise SkipShot('Debrun did not read the package')
+    s.park_pointer()
+    s.shot('debrun', quiet=0.6, wid=w)
+    r = s.control('Debrun', 'Install the package', timeout=3)
+    if not r or not r[4]:
+        raise SkipShot('no Install button in view')
+    g = s.geom(w)
+    s.click(g['x'] + r[0] + r[2] / 2, g['y'] + r[1] + r[3] / 2)
+    if not s.control('Debrun', '@state:working', timeout=6):
+        raise SkipShot('Debrun did not start installing')
+    s.park_pointer()
+    s.shot('debrun-installing', quiet=0.6, wid=w)
+
+
+@scene('AppImage Runner', [('appimage-unsigned', 'AppImage Runner: an AppImage without a signature does not run; '
+                                                 'Delete is the default (test data)'),
+                           ('appimage-key-changed', 'AppImage Runner: a new version signed with another key than '
+                                                    'the earlier ones (test data)')], needs=['sde-appimage'])
+def appimage(s):
+    """tools/appimage_fixture.py: small AppImages, signed with throwaway keys
+    when GnuPG is installed."""
+    sys.path.insert(0, str(ROOT / 'tools'))
+    import appimage_fixture
+    signer = appimage_fixture.Signer() if shutil.which('gpg') and shutil.which('gpgv') else None
+    try:
+        files = appimage_fixture.write(s.home / 'Downloads/AppImages', signer)
+    finally:
+        if signer:
+            signer.close()
+    policy = s.home / '.fixtures/appimage.conf'
+    policy.parent.mkdir(parents=True, exist_ok=True)
+    policy.write_text('policy=verified-only\n')
+    env = dict(s.env, SDE_APPIMAGE_POLICY=str(policy), SDE_APPIMAGE_TRUST=str(s.home / '.fixtures/appimage-trust.tsv'))
+    s.spawn('sde-appimage', files['unsigned'], env=env)
+    w = s.need('AppImage Runner$', 10, what='the AppImage Runner window')
+    s.control('AppImage', '@focus:Delete', timeout=5)
+    s.park_pointer()
+    s.shot('appimage-unsigned', quiet=0.5, wid=w)
+    s.stop_scene_procs()
+    if not signer:
+        raise SkipShot('GnuPG is not installed: no signed AppImages')
+    # The first key of "Fixture", in the trust store of the scene.
+    sp.run([s.which('sde-appimage'), '--check', str(files['signed'])], env=env, capture_output=True, timeout=60)
+    s.spawn('sde-appimage', files['other-key'], env=env)
+    w = s.need('AppImage Runner$', 10, what='the AppImage Runner window')
+    s.control('AppImage', '@verdict:key-changed', timeout=5)
+    s.park_pointer()
+    s.shot('appimage-key-changed', quiet=0.5, wid=w)
 
 
 # ================================================================== output
@@ -2720,7 +2890,8 @@ def parse_args(argv=None):
     a.xdg_data_dirs = []
     if a.build_dir:
         b = a.build_dir.resolve()
-        for d in ['src', 'src/niny', 'src/welcome', 'src/merkadu', 'cargo/release', 'rust/release']:
+        for d in ['src', 'src/niny', 'src/welcome', 'src/merkadu', 'cargo/release', 'rust/release', 'src/debrun',
+                  'src/appimage']:
             if (b / d).is_dir():
                 a.bin_dirs.append(b / d)
         if (b / 'tests').is_dir():

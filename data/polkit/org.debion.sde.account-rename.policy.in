@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Selviana DE Project</vendor>
+  <vendor_url>https://github.com/hugomonizdorego/SDE-Desktop</vendor_url>
+
+  <!-- Renaming a user account (Control Center > Users & Avatar,
+       docs/CONTROL-CENTER.md): the helper only records the request after
+       checking the new name; sde-account-rename.service makes the rename at
+       the next start of the computer, before anyone can log in. People may
+       ask for their own account with their own password; other accounts
+       need an administrator. The helper checks that "-self" requests name
+       the caller's own account (PKEXEC_UID). -->
+  <action id="org.debion.sde.account-rename.schedule-self">
+    <description>Rename your own account at the next restart</description>
+    <message>Authentication is required to rename your account</message>
+    <icon_name>sde-control-center</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_self_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/sde-account-rename</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">schedule-self</annotate>
+  </action>
+
+  <action id="org.debion.sde.account-rename.cancel-self">
+    <description>Cancel the rename of your own account</description>
+    <message>Authentication is required to cancel the rename of your account</message>
+    <icon_name>sde-control-center</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_self_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/sde-account-rename</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">cancel-self</annotate>
+  </action>
+
+  <action id="org.debion.sde.account-rename.schedule">
+    <description>Rename a user account at the next restart</description>
+    <message>Authentication is required to rename another user's account</message>
+    <icon_name>sde-control-center</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/sde-account-rename</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">schedule</annotate>
+  </action>
+
+  <action id="org.debion.sde.account-rename.cancel">
+    <description>Cancel the rename of a user account</description>
+    <message>Authentication is required to cancel the rename of another user's account</message>
+    <icon_name>sde-control-center</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/sde-account-rename</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">cancel</annotate>
+  </action>
+</policyconfig>

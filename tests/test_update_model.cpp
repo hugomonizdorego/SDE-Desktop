@@ -138,62 +138,30 @@ static void classifier() {
   CHECK(l.updates[1].title() == "Firefox ESR" && l.updates[1].icon == "firefox-esr");
   CHECK(l.updates[1].section == "web" && l.updates[1].group == Group::Main);
 
-  // Flatpak parsing.
-  CHECK(!parse_flatpaks("SDE-UPDATES\t2\n", l));
-  UpdateList none;
-  CHECK(parse_flatpaks("SDE-FLATPAK\t1\nI\t0\n", none) && !none.flatpak_installed);
-  CHECK(parse_flatpaks(
-      "SDE-FLATPAK\t1\nI\t1\n"
-      "F\tsystem\tapp/org.gimp.GIMP/x86_64/stable\tGIMP\torg.gimp.GIMP\tstable\tflathub\t2.10.36\t"
-      "2.10.38\t52000000\tGNU Image Manipulation Program\n"
-      "F\tuser\truntime/org.gnome.Platform/x86_64/47\tGNOME Application Platform\t"
-      "org.gnome.Platform\t47\tflathub\t\t47.2\t1000\tShared libraries\n"
-      "F\tsystem\tapp/bad ref\tBad\tbad\tstable\tflathub\t\t\t1\t\n"
-      "F\troot\tapp/org.x.Y/x86_64/stable\tY\torg.x.Y\tstable\tflathub\t\t\t1\t\n"
-      "E\tUnable to load summary from remote fedora\n",
-      l));
-  CHECK(l.flatpak_installed && l.flatpak_errors.size() == 1);
-  CHECK(l.updates.size() == 4 && l.count(Group::Flatpak) == 2);
-  CHECK(l.updates[2].flatpak && l.updates[2].title() == "GIMP" && l.updates[2].icon == "org.gimp.GIMP");
-  CHECK(l.updates[3].installation == "user" && l.updates[3].group == Group::Flatpak);
-  CHECK(!l.updates[2].reboot);
-
   // Size totals and the selection.
-  CHECK(l.total_size() == 300 + 200 + 52000000LL + 1000);
-  CHECK(l.size(Group::Flatpak) == 52001000LL && l.size(Group::Critical) == 200);
-  CHECK(l.selected_count() == 4 && l.selected_size() == l.total_size());
+  CHECK(l.total_size() == 300 + 200);
+  CHECK(l.size(Group::Main) == 300 && l.size(Group::Critical) == 200);
+  CHECK(l.selected_count() == 2 && l.selected_size() == l.total_size());
   CHECK(l.needs_reboot() == false);
 
   // Selection -> helper command lines.
   auto cmds = install_commands(l.updates);
-  CHECK(cmds.size() == 2);
-  CHECK(cmds.size() == 2 && cmds[0] == std::vector<std::string>({"upgrade"}));
-  CHECK(cmds.size() == 2 &&
-        cmds[1] == std::vector<std::string>({"flatpak", "system:app/org.gimp.GIMP/x86_64/stable",
-                                             "user:runtime/org.gnome.Platform/x86_64/47"}));
+  CHECK(cmds.size() == 1 && cmds[0] == std::vector<std::string>({"upgrade"}));
   l.updates[1].selected = false;  // firefox-esr
-  l.updates[3].selected = false;  // the GNOME runtime
   cmds = install_commands(l.updates);
-  CHECK(cmds.size() == 2 && cmds[0] == std::vector<std::string>({"upgrade", "bash"}));
-  CHECK(cmds.size() == 2 && cmds[1].size() == 2);
-  CHECK(l.selected_size() == 200 + 52000000LL && l.selected_count() == 2);
-  for (auto &u : l.updates) u.selected = u.flatpak && u.installation == "system";
-  cmds = install_commands(l.updates);
-  CHECK(cmds.size() == 1 && cmds[0][0] == "flatpak");
+  CHECK(cmds.size() == 1 && cmds[0] == std::vector<std::string>({"upgrade", "bash"}));
+  CHECK(l.selected_size() == 200 && l.selected_count() == 1);
   for (auto &u : l.updates) u.selected = false;
   CHECK(install_commands(l.updates).empty());
   bool all = true;
   CHECK(selected_packages(l.updates, &all).empty() && !all);
-
-  CHECK(valid_flatpak_ref("app/org.gimp.GIMP/x86_64/stable"));
-  CHECK(valid_flatpak_ref("runtime/org.freedesktop.Platform.GL.default/x86_64/24.08"));
-  CHECK(!valid_flatpak_ref("app/../x86_64/stable"));
-  CHECK(!valid_flatpak_ref("app/org.x/x86_64"));
-  CHECK(!valid_flatpak_ref("app/org.x/x86 64/stable"));
-  CHECK(!valid_flatpak_ref("--help/a/b/c"));
-  CHECK(valid_flatpak_item("user:app/org.gimp.GIMP/x86_64/stable"));
-  CHECK(!valid_flatpak_item("root:app/org.gimp.GIMP/x86_64/stable"));
-  CHECK(!valid_flatpak_item("app/org.gimp.GIMP/x86_64/stable"));
+  // No updates: nothing to install, and not "everything selected".
+  CHECK(install_commands({}).empty());
+  all = true;
+  CHECK(selected_packages({}, &all).empty() && !all);
+  // Critical, security and main: applications from Flathub and the Snap
+  // Store are updated in Merkadu.
+  CHECK(kGroupCount == 3 && std::string(group_id(Group::Main)) == "main");
   CHECK(std::string(group_title(Group::Critical)) == "Critical updates");
   CHECK(remind_label(24) == "Tomorrow");
 }
@@ -309,11 +277,9 @@ static void end_to_end() {
   CHECK(status == 0 && out.find("--only-upgrade\nbash\n") != std::string::npos);
   run_sync({"python3", dir + "/transaction.py", "--plan", "upgrade", "bad;name"}, &status, 20000);
   CHECK(status == 2);
-  out = run_sync({"python3", dir + "/transaction.py", "--plan", "flatpak", "user:app/org.gimp.GIMP/x86_64/stable"},
-                 &status, 20000);
-  CHECK(status == 0 && out.find("update\n--user\n-y\n--noninteractive\napp/org.gimp.GIMP/x86_64/stable\n") !=
-                           std::string::npos);
-  run_sync({"python3", dir + "/transaction.py", "--plan", "flatpak", "user:app/x;rm/x86_64/stable"}, &status, 20000);
+  // Flatpak apps are Merkadu's: no such action here.
+  run_sync({"python3", dir + "/transaction.py", "--plan", "flatpak", "user:app/org.gimp.GIMP/x86_64/stable"}, &status,
+           20000);
   CHECK(status == 2);
   run_sync({"rm", "-rf", tmp});
 }

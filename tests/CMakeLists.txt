@@ -28,6 +28,14 @@ target_compile_definitions(sde-transfer-tests PRIVATE SDE_TEST_SOURCE_DIR="${PRO
 add_test(NAME sde-transfer-model COMMAND sde-transfer-tests)
 add_executable(sde-transfer-demo transfer_demo.cpp)
 target_link_libraries(sde-transfer-demo PRIVATE sde-common)
+# 0.2.0 Alpha 3: safe copying (src/common/safe_copy.h): the writer against a
+# simulated slow drive, and a benchmark for real drives (not installed;
+# tools/safe-copy-bench.py).
+add_executable(sde-safe-copy-tests test_safe_copy.cpp)
+target_link_libraries(sde-safe-copy-tests PRIVATE sde-common)
+add_test(NAME sde-safe-copy COMMAND sde-safe-copy-tests)
+add_executable(sde-safe-copy-bench safe_copy_bench.cpp)
+target_link_libraries(sde-safe-copy-bench PRIVATE sde-desktop-model sde-common)
 
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).
@@ -122,6 +130,13 @@ add_test(NAME sde-photo-draw COMMAND sde-photo-draw-tests)
 add_executable(niny-tests test_niny.cpp)
 target_link_libraries(niny-tests PRIVATE niny-core)
 add_test(NAME niny-core COMMAND niny-tests)
+# Niny's tabs and menu bar on Xvfb (0.2 Alpha 3): each × closes its own tab,
+# the only tab stays, the menus open from the mouse and keyboard and fit.
+if(SDE_XVFB)
+  add_test(NAME niny-tabs-menus COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_niny_ui.py
+    $<TARGET_FILE:niny>)
+  set_tests_properties(niny-tabs-menus PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 
 # SDE Screen Lock and SDE Power: PAM conversation (fake PAM stack), password
 # buffer, attempt delays, inhibitors, idle stages, battery levels, brightness.
@@ -153,6 +168,7 @@ if(SDE_XVFB)
     niny=$<TARGET_FILE:niny> sysmon=$<TARGET_FILE:sde-system-monitor>
     run=$<TARGET_FILE:sde-run> display=$<TARGET_FILE:sde-display-settings>
     calculator=$<TARGET_FILE:calculator> welcome=$<TARGET_FILE:sde-welcome>
+    debrun=$<TARGET_FILE:debrun>
     reports=$<TARGET_FILE:sde-system-reports> licenses=$<TARGET_FILE:sde-ui-kit-demo>)
   set_tests_properties(sde-about-windows PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
@@ -280,3 +296,54 @@ if(TARGET merkadu AND SDE_XVFB)
     $<TARGET_FILE:merkadu> ${PROJECT_SOURCE_DIR})
   set_tests_properties(merkadu-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# Debrun (src/debrun): control files, versions (and dpkg's order), relations,
+# .deb files of every compression and broken ones, the changes beyond the
+# files, dpkg's status file, APT's simulation and the helper's contract.
+add_executable(debrun-tests test_debrun.cpp)
+target_link_libraries(debrun-tests PRIVATE debrun-core sde-installer-base)
+add_test(NAME debrun-model COMMAND debrun-tests)
+# Debrun's window with generated packages and a fake package system
+# (tools/debrun_fixture.py), and the PackageKit backend against a fake
+# PackageKit on a private bus (debrun-fake-packagekit, not installed).
+add_executable(debrun-fake-packagekit fake_packagekit.cpp)
+target_link_libraries(debrun-fake-packagekit PRIVATE PkgConfig::DBUS)
+if(SDE_XVFB)
+  add_test(NAME debrun-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_debrun_ui.py
+    $<TARGET_FILE:debrun> $<TARGET_FILE:debrun-fake-packagekit>)
+  set_tests_properties(debrun-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()
+
+# sde-appimage (src/appimage): ELF headers and AppImage sections, the signed
+# digest, OpenPGP armor, gpgv's answers, the trust store, the policy and
+# the verdicts (with a stand-in for gpgv).
+add_executable(appimage-tests test_appimage.cpp)
+target_link_libraries(appimage-tests PRIVATE sde-appimage-core sde-installer-base)
+add_test(NAME appimage-model COMMAND appimage-tests)
+# sde-appimage with generated AppImages and real GnuPG signatures
+# (tools/appimage_fixture.py; skipped without gpg), its window on Xvfb when
+# Xvfb and xdotool are installed.
+add_test(NAME appimage-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_appimage_ui.py
+  $<TARGET_FILE:sde-appimage>)
+set_tests_properties(appimage-ui PROPERTIES TIMEOUT 240)
+
+# Renaming accounts (src/settings/account_rename.*): requests, name rules,
+# checks and file edits; as root, whole renames, failures undone at every
+# step and interrupted renames in a fake root (usermod --prefix); the
+# helper's commands and refusals.
+add_executable(account-rename-tests test_account_rename.cpp ${PROJECT_SOURCE_DIR}/src/settings/account_rename.cpp)
+target_include_directories(account-rename-tests PRIVATE ${PROJECT_SOURCE_DIR}/src/settings)
+target_link_libraries(account-rename-tests PRIVATE sde-installer-base)
+add_test(NAME account-rename COMMAND account-rename-tests $<TARGET_FILE:sde-account-rename>)
+# Users & Avatar: renaming an account with the fake AccountsService and the
+# real helper on a fake root (no pkexec), on Xvfb.
+if(SDE_XVFB)
+  add_test(NAME account-rename-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_account_rename_ui.py
+    $<TARGET_FILE:sde-settings> $<TARGET_FILE:sde-account-rename> $<TARGET_FILE:sde-panel-service-fixture>)
+  set_tests_properties(account-rename-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()
+
+# startsde: the Flatpak and Snap directories in XDG_DATA_DIRS and PATH, also
+# when display managers did not add them (stubs instead of the session).
+add_test(NAME sde-session-env COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_session_env.py
+  ${PROJECT_SOURCE_DIR})

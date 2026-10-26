@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <deque>
 #include <list>
@@ -150,6 +151,11 @@ std::list<std::pair<std::string, std::unique_ptr<Picture>>> g_pictures;  // most
 
 void on_ready(std::function<void()> fn) { g_ready.push_back(std::move(fn)); }
 
+bool failed(const std::string &ref) {
+  auto it = g_entries.find(ref);
+  return it != g_entries.end() && it->second.state == State::Failed;
+}
+
 std::string path(const std::string &ref) {
   if (ref.empty()) return "";
   if (ref[0] == '/') return file_exists(ref) ? ref : "";
@@ -220,6 +226,43 @@ cairo_surface_t *icon(const std::string &ref, int size, const std::string &fallb
     if (file_exists(file)) return IconLoader::get({file, fallback}, size);
   }
   return IconLoader::get({ref, fallback}, size);
+}
+
+cairo_surface_t *icon_file(const std::string &ref, int size) {
+  static std::map<std::string, cairo_surface_t *> cache;  // path@size -> icon (nullptr: unreadable)
+  static std::deque<std::string> order;
+  std::string file = path(ref);
+  if (file.empty() || size <= 0) return nullptr;
+  std::string key = file + "@" + std::to_string(size);
+  auto it = cache.find(key);
+  if (it != cache.end()) return it->second;
+  cairo_surface_t *out = nullptr;
+  if (cairo_surface_t *raw = load_image(file, size, size)) {
+    int w = cairo_image_surface_get_width(raw), h = cairo_image_surface_get_height(raw);
+    out = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+    cairo_t *cr = cairo_create(out);
+    double sc = double(size) / std::max(1, std::max(w, h));
+    cairo_translate(cr, (size - w * sc) / 2, (size - h * sc) / 2);
+    cairo_scale(cr, sc, sc);
+    cairo_set_source_surface(cr, raw, 0, 0);
+    cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    cairo_surface_destroy(raw);
+    cairo_surface_flush(out);
+  }
+  cache[key] = out;
+  order.push_back(key);
+  // A few hundred icons of the pages seen last.
+  while (order.size() > 800) {
+    auto old = cache.find(order.front());
+    if (old != cache.end()) {
+      if (old->second) cairo_surface_destroy(old->second);
+      cache.erase(old);
+    }
+    order.pop_front();
+  }
+  return out;
 }
 
 void clear() { g_pictures.clear(); }

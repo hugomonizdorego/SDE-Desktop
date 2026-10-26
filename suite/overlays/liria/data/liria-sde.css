@@ -791,3 +791,12 @@ button.sde-network-choice {
 .sde-progress.sde-paused progressbar.sde-progress-bar progress {
   background-color: @warning_color;
 }
+
+/* 0.2.0 Alpha 3: green when done, red when it failed. */
+.sde-progress.sde-done progressbar.sde-progress-bar progress {
+  background-color: @success_color;
+}
+
+.sde-progress.sde-failed progressbar.sde-progress-bar progress {
+  background-color: @error_color;
+}

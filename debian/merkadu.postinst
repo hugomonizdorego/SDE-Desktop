@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+# Flathub comes set up with Merkadu: the system installation gets the
+# remote from the repository file Merkadu ships (Flathub's address and
+# signing key; no network is needed, the app catalog is downloaded when
+# Merkadu refreshes the software lists). Only on the first installation and
+# on the upgrade from an older Merkadu, so that an administrator who removed
+# Flathub later keeps it removed. Distributions turn it off with
+# "setup-flathub=false" in the [Flatpak] group of /etc/merkadu/merkadu.conf.
+if [ "$1" = "configure" ]; then
+    if [ -z "$2" ] || dpkg --compare-versions "$2" lt 0.2.0~alpha3; then
+        if grep -Eqs '^[[:space:]]*setup-flathub[[:space:]]*=[[:space:]]*(false|no|0)[[:space:]]*$' \
+                /etc/merkadu/merkadu.conf; then
+            :
+        elif command -v flatpak >/dev/null 2>&1; then
+            flatpak remote-add --system --if-not-exists flathub /usr/share/merkadu/flathub.flatpakrepo ||
+                echo "merkadu: Flathub could not be added; Merkadu offers it on its Sources page" >&2
+        fi
+    fi
+fi
+#DEBHELPER#
+exit 0

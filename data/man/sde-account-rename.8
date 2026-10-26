@@ -1,0 +1,79 @@
+.TH SDE-ACCOUNT-RENAME 8 "October 2026" "SDE" "System Administration"
+.SH NAME
+sde-account-rename \- rename user accounts at the next start of the computer
+.SH SYNOPSIS
+.B /usr/libexec/sde/sde-account-rename
+\fBschedule\fR|\fBschedule-self\fR \fB--uid\fR \fIUID\fR \fB--old\fR \fINAME\fR \fB--new\fR \fINAME\fR [\fB--link\fR]
+.br
+.B /usr/libexec/sde/sde-account-rename
+\fBcancel\fR|\fBcancel-self\fR \fB--uid\fR \fIUID\fR
+.br
+.B /usr/libexec/sde/sde-account-rename
+\fBapply\fR | \fBstatus\fR | \fB--version\fR
+.SH DESCRIPTION
+\fBsde-account-rename\fR renames a user account: its login name, its own
+group and, when it is named after the account, its home folder. The Control
+Center (Users & Avatar, \fBRename...\fR) runs it through \fBpkexec\fR(1) to
+record a request; \fBsde-account-rename.service\fR makes the rename early at
+the next boot, before the display manager, logins, logind, AccountsService
+and cron start, because a login name cannot change while the person is
+logged in.
+.SH COMMANDS
+.TP
+.B schedule-self, schedule
+Checks the request as root and writes it to
+\fI/var/lib/sde/account-renames/UID.rename\fR. The account \fIUID\fR must
+be a person's (UID_MIN to UID_MAX of \fI/etc/login.defs\fR) and be called
+\fB--old\fR now; the new name must be a valid login name (a lowercase
+letter, then lowercase letters, digits, - and _, at most 32 characters, no
+name of the system), not the name of a user or group, not asked for by
+another request, and not named by a file that grants something to users
+(group member lists, sudo rules, polkit rules, sshd's AllowUsers,
+DenyUsers and Match, access.conf, cron.allow, at.allow). \fB--link\fR also
+leaves a link from the old home folder. \fBschedule-self\fR is for one's own
+account (polkit action org.debion.sde.account-rename.schedule-self, the
+user's own password); \fBschedule\fR for any (org.debion.sde.account-rename.schedule,
+an administrator's).
+.TP
+.B cancel-self, cancel
+Removes the request (or a failed one) of \fIUID\fR.
+.TP
+.B apply
+Makes the renames (run by the boot service as root; refused through
+pkexec). For each request: when programs of the account run, it waits for
+the next start. Otherwise each step is written to a journal first: the
+account database (\fI/etc/passwd\fR, \fIshadow\fR, \fIgroup\fR,
+\fIgshadow\fR, \fIsubuid\fR, \fIsubgid\fR) is saved; \fBusermod -l NEW -d
+HOME -m OLD\fR; \fBgroupmod -n NEW OLD\fR for the account's own group;
+AccountsService's user file and picture; automatic login of LightDM
+(\fIautologin-user\fR, the greeters' \fIlast-user\fR) and GDM
+(\fIAutomaticLogin\fR, \fITimedLogin\fR);
+the crontab and the mail spool; \fI/etc/subuid\fR and \fI/etc/subgid\fR;
+the drop-ins of \fI/etc/sudoers.d\fR (checked with \fBvisudo -c\fR); the
+linger flag of systemd; the link. When a step fails, the steps made are
+undone in reverse order and the request is marked failed with the reason;
+a journal left by a computer that stopped during a rename is undone at the
+next start.
+.TP
+.B status
+Prints the requests.
+.SH FILES
+.TP
+.I /var/lib/sde/account-renames/
+The requests (UID.rename), journals and saved files of a rename in progress.
+.TP
+.I /var/log/sde-account-rename.log
+What was scheduled, cancelled, renamed, undone or refused (also in the
+authpriv syslog).
+.TP
+.I /usr/lib/systemd/system/sde-account-rename.service
+The boot service.
+.SH EXIT STATUS
+0 done, 1 refused or failed (an "ERROR CODE text" line says why), 2 usage.
+.SH NOTES
+\fI/etc/sudoers\fR itself, sshd's configuration and polkit rules are not
+changed; the log lists those that still name the old account. Programs
+that stored the old home folder path in their settings may need the link.
+.SH SEE ALSO
+\fBusermod\fR(8), \fBgroupmod\fR(8), \fBpkexec\fR(1),
+\fI/usr/share/doc/sde/CONTROL-CENTER.md\fR

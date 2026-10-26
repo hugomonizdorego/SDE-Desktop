@@ -3,8 +3,8 @@
 Type=Application
 Name=Software Updater
 GenericName=Software Updates
-Comment=Install critical, security, main and Flatpak updates
-Keywords=update;updates;upgrade;security;critical;flatpak;apt;packages;kernel;SDE Update;Update Manager;
+Comment=Install critical, security and main updates of the operating system
+Keywords=update;updates;upgrade;security;critical;apt;packages;kernel;system;SDE Update;Update Manager;
 Exec=sde-update
 TryExec=sde-update
 Icon=sde-software-updater

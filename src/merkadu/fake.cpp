@@ -30,7 +30,9 @@
 #include <FL/Fl.H>
 
 #include <algorithm>
+#include <cstdlib>
 #include <map>
+#include <set>
 
 #include "backend.h"
 #include "i18n.h"
@@ -59,6 +61,9 @@ struct FakeWorld {
   std::vector<bool> store_only;
   std::map<std::string, std::vector<std::string>> removes;
   std::map<std::string, long long> sizes;  // package -> installed size
+  std::set<std::string> system;            // packages the system needs
+  std::vector<Package> packages;           // All Software: the fixture's packages and the apps' ones
+  std::map<std::string, std::vector<std::string>> depends;  // package -> what installing it adds
   std::vector<HistoryEntry> history;
   SourceStatus status[kSourceCount];
   std::string fail;
@@ -96,6 +101,7 @@ struct FakeWorld {
       a.license = j.text("license");
       a.homepage = j.text("homepage");
       a.bugtracker = j.text("bugtracker");
+      a.section = j.text("section");
       a.desktop_ids = j.strings("desktop");
       for (auto &s : j.strings("screenshots")) {
         Screenshot shot;
@@ -139,6 +145,52 @@ struct FakeWorld {
         for (auto &p : f.second.items) removes[f.first].push_back(p.str);
     if (const Json *sz = root.get("sizes"))
       for (auto &f : sz->fields) sizes[f.first] = f.second.integer;
+    for (auto &s : root.strings("system")) system.insert(s);
+    if (const Json *d = root.get("depends"))
+      for (auto &f : d->fields)
+        for (auto &p : f.second.items) depends[f.first].push_back(p.str);
+    // Packages: those of the fixture, then those of the apps' Debian origins.
+    std::set<std::string> seen;
+    for (auto &j : root.array("packages")) {
+      Package pk;
+      pk.name = j.text("name");
+      if (pk.name.empty() || !seen.insert(pk.name).second) continue;
+      pk.arch = j.text("arch", "amd64");
+      pk.section = j.text("section", "misc");
+      pk.summary = j.text("summary");
+      pk.installed = j.flag("installed");
+      pk.candidate_version = j.text("version", "1.0-1");
+      pk.installed_version = pk.installed ? j.text("installed_version", pk.candidate_version) : "";
+      pk.upgradable = pk.installed && pk.installed_version != pk.candidate_version;
+      pk.automatic = j.flag("automatic");
+      pk.essential = j.flag("essential");
+      pk.priority = int(j.number("priority", 4));
+      pk.download_size = j.number("download", 120000);
+      pk.installed_size = j.number("size", 480000);
+      pk.current_size = pk.installed ? pk.installed_size : -1;
+      pk.origin = j.text("origin", "Debian testing/main");
+      packages.push_back(pk);
+    }
+    for (auto &a : apps)
+      for (auto &o : a.origins) {
+        if (o.source != Source::Debian || !seen.insert(o.id).second) continue;
+        Package pk;
+        pk.name = o.id;
+        pk.arch = "amd64";
+        pk.section = a.section.empty() ? "misc" : a.section;
+        pk.summary = a.summary;
+        pk.installed = o.installed;
+        pk.candidate_version = o.version.empty() ? "1.0-1" : o.version;
+        pk.installed_version = o.installed ? (o.installed_version.empty() ? pk.candidate_version : o.installed_version) : "";
+        pk.upgradable = o.installed && o.update;
+        pk.download_size = o.download_size;
+        pk.installed_size = o.installed_size;
+        pk.current_size = o.installed ? o.installed_size : -1;
+        pk.priority = 4;
+        pk.origin = "Debian testing/main";
+        packages.push_back(pk);
+      }
+    sort_packages(packages);
     for (auto &h : root.array("history")) {
       HistoryEntry e;
       int hh = 12, mm = 0;
@@ -226,6 +278,11 @@ class FakeBackend : public Backend {
 
   void load_installed(AppsFn done) override {
     std::vector<App> out;
+    // MERKADU_FAKE_EMPTY=all: a system without any app at all.
+    if (env("MERKADU_FAKE_EMPTY") == "all") {
+      Fl::add_timeout(0.1, call_later, new std::function<void()>([done, out] { done(out, ""); }));
+      return;
+    }
     for (auto &a : world().apps)
       for (auto &o : a.origins)
         if (o.source == source_ && o.installed) {
@@ -286,25 +343,43 @@ class FakeBackend : public Backend {
     Fl::add_timeout(0.2, call_later, new std::function<void()>([done, out] { done(out); }));
   }
 
-  void plan_remove(const std::vector<std::string> &packages,
-                   std::function<void(std::vector<std::string>, long long, std::string)> done) override {
-    std::vector<std::string> removed;
-    long long freed = 0;
+  void plan_remove(const std::vector<std::string> &packages, std::function<void(RemovalCheck)> done) override {
+    RemovalCheck c;
+    c.freed = 0;
     for (auto &p : packages) {
       auto it = world().removes.find(p);
       for (auto &r : it == world().removes.end() ? std::vector<std::string>{p} : it->second) {
-        removed.push_back(r);
+        c.removed.push_back(r);
         auto sz = world().sizes.find(r);
-        if (sz != world().sizes.end()) freed += sz->second;
+        if (sz != world().sizes.end()) c.freed += sz->second;
+        if (world().system.count(r)) c.system.insert(r);
       }
     }
     if (source_ != Source::Debian) {
-      removed = packages;
-      freed = -1;
+      c.removed = packages;
+      c.freed = -1;
       for (auto &p : packages)
-        if (Origin *o = world().origin_of(source_, p)) freed = o->installed_size;
+        if (Origin *o = world().origin_of(source_, p)) c.freed = o->installed_size;
     }
-    Fl::add_timeout(0.4, call_later, new std::function<void()>([done, removed, freed] { done(removed, freed, ""); }));
+    Fl::add_timeout(0.4, call_later, new std::function<void()>([done, c] { done(c); }));
+  }
+
+  void refresh(bool force, bool interactive, int min_age, std::function<void(const Progress &)> progress,
+               RefreshFn done) override {
+    // A refresh that takes a moment (MERKADU_FAKE_REFRESH seconds, 1 by
+    // default) and changes nothing.
+    double seconds = std::atof(env("MERKADU_FAKE_REFRESH", "1").c_str());
+    Progress p;
+    p.percent = 30;
+    p.status = _("Downloading the package lists");
+    progress(p);
+    std::string fail = env("MERKADU_FAKE_REFRESH_FAIL");
+    RefreshResult r;
+    if (!fail.empty() && fail == source_id(source_)) {
+      r.ok = false;
+      r.message = _("Simulated failure (MERKADU_FAKE_REFRESH_FAIL).");
+    }
+    Fl::add_timeout(std::max(0.05, seconds), call_later, new std::function<void()>([done, r] { done(r); }));
   }
 
   void owners(const std::vector<std::string> &paths, OwnersFn done) override {
@@ -400,6 +475,35 @@ class FakeBackend : public Backend {
         e.items.push_back(o->id);
         e.versions.push_back(o->version);
       }
+      // All Software: the packages of the job (with what goes with them).
+      if (fj->job.source == Source::Debian)
+        for (auto &t : fj->job.targets) {
+          std::vector<std::string> names = {t};
+          if (fj->job.action == Action::Remove) {
+            auto it = world().removes.find(t);
+            if (it != world().removes.end()) names = it->second;
+          } else if (fj->job.action == Action::Install) {
+            auto it = world().depends.find(t);
+            if (it != world().depends.end()) names.insert(names.end(), it->second.begin(), it->second.end());
+          }
+          for (auto &p : world().packages) {
+            if (std::find(names.begin(), names.end(), p.name) == names.end()) continue;
+            if (fj->job.action == Action::Remove) {
+              p.installed = p.upgradable = false;
+              p.installed_version.clear();
+              p.current_size = -1;
+            } else {
+              p.installed = true;
+              p.upgradable = false;
+              p.installed_version = p.candidate_version;
+              p.current_size = p.installed_size;
+            }
+            if (e.items.empty() || std::find(e.items.begin(), e.items.end(), p.name) == e.items.end()) {
+              e.items.push_back(p.name);
+              e.versions.push_back(p.candidate_version);
+            }
+          }
+        }
       world().history.push_back(e);
     }
     DoneFn done = fj->done;
@@ -435,12 +539,104 @@ void load_fake_catalog(const std::string &dir, CatalogFn done) {
                     a.origins.end());
     if (!a.origins.empty()) out.push_back(std::move(a));
   }
-  // Like the real catalog, it arrives a moment later.
-  auto *fn = new std::function<void()>([done, out] { done(out, ""); });
+  // Like the real catalog, it arrives a moment later (MERKADU_FAKE_EMPTY:
+  // an empty one, as on a system whose lists were never refreshed).
+  CatalogData data;
+  if (env("MERKADU_FAKE_EMPTY").empty()) {
+    data.apps = std::move(out);
+    for (auto &a : data.apps)
+      for (auto &o : a.origins) (o.source == Source::Flatpak ? data.flatpak : data.debian)++;
+  }
+  data.sources.appstream_apt = true;
+  data.sources.dep11 = data.sources.dep11_linked = data.debian ? 3 : 0;
+  data.sources.dep11_icons = data.debian ? 3 : 0;
+  data.sources.lists_time = std::time(nullptr) - 3600;
+  if (data.flatpak) data.sources.flatpak_remotes = {"flathub"};
+  auto *fn = new std::function<void()>([done, data] { done(data); });
   Fl::add_timeout(0.3, [](void *data) {
     std::unique_ptr<std::function<void()>> f(static_cast<std::function<void()> *>(data));
     (*f)();
   }, fn);
+}
+
+apt::Snapshot fake_package_snapshot() {
+  world().load(fake_dir());
+  apt::Snapshot s;
+  s.packages = world().packages;
+  s.lists_time = std::time(nullptr) - 3600;
+  return s;
+}
+
+apt::Details fake_package_details(const std::string &name) {
+  apt::Details d;
+  for (auto &p : world().packages)
+    if (p.name == name) {
+      d.found = true;
+      d.name = p.name;
+      d.version = p.candidate_version;
+      d.description = p.summary + ".\n\n" + _("A package of the test data (tests/fixtures/merkadu).");
+      d.maintainer = "Debian QA Group <packages@qa.debian.org>";
+      d.source_package = p.name;
+      d.homepage = "https://example.org/" + p.name;
+      auto it = world().depends.find(p.name);
+      if (it != world().depends.end())
+        for (auto &dep : it->second) d.dependencies.push_back({"Depends", dep});
+      d.dependencies.push_back({"Depends", "libc6 (>= 2.38)"});
+      apt::VersionInfo v;
+      v.version = p.candidate_version;
+      v.origin = p.origin;
+      v.pin = 500;
+      v.candidate = true;
+      v.installed = p.installed && p.installed_version == p.candidate_version;
+      d.versions.push_back(v);
+      if (p.installed && p.installed_version != p.candidate_version) {
+        apt::VersionInfo i;
+        i.version = p.installed_version;
+        i.origin = _("installed");
+        i.pin = 100;
+        i.installed = true;
+        d.versions.push_back(i);
+      }
+    }
+  return d;
+}
+
+ChangePlan fake_simulate(const ChangeSet &marks) {
+  world().load(fake_dir());
+  ChangePlan plan;
+  plan.valid = true;
+  plan.download = 0;
+  std::set<std::string> install, remove, upgrade;
+  for (auto &kv : marks.all()) {
+    plan.marked.insert(kv.first);
+    if (kv.second == Mark::Remove) {
+      auto it = world().removes.find(kv.first);
+      for (auto &r : it == world().removes.end() ? std::vector<std::string>{kv.first} : it->second) remove.insert(r);
+    } else if (kv.second == Mark::Upgrade) {
+      upgrade.insert(kv.first);
+    } else {
+      install.insert(kv.first);
+      auto it = world().depends.find(kv.first);
+      if (it != world().depends.end())
+        for (auto &d : it->second) install.insert(d);
+    }
+  }
+  for (auto &p : world().packages) {
+    if (install.count(p.name) && !p.installed) {
+      plan.install.push_back(p.name);
+      plan.download += std::max(0LL, p.download_size);
+      plan.disk += std::max(0LL, p.installed_size);
+    }
+    if (upgrade.count(p.name)) {
+      plan.upgrade.push_back(p.name);
+      plan.download += std::max(0LL, p.download_size);
+    }
+    if (remove.count(p.name) && p.installed) {
+      plan.remove.push_back(p.name);
+      plan.disk -= std::max(0LL, p.current_size);
+    }
+  }
+  return plan;
 }
 
 }  // namespace merkadu

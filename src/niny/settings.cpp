@@ -125,6 +125,7 @@ void Settings::from_ini(const Ini &ini) {
   show_sidebar = ini.get_bool("view", "side_panel", d.show_sidebar);
   sidebar_width = ini.get_int("view", "side_panel_width", d.sidebar_width, 140, 600);
   status_bar = ini.get_bool("view", "status_bar", d.status_bar);
+  menu_bar = ini.get_bool("view", "menu_bar", d.menu_bar);
   show_whitespace = ini.get_bool("view", "show_whitespace", d.show_whitespace);
   syntax_colors = ini.get_bool("view", "syntax_highlighting", d.syntax_colors);
   remember_recent = ini.get_bool("files", "remember_recent", d.remember_recent);
@@ -170,6 +171,7 @@ void Settings::to_ini(Ini &ini) const {
   ini.set("view", "side_panel", b(show_sidebar));
   ini.set("view", "side_panel_width", std::to_string(sidebar_width));
   ini.set("view", "status_bar", b(status_bar));
+  ini.set("view", "menu_bar", b(menu_bar));
   ini.set("view", "show_whitespace", b(show_whitespace));
   ini.set("view", "syntax_highlighting", b(syntax_colors));
   ini.set("files", "remember_recent", b(remember_recent));
