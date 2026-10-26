@@ -65,35 +65,40 @@ void device_to_page(double pw, double ph, const RenderParams &rp, double dx, dou
 
 // ------------------------------------------------------------ rendering
 
+void render_into(cairo_t *cr, PopplerPage *page, double pw, double ph, const RenderParams &rp, int tx, int ty) {
+  if (!page) return;
+  cairo_save(cr);
+  cairo_translate(cr, -tx, -ty);
+  double s2 = rp.scale;
+  switch (norm_rotation(rp.rotation)) {
+    case 90: cairo_translate(cr, ph * s2, 0); cairo_rotate(cr, M_PI / 2); break;
+    case 180: cairo_translate(cr, pw * s2, ph * s2); cairo_rotate(cr, M_PI); break;
+    case 270: cairo_translate(cr, 0, pw * s2); cairo_rotate(cr, 3 * M_PI / 2); break;
+    default: break;
+  }
+  cairo_scale(cr, s2, s2);
+  // Text tuned for screens: grayscale coverage (no colour fringes when the
+  // page is rotated, inverted for night mode or captured in screenshots)
+  // and unhinted metrics so that glyph positions match the PDF exactly.
+  cairo_font_options_t *fo = cairo_font_options_create();
+  cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_GRAY);
+  cairo_font_options_set_hint_style(fo, CAIRO_HINT_STYLE_SLIGHT);
+  cairo_font_options_set_hint_metrics(fo, CAIRO_HINT_METRICS_OFF);
+  cairo_set_font_options(cr, fo);
+  cairo_font_options_destroy(fo);
+  cairo_set_antialias(cr, CAIRO_ANTIALIAS_GRAY);
+  if (rp.annots) poppler_page_render(page, cr);
+  else poppler_page_render_for_printing_with_options(page, cr, POPPLER_PRINT_DOCUMENT);
+  cairo_restore(cr);
+}
+
 cairo_surface_t *render_area(PopplerPage *page, double pw, double ph, const RenderParams &rp, int tx,
                              int ty, int tw, int th) {
   cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, std::max(1, tw), std::max(1, th));
   cairo_t *cr = cairo_create(s);
   cairo_set_source_rgb(cr, 1, 1, 1);
   cairo_paint(cr);
-  if (page) {
-    cairo_translate(cr, -tx, -ty);
-    double s2 = rp.scale;
-    switch (norm_rotation(rp.rotation)) {
-      case 90: cairo_translate(cr, ph * s2, 0); cairo_rotate(cr, M_PI / 2); break;
-      case 180: cairo_translate(cr, pw * s2, ph * s2); cairo_rotate(cr, M_PI); break;
-      case 270: cairo_translate(cr, 0, pw * s2); cairo_rotate(cr, 3 * M_PI / 2); break;
-      default: break;
-    }
-    cairo_scale(cr, s2, s2);
-    // Text tuned for screens: grayscale coverage (no colour fringes when the
-    // page is rotated, inverted for night mode or captured in screenshots)
-    // and unhinted metrics so that glyph positions match the PDF exactly.
-    cairo_font_options_t *fo = cairo_font_options_create();
-    cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_GRAY);
-    cairo_font_options_set_hint_style(fo, CAIRO_HINT_STYLE_SLIGHT);
-    cairo_font_options_set_hint_metrics(fo, CAIRO_HINT_METRICS_OFF);
-    cairo_set_font_options(cr, fo);
-    cairo_font_options_destroy(fo);
-    cairo_set_antialias(cr, CAIRO_ANTIALIAS_GRAY);
-    if (rp.annots) poppler_page_render(page, cr);
-    else poppler_page_render_for_printing_with_options(page, cr, POPPLER_PRINT_DOCUMENT);
-  }
+  render_into(cr, page, pw, ph, rp, tx, ty);
   cairo_destroy(cr);
   cairo_surface_flush(s);
   apply_color_mode(s, rp.mode);
@@ -237,6 +242,11 @@ void Document::touch(int page) {
   if (page < 0 || page >= count()) return;
   ++revisions_[size_t(page)];
   clear_page_cache(page);
+}
+
+void Document::set_revision(int page, uint64_t revision) {
+  if (page < 0 || page >= count()) return;
+  revisions_[size_t(page)] = std::max<uint64_t>(revision, 1);
 }
 
 void Document::clear_page_cache(int page) {

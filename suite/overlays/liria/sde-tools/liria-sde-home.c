@@ -495,7 +495,8 @@ count_next (GObject *source, GAsyncResult *result, gpointer data)
 		return;
 	}
 	for (GList *l = files; l; l = l->next)
-		if (!g_file_info_get_is_hidden (l->data) && !g_file_info_get_is_backup (l->data))
+		if (!g_file_info_get_attribute_boolean (l->data, G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN) &&
+		    !g_file_info_get_attribute_boolean (l->data, G_FILE_ATTRIBUTE_STANDARD_IS_BACKUP))
 			c->count++;
 	g_list_free_full (files, g_object_unref);
 	if (c->count >= 10000) {

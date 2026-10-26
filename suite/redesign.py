@@ -107,6 +107,8 @@ def liria(staged):
     liria_ribbon(staged)
     liria_right_drag(staged)
     liria_pathbar(staged)
+    liria_hover(staged)
+    liria_network(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
@@ -908,16 +910,41 @@ sde_pin_marker_func (GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeMo
     g_object_set (cell, "visible", pinned, "icon-name", show ? "view-pin-symbolic" : NULL, NULL);
 }
 
+/* 0.2.0 Alpha 3: only the rows that gain or lose the pin are repainted,
+ * when the pointer moves to another row. The whole sidebar was repainted
+ * on every pointer motion (a third of a CPU core while the pointer moved
+ * over it, its rows redrawn about sixty times a second). */
+static void
+sde_sidebar_queue_row (GtkTreeView *tree_view, GtkTreePath *path)
+{
+    GdkRectangle area;
+    int y = 0;
+
+    if (path == NULL)
+        return;
+    gtk_tree_view_get_background_area (tree_view, path, NULL, &area);
+    gtk_tree_view_convert_bin_window_to_widget_coords (tree_view, 0, area.y, NULL, &y);
+    gtk_widget_queue_draw_area (GTK_WIDGET (tree_view), 0, y,
+                                gtk_widget_get_allocated_width (GTK_WIDGET (tree_view)), area.height);
+}
+
 static gboolean
 sde_sidebar_hover (GtkWidget *tree_view, GdkEventMotion *event, LiriaPlacesSidebar *sidebar)
 {
     GtkTreePath *path = NULL;
+    GtkTreePath *old = g_object_get_data (G_OBJECT (sidebar), "sde-hover-path");
 
     if (event != NULL)
         gtk_tree_view_get_path_at_pos (GTK_TREE_VIEW (tree_view), (int) event->x, (int) event->y,
                                        &path, NULL, NULL, NULL);
+    if (path == NULL ? old == NULL : old != NULL && gtk_tree_path_compare (path, old) == 0)
+    {
+        gtk_tree_path_free (path);
+        return FALSE;
+    }
+    sde_sidebar_queue_row (GTK_TREE_VIEW (tree_view), old);
+    sde_sidebar_queue_row (GTK_TREE_VIEW (tree_view), path);
     g_object_set_data_full (G_OBJECT (sidebar), "sde-hover-path", path, (GDestroyNotify) gtk_tree_path_free);
-    gtk_widget_queue_draw (tree_view);
     return FALSE;
 }
 
@@ -1329,6 +1356,577 @@ path_bar_path_event_callback (LiriaPathBar *path_bar,""")
         if (flags != 0)
         {
             slot = liria_window_get_active_slot (LIRIA_WINDOW_PANE (pane)->window);""")
+
+
+CANVAS_ROWS = r'''/* SDE (0.2.0 Alpha 3): the icons of a folder are the children of one
+ * group, and every pointer motion asked each child whether it was under
+ * the pointer, every repaint whether it was in the repainted area: with
+ * 10 000 files eel_canvas_group_point () alone took more than half of
+ * Liria's time while the pointer moved over the icons. A group with many
+ * children now also keeps them in rows of the canvas by their bounding
+ * boxes, in stacking order, and point () and draw () look only at the rows
+ * they need. The rows are made again when they are needed after a child
+ * was added, removed or restacked or its bounding box moved up or down
+ * (bounding boxes change in update () only). */
+#define SDE_ROW_PIXELS 128
+#define SDE_ROW_MAX 16384
+#define SDE_ROW_CHILDREN 64
+
+typedef struct
+{
+    EelCanvasItem *item;
+    guint order;
+} SdeRowEntry;
+
+typedef struct
+{
+    gboolean dirty;
+    guint busy;
+    guint next_order;
+    double top;
+    double height;
+    guint n_rows;
+    GArray **rows;
+} SdeRows;
+
+typedef void (*SdeRowVisit) (EelCanvasItem *child, gpointer data);
+
+static void
+sde_rows_clear (SdeRows *rows)
+{
+    guint i;
+
+    for (i = 0; i < rows->n_rows; i++)
+        g_array_free (rows->rows[i], TRUE);
+    g_free (rows->rows);
+    rows->rows = NULL;
+    rows->n_rows = 0;
+}
+
+static void
+sde_rows_invalidate (EelCanvasGroup *group)
+{
+    if (group != NULL && group->sde_rows != NULL)
+        ((SdeRows *) group->sde_rows)->dirty = TRUE;
+}
+
+static void
+sde_rows_free (EelCanvasGroup *group)
+{
+    if (group->sde_rows != NULL)
+    {
+        sde_rows_clear (group->sde_rows);
+        g_free (group->sde_rows);
+        group->sde_rows = NULL;
+    }
+}
+
+static guint
+sde_rows_index (SdeRows *rows, double y)
+{
+    double r = (y - rows->top) / rows->height;
+
+    if (!(r > 0))
+        return 0;
+    if (r >= rows->n_rows - 1)
+        return rows->n_rows - 1;
+    return (guint) r;
+}
+
+/* The rows of a group, made again if needed; NULL for a group with few
+ * children (faster to look through) and while the rows are in use. */
+static SdeRows *
+sde_rows_get (EelCanvasGroup *group)
+{
+    SdeRows *rows = group->sde_rows;
+    double top = 0, bottom = 0;
+    guint n = 0, order = 0, i;
+    GList *list;
+
+    if (rows != NULL && rows->busy > 0)
+        return NULL;
+    if (rows != NULL && !rows->dirty)
+        return rows->n_rows > 0 ? rows : NULL;
+    if (rows == NULL)
+        group->sde_rows = rows = g_new0 (SdeRows, 1);
+    sde_rows_clear (rows);
+    rows->dirty = FALSE;
+    for (list = group->item_list; list != NULL; list = list->next, n++)
+    {
+        EelCanvasItem *child = list->data;
+
+        if (n == 0 || child->y1 < top)
+            top = child->y1;
+        if (n == 0 || child->y2 > bottom)
+            bottom = child->y2;
+    }
+    if (n < SDE_ROW_CHILDREN || !(bottom - top >= 0 && bottom - top < 1e9))
+        return NULL;
+    rows->top = top;
+    rows->height = MAX (SDE_ROW_PIXELS, (bottom - top) / SDE_ROW_MAX + 1);
+    rows->n_rows = (guint) ((bottom - top) / rows->height) + 1;
+    rows->rows = g_new (GArray *, rows->n_rows);
+    for (i = 0; i < rows->n_rows; i++)
+        rows->rows[i] = g_array_new (FALSE, FALSE, sizeof (SdeRowEntry));
+    for (list = group->item_list; list != NULL; list = list->next, order++)
+    {
+        SdeRowEntry entry = { list->data, order };
+        guint last;
+
+        if (!(entry.item->y2 >= entry.item->y1))
+            continue;
+        last = sde_rows_index (rows, entry.item->y2);
+        for (i = sde_rows_index (rows, entry.item->y1); i <= last; i++)
+            g_array_append_val (rows->rows[i], entry);
+    }
+    rows->next_order = order;
+    return rows;
+}
+
+/* A child changed its place in the stacking order. A child raised to the
+ * top (as the icon under the pointer is) moves to the end of its rows;
+ * any other change makes the rows again when they are needed. */
+static void
+sde_rows_restacked (EelCanvasGroup *group, EelCanvasItem *child, gboolean to_top)
+{
+    SdeRows *rows = group->sde_rows;
+    SdeRowEntry entry = { child, 0 };
+    guint i, j, last;
+
+    if (rows == NULL || rows->dirty || rows->busy > 0 || rows->n_rows == 0 || !to_top)
+    {
+        sde_rows_invalidate (group);
+        return;
+    }
+    if (!(child->y2 >= child->y1))
+        return;
+    entry.order = rows->next_order++;
+    last = sde_rows_index (rows, child->y2);
+    for (i = sde_rows_index (rows, child->y1); i <= last; i++)
+    {
+        GArray *row = rows->rows[i];
+
+        for (j = 0; j < row->len; j++)
+            if (g_array_index (row, SdeRowEntry, j).item == child)
+            {
+                g_array_remove_index (row, j);
+                break;
+            }
+        g_array_append_val (row, entry);
+    }
+}
+
+static int
+sde_row_entry_order (gconstpointer a, gconstpointer b)
+{
+    guint x = ((const SdeRowEntry *) a)->order, y = ((const SdeRowEntry *) b)->order;
+
+    return x < y ? -1 : x > y;
+}
+
+/* Calls |visit| in stacking order, once each, for the children whose
+ * bounding boxes may reach from |top| to |bottom|. FALSE when the group
+ * has no rows: then the caller looks through all children. */
+static gboolean
+sde_rows_visit (EelCanvasGroup *group, double top, double bottom, SdeRowVisit visit, gpointer data)
+{
+    SdeRows *rows = sde_rows_get (group);
+    guint first, last, i;
+
+    if (rows == NULL)
+        return FALSE;
+    if (bottom < rows->top || top > rows->top + rows->height * rows->n_rows)
+        return TRUE;
+    first = sde_rows_index (rows, top);
+    last = sde_rows_index (rows, bottom);
+    rows->busy++;
+    if (first == last)
+    {
+        GArray *row = rows->rows[first];
+
+        for (i = 0; i < row->len; i++)
+            visit (g_array_index (row, SdeRowEntry, i).item, data);
+    }
+    else
+    {
+        GArray *all = g_array_new (FALSE, FALSE, sizeof (SdeRowEntry));
+
+        for (i = first; i <= last; i++)
+            g_array_append_vals (all, rows->rows[i]->data, rows->rows[i]->len);
+        g_array_sort (all, sde_row_entry_order);
+        for (i = 0; i < all->len; i++)
+            if (i == 0 || g_array_index (all, SdeRowEntry, i).order != g_array_index (all, SdeRowEntry, i - 1).order)
+                visit (g_array_index (all, SdeRowEntry, i).item, data);
+        g_array_free (all, TRUE);
+    }
+    rows->busy--;
+    return TRUE;
+}
+
+'''
+
+CANVAS_GROUP_DRAW_POINT = r'''/* Draw handler for canvas groups */
+typedef struct
+{
+    cairo_t *cr;
+    cairo_region_t *region;
+} SdeGroupDraw;
+
+static void
+sde_group_draw_child (EelCanvasItem *child, gpointer data)
+{
+    SdeGroupDraw *draw = data;
+
+    if ((child->flags & EEL_CANVAS_ITEM_MAPPED) &&
+            (EEL_CANVAS_ITEM_GET_CLASS (child)->draw))
+    {
+        GdkRectangle child_rect;
+
+        child_rect.x = child->x1;
+        child_rect.y = child->y1;
+        child_rect.width = child->x2 - child->x1 + 1;
+        child_rect.height = child->y2 - child->y1 + 1;
+
+        if (cairo_region_contains_rectangle (draw->region, &child_rect) != CAIRO_REGION_OVERLAP_OUT)
+            EEL_CANVAS_ITEM_GET_CLASS (child)->draw (child, draw->cr, draw->region);
+    }
+}
+
+static void
+eel_canvas_group_draw (EelCanvasItem  *item,
+                       cairo_t        *cr,
+                       cairo_region_t *region)
+{
+    EelCanvasGroup *group;
+    GList *list;
+    SdeGroupDraw draw = { cr, region };
+    cairo_rectangle_int_t extents;
+
+    group = EEL_CANVAS_GROUP (item);
+
+    /* SDE: only the rows of the repainted area (CANVAS_ROWS) */
+    cairo_region_get_extents (region, &extents);
+    if (sde_rows_visit (group, extents.y - 2, extents.y + extents.height + 2, sde_group_draw_child, &draw))
+        return;
+    for (list = group->item_list; list; list = list->next)
+        sde_group_draw_child (list->data, &draw);
+}
+
+/* Point handler for canvas groups */
+typedef struct
+{
+    EelCanvasItem *item;
+    int x1, y1, x2, y2, cx, cy;
+    double gx, gy, best;
+    EelCanvasItem **actual_item;
+} SdeGroupPoint;
+
+static void
+sde_group_point_child (EelCanvasItem *child, gpointer data)
+{
+    SdeGroupPoint *p = data;
+    EelCanvasItem *point_item;
+    double dist = 0.0;
+    int has_point;
+
+    if ((child->x1 > p->x2) || (child->y1 > p->y2) || (child->x2 < p->x1) || (child->y2 < p->y1))
+        return;
+
+    point_item = NULL; /* cater for incomplete item implementations */
+
+    if ((child->flags & EEL_CANVAS_ITEM_MAPPED)
+            && EEL_CANVAS_ITEM_GET_CLASS (child)->point)
+    {
+        dist = eel_canvas_item_invoke_point (child, p->gx, p->gy, p->cx, p->cy, &point_item);
+        has_point = TRUE;
+    }
+    else
+        has_point = FALSE;
+
+    if (has_point
+            && point_item
+            && ((int) (dist * p->item->canvas->pixels_per_unit + 0.5)
+                <= p->item->canvas->close_enough))
+    {
+        p->best = dist;
+        *p->actual_item = point_item;
+    }
+}
+
+static double
+eel_canvas_group_point (EelCanvasItem *item, double x, double y, int cx, int cy,
+                        EelCanvasItem **actual_item)
+{
+    EelCanvasGroup *group;
+    GList *list;
+    SdeGroupPoint p;
+
+    group = EEL_CANVAS_GROUP (item);
+
+    p.item = item;
+    p.x1 = cx - item->canvas->close_enough;
+    p.y1 = cy - item->canvas->close_enough;
+    p.x2 = cx + item->canvas->close_enough;
+    p.y2 = cy + item->canvas->close_enough;
+    p.cx = cx;
+    p.cy = cy;
+    p.best = 0.0;
+    p.actual_item = actual_item;
+    *actual_item = NULL;
+
+    p.gx = x - group->xpos;
+    p.gy = y - group->ypos;
+
+    /* SDE: only the rows under the pointer (CANVAS_ROWS) */
+    if (!sde_rows_visit (group, p.y1 - 1, p.y2 + 1, sde_group_point_child, &p))
+        for (list = group->item_list; list; list = list->next)
+            sde_group_point_child (list->data, &p);
+
+    return p.best;
+}
+
+'''
+
+
+def liria_canvas_rows(staged):
+    """0.2.0 Alpha 3: the icon and compact views find the icon under the
+    pointer and the icons to repaint by rows of the canvas (CANVAS_ROWS)
+    instead of asking all icons of the folder on every pointer motion."""
+    header = staged / "eel/eel-canvas.h"
+    edit_once(header, "        /* Children of the group */\n        GList *item_list;\n        GList *item_list_end;\n    };\n",
+              "        /* Children of the group */\n        GList *item_list;\n        GList *item_list_end;\n\n"
+              "        /* SDE: the children by rows of the canvas (eel-canvas.c) */\n        gpointer sde_rows;\n    };\n")
+    canvas = staged / "eel/eel-canvas.c"
+    edit_once(canvas, "static void redraw_and_repick_if_mapped (EelCanvasItem *item);\n",
+              "static void redraw_and_repick_if_mapped (EelCanvasItem *item);\n"
+              "static void sde_rows_invalidate         (EelCanvasGroup *group);\n"
+              "static void sde_rows_restacked          (EelCanvasGroup *group,\n"
+              "        EelCanvasItem  *child,\n        gboolean        to_top);\n")
+    # Restacking: put_item_after () is behind raise, lower and send_behind
+    # (the icon under the pointer is raised to the top of its group).
+    edit_once(canvas, "    EelCanvasGroup *parent;\n\n    if (link == before)\n        return FALSE;\n\n"
+              "    parent = EEL_CANVAS_GROUP (EEL_CANVAS_ITEM (link->data)->parent);\n",
+              "    EelCanvasGroup *parent;\n    gboolean to_top;\n\n    if (link == before)\n        return FALSE;\n\n"
+              "    parent = EEL_CANVAS_GROUP (EEL_CANVAS_ITEM (link->data)->parent);\n"
+              "    to_top = before != NULL && before == parent->item_list_end;\n")
+    edit_once(canvas, "            parent->item_list_end = link;\n    }\n    return TRUE;\n}\n",
+              "            parent->item_list_end = link;\n    }\n"
+              "    sde_rows_restacked (parent, link->data, to_top);\n    return TRUE;\n}\n")
+    edit_once(canvas, "/* Destroy handler for canvas groups */\n", CANVAS_ROWS + "/* Destroy handler for canvas groups */\n")
+    edit_once(canvas, """        eel_canvas_item_destroy (child);
+    }
+
+    if (EEL_CANVAS_ITEM_CLASS (group_parent_class)->destroy)""", """        eel_canvas_item_destroy (child);
+    }
+    sde_rows_free (group);
+
+    if (EEL_CANVAS_ITEM_CLASS (group_parent_class)->destroy)""")
+    edit_once(canvas, """        i = list->data;
+
+        eel_canvas_item_invoke_update (i, i2w_dx + group->xpos, i2w_dy + group->ypos, flags);
+""", """        double y1, y2;
+
+        i = list->data;
+        y1 = i->y1;
+        y2 = i->y2;
+
+        eel_canvas_item_invoke_update (i, i2w_dx + group->xpos, i2w_dy + group->ypos, flags);
+        if (i->y1 != y1 || i->y2 != y2)
+            sde_rows_invalidate (group); /* SDE: CANVAS_ROWS */
+""")
+    replace_between(canvas, "/* Draw handler for canvas groups */\n", "void\neel_canvas_group_translate (",
+                    CANVAS_GROUP_DRAW_POINT)
+    edit_once(canvas, """        group->item_list_end = g_list_append (group->item_list_end, item)->next;
+""", """        group->item_list_end = g_list_append (group->item_list_end, item)->next;
+    sde_rows_invalidate (group);
+""")
+    edit_once(canvas, """    g_return_if_fail (EEL_IS_CANVAS_GROUP (group));
+    g_return_if_fail (EEL_IS_CANVAS_ITEM (item));
+
+    for (children = group->item_list; children; children = children->next)""", """    g_return_if_fail (EEL_IS_CANVAS_GROUP (group));
+    g_return_if_fail (EEL_IS_CANVAS_ITEM (item));
+
+    sde_rows_invalidate (group);
+    for (children = group->item_list; children; children = children->next)""")
+
+
+def liria_hover(staged):
+    """0.2.0 Alpha 3: Liria follows the pointer smoothly. A QA recorder
+    (src/liria-sde-qa.c, LIRIA_SDE_QA_FRAMES=FILE) gives tools/liria-perf.py
+    the frame and pointer event timings of its hover scenarios."""
+    edit_once(staged / "src/Makefile.am", "\tliria-sde-ribbon.h \\\n",
+              "\tliria-sde-ribbon.h \\\n\tliria-sde-qa.c \\\n\tliria-sde-qa.h \\\n")
+    liria_canvas_rows(staged)
+    # Every change of the active pane added one more style provider to the
+    # location entry (and leaked its colour string), so working out the
+    # entry's style took a little longer each time.
+    replace_between(staged / "src/liria-location-bar.c", "static void\noverride_background_color (GtkWidget *widget,",
+                    "/* change background color based on activity state */", r'''static void
+override_background_color (GtkWidget *widget,
+                           GdkRGBA   *rgba)
+{
+    gchar          *color, *css;
+    GtkCssProvider *provider;
+
+    /* SDE (0.2.0 Alpha 3): one provider per entry, loaded again. */
+    provider = g_object_get_data (G_OBJECT (widget), "sde-background-provider");
+    if (provider == NULL)
+    {
+        provider = gtk_css_provider_new ();
+        gtk_style_context_add_provider (gtk_widget_get_style_context (widget),
+                                        GTK_STYLE_PROVIDER (provider),
+                                        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_set_data_full (G_OBJECT (widget), "sde-background-provider", provider, g_object_unref);
+    }
+    color = gdk_rgba_to_string (rgba);
+    css = g_strdup_printf ("entry { background-color: %s;}", color);
+    gtk_css_provider_load_from_data (provider, css, -1, NULL);
+    g_free (css);
+    g_free (color);
+}
+
+''')
+
+
+def liria_network(staged):
+    """0.2.0 Alpha 3: network places from the location bar
+    (src/liria-sde-address.c, src/liria-sde-network.c): smb://,
+    \\\\server\\share, smb:, an IP address, a computer name or localhost
+    (its Windows shares, the other protocols offered), sftp://, ftp://,
+    nfs://, dav(s)://. Without the protocol (gvfs-backends) Liria says what
+    the administrator has to install. Liria's own sign-in dialog (Remember
+    when a keyring runs), recent servers in ~/.config/sde/liria-servers,
+    failures explained. Liria sets nothing about the protocols: GVfs,
+    smb.conf and the ssh configuration (known_hosts) decide."""
+    src = staged / "src"
+    edit_once(src / "Makefile.am", "\tliria-sde-qa.h \\\n",
+              "\tliria-sde-qa.h \\\n\tliria-sde-address.c \\\n\tliria-sde-address.h \\\n"
+              "\tliria-sde-network.c \\\n\tliria-sde-network.h \\\n")
+    entry = src / "liria-location-entry.c"
+    edit_once(entry, '#include "liria-location-entry.h"\n',
+              '#include "liria-location-entry.h"\n#include "liria-sde-network.h"\n')
+    edit_once(entry, "    loc_entry = LIRIA_LOCATION_ENTRY (entry);\n    entry_text = gtk_entry_get_text (entry);\n",
+              "    loc_entry = LIRIA_LOCATION_ENTRY (entry);\n\n"
+              "    /* SDE: network places, or a message about what is missing */\n"
+              "    if (liria_sde_network_entry_activate (entry, loc_entry->details->current_directory))\n"
+              "        return;\n"
+              "    entry_text = gtk_entry_get_text (entry);\n")
+    edit_once(entry, "    liria_entry_set_special_tab_handling (LIRIA_ENTRY (entry), TRUE);\n",
+              "    liria_entry_set_special_tab_handling (LIRIA_ENTRY (entry), TRUE);\n"
+              "    liria_sde_network_setup_entry (GTK_ENTRY (entry)); /* SDE: suggestions */\n")
+    views = src / "liria-window-manage-views.c"
+    edit_once(views, '#include "liria-window-manage-views.h"\n',
+              '#include "liria-window-manage-views.h"\n#include "liria-sde-network.h"\n')
+    # The sign-in of a location that is not mounted yet: Liria's dialog.
+    edit_once(views, """        mount_op = gtk_mount_operation_new (GTK_WINDOW (window));
+        g_mount_operation_set_password_save (mount_op, G_PASSWORD_SAVE_FOR_SESSION);
+        location = liria_file_get_location (file);
+""", """        location = liria_file_get_location (file);
+        /* SDE: Liria's sign-in dialog (liria-sde-network.c) */
+        mount_op = liria_sde_network_mount_operation_new (GTK_WINDOW (window), location);
+""")
+    edit_once(views, """        create_content_view (slot, view_id);
+        g_free (view_id);
+
+        report_callback (slot, NULL);
+""", """        create_content_view (slot, view_id);
+        g_free (view_id);
+
+        report_callback (slot, NULL);
+        liria_sde_network_location_shown (location); /* SDE: recent servers */
+""")
+    edit_once(views, """    char *scheme_string;
+
+    /* Some sort of failure occurred. How 'bout we tell the user? */
+""", """    char *scheme_string;
+
+    /* SDE: network places say what went wrong and offer other protocols */
+    if (liria_sde_network_show_failure (GTK_WIDGET (window), location, error))
+        return;
+
+    /* Some sort of failure occurred. How 'bout we tell the user? */
+""")
+    # GLib 2.76 and later report every read of an attribute that the file
+    # system did not give, and GVfs backends (shares of a server, the
+    # network, SSH) leave some out: read them as what they are, optional.
+    private = staged / "libliria-private"
+    file_c = private / "liria-file.c"
+    for getter, attribute in (("g_file_info_get_is_symlink (info)", "boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_SYMLINK)"),
+                              ("g_file_info_get_is_hidden (info)", "boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN)"),
+                              ("g_file_info_get_is_backup (info)", "boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_BACKUP)")):
+        edit_once(file_c, "= %s;" % getter, "= g_file_info_get_attribute_%s; /* SDE */" % attribute)
+    edit_all(file_c, "mime_type = g_file_info_get_content_type (info);",
+             "mime_type = g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE); /* SDE */")
+    edit_once(file_c, """						  g_file_info_get_display_name (info),
+						  g_file_info_get_edit_name (info),""", """						  g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME),
+						  g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_STANDARD_EDIT_NAME),""")
+    edit_once(file_c, "	file_type = g_file_info_get_file_type (info);\n",
+              "	file_type = (GFileType) g_file_info_get_attribute_uint32 (info, G_FILE_ATTRIBUTE_STANDARD_TYPE); /* SDE */\n")
+    edit_once(file_c, """	icon = g_file_info_get_icon (info);
+	if (!g_icon_equal (icon, file->details->icon)) {
+		changed = TRUE;
+
+		if (file->details->icon) {
+			g_object_unref (file->details->icon);
+		}
+		file->details->icon = g_object_ref (icon);
+	}""", """	icon = G_ICON (g_file_info_get_attribute_object (info, G_FILE_ATTRIBUTE_STANDARD_ICON)); /* SDE */
+	if (!g_icon_equal (icon, file->details->icon)) {
+		changed = TRUE;
+
+		if (file->details->icon) {
+			g_object_unref (file->details->icon);
+		}
+		file->details->icon = icon != NULL ? g_object_ref (icon) : NULL;
+	}""")
+    edit_once(file_c, "			    g_file_info_get_display_name (info) == NULL) {",
+              "			    !g_file_info_has_attribute (info, G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME)) {")
+    loader = private / "liria-directory-async.c"
+    edit_once(loader, "    if (!show_hidden_files && g_file_info_get_is_hidden (info))\n",
+              "    if (!show_hidden_files &&\n"
+              "        g_file_info_get_attribute_boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN)) /* SDE */\n")
+    for name in ("file_info", "info"):
+        edit_once(loader, "= g_file_info_get_content_type (%s)) != NULL)" % name,
+                  "= g_file_info_get_attribute_string (%s, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE)) != NULL)" % name)
+    # Connect to Server follows the same rules: Windows shares first and
+    # the default (it was anonymous FTP), the encrypted protocols before
+    # the plain-text ones, NFS, what is missing without gvfs-backends, and
+    # "Remember" only where a keyring can keep the password.
+    dialog = src / "liria-connect-server-dialog.c"
+    edit_once(dialog, '#include "liria-window.h"\n', '#include "liria-window.h"\n#include "liria-sde-address.h"\n')
+    # The standalone liria-connect-server program builds the dialog too.
+    edit_once(src / "Makefile.am", "\tliria-connect-server-operation.h     \\\n\t$(NULL)\n",
+              "\tliria-connect-server-operation.h     \\\n\tliria-sde-address.c \\\n\tliria-sde-address.h \\\n\t$(NULL)\n")
+    replace_between(dialog, "static struct MethodInfo methods[] =\n", "/* To get around non constant gettext strings */",
+                    """static struct MethodInfo methods[] =
+{
+    /* SDE (0.2.0 Alpha 3) */
+    { "smb",  DEFAULT_METHOD | SHOW_SHARE | SHOW_USER | SHOW_DOMAIN, 0 },
+    { "sftp",  SHOW_PORT | SHOW_USER, 22 },
+    { "davs", SHOW_PORT | SHOW_USER, 443 },
+    { "dav",  SHOW_PORT | SHOW_USER, 80 },
+    { "ftp",  SHOW_PORT | SHOW_USER, 21 },
+    { "ftp",  IS_ANONYMOUS | SHOW_PORT, 21 },
+    { "nfs",  SHOW_PORT, 2049 },
+    { "afp", SHOW_SHARE | SHOW_USER, 548 },
+};
+
+""")
+    edit_once(dialog, """    } else if (strcmp (meth->scheme, "smb") == 0) {
+        return _("Windows share");""", """    } else if (strcmp (meth->scheme, "smb") == 0) {
+        return _("Windows share");
+    } else if (strcmp (meth->scheme, "nfs") == 0) {
+        return _("NFS (Unix network share)");""")
+    edit_once(dialog, """	label = gtk_label_new (_("Can't load the supported server method list.\\n"
+				 "Please check your GVfs installation."));""",
+              """	label = gtk_label_new (_("Connecting to servers needs the package gvfs-backends.\\n"
+				 "Ask your administrator to install it."));""")
+    edit_once(dialog, "    bind_visibility (dialog, dialog->details->password_entry, checkbox);\n",
+              "    /* SDE: a password is remembered in a keyring only */\n"
+              "    if (liria_sde_keyring_available ())\n"
+              "        bind_visibility (dialog, dialog->details->password_entry, checkbox);\n"
+              "    else\n"
+              "        gtk_widget_set_no_show_all (checkbox, TRUE);\n")
 
 
 def liria_ribbon(staged):

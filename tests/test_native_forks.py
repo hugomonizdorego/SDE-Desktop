@@ -663,6 +663,153 @@ class LiriaRubberBandCssTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+class LiriaAlpha3Test(unittest.TestCase):
+    """0.2.0 Alpha 3: Liria follows the pointer smoothly (the icons of a
+    folder by rows of the canvas, only the changed rows of the sidebar and
+    of the tabs repainted, no hover fades) and opens network places typed
+    into the location bar (src/liria-sde-address.c, liria-sde-network.c)."""
+
+    def setUp(self):
+        import sys
+        self.root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(self.root / 'suite'))
+        import redesign
+        self.redesign = redesign
+        self.overlay = self.root / 'suite/overlays/liria'
+
+    def run_smoke(self, script, *options):
+        import os
+        import subprocess
+        import sys
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        command = [sys.executable, str(self.root / script), '--prefix', prefix, *options]
+        if os.environ.get('SDE_THEMES'):
+            command += ['--themes', os.environ['SDE_THEMES']]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=900)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_address_unit(self):
+        """Typed addresses (Windows paths, URIs, IP addresses, computer
+        names), passwords kept out of URIs, the other protocols of a
+        computer and the recent servers file."""
+        import shutil
+        import subprocess
+        import tempfile
+        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
+                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
+            self.skipTest('gcc and gio-2.0 development files are needed')
+        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
+                               check=True).stdout.split()
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / 'test-liria-sde-address'
+            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
+                            str(self.overlay / 'sde-tools/test-liria-sde-address.c')] + flags, check=True)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name in ('parse', 'errors', 'other-protocols', 'servers'):
+                self.assertIn('/liria/address/' + name, result.stdout)
+        self.assertIn('test-liria-sde-address', (self.overlay / 'sde-tools/Makefile.am').read_text())
+
+    def test_canvas_rows_recipe(self):
+        """The icon views look up the icon under the pointer by rows of the
+        canvas: every change of a group's children or of their rows keeps
+        the rows right (eel/eel-canvas.c)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            (staged / 'eel').mkdir()
+            (staged / 'eel/eel-canvas.h').write_text(
+                '    struct _EelCanvasGroup {\n        /* Children of the group */\n        GList *item_list;\n'
+                '        GList *item_list_end;\n    };\n')
+            (staged / 'eel/eel-canvas.c').write_text(
+                'static void redraw_and_repick_if_mapped (EelCanvasItem *item);\n'
+                'static gboolean\nput_item_after (GList *link, GList *before)\n{\n'
+                '    EelCanvasGroup *parent;\n\n    if (link == before)\n        return FALSE;\n\n'
+                '    parent = EEL_CANVAS_GROUP (EEL_CANVAS_ITEM (link->data)->parent);\n'
+                '        if (!link->next)\n            parent->item_list_end = link;\n    }\n    return TRUE;\n}\n'
+                '/* Destroy handler for canvas groups */\n'
+                '        eel_canvas_item_destroy (child);\n    }\n\n'
+                '    if (EEL_CANVAS_ITEM_CLASS (group_parent_class)->destroy)\n'
+                '        i = list->data;\n\n'
+                '        eel_canvas_item_invoke_update (i, i2w_dx + group->xpos, i2w_dy + group->ypos, flags);\n'
+                '/* Draw handler for canvas groups */\nOLD DRAW AND POINT\n'
+                'void\neel_canvas_group_translate (EelCanvasGroup *group)\n'
+                '        group->item_list_end = g_list_append (group->item_list_end, item)->next;\n'
+                '    g_return_if_fail (EEL_IS_CANVAS_GROUP (group));\n'
+                '    g_return_if_fail (EEL_IS_CANVAS_ITEM (item));\n\n'
+                '    for (children = group->item_list; children; children = children->next)\n')
+            self.redesign.liria_canvas_rows(staged)
+            self.assertIn('gpointer sde_rows;', (staged / 'eel/eel-canvas.h').read_text())
+            canvas = (staged / 'eel/eel-canvas.c').read_text()
+            self.assertNotIn('OLD DRAW AND POINT', canvas)
+            for needle in ('to_top = before != NULL && before == parent->item_list_end;',
+                           'sde_rows_restacked (parent, link->data, to_top);', 'sde_rows_free (group);',
+                           'sde_rows_invalidate (group); /* SDE: CANVAS_ROWS */', 'sde_rows_visit',
+                           'eel_canvas_group_point', 'eel_canvas_group_draw'):
+                self.assertIn(needle, canvas)
+            # Added and removed children change the rows.
+            inserted = self.redesign.CANVAS_ROWS + self.redesign.CANVAS_GROUP_DRAW_POINT
+            self.assertEqual(canvas.count('    sde_rows_invalidate (group);\n'),
+                             inserted.count('    sde_rows_invalidate (group);\n') + 2)
+        # Small folders keep the plain loop; rows are built when needed.
+        for needle in ('SDE_ROW_CHILDREN 64', 'sde_rows_get', 'SDE_ROW_PIXELS'):
+            self.assertIn(needle, self.redesign.CANVAS_ROWS)
+        self.assertIn('liria_hover(staged)', (self.root / 'suite/redesign.py').read_text())
+
+    def test_hover_repaints_only_what_changes(self):
+        helpers = self.redesign.SIDEBAR_PINNED_HELPERS
+        for needle in ('sde_sidebar_queue_row (GTK_TREE_VIEW (tree_view), old);',
+                       'gtk_tree_view_get_background_area', 'gtk_tree_path_compare (path, old) == 0'):
+            self.assertIn(needle, helpers)
+        css = (self.overlay / 'data/liria-sde.css').read_text()
+        # No hover fades on Liria's own buttons and tabs: GTK 3 works out
+        # the style again on every frame of a fade.
+        for selector in ('.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton {',
+                         '.liria-navigation-window toolbar.sde-header .sde-view-switcher > button {',
+                         'button.sde-ribbon-tab {', 'button.sde-ribbon-button {', 'button.sde-card {',
+                         '.liria-notebook > header tab {', '.liria-notebook > header tab > box {',
+                         '.liria-tab-close-button {', 'button.sde-home-section-button {'):
+            start = css.index(selector)
+            self.assertIn('transition: none;', css[start:css.index('}', start)], selector)
+        recorder = (self.overlay / 'src/liria-sde-qa.c').read_text()
+        for needle in ('LIRIA_SDE_QA_FRAMES', 'gdk_event_handler_set', 'SIGUSR2'):
+            self.assertIn(needle, recorder)
+        perf = (self.root / 'tools/liria-perf.py').read_text()
+        for name in ('hover-icons-10k', 'hover-sidebar', 'hover-tabs', 'hover-ribbon', 'XTestFakeMotionEvent'):
+            self.assertIn(name, perf)
+
+    def test_network_places(self):
+        network = (self.overlay / 'src/liria-sde-network.c').read_text()
+        for needle in ('g_vfs_get_supported_uri_schemes', 'need the package gvfs-backends.', 'gtk_entry_completion_new',
+                       '"ask-password"', 'liria_sde_keyring_available', 'LIRIA_SDE_QA_NETWORK',
+                       'liria_sde_network_show_failure'):
+            self.assertIn(needle, network)
+        # A password is kept in the keyring only when asked for and when a
+        # keyring runs; Liria answers no host key question itself.
+        self.assertEqual(network.count('G_PASSWORD_SAVE_PERMANENTLY'), 1)
+        self.assertNotIn('"ask-question"', network)
+        sources = network + (self.overlay / 'src/liria-sde-address.c').read_text()
+        for setting in ('client min protocol', 'ntlm auth', 'lanman', 'StrictHostKeyChecking', 'NT1'):
+            self.assertNotIn(setting, sources)
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        for needle in ('liria_network(staged)', 'liria_sde_network_entry_activate (entry,',
+                       'liria_sde_network_mount_operation_new (GTK_WINDOW (window), location)',
+                       'liria_sde_network_show_failure (GTK_WIDGET (window), location, error)'):
+            self.assertIn(needle, recipe)
+
+    def test_network_smoke(self):
+        """The location bar on Xvfb (tools/liria-network-smoke.py) when a
+        built Liria is named by SDE_LIRIA_PREFIX; with GVfs and its
+        backends installed it also opens Windows shares."""
+        script = (self.root / 'tools/liria-network-smoke.py').read_text()
+        self.assertIn('without the protocol the message names gvfs-backends', script)
+        self.run_smoke('tools/liria-network-smoke.py')
+
+
 class LiriaAlpha2Test(unittest.TestCase):
     """0.2.0 Alpha 2: Liria's file operations window in the design of SDE's
     copy and move dialog, on SDE's own model (src/common/transfer_model.h),

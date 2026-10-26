@@ -23,13 +23,16 @@ libliria_sde_tools_la_LIBADD = \
 extensioninfodir = $(datadir)/liria/extensions
 extensioninfo_DATA = libliria-sde-tools.so.liria-extension
 
-# Unit tests of the Quick access pin list (parser, writer, edits) and of
-# the preferences and decisions behind the ribbon, Home view and drops.
-check_PROGRAMS = test-liria-sde-pins test-liria-sde-model
+# Unit tests of the Quick access pin list (parser, writer, edits), of
+# the preferences and decisions behind the ribbon, Home view and drops,
+# and of the network places typed in the location bar (0.2.0 Alpha 3).
+check_PROGRAMS = test-liria-sde-pins test-liria-sde-model test-liria-sde-address
 test_liria_sde_pins_SOURCES = test-liria-sde-pins.c
 test_liria_sde_pins_LDADD = $(LIBLIRIA_EXTENSION_LIBS)
 test_liria_sde_model_SOURCES = test-liria-sde-model.c
 test_liria_sde_model_LDADD = $(LIBLIRIA_EXTENSION_LIBS)
-TESTS = test-liria-sde-pins test-liria-sde-model
+test_liria_sde_address_SOURCES = test-liria-sde-address.c
+test_liria_sde_address_LDADD = $(LIBLIRIA_EXTENSION_LIBS)
+TESTS = test-liria-sde-pins test-liria-sde-model test-liria-sde-address
 
 EXTRA_DIST = $(extensioninfo_DATA)

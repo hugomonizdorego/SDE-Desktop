@@ -237,6 +237,128 @@ Since 0.2.0 Alpha 2:
   motion, a complete copy byte for byte and a safe copy's finished state
   (`LIRIA_SDE_QA_PROGRESS=FILE` writes what the window shows).
 
+Since 0.2.0 Alpha 3:
+
+* **Smooth under the pointer.** Parts of the window stuttered or lagged
+  behind the pointer. `tools/liria-perf.py --hover --prefix <built
+  prefix> [--size 1920x1080 --scale 150] [--repeat 3]` moves the pointer
+  like a hand (XTest, 100 motion events a second) over the icon, list and
+  compact views of 1 000 and 10 000 files, the sidebar, the ribbon and its
+  tooltips, the breadcrumbs of a deep folder, the header buttons, four
+  tabs, the status bar and the Home cards, and measures Liria's and the X
+  server's CPU use while the pointer moves, the frames drawn, how long the
+  slowest frames took to lay out and paint and the area repainted
+  (`LIRIA_SDE_QA_FRAMES=FILE`, `src/liria-sde-qa.c`, records every frame
+  and pointer event; SIGUSR2 writes where the parts of the window are).
+  The causes, found with it, `perf` and GTK's frame clock:
+  * the sidebar repainted all its rows on every pointer motion (to show
+    the pin of the pinned row under the pointer); now only the two rows
+    that gain or lose the pin, when the pointer reaches another row;
+  * a tab under the pointer faded in the theme's hover colour and the
+    close button's icon colour, and every step of the fade laid out the
+    whole window again and repainted the tabs and the page; the tabs' own
+    style has no fades and shows the hover inside the tab;
+  * the SDE themes fade the hover of a button in over 75 ms, and GTK 3
+    works out the button's style again on every frame of the fade (2-4 ms
+    each); Liria's own buttons (header, breadcrumbs, ribbon, Home) show
+    the hover at once;
+  * the icon and compact views asked every icon of the folder whether it
+    is under the pointer, on every motion; the canvas keeps its icons by
+    rows (`CANVAS_ROWS` in `suite/redesign.py`), so a motion asks the
+    icons of one row only;
+  * every change of the active pane added one more style provider to the
+    location entry.
+
+  Median of three runs at 1920x1080 and 150 % (SDE Graphite Light,
+  Papirus, Xvfb on a shared virtual machine; runs of 0.2.0 Alpha 2 and of
+  this version alternated): the CPU use of Liria and of the X server in
+  per cent of one core while the pointer moves, the frames drawn and the
+  area they painted, and how long Liria took for the slowest 5 % of the
+  pointer events.
+
+  | Pointer over | Before | After |
+  |---|---|---|
+  | The sidebar | 40 % + 14 % X, 126 frames, 27 Mpx | 15 % + 4 % X, 40 frames, 0.6 Mpx |
+  | Four tabs | 12 % + 16 % X, 72 frames, 81 Mpx | 6 % + 2 % X, 27 frames, 0.2 Mpx |
+  | Icon view, 10 000 files | 15 %, events 2.7 ms | 6 %, events 0.5 ms |
+  | Compact view, 10 000 files | 16 %, events 2.7 ms | 8 %, events 0.8 ms |
+  | Icon and compact views, 1 000 files | 6.5-7 % | 5 % |
+  | Breadcrumbs of a deep folder | 9 %, 119 frames | 5 %, 36 frames |
+  | Ribbon | 5.6 %, 131 frames | 3.8 %, 24 frames |
+  | Header buttons | 5.5 %, 70 frames | 4.5 %, 43 frames |
+  | Home cards | 6.3 %, 87 frames, 3.1 Mpx | 4.7 %, 19 frames, 0.6 Mpx |
+  | List view, 1 000 or 10 000 files | 13 % | 13 % |
+
+  Still at GTK's own cost: GtkTreeView paints a whole row whenever the
+  pointer reaches another row, which is the list view's 13 % and most of
+  the sidebar's, and the canvas of the icon views still updates every icon
+  of the folder when one changes (`eel_canvas_group_update ()`).
+
+* **Network places from the location bar.** Ctrl+L (or the edit button
+  of the path) takes, besides paths, `\\server\share` and
+  `smb://server/share` (written as in Windows, with spaces, `DOMAIN\user@`),
+  an IP address or a computer name such as `192.168.1.10`, `nas`,
+  `localhost` or `fe80::1` (its Windows shares; a name that is also a
+  file or folder in the current folder opens that), `sftp://user@host:port/path`
+  (and `ssh://`), `ftp://`, `ftps://`, `nfs://`, `dav://`, `davs://`
+  (and `webdav(s)://`), `afp://`, and `smb:` or `\\` for the Windows
+  network (`src/liria-sde-address.c`, unit test
+  `sde-tools/test-liria-sde-address.c`). What is not a location
+  (`C:\Users`, `sftp://` without a server, a port out of range) gets a
+  message under the entry that says why, and the text stays to be
+  corrected. While typing, Liria suggests the recent servers
+  (`~/.config/sde/liria-servers`: the last 30 servers and shares opened,
+  mode 0600, never a password) and, for a computer's name or address, its
+  Windows shares and then the other protocols that this computer can open
+  (SSH, WebDAV over HTTPS, NFS, WebDAV, FTP; `src/liria-sde-network.c`).
+  * **What is installed decides.** Liria opens what GVfs can open here
+    (`g_vfs_get_supported_uri_schemes ()`); without gvfs-backends (or
+    GVfs) the message names the package to ask the administrator for
+    ("Windows shares need the package gvfs-backends. It is not installed
+    on this computer; ask your administrator to install it."), in the
+    location bar and in Connect to Server.
+  * **Sign in.** A server that asks for a password gets Liria's own
+    dialog ("Sign in to “share” on nas"): the user name (the login name is
+    suggested, never "guest"), the domain (`DOMAIN\user` is split as in
+    Windows), the password with a button that shows it, "As a guest" when
+    the server allows it, a warning for FTP and WebDAV without HTTPS
+    (passwords travel unencrypted) and, after a wrong password, "not
+    accepted, try again". "Remember the password in the keyring" is
+    offered only when a Secret Service (gnome-keyring, KeePassXC) runs or
+    can be started on the session bus; otherwise the dialog says that
+    passwords can be remembered when a keyring runs. A password typed in
+    the address (`smb://anna:secret@nas/`) is used once and taken out of
+    the address. An unknown SSH host key is GVfs's question (Log In
+    Anyway or Cancel Login, Cancel by default) and goes to the user's
+    `~/.ssh/known_hosts`; ssh refuses a changed key.
+  * **Failures explained.** No such computer, access denied, no answer, no
+    such share or folder and the Windows network that cannot be listed (it
+    needs SMB1) each have their own message. When the Windows shares of a
+    typed computer cannot be opened, the message lists the other ways to
+    reach it, encrypted ones first.
+  * **The system's settings stay in charge.** Liria sets nothing about
+    the protocols: Samba's `smb.conf` (by default SMB2 or later and NTLMv2,
+    no plain-text passwords), the ssh configuration and known hosts and
+    GVfs decide, so there is no fallback to SMB1, NTLMv1 or plain-text
+    logins, and a password is kept only in the keyring and only when the
+    user asks. Connect to Server lists Windows shares first, then SSH,
+    WebDAV (HTTPS), WebDAV, FTP, public FTP, NFS and AFP, offers Remember
+    only with a keyring and names gvfs-backends when it is missing.
+  * `tools/liria-network-smoke.py --prefix <built prefix> [--screenshots
+    DIR]` types into the location bar on Xvfb like a user and checks what
+    Liria shows (`LIRIA_SDE_QA_NETWORK=FILE`): without GVfs the messages;
+    with `--smb smb://server/share --user U --password P` the sign-in
+    dialog and the share opened and remembered without its password,
+    `--remember` with a keyring; `--refused HOST` the failure and the
+    protocols offered; `--sftp sftp://host:port/ --accept-host-key` the
+    host key question. It passes against a Samba share and sshd on the
+    same computer (`tests/test_native_forks.py` `LiriaAlpha3Test` runs it
+    when `SDE_LIRIA_PREFIX` names a built Liria).
+  * GLib 2.76 and later warn about file attributes that are read without
+    being there; Liria read some (hidden, backup, symbolic link, display
+    name, icon) of files on network locations that do not have them, and
+    now reads them only when they are there.
+
 ## SDE Power and SDE Screen Lock (alpha16)
 
 The former power-manager and screen-saver forks were replaced in alpha16 by
@@ -261,7 +383,9 @@ to `sde-lock`) remain as small compatibility scripts.
 New GTK processes follow SDE light/dark settings, respecting an existing
 `GTK_THEME` or the system-theme option. SDE-specific MIME defaults preserve user
 overrides. Xanara (native since alpha15) opens, annotates and fills in PDF files with
-poppler; page operations use qpdf when it is installed.
+poppler; since 0.2 Alpha 3 its own PDF engine (libqpdf, HarfBuzz, FreeType) edits the
+text and pictures of the pages in place and does every page operation itself, without
+running any other program (docs/XANARA.md).
 
 The panel defaults to a full-width square-edged rectangle. Floating and short
 styles remain available. Existing saved panel choices are retained. Control Center → Applications shows short clickable source names and complete installed copyright

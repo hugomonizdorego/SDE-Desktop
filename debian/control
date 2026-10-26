@@ -105,7 +105,13 @@ Build-Depends: debhelper-compat (= 13),
                uthash-dev,
                gpg,
                gpg-agent,
-               gpgv
+               gpgv,
+               libqpdf-dev (>= 11),
+               libharfbuzz-dev,
+               libfreetype-dev,
+               libcups2-dev,
+               libtesseract-dev,
+               libleptonica-dev
 Standards-Version: 4.6.2
 Homepage: https://github.com/hugomonizdorego/SDE-Desktop
 Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
@@ -146,7 +152,7 @@ Depends: ${shlibs:Depends},
          xdg-user-dirs,
          fonts-dejavu-core | fonts-noto-core,
          gpgv | sqv
-Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
+Recommends: papirus-icon-theme | adwaita-icon-theme, cups-client, tesseract-ocr-eng,
             accountsservice,
             network-manager,
             bluez,
@@ -160,7 +166,7 @@ Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             lightdm | x-display-manager,
             libfuse2t64 | libfuse2,
             fuse3 | fuse
-Suggests: eduka-icons, unrar, hunspell, tesseract-ocr, ghostscript,
+Suggests: eduka-icons, unrar, hunspell,
           brightnessctl,
           ddcutil,
           network-manager-gnome,
@@ -245,7 +251,10 @@ Recommends: debion-desktop-base (>= ${source:Version}),
             network-manager-gnome,
             glib-networking,
             ca-certificates,
-            systemd-timesyncd | time-daemon
+            systemd-timesyncd | time-daemon,
+            gnome-keyring,
+            libpam-gnome-keyring
+Suggests: wsdd
 Description: Selviana Desktop Environment - full desktop (metapackage)
  One installation entry point for the complete Selviana Desktop Environment:
  the SDE session and applications, display server, login manager, network
