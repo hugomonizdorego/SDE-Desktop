@@ -280,7 +280,9 @@ sde_suggest_add (GtkListStore *store, const char *what, const char *uri)
 }
 
 /* Fills the suggestions for the text being typed: the protocols of a
- * computer (those GVfs can open here, Windows shares first), then the
+ * computer (those GVfs can open here, Windows shares first) when the text
+ * cannot be anything else (an IP address, localhost, user@host,
+ * host:port; a plain word may be a folder name being typed), then the
  * recent servers it may stand for. Nothing for paths. */
 static void
 sde_suggest_refresh (GtkEntry *entry, GtkListStore *store)
@@ -297,7 +299,7 @@ sde_suggest_refresh (GtkEntry *entry, GtkListStore *store)
         return;
     address = liria_sde_address_parse (text);
     log = g_string_new (NULL);
-    if (address->kind == LIRIA_SDE_ADDRESS_HOST)
+    if (address->kind == LIRIA_SDE_ADDRESS_HOST && !address->ambiguous)
     {
         const char *const *schemes = liria_sde_address_host_schemes ();
 
@@ -693,8 +695,11 @@ sde_ask_password (GMountOperation *op, const char *message, const char *default_
     gtk_grid_set_column_spacing (GTK_GRID (grid), 10);
     if (flags & G_ASK_PASSWORD_NEED_USERNAME)
     {
+        /* Windows shares propose "guest", which is the other choice. */
+        if (default_user == NULL || *default_user == '\0' || g_ascii_strcasecmp (default_user, "guest") == 0)
+            default_user = g_get_user_name ();
         s->user = sde_sign_in_row (grid, row++, _("_User name"), gtk_entry_new ());
-        gtk_entry_set_text (GTK_ENTRY (s->user), default_user != NULL ? default_user : g_get_user_name ());
+        gtk_entry_set_text (GTK_ENTRY (s->user), default_user);
     }
     if (flags & G_ASK_PASSWORD_NEED_DOMAIN)
     {

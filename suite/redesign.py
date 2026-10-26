@@ -1826,6 +1826,48 @@ def liria_network(staged):
 
     /* Some sort of failure occurred. How 'bout we tell the user? */
 """)
+    # GLib 2.76 and later report every read of an attribute that the file
+    # system did not give, and GVfs backends (shares of a server, the
+    # network, SSH) leave some out: read them as what they are, optional.
+    private = staged / "libliria-private"
+    file_c = private / "liria-file.c"
+    for getter, attribute in (("g_file_info_get_is_symlink (info)", "boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_SYMLINK)"),
+                              ("g_file_info_get_is_hidden (info)", "boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN)"),
+                              ("g_file_info_get_is_backup (info)", "boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_BACKUP)")):
+        edit_once(file_c, "= %s;" % getter, "= g_file_info_get_attribute_%s; /* SDE */" % attribute)
+    edit_all(file_c, "mime_type = g_file_info_get_content_type (info);",
+             "mime_type = g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE); /* SDE */")
+    edit_once(file_c, """						  g_file_info_get_display_name (info),
+						  g_file_info_get_edit_name (info),""", """						  g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME),
+						  g_file_info_get_attribute_string (info, G_FILE_ATTRIBUTE_STANDARD_EDIT_NAME),""")
+    edit_once(file_c, "	file_type = g_file_info_get_file_type (info);\n",
+              "	file_type = (GFileType) g_file_info_get_attribute_uint32 (info, G_FILE_ATTRIBUTE_STANDARD_TYPE); /* SDE */\n")
+    edit_once(file_c, """	icon = g_file_info_get_icon (info);
+	if (!g_icon_equal (icon, file->details->icon)) {
+		changed = TRUE;
+
+		if (file->details->icon) {
+			g_object_unref (file->details->icon);
+		}
+		file->details->icon = g_object_ref (icon);
+	}""", """	icon = G_ICON (g_file_info_get_attribute_object (info, G_FILE_ATTRIBUTE_STANDARD_ICON)); /* SDE */
+	if (!g_icon_equal (icon, file->details->icon)) {
+		changed = TRUE;
+
+		if (file->details->icon) {
+			g_object_unref (file->details->icon);
+		}
+		file->details->icon = icon != NULL ? g_object_ref (icon) : NULL;
+	}""")
+    edit_once(file_c, "			    g_file_info_get_display_name (info) == NULL) {",
+              "			    !g_file_info_has_attribute (info, G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME)) {")
+    loader = private / "liria-directory-async.c"
+    edit_once(loader, "    if (!show_hidden_files && g_file_info_get_is_hidden (info))\n",
+              "    if (!show_hidden_files &&\n"
+              "        g_file_info_get_attribute_boolean (info, G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN)) /* SDE */\n")
+    for name in ("file_info", "info"):
+        edit_once(loader, "= g_file_info_get_content_type (%s)) != NULL)" % name,
+                  "= g_file_info_get_attribute_string (%s, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE)) != NULL)" % name)
     # Connect to Server follows the same rules: Windows shares first and
     # the default (it was anonymous FTP), the encrypted protocols before
     # the plain-text ones, NFS, what is missing without gvfs-backends, and

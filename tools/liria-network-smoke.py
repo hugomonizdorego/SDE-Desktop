@@ -23,7 +23,7 @@ first in the recent servers, without the password. With --refused (a
 computer that has no Windows shares): typing its address explains the
 failure and offers the other protocols. With --sftp: an SSH location
 opens (unknown host keys are asked about by GVfs; --accept-host-key
-answers "Log In Anyway"). --bus ADDRESS uses a session bus that is already
+answers "Log In Anyway" and checks --known-hosts). --bus ADDRESS uses a session bus that is already
 running (one with GVfs services of a test installation). Exit status 0 =
 passed, 1 = failed, 77 = skipped (no Xvfb, xdotool or Liria).
 """
@@ -171,6 +171,7 @@ class Session:
 
     def shot(self, name):
         if self.args.screenshots and shutil.which("import"):
+            time.sleep(0.8)  # the message or dialog is drawn after it is reported
             self.args.screenshots.mkdir(parents=True, exist_ok=True)
             subprocess.run(["import", "-window", "root", str(self.args.screenshots / (name + ".png"))], env=self.env,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -276,18 +277,20 @@ def run(s):
         s.x("key", "Escape")
 
     if args.sftp:
-        questions = s.home / ".ssh/known_hosts"
+        questions = args.known_hosts or Path.home() / ".ssh/known_hosts"
+        known = questions.read_text() if questions.exists() else ""
         s.type_location(args.sftp)
         if args.accept_host_key:
             time.sleep(3)
             s.shot("09-host-key")
-            # GVfs asks about an unknown host key: "Log In Anyway" is the
-            # first button of GTK's question dialog.
+            # GVfs asks about an unknown host key; the focus is on Cancel
+            # Login, "Log In Anyway" is the next button.
+            s.x("key", "Tab")
             s.x("key", "Return")
         line = s.wait_qa("remembered", args.sftp.split("://", 1)[0] + "://", 30)
         s.check(line is not None, "the SSH location opens (%s)" % line)
         if args.accept_host_key:
-            s.check(questions.exists() and questions.stat().st_size > 0, "the host key is now known")
+            s.check(questions.exists() and questions.read_text() != known, "the host key is now known (%s)" % questions)
         s.shot("10-sftp-open")
 
     warnings = [line for line in (s.home / "liria.log").read_text(errors="replace").splitlines()
@@ -311,6 +314,8 @@ def main():
     parser.add_argument("--sftp", help="an SSH location that opens with the key in --ssh-dir")
     parser.add_argument("--ssh-dir", type=Path, help="~/.ssh of the test user (keys, config)")
     parser.add_argument("--accept-host-key", action="store_true")
+    parser.add_argument("--known-hosts", type=Path, help="the known_hosts file ssh uses (~/.ssh/known_hosts of "
+                        "the account, which ssh takes from the user database, not $HOME)")
     parser.add_argument("--screenshots", type=Path)
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
