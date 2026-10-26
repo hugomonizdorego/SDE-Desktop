@@ -50,6 +50,33 @@ struct Rect {
   bool operator==(const Rect &o) const { return x == o.x && y == o.y && w == o.w && h == o.h; }
 };
 
+// Finishing touches of the Photo plugins (the Effects tab), applied after
+// the tone and the drawings: a background blur, a watermark and a frame
+// (see finish.cpp). The frame makes the picture larger.
+enum class FrameStyle { None, Border, Mat, Rounded, Print, Shadow };
+enum class FocusShape { Off, Circle, Band };
+struct Finish {
+  // Background blur: sharp around a point (Circle) or along a horizontal
+  // band (Band, "tilt-shift"), blurred elsewhere.
+  FocusShape focus = FocusShape::Off;
+  double focus_x = 0.5, focus_y = 0.5;  // normalized to the picture
+  double focus_size = 45;               // the sharp part, % of the shorter side
+  double blur = 50;                     // 0..100
+  // Watermark text in a corner (0 top left, 1 top right, 2 bottom left,
+  // 3 bottom right, 4 centre).
+  std::string watermark;
+  int watermark_corner = 3;
+  double watermark_size = 4;      // text height, % of the shorter side
+  double watermark_opacity = 70;  // %
+  // Frame around the picture.
+  FrameStyle frame = FrameStyle::None;
+  double frame_width = 5;  // % of the shorter side
+  uint32_t frame_color = 0xFFFFFFFF;  // 0xAARRGGBB
+  bool identity() const;
+  bool operator==(const Finish &o) const;
+  bool operator!=(const Finish &o) const { return !(*this == o); }
+};
+
 struct Edits {
   gallery::Orient orient;  // applied first
   Rect crop;               // then the crop
@@ -58,10 +85,12 @@ struct Edits {
   Filter filter = Filter::Original;
   int strength = 100;  // filter strength in percent
   Marks marks;         // drawings on top (see draw.h), flattened last
+  Finish finish;       // background blur, watermark and frame (plugins)
   bool identity() const;
   // Only rotation/flip: JPEG files can then be saved losslessly.
   bool geometry_only() const;
   bool tone_identity() const { return adjust.identity() && filter == Filter::Original; }
+  bool has_frame() const { return finish.frame != FrameStyle::None; }
   bool operator==(const Edits &o) const;
   bool operator!=(const Edits &o) const { return !(*this == o); }
 };
@@ -83,8 +112,13 @@ RGB filter_pixel(RGB in, Filter f, double strength);
 // centre (0 centre, 1 corner).
 double vignette_factor(double r, double amount);
 
-// Size of the result of the geometry edits for a w x h original.
+// Size of the result of the geometry edits for a w x h original, with the
+// frame (content_size: without it).
 void result_size(const Edits &e, int w, int h, int &ow, int &oh);
+void content_size(const Edits &e, int w, int h, int &ow, int &oh);
+// The frame's width on each side as a fraction of the picture's width
+// (left, right) or height (top, bottom), for a picture of cw x ch.
+void frame_insets(const Finish &f, double cw, double ch, double &l, double &t, double &r, double &b);
 // Integer crop rectangle in oriented pixels.
 void crop_pixels(const Rect &r, int w, int h, int &cx, int &cy, int &cw, int &ch);
 // New surface with orientation, crop and resize applied. |scale| (0..1]
@@ -92,11 +126,22 @@ void crop_pixels(const Rect &r, int w, int h, int &cx, int &cy, int &cw, int &ch
 cairo_surface_t *apply_geometry(cairo_surface_t *src, const Edits &e, double scale = 1.0);
 // Applies the tone adjustments and filter in place (threads for big images).
 void apply_tone(cairo_surface_t *s, const Edits &e);
-// Which marks render() flattens into the result.
-enum MarkLayers { kNoMarks = 0, kMarkEffects = 1, kMarkVectors = 2, kAllMarks = 3 };
+// Which marks render() flattens into the result, and whether the finishing
+// touches (kFinish) are applied.
+enum MarkLayers { kNoMarks = 0, kMarkEffects = 1, kMarkVectors = 2, kAllMarks = 3, kFinish = 4 };
 // Full pipeline; returns a new surface. While editing, Photo renders the
-// pixel effects (blur, pixelate) and draws the vector marks live on top.
-cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale = 1.0, int marks = kAllMarks);
+// pixel effects (blur, pixelate, red eyes) and draws the vector marks live
+// on top.
+cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale = 1.0, int marks = kAllMarks | kFinish);
+
+// Finishing touches (finish.cpp), on a rendered picture.
+void apply_focus_blur(cairo_surface_t *s, const Finish &f);
+void draw_watermark(cairo_surface_t *s, const Finish &f);
+// A new surface: |s| inside its frame (a new reference to |s| without one).
+cairo_surface_t *add_frame(cairo_surface_t *s, const Finish &f);
+// Auto Enhance: tone adjustments that correct a dark, flat, dull or
+// colour-cast picture (all zero for one that needs nothing).
+Adjust auto_adjust(cairo_surface_t *s);
 // A copy of |src| that fits in max_dim x max_dim (a new reference).
 cairo_surface_t *downscale(cairo_surface_t *src, int max_dim);
 

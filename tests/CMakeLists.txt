@@ -125,6 +125,9 @@ add_executable(sde-gallery-plugins-tests test_gallery_plugins.cpp)
 target_link_libraries(sde-gallery-plugins-tests PRIVATE sde-gallery-core)
 target_compile_definitions(sde-gallery-plugins-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 add_test(NAME sde-gallery-plugins COMMAND sde-gallery-plugins-tests)
+add_executable(sde-photo-plugins-tests test_photo_plugins.cpp)
+target_link_libraries(sde-photo-plugins-tests PRIVATE sde-photo-core)
+add_test(NAME sde-photo-plugins COMMAND sde-photo-plugins-tests)
 
 # Niny Text Editor: codec, highlighter, find/replace, undo, settings, text ops.
 add_executable(niny-tests test_niny.cpp)

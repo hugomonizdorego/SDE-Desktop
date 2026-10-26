@@ -313,7 +313,7 @@ SidePanel::SidePanel(PhotoWindow *app, int x, int y, int w, int h) : Fl_Group(x,
       int ow, oh;
       Edits e = panel->app_->edits();
       e.resize_w = e.resize_h = 0;
-      result_size(e, panel->app_->image_w(), panel->app_->image_h(), ow, oh);
+      content_size(e, panel->app_->image_w(), panel->app_->image_h(), ow, oh);
       if (ow <= 0 || oh <= 0) return;
       int v = atoi(static_cast<Fl_Int_Input *>(w)->value());
       if (v <= 0) return;
@@ -333,7 +333,7 @@ SidePanel::SidePanel(PhotoWindow *app, int x, int y, int w, int h) : Fl_Group(x,
     int ow, oh;
     Edits base = e;
     base.resize_w = base.resize_h = 0;
-    result_size(base, panel->app_->image_w(), panel->app_->image_h(), ow, oh);
+    content_size(base, panel->app_->image_w(), panel->app_->image_h(), ow, oh);
     if (w == ow && h == oh) w = h = 0;
     e.resize_w = w;
     e.resize_h = h;
@@ -478,6 +478,7 @@ Tool panel_tool(PhotoWindow *app) {
     case MarkKind::Text: return Tool::Text;
     case MarkKind::Blur: return Tool::Blur;
     case MarkKind::Pixelate: return Tool::Pixelate;
+    case MarkKind::RedEye: return Tool::Select;
   }
   return Tool::Pen;
 }
@@ -733,7 +734,7 @@ void SidePanel::sync() {
   for (int i = 0; i < kSliderCount; ++i) sliders_[size_t(i)]->value(e.adjust.*kSliders[i].field);
   strength_->value(e.strength);
   int ow, oh;
-  result_size(e, app_->image_w(), app_->image_h(), ow, oh);
+  content_size(e, app_->image_w(), app_->image_h(), ow, oh);
   if (Fl::focus() != res_w_ && Fl::focus() != res_h_) {
     res_w_->value(std::to_string(ow).c_str());
     res_h_->value(std::to_string(oh).c_str());

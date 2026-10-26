@@ -768,9 +768,11 @@ void PhotoWindow::refresh_preview() {
   Edits e = edits();
   render_gen_++;
   if (canvas_->cropping()) {
-    // Show the whole (rotated, toned) picture with the selection on top.
+    // Show the whole (rotated, toned) picture with the selection on top,
+    // without the finishing touches (frame, watermark, background blur).
     e.crop = Rect();
     e.resize_w = e.resize_h = 0;
+    e.finish = Finish();
     int ow, oh;
     result_size(e, full_w_, full_h_, ow, oh);
     cairo_surface_t *img = render(preview_base_, e, 1.0, kMarkEffects);
@@ -791,7 +793,7 @@ void PhotoWindow::refresh_preview() {
   int ow, oh;
   result_size(e, full_w_, full_h_, ow, oh);
   double scale = double(cairo_image_surface_get_width(preview_base_)) / std::max(1, full_w_);
-  cairo_surface_t *img = render(preview_base_, base, scale, kMarkEffects);
+  cairo_surface_t *img = render(preview_base_, base, scale, kMarkEffects | kFinish);
   canvas_->set_image(img, ow, oh, true);
   cairo_surface_destroy(img);
   // Sharp pixels for zooming in: render the full image in the background.
@@ -812,7 +814,7 @@ void PhotoWindow::start_full_render() {
       cairo_surface_destroy(src);
       return;
     }
-    cairo_surface_t *out = render(src, e, scale, kMarkEffects);
+    cairo_surface_t *out = render(src, e, scale, kMarkEffects | kFinish);
     cairo_surface_destroy(src);
     auto *job = new RenderJob{this, gen, out};
     Fl::awake(render_awake_cb, job);
@@ -1019,7 +1021,7 @@ void PhotoWindow::mark_reference(int &w, int &h) const {
   Edits g = edits();
   g.crop = Rect();
   g.resize_w = g.resize_h = 0;
-  result_size(g, full_w_, full_h_, w, h);
+  content_size(g, full_w_, full_h_, w, h);
 }
 
 Edits PhotoWindow::edits_for_marks() const {
@@ -1047,13 +1049,14 @@ void PhotoWindow::style_changed(bool amend) {
   // Screen pixels at the current zoom -> image pixels.
   Edits ref = edits_for_marks();
   int rw = 0, rh = 0;
-  result_size(ref, full_w_, full_h_, rw, rh);
+  content_size(ref, full_w_, full_h_, rw, rh);
   MarkMap mm = mark_map(ref, rw, rh);
   if (mm.scale() > 0) k /= mm.scale();
   int tool = m.kind == MarkKind::Pen ? int(Tool::Pen) : m.kind == MarkKind::Highlighter ? int(Tool::Highlighter)
            : m.kind == MarkKind::Line ? int(Tool::Line) : m.kind == MarkKind::Arrow ? int(Tool::Arrow)
            : m.kind == MarkKind::Rect ? int(Tool::Rect) : m.kind == MarkKind::Ellipse ? int(Tool::Ellipse)
            : m.kind == MarkKind::Blur ? int(Tool::Blur) : m.kind == MarkKind::Pixelate ? int(Tool::Pixelate)
+           : m.kind == MarkKind::RedEye ? int(Tool::Select)
                                       : int(Tool::Text);
   if (m.kind == MarkKind::Text) {
     m.size = draw_.text_size * k;

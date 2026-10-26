@@ -176,7 +176,8 @@ add_library(sde-gallery-core STATIC
   gallery/plugins.cpp
   gallery/editors.cpp
   gallery/places.cpp
-  gallery/duplicates.cpp)
+  gallery/duplicates.cpp
+  gallery/metadata.cpp)
 target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
 target_link_libraries(sde-gallery-core PUBLIC sde-common)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
@@ -217,7 +218,7 @@ target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
 # the Selviana DE Project on top of sde-gallery-core.
-add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp photo/collage.cpp)
+add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp photo/collage.cpp photo/finish.cpp)
 target_include_directories(sde-photo-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/photo)
 target_link_libraries(sde-photo-core PUBLIC sde-gallery-core)
 add_executable(sde-view

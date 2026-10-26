@@ -42,7 +42,9 @@ struct Box {
   }
 };
 
-enum class MarkKind { Pen, Highlighter, Line, Arrow, Rect, Ellipse, Text, Blur, Pixelate };
+// RedEye: a circle (two corners) in which red pupils are made dark (the
+// Red-Eye Fix plugin places it with a click).
+enum class MarkKind { Pen, Highlighter, Line, Arrow, Rect, Ellipse, Text, Blur, Pixelate, RedEye };
 
 enum class FontFace { Sans, Serif, Mono };
 
@@ -61,7 +63,7 @@ struct Mark {
   FontFace font = FontFace::Sans;
   double size = 48;  // font size in image pixels
   bool box = false;  // a background box behind the text
-  bool effect() const { return kind == MarkKind::Blur || kind == MarkKind::Pixelate; }
+  bool effect() const { return kind == MarkKind::Blur || kind == MarkKind::Pixelate || kind == MarkKind::RedEye; }
   bool freehand() const { return kind == MarkKind::Pen || kind == MarkKind::Highlighter; }
   bool operator==(const Mark &o) const;
   bool operator!=(const Mark &o) const { return !(*this == o); }
@@ -125,6 +127,9 @@ bool erase_at(Marks &marks, Pt p, double radius);
 // Pixel effects on an ARGB32 surface, in its pixels (clipped to it).
 void pixelate_region(cairo_surface_t *s, int x, int y, int w, int h, int block);
 void blur_region(cairo_surface_t *s, int x, int y, int w, int h, int radius);
+// Darkens the red pupils in the ellipse inside (x, y, w, h); pixels that
+// are not red stay as they are.
+void red_eye_region(cairo_surface_t *s, int x, int y, int w, int h);
 
 // Draws marks with |map| onto |cr| (image coordinates to cr's space).
 // |vectors| and |effects| choose which kinds are drawn; effects need the

@@ -76,6 +76,7 @@ void Canvas::select_mark(int i) {
              : m.kind == MarkKind::Line ? int(Tool::Line) : m.kind == MarkKind::Arrow ? int(Tool::Arrow)
              : m.kind == MarkKind::Rect ? int(Tool::Rect) : m.kind == MarkKind::Ellipse ? int(Tool::Ellipse)
              : m.kind == MarkKind::Blur ? int(Tool::Blur) : m.kind == MarkKind::Pixelate ? int(Tool::Pixelate)
+             : m.kind == MarkKind::RedEye ? int(Tool::Select)
                                         : int(Tool::Text);
     if (m.kind == MarkKind::Text) {
       d.text_size = std::max(8.0, std::min(160.0, std::round(m.size * k)));
