@@ -2,34 +2,39 @@
  * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Liria's file operations window in the design of SDE's transfer dialog
- * (0.2.0 Alpha 2, see liria-sde-progress.h and suite/redesign.py). Every
- * operation of the window is a box of its own:
+ * (0.2.0 Alpha 3, see liria-sde-progress.h and suite/redesign.py). Every
+ * operation of the window is a box of its own; the first one is drawn in
+ * full, the others under it as the queue:
  *
- *   [SDE mark]  Copying 1,234 items from Documents to Backup
- *               42% complete                    [Pause] [Queue] [Cancel]
- *   [progress bar]              or, with More details,
- *   [speed graph: the part done, the speed along the progress, a line at
- *    the current speed with "Speed: 85.3 MB/s"]
- *   Name: holiday.mov
- *   Time remaining: About 2 minutes
- *   Items remaining: 120 (1.2 GB)
- *   (v) More details / Fewer details
+ *   [a penguin takes a paper out of one folder, carries it on its head to
+ *    the other folder and drops it in; a bin for Delete and the Trash]
+ *   Copying 3 items to Backup                     [Pause] [Queue] [Cancel]
+ *   [==================>                         ]
+ *   780 MB of 1.2 GB · 22 MB/s · About 40 seconds left
+ *   holiday.mov
+ *   (v) Details: From Videos, To Backup on SANDISK, Items 2 of 3
+ *   ----
+ *   1 more operation
+ *   Moving 12 items to Documents                  [Pause] [Queue] [Cancel]
+ *   [=========>             ] 35 %
  *
  * Copies and moves report what they do with liria_sde_progress_transfer_*
  * () from their thread; the window reads it four times a second and feeds
- * SDE's model (liria-sde-transfer-model.h), which gives the speed, the
- * time remaining and the graph exactly like the SDE desktop's dialog.
- * Other operations (delete, trash, links) keep their own texts under the
- * bar. While an operation runs, a pulse runs along the red, green and blue
- * stripes of the SDE mark at about 30 frames per second (only the mark is
- * redrawn); the mark stands still while the operation is paused, queued or
- * finishing and with reduced motion (gtk-enable-animations off,
- * SDE_REDUCED_MOTION=1, or [aero] animations=false or [appearance]
- * low_resource=true in sde.conf). With one operation the window title is
- * its progress ("42% complete").
+ * SDE's model (liria-sde-transfer-model.h): the speed and the time left
+ * like the SDE desktop's dialog. Delete and the Trash show the bin with
+ * their own texts; other operations keep their own texts without a
+ * picture. The picture (liria-sde-transfer-scene.h) moves at about 30
+ * frames per second while it is visible (only it is redrawn); it stands
+ * still while paused, queued, minimized and with reduced motion
+ * (gtk-enable-animations off, SDE_REDUCED_MOTION=1, or [aero]
+ * animations=false or [appearance] low_resource=true in sde.conf). A copy
+ * to a removable drive says at the end that the files are on the drive and
+ * that it can be removed; the window title is the first operation's
+ * progress ("42% · Copying 3 items to Backup").
  *
- * LIRIA_SDE_QA_PROGRESS=<file> writes the texts, the state and the button
- * positions to that file for tests (tools/liria-progress-smoke.py).
+ * LIRIA_SDE_QA_PROGRESS=<file> writes the texts, the state and the
+ * positions of the buttons and the picture to that file for tests
+ * (tools/liria-progress-smoke.py, tools/safe-copy-check.py).
  */
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -47,10 +52,13 @@
 
 #include "liria-sde-progress.h"
 #include "liria-sde-transfer-model.h"
+#include "liria-sde-transfer-scene.h"
 
 #define PROGRESS_KEY "sde-progress"
 #define REFRESH_MSEC 250
 #define FRAME_MSEC 33
+#define DONE_MSEC 3000      /* a finished operation stays this long */
+#define DONE_DRIVE_MSEC 6000 /* ... when it says the drive may be removed */
 
 /* ------------------------------------------------------ what jobs report */
 
@@ -59,11 +67,13 @@ typedef struct {
     char *source;      /* display name of the folder the items come from, or NULL */
     char *destination; /* display name of the destination folder, or NULL */
     char *item;        /* name of the item being copied */
+    char *drive;       /* the destination drive written safely, or NULL */
+    char *failure;     /* what went wrong with the drive, or NULL */
     gint64 bytes_done;
     gint64 bytes_total;
     int files_done;
     int files_total;
-    gboolean finishing;
+    gboolean finishing, removable, fat;
 } SdeReport;
 
 static GMutex report_lock;
@@ -86,6 +96,8 @@ report_free (gpointer data)
     g_free (report->source);
     g_free (report->destination);
     g_free (report->item);
+    g_free (report->drive);
+    g_free (report->failure);
     g_free (report);
 }
 
@@ -167,6 +179,8 @@ liria_sde_progress_transfer_begin (LiriaProgressInfo *info, LiriaSdeTransferKind
     report->source = source;
     g_free (report->destination);
     report->destination = target;
+    if (kind == LIRIA_SDE_TRANSFER_DELETE || kind == LIRIA_SDE_TRANSFER_TRASH)
+        report->files_total = (int) g_list_length (files);
     g_mutex_unlock (&report_lock);
 }
 
@@ -201,6 +215,20 @@ liria_sde_progress_transfer_item (LiriaProgressInfo *info, GFile *file)
 }
 
 void
+liria_sde_progress_transfer_drive (LiriaProgressInfo *info, const char *name, gboolean removable, gboolean fat)
+{
+    SdeReport *report;
+
+    g_mutex_lock (&report_lock);
+    report = report_get (info, TRUE);
+    g_free (report->drive);
+    report->drive = g_strdup (name);
+    report->removable = removable;
+    report->fat = fat;
+    g_mutex_unlock (&report_lock);
+}
+
+void
 liria_sde_progress_transfer_finishing (LiriaProgressInfo *info)
 {
     SdeReport *report;
@@ -209,6 +237,18 @@ liria_sde_progress_transfer_finishing (LiriaProgressInfo *info)
     report = report_get (info, FALSE);
     if (report != NULL)
         report->finishing = TRUE;
+    g_mutex_unlock (&report_lock);
+}
+
+void
+liria_sde_progress_transfer_failed (LiriaProgressInfo *info, const char *message)
+{
+    SdeReport *report;
+
+    g_mutex_lock (&report_lock);
+    report = report_get (info, TRUE);
+    g_free (report->failure);
+    report->failure = g_strdup (message);
     g_mutex_unlock (&report_lock);
 }
 
@@ -291,27 +331,12 @@ reduced_motion (void)
            sde_conf_bool ("appearance", "low_resource", FALSE);
 }
 
-static SdeTransferRgb
-theme_rgb (GtkWidget *widget, const char *name, double r, double g, double b)
-{
-    GdkRGBA rgba;
-    SdeTransferRgb out = { r, g, b };
-
-    if (gtk_style_context_lookup_color (gtk_widget_get_style_context (widget), name, &rgba))
-    {
-        out.r = rgba.red;
-        out.g = rgba.green;
-        out.b = rgba.blue;
-    }
-    return out;
-}
-
-static SdeTransferRgb
+static SdeSceneRgb
 text_rgb (GtkWidget *widget)
 {
     GtkStyleContext *context = gtk_widget_get_style_context (widget);
     GdkRGBA rgba;
-    SdeTransferRgb out;
+    SdeSceneRgb out;
 
     gtk_style_context_get_color (context, gtk_style_context_get_state (context), &rgba);
     out.r = rgba.red;
@@ -372,9 +397,10 @@ format_speed (double bytes_per_second)
     return text;
 }
 
-/* "About 2 minutes", "About 35 seconds", "A few seconds", "Calculating..." */
+/* "About 2 minutes left", "About 35 seconds left", "A few seconds left",
+ * "Calculating..." */
 static char *
-format_remaining (double seconds)
+format_left (double seconds)
 {
     int value = 0, minutes = 0;
 
@@ -383,172 +409,19 @@ format_remaining (double seconds)
         case SDE_TRANSFER_ETA_UNKNOWN:
             return g_strdup (_("Calculating\xE2\x80\xA6"));
         case SDE_TRANSFER_ETA_FEW_SECONDS:
-            return g_strdup (_("A few seconds"));
+            return g_strdup (_("A few seconds left"));
         case SDE_TRANSFER_ETA_SECONDS:
-            return g_strdup_printf (ngettext ("About %d second", "About %d seconds", value), value);
+            return g_strdup_printf (ngettext ("About %d second left", "About %d seconds left", value), value);
         case SDE_TRANSFER_ETA_MINUTES:
-            return g_strdup_printf (ngettext ("About %d minute", "About %d minutes", value), value);
+            return g_strdup_printf (ngettext ("About %d minute left", "About %d minutes left", value), value);
         case SDE_TRANSFER_ETA_HOURS:
         default:
             if (minutes == 0)
-                return g_strdup_printf (ngettext ("About %d hour", "About %d hours", value), value);
-            return g_strdup_printf (ngettext ("About %d hour and %d minutes", "About %d hours and %d minutes",
-                                              value), value, minutes);
+                return g_strdup_printf (ngettext ("About %d hour left", "About %d hours left", value), value);
+            return g_strdup_printf (
+                ngettext ("About %d hour and %d minutes left", "About %d hours and %d minutes left", value), value,
+                minutes);
     }
-}
-
-/* ------------------------------------------------------------ the mark */
-
-/* The SDE mark in layers (liria-sde-transfer-model.h), shared by every
- * operation and loaded again when the size or the scale changes. A mark
- * without stripes, a PNG or an icon is drawn still. */
-static SdeTransferLogo mark_layers;
-static cairo_surface_t *mark_still;
-static int mark_size, mark_scale;
-static gboolean mark_loaded;
-
-static char *
-mark_path (void)
-{
-    const gchar *const *system = g_get_system_data_dirs ();
-    const char *forced = g_getenv ("SDE_BRANDING_DIR");
-    GPtrArray *folders = g_ptr_array_new_with_free_func (g_free);
-    char *found = NULL;
-    guint i;
-    int j;
-
-    if (forced != NULL && *forced != '\0')
-        g_ptr_array_add (folders, g_strdup (forced));
-    g_ptr_array_add (folders, g_build_filename (g_get_user_data_dir (), "sde", "branding", NULL));
-    for (i = 0; system[i] != NULL; i++)
-        g_ptr_array_add (folders, g_build_filename (system[i], "sde", "branding", NULL));
-    g_ptr_array_add (folders, g_strdup ("/usr/share/sde/branding"));
-    for (i = 0; i < folders->len && found == NULL; i++)
-    {
-        for (j = 0; j < 2 && found == NULL; j++)
-        {
-            char *path = g_build_filename (folders->pdata[i], j == 0 ? "sde-mark.svg" : "sde-mark.png", NULL);
-
-            if (g_file_test (path, G_FILE_TEST_IS_REGULAR))
-                found = path;
-            else
-                g_free (path);
-        }
-    }
-    g_ptr_array_free (folders, TRUE);
-    return found;
-}
-
-static cairo_surface_t *
-render_svg (const char *svg, int size, int scale)
-{
-    cairo_surface_t *surface = NULL;
-    int attempt;
-
-    /* The loader named "svg" first, then by MIME type and by sniffing: not
-     * every gdk-pixbuf build (glycin) has a loader of that name. On Debian
-     * testing the mark fell back to a generic icon (0.2 Alpha 2); when no
-     * loader reads SVG at all, mark_load () takes the PNG beside it. */
-    for (attempt = 0; attempt < 3 && surface == NULL; attempt++)
-    {
-        GdkPixbufLoader *loader = attempt == 0 ? gdk_pixbuf_loader_new_with_type ("svg", NULL)
-                                  : attempt == 1 ? gdk_pixbuf_loader_new_with_mime_type ("image/svg+xml", NULL)
-                                                 : gdk_pixbuf_loader_new ();
-        gboolean ok;
-
-        if (loader == NULL)
-            continue;
-        gdk_pixbuf_loader_set_size (loader, size * scale, size * scale);
-        ok = gdk_pixbuf_loader_write (loader, (const guchar *) svg, strlen (svg), NULL);
-        ok = gdk_pixbuf_loader_close (loader, NULL) && ok;
-        if (ok && gdk_pixbuf_loader_get_pixbuf (loader) != NULL)
-            surface = gdk_cairo_surface_create_from_pixbuf (gdk_pixbuf_loader_get_pixbuf (loader), scale, NULL);
-        g_object_unref (loader);
-    }
-    return surface;
-}
-
-static void
-mark_load (int size, int scale)
-{
-    char *path, *svg = NULL;
-    int i;
-
-    if (mark_loaded && size == mark_size && scale == mark_scale)
-        return;
-    g_clear_pointer (&mark_layers.under, cairo_surface_destroy);
-    for (i = 0; i < 3; i++)
-        g_clear_pointer (&mark_layers.stripe[i], cairo_surface_destroy);
-    g_clear_pointer (&mark_layers.over, cairo_surface_destroy);
-    g_clear_pointer (&mark_still, cairo_surface_destroy);
-    mark_loaded = TRUE;
-    mark_size = size;
-    mark_scale = scale;
-    mark_layers.size = size;
-
-    path = mark_path ();
-    if (path != NULL && g_str_has_suffix (path, ".svg") && g_file_get_contents (path, &svg, NULL, NULL))
-    {
-        cairo_surface_t *layers[5] = { NULL, NULL, NULL, NULL, NULL };
-        gboolean ok = TRUE;
-
-        for (i = 0; i < 5 && ok; i++)
-        {
-            char *part = sde_transfer_logo_layer_svg (svg, i);
-
-            layers[i] = part != NULL ? render_svg (part, size, scale) : NULL;
-            ok = layers[i] != NULL;
-            free (part);
-        }
-        if (ok)
-        {
-            mark_layers.under = layers[0];
-            for (i = 0; i < 3; i++)
-                mark_layers.stripe[i] = layers[i + 1];
-            mark_layers.over = layers[4];
-        }
-        else
-        {
-            for (i = 0; i < 5; i++)
-                if (layers[i] != NULL)
-                    cairo_surface_destroy (layers[i]);
-        }
-    }
-    if (mark_layers.under == NULL && path != NULL)
-    {
-        /* The SVG as one picture, else the PNG next to it. */
-        char *png = g_str_has_suffix (path, ".svg") ? g_strdup (path) : NULL;
-        const char *files[2] = { path, NULL };
-
-        if (png != NULL)
-        {
-            strcpy (png + strlen (png) - 3, "png");
-            files[1] = png;
-        }
-        for (i = 0; i < 2 && mark_still == NULL; i++)
-        {
-            GdkPixbuf *pixbuf = files[i] != NULL
-                                    ? gdk_pixbuf_new_from_file_at_size (files[i], size * scale, size * scale, NULL)
-                                    : NULL;
-
-            if (pixbuf != NULL)
-            {
-                mark_still = gdk_cairo_surface_create_from_pixbuf (pixbuf, scale, NULL);
-                g_object_unref (pixbuf);
-            }
-        }
-        g_free (png);
-    }
-    if (mark_layers.under == NULL && mark_still == NULL)
-    {
-        static const char *const icons[] = { "sde-logo", "system-file-manager" };
-
-        for (i = 0; i < 2 && mark_still == NULL; i++)
-            mark_still = gtk_icon_theme_load_surface (gtk_icon_theme_get_default (), icons[i], size, scale, NULL,
-                                                      GTK_ICON_LOOKUP_FORCE_SIZE, NULL);
-    }
-    g_free (svg);
-    g_free (path);
 }
 
 /* -------------------------------------------------------- the operation */
@@ -556,34 +429,62 @@ mark_load (int size, int scale)
 typedef struct {
     GtkWidget *box;
     LiriaProgressInfo *info;
-    GtkWidget *mark;
+    GtkWidget *scene;
+    GtkWidget *queue_heading; /* "2 more operations", in the second box */
     GtkWidget *status;   /* the operation's own status (other operations) */
-    GtkWidget *headline; /* "Copying 3 items from Downloads to Desktop" */
-    GtkWidget *percent;
+    GtkWidget *headline; /* "Copying 3 items to Backup" */
     GtkWidget *pause_button, *queue_button, *cancel_button;
     GtkWidget *own_bar;  /* the operation's own bar: pulses while it prepares and finishes */
     GtkWidget *bar;      /* a copy's bar, from the bytes */
-    GtkWidget *graph;
+    GtkWidget *line;     /* "780 MB of 1.2 GB · 22 MB/s · About 40 seconds left" */
+    GtkWidget *details;  /* the operation's own details (other operations) */
+    GtkWidget *note;     /* the item being copied, a hint */
+    GtkWidget *toggle, *toggle_arrow;
     GtkWidget *rows;
-    GtkWidget *values[3]; /* name, time remaining, items remaining */
-    GtkWidget *details;  /* the operation's own details */
-    GtkWidget *toggle, *toggle_arrow, *toggle_label;
+    GtkWidget *values[3]; /* from, to, items */
     SdeTransfer model;
     LiriaSdeTransferKind kind;
-    char *source, *destination;
+    char *source, *destination, *drive, *failure;
     int state;
-    gboolean begun, counted, finishing, details_shown, arrow_up, motion;
-    gint64 started;
-    guint refresh_id, frame_id;
+    gboolean begun, counted, finishing, removable, fat, arrow_up, motion, main, details_shown;
+    gboolean finished, failed;
+    gint64 started, state_changed;
+    guint refresh_id, frame_id, done_id;
+    GSourceFunc remove;
+    gpointer remove_data;
 } SdeProgress;
 
-/* More details stay open for the next operations of the session. */
+/* Details stay open for the next operations of the session. */
 static gboolean details_default = FALSE;
+/* The window is minimized: no picture moves. */
+static gboolean window_iconified = FALSE;
+static GList *all_progress = NULL;
 
 static double
 monotonic_seconds (void)
 {
     return g_get_monotonic_time () / (double) G_USEC_PER_SEC;
+}
+
+static gboolean
+deleting (SdeProgress *p)
+{
+    return p->kind == LIRIA_SDE_TRANSFER_DELETE || p->kind == LIRIA_SDE_TRANSFER_TRASH;
+}
+
+/* A copy or a move, whose texts are SDE's (not a deletion's own). */
+static gboolean
+transfer (SdeProgress *p)
+{
+    return p->begun && !deleting (p);
+}
+
+static double
+progress_of (SdeProgress *p)
+{
+    if (transfer (p))
+        return sde_transfer_progress (&p->model);
+    return liria_progress_info_get_progress (p->info);
 }
 
 static char *
@@ -593,88 +494,139 @@ format_headline (SdeProgress *p)
     gboolean move = p->kind == LIRIA_SDE_TRANSFER_MOVE;
     char *count, *text;
 
-    if (p->kind == LIRIA_SDE_TRANSFER_DUPLICATE || p->destination == NULL)
+    if (p->failed)
     {
-        if (n <= 0)
-            return g_strdup (_("Preparing"));
-        count = g_strdup_printf ("%'ld", n);
-        text = p->source != NULL ?
-               g_strdup_printf (ngettext ("Duplicating %s item in %s", "Duplicating %s items in %s", n), count,
-                                p->source) :
-               g_strdup_printf (ngettext ("Duplicating %s item", "Duplicating %s items", n), count);
-        g_free (count);
-        return text;
+        if (p->kind == LIRIA_SDE_TRANSFER_DUPLICATE || p->destination == NULL)
+            return g_strdup (_("Not everything could be duplicated"));
+        return g_strdup_printf (move ? _("Not everything could be moved to %s") :
+                                       _("Not everything could be copied to %s"), p->destination);
     }
-    if (n <= 0)
-        return g_strdup_printf (move ? _("Moving to %s") : _("Copying to %s"), p->destination);
     count = g_strdup_printf ("%'ld", n);
-    if (p->source == NULL)
+    if (p->finished)
+    {
+        if (p->kind == LIRIA_SDE_TRANSFER_DUPLICATE || p->destination == NULL)
+            text = g_strdup_printf (ngettext ("Duplicated %s item", "Duplicated %s items", n), count);
+        else
+            text = g_strdup_printf (move ? ngettext ("Moved %s item to %s", "Moved %s items to %s", n) :
+                                           ngettext ("Copied %s item to %s", "Copied %s items to %s", n),
+                                    count, p->destination);
+    }
+    else if (p->kind == LIRIA_SDE_TRANSFER_DUPLICATE || p->destination == NULL)
+    {
+        text = n <= 0 ? g_strdup (_("Preparing")) :
+                        g_strdup_printf (ngettext ("Duplicating %s item", "Duplicating %s items", n), count);
+    }
+    else if (n <= 0)
+    {
+        text = g_strdup_printf (move ? _("Moving to %s") : _("Copying to %s"), p->destination);
+    }
+    else
+    {
         text = g_strdup_printf (move ? ngettext ("Moving %s item to %s", "Moving %s items to %s", n) :
                                        ngettext ("Copying %s item to %s", "Copying %s items to %s", n),
                                 count, p->destination);
-    else
-        text = g_strdup_printf (move ? ngettext ("Moving %s item from %s to %s", "Moving %s items from %s to %s", n) :
-                                       ngettext ("Copying %s item from %s to %s", "Copying %s items from %s to %s", n),
-                                count, p->source, p->destination);
+    }
     g_free (count);
     return text;
 }
 
-/* "42% complete", "Paused - 42% complete", "Finishing..."; an operation
- * that only pulses has no percentage. */
+/* The line under the bar of a copy or a move. */
 static char *
-format_percent (SdeProgress *p, double progress)
+format_line (SdeProgress *p)
 {
-    int percent = progress < 0 ? 0 : (int) floor (progress * 100.0);
+    char *done, *total, *text;
 
+    if (p->failed)
+        return g_strdup (p->failure != NULL ? p->failure : _("Something went wrong."));
+    if (p->finished)
+    {
+        if (p->drive != NULL && p->removable)
+            return g_strdup_printf (_("The files are on %s \xE2\x80\x94 you can remove it."), p->drive);
+        if (p->drive != NULL)
+            return g_strdup_printf (_("The files are on %s."), p->drive);
+        return g_strdup (_("Done"));
+    }
     if (p->finishing)
-        return g_strdup (_("Finishing\xE2\x80\xA6"));
-    if (progress < 0 && !p->begun)
-        return g_strdup (p->state == 1 ? _("Paused") : p->state == 2 ? _("Queued") : "");
-    if (p->state == 1)
-        return g_strdup_printf (_("Paused - %d%% complete"), percent);
-    if (p->state == 2)
-        return g_strdup_printf (_("Queued - %d%% complete"), percent);
-    return g_strdup_printf (_("%d%% complete"), percent);
+        return p->drive != NULL ? g_strdup_printf (_("Writing the last data to %s\xE2\x80\xA6"), p->drive)
+                                : g_strdup (_("Writing the last data\xE2\x80\xA6"));
+    if (p->model.bytes_total <= 0)
+        return g_strdup (p->model.files_total > 0 ? "" : _("Preparing\xE2\x80\xA6"));
+    done = format_size ((gint64) p->model.bytes_done);
+    total = format_size ((gint64) p->model.bytes_total);
+    text = g_strdup_printf (_("%s of %s"), done, total);
+    g_free (done);
+    g_free (total);
+    if (p->state != 0)
+    {
+        char *with = g_strconcat (text, " \xC2\xB7 ", p->state == 2 ? _("Waiting") : _("Paused"), NULL);
+
+        g_free (text);
+        return with;
+    }
+    if (p->model.speed > 0)
+    {
+        char *speed = format_speed (p->model.speed), *with = g_strconcat (text, " \xC2\xB7 ", speed, NULL);
+
+        g_free (speed);
+        g_free (text);
+        text = with;
+    }
+    {
+        char *left = format_left (sde_transfer_remaining (&p->model)), *with = g_strconcat (text, " \xC2\xB7 ", left, NULL);
+
+        g_free (left);
+        g_free (text);
+        text = with;
+    }
+    return text;
 }
 
 static char *
-format_speed_text (SdeProgress *p)
+format_note (SdeProgress *p, const char *item)
 {
-    char *speed, *text;
-
-    if (p->model.speed <= 0)
+    if (p->finished && !p->failed)
+        return g_strdup (p->fat && p->removable ?
+                         _("Windows may offer to scan it as it was not ejected; the files are complete.") : "");
+    if (p->failed)
         return g_strdup ("");
-    speed = format_speed (p->model.speed);
-    text = g_strdup_printf (_("Speed: %s"), speed);
-    g_free (speed);
-    return text;
+    if (p->finishing)
+        return g_strdup (_("Do not remove the drive yet."));
+    return g_strdup (item != NULL ? item : "");
 }
 
-static char *
-format_time_text (SdeProgress *p)
+static SdeScene
+scene_of (SdeProgress *p)
 {
-    if (p->state == 1)
-        return g_strdup (_("Paused"));
-    if (p->state == 2)
-        return g_strdup (_("Queued"));
-    return format_remaining (sde_transfer_remaining (&p->model));
-}
+    SdeScene scene;
+    double now = monotonic_seconds ();
 
-static char *
-format_items_text (SdeProgress *p)
-{
-    long items = MAX (p->model.files_total - p->model.files_done, 0);
-    char *count, *size, *text;
+    memset (&scene, 0, sizeof scene);
+    scene.kind = deleting (p) ? SDE_SCENE_DELETE : p->kind == LIRIA_SDE_TRANSFER_MOVE ? SDE_SCENE_MOVE
+                                                                                         : SDE_SCENE_COPY;
+    if (p->failed)
+        scene.state = SDE_SCENE_ERROR;
+    else if (p->finished)
+        scene.state = SDE_SCENE_DONE;
+    else if (p->state == 1)
+        scene.state = SDE_SCENE_PAUSED;
+    else if (p->state == 2)
+        scene.state = SDE_SCENE_QUEUED;
+    else if (p->finishing)
+        scene.state = SDE_SCENE_FINISHING;
+    else
+        scene.state = SDE_SCENE_RUNNING;
+    scene.progress = progress_of (p);
+    scene.seconds = now - p->started / (double) G_USEC_PER_SEC;
+    scene.state_seconds = now - p->state_changed / (double) G_USEC_PER_SEC;
+    scene.animate = p->motion;
+    scene.ink = text_rgb (p->scene);
+    {
+        /* Dark when the text is light. */
+        double l = 0.2126 * scene.ink.r + 0.7152 * scene.ink.g + 0.0722 * scene.ink.b;
 
-    if (p->model.files_total <= 0)
-        return g_strdup (_("Calculating\xE2\x80\xA6"));
-    count = g_strdup_printf ("%'ld", items);
-    size = format_size ((gint64) (p->model.bytes_total - p->model.bytes_done));
-    text = g_strdup_printf ("%s (%s)", count, size);
-    g_free (count);
-    g_free (size);
-    return text;
+        scene.dark = l > 0.5;
+    }
+    return scene;
 }
 
 static gboolean
@@ -682,15 +634,16 @@ frame_tick (gpointer data)
 {
     SdeProgress *p = data;
 
-    gtk_widget_queue_draw (p->mark);
+    gtk_widget_queue_draw (p->scene);
     return G_SOURCE_CONTINUE;
 }
 
 static void
 animation_update (SdeProgress *p)
 {
-    gboolean want = p->motion && p->state == 0 && !p->finishing && gtk_widget_get_mapped (p->mark) &&
-                    mark_layers.under != NULL;
+    SdeScene scene = scene_of (p);
+    gboolean want = p->main && p->begun && sde_scene_moving (&scene) && gtk_widget_get_mapped (p->scene) &&
+                    !window_iconified;
 
     if (want && p->frame_id == 0)
     {
@@ -700,87 +653,18 @@ animation_update (SdeProgress *p)
     {
         g_source_remove (p->frame_id);
         p->frame_id = 0;
-        gtk_widget_queue_draw (p->mark);
+        gtk_widget_queue_draw (p->scene);
     }
-}
-
-static void
-mark_mapped (SdeProgress *p)
-{
-    mark_load (sde_px (72), gtk_widget_get_scale_factor (p->mark));
-    animation_update (p);
 }
 
 static gboolean
-mark_draw (GtkWidget *widget, cairo_t *cr, SdeProgress *p)
+scene_draw (GtkWidget *widget, cairo_t *cr, SdeProgress *p)
 {
-    mark_load (sde_px (72), gtk_widget_get_scale_factor (widget));
-    if (mark_layers.under != NULL)
-        sde_transfer_draw_logo (cr, &mark_layers, 0, 0, (g_get_monotonic_time () - p->started) / 1e6,
-                                p->frame_id != 0);
-    else if (mark_still != NULL)
-    {
-        cairo_set_source_surface (cr, mark_still, 0, 0);
-        cairo_paint (cr);
-    }
+    SdeScene scene = scene_of (p);
+
+    sde_scene_draw (cr, 0, 0, gtk_widget_get_allocated_width (widget), gtk_widget_get_allocated_height (widget),
+                    &scene);
     return FALSE;
-}
-
-static gboolean
-graph_draw (GtkWidget *widget, cairo_t *cr, SdeProgress *p)
-{
-    int w = gtk_widget_get_allocated_width (widget), h = gtk_widget_get_allocated_height (widget);
-    SdeTransferRgb accent = p->state != 0 ? theme_rgb (widget, "warning_color", 0.96, 0.62, 0.04) :
-                                            theme_rgb (widget, "theme_selected_bg_color", 0.21, 0.52, 0.89);
-    SdeTransferRgb fg = text_rgb (widget);
-    double line_y = sde_transfer_draw_graph (cr, 0, 0, w, h, &p->model, accent, fg);
-    char *text = format_speed_text (p);
-
-    if (line_y >= 0 && *text != '\0')
-    {
-        /* Over the current speed line, at the right, inside the graph. */
-        PangoLayout *layout = gtk_widget_create_pango_layout (widget, text);
-        PangoAttrList *attrs = pango_attr_list_new ();
-        int tw, th, y;
-
-        pango_attr_list_insert (attrs, pango_attr_weight_new (PANGO_WEIGHT_BOLD));
-        pango_attr_list_insert (attrs, pango_attr_scale_new (0.92));
-        pango_layout_set_attributes (layout, attrs);
-        pango_attr_list_unref (attrs);
-        pango_layout_get_pixel_size (layout, &tw, &th);
-        y = (int) line_y - th - sde_px (2);
-        if (y < sde_px (2))
-            y = (int) line_y + sde_px (3);
-        cairo_set_source_rgba (cr, fg.r, fg.g, fg.b, 0.92);
-        cairo_move_to (cr, w - tw - sde_px (8), y);
-        pango_cairo_show_layout (cr, layout);
-        g_object_unref (layout);
-    }
-    g_free (text);
-    return FALSE;
-}
-
-static void
-sync_layout (SdeProgress *p)
-{
-    gboolean expanded = p->counted && p->details_shown;
-
-    gtk_widget_set_visible (p->headline, p->begun);
-    gtk_widget_set_visible (p->status, !p->begun);
-    gtk_widget_set_visible (p->bar, p->counted && !p->finishing && !expanded);
-    gtk_widget_set_visible (p->own_bar, !p->counted || (p->finishing && !expanded));
-    gtk_widget_set_visible (p->graph, expanded);
-    gtk_widget_set_visible (p->rows, expanded);
-    gtk_widget_set_visible (p->details, !p->counted || p->finishing);
-    gtk_widget_set_visible (p->toggle, p->counted);
-    if (p->arrow_up != p->details_shown)
-    {
-        p->arrow_up = p->details_shown;
-        gtk_image_set_from_icon_name (GTK_IMAGE (p->toggle_arrow),
-                                      p->details_shown ? "pan-up-symbolic" : "pan-down-symbolic",
-                                      GTK_ICON_SIZE_BUTTON);
-    }
-    set_text (p->toggle_label, p->details_shown ? _("Fewer details") : _("More details"));
 }
 
 static void
@@ -794,34 +678,102 @@ qa_rect (GString *out, const char *key, GtkWidget *widget)
                                 gtk_widget_get_allocated_height (widget));
 }
 
+/* The first box of the window is drawn in full, the others as the queue;
+ * |others|: the operations after the first, for the heading of the second
+ * box (-1 for the third and later). */
+static gboolean
+is_first (SdeProgress *p, int *others)
+{
+    GtkWidget *parent = gtk_widget_get_parent (p->box);
+    GList *children;
+    gboolean first;
+
+    *others = 0;
+    if (parent == NULL || !GTK_IS_CONTAINER (parent))
+        return TRUE;
+    children = gtk_container_get_children (GTK_CONTAINER (parent));
+    first = children == NULL || children->data == p->box;
+    if (!first)
+        *others = children->next != NULL && children->next->data == p->box ? (int) g_list_length (children) - 1 : -1;
+    g_list_free (children);
+    return first;
+}
+
+static void
+sync_layout (SdeProgress *p)
+{
+    int others = 0;
+    gboolean first = is_first (p, &others);
+    gboolean ours = transfer (p);
+    gboolean expanded = first && ours && p->details_shown;
+
+    if (first != p->main)
+    {
+        p->main = first;
+        animation_update (p);
+    }
+    /* The picture for copies, moves and deletions, in the first box only. */
+    gtk_widget_set_visible (p->scene, first && p->begun);
+    gtk_widget_set_visible (p->queue_heading, others > 0);
+    if (others > 0)
+    {
+        char *text = g_strdup_printf (ngettext ("%d more operation", "%d more operations", others), others);
+
+        set_text (p->queue_heading, text);
+        g_free (text);
+    }
+    /* A copy's own texts, or the operation's. */
+    gtk_widget_set_visible (p->headline, ours);
+    gtk_widget_set_visible (p->status, !ours);
+    gtk_widget_set_visible (p->bar, ours && p->counted && !p->finishing);
+    gtk_widget_set_visible (p->own_bar, !ours || !p->counted || p->finishing);
+    gtk_widget_set_visible (p->line, ours);
+    gtk_widget_set_visible (p->details, !ours);
+    gtk_widget_set_visible (p->note, first && (ours || p->finished));
+    gtk_widget_set_visible (p->toggle, first && ours && p->counted);
+    gtk_widget_set_visible (p->rows, expanded);
+    gtk_widget_set_visible (p->pause_button, !p->finished);
+    gtk_widget_set_visible (p->queue_button, !p->finished);
+    if (p->arrow_up != p->details_shown)
+    {
+        p->arrow_up = p->details_shown;
+        gtk_image_set_from_icon_name (GTK_IMAGE (p->toggle_arrow),
+                                      p->details_shown ? "pan-up-symbolic" : "pan-down-symbolic",
+                                      GTK_ICON_SIZE_BUTTON);
+    }
+}
+
 /* LIRIA_SDE_QA_PROGRESS: what the window shows, for tests. */
 static void
 qa_write (SdeProgress *p, const char *percent)
 {
     const char *path = g_getenv ("LIRIA_SDE_QA_PROGRESS");
     GtkWidget *top = gtk_widget_get_toplevel (p->box);
-    char *speed, *remaining, *items;
     GString *out;
 
-    if (path == NULL || *path == '\0')
+    if (path == NULL || *path == '\0' || !p->main)
         return;
-    speed = format_speed_text (p);
-    remaining = format_time_text (p);
-    items = format_items_text (p);
     out = g_string_new (NULL);
     g_string_append_printf (out, "headline=%s\n",
-                            gtk_label_get_text (GTK_LABEL (p->begun ? p->headline : p->status)));
-    g_string_append_printf (out, "percent=%s\nspeed=%s\nremaining=%s\nitems=%s\nname=%s\n", percent, speed,
-                            remaining, items, gtk_label_get_text (GTK_LABEL (p->values[0])));
+                            gtk_label_get_text (GTK_LABEL (transfer (p) ? p->headline : p->status)));
+    g_string_append_printf (out, "status=%s\nnote=%s\npercent=%s\n",
+                            gtk_label_get_text (GTK_LABEL (transfer (p) ? p->line : p->details)),
+                            gtk_label_get_text (GTK_LABEL (p->note)), percent);
     g_string_append_printf (out, "state=%d\npaused=%d\nanimating=%d\ndetails=%d\nfinishing=%d\nreduced=%d\n",
-                            p->state, p->state != 0, p->frame_id != 0, p->counted && p->details_shown,
+                            p->state, p->state != 0, p->frame_id != 0, gtk_widget_get_visible (p->rows),
                             p->finishing, !p->motion);
-    g_string_append_printf (out, "logo=%s\nbytes=%.0f/%.0f\nitems_done=%ld/%ld\n",
-                            mark_layers.under != NULL ? "layers" : mark_still != NULL ? "still" : "none",
-                            p->model.bytes_done, p->model.bytes_total, p->model.files_done, p->model.files_total);
+    g_string_append_printf (out, "finished=%d\nfailed=%d\ndrive=%s\nkind=%d\n", p->finished, p->failed,
+                            p->drive != NULL ? p->drive : "", (int) p->kind);
+    g_string_append_printf (out, "bytes=%.0f/%.0f\nitems_done=%ld/%ld\n", p->model.bytes_done, p->model.bytes_total,
+                            p->model.files_done, p->model.files_total);
     if (GTK_IS_WINDOW (top))
     {
-        g_string_append_printf (out, "title=%s\n", gtk_window_get_title (GTK_WINDOW (top)));
+        GtkWidget *parent = gtk_widget_get_parent (p->box);
+        GList *children = parent != NULL ? gtk_container_get_children (GTK_CONTAINER (parent)) : NULL;
+
+        g_string_append_printf (out, "title=%s\ncount=%u\n", gtk_window_get_title (GTK_WINDOW (top)),
+                                g_list_length (children));
+        g_list_free (children);
 #ifdef GDK_WINDOWING_X11
         if (gtk_widget_get_realized (top) && GDK_IS_X11_WINDOW (gtk_widget_get_window (top)))
             g_string_append_printf (out, "window=%lu\n",
@@ -832,30 +784,30 @@ qa_write (SdeProgress *p, const char *percent)
     qa_rect (out, "queue", p->queue_button);
     qa_rect (out, "cancel", p->cancel_button);
     qa_rect (out, "toggle", p->toggle);
-    qa_rect (out, "mark", p->mark);
-    qa_rect (out, "graph", p->graph);
+    qa_rect (out, "scene", p->scene);
     g_file_set_contents (path, out->str, out->len, NULL);
     g_string_free (out, TRUE);
-    g_free (speed);
-    g_free (remaining);
-    g_free (items);
 }
 
 static void
 update_title (SdeProgress *p, const char *percent)
 {
-    GtkWidget *top = gtk_widget_get_toplevel (p->box), *parent = gtk_widget_get_parent (p->box);
-    const char *title = _("File Operations");
-    GList *children;
+    GtkWidget *top = gtk_widget_get_toplevel (p->box);
+    const char *headline;
+    char *title;
 
-    if (!GTK_IS_WINDOW (top) || parent == NULL)
+    if (!GTK_IS_WINDOW (top) || !p->main)
         return;
-    children = gtk_container_get_children (GTK_CONTAINER (parent));
-    if (children != NULL && children->next == NULL && *percent != '\0')
-        title = percent;
-    g_list_free (children);
+    headline = gtk_label_get_text (GTK_LABEL (transfer (p) ? p->headline : p->status));
+    if (headline == NULL || *headline == '\0')
+        title = g_strdup (_("File Operations"));
+    else if (*percent != '\0' && !p->finished)
+        title = g_strdup_printf ("%s \xC2\xB7 %s", percent, headline);
+    else
+        title = g_strdup (headline);
     if (g_strcmp0 (gtk_window_get_title (GTK_WINDOW (top)), title) != 0)
         gtk_window_set_title (GTK_WINDOW (top), title);
+    g_free (title);
 }
 
 static void
@@ -865,7 +817,7 @@ progress_refresh (SdeProgress *p)
     SdeReport now_report = { 0 };
     gboolean begun = FALSE;
     double progress;
-    char *text;
+    char *text, *percent;
 
     g_mutex_lock (&report_lock);
     report = report_get (p->info, FALSE);
@@ -876,10 +828,12 @@ progress_refresh (SdeProgress *p)
         now_report.source = g_strdup (report->source);
         now_report.destination = g_strdup (report->destination);
         now_report.item = g_strdup (report->item);
+        now_report.drive = g_strdup (report->drive);
+        now_report.failure = g_strdup (report->failure);
     }
     g_mutex_unlock (&report_lock);
 
-    if (begun)
+    if (begun && !p->finished)
     {
         if (!p->begun)
         {
@@ -888,60 +842,89 @@ progress_refresh (SdeProgress *p)
             p->source = g_strdup (now_report.source);
             p->destination = g_strdup (now_report.destination);
         }
-        if (now_report.files_total > 0 && !p->counted)
+        if (now_report.drive != NULL && p->drive == NULL)
         {
-            /* The speed and the time count from the first counted item,
-             * not from the start of the scan. */
-            sde_transfer_init (&p->model, monotonic_seconds ());
-            if (p->state != 0)
-                sde_transfer_set_paused (&p->model, p->model.now, 1);
+            p->drive = g_strdup (now_report.drive);
+            p->removable = now_report.removable;
+            p->fat = now_report.fat;
         }
-        sde_transfer_update (&p->model, MAX (monotonic_seconds (), p->model.now), (double) now_report.bytes_done,
-                             (double) now_report.bytes_total, now_report.files_done, now_report.files_total);
-        p->counted = now_report.files_total > 0;
+        if (now_report.failure != NULL && p->failure == NULL)
+            p->failure = g_strdup (now_report.failure);
+        if (transfer (p))
+        {
+            if (now_report.files_total > 0 && !p->counted)
+            {
+                /* The speed and the time count from the first counted item,
+                 * not from the start of the scan. */
+                sde_transfer_init (&p->model, monotonic_seconds ());
+                if (p->state != 0)
+                    sde_transfer_set_paused (&p->model, p->model.now, 1);
+            }
+            sde_transfer_update (&p->model, MAX (monotonic_seconds (), p->model.now),
+                                 (double) now_report.bytes_done, (double) now_report.bytes_total,
+                                 now_report.files_done, now_report.files_total);
+            p->counted = now_report.files_total > 0;
+        }
+        else
+        {
+            p->model.files_total = now_report.files_total;
+        }
         if (now_report.finishing && !p->finishing)
         {
             p->finishing = TRUE;
-            animation_update (p);
+            p->state_changed = g_get_monotonic_time ();
+            /* The last data must reach the drive: nothing to pause. */
+            gtk_widget_set_sensitive (p->pause_button, FALSE);
+            gtk_widget_set_sensitive (p->queue_button, FALSE);
         }
+    }
+    progress = progress_of (p);
+    if (transfer (p))
+    {
         text = format_headline (p);
         set_text (p->headline, text);
         g_free (text);
-        progress = sde_transfer_progress (&p->model);
-        if (p->counted && !p->finishing && progress >= 0)
-            gtk_progress_bar_set_fraction (GTK_PROGRESS_BAR (p->bar), progress);
+        text = format_line (p);
+        set_text (p->line, text);
+        g_free (text);
+        if (p->counted && progress >= 0)
+            gtk_progress_bar_set_fraction (GTK_PROGRESS_BAR (p->bar), p->finished ? 1.0 : progress);
     }
-    else
+    text = format_note (p, now_report.item);
+    set_text (p->note, text);
+    g_free (text);
+    if (p->details_shown)
     {
-        progress = liria_progress_info_get_progress (p->info);
-    }
+        char *done = g_strdup_printf ("%'ld", p->model.files_done), *total = g_strdup_printf ("%'ld", p->model.files_total);
 
-    if (p->counted && p->details_shown)
-    {
-        set_text (p->values[0], now_report.item != NULL ? now_report.item : "\xE2\x80\x94");
-        text = format_time_text (p);
+        set_text (p->values[0], p->source != NULL ? p->source : "\xE2\x80\x94");
+        if (p->drive != NULL && p->destination != NULL)
+            text = g_strdup_printf (_("%s on %s"), p->destination, p->drive);
+        else
+            text = g_strdup (p->destination != NULL ? p->destination : "\xE2\x80\x94");
         set_text (p->values[1], text);
         g_free (text);
-        text = format_items_text (p);
+        text = p->model.files_total > 0 ? g_strdup_printf (_("%s of %s"), done, total) : g_strdup ("\xE2\x80\x94");
         set_text (p->values[2], text);
         g_free (text);
-        if (p->state == 0)
-            gtk_widget_queue_draw (p->graph);
-    }
-    else if (now_report.item != NULL)
-    {
-        set_text (p->values[0], now_report.item);
+        g_free (done);
+        g_free (total);
     }
 
-    text = format_percent (p, progress);
-    set_text (p->percent, text);
+    percent = progress >= 0 && (p->begun || progress > 0) ? g_strdup_printf ("%d%%", (int) floor (progress * 100.0))
+                                                          : g_strdup ("");
     sync_layout (p);
-    update_title (p, text);
-    qa_write (p, text);
-    g_free (text);
+    if (p->main && p->begun && p->frame_id == 0)
+        gtk_widget_queue_draw (p->scene); /* a still picture follows the progress too */
+    animation_update (p);
+    update_title (p, percent);
+    qa_write (p, percent);
+    g_free (percent);
     g_free (now_report.source);
     g_free (now_report.destination);
     g_free (now_report.item);
+    g_free (now_report.drive);
+    g_free (now_report.failure);
 }
 
 static gboolean
@@ -963,18 +946,11 @@ toggle_clicked (GtkButton *button, SdeProgress *p)
 static gboolean
 box_draw (GtkWidget *box, cairo_t *cr, SdeProgress *p)
 {
-    GtkWidget *parent = gtk_widget_get_parent (box);
-    GList *children;
-    gboolean first;
+    int others = 0;
 
-    if (parent == NULL || !GTK_IS_CONTAINER (parent))
-        return FALSE;
-    children = gtk_container_get_children (GTK_CONTAINER (parent));
-    first = children == NULL || children->data == box;
-    g_list_free (children);
-    if (!first)
+    if (!is_first (p, &others))
     {
-        SdeTransferRgb fg = text_rgb (box);
+        SdeSceneRgb fg = text_rgb (box);
         int inset = sde_px (18);
 
         cairo_set_source_rgba (cr, fg.r, fg.g, fg.b, 0.14);
@@ -992,13 +968,17 @@ progress_destroyed (GtkWidget *box, SdeProgress *p)
     if (p->refresh_id != 0)
     {
         g_source_remove (p->refresh_id);
-        if (qa != NULL && *qa != '\0')
-            g_file_set_contents (qa, "done=1\n", -1, NULL);
+        if (qa != NULL && *qa != '\0' && p->main)
+            g_file_set_contents (qa, "done=1\nfinished=1\n", -1, NULL);
     }
     if (p->frame_id != 0)
         g_source_remove (p->frame_id);
+    if (p->done_id != 0)
+        g_source_remove (p->done_id);
     p->refresh_id = 0;
     p->frame_id = 0;
+    p->done_id = 0;
+    all_progress = g_list_remove (all_progress, p);
 }
 
 static void
@@ -1009,6 +989,8 @@ progress_free (gpointer data)
     progress_destroyed (NULL, p);
     g_free (p->source);
     g_free (p->destination);
+    g_free (p->drive);
+    g_free (p->failure);
     g_free (p);
 }
 
@@ -1048,63 +1030,70 @@ managed (GtkWidget *widget)
     return widget;
 }
 
+static void
+mapped (SdeProgress *p)
+{
+    animation_update (p);
+}
+
 void
 liria_sde_progress_build (GtkWidget *box, LiriaProgressInfo *info, GtkWidget *start_button,
                           GtkWidget *queue_button, GtkWidget *cancel_button, GtkWidget **status,
                           GtkWidget **progress_bar, GtkWidget **details)
 {
-    static const char *const row_names[] = { N_("Name:"), N_("Time remaining:"), N_("Items remaining:") };
+    static const char *const row_names[] = { N_("From"), N_("To"), N_("Items") };
     SdeProgress *p = g_new0 (SdeProgress, 1);
-    GtkWidget *inner, *header, *line, *buttons, *content;
+    GtkWidget *inner, *header, *buttons, *content, *texts;
     int i;
 
     p->box = box;
     p->info = info;
-    p->started = g_get_monotonic_time ();
+    p->started = p->state_changed = g_get_monotonic_time ();
     p->motion = !reduced_motion ();
     p->details_shown = details_default;
+    p->main = TRUE;
     sde_transfer_init (&p->model, monotonic_seconds ());
+    all_progress = g_list_prepend (all_progress, p);
     g_object_set_data_full (G_OBJECT (box), PROGRESS_KEY, p, progress_free);
     g_signal_connect (box, "destroy", G_CALLBACK (progress_destroyed), p);
     g_signal_connect (box, "draw", G_CALLBACK (box_draw), p);
     gtk_style_context_add_class (gtk_widget_get_style_context (box), "sde-progress");
-    gtk_widget_set_size_request (box, sde_px (480), -1);
+    gtk_widget_set_size_request (box, sde_px (500), -1);
     gtk_box_set_spacing (GTK_BOX (box), 0);
     /* The content, inside a margin; the line between operations is drawn
      * on the operation's box (box_draw ()). */
-    inner = gtk_box_new (GTK_ORIENTATION_VERTICAL, sde_px (10));
-    gtk_container_set_border_width (GTK_CONTAINER (inner), sde_px (18));
+    inner = gtk_box_new (GTK_ORIENTATION_VERTICAL, sde_px (6));
+    gtk_container_set_border_width (GTK_CONTAINER (inner), sde_px (16));
     gtk_box_pack_start (GTK_BOX (box), inner, TRUE, TRUE, 0);
 
-    /* The mark, the headline, the percentage and the buttons. */
-    header = gtk_grid_new ();
-    gtk_grid_set_column_spacing (GTK_GRID (header), sde_px (14));
-    p->mark = gtk_drawing_area_new ();
-    gtk_widget_set_size_request (p->mark, sde_px (72), sde_px (72));
-    gtk_widget_set_valign (p->mark, GTK_ALIGN_START);
-    g_signal_connect (p->mark, "draw", G_CALLBACK (mark_draw), p);
-    g_signal_connect_swapped (p->mark, "map", G_CALLBACK (mark_mapped), p);
-    g_signal_connect_swapped (p->mark, "unmap", G_CALLBACK (animation_update), p);
-    gtk_grid_attach (GTK_GRID (header), p->mark, 0, 0, 1, 2);
+    /* "2 more operations" over the queue. */
+    p->queue_heading = managed (line_label (PANGO_ELLIPSIZE_END));
+    gtk_style_context_add_class (gtk_widget_get_style_context (p->queue_heading), "dim-label");
+    label_scale (p->queue_heading, 0.92, TRUE);
+    gtk_box_pack_start (GTK_BOX (inner), p->queue_heading, FALSE, FALSE, 0);
 
-    line = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_margin_top (line, sde_px (4));
+    /* The picture. */
+    p->scene = managed (gtk_drawing_area_new ());
+    gtk_widget_set_size_request (p->scene, -1, sde_px (104));
+    gtk_style_context_add_class (gtk_widget_get_style_context (p->scene), "sde-progress-scene");
+    g_signal_connect (p->scene, "draw", G_CALLBACK (scene_draw), p);
+    g_signal_connect_swapped (p->scene, "map", G_CALLBACK (mapped), p);
+    g_signal_connect_swapped (p->scene, "unmap", G_CALLBACK (animation_update), p);
+    gtk_box_pack_start (GTK_BOX (inner), p->scene, FALSE, FALSE, 0);
+
+    /* The headline and the buttons. */
+    header = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, sde_px (12));
+    texts = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_valign (texts, GTK_ALIGN_CENTER);
     p->status = managed (line_label (PANGO_ELLIPSIZE_END));
     p->headline = managed (line_label (PANGO_ELLIPSIZE_END));
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->status), "dim-label");
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->headline), "dim-label");
-    gtk_box_pack_start (GTK_BOX (line), p->status, TRUE, TRUE, 0);
-    gtk_box_pack_start (GTK_BOX (line), p->headline, TRUE, TRUE, 0);
-    gtk_grid_attach (GTK_GRID (header), line, 1, 0, 2, 1);
-
-    p->percent = line_label (PANGO_ELLIPSIZE_END);
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->percent), "sde-progress-percent");
-    label_scale (p->percent, 1.45, FALSE);
-    gtk_widget_set_vexpand (p->percent, TRUE);
-    gtk_widget_set_valign (p->percent, GTK_ALIGN_CENTER);
-    gtk_grid_attach (GTK_GRID (header), p->percent, 1, 1, 1, 1);
-
-    buttons = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, sde_px (6));
+    label_scale (p->status, 1.08, TRUE);
+    label_scale (p->headline, 1.08, TRUE);
+    gtk_style_context_add_class (gtk_widget_get_style_context (p->headline), "sde-progress-headline");
+    gtk_box_pack_start (GTK_BOX (texts), p->status, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (texts), p->headline, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (header), texts, TRUE, TRUE, 0);
+    buttons = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, sde_px (4));
     gtk_widget_set_valign (buttons, GTK_ALIGN_CENTER);
     p->pause_button = start_button;
     p->queue_button = queue_button;
@@ -1112,7 +1101,8 @@ liria_sde_progress_build (GtkWidget *box, LiriaProgressInfo *info, GtkWidget *st
     action_button (start_button, buttons);
     action_button (queue_button, buttons);
     action_button (cancel_button, buttons);
-    gtk_grid_attach (GTK_GRID (header), buttons, 2, 1, 1, 1);
+    gtk_widget_show_all (queue_button);
+    gtk_box_pack_start (GTK_BOX (header), buttons, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (inner), header, FALSE, FALSE, 0);
 
     /* The bars: the operation's own one and a copy's. */
@@ -1123,23 +1113,46 @@ liria_sde_progress_build (GtkWidget *box, LiriaProgressInfo *info, GtkWidget *st
     gtk_box_pack_start (GTK_BOX (inner), p->own_bar, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (inner), p->bar, FALSE, FALSE, 0);
 
-    /* More details: the speed graph and the rows. */
-    p->graph = managed (gtk_drawing_area_new ());
-    gtk_widget_set_size_request (p->graph, -1, sde_px (104));
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->graph), "sde-progress-graph");
-    g_signal_connect (p->graph, "draw", G_CALLBACK (graph_draw), p);
-    gtk_box_pack_start (GTK_BOX (inner), p->graph, FALSE, FALSE, 0);
+    /* "780 MB of 1.2 GB · 22 MB/s · About 40 seconds left", or the
+     * operation's own details; the item being copied. */
+    p->line = managed (line_label (PANGO_ELLIPSIZE_END));
+    gtk_box_pack_start (GTK_BOX (inner), p->line, FALSE, FALSE, 0);
+    p->details = managed (gtk_label_new (NULL));
+    gtk_label_set_xalign (GTK_LABEL (p->details), 0.0);
+    gtk_label_set_line_wrap (GTK_LABEL (p->details), TRUE);
+    gtk_label_set_line_wrap_mode (GTK_LABEL (p->details), PANGO_WRAP_WORD_CHAR);
+    gtk_label_set_max_width_chars (GTK_LABEL (p->details), 1);
+    gtk_box_pack_start (GTK_BOX (inner), p->details, FALSE, FALSE, 0);
+    p->note = managed (line_label (PANGO_ELLIPSIZE_MIDDLE));
+    gtk_style_context_add_class (gtk_widget_get_style_context (p->note), "dim-label");
+    label_scale (p->note, 0.92, FALSE);
+    gtk_box_pack_start (GTK_BOX (inner), p->note, FALSE, FALSE, 0);
+
+    /* Details: from, to, items. */
+    p->toggle = managed (gtk_button_new ());
+    gtk_style_context_add_class (gtk_widget_get_style_context (p->toggle), "flat");
+    gtk_style_context_add_class (gtk_widget_get_style_context (p->toggle), "sde-progress-toggle");
+    gtk_widget_set_halign (p->toggle, GTK_ALIGN_START);
+    content = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, sde_px (6));
+    p->toggle_arrow = gtk_image_new_from_icon_name ("pan-down-symbolic", GTK_ICON_SIZE_BUTTON);
+    gtk_box_pack_start (GTK_BOX (content), p->toggle_arrow, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (content), gtk_label_new (_("Details")), FALSE, FALSE, 0);
+    gtk_container_add (GTK_CONTAINER (p->toggle), content);
+    gtk_widget_show_all (content);
+    g_signal_connect (p->toggle, "clicked", G_CALLBACK (toggle_clicked), p);
+    gtk_box_pack_start (GTK_BOX (inner), p->toggle, FALSE, FALSE, 0);
 
     p->rows = managed (gtk_grid_new ());
-    gtk_grid_set_column_spacing (GTK_GRID (p->rows), sde_px (12));
+    gtk_grid_set_column_spacing (GTK_GRID (p->rows), sde_px (14));
     gtk_grid_set_row_spacing (GTK_GRID (p->rows), sde_px (4));
+    gtk_widget_set_margin_start (p->rows, sde_px (4));
     for (i = 0; i < 3; i++)
     {
         GtkWidget *name = gtk_label_new (_(row_names[i]));
 
         gtk_label_set_xalign (GTK_LABEL (name), 0.0);
         gtk_style_context_add_class (gtk_widget_get_style_context (name), "dim-label");
-        p->values[i] = line_label (i == 0 ? PANGO_ELLIPSIZE_MIDDLE : PANGO_ELLIPSIZE_END);
+        p->values[i] = line_label (PANGO_ELLIPSIZE_MIDDLE);
         gtk_label_set_text (GTK_LABEL (p->values[i]), "\xE2\x80\x94");
         gtk_grid_attach (GTK_GRID (p->rows), name, 0, i, 1, 1);
         gtk_grid_attach (GTK_GRID (p->rows), p->values[i], 1, i, 1, 1);
@@ -1147,30 +1160,6 @@ liria_sde_progress_build (GtkWidget *box, LiriaProgressInfo *info, GtkWidget *st
         gtk_widget_show (p->values[i]);
     }
     gtk_box_pack_start (GTK_BOX (inner), p->rows, FALSE, FALSE, 0);
-
-    /* The operation's own details ("Preparing to copy 12 files"). */
-    p->details = managed (gtk_label_new (NULL));
-    gtk_label_set_xalign (GTK_LABEL (p->details), 0.0);
-    gtk_label_set_line_wrap (GTK_LABEL (p->details), TRUE);
-    gtk_label_set_line_wrap_mode (GTK_LABEL (p->details), PANGO_WRAP_WORD_CHAR);
-    gtk_label_set_max_width_chars (GTK_LABEL (p->details), 1);
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->details), "dim-label");
-    gtk_box_pack_start (GTK_BOX (inner), p->details, FALSE, FALSE, 0);
-
-    /* More details / Fewer details. */
-    p->toggle = managed (gtk_button_new ());
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->toggle), "flat");
-    gtk_style_context_add_class (gtk_widget_get_style_context (p->toggle), "sde-progress-toggle");
-    gtk_widget_set_halign (p->toggle, GTK_ALIGN_START);
-    content = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, sde_px (6));
-    p->toggle_arrow = gtk_image_new_from_icon_name ("pan-down-symbolic", GTK_ICON_SIZE_BUTTON);
-    p->toggle_label = gtk_label_new (_("More details"));
-    gtk_box_pack_start (GTK_BOX (content), p->toggle_arrow, FALSE, FALSE, 0);
-    gtk_box_pack_start (GTK_BOX (content), p->toggle_label, FALSE, FALSE, 0);
-    gtk_container_add (GTK_CONTAINER (p->toggle), content);
-    gtk_widget_show_all (content);
-    g_signal_connect (p->toggle, "clicked", G_CALLBACK (toggle_clicked), p);
-    gtk_box_pack_start (GTK_BOX (inner), p->toggle, FALSE, FALSE, 0);
 
     *status = p->status;
     *progress_bar = p->own_bar;
@@ -1185,18 +1174,95 @@ liria_sde_progress_set_state (GtkWidget *box, int state)
     SdeProgress *p = g_object_get_data (G_OBJECT (box), PROGRESS_KEY);
     GtkStyleContext *context;
 
-    if (p == NULL || p->state == state)
+    if (p == NULL || p->state == state || p->finished)
         return;
     sde_transfer_set_paused (&p->model, MAX (monotonic_seconds (), p->model.now), state != 0);
     p->state = state;
+    p->state_changed = g_get_monotonic_time ();
     context = gtk_widget_get_style_context (box);
     if (state != 0)
         gtk_style_context_add_class (context, "sde-paused");
     else
         gtk_style_context_remove_class (context, "sde-paused");
-    animation_update (p);
-    gtk_widget_queue_draw (p->graph);
     progress_refresh (p);
+}
+
+static gboolean
+done_timeout (gpointer data)
+{
+    SdeProgress *p = data;
+
+    p->done_id = 0;
+    if (p->remove != NULL)
+        p->remove (p->remove_data);
+    return G_SOURCE_REMOVE;
+}
+
+gboolean
+liria_sde_progress_finish (GtkWidget *box, GSourceFunc remove, gpointer data)
+{
+    SdeProgress *p = g_object_get_data (G_OBJECT (box), PROGRESS_KEY);
+    GtkWidget *top = gtk_widget_get_toplevel (box);
+    GCancellable *cancellable;
+    gboolean cancelled;
+
+    if (p == NULL)
+        return FALSE;
+    progress_refresh (p);
+    cancellable = liria_progress_info_get_cancellable (p->info);
+    cancelled = g_cancellable_is_cancelled (cancellable);
+    g_object_unref (cancellable);
+    /* Only what the user could watch says that it is over. */
+    if (cancelled || !transfer (p) || !GTK_IS_WINDOW (top) || !gtk_widget_get_visible (top))
+        return FALSE;
+    p->finished = TRUE;
+    p->failed = p->failure != NULL;
+    p->finishing = FALSE;
+    p->state = 0;
+    p->state_changed = g_get_monotonic_time ();
+    p->remove = remove;
+    p->remove_data = data;
+    gtk_style_context_remove_class (gtk_widget_get_style_context (box), "sde-paused");
+    gtk_style_context_add_class (gtk_widget_get_style_context (box), p->failed ? "sde-failed" : "sde-done");
+    gtk_widget_set_sensitive (p->cancel_button, TRUE);
+    gtk_widget_set_tooltip_text (p->cancel_button, _("Close"));
+    if (!p->failed)
+        p->done_id = g_timeout_add (p->drive != NULL ? DONE_DRIVE_MSEC : DONE_MSEC, done_timeout, p);
+    progress_refresh (p);
+    return TRUE;
+}
+
+gboolean
+liria_sde_progress_close (GtkWidget *box)
+{
+    SdeProgress *p = g_object_get_data (G_OBJECT (box), PROGRESS_KEY);
+
+    if (p == NULL || !p->finished || p->remove == NULL)
+        return FALSE;
+    if (p->done_id != 0)
+        g_source_remove (p->done_id);
+    p->done_id = g_idle_add (done_timeout, p);
+    return TRUE;
+}
+
+gboolean
+liria_sde_progress_is_finished (GtkWidget *box)
+{
+    SdeProgress *p = g_object_get_data (G_OBJECT (box), PROGRESS_KEY);
+
+    return p != NULL && p->finished;
+}
+
+/* Minimized: no picture moves. */
+static gboolean
+window_state_changed (GtkWidget *window, GdkEventWindowState *event, gpointer data)
+{
+    GList *l;
+
+    window_iconified = (event->new_window_state & GDK_WINDOW_STATE_ICONIFIED) != 0;
+    for (l = all_progress; l != NULL; l = l->next)
+        animation_update (l->data);
+    return FALSE;
 }
 
 void
@@ -1208,4 +1274,5 @@ liria_sde_progress_window_setup (GtkWidget *window)
     gtk_style_context_add_class (gtk_widget_get_style_context (window), "sde-progress-window");
     if (GTK_IS_BOX (child))
         gtk_box_set_spacing (GTK_BOX (child), 0);
+    g_signal_connect (window, "window-state-event", G_CALLBACK (window_state_changed), NULL);
 }

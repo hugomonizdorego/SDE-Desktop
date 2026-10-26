@@ -678,32 +678,48 @@ class LiriaAlpha2Test(unittest.TestCase):
         self.lib = self.root / 'suite/overlays/liria/libliria-private'
 
     def test_window_uses_the_shared_model_and_texts(self):
+        # 0.2.0 Alpha 3: SDE's own picture (a penguin carrying papers,
+        # src/common/transfer_scene.h) instead of the Windows-like speed
+        # graph, in Liria and in the SDE dialog alike.
         source = (self.lib / 'liria-sde-progress.c').read_text()
-        for needle in ('#include "liria-sde-transfer-model.h"', 'sde_transfer_update', 'sde_transfer_set_paused',
-                       'sde_transfer_draw_graph', 'sde_transfer_draw_logo', 'sde_transfer_logo_layer_svg',
+        for needle in ('#include "liria-sde-transfer-model.h"', '#include "liria-sde-transfer-scene.h"',
+                       'sde_transfer_update', 'sde_transfer_set_paused', 'sde_scene_draw', 'sde_scene_moving',
                        'sde_transfer_remaining', 'sde_transfer_eta_parts'):
             self.assertIn(needle, source)
         dialog = (self.root / 'src/common/transfer_dialog.cpp').read_text()
         # The same words as the SDE desktop's dialog.
-        for text in ('"Copying %s item from %s to %s", "Copying %s items from %s to %s"',
-                     '"Moving %s item from %s to %s", "Moving %s items from %s to %s"', '"Paused - %d%% complete"',
-                     '"%d%% complete"', '"Speed: %s"', '"About %d second", "About %d seconds"',
-                     '"About %d hour and %d minutes", "About %d hours and %d minutes"', '"A few seconds"',
-                     '"More details"', '"Fewer details"', '"Name:"', '"Time remaining:"', '"Items remaining:"'):
+        for text in ('"Copying %s item to %s", "Copying %s items to %s"',
+                     '"Moving %s item to %s", "Moving %s items to %s"',
+                     '"Copied %s item to %s", "Copied %s items to %s"',
+                     '"About %d second left", "About %d seconds left"',
+                     '"About %d hour and %d minutes left", "About %d hours and %d minutes left"',
+                     '"A few seconds left"', '"Details"', '"Done"', '"%s on %s"', '"%s of %s"',
+                     '"Not everything could be copied to %s"',
+                     '"Windows may offer to scan it as it was not ejected; the files are complete."'):
             self.assertIn(text, source)
             self.assertIn(text, dialog)
-        # The animated mark at about 30 frames per second, still with
-        # reduced motion; the SDE branding folders, then icons.
+        for name in ('"From"', '"To"', '"Items"'):
+            self.assertIn('N_(' + name + ')', source)
+            self.assertIn('_(' + name + ')', dialog)
+        # Nothing of the Windows 10 dialog is left.
+        for gone in ('Speed: %s', '%% complete', 'More details', 'Items remaining', 'sde_transfer_draw_graph',
+                     'sde_transfer_draw_logo'):
+            self.assertNotIn(gone, source)
+            self.assertNotIn(gone, dialog)
+        # The picture at about 30 frames per second, still with reduced
+        # motion and when minimized.
         for needle in ('FRAME_MSEC 33', 'SDE_REDUCED_MOTION', '"gtk-enable-animations"', '"aero", "animations"',
-                       '"appearance", "low_resource"', 'SDE_BRANDING_DIR', '"sde-mark.svg"', '"sde-logo"',
-                       'gtk_widget_get_scale_factor', 'LIRIA_SDE_QA_PROGRESS', 'LIRIA_SDE_QA_COPY_RATE'):
+                       '"appearance", "low_resource"', 'GDK_WINDOW_STATE_ICONIFIED', 'LIRIA_SDE_QA_PROGRESS',
+                       'LIRIA_SDE_QA_COPY_RATE'):
             self.assertIn(needle, source)
-        model = (self.root / 'src/common/transfer_model.h').read_text()
-        self.assertIn('SPDX-License-Identifier: GPL-2.0-or-later', model)  # part of Liria too
-        self.assertIn(self.root / 'src/common/transfer_model.h', self.redesign.SHARED)
+        for shared in ('src/common/transfer_model.h', 'src/common/transfer_scene.h'):
+            self.assertIn('SPDX-License-Identifier: GPL-2.0-or-later', (self.root / shared).read_text())
+            self.assertIn(self.root / shared, self.redesign.SHARED)
         css = (self.root / 'suite/overlays/liria/data/liria-sde.css').read_text()
         for needle in ('button.sde-progress-action', 'progressbar.sde-progress-bar',
-                       '.sde-progress.sde-paused progressbar.sde-progress-bar progress'):
+                       '.sde-progress.sde-paused progressbar.sde-progress-bar progress',
+                       '.sde-progress.sde-done progressbar.sde-progress-bar progress',
+                       '.sde-progress.sde-failed progressbar.sde-progress-bar progress'):
             self.assertIn(needle, css)
 
     def test_large_files_are_copied_in_slices(self):
@@ -729,7 +745,10 @@ class LiriaAlpha2Test(unittest.TestCase):
                 'gtk_image_new_from_icon_name ("undo", GTK_ICON_SIZE_BUTTON);\n'
                 '    GtkWidget *label, *progress_bar, *hbox, *vbox, *box, *btcancel, *imgcancel;\n'
                 '    label = gtk_label_new ("status");\n    hbox = NULL;\n    gtk_widget_show_all (data->widget);\n'
-                '                        progress,\n                        FALSE, FALSE, 6);\n')
+                '                        progress,\n                        FALSE, FALSE, 6);\n'
+                'static void\nop_finished (ProgressWidgetData *data)\n{\n    gtk_widget_destroy (data->widget);\n'
+                '    if (! is_op_paused (data->state))\n        (*n)++;\n'
+                'static void\nprogress_widget_invalid_state (ProgressWidgetData *data)\n')
             (lib / 'liria-file-operations.c').write_text(
                 '#include "liria-sde-copy.h"\n'
                 '\tliria_progress_info_start (job->common.progress);\n\n\tscan_sources (job->files,\n'
@@ -742,16 +761,28 @@ class LiriaAlpha2Test(unittest.TestCase):
                 '\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n'
                 '\t\t\t\t      pdata->transfer_info);\n\t}\n}\n'
                 '\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n'
-                '\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {\n')
+                '\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {\n'
+                '\tliria_progress_info_get_ready (job->common.progress);\n'
+                '\treturn g_cancellable_is_cancelled (job->common.cancellable);\n'
+                '\tif (!liria_sde_flush_finish (job->sde_flush, &error)) {\n'
+                'static gboolean\ncopy_job (GIOSchedulerJob *io_job,'
+                '\t\tjob->sde_flush = liria_sde_flush_new (dest);\n'
+                '\tjob->sde_flush = liria_sde_flush_new (job->destination);\n'
+                '\tliria_progress_info_start (job->common.progress);\n\n\tto_trash_files = NULL;\n')
             self.redesign.liria_progress(staged)
             self.assertEqual((lib / 'liria-sde-transfer-model.h').read_text(),
                              (self.root / 'src/common/transfer_model.h').read_text())
+            self.assertEqual((lib / 'liria-sde-transfer-scene.h').read_text(),
+                             (self.root / 'src/common/transfer_scene.h').read_text())
+            self.assertIn('\tliria-sde-transfer-scene.h \\\n', (lib / 'Makefile.am').read_text())
             self.assertIn('\tliria-sde-progress.c \\\n', (lib / 'Makefile.am').read_text())
             self.assertIn('\tliria-sde-transfer-model.h \\\n', (lib / 'Makefile.am').read_text())
             info = (lib / 'liria-progress-info.c').read_text()
             for needle in ('#include "liria-sde-progress.h"', 'liria_sde_progress_window_setup (progress_window);',
                            'liria_sde_progress_set_state (data->widget,', 'liria_sde_progress_build (vbox, info,',
-                           '"media-playback-pause-symbolic"', '"window-close-symbolic"', 'FALSE, FALSE, 0);'):
+                           '"media-playback-pause-symbolic"', '"window-close-symbolic"', 'FALSE, FALSE, 0);',
+                           '(GCallback)sde_cancel_clicked', 'liria_sde_progress_finish (data->widget',
+                           '!liria_sde_progress_is_finished (widget)', 'liria_sde_progress_close (data->widget)'):
                 self.assertIn(needle, info)
             self.assertNotIn('gtk_label_new ("status")', info)
             ops = (lib / 'liria-file-operations.c').read_text()
@@ -759,7 +790,9 @@ class LiriaAlpha2Test(unittest.TestCase):
                            'liria_sde_progress_transfer_counts (job->progress', 'liria_sde_progress_transfer_item',
                            'liria_sde_progress_transfer_finishing (job->progress);',
                            'liria_progress_info_get_ready (pdata->job->common.progress);',
-                           'liria_sde_progress_transfer_throttle (new_size);', 'liria_sde_copy_large_file (src, dest'):
+                           'liria_sde_progress_transfer_throttle (new_size);', 'liria_sde_copy_large_file (src, dest',
+                           'liria_sde_progress_transfer_throttle (written);', 'liria_sde_progress_transfer_failed',
+                           'sde_report_drive (job);', 'LIRIA_SDE_TRANSFER_TRASH : LIRIA_SDE_TRANSFER_DELETE'):
                 self.assertIn(needle, ops)
         self.assertIn('liria_progress(staged)', (self.root / 'suite/redesign.py').read_text())
 

@@ -19,7 +19,8 @@ OVERLAYS = HERE / "overlays"
 # SDE-owned files copied into the Liria tree (man page shared with CMake,
 # the copy and move progress model and the safe copy writer shared with the
 # SDE desktop).
-SHARED = [ROOT / "data/man/liria.1", ROOT / "src/common/transfer_model.h", ROOT / "src/common/safe_copy.h"]
+SHARED = [ROOT / "data/man/liria.1", ROOT / "src/common/transfer_model.h", ROOT / "src/common/safe_copy.h",
+          ROOT / "src/common/transfer_scene.h"]
 # Original product names that must not reach users. Legal notices
 # (copyright lines, license files, the About license text and the
 # installed upstream documentation) are the only allowed exception.
@@ -2587,15 +2588,27 @@ def liria_progress(staged):
     liria-sde-transfer-model.h, so Liria and the SDE desktop estimate and
     look the same. Large files on internal disks are copied in slices
     (GLib 2.80 reported a file's progress only when it was there) and
-    copies pause in the middle of a file (Caja paused between files)."""
+    copies pause in the middle of a file (Caja paused between files).
+
+    0.2.0 Alpha 3: the window in the new design of SDE's dialog, without
+    the speed graph: SDE's own picture (src/common/transfer_scene.h,
+    copied in as liria-sde-transfer-scene.h) of a penguin carrying papers
+    from one folder to the other (a bin for Delete and the Trash), "780 MB
+    of 1.2 GB · 22 MB/s · About 40 seconds left", Details, the further
+    operations under the first as its queue; "Writing the last data to
+    SANDISK..." while the safe writer finishes, and at the end, for a
+    moment, "The files are on SANDISK - you can remove it." (a failed
+    operation stays until it is closed; the queue goes on meanwhile)."""
     lib = staged / "libliria-private"
     for name in ("liria-sde-progress.c", "liria-sde-progress.h"):
         if not (lib / name).exists():
             raise ValueError("%s overlay missing" % name)
     shutil.copy2(ROOT / "src/common/transfer_model.h", lib / "liria-sde-transfer-model.h")
+    shutil.copy2(ROOT / "src/common/transfer_scene.h", lib / "liria-sde-transfer-scene.h")
     edit_once(lib / "Makefile.am", "\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n",
               "\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n"
-              "\tliria-sde-progress.c \\\n\tliria-sde-progress.h \\\n\tliria-sde-transfer-model.h \\\n")
+              "\tliria-sde-progress.c \\\n\tliria-sde-progress.h \\\n\tliria-sde-transfer-model.h \\\n"
+              "\tliria-sde-transfer-scene.h \\\n")
 
     info = lib / "liria-progress-info.c"
     edit_once(info, '#include "liria-global-preferences.h"\n',
@@ -2625,7 +2638,7 @@ def liria_progress(staged):
                     "    gtk_container_add (GTK_CONTAINER (btcancel), imgcancel);\n"
                     '    atk_object_set_name (gtk_widget_get_accessible (btcancel), _("Cancel"));\n'
                     '    gtk_widget_set_tooltip_text (btcancel, _("Cancel"));\n'
-                    '    g_signal_connect (btcancel, "clicked", (GCallback)cancel_clicked, data);\n\n'
+                    '    g_signal_connect (btcancel, "clicked", (GCallback)sde_cancel_clicked, data);\n\n'
                     "    start_button_init (data);\n"
                     "    queue_button_init (data);\n\n"
                     "    liria_sde_progress_build (vbox, info, data->btstart, data->btqueue, btcancel,\n"
@@ -2636,6 +2649,52 @@ def liria_progress(staged):
                     "    data->details = GTK_LABEL (details);\n\n")
     edit_once(info, "                        progress,\n                        FALSE, FALSE, 6);\n",
               "                        progress,\n                        FALSE, FALSE, 0);\n")
+    # A finished operation says so for a moment (or, failed, until it is
+    # closed) and no longer counts as running: the queue goes on.
+    edit_once(info, """static void
+op_finished (ProgressWidgetData *data)
+{
+    gtk_widget_destroy (data->widget);
+""", """/* SDE: the operation's box goes (op_finished (), its cross). */
+static void
+sde_op_remove (ProgressWidgetData *data)
+{
+    gtk_widget_destroy (data->widget);
+
+    n_progress_ops--;
+    update_queue ();
+
+    update_status_icon_and_window ();
+}
+
+static gboolean
+sde_op_remove_later (gpointer data)
+{
+    sde_op_remove (data);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+op_finished (ProgressWidgetData *data)
+{
+    /* SDE: a finished copy shows that for a moment (liria-sde-progress.c);
+     * the next queued operation starts at once. */
+    if (liria_sde_progress_finish (data->widget, sde_op_remove_later, data)) {
+        update_queue ();
+        return;
+    }
+    gtk_widget_destroy (data->widget);
+""")
+    edit_once(info, "    if (! is_op_paused (data->state))\n        (*n)++;\n",
+              "    /* SDE: a finished operation that still shows does not run. */\n"
+              "    if (! is_op_paused (data->state) && !liria_sde_progress_is_finished (widget))\n"
+              "        (*n)++;\n")
+    edit_once(info, "static void\nprogress_widget_invalid_state (ProgressWidgetData *data)\n",
+              "/* SDE: the cross of a finished operation closes it; otherwise it cancels. */\n"
+              "static void\nsde_cancel_clicked (GtkWidget *button,\n                    ProgressWidgetData *data)\n{\n"
+              "    if (liria_sde_progress_close (data->widget))\n        return;\n"
+              "    cancel_clicked (button, data);\n}\n\n"
+              "static void\nprogress_widget_invalid_state (ProgressWidgetData *data)\n")
 
     ops = lib / "liria-file-operations.c"
     edit_once(ops, '#include "liria-sde-copy.h"\n', '#include "liria-sde-copy.h"\n#include "liria-sde-progress.h"\n')
@@ -2672,6 +2731,38 @@ def liria_progress(staged):
     edit_once(ops, "\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n",
               "\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n"
               "\tliria_sde_progress_transfer_finishing (job->progress);\n")
+    # 0.2.0 Alpha 3: the window names the drive written safely, says when
+    # the last data is written and when the drive failed.
+    edit_once(ops, "\tliria_progress_info_get_ready (job->common.progress);\n"
+                   "\treturn g_cancellable_is_cancelled (job->common.cancellable);\n",
+              "\tliria_sde_progress_transfer_throttle (written);\n"
+              "\tliria_progress_info_get_ready (job->common.progress);\n"
+              "\treturn g_cancellable_is_cancelled (job->common.cancellable);\n")
+    edit_once(ops, "\tif (!liria_sde_flush_finish (job->sde_flush, &error)) {\n",
+              "\tliria_sde_progress_transfer_finishing (common->progress);\n"
+              "\tif (!liria_sde_flush_finish (job->sde_flush, &error)) {\n"
+              "\t\tliria_sde_progress_transfer_failed (common->progress, error->message);\n")
+    edit_once(ops, "static gboolean\ncopy_job (GIOSchedulerJob *io_job,",
+              "/* SDE: the drive the copy goes to safely, for the window's texts. */\n"
+              "static void\nsde_report_drive (CopyMoveJob *job)\n{\n"
+              "\tif (job->sde_flush != NULL) {\n"
+              "\t\tliria_sde_progress_transfer_drive (job->common.progress,\n"
+              "\t\t\t\t\t\t   liria_sde_flush_get_name (job->sde_flush),\n"
+              "\t\t\t\t\t\t   liria_sde_flush_is_removable (job->sde_flush),\n"
+              "\t\t\t\t\t\t   liria_sde_flush_has_4g_limit (job->sde_flush));\n"
+              "\t}\n}\n\n"
+              "static gboolean\ncopy_job (GIOSchedulerJob *io_job,")
+    edit_once(ops, "\t\tjob->sde_flush = liria_sde_flush_new (dest);\n",
+              "\t\tjob->sde_flush = liria_sde_flush_new (dest);\n\t\tsde_report_drive (job);\n")
+    edit_once(ops, "\tjob->sde_flush = liria_sde_flush_new (job->destination);\n",
+              "\tjob->sde_flush = liria_sde_flush_new (job->destination);\n\tsde_report_drive (job);\n")
+    edit_once(ops, "\tliria_progress_info_start (job->common.progress);\n\n\tto_trash_files = NULL;\n",
+              "\tliria_progress_info_start (job->common.progress);\n"
+              "\t/* SDE: the bin in the file operations window. */\n"
+              "\tliria_sde_progress_transfer_begin (job->common.progress,\n"
+              "\t\t\t\t\t   job->try_trash ? LIRIA_SDE_TRANSFER_TRASH : LIRIA_SDE_TRANSFER_DELETE,\n"
+              "\t\t\t\t\t   job->files, NULL);\n\n"
+              "\tto_trash_files = NULL;\n")
     # GLib 2.80 copies a local file with one copy_file_range () call and
     # reports it at the end: large files on internal disks are copied in
     # slices instead (liria-sde-copy.c), so the progress, the graph and
