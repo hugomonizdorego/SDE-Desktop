@@ -270,8 +270,14 @@ pkg_check_modules(QPDF REQUIRED IMPORTED_TARGET libqpdf>=11)
 pkg_check_modules(XANARA_FONTS REQUIRED IMPORTED_TARGET harfbuzz harfbuzz-subset freetype2 fontconfig zlib)
 add_library(sde-xanara-core STATIC xanara/document.cpp xanara/cache.cpp xanara/model.cpp
   xanara/pdf.cpp xanara/ops.cpp xanara/content.cpp xanara/fonts.cpp xanara/fontdata.cpp xanara/layout.cpp
-  xanara/edit.cpp)
+  xanara/edit.cpp xanara/ocr.cpp)
 target_include_directories(sde-xanara-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xanara)
+# OCR with the tesseract library when it is there (Debian: libtesseract-dev).
+pkg_check_modules(TESSERACT IMPORTED_TARGET tesseract lept)
+if(TESSERACT_FOUND)
+  target_compile_definitions(sde-xanara-core PRIVATE XANARA_HAVE_TESSERACT=1)
+  target_link_libraries(sde-xanara-core PUBLIC PkgConfig::TESSERACT)
+endif()
 target_link_libraries(sde-xanara-core PUBLIC sde-common PkgConfig::POPPLER_GLIB Threads::Threads
   PkgConfig::QPDF PkgConfig::XANARA_FONTS)
 # No qpdf PointerHolder: std::shared_ptr only (qpdf 11 and 12).
