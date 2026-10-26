@@ -58,6 +58,7 @@ Build-Depends: debhelper-compat (= 13),
                libxml2-utils,
                libappstream-dev (>= 1.0),
                libflatpak-dev (>= 1.12),
+               libapt-pkg-dev,
                libexif-dev,
                libexempi-dev,
                libpoppler-glib-dev,
@@ -262,8 +263,8 @@ Depends: ${shlibs:Depends},
          sde (= ${binary:Version}),
          packagekit,
          appstream,
+         flatpak,
          curl
-Recommends: flatpak
 Suggests: snapd
 Description: Selviana Desktop Environment - software center
  Merkadu is the software center of the Selviana Desktop Environment (SDE).

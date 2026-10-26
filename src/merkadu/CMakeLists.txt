@@ -62,4 +62,7 @@ else()
 endif()
 install(TARGETS merkadu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/categories.menu ${PROJECT_SOURCE_DIR}/data/merkadu/merkadu.conf
+              ${PROJECT_SOURCE_DIR}/data/merkadu/flathub.flatpakrepo
         DESTINATION ${CMAKE_INSTALL_DATADIR}/merkadu)
+# The icons of the archive's AppStream catalog (APT leaves them off).
+install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/60merkadu DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/apt/apt.conf.d)

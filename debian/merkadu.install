@@ -5,3 +5,4 @@ usr/share/sde/applications/merkadu.desktop
 usr/share/metainfo/org.debion.Merkadu.metainfo.xml
 usr/share/man/man1/merkadu.1
 usr/share/icons/hicolor/*/apps/merkadu.*
+etc/apt/apt.conf.d/60merkadu
