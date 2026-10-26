@@ -193,6 +193,6 @@ removed afterwards.
   Xvfb: Delete, Keep, Run Anyway, 1024×600 at 150 %).
   `tools/appimage_fixture.py DIR` writes the fixtures to look at.
 - Test hooks: `SDE_APPIMAGE_POLICY` (policy file), `SDE_APPIMAGE_TRUST`
-  (trust store), `SDE_APPIMAGE_GPGV` (verifier), `SDE_APPIMAGE_NO_FUSE=1`
+  (trust store), `SDE_APPIMAGE_GPGV` (the verifier; `-`: none is installed), `SDE_APPIMAGE_NO_FUSE=1`
   (extract and run), `SDE_PANEL_QA_DIR` (the window's controls and verdict
   in `AppImage.txt`).

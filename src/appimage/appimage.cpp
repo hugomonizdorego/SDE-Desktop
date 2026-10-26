@@ -445,10 +445,18 @@ GpgResult verify_detached(const std::string &key, const std::string &signature, 
   GpgResult r;
   r.problem = "error";
   *ran = false;
+  // The system's verifier (/usr/bin), else one in $PATH; tests name their
+  // own (SDE_APPIMAGE_GPGV; "-": none is installed).
+  auto system_program = [](const char *name) {
+    for (const char *dir : {"/usr/bin/", "/bin/"})
+      if (is_executable(std::string(dir) + name)) return std::string(dir) + name;
+    return find_program(name);
+  };
   std::string gpgv = env("SDE_APPIMAGE_GPGV");
-  if (gpgv.empty()) gpgv = find_program("gpgv");
-  std::string sqv = gpgv.empty() ? find_program("sqv") : "";
-  if (gpgv.empty() && sqv.empty()) return r;
+  bool none = gpgv == "-";
+  if (gpgv.empty()) gpgv = system_program("gpgv");
+  std::string sqv = gpgv.empty() ? system_program("sqv") : "";
+  if (none || (gpgv.empty() && sqv.empty())) return r;
   std::string home = tmpdir + "/gnupg", keyring = tmpdir + "/key.gpg", sig = tmpdir + "/sig.asc",
               file = tmpdir + "/digest";
   mkdir(home.c_str(), 0700);

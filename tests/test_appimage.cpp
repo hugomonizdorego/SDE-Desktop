@@ -641,14 +641,11 @@ void test_check() {
   close(dirfd);
 
   // No verifier at all (neither gpgv nor sqv): it cannot be verified.
-  unsetenv("SDE_APPIMAGE_GPGV");
-  std::string path = env("PATH");
-  setenv("PATH", (g_tmp + "/empty-path").c_str(), 1);
+  setenv("SDE_APPIMAGE_GPGV", "-", 1);
   Built nv = build(62, 2, "no verifier");
   sign(nv, kFpr1);
   c = check_file(write_file_at("Noverifier-1.0.AppImage", nv.bytes), store);
   CHECK(c.verdict == Verdict::no_key && c.error == "no-verifier");
-  setenv("PATH", path.c_str(), 1);
 
   // Saved and loaded again: the same answers.
   CHECK(store.save());

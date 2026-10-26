@@ -90,7 +90,7 @@ Private copies of AppImages that cannot run where they are.
 What was run, accepted, refused, kept or deleted.
 .SH ENVIRONMENT
 \fBSDE_APPIMAGE_POLICY\fR replaces the policy file, \fBSDE_APPIMAGE_TRUST\fR
-the trust store and \fBSDE_APPIMAGE_GPGV\fR the verifier (tests).
+the trust store and \fBSDE_APPIMAGE_GPGV\fR the verifier (tests; "-": none). Without it \fI/usr/bin/gpgv\fR is used, else \fBsqv\fR.
 .SH EXIT STATUS
 The application's exit status when it ran; 1 when it did not run (kept,
 deleted, refused or an error); 2 for a usage error.
