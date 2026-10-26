@@ -103,8 +103,15 @@ Right-click the background of a folder to create folders and documents or to pas
 <code>?</code> one character, for example <code>*.jpg</code> or <code>report-??.pdf</code>.</p>
 
 <h2 id="open-location">Opening a location</h2>
-<p>Type a folder path such as <code>/media</code>, a network address such as
-<code>sftp://server/home</code>, or <code>~</code> for your home folder.</p>
+<p>Press <kbd>Ctrl</kbd>+<kbd>L</kbd> and type a folder path such as <code>/media</code>,
+<code>~</code> for your home folder, or a place on another computer:
+<code>\\server\share</code> or <code>smb://server/share</code> for a Windows share (written
+as in Windows), an IP address or a computer name such as <code>192.168.1.10</code>,
+<code>nas</code> or <code>localhost</code> for its Windows shares (the other protocols are
+suggested while you type), <code>sftp://user@server/folder</code> (or <code>ssh://</code>),
+<code>ftp://</code>, <code>nfs://</code>, <code>davs://</code> and <code>dav://</code> (WebDAV),
+or <code>smb:</code> for the Windows network. The servers you opened are suggested as you
+type.</p>
 
 <h2 id="bookmarks">Bookmarks</h2>
 <p>Press <kbd>Ctrl</kbd>+<kbd>D</kbd> to bookmark the current folder; it appears in the sidebar
@@ -120,8 +127,16 @@ menu to copy it to a drive. Always use <b>Eject</b> or <b>Safely Remove</b> in t
 before unplugging: Liria first writes all cached data to the drive.</p>
 
 <h2 id="connect-server">Connecting to a server</h2>
-<p>Main Menu &rsaquo; Connect to Server opens SFTP, FTP, Windows shares (SMB) and WebDAV
-locations. Saved connections appear in the sidebar under Network.</p>
+<p>Type the address in the location bar (see <a href="#open-location">Opening a location</a>),
+or use Main Menu &rsaquo; Connect to Server for Windows shares (SMB), SSH (SFTP), WebDAV, FTP
+and NFS. When a server asks you to sign in, Liria asks for the user name, the domain and the
+password, or lets you in as a guest; <b>Remember the password in the keyring</b> is offered
+when a keyring runs in your session. Liria remembers the servers you opened, never their
+passwords. A new SSH server asks once whether to trust its key. FTP and WebDAV without HTTPS
+send passwords unencrypted, and Liria says so. If this computer cannot open a protocol, Liria
+names the package to ask your administrator for (<code>gvfs-backends</code>). The connection
+settings are the system's own (Samba and SSH configuration). Mounted servers appear in the
+sidebar under Network.</p>
 
 <h2 id="properties">File properties</h2>
 <p>Press <kbd>Alt</kbd>+<kbd>Return</kbd> to see a file's size, type, location, dates,

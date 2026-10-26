@@ -385,6 +385,8 @@ liria_sde_network_setup_entry (GtkEntry *entry)
     gtk_entry_completion_set_minimum_key_length (completion, 1);
     gtk_entry_completion_set_popup_single_match (completion, TRUE);
     gtk_entry_completion_set_inline_completion (completion, FALSE);
+    /* As wide as the suggestions: the entry is narrow on small screens. */
+    gtk_entry_completion_set_popup_set_width (completion, FALSE);
     g_object_set (cell, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
     gtk_cell_layout_pack_start (GTK_CELL_LAYOUT (completion), cell, TRUE);
     gtk_cell_layout_add_attribute (GTK_CELL_LAYOUT (completion), cell, "markup", SUGGEST_MARKUP);
@@ -892,6 +894,15 @@ liria_sde_network_show_failure (GtkWidget *window, GFile *location, GError *erro
     {
         primary = g_strdup_printf (_("%s on %s cannot be opened."), liria_sde_address_scheme_label (scheme), host);
         secondary = g_strdup (error->message);
+    }
+    else if (g_strcmp0 (scheme, "smb") == 0)
+    {
+        /* smb:/// lists the workgroups and their computers over SMB1,
+         * which Samba and Windows no longer speak by default. */
+        primary = g_strdup (_("The computers of the Windows network cannot be listed."));
+        secondary = g_strdup (_("Listing them needs the old SMB1 protocol, which current systems switch off for "
+                                "security. Type the name or the IP address of the computer instead, for example "
+                                "\\\\nas or 192.168.1.10."));
     }
     else
     {
