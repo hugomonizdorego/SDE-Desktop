@@ -311,3 +311,12 @@ add_test(NAME appimage-model COMMAND appimage-tests)
 add_test(NAME appimage-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_appimage_ui.py
   $<TARGET_FILE:sde-appimage>)
 set_tests_properties(appimage-ui PROPERTIES TIMEOUT 240)
+
+# Renaming accounts (src/settings/account_rename.*): requests, name rules,
+# checks and file edits; as root, whole renames, failures undone at every
+# step and interrupted renames in a fake root (usermod --prefix); the
+# helper's commands and refusals.
+add_executable(account-rename-tests test_account_rename.cpp ${PROJECT_SOURCE_DIR}/src/settings/account_rename.cpp)
+target_include_directories(account-rename-tests PRIVATE ${PROJECT_SOURCE_DIR}/src/settings)
+target_link_libraries(account-rename-tests PRIVATE sde-installer-base)
+add_test(NAME account-rename COMMAND account-rename-tests $<TARGET_FILE:sde-account-rename>)
