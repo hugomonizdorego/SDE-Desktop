@@ -340,13 +340,13 @@ def menu_checks():
     waitfor(lambda:'result:Log Out, Restart or Shut Down' in layout('SDE Search'),'typing in the menu did not search')
     assert 'query:shut down' in layout('SDE Search'),layout('SDE Search').keys()
     shot('23-menu-typing-searches');escape('SDE Search')
-    # alpha15 favorites go into the groups of their categories (0.2 Alpha 2).
+    # alpha15 favorites go into the favorites groups of their kind (0.2 Alpha 3).
     favs=';'.join(f'qa-{n.lower()}.desktop' for n in APPS[:12])
     config(extra=f'[menu]\nfavorites={favs}\n');reload()
     m=click_panel('start','^SDE Menu$');time.sleep(.8)
-    waitfor(lambda:'group:Internet' in layout('SDE Menu'),'migrated favorites missing')
+    waitfor(lambda:'group:Work' in layout('SDE Menu'),'migrated favorites missing')
     L=layout('SDE Menu');names=[k[6:] for k in L if k.startswith('group:')]
-    assert names and set(names)<=set(TILE_GROUPS) and 'Productivity' not in names,names
+    assert names and set(names)<=set(FAVORITES) and 'Productivity' not in names,names
     assert 'tiles=' not in conf();escape('SDE Menu')
     # Tile groups and sizes.
     config(extra='[menu]\ntiles=Work,qa-atlas.desktop:m,qa-bluefish.desktop:m,qa-calendar.desktop:w;Play,qa-chess.desktop:s,qa-sudoku.desktop:l\n');reload()
@@ -400,11 +400,13 @@ def menu_checks():
 # The tile groups by category (0.2 Alpha 2), in their order.
 TILE_GROUPS=['Internet','Office','Multimedia','Graphics','Development','Games','Education & Science',
              'System & Settings','Accessories','Other']
+# The favorites groups (0.2 Alpha 3), in their order.
+FAVORITES=['Work','Photos and media','System']
 def a2_menu_checks():
     """0.2.0 Alpha 2 Start menu: typing searches from every place (after the
     category filter, in its dropdown, in and after a context menu, from the
     rail, the jump grid and the account popup; after a popup a click outside
-    still closes the menu); tile groups by category (defaults, Productivity
+    still closes the menu); favorites by default (0.2 Alpha 3; Productivity
     and Explore migrated); drags between groups with drop feedback and
     autoscroll, a new group named at once, a group renamed by a click and
     moved by its name, an empty group removed; a search result dragged into
@@ -447,6 +449,8 @@ def a2_menu_checks():
     def conf_groups():return [g.split(',')[0] for g in conf().split('tiles=')[1].split('\n')[0].split(';')]
     def jump(letter):
         press('SDE Menu',next(k for k in L() if k.startswith('letter:')));press('SDE Menu','jump:'+letter)
+    def group_tiles():
+        return {k[13:].split('=',1)[0]:k.split('=',1)[1] for k in L() if k.startswith('@group-tiles:')}
     # 1) Typing searches from every place of the menu.
     config(overflow=False);reload()
     open_menu();typed('zea','in the menu')
@@ -472,22 +476,29 @@ def a2_menu_checks():
     open_menu();press('SDE Menu',next(k for k in L() if k.startswith('filter:')));time.sleep(.5)
     run('xdotool','key','Down','Return');time.sleep(.5)
     run('xdotool','mousemove',W*4//5,H//3,'click','1');gone('^SDE Menu$')
-    # 2) Without saved tiles: groups by category, in the category order.
+    # 2) Without saved tiles: the favorites in named groups (0.2 Alpha 3), in
+    # their order; never every application (the QA applications fit none of
+    # the favorites' roles).
     config(overflow=False);reload();open_menu()
-    names=[k[6:] for k in L() if k.startswith('group:')]
-    assert len(names)>=2 and set(names)<=set(TILE_GROUPS) and 'Productivity' not in names,names
-    assert [n for n in TILE_GROUPS if n in names]==names,('groups out of the category order',names)
-    shot('63-menu-category-groups')
-    # 3) Groups of 0.2 Alpha 1: Productivity and Explore become category
-    # groups (sizes kept), the user's own group stays.
+    groups=waitfor(group_tiles,'no tile groups')
+    assert set(groups)<=set(FAVORITES) and [n for n in FAVORITES if n in groups]==list(groups),groups
+    assert not any(t.startswith('qa-') for v in groups.values() for t in v.split(',')),groups
+    shot('63-menu-favorites')
+    # 3) Groups of 0.2 Alpha 1: Productivity and Explore give way to the
+    # favorites; the applications pinned into them stay, in their size, in the
+    # favorites group of their kind; the user's own group stays.
     config(overflow=False,extra='[menu]\ntiles=Productivity,qa-calendar.desktop:m,qa-editor.desktop:w;Explore,qa-inkscape.desktop:s;Mine,qa-atlas.desktop:m\n')
     reload();m=open_menu()
-    names=[k[6:] for k in L() if k.startswith('group:')]
-    assert names[:2]==['Internet','Office'],names
-    assert L()['@tile-size:Editor'][0]==ord('w'),L()['@tile-size:Editor']
+    groups=waitfor(lambda:(lambda g:g if 'Mine' in g else None)(group_tiles()),"the user's own group is gone")
+    assert 'Productivity' not in groups and 'Explore' not in groups and groups['Mine']=='qa-atlas.desktop:m',groups
+    assert {'qa-calendar.desktop:m','qa-editor.desktop:w'}<=set(groups.get('Work','').split(',')),groups
+    assert 'qa-inkscape.desktop:s' in groups.get('Photos and media','').split(','),groups
     # 4) A tile dragged into another group: the group is tinted, a bar shows
     # the place (QA: @drop with the group and the index), the group that
-    # lost its last tile goes, tiles_version=2 is saved.
+    # lost its last tile goes, tiles_version=3 is saved.
+    config(overflow=False,extra='[menu]\ntiles=Internet,qa-calendar.desktop:m;Office,qa-editor.desktop:w;'
+                                  'Mine,qa-atlas.desktop:m\ntiles_version=3\n')
+    reload();m=open_menu()
     src=center(item('SDE Menu','tile:Calendar'));editor=item('SDE Menu','tile:Editor')
     g=hold(m,src);glide(g,src,(editor[0]+editor[2]*3//4,editor[1]+editor[3]//2))
     waitfor(lambda:drop_target()==(1,1,0,0,1,0),lambda:'drop target after Editor not shown: '+str(drop_target()))
@@ -495,7 +506,7 @@ def a2_menu_checks():
     shot('64-menu-drag-between-groups')
     run('xdotool','mouseup','1');time.sleep(.6)
     waitfor(lambda:tiles_of('Office')==['qa-editor.desktop:w','qa-calendar.desktop:m'],lambda:'tile not moved: '+conf())
-    assert 'tiles=Internet' not in conf() and 'tiles_version=2' in conf(),conf()
+    assert 'tiles=Internet' not in conf() and 'tiles_version=3' in conf(),conf()
     waitfor(lambda:'group:Internet' not in L(),'the emptied group is still shown')
     # 5) Held near the bottom of the tiles they scroll to the end; dropped on
     # the place for a new group, the tile makes a group named at once.
@@ -603,7 +614,259 @@ def a2_menu_checks():
     shot('70-menu-icon-fallbacks');escape('SDE Menu')
     nm.unlink();(apps_dir/'qa-iconless-game.desktop').unlink()
     config(overflow=False);reload()
-    print('PANEL a2 start menu: typing searches everywhere, grabs after popups, groups by category, migration, drags between groups with feedback and autoscroll, new/renamed/moved/removed groups, drag from the search, Uninstall..., icon fallbacks PASS',flush=True)
+    print('PANEL a2 start menu: typing searches everywhere, grabs after popups, favorites by default, Alpha 1 migration, drags between groups with feedback and autoscroll, new/renamed/moved/removed groups, drag from the search, Uninstall..., icon fallbacks PASS',flush=True)
+def a3_menu_checks():
+    """0.2.0 Alpha 3 Start menu: favorites (the default browser and mail
+    client lead Work, Pin to Start into the group of the application's kind,
+    0.2 Alpha 2's groups by category migrated while SDE's own, kept once
+    arranged, Restore Default Tiles); tile folders (a tile dropped onto
+    another, named at once, opened in place and shut by a click, Escape or
+    a click elsewhere, applications dropped in, moved inside and taken out,
+    a folder left with one application gone, the keyboard, resized and
+    ungrouped from its menu, tiles_version=3); live badges from
+    notifications and the Unity LauncherEntry API (Query, progress, urgent,
+    an application that quits) on tiles, folders, list rows, search results,
+    pinned launchers and taskbar buttons, read in the notifications flyout
+    or when the application's window becomes active."""
+    apps_dir=home/'.local/share/applications'
+    def L():return layout('SDE Menu')
+    def P():return layout('SDE Panel')
+    def open_menu():
+        for t in ('SDE Search','SDE Menu'):
+            if visible('^'+t+'$'):escape(t)
+        command(['--menu'],'SDE Menu')
+        waitfor(lambda:(home/'qa'/'SDE-Menu.input').exists() and '@menu' in L(),'the menu does not have the keyboard')
+        time.sleep(.4);return find('^SDE Menu$')
+    def group_tiles():
+        return {k[13:].split('=',1)[0]:k.split('=',1)[1] for k in L() if k.startswith('@group-tiles:')}
+    def tiles_conf():
+        found=re.search(r'^tiles=(.*)$',conf(),re.M);return found.group(1) if found else ''
+    def drop_target():return next((v for k,v in L().items() if k.startswith('@drop:')),None)
+    def folder_open(name):return L().get('@folder-open:'+name,(0,))[0]
+    def shut():return not any(k.startswith('@folder-open:') for k in L())
+    def sel():return next((k[10:] for k in L() if k.startswith('@selected:')),'')
+    def hold(win,src):
+        g=geom(win);run('xdotool','mousemove',g['x']+src[0],g['y']+src[1],'mousedown','1');time.sleep(.2)
+        return g
+    def glide(g,src,dst,steps=6):
+        for k in range(1,steps+1):
+            run('xdotool','mousemove',g['x']+src[0]+(dst[0]-src[0])*k//steps,g['y']+src[1]+(dst[1]-src[1])*k//steps);time.sleep(.07)
+        time.sleep(.4)
+    def drag_to(src,dst,want,why):
+        g=hold(find('^SDE Menu$'),src);glide(g,src,dst)
+        waitfor(lambda:(lambda d:d is not None and want(d))(drop_target()),lambda:why+': '+str(drop_target()))
+        run('xdotool','mouseup','1');time.sleep(.6)
+    def popup_seq():return next((int(k[5:]) for k in layout('SDE Menu-popup') if k.startswith('@seq:')),0)
+    def popup_items():return [k[5:] for k,v in layout('SDE Menu-popup').items() if k.startswith('item:') and v[4]]
+    def right_click(name):
+        seq=popup_seq();r=item('SDE Menu',name);g=geom(find('^SDE Menu$'))
+        run('xdotool','mousemove',g['x']+r[0]+r[2]//2,g['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:popup_seq()>seq,'no context menu for '+name);time.sleep(.4)
+        return popup_items()
+    def choose(items,label):
+        assert label in items,(label,items)
+        run('xdotool','key',*(['Down']*(items.index(label)+1)),'Return');time.sleep(.6)
+    def jump(letter):
+        press('SDE Menu',next(k for k in L() if k.startswith('letter:')));press('SDE Menu','jump:'+letter)
+    def badge(where,name):
+        """The count the panel (or the menu, the search) shows for |name|."""
+        lay={'panel':P,'menu':L,'search':lambda:layout('SDE Search')}[where]()
+        return next((k.split('=',1)[1] for k in lay if k.startswith(name+'=')),None)
+    def tiles(text):
+        config(overflow=False,extra='[menu]\ntiles='+text+'\ntiles_version=3\n'+extra_conf);reload()
+    # Applications for the favorites' roles: a browser and a mail client
+    # (both the user's defaults), a chat (no favorite) and a video player.
+    fixtures={'qa-browser':'Name=Browser QA\nCategories=Network;WebBrowser;\nMimeType=x-scheme-handler/http;x-scheme-handler/https;\n',
+              'qa-mailer':'Name=Mailer QA\nCategories=Network;Email;\nMimeType=x-scheme-handler/mailto;\nStartupWMClass=qa-mailer-window\n',
+              'qa-chat':'Name=Chat QA\nCategories=Network;Chat;InstantMessaging;\n',
+              'qa-movies':'Name=Movies QA\nCategories=AudioVideo;Video;Player;\n'}
+    for name,body in fixtures.items():
+        (apps_dir/(name+'.desktop')).write_text(f'[Desktop Entry]\nType=Application\nExec={name} %U\nIcon=applications-internet\n'+body)
+    (home/'.config/mimeapps.list').write_text('[Default Applications]\nx-scheme-handler/http=qa-browser.desktop\n'
+                                              'x-scheme-handler/https=qa-browser.desktop\nx-scheme-handler/mailto=qa-mailer.desktop\n')
+    extra_conf=''
+    config(overflow=False);reload();time.sleep(1.0)
+    # 1) The favorites: the default browser first, the mail client in Work,
+    # the video player small in Photos and media, no chat.
+    m=open_menu()
+    groups=waitfor(lambda:(lambda g:g if 'qa-browser.desktop' in g.get('Work','') else None)(group_tiles()),
+                   lambda:'the default browser is not in Work: '+str(group_tiles()))
+    work=groups['Work'].split(',')
+    assert work[0].startswith('qa-browser.desktop:') and 'qa-mailer.desktop:m' in work,work
+    assert 'qa-movies.desktop:s' in groups.get('Photos and media','').split(','),groups
+    assert 'qa-chat.desktop' not in str(groups),groups
+    shot('70-menu-favorites-defaults')
+    # Pin to Start: into the favorites group of its kind (Work for a chat).
+    jump('C');choose(right_click('app:Chat QA'),'Pin to Start')
+    waitfor(lambda:re.search(r'(^|;)Work,[^;]*qa-chat\.desktop:m',tiles_conf()),lambda:'Chat QA not pinned into Work: '+conf())
+    assert 'tiles_version=3' in conf(),conf()
+    escape('SDE Menu')
+    # 2) 0.2 Alpha 2's groups by category, still as SDE made them, give way to
+    # the favorites; an application the user pinned there (Zeal: no pick of
+    # SDE's) stays. Arranged by the user (a group renamed) they stay as they are.
+    config(overflow=False,extra='[menu]\ntiles=Internet,qa-browser.desktop:w,qa-mailer.desktop:m,qa-zeal.desktop:m;'
+                                  'Games,qa-inkscape.desktop:w\ntiles_version=2\n');reload();open_menu()
+    groups=waitfor(lambda:(lambda g:g if 'Work' in g else None)(group_tiles()),lambda:'Alpha 2 groups not migrated: '+str(group_tiles()))
+    assert 'Internet' not in groups and 'Games' not in groups and 'qa-zeal.desktop:m' in groups['Work'].split(','),groups
+    assert 'qa-inkscape.desktop' not in str(groups),groups
+    config(overflow=False,extra='[menu]\ntiles=Web,qa-browser.desktop:w;Games,qa-inkscape.desktop:w\ntiles_version=2\n');reload()
+    open_menu();waitfor(lambda:group_tiles()=={'Web':'qa-browser.desktop:w','Games':'qa-inkscape.desktop:w'},
+                        lambda:'an arranged Alpha 2 layout changed: '+str(group_tiles()))
+    escape('SDE Menu')
+    # 3) Folders. A tile held over the middle of another lights it (QA:
+    # @drop with 1 as w); dropped, they make a folder, named after the
+    # category they share, opened, its name asked at once.
+    tiles('Mine,qa-browser.desktop:m,qa-mailer.desktop:m,qa-chat.desktop:m,qa-atlas.desktop:s;Media,qa-movies.desktop:w')
+    m=open_menu()
+    src=center(item('SDE Menu','tile:Mailer QA'));dst=center(item('SDE Menu','tile:Browser QA'))
+    g=hold(m,src);glide(g,src,dst)
+    waitfor(lambda:drop_target()==(0,0,1,0,1,0),lambda:'no drop onto Browser QA: '+str(drop_target()))
+    shot('71-menu-folder-drop')
+    run('xdotool','mouseup','1')
+    waitfor(lambda:folder_open('Internet')==100,lambda:'the new folder did not open: '+str([k for k in L() if k.startswith(('@folder','folder'))]))
+    waitfor(lambda:'folder:Internet/qa-browser.desktop/qa-mailer.desktop:m' in tiles_conf(),lambda:'folder not saved: '+conf())
+    assert 'tiles_version=3' in conf(),conf()
+    run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Web');run('xdotool','key','Return')
+    waitfor(lambda:'folder:Web/qa-browser.desktop/qa-mailer.desktop:m' in tiles_conf(),lambda:'folder not renamed: '+conf())
+    waitfor(lambda:'folder-app:Browser QA' in L() and 'folder-app:Mailer QA' in L() and 'folder-name:Web' in L(),
+            'the open folder does not show its applications')
+    assert L()['@folder-apps:Web=Browser QA,Mailer QA'],L().keys()
+    shot('72-menu-folder-open')
+    # A click on the folder shuts it, another opens it; Escape shuts it (the
+    # menu stays), and so does a click elsewhere (an empty part of the rail).
+    press('SDE Menu','folder:Web');waitfor(shut,'a click did not shut the folder')
+    press('SDE Menu','folder:Web');waitfor(lambda:folder_open('Web')==100,'a click did not open the folder')
+    run('xdotool','key','Escape');waitfor(shut,'Escape did not shut the folder')
+    assert visible('^SDE Menu$'),'Escape closed the menu with a folder open'
+    top,bottom=L()['rail:menu'],L()['rail:account']
+    if bottom[1]-(top[1]+top[3])>round(12*scale):
+        press('SDE Menu','folder:Web');waitfor(lambda:folder_open('Web')==100,'the folder did not open')
+        g=geom(m);run('xdotool','mousemove',g['x']+top[0]+top[2]//2,g['y']+(top[1]+top[3]+bottom[1])//2,'click','1')
+        waitfor(shut,'a click elsewhere did not shut the folder')
+    # Applications join it: dropped onto the folder (last), into the open
+    # folder before the application under the pointer (QA: 2 as w, the place
+    # as h), moved inside it.
+    drag_to(center(item('SDE Menu','tile:Chat QA')),center(item('SDE Menu','folder:Web')),lambda d:d[2]==1,'no drop onto the folder')
+    waitfor(lambda:'folder:Web/qa-browser.desktop/qa-mailer.desktop/qa-chat.desktop:m' in tiles_conf(),lambda:'Chat QA not in the folder: '+conf())
+    press('SDE Menu','folder:Web');waitfor(lambda:folder_open('Web')==100,'the folder did not open')
+    first=item('SDE Menu','folder-app:Browser QA')
+    drag_to(center(item('SDE Menu','tile:Atlas')),(first[0]+first[2]//6,first[1]+first[3]//2),lambda d:d[2:4]==(2,0),
+            'no drop into the open folder')
+    waitfor(lambda:'folder:Web/qa-atlas.desktop/qa-browser.desktop/qa-mailer.desktop/qa-chat.desktop:m' in tiles_conf(),
+            lambda:'Atlas not dropped into the folder: '+conf())
+    shot('73-menu-folder-four')
+    first=item('SDE Menu','folder-app:Atlas')
+    drag_to(center(item('SDE Menu','folder-app:Chat QA')),(first[0]+first[2]//6,first[1]+first[3]//2),lambda d:d[2]==2,
+            'no place in the folder')
+    waitfor(lambda:'folder:Web/qa-chat.desktop/qa-atlas.desktop/qa-browser.desktop/qa-mailer.desktop:m' in tiles_conf(),
+            lambda:'Chat QA not moved inside the folder: '+conf())
+    # Out again: dragged before the folder, from its menu, unpinned; a
+    # folder left with one application becomes that application's tile.
+    f=item('SDE Menu','folder:Web')
+    drag_to(center(item('SDE Menu','folder-app:Atlas')),(f[0]+f[2]//8,f[1]+f[3]//2),lambda d:d[2]==0 and d[1]==0,
+            'no place before the folder')
+    waitfor(lambda:tiles_conf().startswith('Mine,qa-atlas.desktop:m,folder:Web/qa-chat.desktop/qa-browser.desktop/qa-mailer.desktop:m'),
+            lambda:'Atlas not taken out of the folder: '+conf())
+    if shut():press('SDE Menu','folder:Web');waitfor(lambda:folder_open('Web')==100,'the folder did not open')
+    choose(right_click('folder-app:Chat QA'),'Remove from Folder')
+    waitfor(lambda:'folder:Web/qa-browser.desktop/qa-mailer.desktop:m,qa-chat.desktop:m' in tiles_conf(),
+            lambda:'Remove from Folder: '+conf())
+    choose(right_click('folder-app:Browser QA'),'Unpin from Start')
+    waitfor(lambda:'folder:' not in tiles_conf() and 'qa-browser.desktop' not in tiles_conf() and
+            'qa-mailer.desktop:m' in tiles_conf(),lambda:'a folder with one application stayed: '+conf())
+    waitfor(shut,'the folder that is gone stayed open')
+    escape('SDE Menu')
+    # The keyboard: Enter opens a folder on its first application, Escape
+    # shuts it on the folder again.
+    tiles('Mine,folder:Web/qa-browser.desktop/qa-mailer.desktop:m,qa-chat.desktop:m;Media,qa-movies.desktop:w')
+    m=open_menu();run('xdotool','key','Down');waitfor(lambda:sel()=='folder:Web',lambda:'the first tile is not the folder: '+sel())
+    run('xdotool','key','Return')
+    waitfor(lambda:folder_open('Web')==100 and sel()=='folder-app:Browser QA',lambda:'Enter did not open the folder on its first application: '+sel())
+    run('xdotool','key','Right');waitfor(lambda:sel()=='folder-app:Mailer QA',lambda:'Right did not move in the folder: '+sel())
+    run('xdotool','key','Escape');waitfor(lambda:shut() and sel()=='folder:Web',lambda:'Escape did not shut the folder: '+sel())
+    # Its menu: Resize (Large), Ungroup Folder (the applications get their tiles back).
+    items=right_click('folder:Web');assert items[:2]==['Open Folder','Rename Folder'] and 'Ungroup Folder' in items,items
+    into_submenu(3);run('xdotool','key','Down','Down','Down','Return');time.sleep(.6)
+    waitfor(lambda:'folder:Web/qa-browser.desktop/qa-mailer.desktop:l' in tiles_conf(),lambda:'the folder not resized: '+conf())
+    waitfor(lambda:L().get('@tile-size:folder:Web',(0,))[0]==ord('l'),'the large folder is not shown')
+    shot('74-menu-folder-large')
+    choose(right_click('folder:Web'),'Ungroup Folder')
+    waitfor(lambda:tiles_conf().startswith('Mine,qa-browser.desktop:m,qa-mailer.desktop:m,qa-chat.desktop:m'),
+            lambda:'Ungroup Folder: '+conf())
+    escape('SDE Menu')
+    # 4) Live badges. Notifications counted per application (the
+    # desktop-entry hint): the folder shows its applications' together.
+    extra_conf='[panel]\npinned=qa-mailer.desktop;qa-chat.desktop\n'
+    tiles('Mine,folder:Web/qa-browser.desktop/qa-mailer.desktop:m,qa-chat.desktop:m;Media,qa-movies.desktop:w')
+    for who in ('Ana','Bo'):run('notify-send','-a','Mailer QA','-h','string:desktop-entry:qa-mailer',f'New mail from {who}','Lunch?')
+    waitfor(lambda:badge('panel','@app-badge:qa-mailer.desktop')=='2',lambda:'no badge for two mails: '+str([k for k in P() if 'badge' in k]))
+    waitfor(lambda:(badge('panel','@pin-badge:qa-mailer.desktop') or '').startswith('2:#'),'no badge on the pinned Mailer QA')
+    m=open_menu()
+    waitfor(lambda:badge('menu','@badge:folder:Web')=='2','no badge on the folder')
+    press('SDE Menu','folder:Web')
+    waitfor(lambda:(badge('menu','@badge:folder-app:Mailer QA') or '').startswith('2:#'),'no badge on the tile in the folder')
+    shot('75-menu-badges-folder')
+    jump('M');waitfor(lambda:(badge('menu','@badge:app:Mailer QA') or '').startswith('2:#'),'no badge in the list')
+    escape('SDE Menu')
+    command(['--search','mailer'],'SDE Search')
+    waitfor(lambda:badge('search','@badge:result:Mailer QA')=='2','no badge in the search results')
+    shot('76-search-badges');escape('SDE Search')
+    # LauncherEntry: the first Update brings only the progress, Query the
+    # count; then changes; urgent without a count.
+    fx=sp.Popen([str(a.test_dir.resolve()/'sde-launcher-entry-fixture'),'application://qa-chat.desktop','--count','5',
+                 '--progress','0.4','--partial'],env=e,stdin=sp.PIPE,stdout=sp.PIPE,text=True)
+    processes.append(fx)
+    assert fx.stdout.readline().strip()=='READY','the LauncherEntry fixture did not start'
+    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='5:progress 40',
+            lambda:'LauncherEntry count (Query) missing: '+str([k for k in P() if 'badge' in k]))
+    fx.stdin.write('count 12\n');fx.stdin.flush()
+    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='12:progress 40','LauncherEntry count not updated')
+    waitfor(lambda:(badge('panel','@pin-badge:qa-chat.desktop') or '').startswith('12:#'),'no badge on the pinned Chat QA')
+    m=open_menu();waitfor(lambda:(badge('menu','@badge:tile:Chat QA') or '').startswith('12:#'),'no LauncherEntry badge on the tile')
+    shot('77-menu-badges');escape('SDE Menu')
+    fx.stdin.write('urgent 1\nhide\n');fx.stdin.flush()
+    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='0:urgent:progress 40','urgent without a count not shown')
+    shot('78-taskbar-badges')
+    # Read in the notifications flyout: the mails' badge goes.
+    click_panel('notifications','^Notifications$');time.sleep(.5);escape('Notifications')
+    waitfor(lambda:badge('panel','@app-badge:qa-mailer.desktop') is None,'the badge stayed after the flyout')
+    # A window of the application becomes active: its notifications are read.
+    import shutil
+    wm_bin=shutil.which('sde-wm') or 'openbox'
+    rc=next((str(c) for c in (Path('/usr/share/sde/openbox/rc.xml'),Path(__file__).resolve().parent.parent/'data/openbox/rc.xml') if c.exists()),None)
+    wm=spawn(wm_bin,'--replace','--sm-disable',*(['--config-file',rc] if rc else []))
+    waitfor(lambda:'_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop','-root','_NET_SUPPORTING_WM_CHECK',check=False).stdout,'the window manager did not start')
+    window=str(a.test_dir.resolve()/'sde-preview-window')
+    mailer=sp.Popen([window,'Mailer QA Window','2563EB','qa-mailer-window'],env=e,stdout=sp.DEVNULL)
+    find('^Mailer QA Window$');time.sleep(.5)
+    other=sp.Popen([window,'Other QA Window','16A34A','QA-Other'],env=e,stdout=sp.DEVNULL)
+    processes.extend([mailer,other])
+    w_other=find('^Other QA Window$');run('xdotool','windowactivate',w_other);time.sleep(.6)
+    run('notify-send','-a','Mailer QA','-h','string:desktop-entry:qa-mailer','New mail from Cy','Lunch?')
+    waitfor(lambda:(badge('panel','@task-badge:Mailer QA Window') or '').startswith('1:#'),
+            lambda:'no badge on the taskbar button: '+str([k for k in P() if 'badge' in k or k.startswith('task:')]))
+    shot('79-taskbar-badge-window')
+    run('xdotool','windowactivate',find('^Mailer QA Window$'))
+    waitfor(lambda:badge('panel','@app-badge:qa-mailer.desktop') is None,'the badge stayed when the window became active')
+    # The LauncherEntry application quits: its badge goes with it.
+    fx.terminate();fx.wait()
+    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop') is None,'the badge of an application that quit stayed')
+    for p in (mailer,other,wm):p.terminate()
+    for p in (mailer,other,wm):p.wait()
+    # 5) Restore Default Tiles: the favorites again.
+    extra_conf=''
+    tiles('Mine,qa-atlas.desktop:m');m=open_menu()
+    t=L()['@tiles'];g=geom(m);seq=popup_seq()
+    run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]-round(8*scale),'click','3')
+    waitfor(lambda:popup_seq()>seq,'no background menu');time.sleep(.3)
+    choose(popup_items(),'Restore Default Tiles')
+    waitfor(lambda:not tiles_conf() and 'Work' in group_tiles(),lambda:'default tiles not restored: '+conf()+str(group_tiles()))
+    escape('SDE Menu')
+    for name in fixtures:(apps_dir/(name+'.desktop')).unlink()
+    (home/'.config/mimeapps.list').unlink()
+    config(overflow=False);reload()
+    assert panel_proc.poll() is None,'panel exited'
+    print('PANEL a3 start menu: favorites (default browser/mail, Pin to Start by kind, Alpha 2 migration, Restore Default Tiles), folders (made by a drop, named, opened/shut by click, Escape, a click elsewhere; apps in, inside, out; one left: gone; keyboard; resized; ungrouped), live badges (notifications, LauncherEntry with Query/progress/urgent, tiles, folder, list, search, pinned and taskbar buttons, read in the flyout or by the active window, sender gone) PASS',flush=True)
 def perf_log():
     """Lines of the Start menu timing hook (src/panel/menu_perf.h)."""
     try:text=(home/'qa'/'menu-perf.log').read_text().splitlines()
@@ -1727,7 +1990,7 @@ try:
     if a.only=='a52':
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     if a.only=='start-menu':
-        panel_checks_a50();menu_checks();search_checks();start_menu_checks();a2_menu_checks();raise SystemExit(0)
+        panel_checks_a50();menu_checks();search_checks();start_menu_checks();a2_menu_checks();a3_menu_checks();raise SystemExit(0)
     if a.only=='battery-clock':
         battery_a2_checks();battery_checks();clock_a2_checks()
         assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
@@ -1737,6 +2000,7 @@ try:
     search_checks()
     start_menu_checks()
     a2_menu_checks()
+    a3_menu_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
     config(overflow=False);reload()
     waitfor(lambda:'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons')

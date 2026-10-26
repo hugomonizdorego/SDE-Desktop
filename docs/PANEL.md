@@ -147,3 +147,26 @@ when the keys above are not set.
   `@clock-blink`.
 * `tools/showcase.py`: the battery scenes (charging with the label, low
   battery) and the clock styles with their options.
+
+## Badges on the taskbar
+
+Since 0.2.0 Alpha 3 the pinned launchers and the taskbar buttons show the
+live badges of the Start menu ([START-MENU.md](START-MENU.md#live-badges)):
+the count of an application's unread notifications, or the count it sends
+with the Unity LauncherEntry API, on the top right corner of its icon, in
+the application's colour with a ring of the panel's colour ("99+" above
+99); a dot when it only asks for attention; its progress as a thin bar
+below the icon. A taskbar button finds its application by its window's
+class (`WM_CLASS`: the desktop file's name, `StartupWMClass=`, the program
+of `Exec=`). When a window of the application becomes active, its
+notifications are read and their count goes; a count the application sends
+itself stays until the application changes it. The badges change without
+polling, and only the launchers and buttons are repainted.
+
+Tests: `tools/panel-smoke.py --only start-menu` sends notifications with
+`notify-send` (with and without a `desktop-entry` hint) and counts with
+`sde-launcher-entry-fixture` (`tests/launcher_entry_fixture.cpp`), opens
+windows of the application under `sde-wm` and reads the panel's QA dump:
+`@app-badge:<desktop ID>=<count>[:urgent][:progress <percent>]`,
+`@pin-badge:<desktop ID>=<count>:#<colour>` and
+`@task-badge:<window title>=<count>:#<colour>`.

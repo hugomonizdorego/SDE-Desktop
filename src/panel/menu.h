@@ -336,6 +336,7 @@ class AppMenu : public PanelPopup {
   double folder_open_ = 0, folder_from_ = 0, folder_to_ = 0, folder_start_ = 0;
   bool renaming_folder_ = false;
   bool rename_when_open_ = false;  // a new folder: its name is asked once it is open
+  bool press_shuts_folder_ = false;  // a press outside it: shuts it unless it becomes a drag
   Rect folder_band_;  // where the open folder shows its applications (window coordinates)
   int folder_notch_ = 0;  // x of the folder tile's middle, where the band points
   // Resizing the menu by its edge.

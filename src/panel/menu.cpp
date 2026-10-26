@@ -1792,14 +1792,14 @@ void AppMenu::folder_menu(const Item &it, int px, int py) {
     add(texts.back().c_str(), SMALL + int(s), FL_MENU_RADIO | (folder.size == s ? FL_MENU_VALUE : 0));
   }
   add(nullptr, 0);
-  add(_("Move to Group"), 0, FL_SUBMENU);
+  add(_("Move to Group"), 0, FL_SUBMENU | FL_MENU_DIVIDER);
   for (size_t i = 0; i < groups_.size(); ++i) {
     if (int(i) == it.group) continue;
     texts.push_back(groups_[i].name.empty() ? std::string(_("Unnamed group")) : menu_text(groups_[i].name));
     add(texts.back().c_str(), GROUP0 + long(i));
   }
   add(_("New Group"), NEW_GROUP);
-  add(nullptr, 0, FL_MENU_DIVIDER);
+  add(nullptr, 0);
   add(_("Ungroup Folder"), UNGROUP);
   add(_("Unpin Folder from Start"), UNPIN);
   add(nullptr, 0);
@@ -2000,7 +2000,7 @@ void AppMenu::background_menu(int px, int py) {
       start_rename(int(groups_.size()) - 1);
       return;
     case 3:
-      // The groups by category of the installed applications again.
+      // The favorites made of the installed applications again.
       p->set_settings({{"menu", "tiles", ""}, {"menu", "favorites", ""}, {"menu", "tiles_version", ""}});
       break;
     case 4:
@@ -2830,16 +2830,21 @@ int AppMenu::handle(int event) {
         return 1;
       }
       // 0.2 Alpha 3: a click outside the open folder shuts it (on another
-      // folder: that one opens instead).
+      // folder: that one opens instead). A press on something that can be
+      // dragged shuts it on release: dragged, it may go into the folder.
+      bool draggable = tile_like(it.kind) || it.kind == K_ROW || it.kind == K_GROUP || it.kind == K_FOLDER_NAME;
+      press_shuts_folder_ = false;
       if (left && folder_expanded() && folder_to_ > 0 && !folder_band_.contains(ex, ey) &&
-          !(it.kind == K_FOLDER && it.group == folder_group_ && it.index == folder_index_))
-        collapse_folder();
+          !(it.kind == K_FOLDER && it.group == folder_group_ && it.index == folder_index_)) {
+        if (draggable) press_shuts_folder_ = true;
+        else collapse_folder();
+      }
       if (letters_open_ && it.kind != K_JUMP && ex >= list_x_ && ex < list_x_ + list_w_) {
         letters_open_ = false;
         redraw();
         return 1;
       }
-      if (left && (tile_like(it.kind) || it.kind == K_ROW || it.kind == K_GROUP || it.kind == K_FOLDER_NAME)) {
+      if (left && draggable) {
         // Opens (a group name: renames, a folder: opens in place) on
         // release, unless the press becomes a drag.
         press_ = {it.kind, it.index, it.group};
@@ -2913,6 +2918,7 @@ int AppMenu::handle(int event) {
         press_ = {};
         Fl::remove_timeout(autoscroll, this);
         if (dragging_) {
+          press_shuts_folder_ = false;
           // The drops end the drag (the target is found in its layout).
           if (drag_group_ >= 0) drop_group(Fl::event_x(), Fl::event_y());
           else drop(Fl::event_x(), Fl::event_y());
@@ -2925,10 +2931,13 @@ int AppMenu::handle(int event) {
         drag_folder_group_ = drag_folder_index_ = -1;
         build_items();
         const Item *it = find(pressed);
-        if (it && it->contains(Fl::event_x(), Fl::event_y())) {
-          Item copy = *it;
-          activate(copy);
-        }
+        bool hit = it && it->contains(Fl::event_x(), Fl::event_y());
+        Item copy = hit ? *it : Item();
+        // A click outside the open folder shuts it (another folder opens
+        // instead).
+        if (press_shuts_folder_ && copy.kind != K_FOLDER) collapse_folder();
+        press_shuts_folder_ = false;
+        if (hit) activate(copy);
         return 1;
       }
       return PanelPopup::handle(event);
@@ -3860,22 +3869,18 @@ void AppMenu::qa_dump_menu() {
     line("@folder-open:" + groups_[size_t(folder_group_)].tiles[size_t(folder_index_)].name,
          int(std::lround(folder_open_ * 100)), folder_band_.y, folder_band_.w, folder_band_.h, 1, 0);
   // Every group's tiles, also those out of view, with their sizes:
-  // "@group-tiles:Work=Liria:m,folder Web(Firefox+Thunderbird):m" (the
-  // group's number as x).
-  auto app_name = [&](const std::string &id) {
-    const DesktopEntry *e = app(id);
-    return e ? e->name : id;
-  };
+  // "@group-tiles:Work=liria.desktop:m,folder Web(a.desktop+b.desktop):m"
+  // (the group's number as x).
   for (size_t g = 0; g < groups_.size(); ++g) {
     std::string tiles;
     for (auto &t : groups_[g].tiles) {
       if (!tiles.empty()) tiles += ",";
       if (t.folder) {
         tiles += "folder " + t.name + "(";
-        for (size_t i = 0; i < t.apps.size(); ++i) tiles += (i ? "+" : "") + app_name(t.apps[i]);
+        for (size_t i = 0; i < t.apps.size(); ++i) tiles += (i ? "+" : "") + t.apps[i];
         tiles += ")";
       } else {
-        tiles += app_name(t.id);
+        tiles += t.id;
       }
       tiles += std::string(":") + menu::tile_size_code(t.size);
     }
