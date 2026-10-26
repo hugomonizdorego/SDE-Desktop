@@ -102,7 +102,10 @@ Build-Depends: debhelper-compat (= 13),
                libxcb-sync-dev,
                libxcb-util-dev,
                libxcb-xfixes0-dev,
-               uthash-dev
+               uthash-dev,
+               gpg,
+               gpg-agent,
+               gpgv
 Standards-Version: 4.6.2
 Homepage: https://github.com/hugomonizdorego/SDE-Desktop
 Vcs-Git: https://github.com/hugomonizdorego/SDE-Desktop.git
@@ -141,7 +144,8 @@ Depends: ${shlibs:Depends},
          bzip2,
          xz-utils,
          xdg-user-dirs,
-         fonts-dejavu-core | fonts-noto-core
+         fonts-dejavu-core | fonts-noto-core,
+         gpgv | sqv
 Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             accountsservice,
             network-manager,
@@ -153,7 +157,9 @@ Recommends: papirus-icon-theme | adwaita-icon-theme, qpdf, cups-client,
             libnotify-bin,
             dconf-gsettings-backend | gsettings-backend,
             glib-networking,
-            lightdm | x-display-manager
+            lightdm | x-display-manager,
+            libfuse2t64 | libfuse2,
+            fuse3 | fuse
 Suggests: eduka-icons, unrar, hunspell, tesseract-ocr, ghostscript,
           brightnessctl,
           ddcutil,

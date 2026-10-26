@@ -70,6 +70,8 @@ jobs:
           for p in sde-display-settings calculator sde-wm sde-compositor sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update merkadu; do
             "$p" --version
           done
+          debrun --version && sde-appimage --version && test -x /usr/libexec/sde/debrun-helper
+          /usr/libexec/sde/sde-account-rename --version && test -f /usr/lib/systemd/system/sde-account-rename.service
           # SDE's own ecosystem: no distribution FLTK, xsettingsd or polkit agent.
           test -x /usr/bin/sde-xsettingsd && test -x /usr/libexec/sde/sde-polkit-agent
           ! ldd /usr/bin/sde-panel | grep -q libfltk
@@ -103,6 +105,7 @@ jobs:
           dbus-run-session -- python3 tests/test_about_ui.py niny=/usr/bin/niny \
             sysmon=/usr/bin/sde-system-monitor run=/usr/bin/sde-run display=/usr/bin/sde-display-settings \
             calculator=/usr/bin/calculator welcome=/usr/bin/sde-welcome reports=/usr/bin/sde-system-reports \
+            debrun=/usr/bin/debrun \
             merkadu=/usr/bin/merkadu licenses=dist/test-tools/sde-ui-kit-demo
           # Niny: each tab's × closes its tab, the only tab stays, the menu bar.
           python3 tests/test_niny_ui.py /usr/bin/niny

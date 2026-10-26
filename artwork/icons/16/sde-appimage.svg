@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppImage Runner, 16 px: SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="auto">
+  <rect x="0.5" y="0.5" width="12" height="12" rx="3" fill="#3876B9" stroke="#2B2B2F"/>
+  <path d="M4 3.5V9.5L8.5 6.5Z" fill="#F4EFE6"/>
+  <path d="M11.5 7L15.5 8.5V11.5Q15.5 14 11.5 15.8Q7.5 14 7.5 11.5V8.5Z" fill="#4A9157" stroke="#2B2B2F"/>
+  <path d="M9.6 11.4L11 12.8L13.4 10.2" fill="none" stroke="#F4F3EE" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

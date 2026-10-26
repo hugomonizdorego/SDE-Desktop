@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Renames the user accounts that Control Center > Users & Avatar scheduled
+# (requests in /var/lib/sde/account-renames; docs/CONTROL-CENTER.md, man
+# sde-account-rename): early at boot, before anyone can log in (the display
+# manager, logins, logind, AccountsService and cron wait for it), when no
+# program of the account runs. Each step is journaled and undone when one
+# fails; the log is /var/log/sde-account-rename.log. Without a request it is
+# skipped at once.
+[Unit]
+Description=SDE: rename user accounts as scheduled in the Control Center
+Documentation=man:sde-account-rename(8)
+DefaultDependencies=no
+ConditionDirectoryNotEmpty=/var/lib/sde/account-renames
+RequiresMountsFor=/home /var/lib
+After=local-fs.target systemd-remount-fs.service systemd-tmpfiles-setup.service
+Before=systemd-user-sessions.service systemd-logind.service display-manager.service accounts-daemon.service cron.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=@SDE_LIBEXECDIR@/sde/sde-account-rename apply
+TimeoutStartSec=15min
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
