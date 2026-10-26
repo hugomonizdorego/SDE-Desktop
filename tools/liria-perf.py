@@ -44,6 +44,8 @@ Liria is idle again:
 
   hover-icons, hover-list, hover-compact
              sweeps over the 1 000 files in the icon, list and compact views
+  hover-icons-10k, hover-list-10k, hover-compact-10k
+             ... and over the 10 000 files
   hover-sidebar   up and down the sidebar
   hover-ribbon    across the ribbon's buttons and tabs
   hover-tooltips  a rest on eight ribbon buttons (their tooltips show), then
@@ -78,8 +80,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS = ("startup", "open-1k", "open-10k", "scroll", "view-list", "scroll-list", "view-compact", "view-icons",
              "select-all", "select-one", "home", "thumbnails", "sidebar")
-HOVER = ("hover-icons", "hover-list", "hover-compact", "hover-sidebar", "hover-ribbon", "hover-tooltips",
-         "hover-path", "hover-header", "hover-tabs", "hover-status", "hover-home")
+HOVER = ("hover-icons", "hover-list", "hover-compact", "hover-icons-10k", "hover-list-10k", "hover-compact-10k",
+         "hover-sidebar", "hover-ribbon", "hover-tooltips", "hover-path", "hover-header", "hover-tabs", "hover-status",
+         "hover-home")
 
 
 def png(width, height, seed):
@@ -407,6 +410,12 @@ class Bench:
         pid = self.liria.pid
         self.pointer.move(*points[0])
         self.idle(time.monotonic(), 0.5, 20)
+        perf = None
+        if self.args.perf and self.args.perf_scenario == name:
+            perf = subprocess.Popen([str(self.args.perf), "record"] + self.args.perf_args.split()
+                                    + ["-p", str(pid), "-o", str(self.args.perf_output)],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.5)
         offset = self.qa.stat().st_size
         cpu0, xcpu0 = cpu_ns(pid), cpu_ns(self.xvfb.pid)
         start = time.monotonic()
@@ -420,6 +429,9 @@ class Bench:
             moved = self.pointer.path(points[1:], self.speed)
         settled = self.idle(start, 0.4, 30)
         cpu, xcpu = cpu_ns(pid) - cpu0, cpu_ns(self.xvfb.pid) - xcpu0
+        if perf is not None:
+            perf.send_signal(2)
+            perf.wait()
         frames, events, area = [], [], 0
         with self.qa.open(errors="replace") as f:
             f.seek(offset)
@@ -475,16 +487,21 @@ class Bench:
             scenario("hover-ribbon", self.sweeps(self.bounds(ribbon), 4))
         if g.get("ribbon-button"):
             scenario("hover-tooltips", self.across(g["ribbon-button"][:8], 1), rest=0.9)
-        self.go(self.home / "Files-1000")()
-        self.idle(time.monotonic(), 0.6)
-        for key, name, kind, rows, vertical in (("ctrl+1", "hover-icons", "icon-view", 6, False),
-                                                ("ctrl+2", "hover-list", "list-view", 4, True),
-                                                ("ctrl+3", "hover-compact", "icon-view", 6, False)):
-            self.x("key", key)
-            self.idle(time.monotonic(), 0.6)
-            g = self.geometry()
-            if g.get(kind):
-                scenario(name, self.sweeps(g[kind][0], rows, vertical))
+        views = ("hover-icons", "hover-list", "hover-compact")
+        for folder, suffix in (("Files-10000", "-10k"), ("Files-1000", "")):
+            wanted = [view + suffix for view in views] + ([] if suffix else ["hover-status"])
+            if only and not set(wanted) & set(only):
+                continue
+            self.go(self.home / folder)()
+            self.idle(time.monotonic(), 0.6, 60)
+            for key, name, kind, rows, vertical in (("ctrl+1", "hover-icons", "icon-view", 6, False),
+                                                    ("ctrl+2", "hover-list", "list-view", 4, True),
+                                                    ("ctrl+3", "hover-compact", "icon-view", 6, False)):
+                self.x("key", key)
+                self.idle(time.monotonic(), 0.6, 60)
+                g = self.geometry()
+                if g.get(kind):
+                    scenario(name + suffix, self.sweeps(g[kind][0], rows, vertical))
         if g.get("status"):
             scenario("hover-status", self.sweeps(g["status"][0], 1, margin=0.02) * 3)
         self.x("key", "ctrl+1")

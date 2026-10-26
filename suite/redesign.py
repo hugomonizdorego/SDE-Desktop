@@ -889,16 +889,41 @@ sde_pin_marker_func (GtkTreeViewColumn *column, GtkCellRenderer *cell, GtkTreeMo
     g_object_set (cell, "visible", pinned, "icon-name", show ? "view-pin-symbolic" : NULL, NULL);
 }
 
+/* 0.2.0 Alpha 3: only the rows that gain or lose the pin are repainted,
+ * when the pointer moves to another row. The whole sidebar was repainted
+ * on every pointer motion (a third of a CPU core while the pointer moved
+ * over it, its rows redrawn about sixty times a second). */
+static void
+sde_sidebar_queue_row (GtkTreeView *tree_view, GtkTreePath *path)
+{
+    GdkRectangle area;
+    int y = 0;
+
+    if (path == NULL)
+        return;
+    gtk_tree_view_get_background_area (tree_view, path, NULL, &area);
+    gtk_tree_view_convert_bin_window_to_widget_coords (tree_view, 0, area.y, NULL, &y);
+    gtk_widget_queue_draw_area (GTK_WIDGET (tree_view), 0, y,
+                                gtk_widget_get_allocated_width (GTK_WIDGET (tree_view)), area.height);
+}
+
 static gboolean
 sde_sidebar_hover (GtkWidget *tree_view, GdkEventMotion *event, LiriaPlacesSidebar *sidebar)
 {
     GtkTreePath *path = NULL;
+    GtkTreePath *old = g_object_get_data (G_OBJECT (sidebar), "sde-hover-path");
 
     if (event != NULL)
         gtk_tree_view_get_path_at_pos (GTK_TREE_VIEW (tree_view), (int) event->x, (int) event->y,
                                        &path, NULL, NULL, NULL);
+    if (path == NULL ? old == NULL : old != NULL && gtk_tree_path_compare (path, old) == 0)
+    {
+        gtk_tree_path_free (path);
+        return FALSE;
+    }
+    sde_sidebar_queue_row (GTK_TREE_VIEW (tree_view), old);
+    sde_sidebar_queue_row (GTK_TREE_VIEW (tree_view), path);
     g_object_set_data_full (G_OBJECT (sidebar), "sde-hover-path", path, (GDestroyNotify) gtk_tree_path_free);
-    gtk_widget_queue_draw (tree_view);
     return FALSE;
 }
 
@@ -1312,12 +1337,405 @@ path_bar_path_event_callback (LiriaPathBar *path_bar,""")
             slot = liria_window_get_active_slot (LIRIA_WINDOW_PANE (pane)->window);""")
 
 
+CANVAS_ROWS = r'''/* SDE (0.2.0 Alpha 3): the icons of a folder are the children of one
+ * group, and every pointer motion asked each child whether it was under
+ * the pointer, every repaint whether it was in the repainted area: with
+ * 10 000 files eel_canvas_group_point () alone took more than half of
+ * Liria's time while the pointer moved over the icons. A group with many
+ * children now also keeps them in rows of the canvas by their bounding
+ * boxes, in stacking order, and point () and draw () look only at the rows
+ * they need. The rows are made again when they are needed after a child
+ * was added, removed or restacked or its bounding box moved up or down
+ * (bounding boxes change in update () only). */
+#define SDE_ROW_PIXELS 128
+#define SDE_ROW_MAX 16384
+#define SDE_ROW_CHILDREN 64
+
+typedef struct
+{
+    EelCanvasItem *item;
+    guint order;
+} SdeRowEntry;
+
+typedef struct
+{
+    gboolean dirty;
+    guint busy;
+    guint next_order;
+    double top;
+    double height;
+    guint n_rows;
+    GArray **rows;
+} SdeRows;
+
+typedef void (*SdeRowVisit) (EelCanvasItem *child, gpointer data);
+
+static void
+sde_rows_clear (SdeRows *rows)
+{
+    guint i;
+
+    for (i = 0; i < rows->n_rows; i++)
+        g_array_free (rows->rows[i], TRUE);
+    g_free (rows->rows);
+    rows->rows = NULL;
+    rows->n_rows = 0;
+}
+
+static void
+sde_rows_invalidate (EelCanvasGroup *group)
+{
+    if (group != NULL && group->sde_rows != NULL)
+        ((SdeRows *) group->sde_rows)->dirty = TRUE;
+}
+
+static void
+sde_rows_free (EelCanvasGroup *group)
+{
+    if (group->sde_rows != NULL)
+    {
+        sde_rows_clear (group->sde_rows);
+        g_free (group->sde_rows);
+        group->sde_rows = NULL;
+    }
+}
+
+static guint
+sde_rows_index (SdeRows *rows, double y)
+{
+    double r = (y - rows->top) / rows->height;
+
+    if (!(r > 0))
+        return 0;
+    if (r >= rows->n_rows - 1)
+        return rows->n_rows - 1;
+    return (guint) r;
+}
+
+/* The rows of a group, made again if needed; NULL for a group with few
+ * children (faster to look through) and while the rows are in use. */
+static SdeRows *
+sde_rows_get (EelCanvasGroup *group)
+{
+    SdeRows *rows = group->sde_rows;
+    double top = 0, bottom = 0;
+    guint n = 0, order = 0, i;
+    GList *list;
+
+    if (rows != NULL && rows->busy > 0)
+        return NULL;
+    if (rows != NULL && !rows->dirty)
+        return rows->n_rows > 0 ? rows : NULL;
+    if (rows == NULL)
+        group->sde_rows = rows = g_new0 (SdeRows, 1);
+    sde_rows_clear (rows);
+    rows->dirty = FALSE;
+    for (list = group->item_list; list != NULL; list = list->next, n++)
+    {
+        EelCanvasItem *child = list->data;
+
+        if (n == 0 || child->y1 < top)
+            top = child->y1;
+        if (n == 0 || child->y2 > bottom)
+            bottom = child->y2;
+    }
+    if (n < SDE_ROW_CHILDREN || !(bottom - top >= 0 && bottom - top < 1e9))
+        return NULL;
+    rows->top = top;
+    rows->height = MAX (SDE_ROW_PIXELS, (bottom - top) / SDE_ROW_MAX + 1);
+    rows->n_rows = (guint) ((bottom - top) / rows->height) + 1;
+    rows->rows = g_new (GArray *, rows->n_rows);
+    for (i = 0; i < rows->n_rows; i++)
+        rows->rows[i] = g_array_new (FALSE, FALSE, sizeof (SdeRowEntry));
+    for (list = group->item_list; list != NULL; list = list->next, order++)
+    {
+        SdeRowEntry entry = { list->data, order };
+        guint last;
+
+        if (!(entry.item->y2 >= entry.item->y1))
+            continue;
+        last = sde_rows_index (rows, entry.item->y2);
+        for (i = sde_rows_index (rows, entry.item->y1); i <= last; i++)
+            g_array_append_val (rows->rows[i], entry);
+    }
+    rows->next_order = order;
+    return rows;
+}
+
+/* A child changed its place in the stacking order. A child raised to the
+ * top (as the icon under the pointer is) moves to the end of its rows;
+ * any other change makes the rows again when they are needed. */
+static void
+sde_rows_restacked (EelCanvasGroup *group, EelCanvasItem *child, gboolean to_top)
+{
+    SdeRows *rows = group->sde_rows;
+    SdeRowEntry entry = { child, 0 };
+    guint i, j, last;
+
+    if (rows == NULL || rows->dirty || rows->busy > 0 || rows->n_rows == 0 || !to_top)
+    {
+        sde_rows_invalidate (group);
+        return;
+    }
+    if (!(child->y2 >= child->y1))
+        return;
+    entry.order = rows->next_order++;
+    last = sde_rows_index (rows, child->y2);
+    for (i = sde_rows_index (rows, child->y1); i <= last; i++)
+    {
+        GArray *row = rows->rows[i];
+
+        for (j = 0; j < row->len; j++)
+            if (g_array_index (row, SdeRowEntry, j).item == child)
+            {
+                g_array_remove_index (row, j);
+                break;
+            }
+        g_array_append_val (row, entry);
+    }
+}
+
+static int
+sde_row_entry_order (gconstpointer a, gconstpointer b)
+{
+    guint x = ((const SdeRowEntry *) a)->order, y = ((const SdeRowEntry *) b)->order;
+
+    return x < y ? -1 : x > y;
+}
+
+/* Calls |visit| in stacking order, once each, for the children whose
+ * bounding boxes may reach from |top| to |bottom|. FALSE when the group
+ * has no rows: then the caller looks through all children. */
+static gboolean
+sde_rows_visit (EelCanvasGroup *group, double top, double bottom, SdeRowVisit visit, gpointer data)
+{
+    SdeRows *rows = sde_rows_get (group);
+    guint first, last, i;
+
+    if (rows == NULL)
+        return FALSE;
+    if (bottom < rows->top || top > rows->top + rows->height * rows->n_rows)
+        return TRUE;
+    first = sde_rows_index (rows, top);
+    last = sde_rows_index (rows, bottom);
+    rows->busy++;
+    if (first == last)
+    {
+        GArray *row = rows->rows[first];
+
+        for (i = 0; i < row->len; i++)
+            visit (g_array_index (row, SdeRowEntry, i).item, data);
+    }
+    else
+    {
+        GArray *all = g_array_new (FALSE, FALSE, sizeof (SdeRowEntry));
+
+        for (i = first; i <= last; i++)
+            g_array_append_vals (all, rows->rows[i]->data, rows->rows[i]->len);
+        g_array_sort (all, sde_row_entry_order);
+        for (i = 0; i < all->len; i++)
+            if (i == 0 || g_array_index (all, SdeRowEntry, i).order != g_array_index (all, SdeRowEntry, i - 1).order)
+                visit (g_array_index (all, SdeRowEntry, i).item, data);
+        g_array_free (all, TRUE);
+    }
+    rows->busy--;
+    return TRUE;
+}
+
+'''
+
+CANVAS_GROUP_DRAW_POINT = r'''/* Draw handler for canvas groups */
+typedef struct
+{
+    cairo_t *cr;
+    cairo_region_t *region;
+} SdeGroupDraw;
+
+static void
+sde_group_draw_child (EelCanvasItem *child, gpointer data)
+{
+    SdeGroupDraw *draw = data;
+
+    if ((child->flags & EEL_CANVAS_ITEM_MAPPED) &&
+            (EEL_CANVAS_ITEM_GET_CLASS (child)->draw))
+    {
+        GdkRectangle child_rect;
+
+        child_rect.x = child->x1;
+        child_rect.y = child->y1;
+        child_rect.width = child->x2 - child->x1 + 1;
+        child_rect.height = child->y2 - child->y1 + 1;
+
+        if (cairo_region_contains_rectangle (draw->region, &child_rect) != CAIRO_REGION_OVERLAP_OUT)
+            EEL_CANVAS_ITEM_GET_CLASS (child)->draw (child, draw->cr, draw->region);
+    }
+}
+
+static void
+eel_canvas_group_draw (EelCanvasItem  *item,
+                       cairo_t        *cr,
+                       cairo_region_t *region)
+{
+    EelCanvasGroup *group;
+    GList *list;
+    SdeGroupDraw draw = { cr, region };
+    cairo_rectangle_int_t extents;
+
+    group = EEL_CANVAS_GROUP (item);
+
+    /* SDE: only the rows of the repainted area (CANVAS_ROWS) */
+    cairo_region_get_extents (region, &extents);
+    if (sde_rows_visit (group, extents.y - 2, extents.y + extents.height + 2, sde_group_draw_child, &draw))
+        return;
+    for (list = group->item_list; list; list = list->next)
+        sde_group_draw_child (list->data, &draw);
+}
+
+/* Point handler for canvas groups */
+typedef struct
+{
+    EelCanvasItem *item;
+    int x1, y1, x2, y2, cx, cy;
+    double gx, gy, best;
+    EelCanvasItem **actual_item;
+} SdeGroupPoint;
+
+static void
+sde_group_point_child (EelCanvasItem *child, gpointer data)
+{
+    SdeGroupPoint *p = data;
+    EelCanvasItem *point_item;
+    double dist = 0.0;
+    int has_point;
+
+    if ((child->x1 > p->x2) || (child->y1 > p->y2) || (child->x2 < p->x1) || (child->y2 < p->y1))
+        return;
+
+    point_item = NULL; /* cater for incomplete item implementations */
+
+    if ((child->flags & EEL_CANVAS_ITEM_MAPPED)
+            && EEL_CANVAS_ITEM_GET_CLASS (child)->point)
+    {
+        dist = eel_canvas_item_invoke_point (child, p->gx, p->gy, p->cx, p->cy, &point_item);
+        has_point = TRUE;
+    }
+    else
+        has_point = FALSE;
+
+    if (has_point
+            && point_item
+            && ((int) (dist * p->item->canvas->pixels_per_unit + 0.5)
+                <= p->item->canvas->close_enough))
+    {
+        p->best = dist;
+        *p->actual_item = point_item;
+    }
+}
+
+static double
+eel_canvas_group_point (EelCanvasItem *item, double x, double y, int cx, int cy,
+                        EelCanvasItem **actual_item)
+{
+    EelCanvasGroup *group;
+    GList *list;
+    SdeGroupPoint p;
+
+    group = EEL_CANVAS_GROUP (item);
+
+    p.item = item;
+    p.x1 = cx - item->canvas->close_enough;
+    p.y1 = cy - item->canvas->close_enough;
+    p.x2 = cx + item->canvas->close_enough;
+    p.y2 = cy + item->canvas->close_enough;
+    p.cx = cx;
+    p.cy = cy;
+    p.best = 0.0;
+    p.actual_item = actual_item;
+    *actual_item = NULL;
+
+    p.gx = x - group->xpos;
+    p.gy = y - group->ypos;
+
+    /* SDE: only the rows under the pointer (CANVAS_ROWS) */
+    if (!sde_rows_visit (group, p.y1 - 1, p.y2 + 1, sde_group_point_child, &p))
+        for (list = group->item_list; list; list = list->next)
+            sde_group_point_child (list->data, &p);
+
+    return p.best;
+}
+
+'''
+
+
+def liria_canvas_rows(staged):
+    """0.2.0 Alpha 3: the icon and compact views find the icon under the
+    pointer and the icons to repaint by rows of the canvas (CANVAS_ROWS)
+    instead of asking all icons of the folder on every pointer motion."""
+    header = staged / "eel/eel-canvas.h"
+    edit_once(header, "        /* Children of the group */\n        GList *item_list;\n        GList *item_list_end;\n    };\n",
+              "        /* Children of the group */\n        GList *item_list;\n        GList *item_list_end;\n\n"
+              "        /* SDE: the children by rows of the canvas (eel-canvas.c) */\n        gpointer sde_rows;\n    };\n")
+    canvas = staged / "eel/eel-canvas.c"
+    edit_once(canvas, "static void redraw_and_repick_if_mapped (EelCanvasItem *item);\n",
+              "static void redraw_and_repick_if_mapped (EelCanvasItem *item);\n"
+              "static void sde_rows_invalidate         (EelCanvasGroup *group);\n"
+              "static void sde_rows_restacked          (EelCanvasGroup *group,\n"
+              "        EelCanvasItem  *child,\n        gboolean        to_top);\n")
+    # Restacking: put_item_after () is behind raise, lower and send_behind
+    # (the icon under the pointer is raised to the top of its group).
+    edit_once(canvas, "    EelCanvasGroup *parent;\n\n    if (link == before)\n        return FALSE;\n\n"
+              "    parent = EEL_CANVAS_GROUP (EEL_CANVAS_ITEM (link->data)->parent);\n",
+              "    EelCanvasGroup *parent;\n    gboolean to_top;\n\n    if (link == before)\n        return FALSE;\n\n"
+              "    parent = EEL_CANVAS_GROUP (EEL_CANVAS_ITEM (link->data)->parent);\n"
+              "    to_top = before != NULL && before == parent->item_list_end;\n")
+    edit_once(canvas, "            parent->item_list_end = link;\n    }\n    return TRUE;\n}\n",
+              "            parent->item_list_end = link;\n    }\n"
+              "    sde_rows_restacked (parent, link->data, to_top);\n    return TRUE;\n}\n")
+    edit_once(canvas, "/* Destroy handler for canvas groups */\n", CANVAS_ROWS + "/* Destroy handler for canvas groups */\n")
+    edit_once(canvas, """        eel_canvas_item_destroy (child);
+    }
+
+    if (EEL_CANVAS_ITEM_CLASS (group_parent_class)->destroy)""", """        eel_canvas_item_destroy (child);
+    }
+    sde_rows_free (group);
+
+    if (EEL_CANVAS_ITEM_CLASS (group_parent_class)->destroy)""")
+    edit_once(canvas, """        i = list->data;
+
+        eel_canvas_item_invoke_update (i, i2w_dx + group->xpos, i2w_dy + group->ypos, flags);
+""", """        double y1, y2;
+
+        i = list->data;
+        y1 = i->y1;
+        y2 = i->y2;
+
+        eel_canvas_item_invoke_update (i, i2w_dx + group->xpos, i2w_dy + group->ypos, flags);
+        if (i->y1 != y1 || i->y2 != y2)
+            sde_rows_invalidate (group); /* SDE: CANVAS_ROWS */
+""")
+    replace_between(canvas, "/* Draw handler for canvas groups */\n", "void\neel_canvas_group_translate (",
+                    CANVAS_GROUP_DRAW_POINT)
+    edit_once(canvas, """        group->item_list_end = g_list_append (group->item_list_end, item)->next;
+""", """        group->item_list_end = g_list_append (group->item_list_end, item)->next;
+    sde_rows_invalidate (group);
+""")
+    edit_once(canvas, """    g_return_if_fail (EEL_IS_CANVAS_GROUP (group));
+    g_return_if_fail (EEL_IS_CANVAS_ITEM (item));
+
+    for (children = group->item_list; children; children = children->next)""", """    g_return_if_fail (EEL_IS_CANVAS_GROUP (group));
+    g_return_if_fail (EEL_IS_CANVAS_ITEM (item));
+
+    sde_rows_invalidate (group);
+    for (children = group->item_list; children; children = children->next)""")
+
+
 def liria_hover(staged):
     """0.2.0 Alpha 3: Liria follows the pointer smoothly. A QA recorder
     (src/liria-sde-qa.c, LIRIA_SDE_QA_FRAMES=FILE) gives tools/liria-perf.py
     the frame and pointer event timings of its hover scenarios."""
     edit_once(staged / "src/Makefile.am", "\tliria-sde-ribbon.h \\\n",
               "\tliria-sde-ribbon.h \\\n\tliria-sde-qa.c \\\n\tliria-sde-qa.h \\\n")
+    liria_canvas_rows(staged)
 
 
 def liria_ribbon(staged):
