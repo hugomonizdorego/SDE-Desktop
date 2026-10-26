@@ -31,7 +31,9 @@
 #define SUB_DELIMS "!$&'()*+,;="
 
 static const gchar *const network_schemes[] = { "smb", "sftp", "ftp", "ftps", "nfs", "dav", "davs", "afp", NULL };
-static const gchar *const host_schemes[] = { "smb", "sftp", "ftp", "davs", "dav", "nfs", NULL };
+/* The protocols offered for a computer: Windows shares, then the
+ * encrypted ones, then those that send passwords as plain text. */
+static const gchar *const host_schemes[] = { "smb", "sftp", "davs", "nfs", "dav", "ftp", NULL };
 
 /* Other names people type for the same protocols. */
 static const gchar *const aliases[][2] = {

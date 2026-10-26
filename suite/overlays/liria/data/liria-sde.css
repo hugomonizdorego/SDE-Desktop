@@ -748,6 +748,14 @@ popover.sde-network-message .sde-network-message-title {
   color: mix(@warning_color, @theme_fg_color, 0.35);
 }
 
+/* The other ways to reach a computer that could not be opened. */
+button.sde-network-choice {
+  min-height: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: none;
+}
+
 /* File operations (0.2.0 Alpha 2, libliria-private/liria-sde-progress.c):
  * the design of SDE's transfer dialog, with round flat buttons and a slim
  * accent bar that turns amber while the operation is paused. */

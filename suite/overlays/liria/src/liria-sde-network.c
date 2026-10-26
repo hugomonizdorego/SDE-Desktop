@@ -667,8 +667,18 @@ sde_ask_password (GMountOperation *op, const char *message, const char *default_
     }
     else
     {
-        label = gtk_label_new (message != NULL ? message : "");
+        /* GVfs starts with a line such as "Authentication Required", which
+         * the title says already. */
+        const char *detail = message != NULL && strchr (message, '\n') != NULL ? strchr (message, '\n') + 1
+                             : message != NULL ? message : "";
+        char *text = g_strstrip (g_strdup (detail));
+
+        /* GVfs ends with a colon that leads to its own fields. */
+        if (g_str_has_suffix (text, ":"))
+            text[strlen (text) - 1] = '\0';
+        label = gtk_label_new (text);
         gtk_style_context_add_class (gtk_widget_get_style_context (label), "dim-label");
+        g_free (text);
     }
     gtk_label_set_xalign (GTK_LABEL (label), 0);
     gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
@@ -787,26 +797,33 @@ liria_sde_network_location_shown (GFile *location)
 typedef struct
 {
     GtkWidget *window;
-    char **choices; /* the location of each protocol button */
+    GtkWidget *dialog;
 } SdeFailure;
 
 static void
 sde_failure_response (GtkDialog *dialog, int response, SdeFailure *f)
 {
-    if (response >= 0 && f->choices != NULL && (guint) response < g_strv_length (f->choices) &&
-        f->window != NULL)
-    {
-        GFile *location = g_file_new_for_uri (f->choices[response]);
-
-        sde_qa ("open", "%s", f->choices[response]);
-        liria_window_go_to (LIRIA_WINDOW (f->window), location);
-        g_object_unref (location);
-    }
     gtk_widget_destroy (GTK_WIDGET (dialog));
     if (f->window != NULL)
         g_object_remove_weak_pointer (G_OBJECT (f->window), (gpointer *) &f->window);
-    g_strfreev (f->choices);
     g_free (f);
+}
+
+/* One of the other protocols of the computer was chosen. */
+static void
+sde_failure_choice (GtkButton *button, SdeFailure *f)
+{
+    const char *uri = g_object_get_data (G_OBJECT (button), "sde-uri");
+
+    if (f->window != NULL && uri != NULL)
+    {
+        GFile *location = g_file_new_for_uri (uri);
+
+        sde_qa ("open", "%s", uri);
+        liria_window_go_to (LIRIA_WINDOW (f->window), location);
+        g_object_unref (location);
+    }
+    gtk_dialog_response (GTK_DIALOG (f->dialog), GTK_RESPONSE_CLOSE);
 }
 
 gboolean
@@ -817,7 +834,6 @@ liria_sde_network_show_failure (GtkWidget *window, GFile *location, GError *erro
     gchar *host = NULL, *path = NULL;
     char *primary = NULL, *secondary = NULL, *missing;
     gboolean server_root, offer, ambiguous = FALSE;
-    GPtrArray *choices = g_ptr_array_new_with_free_func (g_free);
     GtkWidget *dialog;
     GString *offered = g_string_new (NULL);
     SdeFailure *f;
@@ -827,7 +843,6 @@ liria_sde_network_show_failure (GtkWidget *window, GFile *location, GError *erro
     {
         g_free (uri);
         g_free (scheme);
-        g_ptr_array_unref (choices);
         g_string_free (offered, TRUE);
         return FALSE;
     }
@@ -889,37 +904,54 @@ liria_sde_network_show_failure (GtkWidget *window, GFile *location, GError *erro
             !g_error_matches (error, G_IO_ERROR, G_IO_ERROR_HOST_NOT_FOUND);
     dialog = gtk_message_dialog_new (GTK_WINDOW (window), GTK_DIALOG_DESTROY_WITH_PARENT, GTK_MESSAGE_ERROR,
                                      GTK_BUTTONS_NONE, "%s", primary);
-    gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog), "%s%s", secondary,
-                                              offer ? _("\n\nTry another way to connect to it:") : "");
     gtk_window_set_title (GTK_WINDOW (dialog), _("Cannot Open the Location"));
+    f = g_new0 (SdeFailure, 1);
+    f->window = window;
+    f->dialog = dialog;
+    g_object_add_weak_pointer (G_OBJECT (window), (gpointer *) &f->window);
     if (offer)
     {
+        /* The other protocols as a list (a row of buttons would be wider
+         * than a small screen), the encrypted ones first. */
         LiriaSdeAddress *address = liria_sde_address_parse (typed_host);
         const char *const *schemes = liria_sde_address_host_schemes ();
+        GtkWidget *list = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
 
         for (i = 0; schemes[i] != NULL; i++)
         {
-            char *alternative;
+            GtkWidget *button, *label;
+            char *alternative, *markup;
 
             if (g_strcmp0 (schemes[i], scheme) == 0 || !liria_sde_network_scheme_supported (schemes[i]))
                 continue;
             alternative = liria_sde_address_with_scheme (address, schemes[i]);
             if (alternative == NULL)
                 continue;
-            gtk_dialog_add_button (GTK_DIALOG (dialog), liria_sde_address_scheme_label (schemes[i]), choices->len);
+            button = gtk_button_new ();
+            label = gtk_label_new (NULL);
+            markup = g_markup_printf_escaped ("%s  <span alpha=\"60%%\">%s</span>",
+                                              liria_sde_address_scheme_label (schemes[i]), alternative);
+            gtk_label_set_markup (GTK_LABEL (label), markup);
+            gtk_label_set_xalign (GTK_LABEL (label), 0);
+            gtk_container_add (GTK_CONTAINER (button), label);
+            gtk_button_set_relief (GTK_BUTTON (button), GTK_RELIEF_NONE);
+            gtk_style_context_add_class (gtk_widget_get_style_context (button), "sde-network-choice");
+            g_object_set_data_full (G_OBJECT (button), "sde-uri", alternative, g_free);
+            g_signal_connect (button, "clicked", G_CALLBACK (sde_failure_choice), f);
+            gtk_box_pack_start (GTK_BOX (list), button, FALSE, FALSE, 0);
             g_string_append_printf (offered, "%s ", alternative);
-            g_ptr_array_add (choices, alternative);
+            g_free (markup);
         }
+        gtk_box_pack_start (GTK_BOX (gtk_message_dialog_get_message_area (GTK_MESSAGE_DIALOG (dialog))), list,
+                            FALSE, FALSE, 0);
+        gtk_widget_show_all (list);
         liria_sde_address_free (address);
     }
-    gtk_dialog_add_button (GTK_DIALOG (dialog), _("_Close"), GTK_RESPONSE_CLOSE);
+    gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog), "%s%s", secondary,
+                                              offered->len > 0 ? _("\n\nTry another way to connect to it:") : "");
+    /* Return closes; a protocol is a deliberate choice. */
+    gtk_widget_grab_focus (gtk_dialog_add_button (GTK_DIALOG (dialog), _("_Close"), GTK_RESPONSE_CLOSE));
     gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_CLOSE);
-    g_ptr_array_add (choices, NULL);
-    f = g_new0 (SdeFailure, 1);
-    f->window = window;
-    g_object_add_weak_pointer (G_OBJECT (window), (gpointer *) &f->window);
-    f->choices = (char **) g_ptr_array_free (choices, FALSE);
-    choices = NULL;
     g_signal_connect (dialog, "response", G_CALLBACK (sde_failure_response), f);
     gtk_widget_show (dialog);
     sde_qa ("failure", "%s | %s | %s", primary, secondary, offered->str);
@@ -927,8 +959,6 @@ liria_sde_network_show_failure (GtkWidget *window, GFile *location, GError *erro
 done:
     if (window != NULL)
         g_object_set_data (G_OBJECT (window), "sde-network-typed-host", NULL);
-    if (choices != NULL)
-        g_ptr_array_unref (choices);
     g_string_free (offered, TRUE);
     g_free (primary);
     g_free (secondary);
