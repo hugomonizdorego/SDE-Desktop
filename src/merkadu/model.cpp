@@ -10,6 +10,7 @@
 
 #include "i18n.h"
 #include "json.h"
+#include "packages.h"
 #include "util.h"
 
 namespace sde {
@@ -159,6 +160,69 @@ std::time_t App::newest_release() const {
 
 bool App::is_app() const { return kind == "desktop-application" || kind == "web-application" || kind.empty(); }
 
+void add_icon(App &app, const IconRef &icon) {
+  if (icon.ref.empty()) return;
+  if (std::find(app.icons.begin(), app.icons.end(), icon) != app.icons.end()) return;
+  app.icons.push_back(icon);
+  if (app.icon.empty()) app.icon = icon.ref;
+}
+
+std::vector<std::string> icon_candidates(const App &app, int px) {
+  auto is_name = [](const std::string &r) {
+    return !r.empty() && r[0] != '/' && !starts_with(r, "https://") && !starts_with(r, "http://") &&
+           !starts_with(r, "snap-icon:");
+  };
+  auto is_file = [](const std::string &r) { return !r.empty() && r[0] == '/'; };
+  std::vector<IconRef> all = app.icons;
+  if (!app.icon.empty() && std::none_of(all.begin(), all.end(), [&](const IconRef &i) { return i.ref == app.icon; }))
+    all.insert(all.begin(), IconRef{app.icon, 0});
+  std::vector<std::string> out;
+  for (auto &i : all)
+    if (is_name(i.ref)) add_unique(out, i.ref);
+  // Large enough (90 % of the size is fine), smallest first; files first.
+  std::vector<IconRef> big, small;
+  for (auto &i : all) {
+    if (is_name(i.ref)) continue;
+    int size = i.size > 0 ? i.size : 64;
+    (size * 10 >= px * 9 ? big : small).push_back(IconRef{i.ref, size});
+  }
+  std::stable_sort(big.begin(), big.end(), [&](const IconRef &a, const IconRef &b) {
+    if (a.size != b.size) return a.size < b.size;
+    return is_file(a.ref) && !is_file(b.ref);
+  });
+  std::stable_sort(small.begin(), small.end(), [&](const IconRef &a, const IconRef &b) {
+    if (a.size != b.size) return a.size > b.size;
+    return is_file(a.ref) && !is_file(b.ref);
+  });
+  for (auto &i : big) add_unique(out, i.ref);
+  for (auto &i : small) add_unique(out, i.ref);
+  return out;
+}
+
+std::vector<std::string> fallback_icon_names(const App &app) {
+  std::vector<std::string> out;
+  if (app.kind == "font") out = {"font-x-generic", "preferences-desktop-font"};
+  else if (app.kind == "addon" || app.kind == "codec") out = {"application-x-addon", "extension"};
+  else if (app.kind == "console-application") out = {"utilities-terminal", "terminal"};
+  // The main categories of the Desktop Menu Specification, most specific first.
+  static const std::pair<const char *, const char *> categories[] = {
+      {"Game", "applications-games"},           {"Graphics", "applications-graphics"},
+      {"AudioVideo", "applications-multimedia"}, {"Audio", "applications-multimedia"},
+      {"Video", "applications-multimedia"},      {"WebBrowser", "web-browser"},
+      {"Email", "internet-mail"},                {"Network", "applications-internet"},
+      {"Office", "applications-office"},          {"Development", "applications-development"},
+      {"Science", "applications-science"},        {"Education", "applications-education"},
+      {"Settings", "preferences-desktop"},        {"System", "applications-system"},
+      {"Utility", "applications-utilities"},      {"Accessibility", "preferences-desktop-accessibility"},
+  };
+  for (auto &c : categories)
+    if (contains(app.categories, c.first)) add_unique(out, c.second);
+  if (!app.section.empty())
+    for (auto &n : section_icon_names(section_base(app.section))) add_unique(out, n);
+  for (const char *n : {"application-x-executable", "package-x-generic"}) add_unique(out, n);
+  return out;
+}
+
 std::string normalize_id(const std::string &appstream_id) {
   std::string id = lower_ascii(trim(appstream_id));
   if (ends_with(id, ".desktop")) id.resize(id.size() - 8);
@@ -293,6 +357,8 @@ App &Catalog::add(App app) {
   // A local icon beats a remote one.
   if (cur.icon.empty() || (starts_with(cur.icon, "http") && !app.icon.empty() && !starts_with(app.icon, "http")))
     cur.icon = app.icon;
+  for (auto &i : app.icons)
+    if (std::find(cur.icons.begin(), cur.icons.end(), i) == cur.icons.end()) cur.icons.push_back(i);
   if (cur.kind.empty()) cur.kind = app.kind;
   fill(cur.developer, app.developer);
   fill(cur.license, app.license);
@@ -508,6 +574,14 @@ PackageId parse_package_id(const std::string &id) {
 }
 
 bool valid_package_name(const std::string &name) {
+  size_t colon = name.find(':');
+  if (colon != std::string::npos) {
+    std::string arch = name.substr(colon + 1);
+    if (arch.empty() || arch.size() > 32) return false;
+    for (unsigned char c : arch)
+      if (!(std::islower(c) || std::isdigit(c) || c == '-')) return false;
+    return valid_package_name(name.substr(0, colon));
+  }
   if (name.size() < 2 || name.size() > 128) return false;
   if (!std::islower(static_cast<unsigned char>(name[0])) && !std::isdigit(static_cast<unsigned char>(name[0])))
     return false;
@@ -946,18 +1020,18 @@ long long parse_installed_sizes(const std::string &output) {
 }
 
 RemovalPlan plan_removal(const std::string &package, const std::vector<std::string> &removed,
-                         const std::set<std::string> &protected_packages) {
+                         const std::set<std::string> &protected_packages,
+                         const std::set<std::string> &system_packages) {
   RemovalPlan plan;
-  if (protected_packages.count(package)) {
-    plan.protected_package = package;
+  auto refuse = [&](const std::string &p) {
+    plan.protected_package = p;
+    plan.system = !protected_packages.count(p);
+    plan.also_removed.clear();
     return plan;
-  }
+  };
+  if (protected_packages.count(package) || system_packages.count(package)) return refuse(package);
   for (const std::string &p : removed) {
-    if (protected_packages.count(p)) {
-      plan.protected_package = p;
-      plan.also_removed.clear();
-      return plan;
-    }
+    if (protected_packages.count(p) || system_packages.count(p)) return refuse(p);
     if (p != package) add_unique(plan.also_removed, p);
   }
   std::sort(plan.also_removed.begin(), plan.also_removed.end());
@@ -965,7 +1039,62 @@ RemovalPlan plan_removal(const std::string &package, const std::vector<std::stri
   return plan;
 }
 
+std::string refusal_text(const RemovalPlan &plan, const std::string &name, const std::string &package) {
+  const std::string &p = plan.protected_package;
+  if (plan.system) {
+    if (p == package)
+      return format(_("%s (package %s) is part of the base system: the computer may not start or work without "
+                      "it."),
+                    name.c_str(), p.c_str());
+    return format(_("Removing %s would also remove %s, a part of the base system that the computer needs to "
+                    "start and work."),
+                  name.c_str(), p.c_str());
+  }
+  if (p == package)
+    return format(_("%s is part of the Selviana Desktop Environment (package %s). It is installed and removed "
+                    "together with the desktop, not on its own."),
+                  name.c_str(), p.c_str());
+  return format(_("Removing %s would also remove %s, which the Selviana Desktop Environment needs."), name.c_str(),
+                p.c_str());
+}
+
 std::set<std::string> default_protected_packages() { return {"sde", "sde-desktop", "merkadu"}; }
+
+void parse_removal_query(const std::string &output, long long *freed, std::set<std::string> *system) {
+  long long kib = 0;
+  bool any = false;
+  for (const std::string &line : split(output, '\n')) {
+    auto f = split(line, '\t', true);
+    if (f.size() < 4 || !valid_package_name(trim(f[0]))) continue;
+    char *end = nullptr;
+    long long v = std::strtoll(trim(f[1]).c_str(), &end, 10);
+    if (end && *end == '\0' && v > 0) {
+      kib += v;
+      any = true;
+    }
+    if (lower_ascii(trim(f[2])) == "yes" || lower_ascii(trim(f[3])) == "required") system->insert(trim(f[0]));
+  }
+  *freed = any ? kib * 1024 : -1;
+}
+
+std::set<std::string> parse_system_packages(const std::string &output) {
+  std::set<std::string> out;
+  for (const std::string &line : split(output, '\n')) {
+    auto f = split(line, '\t', true);
+    if (f.size() < 3) continue;
+    std::string name = trim(f[0]);
+    if (!valid_package_name(name)) continue;
+    if (lower_ascii(trim(f[1])) == "yes" || lower_ascii(trim(f[2])) == "required") out.insert(name);
+  }
+  return out;
+}
+
+std::string running_kernel_package(const std::string &release) {
+  std::string r = trim(release);
+  if (r.empty() || r.find('/') != std::string::npos) return "";
+  std::string name = "linux-image-" + r;
+  return valid_package_name(name) ? name : "";
+}
 
 // --------------------------------------------------------------- config
 
@@ -985,6 +1114,14 @@ void KeyFile::parse(const std::string &text) {
     if (eq == std::string::npos || section.empty()) continue;
     values_[lower_ascii(section)][lower_ascii(trim(line.substr(0, eq)))] = trim(line.substr(eq + 1));
   }
+}
+
+std::vector<std::string> KeyFile::keys(const std::string &section) const {
+  std::vector<std::string> out;
+  auto s = values_.find(lower_ascii(section));
+  if (s != values_.end())
+    for (auto &kv : s->second) out.push_back(kv.first);
+  return out;
 }
 
 bool KeyFile::has(const std::string &section, const std::string &key) const {
@@ -1012,9 +1149,20 @@ int KeyFile::get_int(const std::string &section, const std::string &key, int fal
 
 Settings Settings::from(const KeyFile &kf) {
   Settings s;
-  s.featured = kf.list("Featured", "apps");
-  s.top = kf.list("Top", "apps");
+  // [Highlights] and [Popular]; [Featured] and [Top] of 0.2 Alpha 2 still count.
+  s.featured = kf.has("Highlights", "apps") ? kf.list("Highlights", "apps") : kf.list("Featured", "apps");
+  s.top = kf.has("Popular", "apps") ? kf.list("Popular", "apps") : kf.list("Top", "apps");
+  for (auto &key : kf.keys("Recommended")) s.recommended[key] = kf.list("Recommended", key);
   s.new_count = std::max(0, std::min(48, kf.get_int("New", "count", s.new_count)));
+  auto flag = [&](const char *section, const char *key, bool fallback) {
+    std::string v = lower_ascii(kf.get(section, key));
+    if (v == "false" || v == "0" || v == "no") return false;
+    if (v == "true" || v == "1" || v == "yes") return true;
+    return fallback;
+  };
+  s.refresh_on_start = flag("Refresh", "on-start", s.refresh_on_start);
+  s.refresh_minutes = std::max(0, std::min(24 * 60, kf.get_int("Refresh", "min-age", s.refresh_minutes)));
+  s.setup_flathub = flag("Flatpak", "setup-flathub", s.setup_flathub);
   if (kf.has("Sources", "order")) {
     std::vector<Source> order;
     for (auto &id : kf.list("Sources", "order")) {
@@ -1059,6 +1207,11 @@ Settings load_settings() {
 const App *resolve_reference(const Catalog &catalog, const std::string &ref) {
   auto &cat = const_cast<Catalog &>(catalog);
   std::string r = trim(ref);
+  if (r.find('|') != std::string::npos) {
+    for (auto &alt : split(r, '|'))
+      if (const App *a = resolve_reference(catalog, alt)) return a;
+    return nullptr;
+  }
   if (starts_with(r, "deb:")) return cat.find_origin(Source::Debian, r.substr(4));
   if (starts_with(r, "snap:")) {
     if (const App *a = cat.find(r)) return a;

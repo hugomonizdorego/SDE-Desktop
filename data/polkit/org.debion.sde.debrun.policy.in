@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Selviana DE Project</vendor>
+  <vendor_url>https://github.com/hugomonizdorego/SDE-Desktop</vendor_url>
+
+  <!-- Debrun (docs/DEBRUN.md) runs its helper through pkexec for one change
+       at a time. The helper checks every argument itself, copies the .deb
+       to a directory only root can write to and installs exactly the file
+       the user saw (its SHA-256 digest), with the removals the user saw.
+       Always an administrator's password, remembered for a few minutes. -->
+  <action id="org.debion.sde.debrun.install">
+    <description>Install a downloaded Debian package</description>
+    <message>Authentication is required to install a package that was downloaded from outside the package sources</message>
+    <icon_name>debrun</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/debrun-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">install</annotate>
+  </action>
+
+  <action id="org.debion.sde.debrun.remove">
+    <description>Remove an installed package</description>
+    <message>Authentication is required to remove a package</message>
+    <icon_name>debrun</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/debrun-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">remove</annotate>
+  </action>
+
+  <action id="org.debion.sde.debrun.refresh">
+    <description>Refresh the package lists</description>
+    <message>Authentication is required to refresh the package lists</message>
+    <icon_name>debrun</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/debrun-helper</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">refresh</annotate>
+  </action>
+</policyconfig>

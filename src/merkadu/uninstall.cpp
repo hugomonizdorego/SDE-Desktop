@@ -357,26 +357,24 @@ void check_package() {
     g.origin = origin_line(o);
     auto prot = Store::get().settings().protected_packages;
     if (prot.count(pkg)) {
-      refuse(format(_("%s is part of the Selviana Desktop Environment (package %s). It is installed and removed "
-                      "together with the desktop, not on its own."),
-                    g.title.c_str(), pkg.c_str()));
+      RemovalPlan plan = plan_removal(pkg, {pkg}, prot);
+      refuse(refusal_text(plan, g.title, pkg));
       return;
     }
-    Store::get().backend(Source::Debian)->plan_remove({pkg}, [pkg, prot](std::vector<std::string> removed,
-                                                                          long long freed, std::string error) {
-      if (!error.empty()) {
-        g.message = error;
+    Store::get().backend(Source::Debian)->plan_remove({pkg}, [pkg, prot](RemovalCheck c) {
+      if (!c.error.empty()) {
+        g.message = c.error;
         set_phase(Phase::Failed);
         return;
       }
-      RemovalPlan plan = plan_removal(pkg, removed, prot);
+      // The desktop's packages and those the system needs stay.
+      RemovalPlan plan = plan_removal(pkg, c.removed, prot, c.system);
       if (!plan.allowed) {
-        refuse(format(_("Removing %s would also remove %s, which the Selviana Desktop Environment needs."),
-                      g.title.c_str(), plan.protected_package.c_str()));
+        refuse(refusal_text(plan, g.title, pkg));
         return;
       }
       g.also = plan.also_removed;
-      g.freed = freed;
+      g.freed = c.freed;
       set_phase(Phase::Confirm);
     });
   });

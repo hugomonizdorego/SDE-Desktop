@@ -8,12 +8,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 #include "buffered_window.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
 #include "image_cache.h"
+#include "logo_anim.h"
 #include "store.h"
 #include "theme.h"
 #include "util.h"
@@ -337,13 +339,186 @@ void paint_symbol(Painter &p, Symbol s, double x, double y, double size, const C
       cairo_line_to(cr, 5, 15);
       cairo_stroke(cr);
       break;
+    case Symbol::Forward:
+      cairo_move_to(cr, 7.5, 4);
+      cairo_line_to(cr, 13.5, 10);
+      cairo_line_to(cr, 7.5, 16);
+      cairo_stroke(cr);
+      break;
+    case Symbol::Home:  // a house
+      cairo_move_to(cr, 2.8, 9.6);
+      cairo_line_to(cr, 10, 3.2);
+      cairo_line_to(cr, 17.2, 9.6);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 4.8, 8.2);
+      cairo_line_to(cr, 4.8, 16.5);
+      cairo_line_to(cr, 15.2, 16.5);
+      cairo_line_to(cr, 15.2, 8.2);
+      cairo_stroke(cr);
+      rr(8.4, 11.2, 3.2, 5.3, 0.8);
+      cairo_stroke(cr);
+      break;
+    case Symbol::Package:  // a box with its lid
+      cairo_move_to(cr, 10, 2.8);
+      cairo_line_to(cr, 16.8, 6.3);
+      cairo_line_to(cr, 16.8, 13.8);
+      cairo_line_to(cr, 10, 17.3);
+      cairo_line_to(cr, 3.2, 13.8);
+      cairo_line_to(cr, 3.2, 6.3);
+      cairo_close_path(cr);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 3.2, 6.3);
+      cairo_line_to(cr, 10, 9.8);
+      cairo_line_to(cr, 16.8, 6.3);
+      cairo_move_to(cr, 10, 9.8);
+      cairo_line_to(cr, 10, 17.3);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 6.6, 4.5);
+      cairo_line_to(cr, 13.4, 8.0);
+      cairo_stroke(cr);
+      break;
+    case Symbol::Info:
+      cairo_arc(cr, 10, 10, 7.5, 0, 2 * M_PI);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 10, 9);
+      cairo_line_to(cr, 10, 14);
+      cairo_stroke(cr);
+      cairo_arc(cr, 10, 6.4, 0.95, 0, 2 * M_PI);
+      cairo_fill(cr);
+      break;
+    case Symbol::Grid:  // four tiles
+      rr(3, 3, 6, 6, 1.5);
+      rr(11, 3, 6, 6, 1.5);
+      rr(3, 11, 6, 6, 1.5);
+      rr(11, 11, 6, 6, 1.5);
+      cairo_stroke(cr);
+      break;
+    case Symbol::Snap:  // a bird's wing: two strokes meeting
+      cairo_move_to(cr, 4, 4.5);
+      cairo_line_to(cr, 15.5, 8.5);
+      cairo_line_to(cr, 9, 11);
+      cairo_close_path(cr);
+      cairo_stroke(cr);
+      cairo_move_to(cr, 9, 11);
+      cairo_line_to(cr, 12.5, 16);
+      cairo_line_to(cr, 15.5, 8.5);
+      cairo_stroke(cr);
+      break;
+    case Symbol::Sparkle:  // a four-pointed star
+      cairo_move_to(cr, 10, 2.5);
+      cairo_curve_to(cr, 10.8, 7.8, 12.2, 9.2, 17.5, 10);
+      cairo_curve_to(cr, 12.2, 10.8, 10.8, 12.2, 10, 17.5);
+      cairo_curve_to(cr, 9.2, 12.2, 7.8, 10.8, 2.5, 10);
+      cairo_curve_to(cr, 7.8, 9.2, 9.2, 7.8, 10, 2.5);
+      cairo_close_path(cr);
+      cairo_fill(cr);
+      break;
   }
   cairo_restore(cr);
 }
 
+namespace {
+
+bool icon_name(const std::string &ref) {
+  return !ref.empty() && ref[0] != '/' && !starts_with(ref, "https://") && !starts_with(ref, "http://") &&
+         !starts_with(ref, "snap-icon:");
+}
+
+// A theme icon, only when the theme has it (IconLoader::get() would give
+// the generic application icon instead).
+cairo_surface_t *theme_icon(const std::string &name, int size) {
+  if (fake_mode()) {
+    // The fake sources' launchers name the icons of DIR/icons.
+    std::string file = fake_dir() + "/icons/" + name + ".svg";
+    if (file_exists(file)) return images::icon_file(file, size);
+  }
+  if (IconLoader::lookup(name, size).empty()) return nullptr;
+  return IconLoader::get({name}, size);
+}
+
+Color hue_color(const std::string &seed) {
+  // Calm colors of the SDE palette, chosen by the name.
+  static const uint32_t palette[] = {0x3876B9, 0x4A9157, 0xC8742F, 0x8E5BB5, 0xC9564E, 0x2E8C8C, 0x5867C2, 0x9A7B2E};
+  unsigned h = 2166136261u;
+  for (unsigned char c : seed) h = (h ^ c) * 16777619u;
+  return Color::hex(palette[h % (sizeof palette / sizeof palette[0])]);
+}
+
+}  // namespace
+
 cairo_surface_t *app_icon(const App &a, int size) {
-  std::string fallback = a.kind == "font" ? "font-x-generic" : "application-x-executable";
-  return images::icon(a.icon, size, fallback);
+  for (const std::string &ref : icon_candidates(a, size)) {
+    cairo_surface_t *s = icon_name(ref) ? theme_icon(ref, size) : images::icon_file(ref, size);
+    if (s) return s;
+  }
+  for (const std::string &name : fallback_icon_names(a))
+    if (cairo_surface_t *s = theme_icon(name, size)) return s;
+  return nullptr;
+}
+
+void paint_icon_placeholder(Painter &p, double x, double y, int size, const std::string &seed, Symbol s) {
+  const Theme &t = active_theme();
+  Color c = hue_color(seed);
+  double r = size * 0.22;
+  p.fill_gradient(x, y, size, size, r, c.mix(Color::hex(0xFFFFFF), t.dark ? 0.05 : 0.2), c.mix(Color::hex(0), 0.12),
+                  true);
+  double ss = size * 0.56;
+  paint_symbol(p, s, x + (size - ss) / 2, y + (size - ss) / 2, ss, Color::hex(0xFFFFFF).alpha(0.92));
+}
+
+void paint_app_icon(Painter &p, const App &a, double x, double y, int size) {
+  if (cairo_surface_t *s = app_icon(a, size))
+    p.image(s, x, y, size);
+  else
+    paint_icon_placeholder(p, x, y, size, a.name, Symbol::Package);
+}
+
+void paint_package_icon(Painter &p, const Package &pkg, const App *app, double x, double y, int size) {
+  if (app) {
+    paint_app_icon(p, *app, x, y, size);
+    return;
+  }
+  std::vector<std::string> names = section_icon_names(section_base(pkg.section));
+  names.push_back("package-x-generic");
+  for (auto &n : names)
+    if (cairo_surface_t *s = theme_icon(n, size)) {
+      p.image(s, x, y, size);
+      return;
+    }
+  paint_icon_placeholder(p, x, y, size, section_base(pkg.section), Symbol::Package);
+}
+
+Color icon_tint(const App &a) {
+  // Computed again when the icon changes (a download finished).
+  static std::map<std::string, std::pair<cairo_surface_t *, Color>> cache;
+  cairo_surface_t *s = app_icon(a, 48);
+  auto it = cache.find(a.id);
+  if (it != cache.end() && it->second.first == s) return it->second.second;
+  Color out = hue_color(a.name);
+  if (s) {
+    // The average of the colorful, opaque pixels.
+    cairo_surface_flush(s);
+    int w = cairo_image_surface_get_width(s), h = cairo_image_surface_get_height(s);
+    int stride = cairo_image_surface_get_stride(s);
+    const unsigned char *data = cairo_image_surface_get_data(s);
+    double sr = 0, sg = 0, sb = 0, sw = 0;
+    for (int yy = 0; data && yy < h; ++yy)
+      for (int xx = 0; xx < w; ++xx) {
+        const unsigned char *px = data + yy * stride + xx * 4;  // premultiplied BGRA
+        double al = px[3] / 255.0;
+        if (al < 0.5) continue;
+        double b = px[0] / 255.0 / al, g = px[1] / 255.0 / al, r = px[2] / 255.0 / al;
+        double mx = std::max(r, std::max(g, b)), mn = std::min(r, std::min(g, b));
+        double weight = (mx - mn) + 0.05;  // saturated pixels count most
+        sr += r * weight;
+        sg += g * weight;
+        sb += b * weight;
+        sw += weight;
+      }
+    if (sw > 0) out = Color{std::min(1.0, sr / sw), std::min(1.0, sg / sw), std::min(1.0, sb / sw), 1};
+  }
+  cache[a.id] = {s, out};
+  return out;
 }
 
 // --------------------------------------------------------------- button
@@ -435,11 +610,22 @@ void Chip::draw() {
     p.fill_rounded(x(), y(), w(), h(), r, bg);
     p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, on_ ? t.accent : t.border);
     if (dot.a > 0) p.circle(x() + S(14), y() + h() / 2.0, Sd(4), dot);
+    if (menu) {
+      cairo_t *cr = p.cr();
+      double cx = x() + w() - S(17), cy = y() + h() / 2.0;
+      p.set(on_ ? t.accent_text : t.text_dim);
+      cairo_set_line_width(cr, Sd(1.6));
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      cairo_move_to(cr, cx - Sd(4), cy - Sd(2));
+      cairo_line_to(cr, cx, cy + Sd(2));
+      cairo_line_to(cr, cx + Sd(4), cy - Sd(2));
+      cairo_stroke(cr);
+    }
     if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
   }
   text_font(t.font_size, on_);
-  int dx = dot.a > 0 ? S(10) : 0;
-  draw_text(text_, x() + S(10) + dx, y(), w() - S(20) - dx, h(), on_ ? t.accent_text : t.text, 1);
+  int dx = dot.a > 0 ? S(10) : 0, mx = menu ? S(16) : 0;
+  draw_text(text_, x() + S(10) + dx, y(), w() - S(20) - dx - mx, h(), on_ ? t.accent_text : t.text, 1);
 }
 
 int Chip::handle(int e) {
@@ -472,17 +658,20 @@ AppTile::AppTile(int x, int y, int w, int h, const std::string &app_id) : Fl_Wid
   if (const App *a = Store::get().app(app_id)) copy_tooltip(a->name.c_str());
 }
 
+int AppTile::height() { return S(112); }
+
 void AppTile::draw() {
   const Theme &t = active_theme();
   const App *a = Store::get().app(id_);
   if (!a) return;
-  int is = S(48), pad = S(14);
-  int tx = x() + pad + is + S(14), tw = w() - (tx - x()) - pad;
+  int is = S(56), pad = S(16);
+  int tx = x() + pad + is + S(16), tw = w() - (tx - x()) - pad;
   int badge_h = S(20), by = y() + h() - pad - badge_h + S(2);
   {
     Painter p(window()->w(), window()->h());
+    if (hot_) p.shadow(x(), y() + S(2), w(), h(), std::min(double(t.radius), Sd(14)), t.shadow.alpha(0.18), S(8));
     paint_card(p, x(), y(), w(), h(), hot_, Fl::focus() == this);
-    p.image(app_icon(*a, is), x() + pad, y() + pad, is);
+    paint_app_icon(p, *a, x() + pad, y() + pad, is);
     paint_source_badges(p, *a, tx, by, badge_h, tw - S(24));
     if (a->installed()) {
       double cs = S(18);
@@ -493,11 +682,11 @@ void AppTile::draw() {
   }
   int name_w = tw - (a->installed() ? S(24) : 0);
   text_font(t.font_size + 1, true);
-  draw_text(a->name, tx, y() + S(10), name_w, S(22), t.text);
+  draw_text(a->name, tx, y() + pad - S(3), name_w, S(22), t.text);
   text_font(std::max(S(9), t.font_size - S(1)));
   fl_color(t.text_dim.fl());
-  int sh = by - (y() + S(34)) - S(2);
-  draw_lines(a->summary, tx, y() + S(34), tw, std::max(1, sh / std::max(1, fl_height())));
+  int sy = y() + pad + S(21), sh = by - sy - S(2);
+  draw_lines(a->summary, tx, sy, tw, std::max(1, sh / std::max(1, fl_height())));
   draw_source_badges(*a, tx, by, badge_h, tw - S(24));
 }
 
@@ -574,13 +763,13 @@ void AppRow::draw() {
   bool primary = mode_ != Installed && can_act;
   int bx, by, bw, bh;
   action_box(&bx, &by, &bw, &bh);
-  int is = S(40), ix = x() + S(14), tx = ix + is + S(14), tw = bx - tx - S(14);
+  int is = S(44), ix = x() + S(14), tx = ix + is + S(14), tw = bx - tx - S(14);
   text_font(t.font_size + 1, true);
   int name_w = std::min(tw, text_width(a->name) + S(4));
   {
     Painter p(window()->w(), window()->h());
     paint_card(p, x(), y(), w(), h(), hot_, Fl::focus() == this);
-    p.image(app_icon(*a, is), ix, y() + (h() - is) / 2.0, is);
+    paint_app_icon(p, *a, ix, y() + (h() - is) / 2.0, is);
     paint_source_badges(p, *a, tx + name_w + S(8), y() + h() / 2 - S(20), S(18), tw - name_w - S(8));
     if (job) {
       paint_progress(p, bx, by + bh / 2.0 + S(4), bw, S(6), job->percent, 0);
@@ -691,43 +880,72 @@ void Banner::draw() {
   const App *a = Store::get().app(id_);
   if (!a) return;
   double r = t.radius_large;
-  int pad = S(28), is = std::min(S(96), h() - 2 * pad);
-  bool shot = !a->screenshots.empty() && w() > S(620);
-  int shot_w = shot ? std::min(int(w() * 0.42), int((h() - S(36)) * 16 / 9.0)) : 0;
-  int tx = x() + pad + is + S(24), tw = w() - (tx - x()) - pad - (shot ? shot_w + S(24) : 0);
+  int pad = S(32), plate = std::min(S(120), h() - 2 * pad), is = plate * 3 / 4;
+  bool shot = !a->screenshots.empty() && w() > S(700) && !images::failed(a->screenshots[0].thumbnail);
+  int shot_w = shot ? std::min(int(w() * 0.40), int((h() - S(40)) * 16 / 9.0)) : 0;
+  int tx = x() + pad + plate + S(28), tw = w() - (tx - x()) - pad - (shot ? shot_w + S(28) : 0);
+  // The app's own color, deep enough for white text.
+  Color base = icon_tint(*a).mix(Color::hex(0x000000), t.dark ? 0.35 : 0.15);
+  for (int i = 0; i < 12 && Color::hex(0xFFFFFF).contrast(base) < 4.8; ++i) base = base.mix(Color::hex(0), 0.12);
+  Color deep = base.mix(Color::hex(0x000000), 0.38);
+  Color white = Color::hex(0xFFFFFF);
   {
     Painter p(window()->w(), window()->h());
-    Color base = t.surface;
-    p.fill_gradient(x(), y(), w(), h(), r, t.accent.alpha(t.dark ? 0.34 : 0.20).mix(base, 0.25),
-                    base.alpha(t.dark ? 0.9 : 1.0), true);
-    p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, hot_ ? t.accent : t.border);
-    p.image(app_icon(*a, is), x() + pad, y() + (h() - is) / 2.0, is);
+    if (hot_) p.shadow(x(), y() + S(3), w(), h(), r, t.shadow.alpha(0.25), S(10));
+    p.fill_gradient(x(), y(), w(), h(), r, base, deep, true);
+    // Soft light circles: depth without an image.
+    cairo_t *cr = p.cr();
+    cairo_save(cr);
+    p.rounded_rect(x(), y(), w(), h(), r);
+    cairo_clip(cr);
+    p.circle(x() + w() * 0.86, y() - h() * 0.15, h() * 0.75, white.alpha(0.07));
+    p.circle(x() + w() * 0.60, y() + h() * 1.25, h() * 0.6, white.alpha(0.05));
+    cairo_restore(cr);
+    // The icon on a light plate.
+    double px = x() + pad, py = y() + (h() - plate) / 2.0;
+    p.shadow(px, py + S(2), plate, plate, plate * 0.24, Color::hex(0).alpha(0.25), S(8));
+    p.fill_rounded(px, py, plate, plate, plate * 0.24, white.alpha(0.94));
+    paint_app_icon(p, *a, px + (plate - is) / 2.0, py + (plate - is) / 2.0, is);
     if (shot) {
       int sh = int(shot_w * 9 / 16.0), sx = x() + w() - pad - shot_w, sy = y() + (h() - sh) / 2;
       cairo_surface_t *img = images::picture(a->screenshots[0].thumbnail, shot_w, sh);
-      p.shadow(sx, sy, shot_w, sh, S(8), t.shadow.alpha(std::min(0.3, t.shadow.a)), S(6));
-      p.fill_rounded(sx, sy, shot_w, sh, S(8), t.surface_alt);
+      p.shadow(sx, sy, shot_w, sh, S(10), Color::hex(0).alpha(0.3), S(10));
+      p.fill_rounded(sx, sy, shot_w, sh, S(10), white.alpha(0.12));
       if (img) {
         double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
-        cairo_save(p.cr());
-        p.rounded_rect(sx, sy, shot_w, sh, S(8));
-        cairo_clip(p.cr());
+        cairo_save(cr);
+        p.rounded_rect(sx, sy, shot_w, sh, S(10));
+        cairo_clip(cr);
         p.surface(img, sx + (shot_w - iw) / 2, sy + (sh - ih) / 2);
-        cairo_restore(p.cr());
+        cairo_restore(cr);
       }
-      p.stroke_rounded(sx + 0.5, sy + 0.5, shot_w - 1, sh - 1, S(8), t.border);
     }
-    paint_source_badges(p, *a, tx, y() + h() / 2 + S(34), S(22), tw);
+    // Source pills.
+    int cx = tx, by = y() + h() / 2 + S(38);
+    for (Source s : badge_sources(*a)) {
+      int bw = badge_width(source_label(s));
+      if (cx + bw > tx + tw) break;
+      p.fill_rounded(cx, by, bw, S(22), S(11), white.alpha(0.18));
+      cx += bw + S(6);
+    }
     if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
   }
   text_font(std::max(S(9), t.font_size - S(1)), true);
-  draw_text(_("FEATURED"), tx, y() + h() / 2 - S(58), tw, S(20), t.accent_text);
-  text_font(t.font_size + S(10), true);
-  draw_text(a->name, tx, y() + h() / 2 - S(38), tw, S(38), t.text);
+  draw_text(a->installed() ? _("INSTALLED") : _("HIGHLIGHT"), tx, y() + h() / 2 - S(62), tw, S(20), white.alpha(0.78));
+  text_font(t.font_size + S(12), true);
+  draw_text(a->name, tx, y() + h() / 2 - S(42), tw, S(42), white);
   text_font(t.font_size + 1);
-  fl_color(t.text_dim.fl());
-  draw_lines(a->summary, tx, y() + h() / 2 + S(2), tw, std::max(1, S(30) / std::max(1, fl_height())));
-  draw_source_badges(*a, tx, y() + h() / 2 + S(34), S(22), tw);
+  fl_color(white.alpha(0.88).mix(base, 0.12).fl());
+  draw_lines(a->summary, tx, y() + h() / 2 + S(2), tw, 2);
+  int cx = tx, by = y() + h() / 2 + S(38);
+  text_font(std::max(S(9), t.font_size - S(2)), true);
+  for (Source s : badge_sources(*a)) {
+    std::string label = source_label(s);
+    int bw = badge_width(label);
+    if (cx + bw > tx + tw) break;
+    draw_text(label, cx, by, bw, S(22), white, 1);
+    cx += bw + S(6);
+  }
 }
 
 int Banner::handle(int e) {
@@ -773,7 +991,7 @@ void CategoryTile::draw() {
   {
     Painter p(window()->w(), window()->h());
     paint_card(p, x(), y(), w(), h(), hot_, Fl::focus() == this);
-    p.fill_rounded(bx, by, box, box, Sd(10), t.accent.alpha(0.12));
+    p.fill_rounded(bx, by, box, box, Sd(10), hue_color(title_).alpha(t.dark ? 0.28 : 0.16));
     int is = compact_ ? S(22) : S(26);
     p.image(IconLoader::get({icon_, "applications-other", "folder"}, is), bx + (box - is) / 2.0,
             by + (box - is) / 2.0, is);
@@ -813,6 +1031,207 @@ int CategoryTile::handle(int e) {
     default:
       return Fl_Widget::handle(e);
   }
+}
+
+// ----------------------------------------------------------- IconButton
+
+bool reduced_motion() { return LogoAnimation::reduced_motion(); }
+
+IconButton::IconButton(int x, int y, int w, int h, Symbol s, const std::string &tip)
+    : Fl_Button(x, y, w, h), symbol_(s) {
+  box(FL_NO_BOX);
+  down_box(FL_NO_BOX);
+  copy_tooltip(tip.c_str());
+  callback([](Fl_Widget *w, void *) {
+    auto *b = static_cast<IconButton *>(w);
+    if (b->on_click) b->on_click();
+  });
+}
+
+void IconButton::spinning(bool on) {
+  if (on == spinning_) return;
+  spinning_ = on;
+  if (on && !reduced_motion())
+    Fl::add_timeout(1.0 / 30, tick, this);
+  else
+    Fl::remove_timeout(tick, this);
+  redraw();
+}
+
+void IconButton::tick(void *data) {
+  auto *b = static_cast<IconButton *>(data);
+  if (!b->spinning_) return;
+  b->angle_ = std::fmod(b->angle_ + 0.22, 2 * M_PI);
+  b->redraw();
+  Fl::repeat_timeout(1.0 / 30, tick, data);
+}
+
+void IconButton::draw() {
+  const Theme &t = active_theme();
+  bool hot = Fl::belowmouse() == this && active_r(), down = value() != 0;
+  Painter p(window()->w(), window()->h());
+  double r = std::min(w(), h()) / 2.0;
+  if (hot || down || spinning_)
+    p.fill_rounded(x(), y(), w(), h(), r, down ? t.hover.mix(t.text, 0.1) : spinning_ && !hot ? t.accent.alpha(0.12)
+                                                                                               : t.hover);
+  if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
+  double s = std::min(w(), h()) * 0.55;
+  Color c = !active_r() ? t.text_dim.alpha(0.45) : spinning_ ? t.accent_text : t.text;
+  cairo_t *cr = p.cr();
+  cairo_save(cr);
+  if (spinning_) {
+    double cx = x() + w() / 2.0, cy = y() + h() / 2.0;
+    cairo_translate(cr, cx, cy);
+    cairo_rotate(cr, angle_);
+    cairo_translate(cr, -cx, -cy);
+  }
+  paint_symbol(p, symbol_, x() + (w() - s) / 2, y() + (h() - s) / 2, s, c);
+  cairo_restore(cr);
+}
+
+int IconButton::handle(int e) {
+  if (e == FL_ENTER || e == FL_LEAVE || e == FL_FOCUS || e == FL_UNFOCUS) {
+    redraw();
+    return 1;
+  }
+  if (e == FL_KEYBOARD && Fl::focus() == this &&
+      (Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter || Fl::event_key() == ' ')) {
+    do_callback();
+    return 1;
+  }
+  return Fl_Button::handle(e);
+}
+
+// ---------------------------------------------------------- Placeholder
+
+namespace {
+std::vector<Placeholder *> g_placeholders;
+double g_shimmer = 0;
+}  // namespace
+
+Placeholder::Placeholder(int x, int y, int w, int h, bool banner) : Fl_Widget(x, y, w, h), banner_(banner) {
+  if (g_placeholders.empty() && !reduced_motion()) Fl::add_timeout(1.0 / 20, tick, nullptr);
+  g_placeholders.push_back(this);
+}
+
+Placeholder::~Placeholder() {
+  g_placeholders.erase(std::remove(g_placeholders.begin(), g_placeholders.end(), this), g_placeholders.end());
+  if (g_placeholders.empty()) Fl::remove_timeout(tick, nullptr);
+}
+
+void Placeholder::tick(void *) {
+  g_shimmer = std::fmod(g_shimmer + 0.04, 1.6);
+  for (auto *p : g_placeholders) p->redraw();
+  Fl::repeat_timeout(1.0 / 20, tick, nullptr);
+}
+
+void Placeholder::draw() {
+  const Theme &t = active_theme();
+  Painter p(window()->w(), window()->h());
+  double r = banner_ ? double(t.radius_large) : std::min(double(t.radius), Sd(14));
+  Color shape = t.text.alpha(t.dark ? 0.10 : 0.07);
+  p.fill_rounded(x(), y(), w(), h(), r, banner_ ? t.surface_alt : t.surface);
+  p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, t.border.alpha(0.7));
+  int pad = banner_ ? S(32) : S(16), is = banner_ ? std::min(S(120), h() - 2 * pad) : S(56);
+  int iy = banner_ ? y() + (h() - is) / 2 : y() + pad;
+  p.fill_rounded(x() + pad, iy, is, is, is * 0.22, shape);
+  int tx = x() + pad + is + S(18), tw = w() - (tx - x()) - pad;
+  int ly = banner_ ? y() + h() / 2 - S(30) : y() + pad;
+  int lh = banner_ ? S(22) : S(14);
+  p.fill_rounded(tx, ly, tw * 0.55, lh, lh / 2.0, shape);
+  p.fill_rounded(tx, ly + lh + S(12), tw * 0.85, S(11), S(5.5), shape);
+  p.fill_rounded(tx, ly + lh + S(30), tw * 0.65, S(11), S(5.5), shape);
+  if (!reduced_motion()) {
+    // A band of light passing from left to right.
+    double pos = x() - w() * 0.3 + g_shimmer / 1.2 * w() * 1.6;
+    cairo_t *cr = p.cr();
+    cairo_save(cr);
+    p.rounded_rect(x(), y(), w(), h(), r);
+    cairo_clip(cr);
+    cairo_pattern_t *g = cairo_pattern_create_linear(pos, 0, pos + w() * 0.3, 0);
+    Color light = t.dark ? Color::hex(0xFFFFFF) : Color::hex(0xFFFFFF);
+    double a = t.dark ? 0.05 : 0.45;
+    cairo_pattern_add_color_stop_rgba(g, 0, light.r, light.g, light.b, 0);
+    cairo_pattern_add_color_stop_rgba(g, 0.5, light.r, light.g, light.b, a);
+    cairo_pattern_add_color_stop_rgba(g, 1, light.r, light.g, light.b, 0);
+    cairo_set_source(cr, g);
+    cairo_paint(cr);
+    cairo_pattern_destroy(g);
+    cairo_restore(cr);
+  }
+}
+
+// ----------------------------------------------------------- EmptyState
+
+EmptyState::EmptyState(int x, int y, int w, Symbol s, const std::string &title, const std::string &text, bool problem)
+    : Fl_Widget(x, y, w, measure(w, title, text)), symbol_(s), title_(title), text_(text), problem_(problem) {
+  copy_tooltip(title.c_str());
+}
+
+int EmptyState::measure(int w, const std::string &title, const std::string &text) {
+  int tw = std::min(w, S(560));
+  text_font(active_theme().font_size + 5, true);
+  int th = 0, ww = tw;
+  fl_measure(title.c_str(), ww, th, 0);
+  int bh = text.empty() ? 0 : TextBlock::measure(text, tw, 0) + S(10);
+  return S(24) + S(96) + S(20) + th + S(10) + bh + S(8);
+}
+
+void EmptyState::draw() {
+  const Theme &t = active_theme();
+  Color c = problem_ ? t.warning : t.accent;
+  int cs = S(96), cx = x() + (w() - cs) / 2, cy = y() + S(24);
+  {
+    Painter p(window()->w(), window()->h());
+    p.circle(cx + cs / 2.0, cy + cs / 2.0, cs / 2.0, c.alpha(t.dark ? 0.22 : 0.13));
+    p.circle(cx + cs / 2.0, cy + cs / 2.0, cs / 2.0 - S(10), c.alpha(t.dark ? 0.18 : 0.10));
+    double ss = S(44);
+    paint_symbol(p, symbol_, cx + (cs - ss) / 2, cy + (cs - ss) / 2, ss, readable(c, t.background));
+  }
+  int tw = std::min(w(), S(560)), tx = x() + (w() - tw) / 2, ty = cy + cs + S(20);
+  text_font(t.font_size + 5, true);
+  int th = 0, ww = tw;
+  fl_measure(title_.c_str(), ww, th, 0);
+  fl_color(t.text.fl());
+  fl_draw(title_.c_str(), tx, ty, tw, th, Fl_Align(FL_ALIGN_TOP | FL_ALIGN_WRAP | FL_ALIGN_INSIDE), nullptr, 0);
+  if (!text_.empty()) {
+    text_font(t.font_size);
+    fl_color(t.text_dim.fl());
+    int bh = TextBlock::measure(text_, tw, 0);
+    fl_draw(text_.c_str(), tx, ty + th + S(10), tw, bh, Fl_Align(FL_ALIGN_TOP | FL_ALIGN_WRAP | FL_ALIGN_INSIDE),
+            nullptr, 0);
+  }
+}
+
+// --------------------------------------------------------------- Notice
+
+Notice::Notice(int x, int y, int w, int h, const std::string &text, int level, bool busy)
+    : Fl_Widget(x, y, w, h), text_(text), level_(level), busy_(busy) {
+  copy_tooltip(text.c_str());
+}
+
+int Notice::measure(int w, const std::string &text, int button_w) {
+  int tw = w - S(56) - (button_w ? button_w + S(16) : S(16));
+  return std::max(S(48), TextBlock::measure(text, tw, 0) + S(24));
+}
+
+void Notice::draw() {
+  const Theme &t = active_theme();
+  Color c = level_ == 2 ? t.error : level_ == 1 ? t.warning : t.accent;
+  {
+    Painter p(window()->w(), window()->h());
+    double r = std::min(double(t.radius), Sd(12));
+    p.fill_rounded(x(), y(), w(), h(), r, c.alpha(t.dark ? 0.18 : 0.10).mix(t.surface, 0.3));
+    p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, c.alpha(0.45));
+    double s = S(20), sx = x() + S(18), sy = y() + (h() - s) / 2;
+    paint_symbol(p, busy_ ? Symbol::Refresh : level_ ? Symbol::Warning : Symbol::Info, sx, sy, s,
+                 readable(c, t.surface));
+  }
+  text_font(t.font_size);
+  fl_color(t.text.fl());
+  int tx = x() + S(56), tw = w() - S(56) - (text_right ? text_right + S(16) : S(16));
+  fl_draw(text_.c_str(), tx, y() + S(12), tw, h() - S(24),
+          Fl_Align(FL_ALIGN_LEFT | FL_ALIGN_WRAP | FL_ALIGN_INSIDE), nullptr, 0);
 }
 
 // ------------------------------------------------------ ScreenshotStrip
@@ -856,30 +1275,40 @@ int ScreenshotStrip::shot_at(int ex, int ey) const {
 
 void ScreenshotStrip::draw() {
   const Theme &t = active_theme();
-  Painter p(window()->w(), window()->h());
   std::vector<Box> b = boxes();
-  for (size_t i = 0; i < b.size(); ++i) {
-    int sx = b[i].x, sy = b[i].y, sw = b[i].w, sh = b[i].h;
-    double r = i == 0 ? S(10) : S(8);
-    p.fill_rounded(sx, sy, sw, sh, r, t.surface_alt);
-    // Thumbnails are about 600 px wide: a larger first screenshot (HiDPI)
-    // uses the full image.
-    bool full = i == 0 && !shots_[i].image.empty() && sw > 640;
-    cairo_surface_t *img = images::picture(full ? shots_[i].image : shots_[i].thumbnail, sw, sh);
-    if (img) {
-      double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
-      cairo_save(p.cr());
-      p.rounded_rect(sx, sy, sw, sh, r);
-      cairo_clip(p.cr());
-      p.surface(img, sx + (sw - iw) / 2, sy + (sh - ih) / 2);
-      cairo_restore(p.cr());
-    } else {
-      // Loading or missing: a picture symbol.
+  std::vector<Box> failed;  // could not be downloaded (offline, or gone)
+  {
+    Painter p(window()->w(), window()->h());
+    for (size_t i = 0; i < b.size(); ++i) {
+      int sx = b[i].x, sy = b[i].y, sw = b[i].w, sh = b[i].h;
+      double r = i == 0 ? S(10) : S(8);
+      p.fill_rounded(sx, sy, sw, sh, r, t.surface_alt);
+      // Thumbnails are about 600 px wide: a larger first screenshot (HiDPI)
+      // uses the full image.
+      bool full = i == 0 && !shots_[i].image.empty() && sw > 640;
+      std::string ref = full ? shots_[i].image : shots_[i].thumbnail;
+      cairo_surface_t *img = images::picture(ref, sw, sh);
       double s = S(28);
-      paint_symbol(p, Symbol::Folder, sx + (sw - s) / 2, sy + (sh - s) / 2, s, t.text_dim.alpha(0.5));
+      if (img) {
+        double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
+        cairo_save(p.cr());
+        p.rounded_rect(sx, sy, sw, sh, r);
+        cairo_clip(p.cr());
+        p.surface(img, sx + (sw - iw) / 2, sy + (sh - ih) / 2);
+        cairo_restore(p.cr());
+      } else if (images::failed(ref)) {
+        paint_symbol(p, Symbol::Warning, sx + (sw - s) / 2, sy + sh / 2.0 - s - S(4), s, t.text_dim.alpha(0.6));
+        failed.push_back(b[i]);
+      } else {
+        // Loading: a picture symbol.
+        paint_symbol(p, Symbol::Folder, sx + (sw - s) / 2, sy + (sh - s) / 2, s, t.text_dim.alpha(0.5));
+      }
+      p.stroke_rounded(sx + 0.5, sy + 0.5, sw - 1, sh - 1, r, int(i) == hover_ ? t.accent : t.border);
     }
-    p.stroke_rounded(sx + 0.5, sy + 0.5, sw - 1, sh - 1, r, int(i) == hover_ ? t.accent : t.border);
   }
+  text_font(t.font_size - S(1));
+  for (auto &f : failed)
+    draw_text(_("Screenshot not available"), f.x + S(8), f.y + f.h / 2 + S(2), f.w - S(16), S(22), t.text_dim, 1);
 }
 
 int ScreenshotStrip::handle(int e) {

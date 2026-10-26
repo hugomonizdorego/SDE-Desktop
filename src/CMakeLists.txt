@@ -439,6 +439,28 @@ install(PROGRAMS ${PROJECT_SOURCE_DIR}/data/compat/sde-power-preferences
                  ${PROJECT_SOURCE_DIR}/data/compat/sde-control-center
         DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# Debrun, the installer of downloaded .deb files (docs/DEBRUN.md), and
+# sde-appimage, AppImages after verification (docs/APPIMAGE.md).
+add_subdirectory(debrun)
+add_subdirectory(appimage)
+# Renaming user accounts at the next start (Control Center > Users & Avatar,
+# docs/CONTROL-CENTER.md): the model is part of the Control Center's; the
+# root helper (pkexec, and the boot service) links only the model and
+# sde-installer-base.
+target_sources(sde-settings-model PRIVATE settings/account_rename.cpp)
+add_executable(sde-account-rename settings/account_rename.cpp settings/account_rename_main.cpp)
+target_include_directories(sde-account-rename PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/settings)
+target_link_libraries(sde-account-rename PRIVATE sde-installer-base)
+install(TARGETS sde-account-rename RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+configure_file(${PROJECT_SOURCE_DIR}/data/polkit/org.debion.sde.account-rename.policy.in
+               ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.account-rename.policy @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.account-rename.policy
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
+configure_file(${PROJECT_SOURCE_DIR}/data/systemd/sde-account-rename.service.in
+               ${CMAKE_BINARY_DIR}/systemd/sde-account-rename.service @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/systemd/sde-account-rename.service DESTINATION lib/systemd/system)
+install(FILES ${PROJECT_SOURCE_DIR}/data/man/sde-account-rename.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
+
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)
 

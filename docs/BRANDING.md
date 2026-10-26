@@ -130,6 +130,8 @@ dominant colour, a consistent charcoal outline (#2B2B2F) and no text.
 | `sde-control-center` | Control Center (`sde-settings`, formerly SDE Settings) | rounded panel with sliders, a toggle and a gear | purple |
 | `sde-software-updater` | Software Updater (`sde-update`) | circular arrows around a download arrow, with a shield | teal |
 | `merkadu` | Merkadu, software center (package `merkadu`) | market stall with a red and cream striped awning and three apps (red, green, blue) in its window | red and cream |
+| `debrun` | Debrun, installer of downloaded `.deb` files | cream box with a red label and a green arrow going in | cream and green |
+| `sde-appimage` | AppImage Runner (`sde-appimage`) | blue application tile with a play triangle and a green shield with a check mark | blue and green |
 | `sde-welcome` | Welcome | the SDE monitor with RGB stripes and a sparkle | cream and RGB |
 | `sde-driver-manager` | Driver Manager | microchip with a wrench | navy and gold |
 | `sde-system-reports` | System Reports | clipboard with a bar chart and a magnifier | orange |

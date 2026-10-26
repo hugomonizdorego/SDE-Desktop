@@ -5,7 +5,7 @@
 its sections and opens the license viewer.
 
 test_about_ui.py NAME=BINARY ...
-  NAME: niny, sysmon, run, display, calculator, welcome, reports, merkadu, or
+  NAME: niny, sysmon, run, display, calculator, welcome, reports, merkadu, debrun, or
   licenses (BINARY is sde-ui-kit-demo: the Open-Source Licenses dialog)
 
 Each program must show "About <name>"; Ctrl+Tab must move through the
@@ -119,6 +119,7 @@ CASES = {
     'welcome': ('^Welcome$', 'About SDE Welcome', ['F1']),
     'reports': ('^System Reports$', 'About System Reports', ['F1']),
     'merkadu': ('^Merkadu$', 'About Merkadu', ['F1']),
+    'debrun': ('^Debrun$', 'About Debrun', ['F1']),
 }
 
 
@@ -218,7 +219,8 @@ def walk_sections(env, name, about, win, qa, failures, fit=None):
 
 failures = []
 with tempfile.TemporaryDirectory(prefix='sde-about-ui-') as temp:
-    number = 400 + os.getpid() % 20000
+    # SDE_TEST_DISPLAY=N pins the display (N, and N + 1 for the small screen).
+    number = int(os.environ.get('SDE_TEST_DISPLAY') or 400 + os.getpid() % 20000)
     server, env = start_x(number, '1280x800', temp)
     qa = env['SDE_ABOUT_QA_FILE']
     try:

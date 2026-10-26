@@ -74,7 +74,8 @@
     "screenshots/paintbox-0.svg",
     "screenshots/paintbox-1.svg",
     "screenshots/paintbox-2.svg"
-   ]
+   ],
+   "section": "graphics"
   },
   {
    "id": "org.example.Vectorial",
@@ -125,7 +126,8 @@
    "screenshots": [
     "screenshots/vectorial-0.svg",
     "screenshots/vectorial-1.svg"
-   ]
+   ],
+   "section": "graphics"
   },
   {
    "id": "org.example.Lumen",
@@ -213,7 +215,8 @@
    "screenshots": [
     "screenshots/starfield-0.svg",
     "screenshots/starfield-1.svg"
-   ]
+   ],
+   "section": "science"
   },
   {
    "id": "org.example.Waveform",
@@ -263,7 +266,8 @@
    ],
    "screenshots": [
     "screenshots/waveform-0.svg"
-   ]
+   ],
+   "section": "sound"
   },
   {
    "id": "org.example.Reel",
@@ -301,7 +305,8 @@
      "version": "3.0.21",
      "days": 200
     }
-   ]
+   ],
+   "section": "video"
   },
   {
    "id": "org.example.Quill",
@@ -348,7 +353,8 @@
    ],
    "screenshots": [
     "screenshots/quill-0.svg"
-   ]
+   ],
+   "section": "editors"
   },
   {
    "id": "org.example.Ledger",
@@ -383,7 +389,8 @@
      "version": "2.8",
      "days": 60
     }
-   ]
+   ],
+   "section": "misc"
   },
   {
    "id": "org.example.Orbit",
@@ -432,7 +439,8 @@
    ],
    "screenshots": [
     "screenshots/orbit-0.svg"
-   ]
+   ],
+   "section": "web"
   },
   {
    "id": "org.example.Postbox",
@@ -567,7 +575,8 @@
    "screenshots": [
     "screenshots/kartrally-0.svg",
     "screenshots/kartrally-1.svg"
-   ]
+   ],
+   "section": "games"
   },
   {
    "id": "org.example.Chessboard",
@@ -604,7 +613,8 @@
      "version": "3.40",
      "days": 300
     }
-   ]
+   ],
+   "section": "games"
   },
   {
    "id": "org.example.CodeForge",
@@ -724,7 +734,8 @@
      "version": "5.6",
      "days": 11
     }
-   ]
+   ],
+   "section": "science"
   },
   {
    "id": "org.example.Bookshelf",
@@ -769,7 +780,8 @@
      "version": "7.19",
      "days": 10
     }
-   ]
+   ],
+   "section": "text"
   },
   {
    "id": "org.example.DiskDoctor",
@@ -806,7 +818,8 @@
      "version": "1.12",
      "days": 120
     }
-   ]
+   ],
+   "section": "admin"
   },
   {
    "id": "org.example.Notes",
@@ -843,7 +856,8 @@
      "version": "0.9",
      "days": 90
     }
-   ]
+   ],
+   "section": "editors"
   },
   {
    "id": "org.example.CloudNotes",
@@ -912,7 +926,8 @@
      "days": 50
     }
    ],
-   "kind": "font"
+   "kind": "font",
+   "section": "fonts"
   },
   {
    "id": "org.debion.Calculator",
@@ -949,7 +964,8 @@
      "version": "0.2.0~alpha2",
      "days": 0
     }
-   ]
+   ],
+   "section": "x11"
   }
  ],
  "removes": {
@@ -1068,6 +1084,211 @@
    ],
    "automatic": 2,
    "by": "alex"
+  }
+ ],
+ "system": [
+  "base-files",
+  "bash",
+  "coreutils",
+  "dpkg",
+  "libc6"
+ ],
+ "depends": {
+  "paintbox": [
+   "libpaint2",
+   "paintbox-data"
+  ],
+  "starfield": [
+   "starfield-data"
+  ],
+  "python3-pixel": [
+   "python3",
+   "libpaint2"
+  ]
+ },
+ "packages": [
+  {
+   "name": "base-files",
+   "section": "admin",
+   "summary": "Debian base system miscellaneous files",
+   "installed": true,
+   "version": "14",
+   "essential": true,
+   "priority": 1,
+   "size": 340000
+  },
+  {
+   "name": "bash",
+   "section": "shells",
+   "summary": "GNU Bourne Again SHell",
+   "installed": true,
+   "version": "5.2.37-2",
+   "essential": true,
+   "priority": 1,
+   "size": 7400000
+  },
+  {
+   "name": "coreutils",
+   "section": "utils",
+   "summary": "GNU core utilities",
+   "installed": true,
+   "version": "9.7-3",
+   "essential": true,
+   "priority": 1,
+   "size": 18900000
+  },
+  {
+   "name": "dpkg",
+   "section": "admin",
+   "summary": "Debian package management system",
+   "installed": true,
+   "version": "1.22.21",
+   "essential": true,
+   "priority": 1,
+   "size": 6700000
+  },
+  {
+   "name": "libc6",
+   "section": "libs",
+   "summary": "GNU C Library: Shared libraries",
+   "installed": true,
+   "version": "2.41-12",
+   "priority": 1,
+   "size": 12900000
+  },
+  {
+   "name": "curl",
+   "section": "web",
+   "summary": "command line tool for transferring data with URL syntax",
+   "installed": true,
+   "version": "8.14.1-2",
+   "installed_version": "8.14.1-1",
+   "size": 500000
+  },
+  {
+   "name": "git",
+   "section": "vcs",
+   "summary": "fast, scalable, distributed revision control system",
+   "installed": false,
+   "version": "1:2.47.2-0.2",
+   "size": 46000000,
+   "download": 8900000
+  },
+  {
+   "name": "htop",
+   "section": "utils",
+   "summary": "interactive processes viewer",
+   "installed": false,
+   "version": "3.4.1-5",
+   "size": 430000,
+   "download": 170000
+  },
+  {
+   "name": "vim",
+   "section": "editors",
+   "summary": "Vi IMproved - enhanced vi editor",
+   "installed": false,
+   "version": "2:9.1.1230-2",
+   "size": 4100000,
+   "download": 1600000
+  },
+  {
+   "name": "python3",
+   "section": "python",
+   "summary": "interactive high-level object-oriented language (default python3 version)",
+   "installed": true,
+   "version": "3.13.5-1",
+   "automatic": true,
+   "size": 92000
+  },
+  {
+   "name": "python3-requests",
+   "section": "python",
+   "summary": "elegant and simple HTTP library for Python3, built for human beings",
+   "installed": false,
+   "version": "2.32.3+dfsg-5",
+   "size": 260000,
+   "download": 70000
+  },
+  {
+   "name": "libpaint2",
+   "section": "libs",
+   "summary": "painting library of Paintbox (shared library)",
+   "installed": false,
+   "version": "3.2-1",
+   "size": 1200000,
+   "download": 400000
+  },
+  {
+   "name": "paintbox-data",
+   "section": "graphics",
+   "summary": "brushes and palettes of Paintbox",
+   "installed": false,
+   "version": "3.2-1",
+   "size": 9800000,
+   "download": 4100000
+  },
+  {
+   "name": "starfield-data",
+   "section": "science",
+   "summary": "star catalogs of Starfield",
+   "installed": false,
+   "version": "1.4-1",
+   "size": 31000000,
+   "download": 12000000
+  },
+  {
+   "name": "waveform-studio-data",
+   "section": "sound",
+   "summary": "sounds and presets of Waveform Studio",
+   "installed": true,
+   "version": "5.1-2",
+   "automatic": true,
+   "size": 18000000
+  },
+  {
+   "name": "libwaveform3",
+   "section": "libs",
+   "summary": "audio editing library of Waveform Studio",
+   "installed": true,
+   "version": "5.1-2",
+   "automatic": true,
+   "size": 3000000
+  },
+  {
+   "name": "reel-player-codecs",
+   "section": "video",
+   "summary": "codecs of Reel Player",
+   "installed": true,
+   "version": "2.0-1",
+   "automatic": true,
+   "size": 21000000
+  },
+  {
+   "name": "fonts-dejavu-core",
+   "section": "fonts",
+   "summary": "Vera font family derivate with additional characters",
+   "installed": true,
+   "version": "2.37-8",
+   "size": 2900000
+  },
+  {
+   "name": "linux-image-amd64",
+   "section": "kernel",
+   "summary": "Linux for 64-bit PCs (meta-package)",
+   "installed": true,
+   "version": "6.16.12-1",
+   "installed_version": "6.16.9-1",
+   "size": 12000
+  },
+  {
+   "name": "python3-pixel",
+   "section": "python",
+   "summary": "Python bindings of the Paintbox painting library",
+   "installed": false,
+   "version": "3.2-1",
+   "size": 200000,
+   "download": 60000
   }
  ]
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppImage Runner (sde-appimage): SDE icon family. Copyright (C) 2026 Selviana DE Project. SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>AppImage Runner</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4C8BCB"/><stop offset="1" stop-color="#3876B9"/></linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5AA868"/><stop offset="1" stop-color="#4A9157"/></linearGradient>
+  </defs>
+  <rect x="24" y="22" width="174" height="174" rx="38" fill="url(#tile)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <path d="M46 60Q48 44 64 44H120" fill="none" stroke="#7FB0DE" stroke-width="6" stroke-linecap="round" class="detail"/>
+  <path d="M72 62Q72 54 79 58L134 92Q141 97 134 102L79 136Q72 140 72 132Z" fill="#F4EFE6" stroke="#2B2B2F" stroke-width="5" stroke-linejoin="round" class="detail"/>
+  <path d="M182 112L228 128V168Q228 210 182 234Q136 210 136 168V128Z" fill="url(#shield)" stroke="#2B2B2F" stroke-width="7" stroke-linejoin="round" class="outline"/>
+  <path d="M160 170L176 186L205 155" fill="none" stroke="#F4F3EE" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

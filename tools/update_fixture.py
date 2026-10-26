@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fake APT and Flatpak data for the Software Updater (sde-update) in QA.
+"""Fake APT data for the Software Updater (sde-update) in QA.
 
 write(fixtures, bin_dir, root) creates:
   fixtures/apt.py, fixtures/apt_pkg.py   python-apt stand-ins (PYTHONPATH)
-  bin_dir/flatpak                        answers remote-ls/list (PATH)
+  bin_dir                                (created; the updater needs no
+                                         fake programs since Flatpak apps
+                                         are updated in Merkadu)
   root/var/lib/dpkg/info, root/usr/share/applications
                                          desktop files (SDE_UPDATE_ROOT)
-so that all four groups appear: Critical (a signed kernel and glibc),
-Security (OpenSSL, Firefox ESR, example-security), Main (LibreOffice
-Writer, VLC, example) and Flatpak (GIMP and Thunderbird).
+so that all three groups appear: Critical (a signed kernel and glibc),
+Security (OpenSSL, Firefox ESR, example-security) and Main (LibreOffice
+Writer, VLC, example).
 """
 from pathlib import Path
 
@@ -57,21 +59,6 @@ def Cache():
     ]
 """
 
-FLATPAK = r"""#!/bin/sh
-# Fake flatpak for the Software Updater QA (read-only commands only).
-case "$1 $2" in
-'remote-ls --system')
-  printf 'app/org.gimp.GIMP/x86_64/stable\tGIMP\torg.gimp.GIMP\t3.0.6\tstable\tflathub\t52.4 MB\tCreate images and edit photographs\n'
-  printf 'app/org.mozilla.Thunderbird/x86_64/stable\tThunderbird\torg.mozilla.Thunderbird\t140.4.0esr\tstable\tflathub\t78.1 MB\tAn email client\n' ;;
-'remote-ls --user') echo 'error: No remotes found' >&2; exit 1 ;;
-'list --system')
-  printf 'app/org.gimp.GIMP/x86_64/stable\t3.0.4\n'
-  printf 'app/org.mozilla.Thunderbird/x86_64/stable\t140.3.0esr\n' ;;
-'list --user') ;;
-*) echo "fake flatpak: $*" >&2; exit 1 ;;
-esac
-"""
-
 DESKTOP = {
     # package: (desktop file, Name, Icon)
     "firefox-esr": ("firefox-esr.desktop", "Firefox ESR", "firefox-esr"),
@@ -86,9 +73,6 @@ def write(fixtures, bin_dir, root):
     bin_dir.mkdir(parents=True, exist_ok=True)
     (fixtures / "apt_pkg.py").write_text("SELSTATE_HOLD = 1\n")
     (fixtures / "apt.py").write_text(APT)
-    flatpak = bin_dir / "flatpak"
-    flatpak.write_text(FLATPAK)
-    flatpak.chmod(0o755)
     info = root / "var/lib/dpkg/info"
     apps = root / "usr/share/applications"
     info.mkdir(parents=True, exist_ok=True)

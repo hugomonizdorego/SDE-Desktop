@@ -3,9 +3,11 @@
 //
 // Merkadu's widgets in the SDE UI kit look (docs/UI-KIT.md): cards and
 // tiles like the Control Center's, source badges, app rows with their
-// action button, filter chips and the screenshot strip. They follow
-// active_theme() and the UI scale; widgets that show an app look it up by
-// id in the Store whenever they draw, so they always show its current state.
+// action button, filter chips, the screenshot strip, the hero banner, the
+// placeholders shown while the catalog loads and the empty and error
+// states. They follow active_theme() and the UI scale; widgets that show an
+// app look it up by id in the Store whenever they draw, so they always show
+// its current state.
 #pragma once
 
 #include <FL/Fl_Button.H>
@@ -17,6 +19,7 @@
 #include <vector>
 
 #include "model.h"
+#include "packages.h"
 #include "paint.h"
 
 namespace sde {
@@ -37,14 +40,26 @@ void draw_source_badges(const App &a, int x, int y, int h, int max_w);
 void paint_progress(Painter &p, double x, double y, double w, double h, int percent, double phase);
 // A rounded card like the Control Center's tiles.
 void paint_card(Painter &p, double x, double y, double w, double h, bool hot, bool focus);
-// Small line symbols for the sidebar and the history.
+// Small line symbols for the sidebar, the bar and the history.
 enum class Symbol {
   Explore, Installed, Updates, History, Progress, Sources, Search, Back, Check, Plus, Minus, Refresh, Warning,
-  Download, Trash, Shield, Folder, Star, Clock, Close
+  Download, Trash, Shield, Folder, Star, Clock, Close, Forward, Home, Package, Info, Grid, Snap, Sparkle
 };
 void paint_symbol(Painter &p, Symbol s, double x, double y, double size, const Color &c);
-// The app's icon at |size|.
+
+// The app's icon at |size|: the icon theme's drawing of its icon name, its
+// own files and URLs (downloaded once), else an icon of its kind, category
+// or section; nullptr when even those are missing.
 cairo_surface_t *app_icon(const App &a, int size);
+// Paints the app's icon, or a tile in a color of its name with a package
+// symbol: never an empty square.
+void paint_app_icon(Painter &p, const App &a, double x, double y, int size);
+// A package's icon: the icon of its app, else one of its section.
+void paint_package_icon(Painter &p, const Package &pkg, const App *app, double x, double y, int size);
+// The tile without an icon (|seed| picks the color).
+void paint_icon_placeholder(Painter &p, double x, double y, int size, const std::string &seed, Symbol s);
+// The main color of an app's icon (for the hero banner), cached.
+Color icon_tint(const App &a);
 
 // A push button. Primary: the accent; Danger: the theme's error color;
 // Ghost: no background until hovered.
@@ -69,13 +84,32 @@ class Button : public Fl_Button {
   Kind kind_;
 };
 
+// A round button with a symbol in the bar (Back, Forward, Home, Refresh).
+// While |spinning| the symbol turns (Refresh while the lists download).
+class IconButton : public Fl_Button {
+ public:
+  IconButton(int x, int y, int w, int h, Symbol s, const std::string &tip);
+  std::function<void()> on_click;
+  void spinning(bool on);
+  bool spinning() const { return spinning_; }
+  void draw() override;
+  int handle(int e) override;
+
+ private:
+  static void tick(void *data);
+  Symbol symbol_;
+  bool spinning_ = false;
+  double angle_ = 0;
+};
+
 // A toggle in a row of filters ("All", "Debian", ...).
 class Chip : public Fl_Widget {
  public:
   Chip(int x, int y, int w, int h, const std::string &text, bool on);
   static int fit(const std::string &text);
   std::function<void()> on_click;
-  Color dot;  // a colored dot before the text (alpha 0: none)
+  Color dot;          // a colored dot before the text (alpha 0: none)
+  bool menu = false;  // a chevron after the text: it opens a menu (fit() + S(18))
   void draw() override;
   int handle(int e) override;
 
@@ -84,7 +118,7 @@ class Chip : public Fl_Widget {
   bool on_;
 };
 
-// A card with an app: icon, name, summary and source badges.
+// A card with an app: a large icon, name, summary and source badges.
 class AppTile : public Fl_Widget {
  public:
   AppTile(int x, int y, int w, int h, const std::string &app_id);
@@ -92,6 +126,8 @@ class AppTile : public Fl_Widget {
   void draw() override;
   int handle(int e) override;
   const std::string &app_id() const { return id_; }
+  // The height of a tile (its icon size decides it).
+  static int height();
 
  private:
   std::string id_;
@@ -118,8 +154,9 @@ class AppRow : public Fl_Widget {
   bool hot_ = false, hot_button_ = false;
 };
 
-// The featured app: a large card with its icon, name, summary and a
-// screenshot when there is one.
+// The highlighted app: a large card tinted with its icon's color, with its
+// icon, name, summary, an Install/Open button and a screenshot when there
+// is one.
 class Banner : public Fl_Widget {
  public:
   Banner(int x, int y, int w, int h, const std::string &app_id);
@@ -147,6 +184,49 @@ class CategoryTile : public Fl_Widget {
   bool compact_, hot_ = false;
 };
 
+// A grey tile shown in place of an app while the catalog loads; a light
+// passes over it (not with reduced motion).
+class Placeholder : public Fl_Widget {
+ public:
+  Placeholder(int x, int y, int w, int h, bool banner = false);
+  ~Placeholder() override;
+  void draw() override;
+
+ private:
+  static void tick(void *data);
+  bool banner_;
+};
+
+// The page of nothing to show: a symbol in a large circle, a title and a
+// text; buttons go below it (EmptyState::bottom()).
+class EmptyState : public Fl_Widget {
+ public:
+  EmptyState(int x, int y, int w, Symbol s, const std::string &title, const std::string &text, bool problem);
+  static int measure(int w, const std::string &title, const std::string &text);
+  void draw() override;
+
+ private:
+  Symbol symbol_;
+  std::string title_, text_;
+  bool problem_;
+};
+
+// A line of information above a page: the refresh in progress, what could
+// not be refreshed, a source that needs setting up. |level|: 0 info, 1
+// warning, 2 error.
+class Notice : public Fl_Widget {
+ public:
+  Notice(int x, int y, int w, int h, const std::string &text, int level, bool busy);
+  static int measure(int w, const std::string &text, int button_w);
+  void draw() override;
+  int text_right = 0;  // room kept free on the right (a button)
+
+ private:
+  std::string text_;
+  int level_;
+  bool busy_;
+};
+
 // Screenshots side by side; a click shows one large (on_open).
 class ScreenshotStrip : public Fl_Widget {
  public:
@@ -172,6 +252,10 @@ class SearchField : public Fl_Input {
  public:
   SearchField(int x, int y, int w, int h, const std::string &placeholder);
   void restyle();
+  void placeholder(const std::string &text) {
+    placeholder_ = text;
+    redraw();
+  }
   void draw() override;
   int handle(int e) override;
   std::function<void()> on_enter, on_escape;
@@ -198,6 +282,9 @@ class TextBlock : public Fl_Widget {
 
 // Shows one screenshot in a window of its own.
 void show_screenshot(const std::vector<Screenshot> &shots, int index, const std::string &title);
+
+// True when animations are off ([effects] in sde.conf, reduced motion).
+bool reduced_motion();
 
 }  // namespace merkadu
 }  // namespace sde

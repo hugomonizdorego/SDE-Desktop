@@ -98,6 +98,7 @@ def liria(staged):
     liria_view_switcher(staged)
     liria_history_buttons(staged)
     liria_context_menus(staged)
+    liria_appimage_activation(staged)
     liria_home(staged)
     liria_sidebar(staged)
     liria_quick_access(staged)
@@ -630,6 +631,23 @@ def liria_context_menus(staged):
         <menuitem name="Properties" action="Properties"/>
 </popup>
 ''')
+
+
+def liria_appimage_activation(staged):
+    """0.2.0 Alpha 3: an AppImage opens with its default application
+    (sde-appimage, which verifies it first, docs/APPIMAGE.md) also when it
+    is executable already; Caja would run an executable one directly."""
+    edit_once(staged / "libliria-private/liria-mime-actions.c",
+              "    action = ACTIVATION_ACTION_DO_NOTHING;\n    if (liria_file_is_launchable (file))\n",
+              "    action = ACTIVATION_ACTION_DO_NOTHING;\n"
+              "    if (liria_file_is_mime_type (file, \"application/vnd.appimage\") ||\n"
+              "        liria_file_is_mime_type (file, \"application/x-iso9660-appimage\"))\n"
+              "    {\n"
+              "        /* SDE: sde-appimage verifies AppImages before they run. */\n"
+              "        g_free (activation_uri);\n"
+              "        return ACTIVATION_ACTION_OPEN_IN_APPLICATION;\n"
+              "    }\n"
+              "    if (liria_file_is_launchable (file))\n")
 
 
 def liria_home(staged):
