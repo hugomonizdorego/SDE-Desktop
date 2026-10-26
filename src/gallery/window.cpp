@@ -83,6 +83,7 @@ GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) 
   service_.reset(new ThumbnailService([this] { Fl::awake(awake_cb, this); },
                                       int(std::max(2u, std::thread::hardware_concurrency() / 2))));
 
+  load_plugins();
   begin();
   menubar_ = new MenuBar(0, 0, w, S(30));
   build_menu();
@@ -161,6 +162,8 @@ GalleryWindow::GalleryWindow(int w, int h) : BufferedWindow(w, h, _("Gallery")) 
 
 GalleryWindow::~GalleryWindow() {
   Fl::remove_handler(x_event_handler);
+  Fl::remove_timeout(watch_timer_cb, this);
+  if (watch_ && watch_->fd() >= 0) Fl::remove_fd(watch_->fd());
   Fl::remove_timeout(mounts_timer_cb, this);
   if (mounts_fd_ >= 0) {
     Fl::remove_fd(mounts_fd_);
@@ -200,6 +203,8 @@ void GalleryWindow::reload_config() {
   // Photos open in Photo; the quick preview is in the photo menu.
   prefer_photo_ = cfg.get_bool("gallery", "open_in_photo", true);
   show_sidebar_ = cfg.get_bool("gallery", "sidebar", true);
+  editor_ = cfg.get("gallery", "editor", "");
+  if (editor_ == "sde-view.desktop") editor_.clear();
 }
 
 LibrarySettings GalleryWindow::library_settings() const {
@@ -221,6 +226,7 @@ void GalleryWindow::save_settings() {
   cfg.set("gallery", "sort", sort_name(sort_));
   cfg.set("gallery", "open_in_photo", prefer_photo_ ? "true" : "false");
   cfg.set("gallery", "sidebar", show_sidebar_ ? "true" : "false");
+  cfg.set("gallery", "editor", editor_);
   cfg.save();
 }
 

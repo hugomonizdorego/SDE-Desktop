@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "config.h"
+#include "editors.h"
 #include "plugins.h"
 #include "util.h"
 
@@ -145,6 +146,75 @@ static void test_settings_and_types() {
   CHECK(!mime_matches("video/*", "image/png"));
 }
 
+static sde::DesktopEntry entry(const std::string &id, const std::string &name, const std::string &exec,
+                               std::vector<std::string> cats, std::vector<std::string> types) {
+  sde::DesktopEntry e;
+  e.id = id;
+  e.name = name;
+  e.exec = exec;
+  e.type = "Application";
+  e.categories = std::move(cats);
+  e.mime_types = std::move(types);
+  return e;
+}
+
+static void test_editors() {
+  std::vector<sde::DesktopEntry> apps{
+      entry("gimp.desktop", "GNU Image Manipulation Program", "gimp-2.10 %U",
+            {"Graphics", "2DGraphics", "RasterGraphics", "GTK"}, {"image/jpeg", "image/png", "image/svg+xml"}),
+      entry("org.kde.krita.desktop", "Krita", "krita %F", {"Qt", "KDE", "Graphics", "2DGraphics", "RasterGraphics"},
+            {"image/png", "image/jpeg", "image/tiff"}),
+      entry("darktable.desktop", "darktable", "darktable %U", {"Graphics", "Photography", "GTK"}, {"image/*"}),
+      entry("org.inkscape.Inkscape.desktop", "Inkscape", "inkscape %F", {"Graphics", "VectorGraphics", "GTK"},
+            {"image/svg+xml", "image/png"}),
+      entry("org.gnome.eog.desktop", "Image Viewer", "eog %U", {"Graphics", "2DGraphics", "RasterGraphics", "Viewer"},
+            {"image/jpeg", "image/png"}),
+      entry("sde-view.desktop", "Photo", "sde-view %U", {"Graphics", "RasterGraphics", "Viewer"}, {"image/jpeg"}),
+      entry("pinta.desktop", "Pinta", "pinta", {"Graphics", "RasterGraphics"}, {"image/jpeg"}),  // no files
+      entry("firefox.desktop", "Firefox", "firefox %u", {"Network", "WebBrowser"}, {"text/html", "image/jpeg"}),
+  };
+  auto jpeg = image_editors(apps, "image/jpeg");
+  std::vector<std::string> names;
+  for (const auto &e : jpeg) names.push_back(e.name);
+  CHECK((names == std::vector<std::string>{"darktable", "GNU Image Manipulation Program", "Krita"}));
+  // Inkscape for SVG images, not for photos.
+  auto svg = image_editors(apps, "image/svg+xml");
+  CHECK(svg.size() == 2 && svg[0].name == "GNU Image Manipulation Program" && svg[1].name == "Inkscape");
+  auto png = image_editors(apps, "image/png");
+  CHECK(png.size() == 3);  // darktable (image/*), GIMP, Krita; Inkscape draws vectors
+  // Other applications: everything that opens the type, editors first.
+  auto all = applications_for(apps, "image/jpeg");
+  CHECK(all.size() == 5 && all[0].name == "darktable" && all.back().name == "Image Viewer");
+  CHECK(!takes_files(apps[6]) && takes_files(apps[0]));
+}
+
+static void test_folder_watch() {
+  std::string dir = g_tmp + "/watched";
+  sde::make_dirs(dir);
+  FolderWatch w;
+  w.set_filter([](const std::string &name) { return sde::ends_with(name, ".jpg") || sde::ends_with(name, ".png"); });
+  CHECK(w.fd() >= 0);
+  CHECK(w.watch(dir) && w.watching(dir) && !w.watching(g_tmp));
+  CHECK(!w.watch(g_tmp + "/no-such-folder"));
+  CHECK(w.take().empty());
+  // A program saves a photo in place and through a temporary file.
+  sde::write_file_atomic(dir + "/a.jpg", "one");
+  sde::write_file_atomic(dir + "/a.jpg", "two");
+  FILE *f = fopen((dir + "/b.png").c_str(), "wb");
+  fputs("png", f);
+  fclose(f);
+  auto changes = w.take();
+  CHECK(changes.size() == 2);
+  if (changes.size() == 2) {
+    CHECK(changes[0].first == dir + "/a.jpg" && !changes[0].second);
+    CHECK(changes[1].first == dir + "/b.png" && !changes[1].second);
+  }
+  unlink((dir + "/b.png").c_str());
+  changes = w.take();
+  CHECK(changes.size() == 1 && changes[0].second);
+  CHECK(w.take().empty());
+}
+
 int main() {
   char tmpl[] = "/tmp/sde-gallery-plugins-XXXXXX";
   if (!mkdtemp(tmpl)) return 1;
@@ -153,6 +223,8 @@ int main() {
   test_action_plugins();
   test_plugin_files();
   test_settings_and_types();
+  test_editors();
+  test_folder_watch();
   std::string rm = "rm -rf '" + g_tmp + "'";
   if (system(rm.c_str()) != 0) fprintf(stderr, "could not remove %s\n", g_tmp.c_str());
   if (g_failures) {

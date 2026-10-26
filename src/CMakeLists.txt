@@ -173,7 +173,8 @@ add_library(sde-gallery-core STATIC
   gallery/media.cpp
   gallery/album.cpp
   gallery/collections.cpp
-  gallery/plugins.cpp)
+  gallery/plugins.cpp
+  gallery/editors.cpp)
 target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
 target_link_libraries(sde-gallery-core PUBLIC sde-common)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)

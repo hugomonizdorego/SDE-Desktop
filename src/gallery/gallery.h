@@ -27,7 +27,10 @@
 #include "buffered_window.h"
 #include "album.h"
 #include "collections.h"
+#include "desktop_entry.h"
+#include "editors.h"
 #include "library.h"
+#include "plugins.h"
 #include "media.h"
 #include "menu.h"
 #include "menubar.h"
@@ -302,6 +305,30 @@ class GalleryWindow : public sde::BufferedWindow {
   void edit_in_photo(const std::string &path);  // Photo with this view as album
   void preview(int index);                       // the built-in quick preview
   void open_with(const std::string &path);
+
+  // Edit with (tools.cpp): Photo or another installed image editor. The
+  // default editor ([gallery] editor, a desktop file ID; "" is Photo) is
+  // what Ctrl+E uses. Folders of photos edited elsewhere are watched, so
+  // what the other program saves shows up here.
+  void edit_with_default(const std::vector<std::string> &paths);
+  void edit_with(const std::vector<std::string> &paths, const std::string &app_id);  // "" Photo
+  sde::ContextMenu edit_with_menu(const std::vector<std::string> &paths);
+  void edit_with_popup(const std::vector<std::string> &paths, int x = -1, int y = -1);
+  void edit_with_other(const std::vector<std::string> &paths);
+  std::string default_editor_name() const;
+  void set_default_editor(const std::string &app_id);
+  const std::vector<sde::DesktopEntry> &applications();
+  void watch_folder(const std::string &dir);
+  void file_events(const std::vector<GalleryEvent> &events);
+
+  // Plugins (tools.cpp): built-in ones that can be switched off, and
+  // action plugins (*.plugin files) that run a program on photos.
+  bool plugin_on(const std::string &id) const;
+  void load_plugins();
+  void show_plugins();
+  void run_action(size_t index, const std::vector<std::string> &paths);
+  void add_action_items(sde::ContextMenu &m, const std::vector<std::string> &paths);
+  void create_collage(const std::vector<std::string> &paths);
   void set_wallpaper(const std::string &path);
   void show_in_files(const std::string &path);
   void copy_paths(const std::vector<std::string> &paths);
@@ -399,6 +426,17 @@ class GalleryWindow : public sde::BufferedWindow {
   int header_h_ = 0;
   std::string toast_;
   static GalleryWindow *instance_;
+  // Edit with and plugins (tools.cpp).
+  std::string editor_;  // the default editor's desktop file ID, "" Photo
+  std::vector<sde::DesktopEntry> apps_;
+  std::string apps_stamp_;
+  std::unique_ptr<FolderWatch> watch_;
+  std::vector<GalleryEvent> watch_pending_;
+  static void watch_cb(int fd, void *p);
+  static void watch_timer_cb(void *p);
+  std::map<std::string, bool> plugins_;
+  std::vector<ActionPlugin> actions_;
+  friend class Viewer;
 };
 
 }  // namespace gallery
