@@ -397,13 +397,15 @@ MenuSpec App::menu_spec(int id) {
       v.push_back(MenuItem::sep());
       std::vector<MenuItem> ind;
       if (d) {
-        ind.push_back(radio_item(_("Indent Using Spaces"), !d->use_tabs, [this, d] { set_indent(false, d->indent_width); }));
+        ind.push_back(radio_item(_("Indent Using Spaces"), !d->use_tabs,
+                                 [this, d] { set_indent(false, d->indent_width); }));
         ind.push_back(radio_item(_("Indent Using Tabs"), d->use_tabs,
                                  [this, d] { set_indent(true, d->buf->tab_distance()); }));
         ind.push_back(MenuItem::sep());
         int cur = d->use_tabs ? d->buf->tab_distance() : d->indent_width;
         for (int wdt : {2, 3, 4, 8})
-          ind.push_back(radio_item(format(_("Width: %d"), wdt), cur == wdt, [this, d, wdt] { set_indent(d->use_tabs, wdt); }));
+          ind.push_back(radio_item(format(_("Width: %d"), wdt), cur == wdt,
+                                   [this, d, wdt] { set_indent(d->use_tabs, wdt); }));
         ind.push_back(MenuItem::sep());
         ind.push_back(command_item("auto_indent", -1, settings_.auto_indent));
       }

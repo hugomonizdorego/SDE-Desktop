@@ -657,7 +657,8 @@ bool App::menu_key(int event) {
     case FL_MOUSEWHEEL:
     case FL_UNFOCUS:  // the window lost the keyboard (Alt+Tab)
       alt_alone_ = false;
-      if (toolbar_->titles_focused() && !(event == FL_PUSH && Fl::event_inside(toolbar_))) toolbar_->focus_titles(false);
+      if (toolbar_->titles_focused() && !(event == FL_PUSH && Fl::event_inside(toolbar_)))
+        toolbar_->focus_titles(false);
       return false;
   }
   return false;
