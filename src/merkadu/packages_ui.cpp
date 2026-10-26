@@ -138,6 +138,10 @@ void set_mark(const std::string &name, Mark m) {
   Store &st = Store::get();
   const Package *p = st.package(name);
   if (!p) return;
+  // Only the changes the package allows (the keys mark without a menu).
+  if ((m == Mark::Remove && !p->installed && !p->config_only) || (m == Mark::Upgrade && !p->upgradable) ||
+      (m == Mark::Install && (p->installed || p->candidate_version.empty())))
+    return;
   if (m == Mark::Remove) {
     std::string why = removal_block(*p);
     if (!why.empty()) {
@@ -445,10 +449,18 @@ class PackageTable : public Fl_Group {
         else if (k == FL_End) select(count() - 1);
         else if ((k == FL_Enter || k == FL_KP_Enter) && sel_ >= 0) navigate(View{View::Package, name(sel_)});
         else if (k == ' ' && sel_ >= 0) toggle_mark(name(sel_));
-        else if ((k == '+' || k == FL_KP + '+' || k == FL_Insert) && sel_ >= 0) set_mark(name(sel_), Mark::Install);
-        else if ((k == '-' || k == FL_KP + '-' || k == FL_Delete) && sel_ >= 0) set_mark(name(sel_), Mark::Remove);
-        else if (k == FL_Menu && sel_ >= 0) mark_menu(name(sel_), true);
-        else return 0;
+        else if ((k == '+' || k == FL_KP + '+' || k == FL_Insert) && sel_ >= 0) {
+          // Install, or update what is installed (like Synaptic's "+").
+          const Package *p = Store::get().package(name(sel_));
+          if (p && !p->installed) set_mark(p->name, Mark::Install);
+          else if (p && p->upgradable) set_mark(p->name, Mark::Upgrade);
+        } else if ((k == '-' || k == FL_KP + '-' || k == FL_Delete) && sel_ >= 0) {
+          set_mark(name(sel_), Mark::Remove);
+        } else if (k == FL_Menu && sel_ >= 0) {
+          mark_menu(name(sel_), true);
+        } else {
+          return 0;
+        }
         return 1;
       }
       default:

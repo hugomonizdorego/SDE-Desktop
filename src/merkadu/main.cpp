@@ -45,7 +45,7 @@ std::string usage() {
            "  --details APPID   open the page of an app (its AppStream id, e.g. org.gimp.GIMP)\n"
            "  --package NAME    open the page of a package in All Software\n"
            "  --self-test       load the catalogs and package lists without a window and report\n"
-           "                    (--expect REF,... --expect-flatpak N --list)\n"
+           "                    (--expect REF,... --expect-flatpak N --list --simulate install:PKG,...)\n"
            "  --uninstall FILE  uninstall the app of a launcher (the absolute path of its .desktop\n"
            "                    file), asking first; exits with 0 when it was removed, 1 when it\n"
            "                    failed or cannot be removed, 2 when the user cancelled\n"

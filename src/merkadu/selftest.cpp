@@ -9,6 +9,7 @@
 // on Debian testing with the real archive and Flathub.
 //
 //   merkadu --self-test [--expect REF[,REF...]] [--expect-flatpak N] [--list]
+//                       [--simulate install:PKG,remove:PKG,update:PKG]
 //
 // REF is an app reference as in merkadu.conf (AppStream id, deb:PACKAGE,
 // flatpak:APPID; alternatives with '|'). Exit status 0 when everything
