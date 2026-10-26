@@ -188,3 +188,15 @@ Bluetooth, audio streams/MPRIS, network controls and compact tray handling.
 SDE implements these independently in native C++/FLTK; no Qt code/assets are
 copied. The reference repo has no top-level license declaration. See
 [Alpha 9](ALPHA9.md) for attribution, feature mapping and alpha limitations.
+
+## Data
+
+**[Natural Earth](https://www.naturalearthdata.com/)** — public domain, by
+Tom Patterson, Nathaniel Vaughn Kelso and the Natural Earth contributors.
+The Gallery's Places plugin ([GALLERY.md](GALLERY.md)) names the places where
+photos were taken offline with `data/gallery/places.tsv` (installed as
+`/usr/share/sde/gallery/places.tsv`): about 7,300 cities and towns of the
+world, made by `tools/natural-earth-places.py` from Natural Earth's 1:10m
+populated places (`ne_10m_populated_places_simple`): name, country,
+position and population, with the region only where a country has two
+places of the same name. Nothing is downloaded at run time.

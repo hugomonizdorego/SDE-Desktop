@@ -76,37 +76,52 @@ std::vector<std::vector<size_t>> identical_groups(const std::vector<long long> &
 }
 
 uint64_t difference_hash(cairo_surface_t *s) {
-  if (!s || cairo_image_surface_get_width(s) < 2 || cairo_image_surface_get_height(s) < 2) return 0;
-  // A 9x8 grey copy (cairo averages the pixels while scaling down).
-  cairo_surface_t *small = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 9, 8);
-  cairo_t *cr = cairo_create(small);
-  cairo_set_source_rgb(cr, 1, 1, 1);
-  cairo_paint(cr);
-  double sw = cairo_image_surface_get_width(s), sh = cairo_image_surface_get_height(s);
-  cairo_scale(cr, 9 / sw, 8 / sh);
-  cairo_set_source_surface(cr, s, 0, 0);
-  cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
-  cairo_paint(cr);
-  cairo_destroy(cr);
-  cairo_surface_flush(small);
-  const unsigned char *data = cairo_image_surface_get_data(small);
-  int stride = cairo_image_surface_get_stride(small);
+  if (!s || cairo_surface_get_type(s) != CAIRO_SURFACE_TYPE_IMAGE) return 0;
+  int sw = cairo_image_surface_get_width(s), sh = cairo_image_surface_get_height(s);
+  if (sw < 2 || sh < 2) return 0;
+  cairo_surface_t *src = s;
+  cairo_format_t format = cairo_image_surface_get_format(s);
+  if (format != CAIRO_FORMAT_ARGB32 && format != CAIRO_FORMAT_RGB24) {
+    src = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, sw, sh);
+    cairo_t *cr = cairo_create(src);
+    cairo_set_source_surface(cr, s, 0, 0);
+    cairo_paint(cr);
+    cairo_destroy(cr);
+    format = CAIRO_FORMAT_ARGB32;
+  }
+  cairo_surface_flush(src);
+  const unsigned char *data = cairo_image_surface_get_data(src);
+  int stride = cairo_image_surface_get_stride(src);
+  // A 9x8 grey copy: each cell the average of its pixels (cairo's scaling
+  // samples only part of them when it shrinks a lot), transparency white.
   double grey[8][9];
   double lo = 1e9, hi = -1e9;
   for (int y = 0; y < 8; ++y) {
-    const uint32_t *row = reinterpret_cast<const uint32_t *>(data + y * stride);
+    int y0 = y * sh / 8, y1 = std::max(y0 + 1, (y + 1) * sh / 8);
     for (int x = 0; x < 9; ++x) {
-      uint32_t px = row[x];
-      grey[y][x] = 0.299 * ((px >> 16) & 0xFF) + 0.587 * ((px >> 8) & 0xFF) + 0.114 * (px & 0xFF);
+      int x0 = x * sw / 9, x1 = std::max(x0 + 1, (x + 1) * sw / 9);
+      double sum = 0;
+      for (int yy = y0; yy < y1; ++yy) {
+        const uint32_t *row = reinterpret_cast<const uint32_t *>(data + size_t(yy) * size_t(stride));
+        for (int xx = x0; xx < x1; ++xx) {
+          uint32_t px = row[xx];
+          double white = format == CAIRO_FORMAT_ARGB32 ? 255.0 - ((px >> 24) & 0xFF) : 0.0;
+          sum += 0.299 * (((px >> 16) & 0xFF) + white) + 0.587 * (((px >> 8) & 0xFF) + white) +
+                 0.114 * ((px & 0xFF) + white);
+        }
+      }
+      grey[y][x] = sum / double((y1 - y0) * (x1 - x0));
       lo = std::min(lo, grey[y][x]);
       hi = std::max(hi, grey[y][x]);
     }
   }
-  cairo_surface_destroy(small);
+  if (src != s) cairo_surface_destroy(src);
   if (hi - lo < 1) return 0;  // a blank image says nothing
+  // Neighbours of (almost) the same brightness give 0, however the scaling
+  // rounded them: flat areas say the same in every copy.
   uint64_t h = 0;
   for (int y = 0; y < 8; ++y)
-    for (int x = 0; x < 8; ++x) h = (h << 1) | (grey[y][x] > grey[y][x + 1] ? 1 : 0);
+    for (int x = 0; x < 8; ++x) h = (h << 1) | (grey[y][x] > grey[y][x + 1] + 1.5 ? 1 : 0);
   return h == 0 ? 1 : h;
 }
 

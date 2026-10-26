@@ -63,6 +63,9 @@ std::vector<Place> parse_gazetteer(const std::string &text) {
     if (p.name.empty() || std::fabs(p.lat) > 90 || std::fabs(p.lon) > 180) continue;
     out.push_back(std::move(p));
   }
+  std::map<std::pair<std::string, std::string>, int> names;
+  for (const auto &p : out) ++names[{p.name, p.country}];
+  for (auto &p : out) p.ambiguous = names[{p.name, p.country}] > 1 && !p.region.empty();
   std::sort(out.begin(), out.end(), [](const Place &a, const Place &b) { return a.lat < b.lat; });
   return out;
 }
@@ -90,34 +93,33 @@ int place_for(const std::vector<Place> &places, double lat, double lon, bool *ne
   const double band = 200.0 / 111.0 + 0.01;
   auto lo = std::lower_bound(places.begin(), places.end(), lat - band,
                              [](const Place &p, double v) { return p.lat < v; });
-  int best = -1, nearest = -1;
-  double best_score = -1e18, nearest_d = 1e18;
+  int best = -1, nearby = -1;
+  double best_score = -1e18, nearby_score = -1e18;
   for (auto it = lo; it != places.end() && it->lat <= lat + band; ++it) {
     double d = distance_km(lat, lon, it->lat, it->lon);
+    if (d > 200) continue;
     int i = int(it - places.begin());
-    if (d <= 50) {
-      // A town nearby wins over a city a little farther away.
-      double score = std::log10(double(it->population) + 1000) - d / 12;
-      if (score > best_score) {
-        best_score = score;
-        best = i;
-      }
+    double size = std::log10(double(it->population) + 1000);
+    // Within 50 km a town nearby wins over a city a little farther away;
+    // farther out the place people know is better ("Near Bergen").
+    if (d <= 50 && size - d / 12 > best_score) {
+      best_score = size - d / 12;
+      best = i;
     }
-    if (d < nearest_d) {
-      nearest_d = d;
-      nearest = i;
+    if (size - d / 40 > nearby_score) {
+      nearby_score = size - d / 40;
+      nearby = i;
     }
   }
   if (best >= 0) return best;
-  if (nearest >= 0 && nearest_d <= 200) {
-    if (near) *near = true;
-    return nearest;
-  }
-  return -1;
+  if (nearby >= 0 && near) *near = true;
+  return nearby;
 }
 
 std::string place_label(const Place &p, bool near) {
-  std::string label = p.country.empty() || p.country == p.name ? p.name : p.name + ", " + p.country;
+  std::string label = p.name;
+  if (p.ambiguous) label += ", " + p.region;
+  if (!p.country.empty() && p.country != p.name) label += ", " + p.country;
   return near ? sde::format(_("Near %s"), label.c_str()) : label;
 }
 

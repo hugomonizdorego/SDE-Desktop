@@ -292,7 +292,13 @@ size_t apply_rename(const std::vector<RenameItem> &items, std::string *error) {
     // Never replace a file that appeared meanwhile.
     if (exists_path(items[i].to) || rename(temps[i].c_str(), items[i].to.c_str()) != 0) {
       if (error) *error = exists_path(items[i].to) ? "exists" : strerror(errno);
-      rename(temps[i].c_str(), items[i].from.c_str());
+      // Back to the old name, unless another photo of the batch has it now.
+      std::string back = items[i].from;
+      size_t slash = back.rfind('/'), dot = back.rfind('.');
+      if (dot == std::string::npos || dot <= slash + 1) dot = back.size();
+      for (int k = 2; exists_path(back) && k < 10000; ++k)
+        back = items[i].from.substr(0, dot) + " (" + std::to_string(k) + ")" + items[i].from.substr(dot);
+      rename(temps[i].c_str(), back.c_str());
       continue;
     }
     ++moved;

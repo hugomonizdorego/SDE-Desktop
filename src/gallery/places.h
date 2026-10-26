@@ -26,6 +26,7 @@ struct Place {
   std::string name, region, country;
   double lat = 0, lon = 0;
   long population = 0;
+  bool ambiguous = false;  // another place of the country has the same name
 };
 
 // Parses the places file; the result is sorted by latitude.
@@ -35,10 +36,12 @@ std::string gazetteer_path();
 double distance_km(double lat1, double lon1, double lat2, double lon2);
 
 // The place a position belongs to: the most important place within 50 km
-// (a town nearby wins over a city farther away), else the nearest within
-// 200 km (|near| is then set), else -1. |places| sorted by latitude.
+// (a town nearby wins over a city farther away), else a place within
+// 200 km, a big one rather than the nearest (|near| is then set), else -1.
+// |places| sorted by latitude.
 int place_for(const std::vector<Place> &places, double lat, double lon, bool *near = nullptr);
-// "Bergen, Norway"; "Near Bergen, Norway" when |near|.
+// "Bergen, Norway"; "Near Bergen, Norway" when |near|; with the region
+// when the name alone is ambiguous ("Portland, Oregon, United States").
 std::string place_label(const Place &p, bool near);
 
 struct LocatedPhoto {
