@@ -193,32 +193,49 @@ Since 0.2.0 Alpha 2:
   (`suite/redesign.py` `liria_folder_loading`, `liria-sde-ribbon.c`,
   `liria-sde-tools.c`). Still slow: the first switch of 10 000 files to
   the list view, where GTK's tree view measures every row.
-* **File operations.** The file operations window has the design of SDE's
-  copy and move dialog ([UI-KIT.md](UI-KIT.md#copy-and-move-progress-transferdialog)):
-  each operation shows the animated SDE mark, "Copying 63 items from Source
-  to Backup", "42% complete" with Pause, Queue and Cancel and a slim
-  accent bar, and with More details the speed graph with the current
-  speed, the item being copied and the time and items remaining; paused,
-  the bar and graph turn amber and the mark stands still (so it does while
-  queued, while writing the last data to a USB stick and with reduced
-  motion). Several operations are stacked with a line between them; with
-  one, the window title is its percentage. The window takes about 2 % of
-  one CPU core while it shows a copy (1 % for the mark's animation). The
-  model is SDE's own (`src/common/transfer_model.h`, copied in as
-  `libliria-private/liria-sde-transfer-model.h`), so Liria and the SDE
-  desktop estimate and look the same; Delete, Trash and links keep their
-  own texts under the bar. GLib 2.80 copies a local file with one
-  `copy_file_range ()` call and reports its progress when it is there, so
-  a large file sat at 0 % and Pause waited for it: files of 32 MiB and
-  more on internal disks are now copied in slices of about a tenth of a
-  second (a reflink where the file system can share data;
-  `liria_sde_copy_large_file ()` in `liria-sde-copy.c`), and Pause stops
-  a copy in the middle of a file. `tools/liria-progress-smoke.py --prefix
-  <built prefix>` copies real files on Xvfb (slowed down with
-  `LIRIA_SDE_QA_COPY_RATE`) and checks the texts, the animation, More
-  details, Pause in the middle of a file, Resume, Cancel, reduced motion
-  and a complete copy byte for byte (`LIRIA_SDE_QA_PROGRESS=FILE` writes
-  what the window shows).
+* **File operations (0.2.0 Alpha 3).** The file operations window has the
+  design of SDE's copy and move dialog ([TRANSFERS.md](TRANSFERS.md)): SDE's
+  own picture of a penguin that carries papers from one folder to the other
+  (a bin for Delete and the Trash; it sits when paused, pushes the last
+  paper in while the last data is written, jumps when done, is puzzled on
+  errors), "Copying 3 items to Backup" with Pause, Queue and Cancel, a slim
+  bar, "780 MB of 1.2 GB · 22 MB/s · About 40 seconds left", the item being
+  copied and Details (from, to, items); further operations stand under the
+  first as its queue. The picture moves at about 30 frames per second while
+  it is visible and stands still when paused, queued, minimized and with
+  reduced motion; it costs about 2 % of a CPU core. The picture and the
+  model are SDE's own (`src/common/transfer_scene.h` and
+  `transfer_model.h`, copied in as
+  `libliria-private/liria-sde-transfer-scene.h` and
+  `liria-sde-transfer-model.h`), so Liria and the SDE desktop look and
+  estimate the same; the Windows-like speed graph of 0.2.0 Alpha 2 is
+  gone. At the end a copy says for a moment "Copied 3 items to Backup"
+  and, for a removable drive, "The files are on SANDISK — you can remove
+  it."; a failed one stays until its cross is clicked, while the queue goes
+  on.
+* **Safe copying (0.2.0 Alpha 3).** Copies and moves to removable and
+  external drives (USB, SD cards, FireWire, Thunderbolt, also under LUKS or
+  LVM), network shares and FAT, exFAT, NTFS, UDF and HFS+ file systems go
+  through SDE's safe writer (`src/common/safe_copy.h`, shared with the
+  desktop and copied in as `liria-sde-safe-copy.h`; `liria-sde-copy.c`):
+  about a second of the drive's speed in flight, progress only for what the
+  drive has taken, checkpoints (`syncfs`, `fsync` of the folder) every 5 s
+  and at the end, "done" only after the last one, the sources of a move
+  deleted only after a checkpoint; deletions, the Trash and an emptied
+  Trash on such drives are written to them before the operation ends. On a
+  drive limited to 20 MB/s Liria said "done" after 0.6 s with nothing on the
+  drive before, and now after 6.2 s with everything on it. Internal disks
+  keep the page cache (`[files] safe_copy = auto | always | never` in
+  sde.conf). GLib 2.80 copies a local file with one `copy_file_range ()`
+  call and reports its progress when it is there, so files of 32 MiB and
+  more on internal disks are copied in slices of about a tenth of a second
+  (`liria_sde_copy_large_file ()`, 0.2.0 Alpha 2), and Pause stops a copy
+  in the middle of a file. `tools/liria-progress-smoke.py --prefix <built
+  prefix>` copies real files on Xvfb (slowed down with
+  `LIRIA_SDE_QA_COPY_RATE`) and checks the texts, the moving and the still
+  picture, Details, Pause in the middle of a file, Resume, Cancel, reduced
+  motion, a complete copy byte for byte and a safe copy's finished state
+  (`LIRIA_SDE_QA_PROGRESS=FILE` writes what the window shows).
 
 ## SDE Power and SDE Screen Lock (alpha16)
 

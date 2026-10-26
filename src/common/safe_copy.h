@@ -45,8 +45,9 @@
  * NTFS, UDF and HFS+ file systems (sticks and external disks) use the safe
  * writer; internal disks keep the page cache (measured in docs/TRANSFERS.md:
  * the safe writer would make every copy on them wait for the disk, for no
- * gain in safety a user can see). SDE_SAFE_COPY=always or never overrides
- * it (the older SDE_LIRIA_SAFE_COPY too).
+ * gain in safety a user can see). sde.conf [files] safe_copy = auto |
+ * always | never changes it, SDE_SAFE_COPY (the older SDE_LIRIA_SAFE_COPY
+ * too) overrides both (sde_safe_mode ()).
  *
  * SdeWriterOps lets tests replace the system calls with a simulated slow
  * drive (tests/test_safe_copy.cpp).
