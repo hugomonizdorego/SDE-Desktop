@@ -157,7 +157,8 @@ def liria_copy(args, drive, source, target, safe, problems):
         lead, reported, done_at = -1 << 62, 0, None
         while time.time() - start < 120:
             values = smoke.qa_values(qa)
-            if values.get("done") == "1":
+            # finished=1: the window says the copy is over (or it closed).
+            if values.get("finished") == "1":
                 done_at = time.time() - start
                 break
             try:

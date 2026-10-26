@@ -1030,9 +1030,25 @@ managed (GtkWidget *widget)
     return widget;
 }
 
+/* On a small screen (1024x600 at 150 %) the picture is smaller, so the
+ * window fits. */
 static void
 mapped (SdeProgress *p)
 {
+    GdkDisplay *display = gtk_widget_get_display (p->scene);
+    GdkWindow *window = gtk_widget_get_window (p->scene);
+    GdkMonitor *monitor = window != NULL ? gdk_display_get_monitor_at_window (display, window) : NULL;
+    int height = sde_px (104);
+
+    if (monitor != NULL)
+    {
+        GdkRectangle area;
+
+        gdk_monitor_get_workarea (monitor, &area);
+        if (area.height < sde_px (560))
+            height = sde_px (72);
+    }
+    gtk_widget_set_size_request (p->scene, -1, height);
     animation_update (p);
 }
 

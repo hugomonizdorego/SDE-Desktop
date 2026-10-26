@@ -365,10 +365,19 @@ void TransferDialog::set_details(bool details) {
 void TransferDialog::relayout() {
   int pad = S(kPad), inner = w() - 2 * pad;
   int y = S(14);
+  // Below the picture: the headline, the bar, the texts, Details and the
+  // queue. On a small screen (1024x600 at 150 %) the picture gives way
+  // first, down to about half its size, so the window fits.
+  int below = S(8) + S(30) + S(6 + 8) + S(8 + 20) + S(20) + S(6) + S(28) +
+              (details_ ? S(4) + 3 * S(22) + S(4) : 0) +
+              (ops_.size() > 1 ? S(10) + S(24) + int(ops_.size() - 1) * S(kRow) : 0) + S(14);
+  int sx = 0, sy = 0, sw = 0, sh = 0;
+  Fl::screen_work_area(sx, sy, sw, sh, shown() ? screen_num() : Fl::screen_num(Fl::event_x_root(), Fl::event_y_root()));
+  int room = sh - S(44) - y - below;  // S(44): the title bar
   scene_x_ = pad;
   scene_y_ = y;
   scene_w_ = inner;
-  scene_h_ = S(kScene);
+  scene_h_ = std::max(S(kScene / 2 + 4), std::min(S(kScene), room));
   y += scene_h_ + S(8);
   if (!ops_.empty()) {
     Op *main = ops_.front();

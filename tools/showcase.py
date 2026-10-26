@@ -2090,11 +2090,11 @@ def liria_ribbon_tabs(s):
     time.sleep(0.3)
 
 
-@scene('Liria', [('liria-copy-progress', 'Liria: copying videos, with More details: the speed graph, the time '
-                                         'and items remaining and the animated SDE mark')], needs=['liria'])
+@scene('Liria', [('liria-copy-progress', 'Liria: copying videos, with the details: the penguin carries the '
+                                         'files, how much, how fast and how long')], needs=['liria'])
 def liria_copy_progress(s):
     """A copy slowed down to about 20 MB/s (LIRIA_SDE_QA_COPY_RATE), the
-    file operations window with More details."""
+    file operations window with the details (0.2.0 Alpha 3)."""
     src = s.home / 'Videos/Trip to the Lakes'
     dst = s.home / 'Backup'
     src.mkdir(parents=True, exist_ok=True)
@@ -2124,7 +2124,7 @@ def liria_copy_progress(s):
         progress = qa_pairs(qa)['window']
         click_box(s, progress, qa_box(qa_pairs(qa), 'toggle'))
         s.wait(lambda: qa_pairs(qa).get('details') == '1', 3)
-        time.sleep(3.0)  # the graph fills
+        time.sleep(3.0)  # the speed and the time left settle
         s.park_pointer()
         # The window changes four times a second: no waiting for stillness.
         s.shot('liria-copy-progress', quiet=0.2, timeout=0.5)
@@ -2139,21 +2139,37 @@ def liria_copy_progress(s):
             (src / name).unlink(missing_ok=True)
 
 
-@scene('Desktop', [('sde-transfer', 'SDE: the copy and move dialog of the desktop with More details (speed '
-                                    'graph, time and items remaining)')])
+@scene('Desktop', [('sde-transfer', 'SDE: the copy dialog of the desktop: the penguin carries the files, '
+                                    'the time left, the details and a second operation in the queue')])
 def sde_transfer(s):
     """SDE-FLTK's copy and move dialog (src/common/transfer_dialog.h) with a
     simulated copy from the test tools."""
     demo = s.test_tool('sde-transfer-demo')
     if not demo:
         raise SkipShot('sde-transfer-demo not found (--test-dir)')
-    s.spawn(demo, '--details', '--at', '0.46', name='transfer-demo')
-    w = s.need('complete$', 10, what='the copy dialog')
+    s.spawn(demo, '--details', '--queue', '--drive', 'SANDISK', '--removable', '--at', '0.46', name='transfer-demo')
+    w = s.need('Backup Drive$', 10, what='the copy dialog')
     s.activate(w)
     time.sleep(1.0)
     s.park_pointer()
-    # The mark is animated: no waiting for stillness.
+    # The penguin walks: no waiting for stillness.
     s.shot('sde-transfer', quiet=0.2, timeout=0.5)
+
+
+@scene('Desktop', [('sde-transfer-done', 'SDE: a copy to a USB stick is over only when the files are on it; '
+                                         'then the dialog says the stick can be removed')])
+def sde_transfer_done(s):
+    """The finished state of the copy dialog (0.2.0 Alpha 3, safe copying:
+    src/common/safe_copy.h)."""
+    demo = s.test_tool('sde-transfer-demo')
+    if not demo:
+        raise SkipShot('sde-transfer-demo not found (--test-dir)')
+    s.spawn(demo, '--done', '--drive', 'SANDISK', '--removable', '--fat', name='transfer-demo')
+    w = s.need('Backup Drive$', 10, what='the copy dialog')
+    s.activate(w)
+    time.sleep(1.6)  # after the penguin's jump
+    s.park_pointer()
+    s.shot('sde-transfer-done', quiet=0.2, timeout=0.5)
 
 
 @scene('Niny', [('niny', 'Niny: Markdown with its formatted view, tabs and the formatting toolbar')],
