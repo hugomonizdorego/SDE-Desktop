@@ -182,6 +182,9 @@ class DocView : public Fl_Widget {
   void swap_document(Document *doc, const std::vector<int> &changed);
   // Files the undo history still needs.
   void history_files(std::set<std::string> &out) const;
+  // For the UI test: where the visible pages are (window coordinates) and
+  // their size in points, one line per page.
+  std::string qa_pages() const;
 
   // Redaction marks (not yet applied).
   const std::vector<std::pair<int, Box>> &redactions() const { return redactions_; }
@@ -674,6 +677,7 @@ class XanaraWindow : public sde::BufferedWindow {
   bool tool_enabled(const ToolSpec &s, std::string *why = nullptr);
   bool tool_toggled(const ToolSpec &s) const;
   int tab_x(int index) const;
+  void qa_report();  // XANARA_QA_FILE: the state the UI test reads
   static void toast_cb(void *p);
   static void remember_cb(void *p);
   static void settings_cb(void *p);

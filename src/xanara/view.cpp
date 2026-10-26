@@ -331,6 +331,20 @@ void DocView::swap_document(Document *doc, const std::vector<int> &changed) {
   redraw();
 }
 
+std::string DocView::qa_pages() const {
+  std::string out;
+  if (!doc_) return out;
+  int top = int(std::round(sy_)), left = int(std::round(sx_));
+  for (int i = 0; i < int(slots_.size()); ++i) {
+    const Slot &s = slots_[size_t(i)];
+    if (!s.shown || s.y >= top + h() || s.y + s.h <= top || s.x >= left + w() || s.x + s.w <= left) continue;
+    out += format("page %d %d %d %d %d %.2f %.2f\n", i, x() + s.x - left, y() + s.y - top, s.w, s.h, doc_->width(i),
+                  doc_->height(i));
+  }
+  out += format("view %d %d %d %d rotation %d\n", x(), y(), w(), h(), rotation_);
+  return out;
+}
+
 void DocView::render_now(int page) {
   if (!doc_ || page < 0 || page >= int(slots_.size()) || !slots_[size_t(page)].shown || !visible_r()) return;
   const Slot &s = slots_[size_t(page)];

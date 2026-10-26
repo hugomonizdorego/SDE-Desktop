@@ -105,6 +105,16 @@ add_test(NAME sde-accounts-model COMMAND sde-accounts-tests)
 add_executable(sde-xanara-tests test_xanara.cpp)
 target_link_libraries(sde-xanara-tests PRIVATE sde-xanara-core)
 add_test(NAME sde-xanara COMMAND sde-xanara-tests)
+# 0.2.0 Alpha 3: Xanara's direct editing in the window (click a word, type,
+# save, reopen, move a picture, close the tab), checked with poppler by
+# sde-xanara-probe; no other program may run.
+add_executable(sde-xanara-probe xanara_probe.cpp)
+target_link_libraries(sde-xanara-probe PRIVATE sde-xanara-core)
+if(SDE_XVFB AND TARGET xanara)
+  add_test(NAME sde-xanara-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_xanara_ui.py
+    $<TARGET_FILE:xanara> $<TARGET_FILE:sde-xanara-probe>)
+  set_tests_properties(sde-xanara-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 
 add_executable(sde-taca-tests test_taca.cpp)
 target_link_libraries(sde-taca-tests PRIVATE taca-core)

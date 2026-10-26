@@ -1073,7 +1073,31 @@ void XanaraWindow::draw_chrome_text() {
   }
 }
 
+// The state the UI test (tests/test_xanara_ui.py) waits for and the
+// places it clicks, written when XANARA_QA_FILE names a file.
+void XanaraWindow::qa_report() {
+  static const char *file = getenv("XANARA_QA_FILE");
+  if (!file || !*file) return;
+  DocView *v = view();
+  DocTab *t = tab();
+  std::string s = format("tabs %d active %d\nmode %s\n", tablist_.count(), tablist_.active(), mode_id(mode_));
+  if (v && t) {
+    s += format("tool %d\nediting %d\nimage %d\ndirty %d\nundo %d\nredo %d\npages %d\nfile %s\n", int(v->tool()),
+                v->editing_text() ? 1 : 0, v->has_selected_image() ? 1 : 0, t->dirty() ? 1 : 0, v->can_undo() ? 1 : 0,
+                v->can_redo() ? 1 : 0, t->doc->count(), t->doc->path().c_str());
+    s += v->qa_pages();
+  }
+  for (const auto &h : hots_)
+    if (h.kind == Hot::TabClose) s += format("tabclose %d %d %d %d %d\n", h.tab, h.x, h.y, h.w, h.h);
+  s += format("toast %s\n", toast_.c_str());
+  static std::string last;
+  if (s == last) return;
+  last = s;
+  write_file_atomic(file, s);
+}
+
 void XanaraWindow::draw() {
+  qa_report();
   DocView *v = view();
   {
     Painter p(w(), h());
