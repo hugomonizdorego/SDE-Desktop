@@ -35,11 +35,37 @@ the X server ("cpu", "xcpu", from /proc/PID/schedstat) are printed; with
 --repeat the median of the runs. --perf PATH records a perf profile of
 --perf-scenario into --perf-output (perf report -i FILE). Exit status 0,
 or 77 when Xvfb, xdotool or Liria is missing.
+
+--hover (0.2.0 Alpha 3) runs the hover scenarios instead: the pointer moves
+like a hand (XTest, 100 motion events a second at --speed pixels a second
+times the scale) over the parts of the window that Liria reports with
+LIRIA_SDE_QA_FRAMES (src/liria-sde-qa.c), and the scenario measures until
+Liria is idle again:
+
+  hover-icons, hover-list, hover-compact
+             sweeps over the 1 000 files in the icon, list and compact views
+  hover-sidebar   up and down the sidebar
+  hover-ribbon    across the ribbon's buttons and tabs
+  hover-tooltips  a rest on eight ribbon buttons (their tooltips show), then
+                  on to the next ones with the tooltip open
+  hover-path, hover-header, hover-tabs, hover-status
+             the breadcrumbs of a deep folder, the header buttons, four tabs
+             and the status bar
+  hover-home      over the cards of the Home overview
+
+and prints for each the Liria and X server CPU use while the pointer moves
+("cpu%", "xcpu%"), the frames drawn, how long the slowest 5 % and the
+slowest frame took to lay out and paint ("p95", "max", in ms; a frame
+longer than 16.7 ms is late at 60 Hz, "late"), the area repainted in all
+("Mpx", megapixels) and how long Liria took to handle the slowest 5 % of
+the pointer events ("ev95", in ms).
 """
 import argparse
+import ctypes
 import json
 import os
 import shutil
+import signal
 import statistics
 import struct
 import subprocess
@@ -52,6 +78,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS = ("startup", "open-1k", "open-10k", "scroll", "view-list", "scroll-list", "view-compact", "view-icons",
              "select-all", "select-one", "home", "thumbnails", "sidebar")
+HOVER = ("hover-icons", "hover-list", "hover-compact", "hover-sidebar", "hover-ribbon", "hover-tooltips",
+         "hover-path", "hover-header", "hover-tabs", "hover-status", "hover-home")
 
 
 def png(width, height, seed):
@@ -82,6 +110,10 @@ def make_home(home):
             (folder / ("document-%05d%s" % (i, kinds[i % len(kinds)]))).write_bytes(b"x" * (i % 97))
         for i in range(20):
             (folder / ("folder-%02d" % i)).mkdir()
+    deep = home / "Documents/Projects/2026/Customers/Selviana/Reports/Quarter 3"
+    deep.mkdir(parents=True)
+    for i in range(40):
+        (deep / ("report-%02d.odt" % i)).write_bytes(b"x")
     pictures = home / "Pictures/Holiday"
     pictures.mkdir(parents=True)
     samples = [png(160, 120, i) for i in range(12)]
@@ -126,6 +158,59 @@ def children_cpu_ns(pid):
         return 0
 
 
+class Pointer:
+    """Moves the pointer like a hand: XTest motion events at a steady rate
+    (libX11 and libXtst through ctypes, no extra Python modules)."""
+
+    def __init__(self, display):
+        self.x11 = ctypes.CDLL("libX11.so.6")
+        self.xtst = ctypes.CDLL("libXtst.so.6")
+        self.x11.XOpenDisplay.restype = ctypes.c_void_p
+        self.x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        self.x11.XFlush.argtypes = [ctypes.c_void_p]
+        self.x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        self.xtst.XTestFakeMotionEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                                   ctypes.c_ulong]
+        self.dpy = self.x11.XOpenDisplay(display.encode())
+        if not self.dpy:
+            raise SystemExit("cannot open display " + display)
+        self.pos = (0, 0)
+
+    def move(self, x, y):
+        self.xtst.XTestFakeMotionEvent(self.dpy, -1, int(round(x)), int(round(y)), 0)
+        self.x11.XFlush(self.dpy)
+        self.pos = (x, y)
+
+    def path(self, points, speed, rate=100):
+        """Moves through |points| at |speed| pixels a second, |rate| events
+        a second; returns the time it took."""
+        start = time.monotonic()
+        tick = start
+        step = speed / rate
+        x, y = self.pos
+        for tx, ty in points:
+            distance = ((tx - x) ** 2 + (ty - y) ** 2) ** 0.5
+            n = max(1, int(distance / step))
+            for i in range(1, n + 1):
+                tick += 1.0 / rate
+                delay = tick - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                self.move(x + (tx - x) * i / n, y + (ty - y) * i / n)
+            x, y = tx, ty
+        return time.monotonic() - start
+
+    def close(self):
+        self.x11.XCloseDisplay(self.dpy)
+
+
+def percentile(values, share):
+    if not values:
+        return 0
+    values = sorted(values)
+    return values[min(len(values) - 1, int(len(values) * share))]
+
+
 class Bench:
     def __init__(self, args):
         self.args = args
@@ -135,6 +220,8 @@ class Bench:
         self.xvfb = None
         width, height = (int(v) for v in args.size.split("x"))
         self.width, self.height = width, height
+        self.speed = args.speed * args.scale / 100
+        self.pointer = None
 
     # -------------------------------------------------------------- setup
     def start(self):
@@ -156,6 +243,9 @@ class Bench:
         (self.home / ".config/gtk-3.0/settings.ini").write_text(
             "[Settings]\ngtk-theme-name=%s\ngtk-icon-theme-name=%s\ngtk-font-name=Sans 10\n" % (args.theme, icons))
         (self.home / ".config/sde/liria.conf").write_text("[ribbon]\nmode=%s\n" % args.ribbon)
+        self.qa = self.home / "qa-frames"
+        if args.hover:
+            env["LIRIA_SDE_QA_FRAMES"] = str(self.qa)
         self.xvfb = subprocess.Popen(["Xvfb", args.display, "-screen", "0", args.size + "x24", "-nolisten", "tcp",
                                       "-dpi", str(dpi)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.procs.append(self.xvfb)
@@ -257,6 +347,169 @@ class Bench:
         # and under the header (and ribbon).
         self.x("mousemove", self.width * 3 // 5, self.height * 3 // 5)
         time.sleep(0.2)
+
+    # -------------------------------------------------------------- hover
+    def geometry(self):
+        """The parts of Liria's windows on the screen, by kind, as written
+        on SIGUSR2 (LIRIA_SDE_QA_FRAMES, src/liria-sde-qa.c)."""
+        path = Path(str(self.qa) + ".geometry")
+        for _ in range(3):
+            path.unlink(missing_ok=True)
+            os.kill(self.liria.pid, signal.SIGUSR2)
+            end = time.monotonic() + 3
+            while time.monotonic() < end:
+                time.sleep(0.05)
+                text = path.read_text(errors="replace") if path.exists() else ""
+                if text.endswith("end\n"):
+                    parts = {}
+                    for line in text.splitlines():
+                        f = line.split("\t")
+                        if len(f) >= 6:
+                            parts.setdefault(f[0], []).append(tuple(int(v) for v in f[1:5]) + (f[5],))
+                    return parts
+        raise SystemExit("Liria wrote no geometry; is it built with src/liria-sde-qa.c?")
+
+    @staticmethod
+    def sweeps(rect, rows, vertical=False, margin=0.06):
+        """Back and forth over |rect| in |rows| lines."""
+        x, y, w, h = rect[:4]
+        points = []
+        for i in range(rows):
+            f = (i + 0.5) / rows
+            if vertical:
+                a, b = (x + w * f, y + h * margin), (x + w * f, y + h * (1 - margin))
+            else:
+                a, b = (x + w * margin, y + h * f), (x + w * (1 - margin), y + h * f)
+            points += [a, b] if i % 2 == 0 else [b, a]
+        return points
+
+    @staticmethod
+    def across(rects, times=2):
+        """Through the middle of each of |rects|, left to right and back."""
+        middles = sorted((x + w / 2, y + h / 2) for x, y, w, h, _ in rects)
+        points = []
+        for i in range(times):
+            points += middles if i % 2 == 0 else middles[::-1]
+        return points
+
+    @staticmethod
+    def bounds(rects):
+        x0 = min(r[0] for r in rects)
+        y0 = min(r[1] for r in rects)
+        return (x0, y0, max(r[0] + r[2] for r in rects) - x0, max(r[1] + r[3] for r in rects) - y0)
+
+    def hover(self, name, points, rest=0.0):
+        """Moves the pointer through |points| (resting |rest| seconds on
+        each) and measures until Liria is idle again."""
+        if len(points) < 2:
+            print("%s: nothing to hover" % name)
+            return None
+        pid = self.liria.pid
+        self.pointer.move(*points[0])
+        self.idle(time.monotonic(), 0.5, 20)
+        offset = self.qa.stat().st_size
+        cpu0, xcpu0 = cpu_ns(pid), cpu_ns(self.xvfb.pid)
+        start = time.monotonic()
+        moved = 0.0
+        if rest:
+            for point in points[1:]:
+                moved += self.pointer.path([point], self.speed)
+                time.sleep(rest)
+                moved += rest
+        else:
+            moved = self.pointer.path(points[1:], self.speed)
+        settled = self.idle(start, 0.4, 30)
+        cpu, xcpu = cpu_ns(pid) - cpu0, cpu_ns(self.xvfb.pid) - xcpu0
+        frames, events, area = [], [], 0
+        with self.qa.open(errors="replace") as f:
+            f.seek(offset)
+            for line in f:
+                field = line.split("\t")
+                if field[0] == "frame" and len(field) == 5:
+                    frames.append((int(field[2]) + int(field[3])) / 1000)
+                    area += int(field[4])
+                elif field[0] == "event" and len(field) == 4:
+                    events.append(int(field[3]) / 1000)
+        wall = max(moved, settled)
+        return {"ms": round(wall * 1000), "cpu%": round(100 * cpu / 1e9 / wall, 1),
+                "xcpu%": round(100 * xcpu / 1e9 / wall, 1), "frames": len(frames),
+                "p95": round(percentile(frames, 0.95), 2), "max": round(max(frames, default=0), 2),
+                "late": sum(1 for v in frames if v > 16.7), "Mpx": round(area / 1e6, 1), "events": len(events),
+                "ev95": round(percentile(events, 0.95), 2), "evmax": round(max(events, default=0), 2)}
+
+    def run_hover(self, only):
+        """The hover scenarios (--hover)."""
+        results = {}
+        self.qa.write_text("")
+        log = open(self.home / "liria.log", "w")
+        self.liria = subprocess.Popen([str(self.args.prefix / "bin/liria"), "--no-desktop", str(self.home)],
+                                      env=self.env, cwd=str(self.home), stdout=log, stderr=subprocess.STDOUT)
+        end = time.monotonic() + 30
+        while time.monotonic() < end and not self.window():
+            time.sleep(0.05)
+        wid = self.window()
+        if wid is None:
+            raise SystemExit("Liria did not open its window; see %s" % (self.home / "liria.log"))
+        self.x("windowmove", wid, 0, 0)
+        self.x("windowsize", wid, self.width, self.height - 30)
+        self.x("windowactivate", wid)
+        self.idle(time.monotonic(), 0.8)
+        self.pointer = Pointer(self.args.display)
+
+        def scenario(name, points, rest=0.0):
+            if only and name not in only:
+                return
+            result = self.hover(name, points, rest)
+            if result is not None:
+                results[name] = result
+
+        g = self.geometry()
+        if g.get("card"):
+            scenario("hover-home", self.sweeps(self.bounds(g["card"]), 5))
+        if g.get("header-button"):
+            scenario("hover-header", self.across(g["header-button"], 3))
+        if g.get("sidebar"):
+            scenario("hover-sidebar", self.sweeps(g["sidebar"][0], 3, vertical=True, margin=0.02))
+        ribbon = g.get("ribbon-button", []) + g.get("ribbon-tab", [])
+        if ribbon:
+            scenario("hover-ribbon", self.sweeps(self.bounds(ribbon), 4))
+        if g.get("ribbon-button"):
+            scenario("hover-tooltips", self.across(g["ribbon-button"][:8], 1), rest=0.9)
+        self.go(self.home / "Files-1000")()
+        self.idle(time.monotonic(), 0.6)
+        for key, name, kind, rows, vertical in (("ctrl+1", "hover-icons", "icon-view", 6, False),
+                                                ("ctrl+2", "hover-list", "list-view", 4, True),
+                                                ("ctrl+3", "hover-compact", "icon-view", 6, False)):
+            self.x("key", key)
+            self.idle(time.monotonic(), 0.6)
+            g = self.geometry()
+            if g.get(kind):
+                scenario(name, self.sweeps(g[kind][0], rows, vertical))
+        if g.get("status"):
+            scenario("hover-status", self.sweeps(g["status"][0], 1, margin=0.02) * 3)
+        self.x("key", "ctrl+1")
+        self.go(self.home / "Documents/Projects/2026/Customers/Selviana/Reports/Quarter 3")()
+        self.idle(time.monotonic(), 0.6)
+        g = self.geometry()
+        if g.get("crumb"):
+            scenario("hover-path", self.across(g["crumb"], 3))
+        for _ in range(3):
+            self.x("key", "ctrl+t")
+            self.idle(time.monotonic(), 0.4)
+        g = self.geometry()
+        if len(g.get("tab", [])) > 1:
+            scenario("hover-tabs", self.across(g["tab"], 3))
+        log.close()
+        warnings = [line for line in (self.home / "liria.log").read_text(errors="replace").splitlines()
+                    if "CRITICAL" in line or "WARNING" in line]
+        results["warnings"] = len(warnings)
+        if warnings and self.args.verbose:
+            print("\n".join(warnings[:10]))
+        self.pointer.close()
+        self.liria.terminate()
+        self.liria.wait(timeout=10)
+        self.liria = None
+        return results
 
     # ---------------------------------------------------------- scenarios
     def warm_up(self):
@@ -390,6 +643,8 @@ def main():
     parser.add_argument("--perf-output", type=Path, default=Path("liria-perf.data"))
     parser.add_argument("--perf-args", default="-F 400 --call-graph dwarf,32768",
                         help="perf record options (default: %(default)s)")
+    parser.add_argument("--hover", action="store_true", help="run the hover scenarios: " + ", ".join(HOVER))
+    parser.add_argument("--speed", type=float, default=800, help="pointer speed at 100 %% (pixels a second)")
     parser.add_argument("--keep", action="store_true", help="keep the temporary home")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -407,10 +662,24 @@ def main():
         bench.start()
         bench.warm_up()
         for i in range(args.repeat):
-            runs.append(bench.run(only, args.perf_scenario if args.perf and i == 0 else None))
+            if args.hover:
+                runs.append(bench.run_hover(only))
+            else:
+                runs.append(bench.run(only, args.perf_scenario if args.perf and i == 0 else None))
             print("run %d: %s" % (i + 1, json.dumps(runs[-1])), flush=True)
     finally:
         bench.stop()
+    if args.hover:
+        keys = ("ms", "cpu%", "xcpu%", "frames", "p95", "max", "late", "Mpx", "ev95")
+        print("%-15s" % "scenario" + "".join("%8s" % k for k in keys))
+        for name in HOVER:
+            values = [run[name] for run in runs if name in run]
+            if values:
+                print("%-15s" % name + "".join("%8s" % round(statistics.median(v[k] for v in values), 2)
+                                               for k in keys))
+        if args.json:
+            args.json.write_text(json.dumps(runs, indent=1) + "\n")
+        return 0
     print("%-13s %8s %8s %8s %8s" % ("scenario", "ms", "cpu", "xcpu", "child"))
     for name in SCENARIOS:
         values = [run[name] for run in runs if name in run]

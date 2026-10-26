@@ -33,6 +33,7 @@
 #include "liria-sde-ui.h"
 #include "liria-sde-model.h"
 #include "liria-sde-pins.h"
+#include "liria-sde-qa.h"
 #include "liria-sde-ribbon.h"
 #include "liria-bookmark-list.h"
 #include "liria-location-bar.h"
@@ -879,6 +880,9 @@ liria_sde_ui_setup_header (LiriaNavigationWindow *window,
 
     /* alpha52: the ribbon under the header (liria-sde-ribbon.c). */
     liria_sde_ribbon_setup (window, ui_manager);
+
+    /* LIRIA_SDE_QA_FRAMES (liria-sde-qa.c). */
+    liria_sde_qa_window (GTK_WIDGET (window));
 }
 
 /* The sidebar header ("Places" chooser and close button) is replaced by
@@ -1217,6 +1221,8 @@ liria_sde_ui_startup (GApplication *application)
     /* 0.2.0: SDE's Liria icon for dialogs and other windows without an
      * icon of their own (folder windows show their folder's icon). */
     gtk_window_set_default_icon_name (liria_sde_ui_icon_name ());
+
+    liria_sde_qa_startup ();
 }
 
 G_GNUC_END_IGNORE_DEPRECATIONS

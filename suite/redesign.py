@@ -104,6 +104,7 @@ def liria(staged):
     liria_ribbon(staged)
     liria_right_drag(staged)
     liria_pathbar(staged)
+    liria_hover(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
@@ -1309,6 +1310,14 @@ path_bar_path_event_callback (LiriaPathBar *path_bar,""")
         if (flags != 0)
         {
             slot = liria_window_get_active_slot (LIRIA_WINDOW_PANE (pane)->window);""")
+
+
+def liria_hover(staged):
+    """0.2.0 Alpha 3: Liria follows the pointer smoothly. A QA recorder
+    (src/liria-sde-qa.c, LIRIA_SDE_QA_FRAMES=FILE) gives tools/liria-perf.py
+    the frame and pointer event timings of its hover scenarios."""
+    edit_once(staged / "src/Makefile.am", "\tliria-sde-ribbon.h \\\n",
+              "\tliria-sde-ribbon.h \\\n\tliria-sde-qa.c \\\n\tliria-sde-qa.h \\\n")
 
 
 def liria_ribbon(staged):
