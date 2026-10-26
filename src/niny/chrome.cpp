@@ -664,12 +664,17 @@ void Toolbar::open(int id, bool keyboard) {
       link->neighbour = [this, id](int dir) { return neighbour(id, dir); };
       spec.bar = link;
     }
+    // Before the chosen command runs (it may open a dialog): the title is
+    // no longer open, and a menu bar shown for Alt or F10 hides again.
+    spec.closed = [this, link = spec.bar] {
+      open_ = -1;
+      hover_ = -1;
+      redraw();
+      if (!link || !link->next) app_->peek_menubar(false);
+    };
     app_->schedule_qa();
     int rx = window()->x_root() + int(it->x), ry = window()->y_root() + y() + h() - S(2);
     popup_menu(spec, rx, ry, h());
-    open_ = -1;
-    hover_ = -1;
-    redraw();
     id = spec.bar ? spec.bar->next : 0;
     keyboard = spec.bar && spec.bar->next_keyboard;
   }

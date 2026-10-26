@@ -342,7 +342,7 @@ void App::build_commands() {
   add("new", _("New Tab"), F, FL_CTRL + 'n', "Ctrl+N", [this] { new_document(); });
   add("new_window", _("New Window"), F, FL_CTRL + FL_SHIFT + 'n', "Ctrl+Shift+N", [this] { new_window(); });
   add("open", _("Open…"), F, FL_CTRL + 'o', "Ctrl+O", [this] { open_dialog(); });
-  add("quick_open", _("Quick Open…"), F, FL_CTRL + 'p', "Ctrl+P", [this] { show_palette(""); });
+  add("quick_open", _("Quick Open…"), S_, FL_CTRL + 'p', "Ctrl+P", [this] { show_palette(""); });
   add("save", _("Save"), F, FL_CTRL + 's', "Ctrl+S", [this] { if (active()) save(active()); });
   add("save_as", _("Save As…"), F, FL_CTRL + FL_SHIFT + 's', "Ctrl+Shift+S", [this] { if (active()) save_as(active()); });
   add("save_all", _("Save All"), F, FL_CTRL + FL_ALT + 's', "Ctrl+Alt+S", [this] { save_all(); });

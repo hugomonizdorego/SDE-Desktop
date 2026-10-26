@@ -366,7 +366,7 @@ void FontDialog::draw() {
   fl_color(L.text.fl());
   fl_push_clip(lx_[0] + S(12), py_ + S(4), lx_[1] + lw_[1] - lx_[0] - S(24), ph_ - S(8));
   fl_draw(_("The quick brown fox jumps over the lazy dog. 0123456789 {}[]()"), lx_[0] + S(14), py_,
-          lx_[1] + lw_[1] - lx_[0] - S(28), ph_, FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
+          lx_[1] + lw_[1] - lx_[0] - S(28), ph_, FL_ALIGN_LEFT | FL_ALIGN_INSIDE | FL_ALIGN_WRAP);
   fl_pop_clip();
   draw_children();
 }

@@ -189,6 +189,7 @@ class Controller {
     levels_.push_back(l);
     l->show();
     open_time_ = now_seconds();
+    Fl::get_mouse(open_rx_, open_ry_);
     Fl::grab(l);
     qa();
   }
@@ -289,6 +290,10 @@ class Controller {
       case FL_ENTER:
       case FL_MOVE:
       case FL_DRAG: {
+        // A pointer that has not moved since the menu opened (it rests on
+        // another title when Alt or F10 opened this one) changes nothing.
+        if (!moved_ && rx == open_rx_ && ry == open_ry_) return 1;
+        moved_ = true;
         if (li < 0) {
           // Menu bar: the pointer on another title opens its menu.
           if (bar && bar->title_at) switch_to(bar->title_at(rx, ry), false);
@@ -414,6 +419,7 @@ class Controller {
     while (!done_ && !levels_.empty() && levels_[0]->shown()) Fl::wait();
     if (!levels_.empty() && Fl::grab() == levels_[0]) Fl::grab(nullptr);
     for (Level *l : levels_) l->hide();
+    if (spec_.closed) spec_.closed();
     Fl::flush();
     qa(true);
     if (chosen_) {
@@ -470,8 +476,9 @@ class Controller {
  private:
   const MenuSpec &spec_;
   std::vector<Level *> levels_;
-  bool done_ = false, pressed_ = false;
+  bool done_ = false, pressed_ = false, moved_ = false;
   double open_time_ = 0;
+  int open_rx_ = 0, open_ry_ = 0;  // the pointer when the menu opened
   std::function<void()> chosen_;
 };
 

@@ -367,14 +367,16 @@ void SettingsPage::build_shortcuts() {
       keys(c.label, c.shortcut_text);
     }
   }
-  heading(_("Tabs and menus"));
+  heading(_("Tabs"));
   keys(_("Next tab, previous tab"), "Ctrl+Tab, Ctrl+Shift+Tab");
-  keys(_("Go to a tab (Alt+9: the last one)"), "Alt+1, Alt+9");
+  keys(_("Tab 1 to 8"), "Alt+1…8");
+  keys(_("Last tab"), "Alt+9");
+  heading(_("Menus"));
   keys(_("Open the menu bar"), "F10");
-  std::string letters;
+  // Alt and the underlined letter of each title.
   for (int id = Toolbar::File; id <= Toolbar::Help; ++id)
-    if (int k = Toolbar::mnemonic(id)) letters += (letters.empty() ? "" : ", ") + std::string("Alt+") + char(toupper(k));
-  if (!letters.empty()) keys(_("Open a menu by its underlined letter"), letters);
+    if (int k = Toolbar::mnemonic(id))
+      keys(format(_("%s menu"), Toolbar::title(id).c_str()), std::string("Alt+") + char(toupper(k)));
   keys(_("Show the menu bar when it is hidden"), "Alt");
   keys(_("Context menu"), "Menu, Shift+F10");
   heading(_("More keys"));

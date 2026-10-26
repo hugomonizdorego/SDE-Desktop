@@ -61,6 +61,7 @@ struct MenuSpec {
   int min_width = 0;      // unscaled pixels
   bool keyboard = false;  // opened with a key: its first item is highlighted
   std::shared_ptr<MenuBarLink> bar;
+  std::function<void()> closed;  // runs when the menu closes, before the chosen action
   // UI test hook: with SDE_PANEL_QA_DIR set, open menus are described in
   // <dir>/Niny-menu.txt ("@open:<qa_name>", then "level:N" and
   // "item:N:<label>" lines with root geometry); "@open:none" once closed.
