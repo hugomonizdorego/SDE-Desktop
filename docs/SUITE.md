@@ -19,7 +19,7 @@ they are not duplicated inside SDE.
 | SDE Screen Lock | `sde-lock` (Control Center > Lock Screen) | native SDE application (Selviana DE Project, alpha16) |
 | Calculator | `calculator` | native SDE application (Selviana DE Project, alpha50; replaced the GTK4 scientific-calculator frontend) |
 | Display Settings | `sde-display-settings` | [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) profile model, native Linux frontend |
-| Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit and Flatpak |
+| Software Updater (formerly SDE Update) | `sde-update` | [mintupdate](https://github.com/linuxmint/mintupdate) model, Debian PackageKit (the operating system; apps are updated in Merkadu) |
 
 These GTK forks retain their upstream C/C++ implementation. SDE's configuration,
 panel geometry, autostart and suite diagnostics use Rust; the shell and update
@@ -295,12 +295,16 @@ or system services; use `sudo apt --fix-broken install` to repair that state.
 Software Updater (`sde-update`, called SDE Update before Alpha 51) is a native
 FLTK window in the style of a classic software updater, drawn with the active
 SDE theme (colors and radii follow the theme, also when it changes while the
-window is open) at every UI scale:
+window is open) at every UI scale. It updates the operating system: the Debian
+packages. Applications from Flathub and the Snap Store are updated in Merkadu,
+the software center ([MERKADU.md](MERKADU.md)), whose Updates page sends system
+updates back here; since 0.2 Alpha 3 the Software Updater has no Flatpak group,
+and its up-to-date view offers **Open Merkadu** when Merkadu is installed.
 
 - **Updater**: the question "Updated software is available for this computer.
   Do you want to install it now?" (or "up to date" with the last check), a
-  collapsible **Details of updates** tree with the groups Critical, Security,
-  Main and Flatpak (tri-state check boxes, sizes, application names and icons
+  collapsible **Details of updates** tree with the groups Critical, Security
+  and Main (tri-state check boxes, sizes, application names and icons
   from the packages' desktop files), a collapsible **Technical description**
   (versions, origin, size and the changelog from `apt-get changelog`,
   PackageKit `get-update-detail`, then the installed changelog, loaded in the
@@ -310,8 +314,7 @@ window is open) at every UI scale:
 - Critical: Priority required/important, the kernel, libc, systemd, D-Bus,
   APT/dpkg, boot loader, firmware and microcode, urgency high/critical, and
   anything that needs a restart. Security: the Debian security archive. Main:
-  everything else (backports included). Flatpak: `flatpak remote-ls --updates`
-  of the system and user installations (`data/update/flatpak.py`).
+  everything else (backports included).
 - **Settings…** opens the other pages with a sidebar (Escape goes back):
   **History** from `/var/log/apt/history.log*`, **Sources** (read-only one-line
   and deb822 entries, Software Sources when installed), **Maintenance** (refresh,
@@ -327,9 +330,8 @@ get their own type. Mint repositories and Mint-only policies are not imported.
 Transactions run in `transaction.py`, which streams progress (status, percent,
 per-package items) to the window. It uses `pkcon` when PackageKit is running,
 so polkit authorizes and the user can cancel; otherwise, and for cache cleaning
-and autoremove, `apt-get` runs through `pkexec`. Names and Flatpak references are
-validated and no options or repository URLs are accepted; checked Flatpak refs
-are updated with `flatpak update` as the user after the APT part. `sde-update --notifier` (autostarted)
+and autoremove, `apt-get` runs through `pkexec`. Package names are validated and
+no options or repository URLs are accepted. `sde-update --notifier` (autostarted)
 checks in the background and notifies; nothing is installed automatically.
 `--check`, `--history` and `--sources` print the helper protocols; `--plan`
 prints a transaction's argument vector without changing the system. Debian

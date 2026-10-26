@@ -342,3 +342,8 @@ if(SDE_XVFB)
     $<TARGET_FILE:sde-settings> $<TARGET_FILE:sde-account-rename> $<TARGET_FILE:sde-panel-service-fixture>)
   set_tests_properties(account-rename-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# startsde: the Flatpak and Snap directories in XDG_DATA_DIRS and PATH, also
+# when display managers did not add them (stubs instead of the session).
+add_test(NAME sde-session-env COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_session_env.py
+  ${PROJECT_SOURCE_DIR})

@@ -22,6 +22,44 @@ export QT_QPA_PLATFORMTHEME="${QT_QPA_PLATFORMTHEME:-gtk3}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 mkdir -p "$XDG_CONFIG_HOME/sde" "$XDG_DATA_HOME"
 
+# Flatpak and Snap apps: their launchers and icons are exported outside
+# /usr/share, so the Start menu, the file manager and every application only
+# find them through XDG_DATA_DIRS. Debian adds them in /etc/X11/Xsession.d/
+# 20flatpak and /etc/profile.d (flatpak.sh, snapd's apps-bin-path.sh), but
+# only when flatpak or snapd was installed before the session started, and
+# only for display managers that run those scripts (startx and Xsession do
+# not read /etc/profile.d). The directories are added here whether they
+# exist yet or not, so that apps installed during the session appear in the
+# Start menu without logging in again. Flatpak's own order: the user's
+# installation, the system one, other installations, then the rest; the
+# snap launchers go last, like snapd does.
+: "${XDG_DATA_DIRS:=/usr/local/share:/usr/share}"
+sde_flatpak_dirs="$XDG_DATA_HOME/flatpak/exports/share /var/lib/flatpak/exports/share"
+if command -v flatpak >/dev/null 2>&1; then
+    for d in $(GIO_USE_VFS=local G_MESSAGES_DEBUG= flatpak --installations 2>/dev/null); do
+        sde_flatpak_dirs="$sde_flatpak_dirs $d/exports/share"
+    done
+fi
+sde_front=""
+for d in $sde_flatpak_dirs; do
+    case ":$XDG_DATA_DIRS:$sde_front:" in
+        *":$d:"*|*":$d/:"*) ;;
+        *) sde_front="${sde_front:+$sde_front:}$d" ;;
+    esac
+done
+XDG_DATA_DIRS="${sde_front:+$sde_front:}$XDG_DATA_DIRS"
+case ":$XDG_DATA_DIRS:" in
+    *":/var/lib/snapd/desktop:"*|*":/var/lib/snapd/desktop/:"*) ;;
+    *) XDG_DATA_DIRS="$XDG_DATA_DIRS:/var/lib/snapd/desktop" ;;
+esac
+# Snap commands (snapd's /etc/profile.d/apps-bin-path.sh adds it the same way).
+case ":$PATH:" in
+    *":/snap/bin:"*) ;;
+    *) PATH="$PATH:/snap/bin" ;;
+esac
+export XDG_DATA_DIRS PATH
+unset sde_flatpak_dirs sde_front d
+
 # Create standard Desktop/Documents/Downloads folders on first login.
 if command -v xdg-user-dirs-update >/dev/null 2>&1; then
     xdg-user-dirs-update
@@ -66,7 +104,7 @@ fi
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
     # shellcheck disable=SC2086
     dbus-update-activation-environment --systemd DISPLAY XAUTHORITY \
-        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION $proxy_vars 2>/dev/null || true
+        XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION XDG_DATA_DIRS $proxy_vars 2>/dev/null || true
 fi
 
 # Mounting USB drives (UDisks2) and the power actions need an active local

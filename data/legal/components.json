@@ -151,7 +151,7 @@
       "id": "sde-update",
       "name": "Software Updater",
       "kind": "application",
-      "summary": "Critical, security, main and Flatpak updates",
+      "summary": "Critical, security and main updates of the operating system",
       "programs": ["sde-update"],
       "desktop": ["sde-update.desktop"],
       "metainfo": "org.debion.Update.metainfo.xml",
@@ -350,7 +350,7 @@
       "upstream": [
         {"project": "Ubuntu Software Center", "url": "https://github.com/mortenpi/ubuntu-software-center", "license": "GPL-3.0-only", "copyright": "Copyright © 2009–2013 Canonical Ltd.", "relation": "based-on"}
       ],
-      "credits": ["Departments, lobby, app pages, installed apps and history follow Ubuntu Software Center by Michael Vogt, Gary Lasker, Matthew McGowan and the other Ubuntu Software Center authors; its category parser and menu (commit 897c3933f5a27b6755cde72bb06329a4bc8b97b8) were ported to C++"],
+      "credits": ["Departments, lobby, app pages, installed apps and history follow Ubuntu Software Center by Michael Vogt, Gary Lasker, Matthew McGowan and the other Ubuntu Software Center authors; its category parser and menu (commit 897c3933f5a27b6755cde72bb06329a4bc8b97b8) were ported to C++", "All Software follows how Synaptic works with packages (sections, status, marked changes applied together); no Synaptic code is used"],
       "trademarks": ["sde", "linux", "debian"],
       "notices": ["/usr/share/doc/merkadu/copyright"],
       "sources": ["src/merkadu/", "data/merkadu/"]

@@ -84,6 +84,18 @@ jobs:
           test "$(readlink -f /usr/share/images/vendor-logos)" = /usr/share/desktop-base/debion-logos
           test -s /usr/share/plymouth/themes/debion/debion.script
           DEBIAN_FRONTEND=noninteractive apt-get install --simulate --no-install-recommends ./dist/sde-desktop_*.deb ./dist/debion-desktop-base_*.deb
+      # Merkadu with the real archive and Flathub (docs/MERKADU.md): the
+      # merkadu package set up Flathub; the package lists bring the archive's
+      # AppStream catalog with its icons (appstream's APT hook, Merkadu's
+      # 60merkadu); the headless check loads what the window would show.
+      - name: Merkadu with the real catalogs
+        if: matrix.image == 'debian:testing'
+        timeout-minutes: 20
+        run: |
+          flatpak remotes --system --columns=name | grep -qx flathub
+          apt-get update
+          flatpak update --system --appstream --noninteractive flathub
+          merkadu --self-test --expect deb:firefox-esr,deb:gimp,deb:vlc,org.mozilla.firefox --expect-flatpak 1
       - name: Native UI smoke checks
         if: matrix.image == 'debian:testing'
         run: |

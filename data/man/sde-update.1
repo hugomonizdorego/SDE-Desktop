@@ -12,22 +12,21 @@ sde-update \- Software Updater: review and install software updates
 \fB--plan\fR \fIACTION\fR [\fIPACKAGE\fR...]
 .br
 .B sde-update
-\fB--plan flatpak\fR \fIINSTALLATION\fB:\fIREF\fR...
-.br
-.B sde-update
 \fB--transaction\fR \fBrefresh\fR|\fBupgrade\fR
 .br
 .B sde-update
 \fB--notifier\fR [\fB--once\fR]
 .SH DESCRIPTION
-\fBSoftware Updater\fR (called SDE Update before Alpha 51) shows the updates in
-the local APT cache and the Flatpak updates of the system and user
-installations, and installs the ones you keep checked. The read-only Python APT
-model is adapted from Linux Mint's Update Manager (mintupdate) with its
+\fBSoftware Updater\fR (called SDE Update before Alpha 51) keeps the operating
+system up to date: it shows the updates of the Debian packages in the local APT
+cache and installs the ones you keep checked. Applications from Flathub and the
+Snap Store are updated in \fBmerkadu\fR(1), the software center; when it is
+installed, the up-to-date view offers \fBOpen Merkadu\fR. The read-only Python
+APT model is adapted from Linux Mint's Update Manager (mintupdate) with its
 original GPLv3+ copyright preserved; held packages are excluded and counted.
 .PP
 The window asks whether to install the updated software now. \fBDetails of
-updates\fR is a tree of four groups, each with a check box (checked, unchecked
+updates\fR is a tree of three groups, each with a check box (checked, unchecked
 or mixed), its download size and its updates:
 .TP
 .B Critical updates
@@ -42,10 +41,6 @@ updates from the Debian security archive (the Debian-Security label or a
 .TP
 .B Main updates
 everything else from the package sources, backports included.
-.TP
-.B Flatpak updates
-Flatpak applications and runtimes (\fBflatpak remote-ls --updates\fR); only
-shown when Flatpak is installed and has updates.
 .PP
 Updates show the application's name and icon when the package ships a desktop
 file, otherwise the package's short description. \fBTechnical description\fR
@@ -54,9 +49,9 @@ shows the selected update's versions, origin, size and changelog
 changelog), loaded in the background with a time limit. The line below tells
 how much will be downloaded.
 .PP
-\fBInstall Now\fR installs the checked updates: all APT updates checked means a
+\fBInstall Now\fR installs the checked updates: all updates checked means a
 full upgrade, otherwise \fBapt-get install --only-upgrade\fR (or PackageKit) of
-the checked packages, followed by \fBflatpak update\fR of the checked refs.
+the checked packages.
 Progress, the current package and the log appear in the window; when a restart
 is needed, \fBRestart Now\fR and \fBLater\fR are offered. \fBRemind Me Later\fR
 closes the window and silences the notification for a day (see
@@ -76,11 +71,9 @@ The window follows the SDE theme, including changes made while it is open.
 Transactions run in a helper process and report per-package progress. They use
 PackageKit (\fBpkcon\fR) when its daemon is available, which applies the
 system's polkit policy and can be cancelled; otherwise, and for cleaning and
-removing unused packages, \fBapt-get\fR runs through \fBpkexec\fR. Flatpak
-updates run \fBflatpak update\fR as the user; Flatpak's own polkit rules cover
-system installations. Software Updater never runs APT as root by itself,
-accepts no repository URLs or options, and validates every package name and
-Flatpak reference.
+removing unused packages, \fBapt-get\fR runs through \fBpkexec\fR. Software
+Updater never runs APT as root by itself, accepts no repository URLs or
+options, and validates every package name.
 .PP
 Debian testing transitions can require manual APT decisions; a preview from the
 local cache does not guarantee that every upgrade is currently resolvable.
@@ -101,9 +94,7 @@ Print the package sources (SDE-SOURCES 1) and exit.
 .TP
 .BI --plan " ACTION" " " [PACKAGE...]
 Print the fixed argument vector of \fBrefresh\fR, \fBupgrade\fR,
-\fBautoremove\fR, \fBclean\fR or \fBrepair\fR without running it, or of
-\fBflatpak\fR \fIINSTALLATION\fB:\fIREF\fR... (\fIINSTALLATION\fR is
-\fBsystem\fR or \fBuser\fR).
+\fBautoremove\fR, \fBclean\fR or \fBrepair\fR without running it.
 .TP
 .B --transaction refresh|upgrade
 Run the interactive PackageKit operation in the current terminal.
@@ -130,7 +121,7 @@ How long \fBRemind Me Later\fR silences the notification: 1, 4, 24 (default),
 72 or 168 hours.
 .SH FILES
 .I /usr/share/sde/update/
-helpers: check.py, model.py, flatpak.py, history.py, sources.py, changelog.py,
+helpers: check.py, model.py, history.py, sources.py, changelog.py,
 transaction.py
 .br
 .I ~/.local/state/sde/update-notifier
@@ -138,6 +129,6 @@ time of the last automatic check and the end of Remind Me Later
 .SH SEE ALSO
 .BR pkcon (1),
 .BR pkexec (1),
-.BR flatpak (1),
+.BR merkadu (1),
 .BR sde-suite (1),
 .BR apt-get (8)

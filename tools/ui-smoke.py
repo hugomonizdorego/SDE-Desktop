@@ -76,8 +76,8 @@ if args.themes_dir and (args.themes_dir / "SDE-Graphite-Light-Blue/openbox-3/the
 (home / "qa").mkdir()
 fixtures = home / "fixtures"
 fixtures.mkdir()
-# Software Updater: fake python-apt, flatpak and desktop files so that the
-# Critical, Security, Main and Flatpak groups all appear (tools/update_fixture.py).
+# Software Updater: fake python-apt and desktop files so that the Critical,
+# Security and Main groups all appear (tools/update_fixture.py).
 import sys as _sys  # noqa: E402
 
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -870,8 +870,6 @@ try:
     assert {r[1] for r in records} == {"kernel", "security", "package"}, metadata
     assert any(r[14] == "required" for r in records), metadata  # glibc: Critical
     assert any(r[17] == "Firefox ESR" for r in records), metadata  # desktop file name
-    plan = run("sde-update", "--plan", "flatpak", "system:app/org.gimp.GIMP/x86_64/stable").stdout
-    assert plan.splitlines()[1:3] == ["update", "--system"], plan
     for theme in ("light", "dark"):
         config(theme=theme)
         update = spawn("sde-update")
@@ -879,7 +877,7 @@ try:
         g = geom(updater)
         assert g["X"] >= 0 and g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
         assert g["X"] + g["WIDTH"] <= W, g
-        time.sleep(2)  # check.py and flatpak.py
+        time.sleep(2)  # check.py
         shot("09-update-" + theme)
         if theme == "light":
             # The technical description (Tab from the tree to its expander).
