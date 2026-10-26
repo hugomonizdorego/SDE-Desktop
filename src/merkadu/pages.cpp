@@ -954,10 +954,22 @@ void details_header(Page *page, const App &a) {
       else
         add(_("Remove"), Button::Danger, [id, chosen] { request_remove(id, chosen); });
     } else {
-      bool available = st.status(chosen).available || fake_mode();
+      const SourceStatus &ss = st.status(chosen);
+      bool available = ss.available || fake_mode();
       if (!available) {
-        new Label(bx, cy, tw, S(34), format(_("%s is not set up on this computer (see Sources)."),
-                                              source_label(chosen).c_str()), Label::DIM);
+        // Why it cannot be installed from here, and the way to fix it.
+        if (chosen == Source::Snap && !ss.installed)
+          add(_("Enable Snap Support"), Button::Primary, enable_snap);
+        else if (chosen == Source::Flatpak && !ss.installed)
+          add(_("Install Flatpak"), Button::Primary, [] { install_support(_("Flatpak support"), {"flatpak"}); });
+        else
+          add(_("Sources"), Button::Normal, [] { navigate(View{View::Sources, ""}); });
+        std::string why = chosen == Source::Snap && !ss.installed
+                              ? std::string(_("Snap support is not enabled on this computer."))
+                          : ss.message.empty()
+                              ? format(_("%s cannot be used on this computer now."), source_label(chosen).c_str())
+                              : format(_("%s cannot be used now: %s"), source_label(chosen).c_str(), ss.message.c_str());
+        new Label(bx, cy, tw - (bx - tx), S(34), why, Label::DIM);
       } else {
         add(_("Install"), Button::Primary, [id, chosen] { request_install(id, chosen); });
         long long size = o->download_size;

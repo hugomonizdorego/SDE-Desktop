@@ -1275,30 +1275,40 @@ int ScreenshotStrip::shot_at(int ex, int ey) const {
 
 void ScreenshotStrip::draw() {
   const Theme &t = active_theme();
-  Painter p(window()->w(), window()->h());
   std::vector<Box> b = boxes();
-  for (size_t i = 0; i < b.size(); ++i) {
-    int sx = b[i].x, sy = b[i].y, sw = b[i].w, sh = b[i].h;
-    double r = i == 0 ? S(10) : S(8);
-    p.fill_rounded(sx, sy, sw, sh, r, t.surface_alt);
-    // Thumbnails are about 600 px wide: a larger first screenshot (HiDPI)
-    // uses the full image.
-    bool full = i == 0 && !shots_[i].image.empty() && sw > 640;
-    cairo_surface_t *img = images::picture(full ? shots_[i].image : shots_[i].thumbnail, sw, sh);
-    if (img) {
-      double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
-      cairo_save(p.cr());
-      p.rounded_rect(sx, sy, sw, sh, r);
-      cairo_clip(p.cr());
-      p.surface(img, sx + (sw - iw) / 2, sy + (sh - ih) / 2);
-      cairo_restore(p.cr());
-    } else {
-      // Loading or missing: a picture symbol.
+  std::vector<Box> failed;  // could not be downloaded (offline, or gone)
+  {
+    Painter p(window()->w(), window()->h());
+    for (size_t i = 0; i < b.size(); ++i) {
+      int sx = b[i].x, sy = b[i].y, sw = b[i].w, sh = b[i].h;
+      double r = i == 0 ? S(10) : S(8);
+      p.fill_rounded(sx, sy, sw, sh, r, t.surface_alt);
+      // Thumbnails are about 600 px wide: a larger first screenshot (HiDPI)
+      // uses the full image.
+      bool full = i == 0 && !shots_[i].image.empty() && sw > 640;
+      std::string ref = full ? shots_[i].image : shots_[i].thumbnail;
+      cairo_surface_t *img = images::picture(ref, sw, sh);
       double s = S(28);
-      paint_symbol(p, Symbol::Folder, sx + (sw - s) / 2, sy + (sh - s) / 2, s, t.text_dim.alpha(0.5));
+      if (img) {
+        double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
+        cairo_save(p.cr());
+        p.rounded_rect(sx, sy, sw, sh, r);
+        cairo_clip(p.cr());
+        p.surface(img, sx + (sw - iw) / 2, sy + (sh - ih) / 2);
+        cairo_restore(p.cr());
+      } else if (images::failed(ref)) {
+        paint_symbol(p, Symbol::Warning, sx + (sw - s) / 2, sy + sh / 2.0 - s - S(4), s, t.text_dim.alpha(0.6));
+        failed.push_back(b[i]);
+      } else {
+        // Loading: a picture symbol.
+        paint_symbol(p, Symbol::Folder, sx + (sw - s) / 2, sy + (sh - s) / 2, s, t.text_dim.alpha(0.5));
+      }
+      p.stroke_rounded(sx + 0.5, sy + 0.5, sw - 1, sh - 1, r, int(i) == hover_ ? t.accent : t.border);
     }
-    p.stroke_rounded(sx + 0.5, sy + 0.5, sw - 1, sh - 1, r, int(i) == hover_ ? t.accent : t.border);
   }
+  text_font(t.font_size - S(1));
+  for (auto &f : failed)
+    draw_text(_("Screenshot not available"), f.x + S(8), f.y + f.h / 2 + S(2), f.w - S(16), S(22), t.text_dim, 1);
 }
 
 int ScreenshotStrip::handle(int e) {
