@@ -17,6 +17,7 @@
 #include "i18n.h"
 #include "icons.h"
 #include "image_cache.h"
+#include "packages_ui.h"
 #include "store.h"
 #include "ui.h"
 #include "util.h"
@@ -36,11 +37,12 @@ MainWindow *g_win = nullptr;
 Sidebar *g_sidebar = nullptr;
 Fl_Scroll *g_sidebar_scroll = nullptr;
 Page *g_page = nullptr;
-DrawnButton *g_back = nullptr;
+IconButton *g_back = nullptr, *g_forward = nullptr, *g_home = nullptr, *g_refresh = nullptr;
 SearchField *g_search = nullptr;
 View g_view;
 View g_built;  // the view of g_page
-std::vector<std::pair<View, int>> g_back_stack;  // view and how far it was scrolled
+// Views and how far they were scrolled.
+std::vector<std::pair<View, int>> g_back_stack, g_forward_stack;
 std::map<std::string, Source> g_chosen;
 // Named parts of the page for the QA dump, where they were built (page
 // content, unscrolled): name, x, y, w, h.
@@ -49,8 +51,9 @@ struct QaPart {
   int x, y, w, h;
 };
 std::vector<QaPart> g_qa_lines;
-int g_content_x = 0;
+int g_content_x = 0, g_title_x = 0;
 bool g_rebuild_pending = false;
+bool g_refresh_running = false;
 
 int topbar_h() { return S(64); }
 int sidebar_w(int win_w) { return win_w < S(760) ? S(176) : S(220); }
@@ -62,30 +65,43 @@ struct NavItem {
   std::string title;
   Symbol symbol = Symbol::Explore;
   std::string icon;     // departments: a theme icon instead of a symbol
-  std::string caption;  // a caption above it ("DEPARTMENTS")
+  std::string caption;  // a caption above it ("APPLICATIONS")
   std::string count;    // a small count on the right
+  bool strong = false;  // the count in the accent color
 };
 
 std::vector<NavItem> nav_items() {
   Store &st = Store::get();
   std::vector<NavItem> out;
-  auto add = [&](View::Kind k, const std::string &title, Symbol s, const std::string &count = "") {
+  auto add = [&](View::Kind k, const std::string &title, Symbol s, const std::string &count = "",
+                 bool strong = false) {
     NavItem n;
     n.view.kind = k;
     n.title = title;
     n.symbol = s;
     n.count = count;
+    n.strong = strong;
     out.push_back(n);
   };
-  add(View::Explore, _("Explore"), Symbol::Explore);
+  add(View::Explore, _("Home"), Symbol::Home);
   add(View::Installed, _("Installed"), Symbol::Installed);
-  size_t updates = st.updatable_apps().size();
-  add(View::Updates, _("Updates"), Symbol::Updates, updates ? std::to_string(updates) : "");
+  // The updates Merkadu installs itself: apps from Flatpak and Snap.
+  size_t updates = 0;
+  for (const App *a : st.updatable_apps())
+    for (auto &o : a->origins)
+      if (o.installed && o.update && o.source != Source::Debian) {
+        ++updates;
+        break;
+      }
+  add(View::Updates, _("Updates"), Symbol::Updates, updates ? std::to_string(updates) : "", true);
+  if (st.packages_available())
+    add(View::Packages, _("All Software"), Symbol::Package,
+        st.marks().empty() ? "" : std::to_string(st.marks().size()), true);
   add(View::History, _("History"), Symbol::History);
+  add(View::Sources, _("Sources"), Symbol::Sources);
   int active = st.active_jobs();
   if (!st.jobs().empty())
-    add(View::Progress, _("In Progress"), Symbol::Progress, active ? std::to_string(active) : "");
-  add(View::Sources, _("Sources"), Symbol::Sources);
+    add(View::Progress, _("In Progress"), Symbol::Progress, active ? std::to_string(active) : "", true);
   bool first = true;
   for (const Category *c : st.categories().sorted()) {
     NavItem n;
@@ -93,7 +109,7 @@ std::vector<NavItem> nav_items() {
     n.view.arg = c->id;
     n.title = c->title();
     n.icon = c->icon;
-    if (first) n.caption = _("DEPARTMENTS");
+    if (first) n.caption = _("APPLICATIONS");
     first = false;
     out.push_back(n);
   }
@@ -103,20 +119,22 @@ std::vector<NavItem> nav_items() {
 bool nav_selected(const NavItem &n) {
   if (n.view.kind == View::Category && g_view.kind == View::Category)
     return n.view.arg == g_view.arg.substr(0, g_view.arg.find('/'));
+  if (n.view.kind == View::Packages)
+    return g_view.kind == View::Packages || g_view.kind == View::Package || g_view.kind == View::Changes;
   return n.view.kind == g_view.kind && n.view.kind != View::Category;
 }
 
 class Sidebar : public Fl_Widget {
  public:
   Sidebar(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
-  int row_h() const { return S(32); }
+  int row_h() const { return S(34); }
   int top() const { return y() + S(80); }
   // The rows' y positions (captions make room above them).
   std::vector<int> rows(const std::vector<NavItem> &items) const {
     std::vector<int> ys;
     int cy = top();
     for (auto &n : items) {
-      if (!n.caption.empty()) cy += S(30);
+      if (!n.caption.empty()) cy += S(32);
       ys.push_back(cy);
       cy += row_h();
     }
@@ -151,12 +169,12 @@ class Sidebar : public Fl_Widget {
         if (!items[i].icon.empty())
           p.image(IconLoader::get({items[i].icon, "applications-other"}, is), x() + S(24), iy, is);
         else
-          paint_symbol(p, items[i].symbol, x() + S(24), iy, is, t.accent_text);
+          paint_symbol(p, items[i].symbol, x() + S(24), iy, is, cur ? t.accent_text : t.text);
         if (!items[i].count.empty()) {
           text_font(std::max(S(9), t.font_size - S(2)), true);
           int cw = std::max(S(22), text_width(items[i].count) + S(12));
           p.fill_rounded(x() + w() - S(18) - cw, ry + (row_h() - S(4) - S(20)) / 2.0, cw, S(20), S(10),
-                         items[i].view.kind == View::Updates ? t.accent : t.border);
+                         items[i].strong ? t.accent : t.border);
         }
       }
     }
@@ -175,7 +193,7 @@ class Sidebar : public Fl_Widget {
         text_font(std::max(S(9), t.font_size - S(2)), true);
         cw = std::max(S(22), text_width(items[i].count) + S(12));
         draw_text(items[i].count, x() + w() - S(18) - cw, ry + (row_h() - S(4) - S(20)) / 2, cw, S(20),
-                  items[i].view.kind == View::Updates ? t.on_accent : t.text, 1);
+                  items[i].strong ? t.on_accent : t.text, 1);
       }
       text_font(t.font_size, cur);
       int tw = w() - S(66) - (cw ? cw + S(8) : 0);
@@ -275,6 +293,15 @@ void qa_collect(Fl_Widget *w, const Fl_Widget *view, std::string &out) {
 void qa_dump();
 int scrolled();
 
+// The line below the page title: what the refresh does, or how it went.
+std::string header_status() {
+  const RefreshState &r = Store::get().refresh_state();
+  if (r.running) return r.status.empty() ? std::string(_("Refreshing the software lists\xE2\x80\xA6")) : r.status;
+  if (!r.errors.empty()) return _("Some software lists could not be refreshed");
+  if (Store::get().catalog_loading()) return _("Reading the software catalog\xE2\x80\xA6");
+  return "";
+}
+
 class MainWindow : public BufferedWindow {
  public:
   MainWindow(int w, int h) : BufferedWindow(w, h, _("Merkadu")) {}
@@ -285,11 +312,19 @@ class MainWindow : public BufferedWindow {
       p.fill_rect(0, 0, w(), h(), t.background);
       p.line(g_content_x, topbar_h() - 0.5, w(), topbar_h() - 0.5, t.border.alpha(0.6));
     }
-    // The page title in the bar.
-    int tx = g_content_x + (g_back && g_back->visible() ? S(72) : S(28));
+    // The page title in the bar, with the refresh status below it.
+    int tx = g_title_x;
     int tw = (g_search ? g_search->frame->x() : w()) - tx - S(16);
+    std::string status = header_status();
     text_font(t.font_size + 5, true);
-    draw_text(view_title(g_view), tx, 0, tw, topbar_h(), t.text);
+    if (status.empty()) {
+      draw_text(view_title(g_view), tx, 0, tw, topbar_h(), t.text);
+    } else {
+      draw_text(view_title(g_view), tx, S(8), tw, S(30), t.text);
+      text_font(std::max(S(9), t.font_size - S(1)));
+      bool problem = !Store::get().refresh_state().running && !Store::get().refresh_state().errors.empty();
+      draw_text(status, tx, S(36), tw, S(20), problem ? readable(t.warning, t.background) : t.text_dim);
+    }
     draw_children();
     qa_dump();
   }
@@ -303,6 +338,7 @@ class MainWindow : public BufferedWindow {
     if (e == FL_KEYBOARD || e == FL_SHORTCUT) {
       int k = Fl::event_key();
       bool ctrl = Fl::event_state() & FL_CTRL, alt = Fl::event_state() & FL_ALT;
+      bool typing = Fl::focus() == g_search;
       if (ctrl && (k == 'f' || k == 'k')) {
         if (g_search) g_search->take_focus();
         return 1;
@@ -311,18 +347,28 @@ class MainWindow : public BufferedWindow {
         hide();
         return 1;
       }
-      if ((alt && k == FL_Left) || (k == FL_BackSpace && Fl::focus() != g_search) ||
-          (k == FL_Escape && Fl::focus() != g_search)) {
+      if (ctrl && k == 'r') {
+        Store::get().refresh(true);
+        return 1;
+      }
+      if (k == FL_F + 5) {
+        Store::get().refresh(true);
+        return 1;
+      }
+      if (alt && k == FL_Right) {
+        go_forward();
+        return 1;
+      }
+      if (alt && k == FL_Home) {
+        go_home();
+        return 1;
+      }
+      if ((alt && k == FL_Left) || (k == FL_BackSpace && !typing) || (k == FL_Escape && !typing)) {
         if (!g_back_stack.empty()) {
           go_back();
           return 1;
         }
         if (k == FL_Escape) return 1;  // Escape does not close the window
-      }
-      if (k == FL_F + 5) {
-        Store::get().reload_all();
-        Store::get().probe_sources();
-        return 1;
       }
     }
     int r = BufferedWindow::handle(e);
@@ -339,25 +385,43 @@ void MainWindow::layout() {
     g_sidebar_scroll->resize(0, 0, side, H);
     g_sidebar->resize(0, 0, side - S(10), std::max(H, g_sidebar->content_h()));
   }
-  int cw = W - side;
-  int search_w = std::max(S(170), std::min(S(340), int(cw * 0.42)));
+  int bs = S(36), by = (topbar_h() - bs) / 2, bx = side + S(14);
+  for (IconButton *b : {g_back, g_forward, g_home}) {
+    if (!b) continue;
+    b->resize(bx, by, bs, bs);
+    bx += bs + S(2);
+  }
+  g_title_x = bx + S(12);
+  int rx = W - S(18) - bs;
+  if (g_refresh) g_refresh->resize(rx, by, bs, bs);
+  int cw = rx - g_title_x;
+  int search_w = std::max(S(160), std::min(S(340), int(cw * 0.48)));
   int sh = S(38), sy = (topbar_h() - sh) / 2;
   if (g_search) {
-    g_search->frame->resize(W - S(24) - search_w, sy, search_w, sh);
-    g_search->resize(W - S(24) - search_w + S(36), sy + S(4), search_w - S(50), sh - S(8));
+    int sx = rx - S(8) - search_w;
+    g_search->frame->resize(sx, sy, search_w, sh);
+    g_search->resize(sx + S(36), sy + S(4), search_w - S(50), sh - S(8));
   }
-  if (g_back) g_back->resize(side + S(20), (topbar_h() - S(36)) / 2, S(40), S(36));
   rebuild_page();
 }
 
 void qa_dump() {
   const char *dir = getenv("SDE_PANEL_QA_DIR");
   if (!dir || !*dir || !g_win) return;
+  Store &st = Store::get();
   std::string text = std::string("@page:") + view_id(g_view.kind) + (g_view.arg.empty() ? "" : ":" + g_view.arg) +
                      "\t0\t0\t0\t0\t1\t0\n";
-  text += "@state:catalog=" + std::string(Store::get().catalog_loaded() ? "1" : "0") +
-          ",apps=" + std::to_string(Store::get().catalog().size()) + ",jobs=" +
-          std::to_string(Store::get().active_jobs()) + "\t0\t0\t0\t0\t1\t0\n";
+  text += "@state:catalog=" + std::string(st.catalog_loaded() ? "1" : "0") +
+          ",apps=" + std::to_string(st.catalog().size()) + ",jobs=" + std::to_string(st.active_jobs()) +
+          "\t0\t0\t0\t0\t1\t0\n";
+  text += "@refresh:running=" + std::string(st.refresh_state().running ? "1" : "0") +
+          ",errors=" + std::to_string(st.refresh_state().errors.size()) +
+          ",done=" + std::string(st.refresh_state().finished ? "1" : "0") + "\t0\t0\t0\t0\t1\t0\n";
+  text += "@packages:loaded=" + std::string(st.packages_loaded() ? "1" : "0") +
+          ",count=" + std::to_string(st.packages().size()) + ",marks=" + std::to_string(st.marks().size()) +
+          "\t0\t0\t0\t0\t1\t0\n";
+  text += "@nav:back=" + std::to_string(g_back_stack.size()) + ",forward=" + std::to_string(g_forward_stack.size()) +
+          "\t0\t0\t0\t0\t1\t0\n";
   // Where the parts are now: the page may be scrolled.
   int dy = scrolled();
   for (const QaPart &q : g_qa_lines) {
@@ -417,6 +481,26 @@ void restore_scroll(int amount) {
   if (target > now) g_page->scroll_to(0, g_page->yposition() + (target - now));
 }
 
+void update_bar() {
+  if (g_back) {
+    if (g_back_stack.empty()) g_back->deactivate();
+    else g_back->activate();
+  }
+  if (g_forward) {
+    if (g_forward_stack.empty()) g_forward->deactivate();
+    else g_forward->activate();
+  }
+  if (g_home) {
+    if (g_view.kind == View::Explore) g_home->deactivate();
+    else g_home->activate();
+  }
+  if (g_refresh) g_refresh->spinning(Store::get().refresh_state().running);
+  if (g_search) {
+    bool packages = g_view.kind == View::Packages;
+    g_search->placeholder(packages ? _("Search packages") : _("Search apps"));
+  }
+}
+
 void do_rebuild(void *) {
   g_rebuild_pending = false;
   if (!g_win) return;
@@ -443,12 +527,7 @@ void do_rebuild(void *) {
   g_page_top0 = 0;
   g_page_top0 = content_top();
   restore_scroll(scroll);
-  if (g_back) {
-    if (g_back_stack.empty())
-      g_back->hide();
-    else
-      g_back->show();
-  }
+  update_bar();
   if (g_sidebar) {
     g_sidebar->size(g_sidebar->w(), std::max(g_sidebar_scroll->h(), g_sidebar->content_h()));
     g_sidebar_scroll->redraw();
@@ -462,6 +541,10 @@ void schedule_rebuild() {
   Fl::add_timeout(0.0, do_rebuild);
 }
 
+bool packages_view() {
+  return g_view.kind == View::Packages || g_view.kind == View::Package || g_view.kind == View::Changes;
+}
+
 void on_store_event(Event e) {
   if (!g_win) return;
   switch (e) {
@@ -471,7 +554,9 @@ void on_store_event(Event e) {
       if (g_sidebar) g_sidebar->redraw();
       break;
     case Event::Sources:
-      if (g_view.kind == View::Sources || g_view.kind == View::Details) schedule_rebuild();
+      if (g_view.kind == View::Sources || g_view.kind == View::Details || g_view.kind == View::Explore ||
+          g_view.kind == View::Updates)
+        schedule_rebuild();
       break;
     case Event::History:
       if (g_view.kind == View::History) schedule_rebuild();
@@ -479,6 +564,23 @@ void on_store_event(Event e) {
     case Event::Search:
       if (g_view.kind == View::Search || g_view.kind == View::Category || g_view.kind == View::Details)
         schedule_rebuild();
+      break;
+    case Event::Refresh: {
+      // Progress: the status line; start and end: the pages that show it.
+      bool running = Store::get().refresh_state().running;
+      update_bar();
+      if (running != g_refresh_running) {
+        g_refresh_running = running;
+        if (g_view.kind == View::Explore || g_view.kind == View::Sources || packages_view() ||
+            g_view.kind == View::Updates)
+          schedule_rebuild();
+      }
+      g_win->redraw();
+      break;
+    }
+    case Event::Packages:
+      if (packages_view() || g_view.kind == View::Explore || g_view.kind == View::Search) schedule_rebuild();
+      if (g_sidebar) g_sidebar->redraw();
       break;
     default:
       schedule_rebuild();
@@ -495,6 +597,13 @@ void store_search(void *) {
 
 void search_changed(Fl_Widget *, void *) {
   std::string q = trim(g_search->value());
+  if (g_view.kind == View::Packages) {
+    // All Software filters its list in place.
+    PackageFilter f = packages_filter(g_view.arg);
+    f.query = q;
+    replace_view(View{View::Packages, packages_view_arg(f)});
+    return;
+  }
   if (q.empty()) {
     if (g_view.kind == View::Search) go_back();
     return;
@@ -511,6 +620,21 @@ void search_changed(Fl_Widget *, void *) {
   Fl::add_timeout(0.5, store_search);
 }
 
+// The search text a view shows in the bar.
+std::string search_text_of(const View &v) {
+  if (v.kind == View::Search) return v.arg;
+  if (v.kind == View::Packages) return packages_filter(v.arg).query;
+  return "";
+}
+
+void show_view(const View &v, int scroll) {
+  g_view = v;
+  if (g_search) g_search->value(search_text_of(g_view).c_str());
+  do_rebuild(nullptr);
+  if (g_page) restore_scroll(scroll);
+  if (g_sidebar) g_sidebar->redraw();
+}
+
 }  // namespace
 
 const char *view_id(View::Kind k) {
@@ -523,12 +647,19 @@ const char *view_id(View::Kind k) {
     case View::History: return "history";
     case View::Progress: return "progress";
     case View::Sources: return "sources";
+    case View::Packages: return "packages";
+    case View::Package: return "package";
+    case View::Changes: return "changes";
     default: return "explore";
   }
 }
 
 bool view_from_id(const std::string &id, View::Kind *out) {
-  for (int k = View::Explore; k <= View::Sources; ++k)
+  if (id == "home") {
+    *out = View::Explore;
+    return true;
+  }
+  for (int k = View::Explore; k <= View::Changes; ++k)
     if (id == view_id(View::Kind(k))) {
       *out = View::Kind(k);
       return true;
@@ -542,22 +673,39 @@ void navigate(const View &v) {
   if (v == g_view) return;
   if (g_page) g_back_stack.push_back({g_view, scrolled()});
   if (g_back_stack.size() > 40) g_back_stack.erase(g_back_stack.begin());
+  g_forward_stack.clear();
   g_view = v;
-  if (v.kind != View::Search && g_search && *g_search->value()) g_search->value("");
+  if (g_search) {
+    std::string text = search_text_of(v);
+    if (text != g_search->value()) g_search->value(text.c_str());
+  }
   schedule_rebuild();
   if (g_sidebar) g_sidebar->redraw();
+}
+
+void replace_view(const View &v) {
+  if (v == g_view) return;
+  g_view = v;
+  schedule_rebuild();
 }
 
 void go_back() {
   if (g_back_stack.empty()) return;
   auto prev = g_back_stack.back();
   g_back_stack.pop_back();
-  g_view = prev.first;
-  if (g_search) g_search->value(g_view.kind == View::Search ? g_view.arg.c_str() : "");
-  do_rebuild(nullptr);
-  if (g_page) restore_scroll(prev.second);
-  if (g_sidebar) g_sidebar->redraw();
+  g_forward_stack.push_back({g_view, scrolled()});
+  show_view(prev.first, prev.second);
 }
+
+void go_forward() {
+  if (g_forward_stack.empty()) return;
+  auto next = g_forward_stack.back();
+  g_forward_stack.pop_back();
+  g_back_stack.push_back({g_view, scrolled()});
+  show_view(next.first, next.second);
+}
+
+void go_home() { navigate(View{View::Explore, ""}); }
 
 void rebuild_page() { schedule_rebuild(); }
 
@@ -592,7 +740,9 @@ AppInfo about_info() {
   info.description = _("Find, install, update and remove software from the Debian archive, Flatpak and Snap.");
   info.credits = {toolkit_credit(),
                   _("Departments, lobby and history after Ubuntu Software Center"),
-                  _("Software catalog read with libappstream; Flatpak with libflatpak"),
+                  _("All Software works like Synaptic: every package by section and status, changes marked and "
+                    "applied together"),
+                  _("Software catalog read with libappstream; package lists with libapt-pkg; Flatpak with libflatpak"),
                   _("Debian packages installed with PackageKit; snaps with snapd")};
   return info;
 }
@@ -657,7 +807,9 @@ void request_remove(const std::string &app_id, Source s) {
       fl_alert(_("%s cannot be removed:\n\n%s"), name.c_str(), c.error.c_str());
       return;
     }
-    RemovalPlan plan = plan_removal(pkg, c.removed, st2.settings().protected_packages, c.system);
+    std::set<std::string> system = c.system;
+    for (auto &p : st2.system_packages()) system.insert(p);
+    RemovalPlan plan = plan_removal(pkg, c.removed, st2.settings().protected_packages, system);
     if (!plan.allowed) {
       fl_alert("%s", refusal_text(plan, name, pkg).c_str());
       return;
@@ -678,7 +830,7 @@ void request_remove(const std::string &app_id, Source s) {
 int run_window(const View &start) {
   Store &st = Store::get();
   // Centred in the work area with room for the title bar (fit_to_work_area).
-  int wx = 0, wy = 0, W = S(1100), H = S(720);
+  int wx = 0, wy = 0, W = S(1180), H = S(760);
   fit_to_work_area(wx, wy, W, H);
   auto *win = new MainWindow(W, H);
   g_win = win;
@@ -694,32 +846,28 @@ int run_window(const View &start) {
   g_sidebar_scroll->scrollbar.selection_color(t.border.fl());
   g_sidebar = new Sidebar(0, 0, side - S(10), H);
   g_sidebar_scroll->end();
-  g_back = new DrawnButton(side + S(20), (topbar_h() - S(36)) / 2, S(40), S(36), [](Painter &p, bool hot, bool down) {
-    const Theme &th = active_theme();
-    if (hot || down)
-      p.fill_rounded(g_back->x(), g_back->y(), g_back->w(), g_back->h(), th.radius_for(g_back->h()),
-                     down ? th.hover.mix(th.text, 0.1) : th.hover);
-    double s = S(20);
-    paint_symbol(p, Symbol::Back, g_back->x() + (g_back->w() - s) / 2, g_back->y() + (g_back->h() - s) / 2, s,
-                 th.text);
-  }, nullptr, -1);
-  g_back->tooltip(_("Back"));
-  g_back->callback([](Fl_Widget *, void *) { go_back(); });
-  g_back->hide();
-  g_search = make_search_field(W - S(24) - S(340), (topbar_h() - S(38)) / 2, S(340), S(38),
-                               _("Search apps"));
+  int bs = S(36);
+  g_back = new IconButton(0, 0, bs, bs, Symbol::Back, _("Back"));
+  g_back->on_click = [] { go_back(); };
+  g_forward = new IconButton(0, 0, bs, bs, Symbol::Forward, _("Forward"));
+  g_forward->on_click = [] { go_forward(); };
+  g_home = new IconButton(0, 0, bs, bs, Symbol::Home, _("Home"));
+  g_home->on_click = [] { go_home(); };
+  g_search = make_search_field(W - S(24) - S(340), (topbar_h() - S(38)) / 2, S(340), S(38), _("Search apps"));
   g_search->callback(search_changed);
   g_search->on_enter = [] {
     std::string q = trim(g_search->value());
-    if (!q.empty()) Store::get().search_store(q);
+    if (!q.empty() && g_view.kind != View::Packages) Store::get().search_store(q);
   };
   g_search->on_escape = [] { go_back(); };
+  g_refresh = new IconButton(0, 0, bs, bs, Symbol::Refresh, _("Refresh the software lists"));
+  g_refresh->on_click = [] { Store::get().refresh(true); };
   win->end();
   win->size_range(std::min(W, S(640)), std::min(H, S(440)));
   win->resizable(win);
   win->xclass("merkadu");
   g_view = start;
-  if (start.kind == View::Search) g_search->value(start.arg.c_str());
+  if (g_search) g_search->value(search_text_of(start).c_str());
   st.listen(on_store_event);
   images::on_ready([] {
     for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) w->redraw();

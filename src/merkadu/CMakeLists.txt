@@ -54,6 +54,7 @@ add_executable(merkadu
   ${_src}/merkadu/store.cpp
   ${_src}/merkadu/window.cpp
   ${_src}/merkadu/pages.cpp
+  ${_src}/merkadu/packages_ui.cpp
   ${_src}/merkadu/ui.cpp
   ${_src}/merkadu/uninstall.cpp
   ${_src}/merkadu/selftest.cpp

@@ -108,7 +108,8 @@ class Chip : public Fl_Widget {
   Chip(int x, int y, int w, int h, const std::string &text, bool on);
   static int fit(const std::string &text);
   std::function<void()> on_click;
-  Color dot;  // a colored dot before the text (alpha 0: none)
+  Color dot;          // a colored dot before the text (alpha 0: none)
+  bool menu = false;  // a chevron after the text: it opens a menu (fit() + S(18))
   void draw() override;
   int handle(int e) override;
 

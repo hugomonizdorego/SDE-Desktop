@@ -28,6 +28,9 @@ cairo_surface_t *picture(const std::string &ref, int w, int h);
 // "snap-icon:NAME"; |fallback| (an icon name) while it is fetched or when
 // it is missing. Do not free it.
 cairo_surface_t *icon(const std::string &ref, int size, const std::string &fallback = "application-x-executable");
+// An icon file, URL or "snap-icon:NAME" scaled into |size| x |size|
+// (cached); nullptr while it is fetched or when it cannot be read.
+cairo_surface_t *icon_file(const std::string &ref, int size);
 // Forgets the decoded pictures (after a theme change or to save memory).
 void clear();
 

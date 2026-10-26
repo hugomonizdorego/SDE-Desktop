@@ -132,7 +132,7 @@ class Store {
   const RefreshState &refresh_state() const { return refresh_; }
 
   // All Software: every package APT knows (libapt-pkg).
-  bool packages_available() const { return apt::available() && !fake_mode(); }
+  bool packages_available() const { return fake_mode() || apt::available(); }
   bool packages_loaded() const { return packages_loaded_; }
   bool packages_loading() const { return packages_loading_; }
   const std::string &packages_error() const { return packages_error_; }
