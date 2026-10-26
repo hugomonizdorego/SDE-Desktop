@@ -122,6 +122,13 @@ add_test(NAME sde-photo-draw COMMAND sde-photo-draw-tests)
 add_executable(niny-tests test_niny.cpp)
 target_link_libraries(niny-tests PRIVATE niny-core)
 add_test(NAME niny-core COMMAND niny-tests)
+# Niny's tabs and menu bar on Xvfb (0.2 Alpha 3): each × closes its own tab,
+# the only tab stays, the menus open from the mouse and keyboard and fit.
+if(SDE_XVFB)
+  add_test(NAME niny-tabs-menus COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_niny_ui.py
+    $<TARGET_FILE:niny>)
+  set_tests_properties(niny-tabs-menus PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 
 # SDE Screen Lock and SDE Power: PAM conversation (fake PAM stack), password
 # buffer, attempt delays, inhibitors, idle stages, battery levels, brightness.
