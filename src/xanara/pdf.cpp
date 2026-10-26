@@ -186,6 +186,7 @@ std::unique_ptr<PdfFile> PdfFile::open(const std::string &path, const std::strin
   f->path_ = path;
   f->password_ = password;
   f->repaired_ = q.anyWarnings();
+  for (const auto &kv : q.getXRefTable()) f->base_max_id_ = std::max(f->base_max_id_, kv.first.getObj());
   if (!read_tail(path, f->base_size_, f->base_startxref_, f->base_xref_stream_)) f->base_startxref_ = -1;
   return f;
 }
@@ -270,6 +271,24 @@ QPDFObjectHandle PdfFile::add(QPDFObjectHandle direct) {
   QPDFObjectHandle h = qpdf_->makeIndirectObject(direct);
   changed_.insert(h.getObjGen());
   return h;
+}
+
+void PdfFile::adopt(QPDFObjectHandle obj) {
+  std::vector<QPDFObjectHandle> todo{obj};
+  while (!todo.empty()) {
+    QPDFObjectHandle o = todo.back();
+    todo.pop_back();
+    if (o.isIndirect() && (o.getObjGen().getObj() <= base_max_id_ || !changed_.insert(o.getObjGen()).second))
+      continue;
+    if (o.isArray()) {
+      for (auto x : o.getArrayAsVector()) todo.push_back(x);
+    } else if (o.isDictionary()) {
+      for (const auto &k : o.getKeys()) todo.push_back(o.getKey(k));
+    } else if (o.isStream()) {
+      QPDFObjectHandle d = o.getDict();
+      for (const auto &k : d.getKeys()) todo.push_back(d.getKey(k));
+    }
+  }
 }
 
 QPDFObjectHandle PdfFile::add_stream(const std::string &data, QPDFObjectHandle dict, bool compress) {

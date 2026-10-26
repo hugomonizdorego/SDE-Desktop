@@ -298,6 +298,7 @@ bool overlay_pages(PdfFile &pdf, const std::string &stamp_pdf, bool underlay, st
       QPDFObjectHandle pg = pdf.page(i);
       QPDFObjectHandle fo = QPDFPageObjectHelper(stamps[std::min(size_t(i), stamps.size() - 1)]).getFormXObjectForPage();
       QPDFObjectHandle copy = pdf.qpdf().copyForeignObject(fo);
+      pdf.adopt(copy);
       QPDFObjectHandle res = page_resources(pdf, pg);
       std::string nm = add_resource(pdf, pg, res, "/XObject", copy, "Fx");
       QPDFPageObjectHelper ph(pg);

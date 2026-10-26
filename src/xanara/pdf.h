@@ -110,6 +110,9 @@ class PdfFile {
   void changed(QPDFObjectHandle indirect);
   // Makes |direct| a new indirect object of this file.
   QPDFObjectHandle add(QPDFObjectHandle direct);
+  // Records the new objects reachable from |obj| (what copyForeignObject
+  // made, for example).
+  void adopt(QPDFObjectHandle obj);
   // A new stream; |data| is compressed with Flate unless |compress| is false.
   QPDFObjectHandle add_stream(const std::string &data, QPDFObjectHandle dict, bool compress = true);
   // Replaces the data of an existing stream (compressed with Flate).
@@ -143,6 +146,7 @@ class PdfFile {
   std::string path_, password_;
   bool repaired_ = false, structural_ = false, created_ = false;
   long long base_size_ = 0, base_startxref_ = -1;
+  int base_max_id_ = 0;  // objects above this number are new
   bool base_xref_stream_ = false;
   std::set<QPDFObjGen> changed_;
   std::vector<std::unique_ptr<PdfFile>> sources_;

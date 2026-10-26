@@ -223,6 +223,38 @@ void TextEdit::advances(std::vector<double> &adv, std::vector<Laid> &laid) const
     laid[i].ch = i;
     laid[i].nch = 0;  // no glyph until resolved
   }
+  // Which characters need an installed font: those the document's font
+  // has no glyph for, and then their whole word, so that no word is set
+  // in two fonts. Spaces go with the word before them.
+  std::vector<char> sys(n, 0);
+  for (size_t k = 0; k < n; ++k) {
+    const Char &c = chars_[k];
+    const TextStyle &st = styles_[size_t(c.style)];
+    if (is_break(c.cp)) continue;
+    bool doc = false;
+    if (st.font >= 0 && st.family.empty() && layout_) {
+      std::string b;
+      doc = (c.glyph >= 0 && layout_->glyphs[size_t(c.glyph)].font == st.font) ||
+            (c.cp != 0xFFFD && layout_->fonts[size_t(st.font)]->encode(c.cp, b));
+    }
+    sys[k] = !doc;
+  }
+  for (size_t a = 0; a < n;) {
+    if (is_break(chars_[a].cp) || is_space(chars_[a].cp)) {
+      ++a;
+      continue;
+    }
+    size_t b = a;
+    bool any = false;
+    for (; b < n && !is_break(chars_[b].cp) && !is_space(chars_[b].cp) && chars_[b].style == chars_[a].style; ++b)
+      if (sys[b]) any = true;
+    if (any)
+      for (size_t k = a; k < b; ++k)
+        if (chars_[k].cp != 0xFFFD) sys[k] = 1;  // a glyph without known text stays as it is
+    a = b;
+  }
+  for (size_t k = 1; k < n; ++k)
+    if (is_space(chars_[k].cp) && sys[k - 1] && chars_[k].style == chars_[k - 1].style) sys[k] = 1;
   size_t i = 0;
   while (i < n) {
     const Char &c = chars_[i];
@@ -232,7 +264,7 @@ void TextEdit::advances(std::vector<double> &adv, std::vector<Laid> &laid) const
       continue;
     }
     // An original glyph in its document font: its codes as they were.
-    if (c.glyph >= 0 && layout_ && st.font >= 0 && layout_->glyphs[size_t(c.glyph)].font == st.font) {
+    if (!sys[i] && c.glyph >= 0 && layout_ && st.font >= 0 && layout_->glyphs[size_t(c.glyph)].font == st.font) {
       const Glyph &g = layout_->glyphs[size_t(c.glyph)];
       Laid &L = laid[i];
       L.nch = 1;
@@ -247,8 +279,8 @@ void TextEdit::advances(std::vector<double> &adv, std::vector<Laid> &laid) const
       ++i;
       continue;
     }
-    // A new character in the document's font, when it has the glyph.
-    if (st.font >= 0 && st.family.empty() && layout_) {
+    // A new character in the document's font.
+    if (!sys[i] && st.font >= 0 && st.family.empty() && layout_) {
       const PdfFont &f = *layout_->fonts[size_t(st.font)];
       std::string b;
       if (c.cp != 0xFFFD && f.encode(c.cp, b)) {
@@ -263,9 +295,9 @@ void TextEdit::advances(std::vector<double> &adv, std::vector<Laid> &laid) const
         L.style = c.style;
         L.text = utf8(c.cp);
         adv[i] = (L.width * st.size + st.char_space) * st.hscale;
-        ++i;
-        continue;
       }
+      ++i;
+      continue;
     }
     // An installed font: shape the run of characters that use it.
     FontRequest req;
@@ -290,13 +322,8 @@ void TextEdit::advances(std::vector<double> &adv, std::vector<Laid> &laid) const
     std::u32string run(1, cp);
     while (j < n) {
       const Char &d = chars_[j];
-      if (d.style != c.style || is_break(d.cp) || d.glyph >= 0 || run.size() > 4000) break;
-      if (!(st.font >= 0 && st.family.empty())) {
-        if (!f->covers(d.cp) && !is_space(d.cp)) break;
-      } else {
-        std::string b;
-        if (layout_->fonts[size_t(st.font)]->encode(d.cp, b) || !f->covers(d.cp)) break;
-      }
+      if (!sys[j] || d.style != c.style || is_break(d.cp) || run.size() > 4000) break;
+      if (!f->covers(d.cp) && !is_space(d.cp)) break;
       run += d.cp;
       ++j;
     }
@@ -373,6 +400,8 @@ void TextEdit::relayout() {
         const Glyph &last = layout_->glyphs[size_t(layout_->lines[size_t(layout_->blocks[size_t(block_)].lines[size_t(row)])].glyphs.back())];
         kept = last.end.x <= x0_ + width_ + 0.5;
       }
+      // Text typed after the last original line continues that line.
+      if (kept && size_t(row) + 1 == orig_lengths_.size() && i + len < n && chars_[i + len].cp != '\n') kept = false;
       if (kept) r.end = i + len;
     }
     if (!kept) {
@@ -990,7 +1019,10 @@ std::string TextEdit::content(PdfFile &pdf, QPDFObjectHandle owner, QPDFObjectHa
     auto it = doc_names.find(font);
     if (it != doc_names.end()) return it->second;
     QPDFObjectHandle dict = layout_->font_dicts[size_t(font)];
-    if (dict.getOwningQPDF() != &pdf.qpdf()) dict = pdf.qpdf().copyForeignObject(dict);
+    if (dict.getOwningQPDF() != &pdf.qpdf()) {
+      dict = pdf.qpdf().copyForeignObject(dict);
+      pdf.adopt(dict);
+    }
     std::string name = add_resource(pdf, owner, resources, "/Font", dict, "Xf");
     doc_names[font] = name;
     return name;

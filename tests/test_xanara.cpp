@@ -35,6 +35,15 @@ static int failures = 0;
       ++failures;                                                           \
     }                                                                       \
   } while (0)
+// The same for calls that explain a failure in |error|.
+#define CHECK_OK(call)                                                                              \
+  do {                                                                                              \
+    error.clear();                                                                                  \
+    if (!(call)) {                                                                                  \
+      fprintf(stderr, "%s:%d: CHECK failed: %s (%s)\n", __FILE__, __LINE__, #call, error.c_str()); \
+      ++failures;                                                                                   \
+    }                                                                                               \
+  } while (0)
 
 static std::string make_pdf(const std::string &dir, int pages) {
   std::string path = dir + "/sample.pdf";
@@ -628,9 +637,9 @@ static void test_layout_and_edit(const std::string &dir) {
   if (lines.size() == 3) CHECK(!lines[0].kept && lines[1].kept && lines[2].kept);
   CHECK(ed.undo() && ed.text().find("quick brown fox") != std::string::npos);
   CHECK(ed.redo() && ed.text().find("quick red fox") != std::string::npos);
-  CHECK(commit_text(*pdf, *layout, ed, error));
+  CHECK_OK(commit_text(*pdf, *layout, ed, error));
   std::string out = dir + "/report-edited.pdf";
-  CHECK(pdf->write(out, PdfFile::Write::Auto, error));
+  CHECK_OK(pdf->write(out, PdfFile::Write::Auto, error));
   // An incremental update: the original bytes come first, unchanged.
   std::string a, b;
   CHECK(read_file(src, a) && read_file(out, b) && b.size() > a.size() && b.compare(0, a.size(), a) == 0);
@@ -657,9 +666,9 @@ static void test_layout_and_edit(const std::string &dir) {
   CHECK(ed2.start(layout, sig));
   ed2.move_end(false, true);
   ed2.insert(" — Quintão & Żółw");
-  CHECK(commit_text(*pdf, *layout, ed2, error));
+  CHECK_OK(commit_text(*pdf, *layout, ed2, error));
   std::string out2 = dir + "/report-edited2.pdf";
-  CHECK(pdf->write(out2, PdfFile::Write::Auto, error));
+  CHECK_OK(pdf->write(out2, PdfFile::Write::Auto, error));
   PageText third = poppler_text(out2, 0);
   CHECK(third.text.find("Signed in Lisbon — Quintão & Żółw") != std::string::npos);
   CHECK(third.text.find("quick red fox") != std::string::npos);
@@ -713,7 +722,7 @@ static void test_new_text_and_styles(const std::string &dir) {
   ed.set_caret(ed.size(), true);
   ed.restyle([](TextStyle &st) { st.bold = true; });
   CHECK(ed.style_at_caret().bold && ed.style_at_caret().font < 0);
-  CHECK(commit_text(*pdf, *layout, ed, error));
+  CHECK_OK(commit_text(*pdf, *layout, ed, error));
   // A new text box elsewhere.
   TextEdit nb;
   TextStyle st;
@@ -728,9 +737,9 @@ static void test_new_text_and_styles(const std::string &dir) {
   nb.new_paragraph();
   nb.insert("and two");
   CHECK(nb.lines().size() == 2);
-  CHECK(commit_text(*pdf, *layout, nb, error));
+  CHECK_OK(commit_text(*pdf, *layout, nb, error));
   std::string out = dir + "/base14-edited.pdf";
-  CHECK(pdf->write(out, PdfFile::Write::Auto, error));
+  CHECK_OK(pdf->write(out, PdfFile::Write::Auto, error));
   PageText pt = poppler_text(out, 0);
   CHECK(pt.text.find("SDE Suite - Xanara Editor") != std::string::npos);
   CHECK(pt.text.find("Fresh line one") != std::string::npos && pt.text.find("and two") != std::string::npos);
@@ -785,12 +794,12 @@ static void test_files(const std::string &dir) {
   std::string a = make_report(dir, "a.pdf"), b = make_pdf(dir, 3), error;
   // Merge and split.
   std::string merged = dir + "/merged.pdf";
-  CHECK(merge_files({a, b}, merged, error));
+  CHECK_OK(merge_files({a, b}, merged, error));
   std::unique_ptr<PdfFile> m = PdfFile::open(merged, "", error);
   CHECK(m && m->count() == 4);
   if (!m) return;
   std::vector<std::string> parts;
-  CHECK(split_pages(*m, 3, dir + "/part-%d.pdf", parts, error));
+  CHECK_OK(split_pages(*m, 3, dir + "/part-%d.pdf", parts, error));
   CHECK(parts.size() == 2);
   if (parts.size() == 2) {
     CHECK(PdfFile::open(parts[0], "", error)->count() == 3);
@@ -798,22 +807,22 @@ static void test_files(const std::string &dir) {
   }
   // Pages: rotate, reorder (delete page 2), insert, extract.
   CHECK(rotate_pages(*m, {0}, 90));
-  CHECK(reorder_pages(*m, {3, 0, 2}, error));
-  CHECK(insert_pages(*m, 0, {a}, error));
+  CHECK_OK(reorder_pages(*m, {3, 0, 2}, error));
+  CHECK_OK(insert_pages(*m, 0, {a}, error));
   std::string pages = dir + "/pages.pdf";
-  CHECK(m->write(pages, PdfFile::Write::Auto, error));
+  CHECK_OK(m->write(pages, PdfFile::Write::Auto, error));
   std::unique_ptr<PdfFile> p = PdfFile::open(pages, "", error);
   CHECK(p && p->count() == 4 && p->geometry(2).rotate == 90);
   CHECK(poppler_text(pages, 0).text.find("page 3") != std::string::npos);
   CHECK(poppler_text(pages, 1).text.find("Quarterly") != std::string::npos);
   std::string ex = dir + "/extract.pdf";
-  CHECK(extract_pages(*p, {1, 3}, ex, error));
+  CHECK_OK(extract_pages(*p, {1, 3}, ex, error));
   CHECK(PdfFile::open(ex, "", error)->count() == 2);
   // Encryption round trip; an encrypted file is edited and stays encrypted.
   std::string locked = dir + "/locked.pdf";
   Permissions perms;
   perms.print = false;
-  CHECK(write_protected(*PdfFile::open(a, "", error), locked, "secret", "owner", perms, error));
+  CHECK_OK(write_protected(*PdfFile::open(a, "", error), locked, "secret", "owner", perms, error));
   bool enc = false;
   CHECK(PdfFile::open(locked, "", error, &enc) == nullptr && enc);
   CHECK(!poppler_text(locked, 0).ok);
@@ -826,9 +835,9 @@ static void test_files(const std::string &dir) {
     CHECK(sig >= 0 && ed.start(layout, sig));
     ed.move_end(false, true);
     ed.insert(" today");
-    CHECK(commit_text(*l, *layout, ed, error));
+    CHECK_OK(commit_text(*l, *layout, ed, error));
     std::string locked2 = dir + "/locked2.pdf";
-    CHECK(l->write(locked2, PdfFile::Write::Auto, error));
+    CHECK_OK(l->write(locked2, PdfFile::Write::Auto, error));
     CHECK(!poppler_text(locked2, 0).ok);
     CHECK(poppler_text(locked2, 0, "secret").text.find("Signed in Lisbon today") != std::string::npos);
     std::string open = dir + "/unlocked.pdf";
@@ -851,9 +860,9 @@ static void test_files(const std::string &dir) {
     CHECK(h >= 0 && ed.start(layout, h));
     ed.select_all();
     ed.insert("Annual Report");
-    CHECK(commit_text(*pk, *layout, ed, error));
+    CHECK_OK(commit_text(*pk, *layout, ed, error));
     std::string out = dir + "/packed-edited.pdf";
-    CHECK(pk->write(out, PdfFile::Write::Auto, error));
+    CHECK_OK(pk->write(out, PdfFile::Write::Auto, error));
     std::string bytes, before_bytes;
     CHECK(read_file(out, bytes) && read_file(packed, before_bytes));
     CHECK(bytes.compare(0, before_bytes.size(), before_bytes) == 0);
@@ -873,7 +882,7 @@ static void test_files(const std::string &dir) {
     if (bf) {
       CHECK(rotate_pages(*bf, {0}, 180));
       std::string fixed = dir + "/fixed.pdf";
-      CHECK(bf->write(fixed, PdfFile::Write::Auto, error));
+      CHECK_OK(bf->write(fixed, PdfFile::Write::Auto, error));
       std::unique_ptr<PdfFile> ff = PdfFile::open(fixed, "", error);
       CHECK(ff && !ff->repaired() && ff->geometry(0).rotate == 180);
     }
@@ -903,7 +912,7 @@ static void test_objects(const std::string &dir) {
   CHECK(!add_field(*f, 0, Box{0, 0, 50, 50}, bad));
   CHECK(crop_pages(*f, {1}, Box{50, 50, 400, 500}));
   std::string out = dir + "/objects.pdf";
-  CHECK(f->write(out, PdfFile::Write::Auto, error));
+  CHECK_OK(f->write(out, PdfFile::Write::Auto, error));
   bool enc;
   auto d = Document::open(out, "", error, enc);
   CHECK(d && d->count() == 2);
@@ -923,11 +932,11 @@ static void test_objects(const std::string &dir) {
   std::unique_ptr<PdfFile> g = PdfFile::open(out, "", error);
   g->qpdf().getTrailer().replaceKey("/Info", g->add(QPDFObjectHandle::parse("<< /Author (Somebody) >>")));
   std::string with_info = dir + "/info.pdf";
-  CHECK(g->write(with_info, PdfFile::Write::Rewrite, error));
+  CHECK_OK(g->write(with_info, PdfFile::Write::Rewrite, error));
   g = PdfFile::open(with_info, "", error);
   CHECK(strip_metadata(*g) && !g->can_append());
   std::string stripped = dir + "/stripped.pdf";
-  CHECK(g->write(stripped, PdfFile::Write::Auto, error));
+  CHECK_OK(g->write(stripped, PdfFile::Write::Auto, error));
   std::string bytes;
   CHECK(read_file(stripped, bytes) && bytes.find("Somebody") == std::string::npos);
   // Stamps over every page.
@@ -938,15 +947,15 @@ static void test_objects(const std::string &dir) {
   std::string stamp = dir + "/bates.pdf";
   CHECK(write_stamp_pdf(stamp, {Point{595, 842}, Point{595, 842}}, st, error));
   std::unique_ptr<PdfFile> h = PdfFile::open(src, "", error);
-  CHECK(overlay_pages(*h, stamp, false, error));
+  CHECK_OK(overlay_pages(*h, stamp, false, error));
   std::string stamped = dir + "/stamped.pdf";
-  CHECK(h->write(stamped, PdfFile::Write::Auto, error));
+  CHECK_OK(h->write(stamped, PdfFile::Write::Auto, error));
   CHECK(poppler_text(stamped, 1).text.find("XAN000002") != std::string::npos);
   CHECK(poppler_text(stamped, 1).text.find("page 2") != std::string::npos);
   // Compression keeps the pages and their text.
   std::string small = dir + "/small.pdf";
   std::unique_ptr<PdfFile> c = PdfFile::open(stamped, "", error);
-  CHECK(write_compressed(*c, small, 150, error));
+  CHECK_OK(write_compressed(*c, small, 150, error));
   CHECK(poppler_text(small, 0).text.find("XAN000001") != std::string::npos);
 }
 
@@ -968,9 +977,9 @@ static void test_images_and_redaction(const std::string &dir) {
   int w = 0, h = 0;
   QPDFObjectHandle x = image_xobject(*f, png, w, h, error);
   CHECK(x.isStream() && w == 64 && h == 32 && x.getDict().getKey("/SMask").isStream());
-  CHECK(add_image(*f, 0, x, Box{100, 600, 228, 664}, error));
+  CHECK_OK(add_image(*f, 0, x, Box{100, 600, 228, 664}, error));
   std::string out = dir + "/img1.pdf";
-  CHECK(f->write(out, PdfFile::Write::Auto, error));
+  CHECK_OK(f->write(out, PdfFile::Write::Auto, error));
   f = PdfFile::open(out, "", error);
   std::unique_ptr<PageLayout> l = PageLayout::read(*f, 0);
   CHECK(l->images.size() == 1);
@@ -978,16 +987,16 @@ static void test_images_and_redaction(const std::string &dir) {
     const Box &b = l->images[0].box;
     CHECK(std::fabs(b.x1 - 100) < 0.01 && std::fabs(b.y1 - 600) < 0.01 && std::fabs(b.x2 - 228) < 0.01);
     CHECK(l->image_at(150, 630) == 0);
-    CHECK(move_image(*f, *l, 0, Box{300, 650, 364, 682}, error));
+    CHECK_OK(move_image(*f, *l, 0, Box{300, 650, 364, 682}, error));
     std::string out2 = dir + "/img2.pdf";
-    CHECK(f->write(out2, PdfFile::Write::Auto, error));
+    CHECK_OK(f->write(out2, PdfFile::Write::Auto, error));
     f = PdfFile::open(out2, "", error);
     l = PageLayout::read(*f, 0);
     CHECK(l->images.size() == 1 && std::fabs(l->images[0].box.x1 - 300) < 0.01 &&
           std::fabs(l->images[0].box.y2 - 682) < 0.01);
-    CHECK(delete_image(*f, *l, 0, error));
+    CHECK_OK(delete_image(*f, *l, 0, error));
     std::string out3 = dir + "/img3.pdf";
-    CHECK(f->write(out3, PdfFile::Write::Auto, error));
+    CHECK_OK(f->write(out3, PdfFile::Write::Auto, error));
     f = PdfFile::open(out3, "", error);
     CHECK(PageLayout::read(*f, 0)->images.empty());
   }
@@ -1004,10 +1013,10 @@ static void test_images_and_redaction(const std::string &dir) {
       found = true;
     }
   CHECK(found);
-  CHECK(redact_page(*f, 0, {target}, error));
+  CHECK_OK(redact_page(*f, 0, {target}, error));
   CHECK(!f->can_append());
   std::string red = dir + "/redacted.pdf";
-  CHECK(f->write(red, PdfFile::Write::Auto, error));
+  CHECK_OK(f->write(red, PdfFile::Write::Auto, error));
   PageText before = poppler_text(src, 0), after = poppler_text(red, 0);
   CHECK(after.text.find("brown") == std::string::npos);
   CHECK(after.text.find("quick") != std::string::npos && after.text.find("fox jumps") != std::string::npos);
