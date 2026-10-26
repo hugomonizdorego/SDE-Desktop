@@ -320,3 +320,10 @@ add_executable(account-rename-tests test_account_rename.cpp ${PROJECT_SOURCE_DIR
 target_include_directories(account-rename-tests PRIVATE ${PROJECT_SOURCE_DIR}/src/settings)
 target_link_libraries(account-rename-tests PRIVATE sde-installer-base)
 add_test(NAME account-rename COMMAND account-rename-tests $<TARGET_FILE:sde-account-rename>)
+# Users & Avatar: renaming an account with the fake AccountsService and the
+# real helper on a fake root (no pkexec), on Xvfb.
+if(SDE_XVFB)
+  add_test(NAME account-rename-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_account_rename_ui.py
+    $<TARGET_FILE:sde-settings> $<TARGET_FILE:sde-account-rename> $<TARGET_FILE:sde-panel-service-fixture>)
+  set_tests_properties(account-rename-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()
