@@ -485,25 +485,29 @@ void promo_card(Page *page, const std::string &id, Symbol s, const std::string &
 
 // What the user should know about the sources before the apps: lists that
 // could not be refreshed, a missing catalog or Flathub, PackageKit down.
-void source_notices(Page *page, bool full) {
+void source_notices(Page *page, bool full, bool catalog = true) {
   Store &st = Store::get();
   const RefreshState &r = st.refresh_state();
-  for (auto &e : r.errors)
+  const SourceStatus &deb = st.status(Source::Debian);
+  bool no_packagekit = st.probed(Source::Debian) && !deb.available && !fake_mode();
+  for (auto &e : r.errors) {
+    // Without PackageKit the notice below says it all.
+    if (no_packagekit && starts_with(e, source_label(Source::Debian) + ":")) continue;
     notice(page, "refresh-error", e, 2, false,
            {{_("Try Again"), [] { Store::get().refresh(true); }, false}, {_("Sources"), [] {
                                                                             navigate(View{View::Sources, ""});
                                                                           }}});
+  }
   if (full)
     for (auto &n : r.notes) notice(page, "refresh-note", n, 0);
-  const SourceStatus &deb = st.status(Source::Debian);
-  if (st.probed(Source::Debian) && !deb.available && !fake_mode())
+  if (no_packagekit)
     notice(page, "packagekit",
            format(_("Apps from %s cannot be installed or removed: %s Merkadu needs the PackageKit service "
                     "(package packagekit); start it or reinstall it with Software Updater or a terminal."),
                   source_label(Source::Debian).c_str(), deb.message.c_str()),
            2);
   const CatalogSources &cs = st.catalog_sources();
-  if (st.catalog_loaded() && !fake_mode() && !r.running) {
+  if (catalog && st.catalog_loaded() && !r.running) {
     if (!cs.appstream_apt)
       notice(page, "appstream",
              format(_("The catalog of the apps of %s is not downloaded: the appstream package is missing."),
@@ -671,7 +675,8 @@ std::vector<const App *> recommendations(std::string *why) {
 
 void build_explore(Page *page) {
   Store &st = Store::get();
-  source_notices(page, false);
+  // An empty catalog says itself what is missing.
+  source_notices(page, false, st.catalog().size() > 0);
   if (!st.catalog_loaded() || (st.catalog().size() == 0 && st.catalog_loading())) {
     // The catalog is being read: the shape of the page while it loads.
     int h = page->h() < S(470) ? S(180) : S(230);
@@ -754,7 +759,7 @@ void build_explore(Page *page) {
                              source_label(Source(s)).c_str()));
   std::string from;
   for (size_t i = 0; i < parts.size(); ++i) from += (i ? ", " : "") + parts[i];
-  std::time_t refreshed = std::max(st.refresh_state().finished, st.catalog_sources().lists_time);
+  std::time_t refreshed = std::max(st.refresh_state().succeeded, st.catalog_sources().lists_time);
   page->note(format(_("%s. Snaps are found when you search. The software lists were refreshed %s."), from.c_str(),
                     when_label(refreshed).c_str()));
   if (!st.catalog_error().empty())
@@ -1327,7 +1332,7 @@ void build_sources(Page *page) {
     std::string text = r.running ? r.status
                                  : format(_("The software lists were refreshed %s. Merkadu refreshes them when it "
                                             "starts (when they are older than %d minutes) and with Refresh."),
-                                          when_label(std::max(r.finished, st.catalog_sources().lists_time)).c_str(),
+                                          when_label(std::max(r.succeeded, st.catalog_sources().lists_time)).c_str(),
                                           st.settings().refresh_minutes);
     notice(page, "refresh", text, 0, r.running,
            r.running ? std::vector<NoticeButton>{}

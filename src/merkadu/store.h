@@ -42,7 +42,8 @@ struct RefreshState {
   bool user = false;         // asked for with the Refresh button
   std::string status;        // what it does now ("Downloading the package lists")
   int percent = -1;
-  std::time_t finished = 0;  // when the last one ended
+  std::time_t finished = 0;   // when the last one ended
+  std::time_t succeeded = 0;  // when one last ended without errors
   // What failed, by source ("Debian: Cannot download ..."); notes are
   // things that were skipped on purpose (no network, not authorized).
   std::vector<std::string> errors, notes;

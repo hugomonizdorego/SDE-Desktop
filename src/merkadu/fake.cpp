@@ -278,6 +278,11 @@ class FakeBackend : public Backend {
 
   void load_installed(AppsFn done) override {
     std::vector<App> out;
+    // MERKADU_FAKE_EMPTY=all: a system without any app at all.
+    if (env("MERKADU_FAKE_EMPTY") == "all") {
+      Fl::add_timeout(0.1, call_later, new std::function<void()>([done, out] { done(out, ""); }));
+      return;
+    }
     for (auto &a : world().apps)
       for (auto &o : a.origins)
         if (o.source == source_ && o.installed) {

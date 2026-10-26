@@ -881,7 +881,7 @@ void Banner::draw() {
   if (!a) return;
   double r = t.radius_large;
   int pad = S(32), plate = std::min(S(120), h() - 2 * pad), is = plate * 3 / 4;
-  bool shot = !a->screenshots.empty() && w() > S(700);
+  bool shot = !a->screenshots.empty() && w() > S(700) && !images::failed(a->screenshots[0].thumbnail);
   int shot_w = shot ? std::min(int(w() * 0.40), int((h() - S(40)) * 16 / 9.0)) : 0;
   int tx = x() + pad + plate + S(28), tw = w() - (tx - x()) - pad - (shot ? shot_w + S(28) : 0);
   // The app's own color, deep enough for white text.

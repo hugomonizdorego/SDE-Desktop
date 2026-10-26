@@ -151,6 +151,11 @@ std::list<std::pair<std::string, std::unique_ptr<Picture>>> g_pictures;  // most
 
 void on_ready(std::function<void()> fn) { g_ready.push_back(std::move(fn)); }
 
+bool failed(const std::string &ref) {
+  auto it = g_entries.find(ref);
+  return it != g_entries.end() && it->second.state == State::Failed;
+}
+
 std::string path(const std::string &ref) {
   if (ref.empty()) return "";
   if (ref[0] == '/') return file_exists(ref) ? ref : "";

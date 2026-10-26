@@ -270,6 +270,8 @@ class PackageTable : public Fl_Group {
     g_state.top = top_;
     g_state.arg = current_view().arg;
     bar_->value(top_, visible(), 0, std::max(visible(), count()));
+    // A thumb that can be grabbed, also for 90,000 rows.
+    bar_->slider_size(std::max(double(bar_->slider_size()), double(S(36)) / std::max(1, bar_->h())));
     if (count() <= visible()) bar_->hide();
     else bar_->show();
     redraw();

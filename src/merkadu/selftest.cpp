@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <set>
 
 #include "appstream_catalog.h"
 #include "apt_cache.h"
@@ -91,6 +92,7 @@ int run_self_test(const std::vector<std::string> &args) {
   std::vector<std::string> expect;
   int expect_flatpak = 0;
   bool list = false;
+  ChangeSet marks;
   for (size_t i = 0; i < args.size(); ++i) {
     if (args[i] == "--expect" && i + 1 < args.size())
       for (auto &r : split_list(args[++i])) expect.push_back(r);
@@ -98,6 +100,14 @@ int run_self_test(const std::vector<std::string> &args) {
       expect_flatpak = std::atoi(args[++i].c_str());
     else if (args[i] == "--list")
       list = true;
+    else if (args[i] == "--simulate" && i + 1 < args.size())
+      for (auto &m : split_list(args[++i])) {
+        // install:NAME, remove:NAME, update:NAME
+        size_t colon = m.find(':');
+        if (colon == std::string::npos) continue;
+        std::string what = m.substr(0, colon), name = m.substr(colon + 1);
+        marks.mark(name, what == "remove" ? Mark::Remove : what == "update" ? Mark::Upgrade : Mark::Install);
+      }
   }
   int problems = 0;
   IconLoader::set_theme("auto", false);
@@ -153,6 +163,27 @@ int run_self_test(const std::vector<std::string> &args) {
     if (!snap.error.empty()) {
       printf("  error: %s\n", snap.error.c_str());
       ++problems;
+    }
+    if (!marks.empty()) {
+      // What APT would do with the marked changes (All Software's summary).
+      ChangePlan plan = apt::simulate(marks);
+      auto list_of = [](const std::vector<std::string> &v) {
+        std::string s;
+        for (size_t i = 0; i < v.size() && i < 30; ++i) s += (i ? " " : "") + v[i];
+        if (v.size() > 30) s += " ...";
+        return s;
+      };
+      printf("  simulation: %s; download %s, disk %s%s\n", plan_counts(plan).c_str(), format_size(plan.download).c_str(),
+             plan.disk < 0 ? ("-" + format_size(-plan.disk)).c_str() : format_size(plan.disk).c_str(),
+             plan.error.empty() ? "" : ("; error: " + plan.error).c_str());
+      if (!plan.install.empty()) printf("    install: %s\n", list_of(plan.install).c_str());
+      if (!plan.upgrade.empty()) printf("    update: %s\n", list_of(plan.upgrade).c_str());
+      if (!plan.remove.empty()) printf("    remove: %s\n", list_of(plan.remove).c_str());
+      std::set<std::string> system;
+      for (auto &p : snap.packages)
+        if (p.system() && p.installed) system.insert(p.name);
+      for (auto &r : refused_removals(plan, system, default_protected_packages()))
+        printf("    refused: %s (%s)\n", r.first.c_str(), r.second ? "the system needs it" : "the desktop needs it");
     }
   } else {
     printf("\nPackages: this build has no libapt-pkg\n");

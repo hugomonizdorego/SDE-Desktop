@@ -19,6 +19,8 @@ namespace images {
 // A local file for |ref| (an absolute path, an https URL or
 // "snap-icon:NAME"); "" while it is being fetched or when it failed.
 std::string path(const std::string &ref);
+// True when |ref| could not be fetched or read (it is not tried again).
+bool failed(const std::string &ref);
 // Called (on the FLTK thread) whenever a download finished.
 void on_ready(std::function<void()> fn);
 // An image scaled to fit |w| x |h| (cached; nullptr while it is fetched or

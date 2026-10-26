@@ -592,7 +592,9 @@ void Store::fetch_details(const std::string &app_id) {
 
 void Store::refresh(bool user) {
   if (refresh_.running) return;
+  std::time_t succeeded = refresh_.succeeded;
   refresh_ = RefreshState();
+  refresh_.succeeded = succeeded;
   refresh_.running = true;
   refresh_.user = user;
   refresh_.status = _("Refreshing the software lists\xE2\x80\xA6");
@@ -640,6 +642,7 @@ void Store::refresh(bool user) {
           }
           refresh_.running = false;
           refresh_.finished = std::time(nullptr);
+          if (refresh_.errors.empty()) refresh_.succeeded = refresh_.finished;
           refresh_.status.clear();
           refresh_.percent = -1;
           if (refresh_catalog_) reload_catalog();
