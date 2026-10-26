@@ -672,6 +672,14 @@ def a3_menu_checks():
             g=geom(find('^SDE Menu$'))
             run('xdotool','mousemove',g['x']+t[0]+t[2]//2,g['y']+t[1]+t[3]//2,'click','4' if up else '5');time.sleep(.4)
         raise AssertionError('not in view: '+name)
+    def band():
+        """The open folder's applications in view, in reading order."""
+        apps=sorted((v[1],v[0],k[11:]) for k,v in L().items() if k.startswith('folder-app:'))
+        return [n for _,_,n in apps]
+    def shows(*names):
+        """Waits until the open folder shows |names| first: the QA dump
+        follows the saved tiles a moment later."""
+        waitfor(lambda:band()[:len(names)]==list(names),lambda:f'the folder shows {band()}, not {names}')
     def drag_to(src,dst,want,why):
         g=hold(find('^SDE Menu$'),src);glide(g,src,dst)
         waitfor(lambda:(lambda d:d is not None and want(d))(drop_target()),lambda:why+': '+str(drop_target()))
@@ -769,17 +777,18 @@ def a3_menu_checks():
     drag_to(center(item('SDE Menu','tile:Chat QA')),center(item('SDE Menu','folder:Web')),lambda d:d[2]==1,'no drop onto the folder')
     waitfor(lambda:'folder:Web/qa-browser.desktop/qa-mailer.desktop/qa-chat.desktop:m' in tiles_conf(),lambda:'Chat QA not in the folder: '+conf())
     press('SDE Menu','folder:Web');waitfor(lambda:folder_open('Web')==100,'the folder did not open')
-    first=item('SDE Menu','folder-app:Browser QA')
+    shows('Browser QA','Mailer QA');first=item('SDE Menu','folder-app:Browser QA')
     drag_to(center(item('SDE Menu','tile:Atlas')),(first[0]+first[2]//6,first[1]+first[3]//2),lambda d:d[2:4]==(2,0),
             'no drop into the open folder')
     waitfor(lambda:'folder:Web/qa-atlas.desktop/qa-browser.desktop/qa-mailer.desktop/qa-chat.desktop:m' in tiles_conf(),
             lambda:'Atlas not dropped into the folder: '+conf())
-    shot('73-menu-folder-four')
+    shows('Atlas','Browser QA');shot('73-menu-folder-four')
     reveal('folder-app:Chat QA');first=item('SDE Menu','folder-app:Atlas')
     drag_to(center(item('SDE Menu','folder-app:Chat QA')),(first[0]+first[2]//6,first[1]+first[3]//2),lambda d:d[2]==2,
             'no place in the folder')
     waitfor(lambda:'folder:Web/qa-chat.desktop/qa-atlas.desktop/qa-browser.desktop/qa-mailer.desktop:m' in tiles_conf(),
             lambda:'Chat QA not moved inside the folder: '+conf())
+    shows('Chat QA','Atlas')
     # Out again: dragged before the folder, from its menu, unpinned; a
     # folder left with one application becomes that application's tile.
     reveal('folder:Web',up=True);f=item('SDE Menu','folder:Web')
@@ -788,9 +797,11 @@ def a3_menu_checks():
     waitfor(lambda:tiles_conf().startswith('Mine,qa-atlas.desktop:m,folder:Web/qa-chat.desktop/qa-browser.desktop/qa-mailer.desktop:m'),
             lambda:'Atlas not taken out of the folder: '+conf())
     if shut():press('SDE Menu','folder:Web');waitfor(lambda:folder_open('Web')==100,'the folder did not open')
+    shows('Chat QA','Browser QA','Mailer QA')
     choose(right_click('folder-app:Chat QA'),'Remove from Folder')
     waitfor(lambda:'folder:Web/qa-browser.desktop/qa-mailer.desktop:m,qa-chat.desktop:m' in tiles_conf(),
             lambda:'Remove from Folder: '+conf())
+    shows('Browser QA','Mailer QA')
     choose(right_click('folder-app:Browser QA'),'Unpin from Start')
     waitfor(lambda:'folder:' not in tiles_conf() and 'qa-browser.desktop' not in tiles_conf() and
             'qa-mailer.desktop:m' in tiles_conf(),lambda:'a folder with one application stayed: '+conf())
