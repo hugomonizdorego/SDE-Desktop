@@ -331,8 +331,8 @@ static void settings() {
   CHECK(d.order[0] == Source::Debian);
   CHECK(d.recommended.count("graphics") && d.recommended.count("sound-video") && d.recommended.count("internet"));
   CHECK(d.refresh_on_start && d.refresh_minutes == 30 && d.setup_flathub);
-  // Firefox: the Flathub id, else Debian's ESR, else Ubuntu's package.
-  CHECK(std::find(d.featured.begin(), d.featured.end(), "org.mozilla.firefox|deb:firefox-esr|deb:firefox") !=
+  // Firefox: Debian's ESR, else the Flathub id, else another distribution's package.
+  CHECK(std::find(d.featured.begin(), d.featured.end(), "deb:firefox-esr|org.mozilla.firefox|deb:firefox") !=
         d.featured.end());
   // The 0.2 Alpha 3 names and keys.
   KeyFile kf3;

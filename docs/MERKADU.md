@@ -462,11 +462,11 @@ file instead of all of them.
 
     [Highlights]
     # the Home banner (first app found) and the Highlights row, in order
-    apps=org.gimp.GIMP;org.inkscape.Inkscape;org.mozilla.firefox|deb:firefox-esr|deb:firefox
+    apps=org.gimp.GIMP;org.inkscape.Inkscape;deb:firefox-esr|org.mozilla.firefox|deb:firefox
 
     [Popular]
     # "Popular Apps"
-    apps=org.mozilla.firefox|deb:firefox-esr;org.libreoffice.LibreOffice|deb:libreoffice-writer;org.videolan.VLC
+    apps=deb:firefox-esr|org.mozilla.firefox;deb:libreoffice-writer|org.libreoffice.LibreOffice;org.videolan.VLC
 
     [Recommended]
     # "Recommended for You": department id = well-known apps of it, shown to
@@ -506,7 +506,8 @@ file instead of all of them.
 Apps are named by their AppStream id, which finds them in every source, or
 by `deb:PACKAGE`, `flatpak:APPID` or `snap:NAME`; alternatives separated by
 `|` are tried in order, because Debian and Flathub do not always use the
-same id (`org.mozilla.firefox|deb:firefox-esr|deb:firefox`). Names that are
+same id; where they differ the shipped lists put the distribution's package
+first (`deb:firefox-esr|org.mozilla.firefox|deb:firefox`). Names that are
 in no catalog are skipped, so a list can name apps of sources the system
 does not have. The shipped lists name real apps: Firefox, Thunderbird,
 LibreOffice, GIMP, Inkscape, Krita, Blender, Kdenlive, OBS Studio,
