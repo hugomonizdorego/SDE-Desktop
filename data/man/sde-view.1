@@ -83,6 +83,26 @@ Open With another application, Show in Files
 .RB ( liria ),
 Show in Gallery and Move to Trash (freedesktop.org Trash). Changes are
 announced to a running Gallery, which updates at once.
+.SS Collages
+File \(-> New Collage (Ctrl+N), Gallery's Create Collage and
+.B \-\-collage
+open the collage editor: any number of photos in ten designs (Grid,
+Mosaic, Featured, Prints, Film Strip, Magazine, Shapes, Story, Panorama,
+Framed) that adapt to the number of photos, with sizes from a square post
+to 4K and A4, spacing, corners, borders, a colour or blurred background
+and a title. Photos are moved and zoomed in their frames, swapped by
+dragging one onto another and reordered; Export writes JPEG or PNG.
+.SS Plugins
+Tools \(-> Plugins switches the built-in plugins on and off: Collage, Auto
+Enhance (Adjust tab), Frames & Borders, Watermark, Red-Eye Fix and
+Background Blur (the Effects tab), Sizes for the Web and Social Media
+(Sizes in the Crop tab) and Metadata & Privacy (All Details, Remove
+Location and Save a Copy Without Details in the information panel, without
+encoding the photo again). Action plugins, small
+.I .plugin
+files, run a program on the photo from the Tools menu. See
+.I /usr/share/doc/sde/PHOTO.md
+for details.
 .SH OPTIONS
 .TP
 .BI \-\-album= ID
@@ -115,6 +135,9 @@ Play a slideshow of the photo's folder in Gallery.
 .TP
 .B \-\-fullscreen
 Start in full screen.
+.TP
+.B \-\-collage
+Make a collage of the files (folders add the pictures in them).
 .TP
 .B \-\-version
 Print the version and exit.
