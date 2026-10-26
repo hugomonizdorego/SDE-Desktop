@@ -129,7 +129,6 @@ std::string action_title(const std::string &action) {
   if (action == "autoremove") return _("Removing unused packages");
   if (action == "clean") return _("Cleaning the package cache");
   if (action == "repair") return _("Repairing interrupted installations");
-  if (action == "flatpak") return _("Updating Flatpak applications");
   return action;
 }
 
@@ -179,16 +178,16 @@ class App {
   int page = P_UPDATES;
   int updater_w = 0, updater_h = 0;  // window size of the updater view
 
-  // Updates (APT from check.py, Flatpak from flatpak.py).
+  // Updates (APT, from check.py). Applications from Flathub and the Snap
+  // Store are updated in Merkadu.
   UpdateList list;
   bool loading = false, loaded_once = false, focused_once = false;
-  int pending_loads = 0;
-  std::string apt_output, flatpak_output;
+  std::string apt_output;
   int apt_status = -1;
   std::string load_error;
   std::time_t refreshed = 0;
   std::vector<Row> rows;
-  bool group_open[kGroupCount] = {true, true, true, true};
+  bool group_open[kGroupCount] = {true, true, true};
   std::set<std::string> open_updates;  // update rows that show their packages
   int current = -1;                    // update in the technical description
   int current_group = -1;              // or a group header
@@ -264,21 +263,27 @@ App &app() {
   return a;
 }
 
-std::string update_key(const Update &u) { return u.flatpak ? u.flatpak_item() : u.name; }
+std::string update_key(const Update &u) { return u.name; }
+
+// Merkadu, the software center, updates the applications from Flathub and
+// the Snap Store; the Software Updater points there when it is installed.
+bool have_merkadu() {
+  static int found = -1;
+  if (found < 0) found = find_program("merkadu").empty() ? 0 : 1;
+  return found == 1;
+}
 
 Color group_color(Group g) {
   const Theme &t = active_theme();
   switch (g) {
     case Group::Critical: return danger_color();
     case Group::Security: return warning_color();
-    case Group::Flatpak: return t.accent.mix(success_color(), 0.5);
     default: return t.accent;
   }
 }
 
 View App::view() const {
-  if (installing || (busy() && (progress.action == "upgrade" || progress.action == "flatpak")))
-    return View::Installing;
+  if (installing || (busy() && progress.action == "upgrade")) return View::Installing;
   if (show_restart) return View::Restart;
   if (show_failure) return View::Failed;
   if ((busy() && progress.action == "refresh") || (loading && !loaded_once)) return View::Checking;
@@ -460,14 +465,6 @@ class TechPane : public Fl_Group {
     }
     if (!u) return f;
     std::string versions = u->old_version.empty() ? u->new_version : u->old_version + "  →  " + u->new_version;
-    if (u->flatpak) {
-      f.push_back({_("Reference"), u->ref});
-      f.push_back({_("Version"), versions.empty() ? u->branch : versions});
-      f.push_back({_("Remote"), u->origin + "  ·  " + (u->installation == "user" ? _("user installation")
-                                                                                  : _("system installation"))});
-      f.push_back({_("Download"), format_size(u->size)});
-      return f;
-    }
     f.push_back({_("Package"), u->packages.size() > 1
                                    ? format(_("%s and %d more"), u->main_package.c_str(), int(u->packages.size()) - 1)
                                    : u->main_package});
@@ -505,11 +502,6 @@ class TechPane : public Fl_Group {
     if (!facts_text.empty()) facts_text += "\n";
     if (!u) {
       text->set("");
-    } else if (u->flatpak) {
-      std::string body = u->summary.empty() ? std::string(_("No description is available.")) : u->summary;
-      text->set(facts_text + body + "\n\n" +
-                _("Flatpak applications are updated from their remote; their changes are "
-                  "published by the application developers."));
     } else {
       auto it = a.changelogs.find(u->main_package);
       // The long description, unless it only repeats the summary.
@@ -650,6 +642,8 @@ class UpdaterPage : public Page {
     restart_now->callback([](Fl_Widget *, void *) { app().restart_now(); });
     restart_small = new Button(0, 0, 10, 10, _("Restart…"), Button::Ghost);
     restart_small->callback([](Fl_Widget *, void *) { app().restart_now(); });
+    apps = new Button(0, 0, 10, 10, _("Open Merkadu"));
+    apps->callback([](Fl_Widget *, void *) { spawn_detached({"merkadu", "--page", "updates"}); });
     end();
   }
 
@@ -712,8 +706,7 @@ class UpdaterPage : public Page {
       paint_checkbox(p, x + S(48), y + (h - S(16)) / 2.0, S(16), u.selected ? 1 : 0, hover);
       int is = S(20);
       cairo_surface_t *img = a.icon(u.icon, is);
-      if (!img && u.flatpak) img = a.icon(u.application, is);
-      if (!img) img = a.icon(u.flatpak ? "application-x-executable" : "package-x-generic", is);
+      if (!img) img = a.icon("package-x-generic", is);
       if (img) p.image(img, x + S(72), y + (h - is) / 2.0, is);
       else paint_icon(p, Icon::Package, x + S(72), y + (h - is) / 2.0, is, t.text_dim);
     };
@@ -866,7 +859,7 @@ class UpdaterPage : public Page {
         parts.push_back(n == 1 ? std::string(_("1 update")) : format(_("%d updates"), n));
         if (int c = a.list.count(Group::Critical)) parts.push_back(format(_("%d critical"), c));
         if (int s = a.list.count(Group::Security)) parts.push_back(format(_("%d security"), s));
-        if (int f = a.list.count(Group::Flatpak)) parts.push_back(format(_("%d Flatpak"), f));
+
         if (!a.list.held.empty()) parts.push_back(format(_("%d held back"), int(a.list.held.size())));
         sub = join(parts, "  ·  ") + "  ·  " + age;
         break;
@@ -897,7 +890,7 @@ class UpdaterPage : public Page {
     all_.clear();
     for (Fl_Widget *wd : std::initializer_list<Fl_Widget *>{
              details, list, tech_exp, tech, log_exp, log, settings, remind, install, check, close, cancel, back, retry,
-             later, restart_now, restart_small})
+             later, restart_now, restart_small, apps})
       all_.push_back(wd);
     want_.clear();
     header_y = y() + p;
@@ -913,6 +906,7 @@ class UpdaterPage : public Page {
     }
     progress_y = -1;
     download_y = -1;
+    apps_y = -1;
     tree_y = tree_h = 0;
     log_h = 0;
     // Bottom buttons.
@@ -1001,6 +995,13 @@ class UpdaterPage : public Page {
     } else {  // UpToDate, Error
       place(settings, X, by, S(96));
       right_to_left({close, check});
+      // The applications from Flathub and the Snap Store are Merkadu's.
+      if (v == View::UpToDate && have_merkadu() && by - cy >= S(70)) {
+        apps_y = cy;
+        apps->size(std::max(S(96), apps->preferred_width()), S(34));
+        apps->position(X + W - S(12) - apps->w(), cy + (apps_card() - S(34)) / 2);
+        want_.insert(apps);
+      }
     }
     if (a.busy() && v != View::Installing) check->deactivate();
     else check->activate();
@@ -1056,6 +1057,11 @@ class UpdaterPage : public Page {
         if (tree_head) pp.line(X + S(8), tree_y + tree_head + 0.5, X + W - S(8), tree_y + tree_head + 0.5, t.border);
       }
       if (log_h > 0 && a.log_open) paint_card(pp, X, log_y, W, log_h);
+      if (apps_y >= 0) {
+        paint_card(pp, X, apps_y, W, apps_card());
+        pp.image(IconLoader::get({"merkadu", "system-software-install", "sde-logo"}, S(32)), X + S(12),
+                 apps_y + (apps_card() - S(32)) / 2.0, S(32));
+      }
       if (progress_y >= 0) {
         paint_progress(pp, X, progress_y + S(4), W, S(8), a.busy() ? a.progress.percent : -1, a.phase);
       }
@@ -1072,6 +1078,14 @@ class UpdaterPage : public Page {
       if (!a.reboot_packages.empty()) msg += "  ·  " + join(a.reboot_packages, ", ");
       text_font(t.font_size - S(1), true);
       draw_text(msg, X + S(36), banner_y, restart_small->x() - X - S(44), S(34), t.text);
+    }
+    if (apps_y >= 0) {
+      int ax = X + S(56), aw = apps->x() - S(12) - ax;
+      text_font(t.font_size, true);
+      draw_text(_("Apps from Flathub and the Snap Store"), ax, apps_y + apps_card() / 2 - S(21), aw, S(22), t.text);
+      text_font(t.font_size - S(1));
+      draw_text(_("Merkadu, the software center, keeps them up to date."), ax, apps_y + apps_card() / 2 - S(1), aw,
+                S(22), t.text_dim);
     }
     if (tree_h > 0 && tree_head) {
       text_font(t.font_size - S(1));
@@ -1123,7 +1137,10 @@ class UpdaterPage : public Page {
   TechPane *tech;
   TextView *log;
   Button *settings, *remind, *install, *check, *close, *cancel, *back, *retry, *later, *restart_now, *restart_small;
+  Button *apps;  // Open Merkadu (the up-to-date view)
   int header_y = 0, header_h = 0, banner_y = 0, tree_y = 0, tree_h = 0, progress_y = -1, download_y = -1;
+  int apps_y = -1;
+  static int apps_card() { return S(58); }
   int log_y = 0, log_h = 0, tree_head = 0, download_x = 0, download_w = 0;
   bool download_inline = false;
   bool banner = false;
@@ -1635,8 +1652,9 @@ AppInfo about_info() {
   info.version = SDE_UPDATE_VERSION;
   info.icon = "sde-software-updater";
   info.icon_fallbacks = {"system-software-update"};
-  info.description = _("Keeps the operating system and its applications up to date: critical, security, "
-                       "main and Flatpak updates from the configured sources.");
+  info.description = _("Keeps the operating system up to date: critical, security and main updates "
+                       "from the configured package sources. Applications from Flathub and the Snap "
+                       "Store are updated in Merkadu.");
   // mintupdate (GPL-3.0-or-later, Clement Lefebvre) is credited from the
   // legal data; PackageKit and APT are Debian's.
   info.credits = {_("Transactions by PackageKit or APT from Debian"), toolkit_credit()};
@@ -1694,7 +1712,7 @@ class AboutPage : public Page {
     text_font(t.font_size + S(10), true);
     draw_text(_("Software Updater"), X + S(92), y() + S(32), W - S(92), S(38), t.text);
     text_font(t.font_size);
-    draw_text(format(_("Version %s · Critical, security, main and Flatpak updates"), SDE_UPDATE_VERSION), X + S(92),
+    draw_text(format(_("Version %s · Critical, security and main updates"), SDE_UPDATE_VERSION), X + S(92),
               y() + S(70), W - S(92), S(24), t.text_dim);
     text_font(t.font_size - S(1));
     draw_text(developer_line(), X + S(92), y() + S(94), W - S(92), S(22), t.text_dim);
@@ -2160,7 +2178,6 @@ void App::select_changelog(int index) {
   d->refresh();
   if (index < 0 || index >= int(list.updates.size())) return;
   const Update &u = list.updates[size_t(index)];
-  if (u.flatpak) return;
   std::string pkg = u.main_package;
   if (changelogs.count(pkg) || !valid_package_name(pkg)) return;
   // Wait a moment so that arrowing through the list does not start a
@@ -2214,30 +2231,19 @@ void App::load_updates() {
   reboot = reboot_required(&reboot_packages);
   start_ticking();
   changed();
-  // APT (check.py) and Flatpak (flatpak.py) are read in parallel.
-  pending_loads = 2;
   apt_output.clear();
-  flatpak_output.clear();
   apt_status = -1;
   bool started = run_async({kPython, helper("check.py")}, [](const std::string &output, int status) {
     App &a = app();
     a.apt_output = output;
     a.apt_status = status;
-    if (--a.pending_loads == 0) a.merge_updates();
+    a.merge_updates();
   });
   if (!started) {
     loading = false;
-    pending_loads = 0;
     load_error = _("Python 3 is missing. Reinstall the sde package and its dependencies.");
     changed();
-    return;
   }
-  bool flatpak = run_async({kPython, helper("flatpak.py")}, [](const std::string &output, int) {
-    App &a = app();
-    a.flatpak_output = output;
-    if (--a.pending_loads == 0) a.merge_updates();
-  });
-  if (!flatpak) --pending_loads;
 }
 
 void App::merge_updates() {
@@ -2249,7 +2255,6 @@ void App::merge_updates() {
                    "your package sources are valid.");
     list = UpdateList{};
   } else {
-    parse_flatpaks(flatpak_output, fresh);
     // Keep the user's choices for updates that are still offered.
     std::set<std::string> off;
     for (auto &u : list.updates)
@@ -2394,7 +2399,7 @@ void App::finished() {
   std::string action = progress.action;
   if (installing) {
     if (progress.ok() && !queue.empty()) {
-      // The next part of Install Now (e.g. Flatpak after the APT packages).
+      // The next part of Install Now.
       earlier_log.insert(earlier_log.end(), progress.log.begin(), progress.log.end());
       earlier_log.push_back("");
       run_next();
@@ -2411,8 +2416,7 @@ void App::finished() {
     }
     strip_visible = false;
   }
-  if (action == "refresh" || action == "upgrade" || action == "flatpak" || action == "autoremove" ||
-      action == "repair") {
+  if (action == "refresh" || action == "upgrade" || action == "autoremove" || action == "repair") {
     changelogs.clear();
     load_updates();
   }
