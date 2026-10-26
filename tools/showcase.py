@@ -1080,7 +1080,7 @@ class Session:
         bl.mkdir(parents=True)
         (bl / 'brightness').write_text('70\n')
         (bl / 'max_brightness').write_text('100\n')
-        # Software Updater: fake APT and Flatpak (tools/update_fixture.py),
+        # Software Updater: fake APT (tools/update_fixture.py),
         # with everyday package names instead of its "example" fixtures.
         import update_fixture
         update_fixture.write(self.home / '.fixtures/python', self.home / 'bin', self.home / '.fixtures/update-root')
@@ -2262,11 +2262,11 @@ def system_monitor(s):
     s.shot('system-monitor-performance', quiet=0.3, timeout=2)
 
 
-@scene('Software Updater', [('software-updater', 'Software Updater: critical, security, main and Flatpak '
-                                                 'updates (test data)')], needs=['sde-update'])
+@scene('Software Updater', [('software-updater', 'Software Updater: critical, security and main updates of '
+                                                 'the operating system (test data)')], needs=['sde-update'])
 def software_updater(s):
     w = s.app(['sde-update'], '^Software Updater$', settle=False)
-    time.sleep(2.0)  # check.py and flatpak.py
+    time.sleep(2.0)  # check.py
     s.window_settle(w, quiet=0.8, timeout=8)
     s.park_pointer()
     s.shot('software-updater', quiet=0.6)
