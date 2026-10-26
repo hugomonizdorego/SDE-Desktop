@@ -91,6 +91,7 @@ jobs:
           dbus-run-session -- python3 tests/test_about_ui.py niny=/usr/bin/niny \
             sysmon=/usr/bin/sde-system-monitor run=/usr/bin/sde-run display=/usr/bin/sde-display-settings \
             calculator=/usr/bin/calculator welcome=/usr/bin/sde-welcome reports=/usr/bin/sde-system-reports \
+            debrun=/usr/bin/debrun \
             merkadu=/usr/bin/merkadu licenses=dist/test-tools/sde-ui-kit-demo
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small

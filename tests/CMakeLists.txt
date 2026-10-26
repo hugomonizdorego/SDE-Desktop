@@ -153,6 +153,7 @@ if(SDE_XVFB)
     niny=$<TARGET_FILE:niny> sysmon=$<TARGET_FILE:sde-system-monitor>
     run=$<TARGET_FILE:sde-run> display=$<TARGET_FILE:sde-display-settings>
     calculator=$<TARGET_FILE:calculator> welcome=$<TARGET_FILE:sde-welcome>
+    debrun=$<TARGET_FILE:debrun>
     reports=$<TARGET_FILE:sde-system-reports> licenses=$<TARGET_FILE:sde-ui-kit-demo>)
   set_tests_properties(sde-about-windows PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()

@@ -5,7 +5,7 @@
 its sections and opens the license viewer.
 
 test_about_ui.py NAME=BINARY ...
-  NAME: niny, sysmon, run, display, calculator, welcome, reports, merkadu, or
+  NAME: niny, sysmon, run, display, calculator, welcome, reports, merkadu, debrun, or
   licenses (BINARY is sde-ui-kit-demo: the Open-Source Licenses dialog)
 
 Each program must show "About <name>"; Ctrl+Tab must move through the
@@ -119,6 +119,7 @@ CASES = {
     'welcome': ('^Welcome$', 'About SDE Welcome', ['F1']),
     'reports': ('^System Reports$', 'About System Reports', ['F1']),
     'merkadu': ('^Merkadu$', 'About Merkadu', ['F1']),
+    'debrun': ('^Debrun$', 'About Debrun', ['F1']),
 }
 
 

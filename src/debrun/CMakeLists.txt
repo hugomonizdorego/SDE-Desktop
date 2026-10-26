@@ -44,3 +44,4 @@ add_executable(debrun
 target_include_directories(debrun PRIVATE ${_src}/settings)
 target_link_libraries(debrun PRIVATE debrun-core sde-common)
 install(TARGETS debrun RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES ${PROJECT_SOURCE_DIR}/docs/DEBRUN.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
