@@ -16,8 +16,6 @@
 gboolean liria_sde_network_scheme_supported (const char *scheme);
 /* What the administrator has to install for |scheme|, or NULL. */
 char *liria_sde_network_missing_message (const char *scheme);
-/* A Secret Service (gnome-keyring, KeePassXC, ...) can keep passwords. */
-gboolean liria_sde_network_keyring_available (void);
 
 /* The location entry: suggestions while typing, and on Enter the text
  * made into a location; TRUE when Liria showed a message instead (the

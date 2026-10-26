@@ -729,6 +729,25 @@ levelbar.sde-usage-bar block.empty {
   background-color: transparent;
 }
 
+/* Network places (0.2.0 Alpha 3, src/liria-sde-network.c): the message
+ * under the location entry and Liria's sign-in dialog. */
+popover.sde-network-message .sde-network-message-title {
+  font-weight: bold;
+}
+
+.sde-sign-in .sde-sign-in-title {
+  font-size: 1.15em;
+  font-weight: bold;
+}
+
+.sde-sign-in .sde-sign-in-error {
+  color: @error_color;
+}
+
+.sde-sign-in .sde-sign-in-warning {
+  color: mix(@warning_color, @theme_fg_color, 0.35);
+}
+
 /* File operations (0.2.0 Alpha 2, libliria-private/liria-sde-progress.c):
  * the design of SDE's transfer dialog, with round flat buttons and a slim
  * accent bar that turns amber while the operation is paused. */

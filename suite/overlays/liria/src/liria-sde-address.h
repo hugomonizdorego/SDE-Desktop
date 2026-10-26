@@ -61,6 +61,11 @@ G_GNUC_INTERNAL gchar *liria_sde_servers_path (void);
 G_GNUC_INTERNAL GPtrArray *liria_sde_servers_load (void);
 G_GNUC_INTERNAL gboolean liria_sde_servers_remember (const gchar *uri);
 
+/* A Secret Service (gnome-keyring, KeePassXC, ...) runs or can be started
+ * on the session bus, so GVfs can keep a password that the user wants
+ * remembered. */
+G_GNUC_INTERNAL gboolean liria_sde_keyring_available (void);
+
 G_END_DECLS
 
 #endif

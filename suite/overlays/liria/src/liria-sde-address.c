@@ -706,3 +706,38 @@ liria_sde_servers_remember (const gchar *uri)
 	g_free (root);
 	return ok;
 }
+
+/* A Secret Service on the session bus, running or startable. */
+gboolean
+liria_sde_keyring_available (void)
+{
+	GDBusConnection *bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
+	gboolean found = FALSE;
+	GVariant *reply;
+
+	if (bus == NULL)
+		return FALSE;
+	reply = g_dbus_connection_call_sync (bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+	                                     "org.freedesktop.DBus", "NameHasOwner",
+	                                     g_variant_new ("(s)", "org.freedesktop.secrets"), G_VARIANT_TYPE ("(b)"),
+	                                     G_DBUS_CALL_FLAGS_NONE, 500, NULL, NULL);
+	if (reply != NULL) {
+		g_variant_get (reply, "(b)", &found);
+		g_variant_unref (reply);
+	}
+	if (!found) {
+		reply = g_dbus_connection_call_sync (bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+		                                     "org.freedesktop.DBus", "ListActivatableNames", NULL,
+		                                     G_VARIANT_TYPE ("(as)"), G_DBUS_CALL_FLAGS_NONE, 500, NULL, NULL);
+		if (reply != NULL) {
+			const gchar **names = NULL;
+
+			g_variant_get (reply, "(^a&s)", &names);
+			found = names != NULL && g_strv_contains (names, "org.freedesktop.secrets");
+			g_free (names);
+			g_variant_unref (reply);
+		}
+	}
+	g_object_unref (bus);
+	return found;
+}

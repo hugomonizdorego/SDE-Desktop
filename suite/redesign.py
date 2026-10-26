@@ -105,6 +105,7 @@ def liria(staged):
     liria_right_drag(staged)
     liria_pathbar(staged)
     liria_hover(staged)
+    liria_network(staged)
     liria_copy_engine(staged)
     liria_safe_remove(staged)
     liria_clipboard(staged)
@@ -1765,6 +1766,105 @@ override_background_color (GtkWidget *widget,
 }
 
 ''')
+
+
+def liria_network(staged):
+    """0.2.0 Alpha 3: network places from the location bar
+    (src/liria-sde-address.c, src/liria-sde-network.c): smb://,
+    \\\\server\\share, smb:, an IP address, a computer name or localhost
+    (its Windows shares, the other protocols offered), sftp://, ftp://,
+    nfs://, dav(s)://. Without the protocol (gvfs-backends) Liria says what
+    the administrator has to install. Liria's own sign-in dialog (Remember
+    when a keyring runs), recent servers in ~/.config/sde/liria-servers,
+    failures explained. Liria sets nothing about the protocols: GVfs,
+    smb.conf and the ssh configuration (known_hosts) decide."""
+    src = staged / "src"
+    edit_once(src / "Makefile.am", "\tliria-sde-qa.h \\\n",
+              "\tliria-sde-qa.h \\\n\tliria-sde-address.c \\\n\tliria-sde-address.h \\\n"
+              "\tliria-sde-network.c \\\n\tliria-sde-network.h \\\n")
+    entry = src / "liria-location-entry.c"
+    edit_once(entry, '#include "liria-location-entry.h"\n',
+              '#include "liria-location-entry.h"\n#include "liria-sde-network.h"\n')
+    edit_once(entry, "    loc_entry = LIRIA_LOCATION_ENTRY (entry);\n    entry_text = gtk_entry_get_text (entry);\n",
+              "    loc_entry = LIRIA_LOCATION_ENTRY (entry);\n\n"
+              "    /* SDE: network places, or a message about what is missing */\n"
+              "    if (liria_sde_network_entry_activate (entry, loc_entry->details->current_directory))\n"
+              "        return;\n"
+              "    entry_text = gtk_entry_get_text (entry);\n")
+    edit_once(entry, "    liria_entry_set_special_tab_handling (LIRIA_ENTRY (entry), TRUE);\n",
+              "    liria_entry_set_special_tab_handling (LIRIA_ENTRY (entry), TRUE);\n"
+              "    liria_sde_network_setup_entry (GTK_ENTRY (entry)); /* SDE: suggestions */\n")
+    views = src / "liria-window-manage-views.c"
+    edit_once(views, '#include "liria-window-manage-views.h"\n',
+              '#include "liria-window-manage-views.h"\n#include "liria-sde-network.h"\n')
+    # The sign-in of a location that is not mounted yet: Liria's dialog.
+    edit_once(views, """        mount_op = gtk_mount_operation_new (GTK_WINDOW (window));
+        g_mount_operation_set_password_save (mount_op, G_PASSWORD_SAVE_FOR_SESSION);
+        location = liria_file_get_location (file);
+""", """        location = liria_file_get_location (file);
+        /* SDE: Liria's sign-in dialog (liria-sde-network.c) */
+        mount_op = liria_sde_network_mount_operation_new (GTK_WINDOW (window), location);
+""")
+    edit_once(views, """        create_content_view (slot, view_id);
+        g_free (view_id);
+
+        report_callback (slot, NULL);
+""", """        create_content_view (slot, view_id);
+        g_free (view_id);
+
+        report_callback (slot, NULL);
+        liria_sde_network_location_shown (location); /* SDE: recent servers */
+""")
+    edit_once(views, """    char *scheme_string;
+
+    /* Some sort of failure occurred. How 'bout we tell the user? */
+""", """    char *scheme_string;
+
+    /* SDE: network places say what went wrong and offer other protocols */
+    if (liria_sde_network_show_failure (GTK_WIDGET (window), location, error))
+        return;
+
+    /* Some sort of failure occurred. How 'bout we tell the user? */
+""")
+    # Connect to Server follows the same rules: Windows shares first and
+    # the default (it was anonymous FTP), the encrypted protocols before
+    # the plain-text ones, NFS, what is missing without gvfs-backends, and
+    # "Remember" only where a keyring can keep the password.
+    dialog = src / "liria-connect-server-dialog.c"
+    edit_once(dialog, '#include "liria-window.h"\n', '#include "liria-window.h"\n#include "liria-sde-address.h"\n')
+    # The standalone liria-connect-server program builds the dialog too.
+    edit_once(src / "Makefile.am", "\tliria-connect-server-operation.h     \\\n\t$(NULL)\n",
+              "\tliria-connect-server-operation.h     \\\n\tliria-sde-address.c \\\n\tliria-sde-address.h \\\n\t$(NULL)\n")
+    replace_between(dialog, "static struct MethodInfo methods[] =\n", "/* To get around non constant gettext strings */",
+                    """static struct MethodInfo methods[] =
+{
+    /* SDE (0.2.0 Alpha 3) */
+    { "smb",  DEFAULT_METHOD | SHOW_SHARE | SHOW_USER | SHOW_DOMAIN, 0 },
+    { "sftp",  SHOW_PORT | SHOW_USER, 22 },
+    { "davs", SHOW_PORT | SHOW_USER, 443 },
+    { "dav",  SHOW_PORT | SHOW_USER, 80 },
+    { "ftp",  SHOW_PORT | SHOW_USER, 21 },
+    { "ftp",  IS_ANONYMOUS | SHOW_PORT, 21 },
+    { "nfs",  SHOW_PORT, 2049 },
+    { "afp", SHOW_SHARE | SHOW_USER, 548 },
+};
+
+""")
+    edit_once(dialog, """    } else if (strcmp (meth->scheme, "smb") == 0) {
+        return _("Windows share");""", """    } else if (strcmp (meth->scheme, "smb") == 0) {
+        return _("Windows share");
+    } else if (strcmp (meth->scheme, "nfs") == 0) {
+        return _("NFS (Unix network share)");""")
+    edit_once(dialog, """	label = gtk_label_new (_("Can't load the supported server method list.\\n"
+				 "Please check your GVfs installation."));""",
+              """	label = gtk_label_new (_("Connecting to servers needs the package gvfs-backends.\\n"
+				 "Ask your administrator to install it."));""")
+    edit_once(dialog, "    bind_visibility (dialog, dialog->details->password_entry, checkbox);\n",
+              "    /* SDE: a password is remembered in a keyring only */\n"
+              "    if (liria_sde_keyring_available ())\n"
+              "        bind_visibility (dialog, dialog->details->password_entry, checkbox);\n"
+              "    else\n"
+              "        gtk_widget_set_no_show_all (checkbox, TRUE);\n")
 
 
 def liria_ribbon(staged):
