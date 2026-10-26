@@ -90,6 +90,14 @@
       "version": "1.0",
       "texts": ["/usr/share/common-licenses/CC0-1.0"],
       "url": "https://creativecommons.org/publicdomain/zero/1.0/legalcode"
+    },
+    "LicenseRef-public-domain": {
+      "name": "Public domain",
+      "short_name": "public domain",
+      "notice": "public-domain",
+      "version": "",
+      "texts": [],
+      "url": "https://www.naturalearthdata.com/about/terms-of-use/"
     }
   },
   "components": [
@@ -300,7 +308,7 @@
       "credits": [],
       "trademarks": ["sde"],
       "notices": ["/usr/share/doc/sde/copyright"],
-      "sources": ["src/photo/"]
+      "sources": ["src/photo/", "data/photo/"]
     },
     {
       "id": "sde-gallery",
@@ -313,11 +321,13 @@
       "icons": ["sde-gallery", "image-x-generic"],
       "license": "GPL-3.0-or-later",
       "copyright": ["Copyright © 2026 Selviana DE Project and contributors"],
-      "upstream": [],
+      "upstream": [
+        {"project": "Natural Earth (populated places, for the Places plugin)", "url": "https://www.naturalearthdata.com/", "license": "LicenseRef-public-domain", "copyright": "Public domain: Tom Patterson, Nathaniel Vaughn Kelso and the Natural Earth contributors", "relation": "adapted"}
+      ],
       "credits": [],
       "trademarks": ["sde"],
       "notices": ["/usr/share/doc/sde/copyright"],
-      "sources": ["src/gallery/"]
+      "sources": ["src/gallery/", "data/gallery/plugins/", "tools/natural-earth-places.py"]
     },
     {
       "id": "calculator",

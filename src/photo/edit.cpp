@@ -72,12 +72,13 @@ Adjust filter_preset(Filter f) {
 bool Edits::identity() const { return geometry_only() && orient == gallery::Orient(); }
 
 bool Edits::geometry_only() const {
-  return crop.full() && resize_w == 0 && resize_h == 0 && tone_identity() && marks.empty();
+  return crop.full() && resize_w == 0 && resize_h == 0 && tone_identity() && marks.empty() && finish.identity();
 }
 
 bool Edits::operator==(const Edits &o) const {
   return orient == o.orient && crop == o.crop && resize_w == o.resize_w && resize_h == o.resize_h &&
-         adjust == o.adjust && filter == o.filter && strength == o.strength && marks == o.marks;
+         adjust == o.adjust && filter == o.filter && strength == o.strength && marks == o.marks &&
+         finish == o.finish;
 }
 
 double srgb_to_linear(double c) {
@@ -169,7 +170,7 @@ void crop_pixels(const Rect &r, int w, int h, int &cx, int &cy, int &cw, int &ch
   if (cy + ch > h) cy = std::max(0, h - ch);
 }
 
-void result_size(const Edits &e, int w, int h, int &ow, int &oh) {
+void content_size(const Edits &e, int w, int h, int &ow, int &oh) {
   if (e.orient.k % 2) std::swap(w, h);
   int cx, cy;
   crop_pixels(e.crop, w, h, cx, cy, ow, oh);
@@ -177,6 +178,15 @@ void result_size(const Edits &e, int w, int h, int &ow, int &oh) {
     ow = e.resize_w;
     oh = e.resize_h;
   }
+}
+
+void result_size(const Edits &e, int w, int h, int &ow, int &oh) {
+  content_size(e, w, h, ow, oh);
+  if (!e.has_frame()) return;
+  double l, t, r, b;
+  frame_insets(e.finish, ow, oh, l, t, r, b);
+  ow = std::max(1, int(std::lround(ow * (1 + l + r))));
+  oh = std::max(1, int(std::lround(oh * (1 + t + b))));
 }
 
 cairo_surface_t *apply_geometry(cairo_surface_t *src, const Edits &e, double scale) {
@@ -264,7 +274,8 @@ cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale, int 
   cairo_surface_t *g = apply_geometry(src, e, scale);
   bool effects = (marks & kMarkEffects) && e.marks.has_effects();
   bool vectors = (marks & kMarkVectors) && e.marks.has_vectors();
-  if (!e.tone_identity() || effects || vectors) {
+  bool finish = (marks & kFinish) && !e.finish.identity();
+  if (!e.tone_identity() || effects || vectors || finish) {
     if (g == src) {
       // Never modify the original: work on a copy.
       cairo_surface_destroy(g);
@@ -277,7 +288,16 @@ cairo_surface_t *render(cairo_surface_t *src, const Edits &e, double scale, int 
       cairo_destroy(cr);
     }
     apply_tone(g, e);
+    // The background blur leaves the drawings sharp; the watermark and the
+    // frame come last.
+    if (finish) apply_focus_blur(g, e.finish);
     if (effects || vectors) flatten_marks(g, e, vectors, effects);
+    if (finish) {
+      draw_watermark(g, e.finish);
+      cairo_surface_t *framed = add_frame(g, e.finish);
+      cairo_surface_destroy(g);
+      g = framed;
+    }
   }
   return g;
 }

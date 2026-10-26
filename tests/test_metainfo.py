@@ -14,6 +14,7 @@ import os
 import shutil
 import subprocess
 import sys
+import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -118,4 +119,15 @@ for p in pending_seen:
 for e in errors:
     print("FAIL:", e)
 print(f"{len(desktops)} desktop files, {len(ids)} metainfo files, {len(errors)} problems")
-sys.exit(1 if errors else 0)
+
+
+class MetainfoTest(unittest.TestCase):
+    """The checks above run when the file is imported; this makes them a
+    test for `python3 -m unittest`, next to the other test files."""
+
+    def test_no_problems(self):
+        self.assertEqual(errors, [])
+
+
+if __name__ == '__main__':
+    sys.exit(1 if errors else 0)

@@ -56,4 +56,22 @@ void show_shortcuts(const std::string &title,
 int ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
         int *quality = nullptr);
 
+// A row of the Plugins window (plugins_ui.cpp).
+struct PluginRow {
+  std::string id;
+  std::string name, description;
+  int glyph = -1;        // a line icon (icon::Kind) for a built-in plugin
+  std::string icon;      // a theme icon for an action plugin
+  std::string detail;    // the plugin's file, or why it cannot run
+  bool action = false;   // an action plugin (else built in)
+  bool on = true;
+  bool usable = true;    // false: it cannot run (its program is missing)
+  std::function<void()> settings;  // a "Settings…" button when set
+};
+// The Plugins window of Photo or Gallery: a switch for every plugin
+// (|rows| are changed in place) and a button that opens |folder|, the
+// user's folder for action plugins. Returns true when a switch changed.
+bool show_plugins_dialog(const std::string &title, const std::string &intro, std::vector<PluginRow> &rows,
+                         const std::string &folder);
+
 }  // namespace gallery
