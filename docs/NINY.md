@@ -175,8 +175,9 @@ question, in window pixels — and its open menus in `<dir>/Niny-menu.txt`
 scrolls, `item:N:<label>`, `@hover:`), in screen pixels.
 
 `tests/test_niny_ui.py` (ctest `niny-tabs-menus`) uses them at 1366×768
-(100 %), 1920×1080 (150 %) and 1024×600 (150 %, with a 60 pixel panel):
-the × of each tab, a double click on the × of the last tab, the only tab
+(100 %), 1920×1080 (150 %) and 1024×600 (150 %, with a 60 pixel panel),
+and for the tabs also at 125 % and 200 %: the × of each tab, a double
+click on the × of the last tab, the only tab
 (click, double click, middle button, Ctrl+W), a modified tab (Cancel,
 Close Without Saving, Save), dragging, a scrolled strip, the menus from
 the mouse and the keyboard (F10 and Alt by keycode through XTEST), their

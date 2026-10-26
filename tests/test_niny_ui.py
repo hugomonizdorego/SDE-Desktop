@@ -6,7 +6,8 @@
 test_niny_ui.py NINY [--shots DIR]
 
 Runs Niny at 1366x768 (100 %), 1920x1080 (150 %) and 1024x600 (150 %, with
-a work area that leaves room for a 60 pixel panel). SDE_PANEL_QA_DIR makes
+a work area that leaves room for a 60 pixel panel), and checks the tabs at
+125 % and 200 % as well. SDE_PANEL_QA_DIR makes
 Niny describe its tabs, their close buttons, the + button and the menus
 (Niny.txt, Niny-menu.txt); the test clicks there with xdotool and checks:
 
@@ -26,7 +27,7 @@ Niny describe its tabs, their close buttons, the + button and the menus
 
 Keys without modifiers (F10, Alt) are sent by keycode through XTEST: with
 some keymaps "xdotool key F10" adds Alt. SDE_TEST_DISPLAY=N sets the first
-display number (N to N+2)."""
+display number (N to N+4)."""
 import argparse
 import ctypes
 import ctypes.util
@@ -433,25 +434,27 @@ def check_menus(s):
     expect(s, 'Niny still runs', s.proc.poll() is None)
 
 
+# label, screen, scale, work area height, checks
 CASES = [
-    ('100', '1366x768', 100, None),
-    ('150', '1920x1080', 150, None),
-    ('small', '1024x600', 150, 540),
+    ('100', '1366x768', 100, None, (check_tabs, check_menus, check_scrolled)),
+    ('150', '1920x1080', 150, None, (check_tabs, check_menus, check_scrolled)),
+    ('small', '1024x600', 150, 540, (check_tabs, check_menus)),
+    # The close buttons at the other scales of Control Center > Display.
+    ('125', '1366x768', 125, None, (check_tabs,)),
+    ('200', '2560x1440', 200, None, (check_tabs,)),
 ]
 
 base = int(os.environ.get('SDE_TEST_DISPLAY', 400 + os.getpid() % 20000))
 with tempfile.TemporaryDirectory(prefix='sde-niny-ui-') as temp:
-    for n, (label, size, scale, work) in enumerate(CASES):
+    for n, (label, size, scale, work, checks) in enumerate(CASES):
         s = None
         try:
             s = Session(base + n, size, scale, temp, label)
             if work:
                 s.work_area(work)
             s.start([('a.txt', 'alpha\n'), ('b.txt', 'bravo\n'), ('c.txt', 'charlie\n')])
-            check_tabs(s)
-            check_menus(s)
-            if label != 'small':
-                check_scrolled(s)
+            for check in checks:
+                check(s)
             expect(s, 'Niny is still running', s.proc.poll() is None)
         except Exception as e:  # report and go on with the next size
             failures.append('%s: %s: %s' % (label, type(e).__name__, e))
@@ -465,5 +468,5 @@ with tempfile.TemporaryDirectory(prefix='sde-niny-ui-') as temp:
 if failures:
     print('\n'.join(failures))
     sys.exit(1)
-print('Niny tabs and menu bar: close buttons, the only tab, modified tabs, drag, scrolled strip, '
-      'menus from the mouse and keyboard, fit at 100 and 150 %')
+print('Niny tabs and menu bar: close buttons at 100 to 200 %, the only tab, modified tabs, drag, scrolled '
+      'strip, menus from the mouse and keyboard and their fit at 100 and 150 %')
