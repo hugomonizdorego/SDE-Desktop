@@ -3,7 +3,7 @@
 // the Unity LauncherEntry API (0.2 Alpha 3 live badges), like Telegram,
 // Chromium or libunity applications do.
 //
-//   sde-launcher-entry-fixture URI [--count N] [--progress P] [--urgent] [--partial]
+//   sde-launcher-entry-fixture URI [--count N] [--progress P] [--urgent] [--partial] [--stay]
 //
 // It stays on the session bus, exports com.canonical.Unity.LauncherEntry
 // (Query: the URI and every property) on /com/canonical/unity/launcherentry/1
@@ -11,7 +11,8 @@
 // "progress", so that the count arrives with Query. Lines on standard input
 // change it and send an Update with what changed: "count N", "hide",
 // "progress P" (below 0: hidden), "urgent 0|1". It prints READY once its
-// first Update is sent, and ends at the end of its input or on SIGTERM.
+// first Update is sent, and ends at the end of its input (with --stay: it
+// does not read its input) or on SIGTERM.
 #include <FL/Fl.H>
 #include <unistd.h>
 
@@ -101,16 +102,17 @@ void input(int fd, void *) {
 
 int main(int argc, char **argv) {
   if (argc < 2) {
-    fprintf(stderr, "usage: %s URI [--count N] [--progress P] [--urgent] [--partial]\n", argv[0]);
+    fprintf(stderr, "usage: %s URI [--count N] [--progress P] [--urgent] [--partial] [--stay]\n", argv[0]);
     return 2;
   }
   uri = argv[1];
-  bool partial = false;
+  bool partial = false, stay = false;
   for (int i = 2; i < argc; ++i) {
     if (!strcmp(argv[i], "--count") && i + 1 < argc) count = atoll(argv[++i]), count_visible = true;
     else if (!strcmp(argv[i], "--progress") && i + 1 < argc) progress = atof(argv[++i]), progress_visible = true;
     else if (!strcmp(argv[i], "--urgent")) urgent = true;
     else if (!strcmp(argv[i], "--partial")) partial = true;
+    else if (!strcmp(argv[i], "--stay")) stay = true;
   }
   bus = dbus::Bus::session();
   if (!bus) return 77;
@@ -128,6 +130,6 @@ int main(int argc, char **argv) {
   update(partial);
   printf("READY\n");
   fflush(stdout);
-  Fl::add_fd(0, FL_READ, input, nullptr);
+  if (!stay) Fl::add_fd(0, FL_READ, input, nullptr);
   for (;;) Fl::wait(1e20);
 }

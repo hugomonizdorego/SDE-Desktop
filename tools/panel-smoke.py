@@ -384,9 +384,10 @@ def menu_checks():
     press('SDE Menu','group:Work');time.sleep(.3)
     run('xdotool','key','ctrl+a');run('xdotool','type','--delay','30','Games');run('xdotool','key','Return')
     waitfor(lambda:'tiles=Games,' in conf(),'group rename not saved: '+conf())
-    # Drag an application from the list to the tiles: a new group.
+    # Drag an application from the list to the tiles (near their left edge:
+    # dropped on the middle of a tile, it makes a folder since 0.2 Alpha 3).
     L=layout('SDE Menu');row=next(v for k,v in L.items() if k.startswith('app:'));name=next(k for k,v in L.items() if k.startswith('app:'))[4:]
-    t=L['@tiles'];drag(m,center(row),(t[0]+t[2]//2,t[1]+t[3]-round(20*scale)))
+    t=L['@tiles'];drag(m,center(row),(t[0]+round(6*scale),t[1]+t[3]-round(20*scale)))
     waitfor(lambda:f'qa-{name.lower()}.desktop:m' in conf(),'app dragged to the tiles not pinned: '+conf())
     shot('26-menu-tiles-arranged')
     # Drag the right edge to make the menu narrower; the size is kept.
@@ -813,20 +814,23 @@ def a3_menu_checks():
     shot('76-search-badges');escape('SDE Search')
     # LauncherEntry: the first Update brings only the progress, Query the
     # count; then changes; urgent without a count.
-    fx=sp.Popen([str(a.test_dir.resolve()/'sde-launcher-entry-fixture'),'application://qa-chat.desktop','--count','5',
-                 '--progress','0.4','--partial'],env=e,stdin=sp.PIPE,stdout=sp.PIPE,text=True)
-    processes.append(fx)
-    assert fx.stdout.readline().strip()=='READY','the LauncherEntry fixture did not start'
-    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='5:progress 40',
-            lambda:'LauncherEntry count (Query) missing: '+str([k for k in P() if 'badge' in k]))
-    fx.stdin.write('count 12\n');fx.stdin.flush()
-    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='12:progress 40','LauncherEntry count not updated')
-    waitfor(lambda:(badge('panel','@pin-badge:qa-chat.desktop') or '').startswith('12:#'),'no badge on the pinned Chat QA')
-    m=open_menu();waitfor(lambda:(badge('menu','@badge:tile:Chat QA') or '').startswith('12:#'),'no LauncherEntry badge on the tile')
-    shot('77-menu-badges');escape('SDE Menu')
-    fx.stdin.write('urgent 1\nhide\n');fx.stdin.flush()
-    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='0:urgent:progress 40','urgent without a count not shown')
-    shot('78-taskbar-badges')
+    fixture=a.test_dir.resolve()/'sde-launcher-entry-fixture';fx=None
+    if fixture.exists():
+        fx=sp.Popen([str(fixture),'application://qa-chat.desktop','--count','5','--progress','0.4','--partial'],
+                    env=e,stdin=sp.PIPE,stdout=sp.PIPE,text=True)
+        processes.append(fx)
+        assert fx.stdout.readline().strip()=='READY','the LauncherEntry fixture did not start'
+        waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='5:progress 40',
+                lambda:'LauncherEntry count (Query) missing: '+str([k for k in P() if 'badge' in k]))
+        fx.stdin.write('count 12\n');fx.stdin.flush()
+        waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='12:progress 40','LauncherEntry count not updated')
+        waitfor(lambda:(badge('panel','@pin-badge:qa-chat.desktop') or '').startswith('12:#'),'no badge on the pinned Chat QA')
+        m=open_menu();waitfor(lambda:(badge('menu','@badge:tile:Chat QA') or '').startswith('12:#'),'no LauncherEntry badge on the tile')
+        shot('77-menu-badges');escape('SDE Menu')
+        fx.stdin.write('urgent 1\nhide\n');fx.stdin.flush()
+        waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop')=='0:urgent:progress 40','urgent without a count not shown')
+        shot('78-taskbar-badges')
+    else:print('PANEL a3: no sde-launcher-entry-fixture (--test-dir): the LauncherEntry badges are not checked',flush=True)
     # Read in the notifications flyout: the mails' badge goes.
     click_panel('notifications','^Notifications$');time.sleep(.5);escape('Notifications')
     waitfor(lambda:badge('panel','@app-badge:qa-mailer.desktop') is None,'the badge stayed after the flyout')
@@ -849,8 +853,9 @@ def a3_menu_checks():
     run('xdotool','windowactivate',find('^Mailer QA Window$'))
     waitfor(lambda:badge('panel','@app-badge:qa-mailer.desktop') is None,'the badge stayed when the window became active')
     # The LauncherEntry application quits: its badge goes with it.
-    fx.terminate();fx.wait()
-    waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop') is None,'the badge of an application that quit stayed')
+    if fx:
+        fx.terminate();fx.wait()
+        waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop') is None,'the badge of an application that quit stayed')
     for p in (mailer,other,wm):p.terminate()
     for p in (mailer,other,wm):p.wait()
     # 5) Restore Default Tiles: the favorites again.

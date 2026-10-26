@@ -804,9 +804,10 @@ class Session:
 
     keep_bubbles = False
 
-    def notify(self, app, summary, body='', icon=None, urgency=None):
+    def notify(self, app, summary, body='', icon=None, urgency=None, desktop_entry=None):
         args = ['notify-send', '-p', '-a', app] + (['-i', icon] if icon else []) + \
-            (['-u', urgency] if urgency else []) + [summary, body]
+            (['-u', urgency] if urgency else []) + \
+            (['-h', 'string:desktop-entry:' + desktop_entry] if desktop_entry else []) + [summary, body]
         r = self.run(*args)
         try:
             self.notifications.append(int(r.stdout.strip().split()[-1]))
@@ -912,14 +913,15 @@ class Session:
                       # A steady LED and battery icon (its colours and marks
                       # stay): the screenshots wait until the screen stops changing.
                       'network_led_blink': 'false', 'battery_animation': 'false'},
-            # 0.2 Alpha 2: tile groups by category, as SDE makes them from
-            # the installed applications (fixed here so that every run shows
-            # the same tiles).
-            'menu': {'tiles': 'Office,xanara.desktop:w,niny.desktop:m;Graphics,sde-gallery.desktop:w,'
-                              'sde-view.desktop:m;System & Settings,liria.desktop:m,sde-settings.desktop:m,'
-                              'sde-system-monitor.desktop:m,sde-update.desktop:w,sde-display-settings.desktop:m;'
-                              'Accessories,org.debion.Calculator.desktop:m,taca.desktop:m,sde-run.desktop:m',
-                     'tiles_version': '2'},
+            # 0.2 Alpha 3: the favorites in groups, as SDE makes them from
+            # its applications, with a folder of tiles (fixed here so that
+            # every run shows the same tiles).
+            'menu': {'tiles': 'Work,liria.desktop:w,niny.desktop:m,xanara.desktop:w,'
+                              'folder:Tools/org.debion.Calculator.desktop/taca.desktop/sde-run.desktop:m;'
+                              'Photos and media,sde-gallery.desktop:w,sde-view.desktop:m;'
+                              'System,sde-settings.desktop:m,merkadu.desktop:m,sde-update.desktop:s,'
+                              'sde-system-monitor.desktop:s,sde-display-settings.desktop:s,sde-drivers.desktop:s',
+                     'tiles_version': '3'},
             'action_center': {'multicolor': 'true', 'expanded': 'true'},
             'desktop': {'show_home': 'true', 'show_trash': 'true'},
             'weather': {'animation': 'false'},
@@ -1412,6 +1414,7 @@ def start_menu(s):
     ('start-menu-tile-menu', 'Start Menu: right-click on a tile (resize, move to a group, unpin)'),
     ('start-menu-app-menu', 'Start Menu: right-click on an application (pin, app info, Uninstall... with Merkadu)'),
     ('start-menu-drag', 'Start Menu: a tile dragged into another group (the group and the drop place lit)'),
+    ('start-menu-folder', 'Start Menu: a folder of tiles opened in place (drop a tile onto another to make one)'),
     ('start-menu-account', 'Start Menu: the account on the rail'),
     ('start-menu-power', 'Start Menu: Power off asks first'),
     ('start-menu-search', 'Typing in the Start Menu searches apps, settings and files'),
@@ -1467,6 +1470,16 @@ def start_menu_more(s):
         finally:
             s.key('Escape')
             s.xdo('mouseup', '1')
+    # A folder opens in place below its row (Escape shuts it).
+    open_menu(s)
+    folder = next((k for k in s.layout('SDE Menu') if k.startswith('folder:')), None)
+    if folder:
+        s.press('SDE Menu', folder)
+        if s.wait(lambda: any(k.startswith('@folder-open:') and v[0] >= 100 for k, v in s.layout('SDE Menu').items()),
+                  3):
+            s.park_pointer()
+            s.shot('start-menu-folder', quiet=0.5)
+        s.key('Escape')
     open_menu(s)
     if 'rail:account' in s.layout('SDE Menu'):
         s.press('SDE Menu', 'rail:account')
@@ -1487,6 +1500,37 @@ def start_menu_more(s):
         s.park_pointer()
         s.shot('start-menu-search', quiet=0.6)
     s.key('Escape')
+
+
+@scene('Start Menu', [('start-menu-badges', 'Start Menu: live badges in the colour of each application (unread '
+                                             'notifications, counts sent with the Unity LauncherEntry API) on tiles, '
+                                             'folders, the list and the taskbar')],
+       needs=['sde-panel', 'sde-notifyd'])
+def start_menu_badges(s):
+    s.clear_notifications()
+    s.keep_bubbles = True
+    windows = set(s.overlays())
+    try:
+        s.notify('Liria', 'Copied 24 photos to "Holidays"', desktop_entry='liria')
+        s.notify('Liria', 'Moved "Report.pdf" to Documents', desktop_entry='liria')
+        s.notify('Archive Manager', 'photos.zip was extracted', desktop_entry='taca')
+        # Software Updater's count as applications send theirs (Unity
+        # LauncherEntry; a QA fixture that ends with the scene).
+        fixture = s.test_tool('sde-launcher-entry-fixture')
+        if fixture and s.has('sde-update'):
+            s.spawn(fixture, 'application://sde-update.desktop', '--count', '8', '--stay')
+        if not s.wait(lambda: len(s.notification_ids()) >= 3, 4):
+            raise SkipShot('no notification arrived')
+        time.sleep(0.8)  # the bubbles map (unnamed windows: nothing to wait for)
+        for w in set(s.overlays()) - windows:
+            s.xdo('windowunmap', str(w))
+        open_menu(s)
+        if not s.wait(lambda: any(k.startswith('@badge:') for k in s.layout('SDE Menu')), 4):
+            raise SkipShot('no badge in the Start Menu')
+        s.shot('start-menu-badges', quiet=0.6)
+    finally:
+        s.keep_bubbles = False
+        s.clear_notifications()
 
 
 FLYOUTS = [
