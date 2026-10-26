@@ -32,6 +32,18 @@ namespace merkadu {
 namespace {
 
 constexpr int kInteractiveTimeout = 10 * 60 * 1000;  // polkit may wait for the user
+constexpr int kStartWait = 120;                      // seconds snapd may take to start (Enable Snap Support)
+
+// snapd was installed a moment ago (Enable Snap Support): it does not
+// listen yet, it answers "too early" while it seeds itself, or it is busy
+// with its own first change.
+bool snapd_starting(const HttpResponse &r) {
+  if (r.status == 0) return true;
+  std::string kind = snapd_error_kind(r.body);
+  if (kind == "snap-change-conflict" || kind == "system-restart") return true;
+  std::string msg = snapd_error(r.body);
+  return msg.find("too early") != std::string::npos || msg.find("not yet seeded") != std::string::npos;
+}
 
 std::string error_of(const HttpResponse &r) {
   if (r.status == 0) return r.error.empty() ? std::string(_("snapd did not answer.")) : r.error;
@@ -191,24 +203,40 @@ class SnapBackend : public Backend {
         [j, run, progress] {
           std::string action = j.action == Action::Install ? "install" : j.action == Action::Remove ? "remove"
                                                                                                     : "refresh";
-          HttpResponse r;
-          if (j.targets.size() == 1) {
-            std::string body = "{\"action\":" + json_quote(action);
-            if (j.action == Action::Install) {
-              // The channel of the store result ("latest/stable"); stable by default.
-              std::string channel = j.remote.empty() ? "stable" : j.remote;
-              body += ",\"channel\":" + json_quote(channel);
-              if (j.classic) body += ",\"classic\":true";
+          auto send = [&j, &action] {
+            if (j.targets.size() == 1) {
+              std::string body = "{\"action\":" + json_quote(action);
+              if (j.action == Action::Install) {
+                // The channel of the store result ("latest/stable"); stable by default.
+                std::string channel = j.remote.empty() ? "stable" : j.remote;
+                body += ",\"channel\":" + json_quote(channel);
+                if (j.classic) body += ",\"classic\":true";
+              }
+              body += "}";
+              return http_unix(snapd_socket(), "POST", "/v2/snaps/" + j.targets[0], body, true, kInteractiveTimeout);
             }
-            body += "}";
-            r = http_unix(snapd_socket(), "POST", "/v2/snaps/" + j.targets[0], body, true, kInteractiveTimeout);
-          } else {
             std::string list;
             for (auto &t : j.targets) list += (list.empty() ? "" : ",") + json_quote(t);
-            r = http_unix(snapd_socket(), "POST", "/v2/snaps", "{\"action\":" + json_quote(action) +
-                                                                     ",\"snaps\":[" + list + "]}",
-                          true, kInteractiveTimeout);
+            return http_unix(snapd_socket(), "POST", "/v2/snaps",
+                             "{\"action\":" + json_quote(action) + ",\"snaps\":[" + list + "]}", true,
+                             kInteractiveTimeout);
+          };
+          HttpResponse r = send();
+          // After Enable Snap Support snapd needs a while: wait for it (a
+          // job that needs another one, the installation of snapd, only).
+          auto start = std::chrono::steady_clock::now();
+          while (j.needs && snapd_starting(r) && !run->cancel &&
+                 std::chrono::steady_clock::now() - start < std::chrono::seconds(kStartWait)) {
+            if (progress) {
+              Progress p;
+              p.status = _("Waiting for snapd to start");
+              p.cancellable = true;
+              post([progress, p] { progress(p); });
+            }
+            for (int i = 0; i < 30 && !run->cancel; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            r = send();
           }
+          if (run->cancel && r.status != 202) return std::make_pair(std::string(), true);
           std::string change = r.status == 202 ? snapd_change_id(r.body) : "";
           if (change.empty()) {
             std::string err = error_of(r);

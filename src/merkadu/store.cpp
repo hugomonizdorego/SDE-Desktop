@@ -521,8 +521,12 @@ void Store::job_finished(int id, bool ok, bool cancelled, const std::string &err
       probe_sources();
     }
     reload_installed(s);
-    // A snap install may have added AppStream ids of other sources.
-    if (s == Source::Snap) store_apps_.clear();
+    // A snap install may have added AppStream ids of other sources; the
+    // snapd snap (Enable Snap Support) makes the source available.
+    if (s == Source::Snap) {
+      store_apps_.clear();
+      probe_sources();
+    }
   }
   run_next();
 }
