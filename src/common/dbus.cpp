@@ -76,6 +76,58 @@ bool sandboxed_process(long pid, const std::string &proc) {
   return false;
 }
 
+std::string peer_program(long pid, const std::string &proc) {
+  if (pid <= 0) return "";
+  std::string base = proc + "/" + std::to_string(pid);
+  auto read = [](const std::string &path) {
+    std::string text;
+    if (FILE *f = fopen(path.c_str(), "re")) {
+      char buf[4096];
+      size_t n = fread(buf, 1, sizeof buf, f);
+      fclose(f);
+      text.assign(buf, n);
+    }
+    return text;
+  };
+  // A Flatpak application: the ID in its sandbox's /.flatpak-info.
+  std::string info = read(base + "/root/.flatpak-info");
+  for (size_t at = info.find("\nname="); at != std::string::npos;) {
+    size_t end = info.find('\n', at + 6);
+    std::string id = info.substr(at + 6, end == std::string::npos ? std::string::npos : end - at - 6);
+    while (!id.empty() && (id.back() == ' ' || id.back() == '\r')) id.pop_back();
+    if (!id.empty()) return "flatpak:" + id;
+    break;
+  }
+  std::vector<std::string> argv;
+  std::string cmdline = read(base + "/cmdline"), cur;
+  for (char c : cmdline) {
+    if (c) cur += c;
+    else argv.push_back(cur), cur.clear();
+  }
+  if (!cur.empty()) argv.push_back(cur);
+  char buf[4096];
+  ssize_t n = readlink((base + "/exe").c_str(), buf, sizeof buf - 1);
+  std::string exe = n > 0 ? std::string(buf, size_t(n)) : argv.empty() ? std::string() : argv[0];
+  const std::string deleted = " (deleted)";  // replaced by an upgrade while it runs
+  if (exe.size() > deleted.size() && exe.compare(exe.size() - deleted.size(), deleted.size(), deleted) == 0)
+    exe.resize(exe.size() - deleted.size());
+  auto base_name = [](const std::string &p) { return p.substr(p.rfind('/') == std::string::npos ? 0 : p.rfind('/') + 1); };
+  std::string name = base_name(exe);
+  // Interpreters run the script named after their options.
+  static const char *const interpreters[] = {"python", "perl", "ruby", "node", "nodejs", "gjs", "lua", "java", "sh", "bash"};
+  bool interpreted = false;
+  for (const char *i : interpreters)
+    interpreted = interpreted || name == i || (strcmp(i, "python") == 0 && name.compare(0, 6, "python") == 0);
+  for (size_t i = 1; interpreted && i < argv.size(); ++i)
+    if (!argv[i].empty() && argv[i][0] != '-') {
+      name = base_name(argv[i]);
+      size_t dot = name.rfind('.');
+      if (dot != std::string::npos && dot > 0) name.resize(dot);
+      break;
+    }
+  return name;
+}
+
 std::string sanitize_utf8(const std::string &s) {
   if (valid_utf8(s)) return s;
   std::string out;

@@ -43,6 +43,9 @@ struct Task {
   bool minimized = false;
   bool urgent = false;
   int x = 0, w = 0;
+  // 0.2 Alpha 3: the window's application (desktop file ID) for its live
+  // badge, found again when its class changes.
+  std::string app_id, app_class;
 };
 
 struct Pinned {
@@ -250,6 +253,9 @@ class Panel : public sde::BufferedWindow {
   bool handle_x(const XEvent &e);
   void save_pins();
   bool find_entry_for(const Task &t, sde::DesktopEntry &out) const;
+  // 0.2 Alpha 3: live badges on the pinned launchers and the taskbar
+  // buttons (badges.h); repaints them when a badge changes.
+  static void badges_changed(void *);
   void open_popup(PanelPopup *p, int anchor_x, bool align_right);
   bool any_popup_open() const;
   int status_count() const;

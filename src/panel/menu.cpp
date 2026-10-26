@@ -16,8 +16,10 @@
 #include <ctime>
 #include <map>
 
+#include "../settings/default_apps.h"
 #include "account.h"
 #include "avatar_view.h"
+#include "badges.h"
 #include "buffered_window.h"
 #include "build_config.h"
 #include "glyphs.h"
@@ -100,6 +102,26 @@ std::string size_label(TileSize s) {
     case TileSize::Large: return _("Large");
   }
   return "";
+}
+
+// The small icons on a folder tile of |w| x |h| (0.2 Alpha 3): the grid
+// (menu::folder_grid()), the icon size, the space between them, the margin
+// and the room for the name below them.
+struct FolderGrid {
+  int cols = 2, rows = 2;
+  double icon = 0, gap = 0, pad = 0, label = 0;
+};
+FolderGrid folder_grid_of(TileSize size, int w, int h) {
+  FolderGrid g;
+  menu::folder_grid(size, g.cols, g.rows);
+  bool small = size == TileSize::Small;
+  g.pad = small ? Sd(5) : Sd(10);
+  g.label = small ? 0 : Sd(24);
+  g.gap = small ? Sd(2) : Sd(5);
+  double aw = w - 2 * g.pad, ah = h - 2 * g.pad - g.label;
+  g.icon = std::floor(std::min((aw - (g.cols - 1) * g.gap) / g.cols, (ah - (g.rows - 1) * g.gap) / g.rows));
+  g.icon = std::max(4.0, std::min(g.icon, small ? Sd(18) : Sd(40)));
+  return g;
 }
 
 // ------------------------------------------------------------ rail glyphs
@@ -493,6 +515,8 @@ std::vector<std::string> group_names() {
           _("Accessories"), _("Other")};
 }
 
+std::vector<std::string> favorite_names() { return {_("Work"), _("Photos and media"), _("System")}; }
+
 // SDE's own applications (the default groups prefer them within a role).
 std::vector<std::string> sde_ids(const app_catalog::Snapshot &apps) {
   std::vector<std::string> out;
@@ -501,38 +525,122 @@ std::vector<std::string> sde_ids(const app_catalog::Snapshot &apps) {
   return out;
 }
 
+namespace {
+
+// [menu] tiles_version: 3 since 0.2 Alpha 3 (folders, favorites again).
+const int kTilesVersion = 3;
+const char *const kNoTiles = "\x01";
+
+int saved_version(const Config &cfg) {
+  return cfg.get("menu", "tiles", kNoTiles) == kNoTiles ? kTilesVersion : cfg.get_int("menu", "tiles_version", 1);
+}
+
+// The applications chosen in Control Center > Default Applications
+// (mimeapps.list in |paths|, [applications] terminal), for the default
+// favorites.
+menu::DefaultApps default_apps(const app_catalog::Snapshot &apps, const std::vector<std::string> &paths) {
+  std::vector<MimeApp> mime;
+  mime.reserve(apps.apps.size());
+  for (auto &a : apps.apps) {
+    MimeApp m;
+    m.id = a.id;
+    m.name = a.name;
+    m.mime_types = a.mime_types;
+    m.categories = a.categories;
+    mime.push_back(std::move(m));
+  }
+  std::vector<MimeAppsList> lists;
+  for (auto &p : paths) {
+    MimeAppsList l;
+    if (l.load(p)) lists.push_back(std::move(l));
+  }
+  auto pick = [&](const char *category) {
+    const AppCategory *c = find_category(category);
+    return c && !c->types.empty() ? resolve_default(c->types[0], lists, mime) : std::string();
+  };
+  menu::DefaultApps d;
+  d.browser = pick("browser");
+  d.mail = pick("mail");
+  d.files = pick("files");
+  d.documents = pick("pdf");
+  d.video = pick("video");
+  d.music = pick("music");
+  std::string terminal = Panel::instance->config().get("applications", "terminal", "auto");
+  if (terminal != "auto") d.terminal = terminal;
+  return d;
+}
+
+}  // namespace
+
+bool automatic() {
+  const Config &cfg = Panel::instance->config();
+  return cfg.get("menu", "tiles", kNoTiles) == kNoTiles || saved_version(cfg) < kTilesVersion;
+}
+
 std::vector<TileGroup> load() {
   const Config &cfg = Panel::instance->config();
-  const std::string sentinel = "\x01";
+  const std::string sentinel = kNoTiles;
   std::string v = cfg.get("menu", "tiles", sentinel);
   std::string fav = v == sentinel ? cfg.get("menu", "favorites", sentinel) : std::string();
-  // Saved before 0.2 Alpha 2 ([menu] tiles_version below 2): the default
-  // groups "Productivity" and "Explore" become category groups.
-  bool old = v != sentinel && cfg.get_int("menu", "tiles_version", 1) < 2;
+  int version = saved_version(cfg);
+  // SDE's own tiles follow the installed applications and the defaults:
+  // the favorites while nothing is saved, and the groups of older versions
+  // until they are saved again.
+  bool follow = v == sentinel || version < kTilesVersion;
   // The search asks for every keystroke and every result it shows: parse
-  // once per change of the setting (the default tiles and the migration:
-  // of the installed applications).
-  app_catalog::SnapshotPtr apps = v == sentinel || old ? app_catalog::current() : nullptr;
-  std::string key = v + '\x02' + fav + '\x02' + (old ? "1" : "2") + '\x02' +
-                    (apps ? std::to_string(apps->generation) : "");
+  // once per change of the setting (SDE's own tiles: of the installed
+  // applications and of the mimeapps.list files, compared by their times).
+  app_catalog::SnapshotPtr apps = follow ? app_catalog::current() : nullptr;
+  std::vector<std::string> paths = follow ? mimeapps_paths() : std::vector<std::string>();
+  std::string key = v + '\x02' + fav + '\x02' + std::to_string(version) + '\x02' +
+                    (apps ? std::to_string(apps->generation) : "") + '\x02' +
+                    (follow ? cfg.get("applications", "terminal", "auto") : "");
+  for (auto &p : paths) {
+    struct stat st;
+    if (stat(p.c_str(), &st) == 0) key += '\x03' + p + std::to_string((long long)st.st_mtime);
+  }
   static std::string cached_key;
   static std::vector<TileGroup> cached;
   if (key == cached_key) return cached;
   std::vector<TileGroup> groups;
-  auto names = group_names();
+  auto names = favorite_names();
   if (v != sentinel) {
     groups = menu::parse_tile_groups(v);
-    if (old)
-      groups = menu::migrate_tile_groups(groups, {"Productivity", "Explore", _("Productivity"), _("Explore")},
-                                         apps->apps, names);
+    if (version < kTilesVersion) {
+      // 0.2 Alpha 1 and 2 made the first groups themselves (Productivity
+      // and Explore; groups by category): where they are still as SDE made
+      // them, the favorites take their place (menu::adopt_favorites()).
+      auto sde = sde_ids(*apps);
+      std::vector<bool> automatic(groups.size(), false);
+      std::vector<std::string> picks;
+      if (version < 2) {
+        std::vector<std::string> old = {"Productivity", "Explore", _("Productivity"), _("Explore")};
+        for (size_t g = 0; g < groups.size(); ++g)
+          for (auto &n : old)
+            if (lower(trim(groups[g].name)) == lower(n)) automatic[g] = true;
+        picks = menu::default_favorites(apps->apps, 8);
+      } else {
+        static const char *const english[] = {"Internet", "Office", "Multimedia", "Graphics", "Development",
+                                              "Games", "Education & Science", "System & Settings",
+                                              "Accessories", "Other"};
+        auto translated = group_names();
+        std::vector<std::vector<std::string>> category_names;
+        for (size_t c = 0; c < translated.size(); ++c) category_names.push_back({english[c], translated[c]});
+        if (menu::category_shaped(groups, apps->apps, category_names)) automatic.assign(groups.size(), true);
+        picks = menu::tile_ids(menu::category_groups(apps->apps, sde, translated, kDefaultTiles));
+      }
+      groups = menu::adopt_favorites(groups, automatic, picks,
+                                     menu::favorite_groups(apps->apps, default_apps(*apps, paths), sde, names),
+                                     apps->apps, names);
+    }
   } else if (fav != sentinel) {
-    // alpha15 and older: up to 12 favorites, each in the group of its
-    // category (favorites that are not installed any more are left out).
+    // alpha15 and older: up to 12 favorites, each in the favorites group of
+    // its kind (favorites that are not installed any more are left out).
     for (auto &id : menu::parse_id_list(fav))
-      if (const DesktopEntry *e = apps->find(id)) menu::pin_by_category(groups, *e, apps->apps, names);
+      if (const DesktopEntry *e = apps->find(id)) menu::pin_favorite(groups, *e, apps->apps, names);
   } else {
-    // Never arranged: groups by category of the installed applications.
-    groups = menu::category_groups(apps->apps, sde_ids(*apps), names, kDefaultTiles);
+    // Never arranged: the default favorites of the installed applications.
+    groups = menu::favorite_groups(apps->apps, default_apps(*apps, paths), sde_ids(*apps), names);
   }
   cached_key = key;
   cached = groups;
@@ -544,7 +652,7 @@ void save(const std::vector<TileGroup> &groups) {
   std::string ids = menu::join_id_list(menu::tile_ids(groups));
   Panel::instance->set_settings({{"menu", "tiles", menu::format_tile_groups(groups)},
                                  {"menu", "favorites", ids.empty() ? ";" : ids},
-                                 {"menu", "tiles_version", "2"}});
+                                 {"menu", "tiles_version", std::to_string(kTilesVersion)}});
 }
 
 std::vector<std::string> ids() { return menu::tile_ids(load()); }
@@ -560,19 +668,15 @@ void pin(const std::string &id) {
   DesktopEntry unknown;
   unknown.id = id;
   const DesktopEntry *e = apps->find(id);
-  if (menu::pin_by_category(groups, e ? *e : unknown, apps->apps, group_names())) save(groups);
+  if (menu::pin_favorite(groups, e ? *e : unknown, apps->apps, favorite_names())) save(groups);
 }
 
 void unpin(const std::string &id) {
   auto groups = load();
+  menu::TilePlace was = menu::take_app(groups, id);
+  if (was.group < 0) return;
   // A group whose last tile this was goes with it.
-  for (size_t g = 0; g < groups.size(); ++g) {
-    auto &tiles = groups[g].tiles;
-    size_t before = tiles.size();
-    tiles.erase(std::remove_if(tiles.begin(), tiles.end(), [&](const Tile &t) { return t.id == id; }),
-                tiles.end());
-    if (before && tiles.empty()) groups.erase(groups.begin() + long(g--));
-  }
+  if (groups[size_t(was.group)].tiles.empty()) groups.erase(groups.begin() + was.group);
   save(groups);
 }
 
@@ -591,17 +695,20 @@ AppMenu::AppMenu() : PanelPopup("SDE Menu") {
   account_.reset(new AccountPopup);
   callback([](Fl_Widget *w, void *) { static_cast<AppMenu *>(w)->close(); });
   app_catalog::subscribe(catalog_changed, this);
+  badges::Badges::get().subscribe(badges_changed, this);
 }
 
 AppMenu::~AppMenu() {
   if (instance == this) instance = nullptr;
   app_catalog::unsubscribe(this);
+  badges::Badges::get().unsubscribe(this);
   Fl::remove_timeout(autoscroll, this);
   Fl::remove_timeout(poll_applications, this);
   Fl::remove_timeout(animate, this);
   Fl::remove_timeout(glide, this);
   Fl::remove_timeout(preload, this);
   Fl::remove_timeout(qa_dump_later, this);
+  Fl::remove_timeout(folder_tick, this);
 }
 
 // ---------------------------------------------------------------------------
@@ -622,10 +729,10 @@ const DesktopEntry *AppMenu::app(const std::string &id) const {
 }
 
 void AppMenu::load_tiles() {
-  tiles_default_ = Panel::instance->config().get("menu", "tiles", "\x01") == "\x01" &&
-                   Panel::instance->config().get("menu", "favorites", "\x01") == "\x01";
+  tiles_default_ = start_tiles::automatic();
   groups_ = start_tiles::load();
   usage_ = panel_search::load_usage();
+  find_open_folder(folder_key_);
   invalidate();
 }
 
@@ -636,7 +743,115 @@ void AppMenu::save_tiles(int emptied) {
     groups_.erase(groups_.begin() + emptied);
   tiles_default_ = false;
   start_tiles::save(groups_);
+  find_open_folder(folder_key_);
   invalidate();
+}
+
+// ---------------------------------------------------------------------------
+// Folders (0.2 Alpha 3)
+
+namespace {
+const double kFolderTime = 0.2;  // seconds to glide open or shut
+}
+
+void AppMenu::expand_folder(int group, int index, bool animate) {
+  if (group < 0 || group >= int(groups_.size()) || index < 0 ||
+      index >= int(groups_[size_t(group)].tiles.size()) || !groups_[size_t(group)].tiles[size_t(index)].folder)
+    return;
+  if (folder_group_ == group && folder_index_ == index && folder_to_ == 1) return;
+  // Another open folder closes at once.
+  folder_group_ = group;
+  folder_index_ = index;
+  folder_key_ = groups_[size_t(group)].tiles[size_t(index)].apps;
+  folder_to_ = 1;
+  folder_open_ = folder_from_ = animate && smooth_ && shown() ? 0 : 1;
+  folder_start_ = now();
+  hover_ = {};
+  invalidate();
+  damage_area(K_TILE);
+  Fl::remove_timeout(folder_tick, this);
+  Fl::add_timeout(folder_open_ < 1 ? 1.0 / 60 : 0, folder_tick, this);
+}
+
+void AppMenu::collapse_folder(bool animate) {
+  if (folder_group_ < 0) return;
+  if (animate && smooth_ && shown() && folder_open_ > 0) {
+    folder_from_ = folder_open_;
+    folder_to_ = 0;
+    folder_start_ = now();
+    if (!Fl::has_timeout(folder_tick, this)) Fl::add_timeout(1.0 / 60, folder_tick, this);
+    return;
+  }
+  Fl::remove_timeout(folder_tick, this);
+  folder_group_ = folder_index_ = -1;
+  folder_open_ = folder_to_ = 0;
+  folder_key_.clear();
+  if (selected_.kind == K_FOLDER_APP || selected_.kind == K_FOLDER_NAME) selected_ = {};
+  hover_ = {};
+  invalidate();
+  damage_area(K_TILE);
+}
+
+// One frame of a folder gliding open or shut: the tiles below it move, only
+// the tiles are repainted. Opened, the folder comes into view.
+void AppMenu::folder_tick(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (!self->shown() || self->folder_group_ < 0) return;
+  double span = self->folder_from_ == self->folder_to_ ? 0 : kFolderTime;
+  double p = span > 0 ? std::min(1.0, (now() - self->folder_start_) / span) : 1.0;
+  self->folder_open_ = self->folder_from_ + (self->folder_to_ - self->folder_from_) * ease_out(p);
+  if (p < 1.0) {
+    self->invalidate();
+    self->damage_area(K_TILE);
+    Fl::repeat_timeout(1.0 / 60, folder_tick, data);
+    return;
+  }
+  self->folder_open_ = self->folder_to_;
+  if (self->folder_to_ <= 0) {
+    self->collapse_folder(false);
+    return;
+  }
+  self->invalidate();
+  self->damage_area(K_TILE);
+  self->qa_dumped_ = 0;  // the UI tests see the open folder at once
+  self->build_items();
+  const Area *a = self->area(K_TILE);
+  const Item *f = self->find({K_FOLDER, self->folder_index_, self->folder_group_});
+  bool rename = self->rename_when_open_;
+  self->rename_when_open_ = false;
+  if (a && f && self->folder_band_.h > 0) {
+    // As much of the band as fits, the folder itself staying in view (at
+    // once when its name is asked: the editor sits on the band).
+    int over = self->folder_band_.y + self->folder_band_.h + S(8) - (a->y + a->h);
+    over = std::min(over, f->y - a->y);
+    if (over > 0) self->scroll_to(K_TILE, self->tiles_scroll_ + over, !rename);
+  }
+  if (const Item *s = self->find(self->selected_)) {
+    Item copy = *s;
+    if (copy.kind == K_FOLDER_APP) self->ensure_visible(copy);
+  }
+  if (rename) self->start_rename(self->folder_group_, true);
+  else self->rehover();
+}
+
+void AppMenu::find_open_folder(const std::vector<std::string> &apps) {
+  if (folder_group_ < 0) return;
+  int best = 0, bg = -1, bi = -1;
+  for (size_t g = 0; g < groups_.size(); ++g)
+    for (size_t i = 0; i < groups_[g].tiles.size(); ++i) {
+      const Tile &t = groups_[g].tiles[i];
+      if (!t.folder) continue;
+      int n = 0;
+      for (auto &id : t.apps) n += std::find(apps.begin(), apps.end(), id) != apps.end() ? 1 : 0;
+      if (n > best) best = n, bg = int(g), bi = int(i);
+    }
+  if (bg < 0) {
+    collapse_folder(false);
+    return;
+  }
+  folder_group_ = bg;
+  folder_index_ = bi;
+  folder_key_ = groups_[size_t(bg)].tiles[size_t(bi)].apps;
 }
 
 // Without inotify, or while a data directory is missing
@@ -663,6 +878,14 @@ void AppMenu::catalog_changed(void *data) {
   self->apply_catalog();
 }
 
+void AppMenu::badges_changed(void *data) {
+  auto *self = static_cast<AppMenu *>(data);
+  if (!self->is_open() || !self->shown()) return;
+  self->qa_dumped_ = 0;  // the UI tests see the badges at once
+  self->damage_area(K_TILE);
+  self->damage_area(K_ROW);
+}
+
 bool AppMenu::busy() const {
   return menu_busy_ || launching_ || dragging_ || press_.kind != K_NONE || rename_group_ >= 0 ||
          resize_edge_ || drag_area_ != K_NONE;
@@ -674,6 +897,7 @@ void AppMenu::apply_catalog() {
                              : "";
   reload();
   if (tiles_default_) groups_ = start_tiles::load();
+  find_open_folder(folder_key_);
   auto cat = std::find(categories_.begin(), categories_.end(), category);
   category_ = cat != categories_.end() ? int(cat - categories_.begin()) : -1;
   filter();
@@ -765,6 +989,13 @@ void AppMenu::prepare() {
   hover_ = selected_ = anim_ = press_ = {};
   dragging_ = false;
   drag_group_ = -1;
+  drag_folder_group_ = drag_folder_index_ = -1;
+  // Every opening starts with the folders shut.
+  Fl::remove_timeout(folder_tick, this);
+  folder_group_ = folder_index_ = -1;
+  folder_open_ = folder_to_ = 0;
+  folder_key_.clear();
+  renaming_folder_ = false;
   resize_edge_ = cursor_edge_ = 0;
   keyboard_ = false;
   launching_ = false;
@@ -801,10 +1032,16 @@ void AppMenu::closed() {
   account_->close();
   dragging_ = false;
   drag_group_ = -1;
+  drag_folder_group_ = drag_folder_index_ = -1;
   Fl::remove_timeout(autoscroll, this);
+  Fl::remove_timeout(folder_tick, this);
+  folder_group_ = folder_index_ = -1;
+  folder_open_ = folder_to_ = 0;
+  folder_key_.clear();
   press_ = {};
   rename_->hide();
   rename_group_ = -1;
+  renaming_folder_ = false;
   super_down_ = false;
   cursor(FL_CURSOR_DEFAULT);
 }
@@ -1039,6 +1276,7 @@ void AppMenu::layout_list() {
 
 void AppMenu::layout_tiles() {
   group_rects_.clear();
+  folder_band_ = {};
   int H = h();
   Area a;
   a.kind = K_TILE;
@@ -1050,6 +1288,7 @@ void AppMenu::layout_tiles() {
   int head = S(36), col_gap = S(24);
   std::vector<int> heights(size_t(group_cols_), 0);
   std::vector<Item> tiles;
+  size_t band_first = 0, band_end = 0;  // the open folder's items in |tiles|
   for (size_t g = 0; g < groups_.size(); ++g) {
     size_t col = size_t(std::min_element(heights.begin(), heights.end()) - heights.begin());
     int gx = tiles_x_ + S(4) + int(col) * (group_w_ + col_gap), gy = heights[col] + S(4);
@@ -1064,23 +1303,85 @@ void AppMenu::layout_tiles() {
     tiles.push_back(hd);
     int rows = 0;
     auto cells = menu::pack_tiles(groups_[g].tiles, menu::kGroupColumns, &rows);
-    // Tiles of applications that are no longer installed are hidden.
+    // 0.2 Alpha 3: the open folder shows its applications in a band below
+    // its row (the first row edge no tile crosses), the rows below it
+    // moved down by as much of the band as is open.
+    int band_row = -1, band_h = 0, band_full = 0;
+    int band_pad = S(8), name_h = S(32);
+    std::vector<std::pair<int, const DesktopEntry *>> band_apps;
+    if (int(g) == folder_group_ && folder_index_ >= 0 && folder_index_ < int(cells.size()) &&
+        groups_[g].tiles[size_t(folder_index_)].folder) {
+      const menu::TileCell &fc = cells[size_t(folder_index_)];
+      band_row = fc.row + fc.rows;
+      for (bool moved = true; moved;) {
+        moved = false;
+        for (auto &c : cells)
+          if (c.row < band_row && c.row + c.rows > band_row) band_row = c.row + c.rows, moved = true;
+      }
+      const auto &members = groups_[g].tiles[size_t(folder_index_)].apps;
+      for (size_t m = 0; m < members.size(); ++m)
+        if (const DesktopEntry *e = app(members[m])) band_apps.push_back({int(m), e});
+      int lines = std::max(1, (int(band_apps.size()) + 2) / 3);
+      band_full = band_pad + name_h + lines * (2 * cell_ + 2 * gap_) - gap_ + band_pad;
+      band_h = int(std::lround((band_full + gap_) * folder_open_));
+    }
+    auto row_y = [&](int row) {
+      return gy + head + row * (cell_ + gap_) + (band_row >= 0 && row >= band_row ? band_h : 0);
+    };
+    // Tiles of applications that are no longer installed are hidden, and
+    // folders none of whose applications are installed.
     int shown = 0;
     for (size_t i = 0; i < cells.size(); ++i) {
-      const DesktopEntry *e = app(groups_[g].tiles[i].id);
-      if (!e) continue;
+      const Tile &tile = groups_[g].tiles[i];
       Item t;
-      t.kind = K_TILE;
+      if (tile.folder) {
+        if (folder_entries(int(g), int(i)).empty()) continue;
+        t.kind = K_FOLDER;
+        t.label = tile.name;
+      } else {
+        const DesktopEntry *e = app(tile.id);
+        if (!e) continue;
+        t.kind = K_TILE;
+        t.entry = e;
+      }
       t.group = int(g);
       t.index = int(i);
-      t.entry = e;
-      t.size = groups_[g].tiles[i].size;
+      t.size = tile.size;
       t.x = gx + cells[i].col * (cell_ + gap_);
-      t.y = gy + head + cells[i].row * (cell_ + gap_);
+      t.y = row_y(cells[i].row);
       t.w = cells[i].cols * cell_ + (cells[i].cols - 1) * gap_;
       t.h = cells[i].rows * cell_ + (cells[i].rows - 1) * gap_;
+      if (t.kind == K_FOLDER && int(i) == folder_index_ && int(g) == folder_group_) folder_notch_ = t.x + t.w / 2;
       tiles.push_back(t);
       ++shown;
+    }
+    if (band_row >= 0 && band_h > 0) {
+      int by = gy + head + band_row * (cell_ + gap_);
+      folder_band_ = {gx - S(6), by, group_w_ + S(12), std::min(band_full, std::max(0, band_h - gap_))};
+      band_first = tiles.size();
+      Item nm;
+      nm.kind = K_FOLDER_NAME;
+      nm.group = int(g);
+      nm.index = folder_index_;
+      nm.label = groups_[g].tiles[size_t(folder_index_)].name;
+      nm.x = gx;
+      nm.y = by + band_pad;
+      nm.w = group_w_;
+      nm.h = name_h;
+      tiles.push_back(nm);
+      for (size_t k = 0; k < band_apps.size(); ++k) {
+        Item fa;
+        fa.kind = K_FOLDER_APP;
+        fa.group = int(g);
+        fa.index = band_apps[k].first;
+        fa.entry = band_apps[k].second;
+        fa.size = TileSize::Medium;
+        fa.x = gx + int(k % 3) * 2 * (cell_ + gap_);
+        fa.y = by + band_pad + name_h + int(k / 3) * (2 * cell_ + 2 * gap_);
+        fa.w = fa.h = 2 * cell_ + gap_;
+        tiles.push_back(fa);
+      }
+      band_end = tiles.size();
     }
     if (!shown) {
       // Room to drop tiles into a group without tiles, a hint there and
@@ -1104,7 +1405,7 @@ void AppMenu::layout_tiles() {
       hint.h = 2 * cell_ + gap_;
       tiles.push_back(hint);
     }
-    int gh = head + rows * (cell_ + gap_);
+    int gh = head + rows * (cell_ + gap_) + (band_row >= 0 ? band_h : 0);
     group_rects_.push_back({gx, gy, group_w_, gh});
     heights[col] = gy + gh + S(14);
   }
@@ -1129,16 +1430,33 @@ void AppMenu::layout_tiles() {
   tiles_scroll_ = std::max(0, std::min(tiles_scroll_, a.content - a.h));
   for (auto &r : group_rects_) r.y += a.y - tiles_scroll_;
   new_group_.y += a.y - tiles_scroll_;
-  for (auto &t : tiles) {
+  folder_band_.y += a.y - tiles_scroll_;
+  for (size_t i = 0; i < tiles.size(); ++i) {
+    Item &t = tiles[i];
     t.y += a.y - tiles_scroll_;
     t.cx = a.x;
     t.cy = a.y;
     t.cw = a.w;
     t.ch = a.h;
-    t.visible = t.y + t.h > a.y && t.y < a.y + a.h;
+    if (i >= band_first && i < band_end) {
+      // The open folder's applications show as far as the band is open.
+      int top = std::max(a.y, folder_band_.y), bottom = std::min(a.y + a.h, folder_band_.y + folder_band_.h);
+      t.cy = top;
+      t.ch = std::max(0, bottom - top);
+    }
+    t.visible = t.ch > 0 && t.y + t.h > t.cy && t.y < t.cy + t.ch;
     items_.push_back(t);
   }
   areas_.push_back(a);
+}
+
+std::vector<const DesktopEntry *> AppMenu::folder_entries(int group, int index) const {
+  std::vector<const DesktopEntry *> out;
+  if (group < 0 || group >= int(groups_.size()) || index < 0 || index >= int(groups_[size_t(group)].tiles.size()))
+    return out;
+  for (auto &id : groups_[size_t(group)].tiles[size_t(index)].apps)
+    if (const DesktopEntry *e = app(id)) out.push_back(e);
+  return out;
 }
 
 std::string AppMenu::group_label(int group) const {
@@ -1208,8 +1526,27 @@ void AppMenu::activate(const Item &it) {
         save_tiles();
       }
       break;
+    case K_FOLDER:
+      // A click opens a folder in place; another click shuts it.
+      if (folder_group_ == it.group && folder_index_ == it.index && folder_to_ > 0) {
+        collapse_folder();
+        return;
+      }
+      expand_folder(it.group, it.index);
+      if (keyboard_) {
+        // From the keyboard: its first application is selected.
+        for (auto &id : groups_[size_t(it.group)].tiles[size_t(it.index)].apps)
+          if (app(id)) {
+            auto &apps = groups_[size_t(it.group)].tiles[size_t(it.index)].apps;
+            selected_ = {K_FOLDER_APP, int(std::find(apps.begin(), apps.end(), id) - apps.begin()), it.group};
+            break;
+          }
+      }
+      return;
+    case K_FOLDER_NAME: start_rename(it.group, true); return;
     case K_ROW:
-    case K_TILE: launch(it); return;
+    case K_TILE:
+    case K_FOLDER_APP: launch(it); return;
     default: return;
   }
   redraw();
@@ -1226,7 +1563,7 @@ void AppMenu::launch(const Item &it) {
     close();
     return;
   }
-  bool big = it.kind == K_TILE;
+  bool big = it.kind == K_TILE || it.kind == K_FOLDER_APP;
   launch_size_ = big ? std::min(it.w, it.h) * 0.45 : S(24);
   launch_cx_ = big ? it.x + it.w / 2.0 : it.x + S(12) + launch_size_ / 2;
   launch_cy_ = it.y + it.h / 2.0;
@@ -1433,6 +1770,138 @@ void AppMenu::group_menu(int group, int px, int py) {
   redraw();
 }
 
+// 0.2 Alpha 3: a folder's menu: open it, rename, resize or move it, give
+// its applications back their own tiles, or unpin it with them.
+void AppMenu::folder_menu(const Item &it, int px, int py) {
+  if (it.group < 0 || it.group >= int(groups_.size())) return;
+  auto *tiles = &groups_[size_t(it.group)].tiles;
+  if (it.index < 0 || it.index >= int(tiles->size()) || !(*tiles)[size_t(it.index)].folder) return;
+  Tile folder = (*tiles)[size_t(it.index)];
+  bool open = folder_group_ == it.group && folder_index_ == it.index && folder_to_ > 0;
+  std::vector<std::string> texts;
+  texts.reserve(groups_.size() + 4);
+  enum { TOGGLE = 1, RENAME, SMALL, MEDIUM, WIDE, LARGE, NEW_GROUP, UNGROUP, UNPIN, GROUP0 = 100 };
+  std::vector<Fl_Menu_Item> items;
+  auto add = [&](const char *text, long code, int flags = 0) {
+    items.push_back({text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0});
+  };
+  add(open ? _("Close Folder") : _("Open Folder"), TOGGLE, FL_MENU_DIVIDER);
+  add(_("Rename Folder"), RENAME);
+  add(_("Resize"), 0, FL_SUBMENU);
+  for (TileSize s : {TileSize::Small, TileSize::Medium, TileSize::Wide, TileSize::Large}) {
+    texts.push_back(size_label(s));
+    add(texts.back().c_str(), SMALL + int(s), FL_MENU_RADIO | (folder.size == s ? FL_MENU_VALUE : 0));
+  }
+  add(nullptr, 0);
+  add(_("Move to Group"), 0, FL_SUBMENU);
+  for (size_t i = 0; i < groups_.size(); ++i) {
+    if (int(i) == it.group) continue;
+    texts.push_back(groups_[i].name.empty() ? std::string(_("Unnamed group")) : menu_text(groups_[i].name));
+    add(texts.back().c_str(), GROUP0 + long(i));
+  }
+  add(_("New Group"), NEW_GROUP);
+  add(nullptr, 0, FL_MENU_DIVIDER);
+  add(_("Ungroup Folder"), UNGROUP);
+  add(_("Unpin Folder from Start"), UNPIN);
+  add(nullptr, 0);
+  const Fl_Menu_Item *m = run_menu(items.data(), px, py);
+  if (!m) return;
+  long code = reinterpret_cast<long>(m->user_data());
+  bool new_group = false;
+  switch (code) {
+    case TOGGLE:
+      if (open) collapse_folder();
+      else expand_folder(it.group, it.index);
+      return;
+    case RENAME:
+      if (!open) expand_folder(it.group, it.index, false);
+      start_rename(it.group, true);
+      return;
+    case SMALL:
+    case MEDIUM:
+    case WIDE:
+    case LARGE: (*tiles)[size_t(it.index)].size = TileSize(code - SMALL); break;
+    case NEW_GROUP:
+      tiles->erase(tiles->begin() + it.index);
+      groups_.push_back(TileGroup{"", {folder}});
+      new_group = true;
+      break;
+    case UNGROUP: {
+      // Its applications get their own tiles where it was.
+      tiles->erase(tiles->begin() + it.index);
+      std::vector<Tile> apps;
+      for (auto &id : folder.apps) apps.push_back(Tile{id, TileSize::Medium});
+      tiles->insert(tiles->begin() + it.index, apps.begin(), apps.end());
+      break;
+    }
+    case UNPIN: tiles->erase(tiles->begin() + it.index); break;
+    default:
+      if (code >= GROUP0 && code - GROUP0 < long(groups_.size())) {
+        tiles->erase(tiles->begin() + it.index);
+        groups_[size_t(code - GROUP0)].tiles.push_back(folder);
+      } else {
+        return;
+      }
+  }
+  save_tiles(it.group);
+  if (new_group) start_rename(int(groups_.size()) - 1);
+  redraw();
+}
+
+// An application in the open folder: open it, take it out of the folder
+// (it goes after the folder) or unpin it, and the usual application items.
+void AppMenu::folder_app_menu(const Item &it, int px, int py) {
+  if (!it.entry || it.group != folder_group_) return;
+  DesktopEntry e = *it.entry;
+  bool pinned = Panel::instance->is_pinned(e.id);
+  enum { OPEN = 1, OUT, UNPIN, PANEL, LOCATION, INFO, UNINSTALL };
+  std::vector<Fl_Menu_Item> items;
+  auto add = [&](const char *text, long code, int flags = 0) {
+    items.push_back({text, 0, nullptr, reinterpret_cast<void *>(code), flags, 0, 0, 0, 0});
+  };
+  add(_("Open"), OPEN, FL_MENU_DIVIDER);
+  add(_("Remove from Folder"), OUT);
+  add(_("Unpin from Start"), UNPIN, FL_MENU_DIVIDER);
+  add(pinned ? _("Unpin from Panel") : _("Pin to Panel"), PANEL, FL_MENU_DIVIDER);
+  add(_("Open file location"), LOCATION, e.path.empty() ? FL_MENU_INACTIVE : 0);
+  bool removable = start_apps::can_uninstall(e);
+  add(_("App info..."), INFO, removable ? FL_MENU_DIVIDER : 0);
+  if (removable) add(_("Uninstall..."), UNINSTALL);
+  add(nullptr, 0);
+  const Fl_Menu_Item *m = run_menu(items.data(), px, py);
+  if (!m) return;
+  switch (reinterpret_cast<long>(m->user_data())) {
+    case OPEN: launch(it); return;
+    case OUT: {
+      menu::TileDrop after;
+      after.group = folder_group_;
+      after.index = folder_index_ + 1;
+      menu::drop_app(groups_, e.id, TileSize::Medium, after);
+      break;
+    }
+    case UNPIN: menu::take_app(groups_, e.id); break;
+    case PANEL:
+      if (pinned) Panel::instance->unpin(e.id);
+      else Panel::instance->pin(e.id);
+      return;
+    case LOCATION:
+      close();
+      open_file_location(e);
+      return;
+    case INFO:
+      close();
+      show_app_info(e);
+      return;
+    case UNINSTALL:
+      close();
+      start_apps::uninstall(e);
+      return;
+    default: return;
+  }
+  save_tiles();
+  redraw();
+}
+
 void AppMenu::row_menu(const Item &it, int px, int py) {
   if (!it.entry) return;
   DesktopEntry e = *it.entry;
@@ -1472,20 +1941,12 @@ void AppMenu::row_menu(const Item &it, int px, int py) {
       start_apps::uninstall(e);
       return;
     case START: {
-      // Unpinned: a group left without tiles goes too. Pinned: into the
-      // group of its category (Internet, Office...).
+      // Unpinned (also out of a folder): a group left without tiles goes
+      // too. Pinned: into the favorites group of its kind (Work, Photos and
+      // media, System).
       int emptied = -1;
-      if (tile) {
-        for (size_t g = 0; g < groups_.size(); ++g) {
-          auto &tiles = groups_[g].tiles;
-          size_t before = tiles.size();
-          tiles.erase(std::remove_if(tiles.begin(), tiles.end(), [&](const Tile &t) { return t.id == e.id; }),
-                      tiles.end());
-          if (tiles.size() != before) emptied = int(g);
-        }
-      } else {
-        menu::pin_by_category(groups_, e, apps_->apps, start_tiles::group_names());
-      }
+      if (tile) emptied = menu::take_app(groups_, e.id).group;
+      else menu::pin_favorite(groups_, e, apps_->apps, start_tiles::favorite_names());
       save_tiles(emptied);
       break;
     }
@@ -1560,21 +2021,26 @@ void AppMenu::background_menu(int px, int py) {
   redraw();
 }
 
-void AppMenu::start_rename(int group) {
+void AppMenu::start_rename(int group, bool folder) {
   if (group < 0 || group >= int(groups_.size())) return;
+  if (folder && (group != folder_group_ || folder_index_ < 0)) return;
+  Ref ref = folder ? Ref{K_FOLDER_NAME, folder_index_, group} : Ref{K_GROUP, group, -1};
   build_items();
-  const Item *hd = find({K_GROUP, group, -1});
+  const Item *hd = find(ref);
   // A group out of view (a new one at the end) comes into view first.
   if (hd && hd->clipped() && (hd->y < hd->cy || hd->y + hd->h > hd->cy + hd->ch)) {
     Item copy = *hd;
     ensure_visible(copy);
     build_items();
-    hd = find({K_GROUP, group, -1});
+    hd = find(ref);
   }
   if (!hd || !hd->visible) return;
   rename_group_ = group;
+  renaming_folder_ = folder;
   rename_->resize(hd->x, hd->y + S(4), hd->w, hd->h - S(8));
-  rename_->value(groups_[size_t(group)].name.c_str());
+  const std::string &name =
+      folder ? groups_[size_t(group)].tiles[size_t(folder_index_)].name : groups_[size_t(group)].name;
+  rename_->value(name.c_str());
   rename_->show();
   // FLTK 1.3 ignores Fl::focus() while a window holds the grab, which the
   // popup always does: lift the grab for the moment the focus moves.
@@ -1582,26 +2048,35 @@ void AppMenu::start_rename(int group) {
   Fl::grab_ = nullptr;
   rename_->take_focus();
   Fl::grab_ = grab;
-  rename_->insert_position(rename_->size(), 0);
+  // A folder's name is selected: typing replaces the suggested one.
+  if (folder) rename_->insert_position(0, rename_->size());
+  else rename_->insert_position(rename_->size(), 0);
   redraw();
 }
 
 void AppMenu::finish_rename(bool commit) {
   int g = rename_group_;
+  bool folder = renaming_folder_;
   rename_group_ = -1;
+  renaming_folder_ = false;
   rename_->hide();
   take_focus();
+  if (folder) {
+    if (commit && g == folder_group_ && folder_index_ >= 0 &&
+        folder_index_ < int(groups_[size_t(g)].tiles.size())) {
+      groups_[size_t(g)].tiles[size_t(folder_index_)].name = trim(rename_->value());
+      save_tiles();
+    }
+    redraw();
+    return;
+  }
   if (g >= 0 && g < int(groups_.size())) {
     TileGroup &group = groups_[size_t(g)];
     if (commit) group.name = trim(rename_->value());
     // A new group left without a name and without tiles is not kept.
     bool gone = group.name.empty() && group.tiles.empty();
     if (gone) groups_.erase(groups_.begin() + g);
-    if (commit || gone) {
-      start_tiles::save(groups_);
-      tiles_default_ = false;
-      invalidate();
-    }
+    if (commit || gone) save_tiles();
   }
   redraw();
 }
@@ -1627,60 +2102,93 @@ void AppMenu::redirect_to_search(const std::string &text) {
 // ---------------------------------------------------------------------------
 // Drag and drop of tiles
 
-// Where a drop at (x, y) goes: |group| (groups_.size() for a new group, -1
-// for nowhere) and the tile index in it.
-void AppMenu::drop_target(int x, int y, int &group, int &index) const {
-  group = -1;
-  index = 0;
+// Where a drop at (x, y) goes (0.2 Alpha 3): before or after the tile under
+// the pointer, onto it when the pointer is in its middle (a folder of both,
+// or into that folder), into the open folder, at the end of a group, or a
+// new group (group groups_.size()). Folders do not go into folders.
+bool AppMenu::drop_target(int x, int y, menu::TileDrop &drop) const {
+  drop = menu::TileDrop();
   const Area *a = area(K_TILE);
-  if (!a || x < a->x || x >= a->x + a->w || y < a->y || y >= a->y + a->h) return;
+  if (!a || x < a->x || x >= a->x + a->w || y < a->y || y >= a->y + a->h) return false;
+  bool folder = drag_folder_group_ >= 0;
+  if (folder_expanded() && folder_band_.contains(x, y)) {
+    drop.group = folder_group_;
+    if (folder) {
+      drop.index = folder_index_ + 1;
+      return true;
+    }
+    drop.kind = menu::TileDrop::IntoFolder;
+    drop.index = folder_index_;
+    drop.member = int(groups_[size_t(folder_group_)].tiles[size_t(folder_index_)].apps.size());
+    for (auto &it : items_)
+      if (it.kind == K_FOLDER_APP && it.contains(x, y)) {
+        drop.member = it.index + (x > it.x + it.w / 2 ? 1 : 0);
+        break;
+      }
+    return true;
+  }
   for (auto &it : items_)
-    if (it.kind == K_TILE && it.contains(x, y)) {
-      group = it.group;
-      index = it.index + (x > it.x + it.w / 2 ? 1 : 0);
-      return;
+    if ((it.kind == K_TILE || it.kind == K_FOLDER) && it.contains(x, y)) {
+      drop.group = it.group;
+      double rx = double(x - it.x) / it.w, ry = double(y - it.y) / it.h;
+      bool middle = rx > 0.25 && rx < 0.75 && ry > 0.15 && ry < 0.85;
+      bool self = it.kind == K_TILE && it.entry && it.entry->id == drag_id_;
+      if (middle && !folder && !self) {
+        drop.kind = menu::TileDrop::Merge;
+        drop.index = it.index;
+      } else {
+        drop.index = it.index + (x > it.x + it.w / 2 ? 1 : 0);
+      }
+      return true;
     }
   for (size_t g = 0; g < group_rects_.size(); ++g)
     if (group_rects_[g].contains(x, y)) {
-      group = int(g);
-      index = int(groups_[g].tiles.size());
-      return;
+      drop.group = int(g);
+      drop.index = int(groups_[g].tiles.size());
+      return true;
     }
-  group = int(groups_.size());
+  drop.group = int(groups_.size());
+  return true;
 }
 
 void AppMenu::drop(int x, int y) {
-  int group, index;
   // Where it goes in the layout of the drag (with the new group's place,
   // scrolled as it was), then the drag ends.
   build_items();
-  drop_target(x, y, group, index);
+  menu::TileDrop d;
+  bool ok = drop_target(x, y, d);
   dragging_ = false;
-  if (group < 0) return;
-  Tile tile{drag_id_, drag_size_};
-  // Take the tile out of its place first (a tile moved, or an application
-  // from the list that was already pinned).
-  int source = -1;
-  for (size_t g = 0; g < groups_.size(); ++g) {
-    auto &tiles = groups_[g].tiles;
-    for (size_t i = 0; i < tiles.size(); ++i)
-      if (tiles[i].id == drag_id_) {
-        tile.size = tiles[i].size;
-        tiles.erase(tiles.begin() + long(i));
-        if (int(g) == group && int(i) < index) --index;
-        source = int(g);
-        break;
-      }
-  }
-  bool fresh = group >= int(groups_.size());
-  if (fresh) {
-    groups_.push_back(TileGroup{"", {tile}});
+  int fg = drag_folder_group_, fi = drag_folder_index_;
+  drag_folder_group_ = drag_folder_index_ = -1;
+  if (!ok) return;
+  bool fresh = d.kind == menu::TileDrop::Place && d.group >= int(groups_.size());
+  menu::TilePlace at;
+  if (fg >= 0) {
+    // A folder moved by its tile.
+    if (!menu::drop_tile(groups_, fg, fi, d, &at)) return;
+    save_tiles(fg == at.group ? -1 : fg);
   } else {
-    auto &tiles = groups_[size_t(group)].tiles;
-    index = std::max(0, std::min(index, int(tiles.size())));
-    tiles.insert(tiles.begin() + index, tile);
+    // A tile, an application of the open folder or one from the list (it
+    // leaves its old place).
+    int source = -1;
+    bool made = false;
+    if (!menu::drop_app(groups_, drag_id_, drag_size_, d, &source, &made, &at)) return;
+    if (made) {
+      // A new folder: named after the category its applications share,
+      // opened, and its name asked at once (Enter keeps it).
+      Tile &f = groups_[size_t(at.group)].tiles[size_t(at.index)];
+      f.name = menu::folder_name(f.apps, apps_->apps, start_tiles::group_names());
+    }
+    save_tiles(source == at.group ? -1 : source);
+    if (made) {
+      menu::TilePlace now_at = menu::find_app(groups_, drag_id_);
+      if (now_at.group >= 0 && now_at.member >= 0) {
+        rename_when_open_ = true;
+        expand_folder(now_at.group, now_at.index);
+      }
+      return;
+    }
   }
-  save_tiles(source == group ? -1 : source);
   // A group made by the drop is named at once (Enter keeps the name).
   if (fresh) start_rename(int(groups_.size()) - 1);
 }
@@ -1752,6 +2260,7 @@ void AppMenu::start_drag(const std::string &id) {
   press_y_ = drag_y2_ = Fl::event_y_root() - y_root();
   dragging_ = true;
   drag_group_ = -1;
+  drag_folder_group_ = drag_folder_index_ = -1;
   drag_id_ = id;
   drag_size_ = TileSize::Medium;
   rail_open_ = letters_open_ = false;
@@ -1765,9 +2274,8 @@ void AppMenu::start_drag(const std::string &id) {
 
 void AppMenu::ensure_visible(const Item &it) {
   if (!it.clipped()) return;
-  Kind kind = it.kind == K_ROW || it.kind == K_LETTER   ? K_ROW
-              : it.kind == K_TILE || it.kind == K_GROUP ? K_TILE
-                                                        : K_NONE;
+  bool tiles = tile_like(it.kind) || it.kind == K_GROUP || it.kind == K_FOLDER_NAME;
+  Kind kind = it.kind == K_ROW || it.kind == K_LETTER ? K_ROW : tiles ? K_TILE : K_NONE;
   if (kind == K_NONE) return;
   int scroll = kind == K_TILE ? tiles_scroll_ : list_scroll_;
   if (it.y < it.cy) scroll -= it.cy - it.y;
@@ -1899,7 +2407,7 @@ void AppMenu::drag_scrollbar(int y) {
 void AppMenu::move_selection(int key) {
   auto selectable = [](Kind k) {
     return k == K_RAIL || k == K_FILTER || k == K_ROW || k == K_LETTER || k == K_JUMP ||
-           k == K_GROUP || k == K_TILE;
+           k == K_GROUP || tile_like(k) || k == K_FOLDER_NAME;
   };
   build_items();
   const Item *cur = find(selected_);
@@ -1907,10 +2415,11 @@ void AppMenu::move_selection(int key) {
   keyboard_ = true;
   if (key == FL_Page_Down || key == FL_Page_Up) {
     int dir = key == FL_Page_Down ? 1 : -1;
-    Kind list = cur && (cur->kind == K_TILE || cur->kind == K_GROUP) ? K_TILE : K_ROW;
+    bool in_tiles = cur && (tile_like(cur->kind) || cur->kind == K_GROUP || cur->kind == K_FOLDER_NAME);
+    Kind list = in_tiles ? K_TILE : K_ROW;
     const Area *a = area(list);
     if (!a) return;
-    bool keep = cur && (cur->kind == K_ROW || cur->kind == K_TILE) && cur->visible;
+    bool keep = cur && (cur->kind == K_ROW || tile_like(cur->kind)) && cur->visible;
     int ref_x = keep ? cur->x : a->x, ref_y = keep ? cur->y : a->y;
     int &scroll = list == K_TILE ? tiles_scroll_ : list_scroll_;
     const Glide &g = list == K_TILE ? tiles_glide_ : list_glide_;
@@ -1922,17 +2431,17 @@ void AppMenu::move_selection(int key) {
     // then glide there.
     scroll = target;
     build_items();
-    Kind kind = list == K_TILE ? K_TILE : K_ROW;
+    auto of_list = [&](const Item &it) { return list == K_TILE ? tile_like(it.kind) : it.kind == K_ROW; };
     const Item *best = nullptr;
     double best_d = 1e18;
     for (auto &it : items_) {
-      if (it.kind != kind || !it.visible) continue;
+      if (!of_list(it) || !it.visible) continue;
       double d = std::fabs(double(it.y - ref_y)) + std::fabs(double(it.x - ref_x));
       if (d < best_d) best_d = d, best = &it;
     }
     if (!moved && keep)
       for (auto &it : items_)
-        if (it.kind == kind) {
+        if (of_list(it)) {
           best = &it;
           if (dir < 0) break;
         }
@@ -1954,7 +2463,7 @@ void AppMenu::move_selection(int key) {
     // The first key selects the first tile, else the first application.
     const Item *first = nullptr;
     for (auto &it : items_)
-      if (it.kind == K_TILE && it.visible) {
+      if (tile_like(it.kind) && it.visible) {
         first = &it;
         break;
       }
@@ -2016,7 +2525,10 @@ void AppMenu::move_zone(bool back) {
       case K_LETTER:
       case K_JUMP: return Z_LIST;
       case K_GROUP:
-      case K_TILE: return Z_TILES;
+      case K_TILE:
+      case K_FOLDER:
+      case K_FOLDER_APP:
+      case K_FOLDER_NAME: return Z_TILES;
       default: return Z_NONE;
     }
   };
@@ -2027,7 +2539,7 @@ void AppMenu::move_zone(bool back) {
     for (int pass = 0; pass < 2 && !best; ++pass)
       for (auto &it : items_) {
         if (zone_of(it) != zone || !it.visible) continue;
-        if (pass == 0 && (it.kind == K_LETTER || it.kind == K_GROUP)) continue;
+        if (pass == 0 && (it.kind == K_LETTER || it.kind == K_GROUP || it.kind == K_FOLDER_NAME)) continue;
         if (!best || it.y < best->y || (it.y == best->y && it.x < best->x)) best = &it;
       }
     return best;
@@ -2053,11 +2565,11 @@ void AppMenu::move_zone(bool back) {
 void AppMenu::move_end(bool end) {
   build_items();
   const Item *cur = find(selected_);
-  bool tiles = cur && (cur->kind == K_TILE || cur->kind == K_GROUP);
+  bool tiles = cur && (tile_like(cur->kind) || cur->kind == K_GROUP || cur->kind == K_FOLDER_NAME);
   Kind kind = tiles ? K_TILE : letters_open_ ? K_JUMP : K_ROW;
   const Item *pick = nullptr;
   for (auto &it : items_)
-    if (it.kind == kind) {
+    if (tiles ? tile_like(it.kind) : it.kind == kind) {
       pick = &it;
       if (!end) break;
     }
@@ -2187,10 +2699,14 @@ void AppMenu::preload(void *data) {
     };
     int row = start_row_icon_size();
     for (auto &it : self->items_)
-      if (it.kind == K_TILE && it.entry) {
+      if ((it.kind == K_TILE || it.kind == K_FOLDER_APP) && it.entry) {
         double is = std::min(it.w, it.h) *
                     (it.size == TileSize::Small ? 0.62 : it.size == TileSize::Large ? 0.38 : 0.42);
         add(it.entry, int(std::lround(is)));
+      } else if (it.kind == K_FOLDER) {
+        // The small icons of a folder.
+        FolderGrid g = folder_grid_of(it.size, it.w, it.h);
+        for (auto *e : self->folder_entries(it.group, it.index)) add(e, int(g.icon));
       }
     for (auto *e : self->most_used_) add(e, row);
     for (auto *e : self->added_) add(e, row);
@@ -2300,32 +2816,42 @@ int AppMenu::handle(int event) {
           return 1;
         }
       if (Fl::event_button() == FL_RIGHT_MOUSE) {
-        if (it.kind == K_TILE || it.kind == K_ROW) {
+        if (tile_like(it.kind) || it.kind == K_ROW) {
           damage_item(selected_, S(4));
           selected_ = {it.kind, it.index, it.group};
           damage_item(selected_, S(4));
         }
         if (it.kind == K_TILE) tile_menu(it, ex, ey);
+        else if (it.kind == K_FOLDER) folder_menu(it, ex, ey);
+        else if (it.kind == K_FOLDER_APP) folder_app_menu(it, ex, ey);
         else if (it.kind == K_ROW) row_menu(it, ex, ey);
         else if (it.kind == K_GROUP) group_menu(it.index, ex, ey);
+        else if (it.kind == K_FOLDER_NAME) start_rename(it.group, true);
         else background_menu(ex, ey);
         return 1;
       }
+      // 0.2 Alpha 3: a click outside the open folder shuts it (on another
+      // folder: that one opens instead).
+      if (left && folder_expanded() && folder_to_ > 0 && !folder_band_.contains(ex, ey) &&
+          !(it.kind == K_FOLDER && it.group == folder_group_ && it.index == folder_index_))
+        collapse_folder();
       if (letters_open_ && it.kind != K_JUMP && ex >= list_x_ && ex < list_x_ + list_w_) {
         letters_open_ = false;
         redraw();
         return 1;
       }
-      if (left && (it.kind == K_TILE || it.kind == K_ROW || it.kind == K_GROUP)) {
-        // Opens (a group name: renames) on release, unless the press
-        // becomes a drag.
+      if (left && (tile_like(it.kind) || it.kind == K_ROW || it.kind == K_GROUP || it.kind == K_FOLDER_NAME)) {
+        // Opens (a group name: renames, a folder: opens in place) on
+        // release, unless the press becomes a drag.
         press_ = {it.kind, it.index, it.group};
         press_x_ = drag_x_ = ex;
         press_y_ = drag_y2_ = ey;
         dragging_ = false;
         drag_group_ = -1;
         drag_id_ = it.entry ? it.entry->id : "";
-        drag_size_ = it.kind == K_TILE ? it.size : TileSize::Medium;
+        drag_size_ = it.kind == K_TILE || it.kind == K_FOLDER ? it.size : TileSize::Medium;
+        drag_folder_group_ = it.kind == K_FOLDER ? it.group : -1;
+        drag_folder_index_ = it.kind == K_FOLDER ? it.index : -1;
         return 1;
       }
       if (left && it.kind != K_NONE) activate(it);
@@ -2346,7 +2872,9 @@ int AppMenu::handle(int event) {
         return 1;
       }
       if (press_.kind != K_NONE) {
-        if (!dragging_ && std::abs(ex - press_x_) + std::abs(ey - press_y_) > S(8)) {
+        // A folder's name is not dragged.
+        if (!dragging_ && press_.kind != K_FOLDER_NAME &&
+            std::abs(ex - press_x_) + std::abs(ey - press_y_) > S(8)) {
           dragging_ = true;
           drag_group_ = press_.kind == K_GROUP ? press_.index : -1;
           rail_open_ = letters_open_ = false;
@@ -2391,9 +2919,11 @@ int AppMenu::handle(int event) {
           else drop(Fl::event_x(), Fl::event_y());
           dragging_ = false;
           drag_group_ = -1;
+          drag_folder_group_ = drag_folder_index_ = -1;
           redraw();
           return 1;
         }
+        drag_folder_group_ = drag_folder_index_ = -1;
         build_items();
         const Item *it = find(pressed);
         if (it && it->contains(Fl::event_x(), Fl::event_y())) {
@@ -2501,12 +3031,18 @@ int AppMenu::handle(int event) {
         if (dragging_) {
           dragging_ = false;
           drag_group_ = -1;
+          drag_folder_group_ = drag_folder_index_ = -1;
           press_ = {};
           Fl::remove_timeout(autoscroll, this);
         } else if (letters_open_) {
           letters_open_ = false;
         } else if (rail_open_) {
           rail_open_ = false;
+        } else if (folder_expanded() && folder_to_ > 0) {
+          // The open folder shuts; the keyboard goes back to its tile.
+          if (selected_.kind == K_FOLDER_APP || selected_.kind == K_FOLDER_NAME)
+            selected_ = {K_FOLDER, folder_index_, folder_group_};
+          collapse_folder();
         } else if (category_ >= 0) {
           category_ = -1;
           scroll_to(K_ROW, 0, false);
@@ -2526,6 +3062,8 @@ int AppMenu::handle(int event) {
         if (found) {
           int px = sel.x + sel.w / 2, py = sel.y + sel.h / 2;
           if (sel.kind == K_TILE) tile_menu(sel, px, py);
+          else if (sel.kind == K_FOLDER) folder_menu(sel, px, py);
+          else if (sel.kind == K_FOLDER_APP) folder_app_menu(sel, px, py);
           else if (sel.kind == K_ROW) row_menu(sel, px, py);
           else if (sel.kind == K_GROUP) group_menu(sel.index, px, py);
         }
@@ -2614,7 +3152,15 @@ void AppMenu::draw() {
   auto is_hov = [&](const Item &it) { return hov == &it; };
   int drop_group = -1, drop_index = 0;
   bool tile_drag = dragging_ && drag_group_ < 0;
-  if (tile_drag) drop_target(drag_x_, drag_y2_, drop_group, drop_index);
+  menu::TileDrop dd;
+  if (tile_drag && drop_target(drag_x_, drag_y2_, dd)) drop_group = dd.group, drop_index = dd.index;
+  // 0.2 Alpha 3: where the bar goes (before or after a tile, or between
+  // the open folder's applications) and the tile a drop goes onto.
+  bool place = tile_drag && dd.kind == menu::TileDrop::Place;
+  auto merging = [&](const Item &it) {
+    return tile_drag && dd.kind == menu::TileDrop::Merge && dd.group == it.group && dd.index == it.index &&
+           (it.kind == K_TILE || it.kind == K_FOLDER);
+  };
 
   // The hover effect of an item: lift (wave, bounce), scale (pop), slide
   // to the right (slide) and a glow behind the icon (glow; it pulses for a
@@ -2652,6 +3198,40 @@ void AppMenu::draw() {
       default: return std::min(it.w, it.h) * 0.42;
     }
   };
+  // 0.2 Alpha 3: live badges (badges.h): a pill in the top right corner of
+  // a tile (a folder: its applications' together, in the colour of the one
+  // with the most) and at the end of a list row.
+  badges::Badges &live = badges::Badges::get();
+  struct Pill {
+    int right = 0, top = 0, h = 0;
+    badges::Badge badge;
+    badges::Colors colors;
+  };
+  auto pill_for = [&](const Item &it, Pill &pill) {
+    if (!live.any()) return false;
+    std::string id;
+    if (it.kind == K_FOLDER) {
+      const auto &apps = groups_[size_t(it.group)].tiles[size_t(it.index)].apps;
+      pill.badge = live.sum(apps);
+      int most = 0;
+      for (auto &a : apps) {
+        badges::Badge b = live.of(a);
+        if ((id.empty() && b.shown()) || b.count > most) most = b.count, id = a;
+      }
+    } else if (it.entry && (tile_like(it.kind) || it.kind == K_ROW)) {
+      id = it.entry->id;
+      pill.badge = live.of(id);
+    } else {
+      return false;
+    }
+    if (!pill.badge.shown() && pill.badge.progress < 0) return false;
+    bool row = it.kind == K_ROW;
+    pill.colors = live.colors(id, row ? t.surface : tile_bg, t.accent);
+    pill.h = !row && it.size == TileSize::Small ? S(14) : S(18);
+    pill.right = row ? it.x + it.w - S(10) : it.x + it.w - S(5);
+    pill.top = row ? it.y + (it.h - pill.h) / 2 : it.y + S(5);
+    return true;
+  };
 
   {
     Painter p(W, H);
@@ -2659,6 +3239,28 @@ void AppMenu::draw() {
     // The rail is a shade apart from the list; the tiles sit on the surface.
     p.fill_rect(0, 0, rail_w_, H, t.surface_alt.alpha(t.dark ? 0.35 : 0.55));
     stroke_outline(p, t.border);
+    // 0.2 Alpha 3: the open folder's band, a shade apart from the tiles,
+    // with a notch towards its folder.
+    if (folder_band_.h > 0 &&
+        fl_not_clipped(folder_band_.x, folder_band_.y - S(8), folder_band_.w, folder_band_.h + S(8))) {
+      cairo_t *cr = p.cr();
+      cairo_save(cr);
+      if (const Area *a = area(K_TILE)) {
+        cairo_rectangle(cr, a->x, a->y, a->w, a->h);
+        cairo_clip(cr);
+      }
+      Color band = t.surface.mix(t.text, t.dark ? 0.08 : 0.05).mix(t.accent, 0.08);
+      p.fill_rounded(folder_band_.x, folder_band_.y, folder_band_.w, folder_band_.h, S(8), band);
+      double n = std::min(Sd(7), folder_band_.h / 2.0);
+      cairo_new_path(cr);
+      cairo_move_to(cr, folder_notch_ - n, folder_band_.y + 0.5);
+      cairo_line_to(cr, folder_notch_, folder_band_.y - n + 0.5);
+      cairo_line_to(cr, folder_notch_ + n, folder_band_.y + 0.5);
+      cairo_close_path(cr);
+      p.set(band);
+      cairo_fill(cr);
+      cairo_restore(cr);
+    }
 
     for (auto &it : items_) {
       if (!it.visible || it.kind == K_RAIL) continue;
@@ -2699,7 +3301,7 @@ void AppMenu::draw() {
                              t.accent.alpha(0.6), Sd(1.5));
           }
           bool moving = dragging_ && drag_group_ == it.index;
-          if (hv && rename_group_ != it.index && !dragging_) {
+          if (hv && (rename_group_ != it.index || renaming_folder_) && !dragging_) {
             p.fill_rounded(it.x, it.y + S(4), it.w, it.h - S(8), S(4), t.hover);
             // Move handle (two short lines) at the right: drag the name to
             // move the group, click it to rename it.
@@ -2746,31 +3348,71 @@ void AppMenu::draw() {
           double ix = it.x + S(10) + (S(26) - is) / 2 + fx.slide, iy = it.y + (it.h - is) / 2.0 - fx.lift;
           if (fx.glow > 0) p.circle(ix + is / 2, iy + is / 2, is * 0.72, t.accent.alpha(0.28 * fx.glow));
           p.image(icon(*it.entry, base, fx.scale), ix, iy, is, pressed ? 0.4 : 1.0);
+          Pill pill;
+          if (pill_for(it, pill))
+            badges::paint_pill(p, pill.right, pill.top, pill.h, pill.badge, pill.colors, Color{0, 0, 0, 0});
           break;
         }
-        case K_TILE: {
+        case K_TILE:
+        case K_FOLDER_APP:
+        case K_FOLDER: {
           bool pressed = dragging_ && press_ == Ref{it.kind, it.index, it.group};
-          Fx fx = hover_of(it);
+          bool folder = it.kind == K_FOLDER, onto = merging(it);
+          bool open = folder && folder_group_ == it.group && folder_index_ == it.index && folder_to_ > 0;
+          Fx fx = folder ? Fx() : hover_of(it);
           double r = S(4);
-          Color bg = hv ? tile_hover : tile_bg;
+          Color bg = hv || onto ? tile_hover : tile_bg;
+          if (open) bg = bg.mix(t.accent, t.dark ? 0.2 : 0.12);
           if (pressed) bg = bg.alpha(0.35);
           p.fill_rounded(it.x, it.y, it.w, it.h, r, bg);
-          // Reveal border on hover; accent ring for the keyboard selection.
-          if (hv && !pressed) p.stroke_rounded(it.x + 0.5, it.y + 0.5, it.w - 1, it.h - 1, r, t.text.alpha(0.28));
-          if (s && keyboard_)
+          // Reveal border on hover; an accent ring for the keyboard
+          // selection, the open folder and the tile a drop goes onto (a
+          // folder is made, or the application joins this one).
+          if (hv && !pressed && !onto)
+            p.stroke_rounded(it.x + 0.5, it.y + 0.5, it.w - 1, it.h - 1, r, t.text.alpha(0.28));
+          if (onto) p.fill_rounded(it.x, it.y, it.w, it.h, r, t.accent.alpha(t.dark ? 0.22 : 0.14));
+          if ((s && keyboard_) || open || onto)
             p.stroke_rounded(it.x + 1, it.y + 1, it.w - 2, it.h - 2, r, t.accent, Sd(2));
-          double base = std::round(icon_size(it)), is = base * fx.scale;
-          double ix = it.x + (it.w - is) / 2.0 + fx.slide;
-          double iy = it.size == TileSize::Small ? it.y + (it.h - is) / 2.0
-                                                 : it.y + (it.h - is) / 2.0 - it.h * 0.07;
-          if (fx.glow > 0)
-            p.circle(ix + is / 2, iy + is / 2 - fx.lift, is * 0.72, t.accent.alpha(0.28 * fx.glow));
-          p.image(icon(*it.entry, base, fx.scale), ix, iy - fx.lift, is, pressed ? 0.35 : 1.0);
-          // Drop position: a bar before or after this tile, with round ends.
-          if (tile_drag && drop_group == it.group && (drop_index == it.index || drop_index == it.index + 1)) {
+          if (folder) {
+            // The small icons of its applications, the rows in use centered.
+            auto entries = folder_entries(it.group, it.index);
+            FolderGrid g = folder_grid_of(it.size, it.w, it.h);
+            size_t n = std::min(entries.size(), size_t(g.cols * g.rows));
+            int used = int((n + size_t(g.cols) - 1) / size_t(g.cols));
+            double gw = g.cols * g.icon + (g.cols - 1) * g.gap, gh = used * g.icon + (used - 1) * g.gap;
+            double x0 = it.x + (it.w - gw) / 2.0, y0 = it.y + g.pad + (it.h - 2 * g.pad - g.label - gh) / 2.0;
+            for (size_t k = 0; k < n; ++k)
+              p.image(icon(*entries[k], g.icon, 1.0), x0 + double(k % size_t(g.cols)) * (g.icon + g.gap),
+                      y0 + double(k / size_t(g.cols)) * (g.icon + g.gap), g.icon, pressed ? 0.35 : 1.0);
+          } else {
+            double base = std::round(icon_size(it)), is = base * fx.scale;
+            double ix = it.x + (it.w - is) / 2.0 + fx.slide;
+            double iy = it.size == TileSize::Small ? it.y + (it.h - is) / 2.0
+                                                   : it.y + (it.h - is) / 2.0 - it.h * 0.07;
+            if (fx.glow > 0)
+              p.circle(ix + is / 2, iy + is / 2 - fx.lift, is * 0.72, t.accent.alpha(0.28 * fx.glow));
+            p.image(icon(*it.entry, base, fx.scale), ix, iy - fx.lift, is, pressed ? 0.35 : 1.0);
+          }
+          // Its live badge, and a thin bar for what it is doing (progress).
+          Pill pill;
+          if (pill_for(it, pill)) {
+            if (pill.badge.progress >= 0 && !folder)
+              badges::paint_progress(p, it.x + S(6), it.y + it.h - S(5), it.w - S(12), Sd(3), pill.badge.progress,
+                                     pill.colors, t.text_dim.alpha(0.22));
+            badges::paint_pill(p, pill.right, pill.top, pill.h, pill.badge, pill.colors, Color{0, 0, 0, 0});
+          }
+          // Drop position: a bar before or after this tile (or between the
+          // open folder's applications), with round ends.
+          bool in_folder = it.kind == K_FOLDER_APP;
+          int at = in_folder ? dd.member : drop_index;
+          bool here = in_folder ? tile_drag && dd.kind == menu::TileDrop::IntoFolder && dd.group == it.group
+                                : place && drop_group == it.group;
+          if (here && (at == it.index || at == it.index + 1)) {
             double bw = Sd(4);
-            double bx = drop_index == it.index ? it.x - gap_ / 2.0 - bw / 2 : it.x + it.w + gap_ / 2.0 - bw / 2;
-            if (drop_index == it.index || !find({K_TILE, it.index + 1, it.group})) {
+            double bx = at == it.index ? it.x - gap_ / 2.0 - bw / 2 : it.x + it.w + gap_ / 2.0 - bw / 2;
+            bool next = in_folder ? find({K_FOLDER_APP, it.index + 1, it.group}) != nullptr
+                                  : find({K_TILE, it.index + 1, it.group}) || find({K_FOLDER, it.index + 1, it.group});
+            if (at == it.index || !next) {
               p.fill_rounded(bx, it.y - S(2), bw, it.h + S(4), bw / 2, t.accent);
               p.circle(bx + bw / 2, it.y - S(2), bw, t.accent);
               p.circle(bx + bw / 2, it.y + it.h + S(2), bw, t.accent);
@@ -2778,6 +3420,11 @@ void AppMenu::draw() {
           }
           break;
         }
+        case K_FOLDER_NAME:
+          if (hv && !renaming_folder_) p.fill_rounded(it.x, it.y + S(2), it.w, it.h - S(4), S(4), t.hover);
+          if (s && keyboard_)
+            p.stroke_rounded(it.x + 1, it.y + S(2), it.w - 2, it.h - S(4), S(4), t.accent, Sd(2));
+          break;
         default: break;
       }
       cairo_restore(p.cr());
@@ -2961,18 +3608,43 @@ void AppMenu::draw() {
         break;
       }
       case K_GROUP:
-        if (rename_group_ == it.index) break;
+        if (rename_group_ == it.index && !renaming_folder_) break;
         text_font(t.font_size + 1, true);
         draw_text(group_label(it.index), it.x + S(4), it.y, it.w - S(36), it.h,
                   it.label.empty() ? t.text_dim : t.text);
         break;
-      case K_ROW: {
-        text_font(t.font_size);
-        int tx = it.x + S(46) + int(std::lround(hover_of(it).slide));
-        draw_text(it.entry->name, tx, it.y, it.x + it.w - S(6) - tx, it.h, t.text);
+      case K_FOLDER_NAME:
+        if (renaming_folder_) break;
+        text_font(t.font_size + 1, true);
+        draw_text(it.label.empty() ? std::string(_("Name folder")) : it.label, it.x + S(4), it.y,
+                  it.w - S(12), it.h, it.label.empty() ? t.text_dim : t.text);
+        break;
+      case K_FOLDER: {
+        Pill pill;
+        if (pill_for(it, pill)) badges::draw_pill_text(pill.right, pill.top, pill.h, pill.badge, pill.colors);
+        if (it.size == TileSize::Small || it.label.empty()) break;
+        text_font(t.font_size - 1);
+        draw_text(it.label, it.x + S(7), it.y + it.h - S(24), it.w - S(12), S(20),
+                  t.text.alpha(dragging_ && press_ == Ref{it.kind, it.index, it.group} ? 0.4 : 1));
         break;
       }
-      case K_TILE: {
+      case K_ROW: {
+        // The name leaves room for a badge.
+        Pill pill;
+        int room = 0;
+        if (pill_for(it, pill) && pill.badge.shown()) {
+          badges::draw_pill_text(pill.right, pill.top, pill.h, pill.badge, pill.colors);
+          room = badges::pill_width(pill.badge, pill.h) + S(8);
+        }
+        text_font(t.font_size);
+        int tx = it.x + S(46) + int(std::lround(hover_of(it).slide));
+        draw_text(it.entry->name, tx, it.y, it.x + it.w - S(6) - tx - room, it.h, t.text);
+        break;
+      }
+      case K_TILE:
+      case K_FOLDER_APP: {
+        Pill pill;
+        if (pill_for(it, pill)) badges::draw_pill_text(pill.right, pill.top, pill.h, pill.badge, pill.colors);
         if (it.size == TileSize::Small) break;
         text_font(t.font_size - 1);
         draw_text(it.entry->name, it.x + S(7), it.y + it.h - S(24), it.w - S(12), S(20),
@@ -3023,6 +3695,31 @@ void AppMenu::draw() {
       if (e) {
         text_font(t.font_size - 1);
         draw_text(e->name, dx + S(7), dy + tw - S(24), tw - S(12), S(20), t.text);
+      }
+    } else if (drag_folder_group_ >= 0) {
+      // A folder: its small icons and its name.
+      int tw = 2 * cell_ + gap_;
+      int dx = drag_x_ - tw / 2, dy = drag_y2_ - tw / 2;
+      auto entries = folder_entries(drag_folder_group_, drag_folder_index_);
+      FolderGrid g = folder_grid_of(TileSize::Medium, tw, tw);
+      {
+        Painter p(W, H);
+        p.shadow(dx, dy, tw, tw, S(4), t.shadow, S(8));
+        p.fill_rounded(dx, dy, tw, tw, S(4), tile_hover.mix(t.surface, 0.3));
+        p.stroke_rounded(dx + 0.5, dy + 0.5, tw - 1, tw - 1, S(4), t.accent, Sd(1.5));
+        size_t n = std::min(entries.size(), size_t(4));
+        int used = int((n + 1) / 2);
+        double gw = 2 * g.icon + g.gap, gh = used * g.icon + (used - 1) * g.gap;
+        double x0 = dx + (tw - gw) / 2.0, y0 = dy + g.pad + (tw - 2 * g.pad - g.label - gh) / 2.0;
+        for (size_t k = 0; k < n; ++k)
+          p.image(IconLoader::get({IconLoader::app_icon(*entries[k], int(g.icon)), "application-x-executable"},
+                                  int(g.icon)),
+                  x0 + double(k % 2) * (g.icon + g.gap), y0 + double(k / 2) * (g.icon + g.gap), g.icon);
+      }
+      const auto &tiles = groups_[size_t(drag_folder_group_)].tiles;
+      if (drag_folder_index_ < int(tiles.size()) && !tiles[size_t(drag_folder_index_)].name.empty()) {
+        text_font(t.font_size - 1);
+        draw_text(tiles[size_t(drag_folder_index_)].name, dx + S(7), dy + tw - S(24), tw - S(12), S(20), t.text);
       }
     }
   }
@@ -3130,20 +3827,36 @@ void AppMenu::qa_dump_menu() {
       case K_GROUP_REMOVE: return "group-remove:" + it.label;
       case K_TILE: return "tile:" + it.entry->name;
       case K_HEADING: return it.index == 0 ? "heading:" + it.label : "";
+      case K_FOLDER: return "folder:" + it.label;
+      case K_FOLDER_APP: return "folder-app:" + it.entry->name;
+      case K_FOLDER_NAME: return "folder-name:" + it.label;
       default: return "";
     }
   };
   // 0.2 Alpha 2: a drag in progress and where it would drop: "@drop:" with
-  // the group (its count for a new group) and the index in it as x and y;
-  // "@group-drop:" with the index the moved group would take.
+  // the group (its count for a new group, -1 outside) and the index in it
+  // as x and y; 0.2 Alpha 3: 1 as w for a drop onto that tile (a folder),
+  // 2 for into the open folder, with the place in it as h. A folder dragged
+  // is "@drop:folder:<name>". "@group-drop:" has the index the moved group
+  // would take.
   if (dragging_ && drag_group_ < 0) {
-    int g = -1, i = 0;
-    drop_target(drag_x_, drag_y2_, g, i);
-    line("@drop:" + drag_id_, g, i, 0, 0, 1, 0);
+    menu::TileDrop d;
+    bool ok = drop_target(drag_x_, drag_y2_, d);
+    std::string what = drag_folder_group_ >= 0 && drag_folder_group_ < int(groups_.size()) &&
+                               drag_folder_index_ < int(groups_[size_t(drag_folder_group_)].tiles.size())
+                           ? "folder:" + groups_[size_t(drag_folder_group_)].tiles[size_t(drag_folder_index_)].name
+                           : drag_id_;
+    line("@drop:" + what, ok ? d.group : -1, ok ? d.index : 0, ok ? int(d.kind) : 0,
+         ok && d.kind == menu::TileDrop::IntoFolder ? d.member : 0, 1, 0);
     line("@new-group-zone", new_group_.x, new_group_.y, new_group_.w, new_group_.h, 1, 0);
   } else if (dragging_) {
     line("@group-drop:" + group_label(drag_group_), group_target(drag_x_, drag_y2_), drag_group_, 0, 0, 1, 0);
   }
+  // 0.2 Alpha 3: the open folder, how far it is open (percent, as x) and
+  // its band.
+  if (folder_expanded() && folder_index_ < int(groups_[size_t(folder_group_)].tiles.size()))
+    line("@folder-open:" + groups_[size_t(folder_group_)].tiles[size_t(folder_index_)].name,
+         int(std::lround(folder_open_ * 100)), folder_band_.y, folder_band_.w, folder_band_.h, 1, 0);
   // The selection (keyboard: 1, pointer: 0 in the "active" column), with
   // its place even when it is scrolled out of view.
   if (const Item *s = find(selected_))
@@ -3157,11 +3870,35 @@ void AppMenu::qa_dump_menu() {
     if (name.empty()) continue;
     if (it.kind == K_TILE)
       line("@tile-size:" + it.entry->name, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
+    if (it.kind == K_FOLDER) {
+      // 0.2 Alpha 3: a folder's size and the applications it shows.
+      line("@tile-size:folder:" + it.label, int(menu::tile_size_code(it.size)), it.group, 0, 0, 1, 0);
+      std::string names;
+      for (auto *e : folder_entries(it.group, it.index)) names += (names.empty() ? "" : ",") + e->name;
+      line("@folder-apps:" + it.label + "=" + names, it.group, it.index, 0, 0, 1, 0);
+    }
     // 0.2 Alpha 2: an application drawn with another icon than its Icon=
     // (a near match or a category icon, IconLoader::app_icon()).
-    if ((it.kind == K_ROW || it.kind == K_TILE) && it.entry) {
+    if ((it.kind == K_ROW || it.kind == K_TILE || it.kind == K_FOLDER_APP) && it.entry) {
       std::string drawn = IconLoader::app_icon(*it.entry, start_row_icon_size());
       if (drawn != it.entry->icon) line("@icon:" + it.entry->name + "=" + drawn, 0, 0, 0, 0, 1, 0);
+    }
+    // 0.2 Alpha 3: the live badge it shows ("@badge:tile:Name=3:#rrggbb",
+    // a folder's without a colour).
+    if (badges::Badges::get().any() && (tile_like(it.kind) || it.kind == K_ROW)) {
+      auto &live = badges::Badges::get();
+      badges::Badge b;
+      std::string colour;
+      if (it.kind == K_FOLDER) {
+        b = live.sum(groups_[size_t(it.group)].tiles[size_t(it.index)].apps);
+      } else if (it.entry) {
+        b = live.of(it.entry->id);
+        Color surface = it.kind == K_ROW ? theme_.surface : theme_.surface_alt.mix(theme_.accent, theme_.dark ? 0.16 : 0.10);
+        colour = ":" + live.colors(it.entry->id, surface, theme_.accent).fill.to_hex();
+      }
+      if (b.shown())
+        line("@badge:" + name + "=" + std::to_string(b.count) + (b.urgent ? ":urgent" : "") + colour, it.x, it.y,
+             it.w, it.h, 1, 0);
     }
     line(name, it.x, it.y, it.w, it.h, 1, it.clipped() ? 1 : 0);
   }

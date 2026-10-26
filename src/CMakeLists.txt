@@ -84,7 +84,12 @@ add_executable(sde-panel
   panel/panel_menus.cpp
   panel/notify_center.cpp
   # The Start menu's account button and popup, the Action Center's user.
-  panel/account.cpp)
+  panel/account.cpp
+  # 0.2 Alpha 3: the default favorites (the user's browser, mail...) and the
+  # live badges of the Start menu, the search and the taskbar.
+  settings/default_apps.cpp
+  panel/badge_model.cpp
+  panel/badges.cpp)
 target_link_libraries(sde-panel PRIVATE sde-common)
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)

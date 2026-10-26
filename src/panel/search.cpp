@@ -11,6 +11,7 @@
 #include <map>
 #include <unordered_map>
 
+#include "badges.h"
 #include "i18n.h"
 #include "icons.h"
 #include "menu.h"
@@ -195,10 +196,12 @@ SearchFlyout::SearchFlyout() : PanelPopup("SDE Search") {
   end();
   callback([](Fl_Widget *w, void *) { static_cast<SearchFlyout *>(w)->close(); });
   app_catalog::subscribe(catalog_changed, this);
+  badges::Badges::get().subscribe(badges_changed, this);
 }
 
 SearchFlyout::~SearchFlyout() {
   app_catalog::unsubscribe(this);
+  badges::Badges::get().unsubscribe(this);
   Fl::remove_timeout(blink, this);
   Fl::remove_timeout(poll_applications, this);
   Fl::remove_timeout(index_step, this);
@@ -283,6 +286,11 @@ void SearchFlyout::poll_applications(void *data) {
   if (!self->is_open() || !app_catalog::needs_poll()) return;
   Fl::repeat_timeout(2, poll_applications, data);
   app_catalog::poll();
+}
+
+void SearchFlyout::badges_changed(void *data) {
+  auto *self = static_cast<SearchFlyout *>(data);
+  if (self->is_open() && self->shown()) self->redraw();
 }
 
 void SearchFlyout::catalog_changed(void *data) {
@@ -1103,6 +1111,33 @@ void SearchFlyout::draw() {
   const DesktopEntry *shown = query && !results_.empty()
                                   ? (selected_entry() ? selected_entry() : results_.front())
                                   : nullptr;
+  // 0.2 Alpha 3: live badges (badges.h): at the end of an application's
+  // row, over the corner of a top application's icon.
+  auto &live = badges::Badges::get();
+  struct Pill {
+    int right = 0, top = 0, h = 0;
+    badges::Badge badge;
+    badges::Colors colors;
+  };
+  auto pill_for = [&](const Item &it, Pill &pill) {
+    if (!live.any() || !it.entry || !is_app(it.entry) ||
+        (it.kind != K_RESULT && it.kind != K_TOP && it.kind != K_RECENT))
+      return false;
+    pill.badge = live.of(it.entry->id);
+    if (!pill.badge.shown()) return false;
+    pill.colors = live.colors(it.entry->id, t.surface, t.accent);
+    if (it.kind == K_TOP) {
+      int is = S(36);
+      pill.h = S(16);
+      pill.right = it.x + (it.w + is) / 2 + S(6);
+      pill.top = it.y + S(6);
+    } else {
+      pill.h = S(18);
+      pill.right = it.x + it.w - S(10);
+      pill.top = it.y + (it.h - pill.h) / 2;
+    }
+    return true;
+  };
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
@@ -1152,6 +1187,10 @@ void SearchFlyout::draw() {
           double ix = it.kind == K_TOP ? it.x + (it.w - is) / 2.0 : it.x + S(12);
           double iy = it.kind == K_TOP ? it.y + S(10) : it.y + (it.h - is) / 2.0;
           p.image(IconLoader::get({entry_icon(it.entry, is), "application-x-executable"}, is), ix, iy, is);
+          Pill pill;
+          if (pill_for(it, pill))
+            badges::paint_pill(p, pill.right, pill.top, pill.h, pill.badge, pill.colors,
+                               it.kind == K_TOP ? t.surface : Color{0, 0, 0, 0});
           break;
         }
         default: break;
@@ -1203,15 +1242,25 @@ void SearchFlyout::draw() {
           draw_text(it.label, it.x, it.y, it.w, it.h, t.text_dim);
         }
         break;
-      case K_TOP:
+      case K_TOP: {
+        Pill pill;
+        if (pill_for(it, pill)) badges::draw_pill_text(pill.right, pill.top, pill.h, pill.badge, pill.colors);
         text_font(t.font_size - 1);
         draw_text(it.entry->name, it.x + S(4), it.y + S(50), it.w - S(8), S(28), t.text, 1);
         break;
+      }
       case K_RECENT:
-      case K_CHIP:
+      case K_CHIP: {
+        Pill pill;
+        int room = 0;
+        if (pill_for(it, pill)) {
+          badges::draw_pill_text(pill.right, pill.top, pill.h, pill.badge, pill.colors);
+          room = badges::pill_width(pill.badge, pill.h) + S(8);
+        }
         text_font(t.font_size);
-        draw_text(it.entry->name, it.x + S(46), it.y, it.w - S(52), it.h, t.text);
+        draw_text(it.entry->name, it.x + S(46), it.y, it.w - S(52) - room, it.h, t.text);
         break;
+      }
       case K_RESULT: {
         const DesktopEntry *e = it.entry;
         std::string kind = is_file(e) ? (e->icon == "folder" ? _("Folder") : _("File"))
@@ -1219,6 +1268,12 @@ void SearchFlyout::draw() {
                                          : _("App");
         std::string sub = is_file(e) ? e->generic_name : kind;
         int tx = it.x + (it.index == 0 ? S(58) : S(46)), tw = it.w - (tx - it.x) - S(8);
+        // The name leaves room for a badge.
+        Pill pill;
+        if (pill_for(it, pill)) {
+          badges::draw_pill_text(pill.right, pill.top, pill.h, pill.badge, pill.colors);
+          tw -= badges::pill_width(pill.badge, pill.h) + S(8);
+        }
         if (it.index == 0) {
           text_font(t.font_size + 1, true);
           draw_text(e->name, tx, it.y + S(8), tw, S(22), t.text);
@@ -1289,6 +1344,11 @@ void SearchFlyout::qa_dump_search() {
     int cy = it.y + it.h / 2;
     if (it.kind == K_RESULT && (cy < list_top_ || cy >= list_bottom_)) continue;
     line(name, it.x, it.y, it.w, it.h, it.kind == K_RESULT ? 1 : 0);
+    // 0.2 Alpha 3: the live badge it shows.
+    if (it.entry && is_app(it.entry) && (it.kind == K_RESULT || it.kind == K_TOP || it.kind == K_RECENT)) {
+      badges::Badge b = badges::Badges::get().of(it.entry->id);
+      if (b.shown()) line("@badge:" + name + "=" + std::to_string(b.count), it.x, it.y, it.w, it.h, 0);
+    }
   }
   qa_dump(this, text);
 }

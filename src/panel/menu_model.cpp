@@ -311,10 +311,11 @@ TileSize tile_size_from(char c) {
 }
 
 namespace {
-std::string escape_name(const std::string &s) {
+// |slash|: also "/", which separates the parts of a folder.
+std::string escape_name(const std::string &s, bool slash = false) {
   std::string out;
   for (char c : s) {
-    if (c == ',' || c == ';' || c == ':' || c == '%' || c == '\n' || c == '\r') {
+    if (c == ',' || c == ';' || c == ':' || c == '%' || c == '\n' || c == '\r' || (slash && c == '/')) {
       char buf[4];
       snprintf(buf, sizeof buf, "%%%02X", (unsigned char)c);
       out += buf;
@@ -343,21 +344,41 @@ std::string unescape_name(const std::string &s) {
 std::vector<TileGroup> parse_tile_groups(const std::string &text) {
   std::vector<TileGroup> out;
   std::vector<std::string> seen;
+  auto fresh = [&](const std::string &id) {
+    if (id.empty() || std::find(seen.begin(), seen.end(), id) != seen.end()) return false;
+    seen.push_back(id);
+    return true;
+  };
   for (auto &part : split(text, ';')) {
     if (trim(part).empty()) continue;
-    auto fields = split(part, ',');
+    // Empty fields kept: a group without a name starts with ",".
+    auto fields = split(part, ',', true);
     TileGroup g;
     g.name = trim(unescape_name(fields[0]));
     for (size_t i = 1; i < fields.size(); ++i) {
       std::string f = trim(fields[i]);
       if (f.empty()) continue;
       Tile t;
+      bool folder = starts_with(f, "folder:");
       size_t colon = f.rfind(':');
-      t.id = trim(colon == std::string::npos ? f : f.substr(0, colon));
+      if (folder && colon < 7) colon = std::string::npos;  // no size after the folder
       if (colon != std::string::npos && colon + 1 < f.size()) t.size = tile_size_from(f[colon + 1]);
-      if (t.id.empty() || std::find(seen.begin(), seen.end(), t.id) != seen.end()) continue;
-      seen.push_back(t.id);
-      g.tiles.push_back(t);
+      std::string body = trim(colon == std::string::npos ? f : f.substr(0, colon));
+      if (folder) {
+        auto parts = split(body.substr(7), '/', true);
+        t.folder = true;
+        t.name = parts.empty() ? "" : trim(unescape_name(parts[0]));
+        for (size_t k = 1; k < parts.size(); ++k) {
+          std::string id = trim(unescape_name(parts[k]));
+          if (fresh(id)) t.apps.push_back(id);
+        }
+        if (t.apps.empty()) continue;
+        if (t.apps.size() == 1) t = Tile{t.apps[0], t.size};
+        g.tiles.push_back(t);
+        continue;
+      }
+      t.id = body;
+      if (fresh(t.id)) g.tiles.push_back(t);
     }
     out.push_back(g);
   }
@@ -369,7 +390,15 @@ std::string format_tile_groups(const std::vector<TileGroup> &groups) {
   for (auto &g : groups) {
     if (!s.empty()) s += ";";
     s += escape_name(g.name);
-    for (auto &t : g.tiles) s += "," + t.id + ":" + tile_size_code(t.size);
+    for (auto &t : g.tiles) {
+      if (t.folder) {
+        s += ",folder:" + escape_name(t.name, true);
+        for (auto &id : t.apps) s += "/" + escape_name(id, true);
+      } else {
+        s += "," + t.id;
+      }
+      s += std::string(":") + tile_size_code(t.size);
+    }
   }
   // Nothing pinned is saved as ";" so that the defaults do not come back.
   return s.empty() ? ";" : s;
@@ -378,8 +407,23 @@ std::string format_tile_groups(const std::vector<TileGroup> &groups) {
 std::vector<std::string> tile_ids(const std::vector<TileGroup> &groups) {
   std::vector<std::string> out;
   for (auto &g : groups)
-    for (auto &t : g.tiles) out.push_back(t.id);
+    for (auto &t : g.tiles)
+      for (auto &id : tile_apps(t)) out.push_back(id);
   return out;
+}
+
+std::vector<std::string> tile_apps(const Tile &t) {
+  if (t.folder) return t.apps;
+  return t.id.empty() ? std::vector<std::string>() : std::vector<std::string>{t.id};
+}
+
+Tile make_folder(const std::string &name, const std::vector<std::string> &apps, TileSize size) {
+  Tile t;
+  t.folder = true;
+  t.name = name;
+  t.apps = apps;
+  t.size = size;
+  return t;
 }
 
 std::vector<TileGroup> groups_from_favorites(const std::vector<std::string> &favorites,
@@ -459,10 +503,24 @@ const std::string &category_name(const std::vector<std::string> &names, TileCate
 }
 
 bool pinned_in(const std::vector<TileGroup> &groups, const std::string &id) {
-  for (auto &g : groups)
-    for (auto &t : g.tiles)
-      if (t.id == id) return true;
-  return false;
+  return find_app(groups, id).group >= 0;
+}
+
+// Whole rows of the six-cell group: medium tiles by three; with one, two,
+// four or five tiles the first of a row is wide (W M, W M / M M M).
+bool wide_at(size_t n, size_t i) {
+  return n == 1 || (n == 2 && i == 0) || (n == 4 && i % 2 == 0) || (n == 5 && i == 0);
+}
+
+const DesktopEntry *installed(const std::vector<DesktopEntry> &apps, const std::string &id) {
+  if (id.empty()) return nullptr;
+  for (auto &a : apps)
+    if (a.id == id) return &a;
+  return nullptr;
+}
+
+bool has_category(const DesktopEntry &e, const std::string &cat) {
+  return std::find(e.categories.begin(), e.categories.end(), cat) != e.categories.end();
 }
 
 }  // namespace
@@ -511,102 +569,357 @@ std::vector<TileGroup> category_groups(const std::vector<DesktopEntry> &apps,
     for (auto &cand : list)
       if (picked.size() < per_group && std::find(picked.begin(), picked.end(), cand.e) == picked.end())
         picked.push_back(cand.e);
-    // Full rows of the six-cell group: medium tiles by three; with one,
-    // two, four or five tiles the first of a row is wide (W M, W M / M M M).
     size_t n = picked.size();
     TileGroup g{category_name(names, c), {}};
-    for (size_t i = 0; i < n; ++i) {
-      bool wide = n == 1 || (n == 2 && i == 0) || (n == 4 && i % 2 == 0) || (n == 5 && i == 0);
-      g.tiles.push_back(Tile{picked[i]->id, wide ? TileSize::Wide : TileSize::Medium});
-    }
+    for (size_t i = 0; i < n; ++i)
+      g.tiles.push_back(Tile{picked[i]->id, wide_at(n, i) ? TileSize::Wide : TileSize::Medium});
     out.push_back(g);
   }
   return out;
 }
 
-std::vector<TileGroup> migrate_tile_groups(const std::vector<TileGroup> &groups,
-                                           const std::vector<std::string> &old_names,
-                                           const std::vector<DesktopEntry> &apps,
-                                           const std::vector<std::string> &names) {
-  auto is_old = [&](const TileGroup &g) {
-    for (auto &n : old_names)
-      if (same_name(g.name, n)) return true;
-    return false;
-  };
-  if (std::none_of(groups.begin(), groups.end(), is_old)) return groups;
-  std::vector<std::vector<Tile>> by_category(static_cast<size_t>(kTileCategories));
-  std::vector<Tile> unknown;
-  std::vector<TileGroup> out;
-  size_t at = 0;
-  bool found = false;
+bool category_shaped(const std::vector<TileGroup> &groups, const std::vector<DesktopEntry> &apps,
+                     const std::vector<std::vector<std::string>> &names, size_t per_group) {
+  if (groups.empty()) return false;
+  int last = -1;
   for (auto &g : groups) {
-    if (!is_old(g)) {
-      out.push_back(g);
-      continue;
-    }
-    if (!found) at = out.size(), found = true;
+    // The category the group is named after, later than the one before.
+    int cat = -1;
+    for (size_t c = 0; c < names.size() && cat < 0; ++c)
+      for (auto &n : names[c])
+        if (!trim(n).empty() && same_name(g.name, n)) {
+          cat = int(c);
+          break;
+        }
+    if (cat <= last || g.tiles.empty() || g.tiles.size() > per_group) return false;
+    last = cat;
     for (auto &t : g.tiles) {
-      auto e = std::find_if(apps.begin(), apps.end(), [&](const DesktopEntry &a) { return a.id == t.id; });
-      TileCategory c = e == apps.end() ? TileCategory::Other : tile_category(*e);
-      if (c == TileCategory::Other) unknown.push_back(t);
-      else by_category[size_t(c)].push_back(t);
+      if (t.folder || (t.size != TileSize::Medium && t.size != TileSize::Wide)) return false;
+      const DesktopEntry *e = installed(apps, t.id);
+      if (e && int(tile_category(*e)) != cat) return false;
     }
   }
-  std::vector<TileGroup> fresh;
-  for (int ci = 0; ci < kTileCategories; ++ci) {
-    auto &tiles = by_category[size_t(ci)];
-    if (tiles.empty()) continue;
-    const std::string &name = category_name(names, TileCategory(ci));
-    int existing = group_named(out, name);
-    if (existing >= 0) {
-      for (auto &t : tiles)
-        if (!pinned_in(out, t.id)) out[size_t(existing)].tiles.push_back(t);
-    } else {
-      fresh.push_back(TileGroup{name, tiles});
+  return true;
+}
+
+namespace {
+
+// A role of the default favorites: SDE's application for it, the user's
+// default (a member of DefaultApps), else an application with every
+// category of one of |cats| (tried in order).
+struct FavoriteRole {
+  FavoriteGroup group;
+  bool main;  // a medium tile, else a small one
+  const char *sde;
+  std::string DefaultApps::*fallback;
+  std::vector<std::vector<std::string>> cats;
+};
+
+const std::vector<FavoriteRole> &favorite_roles() {
+  using G = FavoriteGroup;
+  static const std::vector<FavoriteRole> roles = {
+      {G::Work, true, nullptr, &DefaultApps::browser, {{"WebBrowser"}}},
+      {G::Work, true, "liria.desktop", &DefaultApps::files, {{"FileManager"}}},
+      {G::Work, true, nullptr, &DefaultApps::mail, {{"Email"}}},
+      {G::Work, true, "niny.desktop", nullptr, {{"TextEditor"}}},
+      {G::Work, true, "xanara.desktop", &DefaultApps::documents, {{"Office", "Viewer"}}},
+      {G::Work, false, "org.debion.Calculator.desktop", nullptr, {{"Calculator"}}},
+      {G::Work, false, "taca.desktop", nullptr, {{"Archiving"}, {"Compression"}}},
+      {G::Media, true, "sde-gallery.desktop", nullptr, {{"Photography"}}},
+      {G::Media, true, "sde-view.desktop", nullptr, {{"RasterGraphics", "Viewer"}, {"Viewer", "Photography"}}},
+      {G::Media, false, nullptr, &DefaultApps::video, {{"Video", "Player"}, {"AudioVideo", "Player"}}},
+      {G::Media, false, nullptr, &DefaultApps::music, {{"Audio", "Player"}, {"Music", "Player"}}},
+      {G::System, true, "sde-settings.desktop", nullptr, {{"DesktopSettings"}}},
+      {G::System, true, "merkadu.desktop", nullptr, {{"PackageManager"}}},
+      {G::System, false, "sde-update.desktop", nullptr, {}},
+      {G::System, false, "sde-system-monitor.desktop", nullptr, {{"Monitor"}}},
+      {G::System, false, nullptr, &DefaultApps::terminal, {{"TerminalEmulator"}}},
+  };
+  return roles;
+}
+
+const std::string &favorite_name(const std::vector<std::string> &names, FavoriteGroup g) {
+  static const std::string empty;
+  size_t i = size_t(g);
+  return i < names.size() ? names[i] : empty;
+}
+
+}  // namespace
+
+std::vector<TileGroup> favorite_groups(const std::vector<DesktopEntry> &apps, const DefaultApps &defaults,
+                                       const std::vector<std::string> &preferred,
+                                       const std::vector<std::string> &names) {
+  const auto &roles = favorite_roles();
+  // SDE's application of a role is kept for it: the category matches of
+  // other roles leave it alone (Merkadu's role does not take the Software
+  // Updater, which is a package manager too).
+  std::vector<std::string> reserved;
+  for (auto &r : roles)
+    if (r.sde && installed(apps, r.sde)) reserved.push_back(r.sde);
+  std::vector<std::string> used;
+  auto unused = [&](const DesktopEntry *e) {
+    return e && std::find(used.begin(), used.end(), e->id) == used.end();
+  };
+  auto kept = [&](const DesktopEntry &e) {
+    return std::find(reserved.begin(), reserved.end(), e.id) != reserved.end();
+  };
+  std::vector<TileGroup> out;
+  for (int gi = 0; gi < kFavoriteGroups; ++gi) {
+    std::vector<std::string> mains, others;
+    for (auto &r : roles) {
+      if (int(r.group) != gi) continue;
+      const DesktopEntry *pick = r.sde ? installed(apps, r.sde) : nullptr;
+      if (!unused(pick) && r.fallback) {
+        pick = installed(apps, defaults.*r.fallback);
+        if (pick && kept(*pick)) pick = nullptr;
+      }
+      for (size_t k = 0; !unused(pick) && k < r.cats.size(); ++k) {
+        pick = nullptr;
+        bool pick_sde = false;
+        for (auto &a : apps) {
+          bool fits = unused(&a) && !kept(a);
+          for (auto &c : r.cats[k]) fits = fits && has_category(a, c);
+          if (!fits) continue;
+          bool sde = std::find(preferred.begin(), preferred.end(), a.id) != preferred.end();
+          if (!pick || (sde && !pick_sde) || (sde == pick_sde && lower(a.name) < lower(pick->name)))
+            pick = &a, pick_sde = sde;
+        }
+      }
+      if (!unused(pick)) continue;
+      used.push_back(pick->id);
+      (r.main ? mains : others).push_back(pick->id);
     }
+    // Small tiles only next to medium ones; up to four share the place of
+    // a medium tile.
+    if (mains.empty()) mains.swap(others);
+    if (mains.empty()) continue;
+    if (others.size() > 4) others.resize(4);
+    size_t units = mains.size() + (others.empty() ? 0 : 1);
+    TileGroup g{favorite_name(names, FavoriteGroup(gi)), {}};
+    for (size_t i = 0; i < mains.size(); ++i)
+      g.tiles.push_back(Tile{mains[i], wide_at(units, i) ? TileSize::Wide : TileSize::Medium});
+    for (auto &id : others) g.tiles.push_back(Tile{id, TileSize::Small});
+    out.push_back(g);
   }
-  if (!unknown.empty()) {
-    if (fresh.empty())
-      fresh.push_back(TileGroup{category_name(names, TileCategory::Other), {}});
-    for (auto &t : unknown) fresh.front().tiles.push_back(t);
-  }
-  out.insert(out.begin() + long(at), fresh.begin(), fresh.end());
   return out;
 }
 
-bool pin_by_category(std::vector<TileGroup> &groups, const DesktopEntry &e,
-                     const std::vector<DesktopEntry> &apps, const std::vector<std::string> &names,
-                     TileSize size) {
+FavoriteGroup favorite_group(const DesktopEntry &e) {
+  switch (tile_category(e)) {
+    case TileCategory::Multimedia:
+    case TileCategory::Graphics:
+    case TileCategory::Games: return FavoriteGroup::Media;
+    case TileCategory::System: return FavoriteGroup::System;
+    default: return FavoriteGroup::Work;
+  }
+}
+
+bool pin_favorite(std::vector<TileGroup> &groups, const DesktopEntry &e, const std::vector<DesktopEntry> &apps,
+                  const std::vector<std::string> &names, TileSize size) {
   if (e.id.empty() || pinned_in(groups, e.id)) return false;
-  TileCategory c = tile_category(e);
-  int target = group_named(groups, category_name(names, c));
-  if (target < 0 && c != TileCategory::Other) {
-    // A category group the user renamed: the one with the most
-    // applications of this category.
+  FavoriteGroup kind = favorite_group(e);
+  int target = group_named(groups, favorite_name(names, kind));
+  if (target < 0) {
+    // A favorites group the user renamed: the one with the most
+    // applications of this kind; else the first group.
     int best = 0;
     for (size_t g = 0; g < groups.size(); ++g) {
       int n = 0;
-      for (auto &t : groups[g].tiles) {
-        auto a = std::find_if(apps.begin(), apps.end(), [&](const DesktopEntry &x) { return x.id == t.id; });
-        if (a != apps.end() && tile_category(*a) == c) ++n;
-      }
+      for (auto &t : groups[g].tiles)
+        for (auto &id : tile_apps(t))
+          if (const DesktopEntry *a = installed(apps, id)) n += favorite_group(*a) == kind ? 1 : 0;
       if (n > best) best = n, target = int(g);
     }
+    if (target < 0 && !groups.empty()) target = 0;
   }
   if (target < 0) {
-    // A new group, before the first group of a later category.
-    size_t at = groups.size();
-    for (size_t g = 0; g < groups.size() && at == groups.size(); ++g)
-      for (int later = int(c) + 1; later <= kTileCategories; ++later)
-        if (same_name(groups[g].name, category_name(names, TileCategory(later)))) {
-          at = g;
-          break;
-        }
-    groups.insert(groups.begin() + long(at), TileGroup{category_name(names, c), {}});
-    target = int(at);
+    groups.push_back(TileGroup{favorite_name(names, kind), {}});
+    target = int(groups.size()) - 1;
   }
   groups[size_t(target)].tiles.push_back(Tile{e.id, size});
   return true;
+}
+
+std::vector<TileGroup> adopt_favorites(const std::vector<TileGroup> &groups, const std::vector<bool> &automatic,
+                                       const std::vector<std::string> &picks,
+                                       const std::vector<TileGroup> &favorites,
+                                       const std::vector<DesktopEntry> &apps,
+                                       const std::vector<std::string> &names) {
+  auto is_auto = [&](size_t g) { return g < automatic.size() && automatic[g]; };
+  size_t first = groups.size();
+  for (size_t g = 0; g < groups.size() && first == groups.size(); ++g)
+    if (is_auto(g)) first = g;
+  if (first == groups.size()) return groups;
+  // The user's own groups stay; what they hold is not repeated among the
+  // favorites.
+  std::vector<TileGroup> own;
+  for (size_t g = 0; g < groups.size(); ++g)
+    if (!is_auto(g)) own.push_back(groups[g]);
+  std::vector<TileGroup> fav;
+  for (auto g : favorites) {
+    g.tiles.erase(std::remove_if(g.tiles.begin(), g.tiles.end(),
+                                 [&](const Tile &t) { return pinned_in(own, t.id); }),
+                  g.tiles.end());
+    if (!g.tiles.empty()) fav.push_back(g);
+  }
+  // Applications the user pinned into the old groups join the favorites
+  // group of their kind (made where it belongs when it is missing).
+  for (size_t g = first; g < groups.size(); ++g) {
+    if (!is_auto(g)) continue;
+    for (auto &t : groups[g].tiles)
+      for (auto &id : tile_apps(t)) {
+        const DesktopEntry *e = installed(apps, id);
+        if (!e || std::find(picks.begin(), picks.end(), id) != picks.end() || pinned_in(own, id) ||
+            pinned_in(fav, id))
+          continue;
+        FavoriteGroup kind = favorite_group(*e);
+        int target = group_named(fav, favorite_name(names, kind));
+        if (target < 0) {
+          size_t at = 0;
+          for (int k = 0; k < int(kind); ++k)
+            if (at < fav.size() && same_name(fav[at].name, favorite_name(names, FavoriteGroup(k)))) ++at;
+          fav.insert(fav.begin() + long(at), TileGroup{favorite_name(names, kind), {}});
+          target = int(at);
+        }
+        fav[size_t(target)].tiles.push_back(Tile{id, TileSize::Medium});
+      }
+  }
+  // The favorites where the first old group was.
+  std::vector<TileGroup> out;
+  for (size_t g = 0; g < groups.size(); ++g) {
+    if (g == first) out.insert(out.end(), fav.begin(), fav.end());
+    if (!is_auto(g)) out.push_back(groups[g]);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- folders
+
+TilePlace find_app(const std::vector<TileGroup> &groups, const std::string &id) {
+  if (id.empty()) return {};
+  for (size_t g = 0; g < groups.size(); ++g)
+    for (size_t i = 0; i < groups[g].tiles.size(); ++i) {
+      const Tile &t = groups[g].tiles[i];
+      if (!t.folder && t.id == id) return {int(g), int(i), -1};
+      for (size_t m = 0; t.folder && m < t.apps.size(); ++m)
+        if (t.apps[m] == id) return {int(g), int(i), int(m)};
+    }
+  return {};
+}
+
+TilePlace take_app(std::vector<TileGroup> &groups, const std::string &id, Tile *tile) {
+  TilePlace p = find_app(groups, id);
+  if (p.group < 0) return p;
+  auto &tiles = groups[size_t(p.group)].tiles;
+  Tile &t = tiles[size_t(p.index)];
+  if (p.member < 0) {
+    if (tile) *tile = t;
+    tiles.erase(tiles.begin() + p.index);
+    return p;
+  }
+  if (tile) *tile = Tile{id, TileSize::Medium};
+  t.apps.erase(t.apps.begin() + p.member);
+  // A folder holds two applications or more.
+  if (t.apps.size() == 1) t = Tile{t.apps[0], t.size};
+  else if (t.apps.empty()) tiles.erase(tiles.begin() + p.index);
+  return p;
+}
+
+bool drop_app(std::vector<TileGroup> &groups, const std::string &id, TileSize size, const TileDrop &drop,
+              int *source, bool *made, TilePlace *at) {
+  if (source) *source = -1;
+  if (made) *made = false;
+  if (id.empty() || drop.group < 0 || drop.group > int(groups.size())) return false;
+  TilePlace from = find_app(groups, id);
+  TileDrop d = drop;
+  bool onto = d.kind != TileDrop::Place;
+  if (onto && (d.group >= int(groups.size()) || d.index < 0 || d.index >= int(groups[size_t(d.group)].tiles.size())))
+    return false;
+  if (from.group == d.group && from.index == d.index && from.member < 0 && onto) return false;  // onto itself
+  if (from.group == d.group && from.member < 0 && !onto && (d.index == from.index || d.index == from.index + 1))
+    return false;  // to where it is
+  if (onto && from.group == d.group && from.index == d.index) {
+    // Inside its own folder: dropped on the folder it stays, else it moves.
+    if (d.kind == TileDrop::Merge) return false;
+    auto &apps = groups[size_t(d.group)].tiles[size_t(d.index)].apps;
+    int to = std::max(0, std::min(d.member, int(apps.size())));
+    if (to > from.member) --to;
+    if (to == from.member) return false;
+    apps.erase(apps.begin() + from.member);
+    apps.insert(apps.begin() + to, id);
+    if (at) *at = {d.group, d.index, to};
+    return true;
+  }
+  Tile tile{id, size};
+  if (from.group >= 0) {
+    take_app(groups, id, &tile);
+    if (source) *source = from.group;
+    // Its tile left the group: the tiles after it moved up by one.
+    if (from.member < 0 && from.group == d.group && from.index < d.index) --d.index;
+  }
+  if (!onto) {
+    if (d.group >= int(groups.size())) {
+      groups.push_back(TileGroup{"", {tile}});
+      if (at) *at = {int(groups.size()) - 1, 0, -1};
+      return true;
+    }
+    auto &tiles = groups[size_t(d.group)].tiles;
+    int index = std::max(0, std::min(d.index, int(tiles.size())));
+    tiles.insert(tiles.begin() + index, tile);
+    if (at) *at = {d.group, index, -1};
+    return true;
+  }
+  Tile &target = groups[size_t(d.group)].tiles[size_t(d.index)];
+  if (target.folder) {
+    int m = d.kind == TileDrop::IntoFolder ? std::max(0, std::min(d.member, int(target.apps.size())))
+                                           : int(target.apps.size());
+    target.apps.insert(target.apps.begin() + m, id);
+    if (at) *at = {d.group, d.index, m};
+  } else {
+    // An application's tile becomes a folder of both, in its size.
+    target = make_folder("", {target.id, id}, target.size);
+    if (made) *made = true;
+    if (at) *at = {d.group, d.index, 1};
+  }
+  return true;
+}
+
+bool drop_tile(std::vector<TileGroup> &groups, int group, int index, const TileDrop &drop, TilePlace *at) {
+  if (group < 0 || group >= int(groups.size()) || index < 0 || index >= int(groups[size_t(group)].tiles.size()))
+    return false;
+  if (drop.kind != TileDrop::Place || drop.group < 0 || drop.group > int(groups.size())) return false;
+  if (drop.group == group && (drop.index == index || drop.index == index + 1)) return false;
+  auto &from = groups[size_t(group)].tiles;
+  Tile t = from[size_t(index)];
+  from.erase(from.begin() + index);
+  if (drop.group >= int(groups.size())) {
+    groups.push_back(TileGroup{"", {t}});
+    if (at) *at = {int(groups.size()) - 1, 0, -1};
+    return true;
+  }
+  int to = drop.index - (drop.group == group && index < drop.index ? 1 : 0);
+  auto &tiles = groups[size_t(drop.group)].tiles;
+  to = std::max(0, std::min(to, int(tiles.size())));
+  tiles.insert(tiles.begin() + to, t);
+  if (at) *at = {drop.group, to, -1};
+  return true;
+}
+
+std::string folder_name(const std::vector<std::string> &ids, const std::vector<DesktopEntry> &apps,
+                        const std::vector<std::string> &names) {
+  int cat = -1;
+  for (auto &id : ids) {
+    const DesktopEntry *e = installed(apps, id);
+    int c = e ? int(tile_category(*e)) : int(TileCategory::Other);
+    if (c == int(TileCategory::Other) || (cat >= 0 && c != cat)) return "";
+    cat = c;
+  }
+  return cat >= 0 ? category_name(names, TileCategory(cat)) : "";
+}
+
+void folder_grid(TileSize size, int &cols, int &rows) {
+  cols = size == TileSize::Wide ? 4 : size == TileSize::Large ? 3 : 2;
+  rows = size == TileSize::Large ? 3 : 2;
 }
 
 std::vector<TileCell> pack_tiles(const std::vector<Tile> &tiles, int columns, int *rows) {

@@ -306,46 +306,267 @@ int main() {
     CHECK(rows == 4);  // two full rows of tiles two cells high
     CHECK(menu::category_groups({}, {}, names).empty());
 
-    // Groups of 0.2 Alpha 1: Productivity and Explore become category groups
-    // where Productivity was; "Work" stays; the existing Internet group
-    // gets the Internet tiles; sizes are kept; an application that is not
-    // installed goes with the first new group.
-    std::vector<menu::TileGroup> old = {
-        {"Productivity", {{"liria.desktop", W}, {"firefox.desktop", M}, {"gone.desktop", M}, {"writer.desktop", M}}},
-        {"Work", {{"calc.desktop", M}}},
-        {"Explore", {{"chess.desktop", M}, {"thunderbird.desktop", M}}},
-        {"Internet", {{"chromium.desktop", M}}},
-    };
-    auto moved = menu::migrate_tile_groups(old, {"Productivity", "Explore"}, apps, names);
-    CHECK(moved.size() == 5 && moved[0].name == "Office" && moved[1].name == "Games" &&
-          moved[2].name == "System & Settings" && moved[3].name == "Work" && moved[4].name == "Internet");
-    CHECK(moved[2].tiles.size() == 1 && moved[2].tiles[0].id == "liria.desktop" && moved[2].tiles[0].size == W);
-    CHECK(moved[4].tiles.size() == 3 && moved[4].tiles[1].id == "firefox.desktop" &&
-          moved[4].tiles[2].id == "thunderbird.desktop");
-    CHECK(moved[0].tiles.size() == 2 && moved[0].tiles[1].id == "gone.desktop");
-    CHECK(moved[3].tiles.size() == 1 && moved[3].tiles[0].id == "calc.desktop");
-    // Nothing left to move: unchanged.
-    CHECK(menu::format_tile_groups(menu::migrate_tile_groups(moved, {"Productivity", "Explore"}, apps, names)) ==
-          menu::format_tile_groups(moved));
-    auto lone = menu::migrate_tile_groups({{"productivity", {{"gone.desktop", M}}}}, {"Productivity"}, apps, names);
-    CHECK(lone.size() == 1 && lone[0].name == "Other" && lone[0].tiles.size() == 1);
+    // 0.2 Alpha 3: whether saved groups are still the ones SDE made by
+    // category (English or translated names)...
+    std::vector<std::vector<std::string>> both;
+    for (auto &n : names) both.push_back({n, "x-" + n});
+    CHECK(menu::category_shaped(groups, apps, both) && menu::category_shaped(six, apps, both));
+    auto translated = groups;
+    translated[0].name = "x-Internet";
+    CHECK(menu::category_shaped(translated, apps, both));
+    auto changed = groups;
+    changed[0].name = "Web";  // renamed
+    CHECK(!menu::category_shaped(changed, apps, both));
+    changed = groups;
+    std::swap(changed[0], changed[1]);  // moved
+    CHECK(!menu::category_shaped(changed, apps, both));
+    changed = groups;
+    changed[0].tiles[0].size = menu::TileSize::Small;  // resized
+    CHECK(!menu::category_shaped(changed, apps, both));
+    changed = groups;
+    changed[0].tiles.push_back({"writer.desktop", M});  // a tile of another category
+    CHECK(!menu::category_shaped(changed, apps, both));
+    changed = groups;
+    changed.push_back({"Mine", {{"chess.desktop", M}}});  // an own group
+    CHECK(!menu::category_shaped(changed, apps, both));
+    changed = groups;
+    changed[0].tiles.push_back({"gone.desktop", M});  // not installed any more: still SDE's
+    CHECK(menu::category_shaped(changed, apps, both));
+    CHECK(!menu::category_shaped({}, apps, both));
+  }
 
-    // Pin to Start: the group of the category...
-    CHECK(menu::pin_by_category(groups, apps[0], apps, names));
-    CHECK(groups[0].tiles.back().id == "firefox.desktop");
-    CHECK(!menu::pin_by_category(groups, apps[0], apps, names));  // pinned already
-    // ...a new one in the order of the categories...
+  // 0.2 Alpha 3: favorites in named groups.
+  {
+    using G = menu::FavoriteGroup;
+    const auto S = menu::TileSize::Small, M = menu::TileSize::Medium, W = menu::TileSize::Wide;
+    std::vector<std::string> names = {"Work", "Photos and media", "System"};
+    std::vector<DesktopEntry> apps = {
+        app("firefox-esr.desktop", "Firefox ESR", {"Network", "WebBrowser"}),
+        app("chromium.desktop", "Chromium", {"Network", "WebBrowser"}),
+        app("thunderbird.desktop", "Thunderbird", {"Network", "Email"}),
+        app("transmission-gtk.desktop", "Transmission", {"Network", "FileTransfer", "P2P"}),
+        app("liria.desktop", "Liria", {"System", "FileTools", "FileManager"}),
+        app("niny.desktop", "Niny", {"Utility", "TextEditor"}),
+        app("gedit.desktop", "Text Editor", {"Utility", "TextEditor"}),
+        app("xanara.desktop", "Xanara", {"Office", "Viewer"}),
+        app("org.debion.Calculator.desktop", "Calculator", {"Utility", "Calculator"}),
+        app("taca.desktop", "Taca", {"Utility", "Archiving", "Compression"}),
+        app("sde-gallery.desktop", "Gallery", {"Graphics", "Photography", "Viewer"}),
+        app("sde-view.desktop", "Photo", {"Graphics", "RasterGraphics", "Viewer"}),
+        app("io.github.celluloid_player.Celluloid.desktop", "Celluloid", {"AudioVideo", "Video", "Player"}),
+        app("org.gnome.Rhythmbox3.desktop", "Rhythmbox", {"AudioVideo", "Audio", "Player"}),
+        app("sde-settings.desktop", "Control Center", {"Settings", "DesktopSettings"}),
+        app("sde-display-settings.desktop", "Display Settings", {"Settings", "DesktopSettings"}),
+        app("merkadu.desktop", "Merkadu", {"System", "PackageManager"}),
+        app("sde-update.desktop", "Software Updater", {"System", "Settings", "PackageManager"}),
+        app("sde-system-monitor.desktop", "SDE System Monitor", {"System", "Monitor"}),
+        app("xterm.desktop", "XTerm", {"System", "TerminalEmulator"}),
+        app("chess.desktop", "Chess", {"Game", "BoardGame"}),
+    };
+    menu::DefaultApps defaults;
+    defaults.browser = "firefox-esr.desktop";
+    defaults.mail = "thunderbird.desktop";
+    defaults.files = "nautilus.desktop";  // not installed: Liria anyway
+    auto fav = menu::favorite_groups(apps, defaults, {}, names);
+    CHECK(fav.size() == 3 && fav[0].name == "Work" && fav[1].name == "Photos and media" && fav[2].name == "System");
+    // Work: the default browser, Liria, the mail client, Niny and Xanara as
+    // medium tiles (six places: whole rows), Calculator and Taca small in
+    // the place of one; never every application (no Chromium, gedit,
+    // Transmission, Chess).
+    auto ids = [](const menu::TileGroup &g) {
+      std::string s;
+      for (auto &t : g.tiles) s += t.id + ":" + menu::tile_size_code(t.size) + " ";
+      return s;
+    };
+    CHECK(ids(fav[0]) == "firefox-esr.desktop:m liria.desktop:m thunderbird.desktop:m niny.desktop:m "
+                         "xanara.desktop:m org.debion.Calculator.desktop:s taca.desktop:s ");
+    CHECK(ids(fav[1]) == "sde-gallery.desktop:m sde-view.desktop:m io.github.celluloid_player.Celluloid.desktop:s "
+                         "org.gnome.Rhythmbox3.desktop:s ");
+    // Merkadu's role does not take the Software Updater.
+    CHECK(ids(fav[2]) == "sde-settings.desktop:m merkadu.desktop:m sde-update.desktop:s "
+                         "sde-system-monitor.desktop:s xterm.desktop:s ");
+    int rows = 0;
+    menu::pack_tiles(fav[0].tiles, menu::kGroupColumns, &rows);
+    CHECK(rows == 4);
+    menu::pack_tiles(fav[1].tiles, menu::kGroupColumns, &rows);
+    CHECK(rows == 2);  // the small tiles fit beside the medium ones
+    auto cells = menu::pack_tiles(fav[2].tiles, menu::kGroupColumns, &rows);
+    CHECK(rows == 2 && cells[2].col == 4 && cells[3].col == 5 && cells[4].col == 4 && cells[4].row == 1);
+    // Without a mail client the browser is wide (W M / M M M); without the
+    // players Gallery is (W M); the other default browser counts.
+    std::vector<DesktopEntry> fewer;
+    for (auto &a : apps)
+      if (a.id != "thunderbird.desktop" && a.name != "Celluloid" && a.name != "Rhythmbox") fewer.push_back(a);
+    defaults.browser = "chromium.desktop";
+    fav = menu::favorite_groups(fewer, defaults, {}, names);
+    CHECK(fav[0].tiles[0].id == "chromium.desktop" && fav[0].tiles[0].size == W && fav[0].tiles[1].size == M);
+    CHECK(ids(fav[1]) == "sde-gallery.desktop:w sde-view.desktop:m ");
+    // Without SDE's applications the best match by category, SDE's own
+    // first (|preferred|), then A-Z; no default: A-Z.
+    std::vector<DesktopEntry> other = {
+        app("org.gnome.Nautilus.desktop", "Files", {"GNOME", "System", "FileManager"}),
+        app("pcmanfm.desktop", "PCManFM", {"System", "FileManager"}),
+        app("gedit.desktop", "Text Editor", {"Utility", "TextEditor"}),
+        app("chromium.desktop", "Chromium", {"Network", "WebBrowser"}),
+        app("org.gnome.Evince.desktop", "Document Viewer", {"Office", "Viewer", "Graphics"}),
+        app("eog.desktop", "Image Viewer", {"Graphics", "RasterGraphics", "Viewer"}),
+        app("vlc.desktop", "VLC media player", {"AudioVideo", "Player", "Recorder"}),
+    };
+    fav = menu::favorite_groups(other, {}, {"pcmanfm.desktop"}, names);
+    CHECK(fav.size() == 2 && ids(fav[0]) == "chromium.desktop:w pcmanfm.desktop:m gedit.desktop:w "
+                                             "org.gnome.Evince.desktop:m ");
+    CHECK(ids(fav[1]) == "eog.desktop:w vlc.desktop:s ");  // VLC: a player without Video
+    CHECK(menu::favorite_groups({}, {}, {}, names).empty());
+    // Only small-tile roles: they become medium tiles.
+    fav = menu::favorite_groups({apps[8]}, {}, {}, names);
+    CHECK(fav.size() == 1 && ids(fav[0]) == "org.debion.Calculator.desktop:w ");
+
+    // The favorites group of an application pinned later.
+    CHECK(menu::favorite_group(apps[0]) == G::Work && menu::favorite_group(apps[12]) == G::Media &&
+          menu::favorite_group(apps[20]) == G::Media && menu::favorite_group(apps[19]) == G::System &&
+          menu::favorite_group(apps[5]) == G::Work);
+    // Pin to Start: the group of its kind...
+    auto groups = menu::favorite_groups(apps, {}, {}, names);
     DesktopEntry gimp = app("gimp.desktop", "GIMP", {"Graphics", "RasterGraphics"});
-    CHECK(menu::pin_by_category(groups, gimp, apps, names));
-    CHECK(groups.size() == 6 && groups[2].name == "Graphics" && groups[2].tiles[0].id == "gimp.desktop" &&
-          groups[3].name == "Games");
-    // ...the renamed group that holds the category's applications...
-    groups[0].name = "Web";
-    DesktopEntry web = app("epiphany.desktop", "Web", {"Network", "WebBrowser"});
-    CHECK(menu::pin_by_category(groups, web, apps, names) && groups[0].tiles.back().id == "epiphany.desktop");
-    // ...and "Other" at the end for an application without a category.
-    CHECK(menu::pin_by_category(groups, apps[12], apps, names, menu::TileSize::Small));
-    CHECK(groups.back().name == "Other" && groups.back().tiles[0].size == menu::TileSize::Small);
+    CHECK(menu::pin_favorite(groups, gimp, apps, names) && groups[1].tiles.back().id == "gimp.desktop");
+    CHECK(!menu::pin_favorite(groups, gimp, apps, names));  // pinned already
+    // ...the renamed group with most applications of that kind...
+    groups[2].name = "Admin";
+    DesktopEntry gparted = app("gparted.desktop", "GParted", {"System", "Filesystem"});
+    CHECK(menu::pin_favorite(groups, gparted, apps, names) && groups[2].tiles.back().id == "gparted.desktop");
+    // ...else the first group; without groups a new one of its kind.
+    std::vector<menu::TileGroup> mine = {{"Mine", {{"chess.desktop", M}}}};
+    CHECK(menu::pin_favorite(mine, apps[0], apps, names) && mine[0].tiles.size() == 2);
+    std::vector<menu::TileGroup> none;
+    CHECK(menu::pin_favorite(none, gimp, apps, names, S) && none.size() == 1 &&
+          none[0].name == "Photos and media" && none[0].tiles[0].size == S);
+    // Pinned inside a folder counts.
+    std::vector<menu::TileGroup> folded = {{"F", {menu::make_folder("Web", {"chromium.desktop", "firefox-esr.desktop"})}}};
+    CHECK(!menu::pin_favorite(folded, apps[0], apps, names));
+
+    // Migration: 0.2 Alpha 2's groups by category, as SDE made them, give
+    // way to the favorites; an application the user pinned into them stays.
+    std::vector<std::string> cat_names = {"Internet", "Office", "Multimedia", "Graphics", "Development",
+                                          "Games", "Education & Science", "System & Settings",
+                                          "Accessories", "Other"};
+    std::vector<std::vector<std::string>> cat_both;
+    for (auto &n : cat_names) cat_both.push_back({n});
+    auto made = menu::category_groups(apps, {}, cat_names, 6);
+    auto picks = menu::tile_ids(made);
+    auto saved = made;
+    saved[0].tiles.erase(saved[0].tiles.begin() + 1);  // as Alpha 2 saved it after an uninstall
+    saved[0].tiles.push_back({"telegram.desktop", M});  // pinned by the user
+    std::vector<DesktopEntry> with_telegram = apps;
+    with_telegram.push_back(app("telegram.desktop", "Telegram", {"Network", "Chat", "InstantMessaging"}));
+    CHECK(menu::category_shaped(saved, with_telegram, cat_both));
+    auto fresh = menu::favorite_groups(with_telegram, {}, {}, names);
+    auto adopted = menu::adopt_favorites(saved, std::vector<bool>(saved.size(), true), picks, fresh,
+                                         with_telegram, names);
+    CHECK(adopted.size() == 3 && adopted[0].name == "Work" && adopted[0].tiles.back().id == "telegram.desktop");
+    CHECK(menu::tile_ids(adopted).size() == menu::tile_ids(fresh).size() + 1);
+    // 0.2 Alpha 1: Productivity and Explore are SDE's; "Mine" stays where it
+    // is, and what it holds is not repeated among the favorites; a pinned
+    // game gets the Photos and media group.
+    std::vector<menu::TileGroup> alpha1 = {
+        {"Mine", {{"niny.desktop", W}}},
+        {"Productivity", {{"liria.desktop", M}, {"chess.desktop", M}}},
+        {"Explore", {{"firefox-esr.desktop", M}, {"gone.desktop", M}}},
+    };
+    auto from1 = menu::adopt_favorites(alpha1, {false, true, true}, {"liria.desktop", "firefox-esr.desktop"},
+                                       fresh, apps, names);
+    CHECK(from1.size() == 4 && from1[0].name == "Mine" && from1[1].name == "Work" &&
+          from1[2].name == "Photos and media" && from1[3].name == "System");
+    CHECK(menu::find_app(from1, "niny.desktop").group == 0 && menu::tile_ids(from1).size() ==
+                                                                  menu::tile_ids(fresh).size() + 1);
+    CHECK(from1[2].tiles.back().id == "chess.desktop" && menu::find_app(from1, "gone.desktop").group < 0);
+    // A missing favorites group of the kind is made in its place.
+    auto only_work = std::vector<menu::TileGroup>{fresh[0]};
+    auto placed = menu::adopt_favorites({{"Productivity", {{"chess.desktop", M}}}}, {true}, {}, only_work, apps, names);
+    CHECK(placed.size() == 2 && placed[0].name == "Work" && placed[1].name == "Photos and media");
+    // Nothing automatic: unchanged.
+    CHECK(menu::format_tile_groups(menu::adopt_favorites(alpha1, {false, false, false}, {}, fresh, apps, names)) ==
+          menu::format_tile_groups(alpha1));
+  }
+
+  // 0.2 Alpha 3: tile folders.
+  {
+    const auto M = menu::TileSize::Medium, W = menu::TileSize::Wide;
+    using D = menu::TileDrop;
+    // Saved as "folder:Name/a/b:size": names and IDs escaped; a folder with
+    // one application reads as its tile; an application only once; a group
+    // without a name keeps its tiles.
+    auto g = menu::parse_tile_groups("Work,a.desktop:m,folder:Int%2Fernet/b.desktop/c%3Ax.desktop:w,"
+                                     "folder:Solo/d.desktop:l,folder:/a.desktop/e.desktop;,f.desktop:s");
+    CHECK(g.size() == 2 && g[0].tiles.size() == 4);
+    CHECK(g[0].tiles[1].folder && g[0].tiles[1].name == "Int/ernet" && g[0].tiles[1].size == W &&
+          g[0].tiles[1].apps.size() == 2 && g[0].tiles[1].apps[1] == "c:x.desktop");
+    CHECK(!g[0].tiles[2].folder && g[0].tiles[2].id == "d.desktop" && g[0].tiles[2].size == menu::TileSize::Large);
+    // "a.desktop" is pinned already: the unnamed folder keeps only e.desktop.
+    CHECK(!g[0].tiles[3].folder && g[0].tiles[3].id == "e.desktop");
+    CHECK(g[1].name.empty() && g[1].tiles.size() == 1 && g[1].tiles[0].id == "f.desktop");
+    CHECK(menu::format_tile_groups(g) == "Work,a.desktop:m,folder:Int%2Fernet/b.desktop/c%3Ax.desktop:w,"
+                                         "d.desktop:l,e.desktop:m;,f.desktop:s");
+    CHECK(menu::format_tile_groups(menu::parse_tile_groups(menu::format_tile_groups(g))) ==
+          menu::format_tile_groups(g));
+    CHECK(menu::tile_ids(g).size() == 6 && menu::tile_ids(g)[1] == "b.desktop");
+    // A folder without a size reads as medium.
+    auto nosize = menu::parse_tile_groups("G,folder:X/a.desktop/b.desktop");
+    CHECK(nosize[0].tiles.size() == 1 && nosize[0].tiles[0].folder && nosize[0].tiles[0].size == M);
+    CHECK(menu::find_app(g, "c:x.desktop").group == 0 && menu::find_app(g, "c:x.desktop").index == 1 &&
+          menu::find_app(g, "c:x.desktop").member == 1 && menu::find_app(g, "zz.desktop").group < 0);
+
+    // Dragging a tile onto another makes a folder of both, in the size of
+    // the tile it was dropped on (the tiles after the dragged one move up).
+    std::vector<menu::TileGroup> t = {{"A", {{"a", M}, {"b", W}, {"c", M}}}, {"B", {{"d", M}}}};
+    int source = -2;
+    bool made = false;
+    menu::TilePlace at;
+    CHECK(menu::drop_app(t, "a", M, {D::Merge, 0, 1, 0}, &source, &made, &at));
+    CHECK(made && source == 0 && t[0].tiles.size() == 2 && t[0].tiles[0].folder && t[0].tiles[0].size == W &&
+          t[0].tiles[0].apps == std::vector<std::string>({"b", "a"}) && at.group == 0 && at.index == 0);
+    // Onto a folder: it joins at the end; into the open folder: at a place.
+    CHECK(menu::drop_app(t, "d", M, {D::Merge, 0, 0, 0}, &source, &made) && !made && source == 1);
+    CHECK(t[1].tiles.empty() && t[0].tiles[0].apps.back() == "d");
+    CHECK(menu::drop_app(t, "e", M, {D::IntoFolder, 0, 0, 1}, &source) && source == -1);
+    CHECK(t[0].tiles[0].apps == std::vector<std::string>({"b", "e", "a", "d"}));
+    // Reordered inside the folder; dropped on its own folder or tile: nothing.
+    CHECK(menu::drop_app(t, "d", M, {D::IntoFolder, 0, 0, 0}));
+    CHECK(t[0].tiles[0].apps == std::vector<std::string>({"d", "b", "e", "a"}));
+    CHECK(!menu::drop_app(t, "d", M, {D::IntoFolder, 0, 0, 1}) && !menu::drop_app(t, "b", M, {D::Merge, 0, 0, 0}));
+    CHECK(!menu::drop_app(t, "c", M, {D::Merge, 0, 1, 0}) && !menu::drop_app(t, "c", M, {D::Place, 0, 1, 0}) &&
+          !menu::drop_app(t, "c", M, {D::Place, 0, 2, 0}));
+    // Dragged out of the folder to a place, and into a new group.
+    CHECK(menu::drop_app(t, "e", M, {D::Place, 0, 2, 0}, &source, nullptr, &at) && source == 0);
+    CHECK(t[0].tiles.size() == 3 && t[0].tiles[2].id == "e" && t[0].tiles[0].apps.size() == 3 && at.index == 2);
+    CHECK(menu::drop_app(t, "a", M, {D::Place, 2, 0, 0}, &source, nullptr, &at) && t.size() == 3 &&
+          t[2].tiles[0].id == "a" && at.group == 2);
+    // A folder left with one application becomes its tile, in its size.
+    menu::Tile out;
+    auto was = menu::take_app(t, "d", &out);
+    CHECK(was.group == 0 && was.index == 0 && was.member == 0 && out.id == "d" && out.size == M);
+    CHECK(!t[0].tiles[0].folder && t[0].tiles[0].id == "b" && t[0].tiles[0].size == W);
+    // Folders move like tiles (drop_tile), into a new group too.
+    std::vector<menu::TileGroup> f = {{"A", {menu::make_folder("Web", {"x", "y"}), {"z", M}}}};
+    CHECK(menu::drop_tile(f, 0, 0, {D::Place, 0, 2, 0}, &at) && f[0].tiles[1].folder && at.index == 1);
+    CHECK(!menu::drop_tile(f, 0, 1, {D::Place, 0, 1, 0}) && !menu::drop_tile(f, 0, 1, {D::Merge, 0, 0, 0}));
+    CHECK(menu::drop_tile(f, 0, 1, {D::Place, 1, 0, 0}) && f.size() == 2 && f[1].tiles[0].folder);
+    // A folder's name: the category its applications share.
+    std::vector<std::string> cat_names = {"Internet", "Office", "Multimedia", "Graphics", "Development",
+                                          "Games", "Education & Science", "System & Settings",
+                                          "Accessories", "Other"};
+    std::vector<DesktopEntry> apps = {app("firefox.desktop", "Firefox", {"Network", "WebBrowser"}),
+                                      app("thunderbird.desktop", "Thunderbird", {"Network", "Email"}),
+                                      app("gimp.desktop", "GIMP", {"Graphics"}), app("odd.desktop", "Odd")};
+    CHECK(menu::folder_name({"firefox.desktop", "thunderbird.desktop"}, apps, cat_names) == "Internet");
+    CHECK(menu::folder_name({"firefox.desktop", "gimp.desktop"}, apps, cat_names).empty());
+    CHECK(menu::folder_name({"odd.desktop", "gone.desktop"}, apps, cat_names).empty());
+    int cols = 0, rows = 0;
+    menu::folder_grid(M, cols, rows);
+    CHECK(cols == 2 && rows == 2);
+    menu::folder_grid(W, cols, rows);
+    CHECK(cols == 4 && rows == 2);
+    menu::folder_grid(menu::TileSize::Large, cols, rows);
+    CHECK(cols == 3 && rows == 3);
   }
 
   if (failures) {

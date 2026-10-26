@@ -105,6 +105,8 @@ class SearchFlyout : public PanelPopup {
   // The application catalog published a new snapshot (app_catalog.h).
   static void catalog_changed(void *);
   void apply_catalog();
+  // 0.2 Alpha 3: a live badge changed (badges.h): an open flyout repaints.
+  static void badges_changed(void *);
   // The file index is built in slices on idle (a big home folder must not
   // stall the first keystroke) and kept for a while between searches.
   void start_file_index();

@@ -308,7 +308,11 @@ void NotifyCenter::start(std::function<void()> changed) {
       "type='signal',sender='org.freedesktop.DBus',interface='org.freedesktop.DBus',"
       "member='NameOwnerChanged',arg0='org.freedesktop.Notifications'",
       [](DBusMessage *m) {
-        return bool(dbus_message_is_signal(m, "org.freedesktop.DBus", "NameOwnerChanged"));
+        // The panel hears every NameOwnerChanged (the tray, the players):
+        // only the notification service's own.
+        if (!dbus_message_is_signal(m, "org.freedesktop.DBus", "NameOwnerChanged")) return false;
+        auto args = dbus::read_args(m);
+        return !args.empty() && args[0].str() == kService;
       },
       [this](DBusMessage *) { refresh(); });
   refresh();
@@ -353,6 +357,10 @@ void NotifyCenter::refresh() {
           e.time = uint32_t(f[6].num());
           e.urgency = uint32_t(f[7].num());
           e.unread = f[8].boolean();
+          if (f.size() >= 11) {
+            e.desktop_entry = f[9].str();
+            e.program = f[10].str();
+          }
           list.push_back(std::move(e));
         }
     }
@@ -375,6 +383,21 @@ void NotifyCenter::mark_read() {
   }
   send_call("MarkRead");
   if (any) changed();
+}
+
+void NotifyCenter::mark_read_ids(const std::vector<uint32_t> &ids) {
+  bool any = false;
+  for (auto &e : entries_)
+    if (e.unread && std::find(ids.begin(), ids.end(), e.id) != ids.end()) {
+      e.unread = false;
+      any = true;
+    }
+  if (!any) return;
+  send_call("MarkIdsRead", [ids](dbus::Writer &w) {
+    dbus::Writer list(w.iter(), DBUS_TYPE_ARRAY, "u");
+    for (uint32_t id : ids) list.u32(id);
+  });
+  changed();
 }
 
 void NotifyCenter::dismiss(uint32_t id) {

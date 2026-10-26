@@ -13,6 +13,10 @@
 // notifications stay in the history until dismissed there; transient ones
 // are not kept. 0.2: HidePopups takes the bubbles off the screen (the
 // panel's flyout opened); they stay in the history as expired ones do.
+// 0.2 Alpha 3: the history tells where each notification came from (its
+// desktop-entry hint and its sender's program), for the panel's live
+// badges, and MarkIdsRead marks some notifications read (a window of their
+// application became active).
 #include <FL/Fl.H>
 #include <FL/Fl_Button.H>
 #include <FL/fl_draw.H>
@@ -135,6 +139,29 @@ bool sandboxed_sender(DBusMessage *msg) {
   return sandboxed;
 }
 
+// The program behind a sender (0.2 Alpha 3: the panel's badges count the
+// notification for its application); asked once per sender, unique names
+// are never reused.
+std::string sender_program(const std::string &sender) {
+  static std::map<std::string, std::string> cache;
+  if (sender.empty() || !g_bus) return "";
+  auto it = cache.find(sender);
+  if (it != cache.end()) return it->second;
+  std::string program;
+  DBusMessage *m = dbus::method("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                                "GetConnectionUnixProcessID");
+  dbus::Writer(m).str(sender);
+  if (DBusMessage *r = g_bus->call(m, 1000)) {
+    auto args = dbus::read_args(r);
+    if (dbus_message_get_type(r) == DBUS_MESSAGE_TYPE_METHOD_RETURN && !args.empty())
+      program = dbus::peer_program(long(args[0].num()));
+    dbus_message_unref(r);
+  }
+  if (cache.size() >= 512) cache.clear();
+  cache[sender] = clip(program, kMaxName);
+  return cache[sender];
+}
+
 void emit_closed(uint32_t id, uint32_t reason) {
   DBusMessage *s = dbus::signal(kPath, kIface, "NotificationClosed");
   dbus::Writer(s).u32(id).u32(reason);
@@ -199,6 +226,7 @@ class Popup : public BufferedWindow {
 struct Notification {
   uint32_t id = 0;
   std::string app, icon, summary, body, sender;
+  std::string desktop_entry, program;  // where it came from (0.2 Alpha 3)
   std::vector<std::pair<std::string, std::string>> actions;  // key, label
   int urgency = 1;  // 0 low, 1 normal, 2 critical
   int timeout_ms = -1;
@@ -223,6 +251,7 @@ struct HistoryEntry {
   uint32_t time = 0;
   uint32_t urgency = 1;
   bool unread = true;
+  std::string desktop_entry, program;
 };
 std::vector<HistoryEntry> g_history;
 constexpr size_t kHistoryMax = 100;
@@ -545,15 +574,17 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
       }
     }
   }
-  if (n->icon.empty()) {
-    if (const dbus::Value *e = hints.get("desktop-entry")) {
-      // A desktop file ID, never a path.
-      std::string id = e->str();
-      DesktopEntry entry;
-      if (!id.empty() && id.size() < kMaxName && id.find('/') == std::string::npos && id[0] != '.' &&
-          find_application(id + ".desktop", entry))
-        n->icon = clip(entry.icon, kMaxIcon);
-    }
+  n->desktop_entry.clear();
+  if (const dbus::Value *e = hints.get("desktop-entry")) {
+    // A desktop file ID, never a path.
+    std::string id = e->str();
+    if (!id.empty() && id.size() < kMaxName && id.find('/') == std::string::npos && id[0] != '.')
+      n->desktop_entry = id;
+  }
+  n->program = sender_program(n->sender);
+  if (n->icon.empty() && !n->desktop_entry.empty()) {
+    DesktopEntry entry;
+    if (find_application(n->desktop_entry + ".desktop", entry)) n->icon = clip(entry.icon, kMaxIcon);
   }
   n->timeout_ms = int(args[7].num());
   uint32_t id = n->id;
@@ -579,6 +610,8 @@ DBusHandlerResult on_notify(DBusMessage *msg) {
     it->time = uint32_t(::time(nullptr));
     it->urgency = uint32_t(n->urgency);
     it->unread = true;
+    it->desktop_entry = n->desktop_entry;
+    it->program = n->program;
     while (g_history.size() > kHistoryMax) g_history.erase(g_history.begin());
     emit_history_changed();
   }
@@ -608,9 +641,11 @@ DBusHandlerResult on_history(DBusMessage *msg, const std::string &m) {
   DBusMessage *r = dbus_message_new_method_return(msg);
   bool changed = false;
   if (m == "GetHistory") {
+    // 0.2 Alpha 3: two more fields, the desktop-entry hint and the sender's
+    // program (readers of the nine fields before ignore them).
     dbus::Writer w(r);
     {
-      dbus::Writer list(w.iter(), DBUS_TYPE_ARRAY, "(ussssasuub)");
+      dbus::Writer list(w.iter(), DBUS_TYPE_ARRAY, "(ussssasuubss)");
       for (const auto &h : g_history) {
         dbus::Writer st(list.iter(), DBUS_TYPE_STRUCT, nullptr);
         std::vector<std::string> acts;
@@ -619,9 +654,16 @@ DBusHandlerResult on_history(DBusMessage *msg, const std::string &m) {
           acts.push_back(a.second);
         }
         st.u32(h.id).str(h.app).str(h.icon).str(h.summary).str(h.body).strings(acts).u32(h.time)
-            .u32(h.urgency).boolean(h.unread);
+            .u32(h.urgency).boolean(h.unread).str(h.desktop_entry).str(h.program);
       }
     }
+  } else if (m == "MarkIdsRead" && !args.empty()) {
+    for (const auto &v : args[0].items)
+      for (auto &h : g_history)
+        if (h.id == uint32_t(v.num()) && h.unread) {
+          h.unread = false;
+          changed = true;
+        }
   } else if (m == "HidePopups") {
     std::vector<uint32_t> ids;
     for (const auto &n : g_notes) ids.push_back(n->id);
@@ -689,8 +731,9 @@ DBusHandlerResult on_message(DBusMessage *msg) {
         "<signal name=\"NotificationClosed\"><arg type=\"u\"/><arg type=\"u\"/></signal>"
         "<signal name=\"ActionInvoked\"><arg type=\"u\"/><arg type=\"s\"/></signal>"
         "</interface><interface name=\"org.sde.Notifications\">"
-        "<method name=\"GetHistory\"><arg type=\"a(ussssasuub)\" direction=\"out\"/></method>"
+        "<method name=\"GetHistory\"><arg type=\"a(ussssasuubss)\" direction=\"out\"/></method>"
         "<method name=\"MarkRead\"/>"
+        "<method name=\"MarkIdsRead\"><arg type=\"au\" direction=\"in\"/></method>"
         "<method name=\"HidePopups\"/>"
         "<method name=\"Dismiss\"><arg type=\"u\" direction=\"in\"/></method>"
         "<method name=\"DismissApp\"><arg type=\"s\" direction=\"in\"/></method>"

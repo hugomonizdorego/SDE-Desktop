@@ -60,6 +60,11 @@ std::string sanitize_utf8(const std::string &s);
 // Flatpak D-Bus proxy has it too) or Snap (AppArmor label "snap.*"). Also
 // true when that cannot be checked. |proc| is for the tests.
 bool sandboxed_process(long pid, const std::string &proc = "/proc");
+// The program process |pid| runs, to tell which application a D-Bus peer
+// is (0.2 Alpha 3 live badges): "flatpak:<ID>" in a Flatpak sandbox, else
+// the name of its executable, or of the script an interpreter runs; "" when
+// it cannot be read.
+std::string peer_program(long pid, const std::string &proc = "/proc");
 
 // Appending arguments. A Writer for a null message (see method()) ignores
 // everything; strings that are not valid UTF-8 are sent sanitized and an

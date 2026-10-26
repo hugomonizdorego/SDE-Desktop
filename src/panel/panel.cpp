@@ -22,6 +22,7 @@
 #include "alarms.h"
 #include "app_catalog.h"
 #include "avatar.h"
+#include "badges.h"
 #include "clockface.h"
 #include "controls.h"
 #include "glyphs.h"
@@ -78,6 +79,8 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
 }
 
 Panel::~Panel() {
+  badges::Badges::get().unsubscribe(this);
+  app_catalog::unsubscribe(this);
   if (input_display_) {
     Fl::remove_fd(ConnectionNumber(input_display_));
     XCloseDisplay(input_display_);
@@ -85,6 +88,16 @@ Panel::~Panel() {
   }
   for (auto &t : tasks_)
     if (t.icon) cairo_surface_destroy(t.icon);
+}
+
+// A badge changed: the pinned launchers and the taskbar buttons are
+// repainted (the rest of the panel stays as it is).
+void Panel::badges_changed(void *data) {
+  auto *self = static_cast<Panel *>(data);
+  if (!self->shown()) return;
+  int x0 = self->visible_pins_ && !self->pinned_.empty() ? self->pinned_[0].x : self->tasks_x_;
+  int x1 = std::max(self->tasks_end_, x0 + 1);
+  self->damage_rect(x0, 0, x1 - x0, self->h());
 }
 
 void Panel::monitor(int &x, int &y, int &w, int &h) const {
@@ -287,7 +300,23 @@ void Panel::setup() {
   NotifyCenter::get().start([this] {
     if (notify_w_ > 0) damage_rect(notify_x_, 0, notify_w_, h());
     if (notify_flyout_) notify_flyout_->status_changed();
+    badges::Badges::get().notifications_changed();
   });
+  // 0.2 Alpha 3: live badges (unread notifications, LauncherEntry), and the
+  // applications of the windows once the catalog has read them (and again
+  // after installs).
+  badges::Badges::get().start();
+  badges::Badges::get().subscribe(badges_changed, this);
+  app_catalog::subscribe([](void *data) {
+    auto *self = static_cast<Panel *>(data);
+    for (auto &t : self->tasks_) {
+      DesktopEntry entry;
+      t.app_class = t.wm_class + '\n' + t.wm_name;
+      t.app_id = self->find_entry_for(t, entry) ? entry.id : std::string();
+    }
+    badges::Badges::get().notifications_changed();
+    badges_changed(data);
+  }, this);
   TouchpadMonitor::get().start([this] { touchpad_activity(); },
                                [this] {
                                  status_signature_.clear();
@@ -1409,6 +1438,30 @@ void Panel::draw() {
   }
   int icon = icon_;
   double edge = t.panel_top ? H - 0.5 : 0.5;
+  // 0.2 Alpha 3: live badges of the pinned launchers and the taskbar
+  // buttons, a pill over the icon's corner (badges.h); their numbers are
+  // drawn with the text.
+  struct Pill {
+    int right, top;
+    badges::Badge badge;
+    badges::Colors colors;
+  };
+  std::vector<Pill> pills;
+  int pill_h = S(14);
+  auto badge_at = [&](Painter &p, const std::string &id, double ix, double alpha) {
+    badges::Badges &b = badges::Badges::get();
+    if (id.empty() || !b.any()) return;
+    badges::Badge badge = b.of(id);
+    if (!badge.shown() && badge.progress < 0) return;
+    badges::Colors c = b.colors(id, t.surface, t.accent);
+    if (badge.progress >= 0)
+      badges::paint_progress(p, ix, (H + icon) / 2.0 + S(2), icon, Sd(3), badge.progress, c,
+                             t.text_dim.alpha(0.25 * alpha));
+    if (!badge.shown()) return;
+    Pill pill{int(std::lround(ix + icon + S(5))), (H - icon) / 2 - S(4), badge, c};
+    badges::paint_pill(p, pill.right, pill.top, pill_h, badge, c, t.surface);
+    pills.push_back(pill);
+  };
   {
     Painter p(W, H);
     p.fill_rect(0, 0, W, H, t.surface);
@@ -1474,6 +1527,7 @@ void Panel::draw() {
       p.image(IconLoader::get({IconLoader::app_icon(pinned_[i].entry, icon), "application-x-executable"},
                               icon),
               pinned_[i].x + (pin_w_ - icon) / 2.0, (H - icon) / 2.0, icon);
+      badge_at(p, pinned_[i].entry.id, pinned_[i].x + (pin_w_ - icon) / 2.0, 1.0);
     }
     if (visible_pins_) p.line(tasks_x_ - S(6), S(10), tasks_x_ - S(6), H - S(10), t.border);
 
@@ -1492,6 +1546,7 @@ void Panel::draw() {
           task.icon ? task.icon : IconLoader::get({"application-x-executable"}, icon);
       int ix = task.w < H + S(20) ? task.x + (task.w - icon) / 2 : task.x + S(10);
       p.image(img, ix, (H - icon) / 2.0, icon, task.minimized ? 0.55 : 1.0);
+      badge_at(p, task.app_id, ix, task.minimized ? 0.55 : 1.0);
       // Indicator bar on the screen edge side: wide for the active window.
       double bar = active ? std::max(S(2), std::min(S(28), task.w - S(16))) : S(8);
       double by = t.panel_top ? Sd(2) : H - Sd(5);
@@ -1698,6 +1753,7 @@ void Panel::draw() {
     draw_text(task.title, task.x + S(10) + icon + S(8), 0, task.w - icon - S(28), H,
               task.minimized ? t.text_dim : t.text);
   }
+  for (auto &pill : pills) badges::draw_pill_text(pill.right, pill.top, pill_h, pill.badge, pill.colors);
   // 0.2 Alpha 2: the battery's percentage or label after its icon.
   if (int bi = battery_text_.empty() ? -1 : status_index(BATTERY_STATUS); bi >= 0) {
     text_font(t.font_size, false);
@@ -1779,6 +1835,20 @@ void Panel::qa_dump_panel() {
       text += line("task:" + printable_text(t.title.empty() ? t.wm_class : t.title) +
                        (t.minimized ? ":minimized" : ""),
                    t.x, t.w);
+  // 0.2 Alpha 3: the live badges ("@badge:" every application's) and the
+  // buttons that show one, with the badge's colour.
+  const auto &live = badges::Badges::get();
+  text += live.qa_lines();
+  auto badge_line = [&](const std::string &what, const std::string &id) {
+    badges::Badge b = live.of(id);
+    if (!b.shown()) return;
+    text += what + "=" + std::to_string(b.count) + ":" +
+            badges::Badges::get().colors(id, theme_.surface, theme_.accent).fill.to_hex() + "\t0\t0\t0\t0\t1\n";
+  };
+  for (const auto &t : tasks_)
+    if (t.w > 0 && !t.app_id.empty()) badge_line("@task-badge:" + printable_text(t.title), t.app_id);
+  for (int i = 0; i < visible_pins_ && i < int(pinned_.size()); ++i)
+    badge_line("@pin-badge:" + pinned_[size_t(i)].entry.id, pinned_[size_t(i)].entry.id);
   qa_dump(this, text);
 }
 
@@ -2031,6 +2101,15 @@ void Panel::update_task(Task &t, bool icon) {
     if (hint.res_class) XFree(hint.res_class);
   }
   if (t.title.empty()) t.title = t.wm_class;
+  // 0.2 Alpha 3: the application of the window, for its live badge (found
+  // again only when its class changes, not with every title; once the
+  // catalog has read the applications, see setup()).
+  std::string cls = t.wm_class + '\n' + t.wm_name;
+  if (cls != t.app_class && app_catalog::ready()) {
+    t.app_class = cls;
+    DesktopEntry entry;
+    t.app_id = find_entry_for(t, entry) ? entry.id : std::string();
+  }
   t.minimized = x11::window_has_state(t.win, "_NET_WM_STATE_HIDDEN");
   t.urgent = x11::window_has_state(t.win, "_NET_WM_STATE_DEMANDS_ATTENTION");
   if (XWMHints *hints = XGetWMHints(fl_display, t.win)) {
@@ -2093,6 +2172,11 @@ void Panel::refresh_tasks() {
   for (auto &t : tasks_)
     if (t.icon) cairo_surface_destroy(t.icon);
   tasks_ = std::move(next);
+  // 0.2 Alpha 3: a window that became active has seen its application's
+  // notifications (their badge clears).
+  if (active_ != was_active)
+    for (const auto &t : tasks_)
+      if (t.win == active_ && !t.app_id.empty()) badges::Badges::get().app_focused(t.app_id);
   // Closed windows drop their thumbnails; the preview follows the list.
   std::vector<Window> alive;
   for (const auto &t : tasks_) alive.push_back(t.win);

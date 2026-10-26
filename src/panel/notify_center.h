@@ -27,6 +27,9 @@ struct NotifyEntry {
   std::vector<std::pair<std::string, std::string>> actions;  // key, label
   uint32_t time = 0, urgency = 1;
   bool unread = true;
+  // 0.2 Alpha 3: where it came from, for the live badges (badges.h): the
+  // desktop-entry hint and the sender's program ("" from older daemons).
+  std::string desktop_entry, program;
   bool has_default() const;
 };
 
@@ -43,6 +46,9 @@ class NotifyCenter {
   int total() const { return int(entries_.size()); }
   void refresh();
   void mark_read();
+  // 0.2 Alpha 3: these notifications are read (a window of their
+  // application became active).
+  void mark_read_ids(const std::vector<uint32_t> &ids);
   void dismiss(uint32_t id);
   void dismiss_app(const std::string &app);
   void clear();

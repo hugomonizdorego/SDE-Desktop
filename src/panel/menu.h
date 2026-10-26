@@ -17,13 +17,19 @@
 // moves to the panel's search. The menu can be resized by dragging its
 // outer edges; [menu] in sde.conf keeps the tiles and the size.
 //
-// 0.2 Alpha 2: the tile groups start out by category (start_tiles below).
-// Tiles are dragged between groups, applications from the list or from the
-// search results into a group, onto empty space for a new group; a group
-// name is renamed by a click and moved by a drag; a group without tiles
-// has a remove button. While dragging, a bar shows where the tile goes,
-// the group under the pointer is highlighted and the tiles scroll near
-// their top and bottom edges. See docs/START-MENU.md.
+// 0.2 Alpha 2: tiles are dragged between groups, applications from the
+// list or from the search results into a group, onto empty space for a new
+// group; a group name is renamed by a click and moved by a drag; a group
+// without tiles has a remove button. While dragging, a bar shows where the
+// tile goes, the group under the pointer is highlighted and the tiles
+// scroll near their top and bottom edges.
+//
+// 0.2 Alpha 3: the tiles start out as favorites in named groups again
+// (start_tiles below). A tile dropped onto another makes a folder (its
+// applications' small icons and its name); a click opens it in place below
+// its row, where its applications are tiles to open, rearrange or drag
+// out. Tiles, folders, list rows, search results and taskbar buttons show
+// live badges (badges.h). See docs/START-MENU.md.
 #pragma once
 
 #include <FL/Fl_Input.H>
@@ -44,18 +50,28 @@
 class AccountPopup;
 
 // Start tiles from other places (search results, the panel): the tile
-// groups saved in [menu] tiles. 0.2 Alpha 2: without saved tiles, groups by
-// category of the installed applications (menu::category_groups()); tiles
-// saved by older versions are migrated (menu::migrate_tile_groups()).
+// groups saved in [menu] tiles. 0.2 Alpha 3: without saved tiles, the
+// default favorites of the installed applications (menu::favorite_groups());
+// the automatic groups of older versions give way to them
+// (menu::adopt_favorites()).
 namespace start_tiles {
-// Group names by menu::TileCategory, translated.
+// Group names by menu::TileCategory, translated (0.2 Alpha 2's groups, the
+// names of new folders).
 std::vector<std::string> group_names();
+// The favorites groups by menu::FavoriteGroup, translated.
+std::vector<std::string> favorite_names();
 std::vector<sde::menu::TileGroup> load();
 void save(const std::vector<sde::menu::TileGroup> &groups);
+// Whether load() shows SDE's own tiles, which follow the installed
+// applications: none saved, or an older version's not saved again yet.
+bool automatic();
+// Every pinned application, those in folders too.
 std::vector<std::string> ids();
 bool pinned(const std::string &id);
-// Into the group of the application's category (menu::pin_by_category()).
+// Into the favorites group of its kind (menu::pin_favorite()).
 void pin(const std::string &id);
+// Out of its group or folder (a folder left with one application becomes
+// its tile).
 void unpin(const std::string &id);
 }  // namespace start_tiles
 
@@ -113,6 +129,12 @@ class AppMenu : public PanelPopup {
     K_TILE,        // tile; index: tile number, group: group
     K_GROUP_REMOVE,  // remove button of a group without tiles; index: group
     K_HEADING,     // text only; index 5: the drop hint of a group without tiles
+    // 0.2 Alpha 3 folders: a folder tile (index: tile number, group:
+    // group), and in the open folder its applications (index: their place
+    // in the folder) and its name (index: tile number).
+    K_FOLDER,
+    K_FOLDER_APP,
+    K_FOLDER_NAME,
   };
   struct Area {
     Kind kind = K_NONE;  // K_ROW (list) or K_TILE (tiles)
@@ -145,6 +167,9 @@ class AppMenu : public PanelPopup {
       return kind == o.kind && index == o.index && group == o.group;
     }
   };
+  // The tiles of the tiles area: applications, folders and the open
+  // folder's applications.
+  static bool tile_like(Kind k) { return k == K_TILE || k == K_FOLDER || k == K_FOLDER_APP; }
 
   void prepare() override;
   void closed() override;
@@ -157,6 +182,9 @@ class AppMenu : public PanelPopup {
   // The application catalog published a new snapshot (app_catalog.h).
   static void catalog_changed(void *);
   void apply_catalog();
+  // 0.2 Alpha 3: a live badge changed (badges.h): an open menu repaints its
+  // tiles and its list.
+  static void badges_changed(void *);
   bool busy() const;
   void filter();
   void metrics();
@@ -179,7 +207,23 @@ class AppMenu : public PanelPopup {
   void group_menu(int group, int px, int py);
   void row_menu(const Item &it, int px, int py);
   void background_menu(int px, int py);
-  void start_rename(int group);
+  // 0.2 Alpha 3: the right-click menus of a folder and of an application in
+  // the open folder.
+  void folder_menu(const Item &it, int px, int py);
+  void folder_app_menu(const Item &it, int px, int py);
+  // Renames group |group|, or with |folder| the open folder.
+  void start_rename(int group, bool folder = false);
+  // Opens the folder at (group, index) in place, gliding open (another open
+  // folder closes); closes the open one, gliding shut.
+  void expand_folder(int group, int index, bool animate = true);
+  void collapse_folder(bool animate = true);
+  bool folder_expanded() const { return folder_group_ >= 0; }
+  static void folder_tick(void *);
+  // The open folder after the tiles changed: the folder that holds most of
+  // |apps| (the applications it held), else it closes.
+  void find_open_folder(const std::vector<std::string> &apps);
+  // The installed applications of the folder at (group, index).
+  std::vector<const sde::DesktopEntry *> folder_entries(int group, int index) const;
   void move_selection(int key);
   void move_zone(bool back);  // Tab / Shift+Tab
   void move_end(bool end);    // Home / End
@@ -196,7 +240,8 @@ class AppMenu : public PanelPopup {
   const Item *item_at(int x, int y) const;
   int edge_at(int x, int y) const;  // 1 width, 2 height, 3 both
   void apply_size(int w, int h);
-  void drop_target(int x, int y, int &group, int &index) const;
+  // Where the dragged tile would go at (x, y): false outside the tiles.
+  bool drop_target(int x, int y, sde::menu::TileDrop &drop) const;
   void drop(int x, int y);
   // Where a dragged group goes: the index to insert it at (-1: outside the
   // tiles); |anchor| and |below| tell where to draw the bar.
@@ -279,8 +324,20 @@ class AppMenu : public PanelPopup {
   int press_x_ = 0, press_y_ = 0, drag_x_ = 0, drag_y2_ = 0;
   bool dragging_ = false;
   int drag_group_ = -1;  // the group being moved by its name, else a tile or application
-  std::string drag_id_;
+  std::string drag_id_;  // the application dragged ("" for a folder)
   sde::menu::TileSize drag_size_ = sde::menu::TileSize::Medium;
+  // 0.2 Alpha 3: a folder dragged by its tile, at (group, index).
+  int drag_folder_group_ = -1, drag_folder_index_ = -1;
+
+  // 0.2 Alpha 3: the open folder (its group and tile number) and how far
+  // it is open (0..1, eased while it glides open or shut).
+  int folder_group_ = -1, folder_index_ = -1;
+  std::vector<std::string> folder_key_;  // its applications, to find it again
+  double folder_open_ = 0, folder_from_ = 0, folder_to_ = 0, folder_start_ = 0;
+  bool renaming_folder_ = false;
+  bool rename_when_open_ = false;  // a new folder: its name is asked once it is open
+  Rect folder_band_;  // where the open folder shows its applications (window coordinates)
+  int folder_notch_ = 0;  // x of the folder tile's middle, where the band points
   // Resizing the menu by its edge.
   int resize_edge_ = 0, resize_rx_ = 0, resize_ry_ = 0, resize_w_ = 0, resize_h_ = 0;
   int cursor_edge_ = 0;
