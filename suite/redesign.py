@@ -17,8 +17,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 OVERLAYS = HERE / "overlays"
 # SDE-owned files copied into the Liria tree (man page shared with CMake,
-# the copy and move progress model shared with the SDE desktop).
-SHARED = [ROOT / "data/man/liria.1", ROOT / "src/common/transfer_model.h"]
+# the copy and move progress model and the safe copy writer shared with the
+# SDE desktop).
+SHARED = [ROOT / "data/man/liria.1", ROOT / "src/common/transfer_model.h", ROOT / "src/common/safe_copy.h"]
 # Original product names that must not reach users. Legal notices
 # (copyright lines, license files, the About license text and the
 # installed upstream documentation) are the only allowed exception.
@@ -1443,16 +1444,32 @@ def liria_copy_engine(staged):
     device, the operation ends with a visible "Finishing" phase (syncfs),
     names are made valid for FAT/exFAT/NTFS before the first write, and
     files over 4 GiB are refused up front on FAT with a clear message.
-    Internal disks keep the normal g_file_copy() path."""
+    Internal disks keep the normal g_file_copy() path.
+
+    0.2.0 Alpha 3: the writer is SDE's own src/common/safe_copy.h (copied
+    in as liria-sde-safe-copy.h, shared with the SDE desktop): about a
+    second of the drive's speed in flight, progress from what the drive has
+    taken (also for small files), checkpoints every few seconds and at the
+    end, the last data written with real progress ("Writing the last data
+    to SANDISK..."), moved sources deleted only after a checkpoint (also
+    the moved folders), and deletions, the trash and emptying the trash on
+    such drives written to them before the operation ends."""
     edit_once(staged / "libliria-private/Makefile.am", "\tliria-file-operations.c \\\n",
-         "\tliria-file-operations.c \\\n\tliria-sde-copy.c \\\n\tliria-sde-copy.h \\\n")
+         "\tliria-file-operations.c \\\n\tliria-sde-copy.c \\\n\tliria-sde-copy.h \\\n"
+         "\tliria-sde-safe-copy.h \\\n")
+    shutil.copy2(ROOT / "src/common/safe_copy.h", staged / "libliria-private/liria-sde-safe-copy.h")
     ops = staged / "libliria-private/liria-file-operations.c"
     edit_once(ops, '#include "liria-metadata.h"\n', '#include "liria-metadata.h"\n#include "liria-sde-copy.h"\n')
     edit_once(ops, "\tLiriaCopyCallback  done_callback;\n\tgpointer done_callback_data;\n} CopyMoveJob;",
          "\tLiriaCopyCallback  done_callback;\n\tgpointer done_callback_data;\n"
          "\tLiriaSdeFlush *sde_flush; /* SDE: removable/slow destination */\n"
-         "\tgboolean sde_skip_large;\n} CopyMoveJob;\n\n"
-         "static void sde_wait_for_device (CommonJob *job, LiriaSdeFlush *flush, const char *path, const char *name);")
+         "\tgboolean sde_skip_large;\n"
+         "\tgpointer sde_source_info, sde_transfer_info; /* SDE: where the drive's bytes are counted */\n"
+         "} CopyMoveJob;\n\n"
+         "static void sde_wait_for_device (CommonJob *job, LiriaSdeFlush *flush, const char *path, const char *name);\n"
+         "static gboolean sde_delete_source (CopyMoveJob *job, GFile *folder, GCancellable *cancellable,\n"
+         "\t\t\t\t   GError **error);\n"
+         "static void sde_announce_sync (gpointer data, const char *name);")
     edit_once(ops, "\tint num_files_since_progress;\n\tOpKind op;\n} SourceInfo;",
          "\tint num_files_since_progress;\n\tOpKind op;\n\tint sde_huge_files; /* SDE: files over 4 GiB */\n} SourceInfo;")
     edit_once(ops, "\tsource_info->num_bytes += g_file_info_get_size (info);\n",
@@ -1612,15 +1629,100 @@ sde_wait_for_device (CommonJob *job, LiriaSdeFlush *flush, const char *path, con
 	g_thread_join (thread);
 }
 
+/* SDE: the bytes the drive has taken (liria-sde-copy.c), from any file. */
+static void
+sde_copy_reported (gpointer data, goffset bytes)
+{
+	CopyMoveJob *job = data;
+	TransferInfo *transfer_info = job->sde_transfer_info;
+
+	if (transfer_info == NULL) {
+		return;
+	}
+	transfer_info->num_bytes += bytes;
+	report_copy_progress (job, job->sde_source_info, transfer_info);
+}
+
+/* SDE: between the reads of a copy: Pause; TRUE stops it. */
+static gboolean
+sde_copy_tick (gpointer data, goffset written)
+{
+	CopyMoveJob *job = data;
+
+	liria_progress_info_get_ready (job->common.progress);
+	return g_cancellable_is_cancelled (job->common.cancellable);
+}
+
+static void
+sde_report_to (CopyMoveJob *job, SourceInfo *source_info, TransferInfo *transfer_info)
+{
+	job->sde_source_info = source_info;
+	job->sde_transfer_info = transfer_info;
+	if (job->sde_flush != NULL) {
+		liria_sde_flush_set_reporter (job->sde_flush, sde_copy_reported, sde_copy_tick, job);
+	}
+}
+
+/* SDE: the end of a copy or a move to a removable, external or network
+ * drive: what is still in flight is written (the progress goes on), then
+ * the file system is synced, and only then are the sources of a move
+ * deleted. Also after a Cancel: what was written must reach the drive. */
 static void
 sde_finish_writing (CopyMoveJob *job)
 {
-	if (job->sde_flush != NULL) {
-		sde_wait_for_device ((CommonJob *) job, job->sde_flush, NULL,
-				     liria_sde_flush_get_name (job->sde_flush));
-		liria_sde_flush_free (job->sde_flush);
-		job->sde_flush = NULL;
+	CommonJob *common = (CommonJob *) job;
+	GError *error = NULL;
+	const char *first = NULL;
+	int failures;
+
+	if (job->sde_flush == NULL) {
+		return;
 	}
+	liria_progress_info_take_status (common->progress,
+					    f (_("Writing the last data to \"%s\"\xE2\x80\xA6"),
+					       liria_sde_flush_get_name (job->sde_flush)));
+	if (!liria_sde_flush_finish (job->sde_flush, &error)) {
+		run_error (common,
+			   f (_("Not everything could be written to \"%s\"."),
+			      liria_sde_flush_get_name (job->sde_flush)),
+			   g_strdup (error->message),
+			   NULL, FALSE, CANCEL, NULL);
+		g_error_free (error);
+	} else if ((failures = liria_sde_flush_get_delete_failures (job->sde_flush, &first)) > 0) {
+		run_error (common,
+			   f (ngettext ("%'d moved item could not be removed from where it was.",
+					"%'d moved items could not be removed from where they were.",
+					failures), failures),
+			   f (_("The copies on \"%s\" are complete."), liria_sde_flush_get_name (job->sde_flush)),
+			   first != NULL ? g_strdup (first) : NULL, FALSE, CANCEL, NULL);
+	}
+	job->sde_source_info = NULL;
+	job->sde_transfer_info = NULL;
+	liria_sde_flush_free (job->sde_flush);
+	job->sde_flush = NULL;
+}
+
+/* SDE: a moved folder goes after its files, which wait for the drive. */
+static gboolean
+sde_delete_source (CopyMoveJob *job, GFile *folder, GCancellable *cancellable, GError **error)
+{
+	if (job->sde_flush != NULL && liria_sde_flush_defer_delete (job->sde_flush, folder)) {
+		return TRUE;
+	}
+	return g_file_delete (folder, cancellable, error);
+}
+
+/* SDE: "Writing the last data to SANDISK..." while a deletion is written. */
+static void
+sde_announce_sync (gpointer data, const char *name)
+{
+	CommonJob *job = data;
+
+	liria_progress_info_take_status (job->progress,
+					    f (_("Writing the last data to \"%s\"\xE2\x80\xA6"), name));
+	liria_progress_info_take_details (job->progress,
+					     f (_("Do not remove the drive until this has finished.")));
+	liria_progress_info_pulse_progress (job->progress);
 }
 
 static gboolean
@@ -1659,6 +1761,44 @@ copy_job (GIOSchedulerJob *io_job,""")
 
 	g_io_scheduler_job_send_to_mainloop_async (io_job,
 						   copy_job_done,""")
+    edit_once(ops, "\tmemset (&transfer_info, 0, sizeof (transfer_info));\n\tcopy_files (job,",
+              "\tmemset (&transfer_info, 0, sizeof (transfer_info));\n"
+              "\tsde_report_to (job, &source_info, &transfer_info);\n\tcopy_files (job,")
+    edit_once(ops, "\tmemset (&transfer_info, 0, sizeof (transfer_info));\n\tmove_files (job,",
+              "\tmemset (&transfer_info, 0, sizeof (transfer_info));\n"
+              "\tsde_report_to (job, &source_info, &transfer_info);\n\tmove_files (job,")
+    # A moved folder is deleted after its files (sde_delete_source ()).
+    edit_once(ops, """	if (!job_aborted (job) && copy_job->is_move &&
+	    /* Don't delete source if there was a skipped file */
+	    !local_skipped_file) {
+		if (!g_file_delete (src, job->cancellable, &error)) {""", """	if (!job_aborted (job) && copy_job->is_move &&
+	    /* Don't delete source if there was a skipped file */
+	    !local_skipped_file) {
+		if (!sde_delete_source (copy_job, src, job->cancellable, &error)) {""")
+    # Deletions, the trash and an emptied trash on such drives are written
+    # to them before the operation ends.
+    edit_once(ops, """		job->user_cancel = TRUE;
+	}
+
+	g_io_scheduler_job_send_to_mainloop_async (io_job,
+						   delete_job_done,""", """		job->user_cancel = TRUE;
+	}
+	liria_sde_sync_drives_of (job->files, sde_announce_sync, common);
+
+	g_io_scheduler_job_send_to_mainloop_async (io_job,
+						   delete_job_done,""")
+    edit_once(ops, """			delete_trash_file (common, l->data, FALSE, TRUE);
+		}
+	}
+
+	g_io_scheduler_job_send_to_mainloop_async (io_job,
+						   empty_trash_job_done,""", """			delete_trash_file (common, l->data, FALSE, TRUE);
+		}
+		liria_sde_sync_trash_drives (sde_announce_sync, common);
+	}
+
+	g_io_scheduler_job_send_to_mainloop_async (io_job,
+						   empty_trash_job_done,""")
     # Moves to another file system are a copy and a delete.
     edit_once(ops, """	/* This moves all files that we can do without copy + delete */
 	move_files_prepare (job, dest_fs_id, &dest_fs_type, &fallbacks);""", """	job->sde_flush = liria_sde_flush_new (job->destination);

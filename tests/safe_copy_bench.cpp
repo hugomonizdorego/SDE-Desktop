@@ -4,7 +4,7 @@
 // tools/safe-copy-bench.py and docs/TRANSFERS.md.
 //
 //   sde-safe-copy-bench SOURCE DESTINATION [--method cache|range|fsync]
-//                       [--device loop0] [--sync-after]
+//                       [--device loop0] [--sync-after] [--desktop]
 //
 // Prints one line of key=value pairs: the seconds until the copy said it
 // was done (done), until the data was really on the drive (durable: the
@@ -14,18 +14,28 @@
 // /sys/block/DEVICE/stat; it includes metadata, so a lead <= 0 means the
 // progress never ran ahead of the drive) and the largest amount of data
 // written but not on the drive (dirty).
+//
+// --desktop copies with the desktop's file operations instead
+// (desk::run_file_ops, src/desktop/file_ops.cpp, as a drop or Paste does,
+// with the policy of SDE_SAFE_COPY / sde.conf) and samples their progress
+// every 20 ms; it adds finishing=1 when the dialog would have said
+// "Writing the last data to ..." and how long that took (finish).
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "file_ops.h"
 #include "safe_copy.h"
 
 namespace {
@@ -99,6 +109,43 @@ bool copy_tree(Bench &b, const std::string &src, const std::string &dst) {
   return sde_writer_file_done(&b.writer) == 0;
 }
 
+// The desktop's file operations on a worker thread, sampled like a dialog.
+int desktop_copy(const std::string &src, const std::string &dst, const std::string &device) {
+  sde::desk::FileProgress progress;
+  sde::desk::FileOp op;
+  op.kind = sde::desk::FileOp::COPY;
+  op.src = src;
+  op.dst = dst;
+  std::atomic<bool> finished{false};
+  std::vector<std::string> errors;
+  long long start_bytes = device_bytes(device);
+  double start = sde_writer_clock(nullptr), finishing_at = -1;
+  int failed = 0;
+  std::thread worker([&] {
+    failed = sde::desk::run_file_ops({op}, &progress, &errors);
+    finished = true;
+  });
+  long long max_lead = -(1LL << 62);
+  while (!finished) {
+    long long done = progress.done;
+    long long on_drive = device.empty() ? 0 : device_bytes(device) - start_bytes;
+    if (!device.empty()) max_lead = std::max(max_lead, done - on_drive);
+    if (finishing_at < 0 && progress.phase == sde::desk::FileProgress::FINISHING)
+      finishing_at = sde_writer_clock(nullptr) - start;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  worker.join();
+  double done_time = sde_writer_clock(nullptr) - start;
+  printf("mode=desktop done=%.3f bytes=%lld files=%ld", done_time, (long long)progress.done,
+         (long)progress.files_done);
+  if (!device.empty()) printf(" lead=%lld drive=%lld", max_lead, device_bytes(device) - start_bytes);
+  printf(" finishing=%d finish=%.3f removable=%d drive_name=%s errors=%d\n", finishing_at >= 0 ? 1 : 0,
+         finishing_at >= 0 ? done_time - finishing_at : 0.0, progress.removable ? 1 : 0, progress.drive.c_str(),
+         failed);
+  for (auto &e : errors) fprintf(stderr, "%s\n", e.c_str());
+  return failed ? 1 : 0;
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -108,14 +155,16 @@ int main(int argc, char **argv) {
     return 2;
   }
   std::string src = argv[1], dst = argv[2], method = "range";
-  bool sync_after = false;
+  bool sync_after = false, desktop = false;
   Bench b;
   for (int i = 3; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--method" && i + 1 < argc) method = argv[++i];
     else if (a == "--device" && i + 1 < argc) b.device = argv[++i];
     else if (a == "--sync-after") sync_after = true;
+    else if (a == "--desktop") desktop = true;
   }
+  if (desktop) return desktop_copy(src, dst, b.device);
   SdeWriterMethod m = method == "cache" ? SDE_WRITER_CACHE : method == "fsync" ? SDE_WRITER_FSYNC : SDE_WRITER_RANGE;
   std::string parent = dst.substr(0, dst.find_last_of('/'));
   int dir_fd = open(parent.empty() ? "/" : parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);

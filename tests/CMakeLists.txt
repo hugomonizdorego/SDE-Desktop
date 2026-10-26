@@ -35,7 +35,7 @@ add_executable(sde-safe-copy-tests test_safe_copy.cpp)
 target_link_libraries(sde-safe-copy-tests PRIVATE sde-common)
 add_test(NAME sde-safe-copy COMMAND sde-safe-copy-tests)
 add_executable(sde-safe-copy-bench safe_copy_bench.cpp)
-target_link_libraries(sde-safe-copy-bench PRIVATE sde-common)
+target_link_libraries(sde-safe-copy-bench PRIVATE sde-desktop-model sde-common)
 
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).

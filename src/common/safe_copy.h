@@ -366,20 +366,32 @@ typedef enum {
     SDE_SAFE_NEVER   /* the page cache everywhere (the behaviour before 0.2.0 Alpha 3) */
 } SdeSafeMode;
 
-/* SDE_SAFE_COPY (or the older SDE_LIRIA_SAFE_COPY): "always", "never",
- * anything else "auto". */
+/* "always", "never" or "auto"; |fallback| for anything else. */
 static inline SdeSafeMode
-sde_safe_mode_from_env (void)
+sde_safe_mode_parse (const char *value, SdeSafeMode fallback)
+{
+    if (value != NULL && strcmp (value, "always") == 0)
+        return SDE_SAFE_ALWAYS;
+    if (value != NULL && strcmp (value, "never") == 0)
+        return SDE_SAFE_NEVER;
+    if (value != NULL && strcmp (value, "auto") == 0)
+        return SDE_SAFE_AUTO;
+    return fallback;
+}
+
+/* The mode: SDE_SAFE_COPY, else the older SDE_LIRIA_SAFE_COPY, else
+ * |configured| (sde.conf [files] safe_copy, read by the caller; NULL for
+ * none). */
+static inline SdeSafeMode
+sde_safe_mode (const char *configured)
 {
     const char *value = getenv ("SDE_SAFE_COPY");
 
     if (value == NULL || *value == '\0')
         value = getenv ("SDE_LIRIA_SAFE_COPY");
-    if (value != NULL && strcmp (value, "always") == 0)
-        return SDE_SAFE_ALWAYS;
-    if (value != NULL && strcmp (value, "never") == 0)
-        return SDE_SAFE_NEVER;
-    return SDE_SAFE_AUTO;
+    if (value == NULL || *value == '\0')
+        value = configured;
+    return sde_safe_mode_parse (value, SDE_SAFE_AUTO);
 }
 
 /* The policy: whether copies to |dest| go through the safe writer. */

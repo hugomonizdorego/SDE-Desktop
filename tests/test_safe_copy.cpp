@@ -502,14 +502,16 @@ void test_policy() {
   CHECK(d.fs_type[0] != '\0' && d.mount_point[0] == '/');
   CHECK(sde_dest_probe("/nonexistent/folder", &d) == -1);
   setenv("SDE_SAFE_COPY", "never", 1);
-  CHECK(sde_safe_mode_from_env() == SDE_SAFE_NEVER);
+  CHECK(sde_safe_mode("always") == SDE_SAFE_NEVER);  // the environment first
   setenv("SDE_SAFE_COPY", "always", 1);
-  CHECK(sde_safe_mode_from_env() == SDE_SAFE_ALWAYS);
+  CHECK(sde_safe_mode(nullptr) == SDE_SAFE_ALWAYS);
   unsetenv("SDE_SAFE_COPY");
   setenv("SDE_LIRIA_SAFE_COPY", "never", 1);
-  CHECK(sde_safe_mode_from_env() == SDE_SAFE_NEVER);
+  CHECK(sde_safe_mode(nullptr) == SDE_SAFE_NEVER);
   unsetenv("SDE_LIRIA_SAFE_COPY");
-  CHECK(sde_safe_mode_from_env() == SDE_SAFE_AUTO);
+  CHECK(sde_safe_mode(nullptr) == SDE_SAFE_AUTO);
+  CHECK(sde_safe_mode("always") == SDE_SAFE_ALWAYS);  // then sde.conf
+  CHECK(sde_safe_mode("bogus") == SDE_SAFE_AUTO);
 }
 
 }  // namespace
