@@ -481,6 +481,129 @@ def user_admin_checks():
     print("CONTROL CENTER USER ACCOUNTS PASS", flush=True)
 
 
+def installer_checks():
+    """0.2.0 Alpha 3: Debrun reads a generated package with a fake package
+    system (tools/debrun_fixture.py) and is ready to install it; the
+    AppImage Runner refuses an unsigned AppImage (tools/appimage_fixture.py)
+    with Delete as the default, and Escape keeps the file."""
+    import debrun_fixture
+    import appimage_fixture
+    fx = home / "debrun-fixture"
+    denv = debrun_fixture.write(fx, "new")
+    log = open(home / "debrun.log", "w")
+    deb = sp.Popen(["debrun", str(fx / "packages/waveform-studio_3.2.0-1_amd64.deb")], env=dict(env, **denv),
+                   stdout=log, stderr=log)
+    procs.append(deb)
+    win = find("Debrun$")
+    qa = home / "qa" / "Debrun.txt"
+    for _ in range(150):
+        if qa.exists() and "@state:ready" in qa.read_text():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(("Debrun is not ready", qa.read_text() if qa.exists() else "no QA dump"))
+    text = qa.read_text()
+    assert "@action:install" in text and "@change:apt_source" in text, text
+    g = geom(win)
+    assert g["X"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
+    shot("30-debrun")
+    deb.terminate()
+    deb.wait()
+    files = appimage_fixture.write(home / "appimages")
+    policy = home / "appimage.conf"
+    policy.write_text("policy=verified-only\n")
+    log = open(home / "sde-appimage.log", "w")
+    ai = sp.Popen(["sde-appimage", str(files["unsigned"])], env=dict(env, SDE_APPIMAGE_POLICY=str(policy)),
+                  stdout=log, stderr=log)
+    procs.append(ai)
+    win = find("AppImage Runner$")
+    aqa = home / "qa" / "AppImage.txt"
+    for _ in range(100):
+        if aqa.exists() and "@focus:Delete" in aqa.read_text():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(("the AppImage window has no default", aqa.read_text() if aqa.exists() else ""))
+    names = [l.split("\t")[0] for l in aqa.read_text().splitlines()]
+    assert "@verdict:unsigned" in names and "Run Anyway" not in names, names
+    g = geom(win)
+    assert g["X"] >= 0 and g["X"] + g["WIDTH"] <= W and g["Y"] + g["HEIGHT"] <= H, g
+    shot("31-appimage-unsigned")
+    run("xdotool", "windowfocus", "--sync", win, "key", "Escape", check=False)
+    assert ai.wait(timeout=10) == 1
+    assert files["unsigned"].exists() and not files["unsigned"].stat().st_mode & 0o111
+    print("INSTALLERS PASS", flush=True)
+
+
+def account_rename_checks():
+    """0.2.0 Alpha 3: Users & Avatar renames Sam at the next restart: the
+    fake AccountsService of the fixture and the real sde-account-rename on
+    a fake root (no pkexec, nothing of this computer changes); the request
+    is shown with Cancel Rename, which removes it."""
+    tests = [d for d in ([args.test_dir] if args.test_dir else
+                         [Path("dist/test-tools"), Path(__file__).resolve().parent.parent / "build/tests"])
+             if d and (d / "sde-panel-service-fixture").is_file()]
+    helpers = [p for p in (args.bin_dir / "sde-account-rename", args.bin_dir.parent / "libexec/sde/sde-account-rename",
+                           Path(__file__).resolve().parent.parent / "build/src/sde-account-rename") if p.is_file()]
+    if not tests or not helpers:
+        print("SKIP account rename: no sde-panel-service-fixture or sde-account-rename", flush=True)
+        return
+    root = home / "rename-root"
+    (root / "etc").mkdir(parents=True)
+    (root / "home/sam").mkdir(parents=True)
+    (root / "etc/passwd").write_text("root:x:0:0:root:/root:/bin/bash\nsam:x:1001:1001:Sam Rivera:/home/sam:/bin/bash\n"
+                                     "mia:x:1002:1002:Mia Chen:/home/mia:/bin/bash\n")
+    (root / "etc/group").write_text("root:x:0:\nsam:x:1001:\nmia:x:1002:\n")
+    requests = home / "rename-requests"
+    log = home / "rename-accounts.log"
+    out_log = open(home / "rename-fixture.log", "w")
+    fixture = sp.Popen([str(tests[0].resolve() / "sde-panel-service-fixture"), str(log)],
+                       env=dict(env, SDE_FIXTURE_SERVICES="accounts"), stdout=out_log, stderr=out_log)
+    procs.append(fixture)
+    for _ in range(80):
+        if log.exists() and "READY" in log.read_text():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("the AccountsService fixture did not start")
+    app_log = open(home / "sde-settings-rename.log", "w")
+    app = sp.Popen(["sde-settings", "--page", "accounts"],
+                   env=dict(env, DBUS_SYSTEM_BUS_ADDRESS=env["DBUS_SESSION_BUS_ADDRESS"],
+                            SDE_ACCOUNT_RENAME_HELPER=str(helpers[0].resolve()), SDE_ACCOUNT_RENAME_DIR=str(requests),
+                            SDE_ACCOUNT_RENAME_ROOT=str(root)),
+                   stdout=app_log, stderr=app_log)
+    procs.append(app)
+    win = find("^Control Center$")
+    wait_page("users")
+    cc_press(win, "user:sam")
+    cc_press(win, "Rename this account")
+    cc_press(win, "New user name")
+    run("xdotool", "type", "--delay", "30", "samuel")
+    cc_press(win, "Rename at Restart")
+    request = requests / "1001.rename"
+    for _ in range(100):
+        if request.exists() and any(f[0] == "@rename:sam:samuel:pending" for f in cc_names()):
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError(("the rename was not recorded or shown", [f[0] for f in cc_names()]))
+    assert "new_home=/home/samuel" in request.read_text(), request.read_text()
+    cc_reveal(win, "Cancel the rename")
+    shot("16-control-center-users-rename")
+    cc_press(win, "Cancel the rename")
+    for _ in range(100):
+        if not request.exists():
+            break
+        time.sleep(0.1)
+    else:
+        raise AssertionError("Cancel Rename left the request")
+    app.terminate()
+    app.wait()
+    fixture.terminate()
+    fixture.wait()
+    print("CONTROL CENTER ACCOUNT RENAME PASS", flush=True)
+
+
 def reload_panel():
     # Property update observed by sde-panel (without another desktop service).
     run(
@@ -680,6 +803,8 @@ try:
     app.wait()
     users_page_checks()
     user_admin_checks()
+    account_rename_checks()
+    installer_checks()
     app = spawn("sde-settings", "--page", "panel")
     settings = find("^Control Center$")
     shot("03-settings-panel")
