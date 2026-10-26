@@ -255,7 +255,7 @@ def test_checks(home, signed):
     check(home.verdict('no-key')[0] == 'no-key', 'no key: %s' % (home.verdict('no-key'),))
     store = home.temp / '.local/share/sde/appimage/trust.tsv'
     check(store.exists() and store.stat().st_mode & 0o777 == 0o600, 'trust store %s' % store)
-    check(store.parent.stat().st_mode & 0o777 == 0o700, 'trust store directory mode')
+    check(store.parent.exists() and store.parent.stat().st_mode & 0o777 == 0o700, 'trust store directory mode')
 
     # A trusted AppImage runs, with its arguments, and becomes executable.
     path = home.files['next']

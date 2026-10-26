@@ -219,7 +219,8 @@ def walk_sections(env, name, about, win, qa, failures, fit=None):
 
 failures = []
 with tempfile.TemporaryDirectory(prefix='sde-about-ui-') as temp:
-    number = 400 + os.getpid() % 20000
+    # SDE_TEST_DISPLAY=N pins the display (N, and N + 1 for the small screen).
+    number = int(os.environ.get('SDE_TEST_DISPLAY') or 400 + os.getpid() % 20000)
     server, env = start_x(number, '1280x800', temp)
     qa = env['SDE_ABOUT_QA_FILE']
     try:
