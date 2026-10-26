@@ -839,6 +839,7 @@ class App : public sde::BufferedWindow {
   bool menubar_peek_ = false;  // a hidden menu bar shown for Alt or F10
   bool alt_alone_ = false;     // Alt is down and no other key came yet
   double alt_time_ = 0;
+  int alt_x_ = 0, alt_y_ = 0;  // the pointer when Alt went down
   bool logo_hover_ = false;
   bool qa_pending_ = false;
   // Spelling: words known to be wrong / right, and the checker program.

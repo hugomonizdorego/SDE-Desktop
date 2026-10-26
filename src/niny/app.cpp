@@ -617,6 +617,7 @@ bool App::menu_key(int event) {
       if (alt) {
         alt_alone_ = (state & (FL_SHIFT | FL_CTRL | FL_META)) == 0;
         alt_time_ = now_seconds();
+        Fl::get_mouse(alt_x_, alt_y_);
         return false;
       }
       if (modifier) return false;
@@ -641,6 +642,10 @@ bool App::menu_key(int event) {
     case FL_KEYUP:
       if (alt && alt_alone_ && now_seconds() - alt_time_ < 1.0) {
         alt_alone_ = false;
+        // Not after Alt and a drag: the window manager moved the window.
+        int mx = 0, my = 0;
+        Fl::get_mouse(mx, my);
+        if (std::abs(mx - alt_x_) + std::abs(my - alt_y_) > S(4)) return false;
         bool on = !toolbar_->titles_focused();
         if (on) peek_menubar(true);
         toolbar_->focus_titles(on);
