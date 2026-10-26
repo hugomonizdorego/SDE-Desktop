@@ -7,7 +7,7 @@ the **Effects** tab. Viewing, the information panel, the Adjust, Filters,
 Crop and Draw tabs and saving are described in `man sde-view`.
 
     sde-view [--album=ID] [--sort=ORDER] [--slideshow] [--fullscreen] [--draw]
-             [FILE|URI|FOLDER...]
+             [--effects] [FILE|URI|FOLDER...]
     sde-view --collage [--] FILE|FOLDER...
 
 ## Collages

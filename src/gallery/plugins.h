@@ -85,7 +85,9 @@ bool parse_action_plugin(const std::string &text, const std::string &id, ActionP
                          const std::vector<std::string> &locales = {});
 // Name[xx] keys for the current locale: ll_CC@modifier, ll_CC, ll@modifier, ll.
 std::vector<std::string> plugin_locales();
-// The folders searched for action plugins of |program|, the user's first.
+// The folders searched for action plugins of |program|, the user's first
+// ($SDE_PHOTO_DATA_DIR/plugins or $SDE_GALLERY_DATA_DIR/plugins, a source
+// tree's data/<program>, next).
 std::vector<std::string> plugin_dirs(const std::string &program);
 // The user's folder (~/.local/share/sde/<program>/plugins).
 std::string user_plugin_dir(const std::string &program);

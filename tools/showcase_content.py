@@ -601,6 +601,45 @@ PICTURES = [
 ]
 PHOTO_SIZE = (1200, 800)
 
+# Where the sample photos were "taken" (Gallery's Places): an EXIF GPS
+# position in an eXIf chunk of the PNG files.
+PHOTO_PLACES = {
+    'Mountain Lake.png': (60.3913, 5.3221),
+    'Northern Lights.png': (69.6492, 18.9553),
+    'Misty Hills.png': (61.2297, 7.0989),
+    'Desert Dunes.png': (31.0994, -4.0122),
+    'Sunset Sea.png': (38.7071, -9.1355),
+    'City at Dusk.png': (59.9133, 10.7389),
+}
+
+
+def exif_gps(lat, lon):
+    """EXIF data (big-endian TIFF) with only a GPS position."""
+    def dms(v):
+        v = abs(v)
+        d = int(v)
+        m = int((v - d) * 60)
+        return [(d, 1), (m, 1), (round(((v - d) * 60 - m) * 6000), 100)]
+    gps = 26  # IFD0 at 8: one entry (the GPS pointer) and no next IFD
+    out = bytearray(b'MM\x00\x2a\x00\x00\x00\x08')
+    out += struct.pack('>HHHII', 1, 0x8825, 4, 1, gps) + struct.pack('>I', 0)
+    lat_at, lon_at = gps + 54, gps + 78
+    out += struct.pack('>H', 4)
+    out += struct.pack('>HHI', 1, 2, 2) + (b'N' if lat >= 0 else b'S') + b'\0\0\0'
+    out += struct.pack('>HHII', 2, 5, 3, lat_at)
+    out += struct.pack('>HHI', 3, 2, 2) + (b'E' if lon >= 0 else b'W') + b'\0\0\0'
+    out += struct.pack('>HHII', 4, 5, 3, lon_at)
+    out += struct.pack('>I', 0)
+    for n, d in dms(lat) + dms(lon):
+        out += struct.pack('>II', n, d)
+    return bytes(out)
+
+
+def png_with_exif(png, tiff):
+    """|png| with an eXIf chunk after its IHDR chunk."""
+    chunk = struct.pack('>I', len(tiff)) + b'eXIf' + tiff + struct.pack('>I', zlib.crc32(b'eXIf' + tiff))
+    return png[:33] + chunk + png[33:]
+
 
 def make_pictures(cache):
     """Writes the pictures into |cache| (once) and returns it."""
@@ -1068,6 +1107,8 @@ def make_home(home, date=None, cache=None, data_dirs=(), user=USER_NAME):
         dest = home / 'Pictures' / folder / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(cache / name, dest)
+        if name in PHOTO_PLACES:
+            dest.write_bytes(png_with_exif(dest.read_bytes(), exif_gps(*PHOTO_PLACES[name])))
         when = noon - day * (3 + i * 17)
         os.utime(dest, (when, when))
         pictures.append(dest)

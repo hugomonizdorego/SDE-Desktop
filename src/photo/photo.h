@@ -337,6 +337,7 @@ class PhotoWindow : public sde::BufferedWindow {
   void set_tool(Tool t);
   void open_draw();
   void open_draw_when_loaded() { draw_on_load_ = true; if (source_) open_draw(); }
+  void open_effects_when_loaded() { effects_on_load_ = true; if (source_) open_effects(); }
   void delete_selected_mark();
   // The panel's style changed: restyle the selected mark (one undo step
   // per slider drag when |amend|).
@@ -464,7 +465,7 @@ class PhotoWindow : public sde::BufferedWindow {
   uint64_t render_result_gen_ = 0;
   int jpeg_quality_ = 92;
   DrawSettings draw_;
-  bool draw_on_load_ = false;
+  bool draw_on_load_ = false, effects_on_load_ = false;
   std::string toast_;
   std::map<std::string, bool> plugins_;         // built-in plugin id -> on
   std::vector<gallery::ActionPlugin> actions_;  // action plugins that are on

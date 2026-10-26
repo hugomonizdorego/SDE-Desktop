@@ -221,9 +221,16 @@ std::string user_plugin_dir(const std::string &program) {
 
 std::vector<std::string> plugin_dirs(const std::string &program) {
   std::vector<std::string> out;
-  for (const auto &d : sde::data_dirs()) {
-    std::string dir = d + "/sde/" + program + "/plugins";
+  auto add = [&](const std::string &dir) {
     if (std::find(out.begin(), out.end(), dir) == out.end()) out.push_back(dir);
+  };
+  // A source tree's data/<program> (the showcase) comes right after the
+  // user's folder.
+  std::string own = sde::env(program == "photo" ? "SDE_PHOTO_DATA_DIR" : "SDE_GALLERY_DATA_DIR");
+  auto dirs = sde::data_dirs();
+  for (size_t i = 0; i < dirs.size(); ++i) {
+    add(dirs[i] + "/sde/" + program + "/plugins");
+    if (i == 0 && !own.empty()) add(own + "/plugins");
   }
   return out;
 }

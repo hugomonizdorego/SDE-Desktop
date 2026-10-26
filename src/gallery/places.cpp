@@ -71,6 +71,9 @@ std::vector<Place> parse_gazetteer(const std::string &text) {
 }
 
 std::string gazetteer_path() {
+  // A source tree's data/gallery (tests, the showcase) wins when given.
+  std::string own = sde::env("SDE_GALLERY_DATA_DIR");
+  if (!own.empty() && sde::file_exists(own + "/places.tsv")) return own + "/places.tsv";
   for (const auto &d : sde::data_dirs()) {
     std::string f = d + "/sde/gallery/places.tsv";
     if (sde::file_exists(f)) return f;

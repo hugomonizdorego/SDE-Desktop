@@ -68,6 +68,7 @@ void usage() {
                  "  --slideshow     play a slideshow of the folder in Gallery\n"
                  "  --fullscreen    start in full screen\n"
                  "  --draw          open the drawing tools (Draw tab)\n"
+                 "  --effects       open the Effects tab (blur, red eyes, frame, watermark)\n"
                  "  --collage       make a collage of the files (any number of photos)\n"
                  "  --version       print the version\n"
                  "  --help          show this help\n\n"
@@ -81,7 +82,7 @@ int main(int argc, char **argv) {
   sde::set_default_window_icon({"sde-photo", "sdeview"});  // title bar and taskbar
   std::vector<std::string> files;
   std::string album_arg, sort_arg;
-  bool slideshow = false, full = false, draw = false, collage = false, options = true;
+  bool slideshow = false, full = false, draw = false, effects = false, collage = false, options = true;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (options && a == "--") {
@@ -96,6 +97,7 @@ int main(int argc, char **argv) {
       }
       if (a == "--slideshow") slideshow = true;
       else if (a == "--draw") draw = true;
+      else if (a == "--effects") effects = true;
       else if (a == "--collage") collage = true;
       else if (a == "--fullscreen") full = true;
       else if (starts_with(a, "--album=")) album_arg = a.substr(8);
@@ -211,6 +213,7 @@ int main(int argc, char **argv) {
   }
   if (slideshow) window->toast(_("Slideshows need Gallery (sde-gallery)"));
   if (draw) window->open_draw_when_loaded();
+  if (effects) window->open_effects_when_loaded();
   Fl::focus(window->canvas());
   int status = Fl::run();
   delete photo::CollageWindow::instance();

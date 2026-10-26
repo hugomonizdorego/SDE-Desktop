@@ -616,6 +616,10 @@ void PhotoWindow::full_loaded(gallery::Result &r) {
     draw_on_load_ = false;
     open_draw();
   }
+  if (effects_on_load_) {
+    effects_on_load_ = false;
+    open_effects();
+  }
 }
 
 void PhotoWindow::load_animation(const std::string &path) {

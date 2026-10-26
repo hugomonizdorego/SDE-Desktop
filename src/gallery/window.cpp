@@ -1021,6 +1021,9 @@ void GalleryWindow::file_events(const std::vector<GalleryEvent> &events) {
     } else if (e.verb == "import") {
       x11::activate_window(fl_xid(this));
       import_dialog();
+    } else if (e.verb == "plugins") {
+      x11::activate_window(fl_xid(this));
+      show_plugins();
     } else if (e.verb == "present") {
       select = "";
       x11::activate_window(fl_xid(this));
