@@ -781,7 +781,7 @@ std::vector<TileGroup> adopt_favorites(const std::vector<TileGroup> &groups, con
           fav.insert(fav.begin() + long(at), TileGroup{favorite_name(names, kind), {}});
           target = int(at);
         }
-        fav[size_t(target)].tiles.push_back(Tile{id, TileSize::Medium});
+        fav[size_t(target)].tiles.push_back(Tile{id, t.folder ? TileSize::Medium : t.size});
       }
   }
   // The favorites where the first old group was.

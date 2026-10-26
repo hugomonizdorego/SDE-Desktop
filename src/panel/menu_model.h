@@ -222,8 +222,9 @@ bool pin_favorite(std::vector<TileGroup> &groups, const DesktopEntry &e,
 // marked |automatic| (an older version's own groups: 0.2 Alpha 1's
 // Productivity and Explore, 0.2 Alpha 2's groups by category the user did
 // not arrange). Their applications that SDE did not put there itself (not
-// in |picks|: pinned by the user) join the favorites group of their kind,
-// unless they are pinned already; the other groups stay as they are.
+// in |picks|: pinned by the user) join the favorites group of their kind in
+// their size, unless they are pinned already; the other groups stay as
+// they are.
 std::vector<TileGroup> adopt_favorites(const std::vector<TileGroup> &groups,
                                        const std::vector<bool> &automatic,
                                        const std::vector<std::string> &picks,

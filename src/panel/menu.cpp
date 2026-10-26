@@ -3679,20 +3679,23 @@ void AppMenu::draw() {
       draw_text(name, gx + S(18), gy, gw - S(36), gh, t.text);
     } else if (!drag_id_.empty()) {
       const DesktopEntry *e = app(drag_id_);
-      int tw = 2 * cell_ + gap_;
+      // Over the middle of a tile (a folder will be made, or it joins one)
+      // the dragged tile shrinks to its icon, so that the lit tile shows.
+      bool onto = tile_drag && dd.kind == menu::TileDrop::Merge;
+      int tw = onto ? int(std::lround((2 * cell_ + gap_) * 0.56)) : 2 * cell_ + gap_;
       int dx = drag_x_ - tw / 2, dy = drag_y2_ - tw / 2;
       {
         Painter p(W, H);
         p.shadow(dx, dy, tw, tw, S(4), t.shadow, S(8));
-        p.fill_rounded(dx, dy, tw, tw, S(4), tile_hover.mix(t.surface, 0.3));
+        p.fill_rounded(dx, dy, tw, tw, S(4), tile_hover.mix(t.surface, 0.3).alpha(onto ? 0.85 : 1.0));
         p.stroke_rounded(dx + 0.5, dy + 0.5, tw - 1, tw - 1, S(4), t.accent, Sd(1.5));
         if (e) {
-          double is = tw * 0.42;
+          double is = tw * (onto ? 0.62 : 0.42);
           p.image(IconLoader::get({IconLoader::app_icon(*e, int(is)), "application-x-executable"}, int(is)),
-                  dx + (tw - is) / 2, dy + (tw - is) / 2 - tw * 0.07, is);
+                  dx + (tw - is) / 2, dy + (tw - is) / 2 - (onto ? 0 : tw * 0.07), is);
         }
       }
-      if (e) {
+      if (e && !onto) {
         text_font(t.font_size - 1);
         draw_text(e->name, dx + S(7), dy + tw - S(24), tw - S(12), S(20), t.text);
       }

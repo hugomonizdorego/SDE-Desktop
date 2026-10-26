@@ -469,7 +469,7 @@ int main() {
     // game gets the Photos and media group.
     std::vector<menu::TileGroup> alpha1 = {
         {"Mine", {{"niny.desktop", W}}},
-        {"Productivity", {{"liria.desktop", M}, {"chess.desktop", M}}},
+        {"Productivity", {{"liria.desktop", M}, {"chess.desktop", S}}},
         {"Explore", {{"firefox-esr.desktop", M}, {"gone.desktop", M}}},
     };
     auto from1 = menu::adopt_favorites(alpha1, {false, true, true}, {"liria.desktop", "firefox-esr.desktop"},
@@ -478,7 +478,8 @@ int main() {
           from1[2].name == "Photos and media" && from1[3].name == "System");
     CHECK(menu::find_app(from1, "niny.desktop").group == 0 && menu::tile_ids(from1).size() ==
                                                                   menu::tile_ids(fresh).size() + 1);
-    CHECK(from1[2].tiles.back().id == "chess.desktop" && menu::find_app(from1, "gone.desktop").group < 0);
+    CHECK(from1[2].tiles.back().id == "chess.desktop" && from1[2].tiles.back().size == S &&
+          menu::find_app(from1, "gone.desktop").group < 0);
     // A missing favorites group of the kind is made in its place.
     auto only_work = std::vector<menu::TileGroup>{fresh[0]};
     auto placed = menu::adopt_favorites({{"Productivity", {{"chess.desktop", M}}}}, {true}, {}, only_work, apps, names);
