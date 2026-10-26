@@ -552,7 +552,7 @@ std::string check(const std::string &root, uid_t uid, const std::string &old_nam
 // ============================================================ file edits
 
 std::string edit_lightdm(const std::string &text, const std::string &old_name, const std::string &new_name) {
-  return edit_keys(text, {"autologin-user"}, old_name, new_name);
+  return edit_keys(text, {"autologin-user", "last-user"}, old_name, new_name);
 }
 
 std::string edit_gdm(const std::string &text, const std::string &old_name, const std::string &new_name) {
@@ -886,6 +886,8 @@ bool Applier::apply(const Request &r, std::string *error, bool *postponed) {
   {
     std::vector<std::string> files = {"/etc/lightdm/lightdm.conf"};
     for (const auto &f : files_with_suffix(root_, "/etc/lightdm/lightdm.conf.d", ".conf")) files.push_back(f);
+    // The greeters remember the last user (lightdm-gtk-greeter, slick-greeter).
+    for (const auto &d : list_dir(path("/var/lib/lightdm/.cache"))) files.push_back("/var/lib/lightdm/.cache/" + d + "/state");
     for (const auto &f : files)
       if (!edit_file("lightdm", f, [&](const std::string &t) { return edit_lightdm(t, r.old_name, r.new_name); }, &e))
         return fail(e);

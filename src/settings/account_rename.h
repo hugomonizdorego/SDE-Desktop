@@ -108,7 +108,8 @@ std::string check(const std::string &root, uid_t uid, const std::string &old_nam
 
 // The lines that name the account, with the new name. Each returns the
 // text unchanged when nothing names it.
-// LightDM: "autologin-user=OLD" (lightdm.conf and lightdm.conf.d).
+// LightDM: "autologin-user=OLD" (lightdm.conf and lightdm.conf.d) and the
+// greeters' "last-user=OLD" (/var/lib/lightdm/.cache/*/state).
 std::string edit_lightdm(const std::string &text, const std::string &old_name, const std::string &new_name);
 // GDM: "AutomaticLogin=OLD", "TimedLogin=OLD" (gdm3/daemon.conf).
 std::string edit_gdm(const std::string &text, const std::string &old_name, const std::string &new_name);

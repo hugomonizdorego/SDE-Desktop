@@ -212,7 +212,9 @@ How (`sde-account-rename`, `man 8 sde-account-rename`):
      account is a member of) and `groupmod -n NEW OLD` for its own group;
    - AccountsService's `users/OLD` and `icons/OLD` (and the `Icon=` line);
    - automatic login: `autologin-user=` of LightDM (`lightdm.conf` and
-     `lightdm.conf.d`), `AutomaticLogin=`/`TimedLogin=` of GDM;
+     `lightdm.conf.d`), `AutomaticLogin=`/`TimedLogin=` of GDM, and the
+     user the LightDM greeters preselect (`last-user=` in
+     `/var/lib/lightdm/.cache/*/state`);
    - the crontab (`/var/spool/cron/crontabs`), the mail spool (`/var/mail`);
    - `/etc/subuid` and `/etc/subgid`;
    - sudo drop-ins in `/etc/sudoers.d` (the name and `/home/OLD/` paths),

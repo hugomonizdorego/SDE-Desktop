@@ -46,7 +46,8 @@ account database (\fI/etc/passwd\fR, \fIshadow\fR, \fIgroup\fR,
 \fIgshadow\fR, \fIsubuid\fR, \fIsubgid\fR) is saved; \fBusermod -l NEW -d
 HOME -m OLD\fR; \fBgroupmod -n NEW OLD\fR for the account's own group;
 AccountsService's user file and picture; automatic login of LightDM
-(\fIautologin-user\fR) and GDM (\fIAutomaticLogin\fR, \fITimedLogin\fR);
+(\fIautologin-user\fR, the greeters' \fIlast-user\fR) and GDM
+(\fIAutomaticLogin\fR, \fITimedLogin\fR);
 the crontab and the mail spool; \fI/etc/subuid\fR and \fI/etc/subgid\fR;
 the drop-ins of \fI/etc/sudoers.d\fR (checked with \fBvisudo -c\fR); the
 linger flag of systemd; the link. When a step fails, the steps made are

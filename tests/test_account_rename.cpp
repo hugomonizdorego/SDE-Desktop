@@ -102,6 +102,7 @@ std::string make_root(const std::string &name) {
   put(r + "/etc/lightdm/lightdm.conf", "[Seat:*]\n#autologin-user=\nautologin-user = sam\nautologin-user-timeout=0\n");
   put(r + "/etc/lightdm/lightdm.conf.d/50-sde.conf", "[Seat:*]\nuser-session=sde\nautologin-user=mia\n");
   put(r + "/etc/gdm3/daemon.conf", "[daemon]\nAutomaticLoginEnable=true\nAutomaticLogin=sam\n");
+  put(r + "/var/lib/lightdm/.cache/slick-greeter/state", "[greeter]\nlast-user=sam\n", 0600);
   put(r + "/var/spool/cron/crontabs/sam", "0 * * * * echo hi\n", 0600);
   put(r + "/var/mail/sam", "From someone\n", 0660);
   put(r + "/etc/subuid", "mia:100000:65536\nsam:165536:65536\n");
@@ -311,6 +312,8 @@ void test_edits() {
   CHECK_EQ(edit_lightdm("autologin-user=samantha\n", "sam", "samuel"), std::string("autologin-user=samantha\n"));
   CHECK_EQ(edit_lightdm("#autologin-user=sam\n", "sam", "samuel"), std::string("#autologin-user=sam\n"));
   CHECK_EQ(edit_lightdm("autologin-user-timeout=sam\n", "sam", "samuel"), std::string("autologin-user-timeout=sam\n"));
+  CHECK_EQ(edit_lightdm("[greeter]\nlast-user=sam\nlast-session=sde\n", "sam", "samuel"),
+           std::string("[greeter]\nlast-user=samuel\nlast-session=sde\n"));
   CHECK_EQ(edit_lightdm("no newline autologin-user=sam", "sam", "samuel"), std::string("no newline autologin-user=sam"));
   CHECK_EQ(edit_gdm("[daemon]\nAutomaticLogin=sam\nTimedLogin=sam\nAutomaticLoginEnable=true\n", "sam", "samuel"),
            std::string("[daemon]\nAutomaticLogin=samuel\nTimedLogin=samuel\nAutomaticLoginEnable=true\n"));
@@ -373,6 +376,7 @@ void test_apply() {
   CHECK(get(root + "/etc/lightdm/lightdm.conf").find("autologin-user = samuel\n") != std::string::npos);
   CHECK(get(root + "/etc/lightdm/lightdm.conf.d/50-sde.conf").find("autologin-user=mia\n") != std::string::npos);
   CHECK(get(root + "/etc/gdm3/daemon.conf").find("AutomaticLogin=samuel\n") != std::string::npos);
+  CHECK_EQ(get(root + "/var/lib/lightdm/.cache/slick-greeter/state"), std::string("[greeter]\nlast-user=samuel\n"));
   CHECK(file_exists(root + "/var/spool/cron/crontabs/samuel") && !file_exists(root + "/var/spool/cron/crontabs/sam"));
   CHECK(file_exists(root + "/var/mail/samuel") && !file_exists(root + "/var/mail/sam"));
   CHECK_EQ(get(root + "/etc/subuid"), std::string("mia:100000:65536\nsamuel:165536:65536\n"));
