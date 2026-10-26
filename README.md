@@ -12,11 +12,25 @@
 SDE is built and tested on Debian testing. DebION GNU/Linux, a separate Debian-based
 distribution, ships SDE; see [LEGAL.md](docs/LEGAL.md) for how the two projects relate.
 
-Development version **0.2 Alpha 2** (`0.2.0~alpha2`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.2 Alpha 3** (`0.2.0~alpha3`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE 0.2 Alpha 2: the Start Menu with tile groups by category](docs/screenshots/0.2-alpha2/01-start-menu.jpg)
+![SDE 0.2 Alpha 3: the Start Menu with favorites, a tile folder and live badges](docs/screenshots/0.2-alpha3/01-start-menu.jpg)
 
-**New in 0.2 Alpha 2:** [Merkadu, tile groups, user accounts and Liquid Glass](docs/0.2-ALPHA2.md) —
+**New in 0.2 Alpha 3:** [Xanara edits PDFs, Merkadu works like Synaptic, safe USB copies and tile folders](docs/0.2-ALPHA3.md) —
+**Xanara** edits PDFs directly (click a text and type, as in an office suite; move and
+replace pictures) and needs no other program; **Merkadu** never shows an empty page,
+refreshes the software lists when it opens, lists every package like Synaptic, comes
+with Flathub set up (Snap when you enable it), uninstalls preinstalled apps and leaves
+system updates to Software Updater; the **Start Menu** is about favorites again, with
+**tile folders** and **live badges** for new mail and messages; copies to **USB sticks**
+are finished when they say so, in a new dialog with a walking **penguin**; Liria is
+smooth under the pointer and opens `\\server\share`, IP addresses and `sftp://` from
+its address bar; **Niny** tabs close with their × and a full menu bar; **collages** and
+plugins in Photo and Gallery; **Debrun** installs downloaded `.deb` files; **AppImages**
+run with a double-click after verification; accounts can be **renamed** at the next
+restart ([screenshots](docs/screenshots/0.2-alpha3/README.md)).
+
+**0.2 Alpha 2:** [Merkadu, tile groups, user accounts and Liquid Glass](docs/0.2-ALPHA2.md) —
 **Merkadu**, a new software center for Debian packages, Flatpak and Snap (after Ubuntu
 Software Center); a Start Menu where typing always searches, tiles grouped by category
 with drag and drop, and **Uninstall…** in the right-click menu; **user accounts** in the
@@ -120,6 +134,8 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-suite` | Rust suite diagnostics, source/copyright links and optional dispatch |
 | `merkadu` | Merkadu, the software center (own package): Debian packages through PackageKit and AppStream, Flatpak (Flathub, set up out of the box) and Snap in one window; Home with highlights and recommendations, departments, All Software (every package by section and status, marked changes applied together, like Synaptic), Installed, app Updates, History; `merkadu --uninstall` for the Start Menu |
 | `sde-update` | Software Updater: critical, security and main updates of the operating system with check boxes, history, sources and maintenance; PackageKit/APT transactions with progress and background notifications (apps from Flathub and the Snap Store are updated in Merkadu) |
+| `debrun` | Debrun: installs `.deb` files downloaded from a vendor's website the Debian way, after showing what the package is and changes (opens on double-click of a `.deb`; not in the Start Menu) |
+| `sde-appimage` | AppImage Runner: runs AppImages with a double-click once their signature is verified, and asks to delete those it cannot verify |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
@@ -273,6 +289,7 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Logo, icons and user pictures](docs/BRANDING.md)
 - [Merkadu, the software center](docs/MERKADU.md), [Start Menu](docs/START-MENU.md), [Control Center](docs/CONTROL-CENTER.md), [Panel](docs/PANEL.md) and [themes](docs/THEMES.md)
+- [Niny](docs/NINY.md), [Xanara](docs/XANARA.md), [Photo](docs/PHOTO.md), [Gallery](docs/GALLERY.md), [copying and the transfer dialog](docs/TRANSFERS.md), [Debrun](docs/DEBRUN.md) and [AppImages](docs/APPIMAGE.md)
 - [SDE Welcome for distributions](docs/WELCOME.md)
 - [Roadmap to 1.0 Final](docs/ROADMAP.md)
 - [Security policy](docs/SECURITY.md) and the [0.2 Alpha 1 audit](docs/AUDIT-0.2.0-alpha1.md)

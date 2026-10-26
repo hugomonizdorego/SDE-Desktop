@@ -1,6 +1,6 @@
 # id	name	role	command	package	icon	upstream	url	license	build_version
 niny	Niny	Text Editor	niny	sde	niny	Selviana DE Project	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
-liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	liria	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later AND LGPL-2.0-or-later	0.2.0~alpha2
+liria	Liria	File Manager	liria --no-desktop	sde/upstream/caja	liria	caja	https://github.com/mate-desktop/caja	GPL-2.0-or-later AND LGPL-2.0-or-later	0.2.0~alpha3
 xanara	Xanara	Document Viewer	xanara	sde	xanara	Selviana DE Project	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 sde-view	Photo	Photos and Image Editing	sde-view	sde	sde-photo	Selviana DE Project	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1
 calculator	Calculator	Scientific Calculator	calculator	sde	sde-calculator	Selviana DE Project	https://github.com/hugomonizdorego/SDE-Desktop	GPL-3.0-or-later	2.0.0~alpha1

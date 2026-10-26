@@ -1,3 +1,36 @@
+sde (0.2.0~alpha3) unstable; urgency=medium
+
+  * Xanara: direct editing of PDF text and pictures (Edit mode), saved as
+    incremental updates with embedded font subsets; page operations,
+    merging, encryption, redaction, printing (libcups) and OCR
+    (libtesseract) in-process through libqpdf and poppler; no external
+    programs (qpdf, ghostscript, pdftoppm, lp, tesseract) any more.
+  * Merkadu: background refresh of the software lists at start, catalog
+    diagnosis instead of empty pages, the DEP-11 icon archives enabled
+    (/etc/apt/apt.conf.d/60merkadu), All Software through libapt-pkg with
+    marked changes, Home with highlights and recommendations, Flathub
+    added by the postinst, Enable Snap Support, uninstall protection for
+    essential packages; Software Updater updates the system only.
+  * Session: Flatpak export directories and the snap launchers in
+    XDG_DATA_DIRS, /snap/bin in PATH.
+  * Start Menu: favorites again, tile folders, live badges (notifications
+    and com.canonical.Unity.LauncherEntry) on tiles, list, search and the
+    taskbar.
+  * Safe copying: copies to removable, external and network drives count
+    what the drive has taken and finish after syncfs; new transfer dialog
+    with an animated penguin in Liria and on the desktop.
+  * Liria: hover repaints only what changes; network places in the
+    location bar with its own sign-in dialog.
+  * Niny: tab close buttons, inactive for the only tab; full menu bar.
+  * Photo collages; Gallery Edit With; plugins for Photo and Gallery.
+  * New programs: debrun (with debrun-helper) and sde-appimage.
+  * Control Center: account renames applied at boot by
+    sde-account-rename.service.
+  * sde-desktop recommends gnome-keyring and libpam-gnome-keyring,
+    suggests wsdd.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 26 Oct 2026 22:00:00 +0000
+
 sde (0.2.0~alpha2) unstable; urgency=medium
 
   * Merkadu, the SDE software center (new binary package merkadu): Debian

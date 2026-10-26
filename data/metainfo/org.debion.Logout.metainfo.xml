@@ -26,6 +26,7 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.2.0~alpha3" date="2026-10-26"/>
     <release version="0.2.0~alpha2" date="2026-10-25"/>
     <release version="0.2.0~alpha1" date="2026-10-24"/>
     <release version="0.1.0~alpha52" date="2026-10-23"/>

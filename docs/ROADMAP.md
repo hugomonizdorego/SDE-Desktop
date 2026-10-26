@@ -1,4 +1,4 @@
-# Roadmap — from 0.2.0 Alpha 2 to 1.0 Final
+# Roadmap — from 0.2.0 Alpha 3 to 1.0 Final
 
 Selviana Desktop Environment (SDE) is a desktop environment. DebION GNU/Linux
 is a separate project: a Debian-based distribution (Linux kernel) that ships
@@ -47,7 +47,7 @@ cairo and Xlib, with a Rust configuration core.
 - [x] Release audit: builds, hardening, sanitizers, security review
 - [x] Screenshot showcase of every component for each build
 
-## Now: 0.2.0 Alpha 2 — software, accounts and polish (October 2026)
+## Done: 0.2.0 Alpha 2 — software, accounts and polish (October 2026)
 
 - [x] **Merkadu**, the SDE software center: Debian packages, Flatpak and Snap
       ([0.2-ALPHA2.md](0.2-ALPHA2.md), [MERKADU.md](MERKADU.md))
@@ -64,21 +64,38 @@ cairo and Xlib, with a Rust configuration core.
 - [x] SDE Welcome editable by distributions (`/usr/share/SDE-Welcome`)
 - [x] SDE-FLTK on FLTK 1.4.5
 
+## Now: 0.2.0 Alpha 3 — editing, installing and copying safely (October 2026)
+
+- [x] Xanara edits PDFs directly and needs no other program
+      ([0.2-ALPHA3.md](0.2-ALPHA3.md), [XANARA.md](XANARA.md))
+- [x] Merkadu: real catalogs refreshed at start, All Software like Synaptic,
+      Flathub out of the box, Snap on request, app updates only
+- [x] Start Menu: favorites again, tile folders, live badges
+- [x] Copies to USB sticks and external drives finished when they say so; a
+      copy dialog of our own (the penguin)
+- [x] Liria: smooth hover; network places in the address bar
+- [x] Niny: tabs and a full menu bar; Photo collages; Gallery Edit With and
+      plugins for both
+- [x] Debrun for downloaded `.deb` files; AppImages after verification;
+      renaming accounts at the next restart
+
 ## 0.2 series — usable every day (target: Q1 2027)
 
-Alpha 3 and later:
+Alpha 4 and later:
 
-- [ ] Merkadu and user accounts validated on real installations (PackageKit,
-      Flatpak, snapd, AccountsService), reviews of featured apps
+- [ ] Merkadu, Debrun and user accounts validated on real installations
+      (PackageKit, Flathub, snapd, AccountsService); copies to real FAT USB
+      sticks measured; Liria against NFS, WebDAV and domain logins
+- [ ] Xanara: editing rotated text and right-to-left scripts; faster undo for
+      large files
 
 - [ ] Translations: Indonesian first, then Portuguese and Tetum; translation
       workflow (Weblate or po files in the repository) and 100% string coverage
 - [ ] Real-hardware validation programme: lock/suspend/resume, lid, battery,
       brightness, touchpad, multi-monitor, Wi‑Fi, USB drives — on at least
       five laptops and two desktops, results published per build
-- [ ] Liria: Ribbon completion (group by, file extensions, network shares,
-      disc burning), search, tabs polish
-- [ ] Gallery: places map and duplicate finder
+- [ ] Liria: Ribbon completion (group by, file extensions, disc burning),
+      search, tabs polish
 - [ ] Notifications: grouping rules and per-application settings
 - [ ] Input devices plugged in during the session get the saved settings
 - [ ] Paste files on the desktop (clipboard file lists)

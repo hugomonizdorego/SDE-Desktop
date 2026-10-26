@@ -45,7 +45,7 @@ void about() {
   AppInfo info;
   info.name = "UI Kit Demo";
   info.program = "sde-ui-kit-demo";
-  info.version = "0.2.0~alpha2";
+  info.version = "0.2.0~alpha3";
   info.icon = "preferences-desktop-theme";
   info.description =
       "Shows FLTK menus, dialogs and widgets drawn in the SDE theme. Used by the SDE test suite.";

@@ -1,3 +1,35 @@
+# 0.2 Alpha 3 · 2026-10-26 — Xanara edits PDFs, Merkadu like Synaptic, safe USB copies, tile folders
+
+- Xanara: direct editing of PDF text (click and type, fonts, sizes,
+  colors, alignment, new text boxes) and pictures; pages, merge, split,
+  encryption, redaction, printing and OCR inside Xanara through libraries
+  (libqpdf, poppler, libcups, libtesseract) — no qpdf, gs, pdftoppm, lp or
+  tesseract programs.
+- Merkadu: refreshes the software lists when it opens and never shows an
+  empty page (the causes on Debian testing are fixed); redesign with Back,
+  Forward, Home and Refresh, highlights and recommendations; All Software
+  with every package by section and marked changes like Synaptic; Flathub
+  set up when installed, Snap on request; icons for everything; uninstall
+  preinstalled apps; app updates in Merkadu, system updates in Software
+  Updater only.
+- Start Menu: favorites in groups again (Work, Photos and media, System);
+  tile folders like Windows 10; live badges from notifications and the
+  Unity launcher API on tiles, the list, the search and the taskbar.
+- Copies to USB sticks, external drives and network shares are on the
+  drive when they say "done"; a new copy dialog with a walking penguin
+  (Liria and the desktop).
+- Liria: smooth hover (sidebar, tabs, icon views); network places typed in
+  the address bar (\\server\share, smb://, IP addresses, localhost,
+  sftp://, ftp://, nfs://, dav://) with its own sign-in dialog.
+- Niny: a tab's × closes it (inactive for the only tab); a full menu bar
+  with Font…, Document and Tools menus.
+- Photo: collages in ten designs; Gallery: Edit With installed editors;
+  plugins for both.
+- Debrun installs downloaded .deb files; AppImages run with a double-click
+  after their signature is verified.
+- Control Center: accounts can be renamed (user name and home folder) at
+  the next restart. See docs/0.2-ALPHA3.md.
+
 # 0.2 Alpha 2 · 2026-10-25 — Merkadu, tile groups, user accounts, Liquid Glass, FLTK 1.4
 
 - Merkadu, the new software center: Debian packages (PackageKit), Flatpak
