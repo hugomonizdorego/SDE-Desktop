@@ -125,7 +125,14 @@ class Session:
                         XANARA_QA_FILE=str(self.qa), PATH=str(stubs) + ':' + os.environ.get('PATH', '/usr/bin:/bin'))
         self.server = sp.Popen(['Xvfb', ':%d' % display, '-noreset', '-screen', '0', size + 'x24', '-nolisten',
                                 'tcp'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        time.sleep(1.0)
+        # The server's socket, not a fixed pause: under a parallel ctest the
+        # X server can take longer than a second to start.
+        socket = Path('/tmp/.X11-unix/X%d' % display)
+        for _ in range(100):
+            if socket.exists():
+                break
+            time.sleep(0.1)
+        time.sleep(0.3)
         self.app = None
         self.window = None
 

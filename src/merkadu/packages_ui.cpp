@@ -843,7 +843,8 @@ void dep_group(Page *page, const std::string &title, const std::vector<std::stri
   page->begin_card(title);
   std::string text;
   for (size_t i = 0; i < items.size() && i < max; ++i) text += (i ? "\n" : "") + items[i];
-  if (items.size() > max) text += "\n" + format(_("and %d more"), int(items.size() - max));
+  if (items.size() > max)
+    text += "\n" + format(ngettext("and %d more", "and %d more", int(items.size() - max)), int(items.size() - max));
   int h = TextBlock::measure(text, page->width() - S(40), 0) + S(4);
   new TextBlock(page->left() + S(20), page->cursor(), page->width() - S(40), h, text);
   page->advance(h + S(6));
