@@ -177,7 +177,12 @@ add_library(sde-gallery-core STATIC
   gallery/exif.cpp
   gallery/media.cpp
   gallery/album.cpp
-  gallery/collections.cpp)
+  gallery/collections.cpp
+  gallery/plugins.cpp
+  gallery/editors.cpp
+  gallery/places.cpp
+  gallery/duplicates.cpp
+  gallery/metadata.cpp)
 target_include_directories(sde-gallery-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/gallery)
 target_link_libraries(sde-gallery-core PUBLIC sde-common)
 pkg_check_modules(GIO REQUIRED IMPORTED_TARGET gio-2.0)
@@ -201,7 +206,8 @@ endif()
 find_package(Threads REQUIRED)
 target_link_libraries(sde-gallery-core PUBLIC Threads::Threads)
 # Drawing shared by Gallery and Photo: line icons and the themed menu bar.
-add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp)
+add_library(sde-gallery-ui STATIC gallery/icons.cpp gallery/menubar.cpp gallery/link.cpp gallery/plugins_ui.cpp
+  gallery/forms.cpp)
 target_link_libraries(sde-gallery-ui PUBLIC sde-gallery-core)
 add_executable(sde-gallery
   gallery/main.cpp
@@ -209,13 +215,15 @@ add_executable(sde-gallery
   gallery/sidebar.cpp
   gallery/grid.cpp
   gallery/viewer.cpp
-  gallery/organize.cpp)
+  gallery/organize.cpp
+  gallery/tools.cpp
+  gallery/batch.cpp)
 # Batch rotate/export use Photo's encoder (lossless JPEG rotation, EXIF).
 target_link_libraries(sde-gallery PRIVATE sde-gallery-ui sde-photo-core)
 
 # Photo (sde-view): the SDE photo viewer and editor, written from scratch by
 # the Selviana DE Project on top of sde-gallery-core.
-add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp)
+add_library(sde-photo-core STATIC photo/edit.cpp photo/save.cpp photo/draw.cpp photo/collage.cpp photo/finish.cpp)
 target_include_directories(sde-photo-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/photo)
 target_link_libraries(sde-photo-core PUBLIC sde-gallery-core)
 add_executable(sde-view
@@ -224,7 +232,11 @@ add_executable(sde-view
   photo/canvas.cpp
   photo/panels.cpp
   photo/drawing.cpp
-  photo/clipboard.cpp)
+  photo/clipboard.cpp
+  photo/collage_window.cpp
+  photo/collage_panel.cpp
+  photo/tools.cpp
+  photo/effects.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
 install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # Its icon (sde-photo, and sdeview for older launchers) is in data/icons.

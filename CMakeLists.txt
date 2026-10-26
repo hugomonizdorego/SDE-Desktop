@@ -256,3 +256,9 @@ install(FILES data/sudoers/sde-liria DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sud
 
 install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications)
 install(FILES data/portals/sde-portals.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal)
+
+# Photo and Gallery (docs/PHOTO.md, docs/GALLERY.md): their example action
+# plugins and the offline list of places of the Places plugin (Natural Earth).
+install(DIRECTORY data/photo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/photo)
+install(DIRECTORY data/gallery/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/gallery)
+install(FILES docs/PHOTO.md docs/GALLERY.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)

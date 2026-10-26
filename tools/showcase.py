@@ -1036,6 +1036,12 @@ class Session:
                        MERKADU_FAKE_HOLD='42', MERKADU_LOGO_PHASE='1.55')
         if (a.data_dir / 'merkadu/categories.menu').exists():
             env['MERKADU_DATA_DIR'] = str(a.data_dir / 'merkadu')
+        # Photo and Gallery: the place list and the action plugins of a
+        # source tree's data/ (installed: /usr/share/sde/gallery, .../photo).
+        if (a.data_dir / 'gallery/places.tsv').exists():
+            env['SDE_GALLERY_DATA_DIR'] = str(a.data_dir / 'gallery')
+        if (a.data_dir / 'photo/plugins').is_dir():
+            env['SDE_PHOTO_DATA_DIR'] = str(a.data_dir / 'photo')
         env.update(self.nss_wrapper())
         # Users & Avatar reads pending account renames here (the scene writes one).
         env['SDE_ACCOUNT_RENAME_DIR'] = str(self.home / '.fixtures/account-renames')
@@ -2706,6 +2712,72 @@ def appimage(s):
     s.control('AppImage', '@verdict:key-changed', timeout=5)
     s.park_pointer()
     s.shot('appimage-key-changed', quiet=0.5, wid=w)
+
+
+# ------------------------------------------------ Photo and Gallery plugins
+# (docs/PHOTO.md, docs/GALLERY.md). Places come from the GPS positions of
+# the sample photos (showcase_content.PHOTO_PLACES). Positions of controls
+# are SDE sizes (S(v)) at the set's scale.
+
+@scene('Photo', [('photo-collage', 'Photo: a collage of six photos in the Prints design'),
+                 ('photo-effects', 'Photo: the Effects tab, with a background blur and a print frame')],
+       needs=['sde-view'])
+def photo_plugins(s):
+    def px(v):
+        return round(v * s.scale)
+    pics = [s.home / 'Pictures' / folder / name for name, _, folder in showcase_content.PICTURES[:6]]
+    s.app(['sde-view', '--collage', '--', *pics], '^Collage of', timeout=20)
+    s.key('ctrl+4')  # the fourth design: Prints
+    time.sleep(0.8)
+    s.park_pointer()
+    s.shot('photo-collage', quiet=1.0)
+    s.stop_scene_procs()
+    s.gone('^Collage of', 3)
+    w = s.app(['sde-view', '--effects', s.home / 'Pictures/Holidays 2026/City at Dusk.png'], 'Photo$')
+    time.sleep(0.8)
+    g = s.geom(w)
+    compact = g['h'] - px(56) < px(600)
+    chip = px(30) if compact else px(32)
+    left, width = g['x'] + g['w'] - px(320) + px(20), px(280)
+    top = g['y'] + px(56) + px(64) - (px(4) if compact else 0)
+    cell = (width - 2 * px(6)) / 3
+    middle = left + cell + px(6) + cell / 2  # the middle chip of a row of three
+    # The print frame first: its place depends on the sections above it,
+    # which are closed (Background Blur off, Red Eyes).
+    frame = top + (px(24) + chip + px(6) + px(4) + px(8)) + (px(24) + chip + px(6) + px(2) + px(8)) + px(24)
+    s.click(middle, frame + chip + px(6) + chip / 2)
+    time.sleep(0.6)
+    s.click(middle, top + px(24) + chip / 2)  # Background Blur: Circle
+    time.sleep(1.0)
+    s.park_pointer()
+    s.shot('photo-effects', quiet=1.0)
+
+
+@scene('Gallery', [('gallery-places', 'Gallery: Places, the photos grouped by where they were taken (offline)'),
+                   ('gallery-edit-with', 'Gallery: Edit With, Photo and the other image editors'),
+                   ('gallery-plugins', 'Gallery: the Plugins window')], needs=['sde-gallery'])
+def gallery_plugins(s):
+    w = s.app(['sde-gallery'], '^Gallery$')
+    time.sleep(1.5)  # the positions are read in the background
+    s.click_in(w, 76, 284)  # the sidebar's Places row
+    time.sleep(1.5)
+    s.park_pointer()
+    s.shot('gallery-places', quiet=0.8)
+    try:
+        s.click_in(w, 344, 239)  # the first photo
+        s.key('ctrl+p')  # the quick preview
+        time.sleep(1.0)
+        s.key('e')  # Edit With
+        time.sleep(0.8)
+        s.shot('gallery-edit-with', quiet=0.8)
+    finally:
+        s.key('Escape')
+        s.key('Escape')
+    time.sleep(0.5)
+    s.spawn('sde-gallery', '--plugins', name='sde-gallery-plugins')  # to the running Gallery
+    s.need('Gallery Plugins', 5)
+    s.park_pointer()
+    s.shot('gallery-plugins', quiet=0.8)
 
 
 # ================================================================== output

@@ -413,6 +413,7 @@ void Canvas::draw() {
       cairo_restore(cr);
       // Drawings: a layer above the photo until it is saved.
       draw_overlay(p);
+      draw_effects_overlay(p);
       if (cropping_) {
         double x0 = ix + crop_.x * iw, y0 = iy + crop_.y * ih, cw = crop_.w * iw, ch = crop_.h * ih;
         // Dim outside the selection.
@@ -482,6 +483,12 @@ int Canvas::handle(int event) {
     bool strip = filmstrip_at(mx, my) != -2 && event != FL_DRAG && event != FL_RELEASE;
     if (event == FL_PUSH && Fl::focus() != this) Fl::focus(this);
     if (!strip && draw_event(event, mx, my)) return 1;
+  }
+  if (app_->effects_open() && chrome_ && (event == FL_PUSH || event == FL_DRAG || event == FL_RELEASE ||
+                                          event == FL_MOVE || event == FL_ENTER)) {
+    bool strip = filmstrip_at(mx, my) != -2 && event != FL_DRAG && event != FL_RELEASE;
+    if (event == FL_PUSH && Fl::focus() != this) Fl::focus(this);
+    if (!strip && effects_event(event, mx, my)) return 1;
   }
   switch (event) {
     case FL_ENTER:

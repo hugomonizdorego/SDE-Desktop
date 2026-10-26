@@ -27,7 +27,11 @@
 #include "buffered_window.h"
 #include "album.h"
 #include "collections.h"
+#include "desktop_entry.h"
+#include "editors.h"
 #include "library.h"
+#include "places.h"
+#include "plugins.h"
 #include "media.h"
 #include "menu.h"
 #include "menubar.h"
@@ -45,13 +49,16 @@ class GalleryWindow;
 // Device and Browse views show photos outside the library (removable
 // media, or a folder opened with File > Open Folder) without adding them.
 // Album views show the photos of an album the user made (its list file).
-enum class ViewKind { All, Favorites, Recent, Screenshots, Folder, Device, Browse, Album };
+// Places and Duplicates are made by plugins: photos grouped by where they
+// were taken, and groups of copies.
+enum class ViewKind { All, Favorites, Recent, Screenshots, Folder, Device, Browse, Album, Places, Duplicates };
 
 struct View {
   ViewKind kind = ViewKind::All;
   std::string folder;  // for Folder, Device (mount point), Browse, and the Album's list file
   bool operator==(const View &o) const { return kind == o.kind && folder == o.folder; }
   bool external() const { return kind == ViewKind::Device || kind == ViewKind::Browse; }
+  bool grouped() const { return kind == ViewKind::Places || kind == ViewKind::Duplicates; }
   Album album() const;  // the same set as an album id for Photo
 };
 
@@ -75,6 +82,7 @@ class Sidebar : public Fl_Widget {
   int row_at(int my) const;
   GalleryWindow *app_;
   int hover_ = -1, focus_ = 0, tip_row_ = -1;
+  double scroll_ = 0;  // rows scrolled under the logo (short windows)
   bool hover_remove_ = false;
   void activate(const Row &row);
   std::string tip_;
@@ -172,6 +180,8 @@ class Viewer : public Fl_Widget {
   void full_loaded(const Result &r);
   void stop_slideshow();
   void photos_changed();  // the view list changed under the viewer
+  void file_changed(const std::string &path);  // rewritten on disk: show it again
+  void edit_menu(int x, int y);                // Edit with, below the toolbar
 
  private:
   struct Button {
@@ -191,6 +201,23 @@ class Viewer : public Fl_Widget {
   void load_current();
   void toggle_slideshow();
   static void slideshow_cb(void *p);
+  static void transition_cb(void *p);
+  void next_slide();
+  void start_transition();
+  cairo_surface_t *screen_image();  // the photo at screen size (slideshows)
+  void paint_slide(cairo_t *cr, sde::Painter &p, cairo_surface_t *s, double alpha, double dx, double zoom,
+                   double drift);
+  // Slideshow transitions (the Slideshow Transitions plugin).
+  enum Transition { NoTransition, Crossfade, Slide, KenBurns };
+  Transition transition_kind_ = NoTransition;
+  double interval_ = 4;                  // seconds a photo is shown
+  bool loop_ = true;
+  cairo_surface_t *previous_ = nullptr;  // the photo shown before, while it goes
+  cairo_surface_t *screen_ = nullptr;    // full_ at screen size
+  double transition_ = 1;                // 0 -> 1 while changing photos
+  double transition_start_ = 0, shown_at_ = 0;
+  bool waiting_ = false;                 // the next photo is being loaded
+  int direction_ = 1;
   bool keyboard(int key, int state);
   void draw_info(sde::Painter &p, double x, double y, double w, double h);
   const Photo *photo() const;
@@ -302,6 +329,42 @@ class GalleryWindow : public sde::BufferedWindow {
   void edit_in_photo(const std::string &path);  // Photo with this view as album
   void preview(int index);                       // the built-in quick preview
   void open_with(const std::string &path);
+
+  // Edit with (tools.cpp): Photo or another installed image editor. The
+  // default editor ([gallery] editor, a desktop file ID; "" is Photo) is
+  // what Ctrl+E uses. Folders of photos edited elsewhere are watched, so
+  // what the other program saves shows up here.
+  void edit_with_default(const std::vector<std::string> &paths);
+  void edit_with(const std::vector<std::string> &paths, const std::string &app_id);  // "" Photo
+  sde::ContextMenu edit_with_menu(const std::vector<std::string> &paths);
+  void edit_with_popup(const std::vector<std::string> &paths, int x = -1, int y = -1);
+  void edit_with_other(const std::vector<std::string> &paths);
+  std::string default_editor_name() const;
+  void set_default_editor(const std::string &app_id);
+  const std::vector<sde::DesktopEntry> &applications();
+  void watch_folder(const std::string &dir);
+  void file_events(const std::vector<GalleryEvent> &events);
+
+  // Plugins (tools.cpp): built-in ones that can be switched off, and
+  // action plugins (*.plugin files) that run a program on photos.
+  bool plugin_on(const std::string &id) const;
+  void load_plugins();
+  void show_plugins();
+  void run_action(size_t index, const std::vector<std::string> &paths);
+  void add_action_items(sde::ContextMenu &m, const std::vector<std::string> &paths);
+  void create_collage(const std::vector<std::string> &paths);
+
+  // Gallery's other plugins (batch.cpp, places.cpp, duplicates.cpp).
+  void slideshow_settings();
+  void email_settings();
+  void rename_files(const std::vector<std::string> &paths);
+  void convert_files(const std::vector<std::string> &paths);
+  void print_files(const std::vector<std::string> &paths);
+  void find_duplicates();
+  void select_extra_copies();
+  void import_camera();
+  size_t located_count() const { return places_count_; }
+  bool locating() const { return locating_; }
   void set_wallpaper(const std::string &path);
   void show_in_files(const std::string &path);
   void copy_paths(const std::vector<std::string> &paths);
@@ -314,6 +377,7 @@ class GalleryWindow : public sde::BufferedWindow {
 
  private:
   void rebuild_view(bool keep_scroll = false);
+  void rebuild_menu();
   void build_menu();
   void update_menu();
   void refresh_devices();
@@ -399,6 +463,32 @@ class GalleryWindow : public sde::BufferedWindow {
   int header_h_ = 0;
   std::string toast_;
   static GalleryWindow *instance_;
+  // Edit with and plugins (tools.cpp).
+  std::string editor_;  // the default editor's desktop file ID, "" Photo
+  std::vector<sde::DesktopEntry> apps_;
+  std::string apps_stamp_;
+  std::unique_ptr<FolderWatch> watch_;
+  std::vector<GalleryEvent> watch_pending_;
+  static void watch_cb(int fd, void *p);
+  static void watch_timer_cb(void *p);
+  std::map<std::string, bool> plugins_;
+  std::vector<ActionPlugin> actions_;
+  // Places: GPS positions read in the background, grouped by place.
+  void start_locating();
+  static void locate_awake_cb(void *p);
+  std::vector<Photo> places_view(std::vector<Group> &groups);
+  bool locating_ = false, located_ = false, relocate_ = false;
+  size_t places_count_ = 0;
+  std::thread locate_thread_;
+  std::map<std::string, std::pair<time_t, std::pair<double, double>>> locations_;  // path -> mtime, lat/lon
+  std::set<std::string> no_location_;
+  std::vector<Place> gazetteer_;  // read when the Places view is first shown
+  // Duplicates: groups of paths, the copy to keep first.
+  std::vector<std::vector<std::string>> duplicates_;
+  std::vector<std::string> duplicate_labels_;
+  bool finding_duplicates_ = false;
+  std::vector<Photo> duplicates_view(std::vector<Group> &groups);
+  friend class Viewer;
 };
 
 }  // namespace gallery

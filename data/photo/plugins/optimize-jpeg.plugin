@@ -1,0 +1,12 @@
+# An action plugin of Photo (docs/PHOTO.md, "Action plugins"): listed under
+# Tools when jpegoptim is installed.
+[SDE Plugin]
+Type=Action
+Name=Make JPEG File Smaller
+Comment=Optimizes the JPEG file without changing a pixel, the photo details or the date (jpegoptim)
+Icon=document-save
+Exec=jpegoptim --preserve --quiet %f
+TryExec=jpegoptim
+MimeType=image/jpeg;
+Files=single
+Changes=true

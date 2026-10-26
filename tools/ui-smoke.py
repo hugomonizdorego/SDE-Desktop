@@ -1016,6 +1016,13 @@ try:
             run("xdotool", "windowclose", native, check=False)
             if engine.poll() is None:
                 engine.terminate()
+        # Photo's collage editor (docs/PHOTO.md) with the sample picture twice.
+        engine = spawn("sde-view", "--collage", "--", str(picture), str(picture))
+        native = find("^Collage of")
+        shot("10-engine-photo-collage")
+        run("xdotool", "windowclose", native, check=False)
+        if engine.poll() is None:
+            engine.terminate()
         # The actual sudo command exercises the compiled Liria root startup path.
         # Xvfb is private; no authentication or power operation is triggered.
         root_folder = home / "Liria-Administrator-Check"

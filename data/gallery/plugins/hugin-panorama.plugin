@@ -1,0 +1,11 @@
+# An action plugin of the Gallery (docs/GALLERY.md, "Action plugins"):
+# listed under Tools and in the photo menu when Hugin is installed.
+[SDE Plugin]
+Type=Action
+Name=Stitch a Panorama
+Comment=Opens the photos in Hugin, which stitches overlapping photos into one panorama
+Icon=hugin
+Exec=hugin %F
+TryExec=hugin
+MimeType=image/jpeg;image/png;image/tiff;
+Files=multiple
