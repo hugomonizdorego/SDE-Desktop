@@ -674,6 +674,24 @@ static void test_helper_contract() {
   CHECK(parse_event("whatever").type == Event::Type::none);
 }
 
+static void test_policy() {
+  Policy p = parse_policy(
+      "waveform-studio:\n  Installed: 3.1.4-2\n  Candidate: 3.2.0-1\n  Version table:\n"
+      "     3.2.0-1 500\n        500 http://deb.debian.org/debian testing/main amd64 Packages\n"
+      "        100 http://deb.debian.org/debian unstable/main amd64 Packages\n"
+      " *** 3.1.4-2 100\n        100 /var/lib/dpkg/status\n");
+  CHECK_EQ(p.name, std::string("waveform-studio"));
+  CHECK_EQ(p.installed, std::string("3.1.4-2"));
+  CHECK_EQ(p.candidate, std::string("3.2.0-1"));
+  CHECK(p.versions.size() == 2);
+  CHECK_EQ(p.repo_version(), std::string("3.2.0-1"));
+  CHECK_EQ(p.repo_source(), std::string("http://deb.debian.org/debian testing/main amd64 Packages"));
+  p = parse_policy("zq:\n  Installed: (none)\n  Candidate: (none)\n  Version table:\n"
+                   " *** 1.0 100\n        100 /var/lib/dpkg/status\n");
+  CHECK(p.installed.empty() && p.candidate.empty() && p.repo_version().empty());
+  CHECK(parse_policy("").name.empty());
+}
+
 static void test_sources() {
   std::vector<std::string> urls = source_urls(
       "echo 'deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft.gpg] "
@@ -716,6 +734,7 @@ int main() {
   test_checks();
   test_helper_contract();
   test_sources();
+  test_policy();
   std::string cmd = "rm -rf '" + g_tmp + "'";
   if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", g_tmp.c_str());
   if (g_failures) {

@@ -484,6 +484,19 @@ bool valid_architecture(const std::string &arch) {
   return true;
 }
 
+std::string format_size(long long bytes) {
+  if (bytes < 0) return _("Unknown");
+  if (bytes < 1000) return format(_("%lld bytes"), bytes);
+  const char *units[] = {"kB", "MB", "GB", "TB"};
+  double v = double(bytes);
+  int u = -1;
+  while (v >= 1000 && u < 3) {
+    v /= 1000;
+    ++u;
+  }
+  return format(v >= 100 ? "%.0f %s" : "%.1f %s", v, units[u]);
+}
+
 int compare_versions(const std::string &a, const std::string &b) {
   Version x = split_version(a), y = split_version(b);
   if (x.epoch != y.epoch) return x.epoch < y.epoch ? -1 : 1;
@@ -925,6 +938,15 @@ std::vector<std::string> source_urls(const std::string &text) {
     add(token_at(i));
   }
   return out;
+}
+
+const char *change_id(Change::Kind kind) {
+  static const char *const ids[] = {"apt_source", "apt_key",     "scripts", "downloads",    "cron",
+                                    "service",    "autostart",   "setuid",  "users",        "sudoers",
+                                    "polkit",     "udev",        "kernel",  "pam",          "environment",
+                                    "alternatives", "debconf",   "conffiles", "essential"};
+  size_t i = size_t(kind);
+  return i < sizeof ids / sizeof ids[0] ? ids[i] : "?";
 }
 
 std::vector<Change> system_changes(const Package &p) {

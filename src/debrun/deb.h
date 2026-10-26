@@ -62,6 +62,8 @@ bool valid_version(const std::string &version);
 // Architecture names: "all", "any" or dpkg's lowercase names (amd64,
 // arm64, armhf, i386, riscv64 ...).
 bool valid_architecture(const std::string &arch);
+// "84.2 MB" (decimal units, as Merkadu and the Software Updater show them).
+std::string format_size(long long bytes);
 // <0, 0 or >0 like dpkg --compare-versions (epochs, '~' before everything,
 // letters before other characters, numbers compared as numbers).
 int compare_versions(const std::string &a, const std::string &b);
@@ -180,6 +182,8 @@ struct Change {
   std::vector<std::string> details;  // files, URLs, script names (shown as a list)
 };
 std::vector<Change> system_changes(const Package &p);
+// "apt_source", "scripts" ... (for logs and tests).
+const char *change_id(Change::Kind kind);
 // Package source URLs written by the maintainer scripts or files
 // ("deb [signed-by=...] https://dl.google.com/linux/chrome/deb/ stable
 // main", or "URIs:" of a .sources file).

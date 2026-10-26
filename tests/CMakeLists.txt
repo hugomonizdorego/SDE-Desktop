@@ -287,3 +287,13 @@ endif()
 add_executable(debrun-tests test_debrun.cpp)
 target_link_libraries(debrun-tests PRIVATE debrun-core debrun-base)
 add_test(NAME debrun-model COMMAND debrun-tests)
+# Debrun's window with generated packages and a fake package system
+# (tools/debrun_fixture.py), and the PackageKit backend against a fake
+# PackageKit on a private bus (debrun-fake-packagekit, not installed).
+add_executable(debrun-fake-packagekit fake_packagekit.cpp)
+target_link_libraries(debrun-fake-packagekit PRIVATE PkgConfig::DBUS)
+if(SDE_XVFB)
+  add_test(NAME debrun-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_debrun_ui.py
+    $<TARGET_FILE:debrun> $<TARGET_FILE:debrun-fake-packagekit>)
+  set_tests_properties(debrun-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()

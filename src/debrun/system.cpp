@@ -282,6 +282,54 @@ AptPlan parse_apt_output(const std::string &output, int status) {
 }
 
 std::string apt_get_program() { return env("DEBRUN_APT_GET", "apt-get"); }
+std::string apt_cache_program() { return env("DEBRUN_APT_CACHE", "apt-cache"); }
+
+Policy parse_policy(const std::string &output) {
+  Policy p;
+  bool table = false;
+  for (const auto &raw : split(output, '\n')) {
+    std::string t = trim(raw);
+    if (!raw.empty() && raw[0] != ' ' && ends_with(t, ":")) {
+      if (!p.name.empty()) break;  // only the first package
+      p.name = t.substr(0, t.find(':'));
+    } else if (starts_with(t, "Installed:")) {
+      p.installed = trim(t.substr(10));
+      if (p.installed == "(none)") p.installed.clear();
+    } else if (starts_with(t, "Candidate:")) {
+      p.candidate = trim(t.substr(10));
+      if (p.candidate == "(none)") p.candidate.clear();
+    } else if (starts_with(t, "Version table:")) {
+      table = true;
+    } else if (table && !t.empty()) {
+      // "*** 1.0-1 500" or "1.0-1 500": a version; "500 http://..." its sources.
+      std::string line = starts_with(t, "*** ") ? trim(t.substr(4)) : t;
+      std::vector<std::string> words;
+      for (auto &w : split(line, ' '))
+        if (!w.empty()) words.push_back(w);
+      bool source = words.size() >= 2 && std::all_of(words[0].begin(), words[0].end(), ::isdigit) &&
+                    (words[1][0] == '/' || words[1].find("://") != std::string::npos);
+      if (source) {
+        if (!p.versions.empty() && p.versions.back().second.empty())
+          p.versions.back().second = line.substr(line.find(words[1]));
+      } else if (words.size() == 2 && valid_version(words[0])) {
+        p.versions.emplace_back(words[0], "");
+      }
+    }
+  }
+  return p;
+}
+
+std::string Policy::repo_version() const {
+  for (const auto &v : versions)
+    if (!v.second.empty() && v.second[0] != '/') return v.first;
+  return "";
+}
+
+std::string Policy::repo_source() const {
+  for (const auto &v : versions)
+    if (!v.second.empty() && v.second[0] != '/') return v.second;
+  return "";
+}
 
 std::vector<std::string> simulate_install_argv(const std::string &deb, bool reinstall, bool downgrade) {
   std::vector<std::string> argv = {apt_get_program(), "--simulate", "-q", "-o", "Debug::NoLocking=true",

@@ -99,6 +99,22 @@ std::string apt_get_program();
 // worker threads.
 std::string run_capture(const std::vector<std::string> &argv, int *status, int timeout_seconds = 120);
 
+// apt-cache policy NAME: the versions the package sources offer.
+struct Policy {
+  std::string name;                  // the package it is about
+  std::string installed, candidate;  // "" for "(none)"
+  // The versions of the version table, highest first, each with its first
+  // source ("http://deb.debian.org/debian testing/main amd64 Packages" or
+  // "/var/lib/dpkg/status").
+  std::vector<std::pair<std::string, std::string>> versions;
+  // The highest version a package source offers (not only dpkg's status), "".
+  std::string repo_version() const;
+  std::string repo_source() const;
+};
+Policy parse_policy(const std::string &output);
+// apt-cache (or DEBRUN_APT_CACHE).
+std::string apt_cache_program();
+
 // ------------------------------------------------------------ relations
 
 struct DepCheck {

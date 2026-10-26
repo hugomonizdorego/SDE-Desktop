@@ -29,3 +29,18 @@ configure_file(${PROJECT_SOURCE_DIR}/data/polkit/org.debion.sde.debrun.policy.in
                ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.debrun.policy @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.debrun.policy
         DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
+
+# The program: the window and the two backends (backend.h). The animated
+# SDE logo and PackageKit's enums are Merkadu's (src/merkadu/logo_anim.*,
+# pkenum.*), the page widgets the Control Center's (settings/ui.cpp).
+add_executable(debrun
+  ${_src}/debrun/main.cpp
+  ${_src}/debrun/window.cpp
+  ${_src}/debrun/helper_client.cpp
+  ${_src}/debrun/packagekit.cpp
+  ${_src}/merkadu/logo_anim.cpp
+  ${_src}/merkadu/pkenum.cpp
+  ${_src}/settings/ui.cpp)
+target_include_directories(debrun PRIVATE ${_src}/settings)
+target_link_libraries(debrun PRIVATE debrun-core sde-common)
+install(TARGETS debrun RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
