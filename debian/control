@@ -251,7 +251,10 @@ Recommends: debion-desktop-base (>= ${source:Version}),
             network-manager-gnome,
             glib-networking,
             ca-certificates,
-            systemd-timesyncd | time-daemon
+            systemd-timesyncd | time-daemon,
+            gnome-keyring,
+            libpam-gnome-keyring
+Suggests: wsdd
 Description: Selviana Desktop Environment - full desktop (metapackage)
  One installation entry point for the complete Selviana Desktop Environment:
  the SDE session and applications, display server, login manager, network
