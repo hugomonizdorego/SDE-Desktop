@@ -151,6 +151,103 @@ the page lists the accounts of `/etc/passwd` and says what to install;
 nothing can be added or changed there. Your picture still works through
 `~/.face`.
 
+### The full name
+
+The **Full name** (AccountsService's `RealName`, the GECOS field) is
+changed in place: your own with **Save** (no password), another person's
+with **Save Name** (an administrator's). The Start menu, the panel's
+account menu, the Control Center overview and the lock screen follow at once
+(the `_SDE_AVATAR_SERIAL` property of the root window tells them); the login
+screen (LightDM's greeter reads AccountsService) shows it at the next login.
+
+### Renaming an account
+
+The **User name** row of your account and of every person's card has
+**Rename…**: a new login name, checked as it is typed (the rules of
+**Add User…**, not the name of another account, group or pending rename),
+with what becomes of the home folder (`/home/sam` becomes `/home/samuel`;
+a folder not named after the account keeps its name) and **Link from the
+old folder** (a link `/home/sam → samuel` for programs that remember the
+old path; the old name then stays taken in `/home`).
+
+A login name cannot change while the person is logged in — their programs
+hold the home folder and know the name — so **Rename at Restart** only
+records the request; the rename is made at the next start of the computer,
+before anyone can log in. Until then the row says **Will be renamed to
+*samuel* at the next restart** (and the list "Renamed to *samuel* at the
+next restart") with **Cancel Rename**. A rename that failed at the last
+start says why (for example, programs of the account were running), with
+**Dismiss**; nothing was changed then.
+
+Who may: your own account with your own password (polkit action
+`org.debion.sde.account-rename.schedule-self`, `auth_self_keep`), other
+people's accounts with an administrator's
+(`org.debion.sde.account-rename.schedule`, `auth_admin_keep`; Cancel:
+`cancel-self` and `cancel`). Only people's accounts (UID_MIN to UID_MAX of
+`/etc/login.defs`) are renamed; root keeps its name.
+
+How (`sde-account-rename`, `man 8 sde-account-rename`):
+
+1. The Control Center runs `pkexec /usr/libexec/sde/sde-account-rename
+   schedule-self|schedule --uid UID --old NAME --new NAME [--link]`. The
+   helper checks everything again as root (the account still has that name
+   and UID; the new name is valid, not a user or group, not pending for
+   another account, its home folder does not exist) and refuses a new name
+   that the system already grants something to: a member of a group in
+   `/etc/group` or `/etc/gshadow`, a user in sudo rules (`/etc/sudoers` and
+   `sudoers.d`), polkit rules, sshd's `AllowUsers`/`DenyUsers`/`Match`,
+   `/etc/security/access.conf`, `cron.allow` or `at.allow` (whoever got
+   that name would get those rights). It writes
+   `/var/lib/sde/account-renames/UID.rename` (key=value lines, mode 0644)
+   and logs to the authpriv syslog and `/var/log/sde-account-rename.log`.
+2. `sde-account-rename.service` (enabled by the package, skipped when the
+   directory is empty) runs `sde-account-rename apply` early at boot:
+   after the local file systems, before `systemd-user-sessions`,
+   `systemd-logind`, the display manager, AccountsService and cron. A
+   request is postponed when programs of the account run anyway. In order,
+   each step journaled first (`UID.journal`, with copies of the files it
+   changes):
+   - `/etc/passwd`, `shadow`, `group`, `gshadow`, `subuid` and `subgid` are
+     saved, then `usermod -l NEW -d /home/NEW -m OLD` (also the groups the
+     account is a member of) and `groupmod -n NEW OLD` for its own group;
+   - AccountsService's `users/OLD` and `icons/OLD` (and the `Icon=` line);
+   - automatic login: `autologin-user=` of LightDM (`lightdm.conf` and
+     `lightdm.conf.d`), `AutomaticLogin=`/`TimedLogin=` of GDM;
+   - the crontab (`/var/spool/cron/crontabs`), the mail spool (`/var/mail`);
+   - `/etc/subuid` and `/etc/subgid`;
+   - sudo drop-ins in `/etc/sudoers.d` (the name and `/home/OLD/` paths),
+     each checked with `visudo -c` before it replaces the old file;
+     `/etc/sudoers` itself (the sudo package's file) is only reported;
+   - systemd's linger flag (`/var/lib/systemd/linger`);
+   - the link from the old home folder, when asked for.
+   Files that still name the old account (sshd, polkit rules) are listed in
+   the log. When a step fails, the steps made are undone in reverse order
+   (the account database restored from the saved copies, the home folder
+   moved back) and the request is marked failed with the reason. When the
+   computer stops in the middle, the journal is undone at the next start.
+3. The requests are deleted once made. Programs that stored the old home
+   path in their own settings may need the link, or to be told the new
+   folder.
+
+### Tests of renaming
+
+- `tests/test_account_rename.cpp` (CTest `account-rename`): the name rules,
+  request files, the files that name a user, the checks and the file
+  edits; as root (usermod and groupmod with `--prefix`), whole renames in a
+  fake root, a failure at every step undone to the byte, and interrupted
+  renames undone by the next start; the helper's commands and refusals
+  (`--root`, `--dir` and `--fail-at` are for tests and refused through
+  pkexec).
+- `tests/test_account_rename_ui.py` (CTest `account-rename-ui`): the page
+  with the fake AccountsService and the real helper on a fake root
+  (`SDE_ACCOUNT_RENAME_HELPER`, `SDE_ACCOUNT_RENAME_DIR`,
+  `SDE_ACCOUNT_RENAME_ROOT`): a taken name refused, a rename recorded,
+  shown and cancelled, a failed one dismissed, 1024 × 600 at 150 %.
+- Never against the accounts of the computer running the tests; a manual
+  check on a test machine: `useradd -m test1`, `sde-account-rename schedule
+  --uid … --old test1 --new test2`, `sde-account-rename apply`, then
+  `userdel -r test2`.
+
 ### Tests
 
 - `tests/test_accounts.cpp` (CTest `sde-accounts-model`): spelling user

@@ -71,6 +71,7 @@ jobs:
             "$p" --version
           done
           debrun --version && sde-appimage --version && test -x /usr/libexec/sde/debrun-helper
+          /usr/libexec/sde/sde-account-rename --version && test -f /usr/lib/systemd/system/sde-account-rename.service
           # SDE's own ecosystem: no distribution FLTK, xsettingsd or polkit agent.
           test -x /usr/bin/sde-xsettingsd && test -x /usr/libexec/sde/sde-polkit-agent
           ! ldd /usr/bin/sde-panel | grep -q libfltk

@@ -442,6 +442,7 @@ install(FILES ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.account-rename.policy
 configure_file(${PROJECT_SOURCE_DIR}/data/systemd/sde-account-rename.service.in
                ${CMAKE_BINARY_DIR}/systemd/sde-account-rename.service @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/systemd/sde-account-rename.service DESTINATION lib/systemd/system)
+install(FILES ${PROJECT_SOURCE_DIR}/data/man/sde-account-rename.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)

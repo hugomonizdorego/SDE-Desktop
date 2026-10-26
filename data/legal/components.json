@@ -114,7 +114,7 @@
       "name": "Control Center",
       "kind": "application",
       "summary": "Settings and system information",
-      "programs": ["sde-settings", "sde-control-center"],
+      "programs": ["sde-settings", "sde-control-center", "sde-account-rename"],
       "desktop": ["sde-settings.desktop"],
       "metainfo": "org.debion.Settings.metainfo.xml",
       "icons": ["sde-control-center", "preferences-desktop", "preferences-system"],
