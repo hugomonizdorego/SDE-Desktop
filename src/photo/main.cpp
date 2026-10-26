@@ -17,6 +17,7 @@
 
 #include "about.h"
 #include "build_config.h"
+#include "collage_ui.h"
 #include "config.h"
 #include "i18n.h"
 #include "icons.h"
@@ -67,6 +68,8 @@ void usage() {
                  "  --slideshow     play a slideshow of the folder in Gallery\n"
                  "  --fullscreen    start in full screen\n"
                  "  --draw          open the drawing tools (Draw tab)\n"
+                 "  --effects       open the Effects tab (blur, red eyes, frame, watermark)\n"
+                 "  --collage       make a collage of the files (any number of photos)\n"
                  "  --version       print the version\n"
                  "  --help          show this help\n\n"
                  "Settings are kept in the [photo] section of ~/.config/sde/sde.conf.\n"));
@@ -79,7 +82,7 @@ int main(int argc, char **argv) {
   sde::set_default_window_icon({"sde-photo", "sdeview"});  // title bar and taskbar
   std::vector<std::string> files;
   std::string album_arg, sort_arg;
-  bool slideshow = false, full = false, draw = false, options = true;
+  bool slideshow = false, full = false, draw = false, effects = false, collage = false, options = true;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (options && a == "--") {
@@ -94,6 +97,8 @@ int main(int argc, char **argv) {
       }
       if (a == "--slideshow") slideshow = true;
       else if (a == "--draw") draw = true;
+      else if (a == "--effects") effects = true;
+      else if (a == "--collage") collage = true;
       else if (a == "--fullscreen") full = true;
       else if (starts_with(a, "--album=")) album_arg = a.substr(8);
       else if (a == "--album" && i + 1 < argc) album_arg = argv[++i];
@@ -105,6 +110,32 @@ int main(int argc, char **argv) {
       continue;
     }
     files.push_back(absolute(a));
+  }
+
+  if (collage) {
+    // The collage editor alone; "Open in Photo" makes a Photo window later.
+    Config config;
+    config.load();
+    fl_open_display();
+    Theme::from_config(config).apply_to_fltk();
+    fl_register_images();
+    Fl::lock();  // worker threads wake the main loop
+    std::vector<std::string> photos;
+    for (const auto &f : files) {
+      if (!dir_exists(f)) {
+        photos.push_back(f);
+        continue;
+      }
+      // A folder: its photos, by name.
+      auto in_dir = gallery::scan_directory(f, gallery::extra_formats());
+      gallery::sort_photos(in_dir, gallery::Sort::Name);
+      for (const auto &p : in_dir) photos.push_back(p.path);
+    }
+    photo::open_collage(photos);
+    int status = Fl::run();
+    delete photo::CollageWindow::instance();
+    delete photo::PhotoWindow::instance();
+    return status;
   }
 
   gallery::Album album;
@@ -182,8 +213,10 @@ int main(int argc, char **argv) {
   }
   if (slideshow) window->toast(_("Slideshows need Gallery (sde-gallery)"));
   if (draw) window->open_draw_when_loaded();
+  if (effects) window->open_effects_when_loaded();
   Fl::focus(window->canvas());
   int status = Fl::run();
+  delete photo::CollageWindow::instance();
   delete window;
   return status;
 }

@@ -1,0 +1,12 @@
+# An action plugin of the Gallery (docs/GALLERY.md, "Action plugins"):
+# listed under Tools and in the photo menu when OptiPNG is installed.
+[SDE Plugin]
+Type=Action
+Name=Make PNG Files Smaller
+Comment=Recompresses PNG files without changing a pixel (OptiPNG)
+Icon=document-save
+Exec=optipng -quiet -preserve -o2 %F
+TryExec=optipng
+MimeType=image/png;
+Files=multiple
+Changes=true

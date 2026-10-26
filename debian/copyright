@@ -109,6 +109,20 @@ Copyright: 2026 Selviana DE Project and contributors
 License: GPL-3.0-or-later
 Comment: SDE theme palettes, overlays and the generated Openbox themes.
 
+Files: data/gallery/places.tsv
+Copyright: 2026 Selviana DE Project and contributors (selection and format)
+License: public-domain
+ The data is Natural Earth's, which is in the public domain: "All versions
+ of Natural Earth raster + vector map data found on this website are in the
+ public domain. You may use the maps in any manner, including modifying the
+ content and design, electronic dissemination, and offset printing."
+ (https://www.naturalearthdata.com/about/terms-of-use/)
+Comment: The Gallery's offline list of places (the Places plugin), made by
+ tools/natural-earth-places.py from Natural Earth's 1:10m populated places
+ (ne_10m_populated_places_simple), by Tom Patterson, Nathaniel Vaughn Kelso
+ and the Natural Earth contributors.
+ Source: https://www.naturalearthdata.com/
+
 Files: vendor/themes/graphite-gtk-theme/*
 Copyright: 2021-2025 Vince Liu (vinceliuice)
 License: GPL-3.0-only

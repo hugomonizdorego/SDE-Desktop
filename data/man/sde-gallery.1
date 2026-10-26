@@ -3,7 +3,7 @@
 sde-gallery \- Gallery, the SDE photo library
 .SH SYNOPSIS
 .B sde-gallery
-[\-\-select FILE] [\-\-slideshow FILE] [\-\-import] [\fIFOLDER\fR]
+[\-\-select FILE] [\-\-slideshow FILE] [\-\-import] [\-\-plugins] [\fIFOLDER\fR]
 .br
 .B sde-gallery
 \-\-version | \-\-help
@@ -126,6 +126,27 @@ in Gallery.
 .PP
 Files are never deleted permanently: Move to Trash uses the
 freedesktop.org Trash through GIO.
+.SS Edit with
+Edit with Photo (Ctrl+E) opens the photo in Photo, or in the default
+editor chosen under Edit With \(-> Default Editor. Edit With (E, and in the
+photo menu and the viewer) lists Photo first, then the image editors
+installed for the photo's type (GIMP, Krita, Inkscape for SVG ...) and
+Other Application. Changes that other programs save show up at once:
+Gallery watches the folders of the photos it handed to them.
+.SS Plugins
+Tools \(-> Plugins switches the built-in plugins on and off: Collage,
+Slideshow Transitions, Places (photos grouped by where they were taken,
+offline), Find Duplicates, Batch Rename (F2), Convert Format, Print, Send
+by Email and Cameras and Phones (MTP and PTP through GIO, or gphoto2).
+Action plugins, small
+.I .plugin
+files in
+.I ~/.local/share/sde/gallery/plugins
+and
+.IR /usr/share/sde/gallery/plugins ,
+run a program on the selected photos without a shell. See
+.I /usr/share/doc/sde/GALLERY.md
+for the format and the plugins.
 .SH KEYS
 .TP
 .B Arrows, Page Up/Down, Home, End
@@ -176,6 +197,9 @@ starting with it.
 .B \-\-import
 Import photos from a connected camera or card.
 .TP
+.B \-\-plugins
+Show the Plugins window.
+.TP
 .B \-\-version
 Print the version and exit.
 .TP
@@ -195,7 +219,16 @@ keeps
 .B sidebar=
 and
 .BR open_in_photo=
-(default true).
+(default true),
+.B editor=
+(the default editor's desktop file, empty for Photo), and
+.BI plugin_ ID =
+and
+.BI action_ ID =
+(false switches a plugin off).
+.TP
+.I ~/.cache/sde/gallery/locations.tsv
+The positions read from the photos (Places).
 Set as Wallpaper writes
 .B wallpaper=
 in

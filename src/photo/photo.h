@@ -6,13 +6,14 @@
 //   PhotoWindow  the window: header bar, actions, files and saving
 //   Canvas       the image: zoom and pan, crop overlay, drawing, filmstrip, GIFs
 //   SidePanel    photo information, and the editing tools (Adjust, Filters,
-//                Crop, Draw)
+//                Crop, Draw, and Effects when its plugins are on)
 //
 // Photo views and edits one image at a time; the library (albums,
 // favorites, slideshows, import, batch actions) is Gallery's job.
 #pragma once
 
 #include <FL/Fl_Group.H>
+#include <FL/Fl_Input.H>
 #include <FL/Fl_Int_Input.H>
 #include <FL/Fl_Menu_Button.H>
 #include <FL/Fl_Widget.H>
@@ -35,6 +36,7 @@
 #include "library.h"
 #include "line_icons.h"
 #include "paint.h"
+#include "plugins.h"
 #include "save.h"
 #include "theme.h"
 #include "thumbnails.h"
@@ -132,6 +134,14 @@ class Canvas : public Fl_Widget {
   ViewMap screen_map() const;  // image coordinates to the screen
   int draw_event(int event, int mx, int my);
   void draw_overlay(sde::Painter &p);
+  // The Effects tab (effects.cpp): clicks choose the sharp point of the
+  // background blur, or fix red eyes.
+  int effects_event(int event, int mx, int my);
+  void draw_effects_overlay(sde::Painter &p);
+  bool content_rect(double &x, double &y, double &w, double &h) const;  // the photo inside a frame
+  void set_focus_point(int mx, int my, bool amend);
+  void add_red_eye(int mx, int my);
+  bool focus_drag_ = false;
   void commit_live();
   int handle_at(int mx, int my) const;  // corner of the selection box, -1
   Mark style_mark(MarkKind kind) const;  // a new mark with the panel's settings
@@ -178,7 +188,7 @@ class Canvas : public Fl_Widget {
 class SidePanel : public Fl_Group {
  public:
   enum Mode { Info, Edit };
-  enum Tab { Adjust, Filters, Crop, Draw };
+  enum Tab { Adjust, Filters, Crop, Draw, Effects };
   SidePanel(PhotoWindow *app, int x, int y, int w, int h);
   void draw() override;
   int handle(int event) override;
@@ -190,6 +200,9 @@ class SidePanel : public Fl_Group {
   // The edits or the photo changed: update the controls.
   void sync();
   void info_changed() { redraw(); }
+  // The Effects tab is shown when one of its plugins is on.
+  bool effects_available() const;
+  int tab_count() const { return effects_available() ? 5 : 4; }
 
   void layout();
 
@@ -219,6 +232,33 @@ class SidePanel : public Fl_Group {
   int draw_top() const { return y() + sde::S(56); }
   int draw_bottom() const { return y() + h() - (draw_compact() ? sde::S(68) : sde::S(96)); }
   int draw_hover_ = -1;
+  // The Effects tab (effects.cpp), in the same area as the Draw tab.
+  void layout_effects(int px, int pw, int top);
+  void draw_effects_tab(sde::Painter *p);
+  void draw_effects_hint();
+  int effects_click(int mx, int my);  // 1 when handled
+  void effects_slider_changed();
+  void watermark_typed();
+  struct FxLabel {
+    double y = 0;
+    const char *text = nullptr;  // untranslated
+    int kind = 0;                // 0 section title, 1 slider label, 2 note
+    sde::Slider *slider = nullptr;
+  };
+  std::vector<HitBox> fx_boxes_;
+  std::vector<FxLabel> fx_labels_;
+  sde::Slider *fx_blur_ = nullptr, *fx_focus_ = nullptr, *fx_frame_ = nullptr, *fx_wm_size_ = nullptr,
+              *fx_wm_alpha_ = nullptr;
+  Fl_Input *fx_text_ = nullptr;
+  double fx_scroll_ = 0, fx_h_ = 0;
+  int fx_hover_ = -1;
+  bool fx_typing_ = false;
+  // Auto Enhance (Adjust tab), size presets (Crop tab) and the actions of
+  // Metadata & Privacy in the info view.
+  sde::FlatButton *auto_ = nullptr, *presets_ = nullptr;
+  double adjust_scroll_ = 0, adjust_h_ = 0;
+  std::vector<HitBox> info_boxes_;
+  int info_hover_ = -1;
   PhotoWindow *app_;
   Mode mode_ = Info;
   Tab tab_ = Adjust;
@@ -262,9 +302,14 @@ class PhotoWindow : public sde::BufferedWindow {
   void hide() override;
 
   const sde::Theme &theme() const { return theme_; }
+  static PhotoWindow *instance() { return instance_; }
+  // Shows |path| (with its folder) in the Photo window, which is made when
+  // there is none yet (e.g. after "Open in Photo" in the collage editor).
+  static void show_file(const std::string &path);
   // Opening.
   void open(const std::string &path, const gallery::Album &album, bool explicit_album,
             gallery::Sort sort);
+  void new_collage();
   void open_dialog();
   void go(int index);
   void step(int delta);
@@ -292,6 +337,7 @@ class PhotoWindow : public sde::BufferedWindow {
   void set_tool(Tool t);
   void open_draw();
   void open_draw_when_loaded() { draw_on_load_ = true; if (source_) open_draw(); }
+  void open_effects_when_loaded() { effects_on_load_ = true; if (source_) open_effects(); }
   void delete_selected_mark();
   // The panel's style changed: restyle the selected mark (one undo step
   // per slider drag when |amend|).
@@ -335,6 +381,28 @@ class PhotoWindow : public sde::BufferedWindow {
   void apply_theme();
   void update_title();
   Canvas *canvas() { return canvas_; }
+
+  // Plugins (tools.cpp): built-in ones that can be switched off, and
+  // action plugins (*.plugin files) that run a program on the photo.
+  bool plugin_on(const std::string &id) const;
+  void load_plugins();
+  void show_plugins();
+  void run_action(size_t index);
+  // The editing plugins (effects.cpp).
+  bool effects_open() const;  // the Effects tab is shown
+  void open_effects();
+  bool red_eye_mode() const { return red_eye_mode_; }
+  void set_red_eye_mode(bool on);
+  void auto_enhance();
+  void show_size_presets(Fl_Widget *anchor);
+  void apply_size_preset(int index);
+  // Metadata & Privacy: on the saved file, without encoding it again.
+  void remove_location();
+  void save_without_details();
+  void show_all_details();
+  bool has_removable_details();  // the saved file has metadata to remove
+  std::string watermark_text() const;  // the last one used
+  void remember_watermark(const std::string &text);
 
  private:
   struct Button {
@@ -397,8 +465,16 @@ class PhotoWindow : public sde::BufferedWindow {
   uint64_t render_result_gen_ = 0;
   int jpeg_quality_ = 92;
   DrawSettings draw_;
-  bool draw_on_load_ = false;
+  bool draw_on_load_ = false, effects_on_load_ = false;
   std::string toast_;
+  std::map<std::string, bool> plugins_;         // built-in plugin id -> on
+  std::vector<gallery::ActionPlugin> actions_;  // action plugins that are on
+  bool red_eye_mode_ = false;                   // clicks on the photo fix red eyes
+  std::string details_path_;                    // has_removable_details(), cached
+  time_t details_mtime_ = 0;
+  bool details_removable_ = false;
+  std::string watermark_;                       // the last watermark text
+  static void save_watermark_cb(void *p);
 
   Canvas *canvas_ = nullptr;
   SidePanel *panel_ = nullptr;

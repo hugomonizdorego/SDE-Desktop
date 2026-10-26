@@ -19,6 +19,7 @@
 #include <cstring>
 
 #include "build_config.h"
+#include "collage_ui.h"
 #include "config.h"
 #include "desktop_entry.h"
 #include "i18n.h"
@@ -29,6 +30,7 @@
 #include "process.h"
 #include "spawn.h"
 #include "util.h"
+#include "wm.h"
 #include "x11.h"
 
 using namespace sde;
@@ -49,7 +51,9 @@ enum MenuId {
   M_OPEN = 1, M_SAVE, M_SAVE_AS, M_COPY, M_WALLPAPER, M_PRINT, M_OPEN_WITH, M_SHOW_FILES, M_SHOW_GALLERY,
   M_TRASH, M_CLOSE, M_UNDO, M_REDO, M_ROT_LEFT, M_ROT_RIGHT, M_FLIP_H, M_FLIP_V, M_CROP, M_RESIZE,
   M_ADJUST, M_FILTERS, M_DRAW, M_DELETE_MARK, M_RESET, M_ZOOM_IN, M_ZOOM_OUT, M_FIT, M_ACTUAL, M_FILL, M_INFO,
-  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT
+  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT, M_NEW_COLLAGE, M_PLUGINS, M_AUTO, M_EFFECTS,
+  M_DETAILS, M_REMOVE_LOCATION, M_STRIP,
+  M_ACTION = 1000  // + the index of an action plugin
 };
 
 // The Photo icon (see sdeview.svg).
@@ -146,6 +150,7 @@ PhotoWindow::PhotoWindow(int w, int h) : BufferedWindow(w, h, _("Photo")) {
   resizable(nullptr);
   size_range(S(480), S(360));
   xclass("Sdeview");
+  load_plugins();
   build_menu();
   apply_theme();
   layout();
@@ -212,13 +217,15 @@ int PhotoWindow::x_event_handler(int) {
 // ----------------------------------------------------------------- menu
 
 void PhotoWindow::build_menu() {
+  menu_->clear();  // rebuilt when plugins are switched on or off
   auto add = [this](const std::string &label, int sc, long id, int flags = 0) {
     std::string l = label;
     menu_->add(l.c_str(), sc, menu_cb, reinterpret_cast<void *>(id), flags);
   };
   std::string f = std::string(_("File")) + "/", e = std::string(_("Edit")) + "/", v = std::string(_("View")) + "/",
               h = std::string(_("Help")) + "/";
-  add(f + _("Open…"), FL_CTRL + 'o', M_OPEN, FL_MENU_DIVIDER);
+  add(f + _("Open…"), FL_CTRL + 'o', M_OPEN, plugin_on("collage") ? 0 : FL_MENU_DIVIDER);
+  if (plugin_on("collage")) add(f + _("New Collage…"), FL_CTRL + 'n', M_NEW_COLLAGE, FL_MENU_DIVIDER);
   add(f + _("Save"), FL_CTRL + 's', M_SAVE);
   add(f + _("Save As…"), FL_CTRL + FL_SHIFT + 's', M_SAVE_AS);
   add(f + _("Copy Image"), FL_CTRL + 'c', M_COPY, FL_MENU_DIVIDER);
@@ -238,8 +245,10 @@ void PhotoWindow::build_menu() {
   add(e + _("Crop…"), 'c', M_CROP);
   add(e + _("Resize…"), 0, M_RESIZE);
   add(e + _("Adjust Colours…"), 'e', M_ADJUST);
+  if (plugin_on("autoenhance")) add(e + _("Auto Enhance"), 0, M_AUTO);
   add(e + _("Filters…"), 0, M_FILTERS);
   add(e + _("Draw and Annotate…"), 'd', M_DRAW);
+  if (panel_ && panel_->effects_available()) add(e + _("Effects…"), 0, M_EFFECTS);
   add(e + _("Delete Annotation"), 0, M_DELETE_MARK, FL_MENU_DIVIDER);
   add(e + _("Revert to Original"), 0, M_RESET);
   add(v + _("Zoom In"), '+', M_ZOOM_IN);
@@ -251,6 +260,21 @@ void PhotoWindow::build_menu() {
   add(v + _("Filmstrip"), 'b', M_FILMSTRIP, FL_MENU_TOGGLE | FL_MENU_DIVIDER);
   add(v + _("Full Screen"), FL_F + 11, M_FULLSCREEN, FL_MENU_TOGGLE);
   add(v + _("Slideshow in Gallery"), FL_F + 5, M_SLIDESHOW);
+  // Tools: what the plugins add, then the action plugins.
+  std::string tl = std::string(_("Tools")) + "/";
+  if (plugin_on("collage")) add(tl + _("New Collage…"), 0, M_NEW_COLLAGE, FL_MENU_DIVIDER);
+  if (plugin_on("metadata")) {
+    add(tl + _("All Details…"), 0, M_DETAILS);
+    add(tl + _("Remove Location"), 0, M_REMOVE_LOCATION);
+    add(tl + _("Save a Copy Without Details…"), 0, M_STRIP, FL_MENU_DIVIDER);
+  }
+  for (size_t i = 0; i < actions_.size(); ++i) {
+    std::string name = actions_[i].name;
+    for (auto &ch : name)
+      if (ch == '/') ch = '|';  // a slash would start a submenu
+    add(tl + name, 0, M_ACTION + long(i), i + 1 == actions_.size() ? FL_MENU_DIVIDER : 0);
+  }
+  add(tl + _("Plugins…"), 0, M_PLUGINS);
   add(h + _("Keyboard Shortcuts"), FL_F + 1, M_SHORTCUTS);
   add(h + _("About Photo"), 0, M_ABOUT);
 }
@@ -260,6 +284,7 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
   if (!self) return;
   switch (reinterpret_cast<long>(data)) {
     case M_OPEN: self->open_dialog(); break;
+    case M_NEW_COLLAGE: self->new_collage(); break;
     case M_SAVE: self->save(); break;
     case M_SAVE_AS: self->save_as(); break;
     case M_COPY: self->copy_to_clipboard(); break;
@@ -303,6 +328,15 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
     case M_SLIDESHOW: self->slideshow_in_gallery(); break;
     case M_SHORTCUTS: self->show_shortcuts(); break;
     case M_ABOUT: self->show_about(); break;
+    case M_PLUGINS: self->show_plugins(); break;
+    case M_AUTO: self->auto_enhance(); break;
+    case M_EFFECTS: self->open_effects(); break;
+    case M_DETAILS: self->show_all_details(); break;
+    case M_REMOVE_LOCATION: self->remove_location(); break;
+    case M_STRIP: self->save_without_details(); break;
+    default:
+      if (reinterpret_cast<long>(data) >= M_ACTION) self->run_action(size_t(reinterpret_cast<long>(data) - M_ACTION));
+      break;
   }
   self->redraw();
 }
@@ -406,6 +440,33 @@ void PhotoWindow::open_dialog() {
   std::string dir = path.substr(0, path.rfind('/'));
   history_.reset();
   open(path, Album{AlbumKind::Directory, dir.empty() ? "/" : dir}, false, gallery::Sort::Name);
+}
+
+void PhotoWindow::show_file(const std::string &path) {
+  std::string dir = path.substr(0, path.rfind('/'));
+  Album album{AlbumKind::Directory, dir.empty() ? "/" : dir};
+  if (!instance_) {
+    int wx = 0, wy = 0, w = S(1280), h = S(840);
+    fit_to_work_area(wx, wy, w, h);
+    auto *win = new PhotoWindow(std::max(w, S(480)), std::max(h, S(360)));
+    win->position(wx, wy);
+    win->show();
+    XClassHint hint{const_cast<char *>("sde-view"), const_cast<char *>("Sdeview")};
+    XSetClassHint(fl_display, fl_xid(win), &hint);
+  } else {
+    if (instance_->modified() && !instance_->confirm_discard()) return;
+    instance_->show();
+    x11::activate_window(fl_xid(instance_));
+  }
+  instance_->history_.reset();
+  instance_->open(path, album, false, gallery::Sort::Name);
+}
+
+void PhotoWindow::new_collage() {
+  // The photo shown is the first one; the chooser asks for the others.
+  std::vector<std::string> paths;
+  if (const Photo *p = current()) paths.push_back(p->path);
+  open_collage(paths, true);
 }
 
 void PhotoWindow::go(int index) {
@@ -554,6 +615,10 @@ void PhotoWindow::full_loaded(gallery::Result &r) {
   if (draw_on_load_) {
     draw_on_load_ = false;
     open_draw();
+  }
+  if (effects_on_load_) {
+    effects_on_load_ = false;
+    open_effects();
   }
 }
 
@@ -720,9 +785,11 @@ void PhotoWindow::refresh_preview() {
   Edits e = edits();
   render_gen_++;
   if (canvas_->cropping()) {
-    // Show the whole (rotated, toned) picture with the selection on top.
+    // Show the whole (rotated, toned) picture with the selection on top,
+    // without the finishing touches (frame, watermark, background blur).
     e.crop = Rect();
     e.resize_w = e.resize_h = 0;
+    e.finish = Finish();
     int ow, oh;
     result_size(e, full_w_, full_h_, ow, oh);
     cairo_surface_t *img = render(preview_base_, e, 1.0, kMarkEffects);
@@ -743,7 +810,7 @@ void PhotoWindow::refresh_preview() {
   int ow, oh;
   result_size(e, full_w_, full_h_, ow, oh);
   double scale = double(cairo_image_surface_get_width(preview_base_)) / std::max(1, full_w_);
-  cairo_surface_t *img = render(preview_base_, base, scale, kMarkEffects);
+  cairo_surface_t *img = render(preview_base_, base, scale, kMarkEffects | kFinish);
   canvas_->set_image(img, ow, oh, true);
   cairo_surface_destroy(img);
   // Sharp pixels for zooming in: render the full image in the background.
@@ -764,7 +831,7 @@ void PhotoWindow::start_full_render() {
       cairo_surface_destroy(src);
       return;
     }
-    cairo_surface_t *out = render(src, e, scale, kMarkEffects);
+    cairo_surface_t *out = render(src, e, scale, kMarkEffects | kFinish);
     cairo_surface_destroy(src);
     auto *job = new RenderJob{this, gen, out};
     Fl::awake(render_awake_cb, job);
@@ -971,7 +1038,7 @@ void PhotoWindow::mark_reference(int &w, int &h) const {
   Edits g = edits();
   g.crop = Rect();
   g.resize_w = g.resize_h = 0;
-  result_size(g, full_w_, full_h_, w, h);
+  content_size(g, full_w_, full_h_, w, h);
 }
 
 Edits PhotoWindow::edits_for_marks() const {
@@ -999,13 +1066,14 @@ void PhotoWindow::style_changed(bool amend) {
   // Screen pixels at the current zoom -> image pixels.
   Edits ref = edits_for_marks();
   int rw = 0, rh = 0;
-  result_size(ref, full_w_, full_h_, rw, rh);
+  content_size(ref, full_w_, full_h_, rw, rh);
   MarkMap mm = mark_map(ref, rw, rh);
   if (mm.scale() > 0) k /= mm.scale();
   int tool = m.kind == MarkKind::Pen ? int(Tool::Pen) : m.kind == MarkKind::Highlighter ? int(Tool::Highlighter)
            : m.kind == MarkKind::Line ? int(Tool::Line) : m.kind == MarkKind::Arrow ? int(Tool::Arrow)
            : m.kind == MarkKind::Rect ? int(Tool::Rect) : m.kind == MarkKind::Ellipse ? int(Tool::Ellipse)
            : m.kind == MarkKind::Blur ? int(Tool::Blur) : m.kind == MarkKind::Pixelate ? int(Tool::Pixelate)
+           : m.kind == MarkKind::RedEye ? int(Tool::Select)
                                       : int(Tool::Text);
   if (m.kind == MarkKind::Text) {
     m.size = draw_.text_size * k;
@@ -1472,6 +1540,7 @@ bool PhotoWindow::keyboard(int key, int state) {
       case 's': shift ? save_as() : save(); return true;
       case 'c': if (!typing) { copy_to_clipboard(); return true; } return false;
       case 'o': open_dialog(); return true;
+      case 'n': if (plugin_on("collage")) new_collage(); return true;
       case 'w': case 'q': hide(); return true;
       case 'g': show_in_gallery(); return true;
       case 'p': print(); return true;

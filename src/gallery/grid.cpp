@@ -476,6 +476,16 @@ bool Grid::keyboard(int key, int state) {
     handle_select_all();
     return true;
   }
+  if (!ctrl && key == 'e') {
+    // Edit with: the menu of editors at the photo.
+    std::vector<std::string> paths;
+    for (size_t i : selection()) paths.push_back(photos[i].path);
+    if (paths.empty() && focus_ >= 0) paths.push_back(photos[size_t(focus_)].path);
+    double tx = 0, ty = 0, ts = 0;
+    if (focus_ >= 0 && tile_rect(size_t(focus_), tx, ty, ts)) app_->edit_with_popup(paths, int(tx + ts / 3), int(ty + ts / 3));
+    else app_->edit_with_popup(paths);
+    return true;
+  }
   if (ctrl && key == 'c') {
     std::vector<std::string> paths;
     for (size_t i : selection()) paths.push_back(photos[i].path);

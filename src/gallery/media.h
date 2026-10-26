@@ -19,7 +19,11 @@ struct MountEntry {
   std::string mount_point;  // /media/alex/NIKON D750
   std::string fs_type;      // vfat, exfat, ...
   std::string options;      // rw,nosuid,...
+  // Cameras and phones mounted by GIO (gvfs): their name and location.
+  std::string name;         // "Pixel 7"
+  std::string uri;          // mtp://Google_Pixel_7_2A1.../
   bool read_only() const;
+  bool camera() const { return !uri.empty(); }
   // The name shown in the sidebar: the volume label (last path component).
   std::string label() const;
 };
@@ -34,6 +38,23 @@ bool is_removable_mount(const MountEntry &m);
 std::vector<MountEntry> removable_mounts(const std::string &mountinfo_text);
 // Reads /proc/self/mountinfo and returns its removable mounts.
 std::vector<MountEntry> current_removable_mounts();
+
+// Cameras (PTP, gphoto2://) and phones (MTP, mtp://) that GIO has mounted
+// are folders in <runtime dir>/gvfs (gvfsd-fuse): "mtp:host=Google_Pixel_7_
+// 2A111FDH200D4A", "gphoto2:host=Canon_Inc._Canon_Digital_Camera" (older
+// gvfs: "gphoto2:host=%5Busb%3A001%2C005%5D").
+std::vector<MountEntry> gvfs_cameras(const std::string &runtime_dir);
+// "Google Pixel 7" from such a folder name (the serial number left out).
+std::string gvfs_device_name(const std::string &folder);
+// Cameras and phones in the output of "gio mount -li" that are not
+// mounted yet: their name and activation root (mtp://..., gphoto2://...).
+struct GioVolume {
+  std::string name, root;
+  bool mounted = false;
+};
+std::vector<GioVolume> parse_gio_volumes(const std::string &text);
+// Cameras in the output of "gphoto2 --auto-detect": (model, port).
+std::vector<std::pair<std::string, std::string>> parse_gphoto2_cameras(const std::string &text);
 
 // Import: copies go to <dest_root>/<YYYY-MM-DD>/<name>, the date being the
 // photo's modification day (cameras keep it). A file that already exists

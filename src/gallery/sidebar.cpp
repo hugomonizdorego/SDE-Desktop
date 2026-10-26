@@ -62,7 +62,7 @@ Sidebar::Sidebar(GalleryWindow *app, int x, int y, int w, int h)
 
 std::vector<Sidebar::Row> Sidebar::rows() const {
   std::vector<Row> out;
-  int y = this->y() + S(76), rh = S(38), hh = S(36);
+  int y = this->y() + S(76) - int(scroll_), rh = S(38), hh = S(36);
   auto add = [&](Row r, int height) {
     r.y = y;
     r.h = height;
@@ -80,6 +80,16 @@ std::vector<Sidebar::Row> Sidebar::rows() const {
   r = Row{_("Screenshots"), icon::Screenshot, app_->count_for(View{ViewKind::Screenshots, ""}),
           View{ViewKind::Screenshots, ""}};
   add(r, rh);
+  // Rows of plugins: Places, and Duplicates once some were found.
+  if (app_->plugin_on("places")) {
+    r = Row{_("Places"), icon::MapPin, app_->count_for(View{ViewKind::Places, ""}), View{ViewKind::Places, ""}};
+    add(r, rh);
+  }
+  if (app_->count_for(View{ViewKind::Duplicates, ""}) > 0) {
+    r = Row{_("Duplicates"), icon::Copy, app_->count_for(View{ViewKind::Duplicates, ""}),
+            View{ViewKind::Duplicates, ""}};
+    add(r, rh);
+  }
   Row h;
   h.label = _("Folders");
   h.header = true;
@@ -134,6 +144,7 @@ std::vector<Sidebar::Row> Sidebar::rows() const {
 }
 
 int Sidebar::row_at(int my) const {
+  if (my < y() + S(66)) return -1;  // under the logo
   auto rs = rows();
   for (size_t i = 0; i < rs.size(); ++i)
     if (!rs[i].header && my >= rs[i].y && my < rs[i].y + rs[i].h) return int(i);
@@ -163,6 +174,9 @@ void Sidebar::draw() {
       p.image(IconLoader::get({"sde-gallery"}, int(ls)), lx, ly, ls);
     else
       draw_logo(p, lx, ly, ls);
+    // Rows scroll under the logo.
+    cairo_rectangle(p.cr(), x(), y() + S(66), w(), h() - S(66));
+    cairo_clip(p.cr());
     for (size_t i = 0; i < rs.size(); ++i) {
       const Row &r = rs[i];
       double rx = x() + S(10), rw = w() - S(20);
@@ -193,6 +207,7 @@ void Sidebar::draw() {
     text_font(t.font_size + S(3), true);
     draw_text(_("Gallery"), x() + S(62), y() + S(18), w() - S(76), S(32), t.text);
   }
+  fl_push_clip(x(), y() + S(66), w(), h() - S(66));
   for (size_t i = 0; i < rs.size(); ++i) {
     const Row &r = rs[i];
     if (small) continue;
@@ -213,10 +228,20 @@ void Sidebar::draw() {
     draw_text(r.label, tx, r.y, tw - cw - (hot && r.removable ? S(30) : 0), r.h,
               active ? t.accent_text : r.add ? t.text_dim : t.text);
   }
+  fl_pop_clip();
 }
 
 int Sidebar::handle(int event) {
   switch (event) {
+    case FL_MOUSEWHEEL: {
+      // Short windows: the rows scroll under the logo.
+      auto rs = rows();
+      double bottom = rs.empty() ? 0 : rs.back().y + rs.back().h + scroll_ + S(16);
+      double room = y() + h();
+      scroll_ = std::max(0.0, std::min(std::max(0.0, bottom - room), scroll_ + Fl::event_dy() * S(40)));
+      redraw();
+      return 1;
+    }
     case FL_ENTER:
     case FL_MOVE: {
       int r = row_at(Fl::event_y());

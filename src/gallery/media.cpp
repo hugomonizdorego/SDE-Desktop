@@ -7,6 +7,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstring>
 #include <ctime>
@@ -25,6 +27,7 @@ bool MountEntry::read_only() const {
 }
 
 std::string MountEntry::label() const {
+  if (!name.empty()) return name;
   std::string l = sde::basename_of(mount_point);
   return l.empty() ? mount_point : l;
 }
@@ -106,6 +109,112 @@ std::vector<MountEntry> current_removable_mounts() {
   std::string text;
   if (!sde::read_file("/proc/self/mountinfo", text)) return {};
   return removable_mounts(text);
+}
+
+std::string gvfs_device_name(const std::string &folder) {
+  size_t eq = folder.find("host=");
+  std::string host = eq == std::string::npos ? folder : folder.substr(eq + 5);
+  // Older gvfs escape the USB port: "%5Busb%3A001%2C005%5D".
+  std::string decoded;
+  for (size_t i = 0; i < host.size(); ++i) {
+    if (host[i] == '%' && i + 2 < host.size() && isxdigit(static_cast<unsigned char>(host[i + 1])) && isxdigit(static_cast<unsigned char>(host[i + 2]))) {
+      decoded += char(std::stoi(host.substr(i + 1, 2), nullptr, 16));
+      i += 2;
+    } else {
+      decoded += host[i];
+    }
+  }
+  if (!decoded.empty() && decoded[0] == '[') return sde::starts_with(folder, "mtp") ? "Phone" : "Camera";
+  // "Google_Pixel_7_2A111FDH200D4A": words, without the serial number at the end.
+  auto words = sde::split(decoded, '_');
+  if (words.size() > 1) {
+    const std::string &last = words.back();
+    bool serial = last.size() >= 6;
+    int digits = 0;
+    for (char c : last) {
+      if (isdigit(static_cast<unsigned char>(c))) ++digits;
+      else if (!isupper(static_cast<unsigned char>(c))) serial = false;
+    }
+    if (serial && digits > 0) words.pop_back();
+  }
+  std::string out;
+  for (const auto &w : words) out += (out.empty() ? "" : " ") + w;
+  return out.empty() ? decoded : out;
+}
+
+std::vector<MountEntry> gvfs_cameras(const std::string &runtime_dir) {
+  std::vector<MountEntry> out;
+  std::string base = runtime_dir + "/gvfs";
+  auto names = sde::list_dir(base);
+  std::sort(names.begin(), names.end());
+  for (const auto &n : names) {
+    bool mtp = sde::starts_with(n, "mtp:host="), ptp = sde::starts_with(n, "gphoto2:host=");
+    if (!mtp && !ptp) continue;
+    MountEntry m;
+    m.source = n;
+    m.mount_point = base + "/" + n;
+    m.fs_type = mtp ? "mtp" : "gphoto2";
+    m.name = gvfs_device_name(n);
+    std::string host = n.substr(n.find("host=") + 5);
+    m.uri = (mtp ? "mtp://" : "gphoto2://") + host + "/";
+    out.push_back(m);
+  }
+  return out;
+}
+
+std::vector<GioVolume> parse_gio_volumes(const std::string &text) {
+  // Volume(0): Pixel 7
+  //   Type: GProxyVolume (GProxyVolumeMonitorMTP)
+  //   activation_root=mtp://Google_Pixel_7_2A111FDH200D4A/
+  //   ...
+  // Mount(0): Pixel 7 -> mtp://Google_Pixel_7_2A111FDH200D4A/
+  std::vector<GioVolume> out;
+  std::vector<std::string> mounted;
+  GioVolume *cur = nullptr;
+  for (const auto &raw : sde::split(text, '\n')) {
+    std::string line = sde::trim(raw);
+    if (sde::starts_with(line, "Volume(")) {
+      size_t colon = line.find("): ");
+      out.push_back(GioVolume());
+      cur = &out.back();
+      cur->name = colon == std::string::npos ? "" : line.substr(colon + 3);
+    } else if (sde::starts_with(line, "Mount(") || sde::starts_with(line, "Drive(")) {
+      cur = nullptr;
+      size_t arrow = line.find(" -> ");
+      if (sde::starts_with(line, "Mount(") && arrow != std::string::npos) mounted.push_back(line.substr(arrow + 4));
+    } else if (cur && sde::starts_with(line, "activation_root=")) {
+      cur->root = line.substr(16);
+    }
+  }
+  std::vector<GioVolume> cams;
+  for (auto &v : out) {
+    if (!sde::starts_with(v.root, "mtp://") && !sde::starts_with(v.root, "gphoto2://")) continue;
+    v.mounted = std::find(mounted.begin(), mounted.end(), v.root) != mounted.end();
+    cams.push_back(v);
+  }
+  return cams;
+}
+
+std::vector<std::pair<std::string, std::string>> parse_gphoto2_cameras(const std::string &text) {
+  // Model                          Port
+  // ----------------------------------------------------------
+  // Canon EOS 600D                 usb:001,005
+  std::vector<std::pair<std::string, std::string>> out;
+  bool table = false;
+  for (const auto &line : sde::split(text, '\n')) {
+    if (sde::starts_with(line, "----")) {
+      table = true;
+      continue;
+    }
+    if (!table) continue;
+    std::string t = sde::trim(line);
+    // The port is the last word ("usb:001,005"), the model the rest.
+    size_t space = t.find_last_of(" \t");
+    if (t.empty() || space == std::string::npos) continue;
+    std::string port = t.substr(space + 1), model = sde::trim(t.substr(0, space));
+    if (!model.empty() && port.find(':') != std::string::npos) out.push_back({model, port});
+  }
+  return out;
 }
 
 std::string import_root(const std::string &pictures) { return pictures + "/Imported"; }

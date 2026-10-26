@@ -195,9 +195,19 @@ ViewMap view_map(const Edits &e, double ix, double iy, double iw, double ih, int
   if (ow <= 0 || oh <= 0) return v;
   int cx, cy, cw, ch;
   crop_pixels(e.crop, ow, oh, cx, cy, cw, ch);
+  double ux = ccx - uw / 2, uy = ccy - uh / 2;
+  if (e.has_frame()) {
+    // The picture shown has a frame: the marks are on the photo inside.
+    double l, t, r, b;
+    frame_insets(e.finish, e.resize_w > 0 ? e.resize_w : cw, e.resize_h > 0 ? e.resize_h : ch, l, t, r, b);
+    double fw = uw / (1 + l + r), fh = uh / (1 + t + b);
+    ux += fw * l;
+    uy += fh * t;
+    uw = fw;
+    uh = fh;
+  }
   v.kx = uw / cw;
   v.ky = uh / ch;
-  double ux = ccx - uw / 2, uy = ccy - uh / 2;
   v.tx = ux - cx * v.kx;
   v.ty = uy - cy * v.ky;
   v.quarter = q;
@@ -318,6 +328,7 @@ bool hit_mark(const Mark &m, Pt p, double tol) {
     case MarkKind::Text:
     case MarkKind::Blur:
     case MarkKind::Pixelate:
+    case MarkKind::RedEye:
       return mark_bounds(m).contains(p, tol);
   }
   return false;
@@ -531,6 +542,105 @@ void blur_region(cairo_surface_t *s, int x, int y, int w, int h, int radius) {
   cairo_surface_mark_dirty(s);
 }
 
+void red_eye_region(cairo_surface_t *s, int x, int y, int w, int h) {
+  if (!s || cairo_image_surface_get_format(s) != CAIRO_FORMAT_ARGB32 || w < 2 || h < 2) return;
+  int sw = cairo_image_surface_get_width(s), sh = cairo_image_surface_get_height(s);
+  int x0 = std::max(0, x), y0 = std::max(0, y), x1 = std::min(sw, x + w), y1 = std::min(sh, y + h);
+  if (x1 <= x0 || y1 <= y0) return;
+  cairo_surface_flush(s);
+  unsigned char *data = cairo_image_surface_get_data(s);
+  int stride = cairo_image_surface_get_stride(s);
+  double cx = x + w / 2.0, cy = y + h / 2.0, rx = w / 2.0, ry = h / 2.0;
+  for (int yy = y0; yy < y1; ++yy) {
+    uint32_t *row = reinterpret_cast<uint32_t *>(data + size_t(yy) * stride);
+    for (int xx = x0; xx < x1; ++xx) {
+      double dx = (xx + 0.5 - cx) / rx, dy = (yy + 0.5 - cy) / ry, d = std::sqrt(dx * dx + dy * dy);
+      if (d >= 1) continue;
+      uint32_t px = row[xx];
+      int a = int(px >> 24), r = int((px >> 16) & 0xFF), g = int((px >> 8) & 0xFF), b = int(px & 0xFF);
+      // Red eyes: red well above green and blue (premultiplied values
+      // compare the same way).
+      int other = std::max(g, b);
+      if (r < 40 || r < other * 1.45 + 12) continue;
+      // Full strength inside, softer towards the edge of the circle and
+      // for pixels that are only a little red.
+      double edge = d < 0.75 ? 1 : 1 - (d - 0.75) / 0.25;
+      double red = std::min(1.0, (r - other * 1.45 - 12) / 40.0 + 0.35);
+      double k = edge * red;
+      int nr = (g + b) / 2;
+      int out_r = int(std::lround(r + (nr - r) * k));
+      // A pupil is dark: a little darker overall.
+      double dark = 1 - 0.18 * k;
+      int out_g = int(std::lround(g * dark)), out_b = int(std::lround(b * dark));
+      out_r = std::min(a, int(std::lround(out_r * dark)));
+      row[xx] = (uint32_t(a) << 24) | (uint32_t(out_r) << 16) | (uint32_t(std::min(a, out_g)) << 8) |
+                uint32_t(std::min(a, out_b));
+    }
+  }
+  cairo_surface_mark_dirty(s);
+}
+
+bool find_red_eye(cairo_surface_t *s, double x, double y, double radius, Box &out) {
+  if (!s || cairo_image_surface_get_format(s) != CAIRO_FORMAT_ARGB32) return false;
+  int sw = cairo_image_surface_get_width(s), sh = cairo_image_surface_get_height(s);
+  int x0 = std::max(0, int(x - radius)), y0 = std::max(0, int(y - radius));
+  int x1 = std::min(sw, int(x + radius) + 1), y1 = std::min(sh, int(y + radius) + 1);
+  if (x1 - x0 < 2 || y1 - y0 < 2) return false;
+  cairo_surface_flush(s);
+  const unsigned char *data = cairo_image_surface_get_data(s);
+  int stride = cairo_image_surface_get_stride(s);
+  auto at = [&](int xx, int yy) { return reinterpret_cast<const uint32_t *>(data + size_t(yy) * stride)[xx]; };
+  // How much redder than green and blue (premultiplied values compare the
+  // same way); <= 0 when not red.
+  auto redness = [&](uint32_t px, double k, double base) {
+    int r = int((px >> 16) & 0xFF), other = std::max(int((px >> 8) & 0xFF), int(px & 0xFF));
+    return r < 40 ? -1.0 : r - (other * k + base);
+  };
+  int bx = -1, by = -1;
+  double best = 0;
+  for (int yy = y0; yy < y1; ++yy)
+    for (int xx = x0; xx < x1; ++xx) {
+      double dx = xx - x, dy = yy - y;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      // Near the click counts more than far.
+      double v = redness(at(xx, yy), 1.45, 12) * (1.2 - 0.4 * std::sqrt(dx * dx + dy * dy) / radius);
+      if (v > best) {
+        best = v;
+        bx = xx;
+        by = yy;
+      }
+    }
+  if (bx < 0) return false;
+  // The red pixels joined to it (a little less red counts at the edge).
+  int w = x1 - x0, h = y1 - y0;
+  std::vector<unsigned char> seen(size_t(w) * h, 0);
+  std::vector<std::pair<int, int>> stack{{bx, by}};
+  seen[size_t(by - y0) * w + (bx - x0)] = 1;
+  Box b{double(bx), double(by), double(bx + 1), double(by + 1)};
+  int count = 0;
+  while (!stack.empty()) {
+    auto [cx, cy] = stack.back();
+    stack.pop_back();
+    ++count;
+    b.x0 = std::min(b.x0, double(cx));
+    b.y0 = std::min(b.y0, double(cy));
+    b.x1 = std::max(b.x1, double(cx + 1));
+    b.y1 = std::max(b.y1, double(cy + 1));
+    const int nb[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (const auto &d : nb) {
+      int nx = cx + d[0], ny = cy + d[1];
+      if (nx < x0 || ny < y0 || nx >= x1 || ny >= y1) continue;
+      unsigned char &flag = seen[size_t(ny - y0) * w + (nx - x0)];
+      if (flag || redness(at(nx, ny), 1.25, 8) <= 0) continue;
+      flag = 1;
+      stack.push_back({nx, ny});
+    }
+  }
+  if (count < 2) return false;
+  out = b;
+  return true;
+}
+
 // --------------------------------------------------------------- drawing
 
 void draw_mark(cairo_t *cr, const Mark &m, const MarkMap &map) {
@@ -646,6 +756,7 @@ void draw_mark(cairo_t *cr, const Mark &m, const MarkMap &map) {
     }
     case MarkKind::Blur:
     case MarkKind::Pixelate:
+    case MarkKind::RedEye:
       break;  // pixel effects: see draw_marks()
   }
   cairo_restore(cr);
@@ -664,6 +775,7 @@ void draw_marks(cairo_t *cr, const Marks &marks, const MarkMap &map, bool vector
       cairo_surface_flush(target);
       int amount = std::max(1, int(std::lround(m.width * map.scale())));
       if (m.kind == MarkKind::Pixelate) pixelate_region(target, x, y, w, h, std::max(2, amount));
+      else if (m.kind == MarkKind::RedEye) red_eye_region(target, x, y, w, h);
       else blur_region(target, x, y, w, h, amount);
       continue;
     }

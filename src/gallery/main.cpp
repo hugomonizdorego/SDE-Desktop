@@ -30,7 +30,7 @@ int main(int argc, char **argv) {
   init_i18n();
   sde::set_default_window_icon({"sde-gallery"});  // title bar and taskbar
   std::string select, slideshow, folder;
-  bool import = false;
+  bool import = false, plugins = false;
   for (int i = 1; i < argc; ++i) {
     if (!strcmp(argv[i], "--version")) return sde::print_version("sde-gallery", SDE_VERSION);
     if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
                      "  --select FILE      show and select FILE (in the running Gallery if any)\n"
                      "  --slideshow FILE   play a slideshow of FILE's folder, from FILE\n"
                      "  --import           import photos from a camera or card\n"
+                     "  --plugins          show the Plugins window\n"
                      "  --version          print the version\n"));
       return 0;
     }
@@ -66,6 +67,10 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(argv[i], "--import")) {
       import = true;
+      continue;
+    }
+    if (!strcmp(argv[i], "--plugins")) {
+      plugins = true;
       continue;
     }
     if (argv[i][0] != '-') {
@@ -99,6 +104,7 @@ int main(int argc, char **argv) {
     if (!select.empty()) ev.push_back({"select", select});
     if (!slideshow.empty()) ev.push_back({"slideshow", slideshow});
     if (import) ev.push_back({"import", "/"});
+    if (plugins) ev.push_back({"plugins", "/"});
     if (ev.empty()) ev.push_back({"present", "/"});
     gallery::send_gallery_events(ev);
     return 0;
@@ -126,6 +132,7 @@ int main(int argc, char **argv) {
   if (!select.empty()) window->select_path(select);
   if (!slideshow.empty()) window->slideshow_from(slideshow);
   if (import) Fl::add_timeout(0.3, [](void *w) { static_cast<gallery::GalleryWindow *>(w)->import_dialog(); }, window);
+  if (plugins) Fl::add_timeout(0.3, [](void *w) { static_cast<gallery::GalleryWindow *>(w)->show_plugins(); }, window);
   // Follow theme changes made in Settings (_SDE_CONFIG_SERIAL on the root).
   Window root = RootWindow(fl_display, fl_screen);
   XWindowAttributes attr;
