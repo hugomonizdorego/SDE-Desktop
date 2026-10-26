@@ -654,8 +654,10 @@ void GalleryWindow::find_duplicates() {
       for (const auto &ig : identical)
         if (ig.size() == g.size() && std::is_permutation(ig.begin(), ig.end(), g.begin())) all_identical = true;
       job->groups.push_back(paths);
-      job->labels.push_back(all_identical ? format(_("%zu identical copies"), paths.size())
-                                          : format(_("%zu similar photos"), paths.size()));
+      // Named after the photo to keep (the header adds how many there are).
+      std::string keep = ph[order[0]].name;
+      job->labels.push_back(all_identical ? format(_("Copies of %s"), keep.c_str())
+                                          : format(_("Similar to %s"), keep.c_str()));
     }
     Fl::awake([](void *p) {
       auto *holder = static_cast<std::shared_ptr<Job> *>(p);
@@ -715,8 +717,12 @@ void GalleryWindow::select_extra_copies() {
 // -------------------------------------------------------------------- places
 
 void GalleryWindow::start_locating() {
-  if (locating_) return;
+  if (locating_) {
+    relocate_ = true;  // photos changed meanwhile: once more when done
+    return;
+  }
   locating_ = true;
+  relocate_ = false;
   if (locate_thread_.joinable()) locate_thread_.join();
   std::vector<Photo> photos = all_;
   locate_thread_ = std::thread([this, photos] {
@@ -772,6 +778,7 @@ void GalleryWindow::locate_awake_cb(void *p) {
   }
   self->sidebar_->redraw();
   if (self->view_kind_.kind == ViewKind::Places) self->rebuild_view(true);
+  if (self->relocate_) self->start_locating();
 }
 
 std::vector<Photo> GalleryWindow::places_view(std::vector<Group> &groups) {
@@ -791,8 +798,9 @@ std::vector<Photo> GalleryWindow::places_view(std::vector<Group> &groups) {
   {
     std::lock_guard<std::mutex> lock(scan_mu_);
     for (const auto &p : all_) {
+      // A photo edited meanwhile keeps its place until it is read again.
       auto it = locations_.find(p.path);
-      if (it == locations_.end() || it->second.first != p.mtime) continue;
+      if (it == locations_.end()) continue;
       LocatedPhoto lp;
       lp.index = located.size();
       lp.lat = it->second.second.first;

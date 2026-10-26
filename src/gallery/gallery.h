@@ -477,7 +477,7 @@ class GalleryWindow : public sde::BufferedWindow {
   void start_locating();
   static void locate_awake_cb(void *p);
   std::vector<Photo> places_view(std::vector<Group> &groups);
-  bool locating_ = false, located_ = false;
+  bool locating_ = false, located_ = false, relocate_ = false;
   size_t places_count_ = 0;
   std::thread locate_thread_;
   std::map<std::string, std::pair<time_t, std::pair<double, double>>> locations_;  // path -> mtime, lat/lon

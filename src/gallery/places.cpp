@@ -149,12 +149,11 @@ std::vector<PlaceGroup> group_by_place(const std::vector<LocatedPhoto> &photos, 
       glat = places[size_t(idx)].lat;
       glon = places[size_t(idx)].lon;
     } else {
-      // Far from every place: cells of a quarter degree (about 25 km).
+      // Far from every place: cells of a quarter degree (about 25 km),
+      // labeled with the position of the first photo.
       long cy = long(std::floor(ph.lat * 4)), cx = long(std::floor(ph.lon * 4));
       key = "g" + std::to_string(cy) + ":" + std::to_string(cx);
-      glat = (cy + 0.5) / 4;
-      glon = (cx + 0.5) / 4;
-      label = coordinates(glat, glon);
+      label = coordinates(ph.lat, ph.lon);
     }
     auto it = by_key.find(key);
     if (it == by_key.end()) {

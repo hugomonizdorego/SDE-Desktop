@@ -150,6 +150,8 @@ void GalleryWindow::run_action(size_t index, const std::vector<std::string> &pat
   std::string name = a.name;
   toast(format(_("Running “%s”…"), name.c_str()));
   bool changes = a.changes;
+  // Photos the program changes or adds next to them show up as it saves.
+  for (const auto &p : paths) watch_folder(p.substr(0, p.rfind('/')));
   // The programs run one after the other; the photos are shown again
   // when the last one is done.
   struct Run {

@@ -321,8 +321,8 @@ void GalleryWindow::scan_finished() {
     scan_result_.clear();
   }
   scanning_ = false;
-  // Places: the positions of new photos are read in the background.
-  located_ = false;
+  // Places: the positions of new photos are read in the background (the
+  // places known so far stay shown meanwhile).
   if (plugin_on("places")) start_locating();
   // Forget thumbnails of files that changed.
   rebuild_view(true);
@@ -1049,6 +1049,8 @@ void GalleryWindow::file_events(const std::vector<GalleryEvent> &events) {
   if (changed) {
     reload_albums();
     rebuild_view(true);
+    // An editor may have changed (or removed) the position too.
+    if (located_ && plugin_on("places")) start_locating();
   }
   if (!select.empty()) select_path(select);
   if (!show.empty()) slideshow_from(show);
@@ -1531,10 +1533,15 @@ void GalleryWindow::draw_header_text() {
     std::string sub;
     if (view_kind_.external() && ext_scanning_) sub = _("Looking for photos…");
     else if (scanning_ && all_.empty() && !view_kind_.external()) sub = _("Looking for photos…");
-    else if (view_kind_.kind == ViewKind::Places && (locating_ || !located_)) sub = _("Looking for places in your photos…");
+    else if (view_kind_.kind == ViewKind::Places && !located_) sub = _("Looking for places in your photos…");
+    else if (view_kind_.kind == ViewKind::Places && view_.empty())
+      sub = _("None of the photos has a location (GPS)");
+    else if (view_kind_.kind == ViewKind::Places && groups_.size() == 1)
+      sub = format(view_.size() == 1 ? _("%zu photo in one place") : _("%zu photos in one place"), view_.size());
     else if (view_kind_.kind == ViewKind::Places)
-      sub = view_.empty() ? std::string(_("None of the photos has a location (GPS)"))
-                          : format(_("%zu photos in %zu places"), view_.size(), groups_.size());
+      sub = format(_("%zu photos in %zu places"), view_.size(), groups_.size());
+    else if (view_kind_.kind == ViewKind::Duplicates && groups_.size() == 1)
+      sub = format(_("%zu photos in one group · the first is the one to keep"), view_.size());
     else if (view_kind_.kind == ViewKind::Duplicates)
       sub = format(_("%zu photos in %zu groups · the first of each group is the one to keep"), view_.size(),
                    groups_.size());
