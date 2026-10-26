@@ -28,6 +28,14 @@ target_compile_definitions(sde-transfer-tests PRIVATE SDE_TEST_SOURCE_DIR="${PRO
 add_test(NAME sde-transfer-model COMMAND sde-transfer-tests)
 add_executable(sde-transfer-demo transfer_demo.cpp)
 target_link_libraries(sde-transfer-demo PRIVATE sde-common)
+# 0.2.0 Alpha 3: safe copying (src/common/safe_copy.h): the writer against a
+# simulated slow drive, and a benchmark for real drives (not installed;
+# tools/safe-copy-bench.py).
+add_executable(sde-safe-copy-tests test_safe_copy.cpp)
+target_link_libraries(sde-safe-copy-tests PRIVATE sde-common)
+add_test(NAME sde-safe-copy COMMAND sde-safe-copy-tests)
+add_executable(sde-safe-copy-bench safe_copy_bench.cpp)
+target_link_libraries(sde-safe-copy-bench PRIVATE sde-common)
 
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).
