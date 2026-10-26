@@ -360,8 +360,11 @@ class PackageTable : public Fl_Group {
       const Package *pk = pkg(i);
       if (!pk) continue;
       int nw = name_w(c);
+      // Packages of the base system: the name stops before the badge (its
+      // width is measured first: that sets another font).
+      int name_room = pk->system() ? system_badge_x(*pk, c) - S(8) : nw;
       text_font(t.font_size, true);
-      draw_text(pk->name, c.name, ry + S(4), nw, S(20), t.text);
+      draw_text(pk->name, c.name, ry + S(4), name_room, S(20), t.text);
       if (pk->system()) {
         int bx = c.name + system_badge_x(*pk, c), bw = system_badge_w();
         text_font(std::max(S(9), t.font_size - S(3)), true);
@@ -477,11 +480,9 @@ class PackageTable : public Fl_Group {
   }
 
  private:
-  // Where the SYSTEM badge of a package of the base system goes (after its name).
-  int system_badge_x(const Package &pk, const Cols &c) const {
-    text_font(active_theme().font_size, true);
-    return std::min(text_width(pk.name) + S(8), name_w(c) - system_badge_w() - S(8));
-  }
+  // Where the SYSTEM badge of a package of the base system goes: at the
+  // end of the name column, the same place in every row.
+  int system_badge_x(const Package &, const Cols &c) const { return name_w(c) - system_badge_w(); }
   static int system_badge_w() {
     text_font(std::max(S(9), active_theme().font_size - S(3)), true);
     return text_width(_("SYSTEM")) + S(12);
@@ -804,7 +805,8 @@ void build_packages_page(Page *page, const std::string &arg) {
   int bar_h = marks ? S(56) : 0;
   int info_h = S(148);
   int bottom = page->y() + page->h() - S(16);
-  int list_h = std::max(S(140), bottom - body_y - info_h - S(12) - (marks ? bar_h + S(12) : 0));
+  // At least four rows: on short screens the page scrolls to the details.
+  int list_h = std::max(S(224), bottom - body_y - info_h - S(12) - (marks ? bar_h + S(12) : 0));
   int lx = x, lw = w;
   if (wide) {
     int sw = S(220);
