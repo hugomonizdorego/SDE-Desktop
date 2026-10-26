@@ -76,12 +76,18 @@ std::string id_stem(const std::string &id) {
 std::string by_id(std::string id, const std::vector<DesktopEntry> &apps) {
   id = sde::trim(id);
   if (id.empty() || id.find('/') != std::string::npos) return "";
-  if (!sde::ends_with(id, ".desktop")) id += ".desktop";
-  for (auto &a : apps)
-    if (a.id == id) return a.id;
-  std::string l = sde::lower(id);
-  for (auto &a : apps)
-    if (sde::lower(a.id) == l) return a.id;
+  // "org.telegram.desktop" is the ID of org.telegram.desktop.desktop too.
+  std::vector<std::string> forms;
+  if (!sde::ends_with(id, ".desktop")) forms = {id + ".desktop"};
+  else forms = {id, id + ".desktop"};
+  for (auto &f : forms)
+    for (auto &a : apps)
+      if (a.id == f) return a.id;
+  for (auto &f : forms) {
+    std::string l = sde::lower(f);
+    for (auto &a : apps)
+      if (sde::lower(a.id) == l) return a.id;
+  }
   return "";
 }
 

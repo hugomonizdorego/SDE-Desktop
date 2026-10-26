@@ -115,7 +115,8 @@ int main() {
     CHECK(s.count == 3);
   }
   CHECK(badges::app_id_from_uri("application://firefox.desktop") == "firefox.desktop");
-  CHECK(badges::app_id_from_uri("application://org.telegram.desktop") == "org.telegram.desktop.desktop");
+  CHECK(badges::app_id_from_uri("application://firefox") == "firefox.desktop");
+  CHECK(badges::app_id_from_uri("application://org.telegram.desktop") == "org.telegram.desktop");
   CHECK(badges::app_id_from_uri("file:///x.desktop").empty() && badges::app_id_from_uri("application://").empty());
   CHECK(badges::app_id_from_uri("application://a/b.desktop").empty());
 
@@ -139,8 +140,10 @@ int main() {
       app("org.gnome.Evolution.desktop", "Evolution", "evolution %U", "org.gnome.Evolution"),
   };
   using Src = badges::Source;
-  CHECK(badges::match_app(Src{"org.telegram.desktop", "", "Telegram Desktop", ""}, apps) ==
-        "org.telegram.desktop.desktop");
+  // "org.telegram.desktop" (the hint, a URI without ".desktop"): the
+  // desktop file org.telegram.desktop.desktop.
+  CHECK(badges::match_app(Src{"org.telegram.desktop", "", "", ""}, apps) == "org.telegram.desktop.desktop");
+  CHECK(badges::match_app(Src{"org.telegram.desktop.desktop", "", "", ""}, apps) == "org.telegram.desktop.desktop");
   CHECK(badges::match_app(Src{"THUNDERBIRD", "", "", ""}, apps) == "thunderbird.desktop");
   CHECK(badges::match_app(Src{"", "thunderbird", "", ""}, apps) == "thunderbird.desktop");
   // A browser's notification: the browser, not its web app.

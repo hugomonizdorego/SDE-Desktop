@@ -280,3 +280,13 @@ if(TARGET merkadu AND SDE_XVFB)
     $<TARGET_FILE:merkadu> ${PROJECT_SOURCE_DIR})
   set_tests_properties(merkadu-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# 0.2 Alpha 3 live badges of the Start menu and the taskbar: LauncherEntry
+# properties, matching notifications to applications, counts, colours (no
+# display or bus needed); and an application announcing a badge for the UI
+# tests (a QA-only fixture, not installed).
+add_executable(sde-badges-tests test_badges.cpp ../src/panel/badge_model.cpp)
+target_link_libraries(sde-badges-tests PRIVATE sde-common)
+add_test(NAME sde-badges COMMAND sde-badges-tests)
+add_executable(sde-launcher-entry-fixture launcher_entry_fixture.cpp)
+target_link_libraries(sde-launcher-entry-fixture PRIVATE sde-common)

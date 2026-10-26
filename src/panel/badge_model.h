@@ -39,7 +39,8 @@ struct LauncherState {
 // a Query reply; other properties and other types are ignored.
 void apply(LauncherState &s, const sde::dbus::Value &props);
 // "application://firefox.desktop" -> "firefox.desktop" (".desktop" added
-// when it is missing); "" when |uri| is not an application URI.
+// when it is missing); "" when |uri| is not an application URI. match_app()
+// also finds "org.telegram.desktop" as org.telegram.desktop.desktop.
 std::string app_id_from_uri(const std::string &uri);
 
 // Where a notification or a launcher entry came from.
