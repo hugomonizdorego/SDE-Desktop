@@ -71,6 +71,10 @@ void device_to_page(double pw, double ph, const RenderParams &rp, double dx, dou
 // the exact device resolution, so glyph edges land on real pixels.
 cairo_surface_t *render_area(PopplerPage *page, double pw, double ph, const RenderParams &rp, int tx,
                              int ty, int tw, int th);
+// Draws |page| over what |cr| holds, with the transform and text settings
+// of render_area(): pixel (0, 0) of |cr| is device pixel (tx, ty) of the
+// page. No color mode is applied.
+void render_into(cairo_t *cr, PopplerPage *page, double pw, double ph, const RenderParams &rp, int tx, int ty);
 // Night (inverted, soft contrast) and sepia reading modes, in place.
 void apply_color_mode(cairo_surface_t *surface, ColorMode mode);
 
@@ -205,6 +209,9 @@ class Document {
 
   // Invalidates the cached queries and bumps the page revision.
   void touch(int page);
+  // Continues the revisions of the document this one replaces, so that
+  // tiles of unchanged pages stay valid and those of changed pages do not.
+  void set_revision(int page, uint64_t revision);
 
  private:
   Document() = default;

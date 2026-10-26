@@ -118,4 +118,8 @@ class PageLayout {
   void build_blocks();
 };
 
+// The same page content read from two copies of a document (the glyph,
+// image and font numbers of one are valid for the other).
+bool same_content(const PageLayout &a, const PageLayout &b);
+
 }  // namespace xanara

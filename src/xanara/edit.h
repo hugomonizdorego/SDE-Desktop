@@ -47,6 +47,9 @@ class TextEdit {
   // A new, empty text box whose first line's top-left corner is |at|;
   // |width| <= 0 makes it grow to the right as the user types.
   void start_new(std::shared_ptr<PageLayout> layout, Point at, double width, const TextStyle &style);
+  // Continues on |layout|: the same page read again from another copy of
+  // the file (same_content()), before the change is written into that copy.
+  void rebase(std::shared_ptr<PageLayout> layout) { layout_ = std::move(layout); }
   bool active() const { return layout_ != nullptr; }
   int page() const { return layout_ ? layout_->page : -1; }
   int block() const { return block_; }

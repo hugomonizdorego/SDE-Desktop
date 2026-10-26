@@ -541,6 +541,15 @@ int PageLayout::image_at(double x, double y) const {
   return -1;
 }
 
+bool same_content(const PageLayout &a, const PageLayout &b) {
+  if (a.page != b.page || a.streams.size() != b.streams.size() || a.glyphs.size() != b.glyphs.size() ||
+      a.images.size() != b.images.size() || a.fonts.size() != b.fonts.size() || a.blocks.size() != b.blocks.size())
+    return false;
+  for (size_t k = 0; k < a.streams.size(); ++k)
+    if (a.streams[k].data != b.streams[k].data || a.streams[k].name != b.streams[k].name) return false;
+  return true;
+}
+
 std::string PageLayout::block_text(int block) const {
   std::string out;
   if (block < 0 || block >= int(blocks.size())) return out;

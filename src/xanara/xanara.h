@@ -18,6 +18,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -55,6 +56,11 @@ bool tool_has_color(Tool t);
 
 enum class Layout { Continuous = 0, Single = 1, Book = 2 };
 enum class Fit { Free = 0, Width = 1, Page = 2 };
+
+// What a new copy of a document changed, for DocView::swap_document(): a
+// list of pages whose content changed, or one of these.
+constexpr int kPagesMoved = -1;   // pages were added, removed or reordered
+constexpr int kSameContent = -2;  // nothing visible changed (a saved copy)
 
 class XanaraWindow;
 
@@ -118,10 +124,11 @@ class DocView : public Fl_Widget {
   void set_opacity(double o);
   double stroke() const { return stroke_; }
   void set_stroke(double w) { stroke_ = w; }
-  double font_size() const { return font_size_; }
-  void set_font_size(double s) { font_size_ = s; }
-  int align() const { return align_; }
-  void set_align(int a) { align_ = a; }
+  // The size and alignment of new text, or of the text box being edited.
+  double font_size() const;
+  void set_font_size(double s);
+  int align() const;
+  void set_align(int a);
   void set_stamp_text(const std::string &s) { stamp_text_ = s; }
   const std::string &stamp_text() const { return stamp_text_; }
   void set_cache_budget(size_t bytes);
@@ -140,35 +147,41 @@ class DocView : public Fl_Widget {
   void set_selected_opacity(double o);
   void undo();
   void redo();
-  bool can_undo() const { return !undo_.empty(); }
-  bool can_redo() const { return !redo_.empty(); }
+  bool can_undo() const;
+  bool can_redo() const;
   void set_signature(cairo_surface_t *image);  // takes ownership
   cairo_surface_t *signature() const { return signature_; }
   void set_image(cairo_surface_t *image, const std::string &file);  // what the Image tool places; takes ownership
 
-  // Direct editing of the page content (Edit mode).
+  // Direct editing of the page content (Edit mode, editing.cpp).
   bool editing_text() const { return text_ != nullptr; }
-  TextEdit *text_edit() const { return text_.get(); }
+  const TextEdit *text_edit() const { return text_.get(); }
   bool has_selected_image() const { return sel_image_ >= 0; }
-  // Ends the text box being edited (writing the change into the document
-  // when there is one) and drops a picked image. Returns false when the
-  // change could not be written.
+  // Ends the text box being edited, writing the change into the document
+  // when there is one, and drops a picked image. False when the change
+  // could not be written.
   bool finish_text_edit();
-  // Changes of the text box being edited (the toolbar and properties).
+  // The style of the text at the caret (or of new text), and changes of
+  // it from the toolbar and the properties panel.
+  TextStyle text_style() const;
+  std::string text_family() const;  // the family name shown for it
   void restyle_text(const std::function<void(TextStyle &)> &change);
-  void align_text(int align);
-  TextStyle new_text_style() const { return new_style_; }
-  void set_new_text_style(const TextStyle &s) { new_style_ = s; }
   void replace_selected_image();
   void delete_selected_image();
-  // The page content changed underneath (a new working copy).
-  void forget_layouts();
-  // One step of document undo: the working copy before and after a change.
+  Box selected_image_box() const;
+  void selected_image_pixels(int &w, int &h) const;
+  // One step of document undo: the working copies before and after a
+  // change of the PDF.
   void push_snapshot(const std::string &before, bool before_working, const std::string &after,
                      const std::vector<int> &pages);
-  // Swaps in |doc| for a document with the same pages; the tiles of the
-  // pages not in |changed| stay valid (empty: all pages changed).
+  // The pages of annotation steps that a new copy of the document absorbs.
+  std::vector<int> annotation_step_pages() const;
+  // Swaps in |doc|, a new copy of the document shown: the tiles of the
+  // pages not in |changed| stay valid (empty: every page changed; or
+  // kPagesMoved / kSameContent).
   void swap_document(Document *doc, const std::vector<int> &changed);
+  // Files the undo history still needs.
+  void history_files(std::set<std::string> &out) const;
 
   // Redaction marks (not yet applied).
   const std::vector<std::pair<int, Box>> &redactions() const { return redactions_; }
@@ -232,7 +245,7 @@ class DocView : public Fl_Widget {
   void page_box_device(int page, const Box &b, double &x, double &y, double &w, double &h) const;
   bool screen_to_page(int mx, int my, int &page, double &px, double &py, bool nearest) const;
   void update_current();
-  void draw_page(sde::Painter &p, int page, std::vector<RenderJob> &jobs);
+  bool draw_page(sde::Painter &p, int page, std::vector<RenderJob> &jobs);  // false: tiles missing
   void draw_overlays(sde::Painter &p, int page);
   void draw_preview(sde::Painter &p);
   void draw_scrollbars(sde::Painter &p);
@@ -260,22 +273,34 @@ class DocView : public Fl_Widget {
   bool keyboard(int key, int state);
   bool is_text_tool(Tool t) const;
   bool is_box_tool(Tool t) const;
-  // Direct editing.
-  PageLayout *layout_of(int page);
-  std::shared_ptr<PageLayout> shared_layout(int page);
-  bool edit_press(int page, double px, double py, int mx, int my);
-  bool edit_drag(int mx, int my);
+  // Direct editing (editing.cpp).
+  bool edit_tool() const { return tool_ == Tool::Edit || tool_ == Tool::NewText; }
+  std::shared_ptr<PageLayout> layout_of(int page, bool now = true);
+  void forget_layouts();
+  bool edit_press(int mx, int my);
+  void edit_drag(int mx, int my);
   void edit_release(int mx, int my);
   bool edit_key(int key, int state);
-  void edit_changed();         // the text box changed: new preview
-  void edit_background();      // the page without the box's original glyphs
-  void render_overlay();       // the box as it will be written
+  void edit_hover(int mx, int my, Fl_Cursor &cursor);
+  void edit_changed(bool now = false);  // the text box changed: a new preview
+  bool make_background();               // the page without the box's original glyphs
+  void render_overlay();                // the box as it will be written
+  void drop_overlay();
   void draw_edit(sde::Painter &p, int page);
+  void draw_edit_overlay(sde::Painter &p, int page);  // the text box being edited
+  bool draw_ghost(sde::Painter &p, int page);
   void start_text(int page, int block, double px, double py);
   void start_new_text(int page, const Box &box);
-  void commit_image(const std::function<bool(PdfFile &, PageLayout &, std::string &)> &op, const std::string &what);
-  void image_box_device(const Box &b, int page, double &x, double &y, double &w, double &h) const;
+  void add_picture(int page, const Box &box);
+  bool commit_image(int page, const std::function<bool(PdfFile &, PageLayout &, std::string &)> &op,
+                    const std::string &message);
+  int edit_handle_at(int mx, int my) const;  // 1 move, 2 width, 10+k image corner k, 0 none
+  void edit_region(Box &box) const;
+  int overlay_key() const;
+  void paste_text();
   static void blink_cb(void *p);
+  static void preview_cb(void *p);
+  static void layouts_cb(void *p);
 
   XanaraWindow *app_;
   Document *doc_ = nullptr;
@@ -336,26 +361,36 @@ class DocView : public Fl_Widget {
   std::string image_file_;
   std::vector<std::pair<int, Box>> redactions_;
 
-  // Direct editing.
-  std::unique_ptr<PdfFile> edit_pdf_;          // the open document, read by the engine
+  // Direct editing (editing.cpp).
+  std::unique_ptr<PdfFile> edit_pdf_;          // the document as the engine reads it
+  bool edit_pdf_failed_ = false;
   std::map<int, std::shared_ptr<PageLayout>> layouts_;
+  std::set<int> layouts_wanted_;               // read when idle
   std::unique_ptr<TextEdit> text_;
   TextStyle new_style_;
   int hover_block_ = -1, hover_image_ = -1, hover_page_ = -1;
   int sel_image_ = -1, sel_image_page_ = -1;
-  bool background_ready_ = false;
-  cairo_surface_t *overlay_ = nullptr;         // the box being edited, rendered
-  Box overlay_box_;
-  int overlay_page_ = -1, overlay_scale_q_ = 0;
-  cairo_surface_t *ghost_ = nullptr;           // the last overlay until new tiles arrive
-  Box ghost_box_;
-  int ghost_page_ = -1;
-  uint64_t ghost_rev_ = 0;
-  cairo_surface_t *drag_image_ = nullptr;      // a picture being moved
-  Box drag_box_;
+  // While a text box is edited: the page without the box's original glyphs
+  // (a copy of the document) and the box alone (a one page document), both
+  // rendered by poppler and put together for the area of the box.
+  PopplerDocument *bg_doc_ = nullptr;
+  cairo_surface_t *bg_ = nullptr;              // background pixels, normal colors
+  int bg_x_ = 0, bg_y_ = 0, bg_key_ = 0;       // device pixels in the page
+  cairo_surface_t *overlay_ = nullptr;         // the box as it will look
+  int ov_x_ = 0, ov_y_ = 0, ov_key_ = 0, ov_page_ = -1;
+  Box ov_box_;                                 // its area in page space
+  bool preview_pending_ = false;
+  // After a change was written: its picture until the page's new tiles
+  // arrive, so that the old content never flashes.
+  cairo_surface_t *ghost_ = nullptr;
+  int ghost_x_ = 0, ghost_y_ = 0, ghost_key_ = 0, ghost_page_ = -1;
   enum class EditDrag { None, Select, Move, Width, Image, ImageCorner } edit_drag_ = EditDrag::None;
-  int drag_handle_ = 0;
-  bool caret_on_ = true;
+  int drag_corner_ = 0;
+  Point edit_p0_;                              // where the drag started (page space)
+  Box drag_box_;                               // where a picture goes
+  double drag_dx_ = 0, drag_dy_ = 0;           // a text box being moved (page space)
+  cairo_surface_t *drag_image_ = nullptr;      // what moves with the pointer
+  bool caret_on_ = true, paste_pending_ = false;
 
   // Find.
   std::string query_;
@@ -595,6 +630,7 @@ class XanaraWindow : public sde::BufferedWindow {
                         const PageLayout *expected, const std::string &message);
   std::string current_source();
   std::string temp_path(const std::string &tag);
+  void drop_temps(DocView *v);  // deletes the copies the undo history no longer needs
   bool choose_image();  // for the Image tool
   std::string choose_image_file();
   void font_menu(int x, int y);
@@ -617,7 +653,8 @@ class XanaraWindow : public sde::BufferedWindow {
   void save_session();
   bool replace_document(DocTab &t, const std::string &path, const std::string &password, bool working, int page,
                         bool keep_view, const std::vector<int> &changed_pages = {});
-  void layout_text_bar(int y0, int h);
+  bool layout_edit_bar(int y0, int h);  // the text and picture tools of the Edit mode
+  void align_menu(int x, int y);
   void stamp_pages(StampSpec::Kind kind);
   void export_images(bool jpeg);
   void export_text(int kind);
