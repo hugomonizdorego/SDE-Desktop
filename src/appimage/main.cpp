@@ -305,6 +305,7 @@ struct Texts {
   std::string title, body;
   std::string window;              // the window title
   std::vector<std::string> meta;   // for the QA dump ("verdict:unsigned" ...)
+  bool danger = false;             // changed or signed by someone else
 };
 
 Texts explain(const Check &c, Policy policy, const std::string &path) {
@@ -316,6 +317,7 @@ Texts explain(const Check &c, Policy policy, const std::string &path) {
   if (!c.fingerprint.empty()) t.meta.push_back("key:" + c.fingerprint);
   if (!c.previous.empty()) t.meta.push_back("previous:" + c.previous);
   if (!c.error.empty()) t.meta.push_back("error:" + c.error);
+  t.danger = c.verdict == Verdict::bad_signature || c.verdict == Verdict::key_changed;
   switch (c.verdict) {
     case Verdict::unsigned_image:
       t.title = _("This AppImage has no signature");
@@ -460,11 +462,24 @@ class Dialog : public BufferedWindow {
     {
       Painter p(w(), h());
       p.fill_rect(0, 0, w(), h(), t.background);
-      p.image(IconLoader::get({"sde-appimage", "application-x-executable"}, isz), pad, pad, isz);
-      double cs = S(26), cx = pad + isz - cs / 2 + S(4), cy = pad + isz - cs / 2 + S(4);
-      p.circle(cx, cy, cs / 2, t.warning);
-      p.line(cx, cy - Sd(6), cx, cy + Sd(1.5), Color::hex(0xFFFFFF), Sd(2.4));
-      p.circle(cx, cy + Sd(5.5), Sd(1.6), Color::hex(0xFFFFFF));
+      // A shield with an exclamation mark: amber, red when the AppImage
+      // was changed or someone else signed it.
+      cairo_t *cr = p.cr();
+      auto at = [&](double v) { return v * isz / 64.0; };
+      double x = pad, y = pad;
+      cairo_new_path(cr);
+      cairo_move_to(cr, x + at(32), y + at(3));
+      cairo_line_to(cr, x + at(56), y + at(11));
+      cairo_line_to(cr, x + at(56), y + at(30));
+      cairo_curve_to(cr, x + at(56), y + at(45), x + at(46), y + at(55), x + at(32), y + at(61));
+      cairo_curve_to(cr, x + at(18), y + at(55), x + at(8), y + at(45), x + at(8), y + at(30));
+      cairo_line_to(cr, x + at(8), y + at(11));
+      cairo_close_path(cr);
+      p.set(texts_.danger ? t.error : t.warning);
+      cairo_fill(cr);
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      p.line(x + at(32), y + at(18), x + at(32), y + at(35), Color::hex(0xFFFFFF), at(6.5));
+      p.circle(x + at(32), y + at(46), at(3.8), Color::hex(0xFFFFFF));
     }
     int tx = pad + isz + S(18), tw = w() - tx - pad;
     text_font(t.font_size + 5, true);
