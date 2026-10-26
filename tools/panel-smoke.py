@@ -964,12 +964,15 @@ def start_menu_checks():
     command(['--search'],'SDE Search');time.sleep(.5);run('xdotool','key','super');gone('^SDE Search$')
     # 3) Tab: Start button, filter, list, tiles, the rail's places; Shift+Tab back.
     m=command(['--menu'],'SDE Menu');time.sleep(.6)
-    order=[]
-    for _ in range(5):
-        run('xdotool','key','Tab');time.sleep(.25);order.append(sel())
+    # (Each key waits for the selection to move: the QA dump comes a moment
+    # later under load.)
+    def tab(key):
+        before=sel();run('xdotool','key',key)
+        return within(lambda:(lambda s:s if s and s!=before else None)(sel()),2.0) or sel()
+    order=[tab('Tab') for _ in range(5)]
     assert order[0]=='rail:menu' and order[1].startswith('filter:') and order[2].startswith(('app:','added:','most-used:')) and order[3].startswith('tile:') and order[4]=='rail:account',order
-    run('xdotool','key','shift+Tab');time.sleep(.25);assert sel().startswith('tile:'),sel()
-    run('xdotool','key','shift+Tab');time.sleep(.25);assert sel().startswith(('app:','added:','most-used:')),sel()
+    s=tab('shift+Tab');assert s.startswith('tile:'),s
+    s=tab('shift+Tab');assert s.startswith(('app:','added:','most-used:')),s
     # 4) End and Home; Down past the last visible row scrolls the list with
     # the selection (it jumped to the rail before).
     run('xdotool','key','End')
