@@ -18,11 +18,13 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "buffered_window.h"
 #include "core.h"
+#include "edit.h"
 #include "model.h"
 #include "paint.h"
 #include "theme.h"
@@ -38,7 +40,10 @@ void draw(sde::Painter &p, Kind kind, double x, double y, double size, const sde
 enum class Tool {
   Select, Hand, Highlight, Underline, Squiggly, Strike, Note, Text, Pen, Eraser, Rect, Ellipse, Arrow, Line,
   Measure, Stamp, Signature, Image, Link, Crop, Field, FillText, FillCheck, FillCross, FillDot, FillDate,
-  FillInitials, Redact, Count
+  FillInitials, Redact,
+  Edit,     // Edit mode: click into text and type, drag pictures
+  NewText,  // Edit mode: a new text box in the page content
+  Count
 };
 constexpr int kToolCount = int(Tool::Count);
 // The canvas tool a context toolbar command arms (Select when it has none).
@@ -51,6 +56,11 @@ bool tool_has_color(Tool t);
 
 enum class Layout { Continuous = 0, Single = 1, Book = 2 };
 enum class Fit { Free = 0, Width = 1, Page = 2 };
+
+// What a new copy of a document changed, for DocView::swap_document(): a
+// list of pages whose content changed, or one of these.
+constexpr int kPagesMoved = -1;   // pages were added, removed or reordered
+constexpr int kSameContent = -2;  // nothing visible changed (a saved copy)
 
 class XanaraWindow;
 
@@ -114,10 +124,11 @@ class DocView : public Fl_Widget {
   void set_opacity(double o);
   double stroke() const { return stroke_; }
   void set_stroke(double w) { stroke_ = w; }
-  double font_size() const { return font_size_; }
-  void set_font_size(double s) { font_size_ = s; }
-  int align() const { return align_; }
-  void set_align(int a) { align_ = a; }
+  // The size and alignment of new text, or of the text box being edited.
+  double font_size() const;
+  void set_font_size(double s);
+  int align() const;
+  void set_align(int a);
   void set_stamp_text(const std::string &s) { stamp_text_ = s; }
   const std::string &stamp_text() const { return stamp_text_; }
   void set_cache_budget(size_t bytes);
@@ -136,11 +147,44 @@ class DocView : public Fl_Widget {
   void set_selected_opacity(double o);
   void undo();
   void redo();
-  bool can_undo() const { return !undo_.empty(); }
-  bool can_redo() const { return !redo_.empty(); }
+  bool can_undo() const;
+  bool can_redo() const;
   void set_signature(cairo_surface_t *image);  // takes ownership
   cairo_surface_t *signature() const { return signature_; }
-  void set_image(cairo_surface_t *image);  // the picture the Image tool places; takes ownership
+  void set_image(cairo_surface_t *image, const std::string &file);  // what the Image tool places; takes ownership
+
+  // Direct editing of the page content (Edit mode, editing.cpp).
+  bool editing_text() const { return text_ != nullptr; }
+  const TextEdit *text_edit() const { return text_.get(); }
+  bool has_selected_image() const { return sel_image_ >= 0; }
+  // Ends the text box being edited, writing the change into the document
+  // when there is one, and drops a picked image. False when the change
+  // could not be written.
+  bool finish_text_edit();
+  // The style of the text at the caret (or of new text), and changes of
+  // it from the toolbar and the properties panel.
+  TextStyle text_style() const;
+  std::string text_family() const;  // the family name shown for it
+  void restyle_text(const std::function<void(TextStyle &)> &change);
+  void replace_selected_image();
+  void delete_selected_image();
+  Box selected_image_box() const;
+  void selected_image_pixels(int &w, int &h) const;
+  // One step of document undo: the working copies before and after a
+  // change of the PDF.
+  void push_snapshot(const std::string &before, bool before_working, const std::string &after,
+                     const std::vector<int> &pages);
+  // The pages of annotation steps that a new copy of the document absorbs.
+  std::vector<int> annotation_step_pages() const;
+  // Swaps in |doc|, a new copy of the document shown: the tiles of the
+  // pages not in |changed| stay valid (empty: every page changed; or
+  // kPagesMoved / kSameContent).
+  void swap_document(Document *doc, const std::vector<int> &changed);
+  // Files the undo history still needs.
+  void history_files(std::set<std::string> &out) const;
+  // For the UI test: where the visible pages are (window coordinates) and
+  // their size in points, one line per page.
+  std::string qa_pages() const;
 
   // Redaction marks (not yet applied).
   const std::vector<std::pair<int, Box>> &redactions() const { return redactions_; }
@@ -179,13 +223,17 @@ class DocView : public Fl_Widget {
     Box box;
   };
   struct UndoStep {
-    enum Kind { Added, Removed, Moved, Recolored, Faded } kind;
+    enum Kind { Added, Removed, Moved, Recolored, Faded, Snapshot } kind;
     int page;
     PopplerAnnot *annot;
     UndoStep(Kind k, int p, PopplerAnnot *a) : kind(k), page(p), annot(a) {}
     double dx = 0, dy = 0;
     Rgb color, color2;
     double opacity = 1, opacity2 = 1;
+    // Snapshot: the working copies before and after a change of the PDF.
+    std::string before, after;
+    bool before_working = false;
+    std::vector<int> pages;
   };
 
   RenderParams params() const;
@@ -200,7 +248,7 @@ class DocView : public Fl_Widget {
   void page_box_device(int page, const Box &b, double &x, double &y, double &w, double &h) const;
   bool screen_to_page(int mx, int my, int &page, double &px, double &py, bool nearest) const;
   void update_current();
-  void draw_page(sde::Painter &p, int page, std::vector<RenderJob> &jobs);
+  bool draw_page(sde::Painter &p, int page, std::vector<RenderJob> &jobs);  // false: tiles missing
   void draw_overlays(sde::Painter &p, int page);
   void draw_preview(sde::Painter &p);
   void draw_scrollbars(sde::Painter &p);
@@ -228,6 +276,37 @@ class DocView : public Fl_Widget {
   bool keyboard(int key, int state);
   bool is_text_tool(Tool t) const;
   bool is_box_tool(Tool t) const;
+  // Direct editing (editing.cpp).
+  bool edit_tool() const { return tool_ == Tool::Edit || tool_ == Tool::NewText; }
+  std::shared_ptr<PageLayout> layout_of(int page, bool now = true);
+  void forget_layouts();
+  bool edit_press(int mx, int my);
+  void edit_drag(int mx, int my);
+  void edit_release(int mx, int my);
+  bool edit_key(int key, int state);
+  void edit_hover(int mx, int my, Fl_Cursor &cursor);
+  void edit_changed(bool now = false);  // the text box changed: a new preview
+  bool make_background();               // the page without the box's original glyphs
+  void render_overlay();                // the box as it will be written
+  void drop_overlay();
+  void draw_edit(sde::Painter &p, int page);
+  void draw_edit_overlay(sde::Painter &p, int page);  // the text box being edited
+  bool draw_ghost(sde::Painter &p, int page);
+  void start_text(int page, int block, double px, double py);
+  void start_new_text(int page, const Box &box);
+  void add_picture(int page, const Box &box);
+  bool commit_image(int page, const std::function<bool(PdfFile &, PageLayout &, std::string &)> &op,
+                    const std::string &message);
+  int edit_handle_at(int mx, int my) const;  // 1 move, 2 width, 10+k image corner k, 0 none
+  void edit_region(Box &box) const;
+  bool overlay_area(int &rx, int &ry, int &rx2, int &ry2, int margin) const;
+  int overlay_key() const;
+  void paste_text();
+  bool edit_context_menu(int mx, int my);
+  void render_now(int page);  // the visible tiles of a page, at once
+  static void blink_cb(void *p);
+  static void preview_cb(void *p);
+  static void layouts_cb(void *p);
 
   XanaraWindow *app_;
   Document *doc_ = nullptr;
@@ -270,7 +349,7 @@ class DocView : public Fl_Widget {
   std::vector<std::pair<int, Box>> sel_boxes_;
 
   // Mouse drags.
-  enum class Drag { Idle, Select, Pan, MoveAnnot, Shape, Ink, Erase, ScrollV, ScrollH, Link } drag_ = Drag::Idle;
+  enum class Drag { Idle, Select, Pan, MoveAnnot, Shape, Ink, Erase, ScrollV, ScrollH, Link, Edit } drag_ = Drag::Idle;
   int press_x_ = 0, press_y_ = 0, drag_page_ = -1;
   Point drag_p0_, drag_p1_;
   double press_sx_ = 0, press_sy_ = 0;
@@ -285,7 +364,39 @@ class DocView : public Fl_Widget {
 
   std::vector<UndoStep> undo_, redo_;
   cairo_surface_t *signature_ = nullptr, *image_ = nullptr;
+  std::string image_file_;
   std::vector<std::pair<int, Box>> redactions_;
+
+  // Direct editing (editing.cpp).
+  std::unique_ptr<PdfFile> edit_pdf_;          // the document as the engine reads it
+  bool edit_pdf_failed_ = false;
+  std::map<int, std::shared_ptr<PageLayout>> layouts_;
+  std::set<int> layouts_wanted_;               // read when idle
+  std::unique_ptr<TextEdit> text_;
+  TextStyle new_style_;
+  int hover_block_ = -1, hover_image_ = -1, hover_page_ = -1;
+  int sel_image_ = -1, sel_image_page_ = -1;
+  // While a text box is edited: the page without the box's original glyphs
+  // (a copy of the document) and the box alone (a one page document), both
+  // rendered by poppler and put together for the area of the box.
+  PopplerDocument *bg_doc_ = nullptr;
+  cairo_surface_t *bg_ = nullptr;              // background pixels, normal colors
+  int bg_x_ = 0, bg_y_ = 0, bg_key_ = 0;       // device pixels in the page
+  cairo_surface_t *overlay_ = nullptr;         // the box as it will look
+  int ov_x_ = 0, ov_y_ = 0, ov_key_ = 0, ov_page_ = -1;
+  Box ov_box_;                                 // its area in page space
+  bool preview_pending_ = false;
+  // After a change was written: its picture until the page's new tiles
+  // arrive, so that the old content never flashes.
+  cairo_surface_t *ghost_ = nullptr;
+  int ghost_x_ = 0, ghost_y_ = 0, ghost_key_ = 0, ghost_page_ = -1;
+  enum class EditDrag { Off, Select, Move, Width, Image, ImageCorner } edit_drag_ = EditDrag::Off;
+  int drag_corner_ = 0;
+  Point edit_p0_;                              // where the drag started (page space)
+  Box drag_box_;                               // where a picture goes
+  double drag_dx_ = 0, drag_dy_ = 0;           // a text box being moved (page space)
+  cairo_surface_t *drag_image_ = nullptr;      // what moves with the pointer
+  bool caret_on_ = true, paste_pending_ = false;
 
   // Find.
   std::string query_;
@@ -380,7 +491,7 @@ class PropsPanel : public Fl_Widget {
 
  private:
   struct Item {
-    enum Kind { Swatch, Opacity, Width, FontSize, Align, Action } kind;
+    enum Kind { Swatch, Opacity, Width, FontSize, Align, Action, Font, Bold, Italic } kind;
     int x, y, w, h;
     int index;  // swatch / width / align / action number
   };
@@ -430,12 +541,13 @@ struct DocTab {
 
 // A clickable spot of the window chrome (tab strip, toolbar, context bar).
 struct Hot {
-  enum Kind { Icon, Label, TabHome, Tab, TabClose, ModeTab, Overflow, Zoom, Pointer } kind = Icon;
+  enum Kind { Icon, Label, TabHome, Tab, TabClose, ModeTab, Overflow, Zoom, Pointer, Dropdown, Swatch } kind = Icon;
   icon::Kind glyph = icon::Open;
   std::string text, tip;
   std::function<void()> action;
   int x = 0, y = 0, w = 0, h = 0;
   bool toggled = false, enabled = true, chevron = false;
+  Rgb color;     // Swatch
   int tab = -1;  // tab index
   int row = 0;   // 0 tabs, 1 toolbar, 2 context bar
 };
@@ -459,7 +571,6 @@ class XanaraWindow : public sde::BufferedWindow {
   Mode mode() const { return mode_; }
   void set_mode(Mode m);
   bool props_on() const { return props_on_ && props_->visible(); }
-  bool have(const std::string &program);  // cached find_program
 
   // Tabs and files.
   bool open_path(const std::string &path, int page = -1);
@@ -513,9 +624,27 @@ class XanaraWindow : public sde::BufferedWindow {
   void merge_files();
   void images_to_pdf_dialog();
   void apply_redactions();
-  bool working_change(const std::string &out, const std::string &message);
+  // Shows |out| (a new working copy) instead of the document, as one step
+  // of undo back to |before|; |changed_pages| keeps the other pages' tiles.
+  bool working_change(const std::string &out, const std::string &message, const std::string &before = "",
+                      const std::vector<int> &changed_pages = {});
+  // Runs |op| on the document through the PDF engine and shows the result.
+  bool engine_change(const std::function<bool(PdfFile &, std::string &)> &op, const std::string &what,
+                     const std::string &message, const std::vector<int> &changed_pages = {});
+  void restore_snapshot(const std::string &path, bool working, const std::vector<int> &changed_pages);
+  // Writes a text edit or a picture change of |v|'s page into the document.
+  bool commit_page_edit(DocView *v, int page, const std::function<bool(PdfFile &, PageLayout &, std::string &)> &op,
+                        const PageLayout *expected, const std::string &message);
+  std::string current_source();
+  std::string temp_path(const std::string &tag);
+  void drop_temps(DocView *v);  // deletes the copies the undo history no longer needs
   bool choose_image();  // for the Image tool
+  std::string choose_image_file();
+  void font_menu(int x, int y);
+  void size_menu(int x, int y);
+  void color_menu(int x, int y);
   bool comparing() const { return compare_id_ >= 0; }
+  void ocr_shutdown();  // stops text recognition that is running
 
  private:
   void build_chrome();
@@ -531,11 +660,9 @@ class XanaraWindow : public sde::BufferedWindow {
   void load_settings();
   void save_session();
   bool replace_document(DocTab &t, const std::string &path, const std::string &password, bool working, int page,
-                        bool keep_view);
-  std::string temp_path(const std::string &tag);
-  bool run_tool(const std::vector<std::string> &argv, const std::string &out, const std::string &what);
-  std::string current_source();
-  bool qpdf_update(const std::function<bool(PdfUpdate &, const PdfObjects &)> &plan, const std::string &message);
+                        bool keep_view, const std::vector<int> &changed_pages = {});
+  bool layout_edit_bar(int y0, int h);  // the text and picture tools of the Edit mode
+  void align_menu(int x, int y);
   void stamp_pages(StampSpec::Kind kind);
   void export_images(bool jpeg);
   void export_text(int kind);
@@ -552,6 +679,8 @@ class XanaraWindow : public sde::BufferedWindow {
   bool tool_enabled(const ToolSpec &s, std::string *why = nullptr);
   bool tool_toggled(const ToolSpec &s) const;
   int tab_x(int index) const;
+  void qa_report();  // XANARA_QA_FILE: the state the UI test reads
+  static void ocr_poll(void *p);
   static void toast_cb(void *p);
   static void remember_cb(void *p);
   static void settings_cb(void *p);
@@ -561,7 +690,6 @@ class XanaraWindow : public sde::BufferedWindow {
   TabList tablist_;
   History history_;
   Mode mode_ = Mode::Annotate;
-  std::map<std::string, bool> programs_;
 
   HomeView *home_ = nullptr;
   Sidebar *sidebar_ = nullptr;

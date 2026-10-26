@@ -383,7 +383,9 @@ to `sde-lock`) remain as small compatibility scripts.
 New GTK processes follow SDE light/dark settings, respecting an existing
 `GTK_THEME` or the system-theme option. SDE-specific MIME defaults preserve user
 overrides. Xanara (native since alpha15) opens, annotates and fills in PDF files with
-poppler; page operations use qpdf when it is installed.
+poppler; since 0.2 Alpha 3 its own PDF engine (libqpdf, HarfBuzz, FreeType) edits the
+text and pictures of the pages in place and does every page operation itself, without
+running any other program (docs/XANARA.md).
 
 The panel defaults to a full-width square-edged rectangle. Floating and short
 styles remain available. Existing saved panel choices are retained. Control Center → Applications shows short clickable source names and complete installed copyright

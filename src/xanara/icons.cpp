@@ -734,6 +734,59 @@ void draw(Painter &p, Kind kind, double x, double y, double size, const Color &c
       d.circle(12, 7.8, 1.1);
       d.fill();
       break;
+    case EditText:
+      // A T and a text cursor.
+      d.seg(3.5, 5.5, 13.5, 5.5);
+      d.seg(8.5, 5.5, 8.5, 18.5);
+      d.stroke();
+      d.seg(15.5, 4.5, 19.5, 4.5);
+      d.seg(15.5, 19.5, 19.5, 19.5);
+      d.seg(17.5, 4.5, 17.5, 19.5);
+      d.stroke();
+      break;
+    case Bold:
+      cairo_set_line_width(cr, 2.6);
+      d.move(7.5, 4.5);
+      d.line(12.5, 4.5);
+      cairo_curve_to(cr, 17, 4.5, 17, 11.5, 12.5, 11.5);
+      d.line(7.5, 11.5);
+      d.move(7.5, 11.5);
+      d.line(13.5, 11.5);
+      cairo_curve_to(cr, 18.5, 11.5, 18.5, 19.5, 13.5, 19.5);
+      d.line(7.5, 19.5);
+      cairo_close_path(cr);
+      d.stroke();
+      break;
+    case Italic:
+      d.seg(10.5, 4.5, 17.5, 4.5);
+      d.seg(6.5, 19.5, 13.5, 19.5);
+      d.seg(14, 4.5, 10, 19.5);
+      d.stroke();
+      break;
+    case AlignLeft:
+    case AlignCenter:
+    case AlignRight:
+    case AlignJustify: {
+      const double widths[4] = {16, 10, 16, 8};
+      for (int l = 0; l < 4; ++l) {
+        double lw = kind == AlignJustify ? (l == 3 ? 10 : 16) : widths[l];
+        double lx = kind == AlignCenter ? 12 - lw / 2 : kind == AlignRight ? 20 - lw : 4;
+        d.seg(lx, 6 + l * 4, lx + lw, 6 + l * 4);
+      }
+      d.stroke();
+      break;
+    }
+    case Replace:
+      // A picture and the arrows of an exchange.
+      d.rect(3, 4, 11, 9, 1.5);
+      d.stroke();
+      d.move(4.5, 12); d.line(7.5, 8.5); d.line(10, 11); d.line(11.5, 9.5); d.line(13, 11.5);
+      d.stroke();
+      d.move(17.5, 8); d.line(17.5, 16.5); d.line(9, 16.5);
+      d.move(11.5, 14); d.line(9, 16.5); d.line(11.5, 19);
+      d.move(15, 10.5); d.line(17.5, 8); d.line(20, 10.5);
+      d.stroke();
+      break;
     case Count:
       break;
     case Lock:

@@ -275,16 +275,30 @@ int main() { poppler_annot_set_border_width(nullptr, 2.0); return 0; }
 ]=] XANARA_HAVE_BORDER_WIDTH)
 unset(CMAKE_REQUIRED_INCLUDES)
 unset(CMAKE_REQUIRED_LIBRARIES)
-add_library(sde-xanara-core STATIC xanara/document.cpp xanara/cache.cpp xanara/model.cpp)
+# 0.2 Alpha 3: Xanara's own PDF engine. libqpdf reads and writes the
+# objects, HarfBuzz shapes and subsets the fonts of edited text, fontconfig
+# and FreeType find and check them; no external program is run.
+pkg_check_modules(QPDF REQUIRED IMPORTED_TARGET libqpdf>=11)
+pkg_check_modules(XANARA_FONTS REQUIRED IMPORTED_TARGET harfbuzz harfbuzz-subset freetype2 fontconfig zlib)
+add_library(sde-xanara-core STATIC xanara/document.cpp xanara/cache.cpp xanara/model.cpp
+  xanara/pdf.cpp xanara/ops.cpp xanara/content.cpp xanara/fonts.cpp xanara/fontdata.cpp xanara/layout.cpp
+  xanara/edit.cpp xanara/ocr.cpp)
 target_include_directories(sde-xanara-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xanara)
-target_link_libraries(sde-xanara-core PUBLIC sde-common PkgConfig::POPPLER_GLIB Threads::Threads)
-# JPEG export writes with libjpeg (already needed by SDE-FLTK); without it
-# Xanara falls back to pdftoppm when that is installed.
-find_package(JPEG)
-if(JPEG_FOUND)
-  target_compile_definitions(sde-xanara-core PRIVATE XANARA_HAVE_JPEG=1)
-  target_link_libraries(sde-xanara-core PUBLIC JPEG::JPEG)
+# OCR with the tesseract library when it is there (Debian: libtesseract-dev).
+pkg_check_modules(TESSERACT IMPORTED_TARGET tesseract lept)
+if(TESSERACT_FOUND)
+  target_compile_definitions(sde-xanara-core PRIVATE XANARA_HAVE_TESSERACT=1)
+  target_link_libraries(sde-xanara-core PUBLIC PkgConfig::TESSERACT)
 endif()
+target_link_libraries(sde-xanara-core PUBLIC sde-common PkgConfig::POPPLER_GLIB Threads::Threads
+  PkgConfig::QPDF PkgConfig::XANARA_FONTS)
+# No qpdf PointerHolder: std::shared_ptr only (qpdf 11 and 12).
+target_compile_definitions(sde-xanara-core PUBLIC POINTERHOLDER_TRANSITION=4)
+# JPEG export, image import and compression write with libjpeg (already
+# needed by SDE-FLTK).
+find_package(JPEG REQUIRED)
+target_compile_definitions(sde-xanara-core PRIVATE XANARA_HAVE_JPEG=1)
+target_link_libraries(sde-xanara-core PUBLIC JPEG::JPEG)
 foreach(feature XANARA_HAVE_FREE_TEXT XANARA_HAVE_INK XANARA_HAVE_BORDER_WIDTH)
   if(${feature})
     target_compile_definitions(sde-xanara-core PUBLIC ${feature}=1)
@@ -298,9 +312,12 @@ add_executable(xanara
   xanara/home.cpp
   xanara/props.cpp
   xanara/view.cpp
+  xanara/editing.cpp
   xanara/sidebar.cpp
   xanara/icons.cpp)
-target_link_libraries(xanara PRIVATE sde-xanara-core)
+# Printing through libcups (no lp program).
+find_package(Cups REQUIRED)
+target_link_libraries(xanara PRIVATE sde-xanara-core Cups::Cups)
 install(TARGETS xanara RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Taca: the SDE archive manager, written from scratch by the Selviana DE Project.

@@ -2,12 +2,12 @@
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The commands of Xanara's modes. Annotations are made by poppler in
-// memory; everything that changes the structure of the PDF (pages, links,
-// form fields, crop boxes, stamps, encryption, redaction) runs qpdf on a
-// copy and shows the result as a working copy, so nothing touches the
-// original until the user saves. Optional programs (qpdf, ghostscript,
-// tesseract, pdftoppm, lp) are checked first and missing ones are named
-// together with the package that provides them.
+// memory; everything that changes the PDF itself (text and images, pages,
+// links, form fields, crop boxes, stamps, encryption, redaction) is done
+// by Xanara's own engine (pdf.h, edit.h) on a working copy, so nothing
+// touches the original until the user saves. Each such change is one
+// step of undo: the working copy before it is kept until the tab closes.
+// No other program is run.
 #include <FL/Fl.H>
 #include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
@@ -15,15 +15,18 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <ctime>
+#include <thread>
 
+#include "edit.h"
 #include "i18n.h"
 #include "icons.h"
-#include "process.h"
-#include "spawn.h"
+#include "layout.h"
+#include "ocr.h"
 #include "util.h"
 #include "xanara.h"
 
@@ -92,6 +95,10 @@ std::string size_text(long b) {
   return b > (1 << 20) ? format("%.1f MB", b / 1048576.0) : format("%.0f KB", b / 1024.0);
 }
 
+void report(const std::string &what, const std::string &error) {
+  fl_alert("%s", format(_("%s did not work:\n%s"), what.c_str(), error.c_str()).c_str());
+}
+
 }  // namespace
 
 // ------------------------------------------------------------- plumbing
@@ -108,76 +115,122 @@ std::string XanaraWindow::current_source() {
   return p;
 }
 
-bool XanaraWindow::run_tool(const std::vector<std::string> &argv, const std::string &out, const std::string &what) {
-  int status = -1;
-  std::string output = run_sync(argv, &status, 600000);
-  bool qpdf = !argv.empty() && argv[0] == "qpdf";
-  if ((status != 0 && !(qpdf && status == 3)) || (!out.empty() && !file_exists(out))) {
-    fl_alert("%s", format(_("%s failed (exit %d).\n%s"), what.c_str(), status, output.substr(0, 1200).c_str()).c_str());
-    return false;
-  }
-  return true;
-}
-
-bool XanaraWindow::working_change(const std::string &out, const std::string &message) {
+bool XanaraWindow::working_change(const std::string &out, const std::string &message, const std::string &before,
+                                  const std::vector<int> &changed_pages) {
   DocTab *t = tab();
   if (!t) return false;
   int cur = t->view->current_page();
   std::string pw = t->doc->password();
-  t->view->forget_history();
-  if (!replace_document(*t, out, pw, true, std::min(cur, std::max(0, t->doc->count() - 1)), true)) return false;
-  t->doc->set_modified(true);
+  std::string doc_path = t->doc->path();
+  bool doc_working = t->working_copy;
+  std::string from = before.empty() ? doc_path : before;
+  // Annotations made since the last copy were saved into |from|: they
+  // become one step of undo of their own.
+  std::vector<int> annot_pages = t->view->annotation_step_pages();
+  if (!replace_document(*t, out, pw, true, cur, true, changed_pages)) return false;
+  if (from != doc_path) t->view->push_snapshot(doc_path, doc_working, from, annot_pages);
+  // One step of undo: back to the file the change started from.
+  t->view->push_snapshot(from, from != t->target, out, changed_pages);
+  drop_temps(t->view);
   update_chrome();
-  toast(message);
+  if (!message.empty()) toast(message);
   return true;
 }
 
-bool XanaraWindow::qpdf_update(const std::function<bool(PdfUpdate &, const PdfObjects &)> &plan,
-                               const std::string &message) {
+bool XanaraWindow::commit_page_edit(DocView *v, int page,
+                                    const std::function<bool(PdfFile &, PageLayout &, std::string &)> &op,
+                                    const PageLayout *expected, const std::string &message) {
+  DocTab *t = tab();
+  if (!t || t->view != v) return false;
+  commit_field();
+  std::string src = current_source();
+  if (src.empty()) return false;
+  std::string error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, t->doc->password(), error);
+  std::unique_ptr<PageLayout> layout = pdf ? PageLayout::read(*pdf, page) : nullptr;
+  if (!layout) {
+    report(_("Edit"), error.empty() ? std::string(_("the page could not be read")) : error);
+    return false;
+  }
+  if (expected && !same_content(*layout, *expected)) {
+    report(_("Edit"), _("the page is not the one that was edited"));
+    return false;
+  }
+  if (!op(*pdf, *layout, error)) {
+    report(_("Edit"), error.empty() ? std::string(_("the change could not be made")) : error);
+    return false;
+  }
+  std::string out = temp_path("edit");
+  bool ok = pdf->write(out, PdfFile::Write::Auto, error);
+  layout.reset();
+  pdf.reset();
+  if (!ok) {
+    report(_("Edit"), error);
+    return false;
+  }
+  return working_change(out, message, src, {page});
+}
+
+bool XanaraWindow::engine_change(const std::function<bool(PdfFile &, std::string &)> &op, const std::string &what,
+                                 const std::string &message, const std::vector<int> &changed_pages) {
   DocTab *t = tab();
   if (!t) return false;
   commit_field();
   std::string src = current_source();
   if (src.empty()) return false;
-  int status = -1;
-  std::string json = run_sync(qpdf_json_args(src, t->doc->password()), &status, 120000);
-  PdfObjects objs;
   std::string error;
-  if (status != 0 && status != 3) {
-    fl_alert("%s", format(_("qpdf could not read the document (exit %d)."), status).c_str());
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, t->doc->password(), error);
+  if (!pdf) {
+    report(what, error);
     return false;
   }
-  if (!objs.load(json, error)) {
-    fl_alert("%s", format(_("qpdf's description of the document could not be read: %s"), error.c_str()).c_str());
+  if (!op(*pdf, error)) {
+    if (error.empty()) toast(_("Nothing to change"));
+    else report(what, error);
     return false;
   }
-  PdfUpdate up(objs);
-  if (!plan(up, objs)) {
-    toast(_("Nothing to change"));
+  std::string out = temp_path("change");
+  if (!pdf->write(out, PdfFile::Write::Auto, error)) {
+    report(what, error);
     return false;
   }
-  std::string jfile = temp_path("update.json"), out = temp_path("updated");
-  if (!write_file_atomic(jfile, up.dump())) return false;
-  if (!run_tool(qpdf_update_args(src, jfile, out, t->doc->password()), out, "qpdf")) return false;
-  return working_change(out, message);
+  return working_change(out, message, src, changed_pages);
+}
+
+void XanaraWindow::restore_snapshot(const std::string &path, bool working, const std::vector<int> &changed_pages) {
+  DocTab *t = tab();
+  if (!t) return;
+  if (path.empty() || !file_exists(path)) {
+    toast(_("This step cannot be undone: its copy is gone"));
+    return;
+  }
+  int cur = t->view->current_page();
+  if (!replace_document(*t, path, t->doc->password(), working, cur, true, changed_pages)) return;
+  update_chrome();
 }
 
 bool XanaraWindow::choose_image() {
   DocView *v = view();
   if (!v) return false;
+  std::string file = choose_image_file();
+  if (file.empty()) return false;
+  cairo_surface_t *img = load_image(file, 0, 0);
+  if (!img) {
+    toast(_("This image could not be read"));
+    return false;
+  }
+  v->set_image(img, file);
+  return true;
+}
+
+std::string XanaraWindow::choose_image_file() {
   Fl_Native_File_Chooser chooser;
   chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
   chooser.title(_("Choose an Image"));
   chooser.filter(_("Images\t*.{png,PNG,jpg,jpeg,JPG,JPEG,svg,gif,bmp}"));
   chooser.directory(user_dir("PICTURES").c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return false;
-  cairo_surface_t *img = load_image(chooser.filename(), 0, 0);
-  if (!img) {
-    toast(_("This image could not be read"));
-    return false;
-  }
-  v->set_image(img);
-  return true;
+  if (chooser.show() != 0 || !chooser.filename()) return "";
+  return chooser.filename();
 }
 
 // ------------------------------------------------------------- commands
@@ -194,11 +247,12 @@ void XanaraWindow::run(Act a) {
     }
     return;
   }
+  v->finish_text_edit();
   if (spec->canvas) {
     FieldKind kind = FieldKind::Text;
     Tool t = tool_for(a, &kind);
     if (tool_toggled(*spec)) {
-      v->set_tool(Tool::Select);
+      if (t != Tool::Edit) v->set_tool(mode_ == Mode::Edit ? Tool::Edit : Tool::Select);
       return;
     }
     if (t == Tool::Image && !choose_image()) return;
@@ -262,7 +316,8 @@ void XanaraWindow::run(Act a) {
     case Act::Decrypt: decrypt(); break;
     case Act::ApplyRedactions: apply_redactions(); break;
     case Act::RemoveMetadata:
-      if (qpdf_update(plan_strip_metadata, _("Metadata removed — save to keep the result"))) {
+      if (engine_change([](PdfFile &pdf, std::string &) { return strip_metadata(pdf); }, _("Remove Metadata"),
+                        _("Metadata removed — save to keep the result"))) {
         // poppler's own copy of the information dictionary goes too.
         if (Document *d = document()) {
           std::lock_guard<std::mutex> lock(d->mutex());
@@ -290,8 +345,9 @@ void XanaraWindow::canvas_box(Tool t, int page, const Box &box) {
     bool number = std::all_of(target.begin(), target.end(), [](char c) { return c >= '0' && c <= '9'; });
     int dest = number ? atoi(target.c_str()) - 1 : -1;
     if (!number && target.find("://") == std::string::npos && target.rfind("mailto:", 0) != 0) target = "https://" + target;
-    qpdf_update([&](PdfUpdate &up, const PdfObjects &src) { return plan_link(up, src, page, box, number ? "" : target, dest); },
-                _("Link added — save to keep it"));
+    std::string uri = number ? "" : target;
+    engine_change([&](PdfFile &pdf, std::string &) { return add_link(pdf, page, box, uri, dest); }, _("Link"),
+                  _("Link added — save to keep it"), {page});
     return;
   }
   if (t == Tool::Crop) {
@@ -301,9 +357,9 @@ void XanaraWindow::canvas_box(Tool t, int page, const Box &box) {
     if (c == 0) pages.push_back(page);
     else
       for (int p = 0; p < document()->count(); ++p) pages.push_back(p);
-    v->set_tool(Tool::Select);
-    qpdf_update([&](PdfUpdate &up, const PdfObjects &src) { return plan_crop(up, src, pages, box); },
-                _("Cropped — save to keep the result"));
+    v->set_tool(mode_ == Mode::Edit ? Tool::Edit : Tool::Select);
+    engine_change([&](PdfFile &pdf, std::string &) { return crop_pages(pdf, pages, box); }, _("Crop"),
+                  _("Cropped — save to keep the result"));
     return;
   }
   if (t == Tool::Field) {
@@ -328,8 +384,8 @@ void XanaraWindow::canvas_box(Tool t, int page, const Box &box) {
       if (!ask_text(_("Button Caption"), f.label, false)) return;
     }
     if (f.kind == FieldKind::Text) f.multiline = box.h() > 40;
-    qpdf_update([&](PdfUpdate &up, const PdfObjects &src) { return plan_field(up, src, page, box, f); },
-                format(_("Field “%s” added — save to keep it"), f.name.c_str()));
+    engine_change([&](PdfFile &pdf, std::string &) { return add_field(pdf, page, box, f); }, _("Form Field"),
+                  format(_("Field “%s” added — save to keep it"), f.name.c_str()), {page});
   }
 }
 
@@ -339,14 +395,9 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
   DocTab *t = tab();
   if (!t) return;
   commit_field();
-  if (!have("qpdf")) {
-    fl_message_title(_("qpdf Is Needed"));
-    fl_alert("%s", _("Changing pages uses qpdf.\nInstall it with:  sudo apt install qpdf"));
-    return;
-  }
+  t->view->finish_text_edit();
   Document *doc = t->doc.get();
   int n = doc->count(), cur = page >= 0 ? page : t->view->current_page();
-  std::string pw = doc->password();
   std::vector<int> order;
   for (int i = 0; i < n; ++i) order.push_back(i);
   std::vector<int> pages;
@@ -376,22 +427,15 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
     order.insert(order.begin() + dest, cur);
     cur = dest;
   }
-  std::string src = current_source();
-  if (src.empty()) return;
+  std::string error;
   if (op == "extract") {
     std::string out = ask_save(_("Save Extracted Pages As"), t->target,
                                stem(t->target) + " (" + format_page_ranges(pages) + ").pdf", _("PDF Documents\t*.pdf"), "pdf");
     if (out.empty()) return;
-    std::string tmp = out + ".xanara-part";
-    std::vector<std::string> xargs = qpdf_base(pw);
-    xargs.insert(xargs.end(), {src, "--pages", ".", format_page_ranges(pages), "--", tmp});
-    if (!run_tool(xargs, tmp, "qpdf")) {
-      unlink(tmp.c_str());
-      return;
-    }
-    if (rename(tmp.c_str(), out.c_str()) != 0) {
-      unlink(tmp.c_str());
-      fl_alert("%s", strerror(errno));
+    std::string src = current_source();
+    std::unique_ptr<PdfFile> pdf = src.empty() ? nullptr : PdfFile::open(src, doc->password(), error);
+    if (!pdf || !extract_pages(*pdf, pages, out, error)) {
+      report(_("Extract"), error);
       return;
     }
     toast(format(_("Saved %zu page(s) to “%s”"), pages.size(), display_name(out).c_str()));
@@ -407,49 +451,43 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
     chooser.directory(dir_of(t->target).c_str());
     if (chooser.show() != 0 || !chooser.filename()) return;
     std::string pattern = std::string(chooser.filename()) + "/" + stem(t->target) + "-%d.pdf";
-    if (!run_tool(qpdf_split_args(src, pattern, k, pw), "", "qpdf")) return;
-    toast(format(_("Split into %d file(s) in %s"), (n + k - 1) / k, chooser.filename()));
+    std::string src = current_source();
+    std::unique_ptr<PdfFile> pdf = src.empty() ? nullptr : PdfFile::open(src, doc->password(), error);
+    std::vector<std::string> written;
+    // A % in the file name would be read as a format.
+    for (size_t p = pattern.find('%'); p != std::string::npos && p != pattern.size() - 6; p = pattern.find('%', p + 2))
+      pattern.insert(p, "%");
+    if (!pdf || !split_pages(*pdf, k, pattern, written, error)) {
+      report(_("Split"), error);
+      return;
+    }
+    toast(format(_("Split into %zu file(s) in %s"), written.size(), chooser.filename()));
     return;
   }
-  std::string out = temp_path("pages");
-  std::vector<std::string> args = qpdf_base(pw);
-  bool ok = false;
   if (op == "rotate-left" || op == "rotate-right") {
-    args.insert(args.end(), {src, out, format("--rotate=%s90:%d", op == "rotate-left" ? "-" : "+", cur + 1)});
-    ok = run_tool(args, out, "qpdf");
+    int deg = op == "rotate-left" ? -90 : 90;
+    engine_change([&](PdfFile &pdf, std::string &) { return rotate_pages(pdf, {cur}, deg); }, _("Rotate"),
+                  _("Pages changed — save to keep the result"), {cur});
   } else if (op == "insert" || op == "append") {
     std::vector<std::string> files =
         ask_open_many(op == "insert" ? _("Insert Pages from PDFs") : _("Append PDFs"), _("PDF Documents\t*.{pdf,PDF}"),
                       dir_of(t->target));
     if (files.empty()) return;
     int after = op == "append" ? n - 1 : cur;
-    args.insert(args.end(), {src, "--pages", ".", format("1-%d", after + 1)});
-    for (auto &f : files) {
-      args.push_back(f);
-      args.push_back("1-z");
-    }
-    if (after + 2 <= n) {
-      args.push_back(".");
-      args.push_back(format("%d-z", after + 2));
-    }
-    args.push_back("--");
-    args.push_back(out);
-    ok = run_tool(args, out, "qpdf");
+    if (!engine_change([&](PdfFile &pdf, std::string &e) { return insert_pages(pdf, after, files, e); }, _("Insert"),
+                       _("Pages changed — save to keep the result"), {kPagesMoved}))
+      return;
     cur = after + 1;
   } else {
-    args.insert(args.end(), {src, "--pages", ".", format_page_ranges(order), "--", out});
-    ok = run_tool(args, out, "qpdf");
+    if (!engine_change([&](PdfFile &pdf, std::string &e) { return reorder_pages(pdf, order, e); }, _("Pages"),
+                       _("Pages changed — save to keep the result"), {kPagesMoved}))
+      return;
     if (op == "delete") cur = std::min(cur, int(order.size()) - 1);
   }
-  if (!ok) return;
-  if (working_change(out, _("Pages changed — save to keep the result")) && tab()) tab()->view->go_to(cur);
+  if (tab()) tab()->view->go_to(cur);
 }
 
 void XanaraWindow::merge_files() {
-  if (!have("qpdf")) {
-    fl_alert("%s", _("Merging uses qpdf.\nInstall it with:  sudo apt install qpdf"));
-    return;
-  }
   auto files = ask_open_many(_("Choose the PDFs to Merge (in order)"), _("PDF Documents\t*.{pdf,PDF}"),
                              user_dir("DOCUMENTS"));
   if (files.size() < 2) {
@@ -460,7 +498,11 @@ void XanaraWindow::merge_files() {
   if (out.empty()) return;
   toast(_("Merging…"));
   Fl::flush();
-  if (!run_tool(qpdf_merge_args(files, out), out, "qpdf")) return;
+  std::string error;
+  if (!xanara::merge_files(files, out, error)) {
+    report(_("Merge"), error);
+    return;
+  }
   open_path(out);
   toast(format(_("Merged %zu files"), files.size()));
 }
@@ -473,7 +515,16 @@ void XanaraWindow::images_to_pdf_dialog() {
   if (!ask_choice(_("Images to PDF"), _("Page size"), {_("A4, image fitted"), _("Same as each image")}, fit)) return;
   std::vector<cairo_surface_t *> images;
   for (const auto &f : files)
-    if (cairo_surface_t *img = load_image(f, 0, 0)) images.push_back(img);
+    if (cairo_surface_t *img = load_image(f, 0, 0)) {
+      // A JPEG goes into the PDF as it is, without a second compression.
+      std::string data;
+      if ((ends_with(lower(f), ".jpg") || ends_with(lower(f), ".jpeg")) && read_file(f, data)) {
+        auto *copy = new std::string(std::move(data));
+        cairo_surface_set_mime_data(img, CAIRO_MIME_TYPE_JPEG, reinterpret_cast<const unsigned char *>(copy->data()),
+                                    copy->size(), [](void *p) { delete static_cast<std::string *>(p); }, copy);
+      }
+      images.push_back(img);
+    }
   if (images.empty()) {
     toast(_("These images could not be read"));
     return;
@@ -567,12 +618,8 @@ void XanaraWindow::stamp_pages(StampSpec::Kind kind) {
     fl_alert("%s", error.c_str());
     return;
   }
-  std::string src = current_source();
-  if (src.empty()) return;
-  std::string out = temp_path("stamped");
-  if (!run_tool(qpdf_overlay_args(src, stamp, out, kind == StampSpec::Background, t->doc->password()), out, "qpdf"))
-    return;
-  working_change(out, message);
+  bool under = kind == StampSpec::Background;
+  engine_change([&](PdfFile &pdf, std::string &e) { return overlay_pages(pdf, stamp, under, e); }, _("Stamp"), message);
 }
 
 // --------------------------------------------------------------- convert
@@ -605,16 +652,7 @@ void XanaraWindow::export_images(bool jpeg) {
   Fl::flush();
   for (int p : pages) {
     std::string out = numbered_name(base, ext, p, n), error;
-    bool ok;
-    if (jpeg && !have_native_jpeg()) {
-      std::string stem_out = out.substr(0, out.size() - 4);
-      int status = -1;
-      run_sync(pdftoppm_jpeg_args(t->doc->path(), p, dpi, stem_out, t->doc->password()), &status);
-      ok = status == 0;
-    } else {
-      ok = export_page_image(*t->doc, p, dpi, out, jpeg, error);
-    }
-    if (!ok) {
+    if (!export_page_image(*t->doc, p, dpi, out, jpeg, error)) {
       fl_alert("%s", format(_("Page %d could not be exported: %s"), p + 1, error.c_str()).c_str());
       break;
     }
@@ -663,30 +701,36 @@ void XanaraWindow::encrypt() {
   perms.print = c != 1 && c != 3;
   perms.copy = c != 2 && c != 3;
   if (c == 3) perms.modify = perms.annotate = perms.forms = perms.assemble = false;
+  t->view->finish_text_edit();
   std::string src = current_source();
   if (src.empty()) return;
   std::string out = ask_save(_("Save the Protected Copy As"), t->target, stem(t->target) + " (protected).pdf",
                              _("PDF Documents\t*.pdf"), "pdf");
   if (out.empty()) return;
-  if (!run_tool(qpdf_encrypt_args(src, out, user, owner, perms, t->doc->password()), out, "qpdf")) return;
+  std::string error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, t->doc->password(), error);
+  if (!pdf || !write_protected(*pdf, out, user, owner, perms, error)) {
+    report(_("Password"), error);
+    return;
+  }
   toast(format(_("Saved the protected copy “%s” (AES-256)"), display_name(out).c_str()));
 }
 
 void XanaraWindow::decrypt() {
   DocTab *t = tab();
   if (!t) return;
+  t->view->finish_text_edit();
   std::string pw = t->doc->password();
   std::string src = current_source();
   if (src.empty()) return;
-  std::string out = temp_path("decrypted");
-  if (!run_tool(qpdf_decrypt_args(src, out, pw), out, "qpdf")) return;
-  int cur = t->view->current_page();
-  t->view->forget_history();
-  if (replace_document(*t, out, "", true, cur, true)) {
-    t->doc->set_modified(true);
-    update_chrome();
-    toast(_("Password and restrictions removed — save to keep the result"));
+  std::string out = temp_path("decrypted"), error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, pw, error);
+  if (!pdf || !write_unprotected(*pdf, out, error)) {
+    report(_("Remove Password"), error);
+    return;
   }
+  pdf.reset();
+  working_change(out, _("Password and restrictions removed — save to keep the result"), src, {kSameContent});
 }
 
 void XanaraWindow::apply_redactions() {
@@ -697,29 +741,34 @@ void XanaraWindow::apply_redactions() {
   fl_message_title(_("Apply Redactions"));
   if (fl_choice("%s", _("Cancel"), _("Black Out"), nullptr,
                 format(_("Black out %zu marked area(s) on %zu page(s)?\n\n"
-                         "Those pages are replaced by a 200 dpi image of themselves with the areas painted "
-                         "black, so the text, pictures and drawings under the boxes are removed for good. "
-                         "The rest of those pages can no longer be selected as text."),
+                         "The text, pictures and drawings under the boxes are removed from the document for "
+                         "good, not only covered; the rest of the pages stays as it is."),
                        t->view->redactions().size(), by_page.size())
                     .c_str()) != 1)
     return;
   toast(_("Redacting…"));
   Fl::flush();
-  std::map<int, std::string> raster;
-  for (const auto &kv : by_page) {
-    std::string out = temp_path(format("redact-%d", kv.first)), error;
-    if (!rasterize_page_pdf(*t->doc, kv.first, 200, kv.second, out, error)) {
-      fl_alert("%s", error.c_str());
-      return;
-    }
-    raster[kv.first] = out;
-  }
-  std::string src = current_source();
-  if (src.empty()) return;
-  std::string out = temp_path("redacted");
-  if (!run_tool(redaction_splice_args(src, t->doc->count(), raster, out, t->doc->password()), out, "qpdf")) return;
-  t->view->clear_redactions();
-  working_change(out, _("Redactions applied — save to keep the result"));
+  // Pages whose content Xanara cannot take apart under a box (an image
+  // inside a form, say) are replaced by a 200 dpi image of themselves.
+  int rasterized = 0;
+  bool done = engine_change(
+      [&](PdfFile &pdf, std::string &e) {
+        for (const auto &kv : by_page) {
+          std::string why;
+          if (redact_page(pdf, kv.first, kv.second, why)) continue;
+          std::string img = temp_path(format("redact-%d", kv.first));
+          if (!rasterize_page_pdf(*t->doc, kv.first, 200, kv.second, img, e) || !replace_page(pdf, kv.first, img, e))
+            return false;
+          ++rasterized;
+        }
+        pdf.structural();  // nothing of the old content may stay in the file
+        return true;
+      },
+      _("Apply Redactions"),
+      rasterized ? std::string() : std::string(_("Redactions applied — save to keep the result")));
+  if (done && rasterized)
+    toast(format(_("Redactions applied; %d page(s) became images — save to keep the result"), rasterized));
+  if (done) t->view->clear_redactions();
 }
 
 // ------------------------------------------------------------------ tools
@@ -727,6 +776,11 @@ void XanaraWindow::apply_redactions() {
 void XanaraWindow::compress() {
   DocTab *t = tab();
   if (!t) return;
+  int q = 1;
+  if (!ask_choice(_("Compress"), _("Image quality"),
+                  {_("Small (screen, 72 dpi)"), _("Medium (ebook, 150 dpi)"), _("High (print, 300 dpi)")}, q))
+    return;
+  t->view->finish_text_edit();
   std::string src = current_source();
   if (src.empty()) return;
   std::string out = ask_save(_("Save the Smaller Copy As"), t->target, stem(t->target) + " (smaller).pdf",
@@ -734,50 +788,127 @@ void XanaraWindow::compress() {
   if (out.empty()) return;
   toast(_("Compressing…"));
   Fl::flush();
-  bool ok;
-  if (have("gs") && t->doc->password().empty()) {
-    int q = 1;
-    if (!ask_choice(_("Compress"), _("Image quality"), {_("Small (screen, 72 dpi)"), _("Medium (ebook, 150 dpi)"),
-                                                        _("High (print, 300 dpi)")},
-                    q))
-      return;
-    static const char *levels[] = {"screen", "ebook", "printer"};
-    ok = run_tool(gs_compress_args(src, out, levels[q]), out, "Ghostscript");
-  } else {
-    ok = run_tool(qpdf_compress_args(src, out, t->doc->password()), out, "qpdf");
+  std::string error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, t->doc->password(), error);
+  static const int dpis[] = {72, 150, 300};
+  if (!pdf || !write_compressed(*pdf, out, dpis[q], error)) {
+    report(_("Compress"), error);
+    return;
   }
-  if (!ok) return;
   long before = file_size(src), after = file_size(out);
   toast(format(_("%s → %s (%s)"), size_text(before).c_str(), size_text(after).c_str(),
                after < before ? format("-%d%%", int(100 - after * 100 / std::max(1L, before))).c_str() : _("no gain")));
 }
 
+// Text recognition takes seconds per page: it runs on a thread of its own
+// with its own copy of the document, and the window stays usable.
+namespace {
+
+struct OcrJob {
+  std::string src, password, lang, text_pdf, out;
+  int pages = 0;
+  std::atomic<int> page{0};
+  std::atomic<bool> cancel{false}, finished{false};
+  bool ok = false;
+  std::string error;
+  std::thread worker;
+};
+std::unique_ptr<OcrJob> g_ocr;
+
+}  // namespace
+
 void XanaraWindow::ocr() {
   DocTab *t = tab();
   if (!t) return;
-  std::string lang = "eng";
-  if (!ask_text(_("OCR Language (tesseract codes, e.g. eng, por, deu+eng)"), lang, false)) return;
+  if (g_ocr) {
+    fl_message_title(_("OCR"));
+    if (fl_choice("%s", _("Continue"), _("Stop"), nullptr,
+                  format(_("Text is being recognized (page %d of %d). Stop it?"), g_ocr->page + 1, g_ocr->pages)
+                      .c_str()) == 1)
+      g_ocr->cancel = true;
+    return;
+  }
+  std::string why;
+  if (!ocr_available(why)) {
+    fl_message_title(_("OCR"));
+    fl_alert("%s", why.c_str());
+    return;
+  }
+  std::string lang = ocr_default_language();
+  if (!ask_text(format(_("OCR Language (%s)"), ocr_languages().c_str()), lang, false)) return;
+  t->view->finish_text_edit();
   std::string out = ask_save(_("Save the Searchable PDF As"), t->target, stem(t->target) + " (OCR).pdf",
                              _("PDF Documents\t*.pdf"), "pdf");
   if (out.empty()) return;
-  std::vector<std::string> parts;
-  int n = t->doc->count();
-  for (int p = 0; p < n; ++p) {
-    toast(format(_("Recognizing page %d of %d…"), p + 1, n));
-    Fl::flush();
-    std::string img = temp_path(format("ocr-%d.png", p)), error;
-    if (!export_page_image(*t->doc, p, 300, img, false, error)) {
-      fl_alert("%s", error.c_str());
-      return;
-    }
-    std::string base = img.substr(0, img.size() - 4);
-    if (!run_tool(tesseract_args(img, base, trim(lang)), base + ".pdf", "tesseract")) return;
-    t->temps.push_back(base + ".pdf");
-    parts.push_back(base + ".pdf");
+  std::string src = current_source();
+  if (src.empty()) return;
+  auto job = std::make_unique<OcrJob>();
+  job->src = src;
+  job->password = t->doc->password();
+  job->lang = trim(lang);
+  job->text_pdf = temp_path("ocr-text");
+  job->out = out;
+  job->pages = t->doc->count();
+  OcrJob *j = job.get();
+  j->worker = std::thread([j] {
+    std::string error;
+    bool encrypted = false;
+    std::unique_ptr<Document> doc = Document::open(j->src, j->password, error, encrypted);
+    if (doc)
+      j->ok = ocr_text_layer(*doc, j->lang, j->text_pdf,
+                             [j](int page) {
+                               j->page = page;
+                               return !j->cancel;
+                             },
+                             error);
+    j->error = error;
+    j->finished = true;
+  });
+  g_ocr = std::move(job);
+  toast(format(_("Recognizing page %d of %d…"), 1, j->pages));
+  Fl::add_timeout(0.3, ocr_poll, this);
+}
+
+void XanaraWindow::ocr_poll(void *data) {
+  auto *self = static_cast<XanaraWindow *>(data);
+  if (!g_ocr) return;
+  if (!g_ocr->finished) {
+    self->toast(format(_("Recognizing page %d of %d…"), g_ocr->page + 1, g_ocr->pages));
+    Fl::repeat_timeout(0.3, ocr_poll, data);
+    return;
   }
-  if (!run_tool(ocr_join_args(parts, out), out, "qpdf")) return;
-  open_path(out);
-  toast(_("Text recognized — the new PDF is searchable"));
+  g_ocr->worker.join();
+  std::unique_ptr<OcrJob> j = std::move(g_ocr);
+  std::string error = j->error;
+  bool ok = j->ok;
+  if (!ok) {
+    unlink(j->text_pdf.c_str());
+    if (j->cancel) self->toast(_("Text recognition stopped"));
+    else report(_("OCR"), error);
+    return;
+  }
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(j->src, j->password, error);
+  ok = pdf && overlay_pages(*pdf, j->text_pdf, false, error);
+  std::string tmp = ok ? temp_beside(j->out) : "";
+  ok = ok && !tmp.empty() && pdf->write(tmp, PdfFile::Write::Rewrite, error) &&
+       commit_file(tmp, j->out, j->password, j->pages, error);
+  pdf.reset();
+  unlink(j->text_pdf.c_str());
+  if (!ok) {
+    report(_("OCR"), error);
+    return;
+  }
+  self->open_path(j->out);
+  self->toast(_("Text recognized — the new PDF is searchable"));
+}
+
+void XanaraWindow::ocr_shutdown() {
+  Fl::remove_timeout(ocr_poll, this);
+  if (!g_ocr) return;
+  g_ocr->cancel = true;
+  g_ocr->worker.join();
+  unlink(g_ocr->text_pdf.c_str());
+  g_ocr.reset();
 }
 
 void XanaraWindow::compare() {

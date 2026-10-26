@@ -11,6 +11,8 @@
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
+#include <cups/cups.h>
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -23,7 +25,6 @@
 #include "config.h"
 #include "i18n.h"
 #include "icons.h"
-#include "process.h"
 #include "spawn.h"
 #include "util.h"
 #include "x11.h"
@@ -48,6 +49,32 @@ namespace {
 
 std::string session_file() { return state_home() + "/sde/xanara-session"; }
 std::string bookmarks_file() { return state_home() + "/sde/xanara-bookmarks"; }
+
+// Working copies of documents under edit and their undo history: on disk
+// (they can be large), readable by the user only, gone when the tab is
+// saved or closed. Copies left behind by a crash are removed after a day.
+std::string work_dir() {
+  std::string base = env("XDG_CACHE_HOME");
+  if (base.empty() || base[0] != '/') base = home_dir() + "/.cache";
+  std::string dir = base + "/sde/xanara";
+  static bool ready = false;
+  if (!ready) {
+    make_dirs(dir);
+    chmod(dir.c_str(), 0700);
+    if (DIR *d = opendir(dir.c_str())) {
+      time_t now = time(nullptr);
+      while (dirent *e = readdir(d)) {
+        std::string f = dir + "/" + e->d_name;
+        struct stat st;
+        if (e->d_name[0] != '.' && stat(f.c_str(), &st) == 0 && S_ISREG(st.st_mode) && now - st.st_mtime > 86400)
+          unlink(f.c_str());
+      }
+      closedir(d);
+    }
+    ready = true;
+  }
+  return dir;
+}
 
 void style_input(Fl_Input *in, const Theme &t, bool paper) {
   in->box(FL_FLAT_BOX);
@@ -100,6 +127,7 @@ XanaraWindow::XanaraWindow(int w, int h) : BufferedWindow(w, h, "Xanara") {
 }
 
 XanaraWindow::~XanaraWindow() {
+  ocr_shutdown();
   remember_position();
   Fl::remove_handler(x_event_handler);
   Fl::remove_timeout(toast_cb, this);
@@ -121,6 +149,7 @@ void XanaraWindow::hide() {
 }
 
 void XanaraWindow::quit() {
+  if (DocView *v = view()) v->finish_text_edit();
   save_session();
   for (int i = tablist_.count() - 1; i >= 0; --i) {
     if (tabs_[size_t(i)]->dirty()) {
@@ -147,19 +176,12 @@ DocTab *XanaraWindow::tab() const {
   return a >= 0 ? tabs_[size_t(a)].get() : nullptr;
 }
 
-bool XanaraWindow::have(const std::string &program) {
-  auto it = programs_.find(program);
-  if (it != programs_.end()) return it->second;
-  bool ok = !find_program(program).empty();
-  programs_[program] = ok;
-  return ok;
-}
-
 void XanaraWindow::set_mode(Mode m) {
+  if (DocView *v = view()) v->finish_text_edit();
   mode_ = m;
   if (DocView *v = view()) {
-    // A tool of another mode is put down.
-    v->set_tool(Tool::Select);
+    // A tool of another mode is put down; the Edit mode edits at once.
+    v->set_tool(m == Mode::Edit ? Tool::Edit : Tool::Select);
     if (m == Mode::Form) v->set_highlight_fields(true);
   }
   layout();
@@ -489,7 +511,9 @@ void XanaraWindow::about() {
   info.version = SDE_APP_VERSION;
   info.icon = "xanara";
   info.description = _("Document viewer and PDF editor for SDE.");
-  info.credits = {format(_("Rendering by poppler %s; page tools by qpdf."), poppler_get_version()),
+  info.credits = {format(_("Rendering by poppler %s; PDF objects by libqpdf; text by HarfBuzz, FreeType and "
+                           "Fontconfig; text recognition by Tesseract; printing by CUPS."),
+                         poppler_get_version()),
                   sde::toolkit_credit()};
   sde::show_about(info);
 }
@@ -841,7 +865,7 @@ void XanaraWindow::commit_field() {
 // ---------------------------------------------------------------- files
 
 bool XanaraWindow::replace_document(DocTab &t, const std::string &path, const std::string &password, bool working,
-                                    int page, bool keep_view) {
+                                    int page, bool keep_view, const std::vector<int> &changed_pages) {
   std::string error;
   bool encrypted = false;
   auto d = Document::open(path, password, error, encrypted);
@@ -853,19 +877,26 @@ bool XanaraWindow::replace_document(DocTab &t, const std::string &path, const st
   Fit fit = v->fit();
   double zoom = v->zoom(), ssx, ssy;
   v->scroll_pos(ssx, ssy);
-  v->set_document(nullptr);
+  int old_count = t.doc ? t.doc->count() : -1;
+  // The view moves to the new copy before the old one goes away; the tiles
+  // of what did not change stay.
+  std::unique_ptr<Document> old = std::move(t.doc);
   t.doc = std::move(d);
   t.working_copy = working;
-  v->set_document(t.doc.get());
-  if (keep_view) {
+  if (old) v->swap_document(t.doc.get(), changed_pages);
+  else v->set_document(t.doc.get());
+  old.reset();
+  bool same_pages = old_count == t.doc->count() &&
+                    !(changed_pages.size() == 1 && changed_pages[0] == kPagesMoved);
+  if (keep_view && !same_pages) {
     if (fit != Fit::Free) v->set_fit(fit);
     else v->set_zoom(zoom);
   }
   if (v == view()) sidebar_->document_changed();
   layout();
-  v->go_to(std::clamp(page, 0, t.doc->count() - 1));
-  // After saving, the pages are the same: stay exactly where the reader was.
-  if (keep_view && !working) v->set_scroll_pos(ssx, ssy);
+  // The same pages: stay exactly where the reader was.
+  if (keep_view && same_pages) v->set_scroll_pos(ssx, ssy);
+  else v->go_to(std::clamp(page, 0, t.doc->count() - 1));
   update_chrome();
   return true;
 }
@@ -927,6 +958,7 @@ bool XanaraWindow::open_path(const std::string &path0, int page) {
   }
   t->view->hide();
   t->view->set_document(t->doc.get());
+  if (mode_ == Mode::Edit) t->view->set_tool(Tool::Edit);
   int at = tablist_.open(path);
   tabs_.insert(tabs_.begin() + at, std::move(t));
   activate_tab(at);
@@ -955,6 +987,7 @@ bool XanaraWindow::open_path(const std::string &path0, int page) {
 void XanaraWindow::activate_tab(int index) {
   commit_field();
   if (DocView *old = view()) {
+    old->finish_text_edit();
     remember_position();
     old->hide();
   }
@@ -965,6 +998,7 @@ void XanaraWindow::activate_tab(int index) {
     v->show();
     Fl::focus(v);
     find_input_->value(v->find_query().c_str());
+    if (mode_ == Mode::Edit && v->tool() == Tool::Select) v->set_tool(Tool::Edit);
   }
   sidebar_->document_changed();
   if (DocView *v = view()) sidebar_->page_changed(v->current_page());
@@ -990,6 +1024,7 @@ bool XanaraWindow::close_tab(int index, bool ask) {
   if (index < 0 || index >= tablist_.count()) return true;
   DocTab &t = *tabs_[size_t(index)];
   commit_field();
+  t.view->finish_text_edit();
   if (ask && t.dirty()) {
     if (index != tablist_.active()) activate_tab(index);
     fl_message_title(_("Unsaved Changes"));
@@ -1023,6 +1058,7 @@ bool XanaraWindow::save() {
   DocTab *t = tab();
   if (!t) return false;
   commit_field();
+  if (!t->view->finish_text_edit()) return false;
   if (t->target.empty()) return save_as();
   if (!t->dirty()) {
     toast(_("No changes to save"));
@@ -1040,7 +1076,7 @@ bool XanaraWindow::save() {
   for (const auto &f : t->temps) unlink(f.c_str());
   t->temps.clear();
   t->view->forget_history();
-  replace_document(*t, t->target, pw, false, page, true);
+  replace_document(*t, t->target, pw, false, page, true, {kSameContent});
   remember_position();
   toast(format(_("Saved “%s”"), display_name(t->target).c_str()));
   return true;
@@ -1049,6 +1085,7 @@ bool XanaraWindow::save() {
 bool XanaraWindow::save_as() {
   DocTab *t = tab();
   if (!t) return false;
+  if (!t->view->finish_text_edit()) return false;
   Fl_Native_File_Chooser chooser;
   chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
   chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
@@ -1072,7 +1109,7 @@ bool XanaraWindow::save_as() {
   for (const auto &f : t->temps) unlink(f.c_str());
   t->temps.clear();
   t->view->forget_history();
-  replace_document(*t, t->target, pw, false, page, true);
+  replace_document(*t, t->target, pw, false, page, true, {kSameContent});
   remember_position();
   save_session();
   toast(format(_("Saved “%s”"), display_name(t->target).c_str()));
@@ -1081,40 +1118,100 @@ bool XanaraWindow::save_as() {
 
 std::string XanaraWindow::temp_path(const std::string &tag) {
   static int counter = 0;
-  std::string dir = runtime_dir();
-  make_dirs(dir);
-  std::string p = format("%s/xanara-%d-%d-%s", dir.c_str(), int(getpid()), ++counter, tag.c_str());
+  std::string p = format("%s/%d-%d-%s", work_dir().c_str(), int(getpid()), ++counter, tag.c_str());
   if (tag.find('.') == std::string::npos) p += ".pdf";
   if (DocTab *t = tab()) t->temps.push_back(p);
   return p;
 }
 
+void XanaraWindow::drop_temps(DocView *v) {
+  for (auto &t : tabs_) {
+    if (t->view != v) continue;
+    std::set<std::string> need;
+    v->history_files(need);
+    if (t->doc) need.insert(t->doc->path());
+    std::vector<std::string> keep;
+    for (const auto &f : t->temps) {
+      if (need.count(f)) keep.push_back(f);
+      else unlink(f.c_str());
+    }
+    t->temps = keep;
+  }
+}
+
 void XanaraWindow::print() {
   DocTab *t = tab();
   if (!t) return;
-  if (!have("lp")) {
-    fl_alert("%s", _("Printing needs the CUPS client (the lp command).\nInstall it with: sudo apt install cups-client"));
+  t->view->finish_text_edit();
+  // Printing goes to CUPS through libcups; no program is run.
+  cups_dest_t *dests = nullptr;
+  int n = cupsGetDests2(CUPS_HTTP_DEFAULT, &dests);
+  if (n <= 0) {
+    if (dests) cupsFreeDests(n, dests);
+    fl_message_title(_("Print"));
+    fl_alert("%s", _("No printer is set up. Add one in the printer settings, then try again."));
     return;
   }
-  std::string file = t->doc->path();
+  std::vector<std::string> names;
+  int choice = 0;
+  for (int k = 0; k < n; ++k) {
+    std::string name = dests[k].name;
+    if (dests[k].instance) name += std::string("/") + dests[k].instance;
+    if (const char *info = cupsGetOption("printer-info", dests[k].num_options, dests[k].options))
+      if (*info && name.find(info) == std::string::npos) name = std::string(info) + " (" + name + ")";
+    if (dests[k].is_default) {
+      choice = k;
+      name += std::string("  ") + _("(default)");
+    }
+    names.push_back(name);
+  }
+  if (n > 1 && !ask_choice(_("Print"), _("Print on which printer?"), names, choice)) {
+    cupsFreeDests(n, dests);
+    return;
+  }
+  std::string printer = dests[choice].name, instance = dests[choice].instance ? dests[choice].instance : "";
+  // The printer's (or instance's) saved settings go with the job.
+  std::vector<std::pair<std::string, std::string>> saved;
+  for (int k = 0; k < dests[choice].num_options; ++k)
+    saved.emplace_back(dests[choice].options[k].name, dests[choice].options[k].value);
+  cupsFreeDests(n, dests);
+  std::string copies = "1";
+  if (!ask_text(format(_("Print “%s” (%d pages) on %s — how many copies?"), display_name(t->target).c_str(),
+                       t->doc->count(), printer.c_str()),
+                copies, false))
+    return;
+  int count = std::clamp(atoi(copies.c_str()), 1, 999);
+  // What is on screen: the annotations made since the last save too; an
+  // encrypted document goes without its encryption, which the printing
+  // system could not open.
+  std::string file = t->doc->path(), error;
   if (t->doc->modified()) {
-    std::string error;
     file = temp_path("print");
     if (!t->doc->save_to(file, error)) {
       fl_alert("%s", error.c_str());
       return;
     }
   }
-  fl_message_title(_("Print"));
-  if (fl_choice("%s", _("Cancel"), _("Print"), nullptr,
-                format(_("Print “%s” (%d pages) on the default printer?"), display_name(t->target).c_str(),
-                       t->doc->count())
-                    .c_str()) != 1)
-    return;
-  run_async(lp_args(file, display_name(t->target)), [this](const std::string &, int status) {
-    if (instance_ != this) return;
-    toast(status == 0 ? std::string(_("Sent to the printer")) : std::string(_("Printing failed — is a printer set up?")));
-  });
+  if (!t->doc->password().empty()) {
+    std::unique_ptr<PdfFile> pdf = PdfFile::open(file, t->doc->password(), error);
+    std::string plain = temp_path("print-plain");
+    if (pdf && pdf->encrypted()) {
+      if (!write_unprotected(*pdf, plain, error)) {
+        fl_alert("%s", error.c_str());
+        return;
+      }
+      file = plain;
+    }
+  }
+  cups_option_t *options = nullptr;
+  int num = 0;
+  for (const auto &kv : saved) num = cupsAddOption(kv.first.c_str(), kv.second.c_str(), num, &options);
+  num = cupsAddOption("copies", std::to_string(count).c_str(), num, &options);
+  std::string dest = instance.empty() ? printer : printer + "/" + instance;
+  int job = cupsPrintFile2(CUPS_HTTP_DEFAULT, printer.c_str(), file.c_str(), display_name(t->target).c_str(), num, options);
+  cupsFreeOptions(num, options);
+  if (job > 0) toast(format(_("Sent to %s"), dest.c_str()));
+  else fl_alert("%s", format(_("Printing failed: %s"), cupsLastErrorString()).c_str());
 }
 
 void XanaraWindow::save_session() {

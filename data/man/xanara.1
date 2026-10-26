@@ -12,7 +12,9 @@ xanara \- read, annotate and edit PDF documents
 .SH DESCRIPTION
 .B Xanara
 is the document viewer and PDF editor of the Selviana Desktop Environment,
-written from scratch by the Selviana DE Project on poppler and cairo.
+written from scratch by the Selviana DE Project. poppler renders the pages;
+Xanara's own PDF engine (on libqpdf, HarfBuzz, FreeType and Fontconfig)
+changes them. No other program is run.
 .PP
 One window holds several documents in tabs, next to a
 .B Home
@@ -33,9 +35,9 @@ and
 .BR Tools ,
 followed by undo, redo, export and the properties panel. The context toolbar
 below shows the tools of the active mode. On narrow or scaled windows modes
-and tools that do not fit move into overflow menus. Tools that need a program
-that is not installed are shown greyed; their tooltip names the Debian
-package to install.
+and tools that do not fit move into overflow menus. While text is edited it
+shows the font, size, bold, italic, colour and alignment instead, and while
+a picture is picked Replace and Delete.
 .PP
 The icon rail on the left switches the side panel between search results,
 page thumbnails (drag a thumbnail to move the page), the outline, bookmarks,
@@ -56,19 +58,26 @@ rubber stamps (Approved, Draft, Confidential, ...); signatures (drawn or from
 an image); showing or hiding all annotations.
 .TP
 .B Edit
-Text and images placed on the page; links to web addresses or pages,
-watermarks, background colours, headers and footers, Bates numbers and
-cropping (these use
-.BR qpdf (1)).
+Edit the page itself. Text blocks and pictures are outlined; a click into
+text places the caret and the text is changed by typing, as in a word
+processor (selection with the mouse or Shift and the arrows, Ctrl+A, Ctrl+C,
+Ctrl+X, Ctrl+V, Enter, undo); font, size, bold, italic, colour and
+alignment come from the toolbar or the properties panel; the box is moved by
+its border and made wider or narrower by the handle on its right. The
+document's own font is used where it has the glyphs, an installed font that
+looks like it otherwise (embedded as a subset). Pictures are moved and
+resized by dragging, replaced and deleted; the Text and Image tools add new
+text and pictures. Also links to web addresses or pages, watermarks,
+background colours, headers and footers, Bates numbers and cropping.
 .TP
 .B Page
 Insert, extract, split, append, rotate, delete and move pages and print page
-numbers (qpdf).
+numbers.
 .TP
 .B Form
 Add text fields, check boxes, radio buttons, combo and list boxes, push
-buttons and signature fields (qpdf); highlight the fields. Fields are filled
-in by clicking them.
+buttons and signature fields; highlight the fields. Fields are filled in by
+clicking them.
 .TP
 .B Fill
 Type text anywhere, check marks, crosses, dots, today's date, initials and
@@ -76,25 +85,30 @@ signatures.
 .TP
 .B Convert
 Export pages as PNG or JPEG images, the text as plain text, HTML or Markdown;
-make a PDF from images; merge PDFs (qpdf).
+make a PDF from images; merge PDFs.
 .TP
 .B Protect
 Save a copy protected with a password (AES-256) and permissions; remove a
-password; mark areas for redaction and apply them: pages with marks are
-replaced by an image of themselves with the areas painted black, so nothing
-under the boxes survives; remove the metadata (qpdf).
+password; mark areas for redaction and apply them: the text, picture pixels
+and drawings under the marks are removed from the page content (a page whose
+content cannot be taken apart there becomes an image of itself), so nothing
+under the boxes survives; remove the metadata.
 .TP
 .B Tools
-Compress (ghostscript when installed, otherwise qpdf), OCR into a searchable
-PDF (
-.BR tesseract (1)
-and qpdf), compare with another PDF side by side, print with
-.BR lp (1).
+Compress (pictures resampled, the file rewritten with object streams), OCR
+into a searchable PDF with the tesseract library (the language data comes
+from the tesseract\-ocr\-* packages), compare with another PDF side by side,
+print through CUPS.
 .PP
-Changes to the structure of the PDF are made on a working copy; nothing is
-written to the original until it is saved. Saving writes a complete new file
-next to the original and renames it over the original only after it was
-written and read back successfully.
+Every change of the PDF is made on a working copy; nothing is written to the
+original until it is saved, and every change is a step of undo. A change is
+appended to the file as an incremental update, so everything it does not
+touch stays byte for byte as it was (encrypted or repaired files are written
+completely). Saving writes the new file next to the original, checks that
+poppler reads it, and only then renames it over the original. Working copies
+are kept in
+.I ~/.cache/sde/xanara
+until the tab is saved or closed.
 .SH OPTIONS
 .TP
 .BI \-\-page= N
@@ -148,7 +162,12 @@ Select, highlight, underline, squiggly, strike out, sticky note, text box,
 pen, eraser, rectangle, ellipse, arrow, line, measure, signature.
 .TP
 .B Delete, Ctrl+Z, Ctrl+Shift+Z, Esc
-Delete the selected annotation, undo, redo, leave the current tool.
+Delete the selected annotation (or picture), undo, redo, leave the current
+tool.
+.TP
+.B Ctrl+B, Ctrl+I, Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J
+While text is edited: bold, italic, align left, center, align right,
+justify. Esc or a click outside the box ends the editing.
 .SH FILES
 .TP
 .I ~/.config/sde/sde.conf
@@ -177,8 +196,4 @@ With poppler older than the release that can create FreeText and Ink
 annotations natively, text boxes, drawings, arrows and fill-in marks are
 stored as image stamps that look the same in every PDF viewer.
 .SH SEE ALSO
-.BR qpdf (1),
-.BR gs (1),
-.BR tesseract (1),
-.BR lp (1),
 .BR sde-settings (1)
