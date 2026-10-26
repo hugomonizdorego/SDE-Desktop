@@ -2,11 +2,10 @@
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
 // Xanara's UI independent model: the editing modes and the registry of
-// their tools, the tab session, command lines for the optional external
-// tools (qpdf, ghostscript, tesseract, pdftoppm, lp), structural PDF edits
-// through qpdf JSON (links, form fields, crop boxes, metadata), exporters
-// and the PDFs Xanara generates itself with cairo (stamps, images, redacted
-// pages). Nothing here touches FLTK, so the unit tests use it directly.
+// their tools, the tab session, exporters and the PDFs Xanara generates
+// itself with cairo (stamps, images, redacted pages). The PDF engine that
+// changes documents is in pdf.h, layout.h and edit.h. Nothing here
+// touches FLTK, so the unit tests use it directly.
 #pragma once
 
 #include <cairo.h>
@@ -19,6 +18,7 @@
 #include <vector>
 
 #include "core.h"
+#include "pdf.h"
 
 namespace xanara {
 
@@ -35,7 +35,9 @@ enum Kind {
   AddText, Image, Link, Watermark, Background, HeaderFooter, Bates, Crop, Insert, Extract, Split, Merge,
   Reorder, PageNumbers, FieldText, FieldCheck, FieldRadio, FieldCombo, FieldList, FieldButton, FieldSign,
   Cross, Dot, Calendar, Initials, ExportImage, ExportText, Html, Markdown, ImagesToPdf, Key, Unlock, Redact,
-  Shield, Compress, Ocr, Compare, Bookmark, Attachment, Hand, More, Grid, Info, Count
+  Shield, Compress, Ocr, Compare, Bookmark, Attachment, Hand, More, Grid, Info,
+  // Added with the direct editing of 0.2 Alpha 3.
+  EditText, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify, Replace, Count
 };
 }  // namespace icon
 
@@ -53,7 +55,7 @@ enum class Act {
   Highlight, Underline, Squiggly, Strike, TextBox, Note, Pen, Eraser, Rect, Ellipse, Arrow, Line, Measure,
   Stamp, Signature, ToggleAnnots,
   // Edit
-  AddText, AddImage, AddLink, Watermark, Background, HeaderFooter, Bates, Crop,
+  EditContent, AddText, AddImage, AddLink, Watermark, Background, HeaderFooter, Bates, Crop,
   // Page
   PageInsert, PageExtract, PageSplit, PageMerge, PageRotateLeft, PageRotateRight, PageDelete, PageMoveUp,
   PageMoveDown, PageNumbers,
@@ -79,23 +81,12 @@ struct ToolSpec {
   icon::Kind glyph;
   bool canvas;           // stays armed and acts on the page (vs. a one shot command)
   int group;             // a separator is drawn between groups
-  // External programs: |needs| are all required, |any| at least one of.
-  std::vector<const char *> needs, any;
-  const char *package;   // Debian package(s) to install when missing
 };
 
 const std::vector<ToolSpec> &tool_registry();
 std::vector<const ToolSpec *> tools_for(Mode m);
 const ToolSpec *tool_spec(Act a);
 const ToolSpec *tool_by_id(const std::string &id);
-
-// Can the tool run here? |have| answers whether a program is installed.
-struct Availability {
-  bool ok = true;
-  std::string missing;  // the first missing program
-  std::string reason;   // "Needs qpdf — install it with: sudo apt install qpdf"
-};
-Availability tool_availability(const ToolSpec &spec, const std::function<bool(const std::string &)> &have);
 
 // How many context tools fit in |width| pixels with |button| wide buttons
 // and |sep| wide separators, leaving room for an overflow button. Returns
@@ -137,154 +128,6 @@ class TabList {
 // The drop slot for a tab dragged to |x| over tabs starting at |x0|, each
 // |tab_w| wide: the index the tab moves to.
 int tab_drop_index(int x, int x0, int tab_w, int count, int from);
-
-// ------------------------------------------------------- command planning
-
-struct Permissions {
-  bool print = true, modify = true, copy = true, annotate = true, forms = true, assemble = true;
-};
-
-using Argv = std::vector<std::string>;
-Argv qpdf_base(const std::string &password);
-Argv qpdf_encrypt_args(const std::string &in, const std::string &out, const std::string &user_pw,
-                       const std::string &owner_pw, const Permissions &perms, const std::string &password);
-Argv qpdf_decrypt_args(const std::string &in, const std::string &out, const std::string &password);
-Argv qpdf_merge_args(const std::vector<std::string> &files, const std::string &out);
-Argv qpdf_overlay_args(const std::string &in, const std::string &stamp, const std::string &out, bool underlay,
-                       const std::string &password);
-Argv qpdf_compress_args(const std::string &in, const std::string &out, const std::string &password);
-Argv qpdf_split_args(const std::string &in, const std::string &out_pattern, int pages_per_file,
-                     const std::string &password);
-Argv qpdf_update_args(const std::string &in, const std::string &json, const std::string &out,
-                      const std::string &password);
-Argv qpdf_json_args(const std::string &in, const std::string &password);
-Argv gs_compress_args(const std::string &in, const std::string &out, const std::string &quality);
-Argv tesseract_args(const std::string &image, const std::string &out_base, const std::string &lang);
-Argv pdftoppm_jpeg_args(const std::string &in, int page, int dpi, const std::string &out_base,
-                        const std::string &password);
-Argv lp_args(const std::string &file, const std::string &title);
-
-// Redaction: pages with redaction boxes are replaced by an image of the
-// page with the boxes painted black, so no text, vector art or image data
-// under a box survives. |raster| maps a page (0 based) to its one page PDF.
-Argv redaction_splice_args(const std::string &in, int count, const std::map<int, std::string> &raster,
-                           const std::string &out, const std::string &password);
-// OCR: page images turned into searchable one page PDFs, joined in order.
-Argv ocr_join_args(const std::vector<std::string> &page_pdfs, const std::string &out);
-
-// ------------------------------------------------------------------ JSON
-
-// A small JSON value, enough for qpdf's JSON v2 (ordered objects).
-class Json {
- public:
-  enum Type { Null, Boolean, Number, String, Array, Object };
-  Json() = default;
-  static Json number(double v);
-  static Json string(const std::string &s);
-  static Json boolean(bool b);
-  static Json array(std::vector<Json> items = {});
-  static Json object();
-  static bool parse(const std::string &text, Json &out, std::string &error);
-
-  Type type() const { return type_; }
-  bool is(Type t) const { return type_ == t; }
-  double num() const { return num_; }
-  const std::string &str() const { return str_; }
-  bool boolean_value() const { return bool_; }
-  std::vector<Json> &items() { return items_; }
-  const std::vector<Json> &items() const { return items_; }
-  const std::vector<std::pair<std::string, Json>> &members() const { return members_; }
-
-  const Json *get(const std::string &key) const;
-  Json *get(const std::string &key);
-  Json &set(const std::string &key, Json value);  // replaces or appends
-  bool erase(const std::string &key);
-  void push(Json v) { items_.push_back(std::move(v)); }
-  std::string dump() const;
-
- private:
-  Type type_ = Null;
-  bool bool_ = false;
-  double num_ = 0;
-  std::string str_;
-  std::vector<Json> items_;
-  std::vector<std::pair<std::string, Json>> members_;
-};
-
-// --------------------------------------------------- structural PDF edits
-
-struct PdfRect {
-  double x1 = 0, y1 = 0, x2 = 0, y2 = 0;  // PDF user space, y up
-};
-
-// Maps a box in Xanara's page space (top-left origin of the page as shown,
-// i.e. after /Rotate) to PDF user space of a page with |media| and |rotate|.
-PdfRect display_to_user(const Box &b, const PdfRect &media, int rotate);
-
-// The objects of a PDF as `qpdf --json=2 --json-key=pages --json-key=qpdf` prints them.
-class PdfObjects {
- public:
-  bool load(const std::string &json_text, std::string &error);
-  int max_id() const { return max_id_; }
-  int page_count() const { return int(pages_.size()); }
-  const std::string &page_ref(int i) const { return pages_[size_t(i)]; }
-  const Json *object(const std::string &ref) const;  // the "value" of "obj:<ref>"
-  const std::string &root_ref() const { return root_; }
-  const Json &trailer() const { return trailer_; }
-  PdfRect media_box(int page) const;  // follows /Parent for inherited boxes
-  int rotation(int page) const;
-
- private:
-  int max_id_ = 0;
-  std::vector<std::string> pages_;
-  std::map<std::string, Json> objects_;
-  std::string root_;
-  Json trailer_;
-};
-
-// Collects changed and new objects and writes the --update-from-json file.
-class PdfUpdate {
- public:
-  explicit PdfUpdate(const PdfObjects &src) : src_(src), next_(src.max_id() + 1) {}
-  std::string add(Json value);                                  // returns "N 0 R"
-  std::string add_stream(Json dict, const std::string &data);  // raw stream data
-  Json value(const std::string &ref) const;  // the current value (changed or original)
-  void set(const std::string &ref, Json value);
-  void set_trailer(Json value);
-  std::string dump() const;
-  bool empty() const { return changed_.empty() && !trailer_set_; }
-
- private:
-  const PdfObjects &src_;
-  int next_;
-  std::vector<std::pair<std::string, Json>> changed_;
-  bool trailer_set_ = false;
-  Json trailer_;
-};
-
-enum class FieldKind { Text, Check, Radio, Combo, List, Button, Signature };
-struct FieldSpec {
-  FieldKind kind = FieldKind::Text;
-  std::string name;                  // fully qualified field name (/T)
-  std::vector<std::string> options;  // choice items
-  std::string label;                 // button caption
-  bool multiline = false;
-};
-
-// Appends an annotation object to a page's /Annots (inline or indirect).
-void append_annot(PdfUpdate &up, const PdfObjects &src, int page, const std::string &annot_ref);
-// A link annotation to a URI, or to a page (0 based) when |uri| is empty.
-bool plan_link(PdfUpdate &up, const PdfObjects &src, int page, const Box &box, const std::string &uri,
-               int dest_page);
-// A new AcroForm field with its widget on |page|.
-bool plan_field(PdfUpdate &up, const PdfObjects &src, int page, const Box &box, const FieldSpec &spec);
-// Sets /CropBox of |pages| to |box| (page space of each page).
-bool plan_crop(PdfUpdate &up, const PdfObjects &src, const std::vector<int> &pages, const Box &box);
-// Drops the document information dictionary and the XMP metadata stream.
-bool plan_strip_metadata(PdfUpdate &up, const PdfObjects &src);
-// qpdf JSON string forms: "u:text" for strings, "/Name" for names.
-std::string pdf_text(const std::string &s);
-std::string pdf_name(const std::string &s);
 
 // ------------------------------------------------------------- exporters
 

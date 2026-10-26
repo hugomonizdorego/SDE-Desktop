@@ -4,6 +4,10 @@
 // Xanara core tests: rendering, editing round trips, tile cache LRU,
 // page ranges and history. No display is needed.
 #include <cairo-pdf.h>
+#include <qpdf/Buffer.hh>
+#include <qpdf/QPDFPageDocumentHelper.hh>
+#include <qpdf/QPDFPageObjectHelper.hh>
+#include <qpdf/QPDFWriter.hh>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -14,8 +18,10 @@
 #include <string>
 
 #include "core.h"
+#include "edit.h"
+#include "layout.h"
 #include "model.h"
-#include "process.h"
+#include "pdf.h"
 #include "util.h"
 
 using namespace xanara;
@@ -343,18 +349,8 @@ static void test_registry() {
   CHECK(!tool_spec(Act::Encrypt)->canvas);
   CHECK(tool_by_id("tools.ocr") == tool_spec(Act::Ocr));
   CHECK(int(tool_registry().size()) == int(Act::Count));
-  // Availability: missing programs explain how to install them.
-  auto none = [](const std::string &) { return false; };
-  auto all = [](const std::string &) { return true; };
-  auto only_gs = [](const std::string &p) { return p == "gs"; };
-  Availability a = tool_availability(*tool_spec(Act::Ocr), none);
-  CHECK(!a.ok && a.missing == "tesseract" && a.reason.find("tesseract-ocr") != std::string::npos);
-  CHECK(tool_availability(*tool_spec(Act::Ocr), all).ok);
-  CHECK(tool_availability(*tool_spec(Act::Compress), only_gs).ok);  // either qpdf or gs
-  CHECK(!tool_availability(*tool_spec(Act::Compress), none).ok);
-  CHECK(tool_availability(*tool_spec(Act::Highlight), none).ok);
-  CHECK(!tool_availability(*tool_spec(Act::Print), none).ok);
-  CHECK(tool_availability(*tool_spec(Act::Print), none).reason.find("cups-client") != std::string::npos);
+  // Edit mode starts with the tool that edits text and images.
+  CHECK(tools_for(Mode::Edit).front()->act == Act::EditContent && tools_for(Mode::Edit).front()->canvas);
   // Overflow: everything fits, or some go to the overflow menu.
   auto tools = tools_for(Mode::Annotate);
   CHECK(tools_that_fit(tools, 2000, 40, 10, 40) == 16);
@@ -399,140 +395,6 @@ static void test_tabs() {
   CHECK(tab_drop_index(260, 100, 50, 4, 0) == 3);
   CHECK(tab_drop_index(9999, 100, 50, 4, 0) == 3);
   CHECK(tab_drop_index(170, 100, 50, 4, 0) == 1);
-}
-
-static bool has(const Argv &a, const std::string &s) {
-  for (const auto &x : a)
-    if (x == s) return true;
-  return false;
-}
-
-static void test_commands() {
-  Permissions p;
-  p.print = false;
-  p.copy = false;
-  Argv e = qpdf_encrypt_args("in.pdf", "out.pdf", "user", "", p, "old");
-  CHECK(e[0] == "qpdf" && has(e, "--password=old") && has(e, "--encrypt"));
-  CHECK(has(e, "--user-password=user") && has(e, "--owner-password=user"));  // owner defaults to user
-  CHECK(has(e, "--bits=256") && has(e, "--print=none") && has(e, "--extract=n") && has(e, "--modify=all"));
-  CHECK(e[e.size() - 2] == "--" && e.back() == "out.pdf");
-  Argv d = qpdf_decrypt_args("in.pdf", "out.pdf", "pw");
-  CHECK(has(d, "--decrypt") && has(d, "--password=pw"));
-  Argv m = qpdf_merge_args({"a.pdf", "b.pdf"}, "o.pdf");
-  CHECK(has(m, "--empty") && m[4] == "a.pdf" && m[5] == "b.pdf" && m.back() == "o.pdf");
-  Argv o = qpdf_overlay_args("in.pdf", "s.pdf", "o.pdf", true, "");
-  CHECK(has(o, "--underlay") && !has(o, "--overlay"));
-  CHECK(has(gs_compress_args("i", "o", ""), "-dPDFSETTINGS=/ebook"));
-  Argv t = tesseract_args("p.png", "p", "eng");
-  CHECK(t[0] == "tesseract" && t.back() == "pdf" && has(t, "eng"));
-  // Redaction: pages 2 and 5 of 6 replaced by their images.
-  std::map<int, std::string> r{{1, "r2.pdf"}, {4, "r5.pdf"}};
-  Argv s = redaction_splice_args("in.pdf", 6, r, "out.pdf", "");
-  std::string joined;
-  for (size_t k = 3; k < s.size(); ++k) joined += s[k] + " ";
-  CHECK(joined == "--pages . 1 r2.pdf 1 . 3-4 r5.pdf 1 . 6 -- out.pdf ");
-  Argv s2 = redaction_splice_args("in.pdf", 2, {{0, "r1.pdf"}, {1, "r2.pdf"}}, "out.pdf", "");
-  joined.clear();
-  for (size_t k = 3; k < s2.size(); ++k) joined += s2[k] + " ";
-  CHECK(joined == "--pages r1.pdf 1 r2.pdf 1 -- out.pdf ");
-}
-
-static void test_json() {
-  Json j;
-  std::string err;
-  CHECK(Json::parse(R"({"a":[1,2.5,-3e2,true,null,"x\"yé😀"],"b":{}})", j, err));
-  CHECK(j.get("a") && j.get("a")->items().size() == 6);
-  CHECK(j.get("a")->items()[2].num() == -300);
-  CHECK(j.get("a")->items()[5].str() == "x\"y\xC3\xA9\xF0\x9F\x98\x80");
-  CHECK(j.dump() == "{\"a\":[1,2.5,-300,true,null,\"x\\\"y\xC3\xA9\xF0\x9F\x98\x80\"],\"b\":{}}");
-  CHECK(!Json::parse("{\"a\":}", j, err) && !err.empty());
-  CHECK(!Json::parse("[1,2", j, err));
-  Json o = Json::object();
-  o.set("/Type", Json::string("/Page"));
-  o.set("/Type", Json::string("/Pages"));
-  CHECK(o.members().size() == 1 && o.get("/Type")->str() == "/Pages");
-  CHECK(o.erase("/Type") && !o.erase("/Type"));
-  // Page space to PDF user space, for each /Rotate.
-  PdfRect m{0, 0, 600, 800};
-  PdfRect r0 = display_to_user(Box{10, 20, 110, 70}, m, 0);
-  CHECK(r0.x1 == 10 && r0.x2 == 110 && r0.y1 == 730 && r0.y2 == 780);
-  PdfRect r90 = display_to_user(Box{10, 20, 110, 70}, m, 90);  // shown 800 x 600
-  CHECK(r90.x1 == 20 && r90.x2 == 70 && r90.y1 == 10 && r90.y2 == 110);
-  PdfRect r180 = display_to_user(Box{10, 20, 110, 70}, m, 180);
-  CHECK(r180.x1 == 490 && r180.x2 == 590 && r180.y1 == 20 && r180.y2 == 70);
-  PdfRect r270 = display_to_user(Box{10, 20, 110, 70}, m, 270);
-  CHECK(r270.x1 == 530 && r270.x2 == 580 && r270.y1 == 690 && r270.y2 == 790);
-}
-
-static const char *kQpdfJson = R"({"version":2,"pages":[{"object":"3 0 R"},{"object":"4 0 R"}],
-"qpdf":[{"jsonversion":2,"maxobjectid":9},
-{"obj:1 0 R":{"value":{"/Type":"/Catalog","/Pages":"2 0 R","/Metadata":"8 0 R"}},
- "obj:2 0 R":{"value":{"/Type":"/Pages","/Kids":["3 0 R","4 0 R"],"/Count":2,"/MediaBox":[0,0,600,800]}},
- "obj:3 0 R":{"value":{"/Type":"/Page","/Parent":"2 0 R"}},
- "obj:4 0 R":{"value":{"/Type":"/Page","/Parent":"2 0 R","/Rotate":90,"/Annots":"5 0 R"}},
- "obj:5 0 R":{"value":["6 0 R"]},
- "obj:8 0 R":{"stream":{"dict":{"/Type":"/Metadata","/Subtype":"/XML"}}},
- "trailer":{"value":{"/Root":"1 0 R","/Info":"7 0 R","/Size":10}}}]})";
-
-static void test_pdf_objects() {
-  PdfObjects src;
-  std::string err;
-  CHECK(src.load(kQpdfJson, err));
-  CHECK(src.page_count() == 2 && src.page_ref(1) == "4 0 R" && src.root_ref() == "1 0 R" && src.max_id() == 9);
-  PdfRect mb = src.media_box(0);  // inherited from the page tree
-  CHECK(mb.x2 == 600 && mb.y2 == 800);
-  CHECK(src.rotation(0) == 0 && src.rotation(1) == 90);
-  {
-    PdfUpdate up(src);
-    CHECK(plan_link(up, src, 0, Box{10, 10, 100, 30}, "https://debion.org", -1));
-    std::string out = up.dump();
-    CHECK(out.find("\"obj:10 0 R\"") != std::string::npos);
-    CHECK(out.find("u:https://debion.org") != std::string::npos);
-    CHECK(out.find("\"/Annots\":[\"10 0 R\"]") != std::string::npos);  // new inline array on page 1
-    Json parsed;
-    CHECK(Json::parse(out, parsed, err));
-  }
-  {
-    PdfUpdate up(src);
-    CHECK(plan_link(up, src, 1, Box{10, 10, 100, 30}, "", 0));  // indirect /Annots array grows
-    std::string out = up.dump();
-    CHECK(out.find("\"obj:5 0 R\":{\"value\":[\"6 0 R\",\"10 0 R\"]}") != std::string::npos);
-    CHECK(out.find("\"/Dest\":[\"3 0 R\",\"/Fit\"]") != std::string::npos);
-    CHECK(!plan_link(up, src, 0, Box{0, 0, 10, 10}, "", 7));  // no such page
-  }
-  {
-    PdfUpdate up(src);
-    FieldSpec f;
-    f.kind = FieldKind::Combo;
-    f.name = "Country";
-    f.options = {"Portugal", "Spain"};
-    CHECK(plan_field(up, src, 0, Box{50, 50, 250, 72}, f));
-    f.kind = FieldKind::Check;
-    f.name = "Agree";
-    CHECK(plan_field(up, src, 0, Box{50, 100, 64, 114}, f));
-    std::string out = up.dump();
-    CHECK(out.find("\"/AcroForm\"") != std::string::npos);
-    CHECK(out.find("\"/NeedAppearances\":true") != std::string::npos);
-    CHECK(out.find("u:Country") != std::string::npos && out.find("u:Portugal") != std::string::npos);
-    CHECK(out.find("\"/Ff\":131072") != std::string::npos);
-    CHECK(out.find("\"/Yes\"") != std::string::npos && out.find("\"/AS\":\"/Off\"") != std::string::npos);
-    FieldSpec bad;
-    CHECK(!plan_field(up, src, 0, Box{0, 0, 50, 50}, bad));  // a field needs a name
-  }
-  {
-    PdfUpdate up(src);
-    CHECK(plan_crop(up, src, {0, 1}, Box{50, 50, 300, 400}));
-    std::string out = up.dump();
-    CHECK(out.find("\"/CropBox\":[50,400,300,750]") != std::string::npos);
-  }
-  {
-    PdfUpdate up(src);
-    CHECK(plan_strip_metadata(up, src));
-    std::string out = up.dump();
-    CHECK(out.find("\"/Metadata\"") == std::string::npos);
-    CHECK(out.find("\"obj:7 0 R\":{\"value\":{}}") != std::string::npos);
-    CHECK(out.find("\"trailer\"") != std::string::npos);
-  }
 }
 
 static void test_exporters(const std::string &dir) {
@@ -583,100 +445,580 @@ static void test_exporters(const std::string &dir) {
   CHECK(arrow_strokes(Point{0, 0}, Point{10, 0}, 3).size() == 2);
 }
 
-static void test_external_tools(const std::string &dir) {
-  std::string src = make_pdf(dir, 3);
-  std::string error;
-  bool enc;
-  auto doc = Document::open(src, "", error, enc);
-  CHECK(doc != nullptr);
-  if (!doc) return;
-  // Redaction rasterizes a page with black boxes: the text is gone.
-  std::string r2 = dir + "/r2.pdf";
-  CHECK(rasterize_page_pdf(*doc, 1, 100, {Box{60, 80, 400, 110}}, r2, error));
-  auto rd = Document::open(r2, "", error, enc);
-  CHECK(rd && rd->count() == 1 && rd->text(0).find("sharp") == std::string::npos);
-  std::string png = dir + "/p1.png";
-  CHECK(export_page_image(*doc, 0, 50, png, false, error) && file_exists(png));
-  if (have_native_jpeg()) {
-    std::string jpg = dir + "/p1.jpg";
-    CHECK(export_page_image(*doc, 0, 50, jpg, true, error) && file_exists(jpg));
+// ------------------------------------------------- the PDF engine (0.2 Alpha 3)
+
+// The text poppler extracts from |path| (page |page|) and the rectangle of
+// each character, in the order of the text.
+struct PageText {
+  std::string text;
+  std::vector<PopplerRectangle> rects;
+  bool ok = false;
+};
+
+static PageText poppler_text(const std::string &path, int page, const std::string &password = "") {
+  PageText out;
+  GError *err = nullptr;
+  PopplerDocument *doc =
+      poppler_document_new_from_file(file_uri(path).c_str(), password.empty() ? nullptr : password.c_str(), &err);
+  if (!doc) {
+    if (err) g_error_free(err);
+    return out;
   }
-  if (find_program("qpdf").empty()) {
-    printf("xanara: qpdf missing, skipping the qpdf round trips\n");
-    return;
+  PopplerPage *pg = poppler_document_get_page(doc, page);
+  if (pg) {
+    gchar *t = poppler_page_get_text(pg);
+    out.text = t ? t : "";
+    g_free(t);
+    PopplerRectangle *r = nullptr;
+    guint n = 0;
+    if (poppler_page_get_text_layout(pg, &r, &n)) {
+      out.rects.assign(r, r + n);
+      g_free(r);
+    }
+    out.ok = true;
+    g_object_unref(pg);
   }
-  int status = -1;
-  std::string out = dir + "/redacted.pdf";
-  run_sync(redaction_splice_args(src, 3, {{1, r2}}, out, ""), &status);
-  auto red = Document::open(out, "", error, enc);
-  CHECK(red && red->count() == 3);
-  if (red) {
-    CHECK(red->text(0).find("sharp text page 1") != std::string::npos);
-    CHECK(red->text(1).find("sharp") == std::string::npos);
-    CHECK(red->text(2).find("sharp text page 3") != std::string::npos);
+  g_object_unref(doc);
+  return out;
+}
+
+// The rectangle of the first character of |word| in |pt| (poppler counts
+// characters, not bytes).
+static bool char_rect(const PageText &pt, const std::string &word, PopplerRectangle &r) {
+  size_t at = pt.text.find(word);
+  if (at == std::string::npos) return false;
+  size_t chars = utf32(pt.text.substr(0, at)).size();
+  if (chars >= pt.rects.size()) return false;
+  r = pt.rects[chars];
+  return true;
+}
+
+static bool same_rect(const PopplerRectangle &a, const PopplerRectangle &b, double tol = 0.05) {
+  return std::fabs(a.x1 - b.x1) < tol && std::fabs(a.y1 - b.y1) < tol && std::fabs(a.x2 - b.x2) < tol &&
+         std::fabs(a.y2 - b.y2) < tol;
+}
+
+// Two blocks of text: a heading and a paragraph of three lines (cairo
+// embeds a subset of the system's sans font), and a red square.
+static std::string make_report(const std::string &dir, const std::string &name) {
+  std::string path = dir + "/" + name;
+  cairo_surface_t *s = cairo_pdf_surface_create(path.c_str(), 595, 842);
+  cairo_t *cr = cairo_create(s);
+  cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+  cairo_set_font_size(cr, 20);
+  cairo_set_source_rgb(cr, 0.1, 0.2, 0.4);
+  cairo_move_to(cr, 72, 90);
+  cairo_show_text(cr, "Quarterly Report");
+  cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+  cairo_set_font_size(cr, 12);
+  cairo_set_source_rgb(cr, 0, 0, 0);
+  const char *lines[] = {"The quick brown fox jumps over the lazy dog,", "while seven bright stars watch the hills",
+                         "and the river sings softly at night."};
+  for (int k = 0; k < 3; ++k) {
+    cairo_move_to(cr, 72, 140 + k * 16);
+    cairo_show_text(cr, lines[k]);
   }
-  // Form fields and links through qpdf JSON.
-  std::string json = run_sync(qpdf_json_args(src, ""), &status);
-  PdfObjects objs;
-  CHECK(objs.load(json, error));
-  PdfUpdate up(objs);
-  FieldSpec f;
-  f.name = "Name";
-  CHECK(plan_field(up, objs, 0, Box{72, 400, 300, 424}, f));
-  f.kind = FieldKind::Check;
-  f.name = "Agree";
-  CHECK(plan_field(up, objs, 0, Box{72, 440, 86, 454}, f));
-  CHECK(plan_link(up, objs, 1, Box{72, 80, 300, 110}, "https://example.org", -1));
-  std::string upd = dir + "/update.json", formed = dir + "/form.pdf";
-  CHECK(write_file_atomic(upd, up.dump()));
-  run_sync(qpdf_update_args(src, upd, formed, ""), &status);
-  CHECK(status == 0 || status == 3);
-  auto fd = Document::open(formed, "", error, enc);
-  CHECK(fd != nullptr);
-  if (fd) {
-    CHECK(fd->fields(0).size() == 2);
-    bool link = false;
-    for (const auto &l : fd->links(1)) link = link || l.target.text == "https://example.org";
-    CHECK(link);
-    // Typing into the new text field works and survives a save.
-    for (const auto &fld : fd->fields(0))
-      if (fld.type == POPPLER_FORM_FIELD_TEXT) CHECK(fd->set_field_text(0, fld.field, "Joana"));
-    std::string saved = dir + "/form-saved.pdf";
-    CHECK(fd->save_to(saved, error));
-    auto again = Document::open(saved, "", error, enc);
-    CHECK(again && again->fields(0).size() == 2);
+  cairo_move_to(cr, 72, 400);
+  cairo_show_text(cr, "Signed in Lisbon");
+  cairo_rectangle(cr, 300, 500, 120, 80);
+  cairo_set_source_rgb(cr, 0.8, 0.1, 0.1);
+  cairo_fill(cr);
+  cairo_show_page(cr);
+  cairo_destroy(cr);
+  cairo_surface_destroy(s);
+  return path;
+}
+
+// A page with a standard 14 font that is neither embedded nor has widths,
+// the way small generators write PDF.
+static std::string make_base14(const std::string &dir) {
+  std::string path = dir + "/base14.pdf", error;
+  std::unique_ptr<PdfFile> f = PdfFile::create();
+  QPDF &q = f->qpdf();
+  QPDFObjectHandle font = QPDFObjectHandle::parse("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  QPDFObjectHandle res = QPDFObjectHandle::newDictionary();
+  QPDFObjectHandle fonts = QPDFObjectHandle::newDictionary();
+  fonts.replaceKey("/F1", q.makeIndirectObject(font));
+  res.replaceKey("/Font", fonts);
+  QPDFObjectHandle page = QPDFObjectHandle::parse("<< /Type /Page /MediaBox [0 0 400 220] >>");
+  page.replaceKey("/Resources", res);
+  page.replaceKey("/Contents", q.newStream("BT /F1 18 Tf 40 150 Td (SDE Suite - Xanara) Tj ET\n"
+                                           "BT /F1 12 Tf 40 100 Td (Second line stays) Tj ET\n"));
+  QPDFPageDocumentHelper(q).addPage(QPDFPageObjectHelper(q.makeIndirectObject(page)), false);
+  CHECK(f->write(path, PdfFile::Write::Rewrite, error));
+  return path;
+}
+
+static int block_with(const PageLayout &l, const std::string &text) {
+  for (size_t b = 0; b < l.blocks.size(); ++b)
+    if (l.block_text(int(b)).find(text) != std::string::npos) return int(b);
+  return -1;
+}
+
+static void test_content_parser() {
+  std::string c = "q 1 0 0 1 72 700 cm BT /F1 12 Tf [(Hel) -20 <6C6C6F>] TJ (a\\)b\\101) Tj ET Q\n"
+                  "BI /W 2 /H 1 /CS /G /BPC 8 ID \x01\xFF EI 0 g";
+  auto ops = parse_content(c);
+  CHECK(ops.size() == 10);
+  if (ops.size() == 10) {
+    CHECK(ops[1].name == "cm" && ops[1].num(4) == 72 && ops[1].num(5) == 700);
+    CHECK(ops[3].name == "Tf" && ops[3].args[0].str == "F1");
+    CHECK(ops[4].name == "TJ" && ops[4].args[0].items.size() == 3 && ops[4].args[0].items[2].str == "llo" &&
+          ops[4].args[0].items[2].hex);
+    CHECK(ops[5].name == "Tj" && ops[5].args[0].str == "a)bA");
+    CHECK(ops[8].name == "BI" && ops[8].data_end - ops[8].data_begin == 2);
+    CHECK(ops[9].name == "g");
+    CHECK(c.substr(ops[4].begin, ops[4].end - ops[4].begin) == "[(Hel) -20 <6C6C6F>] TJ");
   }
-  // Encryption needs the password afterwards.
+  CHECK(pdf_num(1.5) == "1.5" && pdf_num(-0.00001) == "0" && pdf_num(12) == "12");
+  CHECK(apply_splices("abcdef", {{1, 3, "XY"}, {4, 5, ""}}) == "aXYdf");
+  CHECK(pdf_name("A B") == "/A#20B");
+  // CMaps and glyph names.
+  CMap cm;
+  CHECK(cm.parse("1 begincodespacerange <00> <80> endcodespacerange 1 begincodespacerange <8140> <9FFC> "
+                 "endcodespacerange 1 begincidrange <8140> <817E> 633 endcidrange"));
+  unsigned code = 0;
+  CHECK(cm.next("\x81\x41z", 0, code) == 2 && code == 0x8141 && cm.cid(code) == 634);
+  CHECK(cm.next("z", 0, code) == 1 && code == 'z');
+  UnicodeMap um;
+  CHECK(um.parse("2 beginbfchar <0003> <0020> <0011> <00660069> endbfchar 1 beginbfrange <0024> <0026> <0041> "
+                 "endbfrange"));
+  std::string t;
+  CHECK(um.lookup(0x11, t) && t == "fi");
+  CHECK(um.lookup(0x25, t) && t == "B");
+  CHECK(glyph_unicode("Aacute") == 0xC1 && glyph_unicode("uni20AC") == 0x20AC && glyph_unicode("u1F600") == 0x1F600);
+  CHECK(glyph_unicode("a.sc") == 'a' && glyph_unicode("nonsense-name") == 0);
+}
+
+static void test_layout_and_edit(const std::string &dir) {
+  std::string src = make_report(dir, "report.pdf"), error;
+  PageText before = poppler_text(src, 0);
+  CHECK(before.ok && before.text.find("quick brown fox") != std::string::npos);
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, "", error);
+  CHECK(pdf != nullptr);
+  if (!pdf) return;
+  CHECK(pdf->count() == 1 && pdf->can_append() && !pdf->repaired());
+  std::shared_ptr<PageLayout> layout(PageLayout::read(*pdf, 0).release());
+  CHECK(layout->complete);
+  // Heading, paragraph and the signature line are three blocks.
+  int heading = block_with(*layout, "Quarterly Report"), para = block_with(*layout, "brown fox");
+  int sig = block_with(*layout, "Signed in Lisbon");
+  CHECK(heading >= 0 && para >= 0 && sig >= 0 && heading != para && para != sig);
+  if (para < 0) return;
+  CHECK(layout->blocks[size_t(para)].lines.size() == 3);
+  CHECK(layout->block_text(para).find("the hills\nand the river") != std::string::npos);
+  CHECK(layout->blocks[size_t(para)].editable);
+  // The page space matches poppler's: the 'T' of "The" starts at 72 pt.
+  const Glyph &t0 = layout->glyphs[size_t(layout->lines[size_t(layout->blocks[size_t(para)].lines[0])].glyphs[0])];
+  CHECK(std::fabs(t0.origin.x - 72) < 0.01 && std::fabs(t0.origin.y - 140) < 0.01);
+
+  // Replace "brown" with "red" (letters the embedded subset has).
+  TextEdit ed;
+  CHECK(ed.start(layout, para));
+  std::string text = ed.text();
+  size_t at = utf32(text.substr(0, text.find("brown"))).size();
+  ed.set_caret(at, false);
+  ed.set_caret(at + 5, true);
+  CHECK(ed.selected_text() == "brown");
+  ed.insert("red");
+  CHECK(ed.modified() && ed.text().find("quick red fox") != std::string::npos);
+  auto lines = ed.lines();
+  CHECK(lines.size() == 3);
+  // The edited line is set again; the two below keep their glyphs.
+  if (lines.size() == 3) CHECK(!lines[0].kept && lines[1].kept && lines[2].kept);
+  CHECK(ed.undo() && ed.text().find("quick brown fox") != std::string::npos);
+  CHECK(ed.redo() && ed.text().find("quick red fox") != std::string::npos);
+  CHECK(commit_text(*pdf, *layout, ed, error));
+  std::string out = dir + "/report-edited.pdf";
+  CHECK(pdf->write(out, PdfFile::Write::Auto, error));
+  // An incremental update: the original bytes come first, unchanged.
+  std::string a, b;
+  CHECK(read_file(src, a) && read_file(out, b) && b.size() > a.size() && b.compare(0, a.size(), a) == 0);
+  PageText after = poppler_text(out, 0);
+  CHECK(after.text.find("The quick red fox jumps over the lazy dog,") != std::string::npos);
+  CHECK(after.text.find("brown") == std::string::npos);
+  // Everything else is where it was.
+  for (const char *w : {"Quarterly", "The quick", "while seven", "and the river", "Signed in"}) {
+    PopplerRectangle r1, r2;
+    CHECK(char_rect(before, w, r1) && char_rect(after, w, r2));
+    CHECK(same_rect(r1, r2));
+  }
+
+  // A word with letters the subset lacks: an installed font is embedded
+  // (Type0, Identity-H, ToUnicode), so the text is shown and extractable.
+  pdf = PdfFile::open(out, "", error);
+  CHECK(pdf != nullptr);
+  if (!pdf) return;
+  layout.reset(PageLayout::read(*pdf, 0).release());
+  sig = block_with(*layout, "Signed in Lisbon");
+  CHECK(sig >= 0);
+  if (sig < 0) return;
+  TextEdit ed2;
+  CHECK(ed2.start(layout, sig));
+  ed2.move_end(false, true);
+  ed2.insert(" — Quintão & Żółw");
+  CHECK(commit_text(*pdf, *layout, ed2, error));
+  std::string out2 = dir + "/report-edited2.pdf";
+  CHECK(pdf->write(out2, PdfFile::Write::Auto, error));
+  PageText third = poppler_text(out2, 0);
+  CHECK(third.text.find("Signed in Lisbon — Quintão & Żółw") != std::string::npos);
+  CHECK(third.text.find("quick red fox") != std::string::npos);
+  {
+    // Every font of the page is embedded.
+    GError *err = nullptr;
+    PopplerDocument *doc = poppler_document_new_from_file(file_uri(out2).c_str(), nullptr, &err);
+    CHECK(doc != nullptr);
+    if (doc) {
+      PopplerFontInfo *fi = poppler_font_info_new(doc);
+      PopplerFontsIter *it = nullptr;
+      int fonts = 0, embedded = 0;
+      if (poppler_font_info_scan(fi, 1, &it) && it) {
+        do {
+          ++fonts;
+          if (poppler_fonts_iter_is_embedded(it)) ++embedded;
+        } while (poppler_fonts_iter_next(it));
+        poppler_fonts_iter_free(it);
+      }
+      CHECK(fonts >= 3 && fonts == embedded);
+      poppler_font_info_free(fi);
+      g_object_unref(doc);
+    }
+  }
+  // The edited text can be edited again (its own fonts are read back).
+  pdf = PdfFile::open(out2, "", error);
+  layout.reset(PageLayout::read(*pdf, 0).release());
+  sig = block_with(*layout, "Quintão");
+  CHECK(sig >= 0 && layout->block_text(sig).find("Signed in Lisbon — Quintão & Żółw") != std::string::npos);
+}
+
+static void test_new_text_and_styles(const std::string &dir) {
+  std::string src = make_base14(dir), error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, "", error);
+  CHECK(pdf != nullptr);
+  if (!pdf) return;
+  std::shared_ptr<PageLayout> layout(PageLayout::read(*pdf, 0).release());
+  int b = block_with(*layout, "SDE Suite - Xanara");
+  CHECK(b >= 0);
+  if (b < 0) return;
+  // Helvetica without /Widths: the standard metrics.
+  const Glyph &s = layout->glyphs[size_t(layout->lines[size_t(layout->blocks[size_t(b)].lines[0])].glyphs[0])];
+  CHECK(std::fabs(s.width - 0.667) < 0.001);
+  TextEdit ed;
+  CHECK(ed.start(layout, b));
+  ed.move_end(false, true);
+  ed.insert(" Editor");
+  CHECK(ed.text() == "SDE Suite - Xanara Editor");
+  // Bold for the new word: an installed bold font takes over.
+  ed.set_caret(ed.size() - 6, false);
+  ed.set_caret(ed.size(), true);
+  ed.restyle([](TextStyle &st) { st.bold = true; });
+  CHECK(ed.style_at_caret().bold && ed.style_at_caret().font < 0);
+  CHECK(commit_text(*pdf, *layout, ed, error));
+  // A new text box elsewhere.
+  TextEdit nb;
+  TextStyle st;
+  st.family = "Serif";
+  st.size = 14;
+  st.paint.n = 3;
+  st.paint.v[0] = 0.1;
+  st.paint.v[1] = 0.3;
+  st.paint.v[2] = 0.8;
+  nb.start_new(layout, Point{40, 150}, 0, st);
+  nb.insert("Fresh line one");
+  nb.new_paragraph();
+  nb.insert("and two");
+  CHECK(nb.lines().size() == 2);
+  CHECK(commit_text(*pdf, *layout, nb, error));
+  std::string out = dir + "/base14-edited.pdf";
+  CHECK(pdf->write(out, PdfFile::Write::Auto, error));
+  PageText pt = poppler_text(out, 0);
+  CHECK(pt.text.find("SDE Suite - Xanara Editor") != std::string::npos);
+  CHECK(pt.text.find("Fresh line one") != std::string::npos && pt.text.find("and two") != std::string::npos);
+  CHECK(pt.text.find("Second line stays") != std::string::npos);
+  PageText orig = poppler_text(src, 0);
+  PopplerRectangle r1, r2;
+  CHECK(char_rect(orig, "Second", r1) && char_rect(pt, "Second", r2) && same_rect(r1, r2));
+  CHECK(char_rect(orig, "SDE", r1) && char_rect(pt, "SDE", r2) && same_rect(r1, r2, 0.1));
+}
+
+static void test_wrapping(const std::string &dir) {
+  std::string src = make_report(dir, "wrap.pdf"), error;
+  std::unique_ptr<PdfFile> pdf = PdfFile::open(src, "", error);
+  std::shared_ptr<PageLayout> layout(PageLayout::read(*pdf, 0).release());
+  int para = block_with(*layout, "brown fox");
+  TextEdit ed;
+  CHECK(para >= 0 && ed.start(layout, para));
+  if (para < 0) return;
+  // A long insertion in the first line flows into the next ones, which
+  // are set again; nothing leaves the box on the right.
+  Box frame = ed.frame();
+  ed.set_caret(4, false);
+  ed.insert("very very very very very very ");
+  auto lines = ed.lines();
+  CHECK(lines.size() >= 4);
+  for (const auto &l : lines) CHECK(l.x2 <= frame.x2 + 0.5);
+  CHECK(!lines[0].kept && !lines[1].kept);
+  // Enter makes a new paragraph; Backspace joins it again.
+  TextEdit e2;
+  CHECK(e2.start(layout, para));
+  std::string original = e2.text();
+  e2.set_caret(10, false);  // after "The quick "
+  e2.new_paragraph();
+  CHECK(e2.lines().size() == 4 && e2.lines()[1].text.rfind("brown fox", 0) == 0);
+  e2.erase(false, false);
+  CHECK(e2.text() == original);
+  CHECK(e2.lines().size() == 3 && e2.lines()[0].kept && e2.lines()[2].kept);
+  // Word movement and selection.
+  e2.set_caret(0, false);
+  e2.move_right(true, true);
+  CHECK(e2.selected_text() == "The ");
+  e2.select_word(6);
+  CHECK(e2.selected_text() == "quick");
+  // Alignment: centered lines inside the box.
+  e2.set_align(1);
+  auto cl = e2.lines();
+  CHECK(!cl.empty() && !cl[0].kept);
+  if (cl.size() == 3) CHECK(std::fabs((cl[1].x1 + cl[1].x2) / 2 - (frame.x1 + frame.x2) / 2) < 1.0);
+}
+
+static void test_files(const std::string &dir) {
+  std::string a = make_report(dir, "a.pdf"), b = make_pdf(dir, 3), error;
+  // Merge and split.
+  std::string merged = dir + "/merged.pdf";
+  CHECK(merge_files({a, b}, merged, error));
+  std::unique_ptr<PdfFile> m = PdfFile::open(merged, "", error);
+  CHECK(m && m->count() == 4);
+  if (!m) return;
+  std::vector<std::string> parts;
+  CHECK(split_pages(*m, 3, dir + "/part-%d.pdf", parts, error));
+  CHECK(parts.size() == 2);
+  if (parts.size() == 2) {
+    CHECK(PdfFile::open(parts[0], "", error)->count() == 3);
+    CHECK(PdfFile::open(parts[1], "", error)->count() == 1);
+  }
+  // Pages: rotate, reorder (delete page 2), insert, extract.
+  CHECK(rotate_pages(*m, {0}, 90));
+  CHECK(reorder_pages(*m, {3, 0, 2}, error));
+  CHECK(insert_pages(*m, 0, {a}, error));
+  std::string pages = dir + "/pages.pdf";
+  CHECK(m->write(pages, PdfFile::Write::Auto, error));
+  std::unique_ptr<PdfFile> p = PdfFile::open(pages, "", error);
+  CHECK(p && p->count() == 4 && p->geometry(2).rotate == 90);
+  CHECK(poppler_text(pages, 0).text.find("page 3") != std::string::npos);
+  CHECK(poppler_text(pages, 1).text.find("Quarterly") != std::string::npos);
+  std::string ex = dir + "/extract.pdf";
+  CHECK(extract_pages(*p, {1, 3}, ex, error));
+  CHECK(PdfFile::open(ex, "", error)->count() == 2);
+  // Encryption round trip; an encrypted file is edited and stays encrypted.
   std::string locked = dir + "/locked.pdf";
-  run_sync(qpdf_encrypt_args(src, locked, "secret", "owner", Permissions{}, ""), &status);
-  auto ld = Document::open(locked, "", error, enc);
-  CHECK(!ld && enc);
-  ld = Document::open(locked, "secret", error, enc);
-  CHECK(ld && ld->count() == 3);
-  std::string unlocked = dir + "/unlocked.pdf";
-  run_sync(qpdf_decrypt_args(locked, unlocked, "secret"), &status);
-  CHECK(Document::open(unlocked, "", error, enc) != nullptr);
-  // Crop and metadata.
-  PdfUpdate up2(objs);
-  CHECK(plan_crop(up2, objs, {0}, Box{50, 50, 400, 500}));
-  CHECK(plan_strip_metadata(up2, objs) || true);
-  CHECK(write_file_atomic(upd, up2.dump()));
-  std::string cropped = dir + "/cropped.pdf";
-  run_sync(qpdf_update_args(src, upd, cropped, ""), &status);
-  auto cd = Document::open(cropped, "", error, enc);
-  CHECK(cd && std::fabs(cd->width(0) - 350) < 1 && std::fabs(cd->height(0) - 450) < 1);
-  // Stamps through --overlay.
+  Permissions perms;
+  perms.print = false;
+  CHECK(write_protected(*PdfFile::open(a, "", error), locked, "secret", "owner", perms, error));
+  bool enc = false;
+  CHECK(PdfFile::open(locked, "", error, &enc) == nullptr && enc);
+  CHECK(!poppler_text(locked, 0).ok);
+  std::unique_ptr<PdfFile> l = PdfFile::open(locked, "secret", error);
+  CHECK(l && l->encrypted() && !l->can_append());
+  if (l) {
+    std::shared_ptr<PageLayout> layout(PageLayout::read(*l, 0).release());
+    int sig = block_with(*layout, "Signed in Lisbon");
+    TextEdit ed;
+    CHECK(sig >= 0 && ed.start(layout, sig));
+    ed.move_end(false, true);
+    ed.insert(" today");
+    CHECK(commit_text(*l, *layout, ed, error));
+    std::string locked2 = dir + "/locked2.pdf";
+    CHECK(l->write(locked2, PdfFile::Write::Auto, error));
+    CHECK(!poppler_text(locked2, 0).ok);
+    CHECK(poppler_text(locked2, 0, "secret").text.find("Signed in Lisbon today") != std::string::npos);
+    std::string open = dir + "/unlocked.pdf";
+    std::unique_ptr<PdfFile> l2 = PdfFile::open(locked2, "secret", error);
+    CHECK(l2 && write_unprotected(*l2, open, error));
+    CHECK(poppler_text(open, 0).text.find("today") != std::string::npos);
+  }
+  // Object streams and a cross-reference stream: the update follows suit.
+  std::string packed = dir + "/packed.pdf";
+  {
+    std::unique_ptr<PdfFile> f = PdfFile::open(a, "", error);
+    CHECK(f && f->write(packed, PdfFile::Write::Compact, error));
+  }
+  std::unique_ptr<PdfFile> pk = PdfFile::open(packed, "", error);
+  CHECK(pk && pk->can_append());
+  if (pk) {
+    std::shared_ptr<PageLayout> layout(PageLayout::read(*pk, 0).release());
+    int h = block_with(*layout, "Quarterly Report");
+    TextEdit ed;
+    CHECK(h >= 0 && ed.start(layout, h));
+    ed.select_all();
+    ed.insert("Annual Report");
+    CHECK(commit_text(*pk, *layout, ed, error));
+    std::string out = dir + "/packed-edited.pdf";
+    CHECK(pk->write(out, PdfFile::Write::Auto, error));
+    std::string bytes, before_bytes;
+    CHECK(read_file(out, bytes) && read_file(packed, before_bytes));
+    CHECK(bytes.compare(0, before_bytes.size(), before_bytes) == 0);
+    CHECK(bytes.rfind("/Type /XRef") > before_bytes.size() && bytes.rfind("/Type /XRef") != std::string::npos);
+    CHECK(poppler_text(out, 0).text.find("Annual Report") != std::string::npos);
+  }
+  // A damaged cross-reference table is repaired and written completely.
+  std::string data;
+  CHECK(read_file(a, data));
+  size_t sx = data.rfind("startxref");
+  if (sx != std::string::npos) {
+    std::string broken = data.substr(0, sx) + "startxref\n123\n%%EOF\n";
+    std::string bpath = dir + "/broken.pdf";
+    CHECK(write_file_atomic(bpath, broken));
+    std::unique_ptr<PdfFile> bf = PdfFile::open(bpath, "", error);
+    CHECK(bf && bf->repaired() && !bf->can_append());
+    if (bf) {
+      CHECK(rotate_pages(*bf, {0}, 180));
+      std::string fixed = dir + "/fixed.pdf";
+      CHECK(bf->write(fixed, PdfFile::Write::Auto, error));
+      std::unique_ptr<PdfFile> ff = PdfFile::open(fixed, "", error);
+      CHECK(ff && !ff->repaired() && ff->geometry(0).rotate == 180);
+    }
+  }
+}
+
+static void test_objects(const std::string &dir) {
+  std::string src = make_pdf(dir, 2), error;
+  std::unique_ptr<PdfFile> f = PdfFile::open(src, "", error);
+  CHECK(f != nullptr);
+  if (!f) return;
+  // Links, form fields, crop box, metadata, stamps.
+  CHECK(add_link(*f, 0, Box{72, 80, 300, 110}, "https://example.org", -1));
+  CHECK(add_link(*f, 1, Box{72, 80, 300, 110}, "", 0));
+  CHECK(!add_link(*f, 0, Box{0, 0, 10, 10}, "", 7));
+  FieldSpec fs;
+  fs.name = "Name";
+  CHECK(add_field(*f, 0, Box{72, 400, 300, 424}, fs));
+  fs.kind = FieldKind::Check;
+  fs.name = "Agree";
+  CHECK(add_field(*f, 0, Box{72, 440, 86, 454}, fs));
+  fs.kind = FieldKind::Combo;
+  fs.name = "Country";
+  fs.options = {"Portugal", "Indonésia"};
+  CHECK(add_field(*f, 1, Box{72, 400, 300, 424}, fs));
+  FieldSpec bad;
+  CHECK(!add_field(*f, 0, Box{0, 0, 50, 50}, bad));
+  CHECK(crop_pages(*f, {1}, Box{50, 50, 400, 500}));
+  std::string out = dir + "/objects.pdf";
+  CHECK(f->write(out, PdfFile::Write::Auto, error));
+  bool enc;
+  auto d = Document::open(out, "", error, enc);
+  CHECK(d && d->count() == 2);
+  if (d) {
+    CHECK(d->fields(0).size() == 2 && d->fields(1).size() == 1);
+    bool uri = false, page = false;
+    for (const auto &l : d->links(0)) uri = uri || l.target.text == "https://example.org";
+    for (const auto &l : d->links(1)) page = page || (l.target.kind == LinkTarget::Page && l.target.page == 0);
+    CHECK(uri && page);
+    CHECK(std::fabs(d->width(1) - 350) < 1 && std::fabs(d->height(1) - 450) < 1);
+    for (const auto &fld : d->fields(0))
+      if (fld.type == POPPLER_FORM_FIELD_TEXT) CHECK(d->set_field_text(0, fld.field, "Joana"));
+    std::string saved = dir + "/objects-saved.pdf";
+    CHECK(d->save_to(saved, error));
+  }
+  // Metadata goes, and the file is written completely.
+  std::unique_ptr<PdfFile> g = PdfFile::open(out, "", error);
+  g->qpdf().getTrailer().replaceKey("/Info", g->add(QPDFObjectHandle::parse("<< /Author (Somebody) >>")));
+  std::string with_info = dir + "/info.pdf";
+  CHECK(g->write(with_info, PdfFile::Write::Rewrite, error));
+  g = PdfFile::open(with_info, "", error);
+  CHECK(strip_metadata(*g) && !g->can_append());
+  std::string stripped = dir + "/stripped.pdf";
+  CHECK(g->write(stripped, PdfFile::Write::Auto, error));
+  std::string bytes;
+  CHECK(read_file(stripped, bytes) && bytes.find("Somebody") == std::string::npos);
+  // Stamps over every page.
   StampSpec st;
   st.kind = StampSpec::Bates;
   st.font_size = 10;
   st.prefix = "XAN";
-  std::string stamp = dir + "/bates.pdf", stamped = dir + "/stamped.pdf";
-  std::vector<Point> sizes;
-  for (int p = 0; p < doc->count(); ++p) sizes.push_back(Point{doc->width(p), doc->height(p)});
-  CHECK(write_stamp_pdf(stamp, sizes, st, error));
-  run_sync(qpdf_overlay_args(src, stamp, stamped, false, ""), &status);
-  auto sd = Document::open(stamped, "", error, enc);
-  CHECK(sd && sd->text(2).find("XAN000003") != std::string::npos);
+  std::string stamp = dir + "/bates.pdf";
+  CHECK(write_stamp_pdf(stamp, {Point{595, 842}, Point{595, 842}}, st, error));
+  std::unique_ptr<PdfFile> h = PdfFile::open(src, "", error);
+  CHECK(overlay_pages(*h, stamp, false, error));
+  std::string stamped = dir + "/stamped.pdf";
+  CHECK(h->write(stamped, PdfFile::Write::Auto, error));
+  CHECK(poppler_text(stamped, 1).text.find("XAN000002") != std::string::npos);
+  CHECK(poppler_text(stamped, 1).text.find("page 2") != std::string::npos);
+  // Compression keeps the pages and their text.
+  std::string small = dir + "/small.pdf";
+  std::unique_ptr<PdfFile> c = PdfFile::open(stamped, "", error);
+  CHECK(write_compressed(*c, small, 150, error));
+  CHECK(poppler_text(small, 0).text.find("XAN000001") != std::string::npos);
+}
+
+static void test_images_and_redaction(const std::string &dir) {
+  std::string src = make_report(dir, "img.pdf"), error;
+  // A PNG with transparency.
+  std::string png = dir + "/dot.png";
+  {
+    cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 64, 32);
+    cairo_t *cr = cairo_create(s);
+    cairo_set_source_rgba(cr, 0.1, 0.6, 0.2, 1);
+    cairo_rectangle(cr, 0, 0, 40, 32);
+    cairo_fill(cr);
+    cairo_destroy(cr);
+    cairo_surface_write_to_png(s, png.c_str());
+    cairo_surface_destroy(s);
+  }
+  std::unique_ptr<PdfFile> f = PdfFile::open(src, "", error);
+  int w = 0, h = 0;
+  QPDFObjectHandle x = image_xobject(*f, png, w, h, error);
+  CHECK(x.isStream() && w == 64 && h == 32 && x.getDict().getKey("/SMask").isStream());
+  CHECK(add_image(*f, 0, x, Box{100, 600, 228, 664}, error));
+  std::string out = dir + "/img1.pdf";
+  CHECK(f->write(out, PdfFile::Write::Auto, error));
+  f = PdfFile::open(out, "", error);
+  std::unique_ptr<PageLayout> l = PageLayout::read(*f, 0);
+  CHECK(l->images.size() == 1);
+  if (l->images.size() == 1) {
+    const Box &b = l->images[0].box;
+    CHECK(std::fabs(b.x1 - 100) < 0.01 && std::fabs(b.y1 - 600) < 0.01 && std::fabs(b.x2 - 228) < 0.01);
+    CHECK(l->image_at(150, 630) == 0);
+    CHECK(move_image(*f, *l, 0, Box{300, 650, 364, 682}, error));
+    std::string out2 = dir + "/img2.pdf";
+    CHECK(f->write(out2, PdfFile::Write::Auto, error));
+    f = PdfFile::open(out2, "", error);
+    l = PageLayout::read(*f, 0);
+    CHECK(l->images.size() == 1 && std::fabs(l->images[0].box.x1 - 300) < 0.01 &&
+          std::fabs(l->images[0].box.y2 - 682) < 0.01);
+    CHECK(delete_image(*f, *l, 0, error));
+    std::string out3 = dir + "/img3.pdf";
+    CHECK(f->write(out3, PdfFile::Write::Auto, error));
+    f = PdfFile::open(out3, "", error);
+    CHECK(PageLayout::read(*f, 0)->images.empty());
+  }
+  // Redaction removes the words under the box, keeps the rest in place.
+  f = PdfFile::open(src, "", error);
+  l = PageLayout::read(*f, 0);
+  Box target;
+  bool found = false;
+  for (const Glyph &g : l->glyphs)
+    if (g.text == "b" && l->block_text(l->lines[size_t(g.line)].block).find("brown") != std::string::npos && !found) {
+      // "brown": five glyphs from this "b".
+      size_t i = size_t(&g - &l->glyphs[0]);
+      target = Box{g.box.x1, g.box.y1, l->glyphs[i + 4].box.x2, g.box.y2};
+      found = true;
+    }
+  CHECK(found);
+  CHECK(redact_page(*f, 0, {target}, error));
+  CHECK(!f->can_append());
+  std::string red = dir + "/redacted.pdf";
+  CHECK(f->write(red, PdfFile::Write::Auto, error));
+  PageText before = poppler_text(src, 0), after = poppler_text(red, 0);
+  CHECK(after.text.find("brown") == std::string::npos);
+  CHECK(after.text.find("quick") != std::string::npos && after.text.find("fox jumps") != std::string::npos);
+  PopplerRectangle r1, r2;
+  CHECK(char_rect(before, "fox", r1) && char_rect(after, "fox", r2) && same_rect(r1, r2));
+  // Not in the file either (the content is read back by the engine).
+  std::unique_ptr<PdfFile> rf = PdfFile::open(red, "", error);
+  std::unique_ptr<PageLayout> rl = PageLayout::read(*rf, 0);
+  std::string all;
+  for (const Glyph &g : rl->glyphs) all += g.text;
+  CHECK(all.find("brown") == std::string::npos && all.find("quick") != std::string::npos);
 }
 
 int main() {
@@ -690,13 +1032,17 @@ int main() {
   test_threaded_render(dir);
   test_registry();
   test_tabs();
-  test_commands();
-  test_json();
-  test_pdf_objects();
   test_exporters(dir);
-  test_external_tools(dir);
+  test_content_parser();
+  test_layout_and_edit(dir);
+  test_new_text_and_styles(dir);
+  test_wrapping(dir);
+  test_files(dir);
+  test_objects(dir);
+  test_images_and_redaction(dir);
   std::string cmd = std::string("rm -rf '") + dir + "'";
-  if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", dir);
+  if (getenv("XANARA_TEST_KEEP")) printf("xanara: test files kept in %s\n", dir);
+  else if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", dir);
   printf("xanara: free text %s, ink %s\n", native_free_text() ? "native" : "stamp",
          native_ink() ? "native" : "stamp");
   if (failures) {
