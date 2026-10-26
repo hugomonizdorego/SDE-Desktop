@@ -443,6 +443,13 @@ int main() {
     // Pinned inside a folder counts.
     std::vector<menu::TileGroup> folded = {{"F", {menu::make_folder("Web", {"chromium.desktop", "firefox-esr.desktop"})}}};
     CHECK(!menu::pin_favorite(folded, apps[0], apps, names));
+    // alpha15 favorites: each in the group of its kind, in their order.
+    auto kinds = menu::groups_by_kind({"chess.desktop", "xterm.desktop", "niny.desktop", "gone.desktop", "niny.desktop"},
+                                      apps, names);
+    CHECK(kinds.size() == 3 && kinds[0].name == "Work" && kinds[0].tiles.size() == 1 &&
+          kinds[0].tiles[0].id == "niny.desktop" && kinds[1].tiles[0].id == "chess.desktop" &&
+          kinds[2].tiles[0].id == "xterm.desktop");
+    CHECK(menu::groups_by_kind({"gone.desktop"}, apps, names).empty());
 
     // Migration: 0.2 Alpha 2's groups by category, as SDE made them, give
     // way to the favorites; an application the user pinned into them stays.

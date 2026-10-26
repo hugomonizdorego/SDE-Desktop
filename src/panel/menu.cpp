@@ -636,8 +636,7 @@ std::vector<TileGroup> load() {
   } else if (fav != sentinel) {
     // alpha15 and older: up to 12 favorites, each in the favorites group of
     // its kind (favorites that are not installed any more are left out).
-    for (auto &id : menu::parse_id_list(fav))
-      if (const DesktopEntry *e = apps->find(id)) menu::pin_favorite(groups, *e, apps->apps, names);
+    groups = menu::groups_by_kind(menu::parse_id_list(fav), apps->apps, names);
   } else {
     // Never arranged: the default favorites of the installed applications.
     groups = menu::favorite_groups(apps->apps, default_apps(*apps, paths), sde_ids(*apps), names);
@@ -2131,7 +2130,7 @@ bool AppMenu::drop_target(int x, int y, menu::TileDrop &drop) const {
     if ((it.kind == K_TILE || it.kind == K_FOLDER) && it.contains(x, y)) {
       drop.group = it.group;
       double rx = double(x - it.x) / it.w, ry = double(y - it.y) / it.h;
-      bool middle = rx > 0.25 && rx < 0.75 && ry > 0.15 && ry < 0.85;
+      bool middle = rx > 0.3 && rx < 0.7 && ry > 0.2 && ry < 0.8;
       bool self = it.kind == K_TILE && it.entry && it.entry->id == drag_id_;
       if (middle && !folder && !self) {
         drop.kind = menu::TileDrop::Merge;
@@ -3860,6 +3859,28 @@ void AppMenu::qa_dump_menu() {
   if (folder_expanded() && folder_index_ < int(groups_[size_t(folder_group_)].tiles.size()))
     line("@folder-open:" + groups_[size_t(folder_group_)].tiles[size_t(folder_index_)].name,
          int(std::lround(folder_open_ * 100)), folder_band_.y, folder_band_.w, folder_band_.h, 1, 0);
+  // Every group's tiles, also those out of view, with their sizes:
+  // "@group-tiles:Work=Liria:m,folder Web(Firefox+Thunderbird):m" (the
+  // group's number as x).
+  auto app_name = [&](const std::string &id) {
+    const DesktopEntry *e = app(id);
+    return e ? e->name : id;
+  };
+  for (size_t g = 0; g < groups_.size(); ++g) {
+    std::string tiles;
+    for (auto &t : groups_[g].tiles) {
+      if (!tiles.empty()) tiles += ",";
+      if (t.folder) {
+        tiles += "folder " + t.name + "(";
+        for (size_t i = 0; i < t.apps.size(); ++i) tiles += (i ? "+" : "") + app_name(t.apps[i]);
+        tiles += ")";
+      } else {
+        tiles += app_name(t.id);
+      }
+      tiles += std::string(":") + menu::tile_size_code(t.size);
+    }
+    line("@group-tiles:" + group_label(int(g)) + "=" + tiles, int(g), 0, 0, 0, 1, 0);
+  }
   // The selection (keyboard: 1, pointer: 0 in the "active" column), with
   // its place even when it is scrolled out of view.
   if (const Item *s = find(selected_))

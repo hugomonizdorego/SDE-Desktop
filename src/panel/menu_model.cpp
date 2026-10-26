@@ -714,6 +714,20 @@ FavoriteGroup favorite_group(const DesktopEntry &e) {
   }
 }
 
+std::vector<TileGroup> groups_by_kind(const std::vector<std::string> &ids, const std::vector<DesktopEntry> &apps,
+                                      const std::vector<std::string> &names) {
+  std::vector<TileGroup> kinds(static_cast<size_t>(kFavoriteGroups));
+  for (int k = 0; k < kFavoriteGroups; ++k) kinds[size_t(k)].name = favorite_name(names, FavoriteGroup(k));
+  for (auto &id : ids) {
+    const DesktopEntry *e = installed(apps, id);
+    if (e && !pinned_in(kinds, id)) kinds[size_t(favorite_group(*e))].tiles.push_back(Tile{id});
+  }
+  std::vector<TileGroup> out;
+  for (auto &g : kinds)
+    if (!g.tiles.empty()) out.push_back(g);
+  return out;
+}
+
 bool pin_favorite(std::vector<TileGroup> &groups, const DesktopEntry &e, const std::vector<DesktopEntry> &apps,
                   const std::vector<std::string> &names, TileSize size) {
   if (e.id.empty() || pinned_in(groups, e.id)) return false;

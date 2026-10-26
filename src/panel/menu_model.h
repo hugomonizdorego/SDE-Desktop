@@ -211,6 +211,10 @@ std::vector<TileGroup> favorite_groups(const std::vector<DesktopEntry> &apps, co
 // Multimedia, Graphics and Games, System for System and Settings, Work for
 // the others.
 FavoriteGroup favorite_group(const DesktopEntry &e);
+// alpha15 favorites (a flat list of IDs): each installed one in the
+// favorites group of its kind, the groups in their order.
+std::vector<TileGroup> groups_by_kind(const std::vector<std::string> &ids, const std::vector<DesktopEntry> &apps,
+                                      const std::vector<std::string> &names);
 // "Pin to Start": into the favorites group of its kind (the group with that
 // name, else the group holding most applications of that kind, a renamed
 // one, else the first group; without groups a new one of its kind). False
