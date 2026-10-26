@@ -2182,6 +2182,41 @@ def xanara(s):
     s.shot('xanara', quiet=0.8)
 
 
+@scene('Xanara', [('xanara-edit', 'Xanara: editing the text of a PDF in place, with its font, size, style, '
+                                   'color and alignment')], needs=['xanara'])
+def xanara_edit(s):
+    # Xanara reports where its pages are (XANARA_QA_FILE): the click lands
+    # in the report's subtitle at every size and scale.
+    qa = s.home / '.cache/xanara-qa.txt'
+    env = dict(s.env, XANARA_QA_FILE=str(qa))
+    s.spawn('xanara', s.home / 'Documents/Project Aurora - Field Report.pdf', env=env)
+    w = s.fit(s.need('Xanara$', 15, what='the xanara window'))
+    s.activate(w)
+    s.window_settle(w, quiet=0.5, timeout=8)
+    s.key('ctrl+alt+2')  # the Edit mode
+
+    def page():
+        text = qa.read_text() if qa.exists() else ''
+        m = re.search(r'^page 0 (-?\d+) (-?\d+) (\d+) (\d+) ([\d.]+) ([\d.]+)$', text, re.M)
+        return m and re.search(r'^mode edit$', text, re.M) and m
+    m = s.wait(page, 6)
+    if not m:
+        raise SkipShot('xanara did not show the page in the Edit mode')
+    x, y, pw = int(m.group(1)), int(m.group(2)), float(m.group(5))
+    k = int(m.group(3)) / pw
+    g = s.geom(w)
+    # The end of the subtitle ("... from the northern lakes"), 191 pt from
+    # the top of the A4 cover page.
+    s.click(g["x"] + x + 395 * k, g["y"] + y + 189 * k)
+    time.sleep(0.4)
+    s.key('End')
+    s.type(' and the fells', delay=40)
+    s.key('shift+ctrl+Left', 'shift+ctrl+Left')
+    time.sleep(0.6)
+    s.park_pointer()
+    s.shot('xanara-edit', quiet=0.8)
+
+
 @scene('Taca', [('taca', 'Taca: the contents of a ZIP archive')], needs=['taca'])
 def taca(s):
     s.app(['taca', s.home / 'Downloads/Autumn Photos.zip'], 'Taca$')
