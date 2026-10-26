@@ -859,7 +859,6 @@ class UpdaterPage : public Page {
         parts.push_back(n == 1 ? std::string(_("1 update")) : format(_("%d updates"), n));
         if (int c = a.list.count(Group::Critical)) parts.push_back(format(_("%d critical"), c));
         if (int s = a.list.count(Group::Security)) parts.push_back(format(_("%d security"), s));
-
         if (!a.list.held.empty()) parts.push_back(format(_("%d held back"), int(a.list.held.size())));
         sub = join(parts, "  ·  ") + "  ·  " + age;
         break;
