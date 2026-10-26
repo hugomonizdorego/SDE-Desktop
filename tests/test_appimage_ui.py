@@ -311,12 +311,22 @@ def test_dialogs(home, signed):
             check(scr.finished() == 1, 'unsigned: Enter did not close it')
             check(not unsigned.exists() and home.trashed(unsigned), 'unsigned: not moved to the trash')
             check('deleted (trash) %s' % unsigned in home.log(), 'unsigned: deletion not logged')
-        # Another architecture.
+        # Another architecture; F1 shows About AppImage Runner over it.
         if os.uname().machine == 'x86_64':
             scr.start(home.files['arm'])
             if check(scr.dialog(), 'aarch64: no window'):
                 check('@title:This AppImage is made for another kind of computer' in scr.meta(), 'aarch64 %s' % scr.meta())
                 scr.shot('appimage-wrong-arch')
+                scr.key('F1')
+                about = scr.wait(lambda: scr.xdo('search', '--onlyvisible', '--name', '^About AppImage Runner$')
+                                 .stdout.split(), 6)
+                if check(about, 'F1 did not open About AppImage Runner'):
+                    scr.shot('appimage-about')
+                    scr.xdo('key', 'Escape')
+                    check(scr.wait(lambda: not scr.xdo('search', '--onlyvisible', '--name',
+                                                       '^About AppImage Runner$').stdout.split(), 5),
+                          'Escape did not close About')
+                    check(scr.proc.poll() is None, 'the AppImage window closed with About')
                 scr.key('Escape')
                 scr.finished()
         if signed:
