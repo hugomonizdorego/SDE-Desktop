@@ -1,0 +1,98 @@
+.TH SDE-APPIMAGE 1 "October 2026" "SDE" "User Commands"
+.SH NAME
+sde-appimage \- run an AppImage after verifying its signature
+.SH SYNOPSIS
+.B sde-appimage
+\fIFILE\fR [\fIARGUMENTS\fR...]
+.br
+.B sde-appimage
+\fB--check\fR \fIFILE\fR
+.br
+.B sde-appimage
+\fB--forget\fR \fIFILE\fR
+.br
+.B sde-appimage
+\fB--version\fR | \fB--help\fR
+.SH DESCRIPTION
+\fBsde-appimage\fR (the \fBAppImage Runner\fR of the Selviana Desktop
+Environment) runs AppImages with a double-click: Liria and the desktop open
+AppImages with it, also those that are not marked executable, so they do
+not need \fBchmod +x\fR. It is not shown in the Start menu.
+.PP
+Before an AppImage runs for the first time, sde-appimage checks that it is
+an ELF program for this computer with the AppImage magic bytes (type 1 or
+2) and verifies the OpenPGP signature that \fBappimagetool --sign\fR embeds
+in type 2 AppImages (the \fI.sha256_sig\fR section, made over the SHA-256
+digest of the file, with the signer's public key in \fI.sig_key\fR) with
+\fBgpgv\fR(1) (or \fBsqv\fR(1)), trusting no key but the one in the file.
+.PP
+A valid signature proves that the file is unchanged since it was signed; it
+does not prove who signed it. The key that signed the first version of an
+application that was opened is therefore remembered (trust on first use),
+and later versions of the same application (the same update information,
+or the same file name without version and architecture) must be signed
+with the same key.
+.PP
+An AppImage that passes runs at once: it becomes executable for its owner
+and the verified open file is executed, so no other file can take its place
+in between. Its arguments are passed on and its exit status is
+sde-appimage's. Without FUSE (\fI/dev/fuse\fR, \fBfusermount\fR and, for
+older AppImages, \fIlibfuse.so.2\fR) it runs with
+\fBAPPIMAGE_EXTRACT_AND_RUN=1\fR. An AppImage on a drive mounted
+\fBnoexec\fR, or one that other users may change, runs from a private copy
+in \fI~/.local/share/sde/appimages\fR that is verified again.
+.PP
+Any other AppImage does not run. A window explains why (no signature, a
+signature that does not match, a signature without its key, another key
+than earlier versions, an old type 1 AppImage, another architecture, not
+an AppImage at all) and offers \fBDelete\fR (the default: moves it to the
+trash) and \fBKeep\fR (leaves it where it is and takes its executable bits,
+so it does not run by accident). Without a display the explanation is
+printed and nothing runs.
+.SH OPTIONS
+.TP
+.BR --check " " \fIFILE\fR
+Prints the verdict (\fBtrusted\fR, \fBunsigned\fR, \fBbad-signature\fR,
+\fBno-key\fR, \fBkey-changed\fR, \fBtype1\fR, \fBwrong-arch\fR,
+\fBnot-appimage\fR or \fBunreadable\fR), the digest, the application, the
+key and its user id, and exits 0 when the AppImage would run. A valid
+signature of a new application is remembered as when it is opened.
+.TP
+.BR --forget " " \fIFILE\fR
+Forgets that \fIFILE\fR was verified or accepted, its private copies and
+the key of its application: the next version of the application is trusted
+on first use again (for an application whose maker announced a new key).
+.SH POLICY
+The administrator chooses in \fI/etc/sde/appimage.conf\fR:
+.TP
+.B policy=verified-only
+Only AppImages with a valid signature run (the default).
+.TP
+.B policy=ask
+AppImages without a signature, without their key or of type 1 may also run
+after the warning, with \fBRun Anyway\fR; the contents are remembered and
+run again without asking. A signature that does not match and a changed
+key never run.
+.SH FILES
+.TP
+.I /etc/sde/appimage.conf
+The policy.
+.TP
+.I ~/.local/share/sde/appimage/trust.tsv
+What was verified or accepted (SHA-256 digests), the publisher keys and the
+files already checked (device, inode, size and change time, so an unchanged
+file is not read again).
+.TP
+.I ~/.local/share/sde/appimages/
+Private copies of AppImages that cannot run where they are.
+.TP
+.I ~/.local/state/sde/appimage.log
+What was run, accepted, refused, kept or deleted.
+.SH ENVIRONMENT
+\fBSDE_APPIMAGE_POLICY\fR replaces the policy file, \fBSDE_APPIMAGE_TRUST\fR
+the trust store and \fBSDE_APPIMAGE_GPGV\fR the verifier (tests).
+.SH EXIT STATUS
+The application's exit status when it ran; 1 when it did not run (kept,
+deleted, refused or an error); 2 for a usage error.
+.SH SEE ALSO
+\fBgpgv\fR(1), \fBdebrun\fR(1), \fI/usr/share/doc/sde/APPIMAGE.md\fR

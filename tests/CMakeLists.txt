@@ -305,3 +305,9 @@ endif()
 add_executable(appimage-tests test_appimage.cpp)
 target_link_libraries(appimage-tests PRIVATE sde-appimage-core sde-installer-base)
 add_test(NAME appimage-model COMMAND appimage-tests)
+# sde-appimage with generated AppImages and real GnuPG signatures
+# (tools/appimage_fixture.py; skipped without gpg), its window on Xvfb when
+# Xvfb and xdotool are installed.
+add_test(NAME appimage-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_appimage_ui.py
+  $<TARGET_FILE:sde-appimage>)
+set_tests_properties(appimage-ui PROPERTIES TIMEOUT 240)

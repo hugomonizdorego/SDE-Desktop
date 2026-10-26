@@ -372,6 +372,22 @@
       "sources": ["src/debrun/"]
     },
     {
+      "id": "sde-appimage",
+      "name": "AppImage Runner",
+      "kind": "application",
+      "summary": "Runs AppImages with a double-click after it checked their signature",
+      "programs": ["sde-appimage"],
+      "desktop": ["sde-appimage.desktop"],
+      "icons": ["sde-appimage", "application-x-executable"],
+      "license": "GPL-3.0-or-later",
+      "copyright": ["Copyright © 2026 Selviana DE Project and contributors"],
+      "upstream": [],
+      "credits": ["Signatures are checked with gpgv (GnuPG) or sqv (Sequoia-PGP), which are not part of SDE; the AppImage format is described by the AppImage project (appimage.org)"],
+      "trademarks": ["sde"],
+      "notices": ["/usr/share/doc/sde/copyright"],
+      "sources": ["src/appimage/", "data/appimage/"]
+    },
+    {
       "id": "sde-run",
       "name": "Run Command",
       "kind": "application",

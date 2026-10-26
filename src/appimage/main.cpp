@@ -20,6 +20,7 @@
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
+#include <dirent.h>
 #include <fcntl.h>
 #include <gio/gio.h>
 #include <sys/stat.h>
@@ -83,11 +84,14 @@ std::string usage() {
 
 // ----------------------------------------------------------------- the log
 
-// ~/.local/state/sde/appimage.log: what was run or refused.
+// ~/.local/state/sde/appimage.log: what was run or refused (the previous
+// megabyte in appimage.log.1).
 void log_line(const std::string &text) {
-  std::string dir = state_home() + "/sde";
+  std::string dir = state_home() + "/sde", path = dir + "/appimage.log";
   make_dirs(dir);
-  if (FILE *f = fopen((dir + "/appimage.log").c_str(), "ae")) {
+  struct stat st;
+  if (stat(path.c_str(), &st) == 0 && st.st_size > (1 << 20)) rename(path.c_str(), (path + ".1").c_str());
+  if (FILE *f = fopen(path.c_str(), "ae")) {
     char when[32];
     time_t t = time(nullptr);
     strftime(when, sizeof when, "%Y-%m-%dT%H:%M:%S", localtime(&t));
@@ -168,9 +172,13 @@ bool fuse_usable(int fd, const Info &info, std::string *why) {
   return true;
 }
 
+// The directory of the private copies (AppImages on drives that run no
+// programs, or that others may change).
+std::string copies_dir() { return data_home() + "/sde/appimages"; }
+
 // The file to execute: |fd| itself when it may run where it is (made
 // executable for its owner when it is not yet), else a copy in
-// ~/.local/share/sde/appimages. -1 with *error when it cannot run.
+// copies_dir(). -1 with *error when it cannot run.
 int runnable(int fd, const std::string &path, const Check &c, TrustStore &store, std::string *copy,
              std::string *error) {
   struct stat st;
@@ -180,17 +188,21 @@ int runnable(int fd, const std::string &path, const Check &c, TrustStore &store,
     return -1;
   }
   bool noexec = fstatvfs(fd, &vfs) == 0 && (vfs.f_flag & ST_NOEXEC);
-  if (!noexec && access(path.c_str(), X_OK) == 0) return fd;
-  if (!noexec && st.st_uid == getuid()) {
+  // What was verified is what runs (the open file, not its name), unless
+  // someone else may write to it between now and then: then a copy runs.
+  bool others_write = (st.st_mode & S_IWOTH) || ((st.st_mode & S_IWGRP) && st.st_gid != getgid());
+  bool safe = (st.st_uid == getuid() || st.st_uid == 0) && !others_write;
+  if (!noexec && safe) {
+    if (st.st_uid == getuid() ? (st.st_mode & S_IXUSR) : (st.st_mode & S_IXOTH)) return fd;
     // Verified: it may run. Only its owner gets the executable bit.
-    if (fchmod(fd, (st.st_mode & 07777) | S_IXUSR) == 0) {
+    if (st.st_uid == getuid() && fchmod(fd, (st.st_mode & 07777) | S_IXUSR) == 0) {
       store.add_seen(seen_of(fd, path, c.sha256));
       return fd;
     }
   }
   // A drive that runs no programs (noexec), or a file of another user: a
   // private copy that is checked again.
-  std::string dir = data_home() + "/sde/appimages";
+  std::string dir = copies_dir();
   make_dirs(data_home() + "/sde");
   if (!private_dir(dir)) {
     *error = format(_("%s cannot be created."), dir.c_str());
@@ -203,7 +215,20 @@ int runnable(int fd, const std::string &path, const Check &c, TrustStore &store,
     return -1;
   }
   *copy = dir + "/" + c.sha256.substr(0, 12) + "-" + basename_of(path);
-  int out = open(copy->c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0700);
+  CheckOptions o;
+  o.tmpdir = runtime_dir();
+  // A copy made before (it may be running): used when it is still the same.
+  int old = open(copy->c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  if (old >= 0) {
+    struct stat os;
+    Check again = fstat(old, &os) == 0 && os.st_uid == getuid() && !(os.st_mode & 022)
+                      ? check(old, *copy, store, o)
+                      : Check();
+    if (again.verdict == Verdict::trusted && again.sha256 == c.sha256 && (os.st_mode & S_IXUSR)) return old;
+    close(old);
+    unlink(copy->c_str());
+  }
+  int out = open(copy->c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0700);
   if (out < 0) {
     *error = format(_("The copy cannot be made: %s"), strerror(errno));
     return -1;
@@ -232,9 +257,7 @@ int runnable(int fd, const std::string &path, const Check &c, TrustStore &store,
     return -1;
   }
   // The copy must be what was verified.
-  CheckOptions o;
   o.use_seen = false;
-  o.tmpdir = runtime_dir();
   Check again = check(cfd, *copy, store, o);
   if (again.verdict != Verdict::trusted || again.sha256 != c.sha256) {
     close(cfd);
@@ -280,11 +303,19 @@ enum class Choice { none, keep, remove, run };
 
 struct Texts {
   std::string title, body;
+  std::string window;              // the window title
+  std::vector<std::string> meta;   // for the QA dump ("verdict:unsigned" ...)
 };
 
 Texts explain(const Check &c, Policy policy, const std::string &path) {
   Texts t;
   std::string app = display_name(path);
+  t.window = format(_("%s — AppImage Runner"), app.c_str());
+  t.meta = {std::string("verdict:") + verdict_id(c.verdict),
+            std::string("policy:") + (policy == Policy::ask ? "ask" : "verified-only")};
+  if (!c.fingerprint.empty()) t.meta.push_back("key:" + c.fingerprint);
+  if (!c.previous.empty()) t.meta.push_back("previous:" + c.previous);
+  if (!c.error.empty()) t.meta.push_back("error:" + c.error);
   switch (c.verdict) {
     case Verdict::unsigned_image:
       t.title = _("This AppImage has no signature");
@@ -336,8 +367,10 @@ Texts explain(const Check &c, Policy policy, const std::string &path) {
       t.body = c.signer.empty() ? std::string() : format(_("Signed by %s"), c.signer.c_str());
       break;
   }
-  t.body += "\n\n" + format(_("File: %s"), path.c_str());
+  t.body += "\n\n" + format(_("File: %s"), basename_of(path).c_str());
   if (c.info.size) t.body += "  (" + format_size(c.info.size) + ")";
+  std::string folder = path.substr(0, path.rfind('/'));
+  t.body += "\n" + format(_("Folder: %s"), folder.empty() ? "/" : folder.c_str());
   std::string url = origin_url(path);
   if (!url.empty()) t.body += "\n" + format(_("Downloaded from: %s"), url.c_str());
   if (!c.sha256.empty()) t.body += "\n" + format(_("SHA-256: %s"), group(c.sha256, 8).c_str());
@@ -354,7 +387,8 @@ Texts explain(const Check &c, Policy policy, const std::string &path) {
 class Dialog : public BufferedWindow {
  public:
   Dialog(int w, int h, Texts texts, bool can_run)
-      : BufferedWindow(w, h, _("AppImage")), texts_(std::move(texts)) {
+      : BufferedWindow(w, h, nullptr), texts_(std::move(texts)) {
+    copy_label(texts_.window.c_str());
     int pad = S(24), bh = S(36);
     auto add = [&](const std::string &label, const std::string &tip, Choice what, bool primary) {
       text_font(active_theme().font_size + 1);
@@ -378,10 +412,45 @@ class Dialog : public BufferedWindow {
     keep_->position(remove_->x() - S(10) - keep_->w(), y);
     if (run_) run_->position(pad, y);
   }
-  static int measure(const Texts &t, int w) {
-    int pad = S(24), tw = w - 2 * pad - S(64) - S(18);
+  // The width of the text in a window |w| wide.
+  static int text_area(int w) { return w - 2 * S(24) - S(64) - S(18); }
+  // Breaks the words of |text| wider than |width| (folders, file names)
+  // after a '/' when it can, anywhere else when not: FLTK wraps only at
+  // spaces.
+  static std::string fit_words(const std::string &text, int width) {
     text_font(active_theme().font_size + 1);
-    int ww = tw, hh = 0;
+    std::string out, word;
+    auto flush = [&] {
+      while (!word.empty() && fl_width(word.c_str(), int(word.size())) > width) {
+        size_t fit = 0, slash = 0;
+        for (size_t i = 1; i <= word.size(); ++i) {
+          if (i < word.size() && (word[i] & 0xC0) == 0x80) continue;  // inside a UTF-8 character
+          if (fl_width(word.c_str(), int(i)) > width) break;
+          fit = i;
+          if (word[i - 1] == '/') slash = i;
+        }
+        size_t cut = slash ? slash : std::max<size_t>(fit, 1);
+        out += word.substr(0, cut) + "\n";
+        word.erase(0, cut);
+      }
+      out += word;
+      word.clear();
+    };
+    for (char ch : text) {
+      if (ch == ' ' || ch == '\n') {
+        flush();
+        out += ch;
+      } else {
+        word += ch;
+      }
+    }
+    flush();
+    return out;
+  }
+  static int measure(const Texts &t, int w) {
+    int pad = S(24);
+    text_font(active_theme().font_size + 1);
+    int ww = text_area(w), hh = 0;
     fl_measure(t.body.c_str(), ww, hh, 0);
     return pad + S(34) + S(10) + hh + S(20) + S(36) + pad;
   }
@@ -421,6 +490,7 @@ class Dialog : public BufferedWindow {
     const char *dir = getenv("SDE_PANEL_QA_DIR");
     if (!dir || !*dir) return;
     std::string text = "@title:" + texts_.title + "\t0\t0\t0\t0\t1\t0\n";
+    for (const auto &m : texts_.meta) text += "@" + m + "\t0\t0\t0\t0\t1\t0\n";
     for (Fl_Widget *b : {static_cast<Fl_Widget *>(remove_), static_cast<Fl_Widget *>(keep_), static_cast<Fl_Widget *>(run_)})
       if (b)
         text += std::string(b->label()) + "\t" + std::to_string(b->x()) + "\t" + std::to_string(b->y()) + "\t" +
@@ -453,11 +523,12 @@ void open_ui() {
   Fl::visible_focus(1);
 }
 
-Choice ask(const Texts &texts, bool can_run) {
+Choice ask(Texts texts, bool can_run) {
   open_ui();
   int sx, sy, sw, sh;
   Fl::screen_work_area(sx, sy, sw, sh, 0);
   int W = std::min(S(600), sw - S(24));
+  texts.body = Dialog::fit_words(texts.body, Dialog::text_area(W));
   int H = std::min(Dialog::measure(texts, W), sh - S(48));
   Dialog d(W, H, texts, can_run);
   d.xclass("sde-appimage");
@@ -470,7 +541,9 @@ Choice ask(const Texts &texts, bool can_run) {
 }
 
 void message(const std::string &title, const std::string &body) {
-  Texts t{title, body};
+  fprintf(stderr, "sde-appimage: %s: %s\n", title.c_str(), body.c_str());
+  const char *display = getenv("DISPLAY");
+  if (!display || !*display) return;
   open_ui();
   fl_alert("%s\n\n%s", title.c_str(), body.c_str());
 }
@@ -528,7 +601,14 @@ int run(std::string path, const std::vector<std::string> &args) {
   }
   bool can_run = policy == Policy::ask && (c.verdict == Verdict::unsigned_image || c.verdict == Verdict::type1 ||
                                            (c.verdict == Verdict::no_key && c.error != "no-verifier"));
-  Choice choice = ask(explain(c, policy, path), can_run);
+  Texts texts = explain(c, policy, path);
+  const char *display = getenv("DISPLAY");
+  if (!display || !*display) {
+    // From a terminal without a desktop: the explanation, and nothing runs.
+    fprintf(stderr, "sde-appimage: %s\n\n%s\n", texts.title.c_str(), texts.body.c_str());
+    return 1;
+  }
+  Choice choice = ask(texts, can_run);
   if (choice == Choice::run && can_run) {
     accept(c, path, store);
     c.how = "accepted";
@@ -590,7 +670,15 @@ int main(int argc, char **argv) {
     Check c = check(fd, path, store, o);
     if (!o.tmpdir.empty()) rmdir(o.tmpdir.c_str());
     if (a == "--forget") {
-      if (!c.sha256.empty()) store.forget(c.sha256);
+      if (!c.sha256.empty()) {
+        store.forget(c.sha256);
+        // Its private copies go too.
+        if (DIR *d = opendir(copies_dir().c_str())) {
+          while (struct dirent *e = readdir(d))
+            if (starts_with(e->d_name, c.sha256.substr(0, 12) + "-")) unlink((copies_dir() + "/" + e->d_name).c_str());
+          closedir(d);
+        }
+      }
       // The key of its application too: the next version is "first use".
       store.forget_key(c.app);
       store.save();
