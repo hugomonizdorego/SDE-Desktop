@@ -1835,8 +1835,8 @@ void Panel::qa_dump_panel() {
       text += line("task:" + printable_text(t.title.empty() ? t.wm_class : t.title) +
                        (t.minimized ? ":minimized" : ""),
                    t.x, t.w);
-  // 0.2 Alpha 3: the live badges ("@badge:" every application's) and the
-  // buttons that show one, with the badge's colour.
+  // 0.2 Alpha 3: the live badges ("@app-badge:" every application's) and
+  // the buttons that show one, with the badge's colour.
   const auto &live = badges::Badges::get();
   text += live.qa_lines();
   auto badge_line = [&](const std::string &what, const std::string &id) {
