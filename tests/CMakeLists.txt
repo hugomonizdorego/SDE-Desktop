@@ -298,3 +298,10 @@ if(SDE_XVFB)
     $<TARGET_FILE:debrun> $<TARGET_FILE:debrun-fake-packagekit>)
   set_tests_properties(debrun-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# sde-appimage (src/appimage): ELF headers and AppImage sections, the signed
+# digest, OpenPGP armor, gpgv's answers, the trust store, the policy and
+# the verdicts (with a stand-in for gpgv).
+add_executable(appimage-tests test_appimage.cpp)
+target_link_libraries(appimage-tests PRIVATE sde-appimage-core sde-installer-base)
+add_test(NAME appimage-model COMMAND appimage-tests)
