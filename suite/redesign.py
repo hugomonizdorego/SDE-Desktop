@@ -1736,6 +1736,35 @@ def liria_hover(staged):
     edit_once(staged / "src/Makefile.am", "\tliria-sde-ribbon.h \\\n",
               "\tliria-sde-ribbon.h \\\n\tliria-sde-qa.c \\\n\tliria-sde-qa.h \\\n")
     liria_canvas_rows(staged)
+    # Every change of the active pane added one more style provider to the
+    # location entry (and leaked its colour string), so working out the
+    # entry's style took a little longer each time.
+    replace_between(staged / "src/liria-location-bar.c", "static void\noverride_background_color (GtkWidget *widget,",
+                    "/* change background color based on activity state */", r'''static void
+override_background_color (GtkWidget *widget,
+                           GdkRGBA   *rgba)
+{
+    gchar          *color, *css;
+    GtkCssProvider *provider;
+
+    /* SDE (0.2.0 Alpha 3): one provider per entry, loaded again. */
+    provider = g_object_get_data (G_OBJECT (widget), "sde-background-provider");
+    if (provider == NULL)
+    {
+        provider = gtk_css_provider_new ();
+        gtk_style_context_add_provider (gtk_widget_get_style_context (widget),
+                                        GTK_STYLE_PROVIDER (provider),
+                                        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_set_data_full (G_OBJECT (widget), "sde-background-provider", provider, g_object_unref);
+    }
+    color = gdk_rgba_to_string (rgba);
+    css = g_strdup_printf ("entry { background-color: %s;}", color);
+    gtk_css_provider_load_from_data (provider, css, -1, NULL);
+    g_free (css);
+    g_free (color);
+}
+
+''')
 
 
 def liria_ribbon(staged):
