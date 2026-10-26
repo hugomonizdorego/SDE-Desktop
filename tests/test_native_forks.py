@@ -99,9 +99,16 @@ class LiriaAlpha15Test(unittest.TestCase):
 
     def test_safe_copy_overlay_bounds_dirty_data_and_syncs(self):
         source = (self.root / 'suite/overlays/liria/libliria-private/liria-sde-copy.c').read_text()
-        for needle in ('sync_file_range', 'syncfs', 'fdatasync', 'SYNC_FILE_RANGE_WAIT_AFTER',
-                       'G_IO_ERROR_EXISTS', 'G_IO_ERROR_INVALID_FILENAME', '"/usb"'):
+        # 0.2.0 Alpha 3: the writer is SDE's own src/common/safe_copy.h,
+        # shared with the desktop and copied in as liria-sde-safe-copy.h.
+        writer = (self.root / 'src/common/safe_copy.h').read_text()
+        for needle in ('sync_file_range', 'syncfs', 'fdatasync', 'SYNC_FILE_RANGE_WAIT_AFTER', '"/usb"',
+                       'SPDX-License-Identifier: GPL-2.0-or-later'):
+            self.assertIn(needle, writer)
+        for needle in ('#include "liria-sde-safe-copy.h"', 'sde_copy_data', 'sde_writer_finish',
+                       'G_IO_ERROR_EXISTS', 'G_IO_ERROR_INVALID_FILENAME'):
             self.assertIn(needle, source)
+        self.assertIn(self.root / 'src/common/safe_copy.h', self.redesign.SHARED)
         recipe = (self.root / 'suite/redesign.py').read_text()
         for name in ('liria_copy_engine', 'liria_safe_remove', 'liria_clipboard'):
             self.assertIn(name + '(staged)', recipe)
