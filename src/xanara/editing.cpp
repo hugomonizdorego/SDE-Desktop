@@ -349,6 +349,7 @@ void DocView::edit_changed(bool now) {
 
 bool DocView::finish_text_edit() {
   bool ok = true;
+  paste_pending_ = false;
   if (text_) {
     if (preview_pending_) render_overlay();
     Fl::remove_timeout(blink_cb, this);
@@ -710,6 +711,10 @@ void DocView::edit_release(int mx, int my) {
       if (text_ && moved && (std::fabs(drag_dx_) > 0.1 || std::fabs(drag_dy_) > 0.1)) {
         text_->move_by(drag_dx_, drag_dy_);
         edit_changed(true);
+      } else if (text_ && !moved) {
+        // A click on the border: the caret goes to the nearest place.
+        text_->set_caret(text_->hit(edit_p0_.x, edit_p0_.y), Fl::event_state() & FL_SHIFT);
+        caret_on_ = true;
       }
       break;
     case EditDrag::Width:
