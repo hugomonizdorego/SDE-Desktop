@@ -5,7 +5,9 @@
 // touches (frame, watermark, background blur), red eyes, and Metadata &
 // Privacy (removing the location or all details without re-encoding).
 #include <cairo.h>
+#include <fcntl.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cmath>
@@ -477,6 +479,25 @@ static void test_png_metadata() {
   if (img) cairo_surface_destroy(img);
 }
 
+// Remove Location rewrites the photo itself: a symbolic link stays a link,
+// and the photo keeps its permissions and its dates.
+static void test_rewrite_in_place() {
+  std::string photo = g_tmp + "/private.jpg", link = g_tmp + "/link.jpg";
+  CHECK(sde::write_file_atomic(photo, "old contents"));
+  CHECK(chmod(photo.c_str(), 0600) == 0);
+  struct timespec times[2] = {{1700000000, 0}, {1700000000, 0}};
+  CHECK(utimensat(AT_FDCWD, photo.c_str(), times, 0) == 0);
+  CHECK(symlink("private.jpg", link.c_str()) == 0);
+  CHECK(gallery::rewrite_photo_in_place(link, "new contents"));
+  struct stat st {};
+  CHECK(lstat(link.c_str(), &st) == 0 && S_ISLNK(st.st_mode));
+  CHECK(stat(photo.c_str(), &st) == 0 && (st.st_mode & 07777) == 0600 && st.st_mtime == 1700000000);
+  std::string now;
+  CHECK(sde::read_file(photo, now) && now == "new contents");
+  CHECK(gallery::rewrite_photo_in_place(photo, "again"));
+  CHECK(stat(photo.c_str(), &st) == 0 && (st.st_mode & 07777) == 0600 && st.st_mtime == 1700000000);
+}
+
 int main() {
   char tmpl[] = "/tmp/sde-photo-plugins-XXXXXX";
   if (!mkdtemp(tmpl)) return 1;
@@ -489,6 +510,7 @@ int main() {
   test_tiff_gps();
   test_jpeg_metadata();
   test_png_metadata();
+  test_rewrite_in_place();
   std::string rm = "rm -rf '" + g_tmp + "'";
   if (system(rm.c_str()) != 0) fprintf(stderr, "could not remove %s\n", g_tmp.c_str());
   if (g_failures) {

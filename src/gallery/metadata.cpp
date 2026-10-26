@@ -2,9 +2,13 @@
 // Copyright (C) 2026 Selviana DE Project and contributors
 #include "metadata.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <map>
@@ -548,6 +552,23 @@ bool has_removable_metadata(const std::string &b) {
     for (const auto &c : chunks(b))
       if (is_text_chunk(c.type)) return true;
   return false;
+}
+
+bool rewrite_photo_in_place(const std::string &path, const std::string &bytes) {
+  std::string target = path;
+  if (char *real = realpath(path.c_str(), nullptr)) {
+    target = real;
+    free(real);
+  }
+  struct stat st {};
+  bool have = stat(target.c_str(), &st) == 0;
+  if (!sde::write_file_atomic(target, bytes)) return false;
+  if (have) {
+    chmod(target.c_str(), st.st_mode & 07777);
+    struct timespec times[2] = {st.st_atim, st.st_mtim};
+    utimensat(AT_FDCWD, target.c_str(), times, 0);
+  }
+  return true;
 }
 
 }  // namespace gallery

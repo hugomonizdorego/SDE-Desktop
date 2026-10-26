@@ -40,4 +40,10 @@ std::vector<MetadataField> list_metadata(const std::string &file_bytes);
 // True when the bytes carry metadata that strip would remove.
 bool has_removable_metadata(const std::string &file_bytes);
 
+// Replaces the contents of the photo at |path| (atomically), keeping its
+// dates and permissions. A symbolic link keeps pointing at the photo,
+// which is the file rewritten: replacing the link by a copy would leave
+// the details in the photo itself.
+bool rewrite_photo_in_place(const std::string &path, const std::string &bytes);
+
 }  // namespace gallery

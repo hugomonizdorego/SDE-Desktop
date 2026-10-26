@@ -83,19 +83,6 @@ std::string default_signature() {
   return format("© %s %d", name.c_str(), tm.tm_year + 1900);
 }
 
-// Writes |bytes| to |path| (atomically) and keeps its modification time:
-// only the metadata changed, not the photo.
-bool rewrite_keeping_time(const std::string &path, const std::string &bytes) {
-  struct stat st {};
-  bool have = stat(path.c_str(), &st) == 0;
-  if (!write_file_atomic(path, bytes)) return false;
-  if (have) {
-    struct timespec times[2] = {st.st_atim, st.st_mtim};
-    utimensat(AT_FDCWD, path.c_str(), times, 0);
-  }
-  return true;
-}
-
 }  // namespace
 
 // ------------------------------------------------------------- the panel
@@ -718,7 +705,7 @@ void PhotoWindow::remove_location() {
                  p->name.c_str()),
           {_("Cancel"), _("Remove")}) != 1)
     return;
-  if (!rewrite_keeping_time(p->path, bytes)) {
+  if (!gallery::rewrite_photo_in_place(p->path, bytes)) {
     toast(_("The photo could not be written"));
     return;
   }
@@ -767,7 +754,7 @@ void PhotoWindow::save_without_details() {
   std::string dest = chooser.filename();
   if (dest == p->path) {
     // Replacing the photo itself: its time stays.
-    if (!rewrite_keeping_time(dest, bytes)) {
+    if (!gallery::rewrite_photo_in_place(dest, bytes)) {
       toast(_("The copy could not be written"));
       return;
     }
