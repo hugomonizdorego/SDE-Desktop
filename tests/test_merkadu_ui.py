@@ -71,8 +71,13 @@ class Screen:
             (stubs / prog).write_text('#!/bin/sh\nexit 0\n')
             (stubs / prog).chmod(0o755)
         self.server = None
+        # SDE_XVFB_DISPLAYS=FIRST-LAST keeps the X servers in a range (tests
+        # running side by side).
+        first, last = 500, 20499
+        if '-' in os.environ.get('SDE_XVFB_DISPLAYS', ''):
+            first, last = (int(v) for v in os.environ['SDE_XVFB_DISPLAYS'].split('-', 1))
         for attempt in range(10):
-            number = 500 + (os.getpid() + attempt * 37) % 20000
+            number = first + (os.getpid() + attempt * 37) % (last - first + 1)
             server = sp.Popen(['Xvfb', ':%d' % number, '-noreset', '-screen', '0', size + 'x24',
                                '-nolisten', 'tcp'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
             self.env = dict(os.environ, DISPLAY=':%d' % number, HOME=str(home),

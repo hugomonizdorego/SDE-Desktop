@@ -8,6 +8,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "about.h"
 #include "model.h"
@@ -59,6 +60,10 @@ std::string view_title(const View &v);
 // The uninstall dialog of `merkadu --uninstall FILE` (uninstall.cpp).
 // Returns the exit status: 0 removed, 1 failed or refused, 2 cancelled.
 int run_uninstall(const std::string &desktop_file);
+
+// `merkadu --self-test [--expect REF,...] [--expect-flatpak N] [--list]`
+// (selftest.cpp): the catalogs and package lists without a display.
+int run_self_test(const std::vector<std::string> &args);
 
 }  // namespace merkadu
 }  // namespace sde

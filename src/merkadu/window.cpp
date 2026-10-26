@@ -650,21 +650,16 @@ void request_remove(const std::string &app_id, Source s) {
     return;
   }
   std::string id = app_id;
-  st.backend(Source::Debian)->plan_remove({pkg}, [id, name, pkg](std::vector<std::string> removed, long long freed,
-                                                                 std::string error) {
+  st.backend(Source::Debian)->plan_remove({pkg}, [id, name, pkg](RemovalCheck c) {
     Store &st2 = Store::get();
-    RemovalPlan plan = plan_removal(pkg, removed, st2.settings().protected_packages);
-    if (!error.empty()) {
-      fl_alert(_("%s cannot be removed:\n\n%s"), name.c_str(), error.c_str());
+    long long freed = c.freed;
+    if (!c.error.empty()) {
+      fl_alert(_("%s cannot be removed:\n\n%s"), name.c_str(), c.error.c_str());
       return;
     }
+    RemovalPlan plan = plan_removal(pkg, c.removed, st2.settings().protected_packages, c.system);
     if (!plan.allowed) {
-      if (plan.protected_package == pkg)
-        fl_alert(_("%s is part of the Selviana Desktop Environment (package %s) and cannot be removed on its own."),
-                 name.c_str(), pkg.c_str());
-      else
-        fl_alert(_("Removing %s would also remove %s, which the desktop needs. It cannot be removed."),
-                 name.c_str(), plan.protected_package.c_str());
+      fl_alert("%s", refusal_text(plan, name, pkg).c_str());
       return;
     }
     std::string text = format(_("Remove %s?"), name.c_str());

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "about.h"
 #include "config.h"
@@ -50,6 +51,8 @@ std::string usage() {
 
 int main(int argc, char **argv) {
   init_i18n();
+  if (argc > 1 && std::strcmp(argv[1], "--self-test") == 0)
+    return run_self_test(std::vector<std::string>(argv + 2, argv + argc));
   sde::set_default_window_icon({"merkadu", "system-software-install"});  // title bar and taskbar
   install_crash_handler("merkadu");
   View view;

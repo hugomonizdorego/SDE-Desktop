@@ -247,10 +247,6 @@ class SnapBackend : public Backend {
         done);
   }
 
-  void plan_remove(const std::vector<std::string> &packages,
-                   std::function<void(std::vector<std::string>, long long, std::string)> done) override {
-    done(packages, -1, "");
-  }
 
   void setup(const std::string &what, DoneFn done) override {
     if (what != "hide-snap-folder") {
