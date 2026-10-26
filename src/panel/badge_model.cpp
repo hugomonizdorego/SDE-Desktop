@@ -154,9 +154,9 @@ std::string count_text(int count) { return count > 99 ? "99+" : std::to_string(s
 Colors readable(Color fill, const Color &surface) {
   fill.a = 1;
   const Color white = Color::hex(0xFFFFFF), dark = Color::hex(0x1B1B1F), black = Color::hex(0x000000);
-  // White or dark text, whichever reads better; the fill moves away from
-  // it until the text has 4.5:1.
-  bool light_text = fill.contrast(white) >= fill.contrast(dark);
+  // White text unless the colour is light (yellow, lime, sky blue): dark
+  // text then; the fill moves away from the text until it has 4.5:1.
+  bool light_text = fill.contrast(white) >= 2.6 || fill.contrast(white) >= fill.contrast(dark);
   // A badge almost as light as a light surface gets darker (white text),
   // one almost as dark as a dark surface lighter (dark text); a colour of
   // its own stands apart anyway.

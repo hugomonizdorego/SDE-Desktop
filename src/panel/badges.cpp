@@ -288,7 +288,7 @@ Colors Badges::colors(const std::string &id, const Color &surface, const Color &
 std::string Badges::qa_lines() const {
   std::string out;
   for (auto &kv : badges_) {
-    std::string line = "@badge:" + kv.first + "=" + std::to_string(kv.second.count);
+    std::string line = "@app-badge:" + kv.first + "=" + std::to_string(kv.second.count);
     if (kv.second.urgent) line += ":urgent";
     if (kv.second.progress >= 0) line += ":progress " + std::to_string(int(std::lround(kv.second.progress * 100)));
     out += line + "\t0\t0\t0\t0\t1\n";

@@ -56,7 +56,7 @@ class Badges {
   // The colours of |id|'s badge on |surface| (from its icon, |accent| when
   // it has no colour of its own), cached per icon and colours.
   Colors colors(const std::string &id, const sde::Color &surface, const sde::Color &accent);
-  // UI tests: "@badge:<ID>=<count>[:urgent][:progress <percent>]" lines.
+  // UI tests: "@app-badge:<ID>=<count>[:urgent][:progress <percent>]" lines.
   std::string qa_lines() const;
 
  private:
