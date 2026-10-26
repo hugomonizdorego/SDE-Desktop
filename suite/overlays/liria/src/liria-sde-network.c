@@ -385,9 +385,9 @@ liria_sde_network_setup_entry (GtkEntry *entry)
     gtk_entry_completion_set_minimum_key_length (completion, 1);
     gtk_entry_completion_set_popup_single_match (completion, TRUE);
     gtk_entry_completion_set_inline_completion (completion, FALSE);
-    /* As wide as the suggestions: the entry is narrow on small screens. */
+    /* As wide as the suggestions (they are short), not as the entry,
+     * which is narrow on small screens. */
     gtk_entry_completion_set_popup_set_width (completion, FALSE);
-    g_object_set (cell, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
     gtk_cell_layout_pack_start (GTK_CELL_LAYOUT (completion), cell, TRUE);
     gtk_cell_layout_add_attribute (GTK_CELL_LAYOUT (completion), cell, "markup", SUGGEST_MARKUP);
     g_signal_connect (completion, "match-selected", G_CALLBACK (sde_suggest_selected), entry);
