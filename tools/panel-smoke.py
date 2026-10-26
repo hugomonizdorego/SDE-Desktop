@@ -886,8 +886,13 @@ def a3_menu_checks():
     if fx:
         fx.terminate();fx.wait()
         waitfor(lambda:badge('panel','@app-badge:qa-chat.desktop') is None,'the badge of an application that quit stayed')
-    for p in (mailer,other,wm):p.terminate()
-    for p in (mailer,other,wm):p.wait()
+    # The windows go first, then the window manager; the root window names
+    # no window manager again (a later check starts one when none runs).
+    for p in (mailer,other):p.terminate()
+    for p in (mailer,other):p.wait()
+    time.sleep(.3);wm.terminate();wm.wait()
+    for prop in ('_NET_SUPPORTING_WM_CHECK','_NET_CLIENT_LIST','_NET_CLIENT_LIST_STACKING','_NET_ACTIVE_WINDOW'):
+        run('xprop','-root','-remove',prop,check=False)
     # 5) Restore Default Tiles: the favorites again.
     extra_conf=''
     tiles('Mine,qa-atlas.desktop:m');m=open_menu()
