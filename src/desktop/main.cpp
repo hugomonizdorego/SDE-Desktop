@@ -308,9 +308,12 @@ class WallpaperWorker {
 };
 
 // File operations from drops and Paste run on a worker thread; the transfer
-// dialog (src/common/transfer_dialog.h: speed graph, items and time left,
-// pause, the animated SDE mark) appears when they take longer than half a
-// second.
+// dialog (src/common/transfer_dialog.h: one window for every operation, a
+// penguin carrying papers, pause, the time left) appears when they take
+// longer than half a second. On removable drives an operation ends only
+// when its data is on the drive (file_ops.cpp, src/common/safe_copy.h); the
+// dialog then says so ("The files are on SANDISK - you can remove it.").
+// Errors show in the dialog.
 class FileJob {
  public:
   FileJob(std::vector<desk::FileOp> ops, std::function<void()> done) : ops_(std::move(ops)), done_(std::move(done)) {
@@ -330,12 +333,15 @@ class FileJob {
     started_ = perf::now_ms();
     Fl::add_timeout(0.1, poll, this);
   }
-  ~FileJob() {
-    Fl::remove_timeout(poll, this);
-    delete dialog_;
-  }
+  ~FileJob() { Fl::remove_timeout(poll, this); }
 
  private:
+  // The dialog's buttons reach the job of an operation through its id.
+  static std::map<int, std::shared_ptr<desk::FileProgress>> &jobs() {
+    static std::map<int, std::shared_ptr<desk::FileProgress>> map;
+    return map;
+  }
+
   static void poll(void *data) {
     auto *job = static_cast<FileJob *>(data);
     if (*job->finished_) {
@@ -344,24 +350,29 @@ class FileJob {
         std::lock_guard<std::mutex> lock(job->progress_->mutex);
         errors = *job->errors_;
       }
-      if (job->dialog_) job->dialog_->hide();
       bool cancelled = job->progress_->cancel;
+      errors.erase(std::remove(errors.begin(), errors.end(), std::string("Cancelled")), errors.end());
+      if (!errors.empty() && job->id_ < 0) job->show_dialog();  // fast, but with errors
+      if (job->id_ >= 0) {
+        job->update_dialog();
+        auto *dialog = sde::TransferDialog::instance();
+        dialog->finish(job->id_, cancelled && errors.empty() ? sde::TransferDialog::Result::Cancelled
+                                 : errors.empty()            ? sde::TransferDialog::Result::Done
+                                                             : sde::TransferDialog::Result::Failed,
+                       errors);
+        jobs().erase(job->id_);
+      }
       auto done = job->done_;
-      std::string text;
-      for (size_t i = 0; i < errors.size() && i < 5; ++i) text += errors[i] + "\n";
-      if (errors.size() > 5) text += format(_("... and %d more"), int(errors.size() - 5));
-      delete job;  // before any dialog: nothing refers to it any more
+      delete job;
       if (done) done();
-      if (!text.empty() && !(cancelled && text.find("Cancelled") != std::string::npos))
-        fl_alert("%s\n\n%s", _("Some items could not be copied or moved:"), text.c_str());
       return;
     }
-    if (!job->dialog_ && perf::now_ms() - job->started_ > 500) job->show_dialog();
-    if (job->dialog_) job->update_dialog();
+    if (job->id_ < 0 && perf::now_ms() - job->started_ > 500) job->show_dialog();
+    if (job->id_ >= 0) job->update_dialog();
     Fl::repeat_timeout(0.1, poll, data);
   }
 
-  // Folder names for "Copying 3 items from Downloads to Desktop": the
+  // Folder names for "Copying 3 items to Desktop" and the details: the
   // source folder when every item comes from the same one.
   static std::string folder_name(const std::string &path) {
     if (path == home_dir()) return _("Home");
@@ -382,16 +393,26 @@ class FileJob {
     std::string destination;
     if (trash) destination = _("Trash");
     else if (!ops_.empty()) destination = folder_name(ops_[0].dst.substr(0, ops_[0].dst.find_last_of('/')));
-    dialog_ = new sde::TransferDialog(move ? sde::TransferDialog::Operation::Move : sde::TransferDialog::Operation::Copy,
-                                      source.empty() ? std::string() : folder_name(source), destination);
-    auto progress = progress_;
-    dialog_->on_pause = [progress](bool paused) { progress->pause = paused; };
-    dialog_->on_cancel = [progress] {
-      progress->cancel = true;
-      progress->pause = false;
-    };
+    auto *dialog = sde::TransferDialog::instance();
+    if (!dialog->on_pause) {
+      dialog->on_pause = [](int id, bool paused) {
+        auto it = jobs().find(id);
+        if (it != jobs().end()) it->second->pause = paused;
+      };
+      dialog->on_cancel = [](int id) {
+        auto it = jobs().find(id);
+        if (it == jobs().end()) return;
+        it->second->cancel = true;
+        it->second->pause = false;
+      };
+    }
+    id_ = dialog->add(trash  ? sde::TransferDialog::Operation::Trash
+                      : move ? sde::TransferDialog::Operation::Move
+                             : sde::TransferDialog::Operation::Copy,
+                      source.empty() ? std::string() : folder_name(source), destination);
+    jobs()[id_] = progress_;
     update_dialog();
-    dialog_->show();
+    if (!dialog->shown()) dialog->show();
   }
 
   void update_dialog() {
@@ -400,11 +421,15 @@ class FileJob {
     s.bytes_total = progress_->total;
     s.files_done = progress_->files_done;
     s.files_total = progress_->files_total;
+    s.finishing = progress_->phase == desk::FileProgress::FINISHING;
+    s.removable = progress_->removable;
+    s.fat = progress_->fat;
     {
       std::lock_guard<std::mutex> lock(progress_->mutex);
       s.current = basename_of(progress_->current);
+      s.drive = progress_->drive;
     }
-    dialog_->update(s);
+    sde::TransferDialog::instance()->update(id_, s);
   }
 
   std::vector<desk::FileOp> ops_;
@@ -413,7 +438,7 @@ class FileJob {
   std::shared_ptr<std::atomic<bool>> finished_ = std::make_shared<std::atomic<bool>>(false);
   std::shared_ptr<std::vector<std::string>> errors_ = std::make_shared<std::vector<std::string>>();
   double started_ = 0;
-  sde::TransferDialog *dialog_ = nullptr;
+  int id_ = -1;
 };
 
 class Desktop : public sde::BufferedWindow {

@@ -94,13 +94,15 @@ App::App(int w, int h) : BufferedWindow(w, h, "Niny") {
   find_ = new FindBar(this, 0, 0, S(560), S(52));
   palette_ = new Palette(this, 0, 0, S(600), S(300));
   sheet_ = new Sheet(this, 0, 0, w, h);
+  font_dialog_ = new FontDialog(this, 0, 0, w, h);
   end();
   // Every part must be a child of this window (alpha 50: the settings page
   // left the current group empty, and About Niny crashed in the sheet).
   const std::pair<Fl_Widget *, const char *> parts[] = {
       {editor_, "editor"}, {mdview_, "Markdown view"}, {info_, "info bar"}, {sidebar_, "side panel"},
-      {tabs_, "tab bar"}, {toolbar_, "menu row"}, {status_, "status bar"}, {settings_page_, "settings page"},
-      {find_, "find bar"}, {palette_, "command palette"}, {sheet_, "question sheet"}};
+      {tabs_, "tab bar"}, {toolbar_, "menu bar"}, {status_, "status bar"}, {settings_page_, "settings page"},
+      {find_, "find bar"}, {palette_, "command palette"}, {sheet_, "question sheet"},
+      {font_dialog_, "font dialog"}};
   for (const auto &part : parts)
     if (part.first->parent() != this) {
       fprintf(stderr, "niny: BUG: the %s is not part of the window\n", part.second);
@@ -130,6 +132,7 @@ App::~App() {
   Fl::remove_timeout(ui_cb, this);
   Fl::remove_timeout(toast_cb, this);
   Fl::remove_timeout(match_cb, this);
+  Fl::remove_timeout(qa_cb, this);
   Fl::remove_idle(idle_cb, this);
   editor_->buffer(nullptr);
   instance_ = nullptr;
@@ -140,7 +143,7 @@ void App::hide() {
   BufferedWindow::hide();
 }
 
-bool App::modal() const { return sheet_ && sheet_->active(); }
+bool App::modal() const { return (sheet_ && sheet_->active()) || (font_dialog_ && font_dialog_->active()); }
 
 int App::ask(const std::string &title, const std::string &message, const std::vector<std::string> &buttons,
              int default_button, int cancel_button) {
@@ -213,13 +216,18 @@ void App::editor_rect(int &X, int &Y, int &W, int &H) const {
 
 void App::layout() {
   tabs_h_ = S(42);
-  int bar_h = S(40);
+  int bar_h = menubar_shown() ? S(40) : 0;
   header_h_ = tabs_h_ + bar_h;
   bool page = settings_visible();
   status_h_ = settings_.status_bar && !page ? S(30) : 0;
   int W = w(), H = h();
   tabs_->resize(S(46), 0, std::max(S(80), W - S(46) - S(6)), tabs_h_);
-  toolbar_->resize(0, tabs_h_, W, bar_h);
+  if (bar_h) {
+    toolbar_->resize(0, tabs_h_, W, bar_h);
+    toolbar_->show();
+  } else {
+    toolbar_->hide();
+  }
   int ex, ey, ew, eh;
   editor_rect(ex, ey, ew, eh);
   int body_y = ey, body_h = eh;
@@ -268,12 +276,14 @@ void App::layout() {
   palette_->resize((W - pw) / 2, header_h_ + S(6), pw, palette_->h());
   palette_->relayout();
   sheet_->resize(0, 0, W, H);
+  font_dialog_->resize(0, 0, W, H);
   if (status_h_) {
     status_->resize(0, H - status_h_, W, status_h_);
     status_->show();
   } else {
     status_->hide();
   }
+  schedule_qa();
 }
 
 void App::resize(int X, int Y, int W, int H) {
@@ -290,9 +300,14 @@ void App::draw_header(Painter &p) {
   } else {
     p.fill_rect(0, 0, w(), hh, L.strip);
   }
-  // The app mark at the start of the tab strip.
-  double s = S(22);
-  icon::logo(p, (S(46) - s) / 2.0 + S(2), S(6) + (hh - S(6) - s) / 2.0, s);
+  // The app mark at the start of the tab strip; it opens every menu in one
+  // popup (with the menu bar hidden, the way back for the mouse).
+  double s = S(22), lx = (S(46) - s) / 2.0 + S(2), ly = S(6) + (hh - S(6) - s) / 2.0;
+  if (logo_hover_) {
+    Color hover = L.dark ? Color::hex(0xFFFFFF, 0.08) : Color::hex(0x000000, 0.06);
+    p.fill_rounded(lx - S(5), ly - S(5), s + S(10), s + S(10), Sd(7), hover);
+  }
+  icon::logo(p, lx, ly, s);
 }
 
 void App::draw() {
@@ -320,11 +335,14 @@ void App::build_commands() {
     c.global = global;
     commands_.push_back(std::move(c));
   };
-  std::string F = _("File"), E = _("Edit"), S_ = _("Search"), V = _("View"), D = _("Document"), T = _("Tools");
+  // Groups are the menus of the menu bar (the palette shows them, and the
+  // Keyboard Shortcuts page is sorted by them).
+  std::string F = _("File"), E = _("Edit"), S_ = _("Search"), V = _("View"), D = _("Document"), T = _("Tools"),
+              H = _("Help");
   add("new", _("New Tab"), F, FL_CTRL + 'n', "Ctrl+N", [this] { new_document(); });
   add("new_window", _("New Window"), F, FL_CTRL + FL_SHIFT + 'n', "Ctrl+Shift+N", [this] { new_window(); });
   add("open", _("Open…"), F, FL_CTRL + 'o', "Ctrl+O", [this] { open_dialog(); });
-  add("quick_open", _("Quick Open…"), F, FL_CTRL + 'p', "Ctrl+P", [this] { show_palette(""); });
+  add("quick_open", _("Quick Open…"), S_, FL_CTRL + 'p', "Ctrl+P", [this] { show_palette(""); });
   add("save", _("Save"), F, FL_CTRL + 's', "Ctrl+S", [this] { if (active()) save(active()); });
   add("save_as", _("Save As…"), F, FL_CTRL + FL_SHIFT + 's', "Ctrl+Shift+S", [this] { if (active()) save_as(active()); });
   add("save_all", _("Save All"), F, FL_CTRL + FL_ALT + 's', "Ctrl+Alt+S", [this] { save_all(); });
@@ -335,12 +353,10 @@ void App::build_commands() {
     for (int i = int(docs_.size()) - 1; i >= 0; --i)
       if (docs_[size_t(i)].get() != keep && !close_document(i)) break;
   });
-  add("close_all", _("Close All Tabs"), F, FL_CTRL + FL_SHIFT + 'w', "Ctrl+Shift+W", [this] {
-    for (int i = int(docs_.size()) - 1; i >= 0; --i)
-      if (!close_document(i)) break;
-  });
+  add("close_all", _("Close All Tabs"), F, FL_CTRL + FL_SHIFT + 'w', "Ctrl+Shift+W",
+      [this] { close_all_documents(); });
   add("reopen", _("Reopen Closed Tab"), F, FL_CTRL + FL_SHIFT + 't', "Ctrl+Shift+T", [this] { reopen_closed(); });
-  add("copy_path", _("Copy File Path"), F, 0, nullptr, [this] {
+  add("copy_path", _("Copy File Path"), E, 0, nullptr, [this] {
     if (active() && !active()->path.empty()) {
       Fl::copy(active()->path.c_str(), int(active()->path.size()), 1);
       toast(_("Path copied"));
@@ -352,7 +368,7 @@ void App::build_commands() {
     sidebar_->set_mode(1);
     if (!settings_.show_sidebar) toggle_sidebar();
   });
-  add("quit", _("Exit"), F, FL_CTRL + 'q', "Ctrl+Q", [this] { quit(); });
+  add("quit", _("Quit"), F, FL_CTRL + 'q', "Ctrl+Q", [this] { quit(); });
 
   add("undo", _("Undo"), E, FL_CTRL + 'z', "Ctrl+Z", [this] { undo(); }, false);
   add("redo", _("Redo"), E, FL_CTRL + FL_SHIFT + 'z', "Ctrl+Shift+Z", [this] { redo(); }, false);
@@ -365,8 +381,8 @@ void App::build_commands() {
     editor_->redraw();
     cursor_moved();
   }, false);
-  add("date_time", _("Time/Date"), E, FL_F + 5, "F5", [this] { insert_date_time(); });
-  add("search_web", _("Search the Web"), E, FL_CTRL + 'e', "Ctrl+E", [this] { search_web(); });
+  add("date_time", _("Insert Date and Time"), E, FL_F + 5, "F5", [this] { insert_date_time(); });
+  add("search_web", _("Search the Web"), S_, FL_CTRL + 'e', "Ctrl+E", [this] { search_web(); });
   add("duplicate", _("Duplicate Line or Selection"), E, FL_CTRL + 'd', "Ctrl+D", [this] { duplicate_lines(); }, false);
   add("delete_line", _("Delete Line"), E, FL_CTRL + FL_SHIFT + 'k', "Ctrl+Shift+K", [this] { delete_lines(); }, false);
   add("move_up", _("Move Line Up"), E, FL_ALT + FL_Up, "Alt+Up", [this] { move_lines(-1); }, false);
@@ -378,7 +394,8 @@ void App::build_commands() {
       [this] { insert_line(true); }, false);
   add("indent", _("Indent"), E, 0, "Tab", [this] { indent(true); }, false);
   add("unindent", _("Unindent"), E, 0, "Shift+Tab", [this] { indent(false); }, false);
-  add("bracket", _("Go to Matching Bracket"), E, FL_CTRL + 'm', "Ctrl+M", [this] { goto_matching_bracket(); }, false);
+  add("bracket", _("Go to Matching Bracket"), S_, FL_CTRL + 'm', "Ctrl+M", [this] { goto_matching_bracket(); },
+      false);
   add("upper", _("Convert to Upper Case"), E, FL_CTRL + 'u', "Ctrl+U", [this] { transform(upper_case, false); }, false);
   add("lower", _("Convert to Lower Case"), E, FL_CTRL + FL_SHIFT + 'u', "Ctrl+Shift+U",
       [this] { transform(lower_case, false); }, false);
@@ -422,9 +439,10 @@ void App::build_commands() {
   add("replace", _("Find and Replace…"), S_, FL_CTRL + 'h', "Ctrl+H", [this] { show_find(true); });
   add("find_next", _("Find Next"), S_, FL_F + 3, "F3", [this] { find_next(true); });
   add("find_prev", _("Find Previous"), S_, FL_SHIFT + FL_F + 3, "Shift+F3", [this] { find_next(false); });
-  add("goto", _("Go To…"), S_, FL_CTRL + 'g', "Ctrl+G", [this] { show_palette(":"); });
+  add("goto", _("Go to Line…"), S_, FL_CTRL + 'g', "Ctrl+G", [this] { show_palette(":"); });
 
-  add("palette", _("Command Palette"), V, FL_CTRL + FL_SHIFT + 'p', "Ctrl+Shift+P", [this] { show_palette(">"); });
+  add("palette", _("Command Palette"), T, FL_CTRL + FL_SHIFT + 'p', "Ctrl+Shift+P", [this] { show_palette(">"); });
+  add("menu_bar", _("Menu Bar"), V, 0, nullptr, [this] { toggle_setting(&Settings::menu_bar); });
   add("sidebar", _("Side Panel"), V, FL_F + 9, "F9", [this] { toggle_sidebar(); });
   add("documents", _("Show Open Documents"), V, 0, nullptr, [this] {
     sidebar_->set_mode(0);
@@ -432,21 +450,18 @@ void App::build_commands() {
   });
   add("wrap", _("Word Wrap"), V, FL_ALT + 'z', "Alt+Z", [this] { set_wrap(!settings_.word_wrap); });
   add("whitespace", _("Show Whitespace"), V, 0, nullptr, [this] { toggle_whitespace(); });
-  add("line_numbers", _("Line Numbers"), V, 0, nullptr, [this] {
-    settings_.line_numbers = !settings_.line_numbers;
-    apply_settings(true);
-  });
-  add("status_bar", _("Status Bar"), V, 0, nullptr, [this] {
-    settings_.status_bar = !settings_.status_bar;
-    apply_settings(true);
-  });
+  add("line_numbers", _("Line Numbers"), V, 0, nullptr, [this] { toggle_setting(&Settings::line_numbers); });
+  add("highlight_line", _("Highlight Current Line"), V, 0, nullptr,
+      [this] { toggle_setting(&Settings::highlight_line); });
+  add("status_bar", _("Status Bar"), V, 0, nullptr, [this] { toggle_setting(&Settings::status_bar); });
+  add("font", _("Font…"), V, 0, nullptr, [this] { choose_font(); });
   add("zoom_in", _("Zoom In"), V, FL_CTRL + '=', "Ctrl++", [this] { zoom(1); });
   add("zoom_out", _("Zoom Out"), V, FL_CTRL + '-', "Ctrl+-", [this] { zoom(-1); });
   add("zoom_reset", _("Restore Default Zoom"), V, FL_CTRL + '0', "Ctrl+0", [this] { zoom(0); });
-  add("next_tab", _("Next Tab"), V, FL_CTRL + FL_Page_Down, "Ctrl+Page Down", [this] {
+  add("next_tab", _("Next Tab"), D, FL_CTRL + FL_Page_Down, "Ctrl+Page Down", [this] {
     if (!docs_.empty()) activate((active_ + 1) % int(docs_.size()));
   });
-  add("prev_tab", _("Previous Tab"), V, FL_CTRL + FL_Page_Up, "Ctrl+Page Up", [this] {
+  add("prev_tab", _("Previous Tab"), D, FL_CTRL + FL_Page_Up, "Ctrl+Page Up", [this] {
     if (!docs_.empty()) activate((active_ + int(docs_.size()) - 1) % int(docs_.size()));
   });
   add("fullscreen", _("Full Screen"), V, FL_F + 11, "F11", [this] {
@@ -506,8 +521,16 @@ void App::build_commands() {
     c.run = [this, wdt] { if (active()) set_indent(active()->use_tabs, wdt); };
     commands_.push_back(c);
   }
-  add("settings", _("Settings"), T, FL_CTRL + ',', "Ctrl+,", [this] { open_settings(); });
-  add("about", _("About Niny"), T, 0, nullptr, [this] { about(); });
+  add("syntax", _("Syntax Highlighting"), D, 0, nullptr, [this] { toggle_setting(&Settings::syntax_colors); });
+  add("auto_indent", _("Automatic Indentation"), D, 0, nullptr, [this] { toggle_setting(&Settings::auto_indent); });
+  add("spell_check", _("Check Spelling as You Type"), T, 0, nullptr, [this] {
+    toggle_setting(&Settings::spell_check);
+    if (settings_.spell_check) schedule_spell_check();
+  });
+  add("statistics", _("Document Statistics…"), T, 0, nullptr, [this] { document_statistics(); });
+  add("settings", _("Preferences"), E, FL_CTRL + ',', "Ctrl+,", [this] { open_settings(); });
+  add("shortcuts", _("Keyboard Shortcuts"), H, FL_F + 1, "F1", [this] { show_shortcuts(); });
+  add("about", _("About Niny"), H, 0, nullptr, [this] { about(); });
 }
 
 void App::run_command(const std::string &id) {
@@ -526,15 +549,13 @@ bool App::global_shortcut(int key, int state) {
     run_command(state & FL_SHIFT ? "prev_tab" : "next_tab");
     return true;
   }
-  if (state == FL_ALT && (key == 'f' || key == 'e' || key == 'v')) {
-    toolbar_->open(key == 'f' ? Toolbar::File : key == 'e' ? Toolbar::Edit : Toolbar::View);
-    return true;
-  }
   if (key == FL_Escape && state == 0 && settings_visible()) {
     show_settings_page(false);
     return true;
   }
-  if (key == FL_Menu && state == 0 && active() && !settings_visible()) {
+  // The Menu key and Shift+F10 open the context menu at the cursor.
+  if (((key == FL_Menu && state == 0) || (key == FL_F + 10 && state == FL_SHIFT)) && active() &&
+      !settings_visible()) {
     int px = 0, py = 0;
     editor_->position_to_xy(editor_->insert_position(), &px, &py);
     context_menu(x_root() + px, y_root() + py + editor_->line_height());
@@ -583,9 +604,70 @@ bool App::global_shortcut(int key, int state) {
   return false;
 }
 
+// The menu bar from the keyboard: F10 opens File, Alt and an underlined
+// letter that letter's menu, and Alt pressed and released alone lets the
+// titles take the keyboard. A hidden menu bar shows while it is used.
+bool App::menu_key(int event) {
+  int key = Fl::event_key();
+  int state = Fl::event_state() & (FL_SHIFT | FL_CTRL | FL_ALT | FL_META);
+  bool alt = key == FL_Alt_L || key == FL_Alt_R;
+  bool modifier = (key >= FL_Shift_L && key <= FL_Alt_R) || (key >= 0xfe01 && key <= 0xfe0f);  // and AltGr
+  switch (event) {
+    case FL_KEYBOARD:
+      if (alt) {
+        alt_alone_ = (state & (FL_SHIFT | FL_CTRL | FL_META)) == 0;
+        alt_time_ = now_seconds();
+        Fl::get_mouse(alt_x_, alt_y_);
+        return false;
+      }
+      if (modifier) return false;
+      alt_alone_ = false;
+      if (toolbar_->titles_focused()) {
+        if (toolbar_->title_key(key, state)) return true;
+        toolbar_->focus_titles(false);
+      }
+      if (key == FL_F + 10 && state == 0) {
+        peek_menubar(true);
+        toolbar_->open(Toolbar::File, true);
+        return true;
+      }
+      if (state == FL_ALT) {
+        if (int id = toolbar_->menu_for_key(key)) {
+          peek_menubar(true);
+          toolbar_->open(id, true);
+          return true;
+        }
+      }
+      return false;
+    case FL_KEYUP:
+      if (alt && alt_alone_ && now_seconds() - alt_time_ < 1.0) {
+        alt_alone_ = false;
+        // Not after Alt and a drag: the window manager moved the window.
+        int mx = 0, my = 0;
+        Fl::get_mouse(mx, my);
+        if (std::abs(mx - alt_x_) + std::abs(my - alt_y_) > S(4)) return false;
+        bool on = !toolbar_->titles_focused();
+        if (on) peek_menubar(true);
+        toolbar_->focus_titles(on);
+        return true;
+      }
+      if (alt) alt_alone_ = false;
+      return false;
+    case FL_PUSH:
+    case FL_MOUSEWHEEL:
+    case FL_UNFOCUS:  // the window lost the keyboard (Alt+Tab)
+      alt_alone_ = false;
+      if (toolbar_->titles_focused() && !(event == FL_PUSH && Fl::event_inside(toolbar_)))
+        toolbar_->focus_titles(false);
+      return false;
+  }
+  return false;
+}
+
 int App::dispatch(int event, Fl_Window *w) {
   App *self = instance_;
   if (self && w == self && !self->modal() && !Fl::grab()) {  // popup menus get their keys
+    if (self->menu_key(event)) return 1;
     if (event == FL_KEYBOARD && self->global_shortcut(Fl::event_key(), Fl::event_state())) return 1;
     if (event == FL_PUSH && self->palette_->visible() && !Fl::event_inside(self->palette_)) {
       self->palette_->close(true);
@@ -601,46 +683,23 @@ void App::popup_status(int id, int x, int y) {
     show_palette(":");
     return;
   }
+  // The same choices as in the Document menu.
   MenuSpec spec;
-  auto radio = [](const std::string &label, bool on, std::function<void()> fn) {
-    MenuItem m;
-    m.label = label;
-    m.radio = true;
-    m.checked = on;
-    m.run = std::move(fn);
-    return m;
-  };
   if (id == StatusBar::FileType) {
-    for (const Language *l : all_languages())
-      spec.items.push_back(radio(is_plain(l) ? std::string(_("Plain text")) : language_name(l), d->lang == l,
-                                 [this, l] { set_language(l); }));
+    spec.items = file_type_items();
   } else if (id == StatusBar::Zoom) {
     spec.items.push_back(command_item("zoom_in"));
     spec.items.push_back(command_item("zoom_out"));
     spec.items.push_back(command_item("zoom_reset"));
   } else if (id == StatusBar::LineEnding) {
-    spec.items.push_back(radio(_("Windows (CRLF)"), d->eol == Eol::CRLF && !d->mixed_eol, [this] { set_eol(Eol::CRLF); }));
-    spec.items.push_back(radio(_("Unix (LF)"), d->eol == Eol::LF && !d->mixed_eol, [this] { set_eol(Eol::LF); }));
-    spec.items.push_back(radio(_("Macintosh (CR)"), d->eol == Eol::CR && !d->mixed_eol, [this] { set_eol(Eol::CR); }));
+    spec.items = line_ending_items();
   } else if (id == StatusBar::Encoding) {
-    for (Encoding e : all_encodings())
-      spec.items.push_back(radio(encoding_name(e), d->encoding == e, [this, e] { set_encoding_for_save(e); }));
-    if (!d->path.empty()) {
-      spec.items.push_back(MenuItem::sep());
-      MenuItem re;
-      re.label = _("Reopen with Encoding");
-      for (Encoding e : all_encodings()) {
-        MenuItem m;
-        m.label = encoding_name(e);
-        m.run = [this, d, e] { reload(d, &e); };
-        re.sub.push_back(m);
-      }
-      spec.items.push_back(re);
-    }
+    spec.items = encoding_items();
   } else {
     return;
   }
   spec.min_width = 160;
+  spec.qa_name = "status";
   popup_menu(spec, x, y, -1);
 }
 
@@ -696,12 +755,24 @@ void App::toggle_preview() {
 
 bool App::settings_visible() const { return settings_page_ && settings_page_->visible(); }
 
+bool App::preferences_visible() const {
+  return settings_visible() && settings_page_->mode() == SettingsPage::Mode::Settings;
+}
+
 void App::show_settings_page(bool on) {
+  if (on && settings_visible() && settings_page_->mode() != SettingsPage::Mode::Settings) {
+    // From the shortcuts to Preferences.
+    settings_page_->set_mode(SettingsPage::Mode::Settings);
+    settings_page_->take_focus();
+    update_ui();
+    redraw();
+    return;
+  }
   if (on == settings_visible()) return;
   if (on) {
     palette_->close(false);
     hide_find();
-    settings_page_->rebuild();
+    settings_page_->set_mode(SettingsPage::Mode::Settings);
     settings_page_->show();
   } else {
     settings_page_->hide();
@@ -713,6 +784,87 @@ void App::show_settings_page(bool on) {
   redraw();
 }
 
+void App::show_shortcuts() {
+  bool was = settings_visible();
+  if (!was) {
+    palette_->close(false);
+    hide_find();
+  }
+  settings_page_->set_mode(SettingsPage::Mode::Shortcuts);
+  if (!was) {
+    settings_page_->show();
+    layout();
+  }
+  settings_page_->take_focus();
+  update_ui();
+  redraw();
+}
+
+void App::toggle_setting(bool Settings::*field) {
+  settings_.*field = !(settings_.*field);
+  apply_settings(true);
+}
+
+void App::peek_menubar(bool on) {
+  if (on == menubar_peek_) return;
+  menubar_peek_ = on;
+  if (settings_.menu_bar) return;  // shown anyway
+  layout();
+  redraw();
+}
+
+// The Niny mark at the start of the tab strip: the menus of the menu bar in
+// one popup, and the switch to bring the menu bar back.
+void App::main_menu(int rx, int ry) {
+  MenuSpec spec;
+  for (int id = Toolbar::File; id <= Toolbar::Help; ++id) {
+    MenuItem m;
+    m.label = Toolbar::title(id);
+    m.sub = menu_spec(id).items;
+    spec.items.push_back(m);
+  }
+  spec.items.push_back(MenuItem::sep());
+  spec.items.push_back(command_item("menu_bar", -1, settings_.menu_bar));
+  spec.min_width = 200;
+  spec.qa_name = "main";
+  popup_menu(spec, rx, ry, S(34));
+  logo_hover_ = false;
+  redraw();
+}
+
+void App::choose_font() {
+  std::string family = settings_.font;
+  int size = settings_.font_size;
+  if (!font_dialog_->run(family, size)) return;
+  if (size != settings_.font_size) settings_.zoom = 0;  // as on the Preferences page
+  settings_.font = family;
+  settings_.font_size = size;
+  apply_settings(true);
+}
+
+void App::document_statistics() {
+  Document *d = active();
+  if (!d) return;
+  auto stats = [](const char *text, size_t len) {
+    TextCounts c = count_text(text, len);
+    long blank = 0;  // spaces, tabs and line breaks
+    for (size_t i = 0; i < len; ++i)
+      if (text[i] == ' ' || text[i] == '\t' || text[i] == '\n' || text[i] == '\r') ++blank;
+    return format(_("Lines: %s\nWords: %s\nCharacters: %s\nCharacters without spaces: %s"),
+                  group_thousands(c.lines).c_str(), group_thousands(c.words).c_str(),
+                  group_thousands(c.chars).c_str(), group_thousands(c.chars - blank).c_str());
+  };
+  const std::string &t = d->text();
+  std::string msg = stats(t.data(), t.size());
+  msg += "\n" + format(_("Bytes (UTF-8): %s"), group_thousands(long(t.size())).c_str());
+  int a = 0, b = 0;
+  if (d->buf->selection_position(&a, &b) && b > a) {
+    std::string sel = selection_text();
+    msg += "\n\n" + std::string(_("Selection")) + "\n" + stats(sel.data(), sel.size());
+  }
+  ask(format(_("Statistics of “%s”"), d->display_name().c_str()), msg, {_("Close")}, 0, 0);
+}
+
 // -------------------------------------------------------------- documents
 
 int App::find_document(const std::string &path) const {
@@ -722,9 +874,18 @@ int App::find_document(const std::string &path) const {
   return -1;
 }
 
+// "Untitled", "Untitled 2" ...: the smallest number no open document has, so
+// that closing every tab starts over with "Untitled".
+int App::next_untitled() const {
+  std::vector<int> used;
+  for (auto &d : docs_)
+    if (d->path.empty() && d->untitled > 0) used.push_back(d->untitled);
+  return free_untitled_number(used);
+}
+
 Document *App::new_document() {
   auto d = std::make_unique<Document>(this);
-  d->untitled = ++untitled_counter_;
+  d->untitled = next_untitled();
   d->indent_width = settings_.tab_width;
   d->use_tabs = !settings_.insert_spaces;
   d->set_tab_width(settings_.tab_width);
@@ -853,6 +1014,12 @@ void App::move_document(int from, int to) {
 
 bool App::close_document(int index, bool ask_user) {
   if (index < 0 || index >= int(docs_.size())) return false;
+  // The only tab stays (alpha 3). Closing it used to open a new "Untitled
+  // N" at once, so its × seemed to add a page instead of closing one.
+  if (!can_close_tab()) {
+    toast(_("Only one tab is open, so it cannot be closed"));
+    return false;
+  }
   Document *d = docs_[size_t(index)].get();
   if (ask_user && d->modified()) {
     activate(index);
@@ -861,7 +1028,20 @@ bool App::close_document(int index, bool ask_user) {
                 {_("Close Without Saving"), _("Cancel"), _("Save")}, 2, 1);
     if (r == 1) return false;
     if (r == 2 && !save(d)) return false;
+    // The question ran the event loop: find the document again.
+    index = -1;
+    for (size_t i = 0; i < docs_.size(); ++i)
+      if (docs_[i].get() == d) index = int(i);
+    if (index < 0 || !can_close_tab()) return false;
   }
+  remove_document(index);
+  return true;
+}
+
+// Drops tab |index| (no questions) and shows its neighbour. With the last
+// tab gone an empty one takes its place (Close All Tabs).
+void App::remove_document(int index) {
+  Document *d = docs_[size_t(index)].get();
   remove_backup(d);
   if (!d->path.empty()) {
     closed_.erase(std::remove(closed_.begin(), closed_.end(), d->path), closed_.end());
@@ -871,18 +1051,33 @@ bool App::close_document(int index, bool ask_user) {
   if (match_doc_ == d) match_doc_ = nullptr;
   docs_.erase(docs_.begin() + index);
   if (docs_.empty()) {
-    // Like Notepad's last tab: start over with an empty one.
     active_ = -1;
     editor_->buffer(nullptr);
     hide_find();
     new_document();
-    return true;
+    return;
   }
   int next = std::min(index, int(docs_.size()) - 1);
-  if (active_ > index) --active_;
   active_ = -1;
   activate(next);
-  return true;
+}
+
+void App::close_all_documents() {
+  if (!can_close_tab()) {
+    toast(_("Only one tab is open, so it cannot be closed"));
+    return;
+  }
+  for (int i = int(docs_.size()) - 1; i > 0; --i)
+    if (!close_document(i)) return;
+  // The last one gives way to an empty "Untitled".
+  Document *d = docs_[0].get();
+  if (d->modified()) {
+    int r = ask(format(_("Save changes to “%s”?"), d->display_name().c_str()),
+                _("Your changes will be lost if you close it without saving."),
+                {_("Close Without Saving"), _("Cancel"), _("Save")}, 2, 1);
+    if (r == 1 || (r == 2 && !save(d))) return;
+  }
+  if (docs_.size() == 1 && docs_[0].get() == d) remove_document(0);
 }
 
 void App::reopen_closed() {
@@ -1103,7 +1298,7 @@ Document *App::recover_from(const std::string &id, const std::string &path_hint)
     d->rehighlight_all();
   }
   d->undo.mark_unsaved();
-  if (path.empty()) d->untitled = ++untitled_counter_;
+  if (path.empty()) d->untitled = next_untitled();
   d->apply_indent_detection(settings_.detect_indent, settings_.tab_width, settings_.insert_spaces);
   d->notice = Document::Notice::Recovered;
   d->notice_text = meta.get_int("backup", "pid", 0, 0, INT_MAX) == 0 || meta.get_bool("backup", "clean_exit", false)
@@ -1334,6 +1529,26 @@ int App::handle(int event) {
       if (!files.empty()) open_files(files, "");
       return 1;
     }
+    case FL_ENTER:
+    case FL_MOVE:
+    case FL_LEAVE: {
+      // The Niny mark is a menu button.
+      int mx = Fl::event_x(), my = Fl::event_y();
+      bool on = event != FL_LEAVE && mx < S(46) && my >= S(4) && my < tabs_h_ && !modal();
+      if (on != logo_hover_) {
+        logo_hover_ = on;
+        redraw();
+        if (on) Fl_Tooltip::enter_area(this, 0, S(4), S(46), tabs_h_ - S(4), _("Menu"));
+      }
+      break;
+    }
+    case FL_PUSH:
+      if (Fl::event_x() < S(46) && Fl::event_y() >= S(4) && Fl::event_y() < tabs_h_ &&
+          Fl::event_button() == FL_LEFT_MOUSE && !modal()) {
+        main_menu(x_root() + S(4), y_root() + tabs_h_ - S(2));
+        return 1;
+      }
+      break;
   }
   return BufferedWindow::handle(event);
 }
@@ -1343,12 +1558,80 @@ void App::toast(const std::string &message) {
   Fl::remove_timeout(toast_cb, this);
   Fl::add_timeout(3.0, toast_cb, this);
   if (status_) status_->redraw();
+  schedule_qa();
 }
 
 void App::toast_cb(void *p) {
   auto *self = static_cast<App *>(p);
   self->toast_.clear();
   self->status_->redraw();
+  self->schedule_qa();
+}
+
+void App::schedule_qa() {
+  static const bool enabled = [] {
+    const char *dir = getenv("SDE_PANEL_QA_DIR");
+    return dir && *dir;
+  }();
+  if (!enabled || qa_pending_) return;
+  qa_pending_ = true;
+  Fl::add_timeout(0.05, qa_cb, this);
+}
+
+void App::qa_cb(void *p) {
+  auto *self = static_cast<App *>(p);
+  self->qa_pending_ = false;
+  self->write_qa();
+}
+
+void App::write_qa() {
+  const char *dir = getenv("SDE_PANEL_QA_DIR");
+  if (!dir || !*dir || !shown()) return;
+  auto clean = [](std::string s) {
+    for (char &c : s)
+      if (c == '\t' || c == '\n') c = ' ';
+    return s;
+  };
+  auto line = [](const std::string &name, int x, int y, int w, int h, bool active, bool scrolled) {
+    return name + "\t" + std::to_string(x) + "\t" + std::to_string(y) + "\t" + std::to_string(w) + "\t" +
+           std::to_string(h) + "\t" + (active ? "1" : "0") + "\t" + (scrolled ? "1" : "0") + "\n";
+  };
+  auto state = [&](const std::string &s) { return line("@" + clean(s), 0, 0, 0, 0, true, false); };
+  std::string page = !settings_visible() ? "none"
+                     : settings_page_->mode() == SettingsPage::Mode::Settings ? "preferences" : "shortcuts";
+  std::string text = state("tabs:" + std::to_string(docs_.size())) + state("active:" + std::to_string(active_)) +
+                     state(std::string("menubar:") + (menubar_shown() ? "1" : "0")) +
+                     state(std::string("titles:") + (toolbar_->titles_focused() ? "focused" : "none")) +
+                     state("sheet:" + (sheet_->active() ? sheet_->title() : std::string("none"))) +
+                     state(std::string("dialog:") + (font_dialog_->active() ? "font" : "none")) +
+                     state("page:" + page) + state("toast:" + toast_) +
+                     state("font:" + settings_.font + " " + std::to_string(settings_.font_size));
+  bool scrolled = tabs_->scrolled();
+  for (size_t i = 0; i < docs_.size(); ++i) {
+    TabBar::Box t = tabs_->tab_box(int(i)), c = tabs_->close_box(int(i));
+    text += line("tab:" + std::to_string(i) + ":" + clean(docs_[i]->display_name()), t.x, t.y, t.w, t.h, t.shown,
+                 scrolled);
+    text += line("close:" + std::to_string(i), c.x, c.y, c.w, c.h, c.shown && can_close_tab(), scrolled);
+  }
+  TabBar::Box p = tabs_->plus_box();
+  text += line("plus", p.x, p.y, p.w, p.h, true, false);
+  if (sheet_->active())
+    for (Fl_Widget *b : sheet_->buttons())
+      text += line("button:" + clean(b->label() ? b->label() : ""), b->x(), b->y(), b->w(), b->h(), true, false);
+  text += line("logo", 0, S(4), S(46), tabs_h_ - S(4), true, false);
+  if (toolbar_->visible_r())
+    for (auto &it : toolbar_->items()) {
+      std::string name = Toolbar::is_menu(it.id) ? std::string("menu:") + Toolbar::qa_name(it.id)
+                         : it.id == Toolbar::Settings ? std::string("gear") : std::string();
+      if (!name.empty())
+        text += line(name, int(it.x), toolbar_->y(), int(it.w), toolbar_->h(), it.enabled, false);
+    }
+  std::string path = std::string(dir) + "/Niny.txt", tmp = path + ".tmp";
+  if (FILE *f = fopen(tmp.c_str(), "w")) {
+    fwrite(text.data(), 1, text.size(), f);
+    fclose(f);
+    rename(tmp.c_str(), path.c_str());
+  }
 }
 
 void App::schedule_ui() {
@@ -1375,6 +1658,7 @@ void App::update_ui() {
   if (mdview_->visible()) mdview_->redraw();
   sidebar_->redraw();
   editor_->redraw();
+  schedule_qa();
 }
 
 void App::doc_changed(Document *doc) {
@@ -1417,6 +1701,7 @@ bool App::find_visible() const { return find_ && find_->visible(); }
 
 void App::show_find(bool replace) {
   if (!active()) return;
+  show_settings_page(false);  // the menus reach Find from the Preferences page too
   palette_->close(false);
   std::string seed = selection_text();
   if (seed.size() > 200) seed.clear();
@@ -1587,6 +1872,7 @@ void App::zoom(int delta) {
 
 void App::show_palette(const std::string &prefix) {
   if (find_->visible() && prefix != ":") hide_find();
+  if (prefix == ":") show_settings_page(false);  // a line of the text
   palette_->open(prefix);
 }
 

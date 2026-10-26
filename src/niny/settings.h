@@ -49,6 +49,7 @@ struct Settings {
   bool syntax_colors = true;  // highlighting for code files
   int sidebar_width = 230;
   bool status_bar = true;
+  bool menu_bar = true;  // File ... Help under the tabs; Alt or F10 shows it when hidden
   std::string color_scheme = "auto";  // auto, light, dark
   // Files
   bool restore_session = true;

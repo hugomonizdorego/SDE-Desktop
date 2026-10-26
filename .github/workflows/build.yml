@@ -92,6 +92,8 @@ jobs:
             sysmon=/usr/bin/sde-system-monitor run=/usr/bin/sde-run display=/usr/bin/sde-display-settings \
             calculator=/usr/bin/calculator welcome=/usr/bin/sde-welcome reports=/usr/bin/sde-system-reports \
             merkadu=/usr/bin/merkadu licenses=dist/test-tools/sde-ui-kit-demo
+          # Niny: each tab's × closes its tab, the only tab stays, the menu bar.
+          python3 tests/test_niny_ui.py /usr/bin/niny
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --output-dir dist/panel-smoke
           dbus-run-session -- python3 tools/panel-smoke.py --test-dir dist/test-tools --size 1024x600 --scale 150 --output-dir dist/panel-smoke-small
           dbus-run-session -- python3 tools/ui-smoke.py --suite-apps --output-dir dist/ui-smoke
