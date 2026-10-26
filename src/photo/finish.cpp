@@ -43,7 +43,7 @@ void rounded_rect(cairo_t *cr, double x, double y, double w, double h, double r)
 
 bool Finish::identity() const {
   bool blur_off = focus == FocusShape::Off || blur <= 0;
-  return blur_off && sde::trim(watermark).empty() && frame == FrameStyle::None;
+  return blur_off && sde::trim(watermark).empty() && frame == FrameStyle::NoFrame;
 }
 
 bool Finish::operator==(const Finish &o) const {
@@ -55,7 +55,7 @@ bool Finish::operator==(const Finish &o) const {
 
 void frame_insets(const Finish &f, double cw, double ch, double &l, double &t, double &r, double &b) {
   l = t = r = b = 0;
-  if (f.frame == FrameStyle::None || cw <= 0 || ch <= 0) return;
+  if (f.frame == FrameStyle::NoFrame || cw <= 0 || ch <= 0) return;
   // The width is a share of the shorter side, so that a frame looks the
   // same on a portrait and a landscape photo.
   double m = std::min(cw, ch) * clamp(f.frame_width, 0.5, 30) / 100;
@@ -64,7 +64,7 @@ void frame_insets(const Finish &f, double cw, double ch, double &l, double &t, d
     case FrameStyle::Mat: L = T = R = B = m * 2.2; break;
     case FrameStyle::Print: B = m * 3.6; break;
     case FrameStyle::Shadow: L = T = R = B = m * 1.6; break;
-    case FrameStyle::None:
+    case FrameStyle::NoFrame:
     case FrameStyle::Border:
     case FrameStyle::Rounded: break;
   }
@@ -75,7 +75,7 @@ void frame_insets(const Finish &f, double cw, double ch, double &l, double &t, d
 }
 
 cairo_surface_t *add_frame(cairo_surface_t *s, const Finish &f) {
-  if (!s || f.frame == FrameStyle::None) return cairo_surface_reference(s);
+  if (!s || f.frame == FrameStyle::NoFrame) return cairo_surface_reference(s);
   int w = cairo_image_surface_get_width(s), h = cairo_image_surface_get_height(s);
   double l, t, r, b;
   frame_insets(f, w, h, l, t, r, b);
@@ -117,7 +117,7 @@ cairo_surface_t *add_frame(cairo_surface_t *s, const Finish &f) {
       cairo_fill(cr);
       break;
     }
-    case FrameStyle::None:
+    case FrameStyle::NoFrame:
     case FrameStyle::Border:
     case FrameStyle::Rounded: break;
   }
@@ -264,20 +264,29 @@ Adjust auto_adjust(cairo_surface_t *s) {
     return 1.0;
   };
   double lo = percentile(0.01), mid = percentile(0.5), hi = percentile(0.99);
-  // Exposure: the middle tones to about the middle (2 EV = 100).
-  if (mid < 0.36) a.exposure = clamp(std::log2(0.46 / std::max(0.02, mid)) * 50, 0, 60);
-  else if (mid > 0.68) a.exposure = clamp(std::log2(0.58 / mid) * 50, -40, 0);
-  // Contrast: a flat picture uses only part of the range.
-  double range = hi - lo;
+  // Exposure: the middle tones towards the middle (2 EV = 100), never
+  // pushing the brightest parts past white (a night sky stays a night sky).
+  double ev = 0;
+  if (mid < 0.36) {
+    double room = std::log2(srgb_to_linear(0.97) / std::max(1e-4, srgb_to_linear(hi)));
+    ev = std::min(std::log2(0.44 / std::max(0.02, mid)), std::max(0.0, room));
+  } else if (mid > 0.68) {
+    ev = std::log2(0.58 / mid);
+  }
+  a.exposure = clamp(ev * 50, -40, 45);
+  // Contrast: a flat picture uses only part of the range (after the
+  // exposure change).
+  auto shifted = [&](double v) { return linear_to_srgb(std::min(1.0, srgb_to_linear(v) * std::pow(2.0, ev))); };
+  double range = shifted(hi) - shifted(lo);
   if (range < 0.8) a.contrast = clamp((0.86 - range) * 110, 0, 45);
-  // Saturation: dull colours a little livelier.
+  // Saturation: dull colours a little livelier; grey pictures stay grey.
   double sat = sum_sat / n;
-  if (sat < 0.3) a.saturation = clamp((0.32 - sat) * 90, 0, 25);
+  if (sat > 0.04 && sat < 0.3) a.saturation = clamp((0.32 - sat) * 90, 0, 25);
   // Warmth: neutral on average (a blue cast is warmed, an orange one cooled).
   double mr = sum_r / n, mb = sum_b / n, mg = sum_g / n;
   double cast = (mb - mr) / std::max(0.05, (mr + mg + mb) / 3);
-  if (cast > 0.06) a.warmth = clamp(cast * 120, 0, 35);
-  else if (cast < -0.18) a.warmth = clamp((cast + 0.12) * 110, -25, 0);
+  if (sat > 0.04 && cast > 0.06) a.warmth = clamp(cast * 120, 0, 35);
+  else if (sat > 0.04 && cast < -0.18) a.warmth = clamp((cast + 0.12) * 110, -25, 0);
   a.exposure = std::round(a.exposure);
   a.contrast = std::round(a.contrast);
   a.saturation = std::round(a.saturation);

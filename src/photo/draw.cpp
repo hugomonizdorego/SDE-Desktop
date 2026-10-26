@@ -580,6 +580,67 @@ void red_eye_region(cairo_surface_t *s, int x, int y, int w, int h) {
   cairo_surface_mark_dirty(s);
 }
 
+bool find_red_eye(cairo_surface_t *s, double x, double y, double radius, Box &out) {
+  if (!s || cairo_image_surface_get_format(s) != CAIRO_FORMAT_ARGB32) return false;
+  int sw = cairo_image_surface_get_width(s), sh = cairo_image_surface_get_height(s);
+  int x0 = std::max(0, int(x - radius)), y0 = std::max(0, int(y - radius));
+  int x1 = std::min(sw, int(x + radius) + 1), y1 = std::min(sh, int(y + radius) + 1);
+  if (x1 - x0 < 2 || y1 - y0 < 2) return false;
+  cairo_surface_flush(s);
+  const unsigned char *data = cairo_image_surface_get_data(s);
+  int stride = cairo_image_surface_get_stride(s);
+  auto at = [&](int xx, int yy) { return reinterpret_cast<const uint32_t *>(data + size_t(yy) * stride)[xx]; };
+  // How much redder than green and blue (premultiplied values compare the
+  // same way); <= 0 when not red.
+  auto redness = [&](uint32_t px, double k, double base) {
+    int r = int((px >> 16) & 0xFF), other = std::max(int((px >> 8) & 0xFF), int(px & 0xFF));
+    return r < 40 ? -1.0 : r - (other * k + base);
+  };
+  int bx = -1, by = -1;
+  double best = 0;
+  for (int yy = y0; yy < y1; ++yy)
+    for (int xx = x0; xx < x1; ++xx) {
+      double dx = xx - x, dy = yy - y;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      // Near the click counts more than far.
+      double v = redness(at(xx, yy), 1.45, 12) * (1.2 - 0.4 * std::sqrt(dx * dx + dy * dy) / radius);
+      if (v > best) {
+        best = v;
+        bx = xx;
+        by = yy;
+      }
+    }
+  if (bx < 0) return false;
+  // The red pixels joined to it (a little less red counts at the edge).
+  int w = x1 - x0, h = y1 - y0;
+  std::vector<unsigned char> seen(size_t(w) * h, 0);
+  std::vector<std::pair<int, int>> stack{{bx, by}};
+  seen[size_t(by - y0) * w + (bx - x0)] = 1;
+  Box b{double(bx), double(by), double(bx + 1), double(by + 1)};
+  int count = 0;
+  while (!stack.empty()) {
+    auto [cx, cy] = stack.back();
+    stack.pop_back();
+    ++count;
+    b.x0 = std::min(b.x0, double(cx));
+    b.y0 = std::min(b.y0, double(cy));
+    b.x1 = std::max(b.x1, double(cx + 1));
+    b.y1 = std::max(b.y1, double(cy + 1));
+    const int nb[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (const auto &d : nb) {
+      int nx = cx + d[0], ny = cy + d[1];
+      if (nx < x0 || ny < y0 || nx >= x1 || ny >= y1) continue;
+      unsigned char &flag = seen[size_t(ny - y0) * w + (nx - x0)];
+      if (flag || redness(at(nx, ny), 1.25, 8) <= 0) continue;
+      flag = 1;
+      stack.push_back({nx, ny});
+    }
+  }
+  if (count < 2) return false;
+  out = b;
+  return true;
+}
+
 // --------------------------------------------------------------- drawing
 
 void draw_mark(cairo_t *cr, const Mark &m, const MarkMap &map) {

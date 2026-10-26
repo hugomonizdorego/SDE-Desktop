@@ -31,7 +31,8 @@ const std::vector<gallery::BuiltinPlugin> &photo_plugins() {
         {"autoenhance", _("Auto Enhance"),
          _("Corrects the exposure, contrast and colours with one click (the Adjust tab)."), icon::Adjust},
         {"frames", _("Frames & Borders"),
-         _("A border, a print or film frame, a mat, a shadow or rounded corners around the photo (the Effects tab)."),
+         _("A border, a mat, a print frame, a shadow or rounded corners around the photo, in the colour you choose "
+           "(the Effects tab)."),
          icon::Picture},
         {"watermark", _("Watermark"),
          _("Signs the photo with your name or a copyright line before you share it (the Effects tab)."), icon::Edit},
@@ -41,10 +42,12 @@ const std::vector<gallery::BuiltinPlugin> &photo_plugins() {
          _("Keeps the subject sharp and blurs the background, round or as a tilt-shift band (the Effects tab)."),
          icon::Filters},
         {"resizepresets", _("Sizes for the Web and Social Media"),
-         _("Resizes and crops for the web, email, Instagram, Facebook, YouTube and others (the Crop tab and Tools)."),
+         _("Resizes for 4K, Full HD, the web and email, and crops for square, portrait and story posts and "
+           "widescreen (Sizes… in the Crop tab)."),
          icon::Resize},
         {"metadata", _("Metadata & Privacy"),
-         _("Shows all camera details, and removes the location or all metadata before you share a photo."),
+         _("Shows every camera detail, and removes the location or all details without touching the picture (the "
+           "info panel)."),
          icon::MapPin},
     };
   }

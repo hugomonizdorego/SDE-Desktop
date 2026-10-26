@@ -302,13 +302,16 @@ struct Form::Impl {
         ly += S(20);
       }
     }
+    fl_pop_clip();
+    win->paint_children(clip_h);
+    // Hints over empty text fields (drawn after them).
+    fl_push_clip(0, 0, win->w(), clip_h);
     for (auto &r : rows)
       if (r.input && r.input->size() == 0 && Fl::focus() != r.input && !r.hint.empty()) {
         text_font(t.font_size);
         draw_text(r.hint, r.input->x() + S(4), r.input->y(), r.input->w() - S(8), r.input->h(), t.text_dim);
       }
     fl_pop_clip();
-    win->paint_children(clip_h);
   }
 
   void notify() {
@@ -532,6 +535,110 @@ std::string Form::text_value(int row) const {
 
 bool Form::check_value(int row) const {
   return row >= 0 && row < int(impl_->rows.size()) && impl_->rows[size_t(row)].on;
+}
+
+// ---------------------------------------------------------------- fields
+
+namespace {
+
+class FieldsWindow : public BufferedWindow {
+ public:
+  FieldsWindow(int w, int h, const std::string &title, const std::string &message,
+               const std::vector<std::pair<std::string, std::string>> &rows)
+      : BufferedWindow(w, h), title_(title), message_(message), rows_(rows) {
+    copy_label(title.c_str());
+    begin();
+    auto *close = new FlatButton(w - S(24) - S(120), h - S(52), S(120), S(34), _("Close"), true);
+    close->callback([](Fl_Widget *b, void *) { b->window()->hide(); });
+    end();
+  }
+
+  void draw() override {
+    const Theme &t = active_theme();
+    int lx = S(24), lw = w() - S(48), name_w = lw * 2 / 5;
+    {
+      Painter p(w(), h());
+      p.fill_rect(0, 0, w(), h(), t.surface);
+      p.line(lx, top() - 0.5, lx + lw, top() - 0.5, t.border.alpha(0.6));
+      p.line(lx, bottom() + 0.5, lx + lw, bottom() + 0.5, t.border.alpha(0.6));
+      if (content_h() > bottom() - top()) {
+        double track = bottom() - top() - S(8), thumb = std::max<double>(S(24), track * (bottom() - top()) / content_h());
+        double most = std::max(1.0, content_h() - (bottom() - top()));
+        p.fill_rounded(w() - S(12), top() + S(4) + (track - thumb) * scroll_ / most, S(4), thumb, Sd(2),
+                       t.text_dim.alpha(0.45));
+      }
+    }
+    text_font(t.font_size + S(2), true);
+    draw_text(title_, lx, S(16), lw, S(30), t.text);
+    text_font(t.font_size);
+    draw_text(message_, lx, S(48), lw, S(22), t.text_dim);
+    fl_push_clip(0, top(), w(), bottom() - top());
+    double y = top() + S(8) - scroll_;
+    for (const auto &r : rows_) {
+      if (r.second.empty()) {
+        y += S(6);
+        text_font(t.font_size - S(1), true);
+        draw_text(upper(r.first), lx, int(y), lw, S(22), t.accent_text);
+        y += S(26);
+        continue;
+      }
+      text_font(t.font_size - S(1));
+      draw_text(r.first, lx, int(y), name_w - S(8), S(22), t.text_dim);
+      text_font(t.font_size);
+      draw_text(r.second, lx + name_w, int(y), lw - name_w, S(22), t.text);
+      y += S(24);
+    }
+    fl_pop_clip();
+    draw_children();
+  }
+
+  int handle(int event) override {
+    if (event == FL_MOUSEWHEEL) {
+      double most = std::max(0.0, content_h() - (bottom() - top()));
+      scroll_ = std::max(0.0, std::min(most, scroll_ + Fl::event_dy() * S(48)));
+      redraw();
+      return 1;
+    }
+    if ((event == FL_KEYBOARD || event == FL_SHORTCUT) &&
+        (Fl::event_key() == FL_Escape || Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter)) {
+      hide();
+      return 1;
+    }
+    return BufferedWindow::handle(event);
+  }
+
+ private:
+  static std::string upper(std::string s) {
+    for (auto &c : s)
+      if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+    return s;
+  }
+  int top() const { return S(82); }
+  int bottom() const { return h() - S(68); }
+  double content_h() const {
+    double hgt = S(16);
+    for (const auto &r : rows_) hgt += r.second.empty() ? S(32) : S(24);
+    return hgt;
+  }
+  std::string title_, message_;
+  std::vector<std::pair<std::string, std::string>> rows_;
+  double scroll_ = 0;
+};
+
+}  // namespace
+
+void show_fields(const std::string &title, const std::string &message,
+                 const std::vector<std::pair<std::string, std::string>> &rows) {
+  const Theme &t = active_theme();
+  double content = S(16);
+  for (const auto &r : rows) content += r.second.empty() ? S(32) : S(24);
+  int sx, sy, sw, sh;
+  work_area(sx, sy, sw, sh);
+  int W = S(560), H = std::max(S(260), std::min(int(content) + S(150), sh - S(60)));
+  auto *win = new FieldsWindow(W, H, title, message, rows);
+  win->color(t.surface.fl());
+  run_window(win);
+  Fl::delete_widget(win);
 }
 
 // ------------------------------------------------------- choose application

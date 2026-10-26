@@ -51,7 +51,8 @@ enum MenuId {
   M_OPEN = 1, M_SAVE, M_SAVE_AS, M_COPY, M_WALLPAPER, M_PRINT, M_OPEN_WITH, M_SHOW_FILES, M_SHOW_GALLERY,
   M_TRASH, M_CLOSE, M_UNDO, M_REDO, M_ROT_LEFT, M_ROT_RIGHT, M_FLIP_H, M_FLIP_V, M_CROP, M_RESIZE,
   M_ADJUST, M_FILTERS, M_DRAW, M_DELETE_MARK, M_RESET, M_ZOOM_IN, M_ZOOM_OUT, M_FIT, M_ACTUAL, M_FILL, M_INFO,
-  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT, M_NEW_COLLAGE, M_PLUGINS,
+  M_FILMSTRIP, M_FULLSCREEN, M_SLIDESHOW, M_SHORTCUTS, M_ABOUT, M_NEW_COLLAGE, M_PLUGINS, M_AUTO, M_EFFECTS,
+  M_DETAILS, M_REMOVE_LOCATION, M_STRIP,
   M_ACTION = 1000  // + the index of an action plugin
 };
 
@@ -244,8 +245,10 @@ void PhotoWindow::build_menu() {
   add(e + _("Crop…"), 'c', M_CROP);
   add(e + _("Resize…"), 0, M_RESIZE);
   add(e + _("Adjust Colours…"), 'e', M_ADJUST);
+  if (plugin_on("autoenhance")) add(e + _("Auto Enhance"), 0, M_AUTO);
   add(e + _("Filters…"), 0, M_FILTERS);
   add(e + _("Draw and Annotate…"), 'd', M_DRAW);
+  if (panel_ && panel_->effects_available()) add(e + _("Effects…"), 0, M_EFFECTS);
   add(e + _("Delete Annotation"), 0, M_DELETE_MARK, FL_MENU_DIVIDER);
   add(e + _("Revert to Original"), 0, M_RESET);
   add(v + _("Zoom In"), '+', M_ZOOM_IN);
@@ -260,6 +263,11 @@ void PhotoWindow::build_menu() {
   // Tools: what the plugins add, then the action plugins.
   std::string tl = std::string(_("Tools")) + "/";
   if (plugin_on("collage")) add(tl + _("New Collage…"), 0, M_NEW_COLLAGE, FL_MENU_DIVIDER);
+  if (plugin_on("metadata")) {
+    add(tl + _("All Details…"), 0, M_DETAILS);
+    add(tl + _("Remove Location"), 0, M_REMOVE_LOCATION);
+    add(tl + _("Save a Copy Without Details…"), 0, M_STRIP, FL_MENU_DIVIDER);
+  }
   for (size_t i = 0; i < actions_.size(); ++i) {
     std::string name = actions_[i].name;
     for (auto &ch : name)
@@ -321,6 +329,11 @@ void PhotoWindow::menu_cb(Fl_Widget *, void *data) {
     case M_SHORTCUTS: self->show_shortcuts(); break;
     case M_ABOUT: self->show_about(); break;
     case M_PLUGINS: self->show_plugins(); break;
+    case M_AUTO: self->auto_enhance(); break;
+    case M_EFFECTS: self->open_effects(); break;
+    case M_DETAILS: self->show_all_details(); break;
+    case M_REMOVE_LOCATION: self->remove_location(); break;
+    case M_STRIP: self->save_without_details(); break;
     default:
       if (reinterpret_cast<long>(data) >= M_ACTION) self->run_action(size_t(reinterpret_cast<long>(data) - M_ACTION));
       break;

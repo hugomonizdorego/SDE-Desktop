@@ -56,6 +56,11 @@ class Form {
   std::unique_ptr<Impl> impl_;
 };
 
+// A list of name/value rows, in groups (a row with an empty value starts
+// a group titled by its name), with a Close button; it scrolls.
+void show_fields(const std::string &title, const std::string &message,
+                 const std::vector<std::pair<std::string, std::string>> &rows);
+
 // A list of |apps| to choose one from (icon, name, comment). Returns its
 // index, or -1. With |make_default|, a switch "Use it from now on" is
 // shown and its state returned there.

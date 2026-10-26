@@ -230,7 +230,8 @@ add_executable(sde-view
   photo/clipboard.cpp
   photo/collage_window.cpp
   photo/collage_panel.cpp
-  photo/tools.cpp)
+  photo/tools.cpp
+  photo/effects.cpp)
 target_link_libraries(sde-view PRIVATE sde-photo-core sde-gallery-ui)
 install(TARGETS sde-view RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # Its icon (sde-photo, and sdeview for older launchers) is in data/icons.

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <map>
 
 #include "exif.h"
@@ -289,6 +290,15 @@ std::string value_text(const TiffView &t, size_t entry, unsigned tag, bool gps) 
     if (tag == 0x9286 && s.size() >= 8) s = s.substr(8);  // the character code
     size_t nul = s.find('\0');
     if (nul != std::string::npos) s.resize(nul);
+    if (!gps && (tag == 0x0132 || tag == 0x9003 || tag == 0x9004)) {
+      // "2026:07:12 11:00:00" -> "12 July 2026, 11:00:00"
+      if (time_t when = parse_exif_date(s)) {
+        struct tm tm {};
+        localtime_r(&when, &tm);
+        char buf[96];
+        if (strftime(buf, sizeof buf, "%e %B %Y, %H:%M:%S", &tm)) return sde::trim(buf);
+      }
+    }
     bool printable = true;
     for (unsigned char c : s)
       if (c < 0x20 && c != '\t' && c != '\n') printable = false;

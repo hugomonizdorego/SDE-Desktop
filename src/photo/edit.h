@@ -53,7 +53,7 @@ struct Rect {
 // Finishing touches of the Photo plugins (the Effects tab), applied after
 // the tone and the drawings: a background blur, a watermark and a frame
 // (see finish.cpp). The frame makes the picture larger.
-enum class FrameStyle { None, Border, Mat, Rounded, Print, Shadow };
+enum class FrameStyle { NoFrame, Border, Mat, Rounded, Print, Shadow };
 enum class FocusShape { Off, Circle, Band };
 struct Finish {
   // Background blur: sharp around a point (Circle) or along a horizontal
@@ -69,7 +69,7 @@ struct Finish {
   double watermark_size = 4;      // text height, % of the shorter side
   double watermark_opacity = 70;  // %
   // Frame around the picture.
-  FrameStyle frame = FrameStyle::None;
+  FrameStyle frame = FrameStyle::NoFrame;
   double frame_width = 5;  // % of the shorter side
   uint32_t frame_color = 0xFFFFFFFF;  // 0xAARRGGBB
   bool identity() const;
@@ -90,7 +90,7 @@ struct Edits {
   // Only rotation/flip: JPEG files can then be saved losslessly.
   bool geometry_only() const;
   bool tone_identity() const { return adjust.identity() && filter == Filter::Original; }
-  bool has_frame() const { return finish.frame != FrameStyle::None; }
+  bool has_frame() const { return finish.frame != FrameStyle::NoFrame; }
   bool operator==(const Edits &o) const;
   bool operator!=(const Edits &o) const { return !(*this == o); }
 };

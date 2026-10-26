@@ -130,6 +130,10 @@ void blur_region(cairo_surface_t *s, int x, int y, int w, int h, int radius);
 // Darkens the red pupils in the ellipse inside (x, y, w, h); pixels that
 // are not red stay as they are.
 void red_eye_region(cairo_surface_t *s, int x, int y, int w, int h);
+// The red pupil near (x, y) of |s|: the box around the red pixels joined
+// to the reddest one within |radius|, in pixels of |s|. False when nothing
+// there is red.
+bool find_red_eye(cairo_surface_t *s, double x, double y, double radius, Box &out);
 
 // Draws marks with |map| onto |cr| (image coordinates to cr's space).
 // |vectors| and |effects| choose which kinds are drawn; effects need the

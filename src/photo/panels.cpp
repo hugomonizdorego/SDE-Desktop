@@ -350,6 +350,10 @@ SidePanel::SidePanel(PhotoWindow *app, int x, int y, int w, int h) : Fl_Group(x,
     (i ? draw_opacity_ : draw_width_) = sl;
   }
   draw_opacity_->bounds(10, 100);
+  auto_ = new FlatButton(0, 0, 10, S(34), _("Auto Enhance"));
+  auto_->callback([](Fl_Widget *, void *p) { static_cast<SidePanel *>(p)->app_->auto_enhance(); }, this);
+  presets_ = new FlatButton(0, 0, 10, S(32), _("Sizes…"));
+  presets_->callback([](Fl_Widget *w, void *p) { static_cast<SidePanel *>(p)->app_->show_size_presets(w); }, this);
   reset_ = new FlatButton(0, 0, 10, S(34), _("Reset"));
   reset_->callback([](Fl_Widget *, void *p) { static_cast<SidePanel *>(p)->app_->reset_edits(); }, this);
   save_as_ = new FlatButton(0, 0, 10, S(34), _("Save As…"));
@@ -376,8 +380,11 @@ void SidePanel::set_mode(Mode m) {
 
 void SidePanel::set_tab(Tab t) {
   if (tab_ == Draw && t != Draw) app_->canvas()->cancel_drawing();
+  if (t == Effects && !effects_available()) t = Adjust;
+  bool leaving_effects = tab_ == Effects && t != Effects;
   tab_ = t;
-  draw_scroll_ = 0;
+  draw_scroll_ = fx_scroll_ = adjust_scroll_ = 0;
+  if (leaving_effects && app_->red_eye_mode()) app_->set_red_eye_mode(false);
   if (t != Crop && app_->canvas()->cropping()) app_->cancel_crop();
   layout();
   sync();
@@ -385,19 +392,42 @@ void SidePanel::set_tab(Tab t) {
 }
 
 void SidePanel::layout() {
-  for (int i = 0; i < children(); ++i) child(i)->hide();
+  // A control being typed in or dragged is never hidden in the middle of
+  // it (hiding takes the focus and the drag away).
+  Fl_Widget *busy = nullptr;
+  if (mode_ == Edit && tab_ == Effects)
+    for (Fl_Widget *w : {static_cast<Fl_Widget *>(fx_text_), static_cast<Fl_Widget *>(fx_blur_),
+                         static_cast<Fl_Widget *>(fx_focus_), static_cast<Fl_Widget *>(fx_frame_),
+                         static_cast<Fl_Widget *>(fx_wm_size_), static_cast<Fl_Widget *>(fx_wm_alpha_)})
+      if (w && (w == Fl::focus() || w == Fl::pushed())) busy = w;
+  for (int i = 0; i < children(); ++i)
+    if (child(i) != busy) child(i)->hide();
   if (mode_ != Edit) return;
+  if (tab_ == Effects && !effects_available()) tab_ = Adjust;
   int px = x() + S(20), pw = w() - S(40);
   int top = y() + S(64);
   if (tab_ == Adjust) {
-    int yy = top + S(22);
-    for (auto *s : sliders_) {
-      s->resize(px, yy, pw, S(26));
-      s->show();
-      yy += S(58);
+    // Scrolls on short screens, like the Draw tab.
+    int ct = draw_top(), cb = draw_bottom();
+    bool compact = draw_compact();
+    double yy = top - adjust_scroll_;
+    if (app_->plugin_on("autoenhance")) {
+      auto_->resize(px, int(yy), pw, S(34));
+      if (auto_->y() >= ct && auto_->y() + auto_->h() <= cb) auto_->show();
+      yy += S(34) + S(14);
     }
+    yy += S(22);
+    double step = compact ? S(50) : S(58);
+    for (auto *s : sliders_) {
+      s->resize(px, int(yy), pw, S(26));
+      if (s->y() - S(20) >= ct && s->y() + s->h() <= cb) s->show();
+      yy += step;
+    }
+    adjust_h_ = yy - step + S(26) + S(8) + adjust_scroll_ - top;
   } else if (tab_ == Draw) {
     layout_draw(px, pw, top);
+  } else if (tab_ == Effects) {
+    layout_effects(px, pw, top);
   } else if (tab_ == Filters) {
     int tile = (pw - 2 * S(8)) / 3;
     int rows = int((filters().size() + 2) / 3);
@@ -423,7 +453,14 @@ void SidePanel::layout() {
       res_w_->show();
       res_h_->show();
       yy += S(40);
-      res_apply_->resize(px, yy, pw, S(32));
+      if (app_->plugin_on("resizepresets")) {
+        // Resize, and sizes for the web and social media.
+        res_apply_->resize(px, yy, half, S(32));
+        presets_->resize(px + half + S(8), yy, half, S(32));
+        presets_->show();
+      } else {
+        res_apply_->resize(px, yy, pw, S(32));
+      }
       res_apply_->show();
     } else {
       yy += S(24);
@@ -747,7 +784,7 @@ void SidePanel::sync() {
     save_->deactivate();
   }
   if (mode_ == Edit && tab_ == Filters) filter_previews();
-  if (mode_ == Edit && tab_ == Draw) layout();
+  if (mode_ == Edit && (tab_ == Draw || tab_ == Effects)) layout();
   redraw();
 }
 
@@ -928,6 +965,34 @@ void SidePanel::draw_info(Painter *p) {
   } else {
     link_w_ = 0;
   }
+  // Metadata & Privacy: every detail, and the location or all details
+  // removed before the photo is shared.
+  if (p) info_boxes_.clear();
+  Format fmt = sniff_format(ph->path);
+  if (app_->plugin_on("metadata") && (fmt == Format::Jpeg || fmt == Format::Png)) {
+    section(_("PRIVACY"));
+    struct Action {
+      int id;
+      const char *label;
+      icon::Kind glyph;
+    };
+    std::vector<Action> actions{{1, N_("All Details…"), icon::Info}};
+    if (in.has_gps) actions.push_back({2, N_("Remove Location"), icon::MapPin});
+    if (app_->has_removable_details()) actions.push_back({3, N_("Save a Copy Without Details…"), icon::Save});
+    for (const auto &a : actions) {
+      if (p) {
+        info_boxes_.push_back({double(px), yy, double(pw), double(S(36)), a.id});
+        bool hot = a.id == info_hover_;
+        p->fill_rounded(px, yy, pw, S(36), Sd(9), hot ? t.hover : t.surface_alt);
+        icon::draw(*p, a.glyph, px + S(10), yy + S(8), S(20), t.text);
+      } else {
+        text_font(t.font_size);
+        draw_text(_(a.label), px + S(38), int(yy), pw - S(46), S(36), t.text);
+      }
+      yy += S(42);
+    }
+    yy += S(4);
+  }
   info_h_ = yy + info_scroll_ - y();
 }
 
@@ -941,9 +1006,30 @@ void SidePanel::draw() {
       // Tabs.
       double tx = x() + S(20), tw = w() - S(40), th = S(34), ty = y() + S(14);
       p.fill_rounded(tx, ty, tw, th, th / 2, t.surface_alt);
-      double seg = (tw - S(6)) / 4;
+      double seg = (tw - S(6)) / tab_count();
       p.fill_rounded(tx + S(3) + seg * tab_, ty + S(3), seg, th - S(6), (th - S(6)) / 2, t.accent);
       if (tab_ == Filters) draw_filters(p);
+      // The tabs that scroll on short screens: a scroll bar, and a fade
+      // where more continues.
+      auto scroll_bar = [&](double content, double offset) {
+        double room = draw_bottom() - draw_top() - S(8);
+        if (content <= room) return;
+        double track = draw_bottom() - draw_top() - S(8);
+        double bar = std::max(double(S(24)), track * room / content);
+        double by = draw_top() + S(4) + (track - bar) * offset / std::max(1.0, content - room);
+        p.fill_rounded(x() + w() - S(7), by, S(4), bar, S(2), t.text_dim.alpha(0.45));
+        if (offset < content - room - 1)
+          p.fill_gradient(x() + 1, draw_bottom() - S(18), w() - S(10), S(18), 0, t.surface.alpha(0), t.surface);
+      };
+      if (tab_ == Effects) {
+        cairo_save(p.cr());
+        cairo_rectangle(p.cr(), x(), draw_top(), w(), draw_bottom() - draw_top());
+        cairo_clip(p.cr());
+        draw_effects_tab(&p);
+        cairo_restore(p.cr());
+        scroll_bar(fx_h_, fx_scroll_);
+      }
+      if (tab_ == Adjust) scroll_bar(adjust_h_, adjust_scroll_);
       if (tab_ == Draw) {
         cairo_save(p.cr());
         cairo_rectangle(p.cr(), x(), draw_top(), w(), draw_bottom() - draw_top());
@@ -972,14 +1058,17 @@ void SidePanel::draw() {
   }
   if (mode_ == Edit) {
     double tx = x() + S(20), tw = w() - S(40), th = S(34), ty = y() + S(14);
-    double seg = (tw - S(6)) / 4;
-    const char *names[] = {_("Adjust"), _("Filters"), _("Crop"), _("Draw")};
-    for (int i = 0; i < 4; ++i) {
-      text_font(t.font_size - S(1), i == tab_);
-      draw_text(names[i], int(tx + S(3) + seg * i), int(ty), int(seg), int(th), i == tab_ ? t.on_accent : t.text, 1);
+    int tabs = tab_count();
+    double seg = (tw - S(6)) / tabs;
+    const char *names[] = {_("Adjust"), _("Filters"), _("Crop"), _("Draw"), _("Effects")};
+    for (int i = 0; i < tabs; ++i) {
+      text_font(t.font_size - S(1) - (tabs > 4 ? S(1) : 0), i == tab_);
+      draw_text(ellipsize(names[i], int(seg) - S(4)), int(tx + S(3) + seg * i), int(ty), int(seg), int(th),
+                i == tab_ ? t.on_accent : t.text, 1);
     }
     int px = x() + S(20), pw = w() - S(40);
     if (tab_ == Adjust) {
+      fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
       for (int i = 0; i < kSliderCount; ++i) {
         Slider *s = sliders_[size_t(i)];
         text_font(t.font_size - S(1));
@@ -988,6 +1077,11 @@ void SidePanel::draw() {
         draw_text(v > 0 && kSliders[i].lo < 0 ? format("+%d", v) : std::to_string(v), px, s->y() - S(20), pw, S(18),
                   v ? t.accent_text : t.text_dim, 2);
       }
+      fl_pop_clip();
+    } else if (tab_ == Effects) {
+      fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
+      draw_effects_tab(nullptr);
+      fl_pop_clip();
     } else if (tab_ == Draw) {
       fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
       draw_draw_tab(nullptr);
@@ -1043,18 +1137,18 @@ void SidePanel::draw() {
     draw_info(nullptr);
     fl_pop_clip();
   }
-  if (mode_ == Edit && tab_ == Draw) {
-    // The sliders scroll with the tab: clip them to its area.
-    for (Slider *sl : {draw_width_, draw_opacity_}) {
-      if (!sl->visible()) continue;
-      fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
-      draw_child(*sl);
-      fl_pop_clip();
-    }
+  if (mode_ == Edit && (tab_ == Draw || tab_ == Effects || tab_ == Adjust)) {
+    // The controls scroll with the tab: clip them to its area (the buttons
+    // at the bottom stay whole).
     for (int i = 0; i < children(); ++i) {
       Fl_Widget *c = child(i);
-      if (c != draw_width_ && c != draw_opacity_ && c->visible()) draw_child(*c);
+      if (!c->visible()) continue;
+      bool scrolls = c != reset_ && c != save_ && c != save_as_;
+      if (scrolls) fl_push_clip(x(), draw_top(), w(), draw_bottom() - draw_top());
+      draw_child(*c);
+      if (scrolls) fl_pop_clip();
     }
+    if (tab_ == Effects) draw_effects_hint();
     return;
   }
   draw_children();
@@ -1065,13 +1159,25 @@ int SidePanel::handle(int event) {
   switch (event) {
     case FL_PUSH:
       if (mode_ == Edit && my >= y() + S(14) && my < y() + S(48) && mx >= x() + S(20) && mx < x() + w() - S(20)) {
-        int seg = (mx - x() - S(23)) * 4 / std::max(1, w() - S(46));
-        Tab nt = Tab(std::max(0, std::min(3, seg)));
+        int tabs = tab_count();
+        int seg = (mx - x() - S(23)) * tabs / std::max(1, w() - S(46));
+        Tab nt = Tab(std::max(0, std::min(tabs - 1, seg)));
         if (nt == Draw) app_->open_draw();
+        else if (nt == Effects) app_->open_effects();
         else set_tab(nt);
         return 1;
       }
       if (mode_ == Edit && tab_ == Draw && draw_tab_click(mx, my)) return 1;
+      if (mode_ == Edit && tab_ == Effects && effects_click(mx, my)) return 1;
+      if (mode_ == Info) {
+        for (const auto &b : info_boxes_)
+          if (b.in(mx, my)) {
+            if (b.id == 1) app_->show_all_details();
+            else if (b.id == 2) app_->remove_location();
+            else if (b.id == 3) app_->save_without_details();
+            return 1;
+          }
+      }
       if (mode_ == Edit && tab_ == Filters) {
         int f = filter_at(mx, my);
         if (f >= 0) {
@@ -1105,6 +1211,24 @@ int SidePanel::handle(int event) {
         redraw();
       }
       if (dh >= 0) f = 0;  // hand cursor
+      int fh = -1;
+      if (mode_ == Edit && tab_ == Effects)
+        for (const auto &b : fx_boxes_)
+          if (b.in(mx, my) && my >= draw_top() && my < draw_bottom()) fh = b.id;
+      if (fh != fx_hover_) {
+        fx_hover_ = fh;
+        redraw();
+      }
+      if (fh >= 0) f = 0;
+      int ih = -1;
+      if (mode_ == Info)
+        for (const auto &b : info_boxes_)
+          if (b.in(mx, my)) ih = b.id;
+      if (ih != info_hover_) {
+        info_hover_ = ih;
+        redraw();
+      }
+      if (ih >= 0) f = 0;
       bool on_link = mode_ == Info && link_w_ > 0 && mx >= link_x_ && mx < link_x_ + link_w_ && my >= link_y_ &&
                      my < link_y_ + link_h_;
       window()->cursor(on_link || f >= 0 ? FL_CURSOR_HAND : FL_CURSOR_DEFAULT);
@@ -1119,6 +1243,15 @@ int SidePanel::handle(int event) {
       if (mode_ == Edit && tab_ == Draw) {
         double room = draw_bottom() - draw_top() - S(8);
         draw_scroll_ = std::max(0.0, std::min(std::max(0.0, draw_h_ - room), draw_scroll_ + Fl::event_dy() * S(40)));
+        layout();
+        redraw();
+        return 1;
+      }
+      if (mode_ == Edit && (tab_ == Effects || tab_ == Adjust)) {
+        double room = draw_bottom() - draw_top() - S(8);
+        double &offset = tab_ == Effects ? fx_scroll_ : adjust_scroll_;
+        double content = tab_ == Effects ? fx_h_ : adjust_h_;
+        offset = std::max(0.0, std::min(std::max(0.0, content - room), offset + Fl::event_dy() * S(40)));
         layout();
         redraw();
         return 1;
