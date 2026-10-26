@@ -149,7 +149,7 @@ class TransferDialog : public BufferedWindow {
 
   std::vector<Op *> ops_;
   int next_id_ = 1;
-  bool details_ = false, animating_ = false, motion_ = true;
+  bool details_ = false, animating_ = false, motion_ = true, keyboard_ = false;
   DrawnButton *toggle_ = nullptr;
   std::string title_;
   int scene_x_ = 0, scene_y_ = 0, scene_w_ = 0, scene_h_ = 0;

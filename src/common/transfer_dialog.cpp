@@ -253,6 +253,16 @@ int TransferDialog::add(Operation kind, const std::string &source, const std::st
 void TransferDialog::update(int id, const TransferState &state, double now) {
   Op *op = find(id);
   if (!op || op->phase != Op::Running) return;
+  if (state.finishing != op->state.finishing && op->cancel->active() == !state.finishing) {
+    // The last data must reach the drive: nothing to pause or cancel.
+    if (state.finishing) {
+      op->pause->deactivate();
+      op->cancel->deactivate();
+    } else {
+      op->pause->activate();
+      op->cancel->activate();
+    }
+  }
   op->state = state;
   sde_transfer_update(&op->model, now >= 0 ? now : std::max(clock(), op->model.now), double(state.bytes_done),
                       double(state.bytes_total), state.files_done, state.files_total);
@@ -296,7 +306,7 @@ void TransferDialog::finish(int id, Result result, const std::vector<std::string
   // The bar at its end; the cross closes the operation now.
   sde_transfer_update(&op->model, std::max(clock(), op->model.now), double(op->state.bytes_total),
                       double(op->state.bytes_total), op->state.files_total, op->state.files_total);
-  op->pause->deactivate();
+  op->pause->hide();
   op->cancel->activate();
   op->cancel->tooltip(_("Close"));
   if (result == Result::Done) {
@@ -364,7 +374,6 @@ void TransferDialog::relayout() {
     Op *main = ops_.front();
     main->cancel->resize(w() - pad - S(kButton) + S(4), y - S(2), S(kButton), S(kButton));
     main->pause->resize(main->cancel->x() - S(4) - S(kButton), y - S(2), S(kButton), S(kButton));
-    main->pause->show();
   }
   y += S(30);       // headline
   y += S(6 + 8);    // bar
@@ -386,7 +395,7 @@ void TransferDialog::relayout() {
   y += S(14);
   if (y != h()) {
     if (shown()) size(w(), y);
-    else resize(x(), y > 0 ? this->y() : this->y(), w(), y);
+    else resize(x(), this->y(), w(), y);
     size_range(w(), y, w(), y);
   }
 }
@@ -469,6 +478,21 @@ void TransferDialog::hide() {
 }
 
 int TransferDialog::handle(int event) {
+  // No button has the keyboard focus (and its ring) until the keyboard is
+  // used: then Tab reaches the first one, as usual.
+  if (event == FL_FOCUS && !keyboard_) {
+    Fl::focus(this);
+    return 1;
+  }
+  if (event == FL_KEYBOARD && Fl::focus() == this) {
+    int key = Fl::event_key();
+    keyboard_ = true;
+    if (key == FL_Tab || key == FL_Right || key == FL_Left || key == FL_Down || key == FL_Up) {
+      bool back = key == FL_Left || key == FL_Up || (key == FL_Tab && Fl::event_shift());
+      for (int i = 0; i < children(); ++i)
+        if (child(back ? children() - 1 - i : i)->take_focus()) return 1;
+    }
+  }
   int r = BufferedWindow::handle(event);
   if (event == FL_SHOW) start_animation();
   if (event == FL_HIDE) stop_animation();
@@ -543,8 +567,11 @@ std::string TransferDialog::status(int id) const {
   const SdeTransfer &m = op->model;
   const std::string &drive = op->state.drive;
   if (op->phase == Op::Done) {
-    if (!drive.empty() && op->state.removable) return format(_("The files are on %s — you can remove it."), drive.c_str());
-    if (!drive.empty()) return format(_("The files are on %s."), drive.c_str());
+    bool removed = op->kind == Operation::Delete || op->kind == Operation::Trash;
+    if (!drive.empty() && op->state.removable)
+      return removed ? format(_("%s is up to date — you can remove it."), drive.c_str())
+                     : format(_("The files are on %s — you can remove it."), drive.c_str());
+    if (!drive.empty() && !removed) return format(_("The files are on %s."), drive.c_str());
     return _("Done");
   }
   if (op->phase == Op::Failed) return op->errors.empty() ? std::string(_("Something went wrong.")) : op->errors.front();
@@ -673,7 +700,7 @@ void TransferDialog::draw() {
         text_font(t.font_size - S(1));
         std::string right = op.phase == Op::Running ? (op.paused ? std::string(_("Paused")) : percent_text(op.id))
                                                     : std::string();
-        draw_text(right, pad + bw + S(6), y + S(20), S(50), S(18), t.text_dim);
+        draw_text(right, pad + bw + S(6), y + S(21), S(50), S(14), t.text_dim);
       }
     }
   }

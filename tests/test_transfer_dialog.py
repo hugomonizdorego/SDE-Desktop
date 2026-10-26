@@ -3,12 +3,17 @@
 """The SDE transfer dialog (src/common/transfer_dialog.h) on a private Xvfb,
 driven with xdotool through tests/transfer_demo.cpp (a simulated copy):
 
-  1. while it copies, the SDE mark is animated (its pixels change between
-     frames) and the speed graph shows the accent colour with the details;
-  2. Pause stops the mark and says "Paused"; Resume starts it again;
-  3. "Fewer details" makes the window lower, "More details" taller again;
-  4. with reduced motion (SDE_REDUCED_MOTION=1) the mark stands still;
-  5. Cancel ends the copy (the demo exits with status 3).
+  1. while it copies, the picture moves (the penguin walks: its pixels
+     change between frames), the bar has the accent colour and the texts
+     say what is copied where, how much of how much, how fast and how long;
+  2. Pause stops the penguin and says "Paused"; Resume starts it again;
+  3. Details makes the window taller, and lower again;
+  4. with reduced motion (SDE_REDUCED_MOTION=1) the picture stands still;
+  5. Cancel ends the copy (the demo exits with status 3);
+  6. a second operation shows as a line of the queue;
+  7. a copy to a removable drive ends with "The files are on SANDISK - you
+     can remove it." and the window goes by itself; a failed one stays with
+     its errors until its cross is clicked.
 
   test_transfer_dialog.py BUILD/tests/sde-transfer-demo
 Exit status 0 passed, 1 failed, 77 skipped (no Xvfb, xdotool or ImageMagick).
@@ -134,55 +139,61 @@ def main():
     problems = []
     with tempfile.TemporaryDirectory(prefix="sde-transfer-") as tmp:
         tmp = Path(tmp)
-        env = dict(os.environ, HOME=str(tmp), XDG_CONFIG_HOME=str(tmp / "config"), NO_AT_BRIDGE="1")
+        env = dict(os.environ, HOME=str(tmp), XDG_CONFIG_HOME=str(tmp / "config"), NO_AT_BRIDGE="1", LC_ALL="C")
         env.pop("SDE_REDUCED_MOTION", None)
         s = Session(demo, env)
         try:
             s.start_x()
             qa = tmp / "qa.txt"
-            proc = s.run_demo(qa, "--details", "--at", "0.4")
+            proc = s.run_demo(qa, "--at", "0.4")
             g = s.geometry()
             values = qa_values(qa)
-            # 1. The mark is animated; the graph has the accent colour.
-            logo = (g["X"] + 18, g["Y"] + 18, 72, 72)
-            frames = [s.shot(*logo)]
+            # 1. The picture moves; the bar has the accent colour; the texts.
+            sx, sy, sw, sh = (int(v) for v in values["scene"].split(","))
+            scene = (g["X"] + sx, g["Y"] + sy, sw, sh)
+            frames = [s.shot(*scene)]
             for _ in range(3):
                 time.sleep(0.15)
-                frames.append(s.shot(*logo))
+                frames.append(s.shot(*scene))
             if len(set(frames)) < 2:
-                problems.append("the SDE mark is not animated while copying")
+                problems.append("the picture does not move while copying")
             if values.get("animating") != "1":
                 problems.append("the dialog does not report an animation: %r" % values.get("animating"))
-            graph = s.shot(g["X"] + 20, g["Y"] + 110, 150, 90)
-            coloured = sum(1 for i in range(0, len(graph) - 2, 3)
-                           if max(graph[i:i + 3]) - min(graph[i:i + 3]) > 40)
-            if coloured < 300:
-                problems.append("no speed graph in the accent colour (%d coloured pixels)" % coloured)
-            for key in ("headline", "percent", "speed", "remaining", "items"):
-                if not values.get(key):
-                    problems.append("empty %s text" % key)
-            if "Copying 1234 items from Videos to Backup Drive" not in values.get("headline", ""):
+            if values.get("headline") != "Copying 1234 items to Backup Drive":
                 problems.append("headline: %r" % values.get("headline"))
-            # 2. Pause stops the mark; Resume starts it again.
+            status = values.get("status", "")
+            if " of 4.2" not in status or "/s" not in status or not status.endswith("left"):
+                problems.append("status: %r" % status)
+            if not values.get("note"):
+                problems.append("no item name")
+            # The bar: 8 px high, 44 px under the picture (transfer_dialog.cpp).
+            bar = s.shot(g["X"] + 24, g["Y"] + sy + sh + 46, 120, 4)
+            coloured = sum(1 for i in range(0, len(bar) - 2, 3) if max(bar[i:i + 3]) - min(bar[i:i + 3]) > 40)
+            if coloured < 150:
+                problems.append("no bar in the accent colour (%d coloured pixels)" % coloured)
+            # 2. Pause stops the penguin; Resume starts it again.
             s.click(values["pause"])
             if not wait(lambda: qa_values(qa).get("paused") == "1"):
                 problems.append("Pause did not pause")
             time.sleep(0.4)
-            still = [s.shot(*logo)]
+            still = [s.shot(*scene)]
             time.sleep(0.3)
-            still.append(s.shot(*logo))
+            still.append(s.shot(*scene))
             if still[0] != still[1]:
-                problems.append("the SDE mark keeps moving while paused")
-            if not qa_values(qa).get("percent", "").startswith("Paused"):
-                problems.append("no \"Paused\" in %r" % qa_values(qa).get("percent"))
+                problems.append("the penguin keeps walking while paused")
+            if not qa_values(qa).get("status", "").endswith("Paused"):
+                problems.append("no \"Paused\" in %r" % qa_values(qa).get("status"))
             s.click(qa_values(qa)["pause"])
             if not wait(lambda: qa_values(qa).get("paused") == "0" and qa_values(qa).get("animating") == "1"):
-                problems.append("Resume did not resume the copy and the animation")
-            # 3. Fewer and more details.
-            tall = s.geometry()["HEIGHT"]
+                problems.append("Resume did not resume the copy and the picture")
+            # 3. Details, and back.
+            low = s.geometry()["HEIGHT"]
             s.click(qa_values(qa)["toggle"])
-            if not wait(lambda: s.geometry()["HEIGHT"] < tall - 50):
-                problems.append("Fewer details did not make the window lower (%d)" % s.geometry()["HEIGHT"])
+            if not wait(lambda: s.geometry()["HEIGHT"] > low + 40 and qa_values(qa).get("details") == "1"):
+                problems.append("Details did not make the window taller (%d)" % s.geometry()["HEIGHT"])
+            s.click(qa_values(qa)["toggle"])
+            if not wait(lambda: s.geometry()["HEIGHT"] == low):
+                problems.append("hiding the details did not make the window lower again")
             # 5. Cancel.
             s.click(qa_values(qa)["cancel"])
             try:
@@ -192,19 +203,62 @@ def main():
                 status = None
             if status != 3:
                 problems.append("Cancel did not end the copy (status %r)" % status)
-            # 4. Reduced motion: a still mark.
+            # 4. Reduced motion: a still picture.
             qa.unlink()
             calm = dict(env, SDE_REDUCED_MOTION="1")
             proc = s.run_demo(qa, "--at", "0.4", env=calm)
             g = s.geometry()
-            logo = (g["X"] + 18, g["Y"] + 18, 72, 72)
-            a = s.shot(*logo)
+            sx, sy, sw, sh = (int(v) for v in qa_values(qa)["scene"].split(","))
+            scene = (g["X"] + sx, g["Y"] + sy, sw, sh)
+            a = s.shot(*scene)
             time.sleep(0.3)
-            b = s.shot(*logo)
+            b = s.shot(*scene)
             if a != b or qa_values(qa).get("animating") != "0":
-                problems.append("the SDE mark moves with reduced motion")
+                problems.append("the picture moves with reduced motion")
             proc.kill()
             proc.wait()
+            # 6. Two operations: the second one in the queue.
+            qa.unlink()
+            proc = s.run_demo(qa, "--at", "0.3", "--queue")
+            values = qa_values(qa)
+            if values.get("count") != "2" or values.get("queue_headline") != "Moving 12 items to Documents":
+                problems.append("no second operation in the queue: %r" % values)
+            if not values.get("queue_pause"):
+                problems.append("the queued operation has no Pause button")
+            proc.kill()
+            proc.wait()
+            # 7. Done on a removable drive: said, then the window goes.
+            qa.unlink()
+            proc = s.run_demo(qa, "--done", "--drive", "SANDISK", "--removable")
+            values = qa_values(qa)
+            if values.get("headline") != "Copied 1234 items to Backup Drive":
+                problems.append("done headline: %r" % values.get("headline"))
+            if values.get("status") != "The files are on SANDISK — you can remove it.":
+                problems.append("done status: %r" % values.get("status"))
+            try:
+                status = proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                status = None
+                problems.append("the finished operation did not go by itself")
+            # A failed operation stays until its cross is clicked.
+            qa.unlink()
+            proc = s.run_demo(qa, "--fail")
+            values = qa_values(qa)
+            if not values.get("headline", "").startswith("Not everything could be copied"):
+                problems.append("failed headline: %r" % values.get("headline"))
+            if values.get("status") != "There is not enough space on Backup Drive.":
+                problems.append("failed status: %r" % values.get("status"))
+            time.sleep(4)
+            if proc.poll() is not None:
+                problems.append("the failed operation did not stay")
+            else:
+                s.click(qa_values(qa)["cancel"])
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    problems.append("the cross did not close the failed operation")
         finally:
             s.stop()
     for problem in problems:

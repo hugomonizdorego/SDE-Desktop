@@ -13,8 +13,8 @@
 // real time (100 MB/s on average). --queue adds a second operation (a move
 // of 12 items) under the first. --drive names the destination drive
 // (--removable: one that may be unplugged, --fat: with FAT). --finishing
-// shows "Writing the last data", --done the finished operation, --fail a
-// failed one, all at once. --qa writes the dialog's state after every
+// shows "Writing the last data" (the progress stays where --at put it),
+// --done the finished operation, --fail a failed one, all at once. --qa writes the dialog's state after every
 // update: its texts, whether the picture moves, the buttons' and the
 // picture's geometry and the window's size. Exit status: 0 done, 3
 // cancelled.
@@ -129,7 +129,7 @@ void tick(void *data) {
     return;
   }
   double t = d.replayed + (now() - d.resumed);
-  if (!d.paused && !d.ended) d.done = std::min(double(kTotal), d.done + speed_at(t) * (t - d.last));
+  if (!d.paused && !d.ended && !d.finishing) d.done = std::min(double(kTotal), d.done + speed_at(t) * (t - d.last));
   d.last = t;
   if (!d.ended) report(d, t);
   else write_qa(d);
@@ -212,9 +212,13 @@ int main(int argc, char **argv) {
     d.ended = true;
     if (done) d.done = kTotal;
     report(d, t);
-    d.dialog->finish(d.id, done ? sde::TransferDialog::Result::Done : sde::TransferDialog::Result::Failed,
-                     {"There is not enough space on Backup Drive.", "Cannot write \"report-2026.pdf\": Read-only file system",
-                      "Cannot write \"music.flac\": Read-only file system"});
+    if (done)
+      d.dialog->finish(d.id, sde::TransferDialog::Result::Done);
+    else
+      d.dialog->finish(d.id, sde::TransferDialog::Result::Failed,
+                       {"There is not enough space on Backup Drive.",
+                        "Cannot write \"report-2026.pdf\": Read-only file system",
+                        "Cannot write \"music.flac\": Read-only file system"});
   }
   d.dialog->show();
   Fl::add_timeout(0.1, tick, &d);
