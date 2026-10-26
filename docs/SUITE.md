@@ -269,7 +269,30 @@ Since 0.2.0 Alpha 3:
   * every change of the active pane added one more style provider to the
     location entry.
 
-HOVER-TABLE
+  Median of three runs at 1920x1080 and 150 % (SDE Graphite Light,
+  Papirus, Xvfb on a shared virtual machine; runs of 0.2.0 Alpha 2 and of
+  this version alternated): the CPU use of Liria and of the X server in
+  per cent of one core while the pointer moves, the frames drawn and the
+  area they painted, and how long Liria took for the slowest 5 % of the
+  pointer events.
+
+  | Pointer over | Before | After |
+  |---|---|---|
+  | The sidebar | 40 % + 14 % X, 126 frames, 27 Mpx | 15 % + 4 % X, 40 frames, 0.6 Mpx |
+  | Four tabs | 12 % + 16 % X, 72 frames, 81 Mpx | 6 % + 2 % X, 27 frames, 0.2 Mpx |
+  | Icon view, 10 000 files | 15 %, events 2.7 ms | 6 %, events 0.5 ms |
+  | Compact view, 10 000 files | 16 %, events 2.7 ms | 8 %, events 0.8 ms |
+  | Icon and compact views, 1 000 files | 6.5-7 % | 5 % |
+  | Breadcrumbs of a deep folder | 9 %, 119 frames | 5 %, 36 frames |
+  | Ribbon | 5.6 %, 131 frames | 3.8 %, 24 frames |
+  | Header buttons | 5.5 %, 70 frames | 4.5 %, 43 frames |
+  | Home cards | 6.3 %, 87 frames, 3.1 Mpx | 4.7 %, 19 frames, 0.6 Mpx |
+  | List view, 1 000 or 10 000 files | 13 % | 13 % |
+
+  Still at GTK's own cost: GtkTreeView paints a whole row whenever the
+  pointer reaches another row, which is the list view's 13 % and most of
+  the sidebar's, and the canvas of the icon views still updates every icon
+  of the folder when one changes (`eel_canvas_group_update ()`).
 
 * **Network places from the location bar.** Ctrl+L (or the edit button
   of the path) takes, besides paths, `\\server\share` and
