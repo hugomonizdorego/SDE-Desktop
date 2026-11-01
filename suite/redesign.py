@@ -114,6 +114,7 @@ def liria(staged):
     liria_clipboard(staged)
     liria_folder_loading(staged)
     liria_progress(staged)
+    liria_menus(staged)
     liria_translations(staged)
 
 
@@ -3392,6 +3393,214 @@ op_finished (ProgressWidgetData *data)
               "\t\t\t\t\t\t &pdata, &sde_handled, &error);\n"
               "\t}\n"
               "\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {")
+
+
+ICON_VIEW_STYLE = r'''/* SDE (0.2.0 Alpha 3.1): what the labels of the icons are measured with:
+ * the font of the view, the screen's resolution and its font options. */
+static char *
+sde_label_style (GtkWidget *widget)
+{
+    PangoContext *context = gtk_widget_get_pango_context (widget);
+    const cairo_font_options_t *options = pango_cairo_context_get_font_options (context);
+    char *font = pango_font_description_to_string (pango_context_get_font_description (context));
+    char *style = g_strdup_printf ("%s|%g|%lu", font, pango_cairo_context_get_resolution (context),
+                                   options != NULL ? cairo_font_options_hash (options) : 0UL);
+
+    g_free (font);
+    return style;
+}
+
+static void
+style_updated (GtkWidget *widget)
+{
+    LiriaIconContainer *container;
+    char *label_style;
+    GList *l;
+
+    container = LIRIA_ICON_CONTAINER (widget);
+    container->details->use_drop_shadows = container->details->drop_shadows_requested;
+
+    /* Don't chain up to parent, if this is a desktop container,
+    * because that resets the background of the window.
+    */
+    if (!liria_icon_container_get_is_desktop (container)) {
+           GTK_WIDGET_CLASS (liria_icon_container_parent_class)->style_updated (widget);
+    }
+
+    if (!gtk_widget_get_realized (widget))
+        return;
+    /* The style of the view changes with its state as well: it loses the
+     * keyboard focus while a menu is open (a context menu, the main menu)
+     * and gets it back when the menu closes. Measuring every label and
+     * updating every icon of the folder again took 60 ms for 1 000 files,
+     * twice for every menu, and the menu waited for it. The colours of a
+     * state are read when the icons are drawn, so unless the labels are
+     * measured differently now (font, resolution) a redraw is enough. The
+     * tints of selected icons are made again (the theme's accent may have
+     * changed). Icon theme changes reach every file through LiriaFile. */
+    label_style = sde_label_style (widget);
+    if (g_strcmp0 (label_style, container->details->sde_label_style) != 0)
+    {
+        g_free (container->details->sde_label_style);
+        container->details->sde_label_style = label_style;
+        invalidate_labels (container);
+        liria_icon_container_request_update_all (container);
+        return;
+    }
+    g_free (label_style);
+    for (l = container->details->icons; l != NULL; l = l->next)
+    {
+        LiriaIcon *icon = l->data;
+
+        if (icon->item != NULL)
+            liria_icon_canvas_item_sde_forget_render (icon->item);
+    }
+    gtk_widget_queue_draw (widget);
+}
+'''
+
+FORGET_RENDER = r'''/* SDE (0.2.0 Alpha 3.1): the icon is tinted again when it is drawn next
+ * (the selection colour may have changed with the theme). */
+void
+liria_icon_canvas_item_sde_forget_render (LiriaIconCanvasItem *item)
+{
+    g_return_if_fail (LIRIA_IS_ICON_CANVAS_ITEM (item));
+
+    if (item->details->rendered_surface != NULL &&
+        (item->details->rendered_is_highlighted_for_selection || item->details->rendered_is_highlighted_for_drop))
+    {
+        cairo_surface_destroy (item->details->rendered_surface);
+        item->details->rendered_surface = NULL;
+    }
+}
+
+void
+liria_icon_canvas_item_set_emblems (LiriaIconCanvasItem *item,'''
+
+BACKGROUND_COLOR = r'''/* SDE (0.2.0 Alpha 3.1): the default colour of the background is the
+ * view's colour in its normal state. It is looked up when the widget's style
+ * changes, not on every draw (a saved style context with a class is styled
+ * from scratch), and the background (a surface as large as the view) is
+ * made again only when that colour or the scale changed: the style changes
+ * with the widget's state too (it loses the keyboard focus while a menu is
+ * open), and the surface was made again twice for every menu. Returns
+ * whether anything changed. */
+static gboolean
+sde_background_style (EelBackground *self)
+{
+    GtkStyleContext *style;
+    GdkRGBA *c, old = self->details->default_color;
+    gboolean known = self->details->sde_color_known;
+    int scale = gtk_widget_get_scale_factor (self->details->widget);
+
+    style = gtk_widget_get_style_context (self->details->widget);
+    gtk_style_context_save (style);
+    gtk_style_context_set_state (style, GTK_STATE_FLAG_NORMAL);
+    if (self->details->use_base) {
+        gtk_style_context_add_class (style, GTK_STYLE_CLASS_VIEW);
+    }
+
+    gtk_style_context_get (style, gtk_style_context_get_state (style),
+                           GTK_STYLE_PROPERTY_BACKGROUND_COLOR,
+                           &c, NULL);
+    self->details->default_color = *c;
+    gdk_rgba_free (c);
+
+    gtk_style_context_restore (style);
+    self->details->sde_color_known = TRUE;
+    if (known && scale == self->details->sde_scale && gdk_rgba_equal (&old, &self->details->default_color))
+        return FALSE;
+    self->details->sde_scale = scale;
+    return TRUE;
+}
+
+static gboolean
+eel_background_ensure_realized (EelBackground *self)
+{
+    int width, height;
+    GdkWindow *window;
+
+    /* Set the default color */
+    if (!self->details->sde_color_known)
+        sde_background_style (self);
+'''
+
+
+def liria_menus(staged):
+    """0.2.0 Alpha 3.1: menus open without waiting for the folder view.
+
+    A context menu (and the main menu) takes the keyboard focus from the
+    folder view while it is open, and the view's style changes with that
+    state: the icon view measured every label and updated every icon of the
+    folder again (60 ms for 1 000 files, twice per menu, and the menu was
+    painted only after it) and the background made a surface as large as
+    the view again. Both now react only to changes that matter to them.
+    The icons' tinted pictures were made again on every draw for icons
+    that are not selected (Caja's cache test only held for selected ones),
+    and the Emblems panel of the side pane built ~100 widgets that every
+    menu's grab walked through even when the panel was never shown; it is
+    filled when it is first shown."""
+    private = staged / "libliria-private"
+    edit_once(private / "liria-icon-private.h", "    gboolean drop_shadows_requested;\n",
+              "    gboolean drop_shadows_requested;\n"
+              "    char *sde_label_style; /* SDE: what the labels were measured with */\n")
+    container = private / "liria-icon-container.c"
+    edit_once(container, "    g_free (details->font);\n\n    if (details->a11y_item_action_queue != NULL)\n",
+              "    g_free (details->font);\n    g_free (details->sde_label_style);\n\n"
+              "    if (details->a11y_item_action_queue != NULL)\n")
+    replace_between(container, "static void\nstyle_updated (GtkWidget *widget)\n{",
+                    "static gboolean\nbutton_press_event (GtkWidget *widget,", ICON_VIEW_STYLE + "\n")
+    item = private / "liria-icon-canvas-item.c"
+    # Focus matters only to icons tinted with the selection colour.
+    edit_once(item, "            && (icon_item->details->is_highlighted_for_selection && "
+                    "icon_item->details->rendered_is_focused == gtk_widget_has_focus "
+                    "(GTK_WIDGET (EEL_CANVAS_ITEM (icon_item)->canvas)))))",
+              "            && (!(icon_item->details->is_highlighted_for_selection || "
+              "icon_item->details->is_highlighted_for_drop) /* SDE */\n"
+              "                || icon_item->details->rendered_is_focused == gtk_widget_has_focus "
+              "(GTK_WIDGET (EEL_CANVAS_ITEM (icon_item)->canvas)))))")
+    edit_once(item, "void\nliria_icon_canvas_item_set_emblems (LiriaIconCanvasItem *item,", FORGET_RENDER)
+    edit_once(private / "liria-icon-canvas-item.h",
+              "    void        liria_icon_canvas_item_invalidate_label         (LiriaIconCanvasItem       *item);\n",
+              "    void        liria_icon_canvas_item_invalidate_label         (LiriaIconCanvasItem       *item);\n"
+              "    void        liria_icon_canvas_item_sde_forget_render        (LiriaIconCanvasItem       *item);\n")
+    background = staged / "eel/eel-background.c"
+    edit_once(background, "    guint change_idle_id;\n",
+              "    guint change_idle_id;\n    gboolean sde_color_known; /* SDE: default_color is current */\n"
+              "    int sde_scale;\n")
+    edit_once(background, "    self->details->default_color.alpha = 1.0;\n}\n",
+              "    self->details->default_color.alpha = 1.0;\n    self->details->sde_color_known = FALSE;\n}\n")
+    replace_between(background, "static gboolean\neel_background_ensure_realized (EelBackground *self)\n{",
+                    "    /* If the window size is the same as last time, don't update */", BACKGROUND_COLOR + "\n")
+    edit_once(background, "                         gpointer   user_data)\n{\n"
+                          "    widget_queue_background_change (widget, user_data);\n}",
+              "                         gpointer   user_data)\n{\n"
+              "    /* SDE: only when the default colour or the scale changed. */\n"
+              "    if (gtk_widget_get_realized (widget) && !sde_background_style (EEL_BACKGROUND (user_data)))\n"
+              "        return;\n"
+              "    widget_queue_background_change (widget, user_data);\n}")
+    edit_once(background, "    self->details->use_base = use_base;\n",
+              "    self->details->use_base = use_base;\n    self->details->sde_color_known = FALSE;\n")
+    emblems = staged / "src/liria-emblem-sidebar.c"
+    edit_once(emblems, "    char *popup_emblem_keyword;\n",
+              "    char *popup_emblem_keyword;\n    gboolean sde_populated; /* SDE: filled when first shown */\n")
+    edit_once(emblems, "static void\nliria_emblem_sidebar_refresh (LiriaEmblemSidebar *emblem_sidebar)\n{\n"
+                       "    liria_emblem_refresh_list ();\n",
+              "static void\nliria_emblem_sidebar_refresh (LiriaEmblemSidebar *emblem_sidebar)\n{\n"
+              "    liria_emblem_refresh_list ();\n"
+              "    if (!emblem_sidebar->details->sde_populated)\n        return;\n")
+    edit_once(emblems, "    widget = liria_emblem_sidebar_create_container (emblem_sidebar);\n"
+                       "    liria_emblem_sidebar_populate (emblem_sidebar);\n",
+              "    widget = liria_emblem_sidebar_create_container (emblem_sidebar);\n"
+              "    /* SDE: the emblems (about a hundred widgets) are made when the\n"
+              "     * panel is first shown. */\n"
+              "    g_signal_connect (emblem_sidebar, \"map\", G_CALLBACK (sde_emblem_sidebar_mapped), NULL);\n")
+    edit_once(emblems, "static void\nliria_emblem_sidebar_init (LiriaEmblemSidebar *emblem_sidebar)\n{",
+              "static void\nsde_emblem_sidebar_mapped (LiriaEmblemSidebar *emblem_sidebar, gpointer data)\n{\n"
+              "    if (emblem_sidebar->details->sde_populated)\n        return;\n"
+              "    emblem_sidebar->details->sde_populated = TRUE;\n"
+              "    liria_emblem_sidebar_populate (emblem_sidebar);\n}\n\n"
+              "static void\nliria_emblem_sidebar_init (LiriaEmblemSidebar *emblem_sidebar)\n{")
 
 
 RECIPES = {"liria": liria}

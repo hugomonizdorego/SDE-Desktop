@@ -467,6 +467,18 @@ menu.sde-main-menu menuitem {
   padding: 3px 12px;
 }
 
+/* 0.2.0 Alpha 3.1: the highlight of a menu item follows the pointer at
+ * once, in every menu of Liria (context menus, the main menu, their
+ * submenus). Themes fade the highlight out (SDE's over 120 ms): two or
+ * three items were blue at once behind the pointer, and GTK 3 works out
+ * the item's style again and lays out and repaints the whole menu on every
+ * frame of a fade. */
+menu menuitem,
+.menu menuitem,
+.context-menu menuitem {
+  transition: none;
+}
+
 /* -------------------------------------------------------- Home overview */
 
 .liria-navigation-window frame.liria-extra-location > border {
