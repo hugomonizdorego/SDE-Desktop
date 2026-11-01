@@ -1,0 +1,31 @@
+/* SDE motion layer (GTK 4), every family since 0.2.0 Alpha 3.1: the
+ * highlight of popover menus, menu bars, drop-down lists, list, column and
+ * grid views and sidebars moves at once with the pointer, with no fade in or
+ * out (two or three items lit at once looked like a double highlight and
+ * made menus feel late). tools/build-themes.py also removes the transitions
+ * of these widgets from the upstream style sheets; this layer comes last and
+ * keeps them off in every state.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+modelbutton, modelbutton:hover, modelbutton:active, modelbutton:checked, modelbutton:selected,
+modelbutton:disabled, modelbutton:focus, popover modelbutton, popover modelbutton:hover,
+popover modelbutton:active, popover modelbutton:selected, popover.menu modelbutton,
+popover.menu modelbutton:hover, popover.menu modelbutton:active, popover.menu modelbutton:selected,
+popover.background modelbutton, popover.background modelbutton:hover, popover.background modelbutton:selected,
+popover.menu modelbutton check, popover.menu modelbutton radio, popover.menu modelbutton arrow,
+menubar > item, menubar > item:hover, menubar > item:selected, menubar > item:active,
+popovermenubar > item, popovermenubar > item:hover, popovermenubar > item:selected,
+row, row:hover, row:active, row:selected, row:focus, row:focus-within, row:backdrop,
+row.activatable, row.activatable:hover, row.activatable:active, row.activatable:selected,
+row.activatable:focus, row.activatable:backdrop, row.activatable.has-open-popup,
+list > row, list > row:hover, list > row:selected, listview > row, listview > row:hover,
+listview > row:selected, columnview row, columnview row:hover, columnview row:selected,
+columnview > listview > row, columnview > listview > row:hover, columnview > listview > row:selected,
+gridview > child, gridview > child:hover, gridview > child:selected,
+.navigation-sidebar > row, .navigation-sidebar > row:hover, .navigation-sidebar > row:selected,
+placessidebar .navigation-sidebar > row image.sidebar-icon, stacksidebar row, stacksidebar row:hover,
+stacksidebar row:selected, dropdown popover listview > row, dropdown popover listview > row:hover,
+.view:hover, .view:selected, flowboxchild, flowboxchild:hover, flowboxchild:selected {
+  transition: none;
+  animation: none;
+}

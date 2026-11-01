@@ -714,6 +714,157 @@ def libadwaita_shapes(fam):
             f'window.dialog.message, window.messagedialog, dialog.alert > sheet {{ border-radius: {rl}px; }}\n')
 
 
+# ------------------------------------------------- motion (0.2.0 Alpha 3.1)
+
+# Widgets whose highlight follows the pointer at once: menu items, popover
+# menu buttons, menu bar items (GTK 4), list and tree rows, icon views.
+# Upstream (Graphite's Material transitions) faded them in and out, so two
+# or three items were lit at once in a menu that the pointer crossed.
+INSTANT_ELEMENTS = {'menuitem', 'modelbutton', 'row', 'treeview', 'iconview', 'flowboxchild', 'item'}
+
+
+def css_rules(text):
+    """(head_start, body_start, body_end) of each top-level block of a style
+    sheet, skipping comments and strings; @-blocks (@keyframes) included."""
+    i, n, depth = 0, len(text), 0
+    head, body = 0, 0
+    while i < n:
+        if text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        c = text[i]
+        if c in '"\'':
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == '\\' else 1
+            i = j + 1
+            continue
+        if c == '{':
+            if depth == 0:
+                body = i + 1
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                yield head, body, i
+                head = i + 1
+        elif c == ';' and depth == 0:
+            head = i + 1
+        i += 1
+
+
+def css_selectors(head):
+    """The selectors of a rule head (comments removed, split at top-level commas)."""
+    import re
+    head = re.sub(r'/\*.*?\*/', '', head, flags=re.S).strip()
+    out, depth, cur = [], 0, ''
+    for ch in head:
+        depth += (ch == '(') - (ch == ')')
+        if ch == ',' and depth == 0:
+            out.append(cur.strip())
+            cur = ''
+        else:
+            cur += ch
+    return [s for s in out + [cur.strip()] if s]
+
+
+def instant_selector(selector):
+    """Whether |selector| styles a menu item, a list or tree row or another
+    widget of INSTANT_ELEMENTS (anywhere in it)."""
+    import re
+    s = selector
+    while True:
+        t = re.sub(r':not\([^()]*\)', '', s)
+        if t == s:
+            break
+        s = t
+    names = set(re.findall(r'(?:^|[\s>+~])([A-Za-z][\w-]*)', s))
+    return bool(names & INSTANT_ELEMENTS)
+
+
+def still_highlights(css):
+    """|css| with the transitions and animations of the rules that style
+    INSTANT_ELEMENTS set to none."""
+    import re
+    out, last = [], 0
+    for head, body, end in css_rules(css):
+        if css[head:body].lstrip().startswith('@'):
+            continue
+        block = css[body:end]
+        if not re.search(r'(?<![\w-])(transition|animation)', block):
+            continue
+        if not any(instant_selector(s) for s in css_selectors(css[head:body - 1])):
+            continue
+        block = re.sub(r'(?<![\w-])(transition|animation)(-[\w-]+)?\s*:[^;{}]*', r'\1: none', block)
+        out.append(css[last:body] + block)
+        last = end
+    out.append(css[last:])
+    return ''.join(out)
+
+
+def rounded_rect_path(x, y, w, h, r):
+    def f(v):
+        return f'{v:.3f}'.rstrip('0').rstrip('.')
+    return (f'M{f(x + r)},{f(y)}H{f(x + w - r)}A{f(r)},{f(r)} 0 0 1 {f(x + w)},{f(y + r)}'
+            f'V{f(y + h - r)}A{f(r)},{f(r)} 0 0 1 {f(x + w - r)},{f(y + h)}'
+            f'H{f(x + r)}A{f(r)},{f(r)} 0 0 1 {f(x)},{f(y + h - r)}'
+            f'V{f(y + r)}A{f(r)},{f(r)} 0 0 1 {f(x + r)},{f(y)}Z')
+
+
+def check_box_svgs(size):
+    """Check boxes as rounded squares (0.2.0 Alpha 3.1), named like
+    Graphite's assets (|size| 24: checkbox-*, 16: small-checkbox-*), which
+    drew them as circles, so a check box looked like a radio button (Liria's
+    "Show Hidden Files" in its menu). Filled paths only: GTK recolors the
+    fill of symbolic assets. Unchecked: an outline; checked: a filled box
+    with the check mark cut out; mixed: with a bar cut out."""
+    big = size >= 24
+    m = 3.0 if big else 1.0              # margin around the box
+    side = size - 2 * m
+    r = side * (0.25 if big else 0.24)   # corner radius
+    sw = 2.0 if big else 1.75            # outline
+    box = rounded_rect_path(m, m, side, side, r)
+    inner = rounded_rect_path(m + sw, m + sw, side - 2 * sw, side - 2 * sw, max(0.5, r - sw))
+    # The check mark as a polygon (a stroke with mitered joins), in the
+    # box's own coordinates (0-1).
+    k, hw = side, (0.075 if big else 0.085)
+    pts = [(0.22, 0.52), (0.42, 0.72), (0.78, 0.33)]
+    import math
+
+    def norm(dx, dy):
+        n = math.hypot(dx, dy)
+        return dx / n, dy / n
+    (ax, ay), (bx, by), (cx, cy) = pts
+    d1, d2 = norm(bx - ax, by - ay), norm(cx - bx, cy - by)
+    n1, n2 = (-d1[1], d1[0]), (-d2[1], d2[0])
+    mx, my = norm(n1[0] + n2[0], n1[1] + n2[1])
+    miter = hw / max(0.2, mx * n1[0] + my * n1[1])
+    poly = [(ax + n1[0] * hw, ay + n1[1] * hw), (bx + mx * miter, by + my * miter),
+            (cx + n2[0] * hw, cy + n2[1] * hw), (cx - n2[0] * hw, cy - n2[1] * hw),
+            (bx - mx * miter, by - my * miter), (ax - n1[0] * hw, ay - n1[1] * hw)]
+    check = 'M' + 'L'.join(f'{m + px * k:.3f},{m + py * k:.3f}' for px, py in poly) + 'Z'
+    bar = rounded_rect_path(m + 0.24 * k, m + 0.5 * k - hw * k, 0.52 * k, 2 * hw * k, hw * k)
+
+    def svg(d):
+        return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 {size} {size}">\n'
+                f'  <path fill-rule="evenodd" d="{d}"/>\n</svg>\n')
+    prefix = 'checkbox' if big else 'small-checkbox'
+    return {f'{prefix}-unchecked-symbolic.svg': svg(box + inner),
+            f'{prefix}-checked-symbolic.svg': svg(box + check),
+            f'{prefix}-mixed-symbolic.svg': svg(box + bar)}
+
+
+def square_check_assets(folder):
+    """Writes check_box_svgs() over Graphite's round check boxes in |folder|
+    (its assets/scalable)."""
+    folder = Path(folder)
+    for size in (24, 16):
+        for name, text in check_box_svgs(size).items():
+            if (folder / name).exists():
+                (folder / name).write_text(text)
+
+
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 # Graphite's PNG assets in the accent color (0.2.0): the slider of scales
 # with marks and the checked selection-mode check box. The others are gray.
@@ -858,6 +1009,7 @@ def build_graphite(pal, vendor, out, work):
         css, assets, scalable = compile_graphite(src, fam['upstream_accent'][accent], work, pal, accent)
         recolor_graphite_assets(assets, tokens(pal, 'graphite', 'light', accent),
                                 tokens(pal, 'graphite', 'dark', accent))
+        square_check_assets(scalable)
         for mode in MODES:
             name = theme_name(pal, 'graphite', mode, accent)
             d = out / name
@@ -865,13 +1017,15 @@ def build_graphite(pal, vendor, out, work):
             for gtk in ('gtk-3.0', 'gtk-4.0'):
                 g = d / gtk
                 write(g / 'gtk.css', f'/* {name}: Graphite GTK theme by Vince Liu (GPL-3.0), built for SDE. */\n'
-                      + css[(gtk, mode)] + '\n' + defs + overlay('graphite', gtk, t, fam) + overlay('soft', gtk, t, fam)
-                      + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam))
+                      + still_highlights(css[(gtk, mode)]) + '\n' + defs + overlay('graphite', gtk, t, fam)
+                      + overlay('soft', gtk, t, fam) + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam)
+                      + overlay('motion', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'graphite', accent, gtk))
                 shutil.copytree(assets, g / 'assets')
                 shutil.copytree(scalable, g / 'assets/scalable')
-            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
+            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam)
+                  + overlay('motion', 'gtk-4.0', t, fam))
             write(d / 'index.theme', index_theme(name, f'SDE Graphite {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  'SDE Graphite, based on the Graphite GTK theme by Vince Liu',
                                                  mode == 'dark'))
@@ -932,14 +1086,14 @@ def build_fluent(pal, vendor, out):
                 g = d / gtk
                 # Flat Remix's saturated accent and tinted grays become SDE
                 # Fluent's calm accent and slate grays (alpha51).
-                base = recolor_css((up / gtk / 'gtk.css').read_text(), upcolor, t['accent'], neutral)
+                base = still_highlights(recolor_css((up / gtk / 'gtk.css').read_text(), upcolor, t['accent'], neutral))
                 if gtk == 'gtk-4.0':
                     # Flat Remix's GTK 4 style sheets name its blue for every color.
                     base += (f"\n@define-color accent_bg_color {t['accent']};\n"
                              f"@define-color accent_fg_color {t['on_accent']};\n")
                 write(g / 'gtk.css', f'/* {name}: Flat Remix GTK by Daniel Ruiz de Alegría (GPL-3.0), built for SDE. */\n'
                       + base + '\n' + defs + overlay('fluent', gtk, t, fam) + overlay('soft', gtk, t, fam)
-                      + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam))
+                      + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam) + overlay('motion', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'fluent', accent, gtk))
                 shutil.copytree(up / gtk / 'assets', g / 'assets')
@@ -947,11 +1101,11 @@ def build_fluent(pal, vendor, out):
             lib.mkdir(parents=True)
             if (up / 'libadwaita/assets').is_dir():
                 shutil.copytree(up / 'libadwaita/assets', lib / 'assets')
-            upstream = recolor_css((up / 'libadwaita/gtk.css').read_text(), upcolor, t['accent'], neutral)
+            upstream = still_highlights(recolor_css((up / 'libadwaita/gtk.css').read_text(), upcolor, t['accent'], neutral))
             # Flat Remix's libadwaita style with every SDE Fluent color (alpha51:
             # libadwaita applications follow the whole palette, not only Mica).
             write(lib / 'gtk.css', upstream + '\n/* SDE Fluent palette */\n' + defs
-                  + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
+                  + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam) + overlay('motion', 'gtk-4.0', t, fam))
             write(d / 'index.theme', index_theme(name, f'SDE Fluent {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  'SDE Fluent, based on Flat Remix GTK and Flat Remix GNOME by Daniel Ruiz de Alegría',
                                                  mode == 'dark'))
@@ -971,10 +1125,11 @@ def build_glass(pal, out):
                 write(g / 'gtk.css', f'/* {name}: SDE glass layer on SDE Graphite. */\n'
                       f'@import url("../../{theme_name(pal, base, mode, accent)}/{gtk}/gtk.css");\n'
                       + defs + overlay('glass', gtk, t, fam) + overlay('soft', gtk, t, fam)
-                      + overlay('caption', gtk, t, fam))
+                      + overlay('caption', gtk, t, fam) + overlay('motion', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
                       else dark_import(pal, 'glass', accent, gtk))
-            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam))
+            write(d / 'libadwaita/gtk.css', defs + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam)
+                  + overlay('motion', 'gtk-4.0', t, fam))
             write(d / 'index.theme', index_theme(name, f'SDE {fam["label"]} {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  f'SDE {fam["label"]}: clear glass with light rims and capsule '
                                                  'shapes, built on SDE Graphite', mode == 'dark'))

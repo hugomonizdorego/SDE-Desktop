@@ -224,13 +224,12 @@ scale:not(.marks-before):not(.marks-after) slider:disabled {
   box-shadow: 0 0 0 1px alpha(@sde_knob_edge, 0.6);
 }
 
-/* Menus and tooltips: room around the items, separators inset like SDE's
- * menus, and a quick fade of the highlight. */
+/* Menus and tooltips: room around the items and separators inset like SDE's
+ * menus. The highlight follows the pointer at once (motion-gtk-3.0.css). */
 .csd menu, .csd .menu, .csd .context-menu { padding: 6px 0; }
 menu menuitem, .menu menuitem, .context-menu menuitem {
   min-height: 26px;
   padding: 3px 10px;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
 }
 menu separator, .menu separator, .context-menu separator { margin: 4px 10px; }
 popover.menu modelbutton, popover modelbutton { min-height: 28px; padding: 2px 10px; }
