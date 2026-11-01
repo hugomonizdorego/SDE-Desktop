@@ -3117,10 +3117,10 @@ void Dialog::filter_changed() {
   if (mode == Mode::Save && name_input && current_filter()) {
     std::string name = name_input->value();
     std::string fixed = chooser::name_for_filter(name, *current_filter(), filters);
-    if (fixed != name) {
-      name_input->value(fixed.c_str());
-      select_stem(name_input);
-    }
+    if (fixed != name) name_input->value(fixed.c_str());
+    // Back to the name, ready to be typed over.
+    select_stem(name_input);
+    name_input->take_focus();
   }
   refilter();
 }

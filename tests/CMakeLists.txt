@@ -68,6 +68,13 @@ if(SDE_XVFB)
   set_tests_properties(sde-transfer-dialog PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120
     ENVIRONMENT "SDE_BRANDING_DIR=${PROJECT_SOURCE_DIR}/data/branding")
 endif()
+# The file chooser on Xvfb (tests/test_file_chooser_ui.py; a drop through
+# sde-xdnd-peer); skipped without xdotool.
+if(SDE_XVFB)
+  add_test(NAME sde-file-chooser-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_file_chooser_ui.py
+    $<TARGET_FILE:sde-file-chooser-demo> $<TARGET_FILE:sde-xdnd-peer>)
+  set_tests_properties(sde-file-chooser-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 
 add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp
   ../src/panel/status_model.cpp ../src/panel/drives.cpp)

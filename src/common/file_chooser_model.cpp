@@ -766,8 +766,9 @@ bool add_recent(const std::string &path, const std::string &mime, const std::str
     g_bookmark_file_free(bf);
     return false;
   }
+  // GLib quotes the command itself ("'niny %u'" in the file, as GTK writes it).
   std::string name = app.empty() ? "sde" : app;
-  std::string exec = "'" + name + " %u'";
+  std::string exec = name + " %u";
   if (!mime.empty()) g_bookmark_file_set_mime_type(bf, uri, mime.c_str());
   g_bookmark_file_add_application(bf, uri, name.c_str(), exec.c_str());
   GDateTime *now = g_date_time_new_now_utc();

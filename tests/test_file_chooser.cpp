@@ -394,10 +394,14 @@ static const char *kXbel =
     "</metadata></info></bookmark>\n"
     "<bookmark href=\"https://example.org/page\" added=\"2026-10-05T10:00:00Z\" modified=\"2026-10-05T10:00:00Z\" "
     "visited=\"2026-10-05T10:00:00Z\"><info><metadata owner=\"http://freedesktop.org\"><mime:mime-type "
-    "type=\"text/html\"/></metadata></info></bookmark>\n"
+    "type=\"text/html\"/><bookmark:applications><bookmark:application name=\"firefox\" "
+    "exec=\"&apos;firefox %u&apos;\" modified=\"2026-10-05T10:00:00Z\" count=\"1\"/></bookmark:applications>"
+    "</metadata></info></bookmark>\n"
     "<bookmark href=\"file:///home/alex/Pictures/Lake%20View.png\" added=\"2026-10-04T08:00:00Z\" "
     "modified=\"2026-10-04T08:00:00Z\" visited=\"2026-10-04T09:30:00Z\"><info><metadata owner=\"http://freedesktop.org\">"
-    "<mime:mime-type type=\"image/png\"/></metadata></info></bookmark>\n"
+    "<mime:mime-type type=\"image/png\"/><bookmark:applications><bookmark:application name=\"sde-view\" "
+    "exec=\"&apos;sde-view %u&apos;\" modified=\"2026-10-04T09:30:00Z\" count=\"1\"/></bookmark:applications>"
+    "</metadata></info></bookmark>\n"
     "</xbel>\n";
 
 static void test_recent() {
@@ -431,6 +435,17 @@ static void test_recent() {
   }
   std::string text;
   CHECK(read_file(recent_file_path(), text) && text.find("sde-view") != std::string::npos);
+  // GLib quotes the command once, as GTK writes it.
+  CHECK(text.find("exec=\"&apos;sde-view %u&apos;\"") != std::string::npos);
+  // What other programs recorded stays.
+  std::string other = g_tmp + "/recent/other.pdf";
+  touch(other);
+  std::string xbel = kXbel;
+  xbel.replace(xbel.find("/home/alex/Documents/Report.pdf"), strlen("/home/alex/Documents/Report.pdf"), other);
+  write_file_atomic(recent_file_path(), xbel);
+  CHECK(add_recent(a, "text/plain", "niny"));
+  list = read_recent();
+  CHECK(list.size() == 2 && list[0].path == a && list[1].path == other);
 }
 
 static void test_types() {
