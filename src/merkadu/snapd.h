@@ -8,6 +8,8 @@
 // SDE polkit agent then asks for the password).
 #pragma once
 
+#include <atomic>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -70,6 +72,39 @@ bool parse_snap_change(const std::string &json, SnapChange &out);
 // The value of experimental.hidden-snap-folder in a
 // /v2/snaps/system/conf?keys=experimental.hidden-snap-folder answer.
 bool parse_hidden_folder(const std::string &json, bool *enabled);
+
+// snapd was installed a moment ago and is not ready: it does not listen
+// yet, answers "too early" or "not yet seeded" while it seeds itself (on
+// Debian there is no seed, but snapd still marks itself seeded first), or
+// another change is in the way.
+bool snapd_starting(const HttpResponse &r);
+// What went wrong with a request, for the user; "" when the user cancelled
+// the authentication (snapd's "auth-cancelled").
+std::string snapd_error_text(const HttpResponse &r);
+
+// The state of a change being followed.
+struct SnapProgress {
+  int percent = -1;
+  std::string status;   // the task being done, or "Waiting for snapd to start"
+  std::string kind;     // its kind ("download-snap" ...), "" while waiting
+  bool waiting = false; // snapd is not ready yet
+  bool aborting = false;
+};
+struct SnapChangeResult {
+  std::string error;      // "" when it is done (or cancelled)
+  bool cancelled = false; // the user cancelled (also the authentication)
+  std::string change;     // snapd's id of the change
+};
+// Sends |method| |path| |body| with X-Allow-Interaction (polkit may ask)
+// and follows the change snapd starts until it is ready, calling |progress|
+// for each state (on the calling thread). |cancel| set: the change is
+// aborted (snapd undoes what it did). While snapd is starting
+// (snapd_starting()) it asks again every |retry_ms| for up to |wait_s|
+// seconds. Blocking: for worker threads.
+SnapChangeResult snap_change(const std::string &socket, const std::string &method, const std::string &path,
+                             const std::string &body, const std::atomic<bool> *cancel,
+                             const std::function<void(const SnapProgress &)> &progress, int wait_s = 120,
+                             int retry_ms = 3000, int poll_ms = 400);
 
 }  // namespace merkadu
 }  // namespace sde

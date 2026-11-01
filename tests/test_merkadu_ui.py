@@ -214,7 +214,7 @@ def main_window(s):
         wid = s.window('^Merkadu$', 15)
         if not check(wid, 'the main window did not open'):
             return
-        if not check(s.wait_qa(M, '@page:explore') and s.wait_qa(M, '@state:catalog=1,apps=20,jobs=0', 15),
+        if not check(s.wait_qa(M, '@page:explore') and s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 15),
                      'the lobby did not load the fake catalog: %s' % s.qa(M)[:3]):
             return
         c = s.controls(M)
@@ -307,7 +307,7 @@ def all_software(s):
         check(s.wait_for(M, lambda l: l.startswith('@refresh:running=1'), 8),
               'no refresh when Merkadu opened: %s' % s.qa(M)[:5])
         check(s.wait_qa(M, '@refresh:running=0,errors=0,done=1', 10), 'the refresh did not finish: %s' % s.qa(M)[:5])
-        check(s.wait_qa(M, '@state:catalog=1,apps=20,jobs=0', 10), 'home: the catalog did not load')
+        check(s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 10), 'home: the catalog did not load')
         c = s.controls(M)
         for name in ('Back', 'Forward', 'Home', 'Refresh the software lists', 'section:featured',
                      'section:recommended', 'nav:packages', 'nav:updates'):

@@ -883,39 +883,39 @@ Banner::Banner(int x, int y, int w, int h, const std::string &app_id) : Fl_Widge
   if (const App *a = Store::get().app(app_id)) copy_tooltip(a->name.c_str());
 }
 
-void Banner::draw() {
+void draw_banner(Fl_Widget *wid, const App &app, int x, int y, int w, int h, bool hot, bool focus,
+                 const std::string &label) {
+  const App *a = &app;
   const Theme &t = active_theme();
-  const App *a = Store::get().app(id_);
-  if (!a) return;
   double r = t.radius_large;
-  int pad = S(32), plate = std::min(S(120), h() - 2 * pad), is = plate * 3 / 4;
-  bool shot = !a->screenshots.empty() && w() > S(700) && !images::failed(a->screenshots[0].thumbnail);
-  int shot_w = shot ? std::min(int(w() * 0.40), int((h() - S(40)) * 16 / 9.0)) : 0;
-  int tx = x() + pad + plate + S(28), tw = w() - (tx - x()) - pad - (shot ? shot_w + S(28) : 0);
+  int pad = S(32), plate = std::min(S(120), h - 2 * pad), is = plate * 3 / 4;
+  bool shot = !a->screenshots.empty() && w > S(700) && !images::failed(a->screenshots[0].thumbnail);
+  int shot_w = shot ? std::min(int(w * 0.40), int((h - S(40)) * 16 / 9.0)) : 0;
+  int tx = x + pad + plate + S(28), tw = w - (tx - x) - pad - (shot ? shot_w + S(28) : 0);
   // The app's own color, deep enough for white text.
   Color base = icon_tint(*a).mix(Color::hex(0x000000), t.dark ? 0.35 : 0.15);
   for (int i = 0; i < 12 && Color::hex(0xFFFFFF).contrast(base) < 4.8; ++i) base = base.mix(Color::hex(0), 0.12);
   Color deep = base.mix(Color::hex(0x000000), 0.38);
   Color white = Color::hex(0xFFFFFF);
   {
-    Painter p(window()->w(), window()->h());
-    if (hot_) p.shadow(x(), y() + S(3), w(), h(), r, t.shadow.alpha(0.25), S(10));
-    p.fill_gradient(x(), y(), w(), h(), r, base, deep, true);
+    Painter p(wid->window()->w(), wid->window()->h());
+    if (hot) p.shadow(x, y + S(3), w, h, r, t.shadow.alpha(0.25), S(10));
+    p.fill_gradient(x, y, w, h, r, base, deep, true);
     // Soft light circles: depth without an image.
     cairo_t *cr = p.cr();
     cairo_save(cr);
-    p.rounded_rect(x(), y(), w(), h(), r);
+    p.rounded_rect(x, y, w, h, r);
     cairo_clip(cr);
-    p.circle(x() + w() * 0.86, y() - h() * 0.15, h() * 0.75, white.alpha(0.07));
-    p.circle(x() + w() * 0.60, y() + h() * 1.25, h() * 0.6, white.alpha(0.05));
+    p.circle(x + w * 0.86, y - h * 0.15, h * 0.75, white.alpha(0.07));
+    p.circle(x + w * 0.60, y + h * 1.25, h * 0.6, white.alpha(0.05));
     cairo_restore(cr);
     // The icon on a light plate.
-    double px = x() + pad, py = y() + (h() - plate) / 2.0;
+    double px = x + pad, py = y + (h - plate) / 2.0;
     p.shadow(px, py + S(2), plate, plate, plate * 0.24, Color::hex(0).alpha(0.25), S(8));
     p.fill_rounded(px, py, plate, plate, plate * 0.24, white.alpha(0.94));
     paint_app_icon(p, *a, px + (plate - is) / 2.0, py + (plate - is) / 2.0, is);
     if (shot) {
-      int sh = int(shot_w * 9 / 16.0), sx = x() + w() - pad - shot_w, sy = y() + (h() - sh) / 2;
+      int sh = int(shot_w * 9 / 16.0), sx = x + w - pad - shot_w, sy = y + (h - sh) / 2;
       cairo_surface_t *img = images::picture(a->screenshots[0].thumbnail, shot_w, sh);
       p.shadow(sx, sy, shot_w, sh, S(10), Color::hex(0).alpha(0.3), S(10));
       p.fill_rounded(sx, sy, shot_w, sh, S(10), white.alpha(0.12));
@@ -929,31 +929,241 @@ void Banner::draw() {
       }
     }
     // Source pills.
-    int cx = tx, by = y() + h() / 2 + S(38);
+    int cx = tx, by = y + h / 2 + S(38);
     for (Source s : badge_sources(*a)) {
       int bw = badge_width(source_label(s));
       if (cx + bw > tx + tw) break;
       p.fill_rounded(cx, by, bw, S(22), S(11), white.alpha(0.18));
       cx += bw + S(6);
     }
-    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
+    if (focus) focus_ring(p, x, y, w, h, r);
   }
   text_font(std::max(S(9), t.font_size - S(1)), true);
-  draw_text(a->installed() ? _("INSTALLED") : _("HIGHLIGHT"), tx, y() + h() / 2 - S(62), tw, S(20), white.alpha(0.78));
+  draw_text(label, tx, y + h / 2 - S(62), tw, S(20), white.alpha(0.78));
   text_font(t.font_size + S(12), true);
-  draw_text(a->name, tx, y() + h() / 2 - S(42), tw, S(42), white);
+  draw_text(a->name, tx, y + h / 2 - S(42), tw, S(42), white);
   text_font(t.font_size + 1);
   fl_color(white.alpha(0.88).mix(base, 0.12).fl());
-  draw_lines(a->summary, tx, y() + h() / 2 + S(2), tw, 2);
-  int cx = tx, by = y() + h() / 2 + S(38);
+  draw_lines(a->summary, tx, y + h / 2 + S(2), tw, 2);
+  int cx = tx, by = y + h / 2 + S(38);
   text_font(std::max(S(9), t.font_size - S(2)), true);
   for (Source s : badge_sources(*a)) {
-    std::string label = source_label(s);
-    int bw = badge_width(label);
+    std::string src = source_label(s);
+    int bw = badge_width(src);
     if (cx + bw > tx + tw) break;
-    draw_text(label, cx, by, bw, S(22), white, 1);
+    draw_text(src, cx, by, bw, S(22), white, 1);
     cx += bw + S(6);
   }
+}
+
+void Banner::draw() {
+  const App *a = Store::get().app(id_);
+  if (!a) return;
+  draw_banner(this, *a, x(), y(), w(), h(), hot_, Fl::focus() == this,
+              a->installed() ? _("INSTALLED") : _("HIGHLIGHT"));
+}
+
+// ------------------------------------------------------------- Carousel
+
+namespace {
+
+std::string g_carousel_id;     // the slide shown, kept across rebuilds of Home
+std::string g_carousel_state;  // for the QA dump
+const Carousel *g_live_carousel = nullptr;
+
+double ease_out(double t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
+
+}  // namespace
+
+Carousel::Carousel(int x, int y, int w, int h, std::vector<std::string> ids, std::vector<std::string> labels,
+                   int seconds)
+    : Fl_Widget(x, y, w, h), ids_(std::move(ids)), labels_(std::move(labels)), seconds_(seconds) {
+  labels_.resize(ids_.size());
+  for (size_t i = 0; i < ids_.size(); ++i)
+    if (ids_[i] == g_carousel_id) index_ = int(i);
+  tooltip(_("Highlights"));
+  if (seconds_ > 0 && ids_.size() > 1 && !reduced_motion()) Fl::add_timeout(seconds_, tick, this);
+  g_live_carousel = this;
+  remember();
+}
+
+Carousel::~Carousel() {
+  Fl::remove_timeout(tick, this);
+  Fl::remove_timeout(animate, this);
+  if (g_live_carousel == this) g_live_carousel = nullptr;
+}
+
+int Carousel::dots_height() { return S(24); }
+
+std::string Carousel::qa_state() { return g_live_carousel ? g_carousel_state : std::string(); }
+
+void Carousel::remember() {
+  if (ids_.empty()) return;
+  g_carousel_id = ids_[size_t(index_)];
+  g_carousel_state = "index=" + std::to_string(index_) + ",count=" + std::to_string(ids_.size()) + ",id=" + g_carousel_id;
+}
+
+void Carousel::go(int index, int direction) {
+  int n = int(ids_.size());
+  if (n < 2) return;
+  index = ((index % n) + n) % n;
+  if (index == index_) return;
+  prev_ = index_;
+  index_ = index;
+  dir_ = direction >= 0 ? 1 : -1;
+  remember();
+  if (reduced_motion()) {
+    t_ = 1;
+  } else {
+    t_ = 0;
+    Fl::remove_timeout(animate, this);
+    Fl::add_timeout(1.0 / 60, animate, this);
+  }
+  redraw();
+}
+
+void Carousel::tick(void *data) {
+  auto *c = static_cast<Carousel *>(data);
+  // Paused while the pointer is on it or it has the keyboard.
+  if (!c->hot_ && Fl::focus() != c) c->go(c->index_ + 1, 1);
+  Fl::repeat_timeout(c->seconds_, tick, data);
+}
+
+void Carousel::animate(void *data) {
+  auto *c = static_cast<Carousel *>(data);
+  c->t_ = std::min(1.0, c->t_ + 1.0 / (0.35 * 60));
+  c->redraw();
+  if (c->t_ < 1) Fl::repeat_timeout(1.0 / 60, animate, data);
+}
+
+void Carousel::boxes(Box *prev, Box *next, std::vector<Box> *dots) const {
+  int bh = h() - dots_height(), as = S(36);
+  if (prev) *prev = {x() + S(12), y() + (bh - as) / 2, as, as};
+  if (next) *next = {x() + w() - S(12) - as, y() + (bh - as) / 2, as, as};
+  if (dots) {
+    dots->clear();
+    int n = int(ids_.size()), d = S(8), gap = S(8), cur = S(22);
+    int total = (n - 1) * (d + gap) + cur;
+    int dx = x() + (w() - total) / 2, dy = y() + bh + (dots_height() - d) / 2;
+    for (int i = 0; i < n; ++i) {
+      int dw = i == index_ ? cur : d;
+      dots->push_back({dx, dy, dw, d});
+      dx += dw + gap;
+    }
+  }
+}
+
+void Carousel::draw() {
+  if (ids_.empty()) return;
+  const Theme &t = active_theme();
+  int bh = h() - dots_height();
+  Store &st = Store::get();
+  auto slide = [&](int i, int sx) {
+    const App *a = st.app(ids_[size_t(i)]);
+    if (a) draw_banner(this, *a, sx, y(), w(), bh, hot_, false, labels_[size_t(i)]);
+  };
+  if (t_ < 1 && prev_ >= 0 && prev_ < int(ids_.size())) {
+    // The slides move by together.
+    int off = int(w() * ease_out(t_));
+    fl_push_clip(x(), y(), w(), bh);
+    slide(prev_, x() - dir_ * off);
+    slide(index_, x() + dir_ * (w() - off));
+    fl_pop_clip();
+  } else {
+    slide(index_, x());
+  }
+  Box prev, next;
+  std::vector<Box> dots;
+  boxes(&prev, &next, &dots);
+  Painter p(window()->w(), window()->h());
+  if (ids_.size() > 1 && (hot_ || Fl::focus() == this)) {
+    // The arrows, on the banner.
+    for (int k = 0; k < 2; ++k) {
+      const Box &b = k ? next : prev;
+      bool over = (k ? hot_next_ : hot_prev_);
+      p.circle(b.x + b.w / 2.0, b.y + b.h / 2.0, b.w / 2.0, Color::hex(0).alpha(over ? 0.55 : 0.35));
+      paint_symbol(p, k ? Symbol::Forward : Symbol::Back, b.x + S(8), b.y + S(8), b.w - S(16), Color::hex(0xFFFFFF));
+    }
+  }
+  if (ids_.size() > 1)
+    for (size_t i = 0; i < dots.size(); ++i)
+      p.fill_rounded(dots[i].x, dots[i].y, dots[i].w, dots[i].h, dots[i].h / 2.0,
+                     int(i) == index_ ? t.accent : t.text.alpha(t.dark ? 0.35 : 0.25));
+  if (Fl::focus() == this) focus_ring(p, x(), y(), w(), bh, t.radius_large);
+}
+
+int Carousel::handle(int e) {
+  auto inside = [](const Box &b) {
+    int ex = Fl::event_x(), ey = Fl::event_y();
+    return ex >= b.x && ex < b.x + b.w && ey >= b.y && ey < b.y + b.h;
+  };
+  Box prev, next;
+  std::vector<Box> dots;
+  boxes(&prev, &next, &dots);
+  switch (e) {
+    case FL_ENTER:
+    case FL_MOVE: {
+      bool hp = ids_.size() > 1 && inside(prev), hn = ids_.size() > 1 && inside(next);
+      if (!hot_ || hp != hot_prev_ || hn != hot_next_) {
+        hot_ = true;
+        hot_prev_ = hp;
+        hot_next_ = hn;
+        redraw();
+      }
+      return 1;
+    }
+    case FL_LEAVE:
+      hot_ = hot_prev_ = hot_next_ = false;
+      redraw();
+      return 1;
+    case FL_FOCUS:
+    case FL_UNFOCUS:
+      redraw();
+      return 1;
+    case FL_PUSH:
+      if (Fl::event_button() != FL_LEFT_MOUSE) return 0;
+      take_focus();
+      return 1;
+    case FL_RELEASE: {
+      if (!Fl::event_inside(this) || ids_.empty()) return 1;
+      if (ids_.size() > 1 && inside(prev)) {
+        go(index_ - 1, -1);
+      } else if (ids_.size() > 1 && inside(next)) {
+        go(index_ + 1, 1);
+      } else {
+        for (size_t i = 0; i < dots.size(); ++i) {
+          Box d = dots[i];
+          d.y -= S(6);  // a little more to aim at
+          d.h += S(12);
+          if (inside(d)) {
+            go(int(i), int(i) > index_ ? 1 : -1);
+            return 1;
+          }
+        }
+        if (Fl::event_y() < y() + h() - dots_height() && on_open) on_open(ids_[size_t(index_)]);
+      }
+      return 1;
+    }
+    case FL_KEYBOARD: {
+      int k = Fl::event_key();
+      if (k == FL_Left) go(index_ - 1, -1);
+      else if (k == FL_Right) go(index_ + 1, 1);
+      else if ((k == FL_Enter || k == FL_KP_Enter || k == ' ') && on_open && !ids_.empty()) on_open(ids_[size_t(index_)]);
+      else return 0;
+      return 1;
+    }
+    default:
+      return Fl_Widget::handle(e);
+  }
+}
+
+void Carousel::qa(void (*line)(const std::string &, int, int, int, int)) const {
+  Box prev, next;
+  std::vector<Box> dots;
+  boxes(&prev, &next, &dots);
+  line("carousel:prev", prev.x, prev.y, prev.w, prev.h);
+  line("carousel:next", next.x, next.y, next.w, next.h);
+  for (size_t i = 0; i < dots.size(); ++i) line("carousel:dot:" + std::to_string(i), dots[i].x, dots[i].y, dots[i].w, dots[i].h);
 }
 
 int Banner::handle(int e) {

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "i18n.h"
 #include "util.h"
 
 namespace sde {
@@ -348,6 +349,103 @@ bool parse_snap_change(const std::string &json, SnapChange &out) {
   if (c.ready && c.status == "Done") c.percent = 100;
   out = c;
   return true;
+}
+
+bool snapd_starting(const HttpResponse &r) {
+  if (r.status == 0) return true;  // not listening (yet)
+  std::string kind = snapd_error_kind(r.body);
+  if (kind == "snap-change-conflict" || kind == "system-restart") return true;
+  std::string msg = snapd_error(r.body);
+  return msg.find("too early") != std::string::npos || msg.find("not yet seeded") != std::string::npos ||
+         msg.find("not seeded") != std::string::npos;
+}
+
+std::string snapd_error_text(const HttpResponse &r) {
+  if (r.status == 0) return r.error.empty() ? std::string(_("snapd did not answer.")) : r.error;
+  std::string msg = snapd_error(r.body);
+  std::string kind = snapd_error_kind(r.body);
+  if (kind == "auth-cancelled") return "";
+  if (kind == "login-required" || r.status == 401 || r.status == 403)
+    return msg.empty() || msg == "access denied"
+               ? std::string(_("You are not allowed to do this, or the authentication failed."))
+               : msg;
+  return msg.empty() ? format(_("snapd answered with error %d."), r.status) : msg;
+}
+
+namespace {
+
+void sleep_ms(int ms, const std::atomic<bool> *cancel) {
+  for (int left = ms; left > 0 && !(cancel && *cancel); left -= 50) {
+    struct timespec ts = {0, long(std::min(50, left)) * 1000000L};
+    nanosleep(&ts, nullptr);
+  }
+}
+
+}  // namespace
+
+SnapChangeResult snap_change(const std::string &socket, const std::string &method, const std::string &path,
+                             const std::string &body, const std::atomic<bool> *cancel,
+                             const std::function<void(const SnapProgress &)> &progress, int wait_s, int retry_ms,
+                             int poll_ms) {
+  SnapChangeResult res;
+  constexpr int kInteractive = 10 * 60 * 1000;  // polkit may wait for the user
+  HttpResponse r = http_unix(socket, method, path, body, true, kInteractive);
+  long long start = now_ms();
+  while (snapd_starting(r) && !(cancel && *cancel) && now_ms() - start < wait_s * 1000LL) {
+    if (progress) {
+      SnapProgress p;
+      p.status = _("Waiting for snapd to start");
+      p.waiting = true;
+      progress(p);
+    }
+    sleep_ms(retry_ms, cancel);
+    if (cancel && *cancel) break;
+    r = http_unix(socket, method, path, body, true, kInteractive);
+  }
+  if (cancel && *cancel && r.status != 202) {
+    res.cancelled = true;
+    return res;
+  }
+  res.change = r.status == 202 ? snapd_change_id(r.body) : "";
+  if (res.change.empty()) {
+    if (snapd_starting(r) && r.status == 0)
+      res.error = _("snapd did not start. Restart the computer, then try again.");
+    else
+      res.error = snapd_error_text(r);
+    res.cancelled = res.error.empty();  // the authentication was cancelled
+    return res;
+  }
+  bool abort_sent = false;
+  for (;;) {
+    if (cancel && *cancel && !abort_sent) {
+      http_unix(socket, "POST", "/v2/changes/" + res.change, "{\"action\":\"abort\"}", true, 30000);
+      abort_sent = true;
+    }
+    HttpResponse s = http_unix(socket, "GET", "/v2/changes/" + res.change);
+    SnapChange c;
+    if (s.status != 200 || !parse_snap_change(s.body, c)) {
+      res.error = snapd_error_text(s);
+      return res;
+    }
+    if (progress) {
+      SnapProgress p;
+      p.percent = c.percent;
+      p.status = c.label;
+      p.kind = c.kind;
+      p.aborting = abort_sent;
+      progress(p);
+    }
+    if (c.ready) {
+      if (c.status == "Done") return res;
+      if (abort_sent) {
+        res.cancelled = true;
+        return res;
+      }
+      res.error = c.error.empty() ? format(_("The change ended with status %s."), c.status.c_str()) : c.error;
+      return res;
+    }
+    sleep_ms(poll_ms, nullptr);
+  }
 }
 
 bool parse_hidden_folder(const std::string &json, bool *enabled) {

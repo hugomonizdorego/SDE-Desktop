@@ -1020,7 +1020,7 @@ void details_header(Page *page, const App &a) {
         add(_("Remove"), Button::Danger, [id, chosen] { request_remove(id, chosen); });
     } else {
       const SourceStatus &ss = st.status(chosen);
-      bool available = ss.available || fake_mode();
+      bool available = ss.available || fake_source(chosen);
       if (!available) {
         // Why it cannot be installed from here, and the way to fix it.
         if (chosen == Source::Snap && !ss.installed)

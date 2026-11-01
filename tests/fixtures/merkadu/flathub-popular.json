@@ -1,0 +1,15 @@
+{
+ "hits": [
+  {"app_id": "org.example.PixelPuzzle", "name": "Pixel Puzzle", "summary": "Colorful logic puzzles", "installs_last_month": 52011},
+  {"app_id": "org.example.Lumen", "name": "Lumen", "summary": "Organize and develop your photos", "installs_last_month": 48770},
+  {"app_id": "org.example.NotInTheCatalog", "name": "Elsewhere", "summary": "Not in the test catalog", "installs_last_month": 40001},
+  {"app_id": "org.example.CodeForge", "name": "Code Forge", "summary": "Write and debug programs", "installs_last_month": 39012},
+  {"app_id": "org.example.Bookshelf", "name": "Bookshelf", "summary": "Read e-books and comics", "installs_last_month": 21400}
+ ],
+ "query": "",
+ "processingTimeMs": 1,
+ "hitsPerPage": 30,
+ "page": 1,
+ "totalPages": 1,
+ "totalHits": 5
+}

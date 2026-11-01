@@ -978,7 +978,7 @@ bool source_problem(Page *page, const PackageFilter &f, const std::function<void
     }
   } else if (f.source == Source::Snap) {
     const SourceStatus &sn = st.status(Source::Snap);
-    if (st.probed(Source::Snap) && !sn.available && !fake_mode()) {
+    if (st.probed(Source::Snap) && !sn.available && !fake_source(Source::Snap)) {
       title = sn.installed ? _("snapd is not running") : _("Snap support is not enabled");
       text = sn.installed ? _("snapd was installed but does not answer yet. Restart the computer (or log out and back "
                               "in) if it does not start by itself.")

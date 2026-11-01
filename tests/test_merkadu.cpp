@@ -21,6 +21,7 @@
 #include "appstream_catalog.h"
 #include "catalog_build.h"
 #include "categories.h"
+#include "highlights.h"
 #include "jobs.h"
 #include "json.h"
 #include "model.h"
@@ -940,6 +941,72 @@ static void job_queue() {
         pk::status_phase(pk::STATUS_COMMIT) == JobPhase::Changing);
 }
 
+// Home's highlights: several kinds in turn, rotated by the day, installed
+// apps and apps without an icon last, Flathub's popular apps only with a
+// Flatpak, each app once; Flathub's collections.
+static void highlights() {
+  Catalog cat;
+  auto add = [&cat](const std::string &id, Source s, const std::string &origin, bool icon = true,
+                    bool installed = false) {
+    App a = make_app(id, id, s, origin);
+    if (icon) a.icon = "icon-" + id;
+    a.origins[0].installed = installed;
+    cat.add(a);
+  };
+  add("org.example.D1", Source::Debian, "d1");
+  add("org.example.D2", Source::Debian, "d2");
+  add("org.example.D3", Source::Debian, "d3", true, true);  // installed
+  add("org.example.N1", Source::Flatpak, "app/org.example.N1/x86_64/stable");
+  add("org.example.N2", Source::Debian, "n2", false);  // no icon
+  add("org.example.P1", Source::Flatpak, "app/org.example.P1/x86_64/stable");
+  add("org.example.P2", Source::Flatpak, "app/org.example.P2/x86_64/stable");
+  add("org.example.DebOnly", Source::Debian, "debonly");
+  add("org.example.S1", Source::Snap, "s1");
+  add("org.example.S2", Source::Snap, "s2");
+  HighlightSources src;
+  src.distribution = {"org.example.D1", "deb:d2", "org.example.D3", "org.example.Missing"};
+  src.fresh = {"org.example.N1", "org.example.N2", "org.example.D1"};
+  src.popular = {"org.example.P1", "org.example.Elsewhere", "org.example.DebOnly", "org.example.P2"};
+  src.featured_snaps = {"org.example.S1", "org.example.S2"};
+  auto ids = [](const std::vector<Highlight> &hs) {
+    std::vector<std::string> out;
+    for (auto &h : hs) out.push_back(h.app->appstream_id);
+    return out;
+  };
+  std::vector<Highlight> day0 = choose_highlights(cat, src, 20, 0);
+  // In turn: the distribution's, a new one, a popular one, a featured snap.
+  CHECK(day0.size() >= 4 && day0[0].why == Highlight::Distribution && day0[1].why == Highlight::New &&
+        day0[2].why == Highlight::Popular && day0[3].why == Highlight::Featured);
+  std::vector<std::string> all = ids(day0);
+  CHECK(all.size() > 3 && all[0] == "org.example.D1" && all[1] == "org.example.N1" && all[2] == "org.example.P1" &&
+        all[3] == "org.example.S1");
+  // Each app once (D1 is new too), nothing that is not in the catalog, no
+  // popular app without a Flatpak.
+  CHECK(std::count(all.begin(), all.end(), "org.example.D1") == 1);
+  CHECK(std::find(all.begin(), all.end(), "org.example.DebOnly") == all.end());
+  CHECK(all.size() == 9);
+  // The installed one and the one without an icon come last.
+  CHECK(all.size() == 9 && ((all[7] == "org.example.D3" && all[8] == "org.example.N2") ||
+                            (all[7] == "org.example.N2" && all[8] == "org.example.D3")));
+  // Another day, another start of every list.
+  std::vector<std::string> day1 = ids(choose_highlights(cat, src, 4, 1));
+  CHECK(day1.size() == 4 && day1[0] == "org.example.D2" && day1[3] == "org.example.S2");
+  CHECK(ids(choose_highlights(cat, src, 4, 2)) == ids(choose_highlights(cat, src, 4, 2)));
+  CHECK(choose_highlights(cat, src, 3, 0).size() == 3);
+  // Only the distribution's list: still several apps.
+  HighlightSources only;
+  only.distribution = src.distribution;
+  CHECK(choose_highlights(cat, only, 8, 0).size() == 3);
+  CHECK(choose_highlights(Catalog(), src, 8, 0).empty());
+
+  std::vector<std::string> popular = parse_flathub_collection(fixture("flathub-popular.json"));
+  CHECK(popular.size() == 5 && popular[0] == "org.example.PixelPuzzle" && popular[4] == "org.example.Bookshelf");
+  CHECK(parse_flathub_collection("[\"org.a.B\",\"org.a.B\",\"nodot\",{\"app_id\":\"org.c.D\"}]") ==
+        (std::vector<std::string>{"org.a.B", "org.c.D"}));
+  CHECK(parse_flathub_collection("{\"apps\":[{\"id\":\"org.e.F\"}]}") == std::vector<std::string>{"org.e.F"});
+  CHECK(parse_flathub_collection("<html>").empty() && parse_flathub_collection("{\"hits\":3}").empty());
+}
+
 int main() {
   set_distribution_name("Debian");
   json();
@@ -960,6 +1027,7 @@ int main() {
   flatpak_remotes();
   catalog_rules();
   job_queue();
+  highlights();
   if (failures) {
     fprintf(stderr, "%d merkadu check(s) failed\n", failures);
     return 1;

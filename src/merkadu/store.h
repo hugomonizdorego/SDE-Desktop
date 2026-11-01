@@ -20,6 +20,7 @@
 #include "backend.h"
 #include "catalog_build.h"
 #include "categories.h"
+#include "highlights.h"
 #include "model.h"
 #include "packages.h"
 
@@ -103,6 +104,19 @@ class Store {
   // Snap Store search and categories, merged into the catalog.
   void search_store(const std::string &query);
   void browse_store(const std::string &category_id);
+  // The Snap Store's featured snaps and those of every department (Home,
+  // the departments and All Software show them); again after a refresh,
+  // when snapd starts and after Enable Snap Support.
+  void load_snap_store();
+  // The app ids of the featured snaps (Home's highlights).
+  const std::vector<std::string> &featured_snaps() const { return featured_snaps_; }
+  // Flathub's popular and trending apps (Home's highlights): kept in
+  // $XDG_CACHE_HOME/merkadu/flathub-collections.json, downloaded again when
+  // older than a day (|force|: now) while Flathub is set up.
+  void load_popular(bool force);
+  const std::vector<std::string> &popular_apps() const { return popular_; }
+  // Home's highlights (highlights.h).
+  std::vector<Highlight> highlights(size_t count) const;
   const std::string &store_query() const { return store_query_; }
   bool store_searching() const { return store_searching_; }
   // Sizes and versions for the details page (once per origin).
@@ -217,6 +231,17 @@ class Store {
   std::shared_ptr<const std::vector<App>> catalog_apps_;
   std::shared_ptr<const std::vector<App>> installed_[kSourceCount];
   std::vector<App> store_apps_;  // snap search and category results
+  std::set<std::string> store_snaps_;  // their snap names (no duplicates)
+  std::vector<std::string> featured_snaps_;
+  bool snap_store_loading_ = false;
+  std::vector<std::string> popular_;
+  bool popular_loading_ = false;
+  std::time_t snapd_watch_until_ = 0;  // probing snapd after its package was installed
+  // Adds snaps of the store (each snap once; |replace|: a newer answer
+  // about a known snap replaces it).
+  void add_store_apps(std::vector<App> apps, bool replace = false);
+  void browse_next(std::shared_ptr<std::vector<std::string>> cats, size_t i);
+  static void watch_snapd(void *);
   std::map<std::string, Origin> details_;  // Origin::key() -> fetched details
   std::set<std::string> details_asked_;
   std::set<std::string> lookups_asked_;

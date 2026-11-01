@@ -1212,6 +1212,14 @@ Settings Settings::from(const KeyFile &kf) {
   s.hidden_snap_folder = !(hide == "false" || hide == "0" || hide == "no");
   std::string url = kf.get("Flatpak", "flathub-url");
   if (starts_with(url, "https://")) s.flathub_url = url;
+  // The highlights: Flathub's collections (empty: none) and how often they
+  // change (0: only with the arrows).
+  if (kf.has("Highlights", "flathub-collections")) {
+    s.popular_urls.clear();
+    for (auto &u : kf.list("Highlights", "flathub-collections"))
+      if (starts_with(u, "https://")) s.popular_urls.push_back(u);
+  }
+  s.rotate_seconds = std::max(0, std::min(120, kf.get_int("Highlights", "rotate", s.rotate_seconds)));
   return s;
 }
 

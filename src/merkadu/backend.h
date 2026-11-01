@@ -75,6 +75,8 @@ class Backend {
   virtual void search(const std::string &query, AppsFn done) { done({}, ""); }
   // Apps of a store category (snapd).
   virtual void browse(const std::string &category, AppsFn done) { done({}, ""); }
+  // The store's featured apps (snapd).
+  virtual void featured(AppsFn done) { done({}, ""); }
   // The store's version of a catalog app, found by its AppStream id
   // (snapd's common-id).
   virtual void lookup(const App &app, AppsFn done) { done({}, ""); }
@@ -129,6 +131,9 @@ std::unique_ptr<Backend> make_fake_backend(Source source, const std::string &dir
 void load_fake_catalog(const std::string &dir, CatalogFn done);
 bool fake_mode();
 std::string fake_dir();
+// Whether |s| is one of the fake sources (MERKADU_FAKE_SNAPD keeps the real
+// Snap source, for a test's fake snapd).
+bool fake_source(Source s);
 // All Software with the fake sources: the fixture's packages (blocking).
 apt::Snapshot fake_package_snapshot();
 apt::Details fake_package_details(const std::string &name);

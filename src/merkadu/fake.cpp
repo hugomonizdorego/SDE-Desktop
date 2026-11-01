@@ -46,6 +46,8 @@ bool fake_mode() { return !fake_dir().empty(); }
 
 std::string fake_dir() { return env("MERKADU_FAKE"); }
 
+bool fake_source(Source s) { return fake_mode() && !(s == Source::Snap && !env("MERKADU_FAKE_SNAPD").empty()); }
+
 namespace {
 
 // The share of a fake change that downloads; the rest installs.
@@ -331,10 +333,27 @@ class FakeBackend : public Backend {
     Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out] { done(out, ""); }));
   }
 
+  void featured(AppsFn done) override {
+    // The snaps of the fixture, as the store's featured ones (none in the
+    // empty world: the store is not reachable there either).
+    std::vector<App> out;
+    if (source_ == Source::Snap && env("MERKADU_FAKE_EMPTY") != "all")
+      for (auto &a : world().apps)
+        if (const Origin *o = a.origin(Source::Snap)) {
+          App copy = a;
+          copy.origins = {*o};
+          copy.origins[0].installed = false;
+          copy.origins[0].update = false;
+          out.push_back(copy);
+        }
+    Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out] { done(out, ""); }));
+  }
+
   void browse(const std::string &category, AppsFn done) override {
     std::vector<App> out;
-    for (size_t i = 0; i < world().apps.size(); ++i)
-      if (world().store_only[i] && source_ == Source::Snap) out.push_back(world().apps[i]);
+    if (env("MERKADU_FAKE_EMPTY") != "all")
+      for (size_t i = 0; i < world().apps.size(); ++i)
+        if (world().store_only[i] && source_ == Source::Snap) out.push_back(world().apps[i]);
     Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out] { done(out, ""); }));
   }
 
@@ -515,6 +534,12 @@ class FakeBackend : public Backend {
                                                     : Change::Install;
       e.requested_by = user_name();
       e.tool = "merkadu";
+      // The snapd package of Enable Snap Support: a test's fake snapd
+      // starts (MERKADU_FAKE_SNAPD names the file it waits for).
+      if (fj->job.source == Source::Debian && fj->job.action == Action::Install &&
+          std::find(fj->job.targets.begin(), fj->job.targets.end(), "snapd") != fj->job.targets.end() &&
+          !env("MERKADU_FAKE_SNAPD").empty())
+        write_file_atomic(env("MERKADU_FAKE_SNAPD"), "installed\n");
       for (auto &t : fj->job.targets) {
         // A Flatpak runtime of All Software.
         for (auto &rt : world().runtimes)

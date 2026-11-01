@@ -3,6 +3,7 @@
 #include "store.h"
 
 #include <FL/Fl.H>
+#include <sys/stat.h>
 #include <sys/utsname.h>
 
 #include <algorithm>
@@ -15,6 +16,8 @@
 #include "desktop_entry.h"
 #include "i18n.h"
 #include "icons.h"
+#include "json.h"
+#include "process.h"
 #include "spawn.h"
 #include "util.h"
 #include "watchdog.h"
@@ -149,7 +152,9 @@ void Store::start(bool catalog) {
   categories_.load();
   for (int i = 0; i < kSourceCount; ++i) {
     Source s = Source(i);
-    if (fake_mode())
+    // MERKADU_FAKE_SNAPD: the real Snap source, talking to a test's fake
+    // snapd (MERKADU_SNAPD_SOCKET), with the other sources fake.
+    if (fake_mode() && !(s == Source::Snap && !env("MERKADU_FAKE_SNAPD").empty()))
       backends_[i] = make_fake_backend(s, fake_dir());
     else if (s == Source::Debian)
       backends_[i] = make_packagekit_backend();
@@ -159,10 +164,12 @@ void Store::start(bool catalog) {
       backends_[i] = make_snap_backend();
   }
   probe_sources();
-  if (catalog)
+  if (catalog) {
+    load_popular(false);  // what was kept (downloaded once Flathub is known)
     reload_catalog();
-  else
+  } else {
     catalog_loaded_ = true;
+  }
   reload_all();
   // The lists of the repositories, Flathub and the Snap Store are
   // refreshed in the background while the cached ones are shown.
@@ -200,11 +207,155 @@ void Store::probe_sources() {
   for (int i = 0; i < kSourceCount; ++i) {
     if (!backends_[i]) continue;
     backends_[i]->probe([this, i](SourceStatus st) {
+      bool was = status_[i].available;
       status_[i] = st;
       probed_[i] = true;
       emit(Event::Sources);
+      // snapd answers (at start, or after Enable Snap Support): what the
+      // store has, and the installed snaps.
+      if (Source(i) == Source::Snap && st.available && !was) {
+        reload_installed(Source::Snap);
+        load_snap_store();
+      }
+      // Flathub is set up: its popular apps for the highlights.
+      if (Source(i) == Source::Flatpak && st.has_flathub) load_popular(false);
     });
   }
+}
+
+void Store::add_store_apps(std::vector<App> apps, bool replace) {
+  bool added = false;
+  for (auto &a : apps) {
+    const Origin *o = a.origin(Source::Snap);
+    if (!o) continue;
+    if (!store_snaps_.insert(o->id).second) {
+      // Known already: a lookup's answer has the catalog app's id.
+      if (!replace) continue;
+      std::string name = o->id;
+      store_apps_.erase(std::remove_if(store_apps_.begin(), store_apps_.end(),
+                                       [&name](const App &x) {
+                                         const Origin *xo = x.origin(Source::Snap);
+                                         return xo && xo->id == name;
+                                       }),
+                        store_apps_.end());
+    }
+    store_apps_.push_back(std::move(a));
+    added = true;
+  }
+  if (added) rebuild();
+}
+
+void Store::load_snap_store() {
+  Backend *b = backend(Source::Snap);
+  if (!b || !status_[int(Source::Snap)].available || snap_store_loading_) return;
+  snap_store_loading_ = true;
+  browsed_.clear();
+  b->featured([this](std::vector<App> apps, std::string error) {
+    if (!error.empty()) watchdog::log("Snap Store: " + error);
+    featured_snaps_.clear();
+    for (auto &a : apps) featured_snaps_.push_back(a.id);
+    add_store_apps(std::move(apps));
+    emit(Event::Search);
+    // The snaps of every department, one after the other (each is a
+    // request snapd sends on to the store).
+    auto cats = std::make_shared<std::vector<std::string>>();
+    for (const Category *c : categories_.sorted())
+      for (auto &cat : snap_categories(c->id))
+        if (browsed_.insert(cat).second) cats->push_back(cat);
+    browse_next(cats, 0);
+  });
+}
+
+void Store::browse_next(std::shared_ptr<std::vector<std::string>> cats, size_t i) {
+  Backend *b = backend(Source::Snap);
+  if (!b || i >= cats->size()) {
+    snap_store_loading_ = false;
+    return;
+  }
+  b->browse((*cats)[i], [this, cats, i](std::vector<App> apps, std::string) {
+    if (!apps.empty()) {
+      add_store_apps(std::move(apps));
+      emit(Event::Search);
+    }
+    browse_next(cats, i + 1);
+  });
+}
+
+namespace {
+
+std::string popular_cache() {
+  std::string base = env("XDG_CACHE_HOME");
+  if (base.empty()) base = join_path(home_dir(), ".cache");
+  return join_path(base, "merkadu/flathub-collections.json");
+}
+
+}  // namespace
+
+void Store::load_popular(bool force) {
+  if (popular_loading_) return;
+  std::string cached;
+  struct stat st;
+  std::string file = popular_cache();
+  if (popular_.empty() && read_file(file, cached)) popular_ = parse_flathub_collection(cached);
+  if (fake_source(Source::Flatpak)) {
+    // The test data's collection (no network).
+    std::string text;
+    if (read_file(join_path(fake_dir(), "flathub-popular.json"), text)) popular_ = parse_flathub_collection(text);
+    return;
+  }
+  bool fresh = stat(file.c_str(), &st) == 0 && std::time(nullptr) - st.st_mtime < 24 * 3600;
+  if ((!force && fresh) || !status_[int(Source::Flatpak)].has_flathub || settings_.popular_urls.empty()) return;
+  popular_loading_ = true;
+  // One collection after the other, with curl (no network: the cached
+  // ones stay).
+  auto urls = std::make_shared<std::vector<std::string>>(settings_.popular_urls);
+  auto found = std::make_shared<std::vector<std::string>>();
+  auto step = std::make_shared<std::function<void(size_t)>>();
+  std::weak_ptr<std::function<void(size_t)>> weak = step;  // kept alive by the download that runs
+  *step = [this, urls, found, weak, file](size_t i) {
+    auto step = weak.lock();
+    if (!step) return;
+    if (i >= urls->size()) {
+      popular_loading_ = false;
+      // A Flathub's answers without any id are no news (offline, an API
+      // that changed): the cached collections stay.
+      if (found->empty()) return;
+      popular_ = *found;
+      std::string json = "[";
+      for (size_t k = 0; k < found->size(); ++k) json += (k ? "," : "") + json_quote((*found)[k]);
+      make_dirs(file.substr(0, file.rfind('/')));
+      write_file_atomic(file, json + "]\n");
+      emit(Event::Catalog);
+      return;
+    }
+    bool started = run_async({"curl", "-fsSL", "--max-time", "20", "--connect-timeout", "8", "--proto", "=https",
+                              (*urls)[i]},
+                             [found, step, i](const std::string &out, int status) {
+                               if (status == 0)
+                                 for (auto &id : parse_flathub_collection(out))
+                                   if (std::find(found->begin(), found->end(), id) == found->end())
+                                     found->push_back(id);
+                               (*step)(i + 1);
+                             });
+    if (!started) (*step)(urls->size());
+  };
+  (*step)(0);
+}
+
+std::vector<Highlight> Store::highlights(size_t count) const {
+  HighlightSources src;
+  src.distribution = settings_.featured;
+  src.fresh = fresh_;
+  src.popular = popular_;
+  src.featured_snaps = featured_snaps_;
+  return choose_highlights(catalog_, src, count, local_day(std::time(nullptr)));
+}
+
+void Store::watch_snapd(void *) {
+  Store &st = get();
+  if (st.status_[int(Source::Snap)].available || std::time(nullptr) > st.snapd_watch_until_) return;
+  st.probe_sources();
+  Fl::repeat_timeout(3.0, watch_snapd);
 }
 
 bool Store::all_installed_loaded() const {
@@ -551,12 +702,18 @@ void Store::job_finished(int id, bool ok, bool cancelled, const std::string &err
     }
     reload_installed(s);
     if (s == Source::Flatpak && runtimes_loaded_) load_runtimes();
-    // A snap install may have added AppStream ids of other sources; the
-    // snapd snap (Enable Snap Support) makes the source available.
-    if (s == Source::Snap) {
-      store_apps_.clear();
-      probe_sources();
+    // The snapd package (Enable Snap Support, or installed in All
+    // Software): snapd starts by itself in a moment; it is asked until it
+    // answers, without restarting Merkadu.
+    if (s == Source::Debian && copy.state == Job::Done && copy.action == Action::Install &&
+        std::find(copy.targets.begin(), copy.targets.end(), "snapd") != copy.targets.end() &&
+        !status_[int(Source::Snap)].available) {
+      snapd_watch_until_ = std::time(nullptr) + 180;
+      Fl::remove_timeout(watch_snapd);
+      Fl::add_timeout(3.0, watch_snapd);
     }
+    // The snapd snap (Enable Snap Support) makes the source available.
+    if (s == Source::Snap) probe_sources();
   }
   run_next();
 }
@@ -575,8 +732,7 @@ void Store::search_store(const std::string &query) {
   b->search(q, [this, q](std::vector<App> apps, std::string error) {
     if (q != store_query_) return;  // a newer search is running
     store_searching_ = false;
-    for (auto &a : apps) store_apps_.push_back(std::move(a));
-    rebuild();
+    add_store_apps(std::move(apps));
     emit(Event::Search);
   });
 }
@@ -588,8 +744,7 @@ void Store::browse_store(const std::string &category_id) {
     if (!browsed_.insert(cat).second) continue;
     b->browse(cat, [this](std::vector<App> apps, std::string error) {
       if (apps.empty()) return;
-      for (auto &a : apps) store_apps_.push_back(std::move(a));
-      rebuild();
+      add_store_apps(std::move(apps));
       emit(Event::Search);
     });
   }
@@ -604,9 +759,7 @@ void Store::fetch_details(const std::string &app_id) {
       lookups_asked_.insert(a->id).second) {
     App copy = *a;
     snap->lookup(copy, [this](std::vector<App> apps, std::string error) {
-      if (apps.empty()) return;
-      for (auto &x : apps) store_apps_.push_back(std::move(x));
-      rebuild();
+      if (!apps.empty()) add_store_apps(std::move(apps), true);
     });
   }
   for (auto &o : a->origins) {
@@ -680,6 +833,10 @@ void Store::refresh(bool user) {
           if (refresh_catalog_) reload_catalog();
           reload_all();
           probe_sources();
+          // The Snap Store's featured snaps and departments, again; with
+          // Refresh, Flathub's popular apps too.
+          load_snap_store();
+          if (refresh_.user) load_popular(true);
           emit(Event::Refresh);
         });
   }
