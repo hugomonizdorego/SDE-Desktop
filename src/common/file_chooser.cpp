@@ -817,17 +817,17 @@ class PlacesView : public Fl_Widget {
       if (!caption.empty()) {
         Row c;
         c.caption = caption;
-        c.y = y + S(8);
-        c.h = S(24);
+        c.y = y + S(6);
+        c.h = S(22);
         rows.push_back(c);
-        y += S(32);
+        y += S(28);
       }
       Row r;
       r.place = int(i);
       r.y = y;
-      r.h = S(34);
+      r.h = S(32);
       rows.push_back(r);
-      y += S(36);
+      y += S(34);
       last = p.kind;
     }
     content_h_ = y + S(6);
@@ -880,6 +880,11 @@ class PlacesView : public Fl_Widget {
           focus_ring(p, rx, ry, rw, r.h, t.radius_for(r.h));
         const Place &pl = d_->places[size_t(r.place)];
         glyph(p, pl.icon, x() + S(20), ry + (r.h - S(18)) / 2.0, S(18), t.accent_text);
+      }
+      if (content_h_ > h() + S(8)) {
+        double track = h() - S(8), th = std::max<double>(S(24), track * h() / content_h_);
+        double ty = y() + S(4) + (track - th) * scroll / std::max(1, content_h_ - h());
+        p.fill_rounded(x() + w() - S(5), ty, Sd(3), th, Sd(1.5), t.text_dim.alpha(0.35));
       }
     }
     for (size_t i = 0; i < rows.size(); ++i) {
@@ -3719,17 +3724,20 @@ void Dialog::place_window() {
     g_transient_for = fl_xid(pw);
   }
   int cx, cy;
+  int sx, sy, sw, sh;
   if (pww > 0) {
     cx = px + pww / 2;
     cy = py + phh / 2;
+    Fl::screen_work_area(sx, sy, sw, sh, cx, cy);
   } else {
     Fl::get_mouse(cx, cy);
+    Fl::screen_work_area(sx, sy, sw, sh, cx, cy);
+    cx = sx + sw / 2;
+    cy = sy + sh / 2;
   }
-  int sx, sy, sw, sh;
-  Fl::screen_work_area(sx, sy, sw, sh, cx, cy);
   double sc = ui_scale() > 0 ? ui_scale() : 1.0;
   int W = state.width > 0 ? int(state.width * sc) : S(880);
-  int H = state.height > 0 ? int(state.height * sc) : S(580);
+  int H = state.height > 0 ? int(state.height * sc) : S(600);
   int frame = S(34);  // the title bar
   W = std::max(std::min(W, sw - S(16)), std::min(S(460), sw));
   H = std::max(std::min(H, sh - frame - S(16)), std::min(S(340), sh - frame));

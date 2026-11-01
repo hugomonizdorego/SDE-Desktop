@@ -2684,6 +2684,105 @@ def user_rename(s):
         req.unlink(missing_ok=True)
 
 
+CHOOSER = 'File Chooser'  # its QA layout: SDE_PANEL_QA_DIR/File-Chooser.txt
+
+
+def chooser_window(s, timeout=10):
+    """The SDE file chooser's window (class sde-file-chooser)."""
+    w = s.wait(lambda: (s.xdo('search', '--onlyvisible', '--class', 'sde-file-chooser').stdout.split() or [None])[-1],
+               timeout)
+    if not w:
+        raise SkipShot('the file chooser did not open')
+    s.wait(lambda: '@loading:0' in s.layout(CHOOSER), 10)
+    return w
+
+
+def chooser_ready(s, location=None):
+    """Waits for the folder (|location|) to be read and its thumbnails made."""
+    if location:
+        s.wait(lambda: f'@location:{location}' in s.layout(CHOOSER), 8)
+    s.wait(lambda: '@loading:0' in s.layout(CHOOSER), 10)
+    s.wait(lambda: '@thumbnailing:0' in s.layout(CHOOSER), 10)
+
+
+def chooser_click(s, wid, name, double=False):
+    r = s.control(CHOOSER, name, 5)
+    if not r:
+        raise SkipShot(f'the file chooser has no {name!r}')
+    g = s.geom(wid)
+    x, y = g['x'] + r[0] + r[2] // 2, g['y'] + r[1] + r[3] // 2
+    if double:
+        s.xdo('mousemove', str(x), str(y), 'click', '--repeat', '2', '--delay', '90', '1')
+        time.sleep(0.4)
+    else:
+        s.click(x, y)
+
+
+@scene('File Chooser', [('file-chooser', 'The SDE file chooser (Control Center, Users & Avatar, Choose a picture): '
+                                         'places, thumbnails in a grid, the preview, Back, Forward, Up and the path '
+                                         'bar')], scopes=(FULL, THEMES), needs=['sde-settings'])
+def file_chooser(s):
+    page = next((p for p in s.run_ctx.pages if p in ACCOUNT_PAGES), None)
+    if not page:
+        raise SkipShot('no account page in this build')
+    settings_page(s, page)
+    reveal_control(s, 'Control Center', 'Choose a picture…')
+    s.press('Control Center', 'Choose a picture…')
+    w = chooser_window(s)
+    chooser_click(s, w, 'item:Nature', double=True)
+    chooser_ready(s, s.home / 'Pictures/Nature')
+    chooser_click(s, w, 'item:Mountain Lake.png')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser', quiet=0.6)
+
+
+@scene('File Chooser', [('file-chooser-list', 'The SDE file chooser in Niny (Open, Ctrl+O): the list view with the '
+                                              'size, date and type of each file')], needs=['niny'])
+def file_chooser_list(s):
+    s.app(['niny', s.home / 'Documents/Garden Planner.md'], 'Niny$')
+    s.key('ctrl+o')
+    w = chooser_window(s)
+    if '@view:list' not in s.layout(CHOOSER):
+        chooser_click(s, w, 'view:list')
+    if '@preview:1' in s.layout(CHOOSER):
+        chooser_click(s, w, 'preview')  # room for the Type column
+    chooser_click(s, w, 'item:Meeting Notes.txt')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser-list', quiet=0.6)
+
+
+@scene('File Chooser', [('file-chooser-save', 'The SDE file chooser saving (Niny, Save As): the name without its '
+                                              'extension selected, ready to be typed over, and New Folder')],
+       needs=['niny'])
+def file_chooser_save(s):
+    s.app(['niny', s.home / 'Documents/Meeting Notes.txt'], 'Niny$')
+    s.key('ctrl+shift+s')
+    w = chooser_window(s)
+    if '@view:grid' not in s.layout(CHOOSER):
+        chooser_click(s, w, 'view:grid')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser-save', quiet=0.6)
+
+
+@scene('File Chooser', [('file-chooser-folder', 'The SDE file chooser picking a folder: files are shown but only '
+                                                'folders can be chosen; Select Folder takes the one shown when none '
+                                                'is selected')])
+def file_chooser_folder(s):
+    demo = s.test_tool('sde-file-chooser-demo')
+    if not demo:
+        raise SkipShot('no sde-file-chooser-demo (QA tools)')
+    s.spawn(demo, '--mode', 'folder', '--title', 'Select a Folder', '--folder', s.home / 'Pictures', '--preview',
+            '--program', 'showcase')
+    w = chooser_window(s)
+    chooser_click(s, w, 'item:Holidays 2026')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser-folder', quiet=0.6)
+
+
 @scene('Debrun', [('debrun', 'Debrun: a package downloaded from its maker, with what it changes besides its files, '
                              'its dependencies and the version of the package sources (test data)'),
                   ('debrun-installing', 'Debrun: installing, with the animated SDE logo (test data)')],
