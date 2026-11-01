@@ -39,6 +39,7 @@ class Level : public BufferedWindow {
   }
   int handle(int event) override;
   void draw() override;
+  void scroll_strips(Painter &p, const Color &bg, bool covers);
 
   struct Row {
     int y = 0, h = 0;
@@ -46,6 +47,7 @@ class Level : public BufferedWindow {
   // Index of the item under window point (wx, wy), -1 for none; quick
   // buttons are returned as -2 - index.
   int hit(int wx, int wy) const {
+    if (scroll_zone(wy)) return -1;
     if (quick_ && !quick_->empty() && wy < quick_h_) {
       int n = int(quick_->size());
       int bw = (w() - 2 * S(6)) / n;
@@ -59,11 +61,25 @@ class Level : public BufferedWindow {
     return -1;
   }
   int row_top(int i) const { return rows_[size_t(i)].y - scroll_; }
+  // A menu that scrolls (too tall for the room under its title, 0.2.0
+  // Alpha 3.1) has a strip with a chevron at the top and at the bottom
+  // while there is more to see that way; the pointer on a strip scrolls.
+  int zone_h() const { return S(22); }
+  int max_scroll() const { return std::max(0, content_h_ - h()); }
+  // -1 in the strip at the top, 1 in the one at the bottom, else 0.
+  int scroll_zone(int wy) const {
+    if (content_h_ <= h()) return 0;
+    if (scroll_ > 0 && wy >= quick_h_ && wy < quick_h_ + zone_h()) return -1;
+    if (scroll_ < max_scroll() && wy >= h() - zone_h()) return 1;
+    return 0;
+  }
   void ensure_visible(int i) {
     if (i < 0 || content_h_ <= h()) return;
     int top = rows_[size_t(i)].y, bottom = top + rows_[size_t(i)].h;
-    if (top - scroll_ < quick_h_ + S(4)) scroll_ = top - quick_h_ - S(4);
-    if (bottom - scroll_ > h() - S(4)) scroll_ = bottom - h() + S(4);
+    // Clear of the scroll strips, except at the very ends.
+    int up = top - rows_top() > 0 ? zone_h() : 0, down = rows_.empty() || i + 1 < int(rows_.size()) ? zone_h() : 0;
+    if (top - scroll_ < quick_h_ + S(4) + up) scroll_ = top - quick_h_ - S(4) - up;
+    if (bottom - scroll_ > h() - S(4) - down) scroll_ = bottom - h() + S(4) + down;
     scroll_ = std::max(0, std::min(scroll_, content_h_ - h()));
   }
   void scroll_by(int d) {
@@ -159,6 +175,7 @@ class Controller {
  public:
   explicit Controller(const MenuSpec &spec) : spec_(spec) {}
   ~Controller() {
+    Fl::remove_timeout(autoscroll_cb, this);
     for (Level *l : levels_) {
       l->hide();
       Fl::delete_widget(l);
@@ -170,20 +187,32 @@ class Controller {
     auto *l = new Level(this, &spec_.items, &spec_.quick, spec_.min_width);
     int sx, sy, sw, sh;
     Fl::screen_work_area(sx, sy, sw, sh, x, y);
-    l->fit_height(sh - S(16));
-    l->clamp_height(sh - S(16));
     int X = x, Y = y;
-    if (anchor_h < 0) {
-      Y = y - l->h() - S(2);
-      if (Y < sy) Y = y;
-    } else if (Y + l->h() > sy + sh) {
-      if (anchor_h > 0 && y - anchor_h - l->h() >= sy) Y = y - anchor_h - l->h();
-      else if (anchor_h == 0 && y - l->h() >= sy) Y = y - l->h();
-      else Y = sy + sh - l->h();
+    if (anchor_h > 0) {
+      // A menu of a menu bar title or a button opens under it, or over it
+      // when it fits only there; lower rows first, then it scrolls. It
+      // never covers its title (0.2.0 Alpha 3.1: on a 1024x600 screen at
+      // 150 % long menus moved up over the menu bar).
+      int below = sy + sh - y - S(4), above = y - anchor_h - sy - S(4);
+      bool up = l->h() > below && (l->h() <= above || above > below + S(80));
+      int room = std::max(S(80), up ? above : below);
+      l->fit_height(room);
+      l->clamp_height(room);
+      Y = up ? y - anchor_h - l->h() : y;
+      if (X + l->w() > sx + sw) X = sx + sw - l->w();
+    } else {
+      l->fit_height(sh - S(16));
+      l->clamp_height(sh - S(16));
+      if (anchor_h < 0) {
+        Y = y - l->h() - S(2);
+        if (Y < sy) Y = y;
+      } else if (Y + l->h() > sy + sh) {
+        Y = y - l->h() >= sy ? y - l->h() : sy + sh - l->h();
+      }
+      if (X + l->w() > sx + sw) X = std::max(sx, x - l->w());
+      Y = std::max(sy, Y);
     }
-    if (X + l->w() > sx + sw) X = anchor_h > 0 ? sx + sw - l->w() : std::max(sx, x - l->w());
     X = std::max(sx, X);
-    Y = std::max(sy, Y);
     l->position(X, Y);
     if (spec_.keyboard) l->hover_ = next_enabled(l, -1, 1);
     levels_.push_back(l);
@@ -215,6 +244,29 @@ class Controller {
     l->show();
     p->redraw();
     qa();
+  }
+
+  // Scrolls |l| while the pointer rests on one of its scroll strips.
+  void autoscroll(Level *l, int dir) {
+    if (l == auto_level_ && dir == auto_dir_) return;
+    auto_level_ = l;
+    auto_dir_ = dir;
+    Fl::remove_timeout(autoscroll_cb, this);
+    if (l && dir) Fl::add_timeout(0.12, autoscroll_cb, this);
+  }
+  static void autoscroll_cb(void *data) {
+    auto *c = static_cast<Controller *>(data);
+    Level *l = c->auto_level_;
+    if (!l || !c->auto_dir_ || std::find(c->levels_.begin(), c->levels_.end(), l) == c->levels_.end()) return;
+    l->scroll_by(c->auto_dir_ * std::max(S(4), l->item_h_ / 3));
+    int left = c->auto_dir_ < 0 ? l->scroll_ : l->max_scroll() - l->scroll_;
+    if (left > 0) {
+      Fl::repeat_timeout(0.03, autoscroll_cb, data);
+    } else {
+      c->auto_dir_ = 0;
+      l->redraw();
+    }
+    c->qa();
   }
 
   void close_after(size_t level) {
@@ -295,11 +347,13 @@ class Controller {
         if (!moved_ && rx == open_rx_ && ry == open_ry_) return 1;
         moved_ = true;
         if (li < 0) {
+          autoscroll(nullptr, 0);
           // Menu bar: the pointer on another title opens its menu.
           if (bar && bar->title_at) switch_to(bar->title_at(rx, ry), false);
           return 1;
         }
         Level *l = levels_[size_t(li)];
+        autoscroll(l, l->scroll_zone(ry - l->y()));
         int h = l->hit(rx - l->x(), ry - l->y());
         if (h != l->hover_) {
           l->hover_ = h;
@@ -477,6 +531,8 @@ class Controller {
   const MenuSpec &spec_;
   std::vector<Level *> levels_;
   bool done_ = false, pressed_ = false, moved_ = false;
+  Level *auto_level_ = nullptr;
+  int auto_dir_ = 0;
   double open_time_ = 0;
   int open_rx_ = 0, open_ry_ = 0;  // the pointer when the menu opened
   std::function<void()> chosen_;
@@ -559,6 +615,7 @@ void Level::draw() {
       if (!it.sub.empty()) icon::draw(p, icon::ChevronRight, w() - pad - S(22), iy + S(2), S(14), tc);
     }
     cairo_restore(cr);
+    scroll_strips(p, bg, false);
   }
   // Labels.
   if (quick_ && !quick_->empty()) {
@@ -593,6 +650,24 @@ void Level::draw() {
     }
   }
   fl_pop_clip();
+  // The strips cover the labels they lie on.
+  Painter p(w(), h());
+  scroll_strips(p, bg, true);
+}
+
+void Level::scroll_strips(Painter &p, const Color &bg, bool covers) {
+  const Look &L = look();
+  for (int dir : {-1, 1}) {
+    bool more = dir < 0 ? content_h_ > h() && scroll_ > 0 : content_h_ > h() && scroll_ < max_scroll();
+    if (!more) continue;
+    double y0 = dir < 0 ? quick_h_ + 1 : h() - zone_h() - 1;
+    p.fill_rect(1, y0, w() - 2, zone_h(), bg);
+    if (!covers) continue;
+    p.line(S(8), dir < 0 ? y0 + zone_h() - 0.5 : y0 + 0.5, w() - S(8), dir < 0 ? y0 + zone_h() - 0.5 : y0 + 0.5,
+           L.border.alpha(0.6), 1);
+    double gs = S(14);
+    icon::draw(p, dir < 0 ? icon::ChevronUp : icon::ChevronDown, (w() - gs) / 2, y0 + (zone_h() - gs) / 2, gs, L.dim);
+  }
 }
 
 }  // namespace
