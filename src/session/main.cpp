@@ -15,6 +15,9 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/shape.h>
+#ifdef SDE_HAVE_XDAMAGE
+#include <X11/extensions/Xdamage.h>
+#endif
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -374,14 +377,21 @@ struct Transition {
   Window win = None;
   Pixmap picture = None;
   Clock::time_point since;
+  Clock::time_point busy;       // the last time a window redrew much of itself
   bool fade = false;            // the compositor fades the picture out
   std::vector<long> requests;   // answered in _SDE_APPEARANCE_DONE when done
+  std::vector<unsigned long> damages;  // the windows watched while held
 } g_transition;
 
 // Durations of a switch: the picture is drawn by the compositor, then the
-// new look is published behind it, held while the programs redraw, and
+// new look is published behind it and held until the programs have redrawn
+// (no window redrew much of itself for kQuietSeconds, at least
+// kHoldSeconds, at most kMaxHoldSeconds: GTK 3 restyles in two steps whose
+// second one came 0.2 s to 0.9 s after the change in the measurements), and
 // faded out.
-constexpr double kShownSeconds = 0.05, kHoldSeconds = 0.30, kFadeSeconds = 0.22;
+constexpr double kShownSeconds = 0.06, kHoldSeconds = 0.25, kQuietSeconds = 0.18, kMaxHoldSeconds = 1.6,
+                 kFadeSeconds = 0.22;
+int g_damage_event = -1;  // XDamage's first event, or -1 without it
 
 Atom atom(const char *name) { return XInternAtom(g_display, name, False); }
 
@@ -458,6 +468,99 @@ bool show_picture() {
   return true;
 }
 
+// Watches the windows the user sees (clients, and popups that do not cover
+// the screen; not the compositor's overlay) for redraws while the picture
+// is held.
+bool has_wm_state(Window w) {
+  Atom type;
+  int fmt = 0;
+  unsigned long n = 0, after = 0;
+  unsigned char *data = nullptr;
+  bool yes = XGetWindowProperty(g_display, w, atom("WM_STATE"), 0, 0, False, AnyPropertyType, &type, &fmt, &n,
+                                &after, &data) == Success && type != None;
+  if (data) XFree(data);
+  return yes;
+}
+
+void watch_redraws() {
+#ifdef SDE_HAVE_XDAMAGE
+  if (g_damage_event < 0) return;
+  XErrorHandler old = XSetErrorHandler(ignore_x_error);
+  int screen = DefaultScreen(g_display);
+  int sw = DisplayWidth(g_display, screen), sh = DisplayHeight(g_display, screen);
+  auto watch = [&](Window w) {
+    // Every rectangle on its own: a spinner and a caret far apart must
+    // not add up to one large box.
+    g_transition.damages.push_back(XDamageCreate(g_display, w, XDamageReportRawRectangles));
+  };
+  Window root_ret, parent, *kids = nullptr;
+  unsigned n = 0;
+  if (XQueryTree(g_display, RootWindow(g_display, screen), &root_ret, &parent, &kids, &n)) {
+    for (unsigned i = 0; i < n; ++i) {
+      Window w = kids[i];
+      XWindowAttributes a;
+      if (w == g_transition.win || w == g_session_win || !XGetWindowAttributes(g_display, w, &a) ||
+          a.map_state != IsViewable || a.c_class == InputOnly)
+        continue;
+      if (has_wm_state(w)) {
+        watch(w);
+        continue;
+      }
+      // A window manager's frame: the client inside it.
+      Window r2, p2, *inner = nullptr;
+      unsigned m = 0;
+      bool client = false;
+      if (XQueryTree(g_display, w, &r2, &p2, &inner, &m)) {
+        for (unsigned k = 0; k < m; ++k)
+          if (has_wm_state(inner[k])) {
+            watch(inner[k]);
+            client = true;
+          }
+        if (inner) XFree(inner);
+      }
+      // Popups and menus, but not what covers the whole screen without
+      // being a client (the compositor's overlay window).
+      if (!client && a.override_redirect && !(a.width >= sw && a.height >= sh)) watch(w);
+    }
+    if (kids) XFree(kids);
+  }
+  XSync(g_display, False);
+  XSetErrorHandler(old);
+#endif
+}
+
+void unwatch_redraws() {
+#ifdef SDE_HAVE_XDAMAGE
+  XErrorHandler old = XSetErrorHandler(ignore_x_error);
+  for (unsigned long d : g_transition.damages) XDamageDestroy(g_display, d);
+  XSync(g_display, False);
+  XSetErrorHandler(old);
+#endif
+  g_transition.damages.clear();
+}
+
+// A window redrew: all or most of it (a theme change) keeps the picture
+// up; a spinner, a caret or a clock does not.
+bool handle_redraw(XEvent &ev) {
+#ifdef SDE_HAVE_XDAMAGE
+  if (g_damage_event < 0 || ev.type != g_damage_event + XDamageNotify) return false;
+  auto *de = reinterpret_cast<XDamageNotifyEvent *>(&ev);
+  long area = long(de->area.width) * de->area.height, full = long(de->geometry.width) * de->geometry.height;
+  // A theme change repaints whole windows; animations (spinners, a video,
+  // a caret) repaint parts of them on every frame and must not keep the
+  // picture up (gtk3-widget-factory's spinners: a fifth of its window).
+  bool big = area >= 4000 && area * 2 >= full;
+  if (big) g_transition.busy = Clock::now();
+  if (!env("SDE_THEME_SWITCH_DEBUG").empty())
+    log("redraw of 0x%lx: %dx%d+%d+%d of %dx%d%s", de->drawable, de->area.width, de->area.height, de->area.x,
+        de->area.y, de->geometry.width, de->geometry.height, big ? " (counts)" : "");
+  return true;
+#else
+  (void)ev;
+  return false;
+#endif
+}
+
 void hide_picture() {
   if (g_transition.win != None) XDestroyWindow(g_display, g_transition.win);
   if (g_transition.picture != None) XFreePixmap(g_display, g_transition.picture);
@@ -467,6 +570,7 @@ void hide_picture() {
 }
 
 void finish_transition() {
+  unwatch_redraws();
   hide_picture();
   for (long r : g_transition.requests) set_cardinal(g_session_win, "_SDE_APPEARANCE_DONE", r);
   g_transition.requests.clear();
@@ -484,7 +588,7 @@ void start_transition(Config &cfg, long request) {
     if (g_transition.stage == Transition::FADE) set_cardinal(g_transition.win, "_NET_WM_WINDOW_OPACITY", 0xFFFFFFFEL);
     publish_appearance(cfg);
     g_transition.stage = Transition::HOLD;
-    g_transition.since = Clock::now();
+    g_transition.since = g_transition.busy = Clock::now();
     return;
   }
   if (g_transition.stage == Transition::SHOWN) return;  // published when it is drawn
@@ -506,12 +610,16 @@ int step_transition(Config &cfg) {
   switch (g_transition.stage) {
     case Transition::SHOWN:
       if (t < kShownSeconds) return int((kShownSeconds - t) * 1000) + 1;
+      watch_redraws();
       publish_appearance(cfg);
       g_transition.stage = Transition::HOLD;
-      g_transition.since = Clock::now();
+      g_transition.since = g_transition.busy = Clock::now();
       return int(kHoldSeconds * 1000);
-    case Transition::HOLD:
-      if (t < kHoldSeconds) return int((kHoldSeconds - t) * 1000) + 1;
+    case Transition::HOLD: {
+      double quiet = std::chrono::duration<double>(Clock::now() - g_transition.busy).count();
+      if (t < kMaxHoldSeconds && (t < kHoldSeconds || quiet < kQuietSeconds))
+        return int(std::min(kMaxHoldSeconds - t, std::max(kHoldSeconds - t, kQuietSeconds - quiet)) * 1000) + 1;
+      unwatch_redraws();
       if (!g_transition.fade) {
         finish_transition();
         return -1;
@@ -519,6 +627,7 @@ int step_transition(Config &cfg) {
       g_transition.stage = Transition::FADE;
       g_transition.since = Clock::now();
       return 0;
+    }
     case Transition::FADE: {
       double k = std::min(1.0, t / kFadeSeconds);
       double ease = k * k * (3 - 2 * k);  // smoothstep: soft start and end
@@ -538,6 +647,10 @@ int step_transition(Config &cfg) {
 // The window that owns _SDE_SESSION_S<screen>: the address of theme switch
 // requests (request_appearance_apply()).
 void claim_session_selection() {
+#ifdef SDE_HAVE_XDAMAGE
+  int damage_error = 0;
+  if (!XDamageQueryExtension(g_display, &g_damage_event, &damage_error)) g_damage_event = -1;
+#endif
   Window root = DefaultRootWindow(g_display);
   XSetWindowAttributes a{};
   a.override_redirect = True;
@@ -1112,6 +1225,8 @@ int main(int argc, char **argv) {
           cfg.load();
           write_appearance_files(cfg);
           deliver(cfg);
+        } else if (handle_redraw(ev)) {
+          // a window redrew while a theme switch is held (watch_redraws())
         } else if (ev.type == ClientMessage && ev.xclient.window == g_session_win &&
                    ev.xclient.message_type == XInternAtom(g_display, "_SDE_APPEARANCE_APPLY", False)) {
           start_transition(cfg, ev.xclient.data.l[0]);

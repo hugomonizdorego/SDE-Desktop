@@ -583,6 +583,9 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
+  // sde-session's picture of the screen during a theme switch (0.2.0 Alpha
+  // 3.1) appears at once and fades out by its own opacity steps.
+  if (motion) c += "fade-exclude = [\"_SDE_CURTAIN@\"];\n";
   // Window corners follow the family: Fluent 8, Graphite 10, Liquid Glass 16.
   c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
   // SDE's own surfaces (x11::set_surface()) are rounded with the radius they
