@@ -352,7 +352,7 @@ class MainWindow : public BufferedWindow {
         return 1;
       }
       if (ctrl && k == 'q') {
-        hide();
+        do_callback();  // like the close button: asks about running changes
         return 1;
       }
       if (ctrl && k == 'r') {
@@ -793,6 +793,61 @@ AppInfo about_info() {
 
 namespace {
 
+bool g_background = false;  // the window was closed with changes left to finish
+
+// Changes that run or wait to run (paused ones wait for the user: they do
+// not keep Merkadu running without its window).
+bool changes_left() {
+  for (auto &j : Store::get().jobs())
+    if (j.state == Job::Running || j.state == Job::Queued) return true;
+  return false;
+}
+
+// The close button, Ctrl+Q: at once, unless changes are not finished; then
+// the user chooses to stop them or to let them finish without the window
+// (Merkadu ends when they are done).
+void close_requested(Fl_Widget *, void *) {
+  Store &st = Store::get();
+  if (!changes_left()) {
+    g_win->hide();
+    return;
+  }
+  const Job *running = nullptr;
+  int waiting = 0;
+  for (auto &j : st.jobs()) {
+    if (j.state == Job::Running) running = &j;
+    else if (j.state == Job::Queued) ++waiting;
+  }
+  std::string text = running ? format(_("%s %s is not finished."), action_progress_label(running->action).c_str(),
+                                      running->title.c_str())
+                             : std::string();
+  if (waiting)
+    text += (text.empty() ? "" : " ") +
+            format(ngettext("%d more change is waiting.", "%d more changes are waiting.", waiting), waiting);
+  text += "\n\n";
+  text += (running ? 1 : 0) + waiting == 1
+              ? _("Merkadu can stop it now, or close its window and finish it in the background; it ends by itself "
+                  "when it is done.")
+              : _("Merkadu can stop them now, or close its window and finish them in the background; it ends by "
+                  "itself when they are done.");
+  int c = fl_choice("%s", _("Keep Merkadu Open"), _("Finish in the Background"), _("Stop and Close"), text.c_str());
+  if (c == 0) return;
+  if (c == 2) {
+    std::vector<int> ids;
+    for (auto &j : st.jobs())
+      if (j.active()) ids.push_back(j.id);
+    for (int id : ids) {
+      const Job *j = st.job(id);
+      if (j && j->state == Job::Running && !job_controls(*j).cancel)
+        watchdog::log(format("\"%s\" cannot be stopped now (%s); it finishes before Merkadu ends",
+                             j->title.c_str(), job_controls(*j).why_not.c_str()));
+      st.cancel(id);
+    }
+  }
+  g_background = true;
+  g_win->hide();
+}
+
 void confirm_and_install(const std::string &app_id, Source s) {
   if (!Store::get().install(app_id, s))
     fl_alert("%s", _("This app cannot be installed from this source now."));
@@ -930,11 +985,24 @@ int run_window(const View &start) {
       }
     });
   });
+  win->callback(close_requested);
   win->layout();
   do_rebuild(nullptr);
   win->position(wx, wy);
   win->show();
-  return Fl::run();
+  // Until the window is closed, then, when changes were left to finish in
+  // the background, until they are done (without a window).
+  for (;;) {
+    if (Fl::first_window()) {
+      Fl::wait(1e20);
+    } else if (g_background && changes_left()) {
+      Fl::wait(1.0);
+    } else {
+      break;
+    }
+  }
+  if (g_background) watchdog::log("the changes left to finish in the background are done");
+  return 0;
 }
 
 }  // namespace merkadu
