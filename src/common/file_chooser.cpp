@@ -61,7 +61,7 @@ struct FileChooser::Options {
   std::string title, folder, default_folder, file_name, accept_label, program;
   std::vector<Filter> filters;
   int all_files = -1;  // -1: by mode
-  int filter = 0;
+  int filter = -1;     // -1: the one that fits the proposed name, else the first
   int preview = -1;  // -1: the user's last choice
   bool confirm_overwrite = true, new_folder = true, recent = true;
   Fl_Window *parent = nullptr;
@@ -429,6 +429,16 @@ class Dialog : public BufferedWindow {
     return it == index_of.end() ? -1 : it->second;
   }
   bool selectable(const Entry &e) const { return !is_folder_mode(mode) || e.dir; }
+  // The order shown: Recent lists the newest first until a column is chosen.
+  chooser::SortOrder order() const {
+    chooser::SortOrder o2 = state.sort;
+    if (location == "recent:" && !sorted_by_user) {
+      o2.key = SortKey::Modified;
+      o2.descending = true;
+      o2.folders_first = false;
+    }
+    return o2;
+  }
   const Filter *current_filter() const {
     return filter >= 0 && filter < int(filters.size()) ? &filters[size_t(filter)] : nullptr;
   }
@@ -586,6 +596,18 @@ class IconButton : public Fl_Button {
           return 1;
         }
         break;
+      case FL_PUSH: {
+        // A click leaves the keyboard where it was (the files keep their
+        // type-ahead), as GTK's tool buttons do; Tab still reaches it.
+        Fl_Widget *before = Fl::focus();
+        int r = Fl_Button::handle(e);
+        if (before && before != this && Fl::focus() == this && before->window() == window() && before->visible_r()) {
+          Fl::focus(before);
+          before->redraw();
+          redraw();
+        }
+        return r;
+      }
     }
     return Fl_Button::handle(e);
   }
@@ -1265,9 +1287,9 @@ void FileView::draw() {
         const Column &c = cols_[i];
         if (int(i) == header_col_hover)
           p.fill_rounded(c.x, y() + S(4), c.w, head_h - S(8), t.radius_for(head_h - S(8)), t.hover);
-        if (c.key == d_->state.sort.key) {
+        if (c.key == d_->order().key) {
           double gx = c.right ? c.x + S(2) : c.x + c.w - S(18);
-          glyph(p, d_->state.sort.descending ? "sort-down" : "sort-up", gx, y() + (head_h - S(14)) / 2.0, S(14),
+          glyph(p, d_->order().descending ? "sort-down" : "sort-up", gx, y() + (head_h - S(14)) / 2.0, S(14),
                 t.accent_text);
         }
       }
@@ -1391,10 +1413,10 @@ void FileView::draw() {
   if (list()) {
     for (size_t i = 0; i < cols_.size(); ++i) {
       const Column &c = cols_[i];
-      text_font(t.font_size - 1, c.key == d_->state.sort.key);
-      int tx = c.x + S(8), tw = c.w - S(16) - (c.key == d_->state.sort.key ? S(18) : 0);
-      if (c.right) tx += c.key == d_->state.sort.key ? S(18) : 0;
-      draw_text(c.title, tx, y(), tw, head_h, c.key == d_->state.sort.key ? t.accent_text : t.text_dim,
+      text_font(t.font_size - 1, c.key == d_->order().key);
+      int tx = c.x + S(8), tw = c.w - S(16) - (c.key == d_->order().key ? S(18) : 0);
+      if (c.right) tx += c.key == d_->order().key ? S(18) : 0;
+      draw_text(c.title, tx, y(), tw, head_h, c.key == d_->order().key ? t.accent_text : t.text_dim,
                 c.right ? 2 : 0);
     }
   }
@@ -2061,7 +2083,11 @@ Dialog::Dialog(FileChooser::Options &opts)
     all.patterns = {"*"};
     filters.push_back(all);
   }
-  filter = filters.empty() ? -1 : std::max(0, std::min(o.filter, int(filters.size()) - 1));
+  int first = o.filter;
+  if (first < 0 && mode == Mode::Save && !o.file_name.empty())
+    for (size_t i = 0; i < filters.size() && first < 0; ++i)
+      if (!filters[i].all() && filters[i].matches_file(basename_of(o.file_name), "")) first = int(i);
+  filter = filters.empty() ? -1 : std::max(0, std::min(first, int(filters.size()) - 1));
 
   color(t.background.fl());
   begin();
@@ -2509,16 +2535,11 @@ void Dialog::refilter() {
   if (searching)
     for (size_t i = 0; i < found.size(); ++i)
       if (found[i].folder != location && keep(found[i])) listed.push_back(-1 - int(i));
-  chooser::SortOrder order = state.sort;
-  if (location == "recent:" && !sorted_by_user) {
-    order.key = SortKey::Modified;
-    order.descending = true;
-    order.folders_first = false;
-  }
+  chooser::SortOrder by = order();
   std::stable_sort(listed.begin(), listed.end(), [&](int a, int b) {
     const Entry &x = a >= 0 ? entries[size_t(a)] : found[size_t(-1 - a)];
     const Entry &y = b >= 0 ? entries[size_t(b)] : found[size_t(-1 - b)];
-    return chooser::entry_less(x, y, order);
+    return chooser::entry_less(x, y, by);
   });
   index_of.clear();
   index_of.reserve(listed.size() * 2);
@@ -2887,6 +2908,7 @@ void Dialog::set_preview(bool on) {
 }
 
 void Dialog::sort_by(SortKey key) {
+  if (!sorted_by_user && location == "recent:") state.sort = order();
   if (state.sort.key == key) {
     state.sort.descending = !state.sort.descending;
   } else {

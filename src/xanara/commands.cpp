@@ -9,7 +9,6 @@
 // step of undo: the working copy before it is kept until the tab closes.
 // No other program is run.
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -23,6 +22,7 @@
 #include <thread>
 
 #include "edit.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "icons.h"
 #include "layout.h"
@@ -50,30 +50,28 @@ std::string dir_of(const std::string &path) {
 // A save dialog for a new PDF (or another |ext|) next to |near|.
 std::string ask_save(const char *title, const std::string &near, const std::string &name, const char *filter,
                      const std::string &ext) {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
-  chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
+  FileChooser chooser(FileChooser::Mode::Save);
   chooser.title(title);
-  chooser.filter(filter);
+  chooser.filters(filter);
   std::string dir = near.empty() ? user_dir("DOCUMENTS") : dir_of(near);
   if (!dir_exists(dir)) dir = home_dir();
-  chooser.directory(dir.c_str());
-  chooser.preset_file(name.c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return "";
-  std::string out = chooser.filename();
+  if (near.empty()) chooser.default_folder(dir);
+  else chooser.folder(dir);
+  chooser.file_name(name);
+  if (!chooser.run()) return "";
+  std::string out = chooser.path();
   if (!ends_with(lower(out), "." + ext)) out += "." + ext;
   return out;
 }
 
 std::vector<std::string> ask_open_many(const char *title, const char *filter, const std::string &dir) {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_MULTI_FILE);
+  FileChooser chooser(FileChooser::Mode::OpenMultiple);
   chooser.title(title);
-  chooser.filter(filter);
-  chooser.directory((dir.empty() || !dir_exists(dir) ? home_dir() : dir).c_str());
+  chooser.filters(filter);
+  chooser.folder(dir.empty() || !dir_exists(dir) ? home_dir() : dir);
   std::vector<std::string> out;
-  if (chooser.show() != 0) return out;
-  for (int k = 0; k < chooser.count(); ++k) out.push_back(path_from_argument(chooser.filename(k)));
+  if (!chooser.run()) return out;
+  for (const auto &p : chooser.paths()) out.push_back(path_from_argument(p));
   return out;
 }
 
@@ -224,13 +222,14 @@ bool XanaraWindow::choose_image() {
 }
 
 std::string XanaraWindow::choose_image_file() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+  FileChooser chooser(FileChooser::Mode::Open);
   chooser.title(_("Choose an Image"));
-  chooser.filter(_("Images\t*.{png,PNG,jpg,jpeg,JPG,JPEG,svg,gif,bmp}"));
-  chooser.directory(user_dir("PICTURES").c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return "";
-  return chooser.filename();
+  chooser.filters(_("Images\t*.{png,PNG,jpg,jpeg,JPG,JPEG,svg,gif,bmp}"));
+  chooser.default_folder(user_dir("PICTURES"));
+  chooser.preview(true);
+  chooser.parent(this);
+  if (!chooser.run()) return "";
+  return chooser.path();
 }
 
 // ------------------------------------------------------------- commands
@@ -445,12 +444,12 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
     std::string every = "1";
     if (!ask_text(_("Split into files of how many pages each?"), every, false)) return;
     int k = std::max(1, atoi(every.c_str()));
-    Fl_Native_File_Chooser chooser;
-    chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
+    FileChooser chooser(FileChooser::Mode::Folder);
     chooser.title(_("Folder for the Split Files"));
-    chooser.directory(dir_of(t->target).c_str());
-    if (chooser.show() != 0 || !chooser.filename()) return;
-    std::string pattern = std::string(chooser.filename()) + "/" + stem(t->target) + "-%d.pdf";
+    chooser.folder(dir_of(t->target));
+    chooser.parent(this);
+    if (!chooser.run()) return;
+    std::string pattern = chooser.path() + "/" + stem(t->target) + "-%d.pdf";
     std::string src = current_source();
     std::unique_ptr<PdfFile> pdf = src.empty() ? nullptr : PdfFile::open(src, doc->password(), error);
     std::vector<std::string> written;
@@ -461,7 +460,7 @@ void XanaraWindow::page_operation(const std::string &op, int page, int to) {
       report(_("Split"), error);
       return;
     }
-    toast(format(_("Split into %zu file(s) in %s"), written.size(), chooser.filename()));
+    toast(format(_("Split into %zu file(s) in %s"), written.size(), chooser.path().c_str()));
     return;
   }
   if (op == "rotate-left" || op == "rotate-right") {
@@ -640,12 +639,12 @@ void XanaraWindow::export_images(bool jpeg) {
   int q = 1;
   if (!ask_choice(_("Resolution"), _("Resolution"), {_("72 dpi (screen)"), _("150 dpi"), _("300 dpi (print)")}, q)) return;
   int dpi = q == 0 ? 72 : q == 1 ? 150 : 300;
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
+  FileChooser chooser(FileChooser::Mode::Folder);
   chooser.title(_("Folder for the Images"));
-  chooser.directory(dir_of(t->target).c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string base = std::string(chooser.filename()) + "/" + display_name(t->target);
+  chooser.folder(dir_of(t->target));
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  std::string base = chooser.path() + "/" + display_name(t->target);
   const char *ext = jpeg ? "jpg" : "png";
   int done = 0;
   toast(_("Exporting…"));
@@ -658,7 +657,7 @@ void XanaraWindow::export_images(bool jpeg) {
     }
     ++done;
   }
-  toast(format(_("Exported %d image(s) to %s"), done, chooser.filename()));
+  toast(format(_("Exported %d image(s) to %s"), done, chooser.path().c_str()));
 }
 
 void XanaraWindow::export_text(int kind) {

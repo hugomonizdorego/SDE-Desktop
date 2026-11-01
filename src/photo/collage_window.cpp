@@ -3,7 +3,6 @@
 //
 // The collage editor's window and its preview (see collage_ui.h).
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <glib.h>
@@ -24,6 +23,7 @@
 #include "collections.h"
 #include "config.h"
 #include "exif.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "link.h"
 #include "menu.h"
@@ -682,33 +682,32 @@ void CollageWindow::add_photos(const std::vector<std::string> &paths) {
 }
 
 void CollageWindow::add_dialog() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_MULTI_FILE);
+  FileChooser chooser(FileChooser::Mode::OpenMultiple);
   chooser.title(_("Add Photos to the Collage"));
-  chooser.filter(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff,avif,heic,jxl}"));
-  std::string dir = gallery::pictures_dir();
+  chooser.filters(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff,avif,heic,jxl}"));
   if (!collage().items.empty()) {
     const std::string &last = collage().items.back().path;
-    dir = last.substr(0, last.rfind('/'));
+    chooser.folder(last.substr(0, last.rfind('/')));
+  } else {
+    chooser.default_folder(gallery::pictures_dir());
   }
-  chooser.directory(dir.c_str());
-  if (chooser.show() != 0) return;
-  std::vector<std::string> paths;
-  for (int i = 0; i < chooser.count(); ++i)
-    if (chooser.filename(i)) paths.push_back(chooser.filename(i));
-  add_photos(paths);
+  chooser.preview(true);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  add_photos(chooser.paths());
 }
 
 void CollageWindow::replace_dialog(int item) {
   if (item < 0 || item >= int(collage().items.size())) return;
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+  FileChooser chooser(FileChooser::Mode::Open);
   chooser.title(_("Replace the Photo"));
-  chooser.filter(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff,avif,heic,jxl}"));
+  chooser.filters(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff,avif,heic,jxl}"));
   const std::string &cur = collage().items[size_t(item)].path;
-  chooser.directory(cur.substr(0, cur.rfind('/')).c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string p = chooser.filename();
+  chooser.folder(cur.substr(0, cur.rfind('/')));
+  chooser.preview(true);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  std::string p = chooser.path();
   struct stat st {};
   if (stat(p.c_str(), &st) != 0) return;
   Collage c = collage();
@@ -915,18 +914,17 @@ void CollageWindow::export_dialog() {
   }
   if (exporting_) return;
   std::string suggestion = default_export_path("jpg");
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
+  FileChooser chooser(FileChooser::Mode::Save);
   chooser.title(_("Export the Collage"));
-  chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
-  chooser.directory(suggestion.substr(0, suggestion.rfind('/')).c_str());
-  chooser.preset_file(basename_of(suggestion).c_str());
-  chooser.filter(_("JPEG\t*.{jpg,jpeg}\nPNG\t*.png"));
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string dest = chooser.filename();
+  chooser.folder(suggestion.substr(0, suggestion.rfind('/')));
+  chooser.file_name(basename_of(suggestion));
+  chooser.filters(_("JPEG\t*.{jpg,jpeg}\nPNG\t*.png"));
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  std::string dest = chooser.path();
   Format f = format_of(dest);
   if (f != Format::Jpeg && f != Format::Png) {
-    dest = replace_extension(dest, chooser.filter_value() == 1 ? Format::Png : Format::Jpeg);
+    dest = replace_extension(dest, chooser.filter_index() == 1 ? Format::Png : Format::Jpeg);
     f = format_of(dest);
   }
   if (f == Format::Jpeg && !can_write(Format::Jpeg)) {

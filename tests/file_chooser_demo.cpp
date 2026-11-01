@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
   using Mode = sde::FileChooser::Mode;
   Mode mode = Mode::Open;
   std::string title, folder, default_folder, name, filters, accept, program;
-  int filter = 0, repeat = 1, preview = -1, all_files = -1;
+  int filter = -1, repeat = 1, preview = -1, all_files = -1;
   bool recent = true, new_folder = true, parent = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
     if (!name.empty()) chooser.file_name(name);
     if (!filters.empty()) chooser.filters(filters);
     if (all_files >= 0) chooser.all_files(all_files != 0);
-    chooser.filter_index(filter);
+    if (filter >= 0) chooser.filter_index(filter);
     if (preview >= 0) chooser.preview(preview != 0);
     if (!accept.empty()) chooser.accept_label(accept);
     if (!program.empty()) chooser.program(program);

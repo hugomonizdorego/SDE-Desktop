@@ -13,7 +13,6 @@
 #include "window.h"
 
 #include <FL/Fl.H>
-#include <FL/Fl_File_Chooser.H>
 #include <FL/fl_draw.H>
 #include <sys/statvfs.h>
 #include <sys/xattr.h>
@@ -33,6 +32,7 @@
 #include "deb.h"
 #include "desktop_entry.h"
 #include "helper.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "icons.h"
 #include "../merkadu/logo_anim.h"
@@ -814,8 +814,12 @@ std::string real_path(const char *f) {
 void choose_file() {
   std::string dir = user_dir("DOWNLOAD");
   if (dir.empty() || !dir_exists(dir)) dir = home_dir();
-  const char *f = fl_file_chooser(_("Choose a Debian package"), "Debian packages (*.deb)", dir.c_str());
-  if (f && *f) open_package(real_path(f));
+  FileChooser chooser(FileChooser::Mode::Open);
+  chooser.title(_("Choose a Debian package"));
+  chooser.filters(std::string(_("Debian packages")) + "\t*.deb");
+  chooser.all_files(false);
+  chooser.default_folder(dir);
+  if (chooser.run()) open_package(real_path(chooser.path().c_str()));
 }
 
 // ---------------------------------------------------------------- page

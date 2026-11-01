@@ -83,7 +83,8 @@ class FileChooser {
   // "All files" at the end of the filter menu. Default: on for opening
   // with filters, off for saving.
   void all_files(bool on);
-  // The filter shown first, and after run() the one that was in use.
+  // The filter shown first (by default the one that fits the proposed
+  // name when saving, else the first), and after run() the one in use.
   void filter_index(int index);
   int filter_index() const;
   // Shows the preview pane (pictures) at first, whatever the user chose

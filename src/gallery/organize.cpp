@@ -7,7 +7,6 @@
 // worker thread and reports back through the event loop. Editing a single
 // photo is Photo's job (sde-view), not Gallery's.
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <errno.h>
 #include <sys/stat.h>
@@ -19,6 +18,7 @@
 
 #include "edit.h"
 #include "gallery.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "menu.h"
 #include "save.h"
@@ -104,13 +104,11 @@ bool move_file(const std::string &from, const std::string &to, std::string *err)
 }
 
 std::string choose_folder(const char *title, const std::string &start) {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
-  chooser.options(Fl_Native_File_Chooser::NEW_FOLDER);
+  FileChooser chooser(FileChooser::Mode::Folder);
   chooser.title(title);
-  chooser.directory(start.c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return "";
-  std::string dir = chooser.filename();
+  chooser.folder(start);
+  if (!chooser.run()) return "";
+  std::string dir = chooser.path();
   while (dir.size() > 1 && dir.back() == '/') dir.pop_back();
   return dir;
 }

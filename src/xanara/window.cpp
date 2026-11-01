@@ -7,7 +7,6 @@
 // commands of the modes live in commands.cpp.
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -23,6 +22,7 @@
 #include "about.h"
 #include "build_config.h"
 #include "config.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "icons.h"
 #include "spawn.h"
@@ -629,13 +629,14 @@ void XanaraWindow::show_menu(int mx, int my) {
 std::string XanaraWindow::signatures_dir() const { return data_home() + "/sde/xanara/signatures"; }
 
 void XanaraWindow::choose_signature() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+  FileChooser chooser(FileChooser::Mode::Open);
   chooser.title(_("Choose a Signature Image"));
-  chooser.filter(_("Images\t*.{png,PNG,jpg,jpeg,JPG,svg}"));
-  chooser.directory(user_dir("PICTURES").c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  cairo_surface_t *img = load_image(chooser.filename(), 900, 300);
+  chooser.filters(_("Images\t*.{png,PNG,jpg,jpeg,JPG,svg}"));
+  chooser.default_folder(user_dir("PICTURES"));
+  chooser.preview(true);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  cairo_surface_t *img = load_image(chooser.path(), 900, 300);
   if (!img) {
     toast(_("This image could not be read"));
     return;
@@ -1008,16 +1009,17 @@ void XanaraWindow::activate_tab(int index) {
 }
 
 void XanaraWindow::open_dialog() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_MULTI_FILE);
+  FileChooser chooser(FileChooser::Mode::OpenMultiple);
   chooser.title(_("Open Documents"));
-  chooser.filter(_("PDF Documents\t*.{pdf,PDF}"));
+  chooser.filters(_("PDF Documents\t*.{pdf,PDF}"));
   DocTab *t = tab();
   std::string dir = !t ? user_dir("DOCUMENTS") : t->target.substr(0, t->target.rfind('/'));
   if (dir.empty() || !dir_exists(dir)) dir = home_dir();
-  chooser.directory(dir.c_str());
-  if (chooser.show() != 0) return;
-  for (int k = 0; k < chooser.count(); ++k) open_path(path_from_argument(chooser.filename(k)));
+  if (t) chooser.folder(dir);
+  else chooser.default_folder(dir);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  for (const auto &p : chooser.paths()) open_path(path_from_argument(p));
 }
 
 bool XanaraWindow::close_tab(int index, bool ask) {
@@ -1086,15 +1088,14 @@ bool XanaraWindow::save_as() {
   DocTab *t = tab();
   if (!t) return false;
   if (!t->view->finish_text_edit()) return false;
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
-  chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
+  FileChooser chooser(FileChooser::Mode::Save);
   chooser.title(_("Save a Copy As"));
-  chooser.filter(_("PDF Documents\t*.pdf"));
-  chooser.directory(t->target.substr(0, t->target.rfind('/')).c_str());
-  chooser.preset_file(display_name(t->target).c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return false;
-  std::string path = chooser.filename();
+  chooser.filters(_("PDF Documents\t*.pdf"));
+  chooser.folder(t->target.substr(0, t->target.rfind('/')));
+  chooser.file_name(display_name(t->target));
+  chooser.parent(this);
+  if (!chooser.run()) return false;
+  std::string path = chooser.path();
   if (!ends_with(lower(path), ".pdf")) path += ".pdf";
   std::string error;
   commit_field();
