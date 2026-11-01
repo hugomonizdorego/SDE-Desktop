@@ -235,6 +235,15 @@ target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
 # alpha51: a plain application window for the taskbar preview checks.
 add_executable(sde-preview-window preview_window_fixture.cpp)
 target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
+# 0.2.0 Alpha 3.1: a window that stops answering _NET_WM_PING on SIGUSR1
+# (Force Close checks, showcase), and a pinger.
+add_executable(sde-frozen-client frozen_client_fixture.cpp)
+target_link_libraries(sde-frozen-client PRIVATE ${X11_LIBRARIES})
+# Force Close: which processes may be ended, the watchdog's decisions and
+# the launch records (no display).
+add_executable(sde-force-close-tests test_force_close.cpp)
+target_link_libraries(sde-force-close-tests PRIVATE sde-forceclose-core)
+add_test(NAME sde-force-close-rules COMMAND sde-force-close-tests)
 
 # SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.

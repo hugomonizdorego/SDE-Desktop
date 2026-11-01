@@ -17,6 +17,7 @@ add_library(sde-common STATIC
   common/glyphs.cpp
   common/i18n.cpp
   common/icons.cpp
+  common/launches.cpp
   common/paint.cpp
   common/power.cpp
   common/process.cpp
@@ -148,6 +149,21 @@ target_link_libraries(sde-run PRIVATE sde-common)
 
 add_executable(sde-logout logout/main.cpp)
 target_link_libraries(sde-logout PRIVATE sde-common)
+
+# Force Close (0.2.0 Alpha 3.1, docs/FORCE-CLOSE.md): sde-watchdog notices
+# programs that stop responding or never open, sde-force-close asks "Wait /
+# Force Close". Which processes may be ended, the X side and the watchdog's
+# decisions are a small library shared with the tests.
+pkg_check_modules(XRES REQUIRED IMPORTED_TARGET xres)
+add_library(sde-forceclose-core STATIC
+  forceclose/process_rules.cpp forceclose/xtarget.cpp forceclose/watch_model.cpp)
+target_include_directories(sde-forceclose-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/forceclose)
+target_link_libraries(sde-forceclose-core PUBLIC sde-common PkgConfig::XRES)
+add_executable(sde-watchdog forceclose/watchdog_main.cpp)
+target_link_libraries(sde-watchdog PRIVATE sde-forceclose-core)
+add_executable(sde-force-close forceclose/dialog_main.cpp)
+target_link_libraries(sde-force-close PRIVATE sde-forceclose-core)
+install(TARGETS sde-watchdog sde-force-close RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)
