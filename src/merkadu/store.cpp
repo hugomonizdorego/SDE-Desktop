@@ -6,6 +6,7 @@
 #include <sys/utsname.h>
 
 #include <algorithm>
+#include <chrono>
 #include <deque>
 #include <mutex>
 
@@ -14,6 +15,7 @@
 #include "icons.h"
 #include "spawn.h"
 #include "util.h"
+#include "watchdog.h"
 
 namespace sde {
 namespace merkadu {
@@ -22,20 +24,63 @@ namespace merkadu {
 
 namespace {
 
-std::mutex g_post_mutex;
-std::deque<std::function<void()>> g_posted;
+// Results of the worker threads for the FLTK thread. Never destroyed:
+// workers may still post while the program ends.
+struct Posted {
+  std::function<void()> fn;
+  const char *what = nullptr;
+};
+struct PostQueue {
+  std::mutex mutex;
+  std::deque<Posted> items;
+  bool scheduled = false;  // a wake-up or a continuation is pending
+  std::chrono::steady_clock::time_point since;
+};
+
+PostQueue &post_queue() {
+  static PostQueue *q = new PostQueue;
+  return *q;
+}
 
 void drain_posted(void *) {
+  PostQueue &q = post_queue();
+  auto t0 = std::chrono::steady_clock::now();
   for (;;) {
-    std::function<void()> fn;
+    Posted p;
     {
-      std::lock_guard<std::mutex> lock(g_post_mutex);
-      if (g_posted.empty()) return;
-      fn = std::move(g_posted.front());
-      g_posted.pop_front();
+      std::lock_guard<std::mutex> lock(q.mutex);
+      if (q.items.empty()) {
+        q.scheduled = false;
+        return;
+      }
+      p = std::move(q.items.front());
+      q.items.pop_front();
     }
-    fn();
+    {
+      watchdog::Busy busy(p.what ? p.what : "handling the result of a worker thread");
+      p.fn();
+    }
+    // A burst of results (a refresh brings many) must not keep the window
+    // from drawing: the rest comes after the next redraw.
+    if (std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(20)) {
+      Fl::add_timeout(0.0, drain_posted);
+      return;
+    }
   }
+}
+
+// FLTK's ring of wake-ups can be full (Fl::awake() fails): a slow timer
+// picks up what is waiting then.
+void posted_safety(void *) {
+  PostQueue &q = post_queue();
+  bool stuck;
+  {
+    std::lock_guard<std::mutex> lock(q.mutex);
+    stuck = !q.items.empty() && std::chrono::steady_clock::now() - q.since > std::chrono::milliseconds(500);
+    if (stuck) q.scheduled = true;
+  }
+  if (stuck) drain_posted(nullptr);
+  Fl::repeat_timeout(0.5, posted_safety);
 }
 
 // A one-line summary of what the catalog was made of, for the session log:
@@ -54,12 +99,15 @@ void log_catalog(const CatalogData &d) {
 
 }  // namespace
 
-void post(std::function<void()> fn) {
+void post(std::function<void()> fn, const char *what) {
+  PostQueue &q = post_queue();
   bool wake;
   {
-    std::lock_guard<std::mutex> lock(g_post_mutex);
-    wake = g_posted.empty();
-    g_posted.push_back(std::move(fn));
+    std::lock_guard<std::mutex> lock(q.mutex);
+    wake = !q.scheduled;
+    q.scheduled = true;
+    if (q.items.empty()) q.since = std::chrono::steady_clock::now();
+    q.items.push_back(Posted{std::move(fn), what});
   }
   // One wake-up per batch: FLTK's awake queue is small.
   if (wake) Fl::awake(drain_posted, nullptr);
@@ -110,6 +158,7 @@ Store &Store::get() {
 void Store::start(bool catalog) {
   if (started_) return;
   started_ = true;
+  Fl::add_timeout(0.5, posted_safety);
   settings_ = load_settings();
   categories_.load();
   for (int i = 0; i < kSourceCount; ++i) {
@@ -217,6 +266,7 @@ void Store::reload_all() {
 }
 
 void Store::rebuild() {
+  watchdog::Busy busy("merging the catalog", long(catalog_apps_.size()));
   catalog_.clear();
   for (App a : catalog_apps_) {
     // Packages the catalog names no package for (metainfo of installed
@@ -677,11 +727,12 @@ void Store::load_packages() {
   }
   apt::queue([this] {
     auto snap = std::make_shared<apt::Snapshot>(apt::snapshot());
-    post([this, snap] { apply_packages(std::move(*snap)); });
+    post([this, snap] { apply_packages(std::move(*snap)); }, "the package lists arrived");
   });
 }
 
 void Store::apply_packages(apt::Snapshot snap) {
+  watchdog::Busy busy("taking over the package lists", long(snap.packages.size()));
   packages_loading_ = false;
   if (!snap.error.empty()) fprintf(stderr, "merkadu: package lists: %s\n", snap.error.c_str());
   packages_error_ = snap.error;

@@ -64,6 +64,7 @@ add_executable(merkadu
   ${_src}/merkadu/flatpak.cpp
   ${_src}/merkadu/snap.cpp
   ${_src}/merkadu/fake.cpp
+  ${_src}/merkadu/watchdog.cpp
   ${_src}/settings/ui.cpp)
 target_link_libraries(merkadu PRIVATE merkadu-core)
 if(FLATPAK_FOUND)

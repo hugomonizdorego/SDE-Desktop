@@ -21,6 +21,7 @@
 #include "store.h"
 #include "ui.h"
 #include "util.h"
+#include "watchdog.h"
 #include "widgets.h"
 #include "wm.h"
 #include "../settings/ui.h"
@@ -306,6 +307,7 @@ class MainWindow : public BufferedWindow {
  public:
   MainWindow(int w, int h) : BufferedWindow(w, h, _("Merkadu")) {}
   void draw() override {
+    watchdog::Busy busy("drawing the window");
     const Theme &t = active_theme();
     {
       Painter p(w(), h());
@@ -506,6 +508,7 @@ void update_bar() {
 void do_rebuild(void *) {
   g_rebuild_pending = false;
   if (!g_win) return;
+  watchdog::Busy busy("building the page");
   // The same view keeps its place; a new one starts at the top.
   int scroll = g_page && g_built == g_view ? scrolled() : 0;
   if (g_page) {

@@ -11,7 +11,9 @@
 //   merkadu --version | --help
 #include <FL/Fl.H>
 #include <FL/x.H>
+#include <unistd.h>
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -25,12 +27,36 @@
 #include "store.h"
 #include "theme.h"
 #include "util.h"
+#include "watchdog.h"
 #include "window.h"
 
 using namespace sde;
 using namespace sde::merkadu;
 
 namespace {
+
+// Ends the program at once. Worker threads (the package lists, catalogs,
+// downloads) may still run, and the libraries' static objects must not be
+// destroyed under them: Merkadu 0.2 Alpha 3 hung for ever in the destructor
+// of the APT thread's condition variable after its window closed.
+[[noreturn]] void quit(int status) {
+  watchdog::stop();
+  fflush(stdout);
+  fflush(stderr);
+  _exit(status);
+}
+
+// FLTK's fatal errors (the X server went away at logout) end the program
+// the same way, instead of exit() and its destructors.
+void fatal(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  fputs("merkadu: ", stderr);
+  vfprintf(stderr, fmt, ap);
+  fputc('\n', stderr);
+  va_end(ap);
+  quit(1);
+}
 
 std::string usage() {
   return _("Merkadu: find, install, update and remove software from the Debian archive, Flatpak and Snap.\n\n"
@@ -118,6 +144,7 @@ int main(int argc, char **argv) {
 
   Config cfg;
   cfg.load();
+  Fl::fatal = fatal;
   fl_open_display();
   Theme theme = Theme::from_config(cfg);
   theme.apply_to_fltk();
@@ -126,7 +153,8 @@ int main(int argc, char **argv) {
   // Worker threads (catalog, Flatpak, snapd) hand their results to the
   // event loop with Fl::awake().
   Fl::lock();
-  if (!uninstall.empty()) return run_uninstall(uninstall);
+  watchdog::start();
+  if (!uninstall.empty()) quit(run_uninstall(uninstall));
   Store::get().start();
-  return run_window(view);
+  quit(run_window(view));
 }

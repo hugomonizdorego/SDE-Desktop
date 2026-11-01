@@ -596,7 +596,8 @@ class PackageKitBackend : public Backend {
 std::unique_ptr<Backend> make_packagekit_backend() { return std::unique_ptr<Backend>(new PackageKitBackend()); }
 
 void load_catalog(CatalogFn done) {
-  background<CatalogData>([] { return load_appstream(); }, [done](CatalogData data) { done(std::move(data)); });
+  background<CatalogData>([] { return load_appstream(); }, [done](CatalogData data) { done(std::move(data)); },
+                          "the software catalog arrived");
 }
 
 }  // namespace merkadu

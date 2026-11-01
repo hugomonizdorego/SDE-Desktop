@@ -2,6 +2,7 @@
 #include "crash.h"
 
 #include <execinfo.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
@@ -12,27 +13,54 @@ namespace sde {
 namespace {
 
 const char *g_program = "sde";
+char g_report[1024];
+const char *(*g_context)() = nullptr;
 
-void put(const char *s) {
-  if (write(2, s, strlen(s)) < 0) {
+void put(int fd, const char *s) {
+  if (s && write(fd, s, strlen(s)) < 0) {
   }
+}
+
+void report(int fd, int sig, void *const *frames, int n) {
+  put(fd, g_program);
+  put(fd, " crashed: ");
+  put(fd, strsignal(sig));
+  put(fd, ". Backtrace (please attach it to a bug report):\n");
+  if (g_context) {
+    const char *what = g_context();
+    if (what && *what) {
+      put(fd, "It was ");
+      put(fd, what);
+      put(fd, ".\n");
+    }
+  }
+  backtrace_symbols_fd(frames, n, fd);
+  put(fd, "-- end of backtrace\n");
 }
 
 void on_crash(int sig) {
   // Only async-signal-safe calls; backtrace() is preloaded below.
-  put(g_program);
-  put(" crashed: ");
-  put(strsignal(sig));
-  put(". Backtrace (please attach it to a bug report):\n");
   void *frames[64];
   int n = backtrace(frames, 64);
-  backtrace_symbols_fd(frames, n, 2);
-  put("-- end of backtrace\n");
+  report(2, sig, frames, n);
+  if (g_report[0]) {
+    int fd = open(g_report, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd >= 0) {
+      report(fd, sig, frames, n);
+      close(fd);
+    }
+  }
   signal(sig, SIG_DFL);
   raise(sig);
 }
 
 }  // namespace
+
+void set_crash_report(const char *path, const char *(*context)()) {
+  g_report[0] = '\0';
+  if (path && strlen(path) < sizeof g_report) strcpy(g_report, path);
+  g_context = context;
+}
 
 void install_crash_handler(const char *program) {
   g_program = program;

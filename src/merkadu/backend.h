@@ -161,15 +161,17 @@ apt::Details fake_package_details(const std::string &name);
 ChangePlan fake_simulate(const ChangeSet &marks);
 
 // Runs |fn| on the FLTK thread (from any thread; Fl::lock() must have been
-// called once by main()).
-void post(std::function<void()> fn);
+// called once by main()). |what| (a string literal) names it in the stall
+// log ("the package lists arrived"). Results are handed over in slices of
+// about 20 ms, with drawing and input in between.
+void post(std::function<void()> fn, const char *what = nullptr);
 // Runs |work| on a new thread and hands its result to |done| on the FLTK
 // thread.
 template <class T>
-void background(std::function<T()> work, std::function<void(T)> done) {
-  std::thread([work, done]() {
+void background(std::function<T()> work, std::function<void(T)> done, const char *what = nullptr) {
+  std::thread([work, done, what]() {
     auto result = std::make_shared<T>(work());
-    post([done, result]() { done(std::move(*result)); });
+    post([done, result]() { done(std::move(*result)); }, what);
   }).detach();
 }
 
