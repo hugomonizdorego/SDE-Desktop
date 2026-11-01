@@ -404,11 +404,11 @@ static bool compositor_lite(const Config &cfg) {
 // steps from opaque to the most each surface can be at 100:
 //  * over the OpenGL compositor's blur, the family's floor (1 - 2 x its
 //    translucency: Graphite the calmest, Liquid Glass the clearest), never
-//    below what keeps text 5:1 and dimmed text 3.4:1 over any backdrop
+//    below what keeps text 5:1 and dimmed text 3.8:1 over any backdrop
 //    (readable_opacity(), with a margin over WCAG's 4.5:1 and 3:1 for what a
 //    blur leaves of a busy backdrop);
-//  * over XRender's small blur, at most 14 % of the backdrop;
-//  * without blur (lite profile, blur off), almost opaque: at most 6 % of
+//  * over XRender's small blur, at most 12 % of the backdrop;
+//  * without blur (lite profile, blur off), almost opaque: at most 2.5 % of
 //    the backdrop, which would show through sharp (0.2.0 Alpha 2 let up to
 //    a third of it through and busy windows behind made text hard to read).
 // Liquid Glass frosts the blurred backdrop with the surface color instead
@@ -418,15 +418,15 @@ static void apply_transparency(Theme &t, const palettes::Family &f, bool strong_
   t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = t.toolkit_menu_opacity = 1.0;
   if (!t.translucent || t.transparency <= 0) return;
   double c = std::min(1.0, t.transparency / 100.0);
-  double reach = !t.blur ? 0.94 : strong_blur ? 0.0 : 0.86;
+  double reach = !t.blur ? 0.975 : strong_blur ? 0.0 : 0.88;
   auto level = [&](double readable) {
     double floor = std::max({readable, reach, 1.0 - 2.0 * f.translucency});
     return 1.0 - c * (1.0 - floor);
   };
   t.opacity = level(std::max(readable_opacity(t.text, t.panel_bg, 5.0, true),
-                             readable_opacity(t.text_dim, t.panel_bg, 3.4, true)));
+                             readable_opacity(t.text_dim, t.panel_bg, 3.8, true)));
   t.popup_opacity = level(std::max({readable_opacity(t.menu_text, t.menu_bg, 5.0, true),
-                                    readable_opacity(t.text_dim, t.menu_bg, 3.4, true),
+                                    readable_opacity(t.text_dim, t.menu_bg, 3.8, true),
                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.4, true)}));
   // Menus of other toolkits (and GTK 3 menus outside Liquid Glass) fade as
   // a whole, like SDE's.

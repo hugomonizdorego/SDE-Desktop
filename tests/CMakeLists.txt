@@ -259,6 +259,14 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+# 0.2.0 Alpha 3.1: every translucent surface (Liquid Glass's shader and the
+# whole-window translucency of the other families, frames and other
+# toolkits' menus) over a busy web page: text contrast, a calm surface and
+# even transparency steps, with the compositor configuration SDE generates.
+add_executable(sde-glass-tests test_glass.cpp)
+target_link_libraries(sde-glass-tests PRIVATE sde-common)
+add_test(NAME sde-glass-busy-backdrop COMMAND sde-glass-tests)
+set_tests_properties(sde-glass-busy-backdrop PROPERTIES TIMEOUT 300)
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data
