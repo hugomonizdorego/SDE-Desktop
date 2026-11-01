@@ -30,7 +30,10 @@ watch, and the files SDE writes in a row, give one reload):
   are made again only when their settings changed (compiling them is slow
   with software OpenGL), every mapped window gets its rules, opacity,
   shadow and rounded-corner mask again (as after a resize, the window
-  keeping its size) and the screen is repainted once;
+  keeping its size), and the layout history starts afresh so that the
+  next frame repaints the whole screen once (picom 12 repaints what its
+  layout history says changed: after a new shadow renderer, whose back
+  image starts empty, the rest of the screen stayed black);
 * the file watch is set up again: SDE replaces the file, which ends the
   watch of the old one.
 
@@ -52,7 +55,7 @@ watch, and the files SDE writes in a row, give one reload):
  }
  
  static bool load_shader_source(session_t *ps, const char *path) {
-@@ -2042,6 +2045,394 @@
+@@ -2042,6 +2045,402 @@
  	return ret;
  }
  
@@ -393,6 +396,14 @@ watch, and the files SDE writes in a row, give one reload):
 +		return false;
 +	}
 +	sde_watch_config_files(ps);
++	// picom 12 repaints what its layout history says changed; a new
++	// renderer (shadows) starts with an empty back image, and every window
++	// may look different now. A fresh history makes the next frame a full
++	// repaint, as when the screen is redirected.
++	if (ps->layout_manager) {
++		layout_manager_free(ps->layout_manager);
++		ps->layout_manager = layout_manager_new((unsigned)ps->damage_ring.count);
++	}
 +	ps->pending_updates = true;
 +	invalidate_reg_ignore(ps);
 +	force_repaint(ps);
@@ -447,7 +458,7 @@ watch, and the files SDE writes in a row, give one reload):
  /**
   * Initialize a session.
   *
-@@ -2456,7 +2847,8 @@
+@@ -2456,7 +2855,8 @@
  	ev_init(&ps->draw_timer, draw_callback);
  
  	// Set up SIGUSR1 signal handler to reset program
@@ -457,7 +468,7 @@ watch, and the files SDE writes in a row, give one reload):
  	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
  	ev_signal_start(ps->loop, &ps->usr1_signal);
  	ev_signal_start(ps->loop, &ps->int_signal);
-@@ -2724,6 +3116,9 @@
+@@ -2724,6 +3124,9 @@
  	ev_timer_stop(ps->loop, &ps->draw_timer);
  	ev_prepare_stop(ps->loop, &ps->event_check);
  	ev_signal_stop(ps->loop, &ps->usr1_signal);
@@ -467,7 +478,7 @@ watch, and the files SDE writes in a row, give one reload):
  	ev_signal_stop(ps->loop, &ps->int_signal);
  
  	// The X connection could hold references to wm if there are pending async
-@@ -2837,6 +3232,12 @@
+@@ -2837,6 +3240,12 @@
  		log_deinit_tls();
  		log_init_tls();
  
