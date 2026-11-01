@@ -116,6 +116,7 @@ def liria(staged):
     liria_progress(staged)
     liria_menus(staged)
     liria_list_view(staged)
+    liria_menu_paint_order(staged)
     liria_translations(staged)
 
 
@@ -3644,6 +3645,122 @@ def liria_list_view(staged):
     edit_once(notebook, "    widget_class->scroll_event = liria_notebook_scroll_event;\n",
               "    widget_class->scroll_event = liria_notebook_scroll_event;\n"
               "    widget_class->motion_notify_event = liria_notebook_motion_notify_event; /* SDE */\n")
+
+
+MENU_FIRST = r'''/* SDE (0.2.0 Alpha 3.1): a menu is painted before the window it opens
+ * over. While a menu is open the window's widgets lose the keyboard focus
+ * and are repainted (the whole folder view), and a new menu window can be
+ * painted only after the X server has mapped it; the menu's first frame
+ * used to come after that repaint. The window's painting now waits until
+ * the menu has been painted, has closed or a quarter of a second passed. */
+typedef struct
+{
+    GdkWindow *frozen;
+    GtkWidget *menu;
+    GdkFrameClock *clock;
+    gulong paint_id;
+    gulong unmap_id;
+    guint timeout_id;
+} EelSdeMenuFirst;
+
+static void
+eel_sde_menu_first_done (EelSdeMenuFirst *first)
+{
+    g_signal_handler_disconnect (first->clock, first->paint_id);
+    g_signal_handler_disconnect (first->menu, first->unmap_id);
+    if (first->timeout_id != 0)
+        g_source_remove (first->timeout_id);
+    if (!gdk_window_is_destroyed (first->frozen))
+        gdk_window_thaw_updates (first->frozen);
+    g_object_unref (first->frozen);
+    g_object_unref (first->clock);
+    g_object_unref (first->menu);
+    g_free (first);
+}
+
+static void
+eel_sde_menu_first_painted (GdkFrameClock *clock, EelSdeMenuFirst *first)
+{
+    eel_sde_menu_first_done (first);
+}
+
+static void
+eel_sde_menu_first_unmapped (GtkWidget *menu, EelSdeMenuFirst *first)
+{
+    eel_sde_menu_first_done (first);
+}
+
+static gboolean
+eel_sde_menu_first_timeout (gpointer data)
+{
+    EelSdeMenuFirst *first = data;
+
+    first->timeout_id = 0;
+    eel_sde_menu_first_done (first);
+    return G_SOURCE_REMOVE;
+}
+
+/* @menu was just popped up over the window of @owner (or of the event
+ * being handled when @owner is NULL). */
+void
+eel_sde_paint_menu_first (GtkMenu *menu, GtkWidget *owner)
+{
+    GtkWidget *popup = gtk_widget_get_toplevel (GTK_WIDGET (menu));
+    GdkWindow *menu_window = gtk_widget_get_window (popup);
+    GdkWindow *frozen = NULL;
+    GdkFrameClock *clock;
+    EelSdeMenuFirst *first;
+
+    if (owner != NULL && gtk_widget_get_realized (owner))
+        frozen = gdk_window_get_toplevel (gtk_widget_get_window (owner));
+    else
+    {
+        GdkEvent *event = gtk_get_current_event ();
+
+        if (event != NULL && event->any.window != NULL)
+            frozen = gdk_window_get_toplevel (event->any.window);
+        if (event != NULL)
+            gdk_event_free (event);
+    }
+    clock = menu_window != NULL ? gdk_window_get_frame_clock (menu_window) : NULL;
+    if (frozen == NULL || clock == NULL || frozen == menu_window || gdk_window_is_destroyed (frozen) ||
+        !gtk_widget_get_mapped (GTK_WIDGET (menu)))
+        return;
+    first = g_new0 (EelSdeMenuFirst, 1);
+    first->frozen = g_object_ref (frozen);
+    first->menu = g_object_ref (GTK_WIDGET (menu));
+    first->clock = g_object_ref (clock);
+    gdk_window_freeze_updates (frozen);
+    first->paint_id = g_signal_connect (clock, "after-paint", G_CALLBACK (eel_sde_menu_first_painted), first);
+    first->unmap_id = g_signal_connect (menu, "unmap", G_CALLBACK (eel_sde_menu_first_unmapped), first);
+    first->timeout_id = g_timeout_add (250, eel_sde_menu_first_timeout, first);
+}
+
+void
+eel_pop_up_context_menu (GtkMenu	*menu,
+                         GdkEventButton *event)
+{
+    g_return_if_fail (GTK_IS_MENU (menu));
+
+    gtk_menu_popup_at_pointer (menu, (const GdkEvent*) event);
+    eel_sde_paint_menu_first (menu, NULL); /* SDE */
+'''
+
+
+def liria_menu_paint_order(staged):
+    """0.2.0 Alpha 3.1: menus are painted before the window they open over
+    (eel_sde_paint_menu_first (), used by every context menu and the main
+    menu): the window's repaint for the lost keyboard focus took 13-30 ms
+    on one slow core and came first."""
+    eel = staged / "eel/eel-gtk-extensions.c"
+    edit_once(eel, "void\neel_pop_up_context_menu (GtkMenu\t*menu,\n                         GdkEventButton *event)\n{\n"
+                   "    g_return_if_fail (GTK_IS_MENU (menu));\n\n"
+                   "    gtk_menu_popup_at_pointer (menu, (const GdkEvent*) event);\n", MENU_FIRST)
+    edit_once(staged / "eel/eel-gtk-extensions.h",
+              "void                  eel_pop_up_context_menu                         (GtkMenu              *menu,\n",
+              "void                  eel_sde_paint_menu_first                        (GtkMenu              *menu,\n"
+              "        GtkWidget            *owner);\n"
+              "void                  eel_pop_up_context_menu                         (GtkMenu              *menu,\n")
 
 
 RECIPES = {"liria": liria}
