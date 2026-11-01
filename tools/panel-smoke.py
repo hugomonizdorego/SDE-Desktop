@@ -1210,10 +1210,16 @@ def session_checks():
     # Keyboard: Tab reaches the buttons in the order they are seen; Return
     # arms Shut Down, the focus stays on it and a second Return runs it.
     before=count('LOGOUT --action poweroff')
-    open_ac();seen=[]
-    for _ in range(30):
-        run('xdotool','key','Tab');time.sleep(.2)
-        f=next((k[7:] for k in layout('Action Center') if k.startswith('@focus:')),None);seen.append(f)
+    def focus():return next((k[7:] for k in layout('Action Center') if k.startswith('@focus:')),None)
+    open_ac();seen=[];prev=focus()
+    for _ in range(40):
+        # Each Tab, then the QA dump that shows where the focus went (it is
+        # written when the popup redraws, a moment later on a busy machine).
+        run('xdotool','key','Tab');f=prev
+        for _ in range(15):
+            time.sleep(.1);f=focus()
+            if f!=prev:break
+        seen.append(f);prev=f
         if f=='Shut Down':break
     assert 'Shut Down' in seen,('Tab never reached Shut Down',seen)
     order=[n for n in seen if n in ['Control Center','Lock Screen']+SESSION]
