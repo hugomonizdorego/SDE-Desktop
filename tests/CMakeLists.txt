@@ -275,6 +275,12 @@ if(SDE_XVFB)
   add_test(NAME sde-theme-switch COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_switch.py
     $<TARGET_FILE:sde-session> ${CMAKE_BINARY_DIR})
   set_tests_properties(sde-theme-switch PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+  # Appearance: choose, Preview (with its GTK part), Cancel, Revert, Apply
+  # in the preview and Ctrl+Enter, on Xvfb.
+  add_test(NAME sde-appearance-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_appearance_ui.py
+    $<TARGET_FILE:sde-settings> ${CMAKE_BINARY_DIR}
+    $<$<TARGET_EXISTS:sde-theme-preview-gtk>:$<TARGET_FILE:sde-theme-preview-gtk>>)
+  set_tests_properties(sde-appearance-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
