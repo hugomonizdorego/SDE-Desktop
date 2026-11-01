@@ -42,6 +42,10 @@ struct Task {
   cairo_surface_t *icon = nullptr;  // owned
   bool minimized = false;
   bool urgent = false;
+  // 0.2.0 Alpha 3.1: its program does not answer (_SDE_NOT_RESPONDING, set
+  // by sde-watchdog or SDE WM; docs/FORCE-CLOSE.md): the button is dimmed,
+  // says so, and its menu offers Force Close.
+  bool not_responding = false;
   int x = 0, w = 0;
   // 0.2 Alpha 3: the window's application (desktop file ID) for its live
   // badge, found again when its class changes.

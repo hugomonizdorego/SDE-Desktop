@@ -1871,6 +1871,39 @@ def empty_spot():
     L=layout('SDE Panel');pg=geom(panel)
     left=min(v[0] for k,v in L.items() if k.startswith(('status:','tray-item:','clock')))
     return pg['x']+left-round(40*scale),pg['y']+pg['h']//2
+def not_responding_checks(pg):
+    """0.2.0 Alpha 3.1 (docs/FORCE-CLOSE.md): a window marked "Not
+    Responding" (_SDE_NOT_RESPONDING, set here as sde-watchdog does) has a
+    dimmed taskbar button that says so, and its menu offers Force Close,
+    which runs sde-force-close --kill-window (a logging stub here); the mark
+    removed, the menu has no Force Close."""
+    ready=home/'frozen-ready'
+    client=sp.Popen([str(a.test_dir.resolve()/'sde-frozen-client'),'--title','QA Frozen App','--ready',str(ready)],env=e,stdout=sp.DEVNULL,stderr=sp.DEVNULL);processes.append(client)
+    try:
+        waitfor(lambda:ready.exists(),'the frozen client did not map its window')
+        win=ready.read_text().strip()
+        def task_button():return next((v for k,v in layout('SDE Panel').items() if k.startswith('task:QA Frozen App')),None)
+        waitfor(task_button,'no task button for the frozen client')
+        run('xprop','-id',win,'-f','_SDE_NOT_RESPONDING','32c','-set','_SDE_NOT_RESPONDING','1793500000')
+        waitfor(lambda:'@task-not-responding:QA Frozen App' in layout('SDE Panel'),'the panel does not show the window as not responding')
+        time.sleep(.4);shot('44-task-not-responding')
+        r=task_button();seq=menu_seq()
+        run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:menu_seq()>seq,'no taskbar menu');time.sleep(.3)
+        items=menu_items();assert ('Force Close',True,False) in items,items
+        shot('44-task-menu-force-close')
+        pick(items,'Force Close')
+        waitfor(lambda:commands('FORCECLOSE --kill-window '+win),'Force Close did not run sde-force-close --kill-window')
+        run('xprop','-id',win,'-remove','_SDE_NOT_RESPONDING')
+        waitfor(lambda:'@task-not-responding:QA Frozen App' not in layout('SDE Panel'),'the mark stayed on the taskbar button')
+        r=task_button();seq=menu_seq()
+        run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:menu_seq()>seq,'no taskbar menu');time.sleep(.3)
+        assert 'Force Close' not in labels(menu_items()),menu_items()
+        close_menu()
+    finally:
+        client.terminate();client.wait()
+    print('PANEL a3.1: not responding taskbar button (dimmed, label, Force Close in its menu) PASS',flush=True)
 def a52_checks():
     """alpha52: every panel item has its own right-click menu; search box,
     icon or hidden from the search's menu; notifications in the panel."""
@@ -1952,6 +1985,7 @@ def a52_checks():
     items=menu_items();assert 'Restore' in labels(items),items
     pick(items,next(l for l in labels(items) if l.startswith('Close All')))
     waitfor(lambda:w1.poll() is not None and w2.poll() is not None,'Close All Windows did not close both windows')
+    not_responding_checks(pg)
     # Tray items: the application's own dbusmenu.
     t=waitfor(lambda:next((k for k in layout('SDE Panel') if k.startswith('tray-item:')),None),'no tray item on the panel')
     r=layout('SDE Panel')[t]
@@ -2039,7 +2073,7 @@ elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n1
 elif a[:2]==['-t','networking']:print('full')
 ''')
 # Session actions, the browser and sound players only log what they were asked.
-for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY'),('timedatectl','TIMEDATECTL')]:
+for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('sde-force-close','FORCECLOSE'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY'),('timedatectl','TIMEDATECTL')]:
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
 ''')

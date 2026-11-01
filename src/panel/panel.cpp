@@ -932,7 +932,10 @@ std::string Panel::tooltip_for(const Target &t) const {
     if (previews_enabled()) return "";
     // A narrow task button shows only the icon: its title as tooltip.
     const Task &task = tasks_[size_t(t.index)];
-    if (task.w < h() + S(20)) return printable_text(task.title.empty() ? task.wm_class : task.title);
+    if (task.w < h() + S(20)) {
+      std::string title = printable_text(task.title.empty() ? task.wm_class : task.title);
+      return task.not_responding ? format(_("%s (Not Responding)"), title.c_str()) : title;
+    }
   } else if (t.kind == PINNED && t.index >= 0 && t.index < int(pinned_.size())) {
     return pinned_[size_t(t.index)].entry.name;
   }
@@ -1545,7 +1548,8 @@ void Panel::draw() {
       cairo_surface_t *img =
           task.icon ? task.icon : IconLoader::get({"application-x-executable"}, icon);
       int ix = task.w < H + S(20) ? task.x + (task.w - icon) / 2 : task.x + S(10);
-      p.image(img, ix, (H - icon) / 2.0, icon, task.minimized ? 0.55 : 1.0);
+      p.image(img, ix, (H - icon) / 2.0, icon,
+              task.not_responding ? 0.4 : task.minimized ? 0.55 : 1.0);
       badge_at(p, task.app_id, ix, task.minimized ? 0.55 : 1.0);
       // Indicator bar on the screen edge side: wide for the active window.
       double bar = active ? std::max(S(2), std::min(S(28), task.w - S(16))) : S(8);
@@ -1750,8 +1754,9 @@ void Panel::draw() {
   for (auto &task : tasks_) {
     if (task.w < H + S(20)) continue;
     text_font(t.font_size, task.win == active_ && !task.minimized);
-    draw_text(task.title, task.x + S(10) + icon + S(8), 0, task.w - icon - S(28), H,
-              task.minimized ? t.text_dim : t.text);
+    draw_text(task.not_responding ? format(_("%s (Not Responding)"), task.title.c_str()) : task.title,
+              task.x + S(10) + icon + S(8), 0, task.w - icon - S(28), H,
+              task.minimized || task.not_responding ? t.text_dim : t.text);
   }
   for (auto &pill : pills) badges::draw_pill_text(pill.right, pill.top, pill_h, pill.badge, pill.colors);
   // 0.2 Alpha 2: the battery's percentage or label after its icon.
@@ -1835,6 +1840,11 @@ void Panel::qa_dump_panel() {
       text += line("task:" + printable_text(t.title.empty() ? t.wm_class : t.title) +
                        (t.minimized ? ":minimized" : ""),
                    t.x, t.w);
+  // 0.2.0 Alpha 3.1: buttons of windows that do not respond.
+  for (const auto &t : tasks_)
+    if (t.not_responding)
+      text += "@task-not-responding:" + printable_text(t.title.empty() ? t.wm_class : t.title) +
+              "\t0\t0\t0\t0\t1\n";
   // 0.2 Alpha 3: the live badges ("@app-badge:" every application's) and
   // the buttons that show one, with the badge's colour.
   const auto &live = badges::Badges::get();
@@ -2093,6 +2103,14 @@ void Panel::task_clicked(int index, int button) {
 
 void Panel::update_task(Task &t, bool icon) {
   t.title = x11::window_title(t.win);
+  // SDE WM (Openbox) adds its own English " - [Not Responding]" to the
+  // visible name; the button says it in the user's language instead.
+  for (const char *suffix : {" - [Not Responding]", " - [Killing...]"}) {
+    std::string s = suffix;
+    if (t.title.size() > s.size() && t.title.compare(t.title.size() - s.size(), s.size(), s) == 0)
+      t.title.resize(t.title.size() - s.size());
+  }
+  t.not_responding = !x11::get_cardinals(t.win, "_SDE_NOT_RESPONDING").empty();
   XClassHint hint;
   if (XGetClassHint(fl_display, t.win, &hint)) {
     t.wm_name = hint.res_name ? hint.res_name : "";
@@ -2282,7 +2300,7 @@ bool Panel::handle_x(const XEvent &e) {
       Atom a = e.xproperty.atom;
       if (a == x11::atom("_NET_WM_NAME") || a == XA_WM_NAME || a == x11::atom("_NET_WM_STATE") ||
           a == x11::atom("_NET_WM_ICON") || a == XA_WM_HINTS ||
-          a == x11::atom("_NET_WM_VISIBLE_NAME")) {
+          a == x11::atom("_NET_WM_VISIBLE_NAME") || a == x11::atom("_SDE_NOT_RESPONDING")) {
         if (a == x11::atom("_NET_WM_STATE") &&
             x11::window_has_state(t.win, "_NET_WM_STATE_SKIP_TASKBAR")) {
           refresh_tasks();

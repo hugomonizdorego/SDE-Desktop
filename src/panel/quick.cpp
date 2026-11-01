@@ -1564,11 +1564,6 @@ IconFn cross_icon() {
     p.line(x + s * .72, y + s * .28, x + s * .28, y + s * .72, c, s * .09);
   };
 }
-IconFn power_icon() {
-  return [](Painter &p, double x, double y, double s, const Color &c) {
-    glyph::power(p, x, y, s, c);
-  };
-}
 // Media transport: 0 previous, 1 play, 2 pause, 3 next.
 IconFn transport_icon(int kind) {
   return [kind](Painter &p, double x, double y, double s, const Color &c) {

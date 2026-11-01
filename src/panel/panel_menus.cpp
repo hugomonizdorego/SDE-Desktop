@@ -293,6 +293,14 @@ void Panel::task_menu(int index) {
     m.submenu(_("Move to Workspace"), std::move(ws));
   }
   m.separator();
+  // 0.2.0 Alpha 3.1: the program does not respond (docs/FORCE-CLOSE.md):
+  // end it at once, with sde-force-close's checks.
+  if (t.not_responding) {
+    char xid[32];
+    snprintf(xid, sizeof xid, "0x%lx", win);
+    m.item(_("Force Close"), [id = std::string(xid)] { spawn_detached({"sde-force-close", "--kill-window", id}); },
+           {"process-stop"});
+  }
   m.item(_("Close Window"), [win] { x11::close_window(win); }, {"close"});
   if (windows.size() > 1) {
     std::vector<Window> all;
