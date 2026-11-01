@@ -124,9 +124,9 @@ void use(Window w, bool closing) {
   if (!g.model.settings().enabled || !watchable(w)) return;
   double t = now();
   // A window that answered a moment ago is not asked again for every
-  // click (the wheel is a button too).
+  // click of a double click.
   auto ok = g.answered_at.find(w);
-  if (!closing && ok != g.answered_at.end() && t - ok->second < 1.0) return;
+  if (!closing && ok != g.answered_at.end() && t - ok->second < 0.3) return;
   bool send = closing ? g.model.closing(w, pid_of(w), t) : g.model.use(w, pid_of(w), t);
   if (send) ping(w);
 }
@@ -321,7 +321,14 @@ int on_event(void *event, void *) {
   const XEvent &e = *static_cast<const XEvent *>(event);
   if (e.type == GenericEvent && e.xcookie.extension == g.xi_opcode &&
       e.xcookie.evtype == XI_RawButtonPress) {
-    use(x11::get_window(g.root, "_NET_ACTIVE_WINDOW"), false);
+    // Clicks only: the wheel's buttons (4 to 7) come many at a time.
+    XGenericEventCookie cookie = e.xcookie;
+    int button = 0;
+    if (XGetEventData(g.dpy, &cookie)) {
+      button = static_cast<XIRawEvent *>(cookie.data)->detail;
+      XFreeEventData(g.dpy, &cookie);
+    }
+    if (button < 4 || button > 7) use(x11::get_window(g.root, "_NET_ACTIVE_WINDOW"), false);
     schedule();
     return 0;
   }

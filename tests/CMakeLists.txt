@@ -392,3 +392,16 @@ target_link_libraries(sde-badges-tests PRIVATE sde-common)
 add_test(NAME sde-badges COMMAND sde-badges-tests)
 add_executable(sde-launcher-entry-fixture launcher_entry_fixture.cpp)
 target_link_libraries(sde-launcher-entry-fixture PRIVATE sde-common)
+
+# 0.2.0 Alpha 3.1 Force Close on Xvfb: pings, marks, the dialog (Wait,
+# recovery, Force Close), programs that never open, refused targets, close
+# attempts in a patched SDE WM and crashes through sde-session.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  set(SDE_FORCE_CLOSE_WM "")
+  if(SDE_BUILD_COMPONENTS)
+    set(SDE_FORCE_CLOSE_WM --wm "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-wm")
+  endif()
+  add_test(NAME sde-force-close-ui COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_force_close_ui.py ${CMAKE_BINARY_DIR} ${SDE_FORCE_CLOSE_WM})
+  set_tests_properties(sde-force-close-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()
