@@ -87,19 +87,29 @@ def main():
         qa = Path(temp) / 'qa'
         qa.mkdir()
         fixed = os.environ.get('SDE_TEST_DISPLAY')
-        number = int(fixed) if fixed else 700 + os.getpid() % 20000
-        xvfb = sp.Popen(['Xvfb', f':{number}', '-noreset', '-screen', '0', '1366x768x24', '-nolisten', 'tcp'],
-                        stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        env = dict(os.environ, DISPLAY=f':{number}', HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'),
-                   XDG_DATA_HOME=str(home / '.local/share'), XDG_CACHE_HOME=str(home / '.cache'),
-                   XDG_STATE_HOME=str(home / '.local/state'), SDE_PANEL_QA_DIR=str(qa), LANG='C.UTF-8',
-                   LC_ALL='C.UTF-8', SDE_PORTAL_IDLE_SECONDS='60')
-        procs = [xvfb]
-        try:
+        procs = []
+        for attempt in range(1 if fixed else 10):
+            number = int(fixed) if fixed else 700 + (os.getpid() + attempt * 37) % 20000
+            xvfb = sp.Popen(['Xvfb', f':{number}', '-noreset', '-screen', '0', '1366x768x24', '-nolisten', 'tcp'],
+                            stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            env = dict(os.environ, DISPLAY=f':{number}', HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'),
+                       XDG_DATA_HOME=str(home / '.local/share'), XDG_CACHE_HOME=str(home / '.cache'),
+                       XDG_STATE_HOME=str(home / '.local/state'), SDE_PANEL_QA_DIR=str(qa), LANG='C.UTF-8',
+                       LC_ALL='C.UTF-8', SDE_PORTAL_IDLE_SECONDS='60')
             for _ in range(100):
+                if xvfb.poll() is not None:
+                    break
                 if sp.run(['xdotool', 'getmouselocation'], env=env, capture_output=True).returncode == 0:
                     break
                 time.sleep(0.05)
+            time.sleep(0.3)  # an Xvfb that lost the number to another server has ended by now
+            if xvfb.poll() is None:
+                procs.append(xvfb)
+                break
+        else:
+            print('no Xvfb display; skipped')
+            return 77
+        try:
             if shutil.which('openbox'):
                 procs.append(sp.Popen(['openbox'], env=env, stdout=sp.DEVNULL, stderr=sp.DEVNULL))
                 time.sleep(0.5)
