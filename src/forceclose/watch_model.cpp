@@ -77,6 +77,18 @@ void Model::dialog_closed(unsigned long w, bool waited, double now) {
   if (it->second.since == 0) wins_.erase(it);
 }
 
+void Model::never_ask(unsigned long w) {
+  auto it = wins_.find(w);
+  if (it == wins_.end()) return;
+  long pid = it->second.pid;
+  for (auto &kv : wins_)
+    if (kv.second.id == w || (pid > 0 && kv.second.pid == pid)) {
+      kv.second.dialog = false;
+      kv.second.closing = false;
+      kv.second.wait_until = 1e300;
+    }
+}
+
 bool Model::dialog_open_for(long pid) const {
   if (pid <= 0) return false;
   for (const auto &kv : wins_)
@@ -98,7 +110,8 @@ Model::Due Model::tick(double now) {
       x.marked = true;
       due.mark.push_back(x.id);
     }
-    if (!x.marked || x.dialog || dialog_open_for(x.pid)) continue;
+    // Not offered at all (never_ask()), one dialog per program.
+    if (!x.marked || x.dialog || x.wait_until >= 1e299 || dialog_open_for(x.pid)) continue;
     bool long_enough = now - x.since >= s_.timeout && now >= x.wait_until;
     if (x.closing || long_enough) {
       x.dialog = true;
@@ -120,7 +133,10 @@ double Model::next(double now) const {
     if (x.since == 0) continue;
     take(x.last_ping + s_.repeat);
     if (!x.marked) take(x.since + s_.mark_after);
-    else if (!x.dialog) take(x.closing ? now : std::max(x.since + s_.timeout, x.wait_until));
+    // The dialog's time, unless it is open (for this program) or refused:
+    // tick() would do nothing then, and the timer must not spin.
+    else if (!x.dialog && x.wait_until < 1e299 && !dialog_open_for(x.pid))
+      take(x.closing ? now : std::max(x.since + s_.timeout, x.wait_until));
   }
   return best;
 }

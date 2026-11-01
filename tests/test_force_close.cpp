@@ -208,6 +208,9 @@ int main() {
     CHECK(d.dialog.size() == 1 && d.dialog[0] == 0x10);
     d = m.tick(321.0);
     CHECK(d.dialog.empty());
+    // While the program's dialog is open, nothing is due for its other
+    // window but pings (the timer does not spin).
+    CHECK(m.next(321.0) > 0.5);
     // Wait: not asked again for another timeout.
     m.dialog_closed(0x10, true, 330.0);
     d = m.tick(400.0);
@@ -228,6 +231,13 @@ int main() {
     m.closing(0x20, 700, 507.0);
     d = m.tick(507.0);
     CHECK(d.dialog.size() == 1 && d.dialog[0] == 0x20);
+    // Refused (a part of the session): not offered again while it is frozen.
+    m.never_ask(0x20);
+    d = m.tick(5000.0);
+    CHECK(d.dialog.empty() && m.find(0x20)->marked);
+    m.closing(0x20, 700, 5001.0);
+    CHECK(m.tick(5001.0).dialog.empty());
+    CHECK(m.next(5001.0) > 0.5);
     // The window goes away: forgotten.
     m.gone(0x20);
     CHECK(m.size() == 0 && m.next(600.0) < 0);

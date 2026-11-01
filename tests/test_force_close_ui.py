@@ -136,6 +136,9 @@ class Test:
                 out[f[0]] = tuple(int(v) for v in f[1:5])
         return out
 
+    def forget_dialog(self):
+        (self.tmp / 'qa/force-close.txt').unlink(missing_ok=True)
+
     def press(self, dialog, name):
         r = wait(lambda: self.dialog_controls().get(name), 5)
         if not r:
@@ -225,9 +228,10 @@ def main():
         if patched(args.wm):
             check(wait(lambda: 'Not Responding' in t.prop(aw, '_NET_WM_VISIBLE_NAME'), 3),
                   'SDE WM adds "Not Responding" to the title')
+        t.forget_dialog()
         dialog = t.find('^QA Frozen A is not responding$', 8)
         check(dialog, 'the dialog opens after the timeout')
-        check(t.dialog_controls().get('@mode:frozen') is not None, 'the dialog says why (frozen)')
+        check(wait(lambda: t.dialog_controls().get('@mode:frozen') is not None, 3), 'the dialog says why (frozen)')
         if dialog:
             # 3. Wait: the program stays, the dialog comes back after another timeout.
             t.press(dialog, 'Wait')
@@ -236,6 +240,7 @@ def main():
             time.sleep(2.0)
             check(not t.run('xdotool', 'search', '--onlyvisible', '--name', 'is not responding$').stdout.split(),
                   'after Wait the dialog does not come back at once')
+            t.forget_dialog()
             dialog = t.find('^QA Frozen A is not responding$', 8)
             check(dialog, 'the dialog comes back after another timeout')
         # 4. It answers again: the dialog closes by itself, the mark goes.
@@ -250,6 +255,7 @@ def main():
         t.run('xdotool', 'windowactivate', aw)
         time.sleep(0.3)
         t.click_on(aw)
+        t.forget_dialog()
         dialog = t.find('^QA Frozen A is not responding$', 10)
         check(dialog, 'the dialog opens again')
         if dialog:
@@ -272,9 +278,10 @@ def main():
             return p
         silent = launch('QA Silent')
         child = t.spawn('sleep', '300', log='silent.log')  # not of its family: stays
+        t.forget_dialog()
         ld = t.find('^QA Silent has not opened yet$', 10)
         check(ld, '"has not opened yet" for a program without a window')
-        check(t.dialog_controls().get('@mode:launch') is not None, 'the dialog says why (launch)')
+        check(wait(lambda: t.dialog_controls().get('@mode:launch') is not None, 3), 'the dialog says why (launch)')
         if ld:
             t.press(ld, 'Force Close')
             check(wait(lambda: silent.poll() is not None, 5) and silent.returncode == -signal.SIGKILL,
@@ -282,6 +289,7 @@ def main():
         check(child.poll() is None, 'and nothing else')
         child.terminate()
         quiet = launch('QA Background')
+        t.forget_dialog()
         ld = t.find('^QA Background has not opened yet$', 10)
         check(ld, '"has not opened yet" for a second program')
         if ld:
@@ -324,8 +332,9 @@ def main():
             time.sleep(0.4)
             os.kill(c.pid, signal.SIGUSR1)
             t.run('xdotool', 'key', '--window', cw, 'alt+F4')
+            t.forget_dialog()
             closing = t.find('^QA Closing is not responding$', 12)
-            check(closing and t.dialog_controls().get('@mode:closing') is not None,
+            check(closing and wait(lambda: t.dialog_controls().get('@mode:closing') is not None, 3),
                   'a close attempt opens the SDE dialog (patched SDE WM)')
             check(not t.run('xdotool', 'search', '--onlyvisible', '--name', '^Openbox$').stdout.split(),
                   "no Openbox prompt")

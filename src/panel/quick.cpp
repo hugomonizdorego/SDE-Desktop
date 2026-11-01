@@ -1825,6 +1825,9 @@ QuickSettings::QuickSettings(Mode mode)
     : PanelPopup(mode == FLYOUT ? "Flyout" : "Action Center"), mode_(mode) {
   end();
   if (mode_ == ACTION_CENTER) section_ = "overview";
+  // What logind can do is known before the Action Center first opens
+  // (asked again at every opening), so no button vanishes in front of the user.
+  if (mode_ == ACTION_CENTER) session_actions::Capabilities::get().refresh(nullptr);
 }
 void QuickSettings::select_section(const std::string &section) {
   if (mode_ == ACTION_CENTER) return;

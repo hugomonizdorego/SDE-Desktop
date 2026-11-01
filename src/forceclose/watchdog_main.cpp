@@ -263,8 +263,12 @@ void reap_dialogs() {
     auto d = g.dialogs.find(pid);
     log("dialog ended:", std::to_string(code));
     if (d != g.dialogs.end()) {
-      // 1: Wait.
-      g.model.dialog_closed(d->second, code == 1, now());
+      // 0 forced to close and 2 resolved: done. 4 refused (a part of the
+      // session...): never again. 1 Wait, 3 another dialog is open (SDE
+      // WM's), and anything else (no sde-force-close): after another
+      // timeout, so that nothing is started over and over.
+      if (code == 4) g.model.never_ask(d->second);
+      else g.model.dialog_closed(d->second, code != 0 && code != 2, now());
       g.dialogs.erase(d);
     }
     auto l = g.launch_dialogs.find(pid);

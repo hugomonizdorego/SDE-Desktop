@@ -139,6 +139,9 @@ void record(long pid, const DesktopEntry &entry, const std::vector<std::string> 
   Record r;
   r.pid = pid;
   r.start = start_time(pid);
+  // Already gone: nothing to watch, and a record without its start time
+  // could later name another program that gets the same number.
+  if (!r.start) return;
   r.time = static_cast<long long>(::time(nullptr));
   r.name = entry.name;
   r.icon = entry.icon;

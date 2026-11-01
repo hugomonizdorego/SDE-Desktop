@@ -58,6 +58,9 @@ class Model {
   void gone(unsigned long w);
   // The dialog of |w| closed; |waited|: the user chose Wait.
   void dialog_closed(unsigned long w, bool waited, double now);
+  // The dialog refused |w|'s program (a part of the session, another
+  // user's...): it is not offered again while it does not answer.
+  void never_ask(unsigned long w);
 
   struct Due {
     std::vector<unsigned long> ping, mark, dialog;
