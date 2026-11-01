@@ -348,7 +348,10 @@ std::vector<Highlight> Store::highlights(size_t count) const {
   src.fresh = fresh_;
   src.popular = popular_;
   src.featured_snaps = featured_snaps_;
-  return choose_highlights(catalog_, src, count, local_day(std::time(nullptr)));
+  // The tests and screenshots see the same highlights every day
+  // (MERKADU_FAKE_DAY picks another).
+  long day = fake_mode() ? std::atol(env("MERKADU_FAKE_DAY").c_str()) : local_day(std::time(nullptr));
+  return choose_highlights(catalog_, src, count, day);
 }
 
 void Store::watch_snapd(void *) {

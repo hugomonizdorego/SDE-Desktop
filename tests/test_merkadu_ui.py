@@ -505,6 +505,64 @@ def small_screen(s):
         stop(proc)
 
 
+def carousel_state(line):
+    """{'index': ..., 'count': ..., 'id': ...} of a "@carousel:" line."""
+    return dict(kv.split('=', 1) for kv in line[len('@carousel:'):].split(','))
+
+
+def highlights(s):
+    """Home's highlights: several apps of several kinds that move on by
+    themselves (not under the pointer), arrows and dots, a slide opens its
+    app."""
+    M = 'Merkadu.txt'
+    conf = s.temp / 'merkadu-rotate.conf'
+    conf.write_text((FIXTURES / 'merkadu.conf').read_text() + '\n[Highlights]\nrotate=1\n')
+    proc = s.start(env={'MERKADU_CONFIG': str(conf)})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'highlights: the main window did not open'):
+            return
+        line = s.wait_for(M, lambda l: l.startswith('@carousel:'), 15)
+        if not check(line, 'highlights: no carousel on Home: %s' % s.qa(M)[:8]):
+            return
+        first = carousel_state(line)
+        check(int(first['count']) >= 4, 'highlights: only %s apps' % first['count'])
+        # Not only the distribution's choice (Alpha 3: GIMP, always).
+        check(s.wait_qa(M, 'section:featured', 5), 'highlights: no more highlights below the carousel')
+        # Away from the pointer the next one comes by itself.
+        xdo(s.env, 'mousemove', '--window', wid, 5, 5)
+        moved = s.wait_for(M, lambda l: l.startswith('@carousel:') and carousel_state(l)['index'] != first['index'],
+                           6)
+        check(moved, 'highlights: the carousel did not move on by itself')
+        # Under the pointer it stays.
+        c = s.controls(M).get('carousel')
+        if check(c, 'highlights: the carousel has no box'):
+            xdo(s.env, 'mousemove', '--window', wid, c[0] + c[2] // 2, c[1] + c[3] // 3)
+            time.sleep(0.6)
+            before = s.wait_for(M, lambda l: l.startswith('@carousel:'), 2)
+            time.sleep(2.5)
+            after = s.wait_for(M, lambda l: l.startswith('@carousel:'), 2)
+            check(before == after, 'highlights: it moved under the pointer: %s, %s' % (before, after))
+        # The dots and the arrows.
+        s.click(wid, M, 'carousel:dot:2')
+        check(s.wait_for(M, lambda l: l.startswith('@carousel:index=2,'), 3), 'highlights: dot 2 did not show slide 2')
+        s.click(wid, M, 'carousel:next')
+        check(s.wait_for(M, lambda l: l.startswith('@carousel:index=3,'), 3), 'highlights: Next did not move on')
+        s.click(wid, M, 'carousel:prev')
+        line = s.wait_for(M, lambda l: l.startswith('@carousel:index=2,'), 3)
+        check(line, 'highlights: Previous did not go back')
+        s.shot('merkadu-highlights.png')
+        # A slide opens its app.
+        if line:
+            app = carousel_state(line)['id']
+            time.sleep(0.5)  # the slide is in place
+            s.click(wid, M, 'banner:' + app)
+            check(s.wait_qa(M, '@page:details:' + app, 5), 'highlights: the slide did not open %s: %s' %
+                  (app, s.qa(M)[:1]))
+    finally:
+        stop(proc)
+
+
 def problems(s):
     try:
         text = (s.temp / 'merkadu.log').read_text()
@@ -520,6 +578,7 @@ try:
     main_window(screen)
     all_software(screen)
     empty_catalog(screen)
+    highlights(screen)
     uninstall_cases(screen)
     problems(screen)
 finally:

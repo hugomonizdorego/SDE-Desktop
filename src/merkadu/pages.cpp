@@ -27,6 +27,7 @@
 #include <cmath>
 #include <map>
 
+#include "about.h"
 #include "i18n.h"
 #include "icons.h"
 #include "logo_anim.h"
@@ -739,6 +740,77 @@ std::vector<const App *> recommendations(std::string *why, const std::vector<con
   return out;
 }
 
+std::string upper_ascii(std::string s) {
+  for (char &c : s)
+    if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+  return s;
+}
+
+// The small line above a highlight's name.
+std::string highlight_label(const Highlight &h) {
+  if (h.app->installed()) return _("INSTALLED");
+  switch (h.why) {
+    case Highlight::New:
+      return _("NEW RELEASE");
+    case Highlight::Popular:
+      return _("POPULAR ON FLATHUB");
+    case Highlight::Featured:
+      return _("FEATURED ON THE SNAP STORE");
+    case Highlight::Distribution:
+      break;
+  }
+  return format(_("CHOSEN BY %s"), upper_ascii(source_label(Source::Debian)).c_str());
+}
+
+// Where the highlights come from ("Chosen by Debian, new releases and
+// popular on Flathub").
+std::string highlights_subtitle(const std::vector<Highlight> &chosen) {
+  bool why[4] = {false, false, false, false};
+  for (auto &h : chosen) why[h.why] = true;
+  std::vector<std::string> parts;
+  if (why[Highlight::Distribution]) parts.push_back(format(_("chosen by %s"), source_label(Source::Debian).c_str()));
+  if (why[Highlight::New]) parts.push_back(_("new releases"));
+  if (why[Highlight::Popular]) parts.push_back(_("popular on Flathub"));
+  if (why[Highlight::Featured]) parts.push_back(_("featured on the Snap Store"));
+  std::string text;
+  for (size_t i = 0; i < parts.size(); ++i)
+    text += (i == 0 ? "" : i + 1 == parts.size() ? std::string(_(" and ")) : std::string(", ")) + parts[i];
+  if (!text.empty()) text[0] = char(toupper(static_cast<unsigned char>(text[0])));
+  return text;
+}
+
+// The report the previous run left when it crashed or stopped responding,
+// once: shown, or dismissed.
+void problem_report_notice(Page *page) {
+  long long when = 0;
+  std::string path = watchdog::last_report(&when);
+  if (path.empty()) return;
+  bool crash = path.find("crash-report") != std::string::npos;
+  std::string text =
+      crash ? format(_("Merkadu stopped unexpectedly %s. It kept a report of what it was doing; please send it "
+                       "with your bug report."),
+                     when_label(std::time_t(when)).c_str())
+            : format(_("Merkadu did not respond for a while %s. It kept a report of what it was doing; please send "
+                       "it with your bug report."),
+                     when_label(std::time_t(when)).c_str());
+  notice(page, "report", text, 1, false,
+         {{_("Show Report"),
+           [path] {
+             std::string report;
+             read_file(path, report);
+             std::string log = join_path(watchdog::state_dir(), "merkadu.log");
+             show_license_viewer(_("Merkadu Problem Report"),
+                                 format(_("This report is the file %s; the log of the previous run is %s.1."),
+                                        path.c_str(), log.c_str()) +
+                                     "\n\n" + report);
+           },
+           false},
+          {_("Dismiss"), [] {
+             watchdog::dismiss_report();
+             rebuild_page();
+           }}});
+}
+
 void build_explore(Page *page) {
   Store &st = Store::get();
   // An empty catalog says itself what is missing.
@@ -759,18 +831,43 @@ void build_explore(Page *page) {
     page->finish();
     return;
   }
-  std::vector<const App *> highlights = resolve_all(st.settings().featured);
+  problem_report_notice(page);
   bool short_window = page->h() < S(470);
-  if (!highlights.empty()) {
+  // The highlights: the distribution's choice, new releases, Flathub's
+  // popular apps and the Snap Store's featured snaps in turn, a few in the
+  // carousel and the next ones below it.
+  constexpr size_t kSlides = 6;
+  std::vector<Highlight> chosen = st.highlights(kSlides + (short_window ? 4 : 8));
+  std::vector<const App *> highlights;
+  for (auto &h : chosen) highlights.push_back(h.app);
+  if (!chosen.empty()) {
     int h = short_window ? S(190) : S(240);
-    auto *b = new Banner(page->left(), page->cursor(), page->width(), h, highlights[0]->id);
-    b->on_open = open_app;
-    qa_line("banner:" + highlights[0]->id, b->x(), b->y(), b->w(), b->h());
-    page->advance(h + S(28));
+    std::vector<std::string> ids, labels;
+    for (size_t i = 0; i < chosen.size() && i < kSlides; ++i) {
+      ids.push_back(chosen[i].app->id);
+      labels.push_back(highlight_label(chosen[i]));
+    }
+    int ch = h + (ids.size() > 1 ? Carousel::dots_height() : 0);
+    auto *c = new Carousel(page->left(), page->cursor(), page->width(), ch, ids, labels,
+                           st.settings().rotate_seconds);
+    c->on_open = open_app;  // its parts are in the QA dump as they are when it is written
+    page->advance(ch + S(22));
   }
-  if (highlights.size() > 1) {
-    caption(page, "featured", _("Highlights"), _("Chosen by your distribution"));
-    tile_grid(page, std::vector<const App *>(highlights.begin() + 1, highlights.end()), short_window ? 1 : 2);
+  if (chosen.size() > kSlides) {
+    caption(page, "featured", _("Highlights"), highlights_subtitle(chosen));
+    tile_grid(page, std::vector<const App *>(highlights.begin() + kSlides, highlights.end()), short_window ? 1 : 2);
+    page->advance(S(14));
+  }
+  // The Snap Store's featured snaps (when snapd runs).
+  std::vector<const App *> snaps;
+  for (auto &id : st.featured_snaps())
+    if (const App *a = st.app(id))
+      if (a->is_app() && !a->installed() && std::find(snaps.begin(), snaps.end(), a) == snaps.end() &&
+          std::find(highlights.begin(), highlights.end(), a) == highlights.end())
+        snaps.push_back(a);
+  if (!snaps.empty()) {
+    caption(page, "snap", _("From the Snap Store"), _("Featured snaps"));
+    tile_grid(page, snaps, 1);
     page->advance(S(14));
   }
   std::string why;
@@ -821,8 +918,12 @@ void build_explore(Page *page) {
   std::string from;
   for (size_t i = 0; i < parts.size(); ++i) from += (i ? ", " : "") + parts[i];
   std::time_t refreshed = std::max(st.refresh_state().succeeded, st.catalog_sources().lists_time);
-  page->note(format(_("%s. Snaps are found when you search. The software lists were refreshed %s."), from.c_str(),
-                    when_label(refreshed).c_str()));
+  if (st.status(Source::Snap).available)
+    page->note(format(_("%s. The Snap Store's featured snaps and those of every department are listed; a search "
+                        "finds the others. The software lists were refreshed %s."),
+                      from.c_str(), when_label(refreshed).c_str()));
+  else
+    page->note(format(_("%s. The software lists were refreshed %s."), from.c_str(), when_label(refreshed).c_str()));
   if (!st.catalog_error().empty())
     page->note(format(_("Some software data could not be read: %s"), st.catalog_error().c_str()));
   page->finish();

@@ -64,9 +64,9 @@ void draw_badge_text(const std::string &text, int x, int y, int w, int h, const 
 
 namespace {
 
-// |text| in at most |max_lines| lines of |w| pixels (current font), drawn
-// from |y| down; the last line ends with an ellipsis when text is left.
-void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
+// |text| in at most |max_lines| lines of |w| pixels (current font); the
+// last line has the rest.
+std::vector<std::string> wrap_lines(const std::string &text, int w, int max_lines) {
   std::vector<std::string> words;
   std::string cur;
   for (char c : text) {
@@ -94,6 +94,13 @@ void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
     line = words[k];
   }
   if (!line.empty() && max_lines > 0) lines.push_back(line);
+  return lines;
+}
+
+// |text| in at most |max_lines| lines of |w| pixels (current font), drawn
+// from |y| down; the last line ends with an ellipsis when text is left.
+void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
+  std::vector<std::string> lines = wrap_lines(text, w, max_lines);
   int lh = fl_height();
   for (size_t i = 0; i < lines.size(); ++i)
     fl_draw(ellipsize(lines[i], w).c_str(), x, y + int(i) * lh + lh - fl_descent());
@@ -897,6 +904,13 @@ void draw_banner(Fl_Widget *wid, const App &app, int x, int y, int w, int h, boo
   for (int i = 0; i < 12 && Color::hex(0xFFFFFF).contrast(base) < 4.8; ++i) base = base.mix(Color::hex(0), 0.12);
   Color deep = base.mix(Color::hex(0x000000), 0.38);
   Color white = Color::hex(0xFFFFFF);
+  // The text, centred: the label, the name, the summary in one or two
+  // lines and the source pills.
+  text_font(t.font_size + 1);
+  int lh = fl_height();
+  int lines = int(wrap_lines(a->summary, tw, 2).size());
+  int top = y + (h - (S(20) + S(42) + lines * lh + S(10) + S(22))) / 2;
+  int sum_y = top + S(62), by = sum_y + lines * lh + S(10);
   {
     Painter p(wid->window()->w(), wid->window()->h());
     if (hot) p.shadow(x, y + S(3), w, h, r, t.shadow.alpha(0.25), S(10));
@@ -929,7 +943,7 @@ void draw_banner(Fl_Widget *wid, const App &app, int x, int y, int w, int h, boo
       }
     }
     // Source pills.
-    int cx = tx, by = y + h / 2 + S(38);
+    int cx = tx;
     for (Source s : badge_sources(*a)) {
       int bw = badge_width(source_label(s));
       if (cx + bw > tx + tw) break;
@@ -939,13 +953,13 @@ void draw_banner(Fl_Widget *wid, const App &app, int x, int y, int w, int h, boo
     if (focus) focus_ring(p, x, y, w, h, r);
   }
   text_font(std::max(S(9), t.font_size - S(1)), true);
-  draw_text(label, tx, y + h / 2 - S(62), tw, S(20), white.alpha(0.78));
+  draw_text(label, tx, top, tw, S(20), white.alpha(0.78));
   text_font(t.font_size + S(12), true);
-  draw_text(a->name, tx, y + h / 2 - S(42), tw, S(42), white);
+  draw_text(a->name, tx, top + S(20), tw, S(42), white);
   text_font(t.font_size + 1);
   fl_color(white.alpha(0.88).mix(base, 0.12).fl());
-  draw_lines(a->summary, tx, y + h / 2 + S(2), tw, 2);
-  int cx = tx, by = y + h / 2 + S(38);
+  draw_lines(a->summary, tx, sum_y, tw, 2);
+  int cx = tx;
   text_font(std::max(S(9), t.font_size - S(2)), true);
   for (Source s : badge_sources(*a)) {
     std::string src = source_label(s);
@@ -981,7 +995,6 @@ Carousel::Carousel(int x, int y, int w, int h, std::vector<std::string> ids, std
   labels_.resize(ids_.size());
   for (size_t i = 0; i < ids_.size(); ++i)
     if (ids_[i] == g_carousel_id) index_ = int(i);
-  tooltip(_("Highlights"));
   if (seconds_ > 0 && ids_.size() > 1 && !reduced_motion()) Fl::add_timeout(seconds_, tick, this);
   g_live_carousel = this;
   remember();
@@ -1037,7 +1050,7 @@ void Carousel::animate(void *data) {
 }
 
 void Carousel::boxes(Box *prev, Box *next, std::vector<Box> *dots) const {
-  int bh = h() - dots_height(), as = S(36);
+  int bh = banner_h(), as = S(36);
   if (prev) *prev = {x() + S(12), y() + (bh - as) / 2, as, as};
   if (next) *next = {x() + w() - S(12) - as, y() + (bh - as) / 2, as, as};
   if (dots) {
@@ -1053,14 +1066,22 @@ void Carousel::boxes(Box *prev, Box *next, std::vector<Box> *dots) const {
   }
 }
 
+int Carousel::banner_h() const { return h() - (ids_.size() > 1 ? dots_height() : 0); }
+
 void Carousel::draw() {
   if (ids_.empty()) return;
   const Theme &t = active_theme();
-  int bh = h() - dots_height();
+  int bh = banner_h();
+  {
+    // The page under the rounded corners, the gap between moving slides
+    // and the dots.
+    Painter p(window()->w(), window()->h());
+    p.fill_rect(x(), y(), w(), h(), t.background);
+  }
   Store &st = Store::get();
   auto slide = [&](int i, int sx) {
     const App *a = st.app(ids_[size_t(i)]);
-    if (a) draw_banner(this, *a, sx, y(), w(), bh, hot_, false, labels_[size_t(i)]);
+    if (a) draw_banner(this, *a, sx, y(), w(), bh, false, false, labels_[size_t(i)]);
   };
   if (t_ < 1 && prev_ >= 0 && prev_ < int(ids_.size())) {
     // The slides move by together.
@@ -1140,7 +1161,7 @@ int Carousel::handle(int e) {
             return 1;
           }
         }
-        if (Fl::event_y() < y() + h() - dots_height() && on_open) on_open(ids_[size_t(index_)]);
+        if (Fl::event_y() < y() + banner_h() && on_open) on_open(ids_[size_t(index_)]);
       }
       return 1;
     }
@@ -1157,13 +1178,20 @@ int Carousel::handle(int e) {
   }
 }
 
-void Carousel::qa(void (*line)(const std::string &, int, int, int, int)) const {
+const Carousel *Carousel::live() { return g_live_carousel; }
+
+void Carousel::qa(const std::function<void(const std::string &, int, int, int, int)> &line) const {
+  if (ids_.empty()) return;
   Box prev, next;
   std::vector<Box> dots;
   boxes(&prev, &next, &dots);
+  line("carousel", x(), y(), w(), h());
+  line("banner:" + ids_[size_t(index_)], x(), y(), w(), banner_h());
+  if (ids_.size() < 2) return;
   line("carousel:prev", prev.x, prev.y, prev.w, prev.h);
   line("carousel:next", next.x, next.y, next.w, next.h);
-  for (size_t i = 0; i < dots.size(); ++i) line("carousel:dot:" + std::to_string(i), dots[i].x, dots[i].y, dots[i].w, dots[i].h);
+  for (size_t i = 0; i < dots.size(); ++i)
+    line("carousel:dot:" + std::to_string(i), dots[i].x, dots[i].y, dots[i].w, dots[i].h);
 }
 
 int Banner::handle(int e) {

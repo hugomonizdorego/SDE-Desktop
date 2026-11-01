@@ -50,6 +50,9 @@ FILE *g_log = nullptr;
 const char *g_program = "merkadu";
 // The current activity for the crash handler, rendered without allocating.
 char g_crash_what[256];
+// The report the previous run left (found by start()), and its time.
+std::string *g_previous = new std::string;
+long long g_previous_when = 0;
 
 constexpr long long kStallMs = 250;   // logged
 constexpr long long kSlowMs = 2000;   // logged while it lasts
@@ -191,12 +194,33 @@ void log(const std::string &line) {
   }
 }
 
+// The newest report that was not dismissed.
+static std::string find_report(long long *when) {
+  std::string dir = state_dir(), best;
+  long long newest = 0;
+  for (const char *name : {"crash-report.txt", "hang-report.txt"}) {
+    struct stat st;
+    std::string p = join_path(dir, name);
+    if (stat(p.c_str(), &st) == 0 && st.st_size > 0 && (long long)st.st_mtime > newest) {
+      newest = st.st_mtime;
+      best = p;
+    }
+  }
+  if (best.empty()) return "";
+  std::string seen;
+  if (read_file(join_path(dir, "report-seen"), seen) && std::atoll(trim(seen).c_str()) >= newest) return "";
+  *when = newest;
+  return best;
+}
+
 void start(const char *program) {
   if (g_running) return;
   g_program = program;
   g_main = pthread_self();
   std::string dir = state_dir();
   make_dirs(dir);
+  // Before this run can write one of its own.
+  *g_previous = find_report(&g_previous_when);
   std::string path = join_path(dir, "merkadu.log");
   rename(path.c_str(), (path + ".1").c_str());
   {
@@ -249,27 +273,14 @@ std::string current() {
 }
 
 std::string last_report(long long *when) {
-  std::string dir = state_dir(), best;
-  long long newest = 0;
-  for (const char *name : {"crash-report.txt", "hang-report.txt"}) {
-    struct stat st;
-    std::string p = join_path(dir, name);
-    if (stat(p.c_str(), &st) == 0 && st.st_size > 0 && (long long)st.st_mtime > newest) {
-      newest = st.st_mtime;
-      best = p;
-    }
-  }
-  if (best.empty()) return "";
-  std::string seen;
-  if (read_file(join_path(dir, "report-seen"), seen) && std::atoll(trim(seen).c_str()) >= newest) return "";
-  if (when) *when = newest;
-  return best;
+  if (when) *when = g_previous_when;
+  return *g_previous;
 }
 
 void dismiss_report() {
-  long long when = 0;
-  if (last_report(&when).empty()) return;
-  write_file_atomic(join_path(state_dir(), "report-seen"), std::to_string(when) + "\n");
+  if (g_previous->empty()) return;
+  write_file_atomic(join_path(state_dir(), "report-seen"), std::to_string(g_previous_when) + "\n");
+  g_previous->clear();
 }
 
 long long longest_stall_ms() { return g_longest; }

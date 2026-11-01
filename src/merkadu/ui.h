@@ -187,10 +187,14 @@ class Carousel : public Fl_Widget {
   int handle(int e) override;
   // The height of the dots under the banner.
   static int dots_height();
-  // "index=N,count=K,id=ID" of the carousel last shown (the QA dump).
+  // "index=N,count=K,id=ID" of the carousel shown ("" when none is).
   static std::string qa_state();
-  // The QA names of the arrows and dots and their boxes.
-  void qa(void (*line)(const std::string &name, int x, int y, int w, int h)) const;
+  // The carousel on the page, nullptr when none is.
+  static const Carousel *live();
+  // The QA names of its parts and their boxes, as they are now: "carousel",
+  // "banner:ID" of the slide shown, "carousel:prev", "carousel:next" and
+  // "carousel:dot:N".
+  void qa(const std::function<void(const std::string &name, int x, int y, int w, int h)> &line) const;
   const std::string &current() const { return ids_[size_t(index_)]; }
   int count() const { return int(ids_.size()); }
 
@@ -199,6 +203,7 @@ class Carousel : public Fl_Widget {
     int x, y, w, h;
   };
   void boxes(Box *prev, Box *next, std::vector<Box> *dots) const;
+  int banner_h() const;  // the banner, above the dots
   void go(int index, int direction);
   void remember();
   static void tick(void *);

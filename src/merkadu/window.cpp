@@ -432,6 +432,15 @@ void qa_dump() {
           "\t0\t0\t0\t0\t1\t0\n";
   text += "@nav:back=" + std::to_string(g_back_stack.size()) + ",forward=" + std::to_string(g_forward_stack.size()) +
           "\t0\t0\t0\t0\t1\t0\n";
+  // The highlights carousel moves by itself: its parts as they are now.
+  if (const Carousel *c = Carousel::live()) {
+    text += "@carousel:" + Carousel::qa_state() + "\t0\t0\t0\t0\t1\t0\n";
+    c->qa([&text](const std::string &name, int x, int y, int w, int h) {
+      bool shown = g_page && y >= g_page->y() && y + h <= g_page->y() + g_page->h();
+      text += name + "\t" + std::to_string(x) + "\t" + std::to_string(y) + "\t" + std::to_string(w) + "\t" +
+              std::to_string(h) + "\t" + (shown ? "1" : "0") + "\t1\n";
+    });
+  }
   // Where the parts are now: the page may be scrolled.
   int dy = scrolled();
   for (const QaPart &q : g_qa_lines) {
