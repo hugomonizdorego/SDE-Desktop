@@ -111,20 +111,25 @@ size_t next_char(const std::string &s, size_t i) {
 }
 
 // A name in at most two lines of |width| pixels (the font must be set):
-// broken after a space, dash, underscore or dot when it can be, the second
-// line shortened with an ellipsis.
+// broken after a space when it can be (else after a dash, an underscore or
+// a dot), the second line shortened with an ellipsis.
 std::vector<std::string> wrap_name(const std::string &s, int width) {
   if (text_width(s) <= width) return {s};
-  size_t fit = 0, brk = std::string::npos;
+  size_t fit = 0, space = std::string::npos, dash = std::string::npos, dot = std::string::npos;
   for (size_t i = 0; i < s.size();) {
     size_t n = next_char(s, i);
     if (text_width(s.substr(0, n)) > width) break;
     fit = n;
     char c = s[i];
-    if (c == ' ' || c == '-' || c == '_' || c == '.') brk = n;
+    if (c == ' ') space = n;
+    else if (c == '-' || c == '_') dash = n;
+    else if (c == '.') dot = n;
     i = n;
   }
-  size_t cut = brk != std::string::npos && brk > fit / 2 ? brk : fit;
+  size_t cut = fit;
+  if (space != std::string::npos && space > fit / 3) cut = space;
+  else if (dash != std::string::npos && dash > fit / 3) cut = dash;
+  else if (dot != std::string::npos && dot > fit / 2) cut = dot;
   if (cut == 0) cut = next_char(s, 0);
   std::string first = s.substr(0, cut), rest = s.substr(cut);
   while (!first.empty() && first.back() == ' ') first.pop_back();
@@ -333,7 +338,7 @@ class Field : public Fl_Input {
   Field(Dialog *d, int x, int y, int w, int h, const char *name)
       : Fl_Input(x, y, w, h), d_(d) {
     box(kFieldBox);
-    tooltip(name);  // also its name in the QA layout
+    (void)name;
   }
   std::string placeholder;
   bool frameless = false;  // inside the path bar, which draws the frame
@@ -482,6 +487,8 @@ class Dialog : public BufferedWindow {
   const std::vector<std::string> &folder_icon_names(const std::string &path);
   const std::string &type_text(const std::string &mime);
   std::string status_text() const;
+  // "Nature", "Home", "File System": a folder's name as places show it.
+  std::string folder_label(const std::string &path) const;
   std::unordered_map<std::string, std::vector<std::string>> icon_cache, folder_icons;
   std::unordered_map<std::string, std::string> type_cache;
   std::set<std::string> also_select;  // more files to select once the folder is read (a drop)
@@ -764,9 +771,7 @@ class PathBar : public Fl_Group {
 
 class PlacesView : public Fl_Widget {
  public:
-  PlacesView(Dialog *d, int x, int y, int w, int h) : Fl_Widget(x, y, w, h), d_(d) {
-    tooltip(_("Places"));
-  }
+  PlacesView(Dialog *d, int x, int y, int w, int h) : Fl_Widget(x, y, w, h), d_(d) {}
   struct Row {
     int place = -1;  // index into d->places, -1 for a caption
     std::string caption;
@@ -890,7 +895,6 @@ class FileView : public Fl_Group {
     }, this);
     bar->hide();
     end();
-    tooltip(_("Files"));
   }
   Fl_Scrollbar *bar;
   int scroll = 0, hover = -1, press = -1;
@@ -1365,10 +1369,17 @@ void FileView::draw() {
     } else {
       text_font(t.font_size);
       int lw = W - S(14);
-      auto it = wraps.find(e.path);
-      if (it == wraps.end()) it = wraps.emplace(e.path, wrap_name(e.display, lw)).first;
       int line_h = fl_height() + S(1);
       int ty = Y + S(8) + image_h + S(6);
+      if (!e.folder.empty()) {
+        // Recent files and search results: the name, and where it is.
+        draw_text(e.display, X + S(7), ty, lw, line_h, fg, 1);
+        text_font(t.font_size - S(1));
+        draw_text(d_->folder_label(e.folder), X + S(7), ty + line_h, lw, line_h, t.text_dim, 1);
+        continue;
+      }
+      auto it = wraps.find(e.path);
+      if (it == wraps.end()) it = wraps.emplace(e.path, wrap_name(e.display, lw)).first;
       for (const auto &line : it->second) {
         draw_text(line, X + S(7), ty, lw, line_h, sel ? t.text : fg, 1);
         ty += line_h;
@@ -2278,6 +2289,12 @@ const std::string &Dialog::type_text(const std::string &mime) {
   auto it = type_cache.find(mime);
   if (it == type_cache.end()) it = type_cache.emplace(mime, chooser::mime_description(mime)).first;
   return it->second;
+}
+
+std::string Dialog::folder_label(const std::string &path) const {
+  if (path == home_dir()) return _("Home");
+  if (path == "/") return _("File System");
+  return take_gstr(g_filename_display_basename(path.c_str()));
 }
 
 std::string Dialog::status_text() const {
