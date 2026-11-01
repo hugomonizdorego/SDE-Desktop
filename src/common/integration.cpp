@@ -744,8 +744,11 @@ AppearanceFiles write_appearance_files(const Config &cfg) {
   out.wm = sync_openbox(cfg);
   if (!compositor_backend(cfg).empty()) {
     std::string before = compositor_inputs(cfg);
-    write_compositor_config(cfg);
-    write_compositor_config(cfg, true);
+    // The XRender configuration in case OpenGL fails, unless it is the one
+    // in use anyway: with XRender chosen both are the same file, and the
+    // fallback's lite effects overwrote the chosen ones (up to 0.2.0 Alpha
+    // 3 every settings change turned blur off for XRender users).
+    if (write_compositor_config(cfg).find("-xrender.conf") == std::string::npos) write_compositor_config(cfg, true);
     out.compositor = compositor_inputs(cfg) != before;
   }
   return out;

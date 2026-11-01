@@ -259,6 +259,23 @@ target_compile_definitions(sde-theme-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJEC
                                                    SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
 add_dependencies(sde-theme-tests sde-build-info sde-themes)
 add_test(NAME sde-theme COMMAND sde-theme-tests)
+# Control Center > Appearance (0.2.0 Alpha 3.1): the chosen and the applied
+# look, and the files a theme switch writes (an accent change leaves the
+# compositor alone; the GTK block follows the theme).
+add_executable(sde-appearance-tests test_appearance.cpp)
+target_link_libraries(sde-appearance-tests PRIVATE sde-settings-model sde-common)
+target_compile_definitions(sde-appearance-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                        SDE_TEST_BINARY_DIR="${CMAKE_BINARY_DIR}")
+add_dependencies(sde-appearance-tests sde-themes)
+add_test(NAME sde-appearance-model COMMAND sde-appearance-tests)
+# The theme switch through the session (0.2.0 Alpha 3.1): each program told
+# once and only when its input changed, the compositor reloaded in place and
+# never restarted, no pkill (stand-ins log the signals; needs Xvfb).
+if(SDE_XVFB)
+  add_test(NAME sde-theme-switch COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_switch.py
+    $<TARGET_FILE:sde-session> ${CMAKE_BINARY_DIR})
+  set_tests_properties(sde-theme-switch PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+endif()
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data

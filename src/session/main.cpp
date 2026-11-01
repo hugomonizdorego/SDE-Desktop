@@ -351,6 +351,15 @@ AppearanceFiles deliver(const Config &cfg) {
   }
   std::string comp = compositor_inputs(cfg);
   if (comp != g_sent_compositor) {
+    if (!env("SDE_THEME_SWITCH_DEBUG").empty()) {
+      auto a = split(g_sent_compositor, '\n'), b = split(comp, '\n');
+      for (size_t i = 0; i < std::max(a.size(), b.size()); ++i)
+        if (i >= a.size() || i >= b.size() || a[i] != b[i]) {
+          log("compositor input differs at line %zu: \"%s\" -> \"%s\"", i + 1, i < a.size() ? a[i].c_str() : "",
+              i < b.size() ? b[i].c_str() : "");
+          break;
+        }
+    }
     g_sent_compositor = comp;
     d.compositor = true;
     if (Component *c = find_component("SDE compositor")) kill(c->pid, SIGUSR1);
