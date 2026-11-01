@@ -35,6 +35,7 @@
 #include "store.h"
 #include "ui.h"
 #include "util.h"
+#include "watchdog.h"
 #include "window.h"
 #include "../settings/ui.h"
 
@@ -333,7 +334,7 @@ class IconView : public Fl_Widget {
 // The progress of a job: status, percentage and a bar, read live.
 class JobProgress : public Fl_Widget {
  public:
-  JobProgress(int x, int y, int w, int h, int job) : Fl_Widget(x, y, w, h), job_(job) {}
+  JobProgress(int x, int y, int w, int h, int job) : Fl_Widget(x, y, w, h), job_(job) { live_widget(this); }
   void draw() override {
     const Theme &t = active_theme();
     const Job *j = Store::get().job(job_);
@@ -601,7 +602,7 @@ int category_count(const Category &c) {
   }
   auto it = g_category_counts.find(c.id);
   if (it != g_category_counts.end()) return it->second;
-  int n = int(st.categories().apps_in(c, st.catalog()).size());
+  int n = int(st.count_in(c));
   g_category_counts[c.id] = n;
   return n;
 }
@@ -638,7 +639,7 @@ std::vector<const App *> recommendations(std::string *why, const std::vector<con
     if (!a->is_app()) continue;
     const Origin *o = a->installed_origin();
     if (o && o->source == Source::Debian && cfg.protected_packages.count(o->id)) continue;  // SDE's own
-    if (const Category *c = st.categories().category_of(*a)) ++weight[c->id];
+    if (const Category *c = st.department_of(*a)) ++weight[c->id];
   }
   std::vector<std::pair<int, std::string>> order;
   for (auto &w : weight)
@@ -719,13 +720,8 @@ void build_explore(Page *page) {
   }
   // New & Updated: the newest releases of apps that are not installed.
   if (st.settings().new_count > 0) {
-    std::vector<const App *> fresh;
-    for (auto &a : st.catalog().apps())
-      if (a.is_app() && !a.installed() && a.newest_release() > 0 && a.newest_release() <= std::time(nullptr) + 86400)
-        fresh.push_back(&a);
-    std::stable_sort(fresh.begin(), fresh.end(),
-                     [](const App *x, const App *y) { return x->newest_release() > y->newest_release(); });
-    if (fresh.size() > size_t(st.settings().new_count)) fresh.resize(size_t(st.settings().new_count));
+    // Worked out with the catalog, on its worker thread.
+    std::vector<const App *> fresh = st.fresh_apps(size_t(st.settings().new_count));
     if (!fresh.empty()) {
       caption(page, "new", _("New & Updated"), _("The newest releases"));
       tile_grid(page, fresh, short_window ? 1 : 2);
@@ -783,7 +779,7 @@ void build_category(Page *page, const std::string &id) {
   const Category *parent = st.categories().parent_of(c);
   const Category *top = parent ? parent : c;
   st.browse_store(top->id);
-  std::vector<const App *> apps = st.categories().apps_in(*c, st.catalog());
+  std::vector<const App *> apps = st.apps_in(*c);
   page->heading(c->title(), parent ? format(_("%s in %s"), apps_count(apps.size()).c_str(), parent->title().c_str())
                                    : apps_count(apps.size()));
   if (!top->subcategories.empty()) {
@@ -819,6 +815,7 @@ void build_category(Page *page, const std::string &id) {
 
 void build_search(Page *page, const std::string &query) {
   Store &st = Store::get();
+  watchdog::Busy busy("searching the catalog", long(st.catalog().size()));
   std::vector<const App *> all = search(st.catalog(), query);
   int counts[kSourceCount] = {0, 0, 0};
   for (const App *a : all)
@@ -856,7 +853,11 @@ void build_search(Page *page, const std::string &query) {
   if (st.packages_available() && st.packages_loaded()) {
     PackageFilter f;
     f.query = query;
-    size_t n = filter_packages(st.packages(), f, st.marks()).size();
+    size_t n;
+    {
+      watchdog::Busy busy("searching the packages", long(st.packages().size()));
+      n = filter_packages(st.packages(), f, st.marks()).size();
+    }
     if (n) {
       page->advance(S(8));
       std::string q = query;
@@ -1073,7 +1074,7 @@ void build_details(Page *page, const std::string &id) {
   info_row(page, _("Developer"), a->developer);
   if (!a->categories.empty()) {
     std::string dept;
-    if (const Category *c = st.categories().category_of(*a)) dept = c->title();
+    if (const Category *c = st.department_of(*a)) dept = c->title();
     info_row(page, _("Department"), dept);
   }
   page->end_card();
@@ -1132,7 +1133,7 @@ void build_installed(Page *page) {
   std::map<const Category *, std::vector<const App *>> groups;
   std::vector<const App *> other;
   for (const App *a : apps) {
-    const Category *c = st.categories().category_of(*a);
+    const Category *c = st.department_of(*a);
     if (c)
       groups[c].push_back(a);
     else

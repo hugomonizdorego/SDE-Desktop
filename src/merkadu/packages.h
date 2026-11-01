@@ -40,6 +40,7 @@ struct Package {
   bool automatic = false;   // installed as a dependency
   bool config_only = false; // removed, its configuration files are left
   bool broken = false;      // installed with unmet dependencies
+  std::string lower_summary;  // for the search, made with the lists (empty: made on the fly)
 
   // Essential, Priority required: the system needs it.
   bool system() const { return essential || priority == 1; }

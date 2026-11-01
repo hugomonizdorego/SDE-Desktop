@@ -483,12 +483,31 @@ void Catalog::sort_origins(const std::vector<Source> &priority) {
 
 std::vector<std::string> query_words(const std::string &query) { return words_of(query); }
 
+void App::prepare_search() {
+  lower_name = lower_ascii(name);
+  lower_summary = lower_ascii(summary);
+  lower_description = lower_ascii(description);
+}
+
 int match_score(const App &app, const std::vector<std::string> &words) {
   if (words.empty()) return 0;
-  std::string name = lower_ascii(app.name);
-  std::vector<std::string> name_words = words_of(app.name);
-  std::string summary = lower_ascii(app.summary);
-  std::string description;  // lowered only when needed
+  // The lower-case texts the catalog prepared (no allocation per app and
+  // key), else made here.
+  bool ready = !app.lower_name.empty() || app.name.empty();
+  std::string own_name, own_summary, own_description;
+  if (!ready) {
+    own_name = lower_ascii(app.name);
+    own_summary = lower_ascii(app.summary);
+  }
+  const std::string &name = ready ? app.lower_name : own_name;
+  const std::string &summary = ready ? app.lower_summary : own_summary;
+  const std::string *description = ready ? &app.lower_description : nullptr;  // else lowered when needed
+  // |w| at the start of a word of the name ("paint" in "gnu paint").
+  auto word_start = [&name](const std::string &w) {
+    for (size_t at = name.find(w); at != std::string::npos; at = name.find(w, at + 1))
+      if (at == 0 || !word_char(static_cast<unsigned char>(name[at - 1]))) return true;
+    return false;
+  };
   int total = 0;
   for (const std::string &w : words) {
     int best = 0;
@@ -496,10 +515,10 @@ int match_score(const App &app, const std::vector<std::string> &words) {
       best = 100;
     } else if (starts_with(name, w)) {
       best = 70;
-    } else {
-      for (auto &nw : name_words)
-        if (starts_with(nw, w)) best = std::max(best, 55);
-      if (!best && name.find(w) != std::string::npos) best = 40;
+    } else if (word_start(w)) {
+      best = 55;
+    } else if (name.find(w) != std::string::npos) {
+      best = 40;
     }
     if (best < 35) {
       if (app.id.find(w) != std::string::npos) best = std::max(best, 35);
@@ -513,8 +532,11 @@ int match_score(const App &app, const std::vector<std::string> &words) {
     }
     if (best < 15 && summary.find(w) != std::string::npos) best = 15;
     if (best < 5 && w.size() >= 3) {
-      if (description.empty()) description = lower_ascii(app.description);
-      if (description.find(w) != std::string::npos) best = 5;
+      if (!description) {
+        own_description = lower_ascii(app.description);
+        description = &own_description;
+      }
+      if (description->find(w) != std::string::npos) best = 5;
     }
     if (best == 0) return 0;
     total += best;
@@ -526,11 +548,16 @@ int match_score(const App &app, const std::vector<std::string> &words) {
 }
 
 void sort_by_name(std::vector<const App *> &apps) {
-  std::stable_sort(apps.begin(), apps.end(), [](const App *a, const App *b) {
-    std::string x = lower_ascii(a->name), y = lower_ascii(b->name);
-    if (x != y) return x < y;
-    return a->id < b->id;
+  // Each name lowered once (or as the catalog prepared it), not per comparison.
+  std::vector<std::pair<std::string, const App *>> keyed;
+  keyed.reserve(apps.size());
+  for (const App *a : apps) keyed.push_back({a->lower_name.empty() ? lower_ascii(a->name) : a->lower_name, a});
+  std::stable_sort(keyed.begin(), keyed.end(), [](const std::pair<std::string, const App *> &x,
+                                                  const std::pair<std::string, const App *> &y) {
+    if (x.first != y.first) return x.first < y.first;
+    return x.second->id < y.second->id;
   });
+  for (size_t i = 0; i < apps.size(); ++i) apps[i] = keyed[i].second;
 }
 
 std::vector<const App *> search(const Catalog &catalog, const std::string &query, bool all_kinds) {
@@ -544,8 +571,12 @@ std::vector<const App *> search(const Catalog &catalog, const std::string &query
   std::stable_sort(scored.begin(), scored.end(), [](const std::pair<int, const App *> &x,
                                                     const std::pair<int, const App *> &y) {
     if (x.first != y.first) return x.first > y.first;
-    std::string a = lower_ascii(x.second->name), b = lower_ascii(y.second->name);
-    if (a != b) return a < b;
+    if (!x.second->lower_name.empty() && !y.second->lower_name.empty()) {
+      if (x.second->lower_name != y.second->lower_name) return x.second->lower_name < y.second->lower_name;
+    } else {
+      std::string a = lower_ascii(x.second->name), b = lower_ascii(y.second->name);
+      if (a != b) return a < b;
+    }
     return x.second->id < y.second->id;
   });
   std::vector<const App *> out;

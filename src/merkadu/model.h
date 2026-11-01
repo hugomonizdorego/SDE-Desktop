@@ -106,6 +106,15 @@ struct App {
   std::vector<Screenshot> screenshots;
   std::vector<Release> releases;        // newest first
   std::vector<Origin> origins;          // in the preferred order (see sort_origins())
+  // A metainfo file of installed software that names no package and no
+  // bundle: it gets a Debian origin only when a package owns its launcher
+  // in /usr/share/applications (never just because it has no other source:
+  // Flatpak and Snap exports are no Debian packages).
+  bool needs_owner = false;
+  // Lower-case copies for the search, made with the catalog on its worker
+  // thread (prepare_search()); computed on the fly when empty.
+  std::string lower_name, lower_summary, lower_description;
+  void prepare_search();
 
   bool installed() const;
   bool has_update() const;

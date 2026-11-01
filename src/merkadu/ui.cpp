@@ -17,8 +17,10 @@
 #include "image_cache.h"
 #include "logo_anim.h"
 #include "store.h"
+#include "window.h"
 #include "theme.h"
 #include "util.h"
+#include "watchdog.h"
 #include "widgets.h"
 #include "wm.h"
 
@@ -433,6 +435,7 @@ cairo_surface_t *theme_icon(const std::string &name, int size) {
     if (file_exists(file)) return images::icon_file(file, size);
   }
   if (IconLoader::lookup(name, size).empty()) return nullptr;
+  watchdog::Busy busy("loading a theme icon", size);
   return IconLoader::get({name}, size);
 }
 
@@ -724,6 +727,9 @@ int AppTile::handle(int e) {
 AppRow::AppRow(int x, int y, int w, int h, const std::string &app_id, Mode mode)
     : Fl_Widget(x, y, w, h), id_(app_id), mode_(mode) {
   if (const App *a = Store::get().app(app_id)) copy_tooltip(a->name.c_str());
+  // A row with a change in progress shows it (the page is built again
+  // when a change starts or ends).
+  if (Store::get().active_job(app_id)) live_widget(this);
 }
 
 std::string AppRow::action_text() const {

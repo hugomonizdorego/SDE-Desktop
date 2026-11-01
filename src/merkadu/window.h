@@ -15,6 +15,8 @@
 #include "about.h"
 #include "model.h"
 
+class Fl_Widget;
+
 namespace sde {
 
 class Page;
@@ -59,6 +61,9 @@ void request_install(const std::string &app_id, Source s);
 void request_remove(const std::string &app_id, Source s);
 // UI test hook: an extra line of the QA dump (Merkadu.txt), window pixels.
 void qa_line(const std::string &name, int x, int y, int w, int h);
+// A widget of the page that shows the progress of a change: when a change
+// progresses only these are redrawn, not the whole window.
+void live_widget(Fl_Widget *w);
 // The About information of Merkadu.
 AppInfo about_info();
 

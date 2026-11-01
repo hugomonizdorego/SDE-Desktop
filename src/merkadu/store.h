@@ -18,6 +18,7 @@
 #include "appstream_catalog.h"
 #include "apt_cache.h"
 #include "backend.h"
+#include "catalog_build.h"
 #include "categories.h"
 #include "model.h"
 #include "packages.h"
@@ -123,6 +124,15 @@ class Store {
   void reload_catalog();
   // Changes whenever the catalog was rebuilt (for caches of the pages).
   int generation() const { return generation_; }
+  // The departments, worked out with the catalog (on its worker thread):
+  // the apps of a department sorted by name, the department of an app.
+  std::vector<const App *> apps_in(const Category &c) const;
+  size_t count_in(const Category &c) const;
+  const Category *department_of(const App &a) const;
+  // "New & Updated": the newest releases of apps that are not installed.
+  std::vector<const App *> fresh_apps(size_t max) const;
+  // Debian origins the last merge dropped (no package APT knows).
+  int dropped_debian() const { return dropped_debian_; }
 
   // Refreshes the software lists of every source: PackageKit's refresh of
   // the package lists (APT downloads the AppStream catalog with them), the
@@ -137,7 +147,7 @@ class Store {
   bool packages_loaded() const { return packages_loaded_; }
   bool packages_loading() const { return packages_loading_; }
   const std::string &packages_error() const { return packages_error_; }
-  const std::vector<Package> &packages() const { return packages_; }
+  const std::vector<Package> &packages() const;
   const Package *package(const std::string &name) const;
   void load_packages();
   // Changes whenever the package list was loaded again.
@@ -161,23 +171,34 @@ class Store {
  private:
   Store() = default;
   void emit(Event e);
+  // Merges what every part contributed into a new catalog on a worker
+  // thread (requests made meanwhile are merged into one more run); the
+  // catalog and its departments are swapped in when it is done, then
+  // Event::Catalog.
   void rebuild();
+  static void run_rebuild(void *);
+  void adopt(std::shared_ptr<CatalogResult> result);
   void run_next();
   void job_finished(int id, bool ok, bool cancelled, const std::string &error);
   void resolve_owners();
-  void apply_packages(apt::Snapshot snap);
+  void apply_packages(std::shared_ptr<PackageList> list);
   void refresh_step_done(const std::string &source, bool ok, bool cancelled, const std::string &error);
   Job *find_job(int id);
 
   Settings settings_;
   Categories categories_;
   Catalog catalog_;
+  CategoryIndex departments_;
+  std::vector<std::string> fresh_;
+  int dropped_debian_ = 0;
+  bool rebuild_scheduled_ = false, rebuild_running_ = false, rebuild_again_ = false;
   std::unique_ptr<Backend> backends_[kSourceCount];
   SourceStatus status_[kSourceCount];
   bool probed_[kSourceCount] = {false, false, false};
   // What each part contributed; rebuild() merges them into catalog_.
-  std::vector<App> catalog_apps_;
-  std::vector<App> installed_[kSourceCount];
+  // Immutable once set: the merge reads them on its thread.
+  std::shared_ptr<const std::vector<App>> catalog_apps_;
+  std::shared_ptr<const std::vector<App>> installed_[kSourceCount];
   std::vector<App> store_apps_;  // snap search and category results
   std::map<std::string, Origin> details_;  // Origin::key() -> fetched details
   std::set<std::string> details_asked_;
@@ -205,8 +226,9 @@ class Store {
   RefreshState refresh_;
   int refresh_pending_ = 0;
   bool refresh_catalog_ = false;  // a refresh changed what the catalog reads
-  std::vector<Package> packages_;
-  std::map<std::string, size_t> package_index_;
+  std::shared_ptr<const PackageList> package_list_;
+  mutable std::set<std::string> system_cache_;
+  mutable int system_generation_ = -1;
   bool packages_loaded_ = false, packages_loading_ = false, packages_again_ = false;
   std::string packages_error_;
   int packages_generation_ = 0;

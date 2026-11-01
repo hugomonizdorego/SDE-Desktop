@@ -19,6 +19,7 @@
 #include "store.h"
 #include "ui.h"
 #include "util.h"
+#include "watchdog.h"
 #include "window.h"
 #include "../settings/ui.h"
 
@@ -103,6 +104,7 @@ const ListCache &filtered(const std::string &arg) {
   g_list.generation = st.packages_generation();
   g_list.arg = arg;
   g_list.marks = sig;
+  watchdog::Busy busy("filtering the packages", long(st.packages().size()));
   g_list.rows = filter_packages(st.packages(), f, st.marks());
   for (auto &c : g_list.counts) c = 0;
   for (auto &p : st.packages()) {

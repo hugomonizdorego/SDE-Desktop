@@ -240,8 +240,12 @@ int package_match_score(const Package &p, const std::vector<std::string> &words)
     else if (p.name.find(w) != std::string::npos)
       best = 35;
     if (best < 10) {
-      if (summary.empty()) summary = lower_ascii(p.summary);
-      if (summary.find(w) != std::string::npos) best = 10;
+      const std::string *text = &p.lower_summary;
+      if (p.lower_summary.empty() && !p.summary.empty()) {
+        if (summary.empty()) summary = lower_ascii(p.summary);
+        text = &summary;
+      }
+      if (text->find(w) != std::string::npos) best = 10;
     }
     if (best == 0) return 0;
     total += best;

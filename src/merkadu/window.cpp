@@ -55,6 +55,10 @@ std::vector<QaPart> g_qa_lines;
 int g_content_x = 0, g_title_x = 0;
 bool g_rebuild_pending = false;
 bool g_refresh_running = false;
+// Widgets of the page that show progress (live_widget()).
+std::vector<Fl_Widget *> g_live;
+int g_sidebar_jobs = -1;     // the count the sidebar shows for In Progress
+bool g_images_pending = false;  // a redraw for downloaded images is due
 
 int topbar_h() { return S(64); }
 int sidebar_w(int win_w) { return win_w < S(760) ? S(176) : S(220); }
@@ -511,6 +515,7 @@ void do_rebuild(void *) {
   watchdog::Busy busy("building the page");
   // The same view keeps its place; a new one starts at the top.
   int scroll = g_page && g_built == g_view ? scrolled() : 0;
+  g_live.clear();
   if (g_page) {
     g_win->remove(g_page);
     Fl::delete_widget(g_page);
@@ -550,14 +555,26 @@ bool packages_view() {
   return g_view.kind == View::Packages || g_view.kind == View::Package || g_view.kind == View::Changes;
 }
 
+// The header: the page title and the refresh status below it.
+void redraw_header() {
+  if (g_win) g_win->damage_rect(g_content_x, 0, g_win->w() - g_content_x, topbar_h());
+}
+
 void on_store_event(Event e) {
   if (!g_win) return;
   switch (e) {
-    case Event::Progress:
-      // Widgets read the jobs when they draw: a repaint is enough.
-      if (g_page) g_page->redraw();
-      if (g_sidebar) g_sidebar->redraw();
+    case Event::Progress: {
+      // Widgets read the jobs when they draw: repainting the ones that
+      // show progress is enough (PackageKit reports often, and a repaint
+      // of the whole window takes long on slow computers).
+      for (Fl_Widget *w : g_live) w->redraw();
+      int jobs = Store::get().active_jobs();
+      if (g_sidebar && jobs != g_sidebar_jobs) {
+        g_sidebar_jobs = jobs;
+        g_sidebar->redraw();
+      }
       break;
+    }
     case Event::Sources:
       if (g_view.kind == View::Sources || g_view.kind == View::Details || g_view.kind == View::Explore ||
           g_view.kind == View::Updates)
@@ -580,7 +597,8 @@ void on_store_event(Event e) {
             g_view.kind == View::Updates)
           schedule_rebuild();
       }
-      g_win->redraw();
+      // Progress only changes the status line below the title.
+      redraw_header();
       break;
     }
     case Event::Packages:
@@ -600,13 +618,21 @@ void store_search(void *) {
   if (g_search && trim(g_search->value()) == g_store_query) Store::get().search_store(g_store_query);
 }
 
+// While typing, the results are built once typing pauses for a moment
+// (searching 90,000 packages for every key is slow on slow computers).
+void typed_rebuild(void *) { schedule_rebuild(); }
+
 void search_changed(Fl_Widget *, void *) {
   std::string q = trim(g_search->value());
   if (g_view.kind == View::Packages) {
     // All Software filters its list in place.
     PackageFilter f = packages_filter(g_view.arg);
     f.query = q;
-    replace_view(View{View::Packages, packages_view_arg(f)});
+    std::string arg = packages_view_arg(f);
+    if (arg == g_view.arg) return;
+    g_view.arg = arg;
+    Fl::remove_timeout(typed_rebuild);
+    Fl::add_timeout(0.15, typed_rebuild);
     return;
   }
   if (q.empty()) {
@@ -615,7 +641,8 @@ void search_changed(Fl_Widget *, void *) {
   }
   if (g_view.kind == View::Search) {
     g_view.arg = q;  // new results start at the top
-    schedule_rebuild();
+    Fl::remove_timeout(typed_rebuild);
+    Fl::add_timeout(0.15, typed_rebuild);
   } else {
     navigate(View{View::Search, q});
   }
@@ -734,6 +761,10 @@ void choose_source(const std::string &app_id, Source s) {
 void qa_line(const std::string &name, int x, int y, int w, int h) {
   if (!getenv("SDE_PANEL_QA_DIR")) return;
   g_qa_lines.push_back({name, x, y, w, h});
+}
+
+void live_widget(Fl_Widget *w) {
+  if (w) g_live.push_back(w);
 }
 
 AppInfo about_info() {
@@ -874,8 +905,22 @@ int run_window(const View &start) {
   g_view = start;
   if (g_search) g_search->value(search_text_of(start).c_str());
   st.listen(on_store_event);
+  // Icons and screenshots arrive one by one (four downloads at a time):
+  // one repaint for those of the last moment, not one per image.
   images::on_ready([] {
-    for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) w->redraw();
+    if (g_images_pending) return;
+    g_images_pending = true;
+    Fl::add_timeout(0.3, [](void *) {
+      g_images_pending = false;
+      for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) {
+        if (w != g_win) {
+          w->redraw();
+        } else {
+          if (g_page) g_page->redraw();
+          if (g_sidebar) g_sidebar->redraw();
+        }
+      }
+    });
   });
   win->layout();
   do_rebuild(nullptr);

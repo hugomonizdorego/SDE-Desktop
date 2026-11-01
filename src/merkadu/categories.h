@@ -25,6 +25,7 @@
 // not supported.
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,25 @@ class Categories {
   bool own_match(const Category &c, const App &app) const;
   const std::vector<Category> *siblings_of(const Category &c) const;
   std::vector<Category> top_;
+};
+
+// The departments of every app of a catalog, worked out once per catalog on
+// the worker thread that builds it: the counts of the Home page, the
+// department pages and the department of an app, without evaluating the
+// menu's queries on the window's thread.
+class CategoryIndex {
+ public:
+  void build(const Categories &cats, const Catalog &catalog);
+  bool built() const { return built_; }
+  // The apps of category |id| (indexes into the catalog's apps), by name.
+  const std::vector<size_t> &apps(const std::string &id) const;
+  // The top-level department of app |i| (nullptr when none).
+  const Category *department(size_t i) const;
+
+ private:
+  bool built_ = false;
+  std::map<std::string, std::vector<size_t>> members_;
+  std::vector<const Category *> top_;
 };
 
 // Snap Store categories (snapd /v2/find?category=) that correspond to a

@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <memory>
 #include <mutex>
+#include <thread>
 
 #include "desktop_entry.h"
 #include "i18n.h"
@@ -193,13 +195,12 @@ void Store::reload_catalog() {
   auto done = [this](CatalogData data) {
     catalog_loading_ = false;
     if (!fake_mode()) log_catalog(data);
-    catalog_apps_ = std::move(data.apps);
+    catalog_apps_ = std::make_shared<const std::vector<App>>(std::move(data.apps));
     catalog_error_ = data.error;
     catalog_sources_ = data.sources;
-    catalog_loaded_ = true;
+    owners_asked_ = false;
     rebuild();
     resolve_owners();
-    emit(Event::Catalog);
     if (catalog_again_) {
       catalog_again_ = false;
       reload_catalog();
@@ -253,11 +254,10 @@ void Store::reload_installed(Source s) {
   Backend *b = backend(s);
   if (!b) return;
   b->load_installed([this, s](std::vector<App> apps, std::string error) {
-    if (!error.empty()) fprintf(stderr, "merkadu: %s: %s\n", source_id(s), error.c_str());
-    installed_[int(s)] = std::move(apps);
+    if (!error.empty()) watchdog::log(std::string(source_id(s)) + ": " + error);
+    installed_[int(s)] = std::make_shared<const std::vector<App>>(std::move(apps));
     installed_loaded_[int(s)] = true;
     rebuild();
-    emit(Event::Catalog);
   });
 }
 
@@ -266,91 +266,108 @@ void Store::reload_all() {
 }
 
 void Store::rebuild() {
-  watchdog::Busy busy("merging the catalog", long(catalog_apps_.size()));
-  catalog_.clear();
-  for (App a : catalog_apps_) {
-    // Packages the catalog names no package for (metainfo of installed
-    // software): the package that owns their desktop file.
-    for (auto &o : a.origins)
-      if (o.source == Source::Debian && o.id.empty())
-        for (auto &d : a.desktop_ids) {
-          auto it = owners_.find(d);
-          if (it == owners_.end()) continue;
-          o.id = it->second;
-          if (std::find(a.pkgnames.begin(), a.pkgnames.end(), o.id) == a.pkgnames.end())
-            a.pkgnames.push_back(o.id);
-          break;
-        }
-    catalog_.add(std::move(a));
+  // Several changes in one turn of the event loop make one merge.
+  if (rebuild_scheduled_) return;
+  rebuild_scheduled_ = true;
+  Fl::add_timeout(0.0, run_rebuild);
+}
+
+void Store::run_rebuild(void *) {
+  Store &st = get();
+  st.rebuild_scheduled_ = false;
+  if (st.rebuild_running_) {
+    st.rebuild_again_ = true;  // merged again when the current one is done
+    return;
   }
-  for (auto &a : store_apps_) catalog_.add(a);
-  for (int s = 0; s < kSourceCount; ++s) {
-    for (auto &a : installed_[s]) {
-      if (s == int(Source::Debian) && starts_with(a.id, "deb:") && !a.origins.empty()) {
-        // An installed package: it marks the app it belongs to, if any.
-        App *target = catalog_.find_origin(Source::Debian, a.origins.front().id);
-        if (!target) continue;
-        App mark;
-        mark.id = target->id;
-        mark.origins = a.origins;
-        catalog_.add(std::move(mark));
-      } else {
-        catalog_.add(a);
-      }
-    }
-  }
-  // Details fetched for the details page (sizes, versions).
-  if (!details_.empty())
-    for (auto &a : catalog_.apps())
-      for (auto &o : a.origins) {
-        auto it = details_.find(o.key());
-        if (it != details_.end()) merge_origin(a, it->second);
-      }
-  // The package lists know the version, sizes and section of every
-  // Debian app.
-  if (!package_index_.empty())
-    for (auto &a : catalog_.apps())
-      for (auto &o : a.origins) {
-        if (o.source != Source::Debian) continue;
-        auto it = package_index_.find(o.id);
-        if (it == package_index_.end()) continue;
-        const Package &p = packages_[it->second];
-        if (o.version.empty()) o.version = p.candidate_version;
-        if (o.download_size < 0) o.download_size = p.download_size;
-        if (o.installed_size < 0) o.installed_size = o.installed ? p.current_size : p.installed_size;
-        if (a.section.empty()) a.section = p.section;
-      }
-  // Origins without anything to install (metainfo without a package).
-  for (auto &a : catalog_.apps())
-    a.origins.erase(std::remove_if(a.origins.begin(), a.origins.end(),
-                                   [](const Origin &o) { return o.id.empty(); }),
-                    a.origins.end());
-  catalog_.remove_empty();
-  catalog_.sort_origins(settings_.order);
-  for (int s = 0; s < kSourceCount; ++s) catalog_counts_[s] = 0;
-  for (auto &a : catalog_.apps())
-    for (int s = 0; s < kSourceCount; ++s)
-      if (a.has_source(Source(s))) ++catalog_counts_[s];
+  // Nothing to show before the catalog is read (the uninstall dialog has
+  // no catalog: catalog_loaded_ is set and catalog_apps_ stays empty).
+  if (!st.catalog_apps_ && !st.catalog_loaded_) return;
+  st.rebuild_running_ = true;
+  auto in = std::make_shared<CatalogInputs>();
+  in->catalog = st.catalog_apps_;
+  for (int s = 0; s < kSourceCount; ++s) in->installed[s] = st.installed_[s];
+  in->store = st.store_apps_;
+  in->details = st.details_;
+  in->owners = st.owners_;
+  in->packages = st.package_list_;
+  in->order = st.settings_.order;
+  in->categories = &st.categories_;  // read-only after start()
+  in->now = std::time(nullptr);
+  in->fresh_count = size_t(std::max(12, st.settings_.new_count * 2));
+  watchdog::Busy busy("starting the merge of the catalog");
+  std::thread([in]() {
+    auto result = std::make_shared<CatalogResult>(build_catalog(*in));
+    post([result]() { get().adopt(result); }, "the merged catalog arrived");
+  }).detach();
+}
+
+void Store::adopt(std::shared_ptr<CatalogResult> result) {
+  watchdog::Busy busy("taking over the merged catalog", long(result->catalog.size()));
+  // The old catalog is freed on a worker: thousands of apps take a while.
+  auto old = std::make_shared<Catalog>(std::move(catalog_));
+  catalog_ = std::move(result->catalog);
+  departments_ = std::move(result->departments);
+  fresh_ = std::move(result->fresh);
+  dropped_debian_ = result->dropped_debian;
+  for (int s = 0; s < kSourceCount; ++s) catalog_counts_[s] = result->counts[s];
+  std::thread([old = std::move(old)]() mutable { old.reset(); }).detach();
+  rebuild_running_ = false;
+  if (catalog_apps_) catalog_loaded_ = true;
   ++generation_;
+  emit(Event::Catalog);
+  if (rebuild_again_) {
+    rebuild_again_ = false;
+    rebuild();
+  }
+}
+
+std::vector<const App *> Store::apps_in(const Category &c) const {
+  std::vector<const App *> out;
+  if (!departments_.built()) return categories_.apps_in(c, catalog_);
+  for (size_t i : departments_.apps(c.id))
+    if (i < catalog_.apps().size()) out.push_back(&catalog_.apps()[i]);
+  return out;
+}
+
+size_t Store::count_in(const Category &c) const {
+  return departments_.built() ? departments_.apps(c.id).size() : categories_.apps_in(c, catalog_).size();
+}
+
+const Category *Store::department_of(const App &a) const {
+  const auto &apps = catalog_.apps();
+  if (departments_.built() && !apps.empty() && &a >= &apps.front() && &a <= &apps.back())
+    return departments_.department(size_t(&a - &apps.front()));
+  return categories_.category_of(a);
+}
+
+std::vector<const App *> Store::fresh_apps(size_t max) const {
+  std::vector<const App *> out;
+  for (auto &id : fresh_) {
+    if (out.size() >= max) break;
+    const App *a = catalog_.find(id);
+    if (a && !a->installed()) out.push_back(a);
+  }
+  return out;
 }
 
 void Store::resolve_owners() {
-  if (owners_asked_ || !backend(Source::Debian)) return;
+  if (owners_asked_ || !backend(Source::Debian) || !catalog_apps_) return;
   owners_asked_ = true;
+  // Launchers of installed software whose metainfo names no package: the
+  // package that owns the launcher, if one does (dpkg -S).
   std::vector<std::string> paths;
-  for (auto &a : catalog_apps_)
-    for (auto &o : a.origins)
-      if (o.source == Source::Debian && o.id.empty())
-        for (auto &d : a.desktop_ids)
-          if (ends_with(d, ".desktop") && d.find('/') == std::string::npos)
-            paths.push_back("/usr/share/applications/" + d);
+  for (auto &a : *catalog_apps_) {
+    if (!a.needs_owner) continue;
+    for (auto &d : a.desktop_ids) {
+      std::string p = "/usr/share/applications/" + d;
+      if (ends_with(d, ".desktop") && d.find('/') == std::string::npos && file_exists(p)) paths.push_back(p);
+    }
+  }
   if (paths.empty()) return;
   backend(Source::Debian)->owners(paths, [this](std::map<std::string, std::vector<std::string>> found) {
     for (auto &f : found)
       if (!f.second.empty()) owners_[basename_of(f.first)] = f.second.front();
-    if (found.empty()) return;
-    rebuild();
-    emit(Event::Catalog);
+    if (!found.empty()) rebuild();
   });
 }
 
@@ -627,7 +644,6 @@ void Store::fetch_details(const std::string &app_id) {
       if (apps.empty()) return;
       for (auto &x : apps) store_apps_.push_back(std::move(x));
       rebuild();
-      emit(Event::Catalog);
     });
   }
   for (auto &o : a->origins) {
@@ -637,7 +653,6 @@ void Store::fetch_details(const std::string &app_id) {
     b->details(copy, o, [this](Origin found) {
       details_[found.key()] = found;
       rebuild();
-      emit(Event::Catalog);
     });
   }
 }
@@ -718,28 +733,44 @@ void Store::load_packages() {
   packages_loading_ = true;
   emit(Event::Packages);
   if (fake_mode()) {
-    auto *snap = new apt::Snapshot(fake_package_snapshot());
+    auto *list = new std::shared_ptr<PackageList>(std::make_shared<PackageList>());
+    apt::Snapshot snap = fake_package_snapshot();
+    (*list)->packages = std::move(snap.packages);
+    (*list)->error = snap.error;
+    (*list)->prepare();
     Fl::add_timeout(0.2, [](void *data) {
-      std::unique_ptr<apt::Snapshot> s(static_cast<apt::Snapshot *>(data));
-      Store::get().apply_packages(std::move(*s));
-    }, snap);
+      std::unique_ptr<std::shared_ptr<PackageList>> l(static_cast<std::shared_ptr<PackageList> *>(data));
+      Store::get().apply_packages(*l);
+    }, list);
     return;
   }
+  // Read, indexed and turned into installed apps on the APT thread: the
+  // window only swaps them in.
   apt::queue([this] {
-    auto snap = std::make_shared<apt::Snapshot>(apt::snapshot());
-    post([this, snap] { apply_packages(std::move(*snap)); }, "the package lists arrived");
+    apt::Snapshot snap = apt::snapshot();
+    auto list = std::make_shared<PackageList>();
+    list->packages = std::move(snap.packages);
+    list->error = snap.error;
+    list->prepare();
+    post([this, list] { apply_packages(list); }, "the package lists arrived");
   });
 }
 
-void Store::apply_packages(apt::Snapshot snap) {
-  watchdog::Busy busy("taking over the package lists", long(snap.packages.size()));
+void Store::apply_packages(std::shared_ptr<PackageList> list) {
+  watchdog::Busy busy("taking over the package lists", long(list->packages.size()));
   packages_loading_ = false;
-  if (!snap.error.empty()) fprintf(stderr, "merkadu: package lists: %s\n", snap.error.c_str());
-  packages_error_ = snap.error;
+  if (!list->error.empty()) watchdog::log("package lists: " + list->error);
+  packages_error_ = list->error;
   packages_loaded_ = true;
-  packages_ = std::move(snap.packages);
-  package_index_.clear();
-  for (size_t i = 0; i < packages_.size(); ++i) package_index_[packages_[i].name] = i;
+  // The lists replaced are freed on a worker (90,000 packages take a while).
+  std::shared_ptr<const PackageList> old = std::move(package_list_);
+  std::shared_ptr<const std::vector<App>> old_installed = std::move(installed_[int(Source::Debian)]);
+  if (old || old_installed)
+    std::thread([old = std::move(old), old_installed = std::move(old_installed)]() mutable {
+      old_installed.reset();
+      old.reset();
+    }).detach();
+  package_list_ = list;
   ++packages_generation_;
   // Marks of packages that are gone, or that are done now.
   for (auto &kv : std::map<std::string, Mark>(marks_.all())) {
@@ -748,39 +779,19 @@ void Store::apply_packages(apt::Snapshot snap) {
         (kv.second == Mark::Upgrade && !p->upgradable))
       marks_.mark(kv.first, Mark::Unmarked);
   }
-  if (packages_.empty() && !packages_error_.empty()) {
+  if (list->packages.empty() && !packages_error_.empty()) {
     // Without APT's view, PackageKit says what is installed.
-    packages_loaded_ = true;
     if (Backend *b = backend(Source::Debian))
       b->load_installed([this](std::vector<App> apps, std::string error) {
-        installed_[int(Source::Debian)] = std::move(apps);
+        installed_[int(Source::Debian)] = std::make_shared<const std::vector<App>>(std::move(apps));
         installed_loaded_[int(Source::Debian)] = true;
         rebuild();
-        emit(Event::Catalog);
       });
   } else {
-    std::vector<App> installed;
-    for (auto &p : packages_) {
-      if (!p.installed) continue;
-      App a;
-      a.id = "deb:" + p.name;
-      a.name = p.name;
-      Origin o;
-      o.source = Source::Debian;
-      o.id = p.name;
-      o.installed = true;
-      o.installed_version = p.installed_version;
-      o.update = p.upgradable;
-      o.version = p.candidate_version;
-      o.installed_size = p.current_size;
-      a.origins.push_back(o);
-      installed.push_back(std::move(a));
-    }
-    installed_[int(Source::Debian)] = std::move(installed);
+    installed_[int(Source::Debian)] = std::shared_ptr<const std::vector<App>>(list, &list->installed);
     installed_loaded_[int(Source::Debian)] = true;
   }
   rebuild();
-  emit(Event::Catalog);
   emit(Event::Packages);
   if (packages_again_) {
     packages_again_ = false;
@@ -788,9 +799,13 @@ void Store::apply_packages(apt::Snapshot snap) {
   }
 }
 
+const std::vector<Package> &Store::packages() const {
+  static const std::vector<Package> *none = new std::vector<Package>();
+  return package_list_ ? package_list_->packages : *none;
+}
+
 const Package *Store::package(const std::string &name) const {
-  auto it = package_index_.find(name);
-  return it == package_index_.end() ? nullptr : &packages_[it->second];
+  return package_list_ ? package_list_->find(name) : nullptr;
 }
 
 const App *Store::app_of_package(const std::string &name) const {
@@ -877,14 +892,18 @@ int Store::apply_marks() {
 }
 
 std::set<std::string> Store::system_packages() const {
+  // Asked by every app page and package pane: worked out once per list.
+  if (system_generation_ == packages_generation_) return system_cache_;
   std::set<std::string> out;
-  for (auto &p : packages_)
+  for (auto &p : packages())
     if (p.system() && p.installed) out.insert(p.name);
   struct utsname u;
   if (uname(&u) == 0) {
     std::string kernel = running_kernel_package(u.release);
     if (!kernel.empty()) out.insert(kernel);
   }
+  system_cache_ = out;
+  system_generation_ = packages_generation_;
   return out;
 }
 
