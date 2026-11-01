@@ -14,6 +14,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/shape.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -24,6 +25,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -68,6 +70,10 @@ struct Component {
 
 std::vector<Component> g_components;
 Display *g_display = nullptr;
+// Owns _SDE_SESSION_S<screen>: programs ask it for theme switches
+// (_SDE_APPEARANCE_APPLY) and find out when they are done
+// (_SDE_APPEARANCE_DONE on it).
+Window g_session_win = None;
 int g_log_fd = -1;          // session.log, inherited by children as stdout/stderr
 int g_console_fd = -1;      // the original stderr (.xsession-errors)
 pid_t g_rescue_pid = 0;
@@ -274,6 +280,274 @@ bool component_running(const std::string &name) {
   for (auto &c : g_components)
     if (c.name == name && c.pid > 0) return true;
   return false;
+}
+
+Component *find_component(const std::string &name) {
+  for (auto &c : g_components)
+    if (c.name == name && c.pid > 0) return &c;
+  return nullptr;
+}
+
+// ------------------------------------------------- switching the look
+//
+// 0.2.0 Alpha 3.1 (docs/THEMES.md, "Switching themes"). A new theme reaches
+// every program in one step: the session is the only one that tells its
+// programs, and each of them once and only when its input changed:
+// sde-xsettingsd (GTK) re-reads its file, SDE WM reconfigures, the
+// compositor reloads its configuration in place (SIGUSR1, see
+// suite/patches/sde-compositor/0003) and SDE programs follow
+// _SDE_CONFIG_SERIAL. Up to 0.2.0 Alpha 3 the Control Center and the
+// session both did it, with pkill for every process of the user: the
+// compositor was reset twice per switch (2.8 s of frozen screen with
+// software OpenGL, a blank panel with XRender) and xsettingsd re-read its
+// file at every configuration change of any kind.
+//
+// A switch asked for with _SDE_APPEARANCE_APPLY (the Control Center's
+// Apply, the panel's dark mode, "sde-session --apply-appearance", the
+// automatic mode at 07:00 and 19:00) happens behind a picture of the
+// screen: an override-redirect window shows the screen as it was, the
+// theme is applied behind it, and once the programs have redrawn (GTK 3
+// restyles in two steps some 200 ms apart, the panel, the window frames and
+// the applications each at their own moment) the picture fades out, so the
+// old look turns into the new one in one calm step.
+
+// What the session's programs read last (their files at start or at the
+// last delivery).
+std::string g_sent_xsettings, g_sent_wm, g_sent_compositor;
+
+std::string read_text(const std::string &path) {
+  std::string text;
+  read_file(path, text);
+  return text;
+}
+
+void remember_delivered(const Config &cfg) {
+  g_sent_xsettings = read_text(config_home() + "/sde/xsettingsd.conf");
+  g_sent_wm = read_text(openbox_config_path());
+  g_sent_compositor = compositor_inputs(cfg);
+}
+
+// Tells the programs what changed since they last read their files.
+AppearanceFiles deliver(const Config &cfg) {
+  AppearanceFiles d;
+  std::string xs = read_text(config_home() + "/sde/xsettingsd.conf");
+  if (xs != g_sent_xsettings) {
+    g_sent_xsettings = xs;
+    d.gtk = true;
+    if (Component *c = find_component("GTK settings"))
+      kill(c->pid, SIGHUP);
+    else if (pid_t pid = selection_owner_pid(g_display, "_XSETTINGS_S" + std::to_string(DefaultScreen(g_display)),
+                                             "sde-xsettingsd|xsettingsd"))
+      kill(pid, SIGHUP);
+  }
+  std::string wm = read_text(openbox_config_path());
+  if (wm != g_sent_wm) {
+    g_sent_wm = wm;
+    d.wm = true;
+    reconfigure_window_manager(g_display);
+  }
+  std::string comp = compositor_inputs(cfg);
+  if (comp != g_sent_compositor) {
+    g_sent_compositor = comp;
+    d.compositor = true;
+    if (Component *c = find_component("SDE compositor")) kill(c->pid, SIGUSR1);
+  }
+  if (d.any())
+    log("appearance delivered:%s%s%s", d.gtk ? " GTK settings" : "", d.wm ? " window manager" : "",
+        d.compositor ? " compositor (reloaded in place)" : "");
+  XFlush(g_display);
+  return d;
+}
+
+// Writes what sde.conf says, tells the programs and announces the change.
+void publish_appearance(Config &cfg) {
+  cfg.load();
+  write_appearance_files(cfg);
+  deliver(cfg);
+  bump_config_serial();
+}
+
+using Clock = std::chrono::steady_clock;
+
+struct Transition {
+  enum Stage { IDLE, SHOWN, HOLD, FADE } stage = IDLE;
+  Window win = None;
+  Pixmap picture = None;
+  Clock::time_point since;
+  bool fade = false;            // the compositor fades the picture out
+  std::vector<long> requests;   // answered in _SDE_APPEARANCE_DONE when done
+} g_transition;
+
+// Durations of a switch: the picture is drawn by the compositor, then the
+// new look is published behind it, held while the programs redraw, and
+// faded out.
+constexpr double kShownSeconds = 0.05, kHoldSeconds = 0.30, kFadeSeconds = 0.22;
+
+Atom atom(const char *name) { return XInternAtom(g_display, name, False); }
+
+void set_cardinal(Window w, const char *name, long value) {
+  XChangeProperty(g_display, w, atom(name), XA_CARDINAL, 32, PropModeReplace,
+                  reinterpret_cast<unsigned char *>(&value), 1);
+}
+
+// True when the sampled pixels of |p| are all black: the X server could not
+// give a picture of the screen (some OpenGL drivers), so none is shown.
+bool picture_is_black(Pixmap p, int w, int h) {
+  XErrorHandler old = XSetErrorHandler(ignore_x_error);
+  bool black = true;
+  for (int gy = 1; gy <= 4 && black; ++gy)
+    for (int gx = 1; gx <= 4 && black; ++gx) {
+      XImage *img = XGetImage(g_display, p, w * gx / 5, h * gy / 5, 1, 1, AllPlanes, ZPixmap);
+      if (!img) continue;
+      if ((XGetPixel(img, 0, 0) & 0xFFFFFF) != 0) black = false;
+      XDestroyImage(img);
+    }
+  XSync(g_display, False);
+  XSetErrorHandler(old);
+  return black;
+}
+
+bool compositor_running() {
+  return XGetSelectionOwner(g_display, atom(("_NET_WM_CM_S" + std::to_string(DefaultScreen(g_display))).c_str())) !=
+         None;
+}
+
+// Covers the screen with a picture of itself. False when there is no
+// picture to show.
+bool show_picture() {
+  int screen = DefaultScreen(g_display);
+  Window root = RootWindow(g_display, screen);
+  int w = DisplayWidth(g_display, screen), h = DisplayHeight(g_display, screen);
+  int depth = DefaultDepth(g_display, screen);
+  Pixmap picture = XCreatePixmap(g_display, root, unsigned(w), unsigned(h), unsigned(depth));
+  XGCValues gv{};
+  gv.subwindow_mode = IncludeInferiors;
+  GC gc = XCreateGC(g_display, picture, GCSubwindowMode, &gv);
+  XCopyArea(g_display, root, picture, gc, 0, 0, unsigned(w), unsigned(h), 0, 0);
+  XFreeGC(g_display, gc);
+  if (picture_is_black(picture, w, h)) {
+    XFreePixmap(g_display, picture);
+    return false;
+  }
+  XSetWindowAttributes a{};
+  a.override_redirect = True;
+  a.background_pixmap = picture;
+  a.backing_store = NotUseful;
+  Window win = XCreateWindow(g_display, root, 0, 0, unsigned(w), unsigned(h), 0, depth, InputOutput,
+                             DefaultVisual(g_display, screen), CWOverrideRedirect | CWBackPixmap | CWBackingStore,
+                             &a);
+  // Clicks reach the windows behind it (it is up for half a second).
+  XShapeCombineRectangles(g_display, win, ShapeInput, 0, 0, nullptr, 0, ShapeSet, Unsorted);
+  XStoreName(g_display, win, "SDE theme switch");
+  XClassHint hint{const_cast<char *>("sde-theme-switch"), const_cast<char *>("SDE-Theme-Switch")};
+  XSetClassHint(g_display, win, &hint);
+  // The compositor neither shadows, rounds, blurs nor fades it (the
+  // generated configuration excludes _SDE_CURTAIN), and keeps compositing
+  // while it covers the screen: just below opaque, it is not a solid
+  // fullscreen window to unredirect.
+  set_cardinal(win, "_SDE_CURTAIN", 1);
+  Atom desktop = atom("_NET_WM_WINDOW_TYPE_DESKTOP");
+  XChangeProperty(g_display, win, atom("_NET_WM_WINDOW_TYPE"), XA_ATOM, 32, PropModeReplace,
+                  reinterpret_cast<unsigned char *>(&desktop), 1);
+  set_cardinal(win, "_NET_WM_WINDOW_OPACITY", 0xFFFFFFFEL);
+  set_cardinal(win, "_NET_WM_BYPASS_COMPOSITOR", 2);
+  XMapRaised(g_display, win);
+  XSync(g_display, False);
+  g_transition.win = win;
+  g_transition.picture = picture;
+  return true;
+}
+
+void hide_picture() {
+  if (g_transition.win != None) XDestroyWindow(g_display, g_transition.win);
+  if (g_transition.picture != None) XFreePixmap(g_display, g_transition.picture);
+  g_transition.win = None;
+  g_transition.picture = None;
+  XFlush(g_display);
+}
+
+void finish_transition() {
+  hide_picture();
+  for (long r : g_transition.requests) set_cardinal(g_session_win, "_SDE_APPEARANCE_DONE", r);
+  g_transition.requests.clear();
+  g_transition.stage = Transition::IDLE;
+  XFlush(g_display);
+}
+
+// Applies the appearance in sde.conf behind a picture of the screen.
+// |request|: the number to answer (0 for the session's own switches).
+void start_transition(Config &cfg, long request) {
+  if (request) g_transition.requests.push_back(request);
+  if (g_transition.stage == Transition::HOLD || g_transition.stage == Transition::FADE) {
+    // Another change while the picture is up: publish it behind the
+    // picture too and hold again.
+    if (g_transition.stage == Transition::FADE) set_cardinal(g_transition.win, "_NET_WM_WINDOW_OPACITY", 0xFFFFFFFEL);
+    publish_appearance(cfg);
+    g_transition.stage = Transition::HOLD;
+    g_transition.since = Clock::now();
+    return;
+  }
+  if (g_transition.stage == Transition::SHOWN) return;  // published when it is drawn
+  cfg.load();
+  g_transition.fade = compositor_running() && cfg.get_bool("aero", "animations", true);
+  if (env("SDE_THEME_SWITCH") == "instant" || !show_picture()) {
+    publish_appearance(cfg);
+    finish_transition();
+    return;
+  }
+  g_transition.stage = Transition::SHOWN;
+  g_transition.since = Clock::now();
+}
+
+// Advances a switch; the milliseconds until it needs this again (-1: idle).
+int step_transition(Config &cfg) {
+  if (g_transition.stage == Transition::IDLE) return -1;
+  double t = std::chrono::duration<double>(Clock::now() - g_transition.since).count();
+  switch (g_transition.stage) {
+    case Transition::SHOWN:
+      if (t < kShownSeconds) return int((kShownSeconds - t) * 1000) + 1;
+      publish_appearance(cfg);
+      g_transition.stage = Transition::HOLD;
+      g_transition.since = Clock::now();
+      return int(kHoldSeconds * 1000);
+    case Transition::HOLD:
+      if (t < kHoldSeconds) return int((kHoldSeconds - t) * 1000) + 1;
+      if (!g_transition.fade) {
+        finish_transition();
+        return -1;
+      }
+      g_transition.stage = Transition::FADE;
+      g_transition.since = Clock::now();
+      return 0;
+    case Transition::FADE: {
+      double k = std::min(1.0, t / kFadeSeconds);
+      double ease = k * k * (3 - 2 * k);  // smoothstep: soft start and end
+      if (k >= 1.0) {
+        finish_transition();
+        return -1;
+      }
+      set_cardinal(g_transition.win, "_NET_WM_WINDOW_OPACITY", long((1.0 - ease) * 0xFFFFFFFEUL));
+      XFlush(g_display);
+      return 16;  // about one frame
+    }
+    default:
+      return -1;
+  }
+}
+
+// The window that owns _SDE_SESSION_S<screen>: the address of theme switch
+// requests (request_appearance_apply()).
+void claim_session_selection() {
+  Window root = DefaultRootWindow(g_display);
+  XSetWindowAttributes a{};
+  a.override_redirect = True;
+  g_session_win = XCreateWindow(g_display, root, -1, -1, 1, 1, 0, CopyFromParent, InputOnly, CopyFromParent,
+                                CWOverrideRedirect, &a);
+  XStoreName(g_display, g_session_win, "sde-session");
+  set_cardinal(g_session_win, "_NET_WM_PID", long(getpid()));
+  XSetSelectionOwner(g_display, atom(("_SDE_SESSION_S" + std::to_string(DefaultScreen(g_display))).c_str()),
+                     g_session_win, CurrentTime);
+  XFlush(g_display);
 }
 
 // Some OpenGL drivers (virtual machines, old GPUs) let the compositor run but
@@ -621,9 +895,55 @@ int print_compositor_config() {
   return 0;
 }
 
+// --apply-appearance [--wait]: applies the appearance saved in sde.conf (a
+// script that edited it, the UI tests): through the session of this display,
+// in one calm step, or at once when no session runs. --wait returns once the
+// session shows the new look.
+int apply_appearance_cli(bool wait) {
+  Display *dpy = XOpenDisplay(nullptr);
+  if (!dpy) {
+    fprintf(stderr, "sde-session: %s\n", format(_("cannot open display %s"), env("DISPLAY").c_str()).c_str());
+    return 1;
+  }
+  Config cfg;
+  cfg.load();
+  long request = request_appearance_apply(dpy);
+  if (!request) {
+    apply_appearance_now(dpy, cfg);
+  } else if (wait) {
+    Atom done = XInternAtom(dpy, "_SDE_APPEARANCE_DONE", False);
+    Window session =
+        XGetSelectionOwner(dpy, XInternAtom(dpy, ("_SDE_SESSION_S" + std::to_string(DefaultScreen(dpy))).c_str(), False));
+    XSelectInput(dpy, session, PropertyChangeMask);
+    auto answered = [&] {
+      Atom type;
+      int fmt = 0;
+      unsigned long n = 0, after = 0;
+      unsigned char *data = nullptr;
+      bool yes = false;
+      if (XGetWindowProperty(dpy, session, done, 0, 1, False, XA_CARDINAL, &type, &fmt, &n, &after, &data) ==
+              Success && data) {
+        yes = n == 1 && reinterpret_cast<long *>(data)[0] == request;
+        XFree(data);
+      }
+      return yes;
+    };
+    for (int i = 0; i < 100 && !answered(); ++i) {
+      struct pollfd fd = {ConnectionNumber(dpy), POLLIN, 0};
+      poll(&fd, 1, 100);
+      while (XPending(dpy)) {
+        XEvent ev;
+        XNextEvent(dpy, &ev);
+      }
+    }
+  }
+  XCloseDisplay(dpy);
+  return 0;
+}
+
 void usage() {
   printf("%s", _("Usage: sde-session [--check | --logout | --compositor MODE | --compositor-config |\n"
-                 "                   --version | --help]\n\n"
+                 "                   --apply-appearance [--wait] | --version | --help]\n\n"
                  "Starts the Selviana Desktop Environment. Normally run by startsde from\n"
                  "the display manager.\n\n"
                  "  --check    check that every SDE component can start, and report problems\n"
@@ -633,6 +953,9 @@ void usage() {
                  "  --compositor-config\n"
                  "             write the compositor configuration from the settings and print\n"
                  "             its path\n"
+                 "  --apply-appearance [--wait]\n"
+                 "             apply the theme saved in sde.conf in one calm step (--wait: return\n"
+                 "             once it is shown)\n"
                  "  --version  print the version and exit\n"));
 }
 
@@ -646,6 +969,8 @@ int main(int argc, char **argv) {
     if (a == "--check") return run_check();
     if (a == "--compositor") return set_compositor(i + 1 < argc ? argv[i + 1] : "");
     if (a == "--compositor-config") return print_compositor_config();
+    if (a == "--apply-appearance")
+      return apply_appearance_cli(i + 1 < argc && std::string(argv[i + 1]) == "--wait");
     if (a == "--version") return print_version("sde-session", SDE_VERSION);
     if (a == "--help" || a == "-h") {
       usage();
@@ -746,13 +1071,16 @@ int main(int argc, char **argv) {
     start_component(g_components.back());
   }
   run_autostart();
+  // What the programs started with: later only changes are delivered.
+  remember_delivered(cfg);
+  claim_session_selection();
 
   bool running = true;
   while (running) {
     struct pollfd fds[2] = {{sfd, POLLIN, 0}, {ConnectionNumber(g_display), POLLIN, 0}};
     // Sleep until a signal, an X event or the next scheduled restart; an idle
     // session manager must not wake up every second.
-    int timeout = -1;
+    int timeout = step_transition(cfg);  // a theme switch in progress
     time_t now0 = time(nullptr);
     for (auto &c : g_components)
       if (c.pid == 0 && c.restart_at && !c.given_up) {
@@ -769,7 +1097,7 @@ int main(int argc, char **argv) {
     int r = poll(fds, 2, timeout);
     if (auto_mode && theme_mode_dark("auto") != g_auto_dark) {
       g_auto_dark = theme_mode_dark("auto");
-      bump_config_serial();  // handled below like any other change
+      start_transition(cfg, 0);  // a calm switch, like Apply in the Control Center
     }
     if (r < 0 && errno != EINTR) break;
     if (fds[1].revents) {
@@ -777,19 +1105,18 @@ int main(int argc, char **argv) {
         XEvent ev;
         XNextEvent(g_display, &ev);
         if (ev.type == PropertyNotify && ev.xproperty.atom == XInternAtom(g_display, "_SDE_CONFIG_SERIAL", False)) {
-          cfg.load(); sync_gtk_settings(cfg);
-          // The window frames and the compositor follow the theme too, no
-          // matter which program changed it (Settings, the panel, a script).
-          if (sync_openbox(cfg)) reconfigure_window_manager();
-          if (!file_exists(config_home() + "/sde/compositor.conf")) {
-            std::string before, after, path = config_home() + "/sde/aero-compositor.conf";
-            read_file(path, before);
-            write_compositor_config(cfg);
-            write_compositor_config(cfg, true);
-            if (read_file(path, after) && after != before) reload_compositor();
-          }
-          for (auto &c : g_components)
-            if (c.name == "GTK settings" && c.pid > 0) kill(c.pid, SIGHUP);
+          // GTK, the window frames and the compositor follow the theme too,
+          // no matter which program changed it (Settings, the panel, a
+          // script); each is told once and only when its input changed (the
+          // session's own announcement finds nothing new).
+          cfg.load();
+          write_appearance_files(cfg);
+          deliver(cfg);
+        } else if (ev.type == ClientMessage && ev.xclient.window == g_session_win &&
+                   ev.xclient.message_type == XInternAtom(g_display, "_SDE_APPEARANCE_APPLY", False)) {
+          start_transition(cfg, ev.xclient.data.l[0]);
+        } else if (ev.type == SelectionClear && ev.xselectionclear.window == g_session_win) {
+          log("another session took over the theme switches of this display");
         }
       }
     }
@@ -804,6 +1131,7 @@ int main(int argc, char **argv) {
           cfg.load();
         } else if (info.ssi_signo == SIGUSR2) {
           restart_compositor(cfg);
+          g_sent_compositor = compositor_inputs(cfg);  // started with them
         } else {
           log("ending session");
           running = false;

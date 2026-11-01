@@ -2,6 +2,8 @@
 // Window manager integration. SDE 0.1 uses Openbox with an SDE configuration.
 #pragma once
 
+#include <X11/Xlib.h>
+
 #include <string>
 #include <vector>
 
@@ -31,8 +33,9 @@ bool sync_openbox(const class Config &cfg);
 // Command line that starts the configured window manager.
 std::vector<std::string> window_manager_command(const std::string &configured);
 
-// Asks a running Openbox to reload its configuration.
-void reconfigure_window_manager();
+// Asks the window manager of the display (fl_display when |dpy| is null) to
+// reload its configuration and theme (_OB_CONTROL, as sde-wm --reconfigure).
+void reconfigure_window_manager(Display *dpy = nullptr);
 
 // Fits a new window of up to |w| x |h| into the work area of the screen
 // under the pointer, frame included, and sets |x|,|y| to centre it there.

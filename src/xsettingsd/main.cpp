@@ -58,7 +58,9 @@ bool load(bool initial) {
   auto next = sde::xsettings::parse(text.str(), &errors);
   for (const auto &e : errors) fprintf(stderr, "sde-xsettingsd: %s: %s\n", g_config.c_str(), e.c_str());
   uint32_t serial = initial ? 0 : g_serial + 1;
-  if (!sde::xsettings::merge(g_settings, next, serial) && !initial) return true;
+  // Unchanged (0.2.0 Alpha 3.1): nothing to publish, so GTK applications
+  // are not woken up to compare every setting again.
+  if (!sde::xsettings::merge(g_settings, next, serial) && !initial) return false;
   g_serial = serial;
   return true;
 }
@@ -89,6 +91,12 @@ bool acquire(bool replace) {
     Window root = RootWindow(g_display, n);
     s.window = XCreateSimpleWindow(g_display, root, -1, -1, 1, 1, 0, 0, 0);
     XSelectInput(g_display, s.window, PropertyChangeMask | StructureNotifyMask);
+    // The manager of this display can be told to re-read its file without
+    // reaching other users' or other displays' daemons (0.2.0 Alpha 3.1).
+    long pid = long(getpid());
+    XChangeProperty(g_display, s.window, XInternAtom(g_display, "_NET_WM_PID", False), XA_CARDINAL, 32,
+                    PropModeReplace, reinterpret_cast<unsigned char *>(&pid), 1);
+    XStoreName(g_display, s.window, "sde-xsettingsd");
     // A server timestamp, obtained from a property change on our own window.
     XChangeProperty(g_display, s.window, XA_WM_NAME, XA_STRING, 8, PropModeAppend, nullptr, 0);
     XEvent ev;
@@ -185,8 +193,7 @@ int main(int argc, char **argv) {
       struct signalfd_siginfo info;
       if (read(sfd, &info, sizeof info) != sizeof info) continue;
       if (info.ssi_signo == SIGHUP) {
-        load(false);
-        publish();
+        if (load(false)) publish();
       } else {
         break;
       }

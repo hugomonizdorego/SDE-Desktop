@@ -48,8 +48,7 @@ void relayout(void*) { refresh_page(); }
 void apply_change() {
   double old = theme.scale;
   cfg.save();
-  sync_gtk_settings(cfg);
-  x11::notify_config_changed();
+  announce_config_change(fl_display, cfg);
   if (std::fabs(old - Theme::from_config(cfg).scale) > .01)
     Fl::add_timeout(.2, [](void*) {
       execl("/proc/self/exe", "sde-display-settings", static_cast<char*>(nullptr));
