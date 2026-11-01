@@ -177,8 +177,41 @@ folders of Copy/Move/Export and Organize), Taca (folders, files and
 archives to add, Extract To) and Xanara (Open Documents, Save a Copy As,
 Choose an Image, a signature, the folders of Split and Export Images).
 
+## Programs that use the portal
+
+`xdg-desktop-portal-sde` (`src/portal/main.cpp`, installed in
+`/usr/libexec/sde`) implements `org.freedesktop.impl.portal.FileChooser`
+(`OpenFile`, `SaveFile`, `SaveFiles`) with the same dialog, so Flatpak
+programs and the programs that ask xdg-desktop-portal for their file
+dialogs (Firefox, Chromium, GTK 4 and Qt programs) show the SDE file
+chooser too. `data/portals/sde.portal` declares it, D-Bus starts it on
+demand (`org.freedesktop.impl.portal.desktop.sde`, activation file from
+`data/portals/*.service.in`), and `data/portals/sde-portals.conf` chooses it
+for `org.freedesktop.impl.portal.FileChooser` in SDE sessions (GTK stays
+the default for the other portals). It understands `accept_label` (GTK's
+`_` mnemonics dropped), `multiple`, `directory`, `filters` (globs and MIME
+types, shown by their names), `current_filter` (chosen in the menu, or the
+only filter when there is no list), `choices` (no controls are shown; their
+default values are returned), `current_name`, `current_folder`,
+`current_file` and `files` (`SaveFiles`: the chosen folder with the
+program's names), and the parent window `x11:<XID>`: the dialog is
+transient for that window and centred on it. `modal` is always honoured.
+The reply has `uris`, `current_filter`, `choices` and `writable` (for
+`OpenFile`); Escape answers 1 and `Request.Close` on the request's handle
+closes its dialog (2). Each program remembers its own last folder (under
+its application ID), and chosen files go to the recent files under that
+ID. Dialogs run from the event loop, not inside libdbus's dispatch, so a
+`Close` (or another program's request) gets through while one is open. The
+service quits a minute after its last dialog (`SDE_PORTAL_IDLE_SECONDS`).
+
 ## Tests
 
+* `sde-file-chooser-portal` (`tests/test_file_chooser_portal.py`, under
+  `dbus-run-session` with Xvfb): the portal called with `gdbus` as
+  xdg-desktop-portal calls it — `OpenFile` with several files, filters,
+  `current_filter`, choices, `current_folder` and a parent window (the
+  dialog is transient for it), a folder, `SaveFile`, `SaveFiles`, Escape and
+  `Request.Close`.
 * `sde-file-chooser-model` (`tests/test_file_chooser.cpp`, no display):
   natural sorting by name, size, date and type with folders first; hidden
   files (dot files, backups, `.hidden`), links; accent-free search; the
