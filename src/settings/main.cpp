@@ -39,6 +39,7 @@
 #include "../panel/clockface.h"
 #include "../panel/timezone.h"
 #include "about.h"
+#include "appearance_draft.h"
 #include "avatar.h"
 #include "avatar_view.h"
 #include "crash.h"
@@ -63,6 +64,7 @@
 #include "suite.h"
 #include "system.h"
 #include "theme.h"
+#include "theme_preview.h"
 #include "thumbnails.h"
 #include "ui.h"
 #include "util.h"
@@ -103,11 +105,11 @@ const Theme &settings_theme() { return g_theme; }
 void apply_change() {
   double old_scale = g_theme.scale;
   g_cfg.save();
-  sync_gtk_settings(g_cfg);
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
-  if (sync_openbox(g_cfg)) reconfigure_window_manager();
-  x11::notify_config_changed();
+  // GTK settings, SDE WM and the compositor files are written at once; the
+  // session tells each program what changed (without a session, this does).
+  announce_config_change(fl_display, g_cfg);
   if (std::fabs(g_theme.scale - old_scale) > 0.01) {
     // Every size depends on the scale: start again with the new one.
     Fl::add_timeout(0.2, [](void *) {
@@ -124,18 +126,16 @@ namespace {
 
 void aero_changed();
 
-// Writes the chosen family, mode and accent and applies them everywhere:
-// GTK (settings.ini, XSETTINGS, libadwaita colors), SDE WM frames and
-// button layout, the compositor and every SDE program.
-void set_theme(const std::string &family, const std::string &mode, const std::string &accent) {
-  g_cfg.set("appearance", "style", family);
-  g_cfg.set("appearance", "theme", mode);
-  g_cfg.set("appearance", "accent_name", accent);
-  g_cfg.set("appearance", "accent", theme_accent_color(family, accent, false).to_hex());
-  g_theme = Theme::from_config(g_cfg);
-  aero_changed();
-  if (g_window) g_window->redraw();
-}
+// Control Center > Appearance (0.2.0 Alpha 3.1): the theme, mode, accent and
+// Transparency and clarity are chosen first (g_draft) and applied together
+// with Apply; see appearance_draft.h. The Control Center itself keeps the
+// look in use (g_theme) until then.
+AppearanceDraft g_draft;
+// The chosen look changed: cards, miniature, notes, bar and preview follow.
+// |rebuild|: the page is built again (not while a slider is dragged).
+void draft_changed(bool rebuild = true);
+// The theme the chosen look would give (for the previews).
+Theme draft_theme() { return Theme::from_config(g_draft.preview_config(g_cfg)); }
 
 // Generic card-like radio widget: draw_card() paints, pick() chooses.
 class PickCard : public Fl_Widget {
@@ -274,15 +274,19 @@ class FamilyCard : public PickCard {
       : PickCard(x, y, w, h), id_(std::move(id)), label_(std::move(label)), desc_(std::move(desc)) {
     tooltip(desc_.c_str());
   }
-  bool selected() const override { return g_theme.family == id_; }
-  void pick() override { set_theme(id_, g_theme.mode, g_theme.accent_name); }
+  bool selected() const override { return g_draft.pending().family == id_; }
+  void pick() override {
+    g_draft.set_family(id_);
+    draft_changed();
+  }
   void draw() override {
     bool on = selected();
     int pv = h() - S(44);
+    Theme pending = draft_theme();
     {
       Painter p(window()->w(), window()->h());
-      Theme t = Theme::make(id_, g_theme.dark, g_theme.accent_name);
-      t.translucent = g_theme.translucent;
+      Theme t = Theme::make(id_, pending.dark, pending.accent_name);
+      t.translucent = pending.translucent;
       p.fill_rounded(x(), y(), w(), h(), S(12), hot_ ? g_theme.hover : g_theme.surface);
       double in = Sd(6);
       cairo_save(p.cr());
@@ -298,7 +302,18 @@ class FamilyCard : public PickCard {
         p.line(bx - Sd(4), by, bx - Sd(1), by + Sd(3), g_theme.on_accent, Sd(2));
         p.line(bx - Sd(1), by + Sd(3), bx + Sd(4), by - Sd(3), g_theme.on_accent, Sd(2));
       }
+      // The family in use while another one is chosen.
+      if (in_use() && !on) {
+        text_font(std::max(S(9), g_theme.font_size - S(3)), true);
+        int tw = text_width(_("In use")) + S(14);
+        p.fill_rounded(x() + w() - tw - S(10), y() + S(10), tw, S(18), S(9), g_theme.surface.alpha(0.92));
+      }
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), Sd(12));
+    }
+    if (in_use() && !on) {
+      text_font(std::max(S(9), g_theme.font_size - S(3)), true);
+      int tw = text_width(_("In use")) + S(14);
+      draw_text(_("In use"), x() + w() - tw - S(10), y() + S(10), tw, S(18), g_theme.text, 1);
     }
     text_font(g_theme.font_size, true);
     draw_text(std::string("SDE ") + _(label_.c_str()), x() + S(12), y() + pv + S(3), w() - S(24), S(20),
@@ -308,6 +323,7 @@ class FamilyCard : public PickCard {
   }
 
  private:
+  bool in_use() const { return g_draft.applied().family == id_; }
   std::string short_desc() const {
     if (id_ == "graphite") return N_("Calm neutral grays · soft depth");
     if (id_ == "fluent") return N_("Fluent Design · Mica, Acrylic");
@@ -319,17 +335,26 @@ class FamilyCard : public PickCard {
 // Light / Dark / Auto: a half-and-half tile for Auto.
 class ModeCard : public PickCard {
  public:
-  ModeCard(int x, int y, int w, int h, std::string mode) : PickCard(x, y, w, h), mode_(std::move(mode)) {}
-  bool selected() const override { return g_theme.mode == mode_; }
-  void pick() override { set_theme(g_theme.family, mode_, g_theme.accent_name); }
+  ModeCard(int x, int y, int w, int h, std::string mode) : PickCard(x, y, w, h), mode_(std::move(mode)) {
+    // The name keyboard and screen reader users (and the UI tests) get.
+    tooltip(mode_ == "light"  ? _("Light mode")
+            : mode_ == "dark" ? _("Dark mode")
+                              : _("Automatic mode: light by day, dark in the evening"));
+  }
+  bool selected() const override { return g_draft.pending().mode == mode_; }
+  void pick() override {
+    g_draft.set_mode(mode_);
+    draft_changed();
+  }
   void draw() override {
     bool on = selected();
+    const AppearanceLook &look = g_draft.pending();
     {
       Painter p(window()->w(), window()->h());
       p.fill_rounded(x(), y(), w(), h(), S(10), hot_ || on ? g_theme.hover : g_theme.surface_alt);
       double sw = h() - Sd(14), sx = x() + Sd(8), sy = y() + Sd(7);
-      Theme light = Theme::make(g_theme.family, false, g_theme.accent_name);
-      Theme dark = Theme::make(g_theme.family, true, g_theme.accent_name);
+      Theme light = Theme::make(look.family, false, look.accent);
+      Theme dark = Theme::make(look.family, true, look.accent);
       if (mode_ == "auto") {
         cairo_save(p.cr());
         p.rounded_rect(sx, sy, sw, sw, Sd(6));
@@ -359,16 +384,17 @@ class ModeCard : public PickCard {
 // Accent swatches of the current family.
 class AccentPicker : public Fl_Widget {
  public:
-  AccentPicker(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {}
+  AccentPicker(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) { tooltip(_("Accent color")); }
   int step() const { return std::min(S(36), w() / int(theme_accents().size())); }
   void draw() override {
     Painter p(window()->w(), window()->h());
     int st = step();
     auto accents = theme_accents();
+    Theme pending = draft_theme();
     for (int i = 0; i < int(accents.size()); ++i) {
-      Color c = theme_accent_color(g_theme.family, accents[size_t(i)], g_theme.dark);
+      Color c = theme_accent_color(pending.family, accents[size_t(i)], pending.dark);
       double cx = x() + st / 2.0 + i * st, cy = y() + h() / 2.0;
-      bool active = accents[size_t(i)] == g_theme.accent_name;
+      bool active = accents[size_t(i)] == g_draft.pending().accent && g_draft.pending().custom_accent.empty();
       double r = st * 0.34;
       if (active) p.circle(cx, cy, r + Sd(4), c);
       p.circle(cx, cy, active ? r + Sd(2) : r + Sd(1), g_theme.surface);
@@ -386,7 +412,9 @@ class AccentPicker : public Fl_Widget {
   void pick(int i) {
     auto accents = theme_accents();
     if (i < 0 || i >= int(accents.size())) return;
-    set_theme(g_theme.family, g_theme.mode, accents[size_t(i)]);
+    focus_ = i;
+    g_draft.set_accent(accents[size_t(i)]);
+    draft_changed();
   }
   int handle(int e) override {
     int n = int(theme_accents().size());
@@ -396,7 +424,8 @@ class AccentPicker : public Fl_Widget {
       case FL_MOVE: {
         int i = (Fl::event_x() - x()) / step();
         static std::string tip;
-        tip = i >= 0 && i < n ? theme_accent_label(theme_accents()[size_t(i)]) : "";
+        tip = i >= 0 && i < n ? format(_("Accent color: %s"), theme_accent_label(theme_accents()[size_t(i)]).c_str())
+                              : std::string(_("Accent color"));
         tooltip(tip.c_str());
         return 1;
       }
@@ -439,6 +468,20 @@ std::string default_wallpaper() {
   if (!file_exists(path) && file_exists("/usr/share/backgrounds/sde/" + name))
     path = "/usr/share/backgrounds/sde/" + name;
   return path;
+}
+
+// The wallpaper in use, rendered at |w| x |h| for the miniature (cached).
+cairo_surface_t *wallpaper_backdrop(int w, int h) {
+  static std::string key;
+  static cairo_surface_t *surface = nullptr;
+  std::string path = g_cfg.get("appearance", "wallpaper", "auto");
+  if (path == "auto" || path.empty()) path = default_wallpaper();
+  std::string k = path + "@" + std::to_string(w) + "x" + std::to_string(h);
+  if (k == key) return surface;
+  if (surface) cairo_surface_destroy(surface);
+  surface = file_exists(path) ? load_wallpaper(path, w, h, "zoom", 0.4, 0.5, 0.6) : nullptr;
+  key = k;
+  return surface;
 }
 
 // ------------------------------------------------------------- wallpapers
@@ -970,31 +1013,27 @@ class PanelStyleCard : public Fl_Widget {
   std::string style_, title_;
 };
 
-void reload_compositor_later(void *) {
-  write_compositor_config(g_cfg);
-  write_compositor_config(g_cfg, true);
-  reload_compositor();
-}
 void aero_changed();
 
 // Transparency preset (Off, Subtle, Clear, Glass): a panel and a menu over a
-// wallpaper, drawn with the opacity that preset gives the current family.
+// wallpaper, drawn with the opacity that preset gives the chosen family.
 class TransparencyCard : public PickCard {
  public:
   TransparencyCard(int x, int y, int w, int h, const TransparencyPreset &p)
-      : PickCard(x, y, w, h), id_(p.id), label_(p.label), value_(p.value) {}
+      : PickCard(x, y, w, h), id_(p.id), label_(p.label), value_(p.value) {
+    name_ = format(_("Transparency: %s"), _(label_.c_str()));
+    tooltip(name_.c_str());
+  }
   bool selected() const override {
-    return g_cfg.get_bool("aero", "enabled", true) && g_theme.transparency == value_;
+    return g_draft.pending().translucent && g_draft.pending().transparency == value_;
   }
   void pick() override {
-    g_cfg.set("aero", "enabled", "true");
-    g_cfg.set("aero", "transparency", std::to_string(value_));
-    aero_changed();
-    Fl::add_timeout(0, [](void *) { refresh_page(); });
+    g_draft.set_preset(value_);
+    draft_changed();
   }
   void draw() override {
     bool on = selected();
-    Config c = g_cfg;
+    Config c = g_draft.preview_config(g_cfg);
     c.set("aero", "enabled", "true");
     c.set("aero", "transparency", std::to_string(value_));
     Theme t = Theme::from_config(c);
@@ -1036,7 +1075,7 @@ class TransparencyCard : public PickCard {
   }
 
  private:
-  std::string id_, label_;
+  std::string id_, label_, name_;
   int value_;
 };
 
@@ -1124,6 +1163,10 @@ class IconThemeCard : public PickCard {
 };
 
 Label *g_transparency_note = nullptr;
+Label *g_theme_note = nullptr;
+Slider *g_transparency_slider = nullptr, *g_blur_slider = nullptr;
+Switch *g_translucent_switch = nullptr, *g_blur_switch = nullptr, *g_corners_switch = nullptr,
+       *g_animations_switch = nullptr;
 
 // "Panel 82 % · Menus 88 % · Window frames 94 % opaque" for the slider hint.
 std::string transparency_summary(const Theme &t) {
@@ -1139,10 +1182,45 @@ std::string transparency_summary(const Theme &t) {
                 pc(t.opacity), pc(std::min(t.popup_opacity, t.gtk_menu_alpha)), pc(t.frame_opacity));
 }
 
+// The GTK and SDE WM theme in use, and the one Apply switches to.
+std::string theme_note() {
+  Theme pending = draft_theme();
+  std::string based = pending.family == "fluent"
+                          ? _("Based on Flat Remix GTK and Flat Remix GNOME by Daniel Ruiz de Alegría.")
+                          : _("Based on the Graphite GTK theme by Vince Liu.");
+  if (pending.gtk_theme != g_theme.gtk_theme)
+    return format(_("Applications, menus, window frames and SDE use %s (GTK 3, GTK 4, libadwaita and SDE "
+                    "WM); Apply switches them to %s. %s"),
+                  g_theme.gtk_theme.c_str(), pending.gtk_theme.c_str(), based.c_str());
+  return format(_("Applications, menus, window frames and SDE use %s (GTK 3, GTK 4, libadwaita "
+                  "and SDE WM). %s"),
+                g_theme.gtk_theme.c_str(), based.c_str());
+}
+
+// The chosen look in miniature, over the wallpaper in use: the window frame,
+// a menu and the panel with the transparency and blur they will have.
+class LookMiniature : public Fl_Widget {
+ public:
+  LookMiniature(int x, int y, int w, int h) : Fl_Widget(x, y, w, h) {
+    tooltip(_("The chosen look in miniature"));
+  }
+  void draw() override {
+    Painter p(window()->w(), window()->h());
+    draw_look_scene(p, draft_theme(), x(), y(), w(), h(), Sd(12), wallpaper_backdrop(w(), h()), g_theme.border);
+  }
+  int handle(int e) override { return e == FL_ENTER || e == FL_LEAVE ? 1 : Fl_Widget::handle(e); }
+};
+LookMiniature *g_miniature = nullptr;
+
 void build_appearance(Page *page) {
-  g_transparency_note = nullptr;
+  g_transparency_note = g_theme_note = nullptr;
+  g_transparency_slider = g_blur_slider = nullptr;
+  g_translucent_switch = g_blur_switch = g_corners_switch = g_animations_switch = nullptr;
   page->heading(_("Appearance"), _("Theme, colors, translucency, size and wallpaper"));
   page->begin_card(_("Theme"));
+  // The chosen look at a glance; Preview shows it for real.
+  g_miniature = new LookMiniature(page->left() + S(20), page->cursor(), page->width() - S(40), S(150));
+  page->advance(S(162));
   auto fams = theme_families();
   int gap = S(12), n = int(fams.size());
   int cw = std::min(S(220), (page->width() - S(40) - (n - 1) * gap) / n);
@@ -1161,12 +1239,10 @@ void build_appearance(Page *page) {
   page->row(_("Accent color"), S(36) * int(theme_accents().size()), S(38),
             [](int x, int yy, int w, int h) { return new AccentPicker(x, yy, w, h); });
   {
-    std::string based = g_theme.family == "fluent"
-                             ? _("Based on Flat Remix GTK and Flat Remix GNOME by Daniel Ruiz de Alegría.")
-                             : _("Based on the Graphite GTK theme by Vince Liu.");
-    page->note(format(_("Applications, menus, window frames and SDE use %s (GTK 3, GTK 4, libadwaita "
-                        "and SDE WM). %s"),
-                      g_theme.gtk_theme.c_str(), based.c_str()));
+    std::string text = theme_note();
+    int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::DIM) + S(14);
+    g_theme_note = new Label(page->left() + S(20), page->cursor(), lw, lh, text, Label::DIM, true);
+    page->advance(lh);
   }
   page->end_card();
 
@@ -1182,59 +1258,63 @@ void build_appearance(Page *page) {
       new TransparencyCard(page->left() + S(20) + i * (pw + pgap), py, pw, S(104), presets[size_t(i)]);
     page->advance(S(116));
   }
-  page->slider_row(
-      _("Transparency"), 0, 100, g_cfg.get_int("aero", "transparency", 25),
-      [](double v) {
-        g_cfg.set("aero", "transparency", std::to_string(int(std::lround(v))));
-        if (!g_cfg.get_bool("aero", "enabled", true) && v > 0) g_cfg.set("aero", "enabled", "true");
-        aero_changed();
-        if (g_transparency_note) g_transparency_note->set(transparency_summary(g_theme));
-      });
+  const AppearanceLook &look = g_draft.pending();
+  // While the slider is dragged only the chosen look, the miniature and the
+  // preview window change: nothing is written and nothing reloads.
+  g_transparency_slider = page->slider_row(_("Transparency"), 0, 100, look.transparency, [](double v) {
+    g_draft.set_transparency(int(std::lround(v)));
+    draft_changed(false);
+  });
+  g_transparency_slider->when(FL_WHEN_CHANGED);
+  g_transparency_slider->tooltip(_("Transparency level"));
   {
-    std::string text = transparency_summary(g_theme);
+    std::string text = transparency_summary(draft_theme());
     int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::DIM) + S(14);
     g_transparency_note = new Label(page->left() + S(20), page->cursor(), lw, lh, text, Label::DIM, true);
     page->advance(lh);
   }
-  page->switch_row(
-      _("Translucent surfaces"), g_cfg.get_bool("aero", "enabled", true),
+  g_translucent_switch = page->switch_row(
+      _("Translucent surfaces"), look.translucent,
       [](bool on) {
-        g_cfg.set("aero", "enabled", on ? "true" : "false");
-        aero_changed();
-        Fl::add_timeout(0, [](void *) { refresh_page(); });
+        g_draft.set_translucent(on);
+        draft_changed();
       },
       _("Acrylic panel and menus in Fluent, vibrancy in Graphite, frosted window frames in "
         "Glass."));
-  page->switch_row(
-      _("Blur behind glass"), g_cfg.get_bool("aero", "blur", true),
+  g_translucent_switch->tooltip(_("Translucent surfaces"));
+  g_blur_switch = page->switch_row(
+      _("Blur behind glass"), look.blur,
       [](bool on) {
-        g_cfg.set("aero", "blur", on ? "true" : "false");
-        aero_changed();
+        g_draft.set_blur(on);
+        draft_changed();
       },
       _("Blur keeps text calm and crisp on translucent surfaces. Uses OpenGL when available."));
+  g_blur_switch->tooltip(_("Blur behind glass"));
   if (g_theme.lite)
     page->note(_("This computer uses the lite compositor profile (virtual machine or software "
                  "rendering): blur is off and surfaces stay more opaque so that text stays readable. "
                  "Choose OpenGL or XRender in Effects to use every effect."));
-  page->slider_row(
-      _("Blur strength"), 1, 12, g_cfg.get_int("aero", "blur_strength", 6),
-      [](double v) {
-        g_cfg.set("aero", "blur_strength", std::to_string(int(std::lround(v))));
-        aero_changed();
-      });
-  page->switch_row(
-      _("Rounded window corners"), g_cfg.get_bool("aero", "rounded_corners", true),
+  g_blur_slider = page->slider_row(_("Blur strength"), 1, 12, look.blur_strength, [](double v) {
+    g_draft.set_blur_strength(int(std::lround(v)));
+    draft_changed(false);
+  });
+  g_blur_slider->when(FL_WHEN_CHANGED);
+  g_blur_slider->tooltip(_("Blur strength"));
+  g_corners_switch = page->switch_row(_("Rounded window corners"), look.rounded_corners, [](bool on) {
+    g_draft.set_rounded_corners(on);
+    draft_changed();
+  });
+  g_corners_switch->tooltip(_("Rounded window corners"));
+  g_animations_switch = page->switch_row(
+      _("Smooth animations"), look.animations,
       [](bool on) {
-        g_cfg.set("aero", "rounded_corners", on ? "true" : "false");
-        aero_changed();
-      });
-  page->switch_row(
-      _("Smooth animations"), g_cfg.get_bool("aero", "animations", true),
-      [](bool on) {
-        g_cfg.set("aero", "animations", on ? "true" : "false");
-        aero_changed();
+        g_draft.set_animations(on);
+        draft_changed();
       },
       _("Fade windows and menus in and out."));
+  g_animations_switch->tooltip(_("Smooth animations"));
+  page->note(_("Theme, mode, accent color and these settings are applied together with Apply; Preview "
+               "shows them first. Size, icons and the wallpaper apply at once."));
   if (g_cfg.get("compositor", "mode", "auto") == "off")
     page->note(_("Compositing is off (Power & Updates), so glass effects are not shown."));
   else if (file_exists(config_home() + "/sde/compositor.conf"))
@@ -1353,12 +1433,12 @@ void build_appearance(Page *page) {
   page->finish();
 }
 
-// Saves, then regenerates the compositor configuration. Slider drags call
-// this often, so the compositor reloads once the value settles.
+// Saves an [aero] change made outside Appearance (Effects > Low resource
+// mode); the session reloads the compositor in place when its
+// configuration changed.
 void aero_changed() {
   apply_change();
-  Fl::remove_timeout(reload_compositor_later);
-  Fl::add_timeout(0.35, reload_compositor_later);
+  g_draft.rebase(g_cfg);
 }
 
 void set_bool(const char *section, const char *key, bool on) {
@@ -2492,9 +2572,12 @@ class SidebarFrame : public Fl_Widget {
       draw_text(title, x() + S(64), y() + S(22), tw, S(32), g_theme.text);
     }
     if (int fh = footer_h(h())) {
-      text_font(g_theme.font_size - 1);
-      draw_text(_("Saved automatically"), x() + S(20), y() + h() - fh + S(6), lw - S(30), S(20),
-                g_theme.text_dim);
+      // Everything is saved at once except a look chosen in Appearance,
+      // which waits for Apply.
+      bool pending = g_draft.dirty();
+      text_font(g_theme.font_size - 1, pending);
+      draw_text(pending ? _("Appearance not applied yet") : _("Saved automatically"), x() + S(20),
+                y() + h() - fh + S(6), lw - S(30), S(20), pending ? g_theme.accent_text : g_theme.text_dim);
     }
   }
 };
@@ -2622,6 +2705,222 @@ class SettingsWindow : public BufferedWindow {
   }
 };
 
+// ---------------------------------------------------- unapplied look
+//
+// While the look chosen in Appearance differs from the one in use, a bar
+// along the bottom of the page says what Apply will do and has Preview,
+// Revert and Apply (Ctrl+Enter). The session applies the look in one calm
+// step (sde-session: a picture of the screen fades to the new look).
+
+void apply_draft();
+void preview_event(const std::string &what, const AppearanceLook &look);
+
+class PendingBar : public Fl_Group {
+ public:
+  static int height() { return S(60); }
+  PendingBar(int x, int y, int w, int h) : Fl_Group(x, y, w, h) {
+    preview_ = new FlatButton(0, 0, 10, 10, _("Preview"));
+    preview_->tooltip(_("Preview the chosen look"));
+    preview_->callback([](Fl_Widget *, void *) { ThemePreview::get().open(g_draft.pending(), preview_event); });
+    revert_ = new FlatButton(0, 0, 10, 10, _("Revert"));
+    revert_->tooltip(_("Revert to the look in use"));
+    revert_->callback([](Fl_Widget *, void *) {
+      g_draft.revert();
+      draft_changed();
+    });
+    apply_ = new FlatButton(0, 0, 10, 10, _("Apply"), true);
+    apply_->tooltip(_("Apply the chosen look"));
+    apply_->shortcut(FL_CTRL | FL_Enter);
+    apply_->callback([](Fl_Widget *, void *) {
+      if (ThemePreview::get().is_open()) {
+        // The preview leaves the screen first: the session's picture of
+        // the screen must not show it.
+        ThemePreview::get().close();
+        Fl::add_timeout(0.2, [](void *) { apply_draft(); });
+      } else {
+        apply_draft();
+      }
+    });
+    end();
+    resizable(nullptr);
+    layout();
+  }
+  void resize(int x, int y, int w, int h) override {
+    Fl_Group::resize(x, y, w, h);
+    layout();
+  }
+  void layout() {
+    int bh = S(36), by = y() + (h() - bh) / 2, pad = S(20);
+    int aw = S(104), rw = S(96), pw = S(100), gap = S(8);
+    int ax = x() + w() - pad - aw;
+    apply_->resize(ax, by, aw, bh);
+    revert_->resize(ax - gap - rw, by, rw, bh);
+    preview_->resize(ax - 2 * gap - rw - pw, by, pw, bh);
+    text_w_ = preview_->x() - x() - pad - S(12);
+  }
+  void draw() override {
+    {
+      Painter p(window()->w(), window()->h());
+      p.fill_rect(x(), y(), w(), h(), g_theme.surface);
+      p.line(x(), y() + 0.5, x() + w(), y() + 0.5, g_theme.border);
+      p.circle(x() + S(26), y() + h() / 2.0, Sd(4.5), g_theme.accent);
+    }
+    int tx = x() + S(40), tw = std::max(S(40), text_w_ - S(20));
+    text_font(g_theme.font_size, true);
+    draw_text(_("Not applied yet"), tx, y() + S(9), tw, S(20), g_theme.text);
+    text_font(std::max(S(9), g_theme.font_size - S(1)));
+    draw_text(look_summary(g_draft.pending()), tx, y() + S(30), tw, S(20), g_theme.text_dim);
+    draw_children();
+  }
+
+ private:
+  FlatButton *preview_ = nullptr, *revert_ = nullptr, *apply_ = nullptr;
+  int text_w_ = 0;
+};
+PendingBar *g_bar = nullptr;
+// Apply went to the session: the Control Center keeps its look (and the
+// bar) until the session announces the new look behind its picture of the
+// screen, so nothing changes before the picture is up.
+bool g_switching = false;
+
+int bar_height() { return g_bar && g_bar->visible() ? PendingBar::height() : 0; }
+
+// Shows the bar while the chosen look is not applied; the page makes room
+// (its content stays: no rebuild while a slider is dragged).
+void update_pending_bar() {
+  if (!g_bar || !g_window) return;
+  bool want = g_draft.dirty() || g_switching;
+  if (want != bool(g_bar->visible())) {
+    if (want)
+      g_bar->show();
+    else
+      g_bar->hide();
+    if (g_page) g_page->resize(g_content_x, 0, g_content_w, g_window->h() - bar_height());
+  }
+  g_bar->resize(g_content_x, g_window->h() - PendingBar::height(), g_content_w, PendingBar::height());
+  g_window->redraw();
+}
+
+void rebuild_appearance(void *) {
+  if (g_restart_page == "appearance") refresh_page();
+}
+
+void draft_changed(bool rebuild) {
+  if (g_transparency_note) g_transparency_note->set(transparency_summary(draft_theme()));
+  if (g_theme_note) g_theme_note->set(theme_note());
+  const AppearanceLook &look = g_draft.pending();
+  // Controls follow the chosen look (a preset turns the switch on, Revert
+  // and the preview's slider move the sliders), except the one in use.
+  if (g_transparency_slider && Fl::pushed() != g_transparency_slider) g_transparency_slider->value(look.transparency);
+  if (g_blur_slider && Fl::pushed() != g_blur_slider) g_blur_slider->value(look.blur_strength);
+  if (g_translucent_switch) g_translucent_switch->value(look.translucent);
+  if (g_blur_switch) g_blur_switch->value(look.blur);
+  if (g_corners_switch) g_corners_switch->value(look.rounded_corners);
+  if (g_animations_switch) g_animations_switch->value(look.animations);
+  if (g_page) g_page->redraw();
+  if (g_sidebar_frame) g_sidebar_frame->redraw();
+  update_pending_bar();
+  ThemePreview::get().update(look);
+  if (rebuild) {
+    Fl::remove_timeout(rebuild_appearance);
+    Fl::add_timeout(0, rebuild_appearance);
+  }
+}
+
+// What decides how the Control Center itself looks.
+std::string look_signature(const Theme &t) {
+  return t.gtk_theme + "|" + (t.dark ? "dark" : "light") + "|" + t.accent.to_hex() + "|" +
+         std::to_string(t.transparency) + "|" + (t.translucent ? "1" : "0") + (t.blur ? "1" : "0") +
+         (t.liquid ? "1" : "0") + "|" + std::to_string(t.radius) + "|" + std::to_string(t.font_size) + "|" +
+         std::to_string(int(std::lround(t.scale * 100)));
+}
+
+void restart_settings(void *) {
+  std::string self = "/proc/self/exe";
+  execl(self.c_str(), g_argv0.c_str(), "--page", g_restart_page.c_str(), static_cast<char *>(nullptr));
+}
+
+// The configuration in use changed (Apply through the session, the panel's
+// dark mode, the automatic mode, another program): the Control Center
+// takes the new look when the session announces it, behind its picture of
+// the screen; a look chosen meanwhile stays chosen.
+void follow_config_change(void *) {
+  g_switching = false;
+  Fl::remove_timeout(follow_config_change);
+  Config disk;
+  disk.load();
+  AppearanceLook::from_config(disk).write(g_cfg);
+  g_draft.rebase(g_cfg);
+  Theme t = Theme::from_config(g_cfg);
+  if (look_signature(t) == look_signature(g_theme)) {
+    update_pending_bar();
+    return;
+  }
+  double old_scale = g_theme.scale;
+  bool old_dark = g_theme.dark;
+  g_theme = t;
+  g_theme.apply_to_fltk();
+  if (old_dark != g_theme.dark) {
+    IconLoader::set_theme(g_cfg.get("appearance", "icon_theme", "auto"), g_theme.dark);
+    IconLoader::clear_cache();
+  }
+  if (std::fabs(g_theme.scale - old_scale) > 0.01) {
+    Fl::add_timeout(0.2, restart_settings);
+    return;
+  }
+  if (g_sidebar_scroll) {
+    g_sidebar_scroll->color(g_theme.surface.fl());
+    g_sidebar_scroll->scrollbar.color(g_theme.surface.fl());
+    g_sidebar_scroll->scrollbar.selection_color(g_theme.border.fl());
+  }
+  refresh_page();
+  update_pending_bar();
+  if (g_window) g_window->redraw();
+}
+
+void apply_draft() {
+  if (!g_draft.dirty() || g_switching) return;
+  // Saved; the look in use (g_draft.applied(), g_theme) changes when the
+  // announcement comes (follow_config_change()), so the Control Center
+  // stays as it is until the session's picture of the screen is up.
+  g_draft.pending().write(g_cfg);
+  g_cfg.save();
+  // Through the session (one calm step for every program, the Control
+  // Center included when the session announces it), or at once.
+  if (apply_appearance(fl_display, g_cfg)) {
+    g_switching = true;
+    Fl::add_timeout(3.0, follow_config_change);  // a session that does not answer
+    return;
+  }
+  follow_config_change(nullptr);
+}
+
+void apply_draft_later(void *) { apply_draft(); }
+
+void preview_event(const std::string &what, const AppearanceLook &look) {
+  if (what == "look") {
+    // The preview's Transparency slider.
+    g_draft.set(look);
+    draft_changed(false);
+  } else if (what == "apply") {
+    g_draft.set(look);
+    // The preview window is gone from the screen (and faded out) first.
+    Fl::add_timeout(0.15, apply_draft_later);
+  } else {
+    update_pending_bar();
+  }
+}
+
+int follow_x_events(int) {
+  if (fl_xevent && fl_xevent->type == PropertyNotify &&
+      fl_xevent->xproperty.window == RootWindow(fl_display, fl_screen) &&
+      fl_xevent->xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
+    Fl::remove_timeout(follow_config_change);
+    Fl::add_timeout(0, follow_config_change);
+  }
+  return 0;
+}
+
 // Scrolls the sidebar (as little as needed) so that row |index| is shown,
 // and never past its end: the header and the first rows show whenever the
 // window is tall enough.
@@ -2688,11 +2987,12 @@ void layout_window() {
   reveal_sidebar_row(g_page_index);
   g_content_x = side;
   g_content_w = W - side;
+  if (g_bar) g_bar->resize(g_content_x, H - PendingBar::height(), g_content_w, PendingBar::height());
   if (g_page) {
     // At once the page covers the window (no band of background below or
     // beside it); its content follows once the size stops changing, as
     // the window manager sends many sizes while a border is dragged.
-    g_page->resize(g_content_x, 0, g_content_w, H);
+    g_page->resize(g_content_x, 0, g_content_w, H - bar_height());
     Fl::remove_timeout(relayout_page);
     Fl::add_timeout(0.08, relayout_page);
   }
@@ -2727,6 +3027,11 @@ void qa_dump_window() {
   const char *dir = getenv("SDE_PANEL_QA_DIR");
   if (!dir || !*dir || !g_window) return;
   std::string text = "@page:" + g_restart_page + "\t0\t0\t0\t0\t1\t0\n";
+  // Appearance (0.2.0 Alpha 3.1): the look in use, the chosen one, the preview.
+  text += "@appearance-applied:" + g_draft.applied().encode() + "\t0\t0\t0\t0\t1\t0\n";
+  text += "@appearance-pending:" + g_draft.pending().encode() + "\t0\t0\t0\t0\t1\t0\n";
+  text += std::string("@appearance-preview:") + (ThemePreview::get().is_open() ? "open" : "closed") +
+          "\t0\t0\t0\t0\t1\t0\n";
   for (const std::string &line : g_qa_lines) text += line;
   if (g_sidebar && g_sidebar_scroll)
     for (size_t i = 0; i < pages().size(); ++i) {
@@ -2770,7 +3075,7 @@ void show_page(int index) {
   }
   g_window->begin();
   g_qa_lines.clear();
-  g_page = new Page(g_content_x, 0, g_content_w, g_window->h());
+  g_page = new Page(g_content_x, 0, g_content_w, g_window->h() - bar_height());
   pages()[size_t(index)].build(g_page);
   g_window->end();
   if (!g_refreshing) g_kept_anchor.clear();
@@ -2918,6 +3223,8 @@ std::string usage() {
          _("  --list-pages print the page names, one per line\n"
            "  --choose-avatar  open Users & Avatar and choose a picture for the account\n"
            "  --apply      apply the saved display, keyboard and mouse settings and exit\n"
+           "  --theme-preview LOOK\n"
+           "               the Preview window of Appearance (started by the Control Center)\n"
            "  --version    print the version and exit\n");
 }
 
@@ -2944,6 +3251,9 @@ int main(int argc, char **argv) {
       choose_avatar = true;
     } else if (a == "--apply") {
       apply = true;
+    } else if (a == "--theme-preview" && i + 1 < argc) {
+      // The Preview window of Appearance (started by the Control Center).
+      return run_theme_preview(argv[i + 1]);
     } else if (a == "--version") {
       return print_version("sde-settings", SDE_VERSION);
     } else {
@@ -2964,6 +3274,7 @@ int main(int argc, char **argv) {
   bool migrated = migrate_theme_config(g_cfg);
   if (clockface::migrate_config(g_cfg)) migrated = true;
   if (migrated) g_cfg.save();
+  g_draft.load(g_cfg);
   if (apply) {
     sync_gtk_settings(g_cfg);
     sync_openbox(g_cfg);
@@ -2996,6 +3307,9 @@ int main(int argc, char **argv) {
   layout_sidebar(W, H);
   g_content_x = side;
   g_content_w = W - side;
+  // Appearance's unapplied look (shown while there is one).
+  g_bar = new PendingBar(side, H - PendingBar::height(), W - side, PendingBar::height());
+  g_bar->hide();
   win->end();
   win->size_range(std::min(W, S(600)), std::min(H, S(420)));
   win->resizable(nullptr);
@@ -3013,8 +3327,18 @@ int main(int argc, char **argv) {
   // their changes made elsewhere (the Start menu, the lock screen).
   watch_account();
   win->show();
+  // Theme changes made elsewhere (and Apply, once the session announces
+  // it) reach the Control Center through _SDE_CONFIG_SERIAL.
+  {
+    Window root = RootWindow(fl_display, fl_screen);
+    XWindowAttributes attr;
+    XGetWindowAttributes(fl_display, root, &attr);
+    XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask);
+    Fl::add_handler(follow_x_events);
+  }
   if (choose_avatar) Fl::add_timeout(0.3, [](void *) { choose_avatar_picture(); });
   int status = Fl::run();
+  ThemePreview::get().close();
   g_thumbnailer.reset();  // joins the decoding threads
   return status;
 }
