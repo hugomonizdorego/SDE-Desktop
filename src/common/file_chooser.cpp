@@ -514,7 +514,7 @@ class Dialog : public BufferedWindow {
 
 void Field::draw() {
   const Theme &t = active_theme();
-  Color fill = frameless ? t.surface : t.surface;
+  Color fill = t.surface;
   {
     Painter p(window()->w(), window()->h());
     if (!frameless) {
@@ -1627,7 +1627,7 @@ int PathBar::handle(int e) {
           std::string path = it->path;
           menu.item(it->label, [this, path] { d_->open_location(path); }, {it->icon.empty() ? "folder" : "", 0});
         }
-        menu.popup(crumbs[size_t(k)].x - window()->x() + window()->x() - x() + x(), y() + h() + S(2));
+        menu.popup(crumbs[size_t(k)].x, y() + h() + S(2));  // window coordinates
         return 1;
       }
       if (!crumbs[size_t(k)].path.empty() && crumbs[size_t(k)].path != d_->location)
