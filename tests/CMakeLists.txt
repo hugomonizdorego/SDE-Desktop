@@ -225,6 +225,11 @@ add_test(NAME sde-timezone-model COMMAND sde-timezone-tests)
 add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
 target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
+# 0.2.0 Alpha 3.1: the Action Center's session buttons (order, logind's
+# answers, the second click, the glyphs).
+add_executable(sde-session-actions-tests test_session_actions.cpp ../src/panel/session_actions.cpp)
+target_link_libraries(sde-session-actions-tests PRIVATE sde-common)
+add_test(NAME sde-session-actions COMMAND sde-session-actions-tests)
 add_executable(sde-grab-fixture grab_fixture.cpp)
 target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
 # alpha51: a plain application window for the taskbar preview checks.

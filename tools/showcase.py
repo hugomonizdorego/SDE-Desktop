@@ -1782,7 +1782,8 @@ def action_center(s):
     ('action-center-night', 'Action Center at night: stars and the moon behind the clock'),
     ('action-center-led', 'Clock styles: LED digits with a blinking colon, in the Action Center and on the panel'),
     ('action-center-analog', 'Clock styles: an analog clock with the seconds hand'),
-    ('action-center-power', 'Action Center: sleep, log out, restart and shut down'),
+    ('action-center-power', 'Action Center: Sleep, Log Out, Restart and Shut Down, always in the footer; '
+                            'Shut Down asks for a second click'),
     ('action-center-brightness', 'Action Center: brightness settings with Night Light'),
 ], needs=['sde-panel'])
 def action_center_more(s):
@@ -1809,10 +1810,25 @@ def action_center_more(s):
              ready=f'@clock-{style}')
     s.write_config(reload=True)
     s.set_clock('10:42')
-    # A footer or a card opens with a click; the click can race the popup
-    # still laying out (services answering): try again then.
-    for button, wanted, name in [('Power', 'Shut Down', 'action-center-power'),
-                                 ('Brightness settings', 'Night Light', 'action-center-brightness')]:
+    # 0.2.0 Alpha 3.1: the session buttons are always in the footer; the
+    # picture shows Shut Down after one click, waiting for the second. Its
+    # ring runs down for four seconds: the screen above the footer settles.
+    try:
+        w = open_ac(s)
+        r = s.press('Action Center', 'Shut Down')
+        if not s.control('Action Center', 'Click again to shut down', 2):
+            raise SkipShot('Shut Down did not ask for a second click')
+        s.park_pointer()
+        g = s.geom(w)
+        s.shot('action-center-power', settle_box=(g['x'], g['y'], g['x'] + g['w'], g['y'] + r[1] - 8),
+               quiet=0.3, timeout=2.0)
+    except SkipShot as e:
+        s.skip('action-center-power', str(e))
+    finally:
+        s.key('Escape')
+    # A card opens with a click; the click can race the popup still laying
+    # out (services answering): try again then.
+    for button, wanted, name in [('Brightness settings', 'Night Light', 'action-center-brightness')]:
         try:
             open_ac(s)
             for _ in range(3):
