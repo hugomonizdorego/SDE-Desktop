@@ -61,9 +61,11 @@ import showcase_content  # noqa: E402
 
 
 class ThemeSet:
-    def __init__(self, name, family, mode, size='1366x768', scale=100, scope='full', label=''):
+    def __init__(self, name, family, mode, size='1366x768', scale=100, scope='full', label='', effects=None):
         self.name, self.family, self.mode, self.size, self.scale = name, family, mode, size, scale
         self.scope, self.label = scope, label
+        # Compositor effects of the set when --effects does not say (lite).
+        self.effects = effects
         self.w, self.h = map(int, size.split('x'))
 
     @property
@@ -76,8 +78,10 @@ SETS = [
     ThemeSet('graphite-dark', 'graphite', 'dark', label='SDE Graphite Dark'),
     ThemeSet('fluent-light', 'fluent', 'light', scope='themes', label='SDE Fluent Light'),
     ThemeSet('fluent-dark', 'fluent', 'dark', scope='themes', label='SDE Fluent Dark'),
-    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Liquid Glass Light'),
-    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Liquid Glass Dark'),
+    # 0.2.0 Alpha 3.1: Liquid Glass as on a real GPU (the compositor's glass
+    # shader through Mesa on Xvfb); the lite profile draws it nearly opaque.
+    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Liquid Glass Light', effects='full'),
+    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Liquid Glass Dark', effects='full'),
     ThemeSet('hero-1920x1080', 'graphite', 'light', '1920x1080', 125, scope='hero',
              label='SDE Graphite Light, 1920x1080 at 125 %'),
 ]
@@ -359,6 +363,7 @@ class Session:
         self.current = None
         self.env = {}
         self.xgrab = None
+        self.effects = self.args.effects or tset.effects or 'lite'
 
     # ------------------------------------------------------------ programs
 
@@ -1021,7 +1026,7 @@ class Session:
             env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
         if (self.home / '.fixtures/avatars').is_dir():
             env['SDE_AVATAR_DIR'] = str(self.home / '.fixtures/avatars')
-        if a.effects == 'full':
+        if self.effects == 'full':
             # Every SDE program draws for the full effects of a real GPU
             # (Xvfb has OpenGL through Mesa's software renderer).
             env['SDE_GRAPHICS'] = 'hardware'
@@ -1173,6 +1178,11 @@ class Session:
                         '-ac', '-noreset', scene=False, env=xenv)
         if not self.wait(lambda: self.xdo('getmouselocation').returncode == 0, 10) or xv.poll() is not None:
             raise RuntimeError(f'Xvfb :{self.display} did not start')
+        if self.effects == 'full' and shutil.which('xdpyinfo') and 'GLX' not in self.run('xdpyinfo', timeout=10).stdout:
+            # The programs must not draw for a glass the compositor cannot show.
+            warn(f'{self.set.name}: no OpenGL (GLX) on Xvfb; capturing with the lite effects')
+            self.effects = 'lite'
+            self.env.pop('SDE_GRAPHICS', None)
         # GTK settings and the SDE WM theme (sde-settings --apply, like the session).
         r = self.run('sde-settings', '--apply', timeout=20)
         if r.returncode != 0:
@@ -1237,7 +1247,7 @@ class Session:
             return
         mine = self.home / '.config/sde/showcase-compositor.conf'
         generated = None
-        if self.args.effects == 'full':
+        if self.effects == 'full':
             # What sde-session starts on a real GPU (OpenGL, blur, shaders).
             r = self.run('sde-session', '--compositor-config', timeout=20)
             path = Path(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
@@ -1247,17 +1257,17 @@ class Session:
                 generated = path
             else:
                 warn(f'sde-session --compositor-config failed ({r.stderr.strip()[:200]}); using the lite one')
-        if generated:
-            mine = generated
-        else:
-            radius = {'fluent': 8, 'graphite': 10, 'glass': 12}.get(self.set.family, 10)
-            text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};',
-                          conf.read_text())
-            if self.set.mode == 'dark':
-                text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
-            mine.write_text(text)
-        p = self.spawn(prog, '--config', mine, scene=False)
+        radius = {'fluent': 8, 'graphite': 10, 'glass': 16}.get(self.set.family, 10)
+        text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};', conf.read_text())
+        if self.set.mode == 'dark':
+            text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
+        mine.write_text(text)
+        p = self.spawn(prog, '--config', generated or mine, scene=False)
         time.sleep(0.8)
+        if generated and p.poll() is not None:
+            warn(f'{prog} exited ({p.returncode}) with the OpenGL configuration; using the lite one')
+            p = self.spawn(prog, '--config', mine, scene=False)
+            time.sleep(0.8)
         if p.poll() is not None:
             warn(f'{prog} exited ({p.returncode}); continuing without a compositor')
 
@@ -3026,10 +3036,11 @@ def parse_args(argv=None):
     ap.add_argument('--scope', choices=('full', 'themes', 'hero'),
                     help="scenes of this scope in every set, e.g. 'full' for all scenes in the Fluent and "
                          "Glass sets (default: each set's own)")
-    ap.add_argument('--effects', choices=('lite', 'full'), default='lite',
-                    help='compositor effects: lite (XRender with data/compositor/sde.conf, as in CI) or full '
+    ap.add_argument('--effects', choices=('lite', 'full'),
+                    help='compositor effects of every set: lite (XRender with data/compositor/sde.conf) or full '
                          '(OpenGL with the configuration sde-session writes for a real GPU: blur, translucency '
-                         'and the Liquid Glass shader; needs sde-compositor)')
+                         'and the Liquid Glass shader; needs sde-compositor). Default: full for the Liquid Glass '
+                         'sets, lite for the others')
     ap.add_argument('--only', help='scenes or images (comma-separated globs, e.g. "start-menu*,control-center-*")')
     ap.add_argument('--zip', type=Path, help='also write one shareable zip')
     ap.add_argument('--display', type=int, default=140, help='first Xvfb display number to try')
@@ -3081,9 +3092,9 @@ def selected_sets(a):
             size, scale = a.resolution or t.size, a.scale or t.scale
             base = t.name.split('-1920x1080')[0]
             t = ThemeSet(f'{base}-{size}-{scale}', t.family, t.mode, size, scale, t.scope,
-                         f'{t.label.split(",")[0]}, {size} at {scale} %')
+                         f'{t.label.split(",")[0]}, {size} at {scale} %', t.effects)
         if a.scope:
-            t = ThemeSet(t.name, t.family, t.mode, t.size, t.scale, a.scope, t.label)
+            t = ThemeSet(t.name, t.family, t.mode, t.size, t.scale, a.scope, t.label, t.effects)
         out.append(t)
     return out
 
