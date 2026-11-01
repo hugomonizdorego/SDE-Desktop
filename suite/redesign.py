@@ -115,6 +115,7 @@ def liria(staged):
     liria_folder_loading(staged)
     liria_progress(staged)
     liria_menus(staged)
+    liria_list_view(staged)
     liria_translations(staged)
 
 
@@ -3601,6 +3602,48 @@ def liria_menus(staged):
               "    emblem_sidebar->details->sde_populated = TRUE;\n"
               "    liria_emblem_sidebar_populate (emblem_sidebar);\n}\n\n"
               "static void\nliria_emblem_sidebar_init (LiriaEmblemSidebar *emblem_sidebar)\n{")
+
+
+NOTEBOOK_MOTION = r'''/* SDE (0.2.0 Alpha 3.1): GtkNotebook asks the X server where its window
+ * is (gdk_window_get_origin (), a round trip) for every pointer motion that
+ * reaches it, also for the motions that bubble up from the folder view in
+ * a tab: the list view, the empty parts of the icon views and the Home
+ * cards do not stop them. The notebook needs them over its tabs and arrows
+ * and while a tab is dragged (a button is held then). */
+static gboolean
+liria_notebook_motion_notify_event (GtkWidget      *widget,
+                                    GdkEventMotion *event)
+{
+    GtkNotebook *notebook = GTK_NOTEBOOK (widget);
+    GtkWidget *event_widget = gtk_get_event_widget ((GdkEvent *) event);
+    int page = gtk_notebook_get_current_page (notebook);
+    GtkWidget *child = page >= 0 ? gtk_notebook_get_nth_page (notebook, page) : NULL;
+
+    if (child != NULL && event_widget != NULL &&
+        (event_widget == child || gtk_widget_is_ancestor (event_widget, child)) &&
+        (event->state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK | GDK_BUTTON3_MASK)) == 0)
+        return FALSE;
+    return GTK_WIDGET_CLASS (liria_notebook_parent_class)->motion_notify_event (widget, event);
+}
+
+static void
+liria_notebook_class_init (LiriaNotebookClass *klass)
+{'''
+
+
+def liria_list_view(staged):
+    """0.2.0 Alpha 3.1: moving the pointer over the list view cost 13 % of a
+    core (the icon view 6 %). Every motion that the tree view did not stop
+    bubbled up to the tabs' GtkNotebook, which asked the X server where its
+    window is (a synchronous round trip) for each one; LiriaNotebook now
+    lets GtkNotebook see only the motions over its own parts or while a
+    button is held. (The other half: an SDE theme rule makes the style of
+    every tree view cell uncacheable, see docs/SUITE.md.)"""
+    notebook = staged / "src/liria-notebook.c"
+    edit_once(notebook, "static void\nliria_notebook_class_init (LiriaNotebookClass *klass)\n{", NOTEBOOK_MOTION)
+    edit_once(notebook, "    widget_class->scroll_event = liria_notebook_scroll_event;\n",
+              "    widget_class->scroll_event = liria_notebook_scroll_event;\n"
+              "    widget_class->motion_notify_event = liria_notebook_motion_notify_event; /* SDE */\n")
 
 
 RECIPES = {"liria": liria}
