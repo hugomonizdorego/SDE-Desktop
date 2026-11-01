@@ -33,6 +33,7 @@ add_library(merkadu-core STATIC
   ${_src}/merkadu/pkenum.cpp
   ${_src}/merkadu/appstream_catalog.cpp
   ${_src}/merkadu/catalog_build.cpp
+  ${_src}/merkadu/jobs.cpp
   ${_src}/merkadu/packages.cpp
   ${_src}/merkadu/apt_cache.cpp)
 target_include_directories(merkadu-core PUBLIC ${_src}/merkadu)

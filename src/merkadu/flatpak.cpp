@@ -31,10 +31,14 @@ namespace {
 
 std::string str(const char *s) { return s ? s : ""; }
 
+// "system", "user" or the id of another installation
+// (/etc/flatpak/installations.d).
 FlatpakInstallation *open_installation(const std::string &which, std::string *error) {
   GError *err = nullptr;
-  FlatpakInstallation *inst = which == "user" ? flatpak_installation_new_user(nullptr, &err)
-                                              : flatpak_installation_new_system(nullptr, &err);
+  FlatpakInstallation *inst = which == "user"     ? flatpak_installation_new_user(nullptr, &err)
+                              : which == "system" || which.empty()
+                                  ? flatpak_installation_new_system(nullptr, &err)
+                                  : flatpak_installation_new_system_with_id(which.c_str(), nullptr, &err);
   if (!inst && error) *error = err ? err->message : "cannot open the Flatpak installation";
   g_clear_error(&err);
   return inst;
@@ -113,13 +117,60 @@ void progress_changed(FlatpakTransactionProgress *p, gpointer data) {
   int op = flatpak_transaction_progress_get_progress(p);
   pr.percent = std::min(100, (run->index * 100 + op) / std::max(1, run->total));
   char *status = flatpak_transaction_progress_get_status(p);
+  bool downloading = run->job.action != Action::Remove && op < 99;
   pr.status = run->job.action == Action::Remove ? std::string(_("Removing"))
-              : op < 99 ? std::string(_("Downloading"))
-                        : run->job.action == Action::Update ? std::string(_("Updating")) : std::string(_("Installing"));
+              : downloading ? std::string(_("Downloading"))
+                            : run->job.action == Action::Update ? std::string(_("Updating")) : std::string(_("Installing"));
   g_free(status);
+  // libflatpak stops between steps and keeps what OSTree already fetched;
+  // a deploy it stops is undone.
   pr.cancellable = true;
+  pr.phase = downloading ? JobPhase::Downloading : JobPhase::Applying;
   auto fn = run->progress;
   post([fn, pr] { fn(pr); });
+}
+
+// The remote to install |ref| from: |wanted| when |inst| has it (the remote
+// whose catalog lists the app), else the configured remote that offers the
+// ref (Merkadu 0.2 Alpha 3 asked for "flatpak", the origin attribute of
+// Flathub's catalog). "" when no remote offers it.
+std::string install_remote(FlatpakInstallation *inst, const std::string &ref, const std::string &wanted) {
+  GError *err = nullptr;
+  if (!wanted.empty()) {
+    FlatpakRemote *r = flatpak_installation_get_remote_by_name(inst, wanted.c_str(), nullptr, &err);
+    g_clear_error(&err);
+    if (r) {
+      bool usable = !flatpak_remote_get_disabled(r);
+      g_object_unref(r);
+      if (usable) return wanted;
+    }
+  }
+  FlatpakRef *parsed = flatpak_ref_parse(ref.c_str(), &err);
+  g_clear_error(&err);
+  if (!parsed) return "";
+  std::string found;
+  GPtrArray *remotes = flatpak_installation_list_remotes(inst, nullptr, &err);
+  g_clear_error(&err);
+  // From the remotes' cached summaries first (no network), then online.
+  for (FlatpakQueryFlags flags : {FLATPAK_QUERY_FLAGS_ONLY_CACHED, FLATPAK_QUERY_FLAGS_NONE}) {
+    for (guint i = 0; found.empty() && remotes && i < remotes->len; ++i) {
+      FlatpakRemote *r = FLATPAK_REMOTE(g_ptr_array_index(remotes, i));
+      if (flatpak_remote_get_disabled(r)) continue;
+      const char *name = flatpak_remote_get_name(r);
+      FlatpakRemoteRef *rr = flatpak_installation_fetch_remote_ref_sync_full(
+          inst, name, flatpak_ref_get_kind(parsed), flatpak_ref_get_name(parsed), flatpak_ref_get_arch(parsed),
+          flatpak_ref_get_branch(parsed), flags, nullptr, &err);
+      g_clear_error(&err);
+      if (rr) {
+        found = name;
+        g_object_unref(rr);
+      }
+    }
+    if (!found.empty()) break;
+  }
+  if (remotes) g_ptr_array_unref(remotes);
+  g_object_unref(parsed);
+  return found;
 }
 
 void new_operation(FlatpakTransaction *t, FlatpakTransactionOperation *op, FlatpakTransactionProgress *p,
@@ -265,6 +316,14 @@ class FlatpakBackend : public Backend {
       running_[job.id] = run->cancellable;
     }
     int id = job.id;
+    {
+      // It can be stopped before libflatpak starts.
+      Progress p;
+      p.status = _("Preparing");
+      p.cancellable = true;
+      p.phase = JobPhase::Preparing;
+      progress(p);
+    }
     background<std::string>(
         [run] {
           // Targets are "installation:ref"; all of one job share an installation.
@@ -273,7 +332,7 @@ class FlatpakBackend : public Backend {
           for (auto &t : run->job.targets) {
             size_t colon = t.find(':');
             if (colon == std::string::npos) continue;
-            which = t.substr(0, colon) == "user" ? "user" : "system";
+            which = t.substr(0, colon);
             std::string ref = t.substr(colon + 1);
             if (!valid_flatpak_ref(ref)) return format(_("\"%s\" is not a Flatpak ref."), ref.c_str());
             refs.push_back(ref);
@@ -292,9 +351,17 @@ class FlatpakBackend : public Backend {
           }
           bool added = true;
           for (auto &ref : refs) {
-            if (run->job.action == Action::Install)
-              added = flatpak_transaction_add_install(t, run->job.remote.c_str(), ref.c_str(), nullptr, &err);
-            else if (run->job.action == Action::Remove)
+            if (run->job.action == Action::Install) {
+              std::string remote = install_remote(inst, ref, run->job.remote);
+              if (remote.empty()) {
+                error = format(_("No Flatpak remote of this computer offers %s. Refresh the software lists, or set "
+                                 "up Flathub on the Sources page."),
+                               ref.c_str());
+                added = false;
+                break;
+              }
+              added = flatpak_transaction_add_install(t, remote.c_str(), ref.c_str(), nullptr, &err);
+            } else if (run->job.action == Action::Remove)
               added = flatpak_transaction_add_uninstall(t, ref.c_str(), &err);
             else
               added = flatpak_transaction_add_update(t, ref.c_str(), nullptr, nullptr, &err);
@@ -307,7 +374,7 @@ class FlatpakBackend : public Backend {
             g_signal_connect(t, "add-new-remote", G_CALLBACK(add_new_remote), nullptr);
             added = flatpak_transaction_run(t, run->cancellable, &err);
           }
-          if (!added) error = !run->error.empty() ? run->error : err ? err->message : "Flatpak failed";
+          if (!added && error.empty()) error = !run->error.empty() ? run->error : err ? err->message : "Flatpak failed";
           g_clear_error(&err);
           g_object_unref(t);
           g_object_unref(inst);

@@ -339,7 +339,10 @@ bool parse_snap_change(const std::string &json, SnapChange &out) {
         total += n;
       }
     }
-    if (t.text("status") == "Doing" && c.label.empty()) c.label = t.text("summary");
+    if (t.text("status") == "Doing" && c.label.empty()) {
+      c.label = t.text("summary");
+      c.kind = t.text("kind");
+    }
   }
   if (total > 0) c.percent = int(done * 100 / total);
   if (c.ready && c.status == "Done") c.percent = 100;

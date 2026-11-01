@@ -88,7 +88,12 @@ std::string follow(const std::string &id, std::shared_ptr<Running> run,
       Progress p;
       p.percent = c.percent;
       p.status = c.label;
-      p.cancellable = !c.ready;
+      // snapd undoes what an aborted change did; a download it stops is
+      // continued from its partial file when the change runs again.
+      p.cancellable = !c.ready && !abort_sent;
+      p.phase = c.kind == "download-snap" ? JobPhase::Downloading
+                : c.kind.empty() || c.kind == "prerequisites" || c.kind == "validate-snap" ? JobPhase::Preparing
+                                                                                          : JobPhase::Applying;
       post([progress, p] { progress(p); });
     }
     if (c.ready) {
@@ -197,6 +202,14 @@ class SnapBackend : public Backend {
       std::lock_guard<std::mutex> lock(mutex_);
       running_[job.id] = run;
     }
+    {
+      // It can be stopped before snapd accepts it.
+      Progress p;
+      p.status = _("Preparing");
+      p.cancellable = true;
+      p.phase = JobPhase::Preparing;
+      progress(p);
+    }
     int id = job.id;
     Job j = job;
     background<std::pair<std::string, bool>>(
@@ -231,6 +244,7 @@ class SnapBackend : public Backend {
               Progress p;
               p.status = _("Waiting for snapd to start");
               p.cancellable = true;
+              p.phase = JobPhase::Waiting;
               post([progress, p] { progress(p); });
             }
             for (int i = 0; i < 30 && !run->cancel; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));

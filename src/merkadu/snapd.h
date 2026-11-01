@@ -63,6 +63,7 @@ struct SnapChange {
   std::string error;
   int percent = -1;    // from the tasks' progress
   std::string label;   // summary of the task being done
+  std::string kind;    // its kind ("download-snap", "mount-snap", "link-snap" ...)
 };
 bool parse_snap_change(const std::string &json, SnapChange &out);
 

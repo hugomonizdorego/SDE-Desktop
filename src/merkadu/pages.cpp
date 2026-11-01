@@ -341,15 +341,25 @@ class JobProgress : public Fl_Widget {
     if (!j) return;
     {
       Painter p(window()->w(), window()->h());
-      int pct = j->state == Job::Done ? 100 : j->state == Job::Running ? j->percent : -1;
-      if (j->state == Job::Queued || j->state == Job::Running)
+      int pct = j->state == Job::Done ? 100 : j->state == Job::Running || j->state == Job::Paused ? j->percent : -1;
+      // A paused change keeps its bar where it stopped (no sliding segment).
+      if (j->state == Job::Queued || j->state == Job::Running || (j->state == Job::Paused && pct >= 0))
         paint_progress(p, x(), y() + h() - S(8), w(), S(8), pct, std::fmod(now_seconds(), 1.6) / 1.6);
     }
     std::string text;
     switch (j->state) {
       case Job::Queued: text = _("Waiting for the other changes to finish"); break;
+      case Job::Paused:
+        text = j->percent > 0 ? format(_("Paused at %d%%: what was downloaded is kept"), j->percent)
+                              : std::string(_("Paused: it waits until you resume it"));
+        break;
       case Job::Running:
-        text = j->status.empty() ? action_progress_label(j->action) : j->status;
+        if (j->stopping == Job::Pausing)
+          text = _("Pausing\xE2\x80\xA6");
+        else if (j->stopping == Job::Cancelling)
+          text = _("Cancelling\xE2\x80\xA6");
+        else
+          text = j->status.empty() ? action_progress_label(j->action) : j->status;
         if (j->percent >= 0) text += format("  %d%%", j->percent);
         break;
       case Job::Done: text = j->action == Action::Remove ? _("Removed") : j->action == Action::Update ? _("Updated")
@@ -367,6 +377,58 @@ class JobProgress : public Fl_Widget {
  private:
   int job_;
 };
+
+void set_active(Fl_Widget *w, bool on) {
+  if (on == bool(w->active())) return;
+  if (on)
+    w->activate();
+  else
+    w->deactivate();
+}
+
+// Pause (Resume) and Cancel (Remove, for a change that has not started) of
+// job |jid|: the buttons at |x|, |y| and the reason they are off at their
+// right (|w| wide in all) or, with |below|, under them. They follow what
+// the change allows at every moment (jobs.h). Returns the height used.
+int job_buttons(int x, int y, int w, int jid, bool below = false) {
+  const Job *j = Store::get().job(jid);
+  if (!j || !j->active()) return 0;
+  bool started = j->state == Job::Running || (j->state == Job::Paused && j->runs > 0);
+  std::string stop = started ? _("Cancel") : _("Remove");
+  int bw1 = std::max(Button::fit(_("Pause")), Button::fit(_("Resume"))), bw2 = Button::fit(stop);
+  auto *pause = new Button(x, y, bw1, S(34), j->state == Job::Paused ? _("Resume") : _("Pause"));
+  auto *cancel = new Button(x + bw1 + S(10), y, bw2, S(34), stop);
+  pause->on_click = [jid] {
+    const Job *job = Store::get().job(jid);
+    if (job && job->state == Job::Paused)
+      Store::get().resume(jid);
+    else
+      Store::get().pause(jid);
+  };
+  cancel->on_click = [jid] { Store::get().cancel(jid); };
+  qa_line("action:pause:" + std::to_string(jid), pause->x(), pause->y(), pause->w(), pause->h());
+  qa_line("action:cancel:" + std::to_string(jid), cancel->x(), cancel->y(), cancel->w(), cancel->h());
+  int bx = x + bw1 + bw2 + S(24), h = S(34);
+  // The reason, where there is room for it.
+  Label *why = below                    ? new Label(x, y + S(40), w, S(40), "", Label::DIM, true)
+               : w - (bx - x) >= S(120) ? new Label(bx, y - S(3), w - (bx - x), S(40), "", Label::DIM, true)
+                                        : nullptr;
+  if (below) h += S(44);
+  auto update = [jid, pause, cancel, why] {
+    const Job *job = Store::get().job(jid);
+    if (!job) return;
+    JobControls c = job_controls(*job);
+    bool paused = job->state == Job::Paused;
+    std::string text = paused ? _("Resume") : _("Pause");
+    if (pause->text() != text) pause->text(text);
+    set_active(pause, paused ? c.resume : c.pause);
+    set_active(cancel, c.cancel);
+    if (why) why->set(c.why_not);
+  };
+  update();
+  live_update(update);
+  return h;
+}
 
 // One entry of the history: what changed, when, by whom.
 class HistoryRow : public Fl_Widget {
@@ -934,11 +996,10 @@ void details_header(Page *page, const App &a) {
     logo->running(job->state == Job::Running);
     logo->tooltip(_("Working"));
     int jid = job->id;
-    new JobProgress(tx + ls + S(16), cy + S(6), std::max(S(120), tw - ls - S(16) - S(120)), S(40), jid);
-    if (job->cancellable || job->state == Job::Queued)
-      button(tx + tw - S(110), cy + S(10), _("Cancel"), Button::Normal, [jid] { Store::get().cancel(jid); }, S(110));
+    new JobProgress(tx + ls + S(16), cy + S(6), std::max(S(120), tw - ls - S(16)), S(40), jid);
     qa_line("job:" + std::to_string(jid), tx, cy, tw, ls);
-    cy += ls + S(12);
+    cy += ls + S(10);
+    cy += job_buttons(tx, cy, tw, jid) + S(14);
   } else if (o) {
     int bx = tx;
     auto add = [&](const std::string &text, Button::Kind kind, std::function<void()> fn) {
@@ -1293,7 +1354,7 @@ void build_progress(Page *page) {
   int x = page->left(), w = page->width();
   if (current) {
     int y = page->cursor(), size = std::min(S(150), page->h() / 3);
-    int h = size + S(40) + S(130);
+    int h = size + S(40) + S(170);
     new Card(x, y, w, h);
     auto *logo = new LogoAnimation(x + (w - size) / 2, y + S(20), size, size);
     logo->running(current->state == Job::Running);
@@ -1307,10 +1368,10 @@ void build_progress(Page *page) {
     int pw = std::min(w - S(80), S(520));
     new JobProgress(x + (w - pw) / 2, ty + S(34), pw, S(40), current->id);
     qa_line("job:" + std::to_string(current->id), x + (w - pw) / 2, ty + S(34), pw, S(40));
-    int jid = current->id;
-    if (current->cancellable || current->state == Job::Queued)
-      button(x + (w - S(120)) / 2, ty + S(82), _("Cancel"), Button::Normal, [jid] { Store::get().cancel(jid); },
-             S(120));
+    // Pause and Cancel under the bar, the reason when they are off below.
+    int bw = std::max(Button::fit(_("Pause")), Button::fit(_("Resume"))) + S(10) +
+             std::max(Button::fit(_("Cancel")), Button::fit(_("Remove")));
+    job_buttons(x + (w - bw) / 2, ty + S(84), pw, current->id, true);
     page->advance(h + S(20));
   }
   bool any_finished = false;
@@ -1322,8 +1383,17 @@ void build_progress(Page *page) {
     new Card(x, y, w, h);
     if (!j.app_id.empty() && st.app(j.app_id)) new IconView(x + S(14), y + (h - S(40)) / 2, S(40), j.app_id);
     int tx = x + S(68);
-    new Label(tx, y + S(8), w - S(88), S(24), action_label(j.action) + ": " + j.title, Label::BOLD);
-    new JobProgress(tx, y + S(32), w - S(88), S(30), j.id);
+    // Waiting and paused changes: Pause or Resume, and Remove, on the right.
+    int bw = j.active() ? std::max(Button::fit(_("Pause")), Button::fit(_("Resume"))) + S(10) +
+                              std::max(Button::fit(_("Cancel")), Button::fit(_("Remove"))) + S(14)
+                        : 0;
+    new Label(tx, y + S(8), w - S(88) - bw, S(24), action_label(j.action) + ": " + j.title, Label::BOLD);
+    new JobProgress(tx, y + S(32), w - S(88) - bw, S(30), j.id);
+    if (j.active()) {
+      // No room for the reason here: the buttons say it in their state.
+      int bx = x + w - S(14) - bw + S(14);
+      job_buttons(bx, y + (h - S(34)) / 2, bw - S(14), j.id);
+    }
     qa_line("job:" + std::to_string(j.id), x, y, w, h);
     page->advance(h + S(8));
   }

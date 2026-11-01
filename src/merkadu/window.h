@@ -9,6 +9,7 @@
 // rebuilt when it changes.
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -64,6 +65,9 @@ void qa_line(const std::string &name, int x, int y, int w, int h);
 // A widget of the page that shows the progress of a change: when a change
 // progresses only these are redrawn, not the whole window.
 void live_widget(Fl_Widget *w);
+// Called when a change progresses, until the page is built again (Pause
+// and Cancel follow what the change allows at each moment).
+void live_update(std::function<void()> fn);
 // The About information of Merkadu.
 AppInfo about_info();
 

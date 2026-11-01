@@ -411,19 +411,35 @@ class PackageKitBackend : public Backend {
       }
     int id = job.id;
     Action action = job.action;
+    cancel_asked_.erase(id);
     auto finish = [this, id, done](unsigned exit, unsigned code, const std::string &error) {
       running_.erase(id);
+      cancel_asked_.erase(id);
       if (exit == pk::FINISHED_SUCCESS) done(true, false, "");
       else if (exit == pk::FINISHED_CANCELLED || pk::error_is_cancel(code)) done(false, true, "");
       else done(false, false, pk::error_text(code, error));
     };
+    // Until PackageKit has a transaction for it, the job can be stopped
+    // here (while its packages are looked up).
+    {
+      Progress p;
+      p.status = _("Looking up the packages");
+      p.cancellable = true;
+      p.phase = JobPhase::Preparing;
+      progress(p);
+    }
     auto start = [this, id, action, progress, finish](std::vector<std::string> ids) {
+      if (cancel_asked_.count(id)) {
+        finish(pk::FINISHED_CANCELLED, 0, "");
+        return;
+      }
       auto t = std::make_shared<Tx>();
       t->on_progress = [progress](int percent, unsigned status, bool cancellable) {
         Progress p;
         p.percent = percent;
         p.status = pk::status_text(status);
         p.cancellable = cancellable;
+        p.phase = pk::status_phase(status);
         progress(p);
       };
       t->on_finished = finish;
@@ -490,7 +506,15 @@ class PackageKitBackend : public Backend {
 
   void cancel(int job_id) override {
     auto it = running_.find(job_id);
-    if (it == running_.end() || it->second->path.empty()) return;
+    if (it == running_.end() || it->second->path.empty()) {
+      // Not a transaction yet (its packages are being looked up): it ends
+      // as cancelled before it starts.
+      cancel_asked_.insert(job_id);
+      return;
+    }
+    // PackageKit stops the transaction while it allows it (AllowCancel:
+    // while it waits or downloads; APT keeps what it downloaded in
+    // /var/cache/apt/archives/partial). Its Finished signal ends the job.
     pk_bus()->call_async(dbus::method(kService, it->second->path, kTransaction, "Cancel"), nullptr);
   }
 
@@ -588,6 +612,7 @@ class PackageKitBackend : public Backend {
 
  private:
   std::map<int, std::shared_ptr<Tx>> running_;
+  std::set<int> cancel_asked_;  // jobs stopped before their transaction started
   std::map<std::string, std::string> updates_;  // package -> package id of its update
 };
 

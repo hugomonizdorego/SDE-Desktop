@@ -55,8 +55,10 @@ std::vector<QaPart> g_qa_lines;
 int g_content_x = 0, g_title_x = 0;
 bool g_rebuild_pending = false;
 bool g_refresh_running = false;
-// Widgets of the page that show progress (live_widget()).
+// Widgets of the page that show progress (live_widget()) and what follows
+// the changes' state (live_update()).
 std::vector<Fl_Widget *> g_live;
+std::vector<std::function<void()>> g_live_updates;
 int g_sidebar_jobs = -1;     // the count the sidebar shows for In Progress
 bool g_images_pending = false;  // a redraw for downloaded images is due
 
@@ -516,6 +518,7 @@ void do_rebuild(void *) {
   // The same view keeps its place; a new one starts at the top.
   int scroll = g_page && g_built == g_view ? scrolled() : 0;
   g_live.clear();
+  g_live_updates.clear();
   if (g_page) {
     g_win->remove(g_page);
     Fl::delete_widget(g_page);
@@ -568,6 +571,7 @@ void on_store_event(Event e) {
       // show progress is enough (PackageKit reports often, and a repaint
       // of the whole window takes long on slow computers).
       for (Fl_Widget *w : g_live) w->redraw();
+      for (auto fn : std::vector<std::function<void()>>(g_live_updates)) fn();
       int jobs = Store::get().active_jobs();
       if (g_sidebar && jobs != g_sidebar_jobs) {
         g_sidebar_jobs = jobs;
@@ -765,6 +769,10 @@ void qa_line(const std::string &name, int x, int y, int w, int h) {
 
 void live_widget(Fl_Widget *w) {
   if (w) g_live.push_back(w);
+}
+
+void live_update(std::function<void()> fn) {
+  if (fn) g_live_updates.push_back(std::move(fn));
 }
 
 AppInfo about_info() {

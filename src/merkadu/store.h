@@ -87,8 +87,11 @@ class Store {
   // Updater's).
   int update_all();
   int enqueue(Job job);
+  // Pause, Resume and Cancel (jobs.h): what the job's state and phase allow.
   void cancel(int job_id);
-  const std::vector<Job> &jobs() const { return jobs_; }
+  void pause(int job_id);
+  void resume(int job_id);
+  const std::vector<Job> &jobs() const { return queue_.jobs(); }
   const Job *job(int id) const;
   // The queued or running job of an app (nullptr when none).
   const Job *active_job(const std::string &app_id) const;
@@ -183,7 +186,6 @@ class Store {
   void resolve_owners();
   void apply_packages(std::shared_ptr<PackageList> list);
   void refresh_step_done(const std::string &source, bool ok, bool cancelled, const std::string &error);
-  Job *find_job(int id);
 
   Settings settings_;
   Categories categories_;
@@ -210,9 +212,7 @@ class Store {
   std::string catalog_error_;
   CatalogSources catalog_sources_;
   int catalog_counts_[kSourceCount] = {0, 0, 0};
-  std::vector<Job> jobs_;
-  int next_job_ = 1;
-  bool running_ = false;
+  JobQueue queue_;
   std::vector<HistoryEntry> history_;
   bool history_loaded_ = false;
   bool history_loading_ = false;
@@ -235,10 +235,6 @@ class Store {
   ChangeSet marks_;
 };
 
-// Short verb for a job: "Installing", "Removing", "Updating" (translated).
-std::string action_progress_label(Action a);
-// "Install", "Remove", "Update".
-std::string action_label(Action a);
 // A one-line description of where an origin comes from: "Debian package
 // gimp", "Flatpak org.gimp.GIMP from flathub", "Snap gimp (latest/stable)".
 std::string origin_line(const Origin &o);

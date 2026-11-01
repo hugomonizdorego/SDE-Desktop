@@ -19,7 +19,9 @@
 #include <thread>
 
 #include "appstream_catalog.h"
+#include "catalog_build.h"
 #include "categories.h"
+#include "jobs.h"
 #include "json.h"
 #include "model.h"
 #include "packages.h"
@@ -695,6 +697,249 @@ static void catalog_diagnosis() {
   CHECK(system(cmd.c_str()) == 0);
 }
 
+// Flathub's appstream.xml says origin="flatpak" for every app: the remote
+// is the directory the catalog was found in (0.2 Alpha 3 asked libflatpak
+// for the remote "flatpak": Remote "flatpak" not found).
+static void flatpak_remotes() {
+  std::string base = std::string(SDE_TEST_SOURCE_DIR) + "/tests/fixtures/merkadu/flatpak-installation";
+  auto catalogs = flatpak_catalogs({{"system", base}}, "x86_64");
+  // old-remote is not configured any more, disabled is disabled.
+  CHECK(catalogs.size() == 1);
+  if (catalogs.empty()) return;
+  CHECK(catalogs[0].remote == "flathub" && catalogs[0].installation == "system" &&
+        ends_with(catalogs[0].file, "/appstream/flathub/x86_64/active/appstream.xml"));
+  CatalogData d = load_flatpak_catalog(catalogs[0]);
+  CHECK(d.error.empty() && d.flatpak == 2 && d.apps.size() == 2);  // the runtime is not an app
+  for (auto &a : d.apps) {
+    const Origin *o = a.origin(Source::Flatpak);
+    CHECK(o && o->remote == "flathub" && o->installation == "system" && !a.has_source(Source::Debian));
+  }
+  const App *only = nullptr;
+  for (auto &a : d.apps)
+    if (a.id == "org.example.onlyflatpak") only = &a;
+  CHECK(only != nullptr);
+  if (only) {
+    // Its cached icon, from the remote's own icon directory.
+    CHECK(!only->icons.empty() && only->icon == base + "/appstream/flathub/x86_64/active/icons/64x64/"
+                                                       "org.example.OnlyFlatpak.png");
+    Job j;
+    CHECK(make_install_job(*only, Source::Flatpak, j));
+    CHECK(j.remote == "flathub" && j.targets == std::vector<std::string>({"system:app/org.example.OnlyFlatpak/x86_64/stable"}));
+    // Flatpak only: nothing to install from Debian.
+    CHECK(!make_install_job(*only, Source::Debian, j));
+  }
+  // The user's installation (no polkit): its apps are installed there.
+  auto user = flatpak_catalogs({{"user", base}}, "x86_64");
+  CHECK(user.size() == 1);
+  if (!user.empty()) {
+    CatalogData u = load_flatpak_catalog(user[0]);
+    CHECK(!u.apps.empty() && u.apps[0].origins[0].installation == "user");
+    Job j;
+    CHECK(make_install_job(u.apps[0], Source::Flatpak, j) && starts_with(j.targets[0], "user:app/"));
+  }
+  // Another architecture has no catalog here.
+  CHECK(flatpak_catalogs({{"system", base}}, "aarch64").empty());
+  // A catalog read on its own: origin="flatpak" names no remote.
+  CatalogData alone = load_appstream_file(catalogs[0].file);
+  CHECK(!alone.apps.empty() && alone.apps[0].origin(Source::Flatpak) &&
+        alone.apps[0].origin(Source::Flatpak)->remote.empty());
+}
+
+static App catalog_app(const std::string &id, const std::string &name, std::vector<std::string> categories = {}) {
+  App a;
+  a.appstream_id = id;
+  a.id = normalize_id(id);
+  a.name = name;
+  a.categories = categories;
+  return a;
+}
+
+// What may be installed from where: a Debian origin needs a real package.
+static void catalog_rules() {
+  auto apps = std::make_shared<std::vector<App>>();
+  App gimp = catalog_app("org.gimp.GIMP", "GIMP", {"Graphics"});
+  gimp.pkgnames = {"gimp"};
+  Origin deb;
+  deb.source = Source::Debian;
+  deb.id = "gimp";
+  gimp.origins.push_back(deb);
+  apps->push_back(gimp);
+  App gimp_fp = catalog_app("org.gimp.GIMP", "GNU Image Manipulation Program");
+  Origin fp;
+  fp.source = Source::Flatpak;
+  fp.id = "app/org.gimp.GIMP/x86_64/stable";
+  fp.remote = "flathub";
+  fp.installation = "system";
+  gimp_fp.origins.push_back(fp);
+  apps->push_back(gimp_fp);
+  App only = catalog_app("org.example.OnlyFlatpak", "Only Flatpak", {"Office"});
+  fp.id = "app/org.example.OnlyFlatpak/x86_64/stable";
+  only.origins.push_back(fp);
+  apps->push_back(only);
+  // A component whose package APT does not know (an old catalog, another
+  // architecture, a component that is not enabled).
+  App ghost = catalog_app("org.example.Ghost", "Ghost", {"Office"});
+  deb.id = "ghost";
+  ghost.pkgnames = {"ghost"};
+  ghost.origins = {deb};
+  apps->push_back(ghost);
+  // Metainfo files of installed software without a package name: one
+  // whose launcher a package owns, one of a Flatpak export.
+  App tool = catalog_app("org.example.Tool", "Tool", {"Utility"});
+  tool.needs_owner = true;
+  tool.desktop_ids = {"org.example.Tool.desktop"};
+  apps->push_back(tool);
+  App exported = catalog_app("org.example.Exported", "Exported", {"Office"});
+  exported.needs_owner = true;
+  exported.desktop_ids = {"org.example.Exported.desktop"};
+  apps->push_back(exported);
+
+  auto list = std::make_shared<PackageList>();
+  for (const char *name : {"gimp", "tool-pkg"}) {
+    Package p;
+    p.name = name;
+    p.candidate_version = "1.0-1";
+    p.section = "graphics";
+    p.download_size = 1000;
+    list->packages.push_back(p);
+  }
+  list->prepare();
+  Categories cats;
+  CHECK(cats.parse(fixture("../../../data/merkadu/categories.menu")));
+  CatalogInputs in;
+  in.catalog = apps;
+  in.owners = {{"org.example.Tool.desktop", "tool-pkg"}};
+  in.packages = list;
+  in.categories = &cats;
+  in.now = 1800000000;
+  CatalogResult r = build_catalog(in);
+  const App *g = r.catalog.find("org.gimp.GIMP");
+  CHECK(g && g->has_source(Source::Debian) && g->has_source(Source::Flatpak) && g->origins.size() == 2);
+  if (g) CHECK(g->origin(Source::Debian)->version == "1.0-1" && g->origin(Source::Debian)->download_size == 1000);
+  const App *o = r.catalog.find("org.example.onlyflatpak");
+  CHECK(o && o->origins.size() == 1 && o->origins[0].source == Source::Flatpak && o->origins[0].remote == "flathub");
+  CHECK(r.catalog.find("org.example.ghost") == nullptr && r.dropped_debian >= 1);
+  const App *t = r.catalog.find("org.example.tool");
+  CHECK(t && t->origins.size() == 1 && t->origins[0].id == "tool-pkg");
+  CHECK(r.catalog.find("org.example.exported") == nullptr);  // no package owns it: no Debian origin
+  CHECK(r.counts[int(Source::Debian)] == 2 && r.counts[int(Source::Flatpak)] == 2);
+  // Before APT's lists are read the catalog's packages are believed.
+  in.packages = nullptr;
+  CHECK(build_catalog(in).catalog.find("org.example.ghost") != nullptr);
+  // The departments, worked out with the catalog, agree with the menu.
+  CHECK(r.departments.built());
+  for (const Category *c : cats.sorted()) {
+    std::vector<const App *> direct = cats.apps_in(*c, r.catalog);
+    const auto &indexed = r.departments.apps(c->id);
+    CHECK(direct.size() == indexed.size());
+    for (size_t i = 0; i < direct.size() && i < indexed.size(); ++i)
+      CHECK(direct[i] == &r.catalog.apps()[indexed[i]]);
+  }
+  for (size_t i = 0; i < r.catalog.size(); ++i)
+    CHECK(r.departments.department(i) == cats.category_of(r.catalog.apps()[i]));
+  // The search texts are made with the catalog.
+  CHECK(g && g->lower_name == "gimp");
+  CHECK(search(r.catalog, "only").size() == 1 && search(r.catalog, "flat").size() == 1);
+}
+
+// Pause, Resume and Cancel: what the queue allows in each state.
+static void job_queue() {
+  JobQueue q;
+  Job a;
+  a.title = "A";
+  a.targets = {"a"};
+  Job b = a;
+  b.title = "B";
+  int ia = q.add(a), ib = q.add(b);
+  Job c = a;
+  c.title = "C (needs B)";
+  c.needs = ib;
+  int ic = q.add(c);
+  CHECK(q.active() == 3 && !q.running());
+  Job *next = q.next(100);
+  CHECK(next && next->id == ia);
+  q.start(ia);
+  CHECK(q.next(100) == nullptr);  // one at a time
+  // Not yet reported: nothing can be stopped.
+  JobControls none = job_controls(*q.find(ia));
+  CHECK(!none.pause && !none.cancel);
+  Progress p;
+  p.cancellable = true;
+  p.phase = JobPhase::Downloading;
+  p.percent = 30;
+  q.progress(ia, p);
+  JobControls dl = job_controls(*q.find(ia));
+  CHECK(dl.pause && dl.cancel && dl.why_not.empty());
+  // dpkg runs: neither, and why.
+  p.phase = JobPhase::Changing;
+  p.cancellable = false;
+  q.progress(ia, p);
+  JobControls inst = job_controls(*q.find(ia));
+  CHECK(!inst.pause && !inst.cancel && !inst.why_not.empty());
+  CHECK(!q.pause(ia) && !q.cancel(ia, 100));
+  // snapd and Flatpak undo what they set up: Cancel, but no Pause.
+  p.phase = JobPhase::Applying;
+  p.cancellable = true;
+  q.progress(ia, p);
+  JobControls apply = job_controls(*q.find(ia));
+  CHECK(!apply.pause && apply.cancel);
+  // Back to downloading: pause it. The source stops it and reports it
+  // cancelled; the job is paused, keeps its place and its percentage.
+  p.phase = JobPhase::Downloading;
+  q.progress(ia, p);
+  CHECK(q.pause(ia) && q.find(ia)->stopping == Job::Pausing);
+  CHECK(!job_controls(*q.find(ia)).pause && !job_controls(*q.find(ia)).why_not.empty());  // "Pausing..."
+  q.finished(ia, false, true, "", 101);
+  CHECK(q.find(ia)->state == Job::Paused && q.find(ia)->percent == 30 && q.find(ia)->active());
+  JobControls paused = job_controls(*q.find(ia));
+  CHECK(paused.resume && paused.cancel && !paused.pause);
+  // The next one runs meanwhile.
+  next = q.next(102);
+  CHECK(next && next->id == ib);
+  q.start(ib);
+  // C waits for B; B fails: C is cancelled with it.
+  q.finished(ib, false, false, "broken", 103);
+  std::vector<int> cancelled;
+  next = q.next(104, &cancelled);
+  CHECK(next == nullptr && cancelled == std::vector<int>({ic}) && q.find(ic)->state == Job::Cancelled);
+  CHECK(q.find(ib)->state == Job::Failed && q.find(ib)->error == "broken");
+  // Resume A: it runs again (a second run) and finishes.
+  CHECK(q.resume(ia) && q.find(ia)->state == Job::Queued);
+  next = q.next(105);
+  CHECK(next && next->id == ia);
+  q.start(ia);
+  CHECK(q.find(ia)->runs == 2);
+  q.finished(ia, true, false, "", 106);
+  CHECK(q.find(ia)->state == Job::Done && q.find(ia)->percent == 100 && q.active() == 0);
+  // A waiting change can be paused or taken out of the queue at once.
+  int id = q.add(a);
+  CHECK(!q.pause(id) && q.find(id)->state == Job::Paused);
+  CHECK(!q.cancel(id, 107) && q.find(id)->state == Job::Cancelled);
+  // Cancelling a running change goes to the source; it ends cancelled.
+  id = q.add(a);
+  q.start(q.next(108)->id);
+  p.phase = JobPhase::Preparing;
+  q.progress(id, p);
+  CHECK(q.cancel(id, 109) && q.find(id)->stopping == Job::Cancelling);
+  q.finished(id, false, true, "", 110);
+  CHECK(q.find(id)->state == Job::Cancelled);
+  // A removal does not download: no Pause, but Cancel while it may.
+  Job r = a;
+  r.action = Action::Remove;
+  id = q.add(r);
+  q.start(q.next(111)->id);
+  p.phase = JobPhase::Preparing;
+  q.progress(id, p);
+  CHECK(!job_controls(*q.find(id)).pause && job_controls(*q.find(id)).cancel);
+  q.clear_finished();
+  CHECK(q.jobs().size() == 1 && q.jobs()[0].id == id);
+  // PackageKit's statuses.
+  CHECK(pk::status_phase(pk::STATUS_DOWNLOAD) == JobPhase::Downloading &&
+        pk::status_phase(pk::STATUS_INSTALL) == JobPhase::Changing &&
+        pk::status_phase(pk::STATUS_WAITING_FOR_LOCK) == JobPhase::Waiting &&
+        pk::status_phase(pk::STATUS_COMMIT) == JobPhase::Changing);
+}
+
 int main() {
   set_distribution_name("Debian");
   json();
@@ -712,6 +957,9 @@ int main() {
   icons();
   all_software();
   catalog_diagnosis();
+  flatpak_remotes();
+  catalog_rules();
+  job_queue();
   if (failures) {
     fprintf(stderr, "%d merkadu check(s) failed\n", failures);
     return 1;

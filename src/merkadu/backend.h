@@ -25,44 +25,12 @@
 
 #include "appstream_catalog.h"
 #include "apt_cache.h"
+#include "jobs.h"
 #include "model.h"
 #include "packages.h"
 
 namespace sde {
 namespace merkadu {
-
-enum class Action { Install = 0, Remove = 1, Update = 2 };
-
-// A change the user asked for; the Store runs them one after the other.
-struct Job {
-  int id = 0;
-  Action action = Action::Install;
-  Source source = Source::Debian;
-  std::string app_id;   // the app it is about ("" for several apps)
-  std::string title;    // what the progress view shows ("GIMP", "3 apps")
-  std::string icon;
-  // Packages, Flatpak items ("system:app/org.gimp.GIMP/x86_64/stable") or
-  // snap names.
-  std::vector<std::string> targets;
-  std::string remote;   // Flatpak remote to install from; snap channel
-  bool classic = false; // a snap with classic confinement
-  int needs = 0;        // a job that must succeed first (else this one is cancelled)
-  // Progress, updated while it runs.
-  enum State { Queued, Running, Done, Failed, Cancelled };
-  State state = Queued;
-  int percent = -1;
-  std::string status;
-  std::string error;
-  bool cancellable = false;
-  std::time_t finished = 0;
-  bool active() const { return state == Queued || state == Running; }
-};
-
-struct Progress {
-  int percent = -1;  // -1: unknown
-  std::string status;
-  bool cancellable = false;
-};
 
 // What removing packages would do (a simulation).
 struct RemovalCheck {
@@ -113,7 +81,10 @@ class Backend {
   // Sizes and versions of |o| that the catalog does not have.
   virtual void details(const App &app, const Origin &o, std::function<void(Origin)> done) {}
   // Runs |job|: |progress| any number of times, then |done| once.
+  // |progress| reports the phase (jobs.h): Pause and Cancel depend on it.
   virtual void run(const Job &job, std::function<void(const Progress &)> progress, DoneFn done) = 0;
+  // Stops a running job (for Cancel and for Pause: the Store tells them
+  // apart); |done| then reports it cancelled.
   virtual void cancel(int job_id) {}
   // The source's history of changes.
   virtual void history(std::function<void(std::vector<HistoryEntry>)> done) { done({}); }

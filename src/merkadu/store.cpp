@@ -117,22 +117,6 @@ void post(std::function<void()> fn, const char *what) {
 
 // --------------------------------------------------------------- labels
 
-std::string action_progress_label(Action a) {
-  switch (a) {
-    case Action::Remove: return _("Removing");
-    case Action::Update: return _("Updating");
-    default: return _("Installing");
-  }
-}
-
-std::string action_label(Action a) {
-  switch (a) {
-    case Action::Remove: return _("Remove");
-    case Action::Update: return _("Update");
-    default: return _("Install");
-  }
-}
-
 std::string origin_line(const Origin &o) {
   switch (o.source) {
     case Source::Flatpak: {
@@ -373,63 +357,33 @@ void Store::resolve_owners() {
 
 // ------------------------------------------------------------------ jobs
 
-Job *Store::find_job(int id) {
-  for (auto &j : jobs_)
-    if (j.id == id) return &j;
-  return nullptr;
-}
-
-const Job *Store::job(int id) const { return const_cast<Store *>(this)->find_job(id); }
+const Job *Store::job(int id) const { return queue_.find(id); }
 
 const Job *Store::active_job(const std::string &app_id) const {
-  for (auto &j : jobs_)
+  for (auto &j : queue_.jobs())
     if (j.active() && !j.app_id.empty() && j.app_id == app_id) return &j;
   return nullptr;
 }
 
-int Store::active_jobs() const {
-  int n = 0;
-  for (auto &j : jobs_) n += j.active();
-  return n;
-}
+int Store::active_jobs() const { return queue_.active(); }
 
 void Store::clear_finished() {
-  jobs_.erase(std::remove_if(jobs_.begin(), jobs_.end(), [](const Job &j) { return !j.active(); }), jobs_.end());
+  queue_.clear_finished();
   emit(Event::Jobs);
 }
 
 int Store::enqueue(Job job) {
   if (job.targets.empty() || !backend(job.source)) return 0;
-  job.id = next_job_++;
-  job.state = Job::Queued;
-  jobs_.push_back(job);
+  int id = queue_.add(job);
   emit(Event::Jobs);
   run_next();
-  return job.id;
+  return id;
 }
 
 int Store::install(const std::string &app_id, Source source) {
   const App *a = app(app_id);
-  const Origin *o = a ? a->origin(source) : nullptr;
-  if (!o || o->installed || active_job(app_id)) return 0;
   Job j;
-  j.action = Action::Install;
-  j.source = source;
-  j.app_id = a->id;
-  j.title = a->name;
-  j.icon = a->icon;
-  j.remote = o->remote;
-  if (source == Source::Debian) {
-    if (!valid_package_name(o->id)) return 0;
-    j.targets = {o->id};
-  } else if (source == Source::Flatpak) {
-    if (!valid_flatpak_ref(o->id)) return 0;
-    j.targets = {std::string(o->installation.empty() ? "system" : o->installation) + ":" + o->id};
-  } else {
-    if (!valid_snap_name(o->id)) return 0;
-    j.targets = {o->id};
-    j.classic = o->classic;
-  }
+  if (!a || active_job(app_id) || !make_install_job(*a, source, j)) return 0;
   return enqueue(j);
 }
 
@@ -510,70 +464,76 @@ int Store::update_all() {
 }
 
 void Store::cancel(int job_id) {
-  Job *j = find_job(job_id);
-  if (!j) return;
-  if (j->state == Job::Queued) {
-    j->state = Job::Cancelled;
-    j->finished = std::time(nullptr);
-    emit(Event::Jobs);
-    if (on_job_done) on_job_done(*j);
+  const Job *before = queue_.find(job_id);
+  if (!before) return;
+  Source source = before->source;
+  if (queue_.cancel(job_id, std::time(nullptr))) {
+    // Running: the source stops it and reports it cancelled.
+    if (backend(source)) backend(source)->cancel(job_id);
+    emit(Event::Progress);
     return;
   }
-  if (j->state == Job::Running && backend(j->source)) backend(j->source)->cancel(job_id);
+  const Job *j = queue_.find(job_id);
+  if (j && j->state == Job::Cancelled) {
+    Job copy = *j;
+    emit(Event::Jobs);
+    if (on_job_done) on_job_done(copy);
+    run_next();  // what waited for it is cancelled too
+  }
+}
+
+void Store::pause(int job_id) {
+  const Job *j = queue_.find(job_id);
+  if (!j) return;
+  Source source = j->source;
+  if (queue_.pause(job_id)) {
+    // Stopped by the source; job_finished() keeps it in the queue, paused.
+    if (backend(source)) backend(source)->cancel(job_id);
+    emit(Event::Progress);
+    return;
+  }
+  emit(Event::Jobs);
+}
+
+void Store::resume(int job_id) {
+  if (!queue_.resume(job_id)) return;
+  emit(Event::Jobs);
+  run_next();
 }
 
 void Store::run_next() {
-  if (running_) return;
-  Job *next = nullptr;
-  for (auto &j : jobs_)
-    if (j.state == Job::Queued) {
-      // A job that needs another one that did not succeed is cancelled.
-      if (j.needs) {
-        const Job *dep = job(j.needs);
-        if (dep && dep->active()) continue;
-        if (!dep || dep->state != Job::Done) {
-          j.state = Job::Cancelled;
-          j.error = _("The change it needs did not succeed.");
-          j.finished = std::time(nullptr);
-          if (on_job_done) on_job_done(j);
-          continue;
-        }
-      }
-      next = &j;
-      break;
-    }
+  std::vector<int> cancelled;
+  Job *next = queue_.next(std::time(nullptr), &cancelled);
+  for (int id : cancelled)
+    if (const Job *c = queue_.find(id))
+      if (on_job_done) on_job_done(*c);
   if (!next) {
     emit(Event::Jobs);
     return;
   }
-  running_ = true;
-  next->state = Job::Running;
-  next->status = action_progress_label(next->action);
   int id = next->id;
-  Job copy = *next;
+  queue_.start(id);
+  Job copy = *queue_.find(id);
   emit(Event::Jobs);
   backend(copy.source)->run(
       copy,
       [this, id](const Progress &p) {
-        Job *j = find_job(id);
-        if (!j || j->state != Job::Running) return;
-        j->percent = p.percent;
-        if (!p.status.empty()) j->status = p.status;
-        j->cancellable = p.cancellable;
+        queue_.progress(id, p);
         emit(Event::Progress);
       },
       [this, id](bool ok, bool cancelled, std::string error) { job_finished(id, ok, cancelled, error); });
 }
 
 void Store::job_finished(int id, bool ok, bool cancelled, const std::string &error) {
-  running_ = false;
-  Job *j = find_job(id);
+  queue_.finished(id, ok, cancelled, error, std::time(nullptr));
+  const Job *j = queue_.find(id);
+  if (j && j->state == Job::Paused) {
+    // Paused: it waits in the queue; the next change may run meanwhile.
+    emit(Event::Jobs);
+    run_next();
+    return;
+  }
   if (j) {
-    j->state = ok ? Job::Done : cancelled ? Job::Cancelled : Job::Failed;
-    j->percent = ok ? 100 : j->percent;
-    j->error = error;
-    j->cancellable = false;
-    j->finished = std::time(nullptr);
     Source s = j->source;
     Job copy = *j;
     history_loaded_ = false;

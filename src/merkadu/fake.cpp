@@ -48,6 +48,9 @@ std::string fake_dir() { return env("MERKADU_FAKE"); }
 
 namespace {
 
+// The share of a fake change that downloads; the rest installs.
+constexpr double kFakeDownload = 0.55;
+
 std::string resolve(const std::string &dir, const std::string &path) {
   if (path.empty() || path[0] == '/' || starts_with(path, "https://") || path.find('/') == std::string::npos)
     return path;  // absolute, remote or an icon name
@@ -69,6 +72,8 @@ struct FakeWorld {
   std::string fail;
   double seconds = 2.5;
   int hold = -1;  // MERKADU_FAKE_HOLD: changes stop at this percentage (screenshots)
+  // What paused changes downloaded (their targets -> seconds done).
+  std::map<std::string, double> downloaded;
 
   void load(const std::string &d) {
     if (loaded) return;
@@ -326,6 +331,11 @@ class FakeBackend : public Backend {
   }
 
   void run(const Job &job, std::function<void(const Progress &)> progress, DoneFn done) override {
+    Progress start;
+    start.status = _("Preparing");
+    start.cancellable = true;
+    start.phase = JobPhase::Preparing;
+    progress(start);
     auto *fj = new FakeJob{job, std::move(progress), std::move(done)};
     jobs_[job.id] = fj;
     Fl::add_timeout(0.1, tick, new std::pair<FakeBackend *, int>(this, job.id));
@@ -417,12 +427,24 @@ class FakeBackend : public Backend {
     auto it = self->jobs_.find(arg->second);
     if (it == self->jobs_.end()) return;
     FakeJob *fj = it->second;
+    std::string key;
+    for (auto &t : fj->job.targets) key += t + ";";
     if (fj->cancelled) {
+      // Like APT and OSTree, what was downloaded stays: the change continues
+      // from there when it runs again (a pause).
+      if (fj->elapsed / world().seconds < kFakeDownload) world().downloaded[key] = fj->elapsed;
       DoneFn done = fj->done;
       self->jobs_.erase(it);
       delete fj;
       done(false, true, "");
       return;
+    }
+    if (fj->elapsed == 0) {
+      auto d = world().downloaded.find(key);
+      if (d != world().downloaded.end()) {
+        fj->elapsed = d->second;
+        world().downloaded.erase(d);
+      }
     }
     if (world().hold >= 0 && fj->elapsed / world().seconds * 100 >= world().hold) {
       // Held for a screenshot: the change stays where it is (still cancellable).
@@ -433,11 +455,16 @@ class FakeBackend : public Backend {
     double f = std::min(1.0, fj->elapsed / world().seconds);
     Progress p;
     p.percent = int(f * 100);
-    p.cancellable = f < 0.7;
+    bool downloading = fj->job.action != Action::Remove && f < kFakeDownload;
+    // Debian: dpkg cannot be stopped; Flatpak and snapd undo what they did.
+    p.phase = downloading ? JobPhase::Downloading
+              : fj->job.source == Source::Debian ? JobPhase::Changing
+                                                 : JobPhase::Applying;
+    p.cancellable = p.phase != JobPhase::Changing;
     if (fj->job.action == Action::Remove)
       p.status = _("Removing");
     else
-      p.status = f < 0.55 ? _("Downloading") : fj->job.action == Action::Update ? _("Updating") : _("Installing");
+      p.status = downloading ? _("Downloading") : fj->job.action == Action::Update ? _("Updating") : _("Installing");
     fj->progress(p);
     if (f < 1.0) {
       Fl::add_timeout(0.1, tick, arg.release());
