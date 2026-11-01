@@ -1,5 +1,13 @@
 SDE-FLTK changes (Selviana DE Project)
 
+Unreleased (SDE 0.2.0 Alpha 3.1)
+  - X11: top-level windows answer _NET_WM_PING (EWMH). WM_PROTOCOLS lists
+    it next to WM_DELETE_WINDOW, and fl_handle() sends the ping back to the
+    root window as the specification says, from the event loop. SDE's
+    watchdog and SDE WM can then tell an SDE program that stopped handling
+    events from a working one, as they can for GTK and Qt programs
+    (docs/FORCE-CLOSE.md in SDE).
+
 1.4.5-sde1  2026-10-25
   - Imported FLTK 1.4.5 (tag release-1.4.5, upstream revision
     a9b1113516ffd15fc7602a6d425a317df30f4720) in place of FLTK 1.3.11, the

@@ -208,6 +208,7 @@ static Atom fl_XaImageBmp;
 static Atom fl_XaImagePNG;
 static Atom fl_INCR;
 static Atom fl_NET_WM_PID;
+static Atom fl_NET_WM_PING;                     // SDE-FLTK: answered, see fl_handle()
 static Atom fl_NET_WM_NAME;                     // utf8 aware window label
 static Atom fl_NET_WM_ICON_NAME;                // utf8 aware window icon name
 static Atom fl_NET_SUPPORTING_WM_CHECK;
@@ -605,6 +606,7 @@ void open_display_i(Display* d) {
   fl_XaImagePNG         = XInternAtom(d, "image/png",           0);
   fl_INCR               = XInternAtom(d, "INCR",                0);
   fl_NET_WM_PID         = XInternAtom(d, "_NET_WM_PID",         0);
+  fl_NET_WM_PING        = XInternAtom(d, "_NET_WM_PING",        0);
   fl_NET_WM_NAME        = XInternAtom(d, "_NET_WM_NAME",        0);
   fl_NET_WM_ICON_NAME   = XInternAtom(d, "_NET_WM_ICON_NAME",   0);
   fl_NET_SUPPORTING_WM_CHECK = XInternAtom(d, "_NET_SUPPORTING_WM_CHECK", 0);
@@ -1641,6 +1643,17 @@ int fl_handle(const XEvent& thisevent)
   case ClientMessage: {
     Atom message = fl_xevent->xclient.message_type;
     const long* data = fl_xevent->xclient.data.l;
+    if (message == WM_PROTOCOLS && (Atom)(data[0]) == fl_NET_WM_PING) {
+      // SDE-FLTK: the window manager (or SDE's watchdog) asks whether the
+      // program still handles events: send the message back to the root
+      // window (EWMH _NET_WM_PING), so that a program that stopped
+      // responding can be told from a working one.
+      XEvent pong = *fl_xevent;
+      Window root = RootWindow(fl_display, fl_screen);
+      pong.xclient.window = root;
+      XSendEvent(fl_display, root, False, SubstructureNotifyMask | SubstructureRedirectMask, &pong);
+      return 1;
+    }
     if ((Atom)(data[0]) == WM_DELETE_WINDOW) {
       event = FL_CLOSE;
     } else if (message == fl_XdndEnter) {
@@ -2729,8 +2742,10 @@ void Fl_X::make_xid(Fl_Window* win, XVisualInfo *visual, Colormap colormap)
 
     win->label(win->label(), win->iconlabel());
 
+    // SDE-FLTK: _NET_WM_PING too (answered in fl_handle()).
+    Atom protocols[2] = {WM_DELETE_WINDOW, fl_NET_WM_PING};
     XChangeProperty(fl_display, xp->xid, WM_PROTOCOLS,
-                    XA_ATOM, 32, 0, (uchar*)&WM_DELETE_WINDOW, 1);
+                    XA_ATOM, 32, 0, (uchar*)protocols, 2);
 
     // send size limits and border:
     Fl_X11_Window_Driver::driver(win)->sendxjunk();
