@@ -1848,6 +1848,58 @@ def action_center_more(s):
     s.set_clock(None)
 
 
+@scene('Force Close', [
+    ('force-close', 'Force Close: Merkadu stopped responding - Wait, or Force Close at once '
+                    '(its taskbar button says "Not Responding")'),
+    ('force-close-launch', 'Force Close: an application that has not opened after two minutes'),
+], needs=['sde-force-close'])
+def force_close(s):
+    """0.2.0 Alpha 3.1 (docs/FORCE-CLOSE.md). A test client stands in for a
+    frozen program (tests/frozen_client_fixture.cpp, under Merkadu's window
+    class: the dialog shows Merkadu's name and icon); the mark that
+    sde-watchdog would set after its pings is set directly."""
+    tool = s.test_tool('sde-frozen-client')
+    if not tool:
+        raise SkipShot('no sde-frozen-client (tests)')
+    try:
+        s.spawn(tool, '--title', 'Merkadu', '--class', 'merkadu', '--frozen')
+        w = s.need('^Merkadu$', what='the frozen window')
+        s.size(w, 900, 560)
+        s.run('xprop', '-id', w, '-f', '_SDE_NOT_RESPONDING', '32c', '-set', '_SDE_NOT_RESPONDING',
+              str(int(time.time()) - 125))
+        s.wait(lambda: any(k.startswith('@task-not-responding:') for k in s.layout('SDE Panel')), 3)
+        s.spawn('sde-force-close', '--window', w)
+        d = s.need('^Merkadu is not responding$', what='the dialog')
+        s.activate(d)
+        s.park_pointer()
+        s.shot('force-close', quiet=0.6)
+    except SkipShot as e:
+        s.skip('force-close', str(e))
+    finally:
+        s.stop_scene_procs()
+    try:
+        # A program SDE started (its launch record) that shows no window.
+        launches = s.tmp / 'launches'
+        launches.mkdir(exist_ok=True)
+        p = s.spawn(tool, '--no-window', name='silent-client')
+        time.sleep(0.3)
+        stat = Path(f'/proc/{p.pid}/stat').read_text()
+        start = stat[stat.rindex(')') + 2:].split()[19]
+        (launches / str(p.pid)).write_text(
+            f'pid={p.pid}\nstart={start}\ntime={int(time.time()) - 125}\nname=Taca\nicon=taca\n'
+            f'desktop=taca.desktop\narg=taca\n')
+        env = dict(s.env, SDE_LAUNCHES_DIR=str(launches))
+        s.spawn('sde-force-close', '--launch', str(p.pid), env=env)
+        d = s.need('has not opened yet$', what='the dialog')
+        s.activate(d)
+        s.park_pointer()
+        s.shot('force-close-launch', quiet=0.6)
+    except SkipShot as e:
+        s.skip('force-close-launch', str(e))
+    finally:
+        s.stop_scene_procs()
+
+
 SETTINGS_TITLE = '^(Settings|Control Center|SDE Settings)$'
 ABOUT_SCROLL = 6  # wheel steps from the top of Control Center > About to its licenses card
 
