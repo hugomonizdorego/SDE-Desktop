@@ -117,6 +117,7 @@ def liria(staged):
     liria_menus(staged)
     liria_list_view(staged)
     liria_menu_paint_order(staged)
+    liria_menu_prepare(staged)
     liria_translations(staged)
 
 
@@ -3761,6 +3762,82 @@ def liria_menu_paint_order(staged):
               "void                  eel_sde_paint_menu_first                        (GtkMenu              *menu,\n"
               "        GtkWidget            *owner);\n"
               "void                  eel_pop_up_context_menu                         (GtkMenu              *menu,\n")
+
+
+MENU_PREPARE = r'''/* SDE (0.2.0 Alpha 3.1): a right-click selects the file when the button is
+ * pressed and opens its menu when it is released (a right-button drag moves
+ * files). The menus are made ready in between, right after the press has
+ * been painted, instead of 100 ms later or when the button is released:
+ * updating them, creating the new items and measuring them took 15-40 ms
+ * of the time from the release to the menu. */
+static gboolean
+sde_update_menus_for_popup (gpointer data)
+{
+	FMDirectoryView *view;
+	GtkWidget *menu;
+
+	view = FM_DIRECTORY_VIEW (data);
+	g_object_ref (view);
+	view->details->update_menus_timeout_id = 0;
+	fm_directory_view_update_menus (view);
+	if (view->details->window != NULL) {
+		menu = gtk_ui_manager_get_widget (liria_window_info_get_ui_manager (view->details->window),
+						  FM_DIRECTORY_VIEW_POPUP_PATH_SELECTION);
+		if (menu != NULL) {
+			gtk_widget_get_preferred_size (menu, NULL, NULL);
+		}
+	}
+	g_object_unref (view);
+	return FALSE;
+}
+
+static gboolean
+sde_right_button_pressed (void)
+{
+	GdkEvent *event;
+	gboolean pressed;
+
+	event = gtk_get_current_event ();
+	pressed = event != NULL && event->type == GDK_BUTTON_PRESS && event->button.button == 3;
+	if (event != NULL) {
+		gdk_event_free (event);
+	}
+	return pressed;
+}
+
+static void
+schedule_update_menus (FMDirectoryView *view)
+{
+	g_assert (FM_IS_DIRECTORY_VIEW (view));
+
+	/* Don't schedule updates after destroy (#349551),
+ 	 * or if we are not active.
+ 	*/
+	if (view->details->window == NULL ||
+	    !view->details->active) {
+		return;
+	}
+
+	view->details->menu_states_untrustworthy = TRUE;
+
+	/* SDE: during a right-click, before the button is released. */
+	if (sde_right_button_pressed ()) {
+		if (view->details->update_menus_timeout_id != 0) {
+			g_source_remove (view->details->update_menus_timeout_id);
+		}
+		view->details->update_menus_timeout_id = g_idle_add (sde_update_menus_for_popup, view);
+		return;
+	}
+'''
+
+
+def liria_menu_prepare(staged):
+    """0.2.0 Alpha 3.1: the context menu of a file is made ready while the
+    right button is held (it opens on release), so the release only shows
+    it (sde_update_menus_for_popup () in fm-directory-view.c)."""
+    view = staged / "src/file-manager/fm-directory-view.c"
+    replace_between(view, "static void\nschedule_update_menus (FMDirectoryView *view)\n{",
+                    "\t/* Schedule a menu update with the current update interval */\n", MENU_PREPARE + "\n")
 
 
 RECIPES = {"liria": liria}
