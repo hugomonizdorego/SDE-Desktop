@@ -319,15 +319,20 @@ void field_box(int x, int y, int w, int h, Fl_Color c) {
   p.fill_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, from_fl(c));
   p.stroke_rounded(x, y, w, h, r, t.border);
 }
-// FLTK's stock boxes, softened (install_soft_boxes()). Small boxes (check
-// buttons) keep a small radius so they stay square-ish.
-double stock_radius(const Theme &t, int h) {
+// FLTK's stock boxes, softened (install_soft_boxes()). A small square box
+// is the box of a check button (Fl_Check_Button draws it with FL_DOWN_BOX,
+// as big as its label's font): a rounded square with corners of a fifth of
+// its side (0.2.0 Alpha 3.1; 4 px corners on a 13 px box made it a circle,
+// a check box that looked like a radio button). Other small boxes keep a
+// small radius.
+double stock_radius(const Theme &t, int w, int h) {
+  if (std::abs(w - h) <= 1 && h <= S(28)) return std::max(1.5, h * 0.2);
   return h < S(20) ? std::min(Sd(4), h / 2.0) : t.radius_for(h);
 }
 void soft_box(int x, int y, int w, int h, Fl_Color c, bool down, bool thin, bool frame_only) {
   const Theme &t = ui_theme();
   Painter p(cur_w(), cur_h());
-  double r = stock_radius(t, h);
+  double r = stock_radius(t, w, h);
   Color fill = from_fl(c);
   if (!frame_only) p.fill_rounded(x + 0.5, y + 0.5, w - 1, h - 1, r, fill);
   Color edge = down ? t.border.mix(t.text_dim, 0.25) : t.border;
