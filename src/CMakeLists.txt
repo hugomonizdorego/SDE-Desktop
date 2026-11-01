@@ -168,6 +168,18 @@ add_executable(sde-polkit-agent polkit-agent/main.cpp)
 target_link_libraries(sde-polkit-agent PRIVATE sde-common PkgConfig::POLKIT_AGENT)
 install(TARGETS sde-polkit-agent RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
 
+# 0.2.0 Alpha 3.1: the FileChooser portal backend: programs that ask
+# xdg-desktop-portal for a file dialog (Flatpak, Firefox, GTK 4, Qt) get the
+# SDE file chooser (docs/FILE-CHOOSER.md). D-Bus starts it on demand.
+add_executable(xdg-desktop-portal-sde portal/main.cpp)
+target_link_libraries(xdg-desktop-portal-sde PRIVATE sde-common)
+install(TARGETS xdg-desktop-portal-sde RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+configure_file(${PROJECT_SOURCE_DIR}/data/portals/org.freedesktop.impl.portal.desktop.sde.service.in
+               ${CMAKE_BINARY_DIR}/portals/org.freedesktop.impl.portal.desktop.sde.service @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/portals/org.freedesktop.impl.portal.desktop.sde.service
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+install(FILES ${PROJECT_SOURCE_DIR}/data/portals/sde.portal DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal/portals)
+
 
 # Gallery: an original SDE photo library. The model, metadata reader,
 # storage media, albums and thumbnail cache are a separate library so that

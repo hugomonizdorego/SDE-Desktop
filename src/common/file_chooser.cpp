@@ -66,6 +66,7 @@ struct FileChooser::Options {
   bool confirm_overwrite = true, new_folder = true, recent = true;
   Fl_Window *parent = nullptr;
   unsigned long parent_xid = 0;
+  void *dialog = nullptr;  // while run() waits
 };
 
 namespace {
@@ -3840,10 +3841,18 @@ bool FileChooser::run() {
   Fl_Group::current(nullptr);
   auto *dialog = new Dialog(*o_);
   Fl_Group::current(current);
+  o_->dialog = dialog;
   bool ok = dialog->run(paths_);
+  o_->dialog = nullptr;
   o_->filter = dialog->filter;
   delete dialog;
   return ok;
 }
+
+void FileChooser::close() {
+  if (o_->dialog) static_cast<Dialog *>(o_->dialog)->cancel();
+}
+
+bool FileChooser::running() const { return o_->dialog != nullptr; }
 
 }  // namespace sde

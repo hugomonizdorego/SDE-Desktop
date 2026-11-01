@@ -100,6 +100,12 @@ if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-dbus-timeouts COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-dbus-timeout-tests>)
   set_tests_properties(sde-dbus-timeouts PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif()
+# The FileChooser portal backend (xdg-desktop-portal-sde) on a private bus.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-file-chooser-portal COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_file_chooser_portal.py $<TARGET_FILE:xdg-desktop-portal-sde>)
+  set_tests_properties(sde-file-chooser-portal PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 
 add_executable(sde-xsettings-tests test_xsettings.cpp)
 target_link_libraries(sde-xsettings-tests PRIVATE sde-xsettings-model)

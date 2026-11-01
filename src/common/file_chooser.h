@@ -107,6 +107,10 @@ class FileChooser {
 
   // Shows the dialog and waits. True when something was chosen.
   bool run();
+  // Closes the dialog while run() waits, as Cancel does (the portal, when
+  // the program that asked closes the request).
+  void close();
+  bool running() const;
   // What was chosen: absolute paths (for Save the full name of the file).
   const std::vector<std::string> &paths() const;
   std::string path() const;
