@@ -1,4 +1,4 @@
-# SDE themes, transparency and icons (0.2.0 Alpha 2)
+# SDE themes, transparency and icons (0.2.0 Alpha 3.1)
 
 SDE has three theme families, SDE Graphite (default), SDE Fluent and SDE
 Liquid Glass (named SDE Glass from alpha51 to 0.2.0 Alpha 1; its id and
@@ -66,6 +66,31 @@ their edge (`Painter::surface_edge()`), Liquid Glass without its compositor
 shader a glass sheen (`Painter::glass_surface()`). Menus and tooltips have
 more room around their items, and menu separators are inset.
 
+## Menus, lists, check boxes (0.2.0 Alpha 3.1)
+
+* **The highlight moves at once.** Graphite's Material transitions faded
+  menu items and rows in and out (and SDE's soft layers added a 120 ms
+  fade), so two or three items of a menu were lit at once while the
+  pointer moved and menus felt late. Every SDE GTK 3 and GTK 4 theme and
+  the libadwaita layer now have no transition or animation on menu items,
+  popover menu buttons, menu bar items, combo box lists, list and tree
+  rows, icon views and flow box children: `tools/build-themes.py` sets
+  them to `none` in the upstream rules (`still_highlights()`) and the last
+  layer, `data/themes/overlays/motion-gtk-{3.0,4.0}.css`, keeps them off
+  in every state.
+* **Check boxes are rounded squares, radio buttons circles,** in windows,
+  dialogs and menus. Graphite drew GTK 3 check boxes as circles (its
+  `checkbox-*-symbolic.svg` assets); SDE Graphite and SDE Liquid Glass
+  ship rounded squares instead (`check_box_svgs()`). SDE-FLTK's check
+  buttons (the file chooser, stock dialogs) get a rounded square with
+  corners of a fifth of its side (`stock_radius()` in
+  `src/common/menu.cpp`); 4 px corners had made a 13 px box a circle.
+* `sde-theme-motion` (`tests/test_theme_motion.py`) checks both: no rule of
+  a built style sheet that styles those widgets may have a transition or
+  animation that takes time, and the indicators drawn by GTK 3, GTK 4 and
+  SDE-FLTK on Xvfb must fill at least 87 % (check box) or at most 84 %
+  (radio button) of their box.
+
 ## Window buttons
 
 Every family has the same caption buttons on the right, after Mint-Y:
@@ -124,39 +149,75 @@ from 0 to 100. One key drives every translucent surface of every family:
 enabled=true        # translucent surfaces on or off
 transparency=25     # 0 (opaque) to 100
 blur=true
+blur_strength=6     # 1 (light) to 12 (strong), around the family's own blur
 ```
 
-* The panel, SDE menus, the Start menu, the Action Center and popups get a
-  whole-window opacity (`Theme::opacity`, `Theme::popup_opacity`).
-* Window frames: compositor `frame-opacity` (`Theme::frame_opacity`), fully
-  for Glass and partly for Graphite and Fluent.
-* GTK 3/4 menus and popovers: a translucent background with opaque text, in
-  the managed block of `~/.config/gtk-3.0/gtk.css` and `gtk-4.0/gtk.css`
-  (`Theme::gtk_menu_alpha`). The rules apply only to `.csd` windows, which
-  GTK marks only while a compositor runs, so without one everything stays
-  opaque. The compositor then leaves GTK menus at full opacity.
-* Text stays crisp: 100 is the most transparent each surface can be while
-  its text keeps WCAG contrast over any backdrop (4.5:1 for text, 3:1 for
-  secondary text; `readable_opacity()` in `src/common/theme.cpp`). The
-  `sde-theme` test checks every family, mode and accent at 100.
-* The lite compositor profile (`[compositor] effects=lite`, or `auto` in
-  virtual machines and with software rendering) turns blur off and keeps
-  surfaces more opaque (half the effect, opaque frames).
-* Menus of other toolkits (Qt, Xlib) fade as a whole and keep their own
-  readable opacity (`Theme::toolkit_menu_opacity`).
+Since 0.2.0 Alpha 3.1 (`apply_transparency()` in `src/common/theme.cpp`):
+
+* **Even steps.** The slider is linear: Off, Subtle, Clear and Glass are
+  even steps from opaque to the most each surface can be at 100 (0.2.0
+  Alpha 2 had a square-root curve: Subtle already went half the way and
+  the last steps hardly changed anything).
+* **Only the floating layer is translucent.** The panel, SDE menus, the
+  Start menu, the Action Center, notifications, OSDs and tooltips, GTK 3
+  menus and the frames (title bars) of windows. The content of windows
+  (the Control Center's pages, lists, documents) stays opaque.
+* **Readable over anything.** A surface faded as a whole (Graphite and
+  Fluent, other toolkits' menus, frames) never goes below what keeps text
+  5:1 and dimmed text 3.8:1 over any flat backdrop
+  (`readable_opacity()`), a margin over WCAG's 4.5:1 and 3:1 for what a
+  blur leaves of a busy page; the family's own floor at 100 is
+  1 - 2 x its `translucency` (Graphite 80 %, Fluent 72 %). Frames: Liquid
+  Glass 72 %, Fluent 86 %, Graphite 90 % at 100.
+* **Almost opaque without blur.** Without the OpenGL compositor's blur
+  (the lite profile: `[compositor] effects=lite`, or `auto` in virtual
+  machines and with software rendering; `[aero] blur=false`) a busy window
+  behind would show through sharp: surfaces keep at least 97.5 % (XRender's
+  small CPU blur 88 %) and frames are opaque. SDE then draws its glass
+  with a sheen and light rims (`Painter::glass_surface()`).
+* **Blur.** dual_kawase strength 9 for Liquid Glass and 7 for the other
+  families with the default `blur_strength` (0.2.0 Alpha 2: 5 and 6), so
+  a busy page behind turns into soft colour.
+* **GTK menus** are opaque in CSS (`Theme::gtk_menu_alpha` is 1): SDE WM
+  does not offer GTK the `_GTK_FRAME_EXTENTS` client-side shadows, so GTK 3
+  menus are plain X windows, where the `.csd menu` rules of 0.2.0 Alpha 2
+  never applied, and a translucent GTK 4 popover showed what is behind its
+  shadow margin. The compositor rounds GTK 3 menus (`corner-radius-rules`),
+  makes them glass in Liquid Glass and fades them like SDE's menus in the
+  other families (`opacity-rule`, `Theme::toolkit_menu_opacity`).
+* **One shadow.** Popups with an alpha channel and a shadow of their own
+  (GTK 4 popovers and tooltips, browser menus) get no second, square
+  shadow from the compositor and no blur behind their transparent margin
+  (`override_redirect && argb && !_SDE_SURFACE` in `shadow-exclude` and
+  `blur-background-exclude`): that was a hazy ghost frame around GTK 4
+  menus.
 * Shadows fall a little downwards, as from a light above, also on the lite
   profile; window corners follow the family (`corner-radius`).
+* `sde-glass-busy-backdrop` (`tests/test_glass.cpp`) draws a busy,
+  high-contrast web page (and a dark one), puts every translucent surface
+  on it the way the compositor draws it with the configuration SDE
+  generates (the Liquid Glass shader's frost, saturation, tint and
+  legibility lift with the constants of the generated shader; the faded
+  surfaces blended over the blurred or sharp page) and measures, for every
+  family, mode, accent, transparency and compositor profile, text 4.5:1
+  and dimmed text 3:1 against the surface around it, how much of the
+  page's text and edges a surface keeps (at most 3 L*), even steps and
+  almost opaque surfaces without blur. It measures text at least 5.8:1,
+  dimmed text 3.1:1 and at most 2.6 L* of structure.
 
-## SDE Liquid Glass (0.2.0 Alpha 2)
+## SDE Liquid Glass (0.2.0 Alpha 2, frosted since 0.2.0 Alpha 3.1)
 
-The Liquid Glass family recreates the look of
+The Liquid Glass family follows Apple's Liquid Glass (macOS 26) and
 [Liquid Glass for GNOME Shell](https://github.com/ryohsuke1231/liquid-glass)
-(see `docs/THIRD-PARTY.md`) on SDE's X11 desktop: clear glass that blurs,
-saturates and brightens what is behind it, bends it along the edges like
-the rim of a lens, a thin light rim where the edges face the light (top
-left) and soft depth, on the panel, the Start menu, the Action Center,
-flyouts, menus, tooltips, notifications and OSDs, with capsule shapes and
-24 px corners on big surfaces.
+(see `docs/THIRD-PARTY.md`) on SDE's X11 desktop: frosted glass that blurs,
+saturates and brightens what is behind it into soft colour, frosted with
+the surface colour, bends it a little along the edges like the rim of a
+lens, a thin specular rim where the edges face the light (top left; a
+fainter one opposite) and soft depth, on the panel, the Start menu, the
+Action Center, flyouts, menus (SDE's and GTK 3's), tooltips, notifications
+and OSDs, with capsule shapes and 24 px corners on big surfaces. 0.2.0
+Alpha 2 had a clear glass (a light blur and 14-32 % of the surface colour)
+that left a busy window behind almost as it was.
 
 How it is drawn (`Theme::liquid`: the family with [aero] enabled,
 transparency above 0, blur on and SDE's OpenGL configuration of SDE
@@ -165,55 +226,63 @@ Compositor):
 * SDE marks its surfaces with the `_SDE_SURFACE` window property
   (`x11::set_surface()`: `panel`, `panel-round`, `popup`, `popup-top`,
   `popup-bottom`, `menu`, `tooltip`) and draws them flat in their surface
-  color, without sheen or rims.
+  color, without sheen or rims; the SDE GTK themes draw GTK 3 menus flat
+  in the menu colour.
 * `write_compositor_config()` writes the Liquid Glass shader
   (`kLiquidShader` in `src/common/integration.cpp`, filled in from the
   theme: `~/.config/sde/liquid-glass{,-top,-bottom}.glsl`, one for each set
-  of square corners) and binds it to those windows with
-  `window-shader-fg-rule`. The same property gives them their exact corner
-  radius (`corner-radius-rules`), while other docks, menus and tooltips
-  stay square (`rounded-corners-exclude`).
+  of square corners) and binds it to those windows and to GTK 3 menus
+  (popup and drop-down menus without an alpha channel) with
+  `window-shader-fg-rule`. The same rules give them their corner radius
+  (`corner-radius-rules`), while other docks and tooltips stay square and
+  menus with an alpha channel draw their own corners
+  (`rounded-corners-exclude`).
 * SDE Compositor's patch
   `suite/patches/sde-compositor/0001-window-shader-backdrop.patch` lets a
   window shader read what is behind its window (`backdrop_at()`, already
   blurred) and redraws such a window as a whole when anything under it
   changes. picom alone cannot bend the backdrop.
-* The shader turns the surface color into glass and keeps everything else
+* The shader frosts the compositor's blur further with a disc of twelve
+  samples (`frost`, 12 px at 100 %), saturates (1.7) and brightens the
+  backdrop, turns the surface color into glass and keeps everything else
   opaque (text, icons, highlights, and colors beyond the surface color such
   as white glyphs and knobs); SDE's fills on the glass (hover tints, cards,
   borders) are glass with their difference on top. The window opacity
   (`Theme::opacity`, `popup_opacity`) is how much of the surface color
-  tints the glass: 32 % at Subtle (25) down to 14 % at 100.
+  frosts the glass, linear with the slider from 1 down to the material's
+  `tint` at 100 (36 %, dark 34 %): 84 % at Subtle, 68 % at Clear, 49 % at
+  Glass. A dither of one 8-bit step keeps the smooth glass free of bands.
 * Text stays readable over any backdrop: under text the glass is lifted (in
   dark mode deepened) just enough for 4.5:1 text, 3:1 dimmed text and, as
   far as the glass can stay clear, 3:1 accent-colored text
-  (`liquid_legible_luminance()`; the `sde-theme` test checks every accent
-  and mode), so the glass is clear over calm backdrops and frosted over
-  busy or contrasting ones.
-* The material is in `palettes.json` (`glass.liquid`): blur strength,
-  backdrop saturation and brightness, the lens band and shift, the rim and
-  its width, and `key_range` (how far a color may be from the surface to
+  (`liquid_legible_luminance()`; the `sde-theme` and
+  `sde-glass-busy-backdrop` tests check every accent and mode).
+* The material is in `palettes.json` (`glass.liquid`): the compositor's
+  blur strength and the shader's frost, backdrop saturation and
+  brightness, the tint at 100, the lens band and shift, the rim and its
+  width, and `key_range` (how far a color may be from the surface to
   count as glass).
-* GTK 3/4 applications get capsule buttons, a light rim on menus, popovers
-  and tooltips (`glass-gtk-{3.0,4.0}.css`) and the translucent GTK menus of
-  every family.
+* GTK 3/4 applications get capsule buttons, a light rim on popovers and
+  tooltips (`glass-gtk-{3.0,4.0}.css`) and glass GTK 3 menus.
 
 Limits: application windows are not turned into glass (their frames are
-translucent and blurred as before). The glass needs OpenGL: with XRender,
-the lite profile or a `compositor.conf` of your own, SDE draws its own
-frosted glass with a sheen and light rims instead, as SDE Glass did. The
-lens bends the blurred backdrop; it is not a physical refraction. Pictures
+translucent and blurred). The glass needs OpenGL: with XRender, the lite
+profile or a `compositor.conf` of your own, SDE draws its own frosted glass
+with a sheen and light rims instead, almost opaque without blur. The lens
+bends the blurred backdrop; it is not a physical refraction. Pictures
 inside SDE's surfaces that use the surface color itself (the light clouds
 of the weather card) let a little glass through.
 
 ## Screenshots (`tools/showcase.py`)
 
-`tools/showcase.py --theme glass-light,glass-dark --effects full` captures
-with SDE Compositor and SDE's full OpenGL configuration (Liquid Glass);
-`--resolution 1024x600 --scale 150` captures the selected sets at another
-screen size and interface scale, and `--scope full` captures every scene in
-every set. `sde-session --compositor-config` prints the configuration the
-session would give the compositor.
+The Liquid Glass sets (`glass-light`, `glass-dark`) capture with SDE
+Compositor and SDE's full OpenGL configuration (the glass shader through
+Mesa on Xvfb; the lite profile when the X server has no GLX), the other
+sets with the lite profile; `--effects lite|full` forces one profile for
+every set. `--resolution 1024x600 --scale 150` captures the selected sets
+at another screen size and interface scale, and `--scope full` captures
+every scene in every set. `sde-session --compositor-config` prints the
+configuration the session would give the compositor.
 
 ## Icons
 
