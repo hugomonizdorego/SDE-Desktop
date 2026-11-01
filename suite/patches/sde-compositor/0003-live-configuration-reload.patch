@@ -1,0 +1,482 @@
+SDE compositor: reload the configuration in place.
+
+SDE 0.2.0 Alpha 3.1 (docs/THEMES.md, "Switching themes"). SDE reloads the
+compositor whenever the theme, the accent or the transparency changes:
+sde-session sends SIGUSR1 when the generated configuration changes, and
+picom also watches the file. Upstream picom answers both with a full reset:
+it unredirects every window, closes the X connection, connects again and
+starts the backend again. On every theme change the screen then showed
+windows without compositing for a frame (the panel blank, translucent
+windows without their alpha) or, with OpenGL, froze for as long as the
+backend took to start (2.8 seconds with Mesa's software OpenGL on Xvfb,
+twice per switch in SDE 0.2.0 Alpha 3).
+
+With this patch SIGUSR1 and changes of the configuration file reload the
+configuration in place, a moment later (30 ms, so the signal and the file
+watch, and the files SDE writes in a row, give one reload):
+
+* the file is parsed again with the same command line; an unreadable file
+  keeps the running configuration (a file being edited by hand);
+* an unchanged file and unchanged shader files do nothing;
+* options that the running backend cannot follow (the backend, vsync,
+  damage, frame pacing, unredirection, D-Bus, logging, the detection
+  options, the fading options that the running animations were generated
+  from, custom animations and "rules") still reset the session as before;
+* otherwise the windows, the redirection and the backend stay. The new
+  options take the place of the old ones (their lists are moved with
+  them), the window conditions get a new state and every window its
+  properties again, the shaders are loaded again (a compiled shader whose
+  source did not change is kept), the blur context and the shadow renderer
+  are made again only when their settings changed (compiling them is slow
+  with software OpenGL), every mapped window gets its rules, opacity,
+  shadow and rounded-corner mask again (as after a resize, the window
+  keeping its size) and the screen is repainted once;
+* the file watch is set up again: SDE replaces the file, which ends the
+  watch of the old one.
+
+"Configuration reloaded in place." is logged at the info level.
+
+--- a/src/picom.c
++++ b/src/picom.c
+@@ -1965,9 +1965,12 @@
+ 	}
+ }
+ 
++static void sde_reload_later(session_t *ps);
++
+ static void config_file_change_cb(void *_ps) {
+ 	auto ps = (struct session *)_ps;
+-	reset_enable(ps->loop, NULL, 0);
++	// SDE: reloaded in place where possible (sde_reload_config()).
++	sde_reload_later(ps);
+ }
+ 
+ static bool load_shader_source(session_t *ps, const char *path) {
+@@ -2042,6 +2045,394 @@
+ 	return ret;
+ }
+ 
++// ===================================================================== SDE
++//
++// SDE (0.2.0 Alpha 3.1): the configuration is reloaded in place, on SIGUSR1
++// and when the configuration file changes. Upstream picom resets the whole
++// session instead: it unredirects every window, closes the X connection and
++// starts the backend again, so for a moment the screen shows windows without
++// compositing (a blank panel, translucent windows without their alpha) or
++// freezes for as long as the backend needs to start (seconds with software
++// OpenGL). SDE reloads the compositor whenever the theme, the accent or the
++// transparency changes, so every switch flickered. The windows, the
++// redirection and the backend now stay; the options, the window rules, the
++// shaders, the blur and the shadows are replaced, and the next frame shows
++// the new configuration. Only options that the running backend cannot
++// follow (the backend itself, vsync, damage, unredirection, animations,
++// window rules of the "rules" kind ...) still reset the session.
++
++static int sde_argc;
++static char **sde_argv;
++static const char *sde_config_file;
++// The configuration text loaded last, so a reload of the same file (SIGUSR1
++// and the file watch often report one change twice) does nothing.
++static char *sde_loaded_text;
++static ev_timer sde_reload_timer;
++static bool sde_reload_timer_ready;
++
++#define SDE_OPTION_LISTS(X)                                                              \
++	X(included_config_files)                                                         \
++	X(unredir_if_possible_blacklist)                                                 \
++	X(paint_blacklist)                                                               \
++	X(shadow_blacklist)                                                              \
++	X(shadow_clip_list)                                                              \
++	X(fade_blacklist)                                                                \
++	X(blur_background_blacklist)                                                     \
++	X(window_shader_fg_rules)                                                        \
++	X(invert_color_list)                                                             \
++	X(opacity_rules)                                                                 \
++	X(rounded_corners_blacklist)                                                     \
++	X(corner_radius_rules)                                                           \
++	X(focus_blacklist)                                                               \
++	X(transparent_clipping_blacklist)                                                \
++	X(rules)
++
++static char *sde_read_text(const char *path) {
++	if (!path) {
++		return NULL;
++	}
++	FILE *f = fopen(path, "r");
++	if (!f) {
++		return NULL;
++	}
++	size_t cap = 4096, len = 0;
++	char *text = malloc(cap);
++	size_t n;
++	while (text && (n = fread(text + len, 1, cap - len - 1, f)) > 0) {
++		len += n;
++		if (cap - len <= 1) {
++			cap *= 2;
++			char *bigger = realloc(text, cap);
++			if (!bigger) {
++				free(text);
++				text = NULL;
++				break;
++			}
++			text = bigger;
++		}
++	}
++	fclose(f);
++	if (text) {
++		text[len] = '\0';
++	}
++	return text;
++}
++
++static bool sde_same_text(const char *a, const char *b) {
++	return (!a && !b) || (a && b && strcmp(a, b) == 0);
++}
++
++/// A list head copied with its options struct points at the nodes of the
++/// list, which still point back at the head's old place |was|.
++static void sde_list_rehome(struct list_node *now, struct list_node *was) {
++	if (now->next == was) {
++		list_init_head(now);
++	} else {
++		now->next->prev = now;
++		now->prev->next = now;
++	}
++}
++
++static void sde_options_swap(struct options *a, struct options *b) {
++	struct options tmp;
++	memcpy(&tmp, a, sizeof tmp);
++	memcpy(a, b, sizeof *a);
++	memcpy(b, &tmp, sizeof *b);
++#define SDE_REHOME(field)                                                                \
++	sde_list_rehome(&a->field, &b->field);                                           \
++	sde_list_rehome(&b->field, &a->field);
++	SDE_OPTION_LISTS(SDE_REHOME)
++#undef SDE_REHOME
++}
++
++/// Whether the running session cannot follow the change from |a| to |b|.
++static bool sde_reload_needs_reset(const struct options *a, const struct options *b) {
++	if (a->use_legacy_backends || b->use_legacy_backends || a->backend != b->backend ||
++	    a->legacy_backend != b->legacy_backend || a->vsync != b->vsync ||
++	    a->vsync_use_glfinish != b->vsync_use_glfinish || a->use_damage != b->use_damage ||
++	    a->frame_pacing != b->frame_pacing || a->glx_no_stencil != b->glx_no_stencil ||
++	    a->glx_no_rebind_pixmap != b->glx_no_rebind_pixmap ||
++	    !sde_same_text(a->glx_fshader_win_str, b->glx_fshader_win_str) ||
++	    a->unredir_if_possible != b->unredir_if_possible ||
++	    a->unredir_if_possible_delay != b->unredir_if_possible_delay ||
++	    a->redirected_force != b->redirected_force || a->stoppaint_force != b->stoppaint_force ||
++	    a->dbus != b->dbus || a->benchmark != b->benchmark || a->benchmark_wid != b->benchmark_wid ||
++	    a->monitor_repaint != b->monitor_repaint || a->debug_mode != b->debug_mode ||
++	    a->dithered_present != b->dithered_present || a->max_brightness != b->max_brightness ||
++	    a->crop_shadow_to_monitor != b->crop_shadow_to_monitor ||
++	    a->detect_rounded_corners != b->detect_rounded_corners ||
++	    a->detect_client_opacity != b->detect_client_opacity ||
++	    a->detect_transient != b->detect_transient ||
++	    a->detect_client_leader != b->detect_client_leader ||
++	    a->use_ewmh_active_win != b->use_ewmh_active_win ||
++	    a->mark_wmwin_focused != b->mark_wmwin_focused ||
++	    a->mark_ovredir_focused != b->mark_ovredir_focused ||
++	    a->no_ewmh_fullscreen != b->no_ewmh_fullscreen ||
++	    a->use_realtime_scheduling != b->use_realtime_scheduling ||
++	    a->force_win_blend != b->force_win_blend || a->resize_damage != b->resize_damage ||
++	    a->no_x_selection != b->no_x_selection || !sde_same_text(a->logpath, b->logpath) ||
++	    !sde_same_text(a->write_pid_path, b->write_pid_path)) {
++		return true;
++	}
++	// Running animations use the scripts of the old options: they must stay
++	// the same, i.e. generated from the same fading options.
++	if (a->fading_enable != b->fading_enable || a->fade_in_step != b->fade_in_step ||
++	    a->fade_out_step != b->fade_out_step || a->fade_delta != b->fade_delta ||
++	    a->no_fading_openclose != b->no_fading_openclose ||
++	    a->no_fading_destroyed_argb != b->no_fading_destroyed_argb) {
++		return true;
++	}
++	for (int i = 0; i < ANIMATION_TRIGGER_COUNT; i++) {
++		if ((a->animations[i].script && !a->animations[i].is_generated) ||
++		    (b->animations[i].script && !b->animations[i].is_generated)) {
++			return true;
++		}
++	}
++	return !list_is_empty(&a->rules) || !list_is_empty(&b->rules);
++}
++
++/// Whether the blur of |b| differs from |a|'s (creating a blur context
++/// compiles shaders: slow with software OpenGL).
++static bool sde_blur_changed(const struct options *a, const struct options *b) {
++	if (a->blur_method != b->blur_method || a->blur_radius != b->blur_radius ||
++	    a->blur_deviation != b->blur_deviation || a->blur_strength != b->blur_strength ||
++	    a->blur_kernel_count != b->blur_kernel_count ||
++	    a->dithered_present != b->dithered_present) {
++		return true;
++	}
++	for (int i = 0; i < a->blur_kernel_count; i++) {
++		const struct conv *ka = a->blur_kerns[i], *kb = b->blur_kerns[i];
++		if (!ka || !kb) {
++			if (ka != kb) {
++				return true;
++			}
++			continue;
++		}
++		if (ka->w != kb->w || ka->h != kb->h ||
++		    memcmp(ka->data, kb->data, sizeof(double) * (size_t)(ka->w * ka->h)) != 0) {
++			return true;
++		}
++	}
++	return false;
++}
++
++/// Loads the shaders of the current options; compiled shaders whose source
++/// did not change are kept (compiling is slow with software OpenGL).
++static void sde_reload_shaders(session_t *ps) {
++	struct shader_info *old_shaders = ps->shaders;
++	ps->shaders = NULL;
++	c2_condition_list_foreach(&ps->o.window_shader_fg_rules, i) {
++		load_shader_source(ps, c2_condition_get_data(i));
++	}
++	load_shader_source(ps, ps->o.window_shader_fg);
++	HASH_ITER2(ps->shaders, shader) {
++		struct shader_info *old = NULL;
++		HASH_FIND_STR(old_shaders, shader->key, old);
++		if (old && old->backend_shader && sde_same_text(old->source, shader->source)) {
++			shader->backend_shader = old->backend_shader;
++			shader->attributes = old->attributes;
++			old->backend_shader = NULL;
++			continue;
++		}
++		if (!ps->backend_data || !ps->backend_data->ops.create_shader) {
++			continue;
++		}
++		shader->backend_shader =
++		    ps->backend_data->ops.create_shader(ps->backend_data, shader->source);
++		if (shader->backend_shader == NULL) {
++			log_warn("Failed to create shader for shader file %s, this shader will "
++			         "not be used",
++			         shader->key);
++			continue;
++		}
++		shader->attributes = 0;
++		if (ps->backend_data->ops.get_shader_attributes) {
++			shader->attributes = ps->backend_data->ops.get_shader_attributes(
++			    ps->backend_data, shader->backend_shader);
++		}
++	}
++	HASH_ITER2(old_shaders, old) {
++		if (old->backend_shader && ps->backend_data) {
++			ps->backend_data->ops.destroy_shader(ps->backend_data, old->backend_shader);
++		}
++		HASH_DEL(old_shaders, old);
++		free(old->source);
++		free(old->key);
++		free(old);
++	}
++}
++
++/// Whether a shader file of the running configuration changed on disk.
++static bool sde_shader_files_changed(session_t *ps) {
++	HASH_ITER2(ps->shaders, shader) {
++		char *now = sde_read_text(shader->key);
++		bool same = sde_same_text(now, shader->source);
++		free(now);
++		if (!same) {
++			return true;
++		}
++	}
++	return false;
++}
++
++static void sde_watch_config_files(session_t *ps);
++
++/// Reloads the configuration in place. False when the session must be
++/// reset instead (the configuration then takes effect through the reset).
++static bool sde_reload_config(session_t *ps) {
++	const char *path = ps->o.config_file_path;
++	char *text = sde_read_text(path);
++	if (sde_loaded_text && sde_same_text(text, sde_loaded_text) && !sde_shader_files_changed(ps)) {
++		free(text);
++		log_debug("Configuration unchanged, nothing to reload");
++		return true;
++	}
++
++	struct options o;
++	if (!parse_config(&o, sde_config_file) || !get_cfg(&o, sde_argc, sde_argv)) {
++		// A file being edited by hand: keep running with what we have.
++		log_error("The new configuration could not be read; keeping the running one.");
++		options_destroy(&o);
++		free(text);
++		return true;
++	}
++	// What the running session found out about the system stays.
++	o.show_all_xerrors = ps->o.show_all_xerrors;
++	o.xrender_sync_fence = ps->o.xrender_sync_fence;
++	o.print_diagnostics = ps->o.print_diagnostics;
++	o.inspect_monitor = ps->o.inspect_monitor;
++	o.inspect_win = ps->o.inspect_win;
++	o.dbus = ps->o.dbus;
++	if (sde_reload_needs_reset(&ps->o, &o)) {
++		log_info("The configuration changed options that need a reset.");
++		options_destroy(&o);
++		free(text);
++		return false;
++	}
++
++	struct c2_state *c2 = c2_state_new(ps->atoms);
++	options_postprocess_c2_lists(c2, &ps->c, &o);
++	bool blur_changed = sde_blur_changed(&ps->o, &o);
++	bool shadow_changed = ps->o.shadow_radius != o.shadow_radius ||
++	                      ps->o.shadow_opacity != o.shadow_opacity ||
++	                      ps->o.shadow_red != o.shadow_red ||
++	                      ps->o.shadow_green != o.shadow_green ||
++	                      ps->o.shadow_blue != o.shadow_blue;
++
++	// The new options in place; the old ones (in |o|) keep only the unused
++	// new animation scripts, the running ones stay with the session.
++	sde_options_swap(&ps->o, &o);
++	{
++		struct script **scripts = ps->o.all_scripts;
++		ps->o.all_scripts = o.all_scripts;
++		o.all_scripts = scripts;
++		struct win_script animations[ANIMATION_TRIGGER_COUNT];
++		memcpy(animations, ps->o.animations, sizeof(animations));
++		memcpy(ps->o.animations, o.animations, sizeof(animations));
++		memcpy(o.animations, animations, sizeof(animations));
++	}
++	struct c2_state *old_c2 = ps->c2_state;
++	ps->c2_state = c2;
++	wm_stack_foreach(ps->wm, cursor) {
++		auto w = wm_ref_deref(cursor);
++		if (w == NULL) {
++			continue;
++		}
++		c2_window_state_destroy(old_c2, &w->c2_state);
++		c2_window_state_init(ps->c2_state, &w->c2_state);
++		// Pointed into the rules of the old options.
++		w->options.shader = NULL;
++		if (w->state == WSTATE_MAPPED) {
++			// Rules, opacity, shadow and corner masks again, as after a
++			// resize (the window keeps its size).
++			win_set_flags(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_FACTOR_CHANGED);
++		}
++	}
++	c2_state_free(old_c2);
++	ps->window_options_default = win_options_from_config(&ps->o);
++	sde_reload_shaders(ps);
++
++	bool ok = true;
++	if (ps->backend_data) {
++		if (blur_changed) {
++			if (ps->backend_blur_context) {
++				ps->backend_data->ops.destroy_blur_context(
++				    ps->backend_data, ps->backend_blur_context);
++				ps->backend_blur_context = NULL;
++			}
++			ok = initialize_blur(ps);
++		}
++		if (ok && shadow_changed && ps->renderer) {
++			renderer_free(ps->backend_data, ps->renderer);
++			ps->renderer = renderer_new(
++			    ps->backend_data, ps->o.shadow_radius,
++			    (struct color){.alpha = ps->o.shadow_opacity,
++			                   .red = ps->o.shadow_red,
++			                   .green = ps->o.shadow_green,
++			                   .blue = ps->o.shadow_blue},
++			    ps->o.dithered_present);
++			ok = ps->renderer != NULL;
++		}
++	}
++	options_destroy(&o);
++	free(sde_loaded_text);
++	sde_loaded_text = text;
++	if (!ok) {
++		log_error("The new blur or shadow settings could not be prepared; resetting.");
++		return false;
++	}
++	sde_watch_config_files(ps);
++	ps->pending_updates = true;
++	invalidate_reg_ignore(ps);
++	force_repaint(ps);
++	log_info("Configuration reloaded in place.");
++	return true;
++}
++
++/// The file watch follows the configuration file again: SDE replaces the
++/// file (a new inode), which ends the old watch.
++static void sde_watch_config_files(session_t *ps) {
++	if (!ps->file_watch_handle) {
++		return;
++	}
++	file_watch_destroy(ps->loop, ps->file_watch_handle);
++	ps->file_watch_handle = file_watch_init(ps->loop);
++	if (!ps->file_watch_handle || !ps->o.config_file_path) {
++		return;
++	}
++	file_watch_add(ps->file_watch_handle, ps->o.config_file_path, config_file_change_cb, ps);
++	list_foreach(struct included_config_file, i, &ps->o.included_config_files, siblings) {
++		file_watch_add(ps->file_watch_handle, i->path, config_file_change_cb, ps);
++	}
++}
++
++static void sde_reload_timer_cb(EV_P_ ev_timer *w attr_unused, int revents attr_unused) {
++	session_t *ps = ps_g;
++	if (ps && !sde_reload_config(ps)) {
++		reset_enable(EV_A_ NULL, 0);
++	}
++}
++
++/// Reloads a moment later: SIGUSR1 and the file watch report one change
++/// together, and SDE writes a few files in a row.
++static void sde_reload_later(session_t *ps) {
++	if (!sde_reload_timer_ready) {
++		ev_timer_init(&sde_reload_timer, sde_reload_timer_cb, 0.03, 0);
++		sde_reload_timer_ready = true;
++	}
++	if (!ev_is_active(&sde_reload_timer)) {
++		ev_timer_set(&sde_reload_timer, 0.03, 0);
++		ev_timer_start(ps->loop, &sde_reload_timer);
++	}
++}
++
++static void sde_reload_signal(EV_P_ ev_signal *w, int revents attr_unused) {
++	session_t *ps = session_ptr(w, usr1_signal);
++	sde_reload_later(ps);
++}
++
++// ================================================================= end SDE
++
+ /**
+  * Initialize a session.
+  *
+@@ -2456,7 +2847,8 @@
+ 	ev_init(&ps->draw_timer, draw_callback);
+ 
+ 	// Set up SIGUSR1 signal handler to reset program
+-	ev_signal_init(&ps->usr1_signal, reset_enable, SIGUSR1);
++	// SDE: SIGUSR1 reloads the configuration in place where possible.
++	ev_signal_init(&ps->usr1_signal, sde_reload_signal, SIGUSR1);
+ 	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
+ 	ev_signal_start(ps->loop, &ps->usr1_signal);
+ 	ev_signal_start(ps->loop, &ps->int_signal);
+@@ -2724,6 +3116,9 @@
+ 	ev_timer_stop(ps->loop, &ps->draw_timer);
+ 	ev_prepare_stop(ps->loop, &ps->event_check);
+ 	ev_signal_stop(ps->loop, &ps->usr1_signal);
++	if (sde_reload_timer_ready) {
++		ev_timer_stop(ps->loop, &sde_reload_timer);
++	}
+ 	ev_signal_stop(ps->loop, &ps->int_signal);
+ 
+ 	// The X connection could hold references to wm if there are pending async
+@@ -2837,6 +3232,12 @@
+ 		log_deinit_tls();
+ 		log_init_tls();
+ 
++		// SDE: what an in-place reload parses again (sde_reload_config()).
++		sde_argc = argc;
++		sde_argv = argv;
++		sde_config_file = config_file;
++		free(sde_loaded_text);
++		sde_loaded_text = NULL;
+ 		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
+ 		if (!ps_g) {
+ 			log_fatal("Failed to create new session.");
