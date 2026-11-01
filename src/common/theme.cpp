@@ -307,8 +307,10 @@ LiquidMaterial theme_liquid_material(const std::string &family, bool dark) {
   int i = dark ? 1 : 0;
   m.on = true;
   m.blur = q.blur;
+  m.frost = q.frost;
   m.saturation = q.saturation;
   m.brightness = q.brightness[i];
+  m.tint = q.tint[i];
   m.lens_band = q.lens_band;
   m.lens_shift = q.lens_shift;
   m.rim = q.rim[i];
@@ -397,39 +399,45 @@ static bool compositor_lite(const Config &cfg) {
   return compositor_effects(cfg) == "lite";
 }
 
-// Turns the transparency setting into the opacity of each surface: 0 is
-// opaque, 100 the readable limit of that surface (readable_opacity()).
-// Families keep a little character: Glass goes furthest, Graphite least.
-// Without blur (lite profile) surfaces only go part of the way.
-static void apply_transparency(Theme &t, const palettes::Family &f) {
+// Turns the transparency setting into the opacity of each surface (0.2.0
+// Alpha 3.1). The slider is linear, so Off, Subtle, Clear and Glass are even
+// steps from opaque to the most each surface can be at 100:
+//  * over the OpenGL compositor's blur, the family's floor (1 - 2 x its
+//    translucency: Graphite the calmest, Liquid Glass the clearest), never
+//    below what keeps text 5:1 and dimmed text 3.4:1 over any backdrop
+//    (readable_opacity(), with a margin over WCAG's 4.5:1 and 3:1 for what a
+//    blur leaves of a busy backdrop);
+//  * over XRender's small blur, at most 14 % of the backdrop;
+//  * without blur (lite profile, blur off), almost opaque: at most 6 % of
+//    the backdrop, which would show through sharp (0.2.0 Alpha 2 let up to
+//    a third of it through and busy windows behind made text hard to read).
+// Liquid Glass frosts the blurred backdrop with the surface color instead
+// and the shader keeps text and icons opaque: from the surface color at 0
+// to the material's tint at 100 (36 % in a light theme).
+static void apply_transparency(Theme &t, const palettes::Family &f, bool strong_blur) {
   t.opacity = t.popup_opacity = t.frame_opacity = t.gtk_menu_alpha = t.toolkit_menu_opacity = 1.0;
   if (!t.translucent || t.transparency <= 0) return;
-  // A square-root curve: the first steps of the slider (Subtle) already
-  // show, the last ones (Glass) approach the readable limit gently.
-  double s = std::sqrt(t.transparency / 100.0) * (0.75 + 0.25 * std::min(1.0, f.translucency / 0.22));
-  if (t.lite) s *= 0.5;
-  auto floor_of = [](std::initializer_list<double> floors) { return std::max(floors); };
-  auto toward = [s](double floor) { return 1.0 - s * (1.0 - floor); };
-  t.opacity = toward(floor_of({readable_opacity(t.text, t.panel_bg, 4.5, true),
-                               readable_opacity(t.text_dim, t.panel_bg, 3.0, true)}));
-  t.popup_opacity = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, true),
-                                     readable_opacity(t.text_dim, t.menu_bg, 3.0, true),
-                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.0, true)}));
-  // Menus of other toolkits fade as a whole, like SDE's without Liquid Glass.
+  double c = std::min(1.0, t.transparency / 100.0);
+  double reach = !t.blur ? 0.94 : strong_blur ? 0.0 : 0.86;
+  auto level = [&](double readable) {
+    double floor = std::max({readable, reach, 1.0 - 2.0 * f.translucency});
+    return 1.0 - c * (1.0 - floor);
+  };
+  t.opacity = level(std::max(readable_opacity(t.text, t.panel_bg, 5.0, true),
+                             readable_opacity(t.text_dim, t.panel_bg, 3.4, true)));
+  t.popup_opacity = level(std::max({readable_opacity(t.menu_text, t.menu_bg, 5.0, true),
+                                    readable_opacity(t.text_dim, t.menu_bg, 3.4, true),
+                                    readable_opacity(t.menu_hover_text, t.menu_hover, 3.4, true)}));
+  // Menus of other toolkits (and GTK 3 menus outside Liquid Glass) fade as
+  // a whole, like SDE's.
   t.toolkit_menu_opacity = t.popup_opacity;
-  if (t.liquid) {
-    // Liquid Glass: the shader tints only the surface color with the
-    // backdrop, keeps text and icons opaque and lifts (or deepens) the glass
-    // under text where the backdrop would make it hard to read, so the glass
-    // can stay clear: a 32 % tint at Subtle (25), 14 % at 100.
-    t.opacity = t.popup_opacity = 0.50 - 0.36 * std::sqrt(t.transparency / 100.0);
-  }
-  // Frames: translucent title bars need blur behind them to stay calm;
-  // Glass goes all the way, the other families part of it.
-  double frame = toward(readable_opacity(t.titlebar_text, t.titlebar_bg, 4.5, true));
-  t.frame_opacity = t.lite ? 1.0 : f.glass ? frame : 1.0 - (1.0 - frame) * 0.6;
-  t.gtk_menu_alpha = toward(floor_of({readable_opacity(t.menu_text, t.menu_bg, 4.5, false),
-                                      readable_opacity(t.text_dim, t.menu_bg, 3.0, false)}));
+  if (t.liquid) t.opacity = t.popup_opacity = 1.0 - c * (1.0 - theme_liquid_material(f.id, t.dark).tint);
+  // Frames: the title bars and borders of application windows (their
+  // content stays opaque), translucent only over a blur; Liquid Glass goes
+  // furthest, Graphite least.
+  double frame_floor = std::max({readable_opacity(t.titlebar_text, t.titlebar_bg, 5.0, true),
+                                 f.glass ? 0.72 : 1.0 - f.translucency, strong_blur ? 0.0 : 0.92});
+  t.frame_opacity = t.blur ? 1.0 - c * (1.0 - frame_floor) : 1.0;
 }
 
 Theme Theme::make(const std::string &family, bool dark, const std::string &accent) {
@@ -476,8 +484,11 @@ Theme Theme::from_config(const Config &cfg) {
   // Liquid Glass needs SDE's own OpenGL configuration of the compositor
   // (blur and the shader): not on the lite profile, with XRender, with the
   // compositor off or with a compositor.conf of the user's own.
-  t.liquid = f.liquid.on && t.glass && t.blur && t.transparency > 0 && compositor_backend(cfg) == "glx";
-  apply_transparency(t, f);
+  std::string backend = compositor_backend(cfg);
+  t.liquid = f.liquid.on && t.glass && t.blur && t.transparency > 0 && backend == "glx";
+  // XRender's blur is a small one on the CPU; a configuration of the user's
+  // own ("") is trusted with the full range.
+  apply_transparency(t, f, t.blur && backend != "xrender");
   return t;
 }
 

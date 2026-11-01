@@ -114,9 +114,9 @@
       "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C94A42"},
       "accent": "graphite",
       "liquid": {
-        "comment": "The glass material of the Liquid Glass compositor shader (src/common/integration.cpp): the blur behind, how much the backdrop is saturated and brightened (light, dark), the lens along the edges (band and shift at the very edge, pixels at 100 %), the light rim (light, dark) and its width, and how far a color may be from the surface to count as glass (key_range, 0-1).",
-        "blur": 5, "saturation": 1.45, "brightness": [1.06, 0.88],
-        "lens_band": 18, "lens_shift": 10, "rim": [0.85, 0.45], "rim_width": 1.5, "key_range": 0.42
+        "comment": "The glass material of the Liquid Glass compositor shader (src/common/integration.cpp): the compositor's blur behind (dual_kawase strength) and the frost the shader adds around each point (pixels at 100 %), how much the backdrop is saturated and brightened (light, dark), how much of the surface color frosts the glass at transparency 100 (tint: light, dark; 1 at 0), the lens along the edges (band and shift at the very edge, pixels at 100 %), the specular rim (light, dark) and its width, and how far a color may be from the surface to count as glass (key_range, 0-1). 0.2.0 Alpha 3.1: a frosted glass after Apple's Liquid Glass (strong blur and saturation, a frost that keeps the backdrop to soft color, a thin bright rim) instead of the clear glass of 0.2.0 Alpha 2.",
+        "blur": 9, "frost": 12, "saturation": 1.7, "brightness": [1.04, 0.86], "tint": [0.36, 0.34],
+        "lens_band": 16, "lens_shift": 7, "rim": [0.85, 0.5], "rim_width": 1.2, "key_range": 0.42
       },
       "light": {
         "background": "#F2F4F7", "surface": "#F8F9FB", "surface_alt": "#E9ECF0", "hover": "#DFE3E8",

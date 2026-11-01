@@ -125,7 +125,7 @@ def write_header(pal, path):
     out.append('struct Liquid {')
     out.append('  bool on;')
     out.append('  int blur;')
-    out.append('  double saturation, brightness[2], lens_band, lens_shift, rim[2], rim_width, key_range;')
+    out.append('  double frost, saturation, brightness[2], tint[2], lens_band, lens_shift, rim[2], rim_width, key_range;')
     out.append('};')
     out.append('struct Family {')
     out.append('  const char *id, *label, *description, *prefix, *buttons, *title_layout, *menu_highlight;')
@@ -170,11 +170,12 @@ def write_header(pal, path):
         out.append('   ' + ', '.join(modes) + ',')
         q = f.get('liquid')
         if q:
-            out.append(f"   {{true, {q['blur']}, {q['saturation']}, {{{q['brightness'][0]}, {q['brightness'][1]}}}, "
+            out.append(f"   {{true, {q['blur']}, {q['frost']}, {q['saturation']}, "
+                       f"{{{q['brightness'][0]}, {q['brightness'][1]}}}, {{{q['tint'][0]}, {q['tint'][1]}}}, "
                        f"{q['lens_band']}, {q['lens_shift']}, {{{q['rim'][0]}, {q['rim'][1]}}}, {q['rim_width']}, "
                        f"{q['key_range']}}}}},")
         else:
-            out.append('   {false, 0, 1, {1, 1}, 0, 0, {0, 0}, 1, 0}},')
+            out.append('   {false, 0, 0, 1, {1, 1}, {1, 1}, 0, 0, {0, 0}, 1, 0}},')
     out.append('};')
     leg = pal['legacy']
     out.append('constexpr Legacy kLegacyStyles[] = {' +
