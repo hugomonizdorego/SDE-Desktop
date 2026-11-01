@@ -267,6 +267,29 @@ add_executable(sde-glass-tests test_glass.cpp)
 target_link_libraries(sde-glass-tests PRIVATE sde-common)
 add_test(NAME sde-glass-busy-backdrop COMMAND sde-glass-tests)
 set_tests_properties(sde-glass-busy-backdrop PROPERTIES TIMEOUT 300)
+# 0.2.0 Alpha 3.1: menus and lists of the SDE GTK themes highlight at once
+# (no transitions on menu items, rows and the like in the built style
+# sheets), and check buttons are square while radio buttons are round, as
+# drawn by GTK 3, GTK 4 (when found) and SDE-FLTK (QA helpers, not
+# installed) on Xvfb.
+add_executable(sde-fltk-indicator-probe fltk_indicator_probe.cpp)
+target_link_libraries(sde-fltk-indicator-probe PRIVATE sde-common)
+set(SDE_INDICATOR_PROBES --fltk $<TARGET_FILE:sde-fltk-indicator-probe>)
+pkg_check_modules(SDE_PROBE_GTK3 IMPORTED_TARGET gtk+-3.0)
+if(SDE_PROBE_GTK3_FOUND)
+  add_executable(sde-gtk3-indicator-probe gtk3_indicator_probe.cpp)
+  target_link_libraries(sde-gtk3-indicator-probe PRIVATE PkgConfig::SDE_PROBE_GTK3)
+  list(APPEND SDE_INDICATOR_PROBES --gtk3 $<TARGET_FILE:sde-gtk3-indicator-probe>)
+endif()
+pkg_check_modules(SDE_PROBE_GTK4 IMPORTED_TARGET gtk4>=4.14)
+if(SDE_PROBE_GTK4_FOUND)
+  add_executable(sde-gtk4-indicator-probe gtk4_indicator_probe.cpp)
+  target_link_libraries(sde-gtk4-indicator-probe PRIVATE PkgConfig::SDE_PROBE_GTK4)
+  list(APPEND SDE_INDICATOR_PROBES --gtk4 $<TARGET_FILE:sde-gtk4-indicator-probe>)
+endif()
+add_test(NAME sde-theme-motion COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_motion.py
+  --themes ${CMAKE_BINARY_DIR}/themes ${SDE_INDICATOR_PROBES})
+set_tests_properties(sde-theme-motion PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data
