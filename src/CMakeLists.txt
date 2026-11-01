@@ -14,6 +14,8 @@ add_library(sde-common STATIC
   common/dbus.cpp
   common/effects.cpp
   common/desktop_entry.cpp
+  common/file_chooser.cpp
+  common/file_chooser_model.cpp
   common/glyphs.cpp
   common/i18n.cpp
   common/icons.cpp

@@ -37,6 +37,16 @@ add_test(NAME sde-safe-copy COMMAND sde-safe-copy-tests)
 add_executable(sde-safe-copy-bench safe_copy_bench.cpp)
 target_link_libraries(sde-safe-copy-bench PRIVATE sde-desktop-model sde-common)
 
+# 0.2.0 Alpha 3.1: the SDE file chooser (src/common/file_chooser*.h): its
+# model (sorting, filters, history, completion, places, recent files,
+# bookmarks, drives, thumbnails, state) without a display, and the dialog on
+# Xvfb through sde-file-chooser-demo (not installed; also for showcase.py).
+add_executable(sde-file-chooser-tests test_file_chooser.cpp)
+target_link_libraries(sde-file-chooser-tests PRIVATE sde-common)
+add_test(NAME sde-file-chooser-model COMMAND sde-file-chooser-tests)
+add_executable(sde-file-chooser-demo file_chooser_demo.cpp)
+target_link_libraries(sde-file-chooser-demo PRIVATE sde-common)
+
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).
 add_executable(calculator-tests test_calculator.cpp)
