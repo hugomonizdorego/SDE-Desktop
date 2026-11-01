@@ -203,6 +203,19 @@ fixture (`mode login1 suspend=na reboot=challenge poweroff=no`: Sleep and
 Shut Down hidden, `@session-can:na,?,challenge,no,`). `tools/showcase.py`:
 `action-center` and `action-center-power` (Shut Down armed).
 
+## Windows that do not respond
+
+Since 0.2.0 Alpha 3.1 a window whose program stopped answering
+(`_SDE_NOT_RESPONDING`, set by `sde-watchdog` or SDE WM; see
+[FORCE-CLOSE.md](FORCE-CLOSE.md)) has a dimmed taskbar button labelled
+"*Title* (Not Responding)" in the user's language (SDE WM's English title
+suffix is left out of the button), and the button's right-click menu
+offers **Force Close** above Close Window, which runs `sde-force-close
+--kill-window` (the checks and the kill stay in that one program). The
+panel follows the property without polling; the QA dump lists such
+buttons as `@task-not-responding:<title>`. Tested in `tools/panel-smoke.py`
+(the a52 menu checks).
+
 ## Badges on the taskbar
 
 Since 0.2.0 Alpha 3 the pinned launchers and the taskbar buttons show the
