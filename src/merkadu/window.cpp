@@ -637,6 +637,12 @@ void search_changed(Fl_Widget *, void *) {
     g_view.arg = arg;
     Fl::remove_timeout(typed_rebuild);
     Fl::add_timeout(0.15, typed_rebuild);
+    if (f.source == Source::Snap && q.size() >= 2) {
+      // The Snap Store is asked too: its answers join the list.
+      g_store_query = q;
+      Fl::remove_timeout(store_search);
+      Fl::add_timeout(0.5, store_search);
+    }
     return;
   }
   if (q.empty()) {

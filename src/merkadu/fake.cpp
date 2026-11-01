@@ -74,6 +74,7 @@ struct FakeWorld {
   int hold = -1;  // MERKADU_FAKE_HOLD: changes stop at this percentage (screenshots)
   // What paused changes downloaded (their targets -> seconds done).
   std::map<std::string, double> downloaded;
+  std::vector<Package> runtimes;  // Flatpak runtimes of All Software
 
   void load(const std::string &d) {
     if (loaded) return;
@@ -196,6 +197,28 @@ struct FakeWorld {
         packages.push_back(pk);
       }
     sort_packages(packages);
+    for (auto &j : root.array("runtimes")) {
+      Package p;
+      p.source = Source::Flatpak;
+      p.runtime = true;
+      p.ref = j.text("ref");
+      std::vector<std::string> parts = split(p.ref, '/', true);
+      if (parts.size() < 4) continue;
+      p.name = p.ref;
+      p.title = parts[1] + " " + parts[3];
+      p.arch = parts[2];
+      p.section = "runtimes";
+      p.summary = j.text("summary");
+      p.installation = "system";
+      p.installed = j.flag("installed");
+      (p.installed ? p.installed_version : p.candidate_version) = parts[3];
+      p.installed_size = j.number("size", -1);
+      p.current_size = p.installed ? p.installed_size : -1;
+      p.download_size = j.number("download", -1);
+      p.origin = "flathub";
+      p.lower_summary = lower(p.title + " " + p.summary);
+      runtimes.push_back(p);
+    }
     for (auto &h : root.array("history")) {
       HistoryEntry e;
       int hh = 12, mm = 0;
@@ -316,6 +339,12 @@ class FakeBackend : public Backend {
   }
 
   void details(const App &app, const Origin &o, std::function<void(Origin)> done) override {}
+
+  void list_runtimes(std::function<void(std::vector<Package>)> done) override {
+    std::vector<Package> out;
+    if (source_ == Source::Flatpak) out = world().runtimes;
+    Fl::add_timeout(0.2, call_later, new std::function<void()>([done, out] { done(out); }));
+  }
 
   void lookup(const App &app, AppsFn done) override {
     std::vector<App> out;
@@ -487,6 +516,21 @@ class FakeBackend : public Backend {
       e.requested_by = user_name();
       e.tool = "merkadu";
       for (auto &t : fj->job.targets) {
+        // A Flatpak runtime of All Software.
+        for (auto &rt : world().runtimes)
+          if (fj->job.source == Source::Flatpak && t.substr(t.find(':') + 1) == rt.ref) {
+            bool remove = fj->job.action == Action::Remove;
+            rt.installed = !remove;
+            if (remove) {
+              rt.candidate_version = rt.installed_version;
+              rt.installed_version.clear();
+            } else if (rt.installed_version.empty()) {
+              rt.installed_version = rt.candidate_version;
+            }
+            rt.current_size = remove ? -1 : rt.installed_size;
+            e.items.push_back(rt.ref);
+            e.versions.push_back("");
+          }
         App *app = nullptr;
         Origin *o = world().origin_of(fj->job.source, t, &app);
         if (!o) continue;

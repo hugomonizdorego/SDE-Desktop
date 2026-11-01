@@ -599,7 +599,9 @@ Chip::Chip(int x, int y, int w, int h, const std::string &text, bool on)
 }
 
 int Chip::fit(const std::string &text) {
-  text_font(active_theme().font_size, false);
+  // Measured in bold: a chip that is on draws its text bold (0.2 Alpha 3
+  // measured it regular, and "Not Installed 17" became "Not Installed ...").
+  text_font(active_theme().font_size, true);
   return text_width(text) + S(30);
 }
 

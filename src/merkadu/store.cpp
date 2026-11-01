@@ -292,6 +292,8 @@ void Store::adopt(std::shared_ptr<CatalogResult> result) {
   catalog_ = std::move(result->catalog);
   departments_ = std::move(result->departments);
   fresh_ = std::move(result->fresh);
+  flatpak_rows_ = std::move(result->flatpak_rows);
+  snap_rows_ = std::move(result->snap_rows);
   dropped_debian_ = result->dropped_debian;
   for (int s = 0; s < kSourceCount; ++s) catalog_counts_[s] = result->counts[s];
   std::thread([old = std::move(old)]() mutable { old.reset(); }).detach();
@@ -548,6 +550,7 @@ void Store::job_finished(int id, bool ok, bool cancelled, const std::string &err
       probe_sources();
     }
     reload_installed(s);
+    if (s == Source::Flatpak && runtimes_loaded_) load_runtimes();
     // A snap install may have added AppStream ids of other sources; the
     // snapd snap (Enable Snap Support) makes the source available.
     if (s == Source::Snap) {
@@ -762,6 +765,44 @@ void Store::apply_packages(std::shared_ptr<PackageList> list) {
 const std::vector<Package> &Store::packages() const {
   static const std::vector<Package> *none = new std::vector<Package>();
   return package_list_ ? package_list_->packages : *none;
+}
+
+const std::vector<Package> &Store::rows(Source source, bool runtimes) const {
+  if (source == Source::Debian) return packages();
+  if (source == Source::Snap) return snap_rows_;
+  if (!runtimes || runtime_rows_.empty()) return flatpak_rows_;
+  int gen = rows_generation(Source::Flatpak);
+  if (flatpak_all_generation_ != gen) {
+    flatpak_all_ = flatpak_rows_;
+    flatpak_all_.insert(flatpak_all_.end(), runtime_rows_.begin(), runtime_rows_.end());
+    flatpak_all_generation_ = gen;
+  }
+  return flatpak_all_;
+}
+
+const Package *Store::row(Source source, const std::string &name) const {
+  if (source == Source::Debian) return package(name);
+  for (auto &p : rows(source, true))
+    if (p.name == name) return &p;
+  return nullptr;
+}
+
+int Store::rows_generation(Source source) const {
+  if (source == Source::Debian) return packages_generation_;
+  return generation_ * 4096 + (source == Source::Flatpak ? runtimes_generation_ % 4096 : 0);
+}
+
+void Store::load_runtimes() {
+  Backend *b = backend(Source::Flatpak);
+  if (!b || runtimes_loading_) return;
+  runtimes_loading_ = true;
+  b->list_runtimes([this](std::vector<Package> rows) {
+    runtimes_loading_ = false;
+    runtimes_loaded_ = true;
+    runtime_rows_ = std::move(rows);
+    ++runtimes_generation_;
+    emit(Event::Packages);
+  });
 }
 
 const Package *Store::package(const std::string &name) const {

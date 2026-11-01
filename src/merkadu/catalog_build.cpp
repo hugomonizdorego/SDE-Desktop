@@ -120,6 +120,13 @@ CatalogResult build_catalog(const CatalogInputs &in) {
     a.prepare_search();
   }
   if (in.categories) r.departments.build(*in.categories, catalog);
+  // All Software's rows of the other sources, by department.
+  std::vector<std::string> department(catalog.size());
+  if (r.departments.built())
+    for (size_t i = 0; i < catalog.size(); ++i)
+      if (const Category *c = r.departments.department(i)) department[i] = c->id;
+  r.flatpak_rows = source_rows(catalog, Source::Flatpak, department);
+  r.snap_rows = source_rows(catalog, Source::Snap, department);
   // New & Updated: the newest releases of apps that are not installed.
   std::vector<const App *> fresh;
   std::time_t now = in.now ? in.now : std::time(nullptr);

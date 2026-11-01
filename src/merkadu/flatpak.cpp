@@ -21,6 +21,7 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <set>
 
 #include "process.h"
 
@@ -294,6 +295,95 @@ class FlatpakBackend : public Backend {
           return r;
         },
         done);
+  }
+
+  void list_runtimes(std::function<void(std::vector<Package>)> done) override {
+    background<std::vector<Package>>(
+        [] {
+          std::vector<Package> out;
+          std::set<std::string> listed;
+          std::string arch = flatpak_get_default_arch();
+          auto noise = [](const std::string &name) {
+            // Translations, debug symbols and sources come with what they belong to.
+            return ends_with(name, ".Locale") || ends_with(name, ".Debug") || ends_with(name, ".Sources");
+          };
+          for (const char *which : {"system", "user"}) {
+            std::string error;
+            FlatpakInstallation *inst = open_installation(which, &error);
+            if (!inst) continue;
+            bool user = std::string(which) == "user";
+            GError *err = nullptr;
+            if (GPtrArray *refs = flatpak_installation_list_installed_refs_by_kind(inst, FLATPAK_REF_KIND_RUNTIME,
+                                                                                   nullptr, &err)) {
+              for (guint i = 0; i < refs->len; ++i) {
+                FlatpakInstalledRef *r = FLATPAK_INSTALLED_REF(g_ptr_array_index(refs, i));
+                FlatpakRef *ref = FLATPAK_REF(r);
+                std::string name = str(flatpak_ref_get_name(ref));
+                if (noise(name)) continue;
+                Package p;
+                p.source = Source::Flatpak;
+                p.runtime = true;
+                p.ref = str(flatpak_ref_format_ref_cached(ref));
+                p.name = p.ref + (user ? "@user" : "");
+                p.title = name + " " + str(flatpak_ref_get_branch(ref));
+                p.installation = which;
+                p.arch = str(flatpak_ref_get_arch(ref));
+                p.section = "runtimes";
+                p.summary = str(flatpak_installed_ref_get_appdata_summary(r));
+                p.installed = true;
+                p.installed_version = str(flatpak_installed_ref_get_appdata_version(r));
+                if (p.installed_version.empty()) p.installed_version = str(flatpak_ref_get_branch(ref));
+                p.current_size = p.installed_size = (long long)flatpak_installed_ref_get_installed_size(r);
+                p.origin = str(flatpak_installed_ref_get_origin(r));
+                p.lower_summary = lower(p.title + " " + p.summary);
+                listed.insert(p.name);
+                out.push_back(std::move(p));
+              }
+              g_ptr_array_unref(refs);
+            }
+            g_clear_error(&err);
+            GPtrArray *remotes = flatpak_installation_list_remotes(inst, nullptr, &err);
+            g_clear_error(&err);
+            for (guint k = 0; remotes && k < remotes->len; ++k) {
+              FlatpakRemote *rem = FLATPAK_REMOTE(g_ptr_array_index(remotes, k));
+              if (flatpak_remote_get_disabled(rem) || flatpak_remote_get_noenumerate(rem)) continue;
+              const char *rname = flatpak_remote_get_name(rem);
+              GPtrArray *refs = flatpak_installation_list_remote_refs_sync_full(
+                  inst, rname, FLATPAK_QUERY_FLAGS_ONLY_CACHED, nullptr, &err);
+              g_clear_error(&err);
+              for (guint i = 0; refs && i < refs->len; ++i) {
+                FlatpakRemoteRef *rr = FLATPAK_REMOTE_REF(g_ptr_array_index(refs, i));
+                FlatpakRef *ref = FLATPAK_REF(rr);
+                if (flatpak_ref_get_kind(ref) != FLATPAK_REF_KIND_RUNTIME) continue;
+                std::string name = str(flatpak_ref_get_name(ref));
+                if (noise(name) || str(flatpak_ref_get_arch(ref)) != arch) continue;
+                Package p;
+                p.ref = str(flatpak_ref_format_ref_cached(ref));
+                p.name = p.ref + (user ? "@user" : "");
+                if (!listed.insert(p.name).second) continue;  // installed, or offered by another remote
+                p.source = Source::Flatpak;
+                p.runtime = true;
+                p.title = name + " " + str(flatpak_ref_get_branch(ref));
+                p.installation = which;
+                p.arch = arch;
+                p.section = "runtimes";
+                p.candidate_version = str(flatpak_ref_get_branch(ref));
+                p.download_size = (long long)flatpak_remote_ref_get_download_size(rr);
+                p.installed_size = (long long)flatpak_remote_ref_get_installed_size(rr);
+                p.origin = rname;
+                if (const char *eol = flatpak_remote_ref_get_eol(rr)) p.summary = format(_("End of life: %s"), eol);
+                p.lower_summary = lower(p.title + " " + p.summary);
+                out.push_back(std::move(p));
+              }
+              if (refs) g_ptr_array_unref(refs);
+            }
+            if (remotes) g_ptr_array_unref(remotes);
+            g_object_unref(inst);
+          }
+          std::sort(out.begin(), out.end(), [](const Package &a, const Package &b) { return a.name < b.name; });
+          return out;
+        },
+        done, "the Flatpak runtimes arrived");
   }
 
   void load_installed(AppsFn done) override {

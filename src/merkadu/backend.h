@@ -101,6 +101,9 @@ class Backend {
   virtual void owners(const std::vector<std::string> &paths, OwnersFn done) { done({}); }
   // Flatpak: adds the Flathub remote. Snap: hides ~/snap. Debian: nothing.
   virtual void setup(const std::string &what, DoneFn done) { done(false, false, "not supported"); }
+  // Flatpak: the runtimes and extensions, installed or offered by the
+  // remotes (from their cached summaries; no network), for All Software.
+  virtual void list_runtimes(std::function<void(std::vector<Package>)> done) { done({}); }
   // Downloads the source's software lists again (Debian: PackageKit's
   // RefreshCache, which also brings the AppStream catalog; Flatpak: the
   // remotes' AppStream data). |force|: also lists younger than |min_age|

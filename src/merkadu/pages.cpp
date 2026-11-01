@@ -1527,6 +1527,10 @@ void build_sources(Page *page) {
 
 }  // namespace
 
+void enable_snap_support() { enable_snap(); }
+void install_flatpak_support() { install_support(_("Flatpak support"), {"flatpak"}); }
+void set_up_flathub() { setup_flathub(); }
+
 std::string view_title(const View &v) {
   switch (v.kind) {
     case View::Category: {

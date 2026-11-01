@@ -155,6 +155,16 @@ class Store {
   void load_packages();
   // Changes whenever the package list was loaded again.
   int packages_generation() const { return packages_generation_; }
+  // All Software's rows of |source|: APT's packages, the Flatpak apps (with
+  // the runtimes and extensions when |runtimes|) or the snaps (installed
+  // ones and what the Snap Store showed).
+  const std::vector<Package> &rows(Source source, bool runtimes = false) const;
+  const Package *row(Source source, const std::string &name) const;
+  // Changes whenever the rows of |source| change.
+  int rows_generation(Source source) const;
+  // Lists the Flatpak runtimes for All Software (again after changes).
+  void load_runtimes();
+  bool runtimes_loaded() const { return runtimes_loaded_; }
   // The app (catalog) of a package, nullptr when it is not one.
   const App *app_of_package(const std::string &name) const;
   // The details of a package (description, dependencies, versions).
@@ -192,6 +202,11 @@ class Store {
   Catalog catalog_;
   CategoryIndex departments_;
   std::vector<std::string> fresh_;
+  std::vector<Package> flatpak_rows_, snap_rows_, runtime_rows_;
+  mutable std::vector<Package> flatpak_all_;  // apps and runtimes
+  mutable int flatpak_all_generation_ = -1;
+  int runtimes_generation_ = 0;
+  bool runtimes_loaded_ = false, runtimes_loading_ = false;
   int dropped_debian_ = 0;
   bool rebuild_scheduled_ = false, rebuild_running_ = false, rebuild_again_ = false;
   std::unique_ptr<Backend> backends_[kSourceCount];

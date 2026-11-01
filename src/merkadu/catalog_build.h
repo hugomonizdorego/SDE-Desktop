@@ -62,6 +62,8 @@ struct CatalogResult {
   CategoryIndex departments;
   std::vector<std::string> fresh;  // the newest releases of apps that are not installed, newest first
   int dropped_debian = 0;          // Debian origins without a package APT knows
+  // All Software's rows of the Flatpak and Snap apps (source_rows()).
+  std::vector<Package> flatpak_rows, snap_rows;
 };
 
 CatalogResult build_catalog(const CatalogInputs &in);

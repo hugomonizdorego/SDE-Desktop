@@ -32,8 +32,12 @@ std::string packages_view_arg(const PackageFilter &f) {
   std::string q = f.query;
   std::replace(q.begin(), q.end(), '|', ' ');
   std::replace(q.begin(), q.end(), '\t', ' ');
-  if (f.status == PackageStatus::All && f.section.empty() && q.empty()) return "";
-  return std::string(package_status_id(f.status)) + "|" + f.section + "|" + q;
+  bool other = f.source != Source::Debian || f.runtimes;
+  if (f.status == PackageStatus::All && f.section.empty() && q.empty() && !other) return "";
+  std::string arg = std::string(package_status_id(f.status)) + "|" + f.section + "|" + q;
+  // STATUS|SECTION|QUERY|SOURCE|runtimes (Debian without the last two).
+  if (other) arg += std::string("|") + source_id(f.source) + (f.runtimes ? "|runtimes" : "");
+  return arg;
 }
 
 PackageFilter packages_filter(const std::string &arg) {
@@ -42,12 +46,41 @@ PackageFilter packages_filter(const std::string &arg) {
   if (parts.size() > 0) package_status_from_id(parts[0], &f.status);
   if (parts.size() > 1) f.section = parts[1];
   if (parts.size() > 2) f.query = parts[2];
+  if (parts.size() > 3) source_from_id(parts[3], &f.source);
+  f.runtimes = parts.size() > 4 && parts[4] == "runtimes" && f.source == Source::Flatpak;
   return f;
 }
 
+namespace {
+
+// The name of a section of |source|'s rows: Debian's sections, the
+// departments for Flatpak and Snap, the runtimes.
+std::string row_section_title(Source source, const std::string &id) {
+  if (source == Source::Debian) return section_title(id);
+  if (id == "runtimes") return _("Runtimes and Extensions");
+  if (id.empty()) return _("Other");
+  if (const Category *c = Store::get().categories().find(id)) return c->title();
+  return id;
+}
+
+std::vector<std::string> row_section_icons(Source source, const std::string &id) {
+  if (source == Source::Debian) return section_icon_names(id);
+  if (id == "runtimes") return {"application-x-sharedlib", "package-x-generic"};
+  if (const Category *c = Store::get().categories().find(id))
+    if (!c->icon.empty()) return {c->icon, "applications-other"};
+  return {"applications-other", "package-x-generic"};
+}
+
+// "Debian packages", "Flatpak", "Snap".
+std::string source_switch_label(Source s) {
+  return s == Source::Debian ? format(_("%s packages"), source_label(s).c_str()) : source_label(s);
+}
+
+}  // namespace
+
 std::string packages_title(const std::string &arg) {
   PackageFilter f = packages_filter(arg);
-  return f.section.empty() ? std::string(_("All Software")) : section_title(f.section);
+  return f.section.empty() ? std::string(_("All Software")) : row_section_title(f.source, f.section);
 }
 
 namespace {
@@ -98,16 +131,20 @@ std::string marks_signature(const ChangeSet &m) {
 
 const ListCache &filtered(const std::string &arg) {
   Store &st = Store::get();
-  std::string sig = marks_signature(st.marks());
-  if (g_list.generation == st.packages_generation() && g_list.arg == arg && g_list.marks == sig) return g_list;
   PackageFilter f = packages_filter(arg);
-  g_list.generation = st.packages_generation();
+  const std::vector<Package> &rows = st.rows(f.source, f.runtimes);
+  // Marks are Debian's (APT's simulation); the other sources act at once.
+  std::string sig = f.source == Source::Debian ? marks_signature(st.marks()) : std::string();
+  int gen = st.rows_generation(f.source);
+  if (g_list.generation == gen && g_list.arg == arg && g_list.marks == sig) return g_list;
+  g_list.generation = gen;
   g_list.arg = arg;
   g_list.marks = sig;
-  watchdog::Busy busy("filtering the packages", long(st.packages().size()));
-  g_list.rows = filter_packages(st.packages(), f, st.marks());
+  watchdog::Busy busy("filtering the packages", long(rows.size()));
+  g_list.rows = filter_packages(rows, f, st.marks());
   for (auto &c : g_list.counts) c = 0;
-  for (auto &p : st.packages()) {
+  for (auto &p : rows) {
+    if (p.runtime && !f.runtimes) continue;
     if (!f.section.empty() && section_base(p.section) != f.section) continue;
     for (int s = 0; s < kPackageStatusCount; ++s) g_list.counts[s] += status_matches(p, PackageStatus(s), st.marks());
   }
@@ -188,6 +225,69 @@ void mark_menu(const std::string &name, bool details) {
   menu.popup();
 }
 
+// ------------------------------------------------- Flatpak and Snap rows
+
+// A row's page: the package page (Debian) or the app page.
+void open_row(Source source, const std::string &name) {
+  if (source == Source::Debian) {
+    navigate(View{View::Package, name});
+    return;
+  }
+  const Package *p = Store::get().row(source, name);
+  if (p && !p->app_id.empty()) navigate(View{View::Details, p->app_id});
+}
+
+// Removes a Flatpak runtime or extension (libflatpak refuses while an
+// installed app needs it, and says which).
+void remove_runtime(const Package &p) {
+  if (fl_choice(_("Remove %s?\n\nApps that need it stop working until it is installed again; Flatpak does not "
+                  "remove it while an installed app needs it."),
+                _("Cancel"), _("Remove"), nullptr, p.label().c_str()) != 1)
+    return;
+  Job j;
+  j.action = Action::Remove;
+  j.source = Source::Flatpak;
+  j.title = p.label();
+  j.icon = "application-x-sharedlib";
+  j.targets = {(p.installation.empty() ? std::string("system") : p.installation) + ":" + p.ref};
+  if (Store::get().enqueue(j)) navigate(View{View::Progress, ""});
+}
+
+using RowAction = std::pair<std::string, std::function<void()>>;
+
+// What can be done with a row of Flatpak or Snap: at once, there is no
+// marking (that is APT's simulation of Debian packages).
+std::vector<RowAction> row_actions(const Package &p) {
+  std::vector<RowAction> out;
+  if (p.runtime) {
+    if (p.installed) {
+      Package copy = p;
+      out.push_back({_("Remove"), [copy] { remove_runtime(copy); }});
+    }
+    return out;
+  }
+  Source s = p.source;
+  std::string app = p.app_id;
+  if (Store::get().active_job(app)) return out;
+  if (!p.installed) out.push_back({_("Install"), [app, s] { request_install(app, s); }});
+  if (p.upgradable) out.push_back({_("Update"), [app] { Store::get().update(app); }});
+  if (p.installed) out.push_back({_("Remove"), [app, s] { request_remove(app, s); }});
+  return out;
+}
+
+void row_menu(Source source, const std::string &name) {
+  const Package *p = Store::get().row(source, name);
+  if (!p) return;
+  ContextMenu menu;
+  for (auto &a : row_actions(*p)) menu.item(a.first, a.second);
+  if (!p->app_id.empty()) {
+    menu.separator();
+    std::string id = p->app_id;
+    menu.item(_("App Page"), [id] { navigate(View{View::Details, id}); });
+  }
+  menu.popup();
+}
+
 // The state of a package as a short text and a color.
 std::string state_text(const Package &p, Mark m) {
   switch (m) {
@@ -241,7 +341,9 @@ void paint_status(Painter &p, const Package &pkg, Mark m, double x, double y, do
 // rows cost no more than the 15 shown.
 class PackageTable : public Fl_Group {
  public:
-  PackageTable(int x, int y, int w, int h, std::vector<size_t> rows) : Fl_Group(x, y, w, h), rows_(std::move(rows)) {
+  PackageTable(int x, int y, int w, int h, std::vector<size_t> rows, Source source = Source::Debian,
+               bool runtimes = false)
+      : Fl_Group(x, y, w, h), rows_(std::move(rows)), source_(source), runtimes_(runtimes) {
     bar_ = new Fl_Scrollbar(x + w - S(12), y + header_h(), S(12), h - header_h());
     bar_->type(FL_VERTICAL);
     bar_->callback([](Fl_Widget *w, void *data) {
@@ -262,9 +364,15 @@ class PackageTable : public Fl_Group {
   int first() const { return top_; }
 
   const Package *pkg(int i) const {
-    const auto &all = Store::get().packages();
+    const auto &all = Store::get().rows(source_, runtimes_);
     if (i < 0 || i >= count() || rows_[size_t(i)] >= all.size()) return nullptr;
     return &all[rows_[size_t(i)]];
+  }
+  Source source() const { return source_; }
+  // The app of a row (its app page), nullptr for packages without one.
+  const App *app_of(const Package &p) const {
+    return source_ == Source::Debian ? Store::get().app_of_package(p.name)
+                                     : p.app_id.empty() ? nullptr : Store::get().app(p.app_id);
   }
   std::string name(int i) const {
     const Package *p = pkg(i);
@@ -339,10 +447,10 @@ class PackageTable : public Fl_Group {
           p.fill_rounded(x() + S(4), ry + S(2), w() - S(8) - (bar_->visible() ? S(12) : 0), row_h() - S(4), S(8),
                          t.hover);
         }
-        Mark m = st.marks().get(pk->name);
+        Mark m = source_ == Source::Debian ? st.marks().get(pk->name) : Mark::Unmarked;
         paint_status(p, *pk, m, c.status, ry + (row_h() - S(20)) / 2.0, S(20));
-        paint_package_icon(p, *pk, st.app_of_package(pk->name), c.icon, ry + (row_h() - S(28)) / 2.0, S(28));
-        if (pk->system()) {
+        paint_package_icon(p, *pk, app_of(*pk), c.icon, ry + (row_h() - S(28)) / 2.0, S(28));
+        if (source_ == Source::Debian && pk->system()) {
           int bx = c.name + system_badge_x(*pk, c), bw = system_badge_w();
           p.fill_rounded(bx, ry + S(6), bw, S(16), S(8), t.warning.alpha(t.dark ? 0.3 : 0.18));
         }
@@ -362,12 +470,13 @@ class PackageTable : public Fl_Group {
       const Package *pk = pkg(i);
       if (!pk) continue;
       int nw = name_w(c);
+      bool system = source_ == Source::Debian && pk->system();
       // Packages of the base system: the name stops before the badge (its
       // width is measured first: that sets another font).
-      int name_room = pk->system() ? system_badge_x(*pk, c) - S(8) : nw;
+      int name_room = system ? system_badge_x(*pk, c) - S(8) : nw;
       text_font(t.font_size, true);
-      draw_text(pk->name, c.name, ry + S(4), name_room, S(20), t.text);
-      if (pk->system()) {
+      draw_text(pk->label(), c.name, ry + S(4), name_room, S(20), t.text);
+      if (system) {
         int bx = c.name + system_badge_x(*pk, c), bw = system_badge_w();
         text_font(std::max(S(9), t.font_size - S(3)), true);
         draw_text(_("SYSTEM"), bx, ry + S(6), bw, S(16), readable(t.warning, t.surface), 1);
@@ -429,16 +538,20 @@ class PackageTable : public Fl_Group {
         take_focus();
         if (i < 0) return 1;
         bool on_status = Fl::event_x() < cols().icon;
+        bool debian = source_ == Source::Debian;
         if (Fl::event_button() == FL_RIGHT_MOUSE) {
           select(i, false);
-          mark_menu(name(i), true);
+          if (debian)
+            mark_menu(name(i), true);
+          else
+            row_menu(source_, name(i));
           rebuild_page();
-        } else if (on_status) {
+        } else if (on_status && debian) {
           select(i, false);
           mark_menu(name(i), false);
           rebuild_page();
         } else if (Fl::event_clicks()) {
-          navigate(View{View::Package, name(i)});
+          open_row(source_, name(i));
         } else {
           select(i);
         }
@@ -446,13 +559,16 @@ class PackageTable : public Fl_Group {
       }
       case FL_KEYBOARD: {
         int k = Fl::event_key(), page = visible() - 1;
+        bool debian = source_ == Source::Debian;
         if (k == FL_Down) select(sel_ + 1);
         else if (k == FL_Up) select(sel_ < 0 ? 0 : sel_ - 1);
         else if (k == FL_Page_Down) select(sel_ + page);
         else if (k == FL_Page_Up) select(sel_ - page);
         else if (k == FL_Home) select(0);
         else if (k == FL_End) select(count() - 1);
-        else if ((k == FL_Enter || k == FL_KP_Enter) && sel_ >= 0) navigate(View{View::Package, name(sel_)});
+        else if ((k == FL_Enter || k == FL_KP_Enter) && sel_ >= 0) open_row(source_, name(sel_));
+        else if (k == FL_Menu && sel_ >= 0 && !debian) row_menu(source_, name(sel_));
+        else if (!debian) return 0;  // marking is for Debian packages (APT's simulation)
         else if (k == ' ' && sel_ >= 0) toggle_mark(name(sel_));
         else if ((k == '+' || k == FL_KP + '+' || k == FL_Insert) && sel_ >= 0) {
           // Install, or update what is installed (like Synaptic's "+").
@@ -494,6 +610,8 @@ class PackageTable : public Fl_Group {
     return right - c.name - S(12);
   }
   std::vector<size_t> rows_;
+  Source source_;
+  bool runtimes_;
   Fl_Scrollbar *bar_;
   int top_ = 0, sel_ = -1, hover_ = -1;
 };
@@ -502,8 +620,9 @@ class PackageTable : public Fl_Group {
 
 class SectionList : public Fl_Widget {
  public:
-  SectionList(int x, int y, int w, int h, std::vector<SectionCount> sections, size_t total, const std::string &current)
-      : Fl_Widget(x, y, w, h), sections_(std::move(sections)), total_(total), current_(current) {
+  SectionList(int x, int y, int w, int h, std::vector<SectionCount> sections, size_t total, const std::string &current,
+              Source source = Source::Debian)
+      : Fl_Widget(x, y, w, h), sections_(std::move(sections)), total_(total), current_(current), source_(source) {
     tooltip(_("Sections"));
   }
   int row_h() const { return S(32); }
@@ -525,8 +644,8 @@ class SectionList : public Fl_Widget {
         bool cur = i == 0 ? current_.empty() : sections_[size_t(i - 1)].id == current_;
         if (cur) p.fill_rounded(x() + S(4), ry, w() - S(8), row_h() - S(2), S(8), t.accent.alpha(0.15));
         else if (i == hover_) p.fill_rounded(x() + S(4), ry, w() - S(8), row_h() - S(2), S(8), t.hover);
-        std::vector<std::string> names =
-            i == 0 ? std::vector<std::string>{"view-grid", "applications-other"} : section_icon_names(sections_[size_t(i - 1)].id);
+        std::vector<std::string> names = i == 0 ? std::vector<std::string>{"view-grid", "applications-other"}
+                                                : row_section_icons(source_, sections_[size_t(i - 1)].id);
         names.push_back("package-x-generic");
         cairo_surface_t *icon = nullptr;
         for (auto &nm : names)
@@ -607,18 +726,80 @@ class SectionList : public Fl_Widget {
   std::vector<SectionCount> sections_;
   size_t total_;
   std::string current_;
+  Source source_;
   int top_ = 0, hover_ = -1;
 };
 int SectionList::g_top = 0;
 
 void qa_hook(const std::string &name, int x, int y, int w, int h) { qa_line(name, x, y, w, h); }
 
+// The selected Flatpak app, runtime or snap: what it is, where it comes
+// from, and Install, Update, Remove at once.
+void row_info_pane(int x, int y, int w, int h, const Package &pk) {
+  Store &st = Store::get();
+  struct Icon : Fl_Widget {
+    Source source;
+    std::string name;
+    Icon(int x, int y, int s, Source src, const std::string &n) : Fl_Widget(x, y, s, s), source(src), name(n) {}
+    void draw() override {
+      const Package *p = Store::get().row(source, name);
+      if (!p) return;
+      Painter pt(window()->w(), window()->h());
+      paint_package_icon(pt, *p, p->app_id.empty() ? nullptr : Store::get().app(p->app_id), x(), y(), w());
+    }
+  };
+  int pad = S(18), is = S(48);
+  new Icon(x + pad, y + pad, is, pk.source, pk.name);
+  int tx = x + pad + is + S(16), tw = w - (tx - x) - pad;
+  new Label(tx, y + pad - S(4), tw, S(26), pk.label() + "  (" + (pk.runtime ? pk.ref : pk.app_id) + ")", Label::BOLD);
+  std::string line = state_text(pk, Mark::Unmarked);
+  std::string version = pk.installed ? pk.installed_version : pk.candidate_version;
+  if (pk.installed && pk.upgradable && !pk.candidate_version.empty())
+    line += "  \xC2\xB7  " + format(_("%s, update to %s"), pk.installed_version.c_str(), pk.candidate_version.c_str());
+  else if (!version.empty())
+    line += "  \xC2\xB7  " + format(_("version %s"), version.c_str());
+  line += "  \xC2\xB7  " + source_label(pk.source) + (pk.origin.empty() ? "" : " (" + pk.origin + ")");
+  long long size = pk.installed ? pk.current_size : pk.download_size > 0 ? pk.download_size : pk.installed_size;
+  if (size > 0) line += "  \xC2\xB7  " + format_size(size);
+  new Label(tx, y + pad + S(22), tw, S(20), line, Label::DIM);
+  int cy = y + pad + S(44);
+  if (!pk.summary.empty()) {
+    new Label(tx, cy, tw, S(22), pk.summary);
+    cy += S(26);
+  }
+  int bx = tx, by = std::min(cy + S(4), y + h - pad - S(34));
+  if (!pk.app_id.empty() && st.active_job(pk.app_id)) {
+    Button *b = button(bx, by, _("In Progress"), Button::Normal, [] { navigate(View{View::Progress, ""}); });
+    bx += b->w() + S(8);
+  } else {
+    for (auto &a : row_actions(pk)) {
+      Button::Kind kind = a.first == _("Remove") ? Button::Danger : Button::Primary;
+      Button *b = button(bx, by, a.first, kind, a.second);
+      qa_line("action:row:" + a.first, b->x(), b->y(), b->w(), b->h());
+      bx += b->w() + S(8);
+    }
+  }
+  if (!pk.app_id.empty()) {
+    std::string id = pk.app_id;
+    Button *b = button(bx, by, _("App Page"), Button::Ghost, [id] { navigate(View{View::Details, id}); });
+    qa_line("action:row:App Page", b->x(), b->y(), b->w(), b->h());
+  }
+}
+
 // The details of the selected package below (or beside) the list.
-void info_pane(int x, int y, int w, int h, const Package *pk) {
+void info_pane(int x, int y, int w, int h, const Package *pk, Source source = Source::Debian) {
   const Theme &t = active_theme();
   new Card(x, y, w, h);
+  if (pk && pk->source != Source::Debian) {
+    row_info_pane(x, y, w, h, *pk);
+    return;
+  }
   if (!pk) {
-    new Label(x + S(20), y, w - S(40), h, _("Select a package to see what it is and to mark a change."), Label::DIM);
+    new Label(x + S(20), y, w - S(40), h,
+              source == Source::Debian ? _("Select a package to see what it is and to mark a change.")
+                                       : _("Select an app to see where it comes from and to install, update or "
+                                           "remove it."),
+              Label::DIM);
     return;
   }
   Store &st = Store::get();
@@ -716,64 +897,204 @@ void marks_bar(int x, int y, int w, int h) {
 
 // ------------------------------------------------------------- the page
 
+namespace {
+
+// The sections of the rows of |f|'s source with their names.
+std::vector<SectionCount> row_sections(const PackageFilter &f) {
+  Store &st = Store::get();
+  std::vector<SectionCount> out = section_counts(st.rows(f.source, f.runtimes), f.status, st.marks());
+  if (f.source != Source::Debian) {
+    for (auto &sc : out) sc.title = row_section_title(f.source, sc.id);
+    std::sort(out.begin(), out.end(), [](const SectionCount &a, const SectionCount &b) {
+      // The runtimes and what has no department last.
+      int ra = a.id == "runtimes" ? 2 : a.id.empty() ? 1 : 0, rb = b.id == "runtimes" ? 2 : b.id.empty() ? 1 : 0;
+      if (ra != rb) return ra < rb;
+      return lower(a.title) < lower(b.title);
+    });
+  }
+  return out;
+}
+
+// A thin line between two groups of chips.
+struct Divider : Fl_Widget {
+  Divider(int x, int y, int h) : Fl_Widget(x, y, S(1) + 1, h) {}
+  void draw() override {
+    Painter p(window()->w(), window()->h());
+    p.fill_rect(x(), y(), S(1), h(), active_theme().border);
+  }
+};
+
+// The switch between the sources at the top of All Software, with how
+// much each has: Debian packages, Flatpak, Snap. Returns where it ends.
+int source_switch(int x, int y, int w, const PackageFilter &f) {
+  Store &st = Store::get();
+  int h = S(32), cx = x;
+  for (Source s : {Source::Debian, Source::Flatpak, Source::Snap}) {
+    std::string count;
+    if (s == Source::Debian)
+      count = st.packages_loaded() ? format_count(long(st.packages().size())) : std::string("\xE2\x80\xA6");
+    else
+      count = st.catalog_loaded() ? format_count(long(st.rows(s).size())) : std::string("\xE2\x80\xA6");
+    std::string text = source_switch_label(s) + "  " + count;
+    int cw = Chip::fit(text) + S(10);
+    if (cx + cw > x + w && cx > x) break;
+    auto *chip = new Chip(cx, y, cw, h, text, f.source == s);
+    chip->dot = source_color(s);
+    PackageFilter g;
+    g.source = s;
+    g.query = f.query;
+    chip->on_click = [g] { go_filter(g); };
+    qa_line(std::string("chip:source:") + source_id(s), cx, y, cw, h);
+    cx += cw + S(8);
+  }
+  return cx - S(8);
+}
+
+// Why a source has no rows, and what fixes it; false when it has some.
+// |before| runs first when there is a problem to show.
+bool source_problem(Page *page, const PackageFilter &f, const std::function<void()> &before) {
+  Store &st = Store::get();
+  int x = page->left(), w = page->width();
+  std::string title, text, action;
+  std::function<void()> fix;
+  if (f.source == Source::Flatpak) {
+    const SourceStatus &fp = st.status(Source::Flatpak);
+    if (st.probed(Source::Flatpak) && !fp.installed && !fake_mode()) {
+      title = _("Flatpak is not installed");
+      text = _("Flatpak apps come from Flathub and other remotes and run isolated from the system.");
+      action = _("Install Flatpak");
+      fix = install_flatpak_support;
+    } else if (st.probed(Source::Flatpak) && fp.available && fp.remotes.empty() && st.settings().setup_flathub) {
+      title = _("No Flatpak remote is set up");
+      text = _("Flathub has thousands of apps. Set it up, then its catalog is downloaded.");
+      action = _("Set Up Flathub");
+      fix = set_up_flathub;
+    } else if (st.catalog_loaded() && st.rows(Source::Flatpak, f.runtimes).empty()) {
+      title = _("No Flatpak apps yet");
+      text = _("The catalogs of the Flatpak remotes have not been downloaded: refresh the software lists (this "
+               "needs a network connection).");
+      action = _("Refresh Software Lists");
+      fix = [] { Store::get().refresh(true); };
+    }
+  } else if (f.source == Source::Snap) {
+    const SourceStatus &sn = st.status(Source::Snap);
+    if (st.probed(Source::Snap) && !sn.available && !fake_mode()) {
+      title = sn.installed ? _("snapd is not running") : _("Snap support is not enabled");
+      text = sn.installed ? _("snapd was installed but does not answer yet. Restart the computer (or log out and back "
+                              "in) if it does not start by itself.")
+                          : _("Snaps come from the Snap Store through snapd, which Merkadu installs with your "
+                              "password.");
+      if (!sn.installed) {
+        action = _("Enable Snap Support");
+        fix = enable_snap_support;
+      }
+    }
+  }
+  if (title.empty()) return false;
+  before();
+  auto *es = new EmptyState(x, page->cursor(), w, f.source == Source::Snap ? Symbol::Snap : Symbol::Package, title,
+                            text, false);
+  qa_line(std::string("empty:source:") + source_id(f.source), es->x(), es->y(), es->w(), es->h());
+  page->advance(es->h() + S(16));
+  if (fix) {
+    Button *b = button(x + (w - Button::fit(action)) / 2, page->cursor(), action, Button::Primary, fix);
+    qa_line("action:source-fix:" + action, b->x(), b->y(), b->w(), b->h());
+    page->advance(S(34) + S(16));
+  }
+  return true;
+}
+
+}  // namespace
+
 void build_packages_page(Page *page, const std::string &arg) {
   Store &st = Store::get();
   page->max_width(1 << 20);  // the list takes the whole width
   PackageFilter f = packages_filter(arg);
   int x = page->left(), w = page->width();
-  if (!st.packages_available()) {
-    page->heading(_("All Software"));
-    page->note(_("This build of Merkadu cannot read the package lists (libapt-pkg)."));
-    page->finish();
-    return;
+  // Debian packages, Flatpak or Snap: each source its own list. The status
+  // filters follow on the same line when there is room.
+  int top = page->cursor() - S(8);
+  int switch_end = source_switch(x, top, w, f);
+  bool one_line = w >= S(820);
+  page->advance(one_line ? 0 : S(32) + S(8));
+  // Pages without the list start below the switch.
+  bool below = false;
+  auto below_switch = [&] {
+    if (one_line && !below) page->advance(S(32) + S(8));
+    below = true;
+  };
+  if (f.source == Source::Debian) {
+    if (!st.packages_available() || !st.packages_loaded() || st.packages().empty()) below_switch();
+    if (!st.packages_available()) {
+      page->note(_("This build of Merkadu cannot read the package lists (libapt-pkg)."));
+      page->finish();
+      return;
+    }
+    if (!st.packages_loaded() || (st.packages().empty() && st.packages_loading())) {
+      if (!st.packages_loading()) st.load_packages();
+      int y = page->cursor();
+      for (int i = 0; i < 6; ++i) new Placeholder(x, y + i * S(56), w, S(48));
+      new Label(x, y + 6 * S(56) + S(8), w, S(24), _("Reading the package lists\xE2\x80\xA6"), Label::DIM);
+      qa_line("loading", x, y, w, S(48));
+      page->advance(6 * S(56) + S(40));
+      page->finish();
+      return;
+    }
+    if (st.packages().empty()) {
+      auto *es = new EmptyState(x, page->cursor(), w, Symbol::Warning, _("The package lists could not be read"),
+                                st.packages_error(), true);
+      page->advance(es->h() + S(16));
+      button(x + (w - Button::fit(_("Refresh Software Lists"))) / 2, page->cursor(), _("Refresh Software Lists"),
+             Button::Primary, [] { Store::get().refresh(true); });
+      page->advance(S(34) + S(16));
+      page->finish();
+      return;
+    }
+  } else {
+    if (f.runtimes && !st.runtimes_loaded()) st.load_runtimes();
+    if (!st.catalog_loaded()) {
+      below_switch();
+      int y = page->cursor();
+      for (int i = 0; i < 6; ++i) new Placeholder(x, y + i * S(56), w, S(48));
+      qa_line("loading", x, y, w, S(48));
+      page->advance(6 * S(56) + S(16));
+      page->finish();
+      return;
+    }
+    if (source_problem(page, f, below_switch)) {
+      page->finish();
+      return;
+    }
   }
-  if (!st.packages_loaded() || (st.packages().empty() && st.packages_loading())) {
-    if (!st.packages_loading()) st.load_packages();
-    int y = page->cursor();
-    for (int i = 0; i < 6; ++i) new Placeholder(x, y + i * S(56), w, S(48));
-    new Label(x, y + 6 * S(56) + S(8), w, S(24), _("Reading the package lists\xE2\x80\xA6"), Label::DIM);
-    qa_line("loading", x, y, w, S(48));
-    page->advance(6 * S(56) + S(40));
-    page->finish();
-    return;
-  }
-  if (st.packages().empty()) {
-    auto *es = new EmptyState(x, page->cursor(), w, Symbol::Warning, _("The package lists could not be read"),
-                              st.packages_error(), true);
-    page->advance(es->h() + S(16));
-    button(x + (w - Button::fit(_("Refresh Software Lists"))) / 2, page->cursor(), _("Refresh Software Lists"),
-           Button::Primary, [] { Store::get().refresh(true); });
-    page->advance(S(34) + S(16));
-    page->finish();
-    return;
-  }
+  const std::vector<Package> &rows = st.rows(f.source, f.runtimes);
   const ListCache &list = filtered(arg);
   if (g_state.arg != arg) {
     // Another filter: the list starts at the top with nothing selected,
     // unless the selection is in it.
     g_state.top = 0;
-    if (std::none_of(list.rows.begin(), list.rows.end(), [](size_t i) {
-          return Store::get().packages()[i].name == g_state.selected;
-        }))
+    if (std::none_of(list.rows.begin(), list.rows.end(),
+                     [&rows](size_t i) { return i < rows.size() && rows[i].name == g_state.selected; }))
       g_state.selected.clear();
     g_state.arg = arg;
   }
-  bool wide = w >= S(820);
-  int top = page->cursor() - S(8);
+  bool wide = w >= S(820), debian = f.source == Source::Debian;
   // The status filters (and the sections on narrow windows).
-  int cx = x, cy = top, chip_h = S(32);
+  int cx = x, cy = page->cursor() - (one_line ? S(8) : 0), chip_h = S(32);
+  if (one_line) {
+    new Divider(switch_end + S(12), cy + S(4), chip_h - S(8));
+    cx = switch_end + S(26);
+  }
   if (!wide) {
-    std::string label = f.section.empty() ? std::string(_("All Sections")) : section_title(f.section);
+    std::string label = f.section.empty() ? std::string(_("All Sections")) : row_section_title(f.source, f.section);
     int bw = Chip::fit(label) + S(18);
     auto *c = new Chip(cx, cy, bw, chip_h, label, !f.section.empty());
     c->menu = true;
     c->on_click = [f] {
-      Store &s = Store::get();
       ContextMenu menu;
       PackageFilter all = f;
       all.section.clear();
       menu.radio(_("All Sections"), f.section.empty(), [all] { go_filter(all); });
-      for (auto &sc : section_counts(s.packages(), f.status, s.marks())) {
+      for (auto &sc : row_sections(f)) {
         PackageFilter g = f;
         g.section = sc.id;
         menu.radio(format("%s (%s)", sc.title.c_str(), format_count(long(sc.count)).c_str()), sc.id == f.section,
@@ -787,6 +1108,8 @@ void build_packages_page(Page *page, const std::string &arg) {
   for (int s = 0; s < kPackageStatusCount; ++s) {
     PackageStatus ps = PackageStatus(s);
     size_t n = list.counts[s];
+    // Marks and left settings are Debian's.
+    if (!debian && (ps == PackageStatus::Marked || ps == PackageStatus::ConfigOnly)) continue;
     if (ps == PackageStatus::ConfigOnly && !n) continue;
     if (ps == PackageStatus::Marked && !n && f.status != ps) continue;
     std::string text = status_title(ps) + "  " + format_count(long(n));
@@ -802,8 +1125,33 @@ void build_packages_page(Page *page, const std::string &arg) {
     qa_line(std::string("chip:status:") + package_status_id(ps), cx, cy, cw, chip_h);
     cx += cw + S(8);
   }
+  if (f.source == Source::Flatpak) {
+    // Runtimes and extensions come with the apps: shown on request.
+    std::string text = _("Runtimes and Extensions");
+    int cw = Chip::fit(text);
+    if (cx + S(10) + cw > x + w && cx > x) {
+      cx = x;
+      cy += chip_h + S(8);
+    } else {
+      cx += S(10);
+    }
+    auto *chip = new Chip(cx, cy, cw, chip_h, text, f.runtimes);
+    PackageFilter g = f;
+    g.runtimes = !f.runtimes;
+    if (!g.runtimes && g.section == "runtimes") g.section.clear();
+    chip->on_click = [g] { go_filter(g); };
+    qa_line("chip:runtimes", cx, cy, cw, chip_h);
+  }
   int body_y = cy + chip_h + S(14);
-  bool marks = !st.marks().empty();
+  if (f.source == Source::Snap) {
+    // snapd has no list of the whole store.
+    std::string note = _("The Snap Store has no complete list: these are the installed snaps and those the store "
+                         "showed (featured, departments and searches). Search to find more.");
+    int nh = TextBlock::measure(note, w, -1) + S(4);
+    new TextBlock(x, body_y - S(6), w, nh, note, true, -1);
+    body_y += nh + S(6);
+  }
+  bool marks = debian && !st.marks().empty();
   int bar_h = marks ? S(56) : 0;
   int info_h = S(148);
   int bottom = page->y() + page->h() - S(16);
@@ -812,20 +1160,20 @@ void build_packages_page(Page *page, const std::string &arg) {
   int lx = x, lw = w;
   if (wide) {
     int sw = S(220);
-    std::vector<SectionCount> sections = section_counts(st.packages(), f.status, st.marks());
+    std::vector<SectionCount> sections = row_sections(f);
     size_t total = 0;
     for (auto &sc : sections) total += sc.count;
-    auto *sl = new SectionList(x, body_y, sw, list_h + S(12) + info_h, sections, total, f.section);
+    auto *sl = new SectionList(x, body_y, sw, list_h + S(12) + info_h, sections, total, f.section, f.source);
     sl->restore();
     sl->qa(qa_hook);
     lx = x + sw + S(14);
     lw = w - sw - S(14);
   }
-  auto *table = new PackageTable(lx, body_y, lw, list_h, list.rows);
+  auto *table = new PackageTable(lx, body_y, lw, list_h, list.rows, f.source, f.runtimes);
   table->qa(qa_hook);
   qa_line("table", table->x(), table->y(), table->w(), table->h());
-  const Package *sel = g_state.selected.empty() ? nullptr : st.package(g_state.selected);
-  info_pane(lx, body_y + list_h + S(12), lw, info_h, sel);
+  const Package *sel = g_state.selected.empty() ? nullptr : st.row(f.source, g_state.selected);
+  info_pane(lx, body_y + list_h + S(12), lw, info_h, sel, f.source);
   if (marks) marks_bar(x, body_y + list_h + S(12) + info_h + S(12), w, bar_h);
   if (g_state.focused) table->take_focus();
   page->advance(bottom - page->cursor() - S(24));

@@ -60,6 +60,11 @@ void choose_source(const std::string &app_id, Source s);
 // Starts a change, asking first where needed (removals, classic snaps).
 void request_install(const std::string &app_id, Source s);
 void request_remove(const std::string &app_id, Source s);
+// What makes a source usable (pages.cpp): Enable Snap Support (snapd and
+// the snapd snap), Install Flatpak, Set Up Flathub.
+void enable_snap_support();
+void install_flatpak_support();
+void set_up_flathub();
 // UI test hook: an extra line of the QA dump (Merkadu.txt), window pixels.
 void qa_line(const std::string &name, int x, int y, int w, int h);
 // A widget of the page that shows the progress of a change: when a change
