@@ -603,7 +603,7 @@ def a2_menu_checks():
     (home/'bin/merkadu').unlink()
     others=os.pathsep.join(d for d in e['PATH'].split(os.pathsep) if d!=str(home/'bin'))
     if shutil.which('merkadu',path=others) is None:
-        items=right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape')
+        items=right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape');time.sleep(.3)
         assert 'Uninstall...' not in items,items
     else:print('PANEL a2: merkadu is installed: the menu without it is not checked',flush=True)
     escape('SDE Menu');(apps_dir/'qa-zeal.desktop').write_text(keep);(apps_dir/'sde-qa-own.desktop').unlink()
