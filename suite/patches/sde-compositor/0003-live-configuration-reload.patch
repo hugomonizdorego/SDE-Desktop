@@ -17,7 +17,12 @@ watch, and the files SDE writes in a row, give one reload):
 
 * the file is parsed again with the same command line; an unreadable file
   keeps the running configuration (a file being edited by hand);
-* an unchanged file and unchanged shader files do nothing;
+* an unchanged file and unchanged shader files reload nothing: a file
+  written again with the same text does nothing, and SIGUSR1 (which
+  scripts, and SDE's screenshot tool after a resize with software
+  OpenGL, send to have the screen drawn again: upstream's reset did
+  that) gives every mapped window its image and rules again and
+  repaints the whole screen once, still without a reset;
 * options that the running backend cannot follow (the backend, vsync,
   damage, frame pacing, unredirection, D-Bus, logging, the detection
   options, the fading options that the running animations were generated
@@ -55,7 +60,7 @@ watch, and the files SDE writes in a row, give one reload):
  }
  
  static bool load_shader_source(session_t *ps, const char *path) {
-@@ -2042,6 +2045,402 @@
+@@ -2042,6 +2045,434 @@
  	return ret;
  }
  
@@ -83,6 +88,9 @@ watch, and the files SDE writes in a row, give one reload):
 +static char *sde_loaded_text;
 +static ev_timer sde_reload_timer;
 +static bool sde_reload_timer_ready;
++// SIGUSR1 arrived since the last reload (an explicit request, not only the
++// file watch).
++static bool sde_reload_asked;
 +
 +#define SDE_OPTION_LISTS(X)                                                              \
 +	X(included_config_files)                                                         \
@@ -291,14 +299,47 @@ watch, and the files SDE writes in a row, give one reload):
 +
 +static void sde_watch_config_files(session_t *ps);
 +
++/// A fresh layout history makes the next frame a full repaint, as when the
++/// screen is redirected.
++static void sde_repaint_all(session_t *ps) {
++	if (ps->layout_manager) {
++		layout_manager_free(ps->layout_manager);
++		ps->layout_manager = layout_manager_new((unsigned)ps->damage_ring.count);
++	}
++	ps->pending_updates = true;
++	invalidate_reg_ignore(ps);
++	force_repaint(ps);
++}
++
++/// What upstream's reset was asked for when nothing changed: every window
++/// drawn again. In place: every mapped window gets its image, rules,
++/// opacity, shadow and corner mask again (as after a resize, the window
++/// keeping its size) and the next frame repaints the whole screen.
++static void sde_draw_everything_again(session_t *ps) {
++	wm_stack_foreach(ps->wm, cursor) {
++		auto w = wm_ref_deref(cursor);
++		if (w != NULL && w->state == WSTATE_MAPPED) {
++			win_set_flags(w, WIN_FLAGS_SIZE_STALE | WIN_FLAGS_FACTOR_CHANGED);
++		}
++	}
++	sde_repaint_all(ps);
++}
++
 +/// Reloads the configuration in place. False when the session must be
 +/// reset instead (the configuration then takes effect through the reset).
-+static bool sde_reload_config(session_t *ps) {
++static bool sde_reload_config(session_t *ps, bool asked) {
 +	const char *path = ps->o.config_file_path;
 +	char *text = sde_read_text(path);
 +	if (sde_loaded_text && sde_same_text(text, sde_loaded_text) && !sde_shader_files_changed(ps)) {
 +		free(text);
-+		log_debug("Configuration unchanged, nothing to reload");
++		if (asked) {
++			// SIGUSR1 with nothing to reload: scripts send it to have
++			// the screen drawn again (upstream resets for it).
++			sde_draw_everything_again(ps);
++			log_info("Configuration unchanged; every window drawn again.");
++		} else {
++			log_debug("Configuration unchanged, nothing to reload");
++		}
 +		return true;
 +	}
 +
@@ -398,15 +439,8 @@ watch, and the files SDE writes in a row, give one reload):
 +	sde_watch_config_files(ps);
 +	// picom 12 repaints what its layout history says changed; a new
 +	// renderer (shadows) starts with an empty back image, and every window
-+	// may look different now. A fresh history makes the next frame a full
-+	// repaint, as when the screen is redirected.
-+	if (ps->layout_manager) {
-+		layout_manager_free(ps->layout_manager);
-+		ps->layout_manager = layout_manager_new((unsigned)ps->damage_ring.count);
-+	}
-+	ps->pending_updates = true;
-+	invalidate_reg_ignore(ps);
-+	force_repaint(ps);
++	// may look different now.
++	sde_repaint_all(ps);
 +	log_info("Configuration reloaded in place.");
 +	return true;
 +}
@@ -430,7 +464,9 @@ watch, and the files SDE writes in a row, give one reload):
 +
 +static void sde_reload_timer_cb(EV_P_ ev_timer *w attr_unused, int revents attr_unused) {
 +	session_t *ps = ps_g;
-+	if (ps && !sde_reload_config(ps)) {
++	bool asked = sde_reload_asked;
++	sde_reload_asked = false;
++	if (ps && !sde_reload_config(ps, asked)) {
 +		reset_enable(EV_A_ NULL, 0);
 +	}
 +}
@@ -450,6 +486,7 @@ watch, and the files SDE writes in a row, give one reload):
 +
 +static void sde_reload_signal(EV_P_ ev_signal *w, int revents attr_unused) {
 +	session_t *ps = session_ptr(w, usr1_signal);
++	sde_reload_asked = true;
 +	sde_reload_later(ps);
 +}
 +
@@ -458,7 +495,7 @@ watch, and the files SDE writes in a row, give one reload):
  /**
   * Initialize a session.
   *
-@@ -2456,7 +2855,8 @@
+@@ -2456,7 +2887,8 @@
  	ev_init(&ps->draw_timer, draw_callback);
  
  	// Set up SIGUSR1 signal handler to reset program
@@ -468,17 +505,18 @@ watch, and the files SDE writes in a row, give one reload):
  	ev_signal_init(&ps->int_signal, exit_enable, SIGINT);
  	ev_signal_start(ps->loop, &ps->usr1_signal);
  	ev_signal_start(ps->loop, &ps->int_signal);
-@@ -2724,6 +3124,9 @@
+@@ -2724,6 +3156,10 @@
  	ev_timer_stop(ps->loop, &ps->draw_timer);
  	ev_prepare_stop(ps->loop, &ps->event_check);
  	ev_signal_stop(ps->loop, &ps->usr1_signal);
 +	if (sde_reload_timer_ready) {
 +		ev_timer_stop(ps->loop, &sde_reload_timer);
 +	}
++	sde_reload_asked = false;
  	ev_signal_stop(ps->loop, &ps->int_signal);
  
  	// The X connection could hold references to wm if there are pending async
-@@ -2837,6 +3240,12 @@
+@@ -2837,12 +3273,24 @@
  		log_deinit_tls();
  		log_init_tls();
  
@@ -486,8 +524,20 @@ watch, and the files SDE writes in a row, give one reload):
 +		sde_argc = argc;
 +		sde_argv = argv;
 +		sde_config_file = config_file;
++		// The text the new session starts from, which a reload compares
++		// with. Read before the session parses the file: a change in
++		// between gives one reload more, never one too few.
 +		free(sde_loaded_text);
-+		sde_loaded_text = NULL;
++		sde_loaded_text = config_file ? sde_read_text(config_file) : NULL;
  		ps_g = session_init(argc, argv, dpy, config_file, all_xerrors, need_fork);
  		if (!ps_g) {
  			log_fatal("Failed to create new session.");
+ 			ret_code = 1;
+ 			break;
+ 		}
++		if (!sde_loaded_text) {
++			sde_loaded_text = sde_read_text(ps_g->o.config_file_path);
++		}
+ 		if (need_fork) {
+ 			// Finishing up daemonization
+ 			// Close files

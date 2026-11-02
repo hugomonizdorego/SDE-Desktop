@@ -344,7 +344,12 @@ repaints the screen once. Upstream picom resets the whole session instead,
 which showed the screen without compositing for a moment (a blank panel)
 or, with OpenGL, froze it while the backend started again. Options the
 running backend cannot follow (backend, vsync, damage, unredirection,
-fading, custom animations, `rules`) still reset it.
+fading, custom animations, `rules`) still reset it. A file written again
+with the same text does nothing; SIGUSR1 with nothing changed (sent by
+scripts, and by `tools/showcase.py` after a resize with software OpenGL,
+to have the screen drawn again, which upstream's reset did) gives every
+window its image again and repaints the whole screen, also without a
+reset.
 
 **One calm step.** A switch asked for with `_SDE_APPEARANCE_APPLY` (a
 client message to the owner of `_SDE_SESSION_S<screen>`, see

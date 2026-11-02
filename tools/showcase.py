@@ -598,8 +598,8 @@ class Session:
             # With the OpenGL compositor on the CPU (Mesa on Xvfb) a window
             # resized while its program is busy starting can stay on the
             # screen at its old size, the rest see-through, for a long time
-            # (0.2.0 Alpha 3 too; Liria): the compositor's reset (SIGUSR1,
-            # what sde-session's reload does) draws every window again.
+            # (0.2.0 Alpha 3 too; Liria): SIGUSR1 draws every window again
+            # (in place since 0.2.0 Alpha 3.1, without the reset).
             time.sleep(1.0)
             os.kill(self.compositor.pid, signal.SIGUSR1)
             time.sleep(1.0)
