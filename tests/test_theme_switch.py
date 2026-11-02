@@ -46,6 +46,17 @@ def check(ok, message):
     return ok
 
 
+def serves(server, number):
+    """Whether |server| (the Xvfb started here) is the one serving :number:
+    its lock file holds the server's PID. With a number already in use the
+    new server exits, and until it does a check would reach the other one."""
+    try:
+        pid = int(Path('/tmp/.X%d-lock' % number).read_text().strip())
+    except (OSError, ValueError):
+        return False
+    return pid == server.pid and server.poll() is None
+
+
 STUB_SIGNALS = r'''#!/usr/bin/env python3
 import os, signal, sys, time
 log = os.environ['STUB_LOG_DIR'] + '/' + os.path.basename(sys.argv[0]) + '.log'
@@ -106,7 +117,7 @@ class Session:
                 if server.poll() is not None:
                     break
                 if sp.run(['xprop', '-root', '-display', ':%d' % number], env=env,
-                          capture_output=True).returncode == 0:
+                          capture_output=True).returncode == 0 and serves(server, number):
                     self.server = server
                     break
                 time.sleep(0.05)

@@ -45,6 +45,17 @@ def check(ok, message):
     return ok
 
 
+def serves(server, number):
+    """Whether |server| (the Xvfb started here) is the one serving :number:
+    its lock file holds the server's PID. With a number already in use the
+    new server exits, and until it does a check would reach the other one."""
+    try:
+        pid = int(Path('/tmp/.X%d-lock' % number).read_text().strip())
+    except (OSError, ValueError):
+        return False
+    return pid == server.pid and server.poll() is None
+
+
 class Session:
     def __init__(self):
         self.temp = Path(tempfile.mkdtemp(prefix='appearance-ui-'))
@@ -76,7 +87,7 @@ class Session:
             for _ in range(100):
                 if server.poll() is not None:
                     break
-                if sp.run([xdotool, 'getmouselocation'], env=self.env, capture_output=True).returncode == 0:
+                if sp.run([xdotool, 'getmouselocation'], env=self.env, capture_output=True).returncode == 0 and serves(server, number):
                     self.server = server
                     break
                 time.sleep(0.05)
