@@ -594,16 +594,20 @@ class Session:
         y = wy + (wh - h - top - bottom) // 2 + top
         self.xdo('windowmove', wid, str(x), str(y))
         self.wait(lambda: (self.geom(wid)['x'], self.geom(wid)['y']) == (x, y), 2)
+        self.redraw_compositor()
+        self.window_settle(wid, quiet=0.4, timeout=4)
+
+    def redraw_compositor(self):
+        """With the OpenGL compositor on the CPU (Mesa on Xvfb) a window can
+        stay on the screen as it was for a long time: at its old size after
+        a resize while its program is busy starting, the rest see-through
+        (0.2.0 Alpha 3 too; Liria), or blank as before it first drew.
+        SIGUSR1 draws every window again (in place since 0.2.0 Alpha 3.1,
+        without the reset)."""
         if self.effects == 'full' and getattr(self, 'compositor', None) and self.compositor.poll() is None:
-            # With the OpenGL compositor on the CPU (Mesa on Xvfb) a window
-            # resized while its program is busy starting can stay on the
-            # screen at its old size, the rest see-through, for a long time
-            # (0.2.0 Alpha 3 too; Liria): SIGUSR1 draws every window again
-            # (in place since 0.2.0 Alpha 3.1, without the reset).
             time.sleep(1.0)
             os.kill(self.compositor.pid, signal.SIGUSR1)
             time.sleep(1.0)
-        self.window_settle(wid, quiet=0.4, timeout=4)
 
     def stop_scene_procs(self):
         """Ends the programs the scene started so far."""
@@ -2020,6 +2024,7 @@ def appearance_preview(s):
     if not s.control('Control Center', 'Apply the chosen look', 4):
         raise SkipShot('no Apply bar')
     s.park_pointer()
+    s.redraw_compositor()
     s.shot('appearance-chosen', quiet=0.6)
     if not s.run_ctx.selected(s.current, 'appearance-preview'):
         return
@@ -2029,6 +2034,7 @@ def appearance_preview(s):
     # Its GTK part (sde-theme-preview-gtk) when this build has it.
     s.control('Appearance Preview', '@gtk:embedded', 8)
     s.park_pointer()
+    s.redraw_compositor()
     s.shot('appearance-preview', quiet=0.8)
     s.press('Appearance Preview', 'Close the preview without applying')
     s.gone('^Appearance Preview$', 4)
