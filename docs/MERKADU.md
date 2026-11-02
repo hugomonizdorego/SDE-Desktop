@@ -529,8 +529,10 @@ and could hardly be closed. What was found and changed:
   swapped in at once; results reach the window in slices of 20 ms with
   drawing in between; an icon or a progress step redraws only what shows
   it; searches are debounced. The same measurement leaves one stall of
-  about 0.3 s at start, and 0.3 to 0.5 s when a click builds or draws a
-  large page (a fifth of a core is far slower than any real computer).
+  about 0.3 s at start, and 0.3 to 0.75 s when a click builds or draws a
+  large page or searches the 87,831 packages (a fifth of a core is far
+  slower than any real computer). At that speed the window is painted
+  about 0.6 s after it appears.
 - **Watching.** The window's thread beats every 100 ms; a watchdog thread
   logs every stall over 250 ms with what the window was doing ("merging the
   catalog", "drawing the window", "decoding a screenshot"), logs a stall
