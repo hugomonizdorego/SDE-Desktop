@@ -432,6 +432,23 @@ void qa_dump() {
           "\t0\t0\t0\t0\t1\t0\n";
   text += "@nav:back=" + std::to_string(g_back_stack.size()) + ",forward=" + std::to_string(g_forward_stack.size()) +
           "\t0\t0\t0\t0\t1\t0\n";
+  // The changes: "@job:3=running,42,downloading,pause+cancel" (state,
+  // percent, phase, what the user can do now).
+  for (const Job &j : st.jobs()) {
+    static const char *states[] = {"queued", "running", "paused", "done", "failed", "cancelled"};
+    static const char *phases[] = {"unknown", "waiting", "preparing", "downloading", "applying", "changing"};
+    std::string state = j.stopping == Job::Pausing      ? "pausing"
+                        : j.stopping == Job::Cancelling ? "cancelling"
+                                                        : states[int(j.state)];
+    JobControls c = job_controls(j);
+    std::string can = std::string(c.pause ? "pause+" : "") + (c.resume ? "resume+" : "") + (c.cancel ? "cancel+" : "");
+    can = can.empty() ? "none" : can.substr(0, can.size() - 1);
+    text += "@job:" + std::to_string(j.id) + "=" + state + "," + std::to_string(j.percent) + "," +
+            phases[int(j.phase)] + "," + can + "\t0\t0\t0\t0\t1\t0\n";
+    // Why it cannot be paused or cancelled now (shown next to the buttons).
+    if (j.active() && !c.why_not.empty())
+      text += "@why:" + std::to_string(j.id) + "=" + c.why_not + "\t0\t0\t0\t0\t1\t0\n";
+  }
   // The highlights carousel moves by itself: its parts as they are now.
   if (const Carousel *c = Carousel::live()) {
     text += "@carousel:" + Carousel::qa_state() + "\t0\t0\t0\t0\t1\t0\n";

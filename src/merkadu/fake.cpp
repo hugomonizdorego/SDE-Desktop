@@ -294,6 +294,7 @@ struct FakeJob {
   DoneFn done;
   double elapsed = 0;
   bool cancelled = false;
+  int reported = -2;  // the percentage last reported
 };
 
 class FakeBackend : public Backend {
@@ -494,15 +495,13 @@ class FakeBackend : public Backend {
         world().downloaded.erase(d);
       }
     }
-    if (world().hold >= 0 && fj->elapsed / world().seconds * 100 >= world().hold) {
-      // Held for a screenshot: the change stays where it is (still cancellable).
-      Fl::add_timeout(0.1, tick, arg.release());
-      return;
-    }
-    fj->elapsed += 0.1;
+    // Held for a screenshot (or a test of Pause): the change stays where it
+    // is, after saying where that is (a resumed change starts there).
+    bool held = world().hold >= 0 && fj->elapsed / world().seconds * 100 >= world().hold;
+    if (!held) fj->elapsed += 0.1;
     double f = std::min(1.0, fj->elapsed / world().seconds);
     Progress p;
-    p.percent = int(f * 100);
+    p.percent = int(f * 100 + 1e-6);
     bool downloading = fj->job.action != Action::Remove && f < kFakeDownload;
     // Debian: dpkg cannot be stopped; Flatpak and snapd undo what they did.
     p.phase = downloading ? JobPhase::Downloading
@@ -513,7 +512,12 @@ class FakeBackend : public Backend {
       p.status = _("Removing");
     else
       p.status = downloading ? _("Downloading") : fj->job.action == Action::Update ? _("Updating") : _("Installing");
-    fj->progress(p);
+    if (!held || fj->reported != p.percent) fj->progress(p);
+    fj->reported = p.percent;
+    if (held) {
+      Fl::add_timeout(0.1, tick, arg.release());
+      return;
+    }
     if (f < 1.0) {
       Fl::add_timeout(0.1, tick, arg.release());
       return;

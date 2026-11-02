@@ -390,6 +390,25 @@ def all_software(s):
                   'the marks were not cleared after Apply')
             check(s.wait_for(M, lambda l: l.startswith('@state:') and l.endswith(',jobs=0'), 15),
                   'the changes did not finish: %s' % s.qa(M)[:3])
+        # Each source its own list: Flatpak apps (the runtimes behind their
+        # filter), then the snaps.
+        s.click(wid, M, 'nav:packages')
+        s.wait_qa(M, '@page:packages', 5)
+        s.click(wid, M, 'chip:source:flatpak')
+        if check(s.wait_qa(M, 'pkg:org.example.lumen', 5), 'All Software: no Flatpak list: %s' % s.qa(M)[:1]):
+            pkgs = [k for k in s.controls(M) if k.startswith('pkg:')]
+            check('pkg:curl' not in pkgs and not any('runtime/' in k for k in pkgs),
+                  'All Software: the Flatpak list has packages or runtimes: %s' % pkgs[:8])
+            s.shot('merkadu-all-software-flatpak.png')
+            s.click(wid, M, 'chip:runtimes')
+            if check(s.wait_qa(M, 'section:runtimes', 5), 'All Software: the runtimes filter has no section'):
+                s.click(wid, M, 'section:runtimes')
+                check(s.wait_for(M, lambda l: l.startswith('pkg:') and 'runtime/org.gnome.Platform' in l, 5),
+                      'All Software: the runtimes filter shows no runtimes: %s' %
+                      [k for k in s.controls(M) if k.startswith('pkg:')][:8])
+        s.click(wid, M, 'chip:source:snap')
+        check(s.wait_for(M, lambda l: l.startswith('@page:packages:') and l.split('\t')[0].endswith('|snap'), 5),
+              'All Software: the Snap list did not open: %s' % s.qa(M)[:1])
         s.click(wid, M, 'Home')
         check(s.wait_qa(M, '@page:explore'), 'Home did not go home')
         # Updates: apps only, the system is the Software Updater's.
@@ -579,6 +598,78 @@ def highlights(s):
         stop(proc)
 
 
+def pause_cancel(s):
+    """Pause, Resume and Cancel on the progress page: a Flatpak that
+    downloads (held at 42 % by MERKADU_FAKE_HOLD) pauses, resumes where it
+    was and is cancelled; a change that waits is removed; a Debian change
+    that installs (held at 80 %) cannot be stopped, and the page says
+    why."""
+    M = 'Merkadu.txt'
+
+    def job(n):
+        line = s.wait_for(M, lambda l: l.startswith('@job:%d=' % n), 1)
+        return line.split('=', 1)[1] if line else ''
+
+    proc = s.start('--details', 'org.example.Lumen', env={'MERKADU_FAKE_HOLD': '42'})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'pause: the main window did not open'):
+            return
+        if not check(s.wait_qa(M, 'action:org.example.lumen:Install', 10), 'pause: Lumen has no Install'):
+            return
+        s.click(wid, M, 'action:org.example.lumen:Install')
+        line = s.wait_for(M, lambda l: l.startswith('@job:1=running,') and l.split('\t')[0].endswith(
+            ',downloading,pause+cancel') and int(l.split(',')[1]) >= 42, 10)
+        check(line, 'pause: the download cannot be paused: %s' % job(1))
+        held = line.split(',')[1] if line else '?'  # where the change stands
+        # A second change waits behind it.
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'type', '--delay', '40', 'quill')
+        s.key(wid, 'Return')
+        s.wait_qa(M, 'app:org.example.quill', 5)
+        s.click(wid, M, 'app:org.example.quill')
+        if s.wait_qa(M, 'action:org.example.quill:Install', 5):
+            s.click(wid, M, 'action:org.example.quill:Install')
+        check(s.wait_for(M, lambda l: l.startswith('@job:2=queued'), 5), 'pause: Quill is not queued: %s' % job(2))
+        s.click(wid, M, 'nav:progress')
+        if not check(s.wait_qa(M, '@page:progress', 5), 'pause: no progress page'):
+            return
+        c = s.controls(M)
+        check('action:pause:1' in c and 'action:cancel:1' in c and 'action:cancel:2' in c,
+              'pause: the progress page has no Pause or Cancel: %s' % [k for k in c if k.startswith('action')])
+        s.shot('merkadu-pause-cancel.png')
+        s.click(wid, M, 'action:cancel:2')
+        check(s.wait_for(M, lambda l: l.startswith('@job:2=cancelled'), 5), 'pause: the waiting change was not '
+              'removed: %s' % job(2))
+        s.click(wid, M, 'action:pause:1')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=paused,%s,' % held) and 'resume' in l, 5),
+              'pause: Pause did not pause: %s' % job(1))
+        # Resumed, it continues with what it downloaded.
+        s.click(wid, M, 'action:pause:1')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=running,%s,downloading' % held), 5),
+              'pause: Resume did not continue from %s %%: %s' % (held, job(1)))
+        s.click(wid, M, 'action:cancel:1')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=cancelled'), 5), 'pause: Cancel did not cancel: %s' %
+              job(1))
+        s.key(wid, 'ctrl+q')
+        check(wait_exit(proc) == 0, 'pause: Ctrl+Q did not quit after the changes ended')
+    finally:
+        stop(proc)
+    proc = s.start('--details', 'org.example.Atlas', env={'MERKADU_FAKE_HOLD': '80'})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid and s.wait_qa(M, 'action:org.example.atlas:Install', 10), 'pause: Atlas has no Install'):
+            return
+        s.click(wid, M, 'action:org.example.atlas:Install')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=running,') and l.split('\t')[0].endswith(',changing,none'),
+                         10), 'pause: a Debian change can be stopped while it installs: %s' % job(1))
+        check(s.wait_for(M, lambda l: l.startswith('@why:1=') and 'half changed' in l, 3),
+              'pause: the page does not say why it cannot stop')
+    finally:
+        stop(proc)
+
+
 def answer_dialog(s, main, key='Return', timeout=5.0):
     """Presses |key| in the dialog (a window that is not |main|)."""
     end = time.time() + timeout
@@ -692,6 +783,7 @@ try:
     empty_catalog(screen)
     highlights(screen)
     snap_support(screen)
+    pause_cancel(screen)
     uninstall_cases(screen)
     problems(screen)
 finally:
