@@ -22,7 +22,9 @@ maximized, tiled by the window manager or dragged at a border.
   keep the usual margins, and rows put their control under their label when
   there is no room beside it.
 - The sidebar's header (the logo and "Control Center") and its footer
-  ("Saved automatically", when the window is tall enough) stay in view;
+  ("Saved automatically", or "Appearance not applied yet" while a look
+  chosen in Appearance waits for Apply; when the window is tall enough)
+  stay in view;
   only the list of pages scrolls, as little as is needed to show the
   current page. After a resize the list scrolls back as far as the current
   page allows, and the page keeps its place or ends at its last card.
@@ -71,6 +73,75 @@ keeps Automatic instead of turning it into 100 %.
   a new size at once, the Control Center and Display Settings start again
   with it; other SDE programs use it when they next start, and GTK
   applications follow XSETTINGS (some only once reopened).
+
+## Appearance: choose, preview, apply (0.2.0 Alpha 3.1)
+
+The look of the desktop is chosen first and applied together, instead of
+switching the whole desktop at every click:
+
+- **Theme** (family, **Mode**, **Accent color**) and everything in
+  **Transparency and clarity** (the levels Off, Subtle, Clear and Glass, the
+  **Transparency** slider, translucent surfaces, blur and its strength,
+  rounded corners, animations) only change the *chosen look*. The page shows
+  it in a live miniature over your wallpaper (a window frame, a menu, quick
+  settings and the panel, with the opacity, blur or Liquid Glass they will
+  have), marks the family **In use**, and the notes say which GTK and SDE WM
+  theme Apply switches to. Dragging the slider changes only the miniature
+  and the preview: nothing is written and nothing reloads.
+- While the chosen look differs from the one in use, a bar along the bottom
+  says **Not applied yet** with a summary ("SDE Fluent · Dark · Teal ·
+  Transparency 50 %") and has **Preview**, **Revert** and **Apply**
+  (Ctrl+Enter); the sidebar's footer says **Appearance not applied yet**.
+  **Revert** returns to the look in use.
+- **Apply** writes the look to `sde.conf` and asks the session for one calm
+  switch (`docs/THEMES.md`, "Switching themes"); without a session it applies
+  at once. The Control Center itself changes when the session announces the
+  new look, behind the session's picture of the screen. Changes made
+  elsewhere (the panel's dark mode, the automatic mode at 07:00 and 19:00)
+  reach the page too; a look chosen meanwhile stays chosen.
+- **Interface size**, **Text size**, **Icons** and the **Wallpaper** still
+  apply at once: they are not part of the theme, each has its own preview on
+  the page (the icon cards, the wallpaper tiles), and the size restarts the
+  Control Center anyway.
+
+**Preview** opens a window over the desktop (`sde-settings --theme-preview
+LOOK`, started by the Control Center) that shows the chosen look for real
+before anything system-wide changes:
+
+- a picture of the screen behind the window (taken as it opens, following
+  the window when it is moved), with the panel, a quick settings popup and a
+  window frame drawn in the chosen look, with its transparency, blur or
+  Liquid Glass over your own wallpaper and windows (Liquid Glass keeps text
+  readable as the compositor's shader does);
+- real SDE widgets (switches, a slider, buttons, an SDE menu) drawn by
+  SDE-FLTK with the chosen theme;
+- real GTK 3 widgets (a view switcher, a search field, a list with a
+  selection, a check button, a switch, a slider, buttons and a menu button)
+  from `sde-theme-preview-gtk`, a GTK helper embedded with XEmbed that uses
+  the chosen GTK theme, icon theme and CSS for itself only: nothing in your
+  settings changes;
+- its own **Transparency** slider (the Control Center's follows it),
+  **Cancel** (Escape; closes the preview and keeps the choice) and
+  **Apply** (Enter).
+
+Without a compositor (Effects > Compositor off) the preview shows the
+surfaces opaque, as they will be.
+
+Names for keyboard and screen reader users (the tooltips, also used by the
+UI tests): the theme cards ("SDE Fluent: Cool slate grays, ..."), "Light
+mode", "Dark mode", "Automatic mode: ...", "Transparency: Glass",
+"Transparency level", "Accent color: Teal", "Preview the chosen look",
+"Revert to the look in use", "Apply the chosen look", and in the preview
+"Apply this look" and "Close the preview without applying".
+
+Tests: `tests/test_appearance.cpp` (CTest `sde-appearance-model`: the look in
+use and the chosen one, the files a switch writes), `tests/test_appearance_ui.py`
+(`sde-appearance-ui`: choosing, Preview with its GTK part, the preview's
+slider, Cancel, Revert, Apply and Ctrl+Enter on Xvfb) and
+`tests/test_theme_switch.py` (`sde-theme-switch`: the session's side).
+The QA dump (`SDE_PANEL_QA_DIR`) lists the looks as `@appearance-applied`,
+`@appearance-pending` and `@appearance-preview` lines, and the preview
+writes `Appearance-Preview.txt`.
 
 ## User accounts (Users & Avatar)
 

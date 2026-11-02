@@ -29,6 +29,7 @@
 #include "tray_icons.h"
 #include "i18n.h"
 #include "icons.h"
+#include "integration.h"
 #include "menu.h"
 #include "menu_perf.h"
 #include "notify_center.h"
@@ -457,10 +458,8 @@ void Panel::search_changed() {
 }
 void Panel::toggle_dark_mode() {
   cfg_.set("appearance", "theme", theme_.dark ? "light" : "dark");
-  if (cfg_.save()) {
-    if (sync_openbox(cfg_)) reconfigure_window_manager();
-    x11::notify_config_changed();
-  }
+  // One calm switch through the session, like Apply in the Control Center.
+  if (cfg_.save()) apply_appearance(fl_display, cfg_);
 }
 
 // ---------------------------------------------------------------- pinning

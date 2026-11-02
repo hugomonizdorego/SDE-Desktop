@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "integration.h"
 
+#include <FL/x.H>
+#include <X11/Xatom.h>
 #include <gio/gio.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -20,6 +22,7 @@
 #include "suite.h"
 #include "theme.h"
 #include "util.h"
+#include "wm.h"
 namespace sde {
 namespace {
 // The directory of an installed GTK theme, or "".
@@ -33,10 +36,11 @@ std::string theme_path(const std::string &name) {
 }
 bool theme_installed(const std::string &name) { return !theme_path(name).empty(); }
 
-std::string rgba(const Color &c, double alpha) {
+// The menu background of the GTK theme in use (@sde_menu, defined by every
+// SDE theme) with |alpha|: it follows the theme in running applications.
+std::string gtk_menu_background(double alpha) {
   char buf[64];
-  snprintf(buf, sizeof buf, "rgba(%d, %d, %d, %.2f)", int(std::lround(c.r * 255)),
-           int(std::lround(c.g * 255)), int(std::lround(c.b * 255)), alpha);
+  snprintf(buf, sizeof buf, "alpha(@sde_menu, %.2f)", alpha);
   return buf;
 }
 
@@ -80,7 +84,55 @@ std::string gtk_icon_theme_name(const Config &cfg, bool dark) {
   return resolve_icon_theme(cfg.get("appearance", "icon_theme", "auto"), dark);
 }
 
-void sync_gtk_settings(const Config &cfg) {
+std::string gtk_user_css(const Config &cfg, int gtk_major) {
+  Theme t = Theme::from_config(cfg);
+  bool system = cfg.get("suite", "gtk_theme", "auto") == "system";
+  std::string gtk_theme = gtk_theme_name(cfg);
+  bool sde_theme = starts_with(gtk_theme, "SDE-");
+  // The SDE themes carry the accent themselves. The user's CSS gets a
+  // custom accent color, and in GTK 4 the theme's libadwaita colors, so
+  // libadwaita applications (which ignore gtk-theme-name) match as well.
+  //
+  // GTK reads these files once, when an application starts, while a new
+  // theme reaches running applications over XSETTINGS (0.2.0 Alpha 3.1).
+  // So the block names the theme's colors (@sde_menu) instead of copying
+  // them and defines the accent only when it is a color of the user's own:
+  // after a switch from light to dark, running GTK 3 applications kept the
+  // light menu background of the old block under the new theme's light text,
+  // and the old accent on focus rings, links and selections.
+  std::string block3, block4;
+  if (!system && sde_theme) {
+    ThemeChoice c = theme_choice(cfg);
+    std::string defs;
+    if (!c.custom_accent.empty())
+      defs += "@define-color sde_accent " + t.accent.to_hex() + ";\n"
+              "@define-color theme_selected_bg_color " + t.accent.to_hex() + ";\n"
+              "@define-color accent_bg_color " + t.accent.to_hex() + ";\n"
+              "@define-color accent_color " + t.accent_text.to_hex() + ";\n"
+              "@define-color accent_fg_color " + t.on_accent.to_hex() + ";\n";
+    block3 = defs;
+    std::string lib = theme_path(gtk_theme) + "/libadwaita/gtk.css";
+    if (cfg.get_bool("suite", "libadwaita", true) && file_exists(lib))
+      block4 = "@import url(\"file://" + lib + "\");\n";
+    block4 += defs;
+    // Transparency (Control Center > Appearance): menus and popovers get a
+    // translucent background while their text stays opaque; the compositor
+    // blurs what is behind. GTK marks windows .csd only while a compositor
+    // runs, so without one everything stays opaque.
+    if (t.gtk_menu_alpha < 0.999) {
+      std::string menu = gtk_menu_background(t.gtk_menu_alpha);
+      block3 += "/* transparency " + std::to_string(t.transparency) + " */\n"
+                ".csd menu, .csd .menu, .csd .context-menu { background-color: " + menu + "; }\n"
+                "window.csd.popup.background { background-color: transparent; }\n"
+                ".csd popover.background { background-color: " + menu + "; }\n";
+      block4 += "/* transparency " + std::to_string(t.transparency) + " */\n"
+                "window.csd popover > contents, window.csd popover > arrow { background-color: " + menu + "; }\n";
+    }
+  }
+  return gtk_major == 4 ? block4 : block3;
+}
+
+bool sync_gtk_settings(const Config &cfg) {
   Theme t = Theme::from_config(cfg);
   int dpi = int(std::lround(96 * t.scale * 1024));
   bool dark = t.dark;
@@ -90,7 +142,6 @@ void sync_gtk_settings(const Config &cfg) {
   std::string icons = gtk_icon_theme_name(cfg, dark);
   std::string cursor = cfg.get("appearance", "cursor_theme", "Adwaita");
   std::string gtk_theme = gtk_theme_name(cfg);
-  bool sde_theme = starts_with(gtk_theme, "SDE-");
   std::string layout = theme_decoration_layout(t.family);
   for (const char *version : {"gtk-3.0", "gtk-4.0"}) {
     std::string dir = config_home() + "/" + version;
@@ -115,37 +166,7 @@ void sync_gtk_settings(const Config &cfg) {
     }
     g_key_file_unref(file);
   }
-  // The SDE themes carry the accent themselves. The user's CSS gets a
-  // custom accent color, and in GTK 4 the theme's libadwaita colors, so
-  // libadwaita applications (which ignore gtk-theme-name) match as well.
-  std::string block3, block4;
-  if (!system && sde_theme) {
-    ThemeChoice c = theme_choice(cfg);
-    std::string defs = "@define-color sde_accent " + t.accent.to_hex() + ";\n";
-    if (!c.custom_accent.empty())
-      defs += "@define-color theme_selected_bg_color " + t.accent.to_hex() + ";\n"
-              "@define-color accent_bg_color " + t.accent.to_hex() + ";\n"
-              "@define-color accent_color " + t.accent_text.to_hex() + ";\n"
-              "@define-color accent_fg_color " + t.on_accent.to_hex() + ";\n";
-    block3 = defs;
-    std::string lib = theme_path(gtk_theme) + "/libadwaita/gtk.css";
-    if (cfg.get_bool("suite", "libadwaita", true) && file_exists(lib))
-      block4 = "@import url(\"file://" + lib + "\");\n";
-    block4 += defs;
-    // Transparency (Control Center > Appearance): menus and popovers get a
-    // translucent background while their text stays opaque; the compositor
-    // blurs what is behind. GTK marks windows .csd only while a compositor
-    // runs, so without one everything stays opaque.
-    if (t.gtk_menu_alpha < 0.999) {
-      std::string menu = rgba(t.menu_bg, t.gtk_menu_alpha);
-      block3 += "/* transparency " + std::to_string(t.transparency) + " */\n"
-                ".csd menu, .csd .menu, .csd .context-menu { background-color: " + menu + "; }\n"
-                "window.csd.popup.background { background-color: transparent; }\n"
-                ".csd popover.background { background-color: " + menu + "; }\n";
-      block4 += "/* transparency " + std::to_string(t.transparency) + " */\n"
-                "window.csd popover > contents, window.csd popover > arrow { background-color: " + menu + "; }\n";
-    }
-  }
+  std::string block3 = gtk_user_css(cfg, 3), block4 = gtk_user_css(cfg, 4);
   write_user_css(config_home() + "/gtk-3.0/gtk.css", block3);
   write_user_css(config_home() + "/gtk-4.0/gtk.css", block4);
   // X11 GTK clients use XSETTINGS; the session supervises one xsettingsd.
@@ -166,20 +187,20 @@ void sync_gtk_settings(const Config &cfg) {
   text += "Xft/DPI " + std::to_string(dpi) + "\n";
   make_dirs(config_home() + "/sde");
   std::string old_text, xsettings = config_home() + "/sde/xsettingsd.conf";
-  if (!read_file(xsettings, old_text) || old_text != text) {
-    write_file_atomic(xsettings, text);
-    // xsettingsd re-reads its file on SIGHUP, so open GTK windows follow the
-    // new theme, icons and fonts immediately instead of at the next login.
-    if (!env("DISPLAY").empty())
-      for (const char *daemon : {"sde-xsettingsd", "xsettingsd"})
-        spawn_detached({"pkill", "-HUP", "-u", std::to_string(getuid()), "-x", daemon});
-  }
+  // xsettingsd re-reads its file on SIGHUP, so open GTK windows follow the
+  // new theme, icons and fonts immediately; the caller tells it (the session
+  // or deliver_appearance()), so that it hears of a change exactly once.
+  bool changed = !read_file(xsettings, old_text) || old_text != text;
+  if (changed) write_file_atomic(xsettings, text);
   GSettingsSchemaSource *source = g_settings_schema_source_get_default();
   GSettingsSchema *schema =
       source ? g_settings_schema_source_lookup(source, "org.gnome.desktop.interface", TRUE)
              : nullptr;
   if (schema) {
     GSettings *settings = g_settings_new_full(schema, nullptr, nullptr);
+    // One change of all keys: GTK 4, libadwaita and the portal restyle once
+    // instead of once per key (color scheme, theme, accent, icons).
+    g_settings_delay(settings);
     auto set = [&](const char *key, const std::string &value) {
       if (g_settings_schema_has_key(schema, key) && g_settings_is_writable(settings, key)) {
         gchar *now = g_settings_get_string(settings, key);
@@ -203,9 +224,14 @@ void sync_gtk_settings(const Config &cfg) {
     }
     set("icon-theme", icons);
     set("cursor-theme", cursor);
+    if (g_settings_get_has_unapplied(settings)) {
+      g_settings_apply(settings);
+      g_settings_sync();  // written before short-lived callers exit
+    }
     g_object_unref(settings);
     g_settings_schema_unref(schema);
   }
+  return changed;
 }
 static bool has_drm_device() {
   for (const char *dev : {"/dev/dri/renderD128", "/dev/dri/card0", "/dev/dri/card1"})
@@ -592,6 +618,9 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
          "no-fading-openclose = false;\n";
   else
     c += "fading = false;\n";
+  // sde-session's picture of the screen during a theme switch (0.2.0 Alpha
+  // 3.1) appears at once and fades out by its own opacity steps.
+  if (motion) c += "fade-exclude = [\"_SDE_CURTAIN@\"];\n";
   // Window corners follow the family: Fluent 8, Graphite 10, Liquid Glass 16.
   c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
   // SDE's own surfaces (x11::set_surface()) are rounded with the radius they
@@ -672,18 +701,182 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   return path;
 }
 
-void reload_compositor() {
-  // picom re-reads its configuration file on SIGUSR1.
-  spawn_detached({"pkill", "-USR1", "-u", std::to_string(getuid()), "-x", "sde-compositor"});
+namespace {
+Display *display_or_fltk(Display *dpy) { return dpy ? dpy : fl_display; }
+
+// The name of process |pid| when it runs as this user, else "".
+std::string own_process_name(pid_t pid) {
+  struct stat st {};
+  if (pid <= 1 || stat(("/proc/" + std::to_string(pid)).c_str(), &st) != 0 || st.st_uid != getuid())
+    return "";
+  std::string comm;
+  read_file("/proc/" + std::to_string(pid) + "/comm", comm);
+  return trim(comm);
+}
+
+int ignore_x_errors(Display *, XErrorEvent *) { return 0; }
+
+// The cardinal property |name| of |w| (or -1).
+long window_cardinal(Display *dpy, Window w, const char *name) {
+  Atom actual;
+  int format = 0;
+  unsigned long n = 0, after = 0;
+  unsigned char *data = nullptr;
+  long value = -1;
+  XErrorHandler old = XSetErrorHandler(ignore_x_errors);
+  if (XGetWindowProperty(dpy, w, XInternAtom(dpy, name, False), 0, 1, False, XA_CARDINAL, &actual,
+                         &format, &n, &after, &data) == Success && data) {
+    if (n == 1 && format == 32) value = reinterpret_cast<long *>(data)[0];
+    XFree(data);
+  }
+  XSync(dpy, False);
+  XSetErrorHandler(old);
+  return value;
+}
+
+// The session's pid file (sde-session writes it for --logout and --compositor).
+pid_t session_pid() {
+  std::string text;
+  if (!read_file(runtime_dir() + "/sde-session-" + env("DISPLAY") + ".pid", text)) return 0;
+  pid_t pid = pid_t(atol(text.c_str()));
+  return own_process_name(pid) == "sde-session" ? pid : 0;
+}
+
+void signal_selection_owner(Display *dpy, const std::string &selection, const std::string &programs,
+                            int sig) {
+  if (!dpy) return;
+  if (pid_t pid = selection_owner_pid(dpy, selection, programs)) kill(pid, sig);
+}
+}  // namespace
+
+pid_t selection_owner_pid(Display *dpy, const std::string &name, const std::string &programs) {
+  if (!dpy) return 0;
+  Window owner = XGetSelectionOwner(dpy, XInternAtom(dpy, name.c_str(), False));
+  if (owner == None) return 0;
+  long pid = window_cardinal(dpy, owner, "_NET_WM_PID");
+  if (pid <= 1) return 0;
+  std::string comm = own_process_name(pid_t(pid));
+  for (const auto &p : split(programs, '|'))
+    if (!comm.empty() && comm == p) return pid_t(pid);
+  return 0;
+}
+
+void reload_compositor(Display *dpy) {
+  // The compositor of this display only (picom names its selection window
+  // with its pid); SDE's compositor reloads in place on SIGUSR1.
+  dpy = display_or_fltk(dpy);
+  signal_selection_owner(dpy, "_NET_WM_CM_S" + std::to_string(DefaultScreen(dpy)), "sde-compositor|picom",
+                         SIGUSR1);
 }
 
 void restart_compositor_now() {
-  // Sessions started before alpha12 end on SIGUSR2; they only get a reload.
-  if (env("SDE_SESSION_VERSION") != SDE_VERSION) {
+  // The session of this display (its pid file), not every session of the
+  // user. Sessions started before alpha12 end on SIGUSR2; they only get a
+  // reload.
+  pid_t pid = session_pid();
+  if (env("SDE_SESSION_VERSION") != SDE_VERSION || pid <= 0) {
     reload_compositor();
     return;
   }
-  spawn_detached({"pkill", "-USR2", "-u", std::to_string(getuid()), "-x", "sde-session"});
+  kill(pid, SIGUSR2);
+}
+
+std::string compositor_inputs(const Config &cfg) {
+  if (compositor_backend(cfg).empty()) return "";
+  std::string text, part;
+  for (const char *name : {"/sde/aero-compositor.conf", "/sde/aero-compositor-xrender.conf",
+                           "/sde/liquid-glass.glsl", "/sde/liquid-glass-top.glsl", "/sde/liquid-glass-bottom.glsl"})
+    if (read_file(config_home() + name, part)) text += std::string(name) + "\n" + part + "\n";
+  return text;
+}
+
+AppearanceFiles write_appearance_files(const Config &cfg) {
+  AppearanceFiles out;
+  out.gtk = sync_gtk_settings(cfg);
+  out.wm = sync_openbox(cfg);
+  if (!compositor_backend(cfg).empty()) {
+    std::string before = compositor_inputs(cfg);
+    // The XRender configuration in case OpenGL fails, unless it is the one
+    // in use anyway: with XRender chosen both are the same file, and the
+    // fallback's lite effects overwrote the chosen ones (up to 0.2.0 Alpha
+    // 3 every settings change turned blur off for XRender users).
+    if (write_compositor_config(cfg).find("-xrender.conf") == std::string::npos) write_compositor_config(cfg, true);
+    out.compositor = compositor_inputs(cfg) != before;
+  }
+  return out;
+}
+
+void deliver_appearance(Display *dpy, const AppearanceFiles &changed) {
+  dpy = display_or_fltk(dpy);
+  if (!dpy) return;
+  std::string screen = std::to_string(DefaultScreen(dpy));
+  if (changed.gtk) signal_selection_owner(dpy, "_XSETTINGS_S" + screen, "sde-xsettingsd|xsettingsd", SIGHUP);
+  if (changed.wm) reconfigure_window_manager(dpy);
+  if (changed.compositor) reload_compositor(dpy);
+  XFlush(dpy);
+}
+
+long request_appearance_apply(Display *dpy) {
+  dpy = display_or_fltk(dpy);
+  if (!dpy) return 0;
+  Window session =
+      XGetSelectionOwner(dpy, XInternAtom(dpy, ("_SDE_SESSION_S" + std::to_string(DefaultScreen(dpy))).c_str(), False));
+  if (session == None) return 0;
+  static long counter = 0;
+  long request = ((long(getpid()) & 0x7FFF) << 16) | (++counter & 0xFFFF);
+  XClientMessageEvent m{};
+  m.type = ClientMessage;
+  m.window = session;
+  m.message_type = XInternAtom(dpy, "_SDE_APPEARANCE_APPLY", False);
+  m.format = 32;
+  m.data.l[0] = request;
+  XErrorHandler old = XSetErrorHandler(ignore_x_errors);
+  XSendEvent(dpy, session, False, NoEventMask, reinterpret_cast<XEvent *>(&m));
+  XSync(dpy, False);
+  XSetErrorHandler(old);
+  return request;
+}
+
+namespace {
+// Tells the programs what changed and bumps _SDE_CONFIG_SERIAL.
+void apply_appearance_announce(Display *dpy, const AppearanceFiles &changed) {
+  deliver_appearance(dpy, changed);
+  if (!dpy) return;
+  // _SDE_CONFIG_SERIAL, as x11::notify_config_changed() bumps it.
+  Window root = DefaultRootWindow(dpy);
+  long serial = window_cardinal(dpy, root, "_SDE_CONFIG_SERIAL");
+  serial = serial < 0 ? 1 : serial + 1;
+  XChangeProperty(dpy, root, XInternAtom(dpy, "_SDE_CONFIG_SERIAL", False), XA_CARDINAL, 32, PropModeReplace,
+                  reinterpret_cast<unsigned char *>(&serial), 1);
+  XSync(dpy, False);
+}
+}  // namespace
+
+void apply_appearance_now(Display *dpy, const Config &cfg) {
+  dpy = display_or_fltk(dpy);
+  apply_appearance_announce(dpy, write_appearance_files(cfg));
+}
+
+bool apply_appearance(Display *dpy, const Config &cfg) {
+  if (request_appearance_apply(dpy)) return true;
+  apply_appearance_now(dpy, cfg);
+  return false;
+}
+
+bool session_coordinates(Display *dpy) {
+  dpy = display_or_fltk(dpy);
+  return dpy && XGetSelectionOwner(dpy, XInternAtom(dpy, ("_SDE_SESSION_S" + std::to_string(DefaultScreen(dpy))).c_str(),
+                                                    False)) != None;
+}
+
+void announce_config_change(Display *dpy, const Config &cfg) {
+  dpy = display_or_fltk(dpy);
+  AppearanceFiles changed = write_appearance_files(cfg);
+  if (session_coordinates(dpy)) {
+    // The session delivers when it sees the announcement.
+    changed = AppearanceFiles();
+  }
+  apply_appearance_announce(dpy, changed);
 }
 
 std::string compositor_report(const Config &cfg) {

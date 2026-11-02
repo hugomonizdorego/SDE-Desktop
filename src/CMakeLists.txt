@@ -55,6 +55,13 @@ endif()
 # theme and window manager helpers with the other programs.
 add_executable(sde-session session/main.cpp)
 target_link_libraries(sde-session PRIVATE sde-common)
+# Theme switches (0.2.0 Alpha 3.1): the session holds its picture of the
+# screen until the windows behind it have redrawn (XDamage).
+pkg_check_modules(XDAMAGE IMPORTED_TARGET xdamage)
+if(XDAMAGE_FOUND)
+  target_compile_definitions(sde-session PRIVATE SDE_HAVE_XDAMAGE=1)
+  target_link_libraries(sde-session PRIVATE PkgConfig::XDAMAGE)
+endif()
 
 add_executable(sde-panel
   panel/main.cpp
@@ -145,6 +152,17 @@ target_include_directories(sde-settings-model PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 pkg_check_modules(LIBCRYPT REQUIRED IMPORTED_TARGET libcrypt)
 target_link_libraries(sde-settings-model PUBLIC sde-gallery-core sde-common PkgConfig::LIBCRYPT)
 target_link_libraries(sde-settings PRIVATE sde-settings-model sde-common)
+# Appearance (0.2.0 Alpha 3.1): the chosen and the applied look (unit
+# tested), and the Preview window (sde-settings --theme-preview) with its GTK
+# part, a GTK 3 helper embedded with XEmbed (built when GTK 3 is found).
+target_sources(sde-settings-model PRIVATE settings/appearance_draft.cpp)
+target_sources(sde-settings PRIVATE settings/theme_preview.cpp)
+pkg_check_modules(GTK3 IMPORTED_TARGET gtk+-3.0)
+if(GTK3_FOUND)
+  add_executable(sde-theme-preview-gtk settings/theme_preview_gtk.cpp)
+  target_link_libraries(sde-theme-preview-gtk PRIVATE PkgConfig::GTK3)
+  install(TARGETS sde-theme-preview-gtk RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+endif()
 
 add_executable(sde-run run/main.cpp)
 target_link_libraries(sde-run PRIVATE sde-common)

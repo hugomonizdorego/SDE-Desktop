@@ -309,3 +309,84 @@ icon_theme=auto     # or a theme directory name, e.g. Papirus-Dark, Adwaita
   parents depth first, then Adwaita, AdwaitaLegacy and hicolor, then
   `/usr/share/pixmaps`. Scaled directories (`Scale=2`) count with their
   pixel size. `tests/fixtures/icon-themes` exercises this.
+
+## Switching themes (0.2.0 Alpha 3.1)
+
+A new look (Control Center > Appearance > Apply, the panel's dark mode,
+`sde-session --apply-appearance`, the automatic mode at 07:00 and 19:00)
+reaches every program in one calm step.
+
+**Who tells whom.** Everything derived from `sde.conf` is written first
+(`write_appearance_files()` in `src/common/integration.cpp`: GTK
+`settings.ini` and the managed `gtk.css` block, the GSettings keys in one
+change, `~/.config/sde/xsettingsd.conf`, SDE WM's `rc.xml`, the compositor
+configurations and their shaders). Then the session is the only one that
+tells its programs, each once and only when its input changed since it last
+read it: `sde-xsettingsd` gets SIGHUP (it publishes nothing when the file did
+not change), SDE WM gets its `_OB_CONTROL` reconfigure message, the
+compositor gets SIGUSR1, and SDE programs follow `_SDE_CONFIG_SERIAL`, which
+the session bumps once. An accent changes GTK and the window frames only:
+the compositor's configuration stays the same and it is not told. Without a
+session, programs use `deliver_appearance()`, which finds this display's
+daemons by their selections (`_XSETTINGS_S<n>`, `_NET_WM_CM_S<n>`,
+`_NET_WM_PID`). Nothing runs `pkill` any more: up to 0.2.0 Alpha 3 the
+Control Center and the session signalled every compositor, xsettingsd and
+session of the user, also those of other displays.
+
+**The compositor reloads in place.** SDE Compositor's patch
+`suite/patches/sde-compositor/0003-live-configuration-reload.patch` makes
+SIGUSR1 and changes of its configuration file reload the configuration
+30 ms later (so the signal and the file watch give one reload) without
+resetting picom: the windows, the redirection and the backend stay; the
+options, window rules, shaders (kept compiled when unchanged), blur and
+shadows (made again only when they changed) are replaced and the next frame
+repaints the screen once. Upstream picom resets the whole session instead,
+which showed the screen without compositing for a moment (a blank panel)
+or, with OpenGL, froze it while the backend started again. Options the
+running backend cannot follow (backend, vsync, damage, unredirection,
+fading, custom animations, `rules`) still reset it. A file written again
+with the same text does nothing; SIGUSR1 with nothing changed (sent by
+scripts, and by `tools/showcase.py` after a resize with software OpenGL,
+to have the screen drawn again, which upstream's reset did) gives every
+window its image again and repaints the whole screen, also without a
+reset.
+
+**One calm step.** A switch asked for with `_SDE_APPEARANCE_APPLY` (a
+client message to the owner of `_SDE_SESSION_S<screen>`, see
+`request_appearance_apply()`) happens behind a picture of the screen: the
+session copies the screen into an override-redirect window (input passes
+through it; just below opaque, so the compositor keeps compositing; excluded
+from fading by the generated configuration, `_SDE_CURTAIN`), publishes the
+new look behind it, holds it until the windows have redrawn (XDamage: no
+window repainted at least half of itself for 0.18 s, at least 0.25 s, at most
+1.6 s; GTK 3 restyles in two visible steps 0.2 to 0.9 s apart, which nothing
+outside GTK can merge) and fades it out in 0.22 s (without a compositor or
+with animations off it simply goes). `_SDE_APPEARANCE_DONE` on the session's
+window then holds the request's number. `SDE_THEME_SWITCH=instant` switches
+without the picture, `SDE_THEME_SWITCH_DEBUG=1` logs the redraws and the
+compositor lines that changed.
+
+**GTK.** GTK reads `~/.config/gtk-3.0/gtk.css` and `gtk-4.0/gtk.css` only
+when an application starts, while the theme itself reaches running
+applications over XSETTINGS. The managed block therefore holds no color
+copied from the theme (translucent GTK menus would name `@sde_menu`; since
+0.2.0 Alpha 3.1 the compositor makes GTK 3 menus translucent instead, so a
+new transparency level reaches them at once) and defines the accent only
+for a color of your own: after a switch from light to dark, running GTK 3
+applications had kept the old light menu background under the new light
+text. A custom accent reaches running GTK applications when they start
+again; libadwaita applications get the dark preference and the accent at
+once (GSettings, the portal) and the theme's libadwaita colors when they
+start again.
+
+Measured on Xvfb (1366x768, sde-session with SDE WM, SDE Compositor, panel,
+desktop, gtk3-widget-factory, Calculator and the Control Center; 30 fps
+captures with ffmpeg x11grab, `SDE_GRAPHICS=hardware`): switching from SDE
+Graphite to SDE Fluent took seven separate visible changes over 1.1 s with
+XRender, with a frame of blank panel during the compositor's reset and up to
+1.9 % of the screen showing neither the old nor the new look; with Mesa's
+software OpenGL the compositor was reset twice and the screen froze 2.7 s,
+then jumped. Now the screen stays as it was until it fades to the new look
+(with XRender at most 0.01 % of the screen shows anything else, with
+software OpenGL the switch is a single frame), the compositor keeps its
+process, and an accent change does not touch it.

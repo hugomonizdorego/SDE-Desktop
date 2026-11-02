@@ -2,6 +2,7 @@
 #include "wm.h"
 
 #include <FL/Fl.H>
+#include <FL/x.H>
 
 #include <algorithm>
 #include <iterator>
@@ -143,8 +144,24 @@ std::vector<std::string> window_manager_command(const std::string &configured) {
   return split_command(wm);
 }
 
-void reconfigure_window_manager() {
-  if (!find_program("sde-wm").empty()) spawn_detached({"sde-wm", "--reconfigure"});
+void reconfigure_window_manager(Display *dpy) {
+  if (!dpy) dpy = fl_display;
+  if (!dpy) {
+    if (!find_program("sde-wm").empty()) spawn_detached({"sde-wm", "--reconfigure"});
+    return;
+  }
+  // What "sde-wm --reconfigure" sends (_OB_CONTROL 1 on the root window),
+  // without starting a process for it: the window manager of this display
+  // reloads rc.xml and the theme once.
+  Window root = DefaultRootWindow(dpy);
+  XEvent e{};
+  e.xclient.type = ClientMessage;
+  e.xclient.window = root;
+  e.xclient.message_type = XInternAtom(dpy, "_OB_CONTROL", False);
+  e.xclient.format = 32;
+  e.xclient.data.l[0] = 1;
+  XSendEvent(dpy, root, False, SubstructureNotifyMask | SubstructureRedirectMask, &e);
+  XFlush(dpy);
 }
 
 void fit_to_work_area(int &x, int &y, int &w, int &h) {
