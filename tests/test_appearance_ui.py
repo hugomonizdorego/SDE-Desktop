@@ -230,21 +230,21 @@ def main():
 
         # Preview shows the chosen look; its slider changes the choice.
         s.press('Preview the chosen look')
-        check(s.wait(lambda: (s.qa('look', 'Theme-Preview.txt') or '').startswith('family=fluent;mode=dark'), 15),
+        check(s.wait(lambda: (s.qa('look', 'Appearance-Preview.txt') or '').startswith('family=fluent;mode=dark'), 15),
               'the preview window did not show the chosen look')
         check(s.qa('appearance-preview') == 'open', 'the Control Center does not know the preview is open')
         if HELPER:
-            check(s.wait(lambda: s.qa('gtk', 'Theme-Preview.txt') == 'embedded', 15),
-                  'the GTK part was not embedded (%s)' % s.qa('gtk', 'Theme-Preview.txt'))
+            check(s.wait(lambda: s.qa('gtk', 'Appearance-Preview.txt') == 'embedded', 15),
+                  'the GTK part was not embedded (%s)' % s.qa('gtk', 'Appearance-Preview.txt'))
         time.sleep(0.5)
         s.shot('02-preview')
-        s.drag('Transparency level (preview)', 0.8, 0.3, 'Theme-Preview.txt', '^Appearance Preview$')
+        s.drag('Transparency level (preview)', 0.8, 0.3, 'Appearance-Preview.txt', '^Appearance Preview$')
         check(s.wait(lambda: s.look('transparency') not in (None, '80')),
               "the preview's slider did not change the chosen look")
         moved = s.look('transparency')
 
         # Cancel: the preview closes, the choice stays, nothing is written.
-        s.press('Close the preview without applying', 'Theme-Preview.txt', '^Appearance Preview$')
+        s.press('Close the preview without applying', 'Appearance-Preview.txt', '^Appearance Preview$')
         check(s.wait(lambda: s.qa('appearance-preview') == 'closed'), 'Cancel did not close the preview')
         check(s.look('family') == 'fluent' and s.look('transparency') == moved, 'Cancel dropped the choice')
         check(s.disk('style') == 'graphite', 'Cancel wrote the configuration')
@@ -258,9 +258,9 @@ def main():
         # Apply in the preview: written and taken by the Control Center.
         s.press('Fluent Design System')
         s.press('Preview the chosen look')
-        check(s.wait(lambda: (s.qa('look', 'Theme-Preview.txt') or '').startswith('family=fluent'), 15),
+        check(s.wait(lambda: (s.qa('look', 'Appearance-Preview.txt') or '').startswith('family=fluent'), 15),
               'the preview did not open again')
-        s.press('Apply this look', 'Theme-Preview.txt', '^Appearance Preview$')
+        s.press('Apply this look', 'Appearance-Preview.txt', '^Appearance Preview$')
         check(s.wait(lambda: s.look('family', 'applied') == 'fluent', 10), 'Apply in the preview did not apply')
         check(s.disk('style') == 'fluent', 'Apply did not write the look')
         check(s.wait(lambda: s.control('Apply the chosen look') is None), 'the bar stayed after Apply')

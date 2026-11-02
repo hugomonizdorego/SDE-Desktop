@@ -168,6 +168,44 @@ cairo_surface_t *sample_backdrop(int w, int h) {
   return s;
 }
 
+// Liquid Glass keeps text readable over any backdrop: under text the glass
+// is lifted (light) or deepened (dark) just enough, as the compositor's
+// shader does (liquid_legible_luminance()). The tint for the worst pixel of
+// |soft| (the blurred backdrop at a quarter size) under the surface.
+double legible_tint(const Theme &t, cairo_surface_t *soft, double sx, double sy, double sw, double sh,
+                    const Color &key, double tint) {
+  int w = cairo_image_surface_get_width(soft), h = cairo_image_surface_get_height(soft);
+  int stride = cairo_image_surface_get_stride(soft);
+  const unsigned char *data = cairo_image_surface_get_data(soft);
+  int x0 = std::max(0, int(sx)), y0 = std::max(0, int(sy));
+  int x1 = std::min(w, int(std::ceil(sx + sw))), y1 = std::min(h, int(std::ceil(sy + sh)));
+  if (x1 <= x0 || y1 <= y0) return tint;
+  Color worst;
+  double worst_l = t.dark ? -1 : 2;
+  for (int y = y0; y < y1; ++y)
+    for (int x = x0; x < x1; ++x) {
+      const unsigned char *px = data + size_t(y) * stride + x * 4;  // B G R x
+      Color c{px[2] / 255.0, px[1] / 255.0, px[0] / 255.0, 1};
+      double l = c.luminance();
+      if (t.dark ? l > worst_l : l < worst_l) {
+        worst_l = l;
+        worst = c;
+      }
+    }
+  double legible = liquid_legible_luminance(t);
+  auto ok = [&](double a) {
+    double l = worst.mix(key, a).luminance();
+    return t.dark ? l <= legible : l >= legible;
+  };
+  if (ok(tint) || !ok(1.0)) return tint;
+  double lo = tint, hi = 1.0;
+  for (int i = 0; i < 12; ++i) {
+    double mid = (lo + hi) / 2;
+    (ok(mid) ? hi : lo) = mid;
+  }
+  return hi;
+}
+
 // A surface of the panel, a popup or a window frame: what is behind it
 // (blurred when the theme blurs), tinted with |fill| at |alpha|; Liquid
 // Glass adds its light rim. Opaque themes simply fill.
@@ -179,6 +217,9 @@ void glass_layer(Painter &p, const Theme &t, const Backdrop &b, double x, double
     LiquidMaterial m = theme_liquid_material(t.family, t.dark);
     int strength = t.liquid ? std::max(1, std::min(12, m.blur)) : 6;
     cairo_surface_t *soft = blurred(b.sharp, strength, t.liquid ? m.saturation : 1.0, t.liquid ? m.brightness : 1.0);
+    if (t.liquid)
+      alpha = legible_tint(t, soft, (x - b.ox) / kBlurDown, (y - b.oy) / kBlurDown, w / kBlurDown, h / kBlurDown, fill,
+                           alpha);
     cairo_save(cr);
     p.rounded_corners(x, y, w, h, r, corners);
     cairo_clip(cr);
@@ -663,7 +704,10 @@ class PreviewWindow : public BufferedWindow {
     text_font(t.font_size);
     draw_text(_("Wi-Fi"), quick_.x + S(16), quick_.y + S(54), quick_.w - S(90), S(26), t.text);
     draw_text(_("Night light"), quick_.x + S(16), quick_.y + S(90), quick_.w - S(90), S(26), t.text);
-    draw_text("10:30", w() - S(70), scene_h_ - S(44), S(60), S(44), t.text, 2);
+    // The clock at the panel's end (the Liquid Glass panel is a pill).
+    int clock_right = t.family == "glass" ? int(w() * 0.86) - S(14) : w() - S(10);
+    draw_text("10:30", clock_right - S(60), scene_h_ - S(44) - (t.family == "glass" ? S(4) : 0), S(60), S(44), t.text,
+              2);
     text_font(t.font_size, true);
     draw_text(_("Preview of the chosen look"), S(18), scene_h_ + S(8), text_w_, S(24), t.text);
     text_font(std::max(S(9), t.font_size - S(1)));
@@ -672,7 +716,7 @@ class PreviewWindow : public BufferedWindow {
     qa_dump();
   }
   // UI test hook, as the Control Center's: with SDE_PANEL_QA_DIR set,
-  // <dir>/Theme-Preview.txt lists the named controls ("name x y w h
+  // <dir>/Appearance-Preview.txt lists the named controls ("name x y w h
   // active"), whether the GTK part is embedded and the look shown.
   void qa_dump() {
     const char *dir = getenv("SDE_PANEL_QA_DIR");
@@ -687,7 +731,7 @@ class PreviewWindow : public BufferedWindow {
       text += std::string(c->tooltip()) + "\t" + std::to_string(c->x()) + "\t" + std::to_string(c->y()) + "\t" +
               std::to_string(c->w()) + "\t" + std::to_string(c->h()) + "\t" + (c->active_r() ? "1" : "0") + "\n";
     }
-    std::string path = std::string(dir) + "/Theme-Preview.txt";
+    std::string path = std::string(dir) + "/Appearance-Preview.txt";
     write_file_atomic(path, text);
   }
   int handle(int e) override {

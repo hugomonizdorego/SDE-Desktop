@@ -1902,6 +1902,49 @@ def control_center_pages(s):
         s.gone(SETTINGS_TITLE, 3)
 
 
+def control_named(s, title, part):
+    """The name of a control of |title| whose name contains |part|."""
+    return next((k for k in s.layout(title) if part in k and not k.startswith('@')), None)
+
+
+@scene('Control Center', [
+    ('appearance-chosen', 'Control Center, Appearance: a look chosen and not applied yet, in a live miniature over '
+                          'the wallpaper, with Preview, Revert and Apply (0.2.0 Alpha 3.1)'),
+    ('appearance-preview', 'Appearance > Preview: the chosen look over the real desktop before anything changes, '
+                           'with real GTK and SDE widgets, its transparency slider, Cancel and Apply')],
+       needs=['sde-settings'])
+def appearance_preview(s):
+    """Another family and mode than the set's, at the Glass level."""
+    settings_page(s, 'appearance')
+    if not s.control('Control Center', 'The chosen look in miniature', 5):
+        raise SkipShot('this build applies the look at once (no Preview)')
+    family = 'Cool slate grays' if s.set.family == 'glass' else 'Luminous glass'
+    mode = 'Light mode' if s.set.mode == 'dark' else 'Dark mode'
+    for part in (family, mode, 'Transparency: Glass'):
+        name = control_named(s, 'Control Center', part)
+        if not name:
+            raise SkipShot(f'no control {part!r}')
+        reveal_control(s, 'Control Center', name)
+        s.press('Control Center', name)
+        time.sleep(0.4)
+    reveal_control(s, 'Control Center', 'The chosen look in miniature')
+    if not s.control('Control Center', 'Apply the chosen look', 4):
+        raise SkipShot('no Apply bar')
+    s.park_pointer()
+    s.shot('appearance-chosen', quiet=0.6)
+    if not s.run_ctx.selected(s.current, 'appearance-preview'):
+        return
+    s.press('Control Center', 'Preview the chosen look')
+    if not s.find('^Appearance Preview$', 10):
+        raise SkipShot('the preview window did not open')
+    # Its GTK part (sde-theme-preview-gtk) when this build has it.
+    s.control('Appearance Preview', '@gtk:embedded', 8)
+    s.park_pointer()
+    s.shot('appearance-preview', quiet=0.8)
+    s.press('Appearance Preview', 'Close the preview without applying')
+    s.gone('^Appearance Preview$', 4)
+
+
 def about_sde_window(s):
     """Control Center > About as the panel's "About SDE" opens it."""
     w = None

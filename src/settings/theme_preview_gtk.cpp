@@ -192,6 +192,9 @@ int main(int argc, char **argv) {
   if (!icons.empty()) set_icons(icons);
   if (!css.empty()) load_css(css);
   GtkWidget *plug = gtk_plug_new(Window(socket));
+  // The visual of the preview's window it lives in (not an RGBA one), so
+  // the X server and the compositor draw it as part of that window.
+  gtk_widget_set_visual(plug, gdk_screen_get_system_visual(gdk_screen_get_default()));
   g_signal_connect(plug, "destroy", G_CALLBACK(gtk_main_quit), nullptr);
   gtk_container_add(GTK_CONTAINER(plug), build());
   gtk_widget_show_all(plug);
