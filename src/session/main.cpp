@@ -4,9 +4,12 @@
 // Responsibilities:
 //   * export the session environment (XDG_CURRENT_DESKTOP=SDE-Desktop:SDE, ...)
 //   * apply saved display and input settings (sde-settings --apply)
-//   * start the window manager, sde-desktop, sde-panel and sde-notifyd,
-//     restarting them when they crash (with a limit, so a broken component
-//     cannot loop)
+//   * start the window manager, sde-desktop, sde-panel, sde-notifyd and
+//     sde-watchdog, restarting them when they crash (with a limit, so a
+//     broken component cannot loop)
+//   * adopt the programs SDE starts (child subreaper): when one that SDE
+//     recorded (launches.h) dies from a signal, log it for System Reports
+//     and announce it with "Open Again" (sde-force-close --crashed)
 //   * start a polkit authentication agent and XDG autostart applications
 //   * log everything to ~/.local/state/sde/session.log and show a rescue
 //     dialog instead of a black screen when the desktop cannot start
@@ -44,6 +47,7 @@
 #include "config.h"
 #include "desktop_entry.h"
 #include "i18n.h"
+#include "launches.h"
 #include "spawn.h"
 #include "util.h"
 #include "wm.h"
@@ -173,6 +177,31 @@ const char *exit_reason(int status, char *buf, size_t n) {
   return buf;
 }
 
+// Signals that mean a program crashed (not that it was asked to stop or was
+// forced to close).
+bool crash_signal(int sig) {
+  return sig == SIGSEGV || sig == SIGABRT || sig == SIGBUS || sig == SIGILL || sig == SIGFPE ||
+         sig == SIGSYS || sig == SIGTRAP;
+}
+
+// A program SDE started ended (it was adopted here, the session's child
+// subreaper): its launch record goes, and a crash is logged ("<name> exited
+// (killed by signal ...)", which System Reports lists) and announced.
+void on_program_exit(pid_t pid, int status) {
+  launches::Record r;
+  if (!launches::load(long(pid), r)) return;
+  launches::remove(long(pid));
+  if (!WIFSIGNALED(status) || !crash_signal(WTERMSIG(status))) return;
+  char why[128];
+  std::string name = r.name.empty() && !r.argv.empty() ? basename_of(r.argv[0]) : r.name;
+  log("%s exited (%s)", name.c_str(), exit_reason(status, why, sizeof why));
+  std::vector<std::string> cmd = {"sde-force-close", "--crashed", "--name", name, "--icon", r.icon,
+                                  "--desktop-id", r.desktop_id, "--signal",
+                                  std::to_string(WTERMSIG(status)), "--"};
+  cmd.insert(cmd.end(), r.argv.begin(), r.argv.end());
+  start_child(cmd);
+}
+
 void on_child_exit(pid_t pid, int status) {
   if (pid == g_rescue_pid) {
     g_rescue_pid = 0;
@@ -211,6 +240,7 @@ void on_child_exit(pid_t pid, int status) {
     c.restart_at = now + 1;
     return;
   }
+  on_program_exit(pid, status);
 }
 
 // The optional SDE compositor. A user's own compositor.conf wins; otherwise
@@ -1174,6 +1204,9 @@ int main(int argc, char **argv) {
     g_components.push_back(panel);
   }
   g_components.push_back(make_component(_("notification service"), {"sde-notifyd"}, false));
+  // 0.2.0 Alpha 3.1: notices programs that stop responding or never open.
+  if (cfg.get_bool("force_close", "enabled", true) && !find_program("sde-watchdog").empty())
+    g_components.push_back(make_component(_("application watchdog"), {"sde-watchdog"}, false));
   for (size_t i = 1; i < g_components.size(); ++i) start_component(g_components[i]);
 
   std::string agent = cfg.get("session", "polkit_agent", "auto");

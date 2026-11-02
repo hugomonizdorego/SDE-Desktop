@@ -782,8 +782,10 @@ try:
     shot("01-action-center-light")
     g = geom(ac)
     assert g["Y"] >= 0 and g["Y"] + g["HEIGHT"] <= H, g
-    # Session and settings buttons live in the Action Center footer.
-    for name in ("Control Center", "Lock Screen", "Power", "Account settings"):
+    # Session and settings buttons live in the Action Center footer; since
+    # 0.2.0 Alpha 3.1 Sleep, Log Out, Restart and Shut Down are always there.
+    for name in ("Control Center", "Lock Screen", "Sleep", "Log Out", "Restart", "Shut Down",
+                 "Account settings"):
         control("Action Center", name)
     # The weather picture behind the clock (SDE_WEATHER_FIXTURE): since
     # alpha52 the Action Center has no scrolled body; the clock hero sits

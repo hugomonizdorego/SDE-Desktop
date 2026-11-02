@@ -19,6 +19,7 @@
 #include "config.h"
 #include "desktop_entry.h"
 #include "i18n.h"
+#include "launches.h"
 #include "icons.h"
 #include "widgets.h"
 #include "paint.h"
@@ -135,7 +136,12 @@ bool run(const std::string &cmd, bool in_terminal) {
     fl_alert(_("Command not found: %s"), argv[0].c_str());
     return false;
   }
-  return spawn_detached(argv);
+  // 0.2.0 Alpha 3.1: an application started here is watched like one
+  // started from the Start menu (launches.h).
+  long pid = 0;
+  if (!spawn_detached(argv, "", &pid)) return false;
+  launches::record_command(pid, argv);
+  return true;
 }
 
 void on_run(Fl_Widget *, void *data) {

@@ -148,6 +148,74 @@ when the keys above are not set.
 * `tools/showcase.py`: the battery scenes (charging with the label, low
   battery) and the clock styles with their options.
 
+## Session buttons
+
+Since 0.2.0 Alpha 3.1 **Sleep**, **Log Out**, **Restart** and **Shut Down**
+are always in the Action Center's footer, a row of four round icon buttons
+right of the user, Control Center and Lock Screen (there is no Power button
+to open them any more). The row has the same place and height in every
+layout of the Action Center (compact, expanded, one or two columns), so it
+never pushes the tiles, sliders or calendar around; at 1024x600 at 150 % the
+user's name gives way (with an ellipsis) before anything else does.
+
+* **Icons.** SDE's own glyphs, drawn with cairo on the 24-unit grid of the
+  tray icons (`src/panel/session_actions.cpp`): a crescent moon with a "z"
+  (Do Not Disturb keeps the filled moon), a door with an arrow leaving it,
+  a circular arrow and the power symbol. They are sharp at every scale and
+  take the theme's colours: the text colour at rest, the accent on Sleep and
+  the theme's error colour on the other three while hovered; Shut Down keeps
+  a hint of the error colour at rest.
+* **Names.** Each button's tooltip is its name ("Sleep", "Log Out",
+  "Restart", "Shut Down"); the QA dump and the UI tests name them by it.
+* **Keyboard.** Tab and the arrow keys reach the buttons like every control
+  of the Action Center; Enter or Space presses the focused one.
+* **Accidental clicks.** Sleep acts at once (nothing is lost). Log Out,
+  Restart and Shut Down ask for a second click on the same button: the first
+  click arms it - it turns red, a ring inside it runs down for four seconds
+  and "Click again to shut down" takes the place of the user and the two
+  buttons beside it - and a second click (or Enter) within those four
+  seconds runs it. A second click within 0.4 s of the first is ignored (a
+  double click or a touchpad tap counted twice is not a confirmation);
+  waiting, a click on the question, Escape or closing the Action Center
+  disarms. This was chosen over sde-logout's confirmation dialog because it
+  stays in place: no second window, no change of keyboard focus (the armed
+  button keeps it, so Enter twice works), and one deliberate gesture is
+  still needed. The Start menu's one Power off button keeps its question.
+* **What the system cannot do** is left out: the panel asks
+  systemd-logind (`CanSuspend`, `CanReboot`, `CanPowerOff` on the system
+  bus) when it starts and whenever the Action Center opens, without
+  waiting for the answers. `na` (e.g. no suspend support) and `no` (polkit
+  refuses) hide the button; `challenge` keeps it (polkit asks for a password
+  then). Without logind (no answer) the buttons stay, and Log Out is always
+  there. The buttons run `sde-logout --action suspend|logout|reboot|poweroff`.
+
+Tests: `tests/test_session_actions.cpp` (order and commands, logind's
+answers, arming and its timing, the glyphs inside their box at 16-48 px and
+different from each other; `sde-session-actions-tests FILE.png` draws them
+for a look); `tools/panel-smoke.py` (`--only action-center` runs these
+too): the row in every plan of the alpha52 checks (one row, in order, round,
+inside the window, below the body, overlapping nothing), the first click
+arming Restart (`@session-armed:reboot` in the QA dump, the question in
+place of the user, nothing run), disarming after four seconds and with a
+click on the question, two clicks running `sde-logout --action reboot`,
+Return on the armed Shut Down, Sleep at once, and logind's answers from the
+fixture (`mode login1 suspend=na reboot=challenge poweroff=no`: Sleep and
+Shut Down hidden, `@session-can:na,?,challenge,no,`). `tools/showcase.py`:
+`action-center` and `action-center-power` (Shut Down armed).
+
+## Windows that do not respond
+
+Since 0.2.0 Alpha 3.1 a window whose program stopped answering
+(`_SDE_NOT_RESPONDING`, set by `sde-watchdog` or SDE WM; see
+[FORCE-CLOSE.md](FORCE-CLOSE.md)) has a dimmed taskbar button labelled
+"*Title* (Not Responding)" in the user's language (SDE WM's English title
+suffix is left out of the button), and the button's right-click menu
+offers **Force Close** above Close Window, which runs `sde-force-close
+--kill-window` (the checks and the kill stay in that one program). The
+panel follows the property without polling; the QA dump lists such
+buttons as `@task-not-responding:<title>`. Tested in `tools/panel-smoke.py`
+(the a52 menu checks).
+
 ## Badges on the taskbar
 
 Since 0.2.0 Alpha 3 the pinned launchers and the taskbar buttons show the

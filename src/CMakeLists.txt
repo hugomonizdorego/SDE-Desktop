@@ -14,9 +14,12 @@ add_library(sde-common STATIC
   common/dbus.cpp
   common/effects.cpp
   common/desktop_entry.cpp
+  common/file_chooser.cpp
+  common/file_chooser_model.cpp
   common/glyphs.cpp
   common/i18n.cpp
   common/icons.cpp
+  common/launches.cpp
   common/paint.cpp
   common/power.cpp
   common/process.cpp
@@ -90,6 +93,8 @@ add_executable(sde-panel
   panel/preview.cpp
   panel/panel_menus.cpp
   panel/notify_center.cpp
+  # 0.2.0 Alpha 3.1: the Action Center's session buttons.
+  panel/session_actions.cpp
   # The Start menu's account button and popup, the Action Center's user.
   panel/account.cpp
   # 0.2 Alpha 3: the default favorites (the user's browser, mail...) and the
@@ -165,6 +170,21 @@ target_link_libraries(sde-run PRIVATE sde-common)
 add_executable(sde-logout logout/main.cpp)
 target_link_libraries(sde-logout PRIVATE sde-common)
 
+# Force Close (0.2.0 Alpha 3.1, docs/FORCE-CLOSE.md): sde-watchdog notices
+# programs that stop responding or never open, sde-force-close asks "Wait /
+# Force Close". Which processes may be ended, the X side and the watchdog's
+# decisions are a small library shared with the tests.
+pkg_check_modules(XRES REQUIRED IMPORTED_TARGET xres)
+add_library(sde-forceclose-core STATIC
+  forceclose/process_rules.cpp forceclose/xtarget.cpp forceclose/watch_model.cpp)
+target_include_directories(sde-forceclose-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/forceclose)
+target_link_libraries(sde-forceclose-core PUBLIC sde-common PkgConfig::XRES)
+add_executable(sde-watchdog forceclose/watchdog_main.cpp)
+target_link_libraries(sde-watchdog PRIVATE sde-forceclose-core)
+add_executable(sde-force-close forceclose/dialog_main.cpp)
+target_link_libraries(sde-force-close PRIVATE sde-forceclose-core)
+install(TARGETS sde-watchdog sde-force-close RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)
 
@@ -183,6 +203,18 @@ pkg_check_modules(POLKIT_AGENT REQUIRED IMPORTED_TARGET polkit-agent-1)
 add_executable(sde-polkit-agent polkit-agent/main.cpp)
 target_link_libraries(sde-polkit-agent PRIVATE sde-common PkgConfig::POLKIT_AGENT)
 install(TARGETS sde-polkit-agent RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+
+# 0.2.0 Alpha 3.1: the FileChooser portal backend: programs that ask
+# xdg-desktop-portal for a file dialog (Flatpak, Firefox, GTK 4, Qt) get the
+# SDE file chooser (docs/FILE-CHOOSER.md). D-Bus starts it on demand.
+add_executable(xdg-desktop-portal-sde portal/main.cpp)
+target_link_libraries(xdg-desktop-portal-sde PRIVATE sde-common)
+install(TARGETS xdg-desktop-portal-sde RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+configure_file(${PROJECT_SOURCE_DIR}/data/portals/org.freedesktop.impl.portal.desktop.sde.service.in
+               ${CMAKE_BINARY_DIR}/portals/org.freedesktop.impl.portal.desktop.sde.service @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/portals/org.freedesktop.impl.portal.desktop.sde.service
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services)
+install(FILES ${PROJECT_SOURCE_DIR}/data/portals/sde.portal DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal/portals)
 
 
 # Gallery: an original SDE photo library. The model, metadata reader,

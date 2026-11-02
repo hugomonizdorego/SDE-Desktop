@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "popup.h"
+#include "session_actions.h"
 #include "status_model.h"
 
 struct NetworkState {
@@ -215,8 +216,12 @@ class QuickSettings : public PanelPopup {
   void agenda_edit(int id);  // 0: a new item on the selected date
   void agenda_save();
   void agenda_cancel();
-  void set_power_menu(bool open);
   void set_brightness_menu(bool open);
+  // The session buttons of the footer (0.2.0 Alpha 3.1, session_actions.h).
+  void session_press(int index);
+  void cancel_arming();
+  const session_actions::Arming &arming() const { return arming_; }
+  static double now_seconds();  // steady clock
 
  private:
   void sync();
@@ -258,8 +263,14 @@ class QuickSettings : public PanelPopup {
   bool agenda_form_ = false;
   int agenda_edit_ = 0, draft_remind_ = 0;
   std::string draft_title_, draft_time_, draft_note_, agenda_error_;
-  // The footer's power button shows Sleep, Log Out, Restart and Shut Down.
-  bool power_open_ = false;
+  // The footer's session buttons: which one is armed (a second click runs
+  // it), the buttons, and what the armed question replaces.
+  session_actions::Arming arming_;
+  std::vector<class Fl_Widget *> session_buttons_, footer_left_;
+  class Fl_Widget *arm_hint_ = nullptr;
+  int separator_x_ = 0;
+  static void arm_tick(void *);
+  void show_armed();
   // The brightness row's gear opens brightness and Night Light settings.
   bool brightness_open_ = false, reveal_brightness_ = false;
   class Fl_Widget *brightness_card_ = nullptr;

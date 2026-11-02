@@ -14,7 +14,6 @@
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
 #include <FL/Fl_Group.H>
-#include <FL/Fl_File_Chooser.H>
 #include <FL/Fl_Input_.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -54,6 +53,7 @@
 #include "devices.h"
 #include "gpu.h"
 #include "glyphs.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "icons.h"
 #include "integration.h"
@@ -1400,14 +1400,18 @@ void build_appearance(Page *page) {
   page->row(_("Your own picture"), S(160), S(34), [](int x, int y, int w, int h) {
     auto *b = new FlatButton(x, y, w, h, _("Browse..."));
     b->callback([](Fl_Widget *, void *) {
-      static std::string filter;
-      filter = "Images (*.{png,jpg,jpeg,svg";
-      for (auto &e : gallery::extra_formats()) filter += "," + e;
-      filter += "})";
-      const char *f = fl_file_chooser(_("Choose a wallpaper"), filter.c_str(),
-                                      (home_dir() + "/Pictures").c_str());
-      if (!f) return;
-      g_cfg.set("appearance", "wallpaper", f);
+      std::string patterns = "*.{png,jpg,jpeg,svg";
+      for (auto &e : gallery::extra_formats()) patterns += "," + e;
+      patterns += "}";
+      FileChooser chooser(FileChooser::Mode::Open);
+      chooser.title(_("Choose a wallpaper"));
+      chooser.filters(std::string(_("Pictures")) + "\t" + patterns);
+      chooser.all_files(false);
+      std::string pictures = user_dir("PICTURES");
+      chooser.default_folder(pictures.empty() || !dir_exists(pictures) ? home_dir() : pictures);
+      chooser.preview(true);
+      if (!chooser.run()) return;
+      g_cfg.set("appearance", "wallpaper", chooser.path());
       apply_change();
       Fl::add_timeout(0, [](void *) { refresh_page(); });
     });

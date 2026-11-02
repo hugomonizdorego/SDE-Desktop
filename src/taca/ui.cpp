@@ -4,7 +4,6 @@
 // Small user interface pieces: themed text fields, option chips, worker
 // jobs, URI lists and file choosers.
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
@@ -19,6 +18,7 @@
 #include <ctime>
 
 #include "config.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "taca.h"
 #include "util.h"
@@ -281,28 +281,24 @@ std::vector<std::string> parse_uri_list(const std::string &text) {
 // --------------------------------------------------------------- choosers
 
 std::string choose_folder(const std::string &title, const std::string &start) {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
-  chooser.title(title.c_str());
-  chooser.directory(start.c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return "";
-  return chooser.filename();
+  FileChooser chooser(FileChooser::Mode::Folder);
+  chooser.title(title);
+  chooser.folder(start);
+  if (!chooser.run()) return "";
+  return chooser.path();
 }
 
 std::vector<std::string> choose_files(const std::string &title, const std::string &start, bool folders,
                                       bool archives) {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(folders ? Fl_Native_File_Chooser::BROWSE_MULTI_DIRECTORY : Fl_Native_File_Chooser::BROWSE_MULTI_FILE);
-  chooser.title(title.c_str());
-  chooser.directory(start.c_str());
+  FileChooser chooser(folders ? FileChooser::Mode::Folders : FileChooser::Mode::OpenMultiple);
+  chooser.title(title);
+  chooser.folder(start);
   if (archives)
-    chooser.filter(_("Archives\t*.{zip,rar,7z,tar,tgz,gz,bz2,xz,zst,lz4,lzma,lz,Z,iso,cab,cpio,deb,rpm,xar,jar,war,"
-                     "apk,epub,cbz,cbr,a,ar,lha,lzh,001}\nAll Files\t*"));
+    chooser.filters(_("Archives\t*.{zip,rar,7z,tar,tgz,gz,bz2,xz,zst,lz4,lzma,lz,Z,iso,cab,cpio,deb,rpm,xar,jar,war,"
+                      "apk,epub,cbz,cbr,a,ar,lha,lzh,001}\nAll Files\t*"));
   std::vector<std::string> out;
-  if (chooser.show() != 0) return out;
-  for (int i = 0; i < chooser.count(); ++i)
-    if (chooser.filename(i)) out.push_back(chooser.filename(i));
-  return out;
+  if (!chooser.run()) return out;
+  return chooser.paths();
 }
 
 // ------------------------------------------------------------- settings

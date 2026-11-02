@@ -341,19 +341,21 @@ std::string compositor_effects(const Config &cfg, bool safe) {
 }
 
 namespace {
-// The Liquid Glass window shader (0.2.0 Alpha 2) for SDE Compositor, which
-// gives window shaders the backdrop of the window (suite/patches/
-// sde-compositor). @NAME@ values come from the theme (write_liquid_shader()).
+// The Liquid Glass window shader (0.2.0 Alpha 2; a frosted glass since 0.2.0
+// Alpha 3.1) for SDE Compositor, which gives window shaders the backdrop of
+// the window (suite/patches/sde-compositor). @NAME@ values come from the
+// theme (write_liquid_shader()).
 const char *kLiquidShader = R"GLSL(#version 330
 // SDE Liquid Glass for @THEME@: written by SDE (src/common/integration.cpp)
 // from the theme and [aero] settings, and replaced when they change; see
-// docs/THEMES.md. SDE draws its glass surfaces (marked _SDE_SURFACE) flat in
-// their surface color, and this shader turns that color into glass: what is
-// behind the window (already blurred by the compositor), saturated and
-// brightened, bent along the edges like the rim of a lens, tinted with the
-// surface color by the window's opacity and lit by a thin rim. Where the
-// backdrop would make text hard to read, the glass is lifted (or deepened)
-// just enough. Text, icons and highlights keep their colors.
+// docs/THEMES.md. SDE draws its glass surfaces (marked _SDE_SURFACE) and the
+// SDE GTK themes draw GTK 3 menus flat in their surface color, and this
+// shader turns that color into frosted glass: what is behind the window,
+// blurred by the compositor and frosted further here, saturated, bent a
+// little along the edges like the rim of a lens, frosted with the surface
+// color by the window's opacity and lit by a thin specular rim. Under text
+// the glass is lifted (or deepened) just enough to keep it readable. Text,
+// icons and highlights keep their colors.
 in vec2 texcoord;
 uniform sampler2D tex;
 uniform vec2 effective_size;
@@ -368,6 +370,7 @@ const vec3 KEY_B = vec3(@KEY_B@);  // menus and notifications (menu_bg)
 const float DARK = @DARK@;
 const float SATURATION = @SATURATION@;
 const float BRIGHTNESS = @BRIGHTNESS@;
+const float FROST = @FROST@;            // px: how far around each point the frost reaches
 const float LENS_BAND = @LENS_BAND@;    // px
 const float LENS_SHIFT = @LENS_SHIFT@;  // px at the very edge
 const float RIM = @RIM@;
@@ -382,7 +385,7 @@ float luminance(vec3 c) {
 	return dot(l, vec3(0.2126, 0.7152, 0.0722));
 }
 
-// The glass tinted |tint| with the key color, with |delta| (a hover tint, a
+// The glass frosted |tint| with the key color, with |delta| (a hover tint, a
 // card) on top, lifted towards the key color until text on it keeps its
 // contrast (the luminance is monotonic in the tint).
 vec3 legible_glass(vec3 back, vec3 key, float tint, vec3 delta) {
@@ -393,7 +396,7 @@ vec3 legible_glass(vec3 back, vec3 key, float tint, vec3 delta) {
 		return glass;
 	}
 	float lo = tint, hi = 1.0;
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < 7; i++) {
 		float mid = 0.5 * (lo + hi);
 		if ((luminance(clamp(mix(back, key, mid) + delta, 0.0, 1.0)) - LEGIBLE) * side >= 0.0) {
 			hi = mid;
@@ -411,6 +414,27 @@ float shape(vec2 p, vec2 h, float r) {
 	}
 	vec2 q = abs(p) - h + vec2(r);
 	return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+// The backdrop, frosted: the compositor's blur widened by a disc of twelve
+// samples on a golden-angle spiral, so text and edges behind become soft
+// color.
+vec3 frosted(vec2 shift) {
+	vec3 sum = backdrop_at(shift).rgb;
+	for (int i = 0; i < 12; i++) {
+		float a = float(i) * 2.39996;
+		float r = FROST * sqrt((float(i) + 0.5) / 12.0);
+		sum += backdrop_at(shift + r * vec2(cos(a), sin(a))).rgb;
+	}
+	return sum / 13.0;
+}
+
+// Noise of about one step of 8 bits (triangular) against banding in the
+// smooth glass.
+float dither(vec2 p) {
+	float a = fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+	float b = fract(sin(dot(p, vec2(39.3468, 11.135))) * 24634.6345);
+	return (a + b - 1.0) / 255.0;
 }
 
 vec4 window_shader() {
@@ -434,7 +458,7 @@ vec4 window_shader() {
 	// The lens: towards the edge the glass shows what is further in.
 	float band = max(min(LENS_BAND, 0.8 * min(h.x, h.y)), 1.0);
 	float t = clamp(1.0 - depth / band, 0.0, 1.0);
-	vec3 back = backdrop_at(-n * LENS_SHIFT * (band / LENS_BAND) * pow(t, 2.2)).rgb;
+	vec3 back = frosted(-n * LENS_SHIFT * (band / LENS_BAND) * t * t * t);
 	float luma = dot(back, vec3(0.2126, 0.7152, 0.0722));
 	back = clamp(mix(vec3(luma), back, SATURATION) * BRIGHTNESS, 0.0, 1.0);
 	// The surface color nearest this pixel, and how far it is from it.
@@ -451,28 +475,30 @@ vec4 window_shader() {
 	// knob; shadows in a dark theme) is content.
 	vec3 beyond = DARK > 0.5 ? key - c.rgb : c.rgb - key;
 	content = max(content, smoothstep(1.5 / 255.0, 6.0 / 255.0, max(max(beyond.r, beyond.g), beyond.b)));
-	// The glass: the backdrop tinted with the surface color by the
-	// window's opacity, more clearly in the lens, where no text is.
-	// Close to the surface color: glass with the difference on top (soft
-	// fills, hover tints); far from it: the window's own color (text).
-	float tint = clamp(opacity, 0.0, 1.0) * (1.0 - 0.45 * t);
+	// The frost: the surface color over the backdrop by the window's
+	// opacity, a little clearer in the lens, where no text is. Close to the
+	// surface color: glass with the difference on top (soft fills, hover
+	// tints); far from it: the window's own color (text).
+	float tint = clamp(opacity, 0.0, 1.0) * (1.0 - 0.30 * t);
 	vec3 col = mix(legible_glass(back, key, tint, delta), c.rgb, content);
-	// Light from the top, a little from the left: a thin rim where the
-	// edge faces it, a fainter one opposite, a glow in the lens.
-	vec2 light = normalize(vec2(-0.42, -0.91));
+	// Light from the top left: a thin specular rim where the edge faces it,
+	// a fainter one on the opposite edge (light through the glass) and a
+	// soft glow just inside the edge.
+	vec2 light = normalize(vec2(-0.5, -0.866));
 	float facing = dot(n, light);
-	float rim = exp(-depth / RIM_WIDTH) * RIM *
-	            (0.30 + 0.70 * max(facing, 0.0) + 0.40 * max(-facing, 0.0));
-	float glow = t * t * RIM * 0.14 * (0.55 + 0.45 * max(facing, 0.0));
+	float spec = pow(max(facing, 0.0), 1.5) + 0.6 * pow(max(-facing, 0.0), 1.5);
+	float rim = exp(-depth / RIM_WIDTH) * RIM * (0.22 + 0.78 * spec);
+	float glow = exp(-depth / (RIM_WIDTH * 7.0)) * RIM * 0.12 * (0.3 + 0.7 * spec) * (1.0 - content);
 	col += (1.0 - col) * clamp(rim + glow, 0.0, 1.0);
 	// A faint hairline away from the light keeps the glass apart from
 	// bright backdrops.
-	col *= 1.0 - exp(-depth / 0.8) * (0.06 + 0.10 * DARK) * max(-facing, 0.0);
+	col *= 1.0 - exp(-depth / 0.8) * (0.07 + 0.10 * DARK) * (0.4 + 0.6 * max(-facing, 0.0));
 	col *= 1.0 - dim;
+	col += dither(gl_FragCoord.xy);
 	// Fading in and out: the compositor animates the opacity from 0, so the
 	// window appears up to FADE_AT and the glass fills in above it.
 	float fade = clamp(opacity / FADE_AT, 0.0, 1.0);
-	return vec4(col, 1.0) * cover * fade;
+	return vec4(clamp(col, 0.0, 1.0), 1.0) * cover * fade;
 }
 )GLSL";
 
@@ -501,6 +527,7 @@ std::string write_liquid_shader(const Theme &t, int square) {
   put("DARK", t.dark ? "1.0" : "0.0");
   put("SATURATION", glsl_number(m.saturation));
   put("BRIGHTNESS", glsl_number(m.brightness));
+  put("FROST", glsl_number(m.frost * t.scale));
   put("LENS_BAND", glsl_number(m.lens_band * t.scale));
   put("LENS_SHIFT", glsl_number(m.lens_shift * t.scale));
   put("RIM", glsl_number(m.rim));
@@ -535,17 +562,22 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   bool round = cfg.get_bool("aero", "rounded_corners", true);
   bool motion = cfg.get_bool("aero", "animations", true) && !lite;
   LiquidMaterial glass = theme_liquid_material(t.family, t.dark);
-  // Liquid Glass keeps the backdrop recognizable (a lighter blur, see
-  // palettes.json); [aero] blur_strength moves it like the others.
+  // The blur behind translucent surfaces and frames (0.2.0 Alpha 3.1: strong
+  // enough that a busy window behind turns into soft color): Liquid Glass's
+  // material (palettes.json), 7 for the other families, moved by [aero]
+  // blur_strength (6 by default).
   int user_strength = cfg.get_int("aero", "blur_strength", 6);
-  int strength = std::max(1, std::min(12, glass.on ? glass.blur + user_strength - 6 : user_strength));
+  int strength = std::max(1, std::min(10, (glass.on ? glass.blur : 7) + user_strength - 6));
   double frame = t.frame_opacity;
-  // GTK menus draw their own translucent background with opaque text (the
-  // CSS block of sync_gtk_settings()); other toolkits' menus get the
-  // whole-window opacity, which is still readable (readable_opacity()).
-  bool gtk_alpha = t.gtk_menu_alpha < 0.999 && cfg.get("suite", "gtk_theme", "auto") != "system" &&
-                   starts_with(gtk_theme_name(cfg), "SDE-");
-  double menu = t.translucent ? (gtk_alpha ? 1.0 : t.toolkit_menu_opacity) : 1.0;
+  // GTK 3 menus are plain X windows under SDE WM (it does not offer GTK the
+  // _GTK_FRAME_EXTENTS client-side shadows): the compositor rounds them like
+  // SDE's menus and makes them glass (Liquid Glass) or fades them like SDE's
+  // menus. Menus with an alpha channel (GTK 4 popovers, browsers) draw their
+  // own corners and shadow and stay as they are.
+  const std::string plain_menu =
+      "(window_type = 'popup_menu' || window_type = 'dropdown_menu') && !argb && !_SDE_SURFACE";
+  double menu = !t.translucent ? 1.0 : t.liquid ? t.popup_opacity : t.toolkit_menu_opacity;
+  double tip = !t.translucent ? 1.0 : std::max(t.liquid ? 0.85 : 0.92, menu);
   char num[32];
   auto f = [&](double v) {
     snprintf(num, sizeof num, "%.2f", v);
@@ -575,8 +607,12 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   c += "shadow = true;\nshadow-radius = " + std::to_string(sr) + ";\nshadow-opacity = " + f(so) +
        ";\nshadow-offset-x = -" + std::to_string(sr) + ";\nshadow-offset-y = -" +
        std::to_string(sr - sr / 3) + ";\n";
+  // Popups with an alpha channel (GTK 4 popovers and tooltips, browser
+  // menus) draw their own shadow inside a transparent margin: a second,
+  // square shadow around that margin was a ghost frame (0.2.0 Alpha 3.1).
+  const std::string own_shadow = "override_redirect && argb && !_SDE_SURFACE";
   c += "shadow-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
-       "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@\"];\n";
+       "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@\", \"" + own_shadow + "\"];\n";
   if (motion)
     // About 10 frames per fade (~100 ms): smooth without long busy periods.
     c += "fading = true;\nfade-in-step = 0.10;\nfade-out-step = 0.12;\nfade-delta = 10;\n"
@@ -600,13 +636,16 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
       {"menu", t.radius, 0}, {"tooltip", t.radius_small, 0}};
   auto is = [](const char *kind) { return std::string("_SDE_SURFACE = '") + kind + "'"; };
   c += "rounded-corners-exclude = [\"window_type = 'desktop'\", \"fullscreen\"";
-  for (const char *type : {"dock", "tooltip", "dropdown_menu", "popup_menu", "menu"})
+  for (const char *type : {"dock", "tooltip", "menu"})
     c += std::string(", \"window_type = '") + type + "' && !_SDE_SURFACE\"";
+  for (const char *type : {"dropdown_menu", "popup_menu"})
+    c += std::string(", \"window_type = '") + type + "' && !_SDE_SURFACE && argb\"";
   c += "];\n";
   if (round) {
     std::string rules;
     for (const auto &s : surfaces)
       rules += std::string(rules.empty() ? "" : ", ") + "\"" + std::to_string(s.radius) + ":" + is(s.kind) + "\"";
+    rules += ", \"" + std::to_string(t.radius) + ":" + plain_menu + "\"";
     c += "corner-radius-rules = [" + rules + "];\n";
   }
   c += "frame-opacity = " + f(frame) + ";\n";
@@ -617,30 +656,44 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
       c += "blur: { method = \"gaussian\"; size = " + std::to_string(std::min(9, 5 + strength / 3 * 2)) +
            "; deviation = " + f(std::min(4.0, 2.0 + strength * 0.25)) + "; };\n";
     else
-      // Above 8 dual_kawase costs much more for little visible difference.
-      c += "blur: { method = \"dual_kawase\"; strength = " + std::to_string(std::min(strength, 8)) + "; };\n";
+      // dual_kawase grows its reach (and the area drawn again) quickly above 10.
+      c += "blur: { method = \"dual_kawase\"; strength = " + std::to_string(strength) + "; };\n";
     c += "blur-background = true;\nblur-background-frame = true;\nblur-background-fixed = false;\n";
+    // A blur behind the transparent margin of a popup with its own shadow
+    // showed as a hazy frame around it.
     c += "blur-background-exclude = [\"window_type = 'desktop'\", \"_GTK_FRAME_EXTENTS@\", "
-         "\"class_g = 'Xfce4-screenshooter'\", \"fullscreen\"];\n";
+         "\"class_g = 'Xfce4-screenshooter'\", \"fullscreen\", \"" + own_shadow + "\"];\n";
   }
-  // Liquid Glass (OpenGL only): SDE's surfaces are drawn by the glass shader,
-  // one for each set of rounded corners.
+  // Liquid Glass (OpenGL only): SDE's surfaces and GTK 3 menus are drawn by
+  // the glass shader, one for each set of rounded corners.
   if (t.liquid && !safe) {
     std::string rules;
     for (int square : {0, 1, 2}) {
       std::string match;
       for (const auto &s : surfaces)
         if (s.square == square) match += std::string(match.empty() ? "" : " || ") + is(s.kind);
+      if (square == 0) match += " || (" + plain_menu + ")";
       rules += std::string(rules.empty() ? "" : ", ") + "\"" + write_liquid_shader(t, square) + ":" + match + "\"";
     }
     c += "window-shader-fg-rule = [" + rules + "];\n";
   }
+  // The opacity of windows that do not set their own: GTK 3 menus (the glass
+  // tint in Liquid Glass, otherwise a whole-window fade that keeps text
+  // readable) and tooltips without an alpha channel. Popups with one (GTK 4,
+  // browsers) stay opaque: nothing blurs what shows through them.
+  auto percent = [](double v) { return std::to_string(int(std::lround(std::min(1.0, v) * 100))); };
+  std::vector<std::string> opacity;
+  if (menu < 0.995) opacity.push_back(percent(menu) + ":" + plain_menu);
+  if (tip < 0.995) opacity.push_back(percent(tip) + ":window_type = 'tooltip' && !argb");
+  if (!opacity.empty()) {
+    c += "opacity-rule = [";
+    for (size_t i = 0; i < opacity.size(); ++i) c += std::string(i ? ", " : "") + "\"" + opacity[i] + "\"";
+    c += "];\n";
+  }
   c += "wintypes: {\n"
-       "  tooltip = { fade = true; shadow = false; opacity = " + f(std::max(0.92, t.toolkit_menu_opacity)) + "; };\n"
+       "  tooltip = { fade = true; shadow = false; };\n"
        "  dock = { shadow = false; clip-shadow-above = true; };\n"
        "  dnd = { shadow = false; };\n"
-       "  popup_menu = { opacity = " + f(menu) + "; };\n"
-       "  dropdown_menu = { opacity = " + f(menu) + "; };\n"
        "};\n";
   std::string path = config_home() + (safe ? "/sde/aero-compositor-xrender.conf" : "/sde/aero-compositor.conf");
   make_dirs(config_home() + "/sde");

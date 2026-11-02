@@ -3,7 +3,6 @@
 //
 // The Gallery main window: library state, sources, header and actions.
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -19,6 +18,7 @@
 #include "exif.h"
 #include "gallery.h"
 #include "link.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "process.h"
 #include "spawn.h"
@@ -527,22 +527,24 @@ void GalleryWindow::browse(const std::string &dir_in) {
 }
 
 void GalleryWindow::open_folder_dialog() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
+  FileChooser chooser(FileChooser::Mode::Folder);
   chooser.title(_("Open a Folder"));
-  chooser.directory((devices_.empty() ? pictures_ : devices_[0].mount_point).c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  browse(chooser.filename());
+  if (devices_.empty()) chooser.default_folder(pictures_);
+  else chooser.folder(devices_[0].mount_point);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  browse(chooser.path());
 }
 
 void GalleryWindow::open_file_dialog() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+  FileChooser chooser(FileChooser::Mode::Open);
   chooser.title(_("Open a Photo"));
-  chooser.filter(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff}"));
-  chooser.directory(pictures_.c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string path = chooser.filename();
+  chooser.filters(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,webp,tif,tiff}"));
+  chooser.default_folder(pictures_);
+  chooser.preview(true);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  std::string path = chooser.path();
   std::string dir = path.substr(0, path.rfind('/'));
   // Photo steps through the photos of that folder.
   if (!open_in_photo(path, Album{AlbumKind::Directory, dir.empty() ? "/" : dir}, Sort::Name)) {
@@ -1227,12 +1229,12 @@ void GalleryWindow::toggle_favorite(const std::vector<std::string> &paths) {
 }
 
 void GalleryWindow::add_folder() {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
+  FileChooser chooser(FileChooser::Mode::Folder);
   chooser.title(_("Add a Folder to Gallery"));
-  chooser.directory(home_dir().c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  add_folder(chooser.filename());
+  chooser.default_folder(home_dir());
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  add_folder(chooser.path());
 }
 
 void GalleryWindow::add_folder(const std::string &chosen) {

@@ -5,7 +5,6 @@
 // the command registry.
 #include <FL/Fl.H>
 #include <FL/Fl_Menu_Item.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/Fl_Tooltip.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -24,6 +23,7 @@
 
 #include "about.h"
 #include "config.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "niny.h"
 #include "spawn.h"
@@ -1093,26 +1093,26 @@ void App::reopen_closed() {
 }
 
 void App::open_dialog() {
-  Fl_Native_File_Chooser fc;
+  FileChooser fc(FileChooser::Mode::OpenMultiple);
   fc.title(_("Open Files"));
-  fc.type(Fl_Native_File_Chooser::BROWSE_MULTI_FILE);
-  fc.directory(cwd_folder().c_str());
-  if (fc.show() != 0) return;
-  std::vector<std::string> files;
-  for (int i = 0; i < fc.count(); ++i) files.push_back(fc.filename(i));
-  open_files(files, "");
+  // The folder of the document or of the side panel; else the folder the
+  // last files were opened from.
+  Document *d = active();
+  if ((d && !d->path.empty()) || !sidebar_->folder().empty()) fc.folder(cwd_folder());
+  else fc.default_folder(home_dir());
+  fc.parent(this);
+  if (!fc.run()) return;
+  open_files(fc.paths(), "");
 }
 
 bool App::save_as(Document *doc) {
-  Fl_Native_File_Chooser fc;
+  FileChooser fc(FileChooser::Mode::Save);
   fc.title(_("Save As"));
-  fc.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
-  fc.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
-  std::string dir = doc->path.empty() ? cwd_folder() : doc->folder();
-  fc.directory(dir.c_str());
-  fc.preset_file(doc->path.empty() ? (doc->display_name() + ".txt").c_str() : basename_of(doc->path).c_str());
-  if (fc.show() != 0) return false;
-  std::string path = fc.filename();
+  fc.folder(doc->path.empty() ? cwd_folder() : doc->folder());
+  fc.file_name(doc->path.empty() ? doc->display_name() + ".txt" : basename_of(doc->path));
+  fc.parent(this);
+  if (!fc.run()) return false;
+  std::string path = fc.path();
   if (path.empty()) return false;
   int other = find_document(path);
   if (other >= 0 && docs_[size_t(other)].get() != doc) {

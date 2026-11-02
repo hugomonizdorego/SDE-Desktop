@@ -1,0 +1,156 @@
+SDE WM: SDE's "Wait / Force Close" dialog for windows that do not respond.
+
+0.2.0 Alpha 3.1 (docs/FORCE-CLOSE.md in SDE). Openbox's ping code stays as it
+is: closing a window that lists _NET_WM_PING pings it, and a window that has
+not answered after two pings (about six seconds) is "Not Responding".
+
+* In place of Openbox's own prompt ("The window ... does not seem to be
+  responding. Do you want to force it to exit by sending the terminate
+  signal?"), client_prompt_kill() runs "sde-force-close --window XID
+  --reason closing": SDE's dialog with the program's icon and name, Wait and
+  Force Close (SIGKILL at once, with SDE's checks), which closes by itself
+  when the program answers again and asks only once per window. Openbox's
+  prompt remains the fallback when sde-force-close cannot be started.
+* _SDE_NOT_RESPONDING (CARDINAL) on a client window marks it "Not
+  Responding": sde-watchdog sets it for the window the user is using when
+  it stops answering, and removes it on the first answer. SDE WM reads it
+  on PropertyNotify, so the title gets " - [Not Responding]" and closing
+  such a window shows the dialog at once. When SDE WM's own ping finds a
+  window dead or alive again, it sets or removes the mark too, so the
+  panel and the dialog learn about it.
+
+--- a/openbox/client.c
++++ b/openbox/client.c
+@@ -54,6 +54,8 @@
+ #endif
+ 
+ #include <glib.h>
++#include <time.h>
++#include <X11/Xatom.h>
+ #include <X11/Xutil.h>
+ 
+ /*! The event mask to grab on client windows */
+@@ -3552,10 +3554,86 @@
+     frame_adjust_area(self->frame, FALSE, TRUE, FALSE);
+ }
+ 
++/* SDE: _SDE_NOT_RESPONDING (CARDINAL, the time it stopped answering) marks
++   a window whose program does not answer _NET_WM_PING. sde-watchdog sets it
++   for the window the user is using, and so does SDE WM when its own ping
++   after a close attempt is not answered; the first answer removes it. The
++   title then says "Not Responding", the panel dims the window's button, and
++   closing the window runs SDE's "Wait / Force Close" dialog at once. */
++Atom client_sde_not_responding_atom(void)
++{
++    static Atom atom = None;
++    if (atom == None)
++        atom = XInternAtom(obt_display, "_SDE_NOT_RESPONDING", FALSE);
++    return atom;
++}
++
++static gboolean client_sde_marked(ObClient *self)
++{
++    Atom type = None;
++    int format;
++    unsigned long n = 0, after = 0;
++    unsigned char *data = NULL;
++    gboolean marked = FALSE;
++
++    if (XGetWindowProperty(obt_display, self->window,
++                           client_sde_not_responding_atom(), 0, 1, False,
++                           AnyPropertyType, &type, &format, &n, &after,
++                           &data) == Success)
++    {
++        marked = type != None;
++        if (data) XFree(data);
++    }
++    return marked;
++}
++
++static void client_sde_mark(ObClient *self, gboolean dead)
++{
++    if (dead) {
++        unsigned long since = (unsigned long)time(NULL);
++        XChangeProperty(obt_display, self->window,
++                        client_sde_not_responding_atom(), XA_CARDINAL, 32,
++                        PropModeReplace, (unsigned char*)&since, 1);
++    } else
++        XDeleteProperty(obt_display, self->window,
++                        client_sde_not_responding_atom());
++}
++
++void client_update_sde_not_responding(ObClient *self)
++{
++    gboolean marked = client_sde_marked(self);
++
++    if (marked == self->not_responding) return;
++    self->not_responding = marked;
++    if (!marked) self->kill_level = 0;
++    client_update_title(self);
++}
++
++/* SDE: sde-force-close --window XID --reason closing, in place of the
++   prompt below; FALSE when it cannot be started. */
++static gboolean client_sde_force_close(ObClient *self)
++{
++    gchar xid[32];
++    gchar *argv[] = { "sde-force-close", "--window", xid,
++                      "--reason", "closing", NULL };
++    GError *err = NULL;
++
++    g_snprintf(xid, sizeof(xid), "0x%lx", (gulong)self->window);
++    if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH,
++                       NULL, NULL, NULL, &err))
++    {
++        ob_debug("sde-force-close: %s", err ? err->message : "failed");
++        if (err) g_error_free(err);
++        return FALSE;
++    }
++    return TRUE;
++}
++
+ static void client_ping_event(ObClient *self, gboolean dead)
+ {
+     if (self->not_responding != dead) {
+         self->not_responding = dead;
++        client_sde_mark(self, dead);
+         client_update_title(self);
+ 
+         if (dead)
+@@ -3633,6 +3711,10 @@
+ 
+ static void client_prompt_kill(ObClient *self)
+ {
++    /* SDE: SDE's dialog (it closes by itself when the program answers
++       again, and asks only once per window) */
++    if (!self->kill_prompt && client_sde_force_close(self)) return;
++
+     /* check if we're already prompting */
+     if (!self->kill_prompt) {
+         ObPromptAnswer answers[] = {
+--- a/openbox/client.h
++++ b/openbox/client.h
+@@ -647,6 +647,10 @@
+ void client_update_wmhints(ObClient *self);
+ /*! Updates the window's title and icon title */
+ void client_update_title(ObClient *self);
++/*! SDE: the atom of SDE's "Not Responding" mark (_SDE_NOT_RESPONDING) */
++Atom client_sde_not_responding_atom(void);
++/*! SDE: reads the mark after it changed (sde-watchdog sets and removes it) */
++void client_update_sde_not_responding(ObClient *self);
+ /*! Updates the strut for the client */
+ void client_update_strut(ObClient *self);
+ /*! Updates the window's icons */
+--- a/openbox/event.c
++++ b/openbox/event.c
+@@ -1701,6 +1701,10 @@
+         else if (msgtype == OBT_PROP_ATOM(NET_WM_WINDOW_OPACITY)) {
+             client_update_opacity(client);
+         }
++        else if (msgtype == client_sde_not_responding_atom()) {
++            /* SDE: sde-watchdog's "Not Responding" mark */
++            client_update_sde_not_responding(client);
++        }
+ #ifdef SYNC
+         else if (msgtype == OBT_PROP_ATOM(NET_WM_SYNC_REQUEST_COUNTER)) {
+             /* if they are resizing right now this would cause weird behaviour.

@@ -5,7 +5,6 @@
 // conversion, printing (and PDF), sending by email, the slideshow
 // settings, cameras and phones, finding duplicates, and the Places view.
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <cairo-pdf.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -22,6 +21,7 @@
 #include "exif.h"
 #include "forms.h"
 #include "gallery.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "menubar.h"
 #include "places.h"
@@ -37,13 +37,11 @@ namespace gallery {
 namespace {
 
 std::string choose_folder_for(const char *title, const std::string &start) {
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_DIRECTORY);
-  chooser.options(Fl_Native_File_Chooser::NEW_FOLDER);
+  FileChooser chooser(FileChooser::Mode::Folder);
   chooser.title(title);
-  chooser.directory(start.c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return "";
-  std::string dir = chooser.filename();
+  chooser.folder(start);
+  if (!chooser.run()) return "";
+  std::string dir = chooser.path();
   while (dir.size() > 1 && dir.back() == '/') dir.pop_back();
   return dir;
 }
@@ -390,17 +388,15 @@ void GalleryWindow::print_files(const std::vector<std::string> &paths) {
   std::string pdf;
   bool to_printer = r == 2;
   if (!to_printer) {
-    Fl_Native_File_Chooser chooser;
-    chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
+    FileChooser chooser(FileChooser::Mode::Save);
     chooser.title(_("Save as PDF"));
-    chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
-    chooser.directory(user_dir("DOCUMENTS").empty() ? home_dir().c_str() : user_dir("DOCUMENTS").c_str());
+    chooser.default_folder(user_dir("DOCUMENTS").empty() ? home_dir() : user_dir("DOCUMENTS"));
     std::string stem = basename_of(paths[0]);
     if (stem.rfind('.') != std::string::npos && stem.rfind('.') > 0) stem = stem.substr(0, stem.rfind('.'));
-    chooser.preset_file(((paths.size() == 1 ? stem : std::string(_("Photos"))) + ".pdf").c_str());
-    chooser.filter("PDF\t*.pdf");
-    if (chooser.show() != 0 || !chooser.filename()) return;
-    pdf = chooser.filename();
+    chooser.file_name((paths.size() == 1 ? stem : std::string(_("Photos"))) + ".pdf");
+    chooser.filters(std::string(_("PDF documents")) + "\t*.pdf");
+    if (!chooser.run()) return;
+    pdf = chooser.path();
     if (!ends_with(lower(pdf), ".pdf")) pdf += ".pdf";
   } else {
     pdf = runtime_dir() + "/sde-gallery/print-" + std::to_string(getpid()) + "-" + std::to_string(time(nullptr)) + ".pdf";

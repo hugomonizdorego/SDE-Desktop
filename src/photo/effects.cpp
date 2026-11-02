@@ -8,7 +8,6 @@
 // work in gallery/metadata.cpp.
 #include <FL/Fl.H>
 #include <FL/Fl_Color_Chooser.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_draw.H>
 #include <fcntl.h>
 #include <pwd.h>
@@ -20,6 +19,7 @@
 #include <ctime>
 
 #include "config.h"
+#include "file_chooser.h"
 #include "forms.h"
 #include "i18n.h"
 #include "menu.h"
@@ -744,14 +744,13 @@ void PhotoWindow::save_without_details() {
     ext = stem.substr(dot);
     stem = stem.substr(0, dot);
   }
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
+  FileChooser chooser(FileChooser::Mode::Save);
   chooser.title(_("Save a Copy Without Details"));
-  chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
-  chooser.directory(p->dir.c_str());
-  chooser.preset_file((stem + " " + _("(no details)") + ext).c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string dest = chooser.filename();
+  chooser.folder(p->dir);
+  chooser.file_name(stem + " " + _("(no details)") + ext);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  std::string dest = chooser.path();
   if (dest == p->path) {
     // Replacing the photo itself: its time stays.
     if (!gallery::rewrite_photo_in_place(dest, bytes)) {

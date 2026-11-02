@@ -106,7 +106,7 @@
       "name": "Selviana Desktop Environment",
       "kind": "desktop",
       "summary": "Session, panel, desktop, notifications and system services",
-      "programs": ["startsde", "sde-session", "sde-panel", "sde-desktop", "sde-notifyd", "sde-autostart", "sde-suite", "sde-xsettingsd", "sde-polkit-agent"],
+      "programs": ["startsde", "sde-session", "sde-panel", "sde-desktop", "sde-notifyd", "sde-autostart", "sde-suite", "sde-xsettingsd", "sde-polkit-agent", "xdg-desktop-portal-sde"],
       "metainfo": "org.debion.SDE.metainfo.xml",
       "icons": ["sde-logo", "start-here"],
       "license": "GPL-3.0-or-later",
@@ -115,7 +115,7 @@
       "credits": ["Inspired by the Equinox Desktop Environment (EDE); contains no EDE code", "Panel and Action Center design ideas from Eduka-Desktop (no code copied)"],
       "trademarks": ["sde"],
       "notices": ["/usr/share/doc/sde/copyright"],
-      "sources": ["src/common/", "src/session/", "src/panel/", "src/desktop/", "src/notifyd/", "src/xsettingsd/", "src/polkit-agent/", "rust/", "data/startsde", "po/"]
+      "sources": ["src/common/", "src/session/", "src/panel/", "src/desktop/", "src/notifyd/", "src/xsettingsd/", "src/polkit-agent/", "src/portal/", "rust/", "data/startsde", "po/"]
     },
     {
       "id": "sde-settings",

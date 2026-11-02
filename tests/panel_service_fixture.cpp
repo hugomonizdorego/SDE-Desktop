@@ -311,6 +311,32 @@ void battery_mode(const std::string& args) {
 // SetIconFile copies the picture next to the log, as accountsservice copies
 // it to /var/lib/AccountsService. Changes are logged, a password only as
 // the kind of its hash: "ACCOUNTS SetPassword robin $y$".
+// 0.2.0 Alpha 3.1: systemd-logind's answers to CanSuspend, CanReboot and
+// CanPowerOff for the Action Center's session buttons. Only after the mode
+// "login1 suspend=<answer> reboot=<answer> poweroff=<answer>" (the name is
+// taken then, "login1-off" gives it up): the panel's other logind calls
+// (brightness) keep going to no service and fall back as before.
+const std::string login1 = "/org/freedesktop/login1";
+std::string can_suspend = "yes", can_reboot = "yes", can_poweroff = "yes";
+bool login1_owned = false;
+void login1_mode(const std::string& mode) {
+  if (mode == "login1-off") {
+    if (login1_owned) dbus_bus_release_name(bus->conn(), "org.freedesktop.login1", nullptr);
+    login1_owned = false;
+    return;
+  }
+  std::istringstream in(mode.substr(7));
+  std::string word;
+  while (in >> word) {
+    size_t eq = word.find('=');
+    if (eq == std::string::npos) continue;
+    std::string key = word.substr(0, eq), value = word.substr(eq + 1);
+    if (key == "suspend") can_suspend = value;
+    if (key == "reboot") can_reboot = value;
+    if (key == "poweroff") can_poweroff = value;
+  }
+  if (!login1_owned) login1_owned = bus->request_name("org.freedesktop.login1");
+}
 const std::string accounts = "/org/freedesktop/Accounts", account_user = accounts + "/User4242";
 struct Person {
   std::string path, name, real_name, icon;
@@ -408,6 +434,12 @@ DBusHandlerResult handle(DBusMessage* m) {
     drive_present = false;
     mount_point.clear();
     ud_signal("InterfacesRemoved", ud_part);
+  } else if (path == login1 && login1_owned &&
+             (method == "CanSuspend" || method == "CanReboot" || method == "CanPowerOff")) {
+    log("LOGIN1 " + method);
+    dbus::Writer(r).str(method == "CanSuspend" ? can_suspend
+                        : method == "CanReboot" ? can_reboot
+                                                : can_poweroff);
   } else if (path == up && method == "GetAll") {
     dbus::Writer w(r);
     dbus::Writer props(w.iter(), DBUS_TYPE_ARRAY, "{sv}");
@@ -605,6 +637,10 @@ DBusHandlerResult handle(DBusMessage* m) {
     p.auto_login = args[0].boolean();
     user_changed(p);
   } else if (path == "/SDETest" && method == "Mode" && !args.empty() &&
+             args[0].str().rfind("login1", 0) == 0) {
+    login1_mode(args[0].str());
+    log("MODE " + args[0].str());
+  } else if (path == "/SDETest" && method == "Mode" && !args.empty() &&
              (args[0].str().rfind("battery ", 0) == 0 || args[0].str().rfind("upower-", 0) == 0)) {
     // The battery modes leave the other services as they are.
     auto mode = args[0].str();
@@ -733,7 +769,7 @@ int main(int argc, char** argv) {
       !bus->request_name("org.freedesktop.UPower"))
     return 1;
   for (const auto& path : {std::string("/"), adapter, device, player, std::string("/SDETest"), nm,
-                           ud, ud_drive, ud_disk, ud_part, accounts, up, up_display})
+                           ud, ud_drive, ud_disk, ud_part, accounts, up, up_display, login1})
     bus->export_object(path, handle);
   for (const auto& p : people) bus->export_object(p.path, handle);
   display = XOpenDisplay(nullptr);

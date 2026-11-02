@@ -1,0 +1,4 @@
+[portal]
+DBusName=org.freedesktop.impl.portal.desktop.sde
+Interfaces=org.freedesktop.impl.portal.FileChooser
+UseIn=SDE-Desktop;SDE

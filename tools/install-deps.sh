@@ -9,7 +9,7 @@
 set -eu
 
 BUILD_DEPS="build-essential cmake pkgconf rustc cargo debhelper devscripts fakeroot lintian
-libcairo2-dev librsvg2-dev libx11-dev libxrandr-dev libxi-dev libxft-dev libxfixes-dev libxext-dev libxrender-dev libxcomposite-dev libxinerama-dev libxcursor-dev libfontconfig-dev libpng-dev libjpeg-dev zlib1g-dev libdbus-1-dev libcrypt-dev libappstream-dev libflatpak-dev gettext python3 sassc xvfb x11-xserver-utils gpg gpg-agent gpgv"
+libcairo2-dev librsvg2-dev libx11-dev libxrandr-dev libxi-dev libxres-dev libxft-dev libxfixes-dev libxext-dev libxrender-dev libxcomposite-dev libxinerama-dev libxcursor-dev libfontconfig-dev libpng-dev libjpeg-dev zlib1g-dev libdbus-1-dev libcrypt-dev libappstream-dev libflatpak-dev gettext python3 sassc xvfb x11-xserver-utils gpg gpg-agent gpgv"
 # Merkadu: the package lists (All Software) are read with libapt-pkg.
 BUILD_DEPS="$BUILD_DEPS libapt-pkg-dev"
 # Xanara's PDF engine (libqpdf, HarfBuzz, FreeType), printing (libcups) and OCR (tesseract).

@@ -37,6 +37,16 @@ add_test(NAME sde-safe-copy COMMAND sde-safe-copy-tests)
 add_executable(sde-safe-copy-bench safe_copy_bench.cpp)
 target_link_libraries(sde-safe-copy-bench PRIVATE sde-desktop-model sde-common)
 
+# 0.2.0 Alpha 3.1: the SDE file chooser (src/common/file_chooser*.h): its
+# model (sorting, filters, history, completion, places, recent files,
+# bookmarks, drives, thumbnails, state) without a display, and the dialog on
+# Xvfb through sde-file-chooser-demo (not installed; also for showcase.py).
+add_executable(sde-file-chooser-tests test_file_chooser.cpp)
+target_link_libraries(sde-file-chooser-tests PRIVATE sde-common)
+add_test(NAME sde-file-chooser-model COMMAND sde-file-chooser-tests)
+add_executable(sde-file-chooser-demo file_chooser_demo.cpp)
+target_link_libraries(sde-file-chooser-demo PRIVATE sde-common)
+
 # Calculator: parser, precedence, percent, functions, errors, formatting,
 # programmer mode, converter and history; then the command line (--eval).
 add_executable(calculator-tests test_calculator.cpp)
@@ -57,6 +67,13 @@ if(SDE_XVFB)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_transfer_dialog.py $<TARGET_FILE:sde-transfer-demo>)
   set_tests_properties(sde-transfer-dialog PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120
     ENVIRONMENT "SDE_BRANDING_DIR=${PROJECT_SOURCE_DIR}/data/branding")
+endif()
+# The file chooser on Xvfb (tests/test_file_chooser_ui.py; a drop through
+# sde-xdnd-peer); skipped without xdotool.
+if(SDE_XVFB)
+  add_test(NAME sde-file-chooser-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_file_chooser_ui.py
+    $<TARGET_FILE:sde-file-chooser-demo> $<TARGET_FILE:sde-xdnd-peer>)
+  set_tests_properties(sde-file-chooser-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 
 add_executable(sde-panel-controls-tests test_panel_controls.cpp ../src/panel/controls.cpp
@@ -82,6 +99,12 @@ target_link_libraries(sde-dbus-timeout-tests PRIVATE sde-common)
 if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-dbus-timeouts COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-dbus-timeout-tests>)
   set_tests_properties(sde-dbus-timeouts PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+endif()
+# The FileChooser portal backend (xdg-desktop-portal-sde) on a private bus.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-file-chooser-portal COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_file_chooser_portal.py $<TARGET_FILE:xdg-desktop-portal-sde>)
+  set_tests_properties(sde-file-chooser-portal PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 endif()
 
 add_executable(sde-xsettings-tests test_xsettings.cpp)
@@ -225,11 +248,25 @@ add_test(NAME sde-timezone-model COMMAND sde-timezone-tests)
 add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
 target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
+# 0.2.0 Alpha 3.1: the Action Center's session buttons (order, logind's
+# answers, the second click, the glyphs).
+add_executable(sde-session-actions-tests test_session_actions.cpp ../src/panel/session_actions.cpp)
+target_link_libraries(sde-session-actions-tests PRIVATE sde-common)
+add_test(NAME sde-session-actions COMMAND sde-session-actions-tests)
 add_executable(sde-grab-fixture grab_fixture.cpp)
 target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
 # alpha51: a plain application window for the taskbar preview checks.
 add_executable(sde-preview-window preview_window_fixture.cpp)
 target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
+# 0.2.0 Alpha 3.1: a window that stops answering _NET_WM_PING on SIGUSR1
+# (Force Close checks, showcase), and a pinger.
+add_executable(sde-frozen-client frozen_client_fixture.cpp)
+target_link_libraries(sde-frozen-client PRIVATE ${X11_LIBRARIES})
+# Force Close: which processes may be ended, the watchdog's decisions and
+# the launch records (no display).
+add_executable(sde-force-close-tests test_force_close.cpp)
+target_link_libraries(sde-force-close-tests PRIVATE sde-forceclose-core)
+add_test(NAME sde-force-close-rules COMMAND sde-force-close-tests)
 
 # SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.
@@ -282,6 +319,37 @@ if(SDE_XVFB)
     $<$<TARGET_EXISTS:sde-theme-preview-gtk>:$<TARGET_FILE:sde-theme-preview-gtk>>)
   set_tests_properties(sde-appearance-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+# 0.2.0 Alpha 3.1: every translucent surface (Liquid Glass's shader and the
+# whole-window translucency of the other families, frames and other
+# toolkits' menus) over a busy web page: text contrast, a calm surface and
+# even transparency steps, with the compositor configuration SDE generates.
+add_executable(sde-glass-tests test_glass.cpp)
+target_link_libraries(sde-glass-tests PRIVATE sde-common)
+add_test(NAME sde-glass-busy-backdrop COMMAND sde-glass-tests)
+set_tests_properties(sde-glass-busy-backdrop PROPERTIES TIMEOUT 300)
+# 0.2.0 Alpha 3.1: menus and lists of the SDE GTK themes highlight at once
+# (no transitions on menu items, rows and the like in the built style
+# sheets), and check buttons are square while radio buttons are round, as
+# drawn by GTK 3, GTK 4 (when found) and SDE-FLTK (QA helpers, not
+# installed) on Xvfb.
+add_executable(sde-fltk-indicator-probe fltk_indicator_probe.cpp)
+target_link_libraries(sde-fltk-indicator-probe PRIVATE sde-common)
+set(SDE_INDICATOR_PROBES --fltk $<TARGET_FILE:sde-fltk-indicator-probe>)
+pkg_check_modules(SDE_PROBE_GTK3 IMPORTED_TARGET gtk+-3.0)
+if(SDE_PROBE_GTK3_FOUND)
+  add_executable(sde-gtk3-indicator-probe gtk3_indicator_probe.cpp)
+  target_link_libraries(sde-gtk3-indicator-probe PRIVATE PkgConfig::SDE_PROBE_GTK3)
+  list(APPEND SDE_INDICATOR_PROBES --gtk3 $<TARGET_FILE:sde-gtk3-indicator-probe>)
+endif()
+pkg_check_modules(SDE_PROBE_GTK4 IMPORTED_TARGET gtk4>=4.14)
+if(SDE_PROBE_GTK4_FOUND)
+  add_executable(sde-gtk4-indicator-probe gtk4_indicator_probe.cpp)
+  target_link_libraries(sde-gtk4-indicator-probe PRIVATE PkgConfig::SDE_PROBE_GTK4)
+  list(APPEND SDE_INDICATOR_PROBES --gtk4 $<TARGET_FILE:sde-gtk4-indicator-probe>)
+endif()
+add_test(NAME sde-theme-motion COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_motion.py
+  --themes ${CMAKE_BINARY_DIR}/themes ${SDE_INDICATOR_PROBES})
+set_tests_properties(sde-theme-motion PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data
@@ -401,3 +469,16 @@ target_link_libraries(sde-badges-tests PRIVATE sde-common)
 add_test(NAME sde-badges COMMAND sde-badges-tests)
 add_executable(sde-launcher-entry-fixture launcher_entry_fixture.cpp)
 target_link_libraries(sde-launcher-entry-fixture PRIVATE sde-common)
+
+# 0.2.0 Alpha 3.1 Force Close on Xvfb: pings, marks, the dialog (Wait,
+# recovery, Force Close), programs that never open, refused targets, close
+# attempts in a patched SDE WM and crashes through sde-session.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  set(SDE_FORCE_CLOSE_WM "")
+  if(SDE_BUILD_COMPONENTS)
+    set(SDE_FORCE_CLOSE_WM --wm "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-wm")
+  endif()
+  add_test(NAME sde-force-close-ui COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_force_close_ui.py ${CMAKE_BINARY_DIR} ${SDE_FORCE_CLOSE_WM})
+  set_tests_properties(sde-force-close-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()

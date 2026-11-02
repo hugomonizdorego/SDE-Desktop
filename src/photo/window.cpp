@@ -4,7 +4,6 @@
 // The Photo window: opening and navigating photos, the header bar and its
 // menu, editing, saving and the actions on the file.
 #include <FL/Fl.H>
-#include <FL/Fl_Native_File_Chooser.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
@@ -22,6 +21,7 @@
 #include "collage_ui.h"
 #include "config.h"
 #include "desktop_entry.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "link.h"
 #include "menu.h"
@@ -429,14 +429,16 @@ void PhotoWindow::album_ready() {
 
 void PhotoWindow::open_dialog() {
   if (modified() && !confirm_discard()) return;
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+  FileChooser chooser(FileChooser::Mode::Open);
   chooser.title(_("Open a Photo"));
-  chooser.filter(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,svgz,webp,tif,tiff,avif,heic,jxl}"));
+  chooser.filters(_("Images\t*.{jpg,jpeg,png,gif,bmp,svg,svgz,webp,tif,tiff,avif,heic,jxl}"));
   const Photo *p = current();
-  chooser.directory((p ? p->dir : gallery::pictures_dir()).c_str());
-  if (chooser.show() != 0 || !chooser.filename()) return;
-  std::string path = chooser.filename();
+  if (p) chooser.folder(p->dir);
+  else chooser.default_folder(gallery::pictures_dir());
+  chooser.preview(true);
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  std::string path = chooser.path();
   std::string dir = path.substr(0, path.rfind('/'));
   history_.reset();
   open(path, Album{AlbumKind::Directory, dir.empty() ? "/" : dir}, false, gallery::Sort::Name);
@@ -956,15 +958,14 @@ bool PhotoWindow::save_as() {
   size_t dot = stem.rfind('.');
   if (dot != std::string::npos && dot > 0) stem.resize(dot);
   std::string suggestion = replace_extension(p->dir + "/" + stem + (modified() ? _(" (edited)") : _(" (copy)")), out_fmt);
-  Fl_Native_File_Chooser chooser;
-  chooser.type(Fl_Native_File_Chooser::BROWSE_SAVE_FILE);
+  FileChooser chooser(FileChooser::Mode::Save);
   chooser.title(_("Save Photo As"));
-  chooser.options(Fl_Native_File_Chooser::SAVEAS_CONFIRM | Fl_Native_File_Chooser::NEW_FOLDER);
-  chooser.directory(p->dir.c_str());
-  chooser.preset_file(basename_of(suggestion).c_str());
-  chooser.filter(_("JPEG\t*.{jpg,jpeg}\nPNG\t*.png\nWebP\t*.webp\nTIFF\t*.{tif,tiff}"));
-  if (chooser.show() != 0 || !chooser.filename()) return false;
-  std::string dest = chooser.filename();
+  chooser.folder(p->dir);
+  chooser.file_name(basename_of(suggestion));
+  chooser.filters(_("JPEG\t*.{jpg,jpeg}\nPNG\t*.png\nWebP\t*.webp\nTIFF\t*.{tif,tiff}"));
+  chooser.parent(this);
+  if (!chooser.run()) return false;
+  std::string dest = chooser.path();
   Format f = format_of(dest);
   if (f == Format::Unknown) {
     dest = replace_extension(dest, out_fmt);

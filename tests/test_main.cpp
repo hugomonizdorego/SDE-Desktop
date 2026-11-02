@@ -517,25 +517,32 @@ static void test_gtk_preferences() {
   std::string conf = write_compositor_config(cfg);
   CHECK(read_file(conf, text));
   CHECK(text.find("backend = \"xrender\";") != std::string::npos);
-  // Frames follow [aero] transparency (Theme::frame_opacity): Glass the most.
+  // The frame opacity of the configuration in |text|.
   auto frame_opacity = [&]() {
     size_t at = text.find("frame-opacity = ");
     return at == std::string::npos ? -1.0 : atof(text.c_str() + at + 16);
   };
-  double glass_frame = frame_opacity();
-  CHECK(glass_frame > 0.6 && glass_frame < 0.95);
+  // 0.2.0 Alpha 3.1: over XRender's small blur frames stay almost opaque.
+  CHECK(frame_opacity() >= 0.95 && frame_opacity() < 1.0);
   CHECK(text.find("blur-background = true;") != std::string::npos);
   CHECK(text.find("corner-radius = 16;") != std::string::npos);  // Liquid Glass: the softest corners
   // SDE's own surfaces (x11::set_surface()) keep the radius they are shaped
-  // with; other docks, menus and tooltips stay square. XRender: no glass shader.
+  // with; other docks and tooltips stay square, GTK 3 menus (no alpha
+  // channel) are rounded and menus with one draw their own corners.
+  // XRender: no glass shader.
   CHECK(text.find("_SDE_SURFACE = 'popup'\"") != std::string::npos);
-  CHECK(text.find("\"window_type = 'popup_menu' && !_SDE_SURFACE\"") != std::string::npos);
+  CHECK(text.find("\"window_type = 'popup_menu' && !_SDE_SURFACE && argb\"") != std::string::npos);
+  CHECK(text.find(":(window_type = 'popup_menu' || window_type = 'dropdown_menu') && !argb && !_SDE_SURFACE\"") !=
+        std::string::npos);
   CHECK(text.find("window-shader-fg-rule") == std::string::npos);
   // Liquid Glass on OpenGL (0.2.0 Alpha 2): the glass shader draws SDE's
   // surfaces, one shader for each set of rounded corners.
   cfg.set("compositor", "backend", "glx");
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(text.find("backend = \"glx\";") != std::string::npos);
+  // Frames follow [aero] transparency (Theme::frame_opacity): Glass the most.
+  double glass_frame = frame_opacity();
+  CHECK(glass_frame > 0.6 && glass_frame < 0.95);
   CHECK(text.find("/sde/liquid-glass.glsl:_SDE_SURFACE = 'panel' || ") != std::string::npos);
   CHECK(text.find("/sde/liquid-glass-top.glsl:_SDE_SURFACE = 'popup-top'\"") != std::string::npos);
   CHECK(text.find("/sde/liquid-glass-bottom.glsl:_SDE_SURFACE = 'popup-bottom'\"") != std::string::npos);
@@ -549,16 +556,16 @@ static void test_gtk_preferences() {
   cfg.set("appearance", "style", "graphite");
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(text.find("window-shader-fg-rule") == std::string::npos);
-  cfg.set("appearance", "style", "glass");
-  cfg.set("compositor", "backend", "xrender");
-  CHECK(read_file(write_compositor_config(cfg), text));
-  // Fluent: lightly translucent frames, Acrylic (translucent, blurred) menus, 8 px corners.
+  // Fluent: lightly translucent frames, Acrylic (translucent, blurred) menus
+  // (GTK 3 menus too, by an opacity rule), 8 px corners.
   cfg.set("appearance", "style", "fluent");
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(frame_opacity() > glass_frame && frame_opacity() < 1.0);
   CHECK(text.find("blur-background = true;") != std::string::npos);
   CHECK(text.find("corner-radius = 8;") != std::string::npos);
-  CHECK(text.find("popup_menu = { opacity = 1.00") == std::string::npos);
+  CHECK(text.find("opacity-rule = [\"") != std::string::npos);
+  CHECK(text.find("popup_menu = { opacity") == std::string::npos);
+  cfg.set("compositor", "backend", "xrender");
   // The lite profile keeps soft corners since alpha51 (only blur and fades go).
   cfg.set("compositor", "effects", "lite");
   CHECK(read_file(write_compositor_config(cfg), text));
@@ -569,7 +576,7 @@ static void test_gtk_preferences() {
   CHECK(read_file(write_compositor_config(cfg), text));
   CHECK(text.find("frame-opacity = 1.00;") != std::string::npos);
   CHECK(text.find("blur-background") == std::string::npos);
-  CHECK(text.find("popup_menu = { opacity = 1.00") != std::string::npos);
+  CHECK(text.find("opacity-rule") == std::string::npos);  // every menu opaque
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 

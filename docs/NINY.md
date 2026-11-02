@@ -126,12 +126,15 @@ popup, with *Menu Bar* at the bottom to show the row again. The setting is
 
 ### Small screens
 
-A menu that is taller than the space on its screen gets lower rows, from
-34 down to 24 pixels (at 100 %), before anything scrolls, and moves up
-over the menu bar if needed; each menu of the menu bar has at most twelve
-entries, and long lists are grouped into submenus (file types like Kate
-and Mousepad). Every menu fits a 1024×600 screen at 150 % without
-scrolling. When the window is narrow the titles move closer together and
+A menu of the menu bar opens right under its title and never covers the
+menu bar (0.2.0 Alpha 3.1; before, a long menu moved up over the titles on
+a 1024×600 screen at 150 %). When it is taller than the room under the
+title it gets lower rows, from 34 down to 24 pixels (at 100 %), and if it
+still does not fit it scrolls: a strip with a chevron at its top or bottom
+shows that there is more, and the pointer resting on a strip, the wheel
+and the arrow keys (Home, End) scroll it. Each menu of the menu bar has at
+most twelve entries, and long lists are grouped into submenus (file types
+like Kate and Mousepad). When the window is narrow the titles move closer together and
 the formatting buttons give way first, then the gear (Preferences stays in
 the Edit menu).
 

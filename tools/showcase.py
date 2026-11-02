@@ -61,9 +61,11 @@ import showcase_content  # noqa: E402
 
 
 class ThemeSet:
-    def __init__(self, name, family, mode, size='1366x768', scale=100, scope='full', label=''):
+    def __init__(self, name, family, mode, size='1366x768', scale=100, scope='full', label='', effects=None):
         self.name, self.family, self.mode, self.size, self.scale = name, family, mode, size, scale
         self.scope, self.label = scope, label
+        # Compositor effects of the set when --effects does not say (lite).
+        self.effects = effects
         self.w, self.h = map(int, size.split('x'))
 
     @property
@@ -76,8 +78,10 @@ SETS = [
     ThemeSet('graphite-dark', 'graphite', 'dark', label='SDE Graphite Dark'),
     ThemeSet('fluent-light', 'fluent', 'light', scope='themes', label='SDE Fluent Light'),
     ThemeSet('fluent-dark', 'fluent', 'dark', scope='themes', label='SDE Fluent Dark'),
-    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Liquid Glass Light'),
-    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Liquid Glass Dark'),
+    # 0.2.0 Alpha 3.1: Liquid Glass as on a real GPU (the compositor's glass
+    # shader through Mesa on Xvfb); the lite profile draws it nearly opaque.
+    ThemeSet('glass-light', 'glass', 'light', scope='themes', label='SDE Liquid Glass Light', effects='full'),
+    ThemeSet('glass-dark', 'glass', 'dark', scope='themes', label='SDE Liquid Glass Dark', effects='full'),
     ThemeSet('hero-1920x1080', 'graphite', 'light', '1920x1080', 125, scope='hero',
              label='SDE Graphite Light, 1920x1080 at 125 %'),
 ]
@@ -359,6 +363,7 @@ class Session:
         self.current = None
         self.env = {}
         self.xgrab = None
+        self.effects = self.args.effects or tset.effects or 'lite'
 
     # ------------------------------------------------------------ programs
 
@@ -589,6 +594,15 @@ class Session:
         y = wy + (wh - h - top - bottom) // 2 + top
         self.xdo('windowmove', wid, str(x), str(y))
         self.wait(lambda: (self.geom(wid)['x'], self.geom(wid)['y']) == (x, y), 2)
+        if self.effects == 'full' and getattr(self, 'compositor', None) and self.compositor.poll() is None:
+            # With the OpenGL compositor on the CPU (Mesa on Xvfb) a window
+            # resized while its program is busy starting can stay on the
+            # screen at its old size, the rest see-through, for a long time
+            # (0.2.0 Alpha 3 too; Liria): the compositor's reset (SIGUSR1,
+            # what sde-session's reload does) draws every window again.
+            time.sleep(1.0)
+            os.kill(self.compositor.pid, signal.SIGUSR1)
+            time.sleep(1.0)
         self.window_settle(wid, quiet=0.4, timeout=4)
 
     def stop_scene_procs(self):
@@ -1021,7 +1035,7 @@ class Session:
             env['SDE_BRANDING_DIR'] = str(a.data_dir / 'branding')
         if (self.home / '.fixtures/avatars').is_dir():
             env['SDE_AVATAR_DIR'] = str(self.home / '.fixtures/avatars')
-        if a.effects == 'full':
+        if self.effects == 'full':
             # Every SDE program draws for the full effects of a real GPU
             # (Xvfb has OpenGL through Mesa's software renderer).
             env['SDE_GRAPHICS'] = 'hardware'
@@ -1173,6 +1187,11 @@ class Session:
                         '-ac', '-noreset', scene=False, env=xenv)
         if not self.wait(lambda: self.xdo('getmouselocation').returncode == 0, 10) or xv.poll() is not None:
             raise RuntimeError(f'Xvfb :{self.display} did not start')
+        if self.effects == 'full' and shutil.which('xdpyinfo') and 'GLX' not in self.run('xdpyinfo', timeout=10).stdout:
+            # The programs must not draw for a glass the compositor cannot show.
+            warn(f'{self.set.name}: no OpenGL (GLX) on Xvfb; capturing with the lite effects')
+            self.effects = 'lite'
+            self.env.pop('SDE_GRAPHICS', None)
         # GTK settings and the SDE WM theme (sde-settings --apply, like the session).
         r = self.run('sde-settings', '--apply', timeout=20)
         if r.returncode != 0:
@@ -1237,7 +1256,7 @@ class Session:
             return
         mine = self.home / '.config/sde/showcase-compositor.conf'
         generated = None
-        if self.args.effects == 'full':
+        if self.effects == 'full':
             # What sde-session starts on a real GPU (OpenGL, blur, shaders).
             r = self.run('sde-session', '--compositor-config', timeout=20)
             path = Path(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 and r.stdout.strip() else None
@@ -1247,19 +1266,21 @@ class Session:
                 generated = path
             else:
                 warn(f'sde-session --compositor-config failed ({r.stderr.strip()[:200]}); using the lite one')
-        if generated:
-            mine = generated
-        else:
-            radius = {'fluent': 8, 'graphite': 10, 'glass': 12}.get(self.set.family, 10)
-            text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};',
-                          conf.read_text())
-            if self.set.mode == 'dark':
-                text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
-            mine.write_text(text)
-        p = self.spawn(prog, '--config', mine, scene=False)
+        radius = {'fluent': 8, 'graphite': 10, 'glass': 16}.get(self.set.family, 10)
+        text = re.sub(r'corner-radius = \d+;', f'corner-radius = {round(radius * self.scale)};', conf.read_text())
+        if self.set.mode == 'dark':
+            text = re.sub(r'shadow-opacity = [0-9.]+;', 'shadow-opacity = 0.32;', text)
+        mine.write_text(text)
+        p = self.spawn(prog, '--config', generated or mine, scene=False)
         time.sleep(0.8)
+        if generated and p.poll() is not None:
+            warn(f'{prog} exited ({p.returncode}) with the OpenGL configuration; using the lite one')
+            p = self.spawn(prog, '--config', mine, scene=False)
+            time.sleep(0.8)
         if p.poll() is not None:
             warn(f'{prog} exited ({p.returncode}); continuing without a compositor')
+        else:
+            self.compositor = p
 
     def close(self):
         if getattr(self, 'closed', False):
@@ -1782,7 +1803,8 @@ def action_center(s):
     ('action-center-night', 'Action Center at night: stars and the moon behind the clock'),
     ('action-center-led', 'Clock styles: LED digits with a blinking colon, in the Action Center and on the panel'),
     ('action-center-analog', 'Clock styles: an analog clock with the seconds hand'),
-    ('action-center-power', 'Action Center: sleep, log out, restart and shut down'),
+    ('action-center-power', 'Action Center: Sleep, Log Out, Restart and Shut Down, always in the footer; '
+                            'Shut Down asks for a second click'),
     ('action-center-brightness', 'Action Center: brightness settings with Night Light'),
 ], needs=['sde-panel'])
 def action_center_more(s):
@@ -1809,10 +1831,25 @@ def action_center_more(s):
              ready=f'@clock-{style}')
     s.write_config(reload=True)
     s.set_clock('10:42')
-    # A footer or a card opens with a click; the click can race the popup
-    # still laying out (services answering): try again then.
-    for button, wanted, name in [('Power', 'Shut Down', 'action-center-power'),
-                                 ('Brightness settings', 'Night Light', 'action-center-brightness')]:
+    # 0.2.0 Alpha 3.1: the session buttons are always in the footer; the
+    # picture shows Shut Down after one click, waiting for the second. Its
+    # ring runs down for four seconds: the screen above the footer settles.
+    try:
+        w = open_ac(s)
+        r = s.press('Action Center', 'Shut Down')
+        if not s.control('Action Center', 'Click again to shut down', 2):
+            raise SkipShot('Shut Down did not ask for a second click')
+        s.park_pointer()
+        g = s.geom(w)
+        s.shot('action-center-power', settle_box=(g['x'], g['y'], g['x'] + g['w'], g['y'] + r[1] - 8),
+               quiet=0.3, timeout=2.0)
+    except SkipShot as e:
+        s.skip('action-center-power', str(e))
+    finally:
+        s.key('Escape')
+    # A card opens with a click; the click can race the popup still laying
+    # out (services answering): try again then.
+    for button, wanted, name in [('Brightness settings', 'Night Light', 'action-center-brightness')]:
         try:
             open_ac(s)
             for _ in range(3):
@@ -1830,6 +1867,58 @@ def action_center_more(s):
         finally:
             s.key('Escape')
     s.set_clock(None)
+
+
+@scene('Force Close', [
+    ('force-close', 'Force Close: Merkadu stopped responding - Wait, or Force Close at once '
+                    '(its taskbar button says "Not Responding")'),
+    ('force-close-launch', 'Force Close: an application that has not opened after two minutes'),
+], needs=['sde-force-close'])
+def force_close(s):
+    """0.2.0 Alpha 3.1 (docs/FORCE-CLOSE.md). A test client stands in for a
+    frozen program (tests/frozen_client_fixture.cpp, under Merkadu's window
+    class: the dialog shows Merkadu's name and icon); the mark that
+    sde-watchdog would set after its pings is set directly."""
+    tool = s.test_tool('sde-frozen-client')
+    if not tool:
+        raise SkipShot('no sde-frozen-client (tests)')
+    try:
+        s.spawn(tool, '--title', 'Merkadu', '--class', 'merkadu', '--frozen')
+        w = s.need('^Merkadu$', what='the frozen window')
+        s.size(w, 900, 560)
+        s.run('xprop', '-id', w, '-f', '_SDE_NOT_RESPONDING', '32c', '-set', '_SDE_NOT_RESPONDING',
+              str(int(time.time()) - 125))
+        s.wait(lambda: any(k.startswith('@task-not-responding:') for k in s.layout('SDE Panel')), 3)
+        s.spawn('sde-force-close', '--window', w)
+        d = s.need('^Merkadu is not responding$', what='the dialog')
+        s.activate(d)
+        s.park_pointer()
+        s.shot('force-close', quiet=0.6)
+    except SkipShot as e:
+        s.skip('force-close', str(e))
+    finally:
+        s.stop_scene_procs()
+    try:
+        # A program SDE started (its launch record) that shows no window.
+        launches = s.tmp / 'launches'
+        launches.mkdir(exist_ok=True)
+        p = s.spawn(tool, '--no-window', name='silent-client')
+        time.sleep(0.3)
+        stat = Path(f'/proc/{p.pid}/stat').read_text()
+        start = stat[stat.rindex(')') + 2:].split()[19]
+        (launches / str(p.pid)).write_text(
+            f'pid={p.pid}\nstart={start}\ntime={int(time.time()) - 125}\nname=Taca\nicon=taca\n'
+            f'desktop=taca.desktop\narg=taca\n')
+        env = dict(s.env, SDE_LAUNCHES_DIR=str(launches))
+        s.spawn('sde-force-close', '--launch', str(p.pid), env=env)
+        d = s.need('has not opened yet$', what='the dialog')
+        s.activate(d)
+        s.park_pointer()
+        s.shot('force-close-launch', quiet=0.6)
+    except SkipShot as e:
+        s.skip('force-close-launch', str(e))
+    finally:
+        s.stop_scene_procs()
 
 
 SETTINGS_TITLE = '^(Settings|Control Center|SDE Settings)$'
@@ -2727,6 +2816,105 @@ def user_rename(s):
         req.unlink(missing_ok=True)
 
 
+CHOOSER = 'File Chooser'  # its QA layout: SDE_PANEL_QA_DIR/File-Chooser.txt
+
+
+def chooser_window(s, timeout=10):
+    """The SDE file chooser's window (class sde-file-chooser)."""
+    w = s.wait(lambda: (s.xdo('search', '--onlyvisible', '--class', 'sde-file-chooser').stdout.split() or [None])[-1],
+               timeout)
+    if not w:
+        raise SkipShot('the file chooser did not open')
+    s.wait(lambda: '@loading:0' in s.layout(CHOOSER), 10)
+    return w
+
+
+def chooser_ready(s, location=None):
+    """Waits for the folder (|location|) to be read and its thumbnails made."""
+    if location:
+        s.wait(lambda: f'@location:{location}' in s.layout(CHOOSER), 8)
+    s.wait(lambda: '@loading:0' in s.layout(CHOOSER), 10)
+    s.wait(lambda: '@thumbnailing:0' in s.layout(CHOOSER), 10)
+
+
+def chooser_click(s, wid, name, double=False):
+    r = s.control(CHOOSER, name, 5)
+    if not r:
+        raise SkipShot(f'the file chooser has no {name!r}')
+    g = s.geom(wid)
+    x, y = g['x'] + r[0] + r[2] // 2, g['y'] + r[1] + r[3] // 2
+    if double:
+        s.xdo('mousemove', str(x), str(y), 'click', '--repeat', '2', '--delay', '90', '1')
+        time.sleep(0.4)
+    else:
+        s.click(x, y)
+
+
+@scene('File Chooser', [('file-chooser', 'The SDE file chooser (Control Center, Users & Avatar, Choose a picture): '
+                                         'places, thumbnails in a grid, the preview, Back, Forward, Up and the path '
+                                         'bar')], scopes=(FULL, THEMES), needs=['sde-settings'])
+def file_chooser(s):
+    page = next((p for p in s.run_ctx.pages if p in ACCOUNT_PAGES), None)
+    if not page:
+        raise SkipShot('no account page in this build')
+    settings_page(s, page)
+    reveal_control(s, 'Control Center', 'Choose a picture…')
+    s.press('Control Center', 'Choose a picture…')
+    w = chooser_window(s)
+    chooser_click(s, w, 'item:Nature', double=True)
+    chooser_ready(s, s.home / 'Pictures/Nature')
+    chooser_click(s, w, 'item:Mountain Lake.png')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser', quiet=0.6)
+
+
+@scene('File Chooser', [('file-chooser-list', 'The SDE file chooser in Niny (Open, Ctrl+O): the list view with the '
+                                              'size, date and type of each file')], needs=['niny'])
+def file_chooser_list(s):
+    s.app(['niny', s.home / 'Documents/Garden Planner.md'], 'Niny$')
+    s.key('ctrl+o')
+    w = chooser_window(s)
+    if '@view:list' not in s.layout(CHOOSER):
+        chooser_click(s, w, 'view:list')
+    if '@preview:1' in s.layout(CHOOSER):
+        chooser_click(s, w, 'preview')  # room for the Type column
+    chooser_click(s, w, 'item:Meeting Notes.txt')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser-list', quiet=0.6)
+
+
+@scene('File Chooser', [('file-chooser-save', 'The SDE file chooser saving (Niny, Save As): the name without its '
+                                              'extension selected, ready to be typed over, and New Folder')],
+       needs=['niny'])
+def file_chooser_save(s):
+    s.app(['niny', s.home / 'Documents/Meeting Notes.txt'], 'Niny$')
+    s.key('ctrl+shift+s')
+    w = chooser_window(s)
+    if '@view:grid' not in s.layout(CHOOSER):
+        chooser_click(s, w, 'view:grid')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser-save', quiet=0.6)
+
+
+@scene('File Chooser', [('file-chooser-folder', 'The SDE file chooser picking a folder: files are shown but only '
+                                                'folders can be chosen; Select Folder takes the one shown when none '
+                                                'is selected')])
+def file_chooser_folder(s):
+    demo = s.test_tool('sde-file-chooser-demo')
+    if not demo:
+        raise SkipShot('no sde-file-chooser-demo (QA tools)')
+    s.spawn(demo, '--mode', 'folder', '--title', 'Select a Folder', '--folder', s.home / 'Pictures', '--preview',
+            '--program', 'showcase')
+    w = chooser_window(s)
+    chooser_click(s, w, 'item:Holidays 2026')
+    chooser_ready(s)
+    s.park_pointer()
+    s.shot('file-chooser-folder', quiet=0.6)
+
+
 @scene('Debrun', [('debrun', 'Debrun: a package downloaded from its maker, with what it changes besides its files, '
                              'its dependencies and the version of the package sources (test data)'),
                   ('debrun-installing', 'Debrun: installing, with the animated SDE logo (test data)')],
@@ -3069,10 +3257,11 @@ def parse_args(argv=None):
     ap.add_argument('--scope', choices=('full', 'themes', 'hero'),
                     help="scenes of this scope in every set, e.g. 'full' for all scenes in the Fluent and "
                          "Glass sets (default: each set's own)")
-    ap.add_argument('--effects', choices=('lite', 'full'), default='lite',
-                    help='compositor effects: lite (XRender with data/compositor/sde.conf, as in CI) or full '
+    ap.add_argument('--effects', choices=('lite', 'full'),
+                    help='compositor effects of every set: lite (XRender with data/compositor/sde.conf) or full '
                          '(OpenGL with the configuration sde-session writes for a real GPU: blur, translucency '
-                         'and the Liquid Glass shader; needs sde-compositor)')
+                         'and the Liquid Glass shader; needs sde-compositor). Default: full for the Liquid Glass '
+                         'sets, lite for the others')
     ap.add_argument('--only', help='scenes or images (comma-separated globs, e.g. "start-menu*,control-center-*")')
     ap.add_argument('--zip', type=Path, help='also write one shareable zip')
     ap.add_argument('--display', type=int, default=140, help='first Xvfb display number to try')
@@ -3124,9 +3313,9 @@ def selected_sets(a):
             size, scale = a.resolution or t.size, a.scale or t.scale
             base = t.name.split('-1920x1080')[0]
             t = ThemeSet(f'{base}-{size}-{scale}', t.family, t.mode, size, scale, t.scope,
-                         f'{t.label.split(",")[0]}, {size} at {scale} %')
+                         f'{t.label.split(",")[0]}, {size} at {scale} %', t.effects)
         if a.scope:
-            t = ThemeSet(t.name, t.family, t.mode, t.size, t.scale, a.scope, t.label)
+            t = ThemeSet(t.name, t.family, t.mode, t.size, t.scale, a.scope, t.label, t.effects)
         out.append(t)
     return out
 

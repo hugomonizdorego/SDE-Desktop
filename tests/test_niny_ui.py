@@ -21,7 +21,9 @@ Niny describe its tabs, their close buttons, the + button and the menus
 - the menu bar has File, Edit, View, Search, Document, Tools and Help; F10
   opens File with its first item highlighted, Right and Left move to the
   other menus, Alt and the underlined letter open a menu, and every menu
-  fits the work area without scrolling;
+  fits the work area and opens under its title (0.2.0 Alpha 3.1: not over
+  the menu bar); it scrolls only on the small screen, where End still shows
+  its last entry;
 - with View > Menu Bar off, F10 and Alt bring the bar back for a moment, and
   the Niny mark's menu switches it on again.
 
@@ -91,6 +93,7 @@ class Session:
 
     def __init__(self, number, size, scale, temp, label):
         self.label = label
+        self.scale = scale
         self.number = number
         self.home = Path(temp) / label
         (self.home / 'config/sde').mkdir(parents=True)
@@ -149,6 +152,10 @@ class Session:
         p.write_text(text)
         sp.run([args.niny, str(p)], env=self.env, stdout=self.log, stderr=sp.STDOUT, timeout=20)
         return p
+
+    def px(self, v):
+        """|v| pixels at 100 % in the session's scale."""
+        return round(v * self.scale / 100)
 
     def origin(self):
         out = self.xdo('getwindowgeometry', '--shell', self.win).stdout
@@ -388,13 +395,24 @@ def check_menus(s):
             continue
         level = s.item('level:0', 'Niny-menu')
         expect(s, 'the %s menu fits the work area (%s)' % (t, level), level and level[4] == 1)
-        expect(s, 'the %s menu does not scroll' % t, level and level[5] == 0)
+        title = s.item('menu:' + t)
+        ox, oy = s.origin()
+        # The menu touches the bar's lower edge (a few pixels) but never
+        # covers the titles.
+        expect(s, 'the %s menu opens under its title (%s, title %s)' % (t, level, title),
+               level and title and level[1] >= oy + title[1] + title[3] - s.px(4))
+        if s.label != 'small':
+            expect(s, 'the %s menu does not scroll' % t, level and level[5] == 0)
+        elif level and level[5] == 1:
+            s.keys.press('End')
+            last = s.wait(lambda: s.state('hover', 'Niny-menu'))
+            row = last and s.item('item:' + last, 'Niny-menu')
+            expect(s, 'End shows the last entry of the scrolling %s menu (%s)' % (t, row), row and row[5] == 0)
         if t == 'view':
             s.shot('menu-view')
         s.keys.press('Escape')
         s.wait(lambda: s.state('open', 'Niny-menu') == 'none')
     # The mouse: a click opens a title, the pointer moves to the next one.
-    # (On a small screen a long menu moves up over the titles to fit.)
     s.click_box(s.item('menu:file'))
     expect(s, 'a click opens File', s.wait(lambda: s.state('open', 'Niny-menu') == 'file'))
     edit = s.item('menu:edit')

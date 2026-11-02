@@ -27,8 +27,8 @@
 // install. The forms are cards of the page, so they scroll on small
 // screens, and what was typed is kept while the page is built again.
 #include <FL/Fl.H>
-#include <FL/Fl_File_Chooser.H>
 #include <FL/Fl_Input.H>
+#include <FL/Fl_Window.H>
 #include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <fcntl.h>
@@ -57,6 +57,7 @@
 #include "build_config.h"
 #include "dbus.h"
 #include "glyphs.h"
+#include "file_chooser.h"
 #include "i18n.h"
 #include "settings.h"
 #include "ui.h"
@@ -1007,14 +1008,21 @@ void remove_user(const accounts::User &u, bool files) {
          });
 }
 
-void choose_user_picture(const accounts::User &u) {
-  static const char *filter = "Pictures (*.{png,jpg,jpeg,svg,PNG,JPG,JPEG,SVG})";
+// The SDE file chooser for a picture: Pictures first, with the preview.
+std::string choose_picture_file(const std::string &title) {
+  FileChooser chooser(FileChooser::Mode::Open);
+  chooser.title(title);
+  chooser.filters(std::string(_("Pictures")) + "\t*.{png,jpg,jpeg,svg}");
+  chooser.all_files(false);
   std::string dir = user_dir("PICTURES");
-  if (dir.empty() || !dir_exists(dir)) dir = home_dir();
-  const char *f = fl_file_chooser(format(_("A picture for %s"), u.display_name().c_str()).c_str(), filter,
-                                  dir.c_str());
-  if (!f || !*f) return;
-  std::string path = f;
+  chooser.default_folder(dir.empty() || !dir_exists(dir) ? home_dir() : dir);
+  chooser.preview(true);
+  return chooser.run() ? chooser.path() : std::string();
+}
+
+void choose_user_picture(const accounts::User &u) {
+  std::string path = choose_picture_file(format(_("A picture for %s"), u.display_name().c_str()));
+  if (path.empty()) return;
   change(format(_("Changing the picture of %s..."), u.display_name().c_str()),
          format(_("The picture of %s was changed."), u.display_name().c_str()),
          [u, path](std::string *error) { return accounts::set_picture(u, path, error); });
@@ -1668,12 +1676,8 @@ void watch_account() {
 
 void choose_avatar_picture() {
   if (g_busy) return;
-  static const char *filter = "Pictures (*.{png,jpg,jpeg,svg,PNG,JPG,JPEG,SVG})";
-  std::string dir = user_dir("PICTURES");
-  if (dir.empty() || !dir_exists(dir)) dir = home_dir();
-  const char *f = fl_file_chooser(_("Choose a picture"), filter, dir.c_str());
-  if (!f || !*f) return;
-  apply_picture(f);
+  std::string path = choose_picture_file(_("Choose a picture"));
+  if (!path.empty()) apply_picture(path);
 }
 
 void build_users_page(Page *page) {
@@ -1729,6 +1733,7 @@ void build_users_page(Page *page) {
     }
     int bw = std::min(S(210), (avail - S(10)) / 2), y = page->cursor();
     auto *choose = new FlatButton(x, y, bw, S(34), _("Choose a picture…"), true);
+    choose->copy_label(_("Choose a picture…"));  // its name in the QA dump
     choose->callback([](Fl_Widget *, void *) { Fl::add_timeout(0, [](void *) { choose_avatar_picture(); }); });
     auto *remove = new FlatButton(x + bw + S(10), y, bw, S(34), _("Remove avatar"));
     remove->callback([](Fl_Widget *, void *) { remove_picture(); });

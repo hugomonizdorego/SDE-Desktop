@@ -1398,6 +1398,101 @@ class UserBadge : public Fl_Widget {
   bool hot_ = false;
 };
 
+// A session button of the footer (0.2.0 Alpha 3.1): a round icon button.
+// Sleep takes the accent when hovered; Log Out, Restart and Shut Down the
+// theme's error colour (Shut Down keeps a hint of it at rest), and filled
+// red while armed, with a ring that runs down until the button disarms.
+class SessionButton : public DrawnButton {
+ public:
+  SessionButton(int x, int y, int size, int index, QuickSettings *qs)
+      : DrawnButton(x, y, size, size, nullptr), index_(index), qs_(qs) {
+    copy_tooltip(_(session_actions::all()[size_t(index)].name));
+    callback([](Fl_Widget *w, void *) {
+      auto *b = static_cast<SessionButton *>(w);
+      b->qs_->session_press(b->index_);
+    });
+  }
+  void draw() override {
+    const Theme &t = Panel::instance->theme();
+    const auto &a = session_actions::all()[size_t(index_)];
+    double now = QuickSettings::now_seconds();
+    const auto &arm = qs_->arming();
+    bool armed = arm.armed == index_ && arm.active(now);
+    bool hot = Fl::belowmouse() == this && active_r(), down = value() != 0;
+    Color tone = a.destructive() ? t.error : t.accent;
+    Color tone_ink = a.destructive() ? t.error : t.accent_text;
+    Color bg = t.surface_alt, ink = t.text, edge = t.border;
+    if (a.kind == session_actions::Kind::SHUTDOWN) {
+      bg = t.surface_alt.mix(t.error, t.dark ? 0.20 : 0.10);
+      ink = t.error;
+      edge = t.error.alpha(0.35);
+    }
+    if (hot || down) {
+      bg = t.surface_alt.mix(tone, down ? 0.32 : t.dark ? 0.26 : 0.16);
+      ink = tone_ink;
+      edge = tone.alpha(0.55);
+    }
+    if (armed) {
+      Color white = Color::hex(0xFFFFFF);
+      bg = down ? t.error.mix(t.text, 0.15) : t.error;
+      ink = white.contrast(t.error) >= 3.0 ? white : Color::hex(0x101820);
+      edge = t.error;
+    }
+    if (!active_r()) ink = t.text_dim;
+    Painter p(window()->w(), window()->h());
+    double r = w() / 2.0, cx = x() + r, cy = y() + h() / 2.0;
+    p.circle(cx, cy, r, bg);
+    cairo_t *cr = p.cr();
+    cairo_new_sub_path(cr);
+    cairo_arc(cr, cx, cy, r - Sd(0.5), 0, 2 * M_PI);
+    p.set(edge);
+    cairo_set_line_width(cr, Sd(1));
+    cairo_stroke(cr);
+    double z = S(popup_style::kIcon);
+    session_actions::draw(p, a.kind, cx - z / 2, cy - z / 2, z, ink);
+    if (armed) {
+      // The time left to confirm: a ring inside the disc, from the top.
+      double left = arm.left(now);
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, cx, cy, r - Sd(2.5), -M_PI / 2, -M_PI / 2 + 2 * M_PI * left);
+      p.set(ink.alpha(0.9));
+      cairo_set_line_width(cr, Sd(2));
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      cairo_stroke(cr);
+    }
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
+  }
+
+ private:
+  int index_;
+  QuickSettings *qs_;
+};
+
+// The question of an armed session button ("Click again to shut down"),
+// shown in place of the user, Control Center and Lock Screen. A click on
+// it cancels.
+class ArmHint : public Fl_Widget {
+ public:
+  ArmHint(int x, int y, int w, int h, QuickSettings *qs) : Fl_Widget(x, y, w, h), qs_(qs) {}
+  void draw() override {
+    const auto &arm = qs_->arming();
+    if (arm.armed < 0) return;
+    const Theme &t = Panel::instance->theme();
+    text_font(t.font_size, true);
+    draw_text(_(session_actions::all()[size_t(arm.armed)].confirm), x(), y(), w(), h(), t.error);
+  }
+  int handle(int e) override {
+    if (e == FL_PUSH) {
+      qs_->cancel_arming();
+      return 1;
+    }
+    return 0;
+  }
+
+ private:
+  QuickSettings *qs_;
+};
+
 IconFn gear_icon() {
   return
       [](Painter &p, double x, double y, double s, const Color &c) { glyph::gear(p, x, y, s, c); };
@@ -1467,11 +1562,6 @@ IconFn cross_icon() {
   return [](Painter &p, double x, double y, double s, const Color &c) {
     p.line(x + s * .28, y + s * .28, x + s * .72, y + s * .72, c, s * .09);
     p.line(x + s * .72, y + s * .28, x + s * .28, y + s * .72, c, s * .09);
-  };
-}
-IconFn power_icon() {
-  return [](Painter &p, double x, double y, double s, const Color &c) {
-    glyph::power(p, x, y, s, c);
   };
 }
 // Media transport: 0 previous, 1 play, 2 pause, 3 next.
@@ -1735,6 +1825,9 @@ QuickSettings::QuickSettings(Mode mode)
     : PanelPopup(mode == FLYOUT ? "Flyout" : "Action Center"), mode_(mode) {
   end();
   if (mode_ == ACTION_CENTER) section_ = "overview";
+  // What logind can do is known before the Action Center first opens
+  // (asked again at every opening), so no button vanishes in front of the user.
+  if (mode_ == ACTION_CENTER) session_actions::Capabilities::get().refresh(nullptr);
 }
 void QuickSettings::select_section(const std::string &section) {
   if (mode_ == ACTION_CENTER) return;
@@ -1792,6 +1885,8 @@ void QuickSettings::media_tick(void *data) {
 
 void QuickSettings::closed() {
   Fl::remove_timeout(poll_brightness, this);
+  Fl::remove_timeout(arm_tick, this);
+  arming_.reset();
   Fl::remove_timeout(weather_tick, this);
   Fl::remove_timeout(media_tick, this);
   brightness_open_ = false;
@@ -1814,7 +1909,8 @@ std::string QuickSettings::structure() const {
   const auto &cfg = Panel::instance->config();
   std::ostringstream out;
   out << Alarms::get().revision() << '|' << agenda_year_ << '-' << agenda_month_ << '-'
-      << agenda_day_ << agenda_form_ << agenda_edit_ << agenda_error_ << power_open_
+      << agenda_day_ << agenda_form_ << agenda_edit_ << agenda_error_
+      << session_actions::Capabilities::get().signature()
       << brightness_open_
       << s.network.connectivity << s.network.check_enabled << '|';
   out << int(mode_) << section_ << calendar_view_ << s.network.available << s.network.has_wifi
@@ -1883,7 +1979,9 @@ void QuickSettings::prepare() {
   SystemStatus::get().message.clear();
   PanelControls::get().message.clear();
   scroll_to_calendar_ = calendar_view_;
-  power_open_ = false;
+  arming_.reset();
+  if (mode_ == ACTION_CENTER)
+    session_actions::Capabilities::get().refresh([this] { status_changed(); });
   if (mode_ == ACTION_CENTER) weather::Service::get().request(weather_settings(), weather_online());
   if (mode_ == ACTION_CENTER) {
     // The agenda starts on today.
@@ -3316,56 +3414,105 @@ void QuickSettings::agenda_card(SectionBuilder &b) {
 
 // ---------------------------------------------------------------- footer
 
-void QuickSettings::set_power_menu(bool open) {
-  power_open_ = open;
-  status_changed();
-}
-
-// The session row: the user, Control Center, Lock and Power. Power opens a
-// row above it with Sleep, Log Out, Restart and Shut Down (the sde-logout
-// actions); Power again closes it.
+// The session row (0.2.0 Alpha 3.1): the user, Control Center and Lock
+// Screen on the left; Sleep, Log Out, Restart and Shut Down as round icon
+// buttons on the right, always shown, in the same place in every layout.
+// What logind says the system cannot do is left out (session_actions.h).
 void QuickSettings::footer(int W, int H, int pad) {
-  int fy = H - footer_ + (power_open_ ? S(44) : 0) + S(8), fb = S(32);
+  int fy = H - footer_ + S(8), fb = S(32);
   auto launch = [this](std::vector<std::string> cmd) {
     return [this, cmd] {
       close();
       spawn_detached(cmd);
     };
   };
-  if (power_open_) {
-    struct Choice {
-      std::string name;
-      const char *action;
-    };
-    std::vector<Choice> choices = {{_("Sleep"), "suspend"},
-                                   {_("Log Out"), "logout"},
-                                   {_("Restart"), "reboot"},
-                                   {_("Shut Down"), "poweroff"}};
-    int gap = S(6), n = int(choices.size()), bw = (W - 2 * pad - (n - 1) * gap) / n;
-    for (int i = 0; i < n; ++i)
-      new CommandButton(pad + i * (bw + gap), H - footer_ + S(8), bw, fb,
-                        choices[size_t(i)].name,
-                        launch({"sde-logout", "--action", choices[size_t(i)].action}));
+  const auto &caps = session_actions::Capabilities::get();
+  const auto &acts = session_actions::all();
+  std::vector<int> shown;
+  for (size_t i = 0; i < acts.size(); ++i)
+    if (caps.shown(acts[i].kind)) shown.push_back(int(i));
+  int sb = S(30), sgap = S(4), n = int(shown.size());
+  int sx = W - pad - (n * sb + std::max(0, n - 1) * sgap);
+  // Control Center and Lock Screen, set apart from the session buttons by
+  // a thin line (drawn in draw()). Made in the order they are seen, which
+  // is the order of Tab and the arrow keys.
+  int bw = S(28), lock_x = sx - S(12) - bw, gear_x = lock_x - S(2) - bw;
+  separator_x_ = sx - S(6);
+  footer_left_.clear();
+  auto *badge = new UserBadge(pad, fy, std::max(fb, gear_x - S(6) - pad), fb);
+  auto *gear = new ActionButton(gear_x, fy, bw, fb, "", gear_icon(), launch({"sde-settings"}),
+                                nullptr, -1, true);
+  gear->copy_tooltip(_("Control Center"));
+  auto *lock = new ActionButton(lock_x, fy, bw, fb, "",
+                                [](Painter &p, double x, double y, double z, const Color &ink) {
+                                  glyph::lock(p, x, y, z, ink);
+                                },
+                                launch({"sde-logout", "--action", "lock"}), nullptr, -1, true);
+  lock->copy_tooltip(_("Lock Screen"));
+  footer_left_ = {badge, gear, lock};
+  session_buttons_.clear();
+  for (int i = 0; i < n; ++i)
+    session_buttons_.push_back(
+        new SessionButton(sx + i * (sb + sgap), fy + (fb - sb) / 2, sb, shown[size_t(i)], this));
+  // While a button is armed, its question takes the place of the user and
+  // the two buttons ("Click again to shut down").
+  arm_hint_ = new ArmHint(pad, fy, std::max(fb, sx - S(12) - pad), fb, this);
+  show_armed();
+}
+
+double QuickSettings::now_seconds() {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// A session button was pressed (click, Enter or Space).
+void QuickSettings::session_press(int index) {
+  using session_actions::Press;
+  Press what = arming_.press(index, now_seconds());
+  if (what == Press::IGNORE) return;
+  if (what == Press::ARM) {
+    show_armed();
+    Fl::remove_timeout(arm_tick, this);
+    Fl::add_timeout(1.0 / 30, arm_tick, this);
+    return;
   }
-  bool open = power_open_;
-  std::vector<std::pair<std::string, std::function<void()>>> foot = {
-      {_("Control Center"), launch({"sde-settings"})},
-      {_("Lock Screen"), launch({"sde-logout", "--action", "lock"})},
-      {open ? _("Close power options") : _("Power"),
-       [this, open] { later([this, open] { set_power_menu(!open); }); }}};
-  std::vector<IconFn> icons = {gear_icon(),
-                               [](Painter &p, double x, double y, double z, const Color &ink) {
-                                 glyph::lock(p, x, y, z, ink);
-                               },
-                               power_icon()};
-  new UserBadge(pad, fy, W - 2 * pad - int(foot.size()) * (fb + S(6)) - S(8), fb);
-  for (size_t i = 0; i < foot.size(); ++i) {
-    auto *b = new ActionButton(W - pad - int(foot.size() - i) * (fb + S(6)) + S(6), fy, fb, fb, "",
-                               icons[i], foot[i].second,
-                               i == 2 ? std::function<bool()>([open] { return open; }) : nullptr,
-                               -1, true);
-    b->copy_tooltip(foot[i].first.c_str());
+  Fl::remove_timeout(arm_tick, this);
+  std::string id = session_actions::all()[size_t(index)].id;
+  later([this, id] {
+    close();
+    spawn_detached({"sde-logout", "--action", id});
+  });
+}
+
+// The armed button's ring runs down; at its end the button disarms.
+void QuickSettings::arm_tick(void *data) {
+  auto *self = static_cast<QuickSettings *>(data);
+  if (!self->shown()) return;
+  bool active = self->arming_.active(now_seconds());
+  if (!active) self->arming_.reset();
+  for (auto *b : self->session_buttons_) b->redraw();
+  if (!active) {
+    self->show_armed();
+    return;
   }
+  Fl::repeat_timeout(1.0 / 30, arm_tick, data);
+}
+
+void QuickSettings::cancel_arming() {
+  Fl::remove_timeout(arm_tick, this);
+  arming_.reset();
+  show_armed();
+}
+
+// Shows the armed question in place of the user, Control Center and Lock
+// Screen, or the other way round. No rebuild: the keyboard focus stays on
+// the armed button, so a second Enter confirms it.
+void QuickSettings::show_armed() {
+  bool armed = arming_.active(now_seconds());
+  for (auto *w : footer_left_) armed ? w->hide() : w->show();
+  if (arm_hint_) armed ? arm_hint_->show() : arm_hint_->hide();
+  if (arm_hint_) arm_hint_->copy_tooltip(armed ? _(session_actions::all()[size_t(arming_.armed)].confirm) : nullptr);
+  for (auto *b : session_buttons_) b->redraw();
+  redraw();
 }
 
 // --------------------------------------------------------------- rebuild
@@ -3391,6 +3538,9 @@ void QuickSettings::rebuild() {
   media_service_.clear();
   stream_sliders_.clear();
   center_plan_.clear();
+  session_buttons_.clear();
+  footer_left_.clear();
+  arm_hint_ = nullptr;
   const auto &t = Panel::instance->theme();
   const auto &s = SystemStatus::get();
   const auto &c = PanelControls::get();
@@ -3485,7 +3635,7 @@ bool QuickSettings::build_center_plan(const CenterPlan &plan, int limit, int &W,
   int colw = plan.two ? (W - 2 * pad - gap) / 2 : W - 2 * pad;
   if (plan.two && colw < S(296)) return false;
   header_ = 0;
-  footer_ = power_open_ ? S(92) : S(48);
+  footer_ = S(48);
   agenda_tight_ = plan.cal_row <= 22 || plan.focus;
   // The calendar view on a small screen takes a lower hero.
   int hero_min = S(plan.focus ? 72 : popup_style::kHeroMin);
@@ -3690,6 +3840,9 @@ void QuickSettings::rebuild_center() {
     stream_sliders_.clear();
     body_ = nullptr;
     scroll_ = nullptr;
+    session_buttons_.clear();
+    footer_left_.clear();
+    arm_hint_ = nullptr;
   };
   // A comfortable height first (one column stays short on tall screens),
   // then all the room the screen has.
@@ -3760,6 +3913,8 @@ void QuickSettings::draw() {
     if (footer_)
       p.line(S(popup_style::kPad), h() - footer_ + 0.5,
              (footer_w_ ? footer_w_ : w()) - S(popup_style::kPad), h() - footer_ + 0.5, t.border);
+    if (footer_ && separator_x_ > 0 && !session_buttons_.empty())
+      p.line(separator_x_ + 0.5, h() - footer_ + S(18), separator_x_ + 0.5, h() - S(18), t.border);
   }
   draw_children();
   sync_native_tray();
@@ -3784,6 +3939,16 @@ void QuickSettings::draw() {
       if (hero->clock().blink) extra += "@clock-blink" + rect();
       extra += "@plan-" + center_plan_ + "\t0\t0\t" + std::to_string(w()) + "\t" +
                std::to_string(h()) + "\t1\n";
+      // 0.2.0 Alpha 3.1: the armed session button (as the footer shows it)
+      // and logind's answers.
+      if (arming_.armed >= 0)
+        extra += std::string("@session-armed:") + session_actions::all()[size_t(arming_.armed)].id +
+                 "\t0\t0\t0\t0\t1\n";
+      extra += "@session-can:" + session_actions::Capabilities::get().signature() +
+               "\t0\t0\t0\t0\t1\n";
+      // The control with the keyboard focus (keyboard navigation checks).
+      std::string focus = focused_name(this);
+      if (!focus.empty()) extra += "@focus:" + focus + "\t0\t0\t0\t0\t1\n";
     }
     qa_dump(this, extra);
   }

@@ -1,0 +1,35 @@
+/* SDE motion layer (GTK 3), every family since 0.2.0 Alpha 3.1: the
+ * highlight of menus, popover menus, combo box lists, list and tree rows,
+ * icon views and sidebars moves at once with the pointer. Fading it in and
+ * out (Graphite's Material transitions and SDE's own 120 ms fade) left two
+ * or three items lit at the same time on slow screens, a "double" highlight
+ * that made menus feel late. tools/build-themes.py also removes the
+ * transitions of these widgets from the upstream style sheets; this layer
+ * comes last and keeps them off in every state.
+ * SPDX-License-Identifier: GPL-3.0-or-later */
+
+menuitem, menuitem:hover, menuitem:active, menuitem:selected, menuitem:checked, menuitem:disabled,
+menuitem:backdrop, menu menuitem, menu menuitem:hover, menu menuitem:active, menu menuitem:disabled,
+.menu menuitem, .menu menuitem:hover, .menu menuitem:active, .menu menuitem:disabled,
+.context-menu menuitem, .context-menu menuitem:hover, .context-menu menuitem:active,
+.context-menu menuitem:disabled, menubar > menuitem, menubar > menuitem:hover, menubar > menuitem:active,
+.menubar > menuitem, .menubar > menuitem:hover, .menubar > menuitem:active,
+menu menuitem check, menu menuitem radio, menu menuitem arrow, menu menuitem label,
+modelbutton, modelbutton:hover, modelbutton:active, modelbutton:checked, modelbutton:selected,
+modelbutton:disabled, modelbutton.flat, modelbutton.flat:hover, modelbutton.flat:active,
+popover modelbutton, popover modelbutton:hover, popover modelbutton:active, popover modelbutton:checked,
+popover.menu modelbutton, popover.menu modelbutton:hover, popover.menu modelbutton:active,
+combobox menu menuitem, combobox menu menuitem:hover, combobox window menu menuitem,
+row, row:hover, row:active, row:selected, row:focus, row:backdrop,
+row.activatable, row.activatable:hover, row.activatable:active, row.activatable:selected,
+row.activatable:focus, row.activatable:backdrop, row.activatable.has-open-popup,
+list row, list row:hover, list row:selected, list > row, list > row:hover, list > row:selected,
+placessidebar row, placessidebar row:hover, placessidebar row:selected, placessidebar row:active,
+.sidebar row, .sidebar row:hover, .sidebar row:selected, stacksidebar row, stacksidebar row:hover,
+stacksidebar row:selected, row image.sidebar-icon, row:selected image.sidebar-icon,
+treeview.view, treeview.view:hover, treeview.view:selected, treeview.view:active,
+iconview, iconview:hover, iconview:selected, .view:hover, .view:selected,
+flowboxchild, flowboxchild:hover, flowboxchild:selected, flowboxchild:active {
+  transition: none;
+  animation: none;
+}

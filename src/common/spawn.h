@@ -10,10 +10,14 @@
 namespace sde {
 
 // Starts |argv| fully detached (double fork, new session). Returns false if
-// the program could not be found. |work_dir| may be empty.
-bool spawn_detached(const std::vector<std::string> &argv, const std::string &work_dir = "");
+// the program could not be found. |work_dir| may be empty. |pid|, when
+// given, receives the started process's id (0 if unknown).
+bool spawn_detached(const std::vector<std::string> &argv, const std::string &work_dir = "",
+                    long *pid = nullptr);
 
-// Starts a desktop entry, honoring Terminal=, Path= and Type=Link.
+// Starts a desktop entry, honoring Terminal=, Path= and Type=Link. Since
+// 0.2.0 Alpha 3.1 the start is recorded for sde-watchdog and sde-session
+// (launches.h).
 bool launch_entry(const DesktopEntry &entry, const std::vector<std::string> &files = {});
 
 // Opens a file, folder or URL with the user's preferred application.
