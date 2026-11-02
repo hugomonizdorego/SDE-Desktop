@@ -3398,16 +3398,18 @@ op_finished (ProgressWidgetData *data)
               "\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {")
 
 
-ICON_VIEW_STYLE = r'''/* SDE (0.2.0 Alpha 3.1): what the labels of the icons are measured with:
- * the font of the view, the screen's resolution and its font options. */
+ICON_VIEW_STYLE = r'''/* SDE (0.2.0 Alpha 3.1): what the labels of the icons are measured and
+ * aligned with: the font of the view, the screen's resolution and font
+ * options and the text direction. */
 static char *
 sde_label_style (GtkWidget *widget)
 {
     PangoContext *context = gtk_widget_get_pango_context (widget);
     const cairo_font_options_t *options = pango_cairo_context_get_font_options (context);
     char *font = pango_font_description_to_string (pango_context_get_font_description (context));
-    char *style = g_strdup_printf ("%s|%g|%lu", font, pango_cairo_context_get_resolution (context),
-                                   options != NULL ? cairo_font_options_hash (options) : 0UL);
+    char *style = g_strdup_printf ("%s|%g|%lu|%d", font, pango_cairo_context_get_resolution (context),
+                                   options != NULL ? cairo_font_options_hash (options) : 0UL,
+                                   (int) gtk_widget_get_direction (widget));
 
     g_free (font);
     return style;
@@ -3540,9 +3542,10 @@ def liria_menus(staged):
     the view again. Both now react only to changes that matter to them.
     The icons' tinted pictures were made again on every draw for icons
     that are not selected (Caja's cache test only held for selected ones),
-    and the Emblems panel of the side pane built ~100 widgets that every
-    menu's grab walked through even when the panel was never shown; it is
-    filled when it is first shown."""
+    the Emblems panel of the side pane built ~100 widgets that every
+    menu's grab walked through even when the panel was never shown (it is
+    filled when it is first shown), and every menu update read every
+    selected file's information again, synchronously."""
     private = staged / "libliria-private"
     edit_once(private / "liria-icon-private.h", "    gboolean drop_shadows_requested;\n",
               "    gboolean drop_shadows_requested;\n"
@@ -3584,6 +3587,18 @@ def liria_menus(staged):
               "    widget_queue_background_change (widget, user_data);\n}")
     edit_once(background, "    self->details->use_base = use_base;\n",
               "    self->details->use_base = use_base;\n    self->details->sde_color_known = FALSE;\n")
+    # Every menu update read the information of every selected file again
+    # (g_file_query_info () with Liria's default attributes: the content
+    # type is sniffed from the file, thumbnails and metadata are looked up)
+    # in the main loop, to notice a file whose type changed since it was
+    # listed: hundreds of files after Ctrl+A, and a network round trip for
+    # each file of a remote location. A few local files are still checked
+    # (one right-clicked file always); folder monitors report the others.
+    edit_once(staged / "src/file-manager/fm-directory-view.c",
+              "\t\t   plaintext to something else. */\n\t\tliria_file_refresh_info (file);\n",
+              "\t\t   plaintext to something else. */\n"
+              "\t\tif (selection_count <= 8 && liria_file_is_local (file)) /* SDE */\n"
+              "\t\t\tliria_file_refresh_info (file);\n")
     emblems = staged / "src/liria-emblem-sidebar.c"
     edit_once(emblems, "    char *popup_emblem_keyword;\n",
               "    char *popup_emblem_keyword;\n    gboolean sde_populated; /* SDE: filled when first shown */\n")

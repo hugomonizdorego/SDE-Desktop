@@ -845,8 +845,12 @@ class LiriaAlpha31Test(unittest.TestCase):
         self.assertLess(style.index('g_strcmp0 (label_style, container->details->sde_label_style) != 0'),
                         style.index('liria_icon_container_request_update_all (container);'))
         self.assertIn('liria_icon_canvas_item_sde_forget_render (icon->item);', style)
+        self.assertIn('gtk_widget_get_direction (widget)', style)
         self.assertIn('gdk_rgba_equal (&old, &self->details->default_color)', self.redesign.BACKGROUND_COLOR)
         self.assertIn('if (!self->details->sde_color_known)', self.redesign.BACKGROUND_COLOR)
+        # A menu update reads the information of a few local files again,
+        # not of hundreds of selected or remote ones (synchronous I/O).
+        self.assertIn('if (selection_count <= 8 && liria_file_is_local (file)) /* SDE */', recipe)
 
     def test_list_view_recipe(self):
         import tempfile
@@ -901,6 +905,8 @@ class LiriaAlpha31Test(unittest.TestCase):
             self.assertIn('FM_DIRECTORY_VIEW_POPUP_PATH_SELECTION', view)
         ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
         self.assertIn('eel_sde_paint_menu_first (GTK_MENU (menu), GTK_WIDGET (button));', ui)
+        ribbon = (self.overlay / 'src/liria-sde-ribbon.c').read_text()
+        self.assertIn('eel_sde_paint_menu_first (GTK_MENU (menu), button);', ribbon)
 
     def test_menu_recorder_and_smoke_agree(self):
         """The records of LIRIA_SDE_QA_FRAMES that tools/liria-menu-smoke.py
