@@ -1152,6 +1152,7 @@ void details_header(Page *page, const App &a) {
         std::string msg = format(_("The last change failed: %s"), it->error.c_str());
         int h = TextBlock::measure(msg, tw) + S(4);
         new TextBlock(tx, cy - S(6), tw, h, msg, false);
+        qa_line("failed:" + it->error, tx, cy - S(6), tw, h);
         cy += h + S(8);
       }
       break;

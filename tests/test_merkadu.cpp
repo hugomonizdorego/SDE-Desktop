@@ -6,15 +6,20 @@
 // JSON and HTTP framing, the history parsers, the uninstall decisions, the
 // icons of an app, All Software (filters, sections, marks, the refused
 // removals) and the diagnosis of the catalog sources.
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -501,6 +506,185 @@ static void snap_socket() {
   CHECK(request.find("Content-Length: 20\r\n") != std::string::npos);
   HttpResponse none = http_unix("/nonexistent/snapd.socket", "GET", "/v2/snaps");
   CHECK(none.status == 0 && !none.error.empty());
+}
+
+// A fake snapd for snap_change(): a UNIX socket that |handler| answers, one
+// request per connection (as http_unix() sends them). It listens when
+// start() is called, so that a test can have snapd start late.
+struct FakeSnapd {
+  using Handler = std::function<std::pair<int, std::string>(const std::string &method, const std::string &path,
+                                                            const std::string &body)>;
+  std::string path;
+  Handler handler;
+  int srv = -1;
+  std::thread thread;
+  std::atomic<bool> stopping{false};
+  std::mutex mutex;
+  std::vector<std::string> requests;  // "METHOD PATH BODY"
+
+  explicit FakeSnapd(const std::string &p) : path(p) { unlink(path.c_str()); }
+  ~FakeSnapd() {
+    stopping = true;
+    if (thread.joinable()) thread.join();
+    if (srv >= 0) close(srv);
+    unlink(path.c_str());
+  }
+  void start() {
+    srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path.c_str());
+    CHECK(bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof addr) == 0 && listen(srv, 8) == 0);
+    thread = std::thread([this] { serve(); });
+  }
+  void serve() {
+    while (!stopping) {
+      struct pollfd p = {srv, POLLIN, 0};
+      if (poll(&p, 1, 50) <= 0) continue;
+      int c = accept(srv, nullptr, nullptr);
+      if (c < 0) continue;
+      std::string req;
+      char buf[4096];
+      ssize_t n;
+      while ((n = read(c, buf, sizeof buf)) > 0) {
+        req.append(buf, size_t(n));
+        size_t head = req.find("\r\n\r\n");
+        if (head == std::string::npos) continue;
+        size_t length = 0, cl = req.find("Content-Length: ");
+        if (cl != std::string::npos && cl < head) length = size_t(atol(req.c_str() + cl + 16));
+        if (req.size() >= head + 4 + length) break;
+      }
+      size_t sp1 = req.find(' '), sp2 = req.find(' ', sp1 + 1), head = req.find("\r\n\r\n");
+      std::string method = req.substr(0, sp1), target = req.substr(sp1 + 1, sp2 - sp1 - 1);
+      std::string body = head == std::string::npos ? "" : req.substr(head + 4);
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        requests.push_back(method + " " + target + " " + body);
+      }
+      std::pair<int, std::string> answer = handler(method, target, body);
+      std::string out = "HTTP/1.1 " + std::to_string(answer.first) + " X\r\nContent-Type: application/json\r\n"
+                        "Content-Length: " + std::to_string(answer.second.size()) + "\r\n\r\n" + answer.second;
+      (void)!write(c, out.data(), out.size());
+      close(c);
+    }
+  }
+  int count(const std::string &prefix) {
+    std::lock_guard<std::mutex> lock(mutex);
+    return int(std::count_if(requests.begin(), requests.end(),
+                             [&prefix](const std::string &r) { return starts_with(r, prefix); }));
+  }
+};
+
+static std::string snapd_err(int status, const std::string &message, const std::string &kind = "") {
+  return "{\"type\":\"error\",\"status-code\":" + std::to_string(status) + ",\"result\":{\"message\":\"" + message +
+         "\",\"kind\":\"" + kind + "\"}}";
+}
+
+// Following a snapd change (snap_change()): snapd that starts late and says
+// it is too early, the first core snap, a polkit refusal, a cancelled
+// password prompt, Cancel (abort), a change that fails and a snapd that
+// never starts.
+static void snap_changes() {
+  std::string sock = "/tmp/merkadu-snapd-" + std::to_string(getpid()) + ".sock";
+  const std::string accepted = "{\"type\":\"async\",\"status-code\":202,\"change\":\"5\"}";
+  const std::string doing =
+      "{\"type\":\"sync\",\"result\":{\"id\":\"5\",\"status\":\"Doing\",\"ready\":false,\"tasks\":["
+      "{\"kind\":\"download-snap\",\"summary\":\"Download snap \\\"core22\\\" from channel \\\"stable\\\"\","
+      "\"status\":\"Doing\",\"progress\":{\"done\":50,\"total\":100}},"
+      "{\"kind\":\"download-snap\",\"summary\":\"Download snap \\\"hello\\\"\",\"status\":\"Do\","
+      "\"progress\":{\"done\":0,\"total\":100}}]}}";
+  const std::string done = "{\"type\":\"sync\",\"result\":{\"id\":\"5\",\"status\":\"Done\",\"ready\":true}}";
+  {
+    // snapd starts a moment after the request, then seeds itself.
+    FakeSnapd d(sock);
+    int early = 2, polls = 0;
+    d.handler = [&](const std::string &m, const std::string &p, const std::string &) -> std::pair<int, std::string> {
+      if (m == "POST" && p == "/v2/snaps/hello") {
+        if (early-- > 0)
+          return {400, snapd_err(400, "too early for operation, device not yet seeded or device model not "
+                                      "acknowledged")};
+        return {202, accepted};
+      }
+      if (m == "GET" && p == "/v2/changes/5") return {200, ++polls == 1 ? doing : done};
+      return {404, snapd_err(404, "not found")};
+    };
+    std::thread later([&d] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(300));
+      d.start();
+    });
+    std::vector<SnapProgress> seen;
+    SnapChangeResult r = snap_change(sock, "POST", "/v2/snaps/hello", "{\"action\":\"install\"}", nullptr,
+                                     [&seen](const SnapProgress &p) { seen.push_back(p); }, 10, 100, 20);
+    later.join();
+    CHECK(r.error.empty() && !r.cancelled && r.change == "5");
+    CHECK(!seen.empty() && seen.front().waiting && seen.front().status == "Waiting for snapd to start");
+    // The first snap brings its base: its download is what is shown.
+    bool core = false;
+    for (auto &p : seen) core |= p.kind == "download-snap" && p.status.find("core22") != std::string::npos &&
+                                 p.percent == 25 && !p.waiting;
+    CHECK(core);
+    CHECK(d.count("POST /v2/snaps/hello") == 3);
+    CHECK(d.count("POST /v2/snaps/hello {\"action\":\"install\"}") == 3);
+  }
+  {
+    // polkit refuses; the user cancels the password prompt; another change
+    // is in the way first.
+    FakeSnapd d(sock);
+    int conflict = 1;
+    d.handler = [&](const std::string &, const std::string &p, const std::string &) -> std::pair<int, std::string> {
+      if (p == "/v2/snaps/refused") return {403, snapd_err(403, "access denied", "login-required")};
+      if (p == "/v2/snaps/cancelled") return {401, snapd_err(401, "cancelled", "auth-cancelled")};
+      if (p == "/v2/snaps/busy") {
+        if (conflict-- > 0) return {409, snapd_err(409, "snap \\\"busy\\\" has changes in progress", "snap-change-conflict")};
+        return {202, accepted};
+      }
+      if (p == "/v2/changes/5")
+        return {200, "{\"type\":\"sync\",\"result\":{\"status\":\"Error\",\"ready\":true,\"err\":\"cannot install "
+                     "snap \\\"busy\\\": no space left on device\"}}"};
+      return {404, snapd_err(404, "not found")};
+    };
+    d.start();
+    SnapChangeResult r = snap_change(sock, "POST", "/v2/snaps/refused", "{}", nullptr, nullptr, 2, 50, 20);
+    CHECK(r.error == "You are not allowed to do this, or the authentication failed." && !r.cancelled);
+    r = snap_change(sock, "POST", "/v2/snaps/cancelled", "{}", nullptr, nullptr, 2, 50, 20);
+    CHECK(r.error.empty() && r.cancelled);
+    r = snap_change(sock, "POST", "/v2/snaps/busy", "{}", nullptr, nullptr, 2, 50, 20);
+    CHECK(!r.cancelled && r.error.find("no space left on device") != std::string::npos);
+    CHECK(d.count("POST /v2/snaps/busy") == 2);
+  }
+  {
+    // Cancel while it downloads: snapd aborts the change and undoes it.
+    FakeSnapd d(sock);
+    std::atomic<bool> aborted{false};
+    d.handler = [&](const std::string &m, const std::string &p, const std::string &b) -> std::pair<int, std::string> {
+      if (m == "POST" && p == "/v2/snaps/hello") return {202, accepted};
+      if (m == "POST" && p == "/v2/changes/5") {
+        aborted = b.find("\"abort\"") != std::string::npos;
+        return {200, "{\"type\":\"sync\",\"result\":{}}"};
+      }
+      if (p == "/v2/changes/5")
+        return {200, aborted ? "{\"type\":\"sync\",\"result\":{\"status\":\"Undone\",\"ready\":true,\"err\":\"aborted\"}}"
+                             : doing};
+      return {404, snapd_err(404, "not found")};
+    };
+    d.start();
+    std::atomic<bool> cancel{false};
+    bool aborting_seen = false;
+    SnapChangeResult r = snap_change(
+        sock, "POST", "/v2/snaps/hello", "{}", &cancel,
+        [&](const SnapProgress &p) {
+          if (p.kind == "download-snap") cancel = true;
+          aborting_seen |= p.aborting;
+        },
+        2, 50, 20);
+    CHECK(aborted && r.cancelled && r.error.empty());
+    CHECK(aborting_seen);
+  }
+  {
+    // snapd never starts.
+    SnapChangeResult r = snap_change(sock, "POST", "/v2/snaps/hello", "{}", nullptr, nullptr, 1, 100, 20);
+    CHECK(r.error == "snapd did not start. Restart the computer, then try again." && !r.cancelled);
+  }
 }
 
 static void appstream_data() {
@@ -1020,6 +1204,7 @@ int main() {
   categories();
   snap_json();
   snap_socket();
+  snap_changes();
   appstream_data();
   icons();
   all_software();

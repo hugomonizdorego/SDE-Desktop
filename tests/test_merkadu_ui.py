@@ -22,6 +22,13 @@ lines and the named controls with their geometry). Checked:
     with what comes with them, Apply; Back, Forward and Home; the Updates
     page pointing to the Software Updater;
   * an empty catalog explained, with Refresh Software Lists;
+  * Home's highlights: several apps that move on by themselves (not under
+    the pointer), dots and arrows, a slide opens its app; an app page
+    offers each source it has (Paintbox) and no other (Lumen);
+  * Enable Snap Support against a fake snapd (tests/fake_snapd.py) that
+    starts late and seeds itself: then the Snap Store's snaps are on Home,
+    in a department, in All Software and in a search without a restart, a
+    polkit refusal is shown and a snap installs;
   * `merkadu --uninstall FILE` (the Start menu's contract): a Debian
     package with the packages removed with it and the space freed (exit 0
     after Uninstall), an app of SDE's own package (refused, exit 1), a
@@ -572,6 +579,102 @@ def highlights(s):
         stop(proc)
 
 
+def answer_dialog(s, main, key='Return', timeout=5.0):
+    """Presses |key| in the dialog (a window that is not |main|)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        ids = [w for w in xdo(s.env, 'search', '--onlyvisible', '--name', '.*').stdout.split() if w != main]
+        if ids:
+            time.sleep(0.4)
+            xdo(s.env, 'windowfocus', '--sync', ids[-1])
+            time.sleep(0.1)
+            xdo(s.env, 'key', '--clearmodifiers', key)
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def snap_support(s):
+    """Enable Snap Support against a fake snapd (tests/fake_snapd.py): snapd
+    starts when its package is installed and says "too early" while it
+    seeds itself; once the snapd snap is installed the Snap Store's snaps
+    are on Home, in a department, in All Software and in a search without
+    restarting Merkadu; a snap installs (the first one sets up the hidden
+    snap folder); polkit refusing one is reported."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from fake_snapd import FakeSnapd
+    M = 'Merkadu.txt'
+    sock, flag = s.temp / 'run' / 'snapd.socket', s.temp / 'snapd-installed'
+    snapd = FakeSnapd(str(sock), str(flag), refuse={'notepadx'})
+    proc = s.start(env={'MERKADU_FAKE_SNAPD': str(flag), 'MERKADU_SNAPD_SOCKET': str(sock)})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'snap: the main window did not open'):
+            return
+        s.wait_qa(M, '@page:explore', 10)
+        s.click(wid, M, 'nav:packages')
+        s.wait_qa(M, '@page:packages', 5)
+        s.click(wid, M, 'chip:source:snap')
+        if not check(s.wait_qa(M, 'action:source-fix:Enable Snap Support', 8),
+                     'snap: no Enable Snap Support without snapd: %s' % s.qa(M)[:12]):
+            return
+        s.click(wid, M, 'action:source-fix:Enable Snap Support')
+        check(answer_dialog(s, wid), 'snap: Enable Snap Support did not ask')
+        check(s.wait_qa(M, '@page:progress', 5), 'snap: no progress page: %s' % s.qa(M)[:1])
+        # The package, then snapd, which is too early at first.
+        check(s.wait_for(M, lambda l: l.startswith('@state:') and 'jobs=0' in l, 60),
+              'snap: Enable Snap Support did not finish: %s' % s.qa(M)[:3])
+        check(flag.exists() and snapd.listening(), 'snap: the snapd package was not installed')
+        early = [r for r in snapd.requests if r.startswith('POST /v2/snaps/snapd')]
+        check(len(early) == 3, 'snap: snapd was not asked again while it seeded: %s' % early)
+        check('snapd' in snapd.installed, 'snap: the snapd snap is not installed')
+        # Without restarting: Home's featured snaps, the department, All
+        # Software and the search.
+        s.click(wid, M, 'nav:explore')
+        # The featured snaps: in the highlights (the fake store features
+        # two) or in their section.
+        check(s.wait_qa(M, 'app:snap:skyview', 15), 'snap: Home has no featured snaps: %s' % s.qa(M)[:12])
+        s.shot('merkadu-snap-home.png')
+        s.click(wid, M, 'nav:category:education')
+        check(s.wait_qa(M, 'app:snap:skyview', 8), 'snap: Skyview is not in Education')
+        s.click(wid, M, 'nav:packages')
+        s.wait_qa(M, '@page:packages', 5)
+        s.click(wid, M, 'chip:source:snap')
+        check(s.wait_qa(M, 'pkg:snap:skyview', 5), 'snap: Skyview is not in All Software: %s' %
+              [k for k in s.controls(M) if k.startswith('pkg:')][:5])
+        # The search of the apps (Home's; All Software's searches packages).
+        s.click(wid, M, 'nav:explore')
+        s.wait_qa(M, '@page:explore', 5)
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'type', '--delay', '40', 'notepad')
+        s.key(wid, 'Return')
+        check(s.wait_qa(M, 'app:snap:notepadx', 8), 'snap: the search does not find Notepad X')
+        # Polkit refuses Notepad X.
+        s.click(wid, M, 'app:snap:notepadx')
+        if check(s.wait_qa(M, 'action:snap:notepadx:Install', 5), 'snap: Notepad X has no Install'):
+            s.click(wid, M, 'action:snap:notepadx:Install')
+            check(s.wait_for(M, lambda l: l.startswith('failed:') and 'not allowed' in l, 20),
+                  'snap: the refusal is not shown: %s' % s.qa(M)[:12])
+            check(snapd.hidden_folder, 'snap: the hidden snap folder was not set up before the first snap')
+        # Skyview installs.
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'key', 'ctrl+a')
+        xdo(s.env, 'type', '--delay', '40', 'skyview')
+        s.key(wid, 'Return')
+        s.wait_qa(M, 'app:snap:skyview', 8)
+        s.click(wid, M, 'app:snap:skyview')
+        if check(s.wait_qa(M, 'action:snap:skyview:Install', 5), 'snap: Skyview has no Install'):
+            s.click(wid, M, 'action:snap:skyview:Install')
+            check(s.wait_qa(M, 'action:snap:skyview:Remove', 30), 'snap: Skyview was not installed: %s' %
+                  s.qa(M)[:8])
+            check('skyview' in snapd.installed, 'snap: snapd did not install Skyview')
+    finally:
+        stop(proc)
+        snapd.stop()
+
+
 def problems(s):
     try:
         text = (s.temp / 'merkadu.log').read_text()
@@ -588,6 +691,7 @@ try:
     all_software(screen)
     empty_catalog(screen)
     highlights(screen)
+    snap_support(screen)
     uninstall_cases(screen)
     problems(screen)
 finally:
