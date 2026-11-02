@@ -30,13 +30,17 @@ first frame that painted the menu:
   submenu    from the moment the pointer reached an item with a submenu
              to the submenu painted (GTK opens submenus after 225 ms)
 
+The first menu after the start is measured on its own; then every file is
+right-clicked once without measuring (the first menu of a type reads its
+applications' icons and data from the disk) before the measured rounds.
 With --slow, Xvfb and Liria share one CPU core with a busy process (taskset;
 the test machine is not throttled), as on a slow computer. The test fails
-when a menu takes longer than --max-menu ms (default 250, 500 with --slow),
-a highlight longer than --max-highlight ms (default 100, 200 with --slow) at
-the 95th percentile, an item change takes more than 3 frames on average (a
-fade), or Liria prints critical warnings. The limits are generous for
-shared CI machines; on an idle computer menus take a few tens of ms.
+when a menu takes longer than --max-menu ms (default 250, 500 with --slow;
+four times that for the first menu), a highlight longer than
+--max-highlight ms (default 100, 200 with --slow) at the 95th percentile,
+an item change takes more than 3 frames on average (a fade), or Liria
+prints critical warnings. The limits are generous for shared CI machines;
+on an idle computer menus take a few tens of ms.
 --json writes every measurement. Exit status 0 = passed, 1 = failed, 77 =
 skipped (no Xvfb, xdotool or Liria, or a Liria without the menu recorder).
 """
@@ -434,8 +438,9 @@ class Smoke:
         self.idle(0.6, 60)
 
     # ------------------------------------------------------------- clicks
-    def click(self, name, point, button=3, hold=0.06, expect_menu=True):
-        """Clicks at |point| and measures the menu that opens."""
+    def click(self, name, point, button=3, hold=0.06, expect_menu=True, record=True):
+        """Clicks at |point| and measures the menu that opens (kept in the
+        results when |record|)."""
         self.records()
         self.x.poll()
         maps0 = len(self.x.maps)
@@ -463,7 +468,8 @@ class Smoke:
             extents = self.x.cardinals(maps[0][1], "_GTK_FRAME_EXTENTS")
             result["frame_extents"] = extents
         result["cpu"] = round((cpu_ns(self.liria.pid) - cpu0) / 1e6, 1)
-        self.results.setdefault(name, []).append(result)
+        if record:
+            self.results.setdefault(name, []).append(result)
         return result
 
     def analyse_menu(self, records, menu, button):
@@ -608,6 +614,13 @@ class Smoke:
             self.click("first menu (%s)" % first, self.centre(files[first]))
         order = ["Projects", "photo.png", "scan.pdf", "tool_1.0_amd64.deb", "Viewer-x86_64.AppImage",
                  "archive.zip", "backup.tar.gz", "notes.txt", "run.sh", "program", "page.html"]
+        # Not measured: the first menu of each type reads its applications'
+        # icons and data from the disk, which takes as long as the disk
+        # (after a reboot of a shared CI machine, half a second).
+        for name in order:
+            if name in files:
+                deselect()
+                self.click("warm-up", self.centre(files[name]), record=False)
         for _ in range(args.repeat):
             for name in order:
                 if name not in files:
@@ -698,6 +711,9 @@ class Smoke:
     def report(self):
         args = self.args
         max_menu = args.max_menu or (500 if args.slow else 250)
+        # The first menu after the start also loads icons and styles from
+        # the disk.
+        max_first = 4 * max_menu
         max_highlight = args.max_highlight or (200 if args.slow else 100)
         print("%-34s %8s %8s %8s %8s %6s" % ("menu", "ms", "press", "handler", "paint", "items"))
         for name, values in self.results.items():
@@ -709,8 +725,9 @@ class Smoke:
                 name, med["menu"], "%.1f" % statistics.median(press) if press else "-", med["handler"],
                 med["paint"], values[0]["items"], values[0]["on"]))
             worst = max(v["menu"] for v in values)
-            if worst > max_menu:
-                self.problems.append("%s: the menu took %.0f ms (limit %d ms)" % (name, worst, max_menu))
+            limit = max_first if name.startswith("first menu") else max_menu
+            if worst > limit:
+                self.problems.append("%s: the menu took %.0f ms (limit %d ms)" % (name, worst, limit))
         for name, values in self.results.items():
             if "p95" in values[0]:
                 v = values[-1]
