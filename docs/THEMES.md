@@ -242,6 +242,18 @@ Compositor):
   window shader read what is behind its window (`backdrop_at()`, already
   blurred) and redraws such a window as a whole when anything under it
   changes. picom alone cannot bend the backdrop.
+* Patch `0002-rebind-damaged-windows.patch` (0.2.0 Alpha 3.1): Mesa's
+  software OpenGL (Xvfb, virtual machines without 3D, a machine without
+  its graphics driver) copies a window into the compositor's texture when
+  the compositor binds it, and picom 12 bound a window only when it was
+  mapped or resized. A window then kept what it had at that moment: a
+  window resized while its program was busy stayed at its old size, the
+  rest see-through, and what a program drew a moment after mapping did not
+  show. On a renderer that is not accelerated the compositor now binds a
+  damaged window again before the next frame (accelerated drivers are not
+  affected; `glx-no-rebind-pixmap = true` turns it off).
+  `sde-compositor-redraw` (`tests/test_compositor_redraw.py`) checks it on
+  Xvfb with the GLX backend.
 * The shader frosts the compositor's blur further with a disc of twelve
   samples (`frost`, 12 px at 100 %), saturates (1.7) and brightens the
   backdrop, turns the surface color into glass and keeps everything else
@@ -277,8 +289,9 @@ of the weather card) let a little glass through.
 
 The Liquid Glass sets (`glass-light`, `glass-dark`) capture with SDE
 Compositor and SDE's full OpenGL configuration (the glass shader through
-Mesa on Xvfb; the lite profile when the X server has no GLX), the other
-sets with the lite profile; `--effects lite|full` forces one profile for
+Mesa on Xvfb, which needs compositor patch 0002 to show what windows draw
+after they were mapped or resized; the lite profile when the X server has
+no GLX), the other sets with the lite profile; `--effects lite|full` forces one profile for
 every set. `--resolution 1024x600 --scale 150` captures the selected sets
 at another screen size and interface scale, and `--scope full` captures
 every scene in every set. `sde-session --compositor-config` prints the
