@@ -1,0 +1,177 @@
+SDE compositor: with software OpenGL, windows show what they draw after they were bound.
+
+SDE 0.2.0 Alpha 3.1. GLX_EXT_texture_from_pixmap lets a driver copy a
+pixmap into the texture when the pixmap is bound (glXBindTexImageEXT):
+what is drawn into the pixmap later is only sure to reach the texture
+after the pixmap is bound again. Mesa's software OpenGL (llvmpipe,
+softpipe: Xvfb, virtual machines without 3D, a machine without its
+graphics driver) copies. picom's old GLX backend bound a damaged window
+again (glx-no-rebind-pixmap turned that off, "known to break things on
+some drivers (LLVMpipe, xf86-video-intel, etc.)"); the backends of picom
+12 bind a window's pixmap only when the window is mapped or resized. With
+software OpenGL a window then showed what it had at that moment:
+
+* a window resized while its program was still busy kept its old content
+  at its old size, and the part it grew by stayed see-through (the
+  wallpaper or the windows behind showed), until something reset the
+  compositor;
+* what a program drew a moment after its window was mapped did not show,
+  the window stayed see-through; later changes (hover highlights, typing)
+  did not show either.
+
+With this patch the GLX backend reports BACKEND_QUIRK_PIXMAP_SNAPSHOT when
+its renderer is not accelerated (GLX_MESA_query_renderer, or the names of
+Mesa's software renderers), and with such a backend a window that was
+damaged since its image was made is bound again (release_image, then
+bind_pixmap of the same named pixmap) before the next frame. Accelerated
+drivers, whose textures follow their pixmaps, are not affected, and
+glx-no-rebind-pixmap = true turns the new binding off. At startup the log
+says "Software OpenGL (<renderer>): a window is bound again after it was
+drawn." (info level).
+
+SDE's tests/test_compositor_redraw.py checks this on Xvfb with the GLX
+backend, and with XRender as a control.
+
+--- a/include/picom/backend.h
++++ b/include/picom/backend.h
+@@ -226,6 +226,12 @@
+ 	/// Backend cannot do blur quickly. The compositor will avoid using blur to create
+ 	/// shadows on this backend
+ 	BACKEND_QUIRK_SLOW_BLUR = 1 << 0,
++	/// SDE: an image made by `bind_pixmap` is a copy of the pixmap's content at the
++	/// time it was bound, later drawing into the pixmap does not reach it
++	/// (GLX_EXT_texture_from_pixmap allows this; Mesa's software OpenGL does it).
++	/// The compositor binds the pixmap of a window again after the window was
++	/// damaged.
++	BACKEND_QUIRK_PIXMAP_SNAPSHOT = 1 << 1,
+ };
+ 
+ struct backend_operations {
+--- a/src/backend/gl/glx.c
++++ b/src/backend/gl/glx.c
+@@ -39,6 +39,8 @@
+ 	xcb_window_t target_win;
+ 	GLXContext ctx;
+ 	struct glx_fbconfig_cache *cached_fbconfigs;
++	/// SDE: enum backend_quirk
++	uint32_t quirks;
+ };
+ 
+ struct glx_fbconfig_cache {
+@@ -218,6 +220,37 @@
+ }
+ 
+ const struct backend_operations glx_ops;
++/// SDE: whether the current context renders with Mesa's software OpenGL
++/// (llvmpipe, softpipe, swr: Xvfb, virtual machines without 3D, a missing
++/// driver). Its GLX_EXT_texture_from_pixmap copies the pixmap into the
++/// texture when it is bound; drawing into the pixmap afterwards does not
++/// reach the texture.
++static bool glx_software_renderer(Display *dpy) {
++#ifdef GLX_MESA_query_renderer
++	unsigned int accelerated = 1;
++	if (glxext.has_GLX_MESA_query_renderer &&
++	    glXQueryCurrentRendererIntegerMESA(GLX_RENDERER_ACCELERATED_MESA, &accelerated)) {
++		return accelerated == 0;
++	}
++#endif
++	const char *names[] = {"llvmpipe", "SWR", "softpipe"};
++	const char *vendor = glXGetClientString(dpy, GLX_VENDOR);
++	const char *renderer = (const char *)glGetString(GL_RENDERER);
++	if (vendor == NULL || renderer == NULL || strcmp(vendor, "Mesa Project and SGI") != 0) {
++		return false;
++	}
++	for (size_t i = 0; i < ARR_SIZE(names); i++) {
++		if (strstr(renderer, names[i]) != NULL) {
++			return true;
++		}
++	}
++	return false;
++}
++
++static uint32_t glx_quirks(backend_t *base) {
++	return ((struct _glx_data *)base)->quirks;
++}
++
+ /**
+  * Initialize OpenGL.
+  */
+@@ -331,6 +364,13 @@
+ 	gd->gl.decouple_texture_user_data = glx_decouple_user_data;
+ 	gd->gl.release_user_data = glx_release_image;
+ 
++	if (glx_software_renderer(ps->c.dpy)) {
++		gd->quirks |= BACKEND_QUIRK_PIXMAP_SNAPSHOT;
++		log_info("Software OpenGL (%s): a window is bound again after it was "
++		         "drawn.",
++		         (const char *)glGetString(GL_RENDERER));
++	}
++
+ 	if (ps->o.vsync) {
+ 		if (!glx_set_swap_interval(1, ps->c.dpy, tgt)) {
+ 			log_error("Failed to enable vsync.");
+@@ -529,7 +569,7 @@
+     .is_format_supported = gl_is_format_supported,
+     .new_image = gl_new_image,
+     .present = glx_present,
+-    .quirks = backend_no_quirks,
++    .quirks = glx_quirks,
+     .version = glx_version,
+     .release_image = gl_release_image,
+ 
+--- a/src/wm/win.c
++++ b/src/wm/win.c
+@@ -520,6 +520,36 @@
+ 	pixman_region32_fini(&extents);
+ }
+ 
++/// SDE: on a backend whose window images are copies made when the pixmap was
++/// bound (BACKEND_QUIRK_PIXMAP_SNAPSHOT: Mesa's software OpenGL), bind the
++/// pixmap of a window that was damaged since then again, so that the image
++/// has what the window has drawn. Otherwise such a window kept the content
++/// it had when it was mapped or last resized: a window resized while its
++/// program was still busy stayed at its old size, the rest of it
++/// see-through, until the compositor was reset. glx-no-rebind-pixmap turns
++/// this off.
++static void win_rebind_damaged_snapshot(session_t *ps, struct win *w) {
++	if (!w->pixmap_damaged || w->win_image == NULL || ps->backend_data == NULL ||
++	    ps->o.glx_no_rebind_pixmap ||
++	    !(ps->backend_data->ops.quirks(ps->backend_data) & BACKEND_QUIRK_PIXMAP_SNAPSHOT)) {
++		return;
++	}
++	w->pixmap_damaged = false;
++	auto pixmap = ps->backend_data->ops.release_image(ps->backend_data, w->win_image);
++	w->win_image = NULL;
++	if (pixmap == XCB_NONE) {
++		win_set_flags(w, WIN_FLAGS_PIXMAP_ERROR);
++		return;
++	}
++	w->win_image = ps->backend_data->ops.bind_pixmap(
++	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual));
++	if (!w->win_image) {
++		log_error("Failed to bind pixmap");
++		xcb_free_pixmap(ps->c.c, pixmap);
++		win_set_flags(w, WIN_FLAGS_PIXMAP_ERROR);
++	}
++}
++
+ void win_process_image_flags(session_t *ps, struct win *w) {
+ 	// Assert that the MAPPED flag is already handled.
+ 	assert(!win_check_flags_all(w, WIN_FLAGS_MAPPED));
+@@ -534,6 +564,7 @@
+ 	    // We don't need to do anything here for legacy backends
+ 	    ps->backend_data == NULL) {
+ 		win_clear_flags(w, WIN_FLAGS_PIXMAP_STALE);
++		win_rebind_damaged_snapshot(ps, w);
+ 		return;
+ 	}
+ 
+@@ -560,6 +591,8 @@
+ 	win_release_pixmap(ps->backend_data, w);
+ 	w->win_image = ps->backend_data->ops.bind_pixmap(
+ 	    ps->backend_data, pixmap, x_get_visual_info(&ps->c, w->a.visual));
++	// SDE: the new image has everything drawn so far (win_rebind_damaged_snapshot()).
++	w->pixmap_damaged = false;
+ 	if (!w->win_image) {
+ 		log_error("Failed to bind pixmap");
+ 		xcb_free_pixmap(ps->c.c, pixmap);
