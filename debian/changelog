@@ -1,3 +1,39 @@
+sde (0.2.0~alpha3.1) unstable; urgency=medium
+
+  * Merkadu: exits with _exit() and never destroys state shared with its
+    worker threads (0.2.0~alpha3 hung in pthread_cond_destroy at exit);
+    catalog merge, departments and package indexing on worker threads; a
+    stall detector with hang and crash reports in ~/.local/state/merkadu;
+    Pause, Resume and Cancel (PackageKit Cancel, GCancellable, snapd abort);
+    All Software by source; rotating highlights with cached Flathub
+    collections; Flatpak remotes read per installation instead of the
+    catalog's origin; Debian origins only for packages APT knows; snapd
+    probed again after Enable Snap Support.
+  * sde::FileChooser replaces Fl_File_Chooser and Fl_Native_File_Chooser in
+    every program; new xdg-desktop-portal-sde (FileChooser) with its .portal
+    and D-Bus activation files, selected in sde-portals.conf.
+  * Themes: frosted Liquid Glass shader and material, linear transparency
+    steps with readability floors, no transitions on menu items and rows,
+    rounded-square check boxes (GTK 3, GTK 4, FLTK), no position-dependent
+    row rules.
+  * sde-compositor: patch 0002 rebinds damaged windows on software OpenGL,
+    patch 0003 reloads the configuration in place on SIGUSR1; menus are
+    excluded from fades.
+  * sde-session: one notification per program for a theme switch behind a
+    screen picture (XDamage); sde-gl-probe chooses the XRender profile on
+    software OpenGL; adopts started programs and announces crashes.
+  * Control Center: Appearance with Preview, Revert and Apply
+    (sde-theme-preview-gtk helper).
+  * Force Close: sde-watchdog and sde-force-close; SDE-FLTK answers
+    _NET_WM_PING; sde-wm patch 0005 runs the SDE dialog for windows that do
+    not respond.
+  * Action Center: session buttons always in the footer; logind's CanSuspend,
+    CanReboot and CanPowerOff hide what the system cannot do.
+  * Liria: faster context menus and highlights, menu latency smoke.
+  * Build-Depends: libxres-dev, libxdamage-dev.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Mon, 02 Nov 2026 12:00:00 +0000
+
 sde (0.2.0~alpha3) unstable; urgency=medium
 
   * Xanara: direct editing of PDF text and pictures (Edit mode), saved as

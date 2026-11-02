@@ -1,3 +1,33 @@
+# 0.2 Alpha 3.1 · 2026-11-02 — Merkadu that closes, a modern file chooser, real Liquid Glass, Preview before Apply, Force Close
+
+- Merkadu: ends when its window closes (Alpha 3 hung on exit in
+  pthread_cond_destroy and left a 240 MB process behind every time); no long
+  pauses of the window (catalog work on worker threads), a stall detector
+  with hang and crash reports; Pause, Resume and Cancel for every change;
+  All Software with Debian packages, Flatpak and Snap apart; rotating
+  highlights (distribution, new, Flathub popular, Snap Store featured); only
+  the sources an app really has ("Choose where to get it"); Flatpak installs
+  from the real remote ("Remote "flatpak" not found" fixed); snaps appear
+  after Enable Snap Support without a restart.
+- A modern file chooser for every SDE program (Back, Forward, Up, path bar,
+  places, search, thumbnails, preview, human filters) and a portal backend
+  so Flatpak apps and browsers get it too.
+- SDE Liquid Glass is frosted glass like Apple's and stays readable over any
+  page; even transparency levels in every theme; compositor patch 0002 fixes
+  see-through, stale windows on software OpenGL, and the automatic profile
+  picks XRender there; menus highlight at once and open without a fade;
+  check boxes are check boxes in GTK 3, GTK 4 and SDE's programs.
+- Appearance: Preview, Revert and Apply instead of applying on click; theme
+  switches in one calm step (one compositor reload in place, patch 0003,
+  instead of two resets).
+- Force Close: frozen windows are marked Not Responding and, after 2 minutes
+  or when closed, offer Wait or Force Close (SIGKILL); programs that never
+  open are caught too; crash notices with Open Again.
+- Action Center: Sleep, Log Out, Restart and Shut Down as icons, always in the
+  footer, with a second click for the last three.
+- Liria: context menus open faster and highlights follow the pointer at once;
+  Niny's menus fit small screens. See docs/0.2-ALPHA3.1.md.
+
 # 0.2 Alpha 3 · 2026-10-26 — Xanara edits PDFs, Merkadu like Synaptic, safe USB copies, tile folders
 
 - Xanara: direct editing of PDF text (click and type, fonts, sizes,

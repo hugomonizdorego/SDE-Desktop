@@ -12,11 +12,24 @@
 SDE is built and tested on Debian testing. DebION GNU/Linux, a separate Debian-based
 distribution, ships SDE; see [LEGAL.md](docs/LEGAL.md) for how the two projects relate.
 
-Development version **0.2 Alpha 3** (`0.2.0~alpha3`) · October 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.2 Alpha 3.1** (`0.2.0~alpha3.1`) · November 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE 0.2 Alpha 3: the Start Menu with favorites, a tile folder and live badges](docs/screenshots/0.2-alpha3/01-start-menu.jpg)
+![SDE 0.2 Alpha 3.1: the new SDE file chooser in the Control Center](docs/screenshots/0.2-alpha3.1/01-file-chooser.jpg)
 
-**New in 0.2 Alpha 3:** [Xanara edits PDFs, Merkadu works like Synaptic, safe USB copies and tile folders](docs/0.2-ALPHA3.md) —
+**New in 0.2 Alpha 3.1:** [Merkadu that closes, a modern file chooser, real Liquid Glass, Preview before Apply and Force Close](docs/0.2-ALPHA3.1.md) —
+**Merkadu** ends when it is closed and no longer freezes for seconds on a slow machine,
+with **Pause** and **Cancel**, Debian packages, Flatpak and Snap apart in All Software, rotating
+highlights, only the sources an app really has, Flatpak installs from the right
+remote and snaps after Enable Snap Support; a **modern file chooser** (Back, path bar,
+places, thumbnails, preview) in every SDE program and for Flatpak apps; **Liquid
+Glass** is frosted glass that stays readable, the compositor no longer leaves windows
+see-through on software OpenGL, and menus highlight at once; **Appearance** has
+Preview, Revert and Apply and switches themes without glitches; frozen programs get
+**Wait / Force Close**; Sleep, Log Out, Restart and Shut Down are always in the
+**Action Center** as icons; Liria's right-click menus open faster
+([screenshots](docs/screenshots/0.2-alpha3.1/README.md)).
+
+**0.2 Alpha 3:** [Xanara edits PDFs, Merkadu works like Synaptic, safe USB copies and tile folders](docs/0.2-ALPHA3.md) —
 **Xanara** edits PDFs directly (click a text and type, as in an office suite; move and
 replace pictures) and needs no other program; **Merkadu** never shows an empty page,
 refreshes the software lists when it opens, lists every package like Synaptic, comes
@@ -136,6 +149,9 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-update` | Software Updater: critical, security and main updates of the operating system with check boxes, history, sources and maintenance; PackageKit/APT transactions with progress and background notifications (apps from Flathub and the Snap Store are updated in Merkadu) |
 | `debrun` | Debrun: installs `.deb` files downloaded from a vendor's website the Debian way, after showing what the package is and changes (opens on double-click of a `.deb`; not in the Start Menu) |
 | `sde-appimage` | AppImage Runner: runs AppImages with a double-click once their signature is verified, and asks to delete those it cannot verify |
+| `sde-watchdog` | Notices windows that stop responding and programs that never open, and asks `sde-force-close` to offer Wait or Force Close (started by the session) |
+| `sde-force-close` | The "Wait / Force Close" dialog; ends a frozen program at once, never a session program or another user's |
+| `xdg-desktop-portal-sde` | The SDE file chooser for programs that use the file chooser portal (Flatpak apps, browsers) |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
@@ -289,7 +305,7 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Logo, icons and user pictures](docs/BRANDING.md)
 - [Merkadu, the software center](docs/MERKADU.md), [Start Menu](docs/START-MENU.md), [Control Center](docs/CONTROL-CENTER.md), [Panel](docs/PANEL.md) and [themes](docs/THEMES.md)
-- [Niny](docs/NINY.md), [Xanara](docs/XANARA.md), [Photo](docs/PHOTO.md), [Gallery](docs/GALLERY.md), [copying and the transfer dialog](docs/TRANSFERS.md), [Debrun](docs/DEBRUN.md) and [AppImages](docs/APPIMAGE.md)
+- [Niny](docs/NINY.md), [Xanara](docs/XANARA.md), [Photo](docs/PHOTO.md), [Gallery](docs/GALLERY.md), [copying and the transfer dialog](docs/TRANSFERS.md), [Debrun](docs/DEBRUN.md), [AppImages](docs/APPIMAGE.md), [the file chooser](docs/FILE-CHOOSER.md) and [Force Close](docs/FORCE-CLOSE.md)
 - [SDE Welcome for distributions](docs/WELCOME.md)
 - [Roadmap to 1.0 Final](docs/ROADMAP.md)
 - [Security policy](docs/SECURITY.md) and the [0.2 Alpha 1 audit](docs/AUDIT-0.2.0-alpha1.md)

@@ -1,4 +1,4 @@
-# Roadmap — from 0.2.0 Alpha 3 to 1.0 Final
+# Roadmap — from 0.2.0 Alpha 3.1 to 1.0 Final
 
 Selviana Desktop Environment (SDE) is a desktop environment. DebION GNU/Linux
 is a separate project: a Debian-based distribution (Linux kernel) that ships
@@ -64,7 +64,7 @@ cairo and Xlib, with a Rust configuration core.
 - [x] SDE Welcome editable by distributions (`/usr/share/SDE-Welcome`)
 - [x] SDE-FLTK on FLTK 1.4.5
 
-## Now: 0.2.0 Alpha 3 — editing, installing and copying safely (October 2026)
+## Done: 0.2.0 Alpha 3 — editing, installing and copying safely (October 2026)
 
 - [x] Xanara edits PDFs directly and needs no other program
       ([0.2-ALPHA3.md](0.2-ALPHA3.md), [XANARA.md](XANARA.md))
@@ -79,6 +79,21 @@ cairo and Xlib, with a Rust configuration core.
 - [x] Debrun for downloaded `.deb` files; AppImages after verification;
       renaming accounts at the next restart
 
+## Now: 0.2.0 Alpha 3.1 — fixes from the review on a real laptop (November 2026)
+
+- [x] Merkadu ends when closed and no longer freezes; Pause and Cancel;
+      Debian, Flatpak and Snap apart; rotating highlights; only real sources;
+      Flatpak remotes and snaps after Enable Snap Support fixed
+      ([0.2-ALPHA3.1.md](0.2-ALPHA3.1.md), [MERKADU.md](MERKADU.md))
+- [x] A modern file chooser in every SDE program and for portal users
+      ([FILE-CHOOSER.md](FILE-CHOOSER.md))
+- [x] Liquid Glass as frosted, readable glass; even transparency; no stale,
+      see-through windows on software OpenGL; menus without fades
+- [x] Appearance: Preview, Revert and Apply; glitch-free theme switches
+- [x] Force Close for frozen programs ([FORCE-CLOSE.md](FORCE-CLOSE.md));
+      session buttons always in the Action Center
+- [x] Liria: faster context menus and highlights
+
 ## 0.2 series — usable every day (target: Q1 2027)
 
 Alpha 4 and later:
@@ -86,6 +101,9 @@ Alpha 4 and later:
 - [ ] Merkadu, Debrun and user accounts validated on real installations
       (PackageKit, Flathub, snapd, AccountsService); copies to real FAT USB
       sticks measured; Liria against NFS, WebDAV and domain logins
+- [ ] Liquid Glass, the compositor patches and Force Close measured on real
+      GPUs (Intel, AMD, NVIDIA) and on the owner's laptop; the file chooser
+      portal through the real xdg-desktop-portal
 - [ ] Xanara: editing rotated text and right-to-left scripts; faster undo for
       large files
 
