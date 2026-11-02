@@ -30,6 +30,8 @@
 #include <libliria-private/liria-sidebar.h>
 #include <libliria-private/liria-view-factory.h>
 
+#include <eel/eel-gtk-extensions.h>
+
 #include "liria-sde-ui.h"
 #include "liria-sde-model.h"
 #include "liria-sde-pins.h"
@@ -668,6 +670,8 @@ sde_popup_main_menu (GtkToggleButton *button, LiriaNavigationWindow *window)
                               GDK_GRAVITY_SOUTH_EAST, GDK_GRAVITY_NORTH_EAST, NULL);
     gtk_menu_shell_select_first (GTK_MENU_SHELL (menu), FALSE);
     gtk_menu_shell_deselect (GTK_MENU_SHELL (menu));
+    /* 0.2.0 Alpha 3.1: painted before the window repaints its header. */
+    eel_sde_paint_menu_first (GTK_MENU (menu), GTK_WIDGET (button));
 }
 
 static gboolean

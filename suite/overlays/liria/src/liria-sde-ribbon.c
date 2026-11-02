@@ -41,6 +41,8 @@
 #include <libliria-private/liria-file-operations.h>
 #include <libliria-private/liria-view.h>
 
+#include <eel/eel-gtk-extensions.h>
+
 #include "liria-sde-ribbon.h"
 #include "liria-sde-pins.h"
 #include "liria-sde-ui.h"
@@ -689,6 +691,8 @@ rb_popup (Ribbon *r, GtkWidget *menu, GtkWidget *button)
     gtk_menu_attach_to_widget (GTK_MENU (menu), button, NULL);
     g_signal_connect (menu, "deactivate", G_CALLBACK (rb_menu_deactivated), r);
     gtk_menu_popup_at_widget (GTK_MENU (menu), button, GDK_GRAVITY_SOUTH_WEST, GDK_GRAVITY_NORTH_WEST, NULL);
+    /* 0.2.0 Alpha 3.1: painted before the window repaints the view. */
+    eel_sde_paint_menu_first (GTK_MENU (menu), button);
 }
 
 /* ------------------------------------------------------ the commands */

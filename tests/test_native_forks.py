@@ -810,6 +810,149 @@ class LiriaAlpha3Test(unittest.TestCase):
         self.run_smoke('tools/liria-network-smoke.py')
 
 
+class LiriaAlpha31Test(unittest.TestCase):
+    """0.2.0 Alpha 3.1: context menus and the main menu open without
+    waiting for the folder view, highlights follow the pointer at once, and
+    pointer motion over a tab's view costs no X round trip."""
+
+    def setUp(self):
+        import sys
+        self.root = Path(__file__).resolve().parents[1]
+        sys.path.insert(0, str(self.root / 'suite'))
+        import redesign
+        self.redesign = redesign
+        self.overlay = self.root / 'suite/overlays/liria'
+
+    def test_menu_items_do_not_fade(self):
+        """Themes fade the highlight of menu items out; Liria's menus show
+        it at once (the owner's video: two or three items blue at once)."""
+        import re
+        css = re.sub(r'/\*.*?\*/', '', (self.overlay / 'data/liria-sde.css').read_text(), flags=re.S)
+        rule = re.search(r'menu menuitem,\s*\.menu menuitem,\s*\.context-menu menuitem\s*\{([^}]*)\}', css)
+        self.assertIsNotNone(rule)
+        self.assertIn('transition: none;', rule.group(1))
+
+    def test_recipe_steps_are_applied(self):
+        recipe = (self.root / 'suite/redesign.py').read_text()
+        order = [recipe.index('    %s(staged)\n' % step) for step in
+                 ('liria_progress', 'liria_menus', 'liria_list_view', 'liria_menu_paint_order',
+                  'liria_menu_prepare', 'liria_translations')]
+        self.assertEqual(order, sorted(order))
+        # The view's style changes with its focus while a menu is open: only
+        # a change of what labels are measured with makes every icon again,
+        # and the background only follows the view colour and the scale.
+        style = self.redesign.ICON_VIEW_STYLE
+        self.assertLess(style.index('g_strcmp0 (label_style, container->details->sde_label_style) != 0'),
+                        style.index('liria_icon_container_request_update_all (container);'))
+        self.assertIn('liria_icon_canvas_item_sde_forget_render (icon->item);', style)
+        self.assertIn('gtk_widget_get_direction (widget)', style)
+        self.assertIn('gdk_rgba_equal (&old, &self->details->default_color)', self.redesign.BACKGROUND_COLOR)
+        self.assertIn('if (!self->details->sde_color_known)', self.redesign.BACKGROUND_COLOR)
+        # A menu update reads the information of a few local files again,
+        # not of hundreds of selected or remote ones (synchronous I/O).
+        self.assertIn('if (selection_count <= 8 && liria_file_is_local (file)) /* SDE */', recipe)
+
+    def test_list_view_recipe(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            (staged / 'src').mkdir()
+            (staged / 'src/liria-notebook.c').write_text(
+                'G_DEFINE_TYPE (LiriaNotebook, liria_notebook, GTK_TYPE_NOTEBOOK);\n\n'
+                'static void\nliria_notebook_class_init (LiriaNotebookClass *klass)\n{\n'
+                '    widget_class->scroll_event = liria_notebook_scroll_event;\n}\n')
+            self.redesign.liria_list_view(staged)
+            notebook = (staged / 'src/liria-notebook.c').read_text()
+            self.assertIn('widget_class->motion_notify_event = liria_notebook_motion_notify_event;', notebook)
+            # Motions from the page are left out, except while a button is
+            # held (a tab being dragged).
+            self.assertLess(notebook.index('gtk_widget_is_ancestor (event_widget, child)'),
+                            notebook.index('GTK_WIDGET_CLASS (liria_notebook_parent_class)->motion_notify_event'))
+            self.assertIn('GDK_BUTTON1_MASK | GDK_BUTTON2_MASK | GDK_BUTTON3_MASK', notebook)
+
+    def test_menu_paint_order_and_prepare_recipes(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            staged = Path(tmp)
+            (staged / 'eel').mkdir()
+            (staged / 'src/file-manager').mkdir(parents=True)
+            (staged / 'eel/eel-gtk-extensions.c').write_text(
+                'void\neel_pop_up_context_menu (GtkMenu\t*menu,\n                         GdkEventButton *event)\n{\n'
+                '    g_return_if_fail (GTK_IS_MENU (menu));\n\n'
+                '    gtk_menu_popup_at_pointer (menu, (const GdkEvent*) event);\n\n'
+                '    g_object_ref_sink (menu);\n    g_object_unref (menu);\n}\n')
+            (staged / 'eel/eel-gtk-extensions.h').write_text(
+                'void                  eel_pop_up_context_menu                         (GtkMenu              *menu,\n'
+                '        GdkEventButton       *event);\n')
+            (staged / 'src/file-manager/fm-directory-view.c').write_text(
+                'static void\nschedule_update_menus (FMDirectoryView *view)\n{\n\tOLD\n'
+                '\t/* Schedule a menu update with the current update interval */\n'
+                '\tif (view->details->update_menus_timeout_id == 0) {\n\t}\n}\n')
+            self.redesign.liria_menu_paint_order(staged)
+            self.redesign.liria_menu_prepare(staged)
+            eel = (staged / 'eel/eel-gtk-extensions.c').read_text()
+            # The window waits for the menu's first frame, its closing or a
+            # quarter of a second, and is thawed exactly once.
+            self.assertLess(eel.index('gtk_menu_popup_at_pointer (menu'), eel.index('eel_sde_paint_menu_first (menu, NULL);'))
+            for needle in ('"after-paint"', '"unmap"', 'g_timeout_add (250,', 'gdk_window_freeze_updates (frozen);'):
+                self.assertIn(needle, eel)
+            self.assertEqual(eel.count('gdk_window_thaw_updates ('), 1)
+            self.assertIn('eel_sde_paint_menu_first', (staged / 'eel/eel-gtk-extensions.h').read_text())
+            view = (staged / 'src/file-manager/fm-directory-view.c').read_text()
+            self.assertNotIn('OLD', view)
+            self.assertIn('event->button.button == 3', view)
+            self.assertIn('g_idle_add (sde_update_menus_for_popup, view)', view)
+            self.assertIn('FM_DIRECTORY_VIEW_POPUP_PATH_SELECTION', view)
+        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
+        self.assertIn('eel_sde_paint_menu_first (GTK_MENU (menu), GTK_WIDGET (button));', ui)
+        ribbon = (self.overlay / 'src/liria-sde-ribbon.c').read_text()
+        self.assertIn('eel_sde_paint_menu_first (GTK_MENU (menu), button);', ribbon)
+
+    def test_menu_recorder_and_smoke_agree(self):
+        """The records of LIRIA_SDE_QA_FRAMES that tools/liria-menu-smoke.py
+        reads exist in the recorder."""
+        recorder = (self.overlay / 'src/liria-sde-qa.c').read_text()
+        smoke = (self.root / 'tools/liria-menu-smoke.py').read_text()
+        for record in ('input', 'menu-map', 'menu-frame', 'menu-select', 'file', 'place', 'menu-item'):
+            self.assertIn('"%s\\t' % record, recorder, record)
+            self.assertIn('"%s"' % record, smoke, record)
+        for needle in ('g_signal_add_emission_hook', 'gtk_menu_shell_get_selected_item', 'gdk_event_get_time'):
+            self.assertIn(needle, recorder)
+        for needle in ('--slow', 'taskset', 'XTestFakeButtonEvent', 'frames_per_change'):
+            self.assertIn(needle, smoke)
+
+    def test_prepared_tree_has_the_menu_fixes(self):
+        source = self.root / 'vendor/suite/liria'
+        if not source.is_dir():
+            self.skipTest('prepare the native suite first')
+        for path, needle in (('libliria-private/liria-icon-container.c', 'sde_label_style (widget)'),
+                             ('libliria-private/liria-icon-canvas-item.c', 'liria_icon_canvas_item_sde_forget_render'),
+                             ('eel/eel-background.c', 'sde_background_style (self)'),
+                             ('src/liria-emblem-sidebar.c', 'sde_emblem_sidebar_mapped'),
+                             ('src/liria-notebook.c', 'liria_notebook_motion_notify_event'),
+                             ('eel/eel-gtk-extensions.c', 'eel_sde_paint_menu_first'),
+                             ('src/file-manager/fm-directory-view.c', 'sde_update_menus_for_popup')):
+            self.assertIn(needle, (source / path).read_text(), path)
+
+    def test_menu_smoke(self):
+        """Context menu latency on Xvfb (tools/liria-menu-smoke.py) when a
+        built Liria is named by SDE_LIRIA_PREFIX; SDE_THEMES names the
+        built SDE themes."""
+        import os
+        import subprocess
+        import sys
+        prefix = os.environ.get('SDE_LIRIA_PREFIX')
+        if not prefix:
+            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
+        command = [sys.executable, str(self.root / 'tools/liria-menu-smoke.py'), '--prefix', prefix, '--repeat', '2']
+        if os.environ.get('SDE_THEMES'):
+            command += ['--themes', os.environ['SDE_THEMES']]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=1200)
+        if result.returncode == 77:
+            self.skipTest(result.stdout.strip())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 class LiriaAlpha2Test(unittest.TestCase):
     """0.2.0 Alpha 2: Liria's file operations window in the design of SDE's
     copy and move dialog, on SDE's own model (src/common/transfer_model.h),
