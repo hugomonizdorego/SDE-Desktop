@@ -552,6 +552,18 @@ static void test_gtk_preferences() {
   CHECK(shader.find('@') == std::string::npos);  // every value filled in
   CHECK(read_file(std::string(root) + "/sde/liquid-glass-top.glsl", shader));
   CHECK(shader.find("const int SQUARE = 1;") != std::string::npos);
+  // 0.2.0 Alpha 3.1: menus (GTK's popup, dropdown and combo menus, SDE-FLTK's
+  // menus) open and close without a fade; windows keep theirs. picom 12
+  // ignores `fade` in wintypes: fade-exclude it is.
+  CHECK(text.find("fading = true;") != std::string::npos);
+  {
+    size_t at = text.find("fade-exclude = [");
+    CHECK(at != std::string::npos);
+    std::string list = at == std::string::npos ? "" : text.substr(at, text.find('\n', at) - at);
+    for (const char *type : {"menu", "popup_menu", "dropdown_menu", "combo"})
+      CHECK(list.find(std::string("\"window_type = '") + type + "'\"") != std::string::npos);
+    CHECK(list.find("normal") == std::string::npos && list.find("notification") == std::string::npos);
+  }
   // Other families never get it.
   cfg.set("appearance", "style", "graphite");
   CHECK(read_file(write_compositor_config(cfg), text));

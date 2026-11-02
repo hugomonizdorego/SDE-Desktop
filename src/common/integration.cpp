@@ -586,12 +586,20 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   const std::string own_shadow = "override_redirect && argb && !_SDE_SURFACE";
   c += "shadow-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@\", \"" + own_shadow + "\"];\n";
-  if (motion)
+  if (motion) {
     // About 10 frames per fade (~100 ms): smooth without long busy periods.
     c += "fading = true;\nfade-in-step = 0.10;\nfade-out-step = 0.12;\nfade-delta = 10;\n"
          "no-fading-openclose = false;\n";
-  else
+    // Menus open and close at once (0.2.0 Alpha 3.1): faded in, a right-click
+    // menu took about 100 ms to be fully there, which felt like lag. GTK's
+    // menus are popup_menu, dropdown_menu or combo, SDE-FLTK's menus and
+    // tooltips menu; windows, SDE's panel popups and notifications keep their
+    // fades. (picom 12 reads `fade` in wintypes but never uses it.)
+    c += "fade-exclude = [\"window_type = 'menu'\", \"window_type = 'popup_menu'\", "
+         "\"window_type = 'dropdown_menu'\", \"window_type = 'combo'\"];\n";
+  } else {
     c += "fading = false;\n";
+  }
   // Window corners follow the family: Fluent 8, Graphite 10, Liquid Glass 16.
   c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
   // SDE's own surfaces (x11::set_surface()) are rounded with the radius they
