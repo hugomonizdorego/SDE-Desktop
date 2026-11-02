@@ -242,7 +242,12 @@ static void test_files(const std::string &source_dir, const std::string &binary_
   CHECK(!glass.gtk);
 
   // The session's picture of the screen is not faded by the compositor.
-  CHECK(contains(compositor_inputs(cfg), "fade-exclude = [\"_SDE_CURTAIN@\"]"));
+  {
+    std::string inputs = compositor_inputs(cfg);
+    size_t at = inputs.find("fade-exclude = [");
+    CHECK(at != std::string::npos &&
+          inputs.substr(at, inputs.find('\n', at) - at).find("\"_SDE_CURTAIN@\"") != std::string::npos);
+  }
 
   // The GTK block: the theme's own colors, so that running GTK 3
   // applications (which read it only at start) follow a switch.

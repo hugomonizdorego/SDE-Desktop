@@ -62,6 +62,11 @@ if(XDAMAGE_FOUND)
   target_compile_definitions(sde-session PRIVATE SDE_HAVE_XDAMAGE=1)
   target_link_libraries(sde-session PRIVATE PkgConfig::XDAMAGE)
 endif()
+# sde-session's OpenGL check at login (0.2.0 Alpha 3.1): Xlib only, libGL is
+# opened at run time.
+add_executable(sde-gl-probe session/gl_probe.cpp)
+target_link_libraries(sde-gl-probe PRIVATE ${X11_LIBRARIES} ${CMAKE_DL_LIBS})
+install(TARGETS sde-gl-probe RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
 
 add_executable(sde-panel
   panel/main.cpp

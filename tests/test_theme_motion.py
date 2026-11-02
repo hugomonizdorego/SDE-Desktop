@@ -7,7 +7,10 @@ buttons do not look like radio buttons (0.2.0 Alpha 3.1).
    no rule that styles a menu item, a popover menu button, a menu bar item,
    a list or tree row, an icon view or a flow box child may have a
    transition or an animation that takes time. Liria's menu lit two or
-   three items at once while they faded in and out.
+   three items at once while they faded in and out. No rule may style list
+   or tree items by their position (zebra rows by :nth-child): GTK 3 then
+   caches no tree view cell style, which cost Liria's list view and sidebar
+   a fifth to a half more CPU, and GTK 4 restyles rows whenever rows move.
 2. The indicators, drawn by GTK 3 (and GTK 4 when its helper was built) in
    a window and in a menu, and by SDE-FLTK (the file chooser's check
    buttons): a check box is a (rounded) square and a radio button a circle.
@@ -108,6 +111,33 @@ def load_css(path, seen=None):
     return re.sub(r'@import\s+url\(\s*["\']?([^"\')]+)["\']?\s*\)\s*;', imp, text)
 
 
+def by_position(selector):
+    """A selector that styles list or tree items by their position: a row
+    (or flow box child, icon view) with :nth-child or :nth-last-child, a tree
+    view with any position pseudo-class. GTK 3 then styles every cell of
+    every tree view by its row and caches none of them (Liria's list view
+    and sidebar spent a fifth to a half more CPU on one such rule), GTK 4
+    restyles the rows of a list view whenever rows move (0.2.0 Alpha 3.1).
+    The rounded ends of boxed lists (row:first-child) are fine."""
+    compounds, depth, cur = [], 0, ''
+    for ch in selector:
+        depth += (ch == '(') - (ch == ')')
+        if depth == 0 and ch in ' \t\n>+~':
+            compounds.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    for compound in compounds + [cur]:
+        m = re.match(r'[A-Za-z][\w-]*', compound)
+        if not m or m.group(0) not in ('row', 'treeview', 'flowboxchild', 'iconview'):
+            continue
+        positions = r':(?:nth-child|nth-last-child|first-child|last-child|only-child)\b' \
+            if m.group(0) == 'treeview' else r':nth-(?:last-)?child\('
+        if re.search(positions, compound):
+            return True
+    return False
+
+
 def check_motion(themes):
     failures, files = [], 0
     for d in sorted(p for p in themes.iterdir() if p.is_dir() and p.name.startswith('SDE-')):
@@ -121,6 +151,9 @@ def check_motion(themes):
                 slow = [f'{k}: {v.strip()}' for k, v in decls if takes_time(v)]
                 if slow and any(instant(s) for s in selectors(head)):
                     failures.append(f'{d.name}/{sub}: {" ".join(head.split())[:120]} {{ {"; ".join(slow)} }}')
+                for s in selectors(head):
+                    if by_position(s):
+                        failures.append(f'{d.name}/{sub}: {" ".join(s.split())[:120]}: list or tree items by position')
     return files, failures
 
 

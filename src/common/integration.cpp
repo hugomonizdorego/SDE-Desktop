@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "build_config.h"
 #include "desktop_entry.h"
@@ -233,11 +234,6 @@ bool sync_gtk_settings(const Config &cfg) {
   }
   return changed;
 }
-static bool has_drm_device() {
-  for (const char *dev : {"/dev/dri/renderD128", "/dev/dri/card0", "/dev/dri/card1"})
-    if (access(dev, R_OK | W_OK) == 0) return true;
-  return false;
-}
 
 std::string virtual_machine_name() {
   // DMI names what the hypervisor emulates; the CPU flag covers the rest.
@@ -314,18 +310,90 @@ std::string detect_graphics_class() {
   return cached;
 }
 
-std::string auto_compositor_backend() {
+OpenGLInfo parse_opengl_probe(const std::string &output) {
+  OpenGLInfo gl;
+  std::string line = trim(output.substr(0, output.find('\n')));
+  auto value = [&](const char *key) {
+    size_t at = line.find(key);
+    return at == std::string::npos ? std::string() : trim(line.substr(at + strlen(key)));
+  };
+  if (starts_with(line, "glx=0")) {
+    gl.state = "none";
+    gl.detail = value("reason=");
+  } else if (starts_with(line, "glx=1")) {
+    gl.detail = value("renderer=");
+    std::string name = lower(gl.detail);
+    bool software = line.find(" accelerated=0") != std::string::npos;
+    for (const char *n : {"llvmpipe", "softpipe", "swrast", "software rasterizer"})
+      if (name.find(n) != std::string::npos) software = true;
+    gl.state = software ? "software" : line.find(" accelerated=1") != std::string::npos ? "accelerated" : "";
+  }
+  return gl;
+}
+
+OpenGLInfo opengl_info() {
+  std::string v = env("SDE_OPENGL");
+  if (v.empty()) {
+    std::string dir = runtime_dir(), text;
+    if (!dir.empty() && read_file(dir + "/sde-opengl", text)) v = trim(text);
+  }
+  OpenGLInfo gl;
+  size_t colon = v.find(':');
+  std::string state = v.substr(0, colon);
+  if (state == "accelerated" || state == "software" || state == "none") {
+    gl.state = state;
+    if (colon != std::string::npos) gl.detail = v.substr(colon + 1);
+  }
+  return gl;
+}
+
+void publish_opengl_info(const OpenGLInfo &gl) {
+  std::string dir = runtime_dir();
+  if (gl.state.empty()) {
+    unsetenv("SDE_OPENGL");
+    if (!dir.empty()) unlink((dir + "/sde-opengl").c_str());
+    return;
+  }
+  std::string v = gl.state + ":" + gl.detail;
+  setenv("SDE_OPENGL", v.c_str(), 1);
+  if (!dir.empty()) write_file_atomic(dir + "/sde-opengl", v + "\n");
+}
+
+AutoProfile auto_profile(const std::string &graphics, const OpenGLInfo &gl) {
   // OpenGL compositing in VirtualBox, VMware and QEMU often draws a black
   // screen (alpha11 bug) and is llvmpipe or a slow paravirtual path anyway;
   // XRender works there and on any X server. A passed-through GPU keeps GLX.
-  return detect_graphics_class() == "hardware" ? "glx" : "xrender";
+  auto detail = [&]() { return gl.detail.empty() ? std::string() : " (" + gl.detail + ")"; };
+  if (graphics == "virtual") return {"xrender", "lite", "virtual machine or graphics device without 3D"};
+  if (graphics != "hardware") return {"xrender", "lite", "no graphics device: software rendering"};
+  // 0.2.0 Alpha 3.1: a graphics device whose OpenGL renders on the CPU (its
+  // driver missing or not working) would run blur and the glass shader on
+  // the CPU too.
+  if (gl.state == "software") return {"xrender", "lite", "OpenGL renders in software" + detail()};
+  if (gl.state == "none") return {"xrender", "lite", "no OpenGL on this display" + detail()};
+  if (gl.state == "accelerated") return {"glx", "full", "graphics device with accelerated OpenGL" + detail()};
+  return {"glx", "full", "graphics device found (OpenGL not checked)"};
 }
+
+std::string auto_compositor_backend() { return auto_profile(detect_graphics_class(), opengl_info()).backend; }
+
+namespace {
+// The backend of the generated configuration, the compositor's mode aside.
+std::string resolved_backend(const Config &cfg) {
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  if (backend == "glx" || backend == "xrender") return backend;
+  // [compositor] effects=full chosen by hand keeps OpenGL on a graphics
+  // device, as before 0.2.0 Alpha 3.1, also when OpenGL renders in software.
+  if (lower(cfg.get("compositor", "effects", "auto")) == "full")
+    return detect_graphics_class() == "hardware" ? "glx" : "xrender";
+  return auto_compositor_backend();
+}
+}  // namespace
 
 std::string compositor_backend(const Config &cfg) {
   if (lower(cfg.get("compositor", "mode", "auto")) == "off") return "";
   if (file_exists(config_home() + "/sde/compositor.conf")) return "";
-  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
-  return backend == "glx" || backend == "xrender" ? backend : auto_compositor_backend();
+  return resolved_backend(cfg);
 }
 
 std::string compositor_effects(const Config &cfg, bool safe) {
@@ -336,7 +404,7 @@ std::string compositor_effects(const Config &cfg, bool safe) {
   // A backend picked by hand in Settings keeps every effect, as before.
   std::string backend = lower(cfg.get("compositor", "backend", "auto"));
   if (backend == "glx" || backend == "xrender") return "full";
-  return detect_graphics_class() == "hardware" ? "full" : "lite";
+  return auto_profile(detect_graphics_class(), opengl_info()).effects;
 }
 
 namespace {
@@ -587,9 +655,9 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   // auto: OpenGL needs a DRM device on real hardware; virtual machines,
   // virtual displays and machines without one get XRender, which picom draws
   // reliably everywhere.
-  c += "# graphics: " + gfx + ", effects: " + effects + "\n";
-  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
-  if (backend != "glx" && backend != "xrender") backend = auto_compositor_backend();
+  OpenGLInfo gl = opengl_info();
+  c += "# graphics: " + gfx + (gl.state.empty() ? "" : ", OpenGL: " + gl.state) + ", effects: " + effects + "\n";
+  std::string backend = resolved_backend(cfg);
   if (safe) backend = "xrender";
   safe = backend == "xrender";
   c += "backend = \"" + backend + "\";\n";
@@ -612,15 +680,22 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   const std::string own_shadow = "override_redirect && argb && !_SDE_SURFACE";
   c += "shadow-exclude = [\"window_type = 'dock'\", \"window_type = 'desktop'\", "
        "\"class_g = 'SDE-Panel'\", \"_GTK_FRAME_EXTENTS@\", \"" + own_shadow + "\"];\n";
-  if (motion)
+  if (motion) {
     // About 10 frames per fade (~100 ms): smooth without long busy periods.
     c += "fading = true;\nfade-in-step = 0.10;\nfade-out-step = 0.12;\nfade-delta = 10;\n"
          "no-fading-openclose = false;\n";
-  else
+    // Menus open and close at once (0.2.0 Alpha 3.1): faded in, a right-click
+    // menu took about 100 ms to be fully there, which felt like lag. GTK's
+    // menus are popup_menu, dropdown_menu or combo, SDE-FLTK's menus and
+    // tooltips menu; windows, SDE's panel popups and notifications keep their
+    // fades. (picom 12 reads `fade` in wintypes but never uses it.)
+    // sde-session's picture of the screen during a theme switch (0.2.0 Alpha
+    // 3.1) appears at once and fades out by its own opacity steps.
+    c += "fade-exclude = [\"window_type = 'menu'\", \"window_type = 'popup_menu'\", "
+         "\"window_type = 'dropdown_menu'\", \"window_type = 'combo'\", \"_SDE_CURTAIN@\"];\n";
+  } else {
     c += "fading = false;\n";
-  // sde-session's picture of the screen during a theme switch (0.2.0 Alpha
-  // 3.1) appears at once and fades out by its own opacity steps.
-  if (motion) c += "fade-exclude = [\"_SDE_CURTAIN@\"];\n";
+  }
   // Window corners follow the family: Fluent 8, Graphite 10, Liquid Glass 16.
   c += "corner-radius = " + std::to_string(round ? int(std::lround(t.radius / t.scale)) : 0) + ";\n";
   // SDE's own surfaces (x11::set_surface()) are rounded with the radius they
@@ -883,9 +958,9 @@ std::string compositor_report(const Config &cfg) {
   Theme t = Theme::from_config(cfg);
   std::string mode = cfg.get("compositor", "mode", "auto");
   std::string backend = lower(cfg.get("compositor", "backend", "auto"));
-  bool drm = has_drm_device();
   std::string vm = virtual_machine_name();
-  std::string chosen = backend == "glx" || backend == "xrender" ? backend : auto_compositor_backend();
+  std::string chosen = resolved_backend(cfg);
+  OpenGLInfo gl = opengl_info();
   int status = -1;
   std::string pid = trim(run_sync({"pgrep", "-u", std::to_string(getuid()), "-x", "sde-compositor"}, &status, 1500));
   std::string virt = trim(run_sync({"systemd-detect-virt"}, nullptr, 1500));
@@ -898,11 +973,14 @@ std::string compositor_report(const Config &cfg) {
   std::string r = std::string("SDE ") + SDE_VERSION + " compositor report\n";
   r += "Compositing: " + std::string(mode == "off" ? "off" : "on") +
        (status == 0 && !pid.empty() ? " (running, pid " + split(pid, '\n')[0] + ")" : " (not running)") + "\n";
-  r += "Backend: " + chosen + (backend != "glx" && backend != "xrender"
-                                  ? (!vm.empty() ? " (auto: virtual machine)"
-                                                 : drm ? " (auto: graphics device found)"
-                                                       : " (auto: no DRM graphics device)")
-                                  : " (chosen in the Control Center)") + "\n";
+  r += "Backend: " + chosen +
+       (backend == "glx" || backend == "xrender" ? " (chosen in the Control Center)"
+        : lower(cfg.get("compositor", "effects", "auto")) == "full"
+            ? " (auto with [compositor] effects=full)"
+            : " (auto: " + auto_profile(detect_graphics_class(), gl).why + ")") +
+       "\n";
+  if (!gl.state.empty())
+    r += "OpenGL at login: " + gl.state + (gl.detail.empty() ? "" : " (" + gl.detail + ")") + "\n";
   if (virt.empty() || virt == "none") virt = vm;
   r += "Virtual machine: " + (virt.empty() || virt == "none" ? std::string("no") : virt) + "\n";
   r += "Graphics: " + detect_graphics_class() + ", effects: " + compositor_effects(cfg, false) +

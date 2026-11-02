@@ -594,16 +594,13 @@ class Session:
         y = wy + (wh - h - top - bottom) // 2 + top
         self.xdo('windowmove', wid, str(x), str(y))
         self.wait(lambda: (self.geom(wid)['x'], self.geom(wid)['y']) == (x, y), 2)
-        self.redraw_compositor()
         self.window_settle(wid, quiet=0.4, timeout=4)
 
     def redraw_compositor(self):
-        """With the OpenGL compositor on the CPU (Mesa on Xvfb) a window can
-        stay on the screen as it was for a long time: at its old size after
-        a resize while its program is busy starting, the rest see-through
-        (0.2.0 Alpha 3 too; Liria), or blank as before it first drew.
-        SIGUSR1 draws every window again (in place since 0.2.0 Alpha 3.1,
-        without the reset)."""
+        """Asks the OpenGL compositor to draw every window again (SIGUSR1,
+        in place since 0.2.0 Alpha 3.1) before an Appearance scene is taken.
+        Window moves don't need it: compositor patch 0002 redraws damaged
+        windows on software OpenGL."""
         if self.effects == 'full' and getattr(self, 'compositor', None) and self.compositor.poll() is None:
             time.sleep(1.0)
             os.kill(self.compositor.pid, signal.SIGUSR1)
@@ -1283,8 +1280,6 @@ class Session:
             time.sleep(0.8)
         if p.poll() is not None:
             warn(f'{prog} exited ({p.returncode}); continuing without a compositor')
-        else:
-            self.compositor = p
 
     def close(self):
         if getattr(self, 'closed', False):

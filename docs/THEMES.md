@@ -78,6 +78,14 @@ more room around their items, and menu separators are inset.
   them to `none` in the upstream rules (`still_highlights()`) and the last
   layer, `data/themes/overlays/motion-gtk-{3.0,4.0}.css`, keeps them off
   in every state.
+* **Menus appear at once.** With the full effects the compositor fades
+  windows in and out (about 100 ms), but not menus: GTK's popup, dropdown
+  and combo menus and SDE-FLTK's menus and tooltips are in the generated
+  `fade-exclude` (picom 12 ignores `fade` in `wintypes`).
+* **No tree view rule by row position.** A selector such as
+  `treeview.view:nth-child(even)` makes GTK 3 style every cell by its row
+  and cache none of them (Liria's list view and sidebar spent a fifth to a
+  half more CPU on one such rule for SDE System Monitor's old GTK tables).
 * **Check boxes are rounded squares, radio buttons circles,** in windows,
   dialogs and menus. Graphite drew GTK 3 check boxes as circles (its
   `checkbox-*-symbolic.svg` assets); SDE Graphite and SDE Liquid Glass
@@ -85,11 +93,13 @@ more room around their items, and menu separators are inset.
   buttons (the file chooser, stock dialogs) get a rounded square with
   corners of a fifth of its side (`stock_radius()` in
   `src/common/menu.cpp`); 4 px corners had made a 13 px box a circle.
-* `sde-theme-motion` (`tests/test_theme_motion.py`) checks both: no rule of
-  a built style sheet that styles those widgets may have a transition or
-  animation that takes time, and the indicators drawn by GTK 3, GTK 4 and
-  SDE-FLTK on Xvfb must fill at least 87 % (check box) or at most 84 %
-  (radio button) of their box.
+* `sde-theme-motion` (`tests/test_theme_motion.py`) checks the style
+  sheets and indicators: no rule of a built style sheet that styles those
+  widgets may have a transition or animation that takes time, no tree view
+  selector may use `:nth-child`, and the indicators drawn by GTK 3, GTK 4
+  and SDE-FLTK on Xvfb must fill at least 87 % (check box) or at most 84 %
+  (radio button) of their box. `sde-tests` checks the menus in the
+  compositor's `fade-exclude`.
 
 ## Window buttons
 
@@ -171,7 +181,9 @@ Since 0.2.0 Alpha 3.1 (`apply_transparency()` in `src/common/theme.cpp`):
   Glass 72 %, Fluent 86 %, Graphite 90 % at 100.
 * **Almost opaque without blur.** Without the OpenGL compositor's blur
   (the lite profile: `[compositor] effects=lite`, or `auto` in virtual
-  machines and with software rendering; `[aero] blur=false`) a busy window
+  machines and with software rendering, also on a GPU whose OpenGL renders
+  in software, which `sde-session` checks at login with `sde-gl-probe` and
+  writes to `session.log`; `[aero] blur=false`) a busy window
   behind would show through sharp: surfaces keep at least 97.5 % (XRender's
   small CPU blur 88 %) and frames are opaque. SDE then draws its glass
   with a sheen and light rims (`Painter::glass_surface()`).
@@ -242,6 +254,18 @@ Compositor):
   window shader read what is behind its window (`backdrop_at()`, already
   blurred) and redraws such a window as a whole when anything under it
   changes. picom alone cannot bend the backdrop.
+* Patch `0002-rebind-damaged-windows.patch` (0.2.0 Alpha 3.1): Mesa's
+  software OpenGL (Xvfb, virtual machines without 3D, a machine without
+  its graphics driver) copies a window into the compositor's texture when
+  the compositor binds it, and picom 12 bound a window only when it was
+  mapped or resized. A window then kept what it had at that moment: a
+  window resized while its program was busy stayed at its old size, the
+  rest see-through, and what a program drew a moment after mapping did not
+  show. On a renderer that is not accelerated the compositor now binds a
+  damaged window again before the next frame (accelerated drivers are not
+  affected; `glx-no-rebind-pixmap = true` turns it off).
+  `sde-compositor-redraw` (`tests/test_compositor_redraw.py`) checks it on
+  Xvfb with the GLX backend.
 * The shader frosts the compositor's blur further with a disc of twelve
   samples (`frost`, 12 px at 100 %), saturates (1.7) and brightens the
   backdrop, turns the surface color into glass and keeps everything else
@@ -277,8 +301,9 @@ of the weather card) let a little glass through.
 
 The Liquid Glass sets (`glass-light`, `glass-dark`) capture with SDE
 Compositor and SDE's full OpenGL configuration (the glass shader through
-Mesa on Xvfb; the lite profile when the X server has no GLX), the other
-sets with the lite profile; `--effects lite|full` forces one profile for
+Mesa on Xvfb, which needs compositor patch 0002 to show what windows draw
+after they were mapped or resized; the lite profile when the X server has
+no GLX), the other sets with the lite profile; `--effects lite|full` forces one profile for
 every set. `--resolution 1024x600 --scale 150` captures the selected sets
 at another screen size and interface scale, and `--scope full` captures
 every scene in every set. `sde-session --compositor-config` prints the
