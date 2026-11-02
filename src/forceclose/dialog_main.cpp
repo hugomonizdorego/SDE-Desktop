@@ -353,8 +353,6 @@ int on_event(void *event, void *) {
   Window w = 0;
   // Any answer from the window: its program handles events again.
   if (!g.launch && forceclose::is_pong(fl_display, e, &w, nullptr) && w == g.win) Dialog::finish(RESOLVED);
-  // The dialog that is open already is asked to come forward.
-  if (e.type == SelectionRequest || e.type == SelectionClear) return 0;
   return 0;
 }
 
