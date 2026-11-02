@@ -255,8 +255,13 @@ def main_window(s):
         s.click(wid, M, 'app:org.example.paintbox')
         if check(s.wait_qa(M, '@page:details:org.example.paintbox'), 'the app page did not open'):
             c = s.controls(M)
-            check('source:debian' in c and 'source:flatpak' in c, 'app page: source chips missing')
+            # In Debian, on Flathub and in the Snap Store: a choice of the three.
+            check('source:debian' in c and 'source:flatpak' in c and 'source:snap' in c,
+                  'app page: the choice of sources is missing')
             check('screenshots' in c, 'app page: no screenshots')
+            s.click(wid, M, 'source:flatpak')
+            check(s.wait_qa(M, 'chosen:flatpak', 3), 'app page: choosing the Flatpak did not choose it')
+            check('action:org.example.paintbox:Install' in s.controls(M), 'app page: no Install for the Flatpak')
 
         # Install a Flatpak (Lumen): progress, then Open and Remove.
         s.key(wid, 'Escape')
@@ -266,6 +271,10 @@ def main_window(s):
         s.wait_qa(M, '@page:category:graphics')
         s.click(wid, M, 'app:org.example.lumen')
         if check(s.wait_qa(M, '@page:details:org.example.lumen'), 'Lumen did not open'):
+            # Only on Flathub: no Debian choice (Alpha 3 offered one).
+            c = s.controls(M)
+            check('source:flatpak' in c and 'source:debian' not in c and 'chosen:debian' not in c,
+                  'Lumen: a source it does not have is offered: %s' % [k for k in c if k.startswith('source')])
             s.click(wid, M, 'action:org.example.lumen:Install')
             check(s.wait_qa(M, 'job:1', 5), 'installing did not show its progress')
             s.shot('merkadu-installing.png')

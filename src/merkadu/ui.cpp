@@ -664,6 +664,127 @@ int Chip::handle(int e) {
   }
 }
 
+// ----------------------------------------------------------- SourceCard
+
+namespace {
+
+// The name people know a Flatpak remote by.
+std::string remote_title(const std::string &remote) {
+  if (remote == "flathub") return "Flathub";
+  if (remote == "flathub-beta") return "Flathub Beta";
+  if (remote == "fedora") return "Fedora";
+  return remote;
+}
+
+}  // namespace
+
+std::string SourceCard::facts(const Origin &o) {
+  std::vector<std::string> parts;
+  std::string ver = o.installed ? o.installed_version : o.version;
+  if (!ver.empty()) parts.push_back(format(_("Version %s"), ver.c_str()));
+  if (!o.installed && o.download_size > 0)
+    parts.push_back(format(_("%s to download"), format_size(o.download_size).c_str()));
+  else if (o.installed_size > 0)
+    parts.push_back(format(o.installed ? _("%s on disk") : _("%s when installed"), format_size(o.installed_size).c_str()));
+  std::string text;
+  for (size_t i = 0; i < parts.size(); ++i) text += (i ? " \xC2\xB7 " : "") + parts[i];
+  return text.empty() ? std::string(_("Version not known yet")) : text;
+}
+
+std::string SourceCard::provenance(const App &app, const Origin &o) {
+  switch (o.source) {
+    case Source::Flatpak: {
+      std::string remote = remote_title(o.remote.empty() ? std::string("flathub") : o.remote);
+      std::string by = !o.publisher.empty() ? o.publisher : app.developer;
+      std::string text = by.empty() ? format(_("From %s"), remote.c_str())
+                                    : format(_("From %s, by %s"), remote.c_str(), by.c_str());
+      if (o.installation == "user") text += " \xC2\xB7 " + std::string(_("your own installation"));
+      return text;
+    }
+    case Source::Snap: {
+      std::string channel = o.remote.empty() ? std::string("latest/stable") : o.remote;
+      if (o.publisher.empty()) return format(_("From the Snap Store, %s"), channel.c_str());
+      return format(o.verified ? _("By %s (verified), %s") : _("By %s, %s"), o.publisher.c_str(), channel.c_str());
+    }
+    default:
+      return format(_("Package %s, updated with the system"), o.id.c_str());
+  }
+}
+
+SourceCard::SourceCard(int x, int y, int w, int h, const App &app, const Origin &o, bool chosen)
+    : Fl_Widget(x, y, w, h),
+      source_(o.source),
+      title_(origin_kind_label(o.source)),
+      facts_(facts(o)),
+      provenance_(provenance(app, o)),
+      chosen_(chosen),
+      installed_(o.installed) {}
+
+int SourceCard::height() { return S(58); }
+
+void SourceCard::draw() {
+  const Theme &t = active_theme();
+  bool hot = Fl::belowmouse() == this;
+  int rs = S(16), rx = x() + S(14), ry = y() + (h() - rs) / 2;  // the radio button
+  int tx = rx + rs + S(12);
+  std::string badge = installed_ ? std::string(_("Installed")) : "";
+  text_font(std::max(S(9), t.font_size - S(2)), true);
+  int bw = badge.empty() ? 0 : text_width(badge) + S(16);
+  int right = x() + w() - S(12) - (bw ? bw + S(8) : 0) - S(16);  // the text ends before the badge and the dot
+  {
+    Painter p(window()->w(), window()->h());
+    double r = std::min(double(t.radius), Sd(10));
+    Color bg = chosen_ ? t.accent.alpha(t.dark ? 0.24 : 0.10) : hot ? t.hover : t.background;
+    p.fill_rounded(x(), y(), w(), h(), r, bg);
+    p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, chosen_ ? t.accent : t.border);
+    if (chosen_) p.stroke_rounded(x() + 1.5, y() + 1.5, w() - 3, h() - 3, r - 1, t.accent);
+    double cx = rx + rs / 2.0, cy = ry + rs / 2.0;
+    p.circle(cx, cy, rs / 2.0, chosen_ ? t.accent : t.border);
+    p.circle(cx, cy, rs / 2.0 - Sd(1.5), chosen_ ? t.accent : t.surface);
+    if (chosen_) p.circle(cx, cy, rs / 4.5, Color::hex(0xFFFFFF));
+    // The source's color, as on the badges, and Installed.
+    int bx = x() + w() - S(12) - bw;
+    if (bw) p.fill_rounded(bx, y() + (h() - S(20)) / 2, bw, S(20), S(10), t.success.alpha(0.18));
+    p.circle(bx - (bw ? S(10) : 0) - Sd(4), cy, Sd(4), source_color(source_));
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
+  }
+  if (bw)
+    draw_text(badge, x() + w() - S(12) - bw, y() + (h() - S(20)) / 2, bw, S(20), readable(t.success, t.surface), 1);
+  // "Flatpak app  Version 3.2 · 54 MB to download", where it comes from below.
+  text_font(t.font_size, true);
+  int title_w = std::min(text_width(title_), std::max(0, right - tx));
+  draw_text(title_, tx, y() + S(8), title_w + S(2), S(22), t.text);
+  text_font(t.font_size);
+  int fx = tx + title_w + S(12);
+  if (fx < right) draw_text(facts_, fx, y() + S(8), right - fx, S(22), t.text);
+  text_font(std::max(S(9), t.font_size - S(1)));
+  draw_text(provenance_, tx, y() + S(30), right - tx, S(20), t.text_dim);
+}
+
+int SourceCard::handle(int e) {
+  switch (e) {
+    case FL_ENTER:
+    case FL_LEAVE:
+    case FL_FOCUS:
+    case FL_UNFOCUS:
+      redraw();
+      return 1;
+    case FL_PUSH:
+      return Fl::event_button() == FL_LEFT_MOUSE ? 1 : 0;
+    case FL_RELEASE:
+      if (Fl::event_inside(this) && on_click) on_click();
+      return 1;
+    case FL_KEYBOARD:
+      if ((Fl::event_key() == ' ' || Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter) && on_click) {
+        on_click();
+        return 1;
+      }
+      return 0;
+    default:
+      return Fl_Widget::handle(e);
+  }
+}
+
 // -------------------------------------------------------------- AppTile
 
 AppTile::AppTile(int x, int y, int w, int h, const std::string &app_id) : Fl_Widget(x, y, w, h), id_(app_id) {

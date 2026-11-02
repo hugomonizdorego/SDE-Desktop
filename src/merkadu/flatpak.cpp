@@ -297,6 +297,41 @@ class FlatpakBackend : public Backend {
         done);
   }
 
+  // The download and installed size of an app that is not installed, from
+  // the remote's summary as it was last downloaded (no network).
+  void details(const App &app, const Origin &o, std::function<void(Origin)> done) override {
+    if (o.installed || o.remote.empty()) return;
+    Origin copy = o;
+    background<Origin>(
+        [copy] {
+          Origin out = copy;
+          std::string error;
+          FlatpakInstallation *inst = open_installation(copy.installation.empty() ? "system" : copy.installation,
+                                                        &error);
+          if (!inst) return out;
+          GError *err = nullptr;
+          FlatpakRef *parsed = flatpak_ref_parse(copy.id.c_str(), &err);
+          g_clear_error(&err);
+          if (parsed) {
+            FlatpakRemoteRef *rr = flatpak_installation_fetch_remote_ref_sync_full(
+                inst, copy.remote.c_str(), flatpak_ref_get_kind(parsed), flatpak_ref_get_name(parsed),
+                flatpak_ref_get_arch(parsed), flatpak_ref_get_branch(parsed), FLATPAK_QUERY_FLAGS_ONLY_CACHED,
+                nullptr, &err);
+            g_clear_error(&err);
+            if (rr) {
+              guint64 dl = flatpak_remote_ref_get_download_size(rr), is = flatpak_remote_ref_get_installed_size(rr);
+              if (dl > 0) out.download_size = (long long)dl;
+              if (is > 0) out.installed_size = (long long)is;
+              g_object_unref(rr);
+            }
+            g_object_unref(parsed);
+          }
+          g_object_unref(inst);
+          return out;
+        },
+        done, "a Flatpak app's size arrived");
+  }
+
   void list_runtimes(std::function<void(std::vector<Package>)> done) override {
     background<std::vector<Package>>(
         [] {

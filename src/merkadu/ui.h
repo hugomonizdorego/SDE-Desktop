@@ -118,6 +118,27 @@ class Chip : public Fl_Widget {
   bool on_;
 };
 
+// One way to get an app, on its page: the source, its version and size,
+// where it comes from and who publishes it; the chosen one is marked like
+// a radio button (Debian package or Flatpak app or Snap).
+class SourceCard : public Fl_Widget {
+ public:
+  SourceCard(int x, int y, int w, int h, const App &app, const Origin &o, bool chosen);
+  std::function<void()> on_click;
+  void draw() override;
+  int handle(int e) override;
+  static int height();
+  // "Version 2.10 · 24 MB to download" and "From Flathub, by The GIMP
+  // Team" of an origin (also the line of an app with one source).
+  static std::string facts(const Origin &o);
+  static std::string provenance(const App &app, const Origin &o);
+
+ private:
+  Source source_;
+  std::string title_, facts_, provenance_;
+  bool chosen_, installed_;
+};
+
 // A card with an app: a large icon, name, summary and source badges.
 class AppTile : public Fl_Widget {
  public:

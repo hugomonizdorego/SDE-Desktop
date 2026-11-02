@@ -1064,31 +1064,31 @@ void details_header(Page *page, const App &a) {
     new TextBlock(tx, cy, tw, summary_h, a.summary, false, 1);
     cy += summary_h + S(10);
   }
-  // Where to get it: one chip per source.
-  if (a.origins.size() > 1 || !a.installed()) {
-    int cx = tx;
-    new Label(cx, cy + S(4), S(70), S(24), _("Source"), Label::DIM);
-    text_font(active_theme().font_size, false);
-    cx += std::max(S(70), text_width(_("Source")) + S(14));
+  // Where to get it. Only the sources the app really has (a Debian origin
+  // needs a package APT knows; a Flatpak one a remote of this computer):
+  // with several, a card for each with its version, size and publisher,
+  // the chosen one marked; with one, a line.
+  if (a.origins.size() > 1) {
+    new Label(tx, cy, tw, S(22), a.installed() ? _("Sources") : _("Choose where to get it"), Label::DIM);
+    qa_line(std::string("chosen:") + source_id(chosen), tx, cy, tw, S(22));
+    cy += S(28);
+    int gap = S(8), ch = SourceCard::height();
     for (auto &org : a.origins) {
-      std::string text = source_label(org.source);
-      std::string ver = org.installed ? org.installed_version : org.version;
-      if (!ver.empty()) text += " " + ver;
-      if (org.source == Source::Flatpak && org.installation == "user") text += " " + std::string(_("(yours)"));
-      int cw = Chip::fit(text) + S(10);
-      if (cx + cw > tx + tw && cx > tx + S(80)) {
-        cx = tx + S(80);
-        cy += S(40);
-      }
-      auto *chip = new Chip(cx, cy, cw, S(32), text, org.source == chosen);
-      chip->dot = source_color(org.source);
+      auto *card = new SourceCard(tx, cy, tw, ch, a, org, org.source == chosen);
       std::string id = a.id;
       Source src = org.source;
-      chip->on_click = [id, src] { choose_source(id, src); };
-      qa_line(std::string("source:") + source_id(org.source), cx, cy, cw, S(32));
-      cx += cw + S(8);
+      card->on_click = [id, src] { choose_source(id, src); };
+      qa_line(std::string("source:") + source_id(org.source), tx, cy, tw, ch);
+      cy += ch + gap;
     }
-    cy += S(44);
+    cy += S(8);
+  } else if (o) {
+    std::string line = format(_("%s: %s"), origin_kind_label(o->source).c_str(),
+                              SourceCard::provenance(a, *o).c_str()) +
+                       " \xC2\xB7 " + SourceCard::facts(*o);
+    auto *l = new Label(tx, cy, tw, S(22), line, Label::DIM);
+    qa_line(std::string("source:") + source_id(o->source), l->x(), l->y(), l->w(), l->h());
+    cy += S(32);
   }
   // Actions, or the progress of the change.
   if (job) {
