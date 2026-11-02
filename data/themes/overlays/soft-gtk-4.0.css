@@ -137,12 +137,12 @@ scale:not(.marks-before):not(.marks-after) > trough > slider {
 scale:not(.marks-before):not(.marks-after) > trough > slider:hover { background-color: mix(@sde_knob, @sde_accent, 0.08); }
 scale:not(.marks-before):not(.marks-after) > trough > slider:active { background-color: mix(@sde_knob, @sde_accent, 0.16); }
 
-/* Menus and tooltips: room around the items and a quick fade of the highlight. */
+/* Menus and tooltips: room around the items. The highlight follows the
+ * pointer at once (motion-gtk-4.0.css). */
 popover.menu > contents { padding: 6px; }
 popover.menu modelbutton, popover modelbutton {
   min-height: 28px;
   padding: 2px 10px;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
 }
 popover.menu separator { margin: 4px 6px; }
 tooltip, tooltip.background { padding: 6px 10px; }

@@ -116,7 +116,9 @@ static void test_transparency_contrast() {
         need("gtk menu dim", translucent_contrast(t.text_dim, t.menu_bg, t.gtk_menu_alpha, false), 3.0);
         CHECK(ok);
         // 100 really is translucent: every surface lets something through.
-        CHECK(t.opacity < 0.9 && t.popup_opacity < 0.95 && t.gtk_menu_alpha < 0.95);
+        // GTK menus are opaque in CSS since 0.2.0 Alpha 3.1 (the compositor
+        // makes GTK 3 menus glass or translucent).
+        CHECK(t.opacity < 0.9 && t.popup_opacity < 0.95 && t.gtk_menu_alpha == 1.0);
         CHECK(t.blur && !t.lite);
         // Lite profile (VMs, software rendering): no blur, more opaque.
         Theme lite = theme_for(fam.id, mode, accent, 100, "lite");
@@ -301,6 +303,8 @@ static void test_liquid_glass() {
     CHECK(m.blur >= 1 && m.blur <= 12 && m.saturation >= 1 && m.saturation <= 2);
     CHECK(m.brightness > 0.5 && m.brightness < 1.5 && m.rim > 0 && m.rim <= 1 && m.rim_width > 0);
     CHECK(m.lens_band > m.lens_shift && m.lens_shift > 0 && m.key_range > 0 && m.key_range < 1);
+    // 0.2.0 Alpha 3.1: a frosted glass (tests/test_glass.cpp measures it).
+    CHECK(m.frost > 0 && m.tint >= 0.25 && m.tint <= 0.6);
     for (const auto &accent : theme_accents()) {
       double previous = 1.0;
       for (int transparency : {25, 50, 100}) {
@@ -327,8 +331,11 @@ static void test_liquid_glass() {
         if (t.accent.contrast(t.surface) >= 4.5) CHECK(t.accent.contrast(glass) >= 2.6);
         CHECK(t.dark ? t.surface.luminance() <= l && t.menu_bg.luminance() <= l
                      : t.surface.luminance() >= l && t.menu_bg.luminance() >= l);
-        // A clear glass, clearer with the slider; one tint for every surface.
-        CHECK(t.opacity == t.popup_opacity && t.opacity >= 0.12 && t.opacity <= 0.5 && t.opacity < previous);
+        // A frosted glass, clearer with the slider in even steps (from the
+        // surface color at 0 to the material's tint at 100); one tint for
+        // every surface.
+        CHECK(t.opacity == t.popup_opacity && t.opacity < previous);
+        CHECK(std::fabs(t.opacity - (1.0 - transparency / 100.0 * (1.0 - m.tint))) < 1e-9);
         previous = t.opacity;
         // Other toolkits' menus still fade as a whole and stay readable.
         CHECK(translucent_contrast(t.menu_text, t.menu_bg, t.toolkit_menu_opacity, true) >= 4.5);

@@ -116,9 +116,11 @@ struct Theme {
   // Off 0, Subtle 25, Clear 50, Glass 80), drives every translucent surface
   // of every family. 100 is the most transparent each surface can be while
   // its text keeps WCAG contrast (4.5:1 text, 3:1 secondary text) over any
-  // backdrop, so text stays crisp; see readable_opacity(). On the lite
-  // compositor profile (virtual machines, software rendering) there is no
-  // blur and surfaces stay more opaque.
+  // backdrop, so text stays crisp; see readable_opacity(). Since 0.2.0
+  // Alpha 3.1 the slider is linear (even steps between the presets), and
+  // without the OpenGL compositor's blur (lite profile, XRender, blur off)
+  // surfaces stay almost opaque: content behind would show through sharp.
+  // Application windows stay opaque; only their frames follow the slider.
   std::string style = "graphite";
   bool glass = false;
   bool translucent = true;
@@ -127,21 +129,28 @@ struct Theme {
   bool blur = true;             // blur behind translucent surfaces
   // Liquid Glass (0.2.0 Alpha 2): the compositor draws SDE's glass surfaces
   // (panel, popups, menus, tooltips, notifications, OSDs; marked with
-  // x11::set_surface()) with the Liquid Glass shader: the backdrop blurred,
-  // saturated and bent along the edges like a lens, light rims, and only the
-  // surface color turned into glass, so text and icons stay opaque. True for
-  // the Liquid Glass family with translucency on the full OpenGL compositor
-  // profile. SDE then draws those surfaces flat in their surface color
-  // (surface, menu_bg) and leaves sheen and rims to the shader; opacity and
-  // popup_opacity become how much of that color tints the glass (a clear
-  // glass: the shader itself keeps text readable over any backdrop, see
+  // x11::set_surface()) and GTK 3 menus with the Liquid Glass shader: the
+  // backdrop blurred, frosted, saturated and bent along the edges like a
+  // lens, a specular rim, and only the surface color turned into glass, so
+  // text and icons stay opaque. True for the Liquid Glass family with
+  // translucency on the full OpenGL compositor profile. SDE then draws those
+  // surfaces flat in their surface color (surface, menu_bg) and leaves sheen
+  // and rims to the shader; opacity and popup_opacity become how much of
+  // that color frosts the glass (from 1 at 0 to LiquidMaterial::tint at
+  // 100; the shader also keeps text readable over any backdrop, see
   // liquid_legible_luminance()).
   bool liquid = false;
   double opacity = 1.0;         // panel (whole window, text included)
   double popup_opacity = 1.0;   // SDE menus, Start menu, Action Center, OSDs
   double frame_opacity = 1.0;   // SDE WM title bars and borders (compositor frame-opacity)
-  double gtk_menu_alpha = 1.0;  // GTK menu and popover backgrounds (text stays opaque)
-  double toolkit_menu_opacity = 1.0;  // menus of other toolkits (whole window, text included)
+  // GTK menu and popover backgrounds in CSS. 1 since 0.2.0 Alpha 3.1: SDE WM
+  // does not ask GTK 3 for client-side menus (their CSS alpha never showed)
+  // and a translucent GTK 4 popover showed what is behind its shadow
+  // margin; the compositor makes GTK 3 menus glass or translucent instead.
+  double gtk_menu_alpha = 1.0;
+  // Menus of other toolkits and GTK 3 menus outside Liquid Glass (whole
+  // window, text included; the compositor sets it).
+  double toolkit_menu_opacity = 1.0;
 
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
@@ -196,8 +205,10 @@ std::string theme_decoration_layout(const std::string &family);
 struct LiquidMaterial {
   bool on = false;
   int blur = 0;              // dual_kawase strength of the blur behind
+  double frost = 0;          // the shader's own frost around each point, pixels at 100 %
   double saturation = 1.0;   // of the backdrop
   double brightness = 1.0;   // of the backdrop
+  double tint = 1.0;         // how much of the surface color frosts the glass at transparency 100
   double lens_band = 0;      // the lens along the edges, pixels at 100 %
   double lens_shift = 0;     // how far it bends the backdrop at the very edge
   double rim = 0;            // strength of the light rim
