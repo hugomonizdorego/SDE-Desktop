@@ -804,6 +804,65 @@ def still_highlights(css):
     return ''.join(out)
 
 
+# List and tree items. A rule that styles them by their position among their
+# siblings (zebra rows by :nth-child) makes GTK 3 style every cell of every
+# tree view by its row and cache none of them (Liria's list view and sidebar
+# spent a fifth to a half more CPU on one), and GTK 4 restyle the rows of a
+# list view whenever rows move (0.2.0 Alpha 3.1). The rounded ends of boxed
+# lists (row:first-child, row:last-child) stay.
+LIST_ITEMS = {'row', 'treeview', 'flowboxchild', 'iconview'}
+
+
+def selector_compounds(selector):
+    """The compound selectors of |selector| (split at combinators outside
+    parentheses)."""
+    out, depth, cur = [], 0, ''
+    for ch in selector:
+        depth += (ch == '(') - (ch == ')')
+        if depth == 0 and ch in ' \t\n>+~':
+            if cur:
+                out.append(cur)
+            cur = ''
+        else:
+            cur += ch
+    return out + ([cur] if cur else [])
+
+
+def by_row_position(selector):
+    """Whether |selector| styles a list or tree item by its position:
+    :nth-child or :nth-last-child on a row, any position on a tree view."""
+    import re
+    for compound in selector_compounds(selector):
+        m = re.match(r'[A-Za-z][\w-]*', compound)
+        if not m or m.group(0) not in LIST_ITEMS:
+            continue
+        positions = r':(nth-child|nth-last-child|first-child|last-child|only-child)\b' \
+            if m.group(0) == 'treeview' else r':nth-(last-)?child\('
+        if re.search(positions, compound):
+            return True
+    return False
+
+
+def no_row_positions(css):
+    """|css| without the selectors that style list or tree items by their
+    position (by_row_position()); a rule left without selectors goes."""
+    out, last = [], 0
+    for head, body, end in css_rules(css):
+        head_text = css[head:body - 1]
+        if head_text.lstrip().startswith('@'):
+            continue
+        sels = css_selectors(head_text)
+        keep = [s for s in sels if not by_row_position(s)]
+        if len(keep) == len(sels):
+            continue
+        out.append(css[last:head])
+        if keep:
+            out.append('\n' + ',\n'.join(keep) + ' {' + css[body:end] + '}')
+        last = end + 1
+    out.append(css[last:])
+    return ''.join(out)
+
+
 def rounded_rect_path(x, y, w, h, r):
     def f(v):
         return f'{v:.3f}'.rstrip('0').rstrip('.')
@@ -1018,7 +1077,8 @@ def build_graphite(pal, vendor, out, work):
             for gtk in ('gtk-3.0', 'gtk-4.0'):
                 g = d / gtk
                 write(g / 'gtk.css', f'/* {name}: Graphite GTK theme by Vince Liu (GPL-3.0), built for SDE. */\n'
-                      + still_highlights(css[(gtk, mode)]) + '\n' + defs + overlay('graphite', gtk, t, fam)
+                      + no_row_positions(still_highlights(css[(gtk, mode)])) + '\n' + defs
+                      + overlay('graphite', gtk, t, fam)
                       + overlay('soft', gtk, t, fam) + overlay('caption', gtk, t, fam) + overlay('apps', gtk, t, fam)
                       + overlay('motion', gtk, t, fam))
                 write(g / 'gtk-dark.css', '@import url("gtk.css");\n' if mode == 'dark'
@@ -1087,7 +1147,8 @@ def build_fluent(pal, vendor, out):
                 g = d / gtk
                 # Flat Remix's saturated accent and tinted grays become SDE
                 # Fluent's calm accent and slate grays (alpha51).
-                base = still_highlights(recolor_css((up / gtk / 'gtk.css').read_text(), upcolor, t['accent'], neutral))
+                base = no_row_positions(still_highlights(recolor_css((up / gtk / 'gtk.css').read_text(), upcolor,
+                                                                     t['accent'], neutral)))
                 if gtk == 'gtk-4.0':
                     # Flat Remix's GTK 4 style sheets name its blue for every color.
                     base += (f"\n@define-color accent_bg_color {t['accent']};\n"
@@ -1102,7 +1163,8 @@ def build_fluent(pal, vendor, out):
             lib.mkdir(parents=True)
             if (up / 'libadwaita/assets').is_dir():
                 shutil.copytree(up / 'libadwaita/assets', lib / 'assets')
-            upstream = still_highlights(recolor_css((up / 'libadwaita/gtk.css').read_text(), upcolor, t['accent'], neutral))
+            upstream = no_row_positions(still_highlights(recolor_css((up / 'libadwaita/gtk.css').read_text(), upcolor,
+                                                                     t['accent'], neutral)))
             # Flat Remix's libadwaita style with every SDE Fluent color (alpha51:
             # libadwaita applications follow the whole palette, not only Mica).
             write(lib / 'gtk.css', upstream + '\n/* SDE Fluent palette */\n' + defs
