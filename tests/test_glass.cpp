@@ -435,9 +435,11 @@ static void test_shader_text() {
 int main() {
   char tmpl[] = "/tmp/sde-glass-test-XXXXXX";
   g_tmp = mkdtemp(tmpl);
-  // A computer with a GPU (OpenGL unless a profile says otherwise), and a
+  // A computer with a GPU and accelerated OpenGL (OpenGL unless a profile
+  // says otherwise, also inside an SDE session on software OpenGL), and a
   // configuration directory of the test's own for the generated files.
   setenv("SDE_GRAPHICS", "hardware", 1);
+  setenv("SDE_OPENGL", "accelerated:test GPU", 1);
   setenv("XDG_CONFIG_HOME", (g_tmp + "/config").c_str(), 1);
   make_dirs(g_tmp + "/config/sde");
   test_even_steps();
