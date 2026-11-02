@@ -368,14 +368,16 @@ compositor lines that changed.
 
 **GTK.** GTK reads `~/.config/gtk-3.0/gtk.css` and `gtk-4.0/gtk.css` only
 when an application starts, while the theme itself reaches running
-applications over XSETTINGS. The managed block therefore names the theme's
-colors (`alpha(@sde_menu, 0.88)` for translucent menus) and defines the
-accent only for a color of your own: after a switch from light to dark,
-running GTK 3 applications had kept the old light menu background under the
-new light text. A new transparency level and a custom accent reach running
-GTK applications when they start again; libadwaita applications get the
-dark preference and the accent at once (GSettings, the portal) and the
-theme's libadwaita colors when they start again.
+applications over XSETTINGS. The managed block therefore holds no color
+copied from the theme (translucent GTK menus would name `@sde_menu`; since
+0.2.0 Alpha 3.1 the compositor makes GTK 3 menus translucent instead, so a
+new transparency level reaches them at once) and defines the accent only
+for a color of your own: after a switch from light to dark, running GTK 3
+applications had kept the old light menu background under the new light
+text. A custom accent reaches running GTK applications when they start
+again; libadwaita applications get the dark preference and the accent at
+once (GSettings, the portal) and the theme's libadwaita colors when they
+start again.
 
 Measured on Xvfb (1366x768, sde-session with SDE WM, SDE Compositor, panel,
 desktop, gtk3-widget-factory, Calculator and the Control Center; 30 fps

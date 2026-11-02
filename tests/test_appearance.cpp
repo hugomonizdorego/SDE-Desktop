@@ -22,6 +22,7 @@
 #include "appearance_draft.h"
 #include "config.h"
 #include "integration.h"
+#include "theme.h"
 #include "util.h"
 
 using namespace sde;
@@ -248,8 +249,12 @@ static void test_files(const std::string &source_dir, const std::string &binary_
   if (gtk_themes) {
     std::string css = gtk_user_css(cfg, 3);
     CHECK(!contains(css, "@define-color sde_accent"));  // the theme defines it
-    CHECK(contains(css, "alpha(@sde_menu, "));
-    CHECK(!contains(css, "rgba("));
+    // No color of its own: nothing a running GTK 3 application could keep
+    // from the old look. Translucent GTK menus (when the theme asks for
+    // them; since 0.2.0 Alpha 3.1 the compositor makes them translucent
+    // instead) name the theme's menu color.
+    CHECK(!contains(css, "rgba(") && !contains(css, "#"));
+    if (Theme::from_config(cfg).gtk_menu_alpha < 0.999) CHECK(contains(css, "alpha(@sde_menu, "));
     Config custom = cfg;
     custom.unset("appearance", "accent_name");
     custom.set("appearance", "accent", "#12A4B0");
