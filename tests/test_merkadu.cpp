@@ -1125,6 +1125,63 @@ static void job_queue() {
         pk::status_phase(pk::STATUS_COMMIT) == JobPhase::Changing);
 }
 
+// All Software's lists of each source: one row per app of the source (the
+// user's own Flatpak a row of its own), never another source's; the
+// runtimes only with their filter; Not Installed for what is offered.
+static void source_lists() {
+  Catalog cat;
+  App gimp = make_app("org.gimp.GIMP", "GIMP", Source::Debian, "gimp");
+  Origin fo;
+  fo.source = Source::Flatpak;
+  fo.id = "app/org.gimp.GIMP/x86_64/stable";
+  fo.installation = "system";
+  fo.remote = "flathub";
+  fo.version = "2.10.38";
+  gimp.origins.push_back(fo);
+  fo.installation = "user";
+  fo.installed = true;
+  fo.installed_version = "2.10.36";
+  gimp.origins.push_back(fo);
+  cat.add(gimp);
+  cat.add(make_app("org.example.Lumen", "Lumen", Source::Flatpak, "app/org.example.Lumen/x86_64/stable"));
+  App sky = make_app("org.example.Skyview", "Skyview", Source::Snap, "skyview");
+  sky.origins[0].publisher = "Example Astronomy";
+  sky.origins[0].remote = "latest/stable";
+  cat.add(sky);
+  std::vector<std::string> dept(cat.apps().size(), "graphics");
+  std::vector<Package> flatpak = source_rows(cat, Source::Flatpak, dept);
+  CHECK(flatpak.size() == 3);
+  CHECK(flatpak.size() == 3 && flatpak[0].title == "GIMP" && flatpak[1].title == "GIMP" && flatpak[2].title == "Lumen");
+  CHECK(flatpak.size() == 3 && flatpak[0].name == "org.gimp.gimp" && flatpak[1].name == "org.gimp.gimp@user");
+  CHECK(flatpak.size() == 3 && flatpak[0].origin == "flathub" && flatpak[0].arch == "x86_64" &&
+        flatpak[0].ref == "app/org.gimp.GIMP/x86_64/stable" && flatpak[0].section == "graphics");
+  std::vector<Package> snaps = source_rows(cat, Source::Snap, dept);
+  CHECK(snaps.size() == 1 && snaps[0].ref == "skyview" && snaps[0].origin == "Example Astronomy, latest/stable");
+  CHECK(source_rows(cat, Source::Debian, dept).size() == 1);
+  // A runtime is listed only with its filter.
+  Package rt;
+  rt.source = Source::Flatpak;
+  rt.runtime = true;
+  rt.name = "runtime/org.gnome.Platform/x86_64/47";
+  rt.title = "org.gnome.Platform 47";
+  rt.section = "runtimes";
+  flatpak.push_back(rt);
+  PackageFilter f;
+  f.source = Source::Flatpak;
+  ChangeSet none;
+  CHECK(filter_packages(flatpak, f, none).size() == 3);
+  f.runtimes = true;
+  CHECK(filter_packages(flatpak, f, none).size() == 4);
+  f.query = "gnome";
+  CHECK(filter_packages(flatpak, f, none).size() == 1);
+  f.query.clear();
+  f.runtimes = false;
+  f.status = PackageStatus::NotInstalled;
+  CHECK(filter_packages(flatpak, f, none).size() == 2);  // GIMP from Flathub and Lumen
+  f.status = PackageStatus::Installed;
+  CHECK(filter_packages(flatpak, f, none).size() == 1);  // the user's GIMP
+}
+
 // Home's highlights: several kinds in turn, rotated by the day, installed
 // apps and apps without an icon last, Flathub's popular apps only with a
 // Flatpak, each app once; Flathub's collections.
@@ -1213,6 +1270,7 @@ int main() {
   catalog_rules();
   job_queue();
   highlights();
+  source_lists();
   if (failures) {
     fprintf(stderr, "%d merkadu check(s) failed\n", failures);
     return 1;
