@@ -142,7 +142,6 @@ bool sync_gtk_settings(const Config &cfg) {
   std::string icons = gtk_icon_theme_name(cfg, dark);
   std::string cursor = cfg.get("appearance", "cursor_theme", "Adwaita");
   std::string gtk_theme = gtk_theme_name(cfg);
-  bool sde_theme = starts_with(gtk_theme, "SDE-");
   std::string layout = theme_decoration_layout(t.family);
   for (const char *version : {"gtk-3.0", "gtk-4.0"}) {
     std::string dir = config_home() + "/" + version;
