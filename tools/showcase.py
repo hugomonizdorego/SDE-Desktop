@@ -2006,7 +2006,7 @@ def appearance_preview(s):
     settings_page(s, 'appearance')
     if not s.control('Control Center', 'The chosen look in miniature', 5):
         raise SkipShot('this build applies the look at once (no Preview)')
-    family = 'Cool slate grays' if s.set.family == 'glass' else 'Luminous glass'
+    family = 'Cool slate grays' if s.set.family == 'glass' else 'Frosted glass'
     mode = 'Light mode' if s.set.mode == 'dark' else 'Dark mode'
     for part in (family, mode, 'Transparency: Glass'):
         name = control_named(s, 'Control Center', part)
