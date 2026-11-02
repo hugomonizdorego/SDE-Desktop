@@ -272,7 +272,9 @@ class FamilyCard : public PickCard {
  public:
   FamilyCard(int x, int y, int w, int h, std::string id, std::string label, std::string desc)
       : PickCard(x, y, w, h), id_(std::move(id)), label_(std::move(label)), desc_(std::move(desc)) {
-    tooltip(desc_.c_str());
+    // The tooltip is also the card's name for screen readers and the UI
+    // tests: the family's name first, then what it looks like.
+    copy_tooltip((label_ + ": " + desc_).c_str());
   }
   bool selected() const override { return g_draft.pending().family == id_; }
   void pick() override {
