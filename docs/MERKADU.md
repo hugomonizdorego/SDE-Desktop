@@ -260,7 +260,8 @@ All Software is for everything that is not an app (libraries, tools,
 fonts, drivers) and for people who know Synaptic:
 
 - **Sources**: **Debian packages**, **Flatpak** and **Snap**, each with its
-  count, are separate lists (0.2 Alpha 3 mixed them). The Debian list is
+  count, are separate lists (0.2 Alpha 3 had only the Debian packages
+  here: Flatpak apps and snaps had no place in All Software). The Debian list is
   every package APT knows, with everything below. The Flatpak list has the
   Flatpak apps of every remote; their runtimes and extensions (GNOME, KDE,
   freedesktop platforms, GL drivers, themes) are behind **Runtimes and
