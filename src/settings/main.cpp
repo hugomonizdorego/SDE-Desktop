@@ -1210,7 +1210,6 @@ class LookMiniature : public Fl_Widget {
   }
   int handle(int e) override { return e == FL_ENTER || e == FL_LEAVE ? 1 : Fl_Widget::handle(e); }
 };
-LookMiniature *g_miniature = nullptr;
 
 void build_appearance(Page *page) {
   g_transparency_note = g_theme_note = nullptr;
@@ -1219,7 +1218,7 @@ void build_appearance(Page *page) {
   page->heading(_("Appearance"), _("Theme, colors, translucency, size and wallpaper"));
   page->begin_card(_("Theme"));
   // The chosen look at a glance; Preview shows it for real.
-  g_miniature = new LookMiniature(page->left() + S(20), page->cursor(), page->width() - S(40), S(150));
+  new LookMiniature(page->left() + S(20), page->cursor(), page->width() - S(40), S(150));
   page->advance(S(162));
   auto fams = theme_families();
   int gap = S(12), n = int(fams.size());
