@@ -7,7 +7,10 @@ buttons do not look like radio buttons (0.2.0 Alpha 3.1).
    no rule that styles a menu item, a popover menu button, a menu bar item,
    a list or tree row, an icon view or a flow box child may have a
    transition or an animation that takes time. Liria's menu lit two or
-   three items at once while they faded in and out.
+   three items at once while they faded in and out. No tree view rule may
+   depend on the row's position (:nth-child): GTK 3 then caches no cell
+   style, which cost Liria's list view and sidebar a fifth to a half more
+   CPU.
 2. The indicators, drawn by GTK 3 (and GTK 4 when its helper was built) in
    a window and in a menu, and by SDE-FLTK (the file chooser's check
    buttons): a check box is a (rounded) square and a radio button a circle.
@@ -108,6 +111,14 @@ def load_css(path, seen=None):
     return re.sub(r'@import\s+url\(\s*["\']?([^"\')]+)["\']?\s*\)\s*;', imp, text)
 
 
+def by_position(selector):
+    """A tree view selector that depends on the row's position (:nth-child,
+    :nth-last-child): GTK 3 then styles every cell of every tree view by its
+    row and caches none of them (Liria's list view and sidebar spent a fifth
+    to a half more CPU on one such rule, 0.2.0 Alpha 3.1)."""
+    return 'treeview' in selector and re.search(r':nth-(?:last-)?child\(', selector) is not None
+
+
 def check_motion(themes):
     failures, files = [], 0
     for d in sorted(p for p in themes.iterdir() if p.is_dir() and p.name.startswith('SDE-')):
@@ -121,6 +132,9 @@ def check_motion(themes):
                 slow = [f'{k}: {v.strip()}' for k, v in decls if takes_time(v)]
                 if slow and any(instant(s) for s in selectors(head)):
                     failures.append(f'{d.name}/{sub}: {" ".join(head.split())[:120]} {{ {"; ".join(slow)} }}')
+                for s in selectors(head):
+                    if by_position(s):
+                        failures.append(f'{d.name}/{sub}: {" ".join(s.split())[:120]}: tree view rows by position')
     return files, failures
 
 

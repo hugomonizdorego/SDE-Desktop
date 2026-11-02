@@ -354,14 +354,12 @@
   border-radius: 9999px;
 }
 
-/* SDE System Monitor: tabs as a segmented control, tables with soft rows. */
+/* Notebooks with a frame: a little room around the tabs. (Tree views get no
+ * rule by position such as :nth-child(even): GTK 3 then styles every cell
+ * by its row and caches none of them; Liria's list view and sidebar spent
+ * a fifth to a half more CPU on it, 0.2.0 Alpha 3.1.) */
 notebook.frame > header {
   padding: 4px 8px 0;
-}
-
-.sde-system-monitor-window treeview.view:nth-child(even),
-.sde-system-monitor treeview.view:nth-child(even) {
-  background-color: alpha(@sde_fg, 0.02);
 }
 
 /* ===================================================== alpha14 Liria */
