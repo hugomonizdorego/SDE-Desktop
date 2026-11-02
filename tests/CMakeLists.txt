@@ -290,6 +290,22 @@ endif()
 add_test(NAME sde-theme-motion COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_theme_motion.py
   --themes ${CMAKE_BINARY_DIR}/themes ${SDE_INDICATOR_PROBES})
 set_tests_properties(sde-theme-motion PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+# 0.2.0 Alpha 3.1: the SDE compositor shows what windows draw after they were
+# mapped or resized, also with Mesa's software OpenGL (compositor patch
+# 0002), on Xvfb with the GLX backend. The compositor is the one built with
+# the session components (SDE_BUILD_COMPONENTS), SDE_TEST_COMPOSITOR or, at
+# run time, $SDE_COMPOSITOR; without one the test is skipped.
+set(SDE_TEST_COMPOSITOR "" CACHE FILEPATH "sde-compositor for sde-compositor-redraw (default: the staged build)")
+set(SDE_REDRAW_COMPOSITOR "${SDE_TEST_COMPOSITOR}")
+if(NOT SDE_REDRAW_COMPOSITOR AND SDE_BUILD_COMPONENTS)
+  set(SDE_REDRAW_COMPOSITOR "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-compositor")
+endif()
+find_package(X11 REQUIRED)
+add_executable(sde-compositor-redraw-probe compositor_redraw_probe.cpp)
+target_link_libraries(sde-compositor-redraw-probe PRIVATE ${X11_LIBRARIES})
+add_test(NAME sde-compositor-redraw COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_compositor_redraw.py
+  --compositor "${SDE_REDRAW_COMPOSITOR}" --probe $<TARGET_FILE:sde-compositor-redraw-probe>)
+set_tests_properties(sde-compositor-redraw PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data
