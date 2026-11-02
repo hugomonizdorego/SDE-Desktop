@@ -220,7 +220,8 @@ bool status_matches(const Package &p, PackageStatus s, const ChangeSet &marks) {
   switch (s) {
     case PackageStatus::Installed: return p.installed;
     case PackageStatus::Upgradable: return p.installed && p.upgradable;
-    case PackageStatus::NotInstalled: return !p.installed && !p.candidate_version.empty();
+    case PackageStatus::NotInstalled:
+      return !p.installed && (p.source != Source::Debian || !p.candidate_version.empty());
     case PackageStatus::Marked: return marks.get(p.name) != Mark::Unmarked;
     case PackageStatus::ConfigOnly: return p.config_only;
     default: return true;
@@ -230,18 +231,26 @@ bool status_matches(const Package &p, PackageStatus s, const ChangeSet &marks) {
 int package_match_score(const Package &p, const std::vector<std::string> &words) {
   if (words.empty()) return 0;
   std::string summary;  // lowered only when needed
+  // Flatpak and Snap rows are found by their app's name like packages by
+  // theirs (the key is the app id).
+  std::string title = p.title.empty() ? std::string() : lower_ascii(p.title);
+  const std::string &name = title.empty() ? p.name : title;
   int total = 0;
   for (const std::string &w : words) {
     int best = 0;
-    if (p.name == w)
+    if (name == w)
       best = 100;
-    else if (starts_with(p.name, w))
+    else if (starts_with(name, w))
       best = 60;
-    else if (p.name.find(w) != std::string::npos)
+    else if (name.find(w) != std::string::npos || (!title.empty() && p.name.find(w) != std::string::npos))
       best = 35;
     if (best < 10) {
-      if (summary.empty()) summary = lower_ascii(p.summary);
-      if (summary.find(w) != std::string::npos) best = 10;
+      const std::string *text = &p.lower_summary;
+      if (p.lower_summary.empty() && !p.summary.empty()) {
+        if (summary.empty()) summary = lower_ascii(p.summary);
+        text = &summary;
+      }
+      if (text->find(w) != std::string::npos) best = 10;
     }
     if (best == 0) return 0;
     total += best;
@@ -257,6 +266,7 @@ std::vector<size_t> filter_packages(const std::vector<Package> &packages, const 
   std::vector<size_t> out;
   for (size_t i = 0; i < packages.size(); ++i) {
     const Package &p = packages[i];
+    if (p.runtime && !f.runtimes) continue;
     if (!f.section.empty() && section_base(p.section) != f.section) continue;
     if (!status_matches(p, f.status, marks)) continue;
     if (words.empty()) {
@@ -284,6 +294,50 @@ std::vector<SectionCount> section_counts(const std::vector<Package> &packages, P
   std::sort(out.begin(), out.end(), [](const SectionCount &a, const SectionCount &b) {
     std::string x = lower_ascii(a.title), y = lower_ascii(b.title);
     return x != y ? x < y : a.id < b.id;
+  });
+  return out;
+}
+
+std::vector<Package> source_rows(const Catalog &catalog, Source source,
+                                 const std::vector<std::string> &department) {
+  std::vector<Package> out;
+  for (size_t i = 0; i < catalog.apps().size(); ++i) {
+    const App &a = catalog.apps()[i];
+    for (auto &o : a.origins) {
+      if (o.source != source) continue;
+      Package p;
+      p.source = source;
+      p.name = a.id;
+      // The user's own copy of a Flatpak is a row of its own.
+      if (source == Source::Flatpak && o.installation == "user") p.name += "@user";
+      p.title = a.name;
+      p.app_id = a.id;
+      p.ref = o.id;
+      p.installation = o.installation;
+      p.summary = a.summary;
+      p.section = i < department.size() ? department[i] : "";
+      p.installed = o.installed;
+      p.installed_version = o.installed_version;
+      p.candidate_version = o.version;
+      p.upgradable = o.installed && o.update;
+      p.download_size = o.download_size;
+      p.installed_size = o.installed_size;
+      p.current_size = o.installed ? o.installed_size : -1;
+      if (source == Source::Flatpak) {
+        std::vector<std::string> parts = split(o.id, '/', true);
+        if (parts.size() >= 3) p.arch = parts[2];
+        p.origin = o.remote.empty() ? std::string("Flatpak") : o.remote;
+        if (o.installation == "user") p.origin += " " + std::string(_("(your own installation)"));
+      } else {
+        p.origin = o.publisher.empty() ? o.remote : o.remote.empty() ? o.publisher : o.publisher + ", " + o.remote;
+      }
+      p.lower_summary = lower_ascii(a.name + " " + a.summary);
+      out.push_back(std::move(p));
+    }
+  }
+  std::stable_sort(out.begin(), out.end(), [](const Package &x, const Package &y) {
+    std::string a = lower_ascii(x.title), b = lower_ascii(y.title);
+    return a != b ? a < b : x.name < y.name;
   });
   return out;
 }

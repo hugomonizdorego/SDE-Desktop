@@ -11,6 +11,8 @@
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 
+#include <strings.h>
+
 #include <algorithm>
 #include <cctype>
 
@@ -188,12 +190,20 @@ bool Query::matches(const App &app) const {
         if (c.matches(app)) return false;
       return true;
     case Category:
+      // Without allocating: the departments of thousands of apps are
+      // worked out after every change of the catalog.
       for (auto &cat : app.categories)
-        if (lower_copy(cat) == value) return true;
+        if (cat.size() == value.size() && strcasecmp(cat.c_str(), value.c_str()) == 0) return true;
       return false;
     case Section: {
-      std::string s = lower_copy(app.section);
-      return !s.empty() && (s == value || ends_with(s, "/" + value) || ends_with(value, "/" + s));
+      const std::string &s = app.section;
+      if (s.empty()) return false;
+      auto tail_is = [](const std::string &whole, const std::string &part) {
+        return whole.size() > part.size() && whole[whole.size() - part.size() - 1] == '/' &&
+               strcasecmp(whole.c_str() + whole.size() - part.size(), part.c_str()) == 0;
+      };
+      return (s.size() == value.size() && strcasecmp(s.c_str(), value.c_str()) == 0) || tail_is(s, value) ||
+             tail_is(value, s);
     }
     case Pkgname:
       for (auto &p : app.pkgnames)
@@ -205,7 +215,7 @@ bool Query::matches(const App &app) const {
       return false;
     case Type:
       if (value == "application") return app.is_app();
-      return lower_copy(app.kind) == value;
+      return app.kind.size() == value.size() && strcasecmp(app.kind.c_str(), value.c_str()) == 0;
     case AppId:
       return app.id == value;
     case SourceIs: {
@@ -313,6 +323,55 @@ std::vector<const App *> Categories::apps_in(const Category &c, const Catalog &c
   sort_by_name(out);
   return out;
 }
+
+// ------------------------------------------------------------- the index
+
+namespace {
+
+void index_category(const Categories &cats, const Category &c, const Catalog &catalog,
+                    std::map<std::string, std::vector<size_t>> &members) {
+  std::vector<size_t> &list = members[c.id];
+  for (size_t i = 0; i < catalog.apps().size(); ++i)
+    if (cats.matches(c, catalog.apps()[i])) list.push_back(i);
+  for (auto &sub : c.subcategories) index_category(cats, sub, catalog, members);
+}
+
+}  // namespace
+
+void CategoryIndex::build(const Categories &cats, const Catalog &catalog) {
+  members_.clear();
+  top_.assign(catalog.apps().size(), nullptr);
+  for (auto &c : cats.top()) index_category(cats, c, catalog, members_);
+  std::vector<std::string> names;
+  names.reserve(catalog.apps().size());
+  for (auto &a : catalog.apps()) names.push_back(lower_copy(a.name));
+  auto by_name = [&](size_t a, size_t b) {
+    if (names[a] != names[b]) return names[a] < names[b];
+    return catalog.apps()[a].id < catalog.apps()[b].id;
+  };
+  for (auto &kv : members_) std::stable_sort(kv.second.begin(), kv.second.end(), by_name);
+  // The department of each app: the first in the menu's order that is not
+  // <OnlyUnallocated/>, else one that takes what is left (as
+  // Categories::category_of()).
+  std::vector<const Category *> order = cats.sorted();
+  for (bool unallocated : {false, true})
+    for (const Category *c : order) {
+      if (c->only_unallocated != unallocated) continue;
+      auto it = members_.find(c->id);
+      if (it == members_.end()) continue;
+      for (size_t i : it->second)
+        if (!top_[i]) top_[i] = c;
+    }
+  built_ = true;
+}
+
+const std::vector<size_t> &CategoryIndex::apps(const std::string &id) const {
+  static const std::vector<size_t> *none = new std::vector<size_t>();
+  auto it = members_.find(id);
+  return it == members_.end() ? *none : it->second;
+}
+
+const Category *CategoryIndex::department(size_t i) const { return i < top_.size() ? top_[i] : nullptr; }
 
 std::vector<std::string> snap_categories(const std::string &category_id) {
   std::string top = category_id.substr(0, category_id.find('/'));

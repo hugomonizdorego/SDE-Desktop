@@ -22,6 +22,13 @@ lines and the named controls with their geometry). Checked:
     with what comes with them, Apply; Back, Forward and Home; the Updates
     page pointing to the Software Updater;
   * an empty catalog explained, with Refresh Software Lists;
+  * Home's highlights: several apps that move on by themselves (not under
+    the pointer), dots and arrows, a slide opens its app; an app page
+    offers each source it has (Paintbox) and no other (Lumen);
+  * Enable Snap Support against a fake snapd (tests/fake_snapd.py) that
+    starts late and seeds itself: then the Snap Store's snaps are on Home,
+    in a department, in All Software and in a search without a restart, a
+    polkit refusal is shown and a snap installs;
   * `merkadu --uninstall FILE` (the Start menu's contract): a Debian
     package with the packages removed with it and the space freed (exit 0
     after Uninstall), an app of SDE's own package (refused, exit 1), a
@@ -141,6 +148,19 @@ class Screen:
             time.sleep(0.1)
         return False
 
+    def wait_controls(self, name, controls, timeout=30.0):
+        """The controls of |name| once every one of |controls| is in the same
+        dump (the page is built: under load that can take a while after the
+        catalog is in), else the last ones seen."""
+        end = time.time() + timeout
+        found = {}
+        while time.time() < end:
+            found = self.controls(name)
+            if all(c in found for c in controls):
+                break
+            time.sleep(0.1)
+        return found
+
     def wait_for(self, name, test, timeout=10.0):
         """The first QA line of |name| for which |test| is true, or None."""
         end = time.time() + timeout
@@ -214,14 +234,23 @@ def main_window(s):
         wid = s.window('^Merkadu$', 15)
         if not check(wid, 'the main window did not open'):
             return
-        if not check(s.wait_qa(M, '@page:explore') and s.wait_qa(M, '@state:catalog=1,apps=20,jobs=0', 15),
+        if not check(s.wait_qa(M, '@page:explore', 30) and s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 30),
                      'the lobby did not load the fake catalog: %s' % s.qa(M)[:3]):
             return
-        c = s.controls(M)
-        for name in ('banner:org.example.paintbox', 'section:featured', 'section:new', 'section:top',
-                     'section:departments', 'app:org.example.starfield', 'category:graphics',
-                     'nav:installed', 'nav:history', 'nav:sources'):
+        # The page is rebuilt a moment after the catalog arrived (later under
+        # load): wait for all of it.
+        lobby = ('carousel', 'section:featured', 'section:new', 'section:top', 'section:departments',
+                 'category:graphics', 'nav:installed', 'nav:history', 'nav:sources')
+        c = s.wait_controls(M, lobby)
+        for name in lobby:
             check(name in c, 'lobby: %s missing' % name)
+        check(any(k.startswith('banner:') for k in c) and any(k.startswith('app:') for k in c),
+              'lobby: no banner or no app tiles: %s' % list(c)[:12])
+        line = s.wait_for(M, lambda l: l.startswith('@carousel:'), 5)
+        state = carousel_state(line) if line else {}
+        check(int(state.get('count', 0)) >= 4, 'lobby: only %s highlights' % state.get('count'))
+        check(state.get('index') != '0' or state.get('id') == 'org.example.paintbox',
+              'lobby: the first highlight is not the distribution\'s first choice: %s' % line)
         s.shot('merkadu-lobby.png')
 
         # F1: About Merkadu (sde::handle_about_event; F1 may arrive with Alt).
@@ -255,8 +284,13 @@ def main_window(s):
         s.click(wid, M, 'app:org.example.paintbox')
         if check(s.wait_qa(M, '@page:details:org.example.paintbox'), 'the app page did not open'):
             c = s.controls(M)
-            check('source:debian' in c and 'source:flatpak' in c, 'app page: source chips missing')
+            # In Debian, on Flathub and in the Snap Store: a choice of the three.
+            check('source:debian' in c and 'source:flatpak' in c and 'source:snap' in c,
+                  'app page: the choice of sources is missing')
             check('screenshots' in c, 'app page: no screenshots')
+            s.click(wid, M, 'source:flatpak')
+            check(s.wait_qa(M, 'chosen:flatpak', 3), 'app page: choosing the Flatpak did not choose it')
+            check('action:org.example.paintbox:Install' in s.controls(M), 'app page: no Install for the Flatpak')
 
         # Install a Flatpak (Lumen): progress, then Open and Remove.
         s.key(wid, 'Escape')
@@ -266,6 +300,10 @@ def main_window(s):
         s.wait_qa(M, '@page:category:graphics')
         s.click(wid, M, 'app:org.example.lumen')
         if check(s.wait_qa(M, '@page:details:org.example.lumen'), 'Lumen did not open'):
+            # Only on Flathub: no Debian choice (Alpha 3 offered one).
+            c = s.controls(M)
+            check('source:flatpak' in c and 'source:debian' not in c and 'chosen:debian' not in c,
+                  'Lumen: a source it does not have is offered: %s' % [k for k in c if k.startswith('source')])
             s.click(wid, M, 'action:org.example.lumen:Install')
             check(s.wait_qa(M, 'job:1', 5), 'installing did not show its progress')
             s.shot('merkadu-installing.png')
@@ -307,10 +345,11 @@ def all_software(s):
         check(s.wait_for(M, lambda l: l.startswith('@refresh:running=1'), 8),
               'no refresh when Merkadu opened: %s' % s.qa(M)[:5])
         check(s.wait_qa(M, '@refresh:running=0,errors=0,done=1', 10), 'the refresh did not finish: %s' % s.qa(M)[:5])
-        check(s.wait_qa(M, '@state:catalog=1,apps=20,jobs=0', 10), 'home: the catalog did not load')
-        c = s.controls(M)
-        for name in ('Back', 'Forward', 'Home', 'Refresh the software lists', 'section:featured',
-                     'section:recommended', 'nav:packages', 'nav:updates'):
+        check(s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 30), 'home: the catalog did not load')
+        home = ('Back', 'Forward', 'Home', 'Refresh the software lists', 'section:featured', 'section:recommended',
+                'nav:packages', 'nav:updates')
+        c = s.wait_controls(M, home)
+        for name in home:
             check(name in c, 'home: %s missing' % name)
         # The Refresh button refreshes again.
         s.click(wid, M, 'Refresh the software lists')
@@ -321,9 +360,10 @@ def all_software(s):
         if not check(s.wait_qa(M, '@page:packages') and s.wait_for(M, lambda l: l.startswith('@packages:loaded=1')) and
                      s.wait_qa(M, 'table'), 'All Software did not open: %s' % s.qa(M)[:6]):
             return
-        c = s.controls(M)
-        for name in ('chip:status:all', 'chip:status:installed', 'chip:status:updates', 'chip:status:available',
-                     'table', 'pkg:bash', 'pkg:curl'):
+        names = ('chip:status:all', 'chip:status:installed', 'chip:status:updates', 'chip:status:available', 'table',
+                 'pkg:bash', 'pkg:curl')
+        c = s.wait_controls(M, names)
+        for name in names:
             check(name in c, 'All Software: %s missing' % name)
         s.shot('merkadu-all-software.png')
         # A package of the base system cannot be marked for removal.
@@ -374,6 +414,25 @@ def all_software(s):
                   'the marks were not cleared after Apply')
             check(s.wait_for(M, lambda l: l.startswith('@state:') and l.endswith(',jobs=0'), 15),
                   'the changes did not finish: %s' % s.qa(M)[:3])
+        # Each source its own list: Flatpak apps (the runtimes behind their
+        # filter), then the snaps.
+        s.click(wid, M, 'nav:packages')
+        s.wait_qa(M, '@page:packages', 5)
+        s.click(wid, M, 'chip:source:flatpak')
+        if check(s.wait_qa(M, 'pkg:org.example.lumen', 5), 'All Software: no Flatpak list: %s' % s.qa(M)[:1]):
+            pkgs = [k for k in s.controls(M) if k.startswith('pkg:')]
+            check('pkg:curl' not in pkgs and not any('runtime/' in k for k in pkgs),
+                  'All Software: the Flatpak list has packages or runtimes: %s' % pkgs[:8])
+            s.shot('merkadu-all-software-flatpak.png')
+            s.click(wid, M, 'chip:runtimes')
+            if check(s.wait_qa(M, 'section:runtimes', 5), 'All Software: the runtimes filter has no section'):
+                s.click(wid, M, 'section:runtimes')
+                check(s.wait_for(M, lambda l: l.startswith('pkg:') and 'runtime/org.gnome.Platform' in l, 5),
+                      'All Software: the runtimes filter shows no runtimes: %s' %
+                      [k for k in s.controls(M) if k.startswith('pkg:')][:8])
+        s.click(wid, M, 'chip:source:snap')
+        check(s.wait_for(M, lambda l: l.startswith('@page:packages:') and l.split('\t')[0].endswith('|snap'), 5),
+              'All Software: the Snap list did not open: %s' % s.qa(M)[:1])
         s.click(wid, M, 'Home')
         check(s.wait_qa(M, '@page:explore'), 'Home did not go home')
         # Updates: apps only, the system is the Software Updater's.
@@ -505,6 +564,232 @@ def small_screen(s):
         stop(proc)
 
 
+def carousel_state(line):
+    """{'index': ..., 'count': ..., 'id': ...} of a "@carousel:" line."""
+    return dict(kv.split('=', 1) for kv in line[len('@carousel:'):].split(','))
+
+
+def highlights(s):
+    """Home's highlights: several apps of several kinds that move on by
+    themselves (not under the pointer), arrows and dots, a slide opens its
+    app."""
+    M = 'Merkadu.txt'
+    conf = s.temp / 'merkadu-rotate.conf'
+    conf.write_text((FIXTURES / 'merkadu.conf').read_text() + '\n[Highlights]\nrotate=1\n')
+    proc = s.start(env={'MERKADU_CONFIG': str(conf)})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'highlights: the main window did not open'):
+            return
+        line = s.wait_for(M, lambda l: l.startswith('@carousel:'), 15)
+        if not check(line, 'highlights: no carousel on Home: %s' % s.qa(M)[:8]):
+            return
+        first = carousel_state(line)
+        check(int(first['count']) >= 4, 'highlights: only %s apps' % first['count'])
+        # Not only the distribution's choice (Alpha 3: GIMP, always).
+        check(s.wait_qa(M, 'section:featured', 15), 'highlights: no more highlights below the carousel')
+        # Away from the pointer the next one comes by itself.
+        xdo(s.env, 'mousemove', '--window', wid, 5, 5)
+        moved = s.wait_for(M, lambda l: l.startswith('@carousel:') and carousel_state(l)['index'] != first['index'],
+                           6)
+        check(moved, 'highlights: the carousel did not move on by itself')
+        # Under the pointer it stays.
+        c = s.controls(M).get('carousel')
+        if check(c, 'highlights: the carousel has no box'):
+            xdo(s.env, 'mousemove', '--window', wid, c[0] + c[2] // 2, c[1] + c[3] // 3)
+            time.sleep(0.6)
+            before = s.wait_for(M, lambda l: l.startswith('@carousel:'), 2)
+            time.sleep(2.5)
+            after = s.wait_for(M, lambda l: l.startswith('@carousel:'), 2)
+            check(before == after, 'highlights: it moved under the pointer: %s, %s' % (before, after))
+        # The dots and the arrows.
+        s.click(wid, M, 'carousel:dot:2')
+        check(s.wait_for(M, lambda l: l.startswith('@carousel:index=2,'), 3), 'highlights: dot 2 did not show slide 2')
+        s.click(wid, M, 'carousel:next')
+        check(s.wait_for(M, lambda l: l.startswith('@carousel:index=3,'), 3), 'highlights: Next did not move on')
+        s.click(wid, M, 'carousel:prev')
+        line = s.wait_for(M, lambda l: l.startswith('@carousel:index=2,'), 3)
+        check(line, 'highlights: Previous did not go back')
+        s.shot('merkadu-highlights.png')
+        # A slide opens its app.
+        if line:
+            app = carousel_state(line)['id']
+            time.sleep(0.5)  # the slide is in place
+            s.click(wid, M, 'banner:' + app)
+            check(s.wait_qa(M, '@page:details:' + app, 5), 'highlights: the slide did not open %s: %s' %
+                  (app, s.qa(M)[:1]))
+    finally:
+        stop(proc)
+
+
+def pause_cancel(s):
+    """Pause, Resume and Cancel on the progress page: a Flatpak that
+    downloads (held at 42 % by MERKADU_FAKE_HOLD) pauses, resumes where it
+    was and is cancelled; a change that waits is removed; a Debian change
+    that installs (held at 80 %) cannot be stopped, and the page says
+    why."""
+    M = 'Merkadu.txt'
+
+    def job(n):
+        line = s.wait_for(M, lambda l: l.startswith('@job:%d=' % n), 1)
+        return line.split('=', 1)[1] if line else ''
+
+    proc = s.start('--details', 'org.example.Lumen', env={'MERKADU_FAKE_HOLD': '42'})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'pause: the main window did not open'):
+            return
+        if not check(s.wait_qa(M, 'action:org.example.lumen:Install', 10), 'pause: Lumen has no Install'):
+            return
+        s.click(wid, M, 'action:org.example.lumen:Install')
+        line = s.wait_for(M, lambda l: l.startswith('@job:1=running,') and l.split('\t')[0].endswith(
+            ',downloading,pause+cancel') and int(l.split(',')[1]) >= 42, 10)
+        check(line, 'pause: the download cannot be paused: %s' % job(1))
+        held = line.split(',')[1] if line else '?'  # where the change stands
+        # A second change waits behind it.
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'type', '--delay', '40', 'quill')
+        s.key(wid, 'Return')
+        s.wait_qa(M, 'app:org.example.quill', 5)
+        s.click(wid, M, 'app:org.example.quill')
+        if s.wait_qa(M, 'action:org.example.quill:Install', 5):
+            s.click(wid, M, 'action:org.example.quill:Install')
+        check(s.wait_for(M, lambda l: l.startswith('@job:2=queued'), 5), 'pause: Quill is not queued: %s' % job(2))
+        s.click(wid, M, 'nav:progress')
+        if not check(s.wait_qa(M, '@page:progress', 5), 'pause: no progress page'):
+            return
+        c = s.controls(M)
+        check('action:pause:1' in c and 'action:cancel:1' in c and 'action:cancel:2' in c,
+              'pause: the progress page has no Pause or Cancel: %s' % [k for k in c if k.startswith('action')])
+        s.shot('merkadu-pause-cancel.png')
+        s.click(wid, M, 'action:cancel:2')
+        check(s.wait_for(M, lambda l: l.startswith('@job:2=cancelled'), 5), 'pause: the waiting change was not '
+              'removed: %s' % job(2))
+        s.click(wid, M, 'action:pause:1')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=paused,%s,' % held) and 'resume' in l, 5),
+              'pause: Pause did not pause: %s' % job(1))
+        # Resumed, it continues with what it downloaded.
+        s.click(wid, M, 'action:pause:1')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=running,%s,downloading' % held), 5),
+              'pause: Resume did not continue from %s %%: %s' % (held, job(1)))
+        s.click(wid, M, 'action:cancel:1')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=cancelled'), 5), 'pause: Cancel did not cancel: %s' %
+              job(1))
+        s.key(wid, 'ctrl+q')
+        check(wait_exit(proc) == 0, 'pause: Ctrl+Q did not quit after the changes ended')
+    finally:
+        stop(proc)
+    proc = s.start('--details', 'org.example.Atlas', env={'MERKADU_FAKE_HOLD': '80'})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid and s.wait_qa(M, 'action:org.example.atlas:Install', 10), 'pause: Atlas has no Install'):
+            return
+        s.click(wid, M, 'action:org.example.atlas:Install')
+        check(s.wait_for(M, lambda l: l.startswith('@job:1=running,') and l.split('\t')[0].endswith(',changing,none'),
+                         10), 'pause: a Debian change can be stopped while it installs: %s' % job(1))
+        check(s.wait_for(M, lambda l: l.startswith('@why:1=') and 'half changed' in l, 3),
+              'pause: the page does not say why it cannot stop')
+    finally:
+        stop(proc)
+
+
+def answer_dialog(s, main, key='Return', timeout=5.0):
+    """Presses |key| in the dialog (a window that is not |main|)."""
+    end = time.time() + timeout
+    while time.time() < end:
+        ids = [w for w in xdo(s.env, 'search', '--onlyvisible', '--name', '.*').stdout.split() if w != main]
+        if ids:
+            time.sleep(0.4)
+            xdo(s.env, 'windowfocus', '--sync', ids[-1])
+            time.sleep(0.1)
+            xdo(s.env, 'key', '--clearmodifiers', key)
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def snap_support(s):
+    """Enable Snap Support against a fake snapd (tests/fake_snapd.py): snapd
+    starts when its package is installed and says "too early" while it
+    seeds itself; once the snapd snap is installed the Snap Store's snaps
+    are on Home, in a department, in All Software and in a search without
+    restarting Merkadu; a snap installs (the first one sets up the hidden
+    snap folder); polkit refusing one is reported."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from fake_snapd import FakeSnapd
+    M = 'Merkadu.txt'
+    sock, flag = s.temp / 'run' / 'snapd.socket', s.temp / 'snapd-installed'
+    snapd = FakeSnapd(str(sock), str(flag), refuse={'notepadx'})
+    proc = s.start(env={'MERKADU_FAKE_SNAPD': str(flag), 'MERKADU_SNAPD_SOCKET': str(sock)})
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'snap: the main window did not open'):
+            return
+        s.wait_qa(M, '@page:explore', 10)
+        s.click(wid, M, 'nav:packages')
+        s.wait_qa(M, '@page:packages', 5)
+        s.click(wid, M, 'chip:source:snap')
+        if not check(s.wait_qa(M, 'action:source-fix:Enable Snap Support', 8),
+                     'snap: no Enable Snap Support without snapd: %s' % s.qa(M)[:12]):
+            return
+        s.click(wid, M, 'action:source-fix:Enable Snap Support')
+        check(answer_dialog(s, wid), 'snap: Enable Snap Support did not ask')
+        check(s.wait_qa(M, '@page:progress', 5), 'snap: no progress page: %s' % s.qa(M)[:1])
+        # The package, then snapd, which is too early at first.
+        check(s.wait_for(M, lambda l: l.startswith('@state:') and 'jobs=0' in l, 60),
+              'snap: Enable Snap Support did not finish: %s' % s.qa(M)[:3])
+        check(flag.exists() and snapd.listening(), 'snap: the snapd package was not installed')
+        early = [r for r in snapd.requests if r.startswith('POST /v2/snaps/snapd')]
+        check(len(early) == 3, 'snap: snapd was not asked again while it seeded: %s' % early)
+        check('snapd' in snapd.installed, 'snap: the snapd snap is not installed')
+        # Without restarting: Home's featured snaps, the department, All
+        # Software and the search.
+        s.click(wid, M, 'nav:explore')
+        # The featured snaps: in the highlights (the fake store features
+        # two) or in their section.
+        check(s.wait_qa(M, 'app:snap:skyview', 15), 'snap: Home has no featured snaps: %s' % s.qa(M)[:12])
+        s.shot('merkadu-snap-home.png')
+        s.click(wid, M, 'nav:category:education')
+        check(s.wait_qa(M, 'app:snap:skyview', 8), 'snap: Skyview is not in Education')
+        s.click(wid, M, 'nav:packages')
+        s.wait_qa(M, '@page:packages', 5)
+        s.click(wid, M, 'chip:source:snap')
+        check(s.wait_qa(M, 'pkg:snap:skyview', 5), 'snap: Skyview is not in All Software: %s' %
+              [k for k in s.controls(M) if k.startswith('pkg:')][:5])
+        # The search of the apps (Home's; All Software's searches packages).
+        s.click(wid, M, 'nav:explore')
+        s.wait_qa(M, '@page:explore', 5)
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'type', '--delay', '40', 'notepad')
+        s.key(wid, 'Return')
+        check(s.wait_qa(M, 'app:snap:notepadx', 8), 'snap: the search does not find Notepad X')
+        # Polkit refuses Notepad X.
+        s.click(wid, M, 'app:snap:notepadx')
+        if check(s.wait_qa(M, 'action:snap:notepadx:Install', 5), 'snap: Notepad X has no Install'):
+            s.click(wid, M, 'action:snap:notepadx:Install')
+            check(s.wait_for(M, lambda l: l.startswith('failed:') and 'not allowed' in l, 20),
+                  'snap: the refusal is not shown: %s' % s.qa(M)[:12])
+            check(snapd.hidden_folder, 'snap: the hidden snap folder was not set up before the first snap')
+        # Skyview installs.
+        s.key(wid, 'ctrl+f')
+        time.sleep(0.2)
+        xdo(s.env, 'key', 'ctrl+a')
+        xdo(s.env, 'type', '--delay', '40', 'skyview')
+        s.key(wid, 'Return')
+        s.wait_qa(M, 'app:snap:skyview', 8)
+        s.click(wid, M, 'app:snap:skyview')
+        if check(s.wait_qa(M, 'action:snap:skyview:Install', 5), 'snap: Skyview has no Install'):
+            s.click(wid, M, 'action:snap:skyview:Install')
+            check(s.wait_qa(M, 'action:snap:skyview:Remove', 30), 'snap: Skyview was not installed: %s' %
+                  s.qa(M)[:8])
+            check('skyview' in snapd.installed, 'snap: snapd did not install Skyview')
+    finally:
+        stop(proc)
+        snapd.stop()
+
+
 def problems(s):
     try:
         text = (s.temp / 'merkadu.log').read_text()
@@ -520,6 +805,9 @@ try:
     main_window(screen)
     all_software(screen)
     empty_catalog(screen)
+    highlights(screen)
+    snap_support(screen)
+    pause_cancel(screen)
     uninstall_cases(screen)
     problems(screen)
 finally:

@@ -2,11 +2,14 @@
 // Copyright (C) 2026 Selviana DE Project and contributors
 //
 // The Snap source: snapd's REST API on /run/snapd.socket (snapd.h). Reads
-// (installed snaps, the store's search and categories, changes) need no
-// authorization; installing, removing and refreshing send
+// (installed snaps, the store's search, categories and featured snaps,
+// changes) need no authorization; installing, removing and refreshing send
 // "X-Allow-Interaction: true" so that snapd asks polkit, and the SDE polkit
 // agent shows the password prompt. A change is followed by polling
-// /v2/changes/ID on a worker thread.
+// /v2/changes/ID on a worker thread (snap_change()).
+//
+// The store's answers are kept in $XDG_CACHE_HOME/merkadu/snapd, so that
+// Home, the departments and All Software still show snaps offline.
 //
 // snapd keeps each user's snap data in ~/snap. Before the first snap is
 // installed Merkadu sets experimental.hidden-snap-folder (setup
@@ -16,10 +19,8 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <map>
 #include <mutex>
-#include <thread>
 
 #include "backend.h"
 #include "i18n.h"
@@ -31,76 +32,75 @@ namespace merkadu {
 
 namespace {
 
-constexpr int kInteractiveTimeout = 10 * 60 * 1000;  // polkit may wait for the user
-constexpr int kStartWait = 120;                      // seconds snapd may take to start (Enable Snap Support)
+// Changes wait this long for snapd to be ready: after Enable Snap Support
+// (snapd starts and seeds itself) longer than otherwise.
+constexpr int kStartWait = 180;
+constexpr int kBusyWait = 60;
 
-// snapd was installed a moment ago (Enable Snap Support): it does not
-// listen yet, it answers "too early" while it seeds itself, or it is busy
-// with its own first change.
-bool snapd_starting(const HttpResponse &r) {
-  if (r.status == 0) return true;
-  std::string kind = snapd_error_kind(r.body);
-  if (kind == "snap-change-conflict" || kind == "system-restart") return true;
-  std::string msg = snapd_error(r.body);
-  return msg.find("too early") != std::string::npos || msg.find("not yet seeded") != std::string::npos;
+std::string cache_file(const std::string &path) {
+  std::string base = env("XDG_CACHE_HOME");
+  if (base.empty()) base = join_path(home_dir(), ".cache");
+  uint64_t h = 1469598103934665603ULL;
+  for (unsigned char c : path) {
+    h ^= c;
+    h *= 1099511628211ULL;
+  }
+  char name[32];
+  std::snprintf(name, sizeof name, "%016llx.json", static_cast<unsigned long long>(h));
+  return join_path(base, std::string("merkadu/snapd/") + name);
 }
 
-std::string error_of(const HttpResponse &r) {
-  if (r.status == 0) return r.error.empty() ? std::string(_("snapd did not answer.")) : r.error;
-  std::string msg = snapd_error(r.body);
-  std::string kind = snapd_error_kind(r.body);
-  if (kind == "auth-cancelled") return "";
-  if (kind == "login-required" || r.status == 401 || r.status == 403)
-    return msg.empty() ? std::string(_("You are not allowed to do this, or the authentication failed.")) : msg;
-  return msg.empty() ? format(_("snapd answered with error %d."), r.status) : msg;
-}
-
+// The snaps of a store query: snapd's answer, kept for offline use; the
+// last answer kept when snapd cannot reach the store.
 std::vector<App> get_apps(const std::string &path, bool installed, std::string *error) {
   std::vector<App> out;
   HttpResponse r = http_unix(snapd_socket(), "GET", path);
-  if (r.status != 200 || !parse_snaps(r.body, installed, out)) {
-    // An empty search is answered with 404 "no snaps found".
-    if (error && r.status != 404) *error = error_of(r);
-    out.clear();
+  bool store = starts_with(path, "/v2/find");
+  if (r.status == 200 && parse_snaps(r.body, installed, out)) {
+    if (store) {
+      std::string file = cache_file(path);
+      make_dirs(file.substr(0, file.rfind('/')));
+      write_file_atomic(file, r.body);
+    }
+    return out;
   }
+  out.clear();
+  // An empty search is answered with 404 "no snaps found".
+  if (r.status == 404) return out;
+  std::string cached;
+  if (store && read_file(cache_file(path), cached) && parse_snaps(cached, installed, out)) return out;
+  if (error) *error = snapd_error_text(r);
   return out;
 }
 
+// The socket of a test's fake snapd: only it says whether snapd is there.
+bool test_socket() { return !env("MERKADU_SNAPD_SOCKET").empty(); }
+
 struct Running {
   std::atomic<bool> cancel{false};
-  std::string change;  // set once snapd accepted it
-  std::mutex mutex;
 };
 
-// Follows change |id| until it is ready; |progress| on the FLTK thread.
-std::string follow(const std::string &id, std::shared_ptr<Running> run,
-                   std::function<void(const Progress &)> progress, bool *cancelled) {
-  bool abort_sent = false;
-  for (;;) {
-    if (run && run->cancel && !abort_sent) {
-      http_unix(snapd_socket(), "POST", "/v2/changes/" + id, "{\"action\":\"abort\"}", true, 30000);
-      abort_sent = true;
-    }
-    HttpResponse r = http_unix(snapd_socket(), "GET", "/v2/changes/" + id);
-    SnapChange c;
-    if (r.status != 200 || !parse_snap_change(r.body, c)) return error_of(r);
-    if (progress) {
-      Progress p;
-      p.percent = c.percent;
-      p.status = c.label;
-      p.cancellable = !c.ready;
-      post([progress, p] { progress(p); });
-    }
-    if (c.ready) {
-      if (c.status == "Done") return "";
-      if (abort_sent) {
-        *cancelled = true;
-        return "";
-      }
-      return c.error.empty() ? format(_("The change ended with status %s."), c.status.c_str()) : c.error;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(400));
-  }
+// A snapd change of |run|, its progress on the FLTK thread.
+std::pair<std::string, bool> follow_change(const std::string &method, const std::string &path,
+                                           const std::string &body, std::shared_ptr<Running> run,
+                                           std::function<void(const Progress &)> progress, int wait_s) {
+  auto report = [progress](const SnapProgress &sp) {
+    if (!progress) return;
+    Progress p;
+    p.percent = sp.percent;
+    p.status = sp.status;
+    // snapd undoes what an aborted change did; a download it stops is
+    // continued from its partial file when the change runs again.
+    p.cancellable = !sp.aborting;
+    p.phase = sp.waiting ? JobPhase::Waiting
+              : sp.kind == "download-snap" ? JobPhase::Downloading
+              : sp.kind.empty() || sp.kind == "prerequisites" || sp.kind == "validate-snap" ? JobPhase::Preparing
+                                                                                            : JobPhase::Applying;
+    post([progress, p] { progress(p); });
+  };
+  SnapChangeResult r =
+      snap_change(snapd_socket(), method, path, body, run ? &run->cancel : nullptr, report, wait_s);
+  return {r.error, r.cancelled};
 }
 
 class SnapBackend : public Backend {
@@ -112,7 +112,8 @@ class SnapBackend : public Backend {
         [] {
           SourceStatus st;
           std::string sock = snapd_socket();
-          st.installed = file_exists(sock) || !find_program("snap").empty() || file_exists("/usr/lib/snapd/snapd");
+          st.installed = file_exists(sock) ||
+                         (!test_socket() && (!find_program("snap").empty() || file_exists("/usr/lib/snapd/snapd")));
           HttpResponse r = http_unix(sock, "GET", "/v2/system-info", "", false, 8000);
           if (r.status != 200) {
             st.message = st.installed ? std::string(_("snapd is not running")) : std::string(_("snapd is not installed"));
@@ -121,7 +122,13 @@ class SnapBackend : public Backend {
           st.available = st.installed = true;
           Json root;
           if (parse_json(r.body, root))
-            if (const Json *res = root.get("result")) st.message = "snapd " + res->text("version");
+            if (const Json *res = root.get("result")) {
+              st.message = "snapd " + res->text("version");
+              // Without AppArmor (Debian turns it on by default) snaps are
+              // only partly isolated.
+              std::string confinement = res->text("confinement");
+              if (confinement == "partial") st.message += ", " + std::string(_("partial confinement (AppArmor is off)"));
+            }
           HttpResponse conf = http_unix(sock, "GET", "/v2/snaps/system/conf?keys=experimental.hidden-snap-folder");
           bool hidden = false;
           if (conf.status == 200 && parse_hidden_folder(conf.body, &hidden))
@@ -131,7 +138,7 @@ class SnapBackend : public Backend {
             st.hidden_snap_folder = file_exists("/var/lib/snapd/features/hidden-snap-folder") ? 1 : 0;
           return st;
         },
-        done);
+        done, "snapd answered");
   }
 
   void load_installed(AppsFn done) override {
@@ -149,13 +156,15 @@ class SnapBackend : public Backend {
               }
           return std::make_pair(std::move(apps), error);
         },
-        [done](std::pair<std::vector<App>, std::string> r) { done(std::move(r.first), r.second); });
+        [done](std::pair<std::vector<App>, std::string> r) { done(std::move(r.first), r.second); },
+        "the installed snaps arrived");
   }
 
   void search(const std::string &query, AppsFn done) override {
     std::string path = "/v2/find?q=" + url_encode(query);
     background<std::vector<App>>([path] { return get_apps(path, false, nullptr); },
-                                 [done](std::vector<App> apps) { done(std::move(apps), ""); });
+                                 [done](std::vector<App> apps) { done(std::move(apps), ""); },
+                                 "the Snap Store answered a search");
   }
 
   void browse(const std::string &category, AppsFn done) override {
@@ -167,7 +176,22 @@ class SnapBackend : public Backend {
           if (apps.empty()) apps = get_apps("/v2/find?section=" + cat, false, nullptr);
           return apps;
         },
-        [done](std::vector<App> apps) { done(std::move(apps), ""); });
+        [done](std::vector<App> apps) { done(std::move(apps), ""); }, "the Snap Store answered a department");
+  }
+
+  void featured(AppsFn done) override {
+    background<std::pair<std::vector<App>, std::string>>(
+        [] {
+          std::string error;
+          std::vector<App> apps;
+          for (const char *path : {"/v2/find?category=featured", "/v2/find?section=featured"}) {
+            apps = get_apps(path, false, &error);
+            if (!apps.empty()) break;
+          }
+          return std::make_pair(std::move(apps), error);
+        },
+        [done](std::pair<std::vector<App>, std::string> r) { done(std::move(r.first), r.second); },
+        "the Snap Store's featured snaps arrived");
   }
 
   void lookup(const App &app, AppsFn done) override {
@@ -197,54 +221,40 @@ class SnapBackend : public Backend {
       std::lock_guard<std::mutex> lock(mutex_);
       running_[job.id] = run;
     }
+    {
+      // It can be stopped before snapd accepts it.
+      Progress p;
+      p.status = _("Preparing");
+      p.cancellable = true;
+      p.phase = JobPhase::Preparing;
+      progress(p);
+    }
     int id = job.id;
     Job j = job;
     background<std::pair<std::string, bool>>(
         [j, run, progress] {
           std::string action = j.action == Action::Install ? "install" : j.action == Action::Remove ? "remove"
                                                                                                     : "refresh";
-          auto send = [&j, &action] {
-            if (j.targets.size() == 1) {
-              std::string body = "{\"action\":" + json_quote(action);
-              if (j.action == Action::Install) {
-                // The channel of the store result ("latest/stable"); stable by default.
-                std::string channel = j.remote.empty() ? "stable" : j.remote;
-                body += ",\"channel\":" + json_quote(channel);
-                if (j.classic) body += ",\"classic\":true";
-              }
-              body += "}";
-              return http_unix(snapd_socket(), "POST", "/v2/snaps/" + j.targets[0], body, true, kInteractiveTimeout);
+          std::string method = "POST", path, body;
+          if (j.targets.size() == 1) {
+            path = "/v2/snaps/" + j.targets[0];
+            body = "{\"action\":" + json_quote(action);
+            if (j.action == Action::Install) {
+              // The channel of the store result ("latest/stable"); stable by default.
+              std::string channel = j.remote.empty() ? "stable" : j.remote;
+              body += ",\"channel\":" + json_quote(channel);
+              if (j.classic) body += ",\"classic\":true";
             }
+            body += "}";
+          } else {
             std::string list;
             for (auto &t : j.targets) list += (list.empty() ? "" : ",") + json_quote(t);
-            return http_unix(snapd_socket(), "POST", "/v2/snaps",
-                             "{\"action\":" + json_quote(action) + ",\"snaps\":[" + list + "]}", true,
-                             kInteractiveTimeout);
-          };
-          HttpResponse r = send();
-          // After Enable Snap Support snapd needs a while: wait for it (a
-          // job that needs another one, the installation of snapd, only).
-          auto start = std::chrono::steady_clock::now();
-          while (j.needs && snapd_starting(r) && !run->cancel &&
-                 std::chrono::steady_clock::now() - start < std::chrono::seconds(kStartWait)) {
-            if (progress) {
-              Progress p;
-              p.status = _("Waiting for snapd to start");
-              p.cancellable = true;
-              post([progress, p] { progress(p); });
-            }
-            for (int i = 0; i < 30 && !run->cancel; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            r = send();
+            path = "/v2/snaps";
+            body = "{\"action\":" + json_quote(action) + ",\"snaps\":[" + list + "]}";
           }
-          if (run->cancel && r.status != 202) return std::make_pair(std::string(), true);
-          std::string change = r.status == 202 ? snapd_change_id(r.body) : "";
-          if (change.empty()) {
-            std::string err = error_of(r);
-            return std::make_pair(err, err.empty());  // empty: the user cancelled the password prompt
-          }
-          bool cancelled = false;
-          std::string err = follow(change, run, progress, &cancelled);
-          return std::make_pair(err, cancelled);
+          // Right after Enable Snap Support snapd starts and seeds itself;
+          // otherwise it may be busy with a change of its own.
+          return follow_change(method, path, body, run, progress, j.needs ? kStartWait : kBusyWait);
         },
         [this, id, done](std::pair<std::string, bool> result) {
           {
@@ -275,7 +285,6 @@ class SnapBackend : public Backend {
         done);
   }
 
-
   void setup(const std::string &what, DoneFn done) override {
     if (what != "hide-snap-folder") {
       done(false, false, "unknown setup");
@@ -283,16 +292,8 @@ class SnapBackend : public Backend {
     }
     background<std::pair<std::string, bool>>(
         [] {
-          HttpResponse r = http_unix(snapd_socket(), "PUT", "/v2/snaps/system/conf",
-                                     "{\"experimental.hidden-snap-folder\":true}", true, kInteractiveTimeout);
-          std::string change = r.status == 202 ? snapd_change_id(r.body) : "";
-          if (change.empty()) {
-            std::string err = error_of(r);
-            return std::make_pair(err, err.empty());
-          }
-          bool cancelled = false;
-          std::string err = follow(change, nullptr, nullptr, &cancelled);
-          return std::make_pair(err, cancelled);
+          return follow_change("PUT", "/v2/snaps/system/conf", "{\"experimental.hidden-snap-folder\":true}", nullptr,
+                               nullptr, kBusyWait);
         },
         [done](std::pair<std::string, bool> r) { done(r.first.empty() && !r.second, r.second, r.first); });
   }

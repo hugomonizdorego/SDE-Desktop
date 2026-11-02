@@ -21,6 +21,7 @@
 #include "store.h"
 #include "ui.h"
 #include "util.h"
+#include "watchdog.h"
 #include "widgets.h"
 #include "wm.h"
 #include "../settings/ui.h"
@@ -54,6 +55,12 @@ std::vector<QaPart> g_qa_lines;
 int g_content_x = 0, g_title_x = 0;
 bool g_rebuild_pending = false;
 bool g_refresh_running = false;
+// Widgets of the page that show progress (live_widget()) and what follows
+// the changes' state (live_update()).
+std::vector<Fl_Widget *> g_live;
+std::vector<std::function<void()>> g_live_updates;
+int g_sidebar_jobs = -1;     // the count the sidebar shows for In Progress
+bool g_images_pending = false;  // a redraw for downloaded images is due
 
 int topbar_h() { return S(64); }
 int sidebar_w(int win_w) { return win_w < S(760) ? S(176) : S(220); }
@@ -306,6 +313,7 @@ class MainWindow : public BufferedWindow {
  public:
   MainWindow(int w, int h) : BufferedWindow(w, h, _("Merkadu")) {}
   void draw() override {
+    watchdog::Busy busy("drawing the window");
     const Theme &t = active_theme();
     {
       Painter p(w(), h());
@@ -344,7 +352,7 @@ class MainWindow : public BufferedWindow {
         return 1;
       }
       if (ctrl && k == 'q') {
-        hide();
+        do_callback();  // like the close button: asks about running changes
         return 1;
       }
       if (ctrl && k == 'r') {
@@ -424,6 +432,32 @@ void qa_dump() {
           "\t0\t0\t0\t0\t1\t0\n";
   text += "@nav:back=" + std::to_string(g_back_stack.size()) + ",forward=" + std::to_string(g_forward_stack.size()) +
           "\t0\t0\t0\t0\t1\t0\n";
+  // The changes: "@job:3=running,42,downloading,pause+cancel" (state,
+  // percent, phase, what the user can do now).
+  for (const Job &j : st.jobs()) {
+    static const char *states[] = {"queued", "running", "paused", "done", "failed", "cancelled"};
+    static const char *phases[] = {"unknown", "waiting", "preparing", "downloading", "applying", "changing"};
+    std::string state = j.stopping == Job::Pausing      ? "pausing"
+                        : j.stopping == Job::Cancelling ? "cancelling"
+                                                        : states[int(j.state)];
+    JobControls c = job_controls(j);
+    std::string can = std::string(c.pause ? "pause+" : "") + (c.resume ? "resume+" : "") + (c.cancel ? "cancel+" : "");
+    can = can.empty() ? "none" : can.substr(0, can.size() - 1);
+    text += "@job:" + std::to_string(j.id) + "=" + state + "," + std::to_string(j.percent) + "," +
+            phases[int(j.phase)] + "," + can + "\t0\t0\t0\t0\t1\t0\n";
+    // Why it cannot be paused or cancelled now (shown next to the buttons).
+    if (j.active() && !c.why_not.empty())
+      text += "@why:" + std::to_string(j.id) + "=" + c.why_not + "\t0\t0\t0\t0\t1\t0\n";
+  }
+  // The highlights carousel moves by itself: its parts as they are now.
+  if (const Carousel *c = Carousel::live()) {
+    text += "@carousel:" + Carousel::qa_state() + "\t0\t0\t0\t0\t1\t0\n";
+    c->qa([&text](const std::string &name, int x, int y, int w, int h) {
+      bool shown = g_page && y >= g_page->y() && y + h <= g_page->y() + g_page->h();
+      text += name + "\t" + std::to_string(x) + "\t" + std::to_string(y) + "\t" + std::to_string(w) + "\t" +
+              std::to_string(h) + "\t" + (shown ? "1" : "0") + "\t1\n";
+    });
+  }
   // Where the parts are now: the page may be scrolled.
   int dy = scrolled();
   for (const QaPart &q : g_qa_lines) {
@@ -506,8 +540,11 @@ void update_bar() {
 void do_rebuild(void *) {
   g_rebuild_pending = false;
   if (!g_win) return;
+  watchdog::Busy busy("building the page");
   // The same view keeps its place; a new one starts at the top.
   int scroll = g_page && g_built == g_view ? scrolled() : 0;
+  g_live.clear();
+  g_live_updates.clear();
   if (g_page) {
     g_win->remove(g_page);
     Fl::delete_widget(g_page);
@@ -547,14 +584,27 @@ bool packages_view() {
   return g_view.kind == View::Packages || g_view.kind == View::Package || g_view.kind == View::Changes;
 }
 
+// The header: the page title and the refresh status below it.
+void redraw_header() {
+  if (g_win) g_win->damage_rect(g_content_x, 0, g_win->w() - g_content_x, topbar_h());
+}
+
 void on_store_event(Event e) {
   if (!g_win) return;
   switch (e) {
-    case Event::Progress:
-      // Widgets read the jobs when they draw: a repaint is enough.
-      if (g_page) g_page->redraw();
-      if (g_sidebar) g_sidebar->redraw();
+    case Event::Progress: {
+      // Widgets read the jobs when they draw: repainting the ones that
+      // show progress is enough (PackageKit reports often, and a repaint
+      // of the whole window takes long on slow computers).
+      for (Fl_Widget *w : g_live) w->redraw();
+      for (auto fn : std::vector<std::function<void()>>(g_live_updates)) fn();
+      int jobs = Store::get().active_jobs();
+      if (g_sidebar && jobs != g_sidebar_jobs) {
+        g_sidebar_jobs = jobs;
+        g_sidebar->redraw();
+      }
       break;
+    }
     case Event::Sources:
       if (g_view.kind == View::Sources || g_view.kind == View::Details || g_view.kind == View::Explore ||
           g_view.kind == View::Updates)
@@ -577,7 +627,8 @@ void on_store_event(Event e) {
             g_view.kind == View::Updates)
           schedule_rebuild();
       }
-      g_win->redraw();
+      // Progress only changes the status line below the title.
+      redraw_header();
       break;
     }
     case Event::Packages:
@@ -597,13 +648,27 @@ void store_search(void *) {
   if (g_search && trim(g_search->value()) == g_store_query) Store::get().search_store(g_store_query);
 }
 
+// While typing, the results are built once typing pauses for a moment
+// (searching 90,000 packages for every key is slow on slow computers).
+void typed_rebuild(void *) { schedule_rebuild(); }
+
 void search_changed(Fl_Widget *, void *) {
   std::string q = trim(g_search->value());
   if (g_view.kind == View::Packages) {
     // All Software filters its list in place.
     PackageFilter f = packages_filter(g_view.arg);
     f.query = q;
-    replace_view(View{View::Packages, packages_view_arg(f)});
+    std::string arg = packages_view_arg(f);
+    if (arg == g_view.arg) return;
+    g_view.arg = arg;
+    Fl::remove_timeout(typed_rebuild);
+    Fl::add_timeout(0.15, typed_rebuild);
+    if (f.source == Source::Snap && q.size() >= 2) {
+      // The Snap Store is asked too: its answers join the list.
+      g_store_query = q;
+      Fl::remove_timeout(store_search);
+      Fl::add_timeout(0.5, store_search);
+    }
     return;
   }
   if (q.empty()) {
@@ -612,7 +677,8 @@ void search_changed(Fl_Widget *, void *) {
   }
   if (g_view.kind == View::Search) {
     g_view.arg = q;  // new results start at the top
-    schedule_rebuild();
+    Fl::remove_timeout(typed_rebuild);
+    Fl::add_timeout(0.15, typed_rebuild);
   } else {
     navigate(View{View::Search, q});
   }
@@ -733,6 +799,14 @@ void qa_line(const std::string &name, int x, int y, int w, int h) {
   g_qa_lines.push_back({name, x, y, w, h});
 }
 
+void live_widget(Fl_Widget *w) {
+  if (w) g_live.push_back(w);
+}
+
+void live_update(std::function<void()> fn) {
+  if (fn) g_live_updates.push_back(std::move(fn));
+}
+
 AppInfo about_info() {
   AppInfo info;
   info.name = _("Merkadu");
@@ -750,6 +824,61 @@ AppInfo about_info() {
 }
 
 namespace {
+
+bool g_background = false;  // the window was closed with changes left to finish
+
+// Changes that run or wait to run (paused ones wait for the user: they do
+// not keep Merkadu running without its window).
+bool changes_left() {
+  for (auto &j : Store::get().jobs())
+    if (j.state == Job::Running || j.state == Job::Queued) return true;
+  return false;
+}
+
+// The close button, Ctrl+Q: at once, unless changes are not finished; then
+// the user chooses to stop them or to let them finish without the window
+// (Merkadu ends when they are done).
+void close_requested(Fl_Widget *, void *) {
+  Store &st = Store::get();
+  if (!changes_left()) {
+    g_win->hide();
+    return;
+  }
+  const Job *running = nullptr;
+  int waiting = 0;
+  for (auto &j : st.jobs()) {
+    if (j.state == Job::Running) running = &j;
+    else if (j.state == Job::Queued) ++waiting;
+  }
+  std::string text = running ? format(_("%s %s is not finished."), action_progress_label(running->action).c_str(),
+                                      running->title.c_str())
+                             : std::string();
+  if (waiting)
+    text += (text.empty() ? "" : " ") +
+            format(ngettext("%d more change is waiting.", "%d more changes are waiting.", waiting), waiting);
+  text += "\n\n";
+  text += (running ? 1 : 0) + waiting == 1
+              ? _("Merkadu can stop it now, or close its window and finish it in the background; it ends by itself "
+                  "when it is done.")
+              : _("Merkadu can stop them now, or close its window and finish them in the background; it ends by "
+                  "itself when they are done.");
+  int c = fl_choice("%s", _("Keep Merkadu Open"), _("Finish in the Background"), _("Stop and Close"), text.c_str());
+  if (c == 0) return;
+  if (c == 2) {
+    std::vector<int> ids;
+    for (auto &j : st.jobs())
+      if (j.active()) ids.push_back(j.id);
+    for (int id : ids) {
+      const Job *j = st.job(id);
+      if (j && j->state == Job::Running && !job_controls(*j).cancel)
+        watchdog::log(format("\"%s\" cannot be stopped now (%s); it finishes before Merkadu ends",
+                             j->title.c_str(), job_controls(*j).why_not.c_str()));
+      st.cancel(id);
+    }
+  }
+  g_background = true;
+  g_win->hide();
+}
 
 void confirm_and_install(const std::string &app_id, Source s) {
   if (!Store::get().install(app_id, s))
@@ -871,14 +1000,41 @@ int run_window(const View &start) {
   g_view = start;
   if (g_search) g_search->value(search_text_of(start).c_str());
   st.listen(on_store_event);
+  // Icons and screenshots arrive one by one (four downloads at a time):
+  // one repaint for those of the last moment, not one per image.
   images::on_ready([] {
-    for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) w->redraw();
+    if (g_images_pending) return;
+    g_images_pending = true;
+    Fl::add_timeout(0.3, [](void *) {
+      g_images_pending = false;
+      for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w)) {
+        if (w != g_win) {
+          w->redraw();
+        } else {
+          if (g_page) g_page->redraw();
+          if (g_sidebar) g_sidebar->redraw();
+        }
+      }
+    });
   });
+  win->callback(close_requested);
   win->layout();
   do_rebuild(nullptr);
   win->position(wx, wy);
   win->show();
-  return Fl::run();
+  // Until the window is closed, then, when changes were left to finish in
+  // the background, until they are done (without a window).
+  for (;;) {
+    if (Fl::first_window()) {
+      Fl::wait(1e20);
+    } else if (g_background && changes_left()) {
+      Fl::wait(1.0);
+    } else {
+      break;
+    }
+  }
+  if (g_background) watchdog::log("the changes left to finish in the background are done");
+  return 0;
 }
 
 }  // namespace merkadu

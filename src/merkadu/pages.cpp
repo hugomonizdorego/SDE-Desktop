@@ -27,6 +27,7 @@
 #include <cmath>
 #include <map>
 
+#include "about.h"
 #include "i18n.h"
 #include "icons.h"
 #include "logo_anim.h"
@@ -35,6 +36,7 @@
 #include "store.h"
 #include "ui.h"
 #include "util.h"
+#include "watchdog.h"
 #include "window.h"
 #include "../settings/ui.h"
 
@@ -333,22 +335,32 @@ class IconView : public Fl_Widget {
 // The progress of a job: status, percentage and a bar, read live.
 class JobProgress : public Fl_Widget {
  public:
-  JobProgress(int x, int y, int w, int h, int job) : Fl_Widget(x, y, w, h), job_(job) {}
+  JobProgress(int x, int y, int w, int h, int job) : Fl_Widget(x, y, w, h), job_(job) { live_widget(this); }
   void draw() override {
     const Theme &t = active_theme();
     const Job *j = Store::get().job(job_);
     if (!j) return;
     {
       Painter p(window()->w(), window()->h());
-      int pct = j->state == Job::Done ? 100 : j->state == Job::Running ? j->percent : -1;
-      if (j->state == Job::Queued || j->state == Job::Running)
+      int pct = j->state == Job::Done ? 100 : j->state == Job::Running || j->state == Job::Paused ? j->percent : -1;
+      // A paused change keeps its bar where it stopped (no sliding segment).
+      if (j->state == Job::Queued || j->state == Job::Running || (j->state == Job::Paused && pct >= 0))
         paint_progress(p, x(), y() + h() - S(8), w(), S(8), pct, std::fmod(now_seconds(), 1.6) / 1.6);
     }
     std::string text;
     switch (j->state) {
       case Job::Queued: text = _("Waiting for the other changes to finish"); break;
+      case Job::Paused:
+        text = j->percent > 0 ? format(_("Paused at %d%%: what was downloaded is kept"), j->percent)
+                              : std::string(_("Paused: it waits until you resume it"));
+        break;
       case Job::Running:
-        text = j->status.empty() ? action_progress_label(j->action) : j->status;
+        if (j->stopping == Job::Pausing)
+          text = _("Pausing\xE2\x80\xA6");
+        else if (j->stopping == Job::Cancelling)
+          text = _("Cancelling\xE2\x80\xA6");
+        else
+          text = j->status.empty() ? action_progress_label(j->action) : j->status;
         if (j->percent >= 0) text += format("  %d%%", j->percent);
         break;
       case Job::Done: text = j->action == Action::Remove ? _("Removed") : j->action == Action::Update ? _("Updated")
@@ -366,6 +378,58 @@ class JobProgress : public Fl_Widget {
  private:
   int job_;
 };
+
+void set_active(Fl_Widget *w, bool on) {
+  if (on == bool(w->active())) return;
+  if (on)
+    w->activate();
+  else
+    w->deactivate();
+}
+
+// Pause (Resume) and Cancel (Remove, for a change that has not started) of
+// job |jid|: the buttons at |x|, |y| and the reason they are off at their
+// right (|w| wide in all) or, with |below|, under them. They follow what
+// the change allows at every moment (jobs.h). Returns the height used.
+int job_buttons(int x, int y, int w, int jid, bool below = false) {
+  const Job *j = Store::get().job(jid);
+  if (!j || !j->active()) return 0;
+  bool started = j->state == Job::Running || (j->state == Job::Paused && j->runs > 0);
+  std::string stop = started ? _("Cancel") : _("Remove");
+  int bw1 = std::max(Button::fit(_("Pause")), Button::fit(_("Resume"))), bw2 = Button::fit(stop);
+  auto *pause = new Button(x, y, bw1, S(34), j->state == Job::Paused ? _("Resume") : _("Pause"));
+  auto *cancel = new Button(x + bw1 + S(10), y, bw2, S(34), stop);
+  pause->on_click = [jid] {
+    const Job *job = Store::get().job(jid);
+    if (job && job->state == Job::Paused)
+      Store::get().resume(jid);
+    else
+      Store::get().pause(jid);
+  };
+  cancel->on_click = [jid] { Store::get().cancel(jid); };
+  qa_line("action:pause:" + std::to_string(jid), pause->x(), pause->y(), pause->w(), pause->h());
+  qa_line("action:cancel:" + std::to_string(jid), cancel->x(), cancel->y(), cancel->w(), cancel->h());
+  int bx = x + bw1 + bw2 + S(24), h = S(34);
+  // The reason, where there is room for it.
+  Label *why = below                    ? new Label(x, y + S(40), w, S(40), "", Label::DIM, true)
+               : w - (bx - x) >= S(120) ? new Label(bx, y - S(3), w - (bx - x), S(40), "", Label::DIM, true)
+                                        : nullptr;
+  if (below) h += S(44);
+  auto update = [jid, pause, cancel, why] {
+    const Job *job = Store::get().job(jid);
+    if (!job) return;
+    JobControls c = job_controls(*job);
+    bool paused = job->state == Job::Paused;
+    std::string text = paused ? _("Resume") : _("Pause");
+    if (pause->text() != text) pause->text(text);
+    set_active(pause, paused ? c.resume : c.pause);
+    set_active(cancel, c.cancel);
+    if (why) why->set(c.why_not);
+  };
+  update();
+  live_update(update);
+  return h;
+}
 
 // One entry of the history: what changed, when, by whom.
 class HistoryRow : public Fl_Widget {
@@ -601,7 +665,7 @@ int category_count(const Category &c) {
   }
   auto it = g_category_counts.find(c.id);
   if (it != g_category_counts.end()) return it->second;
-  int n = int(st.categories().apps_in(c, st.catalog()).size());
+  int n = int(st.count_in(c));
   g_category_counts[c.id] = n;
   return n;
 }
@@ -638,7 +702,7 @@ std::vector<const App *> recommendations(std::string *why, const std::vector<con
     if (!a->is_app()) continue;
     const Origin *o = a->installed_origin();
     if (o && o->source == Source::Debian && cfg.protected_packages.count(o->id)) continue;  // SDE's own
-    if (const Category *c = st.categories().category_of(*a)) ++weight[c->id];
+    if (const Category *c = st.department_of(*a)) ++weight[c->id];
   }
   std::vector<std::pair<int, std::string>> order;
   for (auto &w : weight)
@@ -676,6 +740,77 @@ std::vector<const App *> recommendations(std::string *why, const std::vector<con
   return out;
 }
 
+std::string upper_ascii(std::string s) {
+  for (char &c : s)
+    if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
+  return s;
+}
+
+// The small line above a highlight's name.
+std::string highlight_label(const Highlight &h) {
+  if (h.app->installed()) return _("INSTALLED");
+  switch (h.why) {
+    case Highlight::New:
+      return _("NEW RELEASE");
+    case Highlight::Popular:
+      return _("POPULAR ON FLATHUB");
+    case Highlight::Featured:
+      return _("FEATURED ON THE SNAP STORE");
+    case Highlight::Distribution:
+      break;
+  }
+  return format(_("CHOSEN BY %s"), upper_ascii(source_label(Source::Debian)).c_str());
+}
+
+// Where the highlights come from ("Chosen by Debian, new releases and
+// popular on Flathub").
+std::string highlights_subtitle(const std::vector<Highlight> &chosen) {
+  bool why[4] = {false, false, false, false};
+  for (auto &h : chosen) why[h.why] = true;
+  std::vector<std::string> parts;
+  if (why[Highlight::Distribution]) parts.push_back(format(_("chosen by %s"), source_label(Source::Debian).c_str()));
+  if (why[Highlight::New]) parts.push_back(_("new releases"));
+  if (why[Highlight::Popular]) parts.push_back(_("popular on Flathub"));
+  if (why[Highlight::Featured]) parts.push_back(_("featured on the Snap Store"));
+  std::string text;
+  for (size_t i = 0; i < parts.size(); ++i)
+    text += (i == 0 ? "" : i + 1 == parts.size() ? std::string(_(" and ")) : std::string(", ")) + parts[i];
+  if (!text.empty()) text[0] = char(toupper(static_cast<unsigned char>(text[0])));
+  return text;
+}
+
+// The report the previous run left when it crashed or stopped responding,
+// once: shown, or dismissed.
+void problem_report_notice(Page *page) {
+  long long when = 0;
+  std::string path = watchdog::last_report(&when);
+  if (path.empty()) return;
+  bool crash = path.find("crash-report") != std::string::npos;
+  std::string text =
+      crash ? format(_("Merkadu stopped unexpectedly %s. It kept a report of what it was doing; please send it "
+                       "with your bug report."),
+                     when_label(std::time_t(when)).c_str())
+            : format(_("Merkadu did not respond for a while %s. It kept a report of what it was doing; please send "
+                       "it with your bug report."),
+                     when_label(std::time_t(when)).c_str());
+  notice(page, "report", text, 1, false,
+         {{_("Show Report"),
+           [path] {
+             std::string report;
+             read_file(path, report);
+             std::string log = join_path(watchdog::state_dir(), "merkadu.log");
+             show_license_viewer(_("Merkadu Problem Report"),
+                                 format(_("This report is the file %s; the log of the previous run is %s.1."),
+                                        path.c_str(), log.c_str()) +
+                                     "\n\n" + report);
+           },
+           false},
+          {_("Dismiss"), [] {
+             watchdog::dismiss_report();
+             rebuild_page();
+           }}});
+}
+
 void build_explore(Page *page) {
   Store &st = Store::get();
   // An empty catalog says itself what is missing.
@@ -696,18 +831,43 @@ void build_explore(Page *page) {
     page->finish();
     return;
   }
-  std::vector<const App *> highlights = resolve_all(st.settings().featured);
+  problem_report_notice(page);
   bool short_window = page->h() < S(470);
-  if (!highlights.empty()) {
+  // The highlights: the distribution's choice, new releases, Flathub's
+  // popular apps and the Snap Store's featured snaps in turn, a few in the
+  // carousel and the next ones below it.
+  constexpr size_t kSlides = 6;
+  std::vector<Highlight> chosen = st.highlights(kSlides + (short_window ? 4 : 8));
+  std::vector<const App *> highlights;
+  for (auto &h : chosen) highlights.push_back(h.app);
+  if (!chosen.empty()) {
     int h = short_window ? S(190) : S(240);
-    auto *b = new Banner(page->left(), page->cursor(), page->width(), h, highlights[0]->id);
-    b->on_open = open_app;
-    qa_line("banner:" + highlights[0]->id, b->x(), b->y(), b->w(), b->h());
-    page->advance(h + S(28));
+    std::vector<std::string> ids, labels;
+    for (size_t i = 0; i < chosen.size() && i < kSlides; ++i) {
+      ids.push_back(chosen[i].app->id);
+      labels.push_back(highlight_label(chosen[i]));
+    }
+    int ch = h + (ids.size() > 1 ? Carousel::dots_height() : 0);
+    auto *c = new Carousel(page->left(), page->cursor(), page->width(), ch, ids, labels,
+                           st.settings().rotate_seconds);
+    c->on_open = open_app;  // its parts are in the QA dump as they are when it is written
+    page->advance(ch + S(22));
   }
-  if (highlights.size() > 1) {
-    caption(page, "featured", _("Highlights"), _("Chosen by your distribution"));
-    tile_grid(page, std::vector<const App *>(highlights.begin() + 1, highlights.end()), short_window ? 1 : 2);
+  if (chosen.size() > kSlides) {
+    caption(page, "featured", _("Highlights"), highlights_subtitle(chosen));
+    tile_grid(page, std::vector<const App *>(highlights.begin() + kSlides, highlights.end()), short_window ? 1 : 2);
+    page->advance(S(14));
+  }
+  // The Snap Store's featured snaps (when snapd runs).
+  std::vector<const App *> snaps;
+  for (auto &id : st.featured_snaps())
+    if (const App *a = st.app(id))
+      if (a->is_app() && !a->installed() && std::find(snaps.begin(), snaps.end(), a) == snaps.end() &&
+          std::find(highlights.begin(), highlights.end(), a) == highlights.end())
+        snaps.push_back(a);
+  if (!snaps.empty()) {
+    caption(page, "snap", _("From the Snap Store"), _("Featured snaps"));
+    tile_grid(page, snaps, 1);
     page->advance(S(14));
   }
   std::string why;
@@ -719,13 +879,8 @@ void build_explore(Page *page) {
   }
   // New & Updated: the newest releases of apps that are not installed.
   if (st.settings().new_count > 0) {
-    std::vector<const App *> fresh;
-    for (auto &a : st.catalog().apps())
-      if (a.is_app() && !a.installed() && a.newest_release() > 0 && a.newest_release() <= std::time(nullptr) + 86400)
-        fresh.push_back(&a);
-    std::stable_sort(fresh.begin(), fresh.end(),
-                     [](const App *x, const App *y) { return x->newest_release() > y->newest_release(); });
-    if (fresh.size() > size_t(st.settings().new_count)) fresh.resize(size_t(st.settings().new_count));
+    // Worked out with the catalog, on its worker thread.
+    std::vector<const App *> fresh = st.fresh_apps(size_t(st.settings().new_count));
     if (!fresh.empty()) {
       caption(page, "new", _("New & Updated"), _("The newest releases"));
       tile_grid(page, fresh, short_window ? 1 : 2);
@@ -763,8 +918,12 @@ void build_explore(Page *page) {
   std::string from;
   for (size_t i = 0; i < parts.size(); ++i) from += (i ? ", " : "") + parts[i];
   std::time_t refreshed = std::max(st.refresh_state().succeeded, st.catalog_sources().lists_time);
-  page->note(format(_("%s. Snaps are found when you search. The software lists were refreshed %s."), from.c_str(),
-                    when_label(refreshed).c_str()));
+  if (st.status(Source::Snap).available)
+    page->note(format(_("%s. The Snap Store's featured snaps and those of every department are listed; a search "
+                        "finds the others. The software lists were refreshed %s."),
+                      from.c_str(), when_label(refreshed).c_str()));
+  else
+    page->note(format(_("%s. The software lists were refreshed %s."), from.c_str(), when_label(refreshed).c_str()));
   if (!st.catalog_error().empty())
     page->note(format(_("Some software data could not be read: %s"), st.catalog_error().c_str()));
   page->finish();
@@ -783,7 +942,7 @@ void build_category(Page *page, const std::string &id) {
   const Category *parent = st.categories().parent_of(c);
   const Category *top = parent ? parent : c;
   st.browse_store(top->id);
-  std::vector<const App *> apps = st.categories().apps_in(*c, st.catalog());
+  std::vector<const App *> apps = st.apps_in(*c);
   page->heading(c->title(), parent ? format(_("%s in %s"), apps_count(apps.size()).c_str(), parent->title().c_str())
                                    : apps_count(apps.size()));
   if (!top->subcategories.empty()) {
@@ -819,6 +978,7 @@ void build_category(Page *page, const std::string &id) {
 
 void build_search(Page *page, const std::string &query) {
   Store &st = Store::get();
+  watchdog::Busy busy("searching the catalog", long(st.catalog().size()));
   std::vector<const App *> all = search(st.catalog(), query);
   int counts[kSourceCount] = {0, 0, 0};
   for (const App *a : all)
@@ -856,7 +1016,11 @@ void build_search(Page *page, const std::string &query) {
   if (st.packages_available() && st.packages_loaded()) {
     PackageFilter f;
     f.query = query;
-    size_t n = filter_packages(st.packages(), f, st.marks()).size();
+    size_t n;
+    {
+      watchdog::Busy busy("searching the packages", long(st.packages().size()));
+      n = filter_packages(st.packages(), f, st.marks()).size();
+    }
     if (n) {
       page->advance(S(8));
       std::string q = query;
@@ -900,31 +1064,31 @@ void details_header(Page *page, const App &a) {
     new TextBlock(tx, cy, tw, summary_h, a.summary, false, 1);
     cy += summary_h + S(10);
   }
-  // Where to get it: one chip per source.
-  if (a.origins.size() > 1 || !a.installed()) {
-    int cx = tx;
-    new Label(cx, cy + S(4), S(70), S(24), _("Source"), Label::DIM);
-    text_font(active_theme().font_size, false);
-    cx += std::max(S(70), text_width(_("Source")) + S(14));
+  // Where to get it. Only the sources the app really has (a Debian origin
+  // needs a package APT knows; a Flatpak one a remote of this computer):
+  // with several, a card for each with its version, size and publisher,
+  // the chosen one marked; with one, a line.
+  if (a.origins.size() > 1) {
+    new Label(tx, cy, tw, S(22), a.installed() ? _("Sources") : _("Choose where to get it"), Label::DIM);
+    qa_line(std::string("chosen:") + source_id(chosen), tx, cy, tw, S(22));
+    cy += S(28);
+    int gap = S(8), ch = SourceCard::height();
     for (auto &org : a.origins) {
-      std::string text = source_label(org.source);
-      std::string ver = org.installed ? org.installed_version : org.version;
-      if (!ver.empty()) text += " " + ver;
-      if (org.source == Source::Flatpak && org.installation == "user") text += " " + std::string(_("(yours)"));
-      int cw = Chip::fit(text) + S(10);
-      if (cx + cw > tx + tw && cx > tx + S(80)) {
-        cx = tx + S(80);
-        cy += S(40);
-      }
-      auto *chip = new Chip(cx, cy, cw, S(32), text, org.source == chosen);
-      chip->dot = source_color(org.source);
+      auto *card = new SourceCard(tx, cy, tw, ch, a, org, org.source == chosen);
       std::string id = a.id;
       Source src = org.source;
-      chip->on_click = [id, src] { choose_source(id, src); };
-      qa_line(std::string("source:") + source_id(org.source), cx, cy, cw, S(32));
-      cx += cw + S(8);
+      card->on_click = [id, src] { choose_source(id, src); };
+      qa_line(std::string("source:") + source_id(org.source), tx, cy, tw, ch);
+      cy += ch + gap;
     }
-    cy += S(44);
+    cy += S(8);
+  } else if (o) {
+    std::string line = format(_("%s: %s"), origin_kind_label(o->source).c_str(),
+                              SourceCard::provenance(a, *o).c_str()) +
+                       " \xC2\xB7 " + SourceCard::facts(*o);
+    auto *l = new Label(tx, cy, tw, S(22), line, Label::DIM);
+    qa_line(std::string("source:") + source_id(o->source), l->x(), l->y(), l->w(), l->h());
+    cy += S(32);
   }
   // Actions, or the progress of the change.
   if (job) {
@@ -933,11 +1097,10 @@ void details_header(Page *page, const App &a) {
     logo->running(job->state == Job::Running);
     logo->tooltip(_("Working"));
     int jid = job->id;
-    new JobProgress(tx + ls + S(16), cy + S(6), std::max(S(120), tw - ls - S(16) - S(120)), S(40), jid);
-    if (job->cancellable || job->state == Job::Queued)
-      button(tx + tw - S(110), cy + S(10), _("Cancel"), Button::Normal, [jid] { Store::get().cancel(jid); }, S(110));
+    new JobProgress(tx + ls + S(16), cy + S(6), std::max(S(120), tw - ls - S(16)), S(40), jid);
     qa_line("job:" + std::to_string(jid), tx, cy, tw, ls);
-    cy += ls + S(12);
+    cy += ls + S(10);
+    cy += job_buttons(tx, cy, tw, jid) + S(14);
   } else if (o) {
     int bx = tx;
     auto add = [&](const std::string &text, Button::Kind kind, std::function<void()> fn) {
@@ -958,7 +1121,7 @@ void details_header(Page *page, const App &a) {
         add(_("Remove"), Button::Danger, [id, chosen] { request_remove(id, chosen); });
     } else {
       const SourceStatus &ss = st.status(chosen);
-      bool available = ss.available || fake_mode();
+      bool available = ss.available || fake_source(chosen);
       if (!available) {
         // Why it cannot be installed from here, and the way to fix it.
         if (chosen == Source::Snap && !ss.installed)
@@ -989,6 +1152,7 @@ void details_header(Page *page, const App &a) {
         std::string msg = format(_("The last change failed: %s"), it->error.c_str());
         int h = TextBlock::measure(msg, tw) + S(4);
         new TextBlock(tx, cy - S(6), tw, h, msg, false);
+        qa_line("failed:" + it->error, tx, cy - S(6), tw, h);
         cy += h + S(8);
       }
       break;
@@ -1073,7 +1237,7 @@ void build_details(Page *page, const std::string &id) {
   info_row(page, _("Developer"), a->developer);
   if (!a->categories.empty()) {
     std::string dept;
-    if (const Category *c = st.categories().category_of(*a)) dept = c->title();
+    if (const Category *c = st.department_of(*a)) dept = c->title();
     info_row(page, _("Department"), dept);
   }
   page->end_card();
@@ -1132,7 +1296,7 @@ void build_installed(Page *page) {
   std::map<const Category *, std::vector<const App *>> groups;
   std::vector<const App *> other;
   for (const App *a : apps) {
-    const Category *c = st.categories().category_of(*a);
+    const Category *c = st.department_of(*a);
     if (c)
       groups[c].push_back(a);
     else
@@ -1292,7 +1456,7 @@ void build_progress(Page *page) {
   int x = page->left(), w = page->width();
   if (current) {
     int y = page->cursor(), size = std::min(S(150), page->h() / 3);
-    int h = size + S(40) + S(130);
+    int h = size + S(40) + S(170);
     new Card(x, y, w, h);
     auto *logo = new LogoAnimation(x + (w - size) / 2, y + S(20), size, size);
     logo->running(current->state == Job::Running);
@@ -1306,10 +1470,10 @@ void build_progress(Page *page) {
     int pw = std::min(w - S(80), S(520));
     new JobProgress(x + (w - pw) / 2, ty + S(34), pw, S(40), current->id);
     qa_line("job:" + std::to_string(current->id), x + (w - pw) / 2, ty + S(34), pw, S(40));
-    int jid = current->id;
-    if (current->cancellable || current->state == Job::Queued)
-      button(x + (w - S(120)) / 2, ty + S(82), _("Cancel"), Button::Normal, [jid] { Store::get().cancel(jid); },
-             S(120));
+    // Pause and Cancel under the bar, the reason when they are off below.
+    int bw = std::max(Button::fit(_("Pause")), Button::fit(_("Resume"))) + S(10) +
+             std::max(Button::fit(_("Cancel")), Button::fit(_("Remove")));
+    job_buttons(x + (w - bw) / 2, ty + S(84), pw, current->id, true);
     page->advance(h + S(20));
   }
   bool any_finished = false;
@@ -1321,8 +1485,17 @@ void build_progress(Page *page) {
     new Card(x, y, w, h);
     if (!j.app_id.empty() && st.app(j.app_id)) new IconView(x + S(14), y + (h - S(40)) / 2, S(40), j.app_id);
     int tx = x + S(68);
-    new Label(tx, y + S(8), w - S(88), S(24), action_label(j.action) + ": " + j.title, Label::BOLD);
-    new JobProgress(tx, y + S(32), w - S(88), S(30), j.id);
+    // Waiting and paused changes: Pause or Resume, and Remove, on the right.
+    int bw = j.active() ? std::max(Button::fit(_("Pause")), Button::fit(_("Resume"))) + S(10) +
+                              std::max(Button::fit(_("Cancel")), Button::fit(_("Remove"))) + S(14)
+                        : 0;
+    new Label(tx, y + S(8), w - S(88) - bw, S(24), action_label(j.action) + ": " + j.title, Label::BOLD);
+    new JobProgress(tx, y + S(32), w - S(88) - bw, S(30), j.id);
+    if (j.active()) {
+      // No room for the reason here: the buttons say it in their state.
+      int bx = x + w - S(14) - bw + S(14);
+      job_buttons(bx, y + (h - S(34)) / 2, bw - S(14), j.id);
+    }
     qa_line("job:" + std::to_string(j.id), x, y, w, h);
     page->advance(h + S(8));
   }
@@ -1455,6 +1628,10 @@ void build_sources(Page *page) {
 }
 
 }  // namespace
+
+void enable_snap_support() { enable_snap(); }
+void install_flatpak_support() { install_support(_("Flatpak support"), {"flatpak"}); }
+void set_up_flathub() { setup_flathub(); }
 
 std::string view_title(const View &v) {
   switch (v.kind) {

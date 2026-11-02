@@ -2518,19 +2518,20 @@ def merkadu_window(s, args, ready):
                                'from Debian, Flathub and Snap (test data)'),
                    ('merkadu-category', 'Merkadu: a department with its subcategories'),
                    ('merkadu-search', 'Merkadu: one search in every source, with the source of each app'),
-                   ('merkadu-details', 'Merkadu: an app page with its sources, screenshots and details'),
+                   ('merkadu-details', 'Merkadu: an app in Debian, on Flathub and in the Snap Store: choose where to '
+                                      'get it, with version, size and publisher'),
                    ('merkadu-installed', 'Merkadu: installed apps by department'),
                    ('merkadu-history', 'Merkadu: installations, updates and removals of every source'),
-                   ('merkadu-progress', 'Merkadu: installing an app, with the animated SDE logo')],
+                   ('merkadu-progress', 'Merkadu: installing an app, with the animated SDE logo, Pause and Cancel')],
        needs=['merkadu'])
 def merkadu(s):
     if not (MERKADU_FIXTURES / 'catalog.json').exists():
         raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
-    w = merkadu_window(s, [], 'banner:org.example.paintbox')
+    w = merkadu_window(s, [], 'carousel')
     s.shot('merkadu', quiet=0.6, wid=w)
     w = merkadu_window(s, ['--category', 'graphics'], 'app:org.example.vectorial')
     s.shot('merkadu-category', quiet=0.6, wid=w)
-    w = merkadu_window(s, [], 'banner:org.example.paintbox')
+    w = merkadu_window(s, [], 'carousel')
     s.key('ctrl+f')
     s.type('write', 60)
     s.key('Return')  # Enter also asks the Snap Store
@@ -2601,6 +2602,69 @@ def merkadu_all_software(s):
     s.shot('merkadu-review', quiet=0.6, wid=w)
     w = merkadu_window(s, ['--page', 'updates'], 'action:software-updater')
     s.shot('merkadu-updates', quiet=0.6, wid=w)
+
+
+@scene('Merkadu', [('merkadu-highlights', 'Merkadu: highlights that take turns: the distribution\'s choice, new '
+                                          'releases, popular on Flathub and featured on the Snap Store (test data)'),
+                   ('merkadu-all-software-flatpak', 'Merkadu: All Software lists Debian packages, Flatpak apps and '
+                                                    'snaps apart, Flatpak runtimes behind their own filter'),
+                   ('merkadu-pause-cancel', 'Merkadu: a paused download that resumes with what it downloaded, the '
+                                            'next change running, Pause and Cancel for each'),
+                   ('merkadu-snaps', 'Merkadu: once snapd runs (Enable Snap Support), the Snap Store\'s snaps are '
+                                     'listed without a restart (fake snapd)')],
+       needs=['merkadu'])
+def merkadu_sources(s):
+    if not (MERKADU_FIXTURES / 'catalog.json').exists():
+        raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
+    w = merkadu_window(s, [], 'carousel:dot:2')
+    s.press('Merkadu', 'carousel:dot:2')  # a popular Flathub app (it keeps the carousel still)
+    s.control('Merkadu', 'banner:org.example.pixelpuzzle', timeout=3)
+    time.sleep(0.6)
+    s.park_pointer()
+    s.shot('merkadu-highlights', quiet=0.6, wid=w)
+    w = merkadu_window(s, ['--page', 'packages'], 'chip:source:flatpak')
+    s.press('Merkadu', 'chip:source:flatpak')
+    s.control('Merkadu', 'pkg:org.example.lumen', timeout=5)
+    s.press('Merkadu', 'pkg:org.example.lumen')
+    s.park_pointer()
+    s.shot('merkadu-all-software-flatpak', quiet=0.6, wid=w)
+    # Lumen holds while it downloads (MERKADU_FAKE_HOLD); paused, Quill runs.
+    w = merkadu_window(s, ['--details', 'org.example.Quill'], 'action:org.example.quill:Install')
+    s.press('Merkadu', 'action:org.example.quill:Install')
+    s.control('Merkadu', 'action:pause:1', timeout=5)
+    s.key('ctrl+f')
+    s.type('lumen', 60)
+    s.key('Return')
+    s.press('Merkadu', 'app:org.example.lumen')
+    s.press('Merkadu', 'action:org.example.lumen:Install')
+    s.press('Merkadu', 'nav:progress')
+    s.press('Merkadu', 'action:pause:1')
+    s.control('Merkadu', 'action:pause:2', timeout=5)
+    time.sleep(1.0)
+    s.park_pointer()
+    s.shot('merkadu-pause-cancel', quiet=0.6, wid=w)
+    # A fake snapd that runs (tests/fake_snapd.py): the real Snap source
+    # talks to it, the other sources are the fakes.
+    sys.path.insert(0, str(ROOT / 'tests'))
+    from fake_snapd import FakeSnapd, SYSTEM  # noqa: E402
+    temp = Path(tempfile.mkdtemp(prefix='merkadu-snapd-'))
+    snapd = FakeSnapd(str(temp / 'snapd.socket'), too_early=0)
+    snapd.installed['snapd'] = dict(SYSTEM['snapd'])
+    saved = dict(s.env)
+    s.env.update(MERKADU_FAKE_SNAPD=str(temp / 'installed'), MERKADU_SNAPD_SOCKET=str(temp / 'snapd.socket'))
+    try:
+        w = merkadu_window(s, ['--page', 'packages'], 'chip:source:snap')
+        s.press('Merkadu', 'chip:source:snap')
+        s.control('Merkadu', 'pkg:snap:skyview', timeout=10)
+        s.press('Merkadu', 'pkg:snap:skyview')
+        s.park_pointer()
+        s.shot('merkadu-snaps', quiet=0.6, wid=w)
+    finally:
+        s.stop_scene_procs()
+        s.env.clear()
+        s.env.update(saved)
+        snapd.stop()
+        shutil.rmtree(temp, ignore_errors=True)
 
 
 @scene('Welcome', [('welcome', 'Welcome: first steps after installing DebION')], needs=['sde-welcome'])

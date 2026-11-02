@@ -18,10 +18,14 @@
 #include <string>
 #include <vector>
 
+#include "model.h"
+
 namespace sde {
 namespace merkadu {
 
-// One package of one architecture.
+// One package of one architecture. All Software lists Flatpak and Snap
+// software the same way (0.2 Alpha 3.1): a row per app (and per Flatpak
+// runtime) with |source| set, its name in |title|.
 struct Package {
   std::string name;      // "gimp"; packages of other architectures "libc6:i386"
   std::string arch;      // "amd64", "all", "i386"
@@ -40,9 +44,16 @@ struct Package {
   bool automatic = false;   // installed as a dependency
   bool config_only = false; // removed, its configuration files are left
   bool broken = false;      // installed with unmet dependencies
+  std::string lower_summary;  // for the search, made with the lists (empty: made on the fly)
+  // Flatpak and Snap rows: their source, the app's name and id, the ref or
+  // snap name and the Flatpak installation; |name| is the key (the app id).
+  Source source = Source::Debian;
+  std::string title, app_id, ref, installation;
+  bool runtime = false;  // a Flatpak runtime or extension (shown on request)
 
   // Essential, Priority required: the system needs it.
   bool system() const { return essential || priority == 1; }
+  const std::string &label() const { return title.empty() ? name : title; }
 };
 
 // --------------------------------------------------------------- sections
@@ -114,7 +125,15 @@ struct PackageFilter {
   std::string section;  // a base section ("graphics"), "" for all
   PackageStatus status = PackageStatus::All;
   std::string query;    // words that must be in the name or the summary
+  Source source = Source::Debian;  // which rows: Debian packages, Flatpak or Snap
+  bool runtimes = false;           // Flatpak: also runtimes and extensions
 };
+
+// The rows of All Software for Flatpak or Snap: one per app of that source
+// in |catalog| (installed or offered), by name; |department| gives each
+// app's department id ("" for none). Flatpak runtimes come separately.
+std::vector<Package> source_rows(const Catalog &catalog, Source source,
+                                 const std::vector<std::string> &department);
 
 // Indexes of the packages that pass |f|: by relevance when there is a
 // query (name, then the start of the name, then the summary), else in the

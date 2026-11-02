@@ -16,6 +16,7 @@
 #include "process.h"
 #include "snapd.h"
 #include "util.h"
+#include "watchdog.h"
 
 namespace sde {
 namespace merkadu {
@@ -192,6 +193,7 @@ cairo_surface_t *picture(const std::string &ref, int w, int h) {
     }
   std::string file = path(ref);
   if (file.empty()) return nullptr;
+  watchdog::Busy busy("decoding a screenshot", w);
   cairo_surface_t *img = load_image(file, w, h);
   if (!img) return nullptr;
   double iw = cairo_image_surface_get_width(img), ih = cairo_image_surface_get_height(img);
@@ -237,6 +239,7 @@ cairo_surface_t *icon_file(const std::string &ref, int size) {
   auto it = cache.find(key);
   if (it != cache.end()) return it->second;
   cairo_surface_t *out = nullptr;
+  watchdog::Busy busy("decoding an icon", size);
   if (cairo_surface_t *raw = load_image(file, size, size)) {
     int w = cairo_image_surface_get_width(raw), h = cairo_image_surface_get_height(raw);
     out = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);

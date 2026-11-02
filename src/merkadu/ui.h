@@ -118,6 +118,27 @@ class Chip : public Fl_Widget {
   bool on_;
 };
 
+// One way to get an app, on its page: the source, its version and size,
+// where it comes from and who publishes it; the chosen one is marked like
+// a radio button (Debian package or Flatpak app or Snap).
+class SourceCard : public Fl_Widget {
+ public:
+  SourceCard(int x, int y, int w, int h, const App &app, const Origin &o, bool chosen);
+  std::function<void()> on_click;
+  void draw() override;
+  int handle(int e) override;
+  static int height();
+  // "Version 2.10 · 24 MB to download" and "From Flathub, by The GIMP
+  // Team" of an origin (also the line of an app with one source).
+  static std::string facts(const Origin &o);
+  static std::string provenance(const App &app, const Origin &o);
+
+ private:
+  Source source_;
+  std::string title_, facts_, provenance_;
+  bool chosen_, installed_;
+};
+
 // A card with an app: a large icon, name, summary and source badges.
 class AppTile : public Fl_Widget {
  public:
@@ -167,6 +188,52 @@ class Banner : public Fl_Widget {
  private:
   std::string id_;
   bool hot_ = false;
+};
+// Paints the banner of |app| (what Banner and Carousel show) in |wid|'s
+// window; |label| is the small line above the name ("NEW RELEASE").
+void draw_banner(Fl_Widget *wid, const App &app, int x, int y, int w, int h, bool hot, bool focus,
+                 const std::string &label);
+
+// Home's highlights: one banner at a time, the next one every |seconds|
+// (not while the pointer is on it or it has the keyboard, never with
+// reduced motion), arrows and dots to pick one, Left and Right too. The
+// slide shown is kept when Home is built again.
+class Carousel : public Fl_Widget {
+ public:
+  Carousel(int x, int y, int w, int h, std::vector<std::string> ids, std::vector<std::string> labels,
+           int seconds);
+  ~Carousel() override;
+  std::function<void(const std::string &)> on_open;
+  void draw() override;
+  int handle(int e) override;
+  // The height of the dots under the banner.
+  static int dots_height();
+  // "index=N,count=K,id=ID" of the carousel shown ("" when none is).
+  static std::string qa_state();
+  // The carousel on the page, nullptr when none is.
+  static const Carousel *live();
+  // The QA names of its parts and their boxes, as they are now: "carousel",
+  // "banner:ID" of the slide shown, "carousel:prev", "carousel:next" and
+  // "carousel:dot:N".
+  void qa(const std::function<void(const std::string &name, int x, int y, int w, int h)> &line) const;
+  const std::string &current() const { return ids_[size_t(index_)]; }
+  int count() const { return int(ids_.size()); }
+
+ private:
+  struct Box {
+    int x, y, w, h;
+  };
+  void boxes(Box *prev, Box *next, std::vector<Box> *dots) const;
+  int banner_h() const;  // the banner, above the dots
+  void go(int index, int direction);
+  void remember();
+  static void tick(void *);
+  static void animate(void *);
+  std::vector<std::string> ids_, labels_;
+  int seconds_;
+  int index_ = 0, prev_ = -1, dir_ = 1;
+  double t_ = 1;
+  bool hot_ = false, hot_prev_ = false, hot_next_ = false;
 };
 
 // A department: its icon, name and number of apps.

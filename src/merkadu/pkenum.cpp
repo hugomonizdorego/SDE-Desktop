@@ -41,6 +41,33 @@ std::string status_text(unsigned status) {
   }
 }
 
+JobPhase status_phase(unsigned status) {
+  switch (status) {
+    case STATUS_WAIT:
+    case STATUS_SETUP:
+    case STATUS_WAITING_FOR_LOCK:
+    case STATUS_WAITING_FOR_AUTH:
+      return JobPhase::Waiting;
+    case STATUS_QUERY:
+    case STATUS_INFO:
+    case STATUS_DEP_RESOLVE:
+    case STATUS_LOADING_CACHE:
+    case STATUS_REFRESH_CACHE:
+      return JobPhase::Preparing;
+    case STATUS_DOWNLOAD:
+    case STATUS_SIG_CHECK:
+      return JobPhase::Downloading;
+    case STATUS_INSTALL:
+    case STATUS_UPDATE:
+    case STATUS_REMOVE:
+    case STATUS_CLEANUP:
+    case STATUS_COMMIT:
+      return JobPhase::Changing;
+    default:
+      return JobPhase::Unknown;
+  }
+}
+
 std::string error_text(unsigned code, const std::string &details) {
   switch (code) {
     case ERROR_NO_NETWORK: return _("There is no connection to the internet.");

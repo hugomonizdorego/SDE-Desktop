@@ -25,44 +25,12 @@
 
 #include "appstream_catalog.h"
 #include "apt_cache.h"
+#include "jobs.h"
 #include "model.h"
 #include "packages.h"
 
 namespace sde {
 namespace merkadu {
-
-enum class Action { Install = 0, Remove = 1, Update = 2 };
-
-// A change the user asked for; the Store runs them one after the other.
-struct Job {
-  int id = 0;
-  Action action = Action::Install;
-  Source source = Source::Debian;
-  std::string app_id;   // the app it is about ("" for several apps)
-  std::string title;    // what the progress view shows ("GIMP", "3 apps")
-  std::string icon;
-  // Packages, Flatpak items ("system:app/org.gimp.GIMP/x86_64/stable") or
-  // snap names.
-  std::vector<std::string> targets;
-  std::string remote;   // Flatpak remote to install from; snap channel
-  bool classic = false; // a snap with classic confinement
-  int needs = 0;        // a job that must succeed first (else this one is cancelled)
-  // Progress, updated while it runs.
-  enum State { Queued, Running, Done, Failed, Cancelled };
-  State state = Queued;
-  int percent = -1;
-  std::string status;
-  std::string error;
-  bool cancellable = false;
-  std::time_t finished = 0;
-  bool active() const { return state == Queued || state == Running; }
-};
-
-struct Progress {
-  int percent = -1;  // -1: unknown
-  std::string status;
-  bool cancellable = false;
-};
 
 // What removing packages would do (a simulation).
 struct RemovalCheck {
@@ -107,13 +75,18 @@ class Backend {
   virtual void search(const std::string &query, AppsFn done) { done({}, ""); }
   // Apps of a store category (snapd).
   virtual void browse(const std::string &category, AppsFn done) { done({}, ""); }
+  // The store's featured apps (snapd).
+  virtual void featured(AppsFn done) { done({}, ""); }
   // The store's version of a catalog app, found by its AppStream id
   // (snapd's common-id).
   virtual void lookup(const App &app, AppsFn done) { done({}, ""); }
   // Sizes and versions of |o| that the catalog does not have.
   virtual void details(const App &app, const Origin &o, std::function<void(Origin)> done) {}
   // Runs |job|: |progress| any number of times, then |done| once.
+  // |progress| reports the phase (jobs.h): Pause and Cancel depend on it.
   virtual void run(const Job &job, std::function<void(const Progress &)> progress, DoneFn done) = 0;
+  // Stops a running job (for Cancel and for Pause: the Store tells them
+  // apart); |done| then reports it cancelled.
   virtual void cancel(int job_id) {}
   // The source's history of changes.
   virtual void history(std::function<void(std::vector<HistoryEntry>)> done) { done({}); }
@@ -130,6 +103,9 @@ class Backend {
   virtual void owners(const std::vector<std::string> &paths, OwnersFn done) { done({}); }
   // Flatpak: adds the Flathub remote. Snap: hides ~/snap. Debian: nothing.
   virtual void setup(const std::string &what, DoneFn done) { done(false, false, "not supported"); }
+  // Flatpak: the runtimes and extensions, installed or offered by the
+  // remotes (from their cached summaries; no network), for All Software.
+  virtual void list_runtimes(std::function<void(std::vector<Package>)> done) { done({}); }
   // Downloads the source's software lists again (Debian: PackageKit's
   // RefreshCache, which also brings the AppStream catalog; Flatpak: the
   // remotes' AppStream data). |force|: also lists younger than |min_age|
@@ -155,21 +131,26 @@ std::unique_ptr<Backend> make_fake_backend(Source source, const std::string &dir
 void load_fake_catalog(const std::string &dir, CatalogFn done);
 bool fake_mode();
 std::string fake_dir();
+// Whether |s| is one of the fake sources (MERKADU_FAKE_SNAPD keeps the real
+// Snap source, for a test's fake snapd).
+bool fake_source(Source s);
 // All Software with the fake sources: the fixture's packages (blocking).
 apt::Snapshot fake_package_snapshot();
 apt::Details fake_package_details(const std::string &name);
 ChangePlan fake_simulate(const ChangeSet &marks);
 
 // Runs |fn| on the FLTK thread (from any thread; Fl::lock() must have been
-// called once by main()).
-void post(std::function<void()> fn);
+// called once by main()). |what| (a string literal) names it in the stall
+// log ("the package lists arrived"). Results are handed over in slices of
+// about 20 ms, with drawing and input in between.
+void post(std::function<void()> fn, const char *what = nullptr);
 // Runs |work| on a new thread and hands its result to |done| on the FLTK
 // thread.
 template <class T>
-void background(std::function<T()> work, std::function<void(T)> done) {
-  std::thread([work, done]() {
+void background(std::function<T()> work, std::function<void(T)> done, const char *what = nullptr) {
+  std::thread([work, done, what]() {
     auto result = std::make_shared<T>(work());
-    post([done, result]() { done(std::move(*result)); });
+    post([done, result]() { done(std::move(*result)); }, what);
   }).detach();
 }
 

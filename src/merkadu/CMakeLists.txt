@@ -32,6 +32,9 @@ add_library(merkadu-core STATIC
   ${_src}/merkadu/snapd.cpp
   ${_src}/merkadu/pkenum.cpp
   ${_src}/merkadu/appstream_catalog.cpp
+  ${_src}/merkadu/catalog_build.cpp
+  ${_src}/merkadu/jobs.cpp
+  ${_src}/merkadu/highlights.cpp
   ${_src}/merkadu/packages.cpp
   ${_src}/merkadu/apt_cache.cpp)
 target_include_directories(merkadu-core PUBLIC ${_src}/merkadu)
@@ -64,6 +67,7 @@ add_executable(merkadu
   ${_src}/merkadu/flatpak.cpp
   ${_src}/merkadu/snap.cpp
   ${_src}/merkadu/fake.cpp
+  ${_src}/merkadu/watchdog.cpp
   ${_src}/settings/ui.cpp)
 target_link_libraries(merkadu PRIVATE merkadu-core)
 if(FLATPAK_FOUND)

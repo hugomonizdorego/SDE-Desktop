@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <string>
 
+#include "jobs.h"
+
 namespace sde {
 namespace merkadu {
 namespace pk {
@@ -89,6 +91,9 @@ enum Status : unsigned {
 // "Downloading", "Installing", "Waiting for authentication" ... (translated);
 // "" for statuses not worth showing.
 std::string status_text(unsigned status);
+// What a transaction with |status| does (jobs.h): downloading may be
+// paused, dpkg's installing, removing and committing may not be stopped.
+JobPhase status_phase(unsigned status);
 
 // PkErrorEnum values of the ErrorCode signal.
 enum Error : unsigned {

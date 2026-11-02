@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merkadu test fixture: the catalog of a remote that is no longer
+     configured (repo/config has no [remote "old-remote"]): not listed. -->
+<components version="0.8" origin="flatpak">
+  <component type="desktop-application">
+    <id>org.example.Stale</id>
+    <name>Stale</name>
+    <summary>From a removed remote</summary>
+    <bundle type="flatpak">app/org.example.Stale/x86_64/stable</bundle>
+  </component>
+</components>

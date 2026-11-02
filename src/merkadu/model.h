@@ -106,6 +106,15 @@ struct App {
   std::vector<Screenshot> screenshots;
   std::vector<Release> releases;        // newest first
   std::vector<Origin> origins;          // in the preferred order (see sort_origins())
+  // A metainfo file of installed software that names no package and no
+  // bundle: it gets a Debian origin only when a package owns its launcher
+  // in /usr/share/applications (never just because it has no other source:
+  // Flatpak and Snap exports are no Debian packages).
+  bool needs_owner = false;
+  // Lower-case copies for the search, made with the catalog on its worker
+  // thread (prepare_search()); computed on the fly when empty.
+  std::string lower_name, lower_summary, lower_description;
+  void prepare_search();
 
   bool installed() const;
   bool has_update() const;
@@ -350,6 +359,12 @@ struct Settings {
   bool setup_flathub = true;       // [Flatpak] setup-flathub=: offer Flathub when it is missing
   bool refresh_on_start = true;    // [Refresh] on-start=
   int refresh_minutes = 30;        // [Refresh] min-age=: lists younger than this are not refreshed on start
+  // [Highlights] flathub-collections=: Flathub's popular and trending apps
+  // (downloaded when Flathub is set up, kept for offline use).
+  std::vector<std::string> popular_urls = {
+      "https://flathub.org/api/v2/collection/popular?page=1&per_page=30",
+      "https://flathub.org/api/v2/collection/trending?page=1&per_page=30"};
+  int rotate_seconds = 7;          // [Highlights] rotate=: the banner moves on (0: never by itself)
   static Settings from(const KeyFile &kf);
 };
 // Reads data_dir()/merkadu.conf (/usr/share/merkadu), then

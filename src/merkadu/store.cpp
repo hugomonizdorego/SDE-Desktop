@@ -3,17 +3,24 @@
 #include "store.h"
 
 #include <FL/Fl.H>
+#include <sys/stat.h>
 #include <sys/utsname.h>
 
 #include <algorithm>
+#include <chrono>
 #include <deque>
+#include <memory>
 #include <mutex>
+#include <thread>
 
 #include "desktop_entry.h"
 #include "i18n.h"
 #include "icons.h"
+#include "json.h"
+#include "process.h"
 #include "spawn.h"
 #include "util.h"
+#include "watchdog.h"
 
 namespace sde {
 namespace merkadu {
@@ -22,20 +29,63 @@ namespace merkadu {
 
 namespace {
 
-std::mutex g_post_mutex;
-std::deque<std::function<void()>> g_posted;
+// Results of the worker threads for the FLTK thread. Never destroyed:
+// workers may still post while the program ends.
+struct Posted {
+  std::function<void()> fn;
+  const char *what = nullptr;
+};
+struct PostQueue {
+  std::mutex mutex;
+  std::deque<Posted> items;
+  bool scheduled = false;  // a wake-up or a continuation is pending
+  std::chrono::steady_clock::time_point since;
+};
+
+PostQueue &post_queue() {
+  static PostQueue *q = new PostQueue;
+  return *q;
+}
 
 void drain_posted(void *) {
+  PostQueue &q = post_queue();
+  auto t0 = std::chrono::steady_clock::now();
   for (;;) {
-    std::function<void()> fn;
+    Posted p;
     {
-      std::lock_guard<std::mutex> lock(g_post_mutex);
-      if (g_posted.empty()) return;
-      fn = std::move(g_posted.front());
-      g_posted.pop_front();
+      std::lock_guard<std::mutex> lock(q.mutex);
+      if (q.items.empty()) {
+        q.scheduled = false;
+        return;
+      }
+      p = std::move(q.items.front());
+      q.items.pop_front();
     }
-    fn();
+    {
+      watchdog::Busy busy(p.what ? p.what : "handling the result of a worker thread");
+      p.fn();
+    }
+    // A burst of results (a refresh brings many) must not keep the window
+    // from drawing: the rest comes after the next redraw.
+    if (std::chrono::steady_clock::now() - t0 > std::chrono::milliseconds(20)) {
+      Fl::add_timeout(0.0, drain_posted);
+      return;
+    }
   }
+}
+
+// FLTK's ring of wake-ups can be full (Fl::awake() fails): a slow timer
+// picks up what is waiting then.
+void posted_safety(void *) {
+  PostQueue &q = post_queue();
+  bool stuck;
+  {
+    std::lock_guard<std::mutex> lock(q.mutex);
+    stuck = !q.items.empty() && std::chrono::steady_clock::now() - q.since > std::chrono::milliseconds(500);
+    if (stuck) q.scheduled = true;
+  }
+  if (stuck) drain_posted(nullptr);
+  Fl::repeat_timeout(0.5, posted_safety);
 }
 
 // A one-line summary of what the catalog was made of, for the session log:
@@ -54,34 +104,21 @@ void log_catalog(const CatalogData &d) {
 
 }  // namespace
 
-void post(std::function<void()> fn) {
+void post(std::function<void()> fn, const char *what) {
+  PostQueue &q = post_queue();
   bool wake;
   {
-    std::lock_guard<std::mutex> lock(g_post_mutex);
-    wake = g_posted.empty();
-    g_posted.push_back(std::move(fn));
+    std::lock_guard<std::mutex> lock(q.mutex);
+    wake = !q.scheduled;
+    q.scheduled = true;
+    if (q.items.empty()) q.since = std::chrono::steady_clock::now();
+    q.items.push_back(Posted{std::move(fn), what});
   }
   // One wake-up per batch: FLTK's awake queue is small.
   if (wake) Fl::awake(drain_posted, nullptr);
 }
 
 // --------------------------------------------------------------- labels
-
-std::string action_progress_label(Action a) {
-  switch (a) {
-    case Action::Remove: return _("Removing");
-    case Action::Update: return _("Updating");
-    default: return _("Installing");
-  }
-}
-
-std::string action_label(Action a) {
-  switch (a) {
-    case Action::Remove: return _("Remove");
-    case Action::Update: return _("Update");
-    default: return _("Install");
-  }
-}
 
 std::string origin_line(const Origin &o) {
   switch (o.source) {
@@ -110,11 +147,14 @@ Store &Store::get() {
 void Store::start(bool catalog) {
   if (started_) return;
   started_ = true;
+  Fl::add_timeout(0.5, posted_safety);
   settings_ = load_settings();
   categories_.load();
   for (int i = 0; i < kSourceCount; ++i) {
     Source s = Source(i);
-    if (fake_mode())
+    // MERKADU_FAKE_SNAPD: the real Snap source, talking to a test's fake
+    // snapd (MERKADU_SNAPD_SOCKET), with the other sources fake.
+    if (fake_mode() && !(s == Source::Snap && !env("MERKADU_FAKE_SNAPD").empty()))
       backends_[i] = make_fake_backend(s, fake_dir());
     else if (s == Source::Debian)
       backends_[i] = make_packagekit_backend();
@@ -124,10 +164,12 @@ void Store::start(bool catalog) {
       backends_[i] = make_snap_backend();
   }
   probe_sources();
-  if (catalog)
+  if (catalog) {
+    load_popular(false);  // what was kept (downloaded once Flathub is known)
     reload_catalog();
-  else
+  } else {
     catalog_loaded_ = true;
+  }
   reload_all();
   // The lists of the repositories, Flathub and the Snap Store are
   // refreshed in the background while the cached ones are shown.
@@ -144,13 +186,12 @@ void Store::reload_catalog() {
   auto done = [this](CatalogData data) {
     catalog_loading_ = false;
     if (!fake_mode()) log_catalog(data);
-    catalog_apps_ = std::move(data.apps);
+    catalog_apps_ = std::make_shared<const std::vector<App>>(std::move(data.apps));
     catalog_error_ = data.error;
     catalog_sources_ = data.sources;
-    catalog_loaded_ = true;
+    owners_asked_ = false;
     rebuild();
     resolve_owners();
-    emit(Event::Catalog);
     if (catalog_again_) {
       catalog_again_ = false;
       reload_catalog();
@@ -166,11 +207,158 @@ void Store::probe_sources() {
   for (int i = 0; i < kSourceCount; ++i) {
     if (!backends_[i]) continue;
     backends_[i]->probe([this, i](SourceStatus st) {
+      bool was = status_[i].available;
       status_[i] = st;
       probed_[i] = true;
       emit(Event::Sources);
+      // snapd answers (at start, or after Enable Snap Support): what the
+      // store has, and the installed snaps.
+      if (Source(i) == Source::Snap && st.available && !was) {
+        reload_installed(Source::Snap);
+        load_snap_store();
+      }
+      // Flathub is set up: its popular apps for the highlights.
+      if (Source(i) == Source::Flatpak && st.has_flathub) load_popular(false);
     });
   }
+}
+
+void Store::add_store_apps(std::vector<App> apps, bool replace) {
+  bool added = false;
+  for (auto &a : apps) {
+    const Origin *o = a.origin(Source::Snap);
+    if (!o) continue;
+    if (!store_snaps_.insert(o->id).second) {
+      // Known already: a lookup's answer has the catalog app's id.
+      if (!replace) continue;
+      std::string name = o->id;
+      store_apps_.erase(std::remove_if(store_apps_.begin(), store_apps_.end(),
+                                       [&name](const App &x) {
+                                         const Origin *xo = x.origin(Source::Snap);
+                                         return xo && xo->id == name;
+                                       }),
+                        store_apps_.end());
+    }
+    store_apps_.push_back(std::move(a));
+    added = true;
+  }
+  if (added) rebuild();
+}
+
+void Store::load_snap_store() {
+  Backend *b = backend(Source::Snap);
+  if (!b || !status_[int(Source::Snap)].available || snap_store_loading_) return;
+  snap_store_loading_ = true;
+  browsed_.clear();
+  b->featured([this](std::vector<App> apps, std::string error) {
+    if (!error.empty()) watchdog::log("Snap Store: " + error);
+    featured_snaps_.clear();
+    for (auto &a : apps) featured_snaps_.push_back(a.id);
+    add_store_apps(std::move(apps));
+    emit(Event::Search);
+    // The snaps of every department, one after the other (each is a
+    // request snapd sends on to the store).
+    auto cats = std::make_shared<std::vector<std::string>>();
+    for (const Category *c : categories_.sorted())
+      for (auto &cat : snap_categories(c->id))
+        if (browsed_.insert(cat).second) cats->push_back(cat);
+    browse_next(cats, 0);
+  });
+}
+
+void Store::browse_next(std::shared_ptr<std::vector<std::string>> cats, size_t i) {
+  Backend *b = backend(Source::Snap);
+  if (!b || i >= cats->size()) {
+    snap_store_loading_ = false;
+    return;
+  }
+  b->browse((*cats)[i], [this, cats, i](std::vector<App> apps, std::string) {
+    if (!apps.empty()) {
+      add_store_apps(std::move(apps));
+      emit(Event::Search);
+    }
+    browse_next(cats, i + 1);
+  });
+}
+
+namespace {
+
+std::string popular_cache() {
+  std::string base = env("XDG_CACHE_HOME");
+  if (base.empty()) base = join_path(home_dir(), ".cache");
+  return join_path(base, "merkadu/flathub-collections.json");
+}
+
+}  // namespace
+
+void Store::load_popular(bool force) {
+  if (popular_loading_) return;
+  std::string cached;
+  struct stat st;
+  std::string file = popular_cache();
+  if (popular_.empty() && read_file(file, cached)) popular_ = parse_flathub_collection(cached);
+  if (fake_source(Source::Flatpak)) {
+    // The test data's collection (no network).
+    std::string text;
+    if (read_file(join_path(fake_dir(), "flathub-popular.json"), text)) popular_ = parse_flathub_collection(text);
+    return;
+  }
+  bool fresh = stat(file.c_str(), &st) == 0 && std::time(nullptr) - st.st_mtime < 24 * 3600;
+  if ((!force && fresh) || !status_[int(Source::Flatpak)].has_flathub || settings_.popular_urls.empty()) return;
+  popular_loading_ = true;
+  // One collection after the other, with curl (no network: the cached
+  // ones stay).
+  auto urls = std::make_shared<std::vector<std::string>>(settings_.popular_urls);
+  auto found = std::make_shared<std::vector<std::string>>();
+  auto step = std::make_shared<std::function<void(size_t)>>();
+  std::weak_ptr<std::function<void(size_t)>> weak = step;  // kept alive by the download that runs
+  *step = [this, urls, found, weak, file](size_t i) {
+    auto step = weak.lock();
+    if (!step) return;
+    if (i >= urls->size()) {
+      popular_loading_ = false;
+      // A Flathub's answers without any id are no news (offline, an API
+      // that changed): the cached collections stay.
+      if (found->empty()) return;
+      popular_ = *found;
+      std::string json = "[";
+      for (size_t k = 0; k < found->size(); ++k) json += (k ? "," : "") + json_quote((*found)[k]);
+      make_dirs(file.substr(0, file.rfind('/')));
+      write_file_atomic(file, json + "]\n");
+      emit(Event::Catalog);
+      return;
+    }
+    bool started = run_async({"curl", "-fsSL", "--max-time", "20", "--connect-timeout", "8", "--proto", "=https",
+                              (*urls)[i]},
+                             [found, step, i](const std::string &out, int status) {
+                               if (status == 0)
+                                 for (auto &id : parse_flathub_collection(out))
+                                   if (std::find(found->begin(), found->end(), id) == found->end())
+                                     found->push_back(id);
+                               (*step)(i + 1);
+                             });
+    if (!started) (*step)(urls->size());
+  };
+  (*step)(0);
+}
+
+std::vector<Highlight> Store::highlights(size_t count) const {
+  HighlightSources src;
+  src.distribution = settings_.featured;
+  src.fresh = fresh_;
+  src.popular = popular_;
+  src.featured_snaps = featured_snaps_;
+  // The tests and screenshots see the same highlights every day
+  // (MERKADU_FAKE_DAY picks another).
+  long day = fake_mode() ? std::atol(env("MERKADU_FAKE_DAY").c_str()) : local_day(std::time(nullptr));
+  return choose_highlights(catalog_, src, count, day);
+}
+
+void Store::watch_snapd(void *) {
+  Store &st = get();
+  if (st.status_[int(Source::Snap)].available || std::time(nullptr) > st.snapd_watch_until_) return;
+  st.probe_sources();
+  Fl::repeat_timeout(3.0, watch_snapd);
 }
 
 bool Store::all_installed_loaded() const {
@@ -204,11 +392,10 @@ void Store::reload_installed(Source s) {
   Backend *b = backend(s);
   if (!b) return;
   b->load_installed([this, s](std::vector<App> apps, std::string error) {
-    if (!error.empty()) fprintf(stderr, "merkadu: %s: %s\n", source_id(s), error.c_str());
-    installed_[int(s)] = std::move(apps);
+    if (!error.empty()) watchdog::log(std::string(source_id(s)) + ": " + error);
+    installed_[int(s)] = std::make_shared<const std::vector<App>>(std::move(apps));
     installed_loaded_[int(s)] = true;
     rebuild();
-    emit(Event::Catalog);
   });
 }
 
@@ -217,152 +404,142 @@ void Store::reload_all() {
 }
 
 void Store::rebuild() {
-  catalog_.clear();
-  for (App a : catalog_apps_) {
-    // Packages the catalog names no package for (metainfo of installed
-    // software): the package that owns their desktop file.
-    for (auto &o : a.origins)
-      if (o.source == Source::Debian && o.id.empty())
-        for (auto &d : a.desktop_ids) {
-          auto it = owners_.find(d);
-          if (it == owners_.end()) continue;
-          o.id = it->second;
-          if (std::find(a.pkgnames.begin(), a.pkgnames.end(), o.id) == a.pkgnames.end())
-            a.pkgnames.push_back(o.id);
-          break;
-        }
-    catalog_.add(std::move(a));
+  // Several changes in one turn of the event loop make one merge.
+  if (rebuild_scheduled_) return;
+  rebuild_scheduled_ = true;
+  Fl::add_timeout(0.0, run_rebuild);
+}
+
+void Store::run_rebuild(void *) {
+  Store &st = get();
+  st.rebuild_scheduled_ = false;
+  if (st.rebuild_running_) {
+    st.rebuild_again_ = true;  // merged again when the current one is done
+    return;
   }
-  for (auto &a : store_apps_) catalog_.add(a);
-  for (int s = 0; s < kSourceCount; ++s) {
-    for (auto &a : installed_[s]) {
-      if (s == int(Source::Debian) && starts_with(a.id, "deb:") && !a.origins.empty()) {
-        // An installed package: it marks the app it belongs to, if any.
-        App *target = catalog_.find_origin(Source::Debian, a.origins.front().id);
-        if (!target) continue;
-        App mark;
-        mark.id = target->id;
-        mark.origins = a.origins;
-        catalog_.add(std::move(mark));
-      } else {
-        catalog_.add(a);
-      }
-    }
-  }
-  // Details fetched for the details page (sizes, versions).
-  if (!details_.empty())
-    for (auto &a : catalog_.apps())
-      for (auto &o : a.origins) {
-        auto it = details_.find(o.key());
-        if (it != details_.end()) merge_origin(a, it->second);
-      }
-  // The package lists know the version, sizes and section of every
-  // Debian app.
-  if (!package_index_.empty())
-    for (auto &a : catalog_.apps())
-      for (auto &o : a.origins) {
-        if (o.source != Source::Debian) continue;
-        auto it = package_index_.find(o.id);
-        if (it == package_index_.end()) continue;
-        const Package &p = packages_[it->second];
-        if (o.version.empty()) o.version = p.candidate_version;
-        if (o.download_size < 0) o.download_size = p.download_size;
-        if (o.installed_size < 0) o.installed_size = o.installed ? p.current_size : p.installed_size;
-        if (a.section.empty()) a.section = p.section;
-      }
-  // Origins without anything to install (metainfo without a package).
-  for (auto &a : catalog_.apps())
-    a.origins.erase(std::remove_if(a.origins.begin(), a.origins.end(),
-                                   [](const Origin &o) { return o.id.empty(); }),
-                    a.origins.end());
-  catalog_.remove_empty();
-  catalog_.sort_origins(settings_.order);
-  for (int s = 0; s < kSourceCount; ++s) catalog_counts_[s] = 0;
-  for (auto &a : catalog_.apps())
-    for (int s = 0; s < kSourceCount; ++s)
-      if (a.has_source(Source(s))) ++catalog_counts_[s];
+  // Nothing to show before the catalog is read (the uninstall dialog has
+  // no catalog: catalog_loaded_ is set and catalog_apps_ stays empty).
+  if (!st.catalog_apps_ && !st.catalog_loaded_) return;
+  st.rebuild_running_ = true;
+  auto in = std::make_shared<CatalogInputs>();
+  in->catalog = st.catalog_apps_;
+  for (int s = 0; s < kSourceCount; ++s) in->installed[s] = st.installed_[s];
+  in->store = st.store_apps_;
+  in->details = st.details_;
+  in->owners = st.owners_;
+  in->packages = st.package_list_;
+  in->order = st.settings_.order;
+  in->categories = &st.categories_;  // read-only after start()
+  in->now = std::time(nullptr);
+  in->fresh_count = size_t(std::max(12, st.settings_.new_count * 2));
+  watchdog::Busy busy("starting the merge of the catalog");
+  std::thread([in]() {
+    auto result = std::make_shared<CatalogResult>(build_catalog(*in));
+    post([result]() { get().adopt(result); }, "the merged catalog arrived");
+  }).detach();
+}
+
+void Store::adopt(std::shared_ptr<CatalogResult> result) {
+  watchdog::Busy busy("taking over the merged catalog", long(result->catalog.size()));
+  // The old catalog is freed on a worker: thousands of apps take a while.
+  auto old = std::make_shared<Catalog>(std::move(catalog_));
+  catalog_ = std::move(result->catalog);
+  departments_ = std::move(result->departments);
+  fresh_ = std::move(result->fresh);
+  flatpak_rows_ = std::move(result->flatpak_rows);
+  snap_rows_ = std::move(result->snap_rows);
+  dropped_debian_ = result->dropped_debian;
+  for (int s = 0; s < kSourceCount; ++s) catalog_counts_[s] = result->counts[s];
+  std::thread([old = std::move(old)]() mutable { old.reset(); }).detach();
+  rebuild_running_ = false;
+  if (catalog_apps_) catalog_loaded_ = true;
   ++generation_;
+  emit(Event::Catalog);
+  if (rebuild_again_) {
+    rebuild_again_ = false;
+    rebuild();
+  }
+}
+
+std::vector<const App *> Store::apps_in(const Category &c) const {
+  std::vector<const App *> out;
+  if (!departments_.built()) return categories_.apps_in(c, catalog_);
+  for (size_t i : departments_.apps(c.id))
+    if (i < catalog_.apps().size()) out.push_back(&catalog_.apps()[i]);
+  return out;
+}
+
+size_t Store::count_in(const Category &c) const {
+  return departments_.built() ? departments_.apps(c.id).size() : categories_.apps_in(c, catalog_).size();
+}
+
+const Category *Store::department_of(const App &a) const {
+  const auto &apps = catalog_.apps();
+  if (departments_.built() && !apps.empty() && &a >= &apps.front() && &a <= &apps.back())
+    return departments_.department(size_t(&a - &apps.front()));
+  return categories_.category_of(a);
+}
+
+std::vector<const App *> Store::fresh_apps(size_t max) const {
+  std::vector<const App *> out;
+  for (auto &id : fresh_) {
+    if (out.size() >= max) break;
+    const App *a = catalog_.find(id);
+    if (a && !a->installed()) out.push_back(a);
+  }
+  return out;
 }
 
 void Store::resolve_owners() {
-  if (owners_asked_ || !backend(Source::Debian)) return;
+  if (owners_asked_ || !backend(Source::Debian) || !catalog_apps_) return;
   owners_asked_ = true;
+  // Launchers of installed software whose metainfo names no package: the
+  // package that owns the launcher, if one does (dpkg -S).
   std::vector<std::string> paths;
-  for (auto &a : catalog_apps_)
-    for (auto &o : a.origins)
-      if (o.source == Source::Debian && o.id.empty())
-        for (auto &d : a.desktop_ids)
-          if (ends_with(d, ".desktop") && d.find('/') == std::string::npos)
-            paths.push_back("/usr/share/applications/" + d);
+  for (auto &a : *catalog_apps_) {
+    if (!a.needs_owner) continue;
+    for (auto &d : a.desktop_ids) {
+      std::string p = "/usr/share/applications/" + d;
+      if (ends_with(d, ".desktop") && d.find('/') == std::string::npos && file_exists(p)) paths.push_back(p);
+    }
+  }
   if (paths.empty()) return;
   backend(Source::Debian)->owners(paths, [this](std::map<std::string, std::vector<std::string>> found) {
     for (auto &f : found)
       if (!f.second.empty()) owners_[basename_of(f.first)] = f.second.front();
-    if (found.empty()) return;
-    rebuild();
-    emit(Event::Catalog);
+    if (!found.empty()) rebuild();
   });
 }
 
 // ------------------------------------------------------------------ jobs
 
-Job *Store::find_job(int id) {
-  for (auto &j : jobs_)
-    if (j.id == id) return &j;
-  return nullptr;
-}
-
-const Job *Store::job(int id) const { return const_cast<Store *>(this)->find_job(id); }
+const Job *Store::job(int id) const { return queue_.find(id); }
 
 const Job *Store::active_job(const std::string &app_id) const {
-  for (auto &j : jobs_)
+  for (auto &j : queue_.jobs())
     if (j.active() && !j.app_id.empty() && j.app_id == app_id) return &j;
   return nullptr;
 }
 
-int Store::active_jobs() const {
-  int n = 0;
-  for (auto &j : jobs_) n += j.active();
-  return n;
-}
+int Store::active_jobs() const { return queue_.active(); }
 
 void Store::clear_finished() {
-  jobs_.erase(std::remove_if(jobs_.begin(), jobs_.end(), [](const Job &j) { return !j.active(); }), jobs_.end());
+  queue_.clear_finished();
   emit(Event::Jobs);
 }
 
 int Store::enqueue(Job job) {
   if (job.targets.empty() || !backend(job.source)) return 0;
-  job.id = next_job_++;
-  job.state = Job::Queued;
-  jobs_.push_back(job);
+  int id = queue_.add(job);
   emit(Event::Jobs);
   run_next();
-  return job.id;
+  return id;
 }
 
 int Store::install(const std::string &app_id, Source source) {
   const App *a = app(app_id);
-  const Origin *o = a ? a->origin(source) : nullptr;
-  if (!o || o->installed || active_job(app_id)) return 0;
   Job j;
-  j.action = Action::Install;
-  j.source = source;
-  j.app_id = a->id;
-  j.title = a->name;
-  j.icon = a->icon;
-  j.remote = o->remote;
-  if (source == Source::Debian) {
-    if (!valid_package_name(o->id)) return 0;
-    j.targets = {o->id};
-  } else if (source == Source::Flatpak) {
-    if (!valid_flatpak_ref(o->id)) return 0;
-    j.targets = {std::string(o->installation.empty() ? "system" : o->installation) + ":" + o->id};
-  } else {
-    if (!valid_snap_name(o->id)) return 0;
-    j.targets = {o->id};
-    j.classic = o->classic;
-  }
+  if (!a || active_job(app_id) || !make_install_job(*a, source, j)) return 0;
   return enqueue(j);
 }
 
@@ -443,70 +620,76 @@ int Store::update_all() {
 }
 
 void Store::cancel(int job_id) {
-  Job *j = find_job(job_id);
-  if (!j) return;
-  if (j->state == Job::Queued) {
-    j->state = Job::Cancelled;
-    j->finished = std::time(nullptr);
-    emit(Event::Jobs);
-    if (on_job_done) on_job_done(*j);
+  const Job *before = queue_.find(job_id);
+  if (!before) return;
+  Source source = before->source;
+  if (queue_.cancel(job_id, std::time(nullptr))) {
+    // Running: the source stops it and reports it cancelled.
+    if (backend(source)) backend(source)->cancel(job_id);
+    emit(Event::Progress);
     return;
   }
-  if (j->state == Job::Running && backend(j->source)) backend(j->source)->cancel(job_id);
+  const Job *j = queue_.find(job_id);
+  if (j && j->state == Job::Cancelled) {
+    Job copy = *j;
+    emit(Event::Jobs);
+    if (on_job_done) on_job_done(copy);
+    run_next();  // what waited for it is cancelled too
+  }
+}
+
+void Store::pause(int job_id) {
+  const Job *j = queue_.find(job_id);
+  if (!j) return;
+  Source source = j->source;
+  if (queue_.pause(job_id)) {
+    // Stopped by the source; job_finished() keeps it in the queue, paused.
+    if (backend(source)) backend(source)->cancel(job_id);
+    emit(Event::Progress);
+    return;
+  }
+  emit(Event::Jobs);
+}
+
+void Store::resume(int job_id) {
+  if (!queue_.resume(job_id)) return;
+  emit(Event::Jobs);
+  run_next();
 }
 
 void Store::run_next() {
-  if (running_) return;
-  Job *next = nullptr;
-  for (auto &j : jobs_)
-    if (j.state == Job::Queued) {
-      // A job that needs another one that did not succeed is cancelled.
-      if (j.needs) {
-        const Job *dep = job(j.needs);
-        if (dep && dep->active()) continue;
-        if (!dep || dep->state != Job::Done) {
-          j.state = Job::Cancelled;
-          j.error = _("The change it needs did not succeed.");
-          j.finished = std::time(nullptr);
-          if (on_job_done) on_job_done(j);
-          continue;
-        }
-      }
-      next = &j;
-      break;
-    }
+  std::vector<int> cancelled;
+  Job *next = queue_.next(std::time(nullptr), &cancelled);
+  for (int id : cancelled)
+    if (const Job *c = queue_.find(id))
+      if (on_job_done) on_job_done(*c);
   if (!next) {
     emit(Event::Jobs);
     return;
   }
-  running_ = true;
-  next->state = Job::Running;
-  next->status = action_progress_label(next->action);
   int id = next->id;
-  Job copy = *next;
+  queue_.start(id);
+  Job copy = *queue_.find(id);
   emit(Event::Jobs);
   backend(copy.source)->run(
       copy,
       [this, id](const Progress &p) {
-        Job *j = find_job(id);
-        if (!j || j->state != Job::Running) return;
-        j->percent = p.percent;
-        if (!p.status.empty()) j->status = p.status;
-        j->cancellable = p.cancellable;
+        queue_.progress(id, p);
         emit(Event::Progress);
       },
       [this, id](bool ok, bool cancelled, std::string error) { job_finished(id, ok, cancelled, error); });
 }
 
 void Store::job_finished(int id, bool ok, bool cancelled, const std::string &error) {
-  running_ = false;
-  Job *j = find_job(id);
+  queue_.finished(id, ok, cancelled, error, std::time(nullptr));
+  const Job *j = queue_.find(id);
+  if (j && j->state == Job::Paused) {
+    // Paused: it waits in the queue; the next change may run meanwhile.
+    emit(Event::Jobs);
+    run_next();
+    return;
+  }
   if (j) {
-    j->state = ok ? Job::Done : cancelled ? Job::Cancelled : Job::Failed;
-    j->percent = ok ? 100 : j->percent;
-    j->error = error;
-    j->cancellable = false;
-    j->finished = std::time(nullptr);
     Source s = j->source;
     Job copy = *j;
     history_loaded_ = false;
@@ -521,12 +704,19 @@ void Store::job_finished(int id, bool ok, bool cancelled, const std::string &err
       probe_sources();
     }
     reload_installed(s);
-    // A snap install may have added AppStream ids of other sources; the
-    // snapd snap (Enable Snap Support) makes the source available.
-    if (s == Source::Snap) {
-      store_apps_.clear();
-      probe_sources();
+    if (s == Source::Flatpak && runtimes_loaded_) load_runtimes();
+    // The snapd package (Enable Snap Support, or installed in All
+    // Software): snapd starts by itself in a moment; it is asked until it
+    // answers, without restarting Merkadu.
+    if (s == Source::Debian && copy.state == Job::Done && copy.action == Action::Install &&
+        std::find(copy.targets.begin(), copy.targets.end(), "snapd") != copy.targets.end() &&
+        !status_[int(Source::Snap)].available) {
+      snapd_watch_until_ = std::time(nullptr) + 180;
+      Fl::remove_timeout(watch_snapd);
+      Fl::add_timeout(3.0, watch_snapd);
     }
+    // The snapd snap (Enable Snap Support) makes the source available.
+    if (s == Source::Snap) probe_sources();
   }
   run_next();
 }
@@ -545,8 +735,7 @@ void Store::search_store(const std::string &query) {
   b->search(q, [this, q](std::vector<App> apps, std::string error) {
     if (q != store_query_) return;  // a newer search is running
     store_searching_ = false;
-    for (auto &a : apps) store_apps_.push_back(std::move(a));
-    rebuild();
+    add_store_apps(std::move(apps));
     emit(Event::Search);
   });
 }
@@ -558,8 +747,7 @@ void Store::browse_store(const std::string &category_id) {
     if (!browsed_.insert(cat).second) continue;
     b->browse(cat, [this](std::vector<App> apps, std::string error) {
       if (apps.empty()) return;
-      for (auto &a : apps) store_apps_.push_back(std::move(a));
-      rebuild();
+      add_store_apps(std::move(apps));
       emit(Event::Search);
     });
   }
@@ -574,10 +762,7 @@ void Store::fetch_details(const std::string &app_id) {
       lookups_asked_.insert(a->id).second) {
     App copy = *a;
     snap->lookup(copy, [this](std::vector<App> apps, std::string error) {
-      if (apps.empty()) return;
-      for (auto &x : apps) store_apps_.push_back(std::move(x));
-      rebuild();
-      emit(Event::Catalog);
+      if (!apps.empty()) add_store_apps(std::move(apps), true);
     });
   }
   for (auto &o : a->origins) {
@@ -587,7 +772,6 @@ void Store::fetch_details(const std::string &app_id) {
     b->details(copy, o, [this](Origin found) {
       details_[found.key()] = found;
       rebuild();
-      emit(Event::Catalog);
     });
   }
 }
@@ -652,6 +836,10 @@ void Store::refresh(bool user) {
           if (refresh_catalog_) reload_catalog();
           reload_all();
           probe_sources();
+          // The Snap Store's featured snaps and departments, again; with
+          // Refresh, Flathub's popular apps too.
+          load_snap_store();
+          if (refresh_.user) load_popular(true);
           emit(Event::Refresh);
         });
   }
@@ -668,27 +856,44 @@ void Store::load_packages() {
   packages_loading_ = true;
   emit(Event::Packages);
   if (fake_mode()) {
-    auto *snap = new apt::Snapshot(fake_package_snapshot());
+    auto *list = new std::shared_ptr<PackageList>(std::make_shared<PackageList>());
+    apt::Snapshot snap = fake_package_snapshot();
+    (*list)->packages = std::move(snap.packages);
+    (*list)->error = snap.error;
+    (*list)->prepare();
     Fl::add_timeout(0.2, [](void *data) {
-      std::unique_ptr<apt::Snapshot> s(static_cast<apt::Snapshot *>(data));
-      Store::get().apply_packages(std::move(*s));
-    }, snap);
+      std::unique_ptr<std::shared_ptr<PackageList>> l(static_cast<std::shared_ptr<PackageList> *>(data));
+      Store::get().apply_packages(*l);
+    }, list);
     return;
   }
+  // Read, indexed and turned into installed apps on the APT thread: the
+  // window only swaps them in.
   apt::queue([this] {
-    auto snap = std::make_shared<apt::Snapshot>(apt::snapshot());
-    post([this, snap] { apply_packages(std::move(*snap)); });
+    apt::Snapshot snap = apt::snapshot();
+    auto list = std::make_shared<PackageList>();
+    list->packages = std::move(snap.packages);
+    list->error = snap.error;
+    list->prepare();
+    post([this, list] { apply_packages(list); }, "the package lists arrived");
   });
 }
 
-void Store::apply_packages(apt::Snapshot snap) {
+void Store::apply_packages(std::shared_ptr<PackageList> list) {
+  watchdog::Busy busy("taking over the package lists", long(list->packages.size()));
   packages_loading_ = false;
-  if (!snap.error.empty()) fprintf(stderr, "merkadu: package lists: %s\n", snap.error.c_str());
-  packages_error_ = snap.error;
+  if (!list->error.empty()) watchdog::log("package lists: " + list->error);
+  packages_error_ = list->error;
   packages_loaded_ = true;
-  packages_ = std::move(snap.packages);
-  package_index_.clear();
-  for (size_t i = 0; i < packages_.size(); ++i) package_index_[packages_[i].name] = i;
+  // The lists replaced are freed on a worker (90,000 packages take a while).
+  std::shared_ptr<const PackageList> old = std::move(package_list_);
+  std::shared_ptr<const std::vector<App>> old_installed = std::move(installed_[int(Source::Debian)]);
+  if (old || old_installed)
+    std::thread([old = std::move(old), old_installed = std::move(old_installed)]() mutable {
+      old_installed.reset();
+      old.reset();
+    }).detach();
+  package_list_ = list;
   ++packages_generation_;
   // Marks of packages that are gone, or that are done now.
   for (auto &kv : std::map<std::string, Mark>(marks_.all())) {
@@ -697,39 +902,19 @@ void Store::apply_packages(apt::Snapshot snap) {
         (kv.second == Mark::Upgrade && !p->upgradable))
       marks_.mark(kv.first, Mark::Unmarked);
   }
-  if (packages_.empty() && !packages_error_.empty()) {
+  if (list->packages.empty() && !packages_error_.empty()) {
     // Without APT's view, PackageKit says what is installed.
-    packages_loaded_ = true;
     if (Backend *b = backend(Source::Debian))
       b->load_installed([this](std::vector<App> apps, std::string error) {
-        installed_[int(Source::Debian)] = std::move(apps);
+        installed_[int(Source::Debian)] = std::make_shared<const std::vector<App>>(std::move(apps));
         installed_loaded_[int(Source::Debian)] = true;
         rebuild();
-        emit(Event::Catalog);
       });
   } else {
-    std::vector<App> installed;
-    for (auto &p : packages_) {
-      if (!p.installed) continue;
-      App a;
-      a.id = "deb:" + p.name;
-      a.name = p.name;
-      Origin o;
-      o.source = Source::Debian;
-      o.id = p.name;
-      o.installed = true;
-      o.installed_version = p.installed_version;
-      o.update = p.upgradable;
-      o.version = p.candidate_version;
-      o.installed_size = p.current_size;
-      a.origins.push_back(o);
-      installed.push_back(std::move(a));
-    }
-    installed_[int(Source::Debian)] = std::move(installed);
+    installed_[int(Source::Debian)] = std::shared_ptr<const std::vector<App>>(list, &list->installed);
     installed_loaded_[int(Source::Debian)] = true;
   }
   rebuild();
-  emit(Event::Catalog);
   emit(Event::Packages);
   if (packages_again_) {
     packages_again_ = false;
@@ -737,9 +922,51 @@ void Store::apply_packages(apt::Snapshot snap) {
   }
 }
 
+const std::vector<Package> &Store::packages() const {
+  static const std::vector<Package> *none = new std::vector<Package>();
+  return package_list_ ? package_list_->packages : *none;
+}
+
+const std::vector<Package> &Store::rows(Source source, bool runtimes) const {
+  if (source == Source::Debian) return packages();
+  if (source == Source::Snap) return snap_rows_;
+  if (!runtimes || runtime_rows_.empty()) return flatpak_rows_;
+  int gen = rows_generation(Source::Flatpak);
+  if (flatpak_all_generation_ != gen) {
+    flatpak_all_ = flatpak_rows_;
+    flatpak_all_.insert(flatpak_all_.end(), runtime_rows_.begin(), runtime_rows_.end());
+    flatpak_all_generation_ = gen;
+  }
+  return flatpak_all_;
+}
+
+const Package *Store::row(Source source, const std::string &name) const {
+  if (source == Source::Debian) return package(name);
+  for (auto &p : rows(source, true))
+    if (p.name == name) return &p;
+  return nullptr;
+}
+
+int Store::rows_generation(Source source) const {
+  if (source == Source::Debian) return packages_generation_;
+  return generation_ * 4096 + (source == Source::Flatpak ? runtimes_generation_ % 4096 : 0);
+}
+
+void Store::load_runtimes() {
+  Backend *b = backend(Source::Flatpak);
+  if (!b || runtimes_loading_) return;
+  runtimes_loading_ = true;
+  b->list_runtimes([this](std::vector<Package> rows) {
+    runtimes_loading_ = false;
+    runtimes_loaded_ = true;
+    runtime_rows_ = std::move(rows);
+    ++runtimes_generation_;
+    emit(Event::Packages);
+  });
+}
+
 const Package *Store::package(const std::string &name) const {
-  auto it = package_index_.find(name);
-  return it == package_index_.end() ? nullptr : &packages_[it->second];
+  return package_list_ ? package_list_->find(name) : nullptr;
 }
 
 const App *Store::app_of_package(const std::string &name) const {
@@ -826,14 +1053,18 @@ int Store::apply_marks() {
 }
 
 std::set<std::string> Store::system_packages() const {
+  // Asked by every app page and package pane: worked out once per list.
+  if (system_generation_ == packages_generation_) return system_cache_;
   std::set<std::string> out;
-  for (auto &p : packages_)
+  for (auto &p : packages())
     if (p.system() && p.installed) out.insert(p.name);
   struct utsname u;
   if (uname(&u) == 0) {
     std::string kernel = running_kernel_package(u.release);
     if (!kernel.empty()) out.insert(kernel);
   }
+  system_cache_ = out;
+  system_generation_ = packages_generation_;
   return out;
 }
 

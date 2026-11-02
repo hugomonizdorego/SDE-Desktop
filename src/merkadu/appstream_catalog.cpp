@@ -5,6 +5,7 @@
 #include <appstream.h>
 #include <gio/gio.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -52,9 +53,24 @@ std::string find_cached_icon(const std::string &origin, const std::string &name,
   return "";
 }
 
+// A cached icon of a Flatpak remote's catalog: ICONS/64x64/NAME (with the
+// scale: 64x64@2), else another size there.
+std::string find_flatpak_icon(const std::string &icons_dir, const std::string &name, guint size, guint scale) {
+  if (icons_dir.empty() || name.empty() || name.find('/') != std::string::npos) return "";
+  std::vector<std::string> sizes;
+  if (size > 0)
+    sizes.push_back(std::to_string(size) + "x" + std::to_string(size) + (scale > 1 ? "@" + std::to_string(scale) : ""));
+  for (const char *s : {"128x128", "64x64@2", "64x64", "128x128@2"}) sizes.push_back(s);
+  for (auto &s : sizes) {
+    std::string p = icons_dir + "/" + s + "/" + name;
+    if (file_exists(p)) return p;
+  }
+  return "";
+}
+
 // Every icon of the component: theme names, files of the catalog's icon
 // directories and the catalog's media URLs, with their sizes.
-void add_icons(AsComponent *cpt, App &app) {
+void add_icons(AsComponent *cpt, App &app, const ComponentContext *ctx) {
   GPtrArray *icons = as_component_get_icons(cpt);
   for (guint i = 0; icons && i < icons->len; ++i) {
     AsIcon *icon = AS_ICON(g_ptr_array_index(icons, i));
@@ -67,8 +83,11 @@ void add_icons(AsComponent *cpt, App &app) {
       case AS_ICON_KIND_CACHED:
       case AS_ICON_KIND_LOCAL: {
         std::string f = str(as_icon_get_filename(icon));
+        if (f.empty()) f = str(as_icon_get_name(icon));
         if (!f.empty() && f[0] != '/')
-          f = find_cached_icon(str(as_component_get_origin(cpt)), f, as_icon_get_width(icon), scale);
+          f = ctx && !ctx->icons_dir.empty()
+                  ? find_flatpak_icon(ctx->icons_dir, f, as_icon_get_width(icon), scale)
+                  : find_cached_icon(str(as_component_get_origin(cpt)), f, as_icon_get_width(icon), scale);
         if (!f.empty() && file_exists(f)) add_icon(app, IconRef{f, size});
         break;
       }
@@ -146,15 +165,52 @@ std::vector<std::string> strings_of(GPtrArray *a) {
   return out;
 }
 
-void add_components(AsComponentBox *box, CatalogData &data) {
+void add_components(AsComponentBox *box, CatalogData &data, const ComponentContext *ctx = nullptr,
+                    bool skip_flatpak = false) {
   guint n = box ? as_component_box_get_size(box) : 0;
   data.apps.reserve(data.apps.size() + n);
   for (guint i = 0; i < n; ++i) {
     App app;
-    if (!component_to_app(as_component_box_index_safe(box, i), app)) continue;
+    AsComponent *cpt = as_component_box_index_safe(box, i);
+    // Flatpak bundles come from the remotes' own catalogs, which know their
+    // remote; libappstream's view of them does not (load_appstream()).
+    if (skip_flatpak && as_component_get_bundle(cpt, AS_BUNDLE_KIND_FLATPAK)) continue;
+    if (!component_to_app(cpt, app, ctx)) continue;
     for (auto &o : app.origins) (o.source == Source::Flatpak ? data.flatpak : data.debian)++;
     data.apps.push_back(std::move(app));
   }
+}
+
+// [remote "NAME"] sections of an OSTree repository's config that are not
+// disabled (xa.disable) and list their apps (not xa.noenumerate). false
+// when the file cannot be read.
+bool configured_remotes(const std::string &config, std::set<std::string> &out) {
+  std::string text;
+  if (!read_file(config, text)) return false;
+  std::string remote;
+  bool skip = false;
+  auto close_section = [&] {
+    if (!remote.empty() && !skip) out.insert(remote);
+    remote.clear();
+    skip = false;
+  };
+  for (auto &raw : split(text, '\n')) {
+    std::string line = trim(raw);
+    if (line.empty() || line[0] == '#') continue;
+    if (line[0] == '[') {
+      close_section();
+      const std::string prefix = "[remote \"";
+      if (starts_with(line, prefix) && ends_with(line, "\"]"))
+        remote = line.substr(prefix.size(), line.size() - prefix.size() - 2);
+      continue;
+    }
+    size_t eq = line.find('=');
+    if (eq == std::string::npos || remote.empty()) continue;
+    std::string key = trim(line.substr(0, eq)), value = lower(trim(line.substr(eq + 1)));
+    if ((key == "xa.disable" || key == "xa.noenumerate") && value == "true") skip = true;
+  }
+  close_section();
+  return true;
 }
 
 std::string cache_home() {
@@ -219,20 +275,83 @@ CatalogSources catalog_sources(const std::string &root) {
   for (const char *d : {"/usr/share/swcatalog/xml", "/usr/share/swcatalog/yaml", "/var/cache/swcatalog/xml",
                         "/var/cache/swcatalog/yaml"})
     s.other_catalogs += int(list_dir(root + d).size());
-  std::string fp = root + "/var/lib/flatpak/appstream";
-  for (auto &remote : list_dir(fp)) {
-    bool data = false;
-    for (auto &arch : list_dir(fp + "/" + remote)) {
-      std::string active = fp + "/" + remote + "/" + arch + "/active";
-      data = data || file_exists(active + "/appstream.xml.gz") || file_exists(active + "/appstream.xml");
-    }
-    if (data) s.flatpak_remotes.push_back(remote);
-  }
-  std::sort(s.flatpak_remotes.begin(), s.flatpak_remotes.end());
+  std::set<std::string> remotes;
+  for (auto &c : flatpak_catalogs(flatpak_installations(root)))
+    remotes.insert(c.installation == "system" ? c.remote : c.installation + "/" + c.remote);
+  s.flatpak_remotes.assign(remotes.begin(), remotes.end());
   return s;
 }
 
-bool component_to_app(AsComponent *cpt, App &out) {
+std::string flatpak_arch() {
+  struct utsname u;
+  std::string m = uname(&u) == 0 ? u.machine : "";
+  if (m == "x86_64" || m == "aarch64") return m;
+  if (m.size() == 4 && m[0] == 'i' && m.substr(2) == "86") return "i386";
+  if (starts_with(m, "arm")) return "arm";
+  return m.empty() ? "x86_64" : m;
+}
+
+std::vector<FlatpakInstallationDir> flatpak_installations(const std::string &root) {
+  std::vector<FlatpakInstallationDir> out;
+  std::string system = root.empty() ? env("FLATPAK_SYSTEM_DIR", "/var/lib/flatpak") : root + "/var/lib/flatpak";
+  out.push_back({"system", system});
+  // The user's own installation (not for a test root).
+  if (root.empty()) out.push_back({"user", env("FLATPAK_USER_DIR", join_path(data_home(), "flatpak"))});
+  // Other installations: [Installation "NAME"] Path=... in
+  // /etc/flatpak/installations.d/*.conf.
+  std::string dir = root + "/etc/flatpak/installations.d";
+  std::vector<std::string> names = list_dir(dir);
+  std::sort(names.begin(), names.end());
+  for (auto &n : names) {
+    if (!ends_with(n, ".conf")) continue;
+    std::string text, current;
+    if (!read_file(join_path(dir, n), text)) continue;
+    for (auto &raw : split(text, '\n')) {
+      std::string line = trim(raw);
+      const std::string prefix = "[Installation \"";
+      if (starts_with(line, prefix) && ends_with(line, "\"]")) {
+        current = line.substr(prefix.size(), line.size() - prefix.size() - 2);
+      } else if (!current.empty() && starts_with(line, "Path")) {
+        size_t eq = line.find('=');
+        if (eq == std::string::npos || trim(line.substr(0, eq)) != "Path") continue;
+        std::string path = trim(line.substr(eq + 1));
+        if (!path.empty() && current != "system" && current != "user") out.push_back({current, root + path});
+        current.clear();
+      }
+    }
+  }
+  return out;
+}
+
+std::vector<FlatpakCatalog> flatpak_catalogs(const std::vector<FlatpakInstallationDir> &installations,
+                                             const std::string &arch_name) {
+  std::vector<FlatpakCatalog> out;
+  std::string arch = arch_name.empty() ? flatpak_arch() : arch_name;
+  for (auto &inst : installations) {
+    std::set<std::string> configured;
+    bool known = configured_remotes(inst.path + "/repo/config", configured);
+    std::vector<std::string> remotes = list_dir(inst.path + "/appstream");
+    std::sort(remotes.begin(), remotes.end());
+    for (auto &remote : remotes) {
+      // A remote that was removed or disabled keeps no apps here.
+      if (known && !configured.count(remote)) continue;
+      FlatpakCatalog c;
+      c.installation = inst.name;
+      c.remote = remote;
+      c.dir = inst.path + "/appstream/" + remote + "/" + arch + "/active";
+      if (file_exists(c.dir + "/appstream.xml.gz"))
+        c.file = c.dir + "/appstream.xml.gz";
+      else if (file_exists(c.dir + "/appstream.xml"))
+        c.file = c.dir + "/appstream.xml";
+      else
+        continue;
+      out.push_back(c);
+    }
+  }
+  return out;
+}
+
+bool component_to_app(AsComponent *cpt, App &out, const ComponentContext *ctx) {
   if (!cpt || !listed_kind(as_component_get_kind(cpt))) return false;
   App app;
   app.appstream_id = str(as_component_get_id(cpt));
@@ -253,7 +372,7 @@ bool component_to_app(AsComponent *cpt, App &out) {
   app.donation = str(as_component_get_url(cpt, AS_URL_KIND_DONATION));
   if (AsLaunchable *l = as_component_get_launchable(cpt, AS_LAUNCHABLE_KIND_DESKTOP_ID))
     app.desktop_ids = strings_of(as_launchable_get_entries(l));
-  add_icons(cpt, app);
+  add_icons(cpt, app, ctx);
   add_screenshots(cpt, app);
   add_releases(cpt, app);
 
@@ -262,26 +381,34 @@ bool component_to_app(AsComponent *cpt, App &out) {
     Origin o;
     o.source = Source::Flatpak;
     o.id = str(as_bundle_get_id(b));
-    o.remote = origin;
-    o.installation = "system";
+    // The remote is where the catalog was found. Without that (a catalog
+    // file of its own), the origin attribute is only a guess: Flathub's
+    // says "flatpak", and the backend looks the ref up in the remotes.
+    o.remote = ctx ? ctx->remote : origin == "flatpak" ? std::string() : origin;
+    o.installation = ctx ? ctx->installation : "system";
     o.license = app.license;
     o.publisher = app.developer;
-    if (!valid_flatpak_ref(o.id)) return false;
+    if (!valid_flatpak_ref(o.id) || !starts_with(o.id, "app/")) return false;
     if (!app.releases.empty()) o.version = app.releases.front().version;
     app.origins.push_back(o);
   } else {
     gchar **pkgs = as_component_get_pkgnames(cpt);
     for (int i = 0; pkgs && pkgs[i]; ++i)
       if (valid_package_name(pkgs[i])) app.pkgnames.push_back(pkgs[i]);
-    // Metainfo files of installed software name no package; the catalog
-    // usually has the same component with one. Packages are found for the
-    // rest by their desktop file (see the PackageKit backend).
-    Origin o;
-    o.source = Source::Debian;
-    o.id = app.pkgnames.empty() ? std::string() : app.pkgnames.front();
-    o.remote = origin;
-    o.license = app.license;
-    app.origins.push_back(o);
+    if (!app.pkgnames.empty()) {
+      Origin o;
+      o.source = Source::Debian;
+      o.id = app.pkgnames.front();
+      o.remote = origin;
+      o.license = app.license;
+      app.origins.push_back(o);
+    } else {
+      // A metainfo file of installed software without a package name: the
+      // catalog usually has the same component with one; otherwise the
+      // package that owns its launcher, if any (catalog_build.h). Never a
+      // Debian origin of its own: Flatpak and Snap exports are not packages.
+      app.needs_owner = true;
+    }
   }
   out = std::move(app);
   return true;
@@ -296,9 +423,10 @@ CatalogData load_appstream(const std::vector<std::string> &extra_dirs) {
     std::string own = link_unlinked(data.sources.unlinked);
     if (!own.empty()) extra.push_back(own);
   }
+  // The distribution's catalog and the metainfo of installed software;
+  // the Flatpak remotes' catalogs are read below, each with its remote.
   AsPool *pool = as_pool_new();
-  as_pool_set_flags(pool, AsPoolFlags(AS_POOL_FLAG_LOAD_OS_CATALOG | AS_POOL_FLAG_LOAD_OS_METAINFO |
-                                      AS_POOL_FLAG_LOAD_FLATPAK));
+  as_pool_set_flags(pool, AsPoolFlags(AS_POOL_FLAG_LOAD_OS_CATALOG | AS_POOL_FLAG_LOAD_OS_METAINFO));
   for (auto &d : extra) as_pool_add_extra_data_location(pool, d.c_str(), AS_FORMAT_STYLE_CATALOG);
   GError *err = nullptr;
   if (!as_pool_load(pool, nullptr, &err)) {
@@ -307,15 +435,27 @@ CatalogData load_appstream(const std::vector<std::string> &extra_dirs) {
     g_clear_error(&err);
   }
   AsComponentBox *box = as_pool_get_components(pool);
-  add_components(box, data);
+  add_components(box, data, nullptr, true);
   if (box) g_object_unref(box);
   g_object_unref(pool);
+  // Partial data is still usable: the error only counts without any app.
   if (!data.apps.empty()) data.error.clear();
+  for (auto &c : flatpak_catalogs(flatpak_installations())) {
+    CatalogData f = load_flatpak_catalog(c);
+    if (!f.error.empty() && f.apps.empty()) {
+      data.error += (data.error.empty() ? "" : "; ") + c.installation + "/" + c.remote + ": " + f.error;
+      continue;
+    }
+    data.flatpak += f.flatpak;
+    for (auto &a : f.apps) data.apps.push_back(std::move(a));
+  }
   data.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   return data;
 }
 
-CatalogData load_appstream_file(const std::string &path) {
+namespace {
+
+CatalogData parse_file(const std::string &path, const ComponentContext *ctx) {
   CatalogData data;
   AsMetadata *md = as_metadata_new();
   GFile *file = g_file_new_for_path(path.c_str());
@@ -326,10 +466,33 @@ CatalogData load_appstream_file(const std::string &path) {
     data.error = err ? err->message : "cannot parse " + path;
     g_clear_error(&err);
   } else {
-    add_components(as_metadata_get_components(md), data);
+    add_components(as_metadata_get_components(md), data, ctx);
   }
   g_object_unref(file);
   g_object_unref(md);
+  return data;
+}
+
+}  // namespace
+
+CatalogData load_flatpak_catalog(const FlatpakCatalog &c) {
+  ComponentContext ctx;
+  ctx.remote = c.remote;
+  ctx.installation = c.installation;
+  ctx.icons_dir = c.dir + "/icons";
+  CatalogData data = parse_file(c.file, &ctx);
+  // Only the remote's apps (a catalog is about its own remote).
+  data.apps.erase(std::remove_if(data.apps.begin(), data.apps.end(),
+                                 [](const App &a) { return !a.has_source(Source::Flatpak); }),
+                  data.apps.end());
+  data.debian = 0;
+  return data;
+}
+
+CatalogData load_appstream_file(const std::string &path) {
+  CatalogData data = parse_file(path, nullptr);
+  // Without a context the Flatpak remote is unknown: the file's origin
+  // stands for it, unless it is Flathub's "flatpak".
   return data;
 }
 

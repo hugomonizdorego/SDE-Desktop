@@ -1290,5 +1290,33 @@
    "size": 200000,
    "download": 60000
   }
+ ],
+ "runtimes": [
+  {
+   "ref": "runtime/org.freedesktop.Platform/x86_64/24.08",
+   "summary": "The libraries most Flatpak apps run on",
+   "installed": true,
+   "size": 650000000
+  },
+  {
+   "ref": "runtime/org.freedesktop.Platform.GL.default/x86_64/24.08",
+   "summary": "Mesa graphics drivers for Flatpak apps",
+   "installed": true,
+   "size": 410000000
+  },
+  {
+   "ref": "runtime/org.gnome.Platform/x86_64/47",
+   "summary": "GNOME's libraries for Flatpak apps",
+   "installed": false,
+   "download": 310000000,
+   "size": 1100000000
+  },
+  {
+   "ref": "runtime/org.kde.Platform/x86_64/6.8",
+   "summary": "KDE's libraries for Flatpak apps",
+   "installed": false,
+   "download": 330000000,
+   "size": 1050000000
+  }
  ]
 }

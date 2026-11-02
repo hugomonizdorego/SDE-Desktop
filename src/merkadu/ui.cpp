@@ -17,8 +17,10 @@
 #include "image_cache.h"
 #include "logo_anim.h"
 #include "store.h"
+#include "window.h"
 #include "theme.h"
 #include "util.h"
+#include "watchdog.h"
 #include "widgets.h"
 #include "wm.h"
 
@@ -62,9 +64,9 @@ void draw_badge_text(const std::string &text, int x, int y, int w, int h, const 
 
 namespace {
 
-// |text| in at most |max_lines| lines of |w| pixels (current font), drawn
-// from |y| down; the last line ends with an ellipsis when text is left.
-void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
+// |text| in at most |max_lines| lines of |w| pixels (current font); the
+// last line has the rest.
+std::vector<std::string> wrap_lines(const std::string &text, int w, int max_lines) {
   std::vector<std::string> words;
   std::string cur;
   for (char c : text) {
@@ -92,6 +94,13 @@ void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
     line = words[k];
   }
   if (!line.empty() && max_lines > 0) lines.push_back(line);
+  return lines;
+}
+
+// |text| in at most |max_lines| lines of |w| pixels (current font), drawn
+// from |y| down; the last line ends with an ellipsis when text is left.
+void draw_lines(const std::string &text, int x, int y, int w, int max_lines) {
+  std::vector<std::string> lines = wrap_lines(text, w, max_lines);
   int lh = fl_height();
   for (size_t i = 0; i < lines.size(); ++i)
     fl_draw(ellipsize(lines[i], w).c_str(), x, y + int(i) * lh + lh - fl_descent());
@@ -433,6 +442,7 @@ cairo_surface_t *theme_icon(const std::string &name, int size) {
     if (file_exists(file)) return images::icon_file(file, size);
   }
   if (IconLoader::lookup(name, size).empty()) return nullptr;
+  watchdog::Busy busy("loading a theme icon", size);
   return IconLoader::get({name}, size);
 }
 
@@ -596,7 +606,9 @@ Chip::Chip(int x, int y, int w, int h, const std::string &text, bool on)
 }
 
 int Chip::fit(const std::string &text) {
-  text_font(active_theme().font_size, false);
+  // Measured in bold: a chip that is on draws its text bold (0.2 Alpha 3
+  // measured it regular, and "Not Installed 17" became "Not Installed ...").
+  text_font(active_theme().font_size, true);
   return text_width(text) + S(30);
 }
 
@@ -643,6 +655,127 @@ int Chip::handle(int e) {
       return 1;
     case FL_KEYBOARD:
       if ((Fl::event_key() == ' ' || Fl::event_key() == FL_Enter) && on_click) {
+        on_click();
+        return 1;
+      }
+      return 0;
+    default:
+      return Fl_Widget::handle(e);
+  }
+}
+
+// ----------------------------------------------------------- SourceCard
+
+namespace {
+
+// The name people know a Flatpak remote by.
+std::string remote_title(const std::string &remote) {
+  if (remote == "flathub") return "Flathub";
+  if (remote == "flathub-beta") return "Flathub Beta";
+  if (remote == "fedora") return "Fedora";
+  return remote;
+}
+
+}  // namespace
+
+std::string SourceCard::facts(const Origin &o) {
+  std::vector<std::string> parts;
+  std::string ver = o.installed ? o.installed_version : o.version;
+  if (!ver.empty()) parts.push_back(format(_("Version %s"), ver.c_str()));
+  if (!o.installed && o.download_size > 0)
+    parts.push_back(format(_("%s to download"), format_size(o.download_size).c_str()));
+  else if (o.installed_size > 0)
+    parts.push_back(format(o.installed ? _("%s on disk") : _("%s when installed"), format_size(o.installed_size).c_str()));
+  std::string text;
+  for (size_t i = 0; i < parts.size(); ++i) text += (i ? " \xC2\xB7 " : "") + parts[i];
+  return text.empty() ? std::string(_("Version not known yet")) : text;
+}
+
+std::string SourceCard::provenance(const App &app, const Origin &o) {
+  switch (o.source) {
+    case Source::Flatpak: {
+      std::string remote = remote_title(o.remote.empty() ? std::string("flathub") : o.remote);
+      std::string by = !o.publisher.empty() ? o.publisher : app.developer;
+      std::string text = by.empty() ? format(_("From %s"), remote.c_str())
+                                    : format(_("From %s, by %s"), remote.c_str(), by.c_str());
+      if (o.installation == "user") text += " \xC2\xB7 " + std::string(_("your own installation"));
+      return text;
+    }
+    case Source::Snap: {
+      std::string channel = o.remote.empty() ? std::string("latest/stable") : o.remote;
+      if (o.publisher.empty()) return format(_("From the Snap Store, %s"), channel.c_str());
+      return format(o.verified ? _("By %s (verified), %s") : _("By %s, %s"), o.publisher.c_str(), channel.c_str());
+    }
+    default:
+      return format(_("Package %s, updated with the system"), o.id.c_str());
+  }
+}
+
+SourceCard::SourceCard(int x, int y, int w, int h, const App &app, const Origin &o, bool chosen)
+    : Fl_Widget(x, y, w, h),
+      source_(o.source),
+      title_(origin_kind_label(o.source)),
+      facts_(facts(o)),
+      provenance_(provenance(app, o)),
+      chosen_(chosen),
+      installed_(o.installed) {}
+
+int SourceCard::height() { return S(58); }
+
+void SourceCard::draw() {
+  const Theme &t = active_theme();
+  bool hot = Fl::belowmouse() == this;
+  int rs = S(16), rx = x() + S(14), ry = y() + (h() - rs) / 2;  // the radio button
+  int tx = rx + rs + S(12);
+  std::string badge = installed_ ? std::string(_("Installed")) : "";
+  text_font(std::max(S(9), t.font_size - S(2)), true);
+  int bw = badge.empty() ? 0 : text_width(badge) + S(16);
+  int right = x() + w() - S(12) - (bw ? bw + S(8) : 0) - S(16);  // the text ends before the badge and the dot
+  {
+    Painter p(window()->w(), window()->h());
+    double r = std::min(double(t.radius), Sd(10));
+    Color bg = chosen_ ? t.accent.alpha(t.dark ? 0.24 : 0.10) : hot ? t.hover : t.background;
+    p.fill_rounded(x(), y(), w(), h(), r, bg);
+    p.stroke_rounded(x() + 0.5, y() + 0.5, w() - 1, h() - 1, r, chosen_ ? t.accent : t.border);
+    if (chosen_) p.stroke_rounded(x() + 1.5, y() + 1.5, w() - 3, h() - 3, r - 1, t.accent);
+    double cx = rx + rs / 2.0, cy = ry + rs / 2.0;
+    p.circle(cx, cy, rs / 2.0, chosen_ ? t.accent : t.border);
+    p.circle(cx, cy, rs / 2.0 - Sd(1.5), chosen_ ? t.accent : t.surface);
+    if (chosen_) p.circle(cx, cy, rs / 4.5, Color::hex(0xFFFFFF));
+    // The source's color, as on the badges, and Installed.
+    int bx = x() + w() - S(12) - bw;
+    if (bw) p.fill_rounded(bx, y() + (h() - S(20)) / 2, bw, S(20), S(10), t.success.alpha(0.18));
+    p.circle(bx - (bw ? S(10) : 0) - Sd(4), cy, Sd(4), source_color(source_));
+    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
+  }
+  if (bw)
+    draw_text(badge, x() + w() - S(12) - bw, y() + (h() - S(20)) / 2, bw, S(20), readable(t.success, t.surface), 1);
+  // "Flatpak app  Version 3.2 · 54 MB to download", where it comes from below.
+  text_font(t.font_size, true);
+  int title_w = std::min(text_width(title_), std::max(0, right - tx));
+  draw_text(title_, tx, y() + S(8), title_w + S(2), S(22), t.text);
+  text_font(t.font_size);
+  int fx = tx + title_w + S(12);
+  if (fx < right) draw_text(facts_, fx, y() + S(8), right - fx, S(22), t.text);
+  text_font(std::max(S(9), t.font_size - S(1)));
+  draw_text(provenance_, tx, y() + S(30), right - tx, S(20), t.text_dim);
+}
+
+int SourceCard::handle(int e) {
+  switch (e) {
+    case FL_ENTER:
+    case FL_LEAVE:
+    case FL_FOCUS:
+    case FL_UNFOCUS:
+      redraw();
+      return 1;
+    case FL_PUSH:
+      return Fl::event_button() == FL_LEFT_MOUSE ? 1 : 0;
+    case FL_RELEASE:
+      if (Fl::event_inside(this) && on_click) on_click();
+      return 1;
+    case FL_KEYBOARD:
+      if ((Fl::event_key() == ' ' || Fl::event_key() == FL_Enter || Fl::event_key() == FL_KP_Enter) && on_click) {
         on_click();
         return 1;
       }
@@ -724,6 +857,9 @@ int AppTile::handle(int e) {
 AppRow::AppRow(int x, int y, int w, int h, const std::string &app_id, Mode mode)
     : Fl_Widget(x, y, w, h), id_(app_id), mode_(mode) {
   if (const App *a = Store::get().app(app_id)) copy_tooltip(a->name.c_str());
+  // A row with a change in progress shows it (the page is built again
+  // when a change starts or ends).
+  if (Store::get().active_job(app_id)) live_widget(this);
 }
 
 std::string AppRow::action_text() const {
@@ -875,39 +1011,46 @@ Banner::Banner(int x, int y, int w, int h, const std::string &app_id) : Fl_Widge
   if (const App *a = Store::get().app(app_id)) copy_tooltip(a->name.c_str());
 }
 
-void Banner::draw() {
+void draw_banner(Fl_Widget *wid, const App &app, int x, int y, int w, int h, bool hot, bool focus,
+                 const std::string &label) {
+  const App *a = &app;
   const Theme &t = active_theme();
-  const App *a = Store::get().app(id_);
-  if (!a) return;
   double r = t.radius_large;
-  int pad = S(32), plate = std::min(S(120), h() - 2 * pad), is = plate * 3 / 4;
-  bool shot = !a->screenshots.empty() && w() > S(700) && !images::failed(a->screenshots[0].thumbnail);
-  int shot_w = shot ? std::min(int(w() * 0.40), int((h() - S(40)) * 16 / 9.0)) : 0;
-  int tx = x() + pad + plate + S(28), tw = w() - (tx - x()) - pad - (shot ? shot_w + S(28) : 0);
+  int pad = S(32), plate = std::min(S(120), h - 2 * pad), is = plate * 3 / 4;
+  bool shot = !a->screenshots.empty() && w > S(700) && !images::failed(a->screenshots[0].thumbnail);
+  int shot_w = shot ? std::min(int(w * 0.40), int((h - S(40)) * 16 / 9.0)) : 0;
+  int tx = x + pad + plate + S(28), tw = w - (tx - x) - pad - (shot ? shot_w + S(28) : 0);
   // The app's own color, deep enough for white text.
   Color base = icon_tint(*a).mix(Color::hex(0x000000), t.dark ? 0.35 : 0.15);
   for (int i = 0; i < 12 && Color::hex(0xFFFFFF).contrast(base) < 4.8; ++i) base = base.mix(Color::hex(0), 0.12);
   Color deep = base.mix(Color::hex(0x000000), 0.38);
   Color white = Color::hex(0xFFFFFF);
+  // The text, centred: the label, the name, the summary in one or two
+  // lines and the source pills.
+  text_font(t.font_size + 1);
+  int lh = fl_height();
+  int lines = int(wrap_lines(a->summary, tw, 2).size());
+  int top = y + (h - (S(20) + S(42) + lines * lh + S(10) + S(22))) / 2;
+  int sum_y = top + S(62), by = sum_y + lines * lh + S(10);
   {
-    Painter p(window()->w(), window()->h());
-    if (hot_) p.shadow(x(), y() + S(3), w(), h(), r, t.shadow.alpha(0.25), S(10));
-    p.fill_gradient(x(), y(), w(), h(), r, base, deep, true);
+    Painter p(wid->window()->w(), wid->window()->h());
+    if (hot) p.shadow(x, y + S(3), w, h, r, t.shadow.alpha(0.25), S(10));
+    p.fill_gradient(x, y, w, h, r, base, deep, true);
     // Soft light circles: depth without an image.
     cairo_t *cr = p.cr();
     cairo_save(cr);
-    p.rounded_rect(x(), y(), w(), h(), r);
+    p.rounded_rect(x, y, w, h, r);
     cairo_clip(cr);
-    p.circle(x() + w() * 0.86, y() - h() * 0.15, h() * 0.75, white.alpha(0.07));
-    p.circle(x() + w() * 0.60, y() + h() * 1.25, h() * 0.6, white.alpha(0.05));
+    p.circle(x + w * 0.86, y - h * 0.15, h * 0.75, white.alpha(0.07));
+    p.circle(x + w * 0.60, y + h * 1.25, h * 0.6, white.alpha(0.05));
     cairo_restore(cr);
     // The icon on a light plate.
-    double px = x() + pad, py = y() + (h() - plate) / 2.0;
+    double px = x + pad, py = y + (h - plate) / 2.0;
     p.shadow(px, py + S(2), plate, plate, plate * 0.24, Color::hex(0).alpha(0.25), S(8));
     p.fill_rounded(px, py, plate, plate, plate * 0.24, white.alpha(0.94));
     paint_app_icon(p, *a, px + (plate - is) / 2.0, py + (plate - is) / 2.0, is);
     if (shot) {
-      int sh = int(shot_w * 9 / 16.0), sx = x() + w() - pad - shot_w, sy = y() + (h() - sh) / 2;
+      int sh = int(shot_w * 9 / 16.0), sx = x + w - pad - shot_w, sy = y + (h - sh) / 2;
       cairo_surface_t *img = images::picture(a->screenshots[0].thumbnail, shot_w, sh);
       p.shadow(sx, sy, shot_w, sh, S(10), Color::hex(0).alpha(0.3), S(10));
       p.fill_rounded(sx, sy, shot_w, sh, S(10), white.alpha(0.12));
@@ -921,31 +1064,255 @@ void Banner::draw() {
       }
     }
     // Source pills.
-    int cx = tx, by = y() + h() / 2 + S(38);
+    int cx = tx;
     for (Source s : badge_sources(*a)) {
       int bw = badge_width(source_label(s));
       if (cx + bw > tx + tw) break;
       p.fill_rounded(cx, by, bw, S(22), S(11), white.alpha(0.18));
       cx += bw + S(6);
     }
-    if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), r);
+    if (focus) focus_ring(p, x, y, w, h, r);
   }
   text_font(std::max(S(9), t.font_size - S(1)), true);
-  draw_text(a->installed() ? _("INSTALLED") : _("HIGHLIGHT"), tx, y() + h() / 2 - S(62), tw, S(20), white.alpha(0.78));
+  draw_text(label, tx, top, tw, S(20), white.alpha(0.78));
   text_font(t.font_size + S(12), true);
-  draw_text(a->name, tx, y() + h() / 2 - S(42), tw, S(42), white);
+  draw_text(a->name, tx, top + S(20), tw, S(42), white);
   text_font(t.font_size + 1);
   fl_color(white.alpha(0.88).mix(base, 0.12).fl());
-  draw_lines(a->summary, tx, y() + h() / 2 + S(2), tw, 2);
-  int cx = tx, by = y() + h() / 2 + S(38);
+  draw_lines(a->summary, tx, sum_y, tw, 2);
+  int cx = tx;
   text_font(std::max(S(9), t.font_size - S(2)), true);
   for (Source s : badge_sources(*a)) {
-    std::string label = source_label(s);
-    int bw = badge_width(label);
+    std::string src = source_label(s);
+    int bw = badge_width(src);
     if (cx + bw > tx + tw) break;
-    draw_text(label, cx, by, bw, S(22), white, 1);
+    draw_text(src, cx, by, bw, S(22), white, 1);
     cx += bw + S(6);
   }
+}
+
+void Banner::draw() {
+  const App *a = Store::get().app(id_);
+  if (!a) return;
+  draw_banner(this, *a, x(), y(), w(), h(), hot_, Fl::focus() == this,
+              a->installed() ? _("INSTALLED") : _("HIGHLIGHT"));
+}
+
+// ------------------------------------------------------------- Carousel
+
+namespace {
+
+std::string g_carousel_id;     // the slide shown, kept across rebuilds of Home
+std::string g_carousel_state;  // for the QA dump
+const Carousel *g_live_carousel = nullptr;
+
+double ease_out(double t) { return 1 - (1 - t) * (1 - t) * (1 - t); }
+
+}  // namespace
+
+Carousel::Carousel(int x, int y, int w, int h, std::vector<std::string> ids, std::vector<std::string> labels,
+                   int seconds)
+    : Fl_Widget(x, y, w, h), ids_(std::move(ids)), labels_(std::move(labels)), seconds_(seconds) {
+  labels_.resize(ids_.size());
+  for (size_t i = 0; i < ids_.size(); ++i)
+    if (ids_[i] == g_carousel_id) index_ = int(i);
+  if (seconds_ > 0 && ids_.size() > 1 && !reduced_motion()) Fl::add_timeout(seconds_, tick, this);
+  g_live_carousel = this;
+  remember();
+}
+
+Carousel::~Carousel() {
+  Fl::remove_timeout(tick, this);
+  Fl::remove_timeout(animate, this);
+  if (g_live_carousel == this) g_live_carousel = nullptr;
+}
+
+int Carousel::dots_height() { return S(24); }
+
+std::string Carousel::qa_state() { return g_live_carousel ? g_carousel_state : std::string(); }
+
+void Carousel::remember() {
+  if (ids_.empty()) return;
+  g_carousel_id = ids_[size_t(index_)];
+  g_carousel_state = "index=" + std::to_string(index_) + ",count=" + std::to_string(ids_.size()) + ",id=" + g_carousel_id;
+}
+
+void Carousel::go(int index, int direction) {
+  int n = int(ids_.size());
+  if (n < 2) return;
+  index = ((index % n) + n) % n;
+  if (index == index_) return;
+  prev_ = index_;
+  index_ = index;
+  dir_ = direction >= 0 ? 1 : -1;
+  remember();
+  if (reduced_motion()) {
+    t_ = 1;
+  } else {
+    t_ = 0;
+    Fl::remove_timeout(animate, this);
+    Fl::add_timeout(1.0 / 60, animate, this);
+  }
+  redraw();
+}
+
+void Carousel::tick(void *data) {
+  auto *c = static_cast<Carousel *>(data);
+  // Paused while the pointer is on it or it has the keyboard.
+  if (!c->hot_ && Fl::focus() != c) c->go(c->index_ + 1, 1);
+  Fl::repeat_timeout(c->seconds_, tick, data);
+}
+
+void Carousel::animate(void *data) {
+  auto *c = static_cast<Carousel *>(data);
+  c->t_ = std::min(1.0, c->t_ + 1.0 / (0.35 * 60));
+  c->redraw();
+  if (c->t_ < 1) Fl::repeat_timeout(1.0 / 60, animate, data);
+}
+
+void Carousel::boxes(Box *prev, Box *next, std::vector<Box> *dots) const {
+  int bh = banner_h(), as = S(36);
+  if (prev) *prev = {x() + S(12), y() + (bh - as) / 2, as, as};
+  if (next) *next = {x() + w() - S(12) - as, y() + (bh - as) / 2, as, as};
+  if (dots) {
+    dots->clear();
+    int n = int(ids_.size()), d = S(8), gap = S(8), cur = S(22);
+    int total = (n - 1) * (d + gap) + cur;
+    int dx = x() + (w() - total) / 2, dy = y() + bh + (dots_height() - d) / 2;
+    for (int i = 0; i < n; ++i) {
+      int dw = i == index_ ? cur : d;
+      dots->push_back({dx, dy, dw, d});
+      dx += dw + gap;
+    }
+  }
+}
+
+int Carousel::banner_h() const { return h() - (ids_.size() > 1 ? dots_height() : 0); }
+
+void Carousel::draw() {
+  if (ids_.empty()) return;
+  const Theme &t = active_theme();
+  int bh = banner_h();
+  {
+    // The page under the rounded corners, the gap between moving slides
+    // and the dots.
+    Painter p(window()->w(), window()->h());
+    p.fill_rect(x(), y(), w(), h(), t.background);
+  }
+  Store &st = Store::get();
+  auto slide = [&](int i, int sx) {
+    const App *a = st.app(ids_[size_t(i)]);
+    if (a) draw_banner(this, *a, sx, y(), w(), bh, false, false, labels_[size_t(i)]);
+  };
+  if (t_ < 1 && prev_ >= 0 && prev_ < int(ids_.size())) {
+    // The slides move by together.
+    int off = int(w() * ease_out(t_));
+    fl_push_clip(x(), y(), w(), bh);
+    slide(prev_, x() - dir_ * off);
+    slide(index_, x() + dir_ * (w() - off));
+    fl_pop_clip();
+  } else {
+    slide(index_, x());
+  }
+  Box prev, next;
+  std::vector<Box> dots;
+  boxes(&prev, &next, &dots);
+  Painter p(window()->w(), window()->h());
+  if (ids_.size() > 1 && (hot_ || Fl::focus() == this)) {
+    // The arrows, on the banner.
+    for (int k = 0; k < 2; ++k) {
+      const Box &b = k ? next : prev;
+      bool over = (k ? hot_next_ : hot_prev_);
+      p.circle(b.x + b.w / 2.0, b.y + b.h / 2.0, b.w / 2.0, Color::hex(0).alpha(over ? 0.55 : 0.35));
+      paint_symbol(p, k ? Symbol::Forward : Symbol::Back, b.x + S(8), b.y + S(8), b.w - S(16), Color::hex(0xFFFFFF));
+    }
+  }
+  if (ids_.size() > 1)
+    for (size_t i = 0; i < dots.size(); ++i)
+      p.fill_rounded(dots[i].x, dots[i].y, dots[i].w, dots[i].h, dots[i].h / 2.0,
+                     int(i) == index_ ? t.accent : t.text.alpha(t.dark ? 0.35 : 0.25));
+  if (Fl::focus() == this) focus_ring(p, x(), y(), w(), bh, t.radius_large);
+}
+
+int Carousel::handle(int e) {
+  auto inside = [](const Box &b) {
+    int ex = Fl::event_x(), ey = Fl::event_y();
+    return ex >= b.x && ex < b.x + b.w && ey >= b.y && ey < b.y + b.h;
+  };
+  Box prev, next;
+  std::vector<Box> dots;
+  boxes(&prev, &next, &dots);
+  switch (e) {
+    case FL_ENTER:
+    case FL_MOVE: {
+      bool hp = ids_.size() > 1 && inside(prev), hn = ids_.size() > 1 && inside(next);
+      if (!hot_ || hp != hot_prev_ || hn != hot_next_) {
+        hot_ = true;
+        hot_prev_ = hp;
+        hot_next_ = hn;
+        redraw();
+      }
+      return 1;
+    }
+    case FL_LEAVE:
+      hot_ = hot_prev_ = hot_next_ = false;
+      redraw();
+      return 1;
+    case FL_FOCUS:
+    case FL_UNFOCUS:
+      redraw();
+      return 1;
+    case FL_PUSH:
+      if (Fl::event_button() != FL_LEFT_MOUSE) return 0;
+      take_focus();
+      return 1;
+    case FL_RELEASE: {
+      if (!Fl::event_inside(this) || ids_.empty()) return 1;
+      if (ids_.size() > 1 && inside(prev)) {
+        go(index_ - 1, -1);
+      } else if (ids_.size() > 1 && inside(next)) {
+        go(index_ + 1, 1);
+      } else {
+        for (size_t i = 0; i < dots.size(); ++i) {
+          Box d = dots[i];
+          d.y -= S(6);  // a little more to aim at
+          d.h += S(12);
+          if (inside(d)) {
+            go(int(i), int(i) > index_ ? 1 : -1);
+            return 1;
+          }
+        }
+        if (Fl::event_y() < y() + banner_h() && on_open) on_open(ids_[size_t(index_)]);
+      }
+      return 1;
+    }
+    case FL_KEYBOARD: {
+      int k = Fl::event_key();
+      if (k == FL_Left) go(index_ - 1, -1);
+      else if (k == FL_Right) go(index_ + 1, 1);
+      else if ((k == FL_Enter || k == FL_KP_Enter || k == ' ') && on_open && !ids_.empty()) on_open(ids_[size_t(index_)]);
+      else return 0;
+      return 1;
+    }
+    default:
+      return Fl_Widget::handle(e);
+  }
+}
+
+const Carousel *Carousel::live() { return g_live_carousel; }
+
+void Carousel::qa(const std::function<void(const std::string &, int, int, int, int)> &line) const {
+  if (ids_.empty()) return;
+  Box prev, next;
+  std::vector<Box> dots;
+  boxes(&prev, &next, &dots);
+  line("carousel", x(), y(), w(), h());
+  line("banner:" + ids_[size_t(index_)], x(), y(), w(), banner_h());
+  if (ids_.size() < 2) return;
+  line("carousel:prev", prev.x, prev.y, prev.w, prev.h);
+  line("carousel:next", next.x, next.y, next.w, next.h);
+  for (size_t i = 0; i < dots.size(); ++i)
+    line("carousel:dot:" + std::to_string(i), dots[i].x, dots[i].y, dots[i].w, dots[i].h);
 }
 
 int Banner::handle(int e) {

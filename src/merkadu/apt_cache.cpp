@@ -37,19 +37,31 @@ namespace {
 
 // --------------------------------------------------------------- thread
 
-std::mutex g_mutex;
-std::condition_variable g_wake;
-std::deque<std::function<void()>> g_work;
-bool g_thread = false;
+// The queue of the APT thread. It is never destroyed: the thread waits on
+// it until the process ends, and destroying a condition variable that a
+// thread waits on blocks for ever (glibc), which kept Merkadu 0.2 Alpha 3
+// running invisibly after its window closed.
+struct WorkQueue {
+  std::mutex mutex;
+  std::condition_variable wake;
+  std::deque<std::function<void()>> work;
+  bool thread = false;
+};
+
+WorkQueue &work_queue() {
+  static WorkQueue *q = new WorkQueue;
+  return *q;
+}
 
 void worker() {
+  WorkQueue &q = work_queue();
   for (;;) {
     std::function<void()> fn;
     {
-      std::unique_lock<std::mutex> lock(g_mutex);
-      g_wake.wait(lock, [] { return !g_work.empty(); });
-      fn = std::move(g_work.front());
-      g_work.pop_front();
+      std::unique_lock<std::mutex> lock(q.mutex);
+      q.wake.wait(lock, [&q] { return !q.work.empty(); });
+      fn = std::move(q.work.front());
+      q.work.pop_front();
     }
     fn();
   }
@@ -58,13 +70,14 @@ void worker() {
 }  // namespace
 
 void queue(std::function<void()> work) {
-  std::lock_guard<std::mutex> lock(g_mutex);
-  g_work.push_back(std::move(work));
-  if (!g_thread) {
-    g_thread = true;
+  WorkQueue &q = work_queue();
+  std::lock_guard<std::mutex> lock(q.mutex);
+  q.work.push_back(std::move(work));
+  if (!q.thread) {
+    q.thread = true;
     std::thread(worker).detach();
   }
-  g_wake.notify_one();
+  q.wake.notify_one();
 }
 
 std::time_t lists_time() {
@@ -83,7 +96,9 @@ std::time_t lists_time() {
 namespace {
 
 bool g_init = false;
-std::unique_ptr<pkgCacheFile> g_cache;
+// Owned by the APT thread; not a static object with a destructor, which
+// could run at exit while the thread still reads the cache.
+pkgCacheFile *g_cache = nullptr;
 
 // The errors APT collected (warnings are dropped), one per line.
 std::string take_errors() {
@@ -98,7 +113,7 @@ std::string take_errors() {
 }
 
 pkgCacheFile *cache(std::string *error) {
-  if (g_cache) return g_cache.get();
+  if (g_cache) return g_cache;
   if (!g_init) {
     if (!pkgInitConfig(*_config) || !pkgInitSystem(*_config, _system)) {
       if (error) *error = take_errors();
@@ -116,8 +131,8 @@ pkgCacheFile *cache(std::string *error) {
     return nullptr;
   }
   take_errors();
-  g_cache = std::move(file);
-  return g_cache.get();
+  g_cache = file.release();
+  return g_cache;
 }
 
 std::string str(const char *s) { return s ? s : ""; }
@@ -197,7 +212,10 @@ std::string description_paragraphs(const std::string &desc) {
 
 bool available() { return true; }
 
-void reload() { g_cache.reset(); }
+void reload() {
+  delete g_cache;
+  g_cache = nullptr;
+}
 
 Snapshot snapshot() {
   auto t0 = std::chrono::steady_clock::now();

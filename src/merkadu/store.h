@@ -18,7 +18,9 @@
 #include "appstream_catalog.h"
 #include "apt_cache.h"
 #include "backend.h"
+#include "catalog_build.h"
 #include "categories.h"
+#include "highlights.h"
 #include "model.h"
 #include "packages.h"
 
@@ -86,8 +88,11 @@ class Store {
   // Updater's).
   int update_all();
   int enqueue(Job job);
+  // Pause, Resume and Cancel (jobs.h): what the job's state and phase allow.
   void cancel(int job_id);
-  const std::vector<Job> &jobs() const { return jobs_; }
+  void pause(int job_id);
+  void resume(int job_id);
+  const std::vector<Job> &jobs() const { return queue_.jobs(); }
   const Job *job(int id) const;
   // The queued or running job of an app (nullptr when none).
   const Job *active_job(const std::string &app_id) const;
@@ -99,6 +104,19 @@ class Store {
   // Snap Store search and categories, merged into the catalog.
   void search_store(const std::string &query);
   void browse_store(const std::string &category_id);
+  // The Snap Store's featured snaps and those of every department (Home,
+  // the departments and All Software show them); again after a refresh,
+  // when snapd starts and after Enable Snap Support.
+  void load_snap_store();
+  // The app ids of the featured snaps (Home's highlights).
+  const std::vector<std::string> &featured_snaps() const { return featured_snaps_; }
+  // Flathub's popular and trending apps (Home's highlights): kept in
+  // $XDG_CACHE_HOME/merkadu/flathub-collections.json, downloaded again when
+  // older than a day (|force|: now) while Flathub is set up.
+  void load_popular(bool force);
+  const std::vector<std::string> &popular_apps() const { return popular_; }
+  // Home's highlights (highlights.h).
+  std::vector<Highlight> highlights(size_t count) const;
   const std::string &store_query() const { return store_query_; }
   bool store_searching() const { return store_searching_; }
   // Sizes and versions for the details page (once per origin).
@@ -123,6 +141,15 @@ class Store {
   void reload_catalog();
   // Changes whenever the catalog was rebuilt (for caches of the pages).
   int generation() const { return generation_; }
+  // The departments, worked out with the catalog (on its worker thread):
+  // the apps of a department sorted by name, the department of an app.
+  std::vector<const App *> apps_in(const Category &c) const;
+  size_t count_in(const Category &c) const;
+  const Category *department_of(const App &a) const;
+  // "New & Updated": the newest releases of apps that are not installed.
+  std::vector<const App *> fresh_apps(size_t max) const;
+  // Debian origins the last merge dropped (no package APT knows).
+  int dropped_debian() const { return dropped_debian_; }
 
   // Refreshes the software lists of every source: PackageKit's refresh of
   // the package lists (APT downloads the AppStream catalog with them), the
@@ -137,11 +164,21 @@ class Store {
   bool packages_loaded() const { return packages_loaded_; }
   bool packages_loading() const { return packages_loading_; }
   const std::string &packages_error() const { return packages_error_; }
-  const std::vector<Package> &packages() const { return packages_; }
+  const std::vector<Package> &packages() const;
   const Package *package(const std::string &name) const;
   void load_packages();
   // Changes whenever the package list was loaded again.
   int packages_generation() const { return packages_generation_; }
+  // All Software's rows of |source|: APT's packages, the Flatpak apps (with
+  // the runtimes and extensions when |runtimes|) or the snaps (installed
+  // ones and what the Snap Store showed).
+  const std::vector<Package> &rows(Source source, bool runtimes = false) const;
+  const Package *row(Source source, const std::string &name) const;
+  // Changes whenever the rows of |source| change.
+  int rows_generation(Source source) const;
+  // Lists the Flatpak runtimes for All Software (again after changes).
+  void load_runtimes();
+  bool runtimes_loaded() const { return runtimes_loaded_; }
   // The app (catalog) of a package, nullptr when it is not one.
   const App *app_of_package(const std::string &name) const;
   // The details of a package (description, dependencies, versions).
@@ -161,24 +198,50 @@ class Store {
  private:
   Store() = default;
   void emit(Event e);
+  // Merges what every part contributed into a new catalog on a worker
+  // thread (requests made meanwhile are merged into one more run); the
+  // catalog and its departments are swapped in when it is done, then
+  // Event::Catalog.
   void rebuild();
+  static void run_rebuild(void *);
+  void adopt(std::shared_ptr<CatalogResult> result);
   void run_next();
   void job_finished(int id, bool ok, bool cancelled, const std::string &error);
   void resolve_owners();
-  void apply_packages(apt::Snapshot snap);
+  void apply_packages(std::shared_ptr<PackageList> list);
   void refresh_step_done(const std::string &source, bool ok, bool cancelled, const std::string &error);
-  Job *find_job(int id);
 
   Settings settings_;
   Categories categories_;
   Catalog catalog_;
+  CategoryIndex departments_;
+  std::vector<std::string> fresh_;
+  std::vector<Package> flatpak_rows_, snap_rows_, runtime_rows_;
+  mutable std::vector<Package> flatpak_all_;  // apps and runtimes
+  mutable int flatpak_all_generation_ = -1;
+  int runtimes_generation_ = 0;
+  bool runtimes_loaded_ = false, runtimes_loading_ = false;
+  int dropped_debian_ = 0;
+  bool rebuild_scheduled_ = false, rebuild_running_ = false, rebuild_again_ = false;
   std::unique_ptr<Backend> backends_[kSourceCount];
   SourceStatus status_[kSourceCount];
   bool probed_[kSourceCount] = {false, false, false};
   // What each part contributed; rebuild() merges them into catalog_.
-  std::vector<App> catalog_apps_;
-  std::vector<App> installed_[kSourceCount];
+  // Immutable once set: the merge reads them on its thread.
+  std::shared_ptr<const std::vector<App>> catalog_apps_;
+  std::shared_ptr<const std::vector<App>> installed_[kSourceCount];
   std::vector<App> store_apps_;  // snap search and category results
+  std::set<std::string> store_snaps_;  // their snap names (no duplicates)
+  std::vector<std::string> featured_snaps_;
+  bool snap_store_loading_ = false;
+  std::vector<std::string> popular_;
+  bool popular_loading_ = false;
+  std::time_t snapd_watch_until_ = 0;  // probing snapd after its package was installed
+  // Adds snaps of the store (each snap once; |replace|: a newer answer
+  // about a known snap replaces it).
+  void add_store_apps(std::vector<App> apps, bool replace = false);
+  void browse_next(std::shared_ptr<std::vector<std::string>> cats, size_t i);
+  static void watch_snapd(void *);
   std::map<std::string, Origin> details_;  // Origin::key() -> fetched details
   std::set<std::string> details_asked_;
   std::set<std::string> lookups_asked_;
@@ -189,9 +252,7 @@ class Store {
   std::string catalog_error_;
   CatalogSources catalog_sources_;
   int catalog_counts_[kSourceCount] = {0, 0, 0};
-  std::vector<Job> jobs_;
-  int next_job_ = 1;
-  bool running_ = false;
+  JobQueue queue_;
   std::vector<HistoryEntry> history_;
   bool history_loaded_ = false;
   bool history_loading_ = false;
@@ -205,18 +266,15 @@ class Store {
   RefreshState refresh_;
   int refresh_pending_ = 0;
   bool refresh_catalog_ = false;  // a refresh changed what the catalog reads
-  std::vector<Package> packages_;
-  std::map<std::string, size_t> package_index_;
+  std::shared_ptr<const PackageList> package_list_;
+  mutable std::set<std::string> system_cache_;
+  mutable int system_generation_ = -1;
   bool packages_loaded_ = false, packages_loading_ = false, packages_again_ = false;
   std::string packages_error_;
   int packages_generation_ = 0;
   ChangeSet marks_;
 };
 
-// Short verb for a job: "Installing", "Removing", "Updating" (translated).
-std::string action_progress_label(Action a);
-// "Install", "Remove", "Update".
-std::string action_label(Action a);
 // A one-line description of where an origin comes from: "Debian package
 // gimp", "Flatpak org.gimp.GIMP from flathub", "Snap gimp (latest/stable)".
 std::string origin_line(const Origin &o);

@@ -46,7 +46,12 @@ bool fake_mode() { return !fake_dir().empty(); }
 
 std::string fake_dir() { return env("MERKADU_FAKE"); }
 
+bool fake_source(Source s) { return fake_mode() && !(s == Source::Snap && !env("MERKADU_FAKE_SNAPD").empty()); }
+
 namespace {
+
+// The share of a fake change that downloads; the rest installs.
+constexpr double kFakeDownload = 0.55;
 
 std::string resolve(const std::string &dir, const std::string &path) {
   if (path.empty() || path[0] == '/' || starts_with(path, "https://") || path.find('/') == std::string::npos)
@@ -69,6 +74,9 @@ struct FakeWorld {
   std::string fail;
   double seconds = 2.5;
   int hold = -1;  // MERKADU_FAKE_HOLD: changes stop at this percentage (screenshots)
+  // What paused changes downloaded (their targets -> seconds done).
+  std::map<std::string, double> downloaded;
+  std::vector<Package> runtimes;  // Flatpak runtimes of All Software
 
   void load(const std::string &d) {
     if (loaded) return;
@@ -191,6 +199,28 @@ struct FakeWorld {
         packages.push_back(pk);
       }
     sort_packages(packages);
+    for (auto &j : root.array("runtimes")) {
+      Package p;
+      p.source = Source::Flatpak;
+      p.runtime = true;
+      p.ref = j.text("ref");
+      std::vector<std::string> parts = split(p.ref, '/', true);
+      if (parts.size() < 4) continue;
+      p.name = p.ref;
+      p.title = parts[1] + " " + parts[3];
+      p.arch = parts[2];
+      p.section = "runtimes";
+      p.summary = j.text("summary");
+      p.installation = "system";
+      p.installed = j.flag("installed");
+      (p.installed ? p.installed_version : p.candidate_version) = parts[3];
+      p.installed_size = j.number("size", -1);
+      p.current_size = p.installed ? p.installed_size : -1;
+      p.download_size = j.number("download", -1);
+      p.origin = "flathub";
+      p.lower_summary = lower(p.title + " " + p.summary);
+      runtimes.push_back(p);
+    }
     for (auto &h : root.array("history")) {
       HistoryEntry e;
       int hh = 12, mm = 0;
@@ -264,6 +294,7 @@ struct FakeJob {
   DoneFn done;
   double elapsed = 0;
   bool cancelled = false;
+  int reported = -2;  // the percentage last reported
 };
 
 class FakeBackend : public Backend {
@@ -303,14 +334,37 @@ class FakeBackend : public Backend {
     Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out] { done(out, ""); }));
   }
 
+  void featured(AppsFn done) override {
+    // The snaps of the fixture, as the store's featured ones (none in the
+    // empty world: the store is not reachable there either).
+    std::vector<App> out;
+    if (source_ == Source::Snap && env("MERKADU_FAKE_EMPTY") != "all")
+      for (auto &a : world().apps)
+        if (const Origin *o = a.origin(Source::Snap)) {
+          App copy = a;
+          copy.origins = {*o};
+          copy.origins[0].installed = false;
+          copy.origins[0].update = false;
+          out.push_back(copy);
+        }
+    Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out] { done(out, ""); }));
+  }
+
   void browse(const std::string &category, AppsFn done) override {
     std::vector<App> out;
-    for (size_t i = 0; i < world().apps.size(); ++i)
-      if (world().store_only[i] && source_ == Source::Snap) out.push_back(world().apps[i]);
+    if (env("MERKADU_FAKE_EMPTY") != "all")
+      for (size_t i = 0; i < world().apps.size(); ++i)
+        if (world().store_only[i] && source_ == Source::Snap) out.push_back(world().apps[i]);
     Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out] { done(out, ""); }));
   }
 
   void details(const App &app, const Origin &o, std::function<void(Origin)> done) override {}
+
+  void list_runtimes(std::function<void(std::vector<Package>)> done) override {
+    std::vector<Package> out;
+    if (source_ == Source::Flatpak) out = world().runtimes;
+    Fl::add_timeout(0.2, call_later, new std::function<void()>([done, out] { done(out); }));
+  }
 
   void lookup(const App &app, AppsFn done) override {
     std::vector<App> out;
@@ -326,6 +380,11 @@ class FakeBackend : public Backend {
   }
 
   void run(const Job &job, std::function<void(const Progress &)> progress, DoneFn done) override {
+    Progress start;
+    start.status = _("Preparing");
+    start.cancellable = true;
+    start.phase = JobPhase::Preparing;
+    progress(start);
     auto *fj = new FakeJob{job, std::move(progress), std::move(done)};
     jobs_[job.id] = fj;
     Fl::add_timeout(0.1, tick, new std::pair<FakeBackend *, int>(this, job.id));
@@ -417,28 +476,48 @@ class FakeBackend : public Backend {
     auto it = self->jobs_.find(arg->second);
     if (it == self->jobs_.end()) return;
     FakeJob *fj = it->second;
+    std::string key;
+    for (auto &t : fj->job.targets) key += t + ";";
     if (fj->cancelled) {
+      // Like APT and OSTree, what was downloaded stays: the change continues
+      // from there when it runs again (a pause).
+      if (fj->elapsed / world().seconds < kFakeDownload) world().downloaded[key] = fj->elapsed;
       DoneFn done = fj->done;
       self->jobs_.erase(it);
       delete fj;
       done(false, true, "");
       return;
     }
-    if (world().hold >= 0 && fj->elapsed / world().seconds * 100 >= world().hold) {
-      // Held for a screenshot: the change stays where it is (still cancellable).
-      Fl::add_timeout(0.1, tick, arg.release());
-      return;
+    if (fj->elapsed == 0) {
+      auto d = world().downloaded.find(key);
+      if (d != world().downloaded.end()) {
+        fj->elapsed = d->second;
+        world().downloaded.erase(d);
+      }
     }
-    fj->elapsed += 0.1;
+    // Held for a screenshot (or a test of Pause): the change stays where it
+    // is, after saying where that is (a resumed change starts there).
+    bool held = world().hold >= 0 && fj->elapsed / world().seconds * 100 >= world().hold;
+    if (!held) fj->elapsed += 0.1;
     double f = std::min(1.0, fj->elapsed / world().seconds);
     Progress p;
-    p.percent = int(f * 100);
-    p.cancellable = f < 0.7;
+    p.percent = int(f * 100 + 1e-6);
+    bool downloading = fj->job.action != Action::Remove && f < kFakeDownload;
+    // Debian: dpkg cannot be stopped; Flatpak and snapd undo what they did.
+    p.phase = downloading ? JobPhase::Downloading
+              : fj->job.source == Source::Debian ? JobPhase::Changing
+                                                 : JobPhase::Applying;
+    p.cancellable = p.phase != JobPhase::Changing;
     if (fj->job.action == Action::Remove)
       p.status = _("Removing");
     else
-      p.status = f < 0.55 ? _("Downloading") : fj->job.action == Action::Update ? _("Updating") : _("Installing");
-    fj->progress(p);
+      p.status = downloading ? _("Downloading") : fj->job.action == Action::Update ? _("Updating") : _("Installing");
+    if (!held || fj->reported != p.percent) fj->progress(p);
+    fj->reported = p.percent;
+    if (held) {
+      Fl::add_timeout(0.1, tick, arg.release());
+      return;
+    }
     if (f < 1.0) {
       Fl::add_timeout(0.1, tick, arg.release());
       return;
@@ -459,7 +538,28 @@ class FakeBackend : public Backend {
                                                     : Change::Install;
       e.requested_by = user_name();
       e.tool = "merkadu";
+      // The snapd package of Enable Snap Support: a test's fake snapd
+      // starts (MERKADU_FAKE_SNAPD names the file it waits for).
+      if (fj->job.source == Source::Debian && fj->job.action == Action::Install &&
+          std::find(fj->job.targets.begin(), fj->job.targets.end(), "snapd") != fj->job.targets.end() &&
+          !env("MERKADU_FAKE_SNAPD").empty())
+        write_file_atomic(env("MERKADU_FAKE_SNAPD"), "installed\n");
       for (auto &t : fj->job.targets) {
+        // A Flatpak runtime of All Software.
+        for (auto &rt : world().runtimes)
+          if (fj->job.source == Source::Flatpak && t.substr(t.find(':') + 1) == rt.ref) {
+            bool remove = fj->job.action == Action::Remove;
+            rt.installed = !remove;
+            if (remove) {
+              rt.candidate_version = rt.installed_version;
+              rt.installed_version.clear();
+            } else if (rt.installed_version.empty()) {
+              rt.installed_version = rt.candidate_version;
+            }
+            rt.current_size = remove ? -1 : rt.installed_size;
+            e.items.push_back(rt.ref);
+            e.versions.push_back("");
+          }
         App *app = nullptr;
         Origin *o = world().origin_of(fj->job.source, t, &app);
         if (!o) continue;

@@ -9,21 +9,30 @@
 // on Debian testing with the real archive and Flathub.
 //
 //   merkadu --self-test [--expect REF[,REF...]] [--expect-flatpak N] [--list]
+//                       [--expect-remote REF=REMOTE[,...]]
 //                       [--simulate install:PKG,remove:PKG,update:PKG]
 //
 // REF is an app reference as in merkadu.conf (AppStream id, deb:PACKAGE,
-// flatpak:APPID; alternatives with '|'). Exit status 0 when everything
-// expected was found, 1 otherwise.
+// flatpak:APPID; alternatives with '|'). --expect-remote: the app's
+// Flatpak installs from REMOTE. The catalog is built as the window builds
+// it, and these are always problems: a Flatpak origin whose remote is not
+// configured (Alpha 3 installed Flathub's apps from the remote "flatpak")
+// and a Debian origin whose package APT does not know. Exit status 0 when
+// everything expected was found, 1 otherwise.
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <memory>
 #include <set>
 
 #include "appstream_catalog.h"
 #include "apt_cache.h"
 #include "build_config.h"
+#include "catalog_build.h"
 #include "i18n.h"
 #include "icons.h"
+#include "jobs.h"
 #include "model.h"
 #include "packages.h"
 #include "util.h"
@@ -67,22 +76,27 @@ std::string usable_icon(const App &a, std::string *kind) {
   return "";
 }
 
+// The enabled remotes of the system and the user installation, as
+// "INSTALLATION/NAME" ("system/flathub").
 std::vector<std::string> flatpak_remotes() {
   std::vector<std::string> out;
 #ifdef MERKADU_HAVE_FLATPAK
-  GError *err = nullptr;
-  FlatpakInstallation *inst = flatpak_installation_new_system(nullptr, &err);
-  g_clear_error(&err);
-  if (!inst) return out;
-  if (GPtrArray *remotes = flatpak_installation_list_remotes(inst, nullptr, &err)) {
-    for (guint i = 0; i < remotes->len; ++i) {
-      FlatpakRemote *r = FLATPAK_REMOTE(g_ptr_array_index(remotes, i));
-      if (!flatpak_remote_get_disabled(r)) out.push_back(flatpak_remote_get_name(r));
+  for (const char *which : {"system", "user"}) {
+    GError *err = nullptr;
+    FlatpakInstallation *inst = std::string(which) == "system" ? flatpak_installation_new_system(nullptr, &err)
+                                                               : flatpak_installation_new_user(nullptr, &err);
+    g_clear_error(&err);
+    if (!inst) continue;
+    if (GPtrArray *remotes = flatpak_installation_list_remotes(inst, nullptr, &err)) {
+      for (guint i = 0; i < remotes->len; ++i) {
+        FlatpakRemote *r = FLATPAK_REMOTE(g_ptr_array_index(remotes, i));
+        if (!flatpak_remote_get_disabled(r)) out.push_back(std::string(which) + "/" + flatpak_remote_get_name(r));
+      }
+      g_ptr_array_unref(remotes);
     }
-    g_ptr_array_unref(remotes);
+    g_clear_error(&err);
+    g_object_unref(inst);
   }
-  g_clear_error(&err);
-  g_object_unref(inst);
 #endif
   return out;
 }
@@ -90,13 +104,15 @@ std::vector<std::string> flatpak_remotes() {
 }  // namespace
 
 int run_self_test(const std::vector<std::string> &args) {
-  std::vector<std::string> expect;
+  std::vector<std::string> expect, expect_remote;
   int expect_flatpak = 0;
   bool list = false;
   ChangeSet marks;
   for (size_t i = 0; i < args.size(); ++i) {
     if (args[i] == "--expect" && i + 1 < args.size())
       for (auto &r : split_list(args[++i])) expect.push_back(r);
+    else if (args[i] == "--expect-remote" && i + 1 < args.size())
+      for (auto &r : split_list(args[++i])) expect_remote.push_back(r);
     else if (args[i] == "--expect-flatpak" && i + 1 < args.size())
       expect_flatpak = std::atoi(args[++i].c_str());
     else if (args[i] == "--list")
@@ -116,10 +132,28 @@ int run_self_test(const std::vector<std::string> &args) {
 
   CatalogData data = load_appstream();
   const CatalogSources &s = data.sources;
-  Catalog catalog;
-  for (auto &a : data.apps) catalog.add(a);
+  // The catalog as the window builds it (catalog_build.h): a Debian origin
+  // needs a package APT knows.
+  std::shared_ptr<PackageList> packages;
+  apt::Snapshot snap;
+  if (apt::available()) {
+    snap = apt::snapshot();
+    packages = std::make_shared<PackageList>();
+    packages->packages = snap.packages;
+    packages->error = snap.error;
+    packages->prepare();
+  }
+  CatalogInputs inputs;
+  inputs.catalog = std::make_shared<const std::vector<App>>(data.apps);
+  inputs.packages = packages;
+  inputs.now = std::time(nullptr);
+  CatalogResult built = build_catalog(inputs);
+  const Catalog &catalog = built.catalog;
   printf("AppStream catalog: %zu apps (%d Debian, %d Flatpak components) in %.1f s\n", catalog.size(), data.debian,
          data.flatpak, data.seconds);
+  if (built.dropped_debian)
+    printf("  left out: %d Debian origins of packages APT does not know (metainfo of other software)\n",
+           built.dropped_debian);
   if (!data.error.empty()) printf("  error: %s\n", data.error.c_str());
   printf("  APT downloads the catalog (appstream's 50appstream): %s\n", s.appstream_apt ? "yes" : "NO");
   printf("  DEP-11 catalogs: %d downloaded, %d read by AppStream, %zu read from Merkadu's own links\n", s.dep11,
@@ -128,12 +162,31 @@ int run_self_test(const std::vector<std::string> &args) {
          s.icon_origins, s.other_catalogs);
   printf("  last refresh of the package lists: %s\n", when(s.lists_time).c_str());
   std::string remotes, with_data;
-  for (auto &r : flatpak_remotes()) remotes += (remotes.empty() ? "" : ", ") + r;
+  std::vector<std::string> configured = flatpak_remotes();
+  for (auto &r : configured) remotes += (remotes.empty() ? "" : ", ") + r;
   for (auto &r : s.flatpak_remotes) with_data += (with_data.empty() ? "" : ", ") + r;
   printf("  Flatpak remotes: %s; with AppStream data: %s\n", remotes.empty() ? "none" : remotes.c_str(),
          with_data.empty() ? "none" : with_data.c_str());
   int files = 0, urls = 0, themed = 0, none = 0, flatpak_apps = 0, flatpak_icons = 0;
+  int bad_remote = 0, unknown_package = 0;
   for (auto &a : catalog.apps()) {
+    // Every Flatpak app installs from a remote this computer has (Alpha 3
+    // asked for the remote "flatpak", Flathub's origin attribute), and no
+    // Debian origin is offered without a package.
+    for (auto &o : a.origins) {
+      if (o.source == Source::Flatpak && !configured.empty()) {
+        std::string where = (o.installation.empty() ? std::string("system") : o.installation) + "/" + o.remote;
+        if (std::find(configured.begin(), configured.end(), where) == configured.end()) {
+          if (bad_remote++ < 10)
+            printf("  PROBLEM: %s installs from the remote %s, which is not configured\n", a.id.c_str(),
+                   where.c_str());
+        }
+      }
+      if (o.source == Source::Debian && packages && !packages->find(o.id)) {
+        if (unknown_package++ < 10)
+          printf("  PROBLEM: %s is offered as the package %s, which APT does not know\n", a.id.c_str(), o.id.c_str());
+      }
+    }
     std::string kind;
     std::string icon = usable_icon(a, &kind);
     if (kind == "file") ++files;
@@ -150,9 +203,11 @@ int run_self_test(const std::vector<std::string> &args) {
   }
   printf("  icons: %d files, %d downloaded from the catalog's media, %d of the icon theme, %d generic\n", files, urls,
          themed, none);
+  if (bad_remote) printf("  %d Flatpak origins with a remote that is not configured: PROBLEM\n", bad_remote);
+  if (unknown_package) printf("  %d Debian origins without a package: PROBLEM\n", unknown_package);
+  problems += (bad_remote > 0) + (unknown_package > 0);
 
   if (apt::available()) {
-    apt::Snapshot snap = apt::snapshot();
     size_t installed = 0, updates = 0;
     for (auto &p : snap.packages) {
       installed += p.installed;
@@ -190,7 +245,7 @@ int run_self_test(const std::vector<std::string> &args) {
     printf("\nPackages: this build has no libapt-pkg\n");
   }
 
-  if (!expect.empty() || expect_flatpak > 0) printf("\nExpected:\n");
+  if (!expect.empty() || expect_flatpak > 0 || !expect_remote.empty()) printf("\nExpected:\n");
   for (auto &ref : expect) {
     const App *a = resolve_reference(catalog, ref);
     if (!a) {
@@ -210,6 +265,28 @@ int run_self_test(const std::vector<std::string> &args) {
     printf("  Flatpak apps: %d with %d icons (at least %d expected)%s\n", flatpak_apps, flatpak_icons, expect_flatpak,
            ok ? "" : ": MISSING");
     if (!ok) ++problems;
+  }
+  // REF=REMOTE: the Flatpak app installs from that remote (the job the
+  // Install button would queue).
+  for (auto &er : expect_remote) {
+    size_t eq = er.find('=');
+    std::string ref = er.substr(0, eq), remote = eq == std::string::npos ? "" : er.substr(eq + 1);
+    const App *a = resolve_reference(catalog, ref);
+    Job job;
+    if (!a || !a->has_source(Source::Flatpak)) {
+      printf("  %s: no Flatpak app: MISSING\n", ref.c_str());
+      ++problems;
+    } else if (!make_install_job(*a, Source::Flatpak, job)) {
+      const Origin *o = a->origin(Source::Flatpak);
+      bool installed = o && o->installed;
+      printf("  %s: %s\n", ref.c_str(), installed ? "installed already" : "cannot be installed: PROBLEM");
+      if (!installed) ++problems;
+    } else {
+      bool ok = job.remote == remote;
+      printf("  %s: installs %s from the remote %s%s\n", ref.c_str(), job.targets[0].c_str(), job.remote.c_str(),
+             ok ? "" : (" (" + remote + " expected): PROBLEM").c_str());
+      if (!ok) ++problems;
+    }
   }
   printf("\nResult: %s\n", problems ? format("%d problems", problems).c_str() : "OK");
   return problems ? 1 : 0;

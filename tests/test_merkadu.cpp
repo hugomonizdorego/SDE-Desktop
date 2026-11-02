@@ -6,20 +6,28 @@
 // JSON and HTTP framing, the history parsers, the uninstall decisions, the
 // icons of an app, All Software (filters, sections, marks, the refused
 // removals) and the diagnosis of the catalog sources.
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 
 #include "appstream_catalog.h"
+#include "catalog_build.h"
 #include "categories.h"
+#include "highlights.h"
+#include "jobs.h"
 #include "json.h"
 #include "model.h"
 #include "packages.h"
@@ -500,6 +508,185 @@ static void snap_socket() {
   CHECK(none.status == 0 && !none.error.empty());
 }
 
+// A fake snapd for snap_change(): a UNIX socket that |handler| answers, one
+// request per connection (as http_unix() sends them). It listens when
+// start() is called, so that a test can have snapd start late.
+struct FakeSnapd {
+  using Handler = std::function<std::pair<int, std::string>(const std::string &method, const std::string &path,
+                                                            const std::string &body)>;
+  std::string path;
+  Handler handler;
+  int srv = -1;
+  std::thread thread;
+  std::atomic<bool> stopping{false};
+  std::mutex mutex;
+  std::vector<std::string> requests;  // "METHOD PATH BODY"
+
+  explicit FakeSnapd(const std::string &p) : path(p) { unlink(path.c_str()); }
+  ~FakeSnapd() {
+    stopping = true;
+    if (thread.joinable()) thread.join();
+    if (srv >= 0) close(srv);
+    unlink(path.c_str());
+  }
+  void start() {
+    srv = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof addr.sun_path, "%s", path.c_str());
+    CHECK(bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof addr) == 0 && listen(srv, 8) == 0);
+    thread = std::thread([this] { serve(); });
+  }
+  void serve() {
+    while (!stopping) {
+      struct pollfd p = {srv, POLLIN, 0};
+      if (poll(&p, 1, 50) <= 0) continue;
+      int c = accept(srv, nullptr, nullptr);
+      if (c < 0) continue;
+      std::string req;
+      char buf[4096];
+      ssize_t n;
+      while ((n = read(c, buf, sizeof buf)) > 0) {
+        req.append(buf, size_t(n));
+        size_t head = req.find("\r\n\r\n");
+        if (head == std::string::npos) continue;
+        size_t length = 0, cl = req.find("Content-Length: ");
+        if (cl != std::string::npos && cl < head) length = size_t(atol(req.c_str() + cl + 16));
+        if (req.size() >= head + 4 + length) break;
+      }
+      size_t sp1 = req.find(' '), sp2 = req.find(' ', sp1 + 1), head = req.find("\r\n\r\n");
+      std::string method = req.substr(0, sp1), target = req.substr(sp1 + 1, sp2 - sp1 - 1);
+      std::string body = head == std::string::npos ? "" : req.substr(head + 4);
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        requests.push_back(method + " " + target + " " + body);
+      }
+      std::pair<int, std::string> answer = handler(method, target, body);
+      std::string out = "HTTP/1.1 " + std::to_string(answer.first) + " X\r\nContent-Type: application/json\r\n"
+                        "Content-Length: " + std::to_string(answer.second.size()) + "\r\n\r\n" + answer.second;
+      (void)!write(c, out.data(), out.size());
+      close(c);
+    }
+  }
+  int count(const std::string &prefix) {
+    std::lock_guard<std::mutex> lock(mutex);
+    return int(std::count_if(requests.begin(), requests.end(),
+                             [&prefix](const std::string &r) { return starts_with(r, prefix); }));
+  }
+};
+
+static std::string snapd_err(int status, const std::string &message, const std::string &kind = "") {
+  return "{\"type\":\"error\",\"status-code\":" + std::to_string(status) + ",\"result\":{\"message\":\"" + message +
+         "\",\"kind\":\"" + kind + "\"}}";
+}
+
+// Following a snapd change (snap_change()): snapd that starts late and says
+// it is too early, the first core snap, a polkit refusal, a cancelled
+// password prompt, Cancel (abort), a change that fails and a snapd that
+// never starts.
+static void snap_changes() {
+  std::string sock = "/tmp/merkadu-snapd-" + std::to_string(getpid()) + ".sock";
+  const std::string accepted = "{\"type\":\"async\",\"status-code\":202,\"change\":\"5\"}";
+  const std::string doing =
+      "{\"type\":\"sync\",\"result\":{\"id\":\"5\",\"status\":\"Doing\",\"ready\":false,\"tasks\":["
+      "{\"kind\":\"download-snap\",\"summary\":\"Download snap \\\"core22\\\" from channel \\\"stable\\\"\","
+      "\"status\":\"Doing\",\"progress\":{\"done\":50,\"total\":100}},"
+      "{\"kind\":\"download-snap\",\"summary\":\"Download snap \\\"hello\\\"\",\"status\":\"Do\","
+      "\"progress\":{\"done\":0,\"total\":100}}]}}";
+  const std::string done = "{\"type\":\"sync\",\"result\":{\"id\":\"5\",\"status\":\"Done\",\"ready\":true}}";
+  {
+    // snapd starts a moment after the request, then seeds itself.
+    FakeSnapd d(sock);
+    int early = 2, polls = 0;
+    d.handler = [&](const std::string &m, const std::string &p, const std::string &) -> std::pair<int, std::string> {
+      if (m == "POST" && p == "/v2/snaps/hello") {
+        if (early-- > 0)
+          return {400, snapd_err(400, "too early for operation, device not yet seeded or device model not "
+                                      "acknowledged")};
+        return {202, accepted};
+      }
+      if (m == "GET" && p == "/v2/changes/5") return {200, ++polls == 1 ? doing : done};
+      return {404, snapd_err(404, "not found")};
+    };
+    std::thread later([&d] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(300));
+      d.start();
+    });
+    std::vector<SnapProgress> seen;
+    SnapChangeResult r = snap_change(sock, "POST", "/v2/snaps/hello", "{\"action\":\"install\"}", nullptr,
+                                     [&seen](const SnapProgress &p) { seen.push_back(p); }, 10, 100, 20);
+    later.join();
+    CHECK(r.error.empty() && !r.cancelled && r.change == "5");
+    CHECK(!seen.empty() && seen.front().waiting && seen.front().status == "Waiting for snapd to start");
+    // The first snap brings its base: its download is what is shown.
+    bool core = false;
+    for (auto &p : seen) core |= p.kind == "download-snap" && p.status.find("core22") != std::string::npos &&
+                                 p.percent == 25 && !p.waiting;
+    CHECK(core);
+    CHECK(d.count("POST /v2/snaps/hello") == 3);
+    CHECK(d.count("POST /v2/snaps/hello {\"action\":\"install\"}") == 3);
+  }
+  {
+    // polkit refuses; the user cancels the password prompt; another change
+    // is in the way first.
+    FakeSnapd d(sock);
+    int conflict = 1;
+    d.handler = [&](const std::string &, const std::string &p, const std::string &) -> std::pair<int, std::string> {
+      if (p == "/v2/snaps/refused") return {403, snapd_err(403, "access denied", "login-required")};
+      if (p == "/v2/snaps/cancelled") return {401, snapd_err(401, "cancelled", "auth-cancelled")};
+      if (p == "/v2/snaps/busy") {
+        if (conflict-- > 0) return {409, snapd_err(409, "snap \\\"busy\\\" has changes in progress", "snap-change-conflict")};
+        return {202, accepted};
+      }
+      if (p == "/v2/changes/5")
+        return {200, "{\"type\":\"sync\",\"result\":{\"status\":\"Error\",\"ready\":true,\"err\":\"cannot install "
+                     "snap \\\"busy\\\": no space left on device\"}}"};
+      return {404, snapd_err(404, "not found")};
+    };
+    d.start();
+    SnapChangeResult r = snap_change(sock, "POST", "/v2/snaps/refused", "{}", nullptr, nullptr, 2, 50, 20);
+    CHECK(r.error == "You are not allowed to do this, or the authentication failed." && !r.cancelled);
+    r = snap_change(sock, "POST", "/v2/snaps/cancelled", "{}", nullptr, nullptr, 2, 50, 20);
+    CHECK(r.error.empty() && r.cancelled);
+    r = snap_change(sock, "POST", "/v2/snaps/busy", "{}", nullptr, nullptr, 2, 50, 20);
+    CHECK(!r.cancelled && r.error.find("no space left on device") != std::string::npos);
+    CHECK(d.count("POST /v2/snaps/busy") == 2);
+  }
+  {
+    // Cancel while it downloads: snapd aborts the change and undoes it.
+    FakeSnapd d(sock);
+    std::atomic<bool> aborted{false};
+    d.handler = [&](const std::string &m, const std::string &p, const std::string &b) -> std::pair<int, std::string> {
+      if (m == "POST" && p == "/v2/snaps/hello") return {202, accepted};
+      if (m == "POST" && p == "/v2/changes/5") {
+        aborted = b.find("\"abort\"") != std::string::npos;
+        return {200, "{\"type\":\"sync\",\"result\":{}}"};
+      }
+      if (p == "/v2/changes/5")
+        return {200, aborted ? "{\"type\":\"sync\",\"result\":{\"status\":\"Undone\",\"ready\":true,\"err\":\"aborted\"}}"
+                             : doing};
+      return {404, snapd_err(404, "not found")};
+    };
+    d.start();
+    std::atomic<bool> cancel{false};
+    bool aborting_seen = false;
+    SnapChangeResult r = snap_change(
+        sock, "POST", "/v2/snaps/hello", "{}", &cancel,
+        [&](const SnapProgress &p) {
+          if (p.kind == "download-snap") cancel = true;
+          aborting_seen |= p.aborting;
+        },
+        2, 50, 20);
+    CHECK(aborted && r.cancelled && r.error.empty());
+    CHECK(aborting_seen);
+  }
+  {
+    // snapd never starts.
+    SnapChangeResult r = snap_change(sock, "POST", "/v2/snaps/hello", "{}", nullptr, nullptr, 1, 100, 20);
+    CHECK(r.error == "snapd did not start. Restart the computer, then try again." && !r.cancelled);
+  }
+}
+
 static void appstream_data() {
   std::string dir = std::string(SDE_TEST_SOURCE_DIR) + "/tests/fixtures/merkadu/";
   CatalogData d = load_appstream_file(dir + "catalog-debian.xml");
@@ -695,6 +882,372 @@ static void catalog_diagnosis() {
   CHECK(system(cmd.c_str()) == 0);
 }
 
+// Flathub's appstream.xml says origin="flatpak" for every app: the remote
+// is the directory the catalog was found in (0.2 Alpha 3 asked libflatpak
+// for the remote "flatpak": Remote "flatpak" not found).
+static void flatpak_remotes() {
+  std::string base = std::string(SDE_TEST_SOURCE_DIR) + "/tests/fixtures/merkadu/flatpak-installation";
+  auto catalogs = flatpak_catalogs({{"system", base}}, "x86_64");
+  // old-remote is not configured any more, disabled is disabled.
+  CHECK(catalogs.size() == 1);
+  if (catalogs.empty()) return;
+  CHECK(catalogs[0].remote == "flathub" && catalogs[0].installation == "system" &&
+        ends_with(catalogs[0].file, "/appstream/flathub/x86_64/active/appstream.xml"));
+  CatalogData d = load_flatpak_catalog(catalogs[0]);
+  CHECK(d.error.empty() && d.flatpak == 2 && d.apps.size() == 2);  // the runtime is not an app
+  for (auto &a : d.apps) {
+    const Origin *o = a.origin(Source::Flatpak);
+    CHECK(o && o->remote == "flathub" && o->installation == "system" && !a.has_source(Source::Debian));
+  }
+  const App *only = nullptr;
+  for (auto &a : d.apps)
+    if (a.id == "org.example.onlyflatpak") only = &a;
+  CHECK(only != nullptr);
+  if (only) {
+    // Its cached icon, from the remote's own icon directory.
+    CHECK(!only->icons.empty() && only->icon == base + "/appstream/flathub/x86_64/active/icons/64x64/"
+                                                       "org.example.OnlyFlatpak.png");
+    Job j;
+    CHECK(make_install_job(*only, Source::Flatpak, j));
+    CHECK(j.remote == "flathub" && j.targets == std::vector<std::string>({"system:app/org.example.OnlyFlatpak/x86_64/stable"}));
+    // Flatpak only: nothing to install from Debian.
+    CHECK(!make_install_job(*only, Source::Debian, j));
+  }
+  // The user's installation (no polkit): its apps are installed there.
+  auto user = flatpak_catalogs({{"user", base}}, "x86_64");
+  CHECK(user.size() == 1);
+  if (!user.empty()) {
+    CatalogData u = load_flatpak_catalog(user[0]);
+    CHECK(!u.apps.empty() && u.apps[0].origins[0].installation == "user");
+    Job j;
+    CHECK(make_install_job(u.apps[0], Source::Flatpak, j) && starts_with(j.targets[0], "user:app/"));
+  }
+  // Another architecture has no catalog here.
+  CHECK(flatpak_catalogs({{"system", base}}, "aarch64").empty());
+  // A catalog read on its own: origin="flatpak" names no remote.
+  CatalogData alone = load_appstream_file(catalogs[0].file);
+  CHECK(!alone.apps.empty() && alone.apps[0].origin(Source::Flatpak) &&
+        alone.apps[0].origin(Source::Flatpak)->remote.empty());
+}
+
+static App catalog_app(const std::string &id, const std::string &name, std::vector<std::string> categories = {}) {
+  App a;
+  a.appstream_id = id;
+  a.id = normalize_id(id);
+  a.name = name;
+  a.categories = categories;
+  return a;
+}
+
+// What may be installed from where: a Debian origin needs a real package.
+static void catalog_rules() {
+  auto apps = std::make_shared<std::vector<App>>();
+  App gimp = catalog_app("org.gimp.GIMP", "GIMP", {"Graphics"});
+  gimp.pkgnames = {"gimp"};
+  Origin deb;
+  deb.source = Source::Debian;
+  deb.id = "gimp";
+  gimp.origins.push_back(deb);
+  apps->push_back(gimp);
+  App gimp_fp = catalog_app("org.gimp.GIMP", "GNU Image Manipulation Program");
+  Origin fp;
+  fp.source = Source::Flatpak;
+  fp.id = "app/org.gimp.GIMP/x86_64/stable";
+  fp.remote = "flathub";
+  fp.installation = "system";
+  gimp_fp.origins.push_back(fp);
+  apps->push_back(gimp_fp);
+  App only = catalog_app("org.example.OnlyFlatpak", "Only Flatpak", {"Office"});
+  fp.id = "app/org.example.OnlyFlatpak/x86_64/stable";
+  only.origins.push_back(fp);
+  apps->push_back(only);
+  // A component whose package APT does not know (an old catalog, another
+  // architecture, a component that is not enabled).
+  App ghost = catalog_app("org.example.Ghost", "Ghost", {"Office"});
+  deb.id = "ghost";
+  ghost.pkgnames = {"ghost"};
+  ghost.origins = {deb};
+  apps->push_back(ghost);
+  // Metainfo files of installed software without a package name: one
+  // whose launcher a package owns, one of a Flatpak export.
+  App tool = catalog_app("org.example.Tool", "Tool", {"Utility"});
+  tool.needs_owner = true;
+  tool.desktop_ids = {"org.example.Tool.desktop"};
+  apps->push_back(tool);
+  App exported = catalog_app("org.example.Exported", "Exported", {"Office"});
+  exported.needs_owner = true;
+  exported.desktop_ids = {"org.example.Exported.desktop"};
+  apps->push_back(exported);
+
+  auto list = std::make_shared<PackageList>();
+  for (const char *name : {"gimp", "tool-pkg"}) {
+    Package p;
+    p.name = name;
+    p.candidate_version = "1.0-1";
+    p.section = "graphics";
+    p.download_size = 1000;
+    list->packages.push_back(p);
+  }
+  list->prepare();
+  Categories cats;
+  CHECK(cats.parse(fixture("../../../data/merkadu/categories.menu")));
+  CatalogInputs in;
+  in.catalog = apps;
+  in.owners = {{"org.example.Tool.desktop", "tool-pkg"}};
+  in.packages = list;
+  in.categories = &cats;
+  in.now = 1800000000;
+  CatalogResult r = build_catalog(in);
+  const App *g = r.catalog.find("org.gimp.GIMP");
+  CHECK(g && g->has_source(Source::Debian) && g->has_source(Source::Flatpak) && g->origins.size() == 2);
+  if (g) CHECK(g->origin(Source::Debian)->version == "1.0-1" && g->origin(Source::Debian)->download_size == 1000);
+  const App *o = r.catalog.find("org.example.onlyflatpak");
+  CHECK(o && o->origins.size() == 1 && o->origins[0].source == Source::Flatpak && o->origins[0].remote == "flathub");
+  CHECK(r.catalog.find("org.example.ghost") == nullptr && r.dropped_debian >= 1);
+  const App *t = r.catalog.find("org.example.tool");
+  CHECK(t && t->origins.size() == 1 && t->origins[0].id == "tool-pkg");
+  CHECK(r.catalog.find("org.example.exported") == nullptr);  // no package owns it: no Debian origin
+  CHECK(r.counts[int(Source::Debian)] == 2 && r.counts[int(Source::Flatpak)] == 2);
+  // Before APT's lists are read the catalog's packages are believed.
+  in.packages = nullptr;
+  CHECK(build_catalog(in).catalog.find("org.example.ghost") != nullptr);
+  // The departments, worked out with the catalog, agree with the menu.
+  CHECK(r.departments.built());
+  for (const Category *c : cats.sorted()) {
+    std::vector<const App *> direct = cats.apps_in(*c, r.catalog);
+    const auto &indexed = r.departments.apps(c->id);
+    CHECK(direct.size() == indexed.size());
+    for (size_t i = 0; i < direct.size() && i < indexed.size(); ++i)
+      CHECK(direct[i] == &r.catalog.apps()[indexed[i]]);
+  }
+  for (size_t i = 0; i < r.catalog.size(); ++i)
+    CHECK(r.departments.department(i) == cats.category_of(r.catalog.apps()[i]));
+  // The search texts are made with the catalog.
+  CHECK(g && g->lower_name == "gimp");
+  CHECK(search(r.catalog, "only").size() == 1 && search(r.catalog, "flat").size() == 1);
+}
+
+// Pause, Resume and Cancel: what the queue allows in each state.
+static void job_queue() {
+  JobQueue q;
+  Job a;
+  a.title = "A";
+  a.targets = {"a"};
+  Job b = a;
+  b.title = "B";
+  int ia = q.add(a), ib = q.add(b);
+  Job c = a;
+  c.title = "C (needs B)";
+  c.needs = ib;
+  int ic = q.add(c);
+  CHECK(q.active() == 3 && !q.running());
+  Job *next = q.next(100);
+  CHECK(next && next->id == ia);
+  q.start(ia);
+  CHECK(q.next(100) == nullptr);  // one at a time
+  // Not yet reported: nothing can be stopped.
+  JobControls none = job_controls(*q.find(ia));
+  CHECK(!none.pause && !none.cancel);
+  Progress p;
+  p.cancellable = true;
+  p.phase = JobPhase::Downloading;
+  p.percent = 30;
+  q.progress(ia, p);
+  JobControls dl = job_controls(*q.find(ia));
+  CHECK(dl.pause && dl.cancel && dl.why_not.empty());
+  // dpkg runs: neither, and why.
+  p.phase = JobPhase::Changing;
+  p.cancellable = false;
+  q.progress(ia, p);
+  JobControls inst = job_controls(*q.find(ia));
+  CHECK(!inst.pause && !inst.cancel && !inst.why_not.empty());
+  CHECK(!q.pause(ia) && !q.cancel(ia, 100));
+  // snapd and Flatpak undo what they set up: Cancel, but no Pause.
+  p.phase = JobPhase::Applying;
+  p.cancellable = true;
+  q.progress(ia, p);
+  JobControls apply = job_controls(*q.find(ia));
+  CHECK(!apply.pause && apply.cancel);
+  // Back to downloading: pause it. The source stops it and reports it
+  // cancelled; the job is paused, keeps its place and its percentage.
+  p.phase = JobPhase::Downloading;
+  q.progress(ia, p);
+  CHECK(q.pause(ia) && q.find(ia)->stopping == Job::Pausing);
+  CHECK(!job_controls(*q.find(ia)).pause && !job_controls(*q.find(ia)).why_not.empty());  // "Pausing..."
+  q.finished(ia, false, true, "", 101);
+  CHECK(q.find(ia)->state == Job::Paused && q.find(ia)->percent == 30 && q.find(ia)->active());
+  JobControls paused = job_controls(*q.find(ia));
+  CHECK(paused.resume && paused.cancel && !paused.pause);
+  // The next one runs meanwhile.
+  next = q.next(102);
+  CHECK(next && next->id == ib);
+  q.start(ib);
+  // C waits for B; B fails: C is cancelled with it.
+  q.finished(ib, false, false, "broken", 103);
+  std::vector<int> cancelled;
+  next = q.next(104, &cancelled);
+  CHECK(next == nullptr && cancelled == std::vector<int>({ic}) && q.find(ic)->state == Job::Cancelled);
+  CHECK(q.find(ib)->state == Job::Failed && q.find(ib)->error == "broken");
+  // Resume A: it runs again (a second run) and finishes.
+  CHECK(q.resume(ia) && q.find(ia)->state == Job::Queued);
+  next = q.next(105);
+  CHECK(next && next->id == ia);
+  q.start(ia);
+  CHECK(q.find(ia)->runs == 2);
+  q.finished(ia, true, false, "", 106);
+  CHECK(q.find(ia)->state == Job::Done && q.find(ia)->percent == 100 && q.active() == 0);
+  // A waiting change can be paused or taken out of the queue at once.
+  int id = q.add(a);
+  CHECK(!q.pause(id) && q.find(id)->state == Job::Paused);
+  CHECK(!q.cancel(id, 107) && q.find(id)->state == Job::Cancelled);
+  // Cancelling a running change goes to the source; it ends cancelled.
+  id = q.add(a);
+  q.start(q.next(108)->id);
+  p.phase = JobPhase::Preparing;
+  q.progress(id, p);
+  CHECK(q.cancel(id, 109) && q.find(id)->stopping == Job::Cancelling);
+  q.finished(id, false, true, "", 110);
+  CHECK(q.find(id)->state == Job::Cancelled);
+  // A removal does not download: no Pause, but Cancel while it may.
+  Job r = a;
+  r.action = Action::Remove;
+  id = q.add(r);
+  q.start(q.next(111)->id);
+  p.phase = JobPhase::Preparing;
+  q.progress(id, p);
+  CHECK(!job_controls(*q.find(id)).pause && job_controls(*q.find(id)).cancel);
+  q.clear_finished();
+  CHECK(q.jobs().size() == 1 && q.jobs()[0].id == id);
+  // PackageKit's statuses.
+  CHECK(pk::status_phase(pk::STATUS_DOWNLOAD) == JobPhase::Downloading &&
+        pk::status_phase(pk::STATUS_INSTALL) == JobPhase::Changing &&
+        pk::status_phase(pk::STATUS_WAITING_FOR_LOCK) == JobPhase::Waiting &&
+        pk::status_phase(pk::STATUS_COMMIT) == JobPhase::Changing);
+}
+
+// All Software's lists of each source: one row per app of the source (the
+// user's own Flatpak a row of its own), never another source's; the
+// runtimes only with their filter; Not Installed for what is offered.
+static void source_lists() {
+  Catalog cat;
+  App gimp = make_app("org.gimp.GIMP", "GIMP", Source::Debian, "gimp");
+  Origin fo;
+  fo.source = Source::Flatpak;
+  fo.id = "app/org.gimp.GIMP/x86_64/stable";
+  fo.installation = "system";
+  fo.remote = "flathub";
+  fo.version = "2.10.38";
+  gimp.origins.push_back(fo);
+  fo.installation = "user";
+  fo.installed = true;
+  fo.installed_version = "2.10.36";
+  gimp.origins.push_back(fo);
+  cat.add(gimp);
+  cat.add(make_app("org.example.Lumen", "Lumen", Source::Flatpak, "app/org.example.Lumen/x86_64/stable"));
+  App sky = make_app("org.example.Skyview", "Skyview", Source::Snap, "skyview");
+  sky.origins[0].publisher = "Example Astronomy";
+  sky.origins[0].remote = "latest/stable";
+  cat.add(sky);
+  std::vector<std::string> dept(cat.apps().size(), "graphics");
+  std::vector<Package> flatpak = source_rows(cat, Source::Flatpak, dept);
+  CHECK(flatpak.size() == 3);
+  CHECK(flatpak.size() == 3 && flatpak[0].title == "GIMP" && flatpak[1].title == "GIMP" && flatpak[2].title == "Lumen");
+  CHECK(flatpak.size() == 3 && flatpak[0].name == "org.gimp.gimp" && flatpak[1].name == "org.gimp.gimp@user");
+  CHECK(flatpak.size() == 3 && flatpak[0].origin == "flathub" && flatpak[0].arch == "x86_64" &&
+        flatpak[0].ref == "app/org.gimp.GIMP/x86_64/stable" && flatpak[0].section == "graphics");
+  std::vector<Package> snaps = source_rows(cat, Source::Snap, dept);
+  CHECK(snaps.size() == 1 && snaps[0].ref == "skyview" && snaps[0].origin == "Example Astronomy, latest/stable");
+  CHECK(source_rows(cat, Source::Debian, dept).size() == 1);
+  // A runtime is listed only with its filter.
+  Package rt;
+  rt.source = Source::Flatpak;
+  rt.runtime = true;
+  rt.name = "runtime/org.gnome.Platform/x86_64/47";
+  rt.title = "org.gnome.Platform 47";
+  rt.section = "runtimes";
+  flatpak.push_back(rt);
+  PackageFilter f;
+  f.source = Source::Flatpak;
+  ChangeSet none;
+  CHECK(filter_packages(flatpak, f, none).size() == 3);
+  f.runtimes = true;
+  CHECK(filter_packages(flatpak, f, none).size() == 4);
+  f.query = "gnome";
+  CHECK(filter_packages(flatpak, f, none).size() == 1);
+  f.query.clear();
+  f.runtimes = false;
+  f.status = PackageStatus::NotInstalled;
+  CHECK(filter_packages(flatpak, f, none).size() == 2);  // GIMP from Flathub and Lumen
+  f.status = PackageStatus::Installed;
+  CHECK(filter_packages(flatpak, f, none).size() == 1);  // the user's GIMP
+}
+
+// Home's highlights: several kinds in turn, rotated by the day, installed
+// apps and apps without an icon last, Flathub's popular apps only with a
+// Flatpak, each app once; Flathub's collections.
+static void highlights() {
+  Catalog cat;
+  auto add = [&cat](const std::string &id, Source s, const std::string &origin, bool icon = true,
+                    bool installed = false) {
+    App a = make_app(id, id, s, origin);
+    if (icon) a.icon = "icon-" + id;
+    a.origins[0].installed = installed;
+    cat.add(a);
+  };
+  add("org.example.D1", Source::Debian, "d1");
+  add("org.example.D2", Source::Debian, "d2");
+  add("org.example.D3", Source::Debian, "d3", true, true);  // installed
+  add("org.example.N1", Source::Flatpak, "app/org.example.N1/x86_64/stable");
+  add("org.example.N2", Source::Debian, "n2", false);  // no icon
+  add("org.example.P1", Source::Flatpak, "app/org.example.P1/x86_64/stable");
+  add("org.example.P2", Source::Flatpak, "app/org.example.P2/x86_64/stable");
+  add("org.example.DebOnly", Source::Debian, "debonly");
+  add("org.example.S1", Source::Snap, "s1");
+  add("org.example.S2", Source::Snap, "s2");
+  HighlightSources src;
+  src.distribution = {"org.example.D1", "deb:d2", "org.example.D3", "org.example.Missing"};
+  src.fresh = {"org.example.N1", "org.example.N2", "org.example.D1"};
+  src.popular = {"org.example.P1", "org.example.Elsewhere", "org.example.DebOnly", "org.example.P2"};
+  src.featured_snaps = {"org.example.S1", "org.example.S2"};
+  auto ids = [](const std::vector<Highlight> &hs) {
+    std::vector<std::string> out;
+    for (auto &h : hs) out.push_back(h.app->appstream_id);
+    return out;
+  };
+  std::vector<Highlight> day0 = choose_highlights(cat, src, 20, 0);
+  // In turn: the distribution's, a new one, a popular one, a featured snap.
+  CHECK(day0.size() >= 4 && day0[0].why == Highlight::Distribution && day0[1].why == Highlight::New &&
+        day0[2].why == Highlight::Popular && day0[3].why == Highlight::Featured);
+  std::vector<std::string> all = ids(day0);
+  CHECK(all.size() > 3 && all[0] == "org.example.D1" && all[1] == "org.example.N1" && all[2] == "org.example.P1" &&
+        all[3] == "org.example.S1");
+  // Each app once (D1 is new too), nothing that is not in the catalog, no
+  // popular app without a Flatpak.
+  CHECK(std::count(all.begin(), all.end(), "org.example.D1") == 1);
+  CHECK(std::find(all.begin(), all.end(), "org.example.DebOnly") == all.end());
+  CHECK(all.size() == 9);
+  // The installed one and the one without an icon come last.
+  CHECK(all.size() == 9 && ((all[7] == "org.example.D3" && all[8] == "org.example.N2") ||
+                            (all[7] == "org.example.N2" && all[8] == "org.example.D3")));
+  // Another day, another start of every list.
+  std::vector<std::string> day1 = ids(choose_highlights(cat, src, 4, 1));
+  CHECK(day1.size() == 4 && day1[0] == "org.example.D2" && day1[3] == "org.example.S2");
+  CHECK(ids(choose_highlights(cat, src, 4, 2)) == ids(choose_highlights(cat, src, 4, 2)));
+  CHECK(choose_highlights(cat, src, 3, 0).size() == 3);
+  // Only the distribution's list: still several apps.
+  HighlightSources only;
+  only.distribution = src.distribution;
+  CHECK(choose_highlights(cat, only, 8, 0).size() == 3);
+  CHECK(choose_highlights(Catalog(), src, 8, 0).empty());
+
+  std::vector<std::string> popular = parse_flathub_collection(fixture("flathub-popular.json"));
+  CHECK(popular.size() == 5 && popular[0] == "org.example.PixelPuzzle" && popular[4] == "org.example.Bookshelf");
+  CHECK(parse_flathub_collection("[\"org.a.B\",\"org.a.B\",\"nodot\",{\"app_id\":\"org.c.D\"}]") ==
+        (std::vector<std::string>{"org.a.B", "org.c.D"}));
+  CHECK(parse_flathub_collection("{\"apps\":[{\"id\":\"org.e.F\"}]}") == std::vector<std::string>{"org.e.F"});
+  CHECK(parse_flathub_collection("<html>").empty() && parse_flathub_collection("{\"hits\":3}").empty());
+}
+
 int main() {
   set_distribution_name("Debian");
   json();
@@ -708,10 +1261,16 @@ int main() {
   categories();
   snap_json();
   snap_socket();
+  snap_changes();
   appstream_data();
   icons();
   all_software();
   catalog_diagnosis();
+  flatpak_remotes();
+  catalog_rules();
+  job_queue();
+  highlights();
+  source_lists();
   if (failures) {
     fprintf(stderr, "%d merkadu check(s) failed\n", failures);
     return 1;
