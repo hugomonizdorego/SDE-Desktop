@@ -306,6 +306,11 @@ target_link_libraries(sde-compositor-redraw-probe PRIVATE ${X11_LIBRARIES})
 add_test(NAME sde-compositor-redraw COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_compositor_redraw.py
   --compositor "${SDE_REDRAW_COMPOSITOR}" --probe $<TARGET_FILE:sde-compositor-redraw-probe>)
 set_tests_properties(sde-compositor-redraw PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+# 0.2.0 Alpha 3.1: sde-session's OpenGL check at login on Xvfb (software
+# OpenGL, no GLX, no display); the decision it feeds is in sde-tests.
+add_test(NAME sde-gl-probe COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_gl_probe.py
+  $<TARGET_FILE:sde-gl-probe>)
+set_tests_properties(sde-gl-probe PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 # --version without an X display, with the icons installed (FLTK 1.4).
 add_test(NAME sde-version-without-display
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_version_no_display.py ${PROJECT_SOURCE_DIR}/data

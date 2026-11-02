@@ -43,6 +43,7 @@
 #include "util.h"
 #include "wm.h"
 #include "integration.h"
+#include "process.h"
 #include "theme.h"
 
 using namespace sde;
@@ -447,6 +448,58 @@ void run_and_wait(const std::vector<std::string> &argv, int seconds) {
   log("%s is taking too long; continuing", argv[0].c_str());
 }
 
+// sde-gl-probe: installed next to the polkit agent, or next to this program
+// in a build tree.
+std::string find_gl_probe() {
+  std::string installed = SDE_LIBEXECDIR "/sde/sde-gl-probe";
+  if (is_executable(installed)) return installed;
+  char self[4096];
+  ssize_t n = readlink("/proc/self/exe", self, sizeof self - 1);
+  if (n > 0) {
+    self[n] = 0;
+    std::string dir(self);
+    dir = dir.substr(0, dir.rfind('/'));
+    if (is_executable(dir + "/sde-gl-probe")) return dir + "/sde-gl-probe";
+  }
+  return find_program("sde-gl-probe");
+}
+
+// 0.2.0 Alpha 3.1: which OpenGL renderer the display has, checked once per
+// login. On a graphics device whose OpenGL renders in software (its driver
+// missing or broken) the compositor's blur and glass shader would run on the
+// CPU: the automatic profile is then lite (XRender). The result reaches every
+// program of the session (SDE_OPENGL; $XDG_RUNTIME_DIR/sde-opengl for the
+// others), so that their themes agree with the compositor. The helper runs
+// in its own process with a time limit: a broken OpenGL stack costs a few
+// seconds at most, never the session.
+void probe_opengl(const Config &cfg) {
+  std::string gfx = detect_graphics_class();
+  if (gfx != "hardware") {  // XRender and lite anyway
+    publish_opengl_info({});
+    return;
+  }
+  OpenGLInfo gl;
+  std::string helper = find_gl_probe();
+  if (helper.empty()) {
+    log("OpenGL not checked: sde-gl-probe was not found");
+  } else {
+    int status = -1;
+    std::string out = run_sync({helper}, &status, 4000);
+    if (status == 0)
+      gl = parse_opengl_probe(out);
+    else
+      log("OpenGL not checked: sde-gl-probe failed or took too long (status %d)", status);
+  }
+  publish_opengl_info(gl);
+  AutoProfile p = auto_profile(gfx, gl);
+  std::string backend = lower(cfg.get("compositor", "backend", "auto"));
+  std::string effects = lower(cfg.get("compositor", "effects", "auto"));
+  bool chosen = backend == "glx" || backend == "xrender" || effects == "full" || effects == "lite";
+  log("compositor: %s, so the automatic profile is %s%s", p.why.c_str(),
+      p.effects == "lite" ? "lite (XRender, no blur)" : "full (OpenGL)",
+      chosen ? "; the [compositor] settings chosen by hand are kept" : "");
+}
+
 std::string find_polkit_agent() {
   static const char *agents[] = {
       SDE_LIBEXECDIR "/sde/sde-polkit-agent",  // SDE's own agent
@@ -699,6 +752,8 @@ int main(int argc, char **argv) {
     cfg.save();
     log("theme settings migrated to %s", theme_dir(cfg).c_str());
   }
+  // Before anything computes the theme or the compositor's configuration.
+  probe_opengl(cfg);
   sync_openbox(cfg);
   sync_gtk_settings(cfg);
   migrate_legacy_suite_shortcuts();

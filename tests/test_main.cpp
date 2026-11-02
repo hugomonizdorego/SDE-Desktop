@@ -592,6 +592,91 @@ static void test_gtk_preferences() {
   if (saved.empty()) unsetenv("XDG_CONFIG_HOME"); else setenv("XDG_CONFIG_HOME", saved.c_str(), 1);
 }
 
+// 0.2.0 Alpha 3.1: the automatic compositor profile follows OpenGL's
+// acceleration (sde-gl-probe at login), not only the graphics device; a
+// choice made by hand wins.
+static void test_auto_profile() {
+  const auto npos = std::string::npos;
+  // sde-gl-probe's lines.
+  OpenGLInfo gl = parse_opengl_probe("glx=1 accelerated=0 renderer=llvmpipe (LLVM 20.1.2, 256 bits)\n");
+  CHECK(gl.state == "software" && gl.detail == "llvmpipe (LLVM 20.1.2, 256 bits)");
+  gl = parse_opengl_probe("glx=1 accelerated=1 renderer=Mesa Intel(R) UHD Graphics 620 (KBL GT2)");
+  CHECK(gl.state == "accelerated" && gl.detail == "Mesa Intel(R) UHD Graphics 620 (KBL GT2)");
+  CHECK(parse_opengl_probe("glx=1 accelerated=1 renderer=softpipe").state == "software");  // the name wins
+  gl = parse_opengl_probe("glx=0 reason=no GLX extension");
+  CHECK(gl.state == "none" && gl.detail == "no GLX extension");
+  CHECK(parse_opengl_probe("").state.empty() && parse_opengl_probe("error=no display").state.empty());
+
+  // The decision.
+  OpenGLInfo unknown, sw{"software", "llvmpipe"}, hw{"accelerated", "AMD Radeon RX 6600"},
+      noglx{"none", "no GLX extension"};
+  AutoProfile p = auto_profile("hardware", hw);
+  CHECK(p.backend == "glx" && p.effects == "full");
+  p = auto_profile("hardware", unknown);  // not probed: the graphics device decides, as before
+  CHECK(p.backend == "glx" && p.effects == "full");
+  p = auto_profile("hardware", sw);
+  CHECK(p.backend == "xrender" && p.effects == "lite");
+  CHECK(p.why.find("software") != npos && p.why.find("llvmpipe") != npos);
+  p = auto_profile("hardware", noglx);
+  CHECK(p.backend == "xrender" && p.effects == "lite" && p.why.find("no GLX extension") != npos);
+  for (const char *g : {"virtual", "software"}) {
+    p = auto_profile(g, hw);
+    CHECK(p.backend == "xrender" && p.effects == "lite");
+  }
+
+  // Through the configuration, as the session and its programs see it.
+  char temp[] = "/tmp/sde-auto-profile-XXXXXX";
+  char *root = mkdtemp(temp);
+  CHECK(root != nullptr);
+  if (!root) return;
+  std::string saved_gfx = env("SDE_GRAPHICS"), saved_gl = env("SDE_OPENGL"),
+              saved_rt = env("XDG_RUNTIME_DIR"), saved_cfg = env("XDG_CONFIG_HOME");
+  setenv("XDG_RUNTIME_DIR", root, 1);
+  setenv("XDG_CONFIG_HOME", (std::string(root) + "/config").c_str(), 1);
+  setenv("SDE_GRAPHICS", "hardware", 1);
+  Config cfg;
+  publish_opengl_info(sw);
+  CHECK(env("SDE_OPENGL") == "software:llvmpipe");
+  CHECK(compositor_backend(cfg) == "xrender" && compositor_effects(cfg) == "lite");
+  Theme t = Theme::from_config(cfg);
+  CHECK(t.lite && !t.blur && !t.liquid);
+  // Programs that did not inherit SDE_OPENGL read the session's file.
+  unsetenv("SDE_OPENGL");
+  CHECK(opengl_info().state == "software" && opengl_info().detail == "llvmpipe");
+  CHECK(compositor_backend(cfg) == "xrender");
+  // The generated configuration: XRender, no blur, and why in a comment.
+  std::string text;
+  CHECK(read_file(write_compositor_config(cfg), text));
+  CHECK(text.find("backend = \"xrender\";") != npos && text.find("blur-background") == npos);
+  CHECK(text.find("OpenGL: software") != npos);
+  // [compositor] effects=full chosen by hand keeps OpenGL and every effect.
+  cfg.set("compositor", "effects", "full");
+  CHECK(compositor_backend(cfg) == "glx" && compositor_effects(cfg) == "full");
+  cfg.unset("compositor", "effects");
+  // So does OpenGL chosen by hand.
+  cfg.set("compositor", "backend", "glx");
+  CHECK(compositor_backend(cfg) == "glx" && compositor_effects(cfg) == "full");
+  cfg.unset("compositor", "backend");
+  // An accelerated renderer, and no probe at all: OpenGL, full.
+  publish_opengl_info(hw);
+  CHECK(compositor_backend(cfg) == "glx" && compositor_effects(cfg) == "full");
+  publish_opengl_info({});
+  CHECK(env("SDE_OPENGL").empty() && opengl_info().state.empty());
+  CHECK(compositor_backend(cfg) == "glx" && compositor_effects(cfg) == "full");
+  // No GLX on a graphics device: XRender.
+  publish_opengl_info(noglx);
+  CHECK(compositor_backend(cfg) == "xrender" && compositor_effects(cfg) == "lite");
+  publish_opengl_info({});
+
+  auto restore = [](const char *name, const std::string &v) {
+    if (v.empty()) unsetenv(name); else setenv(name, v.c_str(), 1);
+  };
+  restore("SDE_GRAPHICS", saved_gfx);
+  restore("SDE_OPENGL", saved_gl);
+  restore("XDG_RUNTIME_DIR", saved_rt);
+  restore("XDG_CONFIG_HOME", saved_cfg);
+}
+
 int main() {
   test_rust_config();
   test_split_command();
@@ -605,6 +690,7 @@ int main() {
   test_rgba_pixels();
   test_runtime_dir_fallback();
   test_gtk_preferences();
+  test_auto_profile();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);
     return 1;

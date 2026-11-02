@@ -181,7 +181,9 @@ Since 0.2.0 Alpha 3.1 (`apply_transparency()` in `src/common/theme.cpp`):
   Glass 72 %, Fluent 86 %, Graphite 90 % at 100.
 * **Almost opaque without blur.** Without the OpenGL compositor's blur
   (the lite profile: `[compositor] effects=lite`, or `auto` in virtual
-  machines and with software rendering; `[aero] blur=false`) a busy window
+  machines and with software rendering, also on a GPU whose OpenGL renders
+  in software, which `sde-session` checks at login with `sde-gl-probe` and
+  writes to `session.log`; `[aero] blur=false`) a busy window
   behind would show through sharp: surfaces keep at least 97.5 % (XRender's
   small CPU blur 88 %) and frames are opaque. SDE then draws its glass
   with a sheen and light rims (`Painter::glass_surface()`).
