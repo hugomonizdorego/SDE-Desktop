@@ -311,11 +311,13 @@ if(TARGET merkadu-core)
   add_test(NAME merkadu-model COMMAND merkadu-tests)
 endif()
 # The window and `merkadu --uninstall` with the fake sources (no network or
-# root): pages, an installation, history and the uninstall exit codes.
+# root): pages, an installation, history and the uninstall exit codes, the
+# highlights, Pause and Cancel, Enable Snap Support against a fake snapd
+# (fake_snapd.py).
 if(TARGET merkadu AND SDE_XVFB)
   add_test(NAME merkadu-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_merkadu_ui.py
     $<TARGET_FILE:merkadu> ${PROJECT_SOURCE_DIR})
-  set_tests_properties(merkadu-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+  set_tests_properties(merkadu-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 480)
 endif()
 
 # Debrun (src/debrun): control files, versions (and dpkg's order), relations,

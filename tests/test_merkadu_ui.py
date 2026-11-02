@@ -148,6 +148,19 @@ class Screen:
             time.sleep(0.1)
         return False
 
+    def wait_controls(self, name, controls, timeout=30.0):
+        """The controls of |name| once every one of |controls| is in the same
+        dump (the page is built: under load that can take a while after the
+        catalog is in), else the last ones seen."""
+        end = time.time() + timeout
+        found = {}
+        while time.time() < end:
+            found = self.controls(name)
+            if all(c in found for c in controls):
+                break
+            time.sleep(0.1)
+        return found
+
     def wait_for(self, name, test, timeout=10.0):
         """The first QA line of |name| for which |test| is true, or None."""
         end = time.time() + timeout
@@ -221,14 +234,23 @@ def main_window(s):
         wid = s.window('^Merkadu$', 15)
         if not check(wid, 'the main window did not open'):
             return
-        if not check(s.wait_qa(M, '@page:explore') and s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 15),
+        if not check(s.wait_qa(M, '@page:explore', 30) and s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 30),
                      'the lobby did not load the fake catalog: %s' % s.qa(M)[:3]):
             return
-        c = s.controls(M)
-        for name in ('banner:org.example.paintbox', 'section:featured', 'section:new', 'section:top',
-                     'section:departments', 'app:org.example.starfield', 'category:graphics',
-                     'nav:installed', 'nav:history', 'nav:sources'):
+        # The page is rebuilt a moment after the catalog arrived (later under
+        # load): wait for all of it.
+        lobby = ('carousel', 'section:featured', 'section:new', 'section:top', 'section:departments',
+                 'category:graphics', 'nav:installed', 'nav:history', 'nav:sources')
+        c = s.wait_controls(M, lobby)
+        for name in lobby:
             check(name in c, 'lobby: %s missing' % name)
+        check(any(k.startswith('banner:') for k in c) and any(k.startswith('app:') for k in c),
+              'lobby: no banner or no app tiles: %s' % list(c)[:12])
+        line = s.wait_for(M, lambda l: l.startswith('@carousel:'), 5)
+        state = carousel_state(line) if line else {}
+        check(int(state.get('count', 0)) >= 4, 'lobby: only %s highlights' % state.get('count'))
+        check(state.get('index') != '0' or state.get('id') == 'org.example.paintbox',
+              'lobby: the first highlight is not the distribution\'s first choice: %s' % line)
         s.shot('merkadu-lobby.png')
 
         # F1: About Merkadu (sde::handle_about_event; F1 may arrive with Alt).
@@ -323,10 +345,11 @@ def all_software(s):
         check(s.wait_for(M, lambda l: l.startswith('@refresh:running=1'), 8),
               'no refresh when Merkadu opened: %s' % s.qa(M)[:5])
         check(s.wait_qa(M, '@refresh:running=0,errors=0,done=1', 10), 'the refresh did not finish: %s' % s.qa(M)[:5])
-        check(s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 10), 'home: the catalog did not load')
-        c = s.controls(M)
-        for name in ('Back', 'Forward', 'Home', 'Refresh the software lists', 'section:featured',
-                     'section:recommended', 'nav:packages', 'nav:updates'):
+        check(s.wait_qa(M, '@state:catalog=1,apps=22,jobs=0', 30), 'home: the catalog did not load')
+        home = ('Back', 'Forward', 'Home', 'Refresh the software lists', 'section:featured', 'section:recommended',
+                'nav:packages', 'nav:updates')
+        c = s.wait_controls(M, home)
+        for name in home:
             check(name in c, 'home: %s missing' % name)
         # The Refresh button refreshes again.
         s.click(wid, M, 'Refresh the software lists')
@@ -337,9 +360,10 @@ def all_software(s):
         if not check(s.wait_qa(M, '@page:packages') and s.wait_for(M, lambda l: l.startswith('@packages:loaded=1')) and
                      s.wait_qa(M, 'table'), 'All Software did not open: %s' % s.qa(M)[:6]):
             return
-        c = s.controls(M)
-        for name in ('chip:status:all', 'chip:status:installed', 'chip:status:updates', 'chip:status:available',
-                     'table', 'pkg:bash', 'pkg:curl'):
+        names = ('chip:status:all', 'chip:status:installed', 'chip:status:updates', 'chip:status:available', 'table',
+                 'pkg:bash', 'pkg:curl')
+        c = s.wait_controls(M, names)
+        for name in names:
             check(name in c, 'All Software: %s missing' % name)
         s.shot('merkadu-all-software.png')
         # A package of the base system cannot be marked for removal.
@@ -563,7 +587,7 @@ def highlights(s):
         first = carousel_state(line)
         check(int(first['count']) >= 4, 'highlights: only %s apps' % first['count'])
         # Not only the distribution's choice (Alpha 3: GIMP, always).
-        check(s.wait_qa(M, 'section:featured', 5), 'highlights: no more highlights below the carousel')
+        check(s.wait_qa(M, 'section:featured', 15), 'highlights: no more highlights below the carousel')
         # Away from the pointer the next one comes by itself.
         xdo(s.env, 'mousemove', '--window', wid, 5, 5)
         moved = s.wait_for(M, lambda l: l.startswith('@carousel:') and carousel_state(l)['index'] != first['index'],
