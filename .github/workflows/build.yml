@@ -95,7 +95,11 @@ jobs:
           flatpak remotes --system --columns=name | grep -qx flathub
           apt-get update
           flatpak update --system --appstream --noninteractive flathub
-          merkadu --self-test --expect deb:firefox-esr,deb:gimp,deb:vlc,org.mozilla.firefox --expect-flatpak 1
+          # A Flathub app installs from the remote "flathub" (0.2 Alpha 3 asked for
+          # "flatpak", the origin Flathub's catalog names), and no app is offered
+          # as a Debian package APT does not know (the self-test checks both).
+          merkadu --self-test --expect deb:firefox-esr,deb:gimp,deb:vlc,org.mozilla.firefox --expect-flatpak 1 \
+            --expect-remote org.mozilla.firefox=flathub,org.gimp.GIMP=flathub
       - name: Native UI smoke checks
         if: matrix.image == 'debian:testing'
         run: |
