@@ -128,10 +128,11 @@ Without a compositor (Effects > Compositor off) the preview shows the
 surfaces opaque, as they will be.
 
 Names for keyboard and screen reader users (the tooltips, also used by the
-UI tests): "Light mode", "Dark mode", "Automatic mode: ...", "Transparency:
-Glass", "Transparency level", "Accent color: Teal", "Preview the chosen
-look", "Revert to the look in use", "Apply the chosen look", and in the
-preview "Apply this look" and "Close the preview without applying".
+UI tests): the theme cards ("SDE Fluent: Cool slate grays, ..."), "Light
+mode", "Dark mode", "Automatic mode: ...", "Transparency: Glass",
+"Transparency level", "Accent color: Teal", "Preview the chosen look",
+"Revert to the look in use", "Apply the chosen look", and in the preview
+"Apply this look" and "Close the preview without applying".
 
 Tests: `tests/test_appearance.cpp` (CTest `sde-appearance-model`: the look in
 use and the chosen one, the files a switch writes), `tests/test_appearance_ui.py`
