@@ -3781,8 +3781,10 @@ sde_update_menus_for_popup (gpointer data)
 	view->details->update_menus_timeout_id = 0;
 	fm_directory_view_update_menus (view);
 	if (view->details->window != NULL) {
+		G_GNUC_BEGIN_IGNORE_DEPRECATIONS;
 		menu = gtk_ui_manager_get_widget (liria_window_info_get_ui_manager (view->details->window),
 						  FM_DIRECTORY_VIEW_POPUP_PATH_SELECTION);
+		G_GNUC_END_IGNORE_DEPRECATIONS;
 		if (menu != NULL) {
 			gtk_widget_get_preferred_size (menu, NULL, NULL);
 		}
