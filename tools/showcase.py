@@ -594,15 +594,6 @@ class Session:
         y = wy + (wh - h - top - bottom) // 2 + top
         self.xdo('windowmove', wid, str(x), str(y))
         self.wait(lambda: (self.geom(wid)['x'], self.geom(wid)['y']) == (x, y), 2)
-        if self.effects == 'full' and getattr(self, 'compositor', None) and self.compositor.poll() is None:
-            # With the OpenGL compositor on the CPU (Mesa on Xvfb) a window
-            # resized while its program is busy starting can stay on the
-            # screen at its old size, the rest see-through, for a long time
-            # (0.2.0 Alpha 3 too; Liria): the compositor's reset (SIGUSR1,
-            # what sde-session's reload does) draws every window again.
-            time.sleep(1.0)
-            os.kill(self.compositor.pid, signal.SIGUSR1)
-            time.sleep(1.0)
         self.window_settle(wid, quiet=0.4, timeout=4)
 
     def stop_scene_procs(self):
@@ -1279,8 +1270,6 @@ class Session:
             time.sleep(0.8)
         if p.poll() is not None:
             warn(f'{prog} exited ({p.returncode}); continuing without a compositor')
-        else:
-            self.compositor = p
 
     def close(self):
         if getattr(self, 'closed', False):
