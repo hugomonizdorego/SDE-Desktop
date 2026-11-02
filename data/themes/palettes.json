@@ -96,7 +96,7 @@
     },
     "glass": {
       "label": "Liquid Glass",
-      "description": "Luminous glass with strong blur, light rims and lens edges, pill shapes and the softest corners; the successor of SDE Aero and SDE Glass",
+      "description": "Frosted glass with strong blur, light rims and lens edges, pill shapes and the softest corners; the successor of SDE Aero and SDE Glass",
       "prefix": "SDE-Glass",
       "upstream": "graphite-gtk-theme",
       "base": "graphite",
