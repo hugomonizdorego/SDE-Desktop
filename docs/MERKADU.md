@@ -24,10 +24,12 @@ GPL-3.0-only). All Software follows how **Synaptic** works with packages
 code is used. The rest is new code (GPL-3.0-or-later) in SDE-FLTK with the
 SDE UI kit. No Python is involved, and nothing depends on Ubuntu's online
 services, which no longer exist (ratings and reviews, the software center
-agent, purchases, recommendations): Highlights, Popular Apps and the
-recommendations are lists the distribution chooses
-([configuration](#configuration-for-distributions)), "New & Updated" comes
-from the release dates in the AppStream data.
+agent, purchases, recommendations): the highlights take turns between the
+distribution's choice, new releases, Flathub's popular and trending apps and
+the Snap Store's featured snaps, Popular Apps and the recommendations are
+lists the distribution chooses
+([configuration](#configuration-for-distributions)), and "New & Updated"
+comes from the release dates in the AppStream data.
 
 ## Using it
 
@@ -36,6 +38,7 @@ from the release dates in the AppStream data.
     merkadu appstream://APPID
     merkadu --uninstall /usr/share/applications/APP.desktop
     merkadu --self-test [--expect REF,...] [--expect-flatpak N] [--list]
+                        [--expect-remote REF=REMOTE,...]
     merkadu --version | --help
 
 The header has **Back**, **Forward** and **Home**, the page's title with a
@@ -46,32 +49,45 @@ the number of app updates), All Software (with the number of marked
 changes), History, Sources, In Progress (while changes run) and the
 departments under "Applications".
 
-- **Home**: a banner with the first highlighted app, **Highlights**,
-  **Recommended for You** (well-known apps of the departments whose apps you
-  use and do not have yet; nothing leaves the computer), **New & Updated**,
-  **Popular Apps**, the **Categories**, a card that leads to All Software
-  and, at the bottom, how many apps each source has and when the lists were
-  last refreshed. While the catalog is read, the page shows its shape
-  (placeholders), never an empty window. Apps named in the configuration
-  that no source has are left out.
+- **Home**: the highlights carousel (see [Highlights](#highlights)), the
+  next **Highlights** as tiles, **From the Snap Store** (the store's
+  featured snaps, while snapd runs), **Recommended for You** (well-known
+  apps of the departments whose apps you use and do not have yet; nothing
+  leaves the computer), **New & Updated**, **Popular Apps**, the
+  **Categories**, a card that leads to All Software and, at the bottom, how
+  many apps each source has and when the lists were last refreshed. While
+  the catalog is read, the page shows its shape (placeholders), never an
+  empty window. Apps named in the configuration that no source has are left
+  out. After a crash or a hang, the next start offers the report at the top
+  (see [When Merkadu hangs or crashes](#when-merkadu-hangs-or-crashes)).
 - **Departments** (Accessories, Universal Access, Developer Tools,
   Education, Science & Engineering, Fonts, Games, Graphics, Internet, Sound
   & Video, Office, Themes & Tweaks, System, Books & Magazines) with their
   subcategories and app counts.
 - **Search** (Ctrl+F) covers every source at once. Each result shows badges
   for the sources that offer it; chips filter by source. Enter also asks the
-  Snap Store, which is searched online. On All Software the field searches
-  the packages, by name and description, in place.
-- **App page**: icon, name, developer, summary, a chip per source (the one
-  to install from is chosen with them), Install/Open/Update/Remove, the
-  screenshots (click to enlarge; "Screenshot not available" when one cannot
-  be downloaded), the description, "What's New" (the latest release notes),
-  and a details card: version, download and installed size, license, source,
-  isolation (Flatpak sandbox, snap strict or classic confinement, or "not
-  isolated" for Debian packages), developer, department, links and, for
-  Debian apps, the package in All Software. When the chosen source cannot be
-  used, the page says why (PackageKit not running, Flatpak or snapd not
-  installed) and offers the fix.
+  Snap Store, which is searched online (the snaps it featured and those of
+  every department are in the catalog already). On All Software the field
+  searches the packages, by name and description, in place.
+- **App page**: icon, name, developer, summary, where to get it,
+  Install/Open/Update/Remove, the screenshots (click to enlarge; "Screenshot
+  not available" when one cannot be downloaded), the description, "What's
+  New" (the latest release notes), and a details card: version, download
+  and installed size, license, source, isolation (Flatpak sandbox, snap
+  strict or classic confinement, or "not isolated" for Debian packages),
+  developer, department, links and, for Debian apps, the package in All
+  Software. An app that several sources have says **Choose where to get it**
+  with a row per source, like radio buttons: "Debian package", "Flatpak app"
+  or "Snap", the version and download size, and where it comes from (the
+  package, updated with the system; the Flatpak remote and developer, and
+  whether it is the user's own installation; the snap's publisher, verified
+  or not, and channel). Install installs the chosen one. An app with one
+  source shows that in one line. Only real sources are offered: a Debian
+  origin needs a package APT knows, a Flatpak one a remote of this computer
+  (0.2 Alpha 3 offered Debian for some Flatpak-only apps). When the chosen
+  source cannot be used, the page says why (PackageKit not running, Flatpak
+  or snapd not installed) and offers the fix; a failed change stays on the
+  page ("The last change failed: …").
 - **Installed**: installed apps by department, filtered by source.
 - **Updates**: the updates of apps from Flathub (and other Flatpak remotes)
   and the Snap Store, with **Update All**; see
@@ -80,9 +96,11 @@ departments under "Applications".
   `/var/log/apt/history.log` (and its rotated copies), `flatpak history` and
   snapd's changes, with source filters.
 - **In Progress**: the queue of changes. Changes run one after the other;
-  the running one shows the animated SDE logo, its status and percentage and
-  can be cancelled when its source allows it. Finished and failed changes
-  stay listed until "Clear Finished".
+  the running one shows the animated SDE logo, its status and percentage.
+  Every change has **Pause** (**Resume**) and **Cancel** (**Remove** while
+  it waits), here and on its app page; see
+  [Pause and Cancel](#pause-and-cancel). Finished and failed changes stay
+  listed until "Clear Finished".
 - **Sources**: the state of the three sources and of the Debian catalog
   (whether APT downloads it, how many catalogs and icon archives there are,
   when the lists were refreshed, the errors of the last refresh), **Set Up
@@ -93,11 +111,76 @@ departments under "Applications".
 
 Keys: Ctrl+F or Ctrl+K search; Alt+Left, Backspace or Escape go back,
 Alt+Right forward, Alt+Home home; F5 or Ctrl+R refresh the software lists;
-F1 opens About Merkadu; Ctrl+Q quits. In the package list: arrows, Page Up,
+F1 opens About Merkadu; Ctrl+Q quits (like the close button). On the
+highlights, Left and Right pick the slide and Enter opens it. In the
+package list: arrows, Page Up,
 Page Down, Home and End move, Space marks the most likely change (or
 unmarks), `+` or Insert marks for installation (or update), `-` or Delete
 marks for removal, Enter or a double click opens the package, the Menu key
 or a right click opens the marking menu.
+
+### Highlights
+
+0.2 Alpha 3 showed one banner: the first app of the distribution's list,
+always (GIMP). Since 0.2 Alpha 3.1 Home starts with a carousel of six
+highlights that take turns between four kinds, so that none fills it alone
+(`choose_highlights()` in `src/merkadu/highlights.*`):
+
+| Kind | The line above the name | Where it comes from |
+| --- | --- | --- |
+| the distribution's choice | CHOSEN BY DEBIAN | `[Highlights] apps=` of the configuration |
+| new releases | NEW RELEASE | the newest AppStream release dates of the catalogs |
+| popular on Flathub | POPULAR ON FLATHUB | Flathub's "popular" and "trending" collections |
+| featured snaps | FEATURED ON THE SNAP STORE | the Snap Store's featured snaps (while snapd runs) |
+
+Each list starts at another place every day; apps that are installed or
+have no icon of their own come last ("INSTALLED"), and each app is shown
+once. The carousel moves on every 7 seconds (`[Highlights] rotate=`), not
+while the pointer is on it or it has the keyboard, and never with reduced
+motion (desktop effects off); arrows, dots, Left and Right pick a slide and a
+click or Enter opens the app. The next highlights follow as tiles.
+
+Flathub's collections are downloaded with curl
+(`https://flathub.org/api/v2/collection/popular` and `.../trending`,
+`[Highlights] flathub-collections=`) while Flathub is set up, at most once
+a day (and with Refresh), and kept in
+`~/.cache/merkadu/flathub-collections.json` for offline use; apps that are
+not in this computer's catalogs are skipped.
+
+### Pause and Cancel
+
+Every change has its buttons, on In Progress and on its app page:
+
+- **While it waits** in the queue: **Pause** keeps it waiting (the next one
+  goes first) and **Remove** takes it out of the queue.
+- **While it downloads** (or prepares, or waits for snapd): **Pause** stops
+  it and keeps what was downloaded — APT's packages in
+  `/var/cache/apt/archives`, Flatpak's objects in the repository, snapd's
+  partial download — so that **Resume** continues from there; meanwhile the
+  next change runs. **Cancel** stops it for good.
+- **While Flatpak or snapd set the app up**: Cancel (they undo what they
+  did), but no Pause.
+- **While dpkg changes the system** (a Debian package is unpacked or
+  configured): neither, and the page says why ("stopping now could leave the
+  system half changed"); they come back when that part is done.
+
+Cancel is PackageKit's `Cancel`, a `GCancellable` for libflatpak and
+`abort` of the snapd change; Pause is the same stop, after which the change
+waits in the queue as Paused (`JobQueue` in `src/merkadu/jobs.*`, with the
+phase each source reports).
+
+### Closing Merkadu
+
+The close button and Ctrl+Q close at once. When changes are running or
+waiting, Merkadu first asks: **Finish in the Background** (the default:
+the window closes and Merkadu ends by itself when they are done), **Stop
+and Close** (cancels them; a dpkg step that cannot be stopped is finished
+first) or **Keep Merkadu Open**. Paused changes are not kept. 0.2 Alpha 3
+could stay in memory after its window closed (about 240 MB each time): a
+worker thread still waited on a condition variable that the exit destroyed
+(glibc's `pthread_cond_destroy` waits for its waiters), so the process
+never ended. Merkadu now ends with `_exit()` once its window is closed and
+its changes are done, and its workers' shared state is never destroyed.
 
 ## The software lists and the refresh
 
@@ -116,7 +199,11 @@ refresh) and refreshes the software lists in the background when it starts
   and keeps the old lists.
 - **Flatpak**: the AppStream data of every enabled remote of the system and
   user installations (`flatpak update --appstream`, through libflatpak).
-- **Snap**: nothing to download; the store is asked when you search.
+- **Snap**: the store's updates; afterwards its featured snaps and the snaps
+  of every department are asked for again (see [Snap](#snap)).
+
+Refresh also downloads Flathub's popular and trending collections again (see
+[Highlights](#highlights)).
 
 Lists younger than `[Refresh] min-age=` minutes (30) are not downloaded again
 at start. The Debian lists are refreshed at start whatever their age when the
@@ -172,6 +259,18 @@ on standard error when it reads the catalog.
 All Software is for everything that is not an app (libraries, tools,
 fonts, drivers) and for people who know Synaptic:
 
+- **Sources**: **Debian packages**, **Flatpak** and **Snap**, each with its
+  count, are separate lists (0.2 Alpha 3 mixed them). The Debian list is
+  every package APT knows, with everything below. The Flatpak list has the
+  Flatpak apps of every remote; their runtimes and extensions (GNOME, KDE,
+  freedesktop platforms, GL drivers, themes) are behind **Runtimes and
+  Extensions**, installed ones and those the remotes offer; an installed one
+  can be removed there (Flatpak refuses while an installed app needs it).
+  The Snap list has the installed
+  snaps and the snaps the store showed (featured, departments, searches):
+  the Snap Store has no complete list, so a search there asks the store too.
+  When a source is not available the list says why, with the fix (Enable
+  Snap Support, Install Flatpak, Set Up Flathub).
 - **Status** chips: All, Installed, Updates, Not Installed, Marked, and
   Settings Left (removed packages whose configuration files are still there),
   each with its count.
@@ -269,24 +368,62 @@ Merkadu; this also hides the offers to set it up. When Flathub is missing
 Up Flathub**, which uses the same file (or `flathub-url`). Flathub's catalog
 is downloaded by the first refresh.
 
+**"Remote "flatpak" not found" (0.2 Alpha 3).** Flathub's AppStream file
+says `origin="flatpak"` for every app, and libappstream 1.0 reports that
+attribute as the component's origin; Merkadu took it for the remote and
+asked libflatpak to install from a remote called "flatpak", which no
+computer has, so every installation from Flathub failed. (libappstream
+1.0.2 also drops the cached icons of such files.) Merkadu now reads the
+AppStream data of each configured, enabled remote of each installation
+itself (`INSTALLATION/appstream/REMOTE/ARCH/active`, the system
+installation, the user's and those of `/etc/flatpak/installations.d`), and
+an app is installed from the remote and installation whose catalog listed
+it; when that remote is gone or disabled, from another remote of the same
+installation that offers the app (its cached summary first, then online),
+else the change fails with "No Flatpak remote of this computer offers …".
+`merkadu --self-test` reports any Flatpak origin whose remote is not
+configured.
+
 ## Snap
 
 Snap is off until the user enables it: with snapd missing, the Snap source
-is "not installed" and Sources (and app pages of snaps) offer **Enable Snap
-Support**. It asks once, then runs two changes in In Progress:
+is "not installed" and Sources, All Software's Snap list and the app pages of
+snaps offer **Enable Snap Support**. It asks once, then runs two changes in
+In Progress:
 
 1. installs the `snapd` package from the distribution (PackageKit; the
    administrator password is asked for);
 2. installs the `snapd` snap from the Snap Store, as Debian's instructions
    describe. snapd needs a moment after its installation (it does not
-   listen yet, or answers "too early" while it seeds itself): Merkadu shows
-   "Waiting for snapd to start" and asks again every three seconds for up to
-   two minutes.
+   listen yet, answers "too early" or "not seeded" while it seeds itself, or
+   is busy with a change of its own): Merkadu shows "Waiting for snapd to
+   start" and asks again every three seconds for up to three minutes (one
+   minute for other snap changes, when snapd restarts itself); if snapd
+   never answers, the change fails with "snapd did not start. Restart the
+   computer, then try again."
 
-No terminal is needed. Afterwards Merkadu explains that the computer should
-be restarted (or the user log out and back in): only a new session has
-`/snap/bin` in `PATH` and `/var/lib/snapd/desktop` in `XDG_DATA_DIRS`, which
-snap commands and the menu entries of snaps need (SDE's session adds both).
+No terminal is needed, and Merkadu does not need a restart: once the
+`snapd` package is installed (also from All Software), it asks snapd every
+three seconds until it answers, then reads the installed snaps and the Snap
+Store's featured snaps and those of every department, which appear on Home,
+in the departments, in All Software and in the search at once. 0.2 Alpha 3
+probed snapd only when it started and showed snaps only for a search, so
+after Enable Snap Support and a refresh there were no snaps. The store's
+answers are kept in `~/.cache/merkadu/snapd` and shown while snapd cannot
+reach the store; the featured snaps and departments are asked again after
+every refresh. Sources shows snapd's version, and "partial confinement" when
+AppArmor is off (snaps are then only partly isolated).
+
+The computer should still be restarted (or the user log out and back in)
+before snaps are used: only a new session has `/snap/bin` in `PATH` and
+`/var/lib/snapd/desktop` in `XDG_DATA_DIRS`, which snap commands and the
+menu entries of snaps need (SDE's session adds both).
+
+Errors are named: polkit refusing ("You are not allowed to do this, or the
+authentication failed."), snapd's own message of a failed change, and a
+cancelled password prompt simply cancels the change. The flow is tested
+against a fake snapd (`tests/fake_snapd.py`, below); it was not tried with a
+real snapd for this release.
 
 ### The snap folder
 
@@ -371,6 +508,50 @@ package; a launcher no package owns outside the user's home cannot be removed
 by Merkadu. Preinstalled apps that are none of these can be uninstalled like
 any other.
 
+## When Merkadu hangs or crashes
+
+The owner's report for 0.2 Alpha 3 was a Merkadu window that stayed white
+and could hardly be closed. What was found and changed:
+
+- **It did not end.** After its window closed, Merkadu hung in `exit()`
+  (see [Closing Merkadu](#closing-merkadu)); each closed window left a
+  process of about 240 MB, which on a small computer makes the next one
+  slow. Fixed.
+- **Long stalls of the window.** Measured with a fifth of a CPU core (four
+  busy processes on four cores) and the real Debian, Ubuntu and Flathub
+  catalogs (4,460 apps, 87,831 packages): the window did not respond for up
+  to 1.5 s at a time, many times while it started — merging the catalogs
+  (0.4 s, every time a part arrived), taking over the package lists (0.65 to
+  1 s, twice), counting the apps of the departments for Home (0.9 s), and
+  drawing the whole window again for every downloaded icon and every step of
+  the refresh (0.4 to 0.7 s each). Now the catalog is merged, the
+  departments counted and the package lists indexed on worker threads and
+  swapped in at once; results reach the window in slices of 20 ms with
+  drawing in between; an icon or a progress step redraws only what shows
+  it; searches are debounced. The same measurement leaves one stall of
+  about 0.3 s at start, and 0.3 to 0.5 s when a click builds or draws a
+  large page (a fifth of a core is far slower than any real computer).
+- **Watching.** The window's thread beats every 100 ms; a watchdog thread
+  logs every stall over 250 ms with what the window was doing ("merging the
+  catalog", "drawing the window", "decoding a screenshot"), logs a stall
+  every 2 s while it lasts, and after 10 s writes a hang report with the
+  window thread's stack. A crash writes a crash report with its backtrace
+  and what Merkadu was doing. The next start offers the report at the top of
+  Home (**Show Report**, **Dismiss**).
+
+What to send with a bug report (all in `~/.local/state/merkadu`, that is
+`$XDG_STATE_HOME/merkadu`):
+
+| File | What it has |
+| --- | --- |
+| `merkadu.log` | this run: the catalog's diagnosis, every stall over 250 ms and what ran, errors of the sources |
+| `merkadu.log.1` | the previous run |
+| `crash-report.txt` | the last crash: signal, backtrace, what Merkadu was doing |
+| `hang-report.txt` | the last stall of 10 s or more: the window thread's stack |
+
+The same lines go to standard error (the session log). `report-seen`
+remembers which report was dismissed.
+
 ## The progress animation
 
 While a change runs, Merkadu shows the SDE mark (the monitor of the SDE
@@ -388,9 +569,10 @@ stays still. The widget is `src/merkadu/logo_anim.*`.
               ├─ packages_ui.cpp                 All Software, package page, review
               ├─ uninstall.cpp                   --uninstall dialog
               ├─ selftest.cpp                    --self-test (no display)
+              ├─ watchdog.cpp                    stall log, hang and crash reports
               └─ store.cpp  ── Store (singleton, FLTK thread)
                    │  catalog, refresh, package lists and marks, jobs
-                   │  queue, history, events → pages
+                   │  queue, history, highlights, events → pages
                    ├─ packagekit.cpp   Backend: PackageKit (D-Bus, async)
                    ├─ flatpak.cpp      Backend: libflatpak (worker threads)
                    ├─ snap.cpp         Backend: snapd REST (worker threads)
@@ -399,13 +581,21 @@ stays still. The widget is `src/merkadu/logo_anim.*`.
       model.*            App, Origin, Catalog (merging), search, icons,
                          history parsers, launcher classification, removal
                          plans, settings (merkadu.conf)
-      packages.*         All Software: sections, filters, marks, plans
+      packages.*         All Software: sections, filters, marks, plans, the
+                         Flatpak and Snap rows
+      catalog_build.*    the merge of every part into the catalog, with its
+                         rules (a Debian origin needs an APT package), the
+                         departments and "New & Updated" (on a worker thread)
+      jobs.*             the queue of changes: Pause, Resume, Cancel by phase
+      highlights.*       Home's highlights, Flathub's collections
       apt_cache.*        libapt-pkg: the package lists, details and the
                          simulation of marked changes (one worker thread)
       categories.*       departments (Ubuntu Software Center's menu format)
       appstream_catalog.* AppStream components → apps (libappstream); the
+                         Flatpak remotes' catalogs, read per remote; the
                          diagnosis of the catalog sources
-      snapd.*            HTTP over a UNIX socket, snapd's JSON
+      snapd.*            HTTP over a UNIX socket, snapd's JSON, following a
+                         change (waiting for snapd, abort)
       pkenum.*, json.*   PackageKit enums and texts, a small JSON parser
     logo_anim.*, image_cache.*   the SDE logo animation; icons and
                          screenshots (downloaded with curl to
@@ -423,12 +613,19 @@ stays still. The widget is `src/merkadu/logo_anim.*`.
 - **Threads.** The UI runs on the FLTK thread. PackageKit is asynchronous
   D-Bus on the same loop (`sde::dbus`); AppStream loading, libapt-pkg,
   libflatpak transactions, snapd requests, `dpkg-query` and `flatpak history`
-  run on worker threads and hand their results back with `Fl::awake()`.
+  run on worker threads and hand their results back with `post()`
+  (`Fl::awake()`), which runs them in slices of about 20 ms with drawing in
+  between. The catalog is merged on a worker from immutable parts (requests
+  made meanwhile become one more merge) and swapped in at once; what it
+  replaces is freed on a worker too. State that worker threads share lives
+  until the process ends, which ends with `_exit()`.
 - **Jobs.** Install, remove and update requests become jobs in one queue;
   one runs at a time, with progress events to the pages and the uninstall
   dialog; a job can wait for another (Apply Changes, Enable Snap Support).
-  Cancel maps to PackageKit's `Cancel`, a `GCancellable` for libflatpak and
-  `abort` of the snapd change.
+  Each source reports the phase of a change (waiting, preparing,
+  downloading, applying, changing the system), which decides Pause and
+  Cancel; Cancel maps to PackageKit's `Cancel`, a `GCancellable` for
+  libflatpak and `abort` of the snapd change.
 - **Departments.** `categories.menu` uses Ubuntu Software Center's format
   (`<Menu>`, `<Name>`, `<SCIcon>`, `<Include>` with `<And>`, `<Or>`,
   `<Not>`, `<Category>`, `<SCSection>`, `<SCPkgname>`, `<SCType>`,
@@ -461,8 +658,13 @@ replace the same keys of the earlier files; `MERKADU_CONFIG=FILE` uses one
 file instead of all of them.
 
     [Highlights]
-    # the Home banner (first app found) and the Highlights row, in order
+    # the distribution's choice among the highlights (they take turns with
+    # new releases, Flathub's popular apps and the Snap Store's featured snaps)
     apps=org.gimp.GIMP;org.inkscape.Inkscape;deb:firefox-esr|org.mozilla.firefox|deb:firefox
+    # Flathub's collections of popular apps (https only; empty: none)
+    flathub-collections=https://flathub.org/api/v2/collection/popular?page=1&per_page=30;https://flathub.org/api/v2/collection/trending?page=1&per_page=30
+    # seconds before the carousel shows the next highlight (0: only by hand)
+    rotate=7
 
     [Popular]
     # "Popular Apps"
@@ -535,24 +737,36 @@ For example, a distribution's own department:
 `merkadu --self-test` loads what the window would show, without a display,
 and prints where it comes from:
 
-    AppStream catalog: 2327 apps (2329 Debian, 0 Flatpak components) in 0.4 s
+    AppStream catalog: 4150 apps (2325 Debian, 2131 Flatpak components) in 1.2 s
+      left out: 58 Debian origins of packages APT does not know (metainfo of other software)
       APT downloads the catalog (appstream's 50appstream): yes
       DEP-11 catalogs: 15 downloaded, 15 read by AppStream, 0 read from Merkadu's own links
       icon archives downloaded: 0; catalogs with unpacked icons: 0; other catalog files: 0
       last refresh of the package lists: 2026-10-26 02:59
-      Flatpak remotes: none; with AppStream data: none
-      icons: 0 files, 522 downloaded from the catalog's media, 1192 of the icon theme, 613 generic
-    Packages (libapt-pkg): 87831 packages, 1397 installed, 87 with an update, 58 sections in 2.1 s
+      Flatpak remotes: user/flathub; with AppStream data: user/flathub
+      icons: 1942 files, 469 downloaded from the catalog's media, 1174 of the icon theme, 565 generic
 
-(Ubuntu 24.04 lists in a container without the icon archives.) `--expect
+    Packages (libapt-pkg): 87831 packages, 1387 installed, 86 with an update, 58 sections in 2.6 s
+
+    Expected:
+      org.gimp.GIMP: installs user:app/org.gimp.GIMP/x86_64/stable from the remote flathub
+
+(Ubuntu 24.04 lists in a container without the icon archives, and a user
+Flathub remote.) The catalog is built the way the window builds it. `--expect
 REF,...` checks that apps are there with an icon (references as in the
-configuration), `--expect-flatpak N` that at least N Flatpak apps are, and
-`--list` prints every app with its icon; `--simulate
-install:PKG,remove:PKG,update:PKG` prints APT's plan for marked changes.
-The exit status is 0 when everything expected was found. CI runs it in
-Debian testing with the real archive and Flathub (see `.github/workflows/build.yml`):
+configuration), `--expect-flatpak N` that at least N Flatpak apps are,
+`--expect-remote REF=REMOTE,...` that the Install button would install the
+app's Flatpak from REMOTE, and `--list` prints every app with its icon;
+`--simulate install:PKG,remove:PKG,update:PKG` prints APT's plan for marked
+changes. Always problems: a Flatpak origin whose remote is not configured on
+this computer (0.2 Alpha 3's "Remote "flatpak" not found") and a Debian
+origin whose package APT does not know (a Flatpak-only app offered as a
+Debian package). The exit status is 0 when everything expected was found
+and there are no problems. CI runs it in Debian testing with the real
+archive and Flathub (see `.github/workflows/build.yml`):
 
-    merkadu --self-test --expect deb:firefox-esr,deb:gimp,deb:vlc,org.mozilla.firefox --expect-flatpak 1
+    merkadu --self-test --expect deb:firefox-esr,deb:gimp,deb:vlc,org.mozilla.firefox --expect-flatpak 1 \
+      --expect-remote org.mozilla.firefox=flathub,org.gimp.GIMP=flathub
 
 ## Tests and screenshots
 
@@ -563,17 +777,37 @@ Debian testing with the real archive and Flathub (see `.github/workflows/build.y
   settings (including app alternatives), the departments of the shipped
   menu, snapd's JSON and HTTP framing (with a one-shot UNIX socket server),
   the AppStream conversion of `tests/fixtures/merkadu`, the icon order and
-  fallbacks, All Software's sections, filters, search, marks and plans, and
-  the catalog diagnosis on a fake root.
+  fallbacks, All Software's sections, filters, search, marks and plans, the
+  catalog diagnosis on a fake root, and since 0.2 Alpha 3.1: the Flatpak
+  installations and the catalogs of their remotes
+  (`tests/fixtures/merkadu/flatpak-installation`, whose Flathub-like file
+  says `origin="flatpak"`: the install job must use the remote "flathub"),
+  the catalog's rules (a Debian origin needs an APT package, metainfo
+  without a package gets the owner's, the source rows of All Software), the
+  queue's Pause, Resume and Cancel in every phase, the highlights (turns,
+  rotation by the day, installed and icon-less apps last, Flathub's
+  collections) and following a snapd change against an in-process fake snapd
+  (it starts late and says "too early", the first snap's base, a polkit
+  refusal, a cancelled password prompt, a conflicting change, a failed
+  change, Cancel with abort, a snapd that never starts).
 - `merkadu-ui` (`tests/test_merkadu_ui.py`, needs Xvfb and xdotool): runs
   Merkadu with the fake sources on a private X server and checks, through
   the QA dumps, Home, the refresh at start and with Refresh, a department,
-  the search, an app page, an installation, Installed, History, Sources, All
+  the search, an app page with the choice of its sources (and one without a
+  Debian choice), an installation, Installed, History, Sources, All
   Software (filters, a protected system package, the search, marking an
-  update and an installation, the review with what comes with them, Apply),
-  Back, Forward and Home, the Updates page, an empty catalog, every
-  `--uninstall` outcome (exit codes 0, 1 and 2) and the window at 1024×600
-  and 150 %. `SDE_XVFB_DISPLAYS=FIRST-LAST` keeps its X servers in a range.
+  update and an installation, the review with what comes with them, Apply,
+  the Flatpak list and its runtimes, the Snap list), Back, Forward and Home,
+  the Updates page, an empty catalog, the highlights (several, moving on by
+  themselves but not under the pointer, dots and arrows), Pause, Resume,
+  Cancel and Remove of changes (and no stopping while dpkg runs), Enable
+  Snap Support against a fake snapd (`tests/fake_snapd.py`: it starts once
+  the snapd package is "installed" and says "too early" at first; then the
+  store's snaps are on Home, in a department, in All Software and in the
+  search without a restart, a polkit refusal is shown and a snap installs),
+  every `--uninstall` outcome (exit codes 0, 1 and 2) and the window at
+  1024×600 and 150 %. It waits for whole pages, not for fixed times.
+  `SDE_XVFB_DISPLAYS=FIRST-LAST` keeps its X servers in a range.
 - **Fake sources**: `MERKADU_FAKE=DIR` replaces the three backends and the
   package lists with a simulation of the apps and packages in
   `DIR/catalog.json` (fictional apps, icons and screenshots in
@@ -584,19 +818,33 @@ Debian testing with the real archive and Flathub (see `.github/workflows/build.y
   (screenshots of progress). `MERKADU_FAKE_REFRESH=SECONDS` sets how long the
   refresh takes (1 s) and `MERKADU_FAKE_REFRESH_FAIL=debian|flatpak|snap`
   makes one source's refresh fail. `MERKADU_FAKE_EMPTY=1` gives an empty
-  catalog (as before the first refresh), `=all` also no installed apps. With
-  `SDE_PANEL_QA_DIR=DIR`, Merkadu writes what it shows (`Merkadu.txt`,
-  `Merkadu-Uninstall.txt`). `MERKADU_LOGO_PHASE=P` freezes the logo
-  animation at moment `P` (0 to 3.6: stripe `n` fills between `n` and `n+1`)
-  for screenshots.
+  catalog (as before the first refresh), `=all` also no installed apps and
+  no Snap Store. `MERKADU_FAKE_DAY=N` picks the day of the highlights' turns
+  (0 with the fakes, so that tests and screenshots are stable).
+  `MERKADU_FAKE_SNAPD=FILE` keeps the real Snap source (talking to
+  `MERKADU_SNAPD_SOCKET`, a test's fake snapd) with the other sources fake;
+  the fake Debian source writes `FILE` when it "installs" the snapd package.
+  With `SDE_PANEL_QA_DIR=DIR`, Merkadu writes what it shows (`Merkadu.txt`,
+  `Merkadu-Uninstall.txt`), including `@job:ID=STATE,PERCENT,PHASE,ACTIONS`
+  for each change, `@why:ID=…` when Pause and Cancel are off,
+  `@carousel:index=,count=,id=` and the live boxes of the carousel's parts.
+  `MERKADU_LOGO_PHASE=P` freezes the logo animation at moment `P` (0 to 3.6:
+  stripe `n` fills between `n` and `n+1`) for screenshots.
+- `tests/fake_snapd.py SOCKET [FLAG]` runs the fake snapd on its own:
+  snapd's REST API (system information and configuration, installed snaps,
+  `find` with featured snaps, departments and searches, changes that take a
+  few polls and can be aborted) with three snaps.
 - Other variables: `MERKADU_DATA_DIR` (instead of `/usr/share/merkadu`),
   `MERKADU_SNAPD_SOCKET`, `MERKADU_APT_HISTORY`, `MERKADU_APT_LISTS` (instead
   of `/var/lib/apt/lists`, for the age of the lists),
   `MERKADU_PACKAGEKIT_BUS=session` (a PackageKit on the session bus),
   `MERKADU_FLATHUB_URL`.
-- Screenshots: `tools/showcase.py` has Merkadu scenes (Home, a department,
-  an app page, search, installed apps, history, progress, All Software with
-  marked changes, the review, app updates, the uninstall confirmation and its
+- Screenshots: `tools/showcase.py` has Merkadu scenes (Home with the
+  highlights, a highlight popular on Flathub, a department, an app page with
+  the choice of sources, search, installed apps, history, progress with Pause
+  and Cancel, a paused change with the next one running, All Software with
+  marked changes and its Flatpak list, the review, app updates, the snaps
+  once snapd runs (fake snapd), the uninstall confirmation and its
   progress), light and dark.
 
 ## Packaging
@@ -620,10 +868,15 @@ built (`-DSDE_BUILD_MERKADU=OFF` skips it).
   PackageKit, one batch of removals, installations and updates after the
   other; PackageKit resolves their dependencies again, which can differ from
   the review when the lists changed in between.
-- Snap search needs the network; the Snap Store's own featured lists and
-  ratings are not used.
-- Flatpak runtimes and extensions are installed and removed with their apps
-  by libflatpak, but are not listed on their own.
+- The Snap Store needs the network; offline, the snaps it last showed are
+  listed. Its ratings are not used. Enable Snap Support was tested against
+  a fake snapd only (no snapd could be installed on the build machine).
+- Flatpak runtimes and extensions are installed with their apps by
+  libflatpak; All Software lists them and removes one on request (Flatpak
+  refuses while an installed app needs it).
+- Pausing keeps what was downloaded only as far as the source does (APT's
+  cache, Flatpak's repository, snapd's partial download); a paused change
+  is not kept when Merkadu closes.
 - The DEP-11 icon archives come with the next `apt update` after Merkadu is
   installed (Merkadu's refresh at start does it); until then the catalog's
   icons are downloaded from its media server, or generic icons are shown
