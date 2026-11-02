@@ -1803,7 +1803,8 @@ def action_center(s):
     ('action-center-night', 'Action Center at night: stars and the moon behind the clock'),
     ('action-center-led', 'Clock styles: LED digits with a blinking colon, in the Action Center and on the panel'),
     ('action-center-analog', 'Clock styles: an analog clock with the seconds hand'),
-    ('action-center-power', 'Action Center: sleep, log out, restart and shut down'),
+    ('action-center-power', 'Action Center: Sleep, Log Out, Restart and Shut Down, always in the footer; '
+                            'Shut Down asks for a second click'),
     ('action-center-brightness', 'Action Center: brightness settings with Night Light'),
 ], needs=['sde-panel'])
 def action_center_more(s):
@@ -1830,10 +1831,25 @@ def action_center_more(s):
              ready=f'@clock-{style}')
     s.write_config(reload=True)
     s.set_clock('10:42')
-    # A footer or a card opens with a click; the click can race the popup
-    # still laying out (services answering): try again then.
-    for button, wanted, name in [('Power', 'Shut Down', 'action-center-power'),
-                                 ('Brightness settings', 'Night Light', 'action-center-brightness')]:
+    # 0.2.0 Alpha 3.1: the session buttons are always in the footer; the
+    # picture shows Shut Down after one click, waiting for the second. Its
+    # ring runs down for four seconds: the screen above the footer settles.
+    try:
+        w = open_ac(s)
+        r = s.press('Action Center', 'Shut Down')
+        if not s.control('Action Center', 'Click again to shut down', 2):
+            raise SkipShot('Shut Down did not ask for a second click')
+        s.park_pointer()
+        g = s.geom(w)
+        s.shot('action-center-power', settle_box=(g['x'], g['y'], g['x'] + g['w'], g['y'] + r[1] - 8),
+               quiet=0.3, timeout=2.0)
+    except SkipShot as e:
+        s.skip('action-center-power', str(e))
+    finally:
+        s.key('Escape')
+    # A card opens with a click; the click can race the popup still laying
+    # out (services answering): try again then.
+    for button, wanted, name in [('Brightness settings', 'Night Light', 'action-center-brightness')]:
         try:
             open_ac(s)
             for _ in range(3):
@@ -1851,6 +1867,58 @@ def action_center_more(s):
         finally:
             s.key('Escape')
     s.set_clock(None)
+
+
+@scene('Force Close', [
+    ('force-close', 'Force Close: Merkadu stopped responding - Wait, or Force Close at once '
+                    '(its taskbar button says "Not Responding")'),
+    ('force-close-launch', 'Force Close: an application that has not opened after two minutes'),
+], needs=['sde-force-close'])
+def force_close(s):
+    """0.2.0 Alpha 3.1 (docs/FORCE-CLOSE.md). A test client stands in for a
+    frozen program (tests/frozen_client_fixture.cpp, under Merkadu's window
+    class: the dialog shows Merkadu's name and icon); the mark that
+    sde-watchdog would set after its pings is set directly."""
+    tool = s.test_tool('sde-frozen-client')
+    if not tool:
+        raise SkipShot('no sde-frozen-client (tests)')
+    try:
+        s.spawn(tool, '--title', 'Merkadu', '--class', 'merkadu', '--frozen')
+        w = s.need('^Merkadu$', what='the frozen window')
+        s.size(w, 900, 560)
+        s.run('xprop', '-id', w, '-f', '_SDE_NOT_RESPONDING', '32c', '-set', '_SDE_NOT_RESPONDING',
+              str(int(time.time()) - 125))
+        s.wait(lambda: any(k.startswith('@task-not-responding:') for k in s.layout('SDE Panel')), 3)
+        s.spawn('sde-force-close', '--window', w)
+        d = s.need('^Merkadu is not responding$', what='the dialog')
+        s.activate(d)
+        s.park_pointer()
+        s.shot('force-close', quiet=0.6)
+    except SkipShot as e:
+        s.skip('force-close', str(e))
+    finally:
+        s.stop_scene_procs()
+    try:
+        # A program SDE started (its launch record) that shows no window.
+        launches = s.tmp / 'launches'
+        launches.mkdir(exist_ok=True)
+        p = s.spawn(tool, '--no-window', name='silent-client')
+        time.sleep(0.3)
+        stat = Path(f'/proc/{p.pid}/stat').read_text()
+        start = stat[stat.rindex(')') + 2:].split()[19]
+        (launches / str(p.pid)).write_text(
+            f'pid={p.pid}\nstart={start}\ntime={int(time.time()) - 125}\nname=Taca\nicon=taca\n'
+            f'desktop=taca.desktop\narg=taca\n')
+        env = dict(s.env, SDE_LAUNCHES_DIR=str(launches))
+        s.spawn('sde-force-close', '--launch', str(p.pid), env=env)
+        d = s.need('has not opened yet$', what='the dialog')
+        s.activate(d)
+        s.park_pointer()
+        s.shot('force-close-launch', quiet=0.6)
+    except SkipShot as e:
+        s.skip('force-close-launch', str(e))
+    finally:
+        s.stop_scene_procs()
 
 
 SETTINGS_TITLE = '^(Settings|Control Center|SDE Settings)$'

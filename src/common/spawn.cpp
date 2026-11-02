@@ -8,26 +8,40 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "launches.h"
 #include "util.h"
 
 namespace sde {
 
-bool spawn_detached(const std::vector<std::string> &argv, const std::string &work_dir) {
+bool spawn_detached(const std::vector<std::string> &argv, const std::string &work_dir, long *started) {
+  if (started) *started = 0;
   if (argv.empty() || find_program(argv[0]).empty()) return false;
 
   std::vector<char *> args;
   for (auto &a : argv) args.push_back(const_cast<char *>(a.c_str()));
   args.push_back(nullptr);
 
+  // The first child tells the grandchild's id through this pipe.
+  int ids[2] = {-1, -1};
+  if (started && pipe2(ids, O_CLOEXEC) != 0) ids[0] = ids[1] = -1;
   pid_t pid = fork();
-  if (pid < 0) return false;
+  if (pid < 0) {
+    for (int fd : ids)
+      if (fd >= 0) close(fd);
+    return false;
+  }
   if (pid == 0) {
     // First child: new session, then fork again so the grandchild is
     // re-parented to init (or the session's subreaper) and never becomes a
     // zombie of the caller.
     setsid();
     pid_t pid2 = fork();
-    if (pid2 != 0) _exit(pid2 < 0 ? 1 : 0);
+    if (pid2 != 0) {
+      long id = pid2;
+      if (pid2 > 0 && ids[1] >= 0 && write(ids[1], &id, sizeof id) != sizeof id) {
+      }
+      _exit(pid2 < 0 ? 1 : 0);
+    }
     signal(SIGCHLD, SIG_DFL);
     signal(SIGPIPE, SIG_DFL);
     sigset_t none;
@@ -46,8 +60,14 @@ bool spawn_detached(const std::vector<std::string> &argv, const std::string &wor
     execvp(args[0], args.data());
     _exit(127);
   }
+  if (ids[1] >= 0) close(ids[1]);
   int status = 0;
   while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+  }
+  if (ids[0] >= 0) {
+    long id = 0;
+    if (read(ids[0], &id, sizeof id) == sizeof id && started) *started = id;
+    close(ids[0]);
   }
   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
@@ -107,7 +127,10 @@ bool launch_entry(const DesktopEntry &entry, const std::vector<std::string> &fil
   if (argv.empty()) return false;
   std::string dir = entry.work_dir.empty() ? home_dir() : entry.work_dir;
   if (entry.terminal) return open_terminal(argv, dir);
-  return spawn_detached(argv, dir);
+  long pid = 0;
+  if (!spawn_detached(argv, dir, &pid)) return false;
+  launches::record(pid, entry, argv);
+  return true;
 }
 
 }  // namespace sde

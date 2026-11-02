@@ -24,7 +24,7 @@ p.add_argument('--scale',type=int,default=100)
 p.add_argument('--display',type=int,default=96)
 p.add_argument('--tcp-display',action='store_true')
 p.add_argument('--tcp-bus',action='store_true',help='Private localhost bus for containers without Unix sockets')
-p.add_argument('--only',choices=['a52','action-center','start-menu','battery-clock'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks; start-menu: the Start menu and search checks (0.2); battery-clock: the battery indicator and clock options (0.2 Alpha 2)')
+p.add_argument('--only',choices=['a52','action-center','start-menu','battery-clock'],help='Run only these checks (after the common setup); action-center: the alpha52 Action Center and clock checks and the session buttons (0.2.0 Alpha 3.1); start-menu: the Start menu and search checks (0.2); battery-clock: the battery indicator and clock options (0.2 Alpha 2)')
 a=p.parse_args();W,H=map(int,a.size.split('x'));scale=a.scale/100
 out=a.output_dir.resolve();out.mkdir(parents=True,exist_ok=True)
 tmp=tempfile.TemporaryDirectory(prefix='sde-panel-qa-');home=Path(tmp.name);(home/'bin').mkdir();(home/'.config/sde').mkdir(parents=True);(home/'qa').mkdir()
@@ -603,7 +603,7 @@ def a2_menu_checks():
     (home/'bin/merkadu').unlink()
     others=os.pathsep.join(d for d in e['PATH'].split(os.pathsep) if d!=str(home/'bin'))
     if shutil.which('merkadu',path=others) is None:
-        items=right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape')
+        items=right_click(next(k for k in L() if k.startswith('tile:')));run('xdotool','key','Escape');time.sleep(.3)
         assert 'Uninstall...' not in items,items
     else:print('PANEL a2: merkadu is installed: the menu without it is not checked',flush=True)
     escape('SDE Menu');(apps_dir/'qa-zeal.desktop').write_text(keep);(apps_dir/'sde-qa-own.desktop').unlink()
@@ -1141,6 +1141,111 @@ def weather_checks():
     waitfor(lambda:not any(k.startswith('@weather-') for k in layout('Action Center')),'weather shown while disabled')
     escape('Action Center');config(overflow=False);reload()
     command(['--action-center'],'Action Center');time.sleep(.5)
+SESSION=['Sleep','Log Out','Restart','Shut Down']
+def session_row(tag=''):
+    """0.2.0 Alpha 3.1: Sleep, Log Out, Restart and Shut Down are always in
+    the Action Center's footer, round icon buttons in one row right of the
+    user, Control Center and Lock Screen: none overlaps another control,
+    all inside the window, below everything else. Returns the layout."""
+    ac_win=find('^Action Center$');g=geom(ac_win);L=layout('Action Center')
+    shown=[n for n in SESSION if n in L]
+    rows=[L[n] for n in shown]
+    assert len({r[1] for r in rows})==1,('session buttons not in one row',tag,rows)
+    assert [r[0] for r in rows]==sorted(r[0] for r in rows),('session buttons out of order',tag,rows)
+    assert all(r[2]==r[3] for r in rows),('session buttons not round (square boxes)',tag,rows)
+    body=L.get('@body')
+    named=[(k,r) for k,r in L.items() if not k.startswith('@') and r[2]>0 and r[3]>0]
+    for n,r in zip(shown,rows):
+        assert r[0]>=0 and r[1]>=0 and r[0]+r[2]<=g['w'] and r[1]+r[3]<=g['h'],('session button outside the Action Center',tag,n,r,g)
+        if body:assert r[1]>=body[1]+body[3]-1,('session button inside the body',tag,n,r,body)
+        for k,o in named:
+            if k==n:continue
+            if r[0]<o[0]+o[2] and o[0]<r[0]+r[2] and r[1]<o[1]+o[3] and o[1]<r[1]+r[3]:
+                raise AssertionError(('session button overlaps',tag,n,r,k,o))
+    for k in ['Control Center','Lock Screen','Account settings']:
+        if k in L:assert L[k][0]+L[k][2]<=min(r[0] for r in rows),('footer control right of the session buttons',tag,k,L[k],rows)
+    return L
+def session_checks():
+    """The session buttons: always shown (no Power button to open them),
+    Sleep at once, Log Out, Restart and Shut Down after a second click on
+    the same button (mouse and keyboard), disarmed after a few seconds or
+    with a click on the question; what logind cannot do is hidden."""
+    def open_ac():
+        if visible('^Action Center$'):escape('Action Center');time.sleep(.3)
+        command(['--action-center'],'Action Center');time.sleep(.6)
+        for _ in range(20):
+            L=layout('Action Center');time.sleep(.15)
+            if L==layout('Action Center'):break
+    def count(what):
+        try:return (home/'commands.log').read_text().count(what)
+        except FileNotFoundError:return 0
+    open_ac()
+    L=session_row('open')
+    for n in SESSION:assert n in L,('session button missing',n,list(L))
+    assert 'Power' not in L and 'Close power options' not in L,'the old Power button is back'
+    for n in ['Control Center','Lock Screen','Account settings']:item('Action Center',n)
+    shot('21-session-buttons')
+    # Restart: the first click arms it and asks; nothing runs.
+    before=count('LOGOUT --action reboot')
+    press('Action Center','Restart')
+    waitfor(lambda:'@session-armed:reboot' in layout('Action Center'),'Restart not armed by the first click')
+    L=layout('Action Center');assert 'Click again to restart' in L,list(L)
+    assert 'Account settings' not in L and 'Lock Screen' not in L,'the question does not replace the user and Lock Screen'
+    session_row('armed');shot('21-session-armed')
+    assert visible('^Action Center$') and count('LOGOUT --action reboot')==before,'Restart ran on the first click'
+    # ...and disarms by itself.
+    def disarmed():
+        L=layout('Action Center')
+        return '@session-armed:reboot' not in L and 'Account settings' in L and 'Click again to restart' not in L
+    waitfor(disarmed,lambda:'Restart stayed armed: '+str(list(layout('Action Center'))),tries=120)
+    assert count('LOGOUT --action reboot')==before,'Restart ran after the arming ran out'
+    # A click on the question cancels.
+    press('Action Center','Shut Down');waitfor(lambda:'@session-armed:poweroff' in layout('Action Center'),'Shut Down not armed')
+    press('Action Center','Click again to shut down')
+    waitfor(lambda:'@session-armed:poweroff' not in layout('Action Center'),'a click on the question did not cancel')
+    # Two clicks on the same button run it.
+    press('Action Center','Restart');waitfor(lambda:'@session-armed:reboot' in layout('Action Center'),'Restart not armed')
+    time.sleep(.6);press('Action Center','Restart');gone('^Action Center$')
+    waitfor(lambda:count('LOGOUT --action reboot')==before+1,'the second click did not run sde-logout --action reboot')
+    # Keyboard: Tab reaches the buttons in the order they are seen; Return
+    # arms Shut Down, the focus stays on it and a second Return runs it.
+    before=count('LOGOUT --action poweroff')
+    def focus():return next((k[7:] for k in layout('Action Center') if k.startswith('@focus:')),None)
+    open_ac();seen=[];prev=focus()
+    for _ in range(40):
+        # Each Tab, then the QA dump that shows where the focus went (it is
+        # written when the popup redraws, a moment later on a busy machine).
+        run('xdotool','key','Tab');f=prev
+        for _ in range(15):
+            time.sleep(.1);f=focus()
+            if f!=prev:break
+        seen.append(f);prev=f
+        if f=='Shut Down':break
+    assert 'Shut Down' in seen,('Tab never reached Shut Down',seen)
+    order=[n for n in seen if n in ['Control Center','Lock Screen']+SESSION]
+    assert order==['Control Center','Lock Screen']+SESSION,('footer not in Tab order',seen)
+    run('xdotool','key','Return');waitfor(lambda:'@session-armed:poweroff' in layout('Action Center'),'Return did not arm Shut Down')
+    assert '@focus:Shut Down' in layout('Action Center'),'arming took the focus from Shut Down'
+    assert count('LOGOUT --action poweroff')==before,'Shut Down ran on the first Return'
+    time.sleep(.6);run('xdotool','key','Return');gone('^Action Center$')
+    waitfor(lambda:count('LOGOUT --action poweroff')==before+1,'the second Return on Shut Down did not run it')
+    # Sleep acts at once.
+    before=count('LOGOUT --action suspend')
+    open_ac();press('Action Center','Sleep');gone('^Action Center$')
+    waitfor(lambda:count('LOGOUT --action suspend')==before+1,'Sleep did not run sde-logout --action suspend')
+    assert count('LOGOUT --action logout')==0,'Log Out ran'
+    # logind cannot suspend (na) and polkit refuses to power off (no): those
+    # buttons go; challenge (a password first) keeps Restart.
+    mode('login1 suspend=na reboot=challenge poweroff=no')
+    open_ac()
+    waitfor(lambda:'@session-can:na,?,challenge,no,' in layout('Action Center'),lambda:'logind answers not read: '+str([k for k in layout('Action Center') if k.startswith('@session')]))
+    waitfor(lambda:'Sleep' not in layout('Action Center') and 'Shut Down' not in layout('Action Center'),'Sleep and Shut Down shown although logind cannot do them')
+    L=session_row('logind');assert 'Log Out' in L and 'Restart' in L,list(L)
+    shot('21-session-logind')
+    mode('login1-off');open_ac()
+    waitfor(lambda:all(n in layout('Action Center') for n in SESSION),'session buttons not back without logind')
+    escape('Action Center')
+    print('PANEL a3.1: session buttons always in the footer (order, no overlap, second click, keyboard, Sleep at once, logind) PASS',flush=True)
 def ac52_checks():
     """alpha52: the Action Center never scrolls and fits the screen, compact
     (date, toggles, sliders, media) and expanded (calendar, agenda, time zone,
@@ -1165,6 +1270,7 @@ def ac52_checks():
             if k.startswith('@'):continue
             assert not r[5],('scrolled control in the Action Center',tag,k)
             assert r[0]>=0 and r[1]>=0 and r[0]+r[2]<=g['w']+1 and r[1]+r[3]<=g['h']+1,('control outside the Action Center',tag,k,r,g)
+        session_row(tag)
         return L
     def conf52(extra=''):config(extra=extra);reload()
     # Day (08:30 UTC is the afternoon in Jakarta, the weather location).
@@ -1771,6 +1877,39 @@ def empty_spot():
     L=layout('SDE Panel');pg=geom(panel)
     left=min(v[0] for k,v in L.items() if k.startswith(('status:','tray-item:','clock')))
     return pg['x']+left-round(40*scale),pg['y']+pg['h']//2
+def not_responding_checks(pg):
+    """0.2.0 Alpha 3.1 (docs/FORCE-CLOSE.md): a window marked "Not
+    Responding" (_SDE_NOT_RESPONDING, set here as sde-watchdog does) has a
+    dimmed taskbar button that says so, and its menu offers Force Close,
+    which runs sde-force-close --kill-window (a logging stub here); the mark
+    removed, the menu has no Force Close."""
+    ready=home/'frozen-ready'
+    client=sp.Popen([str(a.test_dir.resolve()/'sde-frozen-client'),'--title','QA Frozen App','--ready',str(ready)],env=e,stdout=sp.DEVNULL,stderr=sp.DEVNULL);processes.append(client)
+    try:
+        waitfor(lambda:ready.exists(),'the frozen client did not map its window')
+        win=ready.read_text().strip()
+        def task_button():return next((v for k,v in layout('SDE Panel').items() if k.startswith('task:QA Frozen App')),None)
+        waitfor(task_button,'no task button for the frozen client')
+        run('xprop','-id',win,'-f','_SDE_NOT_RESPONDING','32c','-set','_SDE_NOT_RESPONDING','1793500000')
+        waitfor(lambda:'@task-not-responding:QA Frozen App' in layout('SDE Panel'),'the panel does not show the window as not responding')
+        time.sleep(.4);shot('44-task-not-responding')
+        r=task_button();seq=menu_seq()
+        run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:menu_seq()>seq,'no taskbar menu');time.sleep(.3)
+        items=menu_items();assert ('Force Close',True,False) in items,items
+        shot('44-task-menu-force-close')
+        pick(items,'Force Close')
+        waitfor(lambda:commands('FORCECLOSE --kill-window '+win),'Force Close did not run sde-force-close --kill-window')
+        run('xprop','-id',win,'-remove','_SDE_NOT_RESPONDING')
+        waitfor(lambda:'@task-not-responding:QA Frozen App' not in layout('SDE Panel'),'the mark stayed on the taskbar button')
+        r=task_button();seq=menu_seq()
+        run('xdotool','mousemove',pg['x']+r[0]+r[2]//2,pg['y']+r[1]+r[3]//2,'click','3')
+        waitfor(lambda:menu_seq()>seq,'no taskbar menu');time.sleep(.3)
+        assert 'Force Close' not in labels(menu_items()),menu_items()
+        close_menu()
+    finally:
+        client.terminate();client.wait()
+    print('PANEL a3.1: not responding taskbar button (dimmed, label, Force Close in its menu) PASS',flush=True)
 def a52_checks():
     """alpha52: every panel item has its own right-click menu; search box,
     icon or hidden from the search's menu; notifications in the panel."""
@@ -1852,6 +1991,7 @@ def a52_checks():
     items=menu_items();assert 'Restore' in labels(items),items
     pick(items,next(l for l in labels(items) if l.startswith('Close All')))
     waitfor(lambda:w1.poll() is not None and w2.poll() is not None,'Close All Windows did not close both windows')
+    not_responding_checks(pg)
     # Tray items: the application's own dbusmenu.
     t=waitfor(lambda:next((k for k in layout('SDE Panel') if k.startswith('tray-item:')),None),'no tray item on the panel')
     r=layout('SDE Panel')[t]
@@ -1939,7 +2079,7 @@ elif 'IP4.ADDRESS,IP4.GATEWAY,IP4.DNS' in s:print('192.0.2.10/24\\n192.0.2.1\\n1
 elif a[:2]==['-t','networking']:print('full')
 ''')
 # Session actions, the browser and sound players only log what they were asked.
-for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY'),('timedatectl','TIMEDATECTL')]:
+for name,tag in [('xinput','XINPUT'),('liria','LIRIA'),('fuser','FUSER'),('sde-logout','LOGOUT'),('sde-force-close','FORCECLOSE'),('xdg-open','OPEN'),('canberra-gtk-play','SOUND'),('paplay','SOUND'),('pw-play','SOUND'),('sde-settings','SETTINGS'),('sde-gallery','GALLERY'),('timedatectl','TIMEDATECTL')]:
     (home/'bin'/name).write_text(f'''#!/bin/sh
 echo "{tag} $*" >> "$HOME/commands.log"
 ''')
@@ -2028,7 +2168,7 @@ try:
     assert 'status:media' not in layout('SDE Panel'),'media icon on the panel'
     if a.only=='action-center':
         ac52_checks();print('PANEL a52: Action Center fits without scrolling (compact, expanded, two columns), clock hero (day/night, weather), clock styles, units PASS',flush=True)
-        raise SystemExit(0)
+        session_checks();raise SystemExit(0)
     shot('00-panel-indicators')
     if a.only=='a52':
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
@@ -2069,7 +2209,7 @@ try:
 
     # The corner button opens the Action Center (expanded by default).
     ac=click_panel('action-center','^Action Center$');time.sleep(.5);bounds(ac);only_open('Action Center')
-    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','Control Center','Lock Screen','Power','Action Center settings','Account settings']+(['Dark Mode','Display','Alarms'] if H/scale>=560 else []):
+    for name in ['Wi-Fi','Bluetooth','Airplane mode','Do Not Disturb','Output volume','Brightness','Brightness settings','Calendar','Add agenda item','Show less','Control Center','Lock Screen','Sleep','Log Out','Restart','Shut Down','Action Center settings','Account settings']+(['Dark Mode','Display','Alarms'] if H/scale>=560 else []):
         item('Action Center',name,active=False)
     tall=geom(ac)['h'];shot('02-action-center')
     # 0.2.0: a popup that takes the keyboard makes the window manager report
@@ -2163,15 +2303,9 @@ try:
     waitfor(lambda:notified('QA Standup'),'agenda reminder notification missing',tries=150)
     waitfor(lambda:'reminded=true' in agenda.read_text(),'reminder not marked as fired')
 
-    # Session buttons live in the Action Center footer.
+    # Session buttons live in the Action Center footer, always shown.
+    session_checks()
     ac=command(['--action-center'],'Action Center');time.sleep(.4)
-    press('Action Center','Power')
-    for name in ['Sleep','Log Out','Restart','Shut Down','Close power options']:item('Action Center',name)
-    shot('21-power-options')
-    press('Action Center','Restart');gone('^Action Center$')
-    waitfor(lambda:commands('LOGOUT --action reboot'),'Restart did not run sde-logout --action reboot')
-    ac=command(['--action-center'],'Action Center');time.sleep(.4)
-    assert 'Restart' not in layout('Action Center'),'power options stayed open'
     press('Action Center','Lock Screen');gone('^Action Center$')
     waitfor(lambda:commands('LOGOUT --action lock'),'Lock Screen did not run sde-logout --action lock')
     ac=command(['--action-center'],'Action Center');time.sleep(.4)

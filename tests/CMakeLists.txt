@@ -248,11 +248,25 @@ add_test(NAME sde-timezone-model COMMAND sde-timezone-tests)
 add_executable(sde-panel-status-tests test_panel_status.cpp ../src/panel/status_model.cpp)
 target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
+# 0.2.0 Alpha 3.1: the Action Center's session buttons (order, logind's
+# answers, the second click, the glyphs).
+add_executable(sde-session-actions-tests test_session_actions.cpp ../src/panel/session_actions.cpp)
+target_link_libraries(sde-session-actions-tests PRIVATE sde-common)
+add_test(NAME sde-session-actions COMMAND sde-session-actions-tests)
 add_executable(sde-grab-fixture grab_fixture.cpp)
 target_link_libraries(sde-grab-fixture PRIVATE ${X11_LIBRARIES})
 # alpha51: a plain application window for the taskbar preview checks.
 add_executable(sde-preview-window preview_window_fixture.cpp)
 target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
+# 0.2.0 Alpha 3.1: a window that stops answering _NET_WM_PING on SIGUSR1
+# (Force Close checks, showcase), and a pinger.
+add_executable(sde-frozen-client frozen_client_fixture.cpp)
+target_link_libraries(sde-frozen-client PRIVATE ${X11_LIBRARIES})
+# Force Close: which processes may be ended, the watchdog's decisions and
+# the launch records (no display).
+add_executable(sde-force-close-tests test_force_close.cpp)
+target_link_libraries(sde-force-close-tests PRIVATE sde-forceclose-core)
+add_test(NAME sde-force-close-rules COMMAND sde-force-close-tests)
 
 # SDE Welcome, Driver Manager and System Reports: firmware log mapping, GPU
 # heuristics, APT sources rewriting, crash log parsing, issue URLs.
@@ -432,3 +446,16 @@ target_link_libraries(sde-badges-tests PRIVATE sde-common)
 add_test(NAME sde-badges COMMAND sde-badges-tests)
 add_executable(sde-launcher-entry-fixture launcher_entry_fixture.cpp)
 target_link_libraries(sde-launcher-entry-fixture PRIVATE sde-common)
+
+# 0.2.0 Alpha 3.1 Force Close on Xvfb: pings, marks, the dialog (Wait,
+# recovery, Force Close), programs that never open, refused targets, close
+# attempts in a patched SDE WM and crashes through sde-session.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  set(SDE_FORCE_CLOSE_WM "")
+  if(SDE_BUILD_COMPONENTS)
+    set(SDE_FORCE_CLOSE_WM --wm "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-wm")
+  endif()
+  add_test(NAME sde-force-close-ui COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_force_close_ui.py ${CMAKE_BINARY_DIR} ${SDE_FORCE_CLOSE_WM})
+  set_tests_properties(sde-force-close-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
+endif()
