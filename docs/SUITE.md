@@ -359,6 +359,126 @@ Since 0.2.0 Alpha 3:
     name, icon) of files on network locations that do not have them, and
     now reads them only when they are there.
 
+Since 0.2.0 Alpha 3.1:
+
+* **Menus at once.** A right-click felt slow, and the highlight in menus
+  lagged behind the pointer with two or three items blue at once.
+  `tools/liria-menu-smoke.py --prefix <built prefix> [--slow]
+  [--compositor] [--repeat 3] [--json FILE]` drives Liria on Xvfb like a
+  user (XTest: press, 60 ms, release): right-clicks on a folder, a picture,
+  a PDF, a Debian package, an AppImage, a zip and a tar archive, text, a
+  script, a program and a web page, on the empty part of a folder, a row of
+  the list view, a sidebar place, a Home card and one of 1 000 selected
+  files, the main menu, the pointer moving over a context menu and the main
+  menu, and a rest on a submenu. `LIRIA_SDE_QA_FRAMES` also records every
+  click and key with its X server time, every menu mapped, every frame of
+  a menu and every highlight change (`src/liria-sde-qa.c`; SIGUSR2 also
+  writes the places of files, sidebar places and menu items), so the time
+  is measured from the click to the end of the frame that painted the
+  menu. With `--slow`, Xvfb and Liria share one CPU core with a busy
+  process (`taskset`). It fails when a menu takes more than 250 ms (500 ms
+  with `--slow`), the highlight more than 100 ms (200 ms) at the 95th
+  percentile, an item change more than three frames (a fade) or Liria
+  prints critical warnings (`tests/test_native_forks.py`
+  `LiriaAlpha31Test` runs it when `SDE_LIRIA_PREFIX` names a built Liria).
+  The causes, found with it, `perf` and gdb:
+  * the SDE themes fade a menu item's highlight out over 120 ms (the two
+    or three blue items of the video), and GTK 3 worked out the item's
+    style again and laid out and repainted the whole menu on every frame
+    of a fade: five frames for every item the pointer crossed. Liria's
+    style sheet turns menu item transitions off;
+  * an open menu takes the keyboard focus from the folder view, and GTK
+    restyles the view. The icon view then measured every label and updated
+    every icon of the folder again (`liria_icon_container_request_update_all
+    ()`: 60-70 ms for 1 000 files and more in larger folders, when a menu
+    opened and again when it closed), and the background
+    (`EelBackground`) made a picture as large as the view again. Both now
+    react only to changes that matter to them: the font and resolution the
+    labels are measured with, and the view colour and scale;
+  * the window's repaint for the lost focus (the whole view, 13-30 ms on
+    one slow core) came before the menu's first frame, and a new menu
+    window is painted only after the X server has mapped it. The window
+    now waits until the menu is painted (`eel_sde_paint_menu_first ()`,
+    for every context menu, the main menu and the ribbon's menus);
+  * the menu of a file opens when the button is released (a right-button
+    drag moves files), but was made ready only then, or 100 ms after the
+    selection changed. A right-button press now makes it ready right after
+    the press is painted, so the release only shows it;
+  * every menu's grab walks all widgets of the window
+    (`gtk_grab_notify ()`), and the Emblems panel of the side pane, never
+    shown, had about 300 of them; it is filled when it is first shown;
+  * Caja's cache of tinted icon pictures was used only for selected icons,
+    so every repaint of the view made a new picture for every other icon;
+  * every menu update (100 ms after the selection changed, or when a menu
+    opens) read the information of every selected file again in the main
+    loop (`liria_file_refresh_info ()`: the content type sniffed from the
+    file, thumbnails and metadata looked up), to notice a file whose type
+    changed since it was listed: hundreds of files after Ctrl+A and a
+    network round trip for each file of a remote location. Only up to
+    eight local files are checked now (folder monitors report the
+    others); Ctrl+A over 10 000 files takes 720 ms instead of 970 ms.
+
+  Median of the runs (Xvfb on a shared virtual machine, 1366x768, SDE
+  Graphite Light, Papirus; 0.2.0 Alpha 3 and this version alternated),
+  from the click that opens the menu to the menu painted, in brackets on
+  one CPU core shared with a busy process:
+
+  | Menu | Before | After |
+  |---|---|---|
+  | Right-click on a file (eleven types, icon view) | 33 ms (60 ms) | 26 ms (42 ms) |
+  | ... on one of 1 000 selected files | 77 ms (190 ms) | 16 ms (37 ms) |
+  | ... on a row of the list view | 38 ms (70 ms) | 23 ms (47 ms) |
+  | ... on a sidebar place | 20 ms (37 ms) | 13 ms (21 ms) |
+  | ... on the empty part of a folder | 25 ms (35 ms) | 21 ms (36 ms) |
+  | ... on a Home card | 30 ms (48 ms) | 26 ms (56 ms) |
+  | Main menu | 32 ms (64 ms) | 33 ms (54 ms) |
+  | Highlight after the pointer reached an item (median / 95 %) | 12.8 / 20.7 ms (16.4 / 22.3 ms) | 5.8 / 9.7 ms (7.7 / 14.0 ms) |
+  | Frames for each item the pointer crosses; Liria's CPU use meanwhile | 5.3, 30 % | 1.4, 12 % |
+
+  Still: GTK 3 opens a submenu 225 ms after the pointer reaches its item
+  (fixed in GTK, the same for every GTK 3 program); the first menu after
+  Liria starts takes 10-20 ms more (its window is made), and the first
+  menu of a file type reads its applications' icons from the disk (half a
+  second right after a shared virtual machine restarted). Most of what
+  remains is GTK styling and measuring the new menu items when the menu
+  opens (the main menu is made anew every time, the context menus get new
+  items for the applications and extensions of the selection). Under SDE
+  Compositor with all effects (on computers with a GPU) menus fade in
+  (`fading` in the compositor's configuration, `src/common/integration.cpp`),
+  about 100 ms more before they are fully visible. GTK 3 menus have no shadow of their own under
+  SDE WM (it does not announce `_GTK_FRAME_EXTENTS`, so GTK draws them as
+  plain windows) and the compositor draws one; with window managers that
+  announce it GTK draws the shadow and SDE Compositor leaves those windows
+  out (`shadow-exclude`), so a menu never has two.
+* **Pointer motion over the list view** cost 13 % of a core (the icon
+  view 6 %). Every motion that the folder view does not stop (the list
+  view, the empty parts of the icon views, the Home cards) bubbled up to
+  the tabs' GtkNotebook, which asked the X server where its window is
+  (`gdk_window_get_origin ()`, a synchronous round trip) for each one;
+  `LiriaNotebook` now passes it only the motions over its own parts and
+  those while a button is held (dragging a tab). The rest is GtkTreeView,
+  which repaints the two rows that gain and lose the hover, styling each
+  cell from scratch: GTK does not cache the style of nodes whose look may
+  depend on their position, and a rule of the SDE themes
+  (`.sde-system-monitor treeview.view:nth-child(even)` in
+  `data/themes/overlays/apps-gtk-3.0.css`, for the GTK System Monitor of
+  earlier versions; GTK matches from the right, so
+  `treeview.view:nth-child(even)` reaches every tree view cell of every
+  program) makes all tree view cells such nodes.
+
+  Median of three runs of `tools/liria-perf.py --hover` (1366x768): Liria's
+  CPU use while the pointer moves, how long Liria took for the slowest 5 %
+  of the pointer events and the slowest 5 % of the frames, before, after
+  and after with that theme rule removed:
+
+  | Pointer over | Before | After | Without the rule |
+  |---|---|---|---|
+  | List view, 1 000 files | 11.7 %, 0.52 ms, 7.8 ms | 11.3 %, 0.19 ms, 5.5 ms | 9.3 %, 0.21 ms, 3.7 ms |
+  | List view, 10 000 files | 11.8 %, 0.86 ms, 6.2 ms | 11.2 %, 0.19 ms, 5.9 ms | 9.0 %, 0.20 ms, 3.6 ms |
+  | Sidebar | 17.8 %, 0.86 ms, 14.1 ms | 17.4 %, 0.62 ms, 11.2 ms | 11.6 %, 0.55 ms, 6.4 ms |
+  | Icon view, 1 000 / 10 000 files | 4.7 / 5.4 %, 0.50 / 0.45 ms | 4.5 / 5.0 %, 0.20 / 0.17 ms | |
+  | Home cards | 5.2 %, 0.54 ms | 4.8 %, 0.22 ms | |
+
 ## SDE Power and SDE Screen Lock (alpha16)
 
 The former power-manager and screen-saver forks were replaced in alpha16 by
