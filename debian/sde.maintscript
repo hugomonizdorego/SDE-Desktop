@@ -1,3 +1,7 @@
+# The transitional sde package (0.2.0~alpha4 and later) removes the
+# conffiles that only the old sde package had: they belonged to it, so
+# dpkg-maintscript-helper must run in this package. Conffiles that moved to
+# sde-core and the application packages are taken over by them (Replaces).
 # Files of the retired power-manager and screen-saver forks (alpha15 and older).
 rm_conffile /etc/pam.d/sde-screensaver 0.1.0~alpha16~
 rm_conffile /etc/xdg/autostart/sde-screensaver.desktop 0.1.0~alpha16~

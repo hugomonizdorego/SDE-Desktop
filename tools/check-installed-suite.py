@@ -59,9 +59,17 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         parser = configparser.ConfigParser(interpolation=None)
         parser.read("/etc/xdg/autostart/" + name + ".desktop")
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
+    # 0.2.0 Alpha 4: SDE Core and one package per application.
     for package in [
         "sde/upstream/caja",
-        "sde",
+        "sde-core",
+        "liria",
+        "xanara",
+        "niny",
+        "sde-calculator",
+        "taca",
+        "sde-photo",
+        "sde-gallery",
     ]:
         assert Path("/usr/share/doc", package, "copyright").is_file(), package
     pam = Path("/etc/pam.d/sde-lock").read_text()

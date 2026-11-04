@@ -1089,7 +1089,9 @@ std::string refusal_text(const RemovalPlan &plan, const std::string &name, const
                 p.c_str());
 }
 
-std::set<std::string> default_protected_packages() { return {"sde", "sde-desktop", "merkadu"}; }
+// SDE Core, the metapackage, the transitional sde package of 0.2.0~alpha3.1
+// and older, and Merkadu itself (docs/PACKAGING.md).
+std::set<std::string> default_protected_packages() { return {"sde", "sde-core", "sde-desktop", "merkadu"}; }
 
 void parse_removal_query(const std::string &output, long long *freed, std::set<std::string> *system) {
   long long kib = 0;

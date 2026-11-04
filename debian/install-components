@@ -1,0 +1,72 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Installs each CMake install component into the Debian package of the same
+# name (docs/PACKAGING.md):
+#
+#   debian/install-components BUILDDIR PACKAGE...
+#
+# The install() rules of an application name its package with COMPONENT;
+# the rules without one (CMake's "Unspecified") belong to sde-core. It stops
+# when a component has no package, when a package has no component and when
+# a file would be in two packages. For dh_missing, which then checks that
+# every file of the complete installation in debian/tmp is in a package, it
+# logs what each package received.
+set -eu
+
+[ $# -ge 2 ] || { echo "usage: $0 BUILDDIR PACKAGE..." >&2; exit 2; }
+builddir=$1
+shift
+packages=" $* "
+components=$builddir/install-components.txt
+[ -r "$components" ] || { echo "install-components: $components is missing" >&2; exit 1; }
+
+fail=0
+for c in $(cat "$components"); do
+    case "$c" in
+        Unspecified) continue ;;
+    esac
+    case "$packages" in
+        *" $c "*) ;;
+        *) echo "install-components: CMake install component \"$c\" is not a package of debian/control;" \
+                "use COMPONENT <package> for an application, no COMPONENT for SDE Core" >&2
+           fail=1 ;;
+    esac
+done
+for p in $packages; do
+    [ "$p" = sde-core ] && continue
+    grep -qx "$p" "$components" ||
+        { echo "install-components: package $p has no CMake install component" >&2; fail=1; }
+done
+[ "$fail" = 0 ] || exit 1
+
+lists=$(mktemp -d)
+trap 'rm -rf "$lists"' EXIT
+for p in $packages; do
+    dest=$(pwd)/debian/$p
+    for c in $p $([ "$p" = sde-core ] && echo Unspecified); do
+        grep -qx "$c" "$components" || continue
+        rm -f "$builddir/install_manifest_$c.txt"
+        DESTDIR=$dest cmake --install "$builddir" --component "$c" >/dev/null
+        # Paths relative to the root, one per line (CMake writes them with
+        # or without DESTDIR, depending on its version).
+        sed -e "s|^$dest/||" -e 's|^/||' "$builddir/install_manifest_$c.txt" >> "$lists/$p"
+    done
+    [ -s "$lists/$p" ] || { echo "install-components: nothing was installed into $p" >&2; exit 1; }
+    sort -u -o "$lists/$p" "$lists/$p"
+    log=debian/.debhelper/generated/$p/installed-by-install-components
+    mkdir -p "${log%/*}"
+    sed 's|^|debian/tmp/|' "$lists/$p" > "$log"
+done
+
+# A file in two packages would make dpkg refuse to install them together.
+for p in $packages; do
+    sed "s|\$| $p|" "$lists/$p"
+done | sort > "$lists/all"
+dups=$(cut -d' ' -f1 "$lists/all" | uniq -d)
+if [ -n "$dups" ]; then
+    echo "install-components: installed by more than one component:" >&2
+    for f in $dups; do
+        grep "^$f " "$lists/all" | sed 's/^/  /' >&2
+    done
+    exit 1
+fi

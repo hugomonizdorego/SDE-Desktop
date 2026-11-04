@@ -1863,7 +1863,7 @@ FlatButton *action_button(int x, int y, int w, int h, const std::string &label,
 void build_suite(Page *page) {
   page->heading(_("Applications"), _("Applications of the Selviana Desktop Environment"));
   page->note(
-      _("Development edition. Native SDE applications are included in one package. "
+      _("Development edition. Each SDE application is a package of its own; sde-desktop installs them all. "
         "Original authors and licenses remain credited."));
   page->choice_row(
       _("Application theme"), {_("Follow SDE"), _("System GTK theme")},

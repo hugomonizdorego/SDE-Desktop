@@ -75,7 +75,15 @@ assert subprocess.run([str(binary/'sde-update'),'--plan','invalid']).returncode=
 for upstream in ['pluma','caja','atril','engrampa','eom','mate-system-monitor','mate-session-manager','openbox','picom']:
     result=subprocess.run(['dpkg-query','-W','-f=${db:Status-Abbrev}',upstream],capture_output=True,text=True)
     assert not result.stdout.startswith('ii'), 'Original application must not be installed: '+upstream
-files=subprocess.check_output(['dpkg-query','-L','sde'],text=True).splitlines()
+# 0.2.0 Alpha 4: SDE Core and one package per application (docs/PACKAGING.md).
+owners={'sde-session':'sde-core','sde-panel':'sde-core','sde-settings':'sde-core','sde-wm':'sde-core',
+        'sde-compositor':'sde-core','sde-system-monitor':'sde-core','sde-update':'sde-core','liria':'liria',
+        'xanara':'xanara','niny':'niny','merkadu':'merkadu','calculator':'sde-calculator','taca':'taca',
+        'sde-view':'sde-photo','sde-gallery':'sde-gallery'}
+for program,package in owners.items():
+    owner=subprocess.check_output(['dpkg-query','-S',str(binary/program)],text=True).split(':')[0]
+    assert owner==package,(program,owner,package)
+files=subprocess.check_output(['dpkg-query','-L',*sorted(set(owners.values()))],text=True).splitlines()
 for path in files:
     assert not path.endswith(('/mime.cache','/mimeinfo.cache','/icon-theme.cache','/gschemas.compiled')),path
 print('Native ELF executables, metadata, transaction plans and absence of original MATE apps passed.')

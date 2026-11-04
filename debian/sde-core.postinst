@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+# startsde is the x-session-manager of SDE. Up to 0.2.0~alpha3.1 the sde
+# package registered it; registering it again keeps an administrator's
+# choice of another session manager.
+if [ "$1" = "configure" ]; then
+    update-alternatives --install /usr/bin/x-session-manager x-session-manager \
+        /usr/bin/startsde 30
+fi
+#DEBHELPER#
+exit 0

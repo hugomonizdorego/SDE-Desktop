@@ -287,6 +287,11 @@ static void uninstall() {
   CHECK(p.allowed && p.also_removed == std::vector<std::string>({"gimp-data", "gimp-help-en"}));
   p = plan_removal("sde", {"sde"}, prot);
   CHECK(!p.allowed && p.protected_package == "sde");
+  // 0.2.0 Alpha 4: SDE Core; an application takes the metapackage with it.
+  p = plan_removal("sde-core", {"sde-core", "sde-desktop"}, prot);
+  CHECK(!p.allowed && p.protected_package == "sde-core");
+  p = plan_removal("niny", {"niny", "sde-desktop"}, prot);
+  CHECK(!p.allowed && p.protected_package == "sde-desktop");
   // xterm is a dependency of sde: removing it would take the desktop away.
   p = plan_removal("xterm", {"xterm", "sde", "sde-desktop"}, prot);
   CHECK(!p.allowed && p.protected_package == "sde" && p.also_removed.empty());

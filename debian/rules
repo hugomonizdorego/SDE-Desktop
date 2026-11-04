@@ -4,20 +4,31 @@
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export DEB_CXXFLAGS_MAINT_APPEND = -O2
 
+include /usr/share/dpkg/architecture.mk
+
+# SDE Core and the applications are CMake install components
+# (docs/PACKAGING.md): an application's install() rules name its package
+# with COMPONENT, the rules without one are SDE Core. debian/install-components
+# installs each component into its package; dh_missing then stops the build
+# when a file of the complete installation (debian/tmp) is in no package.
+COMPONENT_PACKAGES = sde-core liria xanara niny merkadu sde-calculator taca sde-photo sde-gallery
+BUILDDIR = obj-$(DEB_HOST_GNU_TYPE)
+
 %:
-	dh $@ --buildsystem=cmake
+	dh $@ --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
 override_dh_auto_configure:
 	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release
 
-# Merkadu is a package of its own: debian/merkadu.install takes its files
-# and the other packages (sde.install: usr/*) leave every path that names
-# it.
-override_dh_install:
-	dh_install -pmerkadu
-	dh_install -Nmerkadu -Xmerkadu -XMerkadu
+override_dh_auto_install:
+	dh_auto_install --destdir=debian/tmp
+	debian/install-components $(BUILDDIR) $(COMPONENT_PACKAGES)
 
 # debion-network-repair.service is enabled (it runs at the next boot), not
 # started: the postinst already runs the same repair.
 override_dh_installsystemd:
 	dh_installsystemd --no-start
+
+# The debug symbols of 0.2.0~alpha3.1 and older were all in sde-dbgsym.
+override_dh_strip:
+	dh_strip --dbgsym-migration='sde-dbgsym (<< 0.2.0~alpha4~)'

@@ -3,17 +3,25 @@ build/
 dist/
 obj-*/
 debian/.debhelper/
-debian/sde/
-debian/sde.substvars
+debian/tmp/
+debian/*.substvars
 debian/debhelper-build-stamp
 debian/files
 debian/*.debhelper.log
+debian/*.debhelper
+# The package build trees (debian/control, docs/PACKAGING.md).
+debian/sde/
+debian/sde-*/
+debian/liria/
+debian/xanara/
+debian/niny/
+debian/merkadu/
+debian/taca/
+debian/debion-desktop-base/
 
 /source-work/
 /vendor/
 **/__pycache__/
-debian/sde-desktop/
-debian/sde-desktop.substvars
 .claude/worktrees/
 # tools/build-info.py --stamp (package builds)
 /BUILD-INFO
