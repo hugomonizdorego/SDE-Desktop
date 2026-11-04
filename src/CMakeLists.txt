@@ -105,6 +105,8 @@ add_executable(sde-panel
   panel/notify_center.cpp
   # 0.2.0 Alpha 3.1: the Action Center's session buttons.
   panel/session_actions.cpp
+  # 0.2.0 Alpha 4: Win+1..9, Win+T and Win+X (docs/SHORTCUTS.md).
+  panel/taskbar_keys.cpp
   # The Start menu's account button and popup, the Action Center's user.
   panel/account.cpp
   # 0.2 Alpha 3: the default favorites (the user's browser, mail...) and the

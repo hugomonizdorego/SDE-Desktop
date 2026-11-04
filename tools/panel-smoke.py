@@ -1923,7 +1923,8 @@ def a52_checks():
     run('xdotool','mousemove',W//2,H//2);time.sleep(.3)
     # 1) Per-item menus.
     expected={
-        'start':(['Control Center','System Monitor','Run Command...','Software Updater','Lock','Log Out...','Power','Panel Settings...'],'40-menu-start'),
+        # 0.2.0 Alpha 4: the Quick Link menu (also Win+X).
+        'start':(['Apps','Power Options','System','Terminal','System Monitor','Control Center','Files','Search','Run Command...','Shut Down or Log Out','Desktop','Software Updater','Panel Settings...'],'40-menu-start'),
         'search':(['Show Search Box','Show Search Icon Only','Hidden','Search Settings...'],'40-menu-search'),
         'clock':(['Adjust Date and Time...','Sync Time Zone','Clock Style','Show Seconds','24-Hour Clock','Show the Date','Alarms','Calendar'],'40-menu-clock'),
         'notifications':(['Do Not Disturb','Clear All Notifications','Notification Settings...'],'40-menu-notifications'),
@@ -1981,7 +1982,8 @@ def a52_checks():
     waitfor(lambda:menu_seq()>seq,'no taskbar menu');time.sleep(.3)
     ids=[k for k in menu_layout() if k.startswith('@menu:')];assert ids and ids[0].startswith('@menu:task:'),ids
     items=menu_items()
-    for want in ['SDE Menu QA One','SDE Menu QA Two','Minimize','Maximize','Close Window']:assert want in labels(items),(want,items)
+    # 0.2.0 Alpha 4: the window's items as in its title bar menu (window_menu.h).
+    for want in ['SDE Menu QA One','SDE Menu QA Two','Minimize','Maximize','Always on Top','Move to Workspace','Close']:assert want in labels(items),(want,items)
     assert any(l.startswith('Close All') for l in labels(items)),items
     print('A52 menu task:',', '.join(labels(items)),flush=True);shot('42-menu-task')
     pick(items,'Minimize')

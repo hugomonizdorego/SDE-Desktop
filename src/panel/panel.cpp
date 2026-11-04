@@ -2159,6 +2159,14 @@ void Panel::update_task(Task &t, bool icon) {
   }
 }
 
+bool Panel::on_this_workspace(Window w) const {
+  if (cfg_.get_bool("workspaces", "taskbar_all", false)) return true;
+  auto d = x11::get_cardinals(w, "_NET_WM_DESKTOP");
+  if (d.empty() || d[0] == 0xFFFFFFFFul) return true;
+  auto cur = x11::get_cardinals(RootWindow(fl_display, fl_screen), "_NET_CURRENT_DESKTOP");
+  return cur.empty() || d[0] == cur[0];
+}
+
 void Panel::refresh_tasks() {
   if (!configured_) return;
   Window root = RootWindow(fl_display, fl_screen);
@@ -2174,6 +2182,11 @@ void Panel::refresh_tasks() {
   for (Window w : clients) {
     if (!x11::window_is_normal(w) || x11::window_has_state(w, "_NET_WM_STATE_SKIP_TASKBAR"))
       continue;
+    if (!on_this_workspace(w)) {
+      // Told when it comes to the workspace in view (_NET_WM_DESKTOP).
+      XSelectInput(fl_display, w, PropertyChangeMask);
+      continue;
+    }
     auto it = std::find_if(tasks_.begin(), tasks_.end(), [&](const Task &t) { return t.win == w; });
     if (it != tasks_.end()) {
       next.push_back(*it);
@@ -2233,6 +2246,9 @@ bool Panel::handle_x(const XEvent &e) {
         close_notifications();
       }
       refresh_tasks();
+    } else if (a == x11::atom("_NET_CURRENT_DESKTOP")) {
+      // 0.2.0 Alpha 4: the windows of the workspace now in view.
+      refresh_tasks();
     } else if (a == x11::atom("_SDE_COMMAND")) {
       std::string cmd = x11::read_command();
       if (cmd == "menu")
@@ -2257,6 +2273,18 @@ bool Panel::handle_x(const XEvent &e) {
         open_alarms(true);
       else if (cmd == "close-popups" && open_popup_)
         open_popup_->close();  // the screen locks: give the keyboard grab back
+      // 0.2.0 Alpha 4 (taskbar_keys.cpp): Win+1..9, Win+Shift+1..9, Win+T,
+      // Win+X and Win+N.
+      else if (starts_with(cmd, "taskbar:"))
+        taskbar_shortcut(atoi(cmd.c_str() + 8), false);
+      else if (starts_with(cmd, "taskbar-new:"))
+        taskbar_shortcut(atoi(cmd.c_str() + 12), true);
+      else if (cmd == "focus-taskbar")
+        focus_taskbar();
+      else if (cmd == "quick-link-menu")
+        quick_link_menu();
+      else if (cmd == "notifications")
+        open_notifications();
     } else if (a == x11::atom(avatar::kSerialAtom)) {
       // The account picture or name changed (Control Center, Start menu).
       panel_account::reload();
@@ -2294,6 +2322,11 @@ bool Panel::handle_x(const XEvent &e) {
     return true;
   }
   if (e.type == PropertyNotify) {
+    // 0.2.0 Alpha 4: a window went to another workspace.
+    if (e.xproperty.atom == x11::atom("_NET_WM_DESKTOP")) {
+      refresh_tasks();
+      return true;
+    }
     for (auto &t : tasks_) {
       if (t.win != e.xproperty.window) continue;
       Atom a = e.xproperty.atom;
