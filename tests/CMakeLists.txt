@@ -123,6 +123,13 @@ add_test(NAME sde-agenda-model COMMAND sde-agenda-tests)
 add_executable(sde-sysmon-tests test_sysmon.cpp)
 target_link_libraries(sde-sysmon-tests PRIVATE sde-sysmon-core)
 add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
+# 0.2.0 Alpha 4: My processes by default, the kernel's threads described in
+# their own group on request, never offered to be ended (Xvfb).
+if(SDE_XVFB AND TARGET sde-system-monitor)
+  add_test(NAME sde-sysmon-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_sysmon_ui.py
+    $<TARGET_FILE:sde-system-monitor>)
+  set_tests_properties(sde-sysmon-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 
 add_executable(sde-settings-tests test_settings.cpp)
 target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)

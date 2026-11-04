@@ -15,15 +15,30 @@ Environment. It reads /proc and /sys directly from a background thread once a
 second and only repaints what changed.
 .TP
 .B Processes
-All processes, grouped into apps (processes that own a window or were started
-from a .desktop file, shown with their name and icon) and background
-processes, or as a parent/child tree. Columns: name, PID, user, CPU, memory,
-disk read and write rates, threads and state. Click a column header to sort,
-type in the search field to filter by name, user, PID or command line.
+\fBMy processes\fR (the default): your apps (processes that own a window or
+were started from a .desktop file, shown with their name and icon) and your
+background processes, the programs and services that run as you.
+\fBAll processes\fR adds the system's processes (those of root and of the
+other users). Either view can be a parent/child tree. Columns: name, PID,
+user, CPU, memory, disk read and write rates, threads and state; the list is
+sorted by CPU until you click another column header. The search field
+filters by name, user, PID or command line.
 End Task, Kill, Stop, Continue, Change Priority, Open File Location and
 Properties are in the context menu and the Actions button. Acting on another
 user's process asks for administrator rights through
 .BR pkexec (1).
+.IP
+The threads of the Linux kernel (kworker, ksoftirqd, rcu_preempt,
+migration/0 ...) are hidden; the line under the list says how many.
+\fBShow kernel threads\fR lists them in a group of their own, \fBLinux
+kernel\fR, each with what it does ("Linux kernel \(em worker thread"); the
+tooltip and the line under the list explain the selected one. kworker
+threads are the kernel's workers: they do the work that drivers, file
+systems and the network hand over, such as writing to a disk. Kernel
+threads belong to no program, use no memory of their own and cannot be
+ended, so End Task, Kill, Stop, Continue and Change Priority are not
+offered for them. The view and the kernel threads switch are kept in the
+[system-monitor] section of ~/.config/sde/sde.conf.
 .TP
 .B Performance
 Live 60 second graphs for the processor (total or per core, with model, speed,
@@ -55,7 +70,8 @@ Ctrl+W or Ctrl+Q closes the window.
 .SH FILES
 .TP
 .I ~/.config/sde/sde.conf
-Theme, accent color and UI scale.
+Theme, accent color and UI scale; in [system-monitor], processes=mine|all
+and kernel-threads=true|false.
 .TP
 .I ~/.config/autostart/
 Per-user autostart entries and overrides.

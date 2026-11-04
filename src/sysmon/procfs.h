@@ -60,6 +60,7 @@ struct PidStat {
   std::string comm;  // may contain spaces and parentheses
   char state = '?';
   int ppid = 0;
+  uint64_t flags = 0;             // PF_* of the task (field 9)
   uint64_t utime = 0, stime = 0;  // clock ticks
   long priority = 0, nice = 0;
   int threads = 0;
@@ -69,6 +70,28 @@ struct PidStat {
 };
 
 bool parse_pid_stat(const std::string &text, PidStat &out);
+
+// --------------------------------------------------------- kernel threads
+
+// The Linux kernel's own threads (kworker, ksoftirqd, rcu_*, migration ...)
+// carry PF_KTHREAD in their flags. They run no program, have no command
+// line, use no memory of their own and cannot be ended. kthreadd (pid 2)
+// starts them all; older kernels without the flag are recognized by it.
+constexpr uint64_t kPfKthread = 0x00200000;
+bool is_kernel_thread(const PidStat &st, bool has_cmdline);
+
+// What a kernel thread does, read from its name. |role| and |help| are
+// untranslated (N_) texts for _(); |detail| names what it serves now (the
+// workqueue of a kworker, a device, a file system) and |cpu| the processor
+// it belongs to (-1: any).
+struct KernelThread {
+  const char *role = nullptr;  // "worker thread"
+  const char *help = nullptr;  // one or two sentences for the help line
+  const char *area = nullptr;  // a kworker's current work, when known ("disks and file systems")
+  std::string detail;
+  int cpu = -1;
+};
+KernelThread describe_kernel_thread(const std::string &comm);
 
 // /proc/<pid>/io: bytes that really went to or came from storage.
 struct PidIo {

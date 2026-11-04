@@ -442,6 +442,7 @@ void Sampler::sample_procs(Snapshot &s, double dt) {
       c.user = user_name(c.uid);
       std::string raw;
       read_text(base + "/cmdline", raw);
+      c.kernel = is_kernel_thread(st, !raw.empty());
       auto args = split_nul(raw);
       for (size_t i = 0; i < args.size(); ++i) c.cmdline += (i ? " " : "") + args[i];
       c.exe_base = args.empty() ? "" : base_name(args[0]);
@@ -498,6 +499,7 @@ void Sampler::sample_procs(Snapshot &s, double dt) {
     p.exe_base = c.exe_base;
     p.desktop_hint = c.desktop_hint;
     p.state = st.state;
+    p.kernel = c.kernel;
     p.memory = uint64_t(std::max<int64_t>(0, st.rss_pages)) * uint64_t(page_size_);
     p.threads = st.threads;
     p.nice = st.nice;

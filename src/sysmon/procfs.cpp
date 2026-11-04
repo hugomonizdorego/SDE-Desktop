@@ -7,7 +7,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <sstream>
+
+// Texts for the user interface's _() (marked for xgettext only: the parsers
+// do not translate).
+#ifndef N_
+#define N_(s) (s)
+#endif
 
 namespace sysmon {
 
@@ -147,6 +154,7 @@ bool parse_pid_stat(const std::string &text, PidStat &out) {
   if (f.size() < 22) return false;
   out.state = f[0].empty() ? '?' : f[0][0];
   out.ppid = int(to_i64(f[1]));
+  out.flags = to_u64(f[6]);
   out.utime = to_u64(f[11]);
   out.stime = to_u64(f[12]);
   out.priority = long(to_i64(f[15]));
@@ -156,6 +164,165 @@ bool parse_pid_stat(const std::string &text, PidStat &out) {
   out.vsize = to_u64(f[20]);
   out.rss_pages = to_i64(f[21]);
   return out.pid > 0;
+}
+
+// --------------------------------------------------------- kernel threads
+
+bool is_kernel_thread(const PidStat &st, bool has_cmdline) {
+  if (st.flags & kPfKthread) return true;
+  // Kernels that do not show the flag: kthreadd and its children, which
+  // have no command line (a program always has one, even an empty argv[0]).
+  return !has_cmdline && (st.pid == 2 || st.ppid == 2);
+}
+
+namespace {
+
+struct KernelRole {
+  const char *role, *help;
+};
+
+const KernelRole kWorker = {
+    N_("worker thread"),
+    N_("A worker of the Linux kernel: it does work that drivers, file systems and the network hand over, such "
+       "as writing to a disk. Its name gives the processor it serves (u: any) and, after + or -, what it works "
+       "on.")};
+const KernelRole kStarter = {N_("starts the kernel's threads"),
+                             N_("kthreadd starts every other thread of the Linux kernel: they are its children.")};
+const KernelRole kSoftirq = {N_("deferred interrupts"),
+                             N_("Finishes the work of hardware interrupts (network packets, timers, disks) that "
+                                "could not be done at once.")};
+const KernelRole kRcu = {N_("memory synchronization (RCU)"),
+                         N_("Read-copy-update lets the processors share the kernel's data without locks; these "
+                            "threads finish its waiting periods and free old copies.")};
+const KernelRole kMigration = {N_("moves tasks between processors"),
+                               N_("Moves programs from one processor to another to balance the load.")};
+const KernelRole kHotplug = {N_("switches processors on and off"),
+                             N_("Prepares a processor when it is switched on or off, also when the computer "
+                                "suspends and resumes.")};
+const KernelRole kCooling = {N_("processor cooling"),
+                             N_("Lets a processor rest for short moments to keep it cool.")};
+const KernelRole kMemory = {N_("memory management"),
+                            N_("Frees, compacts and reclaims memory when programs need more of it.")};
+const KernelRole kStorage = {N_("disks and file systems"),
+                             N_("Reads and writes data on the disks, keeps the journals of file systems and "
+                                "handles disk errors.")};
+const KernelRole kInterrupt = {N_("interrupt handler"),
+                               N_("Handles the interrupts of a device in a thread of its own.")};
+const KernelRole kGraphics = {N_("graphics"), N_("Drives the graphics card and the display.")};
+const KernelRole kNetwork = {N_("networking"),
+                             N_("Sends and receives network data and manages the network devices.")};
+const KernelRole kHardware = {N_("hardware and power"),
+                              N_("Handles power, temperature and other events of the hardware.")};
+const KernelRole kWatchdog = {N_("watchdog"),
+                              N_("Checks that the system keeps responding and reports tasks that are stuck.")};
+const KernelRole kAudit = {N_("audit log"), N_("Hands the security events of the kernel to the audit log.")};
+const KernelRole kDevices = {N_("device files"), N_("Creates the files in /dev for new devices.")};
+const KernelRole kPools = {N_("worker pools"), N_("Cleans up the pools of the kernel's workers.")};
+const KernelRole kPressure = {N_("pressure monitor"),
+                              N_("Measures how long programs wait for the processor, memory and disks.")};
+const KernelRole kOther = {N_("kernel thread"), N_("A thread of the Linux kernel.")};
+
+bool any_prefix(const std::string &s, std::initializer_list<const char *> prefixes) {
+  for (const char *p : prefixes)
+    if (starts(s, p)) return true;
+  return false;
+}
+
+// The number after the last '/' ("ksoftirqd/3" -> 3), else -1.
+int cpu_suffix(const std::string &s) {
+  size_t slash = s.rfind('/');
+  if (slash == std::string::npos || slash + 1 >= s.size()) return -1;
+  for (size_t i = slash + 1; i < s.size(); ++i)
+    if (s[i] < '0' || s[i] > '9') return -1;
+  return std::atoi(s.c_str() + slash + 1);
+}
+
+// The role of a workqueue name (what a kworker does now, or the name of a
+// rescuer or an old-style workqueue thread).
+const KernelRole *workqueue_role(const std::string &wq) {
+  if (any_prefix(wq, {"kblockd", "writeback", "sync_wq", "blkcg_punt_bio", "kintegrityd", "kthrotld", "nvme",
+                      "scsi_", "ata_sff", "md", "raid", "dm-", "dm_", "kdmflush", "kcryptd", "dmcrypt", "loop",
+                      "ext4", "jbd2", "btrfs", "xfs", "f2fs", "nfsiod", "rpciod", "flush-", "usb-storage", "uas",
+                      "zfs", "z_", "spl_", "txg_", "bdi", "kmpath"}))
+    return &kStorage;
+  if (any_prefix(wq, {"mm_percpu_wq", "slub_flushwq", "kvfree_rcu", "vmstat", "kswapd", "kcompactd", "zswap",
+                      "khugepaged", "ksmd", "oom_reaper", "lru-add-drain"}))
+    return &kMemory;
+  if (any_prefix(wq, {"rcu", "srcu"})) return &kRcu;
+  if (any_prefix(wq, {"netns", "inet_frag", "ipv6_addrconf", "mld", "napi", "krfcomm", "cfg80211", "iwl", "ath",
+                      "rtw", "mt76", "brcmf", "kstrp", "tls-", "wg-", "bond", "netdev", "phy", "ixgbe", "e1000",
+                      "r8169", "igb", "bluetooth", "hci"}))
+    return &kNetwork;
+  if (any_prefix(wq, {"i915", "amdgpu", "radeon", "nouveau", "drm", "ttm", "gfx", "sdma", "comp_", "card",
+                      "vkms", "virtio_gpu", "qxl"}))
+    return &kGraphics;
+  if (any_prefix(wq, {"kacpi", "acpi", "devfreq", "edac", "tpm", "hwrng", "thermal", "kpsmoused", "pm",
+                      "power", "intel_", "amd_", "usb_hub", "hid"}))
+    return &kHardware;
+  return nullptr;
+}
+
+}  // namespace
+
+KernelThread describe_kernel_thread(const std::string &comm) {
+  KernelThread k;
+  const KernelRole *role = &kOther;
+  if (starts(comm, "kworker/")) {
+    // "kworker/3:1H", "kworker/u17:0+events_unbound", "kworker/0:0H-kblockd"
+    // and, since Linux 6.9, rescuers: "kworker/R-rcu_gp".
+    role = &kWorker;
+    std::string rest = comm.substr(8);
+    if (starts(rest, "R-")) {
+      k.detail = rest.substr(2);
+    } else {
+      size_t mark = rest.find_first_of("+-");
+      if (mark != std::string::npos) k.detail = rest.substr(mark + 1);
+      if (!rest.empty() && rest[0] >= '0' && rest[0] <= '9') k.cpu = std::atoi(rest.c_str());
+    }
+    if (const KernelRole *wq = workqueue_role(k.detail)) k.area = wq->role;
+  } else if (comm == "kthreadd") {
+    role = &kStarter;
+  } else if (starts(comm, "ksoftirqd/")) {
+    role = &kSoftirq;
+    k.cpu = cpu_suffix(comm);
+  } else if (starts(comm, "migration/")) {
+    role = &kMigration;
+    k.cpu = cpu_suffix(comm);
+  } else if (starts(comm, "cpuhp/")) {
+    role = &kHotplug;
+    k.cpu = cpu_suffix(comm);
+  } else if (starts(comm, "idle_inject/")) {
+    role = &kCooling;
+    k.cpu = cpu_suffix(comm);
+  } else if (any_prefix(comm, {"rcu", "srcu"})) {
+    role = &kRcu;
+    k.cpu = cpu_suffix(comm);
+  } else if (starts(comm, "irq/")) {
+    // "irq/127-nvme0q1": the interrupt number and the device.
+    role = &kInterrupt;
+    size_t dash = comm.find('-');
+    if (dash != std::string::npos) k.detail = comm.substr(dash + 1);
+  } else if (starts(comm, "jbd2/")) {
+    role = &kStorage;
+    k.detail = comm.substr(5);  // "nvme0n1p2-8": the partition
+  } else if (any_prefix(comm, {"watchdog", "khungtaskd"})) {
+    role = &kWatchdog;
+    k.cpu = cpu_suffix(comm);
+  } else if (comm == "kauditd") {
+    role = &kAudit;
+  } else if (comm == "kdevtmpfs") {
+    role = &kDevices;
+  } else if (comm == "pool_workqueue_release") {
+    role = &kPools;
+  } else if (starts(comm, "psimon")) {
+    role = &kPressure;
+  } else if (const KernelRole *wq = workqueue_role(comm)) {
+    // Threads named after their work (kswapd0, kblockd, nvme-wq ...).
+    role = wq;
+  }
+  k.role = role->role;
+  k.help = role->help;
+  return k;
 }
 
 bool parse_pid_io(const std::string &text, PidIo &out) {
