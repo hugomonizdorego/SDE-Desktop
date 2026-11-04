@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# PAM configuration of SDE Screen Lock for unlocking with a fingerprint
+# (docs/FINGERPRINT.md). The finger is checked by fprintd over D-Bus
+# (net.reactivated.Fprint), next to the password, as pam_fprintd checks it;
+# after a match SDE Screen Lock asks this service's account stack whether
+# the account may still be used (an expired or locked account is not
+# unlocked by a finger either). Nothing authenticates through this file:
+# its auth stack refuses everything.
+#
+# To forbid unlocking the screen with a fingerprint on this computer,
+# replace the account line with "account requisite pam_deny.so".
+auth	requisite	pam_deny.so
+@include common-account

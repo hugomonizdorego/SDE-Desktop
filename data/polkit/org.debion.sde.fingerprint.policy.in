@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Selviana DE Project</vendor>
+  <vendor_url>https://github.com/hugomonizdorego/SDE-Desktop</vendor_url>
+
+  <!-- Control Center > Fingerprint, "Use for" (docs/FINGERPRINT.md): the
+       helper turns pam-auth-update's fingerprint profiles on or off, which
+       changes how the computer's login screen, consoles, sudo and polkit
+       authenticate everyone. That is an administrator's decision.
+       Enrolling and deleting fingerprints are fprintd's own actions
+       (net.reactivated.fprint.device.*). -->
+  <action id="org.debion.sde.fingerprint.configure">
+    <description>Choose where the fingerprint is used to authenticate</description>
+    <message>Authentication is required to change where fingerprints are used to sign in and to authorize administrator tasks</message>
+    <icon_name>sde-control-center</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SDE_LIBEXECDIR@/sde/sde-fingerprint-pam</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">set</annotate>
+  </action>
+</policyconfig>

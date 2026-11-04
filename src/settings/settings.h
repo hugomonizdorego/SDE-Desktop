@@ -69,4 +69,8 @@ void choose_avatar_picture();
 const avatar::Account &settings_account();
 avatar::Picture &settings_avatar();
 
+// Fingerprint (fingerprint_page.cpp): the reader, your enrolled fingers and
+// where the fingerprint is used (docs/FINGERPRINT.md).
+void build_fingerprint_page(Page *page);
+
 }  // namespace sde

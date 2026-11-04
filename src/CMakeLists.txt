@@ -16,6 +16,8 @@ add_library(sde-common STATIC
   common/desktop_entry.cpp
   common/file_chooser.cpp
   common/file_chooser_model.cpp
+  common/fprint.cpp
+  common/fprint_pam.cpp
   common/glyphs.cpp
   common/i18n.cpp
   common/icons.cpp
@@ -532,6 +534,26 @@ configure_file(${PROJECT_SOURCE_DIR}/data/systemd/sde-account-rename.service.in
                ${CMAKE_BINARY_DIR}/systemd/sde-account-rename.service @ONLY)
 install(FILES ${CMAKE_BINARY_DIR}/systemd/sde-account-rename.service DESTINATION lib/systemd/system)
 install(FILES ${PROJECT_SOURCE_DIR}/data/man/sde-account-rename.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
+# Fingerprint (Control Center > Fingerprint, docs/FINGERPRINT.md): the page
+# and its PAM model (unit tested); the root helper that switches
+# pam-auth-update's fingerprint profiles (pkexec, its polkit action), SDE's
+# two profiles; the lock screen's PAM service for the account check after a
+# finger was recognized (fprintd's Verify over D-Bus, lock/fingerprint.cpp).
+target_sources(sde-settings-model PRIVATE settings/fingerprint_pam.cpp)
+target_sources(sde-settings PRIVATE settings/fingerprint_page.cpp)
+add_executable(sde-fingerprint-pam common/fprint_pam.cpp settings/fingerprint_pam.cpp
+  settings/fingerprint_pam_main.cpp)
+target_include_directories(sde-fingerprint-pam PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/settings)
+target_link_libraries(sde-fingerprint-pam PRIVATE sde-installer-base)
+install(TARGETS sde-fingerprint-pam RUNTIME DESTINATION libexec/sde)  # SDE_LIBEXECDIR/sde
+configure_file(${PROJECT_SOURCE_DIR}/data/polkit/org.debion.sde.fingerprint.policy.in
+               ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.fingerprint.policy @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/polkit/org.debion.sde.fingerprint.policy
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/polkit-1/actions)
+install(FILES ${PROJECT_SOURCE_DIR}/data/pam-configs/sde-fingerprint-sign-in
+              ${PROJECT_SOURCE_DIR}/data/pam-configs/sde-fingerprint-admin
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/pam-configs)
+install(FILES ${PROJECT_SOURCE_DIR}/data/pam/sde-lock-fingerprint DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/pam.d)
 
 # Niny Text Editor: a native SDE editor written from scratch (src/niny).
 add_subdirectory(niny)

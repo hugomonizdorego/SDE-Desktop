@@ -2502,6 +2502,7 @@ const std::vector<PageInfo> &pages() {
       {"power", N_("Power"), {"preferences-system-power", "battery"}, build_power_page, nullptr},
       {"date-time", N_("Date & Time"), {"preferences-system-time"}, build_date_time_page, nullptr},
       {"users", N_("Users & Avatar"), {"system-users", "avatar-default"}, build_users_page, nullptr},
+      {"fingerprint", N_("Fingerprint"), {"auth-fingerprint", "system-users"}, build_fingerprint_page, nullptr},
       {"default-apps",
        N_("Default Applications"),
        {"preferences-desktop-default-applications", "applications-other"},

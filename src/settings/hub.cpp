@@ -24,6 +24,7 @@
 
 #include "avatar.h"
 #include "avatar_view.h"
+#include "fprint.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
@@ -103,6 +104,9 @@ const std::vector<Category> &categories() {
            {"users", N_("Users & Avatar"), N_("Accounts, pictures and passwords"), "users", nullptr, {},
             "user users account accounts avatar picture photo face name password add new remove delete "
             "administrator admin sudo standard lock automatic login autologin",
+            nullptr, false},
+           {"fingerprint", N_("Fingerprint"), N_("Sign in and unlock with a finger"), "fingerprint", nullptr, {},
+            "fingerprint finger reader fprintd biometric enroll unlock sign in login sudo polkit pam",
             nullptr, false},
            {"default-apps", N_("Default Applications"), N_("Browser, mail, music and more"),
             "default-apps", nullptr, {},
@@ -650,6 +654,8 @@ bool hub_glyph(Painter &p, const std::string &id, double x, double y, double s, 
     cairo_line_to(cr, X(0.68), Y(0.3));
     cairo_line_to(cr, X(0.84), Y(0.4));
     stroke();
+  } else if (id == "fingerprint") {
+    fprint::draw_glyph(p, x, y, s, c);
   } else {
     return false;
   }
