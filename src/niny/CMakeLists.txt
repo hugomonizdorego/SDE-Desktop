@@ -41,4 +41,4 @@ add_executable(niny
   settings_page.cpp)
 target_compile_definitions(niny PRIVATE NINY_VERSION="${NINY_VERSION}")
 target_link_libraries(niny PRIVATE niny-core)
-install(TARGETS niny RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS niny RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT niny)

@@ -14,8 +14,9 @@ if(SDE_BUILD_NATIVE_SUITE)
             --prefix "${CMAKE_INSTALL_PREFIX}" --libdir "${CMAKE_INSTALL_FULL_LIBDIR}"
             --sysconfdir "${CMAKE_INSTALL_FULL_SYSCONFDIR}"
     USES_TERMINAL VERBATIM)
+  # The native suite is Liria's Caja fork: package liria (docs/PACKAGING.md).
   install(DIRECTORY "${SDE_SUITE_STAGE}${CMAKE_INSTALL_PREFIX}/"
-          DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS
+          DESTINATION "${CMAKE_INSTALL_PREFIX}" USE_SOURCE_PERMISSIONS COMPONENT liria
           PATTERN "include" EXCLUDE PATTERN "pkgconfig" EXCLUDE
           PATTERN "*.la" EXCLUDE PATTERN "*.a" EXCLUDE)
   # Since alpha16 (no power-manager/screensaver forks) the suite may stage
@@ -23,7 +24,7 @@ if(SDE_BUILD_NATIVE_SUITE)
   install(CODE "if(EXISTS \"${SDE_SUITE_STAGE}${CMAKE_INSTALL_FULL_SYSCONFDIR}\")
     file(INSTALL \"${SDE_SUITE_STAGE}${CMAKE_INSTALL_FULL_SYSCONFDIR}/\"
          DESTINATION \"\$ENV{DESTDIR}${CMAKE_INSTALL_FULL_SYSCONFDIR}\" USE_SOURCE_PERMISSIONS)
-  endif()")
+  endif()" COMPONENT liria)
 endif()
 
 option(SDE_BUILD_COMPONENTS "Build the SDE session components (SDE WM, SDE compositor)" ON)

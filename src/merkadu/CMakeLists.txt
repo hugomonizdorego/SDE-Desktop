@@ -76,9 +76,10 @@ if(FLATPAK_FOUND)
 else()
   message(WARNING "Merkadu: libflatpak not found, building without the Flatpak source")
 endif()
-install(TARGETS merkadu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS merkadu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT merkadu)
 install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/categories.menu ${PROJECT_SOURCE_DIR}/data/merkadu/merkadu.conf
               ${PROJECT_SOURCE_DIR}/data/merkadu/flathub.flatpakrepo
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/merkadu)
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/merkadu COMPONENT merkadu)
 # The icons of the archive's AppStream catalog (APT leaves them off).
-install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/60merkadu DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/apt/apt.conf.d)
+install(FILES ${PROJECT_SOURCE_DIR}/data/merkadu/60merkadu DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/apt/apt.conf.d
+        COMPONENT merkadu)
