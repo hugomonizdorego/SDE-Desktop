@@ -152,6 +152,9 @@ class Bus {
   static void dispatch(void *data);
 
   DBusConnection *conn_;
+  // dispatch() is running: a handler that runs a nested event loop (a popup
+  // menu) must not dispatch again (see dispatch()).
+  bool dispatching_ = false;
   std::map<std::string, MethodFn> objects_;
   struct Watch {
     std::function<bool(DBusMessage *)> filter;

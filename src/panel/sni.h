@@ -5,6 +5,10 @@
 // a host with an existing watcher), reads each item's properties, follows
 // its change signals and shows its com.canonical.dbusmenu menu. XEmbed tray
 // icons keep working next to these items (see tray.h).
+//
+// Every call to an item is asynchronous (0.2.0 Alpha 4): a program that does
+// not answer cannot block the panel, and a menu is shown from the event loop,
+// never from inside a D-Bus handler (docs/PANEL.md, "Tray icons").
 #pragma once
 
 #include <cairo.h>
@@ -34,6 +38,10 @@ class SniHost {
     cairo_surface_t *pixmap = nullptr;            // owned
     cairo_surface_t *attention_pixmap = nullptr;  // owned
     bool loaded = false;
+    // A GetAll is on its way; |stale|: a change signal came meanwhile, so the
+    // properties are read once more when it answers (a program that sends
+    // NewIcon a thousand times costs two calls, not a thousand).
+    bool reading = false, stale = false;
   };
 
   explicit SniHost(std::function<void()> changed);
@@ -69,17 +77,28 @@ class SniHost {
   void context_menu(const Item &item, int x, int y);
   void scroll(const Item &item, int delta);
 
+  // A menu of an item is open, or on its way (QA and tests).
+  bool menu_pending() const { return menu_open_ || bool(pending_menu_); }
+
  private:
+  struct PendingMenu;
   void add_item(const std::string &service, const std::string &sender);
   void remove_owner(const std::string &owner);
   void drop_duplicates();
   void refresh(Item &item);
   void apply_properties(Item &item, const sde::dbus::Value &props);
-  bool show_dbus_menu(const Item &item, int x, int y);
+  // Asks for the item's dbusmenu (AboutToShow, GetLayout); the menu opens
+  // from the event loop once the layout arrives (show_pending_menu). Without
+  // an answer the program is asked to show its own menu (ContextMenu).
+  void request_menu(const Item &item, int x, int y);
+  static void show_pending_menu(void *data);
   void notify_changed();
   void emit_watcher_signal(const char *member, const std::string &arg);
 
   std::function<void()> changed_;
+  std::shared_ptr<PendingMenu> pending_menu_;
+  unsigned menu_serial_ = 0;
+  bool menu_open_ = false;
   sde::dbus::Bus *bus_ = nullptr;
   bool own_watcher_ = false;
   std::vector<std::unique_ptr<Item>> items_;
