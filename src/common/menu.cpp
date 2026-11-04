@@ -271,6 +271,21 @@ bool draw_line_icon(Painter &p, const std::string &name, double x, double y, dou
   } else if (name == "close" || name == "window-close") {
     line(p, X(0.24), Y(0.24), X(0.76), Y(0.76));
     line(p, X(0.76), Y(0.24), X(0.24), Y(0.76));
+  } else if (name == "window-minimize") {
+    // 0.2.0 Alpha 4: the window menu, drawn like the caption buttons.
+    line(p, X(0.22), Y(0.56), X(0.78), Y(0.56));
+  } else if (name == "window-maximize") {
+    rect_path(p, X(0.22), Y(0.22), s * 0.56, s * 0.56, s * 0.08);
+  } else if (name == "window-restore") {
+    rect_path(p, X(0.2), Y(0.34), s * 0.46, s * 0.46, s * 0.07);
+    cairo_move_to(cr, X(0.36), Y(0.34));
+    cairo_line_to(cr, X(0.36), Y(0.2));
+    cairo_line_to(cr, X(0.8), Y(0.2));
+    cairo_line_to(cr, X(0.8), Y(0.64));
+    cairo_line_to(cr, X(0.66), Y(0.64));
+  } else if (name == "workspaces") {
+    rect_path(p, X(0.1), Y(0.26), s * 0.36, s * 0.48, s * 0.07);
+    rect_path(p, X(0.54), Y(0.26), s * 0.36, s * 0.48, s * 0.07);
   } else {
     return false;
   }

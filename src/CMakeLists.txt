@@ -33,6 +33,11 @@ add_library(sde-common STATIC
   common/widgets.cpp
   common/wm.cpp
   common/x11.cpp
+  # 0.2.0 Alpha 4 (docs/WINDOWS.md, docs/SHORTCUTS.md): workspaces, the
+  # keyboard shortcuts and the window menu shared by the WM tools and the panel.
+  common/workspaces.cpp
+  common/shortcuts.cpp
+  common/window_menu.cpp
 )
 target_include_directories(sde-common PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/common
@@ -541,3 +546,7 @@ add_subdirectory(welcome)
 
 # Merkadu, the software center (docs/MERKADU.md).
 add_subdirectory(merkadu)
+
+# Window menu, Task View, the window and workspace commands of the keyboard
+# shortcuts and screenshots (0.2.0 Alpha 4, docs/WINDOWS.md).
+add_subdirectory(windows)
