@@ -28,6 +28,13 @@ struct AppearanceLook {
   int blur_strength = 6;            // 1-12
   bool rounded_corners = true;
   bool animations = true;
+  // 0.2.0 Alpha 4: [appearance] wallpaper_tint ("auto": the family's
+  // default, "true", "false") and accent_from_wallpaper.
+  std::string wallpaper_tint = "auto";
+  bool wallpaper_accent = false;
+
+  // Whether the floating layer takes the wallpaper's colour with this look.
+  bool tinted() const;
 
   static AppearanceLook from_config(const Config &cfg);
   // Writes the look into |cfg| (not saved); keys that already hold the
@@ -43,8 +50,9 @@ struct AppearanceLook {
 };
 
 // What differs between two looks, by card, in the order of the page:
-// "family", "mode", "accent", "transparency" (translucency on/off or its
-// level), "blur" (on/off or strength), "corners", "animations".
+// "family", "mode", "accent" (also from the wallpaper), "transparency"
+// (translucency on/off or its level), "tint" (the wallpaper's colour on the
+// surfaces), "blur" (on/off or strength), "corners", "animations".
 std::vector<std::string> look_changes(const AppearanceLook &from, const AppearanceLook &to);
 
 // The chosen ("pending") look and the look in use ("applied").
@@ -71,6 +79,12 @@ class AppearanceDraft {
   void set_blur_strength(int strength);
   void set_rounded_corners(bool on);
   void set_animations(bool on);
+  // The switch "Tint surfaces with the wallpaper color": on or off for
+  // every family from now on (the family's default until it is used).
+  void set_wallpaper_tint(bool on);
+  // "Accent color from the wallpaper"; |accent| is the named accent the
+  // wallpaper gives now (shown as chosen). Choosing a swatch turns it off.
+  void set_wallpaper_accent(bool on, const std::string &accent = "");
   void set(const AppearanceLook &look) { pending_ = look; }
 
   // |base| with the chosen look written in: what the previews draw.

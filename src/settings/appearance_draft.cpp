@@ -31,7 +31,26 @@ void set_if_changed(Config &cfg, const char *section, const char *key, const std
 
 const char *flag(bool on) { return on ? "true" : "false"; }
 
+// [appearance] wallpaper_tint as "auto", "true" or "false".
+std::string tint_setting(const std::string &v) {
+  std::string s = lower(trim(v));
+  if (s == "true" || s == "on" || s == "yes" || s == "1") return "true";
+  if (s == "false" || s == "off" || s == "no" || s == "0") return "false";
+  return "auto";
+}
+
+// Writes |value| unless the key is missing and |value| is its default.
+void set_unless_default(Config &cfg, const char *section, const char *key, const std::string &value,
+                        const std::string &fallback) {
+  if (value == fallback && cfg.get(section, key, "\x01") == "\x01") return;
+  set_if_changed(cfg, section, key, value);
+}
+
 }  // namespace
+
+bool AppearanceLook::tinted() const {
+  return wallpaper_tint == "auto" ? theme_wallpaper_tint_default(family) : wallpaper_tint == "true";
+}
 
 AppearanceLook AppearanceLook::from_config(const Config &cfg) {
   AppearanceLook l;
@@ -46,6 +65,8 @@ AppearanceLook AppearanceLook::from_config(const Config &cfg) {
   l.blur_strength = clamp(cfg.get_int("aero", "blur_strength", 6), 1, 12);
   l.rounded_corners = cfg.get_bool("aero", "rounded_corners", true);
   l.animations = cfg.get_bool("aero", "animations", true);
+  l.wallpaper_tint = tint_setting(cfg.get("appearance", "wallpaper_tint", "auto"));
+  l.wallpaper_accent = cfg.get_bool("appearance", "accent_from_wallpaper", false);
   return l;
 }
 
@@ -61,13 +82,16 @@ void AppearanceLook::write(Config &cfg) const {
   set_if_changed(cfg, "aero", "blur_strength", std::to_string(blur_strength));
   set_if_changed(cfg, "aero", "rounded_corners", flag(rounded_corners));
   set_if_changed(cfg, "aero", "animations", flag(animations));
+  set_unless_default(cfg, "appearance", "wallpaper_tint", wallpaper_tint, "auto");
+  set_unless_default(cfg, "appearance", "accent_from_wallpaper", flag(wallpaper_accent), "false");
 }
 
 std::string AppearanceLook::encode() const {
   return "family=" + family + ";mode=" + mode + ";accent=" + accent + ";custom=" + custom_accent +
          ";translucent=" + (translucent ? "1" : "0") + ";transparency=" + std::to_string(transparency) +
          ";blur=" + (blur ? "1" : "0") + ";strength=" + std::to_string(blur_strength) +
-         ";corners=" + (rounded_corners ? "1" : "0") + ";animations=" + (animations ? "1" : "0");
+         ";corners=" + (rounded_corners ? "1" : "0") + ";animations=" + (animations ? "1" : "0") +
+         ";tint=" + wallpaper_tint + ";wallaccent=" + (wallpaper_accent ? "1" : "0");
 }
 
 bool AppearanceLook::decode(const std::string &text, AppearanceLook &out) {
@@ -99,6 +123,10 @@ bool AppearanceLook::decode(const std::string &text, AppearanceLook &out) {
       l.rounded_corners = v == "1";
     } else if (k == "animations") {
       l.animations = v == "1";
+    } else if (k == "tint") {
+      l.wallpaper_tint = tint_setting(v);
+    } else if (k == "wallaccent") {
+      l.wallpaper_accent = v == "1";
     }
   }
   if (!family) return false;
@@ -109,15 +137,18 @@ bool AppearanceLook::decode(const std::string &text, AppearanceLook &out) {
 bool AppearanceLook::operator==(const AppearanceLook &o) const {
   return family == o.family && mode == o.mode && accent == o.accent && custom_accent == o.custom_accent &&
          translucent == o.translucent && transparency == o.transparency && blur == o.blur &&
-         blur_strength == o.blur_strength && rounded_corners == o.rounded_corners && animations == o.animations;
+         blur_strength == o.blur_strength && rounded_corners == o.rounded_corners && animations == o.animations &&
+         wallpaper_tint == o.wallpaper_tint && wallpaper_accent == o.wallpaper_accent;
 }
 
 std::vector<std::string> look_changes(const AppearanceLook &a, const AppearanceLook &b) {
   std::vector<std::string> out;
   if (a.family != b.family) out.push_back("family");
   if (a.mode != b.mode) out.push_back("mode");
-  if (a.accent != b.accent || a.custom_accent != b.custom_accent) out.push_back("accent");
+  if (a.accent != b.accent || a.custom_accent != b.custom_accent || a.wallpaper_accent != b.wallpaper_accent)
+    out.push_back("accent");
   if (a.translucent != b.translucent || a.transparency != b.transparency) out.push_back("transparency");
+  if (a.wallpaper_tint != b.wallpaper_tint) out.push_back("tint");
   if (a.blur != b.blur || a.blur_strength != b.blur_strength) out.push_back("blur");
   if (a.rounded_corners != b.rounded_corners) out.push_back("corners");
   if (a.animations != b.animations) out.push_back("animations");
@@ -141,6 +172,17 @@ void AppearanceDraft::set_accent(const std::string &accent) {
   if (!known_accent(accent)) return;
   pending_.accent = accent;
   pending_.custom_accent.clear();
+  pending_.wallpaper_accent = false;
+}
+
+void AppearanceDraft::set_wallpaper_tint(bool on) { pending_.wallpaper_tint = on ? "true" : "false"; }
+
+void AppearanceDraft::set_wallpaper_accent(bool on, const std::string &accent) {
+  pending_.wallpaper_accent = on;
+  if (on && known_accent(accent)) {
+    pending_.accent = accent;
+    pending_.custom_accent.clear();
+  }
 }
 
 void AppearanceDraft::set_preset(int transparency) {
@@ -176,14 +218,16 @@ void AppearanceDraft::rebase(const Config &cfg) {
   const AppearanceLook &a = applied_;
   if (p.family == a.family) p.family = now.family;
   if (p.mode == a.mode) p.mode = now.mode;
-  if (p.accent == a.accent && p.custom_accent == a.custom_accent) {
+  if (p.accent == a.accent && p.custom_accent == a.custom_accent && p.wallpaper_accent == a.wallpaper_accent) {
     p.accent = now.accent;
     p.custom_accent = now.custom_accent;
+    p.wallpaper_accent = now.wallpaper_accent;
   }
   if (p.translucent == a.translucent && p.transparency == a.transparency) {
     p.translucent = now.translucent;
     p.transparency = now.transparency;
   }
+  if (p.wallpaper_tint == a.wallpaper_tint) p.wallpaper_tint = now.wallpaper_tint;
   if (p.blur == a.blur && p.blur_strength == a.blur_strength) {
     p.blur = now.blur;
     p.blur_strength = now.blur_strength;

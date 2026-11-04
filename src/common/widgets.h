@@ -21,7 +21,28 @@ class Slider : public Fl_Slider {
   Slider(int x, int y, int w, int h, const char *label = nullptr);
   void draw() override;
   int handle(int event) override;
+  // Shows the value at the right of the track, live while it is dragged
+  // (0.2.0 Alpha 4); |format| turns it into text ("25 %").
+  void show_value(std::function<std::string(double)> format);
+  // The accessible name (the tooltip, which SDE's QA files and the Control
+  // Center's focus keeping use); with a value shown, the value follows it:
+  // "Transparency level: 25 %".
+  void accessible_name(const std::string &name);
+  std::string value_text() const { return format_ ? format_(value()) : std::string(); }
+  // The width the value takes at the right (0 without one).
+  int value_width() const;
+
+ protected:
+  void value_damage() override;
+
+ private:
+  void update_name();
+  std::function<std::string(double)> format_;
+  std::string name_, named_;
 };
+
+// "25 %": a percentage with the space SDE's labels use.
+std::string percent_text(double percent);
 
 // On/off switch; value() is the state.
 class Switch : public Fl_Button {

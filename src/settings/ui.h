@@ -79,8 +79,12 @@ class Page : public Fl_Scroll {
                      const std::string &hint = "");
   Fl_Choice *choice_row(const std::string &label, const std::vector<std::string> &options, int value,
                         std::function<void(int)> changed, const std::string &hint = "");
+  // |value_text| (0.2.0 Alpha 4): the value shown next to the track while it
+  // moves ("25 %", see Slider::show_value()); the label is the accessible
+  // name until the caller gives another.
   Slider *slider_row(const std::string &label, double min, double max, double value,
-                     std::function<void(double)> changed, const std::string &hint = "");
+                     std::function<void(double)> changed, const std::string &hint = "",
+                     std::function<std::string(double)> value_text = nullptr);
 
   // Ends the page; call once all rows are added.
   void finish();

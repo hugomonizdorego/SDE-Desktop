@@ -1169,6 +1169,8 @@ Label *g_theme_note = nullptr;
 Slider *g_transparency_slider = nullptr, *g_blur_slider = nullptr;
 Switch *g_translucent_switch = nullptr, *g_blur_switch = nullptr, *g_corners_switch = nullptr,
        *g_animations_switch = nullptr;
+// 0.2.0 Alpha 4: the wallpaper's colour on the floating layer and as accent.
+Switch *g_tint_switch = nullptr, *g_wallpaper_accent_switch = nullptr;
 
 // "Panel 82 % · Menus 88 % · Window frames 94 % opaque" for the slider hint.
 std::string transparency_summary(const Theme &t) {
@@ -1217,6 +1219,7 @@ void build_appearance(Page *page) {
   g_transparency_note = g_theme_note = nullptr;
   g_transparency_slider = g_blur_slider = nullptr;
   g_translucent_switch = g_blur_switch = g_corners_switch = g_animations_switch = nullptr;
+  g_tint_switch = g_wallpaper_accent_switch = nullptr;
   page->heading(_("Appearance"), _("Theme, colors, translucency, size and wallpaper"));
   page->begin_card(_("Theme"));
   // The chosen look at a glance; Preview shows it for real.
@@ -1239,6 +1242,18 @@ void build_appearance(Page *page) {
   }, _("Auto is light from 07:00 to 19:00 and dark in the evening."));
   page->row(_("Accent color"), S(36) * int(theme_accents().size()), S(38),
             [](int x, int yy, int w, int h) { return new AccentPicker(x, yy, w, h); });
+  // 0.2.0 Alpha 4: the named accent nearest the wallpaper's colour (so GTK
+  // and the window frames follow it too); a swatch turns it off.
+  g_wallpaper_accent_switch = page->switch_row(
+      _("Accent color from the wallpaper"), g_draft.pending().wallpaper_accent,
+      [](bool on) {
+        Config c = g_draft.preview_config(g_cfg);
+        c.set("appearance", "accent_from_wallpaper", "true");
+        g_draft.set_wallpaper_accent(on, theme_choice(c).accent);
+        draft_changed();
+      },
+      _("The accent above that is nearest the wallpaper's color, chosen again when the wallpaper changes."));
+  g_wallpaper_accent_switch->tooltip(_("Accent color from the wallpaper"));
   {
     std::string text = theme_note();
     int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::DIM) + S(14);
@@ -1262,12 +1277,16 @@ void build_appearance(Page *page) {
   const AppearanceLook &look = g_draft.pending();
   // While the slider is dragged only the chosen look, the miniature and the
   // preview window change: nothing is written and nothing reloads.
-  g_transparency_slider = page->slider_row(_("Transparency"), 0, 100, look.transparency, [](double v) {
-    g_draft.set_transparency(int(std::lround(v)));
-    draft_changed(false);
-  });
+  // 0.2.0 Alpha 4: the sliders show their value while they move.
+  g_transparency_slider = page->slider_row(
+      _("Transparency"), 0, 100, look.transparency,
+      [](double v) {
+        g_draft.set_transparency(int(std::lround(v)));
+        draft_changed(false);
+      },
+      "", [](double v) { return percent_text(v); });
   g_transparency_slider->when(FL_WHEN_CHANGED);
-  g_transparency_slider->tooltip(_("Transparency level"));
+  g_transparency_slider->accessible_name(_("Transparency level"));
   {
     std::string text = transparency_summary(draft_theme());
     int lw = page->width() - S(40), lh = Label::measure(text, lw, Label::DIM) + S(14);
@@ -1283,6 +1302,15 @@ void build_appearance(Page *page) {
       _("Acrylic panel and menus in Fluent, vibrancy in Graphite, frosted window frames in "
         "Glass."));
   g_translucent_switch->tooltip(_("Translucent surfaces"));
+  g_tint_switch = page->switch_row(
+      _("Tint surfaces with the wallpaper color"), look.tinted(),
+      [](bool on) {
+        g_draft.set_wallpaper_tint(on);
+        draft_changed();
+      },
+      _("The panel, Start menu, Action Center, menus and notifications take a calm shade of the "
+        "wallpaper's color, also when they are opaque. On by default in Fluent and Liquid Glass."));
+  g_tint_switch->tooltip(_("Tint surfaces with the wallpaper color"));
   g_blur_switch = page->switch_row(
       _("Blur behind glass"), look.blur,
       [](bool on) {
@@ -1295,12 +1323,16 @@ void build_appearance(Page *page) {
     page->note(_("This computer uses the lite compositor profile (virtual machine or software "
                  "rendering): blur is off and surfaces stay more opaque so that text stays readable. "
                  "Choose OpenGL or XRender in Effects to use every effect."));
-  g_blur_slider = page->slider_row(_("Blur strength"), 1, 12, look.blur_strength, [](double v) {
-    g_draft.set_blur_strength(int(std::lround(v)));
-    draft_changed(false);
-  });
+  // 1 (light) to 12 (strong), as a share of the strongest: 6, the default, is 50 %.
+  g_blur_slider = page->slider_row(
+      _("Blur strength"), 1, 12, look.blur_strength,
+      [](double v) {
+        g_draft.set_blur_strength(int(std::lround(v)));
+        draft_changed(false);
+      },
+      "", [](double v) { return percent_text(v * 100.0 / 12.0); });
   g_blur_slider->when(FL_WHEN_CHANGED);
-  g_blur_slider->tooltip(_("Blur strength"));
+  g_blur_slider->accessible_name(_("Blur strength"));
   g_corners_switch = page->switch_row(_("Rounded window corners"), look.rounded_corners, [](bool on) {
     g_draft.set_rounded_corners(on);
     draft_changed();
@@ -2822,6 +2854,8 @@ void draft_changed(bool rebuild) {
   if (g_blur_switch) g_blur_switch->value(look.blur);
   if (g_corners_switch) g_corners_switch->value(look.rounded_corners);
   if (g_animations_switch) g_animations_switch->value(look.animations);
+  if (g_tint_switch) g_tint_switch->value(look.tinted());
+  if (g_wallpaper_accent_switch) g_wallpaper_accent_switch->value(look.wallpaper_accent);
   if (g_page) g_page->redraw();
   if (g_sidebar_frame) g_sidebar_frame->redraw();
   update_pending_bar();
@@ -2837,7 +2871,7 @@ std::string look_signature(const Theme &t) {
   return t.gtk_theme + "|" + (t.dark ? "dark" : "light") + "|" + t.accent.to_hex() + "|" +
          std::to_string(t.transparency) + "|" + (t.translucent ? "1" : "0") + (t.blur ? "1" : "0") +
          (t.liquid ? "1" : "0") + "|" + std::to_string(t.radius) + "|" + std::to_string(t.font_size) + "|" +
-         std::to_string(int(std::lround(t.scale * 100)));
+         std::to_string(int(std::lround(t.scale * 100))) + "|" + t.menu_bg.to_hex() + t.layer_surface.to_hex();
 }
 
 void restart_settings(void *) {
@@ -2855,6 +2889,12 @@ void follow_config_change(void *) {
   Config disk;
   disk.load();
   AppearanceLook::from_config(disk).write(g_cfg);
+  // A wallpaper set elsewhere (Gallery, Photo) brings its colours along
+  // (0.2.0 Alpha 4): the miniature, the tint and the accent follow it.
+  for (const char *key : {"wallpaper", "wallpaper_mode"}) {
+    std::string v = disk.get("appearance", key, "\x01");
+    if (v != "\x01" && v != g_cfg.get("appearance", key, "\x01")) g_cfg.set("appearance", key, v);
+  }
   g_draft.rebase(g_cfg);
   Theme t = Theme::from_config(g_cfg);
   if (look_signature(t) == look_signature(g_theme)) {

@@ -257,11 +257,11 @@ void paint_backdrop(Painter &p, const Backdrop &b, double x, double y, double w,
 void draw_panel(Painter &p, const Theme &t, const Backdrop &b, double x, double y, double w, double h) {
   bool pill = t.family == "glass";
   double px = pill ? x + w * 0.14 : x, pw = pill ? w * 0.72 : w, py = pill ? y - Sd(4) : y;
-  glass_layer(p, t, b, px, py, pw, h, pill ? h / 2 : 0, t.surface, t.opacity, pill ? 15 : 0);
+  glass_layer(p, t, b, px, py, pw, h, pill ? h / 2 : 0, t.layer_surface, t.opacity, pill ? 15 : 0);
   double icon = h * 0.56, ix = px + (pill ? h * 0.5 : Sd(8)), iy = py + (h - icon) / 2;
   p.fill_rounded(ix, iy, icon * 1.6, icon, std::min(icon / 2, double(t.radius_small)), t.accent);
   ix += icon * 1.6 + Sd(8);
-  p.fill_rounded(ix, iy, pw * 0.22, icon, icon / 2, t.surface_alt.alpha(0.9));
+  p.fill_rounded(ix, iy, pw * 0.22, icon, icon / 2, t.layer_surface_alt.alpha(0.9));
   ix += pw * 0.22 + Sd(10);
   for (int i = 0; i < 4; ++i) {
     p.fill_rounded(ix, iy, icon, icon, Sd(4), i == 1 ? t.accent.alpha(0.85) : t.text_dim.alpha(0.55));
@@ -328,12 +328,14 @@ void draw_look_scene(Painter &p, const Theme &t, double x, double y, double w, d
   double qx = bw * 0.62, qy = bh * 0.12, qw = bw * 0.33, qh = bh * 0.62;
   double qr = std::max(2.0, t.radius_large * 0.6 / scale);
   p.shadow(qx, qy, qw, qh, qr, t.shadow.alpha(std::min(0.3, t.shadow.a)), int(std::max(2.0, Sd(5) / scale)));
-  glass_layer(p, t, b, qx, qy, qw, qh, qr, t.surface, t.popup_opacity);
+  // The panel and its popups are the floating layer (with the wallpaper's
+  // tint, 0.2.0 Alpha 4).
+  glass_layer(p, t, b, qx, qy, qw, qh, qr, t.layer_surface, t.popup_opacity);
   for (int r = 0; r < 2; ++r)
     for (int c = 0; c < 3; ++c) {
       double tw = (qw - qw * 0.16) / 3, tx = qx + qw * 0.06 + c * (tw + qw * 0.02), ty = qy + qh * (0.10 + r * 0.26);
       p.fill_rounded(tx, ty, tw, qh * 0.2, std::min(qh * 0.06, double(t.radius_small)),
-                     (r == 0 && c < 2) ? t.accent : t.surface_alt.alpha(0.9));
+                     (r == 0 && c < 2) ? t.accent : t.layer_surface_alt.alpha(0.9));
     }
   double sy = qy + qh * 0.70;
   p.fill_rounded(qx + qw * 0.08, sy, qw * 0.84, qh * 0.04, qh * 0.02, t.text_dim.alpha(0.35));
@@ -623,12 +625,14 @@ class PreviewWindow : public BufferedWindow {
     cancel_ = new FlatButton(w - pad - S(110) - S(8) - S(100), by, S(100), S(36), _("Cancel"));
     cancel_->tooltip(_("Close the preview without applying"));
     cancel_->callback([](Fl_Widget *, void *) { close_preview("cancel"); });
-    int sw = std::min(S(220), w / 4), sx = w - pad - S(230) - S(16) - sw;
+    // 0.2.0 Alpha 4: the level shows next to the slider while it moves.
+    int sw = std::min(S(220), w / 4) + S(54), sx = w - pad - S(230) - S(16) - sw;
     text_w_ = sx - pad - S(16);
     slider_ = new Slider(sx, by + S(4), sw, S(28));
     slider_->bounds(0, 100);
     slider_->when(FL_WHEN_CHANGED);
-    slider_->tooltip(_("Transparency level (preview)"));
+    slider_->show_value([](double v) { return percent_text(v); });
+    slider_->accessible_name(_("Transparency level (preview)"));
     slider_->callback([](Fl_Widget *wg, void *) {
       AppearanceLook l = g_pv.look;
       l.transparency = int(std::lround(static_cast<Slider *>(wg)->value()));
@@ -690,7 +694,8 @@ class PreviewWindow : public BufferedWindow {
       // Quick settings: the popup surface of the panel.
       p.shadow(quick_.x, quick_.y, quick_.w, quick_.h, t.radius_large, t.shadow.alpha(std::min(0.35, t.shadow.a)),
                int(Sd(10)));
-      glass_layer(p, t, b, quick_.x, quick_.y, quick_.w, quick_.h, t.radius_large, t.surface, t.popup_opacity);
+      glass_layer(p, t, b, quick_.x, quick_.y, quick_.w, quick_.h, t.radius_large, t.layer_surface,
+                  t.popup_opacity);
       // The panel along the bottom of the scene.
       draw_panel(p, t, b, 0, scene_h_ - S(44), w(), S(44));
       // The bar.
