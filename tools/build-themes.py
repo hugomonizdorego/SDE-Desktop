@@ -136,6 +136,10 @@ def write_header(pal, path):
     out.append(f'  unsigned accent[{len(acc)}][2];')
     out.append('  Mode light, dark;')
     out.append('  Liquid liquid;')
+    out.append('  // The wallpaper tint of the floating layer (0.2.0 Alpha 4): on by default,')
+    out.append('  // the most Oklab chroma it adds (light, dark).')
+    out.append('  bool tint_default;')
+    out.append('  double tint_amount[2];')
     out.append('};')
     out.append('struct Legacy { const char *from, *to; };')
     out.append('')
@@ -173,9 +177,11 @@ def write_header(pal, path):
             out.append(f"   {{true, {q['blur']}, {q['frost']}, {q['saturation']}, "
                        f"{{{q['brightness'][0]}, {q['brightness'][1]}}}, {{{q['tint'][0]}, {q['tint'][1]}}}, "
                        f"{q['lens_band']}, {q['lens_shift']}, {{{q['rim'][0]}, {q['rim'][1]}}}, {q['rim_width']}, "
-                       f"{q['key_range']}}}}},")
+                       f"{q['key_range']}}},")
         else:
-            out.append('   {false, 0, 0, 1, {1, 1}, {1, 1}, 0, 0, {0, 0}, 1, 0}},')
+            out.append('   {false, 0, 0, 1, {1, 1}, {1, 1}, 0, 0, {0, 0}, 1, 0},')
+        wt = f.get('wallpaper_tint', {'default': False, 'amount': [0, 0]})
+        out.append(f"   {'true' if wt['default'] else 'false'}, {{{wt['amount'][0]}, {wt['amount'][1]}}}}},")
     out.append('};')
     leg = pal['legacy']
     out.append('constexpr Legacy kLegacyStyles[] = {' +

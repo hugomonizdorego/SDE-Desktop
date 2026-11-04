@@ -16,13 +16,22 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <initializer_list>
+#include <map>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include <cairo.h>
 
 #include "build_history.h"
 #include "config.h"
 #include "icons.h"
+#include "integration.h"
 #include "theme.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "wm.h"
 
 using namespace sde;
@@ -427,13 +436,312 @@ static void test_build_history() {
   }
 }
 
+// ------------------------------------- wallpaper colours (0.2.0 Alpha 4)
+//
+// Sample wallpapers drawn here (a sky, a forest, a sunset over the sea, a
+// red, a rainbow, grays, black and white) and SDE's own Selviana pictures:
+// the colour extraction (Oklab, the dominant hue, how strongly it may tint),
+// the cache, the calm tint (same luminance, a tinted gray) and the floating
+// layer of every family, mode and accent with it (WCAG AA kept).
+
+namespace {
+
+using Paint = void (*)(cairo_t *cr, double w, double h);
+
+void stops(cairo_t *cr, double h, std::initializer_list<std::pair<double, unsigned>> list) {
+  cairo_pattern_t *g = cairo_pattern_create_linear(0, 0, 0, h);
+  for (const auto &s : list)
+    cairo_pattern_add_color_stop_rgb(g, s.first, ((s.second >> 16) & 0xff) / 255.0, ((s.second >> 8) & 0xff) / 255.0,
+                                     (s.second & 0xff) / 255.0);
+  cairo_set_source(cr, g);
+  cairo_paint(cr);
+  cairo_pattern_destroy(g);
+}
+
+struct Sample {
+  const char *name;
+  Paint paint;
+};
+
+const Sample kSamples[] = {
+    {"sky", [](cairo_t *cr, double, double h) { stops(cr, h, {{0, 0x8FD3E3}, {0.55, 0x3FA7C2}, {1, 0x167D9A}}); }},
+    {"forest",
+     [](cairo_t *cr, double, double h) {
+       stops(cr, h, {{0, 0xA7C7D9}, {0.25, 0x7FA35B}, {0.6, 0x3F6B3A}, {1, 0x1E3B2A}});
+     }},
+    {"sunset",
+     [](cairo_t *cr, double, double h) {
+       stops(cr, h, {{0, 0x2B1B4A}, {0.35, 0xB4486B}, {0.55, 0xE86A3A}, {0.62, 0xF7C873}, {0.63, 0x1D3557},
+                     {1, 0x0F1C30}});
+     }},
+    {"red", [](cairo_t *cr, double, double) { cairo_set_source_rgb(cr, 0.75, 0.22, 0.17), cairo_paint(cr); }},
+    {"rainbow",
+     [](cairo_t *cr, double w, double h) {
+       for (int i = 0; i < 12; ++i) {
+         double hue = i / 12.0 * 6, x = hue - std::floor(hue / 2) * 2 - 1, c = 0.8, v = c * (1 - std::fabs(x));
+         double rgb[6][3] = {{c, v, 0}, {v, c, 0}, {0, c, v}, {0, v, c}, {v, 0, c}, {c, 0, v}};
+         auto &k = rgb[int(hue) % 6];
+         cairo_set_source_rgb(cr, k[0] + 0.1, k[1] + 0.1, k[2] + 0.1);
+         cairo_rectangle(cr, w * i / 12, 0, w / 12 + 1, h);
+         cairo_fill(cr);
+       }
+     }},
+    {"gray",
+     [](cairo_t *cr, double w, double h) {
+       for (int y = 0; y < h; y += 4)
+         for (int x = 0; x < w; x += 4) {
+           double v = 0.42 + 0.16 * (((x * 7 + y * 13) % 17) / 17.0);
+           cairo_set_source_rgb(cr, v, v, v);
+           cairo_rectangle(cr, x, y, 4, 4);
+           cairo_fill(cr);
+         }
+     }},
+    {"black", [](cairo_t *cr, double, double) { cairo_set_source_rgb(cr, 0, 0, 0), cairo_paint(cr); }},
+    {"white", [](cairo_t *cr, double, double) { cairo_set_source_rgb(cr, 1, 1, 1), cairo_paint(cr); }},
+};
+
+cairo_surface_t *sample_surface(const Sample &s) {
+  cairo_surface_t *img = cairo_image_surface_create(CAIRO_FORMAT_RGB24, 192, 108);
+  cairo_t *cr = cairo_create(img);
+  s.paint(cr, 192, 108);
+  cairo_destroy(cr);
+  cairo_surface_flush(img);
+  return img;
+}
+
+// The colours of a sample measured from its pixels (as RGBA bytes).
+WallpaperColors sample_colors(const Sample &s) {
+  cairo_surface_t *img = sample_surface(s);
+  int w = cairo_image_surface_get_width(img), h = cairo_image_surface_get_height(img);
+  int stride = cairo_image_surface_get_stride(img);
+  const unsigned char *d = cairo_image_surface_get_data(img);
+  std::vector<unsigned char> rgba(size_t(w) * h * 4);
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x) {
+      uint32_t v = reinterpret_cast<const uint32_t *>(d + y * stride)[x];
+      unsigned char *o = &rgba[(size_t(y) * w + x) * 4];
+      o[0] = (v >> 16) & 0xff, o[1] = (v >> 8) & 0xff, o[2] = v & 0xff, o[3] = 255;
+    }
+  cairo_surface_destroy(img);
+  return wallpaper_colors_of_pixels(rgba.data(), w, h, w * 4, 4);
+}
+
+std::string write_sample(const Sample &s, const std::string &path) {
+  cairo_surface_t *img = sample_surface(s);
+  cairo_surface_write_to_png(img, path.c_str());
+  cairo_surface_destroy(img);
+  return path;
+}
+
+double degrees(double radians) {
+  double d = std::fmod(radians * 180 / M_PI + 360, 360);
+  return d;
+}
+
+// The distance between two hues in degrees.
+double hue_gap(double a, double b) { return std::fabs(std::remainder(a - b, 2 * M_PI)) * 180 / M_PI; }
+
+Config tinted_config(const std::string &family, const char *mode, const std::string &accent,
+                     const std::string &wallpaper, const char *tint, int transparency = 25) {
+  Config cfg;
+  cfg.set("appearance", "style", family);
+  cfg.set("appearance", "theme", mode);
+  cfg.set("appearance", "accent_name", accent);
+  cfg.set("appearance", "scale", "100");
+  cfg.set("appearance", "wallpaper", wallpaper);
+  if (tint) cfg.set("appearance", "wallpaper_tint", tint);
+  cfg.set("aero", "enabled", "true");
+  cfg.set("aero", "transparency", std::to_string(transparency));
+  cfg.set("compositor", "effects", "full");
+  return cfg;
+}
+
+}  // namespace
+
+static void test_wallpaper_colors() {
+  setenv("XDG_CACHE_HOME", (g_tmp + "/cache").c_str(), 1);
+  // Oklab there and back.
+  for (unsigned hex : {0x000000u, 0xFFFFFFu, 0x3672B9u, 0xE8975Fu, 0x2B2D31u, 0xF8F9FBu}) {
+    Color c = Color::hex(hex);
+    bool ok = false;
+    Color back = from_oklab(to_oklab(c), &ok);
+    CHECK(ok && std::fabs(back.r - c.r) < 1e-6 && std::fabs(back.g - c.g) < 1e-6 && std::fabs(back.b - c.b) < 1e-6);
+  }
+  CHECK(std::fabs(to_oklab(Color::hex(0xFFFFFF)).L - 1.0) < 1e-4 && std::fabs(to_oklab(Color::hex(0x777777)).a) < 1e-4);
+
+  std::map<std::string, WallpaperColors> m;
+  for (const auto &s : kSamples) m[s.name] = sample_colors(s);
+  for (const auto &kv : m) {
+    printf("wallpaper %-8s chroma %.3f hue %5.1f share %.2f strength %.2f dominant %s accent %s\n",
+           kv.first.c_str(), kv.second.chroma, degrees(kv.second.hue), kv.second.share, kv.second.strength,
+           kv.second.dominant.to_hex().c_str(), wallpaper_accent(kv.second).c_str());
+    CHECK(kv.second.known);
+  }
+  // A clear colour tints strongly, in its own hue: the sky blue-cyan, the
+  // forest green, the red red.
+  CHECK(m["sky"].strength > 0.5 && hue_gap(m["sky"].hue, 225 * M_PI / 180) < 30);
+  CHECK(m["forest"].strength > 0.5 && hue_gap(m["forest"].hue, 135 * M_PI / 180) < 25);
+  CHECK(m["red"].strength > 0.9 && hue_gap(m["red"].hue, 32 * M_PI / 180) < 15);
+  // Many hues at once tint less, gray, black and white not at all.
+  CHECK(m["sunset"].strength < m["sky"].strength * 0.7 && m["rainbow"].strength < 0.6);
+  for (const char *none : {"gray", "black", "white"}) CHECK(m[none].strength == 0 && m[none].chroma < 0.01);
+  CHECK(wallpaper_accent(m["forest"]) == "green" && wallpaper_accent(m["red"]) == "red");
+  CHECK(wallpaper_accent(m["sky"]) == "teal" || wallpaper_accent(m["sky"]) == "blue");
+  for (const char *none : {"gray", "black", "white"}) CHECK(wallpaper_accent(m[none]) == "graphite");
+  CHECK(!wallpaper_colors_of_pixels(nullptr, 10, 10, 40, 4).known);
+  CHECK(!wallpaper_colors(g_tmp + "/no-such-picture.png").known);
+
+  // From a file, cached by path, size and modification time.
+  std::string pic = write_sample(kSamples[0], g_tmp + "/wallpaper.png");
+  WallpaperColors f = wallpaper_colors(pic);
+  CHECK(f.known && hue_gap(f.hue, m["sky"].hue) < 3 && std::fabs(f.strength - m["sky"].strength) < 0.05);
+  std::string cache;
+  CHECK(read_file(g_tmp + "/cache/sde/wallpaper-colors", cache) && cache.find(pic) != std::string::npos);
+  CHECK(std::fabs(wallpaper_colors(pic).hue - f.hue) < 1e-9);
+  write_sample(kSamples[3], pic);  // another picture under the same name
+  CHECK(hue_gap(wallpaper_colors(pic).hue, m["red"].hue) < 3);
+  // SDE's own wallpapers (SVG): calm blue-green, light and dark.
+  for (const char *name : {"selviana-light.svg", "selviana-dark.svg"}) {
+    WallpaperColors s = wallpaper_colors(std::string(SDE_TEST_SOURCE_DIR) + "/data/backgrounds/" + name);
+    printf("wallpaper %s: hue %.1f strength %.2f accent %s\n", name, degrees(s.hue), s.strength,
+           wallpaper_accent(s).c_str());
+    CHECK(s.known && s.strength > 0.3 && hue_gap(s.hue, 225 * M_PI / 180) < 35);
+  }
+  // "auto" is the Selviana wallpaper of the mode (when it is installed).
+  Config cfg;
+  std::string light = wallpaper_in_use(cfg, false), dark = wallpaper_in_use(cfg, true);
+  CHECK(light.empty() || ends_with(light, "selviana-light.svg"));
+  CHECK(dark.empty() || ends_with(dark, "selviana-dark.svg"));
+  cfg.set("appearance", "wallpaper", pic);
+  CHECK(wallpaper_in_use(cfg, true) == pic);
+
+  // The tint: the same luminance (white may lose up to 4.5 %), still a gray
+  // (at most 0.045 between its channels), leaning towards the wallpaper.
+  for (const auto &fam : theme_families())
+    for (bool dk : {false, true}) {
+      Theme base = Theme::make(fam.id, dk, "blue");
+      for (const auto &kv : m)
+        for (const Color *c : {&base.surface, &base.surface_alt, &base.hover, &base.border, &base.menu_bg,
+                               &base.panel_bg, &base.background}) {
+          Color t2 = tint_surface(*c, kv.second, 0.022);
+          double y0 = c->luminance(), y1 = t2.luminance();
+          CHECK(y1 <= y0 * 1.003 + 1e-4 && y1 >= y0 * 0.95 - 1e-4);
+          CHECK(chroma(t2) <= 0.046 || chroma(t2) <= chroma(*c) + 1e-9);
+          Oklab a = to_oklab(*c), b = to_oklab(t2);
+          double moved = std::hypot(b.a - a.a, b.b - a.b);
+          CHECK(moved <= 0.022 * kv.second.strength + 1e-3);
+          if (kv.second.strength == 0) CHECK(moved < 1e-9);
+          if (moved > 0.004) CHECK(hue_gap(std::atan2(b.b - a.b, b.a - a.a), kv.second.hue) < 5);
+        }
+    }
+
+  // Themes with the tint: the floating layer of every family, mode and
+  // accent leans towards the wallpaper and keeps WCAG AA.
+  std::string sky = write_sample(kSamples[0], g_tmp + "/sky.png");
+  std::string forest = write_sample(kSamples[1], g_tmp + "/forest.png");
+  std::string gray = write_sample(kSamples[5], g_tmp + "/gray.png");
+  std::string red = write_sample(kSamples[3], g_tmp + "/red.png");
+  for (const auto &fam : theme_families())
+    for (const char *mode : {"light", "dark"})
+      for (const auto &accent : theme_accents())
+        for (const std::string &wp : {sky, red}) {
+          Theme plain = Theme::from_config(tinted_config(fam.id, mode, accent, wp, "false", 100));
+          Theme t = Theme::from_config(tinted_config(fam.id, mode, accent, wp, "true", 100));
+          std::string what = fam.id + " " + mode + " " + accent + " " + wp;
+          bool ok = true;
+          auto need = [&](const char *name, bool cond) {
+            if (!cond) fprintf(stderr, "  %s: %s\n", what.c_str(), name);
+            ok = ok && cond;
+          };
+          need("tinted", t.wallpaper_tint && !plain.wallpaper_tint);
+          need("layer", t.layer_surface.to_hex() != plain.surface.to_hex() &&
+                            t.menu_bg.to_hex() != plain.menu_bg.to_hex());
+          need("windows keep their colours", t.surface.to_hex() == plain.surface.to_hex() &&
+                                                 t.background.to_hex() == plain.background.to_hex());
+          need("gtk menus", t.gtk_menu_bg.to_hex() == plain.menu_bg.to_hex());
+          for (const Color *c : {&t.layer_surface, &t.layer_surface_alt, &t.layer_hover, &t.layer_border, &t.menu_bg,
+                                 &t.panel_bg, &t.menu_border})
+            need("a tinted gray", chroma(*c) <= 0.05);
+          need("text", t.text.contrast(t.layer_surface) >= 7 && t.menu_text.contrast(t.menu_bg) >= 7);
+          need("dim text", t.text_dim.contrast(t.layer_surface_alt) >= 4.5 && t.text_dim.contrast(t.menu_bg) >= 4.5 &&
+                               t.text_dim.contrast(t.panel_bg) >= 4.5 && t.text_dim.contrast(t.layer_hover) >= 4.5);
+          need("menu highlight", t.menu_hover_text.contrast(t.menu_hover) >= 4.5);
+          // The same contrast as without the tint (within 5 %).
+          need("contrast kept", std::fabs(t.text.contrast(t.layer_surface) / plain.text.contrast(plain.surface) - 1) <
+                                    0.05 &&
+                                    std::fabs(t.text_dim.contrast(t.menu_bg) / plain.text_dim.contrast(plain.menu_bg) -
+                                              1) < 0.05);
+          // At the highest transparency over any backdrop (the faded families).
+          if (!t.liquid) {
+            need("panel", translucent_contrast(t.text, t.layer_surface, t.opacity, true) >= 4.5 &&
+                              translucent_contrast(t.text_dim, t.layer_surface, t.opacity, true) >= 3.0);
+            need("menus", translucent_contrast(t.menu_text, t.menu_bg, t.popup_opacity, true) >= 4.5 &&
+                              translucent_contrast(t.text_dim, t.menu_bg, t.popup_opacity, true) >= 3.0);
+          }
+          CHECK(ok);
+        }
+  // auto: on in Fluent and Liquid Glass, off in Graphite; a gray wallpaper
+  // has nothing to give.
+  CHECK(!Theme::from_config(tinted_config("graphite", "light", "blue", sky, nullptr)).wallpaper_tint);
+  CHECK(Theme::from_config(tinted_config("fluent", "light", "blue", sky, nullptr)).wallpaper_tint);
+  CHECK(Theme::from_config(tinted_config("glass", "dark", "blue", sky, "auto")).wallpaper_tint);
+  CHECK(Theme::from_config(tinted_config("graphite", "dark", "blue", sky, "true")).wallpaper_tint);
+  CHECK(!Theme::from_config(tinted_config("fluent", "dark", "blue", sky, "false")).wallpaper_tint);
+  CHECK(!Theme::from_config(tinted_config("fluent", "light", "blue", gray, "true")).wallpaper_tint);
+  CHECK(theme_wallpaper_tint_default("fluent") && theme_wallpaper_tint_default("glass") &&
+        !theme_wallpaper_tint_default("graphite"));
+  // use_floating_layer(): what the panel, notifications and OSDs draw.
+  Theme layer = Theme::from_config(tinted_config("fluent", "light", "blue", forest, "true"));
+  Color window_surface = layer.surface;
+  layer.use_floating_layer();
+  CHECK(layer.surface.to_hex() == layer.layer_surface.to_hex() && layer.surface.to_hex() != window_surface.to_hex());
+
+  // The accent from the wallpaper: a named accent (GTK and the frames follow).
+  Config acc = tinted_config("fluent", "light", "purple", forest, nullptr);
+  acc.set("appearance", "accent_from_wallpaper", "true");
+  CHECK(theme_choice(acc).accent == "green" && theme_dir(acc) == "SDE-Fluent-Light-Green");
+  acc.set("appearance", "wallpaper", red);
+  CHECK(theme_choice(acc).accent == "red");
+  acc.set("appearance", "wallpaper", gray);
+  CHECK(theme_choice(acc).accent == "graphite");
+  acc.set("appearance", "accent_from_wallpaper", "false");
+  CHECK(theme_choice(acc).accent == "purple");
+
+  // The Liquid Glass shader keys the floating layer's tinted colours, and
+  // GTK 3 menus (the theme's own menu colour) onto the same glass.
+  Config glass = tinted_config("glass", "light", "blue", sky, "true", 80);
+  glass.set("compositor", "backend", "glx");
+  Theme gt = Theme::from_config(glass);
+  CHECK(gt.liquid && gt.wallpaper_tint);
+  write_compositor_config(glass);
+  std::string glsl;
+  CHECK(read_file(config_home() + "/sde/liquid-glass.glsl", glsl));
+  auto key = [&](const char *name) {
+    size_t at = glsl.find(std::string("const vec3 ") + name + " = vec3(");
+    Color c;
+    if (at == std::string::npos) return c;
+    sscanf(glsl.c_str() + at + strlen("const vec3 ") + strlen(name) + strlen(" = vec3("), "%lf, %lf, %lf", &c.r, &c.g,
+           &c.b);
+    return c;
+  };
+  auto same = [](const Color &a, const Color &b) {
+    return std::fabs(a.r - b.r) < 1e-3 && std::fabs(a.g - b.g) < 1e-3 && std::fabs(a.b - b.b) < 1e-3;
+  };
+  CHECK(same(key("KEY_A"), gt.layer_surface) && same(key("KEY_B"), gt.menu_bg) && same(key("KEY_C"), gt.gtk_menu_bg));
+  CHECK(!same(key("KEY_B"), key("KEY_C")));
+  set_ui_scale(1.0);
+}
+
 int main() {
   char tmpl[] = "/tmp/sde-theme-test-XXXXXX";
   g_tmp = mkdtemp(tmpl);
+  // The wallpaper colours' cache (0.2.0 Alpha 4) of the test's own.
+  setenv("XDG_CACHE_HOME", (g_tmp + "/cache").c_str(), 1);
   test_caption_layout();
   test_transparency_contrast();
   test_soft_palettes();
   test_liquid_glass();
+  test_wallpaper_colors();
   test_caption_frames();
   test_icon_lookup();
   test_build_history();

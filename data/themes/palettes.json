@@ -1,5 +1,5 @@
 {
-  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Since 0.2.0 Alpha 2 (the redesign) every family has its own character on one shared grammar: neutral surfaces in three steps (background, surface, surface_alt), hairline borders, text and dimmed text that keep WCAG AA (also the inactive title), soft corners in three sizes (radius_small for controls, radius for windows, menus and cards, radius_large for popups and big surfaces) and Mint-Y like caption buttons on the right (soft discs, a muted red close while hovered; caption sets the hit area in percent of the title height, the spacing in pixels and that red). SDE Graphite is calm and neutral, SDE Fluent a cool slate with Mica, SDE Liquid Glass luminous glass with the softest corners; its liquid block holds the material of the Liquid Glass compositor shader (see docs/THEMES.md).",
+  "comment": "SDE theme palettes: the single source of the colors and shapes of every SDE theme family. tools/build-themes.py uses it for the GTK overlays, libadwaita colors and Openbox themes, and writes generated/theme_palettes.h for sde::Theme (src/common/theme.cpp). Colors are #RRGGBB; shadow_alpha, mica and translucency are 0-1. Since 0.2.0 Alpha 2 (the redesign) every family has its own character on one shared grammar: neutral surfaces in three steps (background, surface, surface_alt), hairline borders, text and dimmed text that keep WCAG AA (also the inactive title), soft corners in three sizes (radius_small for controls, radius for windows, menus and cards, radius_large for popups and big surfaces) and Mint-Y like caption buttons on the right (soft discs, a muted red close while hovered; caption sets the hit area in percent of the title height, the spacing in pixels and that red). SDE Graphite is calm and neutral, SDE Fluent a cool slate with Mica, SDE Liquid Glass luminous glass with the softest corners; its liquid block holds the material of the Liquid Glass compositor shader (see docs/THEMES.md). wallpaper_tint (0.2.0 Alpha 4): whether the floating layer (panel, popups, menus, tooltips, notifications) takes a calm tint of the wallpaper's colour by default ([appearance] wallpaper_tint=auto) and the most Oklab chroma it may add (light, dark).",
   "default": {"family": "graphite", "mode": "light", "accent": "blue"},
   "accents": ["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "graphite"],
   "accent_labels": {
@@ -24,6 +24,7 @@
       "title_justify": "center",
       "menu_highlight": "accent",
       "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C4473F"},
+      "wallpaper_tint": {"default": false, "amount": [0.014, 0.016]},
       "accent": {
         "blue": ["#3672B9", "#6AA4E4"], "teal": ["#237B76", "#54B2AA"], "green": ["#3B8550", "#72BE82"],
         "yellow": ["#C29C48", "#DDBC66"], "orange": ["#C46C3A", "#E8975F"], "red": ["#BE453D", "#E57C73"],
@@ -65,6 +66,7 @@
       "title_justify": "left",
       "menu_highlight": "subtle",
       "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#B8382D"},
+      "wallpaper_tint": {"default": true, "amount": [0.020, 0.022]},
       "accent": {
         "blue": ["#3369B0", "#6BA2E2"], "teal": ["#237479", "#55AFB4"], "green": ["#2F7A4C", "#6CBE89"],
         "yellow": ["#AE8B3E", "#DDBE62"], "orange": ["#B06234", "#E8955E"], "red": ["#B23F37", "#E67A71"],
@@ -112,6 +114,7 @@
       "title_justify": "center",
       "menu_highlight": "accent",
       "caption": {"width": 95, "height": 100, "spacing": 2, "glyph": "soft", "close_hover": "#C94A42"},
+      "wallpaper_tint": {"default": true, "amount": [0.020, 0.022]},
       "accent": "graphite",
       "liquid": {
         "comment": "The glass material of the Liquid Glass compositor shader (src/common/integration.cpp): the compositor's blur behind (dual_kawase strength) and the frost the shader adds around each point (pixels at 100 %), how much the backdrop is saturated and brightened (light, dark), how much of the surface color frosts the glass at transparency 100 (tint: light, dark; 1 at 0), the lens along the edges (band and shift at the very edge, pixels at 100 %), the specular rim (light, dark) and its width, and how far a color may be from the surface to count as glass (key_range, 0-1). 0.2.0 Alpha 3.1: a frosted glass after Apple's Liquid Glass (strong blur and saturation, a frost that keeps the backdrop to soft color, a thin bright rim) instead of the clear glass of 0.2.0 Alpha 2.",
