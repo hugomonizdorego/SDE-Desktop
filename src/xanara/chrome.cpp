@@ -1080,15 +1080,26 @@ void XanaraWindow::qa_report() {
   if (!file || !*file) return;
   DocView *v = view();
   DocTab *t = tab();
-  std::string s = format("tabs %d active %d\nmode %s\n", tablist_.count(), tablist_.active(), mode_id(mode_));
+  std::string s = format("window %d %d\ntabs %d active %d\nmode %s\n", w(), h(), tablist_.count(), tablist_.active(),
+                         mode_id(mode_));
   if (v && t) {
     s += format("tool %d\nediting %d\nimage %d\ndirty %d\nundo %d\nredo %d\npages %d\nfile %s\n", int(v->tool()),
                 v->editing_text() ? 1 : 0, v->has_selected_image() ? 1 : 0, t->dirty() ? 1 : 0, v->can_undo() ? 1 : 0,
                 v->can_redo() ? 1 : 0, t->doc->count(), t->doc->path().c_str());
     s += v->qa_pages();
+    // The text of the box being edited (one line), so that the UI test can
+    // wait for what it typed instead of a fixed pause.
+    if (const TextEdit *te = v->text_edit()) {
+      std::string text = te->text();
+      for (char &c : text)
+        if (c == '\n') c = '|';
+      s += format("edittext %s\n", text.c_str());
+    }
   }
   for (const auto &h : hots_)
     if (h.kind == Hot::TabClose) s += format("tabclose %d %d %d %d %d\n", h.tab, h.x, h.y, h.w, h.h);
+  if (t) s += format("untitled %d\ntarget %s\n", t->untitled ? 1 : 0, t->target.c_str());
+  if (!v) s += home_->qa();
   s += format("toast %s\n", toast_.c_str());
   static std::string last;
   if (s == last) return;

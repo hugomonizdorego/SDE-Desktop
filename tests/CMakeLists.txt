@@ -149,9 +149,11 @@ add_test(NAME sde-xanara COMMAND sde-xanara-tests)
 add_executable(sde-xanara-probe xanara_probe.cpp)
 target_link_libraries(sde-xanara-probe PRIVATE sde-xanara-core)
 if(SDE_XVFB AND TARGET xanara)
+  # 0.2.0 Alpha 4: the start page first (new documents, a tool, a drop
+  # through sde-xdnd-peer).
   add_test(NAME sde-xanara-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_xanara_ui.py
-    $<TARGET_FILE:xanara> $<TARGET_FILE:sde-xanara-probe>)
-  set_tests_properties(sde-xanara-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+    $<TARGET_FILE:xanara> $<TARGET_FILE:sde-xanara-probe> $<TARGET_FILE:sde-xdnd-peer>)
+  set_tests_properties(sde-xanara-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 
 add_executable(sde-taca-tests test_taca.cpp)

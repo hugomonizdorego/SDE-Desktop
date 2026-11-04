@@ -399,6 +399,11 @@ static void test_tabs() {
   CHECK(TabList::parse(s.serialize(), paths, active));
   CHECK(paths.size() == 2 && paths[1] == "/x/two words.pdf" && active == 0);
   CHECK(!TabList::parse("garbage\n", paths, active));
+  // New documents never saved are left out of the session (0.2.0 Alpha 4).
+  s.open("/x/Untitled.pdf");
+  s.activate(0);
+  CHECK(TabList::parse(s.serialize([](int k) { return k != 1; }), paths, active));
+  CHECK(paths.size() == 2 && paths[0] == "/x/one.pdf" && paths[1] == "/x/two words.pdf" && active == 0);
   // Drag and drop slots.
   CHECK(tab_drop_index(5, 100, 50, 4, 2) == 0);
   CHECK(tab_drop_index(260, 100, 50, 4, 0) == 3);
@@ -1030,6 +1035,51 @@ static void test_images_and_redaction(const std::string &dir) {
   CHECK(all.find("brown") == std::string::npos && all.find("quick") != std::string::npos);
 }
 
+// The start page's new documents (0.2.0 Alpha 4): an empty PDF of the
+// locale's paper, the names offered for it, an empty page inserted.
+static void test_new_documents(const std::string &dir) {
+  double w = 0, h = 0;
+  default_paper(w, h);
+  CHECK((std::fabs(w - 595.276) < 0.5 && std::fabs(h - 841.89) < 0.5) || (w == 612 && h == 792) ||
+        (w > 100 && h > 100));
+  std::string blank = dir + "/blank.pdf", error;
+  CHECK_OK(blank_pdf(blank, 595.276, 841.89, 1, error));
+  CHECK(looks_like_pdf(blank));
+  CHECK(!looks_like_pdf(dir + "/missing.pdf"));
+  write_file_atomic(dir + "/notes.txt", "not a PDF\n");
+  CHECK(!looks_like_pdf(dir + "/notes.txt"));
+  CHECK(!blank_pdf(dir + "/none.pdf", 595, 842, 0, error));
+  bool enc = false;
+  if (auto d = Document::open(blank, "", error, enc)) {
+    CHECK(d->count() == 1);
+    CHECK(std::fabs(d->width(0) - 595.276) < 0.5 && std::fabs(d->height(0) - 841.89) < 0.5);
+  } else {
+    CHECK(!"poppler opens the blank PDF");
+  }
+  // An empty page of another size after the first, through the engine.
+  std::string letter = dir + "/letter-page.pdf", out = dir + "/two-pages.pdf";
+  CHECK_OK(blank_pdf(letter, 612, 792, 1, error));
+  if (auto pdf = PdfFile::open(blank, "", error)) {
+    CHECK_OK(insert_pages(*pdf, 0, {letter}, error));
+    CHECK_OK(pdf->write(out, PdfFile::Write::Auto, error));
+  }
+  if (auto d = Document::open(out, "", error, enc)) {
+    CHECK(d->count() == 2);
+    CHECK(d->count() == 2 && std::fabs(d->width(1) - 612) < 0.5 && std::fabs(d->height(1) - 792) < 0.5);
+  } else {
+    CHECK(!"poppler opens the document with the inserted page");
+  }
+  // Names for a new document: not a file there, not open in a tab.
+  std::string docs = dir + "/docs";
+  make_dirs(docs);
+  CHECK(unused_name(docs, "Untitled", nullptr) == docs + "/Untitled.pdf");
+  write_file_atomic(docs + "/Untitled.pdf", "%PDF-1.4\n");
+  CHECK(unused_name(docs, "Untitled", nullptr) == docs + "/Untitled 2.pdf");
+  CHECK(unused_name(docs, "Untitled", [&](const std::string &p) { return p == docs + "/Untitled 2.pdf"; }) ==
+        docs + "/Untitled 3.pdf");
+  CHECK(unused_name(docs, "Merged", nullptr) == docs + "/Merged.pdf");
+}
+
 int main() {
   char tmpl[] = "/tmp/xanara-test-XXXXXX";
   const char *dir = mkdtemp(tmpl);
@@ -1041,6 +1091,7 @@ int main() {
   test_threaded_render(dir);
   test_registry();
   test_tabs();
+  test_new_documents(dir);
   test_exporters(dir);
   test_content_parser();
   test_layout_and_edit(dir);

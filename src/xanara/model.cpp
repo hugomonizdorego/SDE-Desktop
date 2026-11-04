@@ -5,6 +5,7 @@
 #include "model.h"
 
 #include <cairo-pdf.h>
+#include <langinfo.h>
 
 #include <algorithm>
 #include <cmath>
@@ -105,8 +106,8 @@ const std::vector<ToolSpec> &tool_registry() {
     add(Act::Crop, M, "edit.crop", N_("Crop"), N_("Crop pages: drag the area to keep"), I::Crop, true, 3);
     // Page
     M = Mode::Page;
-    add(Act::PageInsert, M, "page.insert", N_("Insert"), N_("Insert pages from another PDF after this page"), I::Insert,
-        false, 0);
+    add(Act::PageInsert, M, "page.insert", N_("Insert"),
+        N_("Insert an empty page, or pages from other PDFs, after this page"), I::Insert, false, 0);
     add(Act::PageExtract, M, "page.extract", N_("Extract"), N_("Save some pages as a new PDF"), I::Extract, false, 0);
     add(Act::PageSplit, M, "page.split", N_("Split"), N_("Split the document into several PDFs"), I::Split, false, 0);
     add(Act::PageMerge, M, "page.merge", N_("Merge"), N_("Append other PDFs to this document"), I::Merge, false, 0);
@@ -269,9 +270,10 @@ void TabList::rename(int i, const std::string &path) {
   if (i >= 0 && i < count()) paths_[size_t(i)] = path;
 }
 
-std::string TabList::serialize() const {
+std::string TabList::serialize(const std::function<bool(int)> &keep) const {
   std::string out;
-  for (int k = 0; k < count(); ++k) out += (k == active_ ? "*" : " ") + paths_[size_t(k)] + "\n";
+  for (int k = 0; k < count(); ++k)
+    if (!keep || keep(k)) out += (k == active_ ? "*" : " ") + paths_[size_t(k)] + "\n";
   return out;
 }
 
@@ -539,6 +541,68 @@ bool images_to_pdf(const std::vector<cairo_surface_t *> &images, const std::stri
   if (!ok) error = cairo_status_to_string(cairo_surface_status(s));
   cairo_surface_destroy(s);
   return ok;
+}
+
+bool looks_like_pdf(const std::string &path) {
+  FILE *f = fopen(path.c_str(), "rb");
+  if (!f) return false;
+  char buf[1024];
+  size_t n = fread(buf, 1, sizeof buf, f);
+  fclose(f);
+  return std::string(buf, n).find("%PDF-") != std::string::npos;
+}
+
+bool blank_pdf(const std::string &path, double width, double height, int pages, std::string &error) {
+  if (width < 1 || height < 1 || pages < 1) {
+    error = "no page";
+    return false;
+  }
+  cairo_surface_t *s = cairo_pdf_surface_create(path.c_str(), width, height);
+  if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS) {
+    error = cairo_status_to_string(cairo_surface_status(s));
+    cairo_surface_destroy(s);
+    return false;
+  }
+  cairo_pdf_surface_set_metadata(s, CAIRO_PDF_METADATA_CREATOR, "Xanara");
+  cairo_t *cr = cairo_create(s);
+  for (int k = 0; k < pages; ++k) cairo_show_page(cr);
+  cairo_destroy(cr);
+  cairo_surface_finish(s);
+  bool ok = cairo_surface_status(s) == CAIRO_STATUS_SUCCESS;
+  if (!ok) error = cairo_status_to_string(cairo_surface_status(s));
+  cairo_surface_destroy(s);
+  return ok;
+}
+
+void default_paper(double &width, double &height) {
+  width = 595.276;  // A4: 210 x 297 mm
+  height = 841.89;
+#ifdef _NL_PAPER_WIDTH
+  // glibc: the paper of LC_PAPER in millimetres, a number in the place of
+  // the string (read as glibc's locale(1) does).
+  union Item {
+    const char *string;
+    unsigned int word;
+  } iw, ih;
+  iw.string = nl_langinfo(_NL_PAPER_WIDTH);
+  ih.string = nl_langinfo(_NL_PAPER_HEIGHT);
+  long mm_w = long(iw.word), mm_h = long(ih.word);
+  if (mm_w >= 50 && mm_w <= 2000 && mm_h >= 50 && mm_h <= 2000) {
+    width = mm_w * 72.0 / 25.4;
+    height = mm_h * 72.0 / 25.4;
+    // US Letter is 215.9 x 279.4 mm, which glibc rounds to 216 x 279.
+    if (mm_w == 216 && mm_h == 279) width = 612, height = 792;
+    if (mm_w == 210 && mm_h == 297) width = 595.276, height = 841.89;
+  }
+#endif
+}
+
+std::string unused_name(const std::string &dir, const std::string &stem,
+                        const std::function<bool(const std::string &)> &taken) {
+  for (int n = 1;; ++n) {
+    std::string path = dir + "/" + stem + (n > 1 ? " " + std::to_string(n) : "") + ".pdf";
+    if (!file_exists(path) && !(taken && taken(path))) return path;
+  }
 }
 
 static cairo_surface_t *render_page(Document &doc, int page, double dpi) {

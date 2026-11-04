@@ -150,15 +150,22 @@ void XanaraWindow::hide() {
 
 void XanaraWindow::quit() {
   if (DocView *v = view()) v->finish_text_edit();
+  // Unsaved changes first; the session is written afterwards, with every
+  // tab (0.2.0 Alpha 3.1 closed the tabs with changes one by one and left
+  // them out of the session, saved or not).
+  for (int i = tablist_.count() - 1; i >= 0; --i)
+    if (!settle_changes(i)) return;
   save_session();
-  for (int i = tablist_.count() - 1; i >= 0; --i) {
-    if (tabs_[size_t(i)]->dirty()) {
-      activate_tab(i);
-      if (!close_tab(i, true)) return;
-    }
-  }
   remember_position();
   hide();
+}
+
+bool DocTab::dirty() const {
+  if (!doc) return false;
+  if (doc->modified()) return true;
+  if (!working_copy) return false;
+  // A new empty document nothing was done to is not worth a question.
+  return !(blank && view && !view->can_undo());
 }
 
 DocView *XanaraWindow::view() const {
@@ -305,7 +312,7 @@ void XanaraWindow::remember_cb(void *p) { static_cast<XanaraWindow *>(p)->rememb
 
 void XanaraWindow::remember_position() {
   DocTab *t = tab();
-  if (!t || t->target.empty()) return;
+  if (!t || t->target.empty() || t->untitled) return;
   HistoryEntry e;
   e.path = t->target;
   e.page = t->view->current_page();
@@ -803,6 +810,10 @@ std::vector<int> XanaraWindow::bookmarks(const std::string &path) {
 void XanaraWindow::toggle_bookmark() {
   DocTab *t = tab();
   if (!t) return;
+  if (t->untitled) {
+    toast(_("Save the document first to bookmark its pages"));
+    return;
+  }
   int page = t->view->current_page();
   std::string text, out;
   read_file(bookmarks_file(), text);
@@ -934,10 +945,34 @@ bool XanaraWindow::open_path(const std::string &path0, int page) {
       fl_alert("%s", format(_("Xanara could not open “%s”:\n%s"), display_name(path).c_str(), error.c_str()).c_str());
     return false;
   }
+  add_tab(std::move(d), path);
+  DocView *v = view();
+  // Where the reader left off.
+  int start = 0;
+  history_.load();
+  if (const HistoryEntry *e = history_.find(path)) {
+    start = e->page;
+    if (e->zoom == "page") v->set_fit(Fit::Page);
+    else if (e->zoom == "width") v->set_fit(Fit::Width);
+    else if (atof(e->zoom.c_str()) > 0) v->set_zoom(atof(e->zoom.c_str()));
+  } else {
+    v->set_fit(Fit::Width);
+  }
+  if (page >= 0) start = page;
+  v->go_to(std::clamp(start, 0, document()->count() - 1));
+  remember_position();
+  home_->refresh();
+  save_session();
+  Fl::focus(v);
+  update_chrome();
+  return true;
+}
+
+DocTab *XanaraWindow::add_tab(std::unique_ptr<Document> d, const std::string &target) {
   commit_field();
   auto t = std::make_unique<DocTab>();
   t->doc = std::move(d);
-  t->target = path;
+  t->target = target;
   begin();
   t->view = new DocView(this, 0, 0, w(), h());
   end();
@@ -960,29 +995,107 @@ bool XanaraWindow::open_path(const std::string &path0, int page) {
   t->view->hide();
   t->view->set_document(t->doc.get());
   if (mode_ == Mode::Edit) t->view->set_tool(Tool::Edit);
-  int at = tablist_.open(path);
+  int at = tablist_.open(target);
+  DocTab *raw = t.get();
   tabs_.insert(tabs_.begin() + at, std::move(t));
   activate_tab(at);
-  DocView *v = view();
-  // Where the reader left off.
-  int start = 0;
-  history_.load();
-  if (const HistoryEntry *e = history_.find(path)) {
-    start = e->page;
-    if (e->zoom == "page") v->set_fit(Fit::Page);
-    else if (e->zoom == "width") v->set_fit(Fit::Width);
-    else if (atof(e->zoom.c_str()) > 0) v->set_zoom(atof(e->zoom.c_str()));
-  } else {
-    v->set_fit(Fit::Width);
+  return raw;
+}
+
+std::string XanaraWindow::new_document_file(const std::string &tag) {
+  static int counter = 0;
+  return format("%s/%d-new%d-%s.pdf", work_dir().c_str(), int(getpid()), ++counter, tag.c_str());
+}
+
+bool XanaraWindow::open_untitled(const std::string &file, const std::string &name, const std::string &message) {
+  std::string error;
+  bool encrypted = false;
+  auto d = Document::open(file, "", error, encrypted);
+  if (!d) {
+    unlink(file.c_str());
+    fl_alert("%s", format(_("Xanara could not open the new document:\n%s"), error.c_str()).c_str());
+    return false;
   }
-  if (page >= 0) start = page;
-  v->go_to(std::clamp(start, 0, document()->count() - 1));
-  remember_position();
+  // The name it is offered under when it is saved, in the documents
+  // folder: "Untitled.pdf", "Untitled 2.pdf" ...
+  std::string dir = user_dir("DOCUMENTS");
+  if (dir.empty() || !dir_exists(dir)) dir = home_dir();
+  std::string stem = trim(name);
+  for (char &c : stem)
+    if (c == '/') c = '-';
+  if (stem.empty()) stem = _("Untitled");
+  std::string target = unused_name(dir, stem, [this](const std::string &p) { return tablist_.find(p) >= 0; });
+  DocTab *t = add_tab(std::move(d), target);
+  t->untitled = true;
+  t->working_copy = true;
+  t->temps.push_back(file);
+  t->view->set_fit(Fit::Width);
+  t->view->go_to(0);
   home_->refresh();
   save_session();
-  Fl::focus(v);
+  Fl::focus(t->view);
   update_chrome();
+  if (!message.empty()) toast(message);
   return true;
+}
+
+void XanaraWindow::new_blank() {
+  double pw, ph;
+  default_paper(pw, ph);
+  std::string file = new_document_file("blank"), error;
+  if (!blank_pdf(file, pw, ph, 1, error)) {
+    fl_alert("%s", format(_("A new PDF could not be made:\n%s"), error.c_str()).c_str());
+    return;
+  }
+  if (!open_untitled(file, _("Untitled"))) return;
+  DocTab *t = tab();
+  t->blank = true;
+  t->view->set_fit(Fit::Page);
+  // Straight to the tools that fill an empty page: a click places text.
+  set_mode(Mode::Edit);
+  t->view->set_tool(Tool::NewText);
+  tool_changed();
+  toast(_("A new PDF: click to write; Image adds pictures, Page › Insert adds pages"));
+}
+
+void XanaraWindow::start_tool(Act a, const std::string &title) {
+  const ToolSpec *spec = tool_spec(a);
+  if (!spec) return;
+  if (a == Act::MergeFiles) {
+    merge_files();
+    return;
+  }
+  if (a == Act::ImagesToPdf) {
+    images_to_pdf_dialog();
+    return;
+  }
+  FileChooser chooser(FileChooser::Mode::Open);
+  chooser.title(format(_("%s: Choose a PDF"), title.empty() ? _(spec->label) : title.c_str()));
+  chooser.filters(_("PDF Documents\t*.{pdf,PDF}"));
+  chooser.default_folder(user_dir("DOCUMENTS"));
+  chooser.parent(this);
+  if (!chooser.run()) return;
+  if (!open_path(path_from_argument(chooser.path()))) return;
+  set_mode(spec->mode);
+  run(a);
+}
+
+void XanaraWindow::drop_files(const std::vector<std::string> &paths) {
+  std::vector<std::string> images, others;
+  for (const auto &line : paths) {
+    std::string f = trim(line);
+    if (f.empty()) continue;
+    std::string p = path_from_argument(f), l = lower(p);
+    bool image = false;
+    for (const char *ext : {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"})
+      if (ends_with(l, ext)) image = true;
+    if (image) images.push_back(p);
+    else if (ends_with(l, ".pdf") || looks_like_pdf(p)) open_path(p);
+    else others.push_back(p);
+  }
+  if (!images.empty()) images_to_new_pdf(images);
+  if (!others.empty())
+    toast(format(_("Xanara opens PDF documents: “%s” is not one"), display_name(others[0]).c_str()));
 }
 
 void XanaraWindow::activate_tab(int index) {
@@ -1022,22 +1135,32 @@ void XanaraWindow::open_dialog() {
   for (const auto &p : chooser.paths()) open_path(path_from_argument(p));
 }
 
-bool XanaraWindow::close_tab(int index, bool ask) {
+bool XanaraWindow::settle_changes(int index) {
   if (index < 0 || index >= tablist_.count()) return true;
   DocTab &t = *tabs_[size_t(index)];
   commit_field();
   t.view->finish_text_edit();
-  if (ask && t.dirty()) {
-    if (index != tablist_.active()) activate_tab(index);
-    fl_message_title(_("Unsaved Changes"));
-    int c = fl_choice("%s", _("Cancel"), _("Don't Save"), _("Save"),
-                      format(_("Save the changes to “%s” before closing?\n"
-                               "Without saving, your annotations and edits are lost."),
-                             display_name(t.target).c_str())
-                          .c_str());
-    if (c == 0) return false;
-    if (c == 2 && !save()) return false;
-  }
+  if (!t.dirty()) return true;
+  if (index != tablist_.active()) activate_tab(index);
+  fl_message_title(_("Unsaved Changes"));
+  std::string question = t.untitled ? format(_("“%s” is a new document that was never saved.\n"
+                                               "Save it before closing?"),
+                                             display_name(t.target).c_str())
+                                    : format(_("Save the changes to “%s” before closing?\n"
+                                               "Without saving, your annotations and edits are lost."),
+                                             display_name(t.target).c_str());
+  int c = fl_choice("%s", _("Cancel"), _("Don't Save"), _("Save"), question.c_str());
+  if (c == 0) return false;
+  if (c == 2 && !save()) return false;
+  return true;
+}
+
+bool XanaraWindow::close_tab(int index, bool ask) {
+  if (index < 0 || index >= tablist_.count()) return true;
+  if (ask && !settle_changes(index)) return false;
+  DocTab &t = *tabs_[size_t(index)];
+  commit_field();
+  t.view->finish_text_edit();
   if (index == tablist_.active()) remember_position();
   DocView *v = t.view;
   v->set_document(nullptr);
@@ -1061,7 +1184,7 @@ bool XanaraWindow::save() {
   if (!t) return false;
   commit_field();
   if (!t->view->finish_text_edit()) return false;
-  if (t->target.empty()) return save_as();
+  if (t->target.empty() || t->untitled) return save_as();
   if (!t->dirty()) {
     toast(_("No changes to save"));
     return true;
@@ -1106,6 +1229,7 @@ bool XanaraWindow::save_as() {
   int page = t->view->current_page();
   std::string pw = t->doc->password();
   t->target = path;
+  t->untitled = t->blank = false;
   tablist_.rename(tablist_.active(), path);
   for (const auto &f : t->temps) unlink(f.c_str());
   t->temps.clear();
@@ -1217,7 +1341,8 @@ void XanaraWindow::print() {
 
 void XanaraWindow::save_session() {
   make_dirs(state_home() + "/sde");
-  write_file_atomic(session_file(), tablist_.serialize());
+  // New documents that were never saved are not files to come back to.
+  write_file_atomic(session_file(), tablist_.serialize([this](int k) { return !tabs_[size_t(k)]->untitled; }));
 }
 
 // ------------------------------------------------------------------ events
@@ -1362,6 +1487,7 @@ int XanaraWindow::handle(int event) {
       if (ctrl) {
         switch (key) {
           case 'o': open_dialog(); return 1;
+          case 'n': new_blank(); return 1;
           case 's':
             if (shift) save_as();
             else save();
@@ -1475,10 +1601,7 @@ int XanaraWindow::handle(int event) {
       return 1;
     case FL_PASTE: {
       std::string text(Fl::event_text(), size_t(Fl::event_length()));
-      for (auto &line : split(text, '\n')) {
-        std::string fl = trim(line);
-        if (!fl.empty()) open_path(path_from_argument(fl));
-      }
+      drop_files(split(text, '\n'));
       return 1;
     }
   }

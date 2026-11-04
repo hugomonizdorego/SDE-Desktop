@@ -1956,10 +1956,7 @@ int DocView::handle(int event) {
       // Files dropped from a file manager arrive as a list of URIs; each
       // PDF opens in a tab of its own.
       std::string text(Fl::event_text(), size_t(Fl::event_length()));
-      for (auto &line : split(text, '\n')) {
-        std::string f = trim(line);
-        if (!f.empty()) app_->open_path(path_from_argument(f));
-      }
+      app_->drop_files(split(text, '\n'));
       return 1;
     }
     case FL_MOUSEWHEEL: {
