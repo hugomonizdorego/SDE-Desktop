@@ -308,16 +308,19 @@ std::string wallpaper_in_use(const Config &cfg, bool dark) {
   return file_exists(path) ? path : "";
 }
 
-Color tint_surface(const Color &surface, const WallpaperColors &w, double amount, double max_spread) {
-  if (!w.known || w.strength <= 0 || amount <= 0) return surface;
+namespace {
+
+// |surface| moved by |chroma| of Oklab in the direction of |hue|, keeping its
+// relative luminance (only the lightest surfaces, where white leaves no room
+// for a hue, lose up to 4.5 %) and at most |max_spread| between channels.
+Color lean(const Color &surface, double hue, double chroma, double max_spread) {
+  if (chroma <= 0) return surface;
   Oklab base = to_oklab(surface);
   double y = surface.luminance();
-  // The same relative luminance; only for the lightest surfaces (white has
-  // no room for a hue) a little less, at most 4.5 %.
   for (double keep : {1.0, 0.985, 0.97, 0.955}) {
-    double k = amount * w.strength;
+    double k = chroma;
     for (int round = 0; round < (keep < 1.0 ? 6 : 24) && k > 1e-4; ++round, k *= 0.85) {
-      Oklab o{base.L, base.a + k * std::cos(w.hue), base.b + k * std::sin(w.hue)};
+      Oklab o{base.L, base.a + k * std::cos(hue), base.b + k * std::sin(hue)};
       double lo = std::max(0.0, base.L - 0.12), hi = std::min(1.0, base.L + 0.12);
       for (int i = 0; i < 30; ++i) {
         o.L = (lo + hi) / 2;
@@ -334,6 +337,19 @@ Color tint_surface(const Color &surface, const WallpaperColors &w, double amount
     }
   }
   return surface;
+}
+
+}  // namespace
+
+Color tint_surface(const Color &surface, const WallpaperColors &w, double amount, double max_spread) {
+  if (!w.known || w.strength <= 0 || amount <= 0) return surface;
+  return lean(surface, w.hue, amount * w.strength, max_spread);
+}
+
+Color tint_towards(const Color &base, const Color &toward, double chroma, double max_spread) {
+  Oklab t = to_oklab(toward);
+  if (chroma_of(t) < 0.01) return base;  // a gray has no hue to give
+  return lean(base, std::atan2(t.b, t.a), chroma, max_spread);
 }
 
 std::string wallpaper_accent(const WallpaperColors &w) {

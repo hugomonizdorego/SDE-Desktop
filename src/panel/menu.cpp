@@ -31,6 +31,7 @@
 #include "spawn.h"
 #include "suite.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "widgets.h"
 
 using namespace sde;
@@ -3196,8 +3197,14 @@ void AppMenu::draw() {
     int load = int(std::lround(scale > 1.0001 ? base * (1 + 0.12 * effects_.size) : base));
     return IconLoader::get({IconLoader::app_icon(e, load), "application-x-executable"}, load);
   };
-  // Tiles: Fluent-like surfaces tinted with the accent.
-  Color tile_bg = t.surface_alt.mix(t.accent, t.dark ? 0.16 : 0.10);
+  // Tiles: Fluent-like surfaces tinted with the accent, a step darker than
+  // the menu in a light theme. In a dark one (0.2.0 Alpha 4) a step lighter,
+  // raised like a card, with a faint hint of the accent's hue: 16 % of the
+  // accent mixed into the sidebar gray gave tiles of the menu's own
+  // lightness that stood apart only by their colour, brown or olive for the
+  // warm accents.
+  Color tile_bg = t.dark ? tint_towards(t.surface.mix(t.text, 0.09), t.accent, 0.016)
+                         : t.surface_alt.mix(t.accent, 0.10);
   Color tile_hover = tile_bg.mix(t.dark ? Color::hex(0xFFFFFF) : Color::hex(0x000000), 0.07);
   auto icon_size = [&](const Item &it) {
     switch (it.size) {

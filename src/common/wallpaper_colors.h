@@ -63,6 +63,10 @@ std::string wallpaper_in_use(const Config &cfg, bool dark);
 // |max_spread| between its largest and smallest sRGB channel (it stays a
 // tinted gray). |surface| itself when there is nothing to tint with.
 Color tint_surface(const Color &surface, const WallpaperColors &w, double amount, double max_spread = 0.045);
+// |base| leaning towards the hue of |toward| by |chroma| of Oklab, with
+// tint_surface()'s guarantees (a soft accent hint on a neutral surface
+// without turning brown or olive in dark mode).
+Color tint_towards(const Color &base, const Color &toward, double chroma, double max_spread = 0.045);
 
 // The named accent (theme_accents()) nearest the wallpaper's dominant hue,
 // "graphite" for a picture with too little colour.
