@@ -6,8 +6,11 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-type Values = BTreeMap<(String, String), String>;
-const DEFAULTS: &str = include_str!("../../../data/sde.conf");
+/// Section and key, e.g. ("panel", "position").
+pub type Key = (String, String);
+/// Values by key.
+pub type Values = BTreeMap<Key, String>;
+pub(crate) const DEFAULTS: &str = include_str!("../../../data/sde.conf");
 static NEXT_TEMP: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Default)]
@@ -16,7 +19,7 @@ pub struct Config {
     user: Values,
 }
 
-fn parse(text: &str, into: &mut Values) {
+pub(crate) fn parse(text: &str, into: &mut Values) {
     let mut section = "";
     for line in text.lines() {
         let line = line.trim();
@@ -36,7 +39,7 @@ fn parse(text: &str, into: &mut Values) {
     }
 }
 
-fn valid_key(section: &str, key: &str) -> bool {
+pub(crate) fn valid_key(section: &str, key: &str) -> bool {
     !section.is_empty()
         && !key.is_empty()
         && section.trim() == section
@@ -48,6 +51,13 @@ fn valid_key(section: &str, key: &str) -> bool {
 
 impl Config {
     pub fn load(&mut self, dirs: &[PathBuf], user_path: &Path) {
+        self.load_unmigrated(dirs, user_path);
+        // Old duplicate keys read as the key their setting has now.
+        crate::migrate::migrate(self);
+    }
+
+    /// load() without merging old duplicate keys: the file as it is.
+    pub fn load_unmigrated(&mut self, dirs: &[PathBuf], user_path: &Path) {
         self.system.clear();
         self.user.clear();
         parse(DEFAULTS, &mut self.system);
@@ -100,6 +110,35 @@ impl Config {
         self.user.remove(&(section.to_string(), key.to_string()));
     }
 
+    /// The value of the user's own file only (not the defaults).
+    pub fn user_get(&self, section: &str, key: &str) -> Option<&str> {
+        self.user
+            .get(&(section.to_string(), key.to_string()))
+            .map(String::as_str)
+    }
+
+    /// The default (built-in or system) value, ignoring the user's file.
+    pub fn default_get(&self, section: &str, key: &str) -> Option<&str> {
+        self.system
+            .get(&(section.to_string(), key.to_string()))
+            .map(String::as_str)
+    }
+
+    /// The keys of the user's file, in file order (section, then key).
+    pub fn user_keys(&self) -> Vec<(String, String)> {
+        self.user.keys().cloned().collect()
+    }
+
+    /// Every key with the value programs read: the user's value over the
+    /// system and built-in defaults.
+    pub fn effective(&self) -> Values {
+        let mut out = self.system.clone();
+        for (k, v) in &self.user {
+            out.insert(k.clone(), v.clone());
+        }
+        out
+    }
+
     pub fn save(&self, path: &Path) -> io::Result<()> {
         let mut out = String::from("# Selviana Desktop Environment user settings.\n# Written by sde-settings. Remove a line to return to the default.\n");
         let mut current = "";
@@ -112,6 +151,19 @@ impl Config {
         }
         atomic_write(path, out.as_bytes())
     }
+}
+
+/// The keys whose effective value differs between |before| and |after|
+/// (added, changed or removed), in order.
+pub fn changed_keys(before: &Values, after: &Values) -> Vec<Key> {
+    let mut out: Vec<Key> = after
+        .iter()
+        .filter(|(k, v)| before.get(*k) != Some(*v))
+        .map(|(k, _)| k.clone())
+        .collect();
+    out.extend(before.keys().filter(|k| !after.contains_key(*k)).cloned());
+    out.sort();
+    out
 }
 
 fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {

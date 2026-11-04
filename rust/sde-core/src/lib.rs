@@ -3,6 +3,9 @@
 
 pub mod autostart;
 pub mod config;
+pub mod controller;
 pub mod desktop;
 pub mod layout;
+pub mod migrate;
 pub mod paths;
+pub mod schema;
