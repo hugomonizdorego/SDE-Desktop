@@ -1678,6 +1678,14 @@ int PlacesView::handle(int e) {
         return 1;
       }
       return 0;
+    case FL_SCROLL_GESTURE: {  // a finger (docs/TOUCH.md)
+      int old = scroll, can = touch_scroll_y(scroll, content_h_ - h());
+      if (scroll != old) {
+        hover = -1;
+        redraw();
+      }
+      return can;
+    }
     case FL_FOCUS:
       focus_row = current_row();
       if (focus_row < 0)
@@ -1824,6 +1832,12 @@ int FileView::handle(int e) {
         return 1;
       }
       return 0;
+    case FL_SCROLL_GESTURE: {  // a finger moves the files with it (docs/TOUCH.md)
+      metrics();
+      int pos = scroll, can = touch_scroll_y(pos, content_h() - items_h());
+      set_scroll(pos);
+      return can;
+    }
     case FL_FOCUS:
       if (d_->focus_path.empty() && d_->count() > 0) {
         int k = 0;
@@ -2007,6 +2021,11 @@ int CompletionList::handle(int e) {
       first = std::max(0, std::min(first + Fl::event_dy(), int(items.size()) - rows()));
       redraw();
       return 1;
+    case FL_SCROLL_GESTURE: {  // a finger, a row at a time (docs/TOUCH.md)
+      int old = first, can = touch_scroll_rows(first, int(items.size()) - rows(), row_h());
+      if (first != old) redraw();
+      return can;
+    }
   }
   return Fl_Widget::handle(e);
 }

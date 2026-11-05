@@ -3,6 +3,7 @@
 //
 // The image view of Photo.
 #include <FL/Fl.H>
+#include <FL/Fl_Touch.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
@@ -536,6 +537,24 @@ int Canvas::handle(int event) {
       // Wheel and Ctrl+wheel zoom around the pointer; Ctrl gives finer steps.
       double f = (Fl::event_state() & FL_CTRL) ? 1.1 : 1.25;
       zoom_at(target_scale() * (dy < 0 ? f : 1 / f), mx, my, true);
+      return 1;
+    }
+    case FL_ZOOM_GESTURE:  // two fingers pinch (docs/TOUCH.md)
+      if (!image_ || filmstrip_at(mx, my) != -2) return 0;
+      zoom_at(target_scale() * Fl_Touch::zoom_factor(), mx, my, false);
+      return 1;
+    case FL_SCROLL_GESTURE: {
+      // A finger moves a photo larger than the view; while cropping (or when
+      // the photo fits) the drag goes to the crop frame as a mouse drag.
+      if (!image_ || cropping_ || filmstrip_at(mx, my) != -2) return 0;
+      int dx = Fl::event_dx(), dy = Fl::event_dy();
+      if (!dx && !dy) return 1;
+      double ox = pan_x_, oy = pan_y_;
+      pan_x_ -= dx;
+      pan_y_ -= dy;
+      clamp_pan();
+      if (pan_x_ == ox && pan_y_ == oy) return 0;
+      redraw();
       return 1;
     }
     case FL_PUSH: {

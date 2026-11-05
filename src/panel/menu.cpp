@@ -3011,6 +3011,18 @@ int AppMenu::handle(int event) {
       if (a) scroll_by(a->kind, dy * (compact_ ? S(64) : S(72)));
       return 1;
     }
+    case FL_SCROLL_GESTURE: {
+      // A finger moves the list or the tiles it touched, with it and at once
+      // (docs/TOUCH.md); 0 when that area cannot move that way.
+      if (menu_busy_) return 0;
+      build_items();
+      const Area *a = area_at(Fl::event_x(), Fl::event_y());
+      if (!a || !a->scrolls() || !a->scroll) return 0;
+      int pos = *a->scroll, max = std::max(0, a->content - a->h);
+      int can = sde::touch_scroll_y(pos, max);
+      if (pos != *a->scroll) scroll_to(a->kind, pos, false);
+      return can;
+    }
     case FL_KEYUP: {
       // Super pressed and released alone closes the menu, as Super opened
       // it (the window manager does not see the key while the menu holds

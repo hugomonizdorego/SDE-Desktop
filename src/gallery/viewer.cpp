@@ -4,6 +4,7 @@
 // Gallery's quick preview: a large view with zoom, slideshows, details and
 // actions. Editing is Photo's: "Edit in Photo" opens the photo there.
 #include <FL/Fl.H>
+#include <FL/Fl_Touch.H>
 #include <FL/fl_draw.H>
 
 #include <algorithm>
@@ -831,6 +832,37 @@ int Viewer::handle(int event) {
       }
       double f = dy < 0 ? 1.18 : 1 / 1.18;
       set_zoom(current_scale() * f, Fl::event_x(), Fl::event_y());
+      return 1;
+    }
+    case FL_ZOOM_GESTURE:  // two fingers pinch (docs/TOUCH.md)
+      if (slideshow_) return 0;
+      set_zoom(current_scale() * Fl_Touch::zoom_factor(), Fl::event_x(), Fl::event_y());
+      return 1;
+    case FL_SCROLL_GESTURE: {
+      // A finger moves a zoomed photo; on a fitted one a sideways swipe goes
+      // to the next or the previous photo.
+      int dx = Fl::event_dx(), dy = Fl::event_dy();
+      if (zoom_ > 0 && !slideshow_) {
+        if (!dx && !dy) return 1;
+        double ox = pan_x_, oy = pan_y_;
+        pan_x_ -= dx;
+        pan_y_ -= dy;
+        set_zoom(zoom_, Fl::event_x(), Fl::event_y());  // clamps
+        return pan_x_ != ox || pan_y_ != oy;
+      }
+      int phase = Fl_Touch::scroll_phase();
+      if (phase == Fl_Touch::SCROLL_BEGIN) {
+        if (std::abs(dx) <= std::abs(dy)) return 0;
+        swipe_ = 0;
+      }
+      const double done = 1e9;  // this swipe has turned its photo
+      if (swipe_ >= done) return 0;
+      swipe_ += dx;
+      if (phase == Fl_Touch::SCROLL_END || std::abs(swipe_) > S(120)) {
+        if (std::abs(swipe_) > S(48)) step(swipe_ > 0 ? 1 : -1);
+        swipe_ = done;
+        return 0;  // one photo per swipe: no momentum
+      }
       return 1;
     }
     case FL_PUSH: {

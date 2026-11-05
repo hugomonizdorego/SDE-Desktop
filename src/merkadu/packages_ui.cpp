@@ -533,6 +533,11 @@ class PackageTable : public Fl_Group {
       case FL_MOUSEWHEEL:
         top(top_ + Fl::event_dy() * 3);
         return 1;
+      case FL_SCROLL_GESTURE: {  // a finger, a row at a time (docs/TOUCH.md)
+        int first = top_, can = sde::touch_scroll_rows(first, count() - visible(), row_h());
+        if (first != top_) top(first);
+        return can;
+      }
       case FL_PUSH: {
         int i = index_at(Fl::event_y());
         take_focus();
@@ -702,6 +707,14 @@ class SectionList : public Fl_Widget {
         g_top = top_;
         redraw();
         return 1;
+      case FL_SCROLL_GESTURE: {  // a finger, a row at a time (docs/TOUCH.md)
+        int old = top_, can = sde::touch_scroll_rows(top_, rows() - visible(), row_h());
+        if (top_ != old) {
+          g_top = top_;
+          redraw();
+        }
+        return can;
+      }
       case FL_PUSH: {
         int i = index_at(Fl::event_y());
         if (i >= 0) open(i);

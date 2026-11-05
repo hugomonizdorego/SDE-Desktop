@@ -7,6 +7,7 @@
 // the nearest cached tiles scaled, and renders the exact scale once the zoom
 // has settled.
 #include <FL/Fl.H>
+#include <FL/Fl_Touch.H>
 #include <FL/Fl_Menu_Item.H>
 #include <FL/fl_ask.H>
 #include <FL/fl_draw.H>
@@ -1978,6 +1979,29 @@ int DocView::handle(int event) {
       scroll_by(dx * S(64), dy * S(64));
       return 1;
     }
+    case FL_SCROLL_GESTURE: {
+      // A finger moves the pages with it, at once (docs/TOUCH.md); it does
+      // not turn single pages, so a flick cannot run through a document.
+      if (!doc_ || presentation_) return 0;
+      double max_x = std::max(0, canvas_w_ - view_w()), max_y = std::max(0, canvas_h_ - view_h());
+      int dx = Fl::event_dx(), dy = Fl::event_dy();
+      bool can = (!dx && !dy) || (dy > 0 && ty_ < max_y - 0.5) || (dy < 0 && ty_ > 0.5) ||
+                 (dx > 0 && tx_ < max_x - 0.5) || (dx < 0 && tx_ > 0.5);
+      if (can && (dx || dy)) {
+        tx_ += dx;
+        ty_ += dy;
+        clamp_scroll();
+        sx_ = tx_;
+        sy_ = ty_;
+        update_current();
+        redraw();
+      }
+      return can;
+    }
+    case FL_ZOOM_GESTURE:  // two fingers pinch (docs/TOUCH.md)
+      if (!doc_ || presentation_) return 0;
+      set_zoom(zoom_ * Fl_Touch::zoom_factor(), mx, my);
+      return 1;
     case FL_PUSH: {
       Fl::focus(this);
       hover_tip_.clear();

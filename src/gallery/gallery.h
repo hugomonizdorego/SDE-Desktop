@@ -234,6 +234,7 @@ class Viewer : public Fl_Widget {
   bool info_ = true, slideshow_ = false;
   std::vector<int> subset_;  // the slideshow's photos (indices), empty = all
   bool panning_ = false;
+  double swipe_ = 0;  // a finger's sideways movement on a fitted photo (docs/TOUCH.md)
   int press_x_ = 0, press_y_ = 0;
   double press_pan_x_ = 0, press_pan_y_ = 0;
   std::vector<Button> top_, actions_;
