@@ -308,6 +308,11 @@ std::string wallpaper_in_use(const Config &cfg, bool dark) {
   return file_exists(path) ? path : "";
 }
 
+void prepare_wallpaper_colors(const Config &cfg) {
+  ThemeChoice c = theme_choice(cfg);  // measures it for the accent from the wallpaper
+  if (theme_wallpaper_tint(cfg, c.family)) wallpaper_colors(wallpaper_in_use(cfg, theme_mode_dark(c.mode)));
+}
+
 namespace {
 
 // |surface| moved by |chroma| of Oklab in the direction of |hue|, keeping its

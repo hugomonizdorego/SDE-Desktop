@@ -23,6 +23,7 @@
 #include "process.h"
 #include "spawn.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "x11.h"
 
 using namespace sde;
@@ -1285,6 +1286,9 @@ void GalleryWindow::set_wallpaper(const std::string &path) {
     toast(_("Could not save the wallpaper setting"));
     return;
   }
+  // Its colours are measured once, here, before every program follows the
+  // change and looks them up (the panel and menus take its tint).
+  prepare_wallpaper_colors(cfg);
   x11::notify_config_changed();
   toast(_("Set as wallpaper"));
 }

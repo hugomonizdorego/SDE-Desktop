@@ -30,6 +30,7 @@
 #include "process.h"
 #include "spawn.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "wm.h"
 #include "x11.h"
 
@@ -1136,6 +1137,7 @@ void PhotoWindow::set_wallpaper() {
     toast(_("Could not save the wallpaper setting"));
     return;
   }
+  prepare_wallpaper_colors(cfg);  // measured once, before every program follows (0.2.0 Alpha 4)
   x11::notify_config_changed();
   toast(_("Set as wallpaper"));
 }
