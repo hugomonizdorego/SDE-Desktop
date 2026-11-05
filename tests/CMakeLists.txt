@@ -205,6 +205,19 @@ if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   set_tests_properties(sde-lock-daemon PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif()
 
+# Fingerprint (docs/FINGERPRINT.md): fprintd's statuses and errors, PAM's
+# lines, the Control Center's PAM model and SDE's pam-auth-update profiles,
+# the lock's account check; sde-fingerprint-pam with the real
+# pam-auth-update on a fake root (private debconf databases); with a fake
+# fprintd (sde-fake-fprintd, not installed; also for showcase.py) on a
+# private bus: the Control Center page and the lock screen on Xvfb.
+add_executable(sde-fingerprint-tests test_fingerprint.cpp)
+target_link_libraries(sde-fingerprint-tests PRIVATE sde-settings-model sde-lock-core)
+target_compile_definitions(sde-fingerprint-tests PRIVATE SDE_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+add_test(NAME sde-fingerprint-model COMMAND sde-fingerprint-tests ${PROJECT_SOURCE_DIR})
+add_executable(sde-fake-fprintd fake_fprintd.cpp)
+target_link_libraries(sde-fake-fprintd PRIVATE PkgConfig::DBUS)
+
 # About windows open and close without crashing (Niny alpha 50 regression).
 if(SDE_XVFB)
   add_test(NAME sde-about-windows COMMAND ${Python3_EXECUTABLE}
