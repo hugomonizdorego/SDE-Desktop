@@ -5,6 +5,7 @@
 #include <FL/x.H>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/Xfixes.h>
 #include <X11/extensions/shape.h>
 #if SDE_HAVE_XCOMPOSITE && SDE_HAVE_XDAMAGE
 #include <X11/extensions/Xcomposite.h>
@@ -386,12 +387,10 @@ bool Tray::dock(Window icon) {
   ic.want_mapped = mapped;
   XSelectInput(fl_display, icon, StructureNotifyMask | PropertyChangeMask);
   // If the panel crashes, the X server puts the icon back on the root window
-  // instead of destroying it; override-redirect keeps a window manager from
-  // framing it there, so it waits in its place until the panel docks it again.
-  XAddToSaveSet(fl_display, icon);
-  XSetWindowAttributes swa;
-  swa.override_redirect = True;
-  XChangeWindowAttributes(fl_display, icon, CWOverrideRedirect, &swa);
+  // instead of destroying it, and leaves it unmapped there (XFixes, as GTK's
+  // own sockets do): with a plain save-set it was mapped, and the window
+  // manager framed it in the middle of the screen until the program noticed.
+  XFixesChangeSaveSet(fl_display, icon, SetModeInsert, SaveSetRoot, SaveSetUnmap);
   if (attr.map_state != IsUnmapped) ++ic.own_unmaps;  // the reparent unmaps it
   XReparentWindow(fl_display, icon, host_, 0, 0);
   XResizeWindow(fl_display, icon, unsigned(icon_size_), unsigned(icon_size_));
@@ -436,12 +435,8 @@ void Tray::undock(size_t index, bool give_back) {
   ErrorTrap trap;
   composite_release(icon);
   if (give_back) {
-    // Back to the root window, unmapped and managed normally again, for the
-    // next tray.
+    // Back to the root window, unmapped, for the next tray.
     XUnmapWindow(fl_display, icon.win);
-    XSetWindowAttributes swa;
-    swa.override_redirect = False;
-    XChangeWindowAttributes(fl_display, icon.win, CWOverrideRedirect, &swa);
     XReparentWindow(fl_display, icon.win, RootWindow(fl_display, fl_screen), 0, 0);
     XRemoveFromSaveSet(fl_display, icon.win);
   } else {

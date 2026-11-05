@@ -107,7 +107,7 @@ add_executable(sde-panel
   settings/default_apps.cpp
   panel/badge_model.cpp
   panel/badges.cpp)
-target_link_libraries(sde-panel PRIVATE sde-common)
+target_link_libraries(sde-panel PRIVATE sde-common ${X11_Xfixes_LIB})
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
   target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
