@@ -22,3 +22,23 @@ add_library(liria-core STATIC
   ${PROJECT_SOURCE_DIR}/src/settings/default_apps.cpp)
 target_include_directories(liria-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(liria-core PUBLIC sde-desktop-model sde-common PkgConfig::LIRIA_GIO Threads::Threads)
+
+# The window: the bars, the views, the menus and dialogs, the clipboard,
+# the jobs with the transfer dialog, GIO's drives and mounts. XDND is the
+# SDE desktop's (src/desktop/xdnd.cpp).
+add_library(liria-ui OBJECT
+  glyphs.cpp
+  glibloop.cpp
+  drives.cpp
+  widgets.cpp
+  fileview.cpp
+  sidebar.cpp
+  home.cpp
+  clipboard.cpp
+  jobs.cpp
+  menus.cpp
+  dialogs.cpp
+  window.cpp
+  ${PROJECT_SOURCE_DIR}/src/desktop/xdnd.cpp)
+target_link_libraries(liria-ui PUBLIC liria-core)
+target_compile_definitions(liria-ui PRIVATE SDE_APP_VERSION="${SDE_VERSION}")
