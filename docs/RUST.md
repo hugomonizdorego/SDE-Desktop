@@ -12,7 +12,7 @@ Tests cover full/floating/short styles, screen offsets, small screens and auto-h
 
 | Crate | Output | Responsibility |
 | --- | --- | --- |
-| `sde-core` | Rust library | Layered configuration, atomic persistence, XDG paths, desktop-entry parsing, autostart discovery |
+| `sde-core` | Rust library | Layered configuration, atomic persistence, XDG paths, desktop-entry parsing, autostart discovery; since 0.2.0 Alpha 4 the schema of sde.conf, merging old duplicate keys and the logic of the SDE core controller (docs/CORE.md) |
 | `sde-config-ffi` | Static library | Small private C ABI, handle/string ownership |
 | `sde-autostart` | Executable | Discover, filter and start autostart entries; dry-run diagnostics |
 
@@ -116,3 +116,19 @@ main programs apply the SDE GTK launch preference through `suite/sde-brand.h`.
 Liria defaults to no desktop ownership. Power preferences, statistics and daemon
 are separate native programs. SDE Update stays C++/FLTK with an attributed Python
 APT model. No new Cargo registry dependency or idle dispatcher daemon is added.
+
+## 0.2.0 Alpha 4: the SDE core controller
+
+The controller every SDE program talks to (`sde-core`, docs/CORE.md) keeps
+its decisions in this crate: `schema.rs` (the type of every key, from
+`data/sde.conf` and `data/sde-schema.tsv`, and the checks of every write),
+`migrate.rs` (old duplicate keys merged whenever `Config::load()` reads a
+file; `load_unmigrated()` reads it as it is) and `controller.rs`
+(all-or-nothing writes merged with the file on disk, the keys to announce,
+single instances, problems, components, the session phase and workspaces,
+the colors of a picture). `sde-config-ffi` exposes them through the same
+private C ABI with callbacks (`src/common/rust_core.h`), so no text format
+crosses the boundary. The D-Bus front end is C++ (`src/core`): the workspace
+still has no registry dependencies, and a D-Bus implementation without crates
+would mean the wire protocol from scratch or raw libdbus bindings next to
+the tested `src/common/dbus.*`.

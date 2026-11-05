@@ -1,9 +1,69 @@
-# Control Center: window, interface size and user accounts
+# Control Center: window, settings, interface size and user accounts
 
 The Control Center (`sde-settings`, also `sde-control-center`) shows a
 sidebar of pages and the page chosen in it. This document describes how the
-window lays itself out, the interface sizes SDE offers and the management of
-user accounts on the **Users & Avatar** page.
+window lays itself out, where each setting lives, the interface sizes SDE
+offers and the management of user accounts on the **Users & Avatar** page.
+
+## One place for each setting (0.2.0 Alpha 4)
+
+Every setting lives on exactly one page. A related page says where it is,
+in a row with a button named after that page ("The clock, 12 or 24 hours and
+the date · **Clock & Weather**", `link_row()` in `src/settings/main.cpp`),
+and the overview's search finds the setting on its page. Up to 0.2.0
+Alpha 3.1 several settings were on two or three pages, each with its own
+code that drifted apart (the Panel page's 24-hour switch wrote two keys,
+Effects' low resource mode turned Appearance's blur off for good).
+
+| Setting | Its page | Linked from |
+| --- | --- | --- |
+| Clock style, 12/24 hours, seconds, blinking colon, the date on the panel | Clock & Weather | Panel, Action Center, Date & Time |
+| Time zone, automatic time zone | Date & Time | Clock & Weather, Power & Updates |
+| Power mode | Power | Power & Updates |
+| The battery icon on the panel, its percentage and label | Power (Battery) | Panel |
+| Notifications button on the panel, Do Not Disturb, duration | Notifications | Panel, Action Center |
+| Tapping, scrolling, clicking, the touchpad's speed | Touchpad | Keyboard & Mouse |
+| Interface size (75 % to 200 %) | Displays (with the display profiles) | Appearance |
+| Fading windows and menus, the Start menu's effects, low resource mode | Effects | Appearance, Start Menu, Power & Updates |
+| Transparency, blur, rounded corners | Appearance | Effects |
+| The search next to the Start button | Panel | Start Menu |
+
+Power & Updates keeps only links and the system tools. The overview shows
+a **Touchpad** tile; the **Mouse** tile is about the mouse.
+
+`sde.conf` keys did not change. Old duplicate keys are merged when the file is
+loaded (`[clock] style`, `seconds`, `blink` into `[action_center]
+clock_style`, `[panel] clock_seconds`, `clock_blink`; `[panel] clock_24h`
+follows `[clock] format`), see docs/CORE.md "The schema". The panel clock's
+"24-Hour Clock" now writes both 24-hour keys (it had no effect once the
+format was set).
+
+**For new pages:** a key is edited on one page only. Give it its page in
+`data/sde-schema.tsv` (with its type) and link to the page from related
+ones with `link_row()` instead of offering the setting again. Saving goes
+through `apply_change()`: since 0.2.0 Alpha 4 it writes only the keys the
+pages changed since the last save, through the SDE core controller
+(docs/CORE.md), so changes other programs make while the window is open
+are kept; a key changed elsewhere is taken over and the page shown again.
+
+`tests/test_settings_pages.py` (CTest `sde-settings-pages`) checks it from
+the sources: for every page of the `pages()` table it follows the build
+function and everything it uses (functions, classes and globals, through
+shared helpers), finds the keys written (`set("section", "key", ...)`,
+`set_bool()`, helpers given a section and a key, loops over keys of a
+section) and fails when two pages edit one key, when a page edits a key the
+schema gives to another page, or when the overview's search does not find a
+moved setting by the words people use ("24-hour", "battery percentage",
+"tap to click", "interface size"...). `--report` lists which page edits
+which key.
+
+## Only one Control Center
+
+While the SDE core controller runs, there is one Control Center per
+session: another `sde-settings --page NAME` (the panel's flyouts, an
+application's "Settings" link) shows that page in the running window and
+brings it to the front; `sde-settings` alone only brings it to the front.
+Without the controller every start is a window of its own, as before.
 
 ## The window
 
@@ -52,12 +112,13 @@ added) gives a page another readable width, `Page::content_h()` and
 
 ## Interface size
 
-**Appearance → Size and text → Interface size** offers Automatic, 75 %,
-100 %, 125 %, 150 %, 175 % and 200 % (`[appearance] scale=auto|75|…|200` in
-`sde.conf`). **Displays → Interface scale** and Display Settings offer the
-same sizes, and display profiles keep them (0 stands for Automatic in a
-profile; 75 to 200 in steps of 25 otherwise). Confirming display settings
-keeps Automatic instead of turning it into 100 %.
+**Displays → Interface scale** offers Automatic, 75 %, 100 %, 125 %, 150 %,
+175 % and 200 % (`[appearance] scale=auto|75|…|200` in `sde.conf`), applied
+with the other display settings and kept in display profiles (0 stands for
+Automatic in a profile; 75 to 200 in steps of 25 otherwise); Display
+Settings offers the same sizes. Confirming display settings keeps Automatic
+instead of turning it into 100 %. Up to 0.2.0 Alpha 3.1 Appearance had the
+same choice in **Size and text**; its **Text** card now links to Displays.
 
 - **Automatic** follows `Xft.dpi` (most display managers and `xrandr --dpi`
   set it), rounded to the nearest quarter, and never makes the interface
@@ -82,7 +143,8 @@ switching the whole desktop at every click:
 - **Theme** (family, **Mode**, **Accent color**) and everything in
   **Transparency and clarity** (the levels Off, Subtle, Clear and Glass, the
   **Transparency** slider, translucent surfaces, blur and its strength,
-  rounded corners, animations) only change the *chosen look*. The page shows
+  rounded corners) only change the *chosen look* (the fades of windows and
+  menus moved to Effects in 0.2.0 Alpha 4). The page shows
   it in a live miniature over your wallpaper (a window frame, a menu, quick
   settings and the panel, with the opacity, blur or Liquid Glass they will
   have), marks the family **In use**, and the notes say which GTK and SDE WM
@@ -99,10 +161,12 @@ switching the whole desktop at every click:
   new look, behind the session's picture of the screen. Changes made
   elsewhere (the panel's dark mode, the automatic mode at 07:00 and 19:00)
   reach the page too; a look chosen meanwhile stays chosen.
-- **Interface size**, **Text size**, **Icons** and the **Wallpaper** still
-  apply at once: they are not part of the theme, each has its own preview on
-  the page (the icon cards, the wallpaper tiles), and the size restarts the
-  Control Center anyway.
+- **Text size**, **Icons** and the **Wallpaper** still apply at once: they
+  are not part of the theme and each has its own preview on the page (the
+  icon cards, the wallpaper tiles). The interface size is in Displays.
+- Apply goes through the SDE core controller when it runs (docs/CORE.md):
+  it asks the session for the switch and announces the new look once the
+  session shows it.
 
 **Preview** opens a window over the desktop (`sde-settings --theme-preview
 LOOK`, started by the Control Center) that shows the chosen look for real
