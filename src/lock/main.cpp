@@ -9,7 +9,9 @@
 //   sde-lock --poke      simulate user activity (wake the monitors)
 //   sde-lock --inhibitors  list the programs that keep the session awake
 //
-// Authentication uses the PAM service "sde-lock" (/etc/pam.d/sde-lock).
+// Authentication uses the PAM service "sde-lock" (/etc/pam.d/sde-lock);
+// a finger recognized by fprintd, the account stack of
+// "sde-lock-fingerprint" (docs/FINGERPRINT.md).
 #include <unistd.h>
 
 #include <cstdio>
@@ -100,6 +102,10 @@ int main(int argc, char **argv) {
     std::string user = o.user;
     o.authenticate = [user](const char *password) {
       return lock::authenticate(lock::system_pam(), "sde-lock", user, password);
+    };
+    // After fprintd recognized a finger (docs/FINGERPRINT.md).
+    o.fingerprint_account = [user] {
+      return lock::check_account(lock::system_pam(), "sde-lock-fingerprint", user);
     };
     return lock::run_lock_ui(o);
   }

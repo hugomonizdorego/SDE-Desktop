@@ -136,5 +136,25 @@ AuthResult authenticate(const PamApi &api, const std::string &service, const std
   return result;
 }
 
+AuthResult check_account(const PamApi &api, const std::string &service, const std::string &user) {
+  AuthResult result;
+  if (user.empty()) return result;
+  Conversation data;  // no password: a prompt fails the check
+  data.messages = &result.messages;
+  struct pam_conv conv = {conversation, &data};
+  pam_handle_t *pamh = nullptr;
+  int rc = api.start(service.c_str(), user.c_str(), &conv, &pamh);
+  if (rc != PAM_SUCCESS || !pamh) return result;
+  rc = api.acct_mgmt(pamh, 0);
+  if (rc == PAM_NEW_AUTHTOK_REQD) rc = PAM_SUCCESS;
+  if (rc == PAM_SUCCESS)
+    result.status = AuthResult::Accepted;
+  else if (rc == PAM_AUTH_ERR || rc == PAM_USER_UNKNOWN || rc == PAM_PERM_DENIED || rc == PAM_ACCT_EXPIRED ||
+           rc == PAM_MAXTRIES || rc == PAM_CRED_INSUFFICIENT)
+    result.status = AuthResult::Rejected;
+  api.end(pamh, rc);
+  return result;
+}
+
 }  // namespace lock
 }  // namespace sde

@@ -28,6 +28,9 @@
 #include "buffered_window.h"
 #include "build_config.h"
 #include "config.h"
+#include "fingerprint.h"
+#include "fprint.h"
+#include "fprint_pam.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "icons.h"
@@ -174,6 +177,10 @@ struct Ui {
   std::string wallpaper, wallpaper_mode;
   int switch_x = 0, switch_y = 0, switch_w = 0, switch_h = 0;
   int enter_x = 0, enter_y = 0, enter_r = 0;
+  // Unlocking with a finger (fingerprint.h); the account check after a
+  // recognized finger runs on a worker thread.
+  std::unique_ptr<FingerprintUnlock> finger;
+  bool finger_checking = false;
 };
 Ui *g = nullptr;
 
@@ -364,6 +371,20 @@ void LockWindow::draw() {
   if (!g->busy && wait >= 1.5)
     msg = format(_("Too many attempts. Try again in %d seconds."), int(std::ceil(wait)));
   int line_y = field_y + field_h + S(12);
+  // The fingerprint reader: what it expects, with its symbol.
+  if (g->finger && !g->finger->text().empty()) {
+    const std::string &ft = g->finger->text();
+    text_font(S(14));
+    int gs = S(18), tw = std::min(text_width(ft), S(480)), tx = fx - (gs + S(8) + tw) / 2;
+    Color c = g->finger->error() ? Color::hex(0xFFB4AB) : kWhite.alpha(0.85);
+    {
+      Painter fp(W, H);
+      fprint::draw_glyph(fp, tx, line_y + S(3), gs, c);
+      fp.flush();
+    }
+    draw_text(ft, tx + gs + S(8), line_y, tw + S(4), S(24), c);
+    line_y += S(26);
+  }
   if (!msg.empty()) {
     text_font(S(14), g->message_error);
     draw_text(msg, fx - S(260), line_y, S(520), S(24),
@@ -490,6 +511,59 @@ void set_primary(LockWindow *w) {
   Fl::focus(w);
 }
 
+// ------------------------------------------------------------ fingerprint
+
+// The account check after a recognized finger is done (main thread).
+void finger_account_done(void *data) {
+  std::unique_ptr<AuthResult> r(static_cast<AuthResult *>(data));
+  if (!g || !g->finger || g->done) return;
+  g->finger_checking = false;
+  if (r->status == AuthResult::Accepted) {
+    log_line("unlocked with a fingerprint");
+    g->password.clear();
+    report(g->opt.report_fd, 'U');
+    g->done = true;
+    return;
+  }
+  log_line("a recognized finger was refused by the account check (PAM service sde-lock-fingerprint)");
+  g->finger->give_up(r->status == AuthResult::Rejected
+                         ? _("This account cannot be unlocked with a fingerprint now. Type your password.")
+                         : _("The fingerprint cannot be checked (PAM service sde-lock-fingerprint). Type your "
+                             "password."));
+  redraw_all();
+}
+
+void finger_matched() {
+  if (!g || g->finger_checking || g->done) return;
+  g->finger_checking = true;
+  std::function<AuthResult()> check = g->opt.fingerprint_account;
+  if (!check) {
+    finger_account_done(new AuthResult());  // nothing to check the account with: refused
+    return;
+  }
+  std::thread([check] { Fl::awake(finger_account_done, new AuthResult(check())); }).detach();
+}
+
+// Once the screen is locked: the reader with the user's fingerprints.
+void start_fingerprint() {
+  if (g->finger || (!g->opt.fingerprint && !g->opt.fingerprint_hold)) return;
+  FingerprintUnlock::Options o;
+  o.verify = g->opt.fingerprint;
+  o.hold = g->opt.fingerprint_hold;
+  o.changed = [] {
+    if (g && g->primary) g->primary->redraw();
+  };
+  o.activity = [] {
+    if (!g) return;
+    g->blanked = false;
+    session::reset_idle();
+  };
+  o.matched = [] { finger_matched(); };
+  o.log = [](const std::string &line) { log_line("%s", line.c_str()); };
+  g->finger.reset(new FingerprintUnlock(dbus::Bus::system(), std::move(o)));
+  g->finger->start();
+}
+
 void become_ready() {
   if (g->ready) return;
   report(g->opt.report_fd, 'H');
@@ -500,6 +574,7 @@ void become_ready() {
   g->ready = true;
   g->caps = caps_lock_on();
   if (g->primary) Fl::focus(g->primary);
+  start_fingerprint();
   redraw_all();
 }
 
@@ -720,6 +795,7 @@ void reassert() {
   g->blanked = false;
   session::reset_idle();
   restart_input_check();
+  if (g->finger) g->finger->wake();
 }
 
 int LockWindow::handle(int e) {
@@ -739,6 +815,7 @@ int LockWindow::handle(int e) {
       return 1;
     case FL_PUSH: {
       if (!g->ready) return 1;
+      if (g->finger) g->finger->wake();
       if (!primary()) {
         set_primary(this);
         return 1;
@@ -746,6 +823,8 @@ int LockWindow::handle(int e) {
       int ex = Fl::event_x(), ey = Fl::event_y();
       if (g->opt.switch_user && ex >= g->switch_x && ex < g->switch_x + g->switch_w &&
           ey >= g->switch_y && ey < g->switch_y + g->switch_h) {
+        // The greeter may want the fingerprint reader for another person.
+        if (g->finger) g->finger->suspend();
         spawn_detached({"dm-tool", "switch-to-greeter"});
         return 1;
       }
@@ -756,6 +835,7 @@ int LockWindow::handle(int e) {
     case FL_KEYBOARD:
     case FL_SHORTCUT: {
       if (!g->ready) return 1;
+      if (g->finger) g->finger->wake();
       g->caps = caps_lock_on();
       if (g->busy) return 1;
       int key = Fl::event_key();
@@ -961,6 +1041,9 @@ void default_options(UiOptions &o) {
   o.blank_after = std::max(0, cfg.get_int("lock", "blank_after", 30));
   o.switch_user = cfg.get_bool("lock", "show_switch_user", true) && !env("XDG_SEAT_PATH").empty() &&
                   !find_program("dm-tool").empty();
+  // Control Center > Fingerprint, "Unlock the screen" (docs/FINGERPRINT.md).
+  o.fingerprint = cfg.get_bool("lock", "fingerprint", true);
+  o.fingerprint_hold = fprint::file_runs_fprintd("/etc/pam.d/common-auth", "sde-lock");
 }
 
 int run_lock_ui(const UiOptions &options) {
@@ -1045,6 +1128,8 @@ int run_lock_ui(const UiOptions &options) {
   XUngrabPointer(fl_display, CurrentTime);
   for (auto *w : ui.windows) w->hide();
   XFlush(fl_display);
+  // Releases the fingerprint reader (fprintd would see us leave anyway).
+  ui.finger.reset();
   Fl::remove_handler(x_events);
   Fl::remove_timeout(tick);
   Fl::remove_timeout(animate);

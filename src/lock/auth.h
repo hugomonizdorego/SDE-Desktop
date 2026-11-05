@@ -88,5 +88,11 @@ int conversation(int n, const struct pam_message **msg, struct pam_response **re
 AuthResult authenticate(const PamApi &api, const std::string &service, const std::string &user,
                         const char *password);
 
+// The account stack alone (pam_acct_mgmt) of |service| for |user|, after
+// fprintd recognized a finger (service "sde-lock-fingerprint",
+// docs/FINGERPRINT.md): an expired or locked account is not unlocked.
+// Prompts are refused; an expired password is accepted as above.
+AuthResult check_account(const PamApi &api, const std::string &service, const std::string &user);
+
 }  // namespace lock
 }  // namespace sde

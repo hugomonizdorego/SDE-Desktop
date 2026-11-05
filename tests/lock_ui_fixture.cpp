@@ -41,6 +41,19 @@ int main(int argc, char **argv) {
                                                  : sde::lock::AuthResult::Rejected;
     return r;
   };
+  // SDE_LOCK_FIXTURE_FINGERPRINT: unlocking with a finger against the
+  // fprintd of the test's bus (tests/fake_fprintd.cpp,
+  // test_lock_fingerprint.py): "1" (the account check accepts), "deny" (it
+  // refuses) or "hold" (the reader is held without verifying). Unset: off,
+  // whatever the configuration says.
+  std::string finger = getenv("SDE_LOCK_FIXTURE_FINGERPRINT") ? getenv("SDE_LOCK_FIXTURE_FINGERPRINT") : "";
+  o.fingerprint = !finger.empty() && finger != "hold";
+  o.fingerprint_hold = finger == "hold";
+  o.fingerprint_account = [finger] {
+    sde::lock::AuthResult r;
+    r.status = finger == "deny" ? sde::lock::AuthResult::Rejected : sde::lock::AuthResult::Accepted;
+    return r;
+  };
   // SDE_LOCK_FIXTURE_MONITORS=FILE: the monitors ("x y w h" per line) are
   // read from FILE whenever the lock screen looks at them, so the test can
   // simulate RandR changes on Xvfb (whose single output cannot change).

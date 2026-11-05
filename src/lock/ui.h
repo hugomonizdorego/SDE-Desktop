@@ -19,7 +19,8 @@
 //   H  heartbeat, every second (the daemon replaces a lock screen that
 //      stops answering)
 //   F  the windows could not be mapped: nothing is locked
-//   U  the password was accepted (the process then exits with status 0)
+//   U  the password, or a recognized finger, was accepted (the process
+//      then exits with status 0)
 //
 // SIGUSR1 (sent by the daemon after a resume) re-checks the monitors, the
 // stacking and the grabs at once.
@@ -51,6 +52,14 @@ struct UiOptions {
   std::function<std::vector<Monitor>()> monitors;
   // Checks a password. Runs on a worker thread.
   std::function<AuthResult(const char *password)> authenticate;
+  // Fingerprint (fingerprint.h, docs/FINGERPRINT.md): unlock with a finger
+  // ([lock] fingerprint), and hold the reader without that when
+  // common-auth runs pam_fprintd for sde-lock. default_options() sets both.
+  bool fingerprint = false;
+  bool fingerprint_hold = false;
+  // The account checks after a recognized finger (PAM service
+  // sde-lock-fingerprint). Runs on a worker thread.
+  std::function<AuthResult()> fingerprint_account;
 };
 
 // Fills user, display_name, avatar and switch_user for the current user
