@@ -24,6 +24,7 @@
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Secret_Input.H>
+#include <FL/fl_draw.H>
 #include <FL/x.H>
 #include <glib-unix.h>
 #include <polkitagent/polkitagent.h>
@@ -99,6 +100,7 @@ class Dialog : public Fl_Double_Window {
   std::string message_text_, details_text_, prompt_text_ = "Password:", error_text_;
   bool prompt_open_ = false, ahead_ = false;
   bool finger_ = false;  // the badge shows a fingerprint
+  int prompt_size_ = 0;  // the prompt's own font size
 };
 
 // ----------------------------------------------------------------- request
@@ -336,6 +338,7 @@ Dialog::Dialog(Request *req, const std::string &message, const std::string &acti
   prompt_->align(FL_ALIGN_INSIDE | FL_ALIGN_LEFT);
   prompt_->labelcolor(t.text.fl());
   prompt_->label(prompt_text_.c_str());
+  prompt_size_ = prompt_->labelsize();
   y += S(22);
   input_ = new Fl_Secret_Input(x, y, w, S(34));
   input_->box(FL_FLAT_BOX);
@@ -392,6 +395,8 @@ void Dialog::prompt(const std::string &text, bool echo) {
   finger_ = false;
   prompt_text_ = text.empty() ? _("Password:") : text;
   prompt_->label(prompt_text_.c_str());
+  prompt_->labelsize(prompt_size_);
+  prompt_->tooltip(nullptr);
   // Echo-on prompts (rare, e.g. a one-time code) are shown in plain text.
   input_->type(echo ? FL_NORMAL_INPUT : FL_SECRET_INPUT);
   busy(false);
@@ -407,19 +412,37 @@ void Dialog::error(const std::string &text) {
 }
 
 void Dialog::info(const std::string &text) {
-  error_text_ = text;
-  error_->label(error_text_.c_str());
-  error_->labelcolor(active_theme().text.fl());
-  if (lower(text).find("finger") != std::string::npos) finger_ = true;
+  const Theme &t = active_theme();
+  bool finger = lower(text).find("finger") != std::string::npos;
+  if (finger) finger_ = true;
   if (!prompt_open_ && !ahead_) {
     // A module works without a prompt (pam_fprintd waits for a finger):
-    // the password can be typed meanwhile.
-    prompt_text_ = _("Or type your password:");
+    // its message goes above the field, and the password can be typed
+    // meanwhile.
+    if (finger) {
+      // pam_fprintd names the reader ("Place your right index finger on
+      // Goodix MOC Fingerprint Sensor"): one line, a little smaller when
+      // needed, the whole text as tooltip.
+      int size = prompt_size_;
+      fl_font(prompt_->labelfont(), size);
+      while (size > prompt_size_ - 2 && fl_width(text.c_str()) > prompt_->w()) fl_font(prompt_->labelfont(), --size);
+      prompt_->labelsize(size);
+      prompt_text_ = ellipsize(text, prompt_->w());
+      prompt_->copy_tooltip(text.c_str());
+    } else {
+      prompt_text_ = _("Or type your password:");
+    }
     prompt_->label(prompt_text_.c_str());
+    error_text_ = finger ? _("Or type your password, then press Enter.") : text;
+    error_->labelcolor((finger ? t.text_dim : t.text).fl());
     input_->type(FL_SECRET_INPUT);
     busy(false);
     input_->take_focus();
+  } else {
+    error_text_ = text;
+    error_->labelcolor(t.text.fl());
   }
+  error_->label(error_text_.c_str());
   redraw();
 }
 
@@ -538,7 +561,7 @@ int main(int argc, char **argv) {
     Dialog d(nullptr, _("Authentication is required to install software updates."),
              "org.freedesktop.packagekit.system-update", {"Example User (user)"}, 0);
     d.show();
-    d.info("Place your finger on the fingerprint reader");
+    d.info("Place your right index finger on Goodix MOC Fingerprint Sensor");
     return Fl::run();
   }
 
