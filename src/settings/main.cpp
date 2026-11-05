@@ -2513,6 +2513,7 @@ const std::vector<PageInfo> &pages() {
        build_input_page,
        nullptr},
       {"touchpad", N_("Touchpad"), {"input-touchpad", "input-mouse"}, build_touchpad_page, nullptr},
+      {"touch", N_("Touch Screen"), {"input-touchscreen", "input-tablet", "input-mouse"}, build_touch_page, nullptr},
       {"network",
        N_("Network"),
        {"preferences-system-network", "network-wireless"},
@@ -3158,6 +3159,7 @@ struct PageAlias {
 };
 const PageAlias kPageAliases[] = {
     {"overview", "home", nullptr},        {"control-center", "home", nullptr},
+    {"touchscreen", "touch", nullptr},    {"touch-screen", "touch", nullptr},
     {"wallpaper", "appearance", "wallpaper"}, {"wallpapers", "appearance", "wallpaper"},
     {"theme", "appearance", nullptr},     {"background", "appearance", "wallpaper"},
     {"icons", "desktop", nullptr},        {"start", "start-menu", nullptr},

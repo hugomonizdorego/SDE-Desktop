@@ -132,6 +132,7 @@ add_executable(sde-settings
   settings/system.cpp
   settings/power.cpp
   settings/touchpad.cpp
+  settings/touch_page.cpp
   settings/network.cpp
   settings/clock.cpp
   settings/default_apps_page.cpp
@@ -190,6 +191,13 @@ target_link_libraries(sde-watchdog PRIVATE sde-forceclose-core)
 add_executable(sde-force-close forceclose/dialog_main.cpp)
 target_link_libraries(sde-force-close PRIVATE sde-forceclose-core)
 install(TARGETS sde-watchdog sde-force-close RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Touch screens (0.2.0 Alpha 4, docs/TOUCH.md): sde-touchscreen keeps them on
+# their display (also after a monitor or the touch screen came back) and
+# shows touches; started at login (data/autostart/sde-touchscreen.desktop).
+add_executable(sde-touchscreen touchscreen/main.cpp)
+target_link_libraries(sde-touchscreen PRIVATE sde-common)
+install(TARGETS sde-touchscreen RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 add_executable(sde-notifyd notifyd/main.cpp)
 target_link_libraries(sde-notifyd PRIVATE sde-common)

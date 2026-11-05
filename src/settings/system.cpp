@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "process.h"
+#include "touch.h"
 #include "touchpad.h"
 #include "util.h"
 
@@ -107,6 +108,7 @@ void apply_all(const Config &cfg) {
   apply_keyboard(cfg);
   apply_pointers(cfg);
   apply_touchpad(cfg);  // [touchpad] keys (touchpad.h), after the [input] pointer keys
+  apply_touch_mapping(cfg);  // [touchscreen] output (touch.h), after the display layout
 }
 
 }  // namespace sde
