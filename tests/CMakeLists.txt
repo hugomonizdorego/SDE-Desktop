@@ -100,6 +100,16 @@ if(SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-dbus-timeouts COMMAND ${SDE_DBUS_RUN_SESSION} -- $<TARGET_FILE:sde-dbus-timeout-tests>)
   set_tests_properties(sde-dbus-timeouts PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif()
+# 0.2.0 Alpha 4: the SDE core controller (docs/CORE.md), sde-core on a
+# private bus and Xvfb, and its client through sde-core-probe (not
+# installed). The Rust logic is in sde-rust-tests.
+add_executable(sde-core-probe core_probe.cpp)
+target_link_libraries(sde-core-probe PRIVATE sde-common)
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  add_test(NAME sde-core-service COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_core.py $<TARGET_FILE:sde-core> $<TARGET_FILE:sde-core-probe>)
+  set_tests_properties(sde-core-service PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 # The FileChooser portal backend (xdg-desktop-portal-sde) on a private bus.
 if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-file-chooser-portal COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}

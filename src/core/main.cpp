@@ -328,6 +328,10 @@ void update_look(bool announce) {
   d["rounded-corners"] = vb(cfg.get_bool("aero", "rounded_corners", true));
   d["animations"] = vb(cfg.get_bool("aero", "animations", true));
   d["low-resource"] = vb(cfg.get_bool("appearance", "low_resource", false));
+  // The compositor's lite profile and Liquid Glass change how surfaces are
+  // drawn (Theme): also a new look.
+  d["lite"] = vb(t.lite);
+  d["liquid-glass"] = vb(t.liquid);
   d["scale"] = vd(t.scale);
   d["font"] = vs(t.font);
   d["font-size"] = vi(cfg.get_int("appearance", "font_size", 10));
@@ -365,15 +369,18 @@ void start_wallpaper_colors(const std::string &path, const std::string &key) {
   auto *job = new ColorJob{path, key, {}, false};
   std::thread([job] {
     cairo_surface_t *s = load_wallpaper(job->path, 96, 54, "zoom", 0.5, 0.5, 0.5);
-    if (s && cairo_image_surface_get_format(s) == CAIRO_FORMAT_ARGB32) {
+    cairo_format_t format = s ? cairo_image_surface_get_format(s) : CAIRO_FORMAT_INVALID;
+    if (format == CAIRO_FORMAT_ARGB32 || format == CAIRO_FORMAT_RGB24) {
       cairo_surface_flush(s);
       int w = cairo_image_surface_get_width(s), h = cairo_image_surface_get_height(s);
       int stride = cairo_image_surface_get_stride(s);
       const unsigned char *data = cairo_image_surface_get_data(s);
+      // RGB24 leaves the alpha byte undefined: those pictures are opaque.
+      uint32_t opaque = format == CAIRO_FORMAT_RGB24 ? 0xFF000000u : 0;
       std::vector<uint32_t> px;
       px.reserve(size_t(w) * size_t(h));
       for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x) px.push_back(reinterpret_cast<const uint32_t *>(data + y * stride)[x]);
+        for (int x = 0; x < w; ++x) px.push_back(reinterpret_cast<const uint32_t *>(data + y * stride)[x] | opaque);
       uint32_t average = 0, colors[5];
       size_t n = sde_core_palette(px.data(), px.size(), &average, colors, 5);
       for (size_t i = 0; i < n; ++i) job->colors.push_back(Color::hex(colors[i]).to_hex());
