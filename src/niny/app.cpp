@@ -23,6 +23,7 @@
 
 #include "about.h"
 #include "config.h"
+#include "core_client.h"
 #include "file_chooser.h"
 #include "i18n.h"
 #include "niny.h"
@@ -118,6 +119,13 @@ App::App(int w, int h) : BufferedWindow(w, h, "Niny") {
   layout();
   Fl::event_dispatch(dispatch);
   Fl::add_handler(x_event);
+  // 0.2.0 Alpha 4: the look follows sde-core (LookChanged), or the root
+  // window's _SDE_CONFIG_SERIAL without it (core_client.h).
+  core::watch_look([] {
+    if (!instance_) return;
+    instance_->apply_theme();
+    instance_->layout();
+  });
   Fl::add_timeout(5.0, backup_cb, this);
   Fl::add_timeout(2.0, watch_cb, this);
   listen_for_instances(this);
@@ -1500,11 +1508,7 @@ void App::handle_notice(Document *doc, int button) {
 int App::x_event(int) {
   if (!instance_ || !fl_xevent) return 0;
   const XEvent &e = *fl_xevent;
-  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
-      e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
-    instance_->apply_theme();
-    instance_->layout();
-  } else if (e.type == FocusIn && instance_->shown() && e.xfocus.window == fl_xid(instance_)) {
+  if (e.type == FocusIn && instance_->shown() && e.xfocus.window == fl_xid(instance_)) {
     instance_->check_disk(true);
   }
   return 0;

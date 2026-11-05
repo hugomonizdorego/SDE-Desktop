@@ -431,7 +431,6 @@ class PhotoWindow : public sde::BufferedWindow {
   static void album_awake_cb(void *p);
   static void toast_cb(void *p);
   static void render_awake_cb(void *p);
-  static int x_event_handler(int event);
   static void menu_cb(Fl_Widget *w, void *data);
 
   sde::Theme theme_;

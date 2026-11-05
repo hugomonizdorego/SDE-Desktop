@@ -22,6 +22,7 @@
 #include "about.h"
 #include "build_config.h"
 #include "config.h"
+#include "core_client.h"
 #include "file_chooser.h"
 #include "i18n.h"
 #include "icons.h"
@@ -42,6 +43,9 @@ const Swatch kSwatches[] = {
 const int kSwatchCount = int(sizeof(kSwatches) / sizeof(kSwatches[0]));
 
 XanaraWindow *XanaraWindow::instance_ = nullptr;
+// 0.2.0 Alpha 4: the look follows sde-core (LookChanged), or the root
+// window's _SDE_CONFIG_SERIAL without it (core_client.h).
+static int g_look_watch = 0;
 
 std::string display_name(const std::string &path) { return basename_of(path); }
 
@@ -122,14 +126,18 @@ XanaraWindow::XanaraWindow(int w, int h) : BufferedWindow(w, h, "Xanara") {
   apply_theme();
   layout();
   update_chrome();
-  Fl::add_handler(x_event_handler);
+  g_look_watch = core::watch_look([] {
+    if (!instance_) return;
+    instance_->apply_theme();
+    instance_->layout();
+  });
   callback([](Fl_Widget *, void *p) { static_cast<XanaraWindow *>(p)->quit(); }, this);
 }
 
 XanaraWindow::~XanaraWindow() {
   ocr_shutdown();
   remember_position();
-  Fl::remove_handler(x_event_handler);
+  core::unwatch(g_look_watch);
   Fl::remove_timeout(toast_cb, this);
   Fl::remove_timeout(remember_cb, this);
   if (Fl::has_timeout(settings_cb, this)) save_settings();
@@ -246,17 +254,6 @@ void XanaraWindow::apply_theme() {
   page_input_->textsize(theme_.font_size - S(1));
   color(theme_.background.fl());
   redraw();
-}
-
-int XanaraWindow::x_event_handler(int) {
-  if (!instance_ || !fl_xevent) return 0;
-  const XEvent &e = *fl_xevent;
-  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
-      e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
-    instance_->apply_theme();
-    instance_->layout();
-  }
-  return 0;
 }
 
 void XanaraWindow::resize(int x, int y, int w, int h) {

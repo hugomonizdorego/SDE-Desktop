@@ -16,6 +16,7 @@
 
 #include "about.h"
 #include "config.h"
+#include "core_client.h"
 #include "converter.h"
 #include "engine.h"
 #include "i18n.h"
@@ -204,7 +205,9 @@ int main(int argc, char **argv) {
   h = std::max(sde::S(470), h);
   auto *window = new CalcWindow(w, h, settings);
   window->position(wx, wy);
-  Fl::add_handler(CalcWindow::x_event_handler);
+  // 0.2.0 Alpha 4: the look follows sde-core (LookChanged), or the root
+  // window's _SDE_CONFIG_SERIAL without it (core_client.h).
+  sde::core::watch_look([window] { window->apply_theme(); });
   window->show(1, argv);
   XClassHint hint{const_cast<char *>("calculator"), const_cast<char *>("org.debion.Calculator")};
   XSetClassHint(fl_display, fl_xid(window), &hint);

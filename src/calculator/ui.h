@@ -114,7 +114,6 @@ class CalcWindow : public sde::BufferedWindow {
   void set_mode(Mode m);
   void apply_theme();
   void show_about();
-  static int x_event_handler(int);
 
  private:
   friend class ExprInput;

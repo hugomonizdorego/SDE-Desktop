@@ -20,6 +20,7 @@
 #include <ctime>
 
 #include "config.h"
+#include "core_client.h"
 #include "i18n.h"
 #include "internal.h"
 #include "spawn.h"
@@ -32,6 +33,9 @@ using namespace sde;
 namespace taca {
 
 TacaWindow *TacaWindow::instance_ = nullptr;
+// 0.2.0 Alpha 4: the look follows sde-core (LookChanged), or the root
+// window's _SDE_CONFIG_SERIAL without it (core_client.h).
+static int g_look_watch = 0;
 
 namespace {
 
@@ -115,7 +119,9 @@ TacaWindow::TacaWindow(int w, int h) : BufferedWindow(w, h, _("Taca")) {
   apply_theme();
   build_menu();
   layout();
-  Fl::add_handler(x_event_handler);
+  g_look_watch = core::watch_look([] {
+    if (instance_) instance_->apply_theme();
+  });
   Fl::add_system_handler(system_handler, this);
   // Temporary copies from earlier sessions (opened files and drags).
   std::string cache = detail::cache_dir();
@@ -134,7 +140,7 @@ TacaWindow::TacaWindow(int w, int h) : BufferedWindow(w, h, _("Taca")) {
 }
 
 TacaWindow::~TacaWindow() {
-  Fl::remove_handler(x_event_handler);
+  core::unwatch(g_look_watch);
   Fl::remove_system_handler(system_handler);
   Fl::remove_timeout(tick_cb, this);
   Fl::remove_timeout(toast_cb, this);
@@ -173,15 +179,6 @@ void TacaWindow::apply_theme() {
   color(theme_.background.fl());
   layout();
   redraw();
-}
-
-int TacaWindow::x_event_handler(int) {
-  if (!instance_ || !fl_xevent) return 0;
-  const XEvent &e = *fl_xevent;
-  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
-      e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL"))
-    instance_->apply_theme();
-  return 0;
 }
 
 // Answers the drop target's request for our dragged files as text/uri-list

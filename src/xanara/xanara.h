@@ -604,7 +604,6 @@ class XanaraWindow : public sde::BufferedWindow {
   void about();
   std::vector<HistoryEntry> recent() const;
   void forget_recent(const std::string &path);
-  static int x_event_handler(int event);
   static XanaraWindow *instance() { return instance_; }
   void layout();
   void find_input_changed();

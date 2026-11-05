@@ -451,7 +451,6 @@ class TacaWindow : public sde::BufferedWindow {
   static void tick_cb(void *p);
   static void toast_cb(void *p);
   static void menu_cb(Fl_Widget *w, void *data);
-  static int x_event_handler(int event);
   static int system_handler(void *event, void *data);
 
   sde::Theme theme_;

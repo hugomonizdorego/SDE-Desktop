@@ -20,6 +20,7 @@
 #include "build_config.h"
 #include "collage_ui.h"
 #include "config.h"
+#include "core_client.h"
 #include "desktop_entry.h"
 #include "file_chooser.h"
 #include "i18n.h"
@@ -44,6 +45,9 @@ namespace photo {
 using gallery::ask;
 
 PhotoWindow *PhotoWindow::instance_ = nullptr;
+// 0.2.0 Alpha 4: the look follows sde-core (LookChanged), or the root
+// window's _SDE_CONFIG_SERIAL without it (core_client.h).
+static int g_look_watch = 0;
 
 namespace {
 
@@ -154,11 +158,15 @@ PhotoWindow::PhotoWindow(int w, int h) : BufferedWindow(w, h, _("Photo")) {
   build_menu();
   apply_theme();
   layout();
-  Fl::add_handler(x_event_handler);
+  g_look_watch = core::watch_look([] {
+    if (!instance_) return;
+    instance_->apply_theme();
+    instance_->layout();
+  });
 }
 
 PhotoWindow::~PhotoWindow() {
-  Fl::remove_handler(x_event_handler);
+  core::unwatch(g_look_watch);
   Fl::remove_timeout(toast_cb, this);
   instance_ = nullptr;
   if (album_thread_.joinable()) album_thread_.join();
@@ -201,17 +209,6 @@ void PhotoWindow::apply_theme() {
   menu_->textsize(theme_.font_size);
   if (panel_) panel_->layout();
   redraw();
-}
-
-int PhotoWindow::x_event_handler(int) {
-  if (!instance_ || !fl_xevent) return 0;
-  const XEvent &e = *fl_xevent;
-  if (e.type == PropertyNotify && e.xproperty.window == RootWindow(fl_display, fl_screen) &&
-      e.xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
-    instance_->apply_theme();
-    instance_->layout();
-  }
-  return 0;
 }
 
 // ----------------------------------------------------------------- menu

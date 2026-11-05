@@ -405,6 +405,8 @@ class GalleryWindow : public sde::BufferedWindow {
   static void toast_cb(void *p);
   static void save_cb(void *p);
   static int x_event_handler(int event);
+  static void settings_changed();
+  int settings_watch_ = 0;
   void draw_header(sde::Painter &p);
   void draw_header_text();
 
