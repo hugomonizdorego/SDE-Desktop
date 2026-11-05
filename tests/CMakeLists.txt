@@ -517,6 +517,6 @@ add_executable(sde-touch-probe touch_probe.cpp)
 target_link_libraries(sde-touch-probe PRIVATE sde-common)
 if(SDE_XVFB)
   add_test(NAME sde-touch-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_touch_ui.py
-    $<TARGET_FILE:sde-touch-probe>)
+    $<TARGET_FILE:sde-touch-probe> $<TARGET_FILE:sde-touchscreen>)
   set_tests_properties(sde-touch-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 endif()

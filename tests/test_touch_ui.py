@@ -7,7 +7,11 @@ touches through Fl_Touch::inject(), the same dispatch as the X server's
 XInput 2.2 touch events; the XInput selection of its windows is checked on
 the real server, and the mouse through XTest.
 
-Usage: test_touch_ui.py PROBE
+Then the session's helper, sde-touchscreen: it runs once per display, waits
+quietly without a touch screen (no touch device on Xvfb), follows Show
+touches in sde.conf and ends on SIGTERM.
+
+Usage: test_touch_ui.py PROBE [SDE-TOUCHSCREEN]
 Exit status 77 (skipped) without Xvfb or XInput 2.2.
 """
 import os
@@ -44,13 +48,46 @@ def main():
                        XDG_CONFIG_HOME=os.path.join(home, '.config'))
             env.pop('SDE_TOUCH', None)
             result = sp.run([probe], env=env, timeout=120)
-            return result.returncode
+            if result.returncode != 0 or len(sys.argv) < 3:
+                return result.returncode
+            return helper(os.path.abspath(sys.argv[2]), env, home)
     finally:
         server.terminate()
         try:
             server.wait(timeout=5)
         except sp.TimeoutExpired:
             server.kill()
+
+
+def helper(exe, env, home):
+    import time
+    conf = os.path.join(home, '.config', 'sde')
+    os.makedirs(conf, exist_ok=True)
+    with open(os.path.join(conf, 'sde.conf'), 'w') as f:
+        f.write('[touchscreen]\nshow_touches=true\n')
+    first = sp.Popen([exe], env=env, stdout=sp.DEVNULL, stderr=sp.PIPE, text=True)
+    failures = 0
+
+    def check(ok, what):
+        nonlocal failures
+        print(('ok    ' if ok else 'FAIL  ') + what)
+        failures += 0 if ok else 1
+
+    try:
+        time.sleep(1.0)
+        check(first.poll() is None, 'sde-touchscreen keeps running without a touch screen')
+        second = sp.run([exe], env=env, timeout=10, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        check(second.returncode == 0, 'a second sde-touchscreen on the display ends at once')
+        check(first.poll() is None, '... and leaves the first one running')
+    finally:
+        first.terminate()
+        try:
+            first.wait(timeout=5)
+        except sp.TimeoutExpired:
+            first.kill()
+    check(first.returncode is not None and first.returncode >= 0 or first.returncode == -15,
+          'sde-touchscreen ends on SIGTERM')
+    return 1 if failures else 0
 
 
 if __name__ == '__main__':
