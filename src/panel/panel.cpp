@@ -285,11 +285,23 @@ void Panel::setup() {
   if (cfg_.get_bool("panel", "hide_duplicate_tray", true))
     for (auto &name : split(cfg_.get("panel", "duplicate_tray_items", ""), ';'))
       if (!trim(name).empty()) hidden.push_back(lower(trim(name)));
-  tray_.reset(new Tray(xid));
+  tray_.reset(new Tray(xid, [this] {
+    status_signature_.clear();
+    status_update();
+  }));
+  tray_->set_background(theme_.surface.fl() >> 8);
   tray_->set_icon_size(tray_icon_);
   tray_->set_hidden(hidden);
   tray_->set_hide_layout_applets(cfg_.get_bool("panel", "show_keyboard", true));
   tray_->start();
+  // 0.2.0 Alpha 4: the tray's X events arrive before FLTK sees them (FLTK
+  // hides the DestroyNotify of foreign windows from Fl::add_handler; tray.h).
+  Fl::add_system_handler(
+      [](void *event, void *data) -> int {
+        auto *self = static_cast<Panel *>(data);
+        return self->tray_ && self->tray_->handle(*static_cast<const XEvent *>(event)) ? 1 : 0;
+      },
+      this);
   sni_.reset(new SniHost([this] {
     status_signature_.clear();  // icons can change without a new title
     status_update();
@@ -1833,6 +1845,9 @@ void Panel::qa_dump_panel() {
       text += line("tray-item:" + SniHost::display_name(*items[i]),
                    sni_x_ + int(i) * (tray_icon_ + S(10)), tray_icon_ + S(10));
   }
+  // 0.2.0 Alpha 4: the XEmbed icons, in the window that holds them now
+  // (tests/test_tray.py).
+  if (tray_) text += tray_->qa_lines();
   // Taskbar buttons (alpha51 window previews).
   for (const auto &t : tasks_)
     if (t.w > 0)
@@ -2207,14 +2222,6 @@ void Panel::refresh_tasks() {
 }
 
 bool Panel::handle_x(const XEvent &e) {
-  bool tray_changed = false;
-  if (tray_ && tray_->handle(e, tray_changed)) {
-    if (tray_changed) {
-      status_signature_.clear();
-      status_update();
-    }
-    return true;
-  }
   Window root = RootWindow(fl_display, fl_screen);
   if (e.type == PropertyNotify && e.xproperty.window == root) {
     Atom a = e.xproperty.atom;

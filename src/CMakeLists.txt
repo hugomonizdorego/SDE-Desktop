@@ -112,6 +112,11 @@ if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
   target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
 endif()
+# 0.2.0 Alpha 4: ARGB tray icons are drawn with their alpha (tray.cpp).
+if(XCOMPOSITE_FOUND AND XDAMAGE_FOUND)
+  target_link_libraries(sde-panel PRIVATE PkgConfig::XDAMAGE)
+  target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XDAMAGE=1)
+endif()
 
 # Desktop drag and drop model and file operations (unit tested).
 add_library(sde-desktop-model STATIC desktop/desktop_model.cpp desktop/file_ops.cpp)

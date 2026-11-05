@@ -262,6 +262,10 @@ target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
 # (Force Close checks, showcase), and a pinger.
 add_executable(sde-frozen-client frozen_client_fixture.cpp)
 target_link_libraries(sde-frozen-client PRIVATE ${X11_LIBRARIES})
+# 0.2.0 Alpha 4: XEmbed tray icons that misbehave (ARGB, frozen, dying,
+# re-embedding storms, bogus dock requests) for tests/test_tray.py.
+add_executable(sde-tray-client tray_client_fixture.cpp)
+target_link_libraries(sde-tray-client PRIVATE ${X11_LIBRARIES})
 # Force Close: which processes may be ended, the watchdog's decisions and
 # the launch records (no display).
 add_executable(sde-force-close-tests test_force_close.cpp)
