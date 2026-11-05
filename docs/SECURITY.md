@@ -67,6 +67,7 @@ vectors, never shell command lines** built from user or network data.
 | Debrun (`/usr/libexec/sde/debrun-helper`, `docs/DEBRUN.md`) | `pkexec` from Debrun (`install`, `remove`, `refresh`), or PackageKit's `InstallFiles` | polkit `org.debion.sde.debrun.install`, `.remove` and `.refresh`: `auth_admin_keep`; PackageKit's own policy | The helper opens the `.deb` with the caller's rights (no symbolic links, at most 8 GiB), copies it to `/var/cache/sde/debrun` (root's, 0711) and refuses it unless its SHA-256 digest, name, version and architecture are those Debrun showed; it simulates the change again and refuses removals not shown, Essential and SDE's own packages. `apt-get` runs with arguments only, a cleared environment, `DEBIAN_FRONTEND=noninteractive` and the old configuration files kept. Logs to the authpriv syslog. |
 | AppImage Runner (`sde-appimage`, `docs/APPIMAGE.md`) | nothing: runs as the user | none | Not privileged. Signatures are checked with `gpgv` (or `sqv`) against only the key embedded in the file, in an empty private home; publisher keys are trusted on first use per application; under the default `policy=verified-only` (`/etc/sde/appimage.conf`) AppImages that cannot be verified never run. The verified open file is executed (`fexecve`); files others may change run from a verified private copy. |
 | Account renames (`/usr/libexec/sde/sde-account-rename`, `docs/CONTROL-CENTER.md`) | `pkexec` from Users & Avatar (`schedule[-self]`, `cancel[-self]`); `sde-account-rename.service` at boot (`apply`) | polkit `org.debion.sde.account-rename.schedule-self`/`cancel-self`: `auth_self_keep` (own account only, checked against `PKEXEC_UID`); `.schedule`/`.cancel`: `auth_admin_keep` | Arguments only, cleared environment; `--root`/`--dir` refused through pkexec, `apply` refused through pkexec. New names are checked as root (syntax, not in use, not pending, not named by group member lists, sudo, polkit, sshd, access.conf or cron.allow rules, so that a rename cannot take over rights left for a name). The rename runs before logins with `usermod`/`groupmod`; every step is journaled with copies of the files and undone on failure or after a crash; sudoers drop-ins are checked with `visudo -c`. Logs to the authpriv syslog and `/var/log/sde-account-rename.log`. |
+| Fingerprint, "Use for" (`/usr/libexec/sde/sde-fingerprint-pam`, `docs/FINGERPRINT.md`) | `pkexec` from Control Center > Fingerprint (`set --sign-in on\|off --admin on\|off`) | polkit `org.debion.sde.fingerprint.configure`: `auth_admin_keep` | Only runs `pam-auth-update --enable/--disable` for the profiles `fprintd` (libpam-fprintd), `sde-fingerprint-sign-in` and `sde-fingerprint-admin` (arguments only, cleared environment, noninteractive debconf) and checks common-auth afterwards; pam-auth-update leaves hand-edited files alone, which is reported. `--root` is refused through pkexec. Logs to the authpriv syslog. Enrolling and deleting fingerprints are fprintd's own polkit actions (`net.reactivated.fprint.device.enroll`: the user's own password). |
 | Package scripts (`debian/*.postinst`) | dpkg | root | Network handover and repair at installation; backups in `/var/backups/debion-network/`; opt-out files documented in `docs/TROUBLESHOOTING.md`. |
 
 Session services that hold secrets or act for other programs:
@@ -78,9 +79,18 @@ Session services that hold secrets or act for other programs:
   accepted from logind itself; a rescue prompt appears when the lock screen
   keeps failing; Switch User hands over to the display manager's greeter
   (`dm-tool switch-to-greeter`) while the session stays locked. Nothing
-  about passwords is logged.
+  about passwords is logged. Fingerprints (`docs/FINGERPRINT.md`): fprintd's
+  Verify over D-Bus next to the password; a status counts only from the
+  unique bus name that answered the lock's Claim and for the claimed device,
+  a recognized finger unlocks only after the account stack of PAM service
+  `sde-lock-fingerprint`, and after five fingers that are not recognized only
+  the password unlocks. The reader stays claimed while locked, so that a
+  pam_fprintd in the password's stack cannot delay the password.
 - **sde-polkit-agent**: the session's polkit authentication agent. The typed
   password is overwritten in the input buffer after it is handed to polkit.
+  While pam_fprintd waits for a finger, a password may be typed ahead; it is
+  only given to an echo-off password prompt and is wiped when a finger
+  succeeds.
 - **sde-notifyd** (`org.freedesktop.Notifications`): bounds every field
   (summary, body, actions, image data); its history interface
   (`org.sde.Notifications`) refuses sandboxed callers (Flatpak, Snap).

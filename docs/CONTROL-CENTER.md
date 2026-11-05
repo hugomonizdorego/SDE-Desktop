@@ -143,6 +143,12 @@ The QA dump (`SDE_PANEL_QA_DIR`) lists the looks as `@appearance-applied`,
 `@appearance-pending` and `@appearance-preview` lines, and the preview
 writes `Appearance-Preview.txt`.
 
+## Fingerprint (0.2.0 Alpha 4)
+
+Enrolling fingers, testing and deleting them, and where the fingerprint is
+used (signing in, the lock screen, sudo and polkit): see
+[`FINGERPRINT.md`](FINGERPRINT.md).
+
 ## User accounts (Users & Avatar)
 
 The page shows your own account first: the picture (stock pictures, your
