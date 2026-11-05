@@ -249,7 +249,7 @@ overrides the directory.
 
 The new programs are system tools, not suite applications, so
 `data/suite.tsv` is unchanged (its row count stays 11). Packaging: they
-install with the main `sde` package through CMake; `pkexec` (polkitd) is
+install with SDE Core (package `sde-core`, docs/PACKAGING.md) through CMake; `pkexec` (polkitd) is
 already needed by SDE Update.
 
 ## SDE Panel: proposals for the panel owner

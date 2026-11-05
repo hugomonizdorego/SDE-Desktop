@@ -41,7 +41,7 @@ are being reviewed separately).
 | icon `sde-logo` (hicolor 16–512 px and scalable) | The mark as an icon; at 16, 22, 24 and 32 px a hand-simplified, pixel-aligned drawing of the same monitor (cream body, black outline, light screen, RGB stripes, portrait silhouette) | icon slots |
 
 They are installed to `/usr/share/sde/branding/` and
-`/usr/share/icons/hicolor/*/apps/sde-logo.{png,svg}` (package `sde`). The
+`/usr/share/icons/hicolor/*/apps/sde-logo.{png,svg}` (package `sde-core`). The
 About windows, Control Center → About and Welcome load `sde-logo`,
 `sde-logo-dark` (dark themes) and `sde-mark` from there — SVG before PNG,
 `$SDE_BRANDING_DIR` first — and fall back to the `sde-logo` icon.
@@ -74,7 +74,10 @@ Only in important places:
 - Control Center → About;
 - Welcome;
 - the SDE session entry of the login screen (`/usr/share/xsessions`,
-  `Icon=sde-logo`);
+  `Icon=sde-logo`) and its badge in Slick Greeter;
+- the bottom left corner of the login screen (Slick Greeter, package
+  `sde-desktop`): the 64 px `sde-logo` icon, i.e. the mark, because the full
+  logo needs 200 px and the corner is smaller;
 - the README.
 
 Panels, menus, launchers and dialogs use the application icons below, not the
@@ -157,8 +160,10 @@ Compatibility copies under old names that existing launchers still use:
 They are generated copies, not separate drawings.
 
 All of them are installed as hicolor icons at 16, 22, 24, 32, 48, 64, 128 and
-256 px (and 512 px for `sde-logo`) plus scalable SVG, in package `sde`
-(`merkadu` in package `merkadu`);
+256 px (and 512 px for `sde-logo`) plus scalable SVG, in package `sde-core`;
+each application's icon is in the application's package (`niny` in `niny`,
+`sde-photo` and `sdeview` in `sde-photo`, `merkadu` in `merkadu`, ...,
+docs/PACKAGING.md);
 dh_icons refreshes the icon cache on installation.
 
 ### Drawing rules
@@ -202,7 +207,7 @@ without real faces, square and drawn to look right inside a circle crop:
 
 Sources: `data/avatars/*.svg`, rendered at 256 × 256 px by
 `tools/render-icons.py`. The PNGs are installed to **`/usr/share/Avatar/`**
-(`${CMAKE_INSTALL_DATADIR}/Avatar`, package `sde`).
+(`${CMAKE_INSTALL_DATADIR}/Avatar`, package `sde-core`).
 
 ## Contact sheets
 

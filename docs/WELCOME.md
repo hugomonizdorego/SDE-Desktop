@@ -12,7 +12,7 @@ that ships SDE can make it its own without patching or rebuilding SDE.
 
 | Folder | Who writes it | What it is for |
 | --- | --- | --- |
-| `/usr/share/SDE-Welcome/` | the `sde` package | the defaults; replaced on every upgrade |
+| `/usr/share/SDE-Welcome/` | the `sde-core` package | the defaults; replaced on every upgrade |
 | `/etc/SDE-Welcome/` | the distribution or the administrator | changes; kept on upgrades, same layout, wins |
 | `$SDE_WELCOME_DIR` | anyone | one more folder searched first, to try changes out |
 
@@ -143,9 +143,9 @@ EOF
 install -m 755 install-codecs /etc/SDE-Welcome/scripts/install-codecs
 ```
 
-A package other than `sde` should put its files in `/etc/SDE-Welcome` (or
-add new names to `/usr/share/SDE-Welcome/steps/`), never overwrite the files
-of the `sde` package.
+A package other than `sde-core` should put its files in `/etc/SDE-Welcome`
+(or add new names to `/usr/share/SDE-Welcome/steps/`), never overwrite the
+files of the `sde-core` package.
 
 ## Translations
 

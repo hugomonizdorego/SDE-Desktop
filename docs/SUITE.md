@@ -1,5 +1,9 @@
 # SDE applications
 
+Since 0.2.0 Alpha 4 every SDE application is a Debian package of its own and
+SDE Core is the package `sde-core`; the native suite of GTK forks described
+below ended with Liria's Caja fork. See [PACKAGING.md](PACKAGING.md).
+
 Alpha6 builds eight native application forks from pinned upstream source. Their
 ELF executables, libraries, resources, schemas and helpers are included in the
 single `sde` binary package. Installing the original MATE application packages
@@ -513,24 +517,27 @@ notices under `/usr/share/doc/sde/upstream/<upstream>/`.
 
 ## Installation
 
-The supported full-suite target is **Debian testing**. Distributions that ship
-SDE, such as DebION GNU/Linux, should publish `sde` and `sde-desktop` in their own signed
-APT repository and seed `sde-desktop` in the installer:
+The supported target is **Debian testing**. Distributions that ship SDE, such
+as DebION GNU/Linux, should publish all SDE packages in their own signed APT
+repository and seed `sde-desktop` in the installer:
 
 ```sh
 sudo apt install sde-desktop
 ```
 
-`sde` contains the native suite. `sde-desktop` adds Xorg, login, network, audio,
-removable-media support, icons and GSettings. These are operating-system
+`sde-core` is the desktop and each application is a package of its own
+(`liria`, `xanara`, `niny`, `merkadu`, `sde-calculator`, `taca`, `sde-photo`,
+`sde-gallery`). `sde-desktop` installs them with GNOME Terminal, the LightDM
+login screen (Slick Greeter), Xorg, network, audio, removable-media support,
+icons and GSettings. These are operating-system
 services required for a complete DE. This project does not configure an APT
 repository. For local packages, let APT resolve dependencies:
 
 ```sh
-sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
+sudo apt install $(ls ./dist/*.deb | grep -v -e -dbgsym_ -e /debion-desktop-base_)
 ```
 
-Select SDE at the login screen. Debug-symbol packages are optional and are not
+Select SDE-Desktop at the login screen. Debug-symbol packages are optional and are not
 needed for normal installation. `dpkg -i` alone does not fetch missing libraries
 or system services; use `sudo apt --fix-broken install` to repair that state.
 

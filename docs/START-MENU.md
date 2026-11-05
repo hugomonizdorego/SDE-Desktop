@@ -228,7 +228,7 @@ Center's Default Applications draw an application with
 
 1. **Icon=** from the icon theme: the theme, its `Inherits=` parents,
    Adwaita, AdwaitaLegacy, hicolor, then **Papirus** for what none of them
-   has (Papirus is recommended by the sde package), then
+   has (Papirus is recommended by the sde-core package), then
    `/usr/share/pixmaps`. An absolute path is used when it exists.
 2. **Near matches** when the theme lacks Icon=: the name without a file
    extension, without `-symbolic`, in lower case and the last part of a

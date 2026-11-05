@@ -115,13 +115,13 @@ published with the binaries.
 | Program | Source | Authors | License | Installed notice directory |
 | --- | --- | --- | --- | --- |
 | Liria | fork of [caja](https://github.com/mate-desktop/caja) 1.28.0 | Nautilus authors (1999–2009), Caja authors (2011–2021), Eazel, Red Hat, GNOME and MATE contributors; Selviana DE Project (SDE changes) | GPL-2.0-or-later; its libraries eel and libcaja-extension LGPL-2.0-or-later | `sde/upstream/caja` |
-| Niny | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
-| Xanara | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
-| Taca | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
-| Photo (SDE View) | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
-| SDE System Monitor | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde` |
-| SDE Power | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde` |
-| SDE Screen Lock | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde` |
+| Niny | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `niny` |
+| Xanara | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `xanara` |
+| Taca | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `taca` |
+| Photo (SDE View) | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde-photo` |
+| SDE System Monitor | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `sde-core` |
+| SDE Power | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde-core` |
+| SDE Screen Lock | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde-core` |
 
 Until alpha14/alpha16 the programs written from scratch were forks of MATE
 applications; nothing of those forks remains. Directories in the last column

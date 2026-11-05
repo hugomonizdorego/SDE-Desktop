@@ -853,8 +853,8 @@ archive and Flathub (see `.github/workflows/build.yml`):
 ## Packaging
 
 The Debian source builds a separate binary package `merkadu` (Depends:
-`sde`, `packagekit`, `appstream`, `flatpak`, `curl`; Suggests: `snapd`);
-`sde-desktop` recommends it. It installs the conffile
+`packagekit`, `appstream`, `flatpak`, `curl`; Recommends: `sde-core`;
+Suggests: `snapd`); `sde-desktop` depends on it (docs/PACKAGING.md). It installs the conffile
 `/etc/apt/apt.conf.d/60merkadu` (the DEP-11 icon archives) and
 `/usr/share/merkadu/flathub.flatpakrepo`, and its `postinst` sets up
 Flathub ([above](#flathub)). `debian/rules` gives every path containing

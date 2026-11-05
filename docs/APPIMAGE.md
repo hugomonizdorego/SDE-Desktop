@@ -1,7 +1,7 @@
 # AppImages: run after verification
 
 The AppImage Runner (command `sde-appimage`, icon `sde-appimage`, package
-`sde`) runs AppImages with a double-click — without `chmod +x` — but only
+`sde-core`) runs AppImages with a double-click — without `chmod +x` — but only
 those it can verify. It is not in the Start menu (`sde-appimage.desktop` has
 `NoDisplay=true`); it opens when an AppImage is opened:
 
@@ -97,7 +97,7 @@ again:
 - **FUSE**: an AppImage mounts its own image with FUSE. That needs
   `/dev/fuse`, `fusermount3` or `fusermount` (packages fuse3 or fuse) and,
   for AppImages made before 2023 whose runtime loads it, `libfuse.so.2`
-  (package libfuse2t64; `sde` recommends both). When something is missing
+  (package libfuse2t64; `sde-core` recommends both). When something is missing
   the AppImage runs with `APPIMAGE_EXTRACT_AND_RUN=1`: it extracts itself to
   a temporary folder first (slower, but it works).
 - The arguments are passed on, and the exit status is the application's.
