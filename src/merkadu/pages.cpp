@@ -1627,6 +1627,197 @@ void build_sources(Page *page) {
   page->finish();
 }
 
+// ------------------------------------------------------------- storage
+
+// "~/.var/app" for a path in the home folder.
+std::string home_path(const std::string &path) {
+  std::string home = home_dir();
+  if (path == home) return "~";
+  if (starts_with(path, home + "/")) return "~" + path.substr(home.size());
+  return path;
+}
+
+// "Kart Rally 2.0 (40), 960 MB; ..." of |items| (at most |max|).
+std::string item_list(const std::vector<std::pair<std::string, long long>> &items, size_t max = 4) {
+  std::string out;
+  for (size_t i = 0; i < items.size() && i < max; ++i) {
+    if (!out.empty()) out += "; ";
+    out += items[i].first;
+    if (items[i].second > 0) out += ", " + format_size(items[i].second);
+  }
+  if (items.size() > max)
+    out += "; " + format(ngettext("and %d more", "and %d more", int(items.size() - max)), int(items.size() - max));
+  return out;
+}
+
+// "GNOME Platform 45", "Kart Rally 2.0 (40)".
+std::string entry_label(const StorageEntry &e) {
+  if (e.version.empty() || e.name.find(e.version) != std::string::npos) return e.name;
+  return e.name + " " + e.version;
+}
+
+void confirm_clean_up() {
+  Store &st = Store::get();
+  const StorageInfo &si = st.storage();
+  std::vector<std::pair<std::string, long long>> runtimes, revisions, leftovers;
+  for (auto &e : si.entries) {
+    if (!e.unused) continue;
+    (e.source == Source::Flatpak ? runtimes : revisions).push_back({entry_label(e), e.size});
+  }
+  for (auto &d : si.data)
+    if (!d.installed) leftovers.push_back({home_path(d.path), d.size});
+  if (runtimes.empty() && revisions.empty() && leftovers.empty()) return;
+  std::string text = format(_("Free %s?"), format_size(si.cleanable()).c_str()) + "\n";
+  if (!runtimes.empty()) text += "\n" + std::string(_("Runtimes no app needs:")) + " " + item_list(runtimes);
+  if (!revisions.empty())
+    text += "\n" + std::string(_("Old revisions snapd keeps:")) + " " + item_list(revisions);
+  if (!leftovers.empty()) {
+    text += "\n" + std::string(_("Data of removed apps:")) + " " + item_list(leftovers);
+    text += "\n\n" + std::string(_("The data of removed apps is deleted for good: their settings and files."));
+  }
+  if (!runtimes.empty() || !revisions.empty())
+    text += "\n" + std::string(_("Removing runtimes and revisions may ask for the administrator password."));
+  fl_message_title(_("Clean Up"));
+  if (fl_choice("%s", _("Cancel"), _("Clean Up"), nullptr, text.c_str()) != 1) return;
+  int jobs = st.clean_up();
+  if (jobs > 0) navigate(View{View::Progress, ""});
+}
+
+void build_storage(Page *page) {
+  Store &st = Store::get();
+  const StorageInfo &si = st.storage();
+  if (!si.loaded && !si.loading) st.load_storage();
+  page->heading(_("Storage"), _("What the apps of Flatpak and Snap keep on this computer"));
+  if (!si.loaded) {
+    notice(page, "storage-loading", _("Measuring what the apps keep…"), 0, true);
+    page->finish();
+    return;
+  }
+  if (!si.error.empty()) notice(page, "storage-error", si.error, 2);
+  qa_line(format("@storage:cleanable=%lld,count=%d,folder=%d,flatpak=%d,snap=%d", si.cleanable(),
+                 si.cleanable_count(), si.folder.exists ? 1 : 0, si.folder.flatpak ? 1 : 0, si.folder.snap ? 1 : 0),
+          0, 0, 0, 0);
+  // Clean Up.
+  std::vector<std::pair<std::string, long long>> runtimes, revisions, leftovers;
+  for (auto &e : si.entries)
+    if (e.unused) (e.source == Source::Flatpak ? runtimes : revisions).push_back({entry_label(e), e.size});
+  for (auto &d : si.data)
+    if (!d.installed) leftovers.push_back({d.id, d.size});
+  page->begin_card(_("Clean Up"));
+  if (si.cleanable_count() == 0) {
+    page->note(_("Nothing to clean up: every runtime is used by an app, snapd keeps no old revision and no removed "
+                 "app left its data behind."));
+  } else {
+    page->note(format(_("%s can be freed. The installed apps and your files stay as they are."),
+                      format_size(si.cleanable()).c_str()));
+    if (!runtimes.empty()) info_row(page, _("Unused runtimes"), item_list(runtimes));
+    if (!revisions.empty()) info_row(page, _("Old revisions"), item_list(revisions));
+    if (!leftovers.empty()) info_row(page, _("Data of removed apps"), item_list(leftovers));
+    page->advance(S(4));
+    Button *b = button(page->left() + S(20), page->cursor(), _("Clean Up…"), Button::Primary, confirm_clean_up);
+    qa_line("action:storage:clean-up", b->x(), b->y(), b->w(), b->h());
+    page->advance(S(34) + S(6));
+  }
+  page->end_card();
+  // The Merkadu folder.
+  const FolderState &f = si.folder;
+  page->begin_card(_("The Merkadu Folder"));
+  page->note(_("One place in your home folder for the data of your Flatpak apps and snaps. Its Flatpak and Snap "
+               "folders are links to where Flatpak and snapd keep the data, which stays there: they find it only "
+               "there, and snapd allows its snaps to write nowhere else."));
+  info_row(page, _("Folder"), f.exists ? home_path(st.storage().paths.folder) : std::string(_("Not made")));
+  if (f.exists) {
+    info_row(page, "Flatpak", f.flatpak ? format(_("a link to %s"), home_path(si.paths.flatpak_data).c_str())
+                                        : std::string(_("missing")));
+    info_row(page, "Snap",
+             f.snap ? format(_("a link to %s"), home_path(f.snap_target).c_str())
+                    : std::string(_("comes with the first snap (snapd makes its folder then)")));
+  }
+  page->advance(S(4));
+  int bx = page->left() + S(20);
+  if (f.exists) {
+    Button *open = button(bx, page->cursor(), _("Open the Folder"), Button::Primary, [] {
+      spawn_detached({"xdg-open", Store::get().storage().paths.folder});
+    });
+    qa_line("action:storage:open-folder", open->x(), open->y(), open->w(), open->h());
+    bx += open->w() + S(10);
+    Button *rm = button(bx, page->cursor(), _("Remove the Folder"), Button::Normal, [] {
+      std::string error;
+      if (!Store::get().remove_merkadu_folder(error)) fl_alert("%s", error.c_str());
+    });
+    qa_line("action:storage:remove-folder", rm->x(), rm->y(), rm->w(), rm->h());
+  } else {
+    Button *mk = button(bx, page->cursor(), _("Make the Merkadu Folder"), Button::Primary, [] {
+      std::string error;
+      if (!Store::get().make_merkadu_folder(error)) fl_alert("%s", error.c_str());
+    });
+    qa_line("action:storage:make-folder", mk->x(), mk->y(), mk->w(), mk->h());
+  }
+  page->advance(S(34) + S(10));
+  page->note(_("Removing the folder removes only the links. Deleting the folder of an app in Flatpak or Snap "
+               "deletes that app's settings and files."));
+  page->end_card();
+  // Each source: the apps, their size and the size of their data.
+  for (Source src : {Source::Flatpak, Source::Snap}) {
+    std::map<std::string, long long> data;
+    std::vector<const DataDir *> left;
+    long long data_total = 0;
+    for (auto &d : si.data) {
+      if (d.source != src) continue;
+      if (d.size > 0) data_total += d.size;
+      if (d.installed) data[d.id] += std::max(0LL, d.size);
+      else left.push_back(&d);
+    }
+    long long apps_total = 0, runtime_total = 0;
+    int apps = 0, runtimes_n = 0;
+    std::vector<const StorageEntry *> rows;
+    for (auto &e : si.entries) {
+      if (e.source != src || e.size < 0) continue;
+      if (e.kind == "app") {
+        ++apps;
+        apps_total += e.size;
+        rows.push_back(&e);
+      } else if (e.kind == "runtime") {
+        ++runtimes_n;
+        runtime_total += e.size;
+      } else {
+        runtime_total += e.size;  // old revisions
+      }
+    }
+    if (!si.complete[int(src)] && rows.empty() && data.empty() && left.empty()) continue;
+    page->begin_card(src == Source::Flatpak ? "Flatpak" : "Snap");
+    if (src == Source::Flatpak) {
+      info_row(page, _("Apps"), format("%s, %s", apps_count(size_t(apps)).c_str(), format_size(apps_total).c_str()));
+      info_row(page, _("Runtimes"),
+               format(ngettext("%d runtime, %s", "%d runtimes, %s", runtimes_n), runtimes_n,
+                      format_size(runtime_total).c_str()));
+      info_row(page, _("Your data"), format(_("%s in %s"), format_size(data_total).c_str(),
+                                            home_path(si.paths.flatpak_data).c_str()));
+    } else {
+      info_row(page, _("Snaps"), format("%s, %s", apps_count(size_t(apps)).c_str(), format_size(apps_total).c_str()));
+      if (runtime_total > 0) info_row(page, _("Old revisions"), format_size(runtime_total));
+      std::string where = dir_exists(si.paths.snap_hidden) ? si.paths.snap_hidden : si.paths.snap_data;
+      info_row(page, _("Your data"), format(_("%s in %s"), format_size(data_total).c_str(), home_path(where).c_str()));
+    }
+    std::sort(rows.begin(), rows.end(), [](const StorageEntry *a, const StorageEntry *b) { return a->size > b->size; });
+    for (const StorageEntry *e : rows) {
+      auto d = data.find(e->id);
+      std::string value = format(_("app %s"), format_size(e->size).c_str());
+      if (d != data.end()) value += " · " + format(_("your data %s"), format_size(d->second).c_str());
+      info_row(page, e->name, value);
+      qa_line("storage:app:" + e->id, page->left(), page->cursor() - S(30), page->width(), S(24));
+    }
+    for (const DataDir *d : left) {
+      info_row(page, d->id, format(_("%s, left behind by a removed app"), format_size(d->size).c_str()));
+      qa_line("storage:left:" + d->id, page->left(), page->cursor() - S(30), page->width(), S(24));
+    }
+    page->end_card();
+  }
+  page->note(_("Installed apps are kept for every user in /var/lib/flatpak and /var/lib/snapd; their folders cannot "
+               "move (Flatpak and snapd find them only there)."));
+  page->finish();
+}
+
 }  // namespace
 
 void enable_snap_support() { enable_snap(); }
@@ -1652,6 +1843,7 @@ std::string view_title(const View &v) {
     case View::Packages: return packages_title(v.arg);
     case View::Package: return v.arg;
     case View::Changes: return _("Review Changes");
+    case View::Storage: return _("Storage");
     default: return _("Home");
   }
 }
@@ -1669,6 +1861,7 @@ void build_page(Page *page, const View &v) {
     case View::Packages: build_packages_page(page, v.arg); break;
     case View::Package: build_package_page(page, v.arg); break;
     case View::Changes: build_changes_page(page); break;
+    case View::Storage: build_storage(page); break;
     default: build_explore(page); break;
   }
 }

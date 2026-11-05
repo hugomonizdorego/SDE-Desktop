@@ -3,7 +3,7 @@
 //
 // merkadu: the SDE software center (docs/MERKADU.md, man merkadu).
 //
-//   merkadu [--page home|installed|updates|packages|history|progress|sources]
+//   merkadu [--page home|installed|updates|packages|history|progress|sources|storage]
 //           [--search TEXT] [--category ID] [--details APPID] [--package NAME]
 //   merkadu --self-test [--expect REF,...] [--expect-flatpak N] [--list]
 //   merkadu appstream://APPID
@@ -65,7 +65,7 @@ std::string usage() {
            "       merkadu --uninstall FILE.desktop\n"
            "       merkadu --version\n\n"
            "  --page NAME       open a page: home, installed, updates, packages (All Software),\n"
-           "                    history, progress or sources\n"
+           "                    history, progress, sources or storage\n"
            "  --search TEXT     search for apps\n"
            "  --category ID     open a department (games, graphics/photography, ...)\n"
            "  --details APPID   open the page of an app (its AppStream id, e.g. org.gimp.GIMP)\n"
