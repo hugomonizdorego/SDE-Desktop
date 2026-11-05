@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Slick Greeter, the login screen of SDE-Desktop (package sde-desktop,
+# docs/PACKAGING.md): SDE Graphite Dark with Papirus, the SDE mark at the
+# bottom left (the full logo needs 200 px, more than that corner has) and
+# the login background of the active desktop-base theme: DebION's with
+# debion-desktop-base, the distribution's otherwise. Slick Greeter reads
+# these defaults through GSettings; a key in /etc/lightdm/slick-greeter.conf
+# (Login Window, lightdm-settings, writes that file) replaces the same key
+# here.
+[x.dm.slick-greeter]
+background='/usr/share/desktop-base/active-theme/login/background.svg'
+background-color='#262628'
+draw-grid=false
+logo='/usr/share/icons/hicolor/64x64/apps/sde-logo.png'
+theme-name='SDE-Graphite-Dark-Blue'
+icon-theme-name='Papirus-Dark'
+font-name='Sans 10'
+clock-format='%A, %d %B  %H:%M'

@@ -1,2 +1,2 @@
-data/lightdm/50-sde-desktop.conf usr/share/lightdm/lightdm.conf.d/
-data/lightdm/50-sde-desktop-greeter.conf usr/share/lightdm/lightdm-gtk-greeter.conf.d/
+data/lightdm/90-sde-desktop.conf usr/share/lightdm/lightdm.conf.d/
+data/lightdm/40_sde-desktop.gschema.override usr/share/glib-2.0/schemas/
