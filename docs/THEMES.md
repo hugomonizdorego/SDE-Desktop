@@ -50,7 +50,17 @@ the interface and has `radius_for(h)` for slim controls. They reach:
   the `.rubberband` class on the view itself (Liria, Nemo, Thunar, desktop
   icons), where the layer's view colour had made it an opaque sheet; and
   the layer no longer has a `:not()` with a compound selector, which
-  GTK 3 rejected with a parsing warning in every application.
+  GTK 3 rejected with a parsing warning in every application. Since 0.2.0
+  Alpha 4 links follow the accent in GTK 3 and GTK 4 (`@sde_link`, the
+  accent moved towards the text colour until it keeps 4.5:1, and
+  `@sde_link_visited`, a quieter shade of it): Graphite's Material blue and
+  purple, with more specific selectors, had kept links blue whatever the
+  accent. SDE Fluent's libadwaita layer, which SDE imports into
+  `~/.config/gtk-4.0/gtk.css` and so reaches every GTK 4 application above
+  the theme, ends with an opaque window, the header bar in the title bar
+  colour and SDE's caption buttons: Flat Remix's own part of it had an
+  80 % opaque header band under a transparent header bar (the desktop
+  showed through behind the title) and orange, blue and red caption discs.
 * Qt applications use the GTK palette (`QT_QPA_PLATFORMTHEME=gtk3`, set by
   `startsde` and `sde-session`).
 
@@ -354,15 +364,23 @@ Selviana wallpaper of the mode), so a new picture reaches every program
 with the configuration change that brings it: the Control Center's
 Wallpaper card, Gallery's and Photo's Set as Wallpaper, the switch to dark
 mode with the automatic wallpaper, and a slideshow, which sets
-[appearance] wallpaper and announces the change like they do. The session
-then rewrites the compositor's shaders with the new keys (reloaded in
-place). The colours are cached per picture (path, size and modification
-time, so a picture replaced under the same name is measured again) in
-`~/.cache/sde/wallpaper-colors`, under a lock: of the programs that follow
-one change, the first measures the picture and the others read its entry.
-Gallery and Photo measure it before they announce the change
-(`prepare_wallpaper_colors()`), the Control Center when it themes itself,
-also before.
+[appearance] wallpaper and announces the change like they do
+(`announce_wallpaper_change()`). With the colours in use a new wallpaper
+is a change of the look, and it changes like one: the picture is measured
+first, then the session switches every program in its one calm step
+(below, "Switching themes"), so the panel's new tint does not come before
+the desktop has drawn the new picture, and in Liquid Glass the surfaces do
+not show their new colours under the compositor's old keys (they would
+count as content and turn opaque until the compositor had reloaded, in
+place, with the new shaders). Without the colours in use, or without a
+session, a wallpaper applies at once as before. The colours are cached per
+picture (path, size and modification time, so a picture replaced under the
+same name is measured again) in `~/.cache/sde/wallpaper-colors`, under a
+lock, so the programs that follow a change read the entry the first one
+wrote. Measuring takes, once per picture, about 6 ms of CPU for the
+Selviana SVG, 16 ms for a 4K desktop-base SVG, 40 ms for a 4K and 90 ms for
+an 8K JPEG (libjpeg decodes them at an eighth), 0.2 s for a 4K PNG photo
+(inflating it is most of that), and a cached lookup 0.02 ms.
 
 **For other programs**: `wallpaper_colors_of_pixels()` measures pixels
 already in memory and `wallpaper_colors(path)` a file (cached); both
@@ -582,3 +600,27 @@ then jumped. Now the screen stays as it was until it fades to the new look
 (with XRender at most 0.01 % of the screen shows anything else, with
 software OpenGL the switch is a single frame), the compositor keeps its
 process, and an accent change does not touch it.
+
+## Smoothness and weak GPUs (0.2.0 Alpha 4)
+
+What was checked for stutter and banding, and what the new colours cost:
+
+* **A new wallpaper with its colours in use** is one calm step (see
+  Wallpaper colours): before, the panel took the new tint at once, before
+  the desktop showed the new picture, and Liquid Glass surfaces could turn
+  opaque for a moment until the compositor had the new keys.
+* **Banding.** The tint is a flat colour, without gradients. SDE's own
+  gradients (the glass sheen without the compositor's shader, the light
+  rims) step by one 8-bit level every 4 px at most (the dark glass sheen;
+  the light one every 40 px), too fine to show as bands; the Liquid Glass
+  shader dithers by one 8-bit step. Nothing needed to change.
+* **The Transparency slider** changes only the chosen look while it is
+  dragged: the miniature and the Preview window keep their blurred
+  backdrop, cached per blur strength, and nothing is written or reloaded
+  until Apply (0.2.0 Alpha 3.1).
+* **Cost.** The tint costs nothing while drawing: it is in the colours.
+  The glass shader's third key adds three subtractions and a comparison
+  per pixel, no pass and no blur. `Theme::from_config()` finds the
+  wallpaper's colours in 0.02 ms (a cached lookup); a picture is measured
+  once, by the program that sets it (about 6 to 90 ms of CPU for SVG and
+  JPEG wallpapers, 0.2 s for a 4K PNG photo).
