@@ -44,7 +44,9 @@ jobs:
         run: sh tools/build-deb.sh --suffix "$SUFFIX" dist
       - name: Install and smoke test
         run: |
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ./dist/sde_*.deb
+          # SDE Core, the applications and the transitional sde (docs/PACKAGING.md).
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            $(ls ./dist/*.deb | grep -v -e '-dbgsym_' -e '/sde-desktop_' -e '/debion-desktop-base_')
           for p in sde-session sde-panel sde-desktop sde-notifyd sde-settings sde-run sde-logout sde-autostart sde-suite sde-update; do
             "$p" --version
           done
@@ -57,8 +59,12 @@ jobs:
         run: |
           version=$(cat VERSION | tr '~' '-')
           mkdir -p out
-          cp dist/sde_*_amd64.deb "out/sde_${version}_${DISTRO}_amd64.deb"
-          cp dist/sde-desktop_*_all.deb "out/sde-desktop_${version}_${DISTRO}_all.deb"
+          # Every package (sde-core, the applications, sde-desktop, sde,
+          # debion-desktop-base and the -dbgsym debug symbols).
+          for f in dist/*.deb; do
+            b=$(basename "$f" .deb)
+            cp "$f" "out/${b%%_*}_${version}_${DISTRO}_${b##*_}.deb"
+          done
           cp dist/*sources*.tar.xz out/
       - uses: actions/upload-artifact@v7
         with:
@@ -95,11 +101,11 @@ jobs:
             echo "| --- | --- |"
             for f in artifacts/*.deb; do
               b=$(basename "$f")
-              d=$(echo "$b" | sed -E 's/^sde(-desktop)?_[^_]+_([^_]+)_(amd64|all)\.deb$/\2/')
+              d=$(echo "$b" | sed -E 's/^[^_]+_[^_]+_([^_]+)_(amd64|all)\.deb$/\1/')
               echo "| $d | \`$b\` |"
             done
             echo
-            echo "Install the matching pair with \`sudo apt install ./sde_<version>_<distro>_amd64.deb ./sde-desktop_<version>_<distro>_all.deb\` and choose **SDE** at the login screen."
+            echo "Download the packages of your distribution without \`-dbgsym\` (debug symbols) and \`debion-desktop-base\` (DebION only) into an empty folder, install them with \`sudo apt install ./*.deb\` and choose **SDE-Desktop** at the login screen."
             echo "Verify downloads with \`sha256sum -c SHA256SUMS --ignore-missing\`."
           } >> notes.md
       - name: Publish
