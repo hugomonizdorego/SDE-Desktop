@@ -9,6 +9,15 @@
 // The agent registers a PolkitAgentListener for the current session; each
 // request runs a PolkitAgentSession that talks to polkit's setuid helper.
 // GLib's main loop drives polkit; FLTK events are handled from it.
+//
+// Fingerprints (docs/FINGERPRINT.md): when common-auth asks pam_fprintd
+// first, its "Place your finger on the fingerprint reader" arrives as an
+// info message before any prompt. The dialog shows it with a fingerprint
+// symbol and lets the password be typed meanwhile: PAM asks for the
+// password only once pam_fprintd gives up (a finger that does not match,
+// or its timeout), and a password typed and confirmed before is then
+// answered at once (to an echo-off password prompt only, never to another
+// module's question).
 #define POLKIT_AGENT_I_KNOW_API_IS_SUBJECT_TO_CHANGE 1
 #include <FL/Fl.H>
 #include <FL/Fl_Box.H>
@@ -31,6 +40,7 @@
 #include "about.h"
 #include "build_config.h"
 #include "config.h"
+#include "fprint.h"
 #include "glyphs.h"
 #include "i18n.h"
 #include "paint.h"
@@ -57,7 +67,18 @@ class Dialog : public Fl_Double_Window {
          const std::vector<std::string> &users, int selected);
   void prompt(const std::string &text, bool echo);
   void error(const std::string &text);
+  // A module's message (pam_fprintd: "Place your finger..."): shown in the
+  // text color; while no prompt is open the password can be typed ahead.
+  void info(const std::string &text);
   void busy(bool on);
+  // PAM asks now (a prompt is open), or a module works (the fingerprint
+  // reader waits) and Enter only keeps the password for the next prompt.
+  bool prompt_open() const { return prompt_open_; }
+  void prompt_answered() { prompt_open_ = ahead_ = false; }
+  void type_ahead();
+  // A password was typed ahead and confirmed: answer the next password
+  // prompt with it.
+  bool typed_ahead() const { return ahead_; }
   std::string password() const { return input_->value(); }
   void clear_password() {
     // value(text, n) copies |text| over the input's own buffer (which holds
@@ -76,6 +97,8 @@ class Dialog : public Fl_Double_Window {
   Fl_Secret_Input *input_;
   FlatButton *ok_, *cancel_;
   std::string message_text_, details_text_, prompt_text_ = "Password:", error_text_;
+  bool prompt_open_ = false, ahead_ = false;
+  bool finger_ = false;  // the badge shows a fingerprint
 };
 
 // ----------------------------------------------------------------- request
@@ -121,6 +144,8 @@ void finish(Request *r, bool gained) {
   }
   if (r->cancel_handler) g_cancellable_disconnect(r->cancellable, r->cancel_handler);
   if (r->dialog) {
+    // A password typed ahead while a finger was recognized: wiped too.
+    r->dialog->clear_password();
     // Deleted later: this may run inside one of the dialog's callbacks.
     r->dialog->hide();
     Fl::delete_widget(r->dialog.release());
@@ -139,18 +164,29 @@ void finish(Request *r, bool gained) {
   start_next();
 }
 
+// PAM's password prompt (pam_unix's "Password: ", in English or in
+// Linux-PAM's translation), not another module's question.
+bool password_prompt(const std::string &text) {
+  if (starts_with(lower(trim(text)), "password")) return true;
+  const char *pam = dgettext("Linux-PAM", "Password: ");
+  return pam && !trim(text).empty() && trim(text) == trim(pam);
+}
+
 void on_request(PolkitAgentSession *, const gchar *text, gboolean echo, gpointer data) {
   auto *r = static_cast<Request *>(data);
   std::string t = text ? text : "";
+  bool answer = r->dialog->typed_ahead() && !echo && password_prompt(t);
   // PAM asks "Password: "; show it translated when it is that prompt.
   if (starts_with(lower(trim(t)), "password")) t = _("Password:");
   r->dialog->prompt(trim(t), echo);
+  // The password typed while the fingerprint reader was waiting.
+  if (answer) respond(r);
 }
 void on_error(PolkitAgentSession *, const gchar *text, gpointer data) {
   static_cast<Request *>(data)->dialog->error(text ? text : "");
 }
 void on_info(PolkitAgentSession *, const gchar *text, gpointer data) {
-  static_cast<Request *>(data)->dialog->error(text ? text : "");
+  static_cast<Request *>(data)->dialog->info(text ? text : "");
 }
 
 void start_session(Request *r);
@@ -171,6 +207,7 @@ void on_completed(PolkitAgentSession *, gboolean gained, gpointer data) {
 }
 
 void start_session(Request *r) {
+  r->dialog->prompt_answered();  // a new conversation: nothing asked yet
   r->session = polkit_agent_session_new(r->identities[size_t(r->selected)], r->cookie.c_str());
   g_signal_connect(r->session, "request", G_CALLBACK(on_request), r);
   g_signal_connect(r->session, "show-error", G_CALLBACK(on_error), r);
@@ -183,8 +220,15 @@ void start_session(Request *r) {
 void respond(Request *r) {
   if (!r) exit(0);  // --preview
   if (!r->session) return;
+  if (!r->dialog->prompt_open()) {
+    // A module (the fingerprint reader) still works: the password waits
+    // for PAM's password prompt.
+    r->dialog->type_ahead();
+    return;
+  }
   std::string pw = r->dialog->password();
   r->dialog->clear_password();
+  r->dialog->prompt_answered();
   r->dialog->busy(true);
   r->dialog->error("");
   polkit_agent_session_response(r->session, pw.c_str());
@@ -323,10 +367,14 @@ void Dialog::draw() {
   Fl_Double_Window::draw();
   const Theme &t = active_theme();
   Painter p(w(), h());
-  // A round badge with a lock: this dialog asks for a password.
+  // A round badge with a lock: this dialog asks for a password (or with a
+  // fingerprint while the reader waits for a finger).
   double cx = S(24), cy = S(22), size = S(44);
   p.fill_rounded(cx, cy, size, size, size / 2, t.accent.alpha(0.16));
-  glyph::lock(p, cx + S(10), cy + S(10), S(24), t.accent);
+  if (finger_)
+    fprint::draw_glyph(p, cx + S(9), cy + S(9), S(26), t.accent);
+  else
+    glyph::lock(p, cx + S(10), cy + S(10), S(24), t.accent);
   p.line(0, h() - S(72) + 0.5, w(), h() - S(72) + 0.5, t.border);
   p.flush();
 }
@@ -340,6 +388,8 @@ int Dialog::handle(int e) {
 }
 
 void Dialog::prompt(const std::string &text, bool echo) {
+  prompt_open_ = true;
+  finger_ = false;
   prompt_text_ = text.empty() ? _("Password:") : text;
   prompt_->label(prompt_text_.c_str());
   // Echo-on prompts (rare, e.g. a one-time code) are shown in plain text.
@@ -352,6 +402,34 @@ void Dialog::prompt(const std::string &text, bool echo) {
 void Dialog::error(const std::string &text) {
   error_text_ = text;
   error_->label(error_text_.c_str());
+  error_->labelcolor(active_theme().error.fl());
+  redraw();
+}
+
+void Dialog::info(const std::string &text) {
+  error_text_ = text;
+  error_->label(error_text_.c_str());
+  error_->labelcolor(active_theme().text.fl());
+  if (lower(text).find("finger") != std::string::npos) finger_ = true;
+  if (!prompt_open_ && !ahead_) {
+    // A module works without a prompt (pam_fprintd waits for a finger):
+    // the password can be typed meanwhile.
+    prompt_text_ = _("Or type your password:");
+    prompt_->label(prompt_text_.c_str());
+    input_->type(FL_SECRET_INPUT);
+    busy(false);
+    input_->take_focus();
+  }
+  redraw();
+}
+
+void Dialog::type_ahead() {
+  if (input_->size() == 0) return;
+  ahead_ = true;
+  busy(true);
+  error_text_ = _("The password is checked as soon as the fingerprint reader stops waiting.");
+  error_->label(error_text_.c_str());
+  error_->labelcolor(active_theme().text_dim.fl());
   redraw();
 }
 
@@ -453,6 +531,14 @@ int main(int argc, char **argv) {
     d.show();
     d.prompt(_("Password:"), false);
     d.error(_("Sorry, that did not work. Please try again."));
+    return Fl::run();
+  }
+  if (argc > 1 && !strcmp(argv[1], "--preview-fingerprint")) {
+    // The same while pam_fprintd waits for a finger (its own message).
+    Dialog d(nullptr, _("Authentication is required to install software updates."),
+             "org.freedesktop.packagekit.system-update", {"Example User (user)"}, 0);
+    d.show();
+    d.info("Place your finger on the fingerprint reader");
     return Fl::run();
   }
 
