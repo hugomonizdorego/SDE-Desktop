@@ -221,6 +221,9 @@ add_test(NAME sde-fingerprint-pam COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_
   $<TARGET_FILE:sde-fingerprint-pam>)
 set_tests_properties(sde-fingerprint-pam PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 if(SDE_XVFB)
+  add_test(NAME sde-fingerprint-lock COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_lock_fingerprint.py
+    $<TARGET_FILE:sde-lock-ui-fixture> $<TARGET_FILE:sde-fake-fprintd>)
+  set_tests_properties(sde-fingerprint-lock PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
   add_test(NAME sde-fingerprint-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_fingerprint_ui.py
     $<TARGET_FILE:sde-settings> $<TARGET_FILE:sde-fake-fprintd> $<TARGET_FILE:sde-fingerprint-pam>)
   set_tests_properties(sde-fingerprint-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
