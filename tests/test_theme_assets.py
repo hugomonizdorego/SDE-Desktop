@@ -2,9 +2,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """tools/build-themes.py moves Graphite's accent-colored PNG assets (the
 sliders of scales with marks, the checked selection-mode check box) to the
-SDE accent (0.2.0); the other assets and every other byte stay as they are."""
+SDE accent (0.2.0); the other assets and every other byte stay as they are.
+0.2.0 Alpha 4: GTK links follow the accent and keep 4.5:1, and Fluent's
+libadwaita layer keeps GTK 4 windows opaque with SDE's caption buttons."""
 import importlib.util
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -119,6 +122,50 @@ class GraphiteAccentAssets(unittest.TestCase):
                             ('selectionmode-checkbox-checked.png', light)):
                 colors = [c[:3] for c in bt.png_palette((work / name).read_bytes()) if c[3] == 255]
                 self.assertIn(rgb(t['accent']), colors, (accent, name))
+
+
+class LinksAndWindows(unittest.TestCase):
+    """0.2.0 Alpha 4: GTK links follow the accent and keep 4.5:1; Fluent's
+    libadwaita layer (imported for every GTK 4 application) keeps windows
+    opaque and SDE's caption buttons."""
+
+    def test_links_follow_the_accent(self):
+        pal = bt.load_palettes()
+        for fam in pal['families']:
+            for mode in ('light', 'dark'):
+                for accent in pal['accents']:
+                    text, t = bt.css_tokens(pal, fam, mode, accent)
+                    link = re.search(r'@define-color sde_link (#[0-9A-F]{6});', text).group(1)
+                    visited = re.search(r'@define-color sde_link_visited (#[0-9A-F]{6});', text).group(1)
+                    what = (fam, mode, accent)
+                    for c in (link, visited):
+                        self.assertGreaterEqual(bt.contrast(c, t['surface']), 4.5, what)
+                        self.assertGreaterEqual(bt.contrast(c, t['background']), 4.5, what)
+                    # The accent itself, or it moved towards the text colour.
+                    steps = [t['accent']] + [bt.mix(t['accent'], t['text'], i * 0.05) for i in range(1, 21)]
+                    self.assertIn(link, steps, what)
+                    self.assertNotEqual(link, visited, what)
+
+    def test_link_rules_outweigh_the_upstream_ones(self):
+        for gtk in ('gtk-3.0', 'gtk-4.0'):
+            css = (ROOT / 'data/themes/overlays' / f'soft-{gtk}.css').read_text()
+            for selector in ('button.link:link:hover', 'button.link:link:active', 'button.link:visited:hover',
+                             '*:link', '*:visited'):
+                self.assertIn(selector, css, gtk)
+            self.assertIn('color: @sde_link;', css)
+            self.assertIn('color: @sde_link_visited;', css)
+
+    def test_fluent_libadwaita_window(self):
+        css = bt.FLUENT_LIBADWAITA_WINDOW
+        self.assertIn('window.background { background: @window_bg_color; }', css)
+        self.assertIn('window.background headerbar { background-color: @headerbar_bg_color;', css)
+        built = ROOT / 'build/themes/SDE-Fluent-Light-Blue/libadwaita/gtk.css'
+        if built.exists():
+            text = built.read_text()
+            # After Flat Remix's own rules: its gradient and coloured discs lose.
+            self.assertGreater(text.rfind('window.background { background: @window_bg_color; }'),
+                               text.find('linear-gradient(to bottom, alpha(@headerbar_bg_color'))
+            self.assertGreater(text.find('window windowcontrols > button'), text.find('windowcontrols button.close image'))
 
 
 if __name__ == '__main__':

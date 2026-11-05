@@ -48,6 +48,12 @@ tooltip, tooltip.background {
   box-shadow: none;
 }
 text selection, label selection, .view:selected, row:selected { background-color: @sde_accent; color: @sde_on_accent; }
+/* Links (0.2.0 Alpha 4): the accent as text (4.5:1) and a quieter shade for
+ * visited links, over Graphite's own Material blue and purple. */
+link, *:link, button.link, button.link:link, button.link:link:focus, button.link:link:hover,
+button.link:link:active { color: @sde_link; }
+link:visited, *:visited, button.link:visited, button.link:visited:focus, button.link:visited:hover,
+button.link:visited:active { color: @sde_link_visited; }
 
 /* ---------------------------------------------------------- corners */
 
