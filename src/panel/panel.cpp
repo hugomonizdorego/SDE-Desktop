@@ -67,6 +67,10 @@ Panel::Panel() : sde::BufferedWindow(0, 0, 800, 40, "SDE Panel") {
   end();
   border(0);
   resizable(nullptr);
+  // Tray icons are windows of other programs inside the panel: the panel
+  // leaves touches to the X server, which sends them mouse events (taps on
+  // the panel are clicks). Its popups take the touches (docs/TOUCH.md).
+  touch_events(false);
   load_config();
   place_on_screen();
   menu_.reset(new AppMenu());
@@ -250,14 +254,16 @@ void Panel::setup() {
 
   input_display_ = XOpenDisplay(nullptr);
   if (input_display_) {
-    int event, error, major = 2, minor = 0;
+    // 2.2: a finger on a touch screen closes popups too (raw touch events).
+    int event, error, major = 2, minor = 2;
     if (!XQueryExtension(input_display_, "XInputExtension", &input_opcode_, &event, &error) ||
         XIQueryVersion(input_display_, &major, &minor) != Success) {
       XCloseDisplay(input_display_);
       input_display_ = nullptr;
     } else {
-      unsigned char bits[XIMaskLen(XI_RawButtonPress)] = {};
+      unsigned char bits[XIMaskLen(XI_LASTEVENT)] = {};
       XISetMask(bits, XI_RawButtonPress);
+      if (major > 2 || minor >= 2) XISetMask(bits, XI_RawTouchBegin);
       XIEventMask mask{XIAllMasterDevices, int(sizeof bits), bits};
       XISelectEvents(input_display_, DefaultRootWindow(input_display_), &mask, 1);
       XFlush(input_display_);
@@ -564,13 +570,13 @@ void Panel::input_event(int, void *d) {
     XEvent event;
     XNextEvent(p->input_display_, &event);
     if (event.type == GenericEvent && event.xcookie.extension == p->input_opcode_ &&
-        event.xcookie.evtype == XI_RawButtonPress) {
+        (event.xcookie.evtype == XI_RawButtonPress || event.xcookie.evtype == XI_RawTouchBegin)) {
       unsigned long time = 0;
       int button = 1;
       if (XGetEventData(p->input_display_, &event.xcookie)) {
         auto *raw = static_cast<XIRawEvent *>(event.xcookie.data);
         time = raw->time;
-        button = raw->detail;
+        button = event.xcookie.evtype == XI_RawTouchBegin ? 1 : raw->detail;
         XFreeEventData(p->input_display_, &event.xcookie);
       }
       if (time > p->last_press_time_) p->last_press_time_ = time;
