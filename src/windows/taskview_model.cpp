@@ -77,11 +77,20 @@ Layout layout(int width, int height, int desks, bool can_add, const std::vector<
   ch = std::min(ch, int(cw * 0.8) + title);
   int used_h = rows * ch + (rows - 1) * wgap;
   int y0 = l.grid.y + (l.grid.h - used_h) / 2;
+  // Each card wraps its picture: a title row above it and a margin around.
+  int pad = px(8, scale);
   for (int r = 0; r < rows; ++r) {
     int in_row = std::min(cols, n - r * cols);
     int row_w = in_row * cw + (in_row - 1) * wgap;
     int x0 = l.grid.x + (l.grid.w - row_w) / 2;
-    for (int c = 0; c < in_row; ++c) l.windows.push_back({x0 + c * (cw + wgap), y0 + r * (ch + wgap), cw, ch});
+    for (int c = 0; c < in_row; ++c) {
+      int i = r * cols + c;
+      Box cell{x0 + c * (cw + wgap), y0 + r * (ch + wgap), cw, ch};
+      Box pic = fit({0, 0, cw - 2 * pad, ch - title - pad}, aspects[size_t(i)]);
+      int card_w = std::max(px(160, scale), pic.w + 2 * pad), card_h = pic.h + title + pad;
+      card_w = std::min(card_w, cw);
+      l.windows.push_back({cell.x + (cw - card_w) / 2, cell.y + (ch - card_h) / 2, card_w, card_h});
+    }
   }
   l.columns = cols;
   return l;

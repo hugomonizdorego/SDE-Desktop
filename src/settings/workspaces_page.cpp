@@ -137,35 +137,46 @@ void build_workspaces_page(Page *page) {
   page->begin_card(_("Workspaces"));
   std::vector<std::string> counts;
   for (int i = workspaces::kMin; i <= workspaces::kMax; ++i) counts.push_back(std::to_string(i));
-  page->choice_row(_("Number of workspaces"), counts, workspaces::clamp_count(s.count) - workspaces::kMin,
-                   [](int v) {
-                     auto s = current();
-                     s.count = workspaces::clamp_count(v + workspaces::kMin);
-                     save(s);
-                     Fl::add_timeout(0, [](void *) { refresh_page(); });
-                   },
-                   _("Windows on a workspace that goes away move to the last one."));
-  for (int i = 0; i < workspaces::clamp_count(s.count); ++i)
-    page->row(format(_("Name of workspace %d"), i + 1), S(240), S(32),
-              [i](int x, int y, int w, int h) { return name_field(i, x, y, w, h); });
-  page->switch_row(_("Go round from the last workspace to the first"), s.wrap, [](bool on) {
+  // Tooltips name the controls (and the UI tests find them by them).
+  Fl_Choice *count = page->choice_row(
+      _("Number of workspaces"), counts, workspaces::clamp_count(s.count) - workspaces::kMin,
+      [](int v) {
+        auto s = current();
+        s.count = workspaces::clamp_count(v + workspaces::kMin);
+        save(s);
+        Fl::add_timeout(0, [](void *) { refresh_page(); });
+      },
+      _("Windows on a workspace that goes away move to the last one."));
+  if (count) count->tooltip(_("Number of workspaces"));
+  for (int i = 0; i < workspaces::clamp_count(s.count); ++i) {
+    std::string label = format(_("Name of workspace %d"), i + 1);
+    page->row(label, S(240), S(32), [i, label](int x, int y, int w, int h) {
+      Fl_Widget *f = name_field(i, x, y, w, h);
+      f->copy_tooltip(label.c_str());
+      return f;
+    });
+  }
+  Switch *wrap = page->switch_row(_("Go round from the last workspace to the first"), s.wrap, [](bool on) {
     auto s = current();
     s.wrap = on;
     save(s);
   }, _("Ctrl+Win+Left and Ctrl+Win+Right"));
+  if (wrap) wrap->tooltip(_("Go round from the last workspace to the first"));
   page->end_card();
 
   page->begin_card(_("Windows on other workspaces"));
-  page->switch_row(_("Show them on the taskbar"), s.taskbar_all, [](bool on) {
+  Switch *taskbar = page->switch_row(_("Show them on the taskbar"), s.taskbar_all, [](bool on) {
     auto s = current();
     s.taskbar_all = on;
     save(s);
   }, _("Off: the taskbar shows the windows of the workspace in view."));
-  page->switch_row(_("Show them with Alt+Tab"), s.alt_tab_all, [](bool on) {
+  if (taskbar) taskbar->tooltip(_("Show them on the taskbar"));
+  Switch *alt_tab = page->switch_row(_("Show them with Alt+Tab"), s.alt_tab_all, [](bool on) {
     auto s = current();
     s.alt_tab_all = on;
     save(s);
   });
+  if (alt_tab) alt_tab->tooltip(_("Show them with Alt+Tab"));
   page->end_card();
 
   page->begin_card(_("Keyboard"));
