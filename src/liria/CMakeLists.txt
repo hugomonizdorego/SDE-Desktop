@@ -41,4 +41,42 @@ add_library(liria-ui OBJECT
   window.cpp
   ${PROJECT_SOURCE_DIR}/src/desktop/xdnd.cpp)
 target_link_libraries(liria-ui PUBLIC liria-core)
-target_compile_definitions(liria-ui PRIVATE SDE_APP_VERSION="${SDE_VERSION}")
+string(JSON LIRIA_VERSION ERROR_VARIABLE LIRIA_VERSION_ERROR GET "${SDE_APP_VERSIONS}" liria)
+if(LIRIA_VERSION_ERROR OR NOT LIRIA_VERSION)
+  set(LIRIA_VERSION "${SDE_VERSION}")
+endif()
+target_compile_definitions(liria-ui PRIVATE SDE_APP_VERSION="${LIRIA_VERSION}")
+
+add_executable(liria main.cpp app.cpp service.cpp $<TARGET_OBJECTS:liria-ui>)
+target_link_libraries(liria PRIVATE liria-core)
+sde_app_version(liria liria)
+# Function names in crash backtraces.
+set_target_properties(liria PROPERTIES ENABLE_EXPORTS ON)
+
+# ---------------------------------------------------------------- install
+install(TARGETS liria RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT liria)
+install(FILES ${PROJECT_SOURCE_DIR}/data/applications/liria.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT liria)
+install(FILES ${PROJECT_SOURCE_DIR}/data/applications/liria.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications COMPONENT liria)
+install(FILES ${PROJECT_SOURCE_DIR}/data/metainfo/org.debion.Liria.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo COMPONENT liria)
+install(FILES ${PROJECT_SOURCE_DIR}/data/man/liria.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1 COMPONENT liria)
+file(GLOB LIRIA_ICONS RELATIVE ${PROJECT_SOURCE_DIR}/data/icons CONFIGURE_DEPENDS
+     ${PROJECT_SOURCE_DIR}/data/icons/hicolor/*/apps/liria.*)
+foreach(icon ${LIRIA_ICONS})
+  get_filename_component(icon_dir ${icon} DIRECTORY)
+  install(FILES ${PROJECT_SOURCE_DIR}/data/icons/${icon} DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/${icon_dir}
+          COMPONENT liria)
+endforeach()
+# D-Bus starts Liria for org.freedesktop.FileManager1 ("Show in folder" of
+# browsers) and org.debion.Liria when no Liria runs.
+foreach(service org.debion.Liria org.debion.Liria.FileManager1)
+  configure_file(${PROJECT_SOURCE_DIR}/data/dbus/${service}.service.in
+                 ${CMAKE_BINARY_DIR}/dbus/${service}.service @ONLY)
+  install(FILES ${CMAKE_BINARY_DIR}/dbus/${service}.service
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/services COMPONENT liria)
+endforeach()
+# sudo liria (Open as administrator) keeps the X display and its authority.
+install(FILES ${PROJECT_SOURCE_DIR}/data/sudoers/sde-liria DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d
+        PERMISSIONS OWNER_READ GROUP_READ COMPONENT liria)

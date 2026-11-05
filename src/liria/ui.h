@@ -363,7 +363,12 @@ class App {
   void unwatch_unused();
   // Quits when no window is left (and the clipboard is no one's).
   void maybe_quit();
+  // Nothing keeps Liria running: no window, no job, no files on the
+  // clipboard that are Liria's, and (started by D-Bus) no call for a while.
+  bool should_quit();
   bool service_mode = false;  // started by D-Bus: no window of its own
+  double service_until = 0;   // now_ms() until which a D-Bus start waits for calls
+  bool quit_requested = false;
 
   // Jobs on worker threads with the transfer dialog (jobs.cpp).
   void transfer(const std::vector<std::string> &sources, const std::string &dest, Transfer kind, MainWindow *from,
@@ -384,9 +389,11 @@ class App {
   std::map<int, std::string> watches_;  // descriptor -> folder
   std::map<std::string, int> watched_;  // folder -> descriptor
   std::map<std::string, std::vector<std::string>> pending_changes_;
+  int config_watch_ = -1, data_watch_ = -1;
+  bool recent_changed_ = false, config_changed_ = false;
   static void inotify_cb(int fd, void *data);
   static void changes_cb(void *data);
-  static void pins_poll_cb(void *data);
+  static void drives_cb(void *data);
 };
 
 // ------------------------------------------------------- widgets (widgets.cpp)

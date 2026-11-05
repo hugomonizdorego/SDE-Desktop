@@ -236,25 +236,25 @@ install(FILES "${CMAKE_BINARY_DIR}/build-history.json" DESTINATION ${CMAKE_INSTA
 install(DIRECTORY "${SDE_THEMES_OUT}/" DESTINATION ${CMAKE_INSTALL_DATADIR}/themes PATTERN ".stamp" EXCLUDE)
 install(FILES data/themes/palettes.json suite/themes.lock.json DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde/themes)
 install(DIRECTORY data/backgrounds/ DESTINATION ${CMAKE_INSTALL_DATADIR}/backgrounds/sde)
-install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+install(DIRECTORY data/icons/ DESTINATION ${CMAKE_INSTALL_DATADIR}/icons PATTERN "liria.*" EXCLUDE)
 # Branding (docs/BRANDING.md): the SDE logo for About windows, Welcome and the
 # login screen, and the sample user pictures offered by the avatar picker.
 install(DIRECTORY data/branding/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/branding)
 install(DIRECTORY data/avatars/ DESTINATION ${CMAKE_INSTALL_DATADIR}/Avatar FILES_MATCHING PATTERN "*.png")
 install(DIRECTORY data/welcome/ DESTINATION ${CMAKE_INSTALL_DATADIR}/SDE-Welcome)
-install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/applications PATTERN "liria.desktop" EXCLUDE)
 # AppStream: every SDE program names the Selviana DE Project as its developer.
-install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml")
+install(DIRECTORY data/metainfo/ DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo FILES_MATCHING PATTERN "*.metainfo.xml"
+        PATTERN "org.debion.Liria.metainfo.xml" EXCLUDE)
 file(GLOB SDE_MANPAGES CONFIGURE_DEPENDS data/man/*.1)
+list(REMOVE_ITEM SDE_MANPAGES ${CMAKE_CURRENT_SOURCE_DIR}/data/man/liria.1)  # src/liria (component liria)
 install(FILES ${SDE_MANPAGES} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 
 install(FILES data/compositor/sde.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/compositor)
 install(FILES data/legal/components.json DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/legal)
 install(FILES docs/LEGAL.md DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/sde)
-install(FILES data/sudoers/sde-liria DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d
-        PERMISSIONS OWNER_READ GROUP_READ)
 
-install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications)
+install(DIRECTORY data/applications/ DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/applications PATTERN "liria.desktop" EXCLUDE)
 install(FILES data/portals/sde-portals.conf DESTINATION ${CMAKE_INSTALL_DATADIR}/xdg-desktop-portal)
 
 # Photo and Gallery (docs/PHOTO.md, docs/GALLERY.md): their example action

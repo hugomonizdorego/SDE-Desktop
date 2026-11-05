@@ -9,12 +9,22 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 namespace sde {
 namespace desk {
 
 namespace {
 const int kVersion = 5;
+
+// Every Xdnd of the program (one per window in Liria). FLTK removes a
+// system handler by its function alone, so a second instance's destructor
+// removed the first one's handler and left a freed one installed: one
+// handler serves them all.
+std::vector<Xdnd *> &instances() {
+  static std::vector<Xdnd *> list;
+  return list;
+}
 }
 
 Atom Xdnd::atom(const char *name) { return XInternAtom(dpy_, name, False); }
@@ -49,11 +59,14 @@ Xdnd::Xdnd(Display *display, Window own, Hooks hooks) : dpy_(display), own_(own)
   wa.override_redirect = True;
   src_win_ = XCreateWindow(dpy_, root_, -10, -10, 1, 1, 0, CopyFromParent, InputOnly, CopyFromParent,
                            CWOverrideRedirect, &wa);
-  Fl::add_system_handler(system_handler, this);
+  if (instances().empty()) Fl::add_system_handler(system_handler, nullptr);
+  instances().push_back(this);
 }
 
 Xdnd::~Xdnd() {
-  Fl::remove_system_handler(system_handler);
+  auto &list = instances();
+  list.erase(std::remove(list.begin(), list.end(), this), list.end());
+  if (list.empty()) Fl::remove_system_handler(system_handler);
   Fl::remove_timeout(deliver_drop, this);
   Fl::remove_timeout(drop_timeout, this);
   Fl::remove_timeout(source_timeout, this);
@@ -103,8 +116,14 @@ void Xdnd::send(Window to, Window window_field, Atom type, long d0, long d1, lon
   XFlush(dpy_);
 }
 
-int Xdnd::system_handler(void *event, void *data) {
-  return static_cast<Xdnd *>(data)->handle(*static_cast<XEvent *>(event));
+int Xdnd::system_handler(void *event, void *) {
+  // A copy: a handler may end a drag and delete its window's Xdnd.
+  std::vector<Xdnd *> list = instances();
+  for (Xdnd *x : list)
+    if (std::find(instances().begin(), instances().end(), x) != instances().end() &&
+        x->handle(*static_cast<XEvent *>(event)))
+      return 1;
+  return 0;
 }
 
 int Xdnd::handle(XEvent &e) {
