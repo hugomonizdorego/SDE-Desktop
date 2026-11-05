@@ -91,5 +91,12 @@ bool sync_openbox_keyboard(std::string &rc, const Config &cfg);
 extern const char *const kBeginMark;
 extern const char *const kEndMark;
 
+// The shortcut sheet to print (docs/SDE-Keyboard-Shortcuts.pdf, installed
+// as SDE_DATADIR/doc/SDE-Keyboard-Shortcuts.pdf; SDE_SHORTCUT_SHEET names
+// another file): its path, "" when it is missing, and opening it in Xanara
+// or the default PDF viewer.
+std::string sheet_path();
+bool open_sheet();
+
 }  // namespace shortcuts
 }  // namespace sde

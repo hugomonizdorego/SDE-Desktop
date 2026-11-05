@@ -142,6 +142,7 @@ add_executable(sde-settings
   settings/clock.cpp
   settings/default_apps_page.cpp
   settings/about_page.cpp
+  settings/workspaces_page.cpp
   # The overview hub and Users & Avatar (the Control Center).
   settings/hub.cpp
   settings/users.cpp

@@ -94,6 +94,9 @@ const std::vector<Category> &categories() {
            {"display", N_("Display"), N_("Resolution, arrangement and scale"), "display", nullptr,
             {{{"sde-display-settings"}}}, "monitor screen resolution refresh rotation scale arrange",
             nullptr, false},
+           {"workspaces", N_("Workspaces"), N_("Virtual desktops and their names"), "workspaces", nullptr, {},
+            "workspace workspaces virtual desktop desktops multitasking task view switch move window wrap",
+            nullptr, false},
            {"sound", N_("Sound"), N_("Volume, speakers and microphones"), "sound", nullptr, {},
             "volume audio speaker headphones microphone output input", nullptr, false},
            {"power", N_("Power"), N_("Battery, sleep and brightness"), "power", nullptr, {},
@@ -570,7 +573,9 @@ bool hub_glyph(Painter &p, const std::string &id, double x, double y, double s, 
   auto X = [&](double f) { return x + s * f; };
   auto Y = [&](double f) { return y + s * f; };
   cairo_new_path(cr);
-  if (id == "users") {
+  if (id == "workspaces") {
+    draw_workspaces_glyph(p, x, y, s, c);
+  } else if (id == "users") {
     cairo_arc(cr, X(0.5), Y(0.32), s * 0.18, 0, 2 * M_PI);
     stroke();
     cairo_new_path(cr);

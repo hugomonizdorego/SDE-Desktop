@@ -7,8 +7,10 @@
 #include <cstring>
 #include <map>
 
+#include "build_config.h"
 #include "config.h"
 #include "i18n.h"
+#include "spawn.h"
 #include "util.h"
 #include "workspaces.h"
 
@@ -540,6 +542,20 @@ bool sync_openbox_keyboard(std::string &rc, const Config &cfg) {
   }
   rc.insert(at, block);
   return rc != before;
+}
+
+std::string sheet_path() {
+  std::string own = env("SDE_SHORTCUT_SHEET");
+  if (!own.empty()) return file_exists(own) ? own : "";
+  std::string installed = std::string(SDE_DATADIR) + "/doc/SDE-Keyboard-Shortcuts.pdf";
+  return file_exists(installed) ? installed : "";
+}
+
+bool open_sheet() {
+  std::string path = sheet_path();
+  if (path.empty()) return false;
+  if (!find_program("xanara").empty() && spawn_detached({"xanara", path})) return true;
+  return open_uri("file://" + path);
 }
 
 }  // namespace shortcuts

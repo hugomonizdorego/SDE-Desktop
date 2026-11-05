@@ -39,6 +39,10 @@ void build_default_apps_page(Page *page);
 // Control Center > About: the Selviana Desktop Environment and, separately,
 // the system it runs on (about_page.cpp).
 void build_about(Page *page);
+// Control Center > Workspaces (workspaces_page.cpp, 0.2.0 Alpha 4) and its
+// symbol.
+void build_workspaces_page(Page *page);
+void draw_workspaces_glyph(Painter &p, double x, double y, double size, const Color &c);
 // Rebuilds the visible page when it is |page_id| (after background work).
 void refresh_if_shown(const char *page_id);
 
