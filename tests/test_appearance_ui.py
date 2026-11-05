@@ -234,6 +234,14 @@ def main():
               % s.qa('appearance-pending'))
         check(s.look('family', 'applied') == 'graphite', 'choosing applied the look')
         check(s.disk('style') == 'graphite', 'choosing wrote the configuration')
+        # 0.2.0 Alpha 4: the sliders show their value (in their names too),
+        # following the preset; the wallpaper colour switches.
+        check(s.wait(lambda: s.control('Transparency level: 80 %') is not None),
+              'the Transparency slider does not show 80 %%: %s' % [r[0] for r in s.rows('Control-Center.txt')
+                                                                    if r[0].startswith('Transparency')])
+        check(s.control('Blur strength: 50 %') is not None, 'the Blur strength slider does not show 50 %')
+        check(s.control('Tint surfaces with the wallpaper color') is not None and
+              s.control('Accent color from the wallpaper') is not None, 'no switches for the wallpaper color')
         check(s.wait(lambda: s.control('Apply the chosen look') is not None), 'no bar with Apply')
         check(s.control('Preview the chosen look') and s.control('Revert to the look in use'),
               'the bar has no Preview or Revert')
@@ -249,10 +257,22 @@ def main():
                   'the GTK part was not embedded (%s)' % s.qa('gtk', 'Appearance-Preview.txt'))
         time.sleep(0.5)
         s.shot('02-preview')
-        s.drag('Transparency level (preview)', 0.8, 0.3, 'Appearance-Preview.txt', '^Appearance Preview$')
+        # Along the track: since 0.2.0 Alpha 4 the value is shown at its
+        # right, and the name carries it ("Transparency level (preview): 80 %").
+        name = next((r[0] for r in s.rows('Appearance-Preview.txt') if r[0].startswith('Transparency level (preview)')),
+                    '')
+        check(name.endswith(': 80 %'), 'the preview slider does not name its value: %r' % name)
+        s.drag('Transparency level (preview)', 0.6, 0.2, 'Appearance-Preview.txt', '^Appearance Preview$')
         check(s.wait(lambda: s.look('transparency') not in (None, '80')),
               "the preview's slider did not change the chosen look")
-        moved = s.look('transparency')
+        # The preview sends a look for every step of the drag: the last one.
+        moved = None
+        for _ in range(20):
+            now = s.look('transparency')
+            if now == moved:
+                break
+            moved = now
+            time.sleep(0.3)
 
         # Cancel: the preview closes, the choice stays, nothing is written.
         s.press('Close the preview without applying', 'Appearance-Preview.txt', '^Appearance Preview$')
