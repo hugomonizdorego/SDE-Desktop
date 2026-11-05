@@ -33,7 +33,7 @@ comes from the release dates in the AppStream data.
 
 ## Using it
 
-    merkadu [--page home|installed|updates|packages|history|progress|sources]
+    merkadu [--page home|installed|updates|packages|history|progress|sources|storage]
             [--search TEXT] [--category ID] [--details APPID] [--package NAME]
     merkadu appstream://APPID
     merkadu --uninstall /usr/share/applications/APP.desktop
@@ -46,8 +46,8 @@ status line below it (what the refresh is doing, or that some lists could
 not be refreshed), the search field and **Refresh** (it spins while the
 software lists are refreshed). The sidebar has Home, Installed, Updates (with
 the number of app updates), All Software (with the number of marked
-changes), History, Sources, In Progress (while changes run) and the
-departments under "Applications".
+changes), History, Sources, Storage (with what Clean Up can free), In
+Progress (while changes run) and the departments under "Applications".
 
 - **Home**: the highlights carousel (see [Highlights](#highlights)), the
   next **Highlights** as tiles, **From the Snap Store** (the store's
@@ -108,6 +108,9 @@ departments under "Applications".
   the Catalog** (`appstream`) or **Install Flatpak** when they are missing,
   **Enable Snap Support**, and where snap data is kept (see
   [the snap folder](#the-snap-folder)).
+- **Storage** (0.2.0 Alpha 4): what the apps of Flatpak and Snap keep on
+  the computer and **Clean Up**; the Merkadu folder; see
+  [One place for Flatpak and Snap](#one-place-for-flatpak-and-snap).
 
 Keys: Ctrl+F or Ctrl+K search; Alt+Left, Backspace or Escape go back,
 Alt+Right forward, Alt+Home home; F5 or Ctrl+R refresh the software lists;
@@ -472,6 +475,99 @@ So the honest choice is snapd's own hidden folder: the data stays where
 snapd and the confinement expect it, private to each user, and out of
 sight. Liria also hides dot-folders by default.
 
+## One place for Flatpak and Snap
+
+**What was asked** (0.2.0 Alpha 4): the folders of snapd and Flatpak in one
+place, a folder `/Merkadu` with a Flatpak folder and a Snap folder in it,
+so that cleaning up is not a bother.
+
+### Where Flatpak and Snap keep things
+
+| What | Where | Can it move? |
+| --- | --- | --- |
+| each Flatpak app's settings, files and cache | `~/.var/app/APPID` | no: the path is fixed in Flatpak (`flatpak_get_data_dir()`), and every app is started with exactly that folder mounted |
+| each snap's settings and files | `~/snap/NAME`, or `~/.snap/data/NAME` with snapd's hidden snap folder | no: snapd computes it from the home folder only, the AppArmor rules of every snap allow writes there only, and snap-confine refuses `~/snap` as a symbolic link ([the snap folder](#the-snap-folder)) |
+| the installed Flatpak apps and runtimes | `/var/lib/flatpak` (every user), `~/.local/share/flatpak` (the user's own); other places only as extra installations in `/etc/flatpak/installations.d` | not the installed ones: an app is installed into one installation; moving it means installing it again |
+| the installed snaps, their old revisions and snapshots | `/var/lib/snapd`, mounted at `/snap` | no: both paths are compiled into snapd and its AppArmor profiles |
+
+### What Merkadu does
+
+**Nothing is moved; the Merkadu folder links to the data.** When Merkadu
+starts for the first time it makes `~/Merkadu` (`[Folders]
+merkadu-folder=true`, `name=Merkadu`) with:
+
+    ~/Merkadu/
+      Flatpak -> ../.var/app      the data of every Flatpak app
+      Snap    -> ../snap          the data of every snap (../.snap/data with the hidden snap folder)
+      README.txt                  what this folder is
+
+The links are relative, so they still work after the account is renamed
+(Control Center can rename accounts). `~/.var/app` is made when it is
+missing, as Flatpak itself would; the Snap link comes once snapd made its
+folder (Merkadu never makes `~/snap`, which the hidden snap folder avoids).
+Merkadu keeps the links right each time it starts and measures (the Snap
+link follows snapd when it moves to `~/.snap/data`). In the folder, the
+data of every app is one folder named after its id: deleting it there
+deletes that app's settings and files (it starts again as new), exactly as
+deleting it in `~/.var/app` or `~/snap` would. Deleting `~/Merkadu`
+deletes only the links and the README: Flatpak and snapd go on as before,
+and Merkadu does not make the folder again by itself (it remembers that it
+made it, in `~/.local/state/merkadu/folder-made`); **Make the Merkadu
+Folder** on the Storage page brings it back. To undo all of it, remove the
+folder: nothing else was changed.
+
+**Storage** (a page of its own in the sidebar, with what can be freed as
+its badge) shows:
+
+- **Clean Up**: the runtimes no app needs any more (libflatpak's
+  `flatpak_installation_list_unused_refs()`, in every installation: the
+  system's, those of `installations.d` and the user's), the old revisions
+  snapd keeps to go back to (`/v2/snaps?select=all`, the revisions that are
+  not active; snapd keeps a few, `refresh.retain`), and the data that
+  removed apps left behind (a folder in `~/.var/app`, `~/snap` or
+  `~/.snap/data` whose app is not installed: Flatpak keeps it unless
+  `--delete-data` is given), each with its size. **Clean Up…** asks once,
+  saying what goes and that the data of removed apps is deleted for good;
+  the runtimes (one change per installation) and the revisions (one change
+  each, snapd's `remove` with a `revision`) then run in In Progress (the
+  administrator password may be asked for), and the left-over data is
+  deleted at once. Data counts as left over only when the source's list of
+  installed apps is complete: when Flatpak cannot read an installation, or
+  snapd does not answer, nothing of that source is offered.
+- **The Merkadu Folder**: where it is and where its links point, **Open the
+  Folder**, **Remove the Folder** (only the links) or **Make the Merkadu
+  Folder**.
+- **Flatpak** and **Snap**: the apps with their size and the size of their
+  data, the runtimes or old revisions, the data in the home folder and what
+  removed apps left there. Sizes are what the files take on the disk
+  (hard links once, no links followed, one file system), measured on a
+  worker thread.
+
+Deleting goes only to a folder directly in `~/.var/app`, `~/snap` or
+`~/.snap/data`, never through a link and never across file systems
+(`remove_app_data()` in `src/merkadu/storage.cpp`).
+
+### Why not /Merkadu
+
+- **The data is per user and private.** Every app writes to the home folder
+  of the user who runs it; a folder at the root of the file system would
+  mix the data of all users (one user could read or change another's), and
+  it would need administrator rights for every change.
+- **The system's software folders cannot move** (the table above): a
+  `/Merkadu` could only hold links to `/var/lib/flatpak` and
+  `/var/lib/snapd`, whose contents users cannot delete anyway; Clean Up
+  removes what is unused there through Flatpak and snapd, with polkit.
+- **Linking the other way round would break apps.** Moving `~/.var/app`
+  into the Merkadu folder and leaving a link behind works with Flatpak 1.14
+  (it follows links in the paths it gives an app), but if the Merkadu folder
+  were then deleted or renamed, every Flatpak app would fail to start
+  (Flatpak cannot make `~/.var/app/APPID` through a broken link); for snaps
+  snap-confine refuses a linked `~/snap` outright. With the links in the
+  Merkadu folder, deleting it can never break an app.
+- **The root of the file system belongs to the system** (the FHS, which
+  Debian follows: no new folders at `/`), and snapd's own `/snap` is already
+  an exception that cannot move.
+
 ## Uninstalling from the Start menu
 
 The Start menu's "Uninstall…" runs
@@ -703,6 +799,12 @@ file instead of all of them.
     # hide ~/snap as ~/.snap/data (see above)
     hide-home-folder=true
 
+    [Folders]
+    # the Merkadu folder of each home folder, with links to the data of the
+    # Flatpak apps and snaps (false: not made unless the user asks); its name
+    merkadu-folder=true
+    name=Merkadu
+
     [Uninstall]
     # packages never removed besides sde, sde-desktop, merkadu and the
     # packages the system needs
@@ -792,7 +894,13 @@ archive and Flathub (see `.github/workflows/build.yml`):
   collections) and following a snapd change against an in-process fake snapd
   (it starts late and says "too early", the first snap's base, a polkit
   refusal, a cancelled password prompt, a conflicting change, a failed
-  change, Cancel with abort, a snapd that never starts).
+  change, Cancel with abort, a snapd that never starts), and since 0.2.0
+  Alpha 4 Storage on a home folder of its own: the sizes (hard links once,
+  links not followed), the data of installed and removed apps, deleting only
+  folders of app data (never through a link, never outside), the Merkadu
+  folder (its relative links, the Snap link following the hidden snap
+  folder, the user's own files kept, removing only what Merkadu made, a file
+  of that name left alone) and snapd's revisions.
 - `merkadu-ui` (`tests/test_merkadu_ui.py`, needs Xvfb and xdotool): runs
   Merkadu with the fake sources on a private X server and checks, through
   the QA dumps, Home, the refresh at start and with Refresh, a department,
@@ -808,8 +916,13 @@ archive and Flathub (see `.github/workflows/build.yml`):
   the snapd package is "installed" and says "too early" at first; then the
   store's snaps are on Home, in a department, in All Software and in the
   search without a restart, a polkit refusal is shown and a snap installs),
-  every `--uninstall` outcome (exit codes 0, 1 and 2) and the window at
-  1024×600 and 150 %. It waits for whole pages, not for fixed times.
+  Storage (the Merkadu folder of the first start, Clean Up of an unused
+  runtime, an old snap revision and the data of two removed apps, Remove the
+  Folder, the folder not made again), every `--uninstall` outcome (exit
+  codes 0, 1 and 2) and the window at 1024×600 and 150 %. It waits for whole
+  pages, not for fixed times, and clicks a control only once it stays in
+  place (0.2.0 Alpha 4: under a loaded parallel ctest pages are rebuilt
+  later and move while answers arrive).
   `SDE_XVFB_DISPLAYS=FIRST-LAST` keeps its X servers in a range.
 - **Fake sources**: `MERKADU_FAKE=DIR` replaces the three backends and the
   package lists with a simulation of the apps and packages in
@@ -830,7 +943,10 @@ archive and Flathub (see `.github/workflows/build.yml`):
   With `SDE_PANEL_QA_DIR=DIR`, Merkadu writes what it shows (`Merkadu.txt`,
   `Merkadu-Uninstall.txt`), including `@job:ID=STATE,PERCENT,PHASE,ACTIONS`
   for each change, `@why:ID=…` when Pause and Cancel are off,
-  `@carousel:index=,count=,id=` and the live boxes of the carousel's parts.
+  `@carousel:index=,count=,id=,held=` and the live boxes of the carousel's
+  parts, and `@storage:cleanable=,count=,folder=,flatpak=,snap=` on Storage.
+  The fixture's Storage: an unused runtime (`"unused": true` in `runtimes`)
+  and an old revision of a snap (`snap_revisions`).
   `MERKADU_LOGO_PHASE=P` freezes the logo animation at moment `P` (0 to 3.6:
   stripe `n` fills between `n` and `n+1`) for screenshots.
 - `tests/fake_snapd.py SOCKET [FLAG]` runs the fake snapd on its own:
@@ -847,8 +963,8 @@ archive and Flathub (see `.github/workflows/build.yml`):
   the choice of sources, search, installed apps, history, progress with Pause
   and Cancel, a paused change with the next one running, All Software with
   marked changes and its Flatpak list, the review, app updates, the snaps
-  once snapd runs (fake snapd), the uninstall confirmation and its
-  progress), light and dark.
+  once snapd runs (fake snapd), Storage with Clean Up and the Merkadu
+  folder, the uninstall confirmation and its progress), light and dark.
 
 ## Packaging
 
