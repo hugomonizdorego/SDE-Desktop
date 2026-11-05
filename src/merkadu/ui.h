@@ -208,7 +208,8 @@ class Carousel : public Fl_Widget {
   int handle(int e) override;
   // The height of the dots under the banner.
   static int dots_height();
-  // "index=N,count=K,id=ID" of the carousel shown ("" when none is).
+  // "index=N,count=K,id=ID,held=0|1" of the carousel shown ("" when none
+  // is); held: it does not move on by itself now.
   static std::string qa_state();
   // The carousel on the page, nullptr when none is.
   static const Carousel *live();

@@ -35,8 +35,17 @@ lines and the named controls with their geometry). Checked:
     Flatpak (Escape cancels: exit 2), a launcher in the home folder
     (removed, exit 0), a simulated failure (exit 1) and a relative path
     (exit 1 without a window);
+  * Storage (0.2.0 Alpha 4): the Merkadu folder made at the first start
+    (Flatpak and Snap links, a README), what Clean Up can free (an unused
+    runtime, an old snap revision, the data of two removed apps), Clean Up
+    (the data of installed apps stays), Remove the Folder (only the links)
+    and the folder not made again at the next start;
   * at 1024x600 and 150 % the main window and the uninstall dialog fit the
     screen.
+
+Every step waits for what Merkadu reports (the QA dump), and clicks a
+control only once it stays in place: under a loaded parallel ctest pages
+are rebuilt later and move while the catalog or a search answer arrives.
 
 SDE_MERKADU_SCREENSHOTS=DIR saves screenshots."""
 import os
@@ -140,7 +149,7 @@ class Screen:
                 out[f[0]] = [int(v) for v in f[1:5]]
         return out
 
-    def wait_qa(self, name, line, timeout=10.0):
+    def wait_qa(self, name, line, timeout=20.0):
         end = time.time() + timeout
         while time.time() < end:
             if line in self.controls(name):
@@ -161,7 +170,7 @@ class Screen:
             time.sleep(0.1)
         return found
 
-    def wait_for(self, name, test, timeout=10.0):
+    def wait_for(self, name, test, timeout=20.0):
         """The first QA line of |name| for which |test| is true, or None."""
         end = time.time() + timeout
         while time.time() < end:
@@ -185,8 +194,21 @@ class Screen:
         return {k: int(v) for k, v in (l.split('=', 1) for l in out.split() if '=' in l)
                 if v.lstrip('-').isdigit()}
 
+    def settled(self, qa_name, control, timeout=10.0):
+        """The box of |control| once it stayed in place for a moment (a page
+        that is rebuilt moves its parts), else the last one seen."""
+        end = time.time() + timeout
+        last = None
+        while time.time() < end:
+            c = self.controls(qa_name).get(control)
+            if c is not None and c == last:
+                return c
+            last = c
+            time.sleep(0.25)
+        return last
+
     def click(self, wid, qa_name, control):
-        c = self.controls(qa_name).get(control)
+        c = self.settled(qa_name, control)
         if not check(c is not None, 'no control "%s" in %s: %s' % (control, qa_name, self.qa(qa_name)[:12])):
             return False
         xdo(self.env, 'mousemove', '--window', wid, c[0] + c[2] // 2, c[1] + c[3] // 2)
@@ -593,11 +615,12 @@ def highlights(s):
         moved = s.wait_for(M, lambda l: l.startswith('@carousel:') and carousel_state(l)['index'] != first['index'],
                            6)
         check(moved, 'highlights: the carousel did not move on by itself')
-        # Under the pointer it stays.
+        # Under the pointer it stays (once Merkadu knows the pointer is there).
         c = s.controls(M).get('carousel')
         if check(c, 'highlights: the carousel has no box'):
             xdo(s.env, 'mousemove', '--window', wid, c[0] + c[2] // 2, c[1] + c[3] // 3)
-            time.sleep(0.6)
+            check(s.wait_for(M, lambda l: l.startswith('@carousel:') and 'held=1' in l, 10),
+                  'highlights: the pointer on the carousel does not hold it')
             before = s.wait_for(M, lambda l: l.startswith('@carousel:'), 2)
             time.sleep(2.5)
             after = s.wait_for(M, lambda l: l.startswith('@carousel:'), 2)
@@ -614,8 +637,7 @@ def highlights(s):
         # A slide opens its app.
         if line:
             app = carousel_state(line)['id']
-            time.sleep(0.5)  # the slide is in place
-            s.click(wid, M, 'banner:' + app)
+            s.click(wid, M, 'banner:' + app)  # once the slide is in place
             check(s.wait_qa(M, '@page:details:' + app, 5), 'highlights: the slide did not open %s: %s' %
                   (app, s.qa(M)[:1]))
     finally:
@@ -694,19 +716,25 @@ def pause_cancel(s):
         stop(proc)
 
 
-def answer_dialog(s, main, key='Return', timeout=5.0):
-    """Presses |key| in the dialog (a window that is not |main|)."""
+def answer_dialog(s, main, key='Return', timeout=15.0):
+    """Presses |key| in the dialog (a window that is not |main|) until it
+    closes: a loaded program can show the dialog before it takes keys."""
     end = time.time() + timeout
+    answered = False
     while time.time() < end:
         ids = [w for w in xdo(s.env, 'search', '--onlyvisible', '--name', '.*').stdout.split() if w != main]
-        if ids:
-            time.sleep(0.4)
-            xdo(s.env, 'windowfocus', '--sync', ids[-1])
+        if not ids:
+            if answered:
+                return True
             time.sleep(0.1)
-            xdo(s.env, 'key', '--clearmodifiers', key)
-            return True
+            continue
+        time.sleep(0.4)
+        xdo(s.env, 'windowfocus', '--sync', ids[-1])
         time.sleep(0.1)
-    return False
+        xdo(s.env, 'key', '--clearmodifiers', key)
+        answered = True
+        time.sleep(1.0)
+    return answered
 
 
 def snap_support(s):
@@ -790,6 +818,81 @@ def snap_support(s):
         snapd.stop()
 
 
+def storage(s):
+    """Storage and the Merkadu folder (0.2.0 Alpha 4) in the test's home."""
+    M = 'Merkadu.txt'
+    home = s.temp
+    files = {'.var/app/org.example.Postbox/config/postbox.conf': 4000,      # installed (Flatpak)
+             '.var/app/org.example.OldGame/data/saves/slot1': 300000,       # removed
+             'snap/kart-rally/40/settings.ini': 2000,                       # installed (snap)
+             'snap/retro-notes/common/notes.txt': 50000}                    # removed
+    for rel, size in files.items():
+        (home / rel).parent.mkdir(parents=True, exist_ok=True)
+        (home / rel).write_bytes(b'x' * size)
+    folder = home / 'Merkadu'
+    # The earlier parts of the test started Merkadu here: it made the folder.
+    check(folder.is_dir() and os.readlink(folder / 'Flatpak') == '../.var/app' and (folder / 'README.txt').exists(),
+          'storage: the first start did not make the Merkadu folder: %s' %
+          (sorted(p.name for p in folder.iterdir()) if folder.is_dir() else 'missing'))
+    proc = s.start('--page', 'storage')
+    try:
+        wid = s.window('^Merkadu$', 15)
+        if not check(wid, 'storage: the main window did not open'):
+            return
+        line = s.wait_for(M, lambda l: l.startswith('@storage:'), 30)
+        if not check(line, 'storage: the page did not measure: %s' % s.qa(M)[:8]):
+            return
+        state = dict(kv.split('=', 1) for kv in line.split('\t')[0][len('@storage:'):].split(','))
+        check(state.get('count') == '4' and int(state.get('cleanable', 0)) > 1900000000,
+              'storage: Clean Up does not offer the unused runtime, the old revision and the data of the two '
+              'removed apps: %s' % line)
+        check(state.get('folder') == '1' and state.get('flatpak') == '1' and state.get('snap') == '1',
+              'storage: the folder and its links: %s' % line)
+        check(os.readlink(folder / 'Snap') == '../snap', 'storage: the Snap link points elsewhere')
+        c = s.wait_controls(M, ('storage:left:org.example.OldGame', 'storage:left:retro-notes',
+                                'storage:app:org.example.Postbox', 'action:storage:clean-up'))
+        for name in ('storage:left:org.example.OldGame', 'storage:left:retro-notes', 'storage:app:org.example.Postbox',
+                     'storage:app:kart-rally', 'action:storage:clean-up', 'action:storage:remove-folder'):
+            check(name in c, 'storage: %s missing' % name)
+        s.shot('merkadu-storage.png')
+        # Clean Up: asks, then the runtime and the revision as changes, the
+        # left-over data at once.
+        s.click(wid, M, 'action:storage:clean-up')
+        check(answer_dialog(s, wid), 'storage: Clean Up did not ask')
+        check(s.wait_qa(M, '@page:progress', 10), 'storage: Clean Up did not show its changes: %s' % s.qa(M)[:1])
+        check(s.wait_for(M, lambda l: l.startswith('@state:') and l.split('\t')[0].endswith(',jobs=0'), 30),
+              'storage: the changes of Clean Up did not finish: %s' % s.qa(M)[:3])
+        end = time.time() + 10
+        while time.time() < end and ((home / '.var/app/org.example.OldGame').exists() or
+                                     (home / 'snap/retro-notes').exists()):
+            time.sleep(0.2)
+        check(not (home / '.var/app/org.example.OldGame').exists() and not (home / 'snap/retro-notes').exists(),
+              'storage: the data of the removed apps is still there')
+        check((home / '.var/app/org.example.Postbox/config/postbox.conf').exists() and
+              (home / 'snap/kart-rally/40/settings.ini').exists(), 'storage: Clean Up deleted data of installed apps')
+        s.click(wid, M, 'nav:storage')
+        check(s.wait_for(M, lambda l: l.startswith('@storage:cleanable=0,count=0'), 20),
+              'storage: something is left to clean up: %s' % [l for l in s.qa(M) if l.startswith('@storage')])
+        s.shot('merkadu-storage-clean.png')
+        # Remove the Folder: the links go, the data stays.
+        s.click(wid, M, 'action:storage:remove-folder')
+        check(s.wait_qa(M, 'action:storage:make-folder', 10), 'storage: Remove the Folder did not remove it')
+        check(not folder.exists(), 'storage: the folder is still there')
+        check((home / '.var/app/org.example.Postbox/config/postbox.conf').exists() and
+              (home / 'snap/kart-rally/40/settings.ini').exists(), 'storage: removing the folder removed data')
+    finally:
+        stop(proc)
+    # Who removed it does not get it back at the next start.
+    proc = s.start()
+    try:
+        wid = s.window('^Merkadu$', 15)
+        check(wid and s.wait_qa(M, '@page:explore', 20), 'storage: Merkadu did not start again')
+        time.sleep(1.0)
+        check(not folder.exists(), 'storage: the removed folder was made again')
+    finally:
+        stop(proc)
+
+
 def problems(s):
     try:
         text = (s.temp / 'merkadu.log').read_text()
@@ -808,6 +911,7 @@ try:
     highlights(screen)
     snap_support(screen)
     pause_cancel(screen)
+    storage(screen)
     uninstall_cases(screen)
     problems(screen)
 finally:

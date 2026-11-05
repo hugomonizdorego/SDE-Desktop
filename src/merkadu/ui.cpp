@@ -1129,7 +1129,12 @@ Carousel::~Carousel() {
 
 int Carousel::dots_height() { return S(24); }
 
-std::string Carousel::qa_state() { return g_live_carousel ? g_carousel_state : std::string(); }
+std::string Carousel::qa_state() {
+  if (!g_live_carousel) return "";
+  // held=1: it does not move on by itself now (pointer or keyboard on it).
+  bool held = g_live_carousel->hot_ || Fl::focus() == g_live_carousel;
+  return g_carousel_state + (held ? ",held=1" : ",held=0");
+}
 
 void Carousel::remember() {
   if (ids_.empty()) return;
