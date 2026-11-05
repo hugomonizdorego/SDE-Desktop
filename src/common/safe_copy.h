@@ -2,12 +2,10 @@
  * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * Safe copying (0.2.0 Alpha 3): a copy to a USB stick is on the stick when
- * it says it is done. Shared by the SDE desktop's file operations
- * (src/desktop/file_ops.cpp) and Liria's (suite/redesign.py copies this
- * file into the Liria tree as libliria-private/liria-sde-safe-copy.h).
- * Plain C99 for Linux that also compiles as C++; GPL-2.0-or-later like
- * Liria, so the file can be part of both. docs/TRANSFERS.md has the design
- * and the measurements.
+ * it says it is done. Used by the file operations of the SDE desktop and of
+ * Liria (src/desktop/file_ops.cpp). Plain C99 for Linux that also compiles
+ * as C++; GPL-2.0-or-later since the GTK Liria of 0.2.0 Alpha 3 compiled it
+ * too. docs/TRANSFERS.md has the design and the measurements.
  *
  * Linux writes data into memory (the page cache) first and to the drive
  * later. A copy to a USB stick therefore "finishes" while most of it is

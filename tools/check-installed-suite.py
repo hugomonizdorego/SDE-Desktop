@@ -60,7 +60,6 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         parser.read("/etc/xdg/autostart/" + name + ".desktop")
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
     for package in [
-        "sde/upstream/caja",
         "sde",
     ]:
         assert Path("/usr/share/doc", package, "copyright").is_file(), package

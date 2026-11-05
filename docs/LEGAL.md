@@ -49,7 +49,7 @@ original notice:
 | Display Settings, Control Center (display profile model) | GPL-3.0-or-later AND MIT | Selviana DE Project and contributors; © 2025 zac15987 | profile model ported from [DisplayProfileManager](https://github.com/zac15987/DisplayProfileManager) (MIT) |
 | Software Updater (update model, `data/update/model.py`) | GPL-3.0-or-later | © 2007–2015 Clement Lefebvre; Selviana DE Project and contributors | adapted from [mintupdate](https://github.com/linuxmint/mintupdate) (GPL-3+) |
 | Merkadu (software center, package `merkadu`) | GPL-3.0-or-later AND GPL-3.0-only | © 2009–2013 Canonical Ltd.; Selviana DE Project and contributors | based on [Ubuntu Software Center](https://github.com/mortenpi/ubuntu-software-center) (GPL-3); its category parser and menu are ported (`src/merkadu/categories.*`, `data/merkadu/categories.menu`) |
-| Liria | GPL-2.0-or-later AND LGPL-2.0-or-later | © 1999–2009 The Nautilus authors, © 2011–2021 The Caja authors (and Eazel, Red Hat, Novell and others per file); Selviana DE Project and contributors (SDE changes) | fork of [Caja](https://github.com/mate-desktop/caja) 1.28.0; eel and libcaja-extension are LGPL |
+| Liria | GPL-3.0-or-later AND GPL-2.0-or-later | Selviana DE Project and contributors | written for SDE (0.2.0 Alpha 4; up to 0.2.0 Alpha 3.1 a fork of Caja); the copy engine's headers it shares with the desktop are GPL-2.0-or-later |
 | SDE-FLTK | LGPL-2.0-only WITH FLTK-exception | © 1998–2026 Bill Spitzak and others; Selviana DE Project and contributors (SDE-FLTK changes) | fork of [FLTK](https://www.fltk.org) 1.4.5 |
 | SDE WM | GPL-2.0-or-later | © 2002–2007 Dana Jansens, © 2004–2006 Mikael Magnusson, © 2003 Derek Foreman and the Openbox contributors | built from [Openbox](https://github.com/Mikachu/openbox) with SDE patches |
 | SDE Compositor | MPL-2.0 AND MIT | © 2003 Keith Packard (xcompmgr), © 2011–2013 Christopher Jeffrey (Compton), © 2019–2023 Yuxuan Shui and the picom contributors | built from [picom](https://github.com/yshui/picom) |
@@ -107,8 +107,7 @@ file associations, software-center metadata and D-Bus clients keep working:
   `org.debion.Liria`, `org.debion.Taca`, `org.debion.Xanara`, ... (the
   `data/metainfo/org.debion.*.metainfo.xml` files);
 * D-Bus names: `org.debion.SDE.Power`, `org.debion.SDE.ScreenLock`;
-* the GSettings schema `org.debion.session` and Liria's
-  `org.debion.liria.*` schemas;
+* the GSettings schema `org.debion.session`;
 * binary and package names (`sde-*`, `niny`, `liria`, `xanara`, `taca`,
   `calculator`, `sde`, `sde-desktop`, `debion-desktop-base`) and the icon
   compatibility names `sdeview` and `org.debion.Calculator`.

@@ -3,8 +3,9 @@
 Type=Application
 Name=Liria
 GenericName=File Manager
-Comment=Browse and organize files and folders
-Exec=liria --no-desktop %U
+Comment=Browse and organize files, drives and network places
+Keywords=files;folders;explorer;drives;network;trash;
+Exec=liria %U
 TryExec=liria
 Icon=liria
 Terminal=false
@@ -12,6 +13,10 @@ Categories=System;FileTools;FileManager;
 OnlyShowIn=SDE;
 StartupNotify=true
 StartupWMClass=Liria
-X-SDE-Upstream=https://github.com/mate-desktop/caja
 MimeType=inode/directory;x-scheme-handler/trash;
+Actions=new-window;
 X-Developer=Selviana DE Project
+
+[Desktop Action new-window]
+Name=New Window
+Exec=liria --new-window

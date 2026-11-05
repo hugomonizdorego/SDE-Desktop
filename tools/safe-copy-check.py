@@ -3,8 +3,7 @@
 """Safe copying on a real slow drive (0.2.0 Alpha 3, src/common/safe_copy.h).
 
   sudo tools/safe-copy-check.py --i-use-a-test-machine --build-dir build
-                                [--prefix LIRIA_PREFIX] [--rate 20000000]
-                                [--display :251]
+                                [--rate 20000000]
 
 Makes a slow "USB stick": a loop device on a sparse file with ext4, whose
 writes are limited to --rate bytes per second with the blkio cgroup (the
@@ -14,9 +13,8 @@ large and many small files onto it
   1. with the writer itself (build/tests/sde-safe-copy-bench), in the page
      cache (the old way) and through the safe writer;
   2. with the SDE desktop's file operations (desk::run_file_ops, as a drop
-     or Paste does), the old way (SDE_SAFE_COPY=never) and safely;
-  3. with Liria on Xvfb (Ctrl+C, Ctrl+V; with --prefix), the old way and
-     safely,
+     or Paste does, and as Liria copies since 0.2.0 Alpha 4), the old way
+     (SDE_SAFE_COPY=never) and safely,
 
 while it reads the progress the copy reports and the drive's own count of
 written bytes (/sys/block/loopN/stat) every 50 ms. Safe copies must never
@@ -29,13 +27,11 @@ has them). Needs root, losetup, mkfs.ext4 and the blkio cgroup (v1), and
 one or in CI. Exit status 0 passed, 1 failed, 77 skipped.
 """
 import argparse
-import importlib.util
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -100,91 +96,10 @@ def parse(line):
     return dict(part.split("=", 1) for part in line.split() if "=" in part)
 
 
-def paste_into(s, env, target):
-    """Liria copies everything in Source (Ctrl+A, Ctrl+C) and opens
-    |target|; returns the Ctrl+V that starts the copy. Unlike the progress
-    smoke test it does not wait for the file operations window: a copy into
-    the page cache is over before the window would appear."""
-    liria = str(s.args.prefix / "bin/liria")
-    log = open(s.home / "liria.log", "a")
-    s.liria = subprocess.Popen([liria, "--no-desktop", str(s.home / "Source")], env=env, cwd=str(s.home),
-                               stdout=log, stderr=subprocess.STDOUT)
-    for _ in range(300):
-        if s.find("^Source"):
-            break
-        time.sleep(0.1)
-    s.x("windowactivate", "--sync", s.find("^Source"))
-    time.sleep(1.0)
-    s.x("key", "ctrl+a")
-    time.sleep(0.3)
-    s.x("key", "ctrl+c")
-    time.sleep(0.3)
-    subprocess.Popen([liria, "--no-desktop", str(target)], env=env, cwd=str(s.home), stdout=log,
-                     stderr=subprocess.STDOUT)
-    for _ in range(200):
-        if s.find("^" + target.name):
-            break
-        time.sleep(0.1)
-    window = s.find("^" + target.name)
-    s.x("windowactivate", "--sync", window)
-    time.sleep(0.8)
-    s.x("mousemove", "--window", window, 500, 400)
-    s.x("click", "1")
-    time.sleep(0.3)
-    return lambda: s.x("key", "ctrl+v")
-
-
-def liria_copy(args, drive, source, target, safe, problems):
-    """Liria copies |source| into |target| on the drive; returns its numbers."""
-    spec = importlib.util.spec_from_file_location("liria_progress_smoke", ROOT / "tools/liria-progress-smoke.py")
-    smoke = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(smoke)
-    ns = argparse.Namespace(prefix=args.prefix, display=args.display, theme="SDE-Graphite-Light-Blue",
-                            themes=ROOT / "build/themes", size="1366x768", scale=100, keep=False)
-    s = smoke.Session(ns)
-    s.home.rmdir()
-    s.home = Path(tempfile.mkdtemp(prefix="liria-safe-", dir=str(drive.work)))
-    result = {}
-    try:
-        # The session's own Source is not needed: Liria copies |source|.
-        smoke.LARGE, smoke.SMALL = (), 0
-        s.start()
-        shutil.rmtree(s.home / "Source")
-        (s.home / "Source").symlink_to(source)
-        qa = s.home / "qa.txt"
-        env = dict(s.env, LIRIA_SDE_QA_PROGRESS=str(qa), SDE_SAFE_COPY="always" if safe else "never")
-        total = sum(p.stat().st_size for p in source.rglob("*") if p.is_file())
-        paste = paste_into(s, env, target)
-        start_bytes, start = drive.written(), time.time()
-        paste()
-        lead, reported, done_at = -1 << 62, 0, None
-        while time.time() - start < 120:
-            values = smoke.qa_values(qa)
-            # finished=1: the window says the copy is over (or it closed).
-            if values.get("finished") == "1":
-                done_at = time.time() - start
-                break
-            try:
-                reported = float(values.get("bytes", "0/0").split("/")[0] or 0)
-            except ValueError:
-                pass
-            lead = max(lead, reported - (drive.written() - start_bytes))
-            time.sleep(0.05)
-        on_drive = drive.written() - start_bytes
-        result = {"done": done_at, "lead": lead, "drive": on_drive, "bytes": total}
-        if done_at is None:
-            problems.append("Liria (%s): the copy did not end" % ("safe" if safe else "old"))
-    finally:
-        s.stop()
-    return result
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build")
-    parser.add_argument("--prefix", type=Path, help="a built Liria (bin/liria)")
     parser.add_argument("--rate", type=int, default=20_000_000, help="the drive's speed, bytes per second")
-    parser.add_argument("--display", default=":251")
     parser.add_argument("--large", type=int, default=96, help="MiB of the large file")
     parser.add_argument("--small", type=int, default=400, help="number of 32 KiB files")
     parser.add_argument("--i-use-a-test-machine", dest="test_machine", action="store_true",
@@ -241,21 +156,6 @@ def main():
                 print("desktop: last phase %s s" % v.get("finish", "?"))
             shutil.rmtree(target)
             drive.settle()
-        # 3. Liria.
-        if args.prefix and (args.prefix / "bin/liria").is_file() and shutil.which("Xvfb"):
-            for safe in (False, True):
-                target = drive.mount / ("liria-" + ("safe" if safe else "old"))
-                target.mkdir()
-                r = liria_copy(args, drive, source, target, safe, problems)
-                if r.get("done") is not None:
-                    rows.append(("Liria, " + ("safe" if safe else "old"), r["done"], None, int(r["lead"]),
-                                 int(r["drive"])))
-                    if safe and r["lead"] > MIB:
-                        problems.append("Liria: the progress ran %d bytes ahead of the drive" % r["lead"])
-                    if safe and r["drive"] < total:
-                        problems.append("Liria: done with %d of %d bytes on the drive" % (r["drive"], total))
-                shutil.rmtree(target, ignore_errors=True)
-                drive.settle()
     finally:
         if drive:
             drive.close()

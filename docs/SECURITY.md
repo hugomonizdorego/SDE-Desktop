@@ -2,8 +2,8 @@
 
 This is the security policy of the Selviana Desktop Environment (SDE): the
 programs in `src/`, the toolkit fork in `sde-fltk/`, the suite components built
-from pinned upstream sources (Liria from Caja, SDE WM from Openbox, the SDE
-compositor from picom) and the DebION integration package
+from pinned upstream sources (SDE WM from Openbox, the SDE compositor from
+picom) and the DebION integration package
 `debion-desktop-base` (`data/networkmanager/`, `debian/`).
 
 ## Supported versions
@@ -40,8 +40,8 @@ What to expect:
   that credits you (unless you prefer otherwise). We aim to publish within
   90 days of the report, earlier for actively exploited problems.
 
-Vulnerabilities in upstream projects that SDE builds (Caja, Openbox, picom,
-FLTK, the Graphite and Flat Remix themes) or uses from Debian (GLib, GTK,
+Vulnerabilities in upstream projects that SDE builds (Openbox, picom, FLTK,
+ the Graphite and Flat Remix themes) or uses from Debian (GLib, GTK,
 poppler, libarchive, polkit, PAM, …) should also be reported upstream; tell us
 when SDE ships an affected copy so that the pin can be updated.
 

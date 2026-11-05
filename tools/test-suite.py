@@ -11,7 +11,7 @@ binary=args.bin_dir.resolve()
 apps=['niny','liria','xanara','taca','sde-view','sde-system-monitor',
       'sde-power','sde-lock','calculator','sde-display-settings','sde-wm','sde-compositor']
 helper=(binary/'sde-suite').read_bytes()
-NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock','calculator'}
+NATIVE={'sde-system-monitor','xanara','taca','sde-view','niny','sde-power','sde-lock','calculator','liria'}
 for name in apps:
     path=binary/name
     assert path.is_file() and not path.is_symlink(),name
@@ -26,6 +26,10 @@ for name in apps:
             assert 'javascriptcore' not in dynamic.lower(),(name,dynamic)
         if name == 'sde-lock':
             assert 'libpam' in dynamic and 'libXss' in dynamic,(name,dynamic)
+        if name == 'liria':
+            # Liria (0.2.0 Alpha 4) is SDE's own: GIO for drives and network
+            # places, no GTK and no MATE or Caja libraries.
+            assert 'libgio' in dynamic and 'libmate' not in dynamic and 'caja' not in dynamic.lower(),(name,dynamic)
     elif name == 'sde-display-settings':
         # The SDE toolkit (FLTK) is linked statically since alpha13.
         assert 'libXrandr' in dynamic and 'libfltk' not in dynamic and 'libXft' in dynamic,(name,dynamic)
@@ -48,17 +52,13 @@ for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
 
-# Liria (alpha16): SDE branding where users see it. Legal notices of the
-# original authors are allowed (see tools/liria-branding-check.py).
-liria_version=subprocess.check_output([str(binary/'liria'),'--version'],text=True)
-assert liria_version.startswith('Liria '),liria_version
-subprocess.run([sys.executable,str(Path(__file__).resolve().parent/'liria-branding-check.py'),
-                '--prefix',str(binary.parent)],check=True)
-# dh_compress gzips larger files under /usr/share/doc (not copyright).
-caja_docs=binary.parent/'share/doc/sde/upstream/caja'
-for doc in ['COPYING','AUTHORS','copyright']:
-    assert (caja_docs/doc).is_file() or (caja_docs/(doc+'.gz')).is_file(),doc
-assert (binary.parent/'share/liria/help/index.html').is_file()
+# Liria (0.2.0 Alpha 4): written by the Selviana DE Project, nothing of Caja
+# is installed; FileManager1 and its own name start it on D-Bus.
+assert not (binary.parent/'share/doc/sde/upstream/caja').exists()
+assert not (binary.parent/'share/liria').exists()
+for service in ['org.debion.Liria.service','org.debion.Liria.FileManager1.service']:
+    text=(binary.parent/'share/dbus-1/services'/service).read_text()
+    assert 'liria --service' in text,(service,text)
 
 # Software Updater (sde-update) streams PackageKit transactions through pkcon; without pkcon
 # (PackageKit 1.4 ships only pkgcli) it uses APT through pkexec.

@@ -1,1134 +1,162 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+"""The SDE suite's registry, and Liria as SDE's own program.
+
+Up to 0.2.0 Alpha 3.1 Liria was a fork of Caja 1.28, prepared by
+tools/prepare-native-suite.py from suite/overlays/liria and built with
+GTK 3 and the MATE libraries. Since 0.2.0 Alpha 4 it is written from
+scratch by the Selviana DE Project on SDE-FLTK (src/liria, docs/LIRIA.md),
+and nothing of the fork is left: these tests keep it so. The behaviour of
+the new Liria is tested by liria-tests (tests/test_liria.cpp), liria-ui
+(tests/test_liria_ui.py) and liria-dbus (tests/test_liria_dbus.py).
+"""
 import json
-import importlib.util
+import os
+import re
+import subprocess
 import unittest
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location("forks", Path(__file__).resolve().parents[1] / "tools/prepare-native-suite.py")
-forks = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(forks)
+ROOT = Path(__file__).resolve().parents[1]
 
 
-class BrandingTest(unittest.TestCase):
+def read(rel):
+    return (ROOT / rel).read_text(encoding='utf-8')
+
+
+def desktop_entry(rel):
+    entry, section = {}, None
+    for line in read(rel).splitlines():
+        line = line.strip()
+        if line.startswith('['):
+            section = line
+        elif section == '[Desktop Entry]' and '=' in line and not line.startswith('#'):
+            k, v = line.split('=', 1)
+            entry[k] = v
+    return entry
+
+
+class SuiteRegistryTest(unittest.TestCase):
     def test_independent_build_versions_and_desktop_placement(self):
-        root = Path(__file__).resolve().parents[1]
-        versions = json.loads((root / 'suite/versions.json').read_text())
-        self.assertEqual(versions['liria'], (root/'VERSION').read_text().strip())
-        rows = [r.split('\t') for r in (root/'data/suite.tsv').read_text().splitlines() if r and not r.startswith('#')]
+        versions = json.loads(read('suite/versions.json'))
+        rows = [r.split('\t') for r in read('data/suite.tsv').splitlines() if r and not r.startswith('#')]
         self.assertEqual(len(rows), 11)
         for row in rows:
             self.assertEqual(row[9], versions[row[0]])
             self.assertIn('alpha', row[9])
             desktop = 'org.debion.Calculator' if row[0] == 'calculator' else row[0]
-            self.assertTrue((root/'data/applications'/ (desktop+'.desktop')).is_file())
-        for record in json.loads((root/'suite/forks.lock.json').read_text())['forks']:
-            self.assertEqual(record['build_version'], versions[record['id']])
+            self.assertTrue((ROOT / 'data/applications' / (desktop + '.desktop')).is_file())
 
-    def test_build_version_keeps_os_release_fields_and_character_quotes(self):
-        source = r'''if (s.at(start) == '\\"') { auto label = "VERSION="; }
-const char *version = VERSION;
-const char *other = "# VERSION=";
-// PACKAGE_VERSION remains in this historical comment
-const char *build = PACKAGE_VERSION;
-#undef VERSION
-'''
-        expected = source.replace('= VERSION;', '= "1.0.0~alpha1";').replace('= PACKAGE_VERSION;', '= "1.0.0~alpha1";')
-        self.assertEqual(forks.stamp_version(source, '1.0.0~alpha1'), expected)
-
-    def test_native_identifiers_and_includes_change(self):
-        self.assertEqual(forks.brand('#include "caja-window.h"'), '#include "liria-window.h"')
-        self.assertEqual(forks.brand('#define EOM_WINDOW "org.mate.eom"'), '#define SDEVIEW_WINDOW "org.debion.sdeview"')
-        self.assertEqual(forks.brand('pluma_window_new(CajaFile *file)'), 'niny_window_new(LiriaFile *file)')
-
-    def test_header_guards_and_copyright_identifiers_stay_consistent(self):
-        source = '#ifndef CAJA_TYPES_H\n#define CAJA_TYPES_H\n#ifdef CAJA_FEATURE\n#define CAJA_COPYRIGHT "Copyright (C) Caja authors"\n#endif\n#endif\n'
-        expected = source.replace('CAJA_', 'LIRIA_')
-        self.assertEqual(forks.brand(source), expected)
-
-    def test_generated_enum_templates_and_nested_comments(self):
-        self.assertEqual(forks.brand('#define PLUMA_TYPE_@ENUMSHORT@ (@enum_name@_get_type())'),
-                         '#define NINY_TYPE_@ENUMSHORT@ (@enum_name@_get_type())')
-        source = '#include "caja.h"\n/* background */\nchar *c = "Copyright Caja authors";\n# source: https://github.com/mate-desktop/caja\n'
-        self.assertEqual(forks.brand(source), source.replace('"caja.h"', '"liria.h"'))
-
-    def test_mime_wildcards_in_strings_do_not_hide_native_code(self):
-        source = 'if (check("image/*")) eom_load(EomImage *image);\n/* unchanged EOM comment */\n'
-        expected = source.replace('eom_load', 'sdeview_load').replace('EomImage', 'SdeviewImage').replace('EOM comment', 'SDEVIEW comment')
-        self.assertEqual(forks.brand(source), expected)
-
-    def test_gtk_doc_ownership_and_type_annotations_follow_c_api(self):
-        source = '/**\n * pluma_app_get_documents:\n * Returns: (element-type PlumaDocument) (transfer container): open documents\n */\nGList *pluma_app_get_documents(PlumaApp *app);\n'
-        self.assertEqual(forks.brand(source), source.replace('pluma', 'niny').replace('Pluma', 'Niny'))
-
-    def test_gtk_geometry_api_is_never_rebranded(self):
-        self.assertEqual(forks.brand('gtk_window_set_geometry_hints(eom_window, geometry);'),
-                         'gtk_window_set_geometry_hints(sdeview_window, geometry);')
-        self.assertEqual(forks.brand('-DEOM_DATA_DIR=path'), '-DSDEVIEW_DATA_DIR=path')
-
-    def test_copyright_licenses_and_source_links_are_preserved(self):
-        source = '/* Copyright (C) 2012 Pluma MATE authors. GPLv2+ */\nconst char *url = "https://github.com/mate-desktop/pluma";\n'
-        self.assertEqual(forks.brand(source), source)
-
-    def test_app_settings_contracts_are_independent(self):
-        self.assertEqual(forks.brand('"org.mate.session" "org.mate.SessionManager"'),
-                         '"org.debion.session" "org.mate.SessionManager"')
-        self.assertEqual(forks.brand('"org.mate.Engrampa" "org.mate.SystemMonitor" "org.mate.media-handling"'),
-                         '"org.debion.Taca" "org.debion.SystemMonitor" "org.debion.media-handling"')
+    def test_liria_is_a_native_sde_program(self):
+        versions = json.loads(read('suite/versions.json'))
+        row = [r.split('\t') for r in read('data/suite.tsv').splitlines() if r.startswith('liria\t')][0]
+        self.assertEqual(row[6], 'Selviana DE Project')
+        # The copy engine's headers shared with the desktop are GPL-2.0-or-later.
+        self.assertEqual(row[8], 'GPL-3.0-or-later AND GPL-2.0-or-later')
+        self.assertEqual(row[4], 'sde')
+        self.assertEqual(versions['liria'], row[9])
+        self.assertTrue(row[3].startswith('liria'))
 
 
-class LiriaAlpha15Test(unittest.TestCase):
-    """Liria copy engine, safe removal, clipboard and recent files."""
+class CajaForkRemovedTest(unittest.TestCase):
+    """Nothing of the Caja fork and the machinery that built it is left."""
 
-    def setUp(self):
-        import sys
-        self.root = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(self.root / 'suite'))
-        import redesign
-        self.redesign = redesign
+    def test_fork_sources_and_tools_are_gone(self):
+        for rel in ['suite/overlays/liria', 'suite/forks.lock.json', 'suite/redesign.py', 'suite/sde-brand.h',
+                    'tools/prepare-native-suite.py', 'tools/build-native-suite.py', 'tools/liria-branding-check.py',
+                    'data/schemas/30_sde-suite.gschema.override']:
+            self.assertFalse((ROOT / rel).exists(), rel)
+        self.assertEqual(sorted(p.name for p in (ROOT / 'tools').glob('liria-*-smoke.py')), [])
 
-    def test_new_recipe_anchors_must_be_unique(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'x.c'
-            path.write_text('a;\na;\n')
-            with self.assertRaises(ValueError):
-                self.redesign.edit_once(path, 'a;', 'b;')
-            path.write_text('a;\n')
-            self.redesign.edit_once(path, 'a;', 'b;')
-            self.assertEqual(path.read_text(), 'b;\n')
+    def test_no_native_suite_build(self):
+        for rel in ['CMakeLists.txt', 'suite/CMakeLists.txt', 'src/CMakeLists.txt', 'tools/build-deb.sh']:
+            text = read(rel)
+            self.assertNotIn('SDE_BUILD_NATIVE_SUITE', text, rel)
+            self.assertNotIn('native-suite', text, rel)
+            self.assertNotIn('vendor/suite', text, rel)
 
-    def test_safe_copy_overlay_bounds_dirty_data_and_syncs(self):
-        source = (self.root / 'suite/overlays/liria/libliria-private/liria-sde-copy.c').read_text()
-        # 0.2.0 Alpha 3: the writer is SDE's own src/common/safe_copy.h,
-        # shared with the desktop and copied in as liria-sde-safe-copy.h.
-        writer = (self.root / 'src/common/safe_copy.h').read_text()
-        for needle in ('sync_file_range', 'syncfs', 'fdatasync', 'SYNC_FILE_RANGE_WAIT_AFTER', '"/usb"',
-                       'SPDX-License-Identifier: GPL-2.0-or-later'):
-            self.assertIn(needle, writer)
-        for needle in ('#include "liria-sde-safe-copy.h"', 'sde_copy_data', 'sde_writer_finish',
-                       'G_IO_ERROR_EXISTS', 'G_IO_ERROR_INVALID_FILENAME'):
-            self.assertIn(needle, source)
-        self.assertIn(self.root / 'src/common/safe_copy.h', self.redesign.SHARED)
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        for name in ('liria_copy_engine', 'liria_safe_remove', 'liria_clipboard'):
-            self.assertIn(name + '(staged)', recipe)
-
-    def test_fat_names_lose_pipe_and_backslash(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            ops = staged / 'libliria-private/liria-file-operations.c'
-            ops.parent.mkdir(parents=True)
-            ops.write_text('#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>"\n')
-            self.redesign.edit_once(ops, '#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>"',
-                                    '#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>|\\\\"')
-            self.assertEqual(ops.read_text(), '#define FAT_FORBIDDEN_CHARACTERS "/:;*?\\"<>|\\\\"\n')
-
-    def test_home_recent_files_can_be_cleared(self):
-        home = (self.root / 'suite/overlays/liria/sde-tools/liria-sde-home.c').read_text()
-        for needle in ('gtk_recent_manager_purge_items', 'gtk_recent_manager_remove_item',
-                       'Remove from Recent', 'sde-home-clear'):
-            self.assertIn(needle, home)
-        css = (self.root / 'suite/overlays/liria/data/liria-sde.css').read_text()
-        self.assertIn('button.sde-home-clear', css)
-
-
-class LiriaAlpha16Test(unittest.TestCase):
-    """Liria re-fork: branding, header and menus, own style sheet."""
-
-    def setUp(self):
-        import sys
-        self.root = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(self.root / 'suite'))
-        import redesign
-        self.redesign = redesign
-        self.overlay = self.root / 'suite/overlays/liria'
-        spec = importlib.util.spec_from_file_location('liria_branding', self.root / 'tools/liria-branding-check.py')
-        self.check = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.check)
-
-    def test_pinned_upstream_release(self):
-        record = [r for r in json.loads((self.root / 'suite/forks.lock.json').read_text())['forks'] if r['id'] == 'liria'][0]
-        self.assertEqual(record['commit'], '27fdb849de02f551eab46eb78f48065da9d1d1ec')  # caja v1.28.0
-        self.assertEqual(record['version'], '1.28.0')
-
-    def test_css_uses_only_standard_named_colours(self):
-        import re
-        css = (self.overlay / 'data/liria-sde.css').read_text()
-        names = set(re.findall(r'@([A-Za-z_]+)', css))
-        self.assertTrue(names)
-        # 0.2.0 Alpha 2: the ribbon's tinted glyphs also use the standard
-        # warning, error and success colours of GTK themes.
-        self.assertLessEqual(names, {'theme_bg_color', 'theme_fg_color', 'theme_base_color', 'theme_text_color',
-                                     'theme_selected_bg_color', 'theme_selected_fg_color', 'warning_color',
-                                     'error_color', 'success_color'})
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        self.assertIn('GTK_STYLE_PROVIDER_PRIORITY_APPLICATION', ui)
-        self.assertIn('/org/debion/liria/liria-sde.css', ui)
-
-    def test_about_names_developer_and_keeps_legal_notice(self):
-        """0.2.0: Liria is made by the Selviana DE Project (SDE and the
-        DebION distribution are separate projects); every copyright notice
-        of the original work stays, in the License and Credits pages."""
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        about = ui[ui.index('#define SDE_ABOUT_GROUP'):ui.index('/* --------------------------------------------------- application level')]
-        for needle in ('#define SDE_DEVELOPER   "Selviana DE Project"', '_("Developer: %s"), SDE_DEVELOPER',
-                       '_("Part of Selviana Desktop Environment")',
-                       'Copyright \\xC2\\xA9 2026 Selviana DE Project and contributors',
-                       'Selviana Desktop Environment, SDE and the SDE logo are trademarks of the Selviana DE Project.',
-                       'Copyright \\xC2\\xA9 1999\\xE2\\x80\\x93" "2009 The Nautilus authors',
-                       'Copyright \\xC2\\xA9 2011\\xE2\\x80\\x93" "2021 The Caja authors',
-                       'Copyright \\xC2\\xA9 2012\\xE2\\x80\\x93" "2021 The MATE developers',
-                       'License: GPL-2.0-or-later AND LGPL-2.0-or-later', 'Novell, Inc.', 'Eazel trademarks',
-                       'modified version of the Caja file manager 1.28 (MATE), itself derived from GNOME Nautilus',
-                       '"Caja 1.28 (MATE) https://github.com/mate-desktop/caja"', '"GNOME Nautilus https://',
-                       '_("Based on"), based_on', '_("Original authors")', 'either version 2',
-                       'of the License, or (at your option) any later version', 'GPL-2.0-or-later',
-                       '/usr/share/doc/sde/upstream/caja/', '"version", "@SDE_BUILD_VERSION@"',
-                       '"logo-icon-name", liria_sde_ui_icon_name ()'):
-            self.assertIn(needle, about)
-        self.assertNotIn('DebION', about)
-        # Liria's icon ("liria" in hicolor) with a fallback, also for windows.
-        self.assertIn('gtk_icon_theme_has_icon (gtk_icon_theme_get_default (), "liria") ? "liria" : "system-file-manager"',
-                      about)
-        self.assertIn('gtk_window_set_default_icon_name (liria_sde_ui_icon_name ());', ui)
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        self.assertIn('"liria") ? "liria" : "system-file-manager"); /* SDE */', recipe)
-        self.assertIn('<developer_name>Selviana DE Project</developer_name>', recipe)
-        import re
-        help_page = re.sub(r'<!--[\s\S]*?-->', '', (self.overlay / 'data/help/index.html').read_text())
-        self.assertIn('Developer: Selviana DE Project', help_page)
-        extension = (self.overlay / 'sde-tools/libliria-sde-tools.so.liria-extension').read_text()
-        self.assertIn('Author=Selviana DE Project', extension)
-        self.assertIn('Version=@SDE_BUILD_VERSION@', extension)
-        self.assertIn('rglob("*.liria-extension")', recipe)
-        for path in self.overlay.rglob('*'):
+    def test_no_caja_code_or_credits(self):
+        word = re.compile(r'\b(caja|nautilus|eazel)\b|mate-desktop|libmate|libcaja', re.I)
+        for path in sorted((ROOT / 'src/liria').rglob('*')):
             if path.is_file():
-                self.assertNotIn('DebION', path.read_text(errors='replace'), path)
-
-    def test_about_matches_legal_data(self):
-        """The About window agrees with data/legal/components.json: Liria's
-        copyright lines and license, SDE's developer, website and trademark."""
-        import codecs
-        import re
-        legal = json.loads((self.root / 'data/legal/components.json').read_text())
+                self.assertIsNone(word.search(path.read_text(encoding='utf-8')), path)
+        legal = json.loads(read('data/legal/components.json'))
         liria = [c for c in legal['components'] if c['id'] == 'liria'][0]
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        about = ui[ui.index('#define SDE_ABOUT_GROUP'):ui.index('/* --------------------------------------------------- application level')]
-        literal = r'"(?:[^"\\\n]|\\.)*"'
-        text = '\n'.join(codecs.escape_decode(''.join(re.findall(r'"((?:[^"\\\n]|\\.)*)"', m.group())).encode())[0]
-                         .decode('utf-8') for m in re.finditer(literal + r'(?:\s*' + literal + ')*', about))
-        for line in liria['copyright']:
-            self.assertIn(line, text)
-        self.assertIn(liria['license'], text)
-        self.assertIn(legal['trademarks']['sde'], text)
-        self.assertIn(legal['project']['developer'], text)
-        self.assertIn('#define SDE_PROJECT_URL     "%s"' % legal['project']['website'], ui)
-        self.assertIn('liria', liria['icons'])
-
-    def test_main_menu_and_header(self):
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        for action in ('"New Window"', '"New Tab"', 'Open _Terminal Here', '"Connect to Server"',
-                       '"Show Hidden Files"', '_("_Sort")', '_("_View")', '"Preferences"',
-                       '_Keyboard Shortcuts', '_About Liria', 'GTK_ICON_SIZE_SMALL_TOOLBAR', '"F10"',
-                       'GtkShortcutsWindow', 'go-previous-symbolic', 'open-menu-symbolic'):
-            self.assertIn(action, ui)
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        for name in ('liria_branding', 'liria_header', 'liria_view_switcher', 'liria_history_buttons',
-                     'liria_context_menus', 'liria_sidebar', 'liria_translations', 'liria_copy_engine',
-                     'liria_safe_remove', 'liria_clipboard'):
-            self.assertIn(name + '(staged)', recipe)
-
-    def test_context_menu_send_to_and_grouping(self):
-        tools = (self.overlay / 'sde-tools/liria-sde-tools.c').read_text()
-        for needle in ('"sde-copy-to"', 'Send To', 'More Actions', 'g_drive_is_removable', 'Compress...',
-                       'Extract Here'):
-            self.assertIn(needle, tools)
-        self.assertNotIn('mate-terminal', tools)
-        self.assertNotIn('get_toolbar_items', tools)
-
-    def test_overlays_and_man_page_are_branded(self):
-        for path in list(self.overlay.rglob('*')) + [self.root / 'data/man/liria.1',
-                                                     self.root / 'data/applications/liria.desktop']:
-            if path.is_file():
-                self.assertEqual(self.redesign.brand_leaks(path.read_text()), [], path)
-
-    def test_branding_check_rules(self):
-        leaks = self.check.leaks_in_text('x', 'Liria is the file manager for the MATE desktop\n'
-                                              'Copyright (C) 2011-2021 The Caja authors\n'
-                                              'Liria is a modified version of the Caja file manager 1.28.\n'
-                                              'Keywords=files;MATE;\nOpen Caja\nhelp:mate-user-guide\n')
-        self.assertEqual(len(leaks), 4)
-
-    def test_quick_access_pins_overlay(self):
-        pins = (self.overlay / 'src/liria-sde-pins.c').read_text()
-        for needle in ('"liria-quick-access"', 'g_get_user_config_dir', 'g_file_set_contents', "'\\t'",
-                       'G_USER_DIRECTORY_DOCUMENTS', '"trash:///"', 'liria_sde_pins_reset'):
-            self.assertIn(needle, pins)
-        self.assertEqual((self.overlay / 'sde-tools/liria-sde-pins.c').read_text().count(
-            '#include "../src/liria-sde-pins.c"'), 1)
-        home = (self.overlay / 'sde-tools/liria-sde-home.c').read_text()
-        for needle in ('liria_sde_pins_load', 'g_file_monitor_file', 'gtk_drag_dest_set', 'gtk_drag_source_set',
-                       '"text/uri-list"', 'Unpin from Quick Access', 'Remove from Quick Access', 'Move _Left',
-                       'Move _Right', 'Reset to _Defaults', 'Not available', 'sde-card-missing', 'sde-quick-add',
-                       'GDK_KEY_Delete', 'GDK_KEY_F2', 'gtk_file_chooser_dialog_new', 'G_FILE_ATTRIBUTE_THUMBNAIL_PATH',
-                       'g_content_type_get_description', 'popup-menu'):
-            self.assertIn(needle, home)
-        # Drops never ask the source to delete what was dropped (Liria moves
-        # files itself), and cards dragged out never offer a move.
-        import re
-        self.assertNotIn('gtk_drag_finish (context, TRUE, TRUE', home)
-        self.assertRegex(home, r'gtk_drag_finish \(context, [^,]+, FALSE, time\)')
-        for call in re.findall(r'gtk_drag_source_set \([^;]*;', home):
-            self.assertNotIn('GDK_ACTION_MOVE', call)
-        tools = (self.overlay / 'sde-tools/liria-sde-tools.c').read_text()
-        for needle in ('Pin to Quick Access', 'Unpin from Quick Access', 'liria_sde_pins_add', 'liria_sde_pins_remove'):
-            self.assertIn(needle, tools)
-        make = (self.overlay / 'sde-tools/Makefile.am').read_text()
-        self.assertIn('liria-sde-pins.c', make)
-        self.assertIn('TESTS = test-liria-sde-pins', make)
-        css = (self.overlay / 'data/liria-sde.css').read_text()
-        for needle in ('button.sde-card-missing', 'button.sde-quick-add', 'flowbox.sde-quick-access:drop(active)'):
-            self.assertIn(needle, css)
-        self.assertIn('Pin to Quick Access', (self.overlay / 'data/help/index.html').read_text())
-
-    def test_quick_access_recipe_edits_window_and_sidebar(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            src = staged / 'src'
-            src.mkdir()
-            (src / 'Makefile.am').write_text('liria_SOURCES = \\\n\tliria-sde-ui.c \\\n')
-            (src / 'liria-places-sidebar.c').write_text(
-                '#include "liria-sde-ui.h"\n'
-                '    GtkWidget *popup_menu_open_in_new_tab_item;\n'
-                '    sidebar->popup_menu_remove_item = NULL;\n'
-                'static void\nbookmarks_check_popup_sensitivity (LiriaPlacesSidebar *sidebar)\n{\n'
-                '    gtk_widget_show (sidebar->popup_menu_open_in_new_tab_item);\n}\n'
-                '/* Rename the selected bookmark */\n'
-                '                      G_CALLBACK (open_shortcut_in_new_window_cb), sidebar);\n'
-                '    gtk_widget_show (item);\n'
-                '    gtk_menu_shell_append (GTK_MENU_SHELL (sidebar->popup_menu), item);\n')
-            self.redesign.liria_quick_access(staged)
-            self.assertIn('\tliria-sde-pins.c \\\n\tliria-sde-pins.h \\\n\tliria-sde-ui.c', (src / 'Makefile.am').read_text())
-            sidebar = (src / 'liria-places-sidebar.c').read_text()
-            for needle in ('#include "liria-sde-pins.h"', 'popup_menu_sde_pin_item = NULL', 'sde_pin_shortcut_cb',
-                           'liria_sde_pins_is_pinned (uri)', 'sde_menu_item_set_text', '"view-pin-symbolic"'):
-                self.assertIn(needle, sidebar)
-        self.assertIn('liria_quick_access(staged)', (self.root / 'suite/redesign.py').read_text())
-
-    def test_quick_access_pin_list_unit(self):
-        import shutil
-        import subprocess
-        import tempfile
-        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
-                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
-            self.skipTest('gcc and gio-2.0 development files are needed')
-        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
-                               check=True).stdout.split()
-        with tempfile.TemporaryDirectory() as tmp:
-            binary = Path(tmp) / 'test-liria-sde-pins'
-            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
-                            str(self.overlay / 'sde-tools/test-liria-sde-pins.c')] + flags, check=True)
-            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn('ok 3 /liria/pins/defaults-and-edits', result.stdout)
-
-    def test_model_unit(self):
-        """Ribbon modes and preferences, Home view suggestions and grid,
-        pin-on-drop decisions (src/liria-sde-model.c)."""
-        import shutil
-        import subprocess
-        import tempfile
-        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
-                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
-            self.skipTest('gcc and gio-2.0 development files are needed')
-        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
-                               check=True).stdout.split()
-        with tempfile.TemporaryDirectory() as tmp:
-            binary = Path(tmp) / 'test-liria-sde-model'
-            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
-                            str(self.overlay / 'sde-tools/test-liria-sde-model.c')] + flags, check=True)
-            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            for name in ('ribbon-modes', 'prefs', 'commands', 'frequent-folders', 'columns', 'drop-decisions',
-                         'pin-on-drop'):
-                self.assertIn('/liria/model/' + name, result.stdout)
-        make = (self.overlay / 'sde-tools/Makefile.am').read_text()
-        self.assertIn('test-liria-sde-model', make)
-        self.assertIn('liria-sde-model.c', make)
-
-    def test_home_view_replaces_folder_grid(self):
-        home = (self.overlay / 'sde-tools/liria-sde-home.c').read_text()
-        for needle in ('"sde-home-replaces-view"', 'liria_sde_home_frequent_folders', 'liria_sde_drop_decide',
-                       '"sde-drop"', 'sde-home-section-button', 'liria_sde_prefs_set_flag ("home", "collapsed"',
-                       'drive_drag_dest', 'card_drag_source', 'Frequent folder', '"sde-drag-ask"'):
-            self.assertIn(needle, home)
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        for needle in ('"sde-home-replaces-view"', 'gtk_widget_set_visible (slot->view_box, !replace)',
-                       '"sde-drop"', 'liria_drag_drop_action_ask'):
-            self.assertIn(needle, ui)
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        for name in ('liria_home_view', 'liria_right_drag'):
-            self.assertIn(name + '(staged)', recipe)
-
-    def test_sidebar_pinned_colour_icons_and_pathbar(self):
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        for name in ('liria_sidebar_pinned', 'liria_pathbar'):
-            self.assertIn(name + '(staged)', recipe)
-        helpers = self.redesign.SIDEBAR_PINNED_HELPERS
-        for needle in ('liria_sde_pins_load', 'SECTION_COMPUTER', 'liria_sde_ui_sidebar_collapsed',
-                       'liria_sde_ui_sidebar_toggle', 'view-pin-symbolic', 'g_file_monitor_file',
-                       'pan-end-symbolic'):
-            self.assertIn(needle, helpers)
-        for needle in ('_("Pinned")', '_("Drives")', 'liria_sde_pins_add ((const char * const *) uris, position)',
-                       'need_sliders = FALSE', 'liria_sde_ui_sidebar_icon_pixels ()', 'sde_crumb_click_check',
-                       'slot->pending_location'):
-            self.assertIn(needle, recipe)
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        # Full-colour theme icons in the sidebar, no symbolic-first lookup.
-        self.assertNotIn('liria_sde_ui_symbolic_icon', ui + recipe)
-        for needle in ('liria_sde_ui_sidebar_icon', 'gtk-xft-dpi', 'sde_location_area_pressed',
-                       'liria_navigation_window_pane_show_navigation_bar_temporarily',
-                       '"sidebar", "collapsed"'):
-            self.assertIn(needle, ui)
-
-    def test_ribbon(self):
-        ribbon = (self.overlay / 'src/liria-sde-ribbon.c').read_text()
-        # Tabs, contextual tabs and the commands asked for.
-        for needle in ('_("Home")', '_("Share")', '_("View")', '_("Drive")', '_("Archive")',
-                       '_("Pin to Quick access")', '"Copy"', '"Paste"', '"Cut"', '_("Copy path")',
-                       '_("Paste shortcut")', '_("Move to")', '_("Copy to")', '"Trash"', '"Rename"',
-                       '"New Folder"', '"New Empty File"', '"Properties"', '"Open"', '"OtherApplication1"',
-                       '"Select All"', '_("Select none")', '"Invert Selection"', '"xdg-email"', '"--add"',
-                       '_("Copy to drive")', '"Show Hide Sidebar"', '"Show Hide Extra Pane"', '"Show Hidden Files"',
-                       '_("Sort by")', '"Self Eject Volume"', '"--extract-here"', 'GDK_ACTION_LINK'):
-            self.assertIn(needle, ribbon)
-        # Three modes, remembered, Ctrl+F1, sensitivity from the selection model.
-        for needle in ('liria_sde_ribbon_mode_save', 'liria_sde_ribbon_mode_toggle', 'GDK_KEY_F1',
-                       'LIRIA_SDE_RIBBON_OFF', 'LIRIA_SDE_RIBBON_COLLAPSED', 'liria_sde_selection_commands',
-                       'gtk_application_get_windows', '"actions-changed"', '"selection-changed"'):
-            self.assertIn(needle, ribbon)
-        # Symbolic icons of the theme only, no product branding.
-        self.assertNotRegex(ribbon, r'(?i)microsoft|windows explorer')
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        self.assertIn('liria_sde_ribbon_setup (window, ui_manager)', ui)
-        self.assertIn('liria_sde_ribbon_add_mode_items (sde_submenu (menu, _("Ri_bbon")))', ui)
-        self.assertNotIn('"<Control>F1", G_CALLBACK (sde_accel_window_call)', ui)
-        self.assertIn('liria_ribbon(staged)', (self.root / 'suite/redesign.py').read_text())
-        css = (self.overlay / 'data/liria-sde.css').read_text()
-        for needle in ('button.sde-ribbon-tab:checked', 'button.sde-ribbon-button', '.sde-ribbon-group-label'):
-            self.assertIn(needle, css)
-
-    def test_drag_and_drop_smoke(self):
-        """Real drags on Xvfb with xdotool (tools/liria-dnd-smoke.py) when a
-        built Liria is named by SDE_LIRIA_PREFIX (e.g. a DESTDIR stage/usr)."""
-        import os
-        import subprocess
-        import sys
-        script = self.root / 'tools/liria-dnd-smoke.py'
-        self.assertIn('right-button drag asks', script.read_text())
-        prefix = os.environ.get('SDE_LIRIA_PREFIX')
-        if not prefix:
-            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
-        result = subprocess.run([sys.executable, str(script), '--prefix', prefix], capture_output=True, text=True,
-                                timeout=300)
-        if result.returncode == 77:
-            self.skipTest(result.stdout.strip())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_home_view_recipe_restores_view(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            src = staged / 'src'
-            src.mkdir()
-            (src / 'Makefile.am').write_text('\tliria-sde-pins.h \\\n')
-            (src / 'liria-window-slot.c').write_text(
-                '    gtk_container_foreach (GTK_CONTAINER (slot->extra_location_widgets),\n'
-                '                           remove_all,\n'
-                '                           slot->extra_location_widgets);\n'
-                '    gtk_widget_hide (slot->extra_location_frame);\n}\n')
-            self.redesign.liria_home_view(staged)
-            self.assertIn('liria-sde-model.c', (src / 'Makefile.am').read_text())
-            slot = (src / 'liria-window-slot.c').read_text()
-            self.assertIn('gtk_widget_show (slot->view_box);', slot)
-            self.assertIn('gtk_box_set_child_packing', slot)
-
-    def test_prepared_tree_has_no_brand_leaks(self):
-        source = self.root / 'vendor/suite/liria'
-        if not source.is_dir():
-            self.skipTest('prepare the native suite first')
-        self.assertEqual(self.check.scan_source(source), [])
+        self.assertEqual(liria['license'], 'GPL-3.0-or-later AND GPL-2.0-or-later')
+        self.assertEqual(liria['upstream'], [])
+        self.assertEqual(liria['credits'], [])
+        self.assertEqual(liria['copyright'], ['Copyright © 2026 Selviana DE Project and contributors'])
+        self.assertIn('src/liria/', liria['sources'])
+        for rel in ['data/applications/liria.desktop', 'data/metainfo/org.debion.Liria.metainfo.xml',
+                    'data/man/liria.1']:
+            self.assertIsNone(word.search(read(rel)), rel)
 
 
-class GtkCss:
-    """A small GTK CSS cascade for the style sheet checks: rules in order
-    (a later rule wins at equal specificity), compound selectors with
-    element names, classes and pseudo-classes (also in :not()), descendant
-    and child combinators. Structural pseudo-classes never match."""
+class LiriaDataTest(unittest.TestCase):
+    def test_desktop_entry(self):
+        e = desktop_entry('data/applications/liria.desktop')
+        self.assertEqual(e['Exec'], 'liria %U')
+        self.assertEqual(e['Icon'], 'liria')
+        self.assertEqual(e['StartupWMClass'], 'Liria')
+        self.assertIn('inode/directory', e['MimeType'])
+        self.assertNotIn('X-SDE-Upstream', e)
+        self.assertEqual(e['X-Developer'], 'Selviana DE Project')
 
-    STATES = {'hover', 'active', 'selected', 'focus', 'backdrop', 'disabled', 'checked', 'drop(active)'}
-    SIMPLE = r'(?:\*|[\w-]+|\.[\w-]+|#[\w-]+|:[\w-]+(?:\([^()]*\))?)'
+    def test_dbus_activation(self):
+        for name, bus in [('org.debion.Liria.service.in', 'org.debion.Liria'),
+                          ('org.debion.Liria.FileManager1.service.in', 'org.freedesktop.FileManager1')]:
+            text = read('data/dbus/' + name)
+            self.assertIn('Name=' + bus + '\n', text)
+            self.assertIn('Exec=@CMAKE_INSTALL_FULL_BINDIR@/liria --service', text)
+        self.assertIn('<dbus type="user">org.freedesktop.FileManager1</dbus>',
+                      read('data/metainfo/org.debion.Liria.metainfo.xml'))
 
-    def __init__(self, *texts):
-        import re
-        self.rules = []
-        text = re.sub(r'/\*.*?\*/', '', '\n'.join(texts), flags=re.S)
-        text = re.sub(r'@(?:define-color|import)[^;]*;', '', text)
-        for selectors, body in re.findall(r'([^{}]+)\{([^{}]*)\}', text):
-            declarations = dict((k.strip(), v.strip()) for k, v in
-                                (d.split(':', 1) for d in body.split(';') if ':' in d))
-            for selector in selectors.split(','):
-                parsed = self.parse(selector.strip())
-                if parsed:
-                    self.rules.append((self.specificity(parsed), len(self.rules), parsed, declarations))
+    def test_install_rules_belong_to_the_liria_component(self):
+        rules = read('src/liria/CMakeLists.txt')
+        installs = re.findall(r'install\((.*?)\)\n', rules, re.S)
+        self.assertGreaterEqual(len(installs), 6)
+        for rule in installs:
+            self.assertIn('COMPONENT liria', rule)
+        for path in ['bin', 'applications', 'metainfo', 'man1', 'icons', 'dbus-1/services', 'sudoers.d']:
+            self.assertIn(path, rules.replace('${CMAKE_INSTALL_BINDIR}', 'bin')
+                          .replace('${CMAKE_INSTALL_MANDIR}/man1', 'man1')
+                          .replace('${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d', 'sudoers.d'))
+        top = read('CMakeLists.txt')
+        self.assertIn('PATTERN "liria.desktop" EXCLUDE', top)
+        self.assertIn('PATTERN "liria.*" EXCLUDE', top)
+        self.assertIn('PATTERN "org.debion.Liria.metainfo.xml" EXCLUDE', top)
+        self.assertIn('data/man/liria.1', top)
+        self.assertNotIn('data/sudoers/sde-liria', top)
 
-    def parse(self, selector):
-        import re
-        parts, combinator = [], ' '
-        for token in re.findall(r'>|[^\s>]+', selector):
-            if token == '>':
-                combinator = '>'
-                continue
-            simples = re.findall(r':not\(' + self.SIMPLE + r'\)|' + self.SIMPLE, token)
-            if ''.join(simples) != token:
-                return None
-            parts.append((combinator, simples))
-            combinator = ' '
-        return parts
-
-    @staticmethod
-    def specificity(parts):
-        a = b = c = 0
-        for _, simples in parts:
-            for s in simples:
-                s = s[5:-1] if s.startswith(':not(') else s
-                if s.startswith('#'):
-                    a += 1
-                elif s.startswith(('.', ':')):
-                    b += 1
-                elif s != '*':
-                    c += 1
-        return a, b, c
-
-    def matches_simple(self, simple, node):
-        name, classes, states = node
-        if simple.startswith(':not('):
-            return not self.matches_simple(simple[5:-1], node)
-        if simple.startswith('.'):
-            return simple[1:] in classes
-        if simple.startswith(':'):
-            return simple[1:] in states
-        return simple in ('*', name)
-
-    def matches(self, parts, path):
-        def match(i, j):  # parts[:i + 1] with parts[i] on path[j]
-            if not all(self.matches_simple(s, path[j]) for s in parts[i][1]):
-                return False
-            if i == 0:
-                return True
-            if parts[i][0] == '>':
-                return j > 0 and match(i - 1, j - 1)
-            return any(match(i - 1, k) for k in range(j - 1, -1, -1))
-        return match(len(parts) - 1, len(path) - 1)
-
-    def value(self, path, *properties):
-        """The winning declaration of the first of |properties| declared
-        (e.g. 'background-color', 'background') for the last node of
-        |path|, a list of (element, classes, states)."""
-        best = None
-        for spec, order, parts, declarations in self.rules:
-            for prop in properties:
-                if prop in declarations and self.matches(parts, path):
-                    if best is None or (spec, order) > best[0]:
-                        best = ((spec, order), declarations[prop])
-                    break
-        return best[1] if best else None
+    def test_man_page_names_the_options_and_keys(self):
+        man = read('data/man/liria.1')
+        for word in ['\\-\\-no\\-desktop', '\\-\\-select', 'FileManager1', 'Ctrl+T', 'Shift+Delete',
+                     'liria-quick-access']:
+            self.assertIn(word, man)
 
 
-class LiriaRubberBandCssTest(unittest.TestCase):
-    """0.2.0: the rubber band is a translucent accent sheet with a 1 px
-    accent border in every SDE theme and in Liria's own style sheet, and
-    selected files stay visible (the .view rules made the band an opaque
-    sheet over the files being selected)."""
+class LiriaCommandLineTest(unittest.TestCase):
+    """The built program (LIRIA_BIN, or build/src/liria/liria), without a display."""
 
-    def setUp(self):
-        self.root = Path(__file__).resolve().parents[1]
-        self.overlays = self.root / 'data/themes/overlays'
-        self.liria_css = (self.root / 'suite/overlays/liria/data/liria-sde.css').read_text()
+    def binary(self):
+        b = os.environ.get('LIRIA_BIN') or str(ROOT / 'build/src/liria/liria')
+        if not os.access(b, os.X_OK):
+            self.skipTest('liria is not built')
+        return b
 
-    def overlay(self, name):
-        return (self.overlays / name).read_text()
-
-    def theme_chains(self):
-        """The SDE layers of each family's gtk-3.0/gtk.css, in the order of
-        tools/build-themes.py (Glass imports Graphite)."""
-        graphite = [self.overlay(n + '-gtk-3.0.css') for n in ('graphite', 'soft', 'caption', 'apps')]
-        fluent = [self.overlay(n + '-gtk-3.0.css') for n in ('fluent', 'soft', 'caption', 'apps')]
-        glass = graphite + [self.overlay(n + '-gtk-3.0.css') for n in ('glass', 'soft', 'caption')]
-        return {'graphite': GtkCss(*graphite), 'fluent': GtkCss(*fluent), 'glass': GtkCss(*glass)}
-
-    def assertTranslucentAccent(self, value, accent, what):
-        import re
-        match = re.fullmatch(r'alpha\(\s*' + re.escape(accent) + r'\s*,\s*([0-9.]+)\s*\)', value or '')
-        self.assertIsNotNone(match, '%s: background %r is not a translucent %s' % (what, value, accent))
-        self.assertTrue(0.15 <= float(match.group(1)) <= 0.25, '%s: alpha %s' % (what, match.group(1)))
-
-    # The nodes Liria's icon view (an EelCanvas with the .view class, which
-    # adds .rubberband while it draws the band), another program's icon
-    # view and a tree view (a rubberband node) style the band with.
-    LIRIA = [('window', {'background', 'liria-navigation-window'}, set()), ('box', set(), set()),
-             ('notebook', {'liria-notebook'}, set()), ('scrolledwindow', set(), set())]
-    BANDS = {
-        'Liria icon view': LIRIA + [('widget', {'view', 'rubberband'}, set())],
-        'other icon view': [('window', {'background'}, set()), ('widget', {'view', 'rubberband'}, set())],
-        'tree view': [('window', {'background'}, set()), ('treeview', {'view'}, set()), ('rubberband', set(), set())],
-        'Liria tree view': LIRIA + [('treeview', {'view'}, set()), ('rubberband', set(), set())],
-    }
-
-    def test_theme_rubber_band_is_translucent_accent(self):
-        for family, css in self.theme_chains().items():
-            for what, path in self.BANDS.items():
-                label = '%s, %s' % (family, what)
-                self.assertTranslucentAccent(css.value(path, 'background-color', 'background'), '@sde_accent', label)
-                self.assertEqual(css.value(path, 'border'), '1px solid @sde_accent', label)
-        gtk4 = GtkCss(self.overlay('soft-gtk-4.0.css'))
-        for path in ([('window', set(), set()), ('gridview', {'view'}, set()), ('rubberband', set(), set())],
-                     [('window', set(), set()), ('columnview', {'view'}, set()), ('listview', {'view'}, set()),
-                      ('rubberband', set(), set())]):
-            self.assertTranslucentAccent(gtk4.value(path, 'background-color'), '@sde_accent', 'GTK 4')
-            self.assertEqual(gtk4.value(path, 'border'), '1px solid @sde_accent')
-
-    def test_liria_rubber_band_and_selection(self):
-        css = GtkCss(self.liria_css)
-        for what in ('Liria icon view', 'Liria tree view'):
-            self.assertTranslucentAccent(css.value(self.BANDS[what], 'background-color'),
-                                         '@theme_selected_bg_color', what)
-            self.assertEqual(css.value(self.BANDS[what], 'border'), '1px solid @theme_selected_bg_color')
-        self.assertEqual(css.value(self.LIRIA + [('widget', {'view'}, set())], 'background-color'),
-                         '@theme_base_color')
-        # Selected rows: a soft accent highlight, not the view colour; the
-        # sidebar keeps its own.
-        row = css.value(self.LIRIA + [('treeview', {'view'}, {'selected'})], 'background-color')
-        self.assertTrue(row.startswith('alpha(@theme_selected_bg_color'), row)
-        side = [('window', {'background', 'liria-navigation-window'}, set()), ('widget', {'liria-side-pane'}, set()),
-                ('treeview', {'view'}, {'selected'})]
-        self.assertEqual(css.value(side, 'background-color'), 'alpha(@theme_selected_bg_color, 0.18)')
-        # Selected icons: the canvas multiplies them by the background
-        # colour, so it is a light, fully transparent tint; the label
-        # highlight is an image. Also when the view has no focus (:active).
-        for state in ('selected', 'active'):
-            item = self.LIRIA + [('widget', {'view', 'liria-canvas-item'}, {state})]
-            self.assertEqual(css.value(item, 'background-color'),
-                             'alpha(mix(white, @theme_selected_bg_color, 0.35), 0)')
-            self.assertIn('alpha(@theme_selected_bg_color, 0.24)', css.value(item, 'background-image'))
-        # The theme layers alone keep selected rows out of the view colour.
-        for family, theme in self.theme_chains().items():
-            value = theme.value(self.LIRIA + [('treeview', {'view'}, {'selected'})], 'background-color')
-            self.assertNotIn(value, ('@sde_view', '@sde_surface'), family)
-
-    def test_gtk3_not_takes_simple_selectors(self):
-        """GTK 3 rejects a compound selector in :not() and drops the rule
-        with a parsing warning in every application."""
-        import re
-        sheets = {p.name: p.read_text() for p in self.overlays.glob('*-gtk-3.0.css')}
-        sheets['liria-sde.css'] = self.liria_css
-        for name, text in sheets.items():
-            text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
-            for inner in re.findall(r':not\(([^()]*(?:\([^()]*\))?)\)', text):
-                self.assertRegex(inner, r'^(?:[.:#]?[\w-]+|:[\w-]+\([\w-]+\))$', '%s: :not(%s)' % (name, inner))
-
-    def test_rubber_band_smoke(self):
-        """Real drags on Xvfb (tools/liria-rubberband-smoke.py) when a built
-        Liria is named by SDE_LIRIA_PREFIX; SDE_THEMES names the built SDE
-        themes (default build/themes), SDE_RUBBERBAND_ALL=1 runs every
-        family, mode, scale and compositor setting."""
-        import os
-        import subprocess
-        import sys
-        script = self.root / 'tools/liria-rubberband-smoke.py'
-        self.assertIn('files hidden under the band', script.read_text())
-        prefix = os.environ.get('SDE_LIRIA_PREFIX')
-        if not prefix:
-            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
-        command = [sys.executable, str(script), '--prefix', prefix]
-        if os.environ.get('SDE_THEMES'):
-            command += ['--themes', os.environ['SDE_THEMES']]
-        if os.environ.get('SDE_RUBBERBAND_ALL') == '1':
-            command.append('--all')
-        result = subprocess.run(command, capture_output=True, text=True, timeout=1800)
-        if result.returncode == 77:
-            self.skipTest(result.stdout.strip())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    def test_version_and_help(self):
+        b = self.binary()
+        env = {k: v for k, v in os.environ.items() if k not in ('DISPLAY', 'DBUS_SESSION_BUS_ADDRESS')}
+        out = subprocess.run([b, '--version'], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        versions = json.loads(read('suite/versions.json'))
+        self.assertIn(versions['liria'], out.stdout)
+        self.assertIn('Selviana', out.stdout)
+        out = subprocess.run([b, '--help'], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(out.returncode, 0)
+        self.assertIn('--no-desktop', out.stdout)
+        out = subprocess.run([b, '--bogus'], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(out.returncode, 2)
 
 
-class LiriaAlpha3Test(unittest.TestCase):
-    """0.2.0 Alpha 3: Liria follows the pointer smoothly (the icons of a
-    folder by rows of the canvas, only the changed rows of the sidebar and
-    of the tabs repainted, no hover fades) and opens network places typed
-    into the location bar (src/liria-sde-address.c, liria-sde-network.c)."""
-
-    def setUp(self):
-        import sys
-        self.root = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(self.root / 'suite'))
-        import redesign
-        self.redesign = redesign
-        self.overlay = self.root / 'suite/overlays/liria'
-
-    def run_smoke(self, script, *options):
-        import os
-        import subprocess
-        import sys
-        prefix = os.environ.get('SDE_LIRIA_PREFIX')
-        if not prefix:
-            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
-        command = [sys.executable, str(self.root / script), '--prefix', prefix, *options]
-        if os.environ.get('SDE_THEMES'):
-            command += ['--themes', os.environ['SDE_THEMES']]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=900)
-        if result.returncode == 77:
-            self.skipTest(result.stdout.strip())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_address_unit(self):
-        """Typed addresses (Windows paths, URIs, IP addresses, computer
-        names), passwords kept out of URIs, the other protocols of a
-        computer and the recent servers file."""
-        import shutil
-        import subprocess
-        import tempfile
-        if not shutil.which('gcc') or not shutil.which('pkg-config') or \
-                subprocess.run(['pkg-config', '--exists', 'gio-2.0']).returncode != 0:
-            self.skipTest('gcc and gio-2.0 development files are needed')
-        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'gio-2.0'], capture_output=True, text=True,
-                               check=True).stdout.split()
-        with tempfile.TemporaryDirectory() as tmp:
-            binary = Path(tmp) / 'test-liria-sde-address'
-            subprocess.run(['gcc', '-Wall', '-Werror', '-o', str(binary),
-                            str(self.overlay / 'sde-tools/test-liria-sde-address.c')] + flags, check=True)
-            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            for name in ('parse', 'errors', 'other-protocols', 'servers'):
-                self.assertIn('/liria/address/' + name, result.stdout)
-        self.assertIn('test-liria-sde-address', (self.overlay / 'sde-tools/Makefile.am').read_text())
-
-    def test_canvas_rows_recipe(self):
-        """The icon views look up the icon under the pointer by rows of the
-        canvas: every change of a group's children or of their rows keeps
-        the rows right (eel/eel-canvas.c)."""
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            (staged / 'eel').mkdir()
-            (staged / 'eel/eel-canvas.h').write_text(
-                '    struct _EelCanvasGroup {\n        /* Children of the group */\n        GList *item_list;\n'
-                '        GList *item_list_end;\n    };\n')
-            (staged / 'eel/eel-canvas.c').write_text(
-                'static void redraw_and_repick_if_mapped (EelCanvasItem *item);\n'
-                'static gboolean\nput_item_after (GList *link, GList *before)\n{\n'
-                '    EelCanvasGroup *parent;\n\n    if (link == before)\n        return FALSE;\n\n'
-                '    parent = EEL_CANVAS_GROUP (EEL_CANVAS_ITEM (link->data)->parent);\n'
-                '        if (!link->next)\n            parent->item_list_end = link;\n    }\n    return TRUE;\n}\n'
-                '/* Destroy handler for canvas groups */\n'
-                '        eel_canvas_item_destroy (child);\n    }\n\n'
-                '    if (EEL_CANVAS_ITEM_CLASS (group_parent_class)->destroy)\n'
-                '        i = list->data;\n\n'
-                '        eel_canvas_item_invoke_update (i, i2w_dx + group->xpos, i2w_dy + group->ypos, flags);\n'
-                '/* Draw handler for canvas groups */\nOLD DRAW AND POINT\n'
-                'void\neel_canvas_group_translate (EelCanvasGroup *group)\n'
-                '        group->item_list_end = g_list_append (group->item_list_end, item)->next;\n'
-                '    g_return_if_fail (EEL_IS_CANVAS_GROUP (group));\n'
-                '    g_return_if_fail (EEL_IS_CANVAS_ITEM (item));\n\n'
-                '    for (children = group->item_list; children; children = children->next)\n')
-            self.redesign.liria_canvas_rows(staged)
-            self.assertIn('gpointer sde_rows;', (staged / 'eel/eel-canvas.h').read_text())
-            canvas = (staged / 'eel/eel-canvas.c').read_text()
-            self.assertNotIn('OLD DRAW AND POINT', canvas)
-            for needle in ('to_top = before != NULL && before == parent->item_list_end;',
-                           'sde_rows_restacked (parent, link->data, to_top);', 'sde_rows_free (group);',
-                           'sde_rows_invalidate (group); /* SDE: CANVAS_ROWS */', 'sde_rows_visit',
-                           'eel_canvas_group_point', 'eel_canvas_group_draw'):
-                self.assertIn(needle, canvas)
-            # Added and removed children change the rows.
-            inserted = self.redesign.CANVAS_ROWS + self.redesign.CANVAS_GROUP_DRAW_POINT
-            self.assertEqual(canvas.count('    sde_rows_invalidate (group);\n'),
-                             inserted.count('    sde_rows_invalidate (group);\n') + 2)
-        # Small folders keep the plain loop; rows are built when needed.
-        for needle in ('SDE_ROW_CHILDREN 64', 'sde_rows_get', 'SDE_ROW_PIXELS'):
-            self.assertIn(needle, self.redesign.CANVAS_ROWS)
-        self.assertIn('liria_hover(staged)', (self.root / 'suite/redesign.py').read_text())
-
-    def test_hover_repaints_only_what_changes(self):
-        helpers = self.redesign.SIDEBAR_PINNED_HELPERS
-        for needle in ('sde_sidebar_queue_row (GTK_TREE_VIEW (tree_view), old);',
-                       'gtk_tree_view_get_background_area', 'gtk_tree_path_compare (path, old) == 0'):
-            self.assertIn(needle, helpers)
-        css = (self.overlay / 'data/liria-sde.css').read_text()
-        # No hover fades on Liria's own buttons and tabs: GTK 3 works out
-        # the style again on every frame of a fade.
-        for selector in ('.liria-navigation-window .sde-location-item box.sde-location-row > togglebutton {',
-                         '.liria-navigation-window toolbar.sde-header .sde-view-switcher > button {',
-                         'button.sde-ribbon-tab {', 'button.sde-ribbon-button {', 'button.sde-card {',
-                         '.liria-notebook > header tab {', '.liria-notebook > header tab > box {',
-                         '.liria-tab-close-button {', 'button.sde-home-section-button {'):
-            start = css.index(selector)
-            self.assertIn('transition: none;', css[start:css.index('}', start)], selector)
-        recorder = (self.overlay / 'src/liria-sde-qa.c').read_text()
-        for needle in ('LIRIA_SDE_QA_FRAMES', 'gdk_event_handler_set', 'SIGUSR2'):
-            self.assertIn(needle, recorder)
-        perf = (self.root / 'tools/liria-perf.py').read_text()
-        for name in ('hover-icons-10k', 'hover-sidebar', 'hover-tabs', 'hover-ribbon', 'XTestFakeMotionEvent'):
-            self.assertIn(name, perf)
-
-    def test_network_places(self):
-        network = (self.overlay / 'src/liria-sde-network.c').read_text()
-        for needle in ('g_vfs_get_supported_uri_schemes', 'need the package gvfs-backends.', 'gtk_entry_completion_new',
-                       '"ask-password"', 'liria_sde_keyring_available', 'LIRIA_SDE_QA_NETWORK',
-                       'liria_sde_network_show_failure'):
-            self.assertIn(needle, network)
-        # A password is kept in the keyring only when asked for and when a
-        # keyring runs; Liria answers no host key question itself.
-        self.assertEqual(network.count('G_PASSWORD_SAVE_PERMANENTLY'), 1)
-        self.assertNotIn('"ask-question"', network)
-        sources = network + (self.overlay / 'src/liria-sde-address.c').read_text()
-        for setting in ('client min protocol', 'ntlm auth', 'lanman', 'StrictHostKeyChecking', 'NT1'):
-            self.assertNotIn(setting, sources)
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        for needle in ('liria_network(staged)', 'liria_sde_network_entry_activate (entry,',
-                       'liria_sde_network_mount_operation_new (GTK_WINDOW (window), location)',
-                       'liria_sde_network_show_failure (GTK_WIDGET (window), location, error)'):
-            self.assertIn(needle, recipe)
-
-    def test_network_smoke(self):
-        """The location bar on Xvfb (tools/liria-network-smoke.py) when a
-        built Liria is named by SDE_LIRIA_PREFIX; with GVfs and its
-        backends installed it also opens Windows shares."""
-        script = (self.root / 'tools/liria-network-smoke.py').read_text()
-        self.assertIn('without the protocol the message names gvfs-backends', script)
-        self.run_smoke('tools/liria-network-smoke.py')
-
-
-class LiriaAlpha31Test(unittest.TestCase):
-    """0.2.0 Alpha 3.1: context menus and the main menu open without
-    waiting for the folder view, highlights follow the pointer at once, and
-    pointer motion over a tab's view costs no X round trip."""
-
-    def setUp(self):
-        import sys
-        self.root = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(self.root / 'suite'))
-        import redesign
-        self.redesign = redesign
-        self.overlay = self.root / 'suite/overlays/liria'
-
-    def test_menu_items_do_not_fade(self):
-        """Themes fade the highlight of menu items out; Liria's menus show
-        it at once (the owner's video: two or three items blue at once)."""
-        import re
-        css = re.sub(r'/\*.*?\*/', '', (self.overlay / 'data/liria-sde.css').read_text(), flags=re.S)
-        rule = re.search(r'menu menuitem,\s*\.menu menuitem,\s*\.context-menu menuitem\s*\{([^}]*)\}', css)
-        self.assertIsNotNone(rule)
-        self.assertIn('transition: none;', rule.group(1))
-
-    def test_recipe_steps_are_applied(self):
-        recipe = (self.root / 'suite/redesign.py').read_text()
-        order = [recipe.index('    %s(staged)\n' % step) for step in
-                 ('liria_progress', 'liria_menus', 'liria_list_view', 'liria_menu_paint_order',
-                  'liria_menu_prepare', 'liria_translations')]
-        self.assertEqual(order, sorted(order))
-        # The view's style changes with its focus while a menu is open: only
-        # a change of what labels are measured with makes every icon again,
-        # and the background only follows the view colour and the scale.
-        style = self.redesign.ICON_VIEW_STYLE
-        self.assertLess(style.index('g_strcmp0 (label_style, container->details->sde_label_style) != 0'),
-                        style.index('liria_icon_container_request_update_all (container);'))
-        self.assertIn('liria_icon_canvas_item_sde_forget_render (icon->item);', style)
-        self.assertIn('gtk_widget_get_direction (widget)', style)
-        self.assertIn('gdk_rgba_equal (&old, &self->details->default_color)', self.redesign.BACKGROUND_COLOR)
-        self.assertIn('if (!self->details->sde_color_known)', self.redesign.BACKGROUND_COLOR)
-        # A menu update reads the information of a few local files again,
-        # not of hundreds of selected or remote ones (synchronous I/O).
-        self.assertIn('if (selection_count <= 8 && liria_file_is_local (file)) /* SDE */', recipe)
-
-    def test_list_view_recipe(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            (staged / 'src').mkdir()
-            (staged / 'src/liria-notebook.c').write_text(
-                'G_DEFINE_TYPE (LiriaNotebook, liria_notebook, GTK_TYPE_NOTEBOOK);\n\n'
-                'static void\nliria_notebook_class_init (LiriaNotebookClass *klass)\n{\n'
-                '    widget_class->scroll_event = liria_notebook_scroll_event;\n}\n')
-            self.redesign.liria_list_view(staged)
-            notebook = (staged / 'src/liria-notebook.c').read_text()
-            self.assertIn('widget_class->motion_notify_event = liria_notebook_motion_notify_event;', notebook)
-            # Motions from the page are left out, except while a button is
-            # held (a tab being dragged).
-            self.assertLess(notebook.index('gtk_widget_is_ancestor (event_widget, child)'),
-                            notebook.index('GTK_WIDGET_CLASS (liria_notebook_parent_class)->motion_notify_event'))
-            self.assertIn('GDK_BUTTON1_MASK | GDK_BUTTON2_MASK | GDK_BUTTON3_MASK', notebook)
-
-    def test_menu_paint_order_and_prepare_recipes(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            (staged / 'eel').mkdir()
-            (staged / 'src/file-manager').mkdir(parents=True)
-            (staged / 'eel/eel-gtk-extensions.c').write_text(
-                'void\neel_pop_up_context_menu (GtkMenu\t*menu,\n                         GdkEventButton *event)\n{\n'
-                '    g_return_if_fail (GTK_IS_MENU (menu));\n\n'
-                '    gtk_menu_popup_at_pointer (menu, (const GdkEvent*) event);\n\n'
-                '    g_object_ref_sink (menu);\n    g_object_unref (menu);\n}\n')
-            (staged / 'eel/eel-gtk-extensions.h').write_text(
-                'void                  eel_pop_up_context_menu                         (GtkMenu              *menu,\n'
-                '        GdkEventButton       *event);\n')
-            (staged / 'src/file-manager/fm-directory-view.c').write_text(
-                'static void\nschedule_update_menus (FMDirectoryView *view)\n{\n\tOLD\n'
-                '\t/* Schedule a menu update with the current update interval */\n'
-                '\tif (view->details->update_menus_timeout_id == 0) {\n\t}\n}\n')
-            self.redesign.liria_menu_paint_order(staged)
-            self.redesign.liria_menu_prepare(staged)
-            eel = (staged / 'eel/eel-gtk-extensions.c').read_text()
-            # The window waits for the menu's first frame, its closing or a
-            # quarter of a second, and is thawed exactly once.
-            self.assertLess(eel.index('gtk_menu_popup_at_pointer (menu'), eel.index('eel_sde_paint_menu_first (menu, NULL);'))
-            for needle in ('"after-paint"', '"unmap"', 'g_timeout_add (250,', 'gdk_window_freeze_updates (frozen);'):
-                self.assertIn(needle, eel)
-            self.assertEqual(eel.count('gdk_window_thaw_updates ('), 1)
-            self.assertIn('eel_sde_paint_menu_first', (staged / 'eel/eel-gtk-extensions.h').read_text())
-            view = (staged / 'src/file-manager/fm-directory-view.c').read_text()
-            self.assertNotIn('OLD', view)
-            self.assertIn('event->button.button == 3', view)
-            self.assertIn('g_idle_add (sde_update_menus_for_popup, view)', view)
-            self.assertIn('FM_DIRECTORY_VIEW_POPUP_PATH_SELECTION', view)
-        ui = (self.overlay / 'src/liria-sde-ui.c').read_text()
-        self.assertIn('eel_sde_paint_menu_first (GTK_MENU (menu), GTK_WIDGET (button));', ui)
-        ribbon = (self.overlay / 'src/liria-sde-ribbon.c').read_text()
-        self.assertIn('eel_sde_paint_menu_first (GTK_MENU (menu), button);', ribbon)
-
-    def test_menu_recorder_and_smoke_agree(self):
-        """The records of LIRIA_SDE_QA_FRAMES that tools/liria-menu-smoke.py
-        reads exist in the recorder."""
-        recorder = (self.overlay / 'src/liria-sde-qa.c').read_text()
-        smoke = (self.root / 'tools/liria-menu-smoke.py').read_text()
-        for record in ('input', 'menu-map', 'menu-frame', 'menu-select', 'file', 'place', 'menu-item'):
-            self.assertIn('"%s\\t' % record, recorder, record)
-            self.assertIn('"%s"' % record, smoke, record)
-        for needle in ('g_signal_add_emission_hook', 'gtk_menu_shell_get_selected_item', 'gdk_event_get_time'):
-            self.assertIn(needle, recorder)
-        for needle in ('--slow', 'taskset', 'XTestFakeButtonEvent', 'frames_per_change'):
-            self.assertIn(needle, smoke)
-
-    def test_prepared_tree_has_the_menu_fixes(self):
-        source = self.root / 'vendor/suite/liria'
-        if not source.is_dir():
-            self.skipTest('prepare the native suite first')
-        for path, needle in (('libliria-private/liria-icon-container.c', 'sde_label_style (widget)'),
-                             ('libliria-private/liria-icon-canvas-item.c', 'liria_icon_canvas_item_sde_forget_render'),
-                             ('eel/eel-background.c', 'sde_background_style (self)'),
-                             ('src/liria-emblem-sidebar.c', 'sde_emblem_sidebar_mapped'),
-                             ('src/liria-notebook.c', 'liria_notebook_motion_notify_event'),
-                             ('eel/eel-gtk-extensions.c', 'eel_sde_paint_menu_first'),
-                             ('src/file-manager/fm-directory-view.c', 'sde_update_menus_for_popup')):
-            self.assertIn(needle, (source / path).read_text(), path)
-
-    def test_menu_smoke(self):
-        """Context menu latency on Xvfb (tools/liria-menu-smoke.py) when a
-        built Liria is named by SDE_LIRIA_PREFIX; SDE_THEMES names the
-        built SDE themes."""
-        import os
-        import subprocess
-        import sys
-        prefix = os.environ.get('SDE_LIRIA_PREFIX')
-        if not prefix:
-            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
-        command = [sys.executable, str(self.root / 'tools/liria-menu-smoke.py'), '--prefix', prefix, '--repeat', '2']
-        if os.environ.get('SDE_THEMES'):
-            command += ['--themes', os.environ['SDE_THEMES']]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=1200)
-        if result.returncode == 77:
-            self.skipTest(result.stdout.strip())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-
-class LiriaAlpha2Test(unittest.TestCase):
-    """0.2.0 Alpha 2: Liria's file operations window in the design of SDE's
-    copy and move dialog, on SDE's own model (src/common/transfer_model.h),
-    large files copied in slices so the progress follows them, and the
-    ribbon's icons."""
-
-    def setUp(self):
-        import sys
-        self.root = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(self.root / 'suite'))
-        import redesign
-        self.redesign = redesign
-        self.lib = self.root / 'suite/overlays/liria/libliria-private'
-
-    def test_window_uses_the_shared_model_and_texts(self):
-        # 0.2.0 Alpha 3: SDE's own picture (a penguin carrying papers,
-        # src/common/transfer_scene.h) instead of the Windows-like speed
-        # graph, in Liria and in the SDE dialog alike.
-        source = (self.lib / 'liria-sde-progress.c').read_text()
-        for needle in ('#include "liria-sde-transfer-model.h"', '#include "liria-sde-transfer-scene.h"',
-                       'sde_transfer_update', 'sde_transfer_set_paused', 'sde_scene_draw', 'sde_scene_moving',
-                       'sde_transfer_remaining', 'sde_transfer_eta_parts'):
-            self.assertIn(needle, source)
-        dialog = (self.root / 'src/common/transfer_dialog.cpp').read_text()
-        # The same words as the SDE desktop's dialog.
-        for text in ('"Copying %s item to %s", "Copying %s items to %s"',
-                     '"Moving %s item to %s", "Moving %s items to %s"',
-                     '"Copied %s item to %s", "Copied %s items to %s"',
-                     '"About %d second left", "About %d seconds left"',
-                     '"About %d hour and %d minutes left", "About %d hours and %d minutes left"',
-                     '"A few seconds left"', '"Details"', '"Done"', '"%s on %s"', '"%s of %s"',
-                     '"Not everything could be copied to %s"',
-                     '"Windows may offer to scan it as it was not ejected; the files are complete."'):
-            self.assertIn(text, source)
-            self.assertIn(text, dialog)
-        for name in ('"From"', '"To"', '"Items"'):
-            self.assertIn('N_(' + name + ')', source)
-            self.assertIn('_(' + name + ')', dialog)
-        # Nothing of the Windows 10 dialog is left.
-        for gone in ('Speed: %s', '%% complete', 'More details', 'Items remaining', 'sde_transfer_draw_graph',
-                     'sde_transfer_draw_logo'):
-            self.assertNotIn(gone, source)
-            self.assertNotIn(gone, dialog)
-        # The picture at about 30 frames per second, still with reduced
-        # motion and when minimized.
-        for needle in ('FRAME_MSEC 33', 'SDE_REDUCED_MOTION', '"gtk-enable-animations"', '"aero", "animations"',
-                       '"appearance", "low_resource"', 'GDK_WINDOW_STATE_ICONIFIED', 'LIRIA_SDE_QA_PROGRESS',
-                       'LIRIA_SDE_QA_COPY_RATE'):
-            self.assertIn(needle, source)
-        for shared in ('src/common/transfer_model.h', 'src/common/transfer_scene.h'):
-            self.assertIn('SPDX-License-Identifier: GPL-2.0-or-later', (self.root / shared).read_text())
-            self.assertIn(self.root / shared, self.redesign.SHARED)
-        css = (self.root / 'suite/overlays/liria/data/liria-sde.css').read_text()
-        for needle in ('button.sde-progress-action', 'progressbar.sde-progress-bar',
-                       '.sde-progress.sde-paused progressbar.sde-progress-bar progress',
-                       '.sde-progress.sde-done progressbar.sde-progress-bar progress',
-                       '.sde-progress.sde-failed progressbar.sde-progress-bar progress'):
-            self.assertIn(needle, css)
-
-    def test_large_files_are_copied_in_slices(self):
-        source = (self.lib / 'liria-sde-copy.c').read_text()
-        for needle in ('liria_sde_copy_large_file', 'copy_file_range', 'FICLONE', 'SLICE_MIN', 'SLICE_MAX',
-                       'open_destination', 'G_IO_ERROR_EXISTS', 'g_file_delete (source'):
-            self.assertIn(needle, source)
-
-    def test_recipe_edits(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            staged = Path(tmp)
-            lib = staged / 'libliria-private'
-            lib.mkdir()
-            for name in ('liria-sde-progress.c', 'liria-sde-progress.h'):
-                (lib / name).write_text((self.lib / name).read_text())
-            (lib / 'Makefile.am').write_text('\tliria-progress-info.c \\\n\tliria-progress-info.h \\\n')
-            (lib / 'liria-progress-info.c').write_text(
-                '#include "liria-global-preferences.h"\n'
-                '    gtk_container_add (GTK_CONTAINER (progress_window),\n                       vbox);\n'
-                '    data->state = newstate;\n'
-                '"media-playback-pause", GTK_ICON_SIZE_BUTTON\n"media-playback-start", GTK_ICON_SIZE_BUTTON\n'
-                'gtk_image_new_from_icon_name ("undo", GTK_ICON_SIZE_BUTTON);\n'
-                '    GtkWidget *label, *progress_bar, *hbox, *vbox, *box, *btcancel, *imgcancel;\n'
-                '    label = gtk_label_new ("status");\n    hbox = NULL;\n    gtk_widget_show_all (data->widget);\n'
-                '                        progress,\n                        FALSE, FALSE, 6);\n'
-                'static void\nop_finished (ProgressWidgetData *data)\n{\n    gtk_widget_destroy (data->widget);\n'
-                '    if (! is_op_paused (data->state))\n        (*n)++;\n'
-                'static void\nprogress_widget_invalid_state (ProgressWidgetData *data)\n')
-            (lib / 'liria-file-operations.c').write_text(
-                '#include "liria-sde-copy.h"\n'
-                '\tliria_progress_info_start (job->common.progress);\n\n\tscan_sources (job->files,\n'
-                '\t\t      &source_info,\n\t\t      common,\n\t\t      OP_KIND_COPY);\n'
-                '\tliria_progress_info_start (job->common.progress);\n\n\tverify_destination (&job->common,\n'
-                '\t\t\t    job->destination,\n\t\t\t    &dest_fs_id,\n\t\t\t    -1);\n'
-                '\tliria_progress_info_set_progress (job->progress, transfer_info->num_bytes, total_size);\n}\n'
-                '\tif (should_skip_file (job, src)) {\n\t\t*skipped_file = TRUE;\n\t\treturn;\n\t}\n\n'
-                '\tunique_name_nr = 1;\n'
-                '\t\treport_copy_progress (pdata->job,\n\t\t\t\t      pdata->source_info,\n'
-                '\t\t\t\t      pdata->transfer_info);\n\t}\n}\n'
-                '\tSdeSync sync = { flush, (char *) path, 0 };\n\tGThread *thread;\n\n'
-                '\tif (sde_handled) {\n\t\t/* done above */\n\t} else if (copy_job->is_move) {\n'
-                '\tliria_progress_info_get_ready (job->common.progress);\n'
-                '\treturn g_cancellable_is_cancelled (job->common.cancellable);\n'
-                '\tif (!liria_sde_flush_finish (job->sde_flush, &error)) {\n'
-                'static gboolean\ncopy_job (GIOSchedulerJob *io_job,'
-                '\t\tjob->sde_flush = liria_sde_flush_new (dest);\n'
-                '\tjob->sde_flush = liria_sde_flush_new (job->destination);\n'
-                '\tliria_progress_info_start (job->common.progress);\n\n\tto_trash_files = NULL;\n')
-            self.redesign.liria_progress(staged)
-            self.assertEqual((lib / 'liria-sde-transfer-model.h').read_text(),
-                             (self.root / 'src/common/transfer_model.h').read_text())
-            self.assertEqual((lib / 'liria-sde-transfer-scene.h').read_text(),
-                             (self.root / 'src/common/transfer_scene.h').read_text())
-            self.assertIn('\tliria-sde-transfer-scene.h \\\n', (lib / 'Makefile.am').read_text())
-            self.assertIn('\tliria-sde-progress.c \\\n', (lib / 'Makefile.am').read_text())
-            self.assertIn('\tliria-sde-transfer-model.h \\\n', (lib / 'Makefile.am').read_text())
-            info = (lib / 'liria-progress-info.c').read_text()
-            for needle in ('#include "liria-sde-progress.h"', 'liria_sde_progress_window_setup (progress_window);',
-                           'liria_sde_progress_set_state (data->widget,', 'liria_sde_progress_build (vbox, info,',
-                           '"media-playback-pause-symbolic"', '"window-close-symbolic"', 'FALSE, FALSE, 0);',
-                           '(GCallback)sde_cancel_clicked', 'liria_sde_progress_finish (data->widget',
-                           '!liria_sde_progress_is_finished (widget)', 'liria_sde_progress_close (data->widget)'):
-                self.assertIn(needle, info)
-            self.assertNotIn('gtk_label_new ("status")', info)
-            ops = (lib / 'liria-file-operations.c').read_text()
-            for needle in ('LIRIA_SDE_TRANSFER_COPY : LIRIA_SDE_TRANSFER_DUPLICATE', 'LIRIA_SDE_TRANSFER_MOVE',
-                           'liria_sde_progress_transfer_counts (job->progress', 'liria_sde_progress_transfer_item',
-                           'liria_sde_progress_transfer_finishing (job->progress);',
-                           'liria_progress_info_get_ready (pdata->job->common.progress);',
-                           'liria_sde_progress_transfer_throttle (new_size);', 'liria_sde_copy_large_file (src, dest',
-                           'liria_sde_progress_transfer_throttle (written);', 'liria_sde_progress_transfer_failed',
-                           'sde_report_drive (job);', 'LIRIA_SDE_TRANSFER_TRASH : LIRIA_SDE_TRANSFER_DELETE'):
-                self.assertIn(needle, ops)
-        self.assertIn('liria_progress(staged)', (self.root / 'suite/redesign.py').read_text())
-
-    def test_ribbon_icon_smoke(self):
-        """The ribbon's icons on Xvfb (tools/liria-ribbon-smoke.py) when a
-        built Liria is named by SDE_LIRIA_PREFIX: full-colour icons of the
-        icon theme or tinted glyphs, their sizes, every tab, a new icon
-        theme while Liria runs."""
-        import os
-        import subprocess
-        import sys
-        script = self.root / 'tools/liria-ribbon-smoke.py'
-        self.assertIn('a new icon theme (xsettingsd) changes the icons while Liria runs', script.read_text())
-        ribbon = (self.root / 'suite/overlays/liria/src/liria-sde-ribbon.c').read_text()
-        self.assertIn('LIRIA_SDE_QA_RIBBON', ribbon)
-        self.assertIn('"tab\\t%s\\t%d,%d,%d,%d\\n"', ribbon)
-        prefix = os.environ.get('SDE_LIRIA_PREFIX')
-        if not prefix:
-            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
-        command = [sys.executable, str(script), '--prefix', prefix]
-        if os.environ.get('SDE_THEMES'):
-            command += ['--themes', os.environ['SDE_THEMES']]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
-        if result.returncode == 77:
-            self.skipTest(result.stdout.strip())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_copy_progress_smoke(self):
-        """A real copy on Xvfb (tools/liria-progress-smoke.py) when a built
-        Liria is named by SDE_LIRIA_PREFIX."""
-        import os
-        import subprocess
-        import sys
-        script = self.root / 'tools/liria-progress-smoke.py'
-        self.assertIn('Pause stops the copy in the middle of a large file', script.read_text())
-        prefix = os.environ.get('SDE_LIRIA_PREFIX')
-        if not prefix:
-            self.skipTest('set SDE_LIRIA_PREFIX to a built Liria prefix')
-        command = [sys.executable, str(script), '--prefix', prefix]
-        if os.environ.get('SDE_THEMES'):
-            command += ['--themes', os.environ['SDE_THEMES']]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=600)
-        if result.returncode == 77:
-            self.skipTest(result.stdout.strip())
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

@@ -1,9 +1,7 @@
 # Building SDE
 
-The complete native suite targets **Debian testing** (and distributions based on it,
-such as DebION GNU/Linux). Older
-Debian and Ubuntu releases are not full-suite CI targets: the selected stable
-GTK application sources require libmate-desktop 1.27.1 or later.
+SDE targets **Debian testing** (and distributions based on it, such as DebION
+GNU/Linux). Older Debian and Ubuntu releases are not CI targets.
 
 ## Debian packages
 
@@ -15,9 +13,8 @@ sudo apt install ./dist/sde_*.deb ./dist/sde-desktop_*.deb
 ```
 
 `debian/control` is the authoritative build dependency list. The scripts install
-compilers, Rust, FLTK, GTK3, GtkSourceView4, GTKmm, document backends and native
-build tools. They do not install Caja (Liria's upstream) or any other upstream
-desktop application.
+compilers, Rust, GLib/GIO, cairo, document backends and the build tools of the
+session components. They install no upstream desktop application.
 
 `build-deb.sh` downloads and verifies pinned source before compilation, builds in
 a temporary source copy with `dpkg-buildpackage -us -uc -b`, runs the tests and
@@ -28,32 +25,29 @@ for installation so shared libraries and system services are resolved.
 ## Editable source and offline compilation
 
 ```sh
-python3 tools/prepare-native-suite.py
+python3 tools/prepare-components.py   # SDE WM and SDE Compositor sources
+python3 tools/prepare-themes.py       # the GTK theme sources
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j4
 ctest --test-dir build --output-on-failure
 sudo cmake --install build
 ```
 
-The preparation step fetches exact commits and pinned submodules from
-`suite/forks.lock.json`, preserves original legal notices and writes downstream
-source to `vendor/suite`. Compilation then needs no network. `source-work/native`
-is only the original checkout cache. Do not edit that cache; edit the prepared
-source or the preparation recipe. The tool refuses to replace a prepared tree
-with a different recipe automatically. Keep downstream edits before regenerating.
-Source edits invalidate the native build stamp. Per-application build logs are
-under `build/native-build/*.log`. `--only` on `tools/build-native-suite.py` can
-rebuild one fork during development; Liria must be staged before Taca.
+The preparation steps fetch the pinned sources of the session components and
+themes; compilation then needs no network. Every application, Liria included
+since 0.2.0 Alpha 4 ([LIRIA.md](LIRIA.md)), is SDE's own source in `src/` and
+needs no preparation. Up to 0.2.0 Alpha 3.1 `tools/prepare-native-suite.py`
+prepared the Caja fork Liria came from; that machinery and the
+`SDE_BUILD_NATIVE_SUITE` option are gone.
 
-Release source archives already contain prepared sources, so CMake can build
-them offline without fetching GitHub. The build installs native executables,
-private libraries, plugins, schemas, resources and helpers into the same SDE
-package. It excludes development headers and static libraries. Native copyrights
-are installed under `/usr/share/doc/sde/upstream`.
+Release source archives already contain the prepared sources, so CMake can
+build them offline without fetching GitHub. The build installs the executables,
+resources, schemas and helpers; it excludes development headers and static
+libraries. Every `install()` rule names an install component (Liria's is
+`liria`), from which the Debian packages are made.
 
-For shell-only development on an older distribution, explicitly configure
-`-DSDE_BUILD_NATIVE_SUITE=OFF`. That option omits the suite and must not be used
-for the complete SDE package.
+For shell-only development, configure `-DSDE_BUILD_COMPONENTS=OFF`: SDE WM and
+SDE Compositor are not built then.
 
 ## Tests
 
@@ -63,7 +57,7 @@ Rust requires 1.59+ and has no registry dependencies:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo test --workspace --locked --offline
-python3 tests/test_native_forks.py
+python3 -m unittest tests/test_native_forks.py tests/test_legal_data.py tests/test_metainfo.py
 ```
 
 CTest also checks C++ parsing, geometry, themes, update models and the Rust ABI.
@@ -100,10 +94,7 @@ releasing an installer image.
 
 Run `python3 tools/prepare-components.py` before configuring; this fetches the
 pinned Openbox and picom sources (Calculator is a native SDE program since
-alpha50). `tools/build-deb.sh` performs both
-source-preparation steps automatically, then builds without network access.
-Additional dependencies are listed in `debian/control` and installed by
-`tools/install-native-deps.sh`. GTK3 is retained for the remaining native forks;
-GTK4 and JavaScriptCoreGTK are no longer needed. CMake >= 3.19 is
-required. For core-only development, explicitly disable both
-`SDE_BUILD_NATIVE_SUITE` and `SDE_BUILD_COMPONENTS`.
+alpha50). `tools/build-deb.sh` performs the source preparation automatically,
+then builds without network access. Additional dependencies are listed in
+`debian/control` and installed by `tools/install-native-deps.sh`. CMake >= 3.19
+is required. For core-only development, disable `SDE_BUILD_COMPONENTS`.

@@ -1,62 +1,88 @@
 .\" SPDX-License-Identifier: GPL-3.0-or-later
-.TH LIRIA 1 "October 2026" "SDE" "User Commands"
+.TH LIRIA 1 "November 2026" "SDE" "User Commands"
 .SH NAME
 liria \- the SDE file manager
 .SH SYNOPSIS
 .B liria
-[\fIOPTIONS\fR] [\fIURI\fR...]
+[\fIOPTIONS\fR] [\fIURI\fR|\fIPATH\fR...]
 .SH DESCRIPTION
-Liria browses and organizes the files and folders on your computer,
-removable drives and the network. It has tabs, an extra pane, a Home overview
-with quick access folders, drives and recent files, safe copying to USB drives
-and extensions for archives (Taca) and terminals.
+Liria browses and organizes the files and folders of your computer, its
+drives and the network. Its window has tabs in the title bar, Back,
+Forward, Up and Refresh, an address bar and a search box, a short command
+bar (New, Cut, Copy, Paste, Rename, Share, Delete, Sort, View and More) and
+a navigation pane with Home, the Trash, the pinned folders, the drives and
+the network.
 .PP
-The window has one compact header row: Back, Forward and Parent Folder, the
-path of the current folder, the view buttons (icons, list, compact), Search and
-the main menu (F10). Press Ctrl+? for all keyboard shortcuts and F1 for help.
+The Home page shows Quick access (only the folders and files you pinned),
+the drives with how full they are, network locations and the recently used
+files.
 .PP
-Liria does not manage the desktop: SDE keeps its own wallpaper and desktop icons.
+The address bar takes paths and network addresses: \fB\\\\server\\share\fR,
+\fBsmb://\fR, \fBsftp://\fR, \fBftp://\fR, \fBdav://\fR, \fBdavs://\fR,
+\fBnfs://\fR, IP addresses and computer names. They are opened with GIO and
+GVfs (the package gvfs-backends); a server that wants a password asks for
+it in Liria's sign-in window.
+.PP
+One Liria runs per session: \fBliria\fR opens a new window of the running
+Liria. Liria is also the session's \fBorg.freedesktop.FileManager1\fR, the
+file manager that web browsers ask to show a downloaded file.
 .SH OPTIONS
 .TP
-.B \-\-browser
-Open a browser window.
+.BR \-s ", " \-\-select
+Show the given files selected in their folders.
+.TP
+.BR \-w ", " \-\-new\-window
+Open a new window (Liria always does).
 .TP
 .BR \-t ", " \-\-tabs
-Open the URIs in tabs of one window.
+Open the locations as tabs of one window (the default).
 .TP
 .BR \-n ", " \-\-no\-default\-window
-Only create windows for explicitly given URIs.
+Start without a window when no location is given.
 .TP
-.BR \-s ", " \-\-select
-Select the given URIs in their parent folders.
-.TP
-.BR \-g ", " \-\-geometry =\fIGEOMETRY\fR
-Create the first window with the given geometry.
+.BR \-g ", " \-\-geometry =\fIW\fBx\fIH\fR
+The size of the window.
 .TP
 .BR \-q ", " \-\-quit
 Quit the running Liria.
 .TP
-.B \-\-version
-Show the Liria version.
+.B \-\-no\-desktop
+Accepted for compatibility; SDE draws its own desktop.
 .TP
-.B \-\-help
-Show all options.
+.B \-\-version
+Show the version.
+.TP
+.BR \-h ", " \-\-help
+Show the options.
+.SH KEYS
+Ctrl+N new window, Ctrl+T new tab, Ctrl+W close the tab, Ctrl+Tab next tab,
+Ctrl+Shift+N new folder, F2 rename, Alt+Enter properties, Alt+Left, Alt+Right
+and Alt+Up go back, forward and up, Backspace back, Ctrl+L or Alt+D the
+address bar, Ctrl+E or Ctrl+F the search box, F5 refresh, Delete to the Trash,
+Shift+Delete delete permanently, Ctrl+A select all, Ctrl+Z undo, Ctrl+H hidden
+items, Ctrl+mouse wheel or Ctrl+plus and minus the icon size, F11 full screen.
 .SH FILES
 .TP
-.I /usr/share/liria/help/index.html
-Liria help.
+.I ~/.config/sde/liria.conf
+The preferences: layout, icon size, sorting, hidden items, the sections of
+the Home page and the navigation pane.
 .TP
-.I ~/.config/liria/
-Bookmarks, accelerators and other user data.
+.I ~/.config/sde/liria-quick-access
+The pinned folders and files, one location per line.
+.TP
+.I ~/.config/sde/liria-servers
+The recently opened servers (never a password).
+.TP
+.I ~/.local/state/sde/liria-views
+The layout and sorting of the folders whose view you changed.
 .SH AUTHORS
-Liria is developed by the Selviana DE Project as part of the Selviana Desktop
-Environment (SDE). The authors of the original program are credited below.
+Liria is written by the Selviana DE Project as part of the Selviana Desktop
+Environment (SDE).
 .SH COPYRIGHT
-Liria is free software under the GNU General Public License, version 2 or
-later. It is a modified version of an earlier free file manager; the original
-copyright notices, author lists and licenses are installed under
-.IR /usr/share/doc/sde/upstream/ .
+Copyright \(co 2026 Selviana DE Project and contributors. Liria is free
+software under the GNU General Public License, version 3 or later.
 .SH SEE ALSO
-.BR liria\-connect\-server (1),
 .BR sde\-settings (1),
-.BR sde\-suite (1)
+.BR taca (1),
+.BR debrun (1),
+.BR sde\-appimage (1)
