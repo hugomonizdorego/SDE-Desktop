@@ -47,6 +47,7 @@
 #include "build_history.h"
 #include "build_info.h"
 #include "config.h"
+#include "core_client.h"
 #include "dbus.h"
 #include "effects.h"
 #include "desktop_entry.h"
@@ -102,14 +103,23 @@ void refresh_if_shown(const char *page_id) {
 Config &settings_config() { return g_cfg; }
 const Theme &settings_theme() { return g_theme; }
 
+// What sde.conf held when the Control Center last saved or read it: only
+// what the pages changed since then is written (0.2.0 Alpha 4), so changes
+// other programs made meanwhile (the panel's menus) are kept.
+Config &saved_config() {
+  static Config saved;
+  return saved;
+}
+
 void apply_change() {
   double old_scale = g_theme.scale;
-  g_cfg.save();
+  // Through sde-core (checked, merged, announced with Changed; the session
+  // tells GTK, the window manager and the compositor), or the file and the
+  // announcement of 0.2.0 Alpha 3 without it (core_client.h).
+  core::write(core::diff(saved_config(), g_cfg));
+  saved_config() = g_cfg;
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
-  // GTK settings, SDE WM and the compositor files are written at once; the
-  // session tells each program what changed (without a session, this does).
-  announce_config_change(fl_display, g_cfg);
   if (std::fabs(g_theme.scale - old_scale) > 0.01) {
     // Every size depends on the scale: start again with the new one.
     Fl::add_timeout(0.2, [](void *) {
@@ -2855,6 +2865,7 @@ void follow_config_change(void *) {
   Config disk;
   disk.load();
   AppearanceLook::from_config(disk).write(g_cfg);
+  AppearanceLook::from_config(disk).write(saved_config());
   g_draft.rebase(g_cfg);
   Theme t = Theme::from_config(g_cfg);
   if (look_signature(t) == look_signature(g_theme)) {
@@ -2889,15 +2900,44 @@ void apply_draft() {
   // announcement comes (follow_config_change()), so the Control Center
   // stays as it is until the session's picture of the screen is up.
   g_draft.pending().write(g_cfg);
-  g_cfg.save();
+  std::vector<core::Write> writes = core::diff(saved_config(), g_cfg);
+  saved_config() = g_cfg;
   // Through the session (one calm step for every program, the Control
-  // Center included when the session announces it), or at once.
-  if (apply_appearance(fl_display, g_cfg)) {
+  // Center included when the session announces it), or at once. sde-core
+  // asks the session and announces the look once it shows it.
+  bool session = session_coordinates(fl_display);
+  core::write(writes, core::Mode::APPEARANCE);
+  if (session) {
     g_switching = true;
     Fl::add_timeout(3.0, follow_config_change);  // a session that does not answer
     return;
   }
   follow_config_change(nullptr);
+}
+
+// Settings changed (sde-core's Changed signal with the keys, or a change
+// announced on the root window without it): the look follows when the
+// session shows it (follow_config_change()); a key another program changed
+// (the panel's menus) is taken over, and the page shows it.
+void follow_settings(const std::vector<core::Key> &keys) {
+  if (core::touches_look(keys)) {
+    Fl::remove_timeout(follow_config_change);
+    Fl::add_timeout(0, follow_config_change);
+  }
+  Config disk;
+  disk.load();
+  bool outside = false;
+  for (const auto &k : keys) {
+    if (k.first == "appearance" || k.first == "aero") continue;  // the look: above
+    std::string now = disk.get(k.first, k.second, "\x01");
+    if (now == g_cfg.get(k.first, k.second, "\x01")) continue;  // this window wrote it
+    for (Config *c : {&g_cfg, &saved_config()}) {
+      if (now == "\x01") c->unset(k.first, k.second);
+      else c->set(k.first, k.second, now);
+    }
+    outside = true;
+  }
+  if (outside) refresh_page();
 }
 
 void apply_draft_later(void *) { apply_draft(); }
@@ -2914,16 +2954,6 @@ void preview_event(const std::string &what, const AppearanceLook &look) {
   } else {
     update_pending_bar();
   }
-}
-
-int follow_x_events(int) {
-  if (fl_xevent && fl_xevent->type == PropertyNotify &&
-      fl_xevent->xproperty.window == RootWindow(fl_display, fl_screen) &&
-      fl_xevent->xproperty.atom == x11::atom("_SDE_CONFIG_SERIAL")) {
-    Fl::remove_timeout(follow_config_change);
-    Fl::add_timeout(0, follow_config_change);
-  }
-  return 0;
 }
 
 // Scrolls the sidebar (as little as needed) so that row |index| is shown,
@@ -3279,6 +3309,7 @@ int main(int argc, char **argv) {
   bool migrated = migrate_theme_config(g_cfg);
   if (clockface::migrate_config(g_cfg)) migrated = true;
   if (migrated) g_cfg.save();
+  saved_config() = g_cfg;
   g_draft.load(g_cfg);
   if (apply) {
     sync_gtk_settings(g_cfg);
@@ -3287,6 +3318,19 @@ int main(int argc, char **argv) {
     apply_all(g_cfg);
     return 0;
   }
+  // 0.2.0 Alpha 4: one Control Center per session (through sde-core).
+  // Another start shows its page in the running one, which comes to the
+  // front, and ends; "sde-settings" alone only brings it to the front.
+  if (!core::single_instance("sde-settings", {requested.empty() ? "" : page, anchor, choose_avatar ? "avatar" : ""},
+                             [](const std::vector<std::string> &a) {
+                               if (!a.empty() && !a[0].empty()) open_settings_page(a[0], a.size() > 1 ? a[1] : "");
+                               if (a.size() > 2 && a[2] == "avatar") choose_avatar_picture();
+                               if (g_window && g_window->shown()) {
+                                 g_window->show();
+                                 x11::activate_window(fl_xid(g_window));
+                               }
+                             }))
+    return 0;
   fl_open_display();
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
@@ -3332,15 +3376,10 @@ int main(int argc, char **argv) {
   // their changes made elsewhere (the Start menu, the lock screen).
   watch_account();
   win->show();
-  // Theme changes made elsewhere (and Apply, once the session announces
-  // it) reach the Control Center through _SDE_CONFIG_SERIAL.
-  {
-    Window root = RootWindow(fl_display, fl_screen);
-    XWindowAttributes attr;
-    XGetWindowAttributes(fl_display, root, &attr);
-    XSelectInput(fl_display, root, attr.your_event_mask | PropertyChangeMask);
-    Fl::add_handler(follow_x_events);
-  }
+  // Theme changes made elsewhere (and Apply, once the session shows it) and
+  // the keys other programs changed: sde-core's Changed signal, or
+  // _SDE_CONFIG_SERIAL on the root window without it (0.2.0 Alpha 4).
+  core::watch_settings(follow_settings);
   if (choose_avatar) Fl::add_timeout(0.3, [](void *) { choose_avatar_picture(); });
   int status = Fl::run();
   ThemePreview::get().close();
