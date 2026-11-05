@@ -502,6 +502,8 @@ void build_display_page(Page* page) {
                [](int v) { pending[size_t(selected)].y = v; });
   }
   page->end_card();
+  // The one place of the interface size (0.2.0 Alpha 4; Appearance links here).
+  page->anchor("scale");
   page->begin_card(_("Interface scale"));
   std::vector<int> scales = {0, 75, 100, 125, 150, 175, 200};
   int chosen = 0;

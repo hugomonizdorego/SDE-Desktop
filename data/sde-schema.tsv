@@ -99,7 +99,7 @@ action_center	clock_style	enum	digital|led|analog|blink	clock
 action_center	show_greeting	bool		action-center
 action_center	multicolor	bool		action-center
 action_center	move_status	bool		action-center
-action_center	show_notifications	bool		notifications
+action_center	show_notifications	bool
 action_center	show_media	bool		action-center
 action_center	show_app_volume	bool		action-center
 action_center	show_microphone	bool		action-center

@@ -137,6 +137,10 @@ add_test(NAME sde-sysmon-parsers COMMAND sde-sysmon-tests)
 add_executable(sde-settings-tests test_settings.cpp)
 target_link_libraries(sde-settings-tests PRIVATE sde-settings-model)
 add_test(NAME sde-settings-model COMMAND sde-settings-tests ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/pci.ids)
+# 0.2.0 Alpha 4: every sde.conf key is edited on one page of the Control
+# Center only, and the overview's search finds the settings that moved
+# (reads the sources; docs/CONTROL-CENTER.md "One place for each setting").
+add_test(NAME sde-settings-pages COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_settings_pages.py)
 # Control Center > Users & Avatar: user names, passwords and their hashes,
 # the administrator rules, AccountsService calls and passwd(1).
 add_executable(sde-accounts-tests test_accounts.cpp)
