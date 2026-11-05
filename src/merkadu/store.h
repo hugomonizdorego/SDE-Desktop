@@ -23,6 +23,7 @@
 #include "highlights.h"
 #include "model.h"
 #include "packages.h"
+#include "storage.h"
 
 namespace sde {
 namespace merkadu {
@@ -36,6 +37,22 @@ enum class Event {
   Search,    // results of a store search arrived
   Refresh,   // the refresh of the software lists started, progressed or ended
   Packages,  // the package lists (All Software) or the marks changed
+  Storage,   // what Flatpak and Snap keep on the computer was measured
+};
+
+// The Storage page (0.2.0 Alpha 4): what Flatpak and Snap keep on this
+// computer and what Clean Up can free.
+struct StorageInfo {
+  bool loading = false, loaded = false;
+  bool complete[kSourceCount] = {false, false, false};  // the source's installed apps are all known
+  std::vector<StorageEntry> entries;  // installed apps, runtimes, old revisions
+  std::vector<DataDir> data;          // the apps' data in the home folder
+  FolderState folder;
+  StoragePaths paths;
+  std::string error;  // of the last Clean Up
+  // What Clean Up removes: unused runtimes, old revisions, left-over data.
+  long long cleanable() const;
+  int cleanable_count() const;
 };
 
 // The refresh of the software lists of every source.
@@ -195,6 +212,20 @@ class Store {
   // running kernel): never removed by Merkadu.
   std::set<std::string> system_packages() const;
 
+  // Storage: measures again (in the background) what Flatpak and Snap keep.
+  void load_storage();
+  const StorageInfo &storage() const { return storage_; }
+  // Clean Up: the unused runtimes and the old snap revisions become changes
+  // in the queue, the data of removed apps is deleted at once. Returns the
+  // number of changes queued (and -1 when there was nothing to clean up).
+  int clean_up();
+  // The Merkadu folder: made (or brought up to date) and removed on the
+  // Storage page; at start it is kept up to date ([Folders]), made once.
+  bool make_merkadu_folder(std::string &error);
+  bool remove_merkadu_folder(std::string &error);
+  // The text of the folder's README (in the user's language).
+  static std::string folder_readme();
+
  private:
   Store() = default;
   void emit(Event e);
@@ -210,6 +241,8 @@ class Store {
   void resolve_owners();
   void apply_packages(std::shared_ptr<PackageList> list);
   void refresh_step_done(const std::string &source, bool ok, bool cancelled, const std::string &error);
+  void storage_part_done();
+  void sync_folder();
 
   Settings settings_;
   Categories categories_;
@@ -273,6 +306,11 @@ class Store {
   std::string packages_error_;
   int packages_generation_ = 0;
   ChangeSet marks_;
+  StorageInfo storage_;
+  int storage_pending_ = 0;
+  bool storage_again_ = false;
+  std::vector<StorageEntry> storage_entries_[kSourceCount];
+  bool storage_complete_[kSourceCount] = {false, false, false};
 };
 
 // A one-line description of where an origin comes from: "Debian package

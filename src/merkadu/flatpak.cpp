@@ -421,6 +421,67 @@ class FlatpakBackend : public Backend {
         done, "the Flatpak runtimes arrived");
   }
 
+  // Every installation: the system's (and those of
+  // /etc/flatpak/installations.d) and the user's.
+  void storage(StorageFn done) override {
+    using Result = std::pair<std::vector<StorageEntry>, bool>;
+    background<Result>(
+        [] {
+          Result r;
+          r.second = true;
+          GError *err = nullptr;
+          std::vector<std::pair<std::string, FlatpakInstallation *>> insts;
+          if (GPtrArray *sys = flatpak_get_system_installations(nullptr, &err)) {
+            for (guint i = 0; i < sys->len; ++i) {
+              auto *inst = FLATPAK_INSTALLATION(g_ptr_array_index(sys, i));
+              std::string id = str(flatpak_installation_get_id(inst));
+              insts.push_back({id.empty() || id == "default" ? std::string("system") : id,
+                               FLATPAK_INSTALLATION(g_object_ref(inst))});
+            }
+            g_ptr_array_unref(sys);
+          } else {
+            r.second = false;
+          }
+          g_clear_error(&err);
+          if (FlatpakInstallation *user = open_installation("user", nullptr)) insts.push_back({"user", user});
+          for (auto &it : insts) {
+            const std::string &which = it.first;
+            FlatpakInstallation *inst = it.second;
+            std::set<std::string> unused;
+            if (GPtrArray *refs = flatpak_installation_list_unused_refs(inst, nullptr, nullptr, &err)) {
+              for (guint i = 0; i < refs->len; ++i)
+                unused.insert(str(flatpak_ref_format_ref_cached(FLATPAK_REF(g_ptr_array_index(refs, i)))));
+              g_ptr_array_unref(refs);
+            }
+            g_clear_error(&err);
+            GPtrArray *refs = flatpak_installation_list_installed_refs(inst, nullptr, &err);
+            if (!refs) r.second = false;
+            g_clear_error(&err);
+            for (guint i = 0; refs && i < refs->len; ++i) {
+              FlatpakInstalledRef *ir = FLATPAK_INSTALLED_REF(g_ptr_array_index(refs, i));
+              FlatpakRef *ref = FLATPAK_REF(ir);
+              StorageEntry e;
+              e.source = Source::Flatpak;
+              e.kind = flatpak_ref_get_kind(ref) == FLATPAK_REF_KIND_APP ? "app" : "runtime";
+              e.id = str(flatpak_ref_get_name(ref));
+              e.version = str(flatpak_ref_get_branch(ref));
+              e.name = str(flatpak_installed_ref_get_appdata_name(ir));
+              if (e.name.empty()) e.name = e.id;
+              std::string formatted = str(flatpak_ref_format_ref_cached(ref));
+              e.target = which + ":" + formatted;
+              e.installation = which;
+              e.size = (long long)flatpak_installed_ref_get_installed_size(ir);
+              e.unused = unused.count(formatted) > 0;
+              r.first.push_back(std::move(e));
+            }
+            if (refs) g_ptr_array_unref(refs);
+            g_object_unref(inst);
+          }
+          return r;
+        },
+        [done](Result r) { done(std::move(r.first), r.second); }, "Flatpak's storage arrived");
+  }
+
   void load_installed(AppsFn done) override {
     background<std::vector<App>>(
         [] {

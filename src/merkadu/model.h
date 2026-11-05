@@ -355,6 +355,10 @@ struct Settings {
   std::vector<Source> order = {Source::Debian, Source::Flatpak, Source::Snap};
   std::set<std::string> protected_packages;
   bool hidden_snap_folder = true;  // [Snap] hide-home-folder=
+  // [Folders] merkadu-folder= and name=: the Merkadu folder of the home
+  // folder, with the data of the Flatpak apps and snaps (storage.h).
+  bool merkadu_folder = true;
+  std::string folder_name = "Merkadu";
   std::string flathub_url = "https://dl.flathub.org/repo/flathub.flatpakrepo";
   bool setup_flathub = true;       // [Flatpak] setup-flathub=: offer Flathub when it is missing
   bool refresh_on_start = true;    // [Refresh] on-start=

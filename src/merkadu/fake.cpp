@@ -25,6 +25,10 @@
 //                           "update": false, "remote": "...",
 //                           "publisher": ..., "verified": true}]}],
 //    "removes": {"paintbox": ["paintbox", "paintbox-data"]},
+//    "runtimes": [{"ref": "runtime/NAME/ARCH/BRANCH", "installed": true,
+//                  "size": 650000000, "unused": false}],
+//    "snap_revisions": [{"name": "kart-rally", "revision": "40",
+//                        "version": "2.0", "size": 960000000}],
 //    "history": [{"days": 0, "time": "10:15", "source": "debian",
 //                 "change": "install", "items": ["paintbox"], "by": "alex"}]}
 #include <FL/Fl.H>
@@ -77,6 +81,12 @@ struct FakeWorld {
   // What paused changes downloaded (their targets -> seconds done).
   std::map<std::string, double> downloaded;
   std::vector<Package> runtimes;  // Flatpak runtimes of All Software
+  std::set<std::string> unused;   // the runtimes no app needs (Storage)
+  struct Revision {
+    std::string name, revision, version;
+    long long size = -1;
+  };
+  std::vector<Revision> revisions;  // old snap revisions (Storage)
 
   void load(const std::string &d) {
     if (loaded) return;
@@ -219,7 +229,16 @@ struct FakeWorld {
       p.download_size = j.number("download", -1);
       p.origin = "flathub";
       p.lower_summary = lower(p.title + " " + p.summary);
+      if (j.flag("unused")) unused.insert(p.ref);
       runtimes.push_back(p);
+    }
+    for (auto &j : root.array("snap_revisions")) {
+      Revision r;
+      r.name = j.text("name");
+      r.revision = j.text("revision");
+      r.version = j.text("version");
+      r.size = j.number("size", -1);
+      if (!r.name.empty() && !r.revision.empty()) revisions.push_back(r);
     }
     for (auto &h : root.array("history")) {
       HistoryEntry e;
@@ -364,6 +383,66 @@ class FakeBackend : public Backend {
     std::vector<Package> out;
     if (source_ == Source::Flatpak) out = world().runtimes;
     Fl::add_timeout(0.2, call_later, new std::function<void()>([done, out] { done(out); }));
+  }
+
+  // Storage: the installed apps and runtimes of the fixture, its unused
+  // runtimes and old snap revisions.
+  void storage(StorageFn done) override {
+    std::vector<StorageEntry> out;
+    for (auto &a : world().apps)
+      for (auto &o : a.origins) {
+        if (o.source != source_ || !o.installed || source_ == Source::Debian) continue;
+        StorageEntry e;
+        e.source = source_;
+        e.kind = "app";
+        e.name = a.name;
+        e.size = o.installed_size;
+        e.installation = o.installation.empty() ? "system" : o.installation;
+        if (source_ == Source::Flatpak) {
+          std::vector<std::string> parts = split(o.id, '/', true);
+          e.id = parts.size() > 1 ? parts[1] : o.id;
+          e.version = parts.size() > 3 ? parts[3] : "";
+          e.target = e.installation + ":" + o.id;
+        } else {
+          e.id = e.target = o.id;
+          e.version = o.installed_version.empty() ? o.version : o.installed_version;
+        }
+        out.push_back(e);
+      }
+    if (source_ == Source::Flatpak)
+      for (auto &rt : world().runtimes) {
+        if (!rt.installed) continue;
+        StorageEntry e;
+        e.source = source_;
+        e.kind = "runtime";
+        std::vector<std::string> parts = split(rt.ref, '/', true);
+        e.id = parts.size() > 1 ? parts[1] : rt.ref;
+        e.name = rt.title;
+        e.version = rt.installed_version;
+        e.target = "system:" + rt.ref;
+        e.installation = "system";
+        e.size = rt.installed_size;
+        e.unused = world().unused.count(rt.ref) > 0;
+        out.push_back(e);
+      }
+    if (source_ == Source::Snap)
+      for (auto &r : world().revisions) {
+        StorageEntry e;
+        e.source = source_;
+        e.kind = "revision";
+        e.id = r.name;
+        e.name = r.name;
+        for (auto &a : world().apps)
+          if (const Origin *o = a.origin(Source::Snap))
+            if (o->id == r.name) e.name = a.name;
+        e.version = r.version + " (" + r.revision + ")";
+        e.target = r.name + "@" + r.revision;
+        e.size = r.size;
+        e.unused = true;
+        out.push_back(e);
+      }
+    bool complete = source_ != Source::Debian;
+    Fl::add_timeout(0.3, call_later, new std::function<void()>([done, out, complete] { done(out, complete); }));
   }
 
   void lookup(const App &app, AppsFn done) override {
@@ -545,6 +624,16 @@ class FakeBackend : public Backend {
           !env("MERKADU_FAKE_SNAPD").empty())
         write_file_atomic(env("MERKADU_FAKE_SNAPD"), "installed\n");
       for (auto &t : fj->job.targets) {
+        // An old revision of a snap (Storage's Clean Up).
+        if (fj->job.source == Source::Snap && t.find('@') != std::string::npos) {
+          auto &revs = world().revisions;
+          revs.erase(std::remove_if(revs.begin(), revs.end(),
+                                    [&](const FakeWorld::Revision &r) { return r.name + "@" + r.revision == t; }),
+                     revs.end());
+          e.items.push_back(t);
+          e.versions.push_back("");
+          continue;
+        }
         // A Flatpak runtime of All Software.
         for (auto &rt : world().runtimes)
           if (fj->job.source == Source::Flatpak && t.substr(t.find(':') + 1) == rt.ref) {
@@ -557,6 +646,7 @@ class FakeBackend : public Backend {
               rt.installed_version = rt.candidate_version;
             }
             rt.current_size = remove ? -1 : rt.installed_size;
+            if (remove) world().unused.erase(rt.ref);
             e.items.push_back(rt.ref);
             e.versions.push_back("");
           }
