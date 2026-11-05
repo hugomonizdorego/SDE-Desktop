@@ -36,6 +36,7 @@ add_library(merkadu-core STATIC
   ${_src}/merkadu/jobs.cpp
   ${_src}/merkadu/highlights.cpp
   ${_src}/merkadu/packages.cpp
+  ${_src}/merkadu/storage.cpp
   ${_src}/merkadu/apt_cache.cpp)
 target_include_directories(merkadu-core PUBLIC ${_src}/merkadu)
 target_compile_definitions(merkadu-core PUBLIC MERKADU_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}/merkadu")
