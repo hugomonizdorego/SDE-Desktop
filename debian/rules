@@ -17,8 +17,11 @@ BUILDDIR = obj-$(DEB_HOST_GNU_TYPE)
 %:
 	dh $@ --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
+# SDE_CMAKE_OPTIONS adds CMake options for local test builds, e.g.
+# -DSDE_BUILD_COMPONENTS=OFF where libconfig is older than SDE compositor
+# needs (1.7); release builds leave it empty.
 override_dh_auto_configure:
-	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release
+	dh_auto_configure -- -DCMAKE_BUILD_TYPE=Release $(SDE_CMAKE_OPTIONS)
 
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp
