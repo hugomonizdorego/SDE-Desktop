@@ -1,4 +1,4 @@
-# SDE themes, transparency and icons (0.2.0 Alpha 3.1)
+# SDE themes, transparency and icons (0.2.0 Alpha 4)
 
 SDE has three theme families, SDE Graphite (default), SDE Fluent and SDE
 Liquid Glass (named SDE Glass from alpha51 to 0.2.0 Alpha 1; its id and
@@ -65,6 +65,60 @@ tooltips and notifications have a hairline of light inside the top of
 their edge (`Painter::surface_edge()`), Liquid Glass without its compositor
 shader a glass sheen (`Painter::glass_surface()`). Menus and tooltips have
 more room around their items, and menu separators are inset.
+
+## How the colours are chosen (0.2.0 Alpha 4)
+
+The rules every palette follows; `sde-theme` checks them for every family,
+mode and accent, with and without the wallpaper's tint.
+
+* **Lightness carries the structure, not colour.** Surfaces are grays with
+  at most a faint cast (Graphite neutral, Fluent and Liquid Glass a cool
+  slate): Oklab chroma at most about 0.02, at most 0.05 between the sRGB
+  channels (the test's limit). Background, surface, sidebar
+  (`surface_alt`), hover and border differ in lightness only, in steps of
+  2 to 5 Oklab L. Oklab is perceptually even, so equal steps look equal:
+  none is a jump, none disappears.
+* **Raised means lighter.** In a light theme menus and cards are the
+  lightest surfaces (near white over a slightly darker window) and soft
+  shadows under them give the depth. In a dark theme what is raised is
+  lighter than what is under it (menus and cards over the window, the
+  Start menu's tiles over the menu), never darker, and shadows are
+  stronger (alpha 0.44-0.50): a dark surface needs more to stand apart.
+* **Text keeps WCAG AA with a margin:** text 7:1 on every surface (11 to
+  16:1 in practice), dimmed text 4.5:1 also on sidebars, menus, the panel
+  and hovered rows, titles 7:1. Disabled text is the dimmed text; disabled
+  controls fade 55 % towards the sidebar colour.
+* **The accent is a signal, not a surface.** Muted accents (Oklab chroma
+  0.08 to 0.16), one shade per mode: in a light theme at Oklab L 50 to 70
+  with a white or a dark label, whichever keeps 4.5:1; in a dark theme
+  lighter (L 70 to 80) with dark labels, as in Windows 11, since a
+  mid-tone accent on a dark surface is either too dark to see or too
+  saturated to read. Accent-coloured text is `accent_text`, moved towards
+  the text colour until it keeps 4.5:1. Accent fills are for selections,
+  switches that are on, focus rings and small marks; larger areas take
+  only a hint of the accent's hue at a low Oklab chroma at the same
+  luminance (`tint_towards()`), because a warm hue at a low lightness is
+  brown or olive. Since 0.2.0 Alpha 4 the Start menu's tiles in a dark
+  theme are such raised grays with a hint of the accent (they were 16 % of
+  the accent in the sidebar gray: the menu's own lightness, brown or olive
+  for the warm accents), and the Action Center's multicolour tiles
+  (`[action_center] multicolor`) are the family's own accents in the
+  mode's shade (they were Tailwind colours about twice as saturated, and
+  the tiles that were off took a muddy tint of them); a tile that is off
+  is the plain tile colour with its icon in its colour.
+* **Hover and selection:** hover is one lightness step from the surface it
+  is on; selection is the accent with its label colour. Menus highlight
+  with the accent in Graphite and Liquid Glass, with the hover gray in
+  Fluent (Windows 11).
+
+| Theme (Oklab L) | background | surface | surface_alt | hover | border | menu | text on surface | dimmed on surface_alt |
+|---|---|---|---|---|---|---|---|---|
+| Graphite light | 97 | 100 | 95 | 93 | 89 | 100 | 16.4:1 | 5.9:1 |
+| Graphite dark | 27 | 31 | 25 | 35 | 38 | 29 | 11.3:1 | 6.8:1 |
+| Fluent light | 97 | 99 | 95 | 92 | 88 | 98 | 16.3:1 | 5.7:1 |
+| Fluent dark | 25 | 30 | 23 | 34 | 37 | 29 | 12.0:1 | 6.9:1 |
+| Liquid Glass light | 97 | 98 | 94 | 91 | 86 | 98 | 16.2:1 | 5.8:1 |
+| Liquid Glass dark | 23 | 28 | 31 | 34 | 36 | 28 | 13.2:1 | 5.6:1 |
 
 ## Menus, lists, check boxes (0.2.0 Alpha 3.1)
 
@@ -162,6 +216,16 @@ blur=true
 blur_strength=6     # 1 (light) to 12 (strong), around the family's own blur
 ```
 
+Since 0.2.0 Alpha 4 the sliders show their value at the right of the
+track while they move (`Slider::show_value()` in
+`src/common/widgets.cpp`): Transparency 0 to 100 %, Blur strength its
+share of the strongest (6 of 12, the default, is 50 %), the Preview
+window's Transparency slider the same as the page's. Their accessible
+names, the tooltips that SDE's QA files and the Control Center's focus
+keeping use, carry the value ("Transparency level: 25 %"). The arrow keys
+and the wheel move a slider by a twentieth of its range: 5 % of the
+transparency, 1 of the blur strength (it moved by 5 of 12).
+
 Since 0.2.0 Alpha 3.1 (`apply_transparency()` in `src/common/theme.cpp`):
 
 * **Even steps.** The slider is linear: Off, Subtle, Clear and Glass are
@@ -215,7 +279,110 @@ Since 0.2.0 Alpha 3.1 (`apply_transparency()` in `src/common/theme.cpp`):
   and dimmed text 3:1 against the surface around it, how much of the
   page's text and edges a surface keeps (at most 3 L*), even steps and
   almost opaque surfaces without blur. It measures text at least 5.8:1,
-  dimmed text 3.1:1 and at most 2.6 L* of structure.
+  dimmed text 3.1:1 and at most 2.6 L* of structure. Since 0.2.0 Alpha 4
+  it takes the glass colour from the shader SDE writes (`KEY_A`), measures
+  the panel with the colour it paints (the floating layer's surface; its
+  opacity floor covers that colour and `panel_bg`), and measures every
+  family and mode once more with the tint of a blue-green and of a red
+  wallpaper (text at least 6.0:1, dimmed text 3.1:1).
+
+## Wallpaper colours (0.2.0 Alpha 4)
+
+The floating layer takes a calm tint of the wallpaper's colour: the panel,
+the Start menu, the Action Center, flyouts and task previews, menus,
+tooltips, notifications and OSDs lean towards the wallpaper's main hue, so
+the transparency follows the wallpaper even over a white window, and the
+surfaces keep the hue when they are opaque. It is in the colour itself,
+as Windows 11's Mica is: it shows without blur, on the lite profile and
+without a compositor, and costs nothing while drawing.
+
+Control Center > Appearance:
+
+* **Tint surfaces with the wallpaper color** (Transparency and clarity):
+  on by default in Fluent and Liquid Glass, off in Graphite (calm and
+  neutral by design). Once used, the switch holds for every family.
+* **Accent color from the wallpaper** (Theme): the named accent nearest
+  the wallpaper's hue, Graphite for a gray wallpaper. It is always a named
+  accent, so the GTK themes and the window frames, built per accent,
+  follow it as well. Choosing a swatch turns it off.
+
+```ini
+[appearance]
+wallpaper_tint=auto          # auto (the family's default), true or false
+accent_from_wallpaper=false
+```
+
+Both are part of the chosen look: Preview shows them, Apply applies them.
+The family's default is in `palettes.json` (`wallpaper_tint`: `default`
+and `amount`, the most Oklab chroma the tint may add in light and dark
+mode: Fluent and Liquid Glass 0.020 and 0.022, Graphite 0.014 and 0.016).
+
+**Measuring** (`src/common/wallpaper_colors.h`). The picture is read small
+(SVG through librsvg, everything else through gdk-pixbuf, which lets
+libjpeg decode at an eighth of the size) and its pixels are taken to
+Oklab: the mean colour, and the most common hue, from a histogram of hues
+weighted by chroma in which near-black and near-white pixels count little
+(their hue is noise), with the mean colour of the pixels within 30 degrees
+of it. A *strength* from 0 to 1 says how much that hue may tint: 0 for
+gray, black and white pictures, less for a picture with little colour and
+for one of many hues at once, 1 for one clear colour. Measured: the
+Selviana light wallpaper teal (hue 217 degrees, strength 0.80), the dark
+one blue (234 degrees, 0.44), a blue-green sky 0.93, a forest 0.82, a red
+1.0, a sunset over the sea 0.18, a rainbow 0.41, gray, black and white 0.
+
+**Tinting** (`tint_surface()`). A colour moves towards that hue by at most
+the family's amount of Oklab chroma times the strength, at the same
+relative luminance (only white, which has no room for a hue, may lose up
+to 4.5 %), and stays a tinted gray (at most 0.045 between its sRGB
+channels). Every contrast with text and every step between surface,
+hover and border therefore stays what the palette has. `menu_bg`,
+`menu_hover` (Fluent's), `menu_border`, `menu_separator` and `panel_bg`
+have the tint in every program; `layer_surface`, `layer_surface_alt`,
+`layer_hover` and `layer_border` are the floating layer's surface,
+sidebar, hover and hairline, which `Theme::use_floating_layer()` puts in
+place in the programs that draw only that layer: the panel,
+`sde-notifyd` and the OSDs. Hairlines get three quarters of the tint;
+text, the accent and accent highlights none. The Liquid Glass shader keys
+the tinted colours (`KEY_A`, `KEY_B`), and GTK 3 menus, which the GTK
+themes draw in the untinted menu colour (`Theme::gtk_menu_bg`, `KEY_C`),
+become the same tinted glass. Appearance's miniature and Preview window
+draw their panel and quick settings in the floating layer's colours.
+
+**When it changes.** `Theme::from_config()` looks the colours up for the
+picture of `wallpaper_in_use()` ([appearance] wallpaper, or for `auto` the
+Selviana wallpaper of the mode), so a new picture reaches every program
+with the configuration change that brings it: the Control Center's
+Wallpaper card, Gallery's and Photo's Set as Wallpaper, the switch to dark
+mode with the automatic wallpaper, and a slideshow, which sets
+[appearance] wallpaper and announces the change like they do. The session
+then rewrites the compositor's shaders with the new keys (reloaded in
+place). The colours are cached per picture (path, size and modification
+time, so a picture replaced under the same name is measured again) in
+`~/.cache/sde/wallpaper-colors`, under a lock: of the programs that follow
+one change, the first measures the picture and the others read its entry.
+Gallery and Photo measure it before they announce the change
+(`prepare_wallpaper_colors()`), the Control Center when it themes itself,
+also before.
+
+**For other programs**: `wallpaper_colors_of_pixels()` measures pixels
+already in memory and `wallpaper_colors(path)` a file (cached); both
+return the average and dominant colours, the overall chroma, the hue, its
+share and the strength, and `wallpaper_accent()` the nearest named accent.
+
+Limits: the content of windows keeps the theme's colours, in SDE programs
+as in GTK and libadwaita applications (GTK reads the theme's colours when
+it starts; a tint that changes with the wallpaper would leave running
+applications with the old one). Window frames take the wallpaper through
+their blur, not as a tint, and GTK 3 menus outside Liquid Glass fade over
+what is behind them. A picture edited in place is measured again at the
+next configuration change.
+
+`sde-theme` measures sample wallpapers drawn with cairo and the Selviana
+pictures (hue, strength, accent, the cache), the tint (the same luminance,
+a tinted gray, the wallpaper's hue) and the floating layer of every
+family, mode and accent with a sky and a red wallpaper (text 7:1, dimmed
+text 4.5:1, contrast within 5 % of the untinted palette, readable at
+transparency 100), and that the shader keys the tinted colours.
 
 ## SDE Liquid Glass (0.2.0 Alpha 2, frosted since 0.2.0 Alpha 3.1)
 
