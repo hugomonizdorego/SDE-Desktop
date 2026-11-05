@@ -1960,12 +1960,14 @@ PAGE_CAPTIONS = {
     'start-menu': 'size, the lists and the account on the rail',
     'date-time': 'time zone and network time',
 }
-# The account page has its own image (avatar-picker).
+# The account page has its own image (avatar-picker), Fingerprint its own
+# scene with a test reader (fingerprint).
 ACCOUNT_PAGES = ('users', 'account', 'accounts', 'user', 'avatar')
+OWN_SCENE_PAGES = ('fingerprint',)
 
 
 def control_center_images(run):
-    pages = [p for p in run.pages if p != 'home' and p not in ACCOUNT_PAGES] or list(PAGE_CAPTIONS)
+    pages = [p for p in run.pages if p != 'home' and p not in ACCOUNT_PAGES + OWN_SCENE_PAGES] or list(PAGE_CAPTIONS)
     return [(f'control-center-{p}', f'Control Center, {p.replace("-", " ").title()}: ' +
              PAGE_CAPTIONS.get(p, 'settings')) for p in pages]
 
@@ -2797,6 +2799,103 @@ def lock_screen(s):
         s.wait(lambda: p.poll() is not None, 5)
     finally:
         os.close(r)
+
+
+# 0.2.0 Alpha 4: fingerprints (docs/FINGERPRINT.md), with the fake fprintd of
+# the tests: a test reader, no real fingerprint anywhere.
+@scene('Fingerprint', [
+    ('fingerprint', 'Control Center, Fingerprint: the reader, your enrolled fingers on both hands, Test and Delete, '
+                    'and where the fingerprint is used: signing in, the lock screen, sudo and polkit (0.2.0 Alpha 4)'),
+    ('fingerprint-enroll', 'Control Center, Fingerprint: enrolling a finger, step by step, with what to do next'),
+    ('lock-screen-fingerprint', 'The lock screen with a fingerprint reader: touch it, or type the password'),
+    ('polkit-fingerprint', 'An administrator prompt while the fingerprint reader waits: the password can be typed '
+                           'instead')], needs=['sde-settings'])
+def fingerprint(s):
+    def want(name):
+        return s.run_ctx.selected(s.current, name)
+
+    def fake_reader(*args):
+        fake = s.test_tool('sde-fake-fprintd')
+        if not fake:
+            raise SkipShot('sde-fake-fprintd not found (--test-dir)')
+        log = s.logs / 'fprintd-calls.log'
+        s.spawn(fake, log, '--name', 'Fingerprint Sensor', *args)
+        if not s.wait(lambda: log.exists() and 'READY' in log.read_text(errors='replace'), 5):
+            raise SkipShot('the fake fprintd did not start')
+        return log
+
+    if want('fingerprint') or want('fingerprint-enroll'):
+        try:
+            fake_reader('--devices', '1', '--enrolled', 'right-index-finger,right-thumb', '--step-ms', '1100')
+            settings_page(s, 'fingerprint')
+            if not s.control('Control Center', 'Right index finger', 8):
+                raise SkipShot('the fingers did not show')
+            if want('fingerprint'):
+                s.shot('fingerprint', quiet=0.6)
+            if want('fingerprint-enroll'):
+                s.press('Control Center', 'Left index finger')
+                s.press('Control Center', 'Enroll a fingerprint: Left index finger')
+                time.sleep(2.6)  # two of the five stages
+                s.park_pointer()
+                s.shot('fingerprint-enroll', quiet=0.3)
+        except SkipShot as e:
+            for name in ('fingerprint', 'fingerprint-enroll'):
+                if want(name):
+                    s.skip(name, str(e))
+        s.stop_scene_procs()
+        s.gone(SETTINGS_TITLE, 3)
+
+    if want('lock-screen-fingerprint'):
+        fixture = s.test_tool('sde-lock-ui-fixture')
+        try:
+            if not fixture:
+                raise SkipShot('sde-lock-ui-fixture not found (--test-dir)')
+            log = fake_reader('--devices', '1', '--enrolled', 'right-index-finger')
+            r, w = os.pipe()
+            env = dict(s.env, SDE_LOCK_FIXTURE_NAME=showcase_content.USER_NAME,
+                       SDE_LOCK_FIXTURE_AVATAR=str(s.home / '.face'), SDE_LOCK_FIXTURE_FINGERPRINT='1')
+            p = sp.Popen([fixture, str(w)], env=env, pass_fds=(w,), stdout=open(s.logs / 'lock.log', 'a'),
+                         stderr=sp.STDOUT, start_new_session=True)
+            s.shot_procs.append((p, 'lock-fixture'))
+            os.close(w)
+            try:
+                got = b''
+                os.set_blocking(r, False)
+                end = time.time() + 10
+                while time.time() < end and b'L' not in got:
+                    try:
+                        got += os.read(r, 64) or b''
+                    except BlockingIOError:
+                        pass
+                    time.sleep(0.05)
+                if b'L' not in got:
+                    raise SkipShot('the lock screen did not lock')
+                if not s.wait(lambda: 'CALL VerifyStart' in log.read_text(errors='replace'), 6):
+                    raise SkipShot('the lock screen did not ask the reader')
+                time.sleep(0.8)
+                s.shot('lock-screen-fingerprint', quiet=0.8)
+                s.type('sde-test', 30)  # the fixture's password: unlocks
+                s.key('Return')
+                s.wait(lambda: p.poll() is not None, 5)
+            finally:
+                os.close(r)
+        except SkipShot as e:
+            s.skip('lock-screen-fingerprint', str(e))
+        s.stop_scene_procs()
+
+    if want('polkit-fingerprint'):
+        # In libexec when installed; in src/ of a build tree.
+        agent = s.which('sde-polkit-agent') or next(
+            (str(p) for p in (Path('/usr/libexec/sde/sde-polkit-agent'),) if p.is_file()), None)
+        try:
+            if not agent:
+                raise SkipShot('sde-polkit-agent not found')
+            s.app([agent, '--preview-fingerprint'], '^Authentication Required$')
+            s.park_pointer()
+            s.shot('polkit-fingerprint', quiet=0.5)
+        except SkipShot as e:
+            s.skip('polkit-fingerprint', str(e))
+        s.stop_scene_procs()
 
 
 @scene('Accounts', [('avatar-picker', 'Control Center, Users & Avatar: the account picture, the name and '
