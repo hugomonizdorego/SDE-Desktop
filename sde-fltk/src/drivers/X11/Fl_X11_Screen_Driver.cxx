@@ -443,6 +443,8 @@ void Fl_X11_Screen_Driver::flush()
 extern void fl_fix_focus(); // in Fl.cxx
 
 
+extern void fl_touch_grab_changed(Fl_Window *grab);  // SDE-FLTK, Fl_x.cxx
+
 void Fl_X11_Screen_Driver::grab(Fl_Window* win)
 {
   const char *p;
@@ -479,6 +481,7 @@ void Fl_X11_Screen_Driver::grab(Fl_Window* win)
     }
     Fl::grab_ = win;    // FIXME: Fl::grab_ "should be private", but we need
                         // a way to *set* the variable from the driver!
+    fl_touch_grab_changed(win);  // SDE-FLTK: touches during the grab (Fl_x.cxx)
   } else {
     if (Fl::grab()) {
       // We must keep the grab in the non-EWMH fullscreen case
@@ -491,6 +494,7 @@ void Fl_X11_Screen_Driver::grab(Fl_Window* win)
       XFlush(fl_display);
       Fl::grab_ = 0;    // FIXME: Fl::grab_ "should be private", but we need
                         // a way to *set* the variable from the driver!
+      fl_touch_grab_changed(0);  // SDE-FLTK
       fl_fix_focus();
     }
   }

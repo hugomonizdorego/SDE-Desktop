@@ -324,6 +324,13 @@ void on_inotify(int fd, void *) {
 int on_event(void *event, void *) {
   const XEvent &e = *static_cast<const XEvent *>(event);
   if (e.type == GenericEvent && e.xcookie.extension == g.xi_opcode &&
+      e.xcookie.evtype == XI_RawTouchBegin) {
+    // A finger on the touch screen is a click.
+    use(x11::get_window(g.root, "_NET_ACTIVE_WINDOW"), false);
+    schedule();
+    return 0;
+  }
+  if (e.type == GenericEvent && e.xcookie.extension == g.xi_opcode &&
       e.xcookie.evtype == XI_RawButtonPress) {
     // Clicks only: the wheel's buttons (4 to 7) come many at a time.
     XGenericEventCookie cookie = e.xcookie;
@@ -377,10 +384,13 @@ int run() {
   XSelectInput(g.dpy, g.root, attr.your_event_mask | PropertyChangeMask | SubstructureNotifyMask);
   int ev, err;
   if (XQueryExtension(g.dpy, "XInputExtension", &g.xi_opcode, &ev, &err)) {
-    int major = 2, minor = 0;
+    // 2.2, as SDE-FLTK announced on this connection (a lower version is
+    // refused once 2.2 was asked for); it also brings the touches.
+    int major = 2, minor = 2;
     if (XIQueryVersion(g.dpy, &major, &minor) == Success) {
       unsigned char bits[XIMaskLen(XI_LASTEVENT)] = {};
       XISetMask(bits, XI_RawButtonPress);
+      if (major > 2 || minor >= 2) XISetMask(bits, XI_RawTouchBegin);
       XIEventMask mask{XIAllMasterDevices, int(sizeof bits), bits};
       XISelectEvents(g.dpy, g.root, &mask, 1);
     } else {

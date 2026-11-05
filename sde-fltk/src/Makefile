@@ -105,6 +105,8 @@ CPPFILES = \
 	Fl_Tree_Item_Array.cxx \
 	Fl_Tree_Prefs.cxx \
 	Fl_Tooltip.cxx \
+	Fl_Touch.cxx \
+	Fl_Touch_Gesture.cxx \
 	Fl_Valuator.cxx \
 	Fl_Value_Input.cxx \
 	Fl_Value_Output.cxx \

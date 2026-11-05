@@ -314,6 +314,17 @@ public:
   unsigned int menu_window() const {return flags() & MENU_WINDOW;}
 
   /**
+    SDE-FLTK: whether this window takes the touches of a touch screen itself
+    (the default, see FL/Fl_Touch.H) or leaves them to the X server, which
+    sends emulated mouse events instead. A window that embeds windows of
+    other programs (a system tray) should leave them: windows of other
+    programs inside it would not get the touches. Call before show().
+  */
+  void touch_events(bool on) { if (on) clear_flag(NO_TOUCH); else set_flag(NO_TOUCH); }
+  /** SDE-FLTK: see touch_events(bool). */
+  bool touch_events() const { return !(flags() & NO_TOUCH); }
+
+  /**
     Marks the window as a tooltip window.
 
     This is intended for internal use, but it can also be used if you

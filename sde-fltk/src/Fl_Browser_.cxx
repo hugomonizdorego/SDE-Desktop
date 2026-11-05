@@ -704,6 +704,26 @@ int Fl_Browser_::handle(int event) {
 
   Fl_Widget_Tracker wp(this);
 
+  if (event == FL_SCROLL_GESTURE) {
+    // SDE-FLTK: a finger scrolls the list (FL/Fl_Touch.H).
+    int X, Y, W, H; bbox(X, Y, W, H);
+    int can = 0;
+    int dy = Fl::event_dy(), dx = Fl::event_dx();
+    if (dy && (has_scrollbar_ & VERTICAL)) {
+      int hi = full_height() - H; if (hi < 0) hi = 0;
+      int p = position_ + dy; if (p < 0) p = 0; if (p > hi) p = hi;
+      if ((dy > 0 && position_ < hi) || (dy < 0 && position_ > 0)) can = 1;
+      vposition(p);
+    }
+    if (dx && (has_scrollbar_ & HORIZONTAL)) {
+      int hi = full_width() - W; if (hi < 0) hi = 0;
+      int p = hposition_ + dx; if (p < 0) p = 0; if (p > hi) p = hi;
+      if ((dx > 0 && hposition_ < hi) || (dx < 0 && hposition_ > 0)) can = 1;
+      hposition(p);
+    }
+    return can || (!dx && !dy);
+  }
+
   // must do shortcuts first or the scrollbar will get them...
   if (event == FL_ENTER || event == FL_LEAVE) return 1;
   if (event == FL_KEYBOARD && type() >= FL_HOLD_BROWSER) {

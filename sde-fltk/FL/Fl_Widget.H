@@ -190,6 +190,9 @@ protected:
         AUTO_DELETE_USER_DATA = 1<<23, ///< automatically call `delete` on the user_data pointer when destroying this widget; if set, user_data must point to a class derived from the class Fl_Callback_User_Data
         MAXIMIZED       = 1<<24,  ///< a maximized Fl_Window
         POPUP           = 1<<25,  ///< popup window (i.e., positioned relatively to another mapped window)
+        TOUCH_DRAG_X    = 1<<26,  ///< SDE-FLTK: a finger drags this widget sideways (touch_drag())
+        TOUCH_DRAG_Y    = 1<<27,  ///< SDE-FLTK: a finger drags this widget up and down (touch_drag())
+        NO_TOUCH        = 1<<28,  ///< SDE-FLTK: this window keeps the X server's pointer emulation (Fl_Window::touch_events())
         // Note to devs: add new FLTK core flags above this line (up to 1<<28).
 
         // Three more flags, reserved for user code
@@ -324,6 +327,26 @@ public:
   */
   bool needs_keyboard() const {
     return (flags_ & NEEDS_KEYBOARD);
+  }
+
+  /**
+    SDE-FLTK: sets the directions in which a finger drags this widget on a
+    touch screen (FL/Fl_Touch.H): FL_TOUCH_DRAG_X, FL_TOUCH_DRAG_Y, both or 0.
+
+    A finger that moves along such a direction from this widget sends the
+    widget FL_PUSH, FL_DRAG and FL_RELEASE as the mouse does (a switch, a
+    knob, a handle); other movements scroll what is under the finger. 0 (the
+    default) leaves the choice to SDE-FLTK: sliders and scroll bars along
+    their axis, other valuators in every direction, nothing for other widgets.
+  */
+  void touch_drag(int axes) {
+    clear_flag(TOUCH_DRAG_X | TOUCH_DRAG_Y);
+    if (axes & 1) set_flag(TOUCH_DRAG_X);
+    if (axes & 2) set_flag(TOUCH_DRAG_Y);
+  }
+  /** SDE-FLTK: the directions set with touch_drag(int), or 0. */
+  int touch_drag() const {
+    return ((flags_ & TOUCH_DRAG_X) ? 1 : 0) | ((flags_ & TOUCH_DRAG_Y) ? 2 : 0);
   }
 
   /** Returns a pointer to the parent widget.
