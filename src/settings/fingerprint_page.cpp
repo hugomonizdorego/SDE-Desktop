@@ -896,11 +896,9 @@ std::vector<std::string> missing_packages(const fingerprint_pam::State &pam) {
 void install_row(Page *page, const fingerprint_pam::State &pam) {
   std::vector<std::string> pkgs = missing_packages(pam);
   if (pkgs.empty()) return;
-  std::string list;
-  for (const std::string &p : pkgs) list += (list.empty() ? "" : " ") + p;
   std::string label = pkgs.size() == 2 ? std::string(_("Install fprintd and libpam-fprintd"))
                                        : format(_("Install %s"), pkgs.front().c_str());
-  button_row(page, {{label, [pkgs] { install(pkgs); }, true, !g.installing, list}});
+  button_row(page, {{label, [pkgs] { install(pkgs); }, true, !g.installing}});
   message_line(page, g.install_message, g.install_kind);
 }
 
@@ -971,8 +969,10 @@ void fingers_card(Page *page) {
                         : n == 0 ? std::string(_("No finger is enrolled yet. Choose a finger, then Enroll."))
                         : n == 1 ? std::string(_("1 finger is enrolled."))
                                  : format(_("%d fingers are enrolled."), n);
-  new Label(x, page->cursor(), w, S(26),
-            chosen + "  ·  " + (on ? std::string(_("enrolled")) : std::string(_("not enrolled"))), Label::BOLD);
+  std::string state = g.op == Op::enroll && g.op_finger == g.selected ? std::string(_("enrolling..."))
+                      : on                                            ? std::string(_("enrolled"))
+                                                                      : std::string(_("not enrolled"));
+  new Label(x, page->cursor(), w, S(26), chosen + "  ·  " + state, Label::BOLD);
   page->advance(S(28));
   page->note(summary);
 
@@ -1002,11 +1002,11 @@ void fingers_card(Page *page) {
     std::string sel = g.selected;
     if (!on)
       buttons.push_back({_("Enroll"), [sel] { enroll(sel); }, true, idle,
-                         format(_("Enroll the %s"), fprint::finger_label(sel).c_str())});
-    buttons.push_back({_("Test"), [] { verify(); }, on, idle && n > 0, _("Check an enrolled finger")});
+                         format(_("Enroll a fingerprint: %s"), fprint::finger_label(sel).c_str())});
+    buttons.push_back({_("Test"), [] { verify(); }, on, idle && n > 0, _("Check that an enrolled finger is recognized")});
     if (on)
       buttons.push_back({_("Delete"), [sel] { delete_finger(sel); }, false, idle,
-                         format(_("Delete the fingerprint of the %s"), fprint::finger_label(sel).c_str())});
+                         format(_("Delete the fingerprint: %s"), fprint::finger_label(sel).c_str())});
     if (n > 0)
       buttons.push_back({_("Delete All..."), [] {
                            g.confirm_remove_all = true;

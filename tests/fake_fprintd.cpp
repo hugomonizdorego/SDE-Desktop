@@ -21,7 +21,8 @@
 // SetEnrollScript(as), SetVerifyScript(as), SetEnrolled(as), SetDevices(u),
 // GetState() -> s. The same as lines on standard input (the tests need no
 // D-Bus tool): "touch STATUS", "enroll-script S,S", "verify-script S,S",
-// "enrolled F,F", "devices N", "state" (logs "STATE ..."). A claim ends
+// "enrolled F,F", "devices N", "deny-enroll on|off" (polkit says no),
+// "state" (logs "STATE ..."). A claim ends
 // when its client leaves the bus, as with fprintd. Every call and signal is
 // logged to LOG ("READY" once the name is owned).
 #include <dbus/dbus.h>
@@ -430,6 +431,7 @@ void command(const std::string &line) {
   else if (cmd == "verify-script") s.verify_script = split(arg);
   else if (cmd == "enrolled") s.enrolled = split(arg);
   else if (cmd == "devices") s.devices = atoi(arg.c_str());
+  else if (cmd == "deny-enroll") s.deny_enroll = arg == "on";
   else if (cmd == "state") log_line("STATE " + state_text());
 }
 

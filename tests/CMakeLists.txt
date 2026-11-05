@@ -220,6 +220,11 @@ target_link_libraries(sde-fake-fprintd PRIVATE PkgConfig::DBUS)
 add_test(NAME sde-fingerprint-pam COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_fingerprint_pam.py
   $<TARGET_FILE:sde-fingerprint-pam>)
 set_tests_properties(sde-fingerprint-pam PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+if(SDE_XVFB)
+  add_test(NAME sde-fingerprint-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_fingerprint_ui.py
+    $<TARGET_FILE:sde-settings> $<TARGET_FILE:sde-fake-fprintd> $<TARGET_FILE:sde-fingerprint-pam>)
+  set_tests_properties(sde-fingerprint-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 
 # About windows open and close without crashing (Niny alpha 50 regression).
 if(SDE_XVFB)
