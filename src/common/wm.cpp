@@ -29,6 +29,15 @@ static void migrate_openbox_config(const std::string &path) {
     text.replace(lock, old_lock.size(), "<command>sde-lock</command>");
     changed = true;
   }
+  // 0.2.0 Alpha 4: Ctrl+Alt+T opens the terminal of Control Center >
+  // Default Applications (sde-run --terminal), not always the alternative.
+  const std::string old_terminal = "<command>x-terminal-emulator</command></action></keybind>";
+  size_t terminal = text.find("<keybind key=\"C-A-t\"><action name=\"Execute\">" + old_terminal);
+  if (terminal != std::string::npos) {
+    text.replace(text.find(old_terminal, terminal), old_terminal.size(),
+                 "<command>sde-run --terminal</command></action></keybind>");
+    changed = true;
+  }
   if (text.find("<context name=\"Desktop\">") == std::string::npos) {
     size_t end = text.find("</mouse>");
     if (end != std::string::npos) {
