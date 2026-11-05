@@ -3,13 +3,19 @@
 // with touch sequences as the X server sends them: taps and double taps,
 // the slop, long presses, pans with axis lock and release velocity,
 // momentum (its distance, its end, catching and boosting it), pinches,
-// two-finger taps, three fingers, cancelling and the interface scale.
+// two-finger taps, three fingers, cancelling and the interface scale; and
+// SDE's side (src/common/touch.h): the scroll helpers of widgets, the
+// [touchscreen] settings and the display a touch screen drives.
+#include <FL/Fl.H>
 #include <FL/Fl_Touch.H>
 
 #include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
+
+#include "config.h"
+#include "touch.h"
 
 namespace {
 
@@ -446,6 +452,87 @@ void test_merging() {
   CHECK(v[0].dy == 120);
 }
 
+void test_sde_helpers() {
+  using namespace sde;
+  // Scroll positions move by the finger within their limits, and say
+  // whether the content could move that way.
+  int pos = 0;
+  Fl::e_dy = 30;
+  CHECK(touch_scroll_y(pos, 100) == 1 && pos == 30);
+  Fl::e_dy = 100;
+  CHECK(touch_scroll_y(pos, 100) == 1 && pos == 100);  // reached the end now
+  Fl::e_dy = 10;
+  CHECK(touch_scroll_y(pos, 100) == 0 && pos == 100);  // at the end
+  Fl::e_dy = -10;
+  CHECK(touch_scroll_y(pos, 100) == 1 && pos == 90);
+  pos = 0;
+  Fl::e_dy = 5;
+  CHECK(touch_scroll_y(pos, 0) == 0 && pos == 0);  // the content fits
+  Fl::e_dy = -5;
+  CHECK(touch_scroll_y(pos, 50) == 0);  // at the top
+  double dpos = 0;
+  Fl::e_dy = 7;
+  CHECK(touch_scroll_y(dpos, 50.0) == 1 && dpos == 7);
+  Fl::e_dx = -3;
+  int hpos = 10;
+  CHECK(touch_scroll_x(hpos, 40) == 1 && hpos == 7);
+  // Rows: whole rows, the rest kept.
+  int first = 0;
+  Fl::e_dy = 15;
+  CHECK(touch_scroll_rows(first, 10, 20) == 1 && first == 0);
+  Fl::e_dy = 10;
+  CHECK(touch_scroll_rows(first, 10, 20) == 1 && first == 1);
+  Fl::e_dy = 200;
+  CHECK(touch_scroll_rows(first, 10, 20) == 1 && first == 10);
+  Fl::e_dy = 20;
+  CHECK(touch_scroll_rows(first, 10, 20) == 0 && first == 10);
+  Fl::e_dx = Fl::e_dy = 0;
+
+  // Which display a touch screen drives.
+  TouchOptions o;
+  CHECK(touch_output(o, {"eDP-1"}).empty());  // one display: nothing to map
+  CHECK(touch_output(o, {"HDMI-1", "eDP-1"}) == "eDP-1");
+  CHECK(touch_output(o, {"DP-1", "LVDS1"}) == "LVDS1");
+  CHECK(touch_output(o, {"HDMI-1", "DP-2"}).empty());  // no built-in panel: a touch monitor
+  o.output = "HDMI-1";
+  CHECK(touch_output(o, {"HDMI-1", "eDP-1"}) == "HDMI-1");
+  o.output = "DP-9";
+  CHECK(touch_output(o, {"HDMI-1", "eDP-1"}).empty());  // not connected now
+  o.output = "all";
+  CHECK(touch_output(o, {"HDMI-1", "eDP-1"}).empty());
+  CHECK(builtin_output("eDP-1") && builtin_output("eDP1") && builtin_output("LVDS-1") &&
+        builtin_output("DSI-1") && !builtin_output("HDMI-A-1") && !builtin_output("DP-1"));
+  std::string query =
+      "Screen 0: minimum 8 x 8, current 4800 x 1800, maximum 32767 x 32767\n"
+      "eDP-1 connected primary 2880x1800+0+0 (normal left inverted right x axis y axis) 302mm x 189mm\n"
+      "   2880x1800    120.00*+  60.00\n"
+      "HDMI-1 connected 1920x1080+2880+0 (normal left inverted right x axis y axis) 527mm x 296mm\n"
+      "   1920x1080     60.00*+\n"
+      "DP-1 disconnected (normal left inverted right x axis y axis)\n";
+  CHECK((parse_connected_outputs(query) == std::vector<std::string>{"eDP-1", "HDMI-1"}));
+
+  // Settings round trip, defaults and limits.
+  Config cfg;
+  TouchOptions d = load_touch_options(cfg);
+  CHECK(d.gestures && !d.show_touches && d.output == "auto" && d.keyboard == "auto" && d.long_press_ms == 500);
+  TouchOptions t;
+  t.gestures = false;
+  t.show_touches = true;
+  t.output = "HDMI-1";
+  t.keyboard = "off";
+  t.long_press_ms = 700;
+  save_touch_options(cfg, t);
+  TouchOptions u = load_touch_options(cfg);
+  CHECK(!u.gestures && u.show_touches && u.output == "HDMI-1" && u.keyboard == "off" && u.long_press_ms == 700);
+  cfg.set("touchscreen", "long_press", "50");
+  cfg.set("touchscreen", "keyboard", "maybe");
+  cfg.unset("touchscreen", "output");
+  u = load_touch_options(cfg);
+  CHECK(u.long_press_ms == 200);
+  CHECK(u.keyboard == "auto");
+  CHECK(u.output == "auto");
+}
+
 }  // namespace
 
 int main() {
@@ -463,6 +550,7 @@ int main() {
   test_cancel();
   test_scale();
   test_merging();
+  test_sde_helpers();
   if (g_failures) {
     fprintf(stderr, "%d check(s) failed\n", g_failures);
     return 1;
