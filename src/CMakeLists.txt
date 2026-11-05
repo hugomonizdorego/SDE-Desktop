@@ -4,6 +4,8 @@ add_library(sde-common STATIC
   display/backend.cpp
   display/profile.cpp
   common/config.cpp
+  # 0.2.0 Alpha 4: the client of the SDE core controller (docs/CORE.md).
+  common/core_client.cpp
   common/crash.cpp
   common/integration.cpp
   common/about.cpp
@@ -53,7 +55,7 @@ endif()
 
 # The session manager draws nothing itself, but shares the configuration,
 # theme and window manager helpers with the other programs.
-add_executable(sde-session session/main.cpp)
+add_executable(sde-session session/main.cpp session/core_link.cpp)
 target_link_libraries(sde-session PRIVATE sde-common)
 # Theme switches (0.2.0 Alpha 3.1): the session holds its picture of the
 # screen until the windows behind it have redrawn (XDamage).
@@ -62,6 +64,12 @@ if(XDAMAGE_FOUND)
   target_compile_definitions(sde-session PRIVATE SDE_HAVE_XDAMAGE=1)
   target_link_libraries(sde-session PRIVATE PkgConfig::XDAMAGE)
 endif()
+# 0.2.0 Alpha 4: the SDE core controller, org.selviana.Core on the session
+# bus (docs/CORE.md): a thin D-Bus and X11 front end of the Rust controller
+# in rust/sde-core/src/controller.rs. sde-session starts and supervises it.
+add_executable(sde-core core/main.cpp)
+target_link_libraries(sde-core PRIVATE sde-common)
+install(TARGETS sde-core RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # sde-session's OpenGL check at login (0.2.0 Alpha 3.1): Xlib only, libGL is
 # opened at run time.
 add_executable(sde-gl-probe session/gl_probe.cpp)
