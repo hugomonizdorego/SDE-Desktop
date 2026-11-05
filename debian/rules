@@ -23,6 +23,8 @@ override_dh_auto_configure:
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp
 	debian/install-components $(BUILDDIR) $(COMPONENT_PACKAGES)
+	@test -x debian/liria/usr/bin/liria || \
+	    echo "debian/rules: WARNING: the liria package has no /usr/bin/liria (src/liria, COMPONENT liria)" >&2
 
 # debion-network-repair.service is enabled (it runs at the next boot), not
 # started: the postinst already runs the same repair.

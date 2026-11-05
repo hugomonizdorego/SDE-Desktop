@@ -260,9 +260,6 @@ install(FILES docs/ALPHA9.md docs/ALPHA10.md docs/ALPHA11.md docs/ALPHA12.md doc
 install(FILES data/xsessions/sde-desktop.desktop data/xsessions/sde.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/xsessions)
 install(FILES data/sde.conf DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/sde)
 install(FILES data/schemas/org.debion.session.gschema.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas)
-# Liria's defaults (its org.debion.liria.* schemas).
-install(FILES data/schemas/30_sde-suite.gschema.override DESTINATION ${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas
-        COMPONENT liria)
 install(FILES data/openbox/rc.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/sde/openbox)
 # SDE themes: SDE Graphite (default), SDE Fluent and SDE Glass, built from
 # data/themes/palettes.json and the pinned upstream sources that

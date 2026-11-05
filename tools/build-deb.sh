@@ -30,10 +30,11 @@ command -v dpkg-buildpackage >/dev/null 2>&1 || {
     exit 1
 }
 
-echo "Building sde $VERSION with native application forks"
-# Download/verify sources before dpkg-buildpackage. Native compilation itself
-# has no network access and never installs upstream application packages.
-python3 "$ROOT/tools/prepare-native-suite.py"
+echo "Building the SDE $VERSION packages"
+# Download/verify sources before dpkg-buildpackage: SDE WM (Openbox) and SDE
+# compositor (picom). The build itself has no network access and never
+# installs upstream application packages. (The native suite of GTK forks
+# ended with Liria's Caja fork in 0.2.0 Alpha 4.)
 python3 "$ROOT/tools/prepare-components.py"
 # SDE Graphite/Fluent/Glass sources (suite/themes.lock.json); built with sassc.
 python3 "$ROOT/tools/prepare-themes.py"

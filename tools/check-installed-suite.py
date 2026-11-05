@@ -61,7 +61,6 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
         assert parser["Desktop Entry"]["OnlyShowIn"] == "SDE;"
     # 0.2.0 Alpha 4: SDE Core and one package per application.
     for package in [
-        "sde/upstream/caja",
         "sde-core",
         "liria",
         "xanara",
@@ -90,8 +89,9 @@ with tempfile.TemporaryDirectory(prefix="sde-installed-") as temporary:
     schemas = set(subprocess.check_output(
         ["gsettings", "list-schemas"], env=env, text=True
     ).splitlines())
-    required = {"org.mate.lockdown", "org.mate.interface", "org.mate.background",
-                "org.debion.media-handling", "org.debion.applications-terminal"}
+    # The org.mate.* and media-handling schemas were the Caja fork's (0.2.0
+    # Alpha 3.1 and older).
+    required = {"org.debion.session", "org.debion.applications-terminal"}
     assert required <= schemas, required - schemas
 print(
     "Installed MIME defaults, user overrides, dry-run autostarts and copyright files passed."

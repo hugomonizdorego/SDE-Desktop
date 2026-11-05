@@ -17,8 +17,11 @@ Build-Depends: debhelper-compat (= 13),
                libjpeg-dev,
                zlib1g-dev,
                libpolkit-agent-1-dev,
+               libpolkit-gobject-1-dev,
                libcairo2-dev,
                librsvg2-dev,
+               libglib2.0-dev,
+               libgdk-pixbuf-2.0-dev,
                libx11-dev,
                libxft-dev,
                libdbus-1-dev,
@@ -30,45 +33,17 @@ Build-Depends: debhelper-compat (= 13),
                x11-xserver-utils,
                autoconf,
                automake,
-               autoconf-archive,
                libtool,
                libtool-bin,
                autopoint,
-               intltool,
-               mate-common,
-               gtk-doc-tools,
-               yelp-tools,
-               xsltproc,
-               docbook-xsl,
-               gobject-introspection,
-               libgirepository1.0-dev,
-               polkitd,
-               libpolkit-gobject-1-dev,
                libgtk-3-dev,
-               libgail-3-dev,
-               libgtksourceview-4-dev,
-               libenchant-2-dev,
-               iso-codes,
-               libmate-desktop-dev (>= 1.27.1),
-               libpeas-dev,
-               libgtop2-dev,
-               libsystemd-dev,
-               libwnck-3-dev,
                libxml2-dev,
-               libxml2-utils,
                libappstream-dev (>= 1.0),
                libflatpak-dev (>= 1.12),
                libapt-pkg-dev,
                libexif-dev,
-               libexempi-dev,
                libpoppler-glib-dev,
-               libsynctex-dev,
-               libspectre-dev,
-               libdjvulibre-dev,
-               libtiff-dev,
                libarchive-dev,
-               libjson-glib-dev,
-               libnotify-dev,
                libpam0g-dev,
                libcrypt-dev,
                libxss-dev,
@@ -78,8 +53,6 @@ Build-Depends: debhelper-compat (= 13),
                libxres-dev,
                libsm-dev,
                libice-dev,
-               liblcms2-dev,
-               chrpath,
                meson,
                ninja-build,
                libxcursor-dev,
@@ -206,28 +179,23 @@ Description: Selviana Desktop Environment - SDE Core
 Package: liria
 Architecture: any
 Depends: ${shlibs:Depends},
-         ${misc:Depends},
-         sde-core (>= ${binary:Version}),
-         mate-desktop-common,
-         librsvg2-common,
-         gsettings-desktop-schemas,
-         sudo
-Recommends: gvfs,
+         ${misc:Depends}
+Recommends: sde-core,
+            gvfs,
             gvfs-backends,
             gvfs-fuse,
-            udisks2,
-            taca
+            udisks2
+Suggests: sudo
 Breaks: sde (<< 0.2.0~alpha4~)
 Replaces: sde (<< 0.2.0~alpha4~)
 Description: Selviana Desktop Environment - Liria file manager
- Liria is the file manager of the Selviana Desktop Environment (SDE): it
- browses folders, the trash, removable media and network places, and opens
- files with their default applications. In SDE the desktop icons are
+ Liria is the file manager of the Selviana Desktop Environment (SDE),
+ written by the Selviana DE Project: it browses folders, the trash,
+ removable media and network places (through GIO and GVfs) and opens files
+ with their default applications. In SDE the desktop icons are
  sde-desktop's, not Liria's.
  .
- This version is SDE's fork of the Caja file manager, built from pinned
- source with the original copyright notices
- (/usr/share/doc/sde/upstream/caja).
+ It runs on any X11 desktop; with sde-core it follows the SDE look.
 
 Package: xanara
 Architecture: any
