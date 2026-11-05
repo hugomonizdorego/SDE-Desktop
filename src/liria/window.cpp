@@ -293,6 +293,7 @@ void MainWindow::layout() {
   view_icons_x_ = W - S(10) - view_btn_w_;
   view_details_x_ = view_icons_x_ - view_btn_w_ - S(2);
   commandbar_->rebuild();
+  schedule_qa();
   (void)t;
 }
 

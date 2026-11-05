@@ -559,8 +559,7 @@ void AddressBar::rebuild() {
   if (!tab.query.empty()) {
     Crumb c;
     c.label = format(_("Search results in %s"), location_title(loc).c_str());
-    c.location = loc;
-    c.current = true;
+    c.current = true;  // no location: a click edits the address
     if (!crumbs.empty()) crumbs.back().current = false;
     crumbs.push_back(c);
   }
@@ -829,8 +828,8 @@ int AddressBar::handle(int e) {
         return 1;
       }
       const std::string &loc = crumbs[size_t(k)].location;
-      if (crumbs[size_t(k)].current && w_->tab().query.empty()) start_edit();
-      else if (!loc.empty()) w_->go(loc);
+      if (loc.empty() || (crumbs[size_t(k)].current && w_->tab().query.empty())) start_edit();
+      else w_->go(loc);
       return 1;
     }
     case FL_DND_ENTER:

@@ -597,7 +597,7 @@ void FileCanvas::draw() {
         if (thumb && thumb->surface) {
           double iw = cairo_image_surface_get_width(thumb->surface), ih = cairo_image_surface_get_height(thumb->surface);
           double kx = std::min(img / iw, img / ih);
-          if (kx > 1 && iw >= S(48)) kx = std::min(kx, 2.0);
+          if (kx > 1) kx = std::min(kx, 2.0);  // small pictures are not blown up much
           double dw = std::round(iw * kx), dh = std::round(ih * kx);
           double dx = std::round(cx - dw / 2), dy = std::round(top + (img - dh) / 2);
           cairo_t *cr = p.cr();

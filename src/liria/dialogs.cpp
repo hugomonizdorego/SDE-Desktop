@@ -187,6 +187,9 @@ class Dialog : public BufferedWindow {
     g_mapping = nullptr;
     if (!buttons_.empty() && !focus_set_) buttons_.back()->take_focus();
     while (!done && shown()) Fl::wait();
+    // The window it belongs to gets the keyboard back (window managers
+    // leave the focus nowhere when an undecorated window's dialog closes).
+    if (parent_ && parent_->shown()) x11::activate_window(fl_xid(parent_));
     return result;
   }
   void focus_later(Fl_Widget *w) {
@@ -461,7 +464,8 @@ void show_properties(MainWindow *parent, const std::vector<Item> &items) {
   d.text = [&] {
     const Theme &t = active_theme();
     // The size, as far as it is counted.
-    std::string size = chooser::size_text(counter->bytes) + format(_(" (%s bytes)"), thousands(counter->bytes).c_str());
+    std::string size = chooser::size_text(counter->bytes);
+    if (counter->bytes >= 1000) size += format(_(" (%s bytes)"), thousands(counter->bytes).c_str());
     if (!counter->done) size = format(_("%s, counting…"), chooser::size_text(counter->bytes).c_str());
     if (!local) size = single && !e.dir ? chooser::size_text(e.size) : std::string(_("Unknown"));
     rows[size_t(size_row)].second = size;
