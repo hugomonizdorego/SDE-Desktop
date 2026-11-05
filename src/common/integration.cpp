@@ -23,6 +23,7 @@
 #include "suite.h"
 #include "theme.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "wm.h"
 namespace sde {
 namespace {
@@ -968,6 +969,15 @@ void announce_config_change(Display *dpy, const Config &cfg) {
     changed = AppearanceFiles();
   }
   apply_appearance_announce(dpy, changed);
+}
+
+void announce_wallpaper_change(Display *dpy, const Config &cfg) {
+  if (!wallpaper_colors_in_use(cfg)) {
+    announce_config_change(dpy, cfg);
+    return;
+  }
+  prepare_wallpaper_colors(cfg);
+  apply_appearance(dpy, cfg);
 }
 
 std::string compositor_report(const Config &cfg) {

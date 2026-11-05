@@ -68,6 +68,7 @@
 #include "thumbnails.h"
 #include "ui.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "wallpapers.h"
 #include "widgets.h"
 #include "wm.h"
@@ -117,6 +118,18 @@ void apply_change() {
             static_cast<char *>(nullptr));
     });
   }
+  if (g_window) g_window->redraw();
+}
+
+// A new wallpaper (0.2.0 Alpha 4): when the look takes its colours, the
+// session switches every program to it in one calm step
+// (announce_wallpaper_change()); otherwise it applies at once as before.
+void apply_wallpaper() {
+  g_cfg.save();
+  prepare_wallpaper_colors(g_cfg);
+  g_theme = Theme::from_config(g_cfg);
+  g_theme.apply_to_fltk();
+  announce_wallpaper_change(fl_display, g_cfg);
   if (g_window) g_window->redraw();
 }
 
@@ -723,7 +736,7 @@ class WallpaperGrid : public Fl_Widget {
   void pick(int i) {
     if (i < 0 || i >= count()) return;
     g_cfg.set("appearance", "wallpaper", tiles_[size_t(i)].value);
-    apply_change();
+    apply_wallpaper();
     redraw();
   }
   int index_at(int ex, int ey) const {
@@ -1446,7 +1459,7 @@ void build_appearance(Page *page) {
       chooser.preview(true);
       if (!chooser.run()) return;
       g_cfg.set("appearance", "wallpaper", chooser.path());
-      apply_change();
+      apply_wallpaper();
       Fl::add_timeout(0, [](void *) { refresh_page(); });
     });
     return b;

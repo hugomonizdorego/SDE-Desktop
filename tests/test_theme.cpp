@@ -690,6 +690,20 @@ static void test_wallpaper_colors() {
   CHECK(!Theme::from_config(tinted_config("fluent", "light", "blue", gray, "true")).wallpaper_tint);
   CHECK(theme_wallpaper_tint_default("fluent") && theme_wallpaper_tint_default("glass") &&
         !theme_wallpaper_tint_default("graphite"));
+  // A new wallpaper is a change of the look when the look takes its colours
+  // (announce_wallpaper_change() then asks the session for its calm switch),
+  // and the program that sets it measures it first.
+  CHECK(!wallpaper_colors_in_use(tinted_config("graphite", "light", "blue", sky, nullptr)));
+  CHECK(wallpaper_colors_in_use(tinted_config("fluent", "light", "blue", sky, nullptr)));
+  CHECK(!wallpaper_colors_in_use(tinted_config("glass", "light", "blue", sky, "false")));
+  Config with_accent = tinted_config("graphite", "light", "blue", sky, nullptr);
+  with_accent.set("appearance", "accent_from_wallpaper", "true");
+  CHECK(wallpaper_colors_in_use(with_accent));
+  std::string fresh = write_sample(kSamples[2], g_tmp + "/fresh.png"), entries;
+  prepare_wallpaper_colors(tinted_config("graphite", "dark", "blue", fresh, nullptr));
+  CHECK(read_file(g_tmp + "/cache/sde/wallpaper-colors", entries) && entries.find(fresh) == std::string::npos);
+  prepare_wallpaper_colors(tinted_config("fluent", "dark", "blue", fresh, nullptr));
+  CHECK(read_file(g_tmp + "/cache/sde/wallpaper-colors", entries) && entries.find(fresh) != std::string::npos);
   // use_floating_layer(): what the panel, notifications and OSDs draw.
   Theme layer = Theme::from_config(tinted_config("fluent", "light", "blue", forest, "true"));
   Color window_surface = layer.surface;

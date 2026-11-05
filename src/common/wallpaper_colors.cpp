@@ -190,6 +190,9 @@ WallpaperColors colors_of_surface(cairo_surface_t *s) {
 WallpaperColors measure(const std::string &path) {
   std::string l = lower(path);
   if (ends_with(l, ".svg") || ends_with(l, ".svgz")) return colors_of_surface(load_image(path, 192, 108));
+  // gdk-pixbuf decodes JPEG at an eighth of the size; a PNG it decodes whole
+  // (a 4K photo about 0.2 s of CPU, once per picture: inflating it is most
+  // of that, so decoding it otherwise would not be faster).
   GError *err = nullptr;
   GdkPixbuf *pb = gdk_pixbuf_new_from_file_at_scale(path.c_str(), 192, 192, TRUE, &err);
   if (err) g_error_free(err);
@@ -306,6 +309,10 @@ std::string wallpaper_in_use(const Config &cfg, bool dark) {
   std::string path = data.substr(0, data.rfind('/')) + "/backgrounds/sde/" + name;
   if (!file_exists(path)) path = "/usr/share/backgrounds/sde/" + name;
   return file_exists(path) ? path : "";
+}
+
+bool wallpaper_colors_in_use(const Config &cfg) {
+  return cfg.get_bool("appearance", "accent_from_wallpaper", false) || theme_wallpaper_tint(cfg, theme_style(cfg));
 }
 
 void prepare_wallpaper_colors(const Config &cfg) {

@@ -56,9 +56,12 @@ WallpaperColors wallpaper_colors(const std::string &path);
 // Gallery, Photo, a slideshow) writes [appearance] wallpaper and announces
 // the configuration change; every SDE program then follows it.
 std::string wallpaper_in_use(const Config &cfg, bool dark);
-// Measures the wallpaper of |cfg| when its theme uses the colours (the tint
-// or the accent from the wallpaper). A program that sets the wallpaper calls
-// it before it announces the change, so the programs that follow find the
+// Whether the look of |cfg| takes colours from the wallpaper: the tint of
+// the floating layer or the accent from the wallpaper.
+bool wallpaper_colors_in_use(const Config &cfg);
+// Measures the wallpaper of |cfg| when its theme uses the colours. A program
+// that sets the wallpaper calls it before it announces the change (as
+// announce_wallpaper_change() does), so the programs that follow find the
 // colours in the cache instead of decoding the picture each.
 void prepare_wallpaper_colors(const Config &cfg);
 
