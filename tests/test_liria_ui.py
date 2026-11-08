@@ -390,6 +390,30 @@ def run(s):
     s.key('Return')
     check(s.wait(lambda: (docs / 'Work').is_dir() and not (docs / 'New folder').exists()), 'the new folder is named')
 
+    # ---------------------------------------------------------------- drag and drop
+    # A file dragged onto a folder of the same drive is moved there (XDND,
+    # Liria as source and target); Ctrl+Z moves it back.
+    s.wait(lambda: 'item:Ideas.txt' in s.controls() and 'item:Work' in s.controls())
+    x0, y0 = s.point('item:Ideas.txt')
+    x1, y1 = s.point('item:Work')
+    undo = int(s.state('undo') or 0)
+    s.xdo('mousemove', x0, y0)
+    time.sleep(0.15)
+    s.xdo('mousedown', 1)
+    for i in range(1, 13):
+        s.xdo('mousemove', int(x0 + (x1 - x0) * i / 12), int(y0 + (y1 - y0) * i / 12))
+        time.sleep(0.04)
+    time.sleep(0.3)
+    s.xdo('mouseup', 1)
+    check(s.wait(lambda: (docs / 'Work/Ideas.txt').exists() and not (docs / 'Ideas.txt').exists()),
+          'a file dragged onto a folder is moved into it')
+    # The move is undoable once its job has ended (not when the file moved).
+    check(s.wait(lambda: s.state('jobs') == '0' and int(s.state('undo') or 0) == undo + 1),
+          f'the move can be undone: {s.state("undo")} steps')
+    s.key('ctrl+z')
+    check(s.wait(lambda: (docs / 'Ideas.txt').exists() and not (docs / 'Work/Ideas.txt').exists()),
+          'Ctrl+Z moves it back')
+
     # ---------------------------------------------------------------- views, hidden, search
     s.key('ctrl+shift+6')
     s.expect('layout', 'details', 'Ctrl+Shift+6 shows details')

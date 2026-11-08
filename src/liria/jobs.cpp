@@ -343,6 +343,12 @@ void App::empty_trash(MainWindow *from) {
 }
 
 void App::undo_last(MainWindow *from) {
+  // The operation still running is not on the list yet: Ctrl+Z pressed
+  // during it (or right after a drop) would undo the one before.
+  if (running_jobs() > 0) {
+    if (from) from->say(_("Wait until the file operation has ended, then undo it."));
+    return;
+  }
   if (undo.empty()) {
     if (from) from->say(_("There is nothing to undo."));
     return;
