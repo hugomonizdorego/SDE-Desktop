@@ -246,6 +246,10 @@ public:
   static void platform_flush();
   /// Forgets the touches without sending anything (their events stopped).
   static void platform_cancel();
+  /// The first window is shown: SDE_TOUCH_FIFO=<path> (tests and
+  /// measurements) reads touches from that FIFO, one per line: "b|u|e ID X
+  /// Y" (begin, update, end; root coordinates), as they arrive.
+  static void platform_start();
 };
 
 #endif // !Fl_Touch_H

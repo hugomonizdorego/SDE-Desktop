@@ -1209,6 +1209,7 @@ bool fl_touch_platform_available() {
 // Touch events for |win|, unless it keeps the X server's pointer
 // emulation (Fl_Window::touch_events(false)) or touch is off.
 static void fl_touch_select_window(Fl_Window *win, Window xid) {
+  Fl_Touch::platform_start();
 #if SDE_FLTK_XI2
   if (fl_xi_touch && Fl_Touch::enabled() && win->touch_events()) xi2_select_touch(xid, true);
 #endif

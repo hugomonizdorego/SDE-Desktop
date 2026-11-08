@@ -35,10 +35,13 @@
 #include <FL/Fl_Text_Display.H>
 #include <FL/Fl_Text_Editor.H>
 
+#include <fcntl.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 // Platform glue (Fl_x.cxx).
 // what: 0 motion, 1 press, 2 release; button: the button pressed, released
@@ -610,6 +613,57 @@ void Fl_Touch::platform_cancel() {
   d.mode = NONE;
   d.nids = 0;
   schedule();
+}
+
+// SDE_TOUCH_FIFO: touches written into a FIFO by a test or a measurement,
+// in root coordinates; they go to the window under them (the grab holder
+// while there is one), as the X server would send them.
+static int fifo_fd = -1;
+static Fl_Widget *fifo_win = 0;  // the window of the touch that began (watched)
+static char fifo_line[256];
+static size_t fifo_len = 0;
+
+static Fl_Window *window_at_root(int rx, int ry) {
+  if (Fl::grab()) return Fl::grab();
+  for (Fl_Window *w = Fl::first_window(); w; w = Fl::next_window(w))
+    if (w->shown() && w->visible() && rx >= w->x_root() && ry >= w->y_root() &&
+        rx < w->x_root() + w->w() && ry < w->y_root() + w->h())
+      return w;
+  return 0;
+}
+
+static void fifo_cb(int fd, void *) {
+  char buf[512];
+  ssize_t n = read(fd, buf, sizeof buf);
+  for (ssize_t i = 0; i < n; i++) {
+    if (buf[i] != '\n') {
+      if (fifo_len < sizeof fifo_line - 1) fifo_line[fifo_len++] = buf[i];
+      continue;
+    }
+    fifo_line[fifo_len] = 0;
+    fifo_len = 0;
+    char kind = 0;
+    int id = 0;
+    double x = 0, y = 0;
+    if (sscanf(fifo_line, " %c %d %lf %lf", &kind, &id, &x, &y) != 4) continue;
+    int type = kind == 'b' ? 0 : kind == 'u' ? 1 : kind == 'e' ? 2 : -1;
+    Fl_Window *win = fifo_win ? fifo_win->as_window() : 0;
+    if (type == 0 || !win || !win->shown()) fifo_win = win = window_at_root(int(lround(x)), int(lround(y)));
+    if (type < 0 || !win) continue;
+    Fl_Touch::inject(win, type, id, x - win->x_root(), y - win->y_root());
+  }
+}
+
+void Fl_Touch::platform_start() {
+  static bool started = false;
+  if (started) return;
+  started = true;
+  const char *path = getenv("SDE_TOUCH_FIFO");
+  if (!path || !*path) return;
+  // Read and write: the FIFO never reads as closed between writers.
+  Fl::watch_widget_pointer(fifo_win);
+  fifo_fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+  if (fifo_fd >= 0) Fl::add_fd(fifo_fd, FL_READ, fifo_cb);
 }
 
 void Fl_Touch::inject(Fl_Window *window, int type, int id, double x, double y, double time) {
