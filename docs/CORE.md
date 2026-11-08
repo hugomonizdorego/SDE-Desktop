@@ -245,3 +245,6 @@ bumping; that path goes away after this release.
 - Liria (C, GTK) does not use the client; a GDBus reader for its start-up
   theme could use `Look.Get`.
 - No D-Bus activation: programs outside an SDE session use the fallbacks.
+- The problems are kept in memory: they start empty when `sde-core` starts
+  again (the session sends the components it runs; System Reports keeps
+  reading `session.log`).
