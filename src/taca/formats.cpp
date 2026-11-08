@@ -342,6 +342,19 @@ bool libarchive_zip_aes() {
   return ok;
 }
 
+// libarchive writes XAR only when it was built with an XML library; Debian
+// testing's no longer is ("Xar not supported on this platform", November
+// 2026). Reading XAR does not need it.
+bool libarchive_writes_xar() {
+  static int cached = -1;
+  if (cached >= 0) return cached == 1;
+  struct archive *a = archive_write_new();
+  bool ok = archive_write_set_format_xar(a) == ARCHIVE_OK;
+  archive_write_free(a);
+  cached = ok ? 1 : 0;
+  return ok;
+}
+
 Capabilities capabilities(Format f) {
   Capabilities c;
   bool sz = !seven_zip_program().empty(), rar = !rar_program().empty();
@@ -372,8 +385,10 @@ Capabilities capabilities(Format f) {
     case Format::TarLzma:
     case Format::TarLzip:
     case Format::Cpio:
-    case Format::Xar:
       c.create = c.modify = true;
+      break;
+    case Format::Xar:
+      c.create = c.modify = libarchive_writes_xar();
       break;
     case Format::TarZ:
       c.modify = true;
@@ -402,6 +417,7 @@ std::vector<Format> creatable_formats() {
                         Format::TarZst, Format::TarBz2,   Format::TarLz4, Format::Tar,
                         Format::Iso,    Format::Cpio,     Format::Xar};
   if (!rar_program().empty()) v.insert(v.begin() + 2, Format::Rar5);
+  if (!libarchive_writes_xar()) v.erase(std::remove(v.begin(), v.end(), Format::Xar), v.end());
   return v;
 }
 

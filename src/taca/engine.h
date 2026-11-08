@@ -192,6 +192,7 @@ std::string seven_zip_program();  // 7zz, 7z or 7za
 std::string unrar_program();      // unrar
 std::string rar_program();        // rar
 bool libarchive_zip_aes();        // libarchive can write AES zip here
+bool libarchive_writes_xar();     // libarchive can write XAR here
 
 Result list_archive(const std::string &path, const std::string &password, ArchiveInfo &out,
                     Progress *progress = nullptr);

@@ -209,8 +209,18 @@ static void roundtrip(Format f) {
 
 static void test_formats() {
   for (Format f : {Format::Zip, Format::SevenZip, Format::Tar, Format::TarGz, Format::TarBz2, Format::TarXz,
-                   Format::TarZst, Format::TarLz4, Format::Cpio, Format::Iso, Format::Xar})
+                   Format::TarZst, Format::TarLz4, Format::Cpio, Format::Iso})
     roundtrip(f);
+  // XAR needs a libarchive built with an XML library (Debian testing's is
+  // not since November 2026); Taca then does not offer it.
+  if (libarchive_writes_xar()) {
+    roundtrip(Format::Xar);
+  } else {
+    fprintf(stderr, "libarchive cannot write XAR here: skipping the XAR round trip\n");
+    CHECK(!capabilities(Format::Xar).create);
+    auto made = creatable_formats();
+    CHECK(std::find(made.begin(), made.end(), Format::Xar) == made.end());
+  }
 
   // A single compressed file.
   std::string file = tmp("notes.txt");

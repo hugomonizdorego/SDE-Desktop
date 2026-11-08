@@ -290,19 +290,29 @@ for rel in tracked:
     if c and not parts(lic) <= parts(c['license']):
         errors.append(f'{rel}: SPDX {lic} is not part of the license of {c["id"]} ({c["license"]})')
 
-# Each component's sources are covered by stanzas with its licenses.
+# Each component's sources are covered by stanzas with its licenses. The
+# order of the files must not matter: a package build lists them without git
+# (in the order of the file system), and a folder may hold a few files under
+# another license (src/common/transfer_*.h are GPL-2.0-or-later in the
+# GPL-3.0-or-later desktop): one stanza with a license of the component is
+# enough.
 for c in COMPONENTS:
     for src in c.get('sources', []):
-        files = [t for t in tracked if t == src or (src.endswith('/') and t.startswith(src))]
-        for rel in files[:1] or ([src.rstrip('/') + '/x'] if src.endswith('/') else [src]):
-            stanza = stanza_for(rel)
-            if not stanza:
-                errors.append(f'{c["id"]}: {rel} is not covered by debian/copyright')
-                continue
+        files = sorted(t for t in tracked if t == src or (src.endswith('/') and t.startswith(src)))
+        files = files or ([src.rstrip('/') + '/x'] if src.endswith('/') else [src])
+        stanzas = [(rel, stanza_for(rel)) for rel in files]
+        if not stanzas[0][1]:
+            errors.append(f'{c["id"]}: {stanzas[0][0]} is not covered by debian/copyright')
+            continue
+
+        def grants(stanza):
             allowed = spdx_parts(stanza['License'].split('\n')[0])
-            if 'individual-upstream-licenses' not in allowed and not (allowed & parts(c['license'])):
-                errors.append(f'{c["id"]}: debian/copyright gives {rel} {stanza["License"].splitlines()[0]}, '
-                              f'the legal data {c["license"]}')
+            return 'individual-upstream-licenses' in allowed or bool(allowed & parts(c['license']))
+
+        if not any(st and grants(st) for _, st in stanzas):
+            rel, stanza = stanzas[0]
+            errors.append(f'{c["id"]}: debian/copyright gives {rel} {stanza["License"].splitlines()[0]}, '
+                          f'the legal data {c["license"]}')
 
 for e in errors:
     print('FAIL:', e)
