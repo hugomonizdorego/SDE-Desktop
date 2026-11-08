@@ -2,13 +2,11 @@
  * Copyright (C) 2026 Selviana DE Project and contributors
  *
  * The copy and move progress of SDE (0.2.0 Alpha 2, 3): the model shared
- * by the SDE-FLTK dialog (src/common/transfer_dialog.*, used by the desktop
- * and other SDE programs) and Liria's file operations window
- * (suite/redesign.py copies this file into the Liria tree as
- * libliria-private/liria-sde-transfer-model.h), so both estimate the same.
- * The picture of the dialog is transfer_scene.h. Plain C99 that also
- * compiles as C++; licensed GPL-2.0-or-later like Liria, so the file can
- * be part of both.
+ * by the SDE-FLTK dialog (src/common/transfer_dialog.*, used by the desktop,
+ * Liria and other SDE programs), so they all estimate the same. The
+ * picture of the dialog is transfer_scene.h. Plain C99 that also compiles
+ * as C++; GPL-2.0-or-later since the GTK Liria of 0.2.0 Alpha 2 and 3
+ * compiled it too.
  *
  *   SdeTransfer   bytes and items done and in total over time: the current
  *                 speed (smoothed over about 2 s) and the time remaining

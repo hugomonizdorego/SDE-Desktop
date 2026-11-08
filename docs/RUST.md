@@ -110,10 +110,9 @@ alpha2 memory measurement are not measurements of this new version.
 ## Alpha6 native suite
 
 `rust/sde-suite` provides optional dispatch and source/copyright diagnostics from
-`data/suite.tsv`. Native app commands are independent ELF executables built from
-the pinned C/C++ GTK source forks, rather than symlinks to this helper. Their
-main programs apply the SDE GTK launch preference through `suite/sde-brand.h`.
-Liria defaults to no desktop ownership. Power preferences, statistics and daemon
+`data/suite.tsv`. Native app commands are independent ELF executables (since
+0.2.0 Alpha 4 every one of them is SDE's own, Liria included), rather than
+symlinks to this helper. Liria never owns the desktop. Power preferences, statistics and daemon
 are separate native programs. SDE Update stays C++/FLTK with an attributed Python
 APT model. No new Cargo registry dependency or idle dispatcher daemon is added.
 

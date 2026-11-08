@@ -589,3 +589,6 @@ add_subdirectory(welcome)
 
 # Merkadu, the software center (docs/MERKADU.md).
 add_subdirectory(merkadu)
+
+# Liria, the file manager (docs/LIRIA.md).
+add_subdirectory(liria)

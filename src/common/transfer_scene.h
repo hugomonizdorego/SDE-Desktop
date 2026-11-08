@@ -6,10 +6,10 @@
  * folder and drops it in, again and again while the operation runs. SDE's
  * own drawing in the style of SDE's icons (flat fills, a dark outline,
  * warm colours), drawn with cairo as vectors, so it is sharp at every size
- * and scale. Shared by the SDE-FLTK dialog (src/common/transfer_dialog.cpp)
- * and Liria's file operations window (suite/redesign.py copies this file
- * into the Liria tree as libliria-private/liria-sde-transfer-scene.h).
- * Plain C99 that also compiles as C++; GPL-2.0-or-later like Liria.
+ * and scale. Drawn by the SDE-FLTK dialog (src/common/transfer_dialog.cpp)
+ * of the desktop, Liria and the other SDE programs. Plain C99 that also
+ * compiles as C++; GPL-2.0-or-later since the GTK Liria of 0.2.0 Alpha 3
+ * compiled it too.
  *
  *   copy       a paper comes out of the full source folder, which stays
  *              full; the destination fills up with the progress;

@@ -101,20 +101,17 @@ Python/PyQt5 panel, Action Center and settings (effects model and capability
 rule, compositor modes and report, removable drives, power profiles) into
 SDE's C++/FLTK code while keeping SDE's own design.
 
-## Native application fork and former forks
+## Former application forks
 
-One application source tree is prepared and compiled by SDE: **Liria**, from
-Caja. Its exact upstream version and commit are recorded in
-`suite/forks.lock.json`. No upstream copyright ownership is replaced by an SDE
-name. The original COPYING, COPYING.LIB, AUTHORS, ChangeLog and trademark
-notices are preserved, as are copyright comments in transformed source.
-Installed combined notices include original copyright headers and full
-top-level licenses. Complete corresponding sources and submodules are
-published with the binaries.
+No application source tree of another project is prepared or compiled by
+SDE any more. Up to 0.2.0 Alpha 3.1 Liria was a fork of
+[Caja](https://github.com/mate-desktop/caja) 1.28; since 0.2.0 Alpha 4 it
+is written from scratch by the Selviana DE Project ([LIRIA.md](LIRIA.md)),
+and the fork's sources, preparation tools and notices are gone.
 
 | Program | Source | Authors | License | Installed notice directory |
 | --- | --- | --- | --- | --- |
-| Liria | fork of [caja](https://github.com/mate-desktop/caja) 1.28.0 | Nautilus authors (1999–2009), Caja authors (2011–2021), Eazel, Red Hat, GNOME and MATE contributors; Selviana DE Project (SDE changes) | GPL-2.0-or-later; its libraries eel and libcaja-extension LGPL-2.0-or-later | `sde/upstream/caja` |
+| Liria | written from scratch (0.2.0 Alpha 4) | Selviana DE Project | GPL-3.0-or-later (its copy engine's headers shared with the desktop, `src/common/safe_copy.h`, `transfer_model.h` and `transfer_scene.h`, GPL-2.0-or-later) | `liria` |
 | Niny | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `niny` |
 | Xanara | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `xanara` |
 | Taca | written from scratch (alpha15) | Selviana DE Project | GPL-3.0-or-later | `taca` |
@@ -123,18 +120,15 @@ published with the binaries.
 | SDE Power | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde-core` |
 | SDE Screen Lock | written from scratch (alpha16) | Selviana DE Project | GPL-3.0-or-later | `sde-core` |
 
-Until alpha14/alpha16 the programs written from scratch were forks of MATE
-applications; nothing of those forks remains. Directories in the last column
-are relative to `/usr/share/doc`; each contains `copyright` and the retained
-license files. In Liria, individual libraries, translations, documentation
-and bundled files retain their own licenses; the full source is
-authoritative. Rebranding is not a relicensing of those files. SDE's
-additions to Liria (`suite/overlays/liria`) and the SDE WM patches
-(`suite/patches/sde-wm`) are GPL-2.0-or-later like the programs they become
-part of, and the SDE Compositor patches (`suite/patches/sde-compositor`)
-are MPL-2.0 like the picom files they change; the shell's GPL-3.0-or-later license remains separate. Shared
-distribution libraries and PackageKit are dependencies with their own
-distribution copyright notices.
+Until alpha14/alpha16 (Liria: 0.2.0 Alpha 3.1) the programs written from
+scratch were forks of MATE applications; nothing of those forks remains.
+Directories in the last column are relative to `/usr/share/doc`; each
+contains `copyright`. The SDE WM patches (`suite/patches/sde-wm`) are
+GPL-2.0-or-later like the program they become part of, and the SDE
+Compositor patches (`suite/patches/sde-compositor`) are MPL-2.0 like the
+picom files they change; the shell's GPL-3.0-or-later license remains
+separate. Shared distribution libraries and PackageKit are dependencies
+with their own distribution copyright notices.
 
 ## Design and development references
 

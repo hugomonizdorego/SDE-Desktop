@@ -97,10 +97,9 @@ out after "done" lost or corrupted files. Measured on a drive limited to
 
 ### What SDE does
 
-`src/common/safe_copy.h` (plain C, shared by the desktop's
-`src/desktop/file_ops.cpp` and Liria's `liria-sde-copy.c`, where
-`suite/redesign.py` copies it in as `liria-sde-safe-copy.h`) writes every
-copy to such a drive through a writer that
+`src/common/safe_copy.h` (plain C, used by the file operations of the
+desktop and of Liria, `src/desktop/file_ops.cpp`) writes every copy to such
+a drive through a writer that
 
 * **sends each piece to the drive as soon as it is written**
   (`sync_file_range (SYNC_FILE_RANGE_WRITE)`) and keeps only a small window

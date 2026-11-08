@@ -596,3 +596,23 @@ if(SDE_XVFB)
     $<TARGET_FILE:sde-settings>)
   set_tests_properties(sde-scroll-blit PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
+# 0.2.0 Alpha 4: Liria, SDE's own file manager (src/liria, docs/LIRIA.md):
+# its display-free core in a temporary home (locations, pins, addresses and
+# servers, the Trash, copy, move, merge and conflicts, rename, new items,
+# undo, history, the view model, preferences, Open With).
+if(TARGET liria-core)
+  add_executable(liria-tests test_liria.cpp)
+  target_include_directories(liria-tests PRIVATE ${PROJECT_SOURCE_DIR}/src/liria)
+  target_link_libraries(liria-tests PRIVATE liria-core)
+  add_test(NAME liria-core COMMAND liria-tests)
+  # The window on Xvfb (Home, tabs, navigation, selection, menus, a copy
+  # with the copy dialog, rename, Trash and undo, views, search, 10 000
+  # files) and FileManager1 with D-Bus activation on a bus of the test's own.
+  if(SDE_XVFB)
+    add_test(NAME liria-ui COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_liria_ui.py
+      $<TARGET_FILE:liria>)
+    add_test(NAME liria-dbus COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_liria_dbus.py
+      $<TARGET_FILE:liria> ${PROJECT_SOURCE_DIR}/data/dbus)
+    set_tests_properties(liria-ui liria-dbus PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+  endif()
+endif()

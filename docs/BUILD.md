@@ -37,8 +37,8 @@ publish those.
 ## Editable source and offline compilation
 
 ```sh
-python3 tools/prepare-components.py
-python3 tools/prepare-themes.py
+python3 tools/prepare-components.py   # SDE WM and SDE Compositor sources
+python3 tools/prepare-themes.py       # the GTK theme sources
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j4
 ctest --test-dir build --output-on-failure
@@ -52,14 +52,17 @@ then needs no network. `source-work/` is only the original checkout cache. Do
 not edit that cache; edit the prepared source or the preparation recipe. The
 tools refuse to replace a prepared tree with a different recipe automatically.
 
+Every application, Liria included since 0.2.0 Alpha 4 ([LIRIA.md](LIRIA.md)),
+is SDE's own source in `src/` and needs no preparation. Up to 0.2.0 Alpha 3.1
+`tools/prepare-native-suite.py` prepared the Caja fork Liria came from; that
+machinery and the `SDE_BUILD_NATIVE_SUITE` option are gone. Every `install()`
+rule of an application names its package as install component (Liria's is
+`liria`, [PACKAGING.md](PACKAGING.md)).
+
 Release source archives already contain prepared sources, so CMake can build
 them offline without fetching GitHub. Upstream copyrights are installed under
 `/usr/share/doc/sde/upstream`. `cmake --install build --component <package>`
 installs one package's files (`build/install-components.txt` lists them).
-
-The native suite (GTK applications built from pinned MATE sources) ended with
-Liria's Caja fork in 0.2.0 Alpha 4; every SDE application is now built by this
-CMake project. `SDE_BUILD_NATIVE_SUITE` is no longer read.
 
 ## Tests
 
@@ -69,7 +72,7 @@ Rust requires 1.59+ and has no registry dependencies:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo test --workspace --locked --offline
-python3 tests/test_native_forks.py
+python3 -m unittest tests/test_native_forks.py tests/test_legal_data.py tests/test_metainfo.py
 ```
 
 CTest also checks C++ parsing, geometry, themes, update models and the Rust ABI.

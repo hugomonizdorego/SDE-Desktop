@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Liria answers org.debion.Liria (liria URI hands its locations to the running Liria).
+[D-BUS Service]
+Name=org.debion.Liria
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/liria --service

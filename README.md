@@ -246,13 +246,14 @@ them in the `sde-debian-testing` GitHub Actions artifact.
 ```sh
 sudo sh tools/install-deps.sh
 sudo sh tools/install-native-deps.sh # native application build libraries
-tools/build-deb.sh              # writes sde and sde-desktop packages to dist/
+tools/build-deb.sh              # writes sde-core, the applications and sde-desktop to dist/
 ```
 
 Or a plain CMake build for development:
 
 ```sh
-python3 tools/prepare-native-suite.py
+python3 tools/prepare-components.py   # SDE WM and SDE compositor sources
+python3 tools/prepare-themes.py       # the GTK theme sources
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build build -j"$(nproc)"
 ctest --test-dir build          # unit tests, including WCAG contrast checks

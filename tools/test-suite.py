@@ -27,6 +27,10 @@ for name in apps:
             assert 'javascriptcore' not in dynamic.lower(),(name,dynamic)
         if name == 'sde-lock':
             assert 'libpam' in dynamic and 'libXss' in dynamic,(name,dynamic)
+        if name == 'liria':
+            # Liria (0.2.0 Alpha 4) is SDE's own: GIO for drives and network
+            # places, no GTK and no MATE or Caja libraries.
+            assert 'libgio' in dynamic and 'libmate' not in dynamic and 'caja' not in dynamic.lower(),(name,dynamic)
     elif name == 'sde-display-settings':
         # The SDE toolkit (FLTK) is linked statically since alpha13.
         assert 'libXrandr' in dynamic and 'libfltk' not in dynamic and 'libXft' in dynamic,(name,dynamic)
@@ -48,6 +52,14 @@ for name in ['niny','liria','xanara','taca','sde-view','sde-system-monitor','sde
     output=subprocess.check_output([str(binary/name),'--version'],text=True)
     assert versions[name] in output,(name,output,versions[name])
 subprocess.run(['visudo','-cf','/etc/sudoers.d/sde-liria'],check=True)
+
+# Liria (0.2.0 Alpha 4): written by the Selviana DE Project, nothing of Caja
+# is installed; FileManager1 and its own name start it on D-Bus.
+assert not (binary.parent/'share/doc/sde/upstream/caja').exists()
+assert not (binary.parent/'share/liria').exists()
+for service in ['org.debion.Liria.service','org.debion.Liria.FileManager1.service']:
+    text=(binary.parent/'share/dbus-1/services'/service).read_text()
+    assert 'liria --service' in text,(service,text)
 
 # Software Updater (sde-update) streams PackageKit transactions through pkcon; without pkcon
 # (PackageKit 1.4 ships only pkgcli) it uses APT through pkexec.

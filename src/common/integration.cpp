@@ -724,8 +724,14 @@ std::string write_compositor_config(const Config &cfg, bool safe) {
   const Surface surfaces[] = {
       {"panel", 0, 0}, {"panel-round", std::min(S(16), t.panel_height / 2), 0},
       {"popup", t.radius_large, 0}, {"popup-top", t.radius_large, 1}, {"popup-bottom", t.radius_large, 2},
-      {"menu", t.radius, 0}, {"tooltip", t.radius_small, 0}};
-  auto is = [](const char *kind) { return std::string("_SDE_SURFACE = '") + kind + "'"; };
+      {"menu", t.radius, 0}, {"tooltip", t.radius_small, 0},
+      // A window that draws its own title bar (Liria): rounded as every
+      // window, its chrome glass; the property is on the client window,
+      // inside the window manager's frame ("@").
+      {"window", int(std::lround(t.radius / t.scale)), 0}};
+  auto is = [](const char *kind) {
+    return std::string("_SDE_SURFACE") + (strcmp(kind, "window") ? "" : "@") + " = '" + kind + "'";
+  };
   c += "rounded-corners-exclude = [\"window_type = 'desktop'\", \"fullscreen\"";
   for (const char *type : {"dock", "tooltip", "menu"})
     c += std::string(", \"window_type = '") + type + "' && !_SDE_SURFACE\"";

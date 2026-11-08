@@ -31,17 +31,18 @@ License: GPL-2.0-or-later
 Comment: Fetches the original EDE sources for reference only; nothing of EDE
  is built or installed.
 
-Files: suite/overlays/* suite/patches/* suite/sde-brand.h
+Files: suite/patches/*
        data/schemas/org.debion.session.gschema.xml src/common/transfer_model.h
        src/common/transfer_scene.h src/common/safe_copy.h
 Copyright: 2026 Selviana DE Project and contributors
 License: GPL-2.0-or-later
-Comment: SDE's additions to the GPL-2.0-or-later application fork Liria
- (from Caja) and the patches to SDE WM (from Openbox), under the license of
- the program they become part of. src/common/transfer_model.h, the copy
- and move progress model, is part of Liria (copied in by suite/redesign.py)
- and of the SDE desktop; so are src/common/transfer_scene.h (the picture of
- the copy dialog) and src/common/safe_copy.h (safe copying to drives).
+Comment: The patches to SDE WM (from Openbox), under the license of the
+ program they become part of. src/common/transfer_model.h (the copy and
+ move progress model), src/common/transfer_scene.h (the picture of the copy
+ dialog) and src/common/safe_copy.h (safe copying to drives) are shared by
+ Liria and the SDE desktop; they keep the GPL-2.0-or-later license they
+ had while Liria was a fork (up to 0.2.0 Alpha 3.1). Nothing of that fork
+ is built or installed any more.
 
 Files: suite/patches/sde-compositor/*
 Copyright: 2026 Selviana DE Project and contributors
@@ -150,26 +151,6 @@ Comment: Flat Remix GNOME, https://github.com/daniruiz/flat-remix-gnome commit
  reference of SDE Fluent's palette (data/themes/palettes.json). Nothing of it
  is installed except its LICENSE and README under
  /usr/share/doc/sde/themes/flat-remix-gnome.
-
-Files: vendor/suite/*
-Copyright: 1999-2009 The Nautilus authors
-           2011-2021 The Caja authors
-           1999-2001 Eazel, Inc.
-           1999-2000 Red Hat, Inc.
-           2026 Selviana DE Project and contributors (downstream changes)
-License: individual-upstream-licenses
- Liria, prepared by tools/prepare-native-suite.py from Caja 1.28.0 (commit
- 27fdb849de02f551eab46eb78f48065da9d1d1ec, https://github.com/mate-desktop/caja).
- Caja is distributed under the GNU General Public License, version 2 or
- later; its libraries eel and libcaja-extension under the GNU Library
- General Public License, version 2 or later. Individual files keep their
- own copyright and license headers, which are authoritative; the original
- COPYING, COPYING.LIB, COPYING.EXTENSIONS and AUTHORS are retained and
- installed under /usr/share/doc/sde/upstream/caja. Caja's COPYING notes
- that its license does not apply to the Eazel trademarks.
- .
- On Debian systems, the complete texts are in
- "/usr/share/common-licenses/GPL-2" and "/usr/share/common-licenses/LGPL-2".
 
 Files: vendor/components/sde-wm/*
 Copyright: 2002-2007 Dana Jansens

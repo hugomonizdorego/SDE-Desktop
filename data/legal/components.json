@@ -474,16 +474,14 @@
       "desktop": ["liria.desktop"],
       "metainfo": "org.debion.Liria.metainfo.xml",
       "icons": ["liria", "system-file-manager"],
-      "license": "GPL-2.0-or-later AND LGPL-2.0-or-later",
-      "copyright": ["Copyright © 1999–2009 The Nautilus authors", "Copyright © 2011–2021 The Caja authors", "Copyright © 2012–2021 The MATE developers", "Copyright © 2026 Selviana DE Project and contributors"],
-      "upstream": [
-        {"project": "Caja (MATE)", "url": "https://github.com/mate-desktop/caja", "license": "GPL-2.0-or-later AND LGPL-2.0-or-later", "copyright": "Copyright © 1999–2009 The Nautilus authors; Copyright © 2011–2021 The Caja authors; Copyright © 2012–2021 The MATE developers", "relation": "fork"}
-      ],
-      "credits": ["Caja's COPYING notes that its license does not apply to the Eazel trademarks"],
+      "license": "GPL-3.0-or-later AND GPL-2.0-or-later",
+      "copyright": ["Copyright © 2026 Selviana DE Project and contributors"],
+      "upstream": [],
+      "credits": [],
       "trademarks": ["sde"],
-      "notices": ["/usr/share/doc/sde/upstream/caja/copyright", "/usr/share/doc/sde/upstream/caja/COPYING"],
-      "sources": ["vendor/suite/", "suite/overlays/liria/", "suite/sde-brand.h", "src/common/transfer_model.h",
-                  "src/common/transfer_scene.h", "src/common/safe_copy.h"]
+      "notices": ["/usr/share/doc/sde/copyright"],
+      "sources": ["src/liria/", "data/dbus/", "src/common/transfer_model.h", "src/common/transfer_scene.h",
+                  "src/common/safe_copy.h"]
     },
     {
       "id": "sde-fltk",

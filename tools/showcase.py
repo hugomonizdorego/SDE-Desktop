@@ -2187,64 +2187,127 @@ def about_app(s):
     s.key('Escape')
 
 
-@scene('Liria', [('liria', 'Liria: the home folder with Quick access pins, recent files and drives')],
+def liria_seed(s):
+    """Two servers opened before (Network locations on Home, suggestions of
+    the address bar); never a password."""
+    f = s.home / '.config/sde/liria-servers'
+    if not f.exists():
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text('# Servers opened in Liria, most recent first (no passwords)\n'
+                     'smb://nas/Photos/\nsftp://alex@garden-pi.local/\n')
+        f.chmod(0o600)
+
+
+def liria_window(s, locations, title, size=(1100, 680), env=None):
+    """Liria (one per session: a second "liria" hands its locations to the
+    running one) with |locations| as tabs, sized and active."""
+    liria_seed(s)
+    cmd = ['liria'] + [str(x) for x in locations]
+    w = app_with_env(s, cmd, title, env) if env else s.app(cmd, title)
+    s.size(w, *size)
+    s.activate(w)
+    return w
+
+
+def liria_state(s, key):
+    """A state of Liria's active window from its QA description
+    (SDE_PANEL_QA_DIR/Liria.txt: "@location:...", "@selected:...")."""
+    for k in s.layout('Liria'):
+        if k.startswith('@' + key + ':'):
+            return k[len(key) + 2:]
+    return None
+
+
+def liria_point(s, w, name, fx=0.5, fy=0.5):
+    """A named part of Liria's active window ("item:Report.pdf", "files",
+    "crumb:0:alex") on the screen."""
+    r = s.control('Liria', name, 5)
+    if not r:
+        raise SkipShot(f'Liria: no {name!r} in its QA description')
+    g = s.geom(w)
+    return g['x'] + r[0] + r[2] * fx, g['y'] + r[1] + r[3] * fy
+
+
+@scene('Liria', [('liria', 'Liria: Home, like the one of Windows 11: the folders you pinned (Quick access), the '
+                            'drives with how full they are, network locations and recent files')],
        scopes=(FULL, THEMES, HERO), needs=['liria'])
 def liria(s):
-    w = s.app(['liria', '--no-desktop', s.home], '^' + s.home.name + '$')
-    s.size(w, 1040, 640)
+    liria_window(s, [], '^Home$')
+    s.wait(lambda: s.control('Liria', 'card:recent:header:Recent files', 1), 5)
     s.park_pointer()
     s.shot('liria', quiet=0.8)
 
 
 @scene('Liria', [
-    ('liria-ribbon', 'Liria: the ribbon with the Home tab, a document selected'),
-    ('liria-details', 'Liria: the details view with sizes, types and dates'),
-    ('liria-context-menu', 'Liria: right-click on a file'),
-    ('liria-properties', 'Liria: the properties of a picture'),
+    ('liria-folder', 'Liria: a folder of pictures with large thumbnails, tabs in the title bar and the command bar'),
+    ('liria-context-menu', 'Liria: right-click on a picture: quick actions, Open with, Edit with, Set as wallpaper'),
+    ('liria-properties', 'Liria: the properties of a picture (size, place, dates, permissions, Open with)'),
 ], needs=['liria'])
-def liria_more(s):
-    w = s.app(['liria', '--no-desktop', s.home / 'Documents'], '^Documents$')
-    s.size(w, 1040, 640)
-    s.activate(w)
-    # Icons sorted by name: Projects, then the files; the fifth is the PDF.
-    s.key('Home', 'Right', 'Right', 'Right', 'Right')
+def liria_folder(s):
+    nature = s.home / 'Pictures/Nature'
+    w = liria_window(s, [nature], '^Nature$')
+    s.key('ctrl+shift+2')  # large icons (Windows Explorer's Ctrl+Shift+2)
+    s.wait(lambda: liria_state(s, 'icon-size') == '128', 3)
+    s.click(*liria_point(s, w, 'item:Northern Lights.png'))
+    time.sleep(1.0)  # the thumbnails
     s.park_pointer()
-    s.shot('liria-ribbon', quiet=0.8)
-    s.key('ctrl+2')
-    time.sleep(0.8)
-    s.park_pointer()
-    s.shot('liria-details', quiet=0.8)
-    s.key('ctrl+1')  # back to icons: Liria keeps the view per folder
-    time.sleep(0.5)
-    s.stop_scene_procs()
-    w = s.app(['liria', '--no-desktop', s.home / 'Pictures/Nature'], '^Nature$')
-    s.size(w, 1040, 640)
-    s.activate(w)
-    # A picture selected with the keyboard, its menu with Shift+F10 (it
-    # opens at the pointer: over the files).
-    s.key('Home', 'Right')
-    time.sleep(0.3)
-    g = s.geom(w)
-    s.move(g['x'] + g['w'] * 0.42, g['y'] + g['h'] * 0.36)
-    box = s.box_of(w)
-    before = s.hash_box(box)
-    s.raw_key('shift+F10')
-    if not s.wait(lambda: s.hash_box(box) != before, 1.5):
-        s.key('Menu')
+    s.shot('liria-folder', quiet=0.8)
+    s.click(*liria_point(s, w, 'item:Northern Lights.png', 0.6, 0.45), button=3)
+    s.wait(lambda: (liria_state(s, 'menu') or '') != '', 3)
     s.shot('liria-context-menu', quiet=0.6)
     s.key('Escape')
     s.key('alt+Return')
-    p = s.find('^(.* )?Properties$', 5)
+    p = s.find('^Northern Lights.png Properties$', 5)
     if p:
         s.fit(p)
         s.window_settle(p)
         s.park_pointer()
         s.shot('liria-properties', quiet=0.6)
+        s.key('Escape', wid=p)
+    else:
+        s.skip('liria-properties', 'no Properties window')
+    s.activate(w)
+    s.key('ctrl+shift+3')  # medium icons again: Liria keeps the view of each folder
+
+
+@scene('Liria', [('liria-details', 'Liria: the details view, sorted by any column, with the contextual commands '
+                                    'of the selected file')], needs=['liria'])
+def liria_details(s):
+    docs = s.home / 'Documents'
+    w = liria_window(s, [docs], '^Documents$')
+    s.key('ctrl+shift+6')  # details (Windows Explorer's Ctrl+Shift+6)
+    s.wait(lambda: liria_state(s, 'layout') == 'details', 3)
+    s.click(*liria_point(s, w, 'item:Project Aurora - Field Report.pdf'))
+    s.park_pointer()
+    s.shot('liria-details', quiet=0.8)
+    s.key('ctrl+shift+3')  # icons again for the next scenes
+
+
+@scene('Liria', [
+    ('liria-tabs', 'Liria: tabs in the title bar (Ctrl+T, Ctrl+Tab, Ctrl+W) and breadcrumbs in the address bar'),
+    ('liria-network', 'Liria: the address bar opens Windows shares (\\\\server\\share), smb://, sftp://, ftp:// and '
+                      'WebDAV, and suggests the servers opened before'),
+], needs=['liria'])
+def liria_tabs(s):
+    proj = s.home / 'Documents/Projects/garden-planner'
+    liria_window(s, [s.home / 'Downloads', s.home / 'Pictures', proj], '^Downloads$')
+    s.wait(lambda: liria_state(s, 'tabs') == '3', 3)
+    s.key('ctrl+shift+Tab')  # the last tab: breadcrumbs of a deeper folder
+    s.wait(lambda: liria_state(s, 'location') == str(proj), 3)
+    s.park_pointer()
+    s.shot('liria-tabs', quiet=0.8)
+    s.key('ctrl+l')
+    s.wait(lambda: liria_state(s, 'editing') == '1', 3)
+    s.key('ctrl+a')
+    s.type('\\\\nas', 60)
+    s.wait(lambda: any(k.startswith('suggestion:') for k in s.layout('Liria')), 3)
+    s.park_pointer()
+    s.shot('liria-network', quiet=0.6)
+    s.key('Escape')
 
 
 def app_with_env(s, cmd, title, extra):
-    """s.app () with extra environment variables for the program (the QA
-    hooks of Liria)."""
+    """s.app () with extra environment variables for the program."""
     saved = s.env
     s.env = dict(saved, **extra)
     try:
@@ -2253,117 +2316,43 @@ def app_with_env(s, cmd, title, extra):
         s.env = saved
 
 
-def qa_pairs(path):
-    """The key=value lines of a QA file."""
-    try:
-        return dict(line.partition('=')[::2] for line in Path(path).read_text().splitlines())
-    except OSError:
-        return {}
-
-
-def qa_box(values, key):
-    try:
-        return tuple(int(v) for v in values[key].split(','))
-    except (KeyError, ValueError):
-        return None
-
-
-def click_box(s, wid, box):
-    """Clicks the middle of a box given in window coordinates (QA files)."""
-    g = s.geom(wid)
-    s.click(g['x'] + box[0] + box[2] // 2, g['y'] + box[1] + box[3] // 2)
-
-
-def ribbon_tabs(path):
-    """The ribbon's tabs from LIRIA_SDE_QA_RIBBON: {page: (x, y, w, h)}."""
-    tabs = {}
-    try:
-        for line in Path(path).read_text().splitlines():
-            f = line.split('\t')
-            if f[0] == 'tab' and len(f) == 3:
-                tabs[f[1]] = tuple(int(v) for v in f[2].split(','))
-    except (OSError, ValueError):
-        pass
-    return tabs
-
-
-@scene('Liria', [
-    ('liria-ribbon-archive', 'Liria: the Archive tab of the ribbon for a selected archive'),
-    ('liria-ribbon-share', 'Liria: the Share tab of the ribbon (email, a removable drive, links)'),
-    ('liria-ribbon-view', 'Liria: the View tab of the ribbon (panes, layout, sorting, hidden files)'),
-], needs=['liria'])
-def liria_ribbon_tabs(s):
-    """The ribbon's other tabs in the icon theme's colours; the tabs' places
-    come from LIRIA_SDE_QA_RIBBON."""
-    qa = s.home / 'qa/liria-ribbon.txt'
-    qa.parent.mkdir(parents=True, exist_ok=True)
-    w = app_with_env(s, ['liria', '--no-desktop', s.home / 'Downloads'], '^Downloads$',
-                     {'LIRIA_SDE_QA_RIBBON': str(qa)})
-    s.size(w, 1040, 640)
-    s.activate(w)
-    if not s.wait(lambda: 'share' in ribbon_tabs(qa), 8):
-        raise SkipShot('the ribbon reported no tabs (LIRIA_SDE_QA_RIBBON)')
-    # The archive selected by typing its name; the Archive tab appears.
-    s.type('Autumn', 60)
-    time.sleep(0.5)
-    s.key('Escape')
-    if s.wait(lambda: 'archive' in ribbon_tabs(qa), 5):
-        click_box(s, w, ribbon_tabs(qa)['archive'])
-        s.park_pointer()
-        s.shot('liria-ribbon-archive', quiet=0.6)
-    else:
-        s.skip('liria-ribbon-archive', 'no Archive tab for the selected archive')
-    for page in ('share', 'view'):
-        click_box(s, w, ribbon_tabs(qa)[page])
-        s.park_pointer()
-        s.shot('liria-ribbon-' + page, quiet=0.6)
-    # Liria remembers the tab: Home again for the next scenes.
-    click_box(s, w, ribbon_tabs(qa)['home'])
-    time.sleep(0.3)
-
-
-@scene('Liria', [('liria-copy-progress', 'Liria: copying videos, with the details: the penguin carries the '
+@scene('Liria', [('liria-copy-progress', 'Liria: copying videos with the SDE copy dialog: the penguin carries the '
                                          'files, how much, how fast and how long')], needs=['liria'])
 def liria_copy_progress(s):
-    """A copy slowed down to about 20 MB/s (LIRIA_SDE_QA_COPY_RATE), the
-    file operations window with the details (0.2.0 Alpha 3)."""
+    """A copy slowed down to about 8 MB/s (SDE_QA_COPY_RATE) with the
+    details of the copy dialog open (src/common/transfer_dialog.h). The
+    files hold data: SDE's copy engine skips the holes of sparse files, so
+    files made with truncate() are copied at once."""
     src = s.home / 'Videos/Trip to the Lakes'
     dst = s.home / 'Backup'
     src.mkdir(parents=True, exist_ok=True)
     dst.mkdir(exist_ok=True)
-    large = [('Drone flight over Lake Varen.mp4', 420), ('Kayaking at Moss Lake.mp4', 260),
-             ('Campfire at Stone Bay.mp4', 180)]
+    large = [('Drone flight over Lake Varen.mp4', 48), ('Kayaking at Moss Lake.mp4', 32),
+             ('Campfire at Stone Bay.mp4', 24)]
+    block = bytes(range(256)) * 4096  # 1 MiB
     for name, mib in large:
         with open(src / name, 'wb') as f:
-            f.truncate(mib << 20)
-    qa = s.home / 'qa/liria-progress.txt'
-    qa.parent.mkdir(parents=True, exist_ok=True)
-    env = {'LIRIA_SDE_QA_PROGRESS': str(qa), 'LIRIA_SDE_QA_COPY_RATE': '20000000'}
+            for _ in range(mib):
+                f.write(block)
     try:
-        w = app_with_env(s, ['liria', '--no-desktop', src], '^Trip to the Lakes$', env)
-        s.size(w, 900, 560)
-        s.activate(w)
-        s.key('ctrl+a')
-        s.key('ctrl+c')
-        b = app_with_env(s, ['liria', '--no-desktop', dst], '^Backup$', env)
-        s.size(b, 1040, 640)
-        s.activate(b)
-        g = s.geom(b)
-        s.click(g['x'] + g['w'] * 0.7, g['y'] + g['h'] * 0.8)  # the empty view: keyboard focus
+        w = liria_window(s, [src], '^Trip to the Lakes$', size=(1000, 620), env={'SDE_QA_COPY_RATE': '8000000'})
+        s.click(*liria_point(s, w, 'files', 0.9, 0.9))  # the empty view: the keyboard
+        s.key('ctrl+a', 'ctrl+c')
+        s.key('ctrl+l', 'ctrl+a')
+        s.type(str(dst), 20)
+        s.key('Return')
+        s.wait(lambda: liria_state(s, 'location') == str(dst), 5)
         s.key('ctrl+v')
-        if not s.wait(lambda: qa_box(qa_pairs(qa), 'toggle') and qa_pairs(qa).get('window'), 15):
-            raise SkipShot('no file operations window')
-        progress = qa_pairs(qa)['window']
-        click_box(s, progress, qa_box(qa_pairs(qa), 'toggle'))
-        s.wait(lambda: qa_pairs(qa).get('details') == '1', 3)
+        d = s.find('Copying|File Transfers', 10)
+        if not d:
+            raise SkipShot('no copy dialog')
+        s.window_settle(d, quiet=0.2, timeout=2)
+        g = s.geom(d)
+        s.click(g['x'] + 50 * s.scale, g['y'] + g['h'] - 28 * s.scale)  # Details
         time.sleep(3.0)  # the speed and the time left settle
         s.park_pointer()
-        # The window changes four times a second: no waiting for stillness.
+        # The dialog changes four times a second: no waiting for stillness.
         s.shot('liria-copy-progress', quiet=0.2, timeout=0.5)
-        cancel = qa_box(qa_pairs(qa), 'cancel')
-        if cancel:
-            click_box(s, progress, cancel)
-            s.wait(lambda: qa_pairs(qa).get('done') == '1', 10)
     finally:
         s.stop_scene_procs()
         shutil.rmtree(dst, ignore_errors=True)
@@ -3563,7 +3552,7 @@ def parse_args(argv=None):
     if a.build_dir:
         b = a.build_dir.resolve()
         for d in ['src', 'src/niny', 'src/welcome', 'src/merkadu', 'cargo/release', 'rust/release', 'src/debrun',
-                  'src/appimage']:
+                  'src/appimage', 'src/liria']:
             if (b / d).is_dir():
                 a.bin_dirs.append(b / d)
         if (b / 'tests').is_dir():
