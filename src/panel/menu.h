@@ -135,6 +135,8 @@ class AppMenu : public PanelPopup {
     K_FOLDER,
     K_FOLDER_APP,
     K_FOLDER_NAME,
+    // 0.2.0 Alpha 4: "Clear" at the end of the "Recently added" heading.
+    K_CLEAR_ADDED,
   };
   struct Area {
     Kind kind = K_NONE;  // K_ROW (list) or K_TILE (tiles)
