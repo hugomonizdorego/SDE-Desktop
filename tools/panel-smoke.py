@@ -624,6 +624,62 @@ def a2_menu_checks():
     nm.unlink();(apps_dir/'qa-iconless-game.desktop').unlink()
     config(overflow=False);reload()
     print('PANEL a2 start menu: typing searches everywhere, grabs after popups, favorites by default, Alpha 1 migration, drags between groups with feedback and autoscroll, new/renamed/moved/removed groups, drag from the search, Uninstall..., icon fallbacks PASS',flush=True)
+def a4_panel_checks():
+    """0.2.0 Alpha 4: the Start button's styles, text and picture; Clear on
+    Recently added; the Task View button (with a stand-in sde-taskview)."""
+    def P():return layout('SDE Panel')
+    def info(prefix):return next((k[len(prefix):] for k in P() if k.startswith(prefix)),None)
+    picture=Path(__file__).resolve().parents[1]/'tests/fixtures/avatars/sample-sunrise.png'
+    widths={}
+    for name,keys,style,label,icon in [('default','','both','SDE','default'),('icon','start_style=icon\n','icon','','default'),
+                                       ('text','start_style=text\n','text','SDE','none'),('label','start_label=Menu\n','both','Menu','default'),
+                                       ('picture',f'start_icon={picture}\nstart_label=Debion\n','both','Debion',str(picture)),
+                                       ('empty','start_label=\n','both','','default')]:
+        config(overflow=False,extra='[panel]\n'+keys);reload()
+        waitfor(lambda:(info('@start-style:'),info('@start-label:'),(info('@start-icon:') or '').split('\t')[0])==(style,label,icon),
+                lambda:f'Start button {name}: {[k for k in P() if k.startswith("@start")]}')
+        widths[name]=P()['start'][2]
+        shot('90-start-button-'+name)
+    assert widths['icon']<widths['default']<widths['picture'] and widths['empty']==widths['icon'],widths
+    # Still the Start button: a click opens the menu.
+    config(overflow=False,extra='[panel]\nstart_style=icon\n');reload()
+    click_panel('start','^SDE Menu$');run('xdotool','key','Escape');gone('^SDE Menu$')
+    print('PANEL a4: Start button styles',widths,flush=True)
+    # Recently added: Clear empties it; an application installed later is listed.
+    config(overflow=False);reload()
+    apps_dir=home/'.local/share/applications'
+    def desktop(name):(apps_dir/f'qa-a4-{name.lower()}.desktop').write_text(f'[Desktop Entry]\nType=Application\nName={name}\nExec=true\nIcon=utilities-terminal\nCategories=Utility;\n')
+    desktop('Fresh QA');time.sleep(1.5)
+    run('sde-panel','--menu');find('^SDE Menu$');time.sleep(.8)
+    waitfor(lambda:'added:Fresh QA' in layout('SDE Menu') and 'added-clear' in layout('SDE Menu'),
+            lambda:'Recently added without Fresh QA or Clear: '+str([k for k in layout('SDE Menu') if k.startswith(('added','heading'))]))
+    shot('91-recently-added-clear');press('SDE Menu','added-clear')
+    waitfor(lambda:not any(k.startswith('added') for k in layout('SDE Menu')),'Clear left Recently added')
+    assert 'recently_added_cleared=' in conf(),conf()
+    run('xdotool','key','Escape');gone('^SDE Menu$')
+    time.sleep(1.1);desktop('Newer QA');time.sleep(1.5)
+    run('sde-panel','--menu');find('^SDE Menu$');time.sleep(.8)
+    waitfor(lambda:'added:Newer QA' in layout('SDE Menu') and 'added:Fresh QA' not in layout('SDE Menu'),
+            lambda:'after Clear and a new install: '+str([k for k in layout('SDE Menu') if k.startswith('added')]))
+    run('xdotool','key','Escape');gone('^SDE Menu$')
+    for name in ('fresh qa','newer qa'):(apps_dir/f'qa-a4-{name.replace(" ","-")}.desktop').unlink(missing_ok=True)
+    print('PANEL a4: Recently added Clear PASS',flush=True)
+    # Task View: off by default, shown while sde-taskview is installed.
+    stand_in=home/'bin/sde-taskview';marker=home/'taskview-ran'
+    config(overflow=False,extra='[panel]\nshow_task_view=true\n');reload()
+    assert 'task-view' not in P(),'Task View without sde-taskview'
+    stand_in.write_text(f'#!/bin/sh\necho ran >> {marker}\n');stand_in.chmod(0o755)
+    config(overflow=False,extra='[panel]\nshow_task_view=true\nstart_label=SDE\n');reload()
+    if W/scale>=1000:  # a small screen keeps its room for the taskbar
+        waitfor(lambda:'task-view' in P(),'no Task View button with sde-taskview installed')
+        click_panel('task-view');waitfor(lambda:marker.exists(),'the Task View button did not run sde-taskview')
+        shot('92-task-view-button')
+    config(overflow=False);reload()
+    waitfor(lambda:'task-view' not in P(),'Task View button shown while switched off')
+    stand_in.unlink()
+    print('PANEL a4: Task View button PASS',flush=True)
+
+
 def a3_menu_checks():
     """0.2.0 Alpha 3 Start menu: favorites (the default browser and mail
     client lead Work, Pin to Start into the group of the application's kind,
@@ -1923,7 +1979,7 @@ def a52_checks():
     run('xdotool','mousemove',W//2,H//2);time.sleep(.3)
     # 1) Per-item menus.
     expected={
-        'start':(['Control Center','System Monitor','Run Command...','Software Updater','Lock','Log Out...','Power','Panel Settings...'],'40-menu-start'),
+        'start':(['Control Center','System Monitor','Run Command...','Software Updater','Lock','Log Out...','Power','Change the Start Button...','Panel Settings...'],'40-menu-start'),
         'search':(['Show Search Box','Show Search Icon Only','Hidden','Search Settings...'],'40-menu-search'),
         'clock':(['Adjust Date and Time...','Sync Time Zone','Clock Style','Show Seconds','24-Hour Clock','Show the Date','Alarms','Calendar'],'40-menu-clock'),
         'notifications':(['Do Not Disturb','Clear All Notifications','Notification Settings...'],'40-menu-notifications'),
@@ -2173,7 +2229,7 @@ try:
     if a.only=='a52':
         a52_checks();assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
     if a.only=='start-menu':
-        panel_checks_a50();menu_checks();search_checks();start_menu_checks();a2_menu_checks();a3_menu_checks();raise SystemExit(0)
+        panel_checks_a50();menu_checks();search_checks();start_menu_checks();a2_menu_checks();a3_menu_checks();a4_panel_checks();raise SystemExit(0)
     if a.only=='battery-clock':
         battery_a2_checks();battery_checks();clock_a2_checks()
         assert panel_proc.poll() is None,'panel exited';raise SystemExit(0)
@@ -2184,6 +2240,7 @@ try:
     start_menu_checks()
     a2_menu_checks()
     a3_menu_checks()
+    a4_panel_checks()
     # Few tray icons: they sit on the panel and there is no overflow button.
     config(overflow=False);reload()
     waitfor(lambda:'status:tray' not in layout('SDE Panel'),'overflow button shown for two tray icons')

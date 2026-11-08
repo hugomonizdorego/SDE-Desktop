@@ -19,8 +19,9 @@
 //    so their transparent corners turned black. The tray asks for the
 //    panel's own visual (_NET_SYSTEM_TRAY_VISUAL), which GTK and Qt follow.
 //  * The background follows the theme at once, an icon that something else
-//    unmaps is shown again, and icons survive a crash of the panel in their
-//    place instead of becoming windows that the window manager frames.
+//    unmaps is shown again, and when the panel crashes its icons go back to
+//    the root window unmapped (XFixes save-set) instead of becoming windows
+//    that the window manager frames in the middle of the screen.
 #pragma once
 #include <X11/Xlib.h>
 
