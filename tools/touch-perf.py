@@ -255,14 +255,19 @@ try:
                     time.sleep(0.008)
         results['phases']['hover'] = phase('hover', 'sde-panel', hover)
     if args.compositor:
-        r = sp.run([str(BIN / 'sde-session'), '--compositor-config'], env=env, stdout=sp.PIPE, text=True, timeout=30)
+        # The profile of a laptop with a working GPU (OpenGL, blur, vsync),
+        # also on Xvfb, where OpenGL renders on the CPU (llvmpipe).
+        genv = dict(env, SDE_GRAPHICS='hardware', SDE_OPENGL='accelerated:touch-perf')
+        r = sp.run([str(BIN / 'sde-session'), '--compositor-config'], env=genv, stdout=sp.PIPE, text=True, timeout=30)
         conf = Path(r.stdout.strip())
         if conf.is_file():
             text = conf.read_text()
             variants = {'generated': text}
-            variants['no blur'] = re.sub(r'blur-background\s*=\s*true', 'blur-background = false', text)
-            variants['xrender, no blur'] = re.sub(r'backend = "\w+"', 'backend = "xrender"', variants['no blur'])
-            variants['no vsync'] = re.sub(r'vsync = \w+', 'vsync = false', text)
+            free = re.sub(r'vsync = \w+', 'vsync = false', text)  # paint time, not vblank waits
+            variants['generated, no vsync'] = free
+            variants['no blur, no vsync'] = re.sub(r'blur-background\s*=\s*true', 'blur-background = false', free)
+            variants['no blur, xrender'] = re.sub(r'backend = "\w+"', 'backend = "xrender"',
+                                                  variants['no blur, no vsync'])
             for label, body in variants.items():
                 path = tmp / ('compositor-' + re.sub(r'\W+', '-', label) + '.conf')
                 path.write_text(body)
