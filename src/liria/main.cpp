@@ -107,6 +107,7 @@ void root_session(int argc, char **argv) {
 }  // namespace
 
 int main(int argc, char **argv) {
+  double started = now_ms();
   init_i18n();
   root_session(argc, argv);
   std::vector<std::string> args;
@@ -166,6 +167,7 @@ int main(int argc, char **argv) {
   set_default_window_icon({"liria", "system-file-manager", "folder"});
   Fl::visual(FL_RGB);
   App &app = App::get();
+  app.started_ms = started;
   app.prefs.load();
   if (gw > 0 && gh > 0) {
     app.prefs.width = int(gw / ui_scale());

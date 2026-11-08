@@ -4,9 +4,10 @@
 """How fast Liria (src/liria) is, on a private Xvfb (0.2.0 Alpha 4).
 
   tools/liria-perf.py [--liria build/src/liria/liria] [--display 241]
-                      [--repeat 3] [--json results.json] [--only NAME,...]
+                      [--size 1366x768] [--scale 100] [--repeat 3]
+                      [--json results.json] [--only NAME,...]
 
-Starts Xvfb (1366x768) and Openbox when installed, and Liria in a
+Starts Xvfb (--size, SDE's scale --scale) and Openbox when installed, and Liria in a
 throw-away home with folders of 1 000 and 10 000 files, without a session
 bus (Liria alone). Liria describes its window in SDE_PANEL_QA_DIR, so the
 scenarios know when it is done; each is driven like a user (xdotool,
@@ -87,6 +88,7 @@ class Bench:
         for _, d in dirs:
             (self.home / d).mkdir(parents=True)
         (self.home / '.config/sde').mkdir(parents=True)
+        (self.home / '.config/sde/sde.conf').write_text(f'[appearance]\nscale={args.scale}\n')
         (self.home / '.config/user-dirs.dirs').write_text(''.join(f'XDG_{k}_DIR="$HOME/{v}"\n' for k, v in dirs))
         for n, name in ((1000, 'k1'), (10000, 'k10')):
             d = self.home / name
@@ -101,7 +103,7 @@ class Bench:
                         LANG='C.UTF-8', LC_ALL='C.UTF-8', GIO_USE_VOLUME_MONITOR='unix',
                         DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent-liria-perf')
         (self.temp / 'run').mkdir(mode=0o700)
-        self.xvfb = sp.Popen(['Xvfb', self.display, '-screen', '0', '1366x768x24', '-nolisten', 'tcp', '-noreset'],
+        self.xvfb = sp.Popen(['Xvfb', self.display, '-screen', '0', args.size + 'x24', '-nolisten', 'tcp', '-noreset'],
                              stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         for _ in range(100):
             if sp.run(['xdotool', 'getmouselocation'], env=self.env, capture_output=True).returncode == 0:
@@ -180,11 +182,12 @@ class Bench:
         calm = self.idle()
         st, _ = self.state()
         self.xdo('windowactivate', '--sync', st['xid'])
-        self.xdo('windowsize', '--sync', st['xid'], 1280, 720)
+        w, h = (int(v) for v in self.args.size.split('x'))
+        self.xdo('windowsize', '--sync', st['xid'], w - 86, h - 48)
         self.xdo('windowmove', '--sync', st['xid'], 40, 20)
         time.sleep(0.3)
         self.idle()
-        return {'ms': (calm - t0) * 1000, 'first': float(st.get('first-frame-ms', 0)),
+        return {'ms': (calm - t0) * 1000, 'first': float(st.get('startup-ms', 0)),
                 'cpu': cpu_seconds(self.proc.pid) * 1000}
 
     def stop(self):
@@ -231,7 +234,8 @@ class Bench:
         result = {'ms': wall * 1000, 'cpu%': (cpu_seconds(self.proc.pid) - c0) / wall * 100,
                   'xcpu%': (cpu_seconds(self.xvfb.pid) - x0c) / wall * 100}
         # Away from the window: no tooltip opens during the next scenario.
-        self.xt.move(1360, 760)
+        w, h = (int(v) for v in self.args.size.split('x'))
+        self.xt.move(w - 6, h - 6)
         self.idle()
         return result
 
@@ -306,6 +310,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--liria', default=str(ROOT / 'build/src/liria/liria'))
     ap.add_argument('--display', type=int, default=241)
+    ap.add_argument('--size', default='1366x768')
+    ap.add_argument('--scale', type=int, default=100)
     ap.add_argument('--repeat', type=int, default=1)
     ap.add_argument('--json')
     ap.add_argument('--only', default='')

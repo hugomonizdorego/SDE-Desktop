@@ -374,6 +374,8 @@ class App {
   bool should_quit();
   bool service_mode = false;  // started by D-Bus: no window of its own
   double service_until = 0;   // now_ms() until which a D-Bus start waits for calls
+  double started_ms = 0;      // now_ms() when main() began
+  double startup_ms = -1;     // from then until the first window's first frame
   bool quit_requested = false;
 
   // Jobs on worker threads with the transfer dialog (jobs.cpp).

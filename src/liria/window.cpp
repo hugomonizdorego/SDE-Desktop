@@ -329,7 +329,11 @@ void MainWindow::resize(int X, int Y, int W, int H) {
 void MainWindow::draw() {
   if (first_frame_ms < 0) {
     first_frame_ms = now_ms() - opened_at;
-    if (getenv("LIRIA_TIMING")) fprintf(stderr, "liria: first frame after %.1f ms\n", first_frame_ms);
+    App &app = App::get();
+    if (app.startup_ms < 0 && app.started_ms > 0) app.startup_ms = now_ms() - app.started_ms;
+    if (getenv("LIRIA_TIMING"))
+      fprintf(stderr, "liria: first frame after %.1f ms (%.1f ms after the start)\n", first_frame_ms,
+              app.startup_ms);
     schedule_qa();
   }
   const Look &l = look();
@@ -2249,6 +2253,7 @@ void MainWindow::qa_dump() {
   state("pins", std::to_string(app.pins.items().size()));
   state("csd", csd_ ? "1" : "0");
   state("first-frame-ms", std::to_string(int(std::lround(first_frame_ms))));
+  state("startup-ms", std::to_string(int(std::lround(app.startup_ms))));
   state("loaded-ms", std::to_string(int(std::lround(t.loaded_ms))));
   state("jobs", std::to_string(app.running_jobs()));
   state("undo", std::to_string(app.undo.size()));
