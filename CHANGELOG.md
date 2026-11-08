@@ -1,3 +1,42 @@
+# 0.2 Alpha 4 · 2026-11-08 — SDE Core, a new Liria, one package per application, workspaces, Windows shortcuts, touch and fingerprint
+
+- SDE Core: sde-core (org.selviana.Core) connects every program: settings
+  with a schema and one Control Center page per setting, Changed signals,
+  the look with the wallpaper's colours, apps (problems, single instance)
+  and the session; decisions in Rust, a thin C++ front end, restarted by
+  the session; programs fall back to the Alpha 3 paths without it.
+- One package per application: sde-core (the desktop) and liria, xanara,
+  niny, merkadu, sde-calculator, taca, sde-photo, sde-gallery; sde-desktop
+  installs them with GNOME Terminal (the default terminal) and LightDM with
+  Slick Greeter (no manual login, live systems log straight in); sde is a
+  transitional package; MATE dependencies are gone.
+- Liria 2, written from scratch (no Caja code, credits or licenses): tabs in
+  the title bar, address bar with network places, search, a command bar
+  with only the commands that apply, Quick access with only the user's pins,
+  Home with drives and recent files, theme-aware glass, 5 to 25 times
+  faster.
+- Workspaces (1 to 5, named, Control Center > Workspaces), Task View
+  (Win+Tab), SDE's own window menu (no Roll up, Decorate or Layer), the
+  Windows keyboard shortcuts from one list and a printable sheet
+  (SDE-Keyboard-Shortcuts.pdf).
+- Control Center: one place for each setting; new pages Fingerprint, Touch
+  Screen, Workspaces; Start button text and picture; sliders in percent.
+- Start Menu: Recently added and Most used can be turned off, Clear for
+  Recently added; optional Task View button.
+- Panel: tray menus no longer freeze the desktop, SDE WM no longer hangs
+  after IBus restarts (patch 0006), IBus icons no longer vanish or turn
+  black.
+- Themes: calmer colours; the floating layer takes a tint of the wallpaper
+  (Fluent and Liquid Glass); accent from the wallpaper.
+- Touch screens: scrolling moves pixels instead of repainting (10 times
+  less work per frame), real touch gestures in every SDE program, the touch
+  screen stays on its display, larger panel targets.
+- Fingerprint (fprintd and PAM): sign in, unlock the screen, administrator
+  authentication.
+- Xanara opens on its start page; System Monitor explains and hides kernel
+  threads (kworker); Merkadu's ~/Merkadu folder and Storage page; Taca offers
+  XAR only where libarchive writes it. See docs/0.2-ALPHA4.md.
+
 # 0.2 Alpha 3.1 · 2026-11-02 — Merkadu that closes, a modern file chooser, real Liquid Glass, Preview before Apply, Force Close
 
 - Merkadu: ends when its window closes (Alpha 3 hung on exit in

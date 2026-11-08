@@ -1,3 +1,38 @@
+sde (0.2.0~alpha4) unstable; urgency=medium
+
+  * sde-core: new session service org.selviana.Core (settings with the
+    schema data/sde-schema.tsv, Changed, Look, Apps, Session) on the Rust
+    core (schema, migration, controller) through the private C ABI; the
+    session starts and restarts it; programs use src/common/core_client.
+  * Packaging: sde-core and one package per application (liria, xanara,
+    niny, merkadu, sde-calculator, taca, sde-photo, sde-gallery), chosen by
+    CMake install components (debian/install-components, dh_missing
+    --fail-missing); sde becomes transitional; sde-desktop depends on
+    gnome-terminal, lightdm and slick-greeter (90-sde-desktop.conf, no
+    manual login, no guest) and recommends lightdm-settings, fprintd and
+    libpam-fprintd; MATE and Caja fork Build-Depends dropped.
+  * Liria: rewritten from scratch in src/liria (SDE-FLTK, cairo, GIO); the
+    Caja fork, its overlays and tools/prepare-native-suite.py are gone;
+    D-Bus activation for org.debion.Liria and org.freedesktop.FileManager1.
+  * sde-wm: patches 0006 (no input method server), 0007 (sde-window-menu)
+    and 0008 (keybinds on release); new programs sde-window-menu,
+    sde-windows, sde-taskview and sde-screenshot; workspaces, the Windows
+    shortcut list and docs/SDE-Keyboard-Shortcuts.pdf.
+  * Panel: no re-entered D-Bus dispatch for tray menus, tray events before
+    FLTK, ARGB tray icons composited, Start button style, label and
+    picture, Recently added Clear, Task View button.
+  * Fingerprint: Control Center page, sde-fingerprint-pam helper with its
+    polkit action, pam-auth-update profiles sde-fingerprint-sign-in and
+    sde-fingerprint-admin, PAM service sde-lock-fingerprint.
+  * Touch: XInput 2.2 gestures in SDE-FLTK, scrolling by moving pixels,
+    sde-touchscreen, Control Center > Touch Screen; Onboard suggested.
+  * Themes: wallpaper colours (Oklab) tint the floating layer; calmer tiles,
+    GTK links and Fluent GTK 4 header bars.
+  * Xanara start page, System Monitor kernel threads, Merkadu storage;
+    Taca offers XAR only where libarchive can write it.
+
+ -- Hugo Moniz do Rego <hugomonizdorego@angelinojoana.com>  Sun, 08 Nov 2026 23:30:00 +0000
+
 sde (0.2.0~alpha3.1) unstable; urgency=medium
 
   * Merkadu: exits with _exit() and never destroys state shared with its

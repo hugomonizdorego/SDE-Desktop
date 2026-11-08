@@ -12,11 +12,25 @@
 SDE is built and tested on Debian testing. DebION GNU/Linux, a separate Debian-based
 distribution, ships SDE; see [LEGAL.md](docs/LEGAL.md) for how the two projects relate.
 
-Development version **0.2 Alpha 3.1** (`0.2.0~alpha3.1`) · November 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
+Development version **0.2 Alpha 4** (`0.2.0~alpha4`) · November 2026 · GPL-3.0-or-later (shell); suite components retain their licenses
 
-![SDE 0.2 Alpha 3.1: the new SDE file chooser in the Control Center](docs/screenshots/0.2-alpha3.1/01-file-chooser.jpg)
+![SDE 0.2 Alpha 4: Liria, written from scratch](docs/screenshots/0.2-alpha4/01-liria-home.jpg)
 
-**New in 0.2 Alpha 3.1:** [Merkadu that closes, a modern file chooser, real Liquid Glass, Preview before Apply and Force Close](docs/0.2-ALPHA3.1.md) —
+**New in 0.2 Alpha 4:** [SDE Core, a new Liria, one package per application, workspaces, Windows shortcuts, touch and fingerprint](docs/0.2-ALPHA4.md) —
+SDE has a **core of its own**, `sde-core`, that connects the session, the panel, the
+Control Center and every application, with one place for each setting; SDE Core and
+each application (Liria, Xanara, Niny, Merkadu, Calculator, Taca, Photo, Gallery) are
+**separate Debian packages**, and `sde-desktop` adds **GNOME Terminal** and **LightDM
+with Slick Greeter**; **Liria** is written from scratch after Windows 11's File
+Explorer, with nothing left of Caja; up to **5 workspaces**, **Task View**, a clear
+window menu and the **Windows keyboard shortcuts** (with a printable sheet); the
+**Start button's text and picture** can be changed, and Recently added has **Clear**;
+the panel no longer **freezes with IBus** or tray icons; themes take a **tint of the
+wallpaper**; **touch screens** scroll smoothly with real gestures; **fingerprint**
+sign-in, unlock and administrator authentication; Xanara opens without a PDF and
+System Monitor explains **kworker** ([screenshots](docs/screenshots/0.2-alpha4/README.md)).
+
+**0.2 Alpha 3.1:** [Merkadu that closes, a modern file chooser, real Liquid Glass, Preview before Apply and Force Close](docs/0.2-ALPHA3.1.md) —
 **Merkadu** ends when it is closed and no longer freezes for seconds on a slow machine,
 with **Pause** and **Cancel**, Debian packages, Flatpak and Snap apart in All Software, rotating
 highlights, only the sources an app really has, Flatpak installs from the right
@@ -152,6 +166,9 @@ and the complete native suite have not yet been profiled. See the [Rust migratio
 | `sde-watchdog` | Notices windows that stop responding and programs that never open, and asks `sde-force-close` to offer Wait or Force Close (started by the session) |
 | `sde-force-close` | The "Wait / Force Close" dialog; ends a frozen program at once, never a session program or another user's |
 | `xdg-desktop-portal-sde` | The SDE file chooser for programs that use the file chooser portal (Flatpak apps, browsers) |
+| `sde-core` | The SDE core controller (`org.selviana.Core`): settings with their schema and one Control Center page each, change signals, the look, running apps and their problems, the session; started first by the session ([CORE.md](docs/CORE.md)) |
+| `sde-window-menu`, `sde-windows`, `sde-taskview`, `sde-screenshot` | SDE's window menu, the window and workspace commands of the keyboard shortcuts, Task View (Win+Tab) and screenshots (PrtScn, Win+Shift+S) ([WINDOWS.md](docs/WINDOWS.md), [SHORTCUTS.md](docs/SHORTCUTS.md)) |
+| `sde-touchscreen` | Keeps a touch screen on its own display and can show touches ([TOUCH.md](docs/TOUCH.md)) |
 
 **Quick settings** use the services the system already has: NetworkManager (`nmcli`)
 for Wi-Fi and Ethernet, PulseAudio or PipeWire (`pactl`) for volume, mute and the
@@ -165,12 +182,12 @@ and **Software Updater** (formerly SDE Update). Control Center → Applications 
 and complete installed copyright notices. GTK suite launches follow SDE's
 light/dark preference, with an option to keep the system theme.
 
-Alpha6 builds the GTK applications from pinned source as native SDE forks.
-`niny`, `liria`, `xanara`, `taca` and the other suite executables are included in
-one `sde` package with their resources and preserved copyrights. The original
-MATE application packages are not installed. Shared GTK/MATE libraries remain
-normal dependencies. Software Updater has a native interface, an attributed Mint Update
-model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
+Every application is SDE's own program, written by the Selviana DE Project in
+C++17 on SDE-FLTK (Liria too, since 0.2 Alpha 4), and since 0.2 Alpha 4 each is a
+Debian package of its own (`liria`, `xanara`, `niny`, `merkadu`, `sde-calculator`,
+`taca`, `sde-photo`, `sde-gallery`) next to `sde-core`; `sde-desktop` installs them
+all ([PACKAGING.md](docs/PACKAGING.md)). No MATE package is needed. Software Updater has
+a native interface, an attributed Mint Update model and Debian PackageKit transactions. See the [suite guide](docs/SUITE.md)
 and [source credits](docs/THIRD-PARTY.md). CI also uploads native application captures.
 
 `sudo apt install sde-desktop` is the single entry point when the SDE packages
@@ -305,6 +322,8 @@ copied to `~/.config/sde/openbox/rc.xml` on first login. Session messages go to
 - [Building, dependencies and releases](docs/BUILD.md)
 - [Troubleshooting (black screen, missing packages)](docs/TROUBLESHOOTING.md)
 - [Logo, icons and user pictures](docs/BRANDING.md)
+- [SDE Core, the core controller](docs/CORE.md) and [packaging: SDE Core and one package per application](docs/PACKAGING.md)
+- [Liria, the file manager](docs/LIRIA.md), [windows and workspaces](docs/WINDOWS.md), [keyboard shortcuts](docs/SHORTCUTS.md) ([printable sheet](docs/SDE-Keyboard-Shortcuts.pdf)), [touch screens](docs/TOUCH.md) and [fingerprint](docs/FINGERPRINT.md)
 - [Merkadu, the software center](docs/MERKADU.md), [Start Menu](docs/START-MENU.md), [Control Center](docs/CONTROL-CENTER.md), [Panel](docs/PANEL.md) and [themes](docs/THEMES.md)
 - [Niny](docs/NINY.md), [Xanara](docs/XANARA.md), [Photo](docs/PHOTO.md), [Gallery](docs/GALLERY.md), [copying and the transfer dialog](docs/TRANSFERS.md), [Debrun](docs/DEBRUN.md), [AppImages](docs/APPIMAGE.md), [the file chooser](docs/FILE-CHOOSER.md) and [Force Close](docs/FORCE-CLOSE.md)
 - [SDE Welcome for distributions](docs/WELCOME.md)
@@ -322,8 +341,8 @@ not build or ship EDE code.
 Copyright © 2026 Selviana DE Project and contributors.
 
 SDE is free software under the GNU General Public License, version 3 or later.
-See [LICENSE](LICENSE). Bundled application forks and components retain their
-individual upstream licenses and historical copyright notices; see
+See [LICENSE](LICENSE). The session components (SDE WM from Openbox, SDE compositor
+from picom) and SDE-FLTK retain their individual upstream licenses and copyright notices; see
 [LEGAL.md](docs/LEGAL.md) and [source credits](docs/THIRD-PARTY.md). Every About
 window shows the license, copyright and trademark notices of its program, and
 Control Center → About → Open-source licenses lists all of them.

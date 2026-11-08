@@ -29,7 +29,7 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="2.0.0~alpha1" date="2026-11-05">
+    <release version="2.0.0~alpha1" date="2026-11-08">
       <description>
         <p>Liria is written anew by the Selviana DE Project: a Home page like the one of Windows 11, tabs, a short command bar and the SDE look in every theme.</p>
       </description>

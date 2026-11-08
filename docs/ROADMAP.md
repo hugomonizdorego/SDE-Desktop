@@ -1,4 +1,4 @@
-# Roadmap — from 0.2.0 Alpha 3.1 to 1.0 Final
+# Roadmap — from 0.2.0 Alpha 4 to 1.0 Final
 
 Selviana Desktop Environment (SDE) is a desktop environment. DebION GNU/Linux
 is a separate project: a Debian-based distribution (Linux kernel) that ships
@@ -79,7 +79,7 @@ cairo and Xlib, with a Rust configuration core.
 - [x] Debrun for downloaded `.deb` files; AppImages after verification;
       renaming accounts at the next restart
 
-## Now: 0.2.0 Alpha 3.1 — fixes from the review on a real laptop (November 2026)
+## Done: 0.2.0 Alpha 3.1 — fixes from the review on a real laptop (November 2026)
 
 - [x] Merkadu ends when closed and no longer freezes; Pause and Cancel;
       Debian, Flatpak and Snap apart; rotating highlights; only real sources;
@@ -94,9 +94,33 @@ cairo and Xlib, with a Rust configuration core.
       session buttons always in the Action Center
 - [x] Liria: faster context menus and highlights
 
+## Now: 0.2.0 Alpha 4 — SDE's own core, one package per application (November 2026)
+
+- [x] SDE Core: the core controller `sde-core` (settings with a schema, one
+      Control Center page per setting, the look, apps, the session)
+      ([0.2-ALPHA4.md](0.2-ALPHA4.md), [CORE.md](CORE.md))
+- [x] SDE Core and one Debian package per application; GNOME Terminal,
+      LightDM and Slick Greeter in `sde-desktop` ([PACKAGING.md](PACKAGING.md))
+- [x] Liria written from scratch, nothing left of Caja ([LIRIA.md](LIRIA.md))
+- [x] Up to 5 workspaces, Task View, SDE's window menu and the Windows keyboard
+      shortcuts with a printable sheet ([WINDOWS.md](WINDOWS.md),
+      [SHORTCUTS.md](SHORTCUTS.md))
+- [x] Tray and IBus no longer freeze the desktop; Start button text and
+      picture; Recently added Clear
+- [x] Themes tinted by the wallpaper; smooth touch screens
+      ([TOUCH.md](TOUCH.md)); fingerprint ([FINGERPRINT.md](FINGERPRINT.md))
+- [x] Xanara's start page, System Monitor's kernel threads, Merkadu's storage
+
 ## 0.2 series — usable every day (target: Q1 2027)
 
-Alpha 4 and later:
+Alpha 5 and later:
+
+- [ ] Alpha 4 on real hardware: touch screens (gesture values, the Start
+      Menu's grab, Firefox), fingerprint readers with LightDM and sudo, the
+      LightDM greeter and live login, IBus with newer releases
+- [ ] Liria: network places against real servers, burning discs, group by;
+      Liria through the SDE core client (look, wallpaper)
+- [ ] Clipboard history (Win+V) and a magnifier (Win+Plus)
 
 - [ ] Merkadu, Debrun and user accounts validated on real installations
       (PackageKit, Flathub, snapd, AccountsService); copies to real FAT USB
@@ -112,8 +136,6 @@ Alpha 4 and later:
 - [ ] Real-hardware validation programme: lock/suspend/resume, lid, battery,
       brightness, touchpad, multi-monitor, Wi‑Fi, USB drives — on at least
       five laptops and two desktops, results published per build
-- [ ] Liria: Ribbon completion (group by, file extensions, disc burning),
-      search, tabs polish
 - [ ] Notifications: grouping rules and per-application settings
 - [ ] Input devices plugged in during the session get the saved settings
 - [ ] Paste files on the desktop (clipboard file lists)
