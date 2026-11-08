@@ -118,7 +118,8 @@ DESTDIR=/tmp/niny cmake --install build --component niny
 3. When files move from an existing package (for example from `sde-core`),
    the new package needs `Breaks:` and `Replaces:` of the old one (`<<` the
    first version without them, with a `~`, e.g. `sde-core (<< 0.2.0~beta1~)`),
-   and the maintainer scripts of those files move with them.
+   and the maintainer scripts of those files move with them. (`sde` is
+   special: it is transitional for good, so `<< ${binary:Version}` is used.)
 
 ### Conffiles and maintainer scripts
 
@@ -147,17 +148,24 @@ Download every package (not the `-dbgsym` ones unless you want them, not
 
 * `sde` becomes the transitional package and pulls in `sde-core` and the
   seven applications it contained; `sde-core` and the applications have
-  `Breaks:`/`Replaces: sde (<< 0.2.0~alpha4~)`, so dpkg moves every file
-  from `sde` to its new package without conflicts. Merkadu was already a
-  package of its own.
+  `Breaks:`/`Replaces: sde (<< ${binary:Version})` (every older `sde`, so
+  the relation needs no update at the next version bump), so dpkg moves
+  every file from `sde` to its new package without conflicts. APT unpacks
+  the transitional `sde` first; a plain `dpkg -i *.deb` stops at the
+  packages that break the old `sde` and needs a second run (or
+  `--auto-deconfigure`). Merkadu was already a package of its own.
 * The conffiles move with their files: `/etc/xdg/sde/sde.conf`,
   `/etc/xdg/sde-mimeapps.list`, `/etc/xdg/autostart/sde-*.desktop`,
   `/etc/pam.d/sde-lock` and `/etc/sde/appimage.conf` to `sde-core`,
   `/etc/sudoers.d/sde-liria` to `liria`. Changes made to them are kept.
-* The `x-session-manager` alternative stays registered (by `sde-core`); an
-  administrator's choice is kept. The account rename service stays enabled.
+* The `x-session-manager` alternative stays registered (by `sde-core`), and
+  with APT an administrator's choice is kept. (When dpkg deconfigures the
+  old `sde` instead, e.g. `dpkg -i --auto-deconfigure`, the old prerm
+  removes `startsde` and re-registering it leaves the alternative in
+  automatic mode.) The account rename service stays enabled.
 * `sde-dbgsym` gives way to the new `-dbgsym` packages
-  (`Breaks`/`Replaces: sde-dbgsym (<< 0.2.0~alpha4~)`).
+  (`Breaks`/`Replaces: sde-dbgsym (<< $(DEB_VERSION))`, `dh_strip
+  --dbgsym-migration`).
 * The files of Liria's Caja fork (`/usr/lib/*/liria`, `libliria-extension`,
   `/usr/share/liria`, its schemas, `/usr/share/doc/sde/upstream/caja`) are
   removed: they are in no new package. The new Liria comes with `liria`.

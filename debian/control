@@ -139,8 +139,8 @@ Suggests: sde-desktop,
           scrot,
           xterm,
           firefox-esr | firefox
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Provides: x-session-manager, notification-daemon
 Description: Selviana Desktop Environment - SDE Core
  SDE (Selviana Desktop Environment) is a lightweight desktop environment
@@ -186,8 +186,8 @@ Recommends: sde-core,
             gvfs-fuse,
             udisks2
 Suggests: sudo
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Liria file manager
  Liria is the file manager of the Selviana Desktop Environment (SDE),
  written by the Selviana DE Project: it browses folders, the trash,
@@ -204,8 +204,8 @@ Depends: ${shlibs:Depends},
 Recommends: sde-core,
             tesseract-ocr-eng
 Suggests: cups
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Xanara PDF viewer and editor
  Xanara is the document viewer and PDF editor of the Selviana Desktop
  Environment (SDE), written from scratch by the Selviana DE Project. It
@@ -221,8 +221,8 @@ Depends: ${shlibs:Depends},
          ${misc:Depends}
 Recommends: sde-core
 Suggests: hunspell | aspell
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Niny text editor
  Niny is the text editor of the Selviana Desktop Environment (SDE), written
  from scratch by the Selviana DE Project: tabs, syntax highlighting, search
@@ -270,8 +270,8 @@ Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends}
 Recommends: sde-core
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Calculator
  Calculator (command calculator) is the scientific calculator of the
  Selviana Desktop Environment (SDE), written from scratch by the Selviana
@@ -288,8 +288,8 @@ Recommends: sde-core,
             7zip | p7zip-full,
             zip
 Suggests: unrar
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Taca archive manager
  Taca is the archive manager of the Selviana Desktop Environment (SDE),
  written from scratch by the Selviana DE Project. It opens and extracts zip,
@@ -306,8 +306,8 @@ Depends: ${shlibs:Depends},
          ${misc:Depends}
 Recommends: sde-core,
             cups-client
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Photo viewer and editor
  Photo (command sde-view) is the photo viewer and editor of the Selviana
  Desktop Environment (SDE), written from scratch by the Selviana DE
@@ -326,8 +326,8 @@ Recommends: sde-core,
 Suggests: hugin-tools,
           jpegoptim,
           optipng
-Breaks: sde (<< 0.2.0~alpha4~)
-Replaces: sde (<< 0.2.0~alpha4~)
+Breaks: sde (<< ${binary:Version})
+Replaces: sde (<< ${binary:Version})
 Description: Selviana Desktop Environment - Gallery photo library
  Gallery (command sde-gallery) is the photo library of the Selviana Desktop
  Environment (SDE), written from scratch by the Selviana DE Project: photos

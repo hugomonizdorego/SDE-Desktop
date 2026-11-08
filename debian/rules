@@ -5,6 +5,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 export DEB_CXXFLAGS_MAINT_APPEND = -O2
 
 include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/pkg-info.mk
 
 # SDE Core and the applications are CMake install components
 # (docs/PACKAGING.md): an application's install() rules name its package
@@ -35,5 +36,7 @@ override_dh_installsystemd:
 	dh_installsystemd --no-start
 
 # The debug symbols of 0.2.0~alpha3.1 and older were all in sde-dbgsym.
+# Like the Breaks/Replaces on sde in debian/control, the relation follows
+# this package's version, so a build before the version bump installs too.
 override_dh_strip:
-	dh_strip --dbgsym-migration='sde-dbgsym (<< 0.2.0~alpha4~)'
+	dh_strip --dbgsym-migration='sde-dbgsym (<< $(DEB_VERSION))'
