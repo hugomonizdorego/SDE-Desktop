@@ -296,12 +296,20 @@ def users_page_checks():
     # No AccountsService of the machine running the checks.
     avatar_env = dict(env, DBUS_SYSTEM_BUS_ADDRESS="unix:path=/nonexistent-sde-ui-smoke-system-bus")
     log = open(home / "sde-settings-users.log", "w")
+    # The Control Center before this one left its QA file on this very page,
+    # often written before it had listed the accounts: start without it, and
+    # wait for the accounts, which the page lists a moment after it opens.
+    (home / "qa" / "Control-Center.txt").unlink(missing_ok=True)
     app = sp.Popen(["sde-settings", "--page", "avatar"], env=avatar_env, stdout=log, stderr=log)
     procs.append(app)
     win = find("^Control Center$")
     wait_page("users")
     # The full name field (inactive here: no AccountsService to change it).
-    names = [l.split("\t")[0] for l in (home / "qa" / "Control-Center.txt").read_text().splitlines()]
+    for _ in range(80):
+        names = [l.split("\t")[0] for l in (home / "qa" / "Control-Center.txt").read_text().splitlines()]
+        if any(n.startswith("user:") for n in names):
+            break
+        time.sleep(0.1)
     for name in ("Your full name", "Sample Forest", "Sample Sunrise"):
         assert name in names, (name, names)
     # Without AccountsService the accounts are listed, nothing is offered.
