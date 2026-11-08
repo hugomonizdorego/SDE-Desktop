@@ -2453,6 +2453,31 @@ def xanara_edit(s):
     s.shot('xanara-edit', quiet=0.8)
 
 
+@scene('Xanara', [('xanara-start', 'Xanara without a PDF: its start page with open, a new PDF (blank, from images '
+                                    'or merged), the tools and the recent documents')], needs=['xanara'])
+def xanara_start(s):
+    # 0.2.0 Alpha 4: the start page needs no file. The two reports were
+    # opened before (they are the recent documents); no tab of an earlier
+    # scene comes back.
+    state = s.home / '.local/state/sde'
+    state.mkdir(parents=True, exist_ok=True)
+    (state / 'xanara-session').unlink(missing_ok=True)
+    now = int(time.time())
+    (state / 'xanara-history').write_text(
+        '%s\t0\twidth\t%d\n%s\t2\twidth\t%d\n' % (s.home / 'Documents/Project Aurora - Field Report.pdf', now - 600,
+                                                 s.home / 'Downloads/Field Report (draft).pdf', now - 86400))
+    qa = s.home / '.cache/xanara-start-qa.txt'
+    env = dict(s.env, XANARA_QA_FILE=str(qa))
+    s.spawn('xanara', env=env)
+    w = s.fit(s.need('Xanara$', 15, what='the xanara window'))
+    s.activate(w)
+    if not s.wait(lambda: qa.exists() and 'home start:blank' in qa.read_text(), 10):
+        raise SkipShot('xanara did not show its start page')
+    time.sleep(1.5)  # the thumbnails of the recent documents
+    s.park_pointer()
+    s.shot('xanara-start', quiet=0.8)
+
+
 @scene('Taca', [('taca', 'Taca: the contents of a ZIP archive')], needs=['taca'])
 def taca(s):
     s.app(['taca', s.home / 'Downloads/Autumn Photos.zip'], 'Taca$')
@@ -2533,6 +2558,37 @@ def system_monitor(s):
     s.shot('system-monitor-performance', quiet=0.3, timeout=2)
 
 
+@scene('System Monitor', [('system-monitor-kernel', 'System Monitor: the threads of the Linux kernel in a group of '
+                                                     'their own, each described (kworker: the kernel\'s workers); '
+                                                     'they cannot be ended')],
+       needs=['sde-system-monitor'])
+def system_monitor_kernel(s):
+    # 0.2.0 Alpha 4: My processes by default; Show kernel threads lists them
+    # apart, and a selected one is explained under the list.
+    s.app(['sde-system-monitor', '--page', 'processes'], '^System Monitor$')
+    if not s.control('System Monitor', 'kernel-threads', timeout=10):
+        raise SkipShot('this System Monitor has no kernel threads switch')
+    s.press('System Monitor', 'kernel-threads')
+    s.key('ctrl+f')
+    s.type('kworker', delay=60)
+
+    def kernel_row():
+        for k, v in s.layout('System Monitor').items():
+            if k.startswith('row:') and v[2] > 0:
+                return k
+        return None
+    row = s.wait(kernel_row, 6)
+    if not row:
+        raise SkipShot('no kernel thread is shown here')
+    s.press('System Monitor', row)
+    time.sleep(0.8)
+    s.park_pointer()
+    s.shot('system-monitor-kernel', quiet=0.8, timeout=4)
+    # The next scenes start with the default view again.
+    s.press('System Monitor', 'kernel-threads')
+    time.sleep(0.5)
+
+
 @scene('Software Updater', [('software-updater', 'Software Updater: critical, security and main updates of '
                                                  'the operating system (test data)')], needs=['sde-update'])
 def software_updater(s):
@@ -2596,6 +2652,30 @@ def merkadu(s):
     s.control('Merkadu', '@page:progress', timeout=5)
     s.park_pointer()
     s.shot('merkadu-progress', quiet=0.6, wid=w)
+
+
+@scene('Merkadu', [('merkadu-storage', 'Merkadu: Storage, what Flatpak apps and snaps keep and what Clean Up frees '
+                                       '(unused runtimes, old snap revisions, data of removed apps); the Merkadu folder '
+                                       'links to their data (test data)')],
+       needs=['merkadu'])
+def merkadu_storage(s):
+    if not (MERKADU_FIXTURES / 'catalog.json').exists():
+        raise SkipShot('no Merkadu test data (tests/fixtures/merkadu)')
+    # The data of an installed Flatpak app and snap, and of two removed apps.
+    for rel, size in (('.var/app/org.example.Postbox/data/mail/inbox.mbox', 3 << 20),
+                      ('.var/app/org.example.Postbox/config/postbox.conf', 4000),
+                      ('.var/app/org.example.OldGame/data/saves/slot1.sav', 6 << 20),
+                      ('.var/app/org.example.OldGame/cache/shaders.bin', 18 << 20),
+                      ('snap/kart-rally/40/settings.ini', 2000),
+                      ('snap/kart-rally/common/replays/race1.rpl', 2 << 20),
+                      ('snap/retro-notes/common/notes.txt', 300000)):
+        p = s.home / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, 'wb') as f:
+            f.truncate(0)
+            f.write(b'\x5a' * size)
+    w = merkadu_window(s, ['--page', 'storage'], 'action:storage:clean-up')
+    s.shot('merkadu-storage', quiet=0.6, wid=w)
 
 
 @scene('Merkadu', [('merkadu-uninstall', 'Uninstall from the Start menu (merkadu --uninstall): the packages '
