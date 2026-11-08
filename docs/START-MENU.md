@@ -10,6 +10,27 @@ named groups on the right, some of them in folders. Applications with news
 on the taskbar. Search lives in the panel (`src/panel/search.*`). This page
 describes how it behaves since 0.2 Alpha 3.
 
+## Recently added and Most used
+
+Above the applications A–Z the list shows the three newest applications
+(installed in the last two weeks) under **Recently added** and the five
+most used ones under **Most used**. Either list can be switched off in the
+list's right-click menu or in Control Center > **Start Menu** ("Show
+recently added applications", "Show most used applications").
+
+Since 0.2.0 Alpha 4 **Clear**, at the end of the "Recently added" heading
+(mouse, or the arrow keys and Enter), empties the list: the applications
+listed now leave it, and an application installed later appears again.
+
+| Key (`[menu]`) | Value |
+| --- | --- |
+| `show_recently_added` | `true` (default) or `false` |
+| `show_most_used` | `true` (default) or `false` (`show_recent` of older versions is read when unset) |
+| `recently_added_cleared` | when Clear was used (seconds since 1970); only applications whose desktop file is newer are listed |
+
+The QA dump names the button `added-clear` and the rows `added:<name>` and
+`most-used:<name>`.
+
 ## Typing searches
 
 Typing any character while the Start menu is open opens the panel search
