@@ -152,6 +152,25 @@ struct Theme {
   // window, text included; the compositor sets it).
   double toolkit_menu_opacity = 1.0;
 
+  // The wallpaper's colour (0.2.0 Alpha 4, [appearance] wallpaper_tint; see
+  // wallpaper_colors.h and docs/THEMES.md). The floating layer - the panel,
+  // its popups (Start menu, Action Center, flyouts, previews), menus,
+  // tooltips, notifications and OSDs - leans towards the wallpaper's
+  // dominant hue at a calm chroma, Mica-like: in the colour itself, so it
+  // shows with or without blur and without a compositor, and with the same
+  // luminance, so every contrast stays. menu_bg, menu_hover (Fluent),
+  // menu_border, menu_separator and panel_bg have it in every program; the
+  // layer_* colours are the floating layer's surface, surface_alt, hover
+  // and border, which use_floating_layer() puts in place for the programs
+  // that draw only that layer. Window content keeps the theme's colours, as
+  // GTK applications do.
+  bool wallpaper_tint = false;  // on, and the wallpaper has colour to give
+  Color tint;                   // the wallpaper's dominant colour (for previews)
+  Color layer_surface, layer_surface_alt, layer_hover, layer_border;
+  Color gtk_menu_bg;            // GTK 3 menus: the theme's menu colour (the GTK themes have no tint)
+  // surface, surface_alt, hover and border become the floating layer's.
+  void use_floating_layer();
+
   // Loads theme and metrics from the merged SDE configuration.
   static Theme from_config(const Config &cfg);
   // A palette without a configuration (previews in Settings).
@@ -162,7 +181,14 @@ struct Theme {
   void apply_to_fltk() const;
 };
 
+// [appearance] wallpaper_tint: "auto" (the family's default: on in Fluent
+// and Liquid Glass, off in Graphite), "true" or "false".
+bool theme_wallpaper_tint(const Config &cfg, const std::string &family);
+bool theme_wallpaper_tint_default(const std::string &family);
+
 // The user's theme choice with every older value mapped to a current one.
+// With [appearance] accent_from_wallpaper=true the accent is the named one
+// nearest the wallpaper's colour (wallpaper_accent()).
 struct ThemeChoice {
   std::string family = "graphite";  // graphite, fluent, glass
   std::string mode = "light";       // light, dark, auto

@@ -34,6 +34,7 @@ add_library(sde-common STATIC
   common/transfer_dialog.cpp
   common/tray_icons.cpp
   common/util.cpp
+  common/wallpaper_colors.cpp
   common/widgets.cpp
   common/wm.cpp
   common/x11.cpp

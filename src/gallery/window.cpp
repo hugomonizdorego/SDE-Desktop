@@ -21,6 +21,7 @@
 #include "link.h"
 #include "file_chooser.h"
 #include "i18n.h"
+#include "integration.h"
 #include "process.h"
 #include "spawn.h"
 #include "util.h"
@@ -1290,7 +1291,10 @@ void GalleryWindow::set_wallpaper(const std::string &path) {
     toast(_("Could not save the wallpaper setting"));
     return;
   }
-  x11::notify_config_changed();
+  // Its colours are measured once, here, before every program follows the
+  // change; when the panel and menus take its tint, the session switches
+  // them and the desktop to it in one calm step (0.2.0 Alpha 4).
+  announce_wallpaper_change(fl_display, cfg);
   toast(_("Set as wallpaper"));
 }
 

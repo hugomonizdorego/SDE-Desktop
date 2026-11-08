@@ -204,6 +204,17 @@ double constant(const std::string &glsl, const std::string &name) {
   return atof(m[1].str().c_str());
 }
 
+// "const vec3 NAME = vec3(r, g, b);" of the shader.
+Rgb vec3_constant(const std::string &glsl, const std::string &name) {
+  std::smatch m;
+  if (!std::regex_search(glsl, m, std::regex("const vec3 " + name + " = vec3\\(([-0-9.]+), ([-0-9.]+), ([-0-9.]+)\\);"))) {
+    fprintf(stderr, "  no %s in the shader\n", name.c_str());
+    ++g_failures;
+    return {};
+  }
+  return {atof(m[1].str().c_str()), atof(m[2].str().c_str()), atof(m[3].str().c_str())};
+}
+
 // CIE lightness L* (0-100) of a relative luminance: equal steps look equal.
 double lightness(double y) { return y > 0.008856 ? 116 * std::cbrt(y) - 16 : 903.3 * y; }
 
@@ -235,7 +246,9 @@ struct Result {
 // Liquid Glass: every pixel of a surface over the page, as the shader draws
 // it where there is no text (the frost and the legibility lift).
 Result liquid(const Image &page, const std::string &glsl, double tint, const Theme &t) {
-  Rgb key = of(t.surface);
+  // The panel's and popups' glass colour as the shader has it (0.2.0 Alpha
+  // 4: the floating layer's, with the wallpaper's tint).
+  Rgb key = vec3_constant(glsl, "KEY_A");
   double frost = constant(glsl, "FROST"), saturation = constant(glsl, "SATURATION");
   double brightness = constant(glsl, "BRIGHTNESS"), legible = constant(glsl, "LEGIBLE");
   bool dark = constant(glsl, "DARK") > 0.5;
@@ -307,7 +320,31 @@ std::string g_tmp;
 
 }  // namespace
 
-static void test_busy_pages() {
+// A wallpaper for the tinted pass, written as PNG: a blue-green sky over the
+// sea, or a strong red.
+static std::string write_wallpaper(const std::string &path, bool red) {
+  cairo_surface_t *s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, 160, 90);
+  cairo_t *cr = cairo_create(s);
+  if (red) {
+    cairo_set_source_rgb(cr, 0.75, 0.13, 0.12);
+  } else {
+    cairo_pattern_t *g = cairo_pattern_create_linear(0, 0, 0, 90);
+    cairo_pattern_add_color_stop_rgb(g, 0, 0.56, 0.83, 0.89);
+    cairo_pattern_add_color_stop_rgb(g, 1, 0.09, 0.49, 0.60);
+    cairo_set_source(cr, g);
+    cairo_pattern_destroy(g);
+  }
+  cairo_paint(cr);
+  cairo_destroy(cr);
+  cairo_surface_write_to_png(s, path.c_str());
+  cairo_surface_destroy(s);
+  return path;
+}
+
+// |wallpaper| empty: the theme's own colours (no tint); otherwise the
+// floating layer takes that wallpaper's tint (0.2.0 Alpha 4), measured for
+// one accent.
+static void test_busy_pages(const std::string &label, const std::string &wallpaper) {
   Image pages[2] = {busy_page(false), busy_page(true)};
   std::map<std::pair<int, int>, Image> blurred;  // (dark, sigma x 10)
   auto backdrop = [&](bool dark, double sigma) -> const Image & {
@@ -327,11 +364,14 @@ static void test_busy_pages() {
             // Contrast falls and the page shows more with the slider: the
             // XRender and lite profiles are measured at their worst, 100.
             if (std::string(prof.name) != "OpenGL" && level != 100) continue;
+            if (!wallpaper.empty() && accent != "blue") continue;
             Config cfg;
             cfg.set("appearance", "style", fam.id);
             cfg.set("appearance", "theme", dark ? "dark" : "light");
             cfg.set("appearance", "accent_name", accent);
             cfg.set("appearance", "scale", "100");
+            cfg.set("appearance", "wallpaper_tint", wallpaper.empty() ? "false" : "true");
+            if (!wallpaper.empty()) cfg.set("appearance", "wallpaper", wallpaper);
             cfg.set("aero", "transparency", std::to_string(level));
             cfg.set("compositor", "backend", prof.backend);
             cfg.set("compositor", "effects", prof.effects);
@@ -340,15 +380,19 @@ static void test_busy_pages() {
             CHECK(read_file(write_compositor_config(cfg), conf));
             double sigma = blur_sigma(conf);
             const Image &page = backdrop(dark, sigma);
-            char what[160];
-            snprintf(what, sizeof what, "%s %s %s, %s, transparency %d", fam.id.c_str(), dark ? "dark" : "light",
-                     accent.c_str(), prof.name, level);
+            char what[200];
+            snprintf(what, sizeof what, "%s%s %s %s, %s, transparency %d", label.c_str(), fam.id.c_str(),
+                     dark ? "dark" : "light", accent.c_str(), prof.name, level);
+            if (!wallpaper.empty()) CHECK(t.wallpaper_tint == true);
             std::vector<std::pair<std::string, Result>> results;
             if (t.liquid) {
               CHECK(read_file(config_home() + "/sde/liquid-glass.glsl", glsl));
               results.push_back({"glass", liquid(page, glsl, t.popup_opacity, t)});
             } else {
-              results.push_back({"panel", faded(page, of(t.panel_bg), of(t.text), of(t.text_dim), t.opacity)});
+              // What the panel paints (the floating layer's surface) and what
+              // GTK and the previews call the panel.
+              results.push_back({"panel", faded(page, of(t.layer_surface), of(t.text), of(t.text_dim), t.opacity)});
+              results.push_back({"panel_bg", faded(page, of(t.panel_bg), of(t.text), of(t.text_dim), t.opacity)});
               results.push_back(
                   {"menu", faded(page, of(t.menu_bg), of(t.menu_text), of(t.text_dim), t.popup_opacity)});
             }
@@ -364,7 +408,7 @@ static void test_busy_pages() {
                 fprintf(stderr, "  %s, %s: text %.2f, dimmed %.2f, structure %.1f\n", what, name.c_str(), r.text,
                         r.dim, r.structure);
               if (!ok) ++g_failures;
-              Result &s = summary[std::string(prof.name) + " " + name];
+              Result &s = summary[label + prof.name + " " + name];
               s.text = std::min(s.text, r.text);
               s.dim = std::min(s.dim, r.dim);
               s.structure = std::max(s.structure, r.structure);
@@ -441,10 +485,14 @@ int main() {
   setenv("SDE_GRAPHICS", "hardware", 1);
   setenv("SDE_OPENGL", "accelerated:test GPU", 1);
   setenv("XDG_CONFIG_HOME", (g_tmp + "/config").c_str(), 1);
+  setenv("XDG_CACHE_HOME", (g_tmp + "/cache").c_str(), 1);  // the wallpaper colours' cache
   make_dirs(g_tmp + "/config/sde");
   test_even_steps();
   test_shader_text();
-  test_busy_pages();
+  test_busy_pages("", "");
+  // 0.2.0 Alpha 4: with the wallpaper's tint on the floating layer.
+  test_busy_pages("tinted (sky) ", write_wallpaper(g_tmp + "/sky.png", false));
+  test_busy_pages("tinted (red) ", write_wallpaper(g_tmp + "/red.png", true));
   std::string cmd = "rm -rf '" + g_tmp + "'";
   if (system(cmd.c_str()) != 0) fprintf(stderr, "could not remove %s\n", g_tmp.c_str());
   if (g_failures) {

@@ -91,6 +91,14 @@ bool session_coordinates(Display *dpy);
 // what the running programs read from it; the session tells GTK, the window
 // manager and the compositor what changed, without a session this does.
 void announce_config_change(Display *dpy, const Config &cfg);
+// A new wallpaper saved in sde.conf (0.2.0 Alpha 4). When the look takes its
+// colours from the wallpaper (the tint of the floating layer, the accent),
+// the wallpaper is a change of the look: the colours are measured first and
+// the session switches every program in one calm step, so the panel's new
+// tint does not come before the new picture and Liquid Glass does not show
+// the new colours under the compositor's old keys. Otherwise the change is
+// announced as any other.
+void announce_wallpaper_change(Display *dpy, const Config &cfg);
 // Plain-text report: mode, backend and why, running state, virtual machine,
 // OpenGL renderer, configuration file and glass settings (after Eduka's
 // eduka-compositor report).

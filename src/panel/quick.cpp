@@ -914,6 +914,24 @@ class ActionCard : public Fl_Group {
   bool flat_, rule_;
 };
 
+// [action_center] multicolor (0.2.0 Alpha 4): every tile has a colour of its
+// own from the theme's accents (in the dark mode's lighter shades), as calm
+// as the rest of the theme. Up to 0.2.0 Alpha 3.1 they were Tailwind colours
+// about twice as saturated, and the tiles that were off took a tint of them
+// that turned brown and olive in dark mode; now a tile that is off is the
+// plain tile colour with its icon in its colour.
+Color tile_color(const Theme &t, int index) {
+  static const char *const names[] = {"blue", "purple", "green", "orange", "pink", "teal", "yellow", "red"};
+  return theme_accent_color(t.family, names[(index % 8 + 8) % 8], t.dark);
+}
+
+// An icon in |c| that keeps 3:1 (WCAG 2.1 for graphics) on |bg|.
+Color tile_icon(const Theme &t, const Color &c, const Color &bg) {
+  Color ink = c;
+  for (int i = 1; i <= 10 && ink.contrast(bg) < 3.0; ++i) ink = c.mix(t.text, i * 0.1);
+  return ink;
+}
+
 class ActionButton : public DrawnButton {
  public:
   ActionButton(int x, int y, int w, int h, std::string title, IconFn icon,
@@ -936,10 +954,9 @@ class ActionButton : public DrawnButton {
   void draw() override {
     const Theme &t = Panel::instance->theme();
     bool hot = Fl::belowmouse() == this && active_r(), on = on_ && on_();
-    static const unsigned colors[] = {0x2563EB, 0x7C3AED, 0x047857, 0xB45309, 0xBE185D, 0x0E7490};
     bool multi =
         Panel::instance->config().get_bool("action_center", "multicolor", false) && color_ >= 0;
-    Color accent = multi ? Color::hex(colors[color_ % 6]) : t.accent;
+    Color accent = multi ? tile_color(t, color_ % 6) : t.accent;
     Color white = Color::hex(0xFFFFFF), black = Color::hex(0x101820);
     Color ink, bg;
     bool fill = true;
@@ -952,7 +969,6 @@ class ActionButton : public DrawnButton {
       ink = t.text;
     } else {
       bg = on ? accent : t.surface_alt;
-      if (multi && !on) bg = t.surface.mix(accent, t.dark ? 0.18 : 0.08);
       if (hot || value()) bg = bg.mix(on ? t.on_accent : t.text, value() ? 0.15 : 0.06);
       ink = on ? (white.contrast(accent) >= 4.5 ? white : black) : t.text;
     }
@@ -964,6 +980,7 @@ class ActionButton : public DrawnButton {
       if (!row_ && (hot || on)) p.stroke_rounded(x(), y(), w(), h(), radius, on ? accent : t.border);
       double size = S(row_ ? popup_style::kIcon : 20);
       Color icon_ink = row_ && on && active_r() ? t.accent_text : ink;
+      if (multi && !row_ && !on && active_r()) icon_ink = tile_icon(t, accent, bg);
       icon_(p, row_ && !title_.empty() ? x() + S(8) : x() + (w() - size) / 2.0,
             row_ ? y() + (h() - size) / 2.0 : y() + S(8), size, icon_ink);
       if (Fl::focus() == this) focus_ring(p, x(), y(), w(), h(), radius);
@@ -1027,12 +1044,9 @@ class QuickTile : public DrawnButton {
   void draw() override {
     const Theme &t = Panel::instance->theme();
     bool on = on_ && on_(), hot = Fl::belowmouse() == this && active_r();
-    static const unsigned colors[] = {0x2563EB, 0x7C3AED, 0x047857, 0xB45309, 0xBE185D, 0x0E7490,
-                                      0x4F46E5, 0x0F766E};
     bool multi = Panel::instance->config().get_bool("action_center", "multicolor", false);
-    Color accent = multi ? Color::hex(colors[color_ % 8]) : t.accent;
+    Color accent = multi ? tile_color(t, color_) : t.accent;
     Color bg = on ? accent : t.surface_alt;
-    if (multi && !on) bg = t.surface.mix(accent, t.dark ? 0.18 : 0.08);
     if (hot || value()) bg = bg.mix(on ? t.on_accent : t.text, value() ? 0.15 : 0.07);
     Color white = Color::hex(0xFFFFFF), black = Color::hex(0x101820);
     Color ink = on ? (white.contrast(accent) >= 4.5 ? white : black) : t.text;
@@ -1045,7 +1059,7 @@ class QuickTile : public DrawnButton {
                        on ? accent.mix(t.text, 0.1) : t.border);
       double size = S(popup_style::kIcon);
       double ix = more_ ? x() + (split() - x() - size) / 2.0 : x() + (w() - size) / 2.0;
-      icon_(p, ix, y() + (bh - size) / 2.0, size, ink);
+      icon_(p, ix, y() + (bh - size) / 2.0, size, multi && !on && active_r() ? tile_icon(t, accent, bg) : ink);
       if (more_) {
         p.line(split() + 0.5, y() + S(8), split() + 0.5, y() + bh - S(8), ink.alpha(0.35));
         double cs = S(10);

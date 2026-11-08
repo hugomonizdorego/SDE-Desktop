@@ -16,6 +16,7 @@
 #include "menu.h"
 #include "theme_palettes.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 
 namespace sde {
 
@@ -179,8 +180,24 @@ ThemeChoice theme_choice(const Config &cfg) {
   // Files from alpha10 to alpha15 without a style: [aero] enabled=false was
   // SDE Light/Dark, anything else Aero; both now mean the default family.
   if (trim(style).empty()) style = palettes::kDefaultFamily;
-  return map_theme_choice(style, cfg.get("appearance", "theme", "light"),
-                          cfg.get("appearance", "accent", ""), cfg.get("appearance", "accent_name", ""));
+  ThemeChoice c = map_theme_choice(style, cfg.get("appearance", "theme", "light"),
+                                   cfg.get("appearance", "accent", ""), cfg.get("appearance", "accent_name", ""));
+  // 0.2.0 Alpha 4: the accent can follow the wallpaper. It is always a named
+  // accent, so GTK and the window frames (built per accent) follow too.
+  if (cfg.get_bool("appearance", "accent_from_wallpaper", false)) {
+    c.accent = wallpaper_accent(wallpaper_colors(wallpaper_in_use(cfg, theme_mode_dark(c.mode))));
+    c.custom_accent.clear();
+  }
+  return c;
+}
+
+bool theme_wallpaper_tint_default(const std::string &family) { return family_info(family).tint_default; }
+
+bool theme_wallpaper_tint(const Config &cfg, const std::string &family) {
+  std::string v = lower(trim(cfg.get("appearance", "wallpaper_tint", "auto")));
+  if (v == "true" || v == "on" || v == "yes" || v == "1") return true;
+  if (v == "false" || v == "off" || v == "no" || v == "0") return false;
+  return theme_wallpaper_tint_default(family);
 }
 
 bool migrate_theme_config(Config &cfg) {
@@ -389,6 +406,44 @@ static void fill_palette(Theme &t, const palettes::Family &f, bool custom) {
   t.family = f.id;
   t.style = f.id;
   t.gtk_theme = theme_dir(f.id, t.dark, t.accent_name);
+  // The floating layer has the window's colours until the wallpaper tints
+  // them (apply_wallpaper_tint()).
+  t.wallpaper_tint = false;
+  t.tint = t.surface;
+  t.layer_surface = t.surface;
+  t.layer_surface_alt = t.surface_alt;
+  t.layer_hover = t.hover;
+  t.layer_border = t.border;
+  t.gtk_menu_bg = t.menu_bg;
+}
+
+// The floating layer leans towards the wallpaper's colour (0.2.0 Alpha 4):
+// each colour by at most the family's amount of Oklab chroma, keeping its
+// luminance (tint_surface()), so the steps between surfaces, hover and
+// borders and every contrast with text stay as the palette has them.
+// Hairlines get a little less of it; text, the accent and highlights none.
+static void apply_wallpaper_tint(Theme &t, const palettes::Family &f, const WallpaperColors &w) {
+  if (!w.known || w.strength <= 0) return;
+  double amount = f.tint_amount[t.dark ? 1 : 0];
+  auto tint = [&](const Color &c, double k) { return tint_surface(c, w, amount * k); };
+  t.wallpaper_tint = true;
+  t.tint = w.dominant;
+  bool accent_menu = std::strcmp(f.menu_highlight, "accent") == 0;
+  t.menu_bg = tint(t.menu_bg, 1.0);
+  if (!accent_menu) t.menu_hover = tint(t.menu_hover, 1.0);
+  t.menu_border = t.menu_separator = tint(t.border, 0.75);
+  t.panel_bg = tint(t.panel_bg, 1.0);
+  t.layer_surface = tint(t.surface, 1.0);
+  t.layer_surface_alt = tint(t.surface_alt, 1.0);
+  t.layer_hover = tint(t.hover, 1.0);
+  t.layer_border = tint(t.border, 0.75);
+}
+
+void Theme::use_floating_layer() {
+  surface = layer_surface;
+  surface_alt = layer_surface_alt;
+  hover = layer_hover;
+  border = layer_border;
 }
 
 // Whether the compositor runs its lite profile ([compositor] effects, or
@@ -423,8 +478,12 @@ static void apply_transparency(Theme &t, const palettes::Family &f, bool strong_
     double floor = std::max({readable, reach, 1.0 - 2.0 * f.translucency});
     return 1.0 - c * (1.0 - floor);
   };
-  t.opacity = level(std::max(readable_opacity(t.text, t.panel_bg, 5.0, true),
-                             readable_opacity(t.text_dim, t.panel_bg, 3.8, true)));
+  // The panel paints the floating layer's surface (panel_bg is what GTK and
+  // the previews know it by): both keep their text readable.
+  t.opacity = level(std::max({readable_opacity(t.text, t.panel_bg, 5.0, true),
+                              readable_opacity(t.text_dim, t.panel_bg, 3.8, true),
+                              readable_opacity(t.text, t.layer_surface, 5.0, true),
+                              readable_opacity(t.text_dim, t.layer_surface, 3.8, true)}));
   t.popup_opacity = level(std::max({readable_opacity(t.menu_text, t.menu_bg, 5.0, true),
                                     readable_opacity(t.text_dim, t.menu_bg, 3.8, true),
                                     readable_opacity(t.menu_hover_text, t.menu_hover, 3.4, true)}));
@@ -463,6 +522,8 @@ Theme Theme::from_config(const Config &cfg) {
   bool custom = !c.custom_accent.empty() && Color::parse(c.custom_accent, t.accent);
   const palettes::Family &f = family_info(c.family);
   fill_palette(t, f, custom);
+  if (theme_wallpaper_tint(cfg, f.id))
+    apply_wallpaper_tint(t, f, wallpaper_colors(wallpaper_in_use(cfg, t.dark)));
   t.font = cfg.get("appearance", "font", "Sans");
   // Config uses points; at 96 DPI one point is 4/3 pixel. Text stays
   // readable at 75 %: never under 9 pixels.

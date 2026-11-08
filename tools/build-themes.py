@@ -136,6 +136,10 @@ def write_header(pal, path):
     out.append(f'  unsigned accent[{len(acc)}][2];')
     out.append('  Mode light, dark;')
     out.append('  Liquid liquid;')
+    out.append('  // The wallpaper tint of the floating layer (0.2.0 Alpha 4): on by default,')
+    out.append('  // the most Oklab chroma it adds (light, dark).')
+    out.append('  bool tint_default;')
+    out.append('  double tint_amount[2];')
     out.append('};')
     out.append('struct Legacy { const char *from, *to; };')
     out.append('')
@@ -173,9 +177,11 @@ def write_header(pal, path):
             out.append(f"   {{true, {q['blur']}, {q['frost']}, {q['saturation']}, "
                        f"{{{q['brightness'][0]}, {q['brightness'][1]}}}, {{{q['tint'][0]}, {q['tint'][1]}}}, "
                        f"{q['lens_band']}, {q['lens_shift']}, {{{q['rim'][0]}, {q['rim'][1]}}}, {q['rim_width']}, "
-                       f"{q['key_range']}}}}},")
+                       f"{q['key_range']}}},")
         else:
-            out.append('   {false, 0, 0, 1, {1, 1}, {1, 1}, 0, 0, {0, 0}, 1, 0}},')
+            out.append('   {false, 0, 0, 1, {1, 1}, {1, 1}, 0, 0, {0, 0}, 1, 0},')
+        wt = f.get('wallpaper_tint', {'default': False, 'amount': [0, 0]})
+        out.append(f"   {'true' if wt['default'] else 'false'}, {{{wt['amount'][0]}, {wt['amount'][1]}}}}},")
     out.append('};')
     leg = pal['legacy']
     out.append('constexpr Legacy kLegacyStyles[] = {' +
@@ -619,7 +625,33 @@ def css_tokens(pal, family, mode, accent):
                 'sde_rim': rgba('#FFFFFF', 0.10 if dark else 0.65)}
     for key, value in controls.items():
         lines.append(f'@define-color {key} {value};')
+    # Links (0.2.0 Alpha 4): the accent as text, as sde::Theme's accent_text
+    # (moved towards the text colour until it keeps 4.5:1 on the surface and
+    # the window), and visited links a quieter shade of it; the upstream
+    # themes had Material blue and purple of their own.
+    link = link_color(t)
+    lines.append(f'@define-color sde_link {link};')
+    lines.append(f'@define-color sde_link_visited {visited_color(t, link)};')
     return '\n'.join(lines) + '\n', t
+
+
+def link_color(t):
+    for i in range(0, 21):
+        c = mix(t['accent'], t['text'], i * 0.05) if i else t['accent']
+        if contrast(c, t['surface']) >= 4.5 and contrast(c, t['background']) >= 4.5:
+            return c
+    return t['text']
+
+
+def visited_color(t, link):
+    """A visited link: the link a third of the way to the dimmed text, and
+    again towards the text until it keeps 4.5:1 (never the upstream purple)."""
+    c = mix(link, t['text_dim'], 0.35)
+    for i in range(0, 21):
+        v = mix(c, t['text'], i * 0.05) if i else c
+        if contrast(v, t['surface']) >= 4.5 and contrast(v, t['background']) >= 4.5:
+            return v
+    return t['text']
 
 
 def overlay(name, gtk, t, fam):
@@ -1132,6 +1164,14 @@ def recolor_css(text, up_accent, accent, neutral):
     return re.sub(r'\b(rgba?)\(\s*(\d+),\s*(\d+),\s*(\d+)(\s*,\s*[0-9.]+)?\)', rgb_sub, text)
 
 
+FLUENT_LIBADWAITA_WINDOW = '''
+/* SDE: an opaque window and a header bar in the title bar colour (0.2.0 Alpha 4). */
+window.background { background: @window_bg_color; }
+window.background headerbar { background-color: @headerbar_bg_color; color: @headerbar_fg_color; }
+window.background:backdrop headerbar { background-color: @headerbar_backdrop_color; }
+'''
+
+
 def build_fluent(pal, vendor, out):
     src = vendor / 'flat-remix-gtk/themes'
     fam = pal['families']['fluent']
@@ -1167,8 +1207,16 @@ def build_fluent(pal, vendor, out):
                                                                      t['accent'], neutral)))
             # Flat Remix's libadwaita style with every SDE Fluent color (alpha51:
             # libadwaita applications follow the whole palette, not only Mica).
+            # SDE imports this sheet into ~/.config/gtk-4.0/gtk.css, so it
+            # reaches every GTK 4 application at the user's priority, above
+            # the theme. 0.2.0 Alpha 4: the window opaque (Flat Remix's
+            # gradient left the header band 80 % opaque, so the desktop
+            # showed through behind the title of client-side decorated
+            # windows), the header bar in the title bar colour, and SDE's
+            # caption buttons after Flat Remix's orange, blue and red discs.
             write(lib / 'gtk.css', upstream + '\n/* SDE Fluent palette */\n' + defs
-                  + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam) + overlay('motion', 'gtk-4.0', t, fam))
+                  + libadwaita_colors(t, mode == 'dark') + libadwaita_shapes(fam) + FLUENT_LIBADWAITA_WINDOW
+                  + overlay('caption', 'gtk-4.0', t, fam) + overlay('motion', 'gtk-4.0', t, fam))
             write(d / 'index.theme', index_theme(name, f'SDE Fluent {mode.capitalize()} {pal["accent_labels"][accent]}',
                                                  'SDE Fluent, based on Flat Remix GTK and Flat Remix GNOME by Daniel Ruiz de Alegría',
                                                  mode == 'dark'))

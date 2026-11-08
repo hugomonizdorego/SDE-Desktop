@@ -115,6 +115,9 @@ void Panel::load_config() {
   // blinking colon option (rewritten once).
   if (clockface::migrate_config(cfg_)) cfg_.save();
   theme_ = Theme::from_config(cfg_);
+  // The panel and its popups are the floating layer (0.2.0 Alpha 4: with
+  // the wallpaper's tint).
+  theme_.use_floating_layer();
   theme_.apply_to_fltk();
   // Every saved setting (a tile pinned, the menu resized, ...) reloads the
   // config: keep the icons unless the icon theme or the dark mode that

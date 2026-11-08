@@ -223,13 +223,19 @@ Fl_Choice *Page::choice_row(const std::string &label, const std::vector<std::str
 }
 
 Slider *Page::slider_row(const std::string &label, double min, double max, double value,
-                         std::function<void(double)> changed, const std::string &hint) {
+                         std::function<void(double)> changed, const std::string &hint,
+                         std::function<std::string(double)> value_text) {
   auto *fn = keep(new std::function<void(double)>(std::move(changed)));
   Slider *sl = nullptr;
-  row(label, S(240), S(32), [&](int x, int y, int w, int h) {
+  // With its value the control is wider, so the track keeps its length.
+  row(label, S(240) + (value_text ? S(54) : 0), S(32), [&](int x, int y, int w, int h) {
     sl = new Slider(x, y, w, h);
     sl->bounds(min, max);
     sl->value(value);
+    if (value_text) {
+      sl->show_value(value_text);
+      sl->accessible_name(label);
+    }
     // Apply once the user lets go, not on every pixel of a drag.
     sl->when(FL_WHEN_RELEASE);
     sl->callback([](Fl_Widget *wdg, void *d) {

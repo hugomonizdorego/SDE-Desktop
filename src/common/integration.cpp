@@ -23,6 +23,7 @@
 #include "suite.h"
 #include "theme.h"
 #include "util.h"
+#include "wallpaper_colors.h"
 #include "wm.h"
 namespace sde {
 namespace {
@@ -434,6 +435,9 @@ vec4 backdrop_at(vec2 offset);
 
 const vec3 KEY_A = vec3(@KEY_A@);  // panel and popups (surface)
 const vec3 KEY_B = vec3(@KEY_B@);  // menus and notifications (menu_bg)
+// GTK 3 menus, drawn in the GTK theme's menu colour: the same glass as
+// KEY_B (they differ when the wallpaper tints SDE's surfaces).
+const vec3 KEY_C = vec3(@KEY_C@);
 const float DARK = @DARK@;
 const float SATURATION = @SATURATION@;
 const float BRIGHTNESS = @BRIGHTNESS@;
@@ -530,17 +534,28 @@ vec4 window_shader() {
 	back = clamp(mix(vec3(luma), back, SATURATION) * BRIGHTNESS, 0.0, 1.0);
 	// The surface color nearest this pixel, and how far it is from it.
 	vec4 c = texture(tex, texcoord / vec2(textureSize(tex, 0)));
-	vec3 da = c.rgb - KEY_A, db = c.rgb - KEY_B;
+	vec3 da = c.rgb - KEY_A, db = c.rgb - KEY_B, dc = c.rgb - KEY_C;
 	float ma = max(max(abs(da.r), abs(da.g)), abs(da.b));
 	float mb = max(max(abs(db.r), abs(db.g)), abs(db.b));
-	vec3 key = ma <= mb ? KEY_A : KEY_B;
+	float mc = max(max(abs(dc.r), abs(dc.g)), abs(dc.b));
+	// |drawn| is the surface color as the window drew it, |key| the glass
+	// it stands for.
+	vec3 drawn = ma <= mb ? KEY_A : KEY_B;
 	vec3 delta = ma <= mb ? da : db;
-	float content = clamp(min(ma, mb) / KEY_RANGE, 0.0, 1.0);
+	float m = min(ma, mb);
+	vec3 key = drawn;
+	if (mc < m) {
+		drawn = KEY_C;
+		delta = dc;
+		m = mc;
+		key = KEY_B;
+	}
+	float content = clamp(m / KEY_RANGE, 0.0, 1.0);
 	// SDE's fills on the glass (hover tints, cards, borders) are darker than
 	// the surface in a light theme and lighter in a dark one; what lies
 	// beyond the surface color (white glyphs and icon parts, a switch's
 	// knob; shadows in a dark theme) is content.
-	vec3 beyond = DARK > 0.5 ? key - c.rgb : c.rgb - key;
+	vec3 beyond = DARK > 0.5 ? drawn - c.rgb : c.rgb - drawn;
 	content = max(content, smoothstep(1.5 / 255.0, 6.0 / 255.0, max(max(beyond.r, beyond.g), beyond.b)));
 	// The frost: the surface color over the backdrop by the window's
 	// opacity, a little clearer in the lens, where no text is. Close to the
@@ -589,8 +604,10 @@ std::string write_liquid_shader(const Theme &t, int square) {
       text.replace(at, key.size() + 2, value);
   };
   put("THEME", t.gtk_theme);
-  put("KEY_A", glsl_vec3(t.surface));
+  // The floating layer's colours (with the wallpaper's tint when it has one).
+  put("KEY_A", glsl_vec3(t.layer_surface));
   put("KEY_B", glsl_vec3(t.menu_bg));
+  put("KEY_C", glsl_vec3(t.gtk_menu_bg));
   put("DARK", t.dark ? "1.0" : "0.0");
   put("SATURATION", glsl_number(m.saturation));
   put("BRIGHTNESS", glsl_number(m.brightness));
@@ -952,6 +969,15 @@ void announce_config_change(Display *dpy, const Config &cfg) {
     changed = AppearanceFiles();
   }
   apply_appearance_announce(dpy, changed);
+}
+
+void announce_wallpaper_change(Display *dpy, const Config &cfg) {
+  if (!wallpaper_colors_in_use(cfg)) {
+    announce_config_change(dpy, cfg);
+    return;
+  }
+  prepare_wallpaper_colors(cfg);
+  apply_appearance(dpy, cfg);
 }
 
 std::string compositor_report(const Config &cfg) {

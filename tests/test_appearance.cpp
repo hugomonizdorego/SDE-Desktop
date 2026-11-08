@@ -121,6 +121,37 @@ static void test_look() {
   CHECK_EQ(changes.front(), "family");
   CHECK_EQ(changes.back(), "animations");
   CHECK(look_changes(l, l).empty());
+
+  // 0.2.0 Alpha 4: the wallpaper's colour on the surfaces (the family's
+  // default until the switch is used) and as accent.
+  CHECK_EQ(l.wallpaper_tint, "auto");
+  CHECK(!l.wallpaper_accent && !l.tinted());
+  AppearanceLook f = l;
+  f.family = "fluent";
+  CHECK(f.tinted());
+  f.wallpaper_tint = "false";
+  CHECK(!f.tinted());
+  f.family = "graphite";
+  f.wallpaper_tint = "true";
+  CHECK(f.tinted());
+  f.wallpaper_accent = true;
+  Config c4 = cfg;
+  f.write(c4);
+  CHECK_EQ(c4.get("appearance", "wallpaper_tint"), "true");
+  CHECK_EQ(c4.get("appearance", "accent_from_wallpaper"), "true");
+  CHECK(AppearanceLook::from_config(c4).wallpaper_tint == "true" && AppearanceLook::from_config(c4).wallpaper_accent);
+  CHECK(AppearanceLook::decode(f.encode(), back) && back == f);
+  auto tint_changes = look_changes(l, f);
+  CHECK(tint_changes.size() == 2 && tint_changes[0] == "accent" && tint_changes[1] == "tint");
+  // The defaults add nothing to a configuration without them.
+  Config c5 = cfg;
+  l.write(c5);
+  CHECK(c5.get("appearance", "wallpaper_tint", "\x01") == "\x01");
+  CHECK(c5.get("appearance", "accent_from_wallpaper", "\x01") == "\x01");
+  // Older preview texts (without the new keys) keep the defaults.
+  CHECK(AppearanceLook::decode("family=glass;mode=dark", back) && back.wallpaper_tint == "auto" &&
+        !back.wallpaper_accent && back.tinted());
+  CHECK(AppearanceLook::decode("family=glass;tint=off", back) && back.wallpaper_tint == "false");
 }
 
 static void test_draft() {
@@ -153,6 +184,22 @@ static void test_draft() {
   d.set_blur_strength(0);
   CHECK(d.pending().blur_strength == 1);
   d.revert();
+
+  // 0.2.0 Alpha 4: the tint switch is on or off from then on; the accent
+  // from the wallpaper shows the accent it gives, and a swatch ends it.
+  d.set_wallpaper_tint(true);
+  CHECK(d.pending().wallpaper_tint == "true" && d.pending().tinted());
+  CHECK(d.changes().size() == 1 && d.changes()[0] == "tint");
+  d.set_wallpaper_tint(false);
+  CHECK(d.pending().wallpaper_tint == "false" && !d.pending().tinted());
+  d.set_wallpaper_accent(true, "green");
+  CHECK(d.pending().wallpaper_accent && d.pending().accent == "green");
+  d.set_accent("teal");
+  CHECK(!d.pending().wallpaper_accent && d.pending().accent == "teal");
+  d.set_wallpaper_accent(true, "no-such-accent");
+  CHECK(d.pending().wallpaper_accent && d.pending().accent == "teal");
+  d.revert();
+  CHECK(!d.dirty());
 
   // The previews get the chosen look; the configuration in use is not
   // written until Apply.
@@ -288,6 +335,7 @@ int main() {
   std::string tmp = dir;
   setenv("HOME", tmp.c_str(), 1);
   setenv("XDG_CONFIG_HOME", (tmp + "/config").c_str(), 1);
+  setenv("XDG_CACHE_HOME", (tmp + "/cache").c_str(), 1);  // the wallpaper colours' cache
   setenv("XDG_CONFIG_DIRS", (tmp + "/xdg").c_str(), 1);
   setenv("XDG_DATA_HOME", (tmp + "/data").c_str(), 1);
   setenv("XDG_RUNTIME_DIR", (tmp + "/run").c_str(), 1);

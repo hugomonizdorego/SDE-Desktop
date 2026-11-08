@@ -60,7 +60,13 @@ tooltip.background, tooltip.background.csd {
 tooltip.background label { color: @sde_text; }
 entry { caret-color: @sde_accent; }
 entry:focus { border-color: @sde_accent; }
-link, button.link, *:link { color: @sde_accent; }
+/* Links (0.2.0 Alpha 4): @sde_link is the accent as text (4.5:1), visited
+ * links a quieter shade of it. The selectors match Graphite's, whose own
+ * Material blue and purple had outweighed the accent until now. */
+link, *:link, button.link, button.link:link, button.link:link:focus, button.link:link:hover,
+button.link:link:active { color: @sde_link; }
+*:visited, button.link:visited, button.link:visited:focus, button.link:visited:hover,
+button.link:visited:active { color: @sde_link_visited; }
 /* Keyboard focus and drop targets (0.2.0). Graphite drew the focus ring at
  * 10 % and a tree view's drop target at 8 % of the text colour: hardly
  * visible, a drop target looked like a hovered row. GTK shows focus rings

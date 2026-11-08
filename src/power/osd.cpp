@@ -118,6 +118,7 @@ void osd_reload_theme() {
   Config cfg;
   cfg.load();
   g_theme = Theme::from_config(cfg);
+  g_theme.use_floating_layer();  // the OSD floats (0.2.0 Alpha 4: the wallpaper's tint)
   g_theme_loaded = true;
   if (g_osd) {
     g_osd->hide();

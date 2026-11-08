@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "i18n.h"
 #include "theme.h"
 
 namespace sde {
@@ -40,26 +41,67 @@ static void knob(Painter &p, double cx, double cy, double r, const Theme &t, boo
   p.circle(cx, cy, r - 1, face);
 }
 
+std::string percent_text(double percent) { return format(_("%d %%"), int(std::lround(percent))); }
+
+void Slider::show_value(std::function<std::string(double)> format) {
+  format_ = std::move(format);
+  update_name();
+  redraw();
+}
+
+void Slider::accessible_name(const std::string &name) {
+  name_ = name;
+  named_.clear();
+  update_name();
+}
+
+int Slider::value_width() const { return format_ ? S(54) : 0; }
+
+void Slider::update_name() {
+  // Sliders that were given neither keep the tooltip their program set.
+  if (!format_ && name_.empty()) return;
+  std::string named = !format_ ? name_ : name_.empty() ? value_text() : name_ + ": " + value_text();
+  if (named != named_) {
+    named_ = named;
+    copy_tooltip(named_.empty() ? nullptr : named_.c_str());
+  }
+}
+
+void Slider::value_damage() {
+  update_name();
+  Fl_Slider::value_damage();
+}
+
 void Slider::draw() {
   const Theme &t = active_theme();
-  Painter p(window()->w(), window()->h());
-  double track = Sd(4), kr = std::min(h() * 0.42, Sd(9));
-  double x0 = x() + kr + Sd(1), x1 = x() + w() - kr - Sd(1), cy = y() + h() / 2.0;
-  double range = maximum() - minimum();
-  double f = range != 0 ? (value() - minimum()) / range : 0;
-  f = std::max(0.0, std::min(1.0, f));
-  double kx = x0 + (x1 - x0) * f;
-  // The rest of the track: visible against the surface (WCAG 3:1 for UI
-  // parts would be heavy; a mid gray between the border and dimmed text).
-  p.fill_rounded(x0, cy - track / 2, x1 - x0, track, track / 2, t.border.mix(t.text_dim, t.dark ? 0.25 : 0.35));
-  if (active_r()) p.fill_rounded(x0, cy - track / 2, kx - x0, track, track / 2, t.accent);
-  knob(p, kx, cy, kr, t, active_r(), Fl::belowmouse() == this);
-  if (Fl::focus() == this) {
-    p.set(t.accent.alpha(0.85));
-    cairo_set_line_width(p.cr(), Sd(2));
-    cairo_new_sub_path(p.cr());
-    cairo_arc(p.cr(), kx, cy, kr + Sd(3), 0, 2 * M_PI);
-    cairo_stroke(p.cr());
+  // The value (0.2.0 Alpha 4) takes the right end; the track the rest.
+  int vw = value_width();
+  {
+    Painter p(window()->w(), window()->h());
+    double track = Sd(4), kr = std::min(h() * 0.42, Sd(9));
+    double x0 = x() + kr + Sd(1), x1 = x() + w() - vw - kr - Sd(1), cy = y() + h() / 2.0;
+    double range = maximum() - minimum();
+    double f = range != 0 ? (value() - minimum()) / range : 0;
+    f = std::max(0.0, std::min(1.0, f));
+    double kx = x0 + (x1 - x0) * f;
+    // The rest of the track: visible against the surface (WCAG 3:1 for UI
+    // parts would be heavy; a mid gray between the border and dimmed text).
+    p.fill_rounded(x0, cy - track / 2, x1 - x0, track, track / 2, t.border.mix(t.text_dim, t.dark ? 0.25 : 0.35));
+    if (active_r()) p.fill_rounded(x0, cy - track / 2, kx - x0, track, track / 2, t.accent);
+    knob(p, kx, cy, kr, t, active_r(), Fl::belowmouse() == this);
+    if (Fl::focus() == this) {
+      p.set(t.accent.alpha(0.85));
+      cairo_set_line_width(p.cr(), Sd(2));
+      cairo_new_sub_path(p.cr());
+      cairo_arc(p.cr(), kx, cy, kr + Sd(3), 0, 2 * M_PI);
+      cairo_stroke(p.cr());
+    }
+  }
+  if (vw) {
+    fl_font(FL_HELVETICA, t.font_size + 1);
+    fl_color((active_r() ? t.text : t.text_dim).fl());
+    fl_draw(value_text().c_str(), x() + w() - vw, y(), vw, h(),
+            Fl_Align(FL_ALIGN_RIGHT | FL_ALIGN_INSIDE | FL_ALIGN_CLIP), nullptr, 0);
   }
 }
 
@@ -73,8 +115,11 @@ int Slider::handle(int event) {
     Fl_Slider::handle(event);
     return 1;
   }
+  // Keys and the wheel move by a twentieth of the range: 5 of 0-100, 1 of a
+  // short range such as the blur strength's 1-12.
+  double step = std::max(1.0, std::round(std::fabs(maximum() - minimum()) / 20));
   if (event == FL_MOUSEWHEEL && Fl::event_inside(this)) {
-    value(clamp(value() - Fl::event_dy() * 5));
+    value(clamp(value() - Fl::event_dy() * step));
     set_changed();
     do_callback();
     redraw();
@@ -83,8 +128,8 @@ int Slider::handle(int event) {
   if (event == FL_KEYBOARD) {
     int k = Fl::event_key();
     double v = value();
-    if (k == FL_Left || k == FL_Down) v -= 5;
-    else if (k == FL_Right || k == FL_Up) v += 5;
+    if (k == FL_Left || k == FL_Down) v -= step;
+    else if (k == FL_Right || k == FL_Up) v += step;
     else if (k == FL_Home) v = minimum();
     else if (k == FL_End) v = maximum();
     else return Fl_Slider::handle(event);
@@ -93,6 +138,15 @@ int Slider::handle(int event) {
     do_callback();
     redraw();
     return 1;
+  }
+  // The pointer moves the knob along the track only (left of the value).
+  int vw = value_width();
+  if (vw && (event == FL_PUSH || event == FL_DRAG || event == FL_RELEASE)) {
+    if (event == FL_PUSH && Fl::visible_focus()) {
+      Fl::focus(this);
+      redraw();
+    }
+    return Fl_Slider::handle(event, x(), y(), w() - vw, h());
   }
   return Fl_Slider::handle(event);
 }

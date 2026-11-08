@@ -773,6 +773,7 @@ DBusHandlerResult on_message(DBusMessage *msg) {
 void load_theme() {
   g_cfg.load();
   g_theme = Theme::from_config(g_cfg);
+  g_theme.use_floating_layer();  // notifications float (0.2.0 Alpha 4: the wallpaper's tint)
   g_theme.apply_to_fltk();
   IconLoader::set_theme(g_cfg.get("appearance", "icon_theme", "auto"));
   IconLoader::clear_cache();
