@@ -1229,7 +1229,12 @@ void Panel::relayout() {
   int H = theme_.panel_height;
   icon_ = H >= S(48) ? S(28) : H >= S(40) ? S(24) : S(20);
   tray_icon_ = H >= S(40) ? S(20) : S(18);
-  start_w_ = H + S(46);
+  // 0.2.0 Alpha 4: the Start button's picture, text and style
+  // (start_button.h); the logo and "SDE" by default.
+  start_ = start_button::from_config(cfg_);
+  text_font(theme_.font_size, true);
+  start_layout_ = start_button::layout(start_, icon_, start_.shows_text() ? text_width(start_.label) : 0, Sd(1));
+  start_w_ = start_layout_.width;
   pin_w_ = H;
 
   // The Show Desktop strip sits at the very end of the panel (an easy
@@ -1511,16 +1516,22 @@ void Panel::draw() {
     {
       double r = cfg_.get("panel", "style", "full") == "full" ? S(6) : S(10);
       Color base = hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent;
+      const auto &L = start_layout_;
       if (glass) {
-        p.fill_gradient(S(6), S(5), start_w_ - S(8), H - S(10), r,
+        p.fill_gradient(L.box_x, S(5), L.box_w, H - S(10), r,
                         base.mix(Color::hex(0xFFFFFF), 0.18), base.mix(Color::hex(0x000000), 0.12));
-        p.glass_sheen(S(6), S(5), start_w_ - S(8), H - S(10), r, true);
+        p.glass_sheen(L.box_x, S(5), L.box_w, H - S(10), r, true);
       } else {
-        p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10), r, base);
+        p.fill_rounded(L.box_x, S(5), L.box_w, H - S(10), r, base);
       }
     }
-    p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14),
-            (H - icon) / 2.0, icon);
+    if (start_.shows_icon()) {
+      // The user's picture (Control Center > Panel > Start button), else
+      // the SDE logo.
+      cairo_surface_t *own = start_.icon.empty() ? nullptr : IconLoader::get({start_.icon}, icon);
+      p.image(own ? own : IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon),
+              start_layout_.icon_x, (H - icon) / 2.0, icon);
+    }
     bool searching = search_ && search_->is_open();
     if (search_box_shown()) {
       int bh = std::min(H - S(10), S(34));
@@ -1752,7 +1763,8 @@ void Panel::draw() {
 
   // Text on top of the cairo layer.
   text_font(t.font_size, true);
-  draw_text("SDE", S(20) + icon, 0, start_w_ - icon - S(28), H, t.on_accent);
+  if (start_.shows_text())
+    draw_text(start_.label, start_layout_.text_x, 0, start_layout_.text_w + S(2), H, t.on_accent);
   if (search_box_shown()) {
     int bh = std::min(H - S(10), S(34));
     bool searching = search_ && search_->is_open();
@@ -1809,6 +1821,12 @@ void Panel::qa_dump_panel() {
                                       "\t0\t0\t0\t0\t1\n"
                                 : std::string());
   if (cfg_.get_bool("notifications", "do_not_disturb", false)) text += "@dnd:on\t0\t0\t0\t0\t1\n";
+  // 0.2.0 Alpha 4: what the Start button shows.
+  text += std::string("@start-style:") + start_button::style_name(start_.style) + "\t0\t0\t0\t0\t1\n" +
+          "@start-label:" + (start_.shows_text() ? start_.label : std::string()) + "\t0\t0\t0\t0\t1\n" +
+          "@start-icon:" + (!start_.shows_icon() ? "none" : start_.icon.empty() ? "default" : start_.icon) +
+          "\t" + std::to_string(start_layout_.icon_x) + "\t0\t" + std::to_string(icon_) + "\t" +
+          std::to_string(h()) + "\t1\n";
   text += "@search-mode:" + std::to_string(search_mode_) + "\t0\t0\t0\t0\t1\n";
   // The tooltip the panel handed to Fl_Tooltip for the hovered part.
   if (!tip_.current().empty()) text += "@tooltip:" + tip_.current() + "\t0\t0\t0\t0\t1\n";

@@ -16,6 +16,7 @@
 #include "buffered_window.h"
 #include "config.h"
 #include "desktop_entry.h"
+#include "start_button.h"
 #include "status_model.h"
 #include "theme.h"
 #include "tooltip_text.h"
@@ -314,6 +315,10 @@ class Panel : public sde::BufferedWindow {
   PanelPopup *open_popup_ = nullptr;
   int monitor_x_ = 0, monitor_y_ = 0, monitor_w_ = 0, monitor_h_ = 0;
 
+  // The Start button's picture, text and style, and where they go (0.2.0
+  // Alpha 4, start_button.h).
+  sde::start_button::Settings start_;
+  sde::start_button::Layout start_layout_;
   // Layout (window coordinates).
   int start_w_ = 0, pin_w_ = 0, tasks_x_ = 0, tasks_end_ = 0, tray_x_ = 0, sni_x_ = 0, sni_w_ = 0,
       status_x_ = 0, status_w_ = 0, clock_x_ = 0, clock_w_ = 0, show_desktop_x_ = 0,

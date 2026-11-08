@@ -24,6 +24,7 @@ add_library(sde-common STATIC
   common/power.cpp
   common/process.cpp
   common/spawn.cpp
+  common/start_button.cpp
   common/suite.cpp
   common/theme.cpp
   common/touchpad.cpp
@@ -139,6 +140,7 @@ add_executable(sde-settings
   settings/network.cpp
   settings/clock.cpp
   settings/default_apps_page.cpp
+  settings/start_button_page.cpp
   settings/about_page.cpp
   # The overview hub and Users & Avatar (the Control Center).
   settings/hub.cpp

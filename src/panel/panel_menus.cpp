@@ -173,6 +173,8 @@ void Panel::start_context_menu() {
   m.separator();
   power_items(m);
   m.separator();
+  // 0.2.0 Alpha 4: its picture, text and style (Control Center > Panel).
+  m.item(_("Change the Start Button..."), settings("start-button"), {"preferences-desktop"});
   m.item(_("Panel Settings..."), settings("panel"), {"preferences-system-windows"});
   run_menu("start", m, Fl::event_x_root());
 }

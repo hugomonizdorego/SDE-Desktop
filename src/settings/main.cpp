@@ -1505,6 +1505,7 @@ void build_panel(Page *page) {
         _("Hidden: Super still opens the Start menu, which searches as you type."));
   }
   page->end_card();
+  build_start_button_card(page);  // start_button_page.cpp
 
   page->begin_card(_("Clock and status"));
   page->switch_row(_("24-hour clock"), g_cfg.get_bool("panel", "clock_24h", true),
@@ -3161,6 +3162,7 @@ const PageAlias kPageAliases[] = {
     {"wallpaper", "appearance", "wallpaper"}, {"wallpapers", "appearance", "wallpaper"},
     {"theme", "appearance", nullptr},     {"background", "appearance", "wallpaper"},
     {"icons", "desktop", nullptr},        {"start", "start-menu", nullptr},
+    {"start-button", "panel", "start-button"},
     {"menu", "start-menu", nullptr},      {"startmenu", "start-menu", nullptr},
     {"displays", "display", nullptr},     {"screen", "display", nullptr},
     {"monitor", "display", nullptr},      {"keyboard", "input", nullptr},
