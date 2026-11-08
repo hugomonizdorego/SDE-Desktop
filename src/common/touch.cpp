@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <sstream>
 
 #include "config.h"
@@ -179,6 +180,17 @@ int apply_touch_mapping(const Config &cfg, Display *dpy) {
     }
   }
   return int(screens.size());
+}
+
+bool large_touch_targets(const Config &cfg) {
+  const char *env = getenv("SDE_TOUCH_TARGETS");
+  if (env && *env) return std::string(env) != "0";
+  std::string v = lower(cfg.get("touchscreen", "large_targets", "auto"));
+  if (v == "true" || v == "1" || v == "yes") return true;
+  if (v == "false" || v == "0" || v == "no") return false;
+  static int present = -1;
+  if (present < 0) present = find_touch_screens().empty() ? 0 : 1;
+  return present == 1;
 }
 
 std::string onscreen_keyboard() {

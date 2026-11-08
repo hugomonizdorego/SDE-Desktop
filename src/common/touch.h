@@ -81,4 +81,10 @@ int apply_touch_mapping(const Config &cfg, Display *dpy = nullptr);
 // An on-screen keyboard that SDE can show: "onboard" when installed, else "".
 std::string onscreen_keyboard();
 
+// Panel and Start menu targets of at least 40 px at 100 % for fingers:
+// [touchscreen] large_targets = auto (when a touch screen is connected,
+// checked once per program), true or false; SDE_TOUCH_TARGETS=1 or 0 in the
+// environment decides for tests and screenshots.
+bool large_touch_targets(const Config &cfg);
+
 }  // namespace sde

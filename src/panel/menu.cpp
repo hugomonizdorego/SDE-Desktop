@@ -1193,7 +1193,9 @@ void AppMenu::layout_list() {
     }
     return;
   }
-  int row_h = compact_ ? S(32) : S(36), head_h = compact_ ? S(28) : S(32);
+  // Rows of at least 40 px at 100 % for fingers (docs/TOUCH.md).
+  int row_h = large_touch_targets(Panel::instance->config()) ? S(40) : compact_ ? S(32) : S(36);
+  int head_h = compact_ ? S(28) : S(32);
   int x = list_x_ + S(4), rw = list_w_ - S(14);
   std::vector<Item> rows;
   int y = 0;
