@@ -460,8 +460,10 @@ def main():
             print('Xvfb did not start; skipped')
             return 77
         t.spawn(args.wm, '--config-file', t.rc, '--sm-disable', log='wm.log')
-        if not check(wait(lambda: '_NET_SUPPORTING_WM_CHECK(WINDOW)' in t.root('_NET_SUPPORTING_WM_CHECK'), 8),
+        # Seconds on a loaded machine (ctest -j, a fresh font cache).
+        if not check(wait(lambda: '_NET_SUPPORTING_WM_CHECK(WINDOW)' in t.root('_NET_SUPPORTING_WM_CHECK'), 30),
                      'the window manager starts'):
+            print((t.tmp / 'wm.log').read_text(errors='replace')[-1500:], flush=True)
             return 1
         a, b, c = t.client('Alpha Window'), t.client('Bravo Window'), t.client('Charlie Window')
         if not check(all((a, b, c)), 'three test windows'):

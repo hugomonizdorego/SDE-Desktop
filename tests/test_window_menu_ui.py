@@ -102,8 +102,13 @@ class Test:
             wait(lambda: '_NET_SUPPORTING_WM_CHECK(WINDOW)' not in self.run('xprop', '-root').stdout, 3)
         env = dict(self.env, **extra)
         self.wm_proc = self.spawn(self.wm, '--config-file', self.rc, '--sm-disable', env=env, log='wm.log')
-        return wait(lambda: '_NET_SUPPORTING_WM_CHECK(WINDOW)' in
-                    self.run('xprop', '-root', '_NET_SUPPORTING_WM_CHECK').stdout, 8)
+        # Seconds on a loaded machine (ctest -j, a fresh font cache); what
+        # the window manager said when it does not come.
+        if wait(lambda: '_NET_SUPPORTING_WM_CHECK(WINDOW)' in
+                self.run('xprop', '-root', '_NET_SUPPORTING_WM_CHECK').stdout, 30):
+            return True
+        print((self.tmp / 'wm.log').read_text(errors='replace')[-1500:], flush=True)
+        return False
 
     # ------------------------------------------------------------ X helpers
     def prop(self, win, name):
