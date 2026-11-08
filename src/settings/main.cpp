@@ -1560,6 +1560,7 @@ void build_panel(Page *page) {
         _("Hidden: Super still opens the Start menu, which searches as you type."));
   }
   page->end_card();
+  build_start_button_card(page);  // start_button_page.cpp
 
   // 0.2.0 Alpha 4: one place for each setting. The clock and the date are
   // in Clock & Weather, the battery in Power, the notifications button in
@@ -3215,6 +3216,7 @@ const PageAlias kPageAliases[] = {
     {"wallpaper", "appearance", "wallpaper"}, {"wallpapers", "appearance", "wallpaper"},
     {"theme", "appearance", nullptr},     {"background", "appearance", "wallpaper"},
     {"icons", "desktop", nullptr},        {"start", "start-menu", nullptr},
+    {"start-button", "panel", "start-button"}, {"task-view", "panel", "task-view"},
     {"menu", "start-menu", nullptr},      {"startmenu", "start-menu", nullptr},
     {"displays", "display", nullptr},     {"screen", "display", nullptr},
     {"monitor", "display", nullptr},      {"keyboard", "input", nullptr},

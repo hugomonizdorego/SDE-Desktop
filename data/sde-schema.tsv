@@ -43,6 +43,7 @@ menu	height	int	0..20000	start-menu
 menu	size	enum	small|medium|large	start-menu
 menu	show_recently_added	bool		start-menu
 menu	show_most_used	bool		start-menu
+menu	recently_added_cleared	text
 menu	show_recent	bool
 menu	tiles	text
 menu	tiles_version	int	0..1000
@@ -84,6 +85,10 @@ panel	tray_overflow	enum	auto|always|never
 panel	tray_overflow_threshold	int	0..100
 panel	hide_duplicate_tray	bool		panel
 panel	pinned	text		panel
+panel	start_style	enum	both|icon|text	panel
+panel	start_label	text		panel
+panel	start_icon	text		panel
+panel	show_task_view	bool		panel
 
 desktop	icon_size	enum	small|medium|large
 desktop	sort	enum	name|size|type|modified

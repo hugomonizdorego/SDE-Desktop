@@ -921,7 +921,9 @@ void AppMenu::filter() {
   if (show_added_) {
     // The catalog keeps the files' times: no stat() of every entry here.
     std::vector<std::pair<long long, const DesktopEntry *>> fresh;
-    long long limit = epoch_now() - kRecentlyAdded;
+    // Only what was installed after the list was last cleared.
+    long long cleared = atoll(Panel::instance->config().get("menu", "recently_added_cleared", "0").c_str());
+    long long limit = std::max(epoch_now() - kRecentlyAdded, cleared);
     for (size_t i = 0; i < apps_->apps.size(); ++i)
       if (apps_->mtime[i] > limit) fresh.push_back({apps_->mtime[i], &apps_->apps[i]});
     std::stable_sort(fresh.begin(), fresh.end(),
@@ -1224,7 +1226,21 @@ void AppMenu::layout_list() {
     y += row_h;
   };
   if (category_ < 0 && !added_.empty()) {
+    int hy = y;
     heading(_("Recently added"));
+    // 0.2.0 Alpha 4: "Clear" empties the list until something new is
+    // installed ([menu] recently_added_cleared).
+    Item c;
+    c.kind = K_CLEAR_ADDED;
+    c.index = 0;
+    c.label = _("Clear");
+    text_font(theme_.font_size - 1, true);
+    c.w = text_width(c.label) + S(16);
+    c.h = head_h - S(6);
+    c.x = x + rw - c.w - S(2);
+    c.y = hy + S(3);
+    rows.push_back(c);
+    rows[rows.size() - 2].w = c.x - rows[rows.size() - 2].x - S(4);  // the heading stops before it
     for (size_t i = 0; i < added_.size(); ++i) row(added_[i], 1, int(i));
     y += S(4);
   }
@@ -1544,6 +1560,13 @@ void AppMenu::activate(const Item &it) {
       }
       return;
     case K_FOLDER_NAME: start_rename(it.group, true); return;
+    case K_CLEAR_ADDED:
+      // The applications listed now leave the list; ones installed later
+      // come in again.
+      Panel::instance->set_setting("menu", "recently_added_cleared", std::to_string(epoch_now()));
+      hover_ = selected_ = {};
+      filter();
+      break;
     case K_ROW:
     case K_TILE:
     case K_FOLDER_APP: launch(it); return;
@@ -2407,7 +2430,7 @@ void AppMenu::drag_scrollbar(int y) {
 void AppMenu::move_selection(int key) {
   auto selectable = [](Kind k) {
     return k == K_RAIL || k == K_FILTER || k == K_ROW || k == K_LETTER || k == K_JUMP ||
-           k == K_GROUP || tile_like(k) || k == K_FOLDER_NAME;
+           k == K_GROUP || tile_like(k) || k == K_FOLDER_NAME || k == K_CLEAR_ADDED;
   };
   build_items();
   const Item *cur = find(selected_);
@@ -3331,6 +3354,11 @@ void AppMenu::draw() {
             p.stroke_rounded(it.x + 1, it.y + S(4), it.w - 2, it.h - S(8), S(4), t.accent, Sd(2));
           break;
         }
+        case K_CLEAR_ADDED:
+          // "Clear": a flat button that shows itself when hovered or chosen.
+          if (hv || s) p.fill_rounded(it.x, it.y, it.w, it.h, it.h / 2.0, hv ? t.hover : t.accent.alpha(0.16));
+          if (s && keyboard_) p.stroke_rounded(it.x + 1, it.y + 1, it.w - 2, it.h - 2, (it.h - 2) / 2.0, t.accent, Sd(1.5));
+          break;
         case K_GROUP_REMOVE: {
           // An x; a round hover behind it.
           double cx = it.x + it.w / 2.0, cy = it.y + it.h / 2.0, k = Sd(4.5);
@@ -3612,6 +3640,10 @@ void AppMenu::draw() {
           draw_text(it.label, it.x, it.y, it.w, it.h, t.text_dim);
         }
         break;
+      case K_CLEAR_ADDED:
+        text_font(t.font_size - 1, true);
+        draw_text(it.label, it.x, it.y, it.w, it.h, t.accent_text, 1);
+        break;
       case K_LETTER:
         text_font(t.font_size + 1, true);
         draw_text(it.label, it.x + S(10), it.y, it.w - S(20), it.h, t.accent_text);
@@ -3848,6 +3880,7 @@ void AppMenu::qa_dump_menu() {
       case K_FOLDER: return "folder:" + it.label;
       case K_FOLDER_APP: return "folder-app:" + it.entry->name;
       case K_FOLDER_NAME: return "folder-name:" + it.label;
+      case K_CLEAR_ADDED: return "added-clear";
       default: return "";
     }
   };

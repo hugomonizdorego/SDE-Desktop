@@ -1,0 +1,37 @@
+SDE WM: no input method server for the window manager.
+
+Openbox opens the X input method of XMODIFIERS (IBus, Fcitx) for its key
+bindings, menus and prompts. XIM calls wait for the server's answer without
+a timeout. When IBus restarted (ibus restart, or its panel or XIM server
+crashing), the keymap change that followed made obt_keyboard_reload() call
+XDestroyIC() on the input context of the server that was gone, and it
+waited forever in _XimRead(): no window was mapped, moved or focused any
+more, the restarted SDE panel stayed unmapped, and the desktop looked frozen
+until the machine was switched off. Reproduced on Xvfb with ibus-daemon and
+its GTK panel; the backtrace was XIfEvent < _XimRead < XDestroyIC <
+obt_keyboard_shutdown < obt_keyboard_reload.
+
+The window manager only uses the local input method (Compose sequences) now
+(XSetLocaleModifiers("@im=none")), as the SDE panel does. XSetLocaleModifiers
+does not change the environment: programs started from the window manager
+keep XMODIFIERS and their input method.
+
+--- a/openbox/openbox.c
++++ b/openbox/openbox.c
+@@ -191,7 +191,15 @@
+     /* check for locale support */
+     if (!XSupportsLocale())
+         g_message(_("X server does not support locale."));
+-    if (!XSetLocaleModifiers(""))
++    /* SDE: the window manager takes keys only for its bindings, menus and
++       prompts, so it never connects to the user's input method server
++       (XMODIFIERS=@im=ibus, fcitx...), only to the local one (Compose).
++       XIM calls wait for the server without a timeout: when IBus restarted,
++       the keymap change that followed made obt_keyboard_reload() wait in
++       XDestroyIC() for the old server forever, and no window could be
++       mapped, moved or focused any more. Programs started from the window
++       manager keep XMODIFIERS. */
++    if (!XSetLocaleModifiers("@im=none"))
+         g_message(_("Cannot set locale modifiers for the X server."));
+ 
+     /* set the DISPLAY environment variable for any lauched children, to the

@@ -2,12 +2,21 @@
 // sde-sni-demo: a minimal StatusNotifierItem with a dbusmenu, used to test
 // the panel's AppIndicator support. Not installed.
 //
-//   sde-sni-demo [icon-name [id [title]]]
+//   sde-sni-demo [--no-activate] [--silent-menu] [--storm N] [--pixmap RRGGBB]
+//                [icon-name [id [title]]]
+//   --no-activate  no Activate method (like libappindicator): the panel shows
+//                  the menu instead
+//   --silent-menu  never answers AboutToShow and GetLayout (a hung program)
+//   --storm N      sends NewIcon N times right after registering
+//   --pixmap C     an IconPixmap (ARGB, a dot of colour C on transparent
+//                  pixels) and no IconName
 #include <FL/Fl.H>
 #include <cairo.h>
 #include <unistd.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -19,6 +28,22 @@ namespace {
 
 dbus::Bus *g_bus;
 std::string g_icon = "utilities-terminal", g_id = "sde-sni-demo", g_title = "SDE tray demo";
+bool g_no_activate = false, g_silent_menu = false;
+int g_storm = 0;
+long g_pixmap = -1;
+
+// A 32x32 ARGB32 pixmap in network byte order: a dot of |rgb|, transparent around it.
+std::vector<unsigned char> dot_pixmap(long rgb) {
+  std::vector<unsigned char> px(32 * 32 * 4, 0);
+  for (int y = 0; y < 32; ++y)
+    for (int x = 0; x < 32; ++x) {
+      double dx = x + .5 - 16, dy = y + .5 - 16;
+      if (dx * dx + dy * dy > 12 * 12) continue;
+      unsigned char *p = &px[size_t(y * 32 + x) * 4];
+      p[0] = 255, p[1] = (rgb >> 16) & 255, p[2] = (rgb >> 8) & 255, p[3] = rgb & 255;
+    }
+  return px;
+}
 
 void add_prop(dbus::Writer &dict, const char *key, const std::string &value, char type = 's') {
   dbus::Writer e(dict.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
@@ -91,9 +116,30 @@ DBusHandlerResult on_item(DBusMessage *m) {
     add_prop(dict, "Id", g_id);
     add_prop(dict, "Title", g_title);
     add_prop(dict, "Status", "Active");
-    add_prop(dict, "IconName", g_icon);
+    if (g_pixmap < 0) add_prop(dict, "IconName", g_icon);
     add_prop(dict, "Menu", "/MenuBar", 'o');
     add_bool(dict, "ItemIsMenu", false);
+    if (g_pixmap >= 0) {
+      // IconPixmap a(iiay): one 32x32 picture.
+      dbus::Writer e(dict.iter(), DBUS_TYPE_DICT_ENTRY, nullptr);
+      e.str("IconPixmap");
+      dbus::Writer v(e.iter(), DBUS_TYPE_VARIANT, "a(iiay)");
+      dbus::Writer list(v.iter(), DBUS_TYPE_ARRAY, "(iiay)");
+      dbus::Writer s(list.iter(), DBUS_TYPE_STRUCT, nullptr);
+      s.i32(32).i32(32);
+      auto px = dot_pixmap(g_pixmap);
+      DBusMessageIter arr;
+      dbus_message_iter_open_container(s.iter(), DBUS_TYPE_ARRAY, "y", &arr);
+      const unsigned char *data = px.data();
+      dbus_message_iter_append_fixed_array(&arr, DBUS_TYPE_BYTE, &data, int(px.size()));
+      dbus_message_iter_close_container(s.iter(), &arr);
+    }
+  } else if (member == "Activate" && g_no_activate) {
+    printf("item: Activate (refused)\n");
+    fflush(stdout);
+    dbus_message_unref(r);
+    g_bus->send(dbus::Bus::error(m, DBUS_ERROR_UNKNOWN_METHOD, "No Activate"));
+    return DBUS_HANDLER_RESULT_HANDLED;
   } else if (member == "Activate" || member == "SecondaryActivate" || member == "ContextMenu" ||
              member == "Scroll") {
     printf("item: %s\n", member.c_str());
@@ -109,6 +155,11 @@ DBusHandlerResult on_item(DBusMessage *m) {
 DBusHandlerResult on_menu(DBusMessage *m) {
   if (dbus_message_get_type(m) != DBUS_MESSAGE_TYPE_METHOD_CALL) return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
   std::string member = dbus_message_get_member(m);
+  if (g_silent_menu && (member == "GetLayout" || member == "AboutToShow")) {
+    printf("menu: %s (not answered)\n", member.c_str());
+    fflush(stdout);
+    return DBUS_HANDLER_RESULT_HANDLED;  // never replies
+  }
   DBusMessage *r = dbus_message_new_method_return(m);
   if (member == "GetLayout") {
     dbus::Writer w(r);
@@ -142,9 +193,17 @@ DBusHandlerResult on_menu(DBusMessage *m) {
 }  // namespace
 
 int main(int argc, char **argv) {
-  if (argc > 1) g_icon = argv[1];
-  if (argc > 2) g_id = argv[2];
-  if (argc > 3) g_title = argv[3];
+  std::vector<std::string> positional;
+  for (int i = 1; i < argc; ++i) {
+    if (!strcmp(argv[i], "--no-activate")) g_no_activate = true;
+    else if (!strcmp(argv[i], "--silent-menu")) g_silent_menu = true;
+    else if (!strcmp(argv[i], "--storm") && i + 1 < argc) g_storm = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--pixmap") && i + 1 < argc) g_pixmap = strtol(argv[++i], nullptr, 16);
+    else positional.push_back(argv[i]);
+  }
+  if (positional.size() > 0) g_icon = positional[0];
+  if (positional.size() > 1) g_id = positional[1];
+  if (positional.size() > 2) g_title = positional[2];
   g_bus = dbus::Bus::session();
   if (!g_bus) return 1;
   std::string name = "org.kde.StatusNotifierItem-" + std::to_string(getpid()) + "-1";
@@ -158,5 +217,13 @@ int main(int argc, char **argv) {
   printf("registered: %s\n", reply ? "yes" : "no (no watcher)");
   fflush(stdout);
   if (reply) dbus_message_unref(reply);
+  for (int i = 0; i < g_storm; ++i) {
+    // A program that announces a new icon over and over.
+    g_bus->send(dbus::signal("/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewIcon"));
+  }
+  if (g_storm) {
+    printf("sent %d NewIcon signals\n", g_storm);
+    fflush(stdout);
+  }
   for (;;) Fl::wait(1e20);
 }

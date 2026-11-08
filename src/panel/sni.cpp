@@ -26,23 +26,29 @@ const char *kWatcherPath = "/StatusNotifierWatcher";
 const char *kWatcherIface = "org.kde.StatusNotifierWatcher";
 const char *kItemIface = "org.kde.StatusNotifierItem";
 
-// Picks the largest pixmap of an a(iiay) icon list.
+// Picks a pixmap of an a(iiay) icon list: the largest up to 256 pixels,
+// else the smallest (up to 1024; an application may send only a large
+// one). Entries whose data is shorter than width x height x 4 are skipped.
 cairo_surface_t *pixmap_from(const dbus::Value &v) {
   const dbus::Value &list = v.inner();
   const dbus::Value *best = nullptr;
   int best_w = 0;
   for (auto &p : list.items) {
     if (p.items.size() < 3) continue;
-    int w = int(p.items[0].num());
-    if (w > best_w && w <= 256) {
+    int64_t w = p.items[0].num(), h = p.items[1].num();
+    const dbus::Value &px = p.items[2].inner();
+    size_t len = std::max(px.data.size(), px.items.size());
+    if (w <= 0 || h <= 0 || w > 1024 || h > 1024 || len < size_t(w * h * 4)) continue;
+    bool better = !best || (w <= 256 && (best_w > 256 || w > best_w)) || (best_w > 256 && w < best_w);
+    if (better) {
       best = &p;
-      best_w = w;
+      best_w = int(w);
     }
   }
   if (!best) return nullptr;
   int w = int(best->items[0].num()), h = int(best->items[1].num());
   auto bytes = best->items[2].bytes();
-  return argb_network_pixels(bytes.data(), bytes.size(), w, h, std::max(w, h));
+  return argb_network_pixels(bytes.data(), bytes.size(), w, h, std::min(256, std::max(w, h)));
 }
 
 // "_File" -> "File", "__" -> "_"; '&' is FLTK's shortcut marker.
@@ -67,6 +73,7 @@ std::string menu_label(const std::string &in) {
 SniHost::SniHost(std::function<void()> changed) : changed_(std::move(changed)) {}
 
 SniHost::~SniHost() {
+  Fl::remove_timeout(show_pending_menu, this);
   for (auto &i : items_) {
     if (i->pixmap) cairo_surface_destroy(i->pixmap);
     if (i->attention_pixmap) cairo_surface_destroy(i->attention_pixmap);
@@ -322,13 +329,22 @@ bool SniHost::is_hidden(const Item &item) const {
 }
 
 void SniHost::refresh(Item &item) {
+  if (item.reading) {
+    item.stale = true;
+    return;
+  }
+  item.reading = true;
+  item.stale = false;
   std::string service = item.service, path = item.path;
   dbus::get_all_properties(bus_, service, path, kItemIface, [this, service, path](const dbus::Value &props) {
     for (auto &i : items_) {
       if (i->service != service || i->path != path) continue;
-      if (!props.valid()) return;
-      apply_properties(*i, props);
-      notify_changed();
+      i->reading = false;
+      if (props.valid()) {
+        apply_properties(*i, props);
+        notify_changed();
+      }
+      if (i->stale) refresh(*i);
       return;
     }
   });
@@ -437,7 +453,10 @@ void SniHost::scroll(const Item &item, int delta) {
 }
 
 void SniHost::context_menu(const Item &item, int x, int y) {
-  if (!item.menu_path.empty() && item.menu_path != "/" && show_dbus_menu(item, x, y)) return;
+  if (!item.menu_path.empty() && item.menu_path != "/") {
+    request_menu(item, x, y);
+    return;
+  }
   DBusMessage *m = dbus::method(item.service, item.path, kItemIface, "ContextMenu");
   dbus::Writer(m).i32(x).i32(y);
   bus_->call_async(m, nullptr);
@@ -465,29 +484,70 @@ std::string menu_icon_file(const std::vector<uint8_t> &png) {
 }
 }  // namespace
 
-bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
+// The menu of one item, copied from the item when it was asked for: the item
+// may go away (its program quits or restarts) while the menu is open.
+struct SniHost::PendingMenu {
+  std::string service, path, menu_path, name;
+  int x = 0, y = 0;
+  dbus::Value layout;
+};
+
+void SniHost::request_menu(const Item &item, int x, int y) {
+  if (menu_open_) return;  // one menu at a time
   const char *iface = "com.canonical.dbusmenu";
+  unsigned serial = ++menu_serial_;
+  auto pm = std::make_shared<PendingMenu>();
+  pm->service = item.service;
+  pm->path = item.path;
+  pm->menu_path = item.menu_path;
+  pm->name = display_name(item);
+  pm->x = x;
+  pm->y = y;
+  // AboutToShow lets the program bring its menu up to date. Its answer is not
+  // waited for: GetLayout follows it on the same connection, so the program
+  // reads them in this order. Up to 0.2.0 Alpha 3.1 both calls blocked the
+  // panel (for up to 2 s when the program did not answer), and the menu ran
+  // inside the D-Bus handler of the click (see dbus::Bus::dispatch).
   DBusMessage *about = dbus::method(item.service, item.menu_path, iface, "AboutToShow");
   dbus::Writer(about).i32(0);
-  if (DBusMessage *r = bus_->call(about, 500)) dbus_message_unref(r);
-
+  bus_->call_async(about, nullptr, 1500);
   DBusMessage *get = dbus::method(item.service, item.menu_path, iface, "GetLayout");
   dbus::Writer(get).i32(0).i32(-1).strings({"type", "label", "enabled", "visible", "toggle-type",
                                              "toggle-state", "children-display", "icon-name",
                                              "icon-data"});
-  DBusMessage *reply = bus_->call(get, 1500);
-  if (!reply) return false;
-  auto args = dbus::read_args(reply);
-  dbus_message_unref(reply);
-  if (args.size() < 2) return false;
+  bus_->call_async(get, [this, pm, serial](DBusMessage *reply) {
+    if (serial != menu_serial_ || menu_open_) return;  // a newer click, or a menu is open
+    auto args = dbus::read_args(reply);
+    if (args.size() < 2) {
+      // No dbusmenu after all: the program may show a menu of its own.
+      DBusMessage *m = dbus::method(pm->service, pm->path, kItemIface, "ContextMenu");
+      dbus::Writer(m).i32(pm->x).i32(pm->y);
+      bus_->call_async(m, nullptr);
+      return;
+    }
+    pm->layout = args[1];
+    pending_menu_ = pm;
+    // Shown from the event loop, outside this handler.
+    Fl::add_timeout(0.0, show_pending_menu, this);
+  }, 2000);
+}
 
+void SniHost::show_pending_menu(void *data) {
+  auto *self = static_cast<SniHost *>(data);
+  std::shared_ptr<PendingMenu> pm = std::move(self->pending_menu_);
+  self->pending_menu_.reset();
+  if (!pm || self->menu_open_ || !Panel::instance) return;
+  const char *iface = "com.canonical.dbusmenu";
   std::deque<std::string> labels;  // stable storage for menu labels
   std::vector<Fl_Menu_Item> menu;
   // 0.2: the items' own icons (icon-name, or icon-data PNG bytes), by index.
   std::vector<std::pair<size_t, std::string>> icons;
+  // A program can send any layout: at most 500 entries are shown.
+  const size_t kMaxEntries = 500;
   std::function<void(const dbus::Value &)> add_children = [&](const dbus::Value &node) {
     if (node.items.size() < 3) return;
     for (auto &child_v : node.items[2].items) {
+      if (menu.size() >= kMaxEntries) return;
       const dbus::Value &child = child_v.inner();
       if (child.items.size() < 3) continue;
       int id = int(child.items[0].num());
@@ -522,25 +582,29 @@ bool SniHost::show_dbus_menu(const Item &item, int x, int y) {
       }
     }
   };
-  add_children(args[1].inner());
-  if (menu.empty()) return false;
+  add_children(pm->layout.inner());
+  if (menu.empty()) {
+    DBusMessage *m = dbus::method(pm->service, pm->path, kItemIface, "ContextMenu");
+    dbus::Writer(m).i32(pm->x).i32(pm->y);
+    self->bus_->call_async(m, nullptr);
+    return;
+  }
   menu.push_back(Fl_Menu_Item{});
 
-  (void)y;
   // Icons by item address: set them once the vector holds every item, and
   // forget them when the menu is gone.
   for (auto &ic : icons) sde::set_menu_icon(&menu[ic.first], ic.second);
-  const Fl_Menu_Item *picked =
-      Panel::instance->popup_named("tray:" + display_name(item), menu.data(), x);
+  self->menu_open_ = true;
+  const Fl_Menu_Item *picked = Panel::instance->popup_named("tray:" + pm->name, menu.data(), pm->x);
+  self->menu_open_ = false;
   for (auto &ic : icons) sde::set_menu_icon(&menu[ic.first], "");
-  if (!picked || (picked->flags & FL_SUBMENU)) return true;
-  DBusMessage *ev = dbus::method(item.service, item.menu_path, iface, "Event");
-  if (!ev) return true;
+  if (!picked || (picked->flags & FL_SUBMENU)) return;
+  DBusMessage *ev = dbus::method(pm->service, pm->menu_path, iface, "Event");
+  if (!ev) return;
   {
     dbus::Writer w(ev);
     w.i32(int32_t(reinterpret_cast<intptr_t>(picked->user_data_))).str("clicked").variant_i32(0).u32(0);
   }
   dbus_message_set_no_reply(ev, TRUE);
-  bus_->send(ev);
-  return true;
+  self->bus_->send(ev);
 }

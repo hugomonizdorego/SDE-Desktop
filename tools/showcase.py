@@ -1685,6 +1685,45 @@ def panel_menu(s):
     s.key('Escape')
 
 
+@scene('Panel', [
+    ('panel-start-button', 'The Start button with a picture and text of your own (0.2.0 Alpha 4)'),
+    ('control-center-start-button', 'Control Center, Panel: the Start button\'s picture, text and style, with a '
+                                    'preview at the panel\'s size, and the Task View button')],
+       needs=['sde-panel', 'sde-settings'])
+def panel_start_button(s):
+    picture = Path(__file__).resolve().parents[1] / 'tests/fixtures/avatars/sample-sunrise.png'
+    if not picture.is_file():
+        raise SkipShot('no sample picture')
+    try:
+        s.write_config({'panel': {'start_icon': str(picture), 'start_label': 'Debion'}}, reload=True)
+        s.park_pointer()
+        s.shot('panel-start-button', quiet=0.5)
+        settings_page(s, 'start-button')
+        s.shot('control-center-start-button', quiet=0.6)
+        s.stop_scene_procs()
+        s.gone(SETTINGS_TITLE, 3)
+    finally:
+        s.write_config(reload=True)
+
+
+@scene('Start Menu', [('start-menu-recently-added', 'Start Menu: Recently added with its Clear button '
+                                                    '(0.2.0 Alpha 4)')], needs=['sde-panel'])
+def start_menu_recently_added(s):
+    apps = s.home / '.local/share/applications'
+    apps.mkdir(parents=True, exist_ok=True)
+    new = apps / 'org.debion.Notes.desktop'
+    new.write_text('[Desktop Entry]\nType=Application\nName=Notes\nComment=Write notes\nExec=true\n'
+                   'Icon=accessories-text-editor\nCategories=Office;\n')
+    try:
+        time.sleep(1.5)  # the catalog sees the new application
+        open_menu(s)
+        s.control('SDE Menu', 'added-clear', 5)
+        s.shot('start-menu-recently-added', quiet=0.6)
+    finally:
+        s.key('Escape')
+        new.unlink()
+
+
 @scene('Notifications', [
     ('notification-bubbles', 'Notifications: bubbles from Software Updater and a new USB drive'),
     ('panel-notifications', 'The notifications button: unread badge and the list grouped by application'),

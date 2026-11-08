@@ -75,7 +75,9 @@ const std::vector<Category> &categories() {
            {"desktop", N_("Desktop"), N_("Icons on the desktop"), "desktop", nullptr, {},
             "icons home trash computer", nullptr, false},
            {"panel", N_("Panel"), N_("Position, size and pinned apps"), "panel", nullptr, {},
-            "taskbar tray pinned autohide search box bar status icons indicators", nullptr, false},
+            "taskbar tray pinned autohide search box bar status icons indicators start button logo "
+            "picture label task view",
+            nullptr, false},
            {"start-menu", N_("Start Menu"), N_("Size, lists and your account"), "start-menu", nullptr,
             {}, "start menu applications recently added most used tiles", nullptr, false},
            {"action-center", N_("Action Center"), N_("Quick controls and greeting"), "action-center",

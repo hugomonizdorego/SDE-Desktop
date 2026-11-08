@@ -147,6 +147,17 @@ void Panel::context_menu_for(const Target &t) {
     case ACTION_CENTER:
       notifications_menu(true);
       break;
+    case TASK_VIEW: {
+      // 0.2.0 Alpha 4: the Task View button.
+      ContextMenu m;
+      m.item(_("Open Task View"), run({"sde-taskview"}), {"view-grid"});
+      m.item(_("Hide the Task View Button"), [this] { set_setting("panel", "show_task_view", "false"); },
+             {"view-hidden"});
+      m.separator();
+      m.item(_("Panel Settings..."), settings("panel"), {"preferences-system-windows"});
+      run_menu("task-view", m, Fl::event_x_root());
+      break;
+    }
     default:
       show_context_menu();
       break;
@@ -173,6 +184,8 @@ void Panel::start_context_menu() {
   m.separator();
   power_items(m);
   m.separator();
+  // 0.2.0 Alpha 4: its picture, text and style (Control Center > Panel).
+  m.item(_("Change the Start Button..."), settings("start-button"), {"preferences-desktop"});
   m.item(_("Panel Settings..."), settings("panel"), {"preferences-system-windows"});
   run_menu("start", m, Fl::event_x_root());
 }

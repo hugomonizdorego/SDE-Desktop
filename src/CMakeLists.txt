@@ -28,6 +28,7 @@ add_library(sde-common STATIC
   common/power.cpp
   common/process.cpp
   common/spawn.cpp
+  common/start_button.cpp
   common/suite.cpp
   common/theme.cpp
   common/touchpad.cpp
@@ -118,10 +119,15 @@ add_executable(sde-panel
   settings/default_apps.cpp
   panel/badge_model.cpp
   panel/badges.cpp)
-target_link_libraries(sde-panel PRIVATE sde-common)
+target_link_libraries(sde-panel PRIVATE sde-common ${X11_Xfixes_LIB})
 if(XCOMPOSITE_FOUND)
   target_link_libraries(sde-panel PRIVATE PkgConfig::XCOMPOSITE)
   target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XCOMPOSITE=1)
+endif()
+# 0.2.0 Alpha 4: ARGB tray icons are drawn with their alpha (tray.cpp).
+if(XCOMPOSITE_FOUND AND XDAMAGE_FOUND)
+  target_link_libraries(sde-panel PRIVATE PkgConfig::XDAMAGE)
+  target_compile_definitions(sde-panel PRIVATE SDE_HAVE_XDAMAGE=1)
 endif()
 
 # Desktop drag and drop model and file operations (unit tested).
@@ -145,6 +151,7 @@ add_executable(sde-settings
   settings/network.cpp
   settings/clock.cpp
   settings/default_apps_page.cpp
+  settings/start_button_page.cpp
   settings/about_page.cpp
   # The overview hub and Users & Avatar (the Control Center).
   settings/hub.cpp

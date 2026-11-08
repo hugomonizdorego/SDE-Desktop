@@ -487,8 +487,20 @@ void Bus::schedule_dispatch(DBusConnection *, DBusDispatchStatus status, void *d
 
 void Bus::dispatch(void *data) {
   auto *bus = static_cast<Bus *>(data);
+  // A handler may run a nested event loop: a popup menu shown from a reply,
+  // a modal dialog. The FLTK loop then calls this again for the next
+  // message, and libdbus cannot dispatch while its dispatch runs on the same
+  // thread: dbus_connection_dispatch() waits for its own dispatch lock
+  // forever. Up to 0.2.0 Alpha 3.1 that froze the panel with the menu's
+  // pointer and keyboard grabs held, and so the whole desktop, after a click
+  // on a tray item without an Activate method (tests/test_dbus_timeout.cpp).
+  // Messages that arrive meanwhile wait in libdbus's queue; the loop below
+  // dispatches them once the handler returns.
+  if (bus->dispatching_) return;
+  bus->dispatching_ = true;
   while (dbus_connection_dispatch(bus->conn_) == DBUS_DISPATCH_DATA_REMAINS) {
   }
+  bus->dispatching_ = false;
 }
 
 std::string Bus::unique_name() const {

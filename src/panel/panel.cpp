@@ -131,6 +131,8 @@ void Panel::load_config() {
     IconLoader::clear_cache();
   }
   autohide_ = cfg_.get_bool("panel", "autohide", false);
+  // The Task View button needs sde-taskview (looked for again after installs).
+  task_view_installed_ = !find_program("sde-taskview").empty();
   pinned_.clear();
   std::vector<std::string> seen_exec;
   for (auto &id : split(cfg_.get("panel", "pinned"), ';')) {
@@ -291,11 +293,23 @@ void Panel::setup() {
   if (cfg_.get_bool("panel", "hide_duplicate_tray", true))
     for (auto &name : split(cfg_.get("panel", "duplicate_tray_items", ""), ';'))
       if (!trim(name).empty()) hidden.push_back(lower(trim(name)));
-  tray_.reset(new Tray(xid));
+  tray_.reset(new Tray(xid, [this] {
+    status_signature_.clear();
+    status_update();
+  }));
+  tray_->set_background(theme_.surface.fl() >> 8);
   tray_->set_icon_size(tray_icon_);
   tray_->set_hidden(hidden);
   tray_->set_hide_layout_applets(cfg_.get_bool("panel", "show_keyboard", true));
   tray_->start();
+  // 0.2.0 Alpha 4: the tray's X events arrive before FLTK sees them (FLTK
+  // hides the DestroyNotify of foreign windows from Fl::add_handler; tray.h).
+  Fl::add_system_handler(
+      [](void *event, void *data) -> int {
+        auto *self = static_cast<Panel *>(data);
+        return self->tray_ && self->tray_->handle(*static_cast<const XEvent *>(event)) ? 1 : 0;
+      },
+      this);
   sni_.reset(new SniHost([this] {
     status_signature_.clear();  // icons can change without a new title
     status_update();
@@ -323,6 +337,12 @@ void Panel::setup() {
     }
     badges::Badges::get().notifications_changed();
     badges_changed(data);
+    bool task_view = !find_program("sde-taskview").empty();
+    if (task_view != self->task_view_installed_) {
+      self->task_view_installed_ = task_view;
+      self->relayout();
+      self->redraw();
+    }
   }, this);
   TouchpadMonitor::get().start([this] { touchpad_activity(); },
                                [this] {
@@ -931,6 +951,8 @@ std::string Panel::tooltip_for(const Target &t) const {
     return _("Clock and alarms · Super+C opens the calendar");
   } else if (t.kind == SHOW_DESKTOP) {
     return _("Show Desktop · Super+D");
+  } else if (t.kind == TASK_VIEW) {
+    return _("Task View · Super+Tab");
   } else if (t.kind == START) {
     return _("Start · Super");
   } else if (t.kind == TASK && t.index >= 0 && t.index < int(tasks_.size())) {
@@ -978,6 +1000,9 @@ bool Panel::target_rect(const Target &t, int &x, int &w) const {
     case SHOW_DESKTOP:
       x = show_desktop_x_, w = show_desktop_w_;
       return true;
+    case TASK_VIEW:
+      x = task_view_x_, w = task_view_w_;
+      return task_view_w_ > 0;
     case NOTIFY:
       x = notify_x_, w = notify_w_;
       return notify_w_ > 0;
@@ -1224,7 +1249,12 @@ void Panel::relayout() {
   int H = theme_.panel_height;
   icon_ = H >= S(48) ? S(28) : H >= S(40) ? S(24) : S(20);
   tray_icon_ = H >= S(40) ? S(20) : S(18);
-  start_w_ = H + S(46);
+  // 0.2.0 Alpha 4: the Start button's picture, text and style
+  // (start_button.h); the logo and "SDE" by default.
+  start_ = start_button::from_config(cfg_);
+  text_font(theme_.font_size, true);
+  start_layout_ = start_button::layout(start_, icon_, start_.shows_text() ? text_width(start_.label) : 0, Sd(1));
+  start_w_ = start_layout_.width;
   pin_w_ = H;
 
   // The Show Desktop strip sits at the very end of the panel (an easy
@@ -1385,6 +1415,14 @@ void Panel::relayout() {
       search_w_ = H;
   }
   int lead = search_w_ ? search_x_ + search_w_ : start_w_;
+  // 0.2.0 Alpha 4: Task View (sde-taskview: the workspaces and their
+  // windows, Super+Tab) after the search, when switched on and installed.
+  task_view_w_ = task_view_installed_ && cfg_.get_bool("panel", "show_task_view", false) &&
+                         tasks_end_ - lead > S(240)
+                     ? H
+                     : 0;
+  task_view_x_ = lead + (task_view_w_ ? S(2) : 0);
+  if (task_view_w_) lead = task_view_x_ + task_view_w_;
 
   // Keep the status area and running windows reachable on short panels.
   int room = std::max(0, tasks_end_ - lead - S(12));
@@ -1416,6 +1454,7 @@ Panel::Target Panel::hit(int x, int y) const {
   if (y < 0 || y >= h()) return t;
   if (x < start_w_) return {START, 0};
   if (search_w_ && x >= search_x_ && x < search_x_ + search_w_) return {SEARCH, 0};
+  if (task_view_w_ && x >= task_view_x_ && x < task_view_x_ + task_view_w_) return {TASK_VIEW, 0};
   for (size_t i = 0; i < pinned_.size(); ++i)
     if (x >= pinned_[i].x && x < pinned_[i].x + pin_w_) return {PINNED, int(i)};
   for (size_t i = 0; i < tasks_.size(); ++i)
@@ -1506,16 +1545,22 @@ void Panel::draw() {
     {
       double r = cfg_.get("panel", "style", "full") == "full" ? S(6) : S(10);
       Color base = hover_.kind == START ? t.accent.mix(t.text, 0.12) : t.accent;
+      const auto &L = start_layout_;
       if (glass) {
-        p.fill_gradient(S(6), S(5), start_w_ - S(8), H - S(10), r,
+        p.fill_gradient(L.box_x, S(5), L.box_w, H - S(10), r,
                         base.mix(Color::hex(0xFFFFFF), 0.18), base.mix(Color::hex(0x000000), 0.12));
-        p.glass_sheen(S(6), S(5), start_w_ - S(8), H - S(10), r, true);
+        p.glass_sheen(L.box_x, S(5), L.box_w, H - S(10), r, true);
       } else {
-        p.fill_rounded(S(6), S(5), start_w_ - S(8), H - S(10), r, base);
+        p.fill_rounded(L.box_x, S(5), L.box_w, H - S(10), r, base);
       }
     }
-    p.image(IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon), S(14),
-            (H - icon) / 2.0, icon);
+    if (start_.shows_icon()) {
+      // The user's picture (Control Center > Panel > Start button), else
+      // the SDE logo.
+      cairo_surface_t *own = start_.icon.empty() ? nullptr : IconLoader::get({start_.icon}, icon);
+      p.image(own ? own : IconLoader::get({"sde-logo", "start-here", "distributor-logo"}, icon),
+              start_layout_.icon_x, (H - icon) / 2.0, icon);
+    }
     bool searching = search_ && search_->is_open();
     if (search_box_shown()) {
       int bh = std::min(H - S(10), S(34));
@@ -1526,6 +1571,14 @@ void Panel::draw() {
       button_bg(search_x_, search_w_, {SEARCH, 0}, searching);
       double g = S(20);
       panel_search::glyph(p, search_x_ + (search_w_ - g) / 2.0, (H - g) / 2.0, g, t.text);
+    }
+    if (task_view_w_) {
+      // Task View: a window in front of another (0.2.0 Alpha 4).
+      button_bg(task_view_x_, task_view_w_, {TASK_VIEW, 0}, false);
+      double g = S(20), gx = task_view_x_ + (task_view_w_ - g) / 2.0, gy = (H - g) / 2.0, lw = Sd(1.6);
+      p.line(gx + g * 0.30, gy + g * 0.18, gx + g * 0.92, gy + g * 0.18, t.text_dim, lw);
+      p.line(gx + g * 0.92, gy + g * 0.18, gx + g * 0.92, gy + g * 0.62, t.text_dim, lw);
+      p.stroke_rounded(gx + g * 0.08, gy + g * 0.32, g * 0.66, g * 0.52, Sd(2.5), t.text, lw);
     }
 
     for (size_t i = 0; i < pinned_.size(); ++i) {
@@ -1747,7 +1800,8 @@ void Panel::draw() {
 
   // Text on top of the cairo layer.
   text_font(t.font_size, true);
-  draw_text("SDE", S(20) + icon, 0, start_w_ - icon - S(28), H, t.on_accent);
+  if (start_.shows_text())
+    draw_text(start_.label, start_layout_.text_x, 0, start_layout_.text_w + S(2), H, t.on_accent);
   if (search_box_shown()) {
     int bh = std::min(H - S(10), S(34));
     bool searching = search_ && search_->is_open();
@@ -1795,6 +1849,7 @@ void Panel::qa_dump_panel() {
            std::to_string(H) + "\t1\n";
   };
   std::string text = line("start", 0, start_w_) + line("clock", clock_x_, clock_w_) +
+                     (task_view_w_ ? line("task-view", task_view_x_, task_view_w_) : std::string()) +
                      (search_w_ ? line(search_box_shown() ? "search" : "search-icon", search_x_,
                                        search_w_)
                                 : std::string()) +
@@ -1804,6 +1859,12 @@ void Panel::qa_dump_panel() {
                                       "\t0\t0\t0\t0\t1\n"
                                 : std::string());
   if (cfg_.get_bool("notifications", "do_not_disturb", false)) text += "@dnd:on\t0\t0\t0\t0\t1\n";
+  // 0.2.0 Alpha 4: what the Start button shows.
+  text += std::string("@start-style:") + start_button::style_name(start_.style) + "\t0\t0\t0\t0\t1\n" +
+          "@start-label:" + (start_.shows_text() ? start_.label : std::string()) + "\t0\t0\t0\t0\t1\n" +
+          "@start-icon:" + (!start_.shows_icon() ? "none" : start_.icon.empty() ? "default" : start_.icon) +
+          "\t" + std::to_string(start_layout_.icon_x) + "\t0\t" + std::to_string(icon_) + "\t" +
+          std::to_string(h()) + "\t1\n";
   text += "@search-mode:" + std::to_string(search_mode_) + "\t0\t0\t0\t0\t1\n";
   // The tooltip the panel handed to Fl_Tooltip for the hovered part.
   if (!tip_.current().empty()) text += "@tooltip:" + tip_.current() + "\t0\t0\t0\t0\t1\n";
@@ -1840,6 +1901,9 @@ void Panel::qa_dump_panel() {
       text += line("tray-item:" + SniHost::display_name(*items[i]),
                    sni_x_ + int(i) * (tray_icon_ + S(10)), tray_icon_ + S(10));
   }
+  // 0.2.0 Alpha 4: the XEmbed icons, in the window that holds them now
+  // (tests/test_tray.py).
+  if (tray_) text += tray_->qa_lines();
   // Taskbar buttons (alpha51 window previews).
   for (const auto &t : tasks_)
     if (t.w > 0)
@@ -1983,6 +2047,9 @@ int Panel::handle(int event) {
           break;
         case SHOW_DESKTOP:
           x11::set_showing_desktop(!x11::showing_desktop());
+          break;
+        case TASK_VIEW:
+          spawn_detached({"sde-taskview"});
           break;
         default:
           break;
@@ -2242,14 +2309,6 @@ void Panel::settings_changed() {
 }
 
 bool Panel::handle_x(const XEvent &e) {
-  bool tray_changed = false;
-  if (tray_ && tray_->handle(e, tray_changed)) {
-    if (tray_changed) {
-      status_signature_.clear();
-      status_update();
-    }
-    return true;
-  }
   Window root = RootWindow(fl_display, fl_screen);
   if (e.type == PropertyNotify && e.xproperty.window == root) {
     Atom a = e.xproperty.atom;

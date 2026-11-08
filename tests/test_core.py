@@ -236,7 +236,9 @@ class ControlCenter:
         if not wait(lambda: self.control(name), 10) or not origin:
             return False
         ox, oy = origin
-        for _ in range(40):
+        # Long pages (the Panel page with its Start button card) take more
+        # than a hundred wheel steps of 16 px at 800x600.
+        for _ in range(160):
             c = self.control(name)
             if c and c[4] == 1:
                 break

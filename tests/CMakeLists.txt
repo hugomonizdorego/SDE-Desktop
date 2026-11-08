@@ -298,6 +298,10 @@ target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
 # 0.2.0 Alpha 3.1: the Action Center's session buttons (order, logind's
 # answers, the second click, the glyphs).
+# 0.2.0 Alpha 4: the Start button's settings, text, layout and picture.
+add_executable(sde-start-button-tests test_start_button.cpp)
+target_link_libraries(sde-start-button-tests PRIVATE sde-common)
+add_test(NAME sde-start-button COMMAND sde-start-button-tests)
 add_executable(sde-session-actions-tests test_session_actions.cpp ../src/panel/session_actions.cpp)
 target_link_libraries(sde-session-actions-tests PRIVATE sde-common)
 add_test(NAME sde-session-actions COMMAND sde-session-actions-tests)
@@ -310,6 +314,23 @@ target_link_libraries(sde-preview-window PRIVATE ${X11_LIBRARIES})
 # (Force Close checks, showcase), and a pinger.
 add_executable(sde-frozen-client frozen_client_fixture.cpp)
 target_link_libraries(sde-frozen-client PRIVATE ${X11_LIBRARIES})
+# 0.2.0 Alpha 4: XEmbed tray icons that misbehave (ARGB, frozen, dying,
+# re-embedding storms, bogus dock requests) for tests/test_tray.py.
+add_executable(sde-tray-client tray_client_fixture.cpp)
+target_link_libraries(sde-tray-client PRIVATE ${X11_LIBRARIES})
+# The panel's tray with those icons, misbehaving StatusNotifierItems
+# (sde-sni-demo) and IBus when it is installed; every check also asks that
+# the panel answers _NET_WM_PING at once and holds no grab.
+if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  set(SDE_TRAY_TEST_WM "")
+  if(SDE_BUILD_COMPONENTS)  # SDE WM must keep working while IBus restarts
+    set(SDE_TRAY_TEST_WM --wm "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-wm")
+  endif()
+  add_test(NAME sde-panel-tray COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_tray.py $<TARGET_FILE:sde-panel> ${CMAKE_CURRENT_BINARY_DIR}
+    ${SDE_TRAY_TEST_WM})
+  set_tests_properties(sde-panel-tray PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
+endif()
 # Force Close: which processes may be ended, the watchdog's decisions and
 # the launch records (no display).
 add_executable(sde-force-close-tests test_force_close.cpp)

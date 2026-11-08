@@ -1,7 +1,9 @@
-# SDE Panel: battery indicator and clock
+# SDE Panel
 
-How the panel's battery icon and clock behave since 0.2.0 Alpha 2, which
-settings change them and how they are tested. The code is in
+How parts of the panel behave, which settings change them and how they are
+tested: the battery icon and the clock (since 0.2.0 Alpha 2), the session
+buttons, windows that do not respond, badges, and since 0.2.0 Alpha 4 the
+tray, the Start button and the Task View button. The battery code is in
 `src/panel/status_model.*` (display-free rules, unit tested),
 `src/panel/quick.cpp` (reading the battery), `src/panel/panel.cpp` (the icon
 on the panel), `src/common/tray_icons.cpp` (its drawing) and
@@ -238,3 +240,143 @@ windows of the application under `sde-wm` and reads the panel's QA dump:
 `@app-badge:<desktop ID>=<count>[:urgent][:progress <percent>]`,
 `@pin-badge:<desktop ID>=<count>:#<colour>` and
 `@task-badge:<window title>=<count>:#<colour>`.
+
+## Tray icons
+
+The tray shows two kinds of application icons: XEmbed icons (the System
+Tray Protocol: GtkStatusIcon, IBus on SDE, Wine, older Qt and Electron) in
+one host window that moves between the panel and the Tray flyout
+(`src/panel/tray.*`), and StatusNotifierItems (AppIndicator, KDE, Qt,
+Electron) that the panel draws itself (`src/panel/sni.*`, with the
+`org.kde.StatusNotifierWatcher` service). Since 0.2.0 Alpha 4 a tray
+program that misbehaves can no longer freeze the desktop, fill the tray or
+turn icons black.
+
+### What went wrong up to 0.2.0 Alpha 3.1
+
+Reproduced on Xvfb with ibus-daemon and its GTK panel and with fake tray
+programs (`tests/test_tray.py`):
+
+* **The whole desktop froze** after a click on a StatusNotifierItem without
+  an `Activate` method (libappindicator programs): the panel opened the
+  item's menu inside the D-Bus reply handler, the menu's event loop
+  dispatched the next session bus message, and libdbus waited for its own
+  dispatch lock forever, with the menu's pointer and keyboard grabs held.
+  Nothing on the screen took input any more.
+* **The window manager hung after IBus restarted** (`ibus restart`, or its
+  panel or XIM server crashing): SDE WM used the input method of
+  `XMODIFIERS` for its key bindings and waited in `XDestroyIC()` for the
+  IBus that was gone, so no window could be mapped, moved or focused, and a
+  restarted panel stayed invisible.
+* **Icons disappeared**: FLTK hides the `DestroyNotify` of foreign windows
+  from `Fl::add_handler` handlers while an input context exists, so the
+  tray never saw an icon go. Every restart of IBus left an empty slot;
+  after two the icons went behind the overflow button, and a new icon that
+  got the old window id was refused as a duplicate.
+* **Icons turned black**: the X server copies a window of another depth
+  (an ARGB icon) into its parent without the alpha channel, so transparent
+  pixels were black; the host window was created black and kept the old
+  colour after a theme switch; when the panel crashed, the icons were
+  mapped as framed windows in the middle of the screen.
+* Opening an item's menu blocked the panel for up to 2 s when the program
+  did not answer, and each `NewIcon` signal cost one property read.
+
+### How the tray works now
+
+* The tray's X events come through `Fl::add_system_handler`, before FLTK.
+* Dock requests are queued and handled in batches of 16, deduplicated and
+  checked: never the root window, the panel's own windows or a mapped
+  application window; a window inside another one only when it is an
+  XEmbed client (it has `_XEMBED_INFO`). At most 64 icons. A window that
+  docks more than 8 times in 3 seconds is docked once more 3 seconds later.
+  Requests on icons run under an error trap; the tray waits only for the X
+  server, never for a tray program.
+* A dock request for an embedded window only refreshes it; for a window id
+  that left the host it docks the new icon.
+* ARGB icons are redirected (XComposite) and drawn by the tray with their
+  alpha channel when they change (XDamage). The tray advertises the
+  panel's visual (`_NET_SYSTEM_TRAY_VISUAL`), so GTK and Qt make icons with
+  a ParentRelative background, which shows the host's colour.
+* The host starts in the theme's colour; a new colour repaints the host and
+  asks every icon to redraw.
+* When the panel dies, the X server puts the icons back on the root window
+  unmapped (XFixes save-set, as GTK's own sockets do); GTK then docks a new
+  plug in the restarted panel. An icon that something else unmaps while it
+  should show is mapped again (three times in ten seconds at most).
+* Only shown icons (`XEMBED_MAPPED`) take a slot; only changed geometry is
+  sent to icons.
+* StatusNotifierItems: every call is asynchronous; a menu is shown from the
+  event loop with a copy of the item's names (an item can go while its menu
+  is open); without a layout within 2 s the program is asked for its own
+  menu (`ContextMenu`). Property reads are coalesced per item. Pixmaps with
+  too little data are skipped; a picture sent only above 256 px is used.
+  At most 256 items and 500 menu entries.
+* `sde::dbus::Bus` never dispatches again while it dispatches: messages that
+  arrive during a handler's nested loop are delivered when it returns.
+* SDE WM uses only the local input method (Compose); programs it starts
+  keep `XMODIFIERS` (`suite/patches/sde-wm/0006-no-input-method-server.patch`).
+
+`SDE_TRAY_DEBUG=1` makes the panel log what the tray docks, refuses and
+undocks on stderr (the session log).
+
+### Tests
+
+* `tests/test_tray.py` (CTest `sde-panel-tray`, Xvfb and a private session
+  bus): with `sde-tray-client` (`tests/tray_client_fixture.cpp`) a GTK-like
+  icon and an ARGB icon and their colours, also after a theme switch; a
+  program that quits and comes back with the same window id; 300 icons
+  created and destroyed at once; 200 dock requests for one window; an icon
+  taken back and docked 30 times; a hung program; dock requests for the
+  root window, the panel, a missing window and an application window;
+  programs that die while docking. With `sde-sni-demo`: an item without
+  `Activate` (its menu, bus traffic while it is open, Escape), a menu that
+  is never answered, 3000 `NewIcon` signals, an ARGB pixmap. With IBus when
+  it is installed: two restarts, its panel killed, the SDE panel killed and
+  restarted; with `--wm` (CMake passes the SDE WM it built) the window
+  manager must still map the panel and a new window. After every step the
+  panel must answer `_NET_WM_PING` within 1.5 s and hold no grab.
+* `tests/test_dbus_timeout.cpp` (CTest `sde-dbus-timeouts`): a reply handler
+  with a blocking call and a nested loop while signals arrive.
+* The QA dump lists `@tray-icon:<class>:<depth>:<shown|hidden>` with the
+  icon's rectangle and `@tray-count:<n>`.
+
+## Start button
+
+The Start button shows the SDE logo and "SDE" unless changed in Control
+Center > **Panel** > **Start button** (`sde-settings --page start-button`,
+also *Change the Start Button...* in its right-click menu):
+
+| Key (`[panel]`) | Values |
+| --- | --- |
+| `start_style` | `both` (default), `icon`, `text` |
+| `start_label` | the text, at most 24 characters (default `SDE`; empty: the picture alone) |
+| `start_icon` | a prepared picture (default: the SDE logo) |
+
+**Choose a Picture...** opens the SDE file chooser for a PNG, JPEG or SVG
+picture. The page asks for a square picture of at least 64 × 64 pixels
+and says at which size the panel shows it (its icon size: 20, 24 or 28
+pixels at 100 %, depending on the panel's size). The centred square is cut
+out and stored at 128 × 128 next to sde.conf as
+`~/.config/sde/start-button-<time>.png` (a new name each time; older ones
+are removed); a picture under 64 × 64 or not square is used with a word
+about it. The preview is drawn with the panel's own layout
+(`src/common/start_button.*`) at the panel's size. **Reset to Default**
+removes the three keys and the stored picture. The panel follows every
+change at once; the logo and "SDE" keep the size of 0.2.0 Alpha 3.1 (within 2 pixels). The
+QA dump has `@start-style:`, `@start-label:` and `@start-icon:` (`default`,
+`none` or the picture's path).
+
+Tests: `tests/test_start_button.cpp` (CTest `sde-start-button`: styles, the
+text, the settings, the layout at 100 % and 200 %, the prepared picture);
+`tools/panel-smoke.py --only start-menu` (each style on the panel);
+`tools/showcase.py` scene `panel-start-button`.
+
+## Task View button
+
+With `[panel] show_task_view=true` (off by default; Control Center >
+Panel > **Task View**, `sde-settings --page task-view`) a Task View button
+follows the search. It runs `sde-taskview` (the workspaces and their
+windows, Super+Tab) and is shown only while that program is installed; the
+panel looks again when applications are installed. Its right-click menu
+opens Task View, hides the button or opens the panel settings. The QA dump
+names it `task-view`.
