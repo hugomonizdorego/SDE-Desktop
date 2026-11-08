@@ -683,7 +683,10 @@ def a4_panel_checks():
     # Task View: off by default, shown while sde-taskview is installed.
     stand_in=home/'bin/sde-taskview';marker=home/'taskview-ran'
     config(overflow=False,extra='[panel]\nshow_task_view=true\n');reload()
-    assert 'task-view' not in P(),'Task View without sde-taskview'
+    # Hidden without sde-taskview; an installed system (CI's) has it, and
+    # then the stand-in in home/bin only comes first on PATH.
+    if not shutil.which('sde-taskview',path=e['PATH']):
+        assert 'task-view' not in P(),'Task View without sde-taskview'
     stand_in.write_text(f'#!/bin/sh\necho ran >> {marker}\n');stand_in.chmod(0o755)
     config(overflow=False,extra='[panel]\nshow_task_view=true\nstart_label=SDE\n');reload()
     if W/scale>=1000:  # a small screen keeps its room for the taskbar
