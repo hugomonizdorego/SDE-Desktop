@@ -52,6 +52,10 @@ std::string mount_point_of(const std::string &path);
 // Every trash folder that exists: the home trash and those of the mounted
 // file systems (/proc/self/mountinfo, |mountinfo| for tests).
 std::vector<std::string> trash_folders(const std::string &mountinfo = "");
+// The mount table read instead of /proc/self/mountinfo from now on: the
+// unit tests use it, so that they never list or empty the trash of a real
+// drive.
+void set_mount_table(const std::string &mountinfo);
 
 // The .trashinfo text for |original| deleted at |when|; |topdir| non-empty:
 // the path relative to it (a topdir trash).

@@ -94,7 +94,15 @@ std::string escape_trash_path(const std::string &path) {
   return take(g_uri_escape_string(path.c_str(), "/", FALSE));
 }
 
+bool g_table_set = false;
+std::string g_table;
+
 }  // namespace
+
+void set_mount_table(const std::string &mountinfo) {
+  g_table_set = true;
+  g_table = mountinfo;
+}
 
 std::string home_trash() { return data_home() + "/Trash"; }
 
@@ -172,7 +180,10 @@ std::vector<std::string> trash_folders(const std::string &mountinfo_in) {
   };
   add(home_trash());
   std::string mountinfo = mountinfo_in;
-  if (mountinfo.empty()) read_file("/proc/self/mountinfo", mountinfo);
+  if (mountinfo.empty()) {
+    if (g_table_set) mountinfo = g_table;
+    else read_file("/proc/self/mountinfo", mountinfo);
+  }
   for (const auto &line : split(mountinfo, '\n')) {
     std::vector<std::string> f = split(line, ' ');
     if (f.size() < 5) continue;

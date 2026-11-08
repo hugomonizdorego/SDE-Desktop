@@ -505,3 +505,14 @@ if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
     ${CMAKE_CURRENT_SOURCE_DIR}/test_force_close_ui.py ${CMAKE_BINARY_DIR} ${SDE_FORCE_CLOSE_WM})
   set_tests_properties(sde-force-close-ui PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 240)
 endif()
+
+# 0.2.0 Alpha 4: Liria, SDE's own file manager (src/liria, docs/LIRIA.md):
+# its display-free core in a temporary home (locations, pins, addresses and
+# servers, the Trash, copy, move, merge and conflicts, rename, new items,
+# undo, history, the view model, preferences, Open With).
+if(TARGET liria-core)
+  add_executable(liria-tests test_liria.cpp)
+  target_include_directories(liria-tests PRIVATE ${PROJECT_SOURCE_DIR}/src/liria)
+  target_link_libraries(liria-tests PRIVATE liria-core)
+  add_test(NAME liria-core COMMAND liria-tests)
+endif()
