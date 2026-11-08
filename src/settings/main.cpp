@@ -3155,6 +3155,9 @@ const PageAlias kPageAliases[] = {
     {"open-with", "default-apps", nullptr}, {"browser", "default-apps", nullptr},
     {"mail", "default-apps", nullptr},    {"email", "default-apps", nullptr},
     {"terminal", "default-apps", nullptr},
+    // 0.2.0 Alpha 4: the cards that settings moved to.
+    {"status-icons", "panel", "status"},  {"scale", "display", "scale"},
+    {"interface-size", "display", "scale"},
 };
 
 // Page id for |name| (an id or an alias, any case), or "".

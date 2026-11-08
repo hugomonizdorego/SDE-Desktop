@@ -1939,23 +1939,23 @@ def control_center(s):
 
 PAGE_CAPTIONS = {
     'appearance': 'themes (Graphite, Fluent, Glass), light or dark, accent color, transparency, wallpaper',
-    'panel': 'panel style and position, search, clock and status icons',
+    'panel': 'status icons, with links to the pages of the clock, the battery and the notifications button',
     'desktop': 'desktop icons',
     'action-center': 'clock card, quick settings and what the Action Center shows',
-    'clock': 'Digital, LED or Analog clock, seconds and the blinking colon, time format and weather',
-    'notifications': 'Do Not Disturb and how long notifications stay',
-    'effects': 'animations and the compositor',
-    'display': 'monitors, resolution and scale',
+    'clock': 'Digital, LED or Analog clock, seconds, the blinking colon, 12 or 24 hours, the date and the weather',
+    'notifications': 'Do Not Disturb, how long notifications stay and the notifications button',
+    'effects': 'fading windows and menus, the Start menu\'s effects, low resource mode and the compositor',
+    'display': 'monitors, resolution and the interface size',
     'input': 'keyboard layouts and the mouse',
     'touchpad': 'tap to click, scrolling and speed',
     'sound': 'output and input devices and volume',
     'network': 'connections, Wi-Fi and proxy',
     'bluetooth': 'adapter and devices',
-    'power': 'the battery on the panel and its warnings, idle times, lid and power button',
+    'power': 'the battery icon on the panel, its label and warnings, idle times, lid and power button',
     'lock': 'screen lock',
     'suite': 'the DebION applications, sources and licenses',
     'default-apps': 'default applications for files and links',
-    'system': 'system information and maintenance',
+    'system': 'links to the power, lock screen, date and effects settings, and the system tools',
     'about': 'version, build and the development log',
     'start-menu': 'size, the lists and the account on the rail',
     'date-time': 'time zone and network time',
@@ -1971,8 +1971,10 @@ def control_center_images(run):
 
 
 # Pages shown scrolled to a card (sde-settings --page <alias>): Power at its
-# Battery card, with the battery's display on the panel (0.2 Alpha 2).
-PAGE_ANCHORS = {'power': 'battery'}
+# Battery card, with the battery's display on the panel (0.2 Alpha 2), the
+# Panel at its status icons and the links to the pages of the settings that
+# moved (0.2.0 Alpha 4).
+PAGE_ANCHORS = {'power': 'battery', 'panel': 'status-icons'}
 
 
 @scene('Control Center', control_center_images, needs=['sde-settings'])
