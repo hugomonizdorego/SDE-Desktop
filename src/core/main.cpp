@@ -40,6 +40,7 @@
 #include <ctime>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -278,6 +279,17 @@ void emit_changed(const std::vector<Key> &keys) {
 
 void collect_key(void *ud, const char *section, const char *key) {
   static_cast<std::vector<Key> *>(ud)->push_back({section, key});
+}
+
+// Stages a write; a key the schema does not know is written as text and
+// logged once (add it to data/sde-schema.tsv, with its page).
+void stage(const std::string &section, const std::string &key, const char *value) {
+  if (value && !sde_core_key_type(g.rust, section.c_str(), key.c_str())) {
+    static std::set<Key> told;
+    if (told.insert({section, key}).second)
+      log("[%s] %s is not in the schema (data/sde-schema.tsv): written as text", section.c_str(), key.c_str());
+  }
+  sde_core_stage(g.rust, section.c_str(), key.c_str(), value);
 }
 
 // ------------------------------------------------------------------ look
@@ -591,13 +603,13 @@ DBusHandlerResult settings_method(DBusMessage *msg, const std::string &member) {
       return DBUS_HANDLER_RESULT_HANDLED;
     }
     sde_core_stage_clear(g.rust);
-    sde_core_stage(g.rust, args[0].s.c_str(), args[1].s.c_str(), text.c_str());
+    stage(args[0].s, args[1].s, text.c_str());
     commit(msg, false, false);
   } else if (member == "Reset" && dbus_message_has_signature(msg, "ss")) {
     if (refused(msg)) return DBUS_HANDLER_RESULT_HANDLED;
     auto args = dbus::read_args(msg);
     sde_core_stage_clear(g.rust);
-    sde_core_stage(g.rust, args[0].s.c_str(), args[1].s.c_str(), nullptr);
+    stage(args[0].s, args[1].s, nullptr);
     commit(msg, false, false);
   } else if (member == "SetMany" && dbus_message_has_signature(msg, "a(ssv)a(ss)a{sv}")) {
     if (refused(msg)) return DBUS_HANDLER_RESULT_HANDLED;
@@ -609,10 +621,10 @@ DBusHandlerResult settings_method(DBusMessage *msg, const std::string &member) {
         reply_error(msg, "org.selviana.Core.Error.InvalidValue", "a value is a boolean, a number or a string");
         return DBUS_HANDLER_RESULT_HANDLED;
       }
-      sde_core_stage(g.rust, item.items[0].s.c_str(), item.items[1].s.c_str(), text.c_str());
+      stage(item.items[0].s, item.items[1].s, text.c_str());
     }
     for (const auto &item : args[1].items)
-      if (item.items.size() == 2) sde_core_stage(g.rust, item.items[0].s.c_str(), item.items[1].s.c_str(), nullptr);
+      if (item.items.size() == 2) stage(item.items[0].s, item.items[1].s, nullptr);
     const dbus::Value *appearance = args[2].get("appearance");
     commit(msg, appearance && appearance->boolean(), true);
   } else {
