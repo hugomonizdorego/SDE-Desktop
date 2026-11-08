@@ -49,8 +49,8 @@ std::string clean_label(const std::string &s) {
     if (ok && !(len == 1 && (c < 0x20 || c == 0x7F))) {
       out.append(s, i, len);
       ++chars;
-    } else if (ok && len == 1) {
-      out += ' ';  // a tab or a line break: a space
+    } else if (ok && (c == '\t' || c == '\n' || c == '\r')) {
+      out += ' ';  // a tab or a line break: a space; other control characters go
       ++chars;
     }
     i += ok ? len : 1;

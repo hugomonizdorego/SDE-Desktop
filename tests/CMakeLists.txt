@@ -250,6 +250,10 @@ target_link_libraries(sde-panel-status-tests PRIVATE sde-common)
 add_test(NAME sde-panel-status COMMAND sde-panel-status-tests)
 # 0.2.0 Alpha 3.1: the Action Center's session buttons (order, logind's
 # answers, the second click, the glyphs).
+# 0.2.0 Alpha 4: the Start button's settings, text, layout and picture.
+add_executable(sde-start-button-tests test_start_button.cpp)
+target_link_libraries(sde-start-button-tests PRIVATE sde-common)
+add_test(NAME sde-start-button COMMAND sde-start-button-tests)
 add_executable(sde-session-actions-tests test_session_actions.cpp ../src/panel/session_actions.cpp)
 target_link_libraries(sde-session-actions-tests PRIVATE sde-common)
 add_test(NAME sde-session-actions COMMAND sde-session-actions-tests)
