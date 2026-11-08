@@ -188,9 +188,12 @@ void MainWindow::apply_translucency() {
     x11::set_opacity(xid, t.opacity);
   } else {
     XDeleteProperty(fl_display, xid, x11::atom("_SDE_SURFACE"));
-    // Translucent themes: the window follows the transparency of the
-    // window frames (only over a blur; frame_opacity is 1 otherwise).
-    x11::set_opacity(xid, t.translucent ? t.frame_opacity : 1.0);
+    // Other translucent themes make the window manager's title bars
+    // translucent, never what a window shows. An X window has one opacity:
+    // Liria's own title bar cannot be translucent without its files, and
+    // the desktop's labels showed through the file names (glass-light
+    // without the OpenGL compositor). Liria stays opaque there.
+    x11::set_opacity(xid, 1.0);
   }
 }
 
