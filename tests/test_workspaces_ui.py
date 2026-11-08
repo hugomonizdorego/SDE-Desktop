@@ -74,7 +74,8 @@ class Test:
                              f'{os.environ["PATH"]}')
         self.rc = self.home / '.config/sde/openbox/rc.xml'
         shutil.copyfile(ROOT / 'data/openbox/rc.xml', self.rc)
-        (self.home / '.config/sde/sde.conf').write_text('[panel]\nwindow_previews=false\n')
+        # No pinned apps: Win+1 is the first window's button.
+        (self.home / '.config/sde/sde.conf').write_text('[panel]\nwindow_previews=false\npinned=\n')
         self.wm = args.wm
 
     def spawn(self, *cmd, log=None, env=None):
@@ -91,9 +92,12 @@ class Test:
         for n in ([display] if display else range(240, 300)):
             if Path(f'/tmp/.X{n}-lock').exists() or Path(f'/tmp/.X11-unix/X{n}').exists():
                 continue
-            self.spawn('Xvfb', f':{n}', '-screen', '0', '1280x800x24', '-nolisten', 'tcp')
+            xvfb = self.spawn('Xvfb', f':{n}', '-screen', '0', '1280x800x24', '-nolisten', 'tcp', log=f'xvfb-{n}.log')
             self.env['DISPLAY'] = f':{n}'
-            if wait(lambda: self.run('xprop', '-root', '_XKB_RULES_NAMES').returncode == 0, 6):
+            # Ours, not the server of a test that took the number at the
+            # same moment (ctest -j): it must still run.
+            if wait(lambda: self.run('xprop', '-root', '_XKB_RULES_NAMES').returncode == 0, 6) and \
+                    (time.sleep(0.3) or xvfb.poll() is None):
                 return True
         return False
 
@@ -275,17 +279,40 @@ def taskbar_checks(t, a, b):
     # with another key does not open it.
     def start_menu():
         return t.run('xdotool', 'search', '--onlyvisible', '--name', '^SDE Menu$').stdout.split()
-    if b'onRelease' in Path(t.wm).read_bytes():
-        t.activate(a)
-        t.key('super+F12')
-        time.sleep(1.0)
-        check(not start_menu(), 'Win with another key does not open the Start menu')
-        t.key('super')
-        check(bool(wait(start_menu, 5)), 'Win alone opens the Start menu')
-        t.key('Escape')
-        wait(lambda: not start_menu(), 5)
-    else:
-        print('skip  Win alone: the window manager has no SDE patch 0007', flush=True)
+    # An SDE WM of this tree (patches 0006 and 0007 come together). Another
+    # window manager opens the Start menu as soon as Win goes down, and the
+    # menu then takes the keys of Win+1 and Win+T too.
+    if b'sde-window-menu' not in Path(t.wm).read_bytes():
+        print('skip  Win alone, Win+1, Win+T: the window manager has no SDE patch 0007', flush=True)
+        return
+    t.activate(a)
+    t.key('super+F12')
+    time.sleep(1.0)
+    check(not start_menu(), 'Win with another key does not open the Start menu')
+    t.key('super')
+    check(bool(wait(start_menu, 5)), 'Win alone opens the Start menu')
+    t.key('Escape')
+    wait(lambda: not start_menu(), 5)
+    # Win+1: the first button, as a click (the active window goes down,
+    # then comes back); Win+T goes through the buttons.
+    t.activate(a)
+    t.key('super+1')
+    check(wait(lambda: '_NET_WM_STATE_HIDDEN' in t.prop(a, '_NET_WM_STATE'), 5),
+          'Win+1 on the active window\'s button minimizes it')
+    t.key('super+1')
+    check(wait(lambda: '_NET_WM_STATE_HIDDEN' not in t.prop(a, '_NET_WM_STATE'), 5), 'Win+1 again brings it back')
+    panel = (t.run('xdotool', 'search', '--name', '^SDE Panel$').stdout.split() or [''])[0]
+    focus = lambda: t.run('xdotool', 'getwindowfocus').stdout.strip()
+    t.key('super+t')
+    check(bool(panel) and wait(lambda: focus() == panel, 5), f'Win+T gives the taskbar the keyboard ({focus()})')
+    t.key('Escape')
+    check(wait(lambda: f'0x{int(a, 16):x}' in t.root('_NET_ACTIVE_WINDOW') and focus() != panel, 5),
+          'Esc goes back to the window')
+    t.key('super+t')
+    wait(lambda: focus() == panel, 5)
+    t.key('Return')
+    check(wait(lambda: focus() != panel and f'0x{int(a, 16):x}' in t.root('_NET_ACTIVE_WINDOW'), 5),
+          'Enter opens the chosen button\'s window')
 
 
 def taskview_cards(t):

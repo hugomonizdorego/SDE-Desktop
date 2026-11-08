@@ -86,9 +86,12 @@ class Test:
         for n in ([display] if display else range(240, 300)):
             if Path(f'/tmp/.X{n}-lock').exists() or Path(f'/tmp/.X11-unix/X{n}').exists():
                 continue
-            self.spawn('Xvfb', f':{n}', '-screen', '0', '1280x800x24', '-nolisten', 'tcp')
+            xvfb = self.spawn('Xvfb', f':{n}', '-screen', '0', '1280x800x24', '-nolisten', 'tcp', log=f'xvfb-{n}.log')
             self.env['DISPLAY'] = f':{n}'
-            if wait(lambda: self.run('xprop', '-root', '_XKB_RULES_NAMES').returncode == 0, 6):
+            # Ours, not the server of a test that took the number at the
+            # same moment (ctest -j): it must still run.
+            if wait(lambda: self.run('xprop', '-root', '_XKB_RULES_NAMES').returncode == 0, 6) and \
+                    (time.sleep(0.3) or xvfb.poll() is None):
                 return True
         return False
 
