@@ -153,5 +153,6 @@ int main(int argc, char **argv) {
   panel->show();
   panel->setup();
   Fl::add_handler(Panel::x_event_handler);
+  Fl::add_system_handler(Panel::x_system_handler, nullptr);
   return Fl::run();
 }

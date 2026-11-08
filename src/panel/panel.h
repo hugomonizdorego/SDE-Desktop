@@ -146,6 +146,8 @@ class Panel : public sde::BufferedWindow {
 
   // Raw X event hook (installed with Fl::add_handler).
   static int x_event_handler(int event);
+  // DestroyNotify before FLTK sees it (Fl::add_system_handler, panel.cpp).
+  static int x_system_handler(void *event, void *data);
   static Panel *instance;
   // sde-panel --safe: no tray, StatusNotifier, D-Bus status or device
   // polling; started by sde-session after the panel keeps crashing.

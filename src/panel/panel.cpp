@@ -2355,6 +2355,17 @@ int Panel::x_event_handler(int event) {
   return instance->handle_x(*fl_xevent) ? (event == 0 ? 1 : 0) : 0;
 }
 
+// While FLTK has an X input context, it gives the DestroyNotify of other
+// programs' windows to no handler (its check for a crashed input method
+// returns first). The tray must still see its icons go away: it kept their
+// ids, which X gives to new windows, and moved those into icon slots and
+// took their property changes (a window minimized was not shown so).
+int Panel::x_system_handler(void *event, void *) {
+  const XEvent &e = *static_cast<const XEvent *>(event);
+  if (instance && e.type == DestroyNotify) instance->handle_x(e);
+  return 0;  // FLTK goes on as before
+}
+
 // ------------------------------------------------------------------ timers
 
 void Panel::clock_tick(void *data) {
