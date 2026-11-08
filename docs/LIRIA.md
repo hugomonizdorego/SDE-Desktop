@@ -116,7 +116,7 @@ Every section folds; what is folded and turned off is remembered.
   question, and so does Delete where there is no trash (read-only drives,
   network shares).
 - **Undo** (Ctrl+Z): the last 30 renames, moves, copies, new items and
-  deletions to the Trash.
+  deletions to the Trash, once the operation has ended.
 - **Properties** (Alt+Enter): name, type, location, size (counted in the
   background), dates, owner, permissions with "Allow running it as a
   program", and the application it opens with (Change…). For several items
@@ -305,8 +305,8 @@ Service keyring is optional.
 - `liria-ui` (`tests/test_liria_ui.py`): the window on Xvfb with xdotool:
   Home, opening, selecting, the context menus, a copy with the copy
   dialog, tabs, Back/Forward/Up, the address bar, rename, Trash and undo,
-  new folder, views, hidden items, search, 10 000 files, the taskbar state
-  and the end of the program.
+  new folder, a file dragged onto a folder, views, hidden items, search,
+  10 000 files, the taskbar state and the end of the program.
 - `liria-dbus` (`tests/test_liria_dbus.py`): FileManager1 through D-Bus
   activation on a bus of the test, `org.debion.Liria.Open`, the hand-off of
   a second `liria` and `--quit`.
