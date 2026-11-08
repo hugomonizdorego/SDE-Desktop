@@ -260,6 +260,10 @@ def run(s):
     check(not any(k.startswith('heading:network') for k in s.controls()), 'Network is a place, not a heading')
     check(not pins_file.exists(), 'Liria pins nothing by itself (no pin file written)')
     check(s.state('csd') == '1', 'the tabs are in the title bar')
+    if shutil.which('xprop'):
+        wm_state = sp.run(['xprop', '-id', s.state('xid'), '_NET_WM_STATE'], env=s.env, capture_output=True,
+                          text=True).stdout
+        check('SKIP_TASKBAR' not in wm_state, f'the window is on the taskbar: {wm_state.strip()}')
     s.shot('liria-home')
 
     # ---------------------------------------------------------------- open, select
@@ -426,8 +430,12 @@ def run(s):
     s.proc.terminate()
     s.proc.wait(10)
     (s.qa / 'Liria.txt').unlink()
-    s.start(docs)
-    s.expect('location', str(docs), 'Liria opens the folder given to it')
+    s.start(docs, home / 'Pictures', home / 'Music')
+    s.expect('location', str(docs), 'Liria opens the folders given to it')
+    tabs = sorted(k for k in s.controls() if k.startswith('tab:'))
+    check(tabs == ['tab:0:Documents', 'tab:1:Pictures', 'tab:2:Music'], f'as tabs, in their order: {tabs}')
+    s.key('ctrl+w', 'ctrl+w')
+    s.expect('tabs', '1', 'Ctrl+W closes tabs')
     s.key('ctrl+w')
     check(s.wait(lambda: s.proc.poll() is not None, 10), 'closing the last tab ends Liria')
     check(s.proc.poll() == 0, f'Liria exits with 0, not {s.proc.poll()}')

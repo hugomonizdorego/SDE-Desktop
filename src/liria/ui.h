@@ -293,6 +293,7 @@ class MainWindow : public BufferedWindow {
   friend class HomeView;
   std::vector<std::unique_ptr<Tab>> tabs_;
   int current_ = 0;
+  int bg_next_ = -1;  // where the next tab opened in the background goes
   TabBar *tabbar_ = nullptr;
   NavButton *back_ = nullptr, *forward_ = nullptr, *up_ = nullptr, *refresh_ = nullptr;
   AddressBar *addressbar_ = nullptr;

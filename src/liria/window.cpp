@@ -136,6 +136,21 @@ void MainWindow::show() {
     Atom motif = x11::atom("_MOTIF_WM_HINTS");
     XChangeProperty(fl_display, fl_xid(this), motif, motif, 32, PropModeReplace,
                     reinterpret_cast<unsigned char *>(&hints), 5);
+    // FLTK keeps borderless windows (popups) out of the taskbar with
+    // _NET_WM_STATE_SKIP_TASKBAR, set before the window is mapped: Liria
+    // is an application window and belongs there (and in Alt+Tab). Once
+    // mapped, the window manager owns the state: ask it (EWMH).
+    XEvent e{};
+    e.xclient.type = ClientMessage;
+    e.xclient.window = fl_xid(this);
+    e.xclient.message_type = x11::atom("_NET_WM_STATE");
+    e.xclient.format = 32;
+    e.xclient.data.l[0] = 0;  // _NET_WM_STATE_REMOVE
+    e.xclient.data.l[1] = long(x11::atom("_NET_WM_STATE_SKIP_TASKBAR"));
+    e.xclient.data.l[3] = 1;  // an application
+    XSendEvent(fl_display, RootWindow(fl_display, fl_screen), False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &e);
+    XFlush(fl_display);
   }
   setup_dnd();
   apply_translucency();
@@ -437,7 +452,15 @@ void MainWindow::new_tab(const std::string &location, bool activate, const std::
   if (t->location.empty()) t->location = kHome;
   t->history.visit(t->location);
   t->select_when_loaded = select;
-  int at = activate ? int(tabs_.size()) : current_ + 1;
+  // A tab opened in the background goes right of the current one and of
+  // the tabs opened from it before (as in web browsers): locations given
+  // together keep their order.
+  int at = int(tabs_.size());
+  if (!activate) {
+    at = current_ + 1;
+    if (bg_next_ > at && bg_next_ <= int(tabs_.size())) at = bg_next_;
+    bg_next_ = at + 1;
+  }
   tabs_.insert(tabs_.begin() + at, std::move(t));
   if (!activate && at <= current_) ++current_;
   if (activate) {
@@ -460,6 +483,7 @@ void MainWindow::close_tab(int i) {
   }
   bool was_current = i == current_;
   if (fileview_->editing.size()) fileview_->finish_rename(false);
+  bg_next_ = -1;
   tabs_.erase(tabs_.begin() + i);
   if (current_ >= i && current_ > 0) --current_;
   if (current_ >= int(tabs_.size())) current_ = int(tabs_.size()) - 1;
@@ -471,6 +495,7 @@ void MainWindow::close_tab(int i) {
 
 void MainWindow::select_tab(int i) {
   if (i < 0 || i >= int(tabs_.size())) return;
+  if (i != current_) bg_next_ = -1;
   if (fileview_->editing.size()) fileview_->finish_rename(true);
   addressbar_->stop_edit();
   if (i != current_ && tab().loading && is_local(tab().location)) {
