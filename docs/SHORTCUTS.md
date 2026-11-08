@@ -9,7 +9,8 @@ Ctrl+Alt+L, Ctrl+Alt+Left/Right, Alt+F1, Alt+F2).
 This page is the source of the printable shortcut sheet
 `docs/SDE-Keyboard-Shortcuts.pdf` (`tools/make-shortcut-sheet.py`),
 installed as `/usr/share/sde/doc/SDE-Keyboard-Shortcuts.pdf` and opened from
-Welcome, the Start menu's documents and Control Center > Workspaces.
+Welcome (the Keyboard Shortcuts tile), Control Center > Workspaces and the
+command `sde-windows sheet`.
 `tests/test_shortcuts.py` checks that every shortcut below is in SDE's
 shortcut list and, for the system shortcuts, bound in SDE WM.
 
