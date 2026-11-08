@@ -2,7 +2,7 @@
 [Desktop Entry]
 Type=Application
 Name=Keyboard Shortcuts
-Comment=The shortcuts of Windows on SDE, ready to print
+Comment=Windows shortcuts on SDE, to print
 Icon=preferences-desktop-keyboard-shortcuts
 X-SDE-Fallback-Icons=input-keyboard;preferences-desktop-keyboard
 Exec=sde-windows sheet
