@@ -270,8 +270,13 @@ target_link_libraries(sde-tray-client PRIVATE ${X11_LIBRARIES})
 # (sde-sni-demo) and IBus when it is installed; every check also asks that
 # the panel answers _NET_WM_PING at once and holds no grab.
 if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
+  set(SDE_TRAY_TEST_WM "")
+  if(SDE_BUILD_COMPONENTS)  # SDE WM must keep working while IBus restarts
+    set(SDE_TRAY_TEST_WM --wm "${CMAKE_BINARY_DIR}/session-stage${CMAKE_INSTALL_PREFIX}/bin/sde-wm")
+  endif()
   add_test(NAME sde-panel-tray COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
-    ${CMAKE_CURRENT_SOURCE_DIR}/test_tray.py $<TARGET_FILE:sde-panel> ${CMAKE_CURRENT_BINARY_DIR})
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_tray.py $<TARGET_FILE:sde-panel> ${CMAKE_CURRENT_BINARY_DIR}
+    ${SDE_TRAY_TEST_WM})
   set_tests_properties(sde-panel-tray PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 300)
 endif()
 # Force Close: which processes may be ended, the watchdog's decisions and

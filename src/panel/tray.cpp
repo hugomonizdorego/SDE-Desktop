@@ -110,6 +110,7 @@ Tray::Tray(Window panel, std::function<void()> changed) : changed_(std::move(cha
 Tray::~Tray() {
   Fl::remove_timeout(process_requests, this);
   Fl::remove_timeout(remap_check, this);
+  Fl::remove_timeout(retry_deferred, this);
   while (!icons_.empty()) undock(icons_.size() - 1, true);
   if (host_) XDestroyWindow(fl_display, host_);
   if (owner_) XDestroyWindow(fl_display, owner_);
@@ -335,7 +336,11 @@ bool Tray::dock(Window icon) {
   auto &recent = recent_[icon];
   if (t - recent.first > 3.0) recent = {t, 0};
   if (++recent.second > 8) {
-    if (recent.second == 9) TRAY_LOG("0x%lx docks again and again: ignored for a while", icon);
+    // A window that docks again and again is docked once more when it has
+    // calmed down (its last request is never lost), not at every request.
+    if (recent.second == 9) TRAY_LOG("0x%lx docks again and again: docked later", icon);
+    if (std::find(deferred_.begin(), deferred_.end(), icon) == deferred_.end()) deferred_.push_back(icon);
+    if (!Fl::has_timeout(retry_deferred, this)) Fl::add_timeout(3.0, retry_deferred, this);
     return false;
   }
   if (recent_.size() > 512)
@@ -442,6 +447,18 @@ void Tray::undock(size_t index, bool give_back) {
   } else {
     XSelectInput(fl_display, icon.win, NoEventMask);
   }
+}
+
+void Tray::retry_deferred(void *data) {
+  auto *self = static_cast<Tray *>(data);
+  for (Window w : self->deferred_) {
+    self->recent_.erase(w);
+    if (std::find(self->requests_.begin(), self->requests_.end(), w) == self->requests_.end())
+      self->requests_.push_back(w);
+  }
+  self->deferred_.clear();
+  if (!self->requests_.empty() && !Fl::has_timeout(process_requests, self))
+    Fl::add_timeout(0.0, process_requests, self);
 }
 
 // Icons that something else unmapped while they should be shown are mapped

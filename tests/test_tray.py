@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The panel's tray with tray programs that misbehave (0.2.0 Alpha 4, docs/PANEL.md).
 
-    dbus-run-session -- test_tray.py SDE-PANEL FIXTURE-DIR
+    dbus-run-session -- test_tray.py SDE-PANEL FIXTURE-DIR [--wm SDE-WM]
 
 On a private Xvfb (SDE_TEST_DISPLAY=N picks the display) and session bus:
 XEmbed icons from sde-tray-client (a GTK-like icon, an ARGB icon, a program
@@ -12,7 +12,8 @@ bogus dock requests) and StatusNotifierItems from sde-sni-demo (no Activate
 method, a menu that is never answered, a NewIcon storm, an ARGB pixmap).
 After each one the panel must still answer _NET_WM_PING at once, hold no
 grab, show exactly the icons that exist, in their colours. When IBus is
-installed, ibus-daemon with its GTK panel is restarted and its panel killed.
+installed, ibus-daemon with its GTK panel is restarted and its panel killed;
+with --wm the window manager must still map windows afterwards.
 Skipped (77) without Xvfb, xdotool, xprop, xwininfo or a session bus.
 """
 import os
@@ -26,6 +27,10 @@ import time
 
 panel_bin = Path(sys.argv[1]).resolve()
 fixtures = Path(sys.argv[2]).resolve()
+# --wm SDE-WM: the IBus checks run under this window manager as well.
+wm_bin = Path(sys.argv[sys.argv.index('--wm') + 1]).resolve() if '--wm' in sys.argv[3:-1] else None
+if wm_bin and not wm_bin.exists():
+    wm_bin = None
 for tool in ('Xvfb', 'xdotool', 'xprop', 'xwininfo', 'dbus-send'):
     if not shutil.which(tool):
         print(f'skipped: {tool} is missing')
@@ -273,21 +278,30 @@ try:
             lambda: f'after the storm: {tray_icons()} count {tray_count()}')
     print('PASS re-embedding storm: one icon left, panel responsive', flush=True)
 
-    # 6. The same window docked again and again, flipping XEMBED_MAPPED.
+    def log_says(name, text):
+        try:
+            return text in (root / (name + '.log')).read_text()
+        except FileNotFoundError:
+            return False
+
+    # 6. The same window docked again and again, flipping XEMBED_MAPPED; the
+    # tray docks a window that keeps asking again once it calms down.
     redock = spawn('qa-redock', tray_client, '--redock', '201', '--name', 'qa-redock')
-    time.sleep(1.5)
+    waitfor(lambda: log_says('qa-redock', 'done'), 'qa-redock did not finish', 20)
     responsive('repeated dock requests')
-    waitfor(lambda: len(tray_icons().get('qa-redock', [])) == 1, lambda: f'repeated docks: {tray_icons()}')
+    waitfor(lambda: len(tray_icons().get('qa-redock', [])) == 1 and tray_count() == 4,
+            lambda: f'repeated docks: {tray_icons()}')
     # 7. An icon taken back to the root window and docked again, 30 times.
     reparent = spawn('qa-reparent', tray_client, '--reparent', '30', '--name', 'qa-reparent')
-    time.sleep(2)
+    waitfor(lambda: log_says('qa-reparent', 'done'), 'qa-reparent did not finish', 20)
     responsive('icon taken back and docked again')
-    waitfor(lambda: len(tray_icons().get('qa-reparent', [])) == 1, lambda: f're-parented: {tray_icons()}')
+    waitfor(lambda: len(tray_icons().get('qa-reparent', [])) == 1 and tray_count() == 5,
+            lambda: f're-parented: {tray_icons()}')
     print('PASS repeated dock requests and re-parenting', flush=True)
 
     # 8. A program that stops reading X events.
     frozen = spawn('qa-frozen', tray_client, '--frozen', '--name', 'qa-frozen')
-    waitfor(lambda: 'qa-frozen' in tray_icons(), 'qa-frozen was not docked')
+    waitfor(lambda: 'qa-frozen' in tray_icons() and tray_count() == 6, 'qa-frozen was not docked')
     write_conf('dark')
     notify_config()
     time.sleep(0.8)
@@ -298,9 +312,9 @@ try:
 
     # 9. Dock requests for the root window, the panel, a missing window and an
     # application window: only the program's real icon is docked.
-    count = tray_count()
+    count = 6
     bogus = spawn('qa-bogus', tray_client, '--bogus', '--name', 'qa-bogus')
-    waitfor(lambda: 'qa-bogus' in tray_icons(), 'qa-bogus was not docked')
+    waitfor(lambda: 'qa-bogus' in tray_icons() and tray_count() == count + 1, 'qa-bogus was not docked')
     victim = run('xdotool', 'search', '--name', '^sde-tray-client victim$').stdout.split()
     assert victim, 'no victim window'
     tree = run('xwininfo', '-tree', '-id', victim[0]).stdout
@@ -367,16 +381,26 @@ try:
     print('PASS NewIcon storm and ARGB pixmap', flush=True)
     stop(pix)
 
-    # 14. IBus with its GTK panel (an XEmbed icon on SDE), when installed.
+    # 14. IBus with its GTK panel (an XEmbed icon on SDE), when installed;
+    # with --wm, SDE WM runs too, with XMODIFIERS=@im=ibus as in a session.
     ui = Path('/usr/libexec/ibus-ui-gtk3')
     if shutil.which('ibus-daemon') and shutil.which('ibus') and ui.exists() and os.environ.get('SDE_TEST_IBUS') != '0':
+        wm = None
+        if wm_bin:
+            rc = Path(__file__).resolve().parents[1] / 'data/openbox/rc.xml'
+            wm = sp.Popen([str(wm_bin), '--sm-disable', '--config-file', str(rc)],
+                          env=dict(env, XMODIFIERS='@im=ibus'), stdout=open(root / 'wm.log', 'w'),
+                          stderr=sp.STDOUT)
+            procs.append(wm)
+            waitfor(lambda: '_NET_SUPPORTING_WM_CHECK(WINDOW)' in run('xprop', '-root', '_NET_SUPPORTING_WM_CHECK').stdout,
+                    'the window manager did not start', 20)
         sockdir = tempfile.mkdtemp(prefix='sdeib', dir='/tmp')  # unix sockets need short paths
         ibus = spawn('ibus', 'ibus-daemon', '--xim', '--restart', '--panel', ui,
                      f'--address=unix:path={sockdir}/b')
         try:
             def ibus_icons():
                 return len(tray_icons().get('ibus-ui-gtk', [])) + len(tray_icons().get('ibus-ui-gtk3', []))
-            waitfor(lambda: ibus_icons() == 1, lambda: f'no IBus icon: {tray_icons()}', 30)
+            waitfor(lambda: ibus_icons() == 1, lambda: f'no IBus icon: {tray_icons()}', 60)
             for i in range(2):
                 run('ibus', 'restart')
                 time.sleep(3)
@@ -394,10 +418,22 @@ try:
             panel.kill()
             panel.wait()
             panel = spawn('panel2', panel_bin)
+            if wm:
+                # The window manager still maps windows: SDE WM up to 0.2.0
+                # Alpha 3.1 waited in XDestroyIC() for the IBus that had gone.
+                def viewable(name):
+                    w = run('xdotool', 'search', '--name', '^' + name + '$').stdout.split()
+                    return bool(w) and 'IsViewable' in run('xwininfo', '-id', w[0]).stdout
+                waitfor(lambda: viewable('SDE Panel'),
+                        'the restarted panel stays unmapped: the window manager hangs (input method?)', 20)
+                window = spawn('window', fixtures / 'sde-preview-window', 'QA Window', '2563EB', 'qa-window')
+                waitfor(lambda: viewable('QA Window'), 'a new window is not mapped: the window manager hangs', 20)
+                stop(window)
             waitfor(lambda: panel_window(refresh=True) and ibus_icons() == 1,
                     lambda: f'IBus icon after the panel restarted: {tray_icons()}', 30)
             responsive('panel restarted with IBus')
-            print('PASS IBus: two restarts, its panel killed, the SDE panel restarted', flush=True)
+            print('PASS IBus: two restarts, its panel killed, the SDE panel restarted' +
+                  (', the window manager still maps windows' if wm else ''), flush=True)
         finally:
             stop(ibus)
             shutil.rmtree(sockdir, ignore_errors=True)

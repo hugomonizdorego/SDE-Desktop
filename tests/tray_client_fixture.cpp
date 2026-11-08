@@ -283,6 +283,11 @@ int main(int argc, char **argv) {
         dock(icon, Window(e.xclient.data.l[2]));
     }
     double t = now();
+    if ((redock || reparent) && !redocks_left && !reparents_left) {
+      printf("done\n");  // the last request is sent
+      fflush(stdout);
+      redock = reparent = 0;
+    }
     if (embedded && t >= next_action && redocks_left > 0) {
       set_info(icon, redocks_left % 2 == 1);  // shown again by the last request
       dock(icon);

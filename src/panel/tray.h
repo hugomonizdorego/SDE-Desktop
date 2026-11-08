@@ -93,6 +93,8 @@ class Tray {
   void changed();
   std::vector<Icon> icons_;
   std::vector<Window> requests_;  // dock requests not handled yet
+  std::vector<Window> deferred_;  // windows that docked too often, docked again later
+  static void retry_deferred(void *data);
   std::vector<std::pair<Window, double>> gone_;  // icons that left, and when
   // Recent dock requests per window: a program that docks the same window
   // again and again is ignored for a while.
