@@ -132,7 +132,7 @@ static void test_bindings() {
   cfg.set("shortcuts", "emoji", "none");
   xml.clear();
   for (const auto &b : shortcuts::bindings(cfg)) xml += b.xml + "\n";
-  CHECK(xml.find("<keybind key=\"W-Return\"><action name=\"Execute\"><command>x-terminal-emulator") !=
+  CHECK(xml.find("<keybind key=\"W-Return\"><action name=\"Execute\"><command>sde-run --terminal") !=
         std::string::npos);
   CHECK(xml.find("sde-windows emoji") == std::string::npos);
   // Keys the user bound are left to the user.

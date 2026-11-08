@@ -52,7 +52,7 @@ class SuiteRegistryTest(unittest.TestCase):
         self.assertEqual(row[6], 'Selviana DE Project')
         # The copy engine's headers shared with the desktop are GPL-2.0-or-later.
         self.assertEqual(row[8], 'GPL-3.0-or-later AND GPL-2.0-or-later')
-        self.assertEqual(row[4], 'sde')
+        self.assertEqual(row[4], 'liria')  # its own package (docs/PACKAGING.md)
         self.assertEqual(versions['liria'], row[9])
         self.assertTrue(row[3].startswith('liria'))
 
@@ -111,21 +111,25 @@ class LiriaDataTest(unittest.TestCase):
                       read('data/metainfo/org.debion.Liria.metainfo.xml'))
 
     def test_install_rules_belong_to_the_liria_component(self):
+        # The program and its D-Bus services are installed by src/liria; its
+        # desktop entries, AppStream file, man page and icons are claimed by
+        # sde_app_data(liria ...) and its sudoers file is installed by the
+        # top CMakeLists.txt, all in the component of the liria package
+        # (docs/PACKAGING.md).
         rules = read('src/liria/CMakeLists.txt')
         installs = re.findall(r'install\((.*?)\)\n', rules, re.S)
-        self.assertGreaterEqual(len(installs), 6)
+        self.assertGreaterEqual(len(installs), 2)
         for rule in installs:
             self.assertIn('COMPONENT liria', rule)
-        for path in ['bin', 'applications', 'metainfo', 'man1', 'icons', 'dbus-1/services', 'sudoers.d']:
-            self.assertIn(path, rules.replace('${CMAKE_INSTALL_BINDIR}', 'bin')
-                          .replace('${CMAKE_INSTALL_MANDIR}/man1', 'man1')
-                          .replace('${CMAKE_INSTALL_SYSCONFDIR}/sudoers.d', 'sudoers.d'))
+        for path in ['bin', 'dbus-1/services']:
+            self.assertIn(path, rules.replace('${CMAKE_INSTALL_BINDIR}', 'bin'))
         top = read('CMakeLists.txt')
-        self.assertIn('PATTERN "liria.desktop" EXCLUDE', top)
-        self.assertIn('PATTERN "liria.*" EXCLUDE', top)
-        self.assertIn('PATTERN "org.debion.Liria.metainfo.xml" EXCLUDE', top)
-        self.assertIn('data/man/liria.1', top)
-        self.assertNotIn('data/sudoers/sde-liria', top)
+        self.assertIn('sde_app_data(liria DESKTOP liria.desktop METAINFO org.debion.Liria.metainfo.xml MAN liria.1 '
+                      'ICONS liria)', top)
+        sudoers = re.search(r'install\(FILES data/sudoers/sde-liria (.*?)\)\n', top, re.S)
+        self.assertIsNotNone(sudoers)
+        self.assertIn('sudoers.d', sudoers.group(1))
+        self.assertIn('COMPONENT liria', sudoers.group(1))
 
     def test_man_page_names_the_options_and_keys(self):
         man = read('data/man/liria.1')

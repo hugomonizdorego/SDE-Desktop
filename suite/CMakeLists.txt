@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-# The native suite (GTK forks built from pinned upstream sources) ended with
-# 0.2.0 Alpha 4: its last fork, Liria's Caja fork, gave way to the
-# from-scratch Liria, an SDE program like the others (package liria,
-# docs/PACKAGING.md). SDE_BUILD_NATIVE_SUITE is no longer read.
+# Since 0.2.0 Alpha 4 no application is built from a fork of another
+# project: Liria, the last one (from Caja), is SDE's own program now
+# (src/liria, package liria, docs/PACKAGING.md). Only the session
+# components below are built from pinned upstream sources.
 
 option(SDE_BUILD_COMPONENTS "Build the SDE session components (SDE WM, SDE compositor)" ON)
 set(SDE_COMPONENT_SOURCES "${PROJECT_SOURCE_DIR}/vendor/components" CACHE PATH "Prepared WM/compositor source trees")

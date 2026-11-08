@@ -142,12 +142,13 @@ def waitfor(fn, why, timeout=10.0):
     failure(why() if callable(why) else why)
 
 
-def tray_icons():
-    """@tray-icon:<class>:<depth>:<shown|hidden> -> (x, y, size), for the shown ones."""
+def tray_icons(hidden=False):
+    """@tray-icon:<class>:<depth>:<shown|hidden> -> (x, y, size), for the shown
+    ones (and those their program asked to hide, with |hidden|)."""
     out = {}
     for k, v in layout().items():
         m = re.match(r'@tray-icon:([^:]*):(\d+):(shown|hidden)$', k)
-        if m and m.group(3) == 'shown':
+        if m and (m.group(3) == 'shown' or hidden):
             out.setdefault(m.group(1), []).append((v[0], v[1], v[2]))
     return out
 
@@ -399,7 +400,12 @@ try:
                      f'--address=unix:path={sockdir}/b')
         try:
             def ibus_icons():
-                return len(tray_icons().get('ibus-ui-gtk', [])) + len(tray_icons().get('ibus-ui-gtk3', []))
+                # Docked once, shown or not: right after a restart IBus's
+                # panel may ask (XEMBED_MAPPED off) to hide its icon until its
+                # engine is up, and the tray follows that (seen in a container
+                # where IBus has no portal).
+                icons = tray_icons(hidden=True)
+                return len(icons.get('ibus-ui-gtk', [])) + len(icons.get('ibus-ui-gtk3', []))
             waitfor(lambda: ibus_icons() == 1, lambda: f'no IBus icon: {tray_icons()}', 60)
             for i in range(2):
                 run('ibus', 'restart')
