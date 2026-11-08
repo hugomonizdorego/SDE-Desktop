@@ -183,12 +183,12 @@ class Screen:
 
 
 def rows(s):
-    """pid -> {group, kernel, uid, name} of the rows."""
+    """pid -> {group, kernel, uid, name} of the rows ("@row:PID:group=...")."""
     out = {}
-    for k, v in s.items():
-        if k.startswith('row:'):
-            info = dict(kv.split('=', 1) for kv in v[5].split(',', 3))
-            out[int(k[4:])] = info
+    for k in s:
+        if k.startswith('@row:'):
+            pid, _, info = k[5:].partition(':')
+            out[int(pid)] = dict(kv.split('=', 1) for kv in info.split(',', 3))
     return out
 
 
@@ -253,7 +253,13 @@ def main(s):
             if check(st, 'searching %s finds no kernel thread: %s' % (name, list(rows(s.state()).items())[:3])):
                 pid = next(p for p, i in rows(st).items() if i['kernel'] == '1' and st['row:%d' % p][2] > 0)
                 s.click('row:%d' % pid, st)
-                st = s.wait(lambda st: '@selected:%d' % pid in st)
+
+                def selected(st):
+                    # The list is sorted by CPU and can move under the click:
+                    # any of the kernel threads it lists will do.
+                    sel = next((int(k[10:]) for k in st if k.startswith('@selected:')), 0)
+                    return sel in kthreads or rows(st).get(sel, {}).get('kernel') == '1'
+                st = s.wait(selected)
                 if check(st, 'the kernel thread was not selected'):
                     check(st['End Task'][4] == 0, 'End Task is offered for a kernel thread')
                     check(st['Properties'][4] == 1, 'Properties is not offered for a kernel thread')

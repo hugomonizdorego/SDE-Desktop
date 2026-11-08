@@ -505,9 +505,12 @@ class ProcessTable : public Fl_Widget {
                            on_screen ? rh : 0, r.count);
         continue;
       }
+      // The row's box (the six fields every SDE QA dump has), then what it
+      // shows in a line of its own.
       const ProcInfo &p = snap_->procs[size_t(r.proc)];
-      out += sde::format("row:%d\t%d\t%d\t%d\t%d\t1\tgroup=%d,kernel=%d,uid=%d,name=%s\n", p.pid, x(), ry,
-                         on_screen ? w() : 0, on_screen ? rh : 0, group, r.kernel ? 1 : 0, p.uid, r.name.c_str());
+      out += sde::format("row:%d\t%d\t%d\t%d\t%d\t1\t0\n", p.pid, x(), ry, on_screen ? w() : 0, on_screen ? rh : 0);
+      out += sde::format("@row:%d:group=%d,kernel=%d,uid=%d,name=%s\t0\t0\t0\t0\t1\t0\n", p.pid, group,
+                         r.kernel ? 1 : 0, p.uid, r.name.c_str());
     }
     out += sde::format("@selected:%d\t0\t0\t0\t0\t1\n", selected_pid_);
     return out;
@@ -931,9 +934,10 @@ class ProcessesPage : public Page {
   }
 
   // UI test hook: with SDE_PANEL_QA_DIR set, System-Monitor.txt lists the
-  // view ("@view:all=0,kernel=0,tree=0"), the group headers, each row
-  // ("row:PID") with its group, kernel flag and name, and the buttons with
-  // their state (name, x, y, w, h, active, as the other SDE programs do).
+  // view ("@view:all=0,kernel=0,tree=0,sort=CPU:descending"), the group
+  // headers, each row ("row:PID" with its box, "@row:PID:group=,kernel=,
+  // uid=,name=") and the buttons with their state (name, x, y, w, h,
+  // active, as the other SDE programs do).
   void qa_dump() {
     static const char *dir = getenv("SDE_PANEL_QA_DIR");
     if (!dir || !*dir || !window()) return;
