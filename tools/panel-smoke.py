@@ -1950,7 +1950,8 @@ def a52_checks():
         shot(png);close_menu()
     sub=None
     right_click_panel('start','start');sub=menu_items(sub=True);close_menu()
-    assert ['Power/Sleep','Power/Restart','Power/Shut Down']==[s[0] for s in sub],sub
+    # 0.2.0 Alpha 4: the Quick Link menu's "Shut Down or Log Out".
+    assert ['Shut Down or Log Out/'+n for n in ('Lock','Log Out...','Sleep','Restart','Shut Down')]==[s[0] for s in sub],sub
     right_click_panel('status:power','status:power');bat=menu_items();close_menu()
     assert any(l.startswith('Battery ') for l in labels(bat)) and 'Balanced' in labels(bat),bat
     # The empty panel: the generic menu.
