@@ -107,7 +107,8 @@ add_executable(sde-core-probe core_probe.cpp)
 target_link_libraries(sde-core-probe PRIVATE sde-common)
 if(SDE_XVFB AND SDE_DBUS_RUN_SESSION)
   add_test(NAME sde-core-service COMMAND ${SDE_DBUS_RUN_SESSION} -- ${Python3_EXECUTABLE}
-    ${CMAKE_CURRENT_SOURCE_DIR}/test_core.py $<TARGET_FILE:sde-core> $<TARGET_FILE:sde-core-probe>)
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_core.py $<TARGET_FILE:sde-core> $<TARGET_FILE:sde-core-probe>
+    $<TARGET_FILE:sde-settings>)
   set_tests_properties(sde-core-service PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 endif()
 # The FileChooser portal backend (xdg-desktop-portal-sde) on a private bus.

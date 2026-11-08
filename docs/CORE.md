@@ -231,7 +231,9 @@ bumping; that path goes away after this release.
   `tests/core_probe.cpp` (`sde-core-probe`, not installed): every interface,
   a program writing `sde.conf` itself, a theme switch, the wallpaper's
   colors, instances handing over arguments and registering again after a
-  restart, and the client without `sde-core`.
+  restart, the client without `sde-core`, and the Control Center: one window
+  (a second `--page` start opens its page there), a link to the page of a
+  setting, and a setting saved without undoing another program's change.
 
 ## Not yet
 

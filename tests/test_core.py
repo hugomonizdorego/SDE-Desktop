@@ -23,7 +23,13 @@ Checked:
     SetPhase, PhaseChanged and Info;
   * the client: writes through sde-core and their Changed, LookChanged only
     for the look, and without sde-core the file written directly (still
-    checked by the schema) with the root window's serial followed instead.
+    checked by the schema) with the root window's serial followed instead;
+  * with SDE_SETTINGS (the Control Center, third argument; needs xdotool
+    and xwininfo): one window per session (another --page start shows its
+    page there), a link to the page that has a setting, a setting written
+    through sde-core without undoing what another program wrote meanwhile.
+
+test_core.py SDE_CORE SDE_CORE_PROBE [SDE_SETTINGS]
 
 SDE_TEST_DISPLAY=N picks the X display (otherwise the first free one)."""
 import os
@@ -42,6 +48,7 @@ if len(sys.argv) < 3 or not all(shutil.which(t) for t in ('Xvfb', 'gdbus', 'xpro
     print('Xvfb, gdbus, xprop and a session bus (dbus-run-session) are required; skipped')
     sys.exit(77)
 CORE, PROBE = sys.argv[1], sys.argv[2]
+SETTINGS = sys.argv[3] if len(sys.argv) > 3 and all(shutil.which(t) for t in ('xdotool', 'xwininfo')) else None
 NAME, PATH = 'org.selviana.Core', '/org/selviana/Core'
 failures = []
 
@@ -182,6 +189,98 @@ def lines(path):
         return []
 
 
+class ControlCenter:
+    """The Control Center's window through its QA dump (SDE_PANEL_QA_DIR)."""
+
+    def __init__(self, world):
+        self.w = world
+        self.qa = world.temp / 'qa'
+        self.qa.mkdir(exist_ok=True)
+        self.env = dict(world.env, SDE_PANEL_QA_DIR=str(self.qa), NO_AT_BRIDGE='1')
+
+    def start(self, *args, wait=True):
+        p = sp.Popen([SETTINGS, *args], env=self.env, stdout=open(self.w.temp / 'settings.log', 'a'),
+                     stderr=sp.STDOUT)
+        if wait:
+            self.w.procs.append(p)
+        return p
+
+    def rows(self):
+        return [l.split('\t') for l in lines(self.qa / 'Control-Center.txt')]
+
+    def page(self):
+        return next((r[0][len('@page:'):] for r in self.rows() if r[0].startswith('@page:')), None)
+
+    def control(self, name):
+        for r in self.rows():
+            if len(r) >= 6 and r[0] == name:
+                return [int(v) for v in r[1:6]]
+        return None
+
+    def origin(self):
+        out = sp.run(['xdotool', 'search', '--onlyvisible', '--name', '^Control Center$'], env=self.env,
+                     capture_output=True, text=True).stdout.split()
+        if not out:
+            return None
+        info = sp.run(['xwininfo', '-id', out[-1]], env=self.env, capture_output=True, text=True).stdout
+        vals = {}
+        for line in info.splitlines():
+            if 'Absolute upper-left' in line:
+                k, v = line.split(':')
+                vals[k.strip()[-1]] = int(v)
+        return (vals['X'], vals['Y']) if 'X' in vals and 'Y' in vals else None
+
+    def press(self, name):
+        """Wheels the page until |name| is in view and clicks it."""
+        origin = wait(self.origin, 10)
+        if not wait(lambda: self.control(name), 10) or not origin:
+            return False
+        ox, oy = origin
+        for _ in range(40):
+            c = self.control(name)
+            if c and c[4] == 1:
+                break
+            sp.run(['xdotool', 'mousemove', str(ox + 600), str(oy + 300), 'click', '5'], env=self.env)
+            time.sleep(0.2)
+        c = self.control(name)
+        if not c or c[4] != 1:
+            return False
+        sp.run(['xdotool', 'mousemove', str(ox + c[0] + c[2] // 2), str(oy + c[1] + c[3] // 2), 'click', '1'],
+               env=self.env)
+        sp.run(['xdotool', 'mousemove', '5', '5'], env=self.env)
+        return True
+
+
+def control_center_checks(w):
+    cc = ControlCenter(w)
+    cc.start('--page', 'panel')
+    if not check(wait(lambda: cc.page() == 'panel' and cc.origin(), 20), 'the Control Center did not open'):
+        return
+    # A link to the page that has a setting (the Panel page's clock).
+    check(cc.press('Open Clock & Weather') and wait(lambda: cc.page() == 'clock'),
+          'the link to Clock & Weather: page %s' % cc.page())
+    # One window per session: a second start shows its page in the first.
+    second = cc.start('--page', 'notifications', wait=False)
+    try:
+        code = second.wait(15)
+    except sp.TimeoutExpired:
+        second.kill()
+        code = None
+    check(code == 0, 'a second Control Center did not hand over its page (%s)' % code)
+    check(wait(lambda: cc.page() == 'notifications'), 'the first window did not show the page: %s' % cc.page())
+    # Another program writes a key the window shows meanwhile; the window's
+    # own change must not undo it (up to 0.2.0 Alpha 3.1 it saved its whole
+    # copy of sde.conf).
+    w.probe('write', 'notifications', 'timeout', '10')
+    check('timeout=10' in w.conf.read_text(), 'the other program did not write')
+    changed = len([l for l in w.signals('Changed') if 'show_notifications' in l])
+    check(cc.press('Notifications button on the panel'), 'no Notifications button switch')
+    check(wait(lambda: 'show_notifications=false' in w.conf.read_text()), 'the switch was not saved')
+    check(wait(lambda: len([l for l in w.signals('Changed') if 'show_notifications' in l]) > changed),
+          'no Changed for the Control Center\'s write')
+    check('timeout=10' in w.conf.read_text(), 'the Control Center undid what another program wrote')
+
+
 def main():
     w = World()
     try:
@@ -277,6 +376,12 @@ def main():
         check(wait(lambda: w.signals('PhaseChanged')), 'no PhaseChanged')
         check("'phase': <'running'>" in w.call('Session.Info')[0], 'Info')
         check('InvalidArgs' in w.call('Session.SetPhase', 'dancing')[1], 'an unknown phase')
+
+        # ---- The Control Center through sde-core
+        if SETTINGS:
+            control_center_checks(w)
+        else:
+            print('the Control Center checks need sde-settings, xdotool and xwininfo; skipped')
 
         # ---- The client, with sde-core
         check(w.probe('available').stdout.strip() == 'yes', 'the client does not see sde-core')

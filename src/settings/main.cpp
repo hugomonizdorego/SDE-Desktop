@@ -111,12 +111,28 @@ Config &saved_config() {
   return saved;
 }
 
+// The values this window wrote whose Changed has not come back yet, by key
+// (the value programs read afterwards). sde-core writes them one after the
+// other: while a slider is dragged, Changed for an earlier value comes when
+// the window already shows a later one, and is not a change made elsewhere.
+std::map<core::Key, std::vector<std::string>> &values_in_flight() {
+  static std::map<core::Key, std::vector<std::string>> written;
+  return written;
+}
+
 void apply_change() {
   double old_scale = g_theme.scale;
   // Through sde-core (checked, merged, announced with Changed; the session
   // tells GTK, the window manager and the compositor), or the file and the
   // announcement of 0.2.0 Alpha 3 without it (core_client.h).
-  core::write(core::diff(saved_config(), g_cfg));
+  std::vector<core::Write> writes = core::diff(saved_config(), g_cfg);
+  if (core::available())
+    for (const auto &w : writes) {
+      auto &list = values_in_flight()[{w.section, w.key}];
+      list.push_back(g_cfg.get(w.section, w.key, "\x01"));
+      if (list.size() > 32) list.erase(list.begin());  // a write sde-core refused never comes back
+    }
+  core::write(writes);
   saved_config() = g_cfg;
   g_theme = Theme::from_config(g_cfg);
   g_theme.apply_to_fltk();
@@ -1830,7 +1846,8 @@ void build_notifications(Page *page) {
   page->begin_card(_("Where notifications show"));
   page->switch_row(_("Notifications button on the panel"), g_cfg.get_bool("panel", "show_notifications", true),
                    [](bool on) { set_bool("panel", "show_notifications", on); },
-                   _("The bell next to the clock; it shows how many are waiting."));
+                   _("The bell next to the clock; it shows how many are waiting."))
+      ->tooltip(_("Notifications button on the panel"));
   page->end_card();
   page->finish();
 }
@@ -2847,6 +2864,17 @@ void follow_settings(const std::vector<core::Key> &keys) {
   for (const auto &k : keys) {
     if (k.first == "appearance" || k.first == "aero") continue;  // the look: above
     std::string now = disk.get(k.first, k.second, "\x01");
+    // A value this window wrote (perhaps an earlier one of a slider).
+    auto sent = values_in_flight().find(k);
+    if (sent != values_in_flight().end()) {
+      auto &list = sent->second;
+      auto mine = std::find(list.begin(), list.end(), now);
+      if (mine != list.end()) {
+        list.erase(list.begin(), mine + 1);
+        if (list.empty()) values_in_flight().erase(sent);
+        continue;
+      }
+    }
     if (now == g_cfg.get(k.first, k.second, "\x01")) continue;  // this window wrote it
     for (Config *c : {&g_cfg, &saved_config()}) {
       if (now == "\x01") c->unset(k.first, k.second);
