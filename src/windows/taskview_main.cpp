@@ -151,14 +151,14 @@ cairo_surface_t *screen_picture() {
 
 // A soft, dimmed copy of the screen for the background (scaled down and up:
 // a cheap blur).
-cairo_surface_t *backdrop_of(cairo_surface_t *screen, int w, int h) {
-  if (!screen) return nullptr;
-  int sw = cairo_image_surface_get_width(screen), sh = cairo_image_surface_get_height(screen);
-  int tw = std::max(1, sw / 24), th = std::max(1, sh / 24);
+cairo_surface_t *backdrop_of(cairo_surface_t *screen, int sx, int sy, int w, int h) {
+  if (!screen || w <= 0 || h <= 0) return nullptr;
+  int tw = std::max(1, w / 24), th = std::max(1, h / 24);
   cairo_surface_t *tiny = cairo_image_surface_create(CAIRO_FORMAT_RGB24, tw, th);
   cairo_t *cr = cairo_create(tiny);
-  cairo_scale(cr, double(tw) / sw, double(th) / sh);
-  cairo_set_source_surface(cr, screen, 0, 0);
+  cairo_scale(cr, double(tw) / w, double(th) / h);
+  // The monitor's part of the screen.
+  cairo_set_source_surface(cr, screen, -sx, -sy);
   cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_GOOD);
   cairo_paint(cr);
   cairo_destroy(cr);
@@ -894,11 +894,7 @@ int main(int argc, char **argv) {
   view->composited = compositor_running();
   // Pictures of the screen before Task View covers it.
   cairo_surface_t *full = screen_picture();
-  if (full) {
-    cairo_surface_t *part = cairo_surface_create_for_rectangle(full, sx, sy, sw, sh);
-    view->backdrop = backdrop_of(part, sw, sh);
-    cairo_surface_destroy(part);
-  }
+  view->backdrop = backdrop_of(full, sx, sy, sw, sh);
   view->screen = full;
   view->load();
   view->show();
