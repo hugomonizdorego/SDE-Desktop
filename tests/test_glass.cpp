@@ -424,6 +424,8 @@ static void test_shader_text() {
   CHECK(glsl.find("frosted(") != std::string::npos && constant(glsl, "FROST") > 4);
   // GTK 3 menus are glass too; popups with their own shadow get no second one.
   CHECK(conf.find("window-shader-fg-rule") != std::string::npos);
+  // Liria's chrome: the property of the client window inside the frame.
+  CHECK(conf.find("_SDE_SURFACE@ = 'window'") != std::string::npos);
   CHECK(conf.find("(window_type = 'popup_menu' || window_type = 'dropdown_menu') && !argb && !_SDE_SURFACE") !=
         std::string::npos);
   CHECK(conf.find("\"override_redirect && argb && !_SDE_SURFACE\"];\nfading") != std::string::npos ||

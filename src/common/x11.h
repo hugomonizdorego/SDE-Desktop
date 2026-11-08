@@ -55,7 +55,8 @@ void set_opacity(Window w, double opacity);  // e.g. "_NET_WM_WINDOW_TYPE_DOCK"
 // Theme::liquid): "panel", "panel-round" (floating and short panels),
 // "popup" (panel popups, notifications, OSDs), "popup-top" / "popup-bottom"
 // (only those corners rounded: the Action Center on a bottom / top panel),
-// "menu" or "tooltip". The surface is drawn flat in its surface color.
+// "menu", "tooltip" or "window" (a top-level window that draws its own title
+// bar: Liria). The surface is drawn flat in its surface color.
 void set_surface(Window w, const char *kind);
 void set_bottom_strut(Window w, int height, int x_start, int x_end, int screen_h);
 // Reserves |height| pixels at the top or bottom edge of the monitor that
